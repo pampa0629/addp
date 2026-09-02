@@ -82,12 +82,6 @@ other = "A domain parent cannot be itself or its descendant"
 [standard.domain.referenced]
 other = "The domain is still referenced by a child domain, glossary, element, metric, or dimension hierarchy and cannot be deleted"
 
-[standard.classification.parent_cycle]
-other = "A classification parent cannot be itself or its descendant"
-
-[standard.classification.referenced]
-other = "The classification is still referenced by a child classification or element and cannot be deleted"
-
 [standard.metric_category.parent_cycle]
 other = "A metric category parent cannot be itself or its descendant"
 

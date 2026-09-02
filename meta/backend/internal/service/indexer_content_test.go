@@ -38,4 +38,7 @@ func TestIndexerServiceSubmitsTableProjectionToManagerOwner(t *testing.T) {
 	if received.DocumentID != "fingerprint-1" || received.DataItemType != "table" || received.EngineID != 9 || received.Schema != "public" || len(received.Fields) != 1 {
 		t.Fatalf("received document = %#v", received)
 	}
+	if received.PayloadKind != commonClient.ManagerContentPayloadTechnicalMetadata || len(received.Metadata) != 0 {
+		t.Fatalf("received table payload kind=%q metadata=%#v", received.PayloadKind, received.Metadata)
+	}
 }

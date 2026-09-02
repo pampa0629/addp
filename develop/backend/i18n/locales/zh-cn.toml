@@ -46,6 +46,9 @@ other = "执行授权状态发生并发冲突，请重试"
 [develop.query.authorization_unavailable]
 other = "执行授权服务暂时不可用，请稍后重试"
 
+[develop.query.analysis_unavailable]
+other = "查询分析服务暂时不可用，请稍后重试"
+
 [develop.query.execution_failed]
 other = "SQL 执行失败"
 

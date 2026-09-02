@@ -413,6 +413,7 @@ import {
   tableSelectionUsesRuntime
 } from '@/utils/queryServiceEngines'
 import { navigateServiceRoute } from '@/utils/moduleNavigation'
+import { SERVICE_NAME_PATTERN } from '@/utils/serviceHelper'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -485,7 +486,7 @@ const inputRef = ref(null)
 const rules = computed(() => ({
   service_name: [
     { required: true, message: t('service.query.serviceNamePlaceholder'), trigger: 'blur' },
-    { pattern: /^[a-z0-9_]+$/, message: t('service.query.serviceNameHelp'), trigger: 'blur' }
+    { pattern: SERVICE_NAME_PATTERN, message: t('service.query.serviceNameHelp'), trigger: 'blur' }
   ],
   title: [
     { required: true, message: t('service.query.titlePlaceholder'), trigger: 'blur' }

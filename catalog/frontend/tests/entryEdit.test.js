@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildEntryEditForm,
+  buildCertificationPayload,
+  buildCertificationWithdrawalPayload,
+  buildDeprecationPayload,
   buildUpdatePayload,
-  governanceOptions,
+  buildWithdrawCurationPayload,
+  curationAction,
   hasEffectivePrimaryDomain,
   isCanonicalPositiveID,
   isCanonicalUUID,
@@ -37,14 +41,28 @@ describe('catalog entry edit contract', () => {
       subject_id: '9007199254740993'
     }])
     expect(payload.component_elements).toEqual([{ component_id: 'component-1', element_id: '50' }])
-    expect(payload.recommended_successor_entry_id).toBeNull()
+    expect(payload).not.toHaveProperty('recommended_successor_entry_id')
   })
 
-  it('only exposes allowed forward governance transitions', () => {
-    expect(governanceOptions('discovered', true, true)).toEqual(['discovered', 'curated'])
-    expect(governanceOptions('curated', false, true)).toEqual(['curated', 'deprecated'])
-    expect(governanceOptions('curated', true, false)).toEqual(['curated', 'certified'])
-    expect(governanceOptions('deprecated', true, true)).toEqual(['deprecated'])
+  it('builds the only valid complete curation withdrawal payload', () => {
+    expect(buildWithdrawCurationPayload({ version: 6 })).toEqual({
+      version: 6,
+      business_name: null,
+      business_description: null,
+      governance_status: 'discovered',
+      visibility: 'inventory',
+      domains: [],
+      glossary_ids: [],
+      responsibilities: [],
+      component_elements: []
+    })
+  })
+
+  it('exposes state-specific curation and lifecycle actions', () => {
+    expect(curationAction('discovered')).toBe('start')
+    expect(curationAction('curated')).toBe('edit')
+    expect(curationAction('certified')).toBe('')
+    expect(curationAction('deprecated')).toBe('')
   })
 
   it('keeps System subject IDs as canonical decimal strings', () => {
@@ -53,11 +71,21 @@ describe('catalog entry edit contract', () => {
     expect(responsibilitySubjectType('business_owner')).toBe('user')
   })
 
-  it('keeps the recommended successor in the complete aggregate payload', () => {
+  it('builds lifecycle payloads for the governance subresource only', () => {
     const successorID = '11111111-2222-3333-4444-555555555555'
-    const form = buildEntryEditForm({ recommended_successor_entry_id: successorID })
-    expect(form.recommendedSuccessorEntryId).toBe(successorID)
-    expect(buildUpdatePayload(form).recommended_successor_entry_id).toBe(successorID)
+    const entry = { version: 9 }
+    expect(buildCertificationPayload(entry)).toEqual({ version: 9, governance_status: 'certified' })
+    expect(buildCertificationWithdrawalPayload(entry, ' needs work ')).toEqual({
+      version: 9,
+      governance_status: 'curated',
+      reason: 'needs work'
+    })
+    expect(buildDeprecationPayload(entry, ' replaced ', successorID)).toEqual({
+      version: 9,
+      governance_status: 'deprecated',
+      reason: 'replaced',
+      recommended_successor_entry_id: successorID
+    })
     expect(isCanonicalUUID(successorID)).toBe(true)
     expect(isCanonicalUUID('00000000-0000-0000-0000-000000000000')).toBe(false)
     expect(isCanonicalUUID('11111111-2222-3333-4444-55555555555A')).toBe(false)

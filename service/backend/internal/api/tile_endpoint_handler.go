@@ -163,6 +163,17 @@ func (h *TileEndpointHandler) GetXYZTile(c *gin.Context) {
 		tileData = staticTile.Data
 	} else if layer.LayerType == "dynamic" {
 		// 动态瓦片：检查缓存 → 实时生成 → 保存缓存
+		endProtection, protectionErr := h.dynamicTileService.BeginProtectedRead(ctx, tileService.TenantID, layer)
+		if protectionErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to protect tile source"})
+			return
+		}
+		protectionOwnedByCacheWrite := false
+		defer func() {
+			if !protectionOwnedByCacheWrite {
+				endProtection()
+			}
+		}()
 
 		// 5.1 检查缓存配置
 		config := layer.LayerConfig
@@ -190,7 +201,7 @@ func (h *TileEndpointHandler) GetXYZTile(c *gin.Context) {
 		// 5.3 缓存未命中，实时生成
 		if tileData == nil || len(tileData) == 0 {
 			startTime := time.Now()
-			tileData, err = h.dynamicTileService.GetDynamicTile(ctx, layer, z, x, y)
+			tileData, err = h.dynamicTileService.GetDynamicTile(ctx, tileService.TenantID, layer, z, x, y)
 			duration := time.Since(startTime)
 
 			if err != nil {
@@ -205,7 +216,12 @@ func (h *TileEndpointHandler) GetXYZTile(c *gin.Context) {
 
 			// 5.4 异步保存到缓存
 			if cacheEnabled && len(tileData) > 0 {
+				// The cache write is part of the old-cursor read. Keep that read
+				// registered until the asynchronous write completes so the
+				// acknowledgement barrier purges after, never before, this write.
+				protectionOwnedByCacheWrite = true
 				go func() {
+					defer endProtection()
 					bgCtx := context.Background()
 					if err := h.tileCacheService.PutCachedTile(
 						bgCtx,

@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -42,8 +43,8 @@ func (p *fakeSQLRuntimeProvider) GenerateSampleQuery(context.Context, Connection
 	return "", "sql"
 }
 
-func (p *fakeSQLRuntimeProvider) ExecuteRuntimeQuery(context.Context, ConnectionInfo, QueryRequest) (*QueryResult, error) {
-	return nil, nil
+func (p *fakeSQLRuntimeProvider) PrepareQuery(_ context.Context, conn ConnectionInfo, req QueryRequest) (PreparedQuery, error) {
+	return PrepareSQLRuntimeQuery(p, conn, req, nil, nil)
 }
 
 func (p *fakeSQLRuntimeProvider) SQLDialect() string { return "postgresql" }
@@ -87,7 +88,7 @@ func TestBindSQLRuntimeParametersUsesDialectPlaceholderStyle(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.dialect, func(t *testing.T) {
-			bound, args, err := bindSQLRuntimeParameters(test.dialect,
+			bound, args, err := BindSQLRuntimeParameters(test.dialect,
 				"SELECT * FROM members WHERE status = :status AND score > :score",
 				QueryOptions{Parameters: map[string]interface{}{"status": "active", "score": 10}},
 			)
@@ -105,12 +106,71 @@ func TestBindSQLRuntimeParametersUsesDialectPlaceholderStyle(t *testing.T) {
 }
 
 func TestBindSQLRuntimeParametersRejectsMixedParameterModes(t *testing.T) {
-	_, _, err := bindSQLRuntimeParameters("postgres", "SELECT $1", QueryOptions{
+	_, _, err := BindSQLRuntimeParameters("postgres", "SELECT $1", QueryOptions{
 		Args:       []interface{}{1},
 		Parameters: map[string]interface{}{"value": 1},
 	})
 	if err == nil {
 		t.Fatal("expected mixed positional and named parameters to fail")
+	}
+}
+
+func TestPrepareSQLRuntimeQueryBindsOnceAndFailsClosedWithoutReadSetResolver(t *testing.T) {
+	provider := &fakeSQLRuntimeProvider{}
+	prepared, err := provider.PrepareQuery(t.Context(), ConnectionInfo{"host": "db"}, QueryRequest{
+		EngineID: 9,
+		Language: "sql",
+		Query:    "SELECT * FROM members WHERE status = :status",
+		Options: QueryOptions{
+			ReadOnly:   true,
+			Parameters: map[string]interface{}{"status": "active"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := prepared.ReadSet(t.Context()); !errors.Is(err, ErrQueryReadSetUnresolved) {
+		t.Fatalf("ReadSet() error = %v", err)
+	}
+	analysis, err := prepared.Analysis(t.Context())
+	if err != nil || analysis.SchemaCoverage != QuerySchemaCoverageUnknown || len(analysis.Diagnostics) != 0 {
+		t.Fatalf("Analysis() = %#v, error = %v", analysis, err)
+	}
+	if _, err := prepared.Execute(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if provider.lastSQL != "SELECT * FROM members WHERE status = $1" {
+		t.Fatalf("executed SQL = %q", provider.lastSQL)
+	}
+	if provider.lastOptions.Parameters != nil || len(provider.lastOptions.Args) != 1 || provider.lastOptions.Args[0] != "active" {
+		t.Fatalf("executed options = %#v", provider.lastOptions)
+	}
+}
+
+func TestConsumeSQLPreparedQueryReturnsTheBoundOneShotRequest(t *testing.T) {
+	provider := &fakeSQLRuntimeProvider{}
+	prepared, err := provider.PrepareQuery(t.Context(), ConnectionInfo{"host": "db"}, QueryRequest{
+		EngineID: 7, Language: "sql", Query: "SELECT :value AS value",
+		Options: QueryOptions{ReadOnly: true, Parameters: map[string]interface{}{"value": "safe"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	connInfo, request, err := ConsumeSQLPreparedQuery(prepared, provider)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if connInfo["host"] != "db" || request.Query != "SELECT $1 AS value" || len(request.Options.Args) != 1 || request.Options.Args[0] != "safe" {
+		t.Fatalf("consumed SQL plan = conn:%#v request:%#v", connInfo, request)
+	}
+	if request.Options.Parameters != nil {
+		t.Fatalf("consumed SQL parameters = %#v, want bound positional args only", request.Options.Parameters)
+	}
+	if _, _, err := ConsumeSQLPreparedQuery(prepared, provider); !errors.Is(err, ErrPreparedQueryConsumed) {
+		t.Fatalf("second consume error = %v", err)
+	}
+	if _, err := prepared.Execute(t.Context()); !errors.Is(err, ErrPreparedQueryConsumed) {
+		t.Fatalf("execute after session consume error = %v", err)
 	}
 }
 

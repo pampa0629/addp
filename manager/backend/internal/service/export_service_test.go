@@ -49,6 +49,23 @@ func TestBuildTableExportTaskConfigUsesTransferSyncShape(t *testing.T) {
 	}
 }
 
+func TestBuildEncodedRecordExportTaskConfigUsesNativeCollectionShape(t *testing.T) {
+	config := buildEncodedRecordExportTaskConfig(
+		"addp://engine/11/path/Outdoor/Persons?type=collection&item_id=81",
+		"addp-infra://minio/manager/tenant_7/export/20260902/session-1?type=prefix",
+		"Persons.ejsonl",
+		format.FormatMongoDBExtendedJSONL,
+	)
+	source := config["source"].(map[string]interface{})
+	if source["representation"] != "native" || source["data_type"] != "unknown" || source["format"] != nil {
+		t.Fatalf("source = %#v", source)
+	}
+	target := config["target"].(map[string]interface{})
+	if target["representation"] != "encoded" || target["format"] != "mongodb_extended_jsonl" || target["name"] != "Persons.ejsonl" {
+		t.Fatalf("target = %#v", target)
+	}
+}
+
 func TestSupportedExportFormatIncludesSingleAndMultiRefWriters(t *testing.T) {
 	if !supportedExportFormat(format.FormatCSV) {
 		t.Fatal("csv should be supported")
@@ -67,6 +84,9 @@ func TestExportFileNamesKeepTransferTargetAndUserDownloadSeparate(t *testing.T) 
 	}
 	if got := exportDownloadFileName("roads", format.FormatCSV); got != "roads.csv" {
 		t.Fatalf("exportDownloadFileName(csv) = %q, want roads.csv", got)
+	}
+	if got := exportDownloadFileName("Persons", format.FormatMongoDBExtendedJSONL); got != "Persons.ejsonl" {
+		t.Fatalf("exportDownloadFileName(mongodb_extended_jsonl) = %q, want Persons.ejsonl", got)
 	}
 }
 

@@ -65,6 +65,9 @@ type DataSessionRunner struct {
 	Now                      func() time.Time
 	DeadLetters              ContinuousDeadLetterRecorder
 	MetadataScanner          PreparedTargetMetadataScanner
+	ProtectionGate           interface {
+		RequireSourceConfig(context.Context, uint, map[string]interface{}) error
+	}
 }
 
 const (
@@ -82,6 +85,12 @@ type sourceLatestSample struct {
 func (r *DataSessionRunner) Run(ctx context.Context, claim repository.RuntimeLeaseClaim) error {
 	if r == nil || r.Resolver == nil || r.States == nil || r.Progress == nil {
 		return fmt.Errorf("continuous data runner dependencies are required")
+	}
+	if r.ProtectionGate == nil {
+		return fmt.Errorf("continuous source protection gate is required")
+	}
+	if err := r.ProtectionGate.RequireSourceConfig(ctx, claim.Task.TenantID, claim.Task.Config); err != nil {
+		return err
 	}
 	plan, err := r.buildPlan(ctx, claim)
 	if err != nil {
@@ -190,6 +199,9 @@ func (r *DataSessionRunner) Run(ctx context.Context, claim repository.RuntimeLea
 	var recordsRead, recordsWritten int64
 	for {
 		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := r.ProtectionGate.RequireSourceConfig(ctx, claim.Task.TenantID, claim.Task.Config); err != nil {
 			return err
 		}
 		currentTime := now()

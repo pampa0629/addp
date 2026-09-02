@@ -692,6 +692,24 @@ func (req *PreviewResolverRequest) MetadataAttributes() map[string]interface{} {
 	return req.Metadata.Attributes
 }
 
+// TableFields returns the standard table structure already carried by the
+// resolved Meta snapshot. It never refreshes Meta or reads source data.
+func (req *PreviewResolverRequest) TableFields() []datatype.FieldInfo {
+	if req == nil {
+		return nil
+	}
+	info := tableInfoFromMetaAttributes(req.MetadataAttributes(), req.ItemName)
+	if info == nil || len(info.Fields) == 0 {
+		return nil
+	}
+	fields := make([]datatype.FieldInfo, len(info.Fields))
+	copy(fields, info.Fields)
+	for index := range fields {
+		fields[index].Path = append([]string(nil), info.Fields[index].Path...)
+	}
+	return fields
+}
+
 func (r *PreviewResolver) resolveProviderByMeta(req *PreviewResolverRequest, providerReq *PreviewRequest) (PreviewProvider, error) {
 	if r == nil || r.registry == nil {
 		return nil, ErrNoPreviewProvider

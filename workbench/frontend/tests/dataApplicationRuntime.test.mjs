@@ -45,6 +45,7 @@ test('builds a component query only from explicit application parameter bindings
     page: { limit: 50, cursor: 'next-page-cursor' },
     format: 'json',
   })
+  assert.equal(buildComponentQuery(snapshot, component, values, '', 'csv').format, 'csv')
 })
 
 test('maps a result selection atomically to application parameters and deduplicated component targets', () => {

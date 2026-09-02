@@ -16,6 +16,7 @@ type Config struct {
 	DBSchema            string
 	PreviewPluginDir    string
 	MetaServiceURL      string
+	SecurityServiceURL  string
 	ServiceClientSecret string
 
 	// Meilisearch 配置
@@ -99,6 +100,7 @@ func Load() *Config {
 		DBSchema:            commonConfig.GetEnv("DB_SCHEMA", "manager"),
 		PreviewPluginDir:    defaultPluginDir,
 		MetaServiceURL:      metaURL,
+		SecurityServiceURL:  commonConfig.GetEnv("SECURITY_URL", "http://localhost:8194"),
 		ServiceClientSecret: commonConfig.GetEnv("MANAGER_SERVICE_CLIENT_SECRET", ""),
 	}
 

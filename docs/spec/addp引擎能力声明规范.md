@@ -217,6 +217,7 @@ type StoreCapability struct {
     BatchRead                 bool                                  `json:"batch_read,omitempty"`
     TableReadSession          bool                                  `json:"table_read_session,omitempty"`
     RecordReadSession         bool                                  `json:"record_read_session,omitempty"`
+    EncodedRecordReadSession  *EncodedRecordReadSessionCapability   `json:"encoded_record_read_session,omitempty"`
     TableReadSpatialTransform bool                                  `json:"table_read_spatial_transform,omitempty"`
     BatchWrite                bool                                  `json:"batch_write,omitempty"`
     TableWriteSession         bool                                  `json:"table_write_session,omitempty"`
@@ -226,6 +227,10 @@ type StoreCapability struct {
     TableUpsert               *TableUpsertCapability                `json:"table_upsert,omitempty"`
     PartitionedTableChangeApply *PartitionedTableChangeApplyCapability `json:"partitioned_table_change_apply,omitempty"`
     TableSpatialEncoding      *NativeTableSpatialEncodingCapability `json:"table_spatial_encoding,omitempty"`
+}
+
+type EncodedRecordReadSessionCapability struct {
+    Formats []string `json:"formats"`
 }
 
 type ChangeStreamReadCapability struct {
@@ -268,6 +273,7 @@ type NativeTableSpatialEncodingCapability struct {
 | `batch_read` | 执行一次有界的固定 schema 结构化 item 批量读取。动态 schema collection 使用 `record_read_session`，图数据使用 `GraphSampleProvider` / `GraphQueryProvider`。 | `BatchReadableProvider` |
 | `table_read_session` | 打开一次表读取会话并连续读取批次，避免大表 `LIMIT/OFFSET` 翻页退化。 | `TableReadSessionProvider` |
 | `record_read_session` | 打开一次动态 schema 记录游标并连续读取原生 record；collection 不因此获得 table 语义。 | `RecordReadSessionProvider` |
+| `encoded_record_read_session` | 按声明的类型保真交换格式连续读取已编码动态记录；`formats` 必须列出稳定格式标识。 | `EncodedRecordReadSessionProvider` |
 | `table_read_spatial_transform` | 读取表时是否可通过 read hints 执行空间 CRS 转换。该字段是早期布尔声明，后续优先使用 `table_spatial_encoding.read_transform`。 | `BatchReadableProvider` / `TableReadSessionProvider` |
 | `batch_write` | 按批次写入结构化 item。 | `BatchWritableProvider` |
 | `table_write_session` | 打开一次表写入会话并连续写入批次，避免每批重复建立 COPY / bulk load 会话。 | `TableWriteSessionProvider` |
@@ -506,10 +512,11 @@ type CapabilitiesView struct {
 - 声明 `storage.store.batch_read=true` 的插件必须实现 `BatchReadableProvider`。
 - 声明 `storage.store.table_read_session=true` 的插件必须实现 `TableReadSessionProvider`。
 - 声明 `storage.store.record_read_session=true` 的插件必须实现 `RecordReadSessionProvider`。
+- 声明 `storage.store.encoded_record_read_session` 的插件必须实现 `EncodedRecordReadSessionProvider`，且 `formats` 必须非空、去重并使用已登记的稳定格式标识。
 - 声明 `storage.store.batch_write=true` 的插件必须实现 `BatchWritableProvider`。
 - 声明 `storage.store.table_write_session=true` 的插件必须实现 `TableWriteSessionProvider`。
 - 声明 `storage.store.table_write_prepare=true` 的插件必须实现 `TableWritePreparer`。
-- 声明 `compute.query.supported=true` 的插件必须实现 `QueryRuntimeProvider` 或 `FederatedQueryRuntimeProvider`。声明 `compute.query.read_session=true` 时必须实现 `QueryReadSessionProvider`；实现该 Provider 时也必须反向声明。声明 `compute.query.federation.supported=true` 时必须实现 `FederatedQueryRuntimeProvider`，且 `runtime_api` 非空。
+- 声明 `compute.query.supported=true` 的普通查询插件必须实现以 `PrepareQuery()` 为唯一执行入口的 `QueryRuntimeProvider`，并从 PreparedQuery 提供受 `schema_coverage` 约束的 `QueryAnalysis`；联邦运行时必须实现 `FederatedQueryRuntimeProvider`。声明 `compute.query.read_session=true` 时必须实现从同一 PreparedQuery 打开会话的 `QueryReadSessionProvider`；实现该 Provider 时也必须反向声明。声明 `compute.query.federation.supported=true` 时必须实现 `FederatedQueryRuntimeProvider`，且 `runtime_api` 非空。
 - 声明 `compute.query.parameters.supported=true` 的插件必须对 `parameters.languages` 中每种语言实现类型化参数绑定，并拒绝缺失、未知或未使用参数；不得只声明 UI 能力而把参数插值交给调用方。
 - 声明 `compute.workflow.supported=true` 的编译期插件必须实现 `WorkflowRuntimeProvider`。通过 System 注册的 `addp.workflow/v1` 外部运行时不要求独立编译期插件，由 Common 唯一的 `HTTPWorkflowRuntimeProvider` 消费；System 必须在注册时校验 capabilities 并完成协议探测。
 - 声明 `compute.script.supported=true` 的插件必须实现 `ScriptRuntimeProvider`。

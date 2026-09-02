@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"reflect"
 	"strings"
@@ -19,7 +20,7 @@ func ExecuteSQLWithConnectionPool(ctx context.Context, poolPlugin ConnectionPool
 	if poolPlugin == nil {
 		return nil, fmt.Errorf("connection pool plugin cannot be nil")
 	}
-	boundSQL, boundArgs, err := bindSQLRuntimeParameters(poolPlugin.GetDialect(), sql, opts)
+	boundSQL, boundArgs, err := BindSQLRuntimeParameters(poolPlugin.GetDialect(), sql, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -64,10 +65,64 @@ func ExecuteSQLWithConnectionPool(ctx context.Context, poolPlugin ConnectionPool
 		}
 	}
 
+	if opts.ReadOnly {
+		return executeReadOnlySQL(ctx, db, poolPlugin.GetDialect(), sql, opts.Args)
+	}
 	rows, err := db.WithContext(ctx).Raw(sql, opts.Args...).Rows()
 	if err != nil {
 		return nil, err
 	}
+	return scanRuntimeSQLRows(rows)
+}
+
+func executeReadOnlySQL(ctx context.Context, db *gorm.DB, dialect, query string, args []interface{}) (*QueryResult, error) {
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, fmt.Errorf("获取数据库连接失败：%w", err)
+	}
+	engineType := strings.ToLower(strings.TrimSpace(dialect))
+	var txOptions *sql.TxOptions
+	switch engineType {
+	case "postgres", "postgresql", "postgis", "mysql", "doris":
+		txOptions = &sql.TxOptions{ReadOnly: true}
+	case "oracle":
+		// go-ora rejects database/sql's ReadOnly option; Oracle exposes the
+		// same database-enforced boundary through SET TRANSACTION READ ONLY.
+		txOptions = nil
+	default:
+		return nil, fmt.Errorf("引擎 %s 不支持受控只读 SQL 执行", dialect)
+	}
+	tx, err := sqlDB.BeginTx(ctx, txOptions)
+	if err != nil {
+		return nil, fmt.Errorf("开启只读事务失败：%w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+	if engineType == "oracle" {
+		if _, err := tx.ExecContext(ctx, "SET TRANSACTION READ ONLY"); err != nil {
+			return nil, fmt.Errorf("设置只读事务失败：%w", err)
+		}
+	}
+	rows, err := tx.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	result, err := scanRuntimeSQLRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("提交只读事务失败：%w", err)
+	}
+	committed = true
+	return result, nil
+}
+
+func scanRuntimeSQLRows(rows *sql.Rows) (*QueryResult, error) {
 	defer rows.Close()
 
 	columns, err := rows.Columns()
@@ -103,7 +158,10 @@ func ExecuteSQLWithConnectionPool(ctx context.Context, poolPlugin ConnectionPool
 	return &QueryResult{Columns: columns, Rows: resultRows}, nil
 }
 
-func bindSQLRuntimeParameters(dialect, sql string, opts QueryOptions) (string, []interface{}, error) {
+// BindSQLRuntimeParameters applies the same parameter contract used by SQL
+// execution. Dialect providers may use it before parsing the execution-bound
+// statement for query planning facts such as QueryReadSet.
+func BindSQLRuntimeParameters(dialect, sql string, opts QueryOptions) (string, []interface{}, error) {
 	if opts.Parameters != nil && len(opts.Args) > 0 {
 		return "", nil, fmt.Errorf("query options cannot contain both named parameters and positional args")
 	}
@@ -115,6 +173,173 @@ func bindSQLRuntimeParameters(dialect, sql string, opts QueryOptions) (string, [
 		return "", nil, fmt.Errorf("bind SQL query parameters: %w", err)
 	}
 	return boundSQL, boundArgs, nil
+}
+
+// PrepareSQLRuntimeQuery binds parameters once and returns the only execution
+// route for an ordinary SQL query. A nil resolver means the dialect has not yet
+// implemented a complete QueryReadSet; execution remains available, while
+// ReadSet fails closed with ErrQueryReadSetUnresolved.
+func PrepareSQLRuntimeQuery(
+	provider SQLQueryRuntimeProvider,
+	connInfo ConnectionInfo,
+	req QueryRequest,
+	resolveReadSet func(context.Context, ConnectionInfo, QueryRequest) (*QueryReadSet, error),
+	resolveLineage func(context.Context, ConnectionInfo, QueryRequest, *QueryReadSet) (*QueryOutputLineage, error),
+) (PreparedQuery, error) {
+	if provider == nil {
+		return nil, fmt.Errorf("SQL query runtime provider cannot be nil")
+	}
+	preparedReq, err := prepareQueryRequest(provider.Type(), req)
+	if err != nil {
+		return nil, err
+	}
+	if !strings.EqualFold(preparedReq.Language, "sql") {
+		return nil, fmt.Errorf("SQL query runtime requires language sql")
+	}
+	boundSQL, boundArgs, err := BindSQLRuntimeParameters(provider.SQLDialect(), preparedReq.Query, preparedReq.Options)
+	if err != nil {
+		return nil, err
+	}
+	preparedReq.Query = boundSQL
+	preparedReq.Options.Parameters = nil
+	preparedReq.Options.Args = cloneQueryValues(boundArgs)
+	if preparedReq.Options.ReadOnly {
+		if err := commonquery.RequireReadOnly(preparedReq.Query); err != nil {
+			return nil, fmt.Errorf("read-only SQL validation failed: %w", err)
+		}
+	}
+	analysis, err := NewQueryAnalysis(preparedReq.Language, QuerySchemaCoverageUnknown)
+	if err != nil {
+		return nil, err
+	}
+	preparedConnInfo := cloneQueryConnectionInfo(connInfo)
+	var readSet func(context.Context) (*QueryReadSet, error)
+	if resolveReadSet != nil {
+		readSet = func(ctx context.Context) (*QueryReadSet, error) {
+			return resolveReadSet(ctx, cloneQueryConnectionInfo(preparedConnInfo), cloneQueryRequest(preparedReq))
+		}
+	}
+	var lineage func(context.Context, *QueryReadSet) (*QueryOutputLineage, error)
+	if resolveLineage != nil {
+		lineage = func(ctx context.Context, readSet *QueryReadSet) (*QueryOutputLineage, error) {
+			return resolveLineage(ctx, cloneQueryConnectionInfo(preparedConnInfo), cloneQueryRequest(preparedReq), readSet.Clone())
+		}
+	}
+	prepared, err := NewPreparedQuery(analysis, readSet, lineage, func(ctx context.Context) (*QueryResult, error) {
+		request := cloneQueryRequest(preparedReq)
+		return provider.ExecuteSQL(ctx, cloneQueryConnectionInfo(preparedConnInfo), request.Query, request.Options)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &preparedSQLQuery{
+		preparedQuery: prepared.(*preparedQuery),
+		providerType:  provider.Type(),
+		connInfo:      preparedConnInfo,
+		request:       preparedReq,
+	}, nil
+}
+
+type preparedSQLQuery struct {
+	*preparedQuery
+	providerType string
+	connInfo     ConnectionInfo
+	request      QueryRequest
+}
+
+// ConsumeSQLPreparedQuery transfers the already-bound SQL request from the
+// shared one-shot PreparedQuery to a streaming session owned by the same
+// provider type. It is the only SQL query-session bridge; providers must not
+// re-bind the original request or call Execute after consuming it.
+func ConsumeSQLPreparedQuery(prepared PreparedQuery, provider SQLQueryRuntimeProvider) (ConnectionInfo, QueryRequest, error) {
+	plan, ok := prepared.(*preparedSQLQuery)
+	if !ok || provider == nil || plan.providerType != provider.Type() {
+		return nil, QueryRequest{}, fmt.Errorf("SQL query read session requires a PreparedQuery from the same provider type")
+	}
+	plan.mu.Lock()
+	defer plan.mu.Unlock()
+	if plan.consumed {
+		return nil, QueryRequest{}, ErrPreparedQueryConsumed
+	}
+	plan.consumed = true
+	return cloneQueryConnectionInfo(plan.connInfo), cloneQueryRequest(plan.request), nil
+}
+
+func prepareQueryRequest(engineType string, req QueryRequest) (QueryRequest, error) {
+	prepared := cloneQueryRequest(req)
+	prepared.Language = strings.ToLower(strings.TrimSpace(prepared.Language))
+	prepared.Query = strings.TrimSpace(prepared.Query)
+	if prepared.Language == "" || prepared.Query == "" {
+		return QueryRequest{}, fmt.Errorf("query language and text are required")
+	}
+	if prepared.EngineID != 0 && prepared.Options.EngineID != 0 && prepared.EngineID != prepared.Options.EngineID {
+		return QueryRequest{}, fmt.Errorf("query engine identity is inconsistent")
+	}
+	if prepared.EngineID == 0 {
+		prepared.EngineID = prepared.Options.EngineID
+	}
+	prepared.Options.EngineID = prepared.EngineID
+	if prepared.Options.EngineType == "" {
+		prepared.Options.EngineType = strings.TrimSpace(engineType)
+	}
+	return prepared, nil
+}
+
+func cloneQueryRequest(req QueryRequest) QueryRequest {
+	cloned := req
+	if req.TargetPath != nil {
+		path := cloneEngineCatalogPath(*req.TargetPath)
+		cloned.TargetPath = &path
+	}
+	cloned.Options.Args = cloneQueryValues(req.Options.Args)
+	cloned.Options.Parameters = cloneQueryValueMap(req.Options.Parameters)
+	return cloned
+}
+
+func cloneQueryConnectionInfo(connInfo ConnectionInfo) ConnectionInfo {
+	if connInfo == nil {
+		return nil
+	}
+	cloned := make(ConnectionInfo, len(connInfo))
+	for key, value := range connInfo {
+		cloned[key] = cloneQueryValue(value)
+	}
+	return cloned
+}
+
+func cloneQueryValueMap(values map[string]interface{}) map[string]interface{} {
+	if values == nil {
+		return nil
+	}
+	cloned := make(map[string]interface{}, len(values))
+	for key, value := range values {
+		cloned[key] = cloneQueryValue(value)
+	}
+	return cloned
+}
+
+func cloneQueryValues(values []interface{}) []interface{} {
+	if values == nil {
+		return nil
+	}
+	cloned := make([]interface{}, len(values))
+	for index, value := range values {
+		cloned[index] = cloneQueryValue(value)
+	}
+	return cloned
+}
+
+func cloneQueryValue(value interface{}) interface{} {
+	switch typed := value.(type) {
+	case []byte:
+		return append([]byte(nil), typed...)
+	case []interface{}:
+		return cloneQueryValues(typed)
+	case map[string]interface{}:
+		return cloneQueryValueMap(typed)
+	default:
+		return value
+	}
 }
 
 func sqlPlaceholderStyle(engineType string) commonquery.SQLPlaceholderStyle {

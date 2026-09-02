@@ -1,11 +1,5 @@
 [workbench.error.invalid_request]
-other = "The Workbench view configuration is invalid"
-
-[workbench.error.view_not_found]
-other = "The Workbench view does not exist"
-
-[workbench.error.version_conflict]
-other = "The Workbench view was updated by another operation; refresh and try again"
+other = "The Workbench request is invalid"
 
 [workbench.error.service_access_denied]
 other = "The data service does not exist or the current user cannot access it"
@@ -14,10 +8,7 @@ other = "The data service does not exist or the current user cannot access it"
 other = "The data service is currently unavailable"
 
 [workbench.error.operation_failed]
-other = "The Workbench view operation failed"
-
-[workbench.message.delete_succeeded]
-other = "The Workbench view was deleted"
+other = "The Workbench operation failed"
 
 [workbench.error.invalid_data_application]
 other = "The data application configuration is invalid"
@@ -54,7 +45,7 @@ other = "Allow the enterprise catalog to read published Data Application changes
 [permissions.workbench.data_application.create.name]
 other = "Create data applications"
 [permissions.workbench.data_application.create.description]
-other = "Create data applications from Workbench views owned by the current user"
+other = "Configure data applications owned by the current user from published data services"
 [permissions.workbench.data_application.delete.name]
 other = "Delete data applications"
 [permissions.workbench.data_application.delete.description]
@@ -84,20 +75,3 @@ other = "Allow Asset to write owner resource grants for data applications"
 other = "Revoke Workbench resource grants"
 [permissions.workbench.resource_grant.revoke.description]
 other = "Allow Asset to revoke owner resource grants for data applications"
-
-[permissions.workbench.view.create.name]
-other = "Create Workbench views"
-[permissions.workbench.view.create.description]
-other = "Create private Workbench views owned by the current user"
-[permissions.workbench.view.read.name]
-other = "Read Workbench views"
-[permissions.workbench.view.read.description]
-other = "Read private Workbench views owned by the current user"
-[permissions.workbench.view.update.name]
-other = "Update Workbench views"
-[permissions.workbench.view.update.description]
-other = "Update private Workbench views owned by the current user"
-[permissions.workbench.view.delete.name]
-other = "Delete Workbench views"
-[permissions.workbench.view.delete.description]
-other = "Delete private Workbench views owned by the current user"

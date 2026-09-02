@@ -37,10 +37,31 @@ func TestValidateGateGroupRequiresExactVersionAndMemberSet(t *testing.T) {
 	}
 }
 
+func TestValidateMaterializationGateAllowedValues(t *testing.T) {
+	binding := []MaterializationGateTableBinding{{Alias: "orders", LogicalTableID: 3}}
+	valid := gateTestDocument(`{"table":"orders","column":"status","values":["enabled","disabled"]}`, "allowed_values")
+	if _, err := validateMaterializationGateContract(binding, valid); err != nil {
+		t.Fatalf("valid allowed_values rejected: %v", err)
+	}
+	for name, params := range map[string]string{
+		"empty":     `{"table":"orders","column":"status","values":[]}`,
+		"blank":     `{"table":"orders","column":"status","values":[""]}`,
+		"duplicate": `{"table":"orders","column":"status","values":["enabled","enabled"]}`,
+		"unknown":   `{"table":"orders","column":"status","values":["enabled"],"sql":"drop table orders"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := validateMaterializationGateContract(binding, gateTestDocument(params, "allowed_values")); err == nil || !strings.Contains(err.Error(), "allowed_values params are invalid") {
+				t.Fatalf("invalid allowed_values error = %v", err)
+			}
+		})
+	}
+}
+
 func TestCompileMaterializationGateUsesOnlyReadContextIdentifiers(t *testing.T) {
 	config := &materializationGateExecutionConfig{
 		TableBindings: []MaterializationGateTableBinding{{Alias: "orders", LogicalTableID: 3}, {Alias: "customers", LogicalTableID: 7}},
 		Assertions: MaterializationGateAssertionDocument{Assertions: []MaterializationGateAssertion{
+			{AssertionKey: "d02be89b-40ca-46f6-a624-5577aa027791", Type: "allowed_values", Severity: "error", Params: json.RawMessage(`{"table":"orders","column":"customer_id","values":["customer-1","customer-2"]}`)},
 			{AssertionKey: "f3889a4a-1675-4623-b6e3-773f9125a04d", Type: "unique_key", Severity: "error", Params: json.RawMessage(`{"table":"orders","columns":["id"]}`)},
 			{AssertionKey: "0cd81b20-8fe8-4fce-a77e-c4c385175d41", Type: "foreign_key", Severity: "error", Params: json.RawMessage(`{"table":"orders","columns":["customer_id"],"reference_table":"customers","reference_columns":["id"]}`)},
 		}},
@@ -53,14 +74,17 @@ func TestCompileMaterializationGateUsesOnlyReadContextIdentifiers(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(compiled) != 2 || !strings.Contains(compiled[0].SQL, `"materialized"."orders_stage"`) || !strings.Contains(compiled[1].SQL, `"materialized"."customers_stage"`) {
+	if len(compiled) != 3 || !strings.Contains(compiled[0].SQL, `"materialized"."orders_stage"`) || !strings.Contains(compiled[1].SQL, `"materialized"."orders_stage"`) || !strings.Contains(compiled[2].SQL, `"materialized"."customers_stage"`) {
 		t.Fatalf("compiled assertions = %#v", compiled)
+	}
+	if !strings.Contains(compiled[0].SQL, `"customer_id"::text NOT IN ($1, $2)`) || len(compiled[0].Args) != 2 || compiled[0].Args[0] != "customer-1" || compiled[0].Args[1] != "customer-2" {
+		t.Fatalf("compiled allowed_values = %#v", compiled[0])
 	}
 	if batches["orders"] != "batch-orders" {
 		t.Fatalf("batch IDs = %#v", batches)
 	}
 
-	config.Assertions.Assertions[0].Params = json.RawMessage(`{"table":"orders","columns":["missing"]}`)
+	config.Assertions.Assertions[1].Params = json.RawMessage(`{"table":"orders","columns":["missing"]}`)
 	if _, _, _, err := compileMaterializationGate(config, readContext); err == nil || !strings.Contains(err.Error(), "not present") {
 		t.Fatalf("missing column error = %v", err)
 	}

@@ -155,7 +155,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "重新校验来源 View 的 Service 契约并复制为 Component 快照；不保存 source_view_ids | Revalidate source View Service contracts and copy them into Component snapshots; source_view_ids are not persisted",
+                "description": "逐一重新校验 Component 的 Service 契约，并使用当前权威指纹归一化完整应用草稿 | Revalidate every Component Service contract and normalize the complete application draft with authoritative current fingerprints",
                 "consumes": [
                     "application/json"
                 ],
@@ -168,7 +168,7 @@
                 "summary": "创建数据应用 | Create a data application",
                 "parameters": [
                     {
-                        "description": "数据应用名称和来源 View | Data application name and source Views",
+                        "description": "数据应用名称和完整草稿 | Data application name and complete draft",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -200,13 +200,6 @@
                     },
                     "403": {
                         "description": "Workbench 或 Service 权限不足 | Insufficient Workbench or Service permission",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "404": {
-                        "description": "来源 View 不存在 | Source View not found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -296,7 +289,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Component ID 和 ServiceReference 不可改变；使用正整数 version 乐观并发并重新校验所有 Service 契约 | Component IDs and ServiceReferences are immutable; use positive version optimistic concurrency and revalidate every Service contract",
+                "description": "允许增删改 Component；使用正整数 version 乐观并发，并逐一重新校验所有 Service 契约 | Allow adding, removing, and editing Components; use positive version optimistic concurrency and revalidate every Service contract",
                 "consumes": [
                     "application/json"
                 ],
@@ -932,369 +925,6 @@
                     "workbench.resource_grant.revoke"
                 ]
             }
-        },
-        "/views": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "只返回当前 Tenant 和当前 User 拥有的工作台视图；不访问 Service | Return only Workbench views owned by the current User in the current Tenant; Service is not accessed",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Workbench Views"
-                ],
-                "summary": "列出工作台视图 | List Workbench views",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "页码，默认 1 | Page number, default 1",
-                        "name": "page",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "每页数量，默认 20，最大 100 | Page size, default 20 and maximum 100",
-                        "name": "page_size",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "工作台视图分页结果 | Paginated Workbench views",
-                        "schema": {
-                            "$ref": "#/definitions/api.PaginatedResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "请求参数无效 | Invalid request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "未认证 | Unauthorized",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "403": {
-                        "description": "权限不足 | Forbidden",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "服务器内部错误 | Internal server error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "workbench.view.read"
-                ]
-            },
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "转发当前已验证的 User Bearer 读取 Service Consumer Descriptor，校验完整配置并保存当前契约指纹；请求不得提交 Tenant、owner、指纹或 Token | Forward the validated User Bearer to read the Service Consumer Descriptor, validate the complete configuration, and save the current contract fingerprint; Tenant, owner, fingerprint, and tokens are not accepted",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Workbench Views"
-                ],
-                "summary": "创建工作台视图 | Create a Workbench view",
-                "parameters": [
-                    {
-                        "description": "工作台视图配置 | Workbench view configuration",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_workbench_internal_models.ViewWriteRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "新建工作台视图 | Created Workbench view",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_workbench_internal_models.ViewResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "视图配置无效 | Invalid view configuration",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "未认证 | Unauthorized",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "403": {
-                        "description": "Workbench 或 Service 权限不足 | Insufficient Workbench or Service permission",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "503": {
-                        "description": "Service 不可用 | Service unavailable",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "workbench.view.create"
-                ]
-            }
-        },
-        "/views/{id}": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "只读取 Workbench 自身保存的配置，不访问 Service；其他用户的视图按不存在处理 | Read only the configuration stored by Workbench without accessing Service; views owned by another user are treated as not found",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Workbench Views"
-                ],
-                "summary": "获取工作台视图 | Get a Workbench view",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Workbench View UUID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "工作台视图 | Workbench view",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_workbench_internal_models.ViewResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "ID 无效 | Invalid ID",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "未认证 | Unauthorized",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "403": {
-                        "description": "权限不足 | Forbidden",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "404": {
-                        "description": "视图不存在 | View not found",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "workbench.view.read"
-                ]
-            },
-            "put": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "service_ref 不可改变；使用正整数 version 乐观并发并重新读取 Descriptor 校验配置和契约指纹 | service_ref is immutable; use a positive version for optimistic concurrency and re-read the Descriptor to validate configuration and contract fingerprint",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Workbench Views"
-                ],
-                "summary": "更新工作台视图 | Update a Workbench view",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Workbench View UUID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "完整工作台视图配置和当前 version | Complete Workbench view configuration and current version",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_workbench_internal_models.ViewWriteRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "更新后的工作台视图 | Updated Workbench view",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_workbench_internal_models.ViewResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "视图配置无效 | Invalid view configuration",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "未认证 | Unauthorized",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "403": {
-                        "description": "Workbench 或 Service 权限不足 | Insufficient Workbench or Service permission",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "404": {
-                        "description": "视图不存在 | View not found",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "409": {
-                        "description": "版本冲突 | Version conflict",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "503": {
-                        "description": "Service 不可用 | Service unavailable",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "workbench.view.update"
-                ]
-            },
-            "delete": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "删除只匹配当前 Tenant 与当前 User 的视图，不访问 Service | Delete a view only when it matches the current Tenant and User, without accessing Service",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Workbench Views"
-                ],
-                "summary": "删除工作台视图 | Delete a Workbench view",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Workbench View UUID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "删除成功 | Deleted",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "ID 无效 | Invalid ID",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "未认证 | Unauthorized",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "403": {
-                        "description": "权限不足 | Forbidden",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "404": {
-                        "description": "视图不存在 | View not found",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "workbench.view.delete"
-                ]
-            }
         }
     },
     "definitions": {
@@ -1468,6 +1098,69 @@
                 }
             }
         },
+        "github_com_addp_workbench_internal_models.ComponentParameterDefinition": {
+            "type": "object",
+            "properties": {
+                "control_type": {
+                    "type": "string"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "required": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_addp_workbench_internal_models.ComponentParameterFilter": {
+            "type": "object",
+            "properties": {
+                "field": {
+                    "type": "string"
+                },
+                "operator": {
+                    "type": "string"
+                },
+                "parameter_key": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_workbench_internal_models.ComponentQueryTemplate": {
+            "type": "object",
+            "properties": {
+                "fixed_filter": {
+                    "$ref": "#/definitions/github_com_addp_workbench_internal_models.QueryFilter"
+                },
+                "format": {
+                    "type": "string"
+                },
+                "order_by": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_workbench_internal_models.QueryOrder"
+                    }
+                },
+                "page_limit": {
+                    "type": "integer"
+                },
+                "parameter_filters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_workbench_internal_models.ComponentParameterFilter"
+                    }
+                },
+                "select": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "github_com_addp_workbench_internal_models.DataApplicationComponent": {
             "type": "object",
             "required": [
@@ -1501,11 +1194,11 @@
                 "parameter_definitions": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_addp_workbench_internal_models.ViewParameterDefinition"
+                        "$ref": "#/definitions/github_com_addp_workbench_internal_models.ComponentParameterDefinition"
                     }
                 },
                 "query_template": {
-                    "$ref": "#/definitions/github_com_addp_workbench_internal_models.ViewQueryTemplate"
+                    "$ref": "#/definitions/github_com_addp_workbench_internal_models.ComponentQueryTemplate"
                 },
                 "renderer_config": {
                     "type": "object"
@@ -1515,7 +1208,8 @@
                     "enum": [
                         "table",
                         "chart",
-                        "map"
+                        "map",
+                        "value"
                     ]
                 },
                 "service_ref": {
@@ -1555,7 +1249,7 @@
             "type": "object",
             "required": [
                 "name",
-                "source_view_ids"
+                "snapshot"
             ],
             "properties": {
                 "description": {
@@ -1564,11 +1258,8 @@
                 "name": {
                     "type": "string"
                 },
-                "source_view_ids": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
+                "snapshot": {
+                    "$ref": "#/definitions/github_com_addp_workbench_internal_models.DataApplicationSnapshot"
                 }
             }
         },
@@ -1925,178 +1616,6 @@
                     "enum": [
                         "query"
                     ]
-                }
-            }
-        },
-        "github_com_addp_workbench_internal_models.ViewParameterDefinition": {
-            "type": "object",
-            "properties": {
-                "control_type": {
-                    "type": "string"
-                },
-                "key": {
-                    "type": "string"
-                },
-                "label": {
-                    "type": "string"
-                },
-                "required": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "github_com_addp_workbench_internal_models.ViewParameterFilter": {
-            "type": "object",
-            "properties": {
-                "field": {
-                    "type": "string"
-                },
-                "operator": {
-                    "type": "string"
-                },
-                "parameter_key": {
-                    "type": "string"
-                }
-            }
-        },
-        "github_com_addp_workbench_internal_models.ViewQueryTemplate": {
-            "type": "object",
-            "properties": {
-                "fixed_filter": {
-                    "$ref": "#/definitions/github_com_addp_workbench_internal_models.QueryFilter"
-                },
-                "format": {
-                    "type": "string"
-                },
-                "order_by": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_addp_workbench_internal_models.QueryOrder"
-                    }
-                },
-                "page_limit": {
-                    "type": "integer"
-                },
-                "parameter_filters": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_addp_workbench_internal_models.ViewParameterFilter"
-                    }
-                },
-                "select": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                }
-            }
-        },
-        "github_com_addp_workbench_internal_models.ViewResponse": {
-            "type": "object",
-            "properties": {
-                "contract_fingerprint": {
-                    "type": "string"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "default_parameter_values": {
-                    "type": "object"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "owner_user_id": {
-                    "type": "integer"
-                },
-                "parameter_definitions": {
-                    "type": "array",
-                    "items": {
-                        "type": "object"
-                    }
-                },
-                "query_template": {
-                    "type": "object"
-                },
-                "renderer_config": {
-                    "type": "object"
-                },
-                "renderer_type": {
-                    "type": "string",
-                    "enum": [
-                        "table",
-                        "chart",
-                        "map"
-                    ]
-                },
-                "service_ref": {
-                    "$ref": "#/definitions/github_com_addp_workbench_internal_models.ServiceReference"
-                },
-                "tenant_id": {
-                    "type": "integer"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "version": {
-                    "type": "integer"
-                }
-            }
-        },
-        "github_com_addp_workbench_internal_models.ViewWriteRequest": {
-            "type": "object",
-            "required": [
-                "name",
-                "renderer_config",
-                "renderer_type"
-            ],
-            "properties": {
-                "default_parameter_values": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "array",
-                        "items": {
-                            "type": "integer"
-                        }
-                    }
-                },
-                "description": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "parameter_definitions": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_addp_workbench_internal_models.ViewParameterDefinition"
-                    }
-                },
-                "query_template": {
-                    "$ref": "#/definitions/github_com_addp_workbench_internal_models.ViewQueryTemplate"
-                },
-                "renderer_config": {
-                    "type": "object"
-                },
-                "renderer_type": {
-                    "type": "string",
-                    "enum": [
-                        "table",
-                        "chart",
-                        "map"
-                    ]
-                },
-                "service_ref": {
-                    "$ref": "#/definitions/github_com_addp_workbench_internal_models.ServiceReference"
-                },
-                "version": {
-                    "type": "integer"
                 }
             }
         }

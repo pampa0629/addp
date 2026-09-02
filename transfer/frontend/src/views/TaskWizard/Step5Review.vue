@@ -22,33 +22,34 @@
       </div>
     </div>
 
-    <!-- 任务基本信息 -->
-    <el-card class="config-card">
+    <div class="review-grid review-grid--summary">
+      <!-- 任务基本信息 -->
+      <el-card class="config-card summary-card">
       <template #header>
         <div class="card-header">
           <span>{{ t('transfer.taskWizard.reviewTaskBasicInfo') }}</span>
         </div>
       </template>
-      <el-descriptions :column="2" border>
+      <el-descriptions class="summary-description" :column="1" border>
         <el-descriptions-item :label="t('transfer.taskWizard.reviewTaskName')">
           {{ wizardState.taskName.value }}
         </el-descriptions-item>
         <el-descriptions-item :label="t('transfer.taskWizard.reviewSchedule')">
           {{ wizardState.schedule.value || t('transfer.taskWizard.reviewScheduleOnce') }}
         </el-descriptions-item>
-        <el-descriptions-item :label="t('transfer.taskWizard.reviewTaskDesc')" :span="2">
+        <el-descriptions-item :label="t('transfer.taskWizard.reviewTaskDesc')">
           {{ wizardState.taskDescription.value || t('transfer.taskWizard.reviewNone') }}
         </el-descriptions-item>
       </el-descriptions>
-    </el-card>
+      </el-card>
 
-    <el-card class="config-card">
+      <el-card class="config-card summary-card">
       <template #header>
         <div class="card-header">
           <span>{{ t('transfer.taskWizard.reviewLoadConfig') }}</span>
         </div>
       </template>
-      <el-descriptions :column="2" border>
+      <el-descriptions class="summary-description" :column="1" border>
         <el-descriptions-item :label="t('transfer.taskWizard.runtimeBoundaryLabel')">
           {{ runtimeBoundaryLabel }}
         </el-descriptions-item>
@@ -87,18 +88,20 @@
           </el-descriptions-item>
         </template>
       </el-descriptions>
-    </el-card>
+      </el-card>
+    </div>
 
-    <!-- 数据源配置 -->
-    <el-card v-if="!wizardState.isRawCopyTask.value" class="config-card">
+    <div class="review-grid review-grid--endpoints">
+      <!-- 数据源配置 -->
+      <el-card v-if="!wizardState.isRawCopyTask.value" class="config-card">
       <template #header>
         <div class="card-header">
           <span>{{ t('transfer.taskWizard.reviewSourceConfig') }}</span>
         </div>
       </template>
-      <el-descriptions :column="2" border>
-        <el-descriptions-item :label="t('transfer.taskWizard.reviewEngineId')">
-          {{ wizardState.sourceEngineID.value }}
+      <el-descriptions class="endpoint-description" :column="1" border>
+        <el-descriptions-item :label="t('transfer.taskWizard.reviewEngine')">
+          {{ sourceEngineName }}
         </el-descriptions-item>
         <el-descriptions-item :label="t('transfer.taskWizard.dataType')">
 							{{ wizardState.isKafkaContinuousTask.value ? t('transfer.taskWizard.kafkaTopicLabel') : dataTypeLabel(wizardState.sourceDataType.value) }}
@@ -109,30 +112,33 @@
         <el-descriptions-item :label="t('transfer.taskWizard.format')">
           {{ formatLabel(wizardState.sourceFormat.value) }}
         </el-descriptions-item>
-        <el-descriptions-item :label="t('transfer.taskWizard.reviewResourcePath')" :span="2">
+        <el-descriptions-item :label="t('transfer.taskWizard.reviewResourcePath')">
           {{ sourceLocatorPath }}
         </el-descriptions-item>
         <template v-if="wizardState.sourceQueryEnabled.value">
           <el-descriptions-item :label="t('transfer.taskWizard.queryLanguageLabel')">
             {{ wizardState.sourceQueryLanguage.value.toUpperCase() }}
           </el-descriptions-item>
-          <el-descriptions-item :label="t('transfer.taskWizard.querySourceLabel')" :span="2">
-            <pre class="query-preview">{{ wizardState.sourceQueryStatement.value }}</pre>
+          <el-descriptions-item :label="t('transfer.taskWizard.querySourceLabel')">
+            <el-button link type="primary" @click="showSourceQuery = !showSourceQuery">
+              {{ showSourceQuery ? t('transfer.taskWizard.reviewHideDetails') : t('transfer.taskWizard.reviewShowDetails') }}
+            </el-button>
+            <pre v-if="showSourceQuery" class="query-preview">{{ wizardState.sourceQueryStatement.value }}</pre>
           </el-descriptions-item>
         </template>
       </el-descriptions>
-    </el-card>
+      </el-card>
 
-    <!-- 目标配置 -->
-    <el-card class="config-card">
+      <!-- 目标配置 -->
+      <el-card class="config-card">
       <template #header>
         <div class="card-header">
           <span>{{ t('transfer.taskWizard.reviewTargetConfig') }}</span>
         </div>
       </template>
-      <el-descriptions :column="2" border>
-        <el-descriptions-item v-if="!isRuntimeTarget" :label="t('transfer.taskWizard.reviewEngineId')">
-          {{ wizardState.targetEngineID.value }}
+      <el-descriptions class="endpoint-description" :column="1" border>
+        <el-descriptions-item v-if="!isRuntimeTarget" :label="t('transfer.taskWizard.reviewEngine')">
+          {{ targetEngineName }}
         </el-descriptions-item>
         <el-descriptions-item v-else :label="t('transfer.taskWizard.targetBindingLabel')">
           {{ t('transfer.taskWizard.runtimeTargetReview') }}
@@ -146,11 +152,12 @@
         <el-descriptions-item :label="t('transfer.taskWizard.writeModeLabel')">
           {{ targetApplyModeLabel }}
         </el-descriptions-item>
-        <el-descriptions-item :label="t('transfer.taskWizard.reviewResourcePath')" :span="2">
+        <el-descriptions-item :label="t('transfer.taskWizard.reviewResourcePath')">
           {{ targetResourcePath }}
         </el-descriptions-item>
       </el-descriptions>
-    </el-card>
+      </el-card>
+    </div>
 
     <!-- 字段映射 -->
     <el-card class="config-card">
@@ -165,9 +172,9 @@
         size="small"
         max-height="300"
       >
-        <el-table-column prop="source_field" :label="t('transfer.taskWizard.reviewSourceFieldCol')" width="200" />
-        <el-table-column prop="target_field" :label="t('transfer.taskWizard.reviewTargetFieldCol')" width="200" />
-        <el-table-column :label="t('transfer.taskWizard.reviewTypeCol')" width="160">
+        <el-table-column prop="source_field" :label="t('transfer.taskWizard.reviewSourceFieldCol')" min-width="220" />
+        <el-table-column prop="target_field" :label="t('transfer.taskWizard.reviewTargetFieldCol')" min-width="220" />
+        <el-table-column :label="t('transfer.taskWizard.reviewTypeCol')" min-width="140">
           <template #default="{ row }">
             {{ mappedTypeLabel(row) }}
           </template>
@@ -190,7 +197,7 @@
       <el-tag
         v-for="(transform, index) in wizardState.transforms.value"
         :key="index"
-        style="margin-right: 8px"
+        class="transform-tag"
       >
         {{ transform.type }}
       </el-tag>
@@ -201,10 +208,15 @@
       <template #header>
         <div class="card-header">
           <span>{{ t('transfer.taskWizard.reviewFullConfig') }}</span>
-          <el-button size="small" @click="copyConfig">{{ t('transfer.taskWizard.reviewCopyConfig') }}</el-button>
+          <div class="card-actions">
+            <el-button link type="primary" @click="showFullConfig = !showFullConfig">
+              {{ showFullConfig ? t('transfer.taskWizard.reviewHideDetails') : t('transfer.taskWizard.reviewShowDetails') }}
+            </el-button>
+            <el-button size="small" @click="copyConfig">{{ t('transfer.taskWizard.reviewCopyConfig') }}</el-button>
+          </div>
         </div>
       </template>
-      <pre class="json-preview">{{ JSON.stringify(wizardState.taskConfig.value, null, 2) }}</pre>
+      <pre v-if="showFullConfig" class="json-preview">{{ JSON.stringify(wizardState.taskConfig.value, null, 2) }}</pre>
     </el-card>
 
     <!-- 警告提示 -->
@@ -213,7 +225,7 @@
       :title="t('transfer.taskWizard.reviewWarnings')"
       type="warning"
       :closable="false"
-      style="margin-top: 20px"
+      class="review-warning"
     >
       <ul class="warning-list">
         <li v-for="warning in warnings" :key="warning">{{ warning }}</li>
@@ -223,13 +235,18 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { formatLocatorDisplayPath } from '@addp/common-frontend'
+import { systemEnginesAPI } from '@/api/systemEngines'
+import { engineNameForID } from '@/utils/engineDisplay.mjs'
 import { dataTypeLabel, formatLabel, representationLabel, writeModeLabel } from '@/utils/transferDisplay'
 
 const { t } = useI18n()
+const engines = ref([])
+const showSourceQuery = ref(false)
+const showFullConfig = ref(false)
 
 const props = defineProps({
   wizardState: {
@@ -269,6 +286,17 @@ const warnings = computed(() => {
 
 const hasWarnings = computed(() => warnings.value.length > 0)
 const isRuntimeTarget = computed(() => props.wizardState.targetBinding.value === 'runtime')
+const sourceEngineName = computed(() => engineNameForID(engines.value, props.wizardState.sourceEngineID.value))
+const targetEngineName = computed(() => engineNameForID(engines.value, props.wizardState.targetEngineID.value))
+
+onMounted(async () => {
+  try {
+    const response = await systemEnginesAPI.list()
+    engines.value = response?.data || response || []
+  } catch (error) {
+    console.error('加载引擎名称失败:', error)
+  }
+})
 
 const loadModeLabel = computed(() => {
 	if (props.wizardState.isDatabaseCDCTask.value) {
@@ -379,7 +407,7 @@ function fallbackCopyToClipboard(text) {
 
 <style scoped>
 .step5-review {
-  max-width: 1000px;
+  width: min(100%, 1280px);
   margin: 0 auto;
 }
 
@@ -403,18 +431,55 @@ function fallbackCopyToClipboard(text) {
 
 .action-buttons {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 12px;
   flex-shrink: 0;
+}
+
+.review-grid {
+  display: grid;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.review-grid--summary,
+.review-grid--endpoints {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.review-grid .config-card {
+  min-width: 0;
+  margin-bottom: 0;
 }
 
 .config-card {
   margin-bottom: 20px;
 }
 
+.summary-description :deep(.el-descriptions__label),
+.endpoint-description :deep(.el-descriptions__label) {
+  width: 132px;
+  white-space: nowrap;
+}
+
+.summary-description :deep(.el-descriptions__content),
+.endpoint-description :deep(.el-descriptions__content) {
+  min-width: 0;
+  word-break: break-word;
+}
+
 .card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 16px;
+}
+
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .json-preview {
@@ -427,7 +492,9 @@ function fallbackCopyToClipboard(text) {
 }
 
 .query-preview {
-  margin: 0;
+  margin: 8px 0 0;
+  max-height: 240px;
+  overflow: auto;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -439,5 +506,30 @@ function fallbackCopyToClipboard(text) {
 
 .warning-list li {
   margin: 4px 0;
+}
+
+.transform-tag {
+  margin-right: 8px;
+  margin-bottom: 8px;
+}
+
+.review-warning {
+  margin-top: 20px;
+}
+
+@media (max-width: 960px) {
+  .review-header {
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .action-buttons {
+    justify-content: flex-start;
+  }
+
+  .review-grid--summary,
+  .review-grid--endpoints {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 </style>

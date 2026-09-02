@@ -7,14 +7,12 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/models"
 	commonquery "github.com/addp/common/query"
-	"github.com/beltran/gohive"
 )
 
 var (
@@ -176,47 +174,33 @@ func catalogEntryRowCount(entry plugin.EngineCatalogEntry) int64 {
 	return *entry.Table.RowCount
 }
 
-// ExecuteQuery 统一查询执行入口（适用于所有引擎类型）
-//
-// 路由规则（按优先级）：
-//  1. 引擎实现了 QueryRuntimeProvider（MongoDB/Neo4j）→ 委托给插件原生执行
-//  2. engineType == "spark" → gohive Thrift 协议执行
-//  3. 其他 SQL 引擎（PostgreSQL/MySQL/Doris/ClickHouse）→ GORM 连接池执行
+// ExecuteQuery executes an ordinary query through the Provider-owned
+// PrepareQuery -> Execute route for every query language and engine.
 func ExecuteQuery(ctx context.Context, engine *models.Engine, query string) (*plugin.QueryResult, error) {
+	if engine == nil {
+		return nil, fmt.Errorf("引擎不能为空")
+	}
 	engineType := strings.ToLower(engine.EngineType)
-	queryOptions := plugin.QueryOptions{
-		EngineID:   engine.ID,
-		EngineType: engine.EngineType,
-	}
-
-	// 1. 原生查询运行时（MongoDB MQL、Neo4j Cypher 等）
 	p, err := plugin.Get(engineType)
-	if err == nil {
-		if qp, ok := p.(plugin.QueryRuntimeProvider); ok {
-			if _, isSQLRuntime := qp.(plugin.SQLQueryRuntimeProvider); !isSQLRuntime {
-				return qp.ExecuteRuntimeQuery(ctx, plugin.ConnectionInfo(engine.ConnectionInfo), plugin.QueryRequest{
-					Language: firstQueryLanguage(qp.QueryLanguages()),
-					Query:    query,
-					Options:  queryOptions,
-				})
-			}
-		}
+	if err != nil {
+		return nil, err
 	}
-
-	// 2. Spark SQL（gohive Thrift 协议）
-	if engineType == "spark" {
-		return executeSparkQuery(ctx, engine, query)
+	provider, ok := p.(plugin.QueryRuntimeProvider)
+	if !ok {
+		return nil, fmt.Errorf("引擎不支持普通查询运行时")
 	}
-
-	// 3. 标准 SQL 运行时。当前通过 QueryOptions 传入 engine 上下文，以便复用连接池。
-	if p != nil {
-		if sqlRuntime, ok := p.(plugin.SQLQueryRuntimeProvider); ok {
-			return sqlRuntime.ExecuteSQL(ctx, plugin.ConnectionInfo(engine.ConnectionInfo), query, queryOptions)
-		}
+	prepared, err := provider.PrepareQuery(ctx, plugin.ConnectionInfo(engine.ConnectionInfo), plugin.QueryRequest{
+		EngineID: engine.ID,
+		Language: firstQueryLanguage(provider.QueryLanguages()),
+		Query:    query,
+		Options: plugin.QueryOptions{
+			EngineID: engine.ID, EngineType: engine.EngineType,
+		},
+	})
+	if err != nil {
+		return nil, err
 	}
-
-	// 4. 标准 SQL 兜底（GORM 连接池）
-	return executeSQLQuery(ctx, engine, query)
+	return prepared.Execute(ctx)
 }
 
 // ExecuteGraphQuery 统一图查询执行入口
@@ -443,7 +427,8 @@ func ExecuteReadOnlyRuntimeQueryWithPath(ctx context.Context, engine *models.Eng
 	if language == "" || !slices.Contains(qp.QueryLanguages(), language) {
 		return nil, fmt.Errorf("引擎不支持查询语言: %s", language)
 	}
-	return qp.ExecuteRuntimeQuery(ctx, plugin.ConnectionInfo(engine.ConnectionInfo), plugin.QueryRequest{
+	prepared, err := qp.PrepareQuery(ctx, plugin.ConnectionInfo(engine.ConnectionInfo), plugin.QueryRequest{
+		EngineID:   engine.ID,
 		Language:   language,
 		Query:      query,
 		TargetPath: targetPath,
@@ -451,6 +436,10 @@ func ExecuteReadOnlyRuntimeQueryWithPath(ctx context.Context, engine *models.Eng
 			EngineID: engine.ID, EngineType: engine.EngineType, Limit: limit, ReadOnly: true, Parameters: parameters,
 		},
 	})
+	if err != nil {
+		return nil, err
+	}
+	return prepared.Execute(ctx)
 }
 
 // ExecuteReadOnlyGraphQuery executes a native graph query through the same
@@ -525,20 +514,6 @@ func bindSQLExecutionParameters(engineType, query string, parameters map[string]
 	return bound, args, nil
 }
 
-// executeSQLQuery 标准 SQL 引擎执行（PostgreSQL/MySQL/Doris/ClickHouse），使用 GORM 连接池
-func executeSQLQuery(ctx context.Context, engine *models.Engine, query string) (*plugin.QueryResult, error) {
-	db, err := GetOrCreatePool(engine, DefaultPoolConfig())
-	if err != nil {
-		return nil, fmt.Errorf("获取连接池失败：%w", err)
-	}
-
-	rows, err := db.WithContext(ctx).Raw(query).Rows()
-	if err != nil {
-		return nil, err
-	}
-	return scanSQLRows(rows)
-}
-
 func scanSQLRows(rows *sql.Rows) (*plugin.QueryResult, error) {
 	defer rows.Close()
 	columns, err := rows.Columns()
@@ -579,86 +554,4 @@ func firstQueryLanguage(languages []string) string {
 		return ""
 	}
 	return languages[0]
-}
-
-// executeSparkQuery 通过 gohive Thrift 协议执行 Spark SQL
-// 逻辑从 develop/backend/internal/service/sql_engine_service.go 迁移而来
-func executeSparkQuery(ctx context.Context, engine *models.Engine, query string) (*plugin.QueryResult, error) {
-	connInfo := engine.ConnectionInfo
-
-	host, _ := connInfo["host"].(string)
-	host = strings.TrimPrefix(strings.TrimPrefix(host, "http://"), "https://")
-
-	portRaw := connInfo["port"]
-	var port int
-	switch v := portRaw.(type) {
-	case float64:
-		port = int(v)
-	case int:
-		port = v
-	case string:
-		port, _ = strconv.Atoi(v)
-	}
-	if port == 0 {
-		port = 10000
-	}
-
-	database, _ := connInfo["database"].(string)
-	if database == "" {
-		database = "default"
-	}
-	user, _ := connInfo["user"].(string)
-	password, _ := connInfo["password"].(string)
-
-	if host == "" {
-		return nil, fmt.Errorf("Spark 引擎缺少 host 配置")
-	}
-
-	configuration := gohive.NewConnectConfiguration()
-	if user != "" {
-		configuration.Username = user
-		if password != "" {
-			configuration.Password = password
-		}
-	}
-	configuration.ConnectTimeout = 30 * time.Second
-	configuration.SocketTimeout = 30 * time.Second
-
-	connection, err := gohive.Connect(host, port, "NONE", configuration)
-	if err != nil {
-		return nil, fmt.Errorf("连接 Spark Thrift Server 失败：%w", err)
-	}
-	defer connection.Close()
-
-	cursor := connection.Cursor()
-
-	if database != "default" && database != "" {
-		cursor.Exec(ctx, fmt.Sprintf("USE `%s`", database))
-		if cursor.Err != nil {
-			return nil, fmt.Errorf("切换数据库失败：%w", cursor.Err)
-		}
-	}
-
-	cursor.Exec(ctx, query)
-	if cursor.Err != nil {
-		return nil, fmt.Errorf("执行 Spark SQL 失败：%w", cursor.Err)
-	}
-
-	var resultRows []map[string]interface{}
-	var columns []string
-
-	for cursor.HasMore(ctx) {
-		row := cursor.RowMap(ctx)
-		if cursor.Err != nil {
-			return nil, fmt.Errorf("读取 Spark 结果失败：%w", cursor.Err)
-		}
-		if len(columns) == 0 {
-			for k := range row {
-				columns = append(columns, k)
-			}
-		}
-		resultRows = append(resultRows, row)
-	}
-
-	return &plugin.QueryResult{Columns: columns, Rows: resultRows}, nil
 }

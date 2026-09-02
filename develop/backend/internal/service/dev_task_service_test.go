@@ -31,6 +31,17 @@ func TestValidateDevTaskContentRejectsUndeclaredQueryField(t *testing.T) {
 	}
 }
 
+func TestValidateDevTaskContentRejectsLegacyRelationInputs(t *testing.T) {
+	err := validateDevTaskContent(commonExecution.TaskTypeQuery, map[string]interface{}{
+		"query": "SELECT * FROM source", "query_type": "sql",
+		"query_parameters": []interface{}{map[string]interface{}{"name": "source", "type": "relation"}},
+		"relation_inputs":  []interface{}{"source"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "content 包含未声明字段: relation_inputs") {
+		t.Fatalf("expected legacy relation_inputs to be rejected, got %v", err)
+	}
+}
+
 func TestValidateDevTaskExecutionConfigAcceptsQueryEngineID(t *testing.T) {
 	err := validateDevTaskExecutionConfig(
 		commonExecution.TaskTypeQuery,
@@ -47,12 +58,12 @@ func TestValidateDevTaskExecutionConfigAcceptsQueryEngineID(t *testing.T) {
 	}
 }
 
-func TestValidateDevTaskExecutionConfigAcceptsRelationInputs(t *testing.T) {
+func TestValidateDevTaskExecutionConfigAcceptsRelationParameters(t *testing.T) {
 	err := validateDevTaskExecutionConfig(
 		commonExecution.TaskTypeQuery,
 		map[string]interface{}{
-			"query":      "SELECT person_id, count(*) FROM addp_input.participation GROUP BY person_id",
-			"query_type": "sql", "relation_inputs": []interface{}{"participation"},
+			"query":      "SELECT person_id, count(*) FROM participation GROUP BY person_id",
+			"query_type": "sql", "query_parameters": []interface{}{map[string]interface{}{"name": "participation", "type": "relation"}},
 		},
 		map[string]interface{}{"engine_id": 12},
 	)
@@ -61,10 +72,27 @@ func TestValidateDevTaskExecutionConfigAcceptsRelationInputs(t *testing.T) {
 	}
 }
 
-func TestValidateDevTaskExecutionConfigRejectsRelationInputWriteSQL(t *testing.T) {
+func TestValidateDevTaskExecutionConfigRequiresRelationDefaultOnQueryEngine(t *testing.T) {
 	err := validateDevTaskExecutionConfig(
 		commonExecution.TaskTypeQuery,
-		map[string]interface{}{"query": "DELETE FROM source", "query_type": "sql", "relation_inputs": []interface{}{"source"}},
+		map[string]interface{}{
+			"query": "SELECT * FROM participation", "query_type": "sql",
+			"query_parameters": []interface{}{map[string]interface{}{
+				"name": "participation", "type": "relation",
+				"default": map[string]interface{}{"locator": "addp://engine/13/path/public/participation?type=table"},
+			}},
+		},
+		map[string]interface{}{"engine_id": 12},
+	)
+	if err == nil || !strings.Contains(err.Error(), "必须与 execution_config.engine_id 位于同一引擎") {
+		t.Fatalf("expected relation default engine mismatch, got %v", err)
+	}
+}
+
+func TestValidateDevTaskExecutionConfigRejectsRelationParameterWriteSQL(t *testing.T) {
+	err := validateDevTaskExecutionConfig(
+		commonExecution.TaskTypeQuery,
+		map[string]interface{}{"query": "DELETE FROM source", "query_type": "sql", "query_parameters": []interface{}{map[string]interface{}{"name": "source", "type": "relation"}}},
 		map[string]interface{}{"engine_id": 12},
 	)
 	if err == nil || !strings.Contains(err.Error(), "单条只读 SELECT") {
@@ -72,16 +100,16 @@ func TestValidateDevTaskExecutionConfigRejectsRelationInputWriteSQL(t *testing.T
 	}
 }
 
-func TestValidateDevTaskExecutionConfigRejectsUndeclaredRelationInput(t *testing.T) {
+func TestValidateDevTaskExecutionConfigRejectsUndeclaredRelationParameter(t *testing.T) {
 	err := validateDevTaskExecutionConfig(
 		commonExecution.TaskTypeQuery,
 		map[string]interface{}{
-			"query": "SELECT * FROM addp_input.person", "query_type": "sql",
-			"relation_inputs": []interface{}{"participation"},
+			"query": "SELECT * FROM person", "query_type": "sql",
+			"query_parameters": []interface{}{map[string]interface{}{"name": "participation", "type": "relation"}},
 		},
 		map[string]interface{}{"engine_id": 12},
 	)
-	if err == nil || !strings.Contains(err.Error(), "未声明的关系输入") {
+	if err == nil || !strings.Contains(err.Error(), "禁止物理关系: person") {
 		t.Fatalf("expected undeclared relation input rejection, got %v", err)
 	}
 }

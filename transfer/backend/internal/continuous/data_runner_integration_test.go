@@ -118,7 +118,8 @@ func TestIntegrationContinuousKafkaToPostgresMultiWorkerFailoverPauseResumeStop(
 		CircuitOpenTime: 10 * time.Second, StabilityWindow: 30 * time.Second,
 	})
 	runner := &DataSessionRunner{
-		Resolver: resolver, States: repository.NewSyncStateRepository(infraDB), Progress: leaseRepo,
+		ProtectionGate: allowSourceProtectionGate{},
+		Resolver:       resolver, States: repository.NewSyncStateRepository(infraDB), Progress: leaseRepo,
 		PollTimeout: 100 * time.Millisecond, MaxBytes: 4 << 20, DiagnosticsInterval: 50 * time.Millisecond,
 	}
 	workerStops := map[string]context.CancelFunc{}

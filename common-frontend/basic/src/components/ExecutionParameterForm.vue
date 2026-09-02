@@ -113,6 +113,8 @@
       <ResourceTreePicker
         v-if="activePicker"
         :api-base-url="activePicker.ui.api_base_url || '/api/v1/meta'"
+		:engine-id="activePicker.ui.engine_id || null"
+		:show-engine-selector="!activePicker.ui.engine_id"
         :engine-families="activePicker.ui.engine_families || []"
         :initial-locator="resourceLocator(activePicker)"
         :selectable-filter="resourceSelectableFilter"

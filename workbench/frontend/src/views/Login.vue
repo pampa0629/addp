@@ -2,6 +2,6 @@
 <script setup>
 import { reactive, ref } from 'vue'; import { useI18n } from 'vue-i18n'; import { useRouter } from 'vue-router'; import { ElMessage } from 'element-plus'; import { useAuthStore } from '../store/auth'
 const { t }=useI18n(), router=useRouter(), auth=useAuthStore(); const form=reactive({username:'',password:''}),loading=ref(false)
-async function submit(){if(!form.username||!form.password)return;loading.value=true;try{await auth.login(form.username,form.password);await router.push('/views')}catch(e){ElMessage.error(e?.message||t('workbench.login.failed'))}finally{loading.value=false}}
+async function submit(){if(!form.username||!form.password)return;loading.value=true;try{await auth.login(form.username,form.password);await router.push('/applications')}catch(e){ElMessage.error(e?.message||t('workbench.login.failed'))}finally{loading.value=false}}
 </script>
 <style scoped>.login{min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--addp-bg-secondary)}.card{width:min(400px,calc(100vw - 32px))}.full{width:100%}h2{margin:0;color:var(--addp-text-primary)}</style>

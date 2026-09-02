@@ -79,20 +79,6 @@ export const unitAPI = {
   delete(id) { return client.delete(`/standard/units/${id}`) }
 }
 
-// ========== 数据分类 API ==========
-export const classificationAPI = {
-  list() { return client.get('/standard/classifications') },
-  create(data) { return client.post('/standard/classifications', data) },
-  update(id, data) { return client.put(`/standard/classifications/${id}`, data) },
-  delete(id) { return client.delete(`/standard/classifications/${id}`) }
-}
-
-// ========== 数据分级 API ==========
-export const gradingLevelAPI = {
-  list() { return client.get('/standard/grading-levels') },
-  update(id, data) { return client.put(`/standard/grading-levels/${id}`, data) }
-}
-
 // ========== 指标 API ==========
 export const metricCategoryAPI = {
   list() { return client.get('/standard/metric-categories') },

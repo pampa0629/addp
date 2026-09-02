@@ -14,9 +14,12 @@ import (
 )
 
 type FederatedQueryService struct {
-	systemClient *commonClient.SystemServiceClient
-	catalog      *federatedquery.Catalog
-	executeQuery func(context.Context, uint, uint, uuid.UUID, int64, string, int, []uint) (*FederatedQueryResult, error)
+	systemClient   *commonClient.SystemServiceClient
+	catalog        *federatedquery.Catalog
+	executeQuery   func(context.Context, uint, uint, uuid.UUID, int64, string, int, []uint) (*FederatedQueryResult, error)
+	protectionGate interface {
+		BeginUnresolvedRead(context.Context, uint) (func(), error)
+	}
 }
 
 type FederatedQueryResult struct {
@@ -24,6 +27,12 @@ type FederatedQueryResult struct {
 	Rows            []map[string]interface{} `json:"rows"`
 	RowCount        int                      `json:"row_count"`
 	ExecutionTimeMs int64                    `json:"execution_time_ms"`
+}
+
+func (s *FederatedQueryService) SetProtectionGate(gate interface {
+	BeginUnresolvedRead(context.Context, uint) (func(), error)
+}) {
+	s.protectionGate = gate
 }
 
 type DataSource = federatedquery.Source
@@ -110,6 +119,14 @@ func (s *FederatedQueryService) ExecuteQuery(
 	if executionID == uuid.Nil || authorizationID <= 0 || len(sourceEngineIDs) == 0 {
 		return nil, fmt.Errorf("联邦查询 Execution Authorization 无效")
 	}
+	if s.protectionGate == nil {
+		return nil, fmt.Errorf("Develop 联邦查询保护门禁未配置")
+	}
+	endProtection, err := s.protectionGate.BeginUnresolvedRead(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer endProtection()
 	if timeout <= 0 {
 		timeout = 30
 	}

@@ -36,3 +36,10 @@ func engineUnavailable(c *gin.Context) {
 		"error_type": "transient",
 	})
 }
+
+func protectionRequired(c *gin.Context) {
+	c.JSON(http.StatusForbidden, gin.H{
+		"error":      commoni18n.T(c, manageri18n.MsgProtectionRequired),
+		"error_code": "security_protection_required",
+	})
+}

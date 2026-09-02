@@ -76,8 +76,9 @@ export function resolveQueryGenerationResult(result) {
     queryParameters: result.query_parameters.map(parameter => ({
       name: parameter.name,
       type: parameter.type,
-      default: parameter.default,
-      ...(parameter.title ? { title: parameter.title } : {}),
+      ...(Object.prototype.hasOwnProperty.call(parameter || {}, 'default') && parameter.default !== null && parameter.default !== undefined
+        ? { default: parameter.default }
+        : {}),
       ...(parameter.description ? { description: parameter.description } : {})
     })),
     explanation: String(result.explanation || '').trim(),

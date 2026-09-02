@@ -88,6 +88,8 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 		// 元数据相关
 		api.GET("/engines/:engine_id/items", permission(metaauthorization.PermissionMetaCatalogRead), handler.ListEngineItems)
 		api.GET("/data-items/changes", auth.MustNewServiceClientGuard("addp-catalog"), permission(metaauthorization.PermissionMetaCatalogRead), handler.ListDataItemChanges)
+		api.GET("/runtime/data-items/:fingerprint/security-facts", auth.MustNewServiceClientGuard("addp-security"), permission(metaauthorization.PermissionMetaSecurityFactsRead), handler.GetDataItemSecurityFacts)
+		api.GET("/runtime/data-items/:fingerprint/security-sample", auth.MustNewServiceClientGuard("addp-security"), permission(metaauthorization.PermissionMetaSecurityFactsRead), handler.GetDataItemSecuritySample)
 
 		// 新增：用于 Manager 模块的元数据查询接口
 		api.GET("/engines/:engine_id/tree", permission(metaauthorization.PermissionMetaCatalogRead), handler.GetMetadataTree)

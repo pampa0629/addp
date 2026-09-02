@@ -234,7 +234,7 @@
       "configTypeNote": "(Config mode cannot be changed after creation)",
       "serviceNameLabel": "Service Name",
       "serviceNamePlaceholder": "e.g. beijing_poi",
-      "serviceNameHelp": "Only letters, numbers and underscores, used in service URL",
+      "serviceNameHelp": "Only lowercase letters, numbers, underscores, and hyphens, used in the service URL",
       "titleLabel": "Service Title",
       "titlePlaceholder": "e.g. Beijing POI Data Query",
       "descriptionLabel": "Description",

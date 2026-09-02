@@ -477,6 +477,9 @@ func taskReferencesEngine(task models.TransferTask, engineID uint) bool {
 	if spec, err := planner.ParseRawCopyTaskSpec(task.Config); err == nil {
 		return endpointReferencesEngine(spec.Source, engineID) || endpointReferencesEngine(spec.Target, engineID)
 	}
+	if spec, err := planner.ParseEncodedRecordExportTaskSpec(task.Config, task.BatchSize); err == nil {
+		return endpointReferencesEngine(spec.Source, engineID) || endpointReferencesEngine(spec.Target, engineID)
+	}
 	if spec, err := planner.ParseTableExportTaskSpec(task.Config, task.BatchSize); err == nil {
 		return endpointReferencesEngine(spec.Source, engineID) || endpointReferencesEngine(spec.Target, engineID)
 	}

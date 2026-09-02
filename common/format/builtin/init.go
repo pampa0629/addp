@@ -25,6 +25,7 @@ import (
 	_ "github.com/addp/common/format/plugins/ksplat"
 	_ "github.com/addp/common/format/plugins/las"
 	_ "github.com/addp/common/format/plugins/laz"
+	_ "github.com/addp/common/format/plugins/mongodbextendedjson"
 	_ "github.com/addp/common/format/plugins/obj"
 	_ "github.com/addp/common/format/plugins/orc"
 	_ "github.com/addp/common/format/plugins/osgb"

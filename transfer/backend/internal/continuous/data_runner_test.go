@@ -24,6 +24,12 @@ import (
 	"github.com/twpayne/go-geom"
 )
 
+type allowSourceProtectionGate struct{}
+
+func (allowSourceProtectionGate) RequireSourceConfig(context.Context, uint, map[string]interface{}) error {
+	return nil
+}
+
 func TestDataSessionRunnerAppliesThenCommitsPartitionPosition(t *testing.T) {
 	sourceCaps := (&kafka.KafkaPlugin{}).Capabilities()
 	targetCaps := (&postgresql.PostgreSQLPlugin{}).Capabilities()
@@ -39,7 +45,8 @@ func TestDataSessionRunnerAppliesThenCommitsPartitionPosition(t *testing.T) {
 	states := &fakeContinuousStateStore{target: target}
 	progress := &fakeContinuousProgressStore{committed: make(chan repository.ContinuousProgress, 1)}
 	runner := &DataSessionRunner{
-		Resolver: resolver, States: states, Progress: progress, PollTimeout: time.Millisecond,
+		ProtectionGate: allowSourceProtectionGate{},
+		Resolver:       resolver, States: states, Progress: progress, PollTimeout: time.Millisecond,
 		GetPlugin: func(engineType string) (plugin.EnginePlugin, error) {
 			if engineType == "kafka" {
 				return &fakeChangeStreamProvider{reader: reader}, nil
@@ -130,7 +137,8 @@ func TestDataSessionRunnerConsumesRegisteredPostgreSQLCDCGeneration(t *testing.T
 	states := &fakeContinuousStateStore{target: target}
 	progress := &fakeContinuousProgressStore{committed: make(chan repository.ContinuousProgress, 1)}
 	runner := &DataSessionRunner{
-		Resolver: resolver, States: states, Progress: progress,
+		ProtectionGate: allowSourceProtectionGate{},
+		Resolver:       resolver, States: states, Progress: progress,
 		Captures: &fakeCaptureStore{resource: &models.CaptureResource{
 			TaskID: 42, TenantID: 7, ConnectorName: "addp-cdc.7.42.1", SourceType: models.CaptureSourcePostgreSQL, Status: models.CaptureStatusRunning,
 			TopicName: "__addp_cdc.7.42.1", ConsumerGroup: "__addp_cdc_consumer.7.42.1",
@@ -194,7 +202,8 @@ func TestDataSessionRunnerConsumesRegisteredMySQLCDCGeneration(t *testing.T) {
 	target := &fakeChangeApplyProvider{}
 	progress := &fakeContinuousProgressStore{committed: make(chan repository.ContinuousProgress, 1)}
 	runner := &DataSessionRunner{
-		Resolver: resolver, States: &fakeContinuousStateStore{target: target}, Progress: progress,
+		ProtectionGate: allowSourceProtectionGate{},
+		Resolver:       resolver, States: &fakeContinuousStateStore{target: target}, Progress: progress,
 		Captures: &fakeCaptureStore{resource: &models.CaptureResource{
 			TaskID: 42, TenantID: 7, ConnectorName: "addp-cdc.7.42.1", SourceType: models.CaptureSourceMySQL, Status: models.CaptureStatusRunning,
 			TopicName: "__addp_cdc.7.42.1", ConsumerGroup: "__addp_cdc_consumer.7.42.1",
@@ -248,7 +257,8 @@ func TestDataSessionRunnerRecordsIncompatiblePostgreSQLCDCSchemaField(t *testing
 	target := &fakeChangeApplyProvider{}
 	progress := &fakeContinuousProgressStore{schemaChange: make(chan repository.ContinuousSchemaChange, 1)}
 	runner := &DataSessionRunner{
-		Resolver: resolver, States: &fakeContinuousStateStore{target: target}, Progress: progress,
+		ProtectionGate: allowSourceProtectionGate{},
+		Resolver:       resolver, States: &fakeContinuousStateStore{target: target}, Progress: progress,
 		Captures: &fakeCaptureStore{resource: &models.CaptureResource{
 			TaskID: 42, TenantID: 7, ConnectorName: "addp-cdc.7.42.1", SourceType: models.CaptureSourcePostgreSQL, Status: models.CaptureStatusRunning,
 			TopicName: "__addp_cdc.7.42.1", ConsumerGroup: "__addp_cdc_consumer.7.42.1",
@@ -425,6 +435,7 @@ func continuousTestRunner(reader *fakeChangeStreamReader, target *fakeChangeAppl
 	sourceCaps := (&kafka.KafkaPlugin{}).Capabilities()
 	targetCaps := (&postgresql.PostgreSQLPlugin{}).Capabilities()
 	return &DataSessionRunner{
+		ProtectionGate: allowSourceProtectionGate{},
 		Resolver: planner.StaticEngineResolver{
 			30: {Type: "kafka", ConnInfo: plugin.ConnectionInfo{"bootstrap_servers": "unused"}, Capabilities: &sourceCaps},
 			8:  {Type: "postgresql", ConnInfo: plugin.ConnectionInfo{"host": "unused"}, Capabilities: &targetCaps},

@@ -1,10 +1,10 @@
 <template>
   <div class="page" v-loading="loading" data-testid="data-application-editor">
     <div class="page-header">
-      <div><h2>{{ application.name || t('workbench.dataApplication') }}</h2><p>{{ t('workbench.dataApplicationEditorSubtitle') }}</p></div>
+      <div><h2>{{ isCreate ? t('workbench.createDataApplication') : (application.name || t('workbench.dataApplication')) }}</h2><p>{{ t('workbench.dataApplicationEditorSubtitle') }}</p></div>
       <div class="actions">
         <el-button @click="router.push('/applications')">{{ t('workbench.cancel') }}</el-button>
-        <el-button :loading="saving" type="primary" @click="save">{{ t('workbench.saveDraft') }}</el-button>
+        <el-button :loading="saving" type="primary" @click="save">{{ isCreate ? t('workbench.createDraft') : t('workbench.saveDraft') }}</el-button>
         <el-button v-if="application.publication_status === 'unpublished'" :disabled="dirty" :loading="publishing" type="success" @click="publish">{{ t('workbench.publish') }}</el-button>
         <el-button v-else-if="application.publication_status === 'offline' || application.has_unpublished_changes" :disabled="dirty" :loading="publishing" type="success" @click="publish">{{ t('workbench.publishRevision') }}</el-button>
         <el-button v-if="application.publication_status === 'published'" :loading="offlining" @click="offline">{{ t('workbench.offline') }}</el-button>
@@ -60,7 +60,7 @@
         <el-table-column :label="t('workbench.parameterLabel')" min-width="180"><template #default="scope"><el-input v-model="scope.row.label" /></template></el-table-column>
         <el-table-column prop="control_type" :label="t('workbench.controlType')" width="130" />
         <el-table-column :label="t('workbench.defaultValue')" min-width="220">
-          <template #default="scope"><ApplicationParameterInput v-model="scope.row.default_value" :control-type="scope.row.control_type" /></template>
+          <template #default="scope"><ApplicationParameterValueInput v-model="scope.row.default_value" :control-type="scope.row.control_type" /></template>
         </el-table-column>
         <el-table-column :label="t('workbench.required')" width="100"><template #default="scope"><el-switch v-model="scope.row.required" /></template></el-table-column>
       </el-table>
@@ -123,10 +123,22 @@
     </el-card>
 
     <el-card>
-      <template #header><div class="card-header"><strong>{{ t('workbench.pageLayout') }}</strong><span>{{ t('workbench.pageLayoutHint') }}</span></div></template>
+      <template #header>
+        <div class="card-header">
+          <div><strong>{{ t('workbench.pageLayout') }}</strong><span>{{ t('workbench.pageLayoutHint') }}</span></div>
+          <div class="layout-actions">
+            <el-button :disabled="application.snapshot.components.length > 0" @click="spatialWizardVisible = true">{{ t('workbench.spatialWizard.open') }}</el-button>
+            <el-button type="primary" @click="openAddComponent">{{ t('workbench.addComponent') }}</el-button>
+          </div>
+        </div>
+      </template>
+      <el-empty v-if="application.snapshot.components.length === 0" :description="t('workbench.noComponents')" />
       <div class="components">
-        <div v-for="component in application.snapshot.components" :key="component.id" class="component-card">
-          <div class="component-heading"><div><strong>{{ component.title }}</strong><span>{{ t(`workbench.renderers.${component.renderer_type}`) }}</span></div><small>{{ component.service_ref.service_type }} · {{ component.service_ref.service_id }}</small></div>
+        <div v-for="component in application.snapshot.components" :key="component.id" class="component-card" data-testid="application-component" :data-component-id="component.id">
+          <div class="component-heading">
+            <div><strong>{{ component.title }}</strong><span>{{ t(`workbench.renderers.${component.renderer_type}`) }}</span></div>
+            <div class="component-actions"><small>{{ component.service_ref.service_type }} · {{ component.service_ref.service_id }}</small><el-button data-testid="edit-component-action" link type="primary" @click="openEditComponent(component)">{{ t('workbench.editComponent') }}</el-button><el-button link type="danger" @click="removeComponent(component)">{{ t('workbench.delete') }}</el-button></div>
+          </div>
           <el-form :inline="true" size="small">
             <el-form-item label="X"><el-input-number v-model="placement(component.id).x" :min="0" :max="11" /></el-form-item>
             <el-form-item label="Y"><el-input-number v-model="placement(component.id).y" :min="0" /></el-form-item>
@@ -136,48 +148,40 @@
         </div>
       </div>
     </el-card>
+    <ApplicationComponentEditor v-model="componentEditorVisible" :component="editingComponent" @save="saveComponent" />
+    <SpatialExplorationWizard v-model="spatialWizardVisible" @apply="applySpatialExploration" />
   </div>
 </template>
 
 <script setup>
-import { computed, defineComponent, h, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
-import { ElDatePicker, ElInput, ElInputNumber, ElMessage, ElMessageBox, ElOption, ElSelect, ElSwitch } from 'element-plus'
-import { getDataApplication, offlineDataApplication, publishDataApplication, updateDataApplication } from '../api/dataApplications'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { createDataApplication, getDataApplication, offlineDataApplication, publishDataApplication, updateDataApplication } from '../api/dataApplications'
 import { getConsumerDescriptor } from '../api/services'
 import { confirmDataApplicationAction, normalizedApplicationSnapshot } from '../utils/dataApplicationDraft.mjs'
 import { APPLICATION_PRESENTATION_SECTIONS, canHideApplicationParameters } from '../utils/dataApplicationRuntime.mjs'
 import { affectedSelectionComponentIDs, compatibleSelectionParameters as compatibleSelectionParameterList, selectionSourceFields } from '../utils/dataApplicationSelection.mjs'
-import { navigateWorkbenchRoute } from '../utils/moduleNavigation'
-
-const ApplicationParameterInput = defineComponent({
-  props: { modelValue: { default: '' }, controlType: { type: String, required: true } },
-  emits: ['update:modelValue'],
-  setup(props, { emit }) {
-    const { t } = useI18n()
-    const update = (value) => emit('update:modelValue', value)
-    return () => {
-      if (props.controlType === 'number') return h(ElInputNumber, { modelValue: props.modelValue, 'onUpdate:modelValue': update, controls: false })
-      if (props.controlType === 'checkbox') return h(ElSwitch, { modelValue: Boolean(props.modelValue), 'onUpdate:modelValue': update })
-      if (props.controlType === 'date' || props.controlType === 'datetime') return h(ElDatePicker, { modelValue: props.modelValue, 'onUpdate:modelValue': update, type: props.controlType === 'datetime' ? 'datetime' : 'date', valueFormat: props.controlType === 'datetime' ? 'YYYY-MM-DDTHH:mm:ssZ' : 'YYYY-MM-DD' })
-      if (props.controlType === 'select') return h(ElSelect, { modelValue: props.modelValue, 'onUpdate:modelValue': update, clearable: true }, () => [h(ElOption, { value: true, label: t('workbench.booleanValues.true') }), h(ElOption, { value: false, label: t('workbench.booleanValues.false') })])
-      if (props.controlType === 'multiselect') return h(ElSelect, { modelValue: props.modelValue, 'onUpdate:modelValue': update, multiple: true, filterable: true, allowCreate: true, defaultFirstOption: true })
-      return h(ElInput, { modelValue: props.modelValue, 'onUpdate:modelValue': update })
-    }
-  },
-})
+import { navigateWorkbenchRoute, openDataApplicationRuntime } from '../utils/moduleNavigation'
+import ApplicationComponentEditor from '../components/ApplicationComponentEditor.vue'
+import ApplicationParameterValueInput from '../components/ApplicationParameterValueInput.vue'
+import SpatialExplorationWizard from '../components/SpatialExplorationWizard.vue'
 
 const { t } = useI18n()
 const route = useRoute()
 const rawRouter = useRouter()
 const router = { push: (location) => navigateWorkbenchRoute(rawRouter, location) }
+const isCreate = computed(() => route.name === 'DataApplicationCreate')
 const loading = ref(false)
 const saving = ref(false)
 const publishing = ref(false)
 const offlining = ref(false)
 const baseline = ref('')
-const application = reactive({ name: '', description: '', version: 0, publication_status: 'unpublished', has_unpublished_changes: false, snapshot: { page: { title: '', display_mode: 'desktop', refresh_interval_seconds: 0, visible_sections: [...APPLICATION_PRESENTATION_SECTIONS], placements: [] }, components: [], parameters: [], parameter_bindings: [], selection_bindings: [] } })
+const componentEditorVisible = ref(false)
+const spatialWizardVisible = ref(false)
+const editingComponent = ref(null)
+const application = reactive(emptyApplication())
 const descriptorByComponent = reactive({})
 const dirty = computed(() => baseline.value !== serializeDraft())
 const bindingRows = computed(() => application.snapshot.parameter_bindings.map((binding) => {
@@ -188,6 +192,17 @@ const bindingRows = computed(() => application.snapshot.parameter_bindings.map((
 
 function serializeDraft() {
   return JSON.stringify({ name: application.name, description: application.description, snapshot: application.snapshot })
+}
+
+function emptyApplication() {
+  return {
+    name: '', description: '', version: 0, publication_status: 'unpublished', has_unpublished_changes: false,
+    snapshot: {
+      schema_version: 'addp.workbench_data_application/v1',
+      page: { id: crypto.randomUUID(), title: '', display_mode: 'desktop', refresh_interval_seconds: 0, visible_sections: [...APPLICATION_PRESENTATION_SECTIONS], placements: [] },
+      components: [], parameters: [], parameter_bindings: [], selection_bindings: [],
+    },
+  }
 }
 
 function assignApplication(data) {
@@ -332,6 +347,10 @@ function normalizedSnapshot() {
 }
 
 async function load() {
+  if (isCreate.value) {
+    baseline.value = serializeDraft()
+    return
+  }
   loading.value = true
   try {
     const { data } = await getDataApplication(route.params.id)
@@ -346,11 +365,16 @@ async function load() {
 
 async function save() {
   if (!validatePresentationSections()) return
+  if (!application.name.trim() || application.snapshot.components.length === 0) return ElMessage.warning(t('workbench.incompleteDataApplication'))
   saving.value = true
   try {
-    const { data } = await updateDataApplication(application.id, { name: application.name.trim(), description: application.description.trim(), snapshot: normalizedSnapshot(), version: application.version })
+    const payload = { name: application.name.trim(), description: application.description.trim(), snapshot: normalizedSnapshot() }
+    const { data } = isCreate.value
+      ? await createDataApplication(payload)
+      : await updateDataApplication(application.id, { ...payload, version: application.version })
     assignApplication(data)
     ElMessage.success(t('workbench.dataApplicationSaved'))
+    if (isCreate.value) await router.push(`/applications/${data.id}`)
   } catch (error) {
     ElMessage.error(error?.response?.data?.error || t('workbench.saveFailed'))
   } finally {
@@ -388,12 +412,99 @@ async function offline() {
 }
 
 function openRuntime() {
-  window.open(`/data-apps/${application.id}`, '_blank', 'noopener')
+  return openDataApplicationRuntime(application.id)
+}
+
+function openAddComponent() {
+  editingComponent.value = null
+  componentEditorVisible.value = true
+}
+
+function applySpatialExploration({ generated, descriptors }) {
+  if (application.snapshot.components.length > 0) return ElMessage.warning(t('workbench.spatialWizard.emptyOnly'))
+  application.name = generated.applicationName
+  application.snapshot.page.title = generated.pageTitle
+  application.snapshot.components = generated.components
+  application.snapshot.parameters = generated.parameters
+  application.snapshot.parameter_bindings = generated.parameterBindings
+  application.snapshot.selection_bindings = generated.selectionBindings
+  application.snapshot.page.placements = generated.placements
+  for (const component of generated.components) {
+    const descriptor = sameServiceReference(component.service_ref, descriptors.aggregate.ref) ? descriptors.aggregate : descriptors.spatial
+    descriptorByComponent[component.id] = descriptor
+  }
+  ElMessage.success(t('workbench.spatialWizard.applied'))
+}
+
+function sameServiceReference(left, right) {
+  return left?.service_type === right?.service_type && left?.service_id === right?.service_id
+}
+
+function openEditComponent(component) {
+  editingComponent.value = structuredClone(toRaw(component))
+  componentEditorVisible.value = true
+}
+
+function applicationParameterKey(componentID, parameterKey) {
+  return `component_${componentID.replaceAll('-', '').slice(0, 12)}.${parameterKey}`
+}
+
+function saveComponent(nextComponent) {
+  const index = application.snapshot.components.findIndex((item) => item.id === nextComponent.id)
+  if (index >= 0) application.snapshot.components.splice(index, 1, nextComponent)
+  else {
+    application.snapshot.components.push(nextComponent)
+    const nextY = application.snapshot.page.placements.reduce((bottom, item) => Math.max(bottom, item.y + item.height), 0)
+    application.snapshot.page.placements.push({ component_id: nextComponent.id, x: 0, y: nextY, width: 12, height: 6 })
+  }
+  const definitions = new Map((nextComponent.parameter_definitions || []).map((item) => [item.key, item]))
+  application.snapshot.parameter_bindings = application.snapshot.parameter_bindings.filter((binding) => binding.component_id !== nextComponent.id || definitions.has(binding.component_parameter_key))
+  for (const definition of definitions.values()) {
+    let binding = application.snapshot.parameter_bindings.find((item) => item.component_id === nextComponent.id && item.component_parameter_key === definition.key)
+    if (!binding) {
+      const key = applicationParameterKey(nextComponent.id, definition.key)
+      binding = { application_parameter_key: key, component_id: nextComponent.id, component_parameter_key: definition.key }
+      application.snapshot.parameter_bindings.push(binding)
+      application.snapshot.parameters.push({
+        key,
+        label: definition.label,
+        control_type: definition.control_type,
+        required: definition.required,
+        ...(Object.prototype.hasOwnProperty.call(nextComponent.default_parameter_values || {}, definition.key) ? { default_value: nextComponent.default_parameter_values[definition.key] } : {}),
+      })
+    }
+  }
+  pruneUnusedApplicationParameters()
+  loadComponentDescriptor(nextComponent)
+  if (application.snapshot.components.length === 1 && !application.name.trim()) {
+    application.name = nextComponent.title
+    application.snapshot.page.title = nextComponent.title
+  }
+}
+
+async function removeComponent(component) {
+  await ElMessageBox.confirm(t('workbench.deleteComponentConfirm'), t('workbench.confirmTitle'), {
+    confirmButtonText: t('workbench.delete'), cancelButtonText: t('workbench.cancel'), confirmButtonClass: 'el-button--danger', customClass: 'addp-message-box',
+  })
+  application.snapshot.components = application.snapshot.components.filter((item) => item.id !== component.id)
+  application.snapshot.page.placements = application.snapshot.page.placements.filter((item) => item.component_id !== component.id)
+  application.snapshot.parameter_bindings = application.snapshot.parameter_bindings.filter((item) => item.component_id !== component.id)
+  application.snapshot.selection_bindings = application.snapshot.selection_bindings.filter((item) => item.source_component_id !== component.id)
+  delete descriptorByComponent[component.id]
+  pruneUnusedApplicationParameters()
+}
+
+function pruneUnusedApplicationParameters() {
+  const used = new Set(application.snapshot.parameter_bindings.map((binding) => binding.application_parameter_key))
+  application.snapshot.parameters = application.snapshot.parameters.filter((parameter) => used.has(parameter.key))
+  application.snapshot.selection_bindings = application.snapshot.selection_bindings
+    .map((binding) => ({ ...binding, assignments: binding.assignments.filter((assignment) => used.has(assignment.application_parameter_key)) }))
+    .filter((binding) => binding.assignments.length > 0)
 }
 
 onMounted(load)
 </script>
 
 <style scoped>
-.page{display:flex;flex-direction:column;gap:16px}.page-header,.actions,.card-header,.component-heading,.selection-binding-heading,.selection-binding-actions{display:flex;align-items:center}.page-header,.card-header,.component-heading,.selection-binding-heading{justify-content:space-between}.actions,.selection-binding-actions{gap:8px;flex-wrap:wrap}.page-header h2{margin:0;color:var(--addp-text-primary)}.page-header p,.card-header span,.component-heading span,.component-heading small,.selection-binding-actions span,.presentation-sections>span{color:var(--addp-text-secondary)}.page-header p{margin:6px 0 0}.card-header>div{display:flex;flex-direction:column;gap:4px}.card-header span,.selection-binding-actions span,.presentation-sections>span{font-size:12px}.full{width:100%}.presentation-sections{display:flex;flex-direction:column;gap:6px}.components,.selection-bindings{display:flex;flex-direction:column;gap:12px}.component-card,.selection-binding-card{padding:16px;border:1px solid var(--addp-border-color);border-radius:var(--addp-border-radius-base)}.component-heading,.selection-binding-heading{margin-bottom:12px}.component-heading div{display:flex;gap:12px;align-items:center}.selection-binding-heading>.el-select{width:min(320px,100%)}@media(max-width:900px){.selection-binding-heading{align-items:stretch;flex-direction:column}.selection-binding-actions{justify-content:space-between}}
+.page{display:flex;flex-direction:column;gap:16px}.page-header,.actions,.card-header,.layout-actions,.component-heading,.component-actions,.selection-binding-heading,.selection-binding-actions{display:flex;align-items:center}.page-header,.card-header,.component-heading,.selection-binding-heading{justify-content:space-between}.actions,.layout-actions,.component-actions,.selection-binding-actions{gap:8px;flex-wrap:wrap}.page-header h2{margin:0;color:var(--addp-text-primary)}.page-header p,.card-header span,.component-heading span,.component-heading small,.selection-binding-actions span,.presentation-sections>span{color:var(--addp-text-secondary)}.page-header p{margin:6px 0 0}.card-header>div:first-child{display:flex;flex-direction:column;gap:4px}.card-header span,.selection-binding-actions span,.presentation-sections>span{font-size:12px}.full{width:100%}.presentation-sections{display:flex;flex-direction:column;gap:6px}.components,.selection-bindings{display:flex;flex-direction:column;gap:12px}.component-card,.selection-binding-card{padding:16px;border:1px solid var(--addp-border-color);border-radius:8px}.component-heading,.selection-binding-heading{margin-bottom:12px}.component-heading>div:first-child{display:flex;gap:12px;align-items:center}.selection-binding-heading>.el-select{width:min(320px,100%)}@media(max-width:900px){.component-heading,.selection-binding-heading{align-items:stretch;flex-direction:column}.component-actions,.selection-binding-actions{justify-content:space-between}}
 </style>

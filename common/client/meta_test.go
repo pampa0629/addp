@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/addp/common/dataprotection"
+	"github.com/addp/common/datatype"
 	commonExecution "github.com/addp/common/execution"
 )
 
@@ -15,6 +17,59 @@ func newTestMetaClient(baseURL string) *MetaClient {
 	return NewMetaClient(baseURL, ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
 		return "test-token", nil
 	}))
+}
+
+func TestMetaClientGetDataItemSecurityFactsUsesExactRuntimeContract(t *testing.T) {
+	t.Parallel()
+	fields := []datatype.FieldInfo{{Name: "phone", Path: []string{"phone"}, Type: datatype.FieldTypeString}}
+	hash, err := dataprotection.TableSchemaSnapshotHash(fields)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var gotPath, gotAuthorization string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath, gotAuthorization = r.URL.Path, r.Header.Get("Authorization")
+		_ = json.NewEncoder(w).Encode(dataprotection.DataItemSecurityFacts{
+			SchemaVersion: dataprotection.DataItemSecurityFactsSchemaV1, ItemFingerprint: "fingerprint-1",
+			ItemType: "collection", Fields: fields, SourceSnapshotHash: hash, ObservedAt: time.Now().UTC(),
+		})
+	}))
+	defer server.Close()
+	facts, err := newTestMetaClient(server.URL).WithTenantID(8).GetDataItemSecurityFacts(context.Background(), "fingerprint-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotPath != "/api/v1/meta/runtime/data-items/fingerprint-1/security-facts" || gotAuthorization != "Bearer test-token" {
+		t.Fatalf("request = %s auth=%q", gotPath, gotAuthorization)
+	}
+	if facts.ItemFingerprint != "fingerprint-1" || facts.SourceSnapshotHash != hash {
+		t.Fatalf("facts = %#v", facts)
+	}
+}
+
+func TestMetaClientGetDataItemSecuritySampleUsesExactRuntimeContract(t *testing.T) {
+	t.Parallel()
+	hash, err := dataprotection.DocumentTextSnapshotHash("contact 13661384499", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/meta/runtime/data-items/fingerprint-1/security-sample" || r.Header.Get("Authorization") != "Bearer test-token" {
+			t.Fatalf("request = %s auth=%q", r.URL.Path, r.Header.Get("Authorization"))
+		}
+		_ = json.NewEncoder(w).Encode(dataprotection.DataItemSecuritySample{
+			SchemaVersion: dataprotection.DataItemSecuritySampleSchemaV1, ItemFingerprint: "fingerprint-1",
+			ItemType: "document", Text: "contact 13661384499", SourceSnapshotHash: hash, ObservedAt: time.Now().UTC(),
+		})
+	}))
+	defer server.Close()
+	sample, err := newTestMetaClient(server.URL).WithTenantID(8).GetDataItemSecuritySample(context.Background(), "fingerprint-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sample.SourceSnapshotHash != hash || sample.Text == "" {
+		t.Fatalf("sample = %#v", sample)
+	}
 }
 
 func TestMetaClientCollectExecutionLineageUsesDevelopServiceContract(t *testing.T) {

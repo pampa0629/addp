@@ -9,15 +9,17 @@ import (
 	"strings"
 
 	commonquery "github.com/addp/common/query"
+	"github.com/addp/common/resourcetree"
 	"github.com/addp/common/taskprovider"
 	"github.com/addp/develop/backend/internal/models"
 )
 
 var allowedQueryParameterTypes = map[string]struct{}{
-	"string":  {},
-	"integer": {},
-	"number":  {},
-	"boolean": {},
+	"relation": {},
+	"string":   {},
+	"integer":  {},
+	"number":   {},
+	"boolean":  {},
 }
 
 type QueryParameterDefinitionsError struct {
@@ -39,18 +41,37 @@ func (e *QueryParameterDefinitionsError) Unwrap() error {
 }
 
 func BuildQueryExecutionContract(content map[string]interface{}) (*taskprovider.ExecutionContract, error) {
+	return buildQueryExecutionContract(content, true)
+}
+
+func buildQueryExecutionContract(content map[string]interface{}, includeResultTarget bool) (*taskprovider.ExecutionContract, error) {
 	definitions, err := queryParameterDefinitions(content)
 	if err != nil {
 		return nil, &QueryParameterDefinitionsError{Cause: err}
 	}
 	query, _ := content["query"].(string)
 	language, _ := content["query_type"].(string)
+	relationBindings, hasRelationParameters, err := relationParameterBindings(definitions)
+	if err != nil {
+		return nil, &QueryParameterDefinitionsError{Cause: err}
+	}
+	if hasRelationParameters {
+		if strings.ToLower(strings.TrimSpace(language)) != "sql" {
+			return nil, &QueryParameterDefinitionsError{Cause: fmt.Errorf("relation 查询参数仅支持 SQL 查询任务")}
+		}
+		if err := validateRelationResultSource(query, relationBindings); err != nil {
+			return nil, &QueryParameterDefinitionsError{Cause: err}
+		}
+	}
 	references, err := commonquery.References(language, query)
 	if err != nil {
 		return nil, &QueryParameterDefinitionsError{Cause: fmt.Errorf("查询参数引用无效: %w", err)}
 	}
 	definitionValues := make(map[string]interface{}, len(definitions))
 	for _, definition := range definitions {
+		if definition.Type == "relation" {
+			continue
+		}
 		definitionValues[definition.Name] = definition.Default
 	}
 	if err := commonquery.ValidateDefinitions(references, definitionValues); err != nil {
@@ -59,54 +80,53 @@ func BuildQueryExecutionContract(content map[string]interface{}) (*taskprovider.
 
 	contract := taskprovider.EmptyExecutionContract()
 	properties := contract.InputSchema["properties"].(map[string]interface{})
+	required := make([]interface{}, 0, len(relationBindings)+1)
 	for index, definition := range definitions {
-		field := map[string]interface{}{
-			"type": definition.Type,
-		}
-		if definition.Title != "" {
-			field["title"] = definition.Title
-		}
+		field := map[string]interface{}{"type": definition.Type}
 		if definition.Description != "" {
 			field["description"] = definition.Description
 		}
+		if definition.Type == "relation" {
+			field["type"] = "object"
+			field["properties"] = map[string]interface{}{
+				"locator": map[string]interface{}{"type": "string", "format": "resource-locator", "minLength": float64(1)},
+			}
+			field["required"] = []interface{}{"locator"}
+			field["additionalProperties"] = false
+			properties[definition.Name] = field
+			if definition.Default == nil {
+				required = append(required, definition.Name)
+			} else {
+				contract.InputDefaults[definition.Name] = definition.Default
+			}
+			contract.InputUISchema[definition.Name] = map[string]interface{}{
+				"control": "resource_tree_picker",
+				"order":   index,
+				"resource_binding": map[string]interface{}{
+					"mode": "existing", "locator_param": "locator",
+				},
+				"api_base_url":          "/api/v1/meta",
+				"engine_families":       []interface{}{"tabular"},
+				"selectable_node_types": []interface{}{"table"},
+			}
+			continue
+		}
 		properties[definition.Name] = field
-		contract.InputDefaults[definition.Name] = definition.Default
-		contract.InputUISchema[definition.Name] = map[string]interface{}{
-			"order": index,
+		if definition.Default == nil {
+			required = append(required, definition.Name)
+		} else {
+			contract.InputDefaults[definition.Name] = definition.Default
 		}
+		contract.InputUISchema[definition.Name] = map[string]interface{}{"order": index}
 	}
-	bindings, hasRelationInputs, err := relationInputBindings(content)
-	if err != nil {
-		return nil, &QueryParameterDefinitionsError{Cause: err}
-	}
-	if hasRelationInputs {
-		if _, exists := properties["input_locators"]; exists {
-			return nil, &QueryParameterDefinitionsError{Cause: fmt.Errorf("查询参数名称 input_locators 与运行时关系输入冲突")}
-		}
+	if hasRelationParameters && includeResultTarget {
 		if _, exists := properties["target_locator"]; exists {
 			return nil, &QueryParameterDefinitionsError{Cause: fmt.Errorf("查询参数名称 target_locator 与运行时目标冲突")}
 		}
-		locatorProperties := make(map[string]interface{}, len(bindings))
-		locatorRequired := make([]interface{}, 0, len(bindings))
-		locatorUIFields := make(map[string]interface{}, len(bindings))
-		for index, binding := range bindings {
-			locatorProperties[binding.Name] = map[string]interface{}{"type": "string", "minLength": float64(1)}
-			locatorRequired = append(locatorRequired, binding.Name)
-			locatorUIFields[binding.Name] = map[string]interface{}{"order": index}
-		}
-		properties["input_locators"] = map[string]interface{}{
-			"type": "object", "properties": locatorProperties, "required": locatorRequired, "additionalProperties": false,
-		}
 		properties["target_locator"] = map[string]interface{}{"type": "string", "minLength": float64(1)}
-		contract.InputUISchema["input_locators"] = map[string]interface{}{
-			"control": "group",
-			"order":   len(definitions),
-			"fields":  locatorUIFields,
-		}
-		contract.InputUISchema["target_locator"] = map[string]interface{}{
-			"order": len(definitions) + 1,
-		}
-		contract.InputSchema["required"] = []interface{}{"input_locators", "target_locator"}
+		contract.InputUISchema["target_locator"] = map[string]interface{}{"order": len(definitions)}
+		required = append(required, "target_locator")
+		contract.InputSchema["required"] = required
 		contract.OutputSchema = map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -118,44 +138,83 @@ func BuildQueryExecutionContract(content map[string]interface{}) (*taskprovider.
 			"additionalProperties": false,
 		}
 	}
+	if len(required) > 0 {
+		contract.InputSchema["required"] = required
+	}
 	return &contract, nil
 }
 
-func resolveQueryExecutionParameters(
+func resolveQueryPreviewParameters(
 	content map[string]interface{},
 	overrides map[string]interface{},
-) (*taskprovider.ExecutionContract, map[string]interface{}, error) {
-	contract, err := BuildQueryExecutionContract(content)
+) (*taskprovider.ExecutionContract, map[string]interface{}, map[string]interface{}, error) {
+	return resolveQueryParameters(content, overrides, false)
+}
+
+func resolveQueryOrchestrationParameters(
+	content map[string]interface{},
+	overrides map[string]interface{},
+) (*taskprovider.ExecutionContract, map[string]interface{}, map[string]interface{}, error) {
+	return resolveQueryParameters(content, overrides, true)
+}
+
+func resolveQueryParameters(
+	content map[string]interface{},
+	overrides map[string]interface{},
+	includeResultTarget bool,
+) (*taskprovider.ExecutionContract, map[string]interface{}, map[string]interface{}, error) {
+	contract, err := buildQueryExecutionContract(content, includeResultTarget)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if err := taskprovider.ValidateExecutionParameters(
 		contract.InputSchema,
 		overrides,
 		taskprovider.ParameterValidationOptions{},
 	); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	definitions, err := queryParameterDefinitions(content)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	if len(definitions) == 0 {
-		return contract, nil, nil
+	var runtimeValues map[string]interface{}
+	var effectiveInputs map[string]interface{}
+	if len(definitions) > 0 || includeResultTarget {
+		effectiveInputs = make(map[string]interface{}, len(definitions)+1)
 	}
-	effective := make(map[string]interface{}, len(definitions))
 	for _, definition := range definitions {
 		value := definition.Default
 		if override, exists := overrides[definition.Name]; exists {
 			value = override
 		}
+		if definition.Type == "relation" {
+			normalized, normalizeErr := normalizeRelationParameterValue(value)
+			if normalizeErr != nil {
+				return nil, nil, nil, fmt.Errorf("查询参数 %s 无效: %w", definition.Name, normalizeErr)
+			}
+			effectiveInputs[definition.Name] = normalized
+			continue
+		}
 		normalized, err := normalizeQueryParameterValue(definition.Type, value)
 		if err != nil {
-			return nil, nil, fmt.Errorf("查询参数 %s 无效: %w", definition.Name, err)
+			return nil, nil, nil, fmt.Errorf("查询参数 %s 无效: %w", definition.Name, err)
 		}
-		effective[definition.Name] = normalized
+		if runtimeValues == nil {
+			runtimeValues = make(map[string]interface{})
+		}
+		runtimeValues[definition.Name] = normalized
+		effectiveInputs[definition.Name] = normalized
 	}
-	return contract, effective, nil
+	if includeResultTarget {
+		if target, exists := overrides["target_locator"]; exists {
+			effectiveInputs["target_locator"] = target
+		}
+	}
+	if len(effectiveInputs) == 0 {
+		effectiveInputs = nil
+	}
+	return contract, runtimeValues, effectiveInputs, nil
 }
 
 func queryParameterDefinitions(content map[string]interface{}) ([]models.QueryParameterDefinition, error) {
@@ -178,7 +237,7 @@ func queryParameterDefinitions(content map[string]interface{}) ([]models.QueryPa
 	seen := map[string]struct{}{}
 	for index, item := range items {
 		allowed := map[string]struct{}{
-			"name": {}, "type": {}, "default": {}, "title": {}, "description": {},
+			"name": {}, "type": {}, "default": {}, "description": {},
 		}
 		unknown := make([]string, 0)
 		for field := range item {
@@ -208,23 +267,20 @@ func queryParameterDefinitions(content map[string]interface{}) ([]models.QueryPa
 		if _, ok := allowedQueryParameterTypes[definition.Type]; !ok {
 			return nil, fmt.Errorf("content.query_parameters[%d].type 不支持: %s", index, definition.Type)
 		}
-		defaultRaw, ok := item["default"]
-		if !ok || bytes.Equal(bytes.TrimSpace(defaultRaw), []byte("null")) {
-			return nil, fmt.Errorf("content.query_parameters[%d].default 必须提供非空默认值", index)
-		}
-		defaultValue, err := decodeJSONValue(defaultRaw)
-		if err != nil {
-			return nil, fmt.Errorf("content.query_parameters[%d].default 无效: %w", index, err)
-		}
-		definition.Default, err = normalizeQueryParameterValue(definition.Type, defaultValue)
-		if err != nil {
-			return nil, fmt.Errorf("content.query_parameters[%d].default 无效: %w", index, err)
-		}
-		if rawTitle, ok := item["title"]; ok {
-			if err := json.Unmarshal(rawTitle, &definition.Title); err != nil {
-				return nil, fmt.Errorf("content.query_parameters[%d].title 必须是字符串", index)
+		defaultRaw, hasDefault := item["default"]
+		if hasDefault && !bytes.Equal(bytes.TrimSpace(defaultRaw), []byte("null")) {
+			defaultValue, decodeErr := decodeJSONValue(defaultRaw)
+			if decodeErr != nil {
+				return nil, fmt.Errorf("content.query_parameters[%d].default 无效: %w", index, decodeErr)
 			}
-			definition.Title = strings.TrimSpace(definition.Title)
+			if definition.Type == "relation" {
+				definition.Default, err = normalizeRelationParameterValue(defaultValue)
+			} else {
+				definition.Default, err = normalizeQueryParameterValue(definition.Type, defaultValue)
+			}
+			if err != nil {
+				return nil, fmt.Errorf("content.query_parameters[%d].default 无效: %w", index, err)
+			}
 		}
 		if rawDescription, ok := item["description"]; ok {
 			if err := json.Unmarshal(rawDescription, &definition.Description); err != nil {
@@ -235,6 +291,25 @@ func queryParameterDefinitions(content map[string]interface{}) ([]models.QueryPa
 		definitions = append(definitions, definition)
 	}
 	return definitions, nil
+}
+
+func normalizeRelationParameterValue(value interface{}) (map[string]interface{}, error) {
+	object, ok := mapValue(value)
+	if !ok {
+		return nil, fmt.Errorf("必须是包含 locator 的数据表资源")
+	}
+	if len(object) != 1 {
+		return nil, fmt.Errorf("只能包含 locator")
+	}
+	locatorText, ok := object["locator"].(string)
+	if !ok || strings.TrimSpace(locatorText) == "" {
+		return nil, fmt.Errorf("locator 必须是非空字符串")
+	}
+	locator, err := resourcetree.ParseURI(strings.TrimSpace(locatorText))
+	if err != nil || locator.EngineID == 0 || locator.Type != resourcetree.TypeTable || len(locator.Path) != 2 {
+		return nil, fmt.Errorf("locator 必须指向已有数据表")
+	}
+	return map[string]interface{}{"locator": locator.ToURI()}, nil
 }
 
 func decodeRequiredString(item map[string]json.RawMessage, field string, target *string) error {

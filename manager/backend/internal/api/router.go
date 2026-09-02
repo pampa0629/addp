@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/dataprotection/projectionstore"
 	"github.com/addp/common/middleware/audit"
 	"github.com/addp/common/middleware/auth"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
@@ -53,6 +54,7 @@ func SetupRouter(
 	cadPreviewHandler *CADPreviewHandler,
 	model3DTilesHandler *Model3DTilesHandler,
 	dataProfileHandler *DataProfileHandler,
+	protectionStore *projectionstore.Store,
 	lifecycle *modulelifecycle.Controller,
 ) *gin.Engine {
 	router := gin.Default()
@@ -116,7 +118,7 @@ func SetupRouter(
 		auth.MustNewServiceClientGuard("addp-meta"),
 		auth.MustNewPermissionGuard(managerauthorization.PermissionManagerContentIndexUpdate),
 	)
-	contentIndexHandler := NewContentIndexHandler(searchService)
+	contentIndexHandler := NewContentIndexHandler(searchService, protectionStore)
 	runtime.PUT("/content-documents/:document_id", contentIndexHandler.UpsertDocument)
 	runtime.DELETE("/content-documents", contentIndexHandler.DeleteEngineDocuments)
 
@@ -347,7 +349,7 @@ func SetupRouter(
 		previewRegistry := metadataService.PreviewRegistry()
 		previewResolver := preview.NewPreviewResolver(previewRegistry, systemClient, metaClient, systemServiceClient)
 		explorerService := service.NewExplorerService(systemClient, metaClient, previewResolver)
-		explorerHandler := NewExplorerHandler(explorerService, previewResolver, metadataService)
+		explorerHandler := NewExplorerHandler(explorerService, previewResolver, metadataService, protectionStore)
 		metadataHandler := NewMetadataHandler(metadataService)
 		downloadHandler := NewDownloadHandler(metadataService)
 

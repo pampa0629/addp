@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/addp/develop/backend/internal/config"
+	"github.com/addp/develop/backend/internal/models"
 )
 
 func TestAnalyzeQuery(t *testing.T) {
@@ -21,6 +22,39 @@ func TestAnalyzeQuery(t *testing.T) {
 	mql, err := AnalyzeQuery("mql", `{"find":"activities"}`)
 	if err != nil || mql.Effect != string(SQLExecutionEffectRead) || mql.ClassificationConfidence != "provider_read_only" {
 		t.Fatalf("mql preflight = %#v, err = %v", mql, err)
+	}
+}
+
+func TestAnalyzeRelationParameterQueryDoesNotTreatCTEsOrLiteralsAsFields(t *testing.T) {
+	query := `WITH governed_activities AS (
+  SELECT activity_id, activity_date_raw
+  FROM activities
+  WHERE COALESCE(activity_status, '') NOT IN ('拟定中', '已取消')
+), eligible_members AS (
+  SELECT m.person_id, NULLIF(BTRIM(m.member_nickname_snapshot), '') AS person_nickname,
+         a.activity_date_raw, m.activity_id, m.member_index,
+         'persons' AS source_kind, 'activity_member_snapshot' AS snapshot_kind
+  FROM members AS m
+  JOIN governed_activities AS a ON a.activity_id = m.activity_id
+), ranked_snapshots AS (
+  SELECT *, ROW_NUMBER() OVER (PARTITION BY person_id ORDER BY activity_date_raw DESC) AS rank
+  FROM eligible_members
+)
+SELECT r.person_id, p.person_name
+FROM ranked_snapshots AS r
+LEFT JOIN persons AS p ON p.person_id = r.person_id
+WHERE r.rank = 1`
+
+	analysis, err := analyzeRelationParameterQuery(
+		"postgresql", "sql", query, []models.QueryParameterDefinition{
+			{Name: "persons", Type: "relation"}, {Name: "activities", Type: "relation"}, {Name: "members", Type: "relation"},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if analysis.SchemaCoverage != "unknown" || len(analysis.Diagnostics) != 0 {
+		t.Fatalf("relation query analysis = %#v", analysis)
 	}
 }
 

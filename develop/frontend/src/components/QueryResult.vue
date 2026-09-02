@@ -9,7 +9,10 @@
       <span v-if="result.rows_count !== undefined" class="summary-item">
         {{ t('develop.queryResult.rowsCount') }} <strong>{{ result.rows_count }}</strong>
       </span>
-      <span v-if="result.rows_affected !== undefined" class="summary-item">
+      <span
+        v-if="result.effect !== 'read' && result.rows_affected !== undefined && result.rows_affected !== null"
+        class="summary-item"
+      >
         {{ t('develop.queryResult.rowsAffected') }} <strong>{{ result.rows_affected }}</strong>
       </span>
       <span v-if="result.execution_time_ms !== undefined" class="summary-item">
@@ -158,24 +161,7 @@ const statusLabel = computed(() => {
   return props.result?.success ? t('develop.queryResult.success') : t('develop.queryResult.failed')
 })
 const errorMessage = computed(() => queryErrorMessage(props.result?.error_code, props.result?.error, t))
-const noDataHint = computed(() => {
-  const diagnostic = props.result?.diagnostics?.[0]
-  if (diagnostic?.code === 'query_zero_result') {
-    if (diagnostic.reason === 'field_case_mismatch' && diagnostic.field && diagnostic.suggested_field) {
-      return t('develop.queryResult.fieldCaseMismatch', {
-        field: diagnostic.field,
-        suggested: diagnostic.suggested_field
-      })
-    }
-    if (diagnostic.reason === 'field_not_observed' && diagnostic.field) {
-      return t('develop.queryResult.fieldNotObserved', { field: diagnostic.field })
-    }
-    if (diagnostic.reason === 'collection_empty') return t('develop.queryResult.collectionEmpty')
-    if (diagnostic.reason === 'filter_not_matched') return t('develop.queryResult.filterNotMatched')
-    if (diagnostic.reason === 'diagnostic_unavailable') return t('develop.queryResult.diagnosticUnavailable')
-  }
-  return diagnostic?.message || t('develop.queryResult.noDataHint')
-})
+const noDataHint = computed(() => t('develop.queryResult.noDataHint'))
 
 const formatValue = (value) => {
   if (value === null) return 'NULL'

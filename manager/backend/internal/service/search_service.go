@@ -145,20 +145,27 @@ func NewHybridSearchService(cfg *config.Config, vectorRepo *repository.Embedding
 // initIndexes 初始化 Meilisearch 索引配置
 func (s *HybridSearchService) initIndexes() error {
 	// Manager 创建并独占技术内容索引。
-	_, err := s.client.CreateIndex(&meilisearch.IndexConfig{
-		Uid:        s.contentIndex,
-		PrimaryKey: "id",
-	})
-	// 忽略索引已存在的错误
-	if err != nil && !strings.Contains(err.Error(), "index_already_exists") {
-		return fmt.Errorf("failed to create Manager content index: %w", err)
+	existing, err := s.client.GetIndex(s.contentIndex)
+	if err != nil {
+		if !strings.Contains(err.Error(), "index_not_found") {
+			return fmt.Errorf("failed to inspect Manager content index: %w", err)
+		}
+		task, createErr := s.client.CreateIndex(&meilisearch.IndexConfig{Uid: s.contentIndex, PrimaryKey: "id"})
+		if createErr != nil {
+			return fmt.Errorf("failed to create Manager content index: %w", createErr)
+		}
+		if err := s.waitMeilisearchTask(context.Background(), task.TaskUID); err != nil {
+			return fmt.Errorf("failed to create Manager content index: %w", err)
+		}
+	} else if existing.PrimaryKey != "id" {
+		return fmt.Errorf("Manager content index primary key is %q, expected id", existing.PrimaryKey)
 	}
 
 	// 配置技术内容索引（存储表、对象、文档元数据和内容）。
 	contentIdx := s.client.Index(s.contentIndex)
 
 	// 设置可搜索字段（按权重排序，与 Meta 模块保持一致）
-	_, err = contentIdx.UpdateSearchableAttributes(&[]string{
+	task, err := contentIdx.UpdateSearchableAttributes(&[]string{
 		"name",            // 文件名/表名 - 最高权重
 		"title",           // 文档标题
 		"full_name",       // 完整路径名
@@ -174,10 +181,14 @@ func (s *HybridSearchService) initIndexes() error {
 	if err != nil {
 		return fmt.Errorf("failed to update searchable attributes: %w", err)
 	}
+	if err := s.waitMeilisearchTask(context.Background(), task.TaskUID); err != nil {
+		return fmt.Errorf("failed to update searchable attributes: %w", err)
+	}
 
 	// 设置可过滤字段
-	_, err = contentIdx.UpdateFilterableAttributes(&[]string{
+	task, err = contentIdx.UpdateFilterableAttributes(&[]string{
 		"tenant_id",
+		"document_id",
 		"engine_id",
 		"engine_type",
 		"data_item_type", // 可过滤表/对象
@@ -190,9 +201,12 @@ func (s *HybridSearchService) initIndexes() error {
 	if err != nil {
 		return fmt.Errorf("failed to update filterable attributes: %w", err)
 	}
+	if err := s.waitMeilisearchTask(context.Background(), task.TaskUID); err != nil {
+		return fmt.Errorf("failed to update filterable attributes: %w", err)
+	}
 
 	// 设置可排序字段
-	_, err = contentIdx.UpdateSortableAttributes(&[]string{
+	task, err = contentIdx.UpdateSortableAttributes(&[]string{
 		"data_updated_at",
 		"size_bytes",
 		"row_count",
@@ -202,8 +216,34 @@ func (s *HybridSearchService) initIndexes() error {
 	if err != nil {
 		return fmt.Errorf("failed to update sortable attributes: %w", err)
 	}
+	if err := s.waitMeilisearchTask(context.Background(), task.TaskUID); err != nil {
+		return fmt.Errorf("failed to update sortable attributes: %w", err)
+	}
 
 	s.log.Info("索引配置已更新", "index", s.contentIndex)
+	return nil
+}
+
+func (s *HybridSearchService) waitMeilisearchTask(ctx context.Context, taskID int64) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+	}
+	completed, err := s.client.WaitForTask(taskID, meilisearch.WaitParams{Context: ctx, Interval: 50 * time.Millisecond})
+	if err != nil {
+		return err
+	}
+	if completed == nil || completed.Status != meilisearch.TaskStatusSucceeded {
+		status := meilisearch.TaskStatusUnknown
+		if completed != nil {
+			status = completed.Status
+		}
+		return fmt.Errorf("Meilisearch task %d finished with status %s", taskID, status)
+	}
 	return nil
 }
 
@@ -329,7 +369,7 @@ func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID, engine
 		return nil, nil
 	}
 	if tenantID == nil || *tenantID == 0 {
-		s.log.Debug("向量检索缺少明确租户，已跳过", "query", query)
+		s.log.Debug("向量检索缺少明确租户，已跳过")
 		return nil, nil
 	}
 
@@ -371,7 +411,6 @@ func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID, engine
 	tenantVal := *tenantID
 	s.log.Debug("触发向量检索",
 		"tenant_id", tenantVal,
-		"query", query,
 		"top_k", s.vectorTopK,
 		"max_distance", runtime.MaxDistance,
 	)
@@ -425,7 +464,6 @@ func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID, engine
 
 	s.log.Info("向量检索完成",
 		"tenant_id", tenantVal,
-		"query", query,
 		"hit_count", len(vectorDocs),
 		"preview", preview,
 	)
@@ -441,8 +479,11 @@ func (s *HybridSearchService) UpsertContentDocument(_ context.Context, tenantID 
 		return ErrSearchDisabled
 	}
 	document.DocumentID = strings.TrimSpace(document.DocumentID)
-	if tenantID == 0 || document.DocumentID == "" || document.EngineID == 0 || strings.TrimSpace(document.DataItemType) == "" || strings.TrimSpace(document.Name) == "" {
+	if tenantID == 0 {
 		return errors.New("invalid Manager content document")
+	}
+	if err := document.Validate(); err != nil {
+		return fmt.Errorf("invalid Manager content document: %w", err)
 	}
 	if document.ProjectionTime.IsZero() {
 		document.ProjectionTime = time.Now().UTC()
@@ -459,6 +500,27 @@ func (s *HybridSearchService) UpsertContentDocument(_ context.Context, tenantID 
 	payload["tenant_id"] = tenantID
 	if _, err := s.client.Index(s.contentIndex).AddDocuments([]map[string]interface{}{payload}); err != nil {
 		return fmt.Errorf("upsert Manager content document: %w", err)
+	}
+	return nil
+}
+
+// DeleteContentDocument synchronously purges one DataItem projection. The
+// protection cursor must not advance while Meilisearch still exposes an older
+// value-bearing document.
+func (s *HybridSearchService) DeleteContentDocument(ctx context.Context, tenantID uint, documentID string) error {
+	if s == nil || tenantID == 0 || strings.TrimSpace(documentID) == "" {
+		return errors.New("invalid Manager content document deletion")
+	}
+	if !s.Enabled() {
+		return nil
+	}
+	filter := fmt.Sprintf("tenant_id = %d AND document_id = '%s'", tenantID, strings.ReplaceAll(strings.TrimSpace(documentID), "'", "\\'"))
+	task, err := s.client.Index(s.contentIndex).DeleteDocumentsByFilter(filter)
+	if err != nil {
+		return fmt.Errorf("delete Manager content document: %w", err)
+	}
+	if err := s.waitMeilisearchTask(ctx, task.TaskUID); err != nil {
+		return fmt.Errorf("wait for Manager content document deletion: %w", err)
 	}
 	return nil
 }

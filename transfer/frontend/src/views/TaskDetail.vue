@@ -448,12 +448,14 @@ import { ArrowLeft } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { continuousRecoveryTagType, formatLocatorDisplayPath, getContinuousRecovery } from '@addp/common-frontend'
 import { taskAPI, executionAPI } from '@/api/tasks'
+import { systemEnginesAPI } from '@/api/systemEngines'
 import { formatDate } from '@common-ui'
 import { formatSchedule, getTaskStatusLabel, getTaskStatusTagType, getExecutionTagType, getExecutionLabel } from '@/utils/formatters'
 import { buildCDCStopRequest, continuousStartDisabledReason, getCDCCaptureHealthWarning, getCDCSourceRecoveryWarning, isCDCSchemaBlocked as isCDCSchemaBlockedTask, isDatabaseCDCTask } from '@/utils/cdcTask.mjs'
 import { parseTransferLocator } from '@/utils/resourceLocator'
 import { buildSchemaChangeApproval, buildSchemaChangeScanRetry, getSchemaChangeScanNotice } from '@/utils/schemaChange.mjs'
 import { navigateTransferRoute } from '@/utils/moduleNavigation'
+import { engineNameForID } from '@/utils/engineDisplay.mjs'
 
 const { t } = useI18n()
 
@@ -461,6 +463,7 @@ const route = useRoute()
 const router = useRouter()
 const loading = ref(false)
 const task = ref({})
+const engines = ref([])
 useConsolePageDescriptor(router, 'transfer', {
   title: computed(() => t('transfer.taskDetail.recentVisitTitle')),
   subject: computed(() => task.value?.name || ''),
@@ -608,6 +611,15 @@ const loadTask = async () => {
     syncAutoRefresh()
   } finally {
     loading.value = false
+  }
+}
+
+const loadEngines = async () => {
+  try {
+    const response = await systemEnginesAPI.list()
+    engines.value = response?.data || response || []
+  } catch (error) {
+    console.error('加载引擎名称失败:', error)
   }
 }
 
@@ -896,7 +908,7 @@ function buildEndpointDetails(endpoint, role) {
 
   const items = []
   const loc = parseTransferLocator(role === 'target' ? endpoint.parent_locator : endpoint.locator)
-  addItem(items, t('transfer.taskDetail.reviewEngineId'), loc.engineID)
+  addItem(items, t('transfer.taskDetail.reviewEngine'), engineNameForID(engines.value, loc.engineID))
   addItem(items, t('transfer.taskDetail.connectionType'), loc.type)
   addItem(items, t('transfer.taskDetail.dataType'), endpoint.data_type)
   addItem(items, t('transfer.taskDetail.representation'), endpoint.representation)
@@ -1010,6 +1022,7 @@ const copyToClipboard = (text) => {
 }
 
 onMounted(() => {
+  loadEngines()
   loadTask()
 })
 

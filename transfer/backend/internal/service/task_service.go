@@ -375,10 +375,12 @@ func validateNewTaskConfig(config map[string]interface{}, batchSize int) error {
 		return nil
 	} else {
 		rawErr := err
-		if _, tableErr := planner.ParseTableExportTaskSpec(config, batchSize); tableErr == nil {
+		if _, recordErr := planner.ParseEncodedRecordExportTaskSpec(config, batchSize); recordErr == nil {
+			return nil
+		} else if _, tableErr := planner.ParseTableExportTaskSpec(config, batchSize); tableErr == nil {
 			return nil
 		} else {
-			return fmt.Errorf("%w: table=%v; raw_copy=%v", ErrInvalidTaskConfig, tableErr, rawErr)
+			return fmt.Errorf("%w: table=%v; encoded_record_export=%v; raw_copy=%v", ErrInvalidTaskConfig, tableErr, recordErr, rawErr)
 		}
 	}
 }

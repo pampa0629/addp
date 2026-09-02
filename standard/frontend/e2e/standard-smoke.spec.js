@@ -1,10 +1,6 @@
 import { expect, test } from '@playwright/test'
 
 const allStandardPermissions = [
-  'standard.classification.create',
-  'standard.classification.delete',
-  'standard.classification.read',
-  'standard.classification.update',
   'standard.code_set.create',
   'standard.code_set.delete',
   'standard.code_set.publish',
@@ -72,7 +68,6 @@ const listPages = [
   ['/elements', '数据元管理'],
   ['/code-sets', '新建码值集'],
   ['/units', '计量单位管理'],
-  ['/classifications', '数据分类与分级'],
   ['/dimension-hierarchies', '维度层级'],
   ['/metrics', '指标管理'],
   ['/documents', '全局文档库']
@@ -84,7 +79,6 @@ const visualPages = [
   ['/elements', '数据元管理', 'elements'],
   ['/code-sets', '新建码值集', 'code-sets'],
   ['/units', '计量单位管理', 'units'],
-  ['/classifications', '数据分类与分级', 'classifications'],
   ['/dimension-hierarchies', '维度层级', 'dimension-hierarchies'],
   ['/metrics', '指标管理', 'metrics'],
   ['/documents', '全局文档库', 'documents']
@@ -663,7 +657,7 @@ test('presents Standard pages as read-only when the role only has read permissio
     }]
   })
 
-  for (const path of ['/domains', '/glossaries', '/elements', '/code-sets', '/units', '/classifications', '/dimension-hierarchies', '/metrics', '/documents']) {
+  for (const path of ['/domains', '/glossaries', '/elements', '/code-sets', '/units', '/dimension-hierarchies', '/metrics', '/documents']) {
     await page.goto(path)
     await expect(page.getByRole('button', { name: /新建|新增|添加分类|录入文档/ })).toHaveCount(0)
     await expect(page.getByRole('button', { name: /审批|废弃|删除/ })).toHaveCount(0)
@@ -908,8 +902,6 @@ async function installMockBackend(page, options = {}) {
     if (path === '/api/v1/standard/code-sets/31/items') return fulfillJSON(route, [])
     if (path === '/api/v1/standard/measurement-categories') return fulfillJSON(route, [])
     if (path === '/api/v1/standard/units') return fulfillJSON(route, [])
-    if (path === '/api/v1/standard/classifications') return fulfillJSON(route, [])
-    if (path === '/api/v1/standard/grading-levels') return fulfillJSON(route, [])
     if (path === '/api/v1/standard/metric-categories') return fulfillJSON(route, [])
     if (path === '/api/v1/standard/metrics') return fulfillJSON(route, { data: metrics, total: metrics.length })
     if (path === '/api/v1/standard/metrics/51') return fulfillJSON(route, metrics.find(item => item.id === 51) || {})

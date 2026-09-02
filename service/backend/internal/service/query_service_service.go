@@ -42,7 +42,7 @@ func NewQueryServiceService(repo *repository.QueryServiceRepository, systemClien
 }
 
 // CreateService 创建新的查询服务
-func (s *QueryServiceService) CreateService(req *models.CreateQueryServiceRequest, tenantID uint, createdBy uint) (*models.QueryServiceDTO, error) {
+func (s *QueryServiceService) CreateService(ctx context.Context, req *models.CreateQueryServiceRequest, tenantID uint, createdBy uint) (*models.QueryServiceDTO, error) {
 	// 1. 验证配置类型
 	if req.ConfigType != "table" && req.ConfigType != "sql" {
 		return nil, errors.New("invalid config_type: must be 'table' or 'sql'")
@@ -82,7 +82,7 @@ func (s *QueryServiceService) CreateService(req *models.CreateQueryServiceReques
 			}
 		} else if req.EngineID == nil || *req.EngineID == 0 {
 			return nil, errors.New("sql mode requires engine_id or runtime_engine_id")
-		} else if err := s.validateDirectSQLQueryEngine(*req.EngineID); err != nil {
+		} else if err := s.validateDirectSQLQueryEngine(ctx, tenantID, *req.EngineID); err != nil {
 			return nil, err
 		}
 	}
@@ -127,10 +127,10 @@ func (s *QueryServiceService) CreateService(req *models.CreateQueryServiceReques
 	} else {
 		snapshot = buildSQLDependencySnapshot(req.SqlQuery, req.OutputContract, time.Now())
 		if req.RuntimeEngineID != nil && *req.RuntimeEngineID > 0 {
-			if err := s.validateFederatedRuntime(*req.RuntimeEngineID, ""); err != nil {
+			if err := s.validateFederatedRuntime(ctx, tenantID, *req.RuntimeEngineID, ""); err != nil {
 				return nil, err
 			}
-			sourceEngineIDs, objectTables, err := s.captureFederatedDependencies(tenantID, *req.RuntimeEngineID, req.SqlQuery)
+			sourceEngineIDs, objectTables, err := s.captureFederatedDependencies(ctx, tenantID, *req.RuntimeEngineID, req.SqlQuery)
 			if err != nil {
 				return nil, err
 			}
@@ -153,7 +153,7 @@ func (s *QueryServiceService) CreateService(req *models.CreateQueryServiceReques
 			if req.RuntimeEngineID == nil || *req.RuntimeEngineID == 0 {
 				return nil, errors.New("object table service requires runtime_engine_id")
 			}
-			if err := s.validateFederatedRuntime(*req.RuntimeEngineID, snapshot.ObjectTable.Format); err != nil {
+			if err := s.validateFederatedRuntime(ctx, tenantID, *req.RuntimeEngineID, snapshot.ObjectTable.Format); err != nil {
 				return nil, err
 			}
 			snapshot.FederatedSourceEngineIDs = []uint{tableRef.EngineID}
@@ -224,11 +224,11 @@ func (s *QueryServiceService) CreateService(req *models.CreateQueryServiceReques
 	return s.convertToDTO(service), nil
 }
 
-func (s *QueryServiceService) validateDirectSQLQueryEngine(engineID uint) error {
+func (s *QueryServiceService) validateDirectSQLQueryEngine(ctx context.Context, tenantID, engineID uint) error {
 	if s.systemClient == nil || engineID == 0 {
 		return errors.New("System client and engine_id are required")
 	}
-	engine, err := s.systemClient.GetEngine(engineID)
+	engine, err := s.systemClient.GetEngineForTenant(ctx, tenantID, engineID)
 	if err != nil {
 		return fmt.Errorf("get SQL query engine %d failed: %w", engineID, err)
 	}
@@ -246,11 +246,11 @@ func (s *QueryServiceService) validateDirectSQLQueryEngine(engineID uint) error 
 	return nil
 }
 
-func (s *QueryServiceService) validateFederatedRuntime(engineID uint, objectFormat string) error {
+func (s *QueryServiceService) validateFederatedRuntime(ctx context.Context, tenantID, engineID uint, objectFormat string) error {
 	if s.systemClient == nil || engineID == 0 {
 		return errors.New("System client and runtime_engine_id are required")
 	}
-	engine, err := s.systemClient.GetEngine(engineID)
+	engine, err := s.systemClient.GetEngineForTenant(ctx, tenantID, engineID)
 	if err != nil {
 		return fmt.Errorf("get federated query runtime %d failed: %w", engineID, err)
 	}
@@ -283,13 +283,14 @@ func supportsFederatedObjectFormat(capabilities plugin.EngineCapabilities, objec
 }
 
 func (s *QueryServiceService) captureFederatedDependencies(
+	ctx context.Context,
 	tenantID, runtimeEngineID uint,
 	sql string,
 ) ([]uint, map[string]map[string]string, error) {
 	if s.systemClient == nil {
 		return nil, nil, errors.New("system client is required for federated SQL publication")
 	}
-	runtimeEngine, err := s.systemClient.GetEngine(runtimeEngineID)
+	runtimeEngine, err := s.systemClient.GetEngineForTenant(ctx, tenantID, runtimeEngineID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("get federated query runtime failed: %w", err)
 	}

@@ -1,5 +1,5 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 74
+manifest_version: 78
 roles:
   - key: platform.agent_runtime
     role_type: platform_builtin
@@ -51,6 +51,7 @@ roles:
     allowed_scope_types: [platform]
     allowed_principal_types: [service_principal]
     permissions:
+      - platform.tenant.read
       - system.runtime_registry.update
   - key: platform.duckdb_runtime
     role_type: platform_builtin
@@ -100,6 +101,7 @@ roles:
     allowed_scope_types: [platform]
     allowed_principal_types: [service_principal]
     permissions:
+      - platform.tenant.read
       - system.runtime_registry.update
   - key: platform.meta_runtime
     role_type: platform_builtin
@@ -185,6 +187,14 @@ roles:
       - iam.user.read
       - iam.user.suspend
       - iam.user.update
+  - key: platform.security_runtime
+    role_type: platform_builtin
+    name_i18n_key: roles.platform.security_runtime.name
+    description_i18n_key: roles.platform.security_runtime.description
+    allowed_scope_types: [platform]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - system.runtime_registry.update
   - key: platform.service_runtime
     role_type: platform_builtin
     name_i18n_key: roles.platform.service_runtime.name
@@ -192,6 +202,7 @@ roles:
     allowed_scope_types: [platform]
     allowed_principal_types: [service_principal]
     permissions:
+      - platform.tenant.read
       - system.runtime_registry.update
   - key: platform.spark_runtime
     role_type: platform_builtin
@@ -260,6 +271,7 @@ roles:
     allowed_scope_types: [platform]
     allowed_principal_types: [service_principal]
     permissions:
+      - platform.tenant.read
       - system.runtime_registry.update
   - key: platform.workbench_runtime
     role_type: platform_builtin
@@ -340,16 +352,39 @@ roles:
       - inference.provider_credential.update
       - manager.configuration.read
       - manager.configuration.update
+      - security.assessment.read
+      - security.assessment.update
+      - security.classification.create
+      - security.classification.delete
+      - security.classification.read
+      - security.classification.update
+      - security.enrollment.create
+      - security.enrollment.read
+      - security.enrollment.update
+      - security.finding.read
+      - security.finding.update
+      - security.grade.create
+      - security.grade.delete
+      - security.grade.read
+      - security.grade.update
+      - security.policy.create
+      - security.policy.delete
+      - security.policy.read
+      - security.policy.update
+      - security.protection_baseline.create
+      - security.protection_baseline.delete
+      - security.protection_baseline.read
+      - security.protection_baseline.update
+      - security.sensitive_data_type.create
+      - security.sensitive_data_type.delete
+      - security.sensitive_data_type.read
+      - security.sensitive_data_type.update
       - workbench.data_application.create
       - workbench.data_application.delete
       - workbench.data_application.execute
       - workbench.data_application.publish
       - workbench.data_application.read
       - workbench.data_application.update
-      - workbench.view.create
-      - workbench.view.delete
-      - workbench.view.read
-      - workbench.view.update
   - key: tenant.agent_runtime
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.agent_runtime.name
@@ -588,10 +623,6 @@ roles:
       - workbench.data_application.publish
       - workbench.data_application.read
       - workbench.data_application.update
-      - workbench.view.create
-      - workbench.view.delete
-      - workbench.view.read
-      - workbench.view.update
   - key: tenant.develop_runtime
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.develop_runtime.name
@@ -601,6 +632,8 @@ roles:
     permissions:
       - meta.catalog.read
       - meta.scan_task.execute
+      - security.protection_projection.read
+      - security.protection_projection.update
       - system.engine_descriptor.read
       - system.execution_authorization.execute
       - system.notebook_session_authorization.execute
@@ -637,10 +670,33 @@ roles:
       - quality.rule_application.delete
       - quality.rule_application.read
       - quality.rule_application.update
-      - standard.classification.create
-      - standard.classification.delete
-      - standard.classification.read
-      - standard.classification.update
+      - security.assessment.read
+      - security.assessment.update
+      - security.classification.create
+      - security.classification.delete
+      - security.classification.read
+      - security.classification.update
+      - security.enrollment.create
+      - security.enrollment.read
+      - security.enrollment.update
+      - security.finding.read
+      - security.finding.update
+      - security.grade.create
+      - security.grade.delete
+      - security.grade.read
+      - security.grade.update
+      - security.policy.create
+      - security.policy.delete
+      - security.policy.read
+      - security.policy.update
+      - security.protection_baseline.create
+      - security.protection_baseline.delete
+      - security.protection_baseline.read
+      - security.protection_baseline.update
+      - security.sensitive_data_type.create
+      - security.sensitive_data_type.delete
+      - security.sensitive_data_type.read
+      - security.sensitive_data_type.update
       - standard.code_set.create
       - standard.code_set.delete
       - standard.code_set.publish
@@ -750,6 +806,8 @@ roles:
       - inference.runtime.execute
       - meta.catalog.read
       - meta.scan_task.execute
+      - security.protection_projection.read
+      - security.protection_projection.update
       - system.engine.read
       - system.engine_descriptor.read
       - transfer.task.create
@@ -856,6 +914,14 @@ roles:
       - standard.element.read
       - system.engine.read
       - system.execution_authorization.execute
+  - key: tenant.security_runtime
+    role_type: tenant_builtin
+    name_i18n_key: roles.tenant.security_runtime.name
+    description_i18n_key: roles.tenant.security_runtime.description
+    allowed_scope_types: [tenant]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - meta.security_facts.read
   - key: tenant.service_publisher
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.service_publisher.name
@@ -887,6 +953,8 @@ roles:
       - audit.tenant_event.create
       - meta.catalog.read
       - meta.lineage.create
+      - security.protection_projection.read
+      - security.protection_projection.update
       - system.engine.read
       - system.engine_descriptor.read
       - system.execution_authorization.execute
@@ -916,6 +984,8 @@ roles:
       - meta.catalog.read
       - meta.inspect.execute
       - meta.scan_task.execute
+      - security.protection_projection.read
+      - security.protection_projection.update
       - system.engine.read
       - system.engine_descriptor.read
       - system.execution_authorization.execute

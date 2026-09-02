@@ -99,38 +99,33 @@ test('execution ports use logical resource fields and stable outputs', () => {
   assert.equal(arePortTypesCompatible(outputs[1], inputs[1]), false)
 })
 
-test('relation locator groups expose each alias as an independently bindable input', () => {
+test('relation query parameters expose each table as a direct resource input', () => {
   const inputs = executionInputPorts({
     input_schema: {
       type: 'object',
       properties: {
-        input_locators: {
+		person: {
           type: 'object',
-          properties: {
-            person: { type: 'string' },
-            participation: { type: 'string' }
-          }
+		  properties: { locator: { type: 'string', format: 'resource-locator' } }
+		},
+		participation: {
+		  type: 'object',
+		  properties: { locator: { type: 'string', format: 'resource-locator' } }
         },
         target_locator: { type: 'string' }
       }
     },
     input_defaults: {},
     input_ui_schema: {
-      input_locators: {
-        control: 'group',
-        order: 0,
-        fields: {
-          person: { order: 0 },
-          participation: { order: 1 }
-        }
-      },
-      target_locator: { order: 1 }
+	  person: { control: 'resource_tree_picker', resource_binding: { mode: 'existing' }, order: 0 },
+	  participation: { control: 'resource_tree_picker', resource_binding: { mode: 'existing' }, order: 1 },
+	  target_locator: { order: 2 }
     }
   })
 
   assert.deepEqual(inputs.map(port => [port.name, port.type, port.bindingPath]), [
-    ['input_locators.person', 'string', ['input_locators', 'person']],
-    ['input_locators.participation', 'string', ['input_locators', 'participation']],
+	['person', 'string', ['person', 'locator']],
+	['participation', 'string', ['participation', 'locator']],
     ['target_locator', 'string', ['target_locator']]
   ])
 })

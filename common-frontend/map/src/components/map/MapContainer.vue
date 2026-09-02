@@ -10,6 +10,7 @@
       :preserve-view="preserveView"
       :view-state="viewState"
       :popup-options="mapPopupOptions"
+      :feature-style="featureStyle"
       :features-only="featuresOnly"
       ref="rendererRef"
       @feature-click="handleFeatureClick"
@@ -56,6 +57,10 @@ const props = defineProps({
   featuresOnly: {
     type: Boolean,
     default: false
+  },
+  featureStyle: {
+    type: Object,
+    default: () => ({ mode: 'uniform', entries: [], valid: true })
   }
 })
 

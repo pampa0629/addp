@@ -4,29 +4,37 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	commonClient "github.com/addp/common/client"
 	commonAuth "github.com/addp/common/middleware/auth"
+	commoni18n "github.com/addp/common/middleware/i18n"
+	manageri18n "github.com/addp/manager/i18n"
+	managerprotection "github.com/addp/manager/internal/protection"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
 )
 
 type ContentIndexHandler struct {
-	search *service.HybridSearchService
+	search         *service.HybridSearchService
+	protectionGate managerprotection.LocalProjectionGate
 }
 
-func NewContentIndexHandler(search *service.HybridSearchService) *ContentIndexHandler {
-	return &ContentIndexHandler{search: search}
+func NewContentIndexHandler(search *service.HybridSearchService, protectionGate managerprotection.LocalProjectionGate) *ContentIndexHandler {
+	return &ContentIndexHandler{search: search, protectionGate: protectionGate}
 }
 
 // UpsertDocument godoc
 // @Summary 写入技术内容检索投影 | Upsert technical content search projection
-// @Description 仅 addp-meta 可按当前 Tenant 幂等覆盖一个 DataItem 内容文档 | Only addp-meta may idempotently replace a DataItem content document in the current tenant
+// @Description 仅 addp-meta 可按当前 Tenant 幂等覆盖一个显式标记为 technical_metadata 或 extracted_content 的 DataItem 检索投影；已纳管正文必须通过 search_index 门禁 | Only addp-meta may idempotently replace a DataItem search projection explicitly marked technical_metadata or extracted_content; managed content must pass the search_index gate
 // @Tags Manager Runtime
 // @Accept json
 // @Param document_id path string true "DataItem fingerprint"
 // @Param request body client.ManagerContentDocument true "内容文档 | Content document"
 // @Success 204
+// @Failure 400 {object} map[string]interface{} "请求契约无效 | Invalid request contract"
+// @Failure 409 {object} map[string]interface{} "已纳管内容尚无可执行 search_index 投影 | Managed content has no executable search_index projection"
+// @Failure 503 {object} map[string]interface{} "内容索引不可用 | Content index unavailable"
 // @Security BearerAuth
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.content_index.update"]
@@ -34,19 +42,35 @@ func NewContentIndexHandler(search *service.HybridSearchService) *ContentIndexHa
 func (h *ContentIndexHandler) UpsertDocument(c *gin.Context) {
 	documentID := strings.TrimSpace(c.Param("document_id"))
 	var document commonClient.ManagerContentDocument
-	if documentID == "" || len(documentID) > 128 || strings.Contains(documentID, "/") || c.ShouldBindJSON(&document) != nil || document.DocumentID != documentID {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid content document"})
+	if documentID == "" || len(documentID) > 128 || strings.Contains(documentID, "/") || c.ShouldBindJSON(&document) != nil || document.DocumentID != documentID || document.Validate() != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, manageri18n.MsgContentDocumentInvalid), "error_code": "manager_content_document_invalid"})
+		return
+	}
+	if err := applyContentIndexProtection(h.protectionGate, commonAuth.GetTenantID(c), &document); err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": commoni18n.T(c, manageri18n.MsgContentProtectionRequired), "error_code": "manager_content_protection_required"})
 		return
 	}
 	if h.search == nil || !h.search.Enabled() {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Manager content index is unavailable"})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": commoni18n.T(c, manageri18n.MsgContentIndexUnavailable), "error_code": "manager_content_index_unavailable"})
 		return
 	}
 	if err := h.search.UpsertContentDocument(c.Request.Context(), commonAuth.GetTenantID(c), document); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": commoni18n.T(c, manageri18n.MsgContentIndexUnavailable), "error_code": "manager_content_index_unavailable"})
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+func applyContentIndexProtection(gate managerprotection.LocalProjectionGate, tenantID uint, document *commonClient.ManagerContentDocument) error {
+	if document == nil || document.PayloadKind != commonClient.ManagerContentPayloadExtractedContent {
+		return nil
+	}
+	now := time.Now().UTC()
+	result := managerprotection.DataItemGate(gate, tenantID, document.DocumentID, now)
+	if !result.Managed {
+		return nil
+	}
+	return managerprotection.ProtectContentIndexDocument(document, result, now)
 }
 
 // DeleteEngineDocuments godoc

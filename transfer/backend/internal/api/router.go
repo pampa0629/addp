@@ -24,6 +24,7 @@ func SetupRouter(
 	taskService *service.TaskService,
 	executionService *service.ExecutionService,
 	continuousPolicyService *service.ContinuousPolicyService,
+	fieldDefinitionRecommendationService *service.FieldDefinitionRecommendationService,
 	systemURL string,
 	metaURL string,
 	redisClient *redis.Client,
@@ -86,9 +87,7 @@ func SetupRouter(
 	executionHandler := NewExecutionHandler(executionService)
 	systemEngineHandler := NewSystemEngineHandler(systemClient)
 	capabilityHandler := NewTransferCapabilityHandler()
-	fieldDefinitionRecommendationHandler := NewFieldDefinitionRecommendationHandler(
-		service.NewFieldDefinitionRecommendationService(systemClient),
-	)
+	fieldDefinitionRecommendationHandler := NewFieldDefinitionRecommendationHandler(fieldDefinitionRecommendationService)
 
 	protected.GET("/system-engines", permission(transferauthorization.PermissionTransferTaskRead), systemEngineHandler.List)
 	protected.GET("/capabilities", permission(transferauthorization.PermissionTransferTaskRead), capabilityHandler.Get)

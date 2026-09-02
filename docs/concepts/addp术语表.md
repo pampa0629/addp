@@ -46,15 +46,19 @@
 | Catalog Collection | 企业目录集合 | Catalog 中由一个 Project Group 拥有、用于组织多个 CatalogEntry 的命名协作聚合。 | 只引用 System Project Group 和 CatalogEntry；不是 Workspace、资产或新的目录身份，项目组关闭后保留历史但不可继续协作。 |
 | catalog source status | 企业目录来源状态 | 专业来源当前是否仍可由 owner 观察到的状态。 | 统一使用 `active`、`missing`；与治理成熟度和资产发布状态正交。 |
 | catalog governance status | 企业目录治理状态 | CatalogEntry 从自动发现到业务治理确认的成熟度。 | 统一使用 `discovered`、`curated`、`certified`、`deprecated`；来源消失不自动改变治理状态。 |
+| withdraw curation | 撤销编目 | 将误编目或不再具备完整业务治理事实的 `curated` CatalogEntry 原子恢复为 `discovered` 自动发现状态。 | 清除 Catalog 当前人工编目覆盖并恢复 `inventory` 可见性；不删除 CatalogEntry、来源绑定、专业事实或审计历史，也不是 `certified` / `deprecated` 的通用回退。 |
+| certification | 认证 | 对某个已编目 CatalogEntry 的当前聚合版本作出治理确认，使其进入 `certified`。 | 认证只改变治理状态，不允许在同一操作中修改业务编目事实；认证历史由 Catalog 领域审计保留。 |
+| withdraw certification | 撤销认证 | 因业务事实需要修改或原认证结论不再成立，将 `certified` CatalogEntry 显式恢复为 `curated`。 | 必须填写原因并具有认证权限；不清除编目事实。后续编辑完成后可重新认证，不建立第二份认证草稿或 CatalogEntry。 |
+| recertification | 重新认证 | 对撤销认证并完成业务事实修订后的 `curated` CatalogEntry 再次执行认证。 | 不是独立状态或旁路 API；固定由“撤销认证 → 编辑编目 → 认证”形成可审计闭环。 |
 | catalog visibility | 企业目录可见性 | Catalog 对某个 CatalogEntry 的发现范围。 | 第一阶段使用 `inventory`、`department`、`tenant`；只控制目录发现，不授予底层内容访问权。 |
 | Asset Directory | 资产目录 | Asset 面向消费者组织已发布资产的多级业务导航能力。 | 由 `AssetCategory` 树和资产归类关系形成；不复制企业资源目录、业务域或引擎资源树。 |
 | AssetCategory | 资产分类 | 资产目录中的一个可分层分类节点。 | 定义名称、父级、说明和展示顺序；分类对象是 Asset，不是 CatalogEntry。整体树称 `AssetCategoryTree`。 |
 | asset category assignment | 资产归类 | Asset 对自身主展示分类的权威归属关系。 | 由 Asset owner 维护，可参考组成 CatalogEntry 的语义，但不得自动复制或继承企业资源目录结构。 |
 | Workbench module | Workbench 模块 | ADDP 面向数据消费者、以已发布 Service 为唯一数据入口的动态查询、可视化和数据应用创作 owner。 | 不直连 Engine、不拥有 SQL、指标、物化或任务编排；Service 不可达只失败依赖该服务的当前请求，不影响 Workbench Ready。 |
 | Service Consumer Descriptor | 服务消费描述 | Service owner 面向消费者发布的、版本化且不包含管理事实的服务输入、输出、分页、格式和执行 operation 契约。 | 稳定协议从 `addp.service_consumer/v1` 开始；不暴露 SQL、Engine 凭据、表名或 Workbench renderer。 |
-| ServiceReference | 服务引用 | 消费者对一个已发布 Service 的强类型稳定引用，由 `service_type + service_id` 组成。 | Workbench View 保存该引用并通过 Service Consumer Catalog 解析，不能保存或猜测执行 URL。 |
-| Workbench View | 工作台视图 | Workbench 中由当前 User 私有持有、绑定一个 ServiceReference、结构化查询模板、参数配置和一种 renderer 配置的可变聚合根。 | 使用正整数 `version` 乐观并发；不保存查询结果、cursor、Token、SQL 或 Service 管理 DTO。 |
-| Data Application | 数据应用 | Workbench 将一个或多个 Workbench View 的已校验配置复制为自身 Component 快照，并拥有草稿、页面布局、参数绑定、发布、下线和稳定运行入口的独立聚合根。 | 不等同于 System Application；运行时不回读来源 View，不保存查询结果、凭据或 Service URL。 |
+| ServiceReference | 服务引用 | 消费者对一个已发布 Service 的强类型稳定引用，由 `service_type + service_id` 组成。 | Data Application Component 保存该引用并通过 Service Consumer Catalog 解析，不能保存或猜测执行 URL。 |
+| Data Application Component | 数据应用组件 | Data Application 内直接绑定一个 ServiceReference，并保存经 Consumer Descriptor 校验的查询模板、参数定义、契约指纹和 renderer 配置的内聚实体。 | 不是独立聚合根，不单独发布或共享；不保存查询结果、cursor、Token、SQL 或 Service 管理 DTO。 |
+| Data Application | 数据应用 | Workbench 中直接配置一个或多个 Data Application Component，并拥有草稿、页面布局、参数绑定、组件联动、发布、下线和稳定运行入口的聚合根。 | 不等同于 System Application；不依赖中间视图资源，不保存查询结果、凭据或 Service URL。 |
 | Application Revision | 应用发布修订 | Data Application 每次发布产生的不可变运行快照，包含当次名称、说明、Component、页面布局、应用展示模式、参数绑定和选择绑定。 | 使用独立 `revision_number` 表达业务发布版次，不复用聚合根并发字段 `version`；CatalogEntry 标识 Data Application，不标识单个 Revision。 |
 | Selection Binding | 选择绑定 | Data Application Revision 中把一个源 Component 当前结果的显式标量字段原子写入 Application Parameter 的声明式配置。 | 目标 Component 只由既有 Parameter Binding 推导；不保存选择值、任意表达式、URL、ServiceReference 或查询片段，首期只用于同页组件联动和受控下钻。 |
 | Application Display Mode | 应用展示模式 | Data Application 页面在交互分析或大屏展示场景中的运行呈现方式。 | 当前稳定值为 `desktop`、`wallboard`；只改变同一页面布局行为，不改变 Component、Service 查询或授权。全屏是浏览器会话状态，不属于发布快照。 |
@@ -70,9 +74,15 @@
 | logical table materialization target | 逻辑表物化目标 | Model 中描述逻辑表准备落入哪个 Engine Instance 和父命名空间的设计事实。 | 使用 `target_parent_locator + target_name` 表达；Model 根据已审批逻辑表执行受控 DDL、staging 准备与原子发布。Transfer 负责跨引擎写入批次 staging，Develop 只负责目标引擎内的查询计算，Orchestrator 只编排顺序。 |
 | Materialization Batch | 物化批次 | Model 为一次逻辑表重算创建的 Tenant 级受控发布聚合，绑定逻辑表版本、目标 Engine、staging、结构指纹和 prepare/publish execution。 | 同一逻辑表同时最多一个活动批次；批次不接受调用方提交 SQL、Schema、表名或 DDL。 |
 | Materialization Read Context | 物化读上下文 | Model 面向同一父 Orchestrator execution 中的 Develop/Quality reader，对已完成有效 write attempt 生成的短期只读批次投影。 | 返回精确 staging locator、字段、结构指纹和批次身份；不返回凭据、DDL 或写入能力，也不替代 reader 自身的 Execution Authorization。 |
-| logical relation input | 逻辑关系输入 | Develop 受管查询通过保留伪 schema `addp_input` 引用的上游逻辑表关系。 | 任务将 alias 静态绑定 LogicalTable ID；worker 只在 SQL 关系节点将 `addp_input.<alias>` 改写为 Model 签发的引用安全 staging locator，不是标识符模板或表名参数。 |
+| query parameter | 查询参数 | Develop 查询任务声明的命名输入，统一保存在 `content.query_parameters[]`。 | `type=relation` 表示绑定 ResourceLocator 的数据表参数；`string`、`integer`、`number`、`boolean` 表示类型化值参数。全部参数共享同一命名空间、默认值与单次执行覆盖语义，且名称唯一。 |
+| relation query parameter | 关系查询参数 | 查询参数中代表关系型数据表的 `relation` 类型参数。 | PostgreSQL SQL 直接使用未加引号、未限定 schema 的裸参数名引用；可保存已有表 ResourceLocator 作为默认绑定，也可由手动执行或 Orchestrator 覆盖。Develop 通过 AST 把该关系节点编译为方言安全的物理表标识符。它不是表名字符串参数，也不绑定 LogicalTable ID。 |
 | Materialization Group | 物化组 | Model 中定义一组必须作为同一可见版本发布的已审批逻辑表。 | 组内逻辑表必须位于同一 PostgreSQL Engine；Model 在一个目标库事务中完成全部物理替换，跨 Engine 组直接拒绝。 |
+| PreparedQuery | 已准备查询 | Engine Provider 从一次 `QueryRequest` 生成的不可变、一次性查询计划，绑定 Engine、语言、参数、目标路径和 Provider 原生解析结果。 | 读取集合解析、安全门禁和真实执行必须绑定同一个 PreparedQuery；门禁后不再接受新的查询文本或参数。 |
+| QueryAnalysis | 查询分析 | PreparedQuery 基于 Provider 原生语言规则产生的结构化诊断事实，包含稳定诊断码、阶段、严重级别、位置与 schema coverage。 | Develop 等 Owner 只展示和消费该事实，不在浏览器或业务服务中再次用正则、分词或样本字段推断 SQL、MQL、Cypher 语义。 |
+| schema coverage | 模式覆盖度 | 表达一次 QueryAnalysis 用于字段结论的 schema 事实完整度，固定为 `complete`、`sampled` 或 `unknown`。 | 只有 `complete` 才允许断言字段不存在；`sampled` 和 `unknown` 只能给出覆盖不足提示，不能把未观察到的字段报成错误。 |
+| QueryReadSet | 查询读取集合 | PreparedQuery 在执行前产生的、完整且去重的 Engine Catalog leaf 路径集合，回答“这次查询可能读取哪些资源”。 | 它不是查询语句或查询结果；不是调用方自报的授权范围，不包含数据行、Meta ID、DataItem 指纹、Security 策略或 Catalog 身份。 |
 | query read session | 查询读取会话 | Engine Provider 为一次只读原生查询打开的连续批次读取会话。 | 与返回有界 `QueryResult` 的交互查询不同；生产搬运不得施加隐式行数上限。MongoDB MQL 可在源端用 `$project`、`$unwind`、`$group` 等把嵌套 BSON 整形为扁平行，但禁止 `$out`、`$merge`。 |
+| raw record export | 原始记录导出 | 将动态 schema collection 中的原生记录按引擎声明的类型保真交换编码流式写出。 | 它不赋予 collection 表语义，也不是物理备份。MongoDB 第一版固定使用 Canonical Extended JSON v2、每行一个文档；表格化导出属于独立转换语义。 |
 | locator | 定位符 | ResourceLocator URI 的简称。 | 检索结果和前端跳转只消费 locator，不再自行拼接。 |
 | data retrieval | 数据检索 | 面向 data item 的关键词、全文或语义检索能力。 | 检索命中以 data item 为结果对象；需要回到资源树时通过 locator 定位。 |
 
@@ -80,7 +90,7 @@
 
 | 英文术语 | 中文术语 | 定义 | 备注 |
 |---|---|---|---|
-| data element | 数据元 | 对一个可复用业务数据概念的标准化定义，统一其名称、定义、表示方式、值域、分级分类和责任归属。 | 数据元是 Standard 的稳定身份；业务含义和表示约束保存在不可变的数据元修订中。它不是数据库中的具体字段。 |
+| data element | 数据元 | 对一个可复用业务数据概念的标准化定义，统一其名称、定义、表示方式、值域和责任归属。 | 数据元是 Standard 的稳定身份；业务含义和表示约束保存在不可变的数据元修订中。它不是数据库中的具体字段，也不承载安全分类分级。 |
 | data element revision | 数据元修订 | 数据元一次可审核、可发布的完整业务定义快照。 | API 与数据库使用 `revision_no` 表达业务版次；`published` 修订的业务定义不可修改，后续变更必须创建新修订。不得复用资源并发字段 `version`。 |
 | value domain | 值域 | 数据元允许取值的语义和表示约束。 | ADDP 当前只实现 `unrestricted`、`range`、`enumeration` 三类；一个数据元修订只能选择一种。暂不建立通用 ValueDomain 主资源。 |
 | range value domain | 连续值域 | 通过结构化最小值、最大值及边界是否包含等规则描述的值域。 | 保存于数据元修订；与枚举码值集互斥。格式、长度等表示约束不作为第二套值域事实。 |
@@ -91,6 +101,26 @@
 | effective standard revision | 当前生效标准修订 | 在指定业务时点满足 `effective_from <= as_of < effective_to` 的已发布修订；`effective_to` 为空表示无上界。 | Standard 按时点动态解析，不保存 `current_revision_id` 缓存；未显式传入 `as_of` 时使用服务端当前时间。同一稳定身份在任一时点至多解析出一个修订。 |
 | owning domain | 归属业务域 | 对标准对象承担定义、维护和审批责任的主要业务域。 | 码值集归属域不限制其他业务域引用；Tenant 自定义码值集必须指定归属域，平台内置码值集由平台治理。 |
 | data dictionary | 数据字典 | 对实际数据结构及其业务解释形成的查询或导出视图。 | 由 Meta 的物理字段事实、Catalog 的语义关联和 Standard 在查询时点生效的数据元/码值解释组合生成；不是 Standard 内新的持久化主资源。 |
+
+## 数据安全与隐私保护
+
+| 英文术语 | 中文术语 | 定义 | 备注 |
+|---|---|---|---|
+| Security module | 数据安全模块 | ADDP 中拥有敏感类型、安全分类分级、敏感发现、资源安全评估、保护策略和保护投影的独立 owner 模块。 | 稳定技术名为 `Security`，产品入口使用“数据安全与隐私保护”；不接管 IAM、资源授权或业务数据代理。 |
+| professional resource reference | 专业资源引用 | 跨模块精确引用 owner 稳定专业资源身份的强类型坐标。 | 由 `owner_module + resource_type + resource_identity + optional component_key` 组成；它不是 CatalogEntry ID，也不是可以解析或猜测的通用字符串。 |
+| SensitiveDataType | 敏感数据类型 | 描述需要保护的数据语义类型。 | 例如手机号、身份证号、邮箱、银行卡号和精确位置；不等同于字段的技术数据类型。 |
+| SecurityClassification | 安全分类 | Security 对保护对象进行安全语义组织的稳定定义。 | 与 Standard 业务域、术语或数据元正交，不保留双事实源。 |
+| SecurityGrade | 安全等级 | Security 对保护强度、审批与使用限制进行有序表达的稳定定义。 | 等级只是策略编译输入，不直接替代 Owner 资源授权。 |
+| ProtectionEnrollment | 保护纳管 | 将确定专业资源显式纳入 Security 发现、评估和保护生命周期的聚合。 | 首期只在 DataItem 级创建纳管，字段组件由 Detector 发现，不接受人工填写字段路径；未纳管资源沿用原路径，纳管必须先安装 Owner 门禁再开始发现。 |
+| protection target snapshot | 保护目标快照 | ProtectionEnrollment 创建时根据标准 ResourceLocator 冻结的最小目标展示与身份前像，包含 Engine ID、DataItem 原生类型和 full_name。 | 仅用于人类可读展示、审计和重新计算 item fingerprint；不是 Meta DataItem 副本，不包含 attributes、字段、样本或 Catalog 身份。 |
+| SensitiveFinding | 敏感发现 | Detector 根据专业事实和受控样本生成的、带证据与置信度的候选结论。 | Finding 不是正式治理事实；达到保护阈值时可编译保守基线，防止审核滞后导致明文泄露。 |
+| ResourceSecurityAssessment | 资源安全评估 | 对确定专业资源或组件做出的正式安全分类分级结论。 | 直接绑定专业资源引用；Catalog 可联邦展示，但不复制或改绑该事实。 |
+| ProtectionBaseline | 保护基线 | 对敏感类型、安全等级或高置信 Finding 规定最低保护效果的规则。 | Owner 可以执行更严结果，不得降低基线。 |
+| ProtectionPolicy | 保护策略 | 针对一个正式资源安全评估、消费 Owner 和动作，对保护基线作显式收紧的可版本化控制面决策。 | 无显式策略时仍执行 Assessment 对应的 ProtectionBaseline；首期策略只能收紧为 `mask|suppress|deny`，不能放宽基线，也不承载授权或受控例外。策略由 Security 拥有，不在 Manager、Transfer、Develop 或 Service 中复制编辑。 |
+| ProtectionProjection | 保护投影 | Security 为某个 Owner 出口编译的、带版本、有效期、校验和发布游标的最小可执行契约。 | Owner 后台拉取并本地执行；用户数据请求不逐次调用 Security。 |
+| protection effect | 保护效果 | Owner 服务端数据出口对返回结果执行的确定性处理结果。 | 严格度固定为 `deny > suppress > mask > allow`；受保护资源投影异常时不得退回明文。 |
+| dynamic masking | 动态遮盖 | 不改写源数据，在 Owner 服务端出口按投影将敏感值转换为可用但不暴露原值的形式。 | 例如手机号 `13661384499` 显示为 `136****4499`；浏览器不应接收原值。 |
+| suppression | 抑制 | 不向当前出口返回受保护字段、组件或资源内容的保守效果。 | 用于无安全遮盖算法、投影异常或 Owner 尚不具备组件级执行能力的场景。 |
 
 ## 数据类型与格式
 
@@ -275,8 +305,8 @@
 | execution input contract | 执行输入契约 | 某个具体任务定义允许调用方在单次 execution 中覆盖的公开输入 Schema、默认值和 UI 语义。 | 保存的任务定义必须始终可直接执行；未提交的输入使用任务保存值，提交值只影响本次 execution。工作流中未被内部连线占用的可序列化 Public Operator 参数默认进入该契约。 |
 | execution output contract | 执行输出契约 | 某个具体任务定义对外承诺的、可被 Orchestrator 后续 Step 引用的稳定执行结果 Schema。 | 只允许声明可跨任务边界传递的持久结果或稳定引用，例如 ResourceLocator；不得暴露 DataFrame、GeoDataFrame 或运行时私有内存句柄。 |
 | execution parameter override | 执行参数覆盖 | 调用方按执行输入契约为某一次 execution 提交的部分参数值。 | 未提交字段保留任务默认值；覆盖不得修改任务定义，不得改变 DAG 结构，也不得绕过最终资源校验和 Execution Authorization。 |
-| query parameter definition | 查询参数定义 | 查询任务为一个命名值声明的公开类型、默认值、标题和说明。 | 第一版只允许 `string`、`integer`、`number`、`boolean` 四种标量类型；保存的任务必须为每个参数提供默认值，并由定义派生任务级执行输入契约。 |
-| query parameter binding | 查询参数绑定 | Query Runtime Provider 把本次 execution 的类型化参数值绑定到查询语言参数位置的过程。 | SQL 使用 `:name` 命名参数并编译为驱动占位符，Cypher 使用 `$name` 原生参数，MQL 使用 `{\"$param\":\"name\"}` 结构化参数节点；禁止字符串插值，参数不得替代标识符、关键字或查询片段。 |
+| query parameter definition | 查询参数定义 | 查询任务为一个命名输入声明唯一参数名、类型以及可选默认值和说明。 | 全部参数类型都可以省略默认值并在执行时填写；定义派生任务级执行输入契约，不再保存显示名称或第二套引用标识。 |
+| query parameter binding | 查询参数绑定 | Develop 在一次 execution 中把查询参数解析为实际执行输入的过程。 | 值参数由 Query Runtime Provider 安全绑定：SQL 使用 `:name`、Cypher 使用 `$name`、MQL 使用 `{\"$param\":\"name\"}`；关系参数只允许 PostgreSQL SQL 中与已声明参数同名的裸关系节点，并由 Develop AST 编译器替换。禁止字符串插值，也禁止用普通值参数替代字段名、关键字和查询片段。 |
 | Develop Adapter Spec | Develop 适配规范 | Develop Backend 按工作流引擎类型和算子 ID 选择的显式执行前转换契约，声明公开资源参数如何派生为运行时参数。 | 负责查询 System Engine Instance、派生 `connection_info/schema/table/path` 并移除公开资源参数；不得按参数名隐式触发。 |
 | Runtime Operator Spec | 运行时算子规范 | Workflow Runtime 实际执行算子时消费的内部契约，只声明运行时真实需要的参数、输入输出端口和执行行为。 | 不解析 ADDP `ResourceLocator`，不承载资源树 UI 配置；`connection_info/schema/table/path` 属于适配层到运行时的内部参数。 |
 | Workflow Access Plan | 工作流访问计划 | Develop、Manager 等调用方把已解析的存储资源转换为 Workflow Runtime 可执行读写计划的内部契约。 | 当前版本为 `addp.workflow.access-plan/v1`；只在执行期携带 `mounted_path` 或 `object_store` 访问参数，不作为用户任务定义、资源身份或长期事实源。 |
@@ -424,6 +454,8 @@
 | info provider | 信息提供者 | 读取 data type info 或 format info 的能力。 | 只提供元数据，不提供内容数据。 |
 | content reader | 内容读取器 | 按数据类型或格式读取内容数据的能力。 | 例如表格样本、文档文本片段、缩略图、原始内容。 |
 | full-text index | 全文索引 | 面向关键词检索的外部搜索索引。 | 例如 Meilisearch 中的资产记录；与 `access_index` 不同，不用于 range read 或表格分页定位。 |
+| technical metadata search projection | 技术元数据搜索投影 | 只包含 DataItem 身份、名称、路径、类型、结构、字段定义和规模等 Meta 技术事实的可重建搜索投影。 | 不包含数据行、字段值、文件正文、正文预览或正文派生属性；它不是 Security `search_index` 数据出口动作。 |
+| content search projection | 数据内容搜索投影 | 包含文件正文、正文预览、数据值或其派生摘要、关键词、作者等内容信息的可重建搜索投影。 | 属于 Security `search_index` 数据出口；已纳管 DataItem 必须命中本地有效投影和独立执行器，缺失时失效关闭。 |
 | capability | 能力 | 引擎、当前进程格式实现或数据项呈现的能力。 | engine capability、format descriptor / provider status、item capability 含义不同。 |
 | spatial | 空间能力 | 描述空间字段、CRS、范围、几何类型、空间索引等横切语义。 | 是横切能力，不是 data type。 |
 | CRS definition conversion | CRS 定义转换 | 在不改变几何坐标和 CRS 身份的前提下，把同一 CRS 的定义在 WKT、ESRI WKT、Proj4、PROJJSON 等表达之间转换。 | 不等于坐标重投影；当前由 GeoPython Workflow `crs_to_projjson` direct 算子执行。 |

@@ -4,7 +4,7 @@ import {
   List, Timer, Connection, Search, Document, Share, DataBoard, Odometer,
   TrendCharts, SortDown, FolderOpened, Warning, Monitor, Notebook,
   Files, Tickets, Key, Refresh, Lock, SetUp,
-  MapLocation, Collection, View,
+  MapLocation, Collection,
 } from '@element-plus/icons-vue'
 import { splitConsoleRoute } from '../utils/consoleNavigation'
 
@@ -13,7 +13,7 @@ import { splitConsoleRoute } from '../utils/consoleNavigation'
 
 export const MODULE_GROUPS = [
   { key: 'data-prepare', label: 'console.groups.dataPrepare', icon: Coin,         modules: ['transfer', 'meta', 'manager'] },
-  { key: 'data-govern',  label: 'console.groups.dataGovern',  icon: Reading,      modules: ['standard', 'modeling', 'quality'] },
+  { key: 'data-govern',  label: 'console.groups.dataGovern',  icon: Reading,      modules: ['standard', 'modeling', 'quality', 'security'] },
   { key: 'dev-monitor',  label: 'console.groups.devMonitor',  icon: Tools,        modules: ['develop', 'service', 'workbench', 'orchestrator', 'monitor'] },
   { key: 'asset',        label: 'console.groups.asset',       icon: Folder,       modules: ['catalog', 'asset'] },
   { key: 'portal',       label: 'console.groups.portal',      icon: Shop,         modules: [], isPortal: true },
@@ -33,6 +33,7 @@ export const ALL_HOME_CARDS = [
   { module: 'standard',     label: 'console.modules.standard.label',     icon: Reading,      cssVar: '--addp-module-standard',      desc: 'console.modules.standard.desc' },
   { module: 'modeling',     label: 'console.modules.modeling.label',     icon: Grid,         cssVar: '--addp-module-modeling',      desc: 'console.modules.modeling.desc' },
   { module: 'quality',      label: 'console.modules.quality.label',      icon: CircleCheck,  cssVar: '--addp-module-quality',       desc: 'console.modules.quality.desc' },
+  { module: 'security',     label: 'console.modules.security.label',     icon: Lock,         cssVar: '--addp-module-security',      desc: 'console.modules.security.desc' },
   { module: 'develop',      label: 'console.modules.develop.label',      icon: Edit,         cssVar: '--addp-module-develop',       desc: 'console.modules.develop.desc' },
   { module: 'service',      label: 'console.modules.service.label',      icon: Link,         cssVar: '--addp-module-service',       desc: 'console.modules.service.desc' },
   { module: 'workbench',    label: 'console.modules.workbench.label',    icon: DataBoard,    cssVar: '--addp-module-workbench',     desc: 'console.modules.workbench.desc' },
@@ -68,6 +69,7 @@ export const MODULE_URLS = {
   standard:     _url(5181, 'standard'),
   modeling:     _url(5182, 'model'),
   quality:      _url(5183, 'quality'),
+  security:     _url(5191, 'security'),
   catalog:      _url(5189, 'catalog'),
   asset:        _url(5184, 'asset'),
   agent:        _url(5186, 'agent'),
@@ -129,9 +131,8 @@ export const PAGE_MAPS = {
     '': 'query-services',
   },
   workbench: {
-    'views': 'views',
     'applications': 'applications',
-    '': 'views',
+    '': 'applications',
   },
   monitor: {
     'dashboard': 'dashboard',
@@ -148,6 +149,9 @@ export const PAGE_MAPS = {
   },
   quality: {
     '': 'check-tasks',
+  },
+  security: {
+    '': 'sensitive-data-types',
   },
   catalog: {
     '': 'entries',
@@ -179,11 +183,12 @@ export const DEFAULT_ROUTES = {
   orchestrator: '/orchestrator/orchestrations',
   develop:      '/develop/sql',
   service:      '/service/query-services',
-  workbench:    '/workbench/views',
+  workbench:    '/workbench/applications',
   monitor:      '/monitor/dashboard',
   standard:     '/standard/domains',
   modeling:     '/modeling/dw-layers',
   quality:      '/quality/check-tasks',
+  security:     '/security/sensitive-data-types',
   catalog:      '/catalog/entries',
   asset:        '/asset/assets',
   agent:        '/agent',
@@ -250,7 +255,6 @@ export const SIDEBAR_MENUS = {
       { index: '/standard/elements',             icon: DataBoard,    label: 'console.menus.standard.elements' },
       { index: '/standard/code-sets',            icon: List,         label: 'console.menus.standard.codeSets' },
       { index: '/standard/units',                icon: Odometer,     label: 'console.menus.standard.units' },
-      { index: '/standard/classifications',      icon: Share,        label: 'console.menus.standard.classifications', recentLabel: 'console.menus.standard.recentClassifications' },
       { index: '/standard/dimension-hierarchies',icon: SortDown,     label: 'console.menus.standard.dimensionHierarchies' },
       { index: '/standard/metrics',              icon: TrendCharts,  label: 'console.menus.standard.metrics', recentLabel: 'console.menus.standard.recentMetrics' },
       { index: '/standard/documents',            icon: FolderOpened, label: 'console.menus.standard.documents' },
@@ -277,6 +281,16 @@ export const SIDEBAR_MENUS = {
       { index: '/quality/issues',            icon: Warning, label: 'console.menus.quality.issues', recentLabel: 'console.menus.quality.recentIssues' },
     ],
   },
+  security: {
+    label: 'console.menus.security.label', icon: Lock,
+    items: [
+      { index: '/security/sensitive-data-types', icon: Key, label: 'console.menus.security.sensitiveDataTypes' },
+      { index: '/security/classifications', icon: Collection, label: 'console.menus.security.classifications' },
+      { index: '/security/grades', icon: DataAnalysis, label: 'console.menus.security.grades' },
+      { index: '/security/protection-baselines', icon: SetUp, label: 'console.menus.security.protectionBaselines' },
+      { index: '/security/protection-enrollments', icon: CircleCheck, label: 'console.menus.security.protectionEnrollments' },
+    ],
+  },
   develop: {
     label: 'console.menus.develop.label', icon: Edit,
     items: [
@@ -300,7 +314,6 @@ export const SIDEBAR_MENUS = {
   workbench: {
     label: 'console.menus.workbench.label', icon: DataBoard,
     items: [
-      { index: '/workbench/views', icon: View, label: 'console.menus.workbench.views' },
       { index: '/workbench/applications', icon: Grid, label: 'console.menus.workbench.dataApplications' },
     ],
   },

@@ -2,7 +2,7 @@
   "common": {
     "executionParameters": {
 	  "title": "执行参数",
-      "workflowConfiguration": "工作流配置",
+      "workflowConfiguration": "任务默认值",
 	  "executionOverride": "执行时指定",
       "upstream": "上游输出",
       "selectOutput": "请选择上游输出",

@@ -2049,6 +2049,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
                         }
+                    },
+                    "503": {
+                        "description": "查询分析服务不可用 | Query analysis unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse"
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -3633,7 +3639,7 @@ const docTemplate = `{
                 },
                 "query": {
                     "type": "string",
-                    "example": "SELECT * FROM addp_input.source"
+                    "example": "SELECT * FROM source"
                 },
                 "query_parameters": {
                     "type": "array",
@@ -3649,15 +3655,6 @@ const docTemplate = `{
                         "cypher"
                     ],
                     "example": "sql"
-                },
-                "relation_inputs": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "example": [
-                        "source"
-                    ]
                 },
                 "target_locator": {
                     "type": "string",
@@ -4248,6 +4245,21 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_develop_backend_internal_models.QueryParameterDefinition": {
+            "type": "object",
+            "properties": {
+                "default": {},
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_develop_backend_internal_models.QueryParameterSwagger": {
             "type": "object",
             "properties": {
@@ -4263,13 +4275,10 @@ const docTemplate = `{
                     "type": "string",
                     "example": "city_name"
                 },
-                "title": {
-                    "type": "string",
-                    "example": "城市名称"
-                },
                 "type": {
                     "type": "string",
                     "enum": [
+                        "relation",
                         "string",
                         "integer",
                         "number",
@@ -4289,8 +4298,18 @@ const docTemplate = `{
                 "engine_id": {
                     "type": "integer"
                 },
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
                 "query": {
                     "type": "string"
+                },
+                "query_parameters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.QueryParameterDefinition"
+                    }
                 },
                 "query_type": {
                     "type": "string",
@@ -4320,6 +4339,12 @@ const docTemplate = `{
                 "confirmation_token": {
                     "type": "string"
                 },
+                "diagnostics": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plugin.QueryDiagnostic"
+                    }
+                },
                 "effect": {
                     "type": "string"
                 },
@@ -4333,6 +4358,9 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "risk_level": {
+                    "type": "string"
+                },
+                "schema_coverage": {
                     "type": "string"
                 },
                 "statement": {
@@ -5448,6 +5476,32 @@ const docTemplate = `{
                 },
                 "type": {
                     "type": "string"
+                }
+            }
+        },
+        "plugin.QueryDiagnostic": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "end": {
+                    "type": "integer"
+                },
+                "parameters": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "phase": {
+                    "type": "string"
+                },
+                "severity": {
+                    "type": "string"
+                },
+                "start": {
+                    "type": "integer"
                 }
             }
         },

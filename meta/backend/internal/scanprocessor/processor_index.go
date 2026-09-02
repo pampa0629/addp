@@ -13,7 +13,7 @@ func (p Processor) indexDeepAsset(ctx context.Context, input *input, item *model
 	if !isDeepScan || p.indexer == nil {
 		return counts
 	}
-	indexed := p.indexer.IndexCatalogContent(ctx, input.Resource, input.TenantID, input.EngineID, catalogResource(input), input.IndexRelativePath, input.FullName, item, extraction.Text)
+	indexed := p.indexer.IndexCatalogContent(ctx, input.Resource, input.TenantID, input.EngineID, catalogResource(input), input.IndexRelativePath, input.FullName, item, extraction.Text, extraction.Truncated)
 	if extraction.Text != "" {
 		if indexed {
 			counts.Indexed++

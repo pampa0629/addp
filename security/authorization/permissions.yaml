@@ -1,0 +1,236 @@
+schema_version: addp.permission_manifest/v1
+owner_module: security
+manifest_version: 4
+permissions:
+  - key: security.assessment.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.security.assessment.read.name
+    description_i18n_key: permissions.security.assessment.read.description
+  - key: security.assessment.update
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.security.assessment.update.name
+    description_i18n_key: permissions.security.assessment.update.description
+  - key: security.classification.create
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.security.classification.create.name
+    description_i18n_key: permissions.security.classification.create.description
+  - key: security.classification.delete
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.security.classification.delete.name
+    description_i18n_key: permissions.security.classification.delete.description
+  - key: security.classification.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.security.classification.read.name
+    description_i18n_key: permissions.security.classification.read.description
+  - key: security.classification.update
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.security.classification.update.name
+    description_i18n_key: permissions.security.classification.update.description
+  - key: security.enrollment.create
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.security.enrollment.create.name
+    description_i18n_key: permissions.security.enrollment.create.description
+  - key: security.enrollment.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.security.enrollment.read.name
+    description_i18n_key: permissions.security.enrollment.read.description
+  - key: security.enrollment.update
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.security.enrollment.update.name
+    description_i18n_key: permissions.security.enrollment.update.description
+  - key: security.finding.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.security.finding.read.name
+    description_i18n_key: permissions.security.finding.read.description
+  - key: security.finding.update
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.security.finding.update.name
+    description_i18n_key: permissions.security.finding.update.description
+  - key: security.grade.create
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.security.grade.create.name
+    description_i18n_key: permissions.security.grade.create.description
+  - key: security.grade.delete
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.security.grade.delete.name
+    description_i18n_key: permissions.security.grade.delete.description
+  - key: security.grade.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.security.grade.read.name
+    description_i18n_key: permissions.security.grade.read.description
+  - key: security.grade.update
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.security.grade.update.name
+    description_i18n_key: permissions.security.grade.update.description
+  - key: security.policy.create
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.security.policy.create.name
+    description_i18n_key: permissions.security.policy.create.description
+  - key: security.policy.delete
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.security.policy.delete.name
+    description_i18n_key: permissions.security.policy.delete.description
+  - key: security.policy.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.security.policy.read.name
+    description_i18n_key: permissions.security.policy.read.description
+  - key: security.policy.update
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.security.policy.update.name
+    description_i18n_key: permissions.security.policy.update.description
+  - key: security.protection_baseline.create
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.security.protection_baseline.create.name
+    description_i18n_key: permissions.security.protection_baseline.create.description
+  - key: security.protection_baseline.delete
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.security.protection_baseline.delete.name
+    description_i18n_key: permissions.security.protection_baseline.delete.description
+  - key: security.protection_baseline.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.security.protection_baseline.read.name
+    description_i18n_key: permissions.security.protection_baseline.read.description
+  - key: security.protection_baseline.update
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.security.protection_baseline.update.name
+    description_i18n_key: permissions.security.protection_baseline.update.description
+  - key: security.protection_projection.read
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.security.protection_projection.read.name
+    description_i18n_key: permissions.security.protection_projection.read.description
+  - key: security.protection_projection.update
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.security.protection_projection.update.name
+    description_i18n_key: permissions.security.protection_projection.update.description
+  - key: security.sensitive_data_type.create
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.security.sensitive_data_type.create.name
+    description_i18n_key: permissions.security.sensitive_data_type.create.description
+  - key: security.sensitive_data_type.delete
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.security.sensitive_data_type.delete.name
+    description_i18n_key: permissions.security.sensitive_data_type.delete.description
+  - key: security.sensitive_data_type.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.security.sensitive_data_type.read.name
+    description_i18n_key: permissions.security.sensitive_data_type.read.description
+  - key: security.sensitive_data_type.update
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.security.sensitive_data_type.update.name
+    description_i18n_key: permissions.security.sensitive_data_type.update.description

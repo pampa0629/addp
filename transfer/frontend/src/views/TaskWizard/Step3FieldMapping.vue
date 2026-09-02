@@ -13,6 +13,14 @@
 
     <template v-else>
     <el-alert
+      v-if="isStructuredMongoQuery"
+      type="info"
+      :closable="false"
+      :title="t('transfer.taskWizard.structuredMongoMappingTitle')"
+      :description="t('transfer.taskWizard.structuredMongoMappingDesc')"
+      class="structured-mapping-alert"
+    />
+    <el-alert
       v-if="wizardState.isContinuousTask.value"
       type="info"
       :closable="false"
@@ -28,7 +36,7 @@
       :description="t('transfer.taskWizard.mysqlDecimalValidationDesc', { fields: invalidDecimalFieldNames })"
       class="decimal-validation-alert"
     />
-    <div class="mapping-controls">
+    <div v-if="!isStructuredMongoQuery" class="mapping-controls">
       <el-button v-if="!wizardState.isContinuousTask.value" type="primary" @click="autoMap">{{ t('transfer.taskWizard.autoMap') }}</el-button>
       <el-button
         v-if="canRecommendDecimalDefinitions"
@@ -57,9 +65,16 @@
       border
       class="mapping-table"
     >
-      <el-table-column :label="t('transfer.taskWizard.sourceFieldCol')" width="200">
+      <el-table-column :label="t('transfer.taskWizard.sourceFieldCol')" :width="isStructuredMongoQuery ? 300 : 200">
         <template #default="{ row, $index }">
+          <div v-if="isStructuredMongoQuery" class="structured-source-field">
+            <span>{{ structuredSourcePath(row.source_field) }}</span>
+            <el-tag size="small" :type="structuredSourceRoleType(row.source_field)">
+              {{ structuredSourceRoleLabel(row.source_field) }}
+            </el-tag>
+          </div>
           <el-select
+            v-else
             v-model="row.source_field"
             :placeholder="t('transfer.taskWizard.selectSourceField')"
             filterable
@@ -211,7 +226,7 @@
         </template>
       </el-table-column>
 
-      <el-table-column :label="t('transfer.taskWizard.actionsCol')" width="100" fixed="right">
+      <el-table-column v-if="!isStructuredMongoQuery" :label="t('transfer.taskWizard.actionsCol')" width="100" fixed="right">
         <template #default="{ $index }">
           <el-button
             type="danger"
@@ -291,6 +306,7 @@ import { fieldDefinitionRecommendationAPI } from '@/api/tasks'
 import { CONTINUOUS_FIELD_TYPES, databaseCDCFieldTypes } from './continuousTask.mjs'
 import { mysqlDecimalMappingIssues } from './decimalMapping.mjs'
 import { inferTopicFieldRecommendations } from './topicFieldRecommendations.mjs'
+import { parseMongoStructureQuery } from './mongoStructureQuery.mjs'
 import { normalizeFieldType } from '@addp/common-frontend'
 
 const { t } = useI18n()
@@ -306,6 +322,15 @@ const topicSampleLoading = ref(false)
 const decimalRecommendationLoading = ref(false)
 const topicSampleDialogVisible = ref(false)
 const topicRecommendations = ref([])
+
+const structuredMongoModel = computed(() => {
+  if (!props.wizardState.sourceQueryEnabled.value) return null
+  if (String(props.wizardState.sourceQueryLanguage.value || '').trim().toLowerCase() !== 'mql') return null
+  if (!String(props.wizardState.sourceEngineType.value || '').trim().toLowerCase().includes('mongodb')) return null
+  const parsed = parseMongoStructureQuery(props.wizardState.sourceQueryStatement.value)
+  return parsed.supported ? parsed.model : null
+})
+const isStructuredMongoQuery = computed(() => structuredMongoModel.value !== null)
 
 const targetTypeOptions = computed(() => {
   const types = props.wizardState.isDatabaseCDCTask.value
@@ -521,6 +546,40 @@ function fieldOptionLabel(field) {
   return type ? `${name} (${type})` : name
 }
 
+function structuredSourceField(fieldName) {
+  return props.wizardState.sourceFields.value.find(field => field?.name === fieldName) || null
+}
+
+function structuredSourcePath(fieldName) {
+  const field = structuredSourceField(fieldName)
+  if (!field) return fieldName
+  if (field.source_role === 'array_index') {
+    return t('transfer.taskWizard.mongoBuilder.arrayIndexSource', { path: field.source_path })
+  }
+  return field.source_path || field.name
+}
+
+function structuredSourceRoleLabel(fieldName) {
+  const role = structuredSourceField(fieldName)?.source_role
+  const key = {
+    record_identifier: 'recordIdentifier',
+    parent_identifier: 'parentIdentifier',
+    parent_field: 'parentField',
+    array_element_field: 'arrayElementField',
+    array_index: 'arrayIndex',
+    selected_field: 'selectedField'
+  }[role] || 'selectedField'
+  return t(`transfer.taskWizard.structuredSourceRole.${key}`)
+}
+
+function structuredSourceRoleType(fieldName) {
+  const role = structuredSourceField(fieldName)?.source_role
+  if (role === 'array_index') return 'warning'
+  if (role === 'record_identifier' || role === 'parent_identifier') return 'info'
+  if (role === 'parent_field') return undefined
+  return 'success'
+}
+
 function standardFieldType(field) {
   return String(field?.type || '').trim()
 }
@@ -551,6 +610,22 @@ function sourceFieldType(fieldName) {
 
 .continuous-mapping-alert {
   margin-bottom: 16px;
+}
+
+.structured-mapping-alert {
+  margin-bottom: 16px;
+}
+
+.structured-source-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.structured-source-field > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .decimal-validation-alert {

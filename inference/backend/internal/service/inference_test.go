@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	commoninference "github.com/addp/common/inference"
-	commonsecurity "github.com/addp/common/security"
+	secretcipher "github.com/addp/common/secretcipher"
 	"github.com/addp/inference/internal/models"
 	"github.com/addp/inference/internal/repository"
 	"gorm.io/driver/sqlite"
@@ -80,7 +80,7 @@ func TestProviderScopeAndCredentialRotation(t *testing.T) {
 	if stored.CredentialCiphertext == "" || stored.CredentialCiphertext == secret || strings.Contains(stored.CredentialCiphertext, secret) {
 		t.Fatal("credential was not stored exclusively as ciphertext")
 	}
-	plaintext, err := commonsecurity.Decrypt(stored.CredentialCiphertext, testEncryptionKey)
+	plaintext, err := secretcipher.Decrypt(stored.CredentialCiphertext, testEncryptionKey)
 	if err != nil || plaintext != secret {
 		t.Fatalf("credential ciphertext cannot be decrypted: %v", err)
 	}

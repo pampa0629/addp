@@ -28,6 +28,18 @@ other = "The engine is currently unavailable. Wait until it is online and try ag
 [manager.error.meta_scan_required]
 other = "This target has not been scanned by meta"
 
+[manager.error.security_protection_required]
+other = "This data item is security-managed and its protection rules are not ready; raw data access is denied"
+
+[manager.error.content_document_invalid]
+other = "The content search projection request is invalid"
+
+[manager.error.content_protection_required]
+other = "This content is security-managed and has no executable search protection rule"
+
+[manager.error.content_index_unavailable]
+other = "The Manager content index is currently unavailable"
+
 [manager.error.missing_engine_id_or_storage_ref]
 other = "Missing engine ID or storage content reference"
 
@@ -189,6 +201,12 @@ other = "Failed to query the data profile"
 
 [manager.error.data_profile_create_failed]
 other = "Failed to create the data profiling execution"
+
+[manager.error.preview_failed]
+other = "Failed to preview data"
+
+[manager.error.hybrid_search_failed]
+other = "Hybrid search failed"
 
 [manager.model3d_tiles.result_deleted]
 other = "Model3d tiles quick view result deleted"

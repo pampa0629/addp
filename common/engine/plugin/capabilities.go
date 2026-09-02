@@ -181,6 +181,7 @@ type StoreCapability struct {
 	BatchRead                   bool                                   `json:"batch_read,omitempty"`
 	TableReadSession            bool                                   `json:"table_read_session,omitempty"`
 	RecordReadSession           bool                                   `json:"record_read_session,omitempty"`
+	EncodedRecordReadSession    *EncodedRecordReadSessionCapability    `json:"encoded_record_read_session,omitempty"`
 	TableReadSpatialTransform   bool                                   `json:"table_read_spatial_transform,omitempty"`
 	BatchWrite                  bool                                   `json:"batch_write,omitempty"`
 	TableWriteSession           bool                                   `json:"table_write_session,omitempty"`
@@ -190,6 +191,10 @@ type StoreCapability struct {
 	TableUpsert                 *TableUpsertCapability                 `json:"table_upsert,omitempty"`
 	PartitionedTableChangeApply *PartitionedTableChangeApplyCapability `json:"partitioned_table_change_apply,omitempty"`
 	TableSpatialEncoding        *NativeTableSpatialEncodingCapability  `json:"table_spatial_encoding,omitempty"`
+}
+
+type EncodedRecordReadSessionCapability struct {
+	Formats []string `json:"formats"`
 }
 
 type ChangeStreamReadCapability struct {

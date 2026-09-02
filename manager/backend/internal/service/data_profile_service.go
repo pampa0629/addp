@@ -10,12 +10,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/addp/common/dataprotection"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/dataprofile"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/profilefilter"
+	managerprotection "github.com/addp/manager/internal/protection"
 	"github.com/google/uuid"
 )
 
@@ -44,6 +46,7 @@ type DataProfileService struct {
 	profiles       dataProfileStore
 	executions     dataProfileExecutionStore
 	sampler        DataProfileSampleProvider
+	protectionGate managerprotection.LocalProjectionGate
 	budget         DataProfileBudget
 	executionSlots chan struct{}
 }
@@ -99,11 +102,13 @@ func NewDataProfileService(
 	profiles dataProfileStore,
 	executions dataProfileExecutionStore,
 	sampler DataProfileSampleProvider,
+	protectionGate managerprotection.LocalProjectionGate,
 ) *DataProfileService {
 	return &DataProfileService{
 		profiles:       profiles,
 		executions:     executions,
 		sampler:        sampler,
+		protectionGate: protectionGate,
 		budget:         DefaultDataProfileBudget,
 		executionSlots: make(chan struct{}, defaultDataProfileConcurrency),
 	}
@@ -114,10 +119,14 @@ func (s *DataProfileService) GetCurrent(
 	tenantID uint,
 	req DataProfileCurrentRequest,
 ) (*DataProfileCurrentResponse, error) {
-	if s == nil || s.profiles == nil || s.executions == nil || s.sampler == nil {
+	if s == nil || s.profiles == nil || s.executions == nil || s.sampler == nil || s.protectionGate == nil {
 		return nil, ErrDataProfileUnavailable
 	}
 	target, err := s.sampler.ResolveTarget(ctx, tenantID, req.Locator, req.DataProfileSelection)
+	if err != nil {
+		return nil, err
+	}
+	profileRules, managed, err := s.profileRules(tenantID, target)
 	if err != nil {
 		return nil, err
 	}
@@ -130,6 +139,13 @@ func (s *DataProfileService) GetCurrent(
 	state, profile, err := s.profiles.GetCurrent(ctx, tenantID, target.ItemFingerprint, dataprofile.ModeSample, configHash)
 	if err != nil {
 		return nil, err
+	}
+	if managed && profile != nil && profile.DataScope.Kind == dataprofile.DataScopeKindCondition {
+		return nil, ErrDataProfileProtectionRequired
+	}
+	profile, err = managerprotection.ProtectProfile(profile, profileRules)
+	if err != nil {
+		return nil, ErrDataProfileProtectionRequired
 	}
 	targetKey := profileTargetKey(tenantID, target.Locator, target.Selection, configHash)
 	active, err := s.executions.GetActive(ctx, int(tenantID), targetKey)
@@ -148,7 +164,7 @@ func (s *DataProfileService) GetCurrent(
 		ProfileConfigHash:  configHash,
 		ActiveExecution:    dataProfileExecutionView(active),
 		LatestExecution:    dataProfileExecutionView(latest),
-		ConditionSupported: target.ConditionSupported,
+		ConditionSupported: target.ConditionSupported && !managed,
 	}
 	if state != nil {
 		profileExecution, err := s.executions.GetByExecutionID(ctx, int(tenantID), state.LastExecutionID)
@@ -172,7 +188,7 @@ func (s *DataProfileService) CreateExecution(
 	userID uint,
 	req DataProfileExecutionRequest,
 ) (*DataProfileExecutionResponse, error) {
-	if s == nil || s.executions == nil || s.sampler == nil {
+	if s == nil || s.executions == nil || s.sampler == nil || s.protectionGate == nil {
 		return nil, ErrDataProfileUnavailable
 	}
 	mode := strings.ToLower(strings.TrimSpace(req.Mode))
@@ -186,12 +202,19 @@ func (s *DataProfileService) CreateExecution(
 	if err != nil {
 		return nil, err
 	}
+	_, managed, err := s.profileRules(tenantID, target)
+	if err != nil {
+		return nil, err
+	}
 	dataScope, err := profilefilter.Normalize(req.DataScope, target.Fields)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrDataProfileInvalidRequest, err)
 	}
 	if dataScope.Kind == dataprofile.DataScopeKindCondition && !target.ConditionSupported {
 		return nil, fmt.Errorf("%w: conditional profiling is not supported", ErrDataProfileUnsupported)
+	}
+	if managed && dataScope.Kind == dataprofile.DataScopeKindCondition {
+		return nil, ErrDataProfileProtectionRequired
 	}
 	configHash := dataProfileConfigHash(target.Selection, dataScope, s.budget)
 	targetKey := profileTargetKey(tenantID, target.Locator, target.Selection, configHash)
@@ -269,7 +292,7 @@ func (s *DataProfileService) runExecution(
 		return
 	}
 	fail := func(code string, err error) {
-		logger.L().Error("数据剖析 execution 失败", "execution_id", execution.ExecutionID, "code", code, "error", err)
+		logger.L().Error("数据剖析 execution 失败", "execution_id", execution.ExecutionID, "code", code)
 		var updateErr error
 		if code == "timeout" {
 			updateErr = s.executions.Timeout(context.Background(), execution.TenantID, execution.ExecutionID, startedAt, code, "data profiling execution timed out")
@@ -279,6 +302,15 @@ func (s *DataProfileService) runExecution(
 		if updateErr != nil {
 			logger.L().Error("更新数据剖析失败状态失败", "execution_id", execution.ExecutionID, "error", updateErr)
 		}
+	}
+	_, managed, err := s.profileRules(uint(execution.TenantID), target)
+	if err != nil {
+		fail("security_protection_required", err)
+		return
+	}
+	if managed && dataScope.Kind == dataprofile.DataScopeKindCondition {
+		fail("security_protection_required", ErrDataProfileProtectionRequired)
+		return
 	}
 	sample, err := s.sampler.Sample(ctx, target, dataScope, s.budget)
 	if err != nil {
@@ -319,6 +351,21 @@ func (s *DataProfileService) runExecution(
 		ProfileConfigHash:  configHash,
 		LastExecutionID:    execution.ExecutionID,
 	}
+	profileRules, managed, err := s.profileRules(uint(execution.TenantID), target)
+	if err != nil {
+		fail("security_protection_required", err)
+		return
+	}
+	if managed && dataScope.Kind == dataprofile.DataScopeKindCondition {
+		fail("security_protection_required", ErrDataProfileProtectionRequired)
+		return
+	}
+	protectedProfile, err := managerprotection.ProtectProfile(&profile, profileRules)
+	if err != nil {
+		fail("security_protection_required", err)
+		return
+	}
+	profile = *protectedProfile
 	if err := s.profiles.ReplaceCurrent(ctx, state, profile); err != nil {
 		fail("result_store_failed", err)
 		return
@@ -332,6 +379,23 @@ func (s *DataProfileService) runExecution(
 	}); err != nil {
 		logger.L().Error("更新数据剖析成功状态失败", "execution_id", execution.ExecutionID, "error", err)
 	}
+}
+
+// profileRules resolves the single local protection path for profiling. An
+// unmanaged DataItem returns no rules and keeps the original execution path.
+func (s *DataProfileService) profileRules(tenantID uint, target *DataProfileTarget) ([]dataprotection.Rule, bool, error) {
+	if s == nil || s.protectionGate == nil || target == nil {
+		return nil, false, ErrDataProfileUnavailable
+	}
+	gate := managerprotection.DataItemGate(s.protectionGate, tenantID, target.ItemFingerprint, time.Now().UTC())
+	rules, err := managerprotection.TableRules(target.ItemFingerprint, target.Fields, gate, managerprotection.ActionProfile, time.Now().UTC())
+	if err != nil {
+		return nil, gate.Managed, ErrDataProfileProtectionRequired
+	}
+	if err := managerprotection.ValidateProfileRules(rules); err != nil {
+		return nil, gate.Managed, ErrDataProfileProtectionRequired
+	}
+	return rules, gate.Managed, nil
 }
 
 func dataProfileConfigHash(selection DataProfileSelection, dataScope dataprofile.DataScope, budget DataProfileBudget) string {

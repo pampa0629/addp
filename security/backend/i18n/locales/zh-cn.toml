@@ -1,0 +1,18 @@
+[security.common.invalid_id]
+other = "资源 ID 无效"
+[security.common.invalid_request]
+other = "请求参数无效"
+[security.common.operation_failed]
+other = "操作失败"
+[security.common.not_found]
+other = "资源不存在"
+[security.common.conflict]
+other = "资源编码或引用已存在"
+[security.common.version_conflict]
+other = "资源已被其他操作更新，请刷新后重试"
+[security.common.delete_success]
+other = "删除成功"
+[security.projection.cursor_conflict]
+other = "保护投影游标无效、倒退或不属于当前消费方"
+[security.enrollment.no_supported_findings_release_unavailable]
+other = "最近一次成功发现不再满足零命中确认条件，请刷新或重新发现后重试"

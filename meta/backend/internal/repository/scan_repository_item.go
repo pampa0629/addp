@@ -299,3 +299,11 @@ func (r *ScanRepository) GetItemByID(tenantID, itemID uint) (*models.MetaItem, e
 	}
 	return &item, nil
 }
+
+func (r *ScanRepository) GetItemByFingerprint(tenantID uint, fingerprint string) (*models.MetaItem, error) {
+	var item models.MetaItem
+	if err := r.db.Where("tenant_id = ? AND fingerprint = ? AND deleted_at IS NULL", tenantID, fingerprint).First(&item).Error; err != nil {
+		return nil, err
+	}
+	return &item, nil
+}

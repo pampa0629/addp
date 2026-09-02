@@ -93,6 +93,7 @@ const formatDisplayNames = {
   geojson: 'GeoJSON',
   json: 'JSON',
   jsonl: 'JSONL',
+  mongodb_extended_jsonl: 'MongoDB Extended JSON Lines',
   parquet: 'Parquet',
   shapefile: 'Shapefile'
 }

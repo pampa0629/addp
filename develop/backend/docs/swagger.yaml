@@ -366,7 +366,7 @@ definitions:
       parameters:
         type: object
       query:
-        example: SELECT * FROM addp_input.source
+        example: SELECT * FROM source
         type: string
       query_parameters:
         items:
@@ -379,12 +379,6 @@ definitions:
         - cypher
         example: sql
         type: string
-      relation_inputs:
-        example:
-        - source
-        items:
-          type: string
-        type: array
       target_locator:
         example: addp://engine/11/path/Outdoor/Persons?type=collection&item_id=51657
         type: string
@@ -810,6 +804,16 @@ definitions:
         example: 1
         type: integer
     type: object
+  github_com_addp_develop_backend_internal_models.QueryParameterDefinition:
+    properties:
+      default: {}
+      description:
+        type: string
+      name:
+        type: string
+      type:
+        type: string
+    type: object
   github_com_addp_develop_backend_internal_models.QueryParameterSwagger:
     properties:
       default:
@@ -821,11 +825,9 @@ definitions:
       name:
         example: city_name
         type: string
-      title:
-        example: 城市名称
-        type: string
       type:
         enum:
+        - relation
         - string
         - integer
         - number
@@ -837,8 +839,15 @@ definitions:
     properties:
       engine_id:
         type: integer
+      parameters:
+        additionalProperties: true
+        type: object
       query:
         type: string
+      query_parameters:
+        items:
+          $ref: '#/definitions/github_com_addp_develop_backend_internal_models.QueryParameterDefinition'
+        type: array
       query_type:
         enum:
         - sql
@@ -861,6 +870,10 @@ definitions:
         type: string
       confirmation_token:
         type: string
+      diagnostics:
+        items:
+          $ref: '#/definitions/plugin.QueryDiagnostic'
+        type: array
       effect:
         type: string
       fingerprint:
@@ -870,6 +883,8 @@ definitions:
       requires_confirmation:
         type: boolean
       risk_level:
+        type: string
+      schema_coverage:
         type: string
       statement:
         type: string
@@ -1625,6 +1640,23 @@ definitions:
         type: string
       type:
         type: string
+    type: object
+  plugin.QueryDiagnostic:
+    properties:
+      code:
+        type: string
+      end:
+        type: integer
+      parameters:
+        additionalProperties:
+          type: string
+        type: object
+      phase:
+        type: string
+      severity:
+        type: string
+      start:
+        type: integer
     type: object
   taskprovider.ExecutionContract:
     properties:
@@ -3146,6 +3178,10 @@ paths:
             $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
         "401":
           description: 需要登录 | Authentication required
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
+        "503":
+          description: 查询分析服务不可用 | Query analysis unavailable
           schema:
             $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ErrorResponse'
       security:

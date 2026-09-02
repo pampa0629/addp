@@ -2,7 +2,7 @@
   "common": {
     "executionParameters": {
 	  "title": "Execution parameters",
-      "workflowConfiguration": "Workflow configuration",
+      "workflowConfiguration": "Task default",
 	  "executionOverride": "Execution override",
       "upstream": "Upstream output",
       "selectOutput": "Select an upstream output",

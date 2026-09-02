@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/develop/backend/internal/models"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -30,6 +31,9 @@ func TestCatalogDevTaskChangeFeedAgainstPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := tx.Exec("CREATE SCHEMA develop").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := commonExecution.EnsureStore(tx); err != nil {
 		t.Fatal(err)
 	}
 	if err := tx.AutoMigrate(&models.DevTask{}, &models.CatalogResourceChangeRow{}); err != nil {

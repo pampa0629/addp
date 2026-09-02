@@ -14,6 +14,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	commonconfiguration "github.com/addp/common/configuration"
+	"github.com/addp/common/dataprotection/projectionstore"
 	_ "github.com/addp/common/engine/plugins/builtin/general"
 	"github.com/addp/common/events"
 	commonExecution "github.com/addp/common/execution"
@@ -29,6 +30,7 @@ import (
 	"github.com/addp/transfer/internal/deadletter"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/planner"
+	transferprotection "github.com/addp/transfer/internal/protection"
 	transferRepo "github.com/addp/transfer/internal/repository"
 	"github.com/addp/transfer/internal/service"
 	"github.com/addp/transfer/internal/worker"
@@ -103,6 +105,16 @@ func main() {
 	if err := continuousPolicyService.Apply(context.Background(), cfg); err != nil {
 		log.Fatalf("Failed to load continuous policy: %v", err)
 	}
+	protectionStore, err := projectionstore.New(db, cfg.DBSchema, "transfer", nil)
+	if err != nil {
+		log.Fatalf("初始化 Transfer 保护投影存储失败: %v", err)
+	}
+	protectionGate := transferprotection.NewGate(protectionStore, systemClient)
+	securityClient := commonClient.NewSecurityClient(cfg.SecurityServiceURL, serviceTokenSource, nil)
+	projectionstore.NewRunner(
+		protectionStore, securityClient, systemRuntimeClient, 30*time.Second,
+		transferprotection.NewExecutionBarrier(db, protectionGate),
+	).Start(runtimeContext)
 
 	// 初始化 Repository 层
 	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db) // 统一执行记录仓库
@@ -136,6 +148,7 @@ func main() {
 		nil,
 	)
 	executionEngineService.SetConfig(cfg)
+	executionEngineService.SetProtectionGate(protectionGate)
 	executionEngineService.SetReplayRuntime(continuous.NewReplayRuntime(continuous.BoundedReplayRunner{
 		PollTimeout: cfg.ContinuousPollTimeout, MaxBytes: cfg.ContinuousFetchMaxBytes,
 		AssertTargetAbsent: continuous.NewReplayTargetAbsenceValidator(nil),
@@ -215,7 +228,8 @@ func main() {
 
 	// 设置路由
 	lifecycleController := modulelifecycle.NewBusiness("transfer", commonClient.ModuleRuntimeRoleBackend)
-	router := api.SetupRouter(taskService, executionService, continuousPolicyService, cfg.SystemServiceURL, cfg.MetaServiceURL, redisClient, systemClient, systemRuntimeClient, lifecycleController)
+	fieldDefinitionRecommendationService := service.NewFieldDefinitionRecommendationService(systemClient, protectionGate)
+	router := api.SetupRouter(taskService, executionService, continuousPolicyService, fieldDefinitionRecommendationService, cfg.SystemServiceURL, cfg.MetaServiceURL, redisClient, systemClient, systemRuntimeClient, lifecycleController)
 	addr := fmt.Sprintf(":%s", cfg.Port)
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {

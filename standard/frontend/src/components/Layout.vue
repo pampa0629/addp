@@ -58,10 +58,6 @@
               <el-icon><Odometer /></el-icon>
               <span>{{ $t('standard.layout.units') }}</span>
             </el-menu-item>
-            <el-menu-item index="/classifications">
-              <el-icon><Share /></el-icon>
-              <span>{{ $t('standard.layout.classifications') }}</span>
-            </el-menu-item>
             <el-menu-item index="/dimension-hierarchies">
               <el-icon><SortDown /></el-icon>
               <span>{{ $t('standard.layout.dimensionHierarchies') }}</span>
@@ -93,7 +89,7 @@ import {
   User, ArrowDown, SwitchButton, Document,
   Grid, Reading, Collection, DataAnalysis,
   List,
-  Odometer, Share, TrendCharts, Files, SortDown
+  Odometer, TrendCharts, Files, SortDown
 } from '@element-plus/icons-vue'
 
 const router = useRouter()
@@ -112,7 +108,6 @@ const activeMenu = computed(() => {
   if (path.startsWith('/elements')) return '/elements'
   if (path.startsWith('/code-sets')) return '/code-sets'
   if (path.startsWith('/units')) return '/units'
-  if (path.startsWith('/classifications')) return '/classifications'
   if (path.startsWith('/metrics')) return '/metrics'
   if (path.startsWith('/documents')) return '/documents'
   if (path.startsWith('/dimension-hierarchies')) return '/dimension-hierarchies'

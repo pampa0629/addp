@@ -19,6 +19,10 @@ other = "The requested governance status transition is not allowed"
 other = "One or more semantic or responsibility references are missing, inactive, or outside the current tenant"
 [catalog.error.certification_permission_required]
 other = "Certifying a catalog entry requires the separate certification permission"
+[catalog.error.certification_requirements_not_met]
+other = "Certification requirements are not met: the source must be active, curation and accountability must be complete, and visibility must be department or tenant"
+[catalog.error.certification_withdrawal_reason_required]
+other = "A reason is required to withdraw certification"
 [catalog.error.deprecation_permission_required]
 other = "Deprecating a catalog entry requires the separate deprecation permission"
 [catalog.error.reference_validation_unavailable]
@@ -43,6 +47,10 @@ other = "The catalog collection was not found or is inaccessible"
 other = "The catalog collection was updated by another operation; refresh and try again"
 [catalog.error.collection_name_conflict]
 other = "A catalog collection with this name already exists in the project group"
+[catalog.error.data_dictionary_not_applicable]
+other = "The federated data dictionary only applies to active Meta data items"
+[catalog.error.data_dictionary_dependency_unavailable]
+other = "A Meta or Standard data dictionary dependency is currently unavailable"
 
 [permissions.catalog.inventory.read.name]
 other = "View enterprise inventory"

@@ -59,33 +59,6 @@ definitions:
       schema_version:
         type: string
     type: object
-  github_com_addp_standard_internal_models.Classification:
-    properties:
-      code:
-        type: string
-      created_at:
-        type: string
-      created_by:
-        type: integer
-      description:
-        type: string
-      id:
-        type: integer
-      name:
-        type: string
-      parent_id:
-        type: integer
-      sort_order:
-        type: integer
-      tenant_id:
-        type: integer
-      updated_at:
-        type: string
-      updated_by:
-        type: integer
-      version:
-        type: integer
-    type: object
   github_com_addp_standard_internal_models.CodeItemMutationResponse:
     properties:
       item:
@@ -264,8 +237,6 @@ definitions:
     properties:
       change_summary:
         type: string
-      classification_id:
-        type: integer
       code:
         type: string
       code_set_revision_id:
@@ -303,8 +274,6 @@ definitions:
         $ref: '#/definitions/github_com_addp_standard_internal_models.RangeConstraint'
       scale:
         type: integer
-      security_level:
-        type: string
       steward_id:
         type: integer
       tags:
@@ -479,8 +448,6 @@ definitions:
     properties:
       change_summary:
         type: string
-      classification_id:
-        type: integer
       code_set_revision_id:
         type: integer
       compiled_quality_rules:
@@ -529,8 +496,6 @@ definitions:
         type: integer
       scale:
         type: integer
-      security_level:
-        type: string
       status:
         type: string
       submitted_at:
@@ -587,29 +552,6 @@ definitions:
         type: string
       updated_by:
         type: integer
-      version:
-        type: integer
-    type: object
-  github_com_addp_standard_internal_models.GradingLevel:
-    properties:
-      color:
-        description: 十六进制颜色
-        type: string
-      description:
-        type: string
-      id:
-        type: integer
-      level:
-        description: L1/L2/L3/L4
-        type: string
-      name:
-        type: string
-      sort_order:
-        type: integer
-      tenant_id:
-        type: integer
-      updated_at:
-        type: string
       version:
         type: integer
     type: object
@@ -965,21 +907,6 @@ definitions:
       version:
         type: integer
     type: object
-  github_com_addp_standard_internal_models.UpdateClassificationRequest:
-    properties:
-      description:
-        type: string
-      name:
-        type: string
-      parent_id:
-        type: integer
-      sort_order:
-        type: integer
-      version:
-        type: integer
-    required:
-    - version
-    type: object
   github_com_addp_standard_internal_models.UpdateCodeItemRequest:
     properties:
       definition:
@@ -1108,8 +1035,6 @@ definitions:
     properties:
       change_summary:
         type: string
-      classification_id:
-        type: integer
       code_set_revision_id:
         type: integer
       data_type:
@@ -1143,8 +1068,6 @@ definitions:
         $ref: '#/definitions/github_com_addp_standard_internal_models.RangeConstraint'
       scale:
         type: integer
-      security_level:
-        type: string
       unit_id:
         type: integer
       value_domain_kind:
@@ -1186,19 +1109,6 @@ definitions:
         items:
           type: string
         type: array
-      version:
-        type: integer
-    required:
-    - version
-    type: object
-  github_com_addp_standard_internal_models.UpdateGradingLevelRequest:
-    properties:
-      color:
-        type: string
-      description:
-        type: string
-      name:
-        type: string
       version:
         type: integer
     required:
@@ -1314,6 +1224,59 @@ definitions:
     required:
     - version
     type: object
+  github_com_addp_standard_internal_service.CodeItemSnapshot:
+    properties:
+      code:
+        type: string
+      definition:
+        type: string
+      label:
+        type: string
+      replacement_item_id:
+        example: ""
+        type: string
+      sort_order:
+        type: integer
+      status:
+        enum:
+        - active
+        - deprecated
+        type: string
+    type: object
+  github_com_addp_standard_internal_service.CodeSetRevisionSnapshot:
+    properties:
+      code:
+        type: string
+      code_set_id:
+        example: ""
+        type: string
+      description:
+        type: string
+      effective_from:
+        type: string
+      effective_to:
+        type: string
+      items:
+        items:
+          $ref: '#/definitions/github_com_addp_standard_internal_service.CodeItemSnapshot'
+        type: array
+      name:
+        type: string
+      revision_id:
+        example: ""
+        type: string
+      revision_no:
+        type: integer
+      status:
+        enum:
+        - draft
+        - in_review
+        - published
+        - withdrawn
+        type: string
+      value_type:
+        type: string
+    type: object
   github_com_addp_standard_internal_service.DomainTree:
     properties:
       children:
@@ -1348,6 +1311,71 @@ definitions:
         type: integer
       version:
         type: integer
+    type: object
+  github_com_addp_standard_internal_service.ElementRevisionResolution:
+    properties:
+      element_id:
+        example: ""
+        type: string
+      found:
+        type: boolean
+      snapshot:
+        $ref: '#/definitions/github_com_addp_standard_internal_service.ElementRevisionSnapshot'
+    type: object
+  github_com_addp_standard_internal_service.ElementRevisionSnapshot:
+    properties:
+      code:
+        type: string
+      code_set_revision:
+        $ref: '#/definitions/github_com_addp_standard_internal_service.CodeSetRevisionSnapshot'
+      data_type:
+        type: string
+      default_value:
+        type: string
+      definition:
+        type: string
+      domain_id:
+        example: ""
+        type: string
+      effective_from:
+        type: string
+      effective_to:
+        type: string
+      element_id:
+        example: ""
+        type: string
+      element_revision_id:
+        example: ""
+        type: string
+      example_values:
+        items:
+          type: string
+        type: array
+      format:
+        type: string
+      length:
+        type: integer
+      name:
+        type: string
+      nullable:
+        type: boolean
+      precision_num:
+        type: integer
+      range_constraint:
+        $ref: '#/definitions/github_com_addp_standard_internal_models.RangeConstraint'
+      revision_no:
+        type: integer
+      scale:
+        type: integer
+      unit_id:
+        example: ""
+        type: string
+      value_domain_kind:
+        enum:
+        - unrestricted
+        - range
+        - enumeration
+        type: string
     type: object
   github_com_addp_standard_internal_service.ReferenceCandidate:
     properties:
@@ -1432,6 +1460,29 @@ definitions:
     - ReferenceTypeDomain
     - ReferenceTypeGlossary
     - ReferenceTypeElement
+  internal_api.elementRevisionResolutionRequest:
+    properties:
+      as_of:
+        format: date-time
+        type: string
+      element_ids:
+        items:
+          type: string
+        maxItems: 200
+        minItems: 1
+        type: array
+        uniqueItems: true
+    required:
+    - as_of
+    - element_ids
+    type: object
+  internal_api.elementRevisionResolutionResponse:
+    properties:
+      results:
+        items:
+          $ref: '#/definitions/github_com_addp_standard_internal_service.ElementRevisionResolution'
+        type: array
+    type: object
   internal_api.referenceResolutionRequest:
     properties:
       references:
@@ -1509,143 +1560,6 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - standard.catalog.read
-  /classifications:
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              $ref: '#/definitions/github_com_addp_standard_internal_models.Classification'
-            type: array
-        "401":
-          description: 需要登录 | Authentication required
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "403":
-          description: 无权访问 | Access denied
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取数据分类列表 | List data classifications
-      tags:
-      - Standard
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - standard.classification.read
-    post:
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: Created
-          schema:
-            $ref: '#/definitions/github_com_addp_standard_internal_models.Classification'
-        "401":
-          description: 需要登录 | Authentication required
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "403":
-          description: 无权访问 | Access denied
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 创建数据分类 | Create data classification
-      tags:
-      - Standard
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - standard.classification.create
-  /classifications/{id}:
-    delete:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-        "401":
-          description: 需要登录 | Authentication required
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "403":
-          description: 无权访问 | Access denied
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "409":
-          description: Conflict
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 删除数据分类 | Delete data classification
-      tags:
-      - Standard
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - standard.classification.delete
-    put:
-      parameters:
-      - description: 更新数据分类 | Update data classification
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/github_com_addp_standard_internal_models.UpdateClassificationRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-        "401":
-          description: 需要登录 | Authentication required
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "403":
-          description: 无权访问 | Access denied
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "409":
-          description: 资源版本冲突 | Resource version conflict
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 更新数据分类 | Update data classification
-      tags:
-      - Standard
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - standard.classification.update
   /code-sets:
     get:
       parameters:
@@ -3897,80 +3811,6 @@ paths:
       x-addp-required-permissions:
       - standard.glossary.read
       - standard.element.read
-  /grading-levels:
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              $ref: '#/definitions/github_com_addp_standard_internal_models.GradingLevel'
-            type: array
-        "401":
-          description: 需要登录 | Authentication required
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "403":
-          description: 无权访问 | Access denied
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取数据分级列表 | List data grading levels
-      tags:
-      - Standard
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - standard.classification.read
-  /grading-levels/{id}:
-    put:
-      parameters:
-      - description: 更新数据分级 | Update data grading level
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/github_com_addp_standard_internal_models.UpdateGradingLevelRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-        "401":
-          description: 需要登录 | Authentication required
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "403":
-          description: 无权访问 | Access denied
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "409":
-          description: 资源版本冲突 | Resource version conflict
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 更新数据分级 | Update data grading level
-      tags:
-      - Standard
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - standard.classification.update
   /measurement-categories:
     get:
       produces:
@@ -4905,6 +4745,63 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - standard.catalog.read
+  /runtime/element-revisions/resolve:
+    post:
+      consumes:
+      - application/json
+      description: 仅 addp-catalog 与 addp-model Tenant Service Principal 可按统一 as_of
+        解析精确数据元修订及其码值集快照；跨 Tenant、不存在或该时点无生效修订统一 found=false | Only addp-catalog and
+        addp-model tenant service principals may resolve exact data element revisions
+        and code-set snapshots at one shared as_of; cross-tenant, missing, or non-effective
+        elements return found=false
+      parameters:
+      - description: 数据元 ID 与统一查询时点，最多 200 个 | Element IDs and one shared query time,
+          up to 200
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.elementRevisionResolutionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.elementRevisionResolutionResponse'
+        "400":
+          description: 请求无效 | Invalid request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: 需要认证 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 仅允许 addp-catalog 或 addp-model 且需数据元读取权限 | addp-catalog or addp-model
+            and element read permission required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 解析失败 | Resolution failed
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 按时点批量解析数据元修订 | Resolve data element revisions at one point in time
+      tags:
+      - StandardRuntime
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.element.read
   /units:
     get:
       produces:

@@ -42,6 +42,12 @@ type gateNotNullParams struct {
 	Column string `json:"column"`
 }
 
+type gateAllowedValuesParams struct {
+	Table  string   `json:"table"`
+	Column string   `json:"column"`
+	Values []string `json:"values"`
+}
+
 type gateUniqueKeyParams struct {
 	Table   string   `json:"table"`
 	Columns []string `json:"columns"`
@@ -150,6 +156,11 @@ func validateGateAssertion(assertion MaterializationGateAssertion, aliases map[s
 		if err := decodeStrictJSON(assertion.Params, &params); err != nil || requireTable(params.Table) != nil || requireColumns([]string{params.Column}) != nil {
 			return fmt.Errorf("not_null params are invalid")
 		}
+	case "allowed_values":
+		var params gateAllowedValuesParams
+		if err := decodeStrictJSON(assertion.Params, &params); err != nil || requireTable(params.Table) != nil || requireColumns([]string{params.Column}) != nil || validateAllowedValues(params.Values) != nil {
+			return fmt.Errorf("allowed_values params are invalid")
+		}
 	case "unique_key":
 		var params gateUniqueKeyParams
 		if err := decodeStrictJSON(assertion.Params, &params); err != nil || requireTable(params.Table) != nil || requireColumns(params.Columns) != nil {
@@ -179,6 +190,23 @@ func validateGateAssertion(assertion MaterializationGateAssertion, aliases map[s
 		}
 	default:
 		return fmt.Errorf("assertion type %q is unsupported", assertion.Type)
+	}
+	return nil
+}
+
+func validateAllowedValues(values []string) error {
+	if len(values) == 0 || len(values) > 1000 {
+		return fmt.Errorf("values must contain between 1 and 1000 items")
+	}
+	seen := make(map[string]struct{}, len(values))
+	for index, value := range values {
+		if value == "" {
+			return fmt.Errorf("value at index %d is empty", index)
+		}
+		if _, exists := seen[value]; exists {
+			return fmt.Errorf("value %q is duplicated", value)
+		}
+		seen[value] = struct{}{}
 	}
 	return nil
 }

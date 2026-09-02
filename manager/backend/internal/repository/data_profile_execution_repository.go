@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	commonExecution "github.com/addp/common/execution"
@@ -16,6 +17,54 @@ import (
 
 type DataProfileExecutionRepository struct {
 	db *gorm.DB
+}
+
+// SuppressConditionalScopesByItemFingerprints removes historical condition
+// values from data-profile execution snapshots for projection-change targets.
+func (r *DataProfileExecutionRepository) SuppressConditionalScopesByItemFingerprints(
+	ctx context.Context,
+	tx *gorm.DB,
+	tenantID int64,
+	itemFingerprints []string,
+) error {
+	if r == nil || tx == nil || tenantID <= 0 || len(itemFingerprints) == 0 {
+		return errors.New("data profile execution cleanup requires transaction, tenant and item fingerprints")
+	}
+	query := tx.WithContext(ctx).Where(
+		"tenant_id = ? AND module = ? AND task_type = ?",
+		tenantID,
+		commonExecution.ModuleManager,
+		commonExecution.TaskTypeDataProfiling,
+	)
+	if tx.Dialector.Name() == "postgres" {
+		query = query.Where("execution_config ->> 'item_fingerprint' IN ?", itemFingerprints)
+	} else {
+		query = query.Where("json_extract(execution_config, '$.item_fingerprint') IN ?", itemFingerprints)
+	}
+	var executions []commonExecution.TaskExecution
+	if err := query.Find(&executions).Error; err != nil {
+		return err
+	}
+	for index := range executions {
+		config := executions[index].ExecutionConfig
+		if config == nil {
+			continue
+		}
+		scope, ok := config["data_scope"].(map[string]interface{})
+		if !ok || strings.TrimSpace(fmt.Sprint(scope["kind"])) != "condition" {
+			continue
+		}
+		config["data_scope"] = map[string]interface{}{
+			"kind":              "condition",
+			"values_suppressed": true,
+		}
+		if err := tx.WithContext(ctx).Model(&commonExecution.TaskExecution{}).
+			Where("id = ?", executions[index].ID).
+			Update("execution_config", config).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func NewDataProfileExecutionRepository(db *gorm.DB) *DataProfileExecutionRepository {

@@ -140,10 +140,15 @@ func buildStorageSection(caps *engineplugin.EngineCapabilities) *models.Capabili
 	}
 
 	if caps.Storage.Store != nil {
-		readTags := make([]models.CapabilityViewTag, 0, 3)
+		readTags := make([]models.CapabilityViewTag, 0, 6)
 		readTags = appendBoolTag(readTags, "stream_read", caps.Storage.Store.StreamRead)
 		readTags = appendBoolTag(readTags, "range_read", caps.Storage.Store.RangeRead)
 		readTags = appendBoolTag(readTags, "batch_read", caps.Storage.Store.BatchRead)
+		readTags = appendBoolTag(readTags, "record_read_session", caps.Storage.Store.RecordReadSession)
+		if encodedRecords := caps.Storage.Store.EncodedRecordReadSession; encodedRecords != nil {
+			readTags = appendBoolTag(readTags, "encoded_record_read_session", true)
+			readTags = append(readTags, valueTags("record_format", encodedRecords.Formats)...)
+		}
 		if len(readTags) > 0 {
 			item := capabilityItem("content_read", "system.engine.capabilityView.items.contentRead", capabilityStatusAvailable)
 			item.Tags = readTags

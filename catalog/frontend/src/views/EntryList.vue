@@ -6,8 +6,8 @@
   >
     <div class="page-header">
       <div>
-        <h1>{{ pageTitle }}</h1>
-        <p>{{ pageDescription }}</p>
+        <h1>{{ t('catalog.entries.title') }}</h1>
+        <p>{{ t('catalog.entries.description') }}</p>
       </div>
       <div class="header-actions">
         <el-button v-if="canManageGovernance" :icon="WarningFilled" @click="openGovernanceTasks">
@@ -19,12 +19,26 @@
       </div>
     </div>
 
-    <div v-if="canViewInventory" class="view-switch" role="group" :aria-label="t('catalog.entries.view.label')">
-      <el-radio-group v-model="filters.view" @change="changeView">
-        <el-radio-button value="governance">{{ t('catalog.entries.view.governance') }}</el-radio-button>
-        <el-radio-button value="inventory">{{ t('catalog.entries.view.inventory') }}</el-radio-button>
-      </el-radio-group>
-    </div>
+    <section
+      class="view-scope"
+      data-testid="catalog-view-scope"
+      :data-active-view="filters.view"
+      :data-result-total="loading ? undefined : result.total"
+      :aria-label="t('catalog.entries.view.label')"
+    >
+      <div class="view-scope-control">
+        <span class="view-scope-label">{{ t('catalog.entries.view.label') }}</span>
+        <el-radio-group v-if="canViewInventory" v-model="filters.view" @change="changeView">
+          <el-radio-button value="governance">{{ t('catalog.entries.view.governance') }}</el-radio-button>
+          <el-radio-button value="inventory">{{ t('catalog.entries.view.inventory') }}</el-radio-button>
+        </el-radio-group>
+        <strong v-else class="view-scope-current">{{ t('catalog.entries.view.governance') }}</strong>
+        <span class="view-scope-total">
+          {{ loading ? t('catalog.entries.view.counting') : t('catalog.entries.view.resultCount', { count: result.total }) }}
+        </span>
+      </div>
+      <p class="view-scope-description">{{ pageDescription }}</p>
+    </section>
 
     <el-alert
       v-if="coverageGapActive"
@@ -58,109 +72,64 @@
         </div>
       </template>
       <nav class="navigation-grid" :aria-label="t('catalog.entries.navigation.title')">
-        <section class="navigation-section">
-          <h2>{{ t('catalog.entries.navigation.primaryDomain') }}</h2>
-          <div class="navigation-options" data-testid="catalog-domain-navigation">
-            <button
-              type="button"
-              class="navigation-option"
-              :class="{ active: !filters.primary_domain_id }"
-              :aria-pressed="!filters.primary_domain_id"
-              @click="selectNavigation('primary_domain', '')"
-            >
-              <span>{{ t('catalog.entries.navigation.allDomains') }}</span>
-            </button>
-            <button
+        <el-form-item :label="t('catalog.entries.navigation.primaryDomain')">
+          <el-select
+            :model-value="filters.primary_domain_id"
+            data-testid="catalog-domain-navigation"
+            clearable
+            filterable
+            :placeholder="t('catalog.entries.navigation.allDomains')"
+            @change="changeDomainNavigation"
+          >
+            <el-option
               v-if="filters.view === 'inventory'"
-              type="button"
-              class="navigation-option"
-              data-testid="catalog-unclassified-domain-navigation"
-              :aria-label="t('catalog.entries.navigation.unclassifiedDomainDescription')"
-              @click="selectUnclassifiedDomain"
-            >
-              <span class="navigation-option-name">{{ t('catalog.entries.navigation.unclassifiedDomain') }}</span>
-              <span class="navigation-option-count">{{ t('catalog.entries.navigation.governanceGap') }}</span>
-            </button>
-            <button
-              v-for="option in domainOptions"
-              :key="option.id"
-              type="button"
-              class="navigation-option"
-              :class="{ active: filters.primary_domain_id === String(option.id) }"
-              :aria-pressed="filters.primary_domain_id === String(option.id)"
-              @click="selectNavigation('primary_domain', String(option.id))"
-            >
-              <span class="navigation-option-name">{{ facetOptionIdentity(option) }}</span>
-              <span class="navigation-option-count">{{ t('catalog.entries.navigation.optionCount', { count: option.count || 0 }) }}</span>
-            </button>
-          </div>
-        </section>
-
-        <section class="navigation-section">
-          <h2>{{ t('catalog.entries.navigation.accountableDepartment') }}</h2>
-          <div class="navigation-options" data-testid="catalog-department-navigation">
-            <button
-              type="button"
-              class="navigation-option"
-              :class="{ active: !filters.accountable_department_id }"
-              :aria-pressed="!filters.accountable_department_id"
-              @click="selectNavigation('accountable_department', '')"
-            >
-              <span>{{ t('catalog.entries.navigation.allDepartments') }}</span>
-            </button>
-            <button
+              value="__unclassified__"
+              :label="`${t('catalog.entries.navigation.unclassifiedDomain')} · ${t('catalog.entries.navigation.governanceGap')}`"
+            />
+            <el-option v-for="option in domainOptions" :key="option.id" :value="String(option.id)" :label="facetOptionLabel(option)" />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="t('catalog.entries.navigation.accountableDepartment')">
+          <el-select
+            :model-value="filters.accountable_department_id"
+            data-testid="catalog-department-navigation"
+            clearable
+            filterable
+            :placeholder="t('catalog.entries.navigation.allDepartments')"
+            @change="changeDepartmentNavigation"
+          >
+            <el-option
               v-if="filters.view === 'inventory'"
-              type="button"
-              class="navigation-option"
-              data-testid="catalog-unassigned-department-navigation"
-              :aria-label="t('catalog.entries.navigation.unassignedDepartmentDescription')"
-              @click="selectUnassignedDepartment"
-            >
-              <span class="navigation-option-name">{{ t('catalog.entries.navigation.unassignedDepartment') }}</span>
-              <span class="navigation-option-count">{{ t('catalog.entries.navigation.governanceGap') }}</span>
-            </button>
-            <button
-              v-for="option in departmentOptions"
-              :key="option.id"
-              type="button"
-              class="navigation-option"
-              :class="{ active: filters.accountable_department_id === String(option.id) }"
-              :aria-pressed="filters.accountable_department_id === String(option.id)"
-              @click="selectNavigation('accountable_department', String(option.id))"
-            >
-              <span class="navigation-option-name">{{ facetOptionIdentity(option) }}</span>
-              <span class="navigation-option-count">{{ t('catalog.entries.navigation.optionCount', { count: option.count || 0 }) }}</span>
-            </button>
-          </div>
-        </section>
-
-        <section class="navigation-section">
-          <h2>{{ t('catalog.entries.navigation.entryType') }}</h2>
-          <div class="navigation-options" data-testid="catalog-entry-type-navigation">
-            <button
-              type="button"
-              class="navigation-option"
-              :class="{ active: !filters.entry_type }"
-              :aria-pressed="!filters.entry_type"
-              @click="selectNavigation('entry_type', '')"
-            >
-              <span>{{ t('catalog.entries.navigation.allEntryTypes') }}</span>
-            </button>
-            <button
+              value="__unassigned__"
+              :label="`${t('catalog.entries.navigation.unassignedDepartment')} · ${t('catalog.entries.navigation.governanceGap')}`"
+            />
+            <el-option v-for="option in departmentOptions" :key="option.id" :value="String(option.id)" :label="facetOptionLabel(option)" />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="t('catalog.entries.navigation.entryType')">
+          <el-select
+            :model-value="filters.entry_type"
+            data-testid="catalog-entry-type-navigation"
+            clearable
+            filterable
+            :placeholder="t('catalog.entries.navigation.allEntryTypes')"
+            @change="value => selectNavigation('entry_type', value || '')"
+          >
+            <el-option
               v-for="option in entryTypeOptions"
               :key="option.entry_type"
-              type="button"
-              class="navigation-option"
-              :class="{ active: filters.entry_type === option.entry_type }"
-              :aria-pressed="filters.entry_type === option.entry_type"
-              @click="selectNavigation('entry_type', option.entry_type)"
-            >
-              <span class="navigation-option-name">{{ entryTypeLabel(option.entry_type) }}</span>
-              <span class="navigation-option-count">{{ t('catalog.entries.navigation.optionCount', { count: option.count || 0 }) }}</span>
-            </button>
-          </div>
-        </section>
+              :value="option.entry_type"
+              :label="`${entryTypeLabel(option.entry_type)} (${option.count || 0})`"
+            />
+          </el-select>
+        </el-form-item>
       </nav>
+      <div v-if="currentScope.length" class="current-scope">
+        <span>{{ t('catalog.entries.navigation.currentScope') }}</span>
+        <el-tag v-for="item in currentScope" :key="item.dimension" closable @close="selectNavigation(item.dimension, '')">
+          {{ item.label }}
+        </el-tag>
+      </div>
     </el-card>
 
     <el-card shadow="never" class="filter-card">
@@ -168,6 +137,12 @@
         <el-form-item :label="t('catalog.entries.search')">
           <el-input v-model="filters.search" clearable :disabled="coverageGapActive" :placeholder="t('catalog.entries.searchPlaceholder')" @keyup.enter="applyFilters" />
         </el-form-item>
+        <el-form-item>
+          <el-button data-testid="catalog-advanced-filters-toggle" text type="primary" @click="advancedFiltersOpen = !advancedFiltersOpen">
+            {{ t(`catalog.entries.${advancedFiltersOpen ? 'hideAdvancedFilters' : 'advancedFilters'}`) }}
+          </el-button>
+        </el-form-item>
+        <template v-if="advancedFiltersOpen">
         <el-form-item :label="t('catalog.entries.sourceStatus')">
           <el-select v-model="filters.source_status" clearable :placeholder="t('catalog.common.all')">
             <el-option :label="t('catalog.status.source.active')" value="active" />
@@ -197,6 +172,7 @@
             <el-option v-for="option in engineOptions" :key="option.id" :label="engineOptionLabel(option)" :value="option.id" />
           </el-select>
         </el-form-item>
+        </template>
         <el-form-item>
           <el-button type="primary" :icon="Search" @click="applyFilters">{{ t('catalog.common.search') }}</el-button>
           <el-button @click="resetFilters">{{ t('catalog.common.reset') }}</el-button>
@@ -369,12 +345,12 @@ const batchSubmitting = ref(false)
 const batchCandidateLoading = ref(false)
 const batchCandidateOptions = ref([])
 const batchForm = reactive({ operation: '', reference_id: '' })
+const advancedFiltersOpen = ref(Boolean(filters.source_status || filters.governance_status || filters.visibility || filters.source_engine_id))
 let requestVersion = 0
 let facetRequestVersion = 0
 let batchCandidateRequestVersion = 0
 let loadedFacetKey = ''
 
-const pageTitle = computed(() => t(`catalog.entries.view.${filters.view}Title`))
 const pageDescription = computed(() => t(`catalog.entries.view.${filters.view}Description`))
 const coverageGapActive = computed(() => Boolean(filters.coverage_dimension && filters.coverage_state === 'missing'))
 const coverageGapTitle = computed(() => t('catalog.entries.coverageGapActive', {
@@ -388,6 +364,16 @@ const departmentOptions = computed(() => optionsWithSelected(facets.accountable_
 const entryTypeOptions = computed(() => optionsWithSelectedEntryType(facets.entry_types, filters.entry_type))
 const engineOptions = computed(() => optionsWithSelected(facets.source_engines, filters.source_engine_id))
 const engineOptionsByID = computed(() => new Map(engineOptions.value.map(option => [String(option.id), option])))
+const currentScope = computed(() => {
+  const scope = []
+  const domain = domainOptions.value.find(option => String(option.id) === filters.primary_domain_id)
+  if (domain) scope.push({ dimension: 'primary_domain', label: `${t('catalog.entries.navigation.primaryDomain')}：${domain.name}` })
+  const department = departmentOptions.value.find(option => String(option.id) === filters.accountable_department_id)
+  if (department) scope.push({ dimension: 'accountable_department', label: `${t('catalog.entries.navigation.accountableDepartment')}：${department.name}` })
+  const entryType = entryTypeOptions.value.find(option => option.entry_type === filters.entry_type)
+  if (entryType) scope.push({ dimension: 'entry_type', label: `${t('catalog.entries.navigation.entryType')}：${entryTypeLabel(entryType.entry_type)}` })
+  return scope
+})
 const unsupportedBatchEntries = computed(() => unsupportedPrimaryDomainEntries(selectedEntries.value))
 const batchTargetLabel = computed(() => batchForm.operation === BATCH_GOVERNANCE_ASSIGN_PRIMARY_DOMAIN
   ? t('catalog.entries.primaryDomain')
@@ -435,8 +421,8 @@ function entryTypeLabel(entryType) {
   return t(`catalog.entryType.${key}`)
 }
 
-function facetOptionIdentity(option) {
-  return option.code ? `${option.name} · ${option.code}` : option.name
+function facetOptionLabel(option) {
+  return `${option.name} (${option.count || 0})`
 }
 
 function engineOptionLabel(option) {
@@ -454,6 +440,9 @@ function sourceEngineLabel(value) {
 
 function syncFilters(query) {
   Object.assign(filters, parseEntryListRoute(query))
+  if (filters.source_status || filters.governance_status || filters.visibility || filters.source_engine_id) {
+    advancedFiltersOpen.value = true
+  }
 }
 
 async function loadEntries() {
@@ -517,6 +506,22 @@ async function selectNavigation(dimension, value) {
   Object.assign(filters, applyEntryNavigationSelection(filters, dimension, value))
   loadedFacetKey = ''
   await navigateList('push')
+}
+
+async function changeDomainNavigation(value) {
+  if (value === '__unclassified__') {
+    await selectUnclassifiedDomain()
+    return
+  }
+  await selectNavigation('primary_domain', value || '')
+}
+
+async function changeDepartmentNavigation(value) {
+  if (value === '__unassigned__') {
+    await selectUnassignedDepartment()
+    return
+  }
+  await selectNavigation('accountable_department', value || '')
 }
 
 async function selectUnclassifiedDomain() {
@@ -696,22 +701,22 @@ watch(() => route.query, async query => {
 .page-header h1 { margin: 0; color: var(--addp-text-primary); font-size: 24px; }
 .page-header p { margin: 8px 0 0; color: var(--addp-text-secondary); }
 .header-actions { display: flex; gap: 8px; }
-.view-switch { margin-bottom: 16px; }
+.view-scope { padding: 16px; margin-bottom: 16px; border: 1px solid var(--addp-border-color); border-radius: 4px; background: var(--addp-bg-secondary); }
+.view-scope-control { display: flex; align-items: center; gap: 12px; }
+.view-scope-label { color: var(--addp-text-primary); font-weight: 600; }
+.view-scope-current { color: var(--el-color-primary); }
+.view-scope-total { margin-left: auto; color: var(--addp-text-secondary); font-size: 13px; }
+.view-scope-description { margin: 10px 0 0; color: var(--addp-text-secondary); font-size: 13px; line-height: 1.6; }
 .facet-alert, .coverage-gap-alert { margin-bottom: 16px; }
 .coverage-gap-title { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; }
 .navigation-card { margin-bottom: 16px; }
 .navigation-header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
 .navigation-header span { color: var(--addp-text-secondary); font-size: 12px; }
 .navigation-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
-.navigation-section { min-width: 0; }
-.navigation-section h2 { margin: 0 0 8px; color: var(--addp-text-primary); font-size: 14px; font-weight: 600; }
-.navigation-options { display: flex; flex-direction: column; gap: 4px; max-height: 184px; overflow-y: auto; }
-.navigation-option { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; padding: 8px; color: var(--addp-text-primary); background: transparent; border: 1px solid transparent; border-radius: 4px; cursor: pointer; text-align: left; }
-.navigation-option:hover { background: var(--el-fill-color-light); }
-.navigation-option.active { color: var(--el-color-primary); background: var(--el-color-primary-light-9); border-color: var(--el-color-primary-light-5); }
-.navigation-option:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 1px; }
-.navigation-option-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.navigation-option-count { flex-shrink: 0; color: var(--addp-text-secondary); font-size: 12px; }
+.navigation-grid :deep(.el-form-item) { display: block; margin: 0; min-width: 0; }
+.navigation-grid :deep(.el-form-item__label) { color: var(--addp-text-primary); font-weight: 600; }
+.navigation-grid :deep(.el-select) { width: 100%; }
+.current-scope { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 14px; color: var(--addp-text-secondary); font-size: 13px; }
 .filter-card { margin-bottom: 16px; }
 .filter-card :deep(.el-form-item) { margin-bottom: 12px; }
 .filter-card :deep(.el-select), .filter-card :deep(.el-input) { width: 210px; }
@@ -725,6 +730,8 @@ watch(() => route.query, async query => {
 @media (max-width: 900px) {
   .page-header { flex-direction: column; }
   .header-actions { flex-wrap: wrap; }
+  .view-scope-control { align-items: flex-start; flex-direction: column; }
+  .view-scope-total { margin-left: 0; }
   .batch-toolbar { align-items: flex-start; flex-direction: column; }
   .batch-toolbar-actions { flex-wrap: wrap; }
   .navigation-header { align-items: flex-start; flex-direction: column; gap: 4px; }

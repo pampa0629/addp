@@ -66,12 +66,6 @@ const routes = [
         meta: { requiresAuth: true, title: '计量单位' }
       },
       {
-        path: 'classifications',
-        name: 'ClassificationList',
-        component: () => import('../views/ClassificationList.vue'),
-        meta: { requiresAuth: true, title: '数据分类与分级' }
-      },
-      {
         path: 'metrics',
         name: 'MetricList',
         component: () => import('../views/MetricList.vue'),

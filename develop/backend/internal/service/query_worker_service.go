@@ -54,9 +54,9 @@ func (s *QueryWorkerService) Execute(
 		return s.completeFailure(ctx, execution, lease, startedAt, err, "develop.query.execution_invalid")
 	}
 
-	_, relationResult, err := relationInputBindings(devTask.Content)
+	_, relationResult, err := relationParameterBindingsFromContent(devTask.Content)
 	if err != nil {
-		return s.completeFailure(ctx, execution, lease, startedAt, err, "develop.query.relation_inputs_invalid")
+		return s.completeFailure(ctx, execution, lease, startedAt, err, "develop.query.relation_parameters_invalid")
 	}
 	if relationResult {
 		return s.executeExistingTableResult(ctx, execution, lease, devTask, parentExecutionID, executionID, startedAt)
@@ -111,7 +111,7 @@ func (s *QueryWorkerService) executeExistingTableResult(
 	parentExecutionID, executionID uuid.UUID,
 	startedAt time.Time,
 ) error {
-	inputLocators, targetLocator, err := relationRuntimeInputs(devTask.ExecutionConfig)
+	relationLocators, targetLocator, err := relationRuntimeInputs(devTask.Content, devTask.ExecutionConfig)
 	if err != nil {
 		return s.completeFailure(ctx, execution, lease, startedAt, err, "develop.query.runtime_inputs_invalid")
 	}
@@ -137,7 +137,7 @@ func (s *QueryWorkerService) executeExistingTableResult(
 	if err != nil {
 		return s.completeFailure(ctx, execution, lease, startedAt, err, "develop.query.engine_access_failed")
 	}
-	compiled, err := compileExistingTableResultQuery(devTask, inputLocators, targetLocator, engine.EngineType)
+	compiled, err := compileExistingTableResultQuery(devTask, relationLocators, targetLocator, engine.EngineType)
 	if err != nil {
 		return s.completeFailure(ctx, execution, lease, startedAt, err, "develop.query.relation_compile_failed")
 	}
@@ -295,30 +295,34 @@ func queryExecutionMetadata(result commonModels.JSONMap) commonModels.JSONMap {
 	return metadata
 }
 
-func relationRuntimeInputs(config models.DevTaskContent) (map[string]string, string, error) {
+func relationRuntimeInputs(content, config models.DevTaskContent) (map[string]string, string, error) {
 	raw, ok := mapValue(config["runtime_inputs"])
 	if !ok {
 		return nil, "", fmt.Errorf("runtime_inputs are required")
 	}
-	rawLocators, ok := mapValue(raw["input_locators"])
-	if !ok {
-		return nil, "", fmt.Errorf("input_locators are required")
-	}
-	inputLocators := make(map[string]string, len(rawLocators))
-	for name, value := range rawLocators {
-		locatorText, valueOK := value.(string)
-		locator, parseErr := resourcetree.ParseURI(strings.TrimSpace(locatorText))
-		if !valueOK || parseErr != nil || locator.Type != resourcetree.TypeTable {
-			return nil, "", fmt.Errorf("input_locators.%s must identify a table", name)
+	bindings, hasRelationParameters, err := relationParameterBindingsFromContent(content)
+	if err != nil || !hasRelationParameters {
+		if err == nil {
+			err = fmt.Errorf("relation query parameters are required")
 		}
-		inputLocators[name] = locator.ToURI()
+		return nil, "", err
+	}
+	relationLocators := make(map[string]string, len(bindings))
+	for _, binding := range bindings {
+		value, exists := mapValue(raw[binding.Name])
+		locatorText, valueOK := value["locator"].(string)
+		locator, parseErr := resourcetree.ParseURI(strings.TrimSpace(locatorText))
+		if !exists || !valueOK || parseErr != nil || locator.Type != resourcetree.TypeTable {
+			return nil, "", fmt.Errorf("query parameter %s must bind a table ResourceLocator", binding.Name)
+		}
+		relationLocators[binding.Name] = locator.ToURI()
 	}
 	targetText, ok := raw["target_locator"].(string)
-	target, err := resourcetree.ParseURI(strings.TrimSpace(targetText))
-	if !ok || err != nil || target.Type != resourcetree.TypeTable {
+	target, parseErr := resourcetree.ParseURI(strings.TrimSpace(targetText))
+	if !ok || parseErr != nil || target.Type != resourcetree.TypeTable {
 		return nil, "", fmt.Errorf("target_locator must identify a table")
 	}
-	return inputLocators, target.ToURI(), nil
+	return relationLocators, target.ToURI(), nil
 }
 
 func mapValue(value interface{}) (map[string]interface{}, bool) {

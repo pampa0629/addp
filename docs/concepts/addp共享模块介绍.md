@@ -4,11 +4,13 @@
 
 **内容**:
 
-- [client/system.go](common/client/system.go) - SystemClient 用于与 System 模块通信
-- [models/engine.go](common/models/engine.go) - 共享的 Engine 模型和 `connection_info` 结构
-- [config/loader.go](common/config/loader.go) - 部署环境配置读取；目标实现不得保留 System shared config 或环境变量 fallback 双轨
+- [client/system.go](../../common/client/system.go) - SystemClient 用于与 System 模块通信
+- [models/engine.go](../../common/models/engine.go) - 共享的 Engine 模型和 `connection_info` 结构
+- [config/loader.go](../../common/config/loader.go) - 部署环境配置读取；目标实现不得保留 System shared config 或环境变量 fallback 双轨
 - `common/config` - 根环境部署配置、服务地址构造、端口可用性检查和时区读取；模块注册端口直接使用 owner 已加载的部署配置，不维护共享默认端口表
-- `common/security` - System、Inference、Monitor 等模块共享的 AES-256-GCM 敏感凭据加解密；不承载 IAM 或业务字段识别
+- `common/secretcipher` - System、Inference、Monitor 等模块共享的 AES-256-GCM 敏感配置值加解密；由现有 `common/security` 在 Security 实施时直接重命名，不保留旧包或转发路径，不承载 IAM 或业务字段识别
+- `common/dataprotection` - Security 和参与执行 Owner 共享的 `addp.protection_projection/v1` 契约、类型化路径、投影校验和确定性遮盖 / 抑制算法；它不读写 Security 业务状态，不执行授权决策
+- `common/engine/plugin.PreparedQuery` - Engine Provider 拥有的普通查询不可变计划；同一计划提供 `QueryAnalysis`、执行前 `QueryReadSet` 与一次性真实执行，属于引擎查询事实，不依赖 Security
 - `common/buildinfo` - Go 服务统一构建身份，由模块生命周期健康响应复用；构建脚本通过链接参数注入 build ID、Git commit、源码指纹和构建时间，进程启动时间由包初始化记录
 - `common/modulelifecycle` - Go Backend 统一的进程存活、System 注册生命周期状态、就绪门禁和 `/health/live`、`/health/ready` 响应；只保存当前进程瞬时状态，System 仍是模块定义、实例和租约的唯一持久事实源
 - `common/jsonmap` - decoded JSON map 的通用读取工具,不承载 `meta_item.attributes` 业务规范
@@ -22,8 +24,9 @@
 - `common/format/pmtiles`、`common/format/rastermosaic` - 格式域内的 PMTiles v3 归档和 Raster Mosaic Schema 实现
 - `common/dataitem` - 候选内容集合到 data item 组织结果的通用解析能力，供 Meta 扫描和 Manager 容器动态预览复用；当前已落地 `ResolveItems()`、single / multi / whole 规则派生、related refs 还原 helper 和基础忽略策略
 - `common/resourcetree` - Meta 已落库 Engine Catalog / item 事实到跨模块资源树视图的投影层，提供 `TreeNode`、`TreeBuilder`、`ResourceLocator` 和 provider `EngineCatalogPath` 纯转换能力；不持有 System / Meta client，不主动读取远程服务，不处理租户权限、token、降级策略、扫描或内容读取
-- [client/meta.go](common/client/meta.go) - MetaClient 是跨模块调用 Meta API 的唯一共享 Client；只接受 `ServiceTokenProvider`，按 Tenant 获取短期 Service Access Token 并只发送 Bearer，Manager 等模块不得保留私有 Meta Client、代传 User Token 或恢复 Internal API Key / Tenant Header
-- [client/service_token.go](common/client/service_token.go) - OAuthServiceTokenSource 按 `tenant_id` 或显式 `context_type=platform` 向 System 换取短期 Service Access Token，并按 Context 独立缓存
+- [client/meta.go](../../common/client/meta.go) - MetaClient 是跨模块调用 Meta API 的唯一共享 Client；只接受 `ServiceTokenProvider`，按 Tenant 获取短期 Service Access Token 并只发送 Bearer，Manager 等模块不得保留私有 Meta Client、代传 User Token 或恢复 Internal API Key / Tenant Header
+- `common/client/security.go` - Security 实施后作为参与 Owner 拉取保护投影变化和回报应用游标的唯一 Go HTTP Client；使用固定 Service Principal 的短期 Bearer，不进入用户数据请求的逐次调用路径
+- [client/service_token.go](../../common/client/service_token.go) - OAuthServiceTokenSource 按 `tenant_id` 或显式 `context_type=platform` 向 System 换取短期 Service Access Token，并按 Context 独立缓存
 - [client/system_service.go](../../common/client/system_service.go) - SystemServiceClient 是 Service Principal 调用 System 的 Bearer-only Client；Tenant 请求使用不可变 `WithTenantID`，平台模块注册、心跳以及随模块注册发布 TaskProvider 声明使用 Platform Context。模块注册返回可查询快照和完成信号的生命周期对象，状态固定为 `starting|registered|recovering|failed|stopped`，供 `common/modulelifecycle` 执行就绪判断。实例首次注册成功后，无论生命周期 Context 从心跳等待、请求或重试阶段取消，Client 都必须使用独立的限时 Context 注销该实例。Go 进程入口必须传入信号 Context，并在退出前等待生命周期完成信号。`SystemAPIError` 必须保留 System 错误的方法、路径、HTTP 状态、稳定错误码、错误文案和受限长度的原始响应正文，与 `common-python` 的模块注册客户端共用同一诊断语义
 - `common/client` 的 Tenant owner Client 统一通过 `TenantAPIError` 保留下游 HTTP 状态码和稳定 `error_code`，通过 `TenantTransportError` 表达连接失败和超时；调用方只能使用 `errors.As`、`TenantAPIStatusCode()`、`TenantAPIErrorCode()` 分类，不得解析本地化错误正文。`StandardClient` 的引用校验会将资源不存在和跨租户资源统一收敛为不可探测的“不存在”语义。
 - `common/engine/workflowaccess` - 把已解析的文件、对象或目录型存储资源转换为 `addp.workflow.access-plan/v1` 执行计划和脱敏审计计划；不保存任务定义、不决定产物归属，也不触发 Meta scan
@@ -79,9 +82,10 @@ connInfo := engine.ConnectionInfo
 - Engine 模型在所有服务中是规范的
 - `connection_info` 是所有引擎连接信息的统一事实源；DSN 不是所有引擎的通用抽象
 - 通用数据类型、格式能力、内容 I/O 抽象、资源树投影和候选内容组织规则可以放入 common；Meta 仍负责扫描调度、最终裁决、claims / exclusive 合并、`meta_item.full_name` 落库决策和 attributes normalizer。`common/resourcetree` 只消费已落库事实并生成资源树 / locator 视图，`common/dataitem` 已作为共享组织层落地，`common/contentio` 负责底层内容定位与读写抽象，详细边界见 [数据项体系图](addp数据项体系图.md)、[数据项探测器规范](../spec/addp数据项探测器规范.md) 和 [内容 I/O 抽象规范](../spec/addp内容IO抽象规范.md)
+- 普通查询统一走 `QueryRuntimeProvider.PrepareQuery()`；Owner 从同一计划读取 `QueryAnalysis`，不得在前端或模块服务中复制 SQL、MQL、Cypher 诊断器。只有 Owner 判断当前 Engine 存在本地纳管目标时才读取同一计划的 `QueryReadSet`，随后仍只能执行该计划。`QueryAnalysis` 的字段存在性结论受 `schema_coverage` 约束；`QueryReadSet` 不读取 Meta、Catalog 或 Security，也不等于查询结果。
 - common 的破坏性更改会影响所有模块 - 彻底测试
 
-**另请参阅**: [docs/COMMON_MODULE.md](docs/COMMON_MODULE.md)
+**另请参阅**: [common/README.md](../../common/README.md)
 
 ## Common Frontend
 
@@ -191,4 +195,4 @@ ResourceTree 是树展示组件；ResourceTreePicker 是表单级资源选择封
 - **Transfer Frontend**: 使用 `basic` (映射 UI 的字段类型工具)
 - **Console Frontend**: 使用 `basic` (通用 UI 元素)
 
-**另请参阅**: [common-frontend/README.md](common-frontend/README.md), [common-frontend/ARCHITECTURE.md](common-frontend/ARCHITECTURE.md)
+**另请参阅**: [common-frontend/README.md](../../common-frontend/README.md), [common-frontend/docs/ARCHITECTURE.md](../../common-frontend/docs/ARCHITECTURE.md)

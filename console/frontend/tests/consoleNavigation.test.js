@@ -106,12 +106,12 @@ describe('Console navigation bridge', () => {
   it('keeps Workbench reachable as the general data-service consumer', () => {
     const configSource = readFileSync(new URL('../src/config/portalConfig.js', import.meta.url), 'utf8')
     expect(configSource).toContain("modules: ['develop', 'service', 'workbench', 'orchestrator', 'monitor']")
-    expect(configSource).toContain("workbench:    '/workbench/views'")
-    expect(configSource).toContain("index: '/workbench/views'")
+    expect(configSource).toContain("workbench:    '/workbench/applications'")
+    expect(configSource).toContain("index: '/workbench/applications'")
     expect(configSource).toContain("index: '/workbench/applications'")
 
     const searchSource = readFileSync(new URL('../src/config/searchIndex.js', import.meta.url), 'utf8')
-    expect(searchSource).toContain("module: 'workbench', route: '/workbench/views'")
+    expect(searchSource).toContain("module: 'workbench', route: '/workbench/applications'")
     expect(searchSource).toContain("module: 'workbench', route: '/workbench/applications'")
 
     const apiDocsSource = readFileSync(new URL('../src/views/ApiDocs.vue', import.meta.url), 'utf8')
@@ -122,6 +122,18 @@ describe('Console navigation bridge', () => {
     expect(viteSource).toContain("'/module-health/workbench'")
     expect(viteSource).toContain("'/swagger-spec/workbench'")
     expect(viteSource).toContain("'/data-apps'")
+  })
+
+  it('keeps Security protection enrollment reachable from Console', () => {
+    const configSource = readFileSync(new URL('../src/config/portalConfig.js', import.meta.url), 'utf8')
+    const searchSource = readFileSync(new URL('../src/config/searchIndex.js', import.meta.url), 'utf8')
+    const zhCn = JSON.parse(readFileSync(new URL('../src/i18n/zh-cn.json', import.meta.url), 'utf8'))
+    const en = JSON.parse(readFileSync(new URL('../src/i18n/en.json', import.meta.url), 'utf8'))
+
+    expect(configSource).toContain("index: '/security/protection-enrollments'")
+    expect(searchSource).toContain("route: '/security/protection-enrollments'")
+    expect(zhCn.console.menus.security.protectionEnrollments).toBe('保护纳管')
+    expect(en.console.menus.security.protectionEnrollments).toBe('Protection Enrollments')
   })
 
   it('localizes the Workbench module name for every Console discovery surface', () => {

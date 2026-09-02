@@ -58,9 +58,9 @@ REQUIRED_PERMISSIONS = {
     "service.definition.delete",
     "service.definition.read",
     "service.definition.update",
-    "workbench.view.create",
-    "workbench.view.delete",
-    "workbench.view.read",
+    "workbench.data_application.create",
+    "workbench.data_application.delete",
+    "workbench.data_application.read",
 }
 FORBIDDEN_ADMIN_ROLES = {
     "platform.audit_administrator",
@@ -318,31 +318,80 @@ def validate_descriptor(descriptor: dict[str, object], service_id: int) -> str:
     return fingerprint
 
 
-def view_payload(service_id: int, run_id: str) -> dict[str, object]:
+def component(
+    service_id: int,
+    component_id: str,
+    title: str,
+    renderer_type: str,
+    select: list[str],
+    renderer_config: dict[str, object],
+) -> dict[str, object]:
     return {
-        "name": f"Commerce order analysis {run_id}",
-        "description": "ADDP Online Workbench MySQL acceptance view",
+        "id": component_id,
+        "title": title,
+        "description": "ADDP Online Workbench MySQL application component",
         "service_ref": {"service_type": "query", "service_id": service_id},
+        "contract_fingerprint": "sha256:" + "0" * 64,
         "parameter_definitions": [
             {"key": "statuses", "label": "Statuses", "control_type": "multiselect", "required": False},
-            {"key": "ordered_after", "label": "Ordered after", "control_type": "datetime", "required": False},
         ],
         "query_template": {
-            "select": FIELDS,
+            "select": select,
             "fixed_filter": None,
             "parameter_filters": [
                 {"parameter_key": "statuses", "field": "status", "operator": "in"},
-                {"parameter_key": "ordered_after", "field": "ordered_at", "operator": "gte"},
             ],
             "order_by": [{"field": "order_no", "direction": "asc"}],
-            "page_limit": 100,
+            "page_limit": 2,
             "format": "json",
         },
         "default_parameter_values": {
             "statuses": ["delivered", "processing"],
         },
-        "renderer_type": "table",
-        "renderer_config": {"columns": FIELDS},
+        "renderer_type": renderer_type,
+        "renderer_config": renderer_config,
+    }
+
+
+def data_application_payload(service_id: int, run_id: str) -> dict[str, object]:
+    table_id = "5d1ca794-1263-42c7-a974-ea3df352ae40"
+    chart_id = "5f6e0ce8-547b-4da5-a44f-87b95b278986"
+    return {
+        "name": f"Commerce order analysis {run_id}",
+        "description": "ADDP Online Workbench MySQL acceptance data application",
+        "snapshot": {
+            "schema_version": "addp.workbench_data_application/v1",
+            "page": {
+                "id": "9431de97-91be-4e4e-8986-647a90d2bf3c",
+                "title": "Commerce order analysis",
+                "display_mode": "desktop",
+                "refresh_interval_seconds": 0,
+                "visible_sections": ["title", "parameters", "query_actions"],
+                "placements": [
+                    {"component_id": table_id, "x": 0, "y": 0, "width": 12, "height": 7},
+                    {"component_id": chart_id, "x": 0, "y": 7, "width": 12, "height": 7},
+                ],
+            },
+            "components": [
+                component(service_id, table_id, "Orders", "table", FIELDS, {"columns": FIELDS}),
+                component(
+                    service_id,
+                    chart_id,
+                    "Order amounts",
+                    "chart",
+                    ["city", "total_amount"],
+                    {"chart_type": "bar", "dimension": "city", "measures": ["total_amount"]},
+                ),
+            ],
+            "parameters": [
+                {"key": "statuses", "label": "Statuses", "control_type": "multiselect", "required": False, "default_value": ["delivered", "processing"]},
+            ],
+            "parameter_bindings": [
+                {"application_parameter_key": "statuses", "component_id": table_id, "component_parameter_key": "statuses"},
+                {"application_parameter_key": "statuses", "component_id": chart_id, "component_parameter_key": "statuses"},
+            ],
+            "selection_bindings": [],
+        },
     }
 
 
@@ -440,7 +489,7 @@ def run_suite(
     browser_runner: Callable[[int, str, str], dict[str, object]] | None = None,
 ) -> dict[str, object]:
     service_id: int | None = None
-    view_id: str | None = None
+    application_id: str | None = None
     created = 0
     deleted = 0
     cleanup_errors: list[str] = []
@@ -492,16 +541,26 @@ def run_suite(
         descriptor = _object(client.request("GET", descriptor_path, (200,)).payload, "Consumer Descriptor")
         original_fingerprint = validate_descriptor(descriptor, service_id)
 
-        view = _object(
-            client.request("POST", "/api/v1/workbench/views", (201,), view_payload(service_id, run_id)).payload,
-            "created Workbench View",
+        application = _object(
+            client.request(
+                "POST",
+                "/api/v1/workbench/data_applications",
+                (201,),
+                data_application_payload(service_id, run_id),
+            ).payload,
+            "created Workbench Data Application",
         )
-        view_id_value = view.get("id")
-        if not isinstance(view_id_value, str) or not view_id_value:
-            raise SuiteError("created Workbench View id is missing")
-        view_id = view_id_value
-        if view.get("tenant_id") != tenant_id or view.get("contract_fingerprint") != original_fingerprint:
-            raise SuiteError("Workbench View did not bind the current Tenant and contract fingerprint")
+        application_id_value = application.get("id")
+        if not isinstance(application_id_value, str) or not application_id_value:
+            raise SuiteError("created Workbench Data Application id is missing")
+        application_id = application_id_value
+        snapshot = _object(application.get("snapshot"), "created Workbench Data Application snapshot")
+        components = _array(snapshot.get("components"), "created Workbench Data Application components")
+        if application.get("tenant_id") != tenant_id or len(components) != 2 or any(
+            not isinstance(item, dict) or item.get("contract_fingerprint") != original_fingerprint
+            for item in components
+        ):
+            raise SuiteError("Workbench Data Application did not bind the current Tenant and authoritative contract fingerprint")
         created += 1
 
         cursor_evidence = validate_json_pages(client)
@@ -509,7 +568,7 @@ def run_suite(
 
         browser_evidence: dict[str, object] = {}
         if browser_runner is not None:
-            browser_evidence = browser_runner(service_id, view_id, original_fingerprint)
+            browser_evidence = browser_runner(service_id, application_id, original_fingerprint)
         else:
             client.request(
                 "PUT",
@@ -521,9 +580,14 @@ def run_suite(
         changed_fingerprint = validate_descriptor(changed, service_id)
         if changed_fingerprint == original_fingerprint:
             raise SuiteError("public contract change did not change contract_fingerprint")
-        saved = _object(client.request("GET", f"/api/v1/workbench/views/{view_id}", (200,)).payload, "saved Workbench View")
-        if saved.get("contract_fingerprint") != original_fingerprint:
-            raise SuiteError("Workbench View fingerprint changed without an explicit View update")
+        saved = _object(
+            client.request("GET", f"/api/v1/workbench/data_applications/{application_id}", (200,)).payload,
+            "saved Workbench Data Application",
+        )
+        saved_snapshot = _object(saved.get("snapshot"), "saved Workbench Data Application snapshot")
+        saved_components = _array(saved_snapshot.get("components"), "saved Workbench Data Application components")
+        if any(not isinstance(item, dict) or item.get("contract_fingerprint") != original_fingerprint for item in saved_components):
+            raise SuiteError("Workbench Data Application fingerprints changed without an explicit draft update")
 
         return {
             "schema_version": "addp.workbench-service-consumption-online/v1",
@@ -541,13 +605,33 @@ def run_suite(
             "residual_resources": 0,
         }
     finally:
-        if view_id is not None:
+        if application_id is not None:
             try:
-                client.request("DELETE", f"/api/v1/workbench/views/{view_id}", (200, 404))
-                if client.request("GET", f"/api/v1/workbench/views/{view_id}", (404,)).status == 404:
+                current = client.request("GET", f"/api/v1/workbench/data_applications/{application_id}", (200, 404))
+                if current.status == 200:
+                    application = _object(current.payload, "cleanup Workbench Data Application")
+                    version = positive_int(application.get("version"), "cleanup Data Application version")
+                    if application.get("publication_status") == "published":
+                        offline = _object(
+                            client.request(
+                                "POST",
+                                f"/api/v1/workbench/data_applications/{application_id}/offline",
+                                (200,),
+                                {"version": version},
+                            ).payload,
+                            "offline Workbench Data Application",
+                        )
+                        version = positive_int(offline.get("version"), "offline Data Application version")
+                    client.request(
+                        "DELETE",
+                        f"/api/v1/workbench/data_applications/{application_id}",
+                        (200, 404),
+                        {"version": version},
+                    )
+                if client.request("GET", f"/api/v1/workbench/data_applications/{application_id}", (404,)).status == 404:
                     deleted += 1
             except SuiteError as error:
-                cleanup_errors.append(f"Workbench View: {error}")
+                cleanup_errors.append(f"Workbench Data Application: {error}")
         if service_id is not None:
             try:
                 client.request("DELETE", f"/api/v1/service/query/{service_id}", (200, 404))
@@ -573,7 +657,7 @@ def validate_browser_report(
     run_id: str,
     tenant_id: str,
     service_id: int,
-    view_id: str,
+    application_id: str,
 ) -> dict[str, object]:
     payload = _object(report, "Workbench browser report")
     expected = {
@@ -583,7 +667,7 @@ def validate_browser_report(
         "result": "passed",
         "tenant_id": tenant_id,
         "service_id": service_id,
-        "view_id": view_id,
+        "application_id": application_id,
         "table_rows": 2,
         "chart_rendered": True,
         "map_available": False,
@@ -599,7 +683,7 @@ def run_browser(
     repository: Path,
     environment: dict[str, str],
     service_id: int,
-    view_id: str,
+    application_id: str,
     original_fingerprint: str,
 ) -> dict[str, object]:
     artifact_dir = Path(required_environment("ADDP_ONLINE_ARTIFACT_DIR"))
@@ -610,7 +694,7 @@ def run_browser(
         {
             "ADDP_ONLINE_REPOSITORY": str(repository),
             "ADDP_ONLINE_WORKBENCH_SERVICE_ID": str(service_id),
-            "ADDP_ONLINE_WORKBENCH_VIEW_ID": view_id,
+            "ADDP_ONLINE_WORKBENCH_APPLICATION_ID": application_id,
             "ADDP_ONLINE_WORKBENCH_ORIGINAL_FINGERPRINT": original_fingerprint,
         }
     )
@@ -641,7 +725,7 @@ def run_browser(
         environment["ADDP_ONLINE_TEST_RUN_ID"],
         environment["ADDP_ONLINE_TEST_TENANT_ID"],
         service_id,
-        view_id,
+        application_id,
     )
 
 
@@ -673,8 +757,8 @@ def main() -> int:
             tenant_id,
             engine_id,
             required_environment("ADDP_ONLINE_TEST_RUN_ID"),
-            lambda service_id, view_id, fingerprint: run_browser(
-                repository, environment, service_id, view_id, fingerprint
+            lambda service_id, application_id, fingerprint: run_browser(
+                repository, environment, service_id, application_id, fingerprint
             ),
         )
     except (SuiteError, ValueError) as error:

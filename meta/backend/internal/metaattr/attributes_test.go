@@ -255,3 +255,24 @@ func TestSetTableFieldsWritesPartitionOnly(t *testing.T) {
 		t.Fatalf("type_info.table.fields missing: %#v", table)
 	}
 }
+
+func TestNormalizeRemovesPersistedContentDerivatives(t *testing.T) {
+	t.Parallel()
+
+	normalized := Normalize(models.JSONMap{
+		"plain_text_preview": "legacy top-level preview",
+		"capabilities": map[string]interface{}{
+			"extraction": map[string]interface{}{
+				"status": "completed", "plain_text_preview": "legacy preview", "text_excerpt": "legacy excerpt",
+			},
+		},
+	})
+	if _, exists := normalized["plain_text_preview"]; exists {
+		t.Fatalf("top-level content derivative survived normalization: %#v", normalized)
+	}
+	capabilities := normalized["capabilities"].(map[string]interface{})
+	extraction := capabilities["extraction"].(map[string]interface{})
+	if extraction["status"] != "completed" || extraction["plain_text_preview"] != nil || extraction["text_excerpt"] != nil {
+		t.Fatalf("normalized extraction = %#v", extraction)
+	}
+}

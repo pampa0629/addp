@@ -150,6 +150,7 @@
         "orchestrator": "Orchestrator - 工作流编排",
         "portal": "Portal - 资产门户",
         "quality": "Quality - 数据质量",
+        "security": "Security - 数据安全",
         "catalog": "Catalog - 企业资源目录",
         "service": "Service - 数据服务",
         "workbench": "Workbench - 数据服务消费工作台",
@@ -266,6 +267,10 @@
         "label": "数据质量",
         "desc": "规则应用、质量检查、执行记录"
       },
+      "security": {
+        "label": "数据安全与隐私保护",
+        "desc": "敏感数据类型、安全分类分级与保护基线"
+      },
       "develop": {
         "label": "数据开发",
         "desc": "查询工作台、工作流编辑器、Notebook"
@@ -276,7 +281,7 @@
       },
       "workbench": {
         "label": "工作台",
-        "desc": "动态查询、可视化、工作台视图与数据应用发布"
+        "desc": "从已发布数据服务创作、联动和发布数据应用"
       },
       "orchestrator": {
         "label": "任务编排",
@@ -349,8 +354,6 @@
         "elements": "数据元管理",
         "codeSets": "码值集管理",
         "units": "计量单位",
-        "classifications": "分类与分级",
-        "recentClassifications": "数据分类与分级",
         "dimensionHierarchies": "维度层级",
         "metrics": "指标管理",
         "recentMetrics": "数据指标管理",
@@ -378,6 +381,14 @@
         "recentExecutions": "质量检查执行记录",
         "recentIssues": "质量问题工单"
       },
+      "security": {
+        "label": "数据安全",
+        "sensitiveDataTypes": "敏感数据类型",
+        "classifications": "安全分类",
+        "grades": "安全等级",
+        "protectionBaselines": "保护基线",
+        "protectionEnrollments": "保护纳管"
+      },
       "develop": {
         "label": "数据开发",
         "sql": "查询工作台",
@@ -399,7 +410,6 @@
       },
       "workbench": {
         "label": "工作台",
-        "views": "工作台视图",
         "dataApplications": "数据应用"
       },
       "orchestrator": {
@@ -421,7 +431,7 @@
       },
       "catalog": {
         "label": "企业资源目录",
-        "entries": "目录浏览",
+        "entries": "资源浏览",
         "coverage": "治理覆盖率"
       },
       "asset": {

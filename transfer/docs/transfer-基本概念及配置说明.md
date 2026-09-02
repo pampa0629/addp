@@ -1,6 +1,6 @@
 # Transfer 模块基本概念及配置说明
 
-更新时间：2026-07-25
+更新时间：2026-08-31
 
 本文档定义 Transfer 稳定任务配置、执行状态、bounded snapshot 主链路、watermark bounded incremental 规则，以及 continuous/Kafka 契约与当前实现边界。旧版顶层 `mode`、`target.policy.write_mode`、`connector_type`、`source_config`、`target_config`、`output_format`、`file_type`、旧 endpoint `engine_id` 等字段不再兼容。
 
@@ -86,7 +86,7 @@ snapshot checkpoint 用于 progress / diagnostics，不表示可从 checkpoint �
 | `locator` | source 必填 | source 使用的 ResourceLocator URI，指向已存在资源。 |
 | `parent_locator` | target 必填 | target 父 node 的 ResourceLocator URI，指向已存在 schema / directory / bucket / prefix 等父节点。 |
 | `name` | target 必填 | 父 node 下待创建或待覆盖的目标资源名。 |
-| `data_type` | 是 | table Transfer 使用 `table`；raw copy 第一版支持 `document`、`media`、`cad`、`unknown`。 |
+| `data_type` | 是 | table Transfer 使用 `table`；动态 schema collection 原始记录导出使用 `unknown`；raw copy 第一版支持 `document`、`media`、`cad`、`unknown`。 |
 | `representation` | 是 | `native` 或 `encoded`。 |
 | `format` | encoded 必填 | encoded endpoint 的格式，如 `csv`、`json`、`geojson`、`parquet`、`shapefile`。 |
 | `options` | 否 | 格式或读取写入选项。 |
@@ -101,6 +101,35 @@ snapshot checkpoint 用于 progress / diagnostics，不表示可从 checkpoint �
 | `object` | `addp://engine/3/path/bucket/exports/roads.csv?type=object` |
 | 已入库 source item | `addp://engine/3/path/bucket/roads.shp?type=object&item_id=12` |
 
+### 2.3 Bounded query source 与 MongoDB 结构整形
+
+`bounded + native table` source 可以声明 `source.query`，由源引擎的 `QueryReadSessionProvider` 执行只读查询，Transfer 仍通过统一 table reader / writer 主链路分批搬运查询结果：
+
+```json
+{
+  "source": {
+    "locator": "addp://engine/11/path/sales/orders?type=table",
+    "data_type": "table",
+    "representation": "native",
+    "query": {
+      "language": "mql",
+      "statement": "{\"aggregate\":\"orders\",\"pipeline\":[{\"$unwind\":{\"path\":\"$items\",\"includeArrayIndex\":\"items__index\",\"preserveNullAndEmptyArrays\":false}},{\"$project\":{\"_id\":\"$_id\",\"items__sku\":{\"$ifNull\":[\"$items.sku\",null]},\"items__index\":1}}]}"
+    }
+  }
+}
+```
+
+MongoDB 控制台提供一个通用结构整形构建器，当前覆盖两类基数模型：
+
+- 一条源文档生成一行：自动携带 Meta 识别出的文档标识，并选择需要进入关系行的文档字段。
+- 一个数组元素生成一行：只能选择一个 Meta 识别出的数组字段，可以选择该数组下的多个元素叶子字段，也可以选择多个不位于任何数组下的父文档叶子字段随每个元素行重复携带；父文档标识自动携带，并可选输出数组序号。空数组和缺失数组固定生成零行。
+
+构建器只是一种 MQL 编写方式，不是新的任务 DSL 或执行路径。保存到任务中的唯一事实仍是 `source.query.language=mql` 和标准 MQL command object；基础构建器只生成 `可选单次 $unwind -> $project`，不生成筛选和排序。编辑已有任务时，只有严格属于该子集且使用系统确定性查询输出名的语句才反向显示为结构化表单，其他合法 MQL 统一进入高级编辑器。字段候选来自 Meta 已扫描的字段路径和数组类型，数组字段禁止手工输入；构建器不得内置业务库、collection、字段名或目标 schema。
+
+基础构建器不暴露 MQL 的 `$match`、`$sort`、`$ifNull`、投影别名和 `preserveNullAndEmptyArrays` 等实现细节，不提供递归自动摊平，不猜测多个数组之间的业务粒度，也不开放 `$group`、`$lookup`、`$unionWith` 等业务计算。父文档随行字段只是同一文档 `$project` 的上下文复制，不是关联、聚合或跨 Collection 读取。需要其他只读 MQL 能力时使用高级编辑器；指标、标准化、维度和事实加工仍属于 Develop。
+
+结构整形与 PostgreSQL 字段映射的职责必须分离：结构整形只决定“一行代表什么”和“哪些 MongoDB 源字段进入查询结果”；编译器为查询结果自动生成确定性、无点号的内部字段名。下一步 `field_mapping` 只展示实际查询输出，不展示其余 MongoDB 原始字段，并负责 PostgreSQL 目标字段名、类型、可空性等目标定义。数组展开的父文档标识属于关系行必需来源，基础模式自动携带且不得从映射中删除；`activity_id` 等业务目标名只在 `field_mapping` 中声明。
+
 ## 三、table Transfer 支持范围
 
 ### 3.1 Endpoint 组合
@@ -113,10 +142,17 @@ snapshot checkpoint 用于 progress / diagnostics，不表示可从 checkpoint �
 | encoded file/object | encoded file/object | 已接入。 |
 | encoded whole scope | encoded / native table target | Parquet dataset 已接入。 |
 | encoded multi refs | encoded / native table target | Shapefile 已接入。 |
+| native dynamic records | encoded file/object | 已接入 `mongodb_extended_jsonl` 原始记录导出；不经过 table pipeline。 |
 
 Transfer 不为 PostgreSQL -> PostgreSQL、NFS -> MinIO、MinIO -> NFS 等具体引擎组合维护专用链路。
 
-### 3.2 格式
+### 3.2 动态记录原始导出
+
+动态 schema collection 的原始记录导出使用 `source representation=native + data_type=unknown` 到 `target representation=encoded + format=mongodb_extended_jsonl` 的唯一任务形态。Transfer 消费源引擎 `EncodedRecordReadSessionProvider` 返回的类型保真批次，再通过目标 `ContentWritableProvider` 流式写出；不得复用 `raw copy`，因为源 collection 没有可直接复制的单一内容字节流。
+
+MongoDB 第一版固定输出 Canonical Extended JSON v2、UTF-8、每行一个紧凑文档，目标扩展名为 `.ejsonl`。该格式用于记录交换，不是 BSON archive 或数据库备份。任务不接受 transforms、query、筛选、排序或用户可选编码模式；表格化导出后续复用 query source 到 encoded table target 的独立主路径。
+
+### 3.3 格式
 
 | 格式 | 支持形态 |
 |---|---|

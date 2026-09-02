@@ -1,6 +1,6 @@
 # ADDP 企业资源目录与 Catalog 模块专题
 
-更新时间：2026-08-28
+更新时间：2026-08-31
 
 状态：阶段 0 至阶段 6 的架构、实现与确定性门禁已收口；企业资源目录、资产目录和引擎资源树的命名边界及 `AssetCategory` 单路径迁移已完成；专用 macOS T4 和停机恢复场景作为外部条件验证继续保留，不阻塞本专题完成
 
@@ -337,7 +337,7 @@ CatalogEntry 来源消失时只改变 `source_status`，不自动清空业务语
 
 ## 九、业务语义关联
 
-Standard 定义“语义是什么”：Domain、Glossary Term、Element、Metric、CodeSet、Classification 和 GradingLevel。
+Standard 定义“业务语义是什么”：Domain、Glossary Term、Element、Metric 和 CodeSet；Security 独立定义 SecurityClassification、SecurityGrade 和 SensitiveDataType。
 
 Catalog 定义“这个语义适用于哪个具体资源”：
 
@@ -349,6 +349,31 @@ Catalog 定义“这个语义适用于哪个具体资源”：
 关联事实由 Catalog 保存唯一权威记录。Catalog 创建关联时通过 Standard 公开 API 验证对象存在、属于同一 Tenant 且处于允许引用的生命周期；不能使用跨 Schema 外键或复制 Standard 名称作为权威事实。
 
 Standard Domain 表达业务语义边界，Department 表达组织结构，二者不能合并。一个业务域可能由多个部门共同治理，一个部门也可能负责多个业务域。
+
+### 9.1 与完整语义层的关系及能力差距
+
+本节只用于 ADDP 内部架构检查，不改变对外科普图书的通用定位，也不把完整语义层收缩为 Catalog 模块。评估基准采用[《数据治理 100 问》第 046 问](../books/数据治理100问/05-元数据、资产与语义篇/046-语义层与指标平台.md)中对语义层和指标平台的通用定义：完整语义层不仅包含业务语义与物理数据的映射，还要能够基于实体、事件、维度、度量、关系、层级、粒度和访问规则生成可执行查询；指标平台还要覆盖指标口径、版本、计算和服务。
+
+ADDP 当前已经形成由多个 owner 共同组成的治理型语义基础：Standard 定义可复用语义与指标，Model 定义业务实体、事实、维度、粒度和模型关系，Meta 提供物理结构与血缘，Catalog 建立企业身份、资源语义关联、责任和治理视图。Catalog 只是其中的语义关联与治理枢纽，不是完整 Semantic Layer，也不应接管专业语义定义、模型设计或查询编译。
+
+| 完整语义体系能力 | 当前 Owner / 现状 | 评估 | 后续边界 |
+| --- | --- | --- | --- |
+| 业务术语、别名、数据元、码值、单位和维度层级 | Standard 已有对应权威对象 | 已具备基础 | 继续由 Standard 定义，Catalog 只保存资源应用关系 |
+| 指标名称、定义、公式、依赖、单位和生命周期 | Standard Metric 已有基础对象和结构化计算配置 | 部分具备 | 继续核查统计对象、事实粒度、业务时间、过滤范围、可分析维度、生效版本和服务方式，不在 Catalog 补字段 |
+| 业务实体及实体关系 | Model Entity 已有权威聚合 | 已具备基础 | 继续由 Model 维护，Catalog 只建立企业目录身份并动态读取专业事实 |
+| 事实表、维度表、度量字段、粒度和星型关系 | Model LogicalTable、LogicalField 和 TableRelation 已表达基础模型 | 已具备基础 | 聚合性质、业务时间与可用维度必须由 Model / Standard 的明确契约提供，Catalog 不推断 |
+| 业务事件，例如下单、签约、发货和回款 | 当前可由事实表或领域模型间接表达，尚无统一一等语义身份 | 尚未统一 | 先通过真实查询场景判断是否需要 Event 聚合；未确认前不预建空壳实体 |
+| 物理表、字段、格式、技术画像和血缘 | Meta 是唯一技术事实 owner | 已具备基础 | 继续由 Meta 提供当前事实与关系，其他模块不复制 |
+| 业务语义、模型与实际资源的稳定绑定 | Catalog 已拥有 CatalogEntry、来源绑定、语义关联和组件数据元关联；Model 内生专业映射仍归 Model | 已具备核心基础 | 保持“专业事实归专业模块、资源应用关系归 Catalog”，不建立反向投影或双写 |
+| 企业级发现、责任、目录可见性和治理生命周期 | Catalog 已实现目录视图、责任、编目、认证、弃用和治理覆盖率 | 已具备核心能力 | 这是 Enterprise Catalog 职责，不等同于底层数据访问授权或语义查询执行 |
+| 统一语义查询契约 | 尚无能够统一表达实体、指标、维度、时间、过滤和排序的稳定请求模型 | 缺失 | 必须先从高价值端到端用例设计逻辑语义查询，不得直接以 SQL、CatalogEntry 字段或某个引擎方言反向定义 |
+| 语义解析、关联路径选择和逻辑计划 | 尚无统一 planner / compiler owner | 缺失 | 需要独立确定事实来源、版本选择、聚合正确性和错误契约；不能塞入 Catalog 列表或搜索服务 |
+| 指标计算与统一查询 / 服务输出 | Standard 保存定义但不执行引擎查询；现有 Engine、Orchestrator、Service 只分别拥有执行、编排和已发布服务能力 | 缺失统一闭环 | 先明确查询编译与执行交接协议，再决定复用现有模块还是形成独立 Semantic Runtime 边界 |
+| 面向 BI、应用和 AI 的稳定语义接口 | 当前主要消费目录、模型、指标或已发布服务的各自 API | 缺失统一入口 | 未来接口应消费权威语义查询契约，不让 BI、应用和 AI 各自重新解释底层表字段 |
+| 语义权限与底层数据访问 | System/IAM 提供身份授权，Catalog 提供目录可见性，实际内容访问仍由资源 owner 判断 | 部分具备 | 必须保持“可发现不等于可访问”，后续语义计划需要携带并下推资源、行列及组织范围约束 |
+| 指标和模型变更影响分析 | Catalog 已联邦组合 Meta 血缘、Model / Standard 专业关系与目录身份 | 部分具备 | 继续保留关系 owner 与证据；未来补足语义查询、报表、服务和消费者依赖后才能形成完整影响链 |
+
+因此，ADDP 当前结论固定为：`Standard + Model + Meta + Catalog` 已形成治理型语义基础，最大的架构缺口是统一语义查询契约、语义解析与指标执行闭环。该缺口是跨模块能力问题，不自动成为 Catalog 待办，也不预先推出必须新增 `semantic` 模块。只有出现可验证的端到端查询场景，并且现有 owner 无法在不复制事实、不形成循环依赖的前提下承载稳定查询身份、逻辑计划和执行生命周期时，才文档优先评估独立 Semantic Runtime。
 
 ## 十、Department、Project Group 与 Workspace
 
@@ -919,7 +944,7 @@ Catalog 新模块实现必须同时覆盖：
 - 使用修正后的 `keepalive restart -all` 完成全量重启；19 个模块 Swagger 生成与路由覆盖、全部 Go Backend 和选定 Worker 编译、System 注册、业务 Backend Ready、工作流与 Notebook Runtime、Gateway 以及 19 个 Frontend 均成功；
 - 新构建的 Catalog、Model、Standard Ready 均为 200。Catalog Meilisearch 重启复用成功，后台不再出现 `index_already_exists` 投影重试；通过 Console 提交企业目录名称搜索返回 200；
 - Model Entity 当前专业事实动态解析成功，专业关系路由返回 200，抽验实体展示 2 条真实一对多关系；Standard Metric 专业关系、Meta DataItem 血缘 4 节点/3 关系、Service QueryService 与 Develop DevTask 当前专业事实均再次通过；
-- 重启门禁同时暴露 Develop 正在收敛的旧 Model materialization 装配和测试残留。已按“Develop 不调用 Model API、不持有 Model Permission”删除旧配置测试与 Swagger 字段，唯一公开契约改为通用 `content.relation_inputs`；并行构建失败现在会在启动服务前被准确拦截；
+- 重启门禁同时暴露 Develop 正在收敛的旧 Model materialization 装配和测试残留。已按“Develop 不调用 Model API、不持有 Model Permission”删除旧配置测试与 Swagger 字段，查询输入统一收敛到 `content.query_parameters[]`，其中 `type=relation` 表示数据表参数；并行构建失败现在会在启动服务前被准确拦截；
 - Catalog Backend 全量 Go 测试、Frontend 10 个测试文件 33 项测试与生产构建、Catalog / Develop PostgreSQL 门禁、Develop Backend 全量 Go 测试、Develop 53 个公开路由 Swagger 覆盖、Online Runner 84 项确定性测试全部通过；
 - `enterprise-catalog-publishing` 真实 T4 仍只能由专用 Runner 执行：本机未配置其 User Access Token、Tenant、Fixture Engine、Domain 和 Department 输入，禁止从浏览器会话或生产数据猜测。套件实现、清理语义、分发/预检和 CI 登记已经通过本地确定性门禁。
 
@@ -929,7 +954,7 @@ Catalog 新模块实现必须同时覆盖：
 - 全量 DataItem 自动建档决策不变。视图切分只改变默认发现体验，不增加“扫描到但不建档”或另一套目录实体；Manager 需要按 fingerprint 定位已发现条目时，在当前 User 具备盘点权限的前提下显式使用 `view=inventory`；
 - 新增 `GET /api/v1/catalog/entries/facets`。Catalog 只从当前调用方、当前视图实际可见的 CatalogEntry 计算 Domain、Accountable Department 和 Source Engine 引用 ID 与计数；Standard / System 再按事实所有权动态解析名称、编码、类型和可引用状态，Catalog 不复制 owner 全量表；
 - 分面 owner 不可达时，只把对应分面标记为 `unavailable`，列表、Catalog Ready 和其他分面继续工作；前端明确提示不可用，不把裸 ID 回退为候选项或表格显示值；
-- 企业目录列表的主业务域、责任部门和来源引擎均改为可搜索下拉，来源引擎列展示 `名称 · 引擎类型`；ID 只保留在 URL、API 和选项值中。Console 菜单从“企业资源总览”收敛为“目录浏览”，避免把默认治理目录误解为技术资源全量树；
+- 企业目录列表的主业务域、责任部门和来源引擎均改为可搜索下拉，来源引擎列展示 `名称 · 引擎类型`；ID 只保留在 URL、API 和选项值中。Console 菜单从“企业资源总览”收敛为“资源浏览”，避免把默认已治理资源视图误解为技术资源全量树；
 - Catalog 为动态读取 System 脱敏 Engine Runtime Descriptor 增加最小 `system.engine_descriptor.read` 授权，System migration 101 只授予内置 `tenant.catalog_runtime`，不授予引擎管理权限；新增独立前向迁移门禁，验证迁移前无授权、迁移后恰好一条授权、版本为 101 且 `dirty=false`；
 
 ### 2026-08-27：编目候选的人类可读交互契约
@@ -1088,6 +1113,32 @@ Catalog 新模块实现必须同时覆盖：
 - 调用方复核发现资产工作台的“重命名目录”仍按旧局部契约只发送 `version + name`，会被完整更新 API 正确拒绝。该入口现已统一保存并回传 `parent_id`、`description`、`sort_order`，不再通过局部负载隐式清空或移动目录；Vitest 增加第二调用方契约回归。真实页面使用 `path3 -> path3-runtime -> path3` 完成可恢复重命名验收，最终仍位于 `root3`，浏览器 warning/error 为 0。
 - 统一 `enterprise-catalog-publishing` T4 已补齐资产目录消费链路：发布临时 Asset 后确认对应 AssetCategory 出现在 Portal 目录树、子树 `count=1` 且分类列表只返回该 Asset；同一 User 浏览器继续打开 `/portal/categories/:id`，确认目录名称和唯一 Asset 卡片。资产正式下架并删除后，先确认空分类立即从 Portal 树消失，再按聚合 `version` 删除临时 AssetCategory。继续复用既有 suite、workflow、Gateway User Token 和零残留清理，不新增 Portal 投影、测试路由或第二套脚本。
 
+### 2026-08-28：Catalog 编目状态与页面信息架构收口
+
+- `curated → discovered` 固定命名为“撤销编目”，继续复用唯一 `PUT /entries/:id` 聚合更新，不新增撤销接口、第二权限或兼容请求。请求必须原子清空 Catalog 自有业务名称、业务说明、Domain、Glossary、责任、组件 Element 和推荐继任关系，同时恢复 `visibility=inventory`；CatalogEntry 稳定身份、来源绑定、专业事实、版本与历史保留；
+- 撤销编目只接受完整重置形状，部分清理、`certified → discovered` 和 `deprecated → discovered` 均由服务端拒绝。成功事件固定为 `catalog.entry.curation_withdrawn`，与普通 `catalog.entry.updated` 审计区分；
+- 页面固定标题统一为“企业资源目录”，侧边栏入口统一为“资源浏览”，两个视图分别称“已治理资源”和“资源盘点”。条目操作按状态显示：`discovered` 为“开始编目”，`curated` 为“编辑编目”并在更多操作提供明确治理操作，`certified` 与 `deprecated` 不再显示通用编目编辑器；不再对所有状态显示含义模糊的“业务编目”；
+- “已治理资源”和“资源盘点”继续作为同一 `/entries` 路由内的两个权限视图，不拆成两个侧边栏页面，也不混成一张无范围提示的列表。页面按“企业资源目录总体说明 → 查看范围及当前结果数 → 浏览维度 → 条件筛选 → 结果列表”组织；查看范围区域明确显示当前视图说明，默认省略 `view` 仍唯一表示 `governance`，显式 `view=inventory` 仍唯一表示资源盘点；
+- 列表不再以三列密集按钮模拟目录树，业务域、责任部门、资源类型改为三个可搜索、可独立清除、显示名称与数量的正交分面；“待归类”“待分配部门”继续唯一映射既有治理缺口查询。来源状态、治理状态、可见性与来源引擎收进默认折叠的高级筛选，避免基础浏览和治理诊断混在同一视觉层级；
+- 详情页按用户问题划分为“概览 / 编目信息 / 专业事实 / 关系与历史”四个可恢复 Tab。概览只回答资源是什么、治理到哪一步、来自哪里和谁负责；编目信息承载 Catalog 自有业务事实；专业事实动态读取 owner 当前事实；关系与历史承载推荐继任、联邦关系、血缘与审计。`tab` 写入 canonical URL，列表返回上下文继续保留；
+- Catalog Backend 全量 Go 测试、Catalog Frontend 15 个测试文件 57 项测试与生产构建、Catalog 22 个公开路由 Swagger 覆盖、Online 套件登记检查均通过。统一重启后只读验收确认已编目 Workbench 条目显示“编辑编目”、四个详情 Tab 和新的概览层级；两条误编目 Workbench 数据应用已通过正式界面撤销，分别从版本 2 升至 3、版本 6 升至 7，均恢复为 `discovered + inventory`，离开户外域并进入“待归类”，来源绑定仍为 active，且产生独立 `catalog.entry.curation_withdrawn` 审计。运行态核验同时发现 Console 侧边栏仍残留“目录浏览 / Catalog Browse”，已收敛为“资源浏览 / Resource Browse”；Console Frontend 12 个测试文件 59 项测试与生产构建通过，页面刷新后旧称归零。
+
+### 2026-08-28：认证、撤销认证与弃用治理生命周期收口
+
+- CatalogEntry 治理状态的唯一可逆闭环固定为 `curated → certified → curated`：认证确认当前完整编目聚合，撤销认证必须填写原因并保留全部编目事实；重新认证不是新状态、认证副本或旁路接口，而是“撤销认证 → 编辑编目 → 认证”；
+- 通用 `PUT /entries/:id` 已严格收窄为 `discovered|curated` 阶段的完整业务编目和撤销编目。认证、撤销认证、弃用以及弃用信息维护唯一使用 `PUT /entries/:id/governance`，只更新治理状态、可选推荐继任项、聚合版本与领域审计，不调用 Standard / System，也不复制专业事实；
+- `certified` 状态冻结业务名称、说明、可见性、语义关联、责任关系和组件数据元关联，通用编目接口与前端编辑器均拒绝修改；`deprecated` 不可恢复，只允许填写原因后更新或清除推荐继任项；
+- 认证前服务端重新检查有效来源、业务名称与说明、`department|tenant` 可见性、有效主业务域、一个责任部门、一个业务责任人及至少一个数据管理员。认证、撤销认证、弃用、弃用信息维护分别写入 `catalog.entry.certified`、`catalog.entry.certification_withdrawn`、`catalog.entry.deprecated`、`catalog.entry.deprecation_updated`；
+- 详情页按职责显示操作：`curated` 保留“编辑编目”，更多治理操作提供“认证资源”“弃用资源”“撤销编目”；`certified` 只提供“弃用资源”和“撤销认证”；`deprecated` 只提供“维护弃用信息”。弃用与维护弃用通过 CatalogEntry 名称选择继任项，不允许输入 UUID；
+- 后端全量 Go 测试、Catalog Frontend 16 个测试文件 58 项测试与生产构建、Catalog PostgreSQL 标准门禁、完整 `make test-module MODULE=catalog`、Online Runner 86 项确定性测试，以及全仓 Swagger 严格覆盖均已通过；Catalog 当前 24 个公开路由方法与运行路由一致。PostgreSQL 门禁已纳入“认证 → 撤销认证 → 重新认证”的真实事务闭环，不新增独立脚本；
+- 统一重启后 Gateway、System、Catalog Ready 均为 `200`，治理子资源经 Gateway 返回认证拦截而非 `404`，Catalog 启动日志确认 `PUT /entries/:id/governance` 已注册。当前已治理资源为 0、资源盘点为 1045；抽验 `discovered` 详情只显示“开始编目”，不显示认证、弃用或更多治理入口。当前没有自然形成的 `curated|certified` 样本，因此不为验收制造不可恢复的弃用事实；受控已编目样本的四个治理入口已登记到统一 `enterprise-catalog-publishing` T4 周期回归。
+
+### 2026-08-31：语义层与指标平台能力基线评估
+
+- 对外科普图书继续保持厂商和实现中立，不写入 ADDP 模块映射；其通用概念只作为 ADDP 内部能力检查基准；
+- Catalog 不等同于完整语义层，固定定位为 Enterprise Catalog 与语义关联、治理枢纽。Standard、Model、Meta、Catalog 分别拥有语义定义、业务与逻辑建模、物理事实、资源绑定与治理，任何一个模块都不单独代表完整语义层；
+- 当前治理型语义基础已经形成，统一语义查询契约、语义 planner / compiler、指标计算与统一服务输出仍是主要能力缺口。缺口暂不归入 Catalog，不预建 `semantic` 模块；只有真实端到端查询用例证明需要稳定独立运行边界时，才文档优先重新评估 Semantic Runtime。
+
 ## 二十二、当前推进状态
 
 | 工作项 | 状态 | 说明 |
@@ -1125,6 +1176,9 @@ Catalog 新模块实现必须同时覆盖：
 | Catalog 编目与治理队列名称选择器 | 已通过运行态验收 | 五类 owner 动态选择器、真实名称候选及治理队列 20 个 CatalogEntry 名称候选已验证；治理队列遗漏 inventory 视图的问题已修复并加回归测试 |
 | Project Group 集合名称解析 | 接口与空状态已通过运行态验收 | `/me/project-groups` 返回 200 且无裸 ID 回退；当前身份没有有效 membership，实际成员名称组合待具备成员关系的验收身份补证 |
 | Catalog 显式成员批量治理 | 已通过运行态验收 | 当前页显式多选、Domain/Department 名称候选、逐条版本、整批原子回滚、owner 边界、共享 `batch_id` 审计、过期页面冲突保留和测试事实回收均已在真实页面验证；专用 macOS 继续随现有 T4 做周期回归，不再承担首次验收 |
+| Catalog 编目状态与页面信息架构 | 已完成并通过运行态验收 | 撤销编目原子重置、状态化操作、同页“查看范围”、正交名称分面、默认折叠高级筛选和四个可恢复详情 Tab 已实现；两个范围不拆分页面、不复制列表，两条误编目 Workbench 样本已正式撤销并核验审计、来源绑定、户外域清除与待归类归属 |
+| Catalog 认证与弃用治理生命周期 | 已完成并通过确定性、PostgreSQL 与只读运行态验收 | 通用编目与治理子资源已单路径分离；认证冻结编目事实，撤销认证保留事实，弃用不可恢复且继任项只能名称选择；可逆闭环已进入标准 PostgreSQL 门禁，不为验收制造不可逆真实弃用样本 |
+| 跨模块语义体系能力基线 | 已建立 | Catalog 只承担语义绑定、治理和发现；Standard、Model、Meta 保持专业 owner。统一语义查询、计划编译、指标执行和 BI / AI 稳定接口是后续跨模块缺口，不默认归 Catalog 或预建新模块 |
 
 阶段 5 的专业来源接入、动态当前事实、基础联邦关系视图、默认治理目录、权限资源盘点、企业目录上下文导航、“待归类”与“待分配部门”虚拟治理入口、七维治理覆盖率、治理缺口处置、联邦来源身份导航、列表分面、编目/治理队列名称选择器、Manager 精确定位和统一 Workspace 评估，以及阶段 6 的显式成员批量治理均已完成。Project Group 组合接口与无成员空状态已通过，真实成员名称只缺有 membership 的验收身份证据。专用 Runner 首跑 `enterprise-catalog-publishing` 以及停机追赶、显式重绑、System 恢复等专项 T4 已纳入统一验证体系，它们需要专用 User Token、Tenant、Fixture Engine、Domain、Department 或服务停机窗口，属于外部条件验证而非本专题实现缺口。技术来源详情中的 fingerprint、Item ID 等继续只保留在明确的技术溯源区。统一 Workspace 评估结论是当前不新增；只有第 10.5 节的端到端触发条件成立时才重开。
 
@@ -1137,7 +1191,7 @@ Catalog 新模块实现必须同时覆盖：
 3. 若能提供具有有效 Project Group membership 的验收身份，只补验集合筛选、创建选择器和详情中的项目组名称；不为验收临时修改组织数据，也不把名称加入 AuthContext 或 Catalog 副本。
 4. 在专用 Runner 配置 User Token、Tenant、Fixture Engine、Domain、Department 后执行 `enterprise-catalog-publishing`，回填自动建档、完整编目、失效引用治理与清理证据。
 5. 在明确的停机窗口执行来源 missing、停机追赶、显式重绑、System 恢复和 owner `503` 专项 T4；不得在共享开发服务上擅自停止 System、Standard、Meta 或 Catalog。
-6. 推荐继任项的名称选择器已有定向门禁；当前 Tenant 只有 998 条 `discovered` 条目，没有可进入弃用流程的 `curated|certified` 样本。后续只在自然产生合适治理状态样本后补运行态证据，不为验收篡改 CatalogEntry。
+6. 推荐继任项的名称选择器已有定向门禁；当前已治理资源为 0、资源盘点为 1045，没有可进入弃用流程的 `curated|certified` 样本。后续只在自然产生合适治理状态样本后补运行态写入证据，不为验收篡改 CatalogEntry。
 7. 如需重跑完整 Catalog 模块门禁，显式使用 `CATALOG_POSTGRES_TEST_DSN='postgres://addp:addp_password@127.0.0.1:15432/addp_test?sslmode=disable' make test-module MODULE=catalog`；不得新建本地测试 database。
 8. System 全量 IAM PostgreSQL 门禁与全仓授权门禁已在 AssetCategory permission migration 109 收口后通过。后续若再次失败，应按对应 owner 根因处理，不得放宽计数、跳过测试或恢复 `asset.catalog.*` 兼容权限。
 9. 治理缺口处置、企业目录上下文导航、“待归类”“待分配部门”和七维治理覆盖率均已完成运行态验收；后续会话不要重复重启或重做共享环境点击，只在相关契约再次变化时重跑。
@@ -1146,3 +1200,5 @@ Catalog 新模块实现必须同时覆盖：
 12. 显式成员批量治理已经完成代码、Swagger、PostgreSQL、前端、Online 契约登记和本机真实写入验收；后续不要增加“全部匹配筛选”、手工 owner ID、Tenant 级 `revision` 或逐条部分成功路线。专用 macOS 只需随既有 `enterprise-catalog-publishing` 做当前页选择和对话框的周期回归，不在永久 fixture 上重复提交批量写入。
 13. **已完成**：正常统一重启后只读确认 Asset schema 中不再存在 `catalogs_id_seq`、`catalogs_pkey`、`idx_asset_catalogs_*` 或 `idx_asset_assets_catalog_id`；迁移由 Asset 启动自动应用，没有手工改库或单独接管整套服务。
 14. **已完成**：AssetCategory 父目录选择器、完整更新契约、所有前端更新调用方、同 Tenant 目录图事务锁、环路/跨 Tenant/同级重名/版本冲突校验、统一 Asset 门禁，以及真实页面“移动→移回→刷新”和“重命名→恢复”验收均已通过；测试目录已恢复原名称与层级，树高亮与详情状态同步，浏览器无 warning/error。后续不要新增 `/move` 路由、局部更新负载、手工 ID 输入或第二份目录关系。
+15. **已完成**：Catalog 编目状态与页面信息架构已完成实现、确定性门禁、统一重启和真实页面验收；`4ff43d3a-3815-49fc-80e7-831dd7cc92b8` 与 `f0359420-a884-4e11-a87f-bd60e37a65e2` 已正式撤销编目，均恢复为 `discovered + inventory`、离开户外域并进入“待归类”，来源绑定保持 active，且分别产生 `catalog.entry.curation_withdrawn` 审计。后续不要直接写数据库、新建撤销路由或恢复通用“业务编目”按钮。
+16. **已完成**：Catalog 认证与弃用治理生命周期已经完成文档、后端、前端、Swagger、完整 Catalog 模块门禁、PostgreSQL 可逆认证闭环和统一重启后的只读页面验收。当前 Tenant 没有自然形成的 `curated|certified` 样本，不得为验收直接改库或制造不可恢复的 `deprecated` 事实；受控已编目样本的状态化入口继续由统一 T4 周期回归验证。

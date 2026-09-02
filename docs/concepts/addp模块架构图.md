@@ -31,6 +31,7 @@ graph TB
         MetaFE[Meta Frontend<br/>:5175]
         CatalogFE[Catalog Frontend<br/>:5189]
         WorkbenchFE[Workbench Frontend<br/>:5190]
+        SecurityFE[Security Frontend<br/>:5191]
         TransferFE[Transfer Frontend<br/>:5176]
         OrchestratorFE[Orchestrator Frontend<br/>:5177]
         DevelopFE[Develop Frontend<br/>:5178]
@@ -52,6 +53,7 @@ graph TB
         Meta[Meta Backend<br/>元数据服务<br/>:8082]
         Catalog[Catalog Backend<br/>企业资源目录<br/>:8192]
         Workbench[Workbench Backend<br/>服务消费工作台<br/>:8193]
+        Security[Security Backend<br/>数据安全<br/>:8194]
         Transfer[Transfer Backend<br/>数据传输<br/>:8083]
         Orchestrator[Orchestrator Backend<br/>任务编排<br/>:8084]
         Develop[Develop Backend<br/>数据开发<br/>:8185]
@@ -69,6 +71,7 @@ graph TB
         TransferContinuousWorker[Transfer Continuous Worker<br/>Supervisor / Runtime Sessions]
         MetaWorker[Meta Worker<br/>扫描任务处理]
         QualityWorker[Quality Worker<br/>独立进程 / PostgreSQL Claim]
+        SecurityWorker[Security Worker<br/>敏感发现 / PostgreSQL Claim]
     end
 
     subgraph "共享模块"
@@ -98,6 +101,7 @@ graph TB
     MetaFE -.-> Console
     CatalogFE -.-> Console
     WorkbenchFE -.-> Console
+    SecurityFE -.-> Console
     TransferFE -.-> Console
     OrchestratorFE -.-> Console
     DevelopFE -.-> Console
@@ -113,6 +117,7 @@ graph TB
     Gateway --> Meta
     Gateway --> Catalog
     Gateway --> Workbench
+    Gateway --> Security
     Gateway --> Transfer
     Gateway --> Orchestrator
     Gateway --> Develop
@@ -129,6 +134,7 @@ graph TB
     Meta --> Common
     Catalog --> Common
     Workbench --> Common
+    Security --> Common
     Transfer --> Common
     Orchestrator --> Common
     Develop --> Common
@@ -141,7 +147,13 @@ graph TB
     Portal --> Common
 
     Meta -. DataItem 可恢复变化 .-> Catalog
+    Meta -. 已显式纳管目标的精确技术事实 .-> Security
     Standard -. 语义对象公开读取 .-> Catalog
+    Security -. 当前用户权限下的安全专业事实 .-> CatalogFE
+    Security -. 保护投影变化 .-> Manager
+    Security -. 保护投影变化 .-> Transfer
+    Security -. 保护投影变化 .-> Develop
+    Security -. 保护投影变化 .-> Service
     Catalog -. 目录摘要与导航 .-> Manager
     Catalog -. 目录对象选择 .-> Asset
     Asset -. 已发布资产 .-> Portal
@@ -152,6 +164,7 @@ graph TB
     MetaFE --> CommonFE
     CatalogFE --> CommonFE
     WorkbenchFE --> CommonFE
+    SecurityFE --> CommonFE
     TransferFE --> CommonFE
     OrchestratorFE --> CommonFE
     DevelopFE --> CommonFE
@@ -171,10 +184,12 @@ graph TB
     Transfer -.-> TransferContinuousWorker
     Meta --> MetaWorker
     Quality --> QualityWorker
+    Security --> SecurityWorker
     TransferBoundedWorker --> PostgreSQL
     TransferContinuousWorker --> PostgreSQL
     MetaWorker --> PostgreSQL
     QualityWorker --> PostgreSQL
+    SecurityWorker --> PostgreSQL
 
     Develop --> Common
     Common --> PyWorkflow
@@ -190,10 +205,10 @@ graph TB
     classDef engine fill:#fff9c4,stroke:#f57f17
     classDef infra fill:#fce4ec,stroke:#880e4f
 
-    class Console,SystemFE,ManagerFE,MetaFE,CatalogFE,WorkbenchFE,TransferFE,OrchestratorFE,DevelopFE,ServiceFE,MonitorFE,InferenceFE,StandardFE,AssetFE,PortalFE frontend
+    class Console,SystemFE,ManagerFE,MetaFE,CatalogFE,WorkbenchFE,SecurityFE,TransferFE,OrchestratorFE,DevelopFE,ServiceFE,MonitorFE,InferenceFE,StandardFE,AssetFE,PortalFE frontend
     class Gateway gateway
-    class System,Manager,Meta,Catalog,Workbench,Transfer,Orchestrator,Develop,Service,Monitor,Quality,Inference,Standard,Asset,Portal backend
-    class TransferBoundedWorker,TransferContinuousWorker,MetaWorker,QualityWorker worker
+    class System,Manager,Meta,Catalog,Workbench,Security,Transfer,Orchestrator,Develop,Service,Monitor,Quality,Inference,Standard,Asset,Portal backend
+    class TransferBoundedWorker,TransferContinuousWorker,MetaWorker,QualityWorker,SecurityWorker worker
     class Common,CommonFE shared
     class PyWorkflow,SparkWorkflow,CustomWorkflow,Jupyter engine
     class PostgreSQL,Redis,MinIO,Meilisearch,InfraKafka,KafkaConnect infra
@@ -205,11 +220,13 @@ graph TB
 - **服务层**: 各业务模块的后端服务,提供 RESTful API
 - **业务模块边界**: Transfer、Develop、Model、Quality 等是对等 owner，默认只向下依赖 System、Meta、Common 和 Engine Provider。跨 owner 协作优先由 Orchestrator 连接 TaskProvider 稳定输出与必填运行时输入，数据资源使用 ResourceLocator 交接；引入 Common Client 只解决传输实现重复，不会消除 owner-specific ID、API 或生命周期造成的语义依赖。任务定义非必要不得保存其他业务 owner 的专有 ID。
 - **企业目录主线**: Meta 维护 DataItem 技术事实并提供可恢复变化；Catalog 建立企业目录身份、业务语义关联、责任和搜索；Asset 从 Catalog 选择并组合目录对象；Portal 只消费已发布资产。图中的虚线业务调用都是运行软依赖，不构成启动或 Ready 条件。
+- **数据安全主线**: Security 与 Catalog 并行消费 Meta 事实，但只精确读取已显式纳管目标；Security 编译 Owner-specific 保护投影，Manager、Transfer、Develop 和 Service 后台拉取后在本模块服务端出口执行。Catalog 只联邦展示 Security 专业事实，不是安全发现或保护生效的前置。
 - **Worker运行时**: bounded execution 数据面使用 owner 模块附属的独立进程；owner Backend 只承担 API、调度和控制面。
   - **Transfer Bounded Worker**: 从 `common.task_executions` PostgreSQL claim snapshot、watermark 和 bounded replay execution。
   - **Transfer Continuous Worker**: 已实现的独立长驻进程角色，通过 supervisor、DB lease、heartbeat 和 fencing 承载多个 continuous runtime session；不使用 Asynq 承载无限消费循环。当前数据面开放业务 Kafka keyed JSON -> PostgreSQL/MySQL，以及 PostgreSQL/MySQL/Oracle 单表 Debezium CDC -> PostgreSQL/MySQL/Oracle；Oracle Spatial 由 Oracle capture Provider 在源 schema 内维护 WKB 镜像表后进入同一 Debezium/consumer/apply 主路径，Oracle target 只开放 XY geometry。两类 source 共用同一 continuous runtime、position、lease 和 fencing；ArcGIS SDE 仍保留为后续独立逻辑变化源 Provider，不能并入普通 Oracle redo CDC。
   - **Meta Worker**: 从 `common.task_executions` PostgreSQL claim 扫描 execution，执行元数据扫描和索引。
   - **Quality Worker**: 独立进程，从 `common.task_executions` PostgreSQL claim `check|materialization_gate` execution；字段检查执行评分和 Issue reconcile，物化门禁通过 Model Client 读取同批 staging 并执行强类型断言。
+  - **Security Worker**: 独立进程，只领取 Security 对显式纳管目标创建的 `sensitive_data_discovery` execution，读取必要专业事实和受控样本并生成 Finding；不全量遍历 Meta，不提供通用数据代理。
 - **Manager 快显与瓦片任务**: `vector_tile_cache_generation` 与 `vector_tile_set_generation` 由 Manager Backend 按源能力选择唯一执行路径：PostgreSQL/PostGIS 表使用原生 `ST_AsMVT`，MySQL、Oracle 等标准 EWKB 可读的空间表流式物化临时 FlatGeobuf 后调用 GeoPython `vector_to_pmtiles`，文件或对象通过受控访问计划调用同一 operator；三类路径统一输出 PMTiles v3。任务定义、执行记录和缓存结果分别进入 Manager owner 表、`common.task_executions` 与 `manager.vector_tile_cache`。`vector_materialized_view_generation` 仍由 Manager Backend 在手动或编排触发时执行，结果进入 `manager.vector_materialized_view`。这些任务当前不启动模块自身定时调度；若需要多执行器横向扩展或独立 GIS 资源隔离，应将对应任务类型整体切换为唯一的 Manager Worker 或 GIS 执行引擎，不允许 Backend 与 Worker 双轨并存。
 - **共享模块**: common 和 common-frontend 提供可复用的代码和组件
 - **扩展运行时**: `engines/` 目录集中放置不拥有业务配置事实的独立计算 / Notebook Runtime 实现，由业务模块通过统一 Provider 调用。Inference 同时拥有 Provider、Deployment、Profile、凭据和配置管理入口，因此保留为根目录业务模块；其数据面端点另以 `inference_runtime` Engine Instance 纳入统一引擎体系，不在 `engines/` 下复制 owner 实现。
@@ -227,7 +244,9 @@ graph TB
 | **Manager** | 数据管理:数据存储目录展示、数据预览、空间快显和瓦片缓存 | 8081 / 8081 | Go, Gin, OpenLayers |
 | **Meta** | 元数据服务:扫描、索引、搜索 | 8082 / 8082 | Go, Gin, Meilisearch, Cron |
 | **Catalog** | 企业资源目录：稳定目录身份、来源绑定、业务语义关联、责任、治理和企业元数据搜索 | 8192 / 8192 | Go, Gin, GORM, Meilisearch |
-| **Workbench** | 服务消费工作台：动态参数、结构化查询、个人 Workbench View，以及支持参数绑定、选择联动、桌面与大屏展示、大屏前台刷新和运行页呈现区块的 Data Application 创作、不可变发布修订和运行 | 8193 / 8193 | Go, Gin, GORM, Vue 3 |
+| **Workbench** | 数据应用工作台：直接把已发布数据服务配置为 Data Application Component，支持动态参数、结构化查询、参数绑定、选择联动、桌面与大屏展示、大屏前台刷新、不可变发布修订和最终运行 | 8193 / 8193 | Go, Gin, GORM, Vue 3 |
+| **Security** | 数据安全：敏感类型、安全分类分级、显式纳管、敏感发现、资源评估、保护策略与 Owner-specific 保护投影 | 8194 / 8194 | Go, Gin, GORM, Vue 3 |
+| **Security Worker** | 已纳管资源的有界敏感数据发现执行器 | - | Go, PostgreSQL claim/lease |
 | **Meta Worker** | Meta 扫描任务处理器 | - | Go, PostgreSQL claim/lease |
 | **Transfer** | 数据传输:同步、搬运、格式转换任务 | 8083 / 8083 | Go, Gin, GORM |
 | **Transfer Bounded Worker** | Transfer 有界任务处理器 | - | Go, PostgreSQL claim/lease |
@@ -238,7 +257,7 @@ graph TB
 | **Monitor** | 执行监控:统一监控所有模块的任务执行记录、统计分析 | 8100 / 8100 | Go, Gin, PostgreSQL |
 | **Quality** | 数据质量:规则应用、检查任务、质量评分和问题治理 | 8182 / 8182 | Go, Gin, GORM |
 | **Quality Worker** | Quality 有界字段检查与物化门禁执行器，独立进程 | - | Go, PostgreSQL claim/lease |
-| **Standard** | 数据标准：业务域、术语、数据元、指标、分类分级等语义定义 | 8110 / 8110 | Go, Gin, GORM |
+| **Standard** | 数据标准：业务域、术语、数据元、指标和码值等业务语义定义 | 8110 / 8110 | Go, Gin, GORM |
 | **Asset** | 数据资产：目录对象组合、发布、申请、授权、评价和运营 | 8183 / 8183 | Go, Gin, GORM, Meilisearch |
 | **Portal** | 面向消费者的已发布资产门户 BFF | 8184 / 8184 | Go, Gin, GORM |
 | **Inference** | 统一 AI 推理：Provider Connection、Model Deployment、Model Profile、加密凭据和推理数据面 | 8191 / 8191 | Go, Gin, GORM |
@@ -261,7 +280,8 @@ graph LR
     Common --> Engine[engine/<br/>引擎插件系统]
     Common --> Models[models/<br/>数据模型]
     Common --> Config[config/<br/>配置加载器]
-    Common --> Security[security/<br/>凭据加解密]
+    Common --> SecretCipher[secretcipher/<br/>敏感配置值加解密]
+    Common --> DataProtection[dataprotection/<br/>保护投影契约与确定性算法]
 
     Client --> PG[PostgreSQL]
     Client --> MySQL[MySQL]
@@ -280,7 +300,7 @@ graph LR
     classDef subNode fill:#c8e6c9,stroke:#2e7d32
 
     class Common mainNode
-    class Client,Engine,Models,Config,Security subNode
+    class Client,Engine,Models,Config,SecretCipher,DataProtection subNode
 ```
 
 **主要内容**:
@@ -288,7 +308,8 @@ graph LR
 - **engine/**: 引擎插件系统(接口定义、插件实现、自动注册)
 - **models/**: 通用数据模型(用户、引擎、任务等)
 - **config/**: 根环境部署配置、服务地址、端口检查和时区
-- **security/**: 跨模块敏感凭据加解密
+- **secretcipher/**: 密码、Token、Webhook Secret 等敏感配置值的 AES-256-GCM 加解密；不承载 Security 业务事实
+- **dataprotection/**: 跨 Owner 共享的保护投影 v1 契约、路径定位、校验和确定性遮盖 / 抑制算法；不读写 Security 数据库，不做业务决策
 
 ### common-frontend (前端共享库)
 
@@ -694,6 +715,7 @@ graph LR
     Gateway --> |/api/v1/meta/*| Meta[Meta Backend<br/>:8082]
     Gateway --> |/api/v1/catalog/*| Catalog[Catalog Backend<br/>:8192]
     Gateway --> |/api/v1/workbench/*| Workbench[Workbench Backend<br/>:8193]
+    Gateway --> |/api/v1/security/*| Security[Security Backend<br/>:8194]
     Gateway --> |/api/v1/transfer/*| Transfer[Transfer Backend<br/>:8083]
     Gateway --> |/api/v1/orchestrator/*| Orchestrator[Orchestrator Backend<br/>:8084]
     Gateway --> |/api/v1/develop/*| Develop[Develop Backend<br/>:8185]
@@ -706,7 +728,7 @@ graph LR
 
     class Client client
     class Gateway gateway
-    class System,Manager,Meta,Catalog,Workbench,Transfer,Orchestrator,Develop,Service,Monitor backend
+    class System,Manager,Meta,Catalog,Workbench,Security,Transfer,Orchestrator,Develop,Service,Monitor backend
 ```
 
 ### 路由规则
@@ -718,6 +740,7 @@ graph LR
 | `/api/v1/meta/*` | Meta Backend | 8082 | 元数据扫描、索引、搜索 |
 | `/api/v1/catalog/*` | Catalog Backend | 8192 | 企业目录身份、业务编目、责任、语义关联和搜索 |
 | `/api/v1/workbench/*` | Workbench Backend | 8193 | 已发布服务消费、个人视图和后续数据应用创作 |
+| `/api/v1/security/*` | Security Backend | 8194 | 安全分类分级、纳管、敏感发现、资源评估、保护策略和运行时投影变化 |
 | `/api/v1/transfer/*` | Transfer Backend | 8083 | 数据同步、搬运、格式转换 |
 | `/api/v1/orchestrator/*` | Orchestrator Backend | 8084 | 任务编排、调度 |
 | `/api/v1/develop/*` | Develop Backend | 8185 | 查询、工作流、Notebook |
@@ -1066,6 +1089,7 @@ ADDP 部署按以下顺序使实例进入 Ready。业务进程可以在 System �
    ├─ Manager Backend
    ├─ Meta Backend + Worker
    ├─ Catalog Backend
+   ├─ Security Backend + Worker
    ├─ Transfer Backend + Worker
    ├─ Orchestrator Backend
    ├─ Develop Backend
@@ -1094,6 +1118,7 @@ ADDP 部署按以下顺序使实例进入 Ready。业务进程可以在 System �
    ├─ Manager Frontend
    ├─ Meta Frontend
    ├─ Catalog Frontend
+   ├─ Security Frontend
    ├─ Transfer Frontend
    ├─ Orchestrator Frontend
    ├─ Develop Frontend
@@ -1115,6 +1140,7 @@ ADDP 部署按以下顺序使实例进入 Ready。业务进程可以在 System �
 | **扩展运行时与 Engine Instance** | Runtime 自身就绪后异步注册；零个 Engine Instance 是合法状态，业务模块启动不得依赖任何内置或外部引擎存在。 |
 | **Agent / Copilot 独立进程** | Python 应用与 Go 模块共用同一模块注册和 Ready 契约；进程可以在任意时刻创建，但 System 注册成功前不得接受业务流量。运行时调用其他业务模块时仍只失败当前请求，不改变本模块 Ready。 |
 | **Catalog ↔ 专业模块** | Catalog 拉取 Meta DataItem 变化并按需读取 Standard、System 等 owner 事实；这些调用失败只造成同步滞后或当前业务请求失败，不改变 Catalog Ready。Manager、Asset 调用 Catalog 也遵循同一软依赖边界，禁止回退旧发现路径。 |
+| **Security ↔ 专业模块** | Security 只精确读取显式纳管目标的 Meta / Owner 必要事实，不全量扫描；参与 Owner 后台拉取投影变化并本地执行。这些调用是运行软依赖，不改变任一模块 Ready；已纳管资源投影失效时 Owner 必须拒绝，不回退明文。Catalog Frontend 可按当前 User AuthContext 直读 Security 摘要，Catalog Backend 不代理、不复制且不依赖 Security Ready。 |
 | **前端无严格顺序约束** | Console 通过 iframe 动态加载各模块前端（用户访问时才加载），各前端可完全并行启动 |
 
 ---
@@ -1129,7 +1155,7 @@ ADDP 部署按以下顺序使实例进入 Ready。业务进程可以在 System �
 - [ADDP 新模块开发指南](../spec/addp新模块开发指南.md)
 - [企业资源目录体系图](addp企业资源目录体系图.md)
 - [企业资源目录实现规范](../spec/addp企业资源目录实现规范.md)
-- [Monitor 模块实施报告](../monitor/docs/Monitor模块实施报告.md)
+- [Monitor 模块实施报告](../../monitor/docs/Monitor模块实施报告.md)
 
 ---
 

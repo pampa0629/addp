@@ -24,8 +24,25 @@ export async function getEntry(id) {
 	return client.get(`/catalog/entries/${encodeURIComponent(id)}`)
 }
 
+export async function getEntryDataDictionary(id, asOf) {
+	const params = asOf ? { as_of: asOf } : undefined
+	return client.get(`/catalog/entries/${encodeURIComponent(id)}/data-dictionary`, { params })
+}
+
+export async function exportEntryDataDictionary(id, asOf) {
+	const params = asOf ? { as_of: asOf } : undefined
+	return client.get(`/catalog/entries/${encodeURIComponent(id)}/data-dictionary/export`, {
+		params,
+		responseType: 'blob'
+	})
+}
+
 export async function updateEntry(id, payload) {
 	return client.put(`/catalog/entries/${encodeURIComponent(id)}`, payload)
+}
+
+export async function updateEntryGovernance(id, payload) {
+	return client.put(`/catalog/entries/${encodeURIComponent(id)}/governance`, payload)
 }
 
 export async function rebindSource(id, payload) {

@@ -16,8 +16,6 @@ var (
 	ErrPlatformCodeSetImmutable      = fmt.Errorf("%w: platform code set is immutable", commonapi.ErrConflict)
 	ErrDomainParentCycle             = errors.New("domain parent cycle")
 	ErrDomainReferenced              = fmt.Errorf("%w: domain is referenced", commonapi.ErrConflict)
-	ErrClassificationParentCycle     = errors.New("classification parent cycle")
-	ErrClassificationReferenced      = fmt.Errorf("%w: classification is referenced", commonapi.ErrConflict)
 	ErrMetricCategoryParentCycle     = errors.New("metric category parent cycle")
 	ErrMetricCategoryReferenced      = fmt.Errorf("%w: metric category is referenced", commonapi.ErrConflict)
 	ErrMeasurementCategoryReferenced = fmt.Errorf("%w: measurement category is referenced", commonapi.ErrConflict)

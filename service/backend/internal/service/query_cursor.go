@@ -1,12 +1,16 @@
 package service
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/addp/service/internal/models"
@@ -77,41 +81,53 @@ func (c *queryTokenCodec) decodeFeatureID(token string) (*featureIDPayload, erro
 
 func (c *queryTokenCodec) encode(purpose string, payload interface{}) (string, error) {
 	if len(c.key) == 0 {
-		return "", fmt.Errorf("query token signing key is not configured")
+		return "", fmt.Errorf("query token encryption key is not configured")
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return "", err
 	}
-	signature := c.signature(purpose, body)
-	return base64.RawURLEncoding.EncodeToString(body) + "." + base64.RawURLEncoding.EncodeToString(signature), nil
+	aead, err := c.aead()
+	if err != nil {
+		return "", err
+	}
+	nonce := make([]byte, aead.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", err
+	}
+	sealed := aead.Seal(nonce, nonce, body, []byte(purpose))
+	return base64.RawURLEncoding.EncodeToString(sealed), nil
 }
 
 func (c *queryTokenCodec) decode(purpose, token string, target interface{}) error {
 	if len(c.key) == 0 {
-		return errors.New("query token signing key is not configured")
+		return errors.New("query token encryption key is not configured")
 	}
-	parts := strings.Split(token, ".")
-	if len(parts) != 2 {
-		return errors.New("invalid token shape")
-	}
-	body, err := base64.RawURLEncoding.DecodeString(parts[0])
+	encoded, err := base64.RawURLEncoding.DecodeString(token)
 	if err != nil {
 		return err
 	}
-	signature, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil || !hmac.Equal(signature, c.signature(purpose, body)) {
-		return errors.New("invalid token signature")
+	aead, err := c.aead()
+	if err != nil {
+		return err
+	}
+	if len(encoded) < aead.NonceSize() {
+		return errors.New("invalid token shape")
+	}
+	nonce, ciphertext := encoded[:aead.NonceSize()], encoded[aead.NonceSize():]
+	body, err := aead.Open(nil, nonce, ciphertext, []byte(purpose))
+	if err != nil {
+		return errors.New("invalid token ciphertext")
 	}
 	decoder := json.NewDecoder(strings.NewReader(string(body)))
 	decoder.UseNumber()
 	return decoder.Decode(target)
 }
 
-func (c *queryTokenCodec) signature(purpose string, body []byte) []byte {
-	mac := hmac.New(sha256.New, c.key)
-	_, _ = mac.Write([]byte(purpose))
-	_, _ = mac.Write([]byte{0})
-	_, _ = mac.Write(body)
-	return mac.Sum(nil)
+func (c *queryTokenCodec) aead() (cipher.AEAD, error) {
+	block, err := aes.NewCipher(c.key)
+	if err != nil {
+		return nil, err
+	}
+	return cipher.NewGCM(block)
 }

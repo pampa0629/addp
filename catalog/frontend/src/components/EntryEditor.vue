@@ -3,7 +3,7 @@
     <template #header>
       <div class="editor-header">
         <div>
-          <strong>{{ t('catalog.edit.title') }}</strong>
+          <strong>{{ t(`catalog.edit.${editorTitleKey}`) }}</strong>
           <p>{{ t('catalog.edit.description') }}</p>
         </div>
         <span>{{ t('catalog.entry.version') }} {{ form.version }}</span>
@@ -25,24 +25,12 @@
 
     <el-form label-position="top" @submit.prevent="submit">
       <el-row :gutter="16">
-        <el-col :xs="24" :md="12">
+        <el-col :xs="24" :md="16">
           <el-form-item :label="t('catalog.entry.businessName')" required>
             <el-input v-model="form.businessName" maxlength="200" show-word-limit />
           </el-form-item>
         </el-col>
-        <el-col :xs="24" :md="6">
-          <el-form-item :label="t('catalog.entries.governanceStatus')" required>
-            <el-select v-model="form.governanceStatus" @change="normalizeVisibility">
-              <el-option
-                v-for="status in governanceStatusOptions"
-                :key="status"
-                :label="t(`catalog.status.governance.${status}`)"
-                :value="status"
-              />
-            </el-select>
-          </el-form-item>
-        </el-col>
-        <el-col :xs="24" :md="6">
+        <el-col :xs="24" :md="8">
           <el-form-item :label="t('catalog.entries.visibility')" required>
             <el-select v-model="form.visibility">
               <el-option
@@ -58,32 +46,6 @@
       <el-form-item :label="t('catalog.edit.businessDescription')" required>
         <el-input v-model="form.businessDescription" type="textarea" :rows="4" maxlength="2000" show-word-limit />
       </el-form-item>
-      <el-form-item v-if="form.governanceStatus === 'deprecated' && entry.governance_status !== 'deprecated'" :label="t('catalog.edit.deprecationReason')" required>
-        <el-input v-model="form.deprecationReason" type="textarea" :rows="3" maxlength="500" show-word-limit />
-      </el-form-item>
-      <el-form-item v-if="form.governanceStatus === 'deprecated'" :label="t('catalog.edit.recommendedSuccessor')">
-        <el-select
-          v-model="form.recommendedSuccessorEntryId"
-          clearable
-          filterable
-          remote
-          reserve-keyword
-          :disabled="!canDeprecate"
-          :loading="successorLoading"
-          :remote-method="searchSuccessors"
-          :placeholder="t('catalog.edit.recommendedSuccessorPlaceholder')"
-          @visible-change="visible => visible && searchSuccessors('')"
-        >
-          <el-option
-            v-for="option in successorOptions"
-            :key="option.id"
-            :label="successorLabel(option)"
-            :value="option.id"
-          />
-        </el-select>
-        <div class="field-hint">{{ t('catalog.edit.recommendedSuccessorHint') }}</div>
-      </el-form-item>
-
       <section class="edit-section">
         <div class="section-title">
           <div>
@@ -217,72 +179,44 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
-import { listEntries, listReferenceCandidates } from '../api/catalog'
+import { listReferenceCandidates } from '../api/catalog'
 import { catalogStatusLabel } from '../utils/catalogStatusLabel'
 import {
   buildEntryEditForm,
   buildUpdatePayload,
-  governanceOptions,
   hasEffectivePrimaryDomain,
   isCanonicalPositiveID,
-  isCanonicalUUID,
   responsibilitySubjectType
 } from '../utils/entryEdit'
 
 const props = defineProps({
   entry: { type: Object, required: true },
   saving: { type: Boolean, default: false },
-  conflict: { type: Boolean, default: false },
-  canCertify: { type: Boolean, default: false },
-  canDeprecate: { type: Boolean, default: false }
+  conflict: { type: Boolean, default: false }
 })
 const emit = defineEmits(['submit', 'cancel', 'reload'])
 const { t } = useI18n()
-const form = reactive(buildEntryEditForm(props.entry))
-const successorOptions = ref(initialSuccessorOptions(props.entry))
-const successorLoading = ref(false)
-let successorRequestVersion = 0
+const form = reactive(buildEditorForm(props.entry))
 const candidateTypes = ['domain', 'glossary', 'element', 'department', 'user']
 const candidateState = reactive(Object.fromEntries(candidateTypes.map(type => [type, { options: [], loading: false, version: 0 }])))
 const responsibilityRoles = ['accountable_department', 'business_owner', 'data_steward', 'technical_owner']
 const ownerModuleName = computed(() => ({ model: 'Model', standard: 'Standard', service: 'Service', develop: 'Develop' }[form.ownerModule] || ''))
+const editorTitleKey = computed(() => props.entry.governance_status === 'discovered' ? 'startTitle' : 'editTitle')
 
 watch(() => props.entry, entry => {
-  Object.assign(form, buildEntryEditForm(entry))
-  successorOptions.value = initialSuccessorOptions(entry)
+  Object.assign(form, buildEditorForm(entry))
   resetCandidateOptions(entry)
 }, { deep: true })
 
 resetCandidateOptions(props.entry)
 
-const governanceStatusOptions = computed(() => governanceOptions(
-  props.entry.governance_status,
-  props.canCertify,
-  props.canDeprecate
-))
-const visibilityOptions = computed(() => {
-  if (form.governanceStatus === 'discovered') return ['inventory']
-  if (form.governanceStatus === 'certified') return ['department', 'tenant']
-  return ['inventory', 'department', 'tenant']
-})
-
-function normalizeVisibility() {
-  if (!visibilityOptions.value.includes(form.visibility)) form.visibility = visibilityOptions.value[0]
-  if (form.governanceStatus !== 'deprecated') form.recommendedSuccessorEntryId = ''
+function buildEditorForm(entry) {
+  const next = buildEntryEditForm(entry)
+  next.governanceStatus = 'curated'
+  return next
 }
 
-function initialSuccessorOptions(entry) {
-  if (entry?.recommended_successor) return [entry.recommended_successor]
-  if (entry?.recommended_successor_entry_id) {
-    return [{ id: entry.recommended_successor_entry_id, display_name: t('catalog.edit.referenceUnavailable') }]
-  }
-  return []
-}
-
-function successorLabel(option) {
-  const name = option.display_name || t('catalog.entries.unnamed')
-  return option.governance_status ? `${name} · ${t(`catalog.status.governance.${option.governance_status}`)}` : name
-}
+const visibilityOptions = ['inventory', 'department', 'tenant']
 
 function resetCandidateOptions(entry) {
   for (const type of candidateTypes) candidateState[type].options = []
@@ -355,36 +289,6 @@ function candidateLabel(option) {
   return option.code ? `${option.name} · ${option.code}` : option.name
 }
 
-async function searchSuccessors(search = '') {
-  if (!props.canDeprecate) return
-  const version = ++successorRequestVersion
-  successorLoading.value = true
-  try {
-    const query = String(search || '').trim()
-    const responses = await Promise.all(['curated', 'certified'].map(governanceStatus => listEntries({
-      ...(query ? { search: query } : {}),
-      source_status: 'active',
-      governance_status: governanceStatus,
-      page: 1,
-      page_size: 20
-    })))
-    if (version !== successorRequestVersion) return
-    const options = new Map(initialSuccessorOptions(props.entry).map(item => [item.id, item]))
-    for (const response of responses) {
-      for (const candidate of response.data || []) {
-        if (candidate.id !== props.entry.id) options.set(candidate.id, candidate)
-      }
-    }
-    successorOptions.value = [...options.values()]
-  } catch (error) {
-    if (version === successorRequestVersion) {
-      ElMessage.error(error?.response?.data?.error || t('catalog.edit.successorSearchFailed'))
-    }
-  } finally {
-    if (version === successorRequestVersion) successorLoading.value = false
-  }
-}
-
 function addDomain() {
   form.domains.push({
     id: '',
@@ -426,21 +330,11 @@ function validateForm() {
     ElMessage.error(t('catalog.edit.multiplePrimaryDomains'))
     return false
   }
-  if (form.governanceStatus !== 'discovered') {
-    const roleCounts = Object.fromEntries(responsibilityRoles.map(role => [role, form.responsibilities.filter(item => item.role === role).length]))
-    if (!form.businessName.trim() || !form.businessDescription.trim() ||
-        !hasEffectivePrimaryDomain(form) ||
-        roleCounts.accountable_department !== 1 || roleCounts.business_owner !== 1 || roleCounts.data_steward < 1) {
-      ElMessage.error(t('catalog.edit.curationIncomplete'))
-      return false
-    }
-  }
-  if (form.governanceStatus === 'deprecated' && props.entry.governance_status !== 'deprecated' && !form.deprecationReason.trim()) {
-    ElMessage.error(t('catalog.edit.deprecationReasonRequired'))
-    return false
-  }
-  if (form.recommendedSuccessorEntryId && !isCanonicalUUID(form.recommendedSuccessorEntryId)) {
-    ElMessage.error(t('catalog.edit.invalidSuccessor'))
+  const roleCounts = Object.fromEntries(responsibilityRoles.map(role => [role, form.responsibilities.filter(item => item.role === role).length]))
+  if (!form.businessName.trim() || !form.businessDescription.trim() ||
+      !hasEffectivePrimaryDomain(form) ||
+      roleCounts.accountable_department !== 1 || roleCounts.business_owner !== 1 || roleCounts.data_steward < 1) {
+    ElMessage.error(t('catalog.edit.curationIncomplete'))
     return false
   }
   return true
@@ -454,7 +348,6 @@ function validateForm() {
 .editor-header > span { color: var(--addp-text-secondary); font-size: 13px; }
 .section-gap, .edit-section { margin-bottom: 20px; }
 .owner-domain-alert { margin-bottom: 12px; }
-.field-hint { color: var(--addp-text-secondary); font-size: 12px; margin-top: 6px; }
 .edit-section { border-top: 1px solid var(--el-border-color-lighter); padding-top: 18px; }
 .section-title { margin-bottom: 12px; }
 .edit-row { display: grid; align-items: center; gap: 12px; margin-bottom: 10px; }

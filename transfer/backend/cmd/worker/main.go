@@ -11,6 +11,7 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
+	"github.com/addp/common/dataprotection/projectionstore"
 	_ "github.com/addp/common/engine/plugins/builtin/general"
 	commonExecution "github.com/addp/common/execution"
 	_ "github.com/addp/common/format/builtin"
@@ -20,6 +21,7 @@ import (
 	commonRuntimeHealth "github.com/addp/common/runtimehealth"
 	"github.com/addp/transfer/internal/config"
 	"github.com/addp/transfer/internal/continuous"
+	transferprotection "github.com/addp/transfer/internal/protection"
 	"github.com/addp/transfer/internal/repository"
 	"github.com/addp/transfer/internal/service"
 	"github.com/addp/transfer/internal/worker"
@@ -53,8 +55,14 @@ func main() {
 	metaClient := commonClient.NewMetaClient(cfg.MetaServiceURL, tokenSource)
 	systemRuntimeClient := commonClient.NewSystemServiceClient(cfg.SystemServiceURL, tokenSource, nil)
 	systemClient := commonClient.NewSystemClient(cfg.SystemServiceURL, tokenSource)
+	protectionStore, err := projectionstore.New(db, cfg.DBSchema, "transfer", nil)
+	if err != nil {
+		log.Fatalf("初始化 Transfer 保护投影存储失败: %v", err)
+	}
+	protectionGate := transferprotection.NewGate(protectionStore, systemClient)
 	executionEngineService := service.NewExecutionEngineService(taskRepo, repository.NewSyncStateRepository(db), executionService, systemClient, systemRuntimeClient, metaClient)
 	executionEngineService.SetConfig(cfg)
+	executionEngineService.SetProtectionGate(protectionGate)
 	executionEngineService.SetReplayRuntime(continuous.NewReplayRuntime(continuous.BoundedReplayRunner{
 		PollTimeout: cfg.ContinuousPollTimeout, MaxBytes: cfg.ContinuousFetchMaxBytes,
 		AssertTargetAbsent: continuous.NewReplayTargetAbsenceValidator(nil),

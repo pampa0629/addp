@@ -30,6 +30,16 @@ type NotebookHandler struct {
 	listSessionEngineDescriptors func(context.Context, string, string) ([]commonModels.EngineRuntimeDescriptor, error)
 }
 
+func (h *NotebookHandler) SetProtectionGate(gate service.NotebookProtectionGate) {
+	if h != nil && h.notebookSessionService != nil {
+		h.notebookSessionService.SetProtectionGate(gate)
+	}
+}
+
+func (h *NotebookHandler) HasActiveExecutionsForTenant(tenantID int64) bool {
+	return h != nil && h.notebookSessionService != nil && h.notebookSessionService.HasActiveExecutionsForTenant(tenantID)
+}
+
 // NewNotebookHandler 创建 Notebook 处理器
 func NewNotebookHandler(
 	jupyterService *service.JupyterService,

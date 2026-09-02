@@ -25,6 +25,18 @@ import (
 
 type emptyQueryTemplatePlugin struct{}
 
+type allowQueryProtectionGate struct{}
+
+func (allowQueryProtectionGate) BeginPreparedQuery(context.Context, uint, plugin.EnginePlugin, plugin.PreparedQuery) (func(*plugin.QueryResult) error, func(), error) {
+	return func(*plugin.QueryResult) error { return nil }, func() {}, nil
+}
+func (allowQueryProtectionGate) BeginCatalogPath(context.Context, uint, plugin.EnginePlugin, plugin.EngineCatalogPath) (func(), error) {
+	return func() {}, nil
+}
+func (allowQueryProtectionGate) BeginUnresolvedRead(context.Context, uint) (func(), error) {
+	return func() {}, nil
+}
+
 func (p *emptyQueryTemplatePlugin) Type() string         { return "develop_empty_query_template_test" }
 func (p *emptyQueryTemplatePlugin) DisplayName() string  { return "Empty Query Template Test" }
 func (p *emptyQueryTemplatePlugin) EngineOrigin() string { return "general" }
@@ -45,8 +57,14 @@ func (p *emptyQueryTemplatePlugin) QueryLanguages() []string { return []string{"
 func (p *emptyQueryTemplatePlugin) GenerateSampleQuery(_ context.Context, _ plugin.ConnectionInfo, opts plugin.SampleQueryOptions) (string, string) {
 	return `{"find":"` + opts.Path.Segments[len(opts.Path.Segments)-1].Name + `","filter":{},"limit":10}`, "mql"
 }
-func (p *emptyQueryTemplatePlugin) ExecuteRuntimeQuery(context.Context, plugin.ConnectionInfo, plugin.QueryRequest) (*plugin.QueryResult, error) {
-	return &plugin.QueryResult{Rows: []map[string]interface{}{}}, nil
+func (p *emptyQueryTemplatePlugin) PrepareQuery(_ context.Context, _ plugin.ConnectionInfo, request plugin.QueryRequest) (plugin.PreparedQuery, error) {
+	analysis, err := plugin.NewQueryAnalysis(request.Language, plugin.QuerySchemaCoverageUnknown)
+	if err != nil {
+		return nil, err
+	}
+	return plugin.NewPreparedQuery(analysis, nil, nil, func(context.Context) (*plugin.QueryResult, error) {
+		return &plugin.QueryResult{Rows: []map[string]interface{}{}}, nil
+	})
 }
 
 func TestConnectionUsesUserDerivedReadAuthorizationAndServiceTokenConsumption(t *testing.T) {
@@ -137,11 +155,17 @@ func TestConnectionUsesUserDerivedReadAuthorizationAndServiceTokenConsumption(t 
 
 func TestPreflightQueryReturnsPermissionAndConfirmationFacts(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	queryHandler := NewQueryHandler(
-		service.NewSQLEngineService(&config.Config{EncryptionKey: []byte("preflight-test-key")}, nil, nil),
-		nil,
-	)
-	request := httptest.NewRequest(http.MethodPost, "/api/v1/develop/query-preflight", bytes.NewBufferString(`{"query_type":"sql","query":"DROP TABLE activities","engine_id":12,"target_locator":"addp://engine/12/path/activities?type=table"}`))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/api/v1/system/runtime/engine-descriptors/12" {
+			t.Fatalf("unexpected System path: %s", request.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(models.EngineRuntimeDescriptor{
+			ID: 12, Name: "PostgreSQL", EngineType: "postgresql", LifecycleState: "active",
+		})
+	}))
+	defer server.Close()
+	queryHandler := newAuthorizedQueryHandlerForTest(server.URL)
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/develop/query-preflight", bytes.NewBufferString(`{"query_type":"sql","query":"DROP TABLE activities","engine_id":12,"target_locator":"addp://engine/12/path/public/activities?type=table"}`))
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 	context, _ := gin.CreateTestContext(response)
@@ -158,7 +182,8 @@ func TestPreflightQueryReturnsPermissionAndConfirmationFacts(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if !body.Allowed || body.Effect != "ddl" || !body.RequiresConfirmation || body.ConfirmationToken == "" || len(body.TargetObjects) != 1 {
+	if !body.Allowed || body.Effect != "ddl" || !body.RequiresConfirmation || body.ConfirmationToken == "" ||
+		len(body.TargetObjects) != 1 || body.SchemaCoverage != plugin.QuerySchemaCoverageUnknown || len(body.Diagnostics) != 0 {
 		t.Fatalf("preflight = %#v", body)
 	}
 }
@@ -353,11 +378,13 @@ func newAuthorizedQueryHandlerForTest(systemURL string) *QueryHandler {
 	systemService := commonClient.NewSystemServiceClient(
 		systemURL, staticDevelopServiceTokens("addp_at_service"), nil,
 	)
-	return NewQueryHandler(service.NewSQLEngineService(
-		&config.Config{DefaultQueryTimeout: 30, MaxQueryTimeout: 300},
+	sqlEngine := service.NewSQLEngineService(
+		&config.Config{DefaultQueryTimeout: 30, MaxQueryTimeout: 300, EncryptionKey: []byte("preflight-test-key")},
 		systemService,
 		commonClient.NewSystemExecutionAuthorizationClient(systemURL, nil),
-	), nil)
+	)
+	sqlEngine.SetProtectionGate(allowQueryProtectionGate{})
+	return NewQueryHandler(sqlEngine, nil)
 }
 
 func testConnectionRequestForTest(handler *QueryHandler, token string) *httptest.ResponseRecorder {

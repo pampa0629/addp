@@ -233,6 +233,7 @@ func tableInfoEmpty(tableInfo *datatype.TableInfo) bool {
 type nativeTableBatchSource struct {
 	reader               engineplugin.BatchReadableProvider
 	tableSessionProvider engineplugin.TableReadSessionProvider
+	protector            TableSourceProtector
 	connInfo             engineplugin.ConnectionInfo
 	path                 engineplugin.EngineCatalogPath
 	query                string
@@ -244,17 +245,30 @@ type nativeTableBatchSource struct {
 
 type queryTableBatchSource struct {
 	provider  engineplugin.QueryReadSessionProvider
+	protector TableSourceProtector
 	connInfo  engineplugin.ConnectionInfo
 	request   engineplugin.QueryRequest
 	tableInfo *datatype.TableInfo
 }
 
 func (s *queryTableBatchSource) Open(ctx context.Context) (TableBatchReader, error) {
-	session, err := s.provider.OpenQueryReadSession(ctx, s.connInfo, s.request)
+	prepared, err := s.provider.PrepareQuery(ctx, s.connInfo, s.request)
+	if err != nil {
+		return nil, fmt.Errorf("prepare query read session: %w", err)
+	}
+	var protect func(*engineplugin.QueryResult) error
+	if s.protector != nil {
+		protect, err = s.protector.PrepareQueryProtection(ctx, prepared)
+		if err != nil {
+			return nil, fmt.Errorf("prepare query source protection: %w", err)
+		}
+	}
+	session, err := s.provider.OpenQueryReadSession(ctx, prepared)
 	if err != nil {
 		return nil, fmt.Errorf("open query read session: %w", err)
 	}
-	return &queryTableBatchReader{session: session, tableInfo: s.tableInfo}, nil
+	reader := TableBatchReader(&queryTableBatchReader{session: session, tableInfo: s.tableInfo})
+	return protectTableBatchReader(reader, protect)
 }
 
 type queryTableBatchReader struct {
@@ -297,6 +311,18 @@ func (r *queryTableBatchReader) Close(ctx context.Context) error {
 func (r *queryTableBatchReader) ResumeMarker() *resume.Marker { return nil }
 
 func (s *nativeTableBatchSource) Open(ctx context.Context) (TableBatchReader, error) {
+	var protect func(*engineplugin.QueryResult) error
+	var err error
+	if s.protector != nil {
+		fields := []datatype.FieldInfo(nil)
+		if s.tableInfo != nil {
+			fields = s.tableInfo.Fields
+		}
+		protect, err = s.protector.PrepareCatalogTableProtection(ctx, s.path, fields)
+		if err != nil {
+			return nil, fmt.Errorf("prepare native table source protection: %w", err)
+		}
+	}
 	if s.tableSessionProvider != nil {
 		session, err := s.tableSessionProvider.OpenTableReadSession(ctx, s.connInfo, s.path, engineplugin.TableReadSessionOptions{
 			Query:        s.query,
@@ -306,12 +332,13 @@ func (s *nativeTableBatchSource) Open(ctx context.Context) (TableBatchReader, er
 		if err != nil {
 			return nil, fmt.Errorf("open native table read session: %w", err)
 		}
-		return &nativeTableSessionBatchReader{session: session, tableInfo: s.tableInfo, spatialInfo: s.spatialInfo}, nil
+		reader := TableBatchReader(&nativeTableSessionBatchReader{session: session, tableInfo: s.tableInfo, spatialInfo: s.spatialInfo})
+		return protectTableBatchReader(reader, protect)
 	}
 	if s.reader == nil {
 		return nil, fmt.Errorf("native table source requires batch reader")
 	}
-	return &nativeOffsetBatchReader{
+	reader := TableBatchReader(&nativeOffsetBatchReader{
 		reader:      s.reader,
 		connInfo:    s.connInfo,
 		path:        s.path,
@@ -319,7 +346,8 @@ func (s *nativeTableBatchSource) Open(ctx context.Context) (TableBatchReader, er
 		readOptions: cloneBatchHints(s.readOptions),
 		tableInfo:   s.tableInfo,
 		spatialInfo: s.spatialInfo,
-	}, nil
+	})
+	return protectTableBatchReader(reader, protect)
 }
 
 type nativeTableSessionBatchReader struct {

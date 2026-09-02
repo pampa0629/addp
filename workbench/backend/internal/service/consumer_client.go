@@ -44,7 +44,7 @@ func NewHTTPDescriptorReader(baseURL string, httpClient *http.Client) (*HTTPDesc
 
 func (r *HTTPDescriptorReader) GetDescriptor(ctx context.Context, input DescriptorRequest) (*models.ConsumerDescriptor, error) {
 	if input.Ref.ServiceType != "query" || input.Ref.ServiceID <= 0 || strings.TrimSpace(input.BearerToken) == "" {
-		return nil, ErrInvalidView
+		return nil, ErrInvalidDataApplication
 	}
 	path := r.baseURL + "/api/v1/service/consumer/services/" + url.PathEscape(input.Ref.ServiceType) + "/" + strconv.FormatInt(input.Ref.ServiceID, 10)
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, path, nil)

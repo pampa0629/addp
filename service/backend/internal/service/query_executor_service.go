@@ -13,9 +13,7 @@ import (
 
 	"github.com/addp/common/client"
 	"github.com/addp/common/datatype"
-	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
-	commonModels "github.com/addp/common/models"
 	commonquery "github.com/addp/common/query"
 	"github.com/addp/service/internal/models"
 	"github.com/google/uuid"
@@ -24,9 +22,20 @@ import (
 
 // QueryExecutorService 执行已发布查询服务的结构化查询计划。
 type QueryExecutorService struct {
-	systemClient  *client.SystemClient
-	systemService *client.SystemServiceClient
-	tokenCodec    *queryTokenCodec
+	systemClient   *client.SystemClient
+	systemService  *client.SystemServiceClient
+	tokenCodec     *queryTokenCodec
+	protectionGate interface {
+		BeginPreparedQuery(context.Context, uint, plugin.EnginePlugin, plugin.PreparedQuery) (func(*plugin.QueryResult) error, func(), error)
+		BeginUnresolvedRead(context.Context, uint) (func(), error)
+	}
+}
+
+func (s *QueryExecutorService) SetProtectionGate(gate interface {
+	BeginPreparedQuery(context.Context, uint, plugin.EnginePlugin, plugin.PreparedQuery) (func(*plugin.QueryResult) error, func(), error)
+	BeginUnresolvedRead(context.Context, uint) (func(), error)
+}) {
+	s.protectionGate = gate
 }
 
 func NewQueryExecutorService(
@@ -83,14 +92,6 @@ func (s *QueryExecutorService) executeDirectQuery(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get engine: %w", err)
 	}
-	commonEngine := &commonModels.Engine{
-		ID: engine.ID, EngineType: engine.EngineType,
-		ConnectionInfo: commonModels.ConnectionInfo(engine.ConnectionInfo),
-	}
-	db, err := dbbridge.GetOrCreatePool(commonEngine, dbbridge.DefaultPoolConfig())
-	if err != nil {
-		return nil, fmt.Errorf("failed to get connection pool: %w", err)
-	}
 	baseSQL, err := directSourceSQL(queryService, engine.EngineType)
 	if err != nil {
 		return nil, err
@@ -99,11 +100,37 @@ func (s *QueryExecutorService) executeDirectQuery(
 	if err != nil {
 		return nil, err
 	}
-	var rows []map[string]interface{}
-	if err := db.WithContext(ctx).Raw(plan.SQL, plan.Args...).Scan(&rows).Error; err != nil {
+	enginePlugin, err := plugin.Get(engine.EngineType)
+	if err != nil {
+		return nil, err
+	}
+	provider, ok := enginePlugin.(plugin.QueryRuntimeProvider)
+	if !ok {
+		return nil, fmt.Errorf("engine %d does not implement query runtime", engine.ID)
+	}
+	prepared, err := provider.PrepareQuery(ctx, plugin.ConnectionInfo(engine.ConnectionInfo), plugin.QueryRequest{
+		EngineID: engine.ID, Language: "sql", Query: plan.SQL,
+		Options: plugin.QueryOptions{
+			EngineID: engine.ID, EngineType: engine.EngineType, Limit: plan.Limit + 1,
+			Timeout: 60 * time.Second, ReadOnly: true, Args: plan.Args, Spatial: queryService.HasGeometry(),
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	if s.protectionGate == nil {
+		return nil, fmt.Errorf("Service 查询保护门禁未配置")
+	}
+	protect, end, err := s.protectionGate.BeginPreparedQuery(ctx, queryService.TenantID, enginePlugin, prepared)
+	if err != nil {
+		return nil, err
+	}
+	defer end()
+	result, err := prepared.Execute(ctx)
+	if err != nil {
 		return nil, fmt.Errorf("execute query plan: %w", err)
 	}
-	return s.finalizeResult(queryService, plan, rows)
+	return s.finalizeResult(queryService, plan, result, protect)
 }
 
 func directSourceSQL(queryService *models.QueryService, engineType string) (string, error) {
@@ -151,6 +178,14 @@ func (s *QueryExecutorService) executeFederatedQuery(
 	if !ok {
 		return nil, fmt.Errorf("engine %d does not implement federated query runtime", *queryService.RuntimeEngineID)
 	}
+	if s.protectionGate == nil {
+		return nil, fmt.Errorf("Service 联邦查询保护门禁未配置")
+	}
+	end, err := s.protectionGate.BeginUnresolvedRead(ctx, queryService.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer end()
 	baseSQL, sourceEngineIDs, objectTables, err := s.federatedSourceSQL(ctx, queryService)
 	if err != nil {
 		return nil, err
@@ -186,7 +221,7 @@ func (s *QueryExecutorService) executeFederatedQuery(
 	if err != nil {
 		return nil, fmt.Errorf("execute federated query plan: %w", err)
 	}
-	return s.finalizeResult(queryService, plan, result.Rows)
+	return s.finalizeResult(queryService, plan, result, nil)
 }
 
 func federatedQueryOptions(queryService *models.QueryService, plan *compiledQueryPlan) plugin.QueryOptions {
@@ -226,14 +261,23 @@ func (s *QueryExecutorService) federatedSourceSQL(
 func (s *QueryExecutorService) finalizeResult(
 	queryService *models.QueryService,
 	plan *compiledQueryPlan,
-	rows []map[string]interface{},
+	result *plugin.QueryResult,
+	protect func(*plugin.QueryResult) error,
 ) (*models.QueryExecutionResult, error) {
+	if result == nil {
+		return nil, errors.New("query service returned no result")
+	}
+	rows := result.Rows
 	if err := normalizePublishedResultRows(rows, queryService.GetTableInfo()); err != nil {
 		return nil, err
 	}
 	hasMore := len(rows) > plan.Limit
 	if hasMore {
 		rows = rows[:plan.Limit]
+	}
+	result.Rows = rows
+	if len(result.Columns) == 0 {
+		result.Columns = append(append([]string(nil), plan.SelectedFields...), plan.HiddenFields...)
 	}
 	featureIDs := make([]string, len(rows))
 	for index, row := range rows {
@@ -257,6 +301,11 @@ func (s *QueryExecutorService) finalizeResult(
 			return nil, err
 		}
 	}
+	if protect != nil {
+		if err := protect(result); err != nil {
+			return nil, err
+		}
+	}
 	for _, row := range rows {
 		for _, field := range plan.HiddenFields {
 			delete(row, field)
@@ -266,8 +315,22 @@ func (s *QueryExecutorService) finalizeResult(
 		Data:           rows,
 		Page:           models.QueryPageResult{Limit: plan.Limit, HasMore: hasMore, NextCursor: nextCursor},
 		ServiceVersion: plan.ServiceVersion,
-		Fields:         append([]string(nil), plan.SelectedFields...), FeatureIDs: featureIDs,
+		Fields:         visibleProtectedFields(plan.SelectedFields, result.Columns), FeatureIDs: featureIDs,
 	}, nil
+}
+
+func visibleProtectedFields(selected, protectedColumns []string) []string {
+	visible := make(map[string]struct{}, len(protectedColumns))
+	for _, field := range protectedColumns {
+		visible[field] = struct{}{}
+	}
+	result := make([]string, 0, len(selected))
+	for _, field := range selected {
+		if _, exists := visible[field]; exists {
+			result = append(result, field)
+		}
+	}
+	return result
 }
 
 // normalizePublishedResultRows makes engine-native scalar values obey the

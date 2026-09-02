@@ -22,6 +22,9 @@ export default defineConfig({
     },
     dedupe: ['vue', 'vue-i18n', 'element-plus', '@element-plus/icons-vue', 'axios']
   },
+  optimizeDeps: {
+    include: ['element-plus/es']
+  },
   server: {
     port: 5183,
     strictPort: true,

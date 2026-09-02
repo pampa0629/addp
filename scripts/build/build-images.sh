@@ -645,7 +645,7 @@ build_service() {
     local dockerfile_path=""
 
     case "$service" in
-        transfer-bounded-worker|meta-worker|quality-worker)
+        transfer-bounded-worker|meta-worker|quality-worker|security-worker)
             # Worker services: special case with worker binary
             dockerfile_path="${service_dir}/Dockerfile.prebuilt.worker"
             build_context="."
@@ -983,6 +983,7 @@ main() {
         "agent-backend:agent/backend"
         "model-backend:model/backend"
         "quality-backend:quality/backend"
+        "security-backend:security/backend"
         "asset-backend:asset/backend"
         "catalog-backend:catalog/backend"
         "workbench-backend:workbench/backend"
@@ -1002,6 +1003,7 @@ main() {
         "transfer-continuous-worker:transfer/backend"
         "meta-worker:meta/backend"
         "quality-worker:quality/backend"
+        "security-worker:security/backend"
         "gateway:gateway"
         "console:console/frontend"
         "system-frontend:system/frontend"
@@ -1018,6 +1020,7 @@ main() {
         "agent-frontend:agent/frontend"
         "model-frontend:model/frontend"
         "quality-frontend:quality/frontend"
+        "security-frontend:security/frontend"
         "asset-frontend:asset/frontend"
         "portal-frontend:portal/frontend"
         "graph-frontend:graph/frontend"

@@ -47,29 +47,6 @@ func (r *DataApplicationRepository) Get(tenantID, ownerUserID int64, id string) 
 	return &application, nil
 }
 
-func (r *DataApplicationRepository) GetSourceViews(tenantID, ownerUserID int64, ids []string) ([]models.View, error) {
-	views := make([]models.View, 0, len(ids))
-	if err := r.db.Where("tenant_id = ? AND owner_user_id = ? AND id IN ?", tenantID, ownerUserID, ids).Find(&views).Error; err != nil {
-		return nil, err
-	}
-	if len(views) != len(ids) {
-		return nil, ErrViewNotFound
-	}
-	byID := make(map[string]models.View, len(views))
-	for _, view := range views {
-		byID[view.ID] = view
-	}
-	ordered := make([]models.View, 0, len(ids))
-	for _, id := range ids {
-		view, ok := byID[id]
-		if !ok {
-			return nil, ErrViewNotFound
-		}
-		ordered = append(ordered, view)
-	}
-	return ordered, nil
-}
-
 func (r *DataApplicationRepository) Create(application *models.DataApplication) error {
 	return r.db.Create(application).Error
 }

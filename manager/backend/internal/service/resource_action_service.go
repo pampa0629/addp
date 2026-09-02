@@ -105,14 +105,25 @@ func (s *ResourceActionService) GetResourceActions(ctx context.Context, locatorU
 		} else if isDatabaseNodeType(loc.Type) {
 			resp.Actions["import"] = unsupported("engine does not support table write")
 		}
-		if isDatabaseItemType(loc.Type) && databaseCanRead(engine) {
+		if loc.Type == resourcetree.TypeTable && databaseCanRead(engine) {
 			resp.Actions["export"] = ResourceActionStatus{
 				Supported: true,
 				DataTypes: []string{"table"},
 				Formats:   tableExportFormats(),
 			}
-		} else if isDatabaseItemType(loc.Type) {
+		} else if loc.Type == resourcetree.TypeTable {
 			resp.Actions["export"] = unsupported("engine does not support table read")
+		} else if loc.Type == resourcetree.TypeCollection {
+			formats := encodedRecordExportFormats(engine)
+			if len(formats) > 0 {
+				resp.Actions["export"] = ResourceActionStatus{
+					Supported: true,
+					DataTypes: []string{string(datatype.Unknown)},
+					Formats:   formats,
+				}
+			} else {
+				resp.Actions["export"] = unsupported("engine does not support encoded record export")
+			}
 		}
 	}
 
@@ -251,7 +262,33 @@ func isDatabaseNodeType(t resourcetree.ResourceType) bool {
 }
 
 func isDatabaseItemType(t resourcetree.ResourceType) bool {
-	return t == resourcetree.TypeTable
+	return t == resourcetree.TypeTable || t == resourcetree.TypeCollection
+}
+
+func encodedRecordExportFormats(engine *commonModels.Engine) []string {
+	caps, ok := engineCapabilities(engine)
+	if !ok || caps.Storage == nil || caps.Storage.Store == nil || caps.Storage.Store.EncodedRecordReadSession == nil {
+		return nil
+	}
+	formats := make([]string, 0, len(caps.Storage.Store.EncodedRecordReadSession.Formats))
+	seen := make(map[string]struct{}, len(caps.Storage.Store.EncodedRecordReadSession.Formats))
+	for _, raw := range caps.Storage.Store.EncodedRecordReadSession.Formats {
+		formatName := strings.TrimSpace(raw)
+		if formatName == "" {
+			continue
+		}
+		descriptor, registered := format.GetFormatDescriptor(format.FormatType(formatName))
+		if !registered || descriptor.DataType != datatype.Unknown {
+			continue
+		}
+		if _, duplicate := seen[formatName]; duplicate {
+			continue
+		}
+		seen[formatName] = struct{}{}
+		formats = append(formats, formatName)
+	}
+	sort.Strings(formats)
+	return formats
 }
 
 func tableImportFormats() []string {

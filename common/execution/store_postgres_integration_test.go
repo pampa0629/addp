@@ -36,6 +36,14 @@ func TestExecutionAuthorizationFactsMigrationAgainstPostgres(t *testing.T) {
 	if err := NewTaskExecutionRepository(db).Create(context.Background(), plain); err != nil {
 		t.Fatalf("create execution without authorization: %v", err)
 	}
+	eventTriggered := &TaskExecution{
+		TenantID: 7, ExecutionID: "00000000-0000-0000-0000-000000000005",
+		Module: ModuleSecurity, TaskType: TaskTypeSensitiveDataDiscovery, Source: ModuleSecurity,
+		Status: ExecutionStatusPending, TriggerType: TriggerTypeEvent, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := NewTaskExecutionRepository(db).Create(context.Background(), eventTriggered); err != nil {
+		t.Fatalf("create event-triggered execution: %v", err)
+	}
 
 	principalID := int64(11)
 	partial := &TaskExecution{

@@ -1,12 +1,52 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 
+	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/datatype"
 	"github.com/addp/meta/internal/metaquery"
 	"github.com/addp/meta/internal/models"
+	"gorm.io/gorm"
 )
+
+func (s *MetadataQueryService) GetDataItemSecurityFacts(tenantID uint, fingerprint string) (*dataprotection.DataItemSecurityFacts, error) {
+	if tenantID == 0 || fingerprint == "" {
+		return nil, fmt.Errorf("DataItem security facts identity is required")
+	}
+	var item models.MetaItem
+	if err := s.db.Where("tenant_id = ? AND fingerprint = ? AND deleted_at IS NULL", tenantID, fingerprint).First(&item).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, gorm.ErrRecordNotFound
+		}
+		return nil, err
+	}
+	fields, err := metaquery.FieldsFromMetaItem(item)
+	if err != nil {
+		return nil, err
+	}
+	hash := ""
+	if len(fields) > 0 {
+		hash, err = dataprotection.TableSchemaSnapshotHash(fields)
+		if err != nil {
+			return nil, fmt.Errorf("DataItem security facts unavailable: %w", err)
+		}
+	}
+	observedAt := item.CreatedAt.UTC()
+	if item.ScannedAt != nil {
+		observedAt = item.ScannedAt.UTC()
+	}
+	facts := &dataprotection.DataItemSecurityFacts{
+		SchemaVersion:   dataprotection.DataItemSecurityFactsSchemaV1,
+		ItemFingerprint: item.Fingerprint, ItemType: item.ItemType,
+		Fields: fields, SourceSnapshotHash: hash, ObservedAt: observedAt,
+	}
+	if err := facts.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid DataItem security facts: %w", err)
+	}
+	return facts, nil
+}
 
 func (s *MetadataQueryService) ListItemsByEngine(engineID, tenantID uint) ([]models.MetaItemLite, error) {
 	var items []models.MetaItem

@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -178,16 +177,22 @@ func TestApplySQLExecutionAuthorizationFactsPersistsOnlyReferences(t *testing.T)
 	}
 }
 
-func TestPrepareContentExecutionRejectsAdHocRelationResult(t *testing.T) {
-	executor := &DevExecutor{}
-	_, err := executor.prepareContentExecution(
-		context.Background(), commonExecution.TaskTypeQuery,
-		map[string]interface{}{"query": "SELECT * FROM addp_input.source", "query_type": "sql", "relation_inputs": []interface{}{"source"}},
-		map[string]interface{}{"engine_id": 12},
-		nil, 7, 11, "addp_at_user", commonExecution.TriggerTypeManual, 60,
-	)
-	if err == nil || !strings.Contains(err.Error(), "只能通过已保存任务的 Orchestrator 执行") {
-		t.Fatalf("expected ad-hoc relation result rejection, got %v", err)
+func TestCompileRelationPreviewQueryUsesEffectiveTableBinding(t *testing.T) {
+	compiled, err := compileRelationPreviewQuery(&models.DevTask{
+		DevType: commonExecution.TaskTypeQuery,
+		Content: models.DevTaskContent{
+			"query": "SELECT * FROM source", "query_type": "sql",
+			"query_parameters": []interface{}{map[string]interface{}{"name": "source", "type": "relation"}},
+		},
+		ExecutionConfig: models.DevTaskContent{"engine_id": 12},
+	}, map[string]interface{}{
+		"source": map[string]interface{}{"locator": "addp://engine/12/path/public/source?type=table"},
+	}, "postgresql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := compiled.Content["query"]; got != `SELECT * FROM "public"."source"` {
+		t.Fatalf("compiled query = %q", got)
 	}
 }
 
@@ -375,11 +380,14 @@ func TestQueryResultAppliesPreviewLimitAndTruncation(t *testing.T) {
 		"table",
 		nil,
 	)
-	if errorMessage != "" || rowsAffected == nil || *rowsAffected != 2 {
+	if errorMessage != "" || rowsAffected != nil {
 		t.Fatalf("error = %q, rowsAffected = %v", errorMessage, rowsAffected)
 	}
 	if result["rows_count"] != 2 || result["result_limit"] != 2 || result["truncated"] != true {
 		t.Fatalf("result limit metadata = %#v", result)
+	}
+	if _, exists := result["rows_affected"]; exists {
+		t.Fatalf("read preview must not expose rows_affected: %#v", result)
 	}
 	summary, ok := result["summary"].(map[string]interface{})
 	if !ok {
@@ -391,13 +399,21 @@ func TestQueryResultAppliesPreviewLimitAndTruncation(t *testing.T) {
 	}
 }
 
-func TestMQLFieldNamesFindsTopLevelFieldsInsideFilters(t *testing.T) {
-	fields := mqlFieldNames(`{"find":"Outdoors","filter":{"members":{"$elemMatch":{"entryInfo.status":"领队"}}},"limit":10}`)
-	if !slices.Contains(fields, "members") {
-		t.Fatalf("fields = %#v, want members", fields)
+func TestQueryResultPreservesRowsAffectedForWrite(t *testing.T) {
+	executor := &DevExecutor{queryResultLimit: 2}
+	result, errorMessage, rowsAffected := executor.queryResult(
+		nil,
+		nil,
+		7,
+		SQLExecutionEffectWrite,
+		"table",
+		nil,
+	)
+	if errorMessage != "" || rowsAffected == nil || *rowsAffected != 7 {
+		t.Fatalf("error = %q, rowsAffected = %v", errorMessage, rowsAffected)
 	}
-	if slices.Contains(fields, "find") || slices.Contains(fields, "filter") || slices.Contains(fields, "limit") {
-		t.Fatalf("command keys leaked into fields = %#v", fields)
+	if result["rows_affected"] != int64(7) {
+		t.Fatalf("write result rows_affected = %#v", result["rows_affected"])
 	}
 }
 

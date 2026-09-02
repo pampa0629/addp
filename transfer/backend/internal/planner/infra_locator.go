@@ -18,6 +18,43 @@ type InfraLocator struct {
 	Type      resourcetree.ResourceType
 }
 
+func (l *InfraLocator) ToURI() string {
+	if l == nil || strings.TrimSpace(l.Kind) == "" || strings.TrimSpace(l.Namespace) == "" || l.Type == "" {
+		return ""
+	}
+	parts := make([]string, 0, len(l.Path)+1)
+	parts = append(parts, strings.TrimSpace(l.Namespace))
+	parts = append(parts, l.Path...)
+	locator := &url.URL{
+		Scheme: infraLocatorScheme,
+		Host:   strings.TrimSpace(l.Kind),
+		Path:   "/" + strings.Join(parts, "/"),
+	}
+	query := locator.Query()
+	query.Set("type", string(l.Type))
+	locator.RawQuery = query.Encode()
+	return locator.String()
+}
+
+func (l *InfraLocator) Child(name string, resourceType resourcetree.ResourceType) (*InfraLocator, error) {
+	if l == nil {
+		return nil, fmt.Errorf("infra parent locator is required")
+	}
+	name = strings.TrimSpace(name)
+	if name == "" || strings.Contains(name, "/") {
+		return nil, fmt.Errorf("infra child name must be one path segment")
+	}
+	if resourceType == "" {
+		return nil, fmt.Errorf("infra child resource type is required")
+	}
+	return &InfraLocator{
+		Kind:      l.Kind,
+		Namespace: l.Namespace,
+		Path:      append(append([]string(nil), l.Path...), name),
+		Type:      resourceType,
+	}, nil
+}
+
 func IsInfraLocatorURI(value string) bool {
 	return strings.HasPrefix(strings.TrimSpace(value), infraLocatorScheme+"://")
 }

@@ -24,7 +24,16 @@ import (
 // WorkflowEngineService 工作流执行引擎服务
 // 通过 Common Engine 的 WorkflowRuntimeProvider 统一调用工作流运行时。
 type WorkflowEngineService struct {
-	systemService *commonClient.SystemServiceClient
+	systemService  *commonClient.SystemServiceClient
+	protectionGate interface {
+		BeginCatalogPath(context.Context, uint, plugin.EnginePlugin, plugin.EngineCatalogPath) (func(), error)
+	}
+}
+
+func (s *WorkflowEngineService) SetProtectionGate(gate interface {
+	BeginCatalogPath(context.Context, uint, plugin.EnginePlugin, plugin.EngineCatalogPath) (func(), error)
+}) {
+	s.protectionGate = gate
 }
 
 var workflowRuntimeStatusPollInterval = 2 * time.Second
@@ -544,6 +553,9 @@ func (s *WorkflowEngineService) preprocessWorkflowParamsWithTargets(
 			}
 			continue
 		}
+		if err := s.requireWorkflowResourceInputs(ctx, tenantID, params, adapterSpec, resolver); err != nil {
+			return nil, nil, fmt.Errorf("任务 %d 数据保护门禁失败: %w", i, err)
+		}
 		if adapterSpec.AccessPlan != nil {
 			targets, err := s.deriveWorkflowAccessPlan(ctx, tenantID, params, adapterSpec, resolver)
 			if err != nil {
@@ -623,6 +635,50 @@ func (s *WorkflowEngineService) preprocessWorkflowParamsWithTargets(
 	}
 
 	return result, producedTargets, nil
+}
+
+func (s *WorkflowEngineService) requireWorkflowResourceInputs(
+	ctx context.Context,
+	tenantID uint,
+	params map[string]interface{},
+	spec workflowOperatorAdapterSpec,
+	resolver *workflowEngineAccessResolver,
+) error {
+	if s.protectionGate == nil {
+		return fmt.Errorf("Develop 工作流保护门禁未配置")
+	}
+	for _, input := range spec.ResourceInputs {
+		locatorText := strings.TrimSpace(stringParam(params, input.PublicParam))
+		if locatorText == "" {
+			continue
+		}
+		locator, err := resourcetree.ParseURI(locatorText)
+		if err != nil || locator.EngineID == 0 {
+			return fmt.Errorf("invalid %s", input.PublicParam)
+		}
+		engine, err := resolver.engine(ctx, locator.EngineID)
+		if err != nil {
+			return err
+		}
+		enginePlugin, err := plugin.Get(engine.EngineType)
+		if err != nil {
+			return err
+		}
+		modelProvider, ok := enginePlugin.(plugin.EngineCatalogModelProvider)
+		if !ok {
+			return fmt.Errorf("workflow source provider has no catalog model")
+		}
+		path, err := resourcetree.EngineCatalogPathFromLocator(modelProvider.EngineCatalogModel(), locator)
+		if err != nil {
+			return err
+		}
+		endProtection, err := s.protectionGate.BeginCatalogPath(ctx, tenantID, enginePlugin, path)
+		if err != nil {
+			return err
+		}
+		endProtection()
+	}
+	return nil
 }
 
 func workflowTargetsForTask(taskID string, targets []WorkflowProducedTarget) []WorkflowProducedTarget {

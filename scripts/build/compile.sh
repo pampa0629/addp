@@ -228,6 +228,8 @@ SERVICES=(
     "model-backend:model/backend"
     "quality-backend:quality/backend"
     "quality-worker:quality/backend"
+    "security-backend:security/backend"
+    "security-worker:security/backend"
     "asset-backend:asset/backend"
     "catalog-backend:catalog/backend"
     "workbench-backend:workbench/backend"

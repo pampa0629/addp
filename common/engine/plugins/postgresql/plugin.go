@@ -10,6 +10,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 	commonquery "github.com/addp/common/query"
 	_ "github.com/lib/pq"
+	pgquery "github.com/pganalyze/pg_query_go/v6"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -105,6 +106,7 @@ func (p *PostgreSQLPlugin) Capabilities() plugin.EngineCapabilities {
 		Write:                     true,
 		BulkWrite:                 true,
 		TableReadSession:          true,
+		QueryReadSession:          true,
 		TableReadSpatialTransform: true,
 		TableSpatialEncoding: &plugin.NativeTableSpatialEncodingCapability{
 			GeometryReadEncodings:  []string{"ewkb", "geojson"},
@@ -171,8 +173,15 @@ func (p *PostgreSQLPlugin) GenerateSampleQuery(ctx context.Context, connInfo plu
 	return plugin.SampleSQLForEngineCatalogPath(p.Type(), opts.Path, 10), "sql"
 }
 
-func (p *PostgreSQLPlugin) ExecuteRuntimeQuery(ctx context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (*plugin.QueryResult, error) {
-	return p.ExecuteSQL(ctx, connInfo, req.Query, req.Options)
+func (p *PostgreSQLPlugin) PrepareQuery(_ context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (plugin.PreparedQuery, error) {
+	boundQuery, _, err := plugin.BindSQLRuntimeParameters(p.GetDialect(), req.Query, req.Options)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := pgquery.Parse(strings.TrimSpace(boundQuery)); err != nil {
+		return nil, fmt.Errorf("PostgreSQL 查询语法无效: %w", err)
+	}
+	return plugin.PrepareSQLRuntimeQuery(p, connInfo, req, p.resolvePreparedQueryReadSet, p.resolvePreparedQueryOutputLineage)
 }
 
 func (p *PostgreSQLPlugin) SQLDialect() string {

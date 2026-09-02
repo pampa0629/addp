@@ -1555,6 +1555,117 @@
                 ]
             }
         },
+        "/runtime/data-items/{fingerprint}/security-facts": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅供 addp-security 使用，按当前 Tenant 和精确 fingerprint 返回无原值的字段结构事实 | Restricted to addp-security; returns value-free field structure facts by current tenant and exact fingerprint",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Runtime"
+                ],
+                "summary": "获取单个 DataItem 的安全技术事实 | Get security technical facts for one DataItem",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "DataItem 指纹 | DataItem fingerprint",
+                        "name": "fingerprint",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "安全技术事实 | Security technical facts",
+                        "schema": {
+                            "$ref": "#/definitions/dataprotection.DataItemSecurityFacts"
+                        }
+                    },
+                    "404": {
+                        "description": "DataItem 不存在 | DataItem not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "422": {
+                        "description": "结构事实不可用 | Structure facts unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.security_facts.read"
+                ]
+            }
+        },
+        "/runtime/data-items/{fingerprint}/security-sample": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅 addp-security 可按当前 Tenant 和确定 fingerprint 临时读取源文档的有界文本样本；样本不写入 Meta attributes | Only addp-security may transiently read a bounded source-document text sample for an exact fingerprint in the current tenant; the sample is not persisted in Meta attributes",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Meta Runtime"
+                ],
+                "summary": "读取 DataItem 受控安全样本 | Read controlled DataItem security sample",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "DataItem fingerprint",
+                        "name": "fingerprint",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "受控样本 | Controlled sample",
+                        "schema": {
+                            "$ref": "#/definitions/dataprotection.DataItemSecuritySample"
+                        }
+                    },
+                    "400": {
+                        "description": "fingerprint 无效 | Invalid fingerprint",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "样本读取不可用 | Sample read unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "meta.security_facts.read"
+                ]
+            }
+        },
         "/scan/run/manual": {
             "post": {
                 "security": [
@@ -2461,6 +2572,58 @@
         }
     },
     "definitions": {
+        "dataprotection.DataItemSecurityFacts": {
+            "type": "object",
+            "properties": {
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/datatype.FieldInfo"
+                    }
+                },
+                "item_fingerprint": {
+                    "type": "string"
+                },
+                "item_type": {
+                    "type": "string"
+                },
+                "observed_at": {
+                    "type": "string"
+                },
+                "schema_version": {
+                    "type": "string"
+                },
+                "source_snapshot_hash": {
+                    "type": "string"
+                }
+            }
+        },
+        "dataprotection.DataItemSecuritySample": {
+            "type": "object",
+            "properties": {
+                "item_fingerprint": {
+                    "type": "string"
+                },
+                "item_type": {
+                    "type": "string"
+                },
+                "observed_at": {
+                    "type": "string"
+                },
+                "schema_version": {
+                    "type": "string"
+                },
+                "source_snapshot_hash": {
+                    "type": "string"
+                },
+                "text": {
+                    "type": "string"
+                },
+                "truncated": {
+                    "type": "boolean"
+                }
+            }
+        },
         "datatype.CRSDefinition": {
             "type": "object",
             "properties": {

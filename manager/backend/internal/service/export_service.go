@@ -152,16 +152,26 @@ func (s *ExportService) CreateExport(ctx context.Context, req *ExportRequest) (*
 	if err := engineaccess.EnsureAvailable(engine); err != nil {
 		return nil, err
 	}
-	if !databaseCanRead(engine) {
-		return nil, ErrExportSourceUnsupported
-	}
-
 	formatType := format.FormatType(strings.ToLower(strings.TrimSpace(req.Format)))
-	if formatType == "" {
+	if formatType == "" && loc.Type == resourcetree.TypeCollection {
+		formatType = format.FormatMongoDBExtendedJSONL
+	} else if formatType == "" {
 		formatType = format.FormatCSV
 	}
-	if !supportedExportFormat(formatType) {
+	if loc.Type == resourcetree.TypeTable && !databaseCanRead(engine) {
+		return nil, ErrExportSourceUnsupported
+	}
+	if loc.Type == resourcetree.TypeTable && !supportedExportFormat(formatType) {
 		return nil, ErrExportFormatUnsupported
+	}
+	if loc.Type == resourcetree.TypeCollection {
+		recordFormats := encodedRecordExportFormats(engine)
+		if len(recordFormats) == 0 {
+			return nil, ErrExportSourceUnsupported
+		}
+		if !containsExactString(recordFormats, string(formatType)) {
+			return nil, ErrExportFormatUnsupported
+		}
 	}
 
 	now := time.Now()
@@ -175,10 +185,14 @@ func (s *ExportService) CreateExport(ctx context.Context, req *ExportRequest) (*
 	targetLocator := managerInfraMinioObjectLocator(s.minioBucket, targetObjectPath)
 
 	autoScanMetadata := false
+	taskConfig := buildTableExportTaskConfig(sourceLocator, parentLocator, targetFileName, formatType)
+	if loc.Type == resourcetree.TypeCollection {
+		taskConfig = buildEncodedRecordExportTaskConfig(sourceLocator, parentLocator, targetFileName, formatType)
+	}
 	taskReq := &commonClient.CreateTransferTaskRequest{
 		Name:             fmt.Sprintf("manager_export_%s_%s", strings.TrimSuffix(targetFileName, path.Ext(targetFileName)), now.Format("20060102_150405")),
 		TaskType:         commonExecution.TaskTypeSync,
-		Config:           buildTableExportTaskConfig(sourceLocator, parentLocator, targetFileName, formatType),
+		Config:           taskConfig,
 		AutoScanMetadata: &autoScanMetadata,
 		BatchSize:        1000,
 		TenantID:         req.TenantID,
@@ -253,7 +267,7 @@ func (s *ExportService) openExportSingleFile(ctx context.Context, session *model
 	}
 	contentType := mime.TypeByExtension(path.Ext(session.FileName))
 	if contentType == "" {
-		contentType = "application/octet-stream"
+		contentType = format.FormatToMIME(format.FormatType(session.Format))
 	}
 	return &ExportFile{
 		Reader:      obj,
@@ -399,6 +413,30 @@ func buildTableExportTaskConfig(sourceLocator, parentLocator, fileName string, f
 	}
 }
 
+func buildEncodedRecordExportTaskConfig(sourceLocator, parentLocator, fileName string, formatType format.FormatType) map[string]interface{} {
+	return map[string]interface{}{
+		"runtime": map[string]interface{}{"boundary": "bounded"},
+		"load":    map[string]interface{}{"mode": "snapshot"},
+		"source": map[string]interface{}{
+			"locator": sourceLocator, "data_type": "unknown", "representation": "native",
+		},
+		"target": map[string]interface{}{
+			"parent_locator": parentLocator, "name": fileName,
+			"data_type": "unknown", "representation": "encoded", "format": string(formatType),
+			"policy": map[string]interface{}{"apply_mode": "replace"},
+		},
+	}
+}
+
+func containsExactString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
 func supportedExportFormat(formatType format.FormatType) bool {
 	if _, err := format.GetTableWriterProvider(formatType); err == nil {
 		return true
@@ -488,9 +526,13 @@ func exportArtifactManifestJSON(session *models.ExportSession, metadata models.J
 			primaryRef = refs[i].Path
 		}
 	}
+	dataType := "table"
+	if formatType == format.FormatMongoDBExtendedJSONL {
+		dataType = "unknown"
+	}
 	manifest := exportArtifactManifest{
 		SchemaVersion: exportArtifactManifestVersion,
-		DataType:      "table",
+		DataType:      dataType,
 		Format:        string(formatType),
 		Layout:        layout,
 		BaseName:      baseName,

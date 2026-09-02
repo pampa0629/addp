@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: workbench
-manifest_version: 3
+manifest_version: 4
 permissions:
   - key: workbench.catalog.read
     allowed_scope_types: [tenant]
@@ -74,35 +74,3 @@ permissions:
     status: active
     name_i18n_key: permissions.workbench.resource_grant.revoke.name
     description_i18n_key: permissions.workbench.resource_grant.revoke.description
-  - key: workbench.view.create
-    allowed_scope_types: [tenant, department, project_group]
-    risk_level: low
-    tenant_customizable: true
-    delegable: false
-    status: active
-    name_i18n_key: permissions.workbench.view.create.name
-    description_i18n_key: permissions.workbench.view.create.description
-  - key: workbench.view.delete
-    allowed_scope_types: [tenant, department, project_group]
-    risk_level: medium
-    tenant_customizable: true
-    delegable: false
-    status: active
-    name_i18n_key: permissions.workbench.view.delete.name
-    description_i18n_key: permissions.workbench.view.delete.description
-  - key: workbench.view.read
-    allowed_scope_types: [tenant, department, project_group]
-    risk_level: low
-    tenant_customizable: true
-    delegable: true
-    status: active
-    name_i18n_key: permissions.workbench.view.read.name
-    description_i18n_key: permissions.workbench.view.read.description
-  - key: workbench.view.update
-    allowed_scope_types: [tenant, department, project_group]
-    risk_level: low
-    tenant_customizable: true
-    delegable: false
-    status: active
-    name_i18n_key: permissions.workbench.view.update.name
-    description_i18n_key: permissions.workbench.view.update.description

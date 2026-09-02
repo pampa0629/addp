@@ -54,6 +54,12 @@ type NotebookSession struct {
 	kernelCapabilityHash   [32]byte
 }
 
+type NotebookProtectionGate interface {
+	BeginPreparedQuery(context.Context, uint, plugin.EnginePlugin, plugin.PreparedQuery) (func(*plugin.QueryResult) error, func(), error)
+	BeginCatalogPath(context.Context, uint, plugin.EnginePlugin, plugin.EngineCatalogPath) (func(), error)
+	BeginUnresolvedRead(context.Context, uint) (func(), error)
+}
+
 type NotebookSessionService struct {
 	jupyter          *JupyterService
 	tasks            *DevTaskService
@@ -65,6 +71,7 @@ type NotebookSessionService struct {
 	activeExecutions map[string]map[string]context.CancelFunc
 	stop             chan struct{}
 	once             sync.Once
+	protectionGate   NotebookProtectionGate
 }
 
 func NewNotebookSessionService(jupyter *JupyterService, tasks *DevTaskService, catalog NotebookSessionControlPlane, ttl time.Duration, ownerAPIBaseURL string) *NotebookSessionService {
@@ -83,6 +90,25 @@ func NewNotebookSessionService(jupyter *JupyterService, tasks *DevTaskService, c
 	}
 	go service.reap()
 	return service
+}
+
+func (s *NotebookSessionService) SetProtectionGate(gate NotebookProtectionGate) {
+	s.protectionGate = gate
+}
+
+func (s *NotebookSessionService) HasActiveExecutionsForTenant(tenantID int64) bool {
+	if s == nil || tenantID <= 0 {
+		return false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for sessionID, executions := range s.activeExecutions {
+		session := s.items[sessionID]
+		if session != nil && int64(session.TenantID) == tenantID && len(executions) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *NotebookSessionService) Create(ctx context.Context, userAccessToken string, tenantID, userID, taskID uint) (*NotebookSession, string, error) {
@@ -275,6 +301,14 @@ func (s *NotebookSessionService) StreamTable(
 		return ErrNotebookTableScanUnsupported
 	}
 	path := notebookPluginCatalogPath(request.Path)
+	if s.protectionGate == nil {
+		return fmt.Errorf("notebook data protection gate is not configured")
+	}
+	endProtection, err := s.protectionGate.BeginCatalogPath(executionCtx, session.TenantID, enginePlugin, path)
+	if err != nil {
+		return err
+	}
+	defer endProtection()
 	readSession, err := provider.OpenTableReadSession(executionCtx, plugin.ConnectionInfo(access.Engine.ConnectionInfo), path,
 		plugin.TableReadSessionOptions{Hints: map[string]interface{}{plugin.TableReadHintGeometryEncoding: "ewkb"}})
 	if err != nil {
@@ -282,7 +316,7 @@ func (s *NotebookSessionService) StreamTable(
 	}
 	defer closeNotebookReadSession(readSession)
 
-	return s.streamNotebookReadSession(executionCtx, session, executionID, access, readSession,
+	return s.streamNotebookReadSession(executionCtx, session, executionID, access, enginePlugin, path, readSession,
 		request.BatchSize, request.MaxRows, destination, ready)
 }
 
@@ -351,7 +385,7 @@ func (s *NotebookSessionService) StreamQuery(
 			return ErrNotebookQueryUnsupported
 		}
 	}
-	result, err := provider.ExecuteRuntimeQuery(executionCtx, plugin.ConnectionInfo(access.Engine.ConnectionInfo), plugin.QueryRequest{
+	prepared, err := provider.PrepareQuery(executionCtx, plugin.ConnectionInfo(access.Engine.ConnectionInfo), plugin.QueryRequest{
 		EngineID: request.EngineID,
 		Language: request.Language,
 		Query:    request.Query,
@@ -361,6 +395,21 @@ func (s *NotebookSessionService) StreamQuery(
 		},
 	})
 	if err != nil {
+		return err
+	}
+	if s.protectionGate == nil {
+		return fmt.Errorf("notebook data protection gate is not configured")
+	}
+	protectResult, endProtection, err := s.protectionGate.BeginPreparedQuery(executionCtx, session.TenantID, enginePlugin, prepared)
+	if err != nil {
+		return err
+	}
+	defer endProtection()
+	result, err := prepared.Execute(executionCtx)
+	if err != nil {
+		return err
+	}
+	if err := protectResult(result); err != nil {
 		return err
 	}
 	batch := plugin.QueryResultToBatchData(result, 0)
@@ -396,12 +445,17 @@ func (s *NotebookSessionService) streamNotebookReadSession(
 	session *NotebookSession,
 	executionID string,
 	access *commonClient.ExecutionEngineAccess,
+	enginePlugin plugin.EnginePlugin,
+	path plugin.EngineCatalogPath,
 	readSession plugin.TableReadSession,
 	batchSize int,
 	maxRows int64,
 	destination io.Writer,
 	ready func(),
 ) error {
+	if s.protectionGate == nil {
+		return fmt.Errorf("notebook data protection gate is not configured")
+	}
 	firstLimit := notebookScanBatchLimit(batchSize, maxRows, 0)
 	firstBatch, err := readSession.ReadBatch(executionCtx, firstLimit)
 	if err != nil {
@@ -426,6 +480,11 @@ func (s *NotebookSessionService) streamNotebookReadSession(
 	rowsRead := int64(len(firstBatch.Rows))
 	nextLeaseCheck := time.Now().Add(notebookExecutionLeaseCheckInterval)
 	for len(firstBatch.Rows) == firstLimit && (maxRows == 0 || rowsRead < maxRows) {
+		endProtection, err := s.protectionGate.BeginCatalogPath(executionCtx, session.TenantID, enginePlugin, path)
+		if err != nil {
+			return err
+		}
+		endProtection()
 		if !time.Now().Before(nextLeaseCheck) {
 			if _, err := s.catalog.ValidateExecutionEngineAccess(executionCtx, session.TenantID, access.AuthorizationID,
 				commonClient.ExecutionEngineAccessRequest{

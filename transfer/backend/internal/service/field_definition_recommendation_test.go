@@ -16,6 +16,12 @@ type fieldRecommendationEngineGetterStub struct {
 	err      error
 }
 
+type allowFieldRecommendationProtectionGate struct{}
+
+func (allowFieldRecommendationProtectionGate) RequireLocator(context.Context, uint, string) error {
+	return nil
+}
+
 func (s *fieldRecommendationEngineGetterStub) GetEngineForTenant(_ context.Context, tenantID, engineID uint) (*commonmodels.Engine, error) {
 	s.tenantID = tenantID
 	s.engineID = engineID
@@ -82,7 +88,7 @@ func TestRecommendationFieldsPreserveQuotedIdentifierCase(t *testing.T) {
 
 func TestFieldRecommendationReadsSourceEngineInCurrentTenant(t *testing.T) {
 	getter := &fieldRecommendationEngineGetterStub{err: errors.New("stop after tenant binding")}
-	service := NewFieldDefinitionRecommendationService(getter)
+	service := NewFieldDefinitionRecommendationService(getter, allowFieldRecommendationProtectionGate{})
 	_, err := service.Recommend(context.Background(), 7, FieldDefinitionRecommendationRequest{
 		SourceLocator:    "addp://engine/8/path/public/amounts?type=table&item_id=60",
 		SourceFields:     []string{"amount"},

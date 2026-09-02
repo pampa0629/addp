@@ -370,8 +370,8 @@ func TestRefreshKnownDOCXItemExtractsTextFacts(t *testing.T) {
 	if !commonJSON.Bool(refreshed.Attributes, "capabilities.extraction", "text_extracted") {
 		t.Fatalf("capabilities.extraction = %#v", refreshed.Attributes["capabilities"])
 	}
-	if got := commonJSON.String(refreshed.Attributes, "capabilities.extraction", "plain_text_preview"); got != "行业赛道分析" {
-		t.Fatalf("plain_text_preview = %q", got)
+	if got := commonJSON.String(refreshed.Attributes, "capabilities.extraction", "plain_text_preview"); got != "" {
+		t.Fatalf("plain_text_preview persisted raw content: %q", got)
 	}
 	if got := commonJSON.String(refreshed.Attributes, "capabilities.extraction", "extractor"); got != "common_format:docx" {
 		t.Fatalf("extractor = %q", got)

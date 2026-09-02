@@ -1,6 +1,6 @@
 # ADDP Workbench 数据服务消费与数据应用专题
 
-状态：概念设计已确认；Phase 1 至 Phase 4B 已实现并完成标准门禁及真实浏览器生命周期验收；CatalogEntry、Asset `application` 组合、owner Resource Grant、Portal 打开链路，以及普通用户在授权前、生效后、撤销后的运行权限边界均已闭环。
+状态：概念设计已确认；Phase 1 至 Phase 4B 已实现并完成标准门禁及真实浏览器生命周期验收；Phase 6 的通用 Value renderer、Map 专题样式、领域事实禁止门禁、Value + Map + Chart + Table 正式组合应用及空间探索创作向导均已完成真实浏览器验收。Tile / OGC Features 只在真实数据量超过有界 GeoJSON 上限后启动。
 
 本文跟进 ADDP `workbench` 模块的概念、边界、阶段计划与实施状态。Workbench 是平台级、领域无关的数据服务消费模块，不属于 Outdoor 业务专用能力。Outdoor 只作为首个真实验收场景；后续任何满足消费契约的数据服务都应能以同一主路径接入，禁止在 Workbench 核心模型、API、渲染判断或权限逻辑中硬编码 Outdoor 表、字段、指标或页面。
 
@@ -19,8 +19,8 @@ Workbench 的第一目标是补齐：
 ```text
 数据生产与刷新
   -> Service 发布稳定数据契约
-  -> Workbench 动态查询、展示和保存视图
-  -> 后续组合并发布 Data Application
+  -> Workbench 直接配置数据应用组件、动态查询和展示
+  -> 组件布局、参数联动、应用发布和稳定运行
   -> Catalog 建立企业目录身份
   -> Asset 组合与发布、Portal 发现和打开
 ```
@@ -38,7 +38,7 @@ Workbench 的第一目标是补齐：
 | 数据库 schema | `workbench` |
 | OAuth Client / Service Principal | `addp-workbench` |
 
-Workbench 是 ADDP 面向数据消费者的工作空间，负责通过已发布数据服务进行动态查询、可视化、保存视图，并在后续阶段组合和发布数据应用。
+Workbench 是 ADDP 面向数据消费者的数据应用工作空间，负责通过已发布数据服务直接配置应用组件、动态查询、可视化、联动、发布和运行。
 
 Workbench 不负责：
 
@@ -63,7 +63,7 @@ Workbench 由同一 owner 承担创作和运行职责，但两个页面职责使
 | Workbench 创作端 | Phase 2 | `/workbench/...` | Console iframe 模块 |
 | Data Application 运行端 | Phase 4 | `/data-apps/:application_id` | Console 当前 origin 下的独立顶层页面 |
 
-创作端负责 Explore Session、Workbench View 和后续 Data Application 编辑发布。Console 外层 URL 是 iframe 模式的公开路由事实源，模块内使用同一 canonical path，并通过 `common-frontend` Console navigation bridge 同步；前端仍按模块规范支持 standalone 开发和验证，但正式入口不形成第二个认证 origin。
+创作端只维护 Data Application：选择服务后直接配置 Component 的字段、参数和 renderer，再完成布局、共享参数、选择联动和发布。Console 外层 URL 是 iframe 模式的公开路由事实源，模块内使用同一 canonical path，并通过 `common-frontend` Console navigation bridge 同步；前端仍按模块规范支持 standalone 开发和验证，但正式入口不形成第二个认证 origin。
 
 已发布 Data Application 的运行端不嵌入 Console iframe，不显示 Console 管理导航，供 Portal 打开、全屏运行和后续 wallboard 使用。稳定 URL `/data-apps/:application_id` 由 Workbench 解析当前有效发布 Revision；同一页面不存在另一条 `/workbench/...` 运行 URL。
 
@@ -136,8 +136,8 @@ Workbench 是 Service-native Analytics，即以已发布数据服务为唯一数
 - 动态参数和结构化筛选；
 - 表格、基础图表和地图；
 - 排序、分页和有限结果导出；
-- 保存并复用 Workbench View；
-- 后续的多视图联动和应用页面。
+- 保存并复用 Data Application Component 配置；
+- 多组件联动和可发布应用页面。
 
 Workbench 不提供：
 
@@ -154,9 +154,9 @@ Workbench 不提供：
 大屏不是独立数据源、服务类型或计算模块，而是 Data Application 的一种展示模式：
 
 ```text
-Workbench View
-  -> Data Application
-  -> desktop | wallboard 展示配置
+Service Consumer Descriptor
+  -> Data Application Component
+  -> desktop | wallboard 应用展示配置
 ```
 
 `wallboard` 复用同一 Application Revision、Component、Parameter Binding、Selection Binding 和 Service 查询，只改变页面在当前浏览器视口中的布局行为。首段能力固定为视口自适应画布和用户主动全屏；不保存屏幕分辨率、缩放倍率或全屏状态，不复制一套大屏 Component 配置。
@@ -169,7 +169,9 @@ Workbench View
 
 用户临时选择服务、输入参数和切换展示方式的前端状态，不持久化，不成为领域实体，也不写入查询结果。
 
-### 5.2 Workbench View
+### 5.2 已废止的 Workbench View 历史设计
+
+> 本节只保留早期实施背景，不再是现行规范。Workbench View 已确认退出产品和领域模型；`/views` API、前端路由、权限和存储一次性删除，不保留兼容或隐式中间 View。其中关于结构化查询模板、参数控件和 renderer 的有效能力已下沉为 Data Application Component 配置。
 
 第一阶段唯一持久化聚合根，中文统一为“工作台视图”。为避免与数据库 View 混淆，概念层和 API 说明首次出现时必须使用完整名称 Workbench View。
 
@@ -292,23 +294,16 @@ Workbench View 禁止保存：
 
 ### 5.3 Data Application
 
-Data Application 是后续阶段的独立聚合根，中文统一为“数据应用”。它可以从一个或多个 Workbench View 创建，但“是否包含多个 View”不是聚合边界；用户显式执行“创建数据应用”，开始拥有组合、发布和独立运行生命周期时，才建立 Data Application。
+Data Application 是 Workbench 唯一持久化的用户创作聚合根，中文统一为“数据应用”。用户从创建页选择已发布数据服务，直接配置一个或多个 Component，随后完成布局、应用参数、组件联动、发布和独立运行。单组件应用与多组件应用使用同一条路径。
 
-Workbench View 的边界保持不变：一个服务引用、一份查询模板和一个 renderer。页面、布局、共享参数、组件联动、展示模式、发布状态和 CatalogEntry 不得继续添加到 Workbench View。
-
-创建 Data Application 时，把所选 View 的已校验配置复制为 Application 自己拥有的 Component 快照。每个 Component 至少持有：
+Data Application Component 是应用内聚实体，不单独拥有 CRUD、权限、共享或发布生命周期。每个 Component 至少持有：
 
 - `service_ref` 和 `contract_fingerprint`；
 - 参数定义、结构化查询模板和默认参数值；
 - `renderer_type` 和严格类型化的 `renderer_config`；
 - Application 内的组件标识与布局位置。
 
-个人 Workbench View 不作为 Data Application 的运行时外键或配置事实源。因此：
-
-- 后续修改或删除原 View 不影响已创建的 Data Application；
-- 修改 Application Component 不回写个人 View；
-- Data Application 运行时不读取 View 来拼装查询；
-- Application Component 仍只保存 Service 消费配置，不保存查询结果、凭据或服务 URL。
+Data Application 的草稿和 Revision 直接保存 Component 快照；创建、更新和发布时均由 Backend 重新读取 Consumer Descriptor 并记录当前契约指纹。Application Component 只保存 Service 消费配置，不保存查询结果、凭据或服务 URL。
 
 Data Application 聚合根负责：
 
@@ -326,7 +321,7 @@ Data Application 不授予底层数据访问权。运行时每个 Component 都�
 
 Phase 4A 的最小创作范围固定为单页 `desktop`：一个页面、十二列栅格和一个或多个 Component。Selection Binding 同页联动和 `wallboard` 展示模式进入 Phase 5；`mobile`、多页面和轮播仍属后续范围，数据库快照不得预埋未实现的第二套页面或展示模式字段。
 
-Data Application 使用独立于 Workbench View 的唯一 API：
+Data Application 使用 Workbench 唯一的用户创作 API：
 
 ```text
 GET    /api/v1/workbench/data_applications
@@ -339,7 +334,7 @@ POST   /api/v1/workbench/data_applications/:id/offline
 GET    /api/v1/workbench/data_applications/:id/runtime
 ```
 
-创建请求只提交名称、说明和一个或多个 `source_view_ids`。Workbench 在当前 Tenant 与当前 owner User 范围内读取来源 View、重新读取各 Service Consumer Descriptor 校验契约，然后复制为 Component 快照；`source_view_ids` 不进入 Data Application 表、Revision 或运行响应。
+创建请求提交名称、说明和完整 `snapshot`。`snapshot.components` 至少包含一个当前用户可消费的已发布 Service；Workbench Backend 逐一读取 Consumer Descriptor，不信任客户端提交的契约指纹，并将当前权威指纹归一化进草稿。请求中不存在 `source_view_ids`。
 
 聚合根保存当前草稿快照、正整数并发 `version`、`unpublished | published | offline` 发布状态和当前 Revision 编号。`PUT` 原子完整替换草稿；发布在一个事务中校验 `version`、写入新的不可变 Application Revision、切换当前 Revision 并递增聚合版本；下线只切换发布状态并递增聚合版本，不删除最后发布修订。只有从未发布的应用允许携带当前 `version` 删除，已产生 Revision 的应用只能下线。
 
@@ -548,7 +543,7 @@ Workbench Backend 在草稿保存和发布时必须使用已读取的 Consumer D
 
 ### 5.9 外部 BI 消费服务契约
 
-外部 BI 是 Service 的另一类客户端，不是 Workbench 插件、Data Application 运行模式或新的数据服务类型。它与 Workbench 共用 Service owner 的消费控制面和执行面，但不读取 Workbench View、Application Revision、renderer 配置或 Asset 私有表：
+外部 BI 是 Service 的另一类客户端，不是 Workbench 插件、Data Application 运行模式或新的数据服务类型。它与 Workbench 共用 Service owner 的消费控制面和执行面，但不读取 Data Application、Application Revision、renderer 配置或 Asset 私有表：
 
 ```text
 外部 BI
@@ -662,7 +657,7 @@ Workbench 的 `service_ref` 不使用已废弃的通用 Owner ResourceRef，也�
 
 Workbench 运行不以 Catalog 可达为前提。Service 或 Workbench 资源后续进入企业目录时，由 Catalog 建立来源绑定，但 Catalog 不接管 Service 的执行定位。
 
-`service_name` 仅是人可读名称和部分协议路径标识，不是 Workbench View 的身份引用。服务删除后重新创建同名服务必须产生新 `service_id`，旧 View 继续显示原服务不可用，不得自动改绑。
+`service_name` 仅是人可读名称和部分协议路径标识，不是 Data Application Component 的身份引用。服务删除后重新创建同名服务必须产生新 `service_id`，已有 Component 继续显示原服务不可用，不得自动改绑。
 
 ### 6.3 服务类型扩展
 
@@ -752,7 +747,7 @@ Workbench 不对底层字段执行无界 `SELECT DISTINCT`，不直接查询来�
 
 ### 7.4 保存与运行
 
-Workbench View 保存参数定义、查询模板和默认值。运行时输入默认只存在当前页面状态，不自动覆盖 View；用户显式保存后才更新聚合根版本。
+Data Application Component 保存参数定义、查询模板和默认值。运行时输入默认只存在当前页面状态，不自动覆盖草稿；所有者显式保存后才更新聚合根版本，发布后才形成新的不可变 Revision。
 
 ### 7.5 Query Service Input Contract 候选结构
 
@@ -801,13 +796,14 @@ Workbench View 保存参数定义、查询模板和默认值。运行时输入�
 
 ## 八、渲染体系
 
-第一阶段 renderer 固定为：
+当前 renderer 固定为：
 
 | Renderer | 开放条件 |
 | --- | --- |
 | `table` | 输出契约为表或等价字段集合 |
 | `chart` | 输出包含可作为维度和指标的标量字段 |
 | `map` | 输出契约声明空间能力和明确空间字段 |
+| `value` | 输出为唯一完整行，且显式选择 1–4 个数值字段 |
 
 renderer 只能消费输出契约，不根据业务名称猜测角色。第一阶段允许用户显式选择维度、指标、排序和空间字段，不自动生成业务解释。
 
@@ -818,6 +814,7 @@ renderer 只能消费输出契约，不根据业务名称猜测角色。第一�
 | 能力 | 放置位置 | 组件 | 边界 |
 | --- | --- | --- | --- |
 | 表格结果 | `common-frontend/basic` | `TabularResultRenderer` | 渲染当前页字段和行并发出当前结果选择事件；cursor 仍由宿主维护 |
+| 单值结果 | `common-frontend/basic` | `ScalarValueRenderer` | 显示服务返回的唯一行标量结果，不做求和、计数或口径推断 |
 | 图表结果 | 新建 `common-frontend/chart` | `ChartRenderer` | 使用 ECharts 渲染已完整的有界表格结果 |
 | 空间结果 | `common-frontend/map` | `GeoJSONResultRenderer` | 复用 `MapContainer`、OpenLayers、CRS registry 和底图 profile |
 | 渲染编排 | `workbench/frontend` | `WorkbenchRendererHost` | 选择 renderer、适配 Service 结果、判断完整性并处理 cursor |
@@ -827,13 +824,13 @@ renderer 只能消费输出契约，不根据业务名称猜测角色。第一�
 共享 renderer primitive：
 
 - 只接收已归一化数据、字段事实和展示配置；
-- 不发起 HTTP 请求，不读取 Token，不识别 ServiceReference、Consumer Descriptor 或 Workbench View；
+- 不发起 HTTP 请求，不读取 Token，不识别 ServiceReference、Consumer Descriptor 或 Data Application；
 - 通过事件返回排序、分页、选择、bbox 和地图视角等交互意图；
 - 只使用 ADDP 主题变量和导出的双语 i18n 消息，不持久化业务状态。
 
 现有 `TablePreview` 和 `GeoJsonPreview` 继续表示 Manager 式数据预览：它们消费预览响应结构并包含原始内容展示，不改名或扩张为 Workbench 结果 renderer。新增组件不保留另一个 Workbench 私有同功能实现。
 
-Workbench View 中的 `renderer_type` 是 `renderer_config` 的可辨识标签。Backend 必须使用三个具体 DTO 严格解码并拒绝未知字段，不使用无约束 `map[string]interface{}`。不为 renderer config 另增一个与 Workbench View `version` 并行的版本字段。
+Data Application Component 中的 `renderer_type` 是 `renderer_config` 的可辨识标签。Backend 必须使用 `table | chart | map | value` 四个具体 DTO 严格解码并拒绝未知字段，不使用无约束 `map[string]interface{}`。不为 renderer config 另增一个与 Data Application `version` 并行的版本字段。
 
 ### 8.2 Table Renderer Config
 
@@ -892,19 +889,77 @@ Workbench View 中的 `renderer_type` 是 `renderer_config` 的可辨识标签�
   "geometry_field": "geometry",
   "label_field": "person_name",
   "tooltip_fields": ["person_id", "activity_count"],
-  "base_map_profile_id": "osm"
+  "base_map_profile_id": "osm",
+  "style": {
+    "mode": "continuous",
+    "field": "activity_count",
+    "palette": "primary",
+    "legend_title": "活动数"
+  }
 }
 ```
 
 - `geometry_field` 必须是 Descriptor 空间契约明确声明的 geometry 字段，不默认为 `geom` 或 `geometry`；
 - `label_field` 可选，`tooltip_fields` 只能引用输出契约字段；
 - `base_map_profile_id` 可省略；省略时使用平台当前默认 profile，显式值只能引用平台已批准底图 profile，不保存 URL、Key 或颜色值；
+- `style.mode` 只允许 `uniform | categorical | continuous`；`categorical` 使用已选标量字段，`continuous` 使用已选数值字段；
+- `style.palette` 只保存受控的 ADDP 主题色板标识，共享 renderer 在运行时解析主题变量；快照不保存原始颜色、函数或任意样式 DSL；
+- 专题样式只对当前服务已返回的值进行分类或连续映射，不产生聚合、业务分级或指标口径；
 - 已保存 profile 失效时显式报告不可用，不自动改用另一底图；
 - 地图根据 Descriptor 的 SpatialInfo 和 CRS definition 进行展示转换，不把 GeoJSON 坐标无条件当作 WGS84；
 - 第一阶段只消费 Query Service 的 GeoJSON FeatureCollection，最多 1000 个 Feature；`page.has_more=true` 时不把局部 Feature 当作完整地图；
-- Tile Service、分级样式、专题图、热力图、聚合点、三维和任意样式 DSL 均不进入第一阶段。
+- Tile Service、自定义分级阈值、热力图、聚合点、三维和任意样式 DSL 暂不进入当前阶段。
 
-### 8.5 结果完整性原则
+### 8.5 Value Renderer Config
+
+```json
+{
+  "items": [
+    {
+      "field": "activity_count",
+      "label": "活动数",
+      "unit": "次",
+      "precision": 0
+    }
+  ]
+}
+```
+
+- `items` 只允许 1–4 项，字段必须是已选择的数值输出字段，同一字段不得重复；
+- `label` 和 `unit` 是 Data Application owner 的显式展示配置，不改变服务字段语义；`precision` 只允许 0–8；
+- Value 必须收到 `page.has_more=false` 且恰好一行结果；空结果、多行结果或非有限数值均显式拒绝渲染；
+- Value 不在浏览器中求和、计数、取第一行或计算面积；服务必须返回已具有正确口径的唯一汇总行。
+
+### 8.6 通用空间数据应用组合
+
+空间数据应用不是新的领域类型，也不使 Workbench 获得农业、户外或其他领域语义。它只是通用 Component 的推荐组合：
+
+```text
+应用参数
+  -> Value Component：已聚合的单行概览服务
+  -> Map Component：有界空间要素服务
+  -> Chart Component：已聚合到目标粒度的分布服务
+  -> Table Component：明细服务
+  -> Selection Binding：地图或图表的标量标识驱动明细查询
+```
+
+创作端可以提供只含布局和 Component 角色的通用空间应用模板，但必须由用户选择 ServiceReference、字段、单位、维度和联动映射。模板、renderer、Backend 校验和默认配置均不得包含验收数据的服务 ID、表名、字段名、业务口径、行政区划或配色。
+
+第一版采用“空间探索创作向导”，它不是新的持久化 Template 实体，也不增加模板 API。向导只在空的数据应用草稿中工作，用户确认后一次性编译为现有 Data Application Snapshot，后续仍通过普通 Component 编辑器继续调整。它固定的只有四种通用角色和十二列布局：
+
+1. Value：消费用户选择的汇总 Query Service，并通过必填应用参数把结果收敛为唯一完整行；
+2. Chart：消费同一汇总服务的完整分布结果，用户显式选择维度和度量；
+3. Map：消费用户选择的空间明细 Query Service，用户显式选择名称、提示、专题字段、样式模式与受控色板；
+4. Table：消费同一空间明细服务，用户显式选择明细列；
+5. 一个共享应用参数分别绑定 Value、Map 和 Table 的等值筛选；Chart 的维度字段通过 Selection Binding 回写该参数。
+
+向导必须读取两个 Service Consumer Descriptor，并在生成前验证：汇总和明细筛选字段均声明 `eq`、筛选字段类型一致、Chart 维度与应用参数类型一致、Value/Chart 度量为数值字段、Map geometry 来自 `primary_geometry_field`、专题字段类型与样式模式一致。应用名称、参数标签、默认值以及每个 Value 项的精度均由用户输入；精度不根据字段名或当前样例值推断。组件标题可以使用 i18n 提供的通用角色名称，但服务引用、字段、单位、精度、默认参数、图例与色板必须在向导中可见并由用户确认。生成结果只保存现有 Snapshot 字段，不保存 `spatial_exploration` 等模板标识，也不形成运行时第二条路径。
+
+已有组件时不允许套用向导或覆盖草稿；如需重新组合，用户应新建数据应用或先显式删除现有组件。向导不预览、不执行或发布服务，生成后仍由现有 Component 预览、草稿保存、发布和运行路径承担验证。
+
+小规模空间结果继续使用 Query Service 的完整有界 GeoJSON。当业务要求超过 1000 个 Feature、多级别加载或地图视窗驱动加载时，必须先定义 Tile / OGC Features 的稳定 Consumer Descriptor 和受控 operation，不得让 Workbench 直连引擎或复用 Manager 预览接口。
+
+### 8.7 结果完整性原则
 
 Table 是 cursor 分页浏览器，可以明确显示当前页。Chart 和 Map 表达对一个结果集的整体解释，因此不得静默渲染第一页：
 
@@ -917,12 +972,12 @@ page.has_more = false
 
 后续 Graph、媒体、三维和大屏 renderer 必须在存在真实服务输出契约和内容读取能力后再增加。不建设空泛 renderer 注册框架、插件 DSL 或 Workbench 私有备用组件。
 
-### 8.6 有限导出
+### 8.8 有限导出
 
 第一阶段的有限导出是 Service 查询结果的一种有界输出格式，不是 Workbench 资源、后台任务或新的执行链路：
 
 ```text
-Workbench View 当前结构化查询
+Data Application Component 当前结构化查询
   -> 同一 Service 查询 operation
   -> format=csv | geojson
   -> 单次有界响应
@@ -935,10 +990,10 @@ Workbench View 当前结构化查询
 3. 每次导出只发送一个 Service 请求，不自动追逐 cursor，不在浏览器或 Backend 拼接多页；
 4. 请求 `limit` 不得超过 Consumer Descriptor 的 `page.max_limit`，并继续受当前 renderer limit 约束；Workbench 不重复保存 Service `max_features`；
 5. 只有 `page.has_more=false` 才允许浏览器保存为完整导出文件；若仍有后续页，必须丢弃待保存内容并提示用户缩小筛选范围；
-6. 导出不创建或修改 Workbench View，不保存结果副本，也不改变 `contract_fingerprint`；
+6. 导出不创建或修改 Data Application，不保存结果副本，也不改变 `contract_fingerprint`；
 7. 导出与普通查询使用相同的 `service.data_read.execute` 和 Service Resource Grant / Policy，不增加第一阶段 `service.data_read.export`。
 
-单独限制 CSV 或 GeoJSON 不能构成真实的数据防泄漏边界，因为拥有查询权限的用户仍可读取相同 JSON 数据并自行转换格式。只有未来的正式批量导出提供更高上限、自动翻页、异步文件生成、对象存储交付或其他新增数据能力时，才需要定义独立的 Service 导出 Permission；该能力归入 Transfer/任务执行体系，不扩张 Workbench View。
+单独限制 CSV 或 GeoJSON 不能构成真实的数据防泄漏边界，因为拥有查询权限的用户仍可读取相同 JSON 数据并自行转换格式。只有未来的正式批量导出提供更高上限、自动翻页、异步文件生成、对象存储交付或其他新增数据能力时，才需要定义独立的 Service 导出 Permission；该能力归入 Transfer/任务执行体系，不扩张 Data Application。
 
 导出审计由 Service owner 负责。Service 查询执行面必须区分普通查询和显式导出，成功与拒绝都记录结构化审计事件，至少包含：
 
@@ -960,21 +1015,12 @@ Workbench View 当前结构化查询
 
 ```text
 当前用户 Permission
-∩ Workbench View owner_user_id
+∩ Data Application owner_user_id 或有效资源授权
 ∩ Service Resource Grant / Policy
 ∩ 服务自身访问策略
 ```
 
-Workbench 的 View Permission 只能控制视图配置，不能授予数据服务访问权。第一阶段 Permission 固定为：
-
-```text
-workbench.view.create
-workbench.view.read
-workbench.view.update
-workbench.view.delete
-```
-
-Phase 4A 增加 Data Application 自身权限：
+Workbench 只保留 Data Application 权限；已经删除的 `workbench.view.*` 不再属于权限目录：
 
 ```text
 workbench.data_application.create
@@ -985,14 +1031,16 @@ workbench.data_application.publish
 workbench.data_application.execute
 ```
 
-`read | update | delete | publish | execute` 在 Phase 4A 都同时匹配当前 Tenant 与 `owner_user_id`；`offline` 复用 `publish`，不增加第二个生命周期 Permission。Data Application Permission 只控制应用配置和运行入口，任何 Component 的真实查询仍由 Service 使用当前 User Bearer 执行最终授权。
+`read | update | delete | publish` 同时匹配当前 Tenant 与 `owner_user_id`；`offline` 复用 `publish`，不增加第二个生命周期 Permission。`execute` 接受 owner 或 Asset 履约形成的有效资源授权。Data Application Permission 只控制应用配置和运行入口，任何 Component 的真实查询仍由 Service 使用当前 User Bearer 执行最终授权。
 
 | 操作 | Workbench Permission | owner 条件 | Service 校验 |
 | --- | --- | --- | --- |
-| 创建 View | `workbench.view.create` | `owner_user_id` 由当前 User 生成 | 当前 User 可读 Descriptor |
-| 列表/读取 View | `workbench.view.read` | 必须匹配当前 User | 不依赖 Service 可达 |
-| 更新 View | `workbench.view.update` | 必须匹配当前 User | 重新读取 Descriptor 并校验 |
-| 删除 View | `workbench.view.delete` | 必须匹配当前 User | 不访问 Service |
+| 创建数据应用 | `workbench.data_application.create` | `owner_user_id` 由当前 User 生成 | 逐个 Component 读取 Descriptor 并校验 |
+| 列表/读取数据应用 | `workbench.data_application.read` | 必须匹配当前 User | 不依赖 Service 可达 |
+| 更新数据应用 | `workbench.data_application.update` | 必须匹配当前 User | 逐个 Component 重新读取 Descriptor 并校验 |
+| 发布/下线数据应用 | `workbench.data_application.publish` | 必须匹配当前 User | 发布冻结已归一化草稿 |
+| 删除未发布数据应用 | `workbench.data_application.delete` | 必须匹配当前 User | 不访问 Service |
+| 运行数据应用 | `workbench.data_application.execute` | owner 或有效资源授权 | 每个 Service operation 再做最终判断 |
 | 枚举可用服务 | `service.data_read.execute` | Service 资源策略 | Service Consumer Catalog 最终判断 |
 | 执行查询 | `service.data_read.execute` | Service 资源策略 | Service operation 最终判断 |
 | 有限导出 | `service.data_read.execute` | Service 资源策略 | 同一 Service operation、单次有界响应与执行面审计 |
@@ -1001,10 +1049,10 @@ workbench.data_application.execute
 
 运行时固定分两次独立判断：
 
-1. 读取 Workbench View 时校验 `workbench.view.read` 和 `owner_user_id`；
-2. 枚举 Descriptor 或执行查询时，由 Service 实时校验 `service.data_read.execute` 和服务资源策略。
+1. 读取创作态 Data Application 时校验应用配置 Permission 和 `owner_user_id`；读取运行态 Revision 时校验 `workbench.data_application.execute`、owner 或有效资源授权；
+2. 枚举 Descriptor 或执行每个 Component 查询时，由 Service 实时校验 `service.data_read.execute` 和服务资源策略。
 
-已保存 View 不因服务授权失效而删除，但查询必须阻断并显示重新申请或联系所有者的入口。
+已保存 Data Application 不因服务授权失效而删除，但相应 Component 查询必须阻断并显示重新申请或联系所有者的入口。
 
 ### 9.2 BFF 和服务身份
 
@@ -1024,23 +1072,21 @@ Workbench 规则使用 Asset Authorization ID 作为 `source_identity`，主体�
 
 ## 十、契约变化
 
-Workbench View 每次加载时比较保存的 `contract_fingerprint` 与 Service 当前契约：
+Data Application 的创作态和发布运行态每次加载 Component 时比较其冻结的 `contract_fingerprint` 与 Service 当前契约：
 
 1. 指纹一致，正常运行；
 2. 指纹变化，停止自动查询；
 3. 显示字段、类型、参数、操作符和空间能力差异；
-4. 由 View 所有者显式修订并保存；
+4. 由 Data Application 所有者显式修订草稿并发布新 Revision；
 5. 不自动删除字段，不按名称猜测映射，不自动改绑同名服务。
 
-普通数据内容刷新不能改变契约指纹。因此周期性重算并替换固定结果表时，Workbench View 无需重新发布。
+普通数据内容刷新不能改变契约指纹。因此周期性重算并替换固定结果表时，Data Application 无需重新发布。
 
-服务下线或删除时保留 Workbench View 及原始 `service_ref`，显示不可用状态；不得自动切换到同名或相似服务。
+服务下线或删除时保留 Data Application Component 及原始 `service_ref`，显示不可用状态；不得自动切换到同名或相似服务。
 
 ## 十一、Asset 与 Portal 衔接
 
-第一阶段 Workbench View 是个人配置，不作为 Asset。
-
-后续 Data Application 发布后：
+Data Application 草稿是个人创作资源，不作为 Asset；发布后的 Data Application 可以进入企业目录和资产链路：
 
 ```text
 Workbench 发布 Data Application
@@ -1058,9 +1104,9 @@ Asset 当前禁用的 `application` 类型后续应一次性收敛为 CatalogEnt
 
 Service 已发布服务和 Workbench Data Application 都可以后续成为 CatalogEntry，但 Workbench 查询时仍使用 ServiceReference，不从 CatalogEntry 反向猜测执行地址。
 
-Portal 只展示资产和打开入口，不保存 Workbench 页面、View、组件、参数或服务凭据。
+Portal 只展示资产和打开入口，不保存 Workbench 页面、组件、参数或服务凭据。
 
-CatalogEntry 标识 Data Application 聚合根，不标识单个发布 Revision。Portal 打开应用时由 Workbench 解析当前有效发布 Revision；已发布 Revision 不因个人 View 或新草稿变化而改变。
+CatalogEntry 标识 Data Application 聚合根，不标识单个发布 Revision。Portal 打开应用时由 Workbench 解析当前有效发布 Revision；已发布 Revision 不因新草稿变化而改变。
 
 ## 十二、阶段计划
 
@@ -1069,16 +1115,15 @@ CatalogEntry 标识 Data Application 聚合根，不标识单个发布 Revision�
 - [x] 确认模块名 `workbench`；
 - [x] 确认平台级通用定位，不绑定 Outdoor；
 - [x] 确认 Service-only 数据入口；
-- [x] 确认 Workbench View 是第一阶段聚合根；
+- [x] 确认 Data Application 是唯一持久化聚合根，Component 直接消费 Service；
 - [x] 确认动态查询进入第一阶段；
 - [x] 确认 BI 是轻量消费能力，大屏是后续应用展示模式；
 - [x] 确认 Consumer Descriptor 稳定术语与 `addp.service_consumer/v1` 协议版本；
 - [x] 确认 Service 只声明输入/输出契约，不声明 Workbench renderer；
 - [x] 确认 Service 拥有 Consumer Catalog，且列表只返回当前可执行服务；
 - [x] 确认 ServiceReference 使用 `service_type + 正整数 service_id` 和唯一详情 URL；
-- [x] 确认第一阶段 Workbench View 只允许个人所有和个人可见；
 - [x] 确认 Query Service 第一阶段只开放字段筛选，不增加服务级命名参数；
-- [x] 确认第一阶段 Workbench View 唯一 CRUD API、个人 owner 边界和权限矩阵；
+- [x] 确认 Data Application 唯一 CRUD、发布、运行 API、owner 边界和权限矩阵；
 - [x] 确认 renderer primitive 按 `common-frontend/basic | chart | map` 依赖边界共享，Workbench 只保留 Renderer Host；
 - [x] 确认第一阶段 Chart 为 `bar | line | pie`，Map 只消费有界完整 GeoJSON；
 - [x] 确认有限导出复用 Service 查询 operation、Descriptor 上限和既有执行权限，不新增 Workbench API 或导出 Permission；
@@ -1107,14 +1152,14 @@ CatalogEntry 标识 Data Application 聚合根，不标识单个发布 Revision�
 - [x] 实现 CSV 与 GeoJSON 单次有界导出及超限阻断；
 - [x] 在 `common-frontend` 实现并测试 `TabularResultRenderer`、`ChartRenderer` 和 `GeoJSONResultRenderer`；
 - [x] 实现 Workbench `RendererHost` 与 Query Service 结果适配；
-- [x] 实现 Workbench View CRUD 和乐观并发；
+- [x] 实现 Data Application CRUD、乐观并发、发布 Revision 和运行端；
 - [x] 接入 Console iframe 唯一创作入口和 canonical navigation bridge；
 - [x] 登记 Makefile、测试脚本、Swagger、构建矩阵、Frontend CI 和 PostgreSQL T2 门禁；
 - [ ] 以 Outdoor 和 Business MySQL 真实服务完成 Online 验收（进入 Phase 3，不在 Phase 2 建立样例旁路）。
 
 ### Phase 3：跨领域真实验收
 
-- [ ] Outdoor 作为首个真实场景验证固定结果刷新、参数查询和视图保存；
+- [x] Outdoor 作为首个真实场景验证固定结果刷新、参数查询、双服务 Data Application 发布和最终运行页；
 - [ ] 基于 Business MySQL `customers + orders` 发布固定只读 SQL 的 `commerce-order-analysis` Query Service；
 - [ ] 验证 MySQL cursor、动态字段筛选、标量类型格式化、CSV 导出和无 SpatialInfo 时禁用 Map；
 - [ ] 验证不同字段名、不同字段类型、无空间/有空间输出；
@@ -1131,7 +1176,7 @@ Phase 4A 先完成 Workbench owner 内的独立闭环：
 - [x] 实现应用级参数与 Component 参数的显式绑定；
 - [x] 实现草稿、不可变发布 Revision、下线和创建者稳定运行入口；
 - [x] 增加同 origin `/data-apps/:application_id` 顶层运行端，不保留第二条 iframe 运行 URL；
-- [x] 验证个人 View 修改或删除不会改变已创建或已发布的 Data Application；
+- [x] 验证草稿修改不会改变已发布的 Data Application Revision；
 
 Phase 4B 再接企业目录和资产授权主线：
 
@@ -1160,6 +1205,17 @@ Phase 4B 再接企业目录和资产授权主线：
 
 Workbench 不因为 Phase 5 增强而取得数据建模、SQL、指标定义或任务计算职责。
 
+### Phase 6：场景化消费体验
+
+- [x] 确认 Workbench 的产品价值是组合服务完成消费场景，不是复制 Manager 数据预览或 Service 执行预览；
+- [x] 确认空间数据应用为通用 Component 组合，不是 Outdoor、农业或其他业务域类型；
+- [x] 实现只消费唯一汇总行的 `value` renderer，不在浏览器计算指标；
+- [x] 实现 Map 显式标签、受控专题样式和图例，不允许任意样式 DSL；
+- [x] 完成通用性合同门禁，禁止 Workbench 生产代码和默认配置出现验收领域事实；
+- [x] 使用一个空间 Query Service 和一个已聚合 Query Service 配置 Value + Map + Chart + Table 应用，完成参数与选择联动验收；
+- [x] 实现只编译现有 Snapshot 概念的空间探索创作向导，并完成无持久副作用浏览器验收；
+- [ ] 数据量超过有界 GeoJSON 上限前，先定义 Tile / OGC Features 的稳定消费契约，不增加无界 Query Service 旁路。
+
 ## 十三、第一阶段明确延期
 
 - Graph、Tile、Registered Service 适配；
@@ -1183,6 +1239,9 @@ Workbench 不因为 Phase 5 增强而取得数据建模、SQL、指标定义或�
 - Workbench PostgreSQL 标准测试入口，只使用允许的测试 database；
 - Workbench Frontend 单元测试和生产构建；
 - `common-frontend/basic | chart | map` renderer 单元测试，并至少构建 Workbench 与一个额外真实消费模块；
+- Value 唯一行、数值字段、项数和精度上限校验；
+- Map `uniform | categorical | continuous` 受控样式、字段类型、完整结果和图例测试；
+- Workbench 生产源码与默认配置的验收领域事实禁止扫描；
 - Consumer Descriptor 契约测试；
 - Service 私有/公开访问矩阵；
 - 参数类型、操作符和非法字段拒绝测试；
@@ -1220,9 +1279,9 @@ Workbench 前端门禁同时运行 `basic | chart | map` 三组共享 renderer �
 
 ### 14.2 Phase 3 MySQL Online 实现状态（2026-08-26）
 
-已实现 `workbench-service-consumption` T4 suite 及专用 `business/scripts/online-workbench-mysql-fixture.sh`：Fixture 不读取或生成 `business/.env`，使用仓库外变量启动确定性 Business MySQL，并为永久 Engine Instance 准备仅有 `SELECT` 的账号。suite 经 Gateway 走 Service 输出契约检测、临时 Query Service 发布、Consumer Descriptor、Workbench View、真实 cursor/筛选/CSV 查询和契约指纹变化主路径，退出时按本轮 ID 删除 View 与 Service。
+已实现 `workbench-service-consumption` T4 suite 及专用 `business/scripts/online-workbench-mysql-fixture.sh`：Fixture 不读取或生成 `business/.env`，使用仓库外变量启动确定性 Business MySQL，并为永久 Engine Instance 准备仅有 `SELECT` 的账号。suite 经 Gateway 走 Service 输出契约检测、临时 Query Service 发布、Consumer Descriptor、含 Table 与 Chart 两个 Component 的未发布 Data Application 创建、真实 cursor/筛选/CSV 查询及契约指纹变化主路径，退出时按本轮 ID 删除未发布 Data Application 和 Service。
 
-该 suite 同时通过 Console 的真实登录与 iframe 模块入口打开保存的 View，并核对浏览器 AuthContext 与 API User 为同一身份。浏览器实际提交动态状态参数，验证 Table 返回两行、Chart 生成 canvas、非空间契约不提供 Map；随后更新 Query Service 公开字段策略并刷新同一 View，必须出现契约变化告警且查询按钮被禁用。浏览器只消费正式 API 和页面，不增加 Workbench 私有执行路由或测试旁路。
+该 suite 同时通过 Console 的真实登录打开 Data Application 创作页，并核对浏览器 AuthContext 与 API User 为同一身份。浏览器依次打开两个正式 Component 编辑器，验证 Table 返回两行、Chart 生成 canvas、非空间契约不出现 Map；随后更新 Query Service 公开字段策略并刷新同一应用，Component 编辑器必须出现契约变化告警且预览查询被禁用。浏览器只消费正式 API 和页面，不增加 Workbench 私有执行路由、已发布应用强删能力或测试旁路。
 
 MySQL 协议把 `BOOLEAN` 报告为 `TINYINT`，仅凭 SQL 结果元数据无法区分业务布尔值和普通小整数。该场景因此在检测契约中显式把唯一的 `active_customer` 字段发布为 `bool`；Service 执行层按冻结输出契约把引擎返回的 `0 | 1` 归一化为 JSON/CSV 布尔值，其他 `TINYINT` 字段仍保持整数，不全局猜测为布尔类型。
 
@@ -1545,7 +1604,7 @@ git diff --check
 
 5.8 节已完成现状核查和模块归属设计，本段没有修改运行代码、数据库或 API。Asset 已拥有资产状态、上架趋势、申请、有效 Authorization 和 Rating 等运营事实；Service 已把 `service.query.executed | exported` 作为追加式审计事件写入 System，包含 Query Service、结果、用途、返回行数、错误码与查询形状指纹；Monitor 只聚合 `common.task_executions`，Data Application 在线消费不属于其执行监控范围。
 
-当前唯一缺失的是 Workbench owner 持久化的“成功运行准入”事实。Runtime API 成功返回可以证明当前 User 在当时获准读取某个已发布 Revision，但现有实现只返回快照，不写使用事实。Component 查询随后由浏览器直接调用 Service，Service 无法可信获知它来自哪个 Data Application；同一 Query Service 也可被 Workbench View、其他 Data Application 或外部客户端复用。因此本轮明确不从 Service Audit、Gateway 日志、Referer、Portal 点击或浏览器自报请求头拼接 Data Application 访问量，也不把有效授权人数命名为活跃用户。
+当前唯一缺失的是 Workbench owner 持久化的“成功运行准入”事实。Runtime API 成功返回可以证明当前 User 在当时获准读取某个已发布 Revision，但现有实现只返回快照，不写使用事实。Component 查询随后由浏览器直接调用 Service，Service 无法可信获知它来自哪个 Data Application；同一 Query Service 也可被多个 Data Application 或外部客户端复用。因此本轮明确不从 Service Audit、Gateway 日志、Referer、Portal 点击或浏览器自报请求头拼接 Data Application 访问量，也不把有效授权人数命名为活跃用户。
 
 第一阶段建议只在 Asset 现有事实上增加 application 类型和具体 Asset 的运营分组，不跨模块联查；Workbench 继续不展示访问量。只有在应用创建者或资产运营方确认确实需要“成功打开次数 / 独立访问用户 / Revision 分布”后，才单独设计 Workbench owner 的运行准入事实、保留周期、隐私边界和聚合 API。具体 Component 查询归因属于更高成本的受信消费上下文问题，不作为运行准入指标的前置条件，也不能用可伪造 header 临时解决。
 
@@ -1573,13 +1632,100 @@ System 已在既有 `system.oauth_clients` 聚合上实现租户外部 Client �
 
 租户管理 API 固定为 `GET | POST /api/v1/system/tenant/oauth_clients`、`GET | PUT /api/v1/system/tenant/oauth_clients/:client_id`、`POST .../:client_id/suspend` 和 `POST .../:client_id/restore`。权限固定为 `iam.oauth_client.create | read | update | suspend | restore`，仅授予不可租户定制的内置 `tenant.administrator`；管理操作带正整数 `version` 做乐观并发控制并写 System IAM Audit。停用事务使用数据库时间取消待处理授权请求、撤销该 Client 的有效 Token Family 及派生 Token；恢复不会恢复旧授权。OAuth consent 读取和决定同时校验当前 User AuthContext 的 Tenant 与 Client owner Tenant，跨 Tenant 请求直接拒绝。
 
-System IAM 的“外部 OAuth 客户端”页已接入统一 IAM 工作台及中英文 i18n，支持搜索、状态筛选、创建、编辑、复制 Client ID、停用和恢复。Swagger、授权 Manifest、生成常量、migration 111、后端/前端测试与现有 CI 自动发现入口同步完成。确定性 `go test ./...`、`make test-system-frontend`（10 个文件、41 个测试及生产构建）、`make test-authorization`，以及标准 `test-system-iam-postgres` 的 IAM、OAuth、API 和 migration PostgreSQL 门禁均已通过；运行态页面验收仍需在 System 应用 migration 111 后完成。真实 BI Connector 和正式接入指南仍是后续工作，不因管理控制面完成而提前标记通过。
+System IAM 的“外部 OAuth 客户端”页已接入统一 IAM 工作台及中英文 i18n，支持搜索、状态筛选、创建、编辑、复制 Client ID、停用和恢复。Swagger、授权 Manifest、生成常量、migration 111、后端/前端测试与现有 CI 自动发现入口同步完成。确定性 `go test ./...`、`make test-system-frontend`（10 个文件、41 个测试及生产构建）、`make test-authorization`，以及标准 `test-system-iam-postgres` 的 IAM、OAuth、API 和 migration PostgreSQL 门禁均已通过。
+
+System 应用 migration 111 后已完成真实浏览器无副作用验收：租户管理员可以打开中文“外部 OAuth 客户端”页，列表 API 正常返回 0 条；创建表单初始保存按钮禁用，`https://localhost/...` 显示安全校验错误且不能保存，合法远程 HTTPS 回调可以进入可保存状态，随后取消表单，未创建持久记录。中英文切换、常见 1192px 窗口布局和浏览器控制台均已复核；验收同时修正状态播报缓存翻译后字符串导致英文页面残留中文，以及固定操作列遮挡状态和更新时间的问题。持久创建、编辑、停用、恢复的浏览器生命周期验收尚未执行，因为 OAuth Client 不允许物理删除，不能为测试擅自留下不可删除对象；后端真实 PostgreSQL 门禁已覆盖完整生命周期与 Token 撤销。真实 BI Connector 和正式接入指南仍是后续工作，不因管理控制面完成而提前标记通过。
+
+### 14.19 Data Application 直接创作收口状态（2026-08-28）
+
+本节是当前接力基线，并取代 14.1 至 14.8 中仍以 Workbench View 为现行产品对象的历史实施描述。现行单一路线为：用户创建 Data Application 草稿，在 Component 编辑器中直接选择已发布 Service、配置字段、参数、renderer 和布局，保存后发布 Revision，并从 `/data-apps/:application_id` 作为最终应用使用。Workbench View 聚合、`/api/v1/workbench/views`、`/workbench/views`、`workbench.view.*` 权限和 `workbench.views` 表均一次性删除，不保留兼容入口。
+
+当前实现已经完成后端直接快照创建/更新、权威 Descriptor 指纹归一化、Component 增删改，前端服务选择与组件预览、应用参数绑定、布局、发布与运行页，以及 Console 菜单和搜索入口收敛。既有 Data Application 与不可变 Revision 均为自包含快照，不依赖被删除的 View 表；删除旧表不会改变现有应用运行结果。System migration 112 负责撤销内置角色上的旧 View Permission 并将其置为 disabled；Workbench schema migration 负责移除旧表。
+
+`workbench-service-consumption` Online suite 已同步为直接创作验收：临时 Query Service 直接生成含 Table、Chart 两个 Component 的未发布应用，由浏览器在正式 Component 编辑器中验证两种 renderer，再通过 Service 契约变化验证告警和预览阻断；未发布应用可在 `finally` 正常删除。最终发布运行态由本地 Outdoor 双服务场景覆盖，不能为自动清理破坏“已产生 Revision 不可物理删除”的生命周期规则。生产代码和配置继续由契约测试禁止出现 Outdoor 或 Business MySQL 领域字段。
+
+本轮 PostgreSQL schema/migration 门禁、Workbench 全量标准入口和全量 ADDP 重启已经完成。全量启动重新生成 19 个模块 Swagger 并通过路由覆盖校验；Workbench 只注册 12 个 Data Application、Catalog Reference 与 Resource Grant 公开路由，不再注册 View 路由。
+
+Outdoor 双服务真实验收已于 2026-08-28 完成，并保留为长期示例应用：
+
+- Data Application：`Outdoor 双服务分析应用`，ID `18c7223c-b5c0-4c25-ba28-648e85f44537`，发布 Revision 1；
+- 最终运行入口：`/data-apps/18c7223c-b5c0-4c25-ba28-648e85f44537`；
+- Component 1 直接消费 Query Service 25“户外人员对指标查询”，以 Table 展示并完成真实查询；
+- Component 2 直接消费 Query Service 24“户外人员指标查询”，以 `metric_code` 为维度、`metric_value` 为度量的 Bar Chart 展示；
+- 应用参数“人员”显式绑定 Component 2 的 `person_id eq` 筛选。默认值 `00a6cea35dc2cd11029061004e3b05cd` 查询出的指标值为 1；运行页改为 `0122a5876424ea6306af911c0551ee29` 后图表重新查询并显示指标值 3，证明最终运行页不是静态快照；
+- “查询全部组件”同时返回人员对表格数据和人员指标图表，浏览器控制台无错误；Table 与 Chart 均显示“导出当前有界结果”，实际导出请求由 Service 返回 200；
+- 实测发现并修复 Component 编辑器“添加参数”在缺少可执行 operator 的 Descriptor 字段上无法生成草稿的问题。参数创建现由独立契约函数过滤可执行字段并采用不可变数组更新；Blob 导出改为挂载下载链接后点击、下一事件循环释放 URL，并补充下载触发顺序回归测试。Workbench 前端 34 个测试及 production build 通过。
+
+2026-08-29 继续修复了发布应用“运行”入口的公开路由归属。列表页和编辑页此前直接执行 `window.open('/data-apps/...')`，在 Console 的 Workbench iframe 中会按模块开发 origin 解析为 `localhost:5190/data-apps/...`，先落入 Vite `/workbench/` base 提示页。两个入口现统一通过共享 `resolveConsoleRouteUrl` 构造 Console canonical URL，再同步打开最终应用标签页；不增加 `/workbench/data-apps/...` 兼容路由或重定向。真实浏览器从应用列表点击“运行”后一次直达 `http://localhost:5170/data-apps/18c7223c-b5c0-4c25-ba28-648e85f44537`，正确渲染“Outdoor 人员指标分析”，浏览器 error 日志为空。
+
+该应用已经产生不可变 Revision，按 Data Application 生命周期保留，不作为临时对象物理删除。Outdoor 证据只证明首个真实领域场景；下一项通用性门禁仍是 Business MySQL `commerce-order-analysis` 的异构 Online 验收。
+
+### 14.20 Business MySQL 异构数据应用本地验收（2026-08-29）
+
+本轮使用 `business-mysql` 标准样例中的 `customers` 与 `orders`，从 Service 正式界面创建 Query Service `commerce-order-analysis`（ID `26`），再由 Workbench 直接创作并发布 `Business MySQL 电商订单分析`（Data Application ID `c847d823-3314-42a2-b2a7-d5139fc68283`，Revision 1）。最终入口为 `/data-apps/c847d823-3314-42a2-b2a7-d5139fc68283`，直接由 Console `localhost:5170` 承载，没有跳转到 Workbench 开发端口。
+
+该应用保留为异构长期示例，不作为临时对象删除或下线。应用包含一个 Table Component 和一个以 `city` 为维度、`total_amount` 为度量的 Bar Chart Component；两个 Component 共同绑定应用级“订单状态”和“城市”文本参数。默认 `订单状态=delivered` 时表格返回上海、成都两条订单；继续输入 `城市=上海` 并执行“查询全部组件”后，表格收敛为订单 `ORD-20260420-001`，图表同步收敛为上海、金额 `2897.00` 的单柱，证明参数通过同一 Application Parameter 显式驱动两个真实 Service 请求，不是编辑器预览或静态快照。
+
+真实创建和运行过程发现并修复三类主路径问题：
+
+1. Service 的资源能力探测和 Query Service 创建仍调用不带 Tenant Context 的 System Engine Client，导致正式界面分别返回 `Service Unavailable` 和“System engine request requires a tenant context”；两处均收敛到当前请求 Tenant 的唯一 Client 路径，并补直接 SQL Engine 回归测试；
+2. Service 后端允许 Query Service 名称包含连字符，但前端只允许下划线，导致规范 fixture `commerce-order-analysis` 无法创建；前端校验和中英文提示现与后端统一支持小写字母、数字、下划线和连字符，并增加边界测试；
+3. 已保存 Component 是 Vue reactive Proxy，编辑器直接执行 `structuredClone(component)` 会抛出 `DataCloneError`，使“编辑组件”无响应；现先通过 Vue `toRaw` 取得原始值再克隆，并增加源码合同回归测试。
+
+本轮验证已经完成 Service Backend 全量测试、Service Frontend 21 项测试与生产构建、Workbench Frontend 36 项测试与生产构建，以及全量 ADDP 重启时的 19 模块 Swagger 生成和路由覆盖。浏览器继续验证了 Query Service 创建、Component 预览、应用保存、不可变发布、canonical 运行入口、默认筛选和二次城市筛选。
+
+这里记录的是本地标准 Business MySQL 环境中的真实异构功能验收，不能替代 `workbench-service-consumption` 的专用 Online Host Gate T4。此前 workflow run `33036113139` 因没有匹配的专用 runner 长时间等待后被取消，未执行正式 fixture 和自动清理，因此 T4 仍为未完成；在专用 runner 可用前，不把本地开发机改造成长期 self-hosted runner，也不把本节写成 Online 通过。
+
+### 14.21 Phase 6 通用 Value 与空间专题图（2026-09-01）
+
+本轮按 8.1、8.4、8.5 和 8.6 的边界完成第一段场景化消费能力。`common-frontend/basic` 新增通用 `ScalarValueRenderer`，只显示 Service 返回的唯一完整行中显式配置的 1–4 个数值字段；空结果、多行、分页未完结、重复字段和非数值均显式拒绝，不在浏览器求和、计数、取第一行或推断指标。运行端和编辑器额外记录查询是否已经完成，尚未查询时显示中性空状态，避免把“还没有执行”误报成服务结果不满足唯一行约束。
+
+`common-frontend/map` 的 GeoJSON renderer 新增显式要素名称字段、受控 `uniform | categorical | continuous` 专题样式和图例。分类与连续映射只读取 Component 已保存的字段和主题色板标识，快照不保存原始颜色、函数或任意样式 DSL；geometry、label、tooltip 和 thematic field 均来自 Consumer Descriptor 与用户显式选择。Workbench Backend 对相同配置执行强类型校验，连续样式只接受已选择数值字段，分类样式只接受已选择标量字段。
+
+第一轮真实浏览器无持久副作用验收使用现有 Query Service 完成两条主路径：空间服务显式选择 geometry、名称字段和连续数值字段后成功绘制分级地图并生成五档图例；人员指标服务通过四个显式等值参数收敛到唯一结果行，Value renderer 成功显示配置的数值字段。该轮只在未保存的 Component 编辑对话框中进行，没有创建、删除或下线 Data Application。
+
+随后通过 Service 正式创作入口发布私有 SQL Query Service `farmland-city-summary`（ID `27`），按城市返回 `city`、`feature_count` 和 `total_area`，稳定键与唯一可过滤字段均为 `city`。聚合 SQL、来源表和业务别名只保存在 Service owner 的服务配置中；Workbench 不新增计算字段、SQL、来源定位或业务口径。
+
+Workbench 正式发布长期 Data Application `farmland-spatial-consumption`（ID `c4c0aa6e-70b1-49e8-8ade-8db92f5c6e33`，Revision 1），最终入口为 `/data-apps/c4c0aa6e-70b1-49e8-8ade-8db92f5c6e33`。应用包含四个显式配置的 Component：
+
+- Value：消费服务 27 的城市唯一汇总行，显示要素数量和面积合计；
+- Chart：消费服务 27 的完整城市分布，以 `city` 为维度、`total_area` 为度量；
+- Map：消费空间服务 23 的有界 GeoJSON，以显式名称字段、连续数值字段和受控绿色色板生成五档图例；
+- Table：消费空间服务 23 的城市明细。
+
+唯一应用参数“城市”同时绑定 Value、Map 和 Table 的等值筛选；Chart 的 `city` 结果字段通过 Selection Binding 回写该参数。默认“长沙市”查询得到指标 10 个、面积 0.1094，并显示对应专题地图和 10 条明细；点击分布图中的“永州市”柱后，参数自动变为“永州市”，三个目标 Component 同步重查为 11 个、2.0039、更新后的五档地图和 11 条明细。该证据证明运行页已经形成参数化、可视化和联动的最终消费场景，而不是复制 Manager 或 Service 的单请求预览。
+
+服务 ID、验收表名、字段名和业务值只作为本段运行证据及持久应用配置存在，不进入 Workbench 生产代码、Backend 默认值或 renderer 判断。Data Application 已产生不可变 Revision，按现行生命周期长期保留，不作为临时对象物理删除。
+
+本轮标准验证结果：
+
+- `go test ./...`（`workbench/backend`）通过；
+- `WORKBENCH_POSTGRES_TEST_DSN='postgres://addp:***@127.0.0.1:15432/addp_test?sslmode=disable' make test-workbench-postgres` 通过；
+- `make test-workbench-frontend` 通过 43 项测试及 production build；
+- `bash scripts/swagger/gen-swagger.sh workbench` 与 `bash scripts/swagger/check-route-coverage.sh workbench` 通过，公开路由仍为 12 条；
+- 全量 ADDP 服务重启完成，Console、Workbench Backend 与 Workbench Frontend Ready。
+
+通用性门禁会递归扫描 Workbench 生产源码和默认配置，拒绝当前 Outdoor、空间样例与 Business MySQL 验收事实进入实现。Phase 6 当前剩余项不是继续增加 renderer，而是当真实数据量超过有界 GeoJSON 上限时，先定义 Tile / OGC Features 的稳定 Consumer Descriptor；在该需求出现前不提前建设旁路。聚合与业务口径继续由上游或 Service owner 提供，Workbench 不补计算表达式。
+
+### 14.22 空间探索创作向导（2026-09-01）
+
+本轮在 8.6 已确认边界内实现“空间探索创作向导”。向导不是持久化 Template 实体，不增加 Backend API 或运行时分支，只在空的数据应用草稿中读取两个 Query Service Consumer Descriptor，并把用户显式选择的服务、字段、参数、单位、精度、专题样式和受控色板编译为现有 Data Application Snapshot。生成结果固定使用 Value + Chart + Map + Table 四种通用角色、一个共享 Application Parameter、三个 Parameter Binding、一个 Chart Selection Binding 和十二列布局；生成后立即回到普通 Component 编辑、草稿保存、发布和运行主路径。
+
+向导编译器执行与 Backend 同方向的前置约束：两个等值筛选字段类型必须完全一致，Chart 维度必须为同类型非空标量，Value 与 Chart 只能选择可查询数值字段，Map geometry 必须来自空间契约的 `primary_geometry_field`，专题字段必须与 `uniform | categorical | continuous` 模式匹配，所有查询与展示字段必须由 Descriptor 标记为 selectable。每个 Value 项的精度没有默认推断值，用户未显式填写 0–8 的整数时不能生成组件，避免小数结果被无意显示为 0。
+
+浏览器无持久副作用验收使用现有汇总服务 27 和空间服务 23 作为表单输入，显式配置共享筛选值、两个 Value 项、Chart 度量、Map 名称字段、连续设色字段和受控绿色色板。向导成功生成四个组件，参数表显示一个必填文本参数，参数绑定显示 Value、Map、Table 三个目标，Selection Binding 显示 Chart 维度驱动三个目标，布局为首行 4 + 8 列、第二行 12 列地图、第三行 12 列明细。向导按钮在组件生成后被禁用，证明不会覆盖已有草稿。
+
+验收继续打开向导生成的普通 Component 编辑器并执行真实查询：Value 返回 10 和 0.1094，保留显式单位及四位精度；Map 返回有界空间结果并显示连续专题图五档图例。首次复测还发现新生成组件的 `service_ref` 保留 Vue Descriptor 嵌套 Proxy，导致立即再次编辑时 `structuredClone` 失败；统一 Component 编译器现复制纯 `service_ref` Snapshot，修复普通新增组件和向导组件的共同根因。刷新后的独立浏览器页面重新验证 Value、Map 查询与立即编辑，错误日志为空。整个验收没有点击“创建草稿”或“发布”，没有新增、修改或删除持久 Data Application。
+
+本轮 `make test-workbench-frontend` 通过 47 项测试及 production build；通用性门禁继续递归拒绝验收领域事实进入 Workbench 生产源码。Backend、API、数据库、Swagger 与 CI 入口均未改变，不需要重跑 PostgreSQL 或 Swagger 门禁；全量 ADDP keepalive 已重新启动并恢复 Console、Gateway、Workbench Backend 与 Workbench Frontend Ready。
 
 ## 十五、概念设计状态
 
-当前没有待确认的 Phase 0 概念问题。Phase 5 的 Selection Binding 同页联动、`desktop | wallboard` 展示模式、浏览器会话级全屏、Application Refresh Policy 和 Application Presentation Sections 已完成设计、实现、标准模块门禁与真实浏览器验收；Data Application 资产运营指标的事实源、模块归属以及 Asset 自有 `application` / 具体 Asset 运营分组也已完成运行态复核。外部 BI 的 owner 边界、消费契约、用户委托 OAuth 单一路线和 System 外部 OAuth Client 注册治理已经完成；运行态 UI 验收、真实 BI Connector 端到端验证与正式接入指南尚未完成。
+当前没有待确认的 Phase 0 概念问题。Phase 5 的 Selection Binding 同页联动、`desktop | wallboard` 展示模式、浏览器会话级全屏、Application Refresh Policy 和 Application Presentation Sections 已完成设计、实现、标准模块门禁与真实浏览器验收；Data Application 资产运营指标的事实源、模块归属以及 Asset 自有 `application` / 具体 Asset 运营分组也已完成运行态复核。外部 BI 的 owner 边界、消费契约、用户委托 OAuth 单一路线和 System 外部 OAuth Client 注册治理已经完成；无副作用运行态 UI 验收已通过，持久 Client 浏览器生命周期、真实 BI Connector 端到端验证与正式接入指南尚未完成。
 
-下一步建议先应用 System migration 111 并完成 IAM 页面运行态验收，再选择一个真实 BI Connector 验证 OAuth、Consumer Catalog、Descriptor、cursor、Token 刷新、权限撤销和契约变化，最后产出接入指南。不要修改 Service 查询路由、引入 API Key 私有授权、复用内置 Client 或增加 Workbench 代理。跨模块综合统计和 Workbench 运行埋点继续暂缓；只有确认成功打开次数、独立访问用户和 Revision 分布确有独立产品价值时，才进入 Workbench owner 运行准入事实设计。在独立价值确认前不进入多页面、`mobile`、页面轮播、通用动作、后台定时任务或第二套运行状态。若后续实现与现有公开契约冲突，必须先回到本专题及正式规范修订设计，不得增加兼容路由、兼容字段或 Workbench 私有旁路。
+14.19 的 Data Application 直接创作收口、Outdoor 双服务真实验收、14.20 的 Business MySQL 本地异构验收，以及 14.21–14.22 的 Phase 6 场景化组合和空间探索创作向导均已完成。验收数据只作运行证据，没有进入 Workbench 领域模型、生产代码或默认配置。Phase 6 当前确认范围已经收口；真实数据量没有超过有界 GeoJSON 上限前不启动 Tile / OGC Features，也不继续堆叠 renderer。
+
+专题既定后续重新回到真实 BI Connector 验证与接入指南；具备专用 runner 后再补跑仍在等待的 `workbench-service-consumption` T4，本地验收不能替代该 Online Gate。若继续优先改善 Workbench 创作体验，下一项应先讨论“保存前整页预览”是否具有独立价值，以及如何复用唯一 Runtime 画布而不引入第二套查询或运行状态，在设计确认前不直接实现。不要修改 Service 查询路由、引入 API Key 私有授权、复用内置 Client 或增加 Workbench 代理。跨模块综合统计和 Workbench 运行埋点继续暂缓；只有确认成功打开次数、独立访问用户和 Revision 分布确有独立产品价值时，才进入 Workbench owner 运行准入事实设计。在独立价值确认前不进入多页面、`mobile`、页面轮播、通用动作、后台定时任务或第二套运行状态。若后续实现与现有公开契约冲突，必须先回到本专题及正式规范修订设计，不得增加兼容路由、兼容字段或 Workbench 私有旁路。
 
 ## 十六、相关文档
 

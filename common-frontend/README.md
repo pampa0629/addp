@@ -256,10 +256,11 @@ import {
 已发布数据服务的消费结果使用三组共享 primitive，业务模块只负责根据自身配置分派 renderer：
 
 - `basic/src/components/TabularResultRenderer.vue`：按显式列配置展示有界表格结果；
+- `basic/src/components/ScalarValueRenderer.vue`：显示服务已返回的唯一行数值结果，不在浏览器求和、计数或猜测口径；
 - `chart/src/ChartRenderer.vue`：展示 `bar | line | pie`，只使用服务已返回的明细值，不在浏览器聚合；
-- `map/src/components/GeoJSONResultRenderer.vue`：只读取 Consumer Descriptor 明确声明的 geometry 字段和 CRS，不猜测字段名。
+- `map/src/components/GeoJSONResultRenderer.vue`：只读取 Consumer Descriptor 明确声明的 geometry 字段和 CRS，并可使用显式 label、tooltip 与 `uniform | categorical | continuous` 受控主题样式；不猜测业务字段，不接受原始颜色或任意样式 DSL。
 
-Chart 和 Map 只接受单次查询得到的完整有界结果；`has_more=true` 或超过组件上限时必须拒绝渲染。Workbench 等消费模块应在自己的 Renderer Host 中按需加载这些组件，不得复制 renderer，也不得把 Service、Outdoor 或其他 owner 的 DTO 写入共享层。
+Value、Chart 和 Map 只接受单次查询得到的完整有界结果；`has_more=true` 时必须拒绝渲染，Value 还必须恰好一行，Chart 和 Map 还必须遵守各自结果上限。Workbench 等消费模块应在自己的 Renderer Host 中按需加载这些组件，不得复制 renderer，也不得把 Service、Outdoor 或其他 owner 的 DTO 写入共享层。
 
 三组结果 renderer 在用户选择当前结果时统一发出 `result-select`，payload 只包含 `{ row_index }`。`row_index` 始终指向宿主传入的原始 `rows`，renderer 不携带字段值、参数名、目标组件或查询片段；宿主负责根据自己的声明式配置解释选择。数据更新、resize 和重绘不得发出该事件。
 
@@ -293,7 +294,7 @@ import { createAuthenticatedFetch } from '@common-ui'
 
 ### 可调整布局
 
-- **useResizable** - 提供受最小/最大值约束的鼠标拖拽和键盘调整能力；分隔条消费方使用方向键逐步调整，使用 `Home` / `End` 跳到边界
+- **useResizable** - 提供受最小/最大值约束的鼠标拖拽和键盘调整能力；分隔条消费方使用方向键逐步调整，使用 `Home` / `End` 跳到边界。右侧面板从左边缘拖拽时传入 `{ reverse: true }`，可用 `setSize` / `resetSize` 恢复布局
 
 ### 树形组件
 

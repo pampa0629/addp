@@ -4,9 +4,9 @@
 
 数据元 `quality_rules` 的结构和校验必须遵守 [ADDP 数据质量规范](../docs/spec/addp数据质量规范.md)。每条规则必须有由 Standard 首次创建时生成且编辑过程中保持不变的 `rule_key`；Standard 只拥有规则定义，不拥有物理字段应用、规则执行、评分或质量问题。
 
-Standard 定义 Domain、Glossary、Element、Metric、CodeSet、Classification 和 GradingLevel 等可复用业务语义，但不拥有这些语义与具体 DataItem、CatalogEntry 或 CatalogComponent 的应用关系。具体资源的语义关联只由独立 Catalog 模块保存；Standard 不依赖 Meta 或 Catalog，不保存 `catalog_entry_id` 或反向资源列表。Standard 向 Catalog 提供两类互不混用的同 Tenant 契约：Domain、Glossary、Element 精确语义引用校验，以及 Metric 的 owner-local 变化流和当前专业摘要动态解析。Metric 定义、公式、状态、Domain、分类、单位、数据元映射和依赖关系始终只归 Standard。
+Standard 定义 Domain、Glossary、Element、Metric、CodeSet 和 Unit 等可复用业务语义，但不拥有这些语义与具体 DataItem、CatalogEntry 或 CatalogComponent 的应用关系。具体资源的语义关联只由独立 Catalog 模块保存；Standard 不依赖 Meta 或 Catalog，不保存 `catalog_entry_id` 或反向资源列表。Standard 向 Catalog 提供两类互不混用的同 Tenant 契约：Domain、Glossary、Element 精确语义引用校验，以及 Metric 的 owner-local 变化流和当前专业摘要动态解析。安全分类、安全等级、敏感类型和保护基线统一属于 Security，Standard 不保存第二份安全事实。
 
-Metric 的指标依赖与基准指标关系通过当前 User Token 读取 `GET /metrics/:id/relations` 一跳图；它要求 `standard.metric.read`，只读 Standard 本地事实，不调用 Catalog 或 Model，也不使用 `standard.catalog.read` 机器权限替代用户权限。数据元、Domain、分类和单位继续留在 Metric 专业详情中，本阶段不伪造为企业目录节点。
+Metric 的指标依赖与基准指标关系通过当前 User Token 读取 `GET /metrics/:id/relations` 一跳图；它要求 `standard.metric.read`，只读 Standard 本地事实，不调用 Catalog 或 Model，也不使用 `standard.catalog.read` 机器权限替代用户权限。数据元、Domain、指标分类和单位继续留在 Metric 专业详情中，本阶段不伪造为企业目录节点。
 
 ## 模块概述
 
@@ -14,10 +14,9 @@ Metric 的指标依赖与基准指标关系通过当前 User Token 读取 `GET /
 
 - 业务域（Domain）树形组织管理
 - 业务术语（Glossary）词典：别名、定义、状态流转、关联数据元
-- 数据元（Element）：数据标准的核心原子对象，定义数据规格、质量规则、安全等级
+- 数据元（Element）：数据标准的核心原子对象，定义数据规格和质量规则
 - 码值集（CodeSet）：系统/自定义码值集及码值项
 - 计量单位（Unit）：按度量类别组织的计量单位
-- 数据分类（Classification）与分级（GradingLevel）
 - 指标（Metric）：原子/派生/复合三类指标，支持依赖关系
 - 标准文档（Document）：文档上传与多维关联（数据元/术语/指标）
 - 维度层级（DimensionHierarchy）：业务上的上下钻路径定义
@@ -79,7 +78,6 @@ standard/
         │   ├── ElementList.vue / ElementDetail.vue
         │   ├── CodeSetList.vue / CodeSetDetail.vue
         │   ├── UnitList.vue
-        │   ├── ClassificationList.vue  # 分类与分级合并页
         │   ├── MetricList.vue / MetricDetail.vue
         │   ├── DocumentList.vue
         │   └── DimensionHierarchyList.vue / DimensionHierarchyDetail.vue
@@ -142,7 +140,7 @@ standard/
 | value_domain_kind | string | `unrestricted` / `range` / `enumeration` |
 | range_constraint | JSONB | 连续值域结构；仅 `range` 使用 |
 | code_set_revision_id | int64? | 枚举值域固定引用；仅 `enumeration` 使用 |
-| unit_id / classification_id / security_level | mixed | 计量与安全治理语义 |
+| unit_id | int64? | 计量单位引用 |
 | extra_quality_rules | JSONB | 不能由标准语义推导的附加质量规则 |
 | compiled_quality_rules | JSONB | 发布时从语义约束和附加规则编译的不可变规则快照 |
 | change_summary | text | 本次业务变更说明 |
@@ -197,22 +195,6 @@ standard/
 | name / symbol | string | 单位名 / 符号（如 kg、℃） |
 | is_system | bool | 是否系统内置 |
 
-### `standard.classifications` — 数据分类（树形）
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| parent_id | int64? | 父节点 |
-| name / code | string | 显示名 / 标识 |
-| sort_order | int | 同层排序 |
-
-### `standard.grading_levels` — 数据分级（固定 L1-L4）
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| level | string | `L1` / `L2` / `L3` / `L4`（固定，不可增删） |
-| name / description | string | 自定义名称 / 描述 |
-| color | string | 十六进制颜色（如 `#FF0000`） |
-| sort_order | int | 显示顺序 |
 
 > **注意**: 分级记录由系统初始化，仅支持 PUT 更新名称/描述/颜色，不支持创建和删除。
 
@@ -330,15 +312,6 @@ GET/POST /api/standard/units
 GET/PUT/DELETE /api/standard/units/:id
 ```
 
-### 数据分类与分级
-```
-GET/POST /api/standard/classifications
-PUT/DELETE /api/standard/classifications/:id
-
-GET /api/standard/grading-levels           # 始终返回 L1-L4 四条记录
-PUT /api/standard/grading-levels/:id       # 更新名称/描述/颜色（不可增删）
-```
-
 ### 指标
 ```
 GET/POST /api/standard/metric-categories
@@ -380,7 +353,6 @@ GET/POST/PUT/DELETE /api/standard/dimension-hierarchies/:id/levels
 /standard/code-sets                  # 码值集列表
 /standard/code-sets/:id              # 码值集详情（码值项管理）
 /standard/units                      # 计量单位（含度量类别）
-/standard/classifications            # 数据分类与分级（合并页）
 /standard/metrics                    # 指标列表
 /standard/metrics/:id                # 指标详情（依赖关系、关联数据元）
 /standard/documents                  # 标准文档库
@@ -412,12 +384,11 @@ Standard 是以下第一批 Permission 的唯一 owner：
 - `standard.document.*`
 - `standard.glossary.*`
 - `standard.unit.*`
-- `standard.classification.*`
 - `standard.dimension_hierarchy.*`
 
 机器可读事实源是 [authorization/permissions.yaml](authorization/permissions.yaml)。该 Manifest 由 `common/authorization` 在构建/发布期统一发现、校验和聚合，Standard 服务启动时不向 System 动态注册 Permission。
 
-Measurement Category 是 Unit 聚合内子资源，Grading Level 是 Classification 聚合内子资源，Dimension Hierarchy Level 是 Dimension Hierarchy 聚合内子资源。Document 与 Element、Glossary、Metric 的关联操作按涉及资源 Permission 做 all-of 校验，不借用宽泛 Key 或前缀匹配授权。
+Measurement Category 是 Unit 聚合内子资源，Dimension Hierarchy Level 是 Dimension Hierarchy 聚合内子资源。Document 与 Element、Glossary、Metric 的关联操作按涉及资源 Permission 做 all-of 校验，不借用宽泛 Key 或前缀匹配授权。
 
 ## 特殊设计
 
@@ -461,6 +432,8 @@ draft → in_review → published → withdrawn
 
 数据字典不是 Standard 内的持久化主资源。它由 Meta 的物理结构事实、Catalog 的语义关联和 Standard 在查询时点生效的数据元/码值解释组合形成。Standard 只提供标准数据元目录和按时点解析已发布修订的能力。
 
+Standard 通过唯一 `POST /api/v1/standard/runtime/element-revisions/resolve` 契约按同一 `as_of` 批量返回精确数据元修订和可选的精确码值集修订；Catalog 数据字典与 Model 审批冻结必须共用该契约，不得分别通过列表接口猜测当前修订。
+
 ### 文档关联的多维设计
 
 同一篇文档可同时关联：
@@ -469,10 +442,6 @@ draft → in_review → published → withdrawn
 - 多个指标（`document_metric_mappings`）
 
 每条关联记录 `reference_location`（在文档中的引用位置），便于溯源。
-
-### 数据分级固定四级
-
-分级（GradingLevel）的 L1-L4 记录由系统初始化脚本预置，不支持用户创建/删除，只能修改各级的名称、描述和颜色。避免各租户因随意增删分级导致数据不一致。
 
 ### 无跨 Schema 外键
 
@@ -497,7 +466,7 @@ Standard 当前使用单一启动迁移入口 `repository.Migrate`：在同一�
    bash scripts/dev/restart.sh -standard
    ```
 
-4. **树形结构查询**: Domain、Classification、MetricCategory 均为树形结构，查询时通过递归或应用层组装。
+4. **树形结构查询**: Domain 和 MetricCategory 均为树形结构，查询时通过递归或应用层组装。
 
 5. **`DocumentPanel` 组件**: 前端复用组件，用于在各详情页嵌入文档关联管理，避免重复实现。
 

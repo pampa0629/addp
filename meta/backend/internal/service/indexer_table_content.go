@@ -15,12 +15,6 @@ func (s *IndexerService) IndexTableContent(ctx context.Context, resource *common
 		return
 	}
 
-	metadata := normalizeContentMap(copyJSONMap(item.Attributes))
-	if metadata == nil {
-		metadata = map[string]interface{}{}
-	}
-	delete(metadata, "fields")
-
 	fieldRecords := make([]commonClient.ManagerContentField, 0, len(fields))
 	for _, field := range fields {
 		fieldRecords = append(fieldRecords, commonClient.ManagerContentField{
@@ -35,6 +29,7 @@ func (s *IndexerService) IndexTableContent(ctx context.Context, resource *common
 
 	document := commonClient.ManagerContentDocument{
 		DocumentID:     item.Fingerprint,
+		PayloadKind:    commonClient.ManagerContentPayloadTechnicalMetadata,
 		Locator:        metaItemLocator(resource.ID, resource.EngineType, "table", item.FullName, &item.ID),
 		EngineID:       resource.ID,
 		EngineName:     resource.Name,
@@ -47,7 +42,6 @@ func (s *IndexerService) IndexTableContent(ctx context.Context, resource *common
 		Description:    tableInfo.Comment,
 		RowCount:       item.RowCount,
 		SizeBytes:      item.SizeBytes,
-		Metadata:       metadata,
 		Fields:         fieldRecords,
 		DataUpdatedAt:  item.DataUpdatedAt,
 		ProjectionTime: time.Now().UTC(),

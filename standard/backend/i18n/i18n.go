@@ -38,7 +38,6 @@ const (
 	MsgStandardResourceReferenced     = "standard.common.model_reference_conflict"
 	MsgModelReferenceGuardUnavailable = "standard.common.model_reference_guard_unavailable"
 	MsgDomainParentCycle              = "standard.domain.parent_cycle"
-	MsgClassificationParentCycle      = "standard.classification.parent_cycle"
 	MsgMetricCategoryParentCycle      = "standard.metric_category.parent_cycle"
 	MsgSystemCategoryImmutable        = "standard.measurement_category.system_immutable"
 	MsgSystemUnitImmutable            = "standard.unit.system_immutable"
@@ -63,8 +62,7 @@ const (
 
 // Element
 const (
-	MsgElementNotFound          = "standard.element.not_found"
-	MsgClassificationReferenced = "standard.classification.referenced"
+	MsgElementNotFound = "standard.element.not_found"
 )
 
 // Document

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/datatype"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/models"
@@ -105,6 +106,71 @@ type MetaDataItemChangesResponse struct {
 	Changes       []MetaDataItemChange `json:"changes"`
 	NextCursor    string               `json:"next_cursor"`
 	HasMore       bool                 `json:"has_more"`
+}
+
+// GetDataItemSecurityFacts reads the value-free technical facts for exactly
+// one explicitly enrolled Meta DataItem.
+func (c *MetaClient) GetDataItemSecurityFacts(ctx context.Context, fingerprint string) (*dataprotection.DataItemSecurityFacts, error) {
+	if c == nil || c.baseURL == "" || c.tenantID == nil || *c.tenantID == 0 {
+		return nil, errors.New("Meta DataItem security facts require a tenant context")
+	}
+	fingerprint = strings.TrimSpace(fingerprint)
+	if fingerprint == "" {
+		return nil, errors.New("Meta DataItem security facts require a fingerprint")
+	}
+	requestURL := c.baseURL + "/api/v1/meta/runtime/data-items/" + url.PathEscape(fingerprint) + "/security-facts"
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create Meta DataItem security facts request: %w", err)
+	}
+	response, err := c.do(request)
+	if err != nil {
+		return nil, fmt.Errorf("send Meta DataItem security facts request: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		payload, _ := io.ReadAll(io.LimitReader(response.Body, 8192))
+		return nil, fmt.Errorf("Meta DataItem security facts returned status %d: %s", response.StatusCode, strings.TrimSpace(string(payload)))
+	}
+	var result dataprotection.DataItemSecurityFacts
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode Meta DataItem security facts response: %w", err)
+	}
+	if err := result.Validate(); err != nil {
+		return nil, fmt.Errorf("validate Meta DataItem security facts response: %w", err)
+	}
+	return &result, nil
+}
+
+func (c *MetaClient) GetDataItemSecuritySample(ctx context.Context, fingerprint string) (*dataprotection.DataItemSecuritySample, error) {
+	if c == nil || c.baseURL == "" || c.tenantID == nil || *c.tenantID == 0 {
+		return nil, errors.New("Meta DataItem security sample requires a tenant context")
+	}
+	fingerprint = strings.TrimSpace(fingerprint)
+	if fingerprint == "" {
+		return nil, errors.New("Meta DataItem security sample requires a fingerprint")
+	}
+	requestURL := c.baseURL + "/api/v1/meta/runtime/data-items/" + url.PathEscape(fingerprint) + "/security-sample"
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create Meta DataItem security sample request: %w", err)
+	}
+	response, err := c.do(request)
+	if err != nil {
+		return nil, fmt.Errorf("send Meta DataItem security sample request: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Meta DataItem security sample returned status %d", response.StatusCode)
+	}
+	var result dataprotection.DataItemSecuritySample
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode Meta DataItem security sample response: %w", err)
+	}
+	if err := result.Validate(); err != nil {
+		return nil, fmt.Errorf("validate Meta DataItem security sample response: %w", err)
+	}
+	return &result, nil
 }
 
 func normalizeManualMetaTriggerType(triggerType string) (string, error) {
@@ -770,22 +836,22 @@ func (c *MetaClient) ListEngineItems(engineID uint, branch string) ([]models.Met
 }
 
 // GetItemFieldsByCatalogPath 获取指定 catalog path 数据项的字段列表。
-func (c *MetaClient) GetItemFieldsByCatalogPath(engineID uint, catalogPath string, includeDetails bool) ([]datatype.FieldInfo, error) {
+func (c *MetaClient) GetItemFieldsByCatalogPath(ctx context.Context, engineID uint, catalogPath string, includeDetails bool) ([]datatype.FieldInfo, error) {
 	item, err := c.GetItemByCatalogPath(engineID, catalogPath)
 	if err != nil {
 		return nil, err
 	}
-	return c.GetItemFieldsByID(item.ID, includeDetails)
+	return c.GetItemFieldsByID(ctx, item.ID, includeDetails)
 }
 
 // GetItemFieldsByID 获取指定 item_id 数据项的字段列表。
-func (c *MetaClient) GetItemFieldsByID(itemID uint, includeDetails bool) ([]datatype.FieldInfo, error) {
+func (c *MetaClient) GetItemFieldsByID(ctx context.Context, itemID uint, includeDetails bool) ([]datatype.FieldInfo, error) {
 	urlStr := fmt.Sprintf("%s/api/v1/meta/items/%d/fields", c.baseURL, itemID)
 	if includeDetails {
 		urlStr += "?include_details=true"
 	}
 
-	req, err := http.NewRequest("GET", urlStr, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, urlStr, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}

@@ -27,7 +27,7 @@ common/
 ├── scheduler/      # 统一 Cron 调度
 ├── spatial/        # CRS、MVT、WKB、空间转换、PostGIS 空间 SQL 表达式
 ├── query/          # 查询参数绑定、SQL 副作用分析和跨引擎 SQL 方言
-└── security/       # 跨模块 AES-256-GCM 敏感凭据加解密
+└── secretcipher/   # 跨模块 AES-256-GCM 敏感配置值加解密
 ```
 
 ## 开发规则
@@ -51,8 +51,10 @@ common/
 - API 响应优先复用 `common/api`。
 - 用户 Bearer Token 统一调用 System `/api/v1/system/auth/context`；业务模块不通过 `/users/me` 验证 Token，不自行解析 JWT。
 - `common/query` 承载查询参数绑定、SQL 副作用分析和跨 SQL 引擎的基础方言差异；PostGIS 等空间扩展能力归入 `common/spatial`。
+- `common/engine/plugin.PreparedQuery` 是普通查询唯一的执行计划边界；Provider 必须从同一计划提供 `Analysis()`、`ReadSet()` 与一次性 `Execute()`，Owner 不得直接调用 `ExecuteSQL()`，也不得另行解析查询语义或依赖。生产搬运的 `QueryReadSessionProvider` 也必须消费这一个不可变计划；SQL Provider 通过共享的 SQL PreparedQuery 消费边界取回已绑定请求，不得二次绑定或另建执行路线。字段诊断只有在 `schema_coverage=complete` 时才能断言不存在；暂未实现完整读取集合的方言必须返回 `ErrQueryReadSetUnresolved`。
 - `common/config` 承载部署配置读取和进程启动辅助；模块端口事实必须来自各模块已加载的配置，不维护第二张模块默认端口表。
-- `common/security` 只承载跨模块敏感凭据的 AES-256-GCM 加解密，不承载 IAM、Permission 或业务字段识别。
+- `common/secretcipher` 只承载跨模块敏感配置值的 AES-256-GCM 加解密，不承载 IAM、Permission 或业务字段识别。
+- `common/dataprotection` 只承载 Security 与参与 Owner 共享的保护投影契约、校验和确定性算法，不读写 Security 业务事实；通用本地投影存储允许 Owner 注入事务变化屏障，使派生结果收敛与投影 cursor 原子提交，但屏障实现和派生业务语义仍归 Owner。
 - 空间能力不要默认几何字段名为 `geom`，应通过元数据或调用方参数传入。
 - 修改 `common/` 后通常需要 `./scripts/dev/restart.sh -all` 验证受影响模块。
 

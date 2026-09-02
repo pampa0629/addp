@@ -22,10 +22,11 @@ import (
 )
 
 var (
-	ErrDataProfileUnsupported    = errors.New("data profiling is not supported for this resource")
-	ErrDataProfileUnavailable    = errors.New("data profiling is unavailable")
-	ErrDataProfileInvalidRequest = errors.New("invalid data profiling request")
-	ErrDataProfileSourceChanged  = errors.New("data profile source structure changed")
+	ErrDataProfileUnsupported        = errors.New("data profiling is not supported for this resource")
+	ErrDataProfileUnavailable        = errors.New("data profiling is unavailable")
+	ErrDataProfileInvalidRequest     = errors.New("invalid data profiling request")
+	ErrDataProfileSourceChanged      = errors.New("data profile source structure changed")
+	ErrDataProfileProtectionRequired = errors.New("data profiling protection is required")
 )
 
 type DataProfileSelection struct {

@@ -325,7 +325,26 @@ Catalog 不拥有 DataItem 技术元数据、Standard 语义定义、Manager 内
 
 ---
 
-### 16. Asset（数据资产）
+### 16. Security（数据安全）
+
+**职责定位**：数据安全与隐私保护控制面，统一拥有安全分类分级、敏感发现、资源安全评估、保护策略和保护投影
+
+**核心能力**：
+- 定义 SensitiveDataType、SecurityClassification、SecurityGrade、Detector 和 ProtectionBaseline
+- 以 owner 稳定专业资源引用显式纳管资源，不以 CatalogEntry ID 为前置
+- 对已纳管目标执行受控敏感发现，分离 Finding 候选与正式 Assessment
+- 为 Manager、Transfer、Develop 和 Service 编译 Owner-specific ProtectionProjection
+- 参与 Owner 在本模块服务端出口执行遮盖、抑制或拒绝；Security 不代理原始数据流量
+
+**端口**：
+- Backend：8194
+- Frontend：5191 (dev)
+
+**详细文档**：`docs/concepts/addp数据安全与隐私保护体系图.md`、`docs/spec/addp数据安全与隐私保护实现规范.md`
+
+---
+
+### 17. Asset（数据资产）
 
 **职责定位**：选择和组合一个或多个 CatalogEntry，形成可发布、申请、授权、评价和运营的数据资产
 
@@ -337,7 +356,7 @@ Asset 不承担企业资源自动盘点，也不复制 Catalog 的来源绑定�
 
 ---
 
-### 17. Portal（资产门户）
+### 18. Portal（资产门户）
 
 **职责定位**：面向数据消费者展示和申请 Asset 已发布对象
 

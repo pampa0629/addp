@@ -18,7 +18,6 @@ function productionFiles(directory) {
 
 test('uses full Axios responses with the same-origin root for canonical API and Descriptor operation paths', () => {
   const client = readSource('../src/api/client.js')
-  const views = readSource('../src/api/views.js')
   const services = readSource('../src/api/services.js')
   const applications = readSource('../src/api/dataApplications.js')
 
@@ -27,11 +26,6 @@ test('uses full Axios responses with the same-origin root for canonical API and 
     client,
     /extractData:\s*false/,
     'Workbench pages need response data and headers for lists, queries, and exports'
-  )
-  assert.match(
-    views,
-    /['"]\/api\/v1\/workbench\/views['"]/,
-    'Workbench View APIs must keep the canonical route'
   )
   assert.match(
     services,
@@ -55,13 +49,62 @@ test('localizes the standalone module name instead of using one language for eve
   assert.equal(en.workbench.dataApplications, 'Data Applications')
   assert.equal(zhCn.workbench.chartTypes.bar, '柱状图')
   assert.equal(en.workbench.chartTypes.bar, 'Bar')
+  assert.equal(zhCn.workbench.renderers.value, '数值卡片')
+  assert.equal(en.workbench.renderers.value, 'Value cards')
+  assert.equal(zhCn.workbench.noData, '暂无数据')
+  assert.equal(en.workbench.noData, 'No data')
+  assert.equal(zhCn.workbench.spatialWizard.open, '从空间探索向导创建')
+  assert.equal(en.workbench.spatialWizard.open, 'Create from spatial exploration wizard')
 })
 
-test('edit loading does not depend on enumerating the entire Service Consumer Catalog', () => {
-  const editor = readSource('../src/views/ViewEditor.vue')
-  assert.match(editor, /if \(isEdit\.value\) await loadExisting\(\)\s*else await loadServices\(\)/)
-  assert.match(editor, /field\?\.type === ['"]bool['"]\) return ['"]select['"]/)
-  assert.match(editor, /:disabled="filterableFields\.length === 0"/)
+test('spatial exploration wizard compiles existing application concepts without a template runtime path', () => {
+  const editor = readSource('../src/views/DataApplicationEditor.vue')
+  const wizard = readSource('../src/components/SpatialExplorationWizard.vue')
+  const compiler = readSource('../src/utils/spatialExplorationDraft.mjs')
+
+  assert.match(editor, /application\.snapshot\.components\.length > 0/)
+  assert.match(wizard, /listConsumerServices\(\{ service_type: ['"]query['"]/)
+  assert.match(wizard, /getConsumerDescriptor\(service\.ref\)/)
+  assert.match(compiler, /buildComponentConfiguration/)
+  assert.doesNotMatch(compiler, /template_type|template_id|spatial_exploration/)
+})
+
+test('data application components own service selection, rendering, parameters, and preview', () => {
+  const editor = readSource('../src/components/ApplicationComponentEditor.vue')
+  const runtime = readSource('../src/views/DataApplicationRuntime.vue')
+  const rendererHost = readSource('../src/components/WorkbenchRendererHost.vue')
+  const draft = readSource('../src/utils/componentDraft.mjs')
+  assert.match(editor, /listConsumerServices\(\{ service_type: ['"]query['"]/) // catalog is capability-scoped
+  assert.match(editor, /getConsumerDescriptor\(props\.component\.service_ref\)/)
+  assert.match(draft, /field\?\.type === ['"]bool['"]\) return ['"]select['"]/) // boolean values preserve an unset state
+  assert.match(editor, /:disabled="parameterizableFields\.length === 0"/)
+  assert.match(draft, /export function createParameterDraft/)
+  assert.match(editor, /executeDescriptorOperation\(operation, buildQueryRequest/)
+  assert.match(editor, /:result-ready="queryCompleted"/)
+  assert.match(runtime, /:result-ready="state\(placement\.component_id\)\.query_completed"/)
+  assert.match(rendererHost, /rendererType === 'value' && !resultReady/)
+})
+
+test('data application editor clones persisted reactive components through their raw value', () => {
+  const editor = readSource('../src/views/DataApplicationEditor.vue')
+
+  assert.match(editor, /import\s*\{[^}]*\btoRaw\b[^}]*\}\s*from\s*['"]vue['"]/s)
+  assert.match(editor, /editingComponent\.value\s*=\s*structuredClone\(toRaw\(component\)\)/)
+})
+
+test('published data applications open the canonical Console runtime directly', () => {
+  const navigation = readSource('../src/utils/moduleNavigation.js')
+  assert.match(navigation, /resolveConsoleRouteUrl\(`\/data-apps\/\$\{encodeURIComponent\(id\)\}`/)
+  assert.match(navigation, /window\.open\(url,\s*['_"]_blank['_"],\s*['_"]noopener,noreferrer['_"]\)/)
+
+  for (const relative of [
+    '../src/views/DataApplicationList.vue',
+    '../src/views/DataApplicationEditor.vue',
+  ]) {
+    const source = readSource(relative)
+    assert.match(source, /openDataApplicationRuntime/)
+    assert.doesNotMatch(source, /window\.open\(`\/data-apps\//)
+  }
 })
 
 test('resolves shared map runtime peers from the Workbench dependency tree', () => {

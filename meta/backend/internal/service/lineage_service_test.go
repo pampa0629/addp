@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/addp/common/execution/executiontest"
 	commonModels "github.com/addp/common/models"
@@ -60,6 +61,66 @@ func TestLineageCollectorIsIdempotentAndBuildsGraph(t *testing.T) {
 	}
 	if graph.Edges[0].Source.EngineID == nil || *graph.Edges[0].Source.EngineID != 9 || graph.Edges[0].Source.EngineName != "Source PostgreSQL" {
 		t.Fatalf("source engine = %#v", graph.Edges[0].Source)
+	}
+}
+
+func TestLineageGraphExcludesRelationsWhoseEndpointIsSoftDeleted(t *testing.T) {
+	db := openLineageTestDB(t)
+	svc := NewLineageService(db, lineageTestEngineCatalog{})
+	source := createLineageItem(t, db, 7, "source", "fp-source")
+	staleTarget := createLineageItem(t, db, 7, "stale-target", "fp-stale-target")
+	currentTarget := createLineageItem(t, db, 7, "current-target", "fp-current-target")
+	now := time.Now().UTC()
+
+	for _, relation := range []models.LineageItemRelation{
+		{
+			TenantID: 7, SourceItemID: source.ID, TargetItemID: staleTarget.ID,
+			RelationKind: "derive", Granularity: "item", Status: "active",
+			FirstObservedAt: now, LastObservedAt: now,
+		},
+		{
+			TenantID: 7, SourceItemID: source.ID, TargetItemID: currentTarget.ID,
+			RelationKind: "derive", Granularity: "item", Status: "active",
+			FirstObservedAt: now, LastObservedAt: now,
+		},
+	} {
+		if err := db.Create(&relation).Error; err != nil {
+			t.Fatalf("create lineage relation: %v", err)
+		}
+	}
+	if err := db.Delete(&staleTarget).Error; err != nil {
+		t.Fatalf("soft delete stale target: %v", err)
+	}
+
+	graph, err := svc.GetGraph(context.Background(), 7, models.LineageGraphRequest{
+		SubjectKind: "data_item", ItemID: &currentTarget.ID, Direction: "both", Depth: 3, Limit: 20,
+	})
+	if err != nil {
+		t.Fatalf("GetGraph() error = %v", err)
+	}
+	if len(graph.Nodes) != 2 {
+		t.Fatalf("graph nodes = %#v, want source and current target", graph.Nodes)
+	}
+	if len(graph.Edges) != 1 {
+		t.Fatalf("graph edges = %#v, want only the relation with active endpoints", graph.Edges)
+	}
+
+	nodeIDs := make(map[uint]struct{}, len(graph.Nodes))
+	for _, node := range graph.Nodes {
+		if node.ItemID != nil {
+			nodeIDs[*node.ItemID] = struct{}{}
+		}
+	}
+	for _, edge := range graph.Edges {
+		if edge.Source.ItemID == nil || edge.Target.ItemID == nil {
+			t.Fatalf("edge has an empty endpoint: %#v", edge)
+		}
+		if _, ok := nodeIDs[*edge.Source.ItemID]; !ok {
+			t.Fatalf("edge source %d is absent from nodes", *edge.Source.ItemID)
+		}
+		if _, ok := nodeIDs[*edge.Target.ItemID]; !ok {
+			t.Fatalf("edge target %d is absent from nodes", *edge.Target.ItemID)
+		}
 	}
 }
 

@@ -1,5 +1,4 @@
 export const STANDARD_PERMISSION_RESOURCES = Object.freeze([
-  'classification',
   'code_set',
   'dimension_hierarchy',
   'document',

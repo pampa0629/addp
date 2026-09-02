@@ -22,20 +22,13 @@ func Migrate(db *gorm.DB) error {
 				return fmt.Errorf("acquire workbench schema lock: %w", err)
 			}
 		}
-		if err := tx.AutoMigrate(&models.View{}, &models.DataApplication{}, &models.DataApplicationRevision{}, &models.CatalogResourceChangeRow{}, &models.ResourceAccessRule{}); err != nil {
+		if err := tx.AutoMigrate(&models.DataApplication{}, &models.DataApplicationRevision{}, &models.CatalogResourceChangeRow{}, &models.ResourceAccessRule{}); err != nil {
 			return fmt.Errorf("auto migrate workbench schema: %w", err)
 		}
 		if tx.Dialector.Name() != "postgres" {
 			return nil
 		}
 		statements := []string{
-			`ALTER TABLE workbench.views DROP CONSTRAINT IF EXISTS ck_workbench_views_service_ref`,
-			`ALTER TABLE workbench.views ADD CONSTRAINT ck_workbench_views_service_ref CHECK (service_type = 'query' AND service_id > 0)`,
-			`ALTER TABLE workbench.views DROP CONSTRAINT IF EXISTS ck_workbench_views_renderer_type`,
-			`ALTER TABLE workbench.views ADD CONSTRAINT ck_workbench_views_renderer_type CHECK (renderer_type IN ('table', 'chart', 'map'))`,
-			`ALTER TABLE workbench.views DROP CONSTRAINT IF EXISTS ck_workbench_views_version`,
-			`ALTER TABLE workbench.views ADD CONSTRAINT ck_workbench_views_version CHECK (version > 0)`,
-			`CREATE INDEX IF NOT EXISTS idx_workbench_views_owner_updated ON workbench.views (tenant_id, owner_user_id, updated_at DESC, id)`,
 			`ALTER TABLE workbench.data_applications DROP CONSTRAINT IF EXISTS ck_workbench_data_applications_status`,
 			`ALTER TABLE workbench.data_applications ADD CONSTRAINT ck_workbench_data_applications_status CHECK (publication_status IN ('unpublished', 'published', 'offline'))`,
 			`ALTER TABLE workbench.data_applications DROP CONSTRAINT IF EXISTS ck_workbench_data_applications_version`,
@@ -65,6 +58,10 @@ func Migrate(db *gorm.DB) error {
 				name TEXT NOT NULL,
 				applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 			)`,
+			`DROP TABLE IF EXISTS workbench.views`,
+			`INSERT INTO workbench.data_migrations (version, name)
+			VALUES (2026082801, 'remove_workbench_view_intermediate_resource')
+			ON CONFLICT (version) DO NOTHING`,
 			`CREATE INDEX IF NOT EXISTS idx_workbench_catalog_changes_tenant_id
 				ON workbench.catalog_resource_changes (tenant_id, id)`,
 			`CREATE INDEX IF NOT EXISTS idx_workbench_catalog_changes_source

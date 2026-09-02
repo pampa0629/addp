@@ -13,16 +13,16 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 399 {
-		t.Fatalf("descriptor count = %d, want 399", len(descriptors))
+	if len(descriptors) != 421 {
+		t.Fatalf("descriptor count = %d, want 421", len(descriptors))
 	}
-	if descriptors[0].Key != "agent.configuration.read" || descriptors[len(descriptors)-1].Key != "workbench.view.update" {
+	if descriptors[0].Key != "agent.configuration.read" || descriptors[len(descriptors)-1].Key != "workbench.resource_grant.revoke" {
 		t.Fatalf("descriptor boundary keys = %q, %q", descriptors[0].Key, descriptors[len(descriptors)-1].Key)
 	}
 
 	roles := report.Roles
-	if len(roles) != 60 {
-		t.Fatalf("role count = %d, want 60", len(roles))
+	if len(roles) != 62 {
+		t.Fatalf("role count = %d, want 62", len(roles))
 	}
 	if roles[0].Key != "platform.agent_runtime" || roles[len(roles)-1].Key != "tenant.transfer_runtime" {
 		t.Fatalf("role boundary keys = %q, %q", roles[0].Key, roles[len(roles)-1].Key)
@@ -33,6 +33,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	assertRepositoryRolePermissions(t, roles, "platform.duckdb_runtime", []string{"system.runtime_registry.update"})
 	assertRepositoryRolePermissions(t, roles, "tenant.agent_runtime", []string{"inference.runtime.execute", "system.engine_descriptor.read"})
 	assertRepositoryRolePermissions(t, roles, "tenant.copilot_runtime", []string{"develop.task.read", "inference.runtime.execute", "system.engine_descriptor.read"})
+	assertRepositoryRolePermissions(t, roles, "tenant.security_runtime", []string{"meta.security_facts.read"})
 	assertRepositoryRolePrincipalTypes(t, roles, "tenant.data_architect", []string{"user"})
 	assertRepositoryRoleScopes(t, roles, "tenant.data_architect", []string{"tenant"})
 	assertRepositoryRolePermissions(t, roles, "tenant.data_architect", []string{
@@ -73,6 +74,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"inference.runtime.execute",
 		"meta.catalog.read",
 		"meta.scan_task.execute",
+		"security.protection_projection.read",
+		"security.protection_projection.update",
 		"system.engine.read",
 		"system.engine_descriptor.read",
 		"transfer.task.create",
@@ -113,6 +116,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"meta.catalog.read",
 		"meta.inspect.execute",
 		"meta.scan_task.execute",
+		"security.protection_projection.read",
+		"security.protection_projection.update",
 		"system.engine.read",
 		"system.engine_descriptor.read",
 		"system.execution_authorization.execute",
@@ -141,6 +146,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	})
 	assertRepositoryRolePrincipalTypes(t, roles, "platform.manager_runtime", []string{"service_principal"})
 	assertRepositoryRolePermissions(t, roles, "platform.manager_runtime", []string{
+		"platform.tenant.read",
 		"system.runtime_registry.update",
 	})
 	assertRepositoryRolePermissions(t, roles, "platform.monitor_runtime", []string{
@@ -157,13 +163,18 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	assertRepositoryRolePermissions(t, roles, "platform.quality_runtime", []string{
 		"system.runtime_registry.update",
 	})
+	assertRepositoryRolePermissions(t, roles, "platform.security_runtime", []string{
+		"system.runtime_registry.update",
+	})
 	assertRepositoryRolePermissions(t, roles, "platform.service_runtime", []string{
+		"platform.tenant.read",
 		"system.runtime_registry.update",
 	})
 	assertRepositoryRolePermissions(t, roles, "platform.standard_runtime", []string{
 		"system.runtime_registry.update",
 	})
 	assertRepositoryRolePermissions(t, roles, "platform.transfer_runtime", []string{
+		"platform.tenant.read",
 		"system.runtime_registry.update",
 	})
 	assertRepositoryRolePermissions(t, roles, "platform.workbench_runtime", []string{
@@ -176,6 +187,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"workbench.resource_grant.revoke",
 	})
 	assertRepositoryRolePermissions(t, roles, "platform.develop_runtime", []string{
+		"platform.tenant.read",
 		"system.runtime_registry.update",
 	})
 	assertRepositoryRolePrincipalTypes(t, roles, "platform.portal_runtime", []string{"service_principal"})
@@ -196,10 +208,6 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"workbench.data_application.publish",
 		"workbench.data_application.read",
 		"workbench.data_application.update",
-		"workbench.view.create",
-		"workbench.view.delete",
-		"workbench.view.read",
-		"workbench.view.update",
 	})
 	assertRepositoryRolePermissions(t, roles, "tenant.ai_user", []string{
 		"agent.run.cancel",
@@ -268,6 +276,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	assertRepositoryRolePermissions(t, roles, "tenant.develop_runtime", []string{
 		"meta.catalog.read",
 		"meta.scan_task.execute",
+		"security.protection_projection.read",
+		"security.protection_projection.update",
 		"system.engine_descriptor.read",
 		"system.execution_authorization.execute",
 		"system.notebook_session_authorization.execute",
@@ -292,6 +302,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"audit.tenant_event.create",
 		"meta.catalog.read",
 		"meta.lineage.create",
+		"security.protection_projection.read",
+		"security.protection_projection.update",
 		"system.engine.read",
 		"system.engine_descriptor.read",
 		"system.execution_authorization.execute",
@@ -347,10 +359,33 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"quality.rule_application.delete",
 		"quality.rule_application.read",
 		"quality.rule_application.update",
-		"standard.classification.create",
-		"standard.classification.delete",
-		"standard.classification.read",
-		"standard.classification.update",
+		"security.assessment.read",
+		"security.assessment.update",
+		"security.classification.create",
+		"security.classification.delete",
+		"security.classification.read",
+		"security.classification.update",
+		"security.enrollment.create",
+		"security.enrollment.read",
+		"security.enrollment.update",
+		"security.finding.read",
+		"security.finding.update",
+		"security.grade.create",
+		"security.grade.delete",
+		"security.grade.read",
+		"security.grade.update",
+		"security.policy.create",
+		"security.policy.delete",
+		"security.policy.read",
+		"security.policy.update",
+		"security.protection_baseline.create",
+		"security.protection_baseline.delete",
+		"security.protection_baseline.read",
+		"security.protection_baseline.update",
+		"security.sensitive_data_type.create",
+		"security.sensitive_data_type.delete",
+		"security.sensitive_data_type.read",
+		"security.sensitive_data_type.update",
 		"standard.code_set.create",
 		"standard.code_set.delete",
 		"standard.code_set.publish",

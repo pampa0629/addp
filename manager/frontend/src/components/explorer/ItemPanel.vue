@@ -1,35 +1,50 @@
 <template>
   <div class="item-panel">
-    <section v-if="itemFingerprint" class="catalog-summary-card">
-      <div class="catalog-summary-card__header">
-        <div>
-          <strong>{{ t('manager.explorer.catalogSummaryTitle') }}</strong>
-          <span>{{ t('manager.explorer.catalogSummaryDescription') }}</span>
-        </div>
-        <el-button v-if="catalogSummary" type="primary" plain size="small" @click="emit('open-catalog', catalogSummary.id)">
-          {{ t('manager.explorer.openCatalogEntry') }}
+    <section
+      v-if="itemFingerprint"
+      class="resource-governance-summary"
+      :aria-label="t('manager.explorer.governanceSummaryLabel')"
+    >
+      <div class="resource-governance-summary__group resource-governance-summary__catalog">
+        <el-tooltip :content="t('manager.explorer.catalogSummaryDescription')" placement="bottom">
+          <span class="resource-governance-summary__label">{{ t('manager.explorer.catalogSummaryTitle') }}</span>
+        </el-tooltip>
+        <el-tag v-if="catalogLookupState === 'loading'" size="small" type="info" effect="plain">
+          {{ t('manager.explorer.catalogLoading') }}
+        </el-tag>
+        <template v-else-if="catalogSummary">
+          <span v-if="showCatalogDisplayName" class="resource-governance-summary__name" :title="catalogDisplayName">
+            {{ catalogDisplayName }}
+          </span>
+          <el-tag size="small" effect="plain">
+            {{ t(`manager.explorer.catalogGovernance.${catalogSummary.governance_status}`) }}
+          </el-tag>
+          <el-tag size="small" effect="plain" :type="catalogSummary.source_status === 'active' ? 'success' : 'warning'">
+            {{ t(`manager.explorer.catalogSource.${catalogSummary.source_status}`) }}
+          </el-tag>
+          <el-button link type="primary" size="small" @click="emit('open-catalog', catalogSummary.id)">
+            {{ t('manager.explorer.openCatalogEntry') }}
+          </el-button>
+        </template>
+        <el-tooltip v-else-if="catalogLookupState === 'missing'" :content="t('manager.explorer.catalogPending')" placement="bottom">
+          <el-tag size="small" type="info" effect="plain">{{ t('manager.explorer.catalogPendingShort') }}</el-tag>
+        </el-tooltip>
+        <el-tooltip
+          v-else-if="catalogLookupState === 'error'"
+          :content="catalogLookupError || t('manager.explorer.catalogUnavailable')"
+          placement="bottom"
+        >
+          <el-tag size="small" type="warning" effect="plain">{{ t('manager.explorer.catalogUnavailableShort') }}</el-tag>
+        </el-tooltip>
+      </div>
+      <div v-if="canOpenSecurity" class="resource-governance-summary__group resource-governance-summary__security">
+        <el-tooltip :content="t('manager.explorer.protectionEntryDescription')" placement="bottom">
+          <span class="resource-governance-summary__label">{{ t('manager.explorer.protectionEntryTitle') }}</span>
+        </el-tooltip>
+        <el-button link type="primary" size="small" @click="openSecurityProtection">
+          {{ t('manager.explorer.openDataProtection') }}
         </el-button>
       </div>
-      <el-skeleton v-if="catalogLookupState === 'loading'" :rows="1" animated />
-      <div v-else-if="catalogSummary" class="catalog-summary-card__facts">
-        <span class="catalog-summary-card__name">{{ catalogSummary.display_name || t('manager.explorer.catalogUnnamed') }}</span>
-        <el-tag size="small">{{ t(`manager.explorer.catalogGovernance.${catalogSummary.governance_status}`) }}</el-tag>
-        <el-tag size="small" :type="catalogSummary.source_status === 'active' ? 'success' : 'warning'">
-          {{ t(`manager.explorer.catalogSource.${catalogSummary.source_status}`) }}
-        </el-tag>
-      </div>
-      <el-alert
-        v-else-if="catalogLookupState === 'missing'"
-        type="info"
-        :closable="false"
-        :title="t('manager.explorer.catalogPending')"
-      />
-      <el-alert
-        v-else-if="catalogLookupState === 'error'"
-        type="warning"
-        :closable="false"
-        :title="catalogLookupError || t('manager.explorer.catalogUnavailable')"
-      />
     </section>
     <div class="item-tab-bar" role="tablist">
       <button
@@ -309,10 +324,12 @@ import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import PreviewPanel from '@/components/explorer/PreviewPanel.vue'
 import { optionalCount, pickNestedCount } from '@/utils/metadataRowCount'
-import { parseLocator } from '@addp/common-frontend'
+import { openConsoleRoute, parseLocator } from '@addp/common-frontend'
 import client from '@/api/client'
 import { getCatalogEntryBySourceIdentity } from '@/api/catalog'
 import { useAuthStore } from '@/store/auth'
+import { buildSecurityProtectionRoute } from '@/utils/securityNavigation'
+import { normalizeMetaItemMetadata } from '@/utils/itemMetadata'
 import { LineageViewer, createLineageApi, normalizeLineageGraph } from '@addp/common-frontend/graph'
 
 const DataProfilePanel = defineAsyncComponent(() => import('@/components/explorer/DataProfilePanel.vue'))
@@ -415,12 +432,61 @@ watch(() => [
   jsonDialogVisible.value = false
 })
 
-const itemMeta = computed(() => props.previewData?.item_meta)
+const fallbackItemMeta = ref(null)
+let itemMetaRequestSeq = 0
+
+const itemMeta = computed(() => props.previewData?.item_meta || fallbackItemMeta.value)
 const itemFingerprint = computed(() => String(itemMeta.value?.fingerprint || '').trim())
+const canOpenSecurity = computed(() => authStore.hasPermission('security.enrollment.create'))
+
+const loadFallbackItemMeta = async (itemId) => {
+  const requestSeq = ++itemMetaRequestSeq
+  try {
+    const item = await client.get(`/meta/items/${itemId}`)
+    if (requestSeq === itemMetaRequestSeq && selectedItemId.value === itemId && !props.previewData?.item_meta) {
+      fallbackItemMeta.value = normalizeMetaItemMetadata(item)
+    }
+  } catch {
+    if (requestSeq === itemMetaRequestSeq) fallbackItemMeta.value = null
+  }
+}
+
+watch([
+  selectedItemId,
+  () => props.previewData?.item_meta,
+  () => props.loading
+], ([itemId, previewItemMeta, loading], [previousItemId] = []) => {
+  if (itemId !== previousItemId) {
+    itemMetaRequestSeq += 1
+    fallbackItemMeta.value = null
+  }
+  if (previewItemMeta) {
+    itemMetaRequestSeq += 1
+    fallbackItemMeta.value = null
+    return
+  }
+  if (!loading && itemId) loadFallbackItemMeta(itemId)
+}, { immediate: true })
+
+const openSecurityProtection = async () => {
+  const locator = String(props.selectedNode?.locator || props.selectedNode?.id || '').trim()
+  const target = buildSecurityProtectionRoute(locator)
+  if (target) await openConsoleRoute(target)
+}
 const catalogSummary = ref(null)
 const catalogLookupState = ref('idle')
 const catalogLookupError = ref('')
 let catalogLookupSeq = 0
+const catalogDisplayName = computed(() => String(catalogSummary.value?.display_name || '').trim())
+const technicalResourceName = computed(() => {
+  const fullName = String(itemMeta.value?.full_name || '').trim()
+  if (fullName) return fullName.split(/[./]/).filter(Boolean).at(-1) || ''
+  return String(props.selectedChildName || props.selectedNode?.label || props.selectedNode?.name || '').trim()
+})
+const showCatalogDisplayName = computed(() => (
+  Boolean(catalogDisplayName.value) &&
+  catalogDisplayName.value.localeCompare(technicalResourceName.value, undefined, { sensitivity: 'accent' }) !== 0
+))
 
 const loadCatalogSummary = async () => {
   const fingerprint = itemFingerprint.value
@@ -580,7 +646,6 @@ const fieldOrder = [
   'extractor',
   'text_extracted',
   'text_truncated',
-  'plain_text_preview',
   'index_ref',
   'srid',
   'dimension',
@@ -681,7 +746,6 @@ const fieldLabelKeys = {
   extractor: 'manager.explorer.attributes.fields.extractor',
   text_extracted: 'manager.explorer.attributes.fields.textExtracted',
   text_truncated: 'manager.explorer.attributes.fields.textTruncated',
-  plain_text_preview: 'manager.explorer.attributes.fields.plainTextPreview',
   relkind: 'manager.explorer.attributes.fields.relkind',
   table_type: 'manager.explorer.attributes.fields.tableType',
   kind: 'manager.explorer.attributes.fields.kind',
@@ -1449,42 +1513,73 @@ const compareKeys = (a, b, order) => {
   border-bottom: 1px solid var(--addp-border-color);
 }
 
-.catalog-summary-card {
-  margin: 12px 16px 0;
-  padding: 14px;
+.resource-governance-summary {
+  flex: 0 0 auto;
+  min-height: 48px;
+  margin: 10px 16px 0;
+  padding: 7px 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px 16px;
   border: 1px solid var(--addp-border-color-light);
   border-radius: 8px;
   background: var(--addp-bg-secondary);
 }
 
-.catalog-summary-card__header,
-.catalog-summary-card__facts {
+.resource-governance-summary__group {
+  min-width: 0;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
 }
 
-.catalog-summary-card__header > div {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+.resource-governance-summary__catalog {
+  flex: 1 1 auto;
 }
 
-.catalog-summary-card__header span {
+.resource-governance-summary__security {
+  flex: 0 0 auto;
+  padding-left: 16px;
+  border-left: 1px solid var(--addp-border-color);
+}
+
+.resource-governance-summary__label {
+  flex: 0 0 auto;
   color: var(--addp-text-secondary);
   font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
-.catalog-summary-card__facts {
-  justify-content: flex-start;
-  margin-top: 12px;
-}
-
-.catalog-summary-card__name {
+.resource-governance-summary__name {
+  min-width: 0;
+  max-width: clamp(120px, 24vw, 320px);
+  overflow: hidden;
   color: var(--addp-text-primary);
   font-weight: 600;
-  margin-right: auto;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resource-governance-summary :deep(.el-button) {
+  flex: 0 0 auto;
+  margin-left: 0;
+  padding-inline: 2px;
+}
+
+@media (max-width: 640px) {
+  .resource-governance-summary {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .resource-governance-summary__security {
+    width: 100%;
+    padding-top: 4px;
+    padding-left: 0;
+    border-top: 1px solid var(--addp-border-color);
+    border-left: 0;
+  }
 }
 
 .item-tab-button {

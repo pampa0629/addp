@@ -554,7 +554,7 @@ func validateDevTaskContent(devType string, content map[string]interface{}) erro
 	switch devType {
 	case commonExecution.TaskTypeQuery:
 		if err := validateAllowedFields(content, "content", map[string]struct{}{
-			"query": {}, "query_type": {}, "query_parameters": {}, "relation_inputs": {}, "target_locator": {},
+			"query": {}, "query_type": {}, "query_parameters": {}, "target_locator": {},
 		}); err != nil {
 			return err
 		}
@@ -766,21 +766,30 @@ func validateDevTaskExecutionConfig(devType string, content map[string]interface
 			return fmt.Errorf("content.target_locator 的引擎 ID 必须与 execution_config.engine_id 一致")
 		}
 	}
-	relationInputs, hasRelationInputs, err := relationInputBindings(content)
+	relationParameters, hasRelationParameters, err := relationParameterBindingsFromContent(content)
 	if err != nil {
 		return err
 	}
-	if hasRelationInputs {
+	if hasRelationParameters {
 		if queryType != "sql" {
-			return fmt.Errorf("content.relation_inputs 仅支持 SQL 查询任务")
+			return fmt.Errorf("relation 查询参数仅支持 SQL 查询任务")
 		}
 		queryText, _ := content["query"].(string)
 		analysis, analysisErr := AnalyzeQuery("sql", queryText)
 		if analysisErr != nil || analysis.Statement != "SELECT" || analysis.Effect != string(SQLExecutionEffectRead) {
-			return fmt.Errorf("关系输入写入的 content.query 必须是单条只读 SELECT")
+			return fmt.Errorf("关系参数写入的 content.query 必须是单条只读 SELECT")
 		}
-		if err := validateRelationResultSource(queryText, relationInputs); err != nil {
+		if err := validateRelationResultSource(queryText, relationParameters); err != nil {
 			return err
+		}
+		for _, parameter := range relationParameters {
+			if parameter.DefaultLocator == "" {
+				continue
+			}
+			locator, parseErr := resourcetree.ParseURI(parameter.DefaultLocator)
+			if parseErr != nil || locator.EngineID != *engineID {
+				return fmt.Errorf("relation 查询参数 %s 的默认表必须与 execution_config.engine_id 位于同一引擎", parameter.Name)
+			}
 		}
 	}
 	return nil

@@ -77,22 +77,15 @@ type ComponentElementInput struct {
 }
 
 type UpdateEntryInput struct {
-	Version                     int64                   `json:"version" binding:"required,gt=0" minimum:"1"`
-	BusinessName                *string                 `json:"business_name"`
-	BusinessDescription         *string                 `json:"business_description"`
-	GovernanceStatus            string                  `json:"governance_status" binding:"required" enums:"discovered,curated,certified,deprecated"`
-	Visibility                  string                  `json:"visibility" binding:"required" enums:"inventory,department,tenant"`
-	Domains                     []DomainLinkInput       `json:"domains"`
-	GlossaryIDs                 []int64                 `json:"glossary_ids"`
-	Responsibilities            []ResponsibilityInput   `json:"responsibilities"`
-	ComponentElements           []ComponentElementInput `json:"component_elements"`
-	DeprecationReason           *string                 `json:"deprecation_reason"`
-	RecommendedSuccessorEntryID *uuid.UUID              `json:"recommended_successor_entry_id"`
-}
-
-type UpdateEntryAuthorization struct {
-	CanCertify   bool
-	CanDeprecate bool
+	Version             int64                   `json:"version" binding:"required,gt=0" minimum:"1"`
+	BusinessName        *string                 `json:"business_name"`
+	BusinessDescription *string                 `json:"business_description"`
+	GovernanceStatus    string                  `json:"governance_status" binding:"required" enums:"discovered,curated"`
+	Visibility          string                  `json:"visibility" binding:"required" enums:"inventory,department,tenant"`
+	Domains             []DomainLinkInput       `json:"domains"`
+	GlossaryIDs         []int64                 `json:"glossary_ids"`
+	Responsibilities    []ResponsibilityInput   `json:"responsibilities"`
+	ComponentElements   []ComponentElementInput `json:"component_elements"`
 }
 
 type UpdateEntryActor struct {
@@ -110,7 +103,6 @@ func (s *EntryService) Update(
 	tenantID int64,
 	id uuid.UUID,
 	input UpdateEntryInput,
-	authorization UpdateEntryAuthorization,
 	actor UpdateEntryActor,
 ) (*EntryDetail, error) {
 	if s == nil || s.db == nil || tenantID <= 0 || id == uuid.Nil || input.Version <= 0 ||
@@ -119,7 +111,6 @@ func (s *EntryService) Update(
 	}
 	normalizeEditableText(&input.BusinessName)
 	normalizeEditableText(&input.BusinessDescription)
-	normalizeEditableText(&input.DeprecationReason)
 	if err := validateUpdateShape(input); err != nil {
 		return nil, err
 	}
@@ -153,20 +144,8 @@ func (s *EntryService) Update(
 		if err != nil {
 			return err
 		}
-		if err := validateGovernanceTransition(entry.GovernanceStatus, input, authorization, ownerPrimaryDomain); err != nil {
+		if err := validateCurationTransition(entry.GovernanceStatus, input, ownerPrimaryDomain); err != nil {
 			return err
-		}
-		successorChanged := !equalOptionalUUID(entry.RecommendedSuccessorEntryID, input.RecommendedSuccessorEntryID)
-		if successorChanged && !authorization.CanDeprecate {
-			return ErrDeprecationPermissionRequired
-		}
-		if input.RecommendedSuccessorEntryID != nil {
-			if input.GovernanceStatus != models.GovernanceStatusDeprecated {
-				return ErrInvalidEntryUpdate
-			}
-			if err := validateRecommendedSuccessor(tx, tenantID, id, *input.RecommendedSuccessorEntryID); err != nil {
-				return err
-			}
 		}
 		if err := validateComponentOwnership(tx, tenantID, id, input.ComponentElements); err != nil {
 			return err
@@ -191,8 +170,7 @@ func (s *EntryService) Update(
 			Updates(map[string]interface{}{
 				"business_name": input.BusinessName, "business_description": input.BusinessDescription,
 				"governance_status": input.GovernanceStatus, "visibility": input.Visibility,
-				"recommended_successor_entry_id": input.RecommendedSuccessorEntryID,
-				"version":                        input.Version + 1, "updated_at": now,
+				"version": input.Version + 1, "updated_at": now,
 			})
 		if result.Error != nil {
 			return fmt.Errorf("update Catalog entry: %w", result.Error)
@@ -208,17 +186,12 @@ func (s *EntryService) Update(
 			"responsibility_count":    len(input.Responsibilities),
 			"component_element_count": len(input.ComponentElements),
 		}
-		if input.DeprecationReason != nil {
-			auditDetails["deprecation_reason"] = *input.DeprecationReason
-		}
-		if entry.RecommendedSuccessorEntryID != nil {
-			auditDetails["previous_recommended_successor_entry_id"] = entry.RecommendedSuccessorEntryID.String()
-		}
-		if input.RecommendedSuccessorEntryID != nil {
-			auditDetails["recommended_successor_entry_id"] = input.RecommendedSuccessorEntryID.String()
+		auditEventType := "catalog.entry.updated"
+		if isWithdrawCurationTransition(entry.GovernanceStatus, input.GovernanceStatus) {
+			auditEventType = "catalog.entry.curation_withdrawn"
 		}
 		if err := tx.Create(&models.AuditEvent{
-			ID: uuid.New(), TenantID: tenantID, CatalogEntryID: id, EventType: "catalog.entry.updated",
+			ID: uuid.New(), TenantID: tenantID, CatalogEntryID: id, EventType: auditEventType,
 			ActorType: actor.Type, ActorID: actor.ID, Details: auditDetails, CreatedAt: now,
 		}).Error; err != nil {
 			return fmt.Errorf("create Catalog audit event: %w", err)
@@ -267,8 +240,7 @@ func validateRecommendedSuccessor(tx *gorm.DB, tenantID int64, entryID, successo
 
 func validateUpdateShape(input UpdateEntryInput) error {
 	if !oneOf(input.GovernanceStatus, models.GovernanceStatusDiscovered, models.GovernanceStatusCurated, models.GovernanceStatusCertified, models.GovernanceStatusDeprecated) ||
-		!oneOf(input.Visibility, models.VisibilityInventory, models.VisibilityDepartment, models.VisibilityTenant) ||
-		(input.RecommendedSuccessorEntryID != nil && input.GovernanceStatus != models.GovernanceStatusDeprecated) {
+		!oneOf(input.Visibility, models.VisibilityInventory, models.VisibilityDepartment, models.VisibilityTenant) {
 		return ErrInvalidEntryUpdate
 	}
 	if len(input.Domains)+len(input.GlossaryIDs)+len(input.ComponentElements) > 200 || len(input.Responsibilities) > 200 {
@@ -402,32 +374,19 @@ func (s *EntryService) resolveUpdateReferences(
 	return validated, nil
 }
 
-func validateGovernanceTransition(current string, input UpdateEntryInput, authorization UpdateEntryAuthorization, ownerPrimaryDomain bool) error {
+func validateCurationTransition(current string, input UpdateEntryInput, ownerPrimaryDomain bool) error {
+	if current == models.GovernanceStatusCertified || current == models.GovernanceStatusDeprecated ||
+		input.GovernanceStatus == models.GovernanceStatusCertified || input.GovernanceStatus == models.GovernanceStatusDeprecated {
+		return ErrEntryNotEditable
+	}
 	if input.GovernanceStatus != current {
 		allowed := (current == models.GovernanceStatusDiscovered && input.GovernanceStatus == models.GovernanceStatusCurated) ||
-			(current == models.GovernanceStatusCurated && input.GovernanceStatus == models.GovernanceStatusCertified) ||
-			((current == models.GovernanceStatusCurated || current == models.GovernanceStatusCertified) && input.GovernanceStatus == models.GovernanceStatusDeprecated)
+			(isWithdrawCurationTransition(current, input.GovernanceStatus) && isWithdrawnCurationShape(input))
 		if !allowed {
 			return ErrInvalidGovernanceTransition
 		}
 	}
-	if input.GovernanceStatus == models.GovernanceStatusCertified && current != models.GovernanceStatusCertified && !authorization.CanCertify {
-		return ErrCertificationPermissionRequired
-	}
-	if input.GovernanceStatus == models.GovernanceStatusDeprecated && current != models.GovernanceStatusDeprecated {
-		if !authorization.CanDeprecate {
-			return ErrDeprecationPermissionRequired
-		}
-		if input.DeprecationReason == nil {
-			return ErrDeprecationReasonRequired
-		}
-	} else if input.DeprecationReason != nil {
-		return ErrInvalidEntryUpdate
-	}
 	if input.GovernanceStatus == models.GovernanceStatusDiscovered && input.Visibility != models.VisibilityInventory {
-		return ErrInvalidEntryUpdate
-	}
-	if input.GovernanceStatus == models.GovernanceStatusCertified && input.Visibility == models.VisibilityInventory {
 		return ErrInvalidEntryUpdate
 	}
 	if input.GovernanceStatus != models.GovernanceStatusDiscovered {
@@ -453,13 +412,22 @@ func validateGovernanceTransition(current string, input UpdateEntryInput, author
 	return nil
 }
 
+func isWithdrawCurationTransition(current, next string) bool {
+	return current == models.GovernanceStatusCurated && next == models.GovernanceStatusDiscovered
+}
+
+func isWithdrawnCurationShape(input UpdateEntryInput) bool {
+	return input.BusinessName == nil && input.BusinessDescription == nil &&
+		input.Visibility == models.VisibilityInventory && len(input.Domains) == 0 &&
+		len(input.GlossaryIDs) == 0 && len(input.Responsibilities) == 0 &&
+		len(input.ComponentElements) == 0
+}
+
 func validateOwnerSemanticInput(entryType string, source models.SourceBinding, input UpdateEntryInput) (bool, error) {
 	if source.SourceModule != models.SourceModuleMeta && len(input.ComponentElements) > 0 {
 		return false, ErrInvalidEntryUpdate
 	}
-	ownerManaged := (source.SourceModule == models.SourceModuleModel &&
-		(entryType == models.EntryTypeBusinessEntity || entryType == models.EntryTypeLogicalModel)) ||
-		(source.SourceModule == models.SourceModuleStandard && entryType == models.EntryTypeMetric && source.SourceType == models.SourceTypeMetric)
+	ownerManaged := ownerManagesPrimaryDomain(entryType, source)
 	if !ownerManaged {
 		return false, nil
 	}
@@ -468,19 +436,33 @@ func validateOwnerSemanticInput(entryType string, source models.SourceBinding, i
 			return false, ErrInvalidEntryUpdate
 		}
 	}
+	ownerPrimaryDomain, valid := observedOwnerPrimaryDomain(source)
+	if !valid {
+		return false, ErrInvalidEntryUpdate
+	}
+	return ownerPrimaryDomain, nil
+}
+
+func ownerManagesPrimaryDomain(entryType string, source models.SourceBinding) bool {
+	return (source.SourceModule == models.SourceModuleModel &&
+		(entryType == models.EntryTypeBusinessEntity || entryType == models.EntryTypeLogicalModel)) ||
+		(source.SourceModule == models.SourceModuleStandard && entryType == models.EntryTypeMetric && source.SourceType == models.SourceTypeMetric)
+}
+
+func observedOwnerPrimaryDomain(source models.SourceBinding) (bool, bool) {
 	rawDomain, ok := source.ObservedSnapshot["domain_id"]
 	if !ok || rawDomain == nil {
-		return false, nil
+		return false, true
 	}
 	domainID, ok := rawDomain.(string)
 	if !ok {
-		return false, ErrInvalidEntryUpdate
+		return false, false
 	}
 	parsed, err := strconv.ParseInt(domainID, 10, 64)
 	if err != nil || parsed <= 0 || strconv.FormatInt(parsed, 10) != domainID {
-		return false, ErrInvalidEntryUpdate
+		return false, false
 	}
-	return true, nil
+	return true, true
 }
 
 func validateComponentOwnership(tx *gorm.DB, tenantID int64, entryID uuid.UUID, inputs []ComponentElementInput) error {

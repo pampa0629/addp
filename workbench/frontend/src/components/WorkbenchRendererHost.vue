@@ -1,7 +1,11 @@
 <template>
   <div data-testid="renderer-host">
+    <el-empty
+      v-if="rendererType === 'value' && !resultReady"
+      :description="t('workbench.noData')"
+    />
     <TabularResultRenderer
-      v-if="rendererType === 'table'"
+      v-else-if="rendererType === 'table'"
       :rows="rows"
       :columns="config.columns || []"
       :fields="descriptor?.output_contract?.fields || []"
@@ -21,6 +25,12 @@
       @invalid="invalidReason = $event"
       @result-select="emit('result-select', $event)"
     />
+    <ScalarValueRenderer
+      v-else-if="rendererType === 'value'"
+      :rows="rows"
+      :config="config"
+      :fields="descriptor?.output_contract?.fields || []"
+    />
     <GeoJSONResultRenderer
       v-else-if="rendererType === 'map'"
       :rows="rows"
@@ -36,7 +46,8 @@
 <script setup>
 import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { TabularResultRenderer } from '@common-ui'
+import { ScalarValueRenderer, TabularResultRenderer } from '@common-ui'
+import { validateScalarValueResult } from '@common-ui/utils/scalarValueResult.mjs'
 import { validateChartResult } from '@common-ui-chart/chartResult.mjs'
 import { validateGeoJSONResult } from '@common-ui-map/utils/geoJSONResult.mjs'
 
@@ -48,7 +59,8 @@ const props = defineProps({
   rendererType: { type: String, required: true },
   config: { type: Object, required: true },
   descriptor: { type: Object, default: null },
-  page: { type: Object, default: () => ({}) }
+  page: { type: Object, default: () => ({}) },
+  resultReady: { type: Boolean, default: true }
 })
 const emit = defineEmits(['result-select'])
 const { t } = useI18n()
@@ -60,6 +72,9 @@ const validationReason = computed(() => {
   if (props.rendererType === 'map') {
     if (!props.descriptor?.output_contract?.spatial) return 'spatial_not_declared'
     return validateGeoJSONResult(props.rows, Boolean(props.page?.has_more)).reason
+  }
+  if (props.rendererType === 'value') {
+    return validateScalarValueResult(props.rows, props.config, Boolean(props.page?.has_more)).reason
   }
   return ''
 })

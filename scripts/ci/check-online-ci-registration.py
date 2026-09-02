@@ -156,6 +156,11 @@ def validate_enterprise_catalog_publishing_profile(repository: Path, registered:
         "ADDP_ONLINE_ASSET_ID",
         "/portal/categories/",
         "portal_category_assets",
+        "data-governance-status",
+        "catalog-certify-action",
+        "catalog-deprecate-action",
+        "catalog-withdraw-curation-action",
+        "catalog_lifecycle_actions",
     ):
         if fragment not in browser_spec:
             raise RegistrationError(

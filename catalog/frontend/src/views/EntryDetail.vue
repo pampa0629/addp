@@ -4,6 +4,7 @@
     data-testid="catalog-entry-detail"
     :data-load-state="loading ? 'loading' : error ? 'error' : entry ? 'loaded' : 'idle'"
     :data-entry-id="entry?.id || ''"
+    :data-governance-status="entry?.governance_status || ''"
   >
     <div class="page-header">
       <el-button text :icon="ArrowLeft" @click="goBack">{{ t('catalog.common.back') }}</el-button>
@@ -14,12 +15,29 @@
 		<el-button v-if="entry" :type="marks.following ? 'primary' : ''" :icon="Bell" :loading="markSaving" @click="toggleMark('following')">
 		  {{ marks.following ? t('catalog.marks.following') : t('catalog.marks.follow') }}
 		</el-button>
-		<el-button v-if="canRebind && entry?.entry_status === 'active' && entry?.source?.source_status === 'missing'" type="warning" @click="openRebind">
-		  {{ t('catalog.rebind.action') }}
+	        <el-button v-if="curationActionKey && !editing" data-testid="catalog-curation-action" type="primary" :icon="Edit" @click="openEditor">
+	          {{ t(`catalog.edit.${curationActionKey}Action`) }}
+	        </el-button>
+		<el-button
+		  v-if="primaryGovernanceAction && !editing"
+		  data-testid="catalog-primary-governance-action"
+		  :type="primaryGovernanceAction === 'deprecate' ? 'danger' : 'warning'"
+		  @click="openGovernanceDialog(primaryGovernanceAction)"
+		>
+		  {{ t(`catalog.governance.${primaryGovernanceAction}.action`) }}
 		</el-button>
-        <el-button v-if="canEdit && entry?.entry_status === 'active' && !editing" type="primary" :icon="Edit" @click="editing = true">
-          {{ t('catalog.edit.action') }}
-        </el-button>
+		<el-dropdown v-if="hasMoreActions && !editing" @command="handleMoreAction">
+		  <el-button data-testid="catalog-more-actions" :icon="MoreFilled">{{ t('catalog.edit.moreActions') }}</el-button>
+		  <template #dropdown>
+			<el-dropdown-menu>
+			  <el-dropdown-item v-if="canCertifyResource" data-testid="catalog-certify-action" command="certify">{{ t('catalog.governance.certify.action') }}</el-dropdown-item>
+			  <el-dropdown-item v-if="canDeprecateResource && entry?.governance_status === 'curated'" data-testid="catalog-deprecate-action" command="deprecate">{{ t('catalog.governance.deprecate.action') }}</el-dropdown-item>
+			  <el-dropdown-item v-if="canWithdrawCertification" data-testid="catalog-withdraw-certification-action" command="withdraw-certification">{{ t('catalog.governance.withdraw-certification.action') }}</el-dropdown-item>
+			  <el-dropdown-item v-if="canWithdrawCuration" data-testid="catalog-withdraw-curation-action" command="withdraw-curation" divided>{{ t('catalog.edit.withdraw') }}</el-dropdown-item>
+			  <el-dropdown-item v-if="canRebindSource" command="rebind-source">{{ t('catalog.rebind.action') }}</el-dropdown-item>
+			</el-dropdown-menu>
+		  </template>
+		</el-dropdown>
         <el-button :icon="Refresh" :loading="loading" @click="reloadLatest">{{ t('catalog.common.refresh') }}</el-button>
       </div>
     </div>
@@ -43,7 +61,7 @@
         <p v-if="entry.business_description" class="description">{{ entry.business_description }}</p>
       </el-card>
 
-      <el-card v-if="entry.recommended_successor_entry_id" shadow="never" class="successor-card">
+      <el-card v-if="!editing && activeDetailTab === 'relations' && entry.recommended_successor_entry_id" shadow="never" class="successor-card">
         <template #header>
           <div class="card-title-row">
             <strong>{{ t('catalog.impact.governanceTitle') }}</strong>
@@ -79,43 +97,70 @@
         :entry="entry"
         :saving="saving"
         :conflict="conflict"
-        :can-certify="canCertify"
-        :can-deprecate="canDeprecate"
         @submit="saveEntry"
         @cancel="cancelEdit"
         @reload="reloadLatest"
       />
 
-      <el-row :gutter="16" class="detail-grid">
+      <EntryGovernanceDialog
+        v-if="entry"
+        v-model:visible="governanceDialogVisible"
+        :entry="entry"
+        :mode="governanceDialogMode"
+        :saving="saving"
+        @submit="submitGovernanceDialog"
+      />
+
+      <el-tabs v-if="!editing" v-model="activeDetailTab" class="detail-tabs" @tab-change="changeDetailTab">
+        <el-tab-pane :label="t('catalog.entry.tabs.overview')" name="overview" />
+        <el-tab-pane :label="t('catalog.entry.tabs.curation')" name="curation" />
+        <el-tab-pane :label="t('catalog.entry.tabs.professional')" name="professional" />
+        <el-tab-pane :label="t('catalog.entry.tabs.relations')" name="relations" />
+      </el-tabs>
+
+      <el-row v-if="!editing && activeDetailTab === 'overview'" :gutter="16" class="detail-grid">
         <el-col :xs="24" :lg="12">
           <el-card shadow="never" class="detail-card">
-            <template #header><strong>{{ t('catalog.entry.catalogFacts') }}</strong></template>
+            <template #header><strong>{{ t('catalog.entry.governanceOverview') }}</strong></template>
             <el-descriptions :column="1" border>
-              <el-descriptions-item :label="t('catalog.entry.businessName')">{{ entry.business_name || '-' }}</el-descriptions-item>
               <el-descriptions-item :label="t('catalog.entries.type')">{{ entryTypeLabel(entry.entry_type) }}</el-descriptions-item>
+              <el-descriptions-item :label="t('catalog.entries.governanceStatus')">{{ t(`catalog.status.governance.${entry.governance_status}`) }}</el-descriptions-item>
               <el-descriptions-item :label="t('catalog.entries.visibility')">{{ t(`catalog.status.visibility.${entry.visibility}`) }}</el-descriptions-item>
-              <el-descriptions-item :label="t('catalog.entry.entryStatus')">{{ t(`catalog.status.entry.${entry.entry_status}`) }}</el-descriptions-item>
+              <el-descriptions-item :label="t('catalog.entry.primaryDomain')">{{ primaryDomainName }}</el-descriptions-item>
+              <el-descriptions-item :label="t('catalog.entry.accountableDepartment')">{{ accountableDepartmentName }}</el-descriptions-item>
+              <el-descriptions-item :label="t('catalog.entry.businessOwner')">{{ businessOwnerName }}</el-descriptions-item>
+            </el-descriptions>
+          </el-card>
+        </el-col>
+        <el-col :xs="24" :lg="12">
+          <el-card shadow="never" class="detail-card">
+            <template #header><strong>{{ t('catalog.entry.sourceOverview') }}</strong></template>
+            <el-descriptions :column="1" border>
+              <el-descriptions-item :label="t('catalog.entry.sourceModule')">{{ entry.source.source_module }}</el-descriptions-item>
+              <el-descriptions-item :label="t('catalog.entries.sourceStatus')">{{ t(`catalog.status.source.${entry.source.source_status}`) }}</el-descriptions-item>
+              <el-descriptions-item v-if="isProfessionalEntry" :label="t('catalog.entry.ownerStatus')">{{ entry.source_resolution?.owner_status || '-' }}</el-descriptions-item>
+              <el-descriptions-item :label="t('catalog.entry.observedAt')">{{ formatDate(entry.source.observed_at) }}</el-descriptions-item>
               <el-descriptions-item :label="t('catalog.entry.version')">{{ entry.version }}</el-descriptions-item>
               <el-descriptions-item :label="t('catalog.entries.updatedAt')">{{ formatDate(entry.updated_at) }}</el-descriptions-item>
             </el-descriptions>
           </el-card>
         </el-col>
-        <el-col :xs="24" :lg="12">
-          <el-card shadow="never" class="detail-card">
-            <template #header><strong>{{ t('catalog.entry.sourceFacts') }}</strong></template>
-            <el-descriptions :column="1" border>
-              <el-descriptions-item :label="t('catalog.entry.sourceModule')">{{ entry.source.source_module }}</el-descriptions-item>
-              <el-descriptions-item :label="t('catalog.entry.sourceIdentity')"><span class="break-all">{{ entry.source.source_identity }}</span></el-descriptions-item>
-              <el-descriptions-item v-if="entry.source.source_module === 'meta'" :label="t('catalog.entries.engineId')">{{ entry.source.observed_snapshot?.engine_id ?? '-' }}</el-descriptions-item>
-              <el-descriptions-item v-if="entry.source.source_module === 'meta'" :label="t('catalog.entry.metaItemId')">{{ entry.source.observed_snapshot?.item_id ?? '-' }}</el-descriptions-item>
-              <el-descriptions-item v-if="entry.source.source_module === 'meta'" :label="t('catalog.entry.scannedDepth')">{{ entry.source.observed_snapshot?.scanned_depth || '-' }}</el-descriptions-item>
-              <el-descriptions-item :label="t('catalog.entry.observedAt')">{{ formatDate(entry.source.observed_at) }}</el-descriptions-item>
-            </el-descriptions>
-          </el-card>
-        </el-col>
       </el-row>
 
-      <el-card v-if="isProfessionalEntry" shadow="never" class="owner-card">
+      <el-card v-if="!editing && activeDetailTab === 'professional'" shadow="never" class="owner-card">
+        <template #header><strong>{{ t('catalog.entry.sourceFacts') }}</strong></template>
+        <el-descriptions :column="2" border>
+          <el-descriptions-item :label="t('catalog.entry.sourceModule')">{{ entry.source.source_module }}</el-descriptions-item>
+          <el-descriptions-item :label="t('catalog.entries.sourceStatus')">{{ t(`catalog.status.source.${entry.source.source_status}`) }}</el-descriptions-item>
+          <el-descriptions-item :label="t('catalog.entry.sourceIdentity')"><span class="break-all">{{ entry.source.source_identity }}</span></el-descriptions-item>
+          <el-descriptions-item :label="t('catalog.entry.observedAt')">{{ formatDate(entry.source.observed_at) }}</el-descriptions-item>
+          <el-descriptions-item v-if="entry.source.source_module === 'meta'" :label="t('catalog.entries.engineId')">{{ entry.source.observed_snapshot?.engine_id ?? '-' }}</el-descriptions-item>
+          <el-descriptions-item v-if="entry.source.source_module === 'meta'" :label="t('catalog.entry.metaItemId')">{{ entry.source.observed_snapshot?.item_id ?? '-' }}</el-descriptions-item>
+          <el-descriptions-item v-if="entry.source.source_module === 'meta'" :label="t('catalog.entry.scannedDepth')">{{ entry.source.observed_snapshot?.scanned_depth || '-' }}</el-descriptions-item>
+        </el-descriptions>
+      </el-card>
+
+      <el-card v-if="!editing && activeDetailTab === 'professional' && isProfessionalEntry" shadow="never" class="owner-card">
         <template #header>
           <div class="card-title-row">
             <strong>{{ t('catalog.entry.ownerFacts', { module: ownerModuleName }) }}</strong>
@@ -150,7 +195,7 @@
         </el-descriptions>
       </el-card>
 
-      <el-card v-if="professionalRelationSubject" shadow="never" class="professional-relation-card">
+      <el-card v-if="!editing && activeDetailTab === 'relations' && professionalRelationSubject" shadow="never" class="professional-relation-card">
         <template #header>
           <div class="card-title-row">
             <strong>{{ t('catalog.impact.professionalTitle') }}</strong>
@@ -217,7 +262,7 @@
         />
       </el-card>
 
-      <el-card v-if="entry.quality_summary" shadow="never" class="quality-card">
+      <el-card v-if="!editing && activeDetailTab === 'overview' && entry.quality_summary" shadow="never" class="quality-card">
         <template #header>
           <div class="card-title-row">
             <strong>{{ t('catalog.quality.title') }}</strong>
@@ -237,7 +282,7 @@
         </el-descriptions>
       </el-card>
 
-      <el-card v-if="lineageSubject" shadow="never" class="lineage-card">
+      <el-card v-if="!editing && activeDetailTab === 'relations' && lineageSubject" shadow="never" class="lineage-card">
         <template #header>
           <div class="card-title-row">
             <strong>{{ t('catalog.impact.lineageTitle') }}</strong>
@@ -284,7 +329,87 @@
         />
       </el-card>
 
-      <el-card v-if="!isProfessionalEntry" shadow="never" class="component-card">
+      <el-card v-if="!editing && activeDetailTab === 'professional' && isDataDictionaryEntry" shadow="never" class="data-dictionary-card">
+        <template #header>
+          <div class="card-title-row data-dictionary-header">
+            <div>
+              <strong>{{ t('catalog.dataDictionary.title') }}</strong>
+              <div class="data-dictionary-hint">{{ t('catalog.dataDictionary.timeSemantics') }}</div>
+            </div>
+            <div class="data-dictionary-actions">
+              <el-date-picker
+                v-model="dataDictionaryAsOf"
+                type="datetime"
+                :clearable="false"
+                :placeholder="t('catalog.dataDictionary.asOf')"
+              />
+              <el-button type="primary" plain :loading="dataDictionaryLoading" @click="loadDataDictionary">
+                {{ t('catalog.dataDictionary.query') }}
+              </el-button>
+              <el-button
+                :loading="dataDictionaryExporting"
+                :disabled="dataDictionaryLoading || !dataDictionary"
+                @click="exportDataDictionarySnapshot"
+              >
+                {{ t('catalog.dataDictionary.export') }}
+              </el-button>
+            </div>
+          </div>
+        </template>
+        <el-alert
+          v-if="dataDictionaryError"
+          type="warning"
+          :closable="false"
+          show-icon
+          :title="dataDictionaryError"
+          class="owner-alert"
+        >
+          <template #default>
+            <el-button text type="primary" @click="loadDataDictionary">{{ t('catalog.common.retry') }}</el-button>
+          </template>
+        </el-alert>
+        <div v-if="dataDictionaryLoading && !dataDictionary" v-loading="true" class="data-dictionary-loading" />
+        <template v-else-if="dataDictionary">
+          <div class="data-dictionary-meta">
+            {{ t('catalog.dataDictionary.resolvedAt', { asOf: formatDate(dataDictionary.as_of), generatedAt: formatDate(dataDictionary.generated_at) }) }}
+          </div>
+          <el-table v-if="dataDictionary.fields?.length" :data="dataDictionary.fields">
+            <el-table-column :label="t('catalog.dataDictionary.physicalField')" min-width="170" fixed="left">
+              <template #default="{ row }">
+                <strong>{{ row.physical?.name || '-' }}</strong>
+                <div v-if="row.physical?.path?.length" class="cell-secondary">{{ row.physical.path.join('.') }}</div>
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('catalog.dataDictionary.physicalType')" min-width="150">
+              <template #default="{ row }">{{ formatPhysicalType(row.physical) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('catalog.dataDictionary.physicalConstraint')" min-width="180">
+              <template #default="{ row }">{{ physicalConstraintLabel(row.physical) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('catalog.dataDictionary.physicalComment')" min-width="220" show-overflow-tooltip>
+              <template #default="{ row }">{{ row.physical?.comment || '-' }}</template>
+            </el-table-column>
+            <el-table-column :label="t('catalog.dataDictionary.standardElement')" min-width="220">
+              <template #default="{ row }">
+                <template v-if="row.standard">
+                  <strong>{{ row.standard.name }}</strong>
+                  <div class="cell-secondary">{{ row.standard.code }} · r{{ row.standard.revision_no }}</div>
+                </template>
+                <span v-else>{{ row.element_id ? t('catalog.dataDictionary.notEffective') : t('catalog.dataDictionary.notLinked') }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('catalog.dataDictionary.definition')" min-width="260" show-overflow-tooltip>
+              <template #default="{ row }">{{ row.standard?.definition || '-' }}</template>
+            </el-table-column>
+            <el-table-column :label="t('catalog.dataDictionary.valueDomain')" min-width="300">
+              <template #default="{ row }"><span class="break-all">{{ valueDomainLabel(row.standard) }}</span></template>
+            </el-table-column>
+          </el-table>
+          <el-empty v-else :image-size="60" :description="t('catalog.dataDictionary.empty')" />
+        </template>
+      </el-card>
+
+      <el-card v-if="!editing && activeDetailTab === 'professional' && !isProfessionalEntry" shadow="never" class="component-card">
         <template #header>
           <div class="card-title-row">
             <strong>{{ t('catalog.entry.components') }}</strong>
@@ -305,7 +430,18 @@
         <el-empty v-if="!entry.components?.length" :description="t('catalog.entry.noComponents')" />
       </el-card>
 
-      <el-row :gutter="16" class="detail-grid">
+      <el-card v-if="!editing && activeDetailTab === 'curation'" shadow="never" class="owner-card">
+        <template #header><strong>{{ t('catalog.entry.catalogFacts') }}</strong></template>
+        <el-descriptions :column="2" border>
+          <el-descriptions-item :label="t('catalog.entry.businessName')">{{ entry.business_name || '-' }}</el-descriptions-item>
+          <el-descriptions-item :label="t('catalog.entries.governanceStatus')">{{ t(`catalog.status.governance.${entry.governance_status}`) }}</el-descriptions-item>
+          <el-descriptions-item :label="t('catalog.edit.businessDescription')" :span="2">{{ entry.business_description || '-' }}</el-descriptions-item>
+          <el-descriptions-item :label="t('catalog.entries.visibility')">{{ t(`catalog.status.visibility.${entry.visibility}`) }}</el-descriptions-item>
+          <el-descriptions-item :label="t('catalog.entry.version')">{{ entry.version }}</el-descriptions-item>
+        </el-descriptions>
+      </el-card>
+
+      <el-row v-if="!editing && activeDetailTab === 'curation'" :gutter="16" class="detail-grid">
         <el-col :xs="24" :lg="12">
           <el-card shadow="never" class="detail-card">
             <template #header><strong>{{ t('catalog.edit.semanticLinks') }}</strong></template>
@@ -336,7 +472,7 @@
         </el-col>
       </el-row>
 
-	  <el-card v-if="canReadAudit" shadow="never" class="history-card">
+	  <el-card v-if="!editing && activeDetailTab === 'relations' && canReadAudit" shadow="never" class="history-card">
 		<template #header>
 		  <div class="card-title-row">
 			<strong>{{ t('catalog.history.title') }}</strong>
@@ -400,15 +536,19 @@
 import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { ElMessage } from 'element-plus'
-import { ArrowLeft, Bell, Edit, Refresh, Star } from '@element-plus/icons-vue'
-import { navigateConsoleModuleRoute, openConsoleRoute, resolveConsoleRouteUrl, useConsolePageDescriptor } from '@common-ui'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { ArrowLeft, Bell, Edit, MoreFilled, Refresh, Star } from '@element-plus/icons-vue'
+import { navigateConsoleModuleRoute, openConsoleRoute, resolveCanonicalTabRouteState, resolveConsoleRouteUrl, useConsolePageDescriptor } from '@common-ui'
 import { createLineageApi, normalizeLineageGraph } from '@addp/common-frontend/graph/lineageApi.js'
 import EntryEditor from '../components/EntryEditor.vue'
-import { getEntry, getEntryHistory, getMyEntryMarks, rebindSource, replaceMyEntryMarks, resolveSourceEntries, updateEntry } from '../api/catalog'
+import EntryGovernanceDialog from '../components/EntryGovernanceDialog.vue'
+import { exportEntryDataDictionary, getEntry, getEntryDataDictionary, getEntryHistory, getMyEntryMarks, rebindSource, replaceMyEntryMarks, resolveSourceEntries, updateEntry, updateEntryGovernance } from '../api/catalog'
 import client from '../api/client'
 import { useAuthStore } from '../store/auth'
 import { catalogStatusLabel } from '../utils/catalogStatusLabel'
+import { dataDictionaryExportFileName, normalizeDataDictionaryBlobError, saveDataDictionaryExport } from '../utils/dataDictionaryExport'
+import { activeCodeItemLabels, formatPhysicalType, formatRangeConstraint } from '../utils/dataDictionaryView'
+import { buildCertificationPayload, buildCertificationWithdrawalPayload, buildDeprecationPayload, buildWithdrawCurationPayload, curationAction } from '../utils/entryEdit'
 import { buildEntryListQuery, parseEntryListRoute } from '../utils/entryRouteState'
 import { isProfessionalOwner, professionalOwnerName } from '../utils/entryOwnerPresentation'
 import { lineageFailureState, lineageNodesToSourceReferences, resolveLineageSubject } from '../utils/lineageView'
@@ -430,6 +570,9 @@ const entry = ref(null)
 const loading = ref(false)
 const saving = ref(false)
 const editing = ref(false)
+const governanceDialogVisible = ref(false)
+const governanceDialogMode = ref('deprecate')
+const activeDetailTab = ref('overview')
 const conflict = ref(false)
 const error = ref('')
 const marks = ref({ favorite: false, following: false })
@@ -440,19 +583,65 @@ const historyError = ref('')
 const rebindVisible = ref(false)
 const rebinding = ref(false)
 const rebindForm = ref(emptyRebindForm())
+const dataDictionary = ref(null)
+const dataDictionaryAsOf = ref(null)
+const dataDictionaryLoading = ref(false)
+const dataDictionaryExporting = ref(false)
+const dataDictionaryError = ref('')
 let requestVersion = 0
+let dataDictionaryRequestVersion = 0
 const canEdit = computed(() => authStore.hasPermission('catalog.entry.update'))
 const canCertify = computed(() => authStore.hasPermission('catalog.entry.certify'))
 const canDeprecate = computed(() => authStore.hasPermission('catalog.entry.deprecate'))
 const canRebind = computed(() => authStore.hasPermission('catalog.source.rebind'))
 const canReadAudit = computed(() => authStore.hasPermission('catalog.audit.read'))
 const canReadLineage = computed(() => authStore.hasPermission('meta.lineage.read'))
+const curationActionKey = computed(() => {
+  if (!canEdit.value || entry.value?.entry_status !== 'active') return ''
+  return curationAction(entry.value?.governance_status)
+})
+const canCertifyResource = computed(() => (
+  canEdit.value && canCertify.value && entry.value?.entry_status === 'active' && entry.value?.governance_status === 'curated'
+))
+const canWithdrawCertification = computed(() => (
+  canEdit.value && canCertify.value && entry.value?.entry_status === 'active' && entry.value?.governance_status === 'certified'
+))
+const canDeprecateResource = computed(() => (
+  canEdit.value && canDeprecate.value && entry.value?.entry_status === 'active' && ['curated', 'certified'].includes(entry.value?.governance_status)
+))
+const canMaintainDeprecation = computed(() => (
+  canEdit.value && canDeprecate.value && entry.value?.entry_status === 'active' && entry.value?.governance_status === 'deprecated'
+))
+const primaryGovernanceAction = computed(() => {
+  if (canMaintainDeprecation.value) return 'deprecated'
+  if (entry.value?.governance_status === 'certified' && canDeprecateResource.value) return 'deprecate'
+  return ''
+})
+const canWithdrawCuration = computed(() => (
+  canEdit.value && entry.value?.entry_status === 'active' && entry.value?.governance_status === 'curated'
+))
+const canRebindSource = computed(() => (
+  canRebind.value && entry.value?.entry_status === 'active' && entry.value?.source?.source_status === 'missing'
+))
+const hasMoreActions = computed(() => (
+  canCertifyResource.value || canWithdrawCertification.value ||
+  (canDeprecateResource.value && entry.value?.governance_status === 'curated') ||
+  canWithdrawCuration.value || canRebindSource.value
+))
 const rebindFormComplete = computed(() => Boolean(
 	rebindForm.value.temporary_entry_id && rebindForm.value.temporary_entry_version > 0 &&
 	rebindForm.value.new_source_identity && rebindForm.value.reason && rebindForm.value.evidence
 ))
 const componentElementByID = computed(() => new Map((entry.value?.component_elements || []).map(item => [item.component_id, item])))
+const primaryDomainName = computed(() => semanticReferenceName('domain', 'primary'))
+const accountableDepartmentName = computed(() => responsibilityReferenceName('accountable_department'))
+const businessOwnerName = computed(() => responsibilityReferenceName('business_owner'))
 const isProfessionalEntry = computed(() => isProfessionalOwner(entry.value?.source?.source_module))
+const isDataDictionaryEntry = computed(() => (
+  entry.value?.entry_status === 'active' && entry.value?.entry_type === 'data_item' &&
+  entry.value?.source?.source_module === 'meta' && entry.value?.source?.source_type === 'data_item' &&
+  entry.value?.source?.source_status === 'active'
+))
 const ownerModuleName = computed(() => professionalOwnerName(entry.value?.source?.source_module))
 const ownerDetailUrl = computed(() => resolveConsoleRouteUrl(entry.value?.source_resolution?.detail_path || ''))
 const sourceResolutionText = computed(() => {
@@ -532,6 +721,137 @@ useConsolePageDescriptor(router, 'catalog', {
   ready: computed(() => Boolean(entry.value))
 })
 
+function semanticReferenceName(type, role) {
+  const link = (entry.value?.semantic_links || []).find(item => item.semantic_type === type && item.relation_role === role)
+  return link?.observed_snapshot?.name || '-'
+}
+
+function responsibilityReferenceName(role) {
+  const responsibility = (entry.value?.responsibilities || []).find(item => item.role === role && item.status === 'active')
+  return responsibility?.observed_snapshot?.name || '-'
+}
+
+function openEditor() {
+  editing.value = true
+}
+
+function detailTabRouteState(query) {
+  return resolveCanonicalTabRouteState({
+    allowedTabs: ['overview', 'curation', 'professional', 'relations'],
+    defaultTab: 'overview',
+    routeQuery: query,
+    preservedQuery: query
+  })
+}
+
+async function changeDetailTab(tab) {
+  const state = detailTabRouteState({ ...route.query, tab })
+  activeDetailTab.value = state.tab
+  if (state.changed) await router.replace({ query: state.query })
+}
+
+async function handleMoreAction(command) {
+  if (command === 'certify') {
+    await certifyEntry()
+    return
+  }
+  if (command === 'withdraw-certification') {
+    openGovernanceDialog('withdraw-certification')
+    return
+  }
+  if (command === 'deprecate') {
+    openGovernanceDialog('deprecate')
+    return
+  }
+  if (command === 'withdraw-curation') {
+    await withdrawCuration()
+    return
+  }
+  if (command === 'rebind-source') openRebind()
+}
+
+function openGovernanceDialog(mode) {
+  governanceDialogMode.value = mode
+  governanceDialogVisible.value = true
+}
+
+async function certifyEntry() {
+  if (!entry.value || !canCertifyResource.value || saving.value) return
+  try {
+    await ElMessageBox.confirm(
+      t('catalog.governance.certify.description'),
+      t('catalog.governance.certify.title'),
+      {
+        type: 'warning',
+        confirmButtonText: t('catalog.governance.certify.confirm'),
+        cancelButtonText: t('catalog.edit.cancel')
+      }
+    )
+  } catch {
+    return
+  }
+  await applyGovernanceUpdate(buildCertificationPayload(entry.value), 'certify')
+}
+
+async function submitGovernanceDialog({ reason, recommendedSuccessorEntryId }) {
+  if (!entry.value) return
+  const mode = governanceDialogMode.value
+  const payload = mode === 'withdraw-certification'
+    ? buildCertificationWithdrawalPayload(entry.value, reason)
+    : buildDeprecationPayload(entry.value, reason, recommendedSuccessorEntryId)
+  await applyGovernanceUpdate(payload, mode)
+}
+
+async function applyGovernanceUpdate(payload, mode) {
+  if (!entry.value || saving.value) return
+  saving.value = true
+  try {
+    entry.value = await updateEntryGovernance(entry.value.id, payload)
+    governanceDialogVisible.value = false
+    history.value = null
+    if (canReadAudit.value) await loadHistory()
+    ElMessage.success(t(`catalog.governance.${mode}.success`))
+  } catch (requestError) {
+    const code = requestError?.response?.data?.error_code
+    if (requestError?.response?.status === 409 && code === 'catalog_entry_version_conflict') {
+      ElMessage.warning(t('catalog.edit.conflict'))
+      return
+    }
+    ElMessage.error(requestError?.response?.data?.error || t(`catalog.governance.${mode}.failed`))
+  } finally {
+    saving.value = false
+  }
+}
+
+async function withdrawCuration() {
+  if (!entry.value || !canWithdrawCuration.value || saving.value) return
+  try {
+    await ElMessageBox.confirm(
+      t('catalog.edit.withdrawDescription'),
+      t('catalog.edit.withdrawTitle'),
+      {
+        type: 'warning',
+        confirmButtonText: t('catalog.edit.withdrawConfirm'),
+        cancelButtonText: t('catalog.edit.cancel')
+      }
+    )
+  } catch {
+    return
+  }
+  saving.value = true
+  try {
+    entry.value = await updateEntry(entry.value.id, buildWithdrawCurationPayload(entry.value))
+    await changeDetailTab('overview')
+    history.value = null
+    if (canReadAudit.value) await loadHistory()
+    ElMessage.success(t('catalog.edit.withdrawSuccess'))
+  } catch (requestError) {
+    ElMessage.error(requestError?.response?.data?.error || t('catalog.edit.withdrawFailed'))
+  } finally {
+    saving.value = false
+  }
+}
+
 async function loadEntry() {
   const id = String(route.params.id || '').trim()
   const version = ++requestVersion
@@ -541,6 +861,8 @@ async function loadEntry() {
     const response = await getEntry(id)
     if (version === requestVersion) {
 	  entry.value = response
+	  dataDictionaryAsOf.value = null
+	  void loadDataDictionary()
 	  await loadMarks(id)
 	  history.value = null
 	  if (canReadAudit.value) await loadHistory()
@@ -553,6 +875,71 @@ async function loadEntry() {
   } finally {
     if (version === requestVersion) loading.value = false
   }
+}
+
+async function loadDataDictionary() {
+  const version = ++dataDictionaryRequestVersion
+  dataDictionary.value = null
+  dataDictionaryError.value = ''
+  if (!isDataDictionaryEntry.value || !entry.value?.id) {
+    dataDictionaryLoading.value = false
+    return
+  }
+  dataDictionaryLoading.value = true
+  try {
+    const asOf = dataDictionaryAsOf.value instanceof Date && !Number.isNaN(dataDictionaryAsOf.value.getTime())
+      ? dataDictionaryAsOf.value.toISOString()
+      : undefined
+    const response = await getEntryDataDictionary(entry.value.id, asOf)
+    if (version !== dataDictionaryRequestVersion) return
+    dataDictionary.value = response
+    dataDictionaryAsOf.value = new Date(response.as_of)
+  } catch (requestError) {
+    if (version !== dataDictionaryRequestVersion) return
+    dataDictionaryError.value = requestError?.response?.data?.error || t('catalog.dataDictionary.unavailable')
+  } finally {
+    if (version === dataDictionaryRequestVersion) dataDictionaryLoading.value = false
+  }
+}
+
+async function exportDataDictionarySnapshot() {
+  if (!entry.value || !dataDictionary.value || dataDictionaryExporting.value) return
+  dataDictionaryExporting.value = true
+  try {
+    const blob = await exportEntryDataDictionary(entry.value.id, dataDictionary.value.as_of)
+    const fileName = await dataDictionaryExportFileName(blob, entry.value.id)
+    saveDataDictionaryExport(blob, fileName)
+    ElMessage.success(t('catalog.dataDictionary.exportSuccess'))
+  } catch (requestError) {
+    await normalizeDataDictionaryBlobError(requestError)
+    ElMessage.error(requestError?.response?.data?.error || t('catalog.dataDictionary.exportFailed'))
+  } finally {
+    dataDictionaryExporting.value = false
+  }
+}
+
+function physicalConstraintLabel(field) {
+  if (!field) return '-'
+  const constraints = []
+  if (field.primary_key) constraints.push(t('catalog.dataDictionary.primaryKey'))
+  constraints.push(field.nullable ? t('catalog.dataDictionary.nullable') : t('catalog.dataDictionary.notNull'))
+  if (field.generated) constraints.push(t('catalog.dataDictionary.generated'))
+  if (field.default_expression) constraints.push(t('catalog.dataDictionary.defaultValue', { value: field.default_expression }))
+  return constraints.join(' · ')
+}
+
+function valueDomainLabel(standard) {
+  if (!standard) return '-'
+  if (standard.value_domain_kind === 'range') {
+    return `${t('catalog.dataDictionary.range')} ${formatRangeConstraint(standard.range_constraint) || '-'}`
+  }
+  if (standard.value_domain_kind === 'enumeration') {
+    const codeSet = standard.code_set_revision
+    const identity = codeSet ? `${codeSet.name} · r${codeSet.revision_no}` : t('catalog.dataDictionary.notEffective')
+    const items = activeCodeItemLabels(standard)
+    return items.length ? `${identity}: ${items.join('; ')}` : identity
+  }
+  return t('catalog.dataDictionary.unrestricted')
 }
 
 async function loadLineage() {
@@ -761,6 +1148,7 @@ async function submitRebind() {
 	rebinding.value = true
 	try {
 	  entry.value = await rebindSource(entry.value.id, { target_version: entry.value.version, ...rebindForm.value })
+	  void loadDataDictionary()
 	  rebindVisible.value = false
 	  ElMessage.success(t('catalog.rebind.success'))
 	  if (canReadAudit.value) await loadHistory()
@@ -801,6 +1189,7 @@ function formatAuditDetails(details) {
 
 async function reloadLatest() {
   editing.value = false
+  governanceDialogVisible.value = false
   conflict.value = false
   await loadEntry()
 }
@@ -862,6 +1251,11 @@ function formatDate(value) {
 }
 
 watch(() => route.params.id, loadEntry, { immediate: true })
+watch(() => route.query, async query => {
+  const state = detailTabRouteState(query)
+  activeDetailTab.value = state.tab
+  if (state.changed) await router.replace({ query: state.query })
+}, { immediate: true })
 watch(() => [lineageSubject.value?.item_id || '', canReadLineage.value], loadLineage, { immediate: true })
 watch(
   () => [professionalRelationSubject.value?.key || '', canReadProfessionalRelations.value],
@@ -876,6 +1270,7 @@ watch(
 .header-actions { margin-bottom: 0; }
 .summary-card { margin-bottom: 16px; }
 .successor-card { margin-bottom: 16px; }
+.detail-tabs { margin-bottom: 16px; }
 .summary-header, .summary-tags, .card-title-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .summary-title { min-width: 0; }
 .summary-title h1 { margin: 0; color: var(--addp-text-primary); font-size: 24px; overflow-wrap: anywhere; }
@@ -894,6 +1289,13 @@ watch(
 .lineage-loading { min-height: 180px; }
 .lineage-mapping-alert { margin-top: 16px; }
 .lineage-catalog-entries h3 { color: var(--addp-text-primary); font-size: 15px; margin: 18px 0 10px; }
+.data-dictionary-card { margin-bottom: 16px; }
+.data-dictionary-header { align-items: flex-start; }
+.data-dictionary-hint, .data-dictionary-meta, .cell-secondary { color: var(--addp-text-secondary); font-size: 13px; }
+.data-dictionary-hint { margin-top: 5px; font-weight: 400; }
+.data-dictionary-actions { display: flex; align-items: center; gap: 8px; }
+.data-dictionary-loading { min-height: 180px; }
+.data-dictionary-meta { margin-bottom: 12px; }
 .owner-alert { margin-bottom: 16px; }
 .history-card { margin-bottom: 16px; }
 .history-card h3 { color: var(--addp-text-primary); font-size: 15px; margin: 18px 0 10px; }
@@ -902,5 +1304,6 @@ watch(
 @media (max-width: 760px) {
   .summary-header { align-items: flex-start; flex-direction: column; }
   .summary-tags { flex-wrap: wrap; }
+  .data-dictionary-header, .data-dictionary-actions { align-items: stretch; flex-direction: column; width: 100%; }
 }
 </style>

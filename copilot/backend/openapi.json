@@ -1054,17 +1054,6 @@
             "title": "Name",
             "type": "string"
           },
-          "title": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Title"
-          },
           "type": {
             "enum": [
               "string",
@@ -1078,8 +1067,7 @@
         },
         "required": [
           "name",
-          "type",
-          "default"
+          "type"
         ],
         "title": "QueryParameterDefinition",
         "type": "object"

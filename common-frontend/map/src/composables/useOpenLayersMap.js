@@ -14,7 +14,7 @@ import Style from 'ol/style/Style'
 import Fill from 'ol/style/Fill'
 import Stroke from 'ol/style/Stroke'
 import CircleStyle from 'ol/style/Circle'
-import { createHighlightStyle } from '../utils/mapStyles'
+import { createHighlightStyle, createThematicFeatureStyle } from '../utils/mapStyles'
 import { formatFeatureProperties } from '../utils/mapFormatters'
 import { createOSMBaseLayer } from '../config/mapLayers'
 
@@ -64,6 +64,7 @@ export function useOpenLayersMap(config, options = {}) {
   let viewEventKeys = []
   let mapClickKey = null
   let featureClickHandler = null
+  let featureStyleContext = { mode: 'uniform', entries: [], valid: true }
   let viewState = normalizeInitialViewState(options.initialViewState)
 
   const updateViewState = () => {
@@ -159,6 +160,8 @@ export function useOpenLayersMap(config, options = {}) {
       vectorLayer.value = new VectorLayer({
         source: vectorSource.value,
         style: (feature) => {
+          const thematicStyle = createThematicFeatureStyle(feature, featureStyleContext)
+          if (thematicStyle) return thematicStyle
           const type = feature.getGeometry()?.getType()
           if (type === 'Point' || type === 'MultiPoint') {
             return pointStyle
@@ -236,6 +239,7 @@ export function useOpenLayersMap(config, options = {}) {
   const renderFeatures = (features, options = {}) => {
     if (!mapInstance.value || !vectorSource.value) return
 
+    featureStyleContext = options.featureStyle || { mode: 'uniform', entries: [], valid: true }
     hidePopup()
     clearHighlight()
     vectorSource.value.clear()
@@ -314,6 +318,7 @@ export function useOpenLayersMap(config, options = {}) {
     }
 
     vectorSource.value.addFeatures(validFeatures)
+    vectorLayer.value?.changed()
 
     const extent = vectorSource.value.getExtent()
     if (extent && isFinite(extent[0])) {

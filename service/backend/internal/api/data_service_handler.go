@@ -35,7 +35,7 @@ func (h *DataServiceHandler) Query(c *gin.Context) {
 		return
 	}
 
-	response, err := h.queryService.Query(c.Request.Context(), &req)
+	response, err := h.queryService.Query(c.Request.Context(), tenantIDValue(c), &req)
 	if err != nil {
 		if data.IsInvalidResourceLocatorError(err) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -65,7 +65,7 @@ func (h *DataServiceHandler) Aggregate(c *gin.Context) {
 		return
 	}
 
-	response, err := h.queryService.Aggregate(c.Request.Context(), &req)
+	response, err := h.queryService.Aggregate(c.Request.Context(), tenantIDValue(c), &req)
 	if err != nil {
 		if data.IsInvalidResourceLocatorError(err) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -95,7 +95,7 @@ func (h *DataServiceHandler) GetTableStructure(c *gin.Context) {
 		return
 	}
 
-	columns, err := h.queryService.GetTableStructure(c.Request.Context(), locator)
+	columns, err := h.queryService.GetTableStructure(c.Request.Context(), tenantIDValue(c), locator)
 	if err != nil {
 		if data.IsInvalidResourceLocatorError(err) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})

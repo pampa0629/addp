@@ -1,0 +1,3055 @@
+basePath: /api/v1/security
+definitions:
+  dataprotection.Component:
+    properties:
+      key:
+        type: string
+      path:
+        items:
+          $ref: '#/definitions/dataprotection.PathSegment'
+        type: array
+      schema_fingerprint:
+        type: string
+      value_type:
+        type: string
+    type: object
+  dataprotection.Decision:
+    properties:
+      algorithm:
+        type: string
+      effect:
+        type: string
+      invalid_value_effect:
+        type: string
+      parameters:
+        additionalProperties: {}
+        type: object
+    type: object
+  dataprotection.PathSegment:
+    properties:
+      container:
+        type: string
+      name:
+        type: string
+    type: object
+  dataprotection.Projection:
+    properties:
+      checksum:
+        type: string
+      consumer_owner:
+        type: string
+      expires_at:
+        type: string
+      projection_id:
+        type: string
+      revision:
+        type: string
+      rules:
+        items:
+          $ref: '#/definitions/dataprotection.Rule'
+        type: array
+      schema_version:
+        type: string
+      source_snapshot_hash:
+        type: string
+      state:
+        type: string
+      target:
+        $ref: '#/definitions/dataprotection.ResourceReference'
+      valid_from:
+        type: string
+    type: object
+  dataprotection.ProjectionAcknowledgementRequest:
+    properties:
+      applied_cursor:
+        type: string
+    required:
+    - applied_cursor
+    type: object
+  dataprotection.ProjectionChange:
+    properties:
+      change_id:
+        type: string
+      operation:
+        type: string
+      projection:
+        $ref: '#/definitions/dataprotection.Projection'
+      release:
+        $ref: '#/definitions/dataprotection.ProjectionRelease'
+    type: object
+  dataprotection.ProjectionChangesResponse:
+    properties:
+      changes:
+        items:
+          $ref: '#/definitions/dataprotection.ProjectionChange'
+        type: array
+      has_more:
+        type: boolean
+      next_cursor:
+        type: string
+      schema_version:
+        type: string
+    type: object
+  dataprotection.ProjectionRelease:
+    properties:
+      projection_id:
+        type: string
+      revision:
+        type: string
+      target:
+        $ref: '#/definitions/dataprotection.ResourceReference'
+    type: object
+  dataprotection.ResourceReference:
+    properties:
+      component_key:
+        type: string
+      owner_module:
+        type: string
+      resource_identity:
+        type: string
+      resource_type:
+        type: string
+    type: object
+  dataprotection.Rule:
+    properties:
+      action:
+        type: string
+      component:
+        $ref: '#/definitions/dataprotection.Component'
+      decision:
+        $ref: '#/definitions/dataprotection.Decision'
+    type: object
+  github_com_addp_security_internal_models.CreateProtectionDiscoveryExecutionRequest:
+    properties:
+      version:
+        type: integer
+    required:
+    - version
+    type: object
+  github_com_addp_security_internal_models.CreateProtectionEnrollmentRequest:
+    properties:
+      locator:
+        type: string
+    required:
+    - locator
+    type: object
+  github_com_addp_security_internal_models.DefinitionRequest:
+    properties:
+      code:
+        type: string
+      description:
+        type: string
+      name:
+        type: string
+      parent_id:
+        type: integer
+      risk_order:
+        type: integer
+      sort_order:
+        type: integer
+      version:
+        type: integer
+    required:
+    - code
+    - name
+    type: object
+  github_com_addp_security_internal_models.DeleteProtectionBaselineRequest:
+    properties:
+      version:
+        type: integer
+    required:
+    - version
+    type: object
+  github_com_addp_security_internal_models.ProtectionBaseline:
+    properties:
+      algorithm:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        example: "0"
+        type: string
+      effect:
+        type: string
+      enabled:
+        type: boolean
+      id:
+        example: "0"
+        type: string
+      invalid_value_effect:
+        type: string
+      keep_prefix:
+        type: integer
+      keep_suffix:
+        type: integer
+      security_grade_id:
+        example: "0"
+        type: string
+      sensitive_data_type_id:
+        example: "0"
+        type: string
+      tenant_id:
+        example: "0"
+        type: string
+      updated_at:
+        type: string
+      updated_by:
+        example: "0"
+        type: string
+      version:
+        example: "0"
+        type: string
+    type: object
+  github_com_addp_security_internal_models.ProtectionBaselineRequest:
+    properties:
+      algorithm:
+        type: string
+      effect:
+        type: string
+      enabled:
+        type: boolean
+      invalid_value_effect:
+        type: string
+      keep_prefix:
+        type: integer
+      keep_suffix:
+        type: integer
+      security_grade_id:
+        type: integer
+      sensitive_data_type_id:
+        type: integer
+      version:
+        type: integer
+    required:
+    - effect
+    - security_grade_id
+    - sensitive_data_type_id
+    type: object
+  github_com_addp_security_internal_models.ProtectionDiscoveryExecutionResponse:
+    properties:
+      created_at:
+        type: string
+      enrollment_id:
+        type: string
+      execution_id:
+        type: string
+      status:
+        type: string
+    type: object
+  github_com_addp_security_internal_models.ProtectionDiscoverySummary:
+    properties:
+      finding_count:
+        type: integer
+      pending_review_count:
+        type: integer
+      reviewed_count:
+        type: integer
+      status:
+        type: string
+    type: object
+  github_com_addp_security_internal_models.ProtectionEnrollmentListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_addp_security_internal_models.ProtectionEnrollmentResponse'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  github_com_addp_security_internal_models.ProtectionEnrollmentResponse:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        example: "0"
+        type: string
+      discovery_summary:
+        $ref: '#/definitions/github_com_addp_security_internal_models.ProtectionDiscoverySummary'
+      id:
+        type: string
+      last_discovered_at:
+        type: string
+      latest_source_snapshot_hash:
+        type: string
+      owner_progress:
+        items:
+          $ref: '#/definitions/github_com_addp_security_internal_models.ProtectionOwnerProgress'
+        type: array
+      release_basis:
+        type: string
+      release_reason:
+        type: string
+      release_requested_at:
+        type: string
+      release_requested_by:
+        example: "0"
+        type: string
+      release_source_snapshot_hash:
+        type: string
+      released_at:
+        type: string
+      state:
+        type: string
+      target:
+        $ref: '#/definitions/dataprotection.ResourceReference'
+      target_snapshot:
+        $ref: '#/definitions/github_com_addp_security_internal_models.ProtectionTargetSnapshot'
+      updated_at:
+        type: string
+      version:
+        example: "0"
+        type: string
+    type: object
+  github_com_addp_security_internal_models.ProtectionOwnerProgress:
+    properties:
+      acknowledged:
+        type: boolean
+      acknowledged_at:
+        type: string
+      consumer_owner:
+        type: string
+      effects:
+        items:
+          type: string
+        type: array
+      projection_id:
+        type: string
+      projection_state:
+        type: string
+      published_cursor:
+        type: string
+      revision:
+        type: string
+    type: object
+  github_com_addp_security_internal_models.ProtectionPolicyResponse:
+    properties:
+      action:
+        type: string
+      assessment_id:
+        type: string
+      consumer_owner:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        example: "0"
+        type: string
+      current:
+        $ref: '#/definitions/github_com_addp_security_internal_models.ProtectionPolicyRevision'
+      current_revision:
+        type: integer
+      history:
+        items:
+          $ref: '#/definitions/github_com_addp_security_internal_models.ProtectionPolicyRevision'
+        type: array
+      id:
+        type: string
+      state:
+        type: string
+      updated_at:
+        type: string
+      version:
+        example: "0"
+        type: string
+    type: object
+  github_com_addp_security_internal_models.ProtectionPolicyRevision:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        example: "0"
+        type: string
+      effect:
+        type: string
+      id:
+        type: string
+      policy_id:
+        type: string
+      rationale:
+        type: string
+      revision:
+        type: integer
+      state:
+        type: string
+    type: object
+  github_com_addp_security_internal_models.ProtectionTargetSnapshot:
+    properties:
+      engine_id:
+        type: integer
+      full_name:
+        type: string
+      item_type:
+        type: string
+    type: object
+  github_com_addp_security_internal_models.ReleaseProtectionEnrollmentRequest:
+    properties:
+      basis:
+        enum:
+        - manual
+        - no_supported_findings
+        type: string
+      reason:
+        type: string
+      version:
+        type: integer
+    required:
+    - basis
+    - reason
+    - version
+    type: object
+  github_com_addp_security_internal_models.ResourceSecurityAssessmentResponse:
+    properties:
+      component_key:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        example: "0"
+        type: string
+      current:
+        $ref: '#/definitions/github_com_addp_security_internal_models.ResourceSecurityAssessmentRevision'
+      current_revision:
+        type: integer
+      enrollment_id:
+        type: string
+      history:
+        items:
+          $ref: '#/definitions/github_com_addp_security_internal_models.ResourceSecurityAssessmentRevision'
+        type: array
+      id:
+        type: string
+      updated_at:
+        type: string
+      version:
+        example: "0"
+        type: string
+    type: object
+  github_com_addp_security_internal_models.ResourceSecurityAssessmentRevision:
+    properties:
+      assessment_id:
+        type: string
+      component:
+        $ref: '#/definitions/dataprotection.Component'
+      created_at:
+        type: string
+      created_by:
+        example: "0"
+        type: string
+      id:
+        type: string
+      rationale:
+        type: string
+      revision:
+        type: integer
+      security_classification_id:
+        example: "0"
+        type: string
+      security_grade_id:
+        example: "0"
+        type: string
+      sensitive_data_type_id:
+        example: "0"
+        type: string
+      source_finding_id:
+        type: string
+      source_review_id:
+        type: string
+      source_snapshot_hash:
+        type: string
+    type: object
+  github_com_addp_security_internal_models.SecurityClassification:
+    properties:
+      code:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        example: "0"
+        type: string
+      description:
+        type: string
+      id:
+        example: "0"
+        type: string
+      name:
+        type: string
+      parent_id:
+        example: "0"
+        type: string
+      sort_order:
+        type: integer
+      tenant_id:
+        example: "0"
+        type: string
+      updated_at:
+        type: string
+      updated_by:
+        example: "0"
+        type: string
+      version:
+        example: "0"
+        type: string
+    type: object
+  github_com_addp_security_internal_models.SecurityGrade:
+    properties:
+      code:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        example: "0"
+        type: string
+      description:
+        type: string
+      id:
+        example: "0"
+        type: string
+      name:
+        type: string
+      risk_order:
+        type: integer
+      tenant_id:
+        example: "0"
+        type: string
+      updated_at:
+        type: string
+      updated_by:
+        example: "0"
+        type: string
+      version:
+        example: "0"
+        type: string
+    type: object
+  github_com_addp_security_internal_models.SensitiveDataType:
+    properties:
+      code:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        example: "0"
+        type: string
+      default_security_grade_id:
+        example: "0"
+        type: string
+      description:
+        type: string
+      id:
+        example: "0"
+        type: string
+      name:
+        type: string
+      protection_threshold:
+        type: number
+      security_classification_id:
+        example: "0"
+        type: string
+      tenant_id:
+        example: "0"
+        type: string
+      updated_at:
+        type: string
+      updated_by:
+        example: "0"
+        type: string
+      version:
+        example: "0"
+        type: string
+    type: object
+  github_com_addp_security_internal_models.SensitiveDataTypeRequest:
+    properties:
+      code:
+        type: string
+      default_security_grade_id:
+        type: integer
+      description:
+        type: string
+      name:
+        type: string
+      protection_threshold:
+        type: number
+      security_classification_id:
+        type: integer
+      version:
+        type: integer
+    required:
+    - code
+    - default_security_grade_id
+    - name
+    - security_classification_id
+    type: object
+  github_com_addp_security_internal_models.SensitiveFindingResponse:
+    properties:
+      component:
+        $ref: '#/definitions/dataprotection.Component'
+      component_key:
+        type: string
+      confidence:
+        type: number
+      created_at:
+        type: string
+      detector_code:
+        type: string
+      detector_version:
+        type: string
+      enrollment_id:
+        type: string
+      evidence:
+        $ref: '#/definitions/models.JSONMap'
+      id:
+        type: string
+      observed_at:
+        type: string
+      review:
+        $ref: '#/definitions/github_com_addp_security_internal_models.SensitiveFindingReview'
+      sensitive_data_type_id:
+        example: "0"
+        type: string
+      source_snapshot_hash:
+        type: string
+    type: object
+  github_com_addp_security_internal_models.SensitiveFindingReview:
+    properties:
+      created_at:
+        type: string
+      decision:
+        type: string
+      finding_id:
+        type: string
+      id:
+        type: string
+      rationale:
+        type: string
+      reviewed_by:
+        example: "0"
+        type: string
+      security_grade_id:
+        example: "0"
+        type: string
+      sensitive_data_type_id:
+        example: "0"
+        type: string
+    type: object
+  internal_api.AssessmentRevisionRequest:
+    properties:
+      rationale:
+        type: string
+      security_grade_id:
+        example: "0"
+        type: string
+      sensitive_data_type_id:
+        example: "0"
+        type: string
+      version:
+        example: "0"
+        type: string
+    required:
+    - rationale
+    - security_grade_id
+    - sensitive_data_type_id
+    - version
+    type: object
+  internal_api.CreateProtectionPolicyRequest:
+    properties:
+      action:
+        type: string
+      assessment_id:
+        type: string
+      consumer_owner:
+        type: string
+      effect:
+        type: string
+      rationale:
+        type: string
+    required:
+    - action
+    - assessment_id
+    - consumer_owner
+    - effect
+    - rationale
+    type: object
+  internal_api.FindingReviewRequest:
+    properties:
+      decision:
+        type: string
+      rationale:
+        type: string
+      security_grade_id:
+        example: "0"
+        type: string
+      sensitive_data_type_id:
+        example: "0"
+        type: string
+    required:
+    - decision
+    - rationale
+    type: object
+  internal_api.FindingReviewResponse:
+    properties:
+      assessment:
+        $ref: '#/definitions/github_com_addp_security_internal_models.ResourceSecurityAssessmentResponse'
+      review:
+        $ref: '#/definitions/github_com_addp_security_internal_models.SensitiveFindingReview'
+    type: object
+  internal_api.ProtectionPolicyListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_addp_security_internal_models.ProtectionPolicyResponse'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  internal_api.ProtectionPolicyResponse:
+    properties:
+      action:
+        type: string
+      assessment_id:
+        type: string
+      consumer_owner:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        example: "0"
+        type: string
+      current:
+        $ref: '#/definitions/github_com_addp_security_internal_models.ProtectionPolicyRevision'
+      current_revision:
+        type: integer
+      history:
+        items:
+          $ref: '#/definitions/github_com_addp_security_internal_models.ProtectionPolicyRevision'
+        type: array
+      id:
+        type: string
+      state:
+        type: string
+      updated_at:
+        type: string
+      version:
+        example: "0"
+        type: string
+    type: object
+  internal_api.ResourceSecurityAssessmentListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_addp_security_internal_models.ResourceSecurityAssessmentResponse'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  internal_api.ResourceSecurityAssessmentResponse:
+    properties:
+      component_key:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        example: "0"
+        type: string
+      current:
+        $ref: '#/definitions/github_com_addp_security_internal_models.ResourceSecurityAssessmentRevision'
+      current_revision:
+        type: integer
+      enrollment_id:
+        type: string
+      history:
+        items:
+          $ref: '#/definitions/github_com_addp_security_internal_models.ResourceSecurityAssessmentRevision'
+        type: array
+      id:
+        type: string
+      updated_at:
+        type: string
+      version:
+        example: "0"
+        type: string
+    type: object
+  internal_api.RevokeProtectionPolicyRequest:
+    properties:
+      rationale:
+        type: string
+      version:
+        example: "0"
+        type: string
+    required:
+    - rationale
+    - version
+    type: object
+  internal_api.SensitiveFindingListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_addp_security_internal_models.SensitiveFindingResponse'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  internal_api.SensitiveFindingResponse:
+    properties:
+      component:
+        $ref: '#/definitions/dataprotection.Component'
+      component_key:
+        type: string
+      confidence:
+        type: number
+      created_at:
+        type: string
+      detector_code:
+        type: string
+      detector_version:
+        type: string
+      enrollment_id:
+        type: string
+      evidence:
+        $ref: '#/definitions/models.JSONMap'
+      id:
+        type: string
+      observed_at:
+        type: string
+      review:
+        $ref: '#/definitions/github_com_addp_security_internal_models.SensitiveFindingReview'
+      sensitive_data_type_id:
+        example: "0"
+        type: string
+      source_snapshot_hash:
+        type: string
+    type: object
+  internal_api.UpdateProtectionPolicyRequest:
+    properties:
+      effect:
+        type: string
+      rationale:
+        type: string
+      version:
+        example: "0"
+        type: string
+    required:
+    - effect
+    - rationale
+    - version
+    type: object
+  models.JSONMap:
+    additionalProperties: true
+    type: object
+host: localhost:8194
+info:
+  contact: {}
+  title: ADDP Security API
+  version: "1.0"
+paths:
+  /assessments:
+    get:
+      description: 分页返回当前租户的正式资源安全评估及当前修订 | Return formal resource security assessments
+        and their current revisions
+      parameters:
+      - description: 页码 | Page number
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量，最大 100 | Page size, maximum 100
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.ResourceSecurityAssessmentListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 正式安全评估列表 | List formal security assessments
+      tags:
+      - Security Assessment
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - security.assessment.read
+  /assessments/{id}:
+    get:
+      description: 返回当前修订和不可变修订历史 | Return the current revision and immutable revision
+        history
+      parameters:
+      - description: Assessment ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.ResourceSecurityAssessmentResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 正式安全评估详情 | Get formal security assessment
+      tags:
+      - Security Assessment
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - security.assessment.read
+  /assessments/{id}/revisions:
+    post:
+      consumes:
+      - application/json
+      description: 使用资源版本并发控制，在同一 Assessment 聚合追加不可变正式修订并重新编译保护投影 | Append an immutable
+        formal revision with resource-version concurrency control and recompile the
+        protection projection
+      parameters:
+      - description: Assessment ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 修订请求 | Revision request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.AssessmentRevisionRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_api.ResourceSecurityAssessmentResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 新增安全评估修订 | Create security assessment revision
+      tags:
+      - Security Assessment
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - security.assessment.update
+  /classifications:
+    get:
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_addp_security_internal_models.SecurityClassification'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 安全分类列表 | List security classifications
+      tags:
+      - Security Classification
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - security.classification.read
+    post:
+      parameters:
+      - description: 安全分类 | Security classification
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_security_internal_models.DefinitionRequest'
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_addp_security_internal_models.SecurityClassification'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建安全分类 | Create security classification
+      tags:
+      - Security Classification
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - security.classification.create
+  /classifications/{id}:
+    delete:
+      parameters:
+      - description: 安全分类 ID | Security classification ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除安全分类 | Delete security classification
+      tags:
+      - Security Classification
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - security.classification.delete
+    get:
+      parameters:
+      - description: 安全分类 ID | Security classification ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_security_internal_models.SecurityClassification'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 安全分类详情 | Get security classification
+      tags:
+      - Security Classification
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - security.classification.read
+    put:
+      parameters:
+      - description: 安全分类 ID | Security classification ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 安全分类 | Security classification
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_security_internal_models.DefinitionRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_security_internal_models.SecurityClassification'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新安全分类 | Update security classification
+      tags:
+      - Security Classification
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - security.classification.update
+  /findings:
+    get:
+      description: 分页返回当前租户不含原始敏感值的不可变检测发现及可选初审记录，可按纳管与来源快照精确过滤 | Return immutable,
+        value-free detector findings with optional first reviews for the current tenant,
+        optionally filtered by enrollment and source snapshot
+      parameters:
+      - description: 页码 | Page number
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量，最大 100 | Page size, maximum 100
+        in: query
+        name: page_size
+        type: integer
+      - description: 纳管 ID | Enrollment ID
+        in: query
+        name: enrollment_id
+        type: string
+      - description: 精确来源快照哈希 | Exact source snapshot hash
+        in: query
+        name: source_snapshot_hash
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.SensitiveFindingListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 敏感发现列表 | List sensitive findings
+      tags:
+      - Sensitive Finding
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - security.finding.read
+  /findings/{id}:
+    get:
+      description: 返回单个不含原始敏感值的检测证据及可选初审记录 | Return one value-free detector observation
+        with its optional first review
+      parameters:
+      - description: Finding ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.SensitiveFindingResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 敏感发现详情 | Get sensitive finding
+      tags:
+      - Sensitive Finding
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - security.finding.read
+  /findings/{id}/reviews:
+    post:
+      consumes:
+      - application/json
+      description: 对不可变 Finding 进行一次确认、调整或驳回；确认和调整形成正式 Assessment revision | Confirm,
+        adjust, or reject an immutable Finding once; confirm and adjust create a formal
+        Assessment revision
+      parameters:
+      - description: Finding ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 复核请求 | Review request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.FindingReviewRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_api.FindingReviewResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 复核敏感发现 | Review sensitive finding
+      tags:
+      - Sensitive Finding
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - security.finding.update
+  /grades:
+    get:
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_addp_security_internal_models.SecurityGrade'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 安全等级列表 | List security grades
+      tags:
+      - Security Grade
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - security.grade.read
+    post:
+      parameters:
+      - description: 安全等级 | Security grade
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_security_internal_models.DefinitionRequest'
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_addp_security_internal_models.SecurityGrade'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建安全等级 | Create security grade
+      tags:
+      - Security Grade
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - security.grade.create
+  /grades/{id}:
+    delete:
+      parameters:
+      - description: 安全等级 ID | Security grade ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除安全等级 | Delete security grade
+      tags:
+      - Security Grade
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - security.grade.delete
+    get:
+      parameters:
+      - description: 安全等级 ID | Security grade ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_security_internal_models.SecurityGrade'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 安全等级详情 | Get security grade
+      tags:
+      - Security Grade
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - security.grade.read
+    put:
+      parameters:
+      - description: 安全等级 ID | Security grade ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 安全等级 | Security grade
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_security_internal_models.DefinitionRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_security_internal_models.SecurityGrade'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新安全等级 | Update security grade
+      tags:
+      - Security Grade
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - security.grade.update
+  /protection-baselines:
+    get:
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_addp_security_internal_models.ProtectionBaseline'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 保护基线列表 | List protection baselines
+      tags:
+      - Protection Baseline
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - security.protection_baseline.read
+    post:
+      description: 创建后在同一事务精确重编译引用该敏感类型和等级的纳管投影 | After creation, precisely recompile
+        enrolled projections that reference this sensitive type and grade in the same
+        transaction
+      parameters:
+      - description: 保护基线 | Protection baseline
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_security_internal_models.ProtectionBaselineRequest'
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_addp_security_internal_models.ProtectionBaseline'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建保护基线 | Create protection baseline
+      tags:
+      - Protection Baseline
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - security.protection_baseline.create
+  /protection-baselines/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: 使用资源版本删除并在同一事务重编译受影响投影；没有其他有效规则时回到 enrolling 资源级拒绝 | Delete with
+        resource-version concurrency control and recompile affected projections in
+        the same transaction; fall back to the enrolling resource-level deny when
+        no other effective rule remains
+      parameters:
+      - description: 保护基线 ID | Protection baseline ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 删除版本 | Delete version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_security_internal_models.DeleteProtectionBaselineRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除保护基线 | Delete protection baseline
+      tags:
+      - Protection Baseline
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - security.protection_baseline.delete
+    get:
+      parameters:
+      - description: 保护基线 ID | Protection baseline ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_security_internal_models.ProtectionBaseline'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 保护基线详情 | Get protection baseline
+      tags:
+      - Protection Baseline
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - security.protection_baseline.read
+    put:
+      description: 完整更新后在同一事务重编译更新前后绑定范围的并集；每个受影响纳管只编译一次 | After full update, recompile
+        the union of old and new binding scopes in the same transaction; each affected
+        enrollment is compiled once
+      parameters:
+      - description: 保护基线 ID | Protection baseline ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 保护基线 | Protection baseline
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_security_internal_models.ProtectionBaselineRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_security_internal_models.ProtectionBaseline'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新保护基线 | Update protection baseline
+      tags:
+      - Protection Baseline
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - security.protection_baseline.update
+  /protection-enrollments:
+    get:
+      description: 分页返回当前租户的显式保护纳管、最近成功发现摘要及必要 Owner 激活进度 | Return explicit protection
+        enrollments, latest successful discovery summaries, and required-owner activation
+        progress for the current tenant
+      parameters:
+      - description: 页码 | Page number
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量，最大 100 | Page size, maximum 100
+        in: query
+        name: page_size
+        type: integer
+      - default: current
+        description: '生命周期视图，current 为保护中，released 为已退出，all 为全部；默认 current | Lifecycle
+          view: current for in-progress protection, released for exited history, all
+          for both; current by default'
+        enum:
+        - current
+        - released
+        - all
+        in: query
+        name: scope
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_security_internal_models.ProtectionEnrollmentListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 保护纳管列表 | List protection enrollments
+      tags:
+      - Protection Enrollment
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - security.enrollment.read
+    post:
+      consumes:
+      - application/json
+      description: 使用 Meta 资源树返回的标准 DataItem locator 创建完整资源纳管；Security 自行计算 fingerprint，创建后固定返回
+        activating，只有 Manager、Transfer、Develop 和 Service 全部安装 enrolling 门禁并确认后才进入
+        enrolling | Create whole-resource enrollment from a standard DataItem locator
+        returned by the Meta resource tree; Security computes the fingerprint and
+        always returns activating until Manager, Transfer, Develop, and Service install
+        and acknowledge the enrolling gate
+      parameters:
+      - description: DataItem 资源定位符 | DataItem resource locator
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_security_internal_models.CreateProtectionEnrollmentRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_addp_security_internal_models.ProtectionEnrollmentResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建保护纳管 | Create protection enrollment
+      tags:
+      - Protection Enrollment
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - security.enrollment.create
+  /protection-enrollments/{id}:
+    get:
+      description: 返回纳管状态、最近成功发现摘要、资源版本和每个必要 Owner 的安装确认进度 | Return enrollment state,
+        latest successful discovery summary, resource version, and installation acknowledgement
+        progress for every required owner
+      parameters:
+      - description: 纳管 ID | Enrollment ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_security_internal_models.ProtectionEnrollmentResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 保护纳管详情 | Get protection enrollment
+      tags:
+      - Protection Enrollment
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - security.enrollment.read
+  /protection-enrollments/{id}/discovery-executions:
+    post:
+      consumes:
+      - application/json
+      description: 为已进入 enrolling 或 active 的纳管创建一次有界重新发现；同一纳管同时至多一个 pending/running
+        执行 | Create one bounded rediscovery for an enrollment in enrolling or active
+        state; at most one pending or running execution may exist for the same enrollment
+      parameters:
+      - description: 纳管 ID | Enrollment ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 资源版本 | Resource version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_security_internal_models.CreateProtectionDiscoveryExecutionRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_addp_security_internal_models.ProtectionDiscoveryExecutionResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建重新发现执行 | Create rediscovery execution
+      tags:
+      - Protection Enrollment
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - security.enrollment.update
+  /protection-enrollments/{id}/releases:
+    post:
+      consumes:
+      - application/json
+      description: 沿单一 release 路径发布退出变化并等待所有必要 Owner 原子删除本地纳管索引；basis=manual 表示常规人工退出，basis=no_supported_findings
+        仅在最近成功发现零命中且无进行中发现时接受并冻结来源快照；等待期间继续保持保护 | Publish release changes through
+        the single release path and wait for every required owner to atomically remove
+        its local enrollment index; basis=manual is a regular manual release, while
+        basis=no_supported_findings is accepted only when the latest successful discovery
+        has zero findings and no discovery is running, and freezes the source snapshot;
+        protection remains in force while waiting
+      parameters:
+      - description: 纳管 ID | Enrollment ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 资源版本、退出依据与原因 | Resource version, release basis, and reason
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_security_internal_models.ReleaseProtectionEnrollmentRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_security_internal_models.ProtectionEnrollmentResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 退出保护纳管 | Release protection enrollment
+      tags:
+      - Protection Enrollment
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - security.enrollment.update
+  /protection-policies:
+    get:
+      description: 分页返回当前租户针对正式 Assessment 的显式收紧策略及当前不可变修订 | Return explicit tightening
+        policies and current immutable revisions for formal Assessments in the current
+        tenant
+      parameters:
+      - description: 页码 | Page number
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量，最大 100 | Page size, maximum 100
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.ProtectionPolicyListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 保护策略列表 | List protection policies
+      tags:
+      - Protection Policy
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - security.policy.read
+    post:
+      consumes:
+      - application/json
+      description: 为正式 Assessment 的 Manager preview 创建只能收紧当前保护基线的策略，并在同一事务重新编译投影 |
+        Create a policy that can only tighten the current baseline for a formal Assessment's
+        Manager preview and recompile the projection in the same transaction
+      parameters:
+      - description: 创建请求 | Create request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.CreateProtectionPolicyRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_api.ProtectionPolicyResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建保护策略 | Create protection policy
+      tags:
+      - Protection Policy
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - security.policy.create
+  /protection-policies/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: 使用资源版本追加 revoked 不可变修订并回落到 Assessment 加 ProtectionBaseline；不解除纳管或放行明文
+        | Append a revoked immutable revision using resource-version concurrency control
+        and fall back to Assessment plus ProtectionBaseline; enrollment and plaintext
+        protection remain in force
+      parameters:
+      - description: 策略 ID | Policy ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 撤销请求 | Revoke request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.RevokeProtectionPolicyRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.ProtectionPolicyResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 撤销保护策略 | Revoke protection policy
+      tags:
+      - Protection Policy
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - security.policy.delete
+    get:
+      description: 返回当前状态、当前修订和不可变修订历史 | Return current state, current revision, and
+        immutable revision history
+      parameters:
+      - description: 策略 ID | Policy ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.ProtectionPolicyResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 保护策略详情 | Get protection policy
+      tags:
+      - Protection Policy
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - security.policy.read
+    put:
+      consumes:
+      - application/json
+      description: 使用资源版本追加 active 不可变修订；新效果只能等于或严于当前保护基线 | Append an active immutable
+        revision using resource-version concurrency control; the new effect must be
+        at least as strict as the current baseline
+      parameters:
+      - description: 策略 ID | Policy ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 更新请求 | Update request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.UpdateProtectionPolicyRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.ProtectionPolicyResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新保护策略 | Update protection policy
+      tags:
+      - Protection Policy
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - security.policy.update
+  /runtime/protection-projection-acknowledgements:
+    post:
+      consumes:
+      - application/json
+      description: 确认当前固定 Owner 已在本地事务中原子安装该游标；重复确认幂等，倒退或伪造游标冲突 | Confirm that the
+        current fixed owner atomically installed the cursor in its local transaction;
+        duplicate acknowledgement is idempotent and regressing or forged cursors conflict
+      parameters:
+      - description: 已应用游标 | Applied cursor
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dataprotection.ProjectionAcknowledgementRequest'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 确认保护投影游标 | Acknowledge protection projection cursor
+      tags:
+      - Protection Projection Runtime
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - security.protection_projection.update
+  /runtime/protection-projections/changes:
+    get:
+      description: 按当前 Tenant Service Access Token 的固定 OAuth Client 返回对应 Owner 的 append-only
+        变化；调用方不能选择其他 consumer | Return append-only changes for the owner fixed by
+        the current Tenant Service Access Token OAuth Client; callers cannot select
+        another consumer
+      parameters:
+      - description: 上次原子提交的不透明游标；空值从历史起点开始 | Opaque cursor committed atomically by
+          the owner; empty starts from history origin
+        in: query
+        name: after_cursor
+        type: string
+      - description: 批大小，默认 200，最大 500 | Batch size, default 200, maximum 500
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dataprotection.ProjectionChangesResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 拉取保护投影变化 | Pull protection projection changes
+      tags:
+      - Protection Projection Runtime
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - security.protection_projection.read
+  /sensitive-data-types:
+    get:
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_addp_security_internal_models.SensitiveDataType'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 敏感数据类型列表 | List sensitive data types
+      tags:
+      - Sensitive Data Type
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - security.sensitive_data_type.read
+    post:
+      parameters:
+      - description: 敏感数据类型 | Sensitive data type
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_security_internal_models.SensitiveDataTypeRequest'
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_addp_security_internal_models.SensitiveDataType'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建敏感数据类型 | Create sensitive data type
+      tags:
+      - Sensitive Data Type
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - security.sensitive_data_type.create
+  /sensitive-data-types/{id}:
+    delete:
+      parameters:
+      - description: 敏感数据类型 ID | Sensitive data type ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除敏感数据类型 | Delete sensitive data type
+      tags:
+      - Sensitive Data Type
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - security.sensitive_data_type.delete
+    get:
+      parameters:
+      - description: 敏感数据类型 ID | Sensitive data type ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_security_internal_models.SensitiveDataType'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 敏感数据类型详情 | Get sensitive data type
+      tags:
+      - Sensitive Data Type
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - security.sensitive_data_type.read
+    put:
+      parameters:
+      - description: 敏感数据类型 ID | Sensitive data type ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 敏感数据类型 | Sensitive data type
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_security_internal_models.SensitiveDataTypeRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_security_internal_models.SensitiveDataType'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新敏感数据类型 | Update sensitive data type
+      tags:
+      - Sensitive Data Type
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - security.sensitive_data_type.update
+securityDefinitions:
+  BearerAuth:
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

@@ -39,7 +39,7 @@ func TestDimensionHierarchyRoutesEnforceTenantScope(t *testing.T) {
 		references,
 		nil,
 	)
-	router := SetupRouter(db, nil, nil, nil, nil, nil, nil, nil, nil, dimensionService, nil, nil, authServer.URL, modulelifecycle.NewStandalone("standard"))
+	router := SetupRouter(db, nil, nil, nil, nil, nil, nil, nil, dimensionService, nil, nil, nil, authServer.URL, modulelifecycle.NewStandalone("standard"))
 
 	t.Run("list only returns current tenant", func(t *testing.T) {
 		response := performTenantRequest(router, http.MethodGet, "/api/v1/standard/dimension-hierarchies", "tenant-one", "")

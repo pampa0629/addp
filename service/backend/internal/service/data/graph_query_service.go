@@ -18,8 +18,17 @@ import (
 )
 
 type GraphQueryExecutor struct {
-	repo         *repository.GraphQueryServiceRepository
-	systemClient *commonClient.SystemClient
+	repo           *repository.GraphQueryServiceRepository
+	systemClient   *commonClient.SystemClient
+	protectionGate interface {
+		BeginUnresolvedRead(context.Context, uint) (func(), error)
+	}
+}
+
+func (e *GraphQueryExecutor) SetProtectionGate(gate interface {
+	BeginUnresolvedRead(context.Context, uint) (func(), error)
+}) {
+	e.protectionGate = gate
 }
 
 func NewGraphQueryExecutor(
@@ -63,9 +72,17 @@ func (e *GraphQueryExecutor) Execute(
 	if service.Status != "active" {
 		return nil, fmt.Errorf("service '%s' is %s", serviceName, service.Status)
 	}
+	if e.protectionGate == nil {
+		return nil, fmt.Errorf("Service 图查询保护门禁未配置")
+	}
+	endProtection, err := e.protectionGate.BeginUnresolvedRead(ctx, service.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer endProtection()
 
 	// 4. 获取引擎配置
-	engine, err := e.systemClient.GetEngine(service.EngineID)
+	engine, err := e.systemClient.GetEngineForTenant(ctx, service.TenantID, service.EngineID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get engine: %w", err)
 	}

@@ -204,12 +204,19 @@ Model 第一阶段资源回收执行方只治理 Model-owned 建模状态：
 
 Standard 第一阶段资源回收执行方只治理 Standard-owned 标准治理状态和标准文档文件：
 
-- `tenant.deleted` 时，扫描该租户下 Standard-owned 业务域、术语、数据元、码值、单位、分类分级、指标、维度层级、标准文档和文档关联状态。
+- `tenant.deleted` 时，扫描该租户下 Standard-owned 业务域、术语、数据元、码值、单位、指标、维度层级、标准文档和文档关联状态；安全分类分级不属于 Standard。
 - `logical_cleanup` 将有状态的术语、数据元和指标置为 `deprecated`；标准文档文件不因逻辑清理删除。
 - `physical_cleanup` 在租户删除范围内删除 Standard-owned PostgreSQL 状态记录，并删除 `standard.documents.file_key` 明确登记的 `standard` bucket 文档对象。
 - 单个标准文档由用户显式删除时，可以同步删除 PG 状态和 `file_key` 指向的 MinIO 文件。
 - `engine.deleted` 不扫描 Standard 状态；标准治理材料和文档不受 engine 生命周期影响。
 - Standard cleanup 不删除引用它的 Model、Quality、Asset 等模块状态；跨模块引用残留由引用方 owner executor 自己治理。
+
+Security 实施时必须同步接入资源回收执行方，只治理 Security-owned 控制面状态：
+
+- `tenant.deleted` 时，扫描该租户下的 ProtectionEnrollment、SensitiveFinding、ResourceSecurityAssessment、ProtectionPolicy、ProtectionProjection、投影应用回执和 Security 领域审计状态。
+- `logical_cleanup` 先终止纳管和投影发布，并向参与 Owner 发布显式 `release`；Owner 完成回执前不得把投影缺失解释为“未纳管”。
+- `physical_cleanup` 只删除 Security-owned PostgreSQL 状态；不删除 Meta DataItem、CatalogEntry、Standard 对象、Owner 资源或源业务数据。
+- `engine.deleted` 或 `item.deleted` 对已纳管目标先生成保守失效投影并阻止新的敏感发现 execution；不按名称、路径或结构相似度把旧评估自动迁移到新来源。
 
 ## 四、架构模型
 

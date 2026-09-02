@@ -271,6 +271,7 @@ type StoreProvider interface {
 - `BatchReadableProvider.ReadBatch()`：执行一次有界的固定 schema 批量读取；大表连续扫描优先使用 `TableReadSessionProvider`，动态 schema collection 使用 `RecordReadSessionProvider`，图数据使用 `GraphSampleProvider` / `GraphQueryProvider`。
 - `TableReadSessionProvider.OpenTableReadSession()`：打开表读取会话，连续读取批次；适合 PostgreSQL cursor、JDBC cursor、Parquet row group reader 等避免 offset 翻页退化的实现。
 - `RecordReadSessionProvider.OpenRecordReadSession()`：打开动态 schema 记录游标，连续返回原生 record map；适合 MongoDB cursor。collection 不得实现或复用表语义的 `TableReadSessionProvider`。
+- `EncodedRecordReadSessionProvider.OpenEncodedRecordReadSession()`：按 Provider 声明的类型保真交换格式连续返回已编码 record 批次；适合 MongoDB Canonical Extended JSON Lines 原始记录导出。它不等于对象内容 `stream_read`，也不得被用于表格化转换。
 - `SpatialFeatureReadProvider.ReadSpatialFeature()`：按一个精确 identity field 读取单个空间要素，统一返回 geometry EWKB、centroid EWKB、SRID 和空间事实。Manager 的要素定位与高亮只消费该 Provider，不得在 Handler 中拼接 PostGIS、MySQL 等原生空间 SQL；Provider 必须校验 geometry field 和 identity field 后再引用标识符。
 - `BatchWritableProvider.WriteBatch()`：批量写入表或集合数据；图写入应由图模块或专用 graph provider 明确建模。
 - `TableWriteSessionProvider.OpenTableWriteSession()`：打开表写入会话，连续写入批次；适合 PostgreSQL COPY、JDBC bulk load 等避免每批重复建立写入会话的实现。
@@ -302,9 +303,42 @@ type RecordBatchData struct {
     Records []map[string]interface{} `json:"records"`
     Offset  int64                    `json:"offset,omitempty"`
 }
+
+type EncodedRecordReadSessionProvider interface {
+    StoreProvider
+    OpenEncodedRecordReadSession(
+        ctx context.Context,
+        connInfo ConnectionInfo,
+        path EngineCatalogPath,
+        opts EncodedRecordReadSessionOptions,
+    ) (EncodedRecordReadSession, error)
+}
+
+type EncodedRecordReadSessionOptions struct {
+    Format       string
+    Hints        map[string]interface{}
+    BeforeEncode EncodedRecordTransform
+}
+
+type EncodedRecordTransform func(document map[string]interface{}) error
+
+type EncodedRecordReadSession interface {
+    ReadBatch(ctx context.Context, limit int) (*EncodedRecordBatchData, error)
+    Close(ctx context.Context) error
+}
+
+type EncodedRecordBatchData struct {
+    Content []byte
+    Records int64
+    Offset  int64
+}
 ```
 
 `limit` 是调用方本批允许接收的最大记录数，Provider 不得返回更多记录。`Close()` 必须释放底层 cursor；调用方取消 context 后，正在进行的 `ReadBatch()` 必须尽快返回。`RecordBatchData` 不声明稳定字段列表，因为同一 cursor 生命周期内后续记录仍可出现新字段。跨 HTTP 的 Notebook transport 使用单个稳定 `document: JSON` Arrow 字段承载每条 record，SDK 解码后恢复为原生 `dict`；该 transport 表达不能反向把 collection 定义成 table。
+
+`EncodedRecordBatchData.Content` 必须包含恰好 `Records` 条完整记录，并由所选格式定义记录边界；空批次固定使用 `Records=0` 且 `Content` 为空。Provider 必须直接从引擎原生值序列化，不能先经过预览友好类型转换。MongoDB `mongodb_extended_jsonl` 固定为 Canonical Extended JSON v2、UTF-8、每条文档一个紧凑 JSON 行且以换行结尾；该交换格式不是 `mongodump` BSON archive，不承诺物理备份语义。
+
+`BeforeEncode` 是 Owner 在原生记录序列化前注入的可选逐记录转换。Provider 必须先把原生 document/object/array 容器投影为 `map[string]interface{}` / `[]interface{}`，同时保留 ObjectId、日期、Decimal128、Binary 等原生标量值；转换成功后才能编码，转换失败必须终止批次且不得写出该记录。该回调只承载当次执行行为，不进入 Engine capability、任务 JSON 或持久配置，Provider 不得读取 Security 业务事实。未提供回调时仍走同一个解码与编码主路径。
 
 当前 bounded watermark 契约：
 
@@ -400,9 +434,98 @@ type QueryRuntimeProvider interface {
     EnginePlugin
     QueryLanguages() []string
     GenerateSampleQuery(ctx context.Context, connInfo ConnectionInfo, opts SampleQueryOptions) (query string, language string)
-    ExecuteRuntimeQuery(ctx context.Context, connInfo ConnectionInfo, req QueryRequest) (*QueryResult, error)
+    PrepareQuery(ctx context.Context, connInfo ConnectionInfo, req QueryRequest) (PreparedQuery, error)
+}
+
+type PreparedQuery interface {
+    Analysis(ctx context.Context) (*QueryAnalysis, error)
+    ReadSet(ctx context.Context) (*QueryReadSet, error)
+    OutputLineage(ctx context.Context) (*QueryOutputLineage, error)
+    Execute(ctx context.Context) (*QueryResult, error)
+}
+
+type QueryAnalysis struct {
+    Language       string
+    SchemaCoverage string // complete | sampled | unknown
+    Diagnostics    []QueryDiagnostic
+}
+
+type QueryDiagnostic struct {
+    Code       string
+    Severity   string // error | warning | info
+    Phase      string // syntax | parameter | scope | schema | policy
+    Parameters map[string]string
+    Start      *int
+    End        *int
+}
+
+type QueryReadSet struct {
+    Paths []EngineCatalogPath
+}
+
+type QueryOutputLineage struct {
+    Sources []QueryOutputSource
+}
+
+type QueryOutputSource struct {
+    Path             EngineCatalogPath
+    Fields           []datatype.FieldInfo
+    IdentityOutput   bool
+    OpaqueOutput     bool
+    Bindings         []QueryOutputBinding
+}
+
+type QueryOutputBinding struct {
+    SourcePath     []string
+    OutputPath     []string
+    Transformation string // direct | derived
 }
 ```
+
+`PreparedQuery` 是 Provider 从一次 `QueryRequest` 生成的不可变、一次性执行计划。Provider 必须在准备时绑定 Engine、语言、参数、`TargetPath`、只读属性和自身原生解析结果；门禁完成后不再接受新的查询文本、参数或目标路径。`Analysis()`、`ReadSet()`、`OutputLineage()`、`Execute()` 和连续读会话只能消费同一 PreparedQuery，不得重新构造 `QueryRequest`。
+
+`QueryAnalysis` 是普通查询诊断的唯一事实源。Provider 必须按自身原生语言语法和已经绑定的参数生成稳定诊断；Owner 与浏览器不得再次用正则、关键字、通用 SQL 分词或样本字段集合实现 SQL、MQL、Cypher 语义诊断。诊断码和参数是 API 契约，用户可见文案由消费方国际化。
+
+`SchemaCoverage` 的含义固定如下：
+
+- `complete`：Provider 已证明当前分析范围内的全部可见字段，允许返回“字段不存在”等 schema 结论；
+- `sampled`：字段事实来自有限样本，只能提示覆盖不足或样本相关事实，禁止把未观察到字段判为不存在；
+- `unknown`：没有足够 schema 事实，只返回语法、参数、作用域和策略等可证明诊断，不生成字段存在性结论。
+
+Provider 不得为了提高提示数量把 `sampled` 或 `unknown` 提升为 `complete`。动态 schema 引擎默认是 `sampled` 或 `unknown`；关系参数编辑态只识别已声明的裸关系参数名而没有执行期 locator，覆盖度同样必须是 `unknown`。
+
+`QueryReadSet` 是 PreparedQuery 在查询执行前产生的中性读依赖事实，不是查询语句、查询结果或 Security 专用投影。Develop、Service、Transfer 等 Owner 在授权、血缘、审计或数据保护门禁需要精确 DataItem 身份时，只能消费当前 PreparedQuery 的 `ReadSet()`，不得在各 Owner 中重复解析 SQL、MQL 或 Cypher。
+
+`QueryOutputLineage` 是同一 PreparedQuery 在执行前产生的中性结果来源事实，也不是 Security 策略。它必须为 `QueryReadSet.Paths` 中每个 leaf 提供且只提供一个 `QueryOutputSource`，并携带 Provider 在当前连接目录中观察到的完整字段结构。`IdentityOutput=true` 表示该来源的字段以同一路径直接出现在结果记录中；`Bindings` 完整列出其余输出依赖，`direct` 表示值只发生路径或别名变化，`derived` 表示值经过表达式、聚合或其他不可逆变换；`OpaqueOutput=true` 表示 Provider 只能证明资源依赖，不能证明字段到结果的完整映射。三者共同表达当前查询的全部数据值输出，不包含只影响过滤、排序或行数的依赖。
+
+`OutputLineage()` 必须遵守：
+
+1. 只能在成功取得同一 PreparedQuery 的完整 `ReadSet()` 后解析；source path 必须与 ReadSet 精确一一对应，不得增加调用方提交的资源或遗漏 View、JOIN、`$lookup` 等间接依赖。
+2. `Fields` 必须来自当前 Engine Catalog Provider 的实时结构事实，并足以使用 `TableSchemaSnapshotHash` 与保护投影比较；不得使用查询结果列名、Meta 缓存或调用方 DTO 伪造源结构。
+3. `direct` binding 必须给出规范源字段路径和结果字段路径；别名属于 direct。只要字段值参与表达式、拼接、函数、聚合、复合对象构造或不能证明为原值直传，就必须标记 `derived` 或把该 source 标记为 `OpaqueOutput`。
+4. Provider 可以用空 bindings 表示当前 source 不向结果返回任何字段值，例如 `count(*)`；但只有在原生 AST / command 证明输出无字段值依赖时才能这样声明。
+5. 无法证明完整输出来源时返回类型化 `ErrQueryOutputLineageUnresolved`，不得按结果列名猜测、把缺失 binding 当成安全或在 Owner 中再次解析查询文本。
+
+PreparedQuery 的 `ReadSet()` 必须遵守：
+
+1. 只接受 `Options.ReadOnly=true` 的查询，并使用与实际执行相同的语言、方言、命名空间解析规则和参数结构。
+2. 返回该查询可能读取的全部 Engine Catalog leaf；路径必须使用 `catalog.path/v1`、带显式结构根和确定 `engine_id`，并按 canonical path 排序去重。
+3. `QueryRequest.TargetPath` 只是查询目标和命名空间上下文，不能在存在 JOIN、subquery、CTE、`$unionWith`、外部表或类似间接引用时充当完整读取集合。
+4. 不得使用 `common/query` 的顶层对象摘要、字符串匹配、调用方提交的 locator 列表或 Meta/Catalog 搜索结果冒充方言级完整解析。
+5. CTE 名不进入结果；view、函数、动态标识符或外部表如果使 Provider 无法得到完整 leaf 闭包，必须返回类型化的 unresolved 错误，不得缩小读取集合继续执行。
+6. 解析不读取业务数据，不产生 Meta item、ResourceLocator、DataItem 指纹、Security 分级或授权结论。Owner 可依据已知 Engine Catalog Model 将 leaf 转为现有 `engine_id + full_name` 指纹。
+
+PostgreSQL Provider 的首个可信切片使用 PostgreSQL AST 和当前连接目录共同解析，而不是通用 SQL 分词：
+
+- 未限定关系名必须按当前连接的 `search_path` 解析，CTE 名只在对应语法作用域内排除；
+- 普通表、分区表和物化视图以其自身的 Engine Catalog leaf 进入集合；普通视图还必须递归纳入其绑定的底层关系 leaf；
+- 普通标量、聚合和窗口函数必须按当前连接目录解析可见候选；只有全部可匹配候选都属于 `pg_catalog`、由 PostgreSQL `internal` 语言实现、不是集合返回或 `SECURITY DEFINER`，且波动性为 `IMMUTABLE|STABLE` 时，才能证明该调用不新增 Engine Catalog leaf，并继续递归检查参数、过滤和窗口表达式；不得维护函数名白名单；
+- `VOLATILE` 函数、表函数、集合返回函数、用户或扩展 schema 函数、非 `internal` 实现以及任何候选无法完整证明的调用必须 unresolved；函数重载、默认参数、variadic 和当前 `search_path` 必须纳入候选闭包，不能按同名某一个安全函数缩小判断；
+- 普通视图继续按 `pg_rewrite/pg_depend` 展开绑定关系；视图依赖的非可信用户函数必须 unresolved。外部表、临时表、系统目录或其他无法证明为 Engine Catalog leaf 的来源同样 unresolved。
+
+查询 Provider 对外提供可读数据出口时，必须使用 `PrepareQuery()` 唯一主路。暂未能完整解析某种语言/方言的 PreparedQuery 必须在 `ReadSet()` 返回类型化 unresolved 错误，且 Provider 不得对受保护 Owner 声称已安装资源门禁；不保留独立 `ResolveQueryReadSet()`、再次提交查询或“仅用 `TargetPath`”的兼容路线。
+
+首个 `QueryOutputLineage` 验证范围固定为 PostgreSQL 和 MongoDB。PostgreSQL 对直接列、显式别名和可证明的单来源 `*` 产生 direct / identity 映射；表达式依赖标记为 derived，View 底层依赖、无法消歧的多来源 wildcard 等不能证明字段映射的 source 标记 opaque。MongoDB `find` 的原结构输出声明 identity，`distinct` 把指定源字段 direct 映射到 `value`，`count` 声明无字段值输出；首期 aggregate 即使 ReadSet 完整，也在无法证明 pipeline 字段变换时返回 output-lineage unresolved。未纳管 Tenant 不调用 `OutputLineage()`，不会承担结构读取或结果来源分析成本。
 
 生产搬运需要连续消费只读查询结果时使用 `QueryReadSessionProvider`，不能循环调用返回有界 `QueryResult` 的预览接口：
 
@@ -411,8 +534,7 @@ type QueryReadSessionProvider interface {
     QueryRuntimeProvider
     OpenQueryReadSession(
         ctx context.Context,
-        connInfo ConnectionInfo,
-        req QueryRequest,
+        prepared PreparedQuery,
     ) (QueryReadSession, error)
 }
 
@@ -422,7 +544,7 @@ type QueryReadSession interface {
 }
 ```
 
-查询读取会话只接受 `QueryOptions.ReadOnly=true`，`QueryOptions.Limit/Offset` 必须为零；每批大小由 `ReadBatch(limit)` 控制。Provider 不得追加隐式 `$limit`、SQL `LIMIT` 或在内存中收集完整结果。查询文本中由用户明确声明的业务 `limit` 仍属于查询语义。MongoDB 第一版只开放 `find` 和 `aggregate`；`aggregate` 可以使用 `$project`、`$unwind`、`$group`、`$unionWith` 等只读阶段把嵌套 BSON 整形成扁平行，但任何层级出现 `$out` 或 `$merge` 都必须拒绝。
+查询读取会话只接受 `QueryOptions.ReadOnly=true`，`QueryOptions.Limit/Offset` 必须为零；每批大小由 `ReadBatch(limit)` 控制。Provider 不得追加隐式 `$limit`、SQL `LIMIT` 或在内存中收集完整结果。查询文本中由用户明确声明的业务 `limit` 仍属于查询语义。PostgreSQL 从同一 PreparedQuery 取出已绑定 SQL 与参数，使用数据库强制的 repeatable-read 只读事务和流式 `Rows` 游标返回批次；不得为打开会话重新绑定或重新准备 SQL。MongoDB 第一版只开放 `find` 和 `aggregate`；`aggregate` 可以使用 `$project`、`$unwind`、`$group`、`$unionWith` 等只读阶段把嵌套 BSON 整形成扁平行，但任何层级出现 `$out` 或 `$merge` 都必须拒绝。
 
 联邦查询运行时使用独立 Provider，不把多数据源连接塞入普通 `QueryRequest`：
 
@@ -430,6 +552,7 @@ type QueryReadSession interface {
 type FederatedQueryRuntimeProvider interface {
     EnginePlugin
     QueryLanguages() []string
+    AnalyzeFederatedQuery(ctx context.Context, req FederatedQueryRequest) (*QueryAnalysis, error)
     ResolveSourceEngineIDs(query string, candidates []FederatedQuerySource) []uint
     ResolveObjectTableReferences(query string, candidates []FederatedQuerySource) []FederatedQueryObjectTableReference
     ExecuteFederatedQuery(
@@ -526,10 +649,10 @@ type InferenceRuntimeProvider interface {
 
 | 引擎 | 推荐接口组合 |
 | --- | --- |
-| PostgreSQL | 通用 tabular 组合 + `BoundedWatermarkReadProvider` + `TableUpsertProvider` + `PartitionedTableChangeApplyProvider` |
+| PostgreSQL | 通用 tabular 组合 + `QueryReadSessionProvider` + `BoundedWatermarkReadProvider` + `TableUpsertProvider` + `PartitionedTableChangeApplyProvider` |
 | MySQL | 通用 tabular 组合 + `TableUpsertProvider` + `PartitionedTableChangeApplyProvider` |
 | Doris / ClickHouse / Spark SQL | `EnginePlugin` + `EngineCatalogModelProvider` + `EngineCatalogProvider` + `EngineCatalogFactsProvider` + `SQLQueryRuntimeProvider` + `ConnectionPoolPlugin` |
-| MongoDB | `EnginePlugin` + `EngineCatalogModelProvider` + `EngineCatalogProvider` + `EngineCatalogFactsProvider` + `DynamicSchemaSamplingProvider` + `RecordReadSessionProvider` + `QueryRuntimeProvider` + `QueryReadSessionProvider` |
+| MongoDB | `EnginePlugin` + `EngineCatalogModelProvider` + `EngineCatalogProvider` + `EngineCatalogFactsProvider` + `DynamicSchemaSamplingProvider` + `RecordReadSessionProvider` + `EncodedRecordReadSessionProvider` + `QueryRuntimeProvider` + `QueryReadSessionProvider` |
 | Neo4j | `EnginePlugin` + `EngineCatalogModelProvider` + `EngineCatalogProvider` + `EngineCatalogFactsProvider` + `GraphSampleProvider` + `QueryRuntimeProvider` + `GraphQueryProvider` |
 | MinIO / S3 | `EnginePlugin` + `EngineCatalogModelProvider` + `EngineCatalogProvider` + `EngineCatalogFactsProvider` + `ContentReadableProvider` + `RangeReadableProvider` + `ContentWritableProvider` + `ResourceDeleteProvider` |
 | NFS | `EnginePlugin` + `EngineCatalogModelProvider` + `EngineCatalogProvider` + `EngineCatalogFactsProvider` + `ContentReadableProvider` + `RangeReadableProvider` + `ContentWritableProvider` + `ResourceDeleteProvider` |
@@ -550,7 +673,7 @@ type InferenceRuntimeProvider interface {
 - Develop：使用 `QueryRuntimeProvider`、`WorkflowRuntimeProvider`、`ScriptRuntimeProvider`；Notebook 引擎实例通过 `execution_config.engine_id` 绑定，并以 System Runtime Descriptor + `ScriptRuntimeProvider.OpenSession()` 解析端点；Notebook Native Engine Facade 只在 `common-python` 把原生方法编译为 `EngineCatalogProvider.ListChildren` / `EngineCatalogFactsProvider.DescribeEngineCatalogFacts`，不得反向新增 PostgreSQL、MongoDB、MinIO 等专用后端接口；图结构展示入口使用 `EngineCatalogFactsProvider` / `GraphQueryProvider`。
 - Agent、Copilot、Manager：通过 System Runtime Descriptor 发现唯一 Inference Runtime，并消费 `InferenceRuntimeProvider`；业务场景绑定仍归各 owner，不能把 Runtime 端点、厂商协议或凭据保存到调用方配置。
 - Service：发布普通查询服务时使用 query runtime 和 Meta item/spatial 元数据；图查询服务使用 `GraphQueryProvider`。图查询服务的易用向导应消费 graph item 的 `type_info.graph.node_shapes`，不得再从 Meta 树读取 Neo4j label item。
-- Transfer：使用 source / target endpoint 生成执行计划。snapshot native table 读写消费 `TableReadSessionProvider`、`BatchReadableProvider`、`TableWritePreparer`、`TableWriteSessionProvider`、`BatchWritableProvider`；只读原生查询 source 消费 `QueryReadSessionProvider`，不得使用有界 `QueryRuntimeProvider` 预览结果冒充全量；watermark bounded incremental 必须消费 `BoundedWatermarkReadProvider` 和幂等 `TableUpsertProvider`；encoded file/object 读写先通过 engine content provider 和 `common/engine/contentadapter` 构造 `common/contentio` 抽象，再交给 `common/format` provider。高吞吐数据搬运优先消费 batch / session / content stream 能力。
+- Transfer：使用 source / target endpoint 生成执行计划。snapshot native table 读写消费 `TableReadSessionProvider`、`BatchReadableProvider`、`TableWritePreparer`、`TableWriteSessionProvider`、`BatchWritableProvider`；动态 schema collection 原始记录导出消费 `EncodedRecordReadSessionProvider`，不得先经过预览 record map 或 table pipeline；只读原生查询 source 消费 `QueryReadSessionProvider`，不得使用有界 `QueryRuntimeProvider` 预览结果冒充全量；watermark bounded incremental 必须消费 `BoundedWatermarkReadProvider` 和幂等 `TableUpsertProvider`；encoded file/object 读写先通过 engine content provider 和 `common/engine/contentadapter` 构造 `common/contentio` 抽象，再交给 `common/format` provider。高吞吐数据搬运优先消费 batch / session / content stream 能力。
 - Transfer continuous runtime：业务 Kafka source 必须消费 `ChangeStreamReaderProvider`，由 Transfer adapter 生成 ChangeEvent 并通过 ChangeApplyWriter 组合目标 Provider。目标必须声明原子、单调且覆盖所需 operation 的 `PartitionedTableChangeApplyProvider`；当前 PostgreSQL 与 MySQL 实现该 Provider。Infra Kafka 连接来自 ADDP infra 配置，不注册 System Engine，但复用同一 Kafka reader/client 底层实现。
 
 所有上层模块 Backend 与附属 Worker 都必须支持零 Engine Instance 启动。具体请求或 execution 引用的实例不存在、不可用或能力不匹配时，只失败该请求或 execution；Worker 不得退出，Backend readiness 不得降级。模块自身必需 Infra 不属于 Engine Instance，仍按各模块部署契约管理。

@@ -17,7 +17,11 @@ export function summarizeExecutionResource(field, value, enginesById = {}) {
 
   const binding = field?.ui?.resource_binding || {}
   const locatorName = binding.mode === 'target' ? 'parent_locator' : 'locator'
-  const locator = parseLocatorSafe(value[locatorName])
+  const locatorValue = String(value[locatorName] || '').trim()
+  if (!locatorValue) {
+    return { status: 'empty', engineId: 0, engineName: '', name: '', type: '' }
+  }
+  const locator = parseLocatorSafe(locatorValue)
   if (!locator.engineId || !locator.type) {
     return { status: 'configured', engineId: 0, engineName: '', name: '', type: '' }
   }
@@ -35,7 +39,7 @@ export function summarizeExecutionResource(field, value, enginesById = {}) {
     status: 'resolved',
     engineId: locator.engineId,
     engineName: engine.name || '',
-    name: formatLocatorDisplayPath(value[locatorName], {
+    name: formatLocatorDisplayPath(locatorValue, {
       engineType: engine.engine_type,
       appendedPath,
       resourceType: type

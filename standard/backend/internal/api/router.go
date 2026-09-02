@@ -24,11 +24,11 @@ func SetupRouter(
 	elementSvc *service.ElementService,
 	codeSetSvc *service.CodeSetService,
 	unitSvc *service.UnitService,
-	classificationSvc *service.ClassificationService,
 	metricSvc *service.MetricService,
 	documentSvc *service.DocumentService,
 	dimHierarchySvc *service.DimensionHierarchyService,
 	referenceResolutionSvc *service.ReferenceResolutionService,
+	elementRevisionResolutionSvc *service.ElementRevisionResolutionService,
 	catalogResourceSvc *service.CatalogResourceService,
 	systemURL string,
 	lifecycle *modulelifecycle.Controller,
@@ -57,11 +57,11 @@ func SetupRouter(
 	elementHandler := NewElementHandler(elementSvc)
 	codeSetHandler := NewCodeSetHandler(codeSetSvc)
 	unitHandler := NewUnitHandler(unitSvc)
-	classificationHandler := NewClassificationHandler(classificationSvc)
 	metricHandler := NewMetricHandler(metricSvc)
 	documentHandler := NewDocumentHandler(documentSvc)
 	dimHierarchyHandler := NewDimensionHierarchyHandler(dimHierarchySvc)
 	referenceResolutionHandler := NewReferenceResolutionHandler(referenceResolutionSvc)
+	elementRevisionResolutionHandler := NewElementRevisionResolutionHandler(elementRevisionResolutionSvc)
 	catalogResourceHandler := NewCatalogResourceHandler(catalogResourceSvc)
 
 	api := router.Group("/api/v1/standard")
@@ -101,6 +101,12 @@ func SetupRouter(
 				standardauthorization.PermissionStandardElementRead,
 			),
 			referenceResolutionHandler.ListCandidates,
+		)
+		api.POST(
+			"/runtime/element-revisions/resolve",
+			commonAuth.MustNewServiceClientGuard("addp-catalog", "addp-model"),
+			permission(standardauthorization.PermissionStandardElementRead),
+			elementRevisionResolutionHandler.Resolve,
 		)
 
 		domains := api.Group("/domains")
@@ -185,20 +191,6 @@ func SetupRouter(
 			units.GET("/:id", permission(standardauthorization.PermissionStandardUnitRead), unitHandler.GetUnit)
 			units.PUT("/:id", permission(standardauthorization.PermissionStandardUnitUpdate), unitHandler.UpdateUnit)
 			units.DELETE("/:id", permission(standardauthorization.PermissionStandardUnitDelete), unitHandler.DeleteUnit)
-		}
-
-		classifications := api.Group("/classifications")
-		{
-			classifications.GET("", permission(standardauthorization.PermissionStandardClassificationRead), classificationHandler.ListClassifications)
-			classifications.POST("", permission(standardauthorization.PermissionStandardClassificationCreate), classificationHandler.CreateClassification)
-			classifications.PUT("/:id", permission(standardauthorization.PermissionStandardClassificationUpdate), classificationHandler.UpdateClassification)
-			classifications.DELETE("/:id", permission(standardauthorization.PermissionStandardClassificationDelete), classificationHandler.DeleteClassification)
-		}
-
-		gradingLevels := api.Group("/grading-levels")
-		{
-			gradingLevels.GET("", permission(standardauthorization.PermissionStandardClassificationRead), classificationHandler.ListGradingLevels)
-			gradingLevels.PUT("/:id", permission(standardauthorization.PermissionStandardClassificationUpdate), classificationHandler.UpdateGradingLevel)
 		}
 
 		metricCats := api.Group("/metric-categories")

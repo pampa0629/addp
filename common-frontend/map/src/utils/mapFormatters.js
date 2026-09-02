@@ -93,7 +93,13 @@ export function formatFeatureProperties(properties = {}, options = {}) {
   let primaryField = ''
   let primaryValue
 
-  for (const candidate of PRIMARY_FIELD_CANDIDATES) {
+  const configuredPrimaryField = normalizedOptions.primaryField
+  if (configuredPrimaryField && properties[configuredPrimaryField] !== undefined && properties[configuredPrimaryField] !== null) {
+    primaryField = configuredPrimaryField
+    primaryValue = properties[configuredPrimaryField]
+  }
+
+  for (const candidate of primaryValue === undefined ? PRIMARY_FIELD_CANDIDATES : []) {
     if (properties[candidate] !== undefined && properties[candidate] !== null && properties[candidate] !== featureId) {
       primaryField = candidate
       primaryValue = properties[candidate]

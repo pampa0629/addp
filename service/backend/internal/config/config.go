@@ -15,6 +15,7 @@ type Config struct {
 	// 模块集成配置
 	ManagerServiceURL   string
 	MetaServiceURL      string
+	SecurityServiceURL  string
 	ServiceClientSecret string
 
 	// Redis 配置（用于资源变更事件同步）
@@ -45,6 +46,7 @@ func Load() *Config {
 		GatewayURL:          commonConfig.GetEnv("GATEWAY_URL", "http://localhost:8000"),
 		ManagerServiceURL:   managerURL,
 		MetaServiceURL:      metaURL,
+		SecurityServiceURL:  commonConfig.GetEnv("SECURITY_URL", "http://localhost:8194"),
 		ServiceClientSecret: commonConfig.GetEnv("SERVICE_SERVICE_CLIENT_SECRET", ""),
 	}
 

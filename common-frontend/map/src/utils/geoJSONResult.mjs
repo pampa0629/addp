@@ -28,7 +28,12 @@ export function buildGeoJSONFeatures(rows, config, transformGeometry = (geometry
   return rows.map((row, index) => {
     const geometry = transformGeometry(geometryValue(row?.[config.geometry_field]))
     if (!geometry) return null
-    const properties = Object.fromEntries((config.tooltip_fields || []).map((field) => [field, row?.[field]]))
+    const propertyFields = new Set([
+      ...(config.tooltip_fields || []),
+      config.label_field,
+      config.style?.field,
+    ].filter(Boolean))
+    const properties = Object.fromEntries([...propertyFields].map((field) => [field, row?.[field]]))
     return { type: 'Feature', id: String(index), geometry, properties }
   }).filter(Boolean)
 }

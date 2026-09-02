@@ -248,7 +248,8 @@ func runIntegrationPostgreSQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T,
 	}
 	task.ApplyIdentity = claim.Task.ApplyIdentity
 	runner := &DataSessionRunner{
-		Resolver: resolver, States: stateRepo, Progress: leaseRepo, Captures: captureRepo,
+		ProtectionGate: allowSourceProtectionGate{},
+		Resolver:       resolver, States: stateRepo, Progress: leaseRepo, Captures: captureRepo,
 		InfraKafkaConnection: cdcDataTransferKafkaConnection(), PollTimeout: 500 * time.Millisecond,
 		DiagnosticsInterval: time.Second,
 		GetPlugin: func(engineType string) (engineplugin.EnginePlugin, error) {

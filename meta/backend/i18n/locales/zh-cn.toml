@@ -22,6 +22,12 @@ other = "血缘主体不存在"
 [meta.lineage.query_failed]
 other = "血缘查询失败"
 
+[meta.security_sample.invalid]
+other = "DataItem 安全样本指纹无效"
+
+[meta.security_sample.unavailable]
+other = "DataItem 安全样本当前不可用"
+
 [permissions.meta.lineage.create.name]
 other = "写入数据血缘"
 

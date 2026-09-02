@@ -157,6 +157,25 @@
                 </el-form-item>
               </template>
 
+              <template v-else-if="assertion.type === 'allowed_values'">
+                <el-form-item :label="t('quality.materializationGate.column')">
+                  <el-select v-model="assertion.params.column" filterable class="full-width">
+                    <el-option v-for="field in fieldsForAlias(assertion.params.table)" :key="field.id" :label="field.column_name" :value="field.column_name" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item :label="t('quality.materializationGate.allowedValues')">
+                  <el-select
+                    v-model="assertion.params.values"
+                    multiple
+                    filterable
+                    allow-create
+                    default-first-option
+                    class="full-width"
+                    :placeholder="t('quality.materializationGate.allowedValuesPlaceholder')"
+                  />
+                </el-form-item>
+              </template>
+
               <template v-else-if="assertion.type === 'unique_key'">
                 <el-form-item :label="t('quality.materializationGate.columns')">
                   <el-select v-model="assertion.params.columns" multiple filterable style="width:100%">
@@ -425,6 +444,10 @@ const addAssertion = type => {
 
 const resetAssertionColumns = assertion => {
   if (assertion.type === 'not_null') assertion.params.column = ''
+  else if (assertion.type === 'allowed_values') {
+    assertion.params.column = ''
+    assertion.params.values = []
+  }
   else if (assertion.type === 'unique_key') assertion.params.columns = []
   else if (assertion.type === 'foreign_key') assertion.params.columns = []
   else if (assertion.type === 'predicate_implication') {
@@ -492,6 +515,10 @@ const assertValid = () => {
     const params = assertion.params
     if (!aliases.includes(params.table)) return t('quality.materializationGate.assertionInvalid')
     if (assertion.type === 'not_null' && !params.column) return t('quality.materializationGate.assertionInvalid')
+    if (assertion.type === 'allowed_values') {
+      if (!params.column || !params.values.length || params.values.length > 1000) return t('quality.materializationGate.assertionInvalid')
+      if (params.values.some(value => typeof value !== 'string' || value.length === 0) || new Set(params.values).size !== params.values.length) return t('quality.materializationGate.assertionInvalid')
+    }
     if (assertion.type === 'unique_key' && !params.columns.length) return t('quality.materializationGate.assertionInvalid')
     if (assertion.type === 'foreign_key' && (!params.columns.length || params.columns.length !== params.reference_columns.length || !aliases.includes(params.reference_table))) return t('quality.materializationGate.assertionInvalid')
     if (assertion.type === 'predicate_implication' && (!params.when.column || !params.then.column)) return t('quality.materializationGate.assertionInvalid')
@@ -577,6 +604,7 @@ onMounted(loadReferences)
 .assertion-card { margin-bottom:12px; }
 .assertion-header { display:flex; justify-content:space-between; align-items:center; gap:12px; }
 .severity-select { width:120px; margin-right:10px; }
+.full-width { width:100%; }
 .condition-editor { grid-column:1 / -1; margin-bottom:14px; }
 .condition-grid { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:10px; margin-top:8px; }
 @media (max-width: 760px) {

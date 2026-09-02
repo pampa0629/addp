@@ -324,6 +324,42 @@ func TestWriteBoundedExecutionOutputsPersistsCreatedTargetContract(t *testing.T)
 	}
 }
 
+func TestWriteBoundedExecutionOutputsPersistsInfraCreatedTargetContract(t *testing.T) {
+	ctx := context.Background()
+	db := newExecutionServiceTestDB(t)
+	task := createExecutionServiceTestTask(t, db)
+	execution := createExecutionServiceTestExecution(t, db, task, commonExecution.ExecutionStatusRunning)
+	executionService := NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
+	bindExecutionServiceTestLease(t, db, executionService, &execution)
+	engineService := &ExecutionEngineService{executionService: executionService}
+
+	if err := engineService.writeBoundedExecutionOutputs(
+		ctx,
+		uint(execution.ID),
+		"",
+		"addp-infra://minio/manager/tenant_1/export/20260902/session-id?type=prefix",
+		"Persons.ejsonl",
+		2188,
+	); err != nil {
+		t.Fatalf("writeBoundedExecutionOutputs() error = %v", err)
+	}
+
+	var stored commonExecution.TaskExecution
+	if err := db.First(&stored, execution.ID).Error; err != nil {
+		t.Fatalf("load execution: %v", err)
+	}
+	outputs, ok := stored.Metadata["outputs"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("metadata.outputs = %#v, want object", stored.Metadata["outputs"])
+	}
+	if outputs["target_locator"] != "addp-infra://minio/manager/tenant_1/export/20260902/session-id/Persons.ejsonl?type=object" {
+		t.Fatalf("outputs.target_locator = %#v", outputs["target_locator"])
+	}
+	if outputs["row_count"] != float64(2188) {
+		t.Fatalf("outputs.row_count = %#v, want 2188", outputs["row_count"])
+	}
+}
+
 func TestTableProgressCallbackStoresResumeAndCommitMarkers(t *testing.T) {
 	ctx := context.Background()
 	db := newExecutionServiceTestDB(t)

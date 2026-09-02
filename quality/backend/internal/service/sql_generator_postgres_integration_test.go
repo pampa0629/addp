@@ -52,14 +52,14 @@ func TestIntegrationPostgresMaterializationGateAssertions(t *testing.T) {
 	if err := db.Exec("CREATE TABLE " + quotedSchema + `.persons (person_id TEXT PRIMARY KEY)`).Error; err != nil {
 		t.Fatalf("create persons: %v", err)
 	}
-	if err := db.Exec("CREATE TABLE " + quotedSchema + `.participations (person_id TEXT, activity_id TEXT, is_actual BOOLEAN, is_signup BOOLEAN)`).Error; err != nil {
+	if err := db.Exec("CREATE TABLE " + quotedSchema + `.participations (person_id TEXT, activity_id TEXT, member_status TEXT, is_actual BOOLEAN, is_signup BOOLEAN)`).Error; err != nil {
 		t.Fatalf("create participations: %v", err)
 	}
 	if err := db.Exec("INSERT INTO " + quotedSchema + `.persons(person_id) VALUES ('p1'), ('p2')`).Error; err != nil {
 		t.Fatalf("insert persons: %v", err)
 	}
-	if err := db.Exec("INSERT INTO " + quotedSchema + `.participations(person_id, activity_id, is_actual, is_signup) VALUES ` +
-		`('p1', 'a1', TRUE, TRUE), ('p1', 'a1', TRUE, TRUE), ('missing', 'a3', FALSE, FALSE), (NULL, 'a4', TRUE, FALSE)`).Error; err != nil {
+	if err := db.Exec("INSERT INTO " + quotedSchema + `.participations(person_id, activity_id, member_status, is_actual, is_signup) VALUES ` +
+		`('p1', 'a1', 'signup', TRUE, TRUE), ('p1', 'a1', 'leader', TRUE, TRUE), ('missing', 'a3', 'invalid', FALSE, FALSE), (NULL, 'a4', NULL, TRUE, FALSE)`).Error; err != nil {
 		t.Fatalf("insert participations: %v", err)
 	}
 
@@ -67,21 +67,22 @@ func TestIntegrationPostgresMaterializationGateAssertions(t *testing.T) {
 		TableBindings: []MaterializationGateTableBinding{{Alias: "persons", LogicalTableID: 1}, {Alias: "participations", LogicalTableID: 2}},
 		Assertions: MaterializationGateAssertionDocument{Assertions: []MaterializationGateAssertion{
 			{AssertionKey: "00000000-0000-4000-8000-000000000001", Type: "not_null", Severity: "error", Params: json.RawMessage(`{"table":"participations","column":"person_id"}`)},
-			{AssertionKey: "00000000-0000-4000-8000-000000000002", Type: "unique_key", Severity: "error", Params: json.RawMessage(`{"table":"participations","columns":["person_id","activity_id"]}`)},
-			{AssertionKey: "00000000-0000-4000-8000-000000000003", Type: "foreign_key", Severity: "error", Params: json.RawMessage(`{"table":"participations","columns":["person_id"],"reference_table":"persons","reference_columns":["person_id"]}`)},
-			{AssertionKey: "00000000-0000-4000-8000-000000000004", Type: "predicate_implication", Severity: "error", Params: json.RawMessage(`{"table":"participations","when":{"column":"is_actual","operator":"is_true"},"then":{"column":"is_signup","operator":"is_true"}}`)},
-			{AssertionKey: "00000000-0000-4000-8000-000000000005", Type: "row_count", Severity: "error", Params: json.RawMessage(`{"table":"participations","exact":4}`)},
+			{AssertionKey: "00000000-0000-4000-8000-000000000002", Type: "allowed_values", Severity: "error", Params: json.RawMessage(`{"table":"participations","column":"member_status","values":["signup","leader"]}`)},
+			{AssertionKey: "00000000-0000-4000-8000-000000000003", Type: "unique_key", Severity: "error", Params: json.RawMessage(`{"table":"participations","columns":["person_id","activity_id"]}`)},
+			{AssertionKey: "00000000-0000-4000-8000-000000000004", Type: "foreign_key", Severity: "error", Params: json.RawMessage(`{"table":"participations","columns":["person_id"],"reference_table":"persons","reference_columns":["person_id"]}`)},
+			{AssertionKey: "00000000-0000-4000-8000-000000000005", Type: "predicate_implication", Severity: "error", Params: json.RawMessage(`{"table":"participations","when":{"column":"is_actual","operator":"is_true"},"then":{"column":"is_signup","operator":"is_true"}}`)},
+			{AssertionKey: "00000000-0000-4000-8000-000000000006", Type: "row_count", Severity: "error", Params: json.RawMessage(`{"table":"participations","exact":4}`)},
 		}},
 	}
 	readContext := &commonClient.MaterializationReadContext{Items: []commonClient.MaterializationReadItem{
 		{LogicalTableID: 1, BatchID: "persons-batch", EngineID: 1, StagingLocator: fmt.Sprintf("addp://engine/1/path/%s/persons?type=table", schemaName), Columns: []commonClient.MaterializationReadColumn{{Name: "person_id"}}},
-		{LogicalTableID: 2, BatchID: "participations-batch", EngineID: 1, StagingLocator: fmt.Sprintf("addp://engine/1/path/%s/participations?type=table", schemaName), Columns: []commonClient.MaterializationReadColumn{{Name: "person_id"}, {Name: "activity_id"}, {Name: "is_actual"}, {Name: "is_signup"}}},
+		{LogicalTableID: 2, BatchID: "participations-batch", EngineID: 1, StagingLocator: fmt.Sprintf("addp://engine/1/path/%s/participations?type=table", schemaName), Columns: []commonClient.MaterializationReadColumn{{Name: "person_id"}, {Name: "activity_id"}, {Name: "member_status"}, {Name: "is_actual"}, {Name: "is_signup"}}},
 	}}
 	compiled, _, _, err := compileMaterializationGate(config, readContext)
 	if err != nil {
 		t.Fatalf("compile materialization gate: %v", err)
 	}
-	wantFailed := []int64{1, 1, 1, 1, 0}
+	wantFailed := []int64{1, 1, 1, 1, 1, 0}
 	for index, assertion := range compiled {
 		var counts gateCounts
 		if err := db.Raw(assertion.SQL, assertion.Args...).Scan(&counts).Error; err != nil {

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -16,6 +17,7 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/contentio"
+	"github.com/addp/common/datatype"
 	engineplugin "github.com/addp/common/engine/plugin"
 	supermapworkflow "github.com/addp/common/engine/plugins/supermap_workflow"
 	commonExecution "github.com/addp/common/execution"
@@ -592,9 +594,232 @@ func TestAttachSourceMetaAttributesLoadsMetaItem(t *testing.T) {
 	}
 }
 
+func TestAttachEncodedRecordSourceMetaAttributesLoadsProtectionSchema(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/meta/items/51657" {
+			t.Fatalf("path = %q, want /api/v1/meta/items/51657", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
+			t.Fatalf("Authorization = %q, want Bearer test-token", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(commonModels.MetaItem{
+			ID:       51657,
+			EngineID: 11,
+			Attributes: map[string]interface{}{
+				"type_info": map[string]interface{}{
+					"table": datatype.TableInfoPayload(&datatype.TableInfo{
+						Name: "Persons",
+						Fields: []datatype.FieldInfo{
+							{Name: "userInfo", Path: []string{"userInfo"}, Type: datatype.FieldTypeJSON, Nullable: true},
+							{Name: "userInfo.phone", Path: []string{"userInfo", "phone"}, Type: datatype.FieldTypeString, Nullable: true},
+						},
+					}),
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	service := &ExecutionEngineService{metaClient: newExecutionTestMetaClient(server.URL)}
+	spec := &planner.EncodedRecordExportTaskSpec{Source: planner.EndpointSpec{
+		Locator: "addp://engine/11/path/Outdoor/Persons?type=collection&item_id=51657",
+	}}
+	task := &models.TransferTask{TenantID: 7}
+
+	if err := service.attachEncodedRecordSourceMetaAttributes(task, spec); err != nil {
+		t.Fatalf("attachEncodedRecordSourceMetaAttributes() error = %v", err)
+	}
+	fields := planner.EncodedRecordSourceFields(*spec)
+	if len(fields) != 2 || fields[1].Name != "userInfo.phone" {
+		t.Fatalf("source protection fields = %#v", fields)
+	}
+}
+
+func TestEncodedRecordManagerInfraExportCommitsStableOutputAndFinishesSuccess(t *testing.T) {
+	const sourceType = "manager-infra-export-source-test"
+	sourcePlugin := &managerInfraExportSourcePlugin{}
+	targetPlugin := &managerInfraExportTargetPlugin{}
+	engineplugin.Register(sourcePlugin)
+	engineplugin.Register(targetPlugin)
+	t.Cleanup(func() {
+		engineplugin.Unregister(sourceType)
+		engineplugin.Unregister("minio")
+	})
+
+	config := map[string]interface{}{
+		"runtime": map[string]interface{}{"boundary": "bounded"},
+		"load":    map[string]interface{}{"mode": "snapshot"},
+		"source": map[string]interface{}{
+			"locator": "addp://engine/11/path/Outdoor/Persons?type=collection&item_id=51657", "data_type": "unknown", "representation": "native",
+		},
+		"target": map[string]interface{}{
+			"parent_locator": "addp-infra://minio/manager/tenant_7/export/20260902/session-id?type=prefix",
+			"name":           "Persons.ejsonl", "data_type": "unknown", "representation": "encoded", "format": "mongodb_extended_jsonl",
+			"policy": map[string]interface{}{"apply_mode": "replace"},
+		},
+	}
+	spec, err := planner.ParseEncodedRecordExportTaskSpec(config, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	db := newExecutionServiceTestDB(t)
+	task := createExecutionServiceTestTask(t, db)
+	task.Config = config
+	task.BatchSize = 1000
+	if err := db.Save(&task).Error; err != nil {
+		t.Fatal(err)
+	}
+	execution := createExecutionServiceTestExecution(t, db, task, commonExecution.ExecutionStatusRunning)
+	runningStatus := commonExecution.ExecutionStatusRunning
+	task.Status = models.TaskStatusRunning
+	task.LastExecutionID = &execution.ExecutionID
+	task.LastExecutionStatus = &runningStatus
+	if err := db.Save(&task).Error; err != nil {
+		t.Fatal(err)
+	}
+	executionService := NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
+	bindExecutionServiceTestLease(t, db, executionService, &execution)
+	engineService := &ExecutionEngineService{
+		taskRepo:         repositoryForExecutionServiceTest(db),
+		executionService: executionService,
+		protectionGate:   allowTransferSourceProtectionGate{},
+		logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	sourceCaps := engineplugin.NewDynamicSchemaCapabilities(sourceType)
+	sourceCaps.Storage.Store.EncodedRecordReadSession = &engineplugin.EncodedRecordReadSessionCapability{Formats: []string{"mongodb_extended_jsonl"}}
+	resolver := planner.NewHybridEngineResolver(
+		planner.StaticEngineResolver{11: {Type: sourceType, EngineID: 11, Capabilities: &sourceCaps}},
+		planner.NewInfraEngineResolver(planner.InfraEngineConfig{MinioEndpoint: "test-minio:9000", MinioAccessKey: "test", MinioSecretKey: "test"}),
+	)
+
+	if err := engineService.executeCommonEncodedRecordExportTask(t.Context(), &task, uint(execution.ID), spec, resolver); err != nil {
+		t.Fatalf("executeCommonEncodedRecordExportTask() error = %v", err)
+	}
+	if !targetPlugin.deletedBeforeWrite || string(targetPlugin.content) != "{\"userInfo\":{\"phone\":\"136****4499\"}}\n" {
+		t.Fatalf("target committed=%t content=%q", targetPlugin.deletedBeforeWrite, targetPlugin.content)
+	}
+
+	var stored commonExecution.TaskExecution
+	if err := db.First(&stored, execution.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.Status != commonExecution.ExecutionStatusSuccess {
+		t.Fatalf("execution status = %q, error_details = %#v", stored.Status, stored.ErrorDetails)
+	}
+	outputs, ok := stored.Metadata["outputs"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("metadata.outputs = %#v", stored.Metadata["outputs"])
+	}
+	if outputs["target_locator"] != "addp-infra://minio/manager/tenant_7/export/20260902/session-id/Persons.ejsonl?type=object" {
+		t.Fatalf("outputs.target_locator = %#v", outputs["target_locator"])
+	}
+	if outputs["row_count"] != float64(1) {
+		t.Fatalf("outputs.row_count = %#v", outputs["row_count"])
+	}
+}
+
+type managerInfraExportSourcePlugin struct{}
+
+func (*managerInfraExportSourcePlugin) Type() string { return "manager-infra-export-source-test" }
+func (*managerInfraExportSourcePlugin) DisplayName() string {
+	return "Manager infra export source test"
+}
+func (*managerInfraExportSourcePlugin) EngineOrigin() string { return "general" }
+func (*managerInfraExportSourcePlugin) TestConnection(context.Context, engineplugin.ConnectionInfo) error {
+	return nil
+}
+func (*managerInfraExportSourcePlugin) ValidateConnectionInfo(engineplugin.ConnectionInfo) error {
+	return nil
+}
+func (*managerInfraExportSourcePlugin) DefaultPort() int          { return 0 }
+func (*managerInfraExportSourcePlugin) RequiredFields() []string  { return nil }
+func (*managerInfraExportSourcePlugin) SensitiveFields() []string { return nil }
+func (*managerInfraExportSourcePlugin) Capabilities() engineplugin.EngineCapabilities {
+	caps := engineplugin.NewDynamicSchemaCapabilities("manager-infra-export-source-test")
+	caps.Storage.Store.EncodedRecordReadSession = &engineplugin.EncodedRecordReadSessionCapability{Formats: []string{"mongodb_extended_jsonl"}}
+	return caps
+}
+func (*managerInfraExportSourcePlugin) StoreSemantics() engineplugin.StoreSemantics {
+	return engineplugin.StoreSemantics{}
+}
+func (*managerInfraExportSourcePlugin) OpenEncodedRecordReadSession(context.Context, engineplugin.ConnectionInfo, engineplugin.EngineCatalogPath, engineplugin.EncodedRecordReadSessionOptions) (engineplugin.EncodedRecordReadSession, error) {
+	return &managerInfraExportRecordSession{}, nil
+}
+
+type managerInfraExportRecordSession struct{ delivered bool }
+
+func (s *managerInfraExportRecordSession) ReadBatch(context.Context, int) (*engineplugin.EncodedRecordBatchData, error) {
+	if s.delivered {
+		return &engineplugin.EncodedRecordBatchData{}, nil
+	}
+	s.delivered = true
+	content := []byte("{\"userInfo\":{\"phone\":\"136****4499\"}}\n")
+	return &engineplugin.EncodedRecordBatchData{Content: content, Records: 1}, nil
+}
+func (*managerInfraExportRecordSession) Close(context.Context) error { return nil }
+
+type managerInfraExportTargetPlugin struct {
+	deletedBeforeWrite bool
+	content            []byte
+}
+
+func (*managerInfraExportTargetPlugin) Type() string { return "minio" }
+func (*managerInfraExportTargetPlugin) DisplayName() string {
+	return "Manager infra export target test"
+}
+func (*managerInfraExportTargetPlugin) EngineOrigin() string { return "general" }
+func (*managerInfraExportTargetPlugin) TestConnection(context.Context, engineplugin.ConnectionInfo) error {
+	return nil
+}
+func (*managerInfraExportTargetPlugin) ValidateConnectionInfo(engineplugin.ConnectionInfo) error {
+	return nil
+}
+func (*managerInfraExportTargetPlugin) DefaultPort() int          { return 0 }
+func (*managerInfraExportTargetPlugin) RequiredFields() []string  { return nil }
+func (*managerInfraExportTargetPlugin) SensitiveFields() []string { return nil }
+func (*managerInfraExportTargetPlugin) Capabilities() engineplugin.EngineCapabilities {
+	return engineplugin.NewObjectCapabilities("minio")
+}
+func (*managerInfraExportTargetPlugin) StoreSemantics() engineplugin.StoreSemantics {
+	return engineplugin.StoreSemantics{}
+}
+func (p *managerInfraExportTargetPlugin) DeleteResource(context.Context, engineplugin.ConnectionInfo, engineplugin.EngineCatalogPath) error {
+	p.deletedBeforeWrite = true
+	p.content = nil
+	return nil
+}
+func (p *managerInfraExportTargetPlugin) CreateContent(context.Context, engineplugin.ConnectionInfo, engineplugin.EngineCatalogPath, engineplugin.WriteOptions) (io.WriteCloser, error) {
+	return &managerInfraExportWriter{target: p}, nil
+}
+
+type managerInfraExportWriter struct {
+	bytes.Buffer
+	target *managerInfraExportTargetPlugin
+}
+
+func (w *managerInfraExportWriter) Close() error {
+	w.target.content = append([]byte(nil), w.Bytes()...)
+	return nil
+}
+
 func TestTargetLineageLocatorBuildsCreatedTableIdentity(t *testing.T) {
 	got := targetLineageLocator("addp://engine/3/path/public?type=schema", "orders")
 	want := "addp://engine/3/path/public/orders?type=table"
+	if got != want {
+		t.Fatalf("targetLineageLocator() = %q, want %q", got, want)
+	}
+}
+
+func TestTargetLineageLocatorBuildsInfraObjectIdentity(t *testing.T) {
+	got := targetLineageLocator(
+		"addp-infra://minio/manager/tenant_1/export/20260902/session-id?type=prefix",
+		"Persons.ejsonl",
+	)
+	want := "addp-infra://minio/manager/tenant_1/export/20260902/session-id/Persons.ejsonl?type=object"
 	if got != want {
 		t.Fatalf("targetLineageLocator() = %q, want %q", got, want)
 	}

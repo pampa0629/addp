@@ -76,14 +76,13 @@ func extractCatalogDocumentText(
 		result.Counts.Failed = 1
 		return result
 	}
-	preview := metatext.PreviewText(text, metatext.DocumentPreviewRuneLimit)
 	metaattr.SetExtraction(attrs, "extractor_available", true)
 	metaattr.SetExtraction(attrs, "text_extracted", true)
 	metaattr.SetExtraction(attrs, "status", "completed")
 	metaattr.SetExtraction(attrs, "extractor", "common_format:"+string(formatType))
-	metaattr.SetExtraction(attrs, "plain_text_preview", preview)
 	metaattr.SetExtraction(attrs, "text_truncated", truncated)
 	result.Text = text
+	result.Truncated = truncated
 	result.Counts.Extracted = 1
 	return result
 }

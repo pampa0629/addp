@@ -37,8 +37,6 @@ type StandardCleanupStats struct {
 	CodeItems                int      `json:"code_items"`
 	MeasurementCategories    int      `json:"measurement_categories"`
 	Units                    int      `json:"units"`
-	Classifications          int      `json:"classifications"`
-	GradingLevels            int      `json:"grading_levels"`
 	MetricCategories         int      `json:"metric_categories"`
 	Metrics                  int      `json:"metrics"`
 	MetricElementMappings    int      `json:"metric_element_mappings"`
@@ -225,8 +223,6 @@ type standardCleanupCandidates struct {
 	codeItems                []models.CodeSetRevisionItem
 	measurementCategories    []models.MeasurementCategory
 	units                    []models.Unit
-	classifications          []models.Classification
-	gradingLevels            []models.GradingLevel
 	metricCategories         []models.MetricCategory
 	metrics                  []models.Metric
 	metricElementMappings    []models.MetricElementMapping
@@ -250,8 +246,6 @@ func (c standardCleanupCandidates) stats() *StandardCleanupStats {
 		CodeItems:                len(c.codeItems),
 		MeasurementCategories:    len(c.measurementCategories),
 		Units:                    len(c.units),
-		Classifications:          len(c.classifications),
-		GradingLevels:            len(c.gradingLevels),
 		MetricCategories:         len(c.metricCategories),
 		Metrics:                  len(c.metrics),
 		MetricElementMappings:    len(c.metricElementMappings),
@@ -328,12 +322,6 @@ func (s *CleanupService) listTenantCandidates(ctx context.Context, tenantID int6
 		return candidates, err
 	}
 	if err := s.db.WithContext(ctx).Where("tenant_id = ?", tenantID).Find(&candidates.units).Error; err != nil {
-		return candidates, err
-	}
-	if err := s.db.WithContext(ctx).Where("tenant_id = ?", tenantID).Find(&candidates.classifications).Error; err != nil {
-		return candidates, err
-	}
-	if err := s.db.WithContext(ctx).Where("tenant_id = ?", tenantID).Find(&candidates.gradingLevels).Error; err != nil {
 		return candidates, err
 	}
 	if err := s.db.WithContext(ctx).Where("tenant_id = ?", tenantID).Find(&candidates.metricCategories).Error; err != nil {
@@ -468,8 +456,6 @@ func (s *CleanupService) physicalCleanup(ctx context.Context, candidates standar
 		{model: &models.DimensionHierarchy{}, ids: standardDimensionHierarchyIDs(candidates.dimensionHierarchies), name: "dimension hierarchies"},
 		{model: &models.Element{}, ids: standardElementIDs(candidates.elements), name: "elements"},
 		{model: &models.Glossary{}, ids: standardGlossaryIDs(candidates.glossaries), name: "glossaries"},
-		{model: &models.GradingLevel{}, ids: standardGradingLevelIDs(candidates.gradingLevels), name: "grading levels"},
-		{model: &models.Classification{}, ids: standardClassificationIDs(candidates.classifications), name: "classifications"},
 		{model: &models.MeasurementCategory{}, ids: standardMeasurementCategoryIDs(candidates.measurementCategories), name: "measurement categories"},
 		{model: &models.CodeSet{}, ids: standardCodeSetIDs(candidates.codeSets), name: "code sets"},
 		{model: &models.Domain{}, ids: standardDomainIDs(candidates.domains), name: "domains"},
@@ -687,8 +673,6 @@ func standardCandidateRecordCount(stats *StandardCleanupStats) int {
 		stats.CodeItems +
 		stats.MeasurementCategories +
 		stats.Units +
-		stats.Classifications +
-		stats.GradingLevels +
 		stats.MetricCategories +
 		stats.Metrics +
 		stats.MetricElementMappings +
@@ -773,22 +757,6 @@ func standardMeasurementCategoryIDs(items []models.MeasurementCategory) []int64 
 }
 
 func standardUnitIDs(items []models.Unit) []int64 {
-	ids := make([]int64, 0, len(items))
-	for _, item := range items {
-		ids = append(ids, item.ID)
-	}
-	return ids
-}
-
-func standardClassificationIDs(items []models.Classification) []int64 {
-	ids := make([]int64, 0, len(items))
-	for _, item := range items {
-		ids = append(ids, item.ID)
-	}
-	return ids
-}
-
-func standardGradingLevelIDs(items []models.GradingLevel) []int64 {
 	ids := make([]int64, 0, len(items))
 	for _, item := range items {
 		ids = append(ids, item.ID)

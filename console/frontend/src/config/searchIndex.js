@@ -38,6 +38,12 @@ export const SEARCH_INDEX = [
   { labelKey: 'console.menus.quality.materializationGateTasks', module: 'quality', route: '/quality/materialization-gate-tasks', keywords: ['物化门禁', '发布门禁', '强类型断言', 'materialization gate'] },
   { labelKey: 'console.menus.quality.ruleApplications', module: 'quality', route: '/quality/rule-applications',keywords: ['规则应用', '质量规则', 'rule'] },
   { labelKey: 'console.menus.quality.issues',           module: 'quality', route: '/quality/issues',           keywords: ['质量问题', '问题工单', 'issue'] },
+  // 数据安全
+  { labelKey: 'console.menus.security.sensitiveDataTypes', module: 'security', route: '/security/sensitive-data-types', keywords: ['敏感数据类型', '手机号', '隐私', 'sensitive data', 'privacy'] },
+  { labelKey: 'console.menus.security.classifications', module: 'security', route: '/security/classifications', keywords: ['安全分类', '个人信息', 'security classification'] },
+  { labelKey: 'console.menus.security.grades', module: 'security', route: '/security/grades', keywords: ['安全等级', '分级', 'security grade'] },
+  { labelKey: 'console.menus.security.protectionBaselines', module: 'security', route: '/security/protection-baselines', keywords: ['保护基线', '脱敏', '遮盖', 'mask', 'protection baseline'] },
+  { labelKey: 'console.menus.security.protectionEnrollments', module: 'security', route: '/security/protection-enrollments', keywords: ['保护纳管', '数据纳管', 'enrollment', 'protection enrollment'] },
   // 数据开发
   { labelKey: 'console.menus.develop.sql',      module: 'develop', route: '/develop/sql',      keywords: ['SQL', 'SQL工作台', '查询', '开发', 'workbench', 'query'] },
   { labelKey: 'console.menus.develop.notebook', module: 'develop', route: '/develop/notebook', keywords: ['Notebook', 'Jupyter', '笔记本', '开发'] },
@@ -48,8 +54,7 @@ export const SEARCH_INDEX = [
   { labelKey: 'console.menus.service.services',      module: 'service', route: '/service/services',       keywords: ['服务注册', '外部服务', 'service registry'] },
   { labelKey: 'console.menus.service.catalog',       module: 'service', route: '/service/catalog',        keywords: ['服务目录', '服务列表', 'catalog'] },
   // 数据服务消费
-  { labelKey: 'console.menus.workbench.views', module: 'workbench', route: '/workbench/views', keywords: ['工作台视图', '数据服务消费', '动态查询', '可视化', 'workbench', 'service consumer', 'view'] },
-  { labelKey: 'console.menus.workbench.dataApplications', module: 'workbench', route: '/workbench/applications', keywords: ['数据应用', '应用发布', '组合展示', 'data application', 'application revision'] },
+  { labelKey: 'console.menus.workbench.dataApplications', module: 'workbench', route: '/workbench/applications', keywords: ['数据应用', '数据服务消费', '动态查询', '可视化', '联动', '应用发布', '组合展示', 'workbench', 'service consumer', 'data application', 'application revision'] },
   // 任务编排
   { labelKey: 'console.menus.orchestrator.orchestrations', module: 'orchestrator', route: '/orchestrator/orchestrations', keywords: ['编排任务', '工作流编排', 'orchestration', 'dag'] },
   { labelKey: 'console.menus.orchestrator.executions',     module: 'orchestrator', route: '/orchestrator/executions',    keywords: ['编排执行', '执行记录', 'orchestrator execution'] },

@@ -746,6 +746,8 @@
           "streamRead": "Stream read",
           "rangeRead": "Range read",
           "batchRead": "Batch read",
+          "recordReadSession": "Record read session",
+          "encodedRecordReadSession": "Type-preserving record export",
           "streamWrite": "Stream write",
           "rangeWrite": "Range write",
           "batchWrite": "Batch write",
@@ -853,6 +855,9 @@
         "geometryWriteEncoding": {
           "ewkb": "EWKB",
           "geojson": "GeoJSON"
+        },
+        "recordFormat": {
+          "mongodbExtendedJsonl": "MongoDB Canonical Extended JSON Lines"
         },
         "engineFamily": {
           "tabular": "Tabular",

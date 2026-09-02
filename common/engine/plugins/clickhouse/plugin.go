@@ -109,8 +109,8 @@ func (p *ClickHousePlugin) GenerateSampleQuery(ctx context.Context, connInfo plu
 	return plugin.SampleSQLForEngineCatalogPath(p.Type(), opts.Path, 10), "sql"
 }
 
-func (p *ClickHousePlugin) ExecuteRuntimeQuery(ctx context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (*plugin.QueryResult, error) {
-	return p.ExecuteSQL(ctx, connInfo, req.Query, req.Options)
+func (p *ClickHousePlugin) PrepareQuery(_ context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (plugin.PreparedQuery, error) {
+	return plugin.PrepareSQLRuntimeQuery(p, connInfo, req, nil, nil)
 }
 
 func (p *ClickHousePlugin) SQLDialect() string {

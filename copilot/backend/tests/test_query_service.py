@@ -81,6 +81,32 @@ def test_parse_output_preserves_query_parameter_definitions():
     }]
 
 
+def test_parse_output_accepts_missing_and_explicit_empty_defaults():
+    result = QueryService._parse_output(
+        '{"query":"SELECT * FROM users WHERE nickname = :nickname AND active = :active",'
+        '"query_parameters":['
+        '{"name":"nickname","type":"string","default":""},'
+        '{"name":"active","type":"boolean","default":null}'
+        '],"warnings":[]}',
+        query_language="sql",
+    )
+
+    assert result["query_parameters"] == [
+        {"name": "nickname", "type": "string", "default": ""},
+        {"name": "active", "type": "boolean"},
+    ]
+
+
+def test_parse_output_rejects_removed_query_parameter_title():
+    with pytest.raises(ValueError, match="unknown fields: title"):
+        QueryService._parse_output(
+            '{"query":"SELECT * FROM users WHERE active = :active",'
+            '"query_parameters":[{"name":"active","type":"boolean","title":"Active"}],'
+            '"warnings":[]}',
+            query_language="sql",
+        )
+
+
 def test_sql_parameter_references_ignore_postgresql_casts():
     assert QueryService._query_parameter_references(
         "sql",

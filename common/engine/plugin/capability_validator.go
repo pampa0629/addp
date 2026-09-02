@@ -3,6 +3,7 @@ package plugin
 import (
 	"fmt"
 	"reflect"
+	"strings"
 )
 
 // ValidatePluginCapabilities verifies that a plugin's declared capabilities
@@ -106,6 +107,25 @@ func validateStoreCapabilities(p EnginePlugin, store *StoreCapability) error {
 	if store.RecordReadSession {
 		if _, ok := p.(RecordReadSessionProvider); !ok {
 			return fmt.Errorf("%s declares record_read_session but does not implement RecordReadSessionProvider", p.Type())
+		}
+	}
+	if capability := store.EncodedRecordReadSession; capability != nil {
+		if _, ok := p.(EncodedRecordReadSessionProvider); !ok {
+			return fmt.Errorf("%s declares encoded_record_read_session but does not implement EncodedRecordReadSessionProvider", p.Type())
+		}
+		seen := make(map[string]struct{}, len(capability.Formats))
+		for _, raw := range capability.Formats {
+			formatName := strings.TrimSpace(raw)
+			if formatName == "" {
+				return fmt.Errorf("%s encoded_record_read_session formats must be non-empty", p.Type())
+			}
+			if _, exists := seen[formatName]; exists {
+				return fmt.Errorf("%s encoded_record_read_session format %q is duplicated", p.Type(), formatName)
+			}
+			seen[formatName] = struct{}{}
+		}
+		if len(seen) == 0 {
+			return fmt.Errorf("%s encoded_record_read_session formats are required", p.Type())
 		}
 	}
 	if store.TableReadSpatialTransform && !implementsNativeTableReader(p) {
@@ -376,6 +396,9 @@ func validateStoreProviderCapabilities(p EnginePlugin, storage *StorageCapabilit
 	}
 	if _, ok := p.(RecordReadSessionProvider); ok && !declaresStoreCapability(storage, func(store *StoreCapability) bool { return store.RecordReadSession }) {
 		return fmt.Errorf("%s implements RecordReadSessionProvider but does not declare record_read_session", p.Type())
+	}
+	if _, ok := p.(EncodedRecordReadSessionProvider); ok && !declaresStoreCapability(storage, func(store *StoreCapability) bool { return store.EncodedRecordReadSession != nil }) {
+		return fmt.Errorf("%s implements EncodedRecordReadSessionProvider but does not declare encoded_record_read_session", p.Type())
 	}
 	if _, ok := p.(SpatialFeatureReadProvider); ok && !declaresStoreCapability(storage, func(store *StoreCapability) bool {
 		return store.TableSpatialEncoding != nil && store.TableSpatialEncoding.NativeSpatialFunctions

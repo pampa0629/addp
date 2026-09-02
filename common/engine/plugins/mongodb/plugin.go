@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/format"
 	commonquery "github.com/addp/common/query"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -58,7 +59,12 @@ func (p *MongoDBPlugin) ConnectionIdentityFields() []string {
 }
 
 func (p *MongoDBPlugin) Capabilities() plugin.EngineCapabilities {
-	return plugin.NewDynamicSchemaCapabilities(p.Type())
+	capabilities := plugin.NewDynamicSchemaCapabilities(p.Type())
+	capabilities.Storage.Store.EncodedRecordReadSession = &plugin.EncodedRecordReadSessionCapability{
+		Formats: []string{string(format.FormatMongoDBExtendedJSONL)},
+	}
+	capabilities.Storage.Semantics = append(capabilities.Storage.Semantics, "encoded_record_read_session")
+	return capabilities
 }
 
 func (p *MongoDBPlugin) EngineCatalogModel() plugin.EngineCatalogModelSpec {
@@ -122,12 +128,36 @@ func mongoDatabaseFromCatalogPath(path plugin.EngineCatalogPath) (string, bool) 
 	return segments[0].Name, true
 }
 
-func (p *MongoDBPlugin) ExecuteRuntimeQuery(ctx context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (*plugin.QueryResult, error) {
+func (p *MongoDBPlugin) PrepareQuery(_ context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (plugin.PreparedQuery, error) {
 	if database, ok := mongoDatabaseFromCatalogPath(valueOrEmptyPath(req.TargetPath)); ok {
 		connInfo = cloneConnectionInfo(connInfo)
 		connInfo["database"] = database
 	}
-	return p.executeQuery(ctx, connInfo, req.Query, req.Options)
+	if req.EngineID != 0 && req.Options.EngineID != 0 && req.EngineID != req.Options.EngineID {
+		return nil, fmt.Errorf("query engine identity is inconsistent")
+	}
+	if req.EngineID == 0 {
+		req.EngineID = req.Options.EngineID
+	}
+	req.Options.EngineID = req.EngineID
+	if req.Options.EngineType == "" {
+		req.Options.EngineType = p.Type()
+	}
+	plan, err := prepareMongoQueryReadPlan(connInfo, req)
+	if err != nil {
+		return nil, err
+	}
+	analysis, err := plugin.NewQueryAnalysis("mql", plugin.QuerySchemaCoverageUnknown)
+	if err != nil {
+		return nil, err
+	}
+	return &mongoPreparedQuery{
+		provider: p,
+		connInfo: cloneConnectionInfo(connInfo),
+		request:  cloneMongoQueryRequest(req),
+		plan:     plan,
+		analysis: analysis,
+	}, nil
 }
 
 func valueOrEmptyPath(path *plugin.EngineCatalogPath) plugin.EngineCatalogPath {
@@ -141,6 +171,23 @@ func cloneConnectionInfo(connInfo plugin.ConnectionInfo) plugin.ConnectionInfo {
 	cloned := make(plugin.ConnectionInfo, len(connInfo))
 	for key, value := range connInfo {
 		cloned[key] = value
+	}
+	return cloned
+}
+
+func cloneMongoQueryRequest(req plugin.QueryRequest) plugin.QueryRequest {
+	cloned := req
+	if req.TargetPath != nil {
+		path := *req.TargetPath
+		path.Segments = append([]plugin.EngineCatalogSegment(nil), req.TargetPath.Segments...)
+		cloned.TargetPath = &path
+	}
+	cloned.Options.Args = append([]interface{}(nil), req.Options.Args...)
+	if req.Options.Parameters != nil {
+		cloned.Options.Parameters = make(map[string]interface{}, len(req.Options.Parameters))
+		for key, value := range req.Options.Parameters {
+			cloned.Options.Parameters[key] = value
+		}
 	}
 	return cloned
 }
@@ -240,6 +287,10 @@ func (p *MongoDBPlugin) executeQuery(ctx context.Context, connInfo plugin.Connec
 	if err := json.Unmarshal([]byte(query), &cmd); err != nil {
 		return nil, fmt.Errorf("无效的 MQL 格式，请输入 JSON 命令对象，示例：{\"find\":\"collection\",\"filter\":{},\"limit\":10}：%w", err)
 	}
+	return p.executePreparedQuery(ctx, connInfo, cmd, queryOptions)
+}
+
+func (p *MongoDBPlugin) executePreparedQuery(ctx context.Context, connInfo plugin.ConnectionInfo, cmd map[string]interface{}, queryOptions plugin.QueryOptions) (*plugin.QueryResult, error) {
 
 	database := plugin.GetString(connInfo, "database")
 	if database == "" {
@@ -384,7 +435,7 @@ func (p *MongoDBPlugin) execAggregate(ctx context.Context, db *mongo.Database, c
 	var pipeline []interface{}
 	if pl, ok := cmd["pipeline"]; ok {
 		if plArr, ok := pl.([]interface{}); ok {
-			pipeline = plArr
+			pipeline = append([]interface{}(nil), plArr...)
 		}
 	}
 	pipeline = append(pipeline, bson.M{"$limit": maxRows})

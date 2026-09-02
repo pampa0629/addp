@@ -22,7 +22,28 @@ func Normalize(attrs models.JSONMap) models.JSONMap {
 			normalized[section] = sectionAttrs
 		}
 	}
+	removePersistedContentDerivatives(normalized)
 	return normalized
+}
+
+func removePersistedContentDerivatives(attrs models.JSONMap) {
+	capabilities := Section(attrs, "capabilities")
+	extraction := commonJSON.InterfaceMap(capabilities["extraction"])
+	if len(extraction) == 0 {
+		return
+	}
+	delete(extraction, "plain_text_preview")
+	delete(extraction, "text_excerpt")
+	if cleaned := cleanAttributeMap(extraction); len(cleaned) > 0 {
+		capabilities["extraction"] = cleaned
+	} else {
+		delete(capabilities, "extraction")
+	}
+	if cleaned := cleanAttributeMap(capabilities); len(cleaned) > 0 {
+		attrs["capabilities"] = cleaned
+	} else {
+		delete(attrs, "capabilities")
+	}
 }
 
 // Section 返回标准 attributes 分区的 JSON map。

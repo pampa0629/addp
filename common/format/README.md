@@ -89,6 +89,7 @@ func GuessContentType(filename string, peek []byte) string
 当前约定：
 
 - `.geojson` 返回 `FormatGeoJSON`；`.json` 默认返回 `FormatJSON`，但 `DetectFormat(filename, peek)` 在内容前缀严格匹配 GeoJSON `FeatureCollection` 时返回 `FormatGeoJSON`。
+- `.ejsonl` 返回 `FormatMongoDBExtendedJSONL`；该 descriptor 只声明 MongoDB Canonical Extended JSON Lines 的稳定交换格式身份，编码由 MongoDB `EncodedRecordReadSessionProvider` 完成，不提供 table/document writer。
 - `application/geo+json`、`application/vnd.geo+json` 返回 `FormatGeoJSON`；`application/json` 返回 `FormatJSON`。
 - Shapefile 只有 primary content `.shp` 识别为 `FormatShapefile`；`.shx`、`.dbf`、`.prj`、`.cpg` 等 related content 不单独代表完整 Shapefile，ref 归并由上层基于 format descriptor、related ref 规则和 item 组织规则完成。
 - Parquet 既可以是单文件表，也可以作为目录 scope 下的表文件；`common/format/plugins/parquet` 只提供格式判断和 provider，不表达 lake table item type。

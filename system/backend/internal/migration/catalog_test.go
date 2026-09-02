@@ -14,8 +14,102 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 111 {
-		t.Fatalf("LatestVersion = %d, want 111", catalog.LatestVersion)
+	if catalog.LatestVersion != 117 {
+		t.Fatalf("LatestVersion = %d, want 117", catalog.LatestVersion)
+	}
+}
+
+func TestSecurityPolicyMigrationCreatesExactCRUDPermissions(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000117_iam_security_policy.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 117: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'security.policy.create'", "'security.policy.delete'", "'security.policy.read'", "'security.policy.update'",
+		"'tenant.administrator'", "'tenant.governance_manager'",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 117 missing %q", fragment)
+		}
+	}
+	if strings.Contains(sql, "security.policy.manage") {
+		t.Fatal("migration 117 must not introduce non-canonical manage action")
+	}
+}
+
+func TestSecurityAssessmentMigrationCreatesExactGovernancePermissions(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000116_iam_security_assessment.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 116: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'security.assessment.read'", "'security.assessment.update'", "'security.finding.update'",
+		"'tenant.administrator'", "'tenant.governance_manager'",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 116 missing %q", fragment)
+		}
+	}
+}
+
+func TestSecurityMetaFactsMigrationCreatesExactTenantRuntimeBoundary(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000115_iam_security_meta_facts.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 115: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'meta.security_facts.read'", "'security.finding.read'", "'tenant.security_runtime'",
+		"'addp-security'", "ARRAY['tenant']::text[]", "false",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 115 missing %q", fragment)
+		}
+	}
+}
+
+func TestSecurityEnrollmentProjectionMigrationKeepsOwnerRuntimeBoundary(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000114_iam_security_enrollment_projection.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 114: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'security.enrollment.create'", "'security.enrollment.read'", "'security.enrollment.update'",
+		"'security.protection_projection.read'", "'security.protection_projection.update'",
+		"'tenant.develop_runtime'", "'tenant.manager_runtime'", "'tenant.service_runtime'", "'tenant.transfer_runtime'",
+		"'platform.tenant.read'", "'platform.develop_runtime'", "'platform.manager_runtime'", "'platform.service_runtime'", "'platform.transfer_runtime'",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 114 missing %q", fragment)
+		}
+	}
+	if strings.Contains(sql, "tenant.security_runtime") {
+		t.Fatal("migration 114 must not create tenant Security runtime membership")
+	}
+}
+
+func TestSecurityModuleMigrationOwnsPermissionsAndRuntimeIdentity(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000113_iam_security_module.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 113: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"permission_key LIKE 'standard.classification.%'",
+		"'security.classification.read'",
+		"'security.grade.read'",
+		"'security.sensitive_data_type.read'",
+		"'security.protection_baseline.read'",
+		"'platform.security_runtime'",
+		"'addp-security'",
+		"'tenant.administrator', 'tenant.governance_manager'",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 113 missing %q", fragment)
+		}
 	}
 }
 
@@ -149,6 +243,22 @@ func TestWorkbenchRuntimeMigrationPublishesConsumerBoundary(t *testing.T) {
 	} {
 		if !strings.Contains(sql, fragment) {
 			t.Fatalf("migration 92 missing %q", fragment)
+		}
+	}
+}
+
+func TestWorkbenchViewRemovalMigrationDisablesRetiredPermissions(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000112_iam_remove_workbench_view.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 112: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"DELETE FROM system.role_permissions", "UPDATE system.permissions", "status = 'disabled'",
+		"'workbench.view.create'", "'workbench.view.delete'", "'workbench.view.read'", "'workbench.view.update'",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 112 missing %q", fragment)
 		}
 	}
 }

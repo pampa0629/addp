@@ -69,6 +69,15 @@ type CRSDefinitionConverter interface {
 
 type TableProgressCallback func(context.Context, TableProgressEvent) error
 
+// TableSourceProtector is the Transfer-owned hook that binds an exact native
+// source or the same immutable PreparedQuery to a local protection projection.
+// The executor owns placement of the returned protector before transforms and
+// target writes; Security policy state never enters this package.
+type TableSourceProtector interface {
+	PrepareCatalogTableProtection(context.Context, engineplugin.EngineCatalogPath, []datatype.FieldInfo) (func(*engineplugin.QueryResult) error, error)
+	PrepareQueryProtection(context.Context, engineplugin.PreparedQuery) (func(*engineplugin.QueryResult) error, error)
+}
+
 type TableProgressEvent struct {
 	BatchIndex     int64
 	SourceOffset   int64
@@ -136,6 +145,7 @@ type TableTransferExecutor struct {
 	GeometryBatchReprojecter   GeometryBatchReprojectProvider
 	CRSDefinitionConverter     CRSDefinitionConverter
 	TargetCRSRequirements      format.CRSDefinitionWriteRequirementProvider
+	SourceProtector            TableSourceProtector
 }
 
 func NewTableTransferExecutor(sourceEngineType, targetEngineType string, sourceFormat, targetFormat format.FormatType) (*TableTransferExecutor, error) {
@@ -221,10 +231,8 @@ func (e *TableTransferExecutor) openSource(plan TableSourcePlan) (TableBatchSour
 			return nil, fmt.Errorf("query source requires runtime query request")
 		}
 		return &queryTableBatchSource{
-			provider:  e.SourceQuerySessionProvider,
-			connInfo:  plan.ConnInfo,
-			request:   *plan.RuntimeQuery,
-			tableInfo: plan.TableInfo,
+			provider: e.SourceQuerySessionProvider, protector: e.SourceProtector,
+			connInfo: plan.ConnInfo, request: *plan.RuntimeQuery, tableInfo: plan.TableInfo,
 		}, nil
 	case TableEndpointNative:
 		if e.SourceNativeReader == nil && e.SourceTableSessionProvider == nil {
@@ -233,6 +241,7 @@ func (e *TableTransferExecutor) openSource(plan TableSourcePlan) (TableBatchSour
 		return &nativeTableBatchSource{
 			reader:               e.SourceNativeReader,
 			tableSessionProvider: e.SourceTableSessionProvider,
+			protector:            e.SourceProtector,
 			connInfo:             plan.ConnInfo,
 			path:                 plan.Path,
 			query:                plan.Query,

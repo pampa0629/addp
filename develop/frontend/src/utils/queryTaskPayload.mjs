@@ -6,10 +6,7 @@ export function toQueryDevTaskPayload(taskData, includeDevType = true) {
       query: taskData.query,
       query_type: taskData.query_type || 'sql',
       target_locator: taskData.target_locator || undefined,
-      query_parameters: Array.isArray(taskData.query_parameters) ? taskData.query_parameters : [],
-      relation_inputs: Array.isArray(taskData.relation_inputs) && taskData.relation_inputs.length > 0
-        ? taskData.relation_inputs
-        : undefined
+      query_parameters: Array.isArray(taskData.query_parameters) ? taskData.query_parameters : []
     },
     execution_config: { engine_id: taskData.engine_id },
     timeout: taskData.timeout,

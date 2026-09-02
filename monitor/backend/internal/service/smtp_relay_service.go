@@ -6,7 +6,7 @@ import (
 	"net/mail"
 	"strings"
 
-	commonsecurity "github.com/addp/common/security"
+	secretcipher "github.com/addp/common/secretcipher"
 	"github.com/addp/monitor/internal/config"
 	"github.com/addp/monitor/internal/models"
 	"github.com/addp/monitor/internal/repository"
@@ -77,7 +77,7 @@ func (s *SMTPRelayService) SetCredential(ctx context.Context, credential string,
 	if credential == "" {
 		return SMTPRelayCredentialStatus{}, fmt.Errorf("SMTP credential is required")
 	}
-	ciphertext, err := commonsecurity.Encrypt(credential, s.encryptionKey)
+	ciphertext, err := secretcipher.Encrypt(credential, s.encryptionKey)
 	if err != nil {
 		return SMTPRelayCredentialStatus{}, err
 	}
@@ -106,7 +106,7 @@ func (s *SMTPRelayService) Apply(ctx context.Context, cfg *config.Config) error 
 	}
 	password := ""
 	if value.CredentialCiphertext != "" {
-		password, err = commonsecurity.Decrypt(value.CredentialCiphertext, s.encryptionKey)
+		password, err = secretcipher.Decrypt(value.CredentialCiphertext, s.encryptionKey)
 		if err != nil {
 			return fmt.Errorf("decrypt SMTP credential: %w", err)
 		}

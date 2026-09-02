@@ -8,7 +8,7 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/execution/executiontest"
 	commonModels "github.com/addp/common/models"
-	commonsecurity "github.com/addp/common/security"
+	secretcipher "github.com/addp/common/secretcipher"
 	monitorModels "github.com/addp/monitor/internal/models"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -91,7 +91,7 @@ func TestAlertEvaluationOpensResolvesAndReopensIncident(t *testing.T) {
 		t.Fatal(err)
 	}
 	encryptionKey := []byte("addp-dev-encryption-key-2025!!!!")
-	secretCiphertext, err := commonsecurity.Encrypt("0123456789abcdef", encryptionKey)
+	secretCiphertext, err := secretcipher.Encrypt("0123456789abcdef", encryptionKey)
 	if err != nil {
 		t.Fatal(err)
 	}

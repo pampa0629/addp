@@ -120,8 +120,8 @@ func (p *DorisPlugin) GenerateSampleQuery(ctx context.Context, connInfo plugin.C
 	return plugin.SampleSQLForEngineCatalogPath(p.Type(), opts.Path, 10), "sql"
 }
 
-func (p *DorisPlugin) ExecuteRuntimeQuery(ctx context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (*plugin.QueryResult, error) {
-	return p.ExecuteSQL(ctx, connInfo, req.Query, req.Options)
+func (p *DorisPlugin) PrepareQuery(_ context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (plugin.PreparedQuery, error) {
+	return plugin.PrepareSQLRuntimeQuery(p, connInfo, req, nil, nil)
 }
 
 func (p *DorisPlugin) SQLDialect() string {

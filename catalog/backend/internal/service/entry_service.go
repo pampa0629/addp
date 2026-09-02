@@ -277,6 +277,8 @@ type EntryService struct {
 	search             CatalogSearchResolver
 	sources            map[string]ProfessionalSourceResolver
 	quality            QualitySummaryResolver
+	metaFields         MetaFieldResolver
+	elementRevisions   StandardElementRevisionResolver
 }
 
 func (s *EntryService) WithQualitySummaryResolver(resolver QualitySummaryResolver) *EntryService {

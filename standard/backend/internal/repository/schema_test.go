@@ -146,8 +146,6 @@ func openStandardSchemaTestDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE standard.code_set_revisions (id INTEGER PRIMARY KEY, code_set_id INTEGER NOT NULL, revision_no INTEGER NOT NULL)`,
 		`CREATE TABLE standard.code_set_revision_items (id INTEGER PRIMARY KEY, code_set_revision_id INTEGER NOT NULL, code TEXT NOT NULL)`,
 		`CREATE TABLE standard.measurement_categories (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, code TEXT NOT NULL)`,
-		`CREATE TABLE standard.classifications (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, code TEXT NOT NULL)`,
-		`CREATE TABLE standard.grading_levels (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, level TEXT NOT NULL)`,
 		`CREATE TABLE standard.metric_categories (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, code TEXT NOT NULL)`,
 		`CREATE TABLE standard.metrics (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, code TEXT NOT NULL)`,
 		`CREATE TABLE standard.metric_element_mappings (id INTEGER PRIMARY KEY, metric_id INTEGER NOT NULL, element_id INTEGER NOT NULL)`,

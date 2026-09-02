@@ -3,9 +3,7 @@ package service
 import "errors"
 
 var (
-	ErrInvalidView                     = errors.New("invalid workbench view")
-	ErrViewNotFound                    = errors.New("workbench view not found")
-	ErrViewVersionConflict             = errors.New("workbench view version conflict")
+	ErrInvalidComponentConfiguration   = errors.New("invalid data application component configuration")
 	ErrServiceAccessDenied             = errors.New("service access denied")
 	ErrServiceUnavailable              = errors.New("service unavailable")
 	ErrInvalidDataApplication          = errors.New("invalid data application")

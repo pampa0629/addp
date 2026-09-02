@@ -82,12 +82,6 @@ other = "业务域父级不能是自身或其子级"
 [standard.domain.referenced]
 other = "业务域仍被子业务域、业务术语、数据元、指标或维度层级引用，无法删除"
 
-[standard.classification.parent_cycle]
-other = "数据分类父级不能是自身或其子级"
-
-[standard.classification.referenced]
-other = "数据分类仍被子分类或数据元引用，无法删除"
-
 [standard.metric_category.parent_cycle]
 other = "指标分类父级不能是自身或其子级"
 

@@ -10,7 +10,6 @@
         >
           <el-icon><Menu /></el-icon>
         </el-button>
-        <h2>{{ currentTaskName || t('develop.query.title') }}</h2>
         <el-select
           ref="queryEngineSelectRef"
           :model-value="selectedQueryTarget"
@@ -40,6 +39,12 @@
         <el-tag v-if="currentQueryLanguage" size="small" effect="plain">
           {{ currentQueryLanguage.toUpperCase() }}
         </el-tag>
+        <h2
+          class="query-task-name"
+          :title="currentTaskName || t('develop.query.title')"
+        >
+          {{ currentTaskName || t('develop.query.title') }}
+        </h2>
       </div>
 
       <div class="toolbar-actions">
@@ -80,12 +85,12 @@
           @click="handlePersistQueryTask"
         >
           <el-icon><FolderAdd /></el-icon>
-          {{ currentTaskId ? t('develop.query.updateTask') : t('develop.query.saveAsTask') }}
+          {{ t('develop.query.saveQuery') }}
         </el-button>
         <el-button
           type="primary"
           :loading="executing"
-          :disabled="loadingSampleQuery || !selectedTarget || !queryContent.trim() || hasRelationInputs || switchingQueryTarget || savingForEngineSwitch"
+          :disabled="loadingSampleQuery || !selectedTarget || !queryContent.trim() || !relationTaskValid || switchingQueryTarget || savingForEngineSwitch"
           @click="executeQuery"
         >
           <el-icon><VideoPlay /></el-icon>
@@ -169,9 +174,9 @@
               <el-button
                 text
                 size="small"
-                :type="hasUnresolvedParameters ? 'warning' : 'default'"
-                :disabled="!queryParametersSupported || executing || switchingQueryTarget || savingForEngineSwitch"
-                @click="parameterDrawerVisible = !parameterDrawerVisible"
+                :type="!relationTaskValid ? 'danger' : hasUnresolvedParameters ? 'warning' : 'default'"
+                :disabled="executing || switchingQueryTarget || savingForEngineSwitch"
+                @click="queryParameterPanelVisible = !queryParameterPanelVisible"
               >
                 <el-icon><Key /></el-icon>
                 {{ t('develop.query.queryParameters') }}<span v-if="queryParameters.length"> ({{ queryParameters.length }})</span>
@@ -179,28 +184,6 @@
             </div>
           </div>
           <div v-loading="loadingSampleQuery" class="editor-content" :aria-busy="loadingSampleQuery">
-            <div class="relation-input-config">
-              <div class="relation-input-heading">
-                <span>{{ t('develop.query.relationInputs') }}</span>
-                <span class="relation-input-hint">{{ t('develop.query.relationInputsHint') }}</span>
-              </div>
-              <el-select
-                v-model="relationInputs"
-                multiple
-                filterable
-                allow-create
-                default-first-option
-                :placeholder="t('develop.query.relationInputsPlaceholder')"
-                :disabled="executing || switchingQueryTarget || savingForEngineSwitch"
-                @change="normalizeRelationInputSelection"
-              />
-              <el-alert
-                v-if="hasRelationInputs"
-                :type="relationTaskValid ? 'info' : 'error'"
-                :closable="false"
-                :title="relationTaskValid ? t('develop.query.relationExecutionHint') : relationTaskError"
-              />
-            </div>
             <el-alert
               v-if="queryDiagnostics.length"
               class="query-diagnostic-alert"
@@ -212,15 +195,6 @@
               <ul class="query-diagnostic-list">
                 <li v-for="(diagnostic, index) in queryDiagnostics" :key="`${diagnostic.code}-${diagnostic.name || diagnostic.field || index}`">
                   <span>{{ queryDiagnosticMessage(diagnostic) }}</span>
-                  <el-button
-                    v-if="diagnostic.replacement && Number.isInteger(diagnostic.start) && Number.isInteger(diagnostic.end)"
-                    link
-                    type="primary"
-                    size="small"
-                    @click="applyQueryDiagnosticFix(diagnostic)"
-                  >
-                    {{ t('develop.query.applyDiagnosticFix') }}
-                  </el-button>
                 </li>
               </ul>
             </el-alert>
@@ -275,110 +249,159 @@
         </div>
       </section>
 
+	  <div
+		v-if="queryParameterPanelVisible && !isCompact"
+		class="resize-handle vertical query-parameter-resize-handle"
+		role="separator"
+		tabindex="0"
+		aria-orientation="vertical"
+		:aria-label="t('develop.query.resizeQueryParameters')"
+		:aria-valuemin="queryParameterPanelMinWidth"
+		:aria-valuemax="queryParameterPanelMaxWidth"
+		:aria-valuenow="queryParameterPanelWidth"
+		aria-controls="query-parameter-panel"
+		@mousedown="startQueryParameterPanelResize"
+		@keydown="handleQueryParameterPanelResizeKeydown"
+		@dblclick="resetQueryParameterPanelWidth"
+	  />
+
       <component
         :is="isCompact ? 'el-drawer' : 'aside'"
-        v-if="parameterDrawerVisible"
-        v-model="parameterDrawerVisible"
-        class="parameter-panel"
-        :class="{ 'parameter-panel-dock': !isCompact }"
+        v-if="queryParameterPanelVisible"
+        v-model="queryParameterPanelVisible"
+        class="query-parameter-panel"
+        :class="{ 'query-parameter-panel-dock': !isCompact }"
+		id="query-parameter-panel"
+		:style="!isCompact ? { width: `${queryParameterPanelWidth}px` } : undefined"
         :title="t('develop.query.queryParameters')"
         direction="rtl"
         size="min(92vw, 560px)"
         :modal="isCompact"
         :close-on-click-modal="false"
       >
-        <div v-if="!isCompact" class="parameter-panel-heading">
+        <div v-if="!isCompact" class="query-parameter-panel-heading">
           <span><el-icon><Key /></el-icon>{{ t('develop.query.queryParameters') }}</span>
-          <el-button circle text size="small" :aria-label="t('develop.query.closeQueryParameters')" @click="parameterDrawerVisible = false">
+          <el-button circle text size="small" :aria-label="t('develop.query.closeQueryParameters')" @click="queryParameterPanelVisible = false">
             <el-icon><Close /></el-icon>
           </el-button>
         </div>
-        <el-alert
-          v-if="hasUnresolvedParameters || hasUnusedParameters"
-          class="parameter-sync-alert"
-          type="warning"
-          :title="parameterSyncMessage"
-          :closable="false"
-          show-icon
-        />
-        <div class="parameter-toolbar">
-          <el-button plain :disabled="!queryParametersSupported || !queryContent.trim()" @click="extractQueryParameters">
-            <el-icon><MagicStick /></el-icon>
-            {{ t('develop.query.extractQueryParameters') }}
-          </el-button>
-          <el-button plain :disabled="!queryParametersSupported || !selectedText" @click="parameterizeSelectedText">
-            <el-icon><Edit /></el-icon>
-            {{ t('develop.query.parameterizeSelection') }}
-          </el-button>
-          <el-button type="primary" plain :disabled="!queryParametersSupported" @click="addQueryParameter">
-            <el-icon><Plus /></el-icon>
-            {{ t('develop.query.addQueryParameter') }}
-          </el-button>
-        </div>
-        <div class="parameter-list">
-          <div v-for="(parameter, index) in queryParameters" :key="parameter.id" class="parameter-item">
-            <div class="parameter-item-heading">
-              <strong>{{ parameter.name || t('develop.query.unnamedParameter') }}</strong>
-              <div class="parameter-item-actions">
-                <el-tooltip :content="t('develop.query.insertParameterReference')">
-                  <el-button
-                    circle
-                    size="small"
-                    :disabled="!parameter.name"
-                    :aria-label="t('develop.query.insertParameterReference')"
-                    @click="insertQueryParameterReference(parameter)"
-                  >
-                    <el-icon><Position /></el-icon>
-                  </el-button>
-                </el-tooltip>
-                <el-tooltip :content="t('develop.query.removeQueryParameter')">
-                  <el-button
-                    circle
-                    size="small"
-                    type="danger"
-                    plain
-                    :aria-label="t('develop.query.removeQueryParameter')"
-                    @click="removeQueryParameter(index)"
-                  >
-                    <el-icon><Delete /></el-icon>
-                  </el-button>
-                </el-tooltip>
+        <div class="query-parameter-content">
+          <section class="query-parameter-section">
+            <div class="query-parameter-section-heading">
+              <div>
+                <strong>{{ t('develop.query.queryParameters') }}</strong>
+                <span>{{ t('develop.query.queryParametersHint') }}</span>
               </div>
+              <el-tag size="small" effect="plain">{{ queryParameters.length }}</el-tag>
             </div>
-            <div class="parameter-grid">
-              <el-form-item :label="t('develop.query.parameterName')" :error="queryParameterNameError(parameter, index)">
-                <el-input v-model="parameter.name" maxlength="64" />
-              </el-form-item>
-              <el-form-item :label="t('develop.query.parameterType')">
-                <el-select v-model="parameter.type" @change="resetQueryParameterDefault(parameter)">
-                  <el-option
-                    v-for="type in queryParameterTypes"
-                    :key="type"
-                    :label="t(`develop.query.parameterTypes.${type}`)"
-                    :value="type"
-                  />
-                </el-select>
-              </el-form-item>
-              <el-form-item :label="t('develop.query.parameterDefault')" :error="queryParameterDefaultError(parameter)">
-                <el-switch v-if="parameter.type === 'boolean'" v-model="parameter.default" />
-                <el-input-number
-                  v-else-if="parameter.type === 'integer' || parameter.type === 'number'"
-                  v-model="parameter.default"
-                  :precision="parameter.type === 'integer' ? 0 : undefined"
-                  :step="parameter.type === 'integer' ? 1 : 0.1"
-                  controls-position="right"
-                />
-                <el-input v-else v-model="parameter.default" />
-              </el-form-item>
-              <el-form-item :label="t('develop.query.parameterTitle')">
-                <el-input v-model="parameter.title" maxlength="100" />
-              </el-form-item>
-              <el-form-item class="parameter-description" :label="t('develop.query.parameterDescription')">
-                <el-input v-model="parameter.description" type="textarea" :rows="2" maxlength="300" />
-              </el-form-item>
+            <el-alert
+			  v-if="!relationTaskValid || hasMissingParameterDefaults"
+			  :type="!relationTaskValid ? 'error' : 'warning'"
+              :closable="false"
+			  :title="!relationTaskValid ? relationTaskError : t('develop.query.parameterDefaultsMissingHint', { count: missingParameterDefaultCount })"
+            />
+            <el-alert
+              v-if="hasUnresolvedParameters || hasUnusedParameters"
+              class="parameter-sync-alert"
+              type="warning"
+              :title="parameterSyncMessage"
+              :closable="false"
+              show-icon
+            />
+            <div class="parameter-toolbar">
+              <el-button plain :disabled="!valueParametersSupported || !queryContent.trim()" @click="extractQueryParameters">
+                <el-icon><MagicStick /></el-icon>
+                {{ t('develop.query.extractQueryParameters') }}
+              </el-button>
+              <el-button plain :disabled="!valueParametersSupported || !selectedText" @click="parameterizeSelectedText">
+                <el-icon><Edit /></el-icon>
+                {{ t('develop.query.parameterizeSelection') }}
+              </el-button>
+              <el-button type="primary" plain :disabled="!queryParametersSupported" @click="addQueryParameter">
+                <el-icon><Plus /></el-icon>
+                {{ t('develop.query.addQueryParameter') }}
+              </el-button>
             </div>
-          </div>
-          <el-empty v-if="queryParameters.length === 0" :description="t('develop.query.noQueryParameters')" :image-size="56" />
+            <div class="parameter-list">
+              <div v-for="(parameter, index) in queryParameters" :key="parameter.id" class="parameter-item">
+                <div class="parameter-item-heading">
+				  <div class="parameter-heading-copy">
+					<strong>{{ parameter.name || t('develop.query.unnamedParameter') }}</strong>
+					<el-tag size="small" effect="plain">{{ t(`develop.query.parameterTypes.${parameter.type}`) }}</el-tag>
+                  </div>
+                  <div class="parameter-item-actions">
+					<el-button link type="primary" :disabled="!parameter.name" @click="insertQueryParameterReference(parameter)">
+					  {{ t('develop.query.insertReference') }}
+					</el-button>
+                    <el-tooltip :content="t('develop.query.removeQueryParameter')">
+                      <el-button
+                        circle
+                        size="small"
+                        type="danger"
+                        plain
+                        :aria-label="t('develop.query.removeQueryParameter')"
+                        @click="removeQueryParameter(index)"
+                      >
+                        <el-icon><Delete /></el-icon>
+                      </el-button>
+                    </el-tooltip>
+                  </div>
+                </div>
+                <div class="parameter-grid">
+				  <el-form-item class="parameter-reference-field" :label="t('develop.query.parameterName')" :error="queryParameterNameError(parameter, index)">
+					<el-input v-model="parameter.name" maxlength="64" />
+					<div class="parameter-field-help">{{ t('develop.query.parameterNameHint') }}</div>
+                  </el-form-item>
+                  <el-form-item :label="t('develop.query.parameterType')">
+                    <el-select v-model="parameter.type" @change="resetQueryParameterDefault(parameter)">
+                      <el-option
+                        v-for="type in queryParameterTypes"
+                        :key="type"
+                        :label="t(`develop.query.parameterTypes.${type}`)"
+                        :value="type"
+                      />
+                    </el-select>
+                  </el-form-item>
+                  <el-form-item v-if="parameter.type !== 'relation'" :label="t('develop.query.parameterDefault')">
+					<div class="scalar-default-value">
+					  <el-checkbox
+						:model-value="hasQueryParameterDefault(parameter)"
+						@change="toggleQueryParameterDefault(parameter, $event)"
+					  >{{ t('develop.query.useDefaultValue') }}</el-checkbox>
+					  <el-switch v-if="parameter.type === 'boolean' && hasQueryParameterDefault(parameter)" v-model="parameter.default" />
+					  <el-input-number
+						v-else-if="(parameter.type === 'integer' || parameter.type === 'number') && hasQueryParameterDefault(parameter)"
+						v-model="parameter.default"
+						:precision="parameter.type === 'integer' ? 0 : undefined"
+						:step="parameter.type === 'integer' ? 1 : 0.1"
+						controls-position="right"
+					  />
+					  <el-input v-else-if="hasQueryParameterDefault(parameter)" v-model="parameter.default" />
+					  <span v-else class="parameter-default-empty">{{ t('develop.query.fillAtExecution') }}</span>
+					</div>
+                  </el-form-item>
+				  <el-form-item v-else class="parameter-default-resource" :label="t('develop.query.parameterDefault')">
+					<div class="relation-default-value">
+					  <div class="relation-default-summary">
+						<strong>{{ relationDefaultName(parameter) }}</strong>
+						<span>{{ relationDefaultPath(parameter) }}</span>
+					  </div>
+					  <el-button plain @click="openRelationDefaultPicker(parameter)">
+						{{ parameter.default?.locator ? t('develop.query.changeDefaultTable') : t('develop.query.selectDefaultTable') }}
+					  </el-button>
+					  <el-button v-if="parameter.default?.locator" link type="danger" @click="clearRelationDefault(parameter)">
+						{{ t('develop.query.clearDefaultTable') }}
+					  </el-button>
+					</div>
+				  </el-form-item>
+                  <el-form-item class="parameter-description" :label="t('develop.query.parameterDescription')">
+                    <el-input v-model="parameter.description" type="textarea" :rows="2" maxlength="300" />
+                  </el-form-item>
+                </div>
+              </div>
+              <el-empty v-if="queryParameters.length === 0" :description="t('develop.query.noQueryParameters')" :image-size="48" />
+            </div>
+          </section>
         </div>
       </component>
     </main>
@@ -423,6 +446,32 @@
     </el-drawer>
 
     <el-dialog
+	  v-model="relationDefaultPickerVisible"
+	  class="addp-dialog"
+	  :title="t('develop.query.selectDefaultTableTitle')"
+	  width="min(760px, calc(100vw - 24px))"
+	  :close-on-click-modal="false"
+	>
+	  <ResourceTreePicker
+		v-if="activeRelationDefaultParameter && selectedEngineId"
+		v-model="relationDefaultSelection"
+		:engine-id="selectedEngineId"
+		:initial-locator="activeRelationDefaultParameter.default?.locator || ''"
+		:show-engine-selector="false"
+		:show-selection-summary="true"
+		mode="item"
+		:selectable-filter="isRelationDefaultSelectionAllowed"
+		tree-height="420px"
+	  />
+	  <template #footer>
+		<el-button @click="relationDefaultPickerVisible = false">{{ t('develop.query.cancel') }}</el-button>
+		<el-button type="primary" :disabled="!relationDefaultSelection?.identity?.locator" @click="confirmRelationDefault">
+		  {{ t('develop.query.confirm') }}
+		</el-button>
+	  </template>
+	</el-dialog>
+
+	<el-dialog
       v-model="executionParameterDialogVisible"
       class="addp-dialog"
       :title="t('develop.query.executionParameters')"
@@ -692,7 +741,6 @@ import {
   Menu,
   Operation,
   Plus,
-  Position,
   VideoPlay
 } from '@element-plus/icons-vue'
 import { format } from 'sql-formatter'
@@ -701,7 +749,6 @@ import {
   ExecutionParameterForm,
   StatusAnnouncer,
   getResourceFields,
-  getResourceItemByCatalogPath,
   getResourceTreeNode,
   getResourceTreeAncestors,
   formatLocatorDisplayPath,
@@ -739,17 +786,11 @@ import {
   queryResultFromExecution,
   extractQueryParameterReferences,
   parameterizeSelection,
-  diagnoseQuery,
   isQueryInputResource,
   mqlCollectionReferences,
-  matchMQLCollectionReferences,
-  parseSQLSources
+  matchMQLCollectionReferences
 } from '@/utils/queryWorkbench.mjs'
 import { resolveQueryGenerationResult } from '@/utils/queryGenerationResult.mjs'
-import {
-  normalizeRelationInputs,
-  relationInputsValid as validateRelationInputs
-} from '@/utils/relationInputContract.mjs'
 import {
   confirmedResources,
   defaultResourceCandidatesByRole,
@@ -797,12 +838,14 @@ const targetLocator = ref('')
 const initialCatalogLocator = ref('')
 const catalogCompletions = ref([])
 const fieldCompletions = ref([])
-const fieldSourceContexts = ref([])
 const queryAnalysis = ref(null)
+const diagnosticAnalysis = ref(null)
 const catalogDrawerVisible = ref(false)
-const parameterDrawerVisible = ref(false)
+const queryParameterPanelVisible = ref(false)
 const queryParameters = ref([])
-const relationInputs = ref([])
+const relationDefaultPickerVisible = ref(false)
+const activeRelationDefaultParameter = ref(null)
+const relationDefaultSelection = ref(null)
 const executionParameterDialogVisible = ref(false)
 const executionParameterOverrides = ref({})
 const executionParameterFormRef = ref(null)
@@ -825,8 +868,8 @@ const sampleRequests = createLatestRequestCoordinator()
 const fieldCompletionCache = new Map()
 let executionRequestSequence = 0
 let fieldRequestSequence = 0
-let fieldSourcesRequestSequence = 0
-let fieldSourcesDebounce = null
+let queryDiagnosticsRequestSequence = 0
+let queryDiagnosticsDebounce = null
 let catalogRequestSequence = 0
 let catalogEngineRequestSequence = 0
 let mediaQuery = null
@@ -843,6 +886,18 @@ const {
   startResize: startEditorResize,
   handleResizeKeydown: handleEditorResizeKeydown
 } = useResizable(390, 220, 720, 'vertical')
+const storedQueryParameterPanelWidth = typeof window === 'undefined'
+  ? 440
+  : Number(window.localStorage.getItem('develop.queryParameterPanelWidth')) || 440
+const {
+  size: queryParameterPanelWidth,
+  minSize: queryParameterPanelMinWidth,
+  maxSize: queryParameterPanelMaxWidth,
+  startResize: startQueryParameterPanelResize,
+  handleResizeKeydown: handleQueryParameterPanelResizeKeydown,
+  setSize: setQueryParameterPanelWidth
+} = useResizable(storedQueryParameterPanelWidth, 360, 720, 'horizontal', { reverse: true })
+const resetQueryParameterPanelWidth = () => setQueryParameterPanelWidth(440)
 
 const queryTargets = computed(() => engines.value.map(engine => {
   const available = isEngineSelectable(engine)
@@ -930,65 +985,99 @@ const catalogEmptyDescription = computed(() => {
   if (federatedQuery.value) return t('develop.query.noFederatedSourceEngines')
   return t('develop.query.selectDataSourceFirst')
 })
-const queryParametersSupported = computed(() => Boolean(
+const valueParametersSupported = computed(() => Boolean(
   selectedCapability.value.parameters?.supported &&
   selectedCapability.value.parameters.languages.includes(currentQueryLanguage.value)
 ))
-const queryParameterTypes = computed(() => selectedCapability.value.parameters?.types || [])
-const queryExecutionContract = computed(() => buildQueryExecutionContract(queryParameters.value))
+const relationParametersSupported = computed(() => Boolean(
+  currentQueryLanguage.value === 'sql' &&
+  String(selectedTarget.value?.engine?.engine_type || '').toLowerCase().includes('postgres')
+))
+const queryParametersSupported = computed(() => valueParametersSupported.value || relationParametersSupported.value)
+const valueQueryParameterTypes = computed(() => selectedCapability.value.parameters?.types || [])
+const queryParameterTypes = computed(() => relationParametersSupported.value
+  ? ['relation', ...valueQueryParameterTypes.value]
+  : valueQueryParameterTypes.value)
+const valueQueryParameters = computed(() => queryParameters.value.filter(parameter => parameter.type !== 'relation'))
+const relationQueryParameters = computed(() => queryParameters.value.filter(parameter => parameter.type === 'relation'))
+const queryExecutionContract = computed(() => buildQueryExecutionContract(queryParameters.value, { engineId: selectedEngineId.value }))
 const referencedParameterNames = computed(() => extractQueryParameterReferences(currentQueryLanguage.value, queryContent.value))
-const definedParameterNames = computed(() => queryParameters.value.map(parameter => String(parameter?.name || '').trim()).filter(Boolean))
+const definedParameterNames = computed(() => valueQueryParameters.value.map(parameter => String(parameter?.name || '').trim()).filter(Boolean))
+const allParameterNames = computed(() => queryParameters.value.map(parameter => String(parameter?.name || '').trim()).filter(Boolean))
 const hasUnresolvedParameters = computed(() => referencedParameterNames.value.some(name => !definedParameterNames.value.includes(name)))
 const hasUnusedParameters = computed(() => definedParameterNames.value.some(name => !referencedParameterNames.value.includes(name)))
-const hasRelationInputs = computed(() => relationInputs.value.length > 0)
-const relationInputsValid = computed(() => validateRelationInputs(relationInputs.value))
-const relationTaskValid = computed(() => !hasRelationInputs.value || (
-  relationInputsValid.value &&
+const hasRelationParameters = computed(() => relationQueryParameters.value.length > 0)
+const hasQueryParameterDefault = parameter => (
+  parameter?.type === 'relation'
+    ? Boolean(String(parameter?.default?.locator || '').trim())
+    : Object.prototype.hasOwnProperty.call(parameter || {}, 'default') && parameter.default !== null && parameter.default !== undefined
+)
+const missingParameterDefaultCount = computed(() => queryParameters.value.filter(parameter => !hasQueryParameterDefault(parameter)).length)
+const hasMissingParameterDefaults = computed(() => missingParameterDefaultCount.value > 0)
+const relationTaskValid = computed(() => !hasRelationParameters.value || (
+	  relationQueryParameters.value.every(parameter => !queryParameterNameError(parameter, queryParameters.value.indexOf(parameter))) &&
   currentQueryLanguage.value === 'sql' &&
   String(selectedTarget.value?.engine?.engine_type || '').toLowerCase().includes('postgres')
 ))
 const relationTaskError = computed(() => {
-  if (!relationInputsValid.value) return t('develop.query.relationInputsInvalid')
+	  if (relationQueryParameters.value.some(parameter => queryParameterNameError(parameter, queryParameters.value.indexOf(parameter)))) return t('develop.query.relationParameterNameInvalid')
   if (currentQueryLanguage.value !== 'sql') return t('develop.query.relationSqlRequired')
   return t('develop.query.relationPostgresRequired')
 })
-const normalizeRelationInputSelection = () => {
-  relationInputs.value = normalizeRelationInputs(relationInputs.value)
-}
 const parameterSyncMessage = computed(() => {
   if (hasUnresolvedParameters.value && hasUnusedParameters.value) return t('develop.query.parameterSyncBoth')
   if (hasUnresolvedParameters.value) return t('develop.query.parameterSyncMissing')
   return t('develop.query.parameterSyncUnused')
 })
-const queryDiagnostics = computed(() => {
-  if (!queryContent.value.trim()) return []
-  return diagnoseQuery({
-    language: currentQueryLanguage.value,
-    engineType: selectedTarget.value?.engine?.engine_type,
-    query: queryContent.value,
-    fields: fieldCompletions.value,
-    fieldSources: currentQueryLanguage.value === 'sql' ? fieldSourceContexts.value : null,
-    targetLocator: catalogSelection.value?.identity?.locator || targetLocator.value,
-    referencedParameters: referencedParameterNames.value,
-    definedParameters: definedParameterNames.value
-  })
-})
+const queryDiagnostics = computed(() => diagnosticAnalysis.value?.diagnostics || [])
 const hasBlockingDiagnostics = computed(() => queryDiagnostics.value.some(item => item.severity === 'error'))
 const queryDiagnosticMessage = diagnostic => {
   const key = {
-    query_empty: 'develop.query.diagnosticQueryEmpty',
-    target_missing: 'develop.query.diagnosticTargetMissing',
-    parameter_undefined: 'develop.query.diagnosticParameterUndefined',
-    field_unknown: 'develop.query.diagnosticFieldUnknown',
-    field_case_mismatch: 'develop.query.diagnosticFieldCaseMismatch',
-    field_requires_quote: 'develop.query.diagnosticFieldRequiresQuote'
+    query_invalid: 'develop.query.diagnosticQueryInvalid',
+    parameter_missing: 'develop.query.diagnosticParameterUndefined',
+    field_not_found: 'develop.query.diagnosticFieldUnknown'
   }[diagnostic.code]
-  return key ? t(key, diagnostic) : diagnostic.code
+  const parameters = diagnostic.parameters || {}
+  return key ? t(key, parameters) : parameters.detail || diagnostic.code
+}
+const refreshQueryDiagnostics = async () => {
+  const requestSequence = ++queryDiagnosticsRequestSequence
+  const query = queryContent.value.trim()
+  if (!query || !selectedEngineId.value) {
+    diagnosticAnalysis.value = null
+    return
+  }
+  try {
+    const analysis = await preflightQuery({
+      query_type: currentQueryLanguage.value,
+      query,
+      engine_id: selectedEngineId.value,
+      target_locator: hasRelationParameters.value ? undefined : (catalogSelection.value?.identity?.locator || targetLocator.value || undefined),
+      parameters: queryExecutionContract.value.input_defaults,
+      query_parameters: queryParameters.value.map(queryParameterPayload)
+    })
+    if (requestSequence === queryDiagnosticsRequestSequence) diagnosticAnalysis.value = analysis
+  } catch (error) {
+    if (requestSequence !== queryDiagnosticsRequestSequence) return
+    const response = error.response?.data
+    if (error.response?.status === 400) {
+      diagnosticAnalysis.value = {
+        schema_coverage: 'unknown',
+        diagnostics: [{
+          code: 'query_invalid', severity: 'error', phase: 'syntax',
+          parameters: { detail: response?.details || response?.error || error.message }
+        }]
+      }
+      return
+    }
+    diagnosticAnalysis.value = null
+  }
+}
+const scheduleQueryDiagnostics = () => {
+  if (queryDiagnosticsDebounce) window.clearTimeout(queryDiagnosticsDebounce)
+  queryDiagnosticsDebounce = window.setTimeout(refreshQueryDiagnostics, 450)
 }
 const triggerCompletion = () => editorRef.value?.triggerSuggest()
-const applyQueryDiagnosticFix = diagnostic => {
-  editorRef.value?.replaceOffsetRange(diagnostic.start, diagnostic.end, diagnostic.replacement)
-}
 const monacoLanguage = computed(() => monacoLanguageForQuery(currentQueryLanguage.value))
 const formatterLanguage = computed(() => formatterLanguageForQuery(currentQueryLanguage.value))
 const hasGraphData = computed(() => {
@@ -999,9 +1088,8 @@ const currentSnapshot = computed(() => JSON.stringify({
   engine_id: selectedEngineId.value,
   language: currentQueryLanguage.value,
   query: queryContent.value,
-  target_locator: catalogSelection.value?.identity?.locator || targetLocator.value || '',
+  target_locator: hasRelationParameters.value ? '' : (catalogSelection.value?.identity?.locator || targetLocator.value || ''),
   query_parameters: queryParameters.value.map(queryParameterPayload),
-  relation_inputs: relationInputs.value
 }))
 const isDirty = computed(() => queryTaskRouteReady.value && savedSnapshot.value !== currentSnapshot.value)
 
@@ -1170,15 +1258,14 @@ async function applyQueryTargetSwitch(targetValue, { saved = false } = {}) {
   selectedQueryTarget.value = targetValue
   catalogSelection.value = null
   fieldRequestSequence += 1
-  fieldSourcesRequestSequence += 1
   fieldCompletions.value = []
-  fieldSourceContexts.value = []
+  diagnosticAnalysis.value = null
   targetLocator.value = ''
   initialCatalogLocator.value = ''
   queryContent.value = ''
   queryParameters.value = []
   executionParameterOverrides.value = {}
-  parameterDrawerVisible.value = false
+  queryParameterPanelVisible.value = false
   queryAiOpen.value = false
   queryClarificationVisible.value = false
   queryClarifications.value = []
@@ -1213,8 +1300,11 @@ async function applyQueryTargetSwitch(targetValue, { saved = false } = {}) {
 const queryParameterPayload = parameter => ({
   name: String(parameter?.name || '').trim(),
   type: parameter?.type,
-  default: parameter?.default,
-  ...(String(parameter?.title || '').trim() ? { title: String(parameter.title).trim() } : {}),
+  ...(hasQueryParameterDefault(parameter)
+    ? (parameter?.type === 'relation'
+        ? (String(parameter?.default?.locator || '').trim() ? { default: { locator: String(parameter.default.locator).trim() } } : {})
+        : { default: parameter.default })
+    : {}),
   ...(String(parameter?.description || '').trim() ? { description: String(parameter.description).trim() } : {})
 })
 
@@ -1222,14 +1312,16 @@ const queryParameterEditorItem = (parameter, id) => ({
   id,
   name: parameter?.name || '',
   type: parameter?.type || 'string',
-  default: parameter?.default,
-  title: parameter?.title || '',
+  ...(Object.prototype.hasOwnProperty.call(parameter || {}, 'default') && parameter.default !== null && parameter.default !== undefined
+    ? { default: parameter.default }
+    : {}),
   description: parameter?.description || ''
 })
 
 const queryParameterNameError = (parameter, index) => {
   const name = String(parameter?.name || '').trim()
   if (!name) return t('develop.query.parameterNameRequired')
+	if (parameter?.type === 'relation' && !/^[a-z][a-z0-9_]{0,62}$/.test(name)) return t('develop.query.relationParameterNameInvalid')
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) return t('develop.query.parameterNameInvalid')
   if (queryParameters.value.some((item, itemIndex) => itemIndex !== index && String(item.name || '').trim() === name)) {
     return t('develop.query.parameterNameDuplicate')
@@ -1237,38 +1329,30 @@ const queryParameterNameError = (parameter, index) => {
   return ''
 }
 
-const queryParameterDefaultError = parameter => {
-  if (parameter?.type === 'string' && !String(parameter?.default ?? '').trim()) {
-    return t('develop.query.parameterDefaultRequired')
-  }
-  return ''
-}
-
 const hasValidQueryParameters = () => queryParameters.value.every((parameter, index) => (
-  !queryParameterNameError(parameter, index) && !queryParameterDefaultError(parameter)
+  !queryParameterNameError(parameter, index)
 ))
 
 const defaultValueForQueryParameterType = type => {
+	if (type === 'relation') return undefined
   if (type === 'boolean') return false
   if (type === 'integer' || type === 'number') return 0
   return ''
 }
 
 const addQueryParameter = () => {
-  const type = queryParameterTypes.value[0] || 'string'
+	  const type = valueQueryParameterTypes.value[0] || (relationParametersSupported.value ? 'relation' : 'string')
   queryParameters.value.push({
     id: `${Date.now()}-${queryParameters.value.length}`,
     name: '',
     type,
-    default: defaultValueForQueryParameterType(type),
-    title: '',
     description: ''
   })
 }
 
 const nextQueryParameterName = (base = 'parameter') => {
   const normalizedBase = String(base || 'parameter').replace(/[^A-Za-z0-9_]/g, '_').replace(/^[^A-Za-z_]+/, '') || 'parameter'
-  const used = new Set(definedParameterNames.value)
+  const used = new Set(allParameterNames.value)
   if (!used.has(normalizedBase)) return normalizedBase
   let index = 2
   while (used.has(`${normalizedBase}_${index}`)) index += 1
@@ -1276,7 +1360,7 @@ const nextQueryParameterName = (base = 'parameter') => {
 }
 
 const parameterizeSelectedText = async () => {
-  if (!queryParametersSupported.value || !selectedText.value) return
+	  if (!valueParametersSupported.value || !selectedText.value) return
   const suggested = nextQueryParameterName('value')
   const parsed = parameterizeSelection(currentQueryLanguage.value, selectedText.value, suggested)
   if (!parsed) {
@@ -1297,7 +1381,7 @@ const parameterizeSelectedText = async () => {
       }
     )
     const name = String(requestedName || '').trim()
-    if (!name || definedParameterNames.value.includes(name)) {
+    if (!name || allParameterNames.value.includes(name)) {
       ElMessage.warning(t('develop.query.parameterNameDuplicate'))
       return
     }
@@ -1309,10 +1393,9 @@ const parameterizeSelectedText = async () => {
       name,
       type: parameter.type,
       default: parameter.default,
-      title: '',
       description: ''
     })
-    parameterDrawerVisible.value = true
+    queryParameterPanelVisible.value = true
     ElMessage.success(t('develop.query.parameterizeSelectionSuccess'))
   } catch {
     // 用户取消参数命名时保持编辑器原内容不变。
@@ -1333,14 +1416,12 @@ const extractQueryParameters = () => {
       id: `${Date.now()}-${queryParameters.value.length}`,
       name,
       type,
-      default: defaultValueForQueryParameterType(type),
-      title: '',
       description: ''
     }
     queryParameters.value.push(parameter)
     existing.set(name, parameter)
   })
-  parameterDrawerVisible.value = true
+  queryParameterPanelVisible.value = true
   ElMessage.success(t('develop.query.extractQueryParametersSuccess', { count: references.length }))
 }
 
@@ -1349,22 +1430,89 @@ const removeQueryParameter = index => {
 }
 
 const resetQueryParameterDefault = parameter => {
-  parameter.default = defaultValueForQueryParameterType(parameter.type)
+  delete parameter.default
+}
+
+const toggleQueryParameterDefault = (parameter, enabled) => {
+  if (enabled) parameter.default = defaultValueForQueryParameterType(parameter.type)
+  else delete parameter.default
 }
 
 const insertQueryParameterReference = parameter => {
-  const reference = queryParameterReference(currentQueryLanguage.value, parameter.name)
+  const reference = queryParameterDisplayReference(parameter)
   if (!reference) return
   editorRef.value?.insertText(reference)
-  parameterDrawerVisible.value = false
+  queryParameterPanelVisible.value = false
+}
+
+const queryParameterDisplayReference = parameter => parameter?.type === 'relation'
+  ? String(parameter?.name || '').trim()
+  : queryParameterReference(currentQueryLanguage.value, parameter?.name)
+
+const relationDefaultLocator = parameter => String(parameter?.default?.locator || '').trim()
+
+const relationDefaultName = parameter => {
+  const locator = relationDefaultLocator(parameter)
+  if (!locator) return t('develop.query.noDefaultTable')
+  try {
+    return parseLocator(locator).path?.at(-1) || t('develop.query.configuredTable')
+  } catch {
+    return t('develop.query.configuredTable')
+  }
+}
+
+const relationDefaultPath = parameter => {
+  const locator = relationDefaultLocator(parameter)
+  if (!locator) return t('develop.query.noDefaultTableHint')
+  try {
+    return formatLocatorDisplayPath(locator, {
+      engineType: String(selectedTarget.value?.engine?.engine_type || '').toLowerCase()
+    })
+  } catch {
+    return t('develop.query.configuredTable')
+  }
+}
+
+const openRelationDefaultPicker = parameter => {
+  activeRelationDefaultParameter.value = parameter
+  relationDefaultSelection.value = null
+  relationDefaultPickerVisible.value = true
+}
+
+const clearRelationDefault = parameter => {
+  delete parameter.default
+}
+
+const isRelationDefaultSelectionAllowed = (node, { locator } = {}) => (
+  Number(locator?.engineId) === Number(selectedEngineId.value) && locator?.type === 'table'
+)
+
+const confirmRelationDefault = () => {
+  const locator = String(relationDefaultSelection.value?.identity?.locator || '').trim()
+  if (!locator || !activeRelationDefaultParameter.value) return
+  activeRelationDefaultParameter.value.default = { locator }
+  relationDefaultPickerVisible.value = false
+  relationDefaultSelection.value = null
+  activeRelationDefaultParameter.value = null
+}
+
+const effectiveRelationLocator = (parameter, overrides) => (
+  String(overrides?.[parameter.name]?.locator || parameter?.default?.locator || '').trim()
+)
+
+const executionInputsComplete = overrides => queryParameters.value.every(parameter => {
+  if (hasQueryParameterDefault(parameter)) return true
+  if (!Object.prototype.hasOwnProperty.call(overrides || {}, parameter.name)) return false
+  return parameter.type !== 'relation' || Boolean(effectiveRelationLocator(parameter, overrides))
+})
+
+const executionValueForParameter = parameter => {
+  if (parameter.type === 'relation') return {}
+  return defaultValueForQueryParameterType(parameter.type)
 }
 
 const executeQuery = async () => {
   if (loadingSampleQuery.value || executing.value) return
-  if (hasRelationInputs.value) {
-    ElMessage.warning(t('develop.query.relationExecutionHint'))
-    return
-  }
   if (!selectedTarget.value) {
     ElMessage.warning(t('develop.query.selectDataSourceFirst'))
     return
@@ -1377,12 +1525,16 @@ const executeQuery = async () => {
   }
 
   if (!hasValidQueryParameters()) {
-    parameterDrawerVisible.value = true
+    queryParameterPanelVisible.value = true
     ElMessage.warning(t('develop.query.queryParametersInvalid'))
     return
   }
   if (queryParameters.value.length > 0) {
-    executionParameterOverrides.value = {}
+    executionParameterOverrides.value = Object.fromEntries(
+      queryParameters.value
+        .filter(parameter => !hasQueryParameterDefault(parameter))
+        .map(parameter => [parameter.name, executionValueForParameter(parameter)])
+    )
     executionParameterDialogVisible.value = true
     window.setTimeout(() => executionParameterFormRef.value?.focus(), 0)
     return
@@ -1395,6 +1547,12 @@ const submitQuery = async (parameters = {}) => {
   const selected = editorRef.value?.getSelection()?.trim() || ''
   const query = selected || queryContent.value.trim()
   if (!selectedTarget.value || !query) return
+	if (!executionInputsComplete(parameters)) {
+	  executionParameterDialogVisible.value = true
+	  ElMessage.warning(t('develop.query.completeRequiredParameters'))
+	  window.setTimeout(() => executionParameterFormRef.value?.focus(), 0)
+	  return
+	}
 
   const requestSequence = ++executionRequestSequence
   executing.value = true
@@ -1405,10 +1563,18 @@ const submitQuery = async (parameters = {}) => {
       query_type: currentQueryLanguage.value,
       query,
       engine_id: selectedEngineId.value,
-      target_locator: catalogSelection.value?.identity?.locator || targetLocator.value || undefined
+      target_locator: hasRelationParameters.value ? undefined : (catalogSelection.value?.identity?.locator || targetLocator.value || undefined),
+      parameters,
+      query_parameters: queryParameters.value.map(queryParameterPayload)
     })
     if (requestSequence !== executionRequestSequence) return
     queryAnalysis.value = preflight
+    diagnosticAnalysis.value = preflight
+    if ((preflight.diagnostics || []).some(diagnostic => diagnostic.severity === 'error')) {
+      ElMessage.error(t('develop.query.fixQueryDiagnostics'))
+      announcement.value = t('develop.query.fixQueryDiagnostics')
+      return
+    }
     if (!preflight.allowed) {
       ElMessage.error(t('develop.query.queryPermissionDenied'))
       announcement.value = t('develop.query.queryPermissionDenied')
@@ -1442,7 +1608,7 @@ const submitQuery = async (parameters = {}) => {
       content: {
         query,
         query_type: currentQueryLanguage.value,
-        target_locator: catalogSelection.value?.identity?.locator || targetLocator.value || undefined,
+        target_locator: hasRelationParameters.value ? undefined : (catalogSelection.value?.identity?.locator || targetLocator.value || undefined),
         query_parameters: queryParameters.value.map(queryParameterPayload)
       },
       execution_config: { engine_id: selectedEngineId.value },
@@ -1571,11 +1737,6 @@ const loadFieldCompletions = async selection => {
   }
 }
 
-const fieldNamesFromMetadata = fields => fields
-  .map(field => String(field?.name || '').trim())
-  .filter(Boolean)
-
-const fieldSourceFieldCache = new Map()
 const catalogSourceEngineForId = engineID => catalogSourceEngines.value.find(engine => Number(engine.id) === Number(engineID)) || null
 const federatedIdentifier = value => {
   let result = ''
@@ -1590,86 +1751,6 @@ const federatedIdentifier = value => {
   if (!result) return 'engine'
   return /^[0-9]/.test(result) ? `_${result}` : result
 }
-
-const sourceEngineForSQLSource = source => {
-  if (!federatedQuery.value) return selectedEngineId.value
-  const sourceName = source?.path?.[0] || ''
-  const sourceEngine = catalogSourceEngines.value.find(engine => (
-    String(engine.name || '') === sourceName || federatedIdentifier(engine.name) === sourceName
-  ))
-  return sourceEngine ? Number(sourceEngine.id) : null
-}
-
-const loadFieldsForItem = async itemId => {
-  const key = String(itemId || '')
-  if (!key) return []
-  if (fieldSourceFieldCache.has(key)) return fieldSourceFieldCache.get(key)
-  const fields = await getResourceFields('/api/v1/meta', { item_id: itemId })
-  const names = fieldNamesFromMetadata(fields)
-  fieldSourceFieldCache.set(key, names)
-  return names
-}
-
-const selectedItemIdForSource = source => {
-  const selection = catalogSelection.value
-  const locator = selection?.identity?.locator || targetLocator.value
-  if (!locator) return null
-  try {
-    const parsed = parseLocator(locator)
-    const sourceEngineID = sourceEngineForSQLSource(source)
-    const sourcePath = federatedQuery.value ? source.path.slice(1) : source.path
-    const selectedName = parsed.path.join('.').toLocaleLowerCase()
-    if (Number(parsed.engineId) === Number(sourceEngineID) &&
-      selectedName === sourcePath.join('.').toLocaleLowerCase()) {
-      return selection?.identity?.item_id || parsed.itemId || null
-    }
-  } catch {
-    return null
-  }
-  return null
-}
-
-const loadSQLFieldSources = async () => {
-  const requestSequence = ++fieldSourcesRequestSequence
-  if (currentQueryLanguage.value !== 'sql' || !selectedEngineId.value || !queryContent.value.trim()) {
-    fieldSourceContexts.value = []
-    return
-  }
-  const parsed = parseSQLSources(queryContent.value)
-  if (!parsed.sources.length) {
-    fieldSourceContexts.value = []
-    return
-  }
-  const contexts = await Promise.all(parsed.sources.map(async source => {
-    if (source.kind === 'cte') {
-      return { name: source.name, alias: source.alias, fields: source.fields, known: source.fields.length > 0 }
-    }
-    try {
-      const sourceEngineID = sourceEngineForSQLSource(source)
-      if (!sourceEngineID) return { name: source.name, alias: source.alias, fields: [], known: false }
-      let itemId = selectedItemIdForSource(source)
-      if (!itemId) {
-        const item = await getResourceItemByCatalogPath('/api/v1/meta', {
-          engine_id: sourceEngineID,
-          catalog_path: (federatedQuery.value ? source.path.slice(1) : source.path).join('/')
-        })
-        itemId = item?.id || item?.item_id
-      }
-      const fields = await loadFieldsForItem(itemId)
-      return { name: source.name, alias: source.alias, fields, known: fields.length > 0 }
-    } catch {
-      return { name: source.name, alias: source.alias, fields: [], known: false }
-    }
-  }))
-  if (requestSequence === fieldSourcesRequestSequence) fieldSourceContexts.value = contexts
-}
-
-const sqlSourceSignature = computed(() => {
-  if (currentQueryLanguage.value !== 'sql') return ''
-  return parseSQLSources(queryContent.value).sources
-    .map(source => `${source.kind}:${source.name}:${source.alias}`)
-    .join('|')
-})
 
 const rememberCatalogSelection = async (selection) => {
   const path = selection?.display?.path
@@ -2069,7 +2150,7 @@ const handleSaveTask = async (taskData) => {
     return
   }
   if (!hasValidQueryParameters()) {
-    parameterDrawerVisible.value = true
+    queryParameterPanelVisible.value = true
     ElMessage.warning(t('develop.query.queryParametersInvalid'))
     return
   }
@@ -2077,9 +2158,8 @@ const handleSaveTask = async (taskData) => {
     const task = await saveQueryTask({
       ...taskData,
       query_type: currentQueryLanguage.value,
-      target_locator: hasRelationInputs.value ? '' : (catalogSelection.value?.identity?.locator || targetLocator.value || ''),
-      query_parameters: queryParameters.value.map(queryParameterPayload),
-      relation_inputs: normalizeRelationInputs(relationInputs.value)
+      target_locator: hasRelationParameters.value ? '' : (catalogSelection.value?.identity?.locator || targetLocator.value || ''),
+      query_parameters: queryParameters.value.map(queryParameterPayload)
     })
     currentTaskId.value = task.id
     currentTaskName.value = task.name
@@ -2114,7 +2194,7 @@ const handlePersistQueryTask = async () => {
     return
   }
   if (!hasValidQueryParameters()) {
-    parameterDrawerVisible.value = true
+    queryParameterPanelVisible.value = true
     ElMessage.warning(t('develop.query.queryParametersInvalid'))
     return
   }
@@ -2132,7 +2212,7 @@ const persistCurrentQueryTask = async () => {
     return false
   }
   if (!hasValidQueryParameters()) {
-    parameterDrawerVisible.value = true
+    queryParameterPanelVisible.value = true
     ElMessage.warning(t('develop.query.queryParametersInvalid'))
     return false
   }
@@ -2144,9 +2224,8 @@ const persistCurrentQueryTask = async () => {
       engine_id: selectedEngineId.value,
       query: queryContent.value,
       query_type: currentQueryLanguage.value,
-      target_locator: hasRelationInputs.value ? '' : (catalogSelection.value?.identity?.locator || targetLocator.value || ''),
+      target_locator: hasRelationParameters.value ? '' : (catalogSelection.value?.identity?.locator || targetLocator.value || ''),
       query_parameters: queryParameters.value.map(queryParameterPayload),
-      relation_inputs: normalizeRelationInputs(relationInputs.value),
       description: task.description,
       tags: task.tags || [],
       timeout: task.timeout
@@ -2171,7 +2250,6 @@ const loadTask = async (taskId) => {
   queryParameters.value = (Array.isArray(task.content?.query_parameters) ? task.content.query_parameters : []).map((parameter, index) => (
     queryParameterEditorItem(parameter, `saved-${index}-${parameter.name}`)
   ))
-  relationInputs.value = normalizeRelationInputs(task.content?.relation_inputs)
   executionParameterOverrides.value = {}
   currentQueryLanguage.value = String(task.content?.query_type || '').toLowerCase()
   const engineID = task.execution_config?.engine_id
@@ -2180,9 +2258,8 @@ const loadTask = async (taskId) => {
   initialCatalogLocator.value = targetLocator.value
   catalogSelection.value = null
   fieldRequestSequence += 1
-  fieldSourcesRequestSequence += 1
   fieldCompletions.value = []
-  fieldSourceContexts.value = []
+  diagnosticAnalysis.value = null
   clearResult()
   if (!queryContent.value) ElMessage.warning(t('develop.query.taskNoSql'))
 }
@@ -2193,15 +2270,13 @@ const resetQueryEditorForCreate = async () => {
   currentTask.value = null
   queryContent.value = ''
   queryParameters.value = []
-  relationInputs.value = []
   executionParameterOverrides.value = {}
   targetLocator.value = ''
   initialCatalogLocator.value = ''
   catalogSelection.value = null
   fieldRequestSequence += 1
-  fieldSourcesRequestSequence += 1
   fieldCompletions.value = []
-  fieldSourceContexts.value = []
+  diagnosticAnalysis.value = null
   clearResult()
   queryClarificationVisible.value = false
   queryClarifications.value = []
@@ -2286,6 +2361,14 @@ watch([queryContent, currentQueryLanguage, selectedEngineId, targetLocator], () 
   queryAnalysis.value = null
 })
 
+watch([
+  queryContent,
+  currentQueryLanguage,
+  selectedEngineId,
+  targetLocator,
+  () => JSON.stringify(queryParameters.value)
+], scheduleQueryDiagnostics)
+
 watch(currentQueryLanguage, () => {
   fieldCompletions.value = fieldCompletions.value.map(item => ({
     ...item,
@@ -2293,23 +2376,22 @@ watch(currentQueryLanguage, () => {
   }))
 })
 
-watch([selectedEngineId, sqlSourceSignature, targetLocator], () => {
-  if (fieldSourcesDebounce) window.clearTimeout(fieldSourcesDebounce)
-  fieldSourcesDebounce = window.setTimeout(() => {
-    loadSQLFieldSources()
-  }, 250)
-})
-
 watch([selectedEngineId, federatedQuery], () => {
   refreshCatalogEngines()
+})
+
+watch(queryParameterPanelWidth, width => {
+  if (typeof window !== 'undefined') {
+    window.localStorage.setItem('develop.queryParameterPanelWidth', String(width))
+  }
 })
 
 onBeforeUnmount(() => {
   executionRequestSequence += 1
   sampleRequests.invalidate()
   catalogEngineRequestSequence += 1
-  fieldSourcesRequestSequence += 1
-  if (fieldSourcesDebounce) window.clearTimeout(fieldSourcesDebounce)
+  queryDiagnosticsRequestSequence += 1
+  if (queryDiagnosticsDebounce) window.clearTimeout(queryDiagnosticsDebounce)
   window.removeEventListener('beforeunload', handleBeforeUnload)
   if (mediaQuery && compactMediaListener) {
     mediaQuery.removeEventListener('change', compactMediaListener)
@@ -2347,8 +2429,17 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
-.toolbar-primary h2 {
-  max-width: 240px;
+.toolbar-primary {
+  flex: 1 1 auto;
+}
+
+.toolbar-actions {
+  flex: 0 0 auto;
+}
+
+.query-task-name {
+  flex: 1 1 auto;
+  min-width: 120px;
   margin: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2441,10 +2532,10 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 
-.parameter-panel-dock {
-  flex: 0 0 360px;
-  min-width: 320px;
-  max-width: 440px;
+.query-parameter-panel-dock {
+  flex: 0 0 auto;
+  min-width: 360px;
+  max-width: min(720px, 72vw);
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -2453,7 +2544,12 @@ onBeforeUnmount(() => {
   background: var(--addp-bg-primary);
 }
 
-.parameter-panel-heading {
+.query-parameter-resize-handle {
+  position: relative;
+  z-index: 2;
+}
+
+.query-parameter-panel-heading {
   height: 40px;
   flex: 0 0 40px;
   display: flex;
@@ -2466,7 +2562,7 @@ onBeforeUnmount(() => {
   font-weight: 600;
 }
 
-.parameter-panel-heading > span {
+.query-parameter-panel-heading > span {
   display: flex;
   align-items: center;
   gap: 7px;
@@ -2510,24 +2606,40 @@ onBeforeUnmount(() => {
   min-height: 0;
 }
 
-.relation-input-config {
-  flex: 0 0 auto;
+.query-parameter-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px 12px;
+}
+
+.query-parameter-section {
   display: grid;
-  gap: 8px;
-  margin: 8px 12px 0;
+  gap: 12px;
 }
 
-.relation-input-heading {
+.query-parameter-section-heading {
   display: flex;
-  align-items: baseline;
-  gap: 10px;
-  font-weight: 600;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
 }
 
-.relation-input-hint {
+.query-parameter-section-heading > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.query-parameter-section-heading strong {
+  color: var(--addp-text-primary);
+  font-size: 14px;
+}
+
+.query-parameter-section-heading span {
   color: var(--addp-text-secondary);
   font-size: 12px;
-  font-weight: 400;
+  line-height: 1.5;
 }
 
 .dirty-indicator {
@@ -2732,20 +2844,16 @@ onBeforeUnmount(() => {
   justify-content: flex-end;
   flex-wrap: wrap;
   gap: 8px;
-  padding: 12px;
-  margin-bottom: 12px;
 }
 
 .parameter-sync-alert {
-  margin: 12px 12px 0;
+  margin: 0;
 }
 
 .parameter-list {
   display: grid;
   gap: 12px;
   min-height: 0;
-  overflow: auto;
-  padding: 0 12px 16px;
 }
 
 .parameter-item {
@@ -2774,6 +2882,13 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
+.parameter-heading-copy {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .parameter-item-actions {
   flex: 0 0 auto;
   gap: 6px;
@@ -2787,6 +2902,68 @@ onBeforeUnmount(() => {
 
 .parameter-description {
   grid-column: 1 / -1;
+}
+
+.parameter-default-resource {
+  grid-column: 1 / -1;
+}
+
+.parameter-reference-field {
+  grid-column: 1 / -1;
+}
+
+.relation-default-value {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.scalar-default-value {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.scalar-default-value > :last-child {
+  min-width: 0;
+  flex: 1;
+}
+
+.parameter-default-empty {
+  color: var(--addp-text-secondary);
+  font-size: 12px;
+}
+
+.relation-default-summary {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 7px 9px;
+  border: 1px solid var(--addp-border-color);
+  border-radius: 5px;
+  background: var(--addp-bg-primary);
+}
+
+.relation-default-summary strong,
+.relation-default-summary span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.relation-default-summary span,
+.parameter-field-help {
+  color: var(--addp-text-secondary);
+  font-size: 12px;
+}
+
+.parameter-field-help {
+  width: 100%;
+  margin-top: 4px;
+  line-height: 1.4;
 }
 
 .parameter-grid :deep(.el-select),
@@ -2815,7 +2992,7 @@ onBeforeUnmount(() => {
     width: 100%;
   }
 
-  .toolbar-primary h2 {
+  .query-task-name {
     display: none;
   }
 
@@ -2841,7 +3018,7 @@ onBeforeUnmount(() => {
     grid-column: auto;
   }
 
-  .parameter-panel-dock {
+  .query-parameter-panel-dock {
     display: none;
   }
 

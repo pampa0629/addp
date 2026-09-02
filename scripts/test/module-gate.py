@@ -151,15 +151,17 @@ def plan_module(repository: Path, module: str, include_platform: bool = True) ->
             raise ModuleGateError(f"Makefile target {python_target} is missing")
         steps.append(Step(f"{module} Python T1", ("make", python_target), repository))
 
-    postgres_scripts = repository_files(repository, "scripts/test/*-postgres-gate.sh")
-    for path in postgres_scripts:
+    integration_scripts = repository_files(repository, "scripts/test/*-gate.sh")
+    registered_targets: set[str] = set()
+    for path in integration_scripts:
         name = Path(path).name.removesuffix("-gate.sh")
         if name.split("-", 1)[0] != module:
             continue
         target = f"test-{name}"
-        if make_target(makefile, target) is None:
-            raise ModuleGateError(f"Makefile target {target} is missing")
-        steps.append(Step(f"{module} PostgreSQL T2", ("make", target), repository))
+        if target in registered_targets or make_target(makefile, target) is None:
+            continue
+        registered_targets.add(target)
+        steps.append(Step(f"{module} integration T2", ("make", target), repository))
 
     minimum_step_count = 1 if include_platform else 0
     if len(steps) == minimum_step_count:

@@ -498,6 +498,10 @@ const handleSearchResultClick = async (result) => {
     await loadSelectedTrees()
   }
   selectNode(result.node, result.engine || selectedEngine.value)
+  searchRequestSeq += 1
+  searching.value = false
+  searchKeyword.value = ''
+  searchResults.value = []
 }
 
 const selectNode = (node, engine = selectedEngine.value) => {

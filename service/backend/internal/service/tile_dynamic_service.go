@@ -7,8 +7,11 @@ import (
 
 	"github.com/addp/common/client"
 	"github.com/addp/common/dbbridge"
+	"github.com/addp/common/engine/plugin"
+	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/resourcetree"
 	"github.com/addp/common/spatial"
 	"github.com/addp/service/internal/models"
 	"golang.org/x/sync/singleflight"
@@ -17,9 +20,52 @@ import (
 
 // DynamicTileService 动态瓦片生成服务
 type DynamicTileService struct {
-	systemClient *client.SystemClient
-	dbPools      sync.Map // map[engineID]*gorm.DB
-	sf           singleflight.Group
+	systemClient   *client.SystemClient
+	dbPools        sync.Map // map[engineID]*gorm.DB
+	sf             singleflight.Group
+	protectionGate interface {
+		BeginCatalogPath(context.Context, uint, plugin.EnginePlugin, plugin.EngineCatalogPath) (func(), error)
+	}
+}
+
+func (s *DynamicTileService) SetProtectionGate(gate interface {
+	BeginCatalogPath(context.Context, uint, plugin.EnginePlugin, plugin.EngineCatalogPath) (func(), error)
+}) {
+	s.protectionGate = gate
+}
+
+func (s *DynamicTileService) BeginProtectedRead(ctx context.Context, tenantID uint, layer *models.TileServiceLayer) (func(), error) {
+	if s == nil || s.protectionGate == nil || s.systemClient == nil || tenantID == 0 || layer == nil {
+		return nil, fmt.Errorf("Service 动态瓦片保护门禁未配置")
+	}
+	source := commonJSON.InterfaceMap(layer.LayerConfig["source"])
+	if source == nil {
+		return nil, fmt.Errorf("invalid source config")
+	}
+	engineID := uint(commonJSON.InterfaceInt64(source["engine_id"]))
+	schema := commonJSON.InterfaceString(source["schema"])
+	table := commonJSON.InterfaceString(source["table"])
+	if engineID == 0 || schema == "" || table == "" {
+		return nil, fmt.Errorf("dynamic tile source identity is incomplete")
+	}
+	engine, err := s.systemClient.GetEngineForTenant(ctx, tenantID, engineID)
+	if err != nil {
+		return nil, err
+	}
+	enginePlugin, err := plugin.Get(engine.EngineType)
+	if err != nil {
+		return nil, err
+	}
+	modelProvider, ok := enginePlugin.(plugin.EngineCatalogModelProvider)
+	if !ok {
+		return nil, fmt.Errorf("dynamic tile source provider has no catalog model")
+	}
+	locator := &resourcetree.ResourceLocator{EngineID: engineID, Type: resourcetree.TypeTable, Path: []string{schema, table}}
+	path, err := resourcetree.EngineCatalogPathFromLocator(modelProvider.EngineCatalogModel(), locator)
+	if err != nil {
+		return nil, err
+	}
+	return s.protectionGate.BeginCatalogPath(ctx, tenantID, enginePlugin, path)
 }
 
 // NewDynamicTileService 创建动态瓦片服务
@@ -32,22 +78,26 @@ func NewDynamicTileService(systemClient *client.SystemClient) *DynamicTileServic
 // GetDynamicTile 生成动态 MVT 瓦片
 func (s *DynamicTileService) GetDynamicTile(
 	ctx context.Context,
+	tenantID uint,
 	layer *models.TileServiceLayer,
 	z, x, y int,
 ) ([]byte, error) {
 	// 1. 解析图层配置
 	config := layer.LayerConfig
 
-	source, ok := config["source"].(map[string]interface{})
-	if !ok {
+	source := commonJSON.InterfaceMap(config["source"])
+	if source == nil {
 		return nil, fmt.Errorf("invalid source config")
 	}
 
-	engineID := uint(source["engine_id"].(float64))
-	schema := source["schema"].(string)
-	table := source["table"].(string)
-	geomCol := source["geometry_column"].(string)
-	srid := int(source["srid"].(float64))
+	engineID := uint(commonJSON.InterfaceInt64(source["engine_id"]))
+	schema := commonJSON.InterfaceString(source["schema"])
+	table := commonJSON.InterfaceString(source["table"])
+	geomCol := commonJSON.InterfaceString(source["geometry_column"])
+	srid := int(commonJSON.InterfaceInt64(source["srid"]))
+	if engineID == 0 || schema == "" || table == "" || geomCol == "" || srid == 0 {
+		return nil, fmt.Errorf("dynamic tile source config is incomplete")
+	}
 
 	// 2. 解析 MVT 配置
 	extent := 4096
@@ -64,7 +114,7 @@ func (s *DynamicTileService) GetDynamicTile(
 	// 3. Singleflight 防缓存击穿
 	sfKey := fmt.Sprintf("%d:%s:%s:%d:%d:%d", engineID, schema, table, z, x, y)
 	v, err, _ := s.sf.Do(sfKey, func() (interface{}, error) {
-		return s.generateTile(ctx, engineID, schema, table, geomCol, srid, z, x, y, extent, buffer, layer.LayerName)
+		return s.generateTile(ctx, tenantID, engineID, schema, table, geomCol, srid, z, x, y, extent, buffer, layer.LayerName)
 	})
 
 	if err != nil {
@@ -77,13 +127,14 @@ func (s *DynamicTileService) GetDynamicTile(
 // generateTile 内部生成瓦片（复用 common/spatial）
 func (s *DynamicTileService) generateTile(
 	ctx context.Context,
+	tenantID uint,
 	engineID uint,
 	schema, table, geomCol string,
 	srid, z, x, y, extent, buffer int,
 	layerName string,
 ) ([]byte, error) {
 	// 1. 获取数据库连接池
-	db, err := s.getOrCreateDBPool(ctx, engineID)
+	db, err := s.getOrCreateDBPool(ctx, tenantID, engineID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get db pool: %w", err)
 	}
@@ -117,14 +168,14 @@ func (s *DynamicTileService) generateTile(
 }
 
 // getOrCreateDBPool 获取或创建数据库连接池
-func (s *DynamicTileService) getOrCreateDBPool(ctx context.Context, engineID uint) (*gorm.DB, error) {
+func (s *DynamicTileService) getOrCreateDBPool(ctx context.Context, tenantID, engineID uint) (*gorm.DB, error) {
 	// 1. 尝试从缓存获取
 	if db, ok := s.dbPools.Load(engineID); ok {
 		return db.(*gorm.DB), nil
 	}
 
 	// 2. 获取引擎配置
-	engine, err := s.systemClient.GetEngine(engineID)
+	engine, err := s.systemClient.GetEngineForTenant(ctx, tenantID, engineID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get engine config: %w", err)
 	}

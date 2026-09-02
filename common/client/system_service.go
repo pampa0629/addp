@@ -105,9 +105,9 @@ func (c *SystemServiceClient) TenantServiceAccessToken(ctx context.Context, tena
 	return c.tenantTokens.Token(ctx, tenantID)
 }
 
-// ListCatalogTenantIDs returns initialized active tenant identities for a
+// ListRuntimeTenantIDs returns initialized active tenant identities for a
 // platform runtime that must schedule tenant-scoped background work.
-func (c *SystemServiceClient) ListCatalogTenantIDs(ctx context.Context) ([]uint, error) {
+func (c *SystemServiceClient) ListRuntimeTenantIDs(ctx context.Context) ([]uint, error) {
 	const pageSize = 100
 	result := make([]uint, 0, pageSize)
 	for page := 1; ; page++ {

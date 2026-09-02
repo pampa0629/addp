@@ -15,7 +15,7 @@ import (
 	supermapworkflow "github.com/addp/common/engine/plugins/supermap_workflow"
 	engineselection "github.com/addp/common/engine/selection"
 	"github.com/addp/common/events"
-	commonsecurity "github.com/addp/common/security"
+	secretcipher "github.com/addp/common/secretcipher"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
 	"github.com/redis/go-redis/v9"
@@ -1284,7 +1284,7 @@ func (s *EngineService) encryptConnectionInfoForStorage(engineType string, connI
 	for field := range s.sensitiveFieldsForEngine(engineType) {
 		if val, exists := connInfo[field]; exists {
 			if strVal, ok := val.(string); ok && strVal != "" {
-				encryptedVal, err := commonsecurity.Encrypt(strVal, s.encryptionKey)
+				encryptedVal, err := secretcipher.Encrypt(strVal, s.encryptionKey)
 				if err != nil {
 					return nil, fmt.Errorf("加密字段 %s 失败: %w", field, err)
 				}
@@ -1306,7 +1306,7 @@ func (s *EngineService) decryptStoredConnectionInfo(engineType string, connInfo 
 	for field := range s.sensitiveFieldsForEngine(engineType) {
 		if val, exists := connInfo[field]; exists {
 			if strVal, ok := val.(string); ok && strVal != "" {
-				decryptedVal, err := commonsecurity.Decrypt(strVal, s.encryptionKey)
+				decryptedVal, err := secretcipher.Decrypt(strVal, s.encryptionKey)
 				if err != nil {
 					return nil, fmt.Errorf("解密字段 %s 失败: %w", field, err)
 				}

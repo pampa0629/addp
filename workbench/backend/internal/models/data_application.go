@@ -85,16 +85,16 @@ type DataApplicationComponentLayout struct {
 }
 
 type DataApplicationComponent struct {
-	ID                     string                     `json:"id" binding:"required"`
-	Title                  string                     `json:"title" binding:"required"`
-	Description            string                     `json:"description"`
-	ServiceRef             ServiceReference           `json:"service_ref" binding:"required"`
-	ContractFingerprint    string                     `json:"contract_fingerprint" binding:"required"`
-	ParameterDefinitions   []ViewParameterDefinition  `json:"parameter_definitions"`
-	QueryTemplate          ViewQueryTemplate          `json:"query_template" binding:"required"`
-	DefaultParameterValues map[string]json.RawMessage `json:"default_parameter_values"`
-	RendererType           string                     `json:"renderer_type" binding:"required" enums:"table,chart,map"`
-	RendererConfig         json.RawMessage            `json:"renderer_config" binding:"required" swaggertype:"object"`
+	ID                     string                         `json:"id" binding:"required"`
+	Title                  string                         `json:"title" binding:"required"`
+	Description            string                         `json:"description"`
+	ServiceRef             ServiceReference               `json:"service_ref" binding:"required"`
+	ContractFingerprint    string                         `json:"contract_fingerprint" binding:"required"`
+	ParameterDefinitions   []ComponentParameterDefinition `json:"parameter_definitions"`
+	QueryTemplate          ComponentQueryTemplate         `json:"query_template" binding:"required"`
+	DefaultParameterValues map[string]json.RawMessage     `json:"default_parameter_values"`
+	RendererType           string                         `json:"renderer_type" binding:"required" enums:"table,chart,map,value"`
+	RendererConfig         json.RawMessage                `json:"renderer_config" binding:"required" swaggertype:"object"`
 }
 
 type DataApplicationParameter struct {
@@ -122,9 +122,9 @@ type DataApplicationSelectionAssignment struct {
 }
 
 type DataApplicationCreateRequest struct {
-	Name          string   `json:"name" binding:"required"`
-	Description   string   `json:"description"`
-	SourceViewIDs []string `json:"source_view_ids" binding:"required"`
+	Name        string                  `json:"name" binding:"required"`
+	Description string                  `json:"description"`
+	Snapshot    DataApplicationSnapshot `json:"snapshot" binding:"required"`
 }
 
 type DataApplicationUpdateRequest struct {

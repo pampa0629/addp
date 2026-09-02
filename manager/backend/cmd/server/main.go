@@ -15,6 +15,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	commonconfiguration "github.com/addp/common/configuration"
+	"github.com/addp/common/dataprotection/projectionstore"
 	"github.com/addp/common/events"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
@@ -153,6 +154,7 @@ func main() {
 		os.Exit(1)
 	}
 	systemServiceClient := commonClient.NewSystemServiceClient(cfg.SystemServiceURL, serviceTokenSource, nil)
+	securityClient := commonClient.NewSecurityClient(cfg.SecurityServiceURL, serviceTokenSource, nil)
 	systemClient := commonClient.NewSystemClient(cfg.SystemServiceURL, serviceTokenSource)
 	engineCacheService = service.NewEngineCacheService(cfg.SystemServiceURL, serviceTokenSource, redisClient)
 	workflowRuntimeLister := service.NewWorkflowRuntimeEngineLister(systemServiceClient)
@@ -177,8 +179,6 @@ func main() {
 	logger.L().Info("数据预览: 已激活预览插件", "providers", previewRegistry.Providers())
 	profilePreviewResolver := preview.NewPreviewResolver(previewRegistry, systemClient, metaClient, systemServiceClient)
 	dataProfileSampler := service.NewPreviewDataProfileSampleProvider(profilePreviewResolver, metaClient)
-	dataProfileService := service.NewDataProfileService(dataProfileRepo, dataProfileExecutionRepo, dataProfileSampler)
-	dataProfileHandler := api.NewDataProfileHandler(dataProfileService)
 
 	// 初始化 services（注意：Manager 不负责引擎管理，引擎信息通过 SystemClient 获取）
 	searchHistoryService := service.NewSearchHistoryService(searchHistoryRepo)
@@ -189,6 +189,18 @@ func main() {
 		os.Exit(1)
 	}
 	defer searchService.Close()
+	managerProjectionBarrier := service.NewManagerProjectionBarrier(dataProfileRepo, dataProfileExecutionRepo, searchService)
+	protectionStore, err := projectionstore.New(db, cfg.DBSchema, "manager", managerProjectionBarrier)
+	if err != nil {
+		logger.L().Error("保护投影本地存储初始化失败", "error", err)
+		os.Exit(1)
+	}
+	if err := managerProjectionBarrier.ReconcileInstalled(context.Background(), db, protectionStore.ManagedTargets()); err != nil {
+		logger.L().Error("已安装保护投影的派生数据收敛失败", "error", err)
+		os.Exit(1)
+	}
+	dataProfileService := service.NewDataProfileService(dataProfileRepo, dataProfileExecutionRepo, dataProfileSampler, protectionStore)
+	dataProfileHandler := api.NewDataProfileHandler(dataProfileService)
 
 	// 创建统一 MVT 服务（整合实时生成 + 缓存访问，对前端隐藏 fingerprint）
 	// ✅ 传入连接池配置，实时生成瓦片使用较小的连接数（默认5，避免峰值压力）
@@ -377,7 +389,7 @@ func main() {
 	logger.L().Info("数据导入服务已初始化", "transfer_url", cfg.TransferServiceURL)
 
 	lifecycleController := modulelifecycle.NewBusiness("manager", commonClient.ModuleRuntimeRoleBackend)
-	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, systemServiceClient, metaClient, cacheManager, redisClient, embeddingService, embeddingConfigurationService, inferenceScenarioBindingService, quickViewPolicyService, baseMapProviderService, spatialPreviewService, rasterCOGRepo, taskProviderHandler, importHandler, uploadHandler, resourceActionHandler, exportHandler, rasterMosaicTileHandler, model3DGLBHandler, gaussianSplatKSplatHandler, pointCloudCOPCHandler, cadPreviewHandler, model3DTilesHandler, dataProfileHandler, lifecycleController)
+	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, systemServiceClient, metaClient, cacheManager, redisClient, embeddingService, embeddingConfigurationService, inferenceScenarioBindingService, quickViewPolicyService, baseMapProviderService, spatialPreviewService, rasterCOGRepo, taskProviderHandler, importHandler, uploadHandler, resourceActionHandler, exportHandler, rasterMosaicTileHandler, model3DGLBHandler, gaussianSplatKSplatHandler, pointCloudCOPCHandler, cadPreviewHandler, model3DTilesHandler, dataProfileHandler, protectionStore, lifecycleController)
 
 	serviceHost := commonConfig.GetServiceHost()
 	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.Port)
@@ -473,6 +485,7 @@ func main() {
 	// ========== 模块定义、运行实例与 TaskProvider 声明发布 ==========
 	runtimeContext, stopRuntime := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopRuntime()
+	projectionstore.NewRunner(protectionStore, securityClient, systemServiceClient, 30*time.Second, nil).Start(runtimeContext)
 	addr := ":" + cfg.Port
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {

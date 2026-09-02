@@ -112,7 +112,7 @@ def image_build_definition(service: str, directory: str) -> tuple[str, str | Non
         return f"{directory}/scripts/build-linux-arm64-images.sh", None, None
     if service == "supermap-workflow-engine":
         return f"{directory}/Dockerfile", None, directory
-    if service in {"transfer-bounded-worker", "meta-worker", "quality-worker"}:
+    if service in {"transfer-bounded-worker", "meta-worker", "quality-worker", "security-worker"}:
         return f"{directory}/Dockerfile.prebuilt.worker", service, "."
     if service == "develop-query-worker":
         return f"{directory}/Dockerfile.prebuilt.query-worker", service, "."

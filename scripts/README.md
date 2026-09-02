@@ -461,8 +461,10 @@ scripts/test/
 ├── workbench-service-consumption-online.py # Service → Workbench 的 MySQL 真实消费验收
 ├── workbench-service-consumption-online_test.py # Workbench 跨模块消费协议测试
 ├── develop-postgres-gate.sh # Develop 可复用成果变化源 PostgreSQL 集成门禁
+├── manager-mongodb-security-gate.sh # Manager MongoDB 动态文档保护集成门禁
 ├── quality-postgres-gate.sh # Quality PostgreSQL 集成门禁
 ├── standard-postgres-gate.sh # Standard PostgreSQL 集成门禁
+├── transfer-postgres-gate.sh # Transfer PostgreSQL 受保护导出集成门禁
 └── system-iam-postgres-gate.sh # System IAM 与 Fosite 一次性 PostgreSQL 发布门禁
 ```
 
@@ -531,7 +533,7 @@ bash scripts/test/online-host-gate.sh --check-only
 
 预检通过后去掉 `--check-only` 即执行正式生命周期和唯一 `make test-online` 入口。验收必须同时保留 `readiness.txt`、`summary.txt`、`online-report.json`、`enterprise-catalog-publishing-browser.json`、`online-gate.log`、Playwright 失败截图（如有）和服务日志；任何缺失、Skip、清理失败或证据中的构建身份不一致都按失败处理。
 
-`workbench-service-consumption` 要求全量 System、Gateway、Service、Workbench 和 Console，并使用 `business/scripts/online-workbench-mysql-fixture.sh` 管理独立 Business MySQL。Fixture 只接受仓库外 `ADDP_ONLINE_WORKBENCH_MYSQL_*` 变量，不读取或创建 `business/.env`；它重建仓库已有确定性样例并把 Engine 使用的账号收敛为仅有 `SELECT` 的读取账号。suite 使用永久 MySQL Engine Instance，经 Gateway 调用 Service 输出契约检测，临时发布固定 PII-safe SQL 服务 `commerce-order-analysis`，再经 Consumer Descriptor 创建个人 Workbench View；API 层真实验证 cursor、动态筛选、标量类型、有限 CSV、无空间输出和契约指纹变化，浏览器层以同一 User 登录 Console，验证 Table、Chart、Map 能力约束及契约变化后的查询阻断。Host Gate 安装专用 Chromium；View 与 Query Service 只按本轮创建 ID 在 `finally` 删除，不使用名称前缀或数据库清理。
+`workbench-service-consumption` 要求全量 System、Gateway、Service、Workbench 和 Console，并使用 `business/scripts/online-workbench-mysql-fixture.sh` 管理独立 Business MySQL。Fixture 只接受仓库外 `ADDP_ONLINE_WORKBENCH_MYSQL_*` 变量，不读取或创建 `business/.env`；它重建仓库已有确定性样例并把 Engine 使用的账号收敛为仅有 `SELECT` 的读取账号。suite 使用永久 MySQL Engine Instance，经 Gateway 调用 Service 输出契约检测，临时发布固定 PII-safe SQL 服务 `commerce-order-analysis`，再经 Consumer Descriptor 直接创建含 Table、Chart 两个 Component 的未发布 Data Application；API 层真实验证 cursor、动态筛选、标量类型、有限 CSV、无空间输出和契约指纹变化，浏览器层以同一 User 登录 Console，在正式 Component 编辑器中验证两种 renderer 及契约变化后的预览阻断。Host Gate 安装专用 Chromium；未发布 Data Application 与 Query Service 只按本轮创建 ID 在 `finally` 删除，不使用名称前缀或数据库清理，也不为自动化测试增加已发布应用强删旁路。
 
 通用预检由分发器向 `scripts/test/online-preflight.py` 传入参与服务的 `module=http://loopback:port`。预检要求显式非默认 Tenant、安全 Run ID、干净工作区和唯一专用数据库 `POSTGRES_DB=addp_online`，并校验所有 `/health/live` 构建身份与当前 Git commit 一致，再要求 `/health/ready` 已就绪；任何非回环服务地址都会被拒绝。宿主机 `--check-only` 在生命周期操作前调用同一预检器的 `--environment-only`，因此不存在第二套数据库或 Tenant 判定。分发器与预检器的无外部服务回归测试统一使用 `make test-online-runner`，并已纳入 `make test-platform`。两者不执行未登记的业务断言，不读取或保存 Token，也不接管服务生命周期。
 
@@ -573,7 +575,7 @@ System IAM 和 Fosite 正式发布使用 `make test-system-iam-postgres`，必�
 
 Standard 的正式 PostgreSQL 集成门禁使用 `make test-standard-postgres`，必须显式提供唯一变量 `STANDARD_POSTGRES_TEST_DSN`，且数据库名包含 `test` 或 `disposable`。门禁验证 Standard migration、删除约束、引用删除协调的并发锁和失败恢复，并拒绝任何测试 Skip。该入口只操作 Standard owner Schema；Standard ↔ Model 的生产调用通过 `common/client`，不允许使用跨 Schema SQL 模拟 Online 验收。
 
-具备全部安全连接条件时，使用 `make test-integration` 严格串行运行 System IAM、Quality 和 Standard 的已登记 PostgreSQL 门禁；即使调用方使用 `make -j`，聚合入口也不会让共享测试库并发执行。各 owner 脚本继续负责校验 DSN 或 database 名称并执行清理，聚合入口不提供默认业务库连接，也不复制模块测试逻辑。GitHub Actions 仍分别运行模块级目标，每个 Job 使用独占 PostgreSQL Service。
+具备全部安全连接条件时，使用 `make test-integration` 严格串行运行已登记的 PostgreSQL 门禁和 Manager MongoDB 数据保护门禁；即使调用方使用 `make -j`，聚合入口也不会让共享测试库并发执行。各 owner 脚本继续负责校验连接、隔离范围并执行清理，聚合入口不复制模块测试逻辑。GitHub Actions 分别使用独占 PostgreSQL 15 或 MongoDB 7 Service。
 
 ---
 

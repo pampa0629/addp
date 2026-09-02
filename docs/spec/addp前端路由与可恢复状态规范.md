@@ -90,7 +90,7 @@ Develop TaskProvider 的 canonical 前端路由为：
 | Quality | 检查任务列表、创建与编辑 | `page`、`page_size`、`create=1`、`task_id`；创建和编辑保留分页上下文，默认列表省略 |
 | Quality | 物化门禁任务列表、创建与编辑 | `page`、`page_size`、`create=1`、`task_id`；创建和编辑保留分页上下文，默认列表省略 |
 | Asset | 资产分类、申请与反馈 Tab | `category_id`、`tab` |
-| Catalog | 治理目录 / 资源盘点筛选、分页与条目详情 | `view`、`search`、`entry_type`、`source_status`、`governance_status`、`visibility`、`primary_domain_id`、`accountable_department_id`、`source_engine_id`、`page`、`page_size`；默认 `view=governance` 省略，资源盘点显式使用 `view=inventory`；详情 path `/entries/:id` 并以同名 query 保留列表返回上下文 |
+| Catalog | 已治理资源 / 资源盘点筛选、分页与条目详情 | `view`、`search`、`entry_type`、`source_status`、`governance_status`、`visibility`、`primary_domain_id`、`accountable_department_id`、`source_engine_id`、`page`、`page_size`；默认 `view=governance` 省略，资源盘点显式使用 `view=inventory`；详情 path `/entries/:id`，以 `tab=curation\|professional\|relations` 恢复非默认子视图，并以同名列表 query 保留返回上下文 |
 | Meta | 扫描引擎与扫描任务入口 | `engine_id`、`task_id`；二者并存时任务所属引擎为事实源 |
 | System | IAM、引擎详情与审计筛选 | `tab`、path `/engines/:id`、`event_name`、`result`、`risk_level`、`module_name`、`entity_type`、`entity_id`、`page` |
 | Standard | 标准文档详情 | path `/documents/:id`；列表筛选 query 原样保留 |

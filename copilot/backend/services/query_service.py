@@ -466,12 +466,12 @@ class QueryService:
                         {"type": "integer"},
                         {"type": "number"},
                         {"type": "boolean"},
+                        {"type": "null"},
                     ],
                 },
-                "title": {"type": ["string", "null"]},
                 "description": {"type": ["string", "null"]},
             },
-            "required": ["name", "type", "default", "title", "description"],
+            "required": ["name", "type", "default", "description"],
         }
         return ResponseSchema(
             name="addp_query_candidate",
@@ -495,7 +495,7 @@ class QueryService:
             self._system_prompt
             + "\n"
             + self._language_instructions.get(language, "严格遵守当前引擎 capability 声明的查询语言语法。")
-            + '\n只返回 JSON 对象：{"query":<查询字符串>,"query_parameters":[{"name":"...","type":"string|integer|number|boolean","default":<默认值>}],"explanation":"...","warnings":[]}；MQL 的 query 必须是已序列化的 JSON command 字符串；query_parameters 必须与查询中的参数引用完全一致，没有引用时为 []。'
+            + '\n只返回 JSON 对象：{"query":<查询字符串>,"query_parameters":[{"name":"...","type":"string|integer|number|boolean","default":<默认值或 null>,"description":<说明或 null>}],"explanation":"...","warnings":[]}；default 为 null 表示不保存默认值、执行时填写；MQL 的 query 必须是已序列化的 JSON command 字符串；query_parameters 必须与查询中的参数引用完全一致，没有引用时为 []。'
         )
 
     @classmethod
@@ -617,7 +617,7 @@ class QueryService:
         for index, item in enumerate(value):
             if not isinstance(item, dict):
                 raise ValueError(f"query_parameters[{index}] must be an object")
-            unknown = set(item) - {"name", "type", "default", "title", "description"}
+            unknown = set(item) - {"name", "type", "default", "description"}
             if unknown:
                 raise ValueError(f"query_parameters[{index}] contains unknown fields: {', '.join(sorted(unknown))}")
             name = str(item.get("name") or "").strip()
@@ -628,26 +628,25 @@ class QueryService:
             parameter_type = str(item.get("type") or "").strip().lower()
             if parameter_type not in cls._query_parameter_types:
                 raise ValueError(f"query_parameters[{index}].type is unsupported: {parameter_type}")
-            if "default" not in item:
-                raise ValueError(f"query_parameters[{index}].default is required")
-            default = item["default"]
-            valid_default = (
-                parameter_type == "string" and isinstance(default, str) and bool(default.strip())
-            ) or (
-                parameter_type == "integer" and isinstance(default, int) and not isinstance(default, bool)
-            ) or (
-                parameter_type == "number" and isinstance(default, (int, float))
-                and not isinstance(default, bool) and math.isfinite(default)
-            ) or (
-                parameter_type == "boolean" and isinstance(default, bool)
-            )
-            if not valid_default:
-                raise ValueError(f"query_parameters[{index}].default does not match type {parameter_type}")
-            definition = {"name": name, "type": parameter_type, "default": default}
-            for key in ("title", "description"):
-                text = str(item.get(key) or "").strip()
-                if text:
-                    definition[key] = text
+            definition = {"name": name, "type": parameter_type}
+            default = item.get("default")
+            if default is not None:
+                valid_default = (
+                    parameter_type == "string" and isinstance(default, str)
+                ) or (
+                    parameter_type == "integer" and isinstance(default, int) and not isinstance(default, bool)
+                ) or (
+                    parameter_type == "number" and isinstance(default, (int, float))
+                    and not isinstance(default, bool) and math.isfinite(default)
+                ) or (
+                    parameter_type == "boolean" and isinstance(default, bool)
+                )
+                if not valid_default:
+                    raise ValueError(f"query_parameters[{index}].default does not match type {parameter_type}")
+                definition["default"] = default
+            description = str(item.get("description") or "").strip()
+            if description:
+                definition["description"] = description
             parameters.append(definition)
             names.add(name)
         return parameters

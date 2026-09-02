@@ -8,13 +8,17 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"time"
 
 	commonAPI "github.com/addp/common/api"
+	"github.com/addp/common/dataprotection"
+	"github.com/addp/common/dataprotection/projectionstore"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/logger"
 	manageri18n "github.com/addp/manager/i18n"
 	"github.com/addp/manager/internal/engineaccess"
 	"github.com/addp/manager/internal/preview"
+	managerprotection "github.com/addp/manager/internal/protection"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -25,6 +29,7 @@ type ExplorerHandler struct {
 	explorerService *service.ExplorerService
 	previewResolver *preview.PreviewResolver
 	metadataService *service.MetadataService
+	protectionStore *projectionstore.Store
 }
 
 // NewExplorerHandler 创建 Explorer Handler
@@ -32,11 +37,13 @@ func NewExplorerHandler(
 	explorerService *service.ExplorerService,
 	previewResolver *preview.PreviewResolver,
 	metadataService *service.MetadataService,
+	protectionStore *projectionstore.Store,
 ) *ExplorerHandler {
 	return &ExplorerHandler{
 		explorerService: explorerService,
 		previewResolver: previewResolver,
 		metadataService: metadataService,
+		protectionStore: protectionStore,
 	}
 }
 
@@ -110,8 +117,30 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 	graphSample := graphSampleFilterFromQuery(c)
 	logger.L().Info("数据预览", "locator", locatorURI, "page", page, "page_size", pageSize, "child_name", childName, "ref_path", refPath, "nested_child_path", nestedChildPath, "graph_sample", graphSample)
 
-	// 调用 PreviewResolver
-	result, err := h.previewResolver.PreviewFromURIWithSelection(c.Request.Context(), locatorURI, page, pageSize, childName, refPath, nestedChildPath, graphSample, tenantID)
+	// 先解析到 Meta DataItem 的稳定指纹，再查 Owner 本地保护索引。
+	// 未纳管资源只是一次本地 map miss，不访问 Security。
+	req, err := h.previewResolver.ResolveRequestFromURIWithSelection(c.Request.Context(), locatorURI, page, pageSize, childName, refPath, nestedChildPath, graphSample, tenantID)
+	var result *preview.PreviewResult
+	var protectionRules []dataprotection.Rule
+	if err == nil && h.protectionStore != nil && tenantID != nil {
+		now := time.Now().UTC()
+		gate := managerprotection.DataItemGate(h.protectionStore, *tenantID, req.ItemFingerprint, now)
+		protectionRules, err = managerprotection.TableRules(req.ItemFingerprint, req.TableFields(), gate, managerprotection.ActionPreview, now)
+		if err != nil {
+			protectionRequired(c)
+			return
+		}
+	}
+	if err == nil {
+		result, err = h.previewResolver.Preview(c.Request.Context(), req)
+		if err == nil {
+			err = applyPreviewProtection(result, protectionRules)
+			if err != nil {
+				protectionRequired(c)
+				return
+			}
+		}
+	}
 	if err != nil {
 		if errors.Is(err, engineaccess.ErrUnavailable) {
 			engineUnavailable(c)
@@ -134,8 +163,8 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 			})
 			return
 		}
-		logger.L().Error("数据预览失败", "error", err)
-		commonAPI.InternalServerError(c, err.Error())
+		logger.L().Error("数据预览失败", "error_type", fmt.Sprintf("%T", err))
+		managerError(c, http.StatusInternalServerError, manageri18n.MsgPreviewFailed)
 		return
 	}
 

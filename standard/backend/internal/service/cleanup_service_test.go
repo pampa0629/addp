@@ -92,7 +92,7 @@ func setupStandardCleanupTestDB(t *testing.T) *gorm.DB {
 			status TEXT NOT NULL, name TEXT NOT NULL, definition TEXT NOT NULL, data_type TEXT NOT NULL,
 			length INTEGER, precision_num INTEGER, scale INTEGER, nullable BOOLEAN, default_value TEXT, format TEXT,
 			value_domain_kind TEXT NOT NULL, range_constraint TEXT, code_set_revision_id INTEGER, unit_id INTEGER,
-			security_level TEXT, classification_id INTEGER, example_values TEXT, extra_quality_rules TEXT,
+			example_values TEXT, extra_quality_rules TEXT,
 			compiled_quality_rules TEXT, change_summary TEXT NOT NULL, effective_from DATETIME, effective_to DATETIME,
 			submitted_by INTEGER, submitted_at DATETIME, published_by INTEGER, published_at DATETIME,
 			created_by INTEGER NOT NULL, updated_by INTEGER, created_at DATETIME, updated_at DATETIME
@@ -154,31 +154,6 @@ func setupStandardCleanupTestDB(t *testing.T) *gorm.DB {
 			sort_order INTEGER,
 			is_system BOOLEAN,
 			created_at DATETIME,
-			updated_at DATETIME,
-			version INTEGER NOT NULL DEFAULT 1
-		)`,
-		`CREATE TABLE standard.classifications (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			tenant_id INTEGER NOT NULL,
-			name TEXT NOT NULL,
-			code TEXT NOT NULL,
-			description TEXT,
-			parent_id INTEGER,
-			sort_order INTEGER,
-			created_by INTEGER NOT NULL,
-			updated_by INTEGER,
-			created_at DATETIME,
-			updated_at DATETIME,
-			version INTEGER NOT NULL DEFAULT 1
-		)`,
-		`CREATE TABLE standard.grading_levels (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			tenant_id INTEGER NOT NULL,
-			level TEXT NOT NULL,
-			name TEXT NOT NULL,
-			description TEXT,
-			color TEXT,
-			sort_order INTEGER,
 			updated_at DATETIME,
 			version INTEGER NOT NULL DEFAULT 1
 		)`,
@@ -390,16 +365,16 @@ func TestStandardCleanupTenantDeletedPhysicalDeletesOwnedState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ScanReclaimCandidates: %v", err)
 	}
-	if standardCandidateRecordCount(stats) != 23 {
-		t.Fatalf("expected 23 scanned records, got %+v", stats)
+	if standardCandidateRecordCount(stats) != 21 {
+		t.Fatalf("expected 21 scanned records, got %+v", stats)
 	}
 
 	stats, err = svc.ExecuteCleanup(context.Background(), 1, events.CleanupModePhysical, map[string]interface{}{"tenant_id": 1})
 	if err != nil {
 		t.Fatalf("ExecuteCleanup: %v", err)
 	}
-	if stats.DeletedRecords != 23 {
-		t.Fatalf("expected 23 deleted records, got %+v", stats)
+	if stats.DeletedRecords != 21 {
+		t.Fatalf("expected 21 deleted records, got %+v", stats)
 	}
 	assertStandardCleanupCounts(t, db, standardCleanupCountExpectation{
 		tenantID:                 2,
@@ -411,8 +386,6 @@ func TestStandardCleanupTenantDeletedPhysicalDeletesOwnedState(t *testing.T) {
 		codeItems:                1,
 		measurementCategories:    1,
 		units:                    1,
-		classifications:          1,
-		gradingLevels:            1,
 		metricCategories:         1,
 		metrics:                  2,
 		metricElementMappings:    1,
@@ -496,14 +469,6 @@ func seedStandardCleanupTenantState(t *testing.T, db *gorm.DB, tenantID int64, w
 	if err := db.Create(&unit).Error; err != nil {
 		t.Fatalf("create unit: %v", err)
 	}
-	classification := models.Classification{TenantID: tenantID, Name: "Public " + suffix, Code: "public_" + suffix, CreatedBy: 1}
-	if err := db.Create(&classification).Error; err != nil {
-		t.Fatalf("create classification: %v", err)
-	}
-	gradingLevel := models.GradingLevel{TenantID: tenantID, Level: "L1", Name: "Level 1 " + suffix}
-	if err := db.Create(&gradingLevel).Error; err != nil {
-		t.Fatalf("create grading level: %v", err)
-	}
 	element := models.Element{
 		TenantID: tenantID, DomainID: &domain.ID, Code: "amount_" + suffix,
 		CreatedBy: 1, LifecycleState: "active",
@@ -511,7 +476,7 @@ func seedStandardCleanupTenantState(t *testing.T, db *gorm.DB, tenantID int64, w
 	if err := db.Create(&element).Error; err != nil {
 		t.Fatalf("create element: %v", err)
 	}
-	elementRevision := models.ElementRevision{ElementID: element.ID, RevisionNo: 1, Status: models.RevisionStatusPublished, Name: "Amount " + suffix, Definition: "amount definition", DataType: "decimal", ValueDomainKind: models.ValueDomainUnrestricted, UnitID: &unit.ID, ClassificationID: &classification.ID, ChangeSummary: "initial", CreatedBy: 1}
+	elementRevision := models.ElementRevision{ElementID: element.ID, RevisionNo: 1, Status: models.RevisionStatusPublished, Name: "Amount " + suffix, Definition: "amount definition", DataType: "decimal", ValueDomainKind: models.ValueDomainUnrestricted, UnitID: &unit.ID, ChangeSummary: "initial", CreatedBy: 1}
 	if err := db.Create(&elementRevision).Error; err != nil {
 		t.Fatalf("create element revision: %v", err)
 	}
@@ -581,8 +546,6 @@ type standardCleanupCountExpectation struct {
 	codeItems                int64
 	measurementCategories    int64
 	units                    int64
-	classifications          int64
-	gradingLevels            int64
 	metricCategories         int64
 	metrics                  int64
 	metricElementMappings    int64
@@ -604,8 +567,6 @@ func assertStandardCleanupCounts(t *testing.T, db *gorm.DB, expected standardCle
 	assertStandardCleanupCount(t, db, &models.CodeSet{}, "tenant_id = ?", []interface{}{expected.tenantID}, expected.codeSets, "code sets")
 	assertStandardCleanupCount(t, db, &models.MeasurementCategory{}, "tenant_id = ?", []interface{}{expected.tenantID}, expected.measurementCategories, "measurement categories")
 	assertStandardCleanupCount(t, db, &models.Unit{}, "tenant_id = ?", []interface{}{expected.tenantID}, expected.units, "units")
-	assertStandardCleanupCount(t, db, &models.Classification{}, "tenant_id = ?", []interface{}{expected.tenantID}, expected.classifications, "classifications")
-	assertStandardCleanupCount(t, db, &models.GradingLevel{}, "tenant_id = ?", []interface{}{expected.tenantID}, expected.gradingLevels, "grading levels")
 	assertStandardCleanupCount(t, db, &models.MetricCategory{}, "tenant_id = ?", []interface{}{expected.tenantID}, expected.metricCategories, "metric categories")
 	assertStandardCleanupCount(t, db, &models.Metric{}, "tenant_id = ?", []interface{}{expected.tenantID}, expected.metrics, "metrics")
 	assertStandardCleanupCount(t, db, &models.Document{}, "tenant_id = ?", []interface{}{expected.tenantID}, expected.documents, "documents")

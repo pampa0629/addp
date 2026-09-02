@@ -13,7 +13,7 @@ import (
 
 type unusedStaticTileEngineClient struct{}
 
-func (unusedStaticTileEngineClient) GetEngine(uint) (*commonModels.Engine, error) {
+func (unusedStaticTileEngineClient) GetEngineForTenant(context.Context, uint, uint) (*commonModels.Engine, error) {
 	return nil, nil
 }
 

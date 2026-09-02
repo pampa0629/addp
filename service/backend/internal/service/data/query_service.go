@@ -17,8 +17,45 @@ import (
 )
 
 type QueryService struct {
-	systemClient *commonClient.SystemClient
-	metaClient   *commonClient.MetaClient
+	systemClient   *commonClient.SystemClient
+	metaClient     *commonClient.MetaClient
+	protectionGate interface {
+		BeginCatalogPath(context.Context, uint, plugin.EnginePlugin, plugin.EngineCatalogPath) (func(), error)
+	}
+}
+
+func (s *QueryService) SetProtectionGate(gate interface {
+	BeginCatalogPath(context.Context, uint, plugin.EnginePlugin, plugin.EngineCatalogPath) (func(), error)
+}) {
+	s.protectionGate = gate
+}
+
+func (s *QueryService) beginTableRead(
+	ctx context.Context,
+	tenantID uint,
+	ref *tableResourceRef,
+	engine *commonModels.Engine,
+) (func(), error) {
+	if s == nil || s.protectionGate == nil || ref == nil || engine == nil || tenantID == 0 {
+		return nil, fmt.Errorf("Service 数据查询保护门禁未配置")
+	}
+	locator, err := resourcetree.ParseURI(ref.Locator)
+	if err != nil {
+		return nil, err
+	}
+	enginePlugin, err := plugin.Get(engine.EngineType)
+	if err != nil {
+		return nil, err
+	}
+	modelProvider, ok := enginePlugin.(plugin.EngineCatalogModelProvider)
+	if !ok {
+		return nil, fmt.Errorf("engine %s does not expose a catalog model", engine.EngineType)
+	}
+	path, err := resourcetree.EngineCatalogPathFromLocator(modelProvider.EngineCatalogModel(), locator)
+	if err != nil {
+		return nil, err
+	}
+	return s.protectionGate.BeginCatalogPath(ctx, tenantID, enginePlugin, path)
 }
 
 type tableResourceRef struct {
@@ -44,7 +81,7 @@ func NewQueryService(systemClient *commonClient.SystemClient, metaClient *common
 }
 
 // Query 执行数据查询（数据服务核心功能）
-func (s *QueryService) Query(ctx context.Context, req *models.DataQueryRequest) (*models.DataQueryResponse, error) {
+func (s *QueryService) Query(ctx context.Context, tenantID uint, req *models.DataQueryRequest) (*models.DataQueryResponse, error) {
 	startTime := time.Now()
 	tableRef, err := tableRefFromLocator(req.Locator)
 	if err != nil {
@@ -52,10 +89,15 @@ func (s *QueryService) Query(ctx context.Context, req *models.DataQueryRequest) 
 	}
 
 	// 1. 获取引擎配置
-	engine, err := s.systemClient.GetEngine(tableRef.EngineID)
+	engine, err := s.systemClient.GetEngineForTenant(ctx, tenantID, tableRef.EngineID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get engine: %w", err)
 	}
+	endProtection, err := s.beginTableRead(ctx, tenantID, tableRef, engine)
+	if err != nil {
+		return nil, err
+	}
+	defer endProtection()
 
 	// 2. 获取数据库连接池
 	db, err := dbbridge.GetOrCreatePool(engine, dbbridge.DefaultPoolConfig())
@@ -244,7 +286,7 @@ func (s *QueryService) Query(ctx context.Context, req *models.DataQueryRequest) 
 }
 
 // Aggregate 执行聚合查询
-func (s *QueryService) Aggregate(ctx context.Context, req *models.AggregationRequest) (*models.AggregationResponse, error) {
+func (s *QueryService) Aggregate(ctx context.Context, tenantID uint, req *models.AggregationRequest) (*models.AggregationResponse, error) {
 	startTime := time.Now()
 	tableRef, err := tableRefFromLocator(req.Locator)
 	if err != nil {
@@ -252,10 +294,15 @@ func (s *QueryService) Aggregate(ctx context.Context, req *models.AggregationReq
 	}
 
 	// 1. 获取引擎配置
-	engine, err := s.systemClient.GetEngine(tableRef.EngineID)
+	engine, err := s.systemClient.GetEngineForTenant(ctx, tenantID, tableRef.EngineID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get engine: %w", err)
 	}
+	endProtection, err := s.beginTableRead(ctx, tenantID, tableRef, engine)
+	if err != nil {
+		return nil, err
+	}
+	defer endProtection()
 
 	// 2. 获取数据库连接池
 	db, err := dbbridge.GetOrCreatePool(engine, dbbridge.DefaultPoolConfig())
@@ -379,14 +426,14 @@ func (s *QueryService) Aggregate(ctx context.Context, req *models.AggregationReq
 }
 
 // GetTableStructure 获取表结构信息（列名、类型等）
-func (s *QueryService) GetTableStructure(ctx context.Context, locator string) ([]models.ColumnInfo, error) {
+func (s *QueryService) GetTableStructure(ctx context.Context, tenantID uint, locator string) ([]models.ColumnInfo, error) {
 	tableRef, err := tableRefFromLocator(locator)
 	if err != nil {
 		return nil, err
 	}
 
 	// 1. 获取引擎配置
-	engine, err := s.systemClient.GetEngine(tableRef.EngineID)
+	engine, err := s.systemClient.GetEngineForTenant(ctx, tenantID, tableRef.EngineID)
 	if err != nil {
 		return nil, fmt.Errorf("获取引擎失败: %w", err)
 	}

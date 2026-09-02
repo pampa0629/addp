@@ -467,41 +467,64 @@ func collectMongoNestedFieldsAcrossDocuments(
 		frontier = append(frontier, mongoDirectFields(path, document, depth+1)...)
 	}
 	for len(frontier) > 0 && len(stats) < mongoSchemaMaxFields {
-		frontier = interleaveMongoSchemaFields(frontier)
+		fieldGroups := groupAndInterleaveMongoSchemaFields(frontier)
 		next := make([]mongoSchemaField, 0)
-		for _, field := range frontier {
-			if len(stats) >= mongoSchemaMaxFields {
+		for _, group := range fieldGroups {
+			fieldName := strings.Join(group.path, ".")
+			if _, exists := stats[fieldName]; !exists && len(stats) >= mongoSchemaMaxFields {
 				return
 			}
-			collectMongoFieldStats(stats, field.path, field.value, mongoSchemaMaxDepth)
-			if field.depth < mongoSchemaMaxDepth {
-				next = append(next, mongoDirectFields(field.path, field.value, field.depth+1)...)
+			for _, value := range group.values {
+				collectMongoFieldStats(stats, group.path, value, mongoSchemaMaxDepth)
+				if group.depth < mongoSchemaMaxDepth {
+					next = append(next, mongoDirectFields(group.path, value, group.depth+1)...)
+				}
 			}
 		}
 		frontier = next
 	}
 }
 
-func interleaveMongoSchemaFields(fields []mongoSchemaField) []mongoSchemaField {
-	groups := make(map[string][]mongoSchemaField)
+type mongoSchemaFieldGroup struct {
+	path   []string
+	values []interface{}
+	depth  int
+}
+
+func groupAndInterleaveMongoSchemaFields(fields []mongoSchemaField) []mongoSchemaFieldGroup {
+	fieldsByPath := make(map[string]*mongoSchemaFieldGroup)
 	for _, field := range fields {
-		parent := strings.Join(field.path[:len(field.path)-1], ".")
-		groups[parent] = append(groups[parent], field)
+		fieldName := strings.Join(field.path, ".")
+		group := fieldsByPath[fieldName]
+		if group == nil {
+			group = &mongoSchemaFieldGroup{
+				path:  append([]string(nil), field.path...),
+				depth: field.depth,
+			}
+			fieldsByPath[fieldName] = group
+		}
+		group.values = append(group.values, field.value)
 	}
-	parents := make([]string, 0, len(groups))
-	for parent := range groups {
+
+	groupsByParent := make(map[string][]mongoSchemaFieldGroup)
+	for _, group := range fieldsByPath {
+		parent := strings.Join(group.path[:len(group.path)-1], ".")
+		groupsByParent[parent] = append(groupsByParent[parent], *group)
+	}
+	parents := make([]string, 0, len(groupsByParent))
+	for parent := range groupsByParent {
 		parents = append(parents, parent)
-		sort.SliceStable(groups[parent], func(i, j int) bool {
-			return strings.Join(groups[parent][i].path, ".") < strings.Join(groups[parent][j].path, ".")
+		sort.SliceStable(groupsByParent[parent], func(i, j int) bool {
+			return strings.Join(groupsByParent[parent][i].path, ".") < strings.Join(groupsByParent[parent][j].path, ".")
 		})
 	}
 	sort.Strings(parents)
-	result := make([]mongoSchemaField, 0, len(fields))
+	result := make([]mongoSchemaFieldGroup, 0, len(fieldsByPath))
 	for index := 0; ; index++ {
 		added := false
 		for _, parent := range parents {
-			if index < len(groups[parent]) {
-				result = append(result, groups[parent][index])
+			if index < len(groupsByParent[parent]) {
+				result = append(result, groupsByParent[parent][index])
 				added = true
 			}
 		}
@@ -564,23 +587,37 @@ func mongoDirectFields(path []string, value interface{}, depth int) []mongoSchem
 }
 
 func looksLikeMongoDynamicKey(key string) bool {
-	if len(key) < 20 {
+	if key == "" {
 		return false
 	}
 	hasLetter := false
 	hasDigit := false
+	hasUpper := false
+	hasLower := false
+	hasSeparator := false
 	for _, char := range key {
 		switch {
-		case char >= 'a' && char <= 'z', char >= 'A' && char <= 'Z':
+		case char >= 'a' && char <= 'z':
 			hasLetter = true
+			hasLower = true
+		case char >= 'A' && char <= 'Z':
+			hasLetter = true
+			hasUpper = true
 		case char >= '0' && char <= '9':
 			hasDigit = true
 		case char == '-' || char == '_':
+			hasSeparator = true
 		default:
 			return false
 		}
 	}
-	return hasLetter && hasDigit
+	if hasDigit && !hasLetter && !hasSeparator {
+		return true
+	}
+	if len(key) < 16 {
+		return false
+	}
+	return hasLetter && (hasDigit || hasSeparator && hasUpper && hasLower)
 }
 
 func collectMongoArrayFields(stats map[string]*mongoFieldStat, path []string, values []interface{}, depth int) {

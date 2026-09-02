@@ -14,10 +14,15 @@ import (
 )
 
 func main() {
-	apply := flag.Bool("apply", false, "apply the narrowly scoped migration 75 repair")
+	apply := flag.Bool("apply", false, "apply one registered narrowly scoped migration repair")
+	migrationVersion := flag.Uint("migration", 0, "registered dirty migration to repair: 75 or 113")
 	flag.Parse()
 	if !*apply {
 		fmt.Fprintln(os.Stderr, "refusing mutation without --apply")
+		os.Exit(2)
+	}
+	if *migrationVersion != 75 && *migrationVersion != 113 {
+		fmt.Fprintln(os.Stderr, "--migration must be exactly 75 or 113")
 		os.Exit(2)
 	}
 	dsn := postgresDSN()
@@ -33,12 +38,21 @@ func main() {
 		fmt.Fprintln(os.Stderr, "connect migration repair database failed")
 		os.Exit(1)
 	}
-	updated, err := migration.RepairDirtyExecutionAudienceMigration75(ctx, db)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "migration 75 repair failed: %v\n", err)
-		os.Exit(1)
+	switch *migrationVersion {
+	case 75:
+		updated, err := migration.RepairDirtyExecutionAudienceMigration75(ctx, db)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "migration 75 repair failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("migration 75 repair completed; normalized_authorizations=%d; migration_state=74/clean\n", updated)
+	case 113:
+		if err := migration.RepairDirtySecurityModuleMigration113(ctx, db); err != nil {
+			fmt.Fprintf(os.Stderr, "migration 113 repair failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("migration 113 repair completed; verified_target_facts=zero; migration_state=112/clean")
 	}
-	fmt.Printf("migration 75 repair completed; normalized_authorizations=%d; migration_state=74/clean\n", updated)
 }
 
 func postgresDSN() string {

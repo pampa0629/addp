@@ -12,13 +12,30 @@ import (
 	"time"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/datatype"
+	engineplugin "github.com/addp/common/engine/plugin"
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/transfer/internal/executor"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/planner"
 	"github.com/addp/transfer/internal/repository"
 	"github.com/google/uuid"
 )
+
+type allowTransferSourceProtectionGate struct{}
+
+func (allowTransferSourceProtectionGate) RequireSourceConfig(context.Context, uint, map[string]interface{}) error {
+	return nil
+}
+
+func (allowTransferSourceProtectionGate) PrepareBoundedTableProtection(context.Context, uint, map[string]interface{}) (executor.TableSourceProtector, error) {
+	return nil, nil
+}
+
+func (allowTransferSourceProtectionGate) PrepareBoundedEncodedRecordProtection(context.Context, uint, map[string]interface{}, []datatype.FieldInfo) (engineplugin.EncodedRecordTransform, error) {
+	return nil, nil
+}
 
 func TestExecutionEngineRunsReplayWithoutUpdatingOwnerTask(t *testing.T) {
 	db := newExecutionServiceTestDB(t)
@@ -82,6 +99,7 @@ func TestExecutionEngineRunsReplayWithoutUpdatingOwnerTask(t *testing.T) {
 	)
 	engineService.logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	engineService.SetReplayRuntime(runtime)
+	engineService.SetProtectionGate(allowTransferSourceProtectionGate{})
 
 	execCtx := commonExecution.ContextWithLease(context.Background(), *lease)
 	if err := engineService.ExecuteTask(execCtx, task.ID, uint(execution.ID)); err != nil {

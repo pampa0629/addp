@@ -129,6 +129,7 @@ const (
 	ModuleAsset        = "asset"
 	ModulePortal       = "portal"
 	ModuleService      = "service"
+	ModuleSecurity     = "security"
 )
 
 // 触发类型常量
@@ -210,6 +211,8 @@ const (
 	// System 运维
 	TaskTypeCleanup         = "cleanup"
 	TaskTypeCleanupExecutor = "cleanup_executor"
+	// Security bounded discovery; it is not a schedulable TaskProvider task.
+	TaskTypeSensitiveDataDiscovery = "sensitive_data_discovery"
 )
 
 // CalculateDuration 计算执行时长

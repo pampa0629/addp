@@ -12,6 +12,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	commonconfiguration "github.com/addp/common/configuration"
+	"github.com/addp/common/dataprotection/projectionstore"
 	_ "github.com/addp/common/engine/plugins/builtin/general"
 	"github.com/addp/common/events"
 	commonExecution "github.com/addp/common/execution"
@@ -21,6 +22,7 @@ import (
 	"github.com/addp/service/internal/api"
 	serviceauthorization "github.com/addp/service/internal/authorization"
 	"github.com/addp/service/internal/config"
+	serviceprotection "github.com/addp/service/internal/protection"
 	"github.com/addp/service/internal/repository"
 	serviceInternal "github.com/addp/service/internal/service"
 	"github.com/addp/service/internal/service/data"
@@ -99,21 +101,31 @@ func main() {
 	systemServiceClient := commonClient.NewSystemServiceClient(cfg.SystemServiceURL, tokenSource, nil)
 	systemClient := commonClient.NewSystemClient(cfg.SystemServiceURL, tokenSource)
 	metaClient := commonClient.NewMetaClient(cfg.MetaServiceURL, tokenSource)
+	securityClient := commonClient.NewSecurityClient(cfg.SecurityServiceURL, tokenSource, nil)
+	protectionStore, err := projectionstore.New(db, cfg.DBSchema, "service", nil)
+	if err != nil {
+		logger.L().Error("Service 保护投影存储初始化失败", "error", err)
+		os.Exit(1)
+	}
+	protectionGate := serviceprotection.NewGate(protectionStore)
 	logger.L().Info("MetaClient 已初始化", "meta_url", cfg.MetaServiceURL)
 
 	// 构建服务基础URL用于查询服务
 	// 使用 Gateway URL 作为对外服务端点的基础地址
 	queryServiceService := serviceInternal.NewQueryServiceService(queryServiceRepo, systemClient, metaClient, cfg.GatewayURL)
 	queryExecutorService := serviceInternal.NewQueryExecutorService(systemClient, systemServiceClient, cfg.EncryptionKey)
+	queryExecutorService.SetProtectionGate(protectionGate)
 	querySampleService := serviceInternal.NewQuerySampleService(
 		systemServiceClient,
 		commonClient.NewSystemExecutionAuthorizationClient(cfg.SystemServiceURL, nil),
 		metaClient,
 	)
+	querySampleService.SetProtectionGate(protectionGate)
 
 	// 图查询服务
 	graphQueryServiceService := serviceInternal.NewGraphQueryServiceService(graphQueryServiceRepo, cfg.GatewayURL)
 	graphQueryExecutor := data.NewGraphQueryExecutor(graphQueryServiceRepo, systemClient)
+	graphQueryExecutor.SetProtectionGate(protectionGate)
 
 	// 注册服务使用 Gateway URL 作为代理端点的基础地址
 	// 这样用户可以通过统一的 Gateway 访问代理服务
@@ -138,7 +150,9 @@ func main() {
 
 	// 初始化瓦片相关服务
 	staticTileService := serviceInternal.NewStaticTileService(systemClient)
+	staticTileService.SetProtectionGate(protectionGate)
 	dynamicTileService := serviceInternal.NewDynamicTileService(systemClient)
+	dynamicTileService.SetProtectionGate(protectionGate)
 	tileCacheService := serviceInternal.NewTileCacheService(minioClient, minioBucket, "tiles")
 	cleanupService := serviceInternal.NewCleanupService(db, redisClient, taskExecutionRepo)
 	if err := cleanupService.Start(context.Background()); err != nil {
@@ -147,6 +161,7 @@ func main() {
 	defer cleanupService.Stop()
 
 	queryService := data.NewQueryService(systemClient, metaClient)
+	queryService.SetProtectionGate(protectionGate)
 
 	// 初始化 handlers
 	queryServiceHandler := api.NewQueryServiceHandler(queryServiceService, queryExecutorService)
@@ -187,6 +202,13 @@ func main() {
 	// ========== 模块注册（注册到 System service_registry）==========
 	runtimeContext, stopRuntime := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopRuntime()
+	projectionstore.NewRunner(
+		protectionStore, securityClient, systemServiceClient, 30*time.Second,
+		serviceprotection.NewAcknowledgementBarrier(
+			protectionGate,
+			serviceInternal.NewProtectionDerivedDataPurger(db, tileCacheService),
+		),
+	).Start(runtimeContext)
 	var registration *commonClient.ModuleRegistrationLifecycle
 	if cfg.SystemServiceURL != "" {
 		serviceHost := commonConfig.GetServiceHost()

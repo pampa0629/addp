@@ -165,7 +165,7 @@ func postgresMissingColumnCanBeAdded(field datatype.FieldInfo) bool {
 func postgresColumnCompatibleWithField(column postgresColumnInfo, field datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) bool {
 	expected := datatype.ParseFieldType(string(field.Type))
 	existing := postgresCommonFieldType(column, postgresColumnNativeType(column))
-	if expected == datatype.FieldTypeUnknown {
+	if expected == datatype.FieldTypeUnknown || expected == datatype.FieldTypeMixed {
 		return existing == datatype.FieldTypeString || existing == datatype.FieldTypeUnknown
 	}
 	if datatype.IsSpatialFieldType(expected) {
@@ -302,9 +302,7 @@ func postgresGeometryTypeWithDimension(geometryType string, dimension int64) str
 
 func postgresSQLTypeForCommonType(fieldType datatype.FieldType) (string, bool) {
 	switch datatype.ParseFieldType(string(fieldType)) {
-	case datatype.FieldTypeString:
-		return "TEXT", true
-	case "":
+	case datatype.FieldTypeString, datatype.FieldTypeMixed, datatype.FieldTypeUnknown:
 		return "TEXT", true
 	case datatype.FieldTypeInt:
 		return "INTEGER", true

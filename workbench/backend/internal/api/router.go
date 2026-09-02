@@ -14,14 +14,14 @@ import (
 	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
-func SetupRouter(systemURL string, lifecycle *modulelifecycle.Controller, views *service.ViewService, applications *service.DataApplicationService, catalogResources *service.CatalogResourceService, resourceGrants *service.ResourceGrantService) *gin.Engine {
+func SetupRouter(systemURL string, lifecycle *modulelifecycle.Controller, applications *service.DataApplicationService, catalogResources *service.CatalogResourceService, resourceGrants *service.ResourceGrantService) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Recovery(), requestidmiddleware.RequestIDMiddleware(), commoni18n.I18nMiddleware())
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 	lifecycle.RegisterHealthRoutes(router)
 	router.Use(lifecycle.RequireReady())
 
-	handler := NewHandler(views, applications)
+	handler := NewHandler(applications)
 	catalogResourceHandler := NewCatalogResourceHandler(catalogResources)
 	resourceGrantHandler := NewResourceGrantHandler(resourceGrants)
 	api := router.Group("/api/v1/workbench")
@@ -34,11 +34,6 @@ func SetupRouter(systemURL string, lifecycle *modulelifecycle.Controller, views 
 	assetAPI.Use(commonAuth.MustNewServiceClientGuard("addp-asset"))
 	assetAPI.PUT("/:source_identity", commonAuth.MustNewPermissionGuard(workbenchauthorization.PermissionWorkbenchResourceGrantCreate), resourceGrantHandler.FulfillAssetGrant)
 	assetAPI.DELETE("/:source_identity", commonAuth.MustNewPermissionGuard(workbenchauthorization.PermissionWorkbenchResourceGrantRevoke), resourceGrantHandler.RevokeAssetGrant)
-	api.GET("/views", commonAuth.MustNewPermissionGuard(workbenchauthorization.PermissionWorkbenchViewRead), handler.ListViews)
-	api.POST("/views", commonAuth.MustNewPermissionGuard(workbenchauthorization.PermissionWorkbenchViewCreate), handler.CreateView)
-	api.GET("/views/:id", commonAuth.MustNewPermissionGuard(workbenchauthorization.PermissionWorkbenchViewRead), handler.GetView)
-	api.PUT("/views/:id", commonAuth.MustNewPermissionGuard(workbenchauthorization.PermissionWorkbenchViewUpdate), handler.UpdateView)
-	api.DELETE("/views/:id", commonAuth.MustNewPermissionGuard(workbenchauthorization.PermissionWorkbenchViewDelete), handler.DeleteView)
 	api.GET("/data_applications", commonAuth.MustNewPermissionGuard(workbenchauthorization.PermissionWorkbenchDataApplicationRead), handler.ListDataApplications)
 	api.POST("/data_applications", commonAuth.MustNewPermissionGuard(workbenchauthorization.PermissionWorkbenchDataApplicationCreate), handler.CreateDataApplication)
 	api.GET("/data_applications/:id", commonAuth.MustNewPermissionGuard(workbenchauthorization.PermissionWorkbenchDataApplicationRead), handler.GetDataApplication)

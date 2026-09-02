@@ -53,9 +53,15 @@ func (p *executableSampleQueryProvider) GenerateSampleQuery(_ context.Context, _
 	return p.query, p.language
 }
 
-func (p *executableSampleQueryProvider) ExecuteRuntimeQuery(_ context.Context, _ plugin.ConnectionInfo, req plugin.QueryRequest) (*plugin.QueryResult, error) {
+func (p *executableSampleQueryProvider) PrepareQuery(_ context.Context, _ plugin.ConnectionInfo, req plugin.QueryRequest) (plugin.PreparedQuery, error) {
 	p.executedReq = &req
-	return p.result, p.executeErr
+	analysis, err := plugin.NewQueryAnalysis(req.Language, plugin.QuerySchemaCoverageUnknown)
+	if err != nil {
+		return nil, err
+	}
+	return plugin.NewPreparedQuery(analysis, nil, nil, func(context.Context) (*plugin.QueryResult, error) {
+		return p.result, p.executeErr
+	})
 }
 
 func TestGenerateExecutableSampleQueryRequiresSuccessfulNonEmptyExecution(t *testing.T) {

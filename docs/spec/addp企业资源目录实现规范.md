@@ -1,7 +1,7 @@
 # ADDP 企业资源目录实现规范
 
-版本：v1.12-draft
-更新日期：2026-08-27
+版本：v1.13-draft
+更新日期：2026-08-28
 
 本文定义 Catalog 模块的身份、数据、变化、API、权限、搜索和运行契约。概念边界见 [企业资源目录体系图](../concepts/addp企业资源目录体系图.md)。
 
@@ -154,7 +154,7 @@ System 的 Department / Project Group 管理契约以 `system/docs/IAM数据模�
 
 推荐继任是 Catalog 当前唯一自有的跨 CatalogEntry 业务关系。它服务于目录弃用后的治理迁移，不扩展为通用关系表、`RelationType` 配置或任意关系编辑器：
 
-- `recommended_successor_entry_id` 是 CatalogEntry 聚合字段，随现有 `PUT /entries/:id` 完整替换并使用同一个 `version`；不新增独立关系写接口；
+- `recommended_successor_entry_id` 是 CatalogEntry 聚合字段，只随唯一治理子资源 `PUT /entries/:id/governance` 在弃用或维护弃用信息时更新，并使用同一个聚合 `version`；通用编目更新不得读写它，也不新增独立关系写接口；
 - 只有持有 `catalog.entry.deprecate` 的用户可以在弃用时设置，或在已弃用条目上变更、清除推荐继任项；
 - 目标校验只读取 Catalog 自身同 Tenant 事实，不调用专业模块，不形成新的启动或 Ready 依赖；
 - 赋值时目标必须是来源有效的 `curated` 或 `certified` active 条目；目标后续来源缺失或继续弃用时，既有关系作为历史治理事实保留，并按当前目标状态明确展示；
@@ -167,15 +167,20 @@ System 的 Department / Project Group 管理契约以 `system/docs/IAM数据模�
 允许的单一路线：
 
 ```text
-discovered → curated → certified → deprecated
-                    ↘ deprecated
+discovered ⇄ curated ⇄ certified → deprecated
+                     ↘ deprecated
 ```
 
 - `discovered → curated`：业务名称、说明、有效 primary Domain、责任部门、业务责任人和至少一个数据管理员完整；Model 来源的 primary Domain 取 owner 当前声明，不要求也不允许 Catalog primary 副本；
-- `curated → certified`：需要独立认证权限和认证审计；
-- `curated|certified → deprecated`：必须填写原因；
+- `curated → discovered`：唯一表示“撤销编目”。它不是普通字段编辑或任意状态回退，而是把误编目或不再具备完整业务治理事实的条目原子恢复为自动发现状态；请求必须同时清空 Catalog 自有业务名称、业务说明、Domain、Glossary、责任、组件 Element 和推荐继任关系，并把可见性恢复为 `inventory`。来源绑定、CatalogEntry 稳定身份、专业 owner 事实、版本和审计历史必须保留；服务端拒绝任何保留人工编目字段的部分撤销；
+- `curated → certified`：需要独立认证权限和认证审计；认证只确认当前 CatalogEntry 聚合版本，不允许在同一请求中改变业务名称、说明、语义关联、责任、组件数据元关联或可见性；
+- `certified → curated`：唯一表示“撤销认证”。必须具有认证权限并填写原因，只改变治理状态并完整保留当前编目事实；撤销后使用普通编目更新完成修订，再由同一路径重新认证；
+- `curated|certified → deprecated`：必须具有弃用权限并填写原因，只改变治理状态和可选推荐继任项，不允许夹带业务编目修改；
+- `deprecated → deprecated`：只允许具有弃用权限的用户填写原因并变更或清除推荐继任项；其他编目事实冻结；
 - 弃用时可以指定一个推荐继任项；推荐继任项不是必填，没有替代资源时允许为空；
-- 第一阶段不允许从 `deprecated` 恢复，也不允许任意回退。若后续确有恢复需求，先扩展规范和审计模型。
+- `deprecated` 不允许恢复；除“撤销编目”和“撤销认证”外不允许任何回退。重新认证不是独立状态、实体或兼容 API，固定由“撤销认证 → 编辑编目 → 认证”构成同一 CatalogEntry 上的可审计闭环。
+
+通用编目更新 `PUT /entries/:id` 只维护 `discovered|curated` 阶段的完整编目聚合和撤销编目，不接受进入、维持或退出 `certified|deprecated` 的请求。认证、撤销认证、弃用和弃用信息维护唯一使用 `PUT /entries/:id/governance`，请求携带当前聚合 `version`、目标 `governance_status`、按转换要求填写的 `reason` 和可选 `recommended_successor_entry_id`。服务端在同一事务中锁定 CatalogEntry、校验状态与版本、更新治理状态或推荐继任项、递增版本并分别写入 `catalog.entry.certified`、`catalog.entry.certification_withdrawn`、`catalog.entry.deprecated` 或 `catalog.entry.deprecation_updated` 审计；该路径不替换编目关联，也不依赖 Standard / System 当前可达。
 
 ### 4.2 目录可见性
 
@@ -194,9 +199,13 @@ Catalog 列表只提供两个相互排他的目录视图：
 - `governance`：默认视图，只包含 `curated|certified|deprecated` 条目；调用者拥有 `catalog.inventory.read` 不改变该默认值。
 - `inventory`：企业资源盘点视图，包含 `discovered|curated|certified|deprecated` 条目，必须同时具有 `catalog.entry.read` 和 `catalog.inventory.read`。
 
+Console 的固定页面标题使用“企业资源目录”，侧边栏入口使用“资源浏览”，两个视图标签分别使用“已治理资源”和“资源盘点”。不得同时使用“目录浏览”“治理目录”“企业目录导航”等相近名称制造另一套目录概念。`discovered` 条目主操作为“开始编目”；`curated` 条目主操作为“编辑编目”，认证和撤销编目放在明确的治理操作中；`certified` 条目只提供“撤销认证”和“弃用资源”，不显示通用编目编辑器；`deprecated` 只提供“维护弃用信息”，不得修改冻结的编目事实。
+
 视图是同一组 CatalogEntry 的权限感知查询，不新增实体、复制条目或维护双轨索引。DataItem 全量自动建档且可在 `inventory` 查询；完成业务编目后，同一 CatalogEntry 自然进入 `governance` 视图。
 
 目录浏览采用“主业务域 + 上下文分面 + 权威分页列表”，不建立持久化企业目录树。Standard Domain 是主业务分类，Accountable Department 是可交叉的组织责任分面，Entry Type 是资源形态分面；三者不能被固化为 Domain 拥有 Department、Department 拥有资源类型的父子事实。前端在同一 `/entries` 路由中按“业务域 → 责任部门 → 资源类型”逐步缩小当前查询，所有选择写入规范 URL，并继续由 `/entries` 返回同一批 CatalogEntry。
+
+前端把业务域、责任部门和资源类型表达为三个独立、可搜索且带计数的浏览维度，不显示 `1/2/3` 层级编号或父子树外观；已选维度以可独立清除的当前范围展示。名称搜索保持常显，来源状态、治理状态、目录可见性和来源引擎属于高级筛选，默认折叠。详情页优先显示业务可理解的概览和编目信息，来源身份、owner 当前事实、联邦专业读模型、关系与审计分别进入“专业事实”和“关系与历史”；进入编辑模式时只显示完整编目表单，不在同一滚动页面下继续重复只读详情。
 
 资源盘点视图的业务域导航可以提供“待归类”虚拟入口，但它不是 Standard Domain、没有稳定 Domain ID，也不进入 `/entries/facets` 的 Domain 候选。该入口唯一映射到 `view=inventory&coverage_dimension=primary_domain&coverage_state=missing` 的权威治理缺口查询；进入时清除名称搜索、已选业务域及其下游责任部门和资源类型，退出后恢复普通目录导航。缺口视图不得继续把“待归类”表现为导航父节点，避免把治理状态误装成企业分类事实。
 
@@ -468,6 +477,35 @@ Data Application 的草稿、Component、页面布局、参数、绑定、Revisi
 
 Catalog 提供给 Asset 的 `POST /api/v1/catalog/runtime/references/resolve` 除可组合、可发布状态外，必须返回当前 `entry_type` 以及唯一当前来源的 `source_module`、`source_type`、`source_identity`。这些字段是一次动态解析结果，不成为 Asset 的来源绑定副本。`application` 类型 Asset 只接受唯一一个 `entry_type=data_application`、`source_module=workbench`、`source_type=data_application` 的 primary Component；`source_identity` 必须是规范小写 Data Application UUID。Asset 使用该解析结果建立 owner 履约目标，不从展示名称、运行路径或手工 URL 猜测资源。
 
+### 5.14 数据字典联邦读模型
+
+数据字典是当前物理字段事实与指定查询时点标准解释的组合视图，不是 Catalog、Meta 或 Standard 的新持久化实体。第一阶段只适用于当前来源为 `meta/data_item`、来源状态为 `active` 且具有规范正整数 `item_id` 的 CatalogEntry。
+
+Catalog 提供唯一查询路径：
+
+```http
+GET /api/v1/catalog/entries/{id}/data-dictionary?as_of={RFC3339}
+```
+
+- `as_of` 可选，省略时由 Catalog 在一次请求中固定一个 UTC 服务器时点；显式值必须是带时区的 RFC3339 时间。
+- Catalog 先使用现有目录可见性规则校验条目，再使用 `addp-catalog` Tenant Service Access Token 调用 Meta `GET /api/v1/meta/items/{item_id}/fields?include_details=true` 读取当前物理字段。Catalog 不从已观察摘要伪造当前字段，也不解析路径猜测 Meta 身份。
+- Catalog 用自身权威的 `CatalogComponent -> Element` 关联把 Meta 字段连接到稳定 `element_id`，然后通过 Standard `POST /api/v1/standard/runtime/element-revisions/resolve` 在同一 `as_of` 批量解析精确数据元修订及其绑定的码值集修订。
+- Standard 运行时请求固定包含 1 到 200 个不重复、规范十进制字符串形式的正整数 `element_ids` 和一个 `as_of`；响应按请求顺序返回 `found`、数据元稳定摘要、精确不可变修订，以及可选的精确码值集修订和码项。跨 Tenant、不存在、已删除或该时点无生效修订统一 `found=false`。该路由 `addp-catalog|addp-model` 和 `standard.element.read` 共同约束；Model 审批冻结也必须复用此唯一契约。
+- 响应按 Meta 字段顺序返回物理名称、原生类型、通用类型、可空、主键、默认表达式、注释等物理事实，并可选组合数据元编码、名称、定义、数据类型、格式、值域、安全等级、生效区间及码项。未关联 Element 的物理字段仍必须返回，其标准解释为 `null`。
+- `as_of` 只回溯 Standard 修订语义；Meta 当前没有物理 Schema 时态版本，因此不得把本视图表述为历史物理结构快照。
+
+数据字典导出使用唯一同步路径：
+
+```http
+GET /api/v1/catalog/entries/{id}/data-dictionary/export?as_of={RFC3339}
+```
+
+- 导出与联邦查询使用完全相同的可见性、适用范围、依赖解析和 `as_of` 规则，不接受客户端提交查询结果，也不从 Catalog 已观察摘要生成字段。
+- 导出在请求时重新组合一次联邦数据字典，以 UTF-8 JSON 附件返回 `catalog.data_dictionary/v1` 完整响应；文件中的 `generated_at` 是本次当前物理结构捕获时点，`as_of` 是 Standard 解释时点，两者不得混淆。
+- 响应使用 `Content-Disposition: attachment`，并以强 ETag 提供响应字节的 SHA-256 摘要。下载文件一经产生即是不可变快照；Catalog 不保存导出文件、导出任务或第二份数据字典事实，不提供修改、覆盖或服务端重放接口。
+- 同步导出只面向单个 DataItem 的有界字段集合。未来若出现批量发布、长期托管、审批或外部分发需求，应另行定义 Asset 发布物及保留策略，不能把本同步下载接口扩展成隐式发布流程。
+- Meta 或 Standard 不可达时返回 `503 catalog_data_dictionary_dependency_unavailable`，仅影响本次字典查询，不影响 Catalog 详情、Alive 或 Ready。条目来源不适用时返回 `409 catalog_data_dictionary_not_applicable`，不返回空数据伪装成功。
+
 ## 六、Catalog API 契约
 
 BasePath 固定为 `/api/v1/catalog`。第一阶段公开单一路由集合：
@@ -480,7 +518,10 @@ BasePath 固定为 `/api/v1/catalog`。第一阶段公开单一路由集合：
 | POST | `/entries/batch_governance` | 对显式选择的 CatalogEntry 原子批量分配主业务域或责任部门 |
 | GET | `/reference-candidates` | 按名称分页查询当前可建立语义或责任关联的 owner 候选 |
 | GET | `/entries/:id` | 读取聚合详情、来源、语义和责任 |
-| PUT | `/entries/:id` | 使用聚合根 `version` 原子更新编目、语义、责任、可见性和治理状态 |
+| GET | `/entries/:id/data-dictionary` | 组合 Meta 当前物理字段、Catalog 组件语义关联与 Standard 按时点修订 |
+| GET | `/entries/:id/data-dictionary/export` | 重新组合一次联邦数据字典并下载不可变 JSON 快照，不在服务端留存副本 |
+| PUT | `/entries/:id` | 使用聚合根 `version` 原子更新 `discovered|curated` 阶段的编目、语义、责任与可见性；`curated → discovered` 只接受完整撤销编目形状，不承担认证或弃用转换 |
+| PUT | `/entries/:id/governance` | 使用聚合根 `version` 原子执行认证、撤销认证、弃用或弃用信息维护；只更新治理状态、推荐继任项和领域审计，不替换编目事实 |
 | POST | `/entries/:id/rebind-source` | 显式把新 DataItem 来源重绑到既有条目 |
 | GET | `/entries/:id/history` | 读取该条目的治理和重绑审计 |
 | GET | `/governance/tasks` | 分页读取责任失效治理队列；默认只返回 open 任务 |

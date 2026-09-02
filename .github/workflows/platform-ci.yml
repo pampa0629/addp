@@ -382,6 +382,9 @@ jobs:
           - module: standard
             name: Standard
             target: test-standard-frontend
+          - module: security
+            name: Security
+            target: test-security-frontend
           - module: system
             name: System
             target: test-system-frontend

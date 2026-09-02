@@ -41,6 +41,24 @@ func TestValidateNewTaskConfigAcceptsRawCopy(t *testing.T) {
 	}
 }
 
+func TestValidateNewTaskConfigAcceptsEncodedRecordExport(t *testing.T) {
+	err := validateNewTaskConfig(map[string]interface{}{
+		"runtime": map[string]interface{}{"boundary": "bounded"},
+		"load":    map[string]interface{}{"mode": "snapshot"},
+		"source": map[string]interface{}{
+			"locator": "addp://engine/11/path/Outdoor/Persons?type=collection", "data_type": "unknown", "representation": "native",
+		},
+		"target": map[string]interface{}{
+			"parent_locator": "addp://engine/2/path/exports?type=directory", "name": "Persons.ejsonl",
+			"data_type": "unknown", "representation": "encoded", "format": "mongodb_extended_jsonl",
+			"policy": map[string]interface{}{"apply_mode": "replace"},
+		},
+	}, 1000)
+	if err != nil {
+		t.Fatalf("validateNewTaskConfig() error = %v", err)
+	}
+}
+
 func TestValidateNewTaskConfigStillAcceptsTableTransfer(t *testing.T) {
 	err := validateNewTaskConfig(map[string]interface{}{
 		"runtime":    map[string]interface{}{"boundary": "bounded"},

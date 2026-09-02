@@ -400,7 +400,7 @@ WGS84 bounds、SRID 和 CRS 属于 `capabilities.spatial`，不重复写入 `for
 | `spatial` | 空间能力 | geometry_columns、primary_geometry_column、extent、has_spatial_index |
 | `temporal` | 时间能力 | time_columns、time_range、granularity、timezone |
 | `statistics` | 扫描统计与采样事实 | sample_size、is_sampled、schema_type、index_count、avg_record_size |
-| `extraction` | 内容提取 | extractor_available、text_extracted、status、reason、extractor、plain_text_preview、text_truncated、summary |
+| `extraction` | 内容提取 | extractor_available、text_extracted、status、reason、extractor、text_truncated、summary |
 | `semantic` | 语义能力 | embedding_model、vector_index_ref、semantic_tags |
 | `constraints` | 关系表命名约束事实 | constraints（primary_key、unique、foreign_key） |
 | `partitioning` | 分区事实 | strategy、key_fields、subpartition_strategy、subpartition_key_fields、partition_count |
@@ -412,7 +412,7 @@ WGS84 bounds、SRID 和 CRS 属于 `capabilities.spatial`，不重复写入 `for
 
 `capabilities.statistics` 只保存 Meta scan、catalog、system table、格式头或结构推断过程获得的紧凑统计与采样事实。它不保存 Manager data profile，也不得新增字段级 `fields`、`null_count`、`distinct_count`、`min`、`max`、`quantiles`、`histogram`、`top_values`、`profiled_at` 或 `profile_ref` 来旁路承载剖析结果。Manager 数据剖析的当前结果、字段分布和执行历史分别归 Manager 私有结果表与 `common.task_executions`。
 
-`capabilities.extraction` 只记录提取过程状态、轻量预览和外部结果引用，不保存完整正文、OCR 全文、字幕全文或 embedding。字段语义：
+`capabilities.extraction` 只记录提取过程状态和外部结果引用，不保存正文、正文预览、OCR 全文、字幕全文或 embedding。字段语义：
 
 | 字段 | 语义 |
 |---|---|
@@ -421,10 +421,9 @@ WGS84 bounds、SRID 和 CRS 属于 `capabilities.spatial`，不重复写入 `for
 | `status` | 提取状态，例如 `completed`、`unsupported`、`failed` |
 | `reason` | `unsupported` 或 `failed` 的稳定原因码，例如 `document_text_reader_unavailable` |
 | `extractor` | 实际使用的提取器标识，例如 `common_format:docx` |
-| `plain_text_preview` | 从正文生成的短预览，不是全文事实源 |
 | `text_truncated` | 正文抽取是否因限制被截断 |
 
-历史或第三方字段如 `text_excerpt` 可以在隔离数据中出现，但平台标准文档正文预览字段统一使用 `plain_text_preview`。新增实现不得同时写入 `text_excerpt` 和 `plain_text_preview` 表达同一事实。
+正文不属于技术元数据。`plain_text_preview`、`text_excerpt` 等正文派生字段不得写入 attributes，也不得由 Manager 从历史快照兼容读取。受控样本只能由 Security 对显式纳管的 data item 按 fingerprint 调用 Meta runtime 即时读取，不持久化到 Meta attributes。
 
 `metadata_extracted` 不是标准 attributes 字段。deep scan 是否完成应看 `meta_item.scanned_depth`、`scan_status` 或 scan run 结果；Manager 不应通过 attributes 判断是否需要补齐元数据。
 

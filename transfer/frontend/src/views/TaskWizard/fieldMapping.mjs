@@ -45,6 +45,17 @@ export function buildAutomaticFieldMappings(sourceFields, targetFields = []) {
   return applyExistingTargetFields(mappings, targetFields)
 }
 
+export function reconcileQueryOutputMappings(outputFields, existingMappings, targetFields = []) {
+  const fields = Array.isArray(outputFields) ? outputFields : []
+  const existing = Array.isArray(existingMappings) ? existingMappings : []
+  const automatic = buildAutomaticFieldMappings(fields, targetFields)
+  return fields.map((field, index) => {
+    const mapping = existing.find(item => normalizedFieldName(item?.source_field) === normalizedFieldName(field?.name))
+    if (!mapping) return automatic[index]
+    return withSourceDecimalFacts({ ...mapping, source_field: field.name }, field)
+  })
+}
+
 export function applySourceFieldNullability(mappings, sourceFields) {
   const fields = Array.isArray(sourceFields) ? sourceFields : []
   return (Array.isArray(mappings) ? mappings : []).map(mapping => {

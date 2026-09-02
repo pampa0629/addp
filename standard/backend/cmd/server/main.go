@@ -80,8 +80,6 @@ func main() {
 	codeSetRepo := repository.NewCodeSetRepository(db)
 	mCatRepo := repository.NewMeasurementCategoryRepository(db)
 	unitRepo := repository.NewUnitRepository(db)
-	classificationRepo := repository.NewClassificationRepository(db)
-	gradingRepo := repository.NewGradingLevelRepository(db)
 	metricCatRepo := repository.NewMetricCategoryRepository(db)
 	metricRepo := repository.NewMetricRepository(db)
 	documentRepo := repository.NewDocumentRepository(db)
@@ -121,7 +119,6 @@ func main() {
 	elementSvc := service.NewElementService(elementRepo, codeSetRepo, tenantReferenceRepo, standardReferenceDeletionSvc)
 	codeSetSvc := service.NewCodeSetService(codeSetRepo, tenantReferenceRepo)
 	unitSvc := service.NewUnitService(mCatRepo, unitRepo)
-	classificationSvc := service.NewClassificationService(classificationRepo, gradingRepo, tenantReferenceRepo)
 	metricSvc := service.NewMetricService(metricCatRepo, metricRepo, tenantReferenceRepo, standardReferenceDeletionSvc)
 	documentSvc := service.NewDocumentService(documentRepo, tenantReferenceRepo, minioClient, service.DocumentStorageOptions{
 		MaxFileSize: cfg.DocumentMaxFileSize,
@@ -130,6 +127,7 @@ func main() {
 	defer documentSvc.Stop()
 	dimHierarchySvc := service.NewDimensionHierarchyService(dimHierarchyRepo, tenantReferenceRepo, standardReferenceDeletionSvc)
 	referenceResolutionSvc := service.NewReferenceResolutionService(referenceResolutionRepo)
+	elementRevisionResolutionSvc := service.NewElementRevisionResolutionService(elementRepo, codeSetRepo)
 	catalogResourceSvc := service.NewCatalogResourceService(catalogResourceRepo)
 	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db)
 	cleanupSvc := service.NewCleanupService(db, redisClient, taskExecutionRepo, minioClient)
@@ -148,11 +146,11 @@ func main() {
 		elementSvc,
 		codeSetSvc,
 		unitSvc,
-		classificationSvc,
 		metricSvc,
 		documentSvc,
 		dimHierarchySvc,
 		referenceResolutionSvc,
+		elementRevisionResolutionSvc,
 		catalogResourceSvc,
 		cfg.SystemURL,
 		lifecycleController,

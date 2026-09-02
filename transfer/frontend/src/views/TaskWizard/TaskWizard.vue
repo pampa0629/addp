@@ -1,5 +1,10 @@
 <template>
-  <div class="task-wizard" v-loading="loading" :element-loading-text="t('transfer.taskWizard.loadingTaskDetail')">
+  <div
+    class="task-wizard"
+    :class="{ 'task-wizard--review': wizardState.currentStep.value === 4 }"
+    v-loading="loading"
+    :element-loading-text="t('transfer.taskWizard.loadingTaskDetail')"
+  >
     <!-- 步骤指示器 -->
     <el-steps :active="wizardState.currentStep.value" finish-status="success" align-center>
       <el-step :title="t('transfer.taskWizard.stepSelectSource')" :description="t('transfer.taskWizard.configureSourceDesc')" />
@@ -24,7 +29,7 @@
     </div>
 
     <!-- 底部导航 -->
-    <div class="wizard-footer">
+    <div v-if="wizardState.currentStep.value < 4" class="wizard-footer">
       <el-button
         v-if="wizardState.currentStep.value > 0"
         @click="wizardState.prevStep"
@@ -39,15 +44,6 @@
         @click="wizardState.nextStep"
       >
         {{ t('transfer.taskWizard.nextStep') }}
-      </el-button>
-
-      <el-button
-        v-if="wizardState.currentStep.value === 4"
-        type="success"
-        @click="handleSubmit"
-        :loading="submitting"
-      >
-        {{ isEditMode ? t('transfer.taskWizard.updateTask') : t('transfer.taskWizard.createTask2') }}
       </el-button>
 
       <el-button @click="handleCancel">
@@ -262,6 +258,10 @@ onMounted(() => {
   padding: 20px;
   max-width: 1200px;
   margin: 0 auto;
+}
+
+.task-wizard--review {
+  max-width: 1440px;
 }
 
 .step-content {

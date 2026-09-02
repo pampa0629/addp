@@ -94,220 +94,6 @@ const docTemplate = `{
                 ]
             }
         },
-        "/classifications": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "获取数据分类列表 | List data classifications",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/github_com_addp_standard_internal_models.Classification"
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "standard.classification.read"
-                ]
-            },
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "创建数据分类 | Create data classification",
-                "responses": {
-                    "201": {
-                        "description": "Created",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_standard_internal_models.Classification"
-                        }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "standard.classification.create"
-                ]
-            }
-        },
-        "/classifications/{id}": {
-            "put": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "更新数据分类 | Update data classification",
-                "parameters": [
-                    {
-                        "description": "更新数据分类 | Update data classification",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_standard_internal_models.UpdateClassificationRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "409": {
-                        "description": "资源版本冲突 | Resource version conflict",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "standard.classification.update"
-                ]
-            },
-            "delete": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "删除数据分类 | Delete data classification",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "409": {
-                        "description": "Conflict",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "standard.classification.delete"
-                ]
-            }
-        },
         "/code-sets": {
             "get": {
                 "security": [
@@ -3828,122 +3614,6 @@ const docTemplate = `{
                 ]
             }
         },
-        "/grading-levels": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "获取数据分级列表 | List data grading levels",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/github_com_addp_standard_internal_models.GradingLevel"
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "standard.classification.read"
-                ]
-            }
-        },
-        "/grading-levels/{id}": {
-            "put": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "更新数据分级 | Update data grading level",
-                "parameters": [
-                    {
-                        "description": "更新数据分级 | Update data grading level",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_standard_internal_models.UpdateGradingLevelRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "409": {
-                        "description": "资源版本冲突 | Resource version conflict",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "standard.classification.update"
-                ]
-            }
-        },
         "/measurement-categories": {
             "get": {
                 "security": [
@@ -5370,6 +5040,85 @@ const docTemplate = `{
                 ]
             }
         },
+        "/runtime/element-revisions/resolve": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅 addp-catalog 与 addp-model Tenant Service Principal 可按统一 as_of 解析精确数据元修订及其码值集快照；跨 Tenant、不存在或该时点无生效修订统一 found=false | Only addp-catalog and addp-model tenant service principals may resolve exact data element revisions and code-set snapshots at one shared as_of; cross-tenant, missing, or non-effective elements return found=false",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StandardRuntime"
+                ],
+                "summary": "按时点批量解析数据元修订 | Resolve data element revisions at one point in time",
+                "parameters": [
+                    {
+                        "description": "数据元 ID 与统一查询时点，最多 200 个 | Element IDs and one shared query time, up to 200",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.elementRevisionResolutionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.elementRevisionResolutionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求无效 | Invalid request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "需要认证 | Authentication required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "仅允许 addp-catalog 或 addp-model 且需数据元读取权限 | addp-catalog or addp-model and element read permission required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "解析失败 | Resolution failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.element.read"
+                ]
+            }
+        },
         "/units": {
             "get": {
                 "security": [
@@ -5721,47 +5470,6 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_standard_internal_models.Classification": {
-            "type": "object",
-            "properties": {
-                "code": {
-                    "type": "string"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "created_by": {
-                    "type": "integer"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "parent_id": {
-                    "type": "integer"
-                },
-                "sort_order": {
-                    "type": "integer"
-                },
-                "tenant_id": {
-                    "type": "integer"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "updated_by": {
-                    "type": "integer"
-                },
-                "version": {
-                    "type": "integer"
-                }
-            }
-        },
         "github_com_addp_standard_internal_models.CodeItemMutationResponse": {
             "type": "object",
             "properties": {
@@ -6035,9 +5743,6 @@ const docTemplate = `{
                 "change_summary": {
                     "type": "string"
                 },
-                "classification_id": {
-                    "type": "integer"
-                },
                 "code": {
                     "type": "string"
                 },
@@ -6092,9 +5797,6 @@ const docTemplate = `{
                 },
                 "scale": {
                     "type": "integer"
-                },
-                "security_level": {
-                    "type": "string"
                 },
                 "steward_id": {
                     "type": "integer"
@@ -6346,9 +6048,6 @@ const docTemplate = `{
                 "change_summary": {
                     "type": "string"
                 },
-                "classification_id": {
-                    "type": "integer"
-                },
                 "code_set_revision_id": {
                     "type": "integer"
                 },
@@ -6420,9 +6119,6 @@ const docTemplate = `{
                 },
                 "scale": {
                     "type": "integer"
-                },
-                "security_level": {
-                    "type": "string"
                 },
                 "status": {
                     "type": "string"
@@ -6507,40 +6203,6 @@ const docTemplate = `{
                 },
                 "updated_by": {
                     "type": "integer"
-                },
-                "version": {
-                    "type": "integer"
-                }
-            }
-        },
-        "github_com_addp_standard_internal_models.GradingLevel": {
-            "type": "object",
-            "properties": {
-                "color": {
-                    "description": "十六进制颜色",
-                    "type": "string"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "level": {
-                    "description": "L1/L2/L3/L4",
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "sort_order": {
-                    "type": "integer"
-                },
-                "tenant_id": {
-                    "type": "integer"
-                },
-                "updated_at": {
-                    "type": "string"
                 },
                 "version": {
                     "type": "integer"
@@ -7080,29 +6742,6 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_standard_internal_models.UpdateClassificationRequest": {
-            "type": "object",
-            "required": [
-                "version"
-            ],
-            "properties": {
-                "description": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "parent_id": {
-                    "type": "integer"
-                },
-                "sort_order": {
-                    "type": "integer"
-                },
-                "version": {
-                    "type": "integer"
-                }
-            }
-        },
         "github_com_addp_standard_internal_models.UpdateCodeItemRequest": {
             "type": "object",
             "required": [
@@ -7301,9 +6940,6 @@ const docTemplate = `{
                 "change_summary": {
                     "type": "string"
                 },
-                "classification_id": {
-                    "type": "integer"
-                },
                 "code_set_revision_id": {
                     "type": "integer"
                 },
@@ -7352,9 +6988,6 @@ const docTemplate = `{
                 },
                 "scale": {
                     "type": "integer"
-                },
-                "security_level": {
-                    "type": "string"
                 },
                 "unit_id": {
                     "type": "integer"
@@ -7409,26 +7042,6 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
-                },
-                "version": {
-                    "type": "integer"
-                }
-            }
-        },
-        "github_com_addp_standard_internal_models.UpdateGradingLevelRequest": {
-            "type": "object",
-            "required": [
-                "version"
-            ],
-            "properties": {
-                "color": {
-                    "type": "string"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
                 },
                 "version": {
                     "type": "integer"
@@ -7601,6 +7214,83 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_standard_internal_service.CodeItemSnapshot": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "definition": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "replacement_item_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "sort_order": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "active",
+                        "deprecated"
+                    ]
+                }
+            }
+        },
+        "github_com_addp_standard_internal_service.CodeSetRevisionSnapshot": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "code_set_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "description": {
+                    "type": "string"
+                },
+                "effective_from": {
+                    "type": "string"
+                },
+                "effective_to": {
+                    "type": "string"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_standard_internal_service.CodeItemSnapshot"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "revision_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "revision_no": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "draft",
+                        "in_review",
+                        "published",
+                        "withdrawn"
+                    ]
+                },
+                "value_type": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_standard_internal_service.DomainTree": {
             "type": "object",
             "properties": {
@@ -7651,6 +7341,101 @@ const docTemplate = `{
                 },
                 "version": {
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_service.ElementRevisionResolution": {
+            "type": "object",
+            "properties": {
+                "element_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "found": {
+                    "type": "boolean"
+                },
+                "snapshot": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_service.ElementRevisionSnapshot"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_service.ElementRevisionSnapshot": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "code_set_revision": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_service.CodeSetRevisionSnapshot"
+                },
+                "data_type": {
+                    "type": "string"
+                },
+                "default_value": {
+                    "type": "string"
+                },
+                "definition": {
+                    "type": "string"
+                },
+                "domain_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "effective_from": {
+                    "type": "string"
+                },
+                "effective_to": {
+                    "type": "string"
+                },
+                "element_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "element_revision_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "example_values": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "format": {
+                    "type": "string"
+                },
+                "length": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "nullable": {
+                    "type": "boolean"
+                },
+                "precision_num": {
+                    "type": "integer"
+                },
+                "range_constraint": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_models.RangeConstraint"
+                },
+                "revision_no": {
+                    "type": "integer"
+                },
+                "scale": {
+                    "type": "integer"
+                },
+                "unit_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "value_domain_kind": {
+                    "type": "string",
+                    "enum": [
+                        "unrestricted",
+                        "range",
+                        "enumeration"
+                    ]
                 }
             }
         },
@@ -7778,6 +7563,39 @@ const docTemplate = `{
                 "ReferenceTypeGlossary",
                 "ReferenceTypeElement"
             ]
+        },
+        "internal_api.elementRevisionResolutionRequest": {
+            "type": "object",
+            "required": [
+                "as_of",
+                "element_ids"
+            ],
+            "properties": {
+                "as_of": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "element_ids": {
+                    "type": "array",
+                    "maxItems": 200,
+                    "minItems": 1,
+                    "uniqueItems": true,
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "internal_api.elementRevisionResolutionResponse": {
+            "type": "object",
+            "properties": {
+                "results": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_standard_internal_service.ElementRevisionResolution"
+                    }
+                }
+            }
         },
         "internal_api.referenceResolutionRequest": {
             "type": "object",

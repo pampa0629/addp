@@ -28,7 +28,7 @@ type TenantSourceSynchronizer interface {
 }
 
 type TenantRegistry interface {
-	ListCatalogTenantIDs(ctx context.Context) ([]uint, error)
+	ListRuntimeTenantIDs(ctx context.Context) ([]uint, error)
 }
 
 func NewSourceSyncRunner(db *gorm.DB, interval time.Duration, registry TenantRegistry, syncers ...TenantSourceSynchronizer) *SourceSyncRunner {
@@ -109,7 +109,7 @@ func (r *SourceSyncRunner) run(ctx context.Context) {
 
 func (r *SourceSyncRunner) syncObservedTenants(ctx context.Context) {
 	if r.registry != nil {
-		if tenantIDs, err := r.registry.ListCatalogTenantIDs(ctx); err != nil {
+		if tenantIDs, err := r.registry.ListRuntimeTenantIDs(ctx); err != nil {
 			if ctx.Err() == nil {
 				log.Printf("Catalog tenant discovery delayed: %v", err)
 			}

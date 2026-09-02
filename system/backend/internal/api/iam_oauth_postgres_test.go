@@ -16,7 +16,7 @@ import (
 
 	commonauth "github.com/addp/common/authorization"
 	sharedauth "github.com/addp/common/middleware/auth"
-	commonsecurity "github.com/addp/common/security"
+	secretcipher "github.com/addp/common/secretcipher"
 	"github.com/addp/system/internal/iam"
 	iamoauth "github.com/addp/system/internal/iam/oauth"
 	"github.com/addp/system/internal/middleware"
@@ -148,6 +148,8 @@ func TestIAMOAuthClientCredentialsAuthContextAgainstPostgres(t *testing.T) {
 			"inference.runtime.execute",
 			"meta.catalog.read",
 			"meta.scan_task.execute",
+			"security.protection_projection.read",
+			"security.protection_projection.update",
 			"system.engine.read",
 			"system.engine_descriptor.read",
 			"transfer.task.create",
@@ -242,7 +244,7 @@ func assertMetaServiceEngineDetailAgainstPostgres(
 		t.Fatalf("migrate engine table for contract test: %v", err)
 	}
 	encryptionKey := []byte("0123456789abcdef0123456789abcdef")
-	encryptedPassword, err := commonsecurity.Encrypt("meta-plain-password", encryptionKey)
+	encryptedPassword, err := secretcipher.Encrypt("meta-plain-password", encryptionKey)
 	if err != nil {
 		t.Fatalf("encrypt engine password: %v", err)
 	}
@@ -408,6 +410,7 @@ func testBuiltinServiceClientSecrets(prefix string) map[string]string {
 		"addp-orchestrator": prefix + "-orchestrator-0123456789abcdef0123456789abcdef",
 		"addp-portal":       prefix + "-portal-0123456789abcdef0123456789abcdef",
 		"addp-quality":      prefix + "-quality-0123456789abcdef0123456789abcdef",
+		"addp-security":     prefix + "-security-0123456789abcdef0123456789abcdef",
 		"addp-pointcloud":   prefix + "-pointcloud-0123456789abcdef0123456789abcdef",
 		"addp-service":      prefix + "-service-0123456789abcdef0123456789abcdef",
 		"addp-standard":     prefix + "-standard-0123456789abcdef0123456789abcdef",

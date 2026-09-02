@@ -118,7 +118,15 @@ test('enterprise Catalog renders governance coverage, human-readable navigation,
     const detail = frame.getByTestId('catalog-entry-detail')
     await expect(detail).toHaveAttribute('data-load-state', 'loaded')
     await expect(detail).toHaveAttribute('data-entry-id', env.ADDP_ONLINE_CATALOG_ENTRY_ID)
+    await expect(detail).toHaveAttribute('data-governance-status', 'curated')
     await expect(detail.locator('h1')).toHaveText(env.ADDP_ONLINE_CATALOG_BUSINESS_NAME)
+    await expect(frame.getByTestId('catalog-curation-action')).toBeVisible()
+    await frame.getByTestId('catalog-more-actions').click()
+    await expect(frame.getByTestId('catalog-certify-action')).toBeVisible()
+    await expect(frame.getByTestId('catalog-deprecate-action')).toBeVisible()
+    await expect(frame.getByTestId('catalog-withdraw-curation-action')).toBeVisible()
+    await page.keyboard.press('Escape')
+    await detail.getByRole('tab').nth(2).click()
     await expect(detail).toContainText(env.ADDP_ONLINE_CATALOG_SOURCE_IDENTITY)
     await expect(detail).not.toContainText('undefined')
 
@@ -126,14 +134,16 @@ test('enterprise Catalog renders governance coverage, human-readable navigation,
     frame = page.frameLocator('iframe[data-testid="module-iframe"]')
     const entryList = frame.getByTestId('catalog-entry-list')
     await expect(entryList).toHaveAttribute('data-load-state', 'loaded')
+    const viewScope = frame.getByTestId('catalog-view-scope')
+    await expect(viewScope).toHaveAttribute('data-active-view', 'inventory')
+    await expect(viewScope).toHaveAttribute('data-result-total', /\d+/)
     await expect(frame.getByTestId('catalog-entry-navigation')).toHaveCount(1)
-    await expect(frame.getByTestId('catalog-unclassified-domain-navigation')).toBeVisible()
-    await expect(frame.getByTestId('catalog-unassigned-department-navigation')).toBeVisible()
     for (const testID of ['catalog-domain-navigation', 'catalog-department-navigation', 'catalog-entry-type-navigation']) {
       const navigation = frame.getByTestId(testID)
       await expect(navigation).toHaveCount(1)
-      await expect(navigation.getByRole('button').first()).toBeVisible()
+      await expect(navigation.getByRole('combobox')).toBeVisible()
     }
+    await frame.getByTestId('catalog-advanced-filters-toggle').click()
     const engineSelector = frame.getByTestId('catalog-engine-filter')
     await expect(engineSelector).toHaveCount(1)
     await expect(engineSelector.getByRole('combobox')).toHaveCount(1)
@@ -177,6 +187,7 @@ test('enterprise Catalog renders governance coverage, human-readable navigation,
       coverage_dimensions: 7,
       human_readable_filter_selectors: 3,
       explicit_batch_governance_ui: true,
+      catalog_lifecycle_actions: ['edit', 'certify', 'deprecate', 'withdraw-curation'],
       portal_category_id: env.ADDP_ONLINE_ASSET_CATEGORY_ID,
       portal_asset_id: env.ADDP_ONLINE_ASSET_ID,
       portal_category_assets: 1,

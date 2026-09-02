@@ -53,8 +53,7 @@ type DevTask struct {
 type QueryParameterDefinition struct {
 	Name        string      `json:"name"`
 	Type        string      `json:"type"`
-	Default     interface{} `json:"default"`
-	Title       string      `json:"title,omitempty"`
+	Default     interface{} `json:"default,omitempty"`
 	Description string      `json:"description,omitempty"`
 }
 

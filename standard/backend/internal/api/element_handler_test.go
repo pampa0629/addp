@@ -150,7 +150,7 @@ func newElementHandlerTestDB(t *testing.T) *gorm.DB {
 		status TEXT NOT NULL, name TEXT NOT NULL, definition TEXT NOT NULL, data_type TEXT NOT NULL,
 		length INTEGER, precision_num INTEGER, scale INTEGER, nullable BOOLEAN, default_value TEXT, format TEXT,
 		value_domain_kind TEXT NOT NULL, range_constraint TEXT, code_set_revision_id INTEGER, unit_id INTEGER,
-		security_level TEXT, classification_id INTEGER, example_values TEXT, extra_quality_rules TEXT,
+		example_values TEXT, extra_quality_rules TEXT,
 		compiled_quality_rules TEXT, change_summary TEXT NOT NULL, effective_from DATETIME, effective_to DATETIME,
 		submitted_by INTEGER, submitted_at DATETIME, published_by INTEGER, published_at DATETIME,
 		created_by INTEGER NOT NULL, updated_by INTEGER, created_at DATETIME, updated_at DATETIME

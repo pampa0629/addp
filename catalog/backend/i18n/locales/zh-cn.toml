@@ -19,6 +19,10 @@ other = "不允许执行该治理状态转换"
 other = "一个或多个语义或责任引用不存在、已失效或不属于当前租户"
 [catalog.error.certification_permission_required]
 other = "认证企业目录条目需要独立认证权限"
+[catalog.error.certification_requirements_not_met]
+other = "认证要求未满足：来源必须有效，业务编目与责任必须完整，目录可见性必须为部门或租户可见"
+[catalog.error.certification_withdrawal_reason_required]
+other = "撤销认证必须填写原因"
 [catalog.error.deprecation_permission_required]
 other = "弃用企业目录条目需要独立弃用权限"
 [catalog.error.reference_validation_unavailable]
@@ -43,6 +47,10 @@ other = "目录集合不存在或当前用户无权访问"
 other = "目录集合已被其他操作更新，请刷新后重试"
 [catalog.error.collection_name_conflict]
 other = "当前项目组中已存在同名目录集合"
+[catalog.error.data_dictionary_not_applicable]
+other = "仅来源有效的 Meta 数据项支持联邦数据字典"
+[catalog.error.data_dictionary_dependency_unavailable]
+other = "Meta 或 Standard 数据字典依赖当前不可用"
 
 [permissions.catalog.inventory.read.name]
 other = "查看企业资源盘点"

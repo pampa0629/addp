@@ -894,6 +894,81 @@ func TestExecutionAudienceForwardMigrationAgainstPostgres(t *testing.T) {
 	}
 }
 
+func TestSecurityModuleDirtyMigrationRepairAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("set ADDP_SYSTEM_POSTGRES_TEST_DSN to a disposable PostgreSQL 15+ database")
+	}
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
+
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`DROP SCHEMA IF EXISTS system CASCADE; DROP SCHEMA IF EXISTS common CASCADE`); err != nil {
+		t.Fatalf("reset Security repair migration schemas: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	through112, _ := migrationFilesBeforeAndThrough(t, "000113_iam_security_module.up.sql")
+	_, through114 := migrationFilesBeforeAndThrough(t, "000114_iam_security_enrollment_projection.up.sql")
+	if err := (&Runner{DSN: dsn, FS: through112, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply migrations through 112: %v", err)
+	}
+	if _, err := db.Exec(`UPDATE system.schema_migrations SET version = 113, dirty = true`); err != nil {
+		t.Fatalf("simulate fully rolled-back migration 113: %v", err)
+	}
+
+	if err := RepairDirtySecurityModuleMigration113(ctx, db); err != nil {
+		t.Fatalf("repair dirty Security module migration 113: %v", err)
+	}
+	var version int
+	var dirty bool
+	if err := db.QueryRow(`SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
+		t.Fatalf("read repaired migration state: %v", err)
+	}
+	if version != 112 || dirty {
+		t.Fatalf("repaired migration state=(%d,%t), want (112,false)", version, dirty)
+	}
+	if err := (&Runner{DSN: dsn, FS: through114, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply corrected migrations 113 and 114 after repair: %v", err)
+	}
+	if err := db.QueryRow(`SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
+		t.Fatalf("read post-repair migration state: %v", err)
+	}
+	if version != 114 || dirty {
+		t.Fatalf("post-repair migration state=(%d,%t), want (114,false)", version, dirty)
+	}
+	assertSecurityModuleRuntimeConstraints(t, db, false)
+
+	if _, err := db.Exec(`DROP SCHEMA system CASCADE; DROP SCHEMA IF EXISTS common CASCADE`); err != nil {
+		t.Fatalf("reset Security repair rejection schemas: %v", err)
+	}
+	if err := (&Runner{DSN: dsn, FS: through112, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("reapply migrations through 112 for rejection: %v", err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO system.permissions (
+			permission_key, owner_module, action, risk_level, delegable,
+			allowed_scope_types, tenant_customizable, name_i18n_key,
+			description_i18n_key, status
+		) VALUES (
+			'security.partial.read', 'security', 'read', 'low', false,
+			ARRAY['tenant']::text[], true, 'partial.name', 'partial.description', 'active'
+		)
+	`); err != nil {
+		t.Fatalf("seed partial Security migration fact: %v", err)
+	}
+	if _, err := db.Exec(`UPDATE system.schema_migrations SET version = 113, dirty = true`); err != nil {
+		t.Fatalf("prepare partial repair rejection state: %v", err)
+	}
+	if err := RepairDirtySecurityModuleMigration113(ctx, db); err == nil || !strings.Contains(err.Error(), "zero target facts") {
+		t.Fatalf("repair with applied Security facts error = %v, want zero-target-facts rejection", err)
+	}
+}
+
 func TestPortalTenantRuntimeRemovalForwardMigrationAgainstPostgres(t *testing.T) {
 	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
 	if dsn == "" {
@@ -1997,7 +2072,7 @@ func TestWorkbenchRuntimeForwardMigrationAgainstPostgres(t *testing.T) {
 	if version != 92 || dirty {
 		t.Fatalf("migration 92 state=(%d,%t), want (92,false)", version, dirty)
 	}
-	assertWorkbenchRuntimeCatalog(t, db, 4, 4)
+	assertWorkbenchRuntimeCatalog(t, db, 4, 4, 0, 8)
 }
 
 func TestWorkbenchDataApplicationForwardMigrationAgainstPostgres(t *testing.T) {
@@ -2034,7 +2109,7 @@ func TestWorkbenchDataApplicationForwardMigrationAgainstPostgres(t *testing.T) {
 	if version != 104 || dirty {
 		t.Fatalf("migration 104 state=(%d,%t), want (104,false)", version, dirty)
 	}
-	assertWorkbenchRuntimeCatalog(t, db, 10, 10)
+	assertWorkbenchRuntimeCatalog(t, db, 10, 10, 0, 8)
 }
 
 func TestWorkbenchCatalogReadForwardMigrationAgainstPostgres(t *testing.T) {
@@ -2492,7 +2567,7 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 	}
 
 	assertIAMCatalogSeed(t, db)
-	assertWorkbenchRuntimeCatalog(t, db, 13, 10)
+	assertWorkbenchRuntimeCatalog(t, db, 9, 6, 4, 0)
 	assertStandardDocumentCatalog(t, db)
 	assertMonitorAuthorizationCatalog(t, db)
 	assertModelAuthorizationCatalog(t, db)
@@ -2512,6 +2587,7 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 	assertIAMRecoveryConstraints(t, db)
 	assertTenantAdministrationClosure(t, db)
 	assertServicePrincipalRuntimeConstraints(t, db)
+	assertSecurityModuleRuntimeConstraints(t, db, true)
 	assertExecutionAuthorizationConstraints(t, db)
 	assertEngineRuntimeDescriptorConstraints(t, db)
 	assertTaskExecutionRuntimeConstraints(t, db)
@@ -2554,15 +2630,38 @@ func TestRunnerAgainstPostgres(t *testing.T) {
 	}
 }
 
-func assertWorkbenchRuntimeCatalog(t *testing.T, db *sql.DB, expectedWorkbenchPermissions, expectedTenantPermissions int) {
+func assertWorkbenchRuntimeCatalog(
+	t *testing.T,
+	db *sql.DB,
+	expectedWorkbenchPermissions,
+	expectedTenantPermissions,
+	expectedRetiredPermissions,
+	expectedRetiredRolePermissions int,
+) {
 	t.Helper()
 	var permissionCount, runtimeRolePermissionCount, principalCount, clientCount, assignmentCount int
 	var administratorPermissionCount, dataViewerPermissionCount int
+	var retiredPermissionCount, retiredRolePermissionCount int
 	if err := db.QueryRow(`
 		SELECT count(*) FROM system.permissions
 		WHERE owner_module = 'workbench' AND status = 'active'
 	`).Scan(&permissionCount); err != nil {
 		t.Fatalf("count Workbench permissions: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT count(*) FROM system.permissions
+		WHERE permission_key IN ('workbench.view.create', 'workbench.view.delete', 'workbench.view.read', 'workbench.view.update')
+		  AND status = 'disabled'
+	`).Scan(&retiredPermissionCount); err != nil {
+		t.Fatalf("count retired Workbench View permissions: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM system.role_permissions role_permission
+		JOIN system.permissions permission ON permission.id = role_permission.permission_id
+		WHERE permission.permission_key IN ('workbench.view.create', 'workbench.view.delete', 'workbench.view.read', 'workbench.view.update')
+	`).Scan(&retiredRolePermissionCount); err != nil {
+		t.Fatalf("count retired Workbench View role bindings: %v", err)
 	}
 	if err := db.QueryRow(`
 		SELECT count(*)
@@ -2618,12 +2717,12 @@ func assertWorkbenchRuntimeCatalog(t *testing.T, db *sql.DB, expectedWorkbenchPe
 	`).Scan(&dataViewerPermissionCount); err != nil {
 		t.Fatalf("count Workbench data viewer permissions: %v", err)
 	}
-	if permissionCount != expectedWorkbenchPermissions || runtimeRolePermissionCount != 1 || principalCount != 1 ||
+	if permissionCount != expectedWorkbenchPermissions || retiredPermissionCount != expectedRetiredPermissions || retiredRolePermissionCount != expectedRetiredRolePermissions || runtimeRolePermissionCount != 1 || principalCount != 1 ||
 		clientCount != 1 || assignmentCount != 1 || administratorPermissionCount != expectedTenantPermissions ||
 		dataViewerPermissionCount != expectedTenantPermissions+1 {
 		t.Fatalf(
-			"Workbench catalog permissions=%d runtime_permission=%d principal=%d client=%d assignment=%d administrator=%d data_viewer=%d",
-			permissionCount, runtimeRolePermissionCount, principalCount, clientCount,
+			"Workbench catalog permissions=%d retired_permissions=%d retired_bindings=%d runtime_permission=%d principal=%d client=%d assignment=%d administrator=%d data_viewer=%d",
+			permissionCount, retiredPermissionCount, retiredRolePermissionCount, runtimeRolePermissionCount, principalCount, clientCount,
 			assignmentCount, administratorPermissionCount, dataViewerPermissionCount,
 		)
 	}
@@ -2969,6 +3068,115 @@ func assertExecutionAuthorizationConstraints(t *testing.T, db *sql.DB) {
 	}
 }
 
+func assertSecurityModuleRuntimeConstraints(t *testing.T, db *sql.DB, hasMetaFactsRuntime bool) {
+	t.Helper()
+
+	var permissionCount, retiredStandardPermissionCount, retiredStandardRolePermissionCount int
+	if err := db.QueryRow(`
+		SELECT count(*) FILTER (WHERE owner_module = 'security' AND status = 'active'),
+		       count(*) FILTER (WHERE permission_key LIKE 'standard.classification.%' AND status = 'disabled')
+		FROM system.permissions
+	`).Scan(&permissionCount, &retiredStandardPermissionCount); err != nil {
+		t.Fatalf("read Security Permission catalog: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM system.role_permissions role_permission
+		JOIN system.permissions permission ON permission.id = role_permission.permission_id
+		WHERE permission.permission_key LIKE 'standard.classification.%'
+	`).Scan(&retiredStandardRolePermissionCount); err != nil {
+		t.Fatalf("read retired Standard classification role bindings: %v", err)
+	}
+
+	var runtimeRoleCount, principalCount, clientCount, assignmentCount int
+	if err := db.QueryRow(`
+		SELECT
+		    (SELECT count(*) FROM system.roles
+		     WHERE role_key = 'platform.security_runtime' AND role_type = 'platform_builtin'
+		       AND allowed_scope_types = ARRAY['platform']::text[]
+		       AND allowed_principal_types = ARRAY['service_principal']::text[]
+		       AND immutable AND status = 'active'),
+		    (SELECT count(*) FROM system.service_principals
+		     WHERE name = 'addp-security' AND owner_scope = 'platform'),
+		    (SELECT count(*) FROM system.oauth_clients
+		     WHERE client_id = 'addp-security' AND client_type = 'confidential'
+		       AND client_secret_hash IS NULL AND status = 'disabled'),
+		    (SELECT count(*)
+		     FROM system.role_assignments assignment
+		     JOIN system.service_principals service_principal ON service_principal.id = assignment.principal_id
+		     JOIN system.roles role ON role.id = assignment.role_id
+		     WHERE service_principal.name = 'addp-security'
+		       AND role.role_key = 'platform.security_runtime'
+		       AND assignment.scope_type = 'platform' AND assignment.tenant_id IS NULL
+		       AND assignment.status = 'active')
+	`).Scan(&runtimeRoleCount, &principalCount, &clientCount, &assignmentCount); err != nil {
+		t.Fatalf("read Security runtime identity: %v", err)
+	}
+
+	var administratorPermissionCount, governancePermissionCount int
+	if err := db.QueryRow(`
+		SELECT
+		    count(*) FILTER (WHERE role.role_key = 'tenant.administrator'),
+		    count(*) FILTER (WHERE role.role_key = 'tenant.governance_manager')
+		FROM system.role_permissions role_permission
+		JOIN system.roles role ON role.id = role_permission.role_id
+		JOIN system.permissions permission ON permission.id = role_permission.permission_id
+		WHERE permission.owner_module = 'security' AND permission.status = 'active'
+	`).Scan(&administratorPermissionCount, &governancePermissionCount); err != nil {
+		t.Fatalf("read Security governance role bindings: %v", err)
+	}
+	var tenantRuntimeRoleCount, tenantRuntimePermissionCount, missingTenantRuntimeBindings int
+	if err := db.QueryRow(`
+		SELECT
+		    (SELECT count(*) FROM system.roles
+		     WHERE role_key = 'tenant.security_runtime' AND role_type = 'tenant_builtin'
+		       AND allowed_scope_types = ARRAY['tenant']::text[]
+		       AND allowed_principal_types = ARRAY['service_principal']::text[]
+		       AND immutable AND status = 'active'),
+		    (SELECT count(*)
+		     FROM system.role_permissions role_permission
+		     JOIN system.roles role ON role.id = role_permission.role_id
+		     JOIN system.permissions permission ON permission.id = role_permission.permission_id
+		     WHERE role.role_key = 'tenant.security_runtime'
+		       AND permission.permission_key = 'meta.security_facts.read'
+		       AND NOT permission.tenant_customizable AND NOT permission.delegable),
+		    (SELECT count(*)
+		     FROM system.tenants tenant
+		     WHERE tenant.initialized_at IS NOT NULL
+		       AND NOT EXISTS (
+		           SELECT 1
+		           FROM system.service_principals service_principal
+		           JOIN system.tenant_memberships membership
+		             ON membership.principal_id = service_principal.id
+		            AND membership.tenant_id = tenant.id AND membership.status = 'active'
+		           JOIN system.role_assignments assignment
+		             ON assignment.principal_id = service_principal.id
+		            AND assignment.tenant_id = tenant.id AND assignment.scope_type = 'tenant'
+		            AND assignment.status = 'active'
+		           JOIN system.roles role ON role.id = assignment.role_id
+		           WHERE service_principal.name = 'addp-security'
+		             AND role.role_key = 'tenant.security_runtime'
+		       ))
+	`).Scan(&tenantRuntimeRoleCount, &tenantRuntimePermissionCount, &missingTenantRuntimeBindings); err != nil {
+		t.Fatalf("read Security tenant runtime boundary: %v", err)
+	}
+
+	expectedSecurityPermissions, expectedGovernancePermissions := 21, 19
+	expectedTenantRuntime := 0
+	if hasMetaFactsRuntime {
+		expectedSecurityPermissions, expectedGovernancePermissions, expectedTenantRuntime = 29, 27, 1
+	}
+	if permissionCount != expectedSecurityPermissions || retiredStandardPermissionCount != 4 || retiredStandardRolePermissionCount != 0 || runtimeRoleCount != 1 ||
+		principalCount != 1 || clientCount != 1 || assignmentCount != 1 ||
+		administratorPermissionCount != expectedGovernancePermissions || governancePermissionCount != expectedGovernancePermissions || tenantRuntimeRoleCount != expectedTenantRuntime || tenantRuntimePermissionCount != expectedTenantRuntime || missingTenantRuntimeBindings != 0 {
+		t.Fatalf(
+			"Security catalog permissions=%d retired_standard=%d retired_standard_bindings=%d runtime_role=%d principal=%d client=%d assignment=%d administrator=%d governance=%d tenant_runtime=%d tenant_permission=%d missing_tenant_bindings=%d",
+			permissionCount, retiredStandardPermissionCount, retiredStandardRolePermissionCount, runtimeRoleCount, principalCount, clientCount,
+			assignmentCount, administratorPermissionCount, governancePermissionCount, tenantRuntimeRoleCount, tenantRuntimePermissionCount, missingTenantRuntimeBindings,
+		)
+	}
+}
+
 func assertServicePrincipalRuntimeConstraints(t *testing.T, db *sql.DB) {
 	t.Helper()
 
@@ -3155,17 +3363,17 @@ func assertServicePrincipalRuntimeConstraints(t *testing.T, db *sql.DB) {
 		t.Fatalf("read platform.manager_runtime permissions: %v", err)
 	}
 	if catalogTenantPermissions != "develop.catalog.read,iam.department.read,iam.project_group.read,iam.tenant_membership.read,meta.catalog.read,model.catalog.read,quality.catalog.read,service.catalog.read,standard.catalog.read,standard.domain.read,standard.element.read,standard.glossary.read,system.engine_descriptor.read,workbench.catalog.read" ||
-		managerTenantPermissions != "inference.runtime.execute,meta.catalog.read,meta.scan_task.execute,system.engine_descriptor.read,system.engine.read,transfer.task.create,transfer.task.execute,transfer.task.read" ||
+		managerTenantPermissions != "inference.runtime.execute,meta.catalog.read,meta.scan_task.execute,security.protection_projection.read,security.protection_projection.update,system.engine_descriptor.read,system.engine.read,transfer.task.create,transfer.task.execute,transfer.task.read" ||
 		metaTenantPermissions != "audit.tenant_event.create,manager.content_index.update,system.engine_descriptor.read,system.engine.read" ||
-		serviceTenantPermissions != "audit.tenant_event.create,meta.catalog.read,meta.lineage.create,system.engine_descriptor.read,system.engine.read,system.execution_authorization.execute" ||
-		transferTenantPermissions != "meta.catalog.read,meta.inspect.execute,meta.scan_task.execute,system.engine_descriptor.read,system.engine.read,system.execution_authorization.execute" ||
-		developTenantPermissions != "meta.catalog.read,meta.scan_task.execute,system.engine_descriptor.read,system.execution_authorization.execute,system.notebook_session_authorization.execute" ||
+		serviceTenantPermissions != "audit.tenant_event.create,meta.catalog.read,meta.lineage.create,security.protection_projection.read,security.protection_projection.update,system.engine_descriptor.read,system.engine.read,system.execution_authorization.execute" ||
+		transferTenantPermissions != "meta.catalog.read,meta.inspect.execute,meta.scan_task.execute,security.protection_projection.read,security.protection_projection.update,system.engine_descriptor.read,system.engine.read,system.execution_authorization.execute" ||
+		developTenantPermissions != "meta.catalog.read,meta.scan_task.execute,security.protection_projection.read,security.protection_projection.update,system.engine_descriptor.read,system.execution_authorization.execute,system.notebook_session_authorization.execute" ||
 		copilotTenantPermissions != "develop.task.read,inference.runtime.execute,system.engine_descriptor.read" ||
 		qualityTenantPermissions != "meta.catalog.read,model.materialization_group.read,model.materialization_read.execute,standard.element.read,system.engine.read,system.execution_authorization.execute" ||
 		catalogPlatformPermissions != "platform.tenant.read,system.runtime_registry.update" ||
 		metaPlatformPermissions != "system.runtime_registry.update" ||
-		developPlatformPermissions != "system.runtime_registry.update" ||
-		managerPlatformPermissions != "system.runtime_registry.update" {
+		developPlatformPermissions != "platform.tenant.read,system.runtime_registry.update" ||
+		managerPlatformPermissions != "platform.tenant.read,system.runtime_registry.update" {
 		t.Fatalf("runtime permissions catalog_tenant=%q manager_tenant=%q meta_tenant=%q service_tenant=%q transfer_tenant=%q develop_tenant=%q copilot_tenant=%q quality_tenant=%q catalog_platform=%q meta_platform=%q develop_platform=%q manager_platform=%q",
 			catalogTenantPermissions, managerTenantPermissions, metaTenantPermissions, serviceTenantPermissions, transferTenantPermissions, developTenantPermissions, copilotTenantPermissions, qualityTenantPermissions, catalogPlatformPermissions, metaPlatformPermissions, developPlatformPermissions, managerPlatformPermissions)
 	}
@@ -3575,8 +3783,8 @@ func assertAuthorizationCatalogRetirement(t *testing.T, db *sql.DB) {
 	`).Scan(&activePermissionCount, &disabledPermissionCount); err != nil {
 		t.Fatalf("read retired Permission counts: %v", err)
 	}
-	if activePermissionCount < 345 || disabledPermissionCount != 58 {
-		t.Fatalf("Permission status counts = active:%d disabled:%d, want at least 345 and exactly 58", activePermissionCount, disabledPermissionCount)
+	if activePermissionCount < 345 || disabledPermissionCount != 66 {
+		t.Fatalf("Permission status counts = active:%d disabled:%d, want at least 345 and exactly 66", activePermissionCount, disabledPermissionCount)
 	}
 
 	var disabledRoles string
@@ -3618,8 +3826,8 @@ func assertStandardAuthorizationCatalog(t *testing.T, db *sql.DB) {
 	`).Scan(&permissionCount); err != nil {
 		t.Fatalf("read Standard authorization permissions: %v", err)
 	}
-	if permissionCount != 43 {
-		t.Fatalf("Standard authorization permission count = %d, want 43", permissionCount)
+	if permissionCount != 39 {
+		t.Fatalf("Standard authorization permission count = %d, want 39", permissionCount)
 	}
 	var publishPermissionCount, disabledApproveCount int
 	if err := db.QueryRow(`
@@ -3646,8 +3854,8 @@ func assertStandardAuthorizationCatalog(t *testing.T, db *sql.DB) {
 	`).Scan(&rolePermissionCount); err != nil {
 		t.Fatalf("read Governance Manager Standard permissions: %v", err)
 	}
-	if rolePermissionCount != 42 {
-		t.Fatalf("Governance Manager Standard permission count = %d, want 42", rolePermissionCount)
+	if rolePermissionCount != 38 {
+		t.Fatalf("Governance Manager Standard permission count = %d, want 38", rolePermissionCount)
 	}
 }
 
@@ -4162,8 +4370,8 @@ func assertIAMCatalogSeed(t *testing.T, db *sql.DB) {
 	if err := db.QueryRow(`SELECT count(DISTINCT owner_module), count(*) FILTER (WHERE owner_module = 'system') FROM system.permissions`).Scan(&ownerCount, &systemPermissionCount); err != nil {
 		t.Fatalf("read seeded Permission owners: %v", err)
 	}
-	if ownerCount != 18 || systemPermissionCount != 122 {
-		t.Fatalf("seeded Permission owners = %d and System Permissions = %d, want 18 and 122", ownerCount, systemPermissionCount)
+	if ownerCount != 19 || systemPermissionCount != 122 {
+		t.Fatalf("seeded Permission owners = %d and System Permissions = %d, want 19 and 122", ownerCount, systemPermissionCount)
 	}
 
 	var invalidRoleCount int

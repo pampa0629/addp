@@ -86,8 +86,6 @@ type ElementRevision struct {
 	RangeConstraint      *RangeConstraint `gorm:"type:jsonb;serializer:json" json:"range_constraint,omitempty"`
 	CodeSetRevisionID    *int64           `gorm:"index" json:"code_set_revision_id,omitempty"`
 	UnitID               *int64           `gorm:"index" json:"unit_id,omitempty"`
-	SecurityLevel        string           `gorm:"size:10" json:"security_level"`
-	ClassificationID     *int64           `gorm:"index" json:"classification_id,omitempty"`
 	ExampleValues        StringArray      `gorm:"type:jsonb;serializer:json" json:"example_values"`
 	ExtraQualityRules    JSONB            `gorm:"type:jsonb;serializer:json" json:"extra_quality_rules"`
 	CompiledQualityRules JSONB            `gorm:"type:jsonb;serializer:json" json:"compiled_quality_rules"`
@@ -143,8 +141,6 @@ type CreateElementRequest struct {
 	RangeConstraint   *RangeConstraint       `json:"range_constraint,omitempty"`
 	CodeSetRevisionID *int64                 `json:"code_set_revision_id,omitempty"`
 	UnitID            *int64                 `json:"unit_id,omitempty"`
-	SecurityLevel     string                 `json:"security_level"`
-	ClassificationID  *int64                 `json:"classification_id,omitempty"`
 	ExampleValues     []string               `json:"example_values"`
 	ExtraQualityRules map[string]interface{} `json:"extra_quality_rules"`
 	ChangeSummary     string                 `json:"change_summary" binding:"required"`
@@ -179,8 +175,6 @@ type UpdateElementRevisionRequest struct {
 	RangeConstraint   *RangeConstraint       `json:"range_constraint,omitempty"`
 	CodeSetRevisionID *int64                 `json:"code_set_revision_id,omitempty"`
 	UnitID            *int64                 `json:"unit_id,omitempty"`
-	SecurityLevel     string                 `json:"security_level"`
-	ClassificationID  *int64                 `json:"classification_id,omitempty"`
 	ExampleValues     []string               `json:"example_values"`
 	ExtraQualityRules map[string]interface{} `json:"extra_quality_rules"`
 	ChangeSummary     string                 `json:"change_summary" binding:"required"`

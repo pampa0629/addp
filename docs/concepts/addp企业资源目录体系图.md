@@ -66,6 +66,7 @@ flowchart LR
     System["System / IAM\nTenant、组织、主体、AuthContext"]
     Meta["Meta\nDataItem、技术元数据、变化游标"]
     Standard["Standard\nDomain、Glossary、Element 等定义"]
+    Security["Security\n安全分类分级、Finding、Assessment、Policy"]
     Workbench["Workbench\n已发布 Data Application"]
     Catalog["Catalog\n企业目录身份、来源绑定、语义关联、责任、搜索"]
     Manager["Manager\n技术资源树、预览、剖析、内容检索"]
@@ -75,6 +76,7 @@ flowchart LR
     System -->|"身份与组织公开契约"| Catalog
     Meta -->|"DataItem 变化与读取契约"| Catalog
     Standard -->|"语义对象读取契约"| Catalog
+    Security -.->|"当前用户权限下的安全专业事实"| Catalog
     Workbench -->|"已发布应用变化与读取契约"| Catalog
     Catalog -.->|"业务摘要与导航"| Manager
     Catalog -->|"可选择的目录对象"| Asset
@@ -89,7 +91,8 @@ flowchart LR
 | Owner | 权威事实 |
 | --- | --- |
 | Meta | DataItem fingerprint、路径、结构、格式、扫描与技术元数据 |
-| Standard | 业务域、术语、数据元、指标、分类分级等语义定义 |
+| Standard | 业务域、术语、数据元、指标和码值等业务语义定义 |
+| Security | 敏感数据类型、安全分类分级、敏感发现、资源安全评估、保护策略和 Owner-specific 保护投影 |
 | Workbench | Data Application 草稿、Component、布局、参数绑定、不可变 Revision、发布状态和运行入口 |
 | Catalog | CatalogEntry、来源绑定、具体资源的语义关联、责任、治理状态和目录可见性 |
 | Manager | 预览、剖析、快显、内容读取和内容检索 |
@@ -97,6 +100,8 @@ flowchart LR
 | System / IAM | Tenant、Department、Project Group、User、成员关系和 AuthContext |
 
 Catalog 可以保存专业资源的最小“已观察摘要”用于列表、搜索和离线展示，但该摘要是可重建投影，不是专业事实源。Meta 和 Standard 不保存 `catalog_entry_id` 反向投影。
+
+Security 与 Catalog 是 Meta 事实的并行消费者，不构成先后流程：Catalog 消费全量可恢复变化建立企业目录身份，Security 只精确读取显式纳管目标的必要事实。Security 事实直接绑定 owner 稳定专业资源引用；Catalog 建档后通过 SourceBinding 联邦展示，不要求 Security 将事实迁移或改绑到 CatalogEntry ID。Catalog 不存在不得阻止 Manager 等 Owner 执行已生效的保护投影。
 
 ## 四、自动建档与生命周期
 
@@ -109,6 +114,7 @@ stateDiagram-v2
     [*] --> discovered: DataItem 首次进入变化源
     discovered --> curated: 补齐业务定义与基本责任
     curated --> certified: 治理确认
+    certified --> curated: 撤销认证并保留编目事实
     certified --> deprecated: 不再推荐
     curated --> deprecated: 不再推荐
 
@@ -129,6 +135,8 @@ stateDiagram-v2
 物理路径变化产生新的 fingerprint。平台不得通过名称或结构相似度自动猜测重命名；治理人员可以通过显式重绑把新来源接到原 CatalogEntry，并把临时 CatalogEntry 留作指向原身份的 `merged` 墓碑。
 
 治理人员把 `curated` 或 `certified` 条目推进为 `deprecated` 时，可以同时指定一个推荐继任 CatalogEntry。推荐继任项必须是同 Tenant、来源有效且当前为 `curated` 或 `certified` 的 active 条目。旧条目仍可独立读取并保留历史，不自动跳转；这与 `merged` 表达的“同一企业身份归并”严格区分。
+
+认证针对 CatalogEntry 当前聚合版本，而不是一份可脱离条目存在的认证副本。`certified` 状态下业务名称、说明、语义关联、责任、组件数据元关联和可见性冻结；需要修改时必须先由具有认证权限的治理人员填写原因并撤销认证，使同一 CatalogEntry 回到 `curated`，再完成编目编辑和重新认证。该闭环只推进同一个聚合版本序列并写入独立领域审计，不新增认证草稿、认证表或第二个 CatalogEntry。弃用也只改变治理状态、可选推荐继任项和审计原因，不允许在同一操作中夹带业务编目修改。
 
 ## 五、组织、协作和 Workspace
 

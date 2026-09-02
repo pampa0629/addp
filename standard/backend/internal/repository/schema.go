@@ -38,8 +38,6 @@ func Migrate(db *gorm.DB) error {
 			&models.CodeSetRevisionItem{},
 			&models.MeasurementCategory{},
 			&models.Unit{},
-			&models.Classification{},
-			&models.GradingLevel{},
 			&models.MetricCategory{},
 			&models.Metric{},
 			&models.MetricElementMapping{},
@@ -246,7 +244,7 @@ func migrateStandardRevisionData(db *gorm.DB) error {
 				INSERT INTO standard.element_revisions (
 					element_id, revision_no, status, name, definition, data_type, length, precision_num, scale,
 					nullable, default_value, format, value_domain_kind, range_constraint, code_set_revision_id,
-					unit_id, security_level, classification_id, example_values, extra_quality_rules,
+					unit_id, example_values, extra_quality_rules,
 					compiled_quality_rules, change_summary, created_by, updated_by, created_at, updated_at
 				)
 				SELECT element.id, 1,
@@ -258,8 +256,7 @@ func migrateStandardRevisionData(db *gorm.DB) error {
 						 WHEN element.value_range IS NOT NULL AND element.value_range <> '{}'::jsonb THEN 'range'
 						 ELSE 'unrestricted' END,
 					CASE WHEN element.code_set_id IS NULL THEN element.value_range ELSE NULL END,
-					code_set.current_revision_id, element.unit_id, element.security_level,
-					element.classification_id, element.example_values,
+					code_set.current_revision_id, element.unit_id, element.example_values,
 					'{"schema_version":"addp.quality.rules/v1","rules":[]}'::jsonb,
 					CASE WHEN element.status = 'approved' THEN COALESCE(element.quality_rules, '{"schema_version":"addp.quality.rules/v1","rules":[]}'::jsonb) ELSE NULL END,
 					'Converted to revision model', element.created_by, element.updated_by, element.created_at, element.updated_at
@@ -419,8 +416,6 @@ func postgresStandardSchemaStatements() []string {
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_code_set_revisions_set_no ON standard.code_set_revisions (code_set_id, revision_no)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_code_set_revision_items_revision_code ON standard.code_set_revision_items (code_set_revision_id, code)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_measurement_categories_tenant_code ON standard.measurement_categories (tenant_id, code)",
-		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_classifications_tenant_code ON standard.classifications (tenant_id, code)",
-		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_grading_levels_tenant_level ON standard.grading_levels (tenant_id, level)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_metric_categories_tenant_code ON standard.metric_categories (tenant_id, code)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_metrics_tenant_code ON standard.metrics (tenant_id, code)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_metric_element_mappings_metric_element ON standard.metric_element_mappings (metric_id, element_id)",
@@ -436,7 +431,11 @@ func postgresStandardSchemaStatements() []string {
 		"DROP INDEX IF EXISTS standard.idx_codeset_tenant_code",
 		"DROP INDEX IF EXISTS standard.idx_codeitem_set_code",
 		"ALTER TABLE standard.measurement_categories DROP CONSTRAINT IF EXISTS measurement_categories_tenant_id_code_key",
-		"ALTER TABLE standard.grading_levels DROP CONSTRAINT IF EXISTS grading_levels_tenant_id_level_key",
+		"ALTER TABLE standard.element_revisions DROP CONSTRAINT IF EXISTS fk_standard_element_revisions_classification",
+		"ALTER TABLE standard.element_revisions DROP COLUMN IF EXISTS classification_id",
+		"ALTER TABLE standard.element_revisions DROP COLUMN IF EXISTS security_level",
+		"DROP TABLE IF EXISTS standard.grading_levels CASCADE",
+		"DROP TABLE IF EXISTS standard.classifications CASCADE",
 		"ALTER TABLE standard.metrics DROP CONSTRAINT IF EXISTS metrics_tenant_id_code_key",
 		"ALTER TABLE standard.metric_element_mappings DROP CONSTRAINT IF EXISTS metric_element_mappings_metric_id_element_id_key",
 		"ALTER TABLE standard.metric_dependencies DROP CONSTRAINT IF EXISTS metric_dependencies_from_metric_id_to_metric_id_key",
@@ -508,12 +507,10 @@ func postgresStandardSchemaStatements() []string {
 		table string
 		name  string
 	}{
-		{"standard.classifications", "classifications_parent_id_fkey"},
 		{"standard.document_element_mappings", "document_element_mappings_document_id_fkey"},
 		{"standard.document_glossary_mappings", "document_glossary_mappings_document_id_fkey"},
 		{"standard.document_metric_mappings", "document_metric_mappings_document_id_fkey"},
 		{"standard.dimension_hierarchy_levels", "fk_standard_dimension_hierarchies_levels"},
-		{"standard.elements", "elements_classification_id_fkey"},
 		{"standard.elements", "elements_unit_id_fkey"},
 		{"standard.metric_categories", "metric_categories_parent_id_fkey"},
 		{"standard.metric_dependencies", "metric_dependencies_from_metric_id_fkey"},
@@ -541,7 +538,6 @@ func postgresStandardSchemaStatements() []string {
 		{"standard.elements", "fk_standard_elements_draft_revision", "draft_revision_id", "standard.element_revisions(id)", "SET NULL"},
 		{"standard.element_revisions", "fk_standard_element_revisions_element", "element_id", "standard.elements(id)", "CASCADE"},
 		{"standard.element_revisions", "fk_standard_element_revisions_unit", "unit_id", "standard.units(id)", "RESTRICT"},
-		{"standard.element_revisions", "fk_standard_element_revisions_classification", "classification_id", "standard.classifications(id)", "RESTRICT"},
 		{"standard.element_revisions", "fk_standard_element_revisions_code_set_revision", "code_set_revision_id", "standard.code_set_revisions(id)", "RESTRICT"},
 		{"standard.code_sets", "fk_standard_code_sets_domain", "domain_id", "standard.domains(id)", "RESTRICT"},
 		{"standard.code_sets", "fk_standard_code_sets_draft_revision", "draft_revision_id", "standard.code_set_revisions(id)", "SET NULL"},
@@ -549,7 +545,6 @@ func postgresStandardSchemaStatements() []string {
 		{"standard.code_set_revision_items", "fk_standard_code_set_revision_items_revision", "code_set_revision_id", "standard.code_set_revisions(id)", "CASCADE"},
 		{"standard.code_set_revision_items", "fk_standard_code_set_revision_items_replacement", "replacement_item_id", "standard.code_set_revision_items(id)", "RESTRICT"},
 		{"standard.units", "fk_standard_units_measurement_category", "category_id", "standard.measurement_categories(id)", "RESTRICT"},
-		{"standard.classifications", "fk_standard_classifications_parent", "parent_id", "standard.classifications(id)", "RESTRICT"},
 		{"standard.metric_categories", "fk_standard_metric_categories_parent", "parent_id", "standard.metric_categories(id)", "RESTRICT"},
 		{"standard.metrics", "fk_standard_metrics_category", "category_id", "standard.metric_categories(id)", "RESTRICT"},
 		{"standard.metrics", "fk_standard_metrics_domain", "domain_id", "standard.domains(id)", "RESTRICT"},
@@ -592,8 +587,6 @@ func sqliteStandardSchemaStatements() []string {
 		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_code_set_revisions_set_no ON code_set_revisions (code_set_id, revision_no)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_code_set_revision_items_revision_code ON code_set_revision_items (code_set_revision_id, code)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_measurement_categories_tenant_code ON measurement_categories (tenant_id, code)",
-		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_classifications_tenant_code ON classifications (tenant_id, code)",
-		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_grading_levels_tenant_level ON grading_levels (tenant_id, level)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_metric_categories_tenant_code ON metric_categories (tenant_id, code)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_metrics_tenant_code ON metrics (tenant_id, code)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_metric_element_mappings_metric_element ON metric_element_mappings (metric_id, element_id)",

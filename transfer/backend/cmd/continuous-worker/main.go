@@ -12,6 +12,7 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
+	"github.com/addp/common/dataprotection/projectionstore"
 	_ "github.com/addp/common/engine/plugins/builtin/general"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
@@ -23,6 +24,7 @@ import (
 	"github.com/addp/transfer/internal/deadletter"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/planner"
+	transferprotection "github.com/addp/transfer/internal/protection"
 	"github.com/addp/transfer/internal/repository"
 	"github.com/addp/transfer/internal/service"
 	"github.com/google/uuid"
@@ -108,6 +110,11 @@ func main() {
 	metaClient := commonClient.NewMetaClient(cfg.MetaServiceURL, tokenSource)
 	systemClient := commonClient.NewSystemClient(cfg.SystemServiceURL, tokenSource)
 	systemRuntimeClient := commonClient.NewSystemServiceClient(cfg.SystemServiceURL, tokenSource, nil)
+	protectionStore, err := projectionstore.New(db, cfg.DBSchema, "transfer", nil)
+	if err != nil {
+		log.Fatalf("初始化 Transfer 保护投影存储失败: %v", err)
+	}
+	protectionGate := transferprotection.NewGate(protectionStore, systemClient)
 	metadataScanner := &continuous.TargetMetadataScanner{
 		Store: leaseRepo, Client: metaClient, ClaimTTL: cfg.MetaScanClaimTTL,
 		Logger: logger.With("component", "continuous_target_metadata_scan"),
@@ -123,6 +130,7 @@ func main() {
 		RetentionCriticalHorizon: cfg.ContinuousRetentionCriticalHorizon,
 		CheckpointStaleAfter:     cfg.ContinuousCheckpointStaleAfter,
 		MetadataScanner:          metadataScanner,
+		ProtectionGate:           protectionGate,
 	}
 	supervisor, err := continuous.NewSupervisor(
 		leaseRepo,

@@ -90,6 +90,14 @@ func (p *recordReadSessionPlugin) OpenRecordReadSession(context.Context, Connect
 	return nil, nil
 }
 
+type encodedRecordReadSessionPlugin struct {
+	spatialEncodingPlugin
+}
+
+func (p *encodedRecordReadSessionPlugin) OpenEncodedRecordReadSession(context.Context, ConnectionInfo, EngineCatalogPath, EncodedRecordReadSessionOptions) (EncodedRecordReadSession, error) {
+	return nil, nil
+}
+
 func TestValidatePluginCapabilitiesAcceptsRecordReadSessionDeclaration(t *testing.T) {
 	plugin := &recordReadSessionPlugin{spatialEncodingPlugin: spatialEncodingPlugin{
 		MockPlugin: MockPlugin{TypeValue: "record_reader"},
@@ -142,6 +150,28 @@ func TestValidatePluginCapabilitiesRejectsRecordReadSessionMismatch(t *testing.T
 			t.Fatalf("ValidatePluginCapabilities() error = %v, want missing declaration error", err)
 		}
 	})
+}
+
+func TestValidatePluginCapabilitiesValidatesEncodedRecordReadSession(t *testing.T) {
+	plugin := &encodedRecordReadSessionPlugin{spatialEncodingPlugin: spatialEncodingPlugin{
+		MockPlugin: MockPlugin{TypeValue: "encoded_record_reader"},
+		caps: EngineCapabilities{
+			SchemaVersion: CapabilitiesSchemaVersion,
+			EngineType:    "encoded_record_reader",
+			EngineFamily:  "dynamic_schema",
+			Storage: &StorageCapabilities{Store: &StoreCapability{
+				EncodedRecordReadSession: &EncodedRecordReadSessionCapability{Formats: []string{"mongodb_extended_jsonl"}},
+			}},
+		},
+	}}
+	if err := ValidatePluginCapabilities(plugin); err != nil {
+		t.Fatalf("ValidatePluginCapabilities() error = %v", err)
+	}
+
+	plugin.caps.Storage.Store.EncodedRecordReadSession.Formats = nil
+	if err := ValidatePluginCapabilities(plugin); err == nil || !strings.Contains(err.Error(), "formats are required") {
+		t.Fatalf("ValidatePluginCapabilities() error = %v, want formats error", err)
+	}
 }
 
 func TestValidatePluginCapabilitiesRejectsSpatialEncodingWithoutReader(t *testing.T) {
@@ -276,8 +306,12 @@ func (p *queryParameterCapabilityPlugin) QueryLanguages() []string         { ret
 func (p *queryParameterCapabilityPlugin) GenerateSampleQuery(context.Context, ConnectionInfo, SampleQueryOptions) (string, string) {
 	return "", "sql"
 }
-func (p *queryParameterCapabilityPlugin) ExecuteRuntimeQuery(context.Context, ConnectionInfo, QueryRequest) (*QueryResult, error) {
-	return &QueryResult{}, nil
+func (p *queryParameterCapabilityPlugin) PrepareQuery(context.Context, ConnectionInfo, QueryRequest) (PreparedQuery, error) {
+	analysis, err := NewQueryAnalysis("sql", QuerySchemaCoverageUnknown)
+	if err != nil {
+		return nil, err
+	}
+	return NewPreparedQuery(analysis, nil, nil, func(context.Context) (*QueryResult, error) { return &QueryResult{}, nil })
 }
 
 func TestValidatePluginCapabilitiesAcceptsQueryParameters(t *testing.T) {

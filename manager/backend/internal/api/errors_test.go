@@ -8,6 +8,7 @@ import (
 
 	commoni18n "github.com/addp/common/middleware/i18n"
 	manageri18n "github.com/addp/manager/i18n"
+	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -31,6 +32,46 @@ func TestEngineUnavailableUsesStableTransientErrorContract(t *testing.T) {
 	}
 }
 
+func TestProtectionRequiredUsesStableFailClosedErrorContract(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Set("addp_lang", commoni18n.LangZhCN)
+
+	protectionRequired(c)
+
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusForbidden)
+	}
+	var body map[string]string
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body["error_code"] != "security_protection_required" || body["error"] == "" {
+		t.Fatalf("response = %#v", body)
+	}
+}
+
+func TestDataProfileProtectionErrorUsesStableFailClosedContract(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Set("addp_lang", commoni18n.LangZhCN)
+
+	handleDataProfileError(c, service.ErrDataProfileProtectionRequired, manageri18n.MsgDataProfileQueryFailed)
+
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusForbidden)
+	}
+	var body map[string]string
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body["error_code"] != "security_protection_required" || body["error"] == "" {
+		t.Fatalf("response = %#v", body)
+	}
+}
+
 func TestManagerErrorMessagesRegistered(t *testing.T) {
 	c := &gin.Context{}
 	c.Set("addp_lang", commoni18n.LangZhCN)
@@ -42,6 +83,8 @@ func TestManagerErrorMessagesRegistered(t *testing.T) {
 		manageri18n.MsgEngineAccessDenied,
 		manageri18n.MsgEngineUnavailable,
 		manageri18n.MsgMetaScanRequired,
+		manageri18n.MsgProtectionRequired,
+		manageri18n.MsgPreviewFailed,
 		manageri18n.MsgMissingEngineIDOrStorageRef,
 		manageri18n.MsgSearchKeywordTooShort,
 		manageri18n.MsgSchemaRequired,
@@ -69,6 +112,7 @@ func TestManagerErrorMessagesRegistered(t *testing.T) {
 		manageri18n.MsgMissingParam,
 		manageri18n.MsgInvalidParam,
 		manageri18n.MsgHybridSearchNotConfigured,
+		manageri18n.MsgHybridSearchFailed,
 		manageri18n.MsgMissingQuery,
 		manageri18n.MsgSearchHistoryUnavailable,
 		manageri18n.MsgUnauthorized,

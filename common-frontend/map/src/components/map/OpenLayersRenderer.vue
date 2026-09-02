@@ -35,6 +35,10 @@ const props = defineProps({
     type: Object,
     default: () => ({})
   },
+  featureStyle: {
+    type: Object,
+    default: () => ({ mode: 'uniform', entries: [], valid: true })
+  },
   featuresOnly: {
     type: Boolean,
     default: false
@@ -66,6 +70,7 @@ const setupMap = async () => {
   renderFeatures(props.features, {
     preserveView: props.preserveView,
     popupOptions: props.popupOptions,
+    featureStyle: props.featureStyle,
     onFeatureClick: (feature, coordinate) => {
       emit('feature-click', { feature, coordinate })
     }
@@ -79,6 +84,7 @@ watch(
       renderFeatures(props.features, {
         preserveView: props.preserveView,
         popupOptions: props.popupOptions,
+        featureStyle: props.featureStyle,
         onFeatureClick: (feature, coordinate) => {
           emit('feature-click', { feature, coordinate })
         }
@@ -107,6 +113,24 @@ watch(
       renderFeatures(props.features, {
         preserveView: true,
         popupOptions: props.popupOptions,
+        featureStyle: props.featureStyle,
+        onFeatureClick: (feature, coordinate) => {
+          emit('feature-click', { feature, coordinate })
+        }
+      })
+    }
+  },
+  { deep: true }
+)
+
+watch(
+  () => props.featureStyle,
+  () => {
+    if (isInitialized) {
+      renderFeatures(props.features, {
+        preserveView: true,
+        popupOptions: props.popupOptions,
+        featureStyle: props.featureStyle,
         onFeatureClick: (feature, coordinate) => {
           emit('feature-click', { feature, coordinate })
         }

@@ -32,6 +32,7 @@ func NewDataProfileHandler(profileService *service.DataProfileService) *DataProf
 // @Param profile_config_hash query string false "服务端返回的条件剖析配置哈希；省略时查询全范围剖析 | Server-issued conditional profile config hash; omit for the all-data profile"
 // @Success 200 {object} service.DataProfileCurrentResponse "当前剖析状态 | Current profiling state"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 403 {object} map[string]interface{} "已纳管资源当前禁止剖析 | Profiling is denied for the managed resource"
 // @Failure 422 {object} map[string]interface{} "资源不支持剖析 | Resource is not profileable"
 // @Failure 503 {object} map[string]interface{} "剖析服务不可用 | Profiling unavailable"
 // @Failure 500 {object} map[string]interface{} "查询剖析结果失败 | Failed to query profile"
@@ -75,6 +76,7 @@ func (h *DataProfileHandler) GetCurrent(c *gin.Context) {
 // @Param body body service.DataProfileExecutionRequest true "剖析执行请求 | Profiling execution request"
 // @Success 202 {object} service.DataProfileExecutionResponse "执行已受理 | Execution accepted"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 403 {object} map[string]interface{} "已纳管资源当前禁止剖析 | Profiling is denied for the managed resource"
 // @Failure 422 {object} map[string]interface{} "资源不支持剖析 | Resource is not profileable"
 // @Failure 503 {object} map[string]interface{} "剖析服务不可用 | Profiling unavailable"
 // @Failure 500 {object} map[string]interface{} "创建剖析执行失败 | Failed to create profiling execution"
@@ -113,6 +115,8 @@ func (h *DataProfileHandler) CreateExecution(c *gin.Context) {
 
 func handleDataProfileError(c *gin.Context, err error, fallbackMessage string) {
 	switch {
+	case errors.Is(err, service.ErrDataProfileProtectionRequired):
+		protectionRequired(c)
 	case errors.Is(err, service.ErrDataProfileUnsupported):
 		managerError(c, http.StatusUnprocessableEntity, manageri18n.MsgDataProfileUnsupported)
 	case errors.Is(err, service.ErrDataProfileUnavailable):

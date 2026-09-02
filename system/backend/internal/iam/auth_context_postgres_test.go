@@ -738,10 +738,6 @@ func assertTenantAuthContext(
 				"workbench.data_application.publish",
 				"workbench.data_application.read",
 				"workbench.data_application.update",
-				"workbench.view.create",
-				"workbench.view.delete",
-				"workbench.view.read",
-				"workbench.view.update",
 			}) {
 			t.Fatalf("projected role assignment %d = %#v", index, assignment)
 		}

@@ -20,7 +20,10 @@ def response(status, payload=None, *, headers=None, raw=b""):
 class FakeClient:
     def __init__(self) -> None:
         self.service_exists = False
-        self.view_exists = False
+        self.application_exists = False
+        self.application_status = "unpublished"
+        self.application_version = 1
+        self.application_snapshot = None
         self.contract_changed = False
         self.fail_query = False
         self.calls: list[tuple[str, str]] = []
@@ -117,25 +120,37 @@ class FakeClient:
             return response(201, {"id": 23, "tenant_id": 42, "service_name": SUITE.SERVICE_NAME})
         if path == "/api/v1/service/consumer/services/query/23":
             return response(200, self.descriptor())
-        if path == "/api/v1/workbench/views" and method == "POST":
-            self.view_exists = True
+        if path == "/api/v1/workbench/data_applications" and method == "POST":
+            self.application_exists = True
+            self.application_snapshot = json.loads(json.dumps(body["snapshot"]))
+            for component in self.application_snapshot["components"]:
+                component["contract_fingerprint"] = "sha256:" + "a" * 64
             return response(
                 201,
                 {
                     "id": "10000000-0000-0000-0000-000000000001",
                     "tenant_id": 42,
-                    "contract_fingerprint": "sha256:" + "a" * 64,
+                    "version": self.application_version,
+                    "publication_status": self.application_status,
+                    "snapshot": self.application_snapshot,
                 },
             )
+        application_path = "/api/v1/workbench/data_applications/10000000-0000-0000-0000-000000000001"
         if path == "/api/v1/service/query/23" and method == "PUT":
             self.contract_changed = True
             return response(200, {"id": 23})
-        if path == "/api/v1/workbench/views/10000000-0000-0000-0000-000000000001":
+        if path == application_path:
             if method == "DELETE":
-                self.view_exists = False
+                self.application_exists = False
                 return response(200)
-            if self.view_exists:
-                return response(200, {"contract_fingerprint": "sha256:" + "a" * 64})
+            if self.application_exists:
+                return response(200, {
+                    "id": "10000000-0000-0000-0000-000000000001",
+                    "tenant_id": 42,
+                    "version": self.application_version,
+                    "publication_status": self.application_status,
+                    "snapshot": self.application_snapshot,
+                })
             return response(404)
         if path == "/api/v1/service/query/23":
             if method == "DELETE":
@@ -191,7 +206,7 @@ class FakeClient:
 
 
 class WorkbenchServiceConsumptionOnlineTest(unittest.TestCase):
-    def test_accepts_mysql_cursor_export_view_and_contract_change(self) -> None:
+    def test_accepts_mysql_cursor_export_application_and_contract_change(self) -> None:
         client = FakeClient()
 
         report = SUITE.run_suite(client, 42, 9, "run-1")
@@ -202,17 +217,17 @@ class WorkbenchServiceConsumptionOnlineTest(unittest.TestCase):
         self.assertTrue(report["contract_change_blocked"])
         self.assertEqual(report["renderers"], {"table": True, "chart": True, "map": False})
         self.assertEqual(report["residual_resources"], 0)
-        self.assertFalse(client.view_exists)
+        self.assertFalse(client.application_exists)
         self.assertFalse(client.service_exists)
 
-    def test_failure_still_deletes_created_view_and_service(self) -> None:
+    def test_failure_still_deletes_created_application_and_service(self) -> None:
         client = FakeClient()
         client.fail_query = True
 
         with self.assertRaisesRegex(SUITE.SuiteError, "injected query failure"):
             SUITE.run_suite(client, 42, 9, "run-1")
 
-        self.assertFalse(client.view_exists)
+        self.assertFalse(client.application_exists)
         self.assertFalse(client.service_exists)
 
     def test_rejects_administrator_identity(self) -> None:
@@ -237,7 +252,7 @@ class WorkbenchServiceConsumptionOnlineTest(unittest.TestCase):
             "result": "passed",
             "tenant_id": "42",
             "service_id": 23,
-            "view_id": "10000000-0000-0000-0000-000000000001",
+            "application_id": "10000000-0000-0000-0000-000000000001",
             "table_rows": 2,
             "chart_rendered": True,
             "map_available": False,

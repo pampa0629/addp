@@ -1,10 +1,24 @@
 package duckdb
 
 import (
+	"context"
 	"testing"
 
 	"github.com/addp/common/engine/plugin"
 )
+
+func TestAnalyzeFederatedQueryReturnsUnknownSchemaWithoutGuessingFields(t *testing.T) {
+	analysis, err := (&Plugin{}).AnalyzeFederatedQuery(context.Background(), plugin.FederatedQueryRequest{
+		Language: "sql", Query: "WITH recent AS (SELECT status FROM source.orders) SELECT status FROM recent",
+		Options: plugin.QueryOptions{ReadOnly: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if analysis.SchemaCoverage != plugin.QuerySchemaCoverageUnknown || len(analysis.Diagnostics) != 0 {
+		t.Fatalf("analysis = %#v", analysis)
+	}
+}
 
 func TestPluginDeclaresFederatedQueryRuntime(t *testing.T) {
 	p := &Plugin{}

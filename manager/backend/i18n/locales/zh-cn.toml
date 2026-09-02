@@ -28,6 +28,18 @@ other = "引擎当前不可用，请等待引擎恢复在线后重试"
 [manager.error.meta_scan_required]
 other = "该目标尚未完成元数据扫描"
 
+[manager.error.security_protection_required]
+other = "该数据项已纳入安全保护，当前保护规则尚未就绪，禁止读取原始数据"
+
+[manager.error.content_document_invalid]
+other = "内容检索投影请求无效"
+
+[manager.error.content_protection_required]
+other = "该内容已纳入安全保护，当前缺少可执行的检索保护规则"
+
+[manager.error.content_index_unavailable]
+other = "Manager 内容索引当前不可用"
+
 [manager.error.missing_engine_id_or_storage_ref]
 other = "缺少存储引擎 ID 或存储内容引用"
 
@@ -189,6 +201,12 @@ other = "查询数据剖析结果失败"
 
 [manager.error.data_profile_create_failed]
 other = "创建数据剖析执行失败"
+
+[manager.error.preview_failed]
+other = "数据预览失败"
+
+[manager.error.hybrid_search_failed]
+other = "混合检索失败"
 
 [manager.model3d_tiles.result_deleted]
 other = "三维瓦片快显结果已删除"

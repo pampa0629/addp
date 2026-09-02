@@ -77,7 +77,7 @@ func (h *QueryServiceHandler) CreateService(c *gin.Context) {
 		return
 	}
 
-	result, err := h.svc.CreateService(&req, tenantID, userID)
+	result, err := h.svc.CreateService(c.Request.Context(), &req, tenantID, userID)
 	if err != nil {
 		// 区分不同的错误类型
 		if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, commonapi.ErrNotFound) {

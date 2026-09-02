@@ -15,12 +15,14 @@ import (
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	commonconfiguration "github.com/addp/common/configuration"
+	"github.com/addp/common/dataprotection/projectionstore"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/events"
 	"github.com/addp/common/modulelifecycle"
 	"github.com/addp/develop/backend/internal/api"
 	developauthorization "github.com/addp/develop/backend/internal/authorization"
 	"github.com/addp/develop/backend/internal/config"
+	developprotection "github.com/addp/develop/backend/internal/protection"
 	"github.com/addp/develop/backend/internal/repository"
 	"github.com/addp/develop/backend/internal/service"
 	"github.com/redis/go-redis/v9"
@@ -79,6 +81,12 @@ func main() {
 		log.Fatalf("Service Token Source 初始化失败: %v", err)
 	}
 	systemServiceClient := commonClient.NewSystemServiceClient(cfg.SystemServiceURL, serviceTokenSource, nil)
+	securityClient := commonClient.NewSecurityClient(cfg.SecurityServiceURL, serviceTokenSource, nil)
+	protectionStore, err := projectionstore.New(db, cfg.DBSchema, "develop", nil)
+	if err != nil {
+		log.Fatalf("Develop 保护投影存储初始化失败: %v", err)
+	}
+	protectionGate := developprotection.NewGate(protectionStore)
 	executionAuthorizationClient := commonClient.NewSystemExecutionAuthorizationClient(cfg.SystemServiceURL, nil)
 	notebookSessionAuthorizationIssuer := commonClient.NewSystemNotebookSessionAuthorizationClient(cfg.SystemServiceURL, nil)
 	notebookSessionControlPlane, err := service.NewNotebookSessionControlPlane(
@@ -91,10 +99,12 @@ func main() {
 	// ========== Service 层 ==========
 	// 1. 工作流引擎服务（从 System 动态获取引擎配置）
 	workflowEngine := service.NewWorkflowEngineService(systemServiceClient)
+	workflowEngine.SetProtectionGate(protectionGate)
 	log.Printf("✅ WorkflowEngineService 初始化完成")
 
 	// 2. SQL引擎服务
 	sqlEngine := service.NewSQLEngineService(cfg, systemServiceClient, executionAuthorizationClient, queryPolicyService)
+	sqlEngine.SetProtectionGate(protectionGate)
 	log.Printf("✅ SQLEngineService 初始化完成")
 
 	// 3. Jupyter引擎服务
@@ -117,6 +127,7 @@ func main() {
 	// 6. 联邦查询 Runtime 编排服务
 	metaClient := commonClient.NewMetaClient(cfg.MetaServiceURL, serviceTokenSource)
 	federatedQueryService := service.NewFederatedQueryService(systemServiceClient, metaClient)
+	federatedQueryService.SetProtectionGate(protectionGate)
 	log.Printf("✅ FederatedQueryService 初始化完成")
 
 	// 7. 算子发现与工作流校验服务（动态发现工作流引擎）
@@ -142,6 +153,7 @@ func main() {
 	engineHandler := api.NewEngineHandler(systemServiceClient)
 	queryHandler := api.NewQueryHandler(sqlEngine, federatedQueryService)
 	notebookHandler := api.NewNotebookHandler(jupyterService, notebookExecutionService, devTaskService, notebookSessionControlPlane, cfg.DevelopServiceURL, cfg.CopilotServiceURL)
+	notebookHandler.SetProtectionGate(protectionGate)
 
 	log.Printf("✅ Handler 层初始化完成")
 
@@ -160,6 +172,10 @@ func main() {
 	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.ServerAddr)
 	runtimeContext, stopRuntime := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopRuntime()
+	projectionstore.NewRunner(
+		protectionStore, securityClient, systemServiceClient, 30*time.Second,
+		developprotection.NewExecutionBarrier(db, protectionGate, notebookHandler),
+	).Start(runtimeContext)
 	var registration *commonClient.ModuleRegistrationLifecycle
 
 	// ========== 模块定义、运行实例与 TaskProvider 声明发布 ==========

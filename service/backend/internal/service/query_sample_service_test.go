@@ -72,13 +72,13 @@ func (*querySampleSQLPlugin) GenerateSampleQuery(context.Context, plugin.Connect
 	return "", "sql"
 }
 
-func (p *querySampleSQLPlugin) ExecuteRuntimeQuery(_ context.Context, _ plugin.ConnectionInfo, req plugin.QueryRequest) (*plugin.QueryResult, error) {
-	p.executedQuery = req.Query
-	return &plugin.QueryResult{Columns: []string{"id"}, Rows: []map[string]interface{}{{"id": 1, "query": req.Query}}}, nil
+func (p *querySampleSQLPlugin) PrepareQuery(_ context.Context, conn plugin.ConnectionInfo, req plugin.QueryRequest) (plugin.PreparedQuery, error) {
+	return plugin.PrepareSQLRuntimeQuery(p, conn, req, nil, nil)
 }
 func (*querySampleSQLPlugin) SQLDialect() string { return "postgresql" }
-func (*querySampleSQLPlugin) ExecuteSQL(ctx context.Context, conn plugin.ConnectionInfo, sql string, opts plugin.QueryOptions) (*plugin.QueryResult, error) {
-	return (&querySampleSQLPlugin{}).ExecuteRuntimeQuery(ctx, conn, plugin.QueryRequest{Query: sql, Options: opts})
+func (p *querySampleSQLPlugin) ExecuteSQL(_ context.Context, _ plugin.ConnectionInfo, sql string, _ plugin.QueryOptions) (*plugin.QueryResult, error) {
+	p.executedQuery = sql
+	return &plugin.QueryResult{Columns: []string{"id"}, Rows: []map[string]interface{}{{"id": 1, "query": sql}}}, nil
 }
 
 func (*querySampleFederatedPlugin) Type() string         { return "service_sample_federated" }
@@ -96,6 +96,9 @@ func (*querySampleFederatedPlugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.NewFederatedQueryCapabilities("service_sample_federated", "http", []string{"postgresql"}, nil)
 }
 func (*querySampleFederatedPlugin) QueryLanguages() []string { return []string{"sql"} }
+func (*querySampleFederatedPlugin) AnalyzeFederatedQuery(context.Context, plugin.FederatedQueryRequest) (*plugin.QueryAnalysis, error) {
+	return plugin.NewQueryAnalysis("sql", plugin.QuerySchemaCoverageUnknown)
+}
 func (*querySampleFederatedPlugin) ResolveSourceEngineIDs(string, []plugin.FederatedQuerySource) []uint {
 	return nil
 }
@@ -148,6 +151,7 @@ func TestQuerySampleServiceExecutesDirectSampleThroughAuthorization(t *testing.T
 
 	system := client.NewSystemServiceClient(server.URL, querySampleTokenSource{}, server.Client())
 	service := NewQuerySampleService(system, client.NewSystemExecutionAuthorizationClient(server.URL, server.Client()), nil)
+	service.SetProtectionGate(allowServiceProtectionGate{})
 	query, language, err := service.Generate(context.Background(), 7, "addp_at_user", 21)
 	if err != nil {
 		t.Fatal(err)
@@ -209,6 +213,7 @@ func TestQuerySampleServiceReturnsUnboundedFederatedSampleAndBoundsValidation(t 
 	system := client.NewSystemServiceClient(server.URL, querySampleTokenSource{}, server.Client())
 	meta := client.NewMetaClient(server.URL, querySampleTokenSource{})
 	service := NewQuerySampleService(system, client.NewSystemExecutionAuthorizationClient(server.URL, server.Client()), meta)
+	service.SetProtectionGate(allowServiceProtectionGate{})
 	query, language, err := service.Generate(context.Background(), 7, "addp_at_user", 90)
 	if err != nil {
 		t.Fatal(err)

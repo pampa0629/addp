@@ -1087,8 +1087,10 @@ func newWorkflowEngineServiceWithRawEnginesForTest(t *testing.T, engines map[uin
 		cached[id] = &copy
 	}
 	authorization := &IssuedWorkflowExecutionAuthorization{AuthorizationID: 1, ExpiresAt: time.Now().Add(time.Hour)}
+	workflowService := NewWorkflowEngineService(nil)
+	workflowService.SetProtectionGate(allowDevelopProtectionGate{})
 	return &workflowEngineServiceTestHarness{
-		service: NewWorkflowEngineService(nil),
+		service: workflowService,
 		resolver: &workflowEngineAccessResolver{
 			tenantID: 7, executionID: uuid.New(), authorization: authorization, engines: cached,
 		},

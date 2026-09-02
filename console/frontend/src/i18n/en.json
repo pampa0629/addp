@@ -150,6 +150,7 @@
         "orchestrator": "Orchestrator - Workflow Orchestration",
         "portal": "Portal - Asset Portal",
         "quality": "Quality - Data Quality",
+        "security": "Security - Data Security",
         "catalog": "Catalog - Enterprise Catalog",
         "service": "Service - Data Services",
         "workbench": "Workbench - Data Service Consumption",
@@ -266,6 +267,10 @@
         "label": "Data Quality",
         "desc": "Rule application, quality checks, execution records"
       },
+      "security": {
+        "label": "Data Security & Privacy",
+        "desc": "Sensitive data types, classifications, grades, and protection baselines"
+      },
       "develop": {
         "label": "Data Development",
         "desc": "SQL workbench, workflow editor, Notebook"
@@ -276,7 +281,7 @@
       },
       "workbench": {
         "label": "Workbench",
-        "desc": "Query and visualize data services, save views, and publish data applications"
+        "desc": "Create, link, and publish data applications from published data services"
       },
       "orchestrator": {
         "label": "Task Orchestration",
@@ -349,8 +354,6 @@
         "elements": "Data Elements",
         "codeSets": "Code Sets",
         "units": "Units of Measure",
-        "classifications": "Classifications",
-        "recentClassifications": "Data Classifications",
         "dimensionHierarchies": "Dimension Hierarchies",
         "metrics": "Metrics",
         "recentMetrics": "Data Metric Management",
@@ -378,6 +381,14 @@
         "recentExecutions": "Quality Check Executions",
         "recentIssues": "Data Quality Issues"
       },
+      "security": {
+        "label": "Data Security",
+        "sensitiveDataTypes": "Sensitive Data Types",
+        "classifications": "Security Classifications",
+        "grades": "Security Grades",
+        "protectionBaselines": "Protection Baselines",
+        "protectionEnrollments": "Protection Enrollments"
+      },
       "develop": {
         "label": "Data Development",
         "sql": "SQL Workbench",
@@ -399,7 +410,6 @@
       },
       "workbench": {
         "label": "Workbench",
-        "views": "Workbench Views",
         "dataApplications": "Data Applications"
       },
       "orchestrator": {
@@ -421,7 +431,7 @@
       },
       "catalog": {
         "label": "Enterprise Catalog",
-        "entries": "Catalog Browse",
+        "entries": "Resource Browse",
         "coverage": "Governance Coverage"
       },
       "asset": {

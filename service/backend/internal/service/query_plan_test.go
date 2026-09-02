@@ -1,12 +1,15 @@
 package service
 
 import (
+	"bytes"
+	"encoding/base64"
 	"errors"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/addp/common/datatype"
+	"github.com/addp/common/engine/plugin"
 	commonJSON "github.com/addp/common/jsonmap"
 	"github.com/addp/service/internal/models"
 )
@@ -97,15 +100,34 @@ func TestQueryTokenRejectsTamperingAndBindsCompositeFeatureID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encodeCursor() error = %v", err)
 	}
-	tampered := token[:len(token)-1] + "A"
+	tamperedBytes, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tamperedBytes[len(tamperedBytes)-1] ^= 0x01
+	tampered := base64.RawURLEncoding.EncodeToString(tamperedBytes)
 	if _, err := codec.decodeCursor(tampered); !errors.Is(err, ErrInvalidQueryCursor) {
 		t.Fatalf("tampered cursor error = %v", err)
+	}
+	decodedToken, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(decodedToken, []byte(`"service_id"`)) {
+		t.Fatalf("cursor exposed plaintext payload: %q", decodedToken)
 	}
 
 	executor := &QueryExecutorService{tokenCodec: codec}
 	featureID, err := executor.encodeFeatureID(queryService, map[string]interface{}{"id": int64(3), "name": "alpha"})
 	if err != nil {
 		t.Fatalf("encodeFeatureID() error = %v", err)
+	}
+	decodedFeatureID, err := base64.RawURLEncoding.DecodeString(featureID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(decodedFeatureID, []byte("alpha")) {
+		t.Fatalf("feature ID exposed a source value: %q", decodedFeatureID)
 	}
 	filter, err := executor.DecodeFeatureID(queryService, featureID)
 	if err != nil {
@@ -126,11 +148,11 @@ func TestFinalizeResultUsesLimitPlusOneAndRemovesHiddenFields(t *testing.T) {
 		OrderBy:   []models.QueryOrder{{Field: "id", Direction: "asc"}},
 		QueryHash: "hash", ServiceVersion: "revision-1",
 	}
-	result, err := executor.finalizeResult(queryService, plan, []map[string]interface{}{
+	result, err := executor.finalizeResult(queryService, plan, &plugin.QueryResult{Columns: []string{"name", "id"}, Rows: []map[string]interface{}{
 		{"id": int64(1), "name": "one"},
 		{"id": int64(2), "name": "two"},
 		{"id": int64(3), "name": "three"},
-	})
+	}}, nil)
 	if err != nil {
 		t.Fatalf("finalizeResult() error = %v", err)
 	}
@@ -142,6 +164,36 @@ func TestFinalizeResultUsesLimitPlusOneAndRemovesHiddenFields(t *testing.T) {
 	}
 	if len(result.FeatureIDs) != 2 || result.FeatureIDs[0] == "" {
 		t.Fatalf("feature IDs = %#v", result.FeatureIDs)
+	}
+}
+
+func TestFinalizeResultUsesProtectedColumnsAndRows(t *testing.T) {
+	t.Parallel()
+
+	queryService := testPublishedQueryService()
+	executor := &QueryExecutorService{tokenCodec: newQueryTokenCodec([]byte("0123456789abcdef0123456789abcdef"))}
+	plan := &compiledQueryPlan{
+		Limit: 1, SelectedFields: []string{"id", "name"},
+		OrderBy:   []models.QueryOrder{{Field: "id", Direction: "asc"}},
+		QueryHash: "hash", ServiceVersion: "revision-1",
+	}
+	protect := func(result *plugin.QueryResult) error {
+		delete(result.Rows[0], "name")
+		result.Columns = []string{"id"}
+		return nil
+	}
+	result, err := executor.finalizeResult(queryService, plan, &plugin.QueryResult{
+		Columns: []string{"id", "name"},
+		Rows:    []map[string]interface{}{{"id": int64(1), "name": "sensitive"}},
+	}, protect)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := result.Data[0]["name"]; exists {
+		t.Fatalf("suppressed value remained in response: %#v", result.Data[0])
+	}
+	if !reflect.DeepEqual(result.Fields, []string{"id"}) {
+		t.Fatalf("protected fields = %#v", result.Fields)
 	}
 }
 

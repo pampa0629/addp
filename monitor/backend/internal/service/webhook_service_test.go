@@ -14,7 +14,7 @@ import (
 	"time"
 
 	commonModels "github.com/addp/common/models"
-	commonsecurity "github.com/addp/common/security"
+	secretcipher "github.com/addp/common/secretcipher"
 	monitorModels "github.com/addp/monitor/internal/models"
 	"github.com/google/uuid"
 	"gorm.io/driver/sqlite"
@@ -94,7 +94,7 @@ func TestWebhookDestinationEncryptsSecretAndDisablingCancelsPending(t *testing.T
 	if len(destination.EventTypes) != 2 || destination.EventTypes[0] != monitorModels.AlertEventOpened {
 		t.Fatalf("event types = %#v", destination.EventTypes)
 	}
-	plaintext, err := commonsecurity.Decrypt(destination.SecretCiphertext, key)
+	plaintext, err := secretcipher.Decrypt(destination.SecretCiphertext, key)
 	if err != nil || plaintext != "0123456789abcdef" {
 		t.Fatalf("decrypted secret = %q, err = %v", plaintext, err)
 	}

@@ -18,7 +18,7 @@ import (
 )
 
 type StaticTileEngineClient interface {
-	GetEngine(engineID uint) (*commonModels.Engine, error)
+	GetEngineForTenant(context.Context, uint, uint) (*commonModels.Engine, error)
 }
 
 type StaticTile struct {
@@ -28,7 +28,16 @@ type StaticTile struct {
 }
 
 type StaticTileService struct {
-	systemClient StaticTileEngineClient
+	systemClient   StaticTileEngineClient
+	protectionGate interface {
+		BeginCatalogPath(context.Context, uint, enginePlugin.EnginePlugin, enginePlugin.EngineCatalogPath) (func(), error)
+	}
+}
+
+func (s *StaticTileService) SetProtectionGate(gate interface {
+	BeginCatalogPath(context.Context, uint, enginePlugin.EnginePlugin, enginePlugin.EngineCatalogPath) (func(), error)
+}) {
+	s.protectionGate = gate
 }
 
 func NewStaticTileService(systemClient StaticTileEngineClient) *StaticTileService {
@@ -67,7 +76,7 @@ func (s *StaticTileService) GetStaticTile(
 	if z < minZoom || z > maxZoom || x < 0 || y < 0 {
 		return emptyStaticVectorTile(), nil
 	}
-	engine, err := s.systemClient.GetEngine(loc.EngineID)
+	engine, err := s.systemClient.GetEngineForTenant(ctx, tenantID, loc.EngineID)
 	if err != nil {
 		return nil, fmt.Errorf("get static tile engine %d: %w", loc.EngineID, err)
 	}
@@ -90,6 +99,14 @@ func (s *StaticTileService) GetStaticTile(
 	if err != nil {
 		return nil, fmt.Errorf("build static PMTiles provider path: %w", err)
 	}
+	if s.protectionGate == nil {
+		return nil, errors.New("Service static tile protection gate is not configured")
+	}
+	endProtection, err := s.protectionGate.BeginCatalogPath(ctx, tenantID, pl, providerPath)
+	if err != nil {
+		return nil, err
+	}
+	defer endProtection()
 	connInfo := enginePlugin.ConnectionInfo(engine.ConnectionInfo)
 	headerBytes, err := readStaticPMTilesRange(ctx, rangeReader, connInfo, providerPath, 0, pmtiles.HeaderSize)
 	if err != nil {

@@ -10,7 +10,9 @@ export { default as AuthLoginFlow } from './components/AuthLoginFlow.vue'
 export { default as StatusAnnouncer } from './components/StatusAnnouncer.vue'
 export { default as ExecutionParameterForm } from './components/ExecutionParameterForm.vue'
 export { default as TabularResultRenderer } from './components/TabularResultRenderer.vue'
+export { default as ScalarValueRenderer } from './components/ScalarValueRenderer.vue'
 export { formatResultCell } from './utils/tabularResult'
+export { formatScalarValue, validateScalarValueResult } from './utils/scalarValueResult.mjs'
 
 // Schedule Components
 export { default as ScheduleConfig } from './components/ScheduleConfig.vue'

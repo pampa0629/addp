@@ -132,6 +132,7 @@ func Load() *Config {
 			"addp-orchestrator": getEnv("ORCHESTRATOR_SERVICE_CLIENT_SECRET", ""),
 			"addp-portal":       getEnv("PORTAL_SERVICE_CLIENT_SECRET", ""),
 			"addp-quality":      getEnv("QUALITY_SERVICE_CLIENT_SECRET", ""),
+			"addp-security":     getEnv("SECURITY_SERVICE_CLIENT_SECRET", ""),
 			"addp-pointcloud":   getEnv("POINTCLOUD_WORKFLOW_SERVICE_CLIENT_SECRET", ""),
 			"addp-service":      getEnv("SERVICE_SERVICE_CLIENT_SECRET", ""),
 			"addp-standard":     getEnv("STANDARD_SERVICE_CLIENT_SECRET", ""),

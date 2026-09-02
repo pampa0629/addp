@@ -38,45 +38,68 @@ type ManagerContentField struct {
 	IsUniqueKey     bool   `json:"is_unique_key,omitempty"`
 }
 
+const (
+	ManagerContentPayloadTechnicalMetadata = "technical_metadata"
+	ManagerContentPayloadExtractedContent  = "extracted_content"
+)
+
 type ManagerContentDocument struct {
-	DocumentID     string                 `json:"document_id"`
-	ContentHash    string                 `json:"content_hash,omitempty"`
-	Locator        string                 `json:"locator,omitempty"`
-	EngineID       uint                   `json:"engine_id"`
-	EngineName     string                 `json:"engine_name,omitempty"`
-	EngineType     string                 `json:"engine_type,omitempty"`
-	DataItemType   string                 `json:"data_item_type"`
-	Name           string                 `json:"name"`
-	FullName       string                 `json:"full_name,omitempty"`
-	Description    string                 `json:"description,omitempty"`
-	Tags           []string               `json:"tags,omitempty"`
-	Schema         string                 `json:"schema,omitempty"`
-	TableKind      string                 `json:"table_kind,omitempty"`
-	Fields         []ManagerContentField  `json:"fields,omitempty"`
-	RowCount       *int64                 `json:"row_count,omitempty"`
-	Bucket         string                 `json:"bucket,omitempty"`
-	Path           string                 `json:"path,omitempty"`
-	SizeBytes      *int64                 `json:"size_bytes,omitempty"`
-	ContentType    string                 `json:"content_type,omitempty"`
-	DataUpdatedAt  *time.Time             `json:"data_updated_at,omitempty"`
-	Content        string                 `json:"content,omitempty"`
-	ContentPreview string                 `json:"content_preview,omitempty"`
-	DocumentType   string                 `json:"document_type,omitempty"`
-	Title          string                 `json:"title,omitempty"`
-	Author         string                 `json:"author,omitempty"`
-	Keywords       []string               `json:"keywords,omitempty"`
-	WordCount      int                    `json:"word_count,omitempty"`
-	PageCount      int                    `json:"page_count,omitempty"`
-	CreatedDate    *time.Time             `json:"created_date,omitempty"`
-	ModifiedDate   *time.Time             `json:"modified_date,omitempty"`
-	Metadata       map[string]interface{} `json:"metadata,omitempty"`
-	ProjectionTime time.Time              `json:"projection_time"`
+	DocumentID       string                 `json:"document_id"`
+	PayloadKind      string                 `json:"payload_kind" enums:"technical_metadata,extracted_content"`
+	ContentHash      string                 `json:"content_hash,omitempty"`
+	Locator          string                 `json:"locator,omitempty"`
+	EngineID         uint                   `json:"engine_id"`
+	EngineName       string                 `json:"engine_name,omitempty"`
+	EngineType       string                 `json:"engine_type,omitempty"`
+	DataItemType     string                 `json:"data_item_type"`
+	Name             string                 `json:"name"`
+	FullName         string                 `json:"full_name,omitempty"`
+	Description      string                 `json:"description,omitempty"`
+	Tags             []string               `json:"tags,omitempty"`
+	Schema           string                 `json:"schema,omitempty"`
+	TableKind        string                 `json:"table_kind,omitempty"`
+	Fields           []ManagerContentField  `json:"fields,omitempty"`
+	RowCount         *int64                 `json:"row_count,omitempty"`
+	Bucket           string                 `json:"bucket,omitempty"`
+	Path             string                 `json:"path,omitempty"`
+	SizeBytes        *int64                 `json:"size_bytes,omitempty"`
+	ContentType      string                 `json:"content_type,omitempty"`
+	DataUpdatedAt    *time.Time             `json:"data_updated_at,omitempty"`
+	Content          string                 `json:"content,omitempty"`
+	ContentPreview   string                 `json:"content_preview,omitempty"`
+	ContentTruncated bool                   `json:"content_truncated,omitempty"`
+	DocumentType     string                 `json:"document_type,omitempty"`
+	Title            string                 `json:"title,omitempty"`
+	Author           string                 `json:"author,omitempty"`
+	Keywords         []string               `json:"keywords,omitempty"`
+	WordCount        int                    `json:"word_count,omitempty"`
+	PageCount        int                    `json:"page_count,omitempty"`
+	CreatedDate      *time.Time             `json:"created_date,omitempty"`
+	ModifiedDate     *time.Time             `json:"modified_date,omitempty"`
+	Metadata         map[string]interface{} `json:"metadata,omitempty"`
+	ProjectionTime   time.Time              `json:"projection_time"`
+}
+
+func (d ManagerContentDocument) Validate() error {
+	if strings.TrimSpace(d.DocumentID) == "" || d.EngineID == 0 || strings.TrimSpace(d.DataItemType) == "" || strings.TrimSpace(d.Name) == "" {
+		return errors.New("Manager content document is incomplete")
+	}
+	switch d.PayloadKind {
+	case ManagerContentPayloadTechnicalMetadata:
+		if d.Content != "" || d.ContentPreview != "" || d.ContentTruncated || d.Title != "" || d.Author != "" || len(d.Keywords) > 0 || d.WordCount != 0 || d.PageCount != 0 || d.CreatedDate != nil || d.ModifiedDate != nil || len(d.Metadata) > 0 || len(d.Tags) > 0 {
+			return errors.New("Manager technical metadata document contains extracted content")
+		}
+	case ManagerContentPayloadExtractedContent:
+	default:
+		return errors.New("Manager content document payload kind is invalid")
+	}
+	return nil
 }
 
 func (c *ManagerContentClient) UpsertDocument(ctx context.Context, document ManagerContentDocument) error {
 	document.DocumentID = strings.TrimSpace(document.DocumentID)
-	if document.DocumentID == "" || document.EngineID == 0 || strings.TrimSpace(document.DataItemType) == "" || strings.TrimSpace(document.Name) == "" {
-		return errors.New("Manager content document is incomplete")
+	if err := document.Validate(); err != nil {
+		return err
 	}
 	path := "/api/v1/manager/runtime/content-documents/" + url.PathEscape(document.DocumentID)
 	if err := c.doJSON(ctx, http.MethodPut, path, document, nil); err != nil {

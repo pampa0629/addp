@@ -222,7 +222,7 @@ func (h *ResourceCapabilityHandler) GetSQLOutputContract(c *gin.Context) {
 	}
 
 	// 1. 获取引擎信息
-	engine, err := h.systemClient.GetEngine(req.EngineID)
+	engine, err := h.systemClient.GetEngineForTenant(c.Request.Context(), tenantIDValue(c), req.EngineID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.TWithDetail(c, servicei18n.MsgSQLOutputContractFailed, err.Error())})
 		return

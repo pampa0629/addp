@@ -86,7 +86,7 @@ bash scripts/test/certify-infra-kafka-ha.sh
 
 本地共享 `addp-postgres` 禁止创建清单之外的测试 database；所有非 IAM 测试复用 `addp_test`，System IAM、Fosite、API 与 Migration 测试复用 `addp_iam_test`。本地测试必须调用根 `Makefile` 或 `scripts/test/` 的标准门禁，由门禁重建并清理自己拥有的 Schema 或测试事实；禁止为了单次验证直接执行 `createdb`、`CREATE DATABASE`、`dropdb` 或 `DROP DATABASE`。如果现有门禁不能提供所需隔离，应先修正门禁的重置和清理能力，不能用新增 database 绕过问题。
 
-需要一次验证全部已登记 PostgreSQL 门禁时，先显式配置各 owner 门禁要求的安全连接变量，再运行 `make test-integration`。该入口严格串行调用模块级门禁，避免 `addp_test` 或 `addp_iam_test` 被并发重置；它不会创建新 database，也不会连接 `addp` 开发业务库。
+需要一次验证全部已登记基础设施集成门禁时，先显式配置各 owner 门禁要求的安全连接变量，再运行 `make test-integration`。该入口严格串行调用 PostgreSQL 和 MongoDB 模块级门禁，避免 `addp_test` 或 `addp_iam_test` 被并发重置；PostgreSQL 门禁不会创建新 database，也不会连接 `addp` 开发业务库。Manager MongoDB 门禁读取 `Outdoor/Persons`；目标为空时只创建一条确定性夹具，并在退出时恢复原状态。
 
 GitHub Actions 使用每个 Job 独占、随 Job 销毁的 PostgreSQL 15 Service，不连接本地开发环境 Infra；workflow 可以为 Job 创建专用测试 database，但必须由 workflow 声明并由隔离实例生命周期回收。
 
@@ -95,6 +95,18 @@ GitHub Actions 使用每个 Job 独占、随 Job 销毁的 PostgreSQL 15 Service
 ```bash
 ADDP_SYSTEM_POSTGRES_TEST_DSN='postgres://addp:addp_password@localhost:15432/addp_iam_test?sslmode=disable' \
   make test-system-iam-postgres
+```
+
+Common PostgreSQL Engine Provider 与 execution store 门禁使用：
+
+```bash
+ADDP_TEST_POSTGRES_HOST=localhost \
+ADDP_TEST_POSTGRES_PORT=15432 \
+ADDP_TEST_POSTGRES_USER=addp \
+ADDP_TEST_POSTGRES_PASSWORD=addp_password \
+ADDP_TEST_POSTGRES_DATABASE=addp_test \
+ADDP_TEST_POSTGRES_SSLMODE=disable \
+  make test-common-postgres
 ```
 
 Model 物化与事务门禁使用：
@@ -109,6 +121,25 @@ Asset 授权履约 Schema 门禁使用：
 ```bash
 ASSET_POSTGRES_TEST_DSN='postgres://addp:addp_password@localhost:15432/addp_test?sslmode=disable' \
   make test-asset-postgres
+```
+
+Security Schema 门禁默认使用本地 `addp_test`；也可以显式覆盖为独占 disposable database：
+
+```bash
+SECURITY_POSTGRES_TEST_DSN='postgres://addp:addp_password@localhost:15432/addp_test?sslmode=disable' \
+  make test-security-postgres
+```
+
+Transfer PostgreSQL 受保护 bounded snapshot 导出门禁使用：
+
+```bash
+ADDP_TEST_POSTGRES_HOST=localhost \
+ADDP_TEST_POSTGRES_PORT=15432 \
+ADDP_TEST_POSTGRES_USER=addp \
+ADDP_TEST_POSTGRES_PASSWORD=addp_password \
+ADDP_TEST_POSTGRES_DATABASE=addp_test \
+ADDP_TEST_POSTGRES_SSLMODE=disable \
+  make test-transfer-postgres
 ```
 
 ### Docker Compose 项目

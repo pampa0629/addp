@@ -746,6 +746,8 @@
           "streamRead": "流式读取",
           "rangeRead": "范围读取",
           "batchRead": "批量读取",
+          "recordReadSession": "连续记录读取",
+          "encodedRecordReadSession": "类型保真记录导出",
           "streamWrite": "流式写入",
           "rangeWrite": "范围写入",
           "batchWrite": "批量写入",
@@ -853,6 +855,9 @@
         "geometryWriteEncoding": {
           "ewkb": "EWKB",
           "geojson": "GeoJSON"
+        },
+        "recordFormat": {
+          "mongodbExtendedJsonl": "MongoDB Canonical Extended JSON Lines"
         },
         "engineFamily": {
           "tabular": "表格数据",

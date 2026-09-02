@@ -57,11 +57,11 @@ func TestQueryExecutionRepositoryFailsAllExpiredQueries(t *testing.T) {
 			config := commonModels.JSONMap{"content": commonModels.JSONMap{"query_type": "sql", "query": "SELECT 1"}}
 			if relationResult {
 				config["content"] = commonModels.JSONMap{
-					"query_type": "sql", "query": "SELECT * FROM addp_input.source",
-					"relation_inputs": []interface{}{"source"},
+					"query_type": "sql", "query": "SELECT * FROM source",
+					"query_parameters": []interface{}{map[string]interface{}{"name": "source", "type": "relation"}},
 				}
 				config["runtime_inputs"] = commonModels.JSONMap{
-					"input_locators": commonModels.JSONMap{"source": "addp://engine/9/path/public/source?type=table"},
+					"source":         commonModels.JSONMap{"locator": "addp://engine/9/path/public/source?type=table"},
 					"target_locator": "addp://engine/9/path/public/result?type=table",
 				}
 			}

@@ -466,9 +466,8 @@ func TestFilesystemDeepScanExtractsDOCXHeaderFooter(t *testing.T) {
 	if !ok {
 		t.Fatal("scanned file item not found")
 	}
-	preview := commonJSON.String(item.Attributes, "capabilities.extraction", "plain_text_preview")
-	if !strings.Contains(preview, "页眉1") || !strings.Contains(preview, "注脚1") {
-		t.Fatalf("plain_text_preview = %q, want header and footer text", preview)
+	if preview := commonJSON.String(item.Attributes, "capabilities.extraction", "plain_text_preview"); preview != "" {
+		t.Fatalf("plain_text_preview persisted raw content: %q", preview)
 	}
 	if got := commonJSON.String(item.Attributes, "type_info.document", "title"); got != "ChatBI详细设计" {
 		t.Fatalf("type_info.document.title = %q", got)

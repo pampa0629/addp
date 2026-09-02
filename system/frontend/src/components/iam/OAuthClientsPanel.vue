@@ -31,35 +31,31 @@
     </div>
 
     <el-table v-loading="loading" :data="rows" stripe>
-      <el-table-column :label="t('system.iam.oauthClients.client')" min-width="260">
+      <el-table-column :label="t('system.iam.oauthClients.client')" min-width="220">
         <template #default="{ row }">
           <div class="iam-primary-cell">
             <strong>{{ row.display_name }}</strong>
             <span class="oauth-client-id">{{ row.client_id }}</span>
+            <span class="oauth-client-protocol">{{ t('system.iam.oauthClients.protocolSummary') }}</span>
           </div>
         </template>
       </el-table-column>
-      <el-table-column :label="t('system.iam.oauthClients.redirectUris')" min-width="340">
+      <el-table-column :label="t('system.iam.oauthClients.redirectUris')" min-width="250">
         <template #default="{ row }">
           <ul class="oauth-uri-list">
             <li v-for="uri in row.redirect_uris" :key="uri">{{ uri }}</li>
           </ul>
         </template>
       </el-table-column>
-      <el-table-column :label="t('system.iam.oauthClients.protocol')" width="210">
-        <template #default>
-          <span>{{ t('system.iam.oauthClients.protocolSummary') }}</span>
-        </template>
-      </el-table-column>
-      <el-table-column :label="t('system.iam.common.status')" width="120">
+      <el-table-column :label="t('system.iam.common.status')" width="90">
         <template #default="{ row }">
           <el-tag :type="row.status === 'active' ? 'success' : 'info'">{{ statusLabel(row.status) }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column :label="t('system.iam.common.updatedAt')" width="180">
+      <el-table-column :label="t('system.iam.common.updatedAt')" width="150">
         <template #default="{ row }">{{ formatDate(row.updated_at) }}</template>
       </el-table-column>
-      <el-table-column :label="t('system.iam.common.actions')" width="260" fixed="right">
+      <el-table-column :label="t('system.iam.common.actions')" width="220">
         <template #default="{ row }">
           <el-button link type="primary" :icon="CopyDocument" @click="copyClientID(row.client_id)">
             {{ t('system.iam.oauthClients.copyClientId') }}
@@ -319,6 +315,11 @@ onMounted(load)
 .oauth-client-id,
 .oauth-uri-list {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.oauth-client-protocol {
+  color: var(--addp-text-secondary);
+  font-size: 12px;
 }
 
 .oauth-uri-list {

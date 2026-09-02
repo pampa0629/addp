@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -113,6 +115,76 @@ func TestDataProfileExecutionRepositoryReusesOnlyActiveTarget(t *testing.T) {
 	next, created, err := repo.CreateOrReuseActive(context.Background(), "target-a", newDataProfileRepositoryTestExecution("execution-4", now.Add(4*time.Second)))
 	if err != nil || !created || next.ExecutionID != "execution-4" {
 		t.Fatalf("post-completion create = (%#v, %v, %v)", next, created, err)
+	}
+}
+
+func TestDataProfileProjectionCleanupDeletesCachedResultsAndSuppressesConditionValues(t *testing.T) {
+	db := newDataProfileRepositoryTestDB(t)
+	profiles := NewDataProfileRepository(db)
+	executions := NewDataProfileExecutionRepository(db)
+	for _, fingerprint := range []string{"protected-item", "other-item"} {
+		state := &models.DataProfile{
+			TenantID: 7, ItemFingerprint: fingerprint, EngineID: 11,
+			Locator: "addp://engine/11/item/" + fingerprint, SourceVersion: "version-1",
+			DependencySnapshot: []byte(`{"source_version":"version-1"}`),
+			ProfileMode:        dataprofile.ModeSample, ProfileConfigHash: "config-" + fingerprint,
+			LastExecutionID: "execution-" + fingerprint,
+		}
+		profile := dataprofile.Profile{
+			SchemaVersion: dataprofile.SchemaVersionV2, Mode: dataprofile.ModeSample,
+			DataScope:    dataprofile.DataScope{Kind: dataprofile.DataScopeKindAll},
+			SampleMethod: "systematic_pages_reservoir", FieldCount: 1, ProfiledAt: time.Now().UTC(),
+			Fields: []dataprofile.FieldProfile{{Name: "phone", Type: datatype.FieldTypeString, Status: dataprofile.MetricStatusComputed}},
+		}
+		if err := profiles.ReplaceCurrent(context.Background(), state, profile); err != nil {
+			t.Fatal(err)
+		}
+		execution := newDataProfileRepositoryTestExecution("cleanup-"+fingerprint, time.Now().UTC())
+		execution.ExecutionConfig = commonModels.JSONMap{
+			"item_fingerprint": fingerprint,
+			"data_scope": map[string]interface{}{
+				"kind":       "condition",
+				"conditions": []interface{}{map[string]interface{}{"field": "phone", "operator": "eq", "value": "13661384499"}},
+			},
+		}
+		if err := db.Create(execution).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		if err := profiles.DeleteByItemFingerprints(context.Background(), tx, 7, []string{"protected-item"}); err != nil {
+			return err
+		}
+		return executions.SuppressConditionalScopesByItemFingerprints(context.Background(), tx, 7, []string{"protected-item"})
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	removed, _, err := profiles.GetCurrent(context.Background(), 7, "protected-item", dataprofile.ModeSample, "config-protected-item")
+	if err != nil || removed != nil {
+		t.Fatalf("protected profile = %#v, err = %v", removed, err)
+	}
+	remaining, _, err := profiles.GetCurrent(context.Background(), 7, "other-item", dataprofile.ModeSample, "config-other-item")
+	if err != nil || remaining == nil {
+		t.Fatalf("other profile = %#v, err = %v", remaining, err)
+	}
+
+	protectedExecution, err := executions.GetByExecutionID(context.Background(), 7, "cleanup-protected-item")
+	if err != nil || protectedExecution == nil {
+		t.Fatalf("protected execution = %#v, err = %v", protectedExecution, err)
+	}
+	payload, _ := json.Marshal(protectedExecution.ExecutionConfig)
+	if strings.Contains(string(payload), "13661384499") || !strings.Contains(string(payload), "values_suppressed") {
+		t.Fatalf("protected execution config = %s", payload)
+	}
+	otherExecution, err := executions.GetByExecutionID(context.Background(), 7, "cleanup-other-item")
+	if err != nil || otherExecution == nil {
+		t.Fatalf("other execution = %#v, err = %v", otherExecution, err)
+	}
+	otherPayload, _ := json.Marshal(otherExecution.ExecutionConfig)
+	if !strings.Contains(string(otherPayload), "13661384499") {
+		t.Fatalf("unrelated execution config was changed: %s", otherPayload)
 	}
 }
 

@@ -156,8 +156,17 @@ func (s *NotebookSessionService) StreamRecords(
 	if !ok {
 		return ErrNotebookRecordScanUnsupported
 	}
+	path := notebookPluginCatalogPath(request.Path)
+	if s.protectionGate == nil {
+		return fmt.Errorf("notebook data protection gate is not configured")
+	}
+	endProtection, err := s.protectionGate.BeginCatalogPath(execution.ctx, execution.session.TenantID, execution.plugin, path)
+	if err != nil {
+		return err
+	}
+	defer endProtection()
 	readSession, err := provider.OpenRecordReadSession(execution.ctx,
-		plugin.ConnectionInfo(execution.access.Engine.ConnectionInfo), notebookPluginCatalogPath(request.Path),
+		plugin.ConnectionInfo(execution.access.Engine.ConnectionInfo), path,
 		plugin.RecordReadSessionOptions{})
 	if err != nil {
 		return err
@@ -175,6 +184,12 @@ func (s *NotebookSessionService) StreamRecords(
 	rowsRead := int64(0)
 	nextLeaseCheck := time.Now().Add(notebookExecutionLeaseCheckInterval)
 	for request.MaxRows == 0 || rowsRead < request.MaxRows {
+		checkEnd, err := s.protectionGate.BeginCatalogPath(execution.ctx, execution.session.TenantID, execution.plugin, path)
+		if err != nil {
+			_ = writer.Close()
+			return err
+		}
+		checkEnd()
 		if !time.Now().Before(nextLeaseCheck) {
 			if err := execution.ValidateLease(); err != nil {
 				_ = writer.Close()
@@ -226,8 +241,17 @@ func (s *NotebookSessionService) SampleGraph(
 	if !ok {
 		return nil, ErrNotebookGraphUnsupported
 	}
+	path := notebookPluginCatalogPath(request.Path)
+	if s.protectionGate == nil {
+		return nil, fmt.Errorf("notebook data protection gate is not configured")
+	}
+	endProtection, err := s.protectionGate.BeginCatalogPath(execution.ctx, execution.session.TenantID, execution.plugin, path)
+	if err != nil {
+		return nil, err
+	}
+	defer endProtection()
 	return provider.SampleGraph(execution.ctx, plugin.ConnectionInfo(execution.access.Engine.ConnectionInfo),
-		notebookPluginCatalogPath(request.Path), plugin.GraphSampleOptions{Limit: request.Limit})
+		path, plugin.GraphSampleOptions{Limit: request.Limit})
 }
 
 func (s *NotebookSessionService) QueryGraph(
@@ -248,6 +272,14 @@ func (s *NotebookSessionService) QueryGraph(
 	if !ok {
 		return nil, ErrNotebookGraphUnsupported
 	}
+	if s.protectionGate == nil {
+		return nil, fmt.Errorf("notebook data protection gate is not configured")
+	}
+	endProtection, err := s.protectionGate.BeginUnresolvedRead(execution.ctx, execution.session.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer endProtection()
 	return provider.ExecuteGraphQuery(execution.ctx, plugin.ConnectionInfo(execution.access.Engine.ConnectionInfo),
 		request.Query, plugin.QueryOptions{Limit: request.MaxRows, Timeout: request.Timeout, ReadOnly: true})
 }
@@ -267,6 +299,14 @@ func (s *NotebookSessionService) StreamContent(
 	defer execution.Close()
 	var reader io.ReadCloser
 	path := notebookPluginCatalogPath(request.Path)
+	if s.protectionGate == nil {
+		return fmt.Errorf("notebook data protection gate is not configured")
+	}
+	endProtection, err := s.protectionGate.BeginCatalogPath(execution.ctx, execution.session.TenantID, execution.plugin, path)
+	if err != nil {
+		return err
+	}
+	defer endProtection()
 	connInfo := plugin.ConnectionInfo(execution.access.Engine.ConnectionInfo)
 	if request.Range == nil {
 		provider, ok := execution.plugin.(plugin.ContentReadableProvider)
@@ -293,6 +333,11 @@ func (s *NotebookSessionService) StreamContent(
 	buffer := make([]byte, 64*1024)
 	nextLeaseCheck := time.Now().Add(notebookExecutionLeaseCheckInterval)
 	for {
+		checkEnd, err := s.protectionGate.BeginCatalogPath(execution.ctx, execution.session.TenantID, execution.plugin, path)
+		if err != nil {
+			return err
+		}
+		checkEnd()
 		if !time.Now().Before(nextLeaseCheck) {
 			if err := execution.ValidateLease(); err != nil {
 				return err
@@ -345,8 +390,17 @@ func (s *NotebookSessionService) StreamChanges(
 	if !ok {
 		return ErrNotebookChangeStreamUnsupported
 	}
+	path := notebookPluginCatalogPath(request.Path)
+	if s.protectionGate == nil {
+		return fmt.Errorf("notebook data protection gate is not configured")
+	}
+	endProtection, err := s.protectionGate.BeginCatalogPath(execution.ctx, execution.session.TenantID, execution.plugin, path)
+	if err != nil {
+		return err
+	}
+	defer endProtection()
 	reader, err := provider.OpenChangeStream(execution.ctx, plugin.ConnectionInfo(execution.access.Engine.ConnectionInfo),
-		notebookPluginCatalogPath(request.Path), plugin.ChangeStreamReadOptions{
+		path, plugin.ChangeStreamReadOptions{
 			ConsumerGroup:      "addp-notebook-" + execution.executionID,
 			CommittedPositions: positions, InitialPosition: initial, PollTimeout: request.PollTimeout,
 		})
@@ -361,6 +415,11 @@ func (s *NotebookSessionService) StreamChanges(
 	encoder := json.NewEncoder(buffered)
 	nextLeaseCheck := time.Now().Add(notebookExecutionLeaseCheckInterval)
 	for {
+		checkEnd, err := s.protectionGate.BeginCatalogPath(execution.ctx, execution.session.TenantID, execution.plugin, path)
+		if err != nil {
+			return err
+		}
+		checkEnd()
 		if !time.Now().Before(nextLeaseCheck) {
 			if err := execution.ValidateLease(); err != nil {
 				return err

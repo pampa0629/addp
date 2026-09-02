@@ -37,7 +37,7 @@ func TestMetricProfessionalRelationRouteUsesCurrentUserPermissionAndTenant(t *te
 	})
 	defer authServer.Close()
 	metricService := service.NewMetricService(nil, repository.NewMetricRepository(db), nil, nil)
-	router := SetupRouter(db, nil, nil, nil, nil, nil, nil, metricService, nil, nil, nil, nil, authServer.URL, modulelifecycle.NewStandalone("standard"))
+	router := SetupRouter(db, nil, nil, nil, nil, nil, metricService, nil, nil, nil, nil, nil, authServer.URL, modulelifecycle.NewStandalone("standard"))
 
 	response := performTenantRequest(router, http.MethodGet, "/api/v1/standard/metrics/1/relations", "metric-reader", "")
 	if response.Code != http.StatusOK {

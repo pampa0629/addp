@@ -101,8 +101,8 @@ func TestDocumentTextExtractionWritesExtractionFacts(t *testing.T) {
 	if !commonJSON.Bool(attrs, "capabilities.extraction", "text_extracted") {
 		t.Fatalf("capabilities.extraction = %#v", attrs["capabilities"])
 	}
-	if got := commonJSON.String(attrs, "capabilities.extraction", "plain_text_preview"); got != "hello document search" {
-		t.Fatalf("plain_text_preview = %q", got)
+	if got := commonJSON.String(attrs, "capabilities.extraction", "plain_text_preview"); got != "" {
+		t.Fatalf("plain_text_preview persisted raw content: %q", got)
 	}
 	if commonJSON.Bool(attrs, "type_info.document", "text_extracted") {
 		t.Fatalf("type_info.document should not carry extraction status: %#v", attrs["type_info"])
@@ -136,8 +136,8 @@ func TestDocumentTextExtractionReadsDOCX(t *testing.T) {
 	if got := commonJSON.String(attrs, "capabilities.extraction", "extractor"); got != "common_format:docx" {
 		t.Fatalf("extractor = %q", got)
 	}
-	if got := commonJSON.String(attrs, "capabilities.extraction", "plain_text_preview"); got != "Hello DOCX\nSearch body" {
-		t.Fatalf("plain_text_preview = %q", got)
+	if got := commonJSON.String(attrs, "capabilities.extraction", "plain_text_preview"); got != "" {
+		t.Fatalf("plain_text_preview persisted raw content: %q", got)
 	}
 	if commonJSON.Bool(attrs, "capabilities.extraction", "text_truncated") {
 		t.Fatalf("text_truncated = true, want false")

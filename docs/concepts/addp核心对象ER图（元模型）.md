@@ -871,21 +871,10 @@ erDiagram
         timestamp updated_at
     }
 
-    Classification {
-        uint id PK
-        uint tenant_id FK
-        uint parent_id FK "自引用"
-        string name
-        string description
-        timestamp created_at
-        timestamp updated_at
-    }
-
     Element {
         uint id PK
         uint tenant_id FK
         uint domain_id FK
-        uint classification_id FK "可选"
         uint code_set_id FK "枚举类型时关联"
         uint unit_id FK "可选"
         string name
@@ -896,7 +885,6 @@ erDiagram
         int scale
         bool nullable
         string default_value
-        string security_level "L1|L2|L3|L4"
         string definition
         json quality_rules "质量规则(JSONB)"
         string[] example_values
@@ -1005,8 +993,6 @@ erDiagram
     Domain ||--o{ Element : "归属"
     Domain ||--o{ Metric : "归属"
     Domain ||--o{ Glossary : "归属(可选)"
-    Classification ||--o{ Classification : "父子分类(self-ref)"
-    Classification ||--o{ Element : "分类(可选)"
     CodeSet ||--o{ CodeItem : "含码值"
     CodeSet ||--o{ Element : "值域约束(可选)"
     MeasurementCategory ||--o{ Unit : "含单位"

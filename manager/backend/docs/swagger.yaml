@@ -12,6 +12,8 @@ definitions:
         type: string
       content_preview:
         type: string
+      content_truncated:
+        type: boolean
       content_type:
         type: string
       created_date:
@@ -54,6 +56,11 @@ definitions:
       page_count:
         type: integer
       path:
+        type: string
+      payload_kind:
+        enum:
+        - technical_metadata
+        - extracted_content
         type: string
       projection_time:
         type: string
@@ -3169,6 +3176,11 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "403":
+          description: 已纳管资源当前禁止剖析 | Profiling is denied for the managed resource
+          schema:
+            additionalProperties: true
+            type: object
         "422":
           description: 资源不支持剖析 | Resource is not profileable
           schema:
@@ -3232,6 +3244,11 @@ paths:
             $ref: '#/definitions/github_com_addp_manager_internal_service.DataProfileCurrentResponse'
         "400":
           description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 已纳管资源当前禁止剖析 | Profiling is denied for the managed resource
           schema:
             additionalProperties: true
             type: object
@@ -6414,8 +6431,10 @@ paths:
     put:
       consumes:
       - application/json
-      description: 仅 addp-meta 可按当前 Tenant 幂等覆盖一个 DataItem 内容文档 | Only addp-meta may
-        idempotently replace a DataItem content document in the current tenant
+      description: 仅 addp-meta 可按当前 Tenant 幂等覆盖一个显式标记为 technical_metadata 或 extracted_content
+        的 DataItem 检索投影；已纳管正文必须通过 search_index 门禁 | Only addp-meta may idempotently
+        replace a DataItem search projection explicitly marked technical_metadata
+        or extracted_content; managed content must pass the search_index gate
       parameters:
       - description: DataItem fingerprint
         in: path
@@ -6431,6 +6450,22 @@ paths:
       responses:
         "204":
           description: No Content
+        "400":
+          description: 请求契约无效 | Invalid request contract
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: 已纳管内容尚无可执行 search_index 投影 | Managed content has no executable
+            search_index projection
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: 内容索引不可用 | Content index unavailable
+          schema:
+            additionalProperties: true
+            type: object
       security:
       - BearerAuth: []
       summary: 写入技术内容检索投影 | Upsert technical content search projection
@@ -6471,6 +6506,11 @@ paths:
             $ref: '#/definitions/github_com_addp_manager_internal_service.SearchResult'
         "400":
           description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 混合检索失败 | Hybrid search failed
           schema:
             additionalProperties: true
             type: object

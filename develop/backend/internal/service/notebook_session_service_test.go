@@ -164,9 +164,15 @@ func (p *notebookTestQueryPlugin) QueryLanguages() []string { return []string{"s
 func (p *notebookTestQueryPlugin) GenerateSampleQuery(context.Context, plugin.ConnectionInfo, plugin.SampleQueryOptions) (string, string) {
 	return "", "sql"
 }
-func (p *notebookTestQueryPlugin) ExecuteRuntimeQuery(_ context.Context, _ plugin.ConnectionInfo, request plugin.QueryRequest) (*plugin.QueryResult, error) {
+func (p *notebookTestQueryPlugin) PrepareQuery(_ context.Context, _ plugin.ConnectionInfo, request plugin.QueryRequest) (plugin.PreparedQuery, error) {
 	p.request = request
-	return p.result, nil
+	analysis, err := plugin.NewQueryAnalysis(request.Language, plugin.QuerySchemaCoverageUnknown)
+	if err != nil {
+		return nil, err
+	}
+	return plugin.NewPreparedQuery(analysis, nil, nil, func(context.Context) (*plugin.QueryResult, error) {
+		return p.result, nil
+	})
 }
 func (p *notebookTestQueryPlugin) SQLDialect() string { return "postgresql" }
 func (p *notebookTestQueryPlugin) ExecuteSQL(context.Context, plugin.ConnectionInfo, string, plugin.QueryOptions) (*plugin.QueryResult, error) {
@@ -308,13 +314,15 @@ func TestNotebookSessionStreamWritesMultipleArrowBatchesAndHonorsMaxRows(t *test
 		},
 		closeCalled: make(chan struct{}),
 	}
-	service := &NotebookSessionService{catalog: &notebookSessionControlPlaneRecorder{}}
+	service := &NotebookSessionService{catalog: &notebookSessionControlPlaneRecorder{}, protectionGate: allowDevelopProtectionGate{}}
 	var destination bytes.Buffer
 	err := service.streamNotebookReadSession(
 		context.Background(),
 		&NotebookSession{ID: "session", TenantID: 7},
 		"execution",
 		&commonClient.ExecutionEngineAccess{AuthorizationID: "1", EngineID: "21"},
+		&notebookTestQueryPlugin{},
+		plugin.EngineCatalogPath{},
 		readSession,
 		2,
 		3,
@@ -355,6 +363,8 @@ func TestNotebookSessionCloseCancelsActiveReadAndUsesBoundedCursorClose(t *testi
 			&NotebookSession{ID: public.ID, TenantID: 7},
 			"execution",
 			&commonClient.ExecutionEngineAccess{AuthorizationID: "1", EngineID: "21"},
+			&notebookTestQueryPlugin{},
+			plugin.EngineCatalogPath{},
 			readSession,
 			1,
 			0,
@@ -386,7 +396,7 @@ func TestNotebookSessionCloseCancelsActiveReadAndUsesBoundedCursorClose(t *testi
 }
 
 func TestNotebookSessionQueryRejectsMissingLanguageOrQuery(t *testing.T) {
-	service := &NotebookSessionService{}
+	service := &NotebookSessionService{protectionGate: allowDevelopProtectionGate{}}
 	for _, request := range []NotebookQueryRequest{
 		{EngineID: 21, Query: "SELECT 1", MaxRows: 10, Timeout: 30 * time.Second},
 		{EngineID: 21, Language: "sql", Query: "", MaxRows: 10, Timeout: 30 * time.Second},
@@ -518,6 +528,7 @@ func newNotebookEngineCatalogSessionTestService(
 		10*time.Minute,
 		"http://develop:8185",
 	)
+	service.SetProtectionGate(allowDevelopProtectionGate{})
 	t.Cleanup(func() { service.Shutdown(context.Background()) })
 	return service, catalog, &runtimeCloseCount
 }

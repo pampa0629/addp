@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -35,6 +36,7 @@ func NewSearchHandler(searchService *service.HybridSearchService, historyService
 // @Param page_size query int false "每页数量，默认10 | Page size, default 10"
 // @Success 200 {object} service.SearchResult "搜索结果，results[].locator 为跨引擎资源定位符 | Search results; results[].locator is the cross-engine resource locator"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
+// @Failure 500 {object} map[string]interface{} "混合检索失败 | Hybrid search failed"
 // @Failure 503 {object} map[string]interface{} "搜索服务不可用 | Search service unavailable"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.search.execute"]
@@ -69,11 +71,11 @@ func (h *SearchHandler) Search(c *gin.Context) {
 	result, err := h.searchService.SearchDocuments(c.Request.Context(), tenantID, engineID, query, page, pageSize)
 	if err != nil {
 		if errors.Is(err, service.ErrSearchDisabled) {
-			c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+			managerError(c, http.StatusServiceUnavailable, manageri18n.MsgHybridSearchNotConfigured)
 			return
 		}
-		logger.L().Error("混合检索失败", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		logger.L().Error("混合检索失败", "error_type", fmt.Sprintf("%T", err))
+		managerError(c, http.StatusInternalServerError, manageri18n.MsgHybridSearchFailed)
 		return
 	}
 
@@ -85,9 +87,7 @@ func (h *SearchHandler) Search(c *gin.Context) {
 		}
 	}
 
-	// 调试日志
 	logger.L().Info("混合检索返回",
-		"query", query,
 		"engine_id", engineID,
 		"total", result.Total,
 		"results_count", len(result.Hits),

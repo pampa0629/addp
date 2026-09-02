@@ -20,6 +20,8 @@
 - 服务端限制结果预览规模，前端显示截断状态并只导出当前预览。
 - 未保存内容在离开页面或加载其他任务前进行防丢失确认。
 - 当前查询可保存为任务，支持名称、描述、标签和超时时间。
+- 查询参数统一支持可选任务默认值和本次执行覆盖；没有默认值的任意类型参数都在执行时填写。数据表参数通过资源选择器保存已有表默认绑定，SQL 直接以裸参数名引用。
+- 数据表参数具备有效绑定后可在工作台直接执行只读结果预览；放入任务编排时可以由上游资源覆盖，结果目标由编排单独绑定。
 
 ### 2. 查询任务管理
 
@@ -273,7 +275,7 @@ CREATE TABLE common.task_executions (
 
 ### 参数化查询
 
-查询任务通过 `content.query_parameters[]` 声明命名参数，并派生任务级 `execution_contract`。SQL 使用 `:name`，Cypher 使用 `$name`，MQL 使用 `{\"$param\":\"name\"}` 结构化值节点。参数只允许替代值，必须通过对应引擎 Provider 原生绑定，不允许字符串插值或动态替代表名、字段名和查询片段。
+查询任务通过 `content.query_parameters[]` 声明全部命名参数，并派生任务级 `execution_contract`。每个参数只保存 `name + type + default? + description?`，面板只展示唯一参数名。值参数类型为 `string`、`integer`、`number`、`boolean`：SQL 使用 `:name`，Cypher 使用 `$name`，MQL 使用 `{\"$param\":\"name\"}` 结构化值节点，由对应 Engine Provider 原生绑定。PostgreSQL SQL 还可声明 `type=relation` 的数据表参数，直接以未加引号、未限定 schema 的裸 `name` 引用；Develop 通过 PostgreSQL AST 把已声明关系节点安全编译为实际表标识符。所有类型都可以保存默认值，也可以缺省并在执行时填写；有效值统一按“本次覆盖 > 保存默认值 > 缺失则拒绝执行”解析。两类参数共享同一命名空间和“查询参数”面板；均不允许字符串插值或动态替换字段名和查询片段。
 
 ## 技术实现
 

@@ -21,23 +21,21 @@ type SuccessResponse struct {
 // DevTaskContentSwagger 开发任务内容 Swagger 摘要。
 // 实际运行时仍由 DevTaskService 按 dev_type 做强校验；此结构用于让 Swagger 展示 query/workflow/script 的规范字段。
 type DevTaskContentSwagger struct {
-	Query              string                     `json:"query,omitempty" example:"SELECT * FROM addp_input.source"`
+	Query              string                     `json:"query,omitempty" example:"SELECT * FROM source"`
 	QueryType          string                     `json:"query_type,omitempty" enums:"sql,mql,cypher" example:"sql"`
 	TargetLocator      string                     `json:"target_locator,omitempty" example:"addp://engine/11/path/Outdoor/Persons?type=collection&item_id=51657"`
 	QueryParameters    []QueryParameterSwagger    `json:"query_parameters,omitempty"`
-	RelationInputs     []string                   `json:"relation_inputs,omitempty" example:"source"`
 	WorkflowDefinition *WorkflowDefinitionSwagger `json:"workflow_definition,omitempty"`
 	Inputs             map[string]interface{}     `json:"inputs,omitempty" swaggertype:"object"`
 	NotebookPath       string                     `json:"notebook_path,omitempty" example:"demo.ipynb"`
 	Parameters         map[string]interface{}     `json:"parameters,omitempty" swaggertype:"object"`
 }
 
-// QueryParameterSwagger 查询值参数定义；default 的 JSON 标量类型必须与 type 一致。
+// QueryParameterSwagger 查询参数定义；所有类型的 default 均可选，relation 的 default 为 {"locator":"<table ResourceLocator>"}。
 type QueryParameterSwagger struct {
 	Name        string      `json:"name" example:"city_name"`
-	Type        string      `json:"type" enums:"string,integer,number,boolean" example:"string"`
-	Default     interface{} `json:"default" swaggertype:"primitive,string" example:"Beijing"`
-	Title       string      `json:"title,omitempty" example:"城市名称"`
+	Type        string      `json:"type" enums:"relation,string,integer,number,boolean" example:"string"`
+	Default     interface{} `json:"default,omitempty" swaggertype:"primitive,string" example:"Beijing"`
 	Description string      `json:"description,omitempty" example:"用于筛选目标城市"`
 }
 

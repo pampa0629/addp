@@ -129,6 +129,7 @@ Service 仍由 Service 模块拥有，Meta 只保存用于血缘查询的关系�
 - `reference`：按当前发布或 DDL 定义替换旧的逻辑依赖。
 - 未知写入语义：只能保存 observation，不得伪造 current projection。
 - Meta 发现目标在没有对应 ADDP 执行时发生外部变化：标记关系为 `unverified` 或 `stale`，不得猜测新的来源。
+- `meta_item` 从有效状态转为软删除时，所有以该 item 为端点的非关闭 item relation 以及以该 item 为来源的 service dependency 必须标记为 `stale`；不可变 observation 继续保留。该 item 后续恢复只恢复资源身份，不自动重新激活关系，只有新的执行或发布事实可以把对应投影重新置为 `active`。
 
 关系查询必须支持当前投影和基于 observed_at / execution 的历史视图，不能只保留一条无时态边。
 
@@ -280,6 +281,8 @@ GET /api/v1/meta/lineage/graph
 ```
 
 节点可以包含 `data_item`、`published_service`、`execution` 和 `field_ref`，但资源身份和执行身份必须保持不同。`data_item` 节点必须返回所属 `engine_id` 和 System 当前的 `engine_name`，用于在同名 schema / table、跨引擎派生等场景中明确资源边界；共享前端不得解析 locator 或调用其他模块补猜引擎名称。边必须返回 relation kind、granularity、evidence summary 和时间状态。
+
+当前图响应必须保持结构闭合：每条 edge 的 source 和 target 都必须存在于同一响应的 nodes 中。当前已软删除的 data item 不进入 nodes，其相关 `stale` 投影也不进入当前 edges；历史证据通过 observation 和后续历史视图查询，不得以缺失端点的边混入当前图。
 
 该 API 必须执行 Tenant、Meta lineage read Permission 和 owner 资源可见性校验。不得因为用户能看到某个服务，就自动泄露该服务无权访问的上游数据项名称。
 

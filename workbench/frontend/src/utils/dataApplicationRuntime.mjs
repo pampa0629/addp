@@ -22,7 +22,7 @@ export function initialApplicationParameterValues(snapshot) {
   ]))
 }
 
-export function buildComponentQuery(snapshot, component, values, cursor = '') {
+export function buildComponentQuery(snapshot, component, values, cursor = '', format = component.query_template.format) {
   const bindingByTarget = new Map(
     (snapshot?.parameter_bindings || [])
       .filter((binding) => binding.component_id === component.id)
@@ -48,7 +48,7 @@ export function buildComponentQuery(snapshot, component, values, cursor = '') {
     filter: combineFilters(filters),
     order_by: [...(component.query_template.order_by || [])],
     page: { limit: component.query_template.page_limit, cursor },
-    format: component.query_template.format,
+    format,
   }
 }
 

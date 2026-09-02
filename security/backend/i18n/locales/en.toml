@@ -1,0 +1,18 @@
+[security.common.invalid_id]
+other = "Invalid resource ID"
+[security.common.invalid_request]
+other = "Invalid request parameters"
+[security.common.operation_failed]
+other = "Operation failed"
+[security.common.not_found]
+other = "Resource not found"
+[security.common.conflict]
+other = "Resource code or relation already exists"
+[security.common.version_conflict]
+other = "The resource was updated by another operation. Refresh and try again"
+[security.common.delete_success]
+other = "Deleted successfully"
+[security.projection.cursor_conflict]
+other = "The protection projection cursor is invalid, regressing, or not issued for this consumer"
+[security.enrollment.no_supported_findings_release_unavailable]
+other = "The latest successful discovery no longer meets the zero-finding confirmation conditions. Refresh or rediscover and try again"

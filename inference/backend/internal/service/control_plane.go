@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	commonsecurity "github.com/addp/common/security"
+	secretcipher "github.com/addp/common/secretcipher"
 	"github.com/addp/inference/internal/models"
 	"github.com/addp/inference/internal/repository"
 	"github.com/google/uuid"
@@ -197,7 +197,7 @@ func (s *ControlPlane) SetCredential(ctx context.Context, actor Actor, id, crede
 	if !canManageProvider(actor, provider) {
 		return nil, ErrNotFound
 	}
-	ciphertext, err := commonsecurity.Encrypt(credential, s.encryptionKey)
+	ciphertext, err := secretcipher.Encrypt(credential, s.encryptionKey)
 	if err != nil {
 		return nil, err
 	}

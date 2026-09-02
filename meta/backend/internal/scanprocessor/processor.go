@@ -20,7 +20,7 @@ import (
 )
 
 type AssetIndexer interface {
-	IndexCatalogContent(ctx context.Context, resource *commonModels.Engine, tenantID, engineID uint, catalogResource scanresource.StorageResource, relativePath, fullName string, item *models.MetaItem, extractedText string) bool
+	IndexCatalogContent(ctx context.Context, resource *commonModels.Engine, tenantID, engineID uint, catalogResource scanresource.StorageResource, relativePath, fullName string, item *models.MetaItem, extractedText string, textTruncated bool) bool
 }
 
 type input struct {
@@ -56,8 +56,9 @@ type Result struct {
 }
 
 type documentExtractionResult struct {
-	Text   string
-	Counts scanflow.ExtractionCounts
+	Text      string
+	Truncated bool
+	Counts    scanflow.ExtractionCounts
 }
 
 type Processor struct {

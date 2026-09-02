@@ -17,7 +17,7 @@ import (
 	engineplugin "github.com/addp/common/engine/plugin"
 	supermapworkflow "github.com/addp/common/engine/plugins/supermap_workflow"
 	"github.com/addp/common/events"
-	commonsecurity "github.com/addp/common/security"
+	secretcipher "github.com/addp/common/secretcipher"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
 	"gorm.io/driver/sqlite"
@@ -824,7 +824,7 @@ func TestDecryptStoredConnectionInfoRejectsPlainSensitiveValue(t *testing.T) {
 
 func TestDecryptStoredConnectionInfoReturnsPlainConnectionInfo(t *testing.T) {
 	key := []byte("addp-dev-encryption-key-2025!!!!")
-	secret, err := commonsecurity.Encrypt("plain-password", key)
+	secret, err := secretcipher.Encrypt("plain-password", key)
 	if err != nil {
 		t.Fatalf("encrypt: %v", err)
 	}

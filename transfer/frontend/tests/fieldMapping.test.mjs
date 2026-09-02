@@ -5,7 +5,8 @@ import {
   buildAutomaticFieldMappings,
   applyExistingTargetFields,
   applyFieldMappingEdit,
-  applySourceFieldNullability
+  applySourceFieldNullability,
+  reconcileQueryOutputMappings
 } from '../src/views/TaskWizard/fieldMapping.mjs'
 
 test('automatic mappings preserve source nullability for every field', () => {
@@ -74,4 +75,23 @@ test('manual decimal facts survive ordinary mapping edits', () => {
     ),
     { ...mapping, precision: 24, scale: undefined }
   )
+})
+
+test('query output mappings drop raw nested fields and preserve matching explicit mappings', () => {
+  const outputFields = [
+    { name: 'order_id', type: 'string', nullable: false },
+    { name: 'item_index', type: 'bigint', nullable: false },
+    { name: 'sku', type: 'string', nullable: true }
+  ]
+  const existing = [
+    { source_field: '_id', target_field: '_id', target_type: 'string', nullable: true },
+    { source_field: 'items.sku', target_field: 'items.sku', target_type: 'string', nullable: true },
+    { source_field: 'SKU', target_field: 'product_code', target_type: 'string', nullable: false }
+  ]
+
+  assert.deepEqual(reconcileQueryOutputMappings(outputFields, existing), [
+    { source_field: 'order_id', target_field: 'order_id', target_type: 'string', format: '', default_value: '', nullable: false },
+    { source_field: 'item_index', target_field: 'item_index', target_type: 'bigint', format: '', default_value: '', nullable: false },
+    { source_field: 'sku', target_field: 'product_code', target_type: 'string', nullable: false }
+  ])
 })

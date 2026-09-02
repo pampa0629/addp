@@ -73,7 +73,7 @@ func (p *dynamicSchemaCollectionPreviewProvider) Preview(ctx context.Context, re
 	if err != nil {
 		return nil, err
 	}
-	queryResult, err := queryRuntime.ExecuteRuntimeQuery(ctx, runtimeConnInfo, plugin.QueryRequest{
+	prepared, err := queryRuntime.PrepareQuery(ctx, runtimeConnInfo, plugin.QueryRequest{
 		EngineID: req.Engine.ID,
 		Language: "mql",
 		Query:    command,
@@ -84,6 +84,10 @@ func (p *dynamicSchemaCollectionPreviewProvider) Preview(ctx context.Context, re
 			ReadOnly:   true,
 		},
 	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare preview: %w", err)
+	}
+	queryResult, err := prepared.Execute(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read preview: %w", err)
 	}

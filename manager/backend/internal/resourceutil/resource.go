@@ -195,7 +195,7 @@ func attributeSectionsForKey(key string) []string {
 		return []string{"type_info.document"}
 	case "spatial", "geometry_columns", "primary_geometry_column", "extent", "has_spatial_index":
 		return []string{"capabilities.spatial"}
-	case "extractor_available", "text_extracted", "status", "reason", "extractor", "plain_text_preview", "text_truncated", "index_ref":
+	case "extractor_available", "text_extracted", "status", "reason", "extractor", "text_truncated", "index_ref":
 		return []string{"capabilities.extraction"}
 	default:
 		return nil

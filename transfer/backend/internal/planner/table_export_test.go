@@ -145,6 +145,33 @@ func TestParseInfraLocatorURIForMinioObject(t *testing.T) {
 	}
 }
 
+func TestInfraLocatorChildPreservesInfraScheme(t *testing.T) {
+	parent, err := ParseInfraLocatorURI("addp-infra://minio/manager/tenant_1/export/20260902/session-id?type=prefix")
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := parent.Child("Persons.ejsonl", resourcetree.TypeObject)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := child.ToURI(), "addp-infra://minio/manager/tenant_1/export/20260902/session-id/Persons.ejsonl?type=object"; got != want {
+		t.Fatalf("child locator = %q, want %q", got, want)
+	}
+	if got := parent.ToURI(); got != "addp-infra://minio/manager/tenant_1/export/20260902/session-id?type=prefix" {
+		t.Fatalf("parent locator mutated: %q", got)
+	}
+}
+
+func TestInfraLocatorChildRejectsNestedName(t *testing.T) {
+	parent, err := ParseInfraLocatorURI("addp-infra://minio/manager/export?type=prefix")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := parent.Child("nested/Persons.ejsonl", resourcetree.TypeObject); err == nil {
+		t.Fatal("Child() accepted a nested name")
+	}
+}
+
 func TestBuildTableTransferPlanForInfraObjectToNativeTable(t *testing.T) {
 	spec := minimalEncodedToNativeSpec()
 	spec.Source.Locator = infraObjectLocator("manager", "tenant_7/import/20260619/upload/roads.shp")

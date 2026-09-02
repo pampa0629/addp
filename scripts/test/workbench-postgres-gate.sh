@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# workbench-postgres-gate.sh - Run Workbench View and Data Application owner, revision, and concurrency tests against addp_test.
+# workbench-postgres-gate.sh - Run Workbench Data Application owner, revision, and concurrency tests against addp_test.
 
 set -euo pipefail
 
@@ -17,7 +17,7 @@ case "$WORKBENCH_POSTGRES_TEST_DSN" in postgres://*/*|postgresql://*/*) ;; *) ec
 case "$database" in addp_test|*disposable*) ;; *) echo "WORKBENCH_POSTGRES_TEST_DSN must use addp_test or an isolated disposable database" >&2; exit 1 ;; esac
 
 cd "$ROOT_DIR/workbench/backend"
-go test ./internal/repository -run '^TestWorkbenchRepositoryAgainstPostgres$' -count=1 -v 2>&1 | tee "$WORK_DIR/workbench.log"
+go test ./internal/repository -run '^TestWorkbenchDataApplicationRepositoryAgainstPostgres$' -count=1 -v 2>&1 | tee "$WORK_DIR/workbench.log"
 if grep -q -- '--- SKIP:' "$WORK_DIR/workbench.log"; then
     echo "Workbench PostgreSQL gate refuses skipped tests" >&2
     exit 1

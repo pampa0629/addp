@@ -18,7 +18,7 @@ import (
 	"strings"
 	"time"
 
-	commonsecurity "github.com/addp/common/security"
+	secretcipher "github.com/addp/common/secretcipher"
 	monitorModels "github.com/addp/monitor/internal/models"
 )
 
@@ -97,7 +97,7 @@ func DecryptWebhookSecret(ciphertext string, encryptionKey []byte) (string, erro
 	if ciphertext == "" {
 		return "", errors.New("webhook secret is unavailable")
 	}
-	return commonsecurity.Decrypt(ciphertext, encryptionKey)
+	return secretcipher.Decrypt(ciphertext, encryptionKey)
 }
 
 func signWebhookPayload(secret, timestamp string, body []byte) string {

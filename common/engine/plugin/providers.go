@@ -118,6 +118,33 @@ type RecordBatchData struct {
 	Offset  int64                    `json:"offset,omitempty"`
 }
 
+// EncodedRecordReadSessionProvider opens a type-preserving encoded stream for
+// schema-flexible records. It is separate from ContentReadableProvider because
+// a collection has no pre-existing single content byte stream.
+type EncodedRecordReadSessionProvider interface {
+	StoreProvider
+	OpenEncodedRecordReadSession(ctx context.Context, connInfo ConnectionInfo, path EngineCatalogPath, opts EncodedRecordReadSessionOptions) (EncodedRecordReadSession, error)
+}
+
+type EncodedRecordReadSessionOptions struct {
+	Format       string
+	Hints        map[string]interface{}
+	BeforeEncode EncodedRecordTransform
+}
+
+type EncodedRecordTransform func(document map[string]interface{}) error
+
+type EncodedRecordReadSession interface {
+	ReadBatch(ctx context.Context, limit int) (*EncodedRecordBatchData, error)
+	Close(ctx context.Context) error
+}
+
+type EncodedRecordBatchData struct {
+	Content []byte `json:"-"`
+	Records int64  `json:"records"`
+	Offset  int64  `json:"offset,omitempty"`
+}
+
 // WatermarkCursor is a provider-owned composite position. Values are encoded as
 // canonical strings and interpreted using the source column types.
 type WatermarkCursor struct {
@@ -303,15 +330,16 @@ type QueryRuntimeProvider interface {
 	EnginePlugin
 	QueryLanguages() []string
 	GenerateSampleQuery(ctx context.Context, connInfo ConnectionInfo, opts SampleQueryOptions) (query string, language string)
-	ExecuteRuntimeQuery(ctx context.Context, connInfo ConnectionInfo, req QueryRequest) (*QueryResult, error)
+	PrepareQuery(ctx context.Context, connInfo ConnectionInfo, req QueryRequest) (PreparedQuery, error)
 }
 
 // QueryReadSessionProvider opens a cursor-backed, read-only query result
-// session for production data movement. Unlike ExecuteRuntimeQuery, it must not
-// impose an implicit preview limit or materialize the complete result in memory.
+// session for production data movement from the same immutable PreparedQuery
+// used by pre-execution gates. It must not impose an implicit preview limit or
+// materialize the complete result in memory.
 type QueryReadSessionProvider interface {
 	QueryRuntimeProvider
-	OpenQueryReadSession(ctx context.Context, connInfo ConnectionInfo, req QueryRequest) (QueryReadSession, error)
+	OpenQueryReadSession(ctx context.Context, prepared PreparedQuery) (QueryReadSession, error)
 }
 
 type QueryReadSession interface {
@@ -322,6 +350,7 @@ type QueryReadSession interface {
 type FederatedQueryRuntimeProvider interface {
 	EnginePlugin
 	QueryLanguages() []string
+	AnalyzeFederatedQuery(ctx context.Context, req FederatedQueryRequest) (*QueryAnalysis, error)
 	ResolveSourceEngineIDs(query string, candidates []FederatedQuerySource) []uint
 	ResolveObjectTableReferences(query string, candidates []FederatedQuerySource) []FederatedQueryObjectTableReference
 	ExecuteFederatedQuery(ctx context.Context, runtimeConn ConnectionInfo, req FederatedQueryRequest) (*QueryResult, error)

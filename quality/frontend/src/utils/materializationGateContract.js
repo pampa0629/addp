@@ -1,5 +1,5 @@
 export const MATERIALIZATION_GATE_SCHEMA_VERSION = 'addp.quality.materialization-gate/v1'
-export const MATERIALIZATION_GATE_TYPES = ['not_null', 'unique_key', 'foreign_key', 'predicate_implication', 'row_count']
+export const MATERIALIZATION_GATE_TYPES = ['not_null', 'allowed_values', 'unique_key', 'foreign_key', 'predicate_implication', 'row_count']
 export const MATERIALIZATION_GATE_OPERATORS = ['eq', 'not_eq', 'is_null', 'is_not_null', 'is_true', 'is_false']
 
 export const bindingAlias = (code, fallback) => {
@@ -15,10 +15,11 @@ export const createMaterializationGateAssertion = (type = 'not_null', uuid = cry
   type,
   severity: 'error',
   params: type === 'not_null' ? { table: '', column: '' }
-    : type === 'unique_key' ? { table: '', columns: [] }
-      : type === 'foreign_key' ? { table: '', columns: [], reference_table: '', reference_columns: [] }
-        : type === 'predicate_implication' ? { table: '', when: blankCondition(), then: blankCondition() }
-          : { table: '', mode: 'range', exact: null, min: 1, max: null }
+    : type === 'allowed_values' ? { table: '', column: '', values: [] }
+      : type === 'unique_key' ? { table: '', columns: [] }
+        : type === 'foreign_key' ? { table: '', columns: [], reference_table: '', reference_columns: [] }
+          : type === 'predicate_implication' ? { table: '', when: blankCondition(), then: blankCondition() }
+            : { table: '', mode: 'range', exact: null, min: 1, max: null }
 })
 
 const conditionContract = condition => {
@@ -34,6 +35,7 @@ const conditionContract = condition => {
 const assertionContract = assertion => {
   let params
   if (assertion.type === 'not_null') params = { table: assertion.params.table, column: assertion.params.column }
+  else if (assertion.type === 'allowed_values') params = { table: assertion.params.table, column: assertion.params.column, values: [...assertion.params.values] }
   else if (assertion.type === 'unique_key') params = { table: assertion.params.table, columns: [...assertion.params.columns] }
   else if (assertion.type === 'foreign_key') params = {
     table: assertion.params.table,
@@ -75,6 +77,8 @@ export const parseMaterializationGateDocument = document => {
       params.exact ??= null
       params.min ??= null
       params.max ??= null
+    } else if (assertion.type === 'allowed_values') {
+      params.values = Array.isArray(params.values) ? params.values : []
     }
     return { assertion_key: assertion.assertion_key, type: assertion.type, severity: assertion.severity, params }
   })

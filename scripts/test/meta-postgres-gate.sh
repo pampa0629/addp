@@ -17,7 +17,7 @@ case "$META_POSTGRES_TEST_DSN" in postgres://*/*|postgresql://*/*) ;; *) echo "M
 case "$database" in *test*|*disposable*) ;; *) echo "META_POSTGRES_TEST_DSN must identify a disposable test database" >&2; exit 1 ;; esac
 
 cd "$ROOT_DIR/meta/backend"
-go test ./internal/repository -run '^TestDataItemChangeMigrationAgainstPostgres$' -count=1 -v 2>&1 | tee "$WORK_DIR/meta.log"
+go test ./internal/repository -run '^(TestDataItemChangeMigrationAgainstPostgres|TestLineageLifecycleMigrationAgainstPostgres)$' -count=1 -v 2>&1 | tee "$WORK_DIR/meta.log"
 if grep -q -- '--- SKIP:' "$WORK_DIR/meta.log"; then
     echo "Meta PostgreSQL gate refuses skipped tests" >&2
     exit 1

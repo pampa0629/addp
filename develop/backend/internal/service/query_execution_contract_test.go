@@ -12,7 +12,7 @@ func TestBuildQueryExecutionContractUsesDefinitionsAndDefaults(t *testing.T) {
 		"query_type": "sql",
 		"query":      "SELECT * FROM members WHERE status = :status AND nickname = :nickname",
 		"query_parameters": []interface{}{
-			map[string]interface{}{"name": "status", "type": "string", "default": "领队", "title": "成员身份"},
+			map[string]interface{}{"name": "status", "type": "string", "default": "领队"},
 			map[string]interface{}{"name": "nickname", "type": "string", "default": "PiPi"},
 		},
 	}
@@ -50,10 +50,11 @@ func TestBuildQueryExecutionContractRequiresExactDefinitions(t *testing.T) {
 
 func TestBuildQueryExecutionContractRequiresRelationLocatorsAtRuntime(t *testing.T) {
 	content := map[string]interface{}{
-		"query_type":      "sql",
-		"query":           "SELECT m.member_id FROM addp_input.members AS m JOIN addp_input.activities AS a ON a.member_id = m.member_id",
-		"relation_inputs": []interface{}{"members", "activities"},
+		"query_type": "sql",
+		"query":      "SELECT m.member_id FROM members AS m JOIN activities AS a ON a.member_id = m.member_id",
 		"query_parameters": []interface{}{
+			map[string]interface{}{"name": "members", "type": "relation", "default": map[string]interface{}{"locator": "addp://engine/12/path/public/members?type=table"}},
+			map[string]interface{}{"name": "activities", "type": "relation"},
 			map[string]interface{}{"name": "status", "type": "string", "default": "active"},
 		},
 	}
@@ -71,32 +72,26 @@ func TestBuildQueryExecutionContractRequiresRelationLocatorsAtRuntime(t *testing
 		t.Fatalf("execution contract is invalid: %v", err)
 	}
 	required := contract.InputSchema["required"].([]interface{})
-	if !reflect.DeepEqual(required, []interface{}{"input_locators", "target_locator"}) {
+	if !reflect.DeepEqual(required, []interface{}{"activities", "target_locator"}) {
 		t.Fatalf("required = %#v", required)
 	}
-	if contract.InputDefaults["status"] != "active" || len(contract.InputDefaults) != 1 {
-		t.Fatalf("runtime locators must not have defaults: %#v", contract.InputDefaults)
+	if contract.InputDefaults["status"] != "active" || len(contract.InputDefaults) != 2 {
+		t.Fatalf("query defaults = %#v", contract.InputDefaults)
 	}
-	inputLocatorUI, ok := contract.InputUISchema["input_locators"].(map[string]interface{})
-	if !ok || inputLocatorUI["control"] != "group" || inputLocatorUI["order"] != 1 {
-		t.Fatalf("input_locators UI schema = %#v", contract.InputUISchema["input_locators"])
+	membersUI, ok := contract.InputUISchema["members"].(map[string]interface{})
+	if !ok || membersUI["control"] != "resource_tree_picker" || membersUI["order"] != 0 {
+		t.Fatalf("members UI schema = %#v", contract.InputUISchema["members"])
 	}
-	fields, ok := inputLocatorUI["fields"].(map[string]interface{})
-	if !ok || fields["members"].(map[string]interface{})["order"] != 0 ||
-		fields["activities"].(map[string]interface{})["order"] != 1 {
-		t.Fatalf("input_locators UI fields = %#v", inputLocatorUI["fields"])
-	}
-	if contract.InputUISchema["target_locator"].(map[string]interface{})["order"] != 2 {
+	if contract.InputUISchema["activities"].(map[string]interface{})["order"] != 1 ||
+		contract.InputUISchema["status"].(map[string]interface{})["order"] != 2 ||
+		contract.InputUISchema["target_locator"].(map[string]interface{})["order"] != 3 {
 		t.Fatalf("target_locator UI schema = %#v", contract.InputUISchema["target_locator"])
 	}
-	if _, _, err := resolveQueryExecutionParameters(content, map[string]interface{}{}); err == nil {
+	if _, _, _, err := resolveQueryOrchestrationParameters(content, map[string]interface{}{}); err == nil {
 		t.Fatal("expected missing runtime locators to fail")
 	}
-	_, effective, err := resolveQueryExecutionParameters(content, map[string]interface{}{
-		"input_locators": map[string]interface{}{
-			"members":    "addp://engine/12/path/public/members?type=table",
-			"activities": "addp://engine/12/path/public/activities?type=table",
-		},
+	_, effective, _, err := resolveQueryOrchestrationParameters(content, map[string]interface{}{
+		"activities":     map[string]interface{}{"locator": "addp://engine/12/path/public/activities?type=table"},
 		"target_locator": "addp://engine/12/path/public/member_result?type=table",
 	})
 	if err != nil {
@@ -104,6 +99,67 @@ func TestBuildQueryExecutionContractRequiresRelationLocatorsAtRuntime(t *testing
 	}
 	if !reflect.DeepEqual(effective, map[string]interface{}{"status": "active"}) {
 		t.Fatalf("runtime locators must not become SQL value parameters: %#v", effective)
+	}
+	previewContract, previewValues, previewInputs, err := resolveQueryPreviewParameters(content, map[string]interface{}{
+		"activities": map[string]interface{}{"locator": "addp://engine/12/path/public/activities?type=table"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := previewContract.InputSchema["properties"].(map[string]interface{})["target_locator"]; exists {
+		t.Fatalf("preview contract must not contain result target: %#v", previewContract.InputSchema)
+	}
+	if previewValues["status"] != "active" || len(previewInputs) != 3 {
+		t.Fatalf("preview effective inputs = %#v", previewInputs)
+	}
+}
+
+func TestBuildQueryExecutionContractTreatsMissingDefaultsUniformly(t *testing.T) {
+	content := map[string]interface{}{
+		"query_type": "sql",
+		"query":      "SELECT :empty_text, :zero_count, :disabled, :required_text",
+		"query_parameters": []interface{}{
+			map[string]interface{}{"name": "empty_text", "type": "string", "default": ""},
+			map[string]interface{}{"name": "zero_count", "type": "integer", "default": 0},
+			map[string]interface{}{"name": "disabled", "type": "boolean", "default": false},
+			map[string]interface{}{"name": "required_text", "type": "string"},
+		},
+	}
+	contract, err := BuildQueryExecutionContract(content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if required := contract.InputSchema["required"]; !reflect.DeepEqual(required, []interface{}{"required_text"}) {
+		t.Fatalf("required = %#v", required)
+	}
+	if value, exists := contract.InputDefaults["empty_text"]; !exists || value != "" {
+		t.Fatalf("empty string default = %#v, exists = %v", value, exists)
+	}
+	if value, exists := contract.InputDefaults["zero_count"]; !exists || value != int64(0) {
+		t.Fatalf("zero default = %#v, exists = %v", value, exists)
+	}
+	if value, exists := contract.InputDefaults["disabled"]; !exists || value != false {
+		t.Fatalf("false default = %#v, exists = %v", value, exists)
+	}
+	if _, _, _, err := resolveQueryPreviewParameters(content, nil); err == nil {
+		t.Fatal("expected missing value parameter without default to fail")
+	}
+	_, runtimeValues, _, err := resolveQueryPreviewParameters(content, map[string]interface{}{"required_text": "ready"})
+	if err != nil || runtimeValues["required_text"] != "ready" {
+		t.Fatalf("runtime values = %#v, err = %v", runtimeValues, err)
+	}
+}
+
+func TestBuildQueryExecutionContractRejectsRemovedTitleField(t *testing.T) {
+	_, err := BuildQueryExecutionContract(map[string]interface{}{
+		"query_type": "sql",
+		"query":      "SELECT :status",
+		"query_parameters": []interface{}{
+			map[string]interface{}{"name": "status", "type": "string", "title": "状态"},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected removed title field to be rejected")
 	}
 }
 
@@ -116,7 +172,7 @@ func TestResolveQueryExecutionParametersMergesAndNormalizesOverrides(t *testing.
 			map[string]interface{}{"name": "enabled", "type": "boolean", "default": true},
 		},
 	}
-	_, effective, err := resolveQueryExecutionParameters(content, map[string]interface{}{"attempts": float64(5)})
+	_, effective, _, err := resolveQueryPreviewParameters(content, map[string]interface{}{"attempts": float64(5)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +183,7 @@ func TestResolveQueryExecutionParametersMergesAndNormalizesOverrides(t *testing.
 }
 
 func TestResolveQueryExecutionParametersKeepsUnparameterizedQueryRuntimeValuesNil(t *testing.T) {
-	contract, effective, err := resolveQueryExecutionParameters(map[string]interface{}{
+	contract, effective, _, err := resolveQueryPreviewParameters(map[string]interface{}{
 		"query_type": "sql",
 		"query":      "SELECT 1",
 	}, map[string]interface{}{})
@@ -140,7 +196,7 @@ func TestResolveQueryExecutionParametersKeepsUnparameterizedQueryRuntimeValuesNi
 }
 
 func TestResolveQueryExecutionParametersRejectsUnknownOverride(t *testing.T) {
-	_, _, err := resolveQueryExecutionParameters(map[string]interface{}{
+	_, _, _, err := resolveQueryPreviewParameters(map[string]interface{}{
 		"query_type": "sql",
 		"query":      "SELECT * FROM events WHERE enabled = :enabled",
 		"query_parameters": []interface{}{

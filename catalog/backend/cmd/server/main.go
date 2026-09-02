@@ -92,7 +92,10 @@ func main() {
 		service.NewServiceClientSourceResolver(serviceClient),
 		service.NewDevelopClientSourceResolver(developClient),
 		service.NewWorkbenchClientSourceResolver(workbenchClient),
-	).WithQualitySummaryResolver(service.NewQualityClientSummaryResolver(qualityClient))
+	).WithQualitySummaryResolver(service.NewQualityClientSummaryResolver(qualityClient)).WithDataDictionaryResolvers(
+		service.NewMetaClientFieldResolver(metaClient),
+		service.NewStandardClientElementRevisionResolver(standardClient),
+	)
 	personalCatalogService := service.NewPersonalCatalogService(db, entryService)
 	collectionService := service.NewCollectionService(db, entryService).WithSystemReferenceResolver(systemReferenceResolver)
 	router := api.SetupRouter(cfg.SystemURL, lifecycle, entryService, governanceTaskService, personalCatalogService, collectionService, syncRunner)

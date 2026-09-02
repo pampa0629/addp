@@ -37,6 +37,15 @@ test('字段映射分别处理源字段变化和已有目标字段选择', () =>
   )
 })
 
+test('结构化 MongoDB 查询固定源字段并只开放目标映射', () => {
+  assert.match(step3Source, /const isStructuredMongoQuery = computed/)
+  assert.match(step3Source, /v-if="isStructuredMongoQuery" class="structured-source-field"/)
+  assert.match(step3Source, /v-if="!isStructuredMongoQuery" class="mapping-controls"/)
+  assert.match(step3Source, /v-if="!isStructuredMongoQuery" :label="t\('transfer\.taskWizard\.actionsCol'\)"/)
+  assert.match(zhCN.transfer.taskWizard.structuredMongoMappingDesc, /未选择的 MongoDB 字段不会出现在映射中/)
+  assert.match(en.transfer.taskWizard.structuredMongoMappingDesc, /unselected MongoDB fields do not appear/)
+})
+
 test('Kafka 字段建议必须经确认后合并', () => {
   assert.match(step3Source, /v-if="wizardState\.isKafkaContinuousTask\.value"[\s\S]*?@click="loadTopicFieldRecommendations"/)
   assert.match(step3Source, /getManagerPreview\(props\.wizardState\.sourceLocator\.value, 50\)/)

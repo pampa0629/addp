@@ -281,23 +281,56 @@ export function parameterizeSelection(language, selection, name) {
   return reference ? { reference, ...scalar } : null
 }
 
-export function buildQueryExecutionContract(definitions = []) {
+export function buildQueryExecutionContract(definitions = [], { engineId = null } = {}) {
   const properties = {}
   const inputDefaults = {}
   const inputUISchema = {}
+  const required = []
   definitions.forEach((definition, index) => {
     const name = String(definition?.name || '').trim()
     if (!name) return
+    if (definition.type === 'relation') {
+      properties[name] = {
+        type: 'object',
+        ...(definition.description ? { description: definition.description } : {}),
+        properties: {
+          locator: { type: 'string', format: 'resource-locator', minLength: 1 }
+        },
+        required: ['locator'],
+        additionalProperties: false
+      }
+      const locator = String(definition?.default?.locator || '').trim()
+      if (locator) inputDefaults[name] = { locator }
+      else required.push(name)
+      inputUISchema[name] = {
+        order: index,
+        control: 'resource_tree_picker',
+        api_base_url: '/api/v1/meta',
+		...(Number(engineId) > 0 ? { engine_id: Number(engineId) } : {}),
+        engine_families: ['tabular'],
+        selectable_node_types: ['table'],
+        resource_binding: { mode: 'existing', locator_param: 'locator' }
+      }
+      return
+    }
     properties[name] = {
       type: definition.type,
-      ...(definition.title ? { title: definition.title } : {}),
       ...(definition.description ? { description: definition.description } : {})
     }
-    inputDefaults[name] = definition.default
+    if (Object.prototype.hasOwnProperty.call(definition, 'default') && definition.default !== null && definition.default !== undefined) {
+      inputDefaults[name] = definition.default
+    } else {
+      required.push(name)
+    }
     inputUISchema[name] = { order: index }
   })
   return {
-    input_schema: { type: 'object', additionalProperties: false, properties },
+    input_schema: {
+      type: 'object',
+      additionalProperties: false,
+      properties,
+      ...(required.length ? { required } : {})
+    },
     input_defaults: inputDefaults,
     input_ui_schema: inputUISchema,
     output_schema: { type: 'object', additionalProperties: false, properties: {} },
@@ -326,534 +359,6 @@ export function formatGeneratedQueryForEditor(query, language) {
     : String(query || '')
 }
 
-const QUERY_DIAGNOSTIC_KEYWORDS = new Set([
-  'SELECT', 'FROM', 'WHERE', 'JOIN', 'LEFT', 'RIGHT', 'FULL', 'INNER', 'OUTER', 'CROSS', 'ON', 'AS',
-  'AND', 'OR', 'NOT', 'IN', 'IS', 'NULL', 'TRUE', 'FALSE', 'BETWEEN', 'LIKE', 'ILIKE', 'EXISTS',
-  'GROUP', 'BY', 'ORDER', 'HAVING', 'LIMIT', 'OFFSET', 'UNION', 'ALL', 'DISTINCT', 'ASC', 'DESC',
-  'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'INSERT', 'INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE',
-  'CREATE', 'ALTER', 'DROP', 'TABLE', 'VIEW', 'INDEX', 'RETURNING', 'WITH', 'OVER', 'PARTITION'
-])
-
-const QUERY_DIAGNOSTIC_TABLE_CONTEXT = new Set(['FROM', 'JOIN', 'UPDATE', 'INTO', 'TABLE'])
-const SQL_RESERVED_IDENTIFIERS = new Set([
-  'all', 'alter', 'and', 'as', 'asc', 'by', 'case', 'column', 'create', 'database', 'default',
-  'delete', 'desc', 'distinct', 'drop', 'else', 'from', 'group', 'having', 'in', 'index', 'insert',
-  'into', 'is', 'join', 'key', 'limit', 'not', 'null', 'on', 'or', 'order', 'primary', 'references',
-  'returning', 'role', 'schema', 'select', 'set', 'table', 'then', 'type', 'union', 'update', 'user',
-  'using', 'value', 'values', 'when', 'where', 'with'
-])
-
-function fieldNameParts(value) {
-  return String(value || '').split('.').map(part => part.trim().replace(/^['"`]|['"`]$/g, '')).filter(Boolean)
-}
-
-function unquoteSQLIdentifier(value) {
-  return String(value || '').trim().replace(/^"|"$/g, '').replace(/^`|`$/g, '')
-}
-
-function tokenizeSQL(query) {
-  const text = String(query || '')
-  const tokens = []
-  for (let index = 0; index < text.length;) {
-    if (/\s/.test(text[index])) { index += 1; continue }
-    if (text[index] === '-' && text[index + 1] === '-') {
-      const end = text.indexOf('\n', index + 2)
-      index = end < 0 ? text.length : end + 1
-      continue
-    }
-    if (text[index] === '/' && text[index + 1] === '*') {
-      const end = text.indexOf('*/', index + 2)
-      index = end < 0 ? text.length : end + 2
-      continue
-    }
-    if (text[index] === "'") {
-      index += 1
-      while (index < text.length) {
-        if (text[index] === "'" && text[index + 1] === "'") { index += 2; continue }
-        if (text[index] === "'") { index += 1; break }
-        index += 1
-      }
-      continue
-    }
-    if (text[index] === '"' || text[index] === '`') {
-      const quote = text[index]
-      const start = index
-      index += 1
-      while (index < text.length) {
-        if (text[index] === quote && text[index + 1] === quote) { index += 2; continue }
-        if (text[index] === quote) { index += 1; break }
-        index += 1
-      }
-      tokens.push({ value: text.slice(start, index), start, end: index })
-      continue
-    }
-    const identifier = /^[A-Za-z_][A-Za-z0-9_$]*/.exec(text.slice(index))
-    if (identifier) {
-      const value = identifier[0]
-      tokens.push({ value, start: index, end: index + value.length })
-      index += value.length
-      continue
-    }
-    if ('(),.;'.includes(text[index])) tokens.push({ value: text[index], start: index, end: index + 1 })
-    index += 1
-  }
-  return tokens
-}
-
-function matchingParen(tokens, openingIndex) {
-  let depth = 0
-  for (let index = openingIndex; index < tokens.length; index += 1) {
-    if (tokens[index].value === '(') depth += 1
-    if (tokens[index].value === ')') {
-      depth -= 1
-      if (depth === 0) return index
-    }
-  }
-  return tokens.length - 1
-}
-
-function cteOutputFields(text) {
-  const fields = []
-  const selectMatch = /\bSELECT\b([\s\S]*?)\bFROM\b/i.exec(String(text || ''))
-  if (!selectMatch) return fields
-  const projection = selectMatch[1]
-  const expressions = []
-  let depth = 0
-  let start = 0
-  for (let index = 0; index < projection.length; index += 1) {
-    if (projection[index] === '(') depth += 1
-    if (projection[index] === ')') depth = Math.max(0, depth - 1)
-    if (projection[index] === ',' && depth === 0) {
-      expressions.push(projection.slice(start, index))
-      start = index + 1
-    }
-  }
-  expressions.push(projection.slice(start))
-  expressions.forEach(expression => {
-    const aliasMatch = /\bAS\s+("(?:""|[^"])+"|`(?:``|[^`])+`|[A-Za-z_][A-Za-z0-9_$]*)\s*$/i.exec(expression.trim())
-    const simpleMatch = /(?:^|\.)("(?:""|[^"])+"|`(?:``|[^`])+`|[A-Za-z_][A-Za-z0-9_$]*)$/.exec(expression.trim())
-    const name = unquoteSQLIdentifier(aliasMatch?.[1] || simpleMatch?.[1] || '')
-    if (name && !fields.includes(name)) fields.push(name)
-  })
-  return fields
-}
-
-/** Parse SQL base-table references and CTE definitions for field diagnostics. */
-export function parseSQLSources(query) {
-  const text = String(query || '')
-  const tokens = tokenizeSQL(text)
-  const ctes = new Map()
-  let index = 0
-  while (index < tokens.length && tokens[index].value.toUpperCase() !== 'WITH') index += 1
-  if (index < tokens.length) {
-    index += 1
-    if (tokens[index]?.value.toUpperCase() === 'RECURSIVE') index += 1
-    while (index < tokens.length) {
-      const nameToken = tokens[index]
-      if (!isSQLIdentifierToken(nameToken.value)) break
-      const name = unquoteSQLIdentifier(nameToken.value)
-      index += 1
-      let declaredFields = []
-      if (tokens[index]?.value === '(') {
-        const closingIndex = matchingParen(tokens, index)
-        declaredFields = tokens.slice(index + 1, closingIndex)
-          .filter(token => isSQLIdentifierToken(token.value))
-          .map(token => unquoteSQLIdentifier(token.value))
-        index = closingIndex + 1
-      }
-      if (tokens[index]?.value?.toUpperCase() !== 'AS' || tokens[index + 1]?.value !== '(') break
-      const bodyStart = tokens[index + 1].end
-      const bodyEndIndex = matchingParen(tokens, index + 1)
-      const bodyEnd = tokens[bodyEndIndex]?.start ?? text.length
-      const outputFields = cteOutputFields(text.slice(bodyStart, bodyEnd))
-      ctes.set(name.toLocaleLowerCase(), { name, fields: outputFields.length ? outputFields : declaredFields })
-      index = bodyEndIndex + 1
-      if (tokens[index]?.value !== ',') break
-      index += 1
-    }
-  }
-
-  const sources = []
-  for (let cursor = 0; cursor < tokens.length; cursor += 1) {
-    if (!QUERY_DIAGNOSTIC_TABLE_CONTEXT.has(tokens[cursor].value.toUpperCase())) continue
-    let next = cursor + 1
-    if (tokens[next]?.value === '(') { cursor = matchingParen(tokens, next); continue }
-    if (!isSQLIdentifierToken(tokens[next]?.value)) continue
-    const path = [unquoteSQLIdentifier(tokens[next].value)]
-    next += 1
-    while (tokens[next]?.value === '.' && isSQLIdentifierToken(tokens[next + 1]?.value)) {
-      path.push(unquoteSQLIdentifier(tokens[next + 1].value))
-      next += 2
-    }
-    const name = path.join('.')
-    let alias = path[path.length - 1]
-    if (tokens[next]?.value.toUpperCase() === 'AS' && isSQLIdentifierToken(tokens[next + 1]?.value)) {
-      alias = unquoteSQLIdentifier(tokens[next + 1].value)
-    } else if (isSQLIdentifierToken(tokens[next]?.value) && !QUERY_DIAGNOSTIC_KEYWORDS.has(tokens[next]?.value.toUpperCase())) {
-      alias = unquoteSQLIdentifier(tokens[next]?.value)
-    }
-    const cte = ctes.get(name.toLocaleLowerCase())
-    sources.push({ name, path, alias, kind: cte ? 'cte' : 'table', fields: cte?.fields || [] })
-  }
-  // Handle comma-separated sources in a FROM clause (JOIN sources are handled above).
-  let fromClause = false
-  let depth = 0
-  for (let cursor = 0; cursor < tokens.length; cursor += 1) {
-    const value = tokens[cursor].value
-    const upper = value.toUpperCase()
-    if (value === '(') { depth += 1; continue }
-    if (value === ')') {
-      depth = Math.max(0, depth - 1)
-      if (depth === 0) fromClause = false
-      continue
-    }
-    if (upper === 'FROM') { fromClause = true; continue }
-    if (fromClause && ['WHERE', 'ON', 'GROUP', 'ORDER', 'HAVING', 'LIMIT', 'UNION', 'RETURNING'].includes(upper)) {
-      fromClause = false
-      continue
-    }
-    if (!fromClause || depth !== 0 || value !== ',') continue
-    let next = cursor + 1
-    if (!isSQLIdentifierToken(tokens[next]?.value)) continue
-    const path = [unquoteSQLIdentifier(tokens[next].value)]
-    next += 1
-    while (tokens[next]?.value === '.' && isSQLIdentifierToken(tokens[next + 1]?.value)) {
-      path.push(unquoteSQLIdentifier(tokens[next + 1].value))
-      next += 2
-    }
-    const name = path.join('.')
-    let alias = path[path.length - 1]
-    if (tokens[next]?.value.toUpperCase() === 'AS' && isSQLIdentifierToken(tokens[next + 1]?.value)) {
-      alias = unquoteSQLIdentifier(tokens[next + 1]?.value)
-    } else if (isSQLIdentifierToken(tokens[next]?.value) && !QUERY_DIAGNOSTIC_KEYWORDS.has(tokens[next]?.value.toUpperCase())) {
-      alias = unquoteSQLIdentifier(tokens[next]?.value)
-    }
-    const cte = ctes.get(name.toLocaleLowerCase())
-    sources.push({ name, path, alias, kind: cte ? 'cte' : 'table', fields: cte?.fields || [] })
-  }
-  return { sources, ctes: Array.from(ctes.values()) }
-}
-
-function fieldLookup(fields = []) {
-  const exact = new Set()
-  const folded = new Map()
-  fields.forEach(field => {
-    const name = String(typeof field === 'string' ? field : field?.label || field?.name || '').trim()
-    if (!name) return
-    exact.add(name)
-    const key = name.toLocaleLowerCase()
-    if (!folded.has(key)) folded.set(key, name)
-  })
-  return { exact, folded }
-}
-
-function fieldDiagnostic(name, lookup, seen, engineType, seenKey = name) {
-  const rawName = String(name || '').trim()
-  const parts = fieldNameParts(name)
-  if (parts.length === 0) return null
-  const candidate = parts[parts.length - 1]
-  if (seen.has(seenKey)) return null
-  seen.add(seenKey)
-  if (lookup.exact.has(candidate)) {
-    const quote = engineType === 'mysql' ? '`' : '"'
-    const simpleLowerIdentifier = /^[a-z_][a-z0-9_$]*$/.test(candidate)
-    const requiresQuote = !simpleLowerIdentifier || SQL_RESERVED_IDENTIFIERS.has(candidate.toLocaleLowerCase())
-    if (engineType && !/^["`]/.test(rawName) && requiresQuote) {
-      return { code: 'field_requires_quote', severity: 'warning', field: candidate, suggested: `${quote}${candidate}${quote}` }
-    }
-    return null
-  }
-  const suggested = lookup.folded.get(candidate.toLocaleLowerCase())
-  if (suggested && suggested !== candidate) {
-    const quote = engineType === 'mysql' ? '`' : '"'
-    const simpleLowerIdentifier = /^[a-z_][a-z0-9_$]+$/.test(suggested)
-    const requiresQuote = !simpleLowerIdentifier || SQL_RESERVED_IDENTIFIERS.has(suggested.toLocaleLowerCase())
-    if (engineType && requiresQuote) {
-      return { code: 'field_requires_quote', severity: 'warning', field: candidate, suggested: `${quote}${suggested}${quote}` }
-    }
-    return { code: 'field_case_mismatch', severity: 'warning', field: candidate, suggested }
-  }
-  return { code: 'field_unknown', severity: 'warning', field: candidate }
-}
-
-function collectMQLFieldCandidates(query, fields = []) {
-  try {
-    const root = JSON.parse(String(query || ''))
-    const candidates = []
-    const sourceScope = new Set(fields.map(field => String(typeof field === 'string' ? field : field?.label || field?.name || '').trim()).filter(Boolean))
-    const addCandidate = name => {
-      const normalized = String(name || '').replace(/^\$+/, '').trim()
-      if (!normalized) return
-      const known = Array.from(sourceScope).some(field => (
-        field === normalized || field.startsWith(`${normalized}.`)
-      ))
-      if (!known) candidates.push(normalized)
-    }
-    const scopeHas = (scope, name) => {
-      const normalized = String(name || '').replace(/^\$+/, '').trim()
-      if (!normalized) return true
-      return Array.from(scope).some(field => (
-        field === normalized || field.startsWith(`${normalized}.`) || normalized.startsWith(`${field}.`)
-      ))
-    }
-    const visitExpression = (value, scope) => {
-      if (Array.isArray(value)) {
-        value.forEach(item => visitExpression(item, scope))
-        return
-      }
-      if (typeof value === 'string') {
-        if (value.startsWith('$') && !value.startsWith('$$') && !scopeHas(scope, value)) addCandidate(value)
-        return
-      }
-      if (!value || typeof value !== 'object') return
-      Object.values(value).forEach(child => visitExpression(child, scope))
-    }
-    const visitDocument = (value, scope, path = []) => {
-      if (Array.isArray(value)) {
-        value.forEach(item => visitDocument(item, scope, path))
-        return
-      }
-      if (!value || typeof value !== 'object') return
-      Object.entries(value).forEach(([key, child]) => {
-        if (key.startsWith('$')) {
-          visitDocument(child, scope, path)
-          visitExpression(child, scope)
-          return
-        }
-        const nextPath = [...path, ...fieldNameParts(key)]
-        const fieldName = nextPath.join('.')
-        if (!scopeHas(scope, fieldName)) addCandidate(fieldName)
-        visitDocument(child, scope, nextPath)
-      })
-    }
-    const visitProjection = (value, scope) => {
-      const output = new Set()
-      if (!value || typeof value !== 'object' || Array.isArray(value)) return output
-      Object.entries(value).forEach(([key, child]) => {
-        if (child === 1 || child === true) {
-          if (!scopeHas(scope, key)) addCandidate(key)
-          output.add(key)
-        } else if (child !== 0 && child !== false) {
-          visitExpression(child, scope)
-          output.add(key)
-        }
-      })
-      return output
-    }
-    const visitPipeline = (pipeline, initialScope) => {
-      let scope = new Set(initialScope)
-      if (!Array.isArray(pipeline)) return scope
-      pipeline.forEach(stage => {
-        if (!stage || typeof stage !== 'object' || Array.isArray(stage)) return
-        Object.entries(stage).forEach(([operator, value]) => {
-          if (operator === '$match' || operator === '$sort') visitDocument(value, scope)
-          else if (operator === '$project') scope = visitProjection(value, scope)
-          else if (operator === '$group') {
-            visitExpression(value, scope)
-            scope = new Set(Object.keys(value || {}))
-          } else if (operator === '$set' || operator === '$addFields') {
-            Object.entries(value || {}).forEach(([key, expression]) => {
-              visitExpression(expression, scope)
-              scope.add(key)
-            })
-          } else if (operator === '$facet' && value && typeof value === 'object') {
-            const facetScope = new Set()
-            Object.entries(value).forEach(([name, branch]) => {
-              facetScope.add(name)
-              visitPipeline(branch, scope).forEach(field => facetScope.add(`${name}.${field}`))
-            })
-            scope = facetScope
-          } else if (operator === '$unwind') visitExpression(value, scope)
-          else if (operator === '$lookup' && value && typeof value === 'object') {
-            if (value.localField && !scopeHas(scope, value.localField)) addCandidate(value.localField)
-            if (value.as) scope.add(String(value.as))
-          } else {
-            visitExpression(value, scope)
-          }
-        })
-      })
-      return scope
-    }
-
-    if (root && typeof root === 'object' && !Array.isArray(root)) {
-      if (typeof root.find === 'string') {
-        visitDocument(root.filter, sourceScope)
-        visitDocument(root.sort, sourceScope)
-        visitProjection(root.projection, sourceScope)
-      } else if (typeof root.count === 'string') {
-        visitDocument(root.query, sourceScope)
-      } else if (typeof root.distinct === 'string') {
-        if (!scopeHas(sourceScope, root.key)) addCandidate(root.key)
-        visitDocument(root.query, sourceScope)
-      } else if (typeof root.aggregate === 'string') {
-        visitPipeline(root.pipeline, sourceScope)
-      }
-    }
-    return { candidates, parseError: false }
-  } catch {
-    return { candidates: [], parseError: true }
-  }
-}
-
-function collectCypherFieldCandidates(query) {
-  const candidates = []
-  const pattern = /\.\s*(`[^`]+`|[A-Za-z_][A-Za-z0-9_]*)/g
-  let match
-  while ((match = pattern.exec(String(query || '')))) candidates.push(match[1])
-  return candidates
-}
-
-function collectSQLFieldCandidates(query) {
-  const candidates = []
-  const tokenPattern = /(?:"(?:""|[^"])+"|`(?:``|[^`])+`|[A-Za-z_][A-Za-z0-9_$]*)|[(),.;:]/g
-  const tokenMatches = Array.from(String(query || '').matchAll(tokenPattern))
-  const tokens = tokenMatches.map(match => match[0])
-  const tableIdentifiers = new Set()
-  let tableReferenceContext = false
-  for (let index = 0; index < tokens.length; index += 1) {
-    const token = tokens[index]
-    const upper = token.toUpperCase()
-    if (QUERY_DIAGNOSTIC_TABLE_CONTEXT.has(upper)) {
-      tableReferenceContext = true
-      continue
-    }
-    if (['SELECT', 'WHERE', 'ON', 'SET', 'HAVING', 'RETURNING', 'LIMIT', 'ORDER', 'GROUP'].includes(upper)) {
-      tableReferenceContext = false
-      continue
-    }
-    if (!tableReferenceContext || !isSQLIdentifierToken(token)) continue
-    tableIdentifiers.add(index)
-    let qualifiedIndex = index + 1
-    while (tokens[qualifiedIndex] === '.' && isSQLIdentifierToken(tokens[qualifiedIndex + 1])) {
-      tableIdentifiers.add(qualifiedIndex + 1)
-      qualifiedIndex += 2
-    }
-    tableReferenceContext = false
-  }
-
-  let tableContext = false
-  let expressionContext = false
-  for (let index = 0; index < tokens.length; index += 1) {
-    const token = tokens[index]
-    const upper = token.toUpperCase()
-    if (tableIdentifiers.has(index)) continue
-    if (token === ',' || token === ';') {
-      if (tableContext) continue
-      expressionContext = true
-      continue
-    }
-    if (QUERY_DIAGNOSTIC_TABLE_CONTEXT.has(upper)) {
-      tableContext = true
-      expressionContext = false
-      continue
-    }
-    if (['SELECT', 'WHERE', 'ON', 'SET', 'HAVING', 'RETURNING'].includes(upper)) {
-      tableContext = false
-      expressionContext = true
-      continue
-    }
-    if (token === '(' || token === ')' || token === ':' || QUERY_DIAGNOSTIC_KEYWORDS.has(upper)) continue
-    const next = tokens[index + 1]
-    if (next === '.') continue
-    if (next === '(') continue
-    if (tableContext) {
-      tableContext = false
-      continue
-    }
-    if (tokens[index - 1] === ':' || tokens[index - 1]?.toUpperCase() === 'AS') continue
-    if (expressionContext || tokens[index - 1] === '.') {
-      const start = tokenMatches[index].index
-      const qualifier = tokens[index - 1] === '.' ? tokens[index - 2] : ''
-      candidates.push({ name: qualifier ? `${qualifier}.${token}` : token, field: token, qualifier, start, end: start + token.length })
-    }
-  }
-  return candidates
-}
-
-function isSQLIdentifierToken(token) {
-  return /^"(?:""|[^"])+"$/.test(token) || /^`(?:``|[^`])+`$/.test(token) || /^[A-Za-z_][A-Za-z0-9_$]*$/.test(token)
-}
-
-/** 基于当前资源字段和查询参数做高置信度静态诊断。 */
-export function diagnoseQuery({ language, engineType = '', query, fields = [], fieldSources = null, targetLocator = '', referencedParameters = [], definedParameters = [] } = {}) {
-  const normalizedLanguage = String(language || '').trim().toLowerCase()
-  const normalizedEngineType = String(engineType || '').trim().toLowerCase()
-  const diagnostics = []
-  const text = String(query || '').trim()
-  if (!text) return [{ code: 'query_empty', severity: 'error' }]
-  const sqlSources = normalizedLanguage === 'sql' ? parseSQLSources(text).sources : []
-  if (!targetLocator && (normalizedLanguage !== 'sql' || sqlSources.length === 0)) diagnostics.push({ code: 'target_missing', severity: 'warning' })
-
-  const defined = new Set(definedParameters.map(value => String(value || '').trim()).filter(Boolean))
-  referencedParameters.forEach(name => {
-    if (!defined.has(name)) diagnostics.push({ code: 'parameter_undefined', severity: 'error', name })
-  })
-
-  const lookup = fieldLookup(fields)
-  const normalizedSources = Array.isArray(fieldSources)
-    ? fieldSources.map(source => ({
-      ...source,
-      aliases: new Set([source.alias, source.name, ...(source.aliases || [])]
-        .map(value => String(value || '').toLocaleLowerCase()).filter(Boolean)),
-      lookup: fieldLookup(source.fields || []),
-      known: source.known !== false
-    }))
-    : []
-  if (normalizedLanguage === 'sql' && Array.isArray(fieldSources)) {
-    if (normalizedSources.length === 0 || normalizedSources.every(source => !source.known || source.lookup.exact.size === 0)) return diagnostics
-  } else if (lookup.exact.size === 0) return diagnostics
-
-  let result
-  if (normalizedLanguage === 'mql') {
-    result = collectMQLFieldCandidates(text, fields)
-    if (result.parseError) return diagnostics
-  } else if (normalizedLanguage === 'cypher') {
-    result = { candidates: collectCypherFieldCandidates(text) }
-  } else if (normalizedLanguage === 'sql') {
-    result = { candidates: collectSQLFieldCandidates(text) }
-  } else {
-    return diagnostics
-  }
-
-  const seen = new Set()
-  result.candidates.forEach(candidate => {
-    const candidateName = typeof candidate === 'string' ? candidate : candidate.name
-    const parts = fieldNameParts(candidateName)
-    let candidateLookup = lookup
-    if (normalizedLanguage === 'sql' && Array.isArray(fieldSources)) {
-      const qualifier = String(candidate?.qualifier || (parts.length > 1 ? parts[0] : ''))
-        .replace(/^['"`]|['"`]$/g, '').toLocaleLowerCase()
-      const matches = qualifier
-        ? normalizedSources.filter(source => source.aliases.has(qualifier))
-        : normalizedSources.filter(source => source.known && source.lookup.exact.size > 0)
-      if (matches.length === 0 || matches.some(source => !source.known)) return
-      if (matches.length === 1) {
-        candidateLookup = matches[0].lookup
-      } else {
-        candidateLookup = matches.reduce((merged, source) => {
-          source.lookup.exact.forEach(value => merged.exact.add(value))
-          source.lookup.folded.forEach((value, key) => { if (!merged.folded.has(key)) merged.folded.set(key, value) })
-          return merged
-        }, { exact: new Set(), folded: new Map() })
-      }
-    } else if (parts.length > 1 && lookup.exact.has(parts[0])) return
-    const diagnostic = fieldDiagnostic(
-      candidate?.field || candidateName,
-      candidateLookup,
-      seen,
-      normalizedLanguage === 'mql' ? '' : normalizedEngineType,
-      candidate?.qualifier ? `${candidate.qualifier}.${candidate.field}` : candidateName
-    )
-    if (diagnostic && typeof candidate === 'object' && diagnostic.suggested) {
-      diagnostic.start = candidate.start
-      diagnostic.end = candidate.end
-      diagnostic.replacement = diagnostic.suggested
-    }
-    if (diagnostic) diagnostics.push(diagnostic)
-  })
-  return diagnostics
-}
-
 export function isTerminalExecutionStatus(status) {
   return TERMINAL_EXECUTION_STATUSES.has(String(status || '').trim().toLowerCase())
 }
@@ -872,6 +377,7 @@ export function queryResultFromExecution(execution) {
     rows: Array.isArray(summary.preview_rows) ? summary.preview_rows : [],
     rows_count: Number(result.rows_count || 0),
     rows_affected: result.rows_affected,
+    effect: result.effect || '',
     execution_time_ms: execution?.execution_time_ms,
     result_kind: result.result_kind || 'table',
     result_limit: result.result_limit,

@@ -95,8 +95,7 @@ class QueryParameterDefinition(BaseModel):
 
     name: str = Field(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")
     type: Literal["string", "integer", "number", "boolean"]
-    default: Any
-    title: Optional[str] = None
+    default: Any = None
     description: Optional[str] = None
 
 

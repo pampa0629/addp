@@ -185,11 +185,6 @@ func (e *DevExecutor) prepareContentExecutionWithConfirmation(
 	if executionConfig == nil {
 		return nil, fmt.Errorf("临时执行必须提供 execution_config")
 	}
-	if _, relationResult, relationErr := relationInputBindings(content); relationErr != nil {
-		return nil, relationErr
-	} else if relationResult {
-		return nil, fmt.Errorf("关系输入写入只能通过已保存任务的 Orchestrator 执行")
-	}
 	if parameters == nil {
 		parameters = map[string]interface{}{}
 	}
@@ -213,14 +208,16 @@ func (e *DevExecutor) prepareContentExecutionWithConfirmation(
 
 	inputs := commonModels.JSONMap{"submitted_parameters": parameters}
 	var effectiveParameters map[string]interface{}
+	var effectiveInputs map[string]interface{}
 	var executionContract *taskprovider.ExecutionContract
 	if devType == commonExecution.TaskTypeQuery {
-		contract, effective, resolveErr := resolveQueryExecutionParameters(content, parameters)
+		contract, effective, resolvedInputs, resolveErr := resolveQueryPreviewParameters(content, parameters)
 		if resolveErr != nil {
 			return nil, &ExecutionParametersError{Cause: resolveErr}
 		}
 		executionContract = contract
 		effectiveParameters = effective
+		effectiveInputs = resolvedInputs
 	} else {
 		emptyContract := taskprovider.EmptyExecutionContract()
 		if err := taskprovider.ValidateExecutionParameters(
@@ -237,6 +234,7 @@ func (e *DevExecutor) prepareContentExecutionWithConfirmation(
 	}
 	inputs["execution_contract"] = executionContract
 	inputs["effective_parameters"] = effectiveParameters
+	inputs["effective_inputs"] = effectiveInputs
 
 	// 创建统一执行记录
 	now := time.Now()
@@ -276,9 +274,15 @@ func (e *DevExecutor) prepareContentExecutionWithConfirmation(
 		ExecutionConfig:   models.DevTaskContent(executionConfig),
 		RuntimeParameters: effectiveParameters,
 	}
+	if devType == commonExecution.TaskTypeQuery {
+		tempItem, err = e.compileRelationQueryPreview(ctx, tempItem, effectiveInputs, tenantID)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if devType == commonExecution.TaskTypeQuery && tempItem.GetQueryType() == "sql" {
 		engineID := tempItem.GetEngineID()
-		queryText, _ := content["query"].(string)
+		queryText, _ := tempItem.Content["query"].(string)
 		targetLocator, _ := content["target_locator"].(string)
 		analysis, analysisErr := AnalyzeQuery("sql", queryText)
 		if analysisErr != nil {
@@ -982,6 +986,17 @@ func (e *DevExecutor) executeSQL(ctx context.Context, devTask *models.DevTask, e
 			targetPath = &path
 		}
 		if engineSupportsQueryResultKind(engine, "graph") {
+			if e.sqlEngine == nil || e.sqlEngine.protectionGate == nil {
+				return nil, "Develop 图查询保护门禁未配置", nil, ""
+			}
+			// Cypher may traverse resources beyond a caller-selected path. Until
+			// its Provider can prove a complete read set, keep this boundary
+			// conservative whenever the tenant has a managed DataItem.
+			endProtection, protectionErr := e.sqlEngine.protectionGate.BeginUnresolvedRead(execCtx, uint(tenantID))
+			if protectionErr != nil {
+				return nil, fmt.Sprintf("查询执行失败: %v", protectionErr), nil, queryErrorCode(protectionErr)
+			}
+			defer endProtection()
 			graphResult, graphErr := dbbridge.ExecuteReadOnlyGraphQueryWithPath(
 				execCtx, engine, devTask.GetQueryType(), sqlContent, devTask.RuntimeParameters, e.queryFetchLimit(), targetPath,
 			)
@@ -991,9 +1006,33 @@ func (e *DevExecutor) executeSQL(ctx context.Context, devTask *models.DevTask, e
 				graphData = graphResult.GraphData
 			}
 		} else {
-			queryResult, queryErr = dbbridge.ExecuteReadOnlyRuntimeQueryWithPath(
-				execCtx, engine, devTask.GetQueryType(), sqlContent, devTask.RuntimeParameters, e.queryFetchLimit(), targetPath,
-			)
+			enginePlugin, pluginErr := plugin.Get(engine.EngineType)
+			if pluginErr != nil {
+				queryErr = pluginErr
+			} else if provider, ok := enginePlugin.(plugin.QueryRuntimeProvider); !ok {
+				queryErr = fmt.Errorf("引擎不支持普通查询运行时")
+			} else if e.sqlEngine == nil || e.sqlEngine.protectionGate == nil {
+				queryErr = fmt.Errorf("Develop 查询保护门禁未配置")
+			} else {
+				prepared, prepareErr := provider.PrepareQuery(execCtx, plugin.ConnectionInfo(engine.ConnectionInfo), plugin.QueryRequest{
+					EngineID: engine.ID, Language: devTask.GetQueryType(), Query: sqlContent, TargetPath: targetPath,
+					Options: plugin.QueryOptions{
+						EngineID: engine.ID, EngineType: engine.EngineType, Limit: e.queryFetchLimit(),
+						ReadOnly: true, Parameters: devTask.RuntimeParameters,
+					},
+				})
+				if prepareErr != nil {
+					queryErr = prepareErr
+				} else if protectResult, endProtection, gateErr := e.sqlEngine.protectionGate.BeginPreparedQuery(execCtx, uint(tenantID), enginePlugin, prepared); gateErr != nil {
+					queryErr = gateErr
+				} else {
+					queryResult, queryErr = prepared.Execute(execCtx)
+					if queryErr == nil {
+						queryErr = protectResult(queryResult)
+					}
+					endProtection()
+				}
+			}
 		}
 		if queryErr == nil && queryResult == nil {
 			queryErr = fmt.Errorf("查询运行时返回空结果")
@@ -1010,9 +1049,6 @@ func (e *DevExecutor) executeSQL(ctx context.Context, devTask *models.DevTask, e
 			}
 			if err == nil {
 				response, message, affected := e.queryResult(result.Columns, result.Rows, result.RowsAffected, result.Effect, resultKind, graphData)
-				if devTask.GetQueryType() == "mql" && len(result.Rows) == 0 {
-					response["diagnostics"] = mongoZeroResultDiagnostics(execCtx, engine, sqlContent, targetPath)
-				}
 				return response, message, affected, ""
 			}
 		}
@@ -1026,105 +1062,6 @@ func (e *DevExecutor) executeSQL(ctx context.Context, devTask *models.DevTask, e
 
 func queryErrorCode(err error) string {
 	return string(plugin.QueryErrorCodeOf(err))
-}
-
-// mongoZeroResultDiagnostics adds non-blocking guidance for the common case where
-// MongoDB accepts a filter but returns no documents because a field name's case
-// does not match the sampled collection schema. It deliberately remains a
-// warning: dynamic schemas may be incomplete and zero rows can be legitimate.
-func mongoZeroResultDiagnostics(ctx context.Context, engine *commonModels.Engine, query string, targetPath *plugin.EngineCatalogPath) []map[string]interface{} {
-	if engine == nil || !strings.EqualFold(engine.EngineType, "mongodb") || targetPath == nil {
-		return []map[string]interface{}{{"code": "query_zero_result", "reason": "diagnostic_unavailable"}}
-	}
-	enginePlugin, err := plugin.Get(engine.EngineType)
-	if err != nil {
-		return []map[string]interface{}{{"code": "query_zero_result", "reason": "diagnostic_unavailable"}}
-	}
-	sampler, ok := enginePlugin.(plugin.DynamicSchemaSamplingProvider)
-	if !ok {
-		return []map[string]interface{}{{"code": "query_zero_result", "reason": "diagnostic_unavailable"}}
-	}
-	facts, err := sampler.SampleDynamicSchema(ctx, plugin.ConnectionInfo(engine.ConnectionInfo), *targetPath, plugin.EngineCatalogFactsOptions{SampleSize: 100})
-	if err != nil || facts == nil || facts.Table == nil {
-		return []map[string]interface{}{{"code": "query_zero_result", "reason": "diagnostic_unavailable"}}
-	}
-	if facts.Table.EstimatedRowCount != nil && *facts.Table.EstimatedRowCount == 0 {
-		return []map[string]interface{}{{"code": "query_zero_result", "reason": "collection_empty"}}
-	}
-	requested := mqlFieldNames(query)
-	fields := facts.Table.FieldNames()
-	for _, name := range requested {
-		for _, field := range fields {
-			if strings.EqualFold(name, field) && name != field {
-				return []map[string]interface{}{{
-					"code": "query_zero_result", "reason": "field_case_mismatch", "field": name, "suggested_field": field,
-				}}
-			}
-		}
-		if !containsString(fields, name) {
-			return []map[string]interface{}{{"code": "query_zero_result", "reason": "field_not_observed", "field": name}}
-		}
-	}
-	return []map[string]interface{}{{"code": "query_zero_result", "reason": "filter_not_matched"}}
-}
-
-func containsString(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
-}
-
-func mqlFieldNames(query string) []string {
-	var command map[string]interface{}
-	if err := json.Unmarshal([]byte(query), &command); err != nil {
-		return nil
-	}
-	seen := map[string]struct{}{}
-	result := make([]string, 0)
-	var collectPredicateFields func(interface{})
-	collectPredicateFields = func(current interface{}) {
-		switch typed := current.(type) {
-		case []interface{}:
-			for _, item := range typed {
-				collectPredicateFields(item)
-			}
-		case map[string]interface{}:
-			for key, child := range typed {
-				if strings.HasPrefix(key, "$") {
-					if key == "$and" || key == "$or" || key == "$nor" {
-						collectPredicateFields(child)
-					}
-					continue
-				}
-				field := strings.SplitN(key, ".", 2)[0]
-				if field != "" {
-					if _, exists := seen[field]; !exists {
-						seen[field] = struct{}{}
-						result = append(result, field)
-					}
-				}
-			}
-		}
-	}
-	if filter, ok := command["filter"]; ok {
-		collectPredicateFields(filter)
-	}
-	if queryFilter, ok := command["query"]; ok {
-		collectPredicateFields(queryFilter)
-	}
-	if pipeline, ok := command["pipeline"].([]interface{}); ok {
-		for _, stage := range pipeline {
-			if stageMap, ok := stage.(map[string]interface{}); ok {
-				if match, ok := stageMap["$match"]; ok {
-					collectPredicateFields(match)
-				}
-			}
-		}
-	}
-	return result
 }
 
 func (e *DevExecutor) queryResultLimitValue() int {
@@ -1159,17 +1096,13 @@ func (e *DevExecutor) queryResult(
 	}
 	graphData, graphTruncated := truncateGraphData(graphData, limit)
 	truncated = truncated || graphTruncated
-	if effect == SQLExecutionEffectRead {
-		rowsAffected = int64(len(rows))
-	}
 	result := commonModels.JSONMap{
-		"columns":       columns,
-		"rows_count":    len(rows),
-		"rows_affected": rowsAffected,
-		"effect":        effect,
-		"result_kind":   resultKind,
-		"result_limit":  limit,
-		"truncated":     truncated,
+		"columns":      columns,
+		"rows_count":   len(rows),
+		"effect":       effect,
+		"result_kind":  resultKind,
+		"result_limit": limit,
+		"truncated":    truncated,
 		"summary": map[string]interface{}{
 			"column_count": len(columns),
 			"preview_rows": rows,
@@ -1178,6 +1111,10 @@ func (e *DevExecutor) queryResult(
 	if graphData != nil {
 		result["graph_data"] = graphData
 	}
+	if effect == SQLExecutionEffectRead {
+		return result, "", nil
+	}
+	result["rows_affected"] = rowsAffected
 	return result, "", &rowsAffected
 }
 
@@ -1495,7 +1432,7 @@ func (e *DevExecutor) ExecuteWithParamsWithContext(
 	if normalizedSource == "" {
 		normalizedSource = commonExecution.ModuleDevelop
 	}
-	preparedTask, err := e.prepareParameterizedDevTask(ctx, itemID, params, tenantID, expectedTaskType)
+	preparedTask, err := e.prepareParameterizedDevTask(ctx, itemID, params, tenantID, expectedTaskType, false)
 	if err != nil {
 		return "", err
 	}
@@ -1563,6 +1500,7 @@ func (e *DevExecutor) prepareParameterizedDevTask(
 	params map[string]interface{},
 	tenantID uint,
 	expectedTaskType string,
+	materializeRelationResult bool,
 ) (*preparedParameterizedDevTask, error) {
 	if params == nil {
 		params = map[string]interface{}{}
@@ -1583,6 +1521,7 @@ func (e *DevExecutor) prepareParameterizedDevTask(
 		return nil, fmt.Errorf("复制开发任务内容失败: %w", err)
 	}
 	var effectiveParameters map[string]interface{}
+	var effectiveInputs map[string]interface{}
 	inputs := commonModels.JSONMap{
 		"submitted_parameters": params,
 	}
@@ -1613,11 +1552,16 @@ func (e *DevExecutor) prepareParameterizedDevTask(
 		inputs["workflow_definition"] = resolved.Workflow
 		inputs["execution_contract"] = resolved.Contract
 	} else if devTask.DevType == commonExecution.TaskTypeQuery {
-		contract, effective, resolveErr := resolveQueryExecutionParameters(resolvedContent, params)
+		var contract *taskprovider.ExecutionContract
+		var resolveErr error
+		if materializeRelationResult {
+			contract, effectiveParameters, effectiveInputs, resolveErr = resolveQueryOrchestrationParameters(resolvedContent, params)
+		} else {
+			contract, effectiveParameters, effectiveInputs, resolveErr = resolveQueryPreviewParameters(resolvedContent, params)
+		}
 		if resolveErr != nil {
 			return nil, &ExecutionParametersError{Cause: resolveErr}
 		}
-		effectiveParameters = effective
 		inputs["execution_contract"] = contract
 	} else {
 		emptyContract := taskprovider.EmptyExecutionContract()
@@ -1631,11 +1575,18 @@ func (e *DevExecutor) prepareParameterizedDevTask(
 		inputs["execution_contract"] = emptyContract
 	}
 	inputs["effective_parameters"] = effectiveParameters
+	inputs["effective_inputs"] = effectiveInputs
 	task := &models.DevTask{
 		ID: devTask.ID, DevType: devTask.DevType, Content: resolvedContent,
 		Timeout: devTask.Timeout, TenantID: tenantID, Status: devTask.Status,
 		ExecutionConfig:   devTask.ExecutionConfig,
 		RuntimeParameters: effectiveParameters,
+	}
+	if task.DevType == commonExecution.TaskTypeQuery && !materializeRelationResult {
+		task, err = e.compileRelationQueryPreview(ctx, task, effectiveInputs, tenantID)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if task.DevType == commonExecution.TaskTypeWorkflow {
 		if err := e.validateWorkflowBeforeExecution(ctx, task.Content, task.ExecutionConfig, tenantID); err != nil {
@@ -1671,7 +1622,7 @@ func (e *DevExecutor) ExecuteWithParamsFromParentExecution(
 	if err != nil {
 		return "", fmt.Errorf("父执行 ID 无效: %w", err)
 	}
-	preparedTask, err := e.prepareParameterizedDevTask(ctx, itemID, params, tenantID, expectedTaskType)
+	preparedTask, err := e.prepareParameterizedDevTask(ctx, itemID, params, tenantID, expectedTaskType, true)
 	if err != nil {
 		return "", err
 	}
@@ -1707,7 +1658,7 @@ func (e *DevExecutor) ExecuteWithParamsFromParentExecution(
 		ExecutionConfig:            devTaskExecutionRecordConfig(preparedTask.task, preparedTask.inputs),
 		CreatedAt:                  now, UpdatedAt: now,
 	}
-	if _, relationResult, _ := relationInputBindings(preparedTask.task.Content); relationResult {
+	if _, relationResult, _ := relationParameterBindingsFromContent(preparedTask.task.Content); relationResult {
 		execution.MaxAttempts = 1
 	}
 	if err := e.taskExecutionRepo.Create(ctx, execution); err != nil {
@@ -1783,11 +1734,35 @@ func devTaskExecutionRecordConfig(devTask *models.DevTask, inputs commonModels.J
 		if devTask.RuntimeParameters != nil {
 			config["runtime_parameters"] = devTask.RuntimeParameters
 		}
-		if _, relationResult, _ := relationInputBindings(devTask.Content); relationResult {
-			if submitted, ok := mapValue(inputs["submitted_parameters"]); ok {
-				config["runtime_inputs"] = commonModels.JSONMap(submitted)
+		if _, relationResult, _ := relationParameterBindingsFromContent(devTask.Content); relationResult {
+			if effective, ok := mapValue(inputs["effective_inputs"]); ok {
+				config["runtime_inputs"] = commonModels.JSONMap(effective)
 			}
 		}
 	}
 	return config
+}
+
+func (e *DevExecutor) compileRelationQueryPreview(
+	ctx context.Context,
+	task *models.DevTask,
+	effectiveInputs map[string]interface{},
+	tenantID uint,
+) (*models.DevTask, error) {
+	if task == nil {
+		return nil, fmt.Errorf("查询预览任务不完整")
+	}
+	_, hasRelationParameters, err := relationParameterBindingsFromContent(task.Content)
+	if err != nil || !hasRelationParameters {
+		return task, err
+	}
+	engineID := task.GetEngineID()
+	if engineID == nil || *engineID == 0 || e == nil || e.sqlEngine == nil || e.sqlEngine.systemService == nil {
+		return nil, fmt.Errorf("relation 查询参数预览缺少查询引擎")
+	}
+	descriptor, err := e.sqlEngine.systemService.WithTenantID(tenantID).GetEngineRuntimeDescriptor(ctx, *engineID)
+	if err != nil {
+		return nil, fmt.Errorf("获取查询引擎描述失败: %w", err)
+	}
+	return compileRelationPreviewQuery(task, effectiveInputs, descriptor.EngineType)
 }

@@ -29,6 +29,7 @@ type Config struct {
 
 	// 其他模块服务配置（用于算子发现）
 	MetaServiceURL     string
+	SecurityServiceURL string
 	TransferServiceURL string
 	ManagerServiceURL  string
 	CopilotServiceURL  string
@@ -76,6 +77,7 @@ func Load() *Config {
 
 		// 其他模块服务配置
 		MetaServiceURL:     getEnv("META_URL", "http://localhost:8082"),
+		SecurityServiceURL: getEnv("SECURITY_URL", "http://localhost:8194"),
 		TransferServiceURL: getEnv("TRANSFER_URL", "http://localhost:8083"),
 		ManagerServiceURL:  getEnv("MANAGER_URL", "http://localhost:8081"),
 		CopilotServiceURL:  getEnv("COPILOT_URL", "http://localhost:8087"),

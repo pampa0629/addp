@@ -21,8 +21,9 @@ export { useVectorTileLoader } from './composables/useVectorTileLoader'
 export { formatBytes, formatDate, safeStringify } from './utils/formatters'
 export { formatFeatureProperties } from './utils/mapFormatters'
 export { fromLonLat, toLonLat } from './utils/mapProjection'
-export { createDefaultStyleFunction, createHighlightStyle } from './utils/mapStyles'
+export { createDefaultStyleFunction, createHighlightStyle, createThematicFeatureStyle } from './utils/mapStyles'
 export { buildGeoJSONFeatures, spatialPreviewDescriptor, validateGeoJSONResult } from './utils/geoJSONResult.mjs'
+export { buildThematicContext, thematicColorVariable, thematicIndexForValue } from './utils/thematicMap.mjs'
 export { mapDisplayCoordinate, mapSourceCoordinate, wgs84ToGCJ02, gcj02ToWGS84 } from './utils/gcj02'
 export {
   crsSuppressionStatus,

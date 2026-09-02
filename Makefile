@@ -1,5 +1,5 @@
-.PHONY: help build build-images select-image-services local-ci test test-changed test-module test-platform test-local-ci-runner test-book test-engine-startup-isolation test-integration test-online test-online-runner test-release test-release-runner test-go test-agent-frontend test-asset-frontend test-catalog-frontend test-console-frontend test-copilot test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-workbench-frontend test-execution-fixtures test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-system-iam-postgres test-asset-postgres test-meta-postgres test-catalog-postgres test-develop-postgres test-model-postgres test-quality-postgres test-service-postgres test-standard-postgres test-workbench-postgres test-arcgis-open-formats \
-        build-iam-bootstrap build-iam-recovery \
+.PHONY: help build build-images select-image-services local-ci test test-changed test-module test-platform test-local-ci-runner test-book test-engine-startup-isolation test-integration test-online test-online-runner test-release test-release-runner test-go test-agent-frontend test-asset-frontend test-catalog-frontend test-console-frontend test-copilot test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-security-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-workbench-frontend test-execution-fixtures test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-common-postgres test-manager-mongodb-security test-system-iam-postgres test-asset-postgres test-meta-postgres test-catalog-postgres test-develop-postgres test-model-postgres test-quality-postgres test-security-postgres test-service-postgres test-standard-postgres test-transfer-postgres test-workbench-postgres test-arcgis-open-formats \
+        build-iam-bootstrap build-iam-recovery build-iam-migration-repair \
         dev-start dev-restart dev-stop infra-up infra-down infra-restart infra-status prod-start prod-restart prod-stop prod-health ports-validate
 
 # 默认目标
@@ -55,6 +55,9 @@ build-iam-bootstrap: ## 构建一次性离线 IAM Bootstrap CLI
 
 build-iam-recovery: ## 构建离线 IAM 三员凭据恢复 CLI
 	$(call build_one_service,system/backend,addp-iam-recovery,cmd/iam-recovery/main.go)
+
+build-iam-migration-repair: ## 构建精确状态校验的 IAM 定向迁移恢复 CLI
+	$(call build_one_service,system/backend,addp-iam-migration-repair,cmd/iam-migration-repair/main.go)
 
 dev-start: ## 开发模式启动所有服务（按正确顺序）
 	@bash scripts/dev/start.sh
@@ -130,6 +133,8 @@ test-local-ci-runner: ## 运行辅助 macOS 巡检器的确定性测试
 	@python3 scripts/test/local-macos-ci_test.py
 
 test-integration: ## 严格串行运行所有已登记的 disposable 基础设施集成门禁
+	@$(MAKE) test-common-postgres
+	@$(MAKE) test-manager-mongodb-security
 	@$(MAKE) test-system-iam-postgres
 	@$(MAKE) test-asset-postgres
 	@$(MAKE) test-meta-postgres
@@ -137,9 +142,17 @@ test-integration: ## 严格串行运行所有已登记的 disposable 基础设�
 	@$(MAKE) test-develop-postgres
 	@$(MAKE) test-model-postgres
 	@$(MAKE) test-quality-postgres
+	@$(MAKE) test-security-postgres
 	@$(MAKE) test-service-postgres
 	@$(MAKE) test-standard-postgres
+	@$(MAKE) test-transfer-postgres
 	@$(MAKE) test-workbench-postgres
+
+test-common-postgres: ## 使用一次性 PostgreSQL 数据库运行 Common Engine Provider 与 execution store 集成门禁
+	@bash scripts/test/common-postgres-gate.sh
+
+test-manager-mongodb-security: ## 使用 MongoDB Outdoor/Persons 运行 Manager 数据保护集成门禁
+	@bash scripts/test/manager-mongodb-security-gate.sh
 
 test-system-iam-postgres: ## 使用一次性 PostgreSQL 数据库运行 System IAM 发布门禁
 	@bash scripts/test/system-iam-postgres-gate.sh
@@ -147,7 +160,7 @@ test-system-iam-postgres: ## 使用一次性 PostgreSQL 数据库运行 System I
 test-asset-postgres: ## 使用一次性 PostgreSQL 数据库运行 Asset 授权履约迁移门禁
 	@bash scripts/test/asset-postgres-gate.sh
 
-test-meta-postgres: ## 使用一次性 PostgreSQL 数据库运行 Meta 变化源集成门禁
+test-meta-postgres: ## 使用一次性 PostgreSQL 数据库运行 Meta 迁移集成门禁
 	@bash scripts/test/meta-postgres-gate.sh
 
 test-catalog-postgres: ## 使用一次性 PostgreSQL 数据库运行 Catalog 约束集成门禁
@@ -162,13 +175,19 @@ test-model-postgres: ## 使用一次性 PostgreSQL 数据库运行 Model 物化�
 test-quality-postgres: ## 使用一次性 PostgreSQL 数据库运行 Quality 集成门禁
 	@bash scripts/test/quality-postgres-gate.sh
 
-test-service-postgres: ## 使用一次性 PostgreSQL 数据库运行 Service Consumer Catalog 集成门禁
+test-security-postgres: ## 使用一次性 PostgreSQL 数据库运行 Security 集成门禁
+	@bash scripts/test/security-postgres-gate.sh
+
+test-service-postgres: ## 使用一次性 PostgreSQL 数据库运行 Service 数据保护与 Consumer Catalog 集成门禁
 	@bash scripts/test/service-postgres-gate.sh
 
 test-standard-postgres: ## 使用一次性 PostgreSQL 数据库运行 Standard 集成门禁
 	@bash scripts/test/standard-postgres-gate.sh
 
-test-workbench-postgres: ## 使用一次性 PostgreSQL 数据库运行 Workbench View 与 Data Application 集成门禁
+test-transfer-postgres: ## 使用一次性 PostgreSQL 数据库运行 Transfer 受保护导出集成门禁
+	@bash scripts/test/transfer-postgres-gate.sh
+
+test-workbench-postgres: ## 使用一次性 PostgreSQL 数据库运行 Workbench Data Application 集成门禁
 	@bash scripts/test/workbench-postgres-gate.sh
 
 test-arcgis-open-formats: ## 使用真实 Access/PGeo 样本和 Oracle Spatial 运行集成门禁
@@ -239,6 +258,10 @@ test-quality-frontend: ## 运行 Quality 前端路由、浏览器与构建门禁
 	@cd quality/frontend && npm run test:route
 	@cd quality/frontend && npm run test:e2e
 	@cd quality/frontend && npm run build
+
+test-security-frontend: ## 运行 Security 前端确定性测试与构建
+	@cd security/frontend && npm test
+	@cd security/frontend && npm run build
 
 test-agent-frontend: ## 运行 Agent 前端确定性测试与构建门禁
 	@cd agent/frontend && npm test
@@ -369,7 +392,7 @@ test: test-platform test-go test-common-python test-agent-eval test-copilot \
 	test-agent-frontend test-asset-frontend test-catalog-frontend test-console-frontend test-develop-frontend \
 	test-graph-frontend test-inference-frontend test-manager-frontend test-meta-frontend \
 	test-model-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend \
-	test-quality-frontend test-service-frontend test-standard-frontend test-system-frontend \
+	test-quality-frontend test-security-frontend test-service-frontend test-standard-frontend test-system-frontend \
 	test-transfer-frontend test-workbench-frontend ## 运行全部无外部服务的确定性测试与构建门禁
 	@echo "$(GREEN)全部确定性测试与构建门禁完成$(NC)"
 

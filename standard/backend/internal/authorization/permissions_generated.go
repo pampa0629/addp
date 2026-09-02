@@ -5,10 +5,6 @@ package authorization
 
 const (
 	PermissionStandardCatalogRead              = "standard.catalog.read"
-	PermissionStandardClassificationCreate     = "standard.classification.create"
-	PermissionStandardClassificationDelete     = "standard.classification.delete"
-	PermissionStandardClassificationRead       = "standard.classification.read"
-	PermissionStandardClassificationUpdate     = "standard.classification.update"
 	PermissionStandardCodeSetCreate            = "standard.code_set.create"
 	PermissionStandardCodeSetDelete            = "standard.code_set.delete"
 	PermissionStandardCodeSetPublish           = "standard.code_set.publish"
@@ -51,10 +47,6 @@ const (
 
 var permissionKeys = [...]string{
 	"standard.catalog.read",
-	"standard.classification.create",
-	"standard.classification.delete",
-	"standard.classification.read",
-	"standard.classification.update",
 	"standard.code_set.create",
 	"standard.code_set.delete",
 	"standard.code_set.publish",

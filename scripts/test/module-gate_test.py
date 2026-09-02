@@ -26,6 +26,7 @@ class ModuleGateTest(unittest.TestCase):
         for relative_path in (
             "sample/backend/go.mod",
             "sample/frontend/package.json",
+            "scripts/test/sample-mongodb-security-gate.sh",
             "scripts/test/sample-postgres-gate.sh",
         ):
             path = self.repository / relative_path
@@ -35,6 +36,7 @@ class ModuleGateTest(unittest.TestCase):
             "test-platform:\n\t@true\n"
             "test-sample-eval:\n\t@true\n"
             "test-sample-frontend:\n\t@true\n"
+            "test-sample-mongodb-security:\n\t@true\n"
             "test-sample-postgres:\n\t@true\n",
             encoding="utf-8",
         )
@@ -51,6 +53,7 @@ class ModuleGateTest(unittest.TestCase):
                 ("go", "test", "./..."),
                 ("make", "test-sample-eval"),
                 ("make", "test-sample-frontend"),
+                ("make", "test-sample-mongodb-security"),
                 ("make", "test-sample-postgres"),
             ],
             [step.command for step in steps],

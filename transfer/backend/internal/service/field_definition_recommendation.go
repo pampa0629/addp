@@ -49,11 +49,16 @@ type fieldRecommendationEngineGetter interface {
 }
 
 type FieldDefinitionRecommendationService struct {
-	engines fieldRecommendationEngineGetter
+	engines        fieldRecommendationEngineGetter
+	protectionGate interface {
+		RequireLocator(context.Context, uint, string) error
+	}
 }
 
-func NewFieldDefinitionRecommendationService(engines fieldRecommendationEngineGetter) *FieldDefinitionRecommendationService {
-	return &FieldDefinitionRecommendationService{engines: engines}
+func NewFieldDefinitionRecommendationService(engines fieldRecommendationEngineGetter, protectionGate interface {
+	RequireLocator(context.Context, uint, string) error
+}) *FieldDefinitionRecommendationService {
+	return &FieldDefinitionRecommendationService{engines: engines, protectionGate: protectionGate}
 }
 
 func (s *FieldDefinitionRecommendationService) Recommend(
@@ -61,7 +66,7 @@ func (s *FieldDefinitionRecommendationService) Recommend(
 	tenantID uint,
 	request FieldDefinitionRecommendationRequest,
 ) (*FieldDefinitionRecommendationResult, error) {
-	if s == nil || s.engines == nil {
+	if s == nil || s.engines == nil || s.protectionGate == nil {
 		return nil, ErrFieldRecommendationUnavailable
 	}
 	if !strings.EqualFold(strings.TrimSpace(request.TargetEngineType), "mysql") {
@@ -74,6 +79,9 @@ func (s *FieldDefinitionRecommendationService) Recommend(
 	locator, err := resourcetree.ParseURI(strings.TrimSpace(request.SourceLocator))
 	if err != nil || locator.EngineID == 0 || locator.Type != resourcetree.TypeTable || locator.ItemID == nil {
 		return nil, fmt.Errorf("%w: source_locator must identify a scanned table item", ErrFieldRecommendationInvalid)
+	}
+	if err := s.protectionGate.RequireLocator(ctx, tenantID, request.SourceLocator); err != nil {
+		return nil, err
 	}
 	engine, err := s.engines.GetEngineForTenant(ctx, tenantID, locator.EngineID)
 	if err != nil || !engineselection.IsAvailable(engine) {

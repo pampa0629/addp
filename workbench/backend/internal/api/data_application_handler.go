@@ -45,18 +45,17 @@ func (h *Handler) ListDataApplications(c *gin.Context) {
 	commonapi.RespondPaginated(c, items, total, page, pageSize)
 }
 
-// CreateDataApplication 从当前用户的 Workbench View 创建独立数据应用。
+// CreateDataApplication 从完整组件快照创建数据应用。
 // @Summary 创建数据应用 | Create a data application
-// @Description 重新校验来源 View 的 Service 契约并复制为 Component 快照；不保存 source_view_ids | Revalidate source View Service contracts and copy them into Component snapshots; source_view_ids are not persisted
+// @Description 逐一重新校验 Component 的 Service 契约，并使用当前权威指纹归一化完整应用草稿 | Revalidate every Component Service contract and normalize the complete application draft with authoritative current fingerprints
 // @Tags Workbench Data Applications
 // @Accept json
 // @Produce json
-// @Param request body models.DataApplicationCreateRequest true "数据应用名称和来源 View | Data application name and source Views"
+// @Param request body models.DataApplicationCreateRequest true "数据应用名称和完整草稿 | Data application name and complete draft"
 // @Success 201 {object} models.DataApplicationResponse "新建数据应用 | Created data application"
 // @Failure 400 {object} map[string]interface{} "配置无效 | Invalid configuration"
 // @Failure 401 {object} map[string]interface{} "未认证 | Unauthorized"
 // @Failure 403 {object} map[string]interface{} "Workbench 或 Service 权限不足 | Insufficient Workbench or Service permission"
-// @Failure 404 {object} map[string]interface{} "来源 View 不存在 | Source View not found"
 // @Failure 503 {object} map[string]interface{} "Service 不可用 | Service unavailable"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["workbench.data_application.create"]
@@ -102,7 +101,7 @@ func (h *Handler) GetDataApplication(c *gin.Context) {
 
 // UpdateDataApplication 完整替换数据应用草稿。
 // @Summary 更新数据应用草稿 | Update a data application draft
-// @Description Component ID 和 ServiceReference 不可改变；使用正整数 version 乐观并发并重新校验所有 Service 契约 | Component IDs and ServiceReferences are immutable; use positive version optimistic concurrency and revalidate every Service contract
+// @Description 允许增删改 Component；使用正整数 version 乐观并发，并逐一重新校验所有 Service 契约 | Allow adding, removing, and editing Components; use positive version optimistic concurrency and revalidate every Service contract
 // @Tags Workbench Data Applications
 // @Accept json
 // @Produce json

@@ -30,3 +30,15 @@ test('binding aliases are stable SQL-safe names', () => {
   assert.equal(bindingAlias('DWD Outdoor Person', 5), 'dwd_outdoor_person')
   assert.equal(bindingAlias('123', 5), 'table_5')
 })
+
+test('allowed_values assertions round-trip without UI metadata', () => {
+  const assertion = createMaterializationGateAssertion('allowed_values', '123e4567-e89b-12d3-a456-426614174001')
+  Object.assign(assertion.params, { table: 'participation', column: 'member_status', values: ['signup', 'leader'] })
+  const document = buildMaterializationGateDocument([assertion])
+  assert.deepEqual(document.assertions[0].params, {
+    table: 'participation',
+    column: 'member_status',
+    values: ['signup', 'leader']
+  })
+  assert.deepEqual(parseMaterializationGateDocument(document)[0].params.values, ['signup', 'leader'])
+})

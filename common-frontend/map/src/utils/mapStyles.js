@@ -5,6 +5,8 @@ import Style from 'ol/style/Style.js'
 import Fill from 'ol/style/Fill.js'
 import Stroke from 'ol/style/Stroke.js'
 import CircleStyle from 'ol/style/Circle.js'
+import { asArray } from 'ol/color.js'
+import { thematicColorVariable, thematicIndexForValue } from './thematicMap.mjs'
 
 /**
  * 创建默认的矢量要素样式函数
@@ -52,4 +54,37 @@ export function createHighlightStyle() {
       stroke: new Stroke({ color: '#FFD700', width: 2 })
     })
   })
+}
+
+export function createThematicFeatureStyle(feature, context) {
+  if (!context?.valid || context.mode === 'uniform' || !context.field) return null
+  const original = feature.get?.('originalFeature')
+  const value = original?.properties?.[context.field]
+  const index = thematicIndexForValue(value, context)
+  const count = Math.max(1, context.entries?.length || 1)
+  const variable = thematicColorVariable(index, count, context.palette)
+  const color = getComputedStyle(document.documentElement).getPropertyValue(variable).trim()
+  if (!color) return null
+
+  const geometryType = feature.getGeometry?.()?.getType?.() || ''
+  const strokeColor = withAlpha(color, 0.95)
+  if (geometryType.includes('Point')) {
+    return new Style({
+      image: new CircleStyle({
+        radius: 6,
+        fill: new Fill({ color: withAlpha(color, 0.85) }),
+        stroke: new Stroke({ color: strokeColor, width: 2 }),
+      }),
+    })
+  }
+  if (geometryType.includes('Line')) return new Style({ stroke: new Stroke({ color: strokeColor, width: 3 }) })
+  return new Style({
+    fill: new Fill({ color: withAlpha(color, 0.42) }),
+    stroke: new Stroke({ color: strokeColor, width: 1.5 }),
+  })
+}
+
+function withAlpha(color, alpha) {
+  const [red, green, blue] = asArray(color)
+  return [red, green, blue, alpha]
 }

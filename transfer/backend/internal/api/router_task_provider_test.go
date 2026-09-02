@@ -29,7 +29,7 @@ func TestTransferTaskProviderRoutesRequireOrchestratorRuntimeIdentity(t *testing
 	})
 	defer authServer.Close()
 
-	router := SetupRouter(nil, nil, nil, authServer.URL, "", nil, nil, nil, modulelifecycle.NewStandalone("transfer"))
+	router := SetupRouter(nil, nil, nil, nil, authServer.URL, "", nil, nil, nil, modulelifecycle.NewStandalone("transfer"))
 
 	for _, test := range []struct {
 		name  string

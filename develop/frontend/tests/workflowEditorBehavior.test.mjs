@@ -85,9 +85,9 @@ assert.match(executionParameterForm, /disabled: \{ type: Boolean, default: false
 assert.match(executionParameterForm, /defineExpose\(\{ focus \}\)/)
 assert.doesNotMatch(executionParameterForm, /executionParameters\.default/)
 assert.doesNotMatch(executionParameterForm, /executionParameters\.fixed/)
-assert.equal(commonZhCnMessages.common.executionParameters.workflowConfiguration, '工作流配置')
+assert.equal(commonZhCnMessages.common.executionParameters.workflowConfiguration, '任务默认值')
 assert.equal(commonZhCnMessages.common.executionParameters.executionOverride, '执行时指定')
-assert.equal(commonEnMessages.common.executionParameters.workflowConfiguration, 'Workflow configuration')
+assert.equal(commonEnMessages.common.executionParameters.workflowConfiguration, 'Task default')
 assert.equal(commonEnMessages.common.executionParameters.executionOverride, 'Execution override')
 assert.equal(commonZhCnMessages.common.executionParameters.geometryDetected, '已从资源元数据自动识别')
 assert.equal(commonEnMessages.common.executionParameters.geometryDetected, 'Detected automatically from resource metadata')
@@ -97,6 +97,13 @@ assert.deepEqual(
     { save: { order: 2 }, load: { order: 0 }, buffer: { order: 1 } }
   ).map(([name]) => name),
   ['load', 'buffer', 'save']
+)
+assert.deepEqual(
+  summarizeExecutionResource(
+    { ui: { resource_binding: { mode: 'existing' } } },
+    {}
+  ),
+  { status: 'empty', engineId: 0, engineName: '', name: '', type: '' }
 )
 assert.deepEqual(
   summarizeExecutionResource(

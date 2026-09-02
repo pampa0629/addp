@@ -107,14 +107,64 @@ func neo4jDatabaseFromCatalogPath(path plugin.EngineCatalogPath) (string, bool) 
 	return segments[0].Name, true
 }
 
-func (p *Neo4jPlugin) ExecuteRuntimeQuery(ctx context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (*plugin.QueryResult, error) {
+func (p *Neo4jPlugin) PrepareQuery(_ context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (plugin.PreparedQuery, error) {
+	if !strings.EqualFold(strings.TrimSpace(req.Language), "cypher") || strings.TrimSpace(req.Query) == "" {
+		return nil, fmt.Errorf("Neo4j query runtime requires a non-empty Cypher query")
+	}
 	if req.TargetPath != nil {
 		if database, ok := neo4jDatabaseFromCatalogPath(*req.TargetPath); ok {
 			connInfo = cloneConnectionInfo(connInfo)
 			connInfo["database"] = database
 		}
 	}
-	return p.executeQuery(ctx, connInfo, req.Query, req.Options)
+	if err := commonquery.ValidateCypher(req.Query, req.Options.Parameters); err != nil {
+		return nil, fmt.Errorf("绑定 Cypher 查询参数失败：%w", err)
+	}
+	preparedConnInfo := cloneConnectionInfo(connInfo)
+	preparedOptions := req.Options
+	preparedOptions.Args = cloneCypherValues(req.Options.Args)
+	if req.Options.Parameters != nil {
+		preparedOptions.Parameters = make(map[string]interface{}, len(req.Options.Parameters))
+		for key, value := range req.Options.Parameters {
+			preparedOptions.Parameters[key] = cloneCypherValue(value)
+		}
+	}
+	query := strings.TrimSpace(req.Query)
+	analysis, err := plugin.NewQueryAnalysis("cypher", plugin.QuerySchemaCoverageUnknown)
+	if err != nil {
+		return nil, err
+	}
+	return plugin.NewPreparedQuery(analysis, nil, nil, func(ctx context.Context) (*plugin.QueryResult, error) {
+		return p.executeQuery(ctx, cloneConnectionInfo(preparedConnInfo), query, preparedOptions)
+	})
+}
+
+func cloneCypherValues(values []interface{}) []interface{} {
+	if values == nil {
+		return nil
+	}
+	cloned := make([]interface{}, len(values))
+	for index, value := range values {
+		cloned[index] = cloneCypherValue(value)
+	}
+	return cloned
+}
+
+func cloneCypherValue(value interface{}) interface{} {
+	switch typed := value.(type) {
+	case []byte:
+		return append([]byte(nil), typed...)
+	case []interface{}:
+		return cloneCypherValues(typed)
+	case map[string]interface{}:
+		cloned := make(map[string]interface{}, len(typed))
+		for key, item := range typed {
+			cloned[key] = cloneCypherValue(item)
+		}
+		return cloned
+	default:
+		return value
+	}
 }
 
 func (p *Neo4jPlugin) ExecuteGraphQuery(ctx context.Context, connInfo plugin.ConnectionInfo, cypher string, opts plugin.QueryOptions) (*plugin.GraphQueryResult, error) {

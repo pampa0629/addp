@@ -55,8 +55,6 @@ export function buildElementRevisionPayload(revision, version, uniqueRuleKey, un
     range_constraint: revision.value_domain_kind === 'range' ? revision.range_constraint : null,
     code_set_revision_id: revision.value_domain_kind === 'enumeration' ? revision.code_set_revision_id : null,
     unit_id: revision.unit_id ?? null,
-    security_level: revision.security_level || '',
-    classification_id: revision.classification_id ?? null,
     example_values: revision.example_values || [],
     extra_quality_rules: {
       schema_version: 'addp.quality.rules/v1',

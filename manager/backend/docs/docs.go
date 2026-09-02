@@ -508,6 +508,13 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "403": {
+                        "description": "已纳管资源当前禁止剖析 | Profiling is denied for the managed resource",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
                     "422": {
                         "description": "资源不支持剖析 | Resource is not profileable",
                         "schema": {
@@ -594,6 +601,13 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "已纳管资源当前禁止剖析 | Profiling is denied for the managed resource",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -5256,7 +5270,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "仅 addp-meta 可按当前 Tenant 幂等覆盖一个 DataItem 内容文档 | Only addp-meta may idempotently replace a DataItem content document in the current tenant",
+                "description": "仅 addp-meta 可按当前 Tenant 幂等覆盖一个显式标记为 technical_metadata 或 extracted_content 的 DataItem 检索投影；已纳管正文必须通过 search_index 门禁 | Only addp-meta may idempotently replace a DataItem search projection explicitly marked technical_metadata or extracted_content; managed content must pass the search_index gate",
                 "consumes": [
                     "application/json"
                 ],
@@ -5285,6 +5299,27 @@ const docTemplate = `{
                 "responses": {
                     "204": {
                         "description": "No Content"
+                    },
+                    "400": {
+                        "description": "请求契约无效 | Invalid request contract",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "已纳管内容尚无可执行 search_index 投影 | Managed content has no executable search_index projection",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "内容索引不可用 | Content index unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -5344,6 +5379,13 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "混合检索失败 | Hybrid search failed",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -7166,6 +7208,9 @@ const docTemplate = `{
                 "content_preview": {
                     "type": "string"
                 },
+                "content_truncated": {
+                    "type": "boolean"
+                },
                 "content_type": {
                     "type": "string"
                 },
@@ -7229,6 +7274,13 @@ const docTemplate = `{
                 },
                 "path": {
                     "type": "string"
+                },
+                "payload_kind": {
+                    "type": "string",
+                    "enum": [
+                        "technical_metadata",
+                        "extracted_content"
+                    ]
                 },
                 "projection_time": {
                     "type": "string"

@@ -46,6 +46,9 @@ other = "The execution authorization changed concurrently. Please retry."
 [develop.query.authorization_unavailable]
 other = "The execution authorization service is temporarily unavailable. Please retry later."
 
+[develop.query.analysis_unavailable]
+other = "The query analysis service is temporarily unavailable. Please retry later."
+
 [develop.query.execution_failed]
 other = "SQL execution failed"
 

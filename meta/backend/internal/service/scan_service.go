@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/events"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
@@ -33,6 +35,25 @@ type ScanService struct {
 	indexerService              *IndexerService            // 索引服务（独立）
 	scanEventPublisher          *events.ScanEventPublisher // 扫描事件发布器
 	dedupService                *ScanDedupService          // 扫描去重服务（可选）
+}
+
+func (s *ScanService) ReadDataItemSecuritySample(ctx context.Context, tenantID uint, fingerprint string) (*dataprotection.DataItemSecuritySample, error) {
+	if s == nil || tenantID == 0 || strings.TrimSpace(fingerprint) == "" {
+		return nil, fmt.Errorf("DataItem security sample identity is required")
+	}
+	item, err := s.repo.GetItemByFingerprint(tenantID, strings.TrimSpace(fingerprint))
+	if err != nil {
+		return nil, err
+	}
+	resource, err := s.engineService.GetResourceByIDWithContext(ctx, item.EngineID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	enginePlugin, err := s.engineService.ResolveScanPlugin(ctx, resource, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	return s.runtimes.ItemRefresh.ReadDocumentSecuritySampleByIDWithPlugin(ctx, enginePlugin, resource, tenantID, item.ID)
 }
 
 func NewScanService(db *gorm.DB, engineService *EngineService) *ScanService {

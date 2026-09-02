@@ -190,7 +190,7 @@ func (s *ElementService) revisionFromCreate(req *models.CreateElementRequest, te
 		Name: strings.TrimSpace(req.Name), Definition: strings.TrimSpace(req.Definition), DataType: strings.TrimSpace(req.DataType), Length: req.Length,
 		PrecisionNum: req.PrecisionNum, Scale: req.Scale, Nullable: req.Nullable, DefaultValue: req.DefaultValue, Format: req.Format,
 		ValueDomainKind: req.ValueDomainKind, RangeConstraint: req.RangeConstraint, CodeSetRevisionID: req.CodeSetRevisionID,
-		UnitID: req.UnitID, SecurityLevel: req.SecurityLevel, ClassificationID: req.ClassificationID, ExampleValues: req.ExampleValues,
+		UnitID: req.UnitID, ExampleValues: req.ExampleValues,
 		ExtraQualityRules: extra, ChangeSummary: strings.TrimSpace(req.ChangeSummary), EffectiveFrom: req.EffectiveFrom, EffectiveTo: req.EffectiveTo, CreatedBy: userID,
 	}
 	if err := s.validateRevision(revision, tenantID); err != nil {
@@ -208,7 +208,7 @@ func (s *ElementService) revisionFromUpdate(elementID, revisionID int64, req *mo
 		ID: revisionID, ElementID: elementID, Name: strings.TrimSpace(req.Name), Definition: strings.TrimSpace(req.Definition), DataType: strings.TrimSpace(req.DataType),
 		Length: req.Length, PrecisionNum: req.PrecisionNum, Scale: req.Scale, Nullable: req.Nullable, DefaultValue: req.DefaultValue, Format: req.Format,
 		ValueDomainKind: req.ValueDomainKind, RangeConstraint: req.RangeConstraint, CodeSetRevisionID: req.CodeSetRevisionID,
-		UnitID: req.UnitID, SecurityLevel: req.SecurityLevel, ClassificationID: req.ClassificationID, ExampleValues: req.ExampleValues,
+		UnitID: req.UnitID, ExampleValues: req.ExampleValues,
 		ExtraQualityRules: extra, ChangeSummary: strings.TrimSpace(req.ChangeSummary), EffectiveFrom: req.EffectiveFrom, EffectiveTo: req.EffectiveTo, UpdatedBy: &userID,
 	}
 	if err := s.validateRevision(revision, tenantID); err != nil {
@@ -241,16 +241,10 @@ func (s *ElementService) validateRevision(revision *models.ElementRevision, tena
 	if revision.Format != "" && dataType != "string" && dataType != "text" && dataType != "date" && dataType != "datetime" {
 		return fmt.Errorf("%w: format is incompatible with data_type", ErrInvalidStandardRevision)
 	}
-	if revision.SecurityLevel != "" && revision.SecurityLevel != "L1" && revision.SecurityLevel != "L2" && revision.SecurityLevel != "L3" && revision.SecurityLevel != "L4" {
-		return fmt.Errorf("%w: invalid security_level", ErrInvalidStandardRevision)
-	}
 	if revision.EffectiveFrom != nil && revision.EffectiveTo != nil && !revision.EffectiveFrom.Before(*revision.EffectiveTo) {
 		return fmt.Errorf("%w: effective_from must precede effective_to", ErrInvalidStandardRevision)
 	}
 	if err := s.refs.RequireUnit(tenantID, revision.UnitID); err != nil {
-		return err
-	}
-	if err := s.refs.RequireClassification(tenantID, revision.ClassificationID); err != nil {
 		return err
 	}
 	switch revision.ValueDomainKind {

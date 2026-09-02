@@ -49,6 +49,7 @@ func NewTabularCapabilities(engineType, namespaceTerm string, opts TabularCapabi
 				ResultKinds:     []string{"table", "scalar"},
 				SupportsExplain: opts.SupportsExplain,
 				SupportsCancel:  opts.SupportsCancel,
+				ReadSession:     opts.QueryReadSession,
 				Parameters:      queryParameterCapability(opts.SupportsParameters, "sql"),
 			},
 		},
@@ -89,6 +90,7 @@ type TabularCapabilityOptions struct {
 	Write                                 bool
 	BulkWrite                             bool
 	TableReadSession                      bool
+	QueryReadSession                      bool
 	TableReadSpatialTransform             bool
 	TableSpatialEncoding                  *NativeTableSpatialEncodingCapability
 	BatchWrite                            bool
@@ -338,6 +340,9 @@ func storeCapabilitySemantics(store *StoreCapability) []string {
 	}
 	if store.RecordReadSession {
 		semantics = append(semantics, "record_read_session")
+	}
+	if store.EncodedRecordReadSession != nil {
+		semantics = append(semantics, "encoded_record_read_session")
 	}
 	if store.TableReadSpatialTransform {
 		semantics = append(semantics, "table_read_spatial_transform")

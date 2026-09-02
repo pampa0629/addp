@@ -234,7 +234,7 @@
       "configTypeNote": "（配置方式创建后不可变更）",
       "serviceNameLabel": "服务名称",
       "serviceNamePlaceholder": "例如: beijing_poi",
-      "serviceNameHelp": "仅支持英文、数字和下划线，用于服务 URL",
+      "serviceNameHelp": "仅支持小写英文字母、数字、下划线和连字符，用于服务 URL",
       "titleLabel": "服务标题",
       "titlePlaceholder": "例如: 北京POI数据查询",
       "descriptionLabel": "服务描述",

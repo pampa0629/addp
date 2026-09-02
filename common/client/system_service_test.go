@@ -60,9 +60,9 @@ func TestSystemServiceClientListsInitializedActiveCatalogTenantsWithPlatformToke
 	defer server.Close()
 
 	client := NewSystemServiceClient(server.URL, staticSystemServiceTokenSource("platform-token"), server.Client())
-	tenantIDs, err := client.ListCatalogTenantIDs(context.Background())
+	tenantIDs, err := client.ListRuntimeTenantIDs(context.Background())
 	if err != nil {
-		t.Fatalf("ListCatalogTenantIDs() error = %v", err)
+		t.Fatalf("ListRuntimeTenantIDs() error = %v", err)
 	}
 	if requests != 1 || len(tenantIDs) != 1 || tenantIDs[0] != 7 {
 		t.Fatalf("tenant IDs = %#v, requests = %d", tenantIDs, requests)

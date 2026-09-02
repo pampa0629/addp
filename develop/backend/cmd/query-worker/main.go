@@ -11,6 +11,7 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
+	"github.com/addp/common/dataprotection/projectionstore"
 	"github.com/addp/common/dbbridge"
 	_ "github.com/addp/common/engine/plugins/builtin/general"
 	commonExecution "github.com/addp/common/execution"
@@ -18,6 +19,7 @@ import (
 	"github.com/addp/common/modulelifecycle"
 	commonRuntimeHealth "github.com/addp/common/runtimehealth"
 	"github.com/addp/develop/backend/internal/config"
+	developprotection "github.com/addp/develop/backend/internal/protection"
 	"github.com/addp/develop/backend/internal/repository"
 	"github.com/addp/develop/backend/internal/service"
 	"github.com/addp/develop/backend/internal/worker"
@@ -47,11 +49,18 @@ func main() {
 		log.Fatalf("Develop Service Token Source 初始化失败: %v", err)
 	}
 	systemService := commonClient.NewSystemServiceClient(cfg.SystemServiceURL, tokenSource, nil)
+	protectionStore, err := projectionstore.New(db, cfg.DBSchema, "develop", nil)
+	if err != nil {
+		log.Fatalf("Develop 保护投影存储初始化失败: %v", err)
+	}
+	protectionGate := developprotection.NewGate(protectionStore)
 	executionAuthorizationClient := commonClient.NewSystemExecutionAuthorizationClient(cfg.SystemServiceURL, nil)
 	metaClient := commonClient.NewMetaClient(cfg.MetaServiceURL, tokenSource)
 	queryPolicyService := service.NewQueryPolicyService(repository.NewQueryPolicyRepository(db))
 	sqlEngine := service.NewSQLEngineService(cfg, systemService, executionAuthorizationClient, queryPolicyService)
+	sqlEngine.SetProtectionGate(protectionGate)
 	federatedQuery := service.NewFederatedQueryService(systemService, metaClient)
+	federatedQuery.SetProtectionGate(protectionGate)
 	executionRepo := commonExecution.NewTaskExecutionRepository(db)
 	devExecutor := service.NewDevExecutor(
 		repository.NewDevTaskRepository(db), executionRepo, nil, nil, metaClient,

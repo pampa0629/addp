@@ -41,6 +41,7 @@ const (
 	MsgExecutionEffectForbidden               = "develop.query.effect_permission_denied"
 	MsgExecutionConflict                      = "develop.query.authorization_conflict"
 	MsgExecutionAuthorizationUnavailable      = "develop.query.authorization_unavailable"
+	MsgQueryAnalysisUnavailable               = "develop.query.analysis_unavailable"
 	MsgSQLExecutionFailed                     = "develop.query.execution_failed"
 	MsgConnectionTestSuccess                  = "develop.query.connection_test_success"
 	MsgConnectionTestFailed                   = "develop.query.connection_test_failed"

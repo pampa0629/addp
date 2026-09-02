@@ -25,7 +25,6 @@ var applicationParameterKeyPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_.-]
 type dataApplicationRepository interface {
 	List(tenantID, ownerUserID int64, offset, limit int) ([]models.DataApplication, int64, error)
 	Get(tenantID, ownerUserID int64, id string) (*models.DataApplication, error)
-	GetSourceViews(tenantID, ownerUserID int64, ids []string) ([]models.View, error)
 	Create(*models.DataApplication) error
 	Update(*models.DataApplication, int64) error
 	Publish(tenantID, ownerUserID int64, id string, expectedVersion int64, publishedBy int64) (*models.DataApplicationRevision, error)
@@ -71,27 +70,10 @@ func (s *DataApplicationService) Get(tenantID, ownerUserID int64, id string) (*m
 
 func (s *DataApplicationService) Create(ctx context.Context, tenantID, ownerUserID int64, descriptorRequest DescriptorRequest, input models.DataApplicationCreateRequest) (*models.DataApplicationResponse, error) {
 	name, description, err := validateDataApplicationIdentity(input.Name, input.Description)
-	if err != nil || tenantID <= 0 || ownerUserID <= 0 || len(input.SourceViewIDs) == 0 || len(input.SourceViewIDs) > maxDataApplicationComponents {
+	if err != nil || tenantID <= 0 || ownerUserID <= 0 {
 		return nil, ErrInvalidDataApplication
 	}
-	ids := make([]string, len(input.SourceViewIDs))
-	seen := make(map[string]struct{}, len(ids))
-	for index, rawID := range input.SourceViewIDs {
-		parsed, parseErr := uuid.Parse(strings.TrimSpace(rawID))
-		if parseErr != nil || parsed == uuid.Nil {
-			return nil, ErrInvalidDataApplication
-		}
-		ids[index] = parsed.String()
-		if _, duplicate := seen[ids[index]]; duplicate {
-			return nil, ErrInvalidDataApplication
-		}
-		seen[ids[index]] = struct{}{}
-	}
-	views, err := s.repository.GetSourceViews(tenantID, ownerUserID, ids)
-	if err != nil {
-		return nil, mapDataApplicationRepositoryError(err)
-	}
-	snapshot, err := s.snapshotFromViews(ctx, descriptorRequest, name, views)
+	snapshot, err := s.normalizeDraftSnapshot(ctx, descriptorRequest, input.Snapshot)
 	if err != nil {
 		return nil, err
 	}
@@ -122,17 +104,11 @@ func (s *DataApplicationService) Update(ctx context.Context, tenantID, ownerUser
 	if existing.Version != input.Version {
 		return nil, ErrDataApplicationVersionConflict
 	}
-	existingSnapshot, err := decodeDataApplicationSnapshot(existing.DraftSnapshot)
+	normalizedSnapshot, err := s.normalizeDraftSnapshot(ctx, descriptorRequest, input.Snapshot)
 	if err != nil {
 		return nil, err
 	}
-	if !sameApplicationComponentIdentity(existingSnapshot.Components, input.Snapshot.Components) {
-		return nil, ErrInvalidDataApplication
-	}
-	if err := s.validateSnapshot(ctx, descriptorRequest, input.Snapshot); err != nil {
-		return nil, err
-	}
-	normalized, contentHash, err := normalizeDataApplication(name, description, input.Snapshot)
+	normalized, contentHash, err := normalizeDataApplication(name, description, normalizedSnapshot)
 	if err != nil {
 		return nil, err
 	}
@@ -214,57 +190,22 @@ func (s *DataApplicationService) Runtime(tenantID, userID int64, id string) (*mo
 	}, nil
 }
 
-func (s *DataApplicationService) snapshotFromViews(ctx context.Context, request DescriptorRequest, applicationName string, views []models.View) (models.DataApplicationSnapshot, error) {
-	refreshIntervalSeconds := models.ApplicationRefreshIntervalDisabled
-	snapshot := models.DataApplicationSnapshot{
-		SchemaVersion: models.DataApplicationSnapshotSchemaVersion,
-		Page: models.DataApplicationPage{
-			ID: uuid.NewString(), Title: applicationName, DisplayMode: models.ApplicationDisplayModeDesktop,
-			RefreshIntervalSeconds: &refreshIntervalSeconds, VisibleSections: defaultApplicationVisibleSections(),
-		},
-		Components: make([]models.DataApplicationComponent, 0, len(views)),
-	}
-	for index, view := range views {
-		input, err := writeRequestFromView(view)
-		if err != nil {
-			return models.DataApplicationSnapshot{}, err
-		}
-		request.Ref = *input.ServiceRef
+func (s *DataApplicationService) normalizeDraftSnapshot(ctx context.Context, request DescriptorRequest, snapshot models.DataApplicationSnapshot) (models.DataApplicationSnapshot, error) {
+	canonicalizeDataApplicationSnapshot(&snapshot)
+	for index := range snapshot.Components {
+		component := &snapshot.Components[index]
+		request.Ref = component.ServiceRef
 		descriptor, err := s.descriptors.GetDescriptor(ctx, request)
 		if err != nil {
 			return models.DataApplicationSnapshot{}, err
 		}
-		if view.ContractFingerprint != descriptor.ContractFingerprint {
-			return models.DataApplicationSnapshot{}, fmt.Errorf("%w: source view contract changed", ErrInvalidDataApplication)
+		component.ContractFingerprint = descriptor.ContractFingerprint
+		if err := validateComponentConfiguration(componentConfigurationFromComponent(*component), descriptor); err != nil {
+			return models.DataApplicationSnapshot{}, ErrInvalidDataApplication
 		}
-		if err := validateViewRequest(input, descriptor); err != nil {
-			return models.DataApplicationSnapshot{}, fmt.Errorf("%w: invalid source view", ErrInvalidDataApplication)
-		}
-		componentID := uuid.NewString()
-		component := models.DataApplicationComponent{
-			ID: componentID, Title: view.Name, Description: view.Description,
-			ServiceRef: *input.ServiceRef, ContractFingerprint: view.ContractFingerprint,
-			ParameterDefinitions: input.ParameterDefinitions, QueryTemplate: input.QueryTemplate,
-			DefaultParameterValues: input.DefaultParameterValues, RendererType: input.RendererType,
-			RendererConfig: append([]byte(nil), input.RendererConfig...),
-		}
-		snapshot.Components = append(snapshot.Components, component)
-		snapshot.Page.Placements = append(snapshot.Page.Placements, models.DataApplicationComponentLayout{
-			ComponentID: componentID, X: 0, Y: index * 6, Width: 12, Height: 6,
-		})
-		for _, parameter := range input.ParameterDefinitions {
-			applicationKey := fmt.Sprintf("component_%d.%s", index+1, parameter.Key)
-			appParameter := models.DataApplicationParameter{
-				Key: applicationKey, Label: parameter.Label, ControlType: parameter.ControlType, Required: parameter.Required,
-			}
-			if value, ok := input.DefaultParameterValues[parameter.Key]; ok {
-				appParameter.DefaultValue = append([]byte(nil), value...)
-			}
-			snapshot.Parameters = append(snapshot.Parameters, appParameter)
-			snapshot.ParameterBindings = append(snapshot.ParameterBindings, models.DataApplicationParameterBinding{
-				ApplicationParameterKey: applicationKey, ComponentID: componentID, ComponentParameterKey: parameter.Key,
-			})
-		}
+	}
+	if err := s.validateSnapshot(ctx, request, snapshot); err != nil {
+		return models.DataApplicationSnapshot{}, err
 	}
 	return snapshot, nil
 }
@@ -278,7 +219,7 @@ func (s *DataApplicationService) validateSnapshot(ctx context.Context, request D
 		return ErrInvalidDataApplication
 	}
 	components := make(map[string]models.DataApplicationComponent, len(snapshot.Components))
-	componentParameters := make(map[string]map[string]models.ViewParameterDefinition, len(snapshot.Components))
+	componentParameters := make(map[string]map[string]models.ComponentParameterDefinition, len(snapshot.Components))
 	descriptors := make(map[string]*models.ConsumerDescriptor, len(snapshot.Components))
 	for _, component := range snapshot.Components {
 		componentID, parseErr := uuid.Parse(strings.TrimSpace(component.ID))
@@ -288,18 +229,18 @@ func (s *DataApplicationService) validateSnapshot(ctx context.Context, request D
 		if _, duplicate := components[component.ID]; duplicate {
 			return ErrInvalidDataApplication
 		}
-		input := viewRequestFromComponent(component)
+		input := componentConfigurationFromComponent(component)
 		request.Ref = component.ServiceRef
 		descriptor, readErr := s.descriptors.GetDescriptor(ctx, request)
 		if readErr != nil {
 			return readErr
 		}
-		if component.ContractFingerprint != descriptor.ContractFingerprint || validateViewRequest(input, descriptor) != nil {
+		if component.ContractFingerprint != descriptor.ContractFingerprint || validateComponentConfiguration(input, descriptor) != nil {
 			return ErrInvalidDataApplication
 		}
 		components[component.ID] = component
 		descriptors[component.ID] = descriptor
-		parameters := make(map[string]models.ViewParameterDefinition, len(component.ParameterDefinitions))
+		parameters := make(map[string]models.ComponentParameterDefinition, len(component.ParameterDefinitions))
 		for _, parameter := range component.ParameterDefinitions {
 			parameters[parameter.Key] = parameter
 		}
@@ -340,7 +281,7 @@ func validateApplicationPlacements(placements []models.DataApplicationComponentL
 	return nil
 }
 
-func validateApplicationParameters(parameters []models.DataApplicationParameter, bindings []models.DataApplicationParameterBinding, components map[string]models.DataApplicationComponent, componentParameters map[string]map[string]models.ViewParameterDefinition, descriptors map[string]*models.ConsumerDescriptor) error {
+func validateApplicationParameters(parameters []models.DataApplicationParameter, bindings []models.DataApplicationParameterBinding, components map[string]models.DataApplicationComponent, componentParameters map[string]map[string]models.ComponentParameterDefinition, descriptors map[string]*models.ConsumerDescriptor) error {
 	applicationParameters := make(map[string]models.DataApplicationParameter, len(parameters))
 	for _, parameter := range parameters {
 		if !applicationParameterKeyPattern.MatchString(parameter.Key) || strings.TrimSpace(parameter.Label) == "" || !allowedControlType(parameter.ControlType) {
@@ -399,13 +340,13 @@ func validateApplicationParameters(parameters []models.DataApplicationParameter,
 	return nil
 }
 
-func componentParameterFilter(component models.DataApplicationComponent, key string) (models.ViewParameterFilter, bool) {
+func componentParameterFilter(component models.DataApplicationComponent, key string) (models.ComponentParameterFilter, bool) {
 	for _, filter := range component.QueryTemplate.ParameterFilters {
 		if filter.ParameterKey == key {
 			return filter, true
 		}
 	}
-	return models.ViewParameterFilter{}, false
+	return models.ComponentParameterFilter{}, false
 }
 
 func validateSelectionBindings(bindings []models.DataApplicationSelectionBinding, parameters []models.DataApplicationParameter, parameterBindings []models.DataApplicationParameterBinding, components map[string]models.DataApplicationComponent, descriptors map[string]*models.ConsumerDescriptor) error {
@@ -623,29 +564,8 @@ func consumerField(descriptor *models.ConsumerDescriptor, name string) (models.C
 	return models.ConsumerQueryField{}, false
 }
 
-func writeRequestFromView(view models.View) (models.ViewWriteRequest, error) {
-	var parameters []models.ViewParameterDefinition
-	var query models.ViewQueryTemplate
-	var defaults map[string]json.RawMessage
-	if err := decodeStrict(json.RawMessage(view.ParameterDefinitions), &parameters); err != nil {
-		return models.ViewWriteRequest{}, fmt.Errorf("%w: decode source parameters", ErrInvalidDataApplication)
-	}
-	if err := decodeStrict(json.RawMessage(view.QueryTemplate), &query); err != nil {
-		return models.ViewWriteRequest{}, fmt.Errorf("%w: decode source query", ErrInvalidDataApplication)
-	}
-	if err := decodeStrict(json.RawMessage(view.DefaultParameterValues), &defaults); err != nil {
-		return models.ViewWriteRequest{}, fmt.Errorf("%w: decode source defaults", ErrInvalidDataApplication)
-	}
-	return models.ViewWriteRequest{
-		Name: view.Name, Description: view.Description,
-		ServiceRef:           &models.ServiceReference{ServiceType: view.ServiceType, ServiceID: view.ServiceID},
-		ParameterDefinitions: parameters, QueryTemplate: query, DefaultParameterValues: defaults,
-		RendererType: view.RendererType, RendererConfig: append([]byte(nil), view.RendererConfig...),
-	}, nil
-}
-
-func viewRequestFromComponent(component models.DataApplicationComponent) models.ViewWriteRequest {
-	return models.ViewWriteRequest{
+func componentConfigurationFromComponent(component models.DataApplicationComponent) models.ComponentConfiguration {
+	return models.ComponentConfiguration{
 		Name: component.Title, Description: component.Description, ServiceRef: &component.ServiceRef,
 		ParameterDefinitions: component.ParameterDefinitions, QueryTemplate: component.QueryTemplate,
 		DefaultParameterValues: component.DefaultParameterValues, RendererType: component.RendererType,
@@ -729,7 +649,7 @@ func canonicalizeDataApplicationSnapshot(snapshot *models.DataApplicationSnapsho
 	for index := range snapshot.Components {
 		component := &snapshot.Components[index]
 		if component.ParameterDefinitions == nil {
-			component.ParameterDefinitions = []models.ViewParameterDefinition{}
+			component.ParameterDefinitions = []models.ComponentParameterDefinition{}
 		}
 		if component.DefaultParameterValues == nil {
 			component.DefaultParameterValues = map[string]json.RawMessage{}
@@ -738,29 +658,12 @@ func canonicalizeDataApplicationSnapshot(snapshot *models.DataApplicationSnapsho
 			component.QueryTemplate.Select = []string{}
 		}
 		if component.QueryTemplate.ParameterFilters == nil {
-			component.QueryTemplate.ParameterFilters = []models.ViewParameterFilter{}
+			component.QueryTemplate.ParameterFilters = []models.ComponentParameterFilter{}
 		}
 		if component.QueryTemplate.OrderBy == nil {
 			component.QueryTemplate.OrderBy = []models.QueryOrder{}
 		}
 	}
-}
-
-func sameApplicationComponentIdentity(current, next []models.DataApplicationComponent) bool {
-	if len(current) != len(next) {
-		return false
-	}
-	identities := make(map[string]models.ServiceReference, len(current))
-	for _, component := range current {
-		identities[component.ID] = component.ServiceRef
-	}
-	for _, component := range next {
-		serviceRef, ok := identities[component.ID]
-		if !ok || serviceRef != component.ServiceRef {
-			return false
-		}
-	}
-	return true
 }
 
 func dataApplicationSummary(application models.DataApplication) models.DataApplicationSummaryResponse {
@@ -787,8 +690,6 @@ func mapDataApplicationRepositoryError(err error) error {
 	switch {
 	case err == nil:
 		return nil
-	case errors.Is(err, repository.ErrViewNotFound):
-		return ErrViewNotFound
 	case errors.Is(err, repository.ErrDataApplicationNotFound):
 		return ErrDataApplicationNotFound
 	case errors.Is(err, repository.ErrDataApplicationVersionConflict):

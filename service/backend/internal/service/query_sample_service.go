@@ -22,9 +22,18 @@ import (
 var ErrQuerySampleUnavailable = dbbridge.ErrSampleQueryUnavailable
 
 type QuerySampleService struct {
-	system  *client.SystemServiceClient
-	issuer  *client.SystemExecutionAuthorizationClient
-	catalog *federatedquery.Catalog
+	system         *client.SystemServiceClient
+	issuer         *client.SystemExecutionAuthorizationClient
+	catalog        *federatedquery.Catalog
+	protectionGate interface {
+		BeginUnresolvedRead(context.Context, uint) (func(), error)
+	}
+}
+
+func (s *QuerySampleService) SetProtectionGate(gate interface {
+	BeginUnresolvedRead(context.Context, uint) (func(), error)
+}) {
+	s.protectionGate = gate
 }
 
 // DescribeFederatedSQL 通过已授权的 DuckDB Runtime 获取 SQL 的真实输出结构。
@@ -39,6 +48,14 @@ func (s *QuerySampleService) DescribeFederatedSQL(
 		!strings.HasPrefix(userAccessToken, "addp_at_") || strings.TrimSpace(query) == "" {
 		return nil, errors.New("联邦 SQL 输出契约服务未正确初始化")
 	}
+	if s.protectionGate == nil {
+		return nil, errors.New("Service 查询样例保护门禁未配置")
+	}
+	endProtection, err := s.protectionGate.BeginUnresolvedRead(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer endProtection()
 	descriptor, err := s.system.WithTenantID(tenantID).GetEngineRuntimeDescriptor(ctx, runtimeEngineID)
 	if err != nil {
 		return nil, fmt.Errorf("获取联邦查询 Runtime 失败: %w", err)
@@ -215,6 +232,14 @@ func (s *QuerySampleService) Generate(
 		!strings.HasPrefix(userAccessToken, "addp_at_") {
 		return "", "", fmt.Errorf("查询样例服务未正确初始化")
 	}
+	if s.protectionGate == nil {
+		return "", "", fmt.Errorf("Service 查询样例保护门禁未配置")
+	}
+	endProtection, err := s.protectionGate.BeginUnresolvedRead(ctx, tenantID)
+	if err != nil {
+		return "", "", err
+	}
+	defer endProtection()
 	descriptor, err := s.system.WithTenantID(tenantID).GetEngineRuntimeDescriptor(ctx, engineID)
 	if err != nil {
 		return "", "", fmt.Errorf("获取查询引擎描述失败: %w", err)

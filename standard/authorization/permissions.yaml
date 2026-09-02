@@ -10,38 +10,6 @@ permissions:
     status: active
     name_i18n_key: permissions.standard.catalog.read.name
     description_i18n_key: permissions.standard.catalog.read.description
-  - key: standard.classification.create
-    allowed_scope_types: [tenant, department, project_group]
-    risk_level: medium
-    tenant_customizable: true
-    delegable: false
-    status: active
-    name_i18n_key: permissions.standard.classification.create.name
-    description_i18n_key: permissions.standard.classification.create.description
-  - key: standard.classification.delete
-    allowed_scope_types: [tenant, department, project_group]
-    risk_level: high
-    tenant_customizable: true
-    delegable: false
-    status: active
-    name_i18n_key: permissions.standard.classification.delete.name
-    description_i18n_key: permissions.standard.classification.delete.description
-  - key: standard.classification.read
-    allowed_scope_types: [tenant, department, project_group]
-    risk_level: low
-    tenant_customizable: true
-    delegable: false
-    status: active
-    name_i18n_key: permissions.standard.classification.read.name
-    description_i18n_key: permissions.standard.classification.read.description
-  - key: standard.classification.update
-    allowed_scope_types: [tenant, department, project_group]
-    risk_level: medium
-    tenant_customizable: true
-    delegable: false
-    status: active
-    name_i18n_key: permissions.standard.classification.update.name
-    description_i18n_key: permissions.standard.classification.update.description
   - key: standard.code_set.create
     allowed_scope_types: [tenant, department, project_group]
     risk_level: medium

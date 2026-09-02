@@ -13,8 +13,11 @@ func TestCompileExistingTableResultQueryQuotesRuntimeLocators(t *testing.T) {
 	task := &models.DevTask{
 		DevType: commonExecution.TaskTypeQuery,
 		Content: models.DevTaskContent{
-			"query_type": "sql", "query": "SELECT id, name FROM addp_input.source WHERE id > :minimum_id",
-			"relation_inputs": []interface{}{"source"},
+			"query_type": "sql", "query": "SELECT id, name FROM source WHERE id > :minimum_id",
+			"query_parameters": []interface{}{
+				map[string]interface{}{"name": "source", "type": "relation"},
+				map[string]interface{}{"name": "minimum_id", "type": "integer", "default": 0},
+			},
 		},
 		ExecutionConfig: models.DevTaskContent{"engine_id": 9},
 	}
@@ -40,8 +43,8 @@ func TestCompileExistingTableResultQueryQuotesRuntimeLocators(t *testing.T) {
 func TestCompileExistingTableResultQueryRejectsCrossEngineTarget(t *testing.T) {
 	task := &models.DevTask{
 		Content: models.DevTaskContent{
-			"query_type": "sql", "query": "SELECT * FROM addp_input.source",
-			"relation_inputs": []interface{}{"source"},
+			"query_type": "sql", "query": "SELECT * FROM source",
+			"query_parameters": []interface{}{map[string]interface{}{"name": "source", "type": "relation"}},
 		},
 	}
 	_, err := compileExistingTableResultQuery(
@@ -55,10 +58,31 @@ func TestCompileExistingTableResultQueryRejectsCrossEngineTarget(t *testing.T) {
 	}
 }
 
-func TestCompileRelationInputsAllowsScopedCTE(t *testing.T) {
-	bindings := []relationInputBinding{{Name: "source"}}
-	query := `WITH filtered AS (SELECT id FROM addp_input.source WHERE enabled) SELECT id FROM filtered`
-	compiled, err := compileRelationInputs(query, bindings, map[string]string{"source": `"stage"."source_1"`})
+func TestRelationRuntimeInputsReadDirectQueryParameterBindings(t *testing.T) {
+	relationLocators, targetLocator, err := relationRuntimeInputs(
+		models.DevTaskContent{
+			"query_parameters": []interface{}{map[string]interface{}{"name": "source", "type": "relation"}},
+		},
+		models.DevTaskContent{
+			"runtime_inputs": map[string]interface{}{
+				"source":         map[string]interface{}{"locator": "addp://engine/9/path/public/source?type=table"},
+				"target_locator": "addp://engine/9/path/public/result?type=table",
+			},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if relationLocators["source"] != "addp://engine/9/path/public/source?type=table" ||
+		targetLocator != "addp://engine/9/path/public/result?type=table" {
+		t.Fatalf("relationLocators = %#v, targetLocator = %q", relationLocators, targetLocator)
+	}
+}
+
+func TestCompileRelationParametersAllowsScopedCTE(t *testing.T) {
+	bindings := []relationParameterBinding{{Name: "source"}}
+	query := `WITH filtered AS (SELECT id FROM source WHERE enabled) SELECT id FROM filtered`
+	compiled, err := compileRelationParameters(query, bindings, map[string]string{"source": `"stage"."source_1"`})
 	if err != nil {
 		t.Fatalf("compile scoped CTE: %v", err)
 	}
@@ -68,10 +92,10 @@ func TestCompileRelationInputsAllowsScopedCTE(t *testing.T) {
 	}
 }
 
-func TestCompileRelationInputsPreservesPostgreSQLCast(t *testing.T) {
-	bindings := []relationInputBinding{{Name: "source"}}
-	query := `SELECT 'all'::text AS scope_type FROM addp_input.source`
-	compiled, err := compileRelationInputs(query, bindings, map[string]string{"source": `"stage"."source_1"`})
+func TestCompileRelationParametersPreservesPostgreSQLCast(t *testing.T) {
+	bindings := []relationParameterBinding{{Name: "source"}}
+	query := `SELECT 'all'::text AS scope_type FROM source`
+	compiled, err := compileRelationParameters(query, bindings, map[string]string{"source": `"stage"."source_1"`})
 	if err != nil {
 		t.Fatalf("compile PostgreSQL cast: %v", err)
 	}
@@ -81,20 +105,31 @@ func TestCompileRelationInputsPreservesPostgreSQLCast(t *testing.T) {
 	}
 }
 
-func TestCompileRelationInputsRejectsPhysicalRelation(t *testing.T) {
-	_, err := compileRelationInputs(
-		`SELECT input.id FROM addp_input.source input JOIN public.secret s ON s.id = input.id`,
-		[]relationInputBinding{{Name: "source"}},
+func TestCompileRelationParametersRejectsPhysicalRelation(t *testing.T) {
+	_, err := compileRelationParameters(
+		`SELECT source.id FROM source source JOIN public.secret s ON s.id = source.id`,
+		[]relationParameterBinding{{Name: "source"}},
 		map[string]string{"source": `"stage"."source_1"`},
 	)
-	if err == nil || !strings.Contains(err.Error(), "只能读取 addp_input") {
+	if err == nil || !strings.Contains(err.Error(), "不允许 schema 限定关系") {
 		t.Fatalf("physical relation error = %v", err)
 	}
 }
 
-func TestCompileRelationInputsRejectsOutOfScopeCTEReference(t *testing.T) {
+func TestCompileRelationParametersRejectsCTENameCollision(t *testing.T) {
+	_, err := compileRelationParameters(
+		`WITH source AS (SELECT 1 AS id) SELECT id FROM source`,
+		[]relationParameterBinding{{Name: "source"}},
+		map[string]string{"source": `"stage"."source_1"`},
+	)
+	if err == nil || !strings.Contains(err.Error(), "CTE 名称与 relation 查询参数重名") {
+		t.Fatalf("CTE collision error = %v", err)
+	}
+}
+
+func TestCompileRelationParametersRejectsOutOfScopeCTEReference(t *testing.T) {
 	query := `SELECT * FROM (WITH hidden AS (SELECT 1 AS id) SELECT id FROM hidden) nested JOIN hidden ON true`
-	_, err := compileRelationInputs(query, nil, map[string]string{})
+	_, err := compileRelationParameters(query, nil, map[string]string{})
 	if err == nil || !strings.Contains(err.Error(), "禁止物理关系: hidden") {
 		t.Fatalf("out-of-scope CTE error = %v", err)
 	}

@@ -36,7 +36,8 @@ import {
   applyExistingTargetFields,
   applySourceFieldNullability,
   applyTargetFieldDefinition,
-  buildAutomaticFieldMappings
+  buildAutomaticFieldMappings,
+  reconcileQueryOutputMappings
 } from './fieldMapping.mjs'
 import { mergeTopicFieldRecommendations } from './topicFieldRecommendations.mjs'
 import { buildRuntimeTableTarget, querySourceValid, withQuerySource } from './runtimeTarget.mjs'
@@ -747,6 +748,18 @@ export function useTaskWizardState() {
         fieldMappings.value = applySourceFieldNullability(fieldMappings.value, sourceFields.value)
       }
     }
+  }
+
+  function replaceSourceFields(fields, attributes = null) {
+    sourceFields.value = enrichSourceFieldsWithSpatialInfo(
+      Array.isArray(fields) ? fields : [],
+      attributes || sourceConfig.value?.sourceItem?.attributes || sourceConfig.value?.attributes || {}
+    )
+    fieldMappings.value = reconcileQueryOutputMappings(
+      sourceFields.value,
+      fieldMappings.value,
+      targetFields.value
+    )
   }
 
   function enrichSourceFieldsWithSpatialInfo(fields, attributes) {
@@ -1471,6 +1484,7 @@ export function useTaskWizardState() {
     applyAssistantSource,
     updateFormatCapabilities,
     loadSourceFields,
+    replaceSourceFields,
     updateSourceItem,
     updateTarget,
     setTargetBinding,

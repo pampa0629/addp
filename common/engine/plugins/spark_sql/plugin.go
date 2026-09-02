@@ -74,8 +74,8 @@ func (p *SparkSQLPlugin) GenerateSampleQuery(ctx context.Context, connInfo plugi
 	return plugin.SampleSQLForEngineCatalogPath(p.Type(), opts.Path, 10), "sql"
 }
 
-func (p *SparkSQLPlugin) ExecuteRuntimeQuery(ctx context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (*plugin.QueryResult, error) {
-	return p.ExecuteSQL(ctx, connInfo, req.Query, req.Options)
+func (p *SparkSQLPlugin) PrepareQuery(_ context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (plugin.PreparedQuery, error) {
+	return plugin.PrepareSQLRuntimeQuery(p, connInfo, req, nil, nil)
 }
 
 func (p *SparkSQLPlugin) SQLDialect() string {

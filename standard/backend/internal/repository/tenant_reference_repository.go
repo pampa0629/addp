@@ -28,10 +28,6 @@ func (r *TenantReferenceRepository) RequireUnit(tenantID int64, id *int64) error
 	return r.requireOne(&models.Unit{}, tenantID, id)
 }
 
-func (r *TenantReferenceRepository) RequireClassification(tenantID int64, id *int64) error {
-	return r.requireOne(&models.Classification{}, tenantID, id)
-}
-
 func (r *TenantReferenceRepository) RequireCodeSet(tenantID int64, id *int64) error {
 	return r.requireOne(&models.CodeSet{}, tenantID, id)
 }

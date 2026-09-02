@@ -27,6 +27,7 @@ mindmap
         transfer:数据传输
         meta:元数据
         catalog:企业资源目录
+        security:数据安全
         manager:数据管理
         develop:数据开发
         service:数据服务
@@ -110,6 +111,16 @@ mindmap
         生效区间 按业务时点解析
         码值项 从属修订
       数据字典 Meta+Catalog+Standard 组合视图
+    数据安全与隐私保护
+      SensitiveDataType 敏感数据类型
+      SecurityClassification 安全分类
+      SecurityGrade 安全等级
+      ProtectionEnrollment 显式纳管
+      SensitiveFinding 敏感发现候选
+      ResourceSecurityAssessment 正式资源评估
+      ProtectionPolicy 保护策略
+      ProtectionProjection Owner-specific 可执行投影
+      Owner 服务端出口执行
     数据开发
       开发方式（capabilities.compute）
         Query → 查询工作台
@@ -117,8 +128,8 @@ mindmap
         Notebook 开发 → Notebook编辑器
     数据服务消费
       Service Consumer Descriptor
-      Workbench View 个人消费配置
       Data Application 独立聚合根
+      Data Application Component 服务消费与呈现配置
       Application Revision 不可变发布快照
       Selection Binding 结果选择到应用参数
       Application Display Mode desktop与wallboard
@@ -165,6 +176,7 @@ mindmap
           Transfer Bounded Worker
           Transfer Continuous Worker
           Meta Scan Worker
+          Security Discovery Worker
         Backend 内嵌 Execution Worker
           Quality Check Worker
         非 Execution Worker
@@ -342,7 +354,20 @@ mindmap
 
 ---
 
-### 13. [认证与路由](addp登录认证的原理说明.md)
+### 13. [数据安全与隐私保护](addp数据安全与隐私保护体系图.md)
+
+**安全专业事实、显式纳管、保护策略与 Owner 出口执行**
+
+- Security 与 Standard、Catalog、IAM 和资源 Owner 的事实边界
+- Meta 技术事实之上的显式纳管和受控敏感发现
+- Finding、Assessment、Policy 和 ProtectionProjection 单一编译主路
+- Manager、Transfer、Develop 和 Service 本地执行保护投影
+
+📄 **[阅读完整文档 →](addp数据安全与隐私保护体系图.md)**
+
+---
+
+### 14. [认证与路由](addp登录认证的原理说明.md)
 
 **Browser AuthSession、登录恢复、静默刷新和 Console iframe 认证机制**
 
@@ -379,6 +404,7 @@ mindmap
 - **[数据项体系图](addp数据项体系图.md)** - engine、node、data item 链条和模块职责边界
 - **[数据类型和格式体系图](addp数据类型和格式体系图.md)** - 数据类型、文件格式、能力分层、provider / reader 体系
 - **[企业资源目录体系图](addp企业资源目录体系图.md)** - CatalogEntry、来源绑定、业务语义、责任和企业目录搜索边界
+- **[数据安全与隐私保护体系图](addp数据安全与隐私保护体系图.md)** - Security 事实所有权、显式纳管、发现评估、保护投影与 Owner 服务端出口执行
 
 ### 数据开发与编排
 
@@ -417,6 +443,10 @@ graph TB
     元数据 --> 字典[数据字典]
     目录 --> 字典
     标准 --> 字典
+    元数据 --> 安全[数据安全]
+    账号 --> 安全
+    安全 -. 专业事实联邦展示 .-> 目录
+    安全 --> 保护出口[Manager / Transfer / Develop / Service 出口]
     账号[账号与权限] --> 目录
     目录 --> 资产[数据资产]
     资产 --> 门户[资产门户]
@@ -447,6 +477,7 @@ graph TB
 
     class 模块 architecture
     class 引擎,元数据,类型,服务 engine
+    class 安全,保护出口 auth
     class 开发,编排,监控 data
     class 账号,隔离,认证 auth
 ```
@@ -459,6 +490,8 @@ graph TB
 5. **账号与权限**确保**基础设施隔离**和**认证与路由**的安全性
 6. **数据标准**以稳定身份承接长期引用，以不可变修订承接审核、发布和历史追溯；当前定义按生效区间和业务时点动态解析，数据元枚举值域固定引用码值集修订
 7. **数据字典**是 Meta、Catalog 与 Standard 的组合视图，不是 Standard 内独立复制的资源
+8. **数据安全**与 Catalog 并行消费 Meta 事实；它只分析显式纳管目标，以 owner 专业资源身份形成事实，不要求先建立 CatalogEntry
+9. **保护执行**不在 Security 中代理原始数据；Security 编译投影，资源 Owner 在服务端出口合并授权结果并执行更严效果
 
 ---
 

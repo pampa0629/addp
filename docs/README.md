@@ -111,9 +111,9 @@ AI 模型接入、在线厂商账号、内网模型服务、模型档案、场�
 
 ## Workbench 数据服务消费与数据应用主题
 
-处理已发布数据服务的动态查询、参数输入、表格/图表/地图展示、Workbench View、后续 Data Application、BI 能力边界或大屏展示模式时，建议按以下顺序阅读：
+处理已发布数据服务的动态查询、参数输入、表格/图表/地图展示、Data Application、BI 能力边界或大屏展示模式时，建议按以下顺序阅读：
 
-1. [术语表](concepts/addp术语表.md)：确认 Workbench、Workbench View、Data Application 和 Consumer Descriptor 等稳定平台术语。
+1. [术语表](concepts/addp术语表.md)：确认 Workbench、Data Application、Data Application Component 和 Consumer Descriptor 等稳定平台术语。
 2. [模块架构图](concepts/addp模块架构图.md)：确认 Console、System、Service、Asset 和 Portal 的现有边界。
 3. [数据服务体系图](concepts/addp数据服务体系图.md)：确认查询服务、瓦片服务和外部服务注册的发布与执行职责。
 4. [API 设计规范](spec/addp-API设计规范.md)：确认结构化查询、cursor 分页、Bearer、Service Principal 和 BFF 边界。
@@ -130,6 +130,17 @@ AI 模型接入、在线厂商账号、内网模型服务、模型档案、场�
 3. [企业资源目录实现规范](spec/addp企业资源目录实现规范.md)：确认身份、来源变化、状态机、权限、API、搜索和迁移约束。
 4. [账号与权限体系](concepts/addp账号与权限体系图.md)：确认 Department、Project Group、User 和 AuthContext。
 5. [企业资源目录与 Catalog 模块专题](next/ADDP企业资源目录能力专题.md)：查看阶段清单、决策记录和当前推进状态。
+
+## 数据安全与隐私保护主题
+
+处理敏感数据识别、安全分类分级、保护纳管、动态遮盖、Owner 出口保护或 Catalog 安全事实联邦展示时，建议按以下顺序阅读：
+
+1. [术语表](concepts/addp术语表.md)：确认 Security module、专业资源引用、Finding、Assessment、Policy 和 ProtectionProjection 等稳定术语。
+2. [数据安全与隐私保护体系图](concepts/addp数据安全与隐私保护体系图.md)：确认 Security、Meta、Catalog、Standard、IAM 和资源 Owner 的事实与执行边界。
+3. [数据安全与隐私保护实现规范](spec/addp数据安全与隐私保护实现规范.md)：确认纳管状态机、受控发现、投影 v1、变化流、Owner 失效关闭和首期 API 契约。
+4. [账号与权限体系](concepts/addp账号与权限体系图.md)：确认 AuthContext、Service Principal、Resource Grant / Policy 与 Security 保护效果的正交关系。
+5. [企业资源目录体系图](concepts/addp企业资源目录体系图.md)：确认 Catalog 是后续企业目录身份与联邦展示层，不是 Security 发现或保护生效的前置。
+6. [数据安全与隐私保护体系专题](next/ADDP数据安全与隐私保护体系专题.md)：查看推进阶段、已确认决策、Outdoor 手机号验收切片和待实施清单。
 
 ## 栅格、TIFF / COG 与空间快显主题
 

@@ -134,15 +134,16 @@ export function formatServiceEndpoints(service, baseURL = '') {
   return endpoints
 }
 
+export const SERVICE_NAME_PATTERN = /^[a-z0-9_-]+$/
+
 /**
- * 验证服务名称格式（英数字下划线）
+ * 验证服务名称格式（小写英数字、下划线或连字符）
  * @param {String} serviceName - 服务名称
  * @returns {Boolean} 是否有效
  */
 export function validateServiceName(serviceName) {
   if (!serviceName) return false
-  const regex = /^[a-zA-Z0-9_]+$/
-  return regex.test(serviceName)
+  return SERVICE_NAME_PATTERN.test(serviceName)
 }
 
 /**

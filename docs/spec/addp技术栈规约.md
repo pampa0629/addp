@@ -5,7 +5,7 @@
 - **语言**: Go 1.23+
 - **HTTP 框架**: Gin
 - **ORM**: GORM
-- **数据库**: PostgreSQL 15 (所有模块使用 schema 隔离: system, manager, meta, transfer, orchestrator, develop)
+- **数据库**: PostgreSQL 15（所有持久化业务模块使用各自 owner schema 隔离，例如 `system`、`manager`、`meta`、`catalog`、`security`、`transfer`、`orchestrator`、`develop`）
 - **缓存/事件**: Redis 7
 - **对象存储**: MinIO (兼容 S3)
 - **Infra Kafka**: Redpanda v24.3.18，唯一 Kafka API broker 实现

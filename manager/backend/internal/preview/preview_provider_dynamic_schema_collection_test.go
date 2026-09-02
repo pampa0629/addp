@@ -114,9 +114,15 @@ func (p *recordingDynamicSchemaPreviewPlugin) QueryLanguages() []string {
 func (p *recordingDynamicSchemaPreviewPlugin) GenerateSampleQuery(context.Context, plugin.ConnectionInfo, plugin.SampleQueryOptions) (string, string) {
 	return "", "mql"
 }
-func (p *recordingDynamicSchemaPreviewPlugin) ExecuteRuntimeQuery(_ context.Context, _ plugin.ConnectionInfo, req plugin.QueryRequest) (*plugin.QueryResult, error) {
+func (p *recordingDynamicSchemaPreviewPlugin) PrepareQuery(_ context.Context, _ plugin.ConnectionInfo, req plugin.QueryRequest) (plugin.PreparedQuery, error) {
 	p.queryRequests = append(p.queryRequests, req)
-	return p.queryResult, nil
+	analysis, err := plugin.NewQueryAnalysis(req.Language, plugin.QuerySchemaCoverageUnknown)
+	if err != nil {
+		return nil, err
+	}
+	return plugin.NewPreparedQuery(analysis, nil, nil, func(context.Context) (*plugin.QueryResult, error) {
+		return p.queryResult, nil
+	})
 }
 func (p *recordingDynamicSchemaPreviewPlugin) DescribeEngineCatalogFacts(_ context.Context, _ plugin.ConnectionInfo, _ plugin.EngineCatalogPath, opts plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error) {
 	p.factsOptions = append(p.factsOptions, opts)

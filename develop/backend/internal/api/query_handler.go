@@ -34,6 +34,7 @@ type QueryHandler struct {
 // @Success 200 {object} models.QueryPreflightResponse "预检结果 | Preflight result"
 // @Failure 400 {object} models.ErrorResponse "查询语句无效 | Invalid query"
 // @Failure 401 {object} models.ErrorResponse "需要登录 | Authentication required"
+// @Failure 503 {object} models.ErrorResponse "查询分析服务不可用 | Query analysis unavailable"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["develop.task.execute"]
 // @Router /query-preflight [post]
@@ -62,6 +63,16 @@ func (h *QueryHandler) PreflightQuery(c *gin.Context) {
 		})
 		return
 	}
+	providerAnalysis, err := h.sqlEngine.AnalyzePreparedQuery(
+		c.Request.Context(), tenantIDValue(c), req.EngineID, queryType, req.Query, req.TargetLocator,
+		req.Parameters, req.QueryParameters, service.SQLExecutionEffect(analysis.Effect) == service.SQLExecutionEffectRead,
+	)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": commoni18n.T(c, developi18n.MsgQueryAnalysisUnavailable), "error_code": "query_analysis_unavailable",
+		})
+		return
+	}
 
 	permissionKey := developauthorization.PermissionDevelopDataReadExecute
 	switch service.SQLExecutionEffect(analysis.Effect) {
@@ -72,7 +83,14 @@ func (h *QueryHandler) PreflightQuery(c *gin.Context) {
 	case service.SQLExecutionEffectExternalEffect:
 		permissionKey = developauthorization.PermissionDevelopDataExternalEffectExecute
 	}
-	allowed := commonAuth.HasRolePermission(c, permissionKey)
+	permissionAllowed := commonAuth.HasRolePermission(c, permissionKey)
+	allowed := permissionAllowed
+	for _, diagnostic := range providerAnalysis.Diagnostics {
+		if diagnostic.Severity == "error" {
+			allowed = false
+			break
+		}
+	}
 	if analysis.ClassificationConfidence == "unknown" && service.SQLExecutionEffect(analysis.Effect) != service.SQLExecutionEffectRead && strings.TrimSpace(req.TargetLocator) == "" {
 		allowed = false
 	}
@@ -84,16 +102,18 @@ func (h *QueryHandler) PreflightQuery(c *gin.Context) {
 		TargetObjects:            analysis.TargetObjects,
 		TargetLocator:            strings.TrimSpace(req.TargetLocator),
 		Warnings:                 analysis.Warnings,
+		SchemaCoverage:           providerAnalysis.SchemaCoverage,
+		Diagnostics:              providerAnalysis.Diagnostics,
 		Fingerprint:              analysis.Fingerprint,
 		RiskLevel:                analysis.RiskLevel,
 		RequiresConfirmation:     analysis.RequiresConfirmation,
 		RequiredPermission:       permissionKey,
 	}
-	if !allowed {
+	if !permissionAllowed {
 		response.Warnings = append(response.Warnings, commoni18n.T(c, developi18n.MsgExecutionEffectForbidden))
-		if analysis.ClassificationConfidence == "unknown" && service.SQLExecutionEffect(analysis.Effect) != service.SQLExecutionEffectRead && strings.TrimSpace(req.TargetLocator) == "" {
-			response.Warnings = append(response.Warnings, "target_required")
-		}
+	}
+	if analysis.ClassificationConfidence == "unknown" && service.SQLExecutionEffect(analysis.Effect) != service.SQLExecutionEffectRead && strings.TrimSpace(req.TargetLocator) == "" {
+		response.Warnings = append(response.Warnings, "target_required")
 	}
 	if allowed && analysis.RequiresConfirmation {
 		token, expiresAt, tokenErr := h.sqlEngine.IssueQueryConfirmationToken(

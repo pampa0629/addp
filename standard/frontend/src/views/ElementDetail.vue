@@ -135,24 +135,6 @@
                 </el-form-item>
               </el-col>
               <el-col :xs="24" :sm="12">
-                <el-form-item :label="$t('standard.element.classificationLabel')">
-                  <el-tree-select
-                    v-model="revision.classification_id"
-                    :data="classificationTree"
-                    :props="{ label: 'name', value: 'id', children: 'children' }"
-                    clearable
-                    class="field-control"
-                  />
-                </el-form-item>
-              </el-col>
-              <el-col :xs="24" :sm="12">
-                <el-form-item :label="$t('standard.element.securityLevelLabel')">
-                  <el-select v-model="revision.security_level" clearable class="field-control">
-                    <el-option v-for="level in securityLevels" :key="level" :label="level" :value="level" />
-                  </el-select>
-                </el-form-item>
-              </el-col>
-              <el-col :xs="24" :sm="12">
                 <el-form-item :label="$t('standard.revision.effectiveFrom')">
                   <el-date-picker
                     v-model="revision.effective_from"
@@ -303,7 +285,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import { StatusAnnouncer, useConsolePageDescriptor } from '@common-ui'
-import { classificationAPI, codeSetAPI, domainAPI, elementAPI, unitAPI } from '../api/standard'
+import { codeSetAPI, domainAPI, elementAPI, unitAPI } from '../api/standard'
 import DocumentPanel from '../components/DocumentPanel.vue'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
 import { useStandardPermissions } from '../composables/useStandardPermissions'
@@ -332,18 +314,15 @@ const element = ref({})
 const revisions = ref([])
 const domains = ref([])
 const units = ref([])
-const classifications = ref([])
 const publishedCodeSets = ref([])
 const revision = reactive({})
 const uniqueEnabled = ref(false)
 const uniqueRuleKey = ref('')
 
-const securityLevels = ['L1', 'L2', 'L3', 'L4']
 const dateTimeValueFormat = 'YYYY-MM-DDTHH:mm:ssZ'
 const identityEditable = computed(() => canUpdate.value && Boolean(element.value.id) && element.value.lifecycle_state !== 'deleting')
 const editable = computed(() => canUpdate.value && revision.status === 'draft' && element.value.draft_revision_id === revision.id)
 const reviewing = computed(() => revision.status === 'in_review' && element.value.draft_revision_id === revision.id)
-const classificationTree = computed(() => tree(classifications.value))
 const compatibleCodeSets = computed(() => publishedCodeSets.value.filter(codeSet => (
   isCodeSetCompatible(revision.data_type, codeSet.current_revision?.value_type)
 )))
@@ -353,12 +332,6 @@ useConsolePageDescriptor(router, 'standard', {
   subject: computed(() => revision.name || element.value.code || ''),
   ready: computed(() => Boolean(element.value.id))
 })
-
-function tree(list, parent = null) {
-  return list
-    .filter(item => (item.parent_id || null) === parent)
-    .map(item => ({ ...item, children: tree(list, item.id) }))
-}
 
 const flatten = nodes => nodes.flatMap(node => [node, ...flatten(node.children || [])])
 const statusLabel = status => status ? t(`standard.revision.status.${status}`) : '-'
@@ -403,14 +376,12 @@ async function load() {
 }
 
 async function loadOptions() {
-  const [domainResult, unitResult, classificationResult] = await Promise.allSettled([
+  const [domainResult, unitResult] = await Promise.allSettled([
     domainAPI.list(),
-    unitAPI.list({ page_size: 500 }),
-    classificationAPI.list()
+    unitAPI.list({ page_size: 500 })
   ])
   domains.value = domainResult.status === 'fulfilled' ? flatten(domainResult.value || []) : []
   units.value = unitResult.status === 'fulfilled' ? unitResult.value || [] : []
-  classifications.value = classificationResult.status === 'fulfilled' ? classificationResult.value || [] : []
   await loadCodeSetOptions()
 }
 

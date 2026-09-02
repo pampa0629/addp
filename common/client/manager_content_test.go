@@ -39,11 +39,39 @@ func TestManagerContentClientUsesTenantBearerAndCanonicalRoutes(t *testing.T) {
 		return "tenant-7", nil
 	}), server.Client()).WithTenantID(7)
 	if err := client.UpsertDocument(context.Background(), ManagerContentDocument{
-		DocumentID: "fingerprint-1", EngineID: 9, DataItemType: "table", Name: "orders",
+		DocumentID: "fingerprint-1", PayloadKind: ManagerContentPayloadTechnicalMetadata,
+		EngineID: 9, DataItemType: "table", Name: "orders",
 	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := client.DeleteDocuments(context.Background(), ManagerContentDeleteScope{EngineID: 9, DataItemType: "table", Schema: "public"}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestManagerContentDocumentSeparatesTechnicalMetadataAndExtractedContent(t *testing.T) {
+	technical := ManagerContentDocument{
+		DocumentID: "fingerprint-1", PayloadKind: ManagerContentPayloadTechnicalMetadata,
+		EngineID: 9, DataItemType: "table", Name: "orders",
+		Fields: []ManagerContentField{{Name: "phone", DataType: "string"}},
+	}
+	if err := technical.Validate(); err != nil {
+		t.Fatalf("technical metadata validation failed: %v", err)
+	}
+	technical.ContentPreview = "13661384499"
+	if err := technical.Validate(); err == nil {
+		t.Fatal("technical metadata accepted extracted content")
+	}
+	technical.ContentPreview = ""
+	technical.ContentTruncated = true
+	if err := technical.Validate(); err == nil {
+		t.Fatal("technical metadata accepted a content-derived truncation flag")
+	}
+	extracted := ManagerContentDocument{
+		DocumentID: "fingerprint-2", PayloadKind: ManagerContentPayloadExtractedContent,
+		EngineID: 9, DataItemType: "document", Name: "contacts.txt", Content: "13661384499",
+	}
+	if err := extracted.Validate(); err != nil {
+		t.Fatalf("extracted content validation failed: %v", err)
 	}
 }

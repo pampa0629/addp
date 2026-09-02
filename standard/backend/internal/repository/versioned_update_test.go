@@ -98,22 +98,6 @@ func TestDirectResourceUpdatesRejectStaleVersion(t *testing.T) {
 			},
 		},
 		{
-			name: "classification", table: "classifications", firstValue: "First classification",
-			createSQL: `CREATE TABLE standard.classifications (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, name TEXT, description TEXT, parent_id INTEGER, sort_order INTEGER, updated_by INTEGER, updated_at DATETIME, version INTEGER NOT NULL DEFAULT 1)`,
-			insertSQL: `INSERT INTO standard.classifications (id, tenant_id, name, version) VALUES (1, 7, 'Original', 1)`,
-			update: func(db *gorm.DB, value string, version int64) error {
-				return NewClassificationRepository(db).Update(&models.Classification{ID: 1, TenantID: 7, Name: value}, version)
-			},
-		},
-		{
-			name: "grading level", table: "grading_levels", firstValue: "First grading level",
-			createSQL: `CREATE TABLE standard.grading_levels (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, name TEXT, description TEXT, color TEXT, updated_at DATETIME, version INTEGER NOT NULL DEFAULT 1)`,
-			insertSQL: `INSERT INTO standard.grading_levels (id, tenant_id, name, version) VALUES (1, 7, 'Original', 1)`,
-			update: func(db *gorm.DB, value string, version int64) error {
-				return NewGradingLevelRepository(db).Update(1, 7, &models.UpdateGradingLevelRequest{Version: version, Name: value})
-			},
-		},
-		{
 			name: "metric category", table: "metric_categories", firstValue: "First metric category",
 			createSQL: `CREATE TABLE standard.metric_categories (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, name TEXT, description TEXT, parent_id INTEGER, sort_order INTEGER, updated_by INTEGER, updated_at DATETIME, version INTEGER NOT NULL DEFAULT 1)`,
 			insertSQL: `INSERT INTO standard.metric_categories (id, tenant_id, name, version) VALUES (1, 7, 'Original', 1)`,

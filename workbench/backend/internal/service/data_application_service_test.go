@@ -8,15 +8,25 @@ import (
 	"testing"
 	"time"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/workbench/internal/models"
 	"github.com/addp/workbench/internal/repository"
-	"gorm.io/datatypes"
 )
 
 type memoryDataApplicationRepository struct {
-	views     map[string]models.View
 	apps      map[string]models.DataApplication
 	revisions map[string][]models.DataApplicationRevision
+}
+
+type fakeDescriptorReader struct {
+	descriptor *models.ConsumerDescriptor
+	err        error
+	requests   []DescriptorRequest
+}
+
+func (f *fakeDescriptorReader) GetDescriptor(_ context.Context, request DescriptorRequest) (*models.ConsumerDescriptor, error) {
+	f.requests = append(f.requests, request)
+	return f.descriptor, f.err
 }
 
 type staticDataApplicationAccessRules struct{ allowed bool }
@@ -27,7 +37,7 @@ func (rules staticDataApplicationAccessRules) CanExecuteDataApplication(_, _ int
 
 func newMemoryDataApplicationRepository() *memoryDataApplicationRepository {
 	return &memoryDataApplicationRepository{
-		views: map[string]models.View{}, apps: map[string]models.DataApplication{}, revisions: map[string][]models.DataApplicationRevision{},
+		apps: map[string]models.DataApplication{}, revisions: map[string][]models.DataApplicationRevision{},
 	}
 }
 
@@ -56,18 +66,6 @@ func (r *memoryDataApplicationRepository) Get(tenantID, ownerUserID int64, id st
 	}
 	copy := application
 	return &copy, nil
-}
-
-func (r *memoryDataApplicationRepository) GetSourceViews(tenantID, ownerUserID int64, ids []string) ([]models.View, error) {
-	items := make([]models.View, 0, len(ids))
-	for _, id := range ids {
-		view, ok := r.views[id]
-		if !ok || view.TenantID != tenantID || view.OwnerUserID != ownerUserID {
-			return nil, repository.ErrViewNotFound
-		}
-		items = append(items, view)
-	}
-	return items, nil
 }
 
 func (r *memoryDataApplicationRepository) Create(application *models.DataApplication) error {
@@ -175,13 +173,11 @@ func (r *memoryDataApplicationRepository) GetRuntimeApplication(tenantID int64, 
 
 func TestDataApplicationServiceOwnsSnapshotAndImmutableRevision(t *testing.T) {
 	repository := newMemoryDataApplicationRepository()
-	view := dataApplicationSourceView(7, 11)
-	repository.views[view.ID] = view
 	descriptors := &fakeDescriptorReader{descriptor: testDescriptor(false)}
 	applications := NewDataApplicationService(repository, descriptors, nil)
 
 	created, err := applications.Create(context.Background(), 7, 11, DescriptorRequest{BearerToken: "user-token"}, models.DataApplicationCreateRequest{
-		Name: "Order application", Description: "Published order view", SourceViewIDs: []string{view.ID},
+		Name: "Order application", Description: "Published order application", Snapshot: testDataApplicationSnapshot(),
 	})
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
@@ -196,12 +192,9 @@ func TestDataApplicationServiceOwnsSnapshotAndImmutableRevision(t *testing.T) {
 		t.Fatalf("component snapshot = %#v", created.Snapshot.Components[0])
 	}
 
-	view.Name = "Changed source view"
-	repository.views[view.ID] = view
-	delete(repository.views, view.ID)
 	loaded, err := applications.Get(7, 11, created.ID)
 	if err != nil || loaded.Snapshot.Components[0].Title != "Orders" {
-		t.Fatalf("snapshot changed with source View: loaded=%#v err=%v", loaded, err)
+		t.Fatalf("snapshot changed after creation: loaded=%#v err=%v", loaded, err)
 	}
 
 	published, err := applications.Publish(context.Background(), 7, 11, created.ID, DescriptorRequest{BearerToken: "user-token"}, 1)
@@ -330,16 +323,17 @@ func TestDataApplicationServiceOwnsSnapshotAndImmutableRevision(t *testing.T) {
 	}
 }
 
-func TestDataApplicationServiceUsesEmptyArraysWithoutViewParameters(t *testing.T) {
+func TestDataApplicationServiceUsesEmptyArraysWithoutComponentParameters(t *testing.T) {
 	repository := newMemoryDataApplicationRepository()
-	view := dataApplicationSourceView(7, 11)
-	view.ParameterDefinitions = datatypes.JSON(`[]`)
-	view.QueryTemplate = datatypes.JSON(`{"select":["id","amount"],"fixed_filter":null,"parameter_filters":[],"order_by":[{"field":"id","direction":"asc"}],"page_limit":50,"format":"json"}`)
-	view.DefaultParameterValues = datatypes.JSON(`{}`)
-	repository.views[view.ID] = view
+	snapshot := testDataApplicationSnapshot()
+	snapshot.Components[0].ParameterDefinitions = nil
+	snapshot.Components[0].QueryTemplate.ParameterFilters = nil
+	snapshot.Components[0].DefaultParameterValues = nil
+	snapshot.Parameters = nil
+	snapshot.ParameterBindings = nil
 	applications := NewDataApplicationService(repository, &fakeDescriptorReader{descriptor: testDescriptor(false)}, nil)
 
-	created, err := applications.Create(context.Background(), 7, 11, DescriptorRequest{}, models.DataApplicationCreateRequest{Name: "Orders", SourceViewIDs: []string{view.ID}})
+	created, err := applications.Create(context.Background(), 7, 11, DescriptorRequest{}, models.DataApplicationCreateRequest{Name: "Orders", Snapshot: snapshot})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -350,11 +344,9 @@ func TestDataApplicationServiceUsesEmptyArraysWithoutViewParameters(t *testing.T
 
 func TestDataApplicationServiceValidatesSelectionBindings(t *testing.T) {
 	repository := newMemoryDataApplicationRepository()
-	view := dataApplicationSourceView(7, 11)
-	repository.views[view.ID] = view
 	descriptor := testDescriptor(false)
 	applications := NewDataApplicationService(repository, &fakeDescriptorReader{descriptor: descriptor}, nil)
-	created, err := applications.Create(context.Background(), 7, 11, DescriptorRequest{}, models.DataApplicationCreateRequest{Name: "Orders", SourceViewIDs: []string{view.ID}})
+	created, err := applications.Create(context.Background(), 7, 11, DescriptorRequest{}, models.DataApplicationCreateRequest{Name: "Orders", Snapshot: testDataApplicationSnapshot()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -469,32 +461,80 @@ func applicationRefreshInterval(value int) *int {
 	return &value
 }
 
-func TestDataApplicationServiceRejectsComponentIdentityChanges(t *testing.T) {
+func TestDataApplicationServiceAllowsComponentReplacement(t *testing.T) {
 	repository := newMemoryDataApplicationRepository()
-	view := dataApplicationSourceView(7, 11)
-	repository.views[view.ID] = view
-	applications := NewDataApplicationService(repository, &fakeDescriptorReader{descriptor: testDescriptor(false)}, nil)
-	created, err := applications.Create(context.Background(), 7, 11, DescriptorRequest{}, models.DataApplicationCreateRequest{Name: "Orders", SourceViewIDs: []string{view.ID}})
+	descriptor := testDescriptor(false)
+	applications := NewDataApplicationService(repository, &fakeDescriptorReader{descriptor: descriptor}, nil)
+	created, err := applications.Create(context.Background(), 7, 11, DescriptorRequest{}, models.DataApplicationCreateRequest{Name: "Orders", Snapshot: testDataApplicationSnapshot()})
 	if err != nil {
 		t.Fatal(err)
 	}
 	changed := created.Snapshot
 	changed.Components[0].ServiceRef.ServiceID = 24
-	if _, err := applications.Update(context.Background(), 7, 11, created.ID, DescriptorRequest{}, models.DataApplicationUpdateRequest{Name: created.Name, Snapshot: changed, Version: 1}); !errors.Is(err, ErrInvalidDataApplication) {
-		t.Fatalf("changed ServiceReference Update() error = %v", err)
+	descriptor.Ref.ServiceID = 24
+	updated, err := applications.Update(context.Background(), 7, 11, created.ID, DescriptorRequest{}, models.DataApplicationUpdateRequest{Name: created.Name, Snapshot: changed, Version: 1})
+	if err != nil || updated.Snapshot.Components[0].ServiceRef.ServiceID != 24 {
+		t.Fatalf("component replacement Update() = %#v, %v", updated, err)
 	}
 }
 
-func dataApplicationSourceView(tenantID, ownerUserID int64) models.View {
-	input := testViewRequest()
-	return models.View{
-		ID: "9e95f345-d2c1-4c79-a582-12b65b1550bd", TenantID: tenantID, OwnerUserID: ownerUserID,
-		Name: input.Name, Description: input.Description, ServiceType: input.ServiceRef.ServiceType, ServiceID: input.ServiceRef.ServiceID,
-		ContractFingerprint: testFingerprint(), ParameterDefinitions: datatypes.JSON(`[{
-			"key":"status","label":"Status","control_type":"select","required":false
-		}]`),
-		QueryTemplate:          datatypes.JSON(`{"select":["id","amount"],"fixed_filter":null,"parameter_filters":[{"parameter_key":"status","field":"status","operator":"eq"}],"order_by":[{"field":"id","direction":"asc"}],"page_limit":50,"format":"json"}`),
-		DefaultParameterValues: datatypes.JSON(`{"status":"paid"}`), RendererType: models.RendererTypeTable,
-		RendererConfig: datatypes.JSON(`{"columns":["id","amount"]}`), Version: 1,
+func testDataApplicationSnapshot() models.DataApplicationSnapshot {
+	refreshInterval := models.ApplicationRefreshIntervalDisabled
+	return models.DataApplicationSnapshot{
+		SchemaVersion: models.DataApplicationSnapshotSchemaVersion,
+		Page: models.DataApplicationPage{
+			ID: "68a283af-e6fd-4743-bf5b-207539c687fa", Title: "Orders", DisplayMode: models.ApplicationDisplayModeDesktop,
+			RefreshIntervalSeconds: &refreshInterval, VisibleSections: defaultApplicationVisibleSections(),
+			Placements: []models.DataApplicationComponentLayout{{ComponentID: "9e95f345-d2c1-4c79-a582-12b65b1550bd", X: 0, Y: 0, Width: 12, Height: 6}},
+		},
+		Components: []models.DataApplicationComponent{{
+			ID: "9e95f345-d2c1-4c79-a582-12b65b1550bd", Title: "Orders", Description: "Order list",
+			ServiceRef:           models.ServiceReference{ServiceType: "query", ServiceID: 23},
+			ParameterDefinitions: []models.ComponentParameterDefinition{{Key: "status", Label: "Status", ControlType: "select"}},
+			QueryTemplate: models.ComponentQueryTemplate{
+				Select: []string{"id", "amount"}, ParameterFilters: []models.ComponentParameterFilter{{ParameterKey: "status", Field: "status", Operator: "eq"}},
+				OrderBy: []models.QueryOrder{{Field: "id", Direction: "asc"}}, PageLimit: 50, Format: "json",
+			},
+			DefaultParameterValues: map[string]json.RawMessage{"status": json.RawMessage(`"paid"`)},
+			RendererType:           models.RendererTypeTable, RendererConfig: json.RawMessage(`{"columns":["id","amount"]}`),
+		}},
+		Parameters:        []models.DataApplicationParameter{{Key: "component_1.status", Label: "Status", ControlType: "select", DefaultValue: json.RawMessage(`"paid"`)}},
+		ParameterBindings: []models.DataApplicationParameterBinding{{ApplicationParameterKey: "component_1.status", ComponentID: "9e95f345-d2c1-4c79-a582-12b65b1550bd", ComponentParameterKey: "status"}},
+		SelectionBindings: []models.DataApplicationSelectionBinding{},
 	}
+}
+
+func testDescriptor(spatial bool) *models.ConsumerDescriptor {
+	descriptor := &models.ConsumerDescriptor{
+		SchemaVersion: models.ConsumerDescriptorSchemaVersion,
+		Ref:           models.ServiceReference{ServiceType: "query", ServiceID: 23}, Status: "active", ContractFingerprint: testFingerprint(),
+		Operations: []models.ConsumerOperation{{Key: "query", Method: "POST", Path: "/api/query/orders/query", InputKind: "structured_query", OutputKind: "tabular"}},
+		InputContract: models.StructuredQueryInputContract{
+			Kind: "structured_query",
+			Fields: []models.ConsumerQueryField{
+				{Name: "id", Type: datatype.FieldTypeString, Selectable: true, Sortable: true},
+				{Name: "amount", Type: datatype.FieldTypeDecimal, Selectable: true},
+				{Name: "status", Type: datatype.FieldTypeString, Selectable: true, Filterable: true, Operators: []string{"eq", "in"}},
+			},
+			Filter: models.ConsumerFilterContract{Combinators: []string{"and", "or", "not"}, MaxDepth: 16, MaxNodes: 256, MaxInValues: 1000},
+			Order:  models.ConsumerOrderContract{Directions: []string{"asc", "desc"}, StableKey: []string{"id"}},
+			Page:   models.ConsumerPageContract{Kind: "cursor", DefaultLimit: 50, MaxLimit: 1000}, Formats: []string{"json", "csv"},
+		},
+		OutputContract: models.TabularOutputContract{Kind: "tabular", Fields: []models.ConsumerOutputField{
+			{Name: "id", Type: datatype.FieldTypeString}, {Name: "amount", Type: datatype.FieldTypeDecimal}, {Name: "status", Type: datatype.FieldTypeString},
+		}},
+	}
+	if spatial {
+		descriptor.InputContract.Fields = append(descriptor.InputContract.Fields, models.ConsumerQueryField{Name: "shape", Type: datatype.FieldTypeGeometry, Selectable: true})
+		descriptor.InputContract.Formats = append(descriptor.InputContract.Formats, "geojson")
+		descriptor.OutputContract.Fields = append(descriptor.OutputContract.Fields, models.ConsumerOutputField{Name: "shape", Type: datatype.FieldTypeGeometry})
+		descriptor.OutputContract.Spatial = &models.ConsumerSpatialContract{PrimaryGeometryField: "shape", GeometryFields: []models.ConsumerGeometryField{{Name: "shape"}}}
+		descriptor.OutputContract.Kind = "spatial_tabular"
+		descriptor.Operations[0].OutputKind = "spatial_tabular"
+	}
+	return descriptor
+}
+
+func testFingerprint() string {
+	return "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 }

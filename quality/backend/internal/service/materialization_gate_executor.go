@@ -282,6 +282,26 @@ func compileGateAssertion(assertion MaterializationGateAssertion, aliases map[st
 			return compiled, err
 		}
 		compiled.SQL = fmt.Sprintf("SELECT COUNT(*) AS total_count, COUNT(*) FILTER (WHERE %s IS NULL) AS failed_count FROM %s", column, table)
+	case "allowed_values":
+		var params gateAllowedValuesParams
+		if err := decodeStrictJSON(assertion.Params, &params); err != nil {
+			return compiled, err
+		}
+		table, columns, err := tableSQL(params.Table)
+		if err != nil {
+			return compiled, err
+		}
+		column, err := columnSQL(columns, params.Column)
+		if err != nil {
+			return compiled, err
+		}
+		placeholders := make([]string, len(params.Values))
+		compiled.Args = make([]interface{}, len(params.Values))
+		for index, value := range params.Values {
+			placeholders[index] = "$" + strconv.Itoa(index+1)
+			compiled.Args[index] = value
+		}
+		compiled.SQL = fmt.Sprintf("SELECT COUNT(*) AS total_count, COUNT(*) FILTER (WHERE %s IS NOT NULL AND %s::text NOT IN (%s)) AS failed_count FROM %s", column, column, strings.Join(placeholders, ", "), table)
 	case "unique_key":
 		var params gateUniqueKeyParams
 		if err := decodeStrictJSON(assertion.Params, &params); err != nil {

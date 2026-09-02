@@ -25,13 +25,17 @@ jobs:
       asset: ${{ steps.asset.outputs.run }}
       catalog: ${{ steps.catalog.outputs.run }}
       cli: ${{ steps.cli.outputs.run }}
+      common: ${{ steps.common.outputs.run }}
       develop: ${{ steps.develop.outputs.run }}
+      manager: ${{ steps.manager.outputs.run }}
       meta: ${{ steps.meta.outputs.run }}
       model: ${{ steps.model.outputs.run }}
       quality: ${{ steps.quality.outputs.run }}
+      security: ${{ steps.security.outputs.run }}
       service: ${{ steps.service.outputs.run }}
       standard: ${{ steps.standard.outputs.run }}
       system: ${{ steps.system.outputs.run }}
+      transfer: ${{ steps.transfer.outputs.run }}
       workbench: ${{ steps.workbench.outputs.run }}
     steps:
       - name: Check out repository
@@ -69,6 +73,36 @@ jobs:
           ADDP_CI_HEAD: ${{ github.sha }}
           ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
         run: python3 scripts/ci/select-module-gate.py --module quality
+
+      - name: Select Common PostgreSQL gate
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        id: common
+        env:
+          ADDP_CI_BEFORE: ${{ github.event.before }}
+          ADDP_CI_EVENT: ${{ github.event_name }}
+          ADDP_CI_HEAD: ${{ github.sha }}
+          ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: python3 scripts/ci/select-module-gate.py --module common
+
+      - name: Select Manager MongoDB Security gate
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        id: manager
+        env:
+          ADDP_CI_BEFORE: ${{ github.event.before }}
+          ADDP_CI_EVENT: ${{ github.event_name }}
+          ADDP_CI_HEAD: ${{ github.sha }}
+          ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: python3 scripts/ci/select-module-gate.py --module manager
+
+      - name: Select Security PostgreSQL gate
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        id: security
+        env:
+          ADDP_CI_BEFORE: ${{ github.event.before }}
+          ADDP_CI_EVENT: ${{ github.event_name }}
+          ADDP_CI_HEAD: ${{ github.sha }}
+          ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: python3 scripts/ci/select-module-gate.py --module security
 
       - name: Select Asset PostgreSQL gate
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
@@ -159,6 +193,16 @@ jobs:
           ADDP_CI_HEAD: ${{ github.sha }}
           ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
         run: python3 scripts/ci/select-module-gate.py --module standard
+
+      - name: Select Transfer PostgreSQL gate
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        id: transfer
+        env:
+          ADDP_CI_BEFORE: ${{ github.event.before }}
+          ADDP_CI_EVENT: ${{ github.event_name }}
+          ADDP_CI_HEAD: ${{ github.sha }}
+          ADDP_CI_PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: python3 scripts/ci/select-module-gate.py --module transfer
 
   cli-product-macos-verification:
     name: CLI product verification (macOS Keychain)
@@ -430,6 +474,102 @@ jobs:
           gate: Workbench integration (PostgreSQL 15)
           status: ${{ job.status }}
 
+  common-postgres:
+    name: Common Engine Provider integration (PostgreSQL 15)
+    needs: selection
+    if: needs.selection.outputs.common == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:15@sha256:74e110c41804365e3915fcc09d5e7a1eff50161aaa94d5da0e58e0cd75ae509c
+        env:
+          POSTGRES_USER: addp_ci
+          POSTGRES_PASSWORD: addp_ci_password
+          POSTGRES_DB: addp_common_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U addp_ci -d addp_common_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: common/go.mod
+          cache: false
+
+      - name: Run Common PostgreSQL gate
+        env:
+          ADDP_TEST_POSTGRES_HOST: 127.0.0.1
+          ADDP_TEST_POSTGRES_PORT: 5432
+          ADDP_TEST_POSTGRES_USER: addp_ci
+          ADDP_TEST_POSTGRES_PASSWORD: addp_ci_password
+          ADDP_TEST_POSTGRES_DATABASE: addp_common_test
+          ADDP_TEST_POSTGRES_SSLMODE: disable
+        run: make test-common-postgres
+
+      - name: Summarize Common PostgreSQL gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Common Engine Provider integration (PostgreSQL 15)
+          status: ${{ job.status }}
+
+  manager-mongodb-security:
+    name: Manager and Transfer data protection integration (MongoDB 7)
+    needs: selection
+    if: needs.selection.outputs.common == 'true' || needs.selection.outputs.manager == 'true' || needs.selection.outputs.transfer == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      mongodb:
+        image: mongo:7.0@sha256:32b5cbf6e1075ad0f5eb2b880ee61e985d5135519a7a34a7d81712af37f27913
+        env:
+          MONGO_INITDB_ROOT_USERNAME: addp_ci
+          MONGO_INITDB_ROOT_PASSWORD: addp_ci_password
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --username addp_ci --password addp_ci_password --authenticationDatabase admin --eval 'db.adminCommand({ping:1}).ok'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: manager/backend/go.mod
+          cache: false
+
+      - name: Run Manager and Transfer MongoDB Security gate
+        env:
+          ADDP_TEST_MONGODB_HOST: 127.0.0.1
+          ADDP_TEST_MONGODB_PORT: 27017
+          ADDP_TEST_MONGODB_USER: addp_ci
+          ADDP_TEST_MONGODB_PASSWORD: addp_ci_password
+          ADDP_TEST_MONGODB_AUTH_SOURCE: admin
+        run: make test-manager-mongodb-security
+
+      - name: Summarize Manager MongoDB Security gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Manager and Transfer data protection integration (MongoDB 7)
+          status: ${{ job.status }}
+
   quality-postgres:
     name: Quality integration (PostgreSQL 15)
     needs: selection
@@ -477,6 +617,47 @@ jobs:
         uses: ./.github/actions/ci-gate-summary
         with:
           gate: Quality integration (PostgreSQL 15)
+          status: ${{ job.status }}
+
+  security-postgres:
+    name: Security integration (PostgreSQL 15)
+    needs: selection
+    if: needs.selection.outputs.security == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:15@sha256:74e110c41804365e3915fcc09d5e7a1eff50161aaa94d5da0e58e0cd75ae509c
+        env:
+          POSTGRES_USER: addp_ci
+          POSTGRES_PASSWORD: addp_ci_password
+          POSTGRES_DB: addp_security_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U addp_ci -d addp_security_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: security/backend/go.mod
+          cache: false
+      - name: Run Security PostgreSQL gate
+        env:
+          SECURITY_POSTGRES_TEST_DSN: postgres://addp_ci:addp_ci_password@127.0.0.1:5432/addp_security_test?sslmode=disable
+        run: make test-security-postgres
+      - name: Summarize Security PostgreSQL gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Security integration (PostgreSQL 15)
           status: ${{ job.status }}
 
   model-postgres:
@@ -653,6 +834,55 @@ jobs:
         uses: ./.github/actions/ci-gate-summary
         with:
           gate: Standard integration (PostgreSQL 15)
+          status: ${{ job.status }}
+
+  transfer-postgres:
+    name: Transfer protected export integration (PostgreSQL 15)
+    needs: selection
+    if: needs.selection.outputs.transfer == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:15@sha256:74e110c41804365e3915fcc09d5e7a1eff50161aaa94d5da0e58e0cd75ae509c
+        env:
+          POSTGRES_USER: addp_ci
+          POSTGRES_PASSWORD: addp_ci_password
+          POSTGRES_DB: addp_transfer_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U addp_ci -d addp_transfer_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: transfer/backend/go.mod
+          cache: false
+
+      - name: Run Transfer PostgreSQL gate
+        env:
+          ADDP_TEST_POSTGRES_HOST: 127.0.0.1
+          ADDP_TEST_POSTGRES_PORT: 5432
+          ADDP_TEST_POSTGRES_USER: addp_ci
+          ADDP_TEST_POSTGRES_PASSWORD: addp_ci_password
+          ADDP_TEST_POSTGRES_DATABASE: addp_transfer_test
+          ADDP_TEST_POSTGRES_SSLMODE: disable
+        run: make test-transfer-postgres
+
+      - name: Summarize Transfer PostgreSQL gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Transfer protected export integration (PostgreSQL 15)
           status: ${{ job.status }}
 
   cli-product-macos:

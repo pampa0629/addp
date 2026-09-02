@@ -27,7 +27,6 @@ func TestRespondErrorMapsStructuredErrorsAndLanguage(t *testing.T) {
 		{name: "not found", err: commonapi.ErrNotFound, fallback: http.StatusInternalServerError, wantStatus: http.StatusNotFound, wantBody: "Resource not found"},
 		{name: "conflict", err: commonapi.ErrConflict, fallback: http.StatusBadRequest, wantStatus: http.StatusConflict, wantBody: "Resource code or relation already exists"},
 		{name: "domain referenced", err: service.ErrDomainReferenced, fallback: http.StatusInternalServerError, wantStatus: http.StatusConflict, wantBody: "The domain is still referenced by a child domain, glossary, element, metric, or dimension hierarchy"},
-		{name: "classification referenced", err: service.ErrClassificationReferenced, fallback: http.StatusInternalServerError, wantStatus: http.StatusConflict, wantBody: "The classification is still referenced by a child classification or element"},
 		{name: "metric category referenced", err: service.ErrMetricCategoryReferenced, fallback: http.StatusInternalServerError, wantStatus: http.StatusConflict, wantBody: "The metric category is still referenced by a child category or metric"},
 		{name: "measurement category referenced", err: service.ErrMeasurementCategoryReferenced, fallback: http.StatusInternalServerError, wantStatus: http.StatusConflict, wantBody: "The measurement category is still referenced by a unit"},
 		{name: "unit referenced", err: service.ErrUnitReferenced, fallback: http.StatusInternalServerError, wantStatus: http.StatusConflict, wantBody: "The unit is still referenced by an element or metric"},

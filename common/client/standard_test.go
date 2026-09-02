@@ -246,11 +246,18 @@ func TestStandardClientListsElementSummariesByCanonicalIDs(t *testing.T) {
 func TestStandardClientResolvesElementRevisionsAtOnePointInTime(t *testing.T) {
 	asOf := time.Date(2026, 8, 28, 9, 30, 0, 123000000, time.UTC)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/standard/elements" || r.URL.Query().Get("ids") != "12,7" || r.URL.Query().Get("as_of") != asOf.Format(time.RFC3339Nano) {
-			t.Fatalf("unexpected Standard request: %s", r.URL.String())
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/standard/runtime/element-revisions/resolve" {
+			t.Fatalf("unexpected Standard request: %s %s", r.Method, r.URL.String())
+		}
+		var request elementRevisionResolutionRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if len(request.ElementIDs) != 2 || request.ElementIDs[0] != "12" || request.ElementIDs[1] != "7" || !request.AsOf.Equal(asOf) {
+			t.Fatalf("request = %#v", request)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"data":[{"id":12,"tenant_id":7,"code":"order_id","lifecycle_state":"active","current_revision":{"id":1201,"revision_no":3,"status":"published","name":"Order ID","data_type":"bigint"}},{"id":7,"tenant_id":7,"code":"customer_id","lifecycle_state":"active","current_revision":{"id":701,"revision_no":2,"status":"published","name":"Customer ID","data_type":"bigint"}}]}`))
+		_, _ = w.Write([]byte(`{"results":[{"element_id":"12","found":true,"snapshot":{"element_id":"12","element_revision_id":"1201","revision_no":3,"code":"order_id","name":"Order ID","definition":"Order identifier","data_type":"bigint","nullable":false,"value_domain_kind":"unrestricted","example_values":[],"effective_from":"2026-01-01T00:00:00Z"}},{"element_id":"7","found":true,"snapshot":{"element_id":"7","element_revision_id":"701","revision_no":2,"code":"customer_id","name":"Customer ID","definition":"Customer identifier","data_type":"bigint","nullable":false,"value_domain_kind":"unrestricted","example_values":[],"effective_from":"2026-01-01T00:00:00Z"}}]}`))
 	}))
 	defer server.Close()
 
@@ -269,7 +276,7 @@ func TestStandardClientResolvesElementRevisionsAtOnePointInTime(t *testing.T) {
 func TestStandardClientRejectsMissingEffectiveElementRevision(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"data":[{"id":12,"tenant_id":7,"code":"order_id","lifecycle_state":"active"}]}`))
+		_, _ = w.Write([]byte(`{"results":[{"element_id":"12","found":false}]}`))
 	}))
 	defer server.Close()
 	client := NewStandardClient(server.URL, ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {

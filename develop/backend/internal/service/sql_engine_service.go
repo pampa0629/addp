@@ -38,6 +38,19 @@ type SQLEngineService struct {
 	queryPolicy             interface {
 		ResolveRuntime(context.Context, uint) (int, int, int, error)
 	}
+	protectionGate interface {
+		BeginPreparedQuery(context.Context, uint, plugin.EnginePlugin, plugin.PreparedQuery) (func(*plugin.QueryResult) error, func(), error)
+		BeginCatalogPath(context.Context, uint, plugin.EnginePlugin, plugin.EngineCatalogPath) (func(), error)
+		BeginUnresolvedRead(context.Context, uint) (func(), error)
+	}
+}
+
+func (s *SQLEngineService) SetProtectionGate(gate interface {
+	BeginPreparedQuery(context.Context, uint, plugin.EnginePlugin, plugin.PreparedQuery) (func(*plugin.QueryResult) error, func(), error)
+	BeginCatalogPath(context.Context, uint, plugin.EnginePlugin, plugin.EngineCatalogPath) (func(), error)
+	BeginUnresolvedRead(context.Context, uint) (func(), error)
+}) {
+	s.protectionGate = gate
 }
 
 func NewSQLEngineService(
@@ -398,8 +411,37 @@ func (s *SQLEngineService) ExecuteIssuedSQLAuthorization(
 		return nil, fmt.Errorf("执行 SQL 效果不在授权范围内")
 	}
 	if executionEffect == SQLExecutionEffectRead {
-		queryResult, err := dbbridge.ExecuteReadOnlyQuery(execCtx, engine, sqlContent, parameters, limit)
+		if s.protectionGate == nil {
+			return nil, fmt.Errorf("Develop 查询保护门禁未配置")
+		}
+		enginePlugin, err := plugin.Get(engine.EngineType)
 		if err != nil {
+			return nil, err
+		}
+		provider, ok := enginePlugin.(plugin.QueryRuntimeProvider)
+		if !ok {
+			return nil, ErrControlledSQLExecutionUnsupported
+		}
+		prepared, err := provider.PrepareQuery(execCtx, plugin.ConnectionInfo(engine.ConnectionInfo), plugin.QueryRequest{
+			EngineID: engine.ID, Language: "sql", Query: sqlContent,
+			Options: plugin.QueryOptions{
+				EngineID: engine.ID, EngineType: engine.EngineType, Limit: limit,
+				Timeout: time.Duration(timeout) * time.Second, ReadOnly: true, Parameters: parameters,
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
+		protectResult, endProtection, err := s.protectionGate.BeginPreparedQuery(execCtx, tenantID, enginePlugin, prepared)
+		if err != nil {
+			return nil, err
+		}
+		defer endProtection()
+		queryResult, err := prepared.Execute(execCtx)
+		if err != nil {
+			return nil, err
+		}
+		if err := protectResult(queryResult); err != nil {
 			return nil, err
 		}
 		rows := queryResult.Rows
@@ -531,6 +573,26 @@ func (s *SQLEngineService) GenerateAuthorizedSampleQuery(
 		}
 		selectedPath = &path
 	}
+	if s.protectionGate == nil {
+		return "", "", fmt.Errorf("Develop 查询保护门禁未配置")
+	}
+	enginePlugin, err := plugin.Get(engine.EngineType)
+	if err != nil {
+		return "", "", err
+	}
+	var endProtection func()
+	if selectedPath != nil {
+		endProtection, err = s.protectionGate.BeginCatalogPath(ctx, tenantID, enginePlugin, *selectedPath)
+		if err != nil {
+			return "", "", err
+		}
+	} else {
+		endProtection, err = s.protectionGate.BeginUnresolvedRead(ctx, tenantID)
+		if err != nil {
+			return "", "", err
+		}
+	}
+	defer endProtection()
 	return generateExecutableSampleQuery(ctx, engine, selectedPath)
 }
 

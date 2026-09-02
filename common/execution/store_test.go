@@ -15,8 +15,17 @@ func TestEmbeddedMigrationsContainQualityQueueIndexes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("executionMigrationNames() error = %v", err)
 	}
-	if got := names[len(names)-1]; got != "011_remove_authorization_effects.sql" {
+	if got := names[len(names)-1]; got != "012_allow_event_trigger_type.sql" {
 		t.Fatalf("latest execution migration = %q", got)
+	}
+	eventTrigger, err := migrationFiles.ReadFile("migrations/012_allow_event_trigger_type.sql")
+	if err != nil {
+		t.Fatalf("read event trigger migration: %v", err)
+	}
+	for _, required := range []string{"DROP CONSTRAINT IF EXISTS chk_task_executions_trigger_type", "'event'"} {
+		if !strings.Contains(string(eventTrigger), required) {
+			t.Fatalf("event trigger migration missing %q", required)
+		}
 	}
 	removedEffects, err := migrationFiles.ReadFile("migrations/011_remove_authorization_effects.sql")
 	if err != nil {

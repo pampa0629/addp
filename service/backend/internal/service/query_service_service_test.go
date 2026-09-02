@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -16,6 +17,42 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
+
+type recordingQueryServiceTokenProvider struct {
+	tenantID atomic.Uint32
+}
+
+func (provider *recordingQueryServiceTokenProvider) Token(_ context.Context, tenantID uint) (string, error) {
+	provider.tenantID.Store(uint32(tenantID))
+	return "addp_at_service_token", nil
+}
+
+func TestCreateServiceUsesTenantContextForDirectSQLEngine(t *testing.T) {
+	tokenProvider := &recordingQueryServiceTokenProvider{}
+	systemServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer systemServer.Close()
+
+	engineID := uint(3)
+	svc := NewQueryServiceService(nil, commonClient.NewSystemClient(systemServer.URL, tokenProvider), nil, "")
+	_, err := svc.CreateService(context.Background(), &serviceModels.CreateQueryServiceRequest{
+		ServiceName: "commerce-order-analysis",
+		Title:       "Commerce order analysis",
+		ConfigType:  "sql",
+		EngineID:    &engineID,
+		SqlQuery:    "SELECT order_no FROM orders",
+		OutputContract: &serviceModels.QueryServiceOutputContract{Table: &datatype.TableInfo{
+			Fields: []datatype.FieldInfo{{Name: "order_no", Type: datatype.FieldTypeString}},
+		}},
+	}, 7, 11)
+	if err == nil {
+		t.Fatal("CreateService() error = nil, want System API failure")
+	}
+	if got := tokenProvider.tenantID.Load(); got != 7 {
+		t.Fatalf("System service token tenant ID = %d, want 7", got)
+	}
+}
 
 func TestCreateServiceRemovesRecordWhenLineagePublicationFails(t *testing.T) {
 	db := openQueryServiceCreateTestDB(t)
@@ -49,7 +86,7 @@ func TestCreateServiceRemovesRecordWhenLineagePublicationFails(t *testing.T) {
 	}))
 	svc := NewQueryServiceService(repository.NewQueryServiceRepository(db), nil, metaClient, "")
 	engineID := uint(9)
-	_, err := svc.CreateService(&serviceModels.CreateQueryServiceRequest{
+	_, err := svc.CreateService(context.Background(), &serviceModels.CreateQueryServiceRequest{
 		ServiceName: "lineage_failure", Title: "Lineage failure", ConfigType: "table", EngineID: &engineID,
 		DataConfig: map[string]interface{}{
 			"locator":           "addp://engine/9/path/public/sales?type=table&item_id=33",

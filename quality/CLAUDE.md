@@ -311,7 +311,7 @@ worker 崩溃后由 lease 恢复：未达 max_attempts 返回 pending，达到�
 **被依赖**:
 - **Monitor 模块**: 通过 `common.task_executions` 中 `module='quality'` 的记录统一监控质量检查执行情况
 
-当前不支持事件触发、定时调度、取消、自定义 SQL、字段检查中的跨字段规则和自动映射；物化门禁只支持正式数据质量规范定义的五类强类型断言，需要扩展时先修改正式规范。
+当前不支持事件触发、定时调度、取消、自定义 SQL、字段检查中的跨字段规则和自动映射；物化门禁只支持正式数据质量规范定义的六类强类型断言（`not_null`、`allowed_values`、`unique_key`、`foreign_key`、`predicate_implication`、`row_count`），需要扩展时先修改正式规范。
 
 MaterializationGateTask 必须绑定唯一 `materialization_group_id`，`table_bindings` 的 LogicalTable ID 集合必须与组成员完全一致，并冻结组版本。保存和执行前通过 Common Model Client 读取现有 MaterializationGroup；worker 再以当前 lease 获取 Materialization Read Context。组查询不返回 staging、DDL 或连接事实，物理读上下文不进入任务定义或 Orchestrator 参数。
 

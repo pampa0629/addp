@@ -206,7 +206,7 @@ func TestIntegrationOracleSpatialCDCSchemaDriftBlocksAndStops(t *testing.T) {
 		t.Fatalf("Oracle schema drift claim=%#v err=%v", claim, err)
 	}
 	task.ApplyIdentity = claim.Task.ApplyIdentity
-	runner := &DataSessionRunner{Resolver: resolver, States: stateRepo, Progress: leaseRepo, Captures: captureRepo, InfraKafkaConnection: cdcDataTransferKafkaConnection(), PollTimeout: 500 * time.Millisecond, DiagnosticsInterval: time.Second,
+	runner := &DataSessionRunner{ProtectionGate: allowSourceProtectionGate{}, Resolver: resolver, States: stateRepo, Progress: leaseRepo, Captures: captureRepo, InfraKafkaConnection: cdcDataTransferKafkaConnection(), PollTimeout: 500 * time.Millisecond, DiagnosticsInterval: time.Second,
 		GetPlugin: func(engineType string) (engineplugin.EnginePlugin, error) {
 			switch engineType {
 			case "kafka":
@@ -421,7 +421,7 @@ func runIntegrationOracleCDCNativeTypeMatrix(t *testing.T, targetType string) {
 		t.Fatalf("ordinary Oracle claim=%#v err=%v", claim, err)
 	}
 	task.ApplyIdentity = claim.Task.ApplyIdentity
-	runner := &DataSessionRunner{Resolver: resolver, States: stateRepo, Progress: leaseRepo, Captures: captureRepo, InfraKafkaConnection: cdcDataTransferKafkaConnection(), PollTimeout: 500 * time.Millisecond, DiagnosticsInterval: time.Second,
+	runner := &DataSessionRunner{ProtectionGate: allowSourceProtectionGate{}, Resolver: resolver, States: stateRepo, Progress: leaseRepo, Captures: captureRepo, InfraKafkaConnection: cdcDataTransferKafkaConnection(), PollTimeout: 500 * time.Millisecond, DiagnosticsInterval: time.Second,
 		GetPlugin: func(engineType string) (engineplugin.EnginePlugin, error) {
 			switch engineType {
 			case "kafka":
@@ -658,7 +658,8 @@ func runIntegrationOracleSpatialCDCGeometryCase(t *testing.T, geometryCase oracl
 		ClaimTTL: 2 * time.Minute,
 	}
 	runner := &DataSessionRunner{
-		Resolver: resolver, States: stateRepo, Progress: leaseRepo, Captures: captureRepo,
+		ProtectionGate: allowSourceProtectionGate{},
+		Resolver:       resolver, States: stateRepo, Progress: leaseRepo, Captures: captureRepo,
 		InfraKafkaConnection: cdcDataTransferKafkaConnection(), PollTimeout: 500 * time.Millisecond,
 		DiagnosticsInterval: time.Second, MetadataScanner: metadataScanner,
 		GetPlugin: func(engineType string) (engineplugin.EnginePlugin, error) {

@@ -8,6 +8,8 @@ import (
 
 const executionAudienceRepairMigrationVersion = 75
 
+const securityModuleRepairMigrationVersion = 113
+
 // RepairDirtyExecutionAudienceMigration75 repairs the one published migration
 // failure that attempted to normalize an immutable execution authorization
 // audience. It is deliberately not a generic migration force mechanism.
@@ -122,4 +124,113 @@ func RepairDirtyExecutionAudienceMigration75(ctx context.Context, db *sql.DB) (i
 		return 0, fmt.Errorf("commit migration 75 repair: %w", err)
 	}
 	return updated, nil
+}
+
+// RepairDirtySecurityModuleMigration113 repairs only the fully rolled-back
+// development failure of migration 113. It does not mark migration 113 as
+// applied; it restores the runner to 112/clean so the corrected migration can
+// execute normally.
+func RepairDirtySecurityModuleMigration113(ctx context.Context, db *sql.DB) error {
+	if db == nil {
+		return fmt.Errorf("migration repair database is required")
+	}
+	catalog, err := ReadCatalog(EmbeddedSQL, DefaultMigrationsRoot)
+	if err != nil {
+		return fmt.Errorf("read migration catalog for migration 113 repair: %w", err)
+	}
+	if len(catalog.Files) < securityModuleRepairMigrationVersion ||
+		catalog.Files[securityModuleRepairMigrationVersion-1].Name != "000113_iam_security_module.up.sql" {
+		return fmt.Errorf("migration 113 repair requires the registered Security module migration")
+	}
+
+	tx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return fmt.Errorf("begin migration 113 repair: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx, `LOCK TABLE system.schema_migrations IN ACCESS EXCLUSIVE MODE`); err != nil {
+		return fmt.Errorf("lock migration state: %w", err)
+	}
+	var version uint
+	var dirty bool
+	if err := tx.QueryRowContext(ctx, `SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
+		return fmt.Errorf("read migration state: %w", err)
+	}
+	if version != securityModuleRepairMigrationVersion || !dirty {
+		return fmt.Errorf("migration 113 repair requires state (113, dirty), got (%d, dirty=%t)", version, dirty)
+	}
+
+	var maxChecksum uint
+	var migration113ChecksumCount int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COALESCE(MAX(version), 0), count(*) FILTER (WHERE version = 113)
+		FROM system.schema_migration_checksums
+	`).Scan(&maxChecksum, &migration113ChecksumCount); err != nil {
+		return fmt.Errorf("read migration checksums: %w", err)
+	}
+	if maxChecksum != securityModuleRepairMigrationVersion-1 || migration113ChecksumCount != 0 {
+		return fmt.Errorf("migration 113 repair requires checksums through 112 with no 113 record, got max=%d migration_113=%d", maxChecksum, migration113ChecksumCount)
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		LOCK TABLE system.permissions, system.roles, system.service_principals,
+		           system.oauth_clients, system.role_assignments IN SHARE MODE
+	`); err != nil {
+		return fmt.Errorf("lock migration 113 facts: %w", err)
+	}
+
+	var securityPermissionCount, runtimeRoleCount, servicePrincipalCount, oauthClientCount, runtimeAssignmentCount int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT
+		    (SELECT count(*) FROM system.permissions WHERE owner_module = 'security'),
+		    (SELECT count(*) FROM system.roles WHERE role_key = 'platform.security_runtime'),
+		    (SELECT count(*) FROM system.service_principals WHERE name = 'addp-security'),
+		    (SELECT count(*) FROM system.oauth_clients WHERE client_id = 'addp-security'),
+		    (SELECT count(*)
+		     FROM system.role_assignments assignment
+		     LEFT JOIN system.roles role ON role.id = assignment.role_id
+		     LEFT JOIN system.service_principals principal ON principal.id = assignment.principal_id
+		     WHERE role.role_key = 'platform.security_runtime' OR principal.name = 'addp-security')
+	`).Scan(&securityPermissionCount, &runtimeRoleCount, &servicePrincipalCount, &oauthClientCount, &runtimeAssignmentCount); err != nil {
+		return fmt.Errorf("inspect migration 113 target facts: %w", err)
+	}
+	if securityPermissionCount != 0 || runtimeRoleCount != 0 || servicePrincipalCount != 0 || oauthClientCount != 0 || runtimeAssignmentCount != 0 {
+		return fmt.Errorf(
+			"migration 113 repair requires zero target facts, got permissions=%d roles=%d principals=%d clients=%d assignments=%d",
+			securityPermissionCount, runtimeRoleCount, servicePrincipalCount, oauthClientCount, runtimeAssignmentCount,
+		)
+	}
+
+	var standardPermissionCount, activeStandardPermissionCount int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT count(*), count(*) FILTER (WHERE status = 'active')
+		FROM system.permissions
+		WHERE permission_key LIKE 'standard.classification.%'
+	`).Scan(&standardPermissionCount, &activeStandardPermissionCount); err != nil {
+		return fmt.Errorf("inspect pre-migration Standard classification permissions: %w", err)
+	}
+	if standardPermissionCount != 4 || activeStandardPermissionCount != 4 {
+		return fmt.Errorf(
+			"migration 113 repair requires four active Standard classification permissions, got total=%d active=%d",
+			standardPermissionCount, activeStandardPermissionCount,
+		)
+	}
+
+	result, err := tx.ExecContext(ctx, `
+		UPDATE system.schema_migrations
+		SET version = 112, dirty = false
+		WHERE version = 113 AND dirty = true
+	`)
+	if err != nil {
+		return fmt.Errorf("restore migration state to clean 112: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil || rows != 1 {
+		return fmt.Errorf("migration state changed during migration 113 repair")
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit migration 113 repair: %w", err)
+	}
+	return nil
 }

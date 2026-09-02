@@ -23,3 +23,12 @@ test('uses explicit spatial contract facts without guessing a field name', () =>
   }, 'shape')
   assert.deepEqual(preview, { source_srid: 4326, source_crs: 'EPSG:4326' })
 })
+
+test('includes only explicitly configured popup, label, and thematic fields', () => {
+  const rows = [{ shape: { type: 'Point', coordinates: [1, 2] }, title: 'A', metric: 7, hidden: 'x' }]
+  const features = buildGeoJSONFeatures(rows, {
+    geometry_field: 'shape', tooltip_fields: [], label_field: 'title',
+    style: { mode: 'continuous', field: 'metric', palette: 'primary' },
+  })
+  assert.deepEqual(features[0].properties, { title: 'A', metric: 7 })
+})

@@ -14,7 +14,11 @@ Transfer 模块是 ADDP 的数据传输中枢，统一负责 `sync` 任务、任
 
 table 类型 Transfer 主链路已经稳定：native table、encoded single file/object、encoded multi refs 和 encoded whole scope 都统一走 planner + executor + common provider，不按具体引擎组合建立专用通道。后续新增 table 能力应优先补 `common/engine` 或 `common/format`，不要在 Transfer 内恢复私有 reader / writer。
 
+Security 对 Transfer 的稳定动作名为 `export`，它表示受保护数据离开源 DataItem，不是 Transfer `task_type`。PostgreSQL `bounded + snapshot` 结构化 TablePipeline 必须在字段映射、类型转换、空间处理和目标 writer 前遮盖/抑制；原生表按精确 Locator 与当前表结构校验，查询源从同一 PreparedQuery 取得 ReadSet 和 OutputLineage。MongoDB collection 到 `mongodb_extended_jsonl` 的原始记录格式导出按精确 Locator 与 Meta 当前字段结构校验同一 `export` 投影，在 Provider 保留 BSON 标量的文档对象上完成保护后才编码 Canonical Extended JSON。Security 生成引擎无关的动作投影，Transfer 只在已实现并验证字段级保护执行器的源引擎和执行形态上开放；其他非 PostgreSQL 源、raw copy、watermark incremental、Kafka replay、encoded source 和 continuous/CDC 在各自执行器完成前仍资源级失效关闭。
+
 只读原生查询结果到 table 的 bounded 搬运属于同一主链路：source 必须消费 `common/engine.QueryReadSessionProvider`，target 继续消费 table write session。MongoDB 嵌套 BSON 的路径投影、数组展开、去重和关系合并由只读 MQL 在源端完成；Transfer 只搬运最终扁平行、执行显式字段映射和严格类型转换，不提供递归 JSON 自动摊平器。
+
+MongoDB 查询的 Console 基础结构整形构建器只是一种 MQL authoring 能力：通用支持 `可选单次 $unwind -> $project`，保存事实仍只有 `source.query` 中的标准 MQL command object。基础界面只决定文档/单数组的行粒度和源字段选择；单数组模式只允许展开一个数组，可以选择多个数组元素叶子字段，并可选择多个不位于任何数组下的父文档叶子字段随每个元素行重复携带；文档标识自动携带。查询输出名由编译器确定，PostgreSQL 目标名称和类型只在后续 `field_mapping` 配置。构建器不得暴露筛选、排序、空数组保留、投影别名等 MQL 拼装细节，不得保存第二份 DSL、硬编码业务 collection/字段、猜测多数组粒度或承担业务聚合；超出可逆子集的合法查询进入高级 MQL 编辑器。
 
 ## 技术栈与端口
 
@@ -80,7 +84,7 @@ Transfer 是 `transfer.task.*` 和 `transfer.task_provider.*` 的 Permission own
 - 大数据传输要优先考虑批大小、连续读取 / 写入 session、进度日志和 restartable retry。
 - bounded Worker 不使用消息载荷；以 `common.task_executions` 中冻结的执行配置为唯一输入，并通过 `lease_token` 条件写入。
 - bounded query-source 可声明通用“写入已存在表”目标：任务定义只保存 source、字段映射和转换，TaskProvider 将 `target_locator` 声明为必填运行时输入。Worker 通过通用 Engine capability 校验已存在表结构，严格校验 field mapping 的目标列名称、顺序和类型，再仅用 `TableWriteSessionProvider` append 本 execution 结果；不得调用 delete、truncate、prepare 或 DDL。稳定输出为 `execution_id + target_locator + row_count`。该模式 lease 过期后不自动重试，由上层重新发起完整编排。Transfer 不保存 LogicalTable ID，不调用 Model API，不持有 Model Permission。
-- 所有 bounded `sync` 任务统一声明稳定输出 `execution_id + target_locator + row_count`。固定目标任务使用闭合空输入契约，目标 locator 从 execution 冻结的任务目标配置解析；只有执行期目标任务要求输入 `target_locator`。下游只能消费稳定输出，不能读取 Transfer 私有配置或拼接物理路径。
+- 所有 bounded `sync` 任务统一声明稳定输出 `execution_id + target_locator + row_count`。固定目标任务使用闭合空输入契约，目标 locator 从 execution 冻结的任务目标配置解析；只有执行期目标任务要求输入 `target_locator`。创建子资源时必须保留父 locator 体系，`addp://engine/...` 与 `addp-infra://...` 分别使用各自解析器，Infra 目标不得经过业务 ResourceLocator 解析。下游只能消费稳定输出，不能读取 Transfer 私有配置或拼接物理路径。
 - 所有 TaskProvider 稳定输出只写入 `common.task_executions.metadata.outputs`；`GET /task-provider/executions/:execution_id` 使用 `common/taskprovider` 标准状态响应把同一对象投影为顶层 `outputs`。用户执行详情继续使用 Transfer DTO，不复用或包装 TaskProvider 机器契约。
 - 工作包 2B/2C 已实现业务 Kafka keyed JSON record -> PostgreSQL/MySQL monotonic upsert；数据库 CDC 已在同一 continuous worker 主循环中实现 PostgreSQL/MySQL/Oracle Debezium envelope -> PostgreSQL/MySQL/Oracle snapshot/upsert/delete。两条路线共用 `ChangeStreamReaderProvider`、partition position、目标 ledger、Infra state CAS、runtime lease/fencing 和 retention 防护；不得新增第二套 CDC consumer。
 - continuous resume 前必须验证 committed `next_offset` 仍在 Kafka 保留范围内；低于 earliest offset 时明确失败，不能静默跳到 earliest。PostgreSQL/MySQL/Oracle 目标被锁时必须响应 context 取消并回滚业务写入与 apply ledger；Oracle 通过 `FOR UPDATE NOWAIT` 有界重试检查 runtime context。

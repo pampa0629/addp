@@ -159,7 +159,13 @@ classDiagram
     class QueryRuntimeProvider {
         +QueryLanguages()
         +GenerateSampleQuery()
-        +ExecuteRuntimeQuery()
+        +PrepareQuery()
+    }
+
+    class PreparedQuery {
+        +Analysis()
+        +ReadSet()
+        +Execute()
     }
 
     class QueryReadSessionProvider {
@@ -194,6 +200,7 @@ classDiagram
     StoreProvider <|-- BatchWritableProvider
     StoreProvider <|-- ChangeStreamReaderProvider
     EnginePlugin <|-- QueryRuntimeProvider
+    QueryRuntimeProvider --> PreparedQuery
     QueryRuntimeProvider <|-- QueryReadSessionProvider
     EnginePlugin <|-- FederatedQueryRuntimeProvider
     EnginePlugin <|-- WorkflowRuntimeProvider
@@ -209,9 +216,9 @@ classDiagram
 | System | 调用 `EnginePlugin` 做连接测试、连接信息校验和 capabilities 刷新；连接信息统一保存为 `connection_info` map。 |
 | Meta | 调用 `EngineCatalogProvider` 和 `EngineCatalogFactsProvider` 扫描真实目录与 Engine Catalog leaf facts；先按 `EngineCatalogModelSpec` 理解目录层级，再结合 provider 组合选择扫描策略。 |
 | Manager | 使用 Meta 树展示探查目录；预览结构化数据优先使用 preview / batch read，预览对象或文件优先使用 preview / content read。 |
-| Develop | 根据 `capabilities.compute` 选择查询、工作流或 Notebook 引擎。 |
-| Service | 使用 query runtime 和 Meta item/spatial 元数据发布数据服务。 |
-| Transfer | bounded table/content 路径消费 batch/session/content Provider；只读原生查询结果搬运消费 `QueryReadSessionProvider`，由源引擎游标连续返回批次，不经过查询预览上限；continuous source 消费 `ChangeStreamReaderProvider`，从同一 reader 获取分区 earliest/latest position 用于 lag/retention 诊断，由 Transfer adapter 归一化 ChangeEvent 并组合目标 Provider。 |
+| Develop | 根据 `capabilities.compute` 选择查询、工作流或 Notebook 引擎；普通查询只消费 `QueryRuntimeProvider.PrepareQuery()` 返回的 PreparedQuery，从同一计划取得读依赖并执行。 |
+| Service | 使用 query runtime 和 Meta item/spatial 元数据发布数据服务；固定 SQL 的读依赖快照与真实执行统一来自 PreparedQuery。 |
+| Transfer | bounded table/content 路径消费 batch/session/content Provider；只读原生查询结果搬运先准备 PreparedQuery，再由 `QueryReadSessionProvider` 从同一计划打开连续读会话；源引擎游标连续返回批次，不经过查询预览上限；continuous source 消费 `ChangeStreamReaderProvider`，从同一 reader 获取分区 earliest/latest position 用于 lag/retention 诊断，由 Transfer adapter 归一化 ChangeEvent 并组合目标 Provider。 |
 
 Workflow Runtime 的发现以 System Engine Instance 和 Runtime Descriptor 为唯一控制面路径。Common 使用一个通用 HTTP `WorkflowRuntimeProvider` 消费所有声明 `compute.workflow.runtime_api=addp.workflow/v1` 的实例；GeoPython、Spark、Math、Model3D、PointCloud、SuperMap 和用户自研 Runtime 不分别维护重复协议插件。SuperMap SDX+ for PostgreSQL 等领域能力仍保留专用 table/session Provider，但 Provider 只依赖工作区绑定 Runtime ID、Runtime Descriptor 和必需 direct 算子，不依赖固定运行时 `engine_type`。
 

@@ -39,6 +39,26 @@ func TestBuildCapabilitiesViewIncludesTableSpatialEncoding(t *testing.T) {
 	assertCapabilityTag(t, *item, "native_spatial_functions")
 }
 
+func TestBuildCapabilitiesViewIncludesEncodedRecordFormats(t *testing.T) {
+	caps := engineplugin.NewDynamicSchemaCapabilities("mongodb")
+	caps.Storage.Store.EncodedRecordReadSession = &engineplugin.EncodedRecordReadSessionCapability{
+		Formats: []string{"mongodb_extended_jsonl"},
+	}
+	payload, err := engineplugin.MarshalEngineCapabilities(caps)
+	if err != nil {
+		t.Fatalf("MarshalEngineCapabilities failed: %v", err)
+	}
+	jsonValue := systemModels.JSONString(payload)
+	view := BuildCapabilitiesView(&jsonValue, "mongodb")
+	item := findCapabilityItem(view, "storage", "content_read")
+	if item == nil {
+		t.Fatalf("content_read item not found: %#v", view)
+	}
+	assertCapabilityTag(t, *item, "record_read_session")
+	assertCapabilityTag(t, *item, "encoded_record_read_session")
+	assertCapabilityTag(t, *item, "record_format_mongodb_extended_jsonl")
+}
+
 func TestBuildCapabilitiesViewIncludesQueryParameters(t *testing.T) {
 	caps := engineplugin.NewTabularCapabilities("postgresql", "schema", engineplugin.TabularCapabilityOptions{
 		SupportsParameters: true,

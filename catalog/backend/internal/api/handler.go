@@ -1,10 +1,14 @@
 package api
 
 import (
+	"crypto/sha256"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	catalogi18n "github.com/addp/catalog/i18n"
 	catalogauthorization "github.com/addp/catalog/internal/authorization"
@@ -41,17 +45,22 @@ type updateComponentElementRequest struct {
 }
 
 type updateEntryRequest struct {
-	Version                     int64                           `json:"version" minimum:"1"`
-	BusinessName                *string                         `json:"business_name"`
-	BusinessDescription         *string                         `json:"business_description"`
-	GovernanceStatus            string                          `json:"governance_status" enums:"discovered,curated,certified,deprecated"`
-	Visibility                  string                          `json:"visibility" enums:"inventory,department,tenant"`
-	Domains                     []updateDomainLinkRequest       `json:"domains"`
-	GlossaryIDs                 []string                        `json:"glossary_ids"`
-	Responsibilities            []updateResponsibilityRequest   `json:"responsibilities"`
-	ComponentElements           []updateComponentElementRequest `json:"component_elements"`
-	DeprecationReason           *string                         `json:"deprecation_reason"`
-	RecommendedSuccessorEntryID *string                         `json:"recommended_successor_entry_id" format:"uuid"`
+	Version             int64                           `json:"version" minimum:"1"`
+	BusinessName        *string                         `json:"business_name"`
+	BusinessDescription *string                         `json:"business_description"`
+	GovernanceStatus    string                          `json:"governance_status" enums:"discovered,curated"`
+	Visibility          string                          `json:"visibility" enums:"inventory,department,tenant"`
+	Domains             []updateDomainLinkRequest       `json:"domains"`
+	GlossaryIDs         []string                        `json:"glossary_ids"`
+	Responsibilities    []updateResponsibilityRequest   `json:"responsibilities"`
+	ComponentElements   []updateComponentElementRequest `json:"component_elements"`
+}
+
+type updateEntryGovernanceRequest struct {
+	Version                     int64   `json:"version" minimum:"1"`
+	GovernanceStatus            string  `json:"governance_status" enums:"curated,certified,deprecated"`
+	Reason                      *string `json:"reason"`
+	RecommendedSuccessorEntryID *string `json:"recommended_successor_entry_id" format:"uuid"`
 }
 
 type batchGovernanceEntryRequest struct {
@@ -729,9 +738,128 @@ func (h *Handler) GetEntry(c *gin.Context) {
 	c.JSON(http.StatusOK, entry)
 }
 
+// GetEntryDataDictionary 联邦读取当前物理字段与指定时点的数据标准快照。
+// @Summary 获取联邦数据字典 | Get federated data dictionary
+// @Description 仅适用于来源有效的 Meta DataItem；物理字段始终来自 Meta 当前结构，as_of 仅用于解析 Standard 数据元及其精确码值集修订 | Only applies to active Meta DataItems; physical fields always come from the current Meta schema, while as_of resolves Standard data element and exact code-set revisions
+// @Tags Catalog
+// @Produce json
+// @Param id path string true "CatalogEntry UUID"
+// @Param as_of query string false "Standard 修订查询时点，RFC3339；缺省为当前时刻 | Standard revision point in time in RFC3339; defaults to now" format(date-time)
+// @Success 200 {object} service.DataDictionary "联邦数据字典 | Federated data dictionary"
+// @Failure 400 {object} map[string]interface{} "ID 或 as_of 无效 | Invalid ID or as_of"
+// @Failure 401 {object} map[string]interface{} "未认证 | Unauthorized"
+// @Failure 403 {object} map[string]interface{} "权限不足 | Forbidden"
+// @Failure 404 {object} map[string]interface{} "条目不存在或不可见 | Entry not found or not visible"
+// @Failure 409 {object} map[string]interface{} "该条目不适用数据字典 | Data dictionary not applicable"
+// @Failure 503 {object} map[string]interface{} "Meta 或 Standard 依赖不可用 | Meta or Standard dependency unavailable"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["catalog.entry.read"]
+// @x-addp-conditional-permissions ["catalog.inventory.read"]
+// @Router /entries/{id}/data-dictionary [get]
+// @Security BearerAuth
+func (h *Handler) GetEntryDataDictionary(c *gin.Context) {
+	dictionary, ok := h.resolveEntryDataDictionary(c)
+	if !ok {
+		return
+	}
+	c.JSON(http.StatusOK, dictionary)
+}
+
+// ExportEntryDataDictionary 导出本次重新解析的联邦数据字典 JSON 快照。
+// @Summary 导出联邦数据字典快照 | Export federated data dictionary snapshot
+// @Description 使用与联邦数据字典查询相同的可见性和解析规则重新组合一次结果，并返回包含 generated_at 和 as_of 的不可变 UTF-8 JSON 附件；服务端不留存导出副本 | Re-resolves the federated data dictionary under the same visibility and resolution rules and returns an immutable UTF-8 JSON attachment containing generated_at and as_of; the server does not retain an export copy
+// @Tags Catalog
+// @Produce application/json
+// @Param id path string true "CatalogEntry UUID"
+// @Param as_of query string false "Standard 修订查询时点，RFC3339；缺省为当前时刻 | Standard revision point in time in RFC3339; defaults to now" format(date-time)
+// @Success 200 {file} file "联邦数据字典 JSON 快照 | Federated data dictionary JSON snapshot"
+// @Failure 400 {object} map[string]interface{} "ID 或 as_of 无效 | Invalid ID or as_of"
+// @Failure 401 {object} map[string]interface{} "未认证 | Unauthorized"
+// @Failure 403 {object} map[string]interface{} "权限不足 | Forbidden"
+// @Failure 404 {object} map[string]interface{} "条目不存在或不可见 | Entry not found or not visible"
+// @Failure 409 {object} map[string]interface{} "该条目不适用数据字典 | Data dictionary not applicable"
+// @Failure 503 {object} map[string]interface{} "Meta 或 Standard 依赖不可用 | Meta or Standard dependency unavailable"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["catalog.entry.read"]
+// @x-addp-conditional-permissions ["catalog.inventory.read"]
+// @Router /entries/{id}/data-dictionary/export [get]
+// @Security BearerAuth
+func (h *Handler) ExportEntryDataDictionary(c *gin.Context) {
+	dictionary, ok := h.resolveEntryDataDictionary(c)
+	if !ok {
+		return
+	}
+	payload, etag, fileName, err := marshalDataDictionaryExport(dictionary)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, fileName))
+	c.Header("ETag", etag)
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.Data(http.StatusOK, "application/json; charset=utf-8", payload)
+}
+
+func (h *Handler) resolveEntryDataDictionary(c *gin.Context) (*service.DataDictionary, bool) {
+	tenantID, ok := commonAuth.TenantIDFromGin(c)
+	if !ok {
+		respondError(c, http.StatusBadRequest, service.ErrInvalidPage)
+		return nil, false
+	}
+	entryID, err := parseCanonicalUUID(c.Param("id"))
+	if err != nil {
+		respondError(c, http.StatusBadRequest, service.ErrInvalidPage)
+		return nil, false
+	}
+	asOf := time.Now().UTC()
+	values := c.Request.URL.Query()["as_of"]
+	if len(values) > 1 {
+		respondError(c, http.StatusBadRequest, service.ErrInvalidPage)
+		return nil, false
+	}
+	if len(values) == 1 {
+		value := values[0]
+		if value == "" {
+			respondError(c, http.StatusBadRequest, service.ErrInvalidPage)
+			return nil, false
+		}
+		asOf, err = time.Parse(time.RFC3339, value)
+		if err != nil {
+			respondError(c, http.StatusBadRequest, service.ErrInvalidPage)
+			return nil, false
+		}
+	}
+	h.sync.ObserveTenant(tenantID)
+	dictionary, err := h.entries.GetDataDictionary(c.Request.Context(), tenantID, entryAccess(c), entryID, asOf)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return nil, false
+	}
+	return dictionary, true
+}
+
+func marshalDataDictionaryExport(dictionary *service.DataDictionary) ([]byte, string, string, error) {
+	if dictionary == nil || dictionary.EntryID == uuid.Nil || dictionary.GeneratedAt.IsZero() {
+		return nil, "", "", fmt.Errorf("invalid data dictionary export")
+	}
+	payload, err := json.MarshalIndent(dictionary, "", "  ")
+	if err != nil {
+		return nil, "", "", fmt.Errorf("marshal data dictionary export: %w", err)
+	}
+	payload = append(payload, '\n')
+	digest := sha256.Sum256(payload)
+	fileName := fmt.Sprintf(
+		"data-dictionary-%s-%s.json",
+		dictionary.EntryID,
+		dictionary.GeneratedAt.UTC().Format("20060102T150405Z"),
+	)
+	return payload, fmt.Sprintf(`"%x"`, digest), fileName, nil
+}
+
 // UpdateEntry 原子更新企业目录的完整可编辑聚合。
-// @Summary 编目企业目录条目 | Curate an enterprise catalog entry
-// @Description 使用聚合根 version 原子替换业务信息、语义关联、责任、组件数据元关联、可见性、治理状态和可选推荐继任项；推荐继任只允许指向同租户、来源有效且已编目或已认证的 active 条目；Standard 或 System 校验不可达时明确失败但不影响模块 Ready | Atomically replace business metadata, semantic links, responsibilities, component-element links, visibility, governance status, and the optional recommended successor using the aggregate version; a successor must be an active-source curated or certified entry in the same tenant; unavailable Standard or System validation fails explicitly without affecting module readiness
+// @Summary 维护企业资源编目 | Maintain enterprise resource curation
+// @Description 使用聚合根 version 原子替换 discovered 或 curated 阶段的业务信息、语义关联、责任、组件数据元关联和可见性；curated 回到 discovered 只表示撤销编目，必须清空全部 Catalog 人工编目字段并恢复 inventory；认证、撤销认证和弃用只允许使用治理子资源；Standard 或 System 校验不可达时明确失败但不影响模块 Ready | Atomically replace business metadata, semantic links, responsibilities, component-element links, and visibility while the entry is discovered or curated; curated to discovered exclusively withdraws curation and must clear every Catalog-owned curation field while restoring inventory visibility; certification, certification withdrawal, and deprecation exclusively use the governance subresource; unavailable Standard or System validation fails explicitly without affecting module readiness
 // @Tags Catalog
 // @Accept json
 // @Produce json
@@ -740,13 +868,12 @@ func (h *Handler) GetEntry(c *gin.Context) {
 // @Success 200 {object} service.EntryDetail "更新后的完整条目 | Updated complete entry"
 // @Failure 400 {object} map[string]interface{} "请求或编目要求无效 | Invalid request or curation requirements"
 // @Failure 401 {object} map[string]interface{} "未认证 | Unauthorized"
-// @Failure 403 {object} map[string]interface{} "缺少更新或条件状态权限 | Missing update or conditional status permission"
+// @Failure 403 {object} map[string]interface{} "缺少目录更新权限 | Missing catalog update permission"
 // @Failure 404 {object} map[string]interface{} "条目不存在 | Entry not found"
 // @Failure 409 {object} map[string]interface{} "版本、状态或引用冲突 | Version, state, or reference conflict"
 // @Failure 503 {object} map[string]interface{} "Standard 或 System 引用校验不可达 | Standard or System reference validation unavailable"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["catalog.entry.update"]
-// @x-addp-conditional-permissions ["catalog.entry.certify","catalog.entry.deprecate"]
 // @Router /entries/{id} [put]
 // @Security BearerAuth
 func (h *Handler) UpdateEntry(c *gin.Context) {
@@ -778,7 +905,64 @@ func (h *Handler) UpdateEntry(c *gin.Context) {
 	h.sync.ObserveTenant(tenantID)
 	entry, err := h.entries.Update(
 		c.Request.Context(), tenantID, id, input,
-		service.UpdateEntryAuthorization{
+		service.UpdateEntryActor{Type: authContext.Principal.Type, ID: authContext.Principal.ID},
+	)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	c.JSON(http.StatusOK, entry)
+}
+
+// UpdateEntryGovernance 原子更新企业目录治理状态。
+// @Summary 维护企业资源治理状态 | Maintain enterprise resource governance state
+// @Description 使用聚合根 version 原子执行认证、撤销认证、弃用或弃用信息维护；只更新治理状态、可选推荐继任项和领域审计，不替换业务编目事实；撤销认证和弃用必须填写原因；推荐继任只允许指向同租户、来源有效且已编目或已认证的 active 条目 | Atomically certify, withdraw certification, deprecate, or maintain deprecation information using the aggregate version; only governance status, the optional recommended successor, and domain audit are updated, while curation facts remain unchanged; certification withdrawal and deprecation require a reason; a successor must be an active-source curated or certified entry in the same tenant
+// @Tags Catalog
+// @Accept json
+// @Produce json
+// @Param id path string true "CatalogEntry UUID"
+// @Param request body updateEntryGovernanceRequest true "治理状态完整更新 | Complete governance-state update"
+// @Success 200 {object} service.EntryDetail "更新后的完整条目 | Updated complete entry"
+// @Failure 400 {object} map[string]interface{} "请求、认证要求或原因无效 | Invalid request, certification requirements, or reason"
+// @Failure 401 {object} map[string]interface{} "未认证 | Unauthorized"
+// @Failure 403 {object} map[string]interface{} "缺少目录更新或条件治理权限 | Missing catalog update or conditional governance permission"
+// @Failure 404 {object} map[string]interface{} "条目不存在 | Entry not found"
+// @Failure 409 {object} map[string]interface{} "版本、状态或推荐继任项冲突 | Version, state, or recommended-successor conflict"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["catalog.entry.update"]
+// @x-addp-conditional-permissions ["catalog.entry.certify","catalog.entry.deprecate"]
+// @Router /entries/{id}/governance [put]
+// @Security BearerAuth
+func (h *Handler) UpdateEntryGovernance(c *gin.Context) {
+	tenantID, ok := commonAuth.TenantIDFromGin(c)
+	if !ok {
+		respondError(c, http.StatusBadRequest, service.ErrInvalidGovernanceUpdate)
+		return
+	}
+	id, err := uuid.Parse(strings.TrimSpace(c.Param("id")))
+	if err != nil || id == uuid.Nil {
+		respondError(c, http.StatusBadRequest, service.ErrInvalidGovernanceUpdate)
+		return
+	}
+	var request updateEntryGovernanceRequest
+	if err := commonapi.BindOptionalJSONStrict(c, &request); err != nil {
+		respondError(c, http.StatusBadRequest, service.ErrInvalidGovernanceUpdate)
+		return
+	}
+	input, err := mapUpdateEntryGovernanceRequest(request)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
+	authContext, ok := commonAuth.AuthContextFromGin(c)
+	if !ok {
+		respondError(c, http.StatusUnauthorized, service.ErrInvalidGovernanceUpdate)
+		return
+	}
+	h.sync.ObserveTenant(tenantID)
+	entry, err := h.entries.UpdateGovernance(
+		c.Request.Context(), tenantID, id, input,
+		service.UpdateEntryGovernanceAuthorization{
 			CanCertify:   commonAuth.HasRolePermission(c, catalogauthorization.PermissionCatalogEntryCertify),
 			CanDeprecate: commonAuth.HasRolePermission(c, catalogauthorization.PermissionCatalogEntryDeprecate),
 		},
@@ -982,18 +1166,11 @@ func mapUpdateEntryRequest(request updateEntryRequest) (service.UpdateEntryInput
 	input := service.UpdateEntryInput{
 		Version: request.Version, BusinessName: request.BusinessName,
 		BusinessDescription: request.BusinessDescription, GovernanceStatus: request.GovernanceStatus,
-		Visibility: request.Visibility, DeprecationReason: request.DeprecationReason,
+		Visibility:        request.Visibility,
 		Domains:           make([]service.DomainLinkInput, 0, len(request.Domains)),
 		GlossaryIDs:       make([]int64, 0, len(request.GlossaryIDs)),
 		Responsibilities:  make([]service.ResponsibilityInput, 0, len(request.Responsibilities)),
 		ComponentElements: make([]service.ComponentElementInput, 0, len(request.ComponentElements)),
-	}
-	if request.RecommendedSuccessorEntryID != nil {
-		successorID, err := uuid.Parse(*request.RecommendedSuccessorEntryID)
-		if err != nil || successorID == uuid.Nil || successorID.String() != *request.RecommendedSuccessorEntryID {
-			return input, service.ErrInvalidEntryUpdate
-		}
-		input.RecommendedSuccessorEntryID = &successorID
 	}
 	for _, domain := range request.Domains {
 		id, err := parseCanonicalPositiveInt64(domain.ID)
@@ -1030,6 +1207,20 @@ func mapUpdateEntryRequest(request updateEntryRequest) (service.UpdateEntryInput
 		input.ComponentElements = append(input.ComponentElements, service.ComponentElementInput{
 			ComponentID: componentID, ElementID: elementID,
 		})
+	}
+	return input, nil
+}
+
+func mapUpdateEntryGovernanceRequest(request updateEntryGovernanceRequest) (service.UpdateEntryGovernanceInput, error) {
+	input := service.UpdateEntryGovernanceInput{
+		Version: request.Version, GovernanceStatus: request.GovernanceStatus, Reason: request.Reason,
+	}
+	if request.RecommendedSuccessorEntryID != nil {
+		successorID, err := uuid.Parse(*request.RecommendedSuccessorEntryID)
+		if err != nil || successorID == uuid.Nil || successorID.String() != *request.RecommendedSuccessorEntryID {
+			return input, service.ErrInvalidGovernanceUpdate
+		}
+		input.RecommendedSuccessorEntryID = &successorID
 	}
 	return input, nil
 }
@@ -1243,6 +1434,14 @@ func respondError(c *gin.Context, status int, err error) {
 		status = http.StatusForbidden
 		message = commoni18n.T(c, catalogi18n.MsgCertificationPermissionRequired)
 		errorCode = "catalog_certification_permission_required"
+	case errors.Is(err, service.ErrCertificationRequirementsNotMet):
+		status = http.StatusBadRequest
+		message = commoni18n.T(c, catalogi18n.MsgCertificationRequirementsNotMet)
+		errorCode = "catalog_certification_requirements_not_met"
+	case errors.Is(err, service.ErrCertificationWithdrawalReasonRequired):
+		status = http.StatusBadRequest
+		message = commoni18n.T(c, catalogi18n.MsgCertificationWithdrawalReasonRequired)
+		errorCode = "catalog_certification_withdrawal_reason_required"
 	case errors.Is(err, service.ErrDeprecationPermissionRequired):
 		status = http.StatusForbidden
 		message = commoni18n.T(c, catalogi18n.MsgDeprecationPermissionRequired)
@@ -1263,7 +1462,7 @@ func respondError(c *gin.Context, status int, err error) {
 		status = http.StatusConflict
 		message = commoni18n.T(c, catalogi18n.MsgInvalidRecommendedSuccessor)
 		errorCode = "catalog_recommended_successor_invalid"
-	case errors.Is(err, service.ErrInvalidEntryUpdate):
+	case errors.Is(err, service.ErrInvalidEntryUpdate), errors.Is(err, service.ErrInvalidGovernanceUpdate):
 		status = http.StatusBadRequest
 		message = commoni18n.T(c, catalogi18n.MsgInvalidParams)
 		errorCode = "invalid_request"
@@ -1311,6 +1510,14 @@ func respondError(c *gin.Context, status int, err error) {
 		status = http.StatusBadRequest
 		message = commoni18n.T(c, catalogi18n.MsgInvalidParams)
 		errorCode = "invalid_request"
+	case errors.Is(err, service.ErrDataDictionaryNotApplicable):
+		status = http.StatusConflict
+		message = commoni18n.T(c, catalogi18n.MsgDataDictionaryNotApplicable)
+		errorCode = "catalog_data_dictionary_not_applicable"
+	case errors.Is(err, service.ErrDataDictionaryDependencyUnavailable):
+		status = http.StatusServiceUnavailable
+		message = commoni18n.T(c, catalogi18n.MsgDataDictionaryDependencyUnavailable)
+		errorCode = "catalog_data_dictionary_dependency_unavailable"
 	case status == http.StatusBadRequest:
 		message = commoni18n.T(c, catalogi18n.MsgInvalidParams)
 		errorCode = "invalid_request"

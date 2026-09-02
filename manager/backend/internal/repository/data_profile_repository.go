@@ -135,6 +135,33 @@ func (r *DataProfileRepository) ReplaceCurrent(
 	})
 }
 
+// DeleteByItemFingerprints removes every cached profile for projection-change
+// targets. The caller supplies the transaction that also owns the projection
+// rows and checkpoint.
+func (r *DataProfileRepository) DeleteByItemFingerprints(
+	ctx context.Context,
+	tx *gorm.DB,
+	tenantID int64,
+	itemFingerprints []string,
+) error {
+	if r == nil || tx == nil || tenantID <= 0 || len(itemFingerprints) == 0 {
+		return errors.New("data profile cleanup requires transaction, tenant and item fingerprints")
+	}
+	var profileIDs []uint
+	if err := tx.WithContext(ctx).Model(&models.DataProfile{}).
+		Where("tenant_id = ? AND item_fingerprint IN ?", tenantID, itemFingerprints).
+		Pluck("id", &profileIDs).Error; err != nil {
+		return err
+	}
+	if len(profileIDs) == 0 {
+		return nil
+	}
+	if err := tx.WithContext(ctx).Where("profile_id IN ?", profileIDs).Delete(&models.DataProfileField{}).Error; err != nil {
+		return err
+	}
+	return tx.WithContext(ctx).Where("id IN ?", profileIDs).Delete(&models.DataProfile{}).Error
+}
+
 func decodeStoredProfile(state *models.DataProfile) (*dataprofile.Profile, error) {
 	profile := &dataprofile.Profile{
 		SchemaVersion: state.SchemaVersion,

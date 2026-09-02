@@ -6,10 +6,12 @@ import (
 	"net/http"
 	"regexp"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/federatedquery"
+	commonquery "github.com/addp/common/query"
 )
 
 const RuntimeAPI = "addp.query-runtime/v1"
@@ -45,6 +47,16 @@ func (p *Plugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {
 }
 
 func (p *Plugin) QueryLanguages() []string { return []string{"sql"} }
+
+func (p *Plugin) AnalyzeFederatedQuery(_ context.Context, req plugin.FederatedQueryRequest) (*plugin.QueryAnalysis, error) {
+	if !strings.EqualFold(strings.TrimSpace(req.Language), "sql") || strings.TrimSpace(req.Query) == "" {
+		return nil, fmt.Errorf("DuckDB federated query requires non-empty SQL")
+	}
+	if err := commonquery.RequireReadOnly(req.Query); err != nil {
+		return nil, fmt.Errorf("DuckDB federated query must be read-only: %w", err)
+	}
+	return plugin.NewQueryAnalysis("sql", plugin.QuerySchemaCoverageUnknown)
+}
 
 func (p *Plugin) ResolveSourceEngineIDs(query string, candidates []plugin.FederatedQuerySource) []uint {
 	referenced := make(map[string]struct{})

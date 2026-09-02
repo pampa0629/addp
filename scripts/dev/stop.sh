@@ -154,6 +154,7 @@ stop_services_concurrent() {
   pkill -9 -f "addp-standard" 2>/dev/null || true
   pkill -9 -f "addp-model" 2>/dev/null || true
   pkill -9 -f "addp-quality" 2>/dev/null || true
+  pkill -9 -f "addp-security" 2>/dev/null || true
   pkill -9 -f "addp-asset" 2>/dev/null || true
   pkill -9 -f "addp-catalog" 2>/dev/null || true
   pkill -9 -f "addp-workbench" 2>/dev/null || true

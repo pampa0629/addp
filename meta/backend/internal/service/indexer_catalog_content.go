@@ -26,7 +26,7 @@ func splitCatalogResourcePath(value string) (dir, name string) {
 	return value[:idx+1], value[idx+1:]
 }
 
-func (s *IndexerService) IndexCatalogContent(ctx context.Context, resource *commonModels.Engine, tenantID, engineID uint, catalogResource scanresource.StorageResource, relativePath, fullName string, item *models.MetaItem, extractedText string) bool {
+func (s *IndexerService) IndexCatalogContent(ctx context.Context, resource *commonModels.Engine, tenantID, engineID uint, catalogResource scanresource.StorageResource, relativePath, fullName string, item *models.MetaItem, extractedText string, textTruncated bool) bool {
 	if s.contentIndex == nil || resource == nil || item == nil {
 		return false
 	}
@@ -55,23 +55,25 @@ func (s *IndexerService) IndexCatalogContent(ctx context.Context, resource *comm
 	}
 
 	document := commonClient.ManagerContentDocument{
-		DocumentID:     item.Fingerprint,
-		ContentHash:    stringFromStandardAttributes(metadata, "storage", "content_hash"),
-		Locator:        metaItemLocator(engineID, resource.EngineType, dataItemType, fullName, &item.ID),
-		EngineID:       engineID,
-		EngineName:     resource.Name,
-		EngineType:     resource.EngineType,
-		DataItemType:   dataItemType,
-		Name:           item.Name,
-		FullName:       fullName,
-		Bucket:         catalogResource.RootName,
-		Path:           dir,
-		Metadata:       metadata,
-		SizeBytes:      item.SizeBytes,
-		DataUpdatedAt:  catalogResource.LastModified,
-		Content:        truncatedContent,
-		ContentPreview: contentPreview,
-		ProjectionTime: time.Now().UTC(),
+		DocumentID:       item.Fingerprint,
+		PayloadKind:      commonClient.ManagerContentPayloadExtractedContent,
+		ContentHash:      stringFromStandardAttributes(metadata, "storage", "content_hash"),
+		Locator:          metaItemLocator(engineID, resource.EngineType, dataItemType, fullName, &item.ID),
+		EngineID:         engineID,
+		EngineName:       resource.Name,
+		EngineType:       resource.EngineType,
+		DataItemType:     dataItemType,
+		Name:             item.Name,
+		FullName:         fullName,
+		Bucket:           catalogResource.RootName,
+		Path:             dir,
+		Metadata:         metadata,
+		SizeBytes:        item.SizeBytes,
+		DataUpdatedAt:    catalogResource.LastModified,
+		Content:          truncatedContent,
+		ContentPreview:   contentPreview,
+		ContentTruncated: textTruncated,
+		ProjectionTime:   time.Now().UTC(),
 	}
 
 	if len(tags) > 0 {

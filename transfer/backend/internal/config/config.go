@@ -19,6 +19,7 @@ type Config struct {
 	Port                               string
 	DBSchema                           string
 	MetaServiceURL                     string // Meta 服务地址
+	SecurityServiceURL                 string
 	ServiceClientSecret                string
 	RedisHost                          string
 	RedisPort                          string
@@ -127,6 +128,7 @@ func Load() *Config {
 		Port:                               commonConfig.GetEnv("TRANSFER_BACKEND_PORT", "8083"),
 		DBSchema:                           commonConfig.GetEnv("DB_SCHEMA", "transfer"),
 		MetaServiceURL:                     metaURL,
+		SecurityServiceURL:                 commonConfig.GetEnv("SECURITY_URL", "http://localhost:8194"),
 		ServiceClientSecret:                commonConfig.GetEnv("TRANSFER_SERVICE_CLIENT_SECRET", ""),
 		RedisHost:                          commonConfig.GetEnv("REDIS_HOST", "localhost"),
 		RedisPort:                          commonConfig.GetEnv("REDIS_PORT", "6379"),

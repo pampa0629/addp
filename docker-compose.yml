@@ -61,6 +61,7 @@ services:
       - ORCHESTRATOR_SERVICE_CLIENT_SECRET=${ORCHESTRATOR_SERVICE_CLIENT_SECRET}
       - PORTAL_SERVICE_CLIENT_SECRET=${PORTAL_SERVICE_CLIENT_SECRET}
       - QUALITY_SERVICE_CLIENT_SECRET=${QUALITY_SERVICE_CLIENT_SECRET}
+      - SECURITY_SERVICE_CLIENT_SECRET=${SECURITY_SERVICE_CLIENT_SECRET}
       - POINTCLOUD_WORKFLOW_SERVICE_CLIENT_SECRET=${POINTCLOUD_WORKFLOW_SERVICE_CLIENT_SECRET}
       - SERVICE_SERVICE_CLIENT_SECRET=${SERVICE_SERVICE_CLIENT_SECRET}
       - STANDARD_SERVICE_CLIENT_SECRET=${STANDARD_SERVICE_CLIENT_SECRET}
@@ -126,6 +127,7 @@ services:
       - POSTGRES_DB=${POSTGRES_DB:-addp}
       - SYSTEM_URL=http://system-backend:8180
       - META_URL=http://meta-backend:8082
+      - SECURITY_URL=http://security-backend:8194
       - MANAGER_SERVICE_CLIENT_SECRET=${MANAGER_SERVICE_CLIENT_SECRET}
       - TRANSFER_URL=http://transfer-backend:8083
       - REDIS_HOST=redis
@@ -1007,6 +1009,65 @@ services:
       - addp-network
     depends_on:
       - quality-backend
+    restart: unless-stopped
+
+  security-backend:
+    image: ${REGISTRY:-localhost:5001}/addp-security-backend:${IMAGE_TAG:-latest}
+    container_name: security-backend
+    environment:
+      - SERVICE_HOST=security-backend
+      - SECURITY_BACKEND_PORT=8194
+      - SYSTEM_URL=http://system-backend:8180
+      - SECURITY_SERVICE_CLIENT_SECRET=${SECURITY_SERVICE_CLIENT_SECRET}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-addp}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB:-addp}
+    ports:
+      - "8194:8194"
+    networks:
+      - addp-network
+    depends_on:
+      system-backend:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8194; echo -e \"GET /health/ready HTTP/1.0\\r\\n\\r\\n\" >&3; head -n 1 <&3 | grep -q \" 200 \"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  security-worker:
+    image: ${REGISTRY:-localhost:5001}/addp-security-worker:${IMAGE_TAG:-latest}
+    environment:
+      - SERVICE_HOST=security-worker
+      - SECURITY_BACKEND_PORT=8194
+      - SYSTEM_URL=http://system-backend:8180
+      - META_URL=http://meta-backend:8082
+      - SECURITY_SERVICE_CLIENT_SECRET=${SECURITY_SERVICE_CLIENT_SECRET}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-addp}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB:-addp}
+    networks:
+      - addp-network
+    depends_on:
+      system-backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+  security-frontend:
+    image: ${REGISTRY:-localhost:5001}/addp-security-frontend:${IMAGE_TAG:-latest}
+    container_name: security-frontend
+    ports:
+      - "8122:80"
+    networks:
+      - addp-network
+    depends_on:
+      - security-backend
     restart: unless-stopped
 
 

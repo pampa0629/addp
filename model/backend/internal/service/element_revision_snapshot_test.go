@@ -2,9 +2,11 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	commonclient "github.com/addp/common/client"
 	"github.com/addp/model/internal/models"
@@ -12,7 +14,7 @@ import (
 )
 
 func TestEntityApprovalFreezesAndReopenClearsElementRevision(t *testing.T) {
-	server := newElementRevisionSnapshotServer(t, `{"data":[{"id":41,"tenant_id":1,"code":"customer_id","lifecycle_state":"active","current_revision":{"id":4103,"revision_no":3,"status":"published","name":"Customer ID","data_type":"bigint"}}]}`)
+	server := newElementRevisionSnapshotServer(t, `{"results":[{"element_id":"41","found":true,"snapshot":{"element_id":"41","element_revision_id":"4103","revision_no":3,"code":"customer_id","name":"Customer ID","definition":"Customer identifier","data_type":"bigint","nullable":false,"value_domain_kind":"unrestricted","example_values":[],"effective_from":"2026-01-01T00:00:00Z"}}]}`)
 	defer server.Close()
 
 	db := setupLifecycleServiceTestDB(t)
@@ -51,7 +53,7 @@ func TestEntityApprovalFreezesAndReopenClearsElementRevision(t *testing.T) {
 }
 
 func TestLogicalTableApprovalFreezesAndReopenClearsElementRevision(t *testing.T) {
-	server := newElementRevisionSnapshotServer(t, `{"data":[{"id":51,"tenant_id":1,"code":"order_id","lifecycle_state":"active","current_revision":{"id":5102,"revision_no":2,"status":"published","name":"Order ID","data_type":"bigint"}}]}`)
+	server := newElementRevisionSnapshotServer(t, `{"results":[{"element_id":"51","found":true,"snapshot":{"element_id":"51","element_revision_id":"5102","revision_no":2,"code":"order_id","name":"Order ID","definition":"Order identifier","data_type":"bigint","nullable":false,"value_domain_kind":"unrestricted","example_values":[],"effective_from":"2026-01-01T00:00:00Z"}}]}`)
 	defer server.Close()
 
 	db := setupLifecycleServiceTestDB(t)
@@ -87,7 +89,7 @@ func TestLogicalTableApprovalFreezesAndReopenClearsElementRevision(t *testing.T)
 }
 
 func TestEntityApprovalIsAtomicWhenElementHasNoEffectiveRevision(t *testing.T) {
-	server := newElementRevisionSnapshotServer(t, `{"data":[{"id":61,"tenant_id":1,"code":"future_id","lifecycle_state":"active"}]}`)
+	server := newElementRevisionSnapshotServer(t, `{"results":[{"element_id":"61","found":false}]}`)
 	defer server.Close()
 	db := setupLifecycleServiceTestDB(t)
 	elementID := int64(61)
@@ -113,8 +115,18 @@ func TestEntityApprovalIsAtomicWhenElementHasNoEffectiveRevision(t *testing.T) {
 func newElementRevisionSnapshotServer(t *testing.T, body string) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/standard/elements" || r.URL.Query().Get("as_of") == "" {
-			t.Fatalf("unexpected Standard request: %s", r.URL.String())
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/standard/runtime/element-revisions/resolve" {
+			t.Fatalf("unexpected Standard request: %s %s", r.Method, r.URL.String())
+		}
+		var request struct {
+			ElementIDs []string  `json:"element_ids"`
+			AsOf       time.Time `json:"as_of"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatalf("decode Standard request: %v", err)
+		}
+		if len(request.ElementIDs) != 1 || request.ElementIDs[0] == "" || request.AsOf.IsZero() {
+			t.Fatalf("unexpected Standard request body: %#v", request)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(body))

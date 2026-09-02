@@ -6,7 +6,7 @@
         <span>{{ t('workbench.revisionLabel', { revision: application.revision_number }) }}</span>
         <span v-if="refreshDelayMilliseconds">{{ t('workbench.automaticRefreshActive', { interval: refreshIntervalLabel }) }}</span>
         <el-button :disabled="!fullscreenSupported" @click="toggleFullscreen">{{ isFullscreen ? t('workbench.exitFullscreen') : t('workbench.enterFullscreen') }}</el-button>
-        <el-button v-if="showQueryActions" type="primary" :loading="queryingAll" @click="queryAll">{{ t('workbench.queryAll') }}</el-button>
+        <el-button v-if="showQueryActions" data-testid="query-all-action" type="primary" :disabled="!canQueryAll" :loading="queryingAll" @click="queryAll">{{ t('workbench.queryAll') }}</el-button>
       </div>
     </header>
 
@@ -22,11 +22,17 @@
 
     <el-alert v-if="pageError" type="error" :closable="false" :title="pageError" />
     <main v-if="application.snapshot.page" class="runtime-grid" :style="runtimeGridStyle(application.snapshot.page)">
-      <el-card v-for="placement in application.snapshot.page.placements" :key="placement.component_id" class="runtime-component" :style="runtimeLayoutStyle(placement)">
+      <el-card v-for="placement in application.snapshot.page.placements" :key="placement.component_id" class="runtime-component" data-testid="runtime-component" :data-component-id="placement.component_id" :style="runtimeLayoutStyle(placement)">
         <template #header>
-          <div class="component-header"><strong>{{ component(placement.component_id)?.title }}</strong><el-button v-if="showQueryActions" link type="primary" :loading="state(placement.component_id).querying" :disabled="!state(placement.component_id).descriptor || Boolean(state(placement.component_id).error)" @click="queryComponent(placement.component_id)">{{ t('workbench.query') }}</el-button></div>
+          <div class="component-header">
+            <strong>{{ component(placement.component_id)?.title }}</strong>
+            <div v-if="showQueryActions" class="component-header-actions">
+              <el-button link :loading="state(placement.component_id).exporting" :disabled="state(placement.component_id).querying || !state(placement.component_id).descriptor || Boolean(state(placement.component_id).error)" @click="exportComponent(placement.component_id)">{{ t('workbench.export') }}</el-button>
+              <el-button link type="primary" :loading="state(placement.component_id).querying" :disabled="state(placement.component_id).exporting || !state(placement.component_id).descriptor || Boolean(state(placement.component_id).error)" @click="queryComponent(placement.component_id)">{{ t('workbench.query') }}</el-button>
+            </div>
+          </div>
         </template>
-        <el-alert v-if="state(placement.component_id).error" type="warning" :closable="false" :title="state(placement.component_id).error" />
+        <el-alert v-if="state(placement.component_id).error" data-testid="contract-changed-alert" type="warning" :closable="false" :title="state(placement.component_id).error" />
         <WorkbenchRendererHost
           v-else
           :rows="state(placement.component_id).rows"
@@ -34,6 +40,7 @@
           :config="component(placement.component_id).renderer_config"
           :descriptor="state(placement.component_id).descriptor"
           :page="state(placement.component_id).page"
+          :result-ready="state(placement.component_id).query_completed"
           @result-select="applySelection(placement.component_id, $event)"
         />
         <div v-if="showQueryActions && component(placement.component_id)?.renderer_type === 'table'" class="component-pagination">
@@ -63,6 +70,7 @@ import { createLatestRequestCoordinator } from '@common-ui'
 import { getDataApplicationRuntime } from '../api/dataApplications'
 import { executeDescriptorOperation, getConsumerDescriptor } from '../api/services'
 import { applicationRefreshDelayMilliseconds, buildComponentQuery, buildSelectionUpdate, canRunApplicationRefresh, initialApplicationParameterValues, runtimeGridStyle, runtimeLayoutStyle, runtimeSectionVisible } from '../utils/dataApplicationRuntime.mjs'
+import { boundedExportHasMore, descriptorSupportsExport, downloadBoundedExport, exportFormatForRenderer } from '../utils/boundedExport.mjs'
 import WorkbenchRendererHost from '../components/WorkbenchRendererHost.vue'
 
 const RuntimeParameterInput = defineComponent({
@@ -97,6 +105,7 @@ const isWallboard = computed(() => application.snapshot.page?.display_mode === '
 const showTitle = computed(() => runtimeSectionVisible(application.snapshot.page, 'title'))
 const showParameters = computed(() => runtimeSectionVisible(application.snapshot.page, 'parameters'))
 const showQueryActions = computed(() => runtimeSectionVisible(application.snapshot.page, 'query_actions'))
+const canQueryAll = computed(() => application.snapshot.components.length > 0 && application.snapshot.components.every((item) => state(item.id).descriptor && !state(item.id).error))
 const refreshDelayMilliseconds = computed(() => applicationRefreshDelayMilliseconds(application.snapshot.page))
 const refreshIntervalLabel = computed(() => {
   switch (application.snapshot.page?.refresh_interval_seconds) {
@@ -114,7 +123,7 @@ function component(id) {
 }
 
 function state(id) {
-  return componentStates[id] || { rows: [], page: {}, descriptor: null, error: '', querying: false, cursors: [''], cursor_index: 0 }
+  return componentStates[id] || { rows: [], page: {}, descriptor: null, error: '', querying: false, exporting: false, query_completed: false, cursors: [''], cursor_index: 0 }
 }
 
 async function load() {
@@ -135,7 +144,7 @@ async function load() {
 }
 
 async function loadDescriptor(item) {
-  componentStates[item.id] = { rows: [], page: { has_more: false, next_cursor: '' }, descriptor: null, error: '', querying: false, cursors: [''], cursor_index: 0, requests: createLatestRequestCoordinator() }
+  componentStates[item.id] = { rows: [], page: { has_more: false, next_cursor: '' }, descriptor: null, error: '', querying: false, exporting: false, query_completed: false, cursors: [''], cursor_index: 0, requests: createLatestRequestCoordinator() }
   try {
     const { data } = await getConsumerDescriptor(item.service_ref)
     if (data.contract_fingerprint !== item.contract_fingerprint) {
@@ -161,6 +170,7 @@ async function queryComponent(componentID, cursor = '', cursorIndex = 0, cursors
     if (!current.requests.isCurrent(request, componentID)) return
     current.rows = data.data || []
     current.page = data.page || { has_more: false, next_cursor: '' }
+    current.query_completed = true
     current.cursors = cursors
     current.cursor_index = cursorIndex
   } catch (error) {
@@ -201,6 +211,29 @@ async function previousPage(componentID) {
   await queryComponent(componentID, current.cursors[previousIndex], previousIndex, current.cursors)
 }
 
+async function exportComponent(componentID) {
+  const item = component(componentID)
+  const current = componentStates[componentID]
+  if (!item || !current?.descriptor || current.error) return
+  const format = exportFormatForRenderer(item.renderer_type)
+  if (!descriptorSupportsExport(current.descriptor, item.renderer_type)) return ElMessage.warning(t('workbench.exportUnsupported'))
+  current.exporting = true
+  try {
+    const operation = current.descriptor.operations.find((candidate) => candidate.key === 'query')
+    const response = await executeDescriptorOperation(
+      operation,
+      buildComponentQuery(application.snapshot, item, parameterValues, '', format),
+      { intent: 'export', responseType: 'blob' },
+    )
+    if (boundedExportHasMore(response.headers)) return ElMessage.warning(t('workbench.exportIncomplete'))
+    downloadBoundedExport(response.data, `workbench-${item.service_ref.service_type}-${item.service_ref.service_id}.${format}`)
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.error || t('workbench.exportFailed'))
+  } finally {
+    current.exporting = false
+  }
+}
+
 async function queryAll() {
   queryingAll.value = true
   try {
@@ -211,7 +244,7 @@ async function queryAll() {
 }
 
 function hasActiveComponentQuery() {
-  return queryingAll.value || Object.values(componentStates).some((current) => current?.querying)
+  return queryingAll.value || Object.values(componentStates).some((current) => current?.querying || current?.exporting)
 }
 
 function clearAutomaticRefreshTimer() {
@@ -268,5 +301,5 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.runtime{min-height:100vh;padding:24px;background:var(--addp-bg-secondary);box-sizing:border-box}.runtime-header,.runtime-actions,.component-header{display:flex;align-items:center;justify-content:space-between}.runtime-header{margin-bottom:16px;gap:24px}.runtime-header--compact{justify-content:flex-end}.runtime-header h1{margin:0;color:var(--addp-text-primary);font-size:28px}.runtime-header p{margin:6px 0 0;color:var(--addp-text-secondary)}.runtime-actions{gap:12px;color:var(--addp-text-secondary);flex-wrap:wrap}.parameters-card{margin-bottom:16px}.parameter-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}.parameter-field{display:flex;flex-direction:column;gap:8px;color:var(--addp-text-primary)}.parameter-field em{color:var(--el-color-danger);font-style:normal}.runtime-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));grid-auto-rows:64px;gap:12px}.runtime-component{min-width:0;overflow:auto}.component-header{gap:12px}.component-pagination{display:flex;align-items:center;justify-content:flex-end;gap:12px;margin-top:12px;color:var(--addp-text-secondary)}.runtime--wallboard{height:100vh;min-height:0;overflow:hidden;display:flex;flex-direction:column;padding:16px}.runtime--wallboard .runtime-header,.runtime--wallboard .parameters-card{flex:0 0 auto;margin-bottom:12px}.runtime--wallboard .runtime-grid{flex:1;min-height:0;grid-auto-rows:minmax(0,1fr)}.runtime--wallboard .runtime-component{min-height:0;overflow:hidden;display:flex;flex-direction:column}.runtime--wallboard .runtime-component:deep(.el-card__body){flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column}.runtime--wallboard .runtime-component:deep([data-testid="renderer-host"]){flex:1;min-height:0;height:100%}.runtime--wallboard .runtime-component:deep(.chart-renderer),.runtime--wallboard .runtime-component:deep(.map-container){height:100%!important;min-height:0}@media(max-width:900px){.runtime{padding:16px}.runtime-header{align-items:flex-start;flex-direction:column}.runtime-header--compact{align-items:flex-end}.runtime-grid{display:flex;flex-direction:column}.runtime-component{min-height:360px}.runtime--wallboard .runtime-grid{display:grid}.runtime--wallboard .runtime-component{min-height:0}}
+.runtime{min-height:100vh;padding:24px;background:var(--addp-bg-secondary);box-sizing:border-box}.runtime-header,.runtime-actions,.component-header,.component-header-actions{display:flex;align-items:center}.runtime-header,.component-header{justify-content:space-between}.runtime-header{margin-bottom:16px;gap:24px}.runtime-header--compact{justify-content:flex-end}.runtime-header h1{margin:0;color:var(--addp-text-primary);font-size:28px}.runtime-header p{margin:6px 0 0;color:var(--addp-text-secondary)}.runtime-actions,.component-header-actions{gap:12px}.runtime-actions{color:var(--addp-text-secondary);flex-wrap:wrap}.parameters-card{margin-bottom:16px}.parameter-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}.parameter-field{display:flex;flex-direction:column;gap:8px;color:var(--addp-text-primary)}.parameter-field em{color:var(--el-color-danger);font-style:normal}.runtime-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));grid-auto-rows:64px;gap:12px}.runtime-component{min-width:0;overflow:auto}.component-header{gap:12px}.component-pagination{display:flex;align-items:center;justify-content:flex-end;gap:12px;margin-top:12px;color:var(--addp-text-secondary)}.runtime--wallboard{height:100vh;min-height:0;overflow:hidden;display:flex;flex-direction:column;padding:16px}.runtime--wallboard .runtime-header,.runtime--wallboard .parameters-card{flex:0 0 auto;margin-bottom:12px}.runtime--wallboard .runtime-grid{flex:1;min-height:0;grid-auto-rows:minmax(0,1fr)}.runtime--wallboard .runtime-component{min-height:0;overflow:hidden;display:flex;flex-direction:column}.runtime--wallboard .runtime-component:deep(.el-card__body){flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column}.runtime--wallboard .runtime-component:deep([data-testid="renderer-host"]){flex:1;min-height:0;height:100%}.runtime--wallboard .runtime-component:deep(.chart-renderer),.runtime--wallboard .runtime-component:deep(.map-container){height:100%!important;min-height:0}@media(max-width:900px){.runtime{padding:16px}.runtime-header{align-items:flex-start;flex-direction:column}.runtime-header--compact{align-items:flex-end}.runtime-grid{display:flex;flex-direction:column}.runtime-component{min-height:360px}.runtime--wallboard .runtime-grid{display:grid}.runtime--wallboard .runtime-component{min-height:0}}
 </style>

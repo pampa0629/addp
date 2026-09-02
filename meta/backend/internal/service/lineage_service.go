@@ -478,6 +478,7 @@ func (s *LineageService) GetGraph(ctx context.Context, tenantID uint, request mo
 		return response, err
 	}
 	nodesByID := make(map[uint]models.LineageNode, len(items))
+	activeItemIDs := make([]uint, 0, len(items))
 	for _, item := range items {
 		node := models.LineageNode{
 			Kind: "data_item", ItemID: uintPtr(item.ID), ItemFingerprint: item.Fingerprint,
@@ -485,8 +486,10 @@ func (s *LineageService) GetGraph(ctx context.Context, tenantID uint, request mo
 			ItemType: item.ItemType, Name: item.Name, FullName: item.FullName,
 		}
 		nodesByID[item.ID] = node
+		activeItemIDs = append(activeItemIDs, item.ID)
 		response.Nodes = append(response.Nodes, node)
 	}
+	sort.Slice(activeItemIDs, func(i, j int) bool { return activeItemIDs[i] < activeItemIDs[j] })
 	if request.SubjectKind == "data_item" {
 		subject, ok := nodesByID[*request.ItemID]
 		if !ok {
@@ -494,7 +497,7 @@ func (s *LineageService) GetGraph(ctx context.Context, tenantID uint, request mo
 		}
 		response.Subject = subject
 	}
-	return s.populateGraphEdges(ctx, tenantID, request, ids, response, nodesByID)
+	return s.populateGraphEdges(ctx, tenantID, request, activeItemIDs, response, nodesByID)
 }
 
 func (s *LineageService) lineageEngineNames(tenantID uint, items []models.MetaItem) (map[uint]string, error) {

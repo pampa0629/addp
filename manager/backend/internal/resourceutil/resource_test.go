@@ -65,7 +65,6 @@ func TestAttributeHelpersReadStandardExtractionSection(t *testing.T) {
 	t.Parallel()
 
 	attrs := map[string]interface{}{
-		"plain_text_preview": "legacy preview",
 		"capabilities": map[string]interface{}{
 			"extraction": map[string]interface{}{
 				"extractor_available": true,
@@ -73,22 +72,25 @@ func TestAttributeHelpersReadStandardExtractionSection(t *testing.T) {
 				"status":              "completed",
 				"reason":              "ok",
 				"extractor":           "common_format:docx",
-				"plain_text_preview":  "standard preview",
 				"text_truncated":      true,
 				"index_ref":           "meilisearch:assets:fingerprint",
 			},
 		},
 	}
 
-	for _, key := range []string{"status", "reason", "extractor", "plain_text_preview", "index_ref"} {
+	for _, key := range []string{"status", "reason", "extractor", "index_ref"} {
 		if got := StringAttribute(attrs, key); got == "" {
 			t.Fatalf("%s should be read from capabilities.extraction", key)
 		}
 	}
-	if got := StringAttribute(attrs, "plain_text_preview"); got != "standard preview" {
-		t.Fatalf("plain_text_preview = %q, want standard preview", got)
-	}
 	if got := StringAttribute(map[string]interface{}{"plain_text_preview": "legacy preview"}, "plain_text_preview"); got != "" {
 		t.Fatalf("flat plain_text_preview = %q, want empty", got)
+	}
+	if got := StringAttribute(map[string]interface{}{
+		"capabilities": map[string]interface{}{
+			"extraction": map[string]interface{}{"plain_text_preview": "legacy preview"},
+		},
+	}, "plain_text_preview"); got != "" {
+		t.Fatalf("nested plain_text_preview = %q, want empty", got)
 	}
 }

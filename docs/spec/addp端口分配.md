@@ -126,6 +126,8 @@ make ports-validate
 | **Catalog Frontend**  | **5189** | **8120**    | **企业资源目录管理 UI** |
 | **Workbench Backend** | **8193** | **8193**    | **已发布服务消费、动态查询和数据应用创作** |
 | **Workbench Frontend** | **5190** | **8121**   | **Workbench 创作端 UI** |
+| **Security Backend** | **8194** | **8194**    | **数据安全分类分级、敏感发现、资源评估、保护策略和投影** |
+| **Security Frontend** | **5191** | **8122**   | **数据安全与隐私保护 UI** |
 | Math Workflow Engine  | 8089     | 8089        | 数学计算工作流参考实现（自动启动服务、手动注册） |
 | Jupyter API Server    | 8097     | 8097        | Jupyter 执行引擎 API       |
 | Spark Workflow Engine | 8098     | 8098        | Spark 分布式工作流引擎     |
@@ -166,6 +168,7 @@ make ports-validate
   - **8191: Inference（统一 AI 推理）**
   - **8192: Catalog（企业资源目录）**
   - **8193: Workbench（服务消费工作台）**
+  - **8194: Security（数据安全）**
 - **引擎服务**：808x-809x 系列
   - 8089: Math Workflow Engine（参考实现，自动启动服务、手动注册）
   - 8097: Jupyter API Server
@@ -197,6 +200,7 @@ make ports-validate
   - **5188: Inference**
   - **5189: Catalog**
   - **5190: Workbench**
+  - **5191: Security**
 
 ### 前端 Docker 端口规则
 - **核心模块**：809x 系列（8090-8096）
@@ -220,6 +224,7 @@ make ports-validate
   - **8119: Inference**
   - **8120: Catalog**
   - **8121: Workbench**
+  - **8122: Security**
 
 ## Standard 和 Model 模块配置要求
 

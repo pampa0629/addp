@@ -21,6 +21,7 @@ show_usage() {
   echo "  -standard     启动 Standard 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
   echo "  -model        启动 Model 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console + Standard)"
   echo "  -quality      启动 Quality 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console + Standard)"
+  echo "  -security     启动 Security 模块 (公共依赖: System Backend + Gateway + Console)"
   echo "  -asset        启动 Asset 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
   echo "  -catalog      启动 Catalog 模块 (依赖: System Backend + Gateway + Console；Meta 为后台同步软依赖)"
   echo "  -workbench    启动 Workbench 模块 (依赖: System Backend + Service Backend + Gateway + Console)"
@@ -86,6 +87,8 @@ export CATALOG_BACKEND_PORT="${CATALOG_BACKEND_PORT:-8192}"
 export CATALOG_FE_PORT="${CATALOG_FE_PORT:-5189}"
 export WORKBENCH_BACKEND_PORT="${WORKBENCH_BACKEND_PORT:-8193}"
 export WORKBENCH_FE_PORT="${WORKBENCH_FE_PORT:-5190}"
+export SECURITY_BACKEND_PORT="${SECURITY_BACKEND_PORT:-8194}"
+export SECURITY_FE_PORT="${SECURITY_FE_PORT:-5191}"
 
 ensure_model3d_node_dependencies() {
   local dir="engines/model3d-workflow"
@@ -111,7 +114,7 @@ ensure_model3d_node_dependencies() {
 
 # 自动生成服务 URL（基于 SERVICE_HOST + XXX_BACKEND_PORT）
 generate_service_urls() {
-    local services=(system manager meta transfer orchestrator develop service copilot monitor standard model quality asset catalog workbench portal agent graph inference)
+    local services=(system manager meta transfer orchestrator develop service copilot monitor standard model quality security asset catalog workbench portal agent graph inference)
     for svc in "${services[@]}"; do
         local port_var="$(echo ${svc} | tr '[:lower:]' '[:upper:]')_BACKEND_PORT"
         local url_var="$(echo ${svc} | tr '[:lower:]' '[:upper:]')_URL"
@@ -248,7 +251,7 @@ for arg in "$@"; do
     -h|--help)
       show_usage
       ;;
-    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-copilot|-agent|-inference|-standard|-model|-quality|-asset|-catalog|-workbench|-portal|-graph|-geopython-workflow|-math-workflow|-model3d-workflow|-pointcloud-workflow|-supermap-workflow|-spark-workflow|-jupyter|-duckdb|-gateway|-console)
+    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-copilot|-agent|-inference|-standard|-model|-quality|-security|-asset|-catalog|-workbench|-portal|-graph|-geopython-workflow|-math-workflow|-model3d-workflow|-pointcloud-workflow|-supermap-workflow|-spark-workflow|-jupyter|-duckdb|-gateway|-console)
       SELECTED_MODULE="${arg#-}"
       SELECTED_MODULE_COUNT=$((SELECTED_MODULE_COUNT + 1))
       START_ALL=false
@@ -321,6 +324,9 @@ START_MODEL_FRONTEND=false
 START_QUALITY_BACKEND=false
 START_QUALITY_FRONTEND=false
 START_QUALITY_WORKER=false
+START_SECURITY_BACKEND=false
+START_SECURITY_FRONTEND=false
+START_SECURITY_WORKER=false
 START_ASSET_BACKEND=false
 START_ASSET_FRONTEND=false
 START_CATALOG_BACKEND=false
@@ -385,6 +391,9 @@ if [ "$START_ALL" = true ]; then
   START_QUALITY_BACKEND=true
   START_QUALITY_FRONTEND=true
   START_QUALITY_WORKER=true
+  START_SECURITY_BACKEND=true
+  START_SECURITY_FRONTEND=true
+  START_SECURITY_WORKER=true
   START_ASSET_BACKEND=true
   START_ASSET_FRONTEND=true
   START_CATALOG_BACKEND=true
@@ -485,6 +494,11 @@ else
       START_QUALITY_FRONTEND=true
       START_QUALITY_WORKER=true
       ;;
+    security)
+      START_SECURITY_BACKEND=true
+      START_SECURITY_FRONTEND=true
+      START_SECURITY_WORKER=true
+      ;;
     asset)
       START_ASSET_BACKEND=true
       START_ASSET_FRONTEND=true
@@ -546,6 +560,8 @@ else
       START_MODEL_BACKEND=true
       START_QUALITY_BACKEND=true
       START_QUALITY_WORKER=true
+      START_SECURITY_BACKEND=true
+      START_SECURITY_WORKER=true
       START_CATALOG_BACKEND=true
       START_GATEWAY=true
       ;;
@@ -575,6 +591,9 @@ else
       START_QUALITY_BACKEND=true
       START_QUALITY_FRONTEND=true
       START_QUALITY_WORKER=true
+      START_SECURITY_BACKEND=true
+      START_SECURITY_FRONTEND=true
+      START_SECURITY_WORKER=true
       START_CATALOG_BACKEND=true
       START_CATALOG_FRONTEND=true
       START_GATEWAY=true
@@ -950,7 +969,7 @@ fi
 
 # 3. 并行启动所有后端服务 + Workers (System 已就绪)
 # 跳过检查：如果没有任何后端模块需要启动
-if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_QUALITY_BACKEND" = true ] || [ "$START_STANDARD_BACKEND" = true ] || [ "$START_MONITOR_BACKEND" = true ] || [ "$START_MODEL_BACKEND" = true ] || [ "$START_ASSET_BACKEND" = true ] || [ "$START_CATALOG_BACKEND" = true ] || [ "$START_PORTAL_BACKEND" = true ] || [ "$START_GRAPH_BACKEND" = true ] || [ "$START_INFERENCE_BACKEND" = true ] || [ "$START_DUCKDB" = true ]; then
+if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_QUALITY_BACKEND" = true ] || [ "$START_SECURITY_BACKEND" = true ] || [ "$START_STANDARD_BACKEND" = true ] || [ "$START_MONITOR_BACKEND" = true ] || [ "$START_MODEL_BACKEND" = true ] || [ "$START_ASSET_BACKEND" = true ] || [ "$START_CATALOG_BACKEND" = true ] || [ "$START_PORTAL_BACKEND" = true ] || [ "$START_GRAPH_BACKEND" = true ] || [ "$START_INFERENCE_BACKEND" = true ] || [ "$START_DUCKDB" = true ]; then
   echo -e "${YELLOW}Step 3/5: 并行启动后端服务和选定 Worker${NC}"
 
   # ============================================================
@@ -1016,6 +1035,11 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
     BUILD_PIDS+=($!)
   fi
 
+  if [ "$START_SECURITY_BACKEND" = true ]; then
+    build_service "security" "security/backend" &
+    BUILD_PIDS+=($!)
+  fi
+
   if [ "$START_ASSET_BACKEND" = true ]; then
     build_service "asset" "asset/backend" &
     BUILD_PIDS+=($!)
@@ -1057,6 +1081,11 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
     BUILD_PIDS+=($!)
   fi
 
+  if [ "$START_SECURITY_WORKER" = true ]; then
+    build_worker "security" "security/backend" &
+    BUILD_PIDS+=($!)
+  fi
+
   if [ "$START_TRANSFER_BOUNDED_WORKER" = true ]; then
     build_transfer_bounded_worker &
     BUILD_PIDS+=($!)
@@ -1086,7 +1115,7 @@ fi
 # ============================================================
 # Phase 2: 并行启动所有 Backend 服务
 # ============================================================
-if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_QUALITY_BACKEND" = true ] || [ "$START_STANDARD_BACKEND" = true ] || [ "$START_MONITOR_BACKEND" = true ] || [ "$START_MODEL_BACKEND" = true ] || [ "$START_ASSET_BACKEND" = true ] || [ "$START_CATALOG_BACKEND" = true ] || [ "$START_PORTAL_BACKEND" = true ] || [ "$START_GRAPH_BACKEND" = true ] || [ "$START_INFERENCE_BACKEND" = true ]; then
+if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_QUALITY_BACKEND" = true ] || [ "$START_SECURITY_BACKEND" = true ] || [ "$START_STANDARD_BACKEND" = true ] || [ "$START_MONITOR_BACKEND" = true ] || [ "$START_MODEL_BACKEND" = true ] || [ "$START_ASSET_BACKEND" = true ] || [ "$START_CATALOG_BACKEND" = true ] || [ "$START_PORTAL_BACKEND" = true ] || [ "$START_GRAPH_BACKEND" = true ] || [ "$START_INFERENCE_BACKEND" = true ]; then
   echo "  [2/3] 并行启动 Backends..."
 
   # 启动 Manager Backend（带检查）
@@ -1199,6 +1228,16 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
     fi
   fi
 
+  if [ "$START_SECURITY_BACKEND" = true ]; then
+    if check_service_running "security" "$SECURITY_BACKEND_PORT"; then
+      .dev-bins/addp-security > logs/security-backend.log 2> logs/security-backend-stderr.log &
+      SECURITY_PID=$!
+      echo $SECURITY_PID > .dev-pids/security.pid
+    else
+      SECURITY_PID=$(cat .dev-pids/security.pid 2>/dev/null)
+    fi
+  fi
+
   # 启动 Asset Backend（带检查）
   if [ "$START_ASSET_BACKEND" = true ]; then
     if check_service_running "asset" "$ASSET_BACKEND_PORT"; then
@@ -1282,6 +1321,16 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
       echo $QUALITY_WORKER_PID > .dev-pids/quality-worker.pid
     else
       QUALITY_WORKER_PID=$(cat .dev-pids/quality-worker.pid 2>/dev/null)
+    fi
+  fi
+
+  if [ "$START_SECURITY_WORKER" = true ]; then
+    if check_service_running "security-worker" ""; then
+      .dev-bins/addp-security-worker > logs/security-worker.log 2>&1 &
+      SECURITY_WORKER_PID=$!
+      echo $SECURITY_WORKER_PID > .dev-pids/security-worker.pid
+    else
+      SECURITY_WORKER_PID=$(cat .dev-pids/security-worker.pid 2>/dev/null)
     fi
   fi
 
@@ -2651,7 +2700,7 @@ ensure_node_modules() {
 # 并发启动所有前端服务（Bash 3.2 兼容）
 # ============================================================
 # 检查是否有任何前端需要启动
-if [ "$START_CONSOLE" = true ] || [ "$START_SYSTEM_FRONTEND" = true ] || [ "$START_MANAGER_FRONTEND" = true ] || [ "$START_META_FRONTEND" = true ] || [ "$START_TRANSFER_FRONTEND" = true ] || [ "$START_ORCHESTRATOR_FRONTEND" = true ] || [ "$START_DEVELOP_FRONTEND" = true ] || [ "$START_SERVICE_FRONTEND" = true ] || [ "$START_MONITOR_FRONTEND" = true ] || [ "$START_STANDARD_FRONTEND" = true ] || [ "$START_MODEL_FRONTEND" = true ] || [ "$START_QUALITY_FRONTEND" = true ] || [ "$START_CATALOG_FRONTEND" = true ] || [ "$START_ASSET_FRONTEND" = true ] || [ "$START_PORTAL_FRONTEND" = true ] || [ "$START_AGENT_FRONTEND" = true ] || [ "$START_GRAPH_FRONTEND" = true ]; then
+if [ "$START_CONSOLE" = true ] || [ "$START_SYSTEM_FRONTEND" = true ] || [ "$START_MANAGER_FRONTEND" = true ] || [ "$START_META_FRONTEND" = true ] || [ "$START_TRANSFER_FRONTEND" = true ] || [ "$START_ORCHESTRATOR_FRONTEND" = true ] || [ "$START_DEVELOP_FRONTEND" = true ] || [ "$START_SERVICE_FRONTEND" = true ] || [ "$START_MONITOR_FRONTEND" = true ] || [ "$START_STANDARD_FRONTEND" = true ] || [ "$START_MODEL_FRONTEND" = true ] || [ "$START_QUALITY_FRONTEND" = true ] || [ "$START_SECURITY_FRONTEND" = true ] || [ "$START_CATALOG_FRONTEND" = true ] || [ "$START_ASSET_FRONTEND" = true ] || [ "$START_PORTAL_FRONTEND" = true ] || [ "$START_AGENT_FRONTEND" = true ] || [ "$START_GRAPH_FRONTEND" = true ]; then
   echo -e "${YELLOW}Step 8/8: 并发启动前端服务${NC}"
 
   # 动态构建前端配置（格式：名称:端口:目录）
@@ -2704,6 +2753,10 @@ if [ "$START_CONSOLE" = true ] || [ "$START_SYSTEM_FRONTEND" = true ] || [ "$STA
 
   if [ "$START_QUALITY_FRONTEND" = true ]; then
     FRONTEND_CONFIGS+=("quality:${QUALITY_FE_PORT}:quality/frontend")
+  fi
+
+  if [ "$START_SECURITY_FRONTEND" = true ]; then
+    FRONTEND_CONFIGS+=("security:${SECURITY_FE_PORT}:security/frontend")
   fi
 
   if [ "$START_CATALOG_FRONTEND" = true ]; then

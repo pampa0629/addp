@@ -52,6 +52,49 @@ func TestIntegrationSampleDynamicSchemaPersistsPersonsNestedFacts(t *testing.T) 
 	assertSampledField("entriedOutdoors.title", datatype.FieldTypeString)
 }
 
+func TestIntegrationPreparedQueryReadSetAndExecutionUseOutdoorPersonsPlan(t *testing.T) {
+	if os.Getenv("ADDP_MONGODB_SCHEMA_E2E") != "1" {
+		t.Skip("set ADDP_MONGODB_SCHEMA_E2E=1 to run against Business MongoDB")
+	}
+	provider := &MongoDBPlugin{}
+	prepared, err := provider.PrepareQuery(t.Context(), plugin.ConnectionInfo{
+		"host": "localhost", "port": 27017, "user": "admin", "password": "admin_password", "auth_source": "admin", "database": "Outdoor",
+	}, plugin.QueryRequest{
+		EngineID: 11,
+		Language: "mql",
+		Query:    `{"find":"Persons","filter":{},"limit":1}`,
+		Options:  plugin.QueryOptions{ReadOnly: true, Limit: 1},
+	})
+	if err != nil {
+		t.Fatalf("PrepareQuery() error = %v", err)
+	}
+	analysis, err := prepared.Analysis(t.Context())
+	if err != nil || analysis.SchemaCoverage != plugin.QuerySchemaCoverageUnknown || len(analysis.Diagnostics) != 0 {
+		t.Fatalf("PreparedQuery.Analysis() = %#v, error = %v", analysis, err)
+	}
+	readSet, err := prepared.ReadSet(t.Context())
+	if err != nil {
+		t.Fatalf("PreparedQuery.ReadSet() error = %v", err)
+	}
+	if len(readSet.Paths) != 1 || readSet.Paths[0].StringPath() != "Outdoor/Persons" {
+		t.Fatalf("read set paths = %#v", readSet.Paths)
+	}
+	lineage, err := prepared.OutputLineage(t.Context())
+	if err != nil {
+		t.Fatalf("PreparedQuery.OutputLineage() error = %v", err)
+	}
+	if len(lineage.Sources) != 1 || !lineage.Sources[0].IdentityOutput || lineage.Sources[0].OpaqueOutput || len(lineage.Sources[0].Fields) == 0 {
+		t.Fatalf("output lineage = %#v", lineage)
+	}
+	result, err := prepared.Execute(t.Context())
+	if err != nil {
+		t.Fatalf("PreparedQuery.Execute() error = %v", err)
+	}
+	if len(result.Rows) > 1 {
+		t.Fatalf("row count = %d, want at most 1", len(result.Rows))
+	}
+}
+
 func TestMapMongoArrayElementTypeOmitsUnknownSample(t *testing.T) {
 	if got := mapMongoArrayElementType(""); got != "" {
 		t.Fatalf("empty element type = %q, want omitted", got)
@@ -143,6 +186,44 @@ func TestCollectMongoDocumentSamplesPreservesTopLevelFieldsAcrossDocuments(t *te
 	}
 }
 
+func TestCollectMongoDocumentSamplesCountsUniquePathsAgainstFieldLimit(t *testing.T) {
+	documents := make([]map[string]interface{}, 0, mongoSchemaMaxFields)
+	for index := 0; index < mongoSchemaMaxFields; index++ {
+		documents = append(documents, map[string]interface{}{
+			"members": primitive.A{
+				bson.M{"userInfo": bson.M{
+					"avatarUrl": "avatar",
+					"nickName":  "nickname",
+					"phone":     "13800000000",
+				}},
+			},
+			"other": bson.M{"bucket": bson.M{
+				fmt.Sprintf("field_%03d", index): index,
+			}},
+		})
+	}
+
+	stats := make(map[string]*mongoFieldStat)
+	for _, document := range documents {
+		collectMongoTopLevelFields(stats, document)
+	}
+	collectMongoNestedFieldsAcrossDocuments(stats, documents, nil, 0)
+
+	for _, fieldName := range []string{
+		"members.userInfo.avatarUrl",
+		"members.userInfo.nickName",
+		"members.userInfo.phone",
+	} {
+		stat := stats[fieldName]
+		if stat == nil {
+			t.Fatalf("repeated earlier paths exhausted the field budget before %q", fieldName)
+		}
+		if stat.Count != len(documents) {
+			t.Fatalf("field %q count = %d, want %d", fieldName, stat.Count, len(documents))
+		}
+	}
+}
+
 func TestCollectMongoDocumentFieldsSkipsGeneratedRecordKeys(t *testing.T) {
 	stats := make(map[string]*mongoFieldStat)
 	document := bson.M{
@@ -159,6 +240,31 @@ func TestCollectMongoDocumentFieldsSkipsGeneratedRecordKeys(t *testing.T) {
 	}
 	if stats["members.ogNmG5A5iITPD0IuDhUCFN8nhbGE.userInfo.nickName"] != nil {
 		t.Fatal("generated record key must not become a query field")
+	}
+}
+
+func TestLooksLikeMongoDynamicKeyRecognizesIdentifierShapedMapKeys(t *testing.T) {
+	tests := []struct {
+		name string
+		key  string
+		want bool
+	}{
+		{name: "numeric object key", key: "2273304", want: true},
+		{name: "array index shaped key", key: "0", want: true},
+		{name: "mixed generated token", key: "W7c20d2AWotkXWsD", want: true},
+		{name: "mixed case generated token", key: "W-UNgnhEiJmgcRxt", want: true},
+		{name: "long generated token", key: "ogNmG5A5iITPD0IuDhUCFN8nhbGE", want: true},
+		{name: "ordinary camel case field", key: "agreedDisclaimer", want: false},
+		{name: "ordinary field with digit", key: "addressLine2", want: false},
+		{name: "ordinary underscored field", key: "member_nickname", want: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := looksLikeMongoDynamicKey(test.key); got != test.want {
+				t.Fatalf("looksLikeMongoDynamicKey(%q) = %v, want %v", test.key, got, test.want)
+			}
+		})
 	}
 }
 

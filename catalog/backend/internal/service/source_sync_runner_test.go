@@ -8,7 +8,7 @@ import (
 
 type runnerTestRegistry struct{ tenantIDs []uint }
 
-func (r runnerTestRegistry) ListCatalogTenantIDs(context.Context) ([]uint, error) {
+func (r runnerTestRegistry) ListRuntimeTenantIDs(context.Context) ([]uint, error) {
 	return append([]uint(nil), r.tenantIDs...), nil
 }
 

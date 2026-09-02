@@ -143,3 +143,14 @@ func TestPostgresColumnCompatibleWithFieldRejectsSpatialFactMismatch(t *testing.
 		t.Fatal("postgresColumnCompatibleWithField accepted SRID mismatch")
 	}
 }
+
+func TestPostgresColumnCompatibleWithFieldAcceptsMixedAsText(t *testing.T) {
+	column := postgresColumnInfo{Name: "phone", DataType: "text", UDTName: "text", NativeType: "text"}
+	field := datatype.FieldInfo{Name: "phone", Type: datatype.FieldTypeMixed}
+	if !postgresColumnCompatibleWithField(column, field, nil) {
+		t.Fatal("postgresColumnCompatibleWithField rejected text column for mixed field")
+	}
+	if got := postgresSQLTypeForField(field, nil); got != "TEXT" {
+		t.Fatalf("postgresSQLTypeForField(mixed) = %q, want TEXT", got)
+	}
+}

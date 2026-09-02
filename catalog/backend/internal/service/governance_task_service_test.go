@@ -79,7 +79,7 @@ func TestEntryUpdateResolvesSupersededResponsibilityTask(t *testing.T) {
 	entries := NewEntryService(db, &fakeStandardReferenceResolver{}, &fakeSystemReferenceResolver{})
 	if _, err := entries.Update(context.Background(), 7, entry.ID, UpdateEntryInput{
 		Version: 2, GovernanceStatus: models.GovernanceStatusDiscovered, Visibility: models.VisibilityInventory,
-	}, UpdateEntryAuthorization{}, UpdateEntryActor{Type: "user", ID: "99"}); err != nil {
+	}, UpdateEntryActor{Type: "user", ID: "99"}); err != nil {
 		t.Fatalf("repair responsibility aggregate: %v", err)
 	}
 	var task models.GovernanceTask

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"math"
@@ -88,6 +89,46 @@ func TestResourceCapabilityHandlerUsesServiceIdentityForMeta(t *testing.T) {
 	}
 	if got := tokenProvider.tenantID.Load(); got != 7 {
 		t.Fatalf("service token tenant ID = %d, want 7", got)
+	}
+}
+
+func TestResourceCapabilityHandlerUsesTenantContextForSystemEngine(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	tokenProvider := &recordingServiceTokenProvider{}
+	systemServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Path; got != "/api/v1/system/engines/3" {
+			t.Fatalf("System path = %q, want /api/v1/system/engines/3", got)
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer systemServer.Close()
+
+	handler := NewResourceCapabilityHandler(commonClient.NewSystemClient(systemServer.URL, tokenProvider), nil)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		if err := commonAuth.SetAuthContextForGin(c, testTenantUserAuthContext(t, 7)); err != nil {
+			t.Fatal(err)
+		}
+		c.Next()
+	})
+	router.POST("/sql/output-contract", handler.GetSQLOutputContract)
+
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/sql/output-contract",
+		bytes.NewBufferString(`{"engine_id":3,"sql":"SELECT 1"}`),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d, body = %s", response.Code, http.StatusInternalServerError, response.Body.String())
+	}
+	if got := tokenProvider.tenantID.Load(); got != 7 {
+		t.Fatalf("System service token tenant ID = %d, want 7", got)
 	}
 }
 

@@ -12,7 +12,7 @@
 4. 未通过的规则维护为当前质量问题，后续 execution 更新同一问题，而不是重复创建同义工单。
 5. Monitor 读取统一 execution 事实；其他模块不得复制 Quality 的执行历史或评分存储。
 
-字段检查第一版只支持 PostgreSQL 单表字段规则。物化门禁第一版只支持同一 PostgreSQL Engine 上 Model staging 的五类强类型断言。Quality 不提供 owner 定时调度、事件触发、自定义 SQL 规则或其他数据库方言。
+字段检查第一版只支持 PostgreSQL 单表字段规则。物化门禁第一版只支持同一 PostgreSQL Engine 上 Model staging 的六类强类型断言。Quality 不提供 owner 定时调度、事件触发、自定义 SQL 规则或其他数据库方言。
 
 ## 2. 模块职责
 
@@ -200,11 +200,12 @@ CheckTask 列表中的运行状态只能投影 `last_execution_id + last_executi
 - `params.table` 必须引用 `table_bindings` 中的 alias；列名必须由 Model 物化读上下文返回的本次列事实验证。
 - 不接受未知字段、未知断言类型、任意 SQL、SQL 片段、表名、Schema 或 staging locator。
 
-第一版只允许五类断言：
+第一版只允许六类断言：
 
 | `type` | `params` | 失败语义 |
 | --- | --- | --- |
 | `not_null` | `{"table":"alias","column":"col"}` | 存在 `column IS NULL` 的行 |
+| `allowed_values` | `{"table":"alias","column":"status","values":["enabled","disabled"]}` | 非 NULL 值转为文本后不在冻结允许值集合中；NULL 是否失败由独立 `not_null` 表达，`values` 必须包含 1–1000 个不重复的非空字符串 |
 | `unique_key` | `{"table":"alias","columns":["a","b"]}` | 一个或多个非空键组重复；键列含 NULL 由独立 `not_null` 表达 |
 | `foreign_key` | `{"table":"child","columns":["a"],"reference_table":"parent","reference_columns":["id"]}` | 非空子键在父表中无匹配；两个列数组必须非空且等长 |
 | `predicate_implication` | `{"table":"alias","when":{"column":"kind","operator":"eq","value":"outdoor"},"then":{"column":"is_valid","operator":"is_true"}}` | `when` 为真但 `then` 不为真；operator 只允许 `eq|not_eq|is_null|is_not_null|is_true|is_false` |
@@ -407,7 +408,7 @@ Quality 私有表只通过模块内连续、带校验和、持有数据库迁移
 以下能力不得出现在 API、TaskProvider capability 或前端可操作入口中：
 
 - MySQL、ClickHouse 或其他非 PostgreSQL 方言
-- 自定义 SQL、字段检查中的跨字段/跨表/聚合业务规则，以及物化门禁已定义五类断言之外的任意表达式
+- 自定义 SQL、字段检查中的跨字段/跨表/聚合业务规则，以及物化门禁已定义六类断言之外的任意表达式
 - schedule、owner scheduler 和 Meta 扫描事件自动触发
 - CheckTask 调度状态字段 `enabled`、`schedule` 和 `next_run_at`
 - 伪取消、仅修改状态的取消
@@ -428,6 +429,6 @@ Quality 私有表只通过模块内连续、带校验和、持有数据库迁移
 6. Issue 按 `tenant_id + rule_application_id + rule_key` 去重、自动 reopen/resolve、人工状态机、并发更新和 RuleApplication 删除级联。
 7. 列表分页、Tenant 隔离、HTTP 状态码、错误 envelope 和 Swagger 路由覆盖。
 8. 前端 Engine 选择、任务执行轮询、metadata 结果展示、错误反馈和路由恢复。
-9. 物化门禁五类断言的文档校验、标识符引用与参数绑定，包括组合键、NULL 语义、predicate operator 白名单和 row_count 边界。
+9. 物化门禁六类断言的文档校验、标识符引用与参数绑定，包括允许值集合、组合键、NULL 语义、predicate operator 白名单和 row_count 边界。
 10. Model 读上下文的租户、服务身份、父子 execution、attempt/lease、批次完成态与同 Engine 校验，以及精确 read 授权。
 11. `error` 断言失败阻断后续 Step、`warning|info` 失败仍成功、结果快照不写 Issue，以及 worker 崩溃后的幂等重试。

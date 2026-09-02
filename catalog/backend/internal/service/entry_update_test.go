@@ -33,7 +33,7 @@ func TestEntryUpdateCuratesCompleteAggregateAtomically(t *testing.T) {
 			{Role: models.ResponsibilityRoleDataSteward, SubjectType: models.ResponsibilitySubjectUser, SubjectID: 41},
 		},
 		ComponentElements: []ComponentElementInput{{ComponentID: component.ID, ElementID: 50}},
-	}, UpdateEntryAuthorization{}, UpdateEntryActor{Type: "user", ID: "99"})
+	}, UpdateEntryActor{Type: "user", ID: "99"})
 	if err != nil {
 		t.Fatalf("Update() error = %v", err)
 	}
@@ -61,7 +61,108 @@ func TestEntryUpdateCuratesCompleteAggregateAtomically(t *testing.T) {
 	}
 }
 
-func TestEntryUpdateDeprecatesWithRecommendedSuccessor(t *testing.T) {
+func TestEntryUpdateWithdrawsCurationAtomically(t *testing.T) {
+	db := openCatalogServiceTestDB(t)
+	entry, component := createEditableCatalogEntry(t, db, 7)
+	name, description := "Wrong outdoor application", "Incorrect business curation"
+	curationService := NewEntryService(db, &fakeStandardReferenceResolver{}, &fakeSystemReferenceResolver{})
+	curated, err := curationService.Update(context.Background(), 7, entry.ID, UpdateEntryInput{
+		Version: entry.Version, BusinessName: &name, BusinessDescription: &description,
+		GovernanceStatus: models.GovernanceStatusCurated, Visibility: models.VisibilityTenant,
+		Domains:     []DomainLinkInput{{ID: 10, Role: models.SemanticRolePrimary}},
+		GlossaryIDs: []int64{20},
+		Responsibilities: []ResponsibilityInput{
+			{Role: models.ResponsibilityRoleAccountableDepartment, SubjectType: models.ResponsibilitySubjectDepartment, SubjectID: 30},
+			{Role: models.ResponsibilityRoleBusinessOwner, SubjectType: models.ResponsibilitySubjectUser, SubjectID: 40},
+			{Role: models.ResponsibilityRoleDataSteward, SubjectType: models.ResponsibilitySubjectUser, SubjectID: 41},
+		},
+		ComponentElements: []ComponentElementInput{{ComponentID: component.ID, ElementID: 50}},
+	}, UpdateEntryActor{Type: "user", ID: "99"})
+	if err != nil {
+		t.Fatalf("curate entry: %v", err)
+	}
+
+	standard := &fakeStandardReferenceResolver{}
+	system := &fakeSystemReferenceResolver{}
+	withdrawalService := NewEntryService(db, standard, system)
+	withdrawn, err := withdrawalService.Update(context.Background(), 7, entry.ID, UpdateEntryInput{
+		Version: curated.Version, GovernanceStatus: models.GovernanceStatusDiscovered, Visibility: models.VisibilityInventory,
+	}, UpdateEntryActor{Type: "user", ID: "99"})
+	if err != nil {
+		t.Fatalf("withdraw curation: %v", err)
+	}
+	if withdrawn.Version != curated.Version+1 || withdrawn.GovernanceStatus != models.GovernanceStatusDiscovered ||
+		withdrawn.Visibility != models.VisibilityInventory || withdrawn.BusinessName != nil || withdrawn.BusinessDescription != nil {
+		t.Fatalf("withdrawn entry = %#v", withdrawn.Entry)
+	}
+	if len(withdrawn.SemanticLinks) != 0 || len(withdrawn.Responsibilities) != 0 || len(withdrawn.ComponentElements) != 0 {
+		t.Fatalf("withdrawn aggregate counts = semantic:%d responsibility:%d component:%d", len(withdrawn.SemanticLinks), len(withdrawn.Responsibilities), len(withdrawn.ComponentElements))
+	}
+	if withdrawn.Source.SourceIdentity == "" || withdrawn.Source.SourceStatus != models.SourceStatusActive {
+		t.Fatalf("source binding was not preserved: %#v", withdrawn.Source)
+	}
+	if standard.calls != 0 || system.calls != 0 {
+		t.Fatalf("withdrawal unexpectedly resolved cleared references: standard=%d system=%d", standard.calls, system.calls)
+	}
+	var audit models.AuditEvent
+	if err := db.Where("catalog_entry_id = ? AND event_type = ?", entry.ID, "catalog.entry.curation_withdrawn").First(&audit).Error; err != nil {
+		t.Fatal(err)
+	}
+	if audit.Details["previous_governance_status"] != models.GovernanceStatusCurated ||
+		audit.Details["governance_status"] != models.GovernanceStatusDiscovered ||
+		audit.Details["domain_count"] != float64(0) || audit.Details["responsibility_count"] != float64(0) {
+		t.Fatalf("withdrawal audit = %#v", audit.Details)
+	}
+}
+
+func TestEntryUpdateRejectsPartialOrUnsupportedCurationWithdrawal(t *testing.T) {
+	tests := []struct {
+		name          string
+		currentStatus string
+		mutate        func(*UpdateEntryInput)
+	}{
+		{name: "business name remains", currentStatus: models.GovernanceStatusCurated, mutate: func(input *UpdateEntryInput) {
+			name := "Residual name"
+			input.BusinessName = &name
+		}},
+		{name: "domain remains", currentStatus: models.GovernanceStatusCurated, mutate: func(input *UpdateEntryInput) {
+			input.Domains = []DomainLinkInput{{ID: 10, Role: models.SemanticRolePrimary}}
+		}},
+		{name: "responsibility remains", currentStatus: models.GovernanceStatusCurated, mutate: func(input *UpdateEntryInput) {
+			input.Responsibilities = []ResponsibilityInput{{Role: models.ResponsibilityRoleBusinessOwner, SubjectType: models.ResponsibilitySubjectUser, SubjectID: 40}}
+		}},
+		{name: "visibility remains tenant", currentStatus: models.GovernanceStatusCurated, mutate: func(input *UpdateEntryInput) {
+			input.Visibility = models.VisibilityTenant
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			db := openCatalogServiceTestDB(t)
+			entry, _ := createEditableCatalogEntry(t, db, 7)
+			if err := db.Model(&models.Entry{}).Where("id = ?", entry.ID).Updates(map[string]any{
+				"governance_status": test.currentStatus, "visibility": models.VisibilityTenant,
+			}).Error; err != nil {
+				t.Fatal(err)
+			}
+			input := UpdateEntryInput{Version: entry.Version, GovernanceStatus: models.GovernanceStatusDiscovered, Visibility: models.VisibilityInventory}
+			test.mutate(&input)
+			service := NewEntryService(db, &fakeStandardReferenceResolver{}, &fakeSystemReferenceResolver{})
+			_, err := service.Update(context.Background(), 7, entry.ID, input, UpdateEntryActor{Type: "user", ID: "99"})
+			if !errors.Is(err, ErrInvalidGovernanceTransition) {
+				t.Fatalf("Update() error = %v", err)
+			}
+			var reloaded models.Entry
+			if err := db.First(&reloaded, "id = ?", entry.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if reloaded.Version != entry.Version || reloaded.GovernanceStatus != test.currentStatus {
+				t.Fatalf("entry changed after rejected withdrawal: %#v", reloaded)
+			}
+		})
+	}
+}
+
+func TestEntryGovernanceDeprecatesWithRecommendedSuccessor(t *testing.T) {
 	db := openCatalogServiceTestDB(t)
 	entry, _ := createEditableCatalogEntry(t, db, 7)
 	successor, _ := createEditableCatalogEntry(t, db, 7)
@@ -77,9 +178,10 @@ func TestEntryUpdateDeprecatesWithRecommendedSuccessor(t *testing.T) {
 	}
 	reason := "Replaced by the current order dataset"
 	service := NewEntryService(db, &fakeStandardReferenceResolver{}, &fakeSystemReferenceResolver{})
-	result, err := service.Update(context.Background(), 7, entry.ID, governedUpdateInput(
-		1, name, description, models.GovernanceStatusDeprecated, &reason, &successor.ID,
-	), UpdateEntryAuthorization{CanDeprecate: true}, UpdateEntryActor{Type: "user", ID: "99"})
+	result, err := service.UpdateGovernance(context.Background(), 7, entry.ID, UpdateEntryGovernanceInput{
+		Version: 1, GovernanceStatus: models.GovernanceStatusDeprecated,
+		Reason: &reason, RecommendedSuccessorEntryID: &successor.ID,
+	}, UpdateEntryGovernanceAuthorization{CanDeprecate: true}, UpdateEntryActor{Type: "user", ID: "99"})
 	if err != nil {
 		t.Fatalf("Update() error = %v", err)
 	}
@@ -89,15 +191,15 @@ func TestEntryUpdateDeprecatesWithRecommendedSuccessor(t *testing.T) {
 		t.Fatalf("result = %#v", result)
 	}
 	var audit models.AuditEvent
-	if err := db.Where("catalog_entry_id = ? AND event_type = ?", entry.ID, "catalog.entry.updated").First(&audit).Error; err != nil {
+	if err := db.Where("catalog_entry_id = ? AND event_type = ?", entry.ID, "catalog.entry.deprecated").First(&audit).Error; err != nil {
 		t.Fatal(err)
 	}
-	if audit.Details["recommended_successor_entry_id"] != successor.ID.String() || audit.Details["deprecation_reason"] != reason {
+	if audit.Details["recommended_successor_entry_id"] != successor.ID.String() || audit.Details["reason"] != reason {
 		t.Fatalf("audit details = %#v", audit.Details)
 	}
 }
 
-func TestEntryUpdateRejectsInvalidRecommendedSuccessorsWithoutSideEffects(t *testing.T) {
+func TestEntryGovernanceRejectsInvalidRecommendedSuccessorsWithoutSideEffects(t *testing.T) {
 	tests := []struct {
 		name    string
 		prepare func(*testing.T, *gorm.DB, models.Entry) uuid.UUID
@@ -127,11 +229,12 @@ func TestEntryUpdateRejectsInvalidRecommendedSuccessorsWithoutSideEffects(t *tes
 			entry, _ := createEditableCatalogEntry(t, db, 7)
 			makeSuccessorEligible(t, db, entry.ID)
 			candidateID := test.prepare(t, db, entry)
-			name, description, reason := "Legacy orders", "Legacy order facts", "Retired"
+			reason := "Retired"
 			service := NewEntryService(db, &fakeStandardReferenceResolver{}, &fakeSystemReferenceResolver{})
-			_, err := service.Update(context.Background(), 7, entry.ID, governedUpdateInput(
-				1, name, description, models.GovernanceStatusDeprecated, &reason, &candidateID,
-			), UpdateEntryAuthorization{CanDeprecate: true}, UpdateEntryActor{Type: "user", ID: "99"})
+			_, err := service.UpdateGovernance(context.Background(), 7, entry.ID, UpdateEntryGovernanceInput{
+				Version: 1, GovernanceStatus: models.GovernanceStatusDeprecated,
+				Reason: &reason, RecommendedSuccessorEntryID: &candidateID,
+			}, UpdateEntryGovernanceAuthorization{CanDeprecate: true}, UpdateEntryActor{Type: "user", ID: "99"})
 			if !errors.Is(err, ErrInvalidRecommendedSuccessor) {
 				t.Fatalf("Update() error = %v", err)
 			}
@@ -146,7 +249,7 @@ func TestEntryUpdateRejectsInvalidRecommendedSuccessorsWithoutSideEffects(t *tes
 	}
 }
 
-func TestEntryUpdateRequiresDeprecationPermissionToChangeSuccessor(t *testing.T) {
+func TestEntryGovernanceRequiresDeprecationPermissionToChangeSuccessor(t *testing.T) {
 	db := openCatalogServiceTestDB(t)
 	entry, _ := createEditableCatalogEntry(t, db, 7)
 	successor, _ := createEditableCatalogEntry(t, db, 7)
@@ -158,11 +261,11 @@ func TestEntryUpdateRequiresDeprecationPermissionToChangeSuccessor(t *testing.T)
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
-	name, description := "Legacy orders", "Legacy order facts"
+	reason := "Remove the obsolete successor"
 	service := NewEntryService(db, &fakeStandardReferenceResolver{}, &fakeSystemReferenceResolver{})
-	_, err := service.Update(context.Background(), 7, entry.ID, governedUpdateInput(
-		1, name, description, models.GovernanceStatusDeprecated, nil, nil,
-	), UpdateEntryAuthorization{}, UpdateEntryActor{Type: "user", ID: "99"})
+	_, err := service.UpdateGovernance(context.Background(), 7, entry.ID, UpdateEntryGovernanceInput{
+		Version: 1, GovernanceStatus: models.GovernanceStatusDeprecated, Reason: &reason,
+	}, UpdateEntryGovernanceAuthorization{}, UpdateEntryActor{Type: "user", ID: "99"})
 	if !errors.Is(err, ErrDeprecationPermissionRequired) {
 		t.Fatalf("Update() error = %v", err)
 	}
@@ -176,20 +279,6 @@ func makeSuccessorEligible(t *testing.T, db *gorm.DB, id uuid.UUID) {
 		"governance_status": models.GovernanceStatusCurated, "visibility": models.VisibilityTenant,
 	}).Error; err != nil {
 		t.Fatal(err)
-	}
-}
-
-func governedUpdateInput(version int64, name, description, status string, reason *string, successorID *uuid.UUID) UpdateEntryInput {
-	return UpdateEntryInput{
-		Version: version, BusinessName: &name, BusinessDescription: &description,
-		GovernanceStatus: status, Visibility: models.VisibilityTenant,
-		Domains: []DomainLinkInput{{ID: 10, Role: models.SemanticRolePrimary}},
-		Responsibilities: []ResponsibilityInput{
-			{Role: models.ResponsibilityRoleAccountableDepartment, SubjectType: models.ResponsibilitySubjectDepartment, SubjectID: 30},
-			{Role: models.ResponsibilityRoleBusinessOwner, SubjectType: models.ResponsibilitySubjectUser, SubjectID: 40},
-			{Role: models.ResponsibilityRoleDataSteward, SubjectType: models.ResponsibilitySubjectUser, SubjectID: 41},
-		},
-		DeprecationReason: reason, RecommendedSuccessorEntryID: successorID,
 	}
 }
 
@@ -207,7 +296,7 @@ func TestModelEntryUsesOwnerPrimaryDomainWithoutCatalogCopy(t *testing.T) {
 			{Role: models.ResponsibilityRoleDataSteward, SubjectType: models.ResponsibilitySubjectUser, SubjectID: 41},
 		},
 	}
-	result, err := service.Update(context.Background(), 7, entry.ID, input, UpdateEntryAuthorization{}, UpdateEntryActor{Type: "user", ID: "99"})
+	result, err := service.Update(context.Background(), 7, entry.ID, input, UpdateEntryActor{Type: "user", ID: "99"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -216,7 +305,7 @@ func TestModelEntryUsesOwnerPrimaryDomainWithoutCatalogCopy(t *testing.T) {
 	}
 	input.Version = result.Version
 	input.Domains = []DomainLinkInput{{ID: 30, Role: models.SemanticRolePrimary}}
-	if _, err := service.Update(context.Background(), 7, entry.ID, input, UpdateEntryAuthorization{}, UpdateEntryActor{Type: "user", ID: "99"}); !errors.Is(err, ErrInvalidEntryUpdate) {
+	if _, err := service.Update(context.Background(), 7, entry.ID, input, UpdateEntryActor{Type: "user", ID: "99"}); !errors.Is(err, ErrInvalidEntryUpdate) {
 		t.Fatalf("Catalog primary Domain copy accepted: %v", err)
 	}
 }
@@ -295,7 +384,7 @@ func TestStandardMetricUsesOwnerDomainAndDynamicCurrentSummary(t *testing.T) {
 		Version: 1, BusinessName: &name, BusinessDescription: &description,
 		GovernanceStatus: models.GovernanceStatusCurated, Visibility: models.VisibilityTenant,
 		Responsibilities: responsibilities,
-	}, UpdateEntryAuthorization{}, UpdateEntryActor{Type: "user", ID: "99"})
+	}, UpdateEntryActor{Type: "user", ID: "99"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -305,7 +394,7 @@ func TestStandardMetricUsesOwnerDomainAndDynamicCurrentSummary(t *testing.T) {
 	input := UpdateEntryInput{Version: result.Version, BusinessName: &name, BusinessDescription: &description,
 		GovernanceStatus: models.GovernanceStatusCurated, Visibility: models.VisibilityTenant,
 		Domains: []DomainLinkInput{{ID: 41, Role: models.SemanticRolePrimary}}, Responsibilities: responsibilities}
-	if _, err := service.Update(context.Background(), 7, entry.ID, input, UpdateEntryAuthorization{}, UpdateEntryActor{Type: "user", ID: "99"}); !errors.Is(err, ErrInvalidEntryUpdate) {
+	if _, err := service.Update(context.Background(), 7, entry.ID, input, UpdateEntryActor{Type: "user", ID: "99"}); !errors.Is(err, ErrInvalidEntryUpdate) {
 		t.Fatalf("Catalog Metric primary Domain copy accepted: %v", err)
 	}
 }
@@ -347,7 +436,7 @@ func TestServiceQueryServiceUsesDynamicFactsAndCatalogOwnedPrimaryDomain(t *test
 		Version: 1, BusinessName: &name, BusinessDescription: &description,
 		GovernanceStatus: models.GovernanceStatusCurated, Visibility: models.VisibilityTenant,
 		Domains: []DomainLinkInput{{ID: 41, Role: models.SemanticRolePrimary}}, Responsibilities: responsibilities,
-	}, UpdateEntryAuthorization{}, UpdateEntryActor{Type: "user", ID: "99"})
+	}, UpdateEntryActor{Type: "user", ID: "99"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -359,7 +448,7 @@ func TestServiceQueryServiceUsesDynamicFactsAndCatalogOwnedPrimaryDomain(t *test
 		Domains: []DomainLinkInput{{ID: 41, Role: models.SemanticRolePrimary}}, Responsibilities: responsibilities,
 		ComponentElements: []ComponentElementInput{{ComponentID: uuid.New(), ElementID: 51}},
 	}
-	if _, err := svc.Update(context.Background(), 7, entry.ID, invalid, UpdateEntryAuthorization{}, UpdateEntryActor{Type: "user", ID: "99"}); !errors.Is(err, ErrInvalidEntryUpdate) {
+	if _, err := svc.Update(context.Background(), 7, entry.ID, invalid, UpdateEntryActor{Type: "user", ID: "99"}); !errors.Is(err, ErrInvalidEntryUpdate) {
 		t.Fatalf("Catalog QueryService component copy accepted: %v", err)
 	}
 }
@@ -376,7 +465,7 @@ func TestEntryUpdateRejectsStaleVersionWithoutReplacingAggregate(t *testing.T) {
 	service := NewEntryService(db, &fakeStandardReferenceResolver{}, &fakeSystemReferenceResolver{})
 	_, err := service.Update(context.Background(), 7, entry.ID, UpdateEntryInput{
 		Version: 1, GovernanceStatus: models.GovernanceStatusDiscovered, Visibility: models.VisibilityInventory,
-	}, UpdateEntryAuthorization{}, UpdateEntryActor{Type: "user", ID: "99"})
+	}, UpdateEntryActor{Type: "user", ID: "99"})
 	if !errors.Is(err, ErrEntryVersionConflict) {
 		t.Fatalf("Update() error = %v, want version conflict", err)
 	}
@@ -389,7 +478,7 @@ func TestEntryUpdateRejectsStaleVersionWithoutReplacingAggregate(t *testing.T) {
 	}
 }
 
-func TestEntryUpdateRequiresReferenceabilityAndConditionalPermissions(t *testing.T) {
+func TestEntryUpdateRequiresReferenceabilityAndRejectsLifecycleStatuses(t *testing.T) {
 	t.Run("reference is not referenceable", func(t *testing.T) {
 		db := openCatalogServiceTestDB(t)
 		entry, _ := createEditableCatalogEntry(t, db, 7)
@@ -398,13 +487,13 @@ func TestEntryUpdateRequiresReferenceabilityAndConditionalPermissions(t *testing
 		_, err := service.Update(context.Background(), 7, entry.ID, UpdateEntryInput{
 			Version: 1, GovernanceStatus: models.GovernanceStatusDiscovered, Visibility: models.VisibilityInventory,
 			Domains: []DomainLinkInput{{ID: 10, Role: models.SemanticRoleSecondary}},
-		}, UpdateEntryAuthorization{}, UpdateEntryActor{Type: "user", ID: "99"})
+		}, UpdateEntryActor{Type: "user", ID: "99"})
 		if !errors.Is(err, ErrReferenceNotReferenceable) {
 			t.Fatalf("Update() error = %v", err)
 		}
 	})
 
-	t.Run("certification requires permission", func(t *testing.T) {
+	t.Run("certification uses governance subresource", func(t *testing.T) {
 		db := openCatalogServiceTestDB(t)
 		entry, _ := createEditableCatalogEntry(t, db, 7)
 		entry.GovernanceStatus = models.GovernanceStatusCurated
@@ -415,8 +504,8 @@ func TestEntryUpdateRequiresReferenceabilityAndConditionalPermissions(t *testing
 			t.Fatal(err)
 		}
 		service := NewEntryService(db, &fakeStandardReferenceResolver{}, &fakeSystemReferenceResolver{})
-		_, err := service.Update(context.Background(), 7, entry.ID, completeGovernedUpdateInput(name, description), UpdateEntryAuthorization{}, UpdateEntryActor{Type: "user", ID: "99"})
-		if !errors.Is(err, ErrCertificationPermissionRequired) {
+		_, err := service.Update(context.Background(), 7, entry.ID, completeGovernedUpdateInput(name, description), UpdateEntryActor{Type: "user", ID: "99"})
+		if !errors.Is(err, ErrEntryNotEditable) {
 			t.Fatalf("Update() error = %v", err)
 		}
 	})

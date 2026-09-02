@@ -22,6 +22,12 @@ other = "Lineage subject not found"
 [meta.lineage.query_failed]
 other = "Lineage query failed"
 
+[meta.security_sample.invalid]
+other = "The DataItem security sample fingerprint is invalid"
+
+[meta.security_sample.unavailable]
+other = "The DataItem security sample is currently unavailable"
+
 [permissions.meta.lineage.create.name]
 other = "Write lineage"
 

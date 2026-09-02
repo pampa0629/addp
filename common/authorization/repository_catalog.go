@@ -24,6 +24,7 @@ var stablePermissionOwnerModules = []string{
 	"monitor",
 	"orchestrator",
 	"quality",
+	"security",
 	"service",
 	"standard",
 	"system",

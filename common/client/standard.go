@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -280,10 +281,72 @@ type ElementSummary struct {
 }
 
 type ElementRevisionBinding struct {
-	ElementID  int64
-	RevisionID int64
-	RevisionNo int64
-	DataType   string
+	ElementID       int64                            `json:"element_id,string"`
+	RevisionID      int64                            `json:"element_revision_id,string"`
+	RevisionNo      int64                            `json:"revision_no"`
+	DomainID        *int64                           `json:"domain_id,omitempty,string"`
+	Code            string                           `json:"code"`
+	Name            string                           `json:"name"`
+	Definition      string                           `json:"definition"`
+	DataType        string                           `json:"data_type"`
+	Length          *int                             `json:"length,omitempty"`
+	PrecisionNum    *int                             `json:"precision_num,omitempty"`
+	Scale           *int                             `json:"scale,omitempty"`
+	Nullable        bool                             `json:"nullable"`
+	DefaultValue    string                           `json:"default_value"`
+	Format          string                           `json:"format"`
+	ValueDomainKind string                           `json:"value_domain_kind"`
+	RangeConstraint *StandardElementRangeConstraint  `json:"range_constraint,omitempty"`
+	CodeSetRevision *StandardCodeSetRevisionSnapshot `json:"code_set_revision,omitempty"`
+	UnitID          *int64                           `json:"unit_id,omitempty,string"`
+	ExampleValues   []string                         `json:"example_values"`
+	EffectiveFrom   time.Time                        `json:"effective_from"`
+	EffectiveTo     *time.Time                       `json:"effective_to,omitempty"`
+}
+
+type StandardElementRangeConstraint struct {
+	Min          *json.Number `json:"min,omitempty"`
+	Max          *json.Number `json:"max,omitempty"`
+	MinInclusive *bool        `json:"min_inclusive,omitempty"`
+	MaxInclusive *bool        `json:"max_inclusive,omitempty"`
+}
+
+type StandardCodeItemSnapshot struct {
+	Code              string `json:"code"`
+	Label             string `json:"label"`
+	Definition        string `json:"definition,omitempty"`
+	SortOrder         int    `json:"sort_order"`
+	Status            string `json:"status"`
+	ReplacementItemID *int64 `json:"replacement_item_id,omitempty,string"`
+}
+
+type StandardCodeSetRevisionSnapshot struct {
+	CodeSetID     int64                      `json:"code_set_id,string"`
+	RevisionID    int64                      `json:"revision_id,string"`
+	RevisionNo    int64                      `json:"revision_no"`
+	Code          string                     `json:"code"`
+	Name          string                     `json:"name"`
+	Description   string                     `json:"description"`
+	ValueType     string                     `json:"value_type"`
+	Status        string                     `json:"status"`
+	EffectiveFrom *time.Time                 `json:"effective_from,omitempty"`
+	EffectiveTo   *time.Time                 `json:"effective_to,omitempty"`
+	Items         []StandardCodeItemSnapshot `json:"items"`
+}
+
+type elementRevisionResolutionRequest struct {
+	ElementIDs []string  `json:"element_ids"`
+	AsOf       time.Time `json:"as_of"`
+}
+
+type ElementRevisionResolution struct {
+	ElementID int64                   `json:"element_id,string"`
+	Found     bool                    `json:"found"`
+	Snapshot  *ElementRevisionBinding `json:"snapshot,omitempty"`
+}
+
+type ElementRevisionResolutionResponse struct {
+	Results []ElementRevisionResolution `json:"results"`
 }
 
 type ElementCandidate struct {
@@ -360,6 +423,25 @@ func (c *StandardClient) GetElement(ctx context.Context, elementID int64) (*Elem
 // in time. Missing, inactive, cross-tenant, or non-effective elements fail the
 // whole call so consumers can freeze an aggregate atomically.
 func (c *StandardClient) ResolveElementRevisions(ctx context.Context, elementIDs []int64, asOf time.Time) (map[int64]ElementRevisionBinding, error) {
+	snapshots, err := c.ResolveElementRevisionSnapshots(ctx, elementIDs, asOf)
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[int64]ElementRevisionBinding, len(snapshots))
+	for elementID, snapshot := range snapshots {
+		if snapshot == nil {
+			return nil, fmt.Errorf("standard resolve element revisions: %w", ErrTenantReferenceNotFound)
+		}
+		result[elementID] = *snapshot
+	}
+	return result, nil
+}
+
+// ResolveElementRevisionSnapshots resolves stable element IDs at one shared
+// point in time while preserving an explicit nil snapshot for elements that do
+// not have an effective revision. It is the federated read-model primitive;
+// aggregate writers should call ResolveElementRevisions instead.
+func (c *StandardClient) ResolveElementRevisionSnapshots(ctx context.Context, elementIDs []int64, asOf time.Time) (map[int64]*ElementRevisionBinding, error) {
 	if c == nil || c.tenantID == nil || *c.tenantID == 0 || asOf.IsZero() {
 		return nil, errors.New("standard resolve element revisions contains invalid parameters")
 	}
@@ -375,35 +457,46 @@ func (c *StandardClient) ResolveElementRevisions(ctx context.Context, elementIDs
 		seen[elementID] = struct{}{}
 		unique = append(unique, elementID)
 	}
-	result := make(map[int64]ElementRevisionBinding, len(unique))
-	for offset := 0; offset < len(unique); offset += 100 {
-		end := offset + 100
+	result := make(map[int64]*ElementRevisionBinding, len(unique))
+	for offset := 0; offset < len(unique); offset += 200 {
+		end := offset + 200
 		if end > len(unique) {
 			end = len(unique)
 		}
-		values := make([]string, 0, end-offset)
-		for _, elementID := range unique[offset:end] {
-			values = append(values, strconv.FormatInt(elementID, 10))
+		batch := unique[offset:end]
+		encodedBatch := make([]string, len(batch))
+		for index, elementID := range batch {
+			encodedBatch[index] = strconv.FormatInt(elementID, 10)
 		}
-		query := url.Values{
-			"ids":       []string{strings.Join(values, ",")},
-			"as_of":     []string{asOf.UTC().Format(time.RFC3339Nano)},
-			"page":      []string{"1"},
-			"page_size": []string{"100"},
-		}
-		var response elementListResponse
-		if err := c.doJSON(ctx, http.MethodGet, "/api/v1/standard/elements?"+query.Encode(), nil, &response); err != nil {
+		var response ElementRevisionResolutionResponse
+		if err := c.doJSON(ctx, http.MethodPost, "/api/v1/standard/runtime/element-revisions/resolve", elementRevisionResolutionRequest{
+			ElementIDs: encodedBatch,
+			AsOf:       asOf.UTC(),
+		}, &response); err != nil {
 			return nil, fmt.Errorf("standard resolve element revisions: %w", err)
 		}
-		for _, element := range response.Data {
-			if _, requested := seen[element.ID]; !requested || element.TenantID != int64(*c.tenantID) || element.LifecycleState != "active" || element.CurrentRevision == nil || element.CurrentRevision.Status != "published" || element.CurrentRevision.ID <= 0 || element.CurrentRevision.RevisionNo <= 0 {
-				return nil, fmt.Errorf("standard resolve element revisions: %w", ErrTenantReferenceNotFound)
+		if len(response.Results) != len(batch) {
+			return nil, errors.New("standard resolve element revisions returned a result count mismatch")
+		}
+		for index, resolution := range response.Results {
+			if resolution.ElementID != batch[index] {
+				return nil, errors.New("standard resolve element revisions returned results out of request order")
 			}
-			result[element.ID] = ElementRevisionBinding{ElementID: element.ID, RevisionID: element.CurrentRevision.ID, RevisionNo: element.CurrentRevision.RevisionNo, DataType: element.CurrentRevision.DataType}
+			if !resolution.Found {
+				if resolution.Snapshot != nil {
+					return nil, errors.New("standard resolve element revisions returned a snapshot for a missing element")
+				}
+				result[resolution.ElementID] = nil
+				continue
+			}
+			if resolution.Snapshot == nil || resolution.Snapshot.ElementID != resolution.ElementID || resolution.Snapshot.RevisionID <= 0 || resolution.Snapshot.RevisionNo <= 0 || strings.TrimSpace(resolution.Snapshot.DataType) == "" || resolution.Snapshot.EffectiveFrom.IsZero() {
+				return nil, errors.New("standard resolve element revisions returned an invalid snapshot")
+			}
+			result[resolution.ElementID] = resolution.Snapshot
 		}
 	}
 	if len(result) != len(unique) {
-		return nil, fmt.Errorf("standard resolve element revisions: %w", ErrTenantReferenceNotFound)
+		return nil, errors.New("standard resolve element revisions returned incomplete results")
 	}
 	return result, nil
 }

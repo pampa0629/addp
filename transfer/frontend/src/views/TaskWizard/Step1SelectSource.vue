@@ -97,7 +97,15 @@
               <el-option label="MQL" value="mql" />
               <el-option label="SQL" value="sql" />
             </el-select>
+            <MongoStructureQueryBuilder
+              v-if="isMongoMqlSource"
+              :model-value="queryStatement"
+              :collection="selectedMongoCollection"
+              :source-fields="mongoSourceFields"
+              @update:model-value="handleMongoQueryUpdate"
+            />
             <el-input
+              v-else
               v-model="queryStatement"
               type="textarea"
               :rows="10"
@@ -142,6 +150,8 @@ import {
   resolveContainerTableChild
 } from './containerSource.mjs'
 import { queryStatementValid } from './runtimeTarget.mjs'
+import MongoStructureQueryBuilder from './MongoStructureQueryBuilder.vue'
+import { mongoStructureOutputFields, parseMongoStructureQuery } from './mongoStructureQuery.mjs'
 
 const { t } = useI18n()
 
@@ -165,6 +175,7 @@ const queryStatement = ref(props.wizardState.sourceQueryStatement.value || '')
 const queryParametersText = ref(JSON.stringify(props.wizardState.sourceQueryParameters.value || {}, null, 2))
 const queryStatementError = ref('')
 const queryParametersError = ref('')
+const catalogSourceFields = ref([])
 
 const supportedEncodedSourceFormats = ref(new Set())
 const supportedRawCopyFormats = ref(new Map())
@@ -194,6 +205,18 @@ const querySourceAvailable = computed(() => {
     selectedTransferDataType.value === 'table' &&
     representationForSelection(selectedNode.value, selectedEngine.value) === 'native'
 })
+const isMongoMqlSource = computed(() => {
+  const engineType = selectedEngine.value?.engine_type || props.wizardState.sourceEngineType.value
+  return queryLanguage.value === 'mql' && String(engineType || '').toLowerCase().includes('mongodb')
+})
+const selectedMongoCollection = computed(() => {
+  const names = pathNames(selectedNode.value)
+  if (names.length > 0) return names[names.length - 1]
+  if (props.wizardState.sourceTable.value) return props.wizardState.sourceTable.value
+  const locatorPath = parseTransferLocator(props.wizardState.sourceLocator.value).path
+  return locatorPath[locatorPath.length - 1] || ''
+})
+const mongoSourceFields = computed(() => catalogSourceFields.value)
 
 watch(
   () => props.wizardState.sourceQueryStatement.value,
@@ -208,6 +231,7 @@ watch(
 )
 
 watch(selectedNode, async (node) => {
+  catalogSourceFields.value = []
   if (!node) {
     containerChildName.value = ''
     return
@@ -249,6 +273,22 @@ function syncQuerySource() {
     parameters,
     valid: !queryStatementError.value && !queryParametersError.value
   })
+  if (!querySourceEnabled.value && catalogSourceFields.value.length > 0) {
+    props.wizardState.replaceSourceFields(catalogSourceFields.value, selectedNode.value?.attributes || {})
+  }
+}
+
+function handleMongoQueryUpdate(statement) {
+  queryStatement.value = statement
+  syncQuerySource()
+  syncMongoQueryOutputFields(statement)
+}
+
+function syncMongoQueryOutputFields(statement) {
+  const parsed = parseMongoStructureQuery(statement)
+  if (!parsed.supported) return
+  const fields = mongoStructureOutputFields(parsed.model, catalogSourceFields.value)
+  props.wizardState.replaceSourceFields(fields)
 }
 
 watch(containerChildName, () => {
@@ -449,8 +489,17 @@ async function loadFieldsForNode(node) {
     }
     const response = await getItemFieldsByID(itemID)
     const fieldList = Array.isArray(response?.data) ? response.data : (response || [])
+    catalogSourceFields.value = fieldList
+    if (querySourceEnabled.value && isMongoMqlSource.value) {
+      const parsed = parseMongoStructureQuery(queryStatement.value)
+      if (parsed.supported) {
+        props.wizardState.replaceSourceFields(mongoStructureOutputFields(parsed.model, fieldList))
+        return
+      }
+    }
     props.wizardState.loadSourceFields(fieldList, node.attributes || {})
   } catch (error) {
+    catalogSourceFields.value = []
     props.wizardState.loadSourceFields([])
     ElMessage.warning(t('transfer.taskWizard.loadSourceFieldsWarning', { error: error.response?.data?.error || error.message }))
   }

@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/addp/common/dataitem"
+	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
@@ -15,6 +17,7 @@ import (
 	"github.com/addp/meta/internal/metaenrich"
 	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/metapath"
+	"github.com/addp/meta/internal/metatext"
 	"github.com/addp/meta/internal/models"
 	metaRepo "github.com/addp/meta/internal/repository"
 	"github.com/addp/meta/internal/scanflow"
@@ -28,6 +31,72 @@ type ItemRefreshRuntime struct {
 	log                *slog.Logger
 	cadInspector       metaenrich.CADInspector
 	containerInspector metaenrich.ContainerInspector
+}
+
+func (r *ItemRefreshRuntime) ReadDocumentSecuritySampleByIDWithPlugin(
+	ctx context.Context,
+	p plugin.EnginePlugin,
+	resource *commonModels.Engine,
+	tenantID uint,
+	itemID uint,
+) (*dataprotection.DataItemSecuritySample, error) {
+	if resource == nil || itemID == 0 {
+		return nil, fmt.Errorf("document security sample target is required")
+	}
+	item, err := r.repo.GetItemByID(tenantID, itemID)
+	if err != nil {
+		return nil, fmt.Errorf("document security sample target not found: %w", err)
+	}
+	if item.EngineID != resource.ID {
+		return nil, fmt.Errorf("document security sample engine mismatch")
+	}
+	if p == nil {
+		p, err = plugin.Get(resource.EngineType)
+		if err != nil {
+			return nil, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
+		}
+	}
+	contentReader, ok := p.(plugin.ContentReadableProvider)
+	if !ok {
+		return nil, fmt.Errorf("engine %s does not implement ContentReadableProvider", resource.EngineType)
+	}
+	descriptor := scanflow.KnownItemDescriptorFromAttributes(item.Attributes)
+	if descriptor.DataType != datatype.Document {
+		return nil, fmt.Errorf("DataItem is not a document")
+	}
+	if err := scanflow.ValidateKnownItemRefreshDescriptor(descriptor, item); err != nil {
+		return nil, err
+	}
+	formatType := format.NormalizeFormat(descriptor.Format)
+	textReader, err := format.GetDocumentTextReader(formatType)
+	if err != nil {
+		return nil, fmt.Errorf("document text reader is unavailable: %w", err)
+	}
+	physicalPath := scanflow.KnownItemPhysicalPath(descriptor, item)
+	catalogPathFor := scanflow.KnownItemCatalogPathResolver(resource.ID, p, descriptor)
+	content, err := contentReader.OpenContent(ctx, plugin.ConnectionInfo(resource.ConnectionInfo), catalogPathFor(physicalPath), plugin.ReadOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("open document security sample: %w", err)
+	}
+	defer content.Close()
+	text, truncated, err := textReader.ReadDocumentText(ctx, content, int64(metatext.DocumentContentRuneLimit), nil)
+	if err != nil {
+		return nil, fmt.Errorf("read document security sample: %w", err)
+	}
+	hash, err := dataprotection.DocumentTextSnapshotHash(text, truncated)
+	if err != nil {
+		return nil, err
+	}
+	observedAt := time.Now().UTC()
+	sample := &dataprotection.DataItemSecuritySample{
+		SchemaVersion:   dataprotection.DataItemSecuritySampleSchemaV1,
+		ItemFingerprint: item.Fingerprint, ItemType: item.ItemType,
+		Text: text, Truncated: truncated, SourceSnapshotHash: hash, ObservedAt: observedAt,
+	}
+	if err := sample.Validate(); err != nil {
+		return nil, err
+	}
+	return sample, nil
 }
 
 func NewItemRefreshRuntime(repo *metaRepo.ScanRepository, indexer RuntimeIndexer, log *slog.Logger) *ItemRefreshRuntime {

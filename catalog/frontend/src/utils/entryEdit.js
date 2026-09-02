@@ -43,9 +43,7 @@ export function buildEntryEditForm(entry) {
         elementId: componentElements.has(String(component.id))
           ? String(componentElements.get(String(component.id)))
           : null
-      })),
-    deprecationReason: '',
-    recommendedSuccessorEntryId: entry?.recommended_successor_entry_id || ''
+      }))
   }
 }
 
@@ -65,25 +63,58 @@ export function buildUpdatePayload(form) {
     })),
     component_elements: form.ownerManagedComponents ? [] : form.componentElements
       .filter(item => item.elementId !== null && item.elementId !== undefined && item.elementId !== '')
-      .map(item => ({ component_id: item.componentId, element_id: String(item.elementId).trim() })),
-    recommended_successor_entry_id: nullableTrimmed(form.recommendedSuccessorEntryId)
+      .map(item => ({ component_id: item.componentId, element_id: String(item.elementId).trim() }))
   }
-  const reason = nullableTrimmed(form.deprecationReason)
-  if (reason !== null) payload.deprecation_reason = reason
   return payload
+}
+
+export function buildWithdrawCurationPayload(entry) {
+  return {
+    version: Number(entry?.version || 0),
+    business_name: null,
+    business_description: null,
+    governance_status: 'discovered',
+    visibility: 'inventory',
+    domains: [],
+    glossary_ids: [],
+    responsibilities: [],
+    component_elements: []
+  }
+}
+
+export function curationAction(status) {
+  if (status === 'discovered') return 'start'
+  if (status === 'curated') return 'edit'
+  return ''
+}
+
+export function buildCertificationPayload(entry) {
+  return {
+    version: Number(entry?.version || 0),
+    governance_status: 'certified'
+  }
+}
+
+export function buildCertificationWithdrawalPayload(entry, reason) {
+  return {
+    version: Number(entry?.version || 0),
+    governance_status: 'curated',
+    reason: nullableTrimmed(reason)
+  }
+}
+
+export function buildDeprecationPayload(entry, reason, recommendedSuccessorEntryId) {
+  return {
+    version: Number(entry?.version || 0),
+    governance_status: 'deprecated',
+    reason: nullableTrimmed(reason),
+    recommended_successor_entry_id: nullableTrimmed(recommendedSuccessorEntryId)
+  }
 }
 
 export function hasEffectivePrimaryDomain(form) {
   if (form.ownerManagedSemantics) return isCanonicalPositiveID(form.ownerPrimaryDomainId)
   return form.domains.filter(item => item.role === 'primary').length === 1
-}
-
-export function governanceOptions(current, canCertify, canDeprecate) {
-  const result = [current]
-  if (current === 'discovered') result.push('curated')
-  if (current === 'curated' && canCertify) result.push('certified')
-  if ((current === 'curated' || current === 'certified') && canDeprecate) result.push('deprecated')
-  return [...new Set(result)]
 }
 
 export function responsibilitySubjectType(role) {

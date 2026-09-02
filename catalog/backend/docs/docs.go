@@ -898,7 +898,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "使用聚合根 version 原子替换业务信息、语义关联、责任、组件数据元关联、可见性、治理状态和可选推荐继任项；推荐继任只允许指向同租户、来源有效且已编目或已认证的 active 条目；Standard 或 System 校验不可达时明确失败但不影响模块 Ready | Atomically replace business metadata, semantic links, responsibilities, component-element links, visibility, governance status, and the optional recommended successor using the aggregate version; a successor must be an active-source curated or certified entry in the same tenant; unavailable Standard or System validation fails explicitly without affecting module readiness",
+                "description": "使用聚合根 version 原子替换 discovered 或 curated 阶段的业务信息、语义关联、责任、组件数据元关联和可见性；curated 回到 discovered 只表示撤销编目，必须清空全部 Catalog 人工编目字段并恢复 inventory；认证、撤销认证和弃用只允许使用治理子资源；Standard 或 System 校验不可达时明确失败但不影响模块 Ready | Atomically replace business metadata, semantic links, responsibilities, component-element links, and visibility while the entry is discovered or curated; curated to discovered exclusively withdraws curation and must clear every Catalog-owned curation field while restoring inventory visibility; certification, certification withdrawal, and deprecation exclusively use the governance subresource; unavailable Standard or System validation fails explicitly without affecting module readiness",
                 "consumes": [
                     "application/json"
                 ],
@@ -908,7 +908,7 @@ const docTemplate = `{
                 "tags": [
                     "Catalog"
                 ],
-                "summary": "编目企业目录条目 | Curate an enterprise catalog entry",
+                "summary": "维护企业资源编目 | Maintain enterprise resource curation",
                 "parameters": [
                     {
                         "type": "string",
@@ -949,7 +949,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "缺少更新或条件状态权限 | Missing update or conditional status permission",
+                        "description": "缺少目录更新权限 | Missing catalog update permission",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -971,6 +971,271 @@ const docTemplate = `{
                     },
                     "503": {
                         "description": "Standard 或 System 引用校验不可达 | Standard or System reference validation unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "catalog.entry.update"
+                ]
+            }
+        },
+        "/entries/{id}/data-dictionary": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅适用于来源有效的 Meta DataItem；物理字段始终来自 Meta 当前结构，as_of 仅用于解析 Standard 数据元及其精确码值集修订 | Only applies to active Meta DataItems; physical fields always come from the current Meta schema, while as_of resolves Standard data element and exact code-set revisions",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog"
+                ],
+                "summary": "获取联邦数据字典 | Get federated data dictionary",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "CatalogEntry UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Standard 修订查询时点，RFC3339；缺省为当前时刻 | Standard revision point in time in RFC3339; defaults to now",
+                        "name": "as_of",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "联邦数据字典 | Federated data dictionary",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_catalog_internal_service.DataDictionary"
+                        }
+                    },
+                    "400": {
+                        "description": "ID 或 as_of 无效 | Invalid ID or as_of",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "条目不存在或不可见 | Entry not found or not visible",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "该条目不适用数据字典 | Data dictionary not applicable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "Meta 或 Standard 依赖不可用 | Meta or Standard dependency unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-conditional-permissions": [
+                    "catalog.inventory.read"
+                ],
+                "x-addp-required-permissions": [
+                    "catalog.entry.read"
+                ]
+            }
+        },
+        "/entries/{id}/data-dictionary/export": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "使用与联邦数据字典查询相同的可见性和解析规则重新组合一次结果，并返回包含 generated_at 和 as_of 的不可变 UTF-8 JSON 附件；服务端不留存导出副本 | Re-resolves the federated data dictionary under the same visibility and resolution rules and returns an immutable UTF-8 JSON attachment containing generated_at and as_of; the server does not retain an export copy",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog"
+                ],
+                "summary": "导出联邦数据字典快照 | Export federated data dictionary snapshot",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "CatalogEntry UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Standard 修订查询时点，RFC3339；缺省为当前时刻 | Standard revision point in time in RFC3339; defaults to now",
+                        "name": "as_of",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "联邦数据字典 JSON 快照 | Federated data dictionary JSON snapshot",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "ID 或 as_of 无效 | Invalid ID or as_of",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "条目不存在或不可见 | Entry not found or not visible",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "该条目不适用数据字典 | Data dictionary not applicable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "Meta 或 Standard 依赖不可用 | Meta or Standard dependency unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-conditional-permissions": [
+                    "catalog.inventory.read"
+                ],
+                "x-addp-required-permissions": [
+                    "catalog.entry.read"
+                ]
+            }
+        },
+        "/entries/{id}/governance": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "使用聚合根 version 原子执行认证、撤销认证、弃用或弃用信息维护；只更新治理状态、可选推荐继任项和领域审计，不替换业务编目事实；撤销认证和弃用必须填写原因；推荐继任只允许指向同租户、来源有效且已编目或已认证的 active 条目 | Atomically certify, withdraw certification, deprecate, or maintain deprecation information using the aggregate version; only governance status, the optional recommended successor, and domain audit are updated, while curation facts remain unchanged; certification withdrawal and deprecation require a reason; a successor must be an active-source curated or certified entry in the same tenant",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Catalog"
+                ],
+                "summary": "维护企业资源治理状态 | Maintain enterprise resource governance state",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "CatalogEntry UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "治理状态完整更新 | Complete governance-state update",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.updateEntryGovernanceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新后的完整条目 | Updated complete entry",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_catalog_internal_service.EntryDetail"
+                        }
+                    },
+                    "400": {
+                        "description": "请求、认证要求或原因无效 | Invalid request, certification requirements, or reason",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "缺少目录更新或条件治理权限 | Missing catalog update or conditional governance permission",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "条目不存在 | Entry not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "版本、状态或推荐继任项冲突 | Version, state, or recommended-successor conflict",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -1705,6 +1970,184 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "client.StandardCodeItemSnapshot": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "definition": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "replacement_item_id": {
+                    "type": "string",
+                    "example": "0"
+                },
+                "sort_order": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "client.StandardCodeSetRevisionSnapshot": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "code_set_id": {
+                    "type": "string",
+                    "example": "0"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "effective_from": {
+                    "type": "string"
+                },
+                "effective_to": {
+                    "type": "string"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.StandardCodeItemSnapshot"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "revision_id": {
+                    "type": "string",
+                    "example": "0"
+                },
+                "revision_no": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "value_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "client.StandardElementRangeConstraint": {
+            "type": "object",
+            "properties": {
+                "max": {
+                    "type": "string"
+                },
+                "max_inclusive": {
+                    "type": "boolean"
+                },
+                "min": {
+                    "type": "string"
+                },
+                "min_inclusive": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "datatype.FieldInfo": {
+            "type": "object",
+            "properties": {
+                "comment": {
+                    "type": "string"
+                },
+                "default_expression": {
+                    "type": "string"
+                },
+                "element_type": {
+                    "$ref": "#/definitions/datatype.FieldType"
+                },
+                "generated": {
+                    "type": "boolean"
+                },
+                "generation_expression": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "native_type": {
+                    "type": "string"
+                },
+                "nullable": {
+                    "type": "boolean"
+                },
+                "ordinal_position": {
+                    "type": "integer"
+                },
+                "path": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "precision": {
+                    "type": "integer"
+                },
+                "primary_key": {
+                    "type": "boolean"
+                },
+                "scale": {
+                    "type": "integer"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "type": {
+                    "$ref": "#/definitions/datatype.FieldType"
+                }
+            }
+        },
+        "datatype.FieldType": {
+            "type": "string",
+            "enum": [
+                "unknown",
+                "string",
+                "bool",
+                "bytes",
+                "mixed",
+                "int",
+                "bigint",
+                "float",
+                "double",
+                "decimal",
+                "date",
+                "time",
+                "timestamp",
+                "json",
+                "array",
+                "uuid",
+                "geometry"
+            ],
+            "x-enum-varnames": [
+                "FieldTypeUnknown",
+                "FieldTypeString",
+                "FieldTypeBool",
+                "FieldTypeBytes",
+                "FieldTypeMixed",
+                "FieldTypeInt",
+                "FieldTypeBigInt",
+                "FieldTypeFloat",
+                "FieldTypeDouble",
+                "FieldTypeDecimal",
+                "FieldTypeDate",
+                "FieldTypeTime",
+                "FieldTypeTimestamp",
+                "FieldTypeJSON",
+                "FieldTypeArray",
+                "FieldTypeUUID",
+                "FieldTypeGeometry"
+            ]
+        },
         "github_com_addp_catalog_internal_models.AuditEvent": {
             "type": "object",
             "properties": {
@@ -2151,6 +2594,124 @@ const docTemplate = `{
                 },
                 "status": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_addp_catalog_internal_service.DataDictionary": {
+            "type": "object",
+            "properties": {
+                "as_of": {
+                    "type": "string"
+                },
+                "entry_id": {
+                    "type": "string",
+                    "format": "uuid"
+                },
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_catalog_internal_service.DataDictionaryField"
+                    }
+                },
+                "generated_at": {
+                    "type": "string"
+                },
+                "schema_version": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_catalog_internal_service.DataDictionaryElementRevision": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "code_set_revision": {
+                    "$ref": "#/definitions/client.StandardCodeSetRevisionSnapshot"
+                },
+                "data_type": {
+                    "type": "string"
+                },
+                "default_value": {
+                    "type": "string"
+                },
+                "definition": {
+                    "type": "string"
+                },
+                "domain_id": {
+                    "type": "string",
+                    "example": "0"
+                },
+                "effective_from": {
+                    "type": "string"
+                },
+                "effective_to": {
+                    "type": "string"
+                },
+                "element_id": {
+                    "type": "string",
+                    "example": "0"
+                },
+                "element_revision_id": {
+                    "type": "string",
+                    "example": "0"
+                },
+                "example_values": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "format": {
+                    "type": "string"
+                },
+                "length": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "nullable": {
+                    "type": "boolean"
+                },
+                "precision_num": {
+                    "type": "integer"
+                },
+                "range_constraint": {
+                    "$ref": "#/definitions/client.StandardElementRangeConstraint"
+                },
+                "revision_no": {
+                    "type": "integer"
+                },
+                "scale": {
+                    "type": "integer"
+                },
+                "unit_id": {
+                    "type": "string",
+                    "example": "0"
+                },
+                "value_domain_kind": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_catalog_internal_service.DataDictionaryField": {
+            "type": "object",
+            "properties": {
+                "component_id": {
+                    "type": "string",
+                    "format": "uuid"
+                },
+                "element_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "physical": {
+                    "$ref": "#/definitions/datatype.FieldInfo"
+                },
+                "standard": {
+                    "$ref": "#/definitions/github_com_addp_catalog_internal_service.DataDictionaryElementRevision"
                 }
             }
         },
@@ -2932,6 +3493,30 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api.updateEntryGovernanceRequest": {
+            "type": "object",
+            "properties": {
+                "governance_status": {
+                    "type": "string",
+                    "enum": [
+                        "curated",
+                        "certified",
+                        "deprecated"
+                    ]
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "recommended_successor_entry_id": {
+                    "type": "string",
+                    "format": "uuid"
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
         "internal_api.updateEntryRequest": {
             "type": "object",
             "properties": {
@@ -2946,9 +3531,6 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/internal_api.updateComponentElementRequest"
                     }
-                },
-                "deprecation_reason": {
-                    "type": "string"
                 },
                 "domains": {
                     "type": "array",
@@ -2966,14 +3548,8 @@ const docTemplate = `{
                     "type": "string",
                     "enum": [
                         "discovered",
-                        "curated",
-                        "certified",
-                        "deprecated"
+                        "curated"
                     ]
-                },
-                "recommended_successor_entry_id": {
-                    "type": "string",
-                    "format": "uuid"
                 },
                 "responsibilities": {
                     "type": "array",

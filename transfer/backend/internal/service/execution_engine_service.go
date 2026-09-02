@@ -12,6 +12,7 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/contentio"
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/instanceprovider"
 	engineplugin "github.com/addp/common/engine/plugin"
@@ -41,6 +42,13 @@ type ExecutionEngineService struct {
 	replayRuntime    BoundedReplayRuntime
 	cfg              *config.Config
 	logger           *slog.Logger
+	protectionGate   sourceProtectionGate
+}
+
+type sourceProtectionGate interface {
+	RequireSourceConfig(context.Context, uint, map[string]interface{}) error
+	PrepareBoundedTableProtection(context.Context, uint, map[string]interface{}) (executor.TableSourceProtector, error)
+	PrepareBoundedEncodedRecordProtection(context.Context, uint, map[string]interface{}, []datatype.FieldInfo) (engineplugin.EncodedRecordTransform, error)
 }
 
 func NewExecutionEngineService(
@@ -70,6 +78,10 @@ func (s *ExecutionEngineService) SetReplayRuntime(runtime BoundedReplayRuntime) 
 	s.replayRuntime = runtime
 }
 
+func (s *ExecutionEngineService) SetProtectionGate(gate sourceProtectionGate) {
+	s.protectionGate = gate
+}
+
 // ExecuteTask 执行任务（由 Worker 调用）
 func (s *ExecutionEngineService) ExecuteTask(ctx context.Context, taskID, executionID uint) error {
 	s.logger.Info("executing task", "task_id", taskID, "execution_id", executionID)
@@ -87,6 +99,12 @@ func (s *ExecutionEngineService) ExecuteTask(ctx context.Context, taskID, execut
 		return fmt.Errorf("execution does not belong to transfer task %d", task.ID)
 	}
 	if isReplayExecutionConfig(execution.ExecutionConfig) {
+		if s.protectionGate == nil {
+			return fmt.Errorf("transfer source protection gate is not configured")
+		}
+		if err := s.protectionGate.RequireSourceConfig(ctx, task.TenantID, task.Config); err != nil {
+			return err
+		}
 		return s.executeBoundedReplay(ctx, task, executionID, execution.ExecutionConfig)
 	}
 	runtimeTask := *task
@@ -107,6 +125,12 @@ func (s *ExecutionEngineService) executeCommonTransferTask(ctx context.Context, 
 
 	rawSpec, rawErr := planner.ParseRawCopyTaskSpec(task.Config)
 	if rawErr == nil {
+		if s.protectionGate == nil {
+			return fmt.Errorf("transfer source protection gate is not configured")
+		}
+		if err := s.protectionGate.RequireSourceConfig(ctx, task.TenantID, task.Config); err != nil {
+			return err
+		}
 		if err := s.attachRawCopySourceMetaAttributes(task, &rawSpec); err != nil {
 			wrapped := fmt.Errorf("load source meta item attributes: %w", err)
 			s.updateExecutionError(ctx, task, executionID, wrapped)
@@ -116,9 +140,20 @@ func (s *ExecutionEngineService) executeCommonTransferTask(ctx context.Context, 
 		return s.executeCommonRawCopyTask(ctx, task, executionID, rawSpec, resolver)
 	}
 
+	recordSpec, recordErr := planner.ParseEncodedRecordExportTaskSpec(task.Config, task.BatchSize)
+	if recordErr == nil {
+		if err := s.attachEncodedRecordSourceMetaAttributes(task, &recordSpec); err != nil {
+			wrapped := fmt.Errorf("load encoded record source meta item attributes: %w", err)
+			s.updateExecutionError(ctx, task, executionID, wrapped)
+			return wrapped
+		}
+		resolver := planner.NewHybridEngineResolver(planner.BindEngineResolver(planner.NewSystemEngineResolver(s.systemClient), task.TenantID), s.infraEngineResolver())
+		return s.executeCommonEncodedRecordExportTask(ctx, task, executionID, recordSpec, resolver)
+	}
+
 	spec, err := planner.ParseTableExportTaskSpec(task.Config, task.BatchSize)
 	if err != nil {
-		wrapped := fmt.Errorf("parse common transfer task config: table=%v; raw_copy=%v", err, rawErr)
+		wrapped := fmt.Errorf("parse common transfer task config: table=%v; encoded_record_export=%v; raw_copy=%v", err, recordErr, rawErr)
 		s.updateExecutionError(ctx, task, executionID, wrapped)
 		return wrapped
 	}
@@ -133,6 +168,12 @@ func (s *ExecutionEngineService) executeCommonTransferTask(ctx context.Context, 
 
 	resolver := planner.NewHybridEngineResolver(planner.BindEngineResolver(planner.NewSystemEngineResolver(s.systemClient), task.TenantID), s.infraEngineResolver())
 	if planner.IsWatermarkIncrementalSpec(spec) {
+		if s.protectionGate == nil {
+			return fmt.Errorf("transfer source protection gate is not configured")
+		}
+		if err := s.protectionGate.RequireSourceConfig(ctx, task.TenantID, task.Config); err != nil {
+			return err
+		}
 		return s.executeWatermarkIncrementalTask(ctx, task, executionID, spec, resolver)
 	}
 	return s.executeCommonTableTransferTask(ctx, task, executionID, spec, resolver)
@@ -283,20 +324,34 @@ func (s *ExecutionEngineService) infraEngineResolver() *planner.InfraEngineResol
 }
 
 func (s *ExecutionEngineService) attachRawCopySourceMetaAttributes(task *models.TransferTask, spec *planner.RawCopyTaskSpec) error {
-	if task == nil || spec == nil || spec.Source.LocatorItemID() == 0 {
+	if spec == nil {
+		return nil
+	}
+	return s.attachEndpointSourceMetaAttributes(task, &spec.Source)
+}
+
+func (s *ExecutionEngineService) attachEncodedRecordSourceMetaAttributes(task *models.TransferTask, spec *planner.EncodedRecordExportTaskSpec) error {
+	if spec == nil {
+		return nil
+	}
+	return s.attachEndpointSourceMetaAttributes(task, &spec.Source)
+}
+
+func (s *ExecutionEngineService) attachEndpointSourceMetaAttributes(task *models.TransferTask, endpoint *planner.EndpointSpec) error {
+	if task == nil || endpoint == nil || endpoint.LocatorItemID() == 0 {
 		return nil
 	}
 	if s.metaClient == nil {
 		return fmt.Errorf("meta client is required when source locator item_id is set")
 	}
-	item, err := s.metaClient.WithTenantID(task.TenantID).GetItemByID(spec.Source.LocatorItemID())
+	item, err := s.metaClient.WithTenantID(task.TenantID).GetItemByID(endpoint.LocatorItemID())
 	if err != nil {
 		return err
 	}
-	if item.EngineID != spec.Source.LocatorEngineID() {
-		return fmt.Errorf("source meta item engine_id %d does not match source locator engine id %d", item.EngineID, spec.Source.LocatorEngineID())
+	if item.EngineID != endpoint.LocatorEngineID() {
+		return fmt.Errorf("source meta item engine_id %d does not match source locator engine id %d", item.EngineID, endpoint.LocatorEngineID())
 	}
-	spec.Source.Attributes = item.Attributes
+	endpoint.Attributes = item.Attributes
 	return nil
 }
 
@@ -387,6 +442,12 @@ func (s *ExecutionEngineService) runCommonTableTransferData(
 	if err := s.configureInstanceTableProviders(ctx, task.TenantID, spec, buildResult, tableExecutor); err != nil {
 		return nil, nil, fmt.Errorf("configure instance table providers: %w", err)
 	}
+	tableExecutor.SourceProtector, err = prepareBoundedTableSourceProtection(
+		ctx, s.protectionGate, task.TenantID, task.Config, buildResult.SourceEngineType, buildResult.Plan.Source.Kind,
+	)
+	if err != nil {
+		return nil, nil, err
+	}
 	if hasSpatialReprojectTransform(buildResult.Plan.Transforms) {
 		workflowEngine, workflowOperator, err := s.selectDirectWorkflowRuntime(ctx, task.TenantID, "vector_reproject")
 		if err != nil {
@@ -412,6 +473,40 @@ func (s *ExecutionEngineService) runCommonTableTransferData(
 	s.updateTableTargetRefs(executionID, metrics.TargetRefs)
 
 	return buildResult, metrics, nil
+}
+
+func prepareBoundedTableSourceProtection(
+	ctx context.Context,
+	gate sourceProtectionGate,
+	tenantID uint,
+	config map[string]interface{},
+	sourceEngineType string,
+	sourceKind executor.TableEndpointKind,
+) (executor.TableSourceProtector, error) {
+	if gate == nil {
+		return nil, fmt.Errorf("transfer source protection gate is not configured")
+	}
+	switch sourceKind {
+	case executor.TableEndpointEncoded:
+		if err := gate.RequireSourceConfig(ctx, tenantID, config); err != nil {
+			return nil, err
+		}
+		return nil, nil
+	case executor.TableEndpointNative, executor.TableEndpointQuery:
+		if sourceEngineType != "postgresql" {
+			if err := gate.RequireSourceConfig(ctx, tenantID, config); err != nil {
+				return nil, err
+			}
+			return nil, nil
+		}
+		protector, err := gate.PrepareBoundedTableProtection(ctx, tenantID, config)
+		if err != nil {
+			return nil, fmt.Errorf("prepare bounded table source protection: %w", err)
+		}
+		return protector, nil
+	default:
+		return nil, fmt.Errorf("unsupported protected table source kind %q", sourceKind)
+	}
 }
 
 func (s *ExecutionEngineService) executeRuntimeTargetTableTransferTask(
@@ -801,6 +896,57 @@ func (s *ExecutionEngineService) executeCommonRawCopyTask(ctx context.Context, t
 	return nil
 }
 
+func (s *ExecutionEngineService) executeCommonEncodedRecordExportTask(ctx context.Context, task *models.TransferTask, executionID uint, spec planner.EncodedRecordExportTaskSpec, resolver planner.EngineResolver) error {
+	buildResult, err := planner.BuildEncodedRecordExportPlan(spec, resolver)
+	if err != nil {
+		wrapped := fmt.Errorf("build encoded record export plan: %w", err)
+		s.updateExecutionError(ctx, task, executionID, wrapped)
+		return wrapped
+	}
+	buildResult.Plan.ProgressCallback = s.encodedRecordExportProgressCallback(task, executionID)
+	if s.protectionGate == nil {
+		wrapped := fmt.Errorf("transfer source protection gate is not configured")
+		s.updateExecutionError(ctx, task, executionID, wrapped)
+		return wrapped
+	}
+	buildResult.Plan.BeforeEncode, err = s.protectionGate.PrepareBoundedEncodedRecordProtection(
+		ctx, task.TenantID, task.Config, planner.EncodedRecordSourceFields(spec),
+	)
+	if err != nil {
+		wrapped := fmt.Errorf("prepare encoded record source protection: %w", err)
+		s.updateExecutionError(ctx, task, executionID, wrapped)
+		return wrapped
+	}
+
+	recordExecutor, err := executor.NewEncodedRecordExportExecutor(buildResult.SourceEngineType, buildResult.TargetEngineType)
+	if err != nil {
+		wrapped := fmt.Errorf("create encoded record export executor: %w", err)
+		s.updateExecutionError(ctx, task, executionID, wrapped)
+		return wrapped
+	}
+	metrics, err := recordExecutor.Execute(ctx, buildResult.Plan)
+	if err != nil {
+		wrapped := fmt.Errorf("execute encoded record export plan: %w", err)
+		if metrics != nil {
+			s.updateEncodedRecordExportMetrics(executionID, metrics)
+		}
+		s.updateExecutionError(ctx, task, executionID, wrapped)
+		return wrapped
+	}
+	s.updateEncodedRecordExportMetrics(executionID, metrics)
+	if err := s.writeTransferLineageFacts(ctx, task, executionID, spec.Source.Locator, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, spec.Target.Policy); err != nil {
+		s.logger.Warn("failed to persist encoded record export lineage facts", "error", err, "execution_id", executionID)
+	}
+	if err := s.writeBoundedExecutionOutputs(ctx, executionID, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, metrics.RecordsWritten); err != nil {
+		s.updateExecutionError(ctx, task, executionID, err)
+		return err
+	}
+	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, ""); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s *ExecutionEngineService) writeTransferLineageFacts(ctx context.Context, task *models.TransferTask, executionID uint, sourceLocator, targetLocator, targetParentLocator, targetName string, targetPolicy map[string]interface{}) error {
 	if s == nil || s.executionService == nil || task == nil {
 		return nil
@@ -835,6 +981,22 @@ func (s *ExecutionEngineService) writeTransferLineageFacts(ctx context.Context, 
 }
 
 func targetLineageLocator(parentURI, name string) string {
+	if planner.IsInfraLocatorURI(parentURI) {
+		parent, err := planner.ParseInfraLocatorURI(parentURI)
+		if err != nil || parent == nil {
+			return ""
+		}
+		switch parent.Type {
+		case resourcetree.TypePrefix, resourcetree.TypeDirectory:
+		default:
+			return ""
+		}
+		child, err := parent.Child(name, resourcetree.TypeObject)
+		if err != nil {
+			return ""
+		}
+		return child.ToURI()
+	}
 	parent, err := resourcetree.ParseURI(strings.TrimSpace(parentURI))
 	if err != nil || parent == nil || parent.EngineID == 0 || strings.TrimSpace(name) == "" {
 		return ""
@@ -956,6 +1118,19 @@ func (s *ExecutionEngineService) updateRawCopyMetrics(executionID uint, metrics 
 	}
 }
 
+func (s *ExecutionEngineService) updateEncodedRecordExportMetrics(executionID uint, metrics *executor.EncodedRecordExportMetrics) {
+	if metrics == nil {
+		return
+	}
+	ctx := context.Background()
+	if err := s.executionService.UpdateMetrics(ctx, executionID, map[string]interface{}{
+		"records_read": metrics.RecordsRead, "records_written": metrics.RecordsWritten,
+		"bytes_read": metrics.BytesRead, "bytes_written": metrics.BytesWritten,
+	}); err != nil {
+		s.logger.Error("failed to update encoded record export metrics", "error", err, "execution_id", executionID)
+	}
+}
+
 func (s *ExecutionEngineService) tableProgressCallback(task *models.TransferTask, executionID uint) executor.TableProgressCallback {
 	return func(ctx context.Context, event executor.TableProgressEvent) error {
 		if s.executionService == nil {
@@ -1069,6 +1244,49 @@ func (s *ExecutionEngineService) rawCopyProgressCallback(task *models.TransferTa
 			return fmt.Errorf("append raw copy progress log: %w", err)
 		}
 		return nil
+	}
+}
+
+func (s *ExecutionEngineService) encodedRecordExportProgressCallback(task *models.TransferTask, executionID uint) executor.EncodedRecordExportProgressCallback {
+	return func(ctx context.Context, event executor.EncodedRecordExportProgressEvent) error {
+		if s.executionService == nil {
+			return nil
+		}
+		if err := s.executionService.UpdateMetrics(ctx, executionID, map[string]interface{}{
+			"records_read": event.RecordsRead, "records_written": event.RecordsWritten,
+			"bytes_read": event.BytesRead, "bytes_written": event.BytesWritten,
+		}); err != nil {
+			return fmt.Errorf("update encoded record export metrics: %w", err)
+		}
+		checkpointState := map[string]interface{}{
+			"version": "v1", "batch_index": event.BatchIndex, "source_offset": event.SourceOffset,
+			"records_read": event.RecordsRead, "records_written": event.RecordsWritten,
+			"bytes_read": event.BytesRead, "bytes_written": event.BytesWritten,
+			"target_committed": event.Final, "updated_at": time.Now().Format(time.RFC3339),
+		}
+		if event.Final {
+			checkpointState["final"] = true
+		}
+		if err := s.executionService.UpdateExecution(ctx, executionID, map[string]interface{}{
+			"checkpoint_offset": event.RecordsRead,
+			"checkpoint_state":  checkpointState,
+		}); err != nil {
+			return fmt.Errorf("update encoded record export checkpoint: %w", err)
+		}
+		if task != nil {
+			progress := runningProgress(event.BatchIndex)
+			if event.Final {
+				progress = 100
+			}
+			if err := s.taskRepo.UpdateFields(task.ID, map[string]interface{}{"progress": progress}); err != nil {
+				s.logger.Warn("failed to update encoded record export task progress", "error", err, "task_id", task.ID)
+			}
+		}
+		return s.executionService.AppendLog(ctx, executionID, fmt.Sprintf(
+			"%s batch=%d source_offset=%d batch_records=%d records_read=%d records_written=%d bytes_written=%d target_committed=%t final=%t",
+			time.Now().Format(time.RFC3339), event.BatchIndex, event.SourceOffset, event.BatchRecords,
+			event.RecordsRead, event.RecordsWritten, event.BytesWritten, event.Final, event.Final,
+		))
 	}
 }
 

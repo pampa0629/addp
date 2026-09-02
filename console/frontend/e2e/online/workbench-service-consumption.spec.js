@@ -10,7 +10,7 @@ const requiredNames = [
   'ADDP_ONLINE_TEST_USER_USERNAME',
   'ADDP_ONLINE_TEST_USER_PASSWORD',
   'ADDP_ONLINE_WORKBENCH_SERVICE_ID',
-  'ADDP_ONLINE_WORKBENCH_VIEW_ID',
+  'ADDP_ONLINE_WORKBENCH_APPLICATION_ID',
   'ADDP_ONLINE_WORKBENCH_ORIGINAL_FINGERPRINT',
   'GATEWAY_URL'
 ]
@@ -58,11 +58,11 @@ async function login(page, username, password, redirect) {
   return browserAccessToken
 }
 
-test('saved View renders MySQL table and chart then blocks a changed contract', async ({ page }) => {
+test('Data Application authoring renders MySQL table and chart then blocks a changed contract', async ({ page }) => {
   const env = environment()
   const serviceID = Number(env.ADDP_ONLINE_WORKBENCH_SERVICE_ID)
   if (!Number.isInteger(serviceID) || serviceID <= 0) throw new Error('Workbench service ID must be positive')
-  const viewPath = `/workbench/views/${env.ADDP_ONLINE_WORKBENCH_VIEW_ID}`
+  const applicationPath = `/workbench/applications/${env.ADDP_ONLINE_WORKBENCH_APPLICATION_ID}`
   const api = await request.newContext({
     baseURL: env.GATEWAY_URL,
     extraHTTPHeaders: { Authorization: `Bearer ${env.ADDP_ONLINE_TEST_USER_ACCESS_TOKEN}` }
@@ -84,7 +84,7 @@ test('saved View renders MySQL table and chart then blocks a changed contract', 
       page,
       env.ADDP_ONLINE_TEST_USER_USERNAME,
       env.ADDP_ONLINE_TEST_USER_PASSWORD,
-      viewPath
+      applicationPath
     )
     const browserAPI = await request.newContext({
       baseURL: env.GATEWAY_URL,
@@ -98,19 +98,26 @@ test('saved View renders MySQL table and chart then blocks a changed contract', 
     expect(String(browserIdentity?.context?.tenant_id)).toBe(env.ADDP_ONLINE_TEST_TENANT_ID)
     await browserAPI.dispose()
     const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
-    await expect(frame.getByTestId('workbench-view-editor')).toBeVisible()
+    await expect(frame.getByTestId('data-application-editor')).toBeVisible()
     await expect(frame.getByTestId('contract-changed-alert')).toHaveCount(0)
 
-    await frame.getByTestId('query-action').click()
-    const tableRows = frame.getByTestId('renderer-host').locator('.el-table__body-wrapper tbody tr')
+    const applicationComponents = frame.getByTestId('application-component')
+    await expect(applicationComponents).toHaveCount(2)
+    await applicationComponents.nth(0).getByTestId('edit-component-action').click()
+    const componentEditor = frame.getByTestId('application-component-editor')
+    await expect(componentEditor).toBeVisible()
+    await componentEditor.getByTestId('component-query-action').click()
+    const tableRows = componentEditor.getByTestId('renderer-host').locator('.el-table__body-wrapper tbody tr')
     await expect(tableRows).toHaveCount(2)
     await expect(tableRows.first()).toContainText('ORD-20260420-001')
+    await frame.locator('.el-dialog__headerbtn').click()
 
-    await frame.getByTestId('renderer-select').click()
-    await expect(frame.getByTestId('renderer-option-map')).toHaveCount(0)
-    await frame.getByTestId('renderer-option-chart').click()
-    await frame.getByTestId('query-action').click()
-    await expect(frame.getByTestId('renderer-host').locator('.chart-renderer canvas')).toBeVisible()
+    await applicationComponents.nth(1).getByTestId('edit-component-action').click()
+    await expect(componentEditor).toBeVisible()
+    await componentEditor.getByTestId('component-query-action').click()
+    await expect(componentEditor.getByTestId('renderer-host').locator('.chart-renderer canvas')).toBeVisible()
+    await expect(componentEditor.getByTestId('renderer-host').locator('.map-container')).toHaveCount(0)
+    await frame.locator('.el-dialog__headerbtn').click()
 
     await json(
       await api.put(`/api/v1/service/query/${serviceID}`, {
@@ -125,9 +132,10 @@ test('saved View renders MySQL table and chart then blocks a changed contract', 
     expect(changed.contract_fingerprint).not.toBe(env.ADDP_ONLINE_WORKBENCH_ORIGINAL_FINGERPRINT)
 
     await page.reload()
-    await expect(frame.getByTestId('workbench-view-editor')).toBeVisible()
-    await expect(frame.getByTestId('contract-changed-alert')).toBeVisible()
-    await expect(frame.getByTestId('query-action')).toBeDisabled()
+    await expect(frame.getByTestId('data-application-editor')).toBeVisible()
+    await applicationComponents.nth(0).getByTestId('edit-component-action').click()
+    await expect(componentEditor.getByTestId('contract-changed-alert')).toBeVisible()
+    await expect(componentEditor.getByTestId('component-query-action')).toBeDisabled()
     expect(failedBusinessResponses).toEqual([])
 
     const report = {
@@ -137,7 +145,7 @@ test('saved View renders MySQL table and chart then blocks a changed contract', 
       result: 'passed',
       tenant_id: env.ADDP_ONLINE_TEST_TENANT_ID,
       service_id: serviceID,
-      view_id: env.ADDP_ONLINE_WORKBENCH_VIEW_ID,
+      application_id: env.ADDP_ONLINE_WORKBENCH_APPLICATION_ID,
       table_rows: 2,
       chart_rendered: true,
       map_available: false,

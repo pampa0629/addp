@@ -8,7 +8,6 @@ import {
 describe('Standard permissions', () => {
   it('builds canonical permission keys for every Standard resource', () => {
     expect(STANDARD_PERMISSION_RESOURCES.map(resource => buildStandardPermission(resource, 'update'))).toEqual([
-      'standard.classification.update',
       'standard.code_set.update',
       'standard.dimension_hierarchy.update',
       'standard.document.update',

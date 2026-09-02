@@ -43,6 +43,7 @@
   --addp-module-standard: #7C3AED;
   --addp-module-modeling: #9333EA;
   --addp-module-quality: #16A34A;
+  --addp-module-security: #DC2626;
   --addp-module-catalog: #0F766E;
   --addp-module-asset: #2563EB;
   --addp-module-monitor: #0891B2;
@@ -114,6 +115,7 @@ html.dark {
   --addp-module-standard: #A78BFA;
   --addp-module-modeling: #C084FC;
   --addp-module-quality: #4ADE80;
+  --addp-module-security: #F87171;
   --addp-module-catalog: #2DD4BF;
   --addp-module-asset: #60A5FA;
   --addp-module-monitor: #22D3EE;
@@ -164,6 +166,7 @@ html.blue {
   --addp-module-standard: #A5B4FC;
   --addp-module-modeling: #C4B5FD;
   --addp-module-quality: #6EE7B7;
+  --addp-module-security: #FCA5A5;
   --addp-module-catalog: #5EEAD4;
   --addp-module-asset: #93C5FD;
   --addp-module-monitor: #67E8F9;
@@ -240,6 +243,7 @@ html.purple {
   --addp-module-standard: #c4b5fd;
   --addp-module-modeling: #e879f9;
   --addp-module-quality: #6ee7b7;
+  --addp-module-security: #fca5a5;
   --addp-module-catalog: #5eead4;
   --addp-module-asset: #a5b4fc;
   --addp-module-monitor: #67e8f9;

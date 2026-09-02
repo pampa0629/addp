@@ -163,6 +163,35 @@ func TestResourceActionsDatabaseItemSupportsExportOnly(t *testing.T) {
 	}
 }
 
+func TestResourceActionsMongoCollectionSupportsCanonicalExtendedJSONExport(t *testing.T) {
+	caps := plugin.NewDynamicSchemaCapabilities("mongodb")
+	caps.Storage.Store.EncodedRecordReadSession = &plugin.EncodedRecordReadSessionCapability{
+		Formats: []string{"mongodb_extended_jsonl"},
+	}
+	rawBytes, err := json.Marshal(caps)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	raw := commonModels.JSONString(rawBytes)
+	svc := NewResourceActionService(fakeResourceActionSystemClient{engines: map[uint]*commonModels.Engine{
+		11: {
+			ID: 11, TenantID: uintPtr(7), EngineType: "mongodb", LifecycleState: "active", Capabilities: &raw,
+		},
+	}})
+
+	got, err := svc.GetResourceActions(t.Context(), "addp://engine/11/path/Outdoor/Persons?type=collection&item_id=81", uintPtr(7))
+	if err != nil {
+		t.Fatalf("GetResourceActions() error = %v", err)
+	}
+	export := got.Actions["export"]
+	if got.Kind != "item" || !export.Supported {
+		t.Fatalf("response = %#v, want collection export supported", got)
+	}
+	if len(export.Formats) != 1 || export.Formats[0] != "mongodb_extended_jsonl" {
+		t.Fatalf("formats = %#v", export.Formats)
+	}
+}
+
 func TestResourceActionsRespectsInactiveEngine(t *testing.T) {
 	svc := NewResourceActionService(fakeResourceActionSystemClient{
 		engines: map[uint]*commonModels.Engine{
