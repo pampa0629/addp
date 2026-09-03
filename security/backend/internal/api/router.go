@@ -21,6 +21,8 @@ func SetupRouter(svc *service.DefinitionService, enrollments *service.Enrollment
 	lifecycle.RegisterHealthRoutes(router)
 	router.Use(lifecycle.RequireReady(), commoni18n.I18nMiddleware())
 	h := NewDefinitionHandler(svc)
+	definitionProfileHandler := NewDefinitionProfileHandler(svc)
+	detectorHandler := NewDetectorHandler(svc)
 	enrollmentHandler := NewEnrollmentHandler(enrollments)
 	findingHandler := NewFindingHandler(discoveries)
 	assessmentHandler := NewAssessmentHandler(assessments)
@@ -28,6 +30,17 @@ func SetupRouter(svc *service.DefinitionService, enrollments *service.Enrollment
 	api := router.Group("/api/v1/security")
 	api.Use(commonauth.MustNewMiddleware(commonauth.MiddlewareConfig{SystemURL: systemURL}), commonauth.MustNewContextGuard("tenant"))
 	permission := func(key string) gin.HandlerFunc { return commonauth.MustNewPermissionGuard(key) }
+
+	api.GET("/definition-profiles",
+		permission(securityauthorization.PermissionSecurityClassificationRead),
+		permission(securityauthorization.PermissionSecurityGradeRead),
+		definitionProfileHandler.List,
+	)
+	api.POST("/definition-profile-applications",
+		permission(securityauthorization.PermissionSecurityClassificationCreate),
+		permission(securityauthorization.PermissionSecurityGradeCreate),
+		definitionProfileHandler.Apply,
+	)
 
 	classifications := api.Group("/classifications")
 	classifications.GET("", permission(securityauthorization.PermissionSecurityClassificationRead), h.ListClassifications)
@@ -50,6 +63,14 @@ func SetupRouter(svc *service.DefinitionService, enrollments *service.Enrollment
 	types.PUT("/:id", permission(securityauthorization.PermissionSecuritySensitiveDataTypeUpdate), h.UpdateType)
 	types.DELETE("/:id", permission(securityauthorization.PermissionSecuritySensitiveDataTypeDelete), h.DeleteType)
 
+	api.GET("/detector-capabilities", permission(securityauthorization.PermissionSecurityDetectorRead), detectorHandler.ListCapabilities)
+	detectors := api.Group("/detectors")
+	detectors.GET("", permission(securityauthorization.PermissionSecurityDetectorRead), detectorHandler.List)
+	detectors.GET("/:id", permission(securityauthorization.PermissionSecurityDetectorRead), detectorHandler.Get)
+	detectors.POST("", permission(securityauthorization.PermissionSecurityDetectorCreate), detectorHandler.Create)
+	detectors.PUT("/:id", permission(securityauthorization.PermissionSecurityDetectorUpdate), detectorHandler.Update)
+	detectors.DELETE("/:id", permission(securityauthorization.PermissionSecurityDetectorDelete), detectorHandler.Delete)
+
 	baselines := api.Group("/protection-baselines")
 	baselines.GET("", permission(securityauthorization.PermissionSecurityProtectionBaselineRead), h.ListBaselines)
 	baselines.GET("/:id", permission(securityauthorization.PermissionSecurityProtectionBaselineRead), h.GetBaseline)
@@ -61,6 +82,8 @@ func SetupRouter(svc *service.DefinitionService, enrollments *service.Enrollment
 	protectionEnrollments.GET("", permission(securityauthorization.PermissionSecurityEnrollmentRead), enrollmentHandler.List)
 	protectionEnrollments.POST("", permission(securityauthorization.PermissionSecurityEnrollmentCreate), enrollmentHandler.Create)
 	protectionEnrollments.GET("/:id", permission(securityauthorization.PermissionSecurityEnrollmentRead), enrollmentHandler.Get)
+	protectionEnrollments.POST("/:id/re-enrollments", permission(securityauthorization.PermissionSecurityEnrollmentCreate), enrollmentHandler.ReEnroll)
+	protectionEnrollments.GET("/:id/components", permission(securityauthorization.PermissionSecurityEnrollmentRead), permission(securityauthorization.PermissionSecurityAssessmentRead), assessmentHandler.ListComponents)
 	protectionEnrollments.POST("/:id/releases", permission(securityauthorization.PermissionSecurityEnrollmentUpdate), enrollmentHandler.Release)
 	protectionEnrollments.POST("/:id/discovery-executions", permission(securityauthorization.PermissionSecurityEnrollmentUpdate), enrollmentHandler.CreateDiscoveryExecution)
 
@@ -68,11 +91,14 @@ func SetupRouter(svc *service.DefinitionService, enrollments *service.Enrollment
 	findings.GET("", permission(securityauthorization.PermissionSecurityFindingRead), findingHandler.List)
 	findings.GET("/:id", permission(securityauthorization.PermissionSecurityFindingRead), findingHandler.Get)
 	findings.POST("/:id/reviews", permission(securityauthorization.PermissionSecurityFindingUpdate), assessmentHandler.ReviewFinding)
+	api.GET("/discovery-quality", permission(securityauthorization.PermissionSecurityFindingRead), findingHandler.Quality)
 
 	assessmentsAPI := api.Group("/assessments")
 	assessmentsAPI.GET("", permission(securityauthorization.PermissionSecurityAssessmentRead), assessmentHandler.List)
+	assessmentsAPI.POST("", permission(securityauthorization.PermissionSecurityAssessmentCreate), assessmentHandler.CreateManual)
 	assessmentsAPI.GET("/:id", permission(securityauthorization.PermissionSecurityAssessmentRead), assessmentHandler.Get)
 	assessmentsAPI.POST("/:id/revisions", permission(securityauthorization.PermissionSecurityAssessmentUpdate), assessmentHandler.Revise)
+	assessmentsAPI.DELETE("/:id", permission(securityauthorization.PermissionSecurityAssessmentUpdate), assessmentHandler.Revoke)
 
 	policiesAPI := api.Group("/protection-policies")
 	policiesAPI.GET("", permission(securityauthorization.PermissionSecurityPolicyRead), policyHandler.List)

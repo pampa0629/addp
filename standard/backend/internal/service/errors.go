@@ -8,6 +8,7 @@ import (
 )
 
 var (
+	ErrInvalidStandardScope          = fmt.Errorf("%w: invalid standard scope", commonapi.ErrBadRequest)
 	ErrInvalidStandardRevision       = fmt.Errorf("%w: invalid standard revision", commonapi.ErrBadRequest)
 	ErrInvalidRevisionTransition     = fmt.Errorf("%w: invalid standard revision transition", commonapi.ErrConflict)
 	ErrEffectiveIntervalConflict     = fmt.Errorf("%w: standard revision effective interval conflicts with an existing published revision", commonapi.ErrConflict)

@@ -195,7 +195,6 @@ const (
 	TaskTypeModel3DTilesGeneration           = "model3d_tiles_generation"
 	TaskTypeGaussianSplatKSplatGeneration    = "gaussian_splat_ksplat_generation"
 	TaskTypePointCloudCOPCGeneration         = "point_cloud_copc_generation"
-	TaskTypeCADPreviewGeneration             = "cad_preview_generation"
 	TaskTypeEmbedding                        = "embedding"
 	TaskTypeDataProfiling                    = "data_profiling"
 	// Graph 模块

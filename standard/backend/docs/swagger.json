@@ -103,9 +103,20 @@
                 "summary": "获取码值集列表 | List code sets",
                 "parameters": [
                     {
+                        "enum": [
+                            "platform",
+                            "tenant_common",
+                            "domain"
+                        ],
+                        "type": "string",
+                        "description": "适用范围 | Scope",
+                        "name": "scope_type",
+                        "in": "query"
+                    },
+                    {
                         "type": "integer",
-                        "description": "归属业务域 ID | Owning domain ID",
-                        "name": "domain_id",
+                        "description": "归属业务域 ID，仅 domain 范围适用 | Owning domain ID, only for domain scope",
+                        "name": "owner_domain_id",
                         "in": "query"
                     },
                     {
@@ -2087,9 +2098,20 @@
                         "in": "query"
                     },
                     {
+                        "enum": [
+                            "platform",
+                            "tenant_common",
+                            "domain"
+                        ],
+                        "type": "string",
+                        "description": "适用范围 | Scope",
+                        "name": "scope_type",
+                        "in": "query"
+                    },
+                    {
                         "type": "integer",
-                        "description": "归属业务域 ID | Owning domain ID",
-                        "name": "domain_id",
+                        "description": "归属业务域 ID，仅 domain 范围适用 | Owning domain ID, only for domain scope",
+                        "name": "owner_domain_id",
                         "in": "query"
                     },
                     {
@@ -5489,9 +5511,6 @@
                 "current_revision": {
                     "$ref": "#/definitions/github_com_addp_standard_internal_models.CodeSetRevision"
                 },
-                "domain_id": {
-                    "type": "integer"
-                },
                 "draft_revision": {
                     "$ref": "#/definitions/github_com_addp_standard_internal_models.CodeSetRevision"
                 },
@@ -5506,6 +5525,17 @@
                 },
                 "origin": {
                     "type": "string"
+                },
+                "owner_domain_id": {
+                    "type": "integer"
+                },
+                "scope_type": {
+                    "type": "string",
+                    "enum": [
+                        "platform",
+                        "tenant_common",
+                        "domain"
+                    ]
                 },
                 "steward_id": {
                     "type": "integer"
@@ -5666,8 +5696,8 @@
                 "change_summary",
                 "code",
                 "description",
-                "domain_id",
                 "name",
+                "scope_type",
                 "value_type"
             ],
             "properties": {
@@ -5680,9 +5710,6 @@
                 "description": {
                     "type": "string"
                 },
-                "domain_id": {
-                    "type": "integer"
-                },
                 "effective_from": {
                     "type": "string"
                 },
@@ -5691,6 +5718,16 @@
                 },
                 "name": {
                     "type": "string"
+                },
+                "owner_domain_id": {
+                    "type": "integer"
+                },
+                "scope_type": {
+                    "type": "string",
+                    "enum": [
+                        "tenant_common",
+                        "domain"
+                    ]
                 },
                 "steward_id": {
                     "type": "integer"
@@ -5730,6 +5767,7 @@
                 "data_type",
                 "definition",
                 "name",
+                "scope_type",
                 "value_domain_kind"
             ],
             "properties": {
@@ -5750,9 +5788,6 @@
                 },
                 "definition": {
                     "type": "string"
-                },
-                "domain_id": {
-                    "type": "integer"
                 },
                 "effective_from": {
                     "type": "string"
@@ -5782,6 +5817,9 @@
                 "nullable": {
                     "type": "boolean"
                 },
+                "owner_domain_id": {
+                    "type": "integer"
+                },
                 "precision_num": {
                     "type": "integer"
                 },
@@ -5790,6 +5828,13 @@
                 },
                 "scale": {
                     "type": "integer"
+                },
+                "scope_type": {
+                    "type": "string",
+                    "enum": [
+                        "tenant_common",
+                        "domain"
+                    ]
                 },
                 "steward_id": {
                     "type": "integer"
@@ -5997,9 +6042,6 @@
                 "current_revision": {
                     "$ref": "#/definitions/github_com_addp_standard_internal_models.ElementRevision"
                 },
-                "domain_id": {
-                    "type": "integer"
-                },
                 "draft_revision": {
                     "$ref": "#/definitions/github_com_addp_standard_internal_models.ElementRevision"
                 },
@@ -6011,6 +6053,17 @@
                 },
                 "lifecycle_state": {
                     "type": "string"
+                },
+                "owner_domain_id": {
+                    "type": "integer"
+                },
+                "scope_type": {
+                    "type": "string",
+                    "enum": [
+                        "platform",
+                        "tenant_common",
+                        "domain"
+                    ]
                 },
                 "steward_id": {
                     "type": "integer"
@@ -6767,12 +6820,19 @@
         "github_com_addp_standard_internal_models.UpdateCodeSetRequest": {
             "type": "object",
             "required": [
-                "domain_id",
+                "scope_type",
                 "version"
             ],
             "properties": {
-                "domain_id": {
+                "owner_domain_id": {
                     "type": "integer"
+                },
+                "scope_type": {
+                    "type": "string",
+                    "enum": [
+                        "tenant_common",
+                        "domain"
+                    ]
                 },
                 "steward_id": {
                     "type": "integer"
@@ -6898,11 +6958,19 @@
         "github_com_addp_standard_internal_models.UpdateElementRequest": {
             "type": "object",
             "required": [
+                "scope_type",
                 "version"
             ],
             "properties": {
-                "domain_id": {
+                "owner_domain_id": {
                     "type": "integer"
+                },
+                "scope_type": {
+                    "type": "string",
+                    "enum": [
+                        "tenant_common",
+                        "domain"
+                    ]
                 },
                 "steward_id": {
                     "type": "integer"
@@ -7263,12 +7331,31 @@
                 "name": {
                     "type": "string"
                 },
+                "origin": {
+                    "type": "string",
+                    "enum": [
+                        "platform",
+                        "tenant"
+                    ]
+                },
+                "owner_domain_id": {
+                    "type": "string",
+                    "example": ""
+                },
                 "revision_id": {
                     "type": "string",
                     "example": ""
                 },
                 "revision_no": {
                     "type": "integer"
+                },
+                "scope_type": {
+                    "type": "string",
+                    "enum": [
+                        "platform",
+                        "tenant_common",
+                        "domain"
+                    ]
                 },
                 "status": {
                     "type": "string",
@@ -7370,10 +7457,6 @@
                 "definition": {
                     "type": "string"
                 },
-                "domain_id": {
-                    "type": "string",
-                    "example": ""
-                },
                 "effective_from": {
                     "type": "string"
                 },
@@ -7406,6 +7489,10 @@
                 "nullable": {
                     "type": "boolean"
                 },
+                "owner_domain_id": {
+                    "type": "string",
+                    "example": ""
+                },
                 "precision_num": {
                     "type": "integer"
                 },
@@ -7417,6 +7504,14 @@
                 },
                 "scale": {
                     "type": "integer"
+                },
+                "scope_type": {
+                    "type": "string",
+                    "enum": [
+                        "platform",
+                        "tenant_common",
+                        "domain"
+                    ]
                 },
                 "unit_id": {
                     "type": "string",

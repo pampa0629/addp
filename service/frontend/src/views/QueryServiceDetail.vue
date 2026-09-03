@@ -172,6 +172,34 @@
           <pre><code>{{ service?.sql_query }}</code></pre>
         </div>
 
+        <div v-if="service?.named_parameters?.length" class="named-parameter-preview">
+          <el-divider content-position="left">{{ t('service.query.namedParametersLabel') }}</el-divider>
+          <el-form label-position="top">
+            <el-form-item v-for="parameter in service.named_parameters" :key="parameter.name" :required="parameter.required">
+              <template #label>
+                <code>:{{ parameter.name }}</code>
+                <span v-if="parameter.description" class="named-parameter-description">{{ parameter.description }}</span>
+              </template>
+              <el-select v-if="parameter.type === 'bool'" v-model="previewNamedParameterValues[parameter.name]" clearable>
+                <el-option :value="true" :label="t('service.common.yes')" />
+                <el-option :value="false" :label="t('service.common.no')" />
+              </el-select>
+              <el-input-number
+                v-else-if="numericNamedParameterTypes.has(parameter.type)"
+                v-model="previewNamedParameterValues[parameter.name]"
+                :controls="false"
+              />
+              <el-date-picker
+                v-else-if="parameter.type === 'date' || parameter.type === 'timestamp'"
+                v-model="previewNamedParameterValues[parameter.name]"
+                :type="parameter.type === 'timestamp' ? 'datetime' : 'date'"
+                :value-format="parameter.type === 'timestamp' ? 'YYYY-MM-DDTHH:mm:ssZ' : 'YYYY-MM-DD'"
+              />
+              <el-input v-else v-model="previewNamedParameterValues[parameter.name]" />
+            </el-form-item>
+          </el-form>
+        </div>
+
         <!-- 空间字段信息（SQL模式） -->
         <div v-if="hasGeometry" style="margin-top: 16px">
           <el-divider content-position="left">{{ t('service.query.dividerGeometry') }}</el-divider>
@@ -230,6 +258,7 @@
         <div style="margin-top: 12px; font-size: 13px; color: var(--addp-text-secondary)">
           <strong>{{ t('service.query.supportedParams') }}</strong>
           <ul style="margin: 8px 0; padding-left: 20px">
+            <li v-if="service?.named_parameters?.length"><code>parameters</code>：{{ t('service.query.paramNamedParameters') }}</li>
             <li><code>select</code>：{{ t('service.query.paramFields') }}</li>
             <li><code>filter</code>：{{ t('service.query.paramFilter') }}</li>
             <li><code>order_by</code>：{{ t('service.query.paramOrderBy') }}</li>
@@ -335,7 +364,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Link } from '@element-plus/icons-vue'
@@ -361,6 +390,8 @@ const loading = ref(false)
 const snapshotChecking = ref(false)
 const snapshotRefreshing = ref(false)
 const snapshotDiff = ref(null)
+const previewNamedParameterValues = reactive({})
+const numericNamedParameterTypes = new Set(['int', 'bigint', 'float', 'double', 'decimal'])
 
 // 数据预览相关状态
 const previewData = ref([])
@@ -509,6 +540,10 @@ const loadService = async () => {
   try {
     const response = await queryServiceAPI.getService(serviceId.value)
     service.value = response
+	for (const key of Object.keys(previewNamedParameterValues)) delete previewNamedParameterValues[key]
+	for (const parameter of response.named_parameters || []) {
+	  previewNamedParameterValues[parameter.name] = Object.prototype.hasOwnProperty.call(parameter, 'default') ? parameter.default : ''
+	}
   } catch (error) {
     ElMessage.error(t('service.query.loadServiceFailed') + ': ' + (error.message || t('service.common.unknownError')))
     console.error('Failed to load service:', error)
@@ -589,7 +624,17 @@ const loadPreviewData = async () => {
 
   previewLoading.value = true
   try {
+	const missingParameter = (service.value.named_parameters || []).find(parameter => (
+	  parameter.required && (previewNamedParameterValues[parameter.name] === '' || previewNamedParameterValues[parameter.name] === null || previewNamedParameterValues[parameter.name] === undefined)
+	))
+	if (missingParameter) {
+	  ElMessage.warning(t('service.query.previewNamedParameterRequired', { name: missingParameter.name }))
+	  return
+	}
     const request = {
+	  parameters: Object.fromEntries((service.value.named_parameters || [])
+		.filter(parameter => previewNamedParameterValues[parameter.name] !== '' && previewNamedParameterValues[parameter.name] !== null && previewNamedParameterValues[parameter.name] !== undefined)
+		.map(parameter => [parameter.name, previewNamedParameterValues[parameter.name]])),
       page: {
         limit: previewPagination.value.pageSize,
         cursor: previewPagination.value.cursors[previewPagination.value.page - 1] || ''
@@ -741,6 +786,16 @@ onMounted(() => {
   color: var(--addp-text-primary);
   white-space: pre-wrap;
   word-wrap: break-word;
+}
+
+.named-parameter-preview :deep(.el-form-item) {
+  max-width: 520px;
+}
+
+.named-parameter-description {
+  margin-left: 8px;
+  color: var(--addp-text-secondary);
+  font-weight: 400;
 }
 
 code {

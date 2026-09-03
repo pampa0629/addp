@@ -37,6 +37,7 @@ func TestRespondErrorMapsStructuredErrorsAndLanguage(t *testing.T) {
 		{name: "domain parent cycle", err: service.ErrDomainParentCycle, fallback: http.StatusBadRequest, wantStatus: http.StatusBadRequest, wantBody: "A domain parent cannot be itself or its descendant"},
 		{name: "system unit", err: service.ErrSystemUnitImmutable, fallback: http.StatusBadRequest, wantStatus: http.StatusConflict, wantBody: "System units cannot be updated or deleted"},
 		{name: "invalid tenant reference", err: repository.ErrInvalidTenantReference, fallback: http.StatusBadRequest, wantStatus: http.StatusBadRequest, wantBody: "A referenced resource does not exist or belongs to another tenant"},
+		{name: "invalid standard scope", err: service.ErrInvalidStandardScope, fallback: http.StatusInternalServerError, wantStatus: http.StatusBadRequest, wantBody: "The scope and owning domain are inconsistent"},
 		{name: "unknown bad request", err: fmt.Errorf("binding internals"), fallback: http.StatusBadRequest, wantStatus: http.StatusBadRequest, wantBody: "Invalid request parameters"},
 		{name: "wrapped document not found", err: fmt.Errorf("link document: %w", commonapi.ErrNotFound), fallback: http.StatusBadRequest, wantStatus: http.StatusNotFound, wantBody: "Resource not found"},
 	}
@@ -56,6 +57,24 @@ func TestRespondErrorMapsStructuredErrorsAndLanguage(t *testing.T) {
 				t.Fatalf("body = %s, want %q", response.Body.String(), tt.wantBody)
 			}
 		})
+	}
+}
+
+func TestRespondErrorReturnsInvalidStandardScopeCode(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Set("addp_lang", "en")
+
+	respondError(context, http.StatusInternalServerError, service.ErrInvalidStandardScope)
+
+	var response struct {
+		ErrorCode string `json:"error_code"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.ErrorCode != "invalid_standard_scope" {
+		t.Fatalf("error_code = %q", response.ErrorCode)
 	}
 }
 

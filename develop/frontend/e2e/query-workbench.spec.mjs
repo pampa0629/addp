@@ -72,7 +72,11 @@ const DUCKDB_RUNTIME = {
 const EXECUTION_ID = '11111111-1111-4111-8111-111111111111'
 
 test('renders the desktop workbench and a bounded table result without overlap', async ({ page }) => {
-  await installMockBackend(page, { resultKind: 'table' })
+  const resultRows = Array.from({ length: 25 }, (_, index) => ({
+    id: index + 1,
+    name: index === 0 ? 'Ada' : index === 1 ? 'Grace' : `Person ${index + 1}`
+  }))
+  await installMockBackend(page, { resultKind: 'table', resultRows })
   await page.goto('/sql')
 
   await expect(page.getByRole('heading', { name: '查询开发', exact: true })).toBeVisible()
@@ -98,9 +102,23 @@ test('renders the desktop workbench and a bounded table result without overlap',
   await executeButton.click()
 
   await expect(page.getByText('Ada', { exact: true })).toBeVisible()
-  await expect(page.getByText('结果已截断，仅展示前 2 行', { exact: true })).toBeVisible()
+  const truncationStatus = page.locator('.result-summary').getByText('结果已截断，仅加载前 25 行', { exact: true })
+  await expect(truncationStatus).toBeVisible()
+  await expect(page.locator('.result-alert').getByText('结果已截断，仅加载前 25 行', { exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: '查看执行详情', exact: true })).toBeVisible()
+  const summaryBox = await requiredBox(page.locator('.result-summary'))
+  const truncationBox = await requiredBox(page.locator('.truncated-status'))
+  const summaryActionsBox = await requiredBox(page.locator('.summary-actions'))
+  expect(truncationBox.y).toBeGreaterThanOrEqual(summaryBox.y)
+  expect(truncationBox.y + truncationBox.height).toBeLessThanOrEqual(summaryBox.y + summaryBox.height)
+  expect(truncationBox.x + truncationBox.width).toBeLessThanOrEqual(summaryActionsBox.x)
   await expect(page.locator('.result-grid')).toHaveCSS('min-height', '160px')
+  const tableBox = await requiredBox(page.locator('.result-grid > .result-table'))
+  const paginationBox = await requiredBox(page.locator('.result-pagination'))
+  expect(tableBox.y + tableBox.height).toBeLessThanOrEqual(paginationBox.y)
+  await page.getByRole('button', { name: '下一页', exact: true }).click()
+  await expect(page.getByText('Person 21', { exact: true })).toBeVisible()
+  await expect(page.getByText('Ada', { exact: true })).toHaveCount(0)
   await expectNoDocumentOverflow(page)
 })
 
@@ -126,7 +144,7 @@ test.describe('narrow query workbench', () => {
     await page.getByRole('button', { name: '执行', exact: true }).click()
     await expect(page.getByText('节点: 2', { exact: true })).toBeVisible()
     await expect(page.getByText('关系: 1', { exact: true })).toBeVisible()
-    await expect(page.getByText('结果已截断，仅展示前 2 行', { exact: true })).toBeVisible()
+    await expect(page.getByText('结果已截断，仅加载前 2 行', { exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: '查看执行详情', exact: true })).toBeVisible()
     await expect(page.locator('.graph-canvas canvas')).toBeVisible()
     const workbenchBox = await requiredBox(page.locator('.query-workbench'))
@@ -257,22 +275,22 @@ test('defines a query parameter, inserts its reference, and submits an execution
   await expect(parameterButton).toBeEnabled()
   await parameterButton.click()
 
-  const parameterPanel = page.locator('.parameter-panel')
+  const parameterPanel = page.locator('.query-parameter-panel')
   const querySurfaceBox = await requiredBox(page.locator('.query-surface'))
   const parameterPanelBox = await requiredBox(parameterPanel)
   expect(parameterPanelBox.x).toBeGreaterThanOrEqual(querySurfaceBox.x + querySurfaceBox.width - 1)
   expect(parameterPanelBox.y).toBeGreaterThanOrEqual(querySurfaceBox.y)
   await parameterPanel.getByRole('button', { name: '添加参数', exact: true }).click()
   await parameterPanel.getByLabel('参数名', { exact: true }).fill('nickname')
-  await parameterPanel.getByLabel('默认值', { exact: true }).fill('Ada')
-  await parameterPanel.getByLabel('显示名称', { exact: true }).fill('昵称')
-  await parameterPanel.getByRole('button', { name: '插入参数引用', exact: true }).click()
+  await parameterPanel.locator('.scalar-default-value .el-checkbox').click()
+  await parameterPanel.locator('.scalar-default-value .el-input__inner').fill('Ada')
+  await parameterPanel.getByRole('button', { name: '插入到查询', exact: true }).click()
 
   await expect(page.locator('.monaco-editor .view-lines')).toContainText(':nickname')
   await page.getByRole('button', { name: '执行', exact: true }).click()
 
   const executionDialog = page.getByRole('dialog', { name: '本次执行参数', exact: true })
-  await executionDialog.getByText('昵称', { exact: true }).locator('..').getByText('执行时指定', { exact: true }).click()
+  await executionDialog.getByText('nickname', { exact: true }).locator('..').getByText('执行时指定', { exact: true }).click()
   await executionDialog.getByRole('textbox').fill('Grace')
   await executionDialog.getByRole('button', { name: '执行', exact: true }).click()
 
@@ -281,8 +299,7 @@ test('defines a query parameter, inserts its reference, and submits an execution
   expect(executionRequests[0].content.query_parameters).toEqual([{
     name: 'nickname',
     type: 'string',
-    default: 'Ada',
-    title: '昵称'
+    default: 'Ada'
   }])
   expect(executionRequests[0].parameters).toEqual({ nickname: 'Grace' })
   await expect(page.getByText('Ada', { exact: true })).toBeVisible()
@@ -294,7 +311,8 @@ async function installMockBackend(page, {
   metaEngines = [ENGINE],
   executionRequests = [],
   copilotRequests = [],
-  resourceTreeRequests = []
+  resourceTreeRequests = [],
+  resultRows
 }) {
   await page.addInitScript(() => localStorage.setItem('addp-lang', 'zh-cn'))
   await page.route('**/api/v1/**', async route => {
@@ -436,7 +454,7 @@ async function installMockBackend(page, {
       return fulfillJSON(route, { execution_id: EXECUTION_ID })
     }
     if (path === `/api/v1/develop/executions/${EXECUTION_ID}`) {
-      return fulfillJSON(route, executionResult(resultKind))
+      return fulfillJSON(route, executionResult(resultKind, resultRows))
     }
 
     return fulfillJSON(route, {})
@@ -465,7 +483,7 @@ function resourceTree() {
   }
 }
 
-function executionResult(resultKind) {
+function executionResult(resultKind, resultRows) {
   const graphData = resultKind === 'graph'
     ? {
         nodes: [
@@ -482,6 +500,11 @@ function executionResult(resultKind) {
       }
     : null
 
+  const previewRows = resultRows || [
+    { id: 1, name: 'Ada' },
+    { id: 2, name: 'Grace' }
+  ]
+
   return {
     execution_id: EXECUTION_ID,
     status: 'success',
@@ -490,17 +513,14 @@ function executionResult(resultKind) {
     metadata: {
       result: {
         columns: ['id', 'name'],
-        rows_count: 3,
+        rows_count: resultRows ? previewRows.length : 3,
         rows_affected: 0,
         result_kind: resultKind,
-        result_limit: 2,
+        result_limit: previewRows.length,
         truncated: true,
         graph_data: graphData,
         summary: {
-          preview_rows: [
-            { id: 1, name: 'Ada' },
-            { id: 2, name: 'Grace' }
-          ]
+          preview_rows: previewRows
         }
       }
     }

@@ -76,8 +76,6 @@ definitions:
         type: integer
       current_revision:
         $ref: '#/definitions/github_com_addp_standard_internal_models.CodeSetRevision'
-      domain_id:
-        type: integer
       draft_revision:
         $ref: '#/definitions/github_com_addp_standard_internal_models.CodeSetRevision'
       draft_revision_id:
@@ -87,6 +85,14 @@ definitions:
       lifecycle_state:
         type: string
       origin:
+        type: string
+      owner_domain_id:
+        type: integer
+      scope_type:
+        enum:
+        - platform
+        - tenant_common
+        - domain
         type: string
       steward_id:
         type: integer
@@ -198,13 +204,18 @@ definitions:
         type: string
       description:
         type: string
-      domain_id:
-        type: integer
       effective_from:
         type: string
       effective_to:
         type: string
       name:
+        type: string
+      owner_domain_id:
+        type: integer
+      scope_type:
+        enum:
+        - tenant_common
+        - domain
         type: string
       steward_id:
         type: integer
@@ -218,8 +229,8 @@ definitions:
     - change_summary
     - code
     - description
-    - domain_id
     - name
+    - scope_type
     - value_type
     type: object
   github_com_addp_standard_internal_models.CreateCodeSetRevisionRequest:
@@ -247,8 +258,6 @@ definitions:
         type: string
       definition:
         type: string
-      domain_id:
-        type: integer
       effective_from:
         type: string
       effective_to:
@@ -268,12 +277,19 @@ definitions:
         type: string
       nullable:
         type: boolean
+      owner_domain_id:
+        type: integer
       precision_num:
         type: integer
       range_constraint:
         $ref: '#/definitions/github_com_addp_standard_internal_models.RangeConstraint'
       scale:
         type: integer
+      scope_type:
+        enum:
+        - tenant_common
+        - domain
+        type: string
       steward_id:
         type: integer
       tags:
@@ -290,6 +306,7 @@ definitions:
     - data_type
     - definition
     - name
+    - scope_type
     - value_domain_kind
     type: object
   github_com_addp_standard_internal_models.CreateElementRevisionRequest:
@@ -419,8 +436,6 @@ definitions:
         type: integer
       current_revision:
         $ref: '#/definitions/github_com_addp_standard_internal_models.ElementRevision'
-      domain_id:
-        type: integer
       draft_revision:
         $ref: '#/definitions/github_com_addp_standard_internal_models.ElementRevision'
       draft_revision_id:
@@ -428,6 +443,14 @@ definitions:
       id:
         type: integer
       lifecycle_state:
+        type: string
+      owner_domain_id:
+        type: integer
+      scope_type:
+        enum:
+        - platform
+        - tenant_common
+        - domain
         type: string
       steward_id:
         type: integer
@@ -929,8 +952,13 @@ definitions:
     type: object
   github_com_addp_standard_internal_models.UpdateCodeSetRequest:
     properties:
-      domain_id:
+      owner_domain_id:
         type: integer
+      scope_type:
+        enum:
+        - tenant_common
+        - domain
+        type: string
       steward_id:
         type: integer
       tags:
@@ -941,7 +969,7 @@ definitions:
         minimum: 1
         type: integer
     required:
-    - domain_id
+    - scope_type
     - version
     type: object
   github_com_addp_standard_internal_models.UpdateCodeSetRevisionRequest:
@@ -1017,8 +1045,13 @@ definitions:
     type: object
   github_com_addp_standard_internal_models.UpdateElementRequest:
     properties:
-      domain_id:
+      owner_domain_id:
         type: integer
+      scope_type:
+        enum:
+        - tenant_common
+        - domain
+        type: string
       steward_id:
         type: integer
       tags:
@@ -1029,6 +1062,7 @@ definitions:
         minimum: 1
         type: integer
     required:
+    - scope_type
     - version
     type: object
   github_com_addp_standard_internal_models.UpdateElementRevisionRequest:
@@ -1262,11 +1296,25 @@ definitions:
         type: array
       name:
         type: string
+      origin:
+        enum:
+        - platform
+        - tenant
+        type: string
+      owner_domain_id:
+        example: ""
+        type: string
       revision_id:
         example: ""
         type: string
       revision_no:
         type: integer
+      scope_type:
+        enum:
+        - platform
+        - tenant_common
+        - domain
+        type: string
       status:
         enum:
         - draft
@@ -1334,9 +1382,6 @@ definitions:
         type: string
       definition:
         type: string
-      domain_id:
-        example: ""
-        type: string
       effective_from:
         type: string
       effective_to:
@@ -1359,6 +1404,9 @@ definitions:
         type: string
       nullable:
         type: boolean
+      owner_domain_id:
+        example: ""
+        type: string
       precision_num:
         type: integer
       range_constraint:
@@ -1367,6 +1415,12 @@ definitions:
         type: integer
       scale:
         type: integer
+      scope_type:
+        enum:
+        - platform
+        - tenant_common
+        - domain
+        type: string
       unit_id:
         example: ""
         type: string
@@ -1563,9 +1617,17 @@ paths:
   /code-sets:
     get:
       parameters:
-      - description: 归属业务域 ID | Owning domain ID
+      - description: 适用范围 | Scope
+        enum:
+        - platform
+        - tenant_common
+        - domain
         in: query
-        name: domain_id
+        name: scope_type
+        type: string
+      - description: 归属业务域 ID，仅 domain 范围适用 | Owning domain ID, only for domain scope
+        in: query
+        name: owner_domain_id
         type: integer
       - description: 修订状态 | Revision status
         enum:
@@ -2831,9 +2893,17 @@ paths:
         in: query
         name: ids
         type: string
-      - description: 归属业务域 ID | Owning domain ID
+      - description: 适用范围 | Scope
+        enum:
+        - platform
+        - tenant_common
+        - domain
         in: query
-        name: domain_id
+        name: scope_type
+        type: string
+      - description: 归属业务域 ID，仅 domain 范围适用 | Owning domain ID, only for domain scope
+        in: query
+        name: owner_domain_id
         type: integer
       - description: 修订状态 | Revision status
         enum:

@@ -926,6 +926,7 @@ app.mount('#app')
 - [ ] **Layout.vue 背景/边框使用 CSS 变量（`var(--addp-bg-primary/secondary)`，非硬编码颜色）**
 - [ ] **main.js 导入主题 CSS 并调用 `useTheme({ listenToConsole: true })`**
 - [ ] 配置 common-frontend 别名
+- [ ] 新建组件前已检索并复用 `common-frontend` 和现有模块的规范实现，没有重复建设相同语义职责与交互契约的前端能力
 - [ ] API Client 正确配置
 - [ ] API 路径不含 `/api` 前缀（格式：`/module-name/resource`）
 

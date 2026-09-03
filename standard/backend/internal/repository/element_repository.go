@@ -71,19 +71,23 @@ func (r *ElementRepository) GetAggregateAt(id, tenantID int64, asOf time.Time) (
 }
 
 type ListElementOptions struct {
-	DomainID *int64
-	IDs      []int64
-	Status   string
-	Keyword  string
-	Page     int
-	PageSize int
-	AsOf     time.Time
+	OwnerDomainID *int64
+	ScopeType     string
+	IDs           []int64
+	Status        string
+	Keyword       string
+	Page          int
+	PageSize      int
+	AsOf          time.Time
 }
 
 func (r *ElementRepository) List(tenantID int64, opts ListElementOptions) ([]models.ElementAggregate, int64, error) {
 	query := r.db.Model(&models.Element{}).Where("elements.tenant_id = ?", tenantID)
-	if opts.DomainID != nil {
-		query = query.Where("elements.domain_id = ?", *opts.DomainID)
+	if opts.OwnerDomainID != nil {
+		query = query.Where("elements.owner_domain_id = ?", *opts.OwnerDomainID)
+	}
+	if opts.ScopeType != "" {
+		query = query.Where("elements.scope_type = ?", opts.ScopeType)
 	}
 	if len(opts.IDs) > 0 {
 		query = query.Where("elements.id IN ?", opts.IDs)
@@ -126,7 +130,7 @@ func (r *ElementRepository) List(tenantID int64, opts ListElementOptions) ([]mod
 
 func (r *ElementRepository) UpdateIdentity(element *models.Element, expectedVersion int64) error {
 	if err := updateVersioned(r.db, element, element.ID, element.TenantID, expectedVersion, map[string]interface{}{
-		"domain_id": element.DomainID, "steward_id": element.StewardID, "tags": element.Tags, "updated_by": element.UpdatedBy,
+		"scope_type": element.ScopeType, "owner_domain_id": element.OwnerDomainID, "steward_id": element.StewardID, "tags": element.Tags, "updated_by": element.UpdatedBy,
 	}); err != nil {
 		return err
 	}

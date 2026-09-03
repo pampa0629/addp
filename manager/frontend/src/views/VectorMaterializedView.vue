@@ -221,33 +221,19 @@
                   </el-tooltip>
                 </template>
               </el-alert>
-              <ResourceTree
-                :tree-data="resourceTreeData"
-                :loading="resourceLoading"
-                :show-refresh-button="true"
+              <ResourceTreePicker
+                v-model="resourceSelection"
+                mode="item"
+                :initial-locator="form.config.target.locator"
+                :engine-filter="isSupportedDatabaseEngine"
+                :selectable-filter="isSelectableSpatialTable"
                 :show-count="false"
-                :expanded-keys="resourceExpandedKeys"
-                :current-node-key="resourceCurrentKey"
-                :default-expand-root="false"
-                :expand-on-click-node="true"
+                :show-selection-summary="false"
                 :title="t('manager.vectorMaterializedView.resourceTreeTitle')"
-                height="320px"
-                @refresh="loadResourceTrees(true)"
+                tree-height="320px"
+                @select="handleResourceSelection"
                 @node-click="handleResourceNodeClick"
-                @node-expand="handleResourceNodeExpand"
-                @update:expanded-keys="resourceExpandedKeys = $event"
-                @update:current-node-key="resourceCurrentKey = $event"
-              >
-                <template #node-label="{ data }">
-                  <span class="resource-node-label">
-                    <el-icon v-if="isResourceRootNode(data)" class="resource-root-caret"><ArrowDown /></el-icon>
-                    <span class="resource-node-text">{{ data.label }}</span>
-                    <el-tag v-if="selectableResourceType(data)" size="small" type="success">
-                      {{ selectableResourceType(data) }}
-                    </el-tag>
-                  </span>
-                </template>
-              </ResourceTree>
+              />
               <div v-if="form.config.target.locator" class="selected-resource">
                 <div class="selected-resource__main">
                   <el-tag size="small" type="success">{{ t('manager.vectorMaterializedView.spatialTable') }}</el-tag>
@@ -306,12 +292,11 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { navigateManagerRoute } from '@/utils/moduleNavigation'
 import { resolveManagerTaskWorkspaceRouteState } from '@/utils/taskWorkspaceRoute'
-import { ArrowDown, InfoFilled, Plus, Refresh } from '@element-plus/icons-vue'
+import { InfoFilled, Plus, Refresh } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { openMonitorExecution, parseLocatorSafe, ResourceTree } from '@addp/common-frontend'
+import { openMonitorExecution, parseLocatorSafe, ResourceTreePicker } from '@addp/common-frontend'
 import client from '@/api/client'
-import { dataExplorerAPI } from '@/api/dataExplorer'
 import { quickViewAPI } from '@/api/quickView'
 import { useCurrentResultConfirmation } from '@/composables/useCurrentResultConfirmation'
 import { formatDateTime } from '@/utils/formatters'
@@ -329,17 +314,7 @@ import {
 import { vectorMaterializedViewResultAction } from '@/utils/vectorMaterializedViewResultAction'
 import { quickViewDisplayText } from '@/utils/quickViewResourceDisplay'
 import { buildTileCacheCreateQuery } from '@/utils/quickViewNavigationQuery'
-import {
-  createResourceRootNode,
-  geometryColumnsFromNode,
-  isResourceRootNode,
-  locatorEngineID,
-  mergeAncestorChainIntoResourceTree,
-  normalizeResourceNode,
-  replaceResourceNode,
-  tableSelectionFromResourceNode,
-  updateResourceNodeChildren
-} from '@/utils/tileCacheResourceTree'
+import { tableSelectionFromResourceNode } from '@/utils/tileCacheResourceTree'
 
 const { t } = useI18n()
 const executeWithCurrentResultConfirmation = useCurrentResultConfirmation()
@@ -364,10 +339,8 @@ const tasksTotal = ref(0)
 const executingId = ref(null)
 const executingResultId = ref(null)
 const engineOptions = ref([])
-const resourceTreeData = ref([])
-const resourceExpandedKeys = ref([])
-const resourceCurrentKey = ref('')
-const resourceLoading = ref(false)
+const resourceSelection = ref(null)
+const acceptedResourceSelection = ref(null)
 const capabilityLoading = ref(false)
 
 const results = ref([])
@@ -417,7 +390,8 @@ const rules = computed(() => ({
 const resetForm = (task = null) => {
   const next = createVectorMaterializedViewTaskFormFromTask(task)
   geometryColumnOptions.value = []
-  resourceCurrentKey.value = ''
+  resourceSelection.value = null
+  acceptedResourceSelection.value = null
   Object.assign(form, next)
   if (form.config.geometry.geometry_column) {
     geometryColumnOptions.value = [form.config.geometry.geometry_column]
@@ -478,62 +452,6 @@ const loadEngines = async (force = false) => {
   } catch (error) {
     console.error('加载引擎列表失败:', error)
     return []
-  }
-}
-
-const loadResourceTrees = async (force = false) => {
-  if (resourceTreeData.value.length && !force) return
-  resourceLoading.value = true
-  try {
-    const engines = await loadEngines(force)
-    resourceTreeData.value = engines.map(createResourceRootNode)
-    resourceExpandedKeys.value = []
-  } catch (error) {
-    console.error('加载矢量物化视图资源树失败:', error)
-    ElMessage.error(t('manager.vectorMaterializedView.loadResourceTreeFailed'))
-  } finally {
-    resourceLoading.value = false
-  }
-}
-
-const loadResourceTreeRoot = async (node) => {
-  const engineID = Number(node?.engineId || locatorEngineID(node?.locator || node?.id, safeParseLocator))
-  if (!engineID) return
-  resourceLoading.value = true
-  try {
-    const tree = await dataExplorerAPI.getTree(engineID, 2)
-    const engine = { id: node.engineId, engine_type: node.engineType, name: node.engineName }
-    const normalized = normalizeResourceNode(tree, engine, { parseLocator: safeParseLocator, loaded: true })
-    if (!normalized) return
-    resourceTreeData.value = replaceResourceNode(resourceTreeData.value, node.locator || node.id, normalized)
-    if (!resourceExpandedKeys.value.includes(normalized.id)) {
-      resourceExpandedKeys.value = [...resourceExpandedKeys.value, normalized.id]
-    }
-  } catch (error) {
-    console.error('加载矢量物化视图资源树失败:', error)
-    ElMessage.error(t('manager.vectorMaterializedView.loadResourceTreeFailed'))
-  } finally {
-    resourceLoading.value = false
-  }
-}
-
-const loadResourceNodeChildren = async (node) => {
-  const locator = node?.locator || node?.id
-  const engineID = Number(node?.engineId || locatorEngineID(locator, safeParseLocator))
-  if (!locator || !engineID) return
-  resourceLoading.value = true
-  try {
-    const response = await dataExplorerAPI.getNodeChildren(engineID, locator)
-    const engine = { id: node.engineId, engine_type: node.engineType, name: node.engineName }
-    const children = (response.children || [])
-      .map((child) => normalizeResourceNode(child, engine, { parseLocator: safeParseLocator }))
-      .filter(Boolean)
-    resourceTreeData.value = updateResourceNodeChildren(resourceTreeData.value, locator, children)
-  } catch (error) {
-    console.error('加载矢量物化视图资源子节点失败:', error)
-    ElMessage.error(t('manager.vectorMaterializedView.loadResourceTreeFailed'))
-  } finally {
-    resourceLoading.value = false
   }
 }
 
@@ -606,95 +524,60 @@ const loadQuickViewCapabilityForForm = async (fallbackGeometryColumns = []) => {
   }
 }
 
-const handleResourceNodeExpand = async (node) => {
-  const locator = node?.locator || node?.id
-  if (!locator || !node?.hasChildren || (node.children || []).length > 0) return
-  if (isResourceRootNode(node) && !node.loaded) {
-    await loadResourceTreeRoot(node)
-    return
-  }
-  await loadResourceNodeChildren(node)
+const isSupportedDatabaseEngine = (engine) => databaseEngineTypes.has(String(engine?.engine_type || '').toLowerCase())
+
+const resourceTargetFromSelection = (selection) => {
+  return tableSelectionFromResourceNode(selection?.raw?.node, safeParseLocator)
 }
 
-const handleResourceNodeClick = async (node) => {
-  const locator = node?.locator || node?.id
-  resourceCurrentKey.value = locator || ''
-  if (isResourceRootNode(node) && !node.loaded) {
-    await loadResourceTreeRoot(node)
-    return
-  }
-  if (node?.hasChildren && (node.children || []).length === 0) {
-    await loadResourceNodeChildren(node)
-  }
-  const selection = tableSelectionFromResourceNode(node, safeParseLocator)
-  if (!selection) return
-  if (sourceSelectionLocked.value && selection.locator !== form.config.target.locator) {
-    resourceCurrentKey.value = form.config.target.locator || ''
+const isSelectableSpatialTable = (node) => {
+  const target = tableSelectionFromResourceNode(node, safeParseLocator)
+  if (!target) return false
+  return !sourceSelectionLocked.value || target.locator === form.config.target.locator
+}
+
+const handleResourceNodeClick = (node) => {
+  const target = tableSelectionFromResourceNode(node, safeParseLocator)
+  if (target && sourceSelectionLocked.value && target.locator !== form.config.target.locator) {
     ElMessage.info(t('manager.vectorMaterializedView.sourceLockedHint'))
-    return
   }
+}
+
+const handleResourceSelection = async (resourceSelectionValue) => {
+  const selection = resourceTargetFromSelection(resourceSelectionValue)
+  if (!selection) return
   const previousTarget = { ...form.config.target }
   const previousGeometry = { ...form.config.geometry }
   const previousStorage = { ...form.config.storage }
   const previousOptions = [...geometryColumnOptions.value]
+  const previousSelection = acceptedResourceSelection.value
   Object.assign(form.config.target, selection)
   form.config.geometry.geometry_column = ''
   form.config.storage.target_schema = selection.schema
-  const capability = await loadQuickViewCapabilityForForm(geometryColumnsFromNode(node))
+  const fallbackColumns = resourceSelectionValue?.resource?.spatial?.geometry_columns || []
+  const capability = await loadQuickViewCapabilityForForm(fallbackColumns)
   if (!capability || !geometryColumnOptions.value.length) {
     Object.assign(form.config.target, previousTarget)
     Object.assign(form.config.geometry, previousGeometry)
     Object.assign(form.config.storage, previousStorage)
     geometryColumnOptions.value = previousOptions
+    resourceSelection.value = previousSelection
     ElMessage.warning(t('manager.vectorMaterializedView.spatialTableRequired'))
     return
   }
-  resourceCurrentKey.value = selection.locator
+  resourceSelection.value = resourceSelectionValue
+  acceptedResourceSelection.value = resourceSelectionValue
   if (!form.name) {
     form.name = t('manager.vectorMaterializedView.defaultTaskName', { resource: `${selection.schema}.${selection.table}` })
   }
   await formRef.value?.validateField('config.target.locator').catch(() => {})
 }
 
-const revealSelectedResource = async () => {
-  const locator = String(form.config.target.locator || '').trim()
-  if (!locator) return
-  const engineID = Number(form.config.target.source_engine_id || locatorEngineID(locator, safeParseLocator))
-  if (!engineID) return
-  resourceLoading.value = true
-  try {
-    const response = await dataExplorerAPI.getTreeAncestors(engineID, locator)
-    const chain = Array.isArray(response?.ancestors) ? response.ancestors : []
-    if (!chain.length) return
-    const engine = engineOptions.value.find((item) => Number(item.id) === engineID) || null
-    const merged = mergeAncestorChainIntoResourceTree(resourceTreeData.value, chain, {
-      engine,
-      parseLocator: safeParseLocator
-    })
-    resourceTreeData.value = merged.nodes
-    const expanded = new Set(resourceExpandedKeys.value)
-    for (const key of merged.expandedKeys) {
-      expanded.add(key)
-    }
-    resourceExpandedKeys.value = Array.from(expanded)
-    resourceCurrentKey.value = response?.target_locator || merged.target?.locator || merged.target?.id || locator
-  } catch (error) {
-    console.error('定位矢量物化视图资源失败:', error)
-    ElMessage.error(t('manager.vectorMaterializedView.loadResourceTreeFailed'))
-  } finally {
-    resourceLoading.value = false
-  }
-}
-
 const openCreateDialog = async () => {
   resetForm()
   formDialogVisible.value = true
   applyRouteSourceContext()
-  if (showResourcePicker.value) await loadResourceTrees()
   await loadQuickViewCapabilityForForm()
-  if (form.config.target.locator && showResourcePicker.value) {
-    await revealSelectedResource()
-  }
   if (!form.name && form.config.target.schema && form.config.target.table) {
     form.name = t('manager.vectorMaterializedView.defaultTaskName', { resource: `${form.config.target.schema}.${form.config.target.table}` })
   }
@@ -721,9 +604,7 @@ const openEditDialog = async (task) => {
   const columns = task?.config?.geometry?.geometry_column ? [task.config.geometry.geometry_column] : []
   setGeometryOptions(columns, task?.config?.geometry?.geometry_column || '')
   formDialogVisible.value = true
-  await loadResourceTrees()
   await loadQuickViewCapabilityForForm(columns)
-  await revealSelectedResource()
 }
 
 const requestEditTask = async (task) => {
@@ -913,9 +794,7 @@ const openCreateDialogFromResult = async (result, options = {}) => {
     form.name = t('manager.vectorMaterializedView.defaultTaskName', { resource: `${result.source_schema}.${result.source_table}` })
   }
   formDialogVisible.value = true
-  if (showResourcePicker.value) await loadResourceTrees()
   await loadQuickViewCapabilityForForm([result.source_geometry_column])
-  if (showResourcePicker.value) await revealSelectedResource()
 }
 
 const openTileCacheCreate = (result) => {
@@ -937,10 +816,6 @@ const openTileCacheCreate = (result) => {
     }
   })
 }
-
-const selectableResourceType = (node) => tableSelectionFromResourceNode(node, safeParseLocator)
-  ? t('manager.vectorMaterializedView.spatialTable')
-  : ''
 
 const taskResource = (task) => taskResourceValue(task, safeParseLocator)
 
@@ -1155,7 +1030,6 @@ onMounted(async () => {
   gap: 10px;
 }
 
-.resource-node-label,
 .selected-resource__main {
   display: inline-flex;
   align-items: center;
@@ -1163,7 +1037,6 @@ onMounted(async () => {
   min-width: 0;
 }
 
-.resource-node-text,
 .selected-resource__name {
   overflow: hidden;
   text-overflow: ellipsis;

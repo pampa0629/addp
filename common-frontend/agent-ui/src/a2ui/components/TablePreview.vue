@@ -1,23 +1,14 @@
 <template>
   <section class="agent-table-preview">
     <div class="table-scroll">
-      <el-table
-        :data="properties.rows"
-        :style="{ minWidth: tableMinWidth }"
+      <TabularResultRenderer
+        :rows="properties.rows"
+        :columns="properties.columns"
+        :null-text="t('agent.chat.presentation.nullValue')"
+        :column-min-width="120"
         size="small"
-        max-height="420"
-      >
-        <el-table-column
-          v-for="column in properties.columns"
-          :key="column"
-          :label="column"
-          :prop="column"
-          min-width="120"
-          show-overflow-tooltip
-        >
-          <template #default="{ row }">{{ formatCell(row[column]) }}</template>
-        </el-table-column>
-      </el-table>
+        :max-height="420"
+      />
     </div>
     <p class="table-summary">
       {{ t('agent.chat.presentation.tableSummary', { visible: properties.rows.length, total: properties.total }) }}
@@ -27,8 +18,9 @@
 </template>
 
 <script setup>
-import { computed, onUnmounted, ref } from 'vue'
+import { onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import TabularResultRenderer from '../../../../basic/src/components/TabularResultRenderer.vue'
 
 const props = defineProps({
   context: { type: Object, required: true },
@@ -40,9 +32,6 @@ const properties = ref({ ...props.context.componentModel.properties })
 const subscription = props.context.componentModel.onUpdated.subscribe(component => {
   properties.value = { ...component.properties }
 })
-
-const formatCell = value => value === null ? t('agent.chat.presentation.nullValue') : String(value)
-const tableMinWidth = computed(() => `${Math.max(360, properties.value.columns.length * 120)}px`)
 
 onUnmounted(() => subscription.unsubscribe())
 </script>

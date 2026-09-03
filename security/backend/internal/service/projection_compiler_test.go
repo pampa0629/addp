@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/addp/common/dataprotection"
+	"github.com/addp/security/internal/models"
 )
 
 func requireManagerProjectionEffects(t *testing.T, projection *dataprotection.Projection, previewEffect string) {
@@ -96,5 +97,47 @@ func TestManagerProfileDecisionIsSystemDerivedAndNeverMasks(t *testing.T) {
 	}
 	if _, err := managerProfileDecision(dataprotection.Decision{Effect: dataprotection.EffectAllow}); err == nil {
 		t.Fatal("allow preview decision must not compile into a profile rule")
+	}
+}
+
+func TestProtectionCandidateDecisionStatesUseTheCompilerSelectionPath(t *testing.T) {
+	finding := models.SensitiveFinding{
+		ID: "finding", SensitiveDataTypeID: 10, DetectorVersion: models.FindingDetectorPhoneMetadataV2,
+		Confidence: 0.89, Component: dataprotection.Component{Key: "phone", SchemaFingerprint: "schema-v1"},
+	}
+	dataType := models.SensitiveDataType{ID: 10, SecurityClassificationID: 20, DefaultSecurityGradeID: 30}
+	detector := models.Detector{SensitiveDataTypeID: 10, CapabilityKey: models.FindingDetectorPhoneMetadataV2, ConfidenceThreshold: 0.9, Enabled: true}
+
+	_, included, state, source := resolveProtectionCandidateFromFacts(finding, nil, nil, nil, &dataType, &detector)
+	if included || state != models.FindingDecisionAwaitingReview || source != "" {
+		t.Fatalf("below-threshold decision = included %v, state %q, source %q", included, state, source)
+	}
+
+	finding.Confidence = 1
+	candidate, included, state, source := resolveProtectionCandidateFromFacts(finding, nil, nil, nil, &dataType, &detector)
+	if !included || state != models.FindingDecisionAutomatic || source != models.FindingGovernanceDetectorDefault ||
+		candidate.SensitiveDataTypeID != 10 || candidate.SecurityClassificationID != 20 || candidate.SecurityGradeID != 30 {
+		t.Fatalf("automatic decision = %#v, included %v, state %q, source %q", candidate, included, state, source)
+	}
+
+	_, included, state, _ = resolveProtectionCandidateFromFacts(finding, nil, nil, &models.SensitiveFindingReview{Decision: models.FindingReviewDecisionReject}, &dataType, &detector)
+	if included || state != models.FindingDecisionRejected {
+		t.Fatalf("rejected decision = included %v, state %q", included, state)
+	}
+
+	assessment := models.ResourceSecurityAssessment{ID: "assessment"}
+	revision := models.ResourceSecurityAssessmentRevision{
+		SensitiveDataTypeID: 11, SecurityClassificationID: 21, SecurityGradeID: 31,
+		Component: dataprotection.Component{Key: "phone", SchemaFingerprint: "schema-v1"},
+	}
+	candidate, included, state, source = resolveProtectionCandidateFromFacts(finding, &assessment, &revision, &models.SensitiveFindingReview{Decision: models.FindingReviewDecisionAdjust}, nil, nil)
+	if !included || state != models.FindingDecisionFormal || source != models.FindingGovernanceAssessment || candidate.AssessmentID != assessment.ID || candidate.SensitiveDataTypeID != 11 {
+		t.Fatalf("formal decision = %#v, included %v, state %q, source %q", candidate, included, state, source)
+	}
+
+	revision.Component.SchemaFingerprint = "schema-v2"
+	_, included, state, _ = resolveProtectionCandidateFromFacts(finding, &assessment, &revision, &models.SensitiveFindingReview{Decision: models.FindingReviewDecisionAdjust}, nil, nil)
+	if included || state != models.FindingDecisionSuperseded {
+		t.Fatalf("superseded decision = included %v, state %q", included, state)
 	}
 }

@@ -16,7 +16,13 @@ export default defineConfig({
         { src: 'node_modules/cesium/Build/Cesium/ThirdParty', dest: 'cesium' },
         { src: 'node_modules/cesium/Build/Cesium/Widgets', dest: 'cesium' },
         { src: 'node_modules/@dfsj/s3m/lib/draco_decoder_new.wasm', dest: 'S3M_module/S3MParser' },
-        { src: 'node_modules/@dfsj/s3m/lib/crunch.wasm', dest: 'S3M_module/S3MTiles/ThirdParty' }
+        { src: 'node_modules/@dfsj/s3m/lib/crunch.wasm', dest: 'S3M_module/S3MTiles/ThirdParty' },
+        { src: 'node_modules/@mlightcad/libredwg-converter/dist/libredwg-parser-worker.js', dest: 'cad-engine' },
+        { src: 'node_modules/@mlightcad/libredwg-converter/dist/libredwg-web.wasm', dest: 'cad-engine' },
+        { src: 'node_modules/@mlightcad/cad-simple-viewer/dist/mtext-renderer-worker.js', dest: 'cad-engine' },
+        { src: 'LICENSE', dest: 'licenses', rename: 'manager-frontend-GPL-3.0.txt' },
+        { src: 'THIRD_PARTY_NOTICES.md', dest: 'licenses' },
+        { src: 'SOURCE_OFFER.md', dest: 'licenses' }
       ]
     })
   ],
@@ -59,6 +65,15 @@ export default defineConfig({
       '@amap/amap-jsapi-loader',
       'proj4'
     ]
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('/node_modules/@mlightcad/')) return 'mlightcad'
+        }
+      }
+    }
   },
   server: {
     port: 5174,

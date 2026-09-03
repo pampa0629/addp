@@ -1035,59 +1035,6 @@ func TestTaskExecutePointCloudCOPCReturnsPendingAndRejectsActiveExecution(t *tes
 	assertStandardErrorResponse(t, second.Body.Bytes())
 }
 
-func TestTaskExecuteCADPreviewReturnsPendingAndRejectsActiveExecution(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	db := newTaskProviderHandlerTestDB(t)
-	cadRepo := repository.NewCADPreviewRepository(db)
-	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
-	taskSvc := service.NewCADPreviewTaskService(cadRepo)
-	task := &models.CADPreviewTask{TenantID: 1, Name: "CAD preview execution contract", Enabled: true, Config: commonModels.JSONMap{"invalid": true}}
-	if err := cadRepo.CreateTask(context.Background(), task); err != nil {
-		t.Fatalf("create CAD preview task: %v", err)
-	}
-	handler := NewTaskProviderHandler(nil, nil, nil, nil, taskExecRepo)
-	handler.SetCADPreviewTaskService(taskSvc)
-	router := gin.New()
-	router.Use(func(c *gin.Context) { setTenantAuthContextForTest(c, 1, 1); c.Next() })
-	router.POST("/tasks/:task_type/:id/execute", handler.TaskExecute)
-	path := "/tasks/" + commonExecution.TaskTypeCADPreviewGeneration + "/" + strconv.FormatUint(uint64(task.ID), 10) + "/execute"
-	first := httptest.NewRecorder()
-	router.ServeHTTP(first, httptest.NewRequest(http.MethodPost, path, nil))
-	if first.Code != http.StatusAccepted {
-		t.Fatalf("first execute status = %d, want 202; body=%s", first.Code, first.Body.String())
-	}
-	var accepted TaskExecuteResponse
-	if err := json.Unmarshal(first.Body.Bytes(), &accepted); err != nil {
-		t.Fatalf("decode first execute response: %v", err)
-	}
-	if accepted.ExecutionID == "" || accepted.Status != commonExecution.ExecutionStatusPending {
-		t.Fatalf("first execute response = %#v, want pending execution", accepted)
-	}
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		exec, err := taskExecRepo.GetByExecutionID(context.Background(), accepted.ExecutionID, 1)
-		if err == nil && exec.IsCompleted() {
-			break
-		}
-		time.Sleep(time.Millisecond)
-	}
-	pending := &commonExecution.TaskExecution{
-		ExecutionID: "manager-api-cad-preview-active", TenantID: 1, Module: commonExecution.ModuleManager,
-		TaskType: commonExecution.TaskTypeCADPreviewGeneration, Source: commonExecution.ModuleManager,
-		Status: commonExecution.ExecutionStatusPending, TriggerType: commonExecution.TriggerTypeManual,
-		CreatedAt: time.Now(), UpdatedAt: time.Now(),
-	}
-	if _, err := cadRepo.ClaimExecution(context.Background(), task.ID, task.TenantID, pending, false); err != nil {
-		t.Fatalf("claim deterministic pending execution: %v", err)
-	}
-	second := httptest.NewRecorder()
-	router.ServeHTTP(second, httptest.NewRequest(http.MethodPost, path, nil))
-	if second.Code != http.StatusConflict {
-		t.Fatalf("second execute status = %d, want 409; body=%s", second.Code, second.Body.String())
-	}
-	assertStandardErrorResponse(t, second.Body.Bytes())
-}
-
 func TestDecodeEmbeddingExecutionRequestRejectsUnknownFields(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
@@ -1374,14 +1321,6 @@ func newTaskProviderHandlerTestDB(t *testing.T) *gorm.DB {
 	)`).Error; err != nil {
 		t.Fatalf("create point_cloud_copc_tasks table: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE manager.cad_preview_tasks (
-		id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, name TEXT NOT NULL,
-		description TEXT, enabled BOOLEAN, last_execution_id TEXT, last_execution_status TEXT,
-		last_run_at DATETIME, next_run_at DATETIME, schedule TEXT, created_by INTEGER, config JSON,
-		created_at DATETIME, updated_at DATETIME, deleted_at DATETIME
-	)`).Error; err != nil {
-		t.Fatalf("create cad_preview_tasks table: %v", err)
-	}
 	if err := db.Exec(`CREATE TABLE manager.model_3d_glb (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		tenant_id INTEGER NOT NULL,
@@ -1465,16 +1404,6 @@ func newTaskProviderHandlerTestDB(t *testing.T) *gorm.DB {
 		deleted_at DATETIME
 	)`).Error; err != nil {
 		t.Fatalf("create point_cloud_copc table: %v", err)
-	}
-	if err := db.Exec(`CREATE TABLE manager.cad_previews (
-		id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, item_fingerprint TEXT NOT NULL,
-		item_id INTEGER, locator TEXT, task_id INTEGER, last_execution_id TEXT, source_engine_id INTEGER,
-		source_format TEXT, source_size_bytes INTEGER, storage_ref TEXT, manifest_ref TEXT, thumbnail_ref TEXT,
-		tile_count INTEGER, tile_size INTEGER, min_zoom INTEGER, max_zoom INTEGER, bounds JSON,
-		status TEXT, metadata JSON, error_message TEXT, created_by INTEGER,
-		created_at DATETIME, updated_at DATETIME, deleted_at DATETIME
-	)`).Error; err != nil {
-		t.Fatalf("create cad_previews table: %v", err)
 	}
 	if err := executiontest.EnsureSQLiteStore(db); err != nil {
 		t.Fatalf("ensure SQLite execution store: %v", err)

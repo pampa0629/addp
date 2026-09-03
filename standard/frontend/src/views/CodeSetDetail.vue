@@ -51,8 +51,15 @@
                 </el-form-item>
               </el-col>
               <el-col :xs="24" :sm="12">
-                <el-form-item :label="$t('standard.glossary.domainLabel')">
-                  <el-select v-model="codeSet.domain_id" class="field-control">
+                <el-form-item :label="$t('standard.common.scopeLabel')">
+                  <el-select v-model="codeSet.scope_type" class="field-control">
+                    <el-option v-for="scope in scopeOptions" :key="scope" :label="scopeLabel(scope)" :value="scope" :disabled="scope === 'platform'" />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+              <el-col v-if="requiresOwnerDomain(codeSet.scope_type)" :xs="24" :sm="12">
+                <el-form-item :label="$t('standard.common.ownerDomainLabel')" required>
+                  <el-select v-model="codeSet.owner_domain_id" class="field-control">
                     <el-option v-for="domain in domains" :key="domain.id" :label="domain.name" :value="domain.id" />
                   </el-select>
                 </el-form-item>
@@ -247,6 +254,7 @@ import { navigateStandardRoute } from '@/utils/moduleNavigation'
 import { formatStandardDateTime } from '../utils/dateTime'
 import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
 import { buildCodeSetRevisionPayload, listReplacementItems } from '../utils/standardRevisionForm'
+import { EDITABLE_STANDARD_SCOPES, buildStandardOwnership, requiresOwnerDomain, standardScopeLabelKey } from '../utils/standardScope'
 
 const route = useRoute()
 const router = useRouter()
@@ -274,6 +282,7 @@ const itemForm = reactive({
 })
 
 const dateTimeValueFormat = 'YYYY-MM-DDTHH:mm:ssZ'
+const scopeOptions = ['platform', ...EDITABLE_STANDARD_SCOPES]
 const platform = computed(() => codeSet.value.origin === 'platform')
 const identityEditable = computed(() => (
   canUpdate.value &&
@@ -304,6 +313,7 @@ const statusType = status => ({
   published: 'success',
   withdrawn: 'danger'
 }[status] || 'info')
+const scopeLabel = scope => scope ? t(standardScopeLabelKey(scope)) : '-'
 const formatTime = value => formatStandardDateTime(value, locale.value)
 
 function setRevision(value) {
@@ -340,12 +350,16 @@ async function loadDomains() {
 }
 
 async function saveIdentity() {
+  if (requiresOwnerDomain(codeSet.value.scope_type) && !codeSet.value.owner_domain_id) {
+    ElMessage.error(t('standard.common.ownerDomainRequired'))
+    return
+  }
   savingIdentity.value = true
   announcement.value = t('standard.common.saving')
   try {
     codeSet.value = await codeSetAPI.update(codeSet.value.id, {
       version: codeSet.value.version,
-      domain_id: codeSet.value.domain_id,
+      ...buildStandardOwnership(codeSet.value.scope_type, codeSet.value.owner_domain_id),
       steward_id: codeSet.value.steward_id ?? null,
       tags: codeSet.value.tags || []
     })
@@ -359,6 +373,10 @@ async function saveIdentity() {
     savingIdentity.value = false
   }
 }
+
+watch(() => codeSet.value.scope_type, scope => {
+  if (!requiresOwnerDomain(scope)) codeSet.value.owner_domain_id = null
+})
 
 async function saveRevision() {
   savingRevision.value = true

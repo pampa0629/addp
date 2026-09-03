@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildDynamicSchemaColumnDescriptors,
-  buildTablePreviewColumnDescriptors,
-  dynamicSchemaCellValue
-} from '../../../../common-frontend/map/src/utils/dynamicSchemaColumns.js'
+  buildTablePreviewColumnDescriptors
+} from '../../../../common-frontend/basic/src/utils/dynamicSchemaColumns.js'
+import { tabularCellValue } from '../../../../common-frontend/basic/src/utils/tabularResult.js'
 
 describe('dynamic schema table columns', () => {
   it('expands a stable object column from provider field paths', () => {
@@ -31,7 +31,7 @@ describe('dynamic schema table columns', () => {
       'userInfo.phone',
       'myOutdoors'
     ])
-    expect(dynamicSchemaCellValue(rows[0], descriptors[2])).toBe('Ada')
+    expect(tabularCellValue(rows[0], descriptors[2])).toBe('Ada')
   })
 
   it('does not expand arrays or object columns without stable schema children', () => {

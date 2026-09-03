@@ -39,6 +39,7 @@ graph TB
         MonitorFE[Monitor Frontend<br/>:5179]
         InferenceFE[Inference Frontend<br/>:5188]
         StandardFE[Standard Frontend<br/>:5181]
+        ModelFE[Model Frontend<br/>:5182]
         AssetFE[Asset Frontend<br/>:5184]
         PortalFE[Portal Frontend<br/>:5185]
     end
@@ -62,6 +63,7 @@ graph TB
         Quality[Quality Backend<br/>数据质量<br/>:8182]
         Inference[Inference Backend<br/>统一 AI 推理<br/>:8191]
         Standard[Standard Backend<br/>数据标准<br/>:8110]
+        Model[Model Backend<br/>数据建模<br/>:8181]
         Asset[Asset Backend<br/>数据资产<br/>:8183]
         Portal[Portal Backend<br/>资产门户 BFF<br/>:8184]
     end
@@ -109,6 +111,7 @@ graph TB
     MonitorFE -.-> Console
     InferenceFE -.-> Console
     StandardFE -.-> Console
+    ModelFE -.-> Console
     AssetFE -.-> Console
     PortalFE -.-> Console
 
@@ -126,6 +129,7 @@ graph TB
     Gateway --> Quality
     Gateway --> Inference
     Gateway --> Standard
+    Gateway --> Model
     Gateway --> Asset
     Gateway --> Portal
 
@@ -143,12 +147,18 @@ graph TB
     Quality --> Common
     Inference --> Common
     Standard --> Common
+    Model --> Common
     Asset --> Common
     Portal --> Common
 
     Meta -. DataItem 可恢复变化 .-> Catalog
     Meta -. 已显式纳管目标的精确技术事实 .-> Security
     Standard -. 语义对象公开读取 .-> Catalog
+    Standard -. 已发布语义修订 .-> Model
+    Standard -. 已发布语义修订 .-> Quality
+    Model -. Entity 与 LogicalTable 专业资源 .-> Catalog
+    Catalog -. 字段或组件标准映射 .-> Quality
+    Quality -. 符合性聚合 .-> Standard
     Security -. 当前用户权限下的安全专业事实 .-> CatalogFE
     Security -. 保护投影变化 .-> Manager
     Security -. 保护投影变化 .-> Transfer
@@ -171,6 +181,7 @@ graph TB
     ServiceFE --> CommonFE
     InferenceFE --> CommonFE
     StandardFE --> CommonFE
+    ModelFE --> CommonFE
     AssetFE --> CommonFE
     PortalFE --> CommonFE
 
@@ -205,9 +216,9 @@ graph TB
     classDef engine fill:#fff9c4,stroke:#f57f17
     classDef infra fill:#fce4ec,stroke:#880e4f
 
-    class Console,SystemFE,ManagerFE,MetaFE,CatalogFE,WorkbenchFE,SecurityFE,TransferFE,OrchestratorFE,DevelopFE,ServiceFE,MonitorFE,InferenceFE,StandardFE,AssetFE,PortalFE frontend
+    class Console,SystemFE,ManagerFE,MetaFE,CatalogFE,WorkbenchFE,SecurityFE,TransferFE,OrchestratorFE,DevelopFE,ServiceFE,MonitorFE,InferenceFE,StandardFE,ModelFE,AssetFE,PortalFE frontend
     class Gateway gateway
-    class System,Manager,Meta,Catalog,Workbench,Security,Transfer,Orchestrator,Develop,Service,Monitor,Quality,Inference,Standard,Asset,Portal backend
+    class System,Manager,Meta,Catalog,Workbench,Security,Transfer,Orchestrator,Develop,Service,Monitor,Quality,Inference,Standard,Model,Asset,Portal backend
     class TransferBoundedWorker,TransferContinuousWorker,MetaWorker,QualityWorker,SecurityWorker worker
     class Common,CommonFE shared
     class PyWorkflow,SparkWorkflow,CustomWorkflow,Jupyter engine
@@ -220,6 +231,7 @@ graph TB
 - **服务层**: 各业务模块的后端服务,提供 RESTful API
 - **业务模块边界**: Transfer、Develop、Model、Quality 等是对等 owner，默认只向下依赖 System、Meta、Common 和 Engine Provider。跨 owner 协作优先由 Orchestrator 连接 TaskProvider 稳定输出与必填运行时输入，数据资源使用 ResourceLocator 交接；引入 Common Client 只解决传输实现重复，不会消除 owner-specific ID、API 或生命周期造成的语义依赖。任务定义非必要不得保存其他业务 owner 的专有 ID。
 - **企业目录主线**: Meta 维护 DataItem 技术事实并提供可恢复变化；Catalog 建立企业目录身份、业务语义关联、责任和搜索；Asset 从 Catalog 选择并组合目录对象；Portal 只消费已发布资产。图中的虚线业务调用都是运行软依赖，不构成启动或 Ready 条件。
+- **数据标准主线**: Standard 拥有业务域、术语、数据元、码值集、单位、指标定义和标准来源文档等语义契约；Model 拥有逻辑模型、公共/一致性维度、维度层级和指标实现，并冻结采用的 Standard 修订；Catalog 拥有实际字段/组件到标准修订的映射；Quality 拥有规则应用、执行、符合性结果和问题。Standard 可以聚合展示落标与符合性，但不复制后三者的事实。
 - **数据安全主线**: Security 与 Catalog 并行消费 Meta 事实，但只精确读取已显式纳管目标；Security 编译 Owner-specific 保护投影，Manager、Transfer、Develop 和 Service 后台拉取后在本模块服务端出口执行。Catalog 只联邦展示 Security 专业事实，不是安全发现或保护生效的前置。
 - **Worker运行时**: bounded execution 数据面使用 owner 模块附属的独立进程；owner Backend 只承担 API、调度和控制面。
   - **Transfer Bounded Worker**: 从 `common.task_executions` PostgreSQL claim snapshot、watermark 和 bounded replay execution。
@@ -255,9 +267,10 @@ graph TB
 | **Develop** | 数据开发:查询执行、工作流、Notebook 开发 | 8185 / 8185 | Go, Gin, Monaco Editor |
 | **Service** | 数据服务:服务发布(空间OGC标准与非空间)、外部服务注册 | 8086 / 8086 | Go, Gin, OGC 标准 |
 | **Monitor** | 执行监控:统一监控所有模块的任务执行记录、统计分析 | 8100 / 8100 | Go, Gin, PostgreSQL |
-| **Quality** | 数据质量:规则应用、检查任务、质量评分和问题治理 | 8182 / 8182 | Go, Gin, GORM |
+| **Model** | 数据建模：业务实体、逻辑模型、模型关系、公共/一致性维度、维度层级和指标实现；冻结采用的 Standard 修订 | 8181 / 8181 | Go, Gin, GORM, Vue 3 |
+| **Quality** | 数据质量：基于确定资源、组件和标准修订管理规则应用、检查任务、符合性结果、质量评分和问题治理 | 8182 / 8182 | Go, Gin, GORM |
 | **Quality Worker** | Quality 有界字段检查与物化门禁执行器，独立进程 | - | Go, PostgreSQL claim/lease |
-| **Standard** | 数据标准：业务域、术语、数据元、指标和码值等业务语义定义 | 8110 / 8110 | Go, Gin, GORM |
+| **Standard** | 数据标准：业务域、术语、数据元、码值集、单位、指标定义和来源文档等可复用业务语义契约；不拥有维度层级、字段映射或质量执行事实 | 8110 / 8110 | Go, Gin, GORM |
 | **Asset** | 数据资产：目录对象组合、发布、申请、授权、评价和运营 | 8183 / 8183 | Go, Gin, GORM, Meilisearch |
 | **Portal** | 面向消费者的已发布资产门户 BFF | 8184 / 8184 | Go, Gin, GORM |
 | **Inference** | 统一 AI 推理：Provider Connection、Model Deployment、Model Profile、加密凭据和推理数据面 | 8191 / 8191 | Go, Gin, GORM |

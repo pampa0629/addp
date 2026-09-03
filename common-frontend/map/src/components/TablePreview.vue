@@ -68,61 +68,29 @@
           />
         </el-select>
       </div>
-      <el-table
+      <TabularResultRenderer
         ref="tableRef"
-        :data="tableData"
-        v-loading="loading"
+        :rows="tableData"
+        :columns="displayColumns"
+        :loading="loading"
         height="100%"
         highlight-current-row
         :row-key="getRowKey"
         :current-row-key="currentRowKey"
         @row-click="handleRowClick"
-      >
-        <el-table-column
-          v-for="column in displayColumns"
-          :key="column.key"
-          :label="column.label"
-          :show-overflow-tooltip="!hasStructuredColumnValues(column)"
-        >
-          <template #default="{ row }">
-            <button
-              v-if="isStructuredCellValue(cellValue(row, column))"
-              class="structured-cell"
-              type="button"
-              @click.stop="openStructuredCell(row, column)"
-            >
-              <span class="structured-cell__kind">{{ structuredValueKind(cellValue(row, column)) }}</span>
-              <span class="structured-cell__summary">{{ structuredValueSummary(cellValue(row, column)) }}</span>
-            </button>
-            <span v-else class="scalar-cell">{{ formatCellValue(cellValue(row, column)) }}</span>
-          </template>
-        </el-table-column>
-      </el-table>
+      />
     </div>
-
-    <el-dialog
-      v-model="structuredDialogVisible"
-      :title="structuredDialogTitle"
-      width="720px"
-      class="structured-value-dialog"
-      destroy-on-close
-    >
-      <pre class="structured-value-json">{{ structuredDialogJSON }}</pre>
-    </el-dialog>
 
     <!-- 分页 -->
     <div v-if="total > 0" ref="paginationRef" class="pagination">
-      <el-pagination
-        background
-        layout="total, sizes, prev, pager, next, jumper"
+      <DataPagination
+        v-model:current-page="currentPage"
+        v-model:page-size="pageSize"
         :total="total"
-        :page-size="pageSize"
-        :current-page="currentPage"
-        :page-sizes="[10, 20, 50, 100]"
-        @current-change="handlePageChange"
-        @size-change="handlePageSizeChange"
-      />
-      <div class="tip">{{ t('map.maxRows') }}</div>
+        @change="handlePaginationChange"
+      >
+        <div class="tip">{{ t('map.maxRows') }}</div>
+      </DataPagination>
     </div>
 
     <!-- 格式附加属性（可折叠） -->
@@ -165,7 +133,10 @@ import {
   getPreviewCRSTransform,
   transformGeoJSONGeometryToWGS84
 } from '../utils/crsRegistry'
-import { buildTablePreviewColumnDescriptors, dynamicSchemaCellValue } from '../utils/dynamicSchemaColumns'
+import TabularResultRenderer from '../../../basic/src/components/TabularResultRenderer.vue'
+import DataPagination from '../../../basic/src/components/DataPagination.vue'
+import { buildTablePreviewColumnDescriptors } from '../../../basic/src/utils/dynamicSchemaColumns.js'
+import { formatResultCell, tabularCellValue } from '../../../basic/src/utils/tabularResult.js'
 
 const { t } = useI18n()
 
@@ -332,9 +303,6 @@ const currentPage = ref(1)
 const pageSize = ref(10)
 const shapefileMetaExpanded = ref(false)
 const hasManualMapResize = ref(false)
-const structuredDialogVisible = ref(false)
-const structuredDialogTitle = ref('')
-const structuredDialogJSON = ref('')
 const selectedColumns = ref([])
 
 let resizeObserver = null
@@ -496,15 +464,7 @@ const escapeHtml = (value) => {
     .replace(/'/g, '&#39;')
 }
 
-const isStructuredCellValue = (value) => {
-  return value !== null && typeof value === 'object'
-}
-
-const cellValue = (row, column) => dynamicSchemaCellValue(row, column)
-
-const hasStructuredColumnValues = (column) => {
-  return rows.value.some((row) => isStructuredCellValue(cellValue(row, column)))
-}
+const cellValue = (row, column) => tabularCellValue(row, column)
 
 const hasScalarColumnValues = (column) => {
   return rows.value.some((row) => {
@@ -513,54 +473,7 @@ const hasScalarColumnValues = (column) => {
   })
 }
 
-const structuredValueKind = (value) => {
-  return Array.isArray(value) ? t('map.structuredArray') : t('map.structuredObject')
-}
-
-const structuredValueSummary = (value) => {
-  if (Array.isArray(value)) {
-    if (value.length === 0) return t('map.emptyArray')
-    const first = value.find((item) => item !== null && item !== undefined)
-    const itemKind = first && typeof first === 'object'
-      ? (Array.isArray(first) ? t('map.structuredArray') : t('map.structuredObject'))
-      : ''
-    return itemKind
-      ? t('map.arraySummaryWithKind', { count: value.length, kind: itemKind })
-      : t('map.arraySummary', { count: value.length })
-  }
-  const keys = Object.keys(value || {})
-  if (keys.length === 0) return t('map.emptyObject')
-  const previewKeys = keys.slice(0, 3).join(', ')
-  return keys.length > 3
-    ? t('map.objectSummaryMore', { count: keys.length, keys: previewKeys })
-    : t('map.objectSummary', { count: keys.length, keys: previewKeys })
-}
-
-const safeStructuredJSON = (value) => {
-  try {
-    return JSON.stringify(value, null, 2)
-  } catch (_error) {
-    return formatCellValue(value)
-  }
-}
-
-const openStructuredCell = (row, column) => {
-  structuredDialogTitle.value = column.label
-  structuredDialogJSON.value = safeStructuredJSON(cellValue(row, column))
-  structuredDialogVisible.value = true
-}
-
-const formatCellValue = (value) => {
-  if (value === null || value === undefined) return ''
-  if (typeof value === 'object') {
-    try {
-      return JSON.stringify(value)
-    } catch (_error) {
-      return '[object]'
-    }
-  }
-  return String(value)
-}
+const formatCellValue = value => formatResultCell(value, '')
 
 const buildPopupContent = (row) => {
   if (!row) {
@@ -708,15 +621,10 @@ const handleFeatureClick = ({ feature, coordinate, position }) => {
   }
 }
 
-const handlePageChange = (page) => {
+const handlePaginationChange = ({ page, pageSize: nextPageSize }) => {
   currentPage.value = page
-  emit('page-change', { page, pageSize: pageSize.value })
-}
-
-const handlePageSizeChange = (size) => {
-  pageSize.value = size
-  currentPage.value = 1
-  emit('page-change', { page: 1, pageSize: size })
+  pageSize.value = nextPageSize
+  emit('page-change', { page, pageSize: nextPageSize })
 }
 
 watch(
@@ -980,72 +888,8 @@ body.is-v-resizing .map-splitter::before {
   width: min(420px, 60%);
 }
 
-.scalar-cell {
-  display: inline-block;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  vertical-align: bottom;
-}
-
-.structured-cell {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  max-width: 100%;
-  height: 24px;
-  padding: 0 8px;
-  border: 1px solid var(--el-border-color-light);
-  border-radius: 4px;
-  background: var(--el-fill-color-light);
-  color: var(--el-text-color-regular);
-  cursor: pointer;
-  font: inherit;
-  line-height: 1;
-  vertical-align: middle;
-}
-
-.structured-cell:hover {
-  border-color: var(--el-color-primary-light-5);
-  color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
-}
-
-.structured-cell__kind {
-  flex: 0 0 auto;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--el-color-primary);
-}
-
-.structured-cell__summary {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-}
-
-.structured-value-json {
-  max-height: min(62vh, 620px);
-  margin: 0;
-  padding: 12px;
-  overflow: auto;
-  border: 1px solid var(--el-border-color-light);
-  border-radius: 4px;
-  background: var(--el-fill-color-lighter);
-  color: var(--el-text-color-primary);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
-  font-size: 12px;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
 .pagination {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex: 0 0 auto;
 }
 
 .pagination .tip {

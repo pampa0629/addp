@@ -269,7 +269,7 @@
       },
       "security": {
         "label": "数据安全与隐私保护",
-        "desc": "敏感数据类型、安全分类分级与保护基线"
+        "desc": "分类分级、敏感数据定义、默认保护规则与受保护资源"
       },
       "develop": {
         "label": "数据开发",
@@ -383,11 +383,10 @@
       },
       "security": {
         "label": "数据安全",
-        "sensitiveDataTypes": "敏感数据类型",
-        "classifications": "安全分类",
-        "grades": "安全等级",
-        "protectionBaselines": "保护基线",
-        "protectionEnrollments": "保护纳管"
+        "classificationGrading": "分类分级体系",
+        "sensitiveDataDefinitions": "敏感数据定义",
+        "defaultProtectionRules": "默认保护规则",
+        "protectedResources": "受保护资源"
       },
       "develop": {
         "label": "数据开发",

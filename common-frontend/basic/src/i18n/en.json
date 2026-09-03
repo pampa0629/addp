@@ -134,6 +134,15 @@
     "goto": "Go to",
     "page": "Page"
   },
+  "tabularResult": {
+    "array": "Array",
+    "object": "Object",
+    "emptyArray": "Empty array",
+    "emptyObject": "Empty object",
+    "arraySummary": "{count} items",
+    "objectSummary": "{count} fields: {keys}",
+    "objectSummaryMore": "{count} fields: {keys}..."
+  },
   "schedule": {
     "title": "Scheduled Task",
     "quickSelect": "Quick Select:",

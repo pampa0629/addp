@@ -195,16 +195,16 @@ Asset 第一阶段资源回收执行方只治理 Asset-owned 资产目录、资�
 
 Model 第一阶段资源回收执行方只治理 Model-owned 建模状态：
 
-- `tenant.deleted` 时，扫描该租户下 Model-owned 数仓分层、实体、实体属性、实体关系、逻辑表、逻辑字段、表关系和事实表指标映射。
-- `logical_cleanup` 将命中的实体和逻辑表降为 `draft`，使其离开已审批 / 已物化语义；字段、关系、映射和分层不单独改写状态。
-- `physical_cleanup` 删除 Model-owned PostgreSQL 状态记录，删除顺序必须先映射、关系和字段，再删除逻辑表、实体和分层。
+- `tenant.deleted` 时，扫描该租户下 Model-owned 数仓分层、实体、实体属性、实体关系、逻辑表、逻辑字段、表关系、维度层级和指标实现。
+- `logical_cleanup` 将命中的实体和逻辑表降为 `draft`，使其离开已审批 / 已物化语义；字段、关系、维度层级、指标实现和分层不单独改写状态。
+- `physical_cleanup` 删除 Model-owned PostgreSQL 状态记录，删除顺序必须先指标实现、维度层级、关系和字段，再删除逻辑表、实体和分层。
 - 没有明确 `tenant.deleted` lifecycle context 的普通 scan 不应把全部 Model 状态视作待回收对象。
 - `engine.deleted` 第一阶段不扫描 Model 状态；Model 不解析 `materialization` 中的物理目标或引擎私有引用。
-- Model cleanup 第一阶段不删除 Standard 数据元、指标、维度层级或业务域，不删除已物化的外部物理表；这些物理产物只有在后续被明确登记为 Model-owned artifact state 后，才进入对应 owner executor。
+- Model cleanup 不删除 Standard 数据元、指标定义或业务域，不删除已物化的外部物理表；这些物理产物只有在后续被明确登记为 Model-owned artifact state 后，才进入对应 owner executor。
 
 Standard 第一阶段资源回收执行方只治理 Standard-owned 标准治理状态和标准文档文件：
 
-- `tenant.deleted` 时，扫描该租户下 Standard-owned 业务域、术语、数据元、码值、单位、指标、维度层级、标准文档和文档关联状态；安全分类分级不属于 Standard。
+- `tenant.deleted` 时，扫描该租户下 Standard-owned 业务域、标准集、术语、数据元、码值集、单位、指标定义、标准文档及其修订和关联状态；维度层级属于 Model，安全分类分级属于 Security。
 - `logical_cleanup` 将有状态的术语、数据元和指标置为 `deprecated`；标准文档文件不因逻辑清理删除。
 - `physical_cleanup` 在租户删除范围内删除 Standard-owned PostgreSQL 状态记录，并删除 `standard.documents.file_key` 明确登记的 `standard` bucket 文档对象。
 - 单个标准文档由用户显式删除时，可以同步删除 PG 状态和 `file_key` 指向的 MinIO 文件。

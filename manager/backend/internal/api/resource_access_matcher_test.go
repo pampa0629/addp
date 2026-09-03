@@ -32,8 +32,6 @@ func TestManagerBrowserResourceRequestMatcher(t *testing.T) {
 		"/api/v1/manager/model_3d_glb/1/content",
 		"/api/v1/manager/gaussian_splat_ksplat/1/content",
 		"/api/v1/manager/point_cloud_copc/1/content",
-		"/api/v1/manager/cad-previews/1/manifest",
-		"/api/v1/manager/cad-previews/1/tiles/2/3/4",
 		"/api/v1/manager/quick-view/tiles/2/3/4.mvt",
 	}
 	for _, path := range derivedPaths {
@@ -49,7 +47,6 @@ func TestManagerBrowserResourceRequestMatcher(t *testing.T) {
 		"/api/v1/manager/exports/7",
 		"/api/v1/manager/raster_cog/1",
 		"/api/v1/manager/gaussian_splat_ksplat/1/inspect",
-		"/api/v1/manager/cad-preview-tasks/1",
 		"/api/v1/manager/quick-view/capability",
 	}
 	for _, path := range disallowed {

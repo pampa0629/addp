@@ -125,16 +125,6 @@
             <el-icon><MagicStick /></el-icon>
             {{ t('manager.explorer.generatePointCloudCOPC') }}
           </el-button>
-          <el-button
-            v-if="showCADPreviewGenerationAction"
-            size="small"
-            type="primary"
-            :loading="cadPreviewGenerationLoading"
-            @click="handleGenerateCADPreview"
-          >
-            <el-icon><MagicStick /></el-icon>
-            {{ t('manager.explorer.generateCADPreview') }}
-          </el-button>
           <div v-if="selectedModel3DTilesResult && isQuickViewActive" class="model3d-tiles-format-switcher">
             <el-segmented
               v-if="readyModel3DTilesFormats.length > 1"
@@ -546,7 +536,6 @@ import {
   isTIFFRasterMeta,
   rasterSpatialFacts
 } from '@/utils/rasterQuickViewTarget'
-import { isCADPreviewSource } from '@/utils/cadPreviewSource'
 import { isVectorTilePreviewTarget } from '@/utils/vectorTileSetResource'
 import { vectorTileObjectPreviewProps } from '@/utils/vectorTileObjectPreview'
 import {
@@ -601,7 +590,6 @@ const rasterCOGGenerationLoading = ref(false)
 const model3DGLBGenerationLoading = ref(false)
 const gaussianSplatKSplatGenerationLoading = ref(false)
 const pointCloudCOPCGenerationLoading = ref(false)
-const cadPreviewGenerationLoading = ref(false)
 const model3DTilesGenerationLoading = ref(false)
 const selectedModel3DTilesFormat = ref('')
 const activePreviewMode = ref('basic_preview')
@@ -1446,10 +1434,6 @@ const isPointCloudCOPCSourceNode = computed(() => {
   return /\.(las|laz|e57|pcd|xyz|copc)$/i.test(selectedNodePath.value)
 })
 
-const isCADPreviewSourceNode = computed(() => {
-  return isCADPreviewSource(props.previewData, props.selectedNode || {})
-})
-
 const spatialInfoTooltip = computed(() => {
   if (!hasGeometry.value) return ''
 
@@ -1482,7 +1466,7 @@ const spatialInfoTooltip = computed(() => {
 })
 
 const spatialPreviewTarget = computed(() => {
-  if ((!hasGeometry.value && !isTIFFNode.value && !isRasterMosaicNode.value && !isModel3DGLBSourceNode.value && !isGaussianSplatKSplatSourceNode.value && !isPointCloudCOPCSourceNode.value && !isCADPreviewSourceNode.value) || !props.selectedNode) return null
+  if ((!hasGeometry.value && !isTIFFNode.value && !isRasterMosaicNode.value && !isModel3DGLBSourceNode.value && !isGaussianSplatKSplatSourceNode.value && !isPointCloudCOPCSourceNode.value) || !props.selectedNode) return null
   const node = props.selectedNode
   const locator = String(node.locator || node.id || '').trim()
   let parsedLocator = null
@@ -2226,44 +2210,6 @@ const handleGeneratePointCloudCOPC = async () => {
   }
 }
 
-const handleGenerateCADPreview = async () => {
-  const locator = String(props.selectedNode?.locator || props.selectedNode?.id || '').trim()
-  if (!locator) {
-    ElMessage.warning(t('manager.explorer.cadPreviewMissingIdentity'))
-    return
-  }
-  cadPreviewGenerationLoading.value = true
-  try {
-    const execution = await executeConfirmedQuickViewAction(locator, 'generate_cad_preview')
-    const executionID = String(execution?.execution_id || execution?.data?.execution_id || '').trim()
-    ElMessage.success(t('manager.explorer.generateCADPreviewSubmitted'))
-    if (executionID) {
-      const result = await waitForRasterCOGExecution(
-        executionID,
-        (id) => quickViewAPI.getExecutionStatus(id),
-        { maxAttempts: 90, intervalMs: 2000 }
-      )
-      if (result.success) {
-        ElMessage.success(t('manager.explorer.generateCADPreviewReady'))
-      } else if (result.failed) {
-        ElMessage.error(t('manager.explorer.generateCADPreviewExecutionFailed'))
-      } else if (!result.completed) {
-        ElMessage.warning(t('manager.explorer.generateCADPreviewTimeout'))
-      }
-    }
-    await reloadCurrentPreview()
-    await loadQuickViewStatus()
-    activePreviewMode.value = 'basic_preview'
-  } catch (error) {
-    if (error !== 'cancel' && error !== 'close') {
-      console.error('提交 CAD 栅格瓦片预览生成失败:', error)
-      ElMessage.error(t('manager.explorer.generateCADPreviewFailed'))
-    }
-  } finally {
-    cadPreviewGenerationLoading.value = false
-  }
-}
-
 const handleGenerateModel3DTiles = async (targetFormat) => {
   const locator = String(props.selectedNode?.locator || props.selectedNode?.id || '').trim()
   const format = String(targetFormat || '').trim()
@@ -2430,10 +2376,6 @@ const gaussianSplatKSplatActionText = computed(() => {
 
 const showPointCloudCOPCGenerationAction = computed(() => {
   return canUseQuickViewAction('generate_point_cloud_copc')
-})
-
-const showCADPreviewGenerationAction = computed(() => {
-  return canUseQuickViewAction('generate_cad_preview')
 })
 
 const showModel3DTaskPrompt = computed(() => Boolean(model3DGLBPromptMetadata.value || model3DTilesPromptMetadata.value))

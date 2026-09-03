@@ -184,6 +184,59 @@
               </div>
             </el-form-item>
 
+            <el-form-item :label="t('service.query.namedParametersLabel')">
+              <div class="named-parameters-editor">
+                <div class="named-parameters-help">{{ t('service.query.namedParametersHelp') }}</div>
+                <div v-for="(parameter, index) in sqlNamedParameters" :key="index" class="named-parameter-row">
+                  <el-input
+                    v-model="parameter.name"
+                    :placeholder="t('service.query.namedParameterName')"
+                    maxlength="64"
+                    @input="resetSQLOutputContract"
+                  />
+                  <el-select v-model="parameter.type" @change="handleNamedParameterDefinitionChange(parameter)" class="named-parameter-type">
+                    <el-option v-for="type in sqlNamedParameterTypes" :key="type" :label="type" :value="type" />
+                  </el-select>
+                  <el-checkbox v-model="parameter.required" @change="handleNamedParameterDefinitionChange(parameter)">
+                    {{ t('service.query.namedParameterRequired') }}
+                  </el-checkbox>
+                  <el-select v-if="parameter.type === 'bool'" v-model="parameter.value" clearable @change="resetSQLOutputContract">
+                    <el-option :value="true" :label="t('service.common.yes')" />
+                    <el-option :value="false" :label="t('service.common.no')" />
+                  </el-select>
+                  <el-input-number
+                    v-else-if="numericSQLNamedParameterTypes.has(parameter.type)"
+                    v-model="parameter.value"
+                    :controls="false"
+                    :placeholder="parameter.required ? t('service.query.namedParameterSample') : t('service.query.namedParameterDefault')"
+                    @change="resetSQLOutputContract"
+                  />
+                  <el-date-picker
+                    v-else-if="parameter.type === 'date' || parameter.type === 'timestamp'"
+                    v-model="parameter.value"
+                    :type="parameter.type === 'timestamp' ? 'datetime' : 'date'"
+                    :value-format="parameter.type === 'timestamp' ? 'YYYY-MM-DDTHH:mm:ssZ' : 'YYYY-MM-DD'"
+                    @change="resetSQLOutputContract"
+                  />
+                  <el-input
+                    v-else
+                    v-model="parameter.value"
+                    :placeholder="parameter.required ? t('service.query.namedParameterSample') : t('service.query.namedParameterDefault')"
+                    @input="resetSQLOutputContract"
+                  />
+                  <el-input
+                    v-model="parameter.description"
+                    :placeholder="t('service.query.namedParameterDescription')"
+                    maxlength="500"
+                  />
+                  <el-button link type="danger" @click="removeSQLNamedParameter(index)">{{ t('service.common.delete') }}</el-button>
+                </div>
+                <el-button type="primary" plain @click="addSQLNamedParameter">
+                  {{ t('service.query.addNamedParameter') }}
+                </el-button>
+              </div>
+            </el-form-item>
+
 			<el-form-item :label="t('service.query.stableKeyLabel')" required>
 			  <el-select
 				v-model="sqlStableKey"
@@ -468,6 +521,9 @@ const sqlGeometryType = ref('')
 const sqlOutputContract = ref(null)
 const sqlStableKey = ref([])
 const sqlStableKeyFilter = ref('')
+const sqlNamedParameters = ref([])
+const sqlNamedParameterTypes = ['string', 'bool', 'int', 'bigint', 'float', 'double', 'decimal', 'date', 'time', 'timestamp', 'uuid']
+const numericSQLNamedParameterTypes = new Set(['int', 'bigint', 'float', 'double', 'decimal'])
 
 // 字段配置输入
 const defaultFieldsInput = ref('')
@@ -538,17 +594,49 @@ const canProceed = computed(() => {
     if (form.config_type === 'table') {
       return !!form.locator && (!tableUsesRuntime.value || (!!form.runtime_engine_id && selectedRuntimeAvailable.value))
     } else {
-		return !!form.execution_engine_id && selectedExecutionEngineAvailable.value && !!form.sql_query && !!sqlOutputContract.value?.table && sqlStableKey.value.length > 0
+		return !!form.execution_engine_id && selectedExecutionEngineAvailable.value && !!form.sql_query && validSQLNamedParameters.value && !!sqlOutputContract.value?.table && sqlStableKey.value.length > 0
     }
   }
   return true
 })
 
-const sqlOutputContractRequestKey = () => `${form.execution_engine_id}\n${form.sql_query}`
+const validSQLNamedParameters = computed(() => {
+  if (sqlNamedParameters.value.length > 32) return false
+  const names = new Set()
+  return sqlNamedParameters.value.every(parameter => {
+    const name = String(parameter.name || '').trim()
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name) || names.has(name) || !sqlNamedParameterTypes.includes(parameter.type)) return false
+    names.add(name)
+	if (parameter.value === '' || parameter.value === null || parameter.value === undefined) return false
+	if (numericSQLNamedParameterTypes.has(parameter.type)) {
+	  const number = Number(parameter.value)
+	  if (!Number.isFinite(number)) return false
+	  if ((parameter.type === 'int' || parameter.type === 'bigint') && !Number.isInteger(number)) return false
+	}
+	return true
+  })
+})
+
+const normalizeSQLNamedParameterValue = parameter => {
+  const value = parameter.value
+  if (['int', 'bigint', 'float', 'double', 'decimal'].includes(parameter.type)) return Number(value)
+  if (parameter.type === 'bool') return value === true || String(value).toLowerCase() === 'true'
+  return value
+}
+
+const sqlNamedParameterValues = () => Object.fromEntries(
+  sqlNamedParameters.value.map(parameter => [String(parameter.name || '').trim(), normalizeSQLNamedParameterValue(parameter)])
+)
+
+const sqlOutputContractRequestKey = () => `${form.execution_engine_id}\n${form.sql_query}\n${JSON.stringify(sqlNamedParameterValues())}`
 
 // 检测 SQL 输出契约，并从同一份事实中更新稳定排序键候选和空间字段。
 const detectSQLOutputContract = async () => {
-	if (!form.execution_engine_id || !form.sql_query) {
+  if (!form.execution_engine_id || !form.sql_query) {
+    return false
+  }
+  if (!validSQLNamedParameters.value) {
+    ElMessage.warning(t('service.query.namedParametersInvalid'))
     return false
   }
 
@@ -558,7 +646,8 @@ const detectSQLOutputContract = async () => {
   try {
     const response = await queryServiceAPI.detectSQLOutputContract({
 		engine_id: form.execution_engine_id,
-      sql: form.sql_query
+      sql: form.sql_query,
+      parameters: sqlNamedParameterValues()
     })
 	if (!outputContractRequests.isCurrent(request, sqlOutputContractRequestKey())) return false
 
@@ -622,6 +711,22 @@ const resetSQLOutputContract = () => {
   sqlGeometryColumn.value = ''
   sqlSrid.value = 0
   sqlGeometryType.value = ''
+}
+
+const addSQLNamedParameter = () => {
+  if (sqlNamedParameters.value.length >= 32) return
+  sqlNamedParameters.value.push({ name: '', type: 'string', required: true, description: '', value: '' })
+  resetSQLOutputContract()
+}
+
+const removeSQLNamedParameter = index => {
+  sqlNamedParameters.value.splice(index, 1)
+  resetSQLOutputContract()
+}
+
+const handleNamedParameterDefinitionChange = parameter => {
+  parameter.value = ''
+  resetSQLOutputContract()
 }
 
 const handleSQLExecutionEngineChange = async (engineID) => {
@@ -845,6 +950,13 @@ const handleSubmit = async () => {
         requestData.engine_id = form.engine_id
       }
 		requestData.sql_query = form.sql_query
+		requestData.named_parameters = sqlNamedParameters.value.map(parameter => ({
+		  name: String(parameter.name || '').trim(),
+		  type: parameter.type,
+		  required: parameter.required,
+		  description: String(parameter.description || '').trim(),
+		  ...(!parameter.required ? { default: normalizeSQLNamedParameterValue(parameter) } : {})
+		}))
 		const dataConfig = {}
 		dataConfig.default_fields = parseFieldInput(defaultFieldsInput.value)
 		dataConfig.filterable_fields = parseFieldInput(filterableFieldsInput.value)
@@ -917,6 +1029,13 @@ onMounted(async () => {
       form.table_name = service.table_name || ''
       form.locator = service.data_config?.locator || ''
       form.sql_query = service.sql_query || ''
+	  sqlNamedParameters.value = (service.named_parameters || []).map(parameter => ({
+		name: parameter.name,
+		type: parameter.type,
+		required: parameter.required,
+		description: parameter.description || '',
+		value: parameter.required ? '' : parameter.default
+	  }))
 
       console.log('[QueryServiceForm] 编辑模式：数据源配置', {
         config_type: form.config_type,
@@ -967,6 +1086,31 @@ onMounted(async () => {
   padding: 20px;
   max-width: 1200px;
   margin: 0 auto;
+}
+
+.named-parameters-editor {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.named-parameters-help {
+  color: var(--addp-text-secondary);
+  font-size: 13px;
+}
+
+.named-parameter-row {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) 120px auto minmax(150px, 1fr) minmax(180px, 1.2fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (max-width: 960px) {
+  .named-parameter-row {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 .page-header {

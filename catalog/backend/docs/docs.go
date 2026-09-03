@@ -2022,12 +2022,22 @@ const docTemplate = `{
                 "name": {
                     "type": "string"
                 },
+                "origin": {
+                    "type": "string"
+                },
+                "owner_domain_id": {
+                    "type": "string",
+                    "example": "0"
+                },
                 "revision_id": {
                     "type": "string",
                     "example": "0"
                 },
                 "revision_no": {
                     "type": "integer"
+                },
+                "scope_type": {
+                    "type": "string"
                 },
                 "status": {
                     "type": "string"
@@ -2639,10 +2649,6 @@ const docTemplate = `{
                 "definition": {
                     "type": "string"
                 },
-                "domain_id": {
-                    "type": "string",
-                    "example": "0"
-                },
                 "effective_from": {
                     "type": "string"
                 },
@@ -2675,6 +2681,10 @@ const docTemplate = `{
                 "nullable": {
                     "type": "boolean"
                 },
+                "owner_domain_id": {
+                    "type": "string",
+                    "example": "0"
+                },
                 "precision_num": {
                     "type": "integer"
                 },
@@ -2686,6 +2696,9 @@ const docTemplate = `{
                 },
                 "scale": {
                     "type": "integer"
+                },
+                "scope_type": {
+                    "type": "string"
                 },
                 "unit_id": {
                     "type": "string",

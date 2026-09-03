@@ -53,6 +53,9 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	if err := dropLegacyQuickViewTables(db); err != nil {
 		return nil, fmt.Errorf("failed to drop legacy quick view tables: %w", err)
 	}
+	if err := dropLegacyCADPreviewTables(db); err != nil {
+		return nil, fmt.Errorf("failed to drop legacy CAD preview tables: %w", err)
+	}
 	if err := ensureTileCacheStateSchema(db); err != nil {
 		return nil, fmt.Errorf("failed to ensure tile cache state schema: %w", err)
 	}
@@ -76,9 +79,6 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	}
 	if err := ensurePointCloudCOPCSchema(db); err != nil {
 		return nil, fmt.Errorf("failed to ensure point cloud COPC schema: %w", err)
-	}
-	if err := ensureCADPreviewSchema(db); err != nil {
-		return nil, fmt.Errorf("failed to ensure CAD preview schema: %w", err)
 	}
 	if err := ensureModel3DTilesSchema(db); err != nil {
 		return nil, fmt.Errorf("failed to ensure model 3d tiles schema: %w", err)
@@ -111,6 +111,13 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 func ensureBaseMapProviderSchema(db *gorm.DB) error {
 	return db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS uq_manager_base_map_scope_provider
 		ON manager.base_map_providers (scope_type, COALESCE(tenant_id, 0), provider)`).Error
+}
+
+func dropLegacyCADPreviewTables(db *gorm.DB) error {
+	if err := db.Exec(`DROP TABLE IF EXISTS manager.cad_previews`).Error; err != nil {
+		return err
+	}
+	return db.Exec(`DROP TABLE IF EXISTS manager.cad_preview_tasks`).Error
 }
 
 func ensureDataProfileSchema(db *gorm.DB) error {
@@ -1053,24 +1060,6 @@ func ensurePointCloudCOPCSchema(db *gorm.DB) error {
 		return err
 	}
 	return nil
-}
-
-func ensureCADPreviewSchema(db *gorm.DB) error {
-	if err := db.AutoMigrate(&models.CADPreviewTask{}, &models.CADPreview{}); err != nil {
-		return err
-	}
-	if err := db.Exec(`
-		CREATE UNIQUE INDEX IF NOT EXISTS idx_cad_preview_tasks_source_unique
-		ON manager.cad_preview_tasks (tenant_id, ((config->'source'->>'item_fingerprint')))
-		WHERE deleted_at IS NULL AND COALESCE(config->'source'->>'item_fingerprint', '') <> ''
-	`).Error; err != nil {
-		return err
-	}
-	return db.Exec(`
-		CREATE UNIQUE INDEX IF NOT EXISTS idx_cad_previews_current_unique
-		ON manager.cad_previews (tenant_id, item_fingerprint)
-		WHERE deleted_at IS NULL AND status <> 'deleted'
-	`).Error
 }
 
 func ensureEmbeddingArtifactStateSchema(db *gorm.DB, vectorDimension int) error {

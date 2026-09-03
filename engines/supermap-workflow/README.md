@@ -38,12 +38,10 @@ SuperMap C++ SDK、native `.so` 和许可文件不进入 ADDP 代码仓库。完
 - `vector.query`
 - `dataset.save`
 - `osgb_scene_to_s3m`
-- `cad.inspect`（direct-only，读取 DWG / DXF Dataset 元数据、record count 与 bounds，不遍历 Geometry）
-- `cad.render_preview`（direct-only，使用 SuperMap Map/Layer 直接渲染 DWG / DXF Dataset，输出 WebP 瓦片）
 
 这些算子运行在同一个 C++ 进程和同一次执行上下文内，DAG 边上传递 `UGDataSource`、`UGDatasetVector` 等对象的类型化共享句柄；输出到外部时再写入 UDBX 数据源。
 
-HTTP 层使用独立线程池，确保长时间 CAD 渲染或其他 SuperMap 算子执行期间，`/health`、算子发现和执行状态接口仍可响应。SuperMap 算子执行通过进程内统一锁串行化，DAG 节点也按稳定拓扑顺序串行执行，避免并发访问非线程安全的 Workspace、Datasource 或 Map 对象；HTTP 并发不等于 SuperMap 计算并发。
+HTTP 层使用独立线程池，确保长时间 SuperMap 算子执行期间，`/health`、算子发现和执行状态接口仍可响应。SuperMap 算子执行通过进程内统一锁串行化，DAG 节点也按稳定拓扑顺序串行执行，避免并发访问非线程安全的 Workspace、Datasource 或 Map 对象；HTTP 并发不等于 SuperMap 计算并发。
 
 算子元数据使用 `param_type=input` 标识由工作流连线传入的参数，并用 `supermap.datasource`、`supermap.dataset`、`supermap.query_result` 等细分类型描述 DAG 内部对象，避免多个通用 `object` 输入只能按连线顺序推断。
 
@@ -75,7 +73,7 @@ SuperMap Workflow 只保留一条本地开发路线：稳定基础镜像承载�
 
 ### 许可边界
 
-当前开发与验证环境接受 `supermap_any_2026.lic12` 试用许可。该许可可被 iObjects C++ Runtime 正常识别，CAD、二维空间分析和 OSGB Scene 转 S3M 均可执行；CAD 地图渲染出现 `SuperMap Trial Use` 水印属于预期行为，不视为运行异常，也不增加正式许可与试用许可双轨判断。
+当前开发与验证环境接受 `supermap_any_2026.lic12` 试用许可。该许可可被 iObjects C++ Runtime 正常识别，二维空间分析和 OSGB Scene 转 S3M 均可执行；不增加正式许可与试用许可双轨判断。
 
 Runtime 启动时会验证 iObjects C++ Core 许可可用，`/health` 只表达当前许可足以启动和执行已验证算子，不承诺无试用水印。现有试用许可有效期截至 2026-12-31；到期前应更新 `vendor/license` 中的受控许可并重建完整基础镜像，不能只替换已经构建完成的代码镜像。
 

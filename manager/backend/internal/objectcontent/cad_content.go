@@ -4,7 +4,6 @@ import (
 	"context"
 	"strings"
 
-	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/format"
 	"github.com/addp/manager/internal/models"
 )
@@ -25,9 +24,7 @@ func (h *cadContentHandler) Handle(_ context.Context, req *ObjectContentRequest,
 		previewURL = strings.TrimSpace(req.PreviewURL)
 	}
 	if previewURL == "" {
-		metadata["preview_reason"] = "requires_cad_preview_generation"
-		metadata["preview_artifact_status"] = "missing"
-		metadata["preview_artifact_task_type"] = commonExecution.TaskTypeCADPreviewGeneration
+		metadata["preview_reason"] = "preview_url_missing"
 		return decoratePreviewContent(&models.ObjectPreviewContent{
 			Kind:             models.ObjectPreviewKindCAD,
 			PreviewMaterial:  models.PreviewMaterialUnsupported,
@@ -35,9 +32,7 @@ func (h *cadContentHandler) Handle(_ context.Context, req *ObjectContentRequest,
 			Metadata:         metadata,
 		}), false, nil
 	}
-	metadata["preview_artifact_status"] = "ready"
-	metadata["preview_artifact_task_type"] = ""
-	metadata["manifest_url"] = previewURL
+	metadata["source_url"] = previewURL
 	return decoratePreviewContent(&models.ObjectPreviewContent{
 		Kind:             models.ObjectPreviewKindCAD,
 		PreviewMaterial:  models.PreviewMaterialURL,

@@ -141,30 +141,30 @@ func TestDirectResourceUpdatesRejectStaleVersion(t *testing.T) {
 func TestElementIdentityUpdateRejectsStaleVersion(t *testing.T) {
 	db := openVersionedTestDB(t,
 		`CREATE TABLE standard.elements (
-			id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, domain_id INTEGER, code TEXT, steward_id INTEGER,
+			id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, scope_type TEXT NOT NULL, owner_domain_id INTEGER, code TEXT, steward_id INTEGER,
 			tags TEXT, draft_revision_id INTEGER, updated_by INTEGER,
 			updated_at DATETIME, version INTEGER NOT NULL DEFAULT 1
 		)`,
-		`INSERT INTO standard.elements (id, tenant_id, code, domain_id, version) VALUES (1, 7, 'customer_id', 10, 1)`,
+		`INSERT INTO standard.elements (id, tenant_id, code, scope_type, owner_domain_id, version) VALUES (1, 7, 'customer_id', 'domain', 10, 1)`,
 	)
 	repo := NewElementRepository(db)
 	domain20 := int64(20)
-	if err := repo.UpdateIdentity(&models.Element{ID: 1, TenantID: 7, DomainID: &domain20}, 1); err != nil {
+	if err := repo.UpdateIdentity(&models.Element{ID: 1, TenantID: 7, ScopeType: models.StandardScopeDomain, OwnerDomainID: &domain20}, 1); err != nil {
 		t.Fatalf("first update element: %v", err)
 	}
 	domain30 := int64(30)
-	if err := repo.UpdateIdentity(&models.Element{ID: 1, TenantID: 7, DomainID: &domain30}, 1); !errors.Is(err, ErrVersionConflict) {
+	if err := repo.UpdateIdentity(&models.Element{ID: 1, TenantID: 7, ScopeType: models.StandardScopeDomain, OwnerDomainID: &domain30}, 1); !errors.Is(err, ErrVersionConflict) {
 		t.Fatalf("stale update element error = %v, want ErrVersionConflict", err)
 	}
 	var current struct {
-		DomainID int64
-		Version  int64
+		OwnerDomainID int64
+		Version       int64
 	}
-	if err := db.Raw(`SELECT domain_id, version FROM standard.elements WHERE id = 1`).Scan(&current).Error; err != nil {
+	if err := db.Raw(`SELECT owner_domain_id, version FROM standard.elements WHERE id = 1`).Scan(&current).Error; err != nil {
 		t.Fatalf("load current element: %v", err)
 	}
-	if current.DomainID != 20 || current.Version != 2 {
-		t.Fatalf("current element = domain %d version %d, want domain 20 version 2", current.DomainID, current.Version)
+	if current.OwnerDomainID != 20 || current.Version != 2 {
+		t.Fatalf("current element = domain %d version %d, want domain 20 version 2", current.OwnerDomainID, current.Version)
 	}
 }
 

@@ -314,13 +314,9 @@ func validateApplicationParameters(parameters []models.DataApplicationParameter,
 		targetBindings[targetKey] = struct{}{}
 		boundApplicationParameters[binding.ApplicationParameterKey] = struct{}{}
 		if len(applicationParameter.DefaultValue) > 0 {
-			parameterFilter, exists := componentParameterFilter(component, binding.ComponentParameterKey)
-			if !exists {
-				return ErrInvalidDataApplication
-			}
 			descriptor := descriptors[binding.ComponentID]
-			field, exists := consumerField(descriptor, parameterFilter.Field)
-			if !exists || validateRawFilterValue(applicationParameter.DefaultValue, field, parameterFilter.Operator, descriptor.InputContract.Filter.MaxInValues) != nil {
+			target, exists := componentParameterTargetFor(component, descriptor, binding.ComponentParameterKey)
+			if !exists || validateRawFilterValue(applicationParameter.DefaultValue, models.ConsumerQueryField{Type: target.Type}, target.Operator, descriptor.InputContract.Filter.MaxInValues) != nil {
 				return ErrInvalidDataApplication
 			}
 		}
@@ -347,6 +343,29 @@ func componentParameterFilter(component models.DataApplicationComponent, key str
 		}
 	}
 	return models.ComponentParameterFilter{}, false
+}
+
+type componentParameterTarget struct {
+	Type     datatype.FieldType
+	Operator string
+}
+
+func componentParameterTargetFor(component models.DataApplicationComponent, descriptor *models.ConsumerDescriptor, key string) (componentParameterTarget, bool) {
+	if filter, exists := componentParameterFilter(component, key); exists {
+		field, fieldExists := consumerField(descriptor, filter.Field)
+		return componentParameterTarget{Type: field.Type, Operator: filter.Operator}, fieldExists
+	}
+	for _, binding := range component.QueryTemplate.NamedParameterBindings {
+		if binding.ParameterKey != key {
+			continue
+		}
+		for _, parameter := range descriptor.InputContract.NamedParameters {
+			if parameter.Name == binding.Name {
+				return componentParameterTarget{Type: parameter.Type, Operator: "eq"}, true
+			}
+		}
+	}
+	return componentParameterTarget{}, false
 }
 
 func validateSelectionBindings(bindings []models.DataApplicationSelectionBinding, parameters []models.DataApplicationParameter, parameterBindings []models.DataApplicationParameterBinding, components map[string]models.DataApplicationComponent, descriptors map[string]*models.ConsumerDescriptor) error {
@@ -400,12 +419,11 @@ func validateSelectionBindings(bindings []models.DataApplicationSelectionBinding
 			}
 			for _, targetBinding := range bindingsForTarget {
 				targetComponent := components[targetBinding.ComponentID]
-				parameterFilter, exists := componentParameterFilter(targetComponent, targetBinding.ComponentParameterKey)
-				if !exists || !selectionScalarOperator(parameterFilter.Operator) {
+				target, exists := componentParameterTargetFor(targetComponent, descriptors[targetBinding.ComponentID], targetBinding.ComponentParameterKey)
+				if !exists || !selectionScalarOperator(target.Operator) {
 					return ErrInvalidDataApplication
 				}
-				targetField, exists := consumerField(descriptors[targetBinding.ComponentID], parameterFilter.Field)
-				if !exists || targetField.Type != sourceField.Type {
+				if target.Type != sourceField.Type {
 					return ErrInvalidDataApplication
 				}
 			}
@@ -519,8 +537,8 @@ func validateApplicationPresentationSections(page models.DataApplicationPage, pa
 			if !exists {
 				return ErrInvalidDataApplication
 			}
-			filter, exists := componentParameterFilter(component, binding.ComponentParameterKey)
-			if !exists || !rawApplicationParameterHasValue(parameter.DefaultValue, filter.Operator) {
+			operator, exists := componentParameterOperator(component, binding.ComponentParameterKey)
+			if !exists || !rawApplicationParameterHasValue(parameter.DefaultValue, operator) {
 				return ErrInvalidDataApplication
 			}
 		}
@@ -553,6 +571,18 @@ func rawApplicationParameterHasValue(raw json.RawMessage, operator string) bool 
 		}
 	}
 	return true
+}
+
+func componentParameterOperator(component models.DataApplicationComponent, key string) (string, bool) {
+	if filter, exists := componentParameterFilter(component, key); exists {
+		return filter.Operator, true
+	}
+	for _, binding := range component.QueryTemplate.NamedParameterBindings {
+		if binding.ParameterKey == key {
+			return "eq", true
+		}
+	}
+	return "", false
 }
 
 func consumerField(descriptor *models.ConsumerDescriptor, name string) (models.ConsumerQueryField, bool) {
@@ -659,6 +689,9 @@ func canonicalizeDataApplicationSnapshot(snapshot *models.DataApplicationSnapsho
 		}
 		if component.QueryTemplate.ParameterFilters == nil {
 			component.QueryTemplate.ParameterFilters = []models.ComponentParameterFilter{}
+		}
+		if component.QueryTemplate.NamedParameterBindings == nil {
+			component.QueryTemplate.NamedParameterBindings = []models.ComponentNamedParameterBinding{}
 		}
 		if component.QueryTemplate.OrderBy == nil {
 			component.QueryTemplate.OrderBy = []models.QueryOrder{}

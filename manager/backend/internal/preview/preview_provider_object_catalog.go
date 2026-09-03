@@ -57,14 +57,9 @@ func metaItemLiteAttributes(item *models.MetaItemLite) map[string]interface{} {
 }
 
 type objectCatalogPreviewProvider struct {
-	metadataRepo   *repository.MetadataRepository
-	cadPreviewRepo *repository.CADPreviewRepository
-	metaClient     *commonClient.MetaClient
-	content        *objectcontent.ObjectContentRegistry
-}
-
-func (p *objectCatalogPreviewProvider) SetCADPreviewRepository(repo *repository.CADPreviewRepository) {
-	p.cadPreviewRepo = repo
+	metadataRepo *repository.MetadataRepository
+	metaClient   *commonClient.MetaClient
+	content      *objectcontent.ObjectContentRegistry
 }
 
 func NewObjectCatalogPreviewProvider(metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, content *objectcontent.ObjectContentRegistry) PreviewProvider {
@@ -380,14 +375,7 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 			Size:        stat.Size,
 			Attributes:  preview.Object.Attributes,
 		}
-		if isCADObjectContentRequest(contentReq) {
-			url, err := resolveCADPreviewURL(ctx, p.cadPreviewRepo, req, contentReq)
-			if err != nil {
-				return nil, err
-			}
-			contentReq.PreviewURL = url
-			preview.Object.URL = url
-		} else if formatTypeFromMetaAttributes(combinedAttributes) == format.FormatPMTiles {
+		if formatTypeFromMetaAttributes(combinedAttributes) == format.FormatPMTiles {
 			contentReq.PreviewURL = buildPMTilesTileURL(req.Locator)
 			preview.Object.URL = contentReq.PreviewURL
 		} else if url := buildStorageStreamURL(resource.ID, preview.Object.StorageRef); url != "" {

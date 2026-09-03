@@ -82,64 +82,6 @@ func TestQuickViewCapabilityUsesDirectFlatGeobufForSmallSpatialTable(t *testing.
 	}
 }
 
-func TestCADPreviewSourceAndCapabilityRequireManagedArtifact(t *testing.T) {
-	source := CADPreviewSourceFromAttributes(map[string]interface{}{
-		"item":    map[string]interface{}{"data_type": "cad", "format": "dwg", "layout": "single"},
-		"storage": map[string]interface{}{"total_size": int64(4096)},
-	})
-	if source == nil || source.Format != "dwg" || source.SourceSizeBytes != 4096 {
-		t.Fatalf("CAD source = %#v", source)
-	}
-	db := newTileCacheTaskServiceTestDB(t)
-	capability, err := NewQuickViewService(db, nil).BuildCapabilityFromSource(context.Background(), QuickViewSource{
-		Identity: QuickViewIdentity{TenantID: 7, ItemFingerprint: "cad-fingerprint", Locator: "addp://engine/26/path/cad/site.dwg?type=file"},
-		EngineID: 26,
-		CAD:      source,
-	})
-	if err != nil {
-		t.Fatalf("BuildCapabilityFromSource() error = %v", err)
-	}
-	if capability.SourceKind != QuickViewSourceKindCAD || capability.UnavailableReason != "requires_cad_preview_generation" {
-		t.Fatalf("capability = %#v", capability)
-	}
-	if len(capability.AvailableActions) != 1 || capability.AvailableActions[0] != QuickViewActionGenerateCADPreview {
-		t.Fatalf("actions = %#v", capability.AvailableActions)
-	}
-	if capability.ActiveMode != models.PreviewModeBasicPreview {
-		t.Fatalf("active mode = %q", capability.ActiveMode)
-	}
-}
-
-func TestCADPreviewSourceAcceptsDXF(t *testing.T) {
-	source := CADPreviewSourceFromAttributes(map[string]interface{}{
-		"item":    map[string]interface{}{"data_type": "cad", "format": "dxf", "layout": "single"},
-		"storage": map[string]interface{}{"total_size": int64(2048)},
-	})
-	if source == nil || source.Format != "dxf" || source.SourceSizeBytes != 2048 {
-		t.Fatalf("CAD source = %#v", source)
-	}
-}
-
-func TestCADPreviewCapabilityUsesBasicRendererWhenArtifactReady(t *testing.T) {
-	db := newTileCacheTaskServiceTestDB(t)
-	capability, err := NewQuickViewService(db, nil).BuildCapabilityFromSource(context.Background(), QuickViewSource{
-		Identity: QuickViewIdentity{TenantID: 7, ItemFingerprint: "cad-ready", Locator: "addp://engine/26/path/cad/site.dwg?type=file"},
-		EngineID: 26,
-		CAD: &CADPreviewSource{
-			Format: "dwg", PreviewURL: "/api/v1/manager/cad-previews/8/manifest",
-		},
-	})
-	if err != nil {
-		t.Fatalf("BuildCapabilityFromSource() error = %v", err)
-	}
-	if capability.CanUseQuickView || capability.UnavailableReason != "source_format_direct_preview" {
-		t.Fatalf("capability = %#v", capability)
-	}
-	if len(capability.AvailableActions) != 0 {
-		t.Fatalf("actions = %#v, want none", capability.AvailableActions)
-	}
-}
-
 func TestQuickViewCapabilityUsesLocatorDirectFlatGeobufForSmallSpatialItem(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	svc := NewQuickViewService(db, nil)

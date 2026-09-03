@@ -13,7 +13,7 @@
     "agent-ui/src"
   ],
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test basic/tests/*.test.mjs chart/tests/*.test.mjs map/tests/*.test.mjs"
   },
   "keywords": [
     "addp",

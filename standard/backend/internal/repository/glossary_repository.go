@@ -104,7 +104,7 @@ func (r *GlossaryRepository) GetMappedElements(glossaryID, tenantID int64) ([]mo
 	var elements []models.PublishedElementReference
 	asOf := time.Now().UTC()
 	err := r.db.Raw(`
-		SELECT e.id, e.tenant_id, e.code, e.lifecycle_state, e.version,
+		SELECT e.id, e.tenant_id, e.scope_type, e.owner_domain_id, e.code, e.lifecycle_state, e.version,
 			er.id AS revision_id, er.revision_no, er.name, er.status
 		FROM standard.elements e
 		INNER JOIN standard.glossary_element_mappings gem ON gem.element_id = e.id

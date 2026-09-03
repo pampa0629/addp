@@ -19,7 +19,6 @@ type FilesystemCatalogRuntime struct {
 	log                *slog.Logger
 	repo               *metaRepo.ScanRepository
 	indexer            scanprocessor.AssetIndexer
-	cadInspector       metaenrich.CADInspector
 	containerInspector metaenrich.ContainerInspector
 }
 

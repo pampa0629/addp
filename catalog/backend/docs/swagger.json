@@ -2015,12 +2015,22 @@
                 "name": {
                     "type": "string"
                 },
+                "origin": {
+                    "type": "string"
+                },
+                "owner_domain_id": {
+                    "type": "string",
+                    "example": "0"
+                },
                 "revision_id": {
                     "type": "string",
                     "example": "0"
                 },
                 "revision_no": {
                     "type": "integer"
+                },
+                "scope_type": {
+                    "type": "string"
                 },
                 "status": {
                     "type": "string"
@@ -2632,10 +2642,6 @@
                 "definition": {
                     "type": "string"
                 },
-                "domain_id": {
-                    "type": "string",
-                    "example": "0"
-                },
                 "effective_from": {
                     "type": "string"
                 },
@@ -2668,6 +2674,10 @@
                 "nullable": {
                     "type": "boolean"
                 },
+                "owner_domain_id": {
+                    "type": "string",
+                    "example": "0"
+                },
                 "precision_num": {
                     "type": "integer"
                 },
@@ -2679,6 +2689,9 @@
                 },
                 "scale": {
                     "type": "integer"
+                },
+                "scope_type": {
+                    "type": "string"
                 },
                 "unit_id": {
                     "type": "string",

@@ -51,7 +51,6 @@ func SetupRouter(
 	model3DGLBHandler *Model3DGLBHandler,
 	gaussianSplatKSplatHandler *GaussianSplatKSplatHandler,
 	pointCloudCOPCHandler *PointCloudCOPCHandler,
-	cadPreviewHandler *CADPreviewHandler,
 	model3DTilesHandler *Model3DTilesHandler,
 	dataProfileHandler *DataProfileHandler,
 	protectionStore *projectionstore.Store,
@@ -285,24 +284,6 @@ func SetupRouter(
 				pointCloudCOPCsGroup.GET("/:id/content", permission(managerauthorization.PermissionManagerDerivedArtifactRead), pointCloudCOPCHandler.GetPointCloudCOPCContent)
 			}
 		}
-		if cadPreviewHandler != nil {
-			cadPreviewTasks := api.Group("/cad-preview-tasks")
-			{
-				cadPreviewTasks.GET("", permission(managerauthorization.PermissionManagerDerivedArtifactRead), cadPreviewHandler.ListTasks)
-				cadPreviewTasks.POST("", permission(managerauthorization.PermissionManagerDerivedArtifactCreate), cadPreviewHandler.CreateTask)
-				cadPreviewTasks.GET("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactRead), cadPreviewHandler.GetTask)
-				cadPreviewTasks.PUT("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactUpdate), cadPreviewHandler.UpdateTask)
-				cadPreviewTasks.DELETE("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactDelete), cadPreviewHandler.DeleteTask)
-			}
-			cadPreviews := api.Group("/cad-previews")
-			{
-				cadPreviews.GET("", permission(managerauthorization.PermissionManagerDerivedArtifactRead), cadPreviewHandler.ListResults)
-				cadPreviews.GET("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactRead), cadPreviewHandler.GetResult)
-				cadPreviews.DELETE("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactDelete), cadPreviewHandler.DeleteResult)
-				cadPreviews.GET("/:id/manifest", permission(managerauthorization.PermissionManagerDerivedArtifactRead), cadPreviewHandler.GetManifest)
-				cadPreviews.GET("/:id/tiles/:z/:x/:y", permission(managerauthorization.PermissionManagerDerivedArtifactRead), cadPreviewHandler.GetTile)
-			}
-		}
 		vectorMaterializedViewTasksGroup := api.Group("/vector_materialized_view_tasks")
 		{
 			vectorMaterializedViewTasksGroup.GET("", permission(managerauthorization.PermissionManagerDerivedArtifactRead), taskProviderHandler.ListVectorMaterializedViewTasks)
@@ -387,7 +368,7 @@ func SetupRouter(
 		quickViewHandler := NewQuickViewHandler(quickViewService, previewResolver, unifiedMVTService, redisClient)
 		if taskProviderHandler != nil {
 			quickViewHandler.SetTileCacheTaskService(taskProviderHandler.tileCacheTaskSvc)
-			quickViewHandler.SetArtifactTaskServices(taskProviderHandler.rasterCOGTaskSvc, taskProviderHandler.model3DGLBTaskSvc, taskProviderHandler.gaussianSplatKSplatTaskSvc, taskProviderHandler.pointCloudCOPCTaskSvc, taskProviderHandler.cadPreviewTaskSvc, taskProviderHandler.model3DTilesTaskSvc)
+			quickViewHandler.SetArtifactTaskServices(taskProviderHandler.rasterCOGTaskSvc, taskProviderHandler.model3DGLBTaskSvc, taskProviderHandler.gaussianSplatKSplatTaskSvc, taskProviderHandler.pointCloudCOPCTaskSvc, taskProviderHandler.model3DTilesTaskSvc)
 		}
 		api.GET("/quick-view/capability", permission(managerauthorization.PermissionManagerDataItemRead), quickViewHandler.GetQuickViewCapabilityByLocator)
 		api.POST("/quick-view/actions", permission(managerauthorization.PermissionManagerDerivedArtifactCreate), quickViewHandler.ExecuteQuickViewAction)
@@ -445,12 +426,6 @@ func isManagerDerivedResourceRequest(c *gin.Context) bool {
 		case "raster_cog", "model_3d_glb", "gaussian_splat_ksplat", "point_cloud_copc":
 			return true
 		}
-	}
-	if len(segments) == 3 && segments[0] == "cad-previews" && segments[2] == "manifest" {
-		return true
-	}
-	if len(segments) == 6 && segments[0] == "cad-previews" && segments[2] == "tiles" {
-		return true
 	}
 	return len(segments) == 5 && segments[0] == "quick-view" && segments[1] == "tiles"
 }

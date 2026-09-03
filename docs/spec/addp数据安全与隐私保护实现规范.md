@@ -71,7 +71,7 @@ Security 中所有 Finding、Assessment、Enrollment 和 Policy 必须使用同�
 
 面向用户创建 ProtectionEnrollment 的唯一命令输入是 Meta 资源树返回的标准 DataItem `locator`。Security 必须验证 locator 同时包含有效 `engine_id`、leaf 类型、路径和 `item_id`，根据 `engine_id + full_name` 计算 DataItem fingerprint，再在聚合内部形成 `{meta, data_item, fingerprint}` 专业资源引用；浏览器不得提交或手工填写 fingerprint。ResourceLocator 只是创建命令的已校验选择上下文，不进入专业资源引用、Finding、Assessment、Policy 或 Owner 投影。
 
-ProtectionEnrollment 首期固定纳管整个 DataItem，不接受 `component_key`。字段或文档组件只能由 Detector 在发现执行中产生，随后进入 Finding、Assessment 和保护规则；不得保留自由文本字段路径或 DataItem 级、字段级两条创建路线。
+ProtectionEnrollment 固定纳管整个 DataItem，不接受 `component_key`。字段或文档组件可以由 Detector 在发现执行中产生 Finding，也可以由治理人员从 Security 服务端实时读取并校验的 Meta 当前字段清单中选择后直接形成正式 Assessment；两者都不得接受自由文本字段路径，也不得形成 DataItem 级、字段级两条纳管路线。
 
 创建时同时冻结最小 protection target snapshot，只包含 `engine_id`、DataItem `item_type` 与 `full_name`。该快照只用于 Security 列表、详情和历史审计，以及校验 fingerprint 前像；不得作为资源存在性、授权、自动改绑或保护执行依据，也不得扩展为 Meta attributes、字段或样本副本。
 
@@ -88,14 +88,15 @@ owner 资源消失、源版本或结构指纹变化时：
 
 | 对象 | 作用 | 并发/修订约束 |
 | --- | --- | --- |
-| SensitiveDataType | 定义敏感数据类型、不含原值的证据 Schema 和保护阈值 | 可变聚合根，使用 `version` |
+| SensitiveDataType | 定义敏感数据类型、所属安全分类和自动发现后的初始安全等级 | 可变聚合根，使用 `version`；不保存识别阈值 |
 | SecurityClassification | 定义安全类别 | 可变聚合根，使用 `version` |
 | SecurityGrade | 定义等级、顺序和最低控制强度 | 可变聚合根，使用 `version` |
-| Detector | 定义结构特征、内容特征、适用数据类型和版本 | 可变聚合根，发布修订不可变 |
+| DetectorCapability | 由平台可信代码定义结构/内容识别算法、证据来源、适用资源类型、实现方法、隐私边界、已知局限和能力版本 | 平台级只读注册表；能力键在一个平台版本内不可变 |
+| Detector | 将一个已安装 DetectorCapability 绑定到一个 SensitiveDataType，并控制是否参与发现及自动采用置信度 | Tenant 可变聚合根，使用 `version`；不保存或执行租户提交的代码、SQL、脚本或任意正则 |
 | ProtectionBaseline | 定义 SensitiveDataType + SecurityGrade + action 的最低保护意图 | 可变聚合根，发布修订不可变 |
 | ProtectionEnrollment | 把一个专业资源显式纳入 Security 生命周期 | 可变聚合根，使用 `version` |
-| SensitiveFinding | 保存自动发现候选、置信度和非原值证据 | 不可变观测记录；复核结果单独保存 |
-| ResourceSecurityAssessment | 保存正式分类、等级、敏感类型、依据和 dependency snapshot | 可变聚合根，每次确认产生不可变修订 |
+| SensitiveFinding | 保存自动发现候选、置信度和非原值证据 | 不可变观测记录；复核结果单独保存；查询必须提供完整规则解释 |
+| ResourceSecurityAssessment | 保存正式分类、等级、敏感类型、依据和 dependency snapshot | 可变聚合根；Finding 复核、人工指定、调整或撤销均产生不可变修订 |
 | ProtectionPolicy | 针对 Assessment、消费 Owner 和动作显式收紧 ProtectionBaseline | 可变聚合根，每次创建、更新或撤销产生不可变修订 |
 | ProtectionProjection | 面向单一消费 Owner 的可执行投影 | 编译产物，不可编辑，可从 Security 事实重建 |
 
@@ -113,17 +114,35 @@ activating -> enrolling -> active -> releasing -> released
 | --- | --- | --- |
 | `activating` | 产生面向必要 Owner 的最小 `enrolling` 门禁变化，等待安装确认 | 未安装前仍是旧路径；Security UI/API 必须明确标记“保护未生效” |
 | `enrolling` | 必要 Owner 已确认门禁，可启动发现和策略编译 | 相关动作使用 `deny` 的第一阶段默认门禁，不返回明文 |
-| `active` | 有效 Policy 已编译并被必要 Owner 确认 | 使用本地有效投影 |
+| `active` | 有效 Policy 已编译，且当前投影被必要 Owner 持久安装并确认 | 具体请求使用本地有效投影执行；当前引擎或数据形态无法证明安全执行时保守拒绝 |
 | `releasing` | 发布明确 release 变化并等待确认 | 继续使用最后有效保护，不因找不到新策略自动解除 |
 | `released` | 保留历史和审计 | 只在已原子安装 release 后删除本地纳管索引 |
 
 创建 Enrollment 返回 HTTP `201` 和 `state=activating`，不得返回假的“已生效”。Security 必须在必要 Owner 对门禁版本完成确认后才进入 `enrolling`。第一阶段结构化 DataItem 必要 Owner 固定为 Manager、Transfer、Develop 和 Service；尚未能执行字段保护的 Owner 必须安装资源级 `deny` 门禁，不得被从激活屏障中忽略。
 
-Enrollment 查询响应必须分别返回每个 Owner 当前投影的 `projection_state` 与该版本的 `acknowledged` 状态。确认只表示 Owner 已安装当前 revision，不能在 UI 中被解释为字段级保护已经 active；产品界面必须区分“已遮盖”“保守拒绝”“等待安装”和“已解除”。
+已退出记录上的“重新纳入保护”只是创建新 ProtectionEnrollment 的便捷入口，不是状态回退。请求必须携带已退出 Enrollment 的正整数 `version`；Security 在同一事务锁定并验证来源记录仍为 `released`，使用其冻结的目标引用和最小目标快照创建新的 `activating` Enrollment 与四个 Owner 的初始门禁。旧 Enrollment、退出原因、退出依据和时间保持只读。若同一目标已有未退出 Enrollment，返回 `409`，不得产生第二条活动生命周期。
+
+Enrollment 查询响应必须分别返回每个 Owner 当前投影的 `projection_state`、该版本的 `acknowledged` 状态，以及从当前投影去重、稳定排序得到的 `rules[{action,effect}]`；旧的纯 `effects` 汇总字段删除，不保留双轨。确认只表示 Owner 已持久安装当前 revision，不能在 UI 中被解释为某个具体请求已经执行成功，也不能扩大为该 Owner 的所有引擎和数据形态均支持字段级处理。产品界面必须区分“字段规则已安装”“保守拒绝已安装”“等待安装”和“已解除”；遮盖、抑制等 effect 只能连同 action 表述为当前投影要求。具体请求无法满足动作、结构、血缘或执行器约束时仍须失效关闭。
 
 退出纳管只使用同一个 Release 子资源路径。Release 请求除 Enrollment `version` 和必填原因外，必须携带稳定依据 `basis=manual|no_supported_findings`；Enrollment 必须冻结 `release_basis`、`release_requested_by`、`release_requested_at` 和当次退出依据的 `release_source_snapshot_hash`。`no_supported_findings` 只允许在最近一次发现已成功、当前快照 Finding 数为 0，且同一 Enrollment 不存在 pending/running 发现 execution 时提交；服务端在同一退出事务内校验，不信任前端判断。
 
 ## 六、敏感发现执行
+
+Detector 执行采用唯一的“能力注册 + 租户绑定”路径：
+
+1. `DetectorCapability` 由 Security 代码注册，稳定键同时包含能力名和版本，例如 `addp.detector.phone_metadata/v2`；注册信息公开描述目标形态、证据来源、适用 DataItem/字段类型、实际识别方法、隐私边界和已知局限，但不可由租户修改。前端必须把这些信息作为只读能力说明展示，不能只显示一个无法判断含义的能力名称。
+2. `Detector` 必须精确引用一个已安装能力和当前 Tenant 下的一个 SensitiveDataType；同一 Tenant 对同一能力最多一个绑定。每个绑定必须配置 `confidence_threshold`，表示该能力的 Finding 可在人工复核前自动采用并触发保守保护的最低置信度；该阈值属于“能力如何识别”，不得放在 SensitiveDataType 或 ProtectionBaseline。删除或停用绑定后，该能力不再参与后续发现。
+3. Worker 只加载当前 Tenant 已启用的 Detector，再按 Capability 的适用范围执行。检测结果的 `sensitive_data_type_id` 来自 Detector 绑定，不得通过 `SensitiveDataType.code`、名称或其他约定猜测。
+4. Detector 创建、改绑、启停或删除后，Security 为当前 Tenant 所有 `enrolling|active` ProtectionEnrollment 创建有界重新发现 execution；已有 pending execution 时由该执行读取提交后的最新绑定，不重复入队。若任一受影响发现已经 running，配置写入返回 `409`，避免运行中的旧配置在新配置提交后覆盖当前结果；用户应等待该次发现结束后重试。变更不触发 Meta 全量扫描，也不给未纳管资源增加发现负担。
+5. 平台新增检测算法必须新增版本化 Capability 并补充证据无原值、适用范围和确定性测试；不得在数据库中保存可执行的租户表达式。
+
+检测能力按目标资源形态独立选择和运行，不组成隐式串行流水线。例如手机号首期两项能力的关系固定为：
+
+- `addp.detector.phone_metadata/v2` 只处理表和集合的字符串字段。有 Meta 结构化字段路径时取路径末级名称；只有物理字段名时，先按 ADDP 确定性内部扁平路径分隔符 `__` 取语义末级名称。末级名称去除下划线、连字符和空格并转为小写后，必须与平台内置手机号别名集合精确匹配。识别得到的 Finding `component_key` 始终保留 Meta 发布的真实物理字段键，不把扁平列改写成嵌套组件。该能力不读取或校验结构化字段中的业务值。
+- `addp.detector.phone_document/v1` 只处理文件的受控文本样本，查找独立的连续 11 位 ASCII 数字候选；它不参与表或集合字段发现，也不作为元数据检测后的“二次确认”。
+- 两项能力都只产生 Finding。遮盖、抑制或拒绝由 ProtectionBaseline、唯一策略编译器和数据出口 Owner 执行；检测器不直接改写或遮盖原始数据。
+
+结构化邮箱首期使用独立的 `addp.detector.email_metadata/v1` 能力。它与手机号字段元数据能力共享“结构化路径末级名称或 `__` 扁平路径语义末级名称”的确定性取值规则，但只在字符串字段的规范化末级名称与 `email`、`emailaddress`、`邮箱`、`电子邮箱` 精确匹配时产生邮箱 Finding。Finding 保留 Meta 发布的真实物理 `component_key`，不读取或验证邮箱业务值；邮箱格式或内容采样不是该能力的后续串行步骤。租户必须把该能力显式绑定到邮箱 SensitiveDataType，并为对应初始保护等级配置 ProtectionBaseline，识别结果才可能形成字段级保护。
 
 1. Security 只为已进入 `enrolling` 的显式 Enrollment 创建发现 execution。
 2. Worker 使用 `addp-security` Tenant Service Access Token 精确读取 owner 已授权技术事实，不订阅 Meta 全量 DataItem 变化。
@@ -131,29 +150,42 @@ Enrollment 查询响应必须分别返回每个 Owner 当前投影的 `projectio
 4. 受控采样必须使用统一 Engine Provider / content reader 和绑定本次 execution、Tenant、目标资源、`read` 效果及有效期的 Execution Authorization。
 5. `addp-security` Service Principal 不获得 Tenant 全量数据读取权；创建 Enrollment 的当前 User 无权读取目标时，只允许元数据检测，不得使用 Security 管理权绕过 owner 数据授权。
 6. 原始样本只存在于当前 Worker 有界处理内存，不写入 Finding、execution metadata、日志、错误或审计。
-7. Finding 证据只保存命中规则、置信度、样本数量、格式符合数、检测器版本和不可逆证据摘要。
+7. Finding 证据只保存命中规则、置信度、样本数量、格式符合数、检测器版本和不可逆证据摘要。结构化字段名识别还应保存不含业务值的语义末级名称、规范化名称和实际命中别名；Finding 查询必须同时返回 Capability 的适用范围、完整识别方法、隐私边界和已知局限，供用户逐项核实原因。
 8. Worker 使用通用 execution lease；租约过期且未达到 `max_attempts` 时原执行回到 `pending`，达到上限时以不含原值的稳定错误码失败，不允许异常退出后永久停留在 `running`。
 9. Enrollment 查询必须返回最近一次成功发现的摘要：`status=not_completed|completed`、该快照的 `finding_count`、`pending_review_count` 和 `reviewed_count`。列表查询必须通过 Finding 与不可变初审记录批量聚合，不得为每个 Enrollment 新增 Finding 或 review 查询。
-10. `completed + finding_count=0` 只表示当前已实现检测能力对该次快照零命中，不是“资源已被证明不含敏感数据”的 Assessment。Enrollment 继续保持 `enrolling` 和资源级 `deny`，不得自动编译 `allow`。
+10. `completed + finding_count=0` 只表示当前已启用检测能力对该次快照零命中，不是“资源已被证明不含敏感数据”的 Assessment。Enrollment 继续保持 `enrolling` 和资源级 `deny`，不得自动编译 `allow`。
 11. 治理人员可以基于零命中摘要显式确认“当前无需保护”，但该确认的唯一效果是使用 `basis=no_supported_findings` 创建 Release 并进入 `releasing`；不创建空 Assessment、`allow` Policy 或第二条放行路径。
+12. 识别质量摘要必须直接聚合现有事实，不新增统计表或异步双写。`current_finding_count` 与 `awaiting_review_count` 只取状态非 `released` Enrollment 的 `latest_discovery_execution_id + latest_source_snapshot_hash`；人工复核质量样本按 `{enrollment_id, component_key, detector_version}` 只取最新 review，分别统计 `confirm|adjust|reject`。确认属于敏感数据的比率为 `(confirm + adjust) / reviewed_sample_count`，分母为零时返回 `null`，不得显示伪造的 `0%`。
+13. 来源为 `manual` 的 Assessment 当前修订分别统计 `sensitive` 与 `not_sensitive`，只表达当前人工补充及已撤销数量。该数据可以按 SensitiveDataType 过滤，但不得分摊到 Detector、宣称为已证明漏检或据此自动修改检测配置。
 
 Meta 专用技术事实读取契约固定为 `GET /api/v1/meta/runtime/data-items/{fingerprint}/security-facts`，由 Meta owner 使用不可租户定制、不可委派的精确 Permission `meta.security_facts.read` 和固定 `addp-security` Client Guard 保护。Tenant 只能来自 Tenant Service Access Token，端点不接受客户端提交 Tenant ID，也不返回完整 attributes、连接信息或原始样本值。响应 Schema 固定为 `addp.data_item_security_facts/v1`，只包含 DataItem fingerprint、item type、字段路径/名称/注释/通用类型、Meta 观测时间以及由 `common/dataprotection.TableSchemaSnapshotHash` 计算的结构快照 Hash。Security 必须按 Enrollment 的精确 fingerprint 单项读取，不得把该端点扩展为全量列表或变化订阅。
 
 ## 七、Finding、Assessment 与唯一策略编译器
 
 - Finding 只是候选证据，不能自动成为正式 Assessment。
-- SensitiveDataType 和 ProtectionBaseline 定义保护阈值。Finding 达到阈值时，编译器允许在人工确认前生成保守临时决策。
+- Detector 绑定定义自动采用置信度。Finding 达到产生该 Finding 的当前有效绑定阈值，且 SensitiveDataType 默认等级存在有效 ProtectionBaseline 时，编译器允许在人工确认前生成保守临时决策。
 - Finding 不达阈值或结构证据不足时，Enrollment 保持 `enrolling`，Owner 继续执行资源级 `deny`。
 - 安全治理人员可以确认、调整或驳回 Finding。确认或调整形成 Assessment 修订；误报驳回保留 Finding 和复核记录，不删除历史证据。
-- 治理界面只把 Enrollment 最近一次成功发现的 `latest_source_snapshot_hash` 作为当前可操作候选集；历史快照 Finding 继续保留用于审计，但不得与当前候选混合展示或复核。`GET /findings` 必须支持按 `enrollment_id + source_snapshot_hash` 精确过滤，并在同一分页响应中返回可选的不可变 `review`，避免前端逐条查询。
+- 治理界面只把 Enrollment 最近一次成功发现的 `latest_discovery_execution_id` 作为当前可操作候选集，并同时保留该次事实来源的 `latest_source_snapshot_hash`；相同 Meta 快照在检测器配置变化后产生新的发现执行，旧 Finding 继续保留用于审计但不得混入当前待办或投影编译。`GET /findings` 必须支持按 `enrollment_id + source_snapshot_hash + discovery_execution_id` 精确过滤，并在同一分页响应中返回可选的不可变 `review`，避免前端逐条查询。
+- 集中“待复核候选”不新增 Queue 或 Task 持久化实体，只使用 `GET /findings?snapshot_scope=current&review_state=pending` 读取未退出 Enrollment 最新成功发现中尚无初审记录的 Finding；该查询可继续按 `sensitive_data_type_id` 和精确 `detector_version` 筛选，并在每条响应中附带不含资源指纹和原始值的 Enrollment 目标快照，供治理界面定位资源。`snapshot_scope` 仅允许 `all|current`，`review_state` 仅允许 `all|pending|reviewed`，默认均为 `all` 且省略；复核写入后候选依事实自然退出视图，前端不得另存队列状态。
 - 一个 Finding 只允许形成一次不可变初审记录；重复初审返回 `409`。初审后的治理调整必须在既有 Assessment 上新增 revision，不得改写 Finding、review 或历史 Assessment revision。
 - `confirm` 继承 Finding 的 SensitiveDataType 及其默认等级；`adjust` 必须显式给出目标 SensitiveDataType 和 SecurityGrade；二者都在同一 `{tenant, enrollment, component_key}` Assessment 聚合上追加 revision。`reject` 只形成 review，不创建 Assessment。
-- Assessment 聚合只保存当前 revision 指针、资源并发 `version` 和审计字段；每个不可变 revision 冻结来源 Finding/review、SensitiveDataType、SecurityClassification、SecurityGrade、来源结构快照 Hash 和已确认组件结构。该依赖快照不得包含原始样本值。
+- 自动发现漏检时，治理人员可以在既有 Enrollment 上人工指定敏感组件。组件候选必须由 Security Backend 使用 `addp-security` Tenant Service Access Token 精确读取 Meta security facts，并只返回当前尚未形成任何正式 Assessment 的组件；已经确认、调整或撤销过的组件必须在既有 Assessment 上继续治理，不得重新列入“遗漏字段”候选。创建命令只提交所选 `component_key`、Enrollment `version`、SensitiveDataType、SecurityGrade 和原因；服务端必须重新读取并校验当前组件、结构指纹和 Tenant，不信任浏览器提交组件结构。
+- Assessment 聚合只保存当前 revision 指针、资源并发 `version` 和审计字段；每个不可变 revision 通过 `source_kind=finding|manual` 区分来源，通过 `conclusion=sensitive|not_sensitive` 表达当前正式结论，并冻结可选 Finding/review、SensitiveDataType、SecurityClassification、SecurityGrade、来源结构快照 Hash 和已确认组件结构。该依赖快照不得包含原始样本值。
+- 治理人员发现既有正式 Assessment 错误时，必须携带 Assessment `version` 和原因追加 `conclusion=not_sensitive` 修订；不得删除或改写 Assessment、Finding、review 或历史 revision。后续重新认定为敏感时仍在同一 Assessment 聚合追加 `sensitive` 修订。
 - 编译器合并有效 Assessment、ProtectionBaseline 和 ProtectionPolicy，对同一资源、组件、消费 Owner 和动作始终选择更严格结果。
 - 候选基线与正式 Assessment 都必须进入同一编译器和同一投影变化流；不允许 Owner 实现“自动发现脱敏”与“正式策略脱敏”两条路线。
-- 当 Finding 被驳回且同一组件不存在有效 Assessment 时，唯一编译器必须发布新的 `enrolling` 资源级拒绝投影；不得继续沿用旧 `active` 候选基线，也不得通过删除投影使 Owner 回到明文路径。
+- 当 Finding 被驳回或正式 Assessment 被撤销，且同一组件不存在其他有效正式结论时，唯一编译器必须移除该字段规则；若整个资源不再有字段规则，则发布新的 `enrolling` 资源级拒绝投影。不得通过删除投影使 Owner 回到明文路径。
 
-同一个 Enrollment 的不同 Owner Projection 允许按各自已实现的执行能力分阶段从 `enrolling` 升级为 `active`：当前 Manager、Develop 与 Service 已发布各自字段级 `active` Projection，Transfer 继续执行资源级 `enrolling` deny。Manager 可以返回受保护预览，Develop 可以返回受保护查询结果，Service 可以通过已发布 QueryService 的直接查询内核返回受保护结果，但 Enrollment 整体状态仍为 `enrolling`；只有全部必要 Owner 都已安装并确认当前 `active` Projection，Enrollment 才进入 `active`。不得用“部分 Owner 已 active”伪装整体保护闭环已完成。
+Finding 查询响应必须同时提供只读的 `explanation`，把已经存在的控制面事实组织成一条可审计解释链，但不得创建第二份业务事实或由前端重新推导保护决策：
+
+1. `capability` 说明产生该 Finding 的平台检测能力，`automatic_adoption_threshold` 取当前 Tenant 的 Detector 绑定；Finding 的置信度仍以不可变观测值为准。
+2. `decision_state` 只允许 `automatic|formal|awaiting_review|detector_inactive|baseline_missing|rejected|revoked|superseded`。`automatic` 表示当前 Finding 达到绑定阈值并命中有效 ProtectionBaseline；`formal` 表示当前组件由有效 `sensitive` Assessment revision 支撑；`revoked` 表示该组件当前正式结论已撤销为 `not_sensitive`；`superseded` 表示该历史 Finding 的确认结果已不再是当前组件的有效 Assessment revision；其余状态必须明确说明为什么没有形成字段级规则。`governance_source=detector_default|assessment` 在基线缺失时仍保留候选结论的来源。
+3. `effective_*_id`、`assessment_id` 和 `baseline` 必须由 Security 后端按唯一编译器使用的同一候选选择规则组装；前端不得根据名称、默认值或列表数据自行猜测。
+4. `outlets` 必须读取当前已发布 Projection，并按组件精确列出每个 Owner 的 `projection_state`、安装确认状态以及投影中的 action/effect/algorithm。它描述当前控制面真实产物，而不是根据 ProtectionBaseline 预测的结果，也不是具体数据请求的执行记录；资源级 `enrolling` 拒绝没有字段规则时返回空 `rules`。
+5. `explanation` 是查询期只读组合结果，不持久化、不进入 Projection checksum，也不包含原始敏感值、样本、连接信息或完整投影载荷。列表查询必须批量装配，禁止逐 Finding 发起数据库查询。
+
+同一个 Enrollment 的不同 Owner Projection 允许按各自已实现的执行能力分阶段从 `enrolling` 升级为 `active`。当前 Manager 的 `preview|profile`、Develop 的受支持结构化 `query`、Service 已发布 QueryService 的 `service_execute`，以及 Transfer bounded snapshot 中统一 Native TablePipeline 结构化导出、PostgreSQL 可证明血缘的查询导出和 MongoDB collection 到 `mongodb_extended_jsonl` 的 `export`，均可安装并确认字段级 `active` Projection；未实现执行器的查询、服务或传输形态仍保持资源级 `enrolling` deny。只有全部必要 Owner 都已安装并确认当前 `active` Projection，Enrollment 才进入 `active`。不得用“部分 Owner 已 active”伪装整体保护闭环已完成，也不得把某个 Owner 的已支持路径扩大解释为该模块所有输出路径都已完成适配。
 
 第一阶段保护效果严格度固定为：
 
@@ -192,10 +224,11 @@ tenant + assessment_id + consumer_owner + action
 | ProtectionBaseline 创建 | 当前 SensitiveDataType + SecurityGrade 已存在 Finding 或正式 Assessment 的 Enrollment | 新基线与对应新投影在同一事务生效 |
 | ProtectionBaseline 完整更新、启停或改绑类型/等级 | 更新前绑定与更新后绑定范围的并集 | 基线新版本与全部受影响投影在同一事务生效 |
 | ProtectionBaseline 删除 | 删除前绑定范围 | 必须携带资源 `version`；删除与受影响投影重编译在同一事务完成，无其他有效规则时回到 `enrolling` 资源级 deny |
-| SensitiveDataType 默认等级或保护阈值更新 | 当前类型 Finding 所属 Enrollment | 只重新计算候选 Finding；正式 Assessment revision 已冻结类型、分类和等级，不随定义静默改写 |
+| SensitiveDataType 自动发现初始等级更新 | 当前类型 Finding 所属 Enrollment | 只重新计算候选 Finding；正式 Assessment revision 已冻结类型、分类和等级，不随定义静默改写 |
+| Detector 自动采用置信度更新 | 当前 Tenant 的 `enrolling|active` Enrollment | 与 Detector 改绑、启停使用同一有界重新发现路径；新 execution 读取提交后的唯一当前绑定，不改写历史 Finding |
 | SecurityClassification、SecurityGrade 名称、描述、层级、排序或风险顺序更新 | 无执行影响 | 不发布空转投影；治理展示读取定义新版本，历史 Assessment revision 仍保留原引用 |
 
-影响定位必须使用 Security 自有 Finding、Assessment current revision 和 Enrollment，不访问 Catalog，不扫描 Meta，不读取样本。每个受影响 Enrollment 在一次定义写事务中至多编译一次，并使用该 Enrollment 最近一次成功发现保存的 `latest_source_snapshot_hash`；缺少成功发现快照时不伪造 active 投影。
+影响定位必须使用 Security 自有 Finding、Assessment current revision 和 Enrollment，不访问 Catalog，不扫描 Meta，不读取样本。每个受影响 Enrollment 在一次定义写事务中至多编译一次，并使用该 Enrollment 最近一次成功发现保存的 `latest_discovery_execution_id` 候选集及其 `latest_source_snapshot_hash`；缺少成功发现执行时不伪造 active 投影。
 
 被 SensitiveFinding、SensitiveFindingReview 或 ResourceSecurityAssessmentRevision 引用的 SensitiveDataType、SecurityGrade、SecurityClassification 不允许删除。定义删除不得级联删除 Finding、review、Assessment、Policy、Projection 或历史修订。
 
@@ -420,11 +453,11 @@ Service 必须在同一个 PreparedQuery 上依次完成 `ReadSet()`、命中判
 
 `export` 是 Transfer Owner 对“受保护数据离开源 DataItem”的稳定动作，不是 Transfer `task_type`。Transfer 任务类型仍唯一使用 `sync`，不得因数据安全恢复 `export` 任务类型或第二条执行路线。
 
-字段级 `export` 首先覆盖两条 `runtime.boundary=bounded + load.mode=snapshot` 主路径：PostgreSQL 结构化 TablePipeline，以及 MongoDB collection 到 `mongodb_extended_jsonl` 的原始记录格式导出。PostgreSQL 原生表源按服务端已解析的精确 ResourceLocator 与当前表结构校验投影；只读查询源必须从同一 PreparedQuery 取得 `ReadSet()` 和 `OutputLineage()`。MongoDB 原始记录导出按精确 collection Locator 与 Meta 当前字段结构校验投影，在 Provider 保留 BSON 标量类型的文档对象上执行规则，随后才生成 Canonical Extended JSON；Transfer 不解析已经编码的 EJSON，也不把预览友好值作为导出输入。保护结果必须位于用户字段映射、类型转换、空间处理、目标 writer 和文件格式序列化之前。`mask` 只修改当次批次副本；`suppress` 必须同时移除值和对外字段结构；执行记录、进度、错误和血缘不得记录原值。Security 的 `export` 投影保持引擎无关，是否存在可执行的字段级导出路径由 Transfer Owner 判定。
+字段级 `export` 首先覆盖 `runtime.boundary=bounded + load.mode=snapshot` 中三类主路径：统一 Native TablePipeline 结构化导出、PostgreSQL 可证明血缘的查询导出，以及 MongoDB collection 到 `mongodb_extended_jsonl` 的原始记录格式导出。原生表源不按 `engine_type` 建立保护分支；只要解析后的源端形态为 Native TablePipeline，就必须按服务端已解析的精确 ResourceLocator 与当前表结构校验投影，并在统一 `BatchData` 上执行保护。只读查询源必须从同一 PreparedQuery 取得 `ReadSet()` 和 `OutputLineage()`；当前仅 PostgreSQL 具备该可证明查询依赖能力。MongoDB 原始记录导出按精确 collection Locator 与 Meta 当前字段结构校验投影，在 Provider 保留 BSON 标量类型的文档对象上执行规则，随后才生成 Canonical Extended JSON；Transfer 不解析已经编码的 EJSON，也不把预览友好值作为导出输入。保护结果必须位于用户字段映射、类型转换、空间处理、目标 writer 和文件格式序列化之前。`mask` 只修改当次批次副本；`suppress` 必须同时移除值和对外字段结构；执行记录、进度、错误和血缘不得记录原值。Security 的 `export` 投影保持引擎无关，是否存在可执行的字段级导出路径由 Transfer Owner 判定。
 
 未纳管租户或未命中纳管目标的 bounded 任务继续原路径；不解析字段，不调用 Security 或 Meta，不写保护审计。命中纳管目标后，Projection 非 active、动作缺失、schema 漂移、查询血缘不完整或 derived 敏感输出都拒绝整个执行。
 
-除上述 MongoDB collection 原始记录格式导出外，其他非 PostgreSQL 源、raw copy、watermark incremental、Kafka bounded replay、continuous/CDC 与从 encoded 内容作为源的路径，在各自建立并验证可证明的字段身份、结构新鲜度和执行屏障前继续使用资源级失效关闭，不得借用已有执行器开放。MongoDB 投影非 active、缺少 `export` 动作、Meta 结构缺失或漂移、组件路径不匹配、值保护失败时拒绝整个导出，不得降级为未保护 EJSON。
+非 PostgreSQL 查询源、raw copy、watermark incremental、Kafka bounded replay、continuous/CDC 与从 encoded 内容作为源的路径，在各自建立并验证可证明的字段身份、结构新鲜度和执行屏障前继续使用资源级失效关闭，不得借用已有执行器开放。任一已支持路径的投影非 active、缺少 `export` 动作、Meta 结构缺失或漂移、组件路径不匹配或值保护失败时，必须拒绝整个导出，不得降级为未保护数据。
 
 ## 十一、Security API 契约
 
@@ -434,24 +467,31 @@ Service 必须在同一个 PreparedQuery 上依次完成 `ReadSet()`、命中判
 | --- | --- | --- |
 | `GET/POST` | `/sensitive-data-types` | 列表/创建敏感数据类型 |
 | `GET/PUT/DELETE` | `/sensitive-data-types/{id}` | 详情/完整更新/删除 |
+| `GET` | `/definition-profiles` | 查询平台随版本提供的只读推荐定义方案 |
+| `POST` | `/definition-profile-applications` | 显式、幂等地按稳定编码补齐当前 Tenant 缺失的推荐分类和等级；不覆盖已有同编码定义 |
 | `GET/POST` | `/classifications` | 安全分类管理 |
 | `GET/PUT/DELETE` | `/classifications/{id}` | 分类详情/完整更新/删除 |
 | `GET/POST` | `/grades` | 安全等级管理 |
 | `GET/PUT/DELETE` | `/grades/{id}` | 等级详情/完整更新/删除 |
 | `GET/POST` | `/detectors` | 检测器管理 |
 | `GET/PUT/DELETE` | `/detectors/{id}` | 检测器详情/完整更新/删除 |
+| `GET` | `/detector-capabilities` | 查询当前平台版本已安装的只读检测能力注册表 |
 | `GET/POST` | `/protection-baselines` | 保护基线管理 |
 | `GET/PUT/DELETE` | `/protection-baselines/{id}` | 基线详情/完整更新/删除；删除 body 必须携带 `version`，写入与受影响投影重编译保持原子 |
-| `GET/POST` | `/protection-enrollments` | 纳管列表/创建；GET 使用 `scope=current|released|all` 服务端分页筛选，默认 `current` |
+| `GET/POST` | `/protection-enrollments` | 纳管列表/创建；GET 使用 `scope=current|released|all` 服务端分页筛选，默认 `current`；`released` 按退出完成时间倒序 |
 | `GET` | `/protection-enrollments/{id}` | 纳管详情与激活进度 |
+| `POST` | `/protection-enrollments/{id}/re-enrollments` | 携带已退出记录的 `version` 创建新的 ProtectionEnrollment；旧记录保持只读，目标已有未退出记录时冲突 |
 | `POST` | `/protection-enrollments/{id}/releases` | 显式退出纳管，body 必须携带 `version` 和原因 |
 | `POST` | `/protection-enrollments/{id}/discovery-executions` | 携带 `version` 显式创建一次有界重新发现执行；同一纳管同时至多一个 pending/running 执行 |
-| `GET` | `/findings` | 敏感发现分页查询；支持按 Enrollment 与来源快照精确过滤，并返回可选初审记录 |
-| `GET` | `/findings/{id}` | 不含原值的证据详情与可选初审记录 |
+| `GET` | `/findings` | 敏感发现分页查询；支持按 Enrollment、来源快照、当前快照、复核状态、敏感类型和识别能力版本筛选，并返回目标资源快照、可选初审记录及后端组装的只读保护解释链 |
+| `GET` | `/findings/{id}` | 不含原值的证据详情、可选初审记录及后端组装的只读保护解释链 |
 | `POST` | `/findings/{id}/reviews` | 确认、调整或驳回 Finding |
-| `GET` | `/assessments` | 正式资源安全评估列表 |
+| `GET` | `/discovery-quality` | 即时聚合识别质量摘要；可按 `sensitive_data_type_id` 过滤，使用 `security.finding.read`，不持久化第二份统计事实 |
+| `GET` | `/protection-enrollments/{id}/components` | 实时读取并只返回尚未形成正式 Assessment、可人工指定的 Meta 当前组件，不返回业务值 |
+| `GET/POST` | `/assessments` | 正式资源安全评估列表/从 Meta 当前组件人工创建正式评估；列表支持按 Enrollment 精确过滤 |
 | `GET` | `/assessments/{id}` | 评估详情和修订历史 |
 | `POST` | `/assessments/{id}/revisions` | 在同一评估聚合上形成新的正式修订 |
+| `DELETE` | `/assessments/{id}` | 携带 `version` 和原因，追加 `not_sensitive` 修订以撤销当前正式结论，不删除历史 |
 | `GET/POST` | `/protection-policies` | 保护策略列表/创建；创建产生首个不可变修订 |
 | `GET/PUT/DELETE` | `/protection-policies/{id}` | 策略详情/完整更新/撤销；更新和撤销均携带 `version` 并追加不可变修订 |
 | `GET` | `/protection-projections` | 面向治理人员的投影状态和 Owner 确认进度，不返回原值 |
@@ -473,6 +513,7 @@ security.protection_baseline.*
 security.enrollment.*
 security.finding.read
 security.finding.update
+security.assessment.create
 security.assessment.read
 security.assessment.update
 security.policy.read
@@ -586,7 +627,7 @@ Manager 必须按已实现的动作执行器逐项开放已纳管 DataItem，不
 12. 已删除的 Standard 安全分类分级和 `common/security` import 在代码、Swagger、i18n、测试和文档中无残留。
 13. ProtectionPolicy 不能降低基线；创建、更新和撤销均保留不可变修订，撤销后投影回落到基线而不是明文。
 14. 显式重新发现拒绝同一纳管的并发 pending/running 执行；结构快照变化后发布携带最新 Hash 的新投影，组件结构未变化的正式 Assessment 可以续用，组件结构冲突时保守保护。
-15. ProtectionBaseline 变化按旧、新绑定精准重编译且与定义写入原子提交；SensitiveDataType 默认等级或阈值变化只影响未复核候选，正式 Assessment 不漂移；无关 Enrollment 不产生投影新版本，编译失败时定义写入回滚。
+15. ProtectionBaseline 变化按旧、新绑定精准重编译且与定义写入原子提交；SensitiveDataType 自动发现初始等级变化只影响未复核候选；Detector 自动采用置信度变化走有界重新发现；正式 Assessment 不漂移；无关 Enrollment 不产生投影新版本，编译失败时定义写入回滚。
 
 代码实施后的标准本地入口至少为：
 

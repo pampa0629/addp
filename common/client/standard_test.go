@@ -257,7 +257,7 @@ func TestStandardClientResolvesElementRevisionsAtOnePointInTime(t *testing.T) {
 			t.Fatalf("request = %#v", request)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"results":[{"element_id":"12","found":true,"snapshot":{"element_id":"12","element_revision_id":"1201","revision_no":3,"code":"order_id","name":"Order ID","definition":"Order identifier","data_type":"bigint","nullable":false,"value_domain_kind":"unrestricted","example_values":[],"effective_from":"2026-01-01T00:00:00Z"}},{"element_id":"7","found":true,"snapshot":{"element_id":"7","element_revision_id":"701","revision_no":2,"code":"customer_id","name":"Customer ID","definition":"Customer identifier","data_type":"bigint","nullable":false,"value_domain_kind":"unrestricted","example_values":[],"effective_from":"2026-01-01T00:00:00Z"}}]}`))
+		_, _ = w.Write([]byte(`{"results":[{"element_id":"12","found":true,"snapshot":{"element_id":"12","element_revision_id":"1201","revision_no":3,"scope_type":"domain","owner_domain_id":"9","code":"order_id","name":"Order ID","definition":"Order identifier","data_type":"bigint","nullable":false,"value_domain_kind":"unrestricted","example_values":[],"effective_from":"2026-01-01T00:00:00Z"}},{"element_id":"7","found":true,"snapshot":{"element_id":"7","element_revision_id":"701","revision_no":2,"scope_type":"tenant_common","code":"customer_id","name":"Customer ID","definition":"Customer identifier","data_type":"bigint","nullable":false,"value_domain_kind":"unrestricted","example_values":[],"effective_from":"2026-01-01T00:00:00Z"}}]}`))
 	}))
 	defer server.Close()
 
@@ -270,6 +270,16 @@ func TestStandardClientResolvesElementRevisionsAtOnePointInTime(t *testing.T) {
 	}
 	if len(bindings) != 2 || bindings[12].RevisionID != 1201 || bindings[7].RevisionNo != 2 {
 		t.Fatalf("bindings = %#v", bindings)
+	}
+}
+
+func TestStandardOwnershipValidation(t *testing.T) {
+	ownerID := int64(9)
+	if !validStandardOwnership("tenant_common", nil) || !validStandardOwnership("domain", &ownerID) || validStandardOwnership("domain", nil) || validStandardOwnership("platform", &ownerID) {
+		t.Fatal("standard ownership validation does not enforce scope semantics")
+	}
+	if !validStandardCodeSetOrigin("platform", "platform") || !validStandardCodeSetOrigin("tenant", "domain") || validStandardCodeSetOrigin("tenant", "platform") || validStandardCodeSetOrigin("", "tenant_common") {
+		t.Fatal("code set origin validation does not enforce scope semantics")
 	}
 }
 

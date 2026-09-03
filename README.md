@@ -257,7 +257,7 @@ ADDP 不创建默认全权管理员、默认租户或共享弱密码账号。首
 
 ### 📝 许可证
 
-本项目采用 MIT 许可证。
+除特别标明的目录外，本项目采用 MIT 许可证。`manager/frontend` 因链接 GPL-3.0 的 LibreDWG 浏览器转换器，其发行物采用 GPL-3.0-only；其他模块仍采用 MIT 许可证。详见仓库根目录和 `manager/frontend` 下的许可证说明。
 
 ### 🙏 致谢
 
@@ -366,7 +366,7 @@ ADDP does not create default administrator or tenant accounts. The initial syste
 
 ### 📝 License
 
-This project is licensed under the MIT License.
+Except where otherwise noted, this project is licensed under the MIT License. The distributed `manager/frontend` application is licensed under GPL-3.0-only because it links the GPL-3.0 LibreDWG browser converter; other modules remain MIT-licensed. See the repository root and `manager/frontend` license notices.
 
 ---
 

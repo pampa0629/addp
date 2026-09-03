@@ -53,7 +53,8 @@ erDiagram
 - `CatalogEntry` 是企业资源目录稳定身份。它独立于当前物理路径、工作区和资产发布状态。
 - `SourceBinding` 是 CatalogEntry 与专业资源之间的权威绑定及历史。关联只保存在 Catalog。
 - `CatalogComponent` 是字段或内部组件级从属对象，默认不成为顶级企业目录条目。
-- 业务语义关联、责任关系、治理状态和推荐继任关系都以 CatalogEntry 为锚点。
+- `StandardMapping` 是 CatalogComponent 到确定数据元修订的可审核关系事实，记录来源、置信度、证据、审核状态和并发版本；AI 只能生成候选，审核通过后才可被 Quality 消费。
+- 条目级业务语义关联、责任关系、治理状态和推荐继任关系以 CatalogEntry 为锚点；字段级落标关系以 CatalogComponent 为目标，不提升为顶级 CatalogEntry。
 
 Catalog 不提供任意 `CatalogRelation` 或可配置关系类型。当前唯一由 Catalog 拥有的跨条目关系是弃用条目指向一个推荐继任项：它表达“两个不同企业身份之间的治理迁移建议”，不表达数据血缘、专业依赖、同义词或同一身份合并。
 
@@ -68,7 +69,7 @@ flowchart LR
     Standard["Standard\nDomain、Glossary、Element 等定义"]
     Security["Security\n安全分类分级、Finding、Assessment、Policy"]
     Workbench["Workbench\n已发布 Data Application"]
-    Catalog["Catalog\n企业目录身份、来源绑定、语义关联、责任、搜索"]
+    Catalog["Catalog\n企业目录身份、来源绑定、语义关联、StandardMapping、责任、搜索"]
     Manager["Manager\n技术资源树、预览、剖析、内容检索"]
     Asset["Asset\n资产组合、发布、授权、运营"]
     Portal["Portal\n已发布资产消费"]
@@ -94,7 +95,7 @@ flowchart LR
 | Standard | 业务域、术语、数据元、指标和码值等业务语义定义 |
 | Security | 敏感数据类型、安全分类分级、敏感发现、资源安全评估、保护策略和 Owner-specific 保护投影 |
 | Workbench | Data Application 草稿、Component、布局、参数绑定、不可变 Revision、发布状态和运行入口 |
-| Catalog | CatalogEntry、来源绑定、具体资源的语义关联、责任、治理状态和目录可见性 |
+| Catalog | CatalogEntry、来源绑定、具体资源的语义关联、字段/组件到确定标准修订的 StandardMapping、责任、治理状态和目录可见性 |
 | Manager | 预览、剖析、快显、内容读取和内容检索 |
 | Asset | 资产身份与版本、CatalogEntry 组合、AssetCategory 多级资产目录、发布、申请、授权、评价和运营 |
 | System / IAM | Tenant、Department、Project Group、User、成员关系和 AuthContext |
@@ -136,7 +137,7 @@ stateDiagram-v2
 
 治理人员把 `curated` 或 `certified` 条目推进为 `deprecated` 时，可以同时指定一个推荐继任 CatalogEntry。推荐继任项必须是同 Tenant、来源有效且当前为 `curated` 或 `certified` 的 active 条目。旧条目仍可独立读取并保留历史，不自动跳转；这与 `merged` 表达的“同一企业身份归并”严格区分。
 
-认证针对 CatalogEntry 当前聚合版本，而不是一份可脱离条目存在的认证副本。`certified` 状态下业务名称、说明、语义关联、责任、组件数据元关联和可见性冻结；需要修改时必须先由具有认证权限的治理人员填写原因并撤销认证，使同一 CatalogEntry 回到 `curated`，再完成编目编辑和重新认证。该闭环只推进同一个聚合版本序列并写入独立领域审计，不新增认证草稿、认证表或第二个 CatalogEntry。弃用也只改变治理状态、可选推荐继任项和审计原因，不允许在同一操作中夹带业务编目修改。
+认证针对 CatalogEntry 当前聚合版本，而不是一份可脱离条目存在的认证副本。`certified` 状态下业务名称、说明、条目级语义关联、责任和可见性冻结；字段 StandardMapping 作为独立版本化关系事实，也必须遵守已认证条目的写入门禁。需要修改时必须先由具有认证权限的治理人员填写原因并撤销认证，使同一 CatalogEntry 回到 `curated`，再完成编目编辑、映射审核和重新认证。该闭环只推进既有身份的版本序列并写入独立领域审计，不新增认证副本或第二个 CatalogEntry。
 
 ## 五、组织、协作和 Workspace
 
@@ -178,7 +179,7 @@ Catalog 编目编辑器同样不要求用户识别稳定 ID。Domain、Glossary�
 
 资源盘点仍使用 Catalog 的分面与分页列表，不在 Catalog 重建 Engine—Node—DataItem 技术资源树；技术路径树继续归 Meta / Manager。
 
-治理覆盖率也是资源盘点的动态读模型：Catalog 直接聚合当前 CatalogEntry、语义关联、责任和组件 Element 关联，按适用对象计算分母，不保存第二份覆盖率投影。它回答“企业目录治理完成到什么程度”，不替代 Quality 数据质量评分，也不推断 owner 专业模型是否完整。
+治理覆盖率也是资源盘点的动态读模型：Catalog 直接聚合当前 CatalogEntry、语义关联、责任和组件已审核 StandardMapping，按适用对象计算分母，不保存第二份覆盖率投影。它回答“企业目录治理完成到什么程度”，不替代 Quality 数据质量评分，也不推断 owner 专业模型是否完整。
 
 目录详情中的影响分析采用联邦组合：Meta 提供血缘，Model / Standard 提供专业关系，Catalog 提供推荐继任和来源绑定解析。前端始终使用当前 User Token 查询事实 owner；Catalog 只把 owner 节点的稳定来源身份解析到当前可见 CatalogEntry，便于继续目录导航。三类关系保留各自 owner、方向、类型和证据，不合并为无来源的通用边，也不在 Catalog 复制专业关系。
 

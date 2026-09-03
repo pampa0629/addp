@@ -6,35 +6,27 @@ import (
 
 	"github.com/addp/common/dataitem"
 	"github.com/addp/common/datatype"
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	commonJSON "github.com/addp/common/jsonmap"
-	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metaitem"
 	"github.com/addp/meta/internal/models"
 )
 
-type stubCADInspector struct {
-	result *CADInspection
-	err    error
-}
-
-func (s stubCADInspector) InspectCAD(context.Context, *commonModels.Engine, uint, string, string, int64) (*CADInspection, error) {
-	return s.result, s.err
-}
-
-func TestEnrichSingleCADItemWritesTypeAndFormatInfo(t *testing.T) {
-	entityCount := int64(12)
+func TestEnrichSingleCADItemReadsDWGHeader(t *testing.T) {
 	attrs := models.JSONMap{}
-	item := &metaitem.DetectedItem{}
-	item.Layout = format.LayoutSingle
-	item.DataType = datatype.CAD
-	item.Format = string(format.FormatDWG)
-	err := EnrichSingleCADItem(context.Background(), attrs, stubCADInspector{result: &CADInspection{
-		CAD:        &datatype.CADInfo{DrawingKind: datatype.CADDrawingKind2D, EntityCount: &entityCount},
-		FormatInfo: map[string]interface{}{"format_version": "AC1032", "geometry_traversed": false},
-	}}, &commonModels.Engine{ID: 1}, 2, item, "drawing.dwg", 128)
+	item := cadTestItem(format.FormatDWG)
+	content := []byte("AC1032\x00\x00\x00")
+
+	err := EnrichSingleCADItem(
+		context.Background(), attrs, rangeBytesContentReader{content: content}, nil, 1,
+		item, "cad/drawing.dwg", int64(len(content)), plugin.FileItemPathForEngine(1),
+	)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if item.CAD == nil || item.CAD.SizeBytes == nil || *item.CAD.SizeBytes != int64(len(content)) {
+		t.Fatalf("CAD info = %#v", item.CAD)
 	}
 	if got := commonJSON.String(attrs, "type_info.cad", "drawing_kind"); got != datatype.CADDrawingKind2D {
 		t.Fatalf("drawing_kind = %q", got)
@@ -44,27 +36,49 @@ func TestEnrichSingleCADItemWritesTypeAndFormatInfo(t *testing.T) {
 	}
 }
 
-func TestEnrichSingleCADItemRequiresInspector(t *testing.T) {
-	item := &metaitem.DetectedItem{}
-	item.Layout = format.LayoutSingle
-	item.DataType = datatype.CAD
-	item.Format = string(format.FormatDWG)
-	if err := EnrichSingleCADItem(context.Background(), models.JSONMap{}, nil, &commonModels.Engine{ID: 1}, 2, item, "drawing.dwg", 128); err == nil {
-		t.Fatal("expected missing inspector error")
-	}
-}
-
-func TestEnrichSingleDXFItemWritesDXFFormatInfo(t *testing.T) {
+func TestEnrichSingleCADItemReadsDXFVersion(t *testing.T) {
 	attrs := models.JSONMap{}
-	item := &metaitem.DetectedItem{ResolvedItem: dataitem.ResolvedItem{Layout: format.LayoutSingle, DataType: datatype.CAD, Format: string(format.FormatDXF)}}
-	err := EnrichSingleCADItem(context.Background(), attrs, stubCADInspector{result: &CADInspection{
-		CAD:        &datatype.CADInfo{DrawingKind: datatype.CADDrawingKind2D},
-		FormatInfo: map[string]interface{}{"format_version": "AC1014", "geometry_traversed": false},
-	}}, &commonModels.Engine{ID: 1}, 2, item, "drawing.dxf", 128)
+	item := cadTestItem(format.FormatDXF)
+	content := []byte("0\r\nSECTION\r\n2\r\nHEADER\r\n9\r\n$ACADVER\r\n1\r\nAC1014\r\n0\r\nENDSEC\r\n")
+
+	err := EnrichSingleCADItem(
+		context.Background(), attrs, rangeBytesContentReader{content: content}, nil, 1,
+		item, "cad/drawing.dxf", int64(len(content)), plugin.FileItemPathForEngine(1),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := commonJSON.String(attrs, "format_info.dxf", "format_version"); got != "AC1014" {
 		t.Fatalf("format_version = %q", got)
 	}
+}
+
+func TestEnrichSingleCADItemDowngradesInvalidCADHeader(t *testing.T) {
+	attrs := models.JSONMap{
+		"type_info":   map[string]interface{}{"cad": map[string]interface{}{"drawing_kind": "2d"}},
+		"format_info": map[string]interface{}{"dwg": map[string]interface{}{"format_version": "AC1032"}},
+	}
+	item := cadTestItem(format.FormatDWG)
+
+	err := EnrichSingleCADItem(
+		context.Background(), attrs, rangeBytesContentReader{content: []byte("not a drawing")}, nil, 1,
+		item, "cad/drawing.dwg", 13, plugin.FileItemPathForEngine(1),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.DataType != datatype.Unknown || item.Format != string(format.FormatUnknown) || item.CAD != nil {
+		t.Fatalf("item = %#v", item)
+	}
+	if commonJSON.Section(attrs, "type_info.cad") != nil || commonJSON.Section(attrs, "format_info.dwg") != nil {
+		t.Fatalf("stale CAD attributes remain: %#v", attrs)
+	}
+}
+
+func cadTestItem(formatType format.FormatType) *metaitem.DetectedItem {
+	return &metaitem.DetectedItem{ResolvedItem: dataitem.ResolvedItem{
+		Layout:   format.LayoutSingle,
+		DataType: datatype.CAD,
+		Format:   string(formatType),
+	}}
 }

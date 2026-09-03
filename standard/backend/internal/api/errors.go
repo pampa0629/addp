@@ -66,6 +66,10 @@ func respondError(c *gin.Context, status int, err error) {
 		message = commoni18n.T(c, sysi18n.MsgSystemUnitImmutable)
 	case errors.Is(err, repository.ErrInvalidTenantReference):
 		message = commoni18n.T(c, sysi18n.MsgInvalidResourceReference)
+	case errors.Is(err, service.ErrInvalidStandardScope):
+		message = commoni18n.T(c, sysi18n.MsgInvalidStandardScope)
+		errorCode = "invalid_standard_scope"
+		useGenericMessage = false
 	case errors.Is(err, service.ErrInvalidStandardRevision):
 		message = commoni18n.T(c, sysi18n.MsgInvalidStandardRevision)
 		useGenericMessage = false

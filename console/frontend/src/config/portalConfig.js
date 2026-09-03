@@ -151,7 +151,7 @@ export const PAGE_MAPS = {
     '': 'check-tasks',
   },
   security: {
-    '': 'sensitive-data-types',
+    '': 'sensitive-data-definitions',
   },
   catalog: {
     '': 'entries',
@@ -188,7 +188,7 @@ export const DEFAULT_ROUTES = {
   standard:     '/standard/domains',
   modeling:     '/modeling/dw-layers',
   quality:      '/quality/check-tasks',
-  security:     '/security/sensitive-data-types',
+  security:     '/security/sensitive-data-definitions',
   catalog:      '/catalog/entries',
   asset:        '/asset/assets',
   agent:        '/agent',
@@ -284,11 +284,10 @@ export const SIDEBAR_MENUS = {
   security: {
     label: 'console.menus.security.label', icon: Lock,
     items: [
-      { index: '/security/sensitive-data-types', icon: Key, label: 'console.menus.security.sensitiveDataTypes' },
-      { index: '/security/classifications', icon: Collection, label: 'console.menus.security.classifications' },
-      { index: '/security/grades', icon: DataAnalysis, label: 'console.menus.security.grades' },
-      { index: '/security/protection-baselines', icon: SetUp, label: 'console.menus.security.protectionBaselines' },
-      { index: '/security/protection-enrollments', icon: CircleCheck, label: 'console.menus.security.protectionEnrollments' },
+      { index: '/security/classification-grading', icon: SortDown, label: 'console.menus.security.classificationGrading' },
+      { index: '/security/sensitive-data-definitions', icon: Key, label: 'console.menus.security.sensitiveDataDefinitions' },
+      { index: '/security/protection-baselines', icon: SetUp, label: 'console.menus.security.defaultProtectionRules' },
+      { index: '/security/protection-enrollments', icon: CircleCheck, label: 'console.menus.security.protectedResources' },
     ],
   },
   develop: {

@@ -1,8 +1,8 @@
 # ADDP 数据安全与隐私保护体系专题
 
-更新时间：2026-09-02
+更新时间：2026-09-03
 
-状态：阶段 6 推进中；Manager、Develop 与 Service 已完成首个字段级保护切片，下一步收敛 Transfer
+状态：阶段 6 推进中；Manager、Develop、Service 与 Transfer bounded snapshot 已完成首个字段级保护切片，当前收敛 Security 治理易用性
 
 ## 一、文档定位
 
@@ -74,7 +74,7 @@
 ```text
 Meta 技术事实与受控样本
     → Security 敏感发现与证据
-    → 候选发现按保护阈值触发保守基线
+    → 候选发现按自动采用置信度触发保守基线
     → 人工确认具体资源的正式分类分级
     → Security 编译版本化保护策略
     → 各资源 Owner 在自身数据出口执行
@@ -84,7 +84,7 @@ Meta 技术事实与受控样本
 建设目标包括：
 
 1. 同一种敏感数据在预览、剖析、搜索、导出、查询、服务和 AI 消费中执行一致的保护意图；
-2. 自动识别只产生候选和证据，不能静默成为正式治理真相；达到保护阈值的候选可立即触发保守基线，不因人工确认或 Catalog 建档滞后继续返回明文；
+2. 自动识别只产生候选和证据，不能静默成为正式治理真相；达到自动采用置信度的候选可立即触发保守基线，不因人工确认或 Catalog 建档滞后继续返回明文；
 3. 分类分级、保护策略、资源授权、使用审批和执行审计各有唯一事实源；
 4. 所有数据出口服务端执行保护，前端不承担安全边界；
 5. 策略决策可解释，能够回答主体、动作、资源、字段、策略版本、允许来源和保护结果；
@@ -333,7 +333,7 @@ flowchart TD
     ReadFacts --> Detect[Detector 分析 userInfo.phone]
     Detect --> Sample[必要时由 Security Worker 读取受控样本]
     Sample --> Finding[生成 SensitiveFinding 候选与证据]
-    Finding --> Threshold{是否达到保护阈值}
+    Finding --> Threshold{是否达到自动采用置信度}
     Threshold -->|是| Baseline[应用保守 ProtectionBaseline]
     Threshold -->|否| Suppress[继续拒绝或保守抑制]
     Finding --> Confirm[安全治理人员确认]
@@ -352,7 +352,7 @@ flowchart TD
 3. Security 先向 Manager 发布最小 `enrolling` 门禁并等待安装确认，再执行发现；因此有效策略尚未就绪时，Manager 已经会拒绝或保守抑制相关出口，不存在等待识别、人工确认或 Catalog 同步而继续返回明文的窗口；
 4. Security 只分析显式纳管范围。Detector 先使用字段路径、名称、注释和类型；证据不足或规则要求内容验证时，Security Worker 才通过统一 Engine Provider 读取受限字段和受限行数的样本；
 5. 原始样本只用于本次检测，不作为 Finding、Assessment 或审计内容持久保存；
-6. Detector 只生成 SensitiveFinding 候选、置信度和非原值证据，不自动成为正式治理真相；达到保护阈值的 Finding 可在人工确认前触发保守基线，不达阈值时继续保持拒绝或保守抑制；治理人员确认后才形成具体资源的正式安全评估；
+6. Detector 只生成 SensitiveFinding 候选、置信度和非原值证据，不自动成为正式治理真相；达到自动采用置信度的 Finding 可在人工确认前触发保守基线，不达阈值时继续保持拒绝或保守抑制；治理人员确认后才形成具体资源的正式安全评估；
 7. Security 拥有 Detector、SensitiveDataType、SecurityClassification、SecurityGrade 和 ProtectionBaseline，分别回答“如何发现、是什么、属于哪类、风险多高、默认如何保护”；
 8. Security 面向 Manager、Transfer、Develop、Service 分别编译可执行变化；Owner 只同步与自身动作有关的保护投影，不同步检测器、样本或治理工作流；
 9. Manager 用户预览期间不调用 Security。Manager 先按本地纳管索引和有效投影做门禁，再读取数据，并在服务端响应序列化前执行遮盖；
@@ -379,7 +379,7 @@ Security 治理与 Owner 执行共用 owner 稳定专业资源身份：Assessmen
 - 更新术语表、核心概念关系图和模块架构图；
 - 新增数据安全与隐私保护概念文档和实现规范；
 - 定义 owner 类型化专业资源引用、component key、必要源版本/结构快照及来源变更失效规则；
-- 定义纳管激活屏障、Owner 版本确认、Finding 保护阈值和正式 Assessment 的单一决策编译语义；
+- 定义纳管激活屏障、Owner 版本确认、Finding 自动采用置信度和正式 Assessment 的单一决策编译语义；
 - 定义 Protection Projection v1，包括纳管状态、资源/组件匹配、动作、保护效果、算法参数、版本、有效期、校验和可恢复变化流；
 - 按新模块指南确定端口、Schema、模块注册、Permission Manifest、API 和测试/CI 门禁；
 - 定义唯一的保护决策契约，不保留旧文档 API 或表结构兼容路线。
@@ -432,7 +432,7 @@ Develop 的回执屏障已进一步按真实活动边界收敛：进程内 Gate 
 - 发现结果与人工确认结果分离，建立 Security-owned Finding、Assessment 及变更历史；
 - 建立版本化保护策略，将高置信 Finding 保守基线和正式 Assessment 收敛到唯一编译器与同一投影变化流；
 - 原始样本只在当次有界 execution 内存中存在，Finding、日志、错误、execution metadata 和审计不保存原值；
-- 首个切片只实现手机号；身份证件、银行卡、邮箱、网络标识和精确位置按同一模型后续增加。
+- 首个切片以手机号闭环验证；结构化邮箱字段名识别随后按同一 DetectorCapability、Tenant 绑定、Finding、基线和投影主线增加，身份证件、银行卡、网络标识和精确位置继续后续扩展。
 
 阶段 4 的首个事实读取契约已固定为 `GET /api/v1/meta/runtime/data-items/{fingerprint}/security-facts`，使用 `meta.security_facts.read` 和固定 `addp-security` Client Guard。响应只返回字段结构事实、观测时间和规范结构快照 Hash，不返回完整 Meta attributes 或原始样本。Security 复用 `common.task_executions` 的 `security/sensitive_data_discovery` 有界 execution 与租约，不建立私有任务队列，也不在本阶段暴露 TaskProvider 或定时调度。
 
@@ -440,13 +440,15 @@ Develop 的回执屏障已进一步按真实活动边界收敛：进程内 Gate 
 
 Owner Projection 按已实现执行器逐项升级：Manager 生成 `preview|profile|search_index`，Develop 生成独立 `query`，Service 生成独立 `service_execute`；Transfer 的结构化 bounded snapshot 将生成独立 `export`，其他出口仍保持资源级 deny。只有四个必要 Owner 都具有当前资源所需的 active 规则并安装确认后，Enrollment 才整体进入 `active`。
 
-截至 2026-09-01，首个自动发现子切片已经实现：`addp-security` 获得唯一的 `tenant.security_runtime` 与 `meta.security_facts.read`；四 Owner enrolling 回执完成时在同一事务创建 `security/sensitive_data_discovery` execution；Security Worker 使用通用 lease 领取执行，精确读取 Meta facts，并把崩溃遗留的过期执行按 `max_attempts` 重试或失败收口；内置版本化手机号元数据检测器生成不含原值的 immutable Finding；唯一编译器读取 `code=phone` 的 SensitiveDataType 和默认等级 ProtectionBaseline，通过既有变化流升级 Manager Projection。Finding 查询 API、Swagger、IAM migration 115、PostgreSQL 门禁和确定性纵向测试已经同步落地。
+截至 2026-09-01，首个自动发现子切片已经实现：`addp-security` 获得唯一的 `tenant.security_runtime` 与 `meta.security_facts.read`；四 Owner enrolling 回执完成时在同一事务创建 `security/sensitive_data_discovery` execution；Security Worker 使用通用 lease 领取执行，精确读取 Meta facts，并把崩溃遗留的过期执行按 `max_attempts` 重试或失败收口；内置版本化手机号元数据检测器生成不含原值的 immutable Finding，通过既有变化流升级 Manager Projection。Finding 查询 API、Swagger、IAM migration 115、PostgreSQL 门禁和确定性纵向测试已经同步落地。早期实现曾通过 `code=phone` 约定查找 SensitiveDataType，该隐式绑定已在后续检测器注册切片删除。
+
+2026-09-02 完成检测器注册与绑定切片：平台只读 `DetectorCapability` 注册表固定提供受信任、版本化的手机号字段元数据与文档受控样本能力；Tenant-owned `Detector` 只配置能力、SensitiveDataType 绑定、自动采用置信度与是否参与发现，不接受脚本、SQL 或任意正则。Worker 只执行已启用绑定，Finding 类型直接来自绑定，不再按敏感类型代码或名称猜测。检测器变化只为当前 Tenant 已纳管资源安排有界重新发现，不扫描全量 Meta；Enrollment 以最近成功的 discovery execution 标识当前候选集，使同一来源结构在规则启停后仍能准确替换当前 Finding，同时保留历史观测。管理 API、精确 CRUD Permission、IAM migration 118、Swagger、前端“敏感类型”页内识别方式配置与纵向测试同步落地。
 
 同日，正式治理子切片已经接续落地：每个 Finding 只接受一次不可变 `confirm|adjust|reject` 初审，确认或调整在 `{tenant, enrollment, component_key}` 唯一 Assessment 聚合上追加不可变 revision，后续调整使用 Assessment `version` 并发控制继续追加 revision；revision 冻结来源 Finding/review、分类分级、来源结构快照和组件结构指纹，不保存原值。候选 Finding 与正式 Assessment 共用同一个 Manager 投影编译函数和既有变化流；误报驳回且无正式 Assessment 时会发布新的 `enrolling` 资源级拒绝投影，不沿用旧 active 候选规则。Assessment 查询/修订 API、三项精确 IAM Permission、migration 116、Swagger 与 SQLite/PostgreSQL 纵向测试已同步完成。阶段 4 后续聚焦只能收紧基线的 ProtectionPolicy，以及结构变化后的显式再发现和投影续期；原值揭示、用途约束、限时例外和双人审批仍留在规范明确的后续范围。
 
 随后完成 ProtectionPolicy 与结构续期子切片：Policy 唯一绑定 `{tenant, assessment, consumer_owner, action}`，首期只开放 `manager/preview`，效果只能等于或严于当前 ProtectionBaseline；Policy 不复制遮盖算法参数，不承载 ACL、用途或例外。创建、更新、撤销均追加不可变 revision，并与新 Manager Projection 在同一事务经过既有唯一编译器发布；撤销回落到 Assessment + Baseline，不解除纳管。Enrollment 新增显式 `discovery-executions` 创建入口，使用资源 `version` 和行锁拒绝同一纳管的并发 pending/running 执行；成功发现保存最新结构快照 Hash 和时间，相关 Policy/Assessment 后续变更始终以最新快照编译。无关字段变化而组件指纹稳定时正式 Assessment 可安全续用，组件漂移或消失时继续走候选保护或资源级 deny。四项精确 Policy CRUD Permission、IAM migration 117、Swagger 38 路由、SQLite/PostgreSQL 测试和标准门禁已同步完成；显式例外仍未进入实现。
 
-保护定义变化的精准传播也已完成：ProtectionBaseline 创建、完整更新、启停、改绑或带 `version` 删除时，只根据 Security 自有的未复核 Finding 和当前 Assessment revision 定位旧、新绑定范围内的 Enrollment，并在同一事务调用唯一 Manager 投影编译器；SensitiveDataType 的默认等级或保护阈值变化只重算尚未复核的候选 Finding，正式 Assessment revision 冻结的分类分级不静默漂移。显示名称、排序等治理展示变化不制造投影版本；定义仍被 Finding、review 或 Assessment revision 引用时拒绝删除。PostgreSQL 门禁同时验证精准命中、无关 Enrollment 零投影变更和发布失败整体回滚，不引入 Meta、Catalog 或 Engine 调用。
+保护定义变化的精准传播也已完成：ProtectionBaseline 创建、完整更新、启停、改绑或带 `version` 删除时，只根据 Security 自有的未复核 Finding 和当前 Assessment revision 定位旧、新绑定范围内的 Enrollment，并在同一事务调用唯一 Manager 投影编译器；SensitiveDataType 的自动发现初始等级变化只重算尚未复核的候选 Finding，Detector 自动采用置信度变化走有界重新发现，正式 Assessment revision 冻结的分类分级不静默漂移。显示名称、排序等治理展示变化不制造投影版本；定义仍被 Finding、review 或 Assessment revision 引用时拒绝删除。PostgreSQL 门禁同时验证精准命中、无关 Enrollment 零投影变更和发布失败整体回滚，不引入 Meta、Catalog 或 Engine 调用。
 
 ### 阶段 5：Manager 手机号首个纵向切片
 
@@ -473,9 +475,23 @@ Owner Projection 按已实现执行器逐项升级：Manager 生成 `preview|pro
 
 同日完成保护纳管交互收敛：创建命令只接受 Meta 资源树选中的标准 DataItem ResourceLocator，Security 自行计算 fingerprint 并冻结 Engine ID、item type、full name 最小展示快照；旧的 fingerprint 和字段路径自由输入字段及 Enrollment `target_component` 已删除。Security 列表改为展示人类可识别的资源、保护生命周期和四个数据出口的实际安装状态，技术指纹只在详情中折叠展示；Manager 当前 DataItem 提供带 locator 的直达入口，Security 自动恢复资源选择并提示是否已纳管。只读用户不显示创建入口，未纳管资源的数据面负担边界不因本次交互调整而变化。
 
+2026-09-02 完成 Security 第一轮产品信息架构收敛：领域层继续独立保存 SensitiveDataType、SecurityClassification、SecurityGrade、ProtectionBaseline 和 ProtectionEnrollment，并删除原 `/sensitive-data-types`、`/classifications`、`/grades` 实体级前端路径，不保留重定向或兼容读取；后端领域 API 不因界面组织方式变化而合并。
+
+2026-09-03 完成定义与规则易用性收敛：低频初始化的“分类目录、保护等级”从“敏感数据定义”中提出，统一放到独立的“分类分级体系”工作区；“敏感数据定义”只维护敏感类型及其识别方式。平台通过只读 definition profile 和显式幂等应用 API 提供推荐分类、等级，不在 GET 或 Tenant 创建链路中偷偷写库。SensitiveDataType 只保存所属分类和自动发现初始等级，原 `protection_threshold` 字段删除；自动采用置信度迁入具体 Detector 绑定并在界面以百分比展示。DetectorCapability 同步公开目标、证据来源、适用范围、实际方法、隐私边界和局限性；不同资源形态的能力并行择用，不构成字段名识别后再做内容识别的隐式串行链路。ProtectionBaseline 的产品名统一为“默认保护规则”，表单明确表达“敏感类型 + 保护等级 → 默认保护效果”，`invalid_value_effect` 统一展示为“不符合格式时”，启停标签分别使用“参与检测”和“规则生效”。旧类型级阈值、旧定义页签和旧通用表单路径不保留兼容读取。
+
+2026-09-03 完成手机号元数据识别语义收敛：唯一安装能力升级为 `addp.detector.phone_metadata/v2`，不再注册或执行 v1。v2 对 Meta 结构化路径继续取末级名称；对 Transfer 产生且在 PostgreSQL 中表现为单一物理列的确定性扁平名，按 `__` 取语义末级名称后再与内置别名精确匹配。Finding 和 ProtectionProjection 仍保留 Meta 发布的真实物理 `component_key`，不改写为嵌套路径；回归测试同时覆盖 `members__userInfo__phone` 命中与 `members__device__microphone` 不误报。
+
+2026-09-03 接续增加结构化邮箱字段名能力 `addp.detector.email_metadata/v1`：只处理表和集合的字符串字段，按与手机号一致的末级/`__` 扁平路径语义提取后，对 `email`、`emailaddress`、`邮箱`、`电子邮箱` 做精确匹配，不读取或验证业务值。MySQL 业务样例 `business.customers` 已有 `email` 字段与按姓名构造的示例邮箱，无需建立第二张样例表或重复字段；实际保护仍要求 Tenant 显式建立邮箱 SensitiveDataType、能力绑定和默认保护规则，并由四个 Owner 复用既有通用投影执行契约。
+
+同日补齐已退出资源的直接重新纳入入口：界面上的一次操作由服务端使用已退出记录冻结的目标引用创建新的 ProtectionEnrollment，旧记录及其退出审计保持只读；新记录从 `activating` 重新经过四个必要 Owner 的门禁、发现和投影安装。不存在把 `released` 状态改回 `active` 的兼容路径，同一目标仍只允许一条未退出生命周期。
+
+2026-09-03 完成敏感字段判定的人工治理闭环：受保护资源详情直接展示识别能力的完整方法、适用范围、隐私边界、已知局限、稳定版本以及本次实际命中证据。自动发现漏报时，治理人员只能从 Security 以服务身份实时读取并校验、且尚未形成任何正式 Assessment 的 Meta 当前字段组件中选择，形成 `source_kind=manual` 的正式 Assessment；已经确认、调整或撤销过的组件只在既有 Assessment 上继续治理，不再混入“遗漏字段”选择器。不能输入自由文本路径、组件结构或自定义检测脚本。未形成正式结论的误报继续通过 Finding `reject` 初审收口，已生效的正式结论通过追加 `conclusion=not_sensitive` 不可变修订撤销，不物理删除审计历史。人工指定与撤销都在同一事务调用既有唯一投影编译器，四个 Owner 仍只消费统一变化流；新增 `security.assessment.create` 精确权限、IAM migration 119、Swagger 和 SQLite/PostgreSQL 回归门禁同步完成。
+
+2026-09-03 完成识别质量首个可观测切片：Security 通过单一只读聚合接口从既有 Finding、不可变人工复核和当前人工 Assessment 即时派生质量证据，不新增统计表、异步双写或原始数据读取。当前候选严格取每个未退出 Enrollment 最近一次成功 discovery execution 与 source snapshot；历史人工证据按“纳管资源 + 组件 + 识别能力版本”只保留最近一次复核，避免重复发现放大样本。界面在敏感类型的“管理识别方式”抽屉内展示当前候选、待复核、去重人工样本和确认敏感比例；无人工样本时明确显示“样本不足”。人工补充及其撤销只作为可能漏检的整体线索，不归因到单个识别能力，也不宣称已经计算出召回率或漏检率。
+
 ### 阶段 6：结构化数据出口收敛
 
-**状态：推进中；Develop、Service 首个字段级切片与 Transfer PostgreSQL bounded snapshot 已完成**
+**状态：推进中；Develop、Service 首个字段级切片与 Transfer PostgreSQL bounded snapshot、MongoDB 原始记录导出已完成**
 
 - Transfer 导出与静态脱敏；
 - Develop 查询、工作流与 Notebook；
@@ -489,7 +505,7 @@ Owner Projection 按已实现执行器逐项升级：Manager 生成 `preview|pro
 
 Develop 已在同一 PreparedQuery 上完成 `ReadSet -> OutputLineage -> Execute -> query 结果保护`，PostgreSQL 与 MongoDB 的直接字段、显式别名和受支持 wildcard 可以执行字段级遮盖或抑制，派生敏感输出与不完整血缘继续拒绝。2026-09-02，Service 复用同一 owner-neutral 保护计划并使用独立 `service_execute` 动作，首期完成已发布 QueryService 的 REST Query 与 OGC API Features 共享直接查询内核；PostgreSQL Provider 同步支持单来源直接投影子查询的递归血缘组合，派生敏感输出仍拒绝。Service cursor 与 feature ID 已无兼容地改为 AEAD 不透明令牌，避免排序键或稳定键通过仅签名载荷泄露。联邦、图、旧 Data API、查询样例和瓦片在各自动作执行器完成前继续资源级拒绝。
 
-Transfer 切片已冻结 `export` 动作边界，不恢复旧 `export` 任务类型。首期只开放 PostgreSQL 源的结构化 `bounded + snapshot` TablePipeline：原生表按精确 Locator 与表结构匹配，查询源在同一 PreparedQuery 上完成 ReadSet 和 OutputLineage；每批数据先遮盖/抑制，再进入字段映射、类型转换、空间处理和 CSV/JSON/数据库 writer。Security 仍生成引擎无关的 `export` 投影，Transfer 根据源引擎执行器能力决定是否可执行。MongoDB 及其他非 PostgreSQL 源、raw copy、watermark incremental、Kafka replay、encoded source 与 continuous/CDC 仍资源级拒绝，不借用本动作放开。
+Transfer 切片已冻结 `export` 动作边界，不恢复旧 `export` 任务类型。当前开放两条由引擎和输出形态明确约束的执行路径：PostgreSQL 源的结构化 `bounded + snapshot` TablePipeline，原生表按精确 Locator 与表结构匹配，查询源在同一 PreparedQuery 上完成 ReadSet 和 OutputLineage，每批数据先遮盖/抑制，再进入字段映射、类型转换、空间处理和 CSV/JSON/数据库 writer；MongoDB 集合到 `mongodb_extended_jsonl` 的原始记录导出，在编码为 Canonical Extended JSON 之前先按真实嵌套字段路径执行遮盖或抑制。Security 继续生成引擎无关的 `export` 投影，Transfer 根据源引擎、读取模式和输出形态决定是否可执行。除上述 MongoDB 路径外的其他非 PostgreSQL 源、raw copy、watermark incremental、Kafka replay、encoded source 与 continuous/CDC 仍资源级拒绝，不借用本动作放开。
 
 ### 阶段 7：全域数据与隐私合规深化
 
@@ -512,9 +528,10 @@ Transfer 切片已冻结 `export` 动作边界，不恢复旧 `export` 任务类
 | 现有 `common/security` 重命名为 `common/secretcipher`；数据保护共享契约使用 `common/dataprotection` | 已确认 |
 | Catalog 与 Security 并行消费 Meta 事实：Catalog 消费全量可恢复变化，Security 只精确读取显式纳管目标；对 Meta 的依赖不构成两者先后关系 | 已确认 |
 | Security Finding、Assessment、Policy 与 Owner 保护投影共用 owner 稳定专业资源身份；Catalog 以 SourceBinding 随后联邦展示，不要求安全事实改绑 Catalog UUID | 已确认 |
-| 纳管先安装 Owner `enrolling` 门禁，再执行发现；达保护阈值的 Finding 可立即触发保守基线，Catalog 未建档不影响 Manager 遮盖 | 已确认 |
+| 纳管先安装 Owner `enrolling` 门禁，再执行发现；达自动采用置信度的 Finding 可立即触发保守基线，Catalog 未建档不影响 Manager 遮盖 | 已确认 |
 | 第一阶段所有普通用户均只看到受保护值，不提供原值揭示 | 已确认 |
 | 第一阶段不允许参与 Owner 存在明文旁路；Manager 覆盖预览、剖析和搜索，Develop 与 Service 已开放首个字段级查询动作，Transfer bounded snapshot 按已冻结 `export` 边界实施，各 Owner 尚无动作执行器的其他出口继续资源级拒绝 | 已确认 |
+| Security 产品入口收敛为“分类分级体系、敏感数据定义、默认保护规则、受保护资源”；界面组织不改变 SensitiveDataType、SecurityClassification、SecurityGrade、ProtectionBaseline、ProtectionEnrollment 的领域边界 | 已确认 |
 
 ## 十一、推进记录
 
@@ -563,7 +580,7 @@ Transfer 切片已冻结 `export` 动作边界，不恢复旧 `export` 任务类
 - 确认 Catalog 与 Security 是 Meta 技术事实的并行消费者：Catalog 消费全量可恢复变化建立企业目录身份，Security 只精确读取显式纳管目标；
 - 确认 Security 定义、Finding、Assessment 和 Policy 不以 Catalog 为前置，使用 Meta fingerprint 等 owner 稳定专业资源身份；Catalog 建档后通过 SourceBinding 联邦展示，不迁移或改绑 Security 事实；
 - 确认 Detector 先分析字段元数据，必要时由 Security Worker 使用统一 Engine Provider 读取受控样本；
-- 确认自动识别只生成 Finding 候选，人工确认后才形成正式 Assessment；达到保护阈值的 Finding 可先触发保守基线，不因审核或 Catalog 同步滞后返回明文；
+- 确认自动识别只生成 Finding 候选，人工确认后才形成正式 Assessment；达到自动采用置信度的 Finding 可先触发保守基线，不因审核或 Catalog 同步滞后返回明文；
 - 确认 Security 编译 Owner-specific 变化流，Manager 等 Owner 后台拉取，本地执行期间不调用 Security；
 - 确认纳管先向 Owner 发布 `enrolling` 门禁并完成安装确认，再开始敏感发现；Catalog 未建档时 Manager 仍按本地有效投影遮盖手机号。
 

@@ -25,7 +25,7 @@ func TestHTTPDescriptorReaderForwardsOnlyUserRequestContext(t *testing.T) {
           "title":"Orders","description":"Order list","status":"active","access_mode":"private",
           "contract_fingerprint":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
           "operations":[{"key":"query","method":"POST","path":"/api/query/orders/query","input_kind":"structured_query","output_kind":"tabular"}],
-          "input_contract":{"kind":"structured_query","fields":[{"name":"id","type":"string","nullable":false,"selectable":true,"filterable":false,"operators":[],"sortable":true}],"default_selection":["id"],"filter":{"combinators":["and","or","not"],"max_depth":16,"max_nodes":256,"max_in_values":1000},"order":{"directions":["asc","desc"],"stable_key":["id"]},"page":{"kind":"cursor","default_limit":50,"max_limit":1000},"formats":["json","csv"],"intent":{"header":"X-ADDP-Query-Intent","allowed_values":["query","export"],"default_value":"query"}},
+          "input_contract":{"kind":"structured_query","fields":[{"name":"id","type":"string","nullable":false,"selectable":true,"filterable":false,"operators":[],"sortable":true}],"named_parameters":[{"name":"person_id","type":"string","required":true,"description":"Person"}],"default_selection":["id"],"filter":{"combinators":["and","or","not"],"max_depth":16,"max_nodes":256,"max_in_values":1000},"order":{"directions":["asc","desc"],"stable_key":["id"]},"page":{"kind":"cursor","default_limit":50,"max_limit":1000},"formats":["json","csv"],"intent":{"header":"X-ADDP-Query-Intent","allowed_values":["query","export"],"default_value":"query"}},
           "output_contract":{"kind":"tabular","fields":[{"name":"id","type":"string","nullable":false,"comment":"Stable ID"}]}
         }`))
 	}))
@@ -41,7 +41,7 @@ func TestHTTPDescriptorReaderForwardsOnlyUserRequestContext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetDescriptor() error = %v", err)
 	}
-	if descriptor.Ref.ServiceID != 23 || descriptor.InputContract.Intent.Header != "X-ADDP-Query-Intent" {
+	if descriptor.Ref.ServiceID != 23 || descriptor.InputContract.Intent.Header != "X-ADDP-Query-Intent" || len(descriptor.InputContract.NamedParameters) != 1 || descriptor.InputContract.NamedParameters[0].Name != "person_id" {
 		t.Fatalf("descriptor = %#v", descriptor)
 	}
 }

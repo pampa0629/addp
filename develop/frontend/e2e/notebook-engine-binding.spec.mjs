@@ -5,13 +5,15 @@ const NOTEBOOK_ENGINE = {
   id: 10,
   name: 'Jupyter Engine',
   engine_type: 'jupyter',
-  lifecycle_state: 'active'
+  lifecycle_state: 'active',
+  connection_status: 'online'
 }
 const ALTERNATE_NOTEBOOK_ENGINE = {
   id: 11,
   name: 'Alternate Jupyter',
   engine_type: 'jupyter',
-  lifecycle_state: 'active'
+  lifecycle_state: 'active',
+  connection_status: 'online'
 }
 
 test('uses an engine-selected kernel for upload and the saved engine for execution', async ({ page }) => {
@@ -23,9 +25,7 @@ test('uses an engine-selected kernel for upload and the saved engine for executi
 
   await page.goto(`/notebook?id=${NOTEBOOK_ID}`)
   await expect(page.getByText('scripts2', { exact: true }).first()).toBeVisible()
-  const runtimeSummary = page.locator('.notebook-runtime-summary')
-  await expect(runtimeSummary.getByRole('cell', { name: 'Notebook 引擎', exact: true })).toBeVisible()
-  await expect(runtimeSummary.getByRole('cell', { name: 'Jupyter Engine', exact: true })).toBeVisible()
+  await expectRuntimeSummary(page, 'Jupyter Engine', 'python3')
 
   await page.locator('.detail-toolbar .el-button--primary').click()
   const executeDialog = page.getByRole('dialog', { name: '执行 Notebook', exact: true })
@@ -57,15 +57,13 @@ test('rebinds the original Notebook task for future executions', async ({ page }
   await expect(dialog).toContainText('新绑定仅用于后续执行，历史执行记录保持不变。')
 
   await dialog.locator('.el-select').nth(0).click()
-  await page.getByRole('option', { name: 'Alternate Jupyter', exact: true }).click()
+  await page.getByRole('option', { name: 'Alternate Jupyter · 在线', exact: true }).click()
   await dialog.locator('.el-select').nth(1).click()
   await page.getByRole('option', { name: 'Python 3.12', exact: true }).click()
   await dialog.getByRole('button', { name: '确认更换', exact: true }).click()
 
   await expect(dialog).toBeHidden()
-  const runtimeSummary = page.locator('.notebook-runtime-summary')
-  await expect(runtimeSummary.getByRole('cell', { name: 'Alternate Jupyter', exact: true })).toBeVisible()
-  await expect(runtimeSummary.getByRole('cell', { name: 'python312', exact: true })).toBeVisible()
+  await expectRuntimeSummary(page, 'Alternate Jupyter', 'python312')
   expect(bindingRequests).toEqual([{ engine_id: 11, kernel: 'python312' }])
   expect(new URL(page.url()).searchParams.get('id')).toBe(String(NOTEBOOK_ID))
 })
@@ -74,8 +72,7 @@ test('keeps execution disabled but allows rebinding when the saved engine is una
   await installMockBackend(page, { boundEngineID: 8 })
   await page.goto(`/notebook?id=${NOTEBOOK_ID}`)
 
-  const runtimeSummary = page.locator('.notebook-runtime-summary')
-  await expect(runtimeSummary.getByRole('cell', { name: '已失效的引擎 #8', exact: true })).toBeVisible()
+  await expectRuntimeSummary(page, '已失效的引擎 #8', 'python3')
   await expect(page.getByRole('button', { name: '执行', exact: true })).toBeDisabled()
   const changeEngine = page.getByRole('button', { name: '更换引擎', exact: true })
   await expect(changeEngine).toBeEnabled()
@@ -217,6 +214,13 @@ async function fulfillJSON(route, body, status = 200) {
 
 function visibleDialogSurface(page) {
   return page.locator('.el-dialog.addp-dialog:visible')
+}
+
+async function expectRuntimeSummary(page, engineName, kernelName) {
+  await page.getByLabel('查看 Notebook 引擎和 Kernel', { exact: true }).hover()
+  const tooltip = page.getByRole('tooltip')
+  await expect(tooltip).toContainText(`Notebook 引擎: ${engineName}`)
+  await expect(tooltip).toContainText(`Kernel: ${kernelName}`)
 }
 
 async function expectDialogWithinViewport(page, dialog) {

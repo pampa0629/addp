@@ -39,11 +39,10 @@ export const SEARCH_INDEX = [
   { labelKey: 'console.menus.quality.ruleApplications', module: 'quality', route: '/quality/rule-applications',keywords: ['规则应用', '质量规则', 'rule'] },
   { labelKey: 'console.menus.quality.issues',           module: 'quality', route: '/quality/issues',           keywords: ['质量问题', '问题工单', 'issue'] },
   // 数据安全
-  { labelKey: 'console.menus.security.sensitiveDataTypes', module: 'security', route: '/security/sensitive-data-types', keywords: ['敏感数据类型', '手机号', '隐私', 'sensitive data', 'privacy'] },
-  { labelKey: 'console.menus.security.classifications', module: 'security', route: '/security/classifications', keywords: ['安全分类', '个人信息', 'security classification'] },
-  { labelKey: 'console.menus.security.grades', module: 'security', route: '/security/grades', keywords: ['安全等级', '分级', 'security grade'] },
-  { labelKey: 'console.menus.security.protectionBaselines', module: 'security', route: '/security/protection-baselines', keywords: ['保护基线', '脱敏', '遮盖', 'mask', 'protection baseline'] },
-  { labelKey: 'console.menus.security.protectionEnrollments', module: 'security', route: '/security/protection-enrollments', keywords: ['保护纳管', '数据纳管', 'enrollment', 'protection enrollment'] },
+  { labelKey: 'console.menus.security.classificationGrading', module: 'security', route: '/security/classification-grading', keywords: ['分类分级体系', '安全分类', '安全等级', '分类目录', '保护等级', 'classification', 'grading', 'grade'] },
+  { labelKey: 'console.menus.security.sensitiveDataDefinitions', module: 'security', route: '/security/sensitive-data-definitions', keywords: ['敏感数据定义', '敏感数据类型', '识别方式', '检测能力', '手机号', '隐私', 'sensitive data', 'detector', 'privacy'] },
+  { labelKey: 'console.menus.security.defaultProtectionRules', module: 'security', route: '/security/protection-baselines', keywords: ['默认保护规则', '保护基线', '脱敏', '遮蔽', 'mask', 'protection baseline', 'protection rule'] },
+  { labelKey: 'console.menus.security.protectedResources', module: 'security', route: '/security/protection-enrollments', keywords: ['受保护资源', '保护纳管', '纳入数据保护', 'enrollment', 'protected resources'] },
   // 数据开发
   { labelKey: 'console.menus.develop.sql',      module: 'develop', route: '/develop/sql',      keywords: ['SQL', 'SQL工作台', '查询', '开发', 'workbench', 'query'] },
   { labelKey: 'console.menus.develop.notebook', module: 'develop', route: '/develop/notebook', keywords: ['Notebook', 'Jupyter', '笔记本', '开发'] },

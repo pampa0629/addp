@@ -8,6 +8,7 @@ import (
 	commoni18n "github.com/addp/common/middleware/i18n"
 	sysi18n "github.com/addp/standard/i18n"
 	"github.com/addp/standard/internal/models"
+	"github.com/addp/standard/internal/repository"
 	"github.com/addp/standard/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -20,7 +21,8 @@ func NewCodeSetHandler(svc *service.CodeSetService) *CodeSetHandler { return &Co
 // @Summary 获取码值集列表 | List code sets
 // @Tags Standard
 // @Produce json
-// @Param domain_id query int false "归属业务域 ID | Owning domain ID"
+// @Param scope_type query string false "适用范围 | Scope" Enums(platform,tenant_common,domain)
+// @Param owner_domain_id query int false "归属业务域 ID，仅 domain 范围适用 | Owning domain ID, only for domain scope"
 // @Param status query string false "修订状态 | Revision status" Enums(draft,in_review,published,withdrawn)
 // @Param keyword query string false "关键字 | Keyword"
 // @Param as_of query string false "生效时点（RFC3339，默认服务端当前时间） | Effective point in time (RFC3339, defaults to server time)"
@@ -42,16 +44,33 @@ func (h *CodeSetHandler) ListCodeSets(c *gin.Context) {
 	}
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
-	var domainID *int64
-	if raw := c.Query("domain_id"); raw != "" {
+	scopeType, err := parseOptionalStandardScope(c)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
+	var ownerDomainID *int64
+	if len(c.Request.URL.Query()["owner_domain_id"]) > 1 {
+		respondError(c, http.StatusBadRequest, fmt.Errorf("duplicate owner_domain_id query parameter"))
+		return
+	}
+	if raw := c.Query("owner_domain_id"); raw != "" {
 		value, parseErr := strconv.ParseInt(raw, 10, 64)
 		if parseErr != nil || value <= 0 {
-			respondError(c, http.StatusBadRequest, fmt.Errorf("invalid domain_id"))
+			respondError(c, http.StatusBadRequest, fmt.Errorf("invalid owner_domain_id"))
 			return
 		}
-		domainID = &value
+		ownerDomainID = &value
 	}
-	items, total, err := h.svc.ListCodeSets(getTenantID(c), domainID, c.Query("keyword"), status, page, pageSize, asOf)
+	items, total, err := h.svc.ListCodeSets(getTenantID(c), repository.ListCodeSetOptions{
+		OwnerDomainID: ownerDomainID,
+		ScopeType:     scopeType,
+		Keyword:       c.Query("keyword"),
+		Status:        status,
+		Page:          page,
+		PageSize:      pageSize,
+		AsOf:          asOf,
+	})
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return

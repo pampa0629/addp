@@ -192,6 +192,9 @@ func policyDependencies(tx *gorm.DB, tenantID int64, assessmentID string) (model
 	if err := tx.Where("tenant_id = ? AND assessment_id = ? AND revision = ?", tenantID, assessment.ID, assessment.CurrentRevision).First(&current).Error; err != nil {
 		return assessment, current, models.ProtectionEnrollment{}, models.ProtectionBaseline{}, policyDBError(err)
 	}
+	if current.Conclusion != models.AssessmentConclusionSensitive {
+		return assessment, current, models.ProtectionEnrollment{}, models.ProtectionBaseline{}, commonapi.ErrConflict
+	}
 	var enrollment models.ProtectionEnrollment
 	if err := tx.Where("tenant_id = ? AND id = ? AND state IN ?", tenantID, assessment.EnrollmentID, []string{models.EnrollmentStateEnrolling, models.EnrollmentStateActive}).First(&enrollment).Error; err != nil {
 		return assessment, current, enrollment, models.ProtectionBaseline{}, policyDBError(err)

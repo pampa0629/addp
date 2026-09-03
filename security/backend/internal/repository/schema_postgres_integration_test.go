@@ -31,7 +31,7 @@ func TestSecurityMigrateAgainstPostgres(t *testing.T) {
 		t.Fatalf("second Migrate() error = %v", err)
 	}
 	for _, table := range []string{
-		"security_classifications", "security_grades", "sensitive_data_types", "protection_baselines",
+		"security_classifications", "security_grades", "sensitive_data_types", "detectors", "protection_baselines",
 		"sensitive_findings", "sensitive_finding_reviews", "resource_security_assessments", "resource_security_assessment_revisions",
 		"protection_policies", "protection_policy_revisions",
 	} {
@@ -42,5 +42,36 @@ func TestSecurityMigrateAgainstPostgres(t *testing.T) {
 		if !exists {
 			t.Fatalf("missing security.%s", table)
 		}
+	}
+	var detectorThresholdExists bool
+	if err := tx.Raw(`SELECT EXISTS (
+		SELECT 1 FROM information_schema.columns
+		WHERE table_schema = 'security' AND table_name = 'detectors' AND column_name = 'confidence_threshold'
+	)`).Scan(&detectorThresholdExists).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !detectorThresholdExists {
+		t.Fatal("security.detectors.confidence_threshold is missing")
+	}
+	var legacyThresholdExists bool
+	if err := tx.Raw(`SELECT EXISTS (
+		SELECT 1 FROM information_schema.columns
+		WHERE table_schema = 'security' AND table_name = 'sensitive_data_types' AND column_name = 'protection_threshold'
+	)`).Scan(&legacyThresholdExists).Error; err != nil {
+		t.Fatal(err)
+	}
+	if legacyThresholdExists {
+		t.Fatal("legacy security.sensitive_data_types.protection_threshold still exists")
+	}
+	var assessmentRevisionColumns int64
+	if err := tx.Raw(`SELECT COUNT(*) FROM information_schema.columns
+		WHERE table_schema = 'security'
+		  AND table_name = 'resource_security_assessment_revisions'
+		  AND ((column_name IN ('source_kind', 'conclusion') AND is_nullable = 'NO')
+		    OR (column_name IN ('source_finding_id', 'source_review_id') AND is_nullable = 'YES'))`).Scan(&assessmentRevisionColumns).Error; err != nil {
+		t.Fatal(err)
+	}
+	if assessmentRevisionColumns != 4 {
+		t.Fatalf("assessment revision governance column contract count = %d, want 4", assessmentRevisionColumns)
 	}
 }

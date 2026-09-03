@@ -500,14 +500,7 @@ func bindSQLExecutionParameters(engineType, query string, parameters map[string]
 	if parameters == nil {
 		return query, nil, nil
 	}
-	style := commonquery.SQLPlaceholderQuestion
-	switch strings.ToLower(strings.TrimSpace(engineType)) {
-	case "postgres", "postgresql", "postgis":
-		style = commonquery.SQLPlaceholderDollar
-	case "oracle":
-		style = commonquery.SQLPlaceholderColon
-	}
-	bound, args, err := commonquery.BindSQL(query, parameters, style)
+	bound, args, err := commonquery.BindSQL(query, parameters, commonquery.SQLPlaceholderStyleForEngine(engineType))
 	if err != nil {
 		return "", nil, fmt.Errorf("绑定 SQL 查询参数失败: %w", err)
 	}

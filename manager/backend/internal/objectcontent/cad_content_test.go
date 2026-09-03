@@ -4,11 +4,10 @@ import (
 	"context"
 	"testing"
 
-	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/manager/internal/models"
 )
 
-func TestCADContentRequiresManagedPreviewArtifact(t *testing.T) {
+func TestCADContentRequiresSourceURL(t *testing.T) {
 	handler := buildCADContentHandler(ObjectContentPluginConfig{Name: "cad", Builtin: models.ObjectPreviewKindCAD})
 	content, _, err := handler.Handle(context.Background(), &ObjectContentRequest{
 		Name: "drawing.dwg", Format: "dwg",
@@ -23,15 +22,15 @@ func TestCADContentRequiresManagedPreviewArtifact(t *testing.T) {
 	if content.FrontendRenderer != models.ObjectPreviewKindUnsupported {
 		t.Fatalf("frontend renderer = %q, want unsupported", content.FrontendRenderer)
 	}
-	if content.Metadata["preview_artifact_task_type"] != commonExecution.TaskTypeCADPreviewGeneration {
-		t.Fatalf("task type = %#v", content.Metadata["preview_artifact_task_type"])
+	if content.Metadata["preview_reason"] != "preview_url_missing" {
+		t.Fatalf("preview reason = %#v", content.Metadata["preview_reason"])
 	}
 }
 
-func TestCADContentUsesManifestURLOnlyWhenArtifactReady(t *testing.T) {
+func TestCADContentUsesSourceStorageStreamURL(t *testing.T) {
 	handler := buildCADContentHandler(ObjectContentPluginConfig{Name: "cad", Builtin: models.ObjectPreviewKindCAD})
 	content, _, err := handler.Handle(context.Background(), &ObjectContentRequest{
-		Name: "drawing.dwg", Format: "dwg", PreviewURL: "/api/v1/manager/cad-previews/9/manifest",
+		Name: "drawing.dwg", Format: "dwg", PreviewURL: "/api/v1/manager/storage-stream?engine_id=9&storage_ref=drawings%2Fdrawing.dwg",
 	}, nil)
 	if err != nil {
 		t.Fatalf("Handle() error = %v", err)
@@ -39,7 +38,7 @@ func TestCADContentUsesManifestURLOnlyWhenArtifactReady(t *testing.T) {
 	if content.PreviewMaterial != models.PreviewMaterialURL || content.FrontendRenderer != models.ObjectPreviewKindCAD {
 		t.Fatalf("content = %#v", content)
 	}
-	if content.URL != "/api/v1/manager/cad-previews/9/manifest" {
+	if content.URL != "/api/v1/manager/storage-stream?engine_id=9&storage_ref=drawings%2Fdrawing.dwg" {
 		t.Fatalf("url = %q", content.URL)
 	}
 }

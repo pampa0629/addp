@@ -45,3 +45,17 @@ test('rejects parameter targets with different types or list operators', () => {
   listTarget.components[1].query_template.parameter_filters[0].operator = 'in'
   assert.equal(selectionParameterType(listTarget, descriptors, 'selected_city'), '')
 })
+
+test('accepts a service named parameter as an exact scalar selection target', () => {
+  const namedSnapshot = structuredClone(snapshot)
+  namedSnapshot.components[2].query_template = {
+    named_parameter_bindings: [{ parameter_key: 'person', name: 'person_id_b' }],
+  }
+  namedSnapshot.parameter_bindings[1].component_parameter_key = 'person'
+  const namedDescriptors = structuredClone(descriptors)
+  namedDescriptors['target-b'].input_contract = {
+    fields: [],
+    named_parameters: [{ name: 'person_id_b', type: 'string', required: true }],
+  }
+  assert.equal(selectionParameterType(namedSnapshot, namedDescriptors, 'selected_city'), 'string')
+})

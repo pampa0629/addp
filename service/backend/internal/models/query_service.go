@@ -33,6 +33,8 @@ type QueryService struct {
 
 	// SQL配置字段（config_type='sql'时使用）
 	SqlQuery string `gorm:"type:text" json:"sql_query"`
+	// SQL 模式的强类型标量命名参数；表模式必须为空。
+	NamedParameters []QueryServiceNamedParameter `gorm:"column:named_parameters;type:jsonb;serializer:json;not null;default:'[]'" json:"named_parameters"`
 
 	// 数据配置（JSONB）
 	DataConfig JSONB `gorm:"type:jsonb;not null;default:'{}';index:idx_query_services_data_config_gin,type:gin" json:"data_config"`
@@ -283,6 +285,8 @@ type CreateQueryServiceRequest struct {
 
 	// SQL配置字段（config_type='sql'时需要）
 	SqlQuery string `json:"sql_query"`
+	// SQL 中使用 :name 引用的强类型标量参数。
+	NamedParameters []QueryServiceNamedParameter `json:"named_parameters"`
 
 	// 数据配置。table 模式必须提供 locator，格式为带 item_id 的 ResourceLocator。
 	DataConfig map[string]interface{} `json:"data_config"`
@@ -337,7 +341,8 @@ type QueryServiceDTO struct {
 	TableName  string `json:"table_name,omitempty"`
 
 	// SQL配置
-	SqlQuery string `json:"sql_query,omitempty"`
+	SqlQuery        string                       `json:"sql_query,omitempty"`
+	NamedParameters []QueryServiceNamedParameter `json:"named_parameters"`
 
 	// 配置
 	DataConfig map[string]interface{} `json:"data_config"`

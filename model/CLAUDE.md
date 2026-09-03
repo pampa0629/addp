@@ -11,12 +11,15 @@
 - 业务实体（Entity）设计与属性定义
 - 逻辑表（LogicalTable）设计：支持实体表、事实表、维度表三种建模角色
 - 星型建模视图：事实表与维度表的显式关联关系
-- 指标血缘：事实表与 Standard 模块指标的关联
+- 公共/一致性维度与维度层级：由 Model 独占定义，层级成员关联本模型字段
+- 指标实现：冻结 Standard 指标定义修订并维护粒度、来源、连接、过滤和可执行表达式
 - ER 图 Mermaid 导入导出
 - DDL 预览（物化前的 SQL 预览）
 - 数仓分层（DW Layer）定义
 
-Model Entity / LogicalTable 是企业 Catalog 的专业资源来源。Model 权威拥有完整对象、属性、字段、Domain / Element / Metric 引用和建模关系；Catalog 只通过 owner-local 变化源自动建立企业身份，并动态读取当前专业摘要，不保存或编辑这些专业事实的副本。变化捕获、动态解析 API、`model.catalog.read` 权限和软依赖边界以 [Model 概念与数据约束规范](docs/model概念与数据约束规范.md) 为准。
+Model Entity / LogicalTable 是企业 Catalog 的专业资源来源。Model 权威拥有完整对象、属性、字段、Domain / ElementRevision / MetricDefinitionRevision 引用、维度层级、指标实现和建模关系；Catalog 只通过 owner-local 变化源自动建立企业身份，并动态读取当前专业摘要，不保存或编辑这些专业事实的副本。变化捕获、动态解析 API、`model.catalog.read` 权限和软依赖边界以 [Model 概念与数据约束规范](docs/model概念与数据约束规范.md) 为准。
+
+当前 `logical_fields.hierarchy_id + hierarchy_level`、`fact_metric_mappings` 以及对 `standard.dimension_hierarchies` 的依赖是待迁移旧实现。后续改造必须直接替换为 Model-owned DimensionHierarchy / MetricImplementation，并删除旧表、字段、API、权限和前端路径，不保留兼容路线。
 
 Model Entity 与 LogicalTable 的专业关系通过当前 User Token 读取 `/:id/relations` 一跳图；它与只供 `addp-catalog` 机器同步使用的变化流、批量摘要解析严格分离。该查询只读 Model 本地事实，不调用 Catalog 或 Standard，不保存 CatalogEntry 反向引用。
 
@@ -76,7 +79,9 @@ model/
             └── DDLPreviewDialog.vue
 ```
 
-## 数据库表结构
+## 当前数据库表结构
+
+本节记录迁移前实现，用于定位代码；目标聚合与边界以 [Model 概念与数据约束规范](docs/model概念与数据约束规范.md) 为准。
 
 ### `model.entities` — 业务实体
 
@@ -144,7 +149,7 @@ model/
 | relation_type | string | `fk`（外键关联）/ `join`（宽泛关联） |
 | tenant_id | int64 | 租户隔离 |
 
-### `model.fact_metric_mappings` — 事实表与指标关联
+### `model.fact_metric_mappings` — 待替换的事实表与指标关联
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -187,7 +192,7 @@ POST   /api/v1/model/entities/import-mermaid # 从 Mermaid ER 图导入
 GET    /api/v1/model/entities/export-mermaid # 导出 Mermaid ER 图
 ```
 
-Entity、LogicalTable、DWLayer 和 EntityRelation 是独立并发版本主体。EntityAttribute 使用父 Entity 版本；LogicalField、TableRelation 和 FactMetricMapping 使用父 LogicalTable 版本。已有资源及聚合子资源的所有写操作都在 JSON body 中携带对应 `version`，成功后返回新版本；不接受 query、Header 或服务端版本兜底。
+Entity、LogicalTable、DWLayer 和 EntityRelation 是独立并发版本主体。EntityAttribute 使用父 Entity 版本；LogicalField、TableRelation、DimensionHierarchy 和 MetricImplementation 使用父 LogicalTable 版本。已有资源及聚合子资源的所有写操作都在 JSON body 中携带对应 `version`，成功后返回新版本；不接受 query、Header 或服务端版本兜底。
 
 Mermaid 导出返回 `{ "mermaid_code": "...", "revision": 1 }`，导入提交同一结构并在单个事务内推进 Tenant 实体模型集合 `revision`。不得保留只返回字符串或不带修订版本的并行接口。
 
@@ -229,7 +234,7 @@ GET/POST/DELETE .../dimension-relations                   # 事实表关联维�
 **依赖**:
 - **System 模块**: JWT 认证、用户信息（`SYSTEM_URL`）
 - **Standard 模块**:
-  - 验证 domain_id、element_id、hierarchy_id、metric_id 是否存在（`STANDARD_URL`）
+  - 验证 domain_id、element_id / element_revision_id、metric_definition_revision_id 是否存在（`STANDARD_URL`）；维度层级只校验 Model 本地事实
   - Standard 前端直接调用 Standard 唯一 API，Model 不提供代理路径
 
 **被依赖**:
@@ -244,8 +249,7 @@ Model 和 Standard 使用不同的 PostgreSQL Schema，**无数据库外键约�
 | `entities.domain_id` | `standard.domains.id` |
 | `entity_attributes.element_id` | `standard.elements.id` |
 | `logical_fields.element_id` | `standard.elements.id` |
-| `logical_fields.hierarchy_id` | `standard.dimension_hierarchies.id` |
-| `fact_metric_mappings.metric_id` | `standard.metrics.id` |
+| `metric_implementations.metric_definition_revision_id` | `standard.metric_definition_revisions.id` |
 
 创建/更新时，Service 层通过 HTTP 调用 Standard 模块 API 验证 ID 是否存在。前端直接调用 Standard 的唯一公开 API，Model 不提供 Standard 代理路径。
 
@@ -253,7 +257,7 @@ Model 和 Standard 使用不同的 PostgreSQL Schema，**无数据库外键约�
 
 Model 是 `model.logical_model.*` 第一批 Permission 的唯一 owner，机器可读事实源是 [authorization/permissions.yaml](authorization/permissions.yaml)。该 Manifest 由 `common/authorization` 在构建/发布期统一发现、校验和聚合，Model 服务启动时不向 System 动态注册 Permission。
 
-Entity、EntityRelation、DWLayer 和 LogicalModel 分别使用 `model.entity.*`、`model.entity_relation.*`、`model.dw_layer.*`、`model.logical_model.*`。EntityAttribute 是 Entity 聚合内子资源；LogicalField、TableRelation 和 FactMetricMapping 是 LogicalModel 聚合内子资源，不建立平行宽泛 Permission。Mermaid 导入是破坏性全量替换，按 Entity 与 EntityRelation 的 create/delete 执行 all-of 校验；导出按两者的 read 执行 all-of 校验。已审批实体必须先全部重新打开，导入不会绕过生命周期约束。
+Entity、EntityRelation、DWLayer 和 LogicalModel 分别使用 `model.entity.*`、`model.entity_relation.*`、`model.dw_layer.*`、`model.logical_model.*`。EntityAttribute 是 Entity 聚合内子资源；LogicalField、TableRelation、DimensionHierarchy 和 MetricImplementation 是 LogicalModel 聚合内子资源，不建立平行宽泛 Permission。Mermaid 导入是破坏性全量替换，按 Entity 与 EntityRelation 的 create/delete 执行 all-of 校验；导出按两者的 read 执行 all-of 校验。已审批实体必须先全部重新打开，导入不会绕过生命周期约束。
 
 并发契约以 [Model 概念与数据约束规范](docs/model概念与数据约束规范.md) 为事实源。后端必须把版本校验、生命周期校验、聚合写入和版本递增放在同一事务中；前端收到 `409 resource_version_conflict` 后保留本地未保存状态，不自动重试。
 

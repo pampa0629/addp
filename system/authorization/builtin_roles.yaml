@@ -1,5 +1,5 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 78
+manifest_version: 80
 roles:
   - key: platform.agent_runtime
     role_type: platform_builtin
@@ -352,12 +352,17 @@ roles:
       - inference.provider_credential.update
       - manager.configuration.read
       - manager.configuration.update
+      - security.assessment.create
       - security.assessment.read
       - security.assessment.update
       - security.classification.create
       - security.classification.delete
       - security.classification.read
       - security.classification.update
+      - security.detector.create
+      - security.detector.delete
+      - security.detector.read
+      - security.detector.update
       - security.enrollment.create
       - security.enrollment.read
       - security.enrollment.update
@@ -670,12 +675,17 @@ roles:
       - quality.rule_application.delete
       - quality.rule_application.read
       - quality.rule_application.update
+      - security.assessment.create
       - security.assessment.read
       - security.assessment.update
       - security.classification.create
       - security.classification.delete
       - security.classification.read
       - security.classification.update
+      - security.detector.create
+      - security.detector.delete
+      - security.detector.read
+      - security.detector.update
       - security.enrollment.create
       - security.enrollment.read
       - security.enrollment.update

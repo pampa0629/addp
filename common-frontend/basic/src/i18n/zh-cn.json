@@ -134,6 +134,15 @@
     "goto": "前往",
     "page": "页"
   },
+  "tabularResult": {
+    "array": "数组",
+    "object": "对象",
+    "emptyArray": "空数组",
+    "emptyObject": "空对象",
+    "arraySummary": "{count} 项",
+    "objectSummary": "{count} 个字段：{keys}",
+    "objectSummaryMore": "{count} 个字段：{keys}..."
+  },
   "schedule": {
     "title": "定时调度",
     "quickSelect": "快捷选择:",

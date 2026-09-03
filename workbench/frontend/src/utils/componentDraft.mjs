@@ -19,6 +19,7 @@ export function createParameterDraft(field, index = 0) {
     label: field.comment || field.name,
     controlType,
     required: false,
+    bindingKind: 'filter',
     field: field.name,
     operator,
     fieldType: field.type,
@@ -26,9 +27,31 @@ export function createParameterDraft(field, index = 0) {
   }
 }
 
-export function buildQueryRequest(descriptor, draft, cursor = '', format = 'json') {
-  const predicates = draft.parameters.filter(hasParameterValue).map(buildPredicate)
+export function createNamedParameterDraft(parameter, index = 0) {
+  if (!parameter?.name || !parameter?.type) return null
+  const controlType = controlTypeFor({ type: parameter.type }, 'eq')
   return {
+    key: parameter.name || `parameter_${index + 1}`,
+    label: parameter.description || parameter.name,
+    controlType,
+    required: parameter.required === true,
+    bindingKind: 'named',
+    name: parameter.name,
+    fieldType: parameter.type,
+    operator: 'eq',
+    value: Object.prototype.hasOwnProperty.call(parameter, 'default') ? structuredClone(parameter.default) : emptyControlValue(controlType),
+  }
+}
+
+export function buildQueryRequest(descriptor, draft, cursor = '', format = 'json') {
+  const predicates = draft.parameters.filter((parameter) => parameter.bindingKind !== 'named' && hasParameterValue(parameter)).map(buildPredicate)
+  const parameters = Object.fromEntries(
+    draft.parameters
+      .filter((parameter) => parameter.bindingKind === 'named' && hasParameterValue(parameter))
+      .map((parameter) => [parameter.name, normalizeParameterValue(parameter)]),
+  )
+  return {
+    parameters,
     select: [...draft.columns],
     filter: predicates.length === 0 ? null : predicates.length === 1 ? predicates[0] : { and: predicates },
     order_by: stableOrder(descriptor),
@@ -56,10 +79,14 @@ export function buildComponentConfiguration(descriptor, draft, id) {
     query_template: {
       select: [...draft.columns],
       fixed_filter: null,
-      parameter_filters: draft.parameters.map((parameter) => ({
+      parameter_filters: draft.parameters.filter((parameter) => parameter.bindingKind !== 'named').map((parameter) => ({
         parameter_key: parameter.key,
         field: parameter.field,
         operator: parameter.operator,
+      })),
+      named_parameter_bindings: draft.parameters.filter((parameter) => parameter.bindingKind === 'named').map((parameter) => ({
+        parameter_key: parameter.key,
+        name: parameter.name,
       })),
       order_by: stableOrder(descriptor),
       page_limit: draft.pageLimit,
@@ -79,15 +106,21 @@ export function draftFromComponent(component, descriptor) {
     columns: [...(component.query_template?.select || [])],
     pageLimit: component.query_template?.page_limit || descriptor.input_contract.page.default_limit,
     parameters: (component.parameter_definitions || []).map((definition) => {
-      const binding = (component.query_template?.parameter_filters || []).find((item) => item.parameter_key === definition.key) || {}
-      const field = (descriptor.input_contract.fields || []).find((item) => item.name === binding.field)
+      const namedBinding = (component.query_template?.named_parameter_bindings || []).find((item) => item.parameter_key === definition.key)
+      const filterBinding = (component.query_template?.parameter_filters || []).find((item) => item.parameter_key === definition.key)
+      const binding = namedBinding || filterBinding || {}
+      const field = namedBinding
+        ? (descriptor.input_contract.named_parameters || []).find((item) => item.name === namedBinding.name)
+        : (descriptor.input_contract.fields || []).find((item) => item.name === filterBinding?.field)
       return {
         key: definition.key,
         label: definition.label,
         controlType: definition.control_type,
         required: definition.required,
-        field: binding.field,
-        operator: binding.operator,
+        bindingKind: namedBinding ? 'named' : 'filter',
+        name: namedBinding?.name,
+        field: filterBinding?.field,
+        operator: namedBinding ? 'eq' : filterBinding?.operator,
         fieldType: field?.type || 'string',
         value: component.default_parameter_values?.[definition.key] ?? emptyControlValue(definition.control_type),
       }

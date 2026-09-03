@@ -1,8 +1,12 @@
 <template>
   <div class="cad-preview">
     <div ref="viewportRef" class="cad-viewport" />
-    <div v-if="loading" class="cad-status">{{ t('manager.explorer.cadLoading') }}</div>
-    <div v-else-if="errorMessage" class="cad-status is-error">{{ errorMessage }}</div>
+    <div v-if="loading" class="cad-status" role="status">
+      {{ t('manager.explorer.cadLoading') }}
+    </div>
+    <div v-else-if="errorMessage" class="cad-status is-error" role="alert">
+      {{ errorMessage }}
+    </div>
   </div>
 </template>
 
@@ -10,110 +14,151 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { getAccessToken } from '@common-ui'
-import Map from 'ol/Map.js'
-import View from 'ol/View.js'
-import TileLayer from 'ol/layer/Tile.js'
-import XYZ from 'ol/source/XYZ.js'
-import Projection from 'ol/proj/Projection.js'
-import { resolveCADTileURL } from '@/utils/cadPreviewURL'
 
 const props = defineProps({
-  data: { type: Object, required: true },
-  viewState: { type: Object, default: () => ({}) }
+  data: { type: Object, required: true }
 })
-const emit = defineEmits(['view-state-change'])
-const { t } = useI18n()
 
+const { t } = useI18n()
 const viewportRef = ref(null)
 const loading = ref(false)
 const errorMessage = ref('')
 const content = computed(() => props.data?.object?.content || {})
-const manifestURL = computed(() => content.value?.url || content.value?.metadata?.manifest_url || '')
-let map = null
-let objectURLs = new Set()
+const sourceURL = computed(() => content.value?.url || content.value?.metadata?.source_url || '')
+
+let activeManager = null
+let abortController = null
 let loadSerial = 0
+let runtimePromise = null
+let converterPromise = null
+let pendingDestroy = Promise.resolve()
+
+function runtimeAssetURL(fileName) {
+  const base = String(import.meta.env.BASE_URL || '/').replace(/\/+$/, '')
+  return new URL(`${base}/cad-engine/${fileName}`, window.location.origin).href
+}
 
 function authHeaders() {
   const token = getAccessToken()
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
-function disposeMap() {
-  if (map) map.setTarget(undefined)
-  map = null
-  for (const url of objectURLs) URL.revokeObjectURL(url)
-  objectURLs = new Set()
-  if (viewportRef.value) viewportRef.value.replaceChildren()
+function drawingName() {
+  const object = props.data?.object || {}
+  const candidate = String(object.path || object.name || object.storage_ref || 'drawing.dwg')
+  return candidate.split('/').filter(Boolean).pop() || 'drawing.dwg'
 }
 
-async function loadManifest(url) {
+async function loadRuntime() {
+  if (!runtimePromise) {
+    runtimePromise = Promise.all([
+      import('@mlightcad/cad-simple-viewer'),
+      import('@mlightcad/data-model'),
+      import('@mlightcad/libredwg-converter')
+    ]).then(([engine, dataModel, converter]) => ({ engine, dataModel, converter }))
+  }
+  const runtime = await runtimePromise
+  if (!converterPromise) {
+    converterPromise = Promise.resolve().then(() => {
+      const dwgConverter = new runtime.converter.AcDbLibreDwgConverter({
+        convertByEntityType: false,
+        parserWorkerUrl: runtimeAssetURL('libredwg-parser-worker.js'),
+        useWorker: true
+      })
+      runtime.dataModel.AcDbDatabaseConverterManager.instance.register(
+        runtime.dataModel.AcDbFileType.DWG,
+        dwgConverter
+      )
+    })
+  }
+  await converterPromise
+  return runtime.engine
+}
+
+async function disposeManager() {
+  abortController?.abort()
+  abortController = null
+  const manager = activeManager
+  activeManager = null
+  if (!manager) return pendingDestroy
+  pendingDestroy = manager.destroy().catch((error) => {
+    console.warn('释放 CAD WebGL 预览失败', error)
+  })
+  return pendingDestroy
+}
+
+async function loadDrawing(url) {
   const serial = ++loadSerial
   loading.value = true
   errorMessage.value = ''
   await nextTick()
-  disposeMap()
-  if (!url || !viewportRef.value) {
-    loading.value = false
-    errorMessage.value = t('manager.explorer.cadMissingManifest')
+  await disposeManager()
+
+  if (!url || !viewportRef.value || serial !== loadSerial) {
+    if (serial === loadSerial) {
+      loading.value = false
+      errorMessage.value = t('manager.explorer.cadMissingSource')
+    }
     return
   }
+
+  const controller = new AbortController()
+  abortController = controller
+  let manager = null
   try {
-    const response = await fetch(url, { headers: authHeaders() })
+    const [engine, response] = await Promise.all([
+      loadRuntime(),
+      fetch(url, { headers: authHeaders(), signal: controller.signal })
+    ])
     if (!response.ok) throw new Error(`${response.status} ${response.statusText}`)
-    const manifest = await response.json()
+    const arrayBuffer = await response.arrayBuffer()
     if (serial !== loadSerial) return
-    const bounds = manifest.bounds_2d || {}
-    const extent = [bounds.min_x, bounds.min_y, bounds.max_x, bounds.max_y].map(Number)
-    if (!extent.every(Number.isFinite) || extent[2] <= extent[0] || extent[3] <= extent[1]) {
-      throw new Error('invalid bounds_2d')
-    }
-    const projection = new Projection({ code: `ADDP-CAD-${serial}`, units: 'm', extent })
-    const template = manifest.tile_url_template || manifest.tile_template
-    if (!template) throw new Error('missing tile template')
-    const source = new XYZ({
-      projection,
-      minZoom: Number(manifest.min_zoom) || 0,
-      maxZoom: Number(manifest.max_zoom) || 0,
-      tileSize: Number(manifest.tile_size) || 512,
-      tileUrlFunction: ([z, x, y]) => resolveCADTileURL(template, z, x, y, url),
-      tileLoadFunction: async (imageTile, src) => {
-        try {
-          const tileResponse = await fetch(src, { headers: authHeaders() })
-          if (!tileResponse.ok) throw new Error(String(tileResponse.status))
-          const objectURL = URL.createObjectURL(await tileResponse.blob())
-          objectURLs.add(objectURL)
-          imageTile.getImage().src = objectURL
-        } catch (error) {
-          console.warn('CAD tile load failed', src, error)
-        }
+
+    manager = engine.AcApDocManager.createInstance({
+      container: viewportRef.value,
+      autoResize: true,
+      busyIndicatorHost: viewportRef.value,
+      builtinOpenFileDialog: false,
+      preloadDefaultFonts: false,
+      useMainThreadDraw: false,
+      webworkerFileUrls: {
+        dwgParser: runtimeAssetURL('libredwg-parser-worker.js'),
+        mtextRender: runtimeAssetURL('mtext-renderer-worker.js')
       }
     })
-    const initialCenter = Array.isArray(props.viewState?.center) ? props.viewState.center.map(Number) : null
-    const center = initialCenter?.length === 2 && initialCenter.every(Number.isFinite)
-      ? initialCenter
-      : [(extent[0] + extent[2]) / 2, (extent[1] + extent[3]) / 2]
-    map = new Map({
-      target: viewportRef.value,
-      layers: [new TileLayer({ source })],
-      view: new View({ projection, center, zoom: Number(props.viewState?.zoom) || 0, extent })
+    if (!manager) throw new Error('CAD rendering engine could not be initialized')
+    if (!(await manager.areWorkersReady())) throw new Error('CAD worker resources are unavailable')
+
+    const opened = await manager.openDocument(drawingName(), arrayBuffer, {
+      mode: engine.AcEdOpenMode.Read,
+      openViewMode: engine.AcApOpenViewMode.Extents,
+      progressiveRendering: true
     })
-    map.on('moveend', () => {
-      const view = map?.getView()
-      if (!view) return
-      emit('view-state-change', { center: view.getCenter(), zoom: view.getZoom(), space_id: manifest.default_space || 'model-space' })
-    })
+    if (!opened) throw new Error('CAD document could not be opened')
+    if (serial !== loadSerial) {
+      await manager.destroy()
+      return
+    }
+
+    activeManager = manager
+    manager = null
+    activeManager.curView.zoomToFitDrawing()
     loading.value = false
   } catch (error) {
-    if (serial !== loadSerial) return
+    if (manager) await manager.destroy().catch(() => undefined)
+    if (serial !== loadSerial || error?.name === 'AbortError') return
     errorMessage.value = t('manager.explorer.cadLoadFailed', { error: error?.message || error })
     loading.value = false
+  } finally {
+    if (abortController === controller) abortController = null
   }
 }
 
-watch(manifestURL, loadManifest, { immediate: true })
+watch(sourceURL, loadDrawing, { immediate: true })
+
 onBeforeUnmount(() => {
   loadSerial++
-  disposeMap()
+  void disposeManager()
 })
 </script>
 
@@ -126,7 +171,12 @@ onBeforeUnmount(() => {
   background: var(--addp-bg-primary);
   border: 1px solid var(--addp-border-color-light);
 }
-.cad-viewport { width: 100%; height: 100%; }
+
+.cad-viewport {
+  width: 100%;
+  height: 100%;
+}
+
 .cad-status {
   position: absolute;
   inset: 0;
@@ -136,5 +186,8 @@ onBeforeUnmount(() => {
   color: var(--addp-text-secondary);
   background: color-mix(in srgb, var(--addp-bg-primary) 75%, transparent);
 }
-.cad-status.is-error { color: var(--el-color-danger); }
+
+.cad-status.is-error {
+  color: var(--el-color-danger);
+}
 </style>

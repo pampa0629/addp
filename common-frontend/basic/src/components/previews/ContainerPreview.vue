@@ -89,37 +89,28 @@
             @page-change="handlePageChange"
             @child-change="handleNestedChildChange"
           />
-          <el-table
+          <TabularResultRenderer
             v-else-if="activeColumns.length"
-            v-loading="activeChildLoading"
-            :data="activeRows"
-            height="420"
+            :loading="activeChildLoading"
+            :rows="activeRows"
+            :columns="activeColumns"
+            :height="420"
             border
             stripe
             class="child-table"
-          >
-            <el-table-column
-              v-for="header in activeColumns"
-              :key="`${activeChild.key}-${header}`"
-              :prop="header"
-              :label="header"
-              show-overflow-tooltip
-              min-width="140"
-            />
-          </el-table>
+          />
           <el-empty
             v-else-if="!activeChildLoading"
             :description="activeChildNoPreviewText"
           />
 
           <div v-if="showTablePagination" class="child-pagination">
-            <el-pagination
-              background
-              layout="prev, pager, next"
+            <DataPagination
               :total="activeTotal"
               :page-size="activePageSize"
               :current-page="activePage"
-              @current-change="handlePageChange"
+              layout="prev, pager, next"
+              @change="handlePageChange"
             />
           </div>
         </div>
@@ -133,6 +124,8 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import DataPagination from '../DataPagination.vue'
+import TabularResultRenderer from '../TabularResultRenderer.vue'
 
 const { t } = useI18n()
 

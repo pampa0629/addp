@@ -117,7 +117,7 @@ func BuildQueryConsumerDescriptor(service *models.QueryService) (*models.Consume
 		InputKind: "structured_query", OutputKind: outputKind,
 	}
 	input := models.StructuredQueryInputContract{
-		Kind: "structured_query", Fields: inputFields, DefaultSelection: append([]string(nil), defaultSelection...),
+		Kind: "structured_query", NamedParameters: consumerNamedParameters(service.NamedParameters), Fields: inputFields, DefaultSelection: append([]string(nil), defaultSelection...),
 		Filter:  models.ConsumerFilterContract{Combinators: []string{"and", "or", "not"}, MaxDepth: 16, MaxNodes: 256, MaxInValues: 1000},
 		Order:   models.ConsumerOrderContract{Directions: []string{"asc", "desc"}, StableKey: append([]string(nil), stableKey...)},
 		Page:    models.ConsumerPageContract{Kind: "cursor", DefaultLimit: defaultLimit, MaxLimit: maxLimit},
@@ -150,6 +150,9 @@ func ValidateQueryConsumerContract(service *models.QueryService) error {
 	if service == nil || service.Status != "active" || !service.IsRESTAPIEnabled() {
 		return fmt.Errorf("%w: query service is not consumable", ErrInvalidConsumerContract)
 	}
+	if _, err := validateQueryServiceNamedParameters(service.ConfigType, service.SqlQuery, service.NamedParameters); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidConsumerContract, err)
+	}
 	table := service.GetTableInfo()
 	if table == nil || len(table.Fields) == 0 {
 		return fmt.Errorf("%w: output fields are missing", ErrInvalidConsumerContract)
@@ -181,6 +184,17 @@ func ValidateQueryConsumerContract(service *models.QueryService) error {
 		return fmt.Errorf("%w: %v", ErrInvalidConsumerContract, err)
 	}
 	return nil
+}
+
+func consumerNamedParameters(parameters []models.QueryServiceNamedParameter) []models.ConsumerNamedParameter {
+	result := make([]models.ConsumerNamedParameter, 0, len(parameters))
+	for _, parameter := range parameters {
+		result = append(result, models.ConsumerNamedParameter{
+			Name: parameter.Name, Type: parameter.Type, Required: parameter.Required,
+			Description: parameter.Description, Default: parameter.Default,
+		})
+	}
+	return result
 }
 
 func consumerContractFingerprint(

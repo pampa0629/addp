@@ -114,6 +114,13 @@ definitions:
       schema_version:
         type: string
     type: object
+  github_com_addp_workbench_internal_models.ComponentNamedParameterBinding:
+    properties:
+      name:
+        type: string
+      parameter_key:
+        type: string
+    type: object
   github_com_addp_workbench_internal_models.ComponentParameterDefinition:
     properties:
       control_type:
@@ -140,6 +147,10 @@ definitions:
         $ref: '#/definitions/github_com_addp_workbench_internal_models.QueryFilter'
       format:
         type: string
+      named_parameter_bindings:
+        items:
+          $ref: '#/definitions/github_com_addp_workbench_internal_models.ComponentNamedParameterBinding'
+        type: array
       order_by:
         items:
           $ref: '#/definitions/github_com_addp_workbench_internal_models.QueryOrder'

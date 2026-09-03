@@ -161,43 +161,6 @@ func TestQuickViewFeatureCollectionConvertsWKTToGeoJSON(t *testing.T) {
 	}
 }
 
-func TestCADPreviewTaskConfigFromQuickView(t *testing.T) {
-	capability := &service.QuickViewCapability{
-		TenantID:        7,
-		ItemFingerprint: "cad-fingerprint",
-		Locator:         "addp://engine/26/path/cad/site.dwg?type=file&item_id=91",
-		SourceKind:      service.QuickViewSourceKindCAD,
-	}
-	config, err := cadPreviewTaskConfigFromQuickView(capability, service.QuickViewSource{
-		EngineID: 26,
-		CAD:      &service.CADPreviewSource{Format: "dwg", SourceSizeBytes: 4096},
-	})
-	if err != nil {
-		t.Fatalf("cadPreviewTaskConfigFromQuickView() error = %v", err)
-	}
-	source, ok := config["source"].(commonModels.JSONMap)
-	if !ok {
-		t.Fatalf("source config = %#v", config["source"])
-	}
-	if source["source_engine_id"] != uint(26) || source["item_id"] != uint(91) || source["format"] != "dwg" {
-		t.Fatalf("source config = %#v", source)
-	}
-}
-
-func TestCADPreviewTaskConfigFromQuickViewPreservesDXF(t *testing.T) {
-	capability := &service.QuickViewCapability{
-		TenantID: 7, ItemFingerprint: "cad-dxf", Locator: "addp://engine/26/path/cad/site.dxf?type=file", SourceKind: service.QuickViewSourceKindCAD,
-	}
-	config, err := cadPreviewTaskConfigFromQuickView(capability, service.QuickViewSource{EngineID: 26, CAD: &service.CADPreviewSource{Format: "dxf"}})
-	if err != nil {
-		t.Fatalf("cadPreviewTaskConfigFromQuickView() error = %v", err)
-	}
-	source := config["source"].(commonModels.JSONMap)
-	if source["format"] != "dxf" {
-		t.Fatalf("source format = %#v, want dxf", source["format"])
-	}
-}
-
 func TestQuickViewFeatureCollectionUsesRequestedGeometryColumn(t *testing.T) {
 	tablePreview := &models.TablePreview{
 		Rows: []map[string]interface{}{

@@ -94,7 +94,6 @@ func main() {
 	model3DGLBRepo := repository.NewModel3DGLBRepository(db)
 	gaussianSplatKSplatRepo := repository.NewGaussianSplatKSplatRepository(db)
 	pointCloudCOPCRepo := repository.NewPointCloudCOPCRepository(db)
-	cadPreviewRepo := repository.NewCADPreviewRepository(db)
 	model3DTilesRepo := repository.NewModel3DTilesRepository(db)
 	exportSessionRepo := repository.NewExportSessionRepository(db)
 	dataProfileRepo := repository.NewDataProfileRepository(db)
@@ -175,7 +174,6 @@ func main() {
 	previewRegistry := preview.NewPreviewRegistry()
 
 	preview.LoadPreviewPlugins(previewRegistry, metadataRepo, metaClient, contentRegistry, buildPluginDirSpec(pluginDirs))
-	preview.ConfigureCADPreviewRepository(previewRegistry, cadPreviewRepo)
 	logger.L().Info("数据预览: 已激活预览插件", "providers", previewRegistry.Providers())
 	profilePreviewResolver := preview.NewPreviewResolver(previewRegistry, systemClient, metaClient, systemServiceClient)
 	dataProfileSampler := service.NewPreviewDataProfileSampleProvider(profilePreviewResolver, metaClient)
@@ -268,7 +266,6 @@ func main() {
 	model3DGLBTaskSvc := service.NewModel3DGLBTaskService(model3DGLBRepo)
 	gaussianSplatKSplatTaskSvc := service.NewGaussianSplatKSplatTaskService(gaussianSplatKSplatRepo)
 	pointCloudCOPCTaskSvc := service.NewPointCloudCOPCTaskService(pointCloudCOPCRepo)
-	cadPreviewTaskSvc := service.NewCADPreviewTaskService(cadPreviewRepo)
 	model3DTilesTaskSvc := service.NewModel3DTilesTaskService(model3DTilesRepo)
 	model3DTilesTaskSvc.SetBucket(minioBucket)
 	model3DTilesTaskSvc.SetCleaner(service.NewMinIOModel3DTilesCleaner(minioClient, minioBucket))
@@ -281,8 +278,6 @@ func main() {
 	gaussianSplatKSplatTaskSvc.SetMetaClient(metaClient)
 	pointCloudCOPCTaskSvc.SetBucket(minioBucket)
 	pointCloudCOPCTaskSvc.SetCleaner(service.NewMinIOPointCloudCOPCCleaner(minioClient, minioBucket))
-	cadPreviewTaskSvc.SetBucket(minioBucket)
-	cadPreviewTaskSvc.SetCleaner(service.NewMinIOCADPreviewCleaner(minioClient, minioBucket))
 	var postGISTileGenerator *mvt.PMTilesGenerator
 	if systemClient != nil {
 		tileCacheTaskSvc.SetSourceEngineResolver(func(ctx context.Context, engineID uint) (*commonModels.Engine, error) {
@@ -340,7 +335,6 @@ func main() {
 	taskProviderHandler.SetModel3DGLBTaskService(model3DGLBTaskSvc)
 	taskProviderHandler.SetGaussianSplatKSplatTaskService(gaussianSplatKSplatTaskSvc)
 	taskProviderHandler.SetPointCloudCOPCTaskService(pointCloudCOPCTaskSvc)
-	taskProviderHandler.SetCADPreviewTaskService(cadPreviewTaskSvc)
 	taskProviderHandler.SetModel3DTilesTaskService(model3DTilesTaskSvc)
 	taskProviderHandler.SetVectorTileSetTaskService(vectorTileSetTaskSvc)
 
@@ -384,12 +378,11 @@ func main() {
 	model3DGLBHandler := api.NewModel3DGLBHandler(model3DGLBRepo, minioClient, minioBucket)
 	gaussianSplatKSplatHandler := api.NewGaussianSplatKSplatHandler(gaussianSplatKSplatRepo, minioClient, minioBucket)
 	pointCloudCOPCHandler := api.NewPointCloudCOPCHandler(pointCloudCOPCRepo, minioClient, minioBucket)
-	cadPreviewHandler := api.NewCADPreviewHandler(cadPreviewTaskSvc, cadPreviewRepo, minioClient, minioBucket)
 	model3DTilesHandler := api.NewModel3DTilesHandler(model3DTilesRepo, minioClient, minioBucket)
 	logger.L().Info("数据导入服务已初始化", "transfer_url", cfg.TransferServiceURL)
 
 	lifecycleController := modulelifecycle.NewBusiness("manager", commonClient.ModuleRuntimeRoleBackend)
-	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, systemServiceClient, metaClient, cacheManager, redisClient, embeddingService, embeddingConfigurationService, inferenceScenarioBindingService, quickViewPolicyService, baseMapProviderService, spatialPreviewService, rasterCOGRepo, taskProviderHandler, importHandler, uploadHandler, resourceActionHandler, exportHandler, rasterMosaicTileHandler, model3DGLBHandler, gaussianSplatKSplatHandler, pointCloudCOPCHandler, cadPreviewHandler, model3DTilesHandler, dataProfileHandler, protectionStore, lifecycleController)
+	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, systemServiceClient, metaClient, cacheManager, redisClient, embeddingService, embeddingConfigurationService, inferenceScenarioBindingService, quickViewPolicyService, baseMapProviderService, spatialPreviewService, rasterCOGRepo, taskProviderHandler, importHandler, uploadHandler, resourceActionHandler, exportHandler, rasterMosaicTileHandler, model3DGLBHandler, gaussianSplatKSplatHandler, pointCloudCOPCHandler, model3DTilesHandler, dataProfileHandler, protectionStore, lifecycleController)
 
 	serviceHost := commonConfig.GetServiceHost()
 	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.Port)
@@ -438,17 +431,6 @@ func main() {
 			workflowRuntimeLister,
 			minioClient,
 			serviceURL,
-			cfg.MinioEndpoint,
-			cfg.MinioAccessKey,
-			cfg.MinioSecretKey,
-			cfg.MinioUseSSL,
-			minioBucket,
-			cfg.RasterMosaicGeneration.Timeout,
-		))
-		cadPreviewTaskSvc.SetExecutor(service.NewManagerCADPreviewExecutor(
-			systemClient,
-			workflowRuntimeLister,
-			minioClient,
 			cfg.MinioEndpoint,
 			cfg.MinioAccessKey,
 			cfg.MinioSecretKey,

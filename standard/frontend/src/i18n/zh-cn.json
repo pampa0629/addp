@@ -43,6 +43,15 @@
       "stewardId": "责任人用户 ID",
       "stewardIdPlaceholder": "输入数据责任人的用户 ID",
       "selectDomain": "选择业务域",
+      "scopeLabel": "适用范围",
+      "selectScope": "选择适用范围",
+      "ownerDomainLabel": "归属业务域",
+      "ownerDomainRequired": "请选择归属业务域",
+      "scopeValue": {
+        "platform": "平台级",
+        "tenant_common": "租户公共",
+        "domain": "业务域专属"
+      },
       "selectStatus": "选择状态",
       "domainOptional": "选择业务域（可选）",
       "remove": "移除",
@@ -233,7 +242,6 @@
       "typeLabel": "类型",
       "descriptionLabel": "描述",
       "descriptionRequired": "请输入描述",
-      "domainRequired": "请选择归属业务域",
       "valueType": "码值类型",
       "origin": "来源",
       "originValue": {

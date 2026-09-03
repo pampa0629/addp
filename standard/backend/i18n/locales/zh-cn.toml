@@ -52,6 +52,9 @@ other = "资源已被其他用户修改，请刷新后重试"
 [standard.common.invalid_resource_reference]
 other = "引用的资源不存在或不属于当前租户"
 
+[standard.scope.invalid]
+other = "适用范围与归属业务域不一致"
+
 [standard.revision.invalid]
 other = "标准修订内容不完整或约束不一致"
 

@@ -116,7 +116,10 @@ func TestPostgresSchemaStatementsDefineDeletePolicies(t *testing.T) {
 	joined := strings.Join(postgresStandardSchemaStatements(), "\n")
 	for _, expected := range []string{
 		"CONSTRAINT fk_standard_domains_parent FOREIGN KEY (parent_id) REFERENCES standard.domains(id) ON DELETE RESTRICT",
-		"CONSTRAINT fk_standard_elements_domain FOREIGN KEY (domain_id) REFERENCES standard.domains(id) ON DELETE RESTRICT",
+		"CONSTRAINT fk_standard_elements_owner_domain FOREIGN KEY (owner_domain_id) REFERENCES standard.domains(id) ON DELETE RESTRICT",
+		"CONSTRAINT fk_standard_code_sets_owner_domain FOREIGN KEY (owner_domain_id) REFERENCES standard.domains(id) ON DELETE RESTRICT",
+		"CONSTRAINT ck_standard_elements_scope CHECK",
+		"CONSTRAINT ck_standard_code_sets_scope CHECK",
 		"CONSTRAINT fk_standard_glossary_element_mappings_element FOREIGN KEY (element_id) REFERENCES standard.elements(id) ON DELETE CASCADE",
 		"CONSTRAINT fk_standard_metric_dependencies_to FOREIGN KEY (to_metric_id) REFERENCES standard.metrics(id) ON DELETE RESTRICT",
 		"CONSTRAINT fk_standard_document_metric_mappings_metric FOREIGN KEY (metric_id) REFERENCES standard.metrics(id) ON DELETE CASCADE",

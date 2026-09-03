@@ -52,6 +52,9 @@ other = "The resource was modified by another user. Refresh and try again"
 [standard.common.invalid_resource_reference]
 other = "A referenced resource does not exist or belongs to another tenant"
 
+[standard.scope.invalid]
+other = "The scope and owning domain are inconsistent"
+
 [standard.revision.invalid]
 other = "The standard revision is incomplete or contains inconsistent constraints"
 

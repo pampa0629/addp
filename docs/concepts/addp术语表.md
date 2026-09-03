@@ -56,6 +56,7 @@
 | asset category assignment | 资产归类 | Asset 对自身主展示分类的权威归属关系。 | 由 Asset owner 维护，可参考组成 CatalogEntry 的语义，但不得自动复制或继承企业资源目录结构。 |
 | Workbench module | Workbench 模块 | ADDP 面向数据消费者、以已发布 Service 为唯一数据入口的动态查询、可视化和数据应用创作 owner。 | 不直连 Engine、不拥有 SQL、指标、物化或任务编排；Service 不可达只失败依赖该服务的当前请求，不影响 Workbench Ready。 |
 | Service Consumer Descriptor | 服务消费描述 | Service owner 面向消费者发布的、版本化且不包含管理事实的服务输入、输出、分页、格式和执行 operation 契约。 | 稳定协议从 `addp.service_consumer/v1` 开始；不暴露 SQL、Engine 凭据、表名或 Workbench renderer。 |
+| query service named parameter | 查询服务命名参数 | Query Service 发布时声明、执行时由消费者按名称提交并由 Service 强类型校验的标量输入。 | 只用于参数影响固定 SQL 内部计算、且不能表达为输出字段筛选的场景；不是字段名、表名、SQL 片段或 Workbench 私有参数。SQL 使用 `:name`，执行时走引擎原生绑定，禁止字符串替换。 |
 | ServiceReference | 服务引用 | 消费者对一个已发布 Service 的强类型稳定引用，由 `service_type + service_id` 组成。 | Data Application Component 保存该引用并通过 Service Consumer Catalog 解析，不能保存或猜测执行 URL。 |
 | Data Application Component | 数据应用组件 | Data Application 内直接绑定一个 ServiceReference，并保存经 Consumer Descriptor 校验的查询模板、参数定义、契约指纹和 renderer 配置的内聚实体。 | 不是独立聚合根，不单独发布或共享；不保存查询结果、cursor、Token、SQL 或 Service 管理 DTO。 |
 | Data Application | 数据应用 | Workbench 中直接配置一个或多个 Data Application Component，并拥有草稿、页面布局、参数绑定、组件联动、发布、下线和稳定运行入口的聚合根。 | 不等同于 System Application；不依赖中间视图资源，不保存查询结果、凭据或 Service URL。 |
@@ -90,16 +91,26 @@
 
 | 英文术语 | 中文术语 | 定义 | 备注 |
 |---|---|---|---|
+| business domain | 业务域 | 对业务能力、业务语义和治理责任进行稳定划分的组织边界。 | 业务域是跨 Standard、Model、Catalog、Quality 等模块复用的治理维度；它不是权限/审批容器、目录分类或可见范围。对象可由一个业务域负责，同时被其他业务域复用。 |
+| standard scope | 标准适用范围 | 描述标准对象在哪个治理范围内成立，固定为 `platform`、`tenant_common` 或 `domain`。 | `domain` 范围必须指定 `owner_domain_id`；`platform` 和 `tenant_common` 不强制归属业务域。适用范围回答“在哪里成立”，归属域回答“谁负责”，二者不可混用。 |
+| standard collection | 标准集 | 为标准对象提供成员维护、管理权限、审核流程和维护人配置的治理容器。 | 标准集可以跨业务域组织对象，不承担业务分类和复用范围语义；对象是否归属标准集不改变其稳定身份、适用范围或归属域。 |
+| standard category | 标准分类 | 为标准对象提供树形浏览、筛选和导航的分类节点。 | 分类仅用于信息架构，可以按对象类型设置不同分类树；不得用分类代替业务域、标准集、权限或审核状态。 |
 | data element | 数据元 | 对一个可复用业务数据概念的标准化定义，统一其名称、定义、表示方式、值域和责任归属。 | 数据元是 Standard 的稳定身份；业务含义和表示约束保存在不可变的数据元修订中。它不是数据库中的具体字段，也不承载安全分类分级。 |
 | data element revision | 数据元修订 | 数据元一次可审核、可发布的完整业务定义快照。 | API 与数据库使用 `revision_no` 表达业务版次；`published` 修订的业务定义不可修改，后续变更必须创建新修订。不得复用资源并发字段 `version`。 |
 | value domain | 值域 | 数据元允许取值的语义和表示约束。 | ADDP 当前只实现 `unrestricted`、`range`、`enumeration` 三类；一个数据元修订只能选择一种。暂不建立通用 ValueDomain 主资源。 |
 | range value domain | 连续值域 | 通过结构化最小值、最大值及边界是否包含等规则描述的值域。 | 保存于数据元修订；与枚举码值集互斥。格式、长度等表示约束不作为第二套值域事实。 |
-| code set | 码值集 | 一组可复用、受治理的枚举允许值标准。 | 码值集是 Standard 的稳定身份，归属一个主要业务域但允许跨域复用；具体定义和码项保存在码值集修订中。 |
+| code set | 码值集 | 一组可复用、受治理的枚举允许值标准。 | 码值集是 Standard 的稳定身份；具体定义和码项保存在码值集修订中。其适用范围可以是平台、租户公共或业务域，不以“租户自定义”推导为必须归属业务域。 |
 | code set revision | 码值集修订 | 码值集一次可审核、可发布的完整枚举快照。 | 发布后不可修改；数据元枚举值域必须引用具体 `code_set_revision_id`，不能动态跟随码值集当前版本。 |
 | code item | 码值项 | 码值集修订中的一个允许值，由机器编码、显示名称和业务定义组成。 | 码值项从属于码值集修订，不具有独立发布生命周期；停用或替代码值通过新修订表达。 |
-| standard revision status | 标准修订状态 | 数据元修订和码值集修订的统一审核发布状态。 | 统一使用 `draft`、`in_review`、`published`、`withdrawn`；`published` 只表示审核通过且定义不可变，不等同于当前生效。同一稳定身份至多有一个可编辑草稿，可以有多个生效区间不重叠的已发布修订。 |
+| metric definition | 指标定义 | 对指标业务含义、统计口径、单位、责任归属及适用范围形成的可复用语义契约。 | 属于 Standard，用来指导和约束实现；不保存具体表、字段、连接、过滤器或可直接执行的引擎表达式。正式发布的指标定义必须引用不可变修订。 |
+| metric implementation | 指标实现 | 在确定模型上实现某个指标定义的计算设计，明确粒度、事实来源、维度、连接、过滤和可执行表达式。 | 属于 Model，并冻结所依据的指标定义修订；同一指标定义可以有多个面向不同模型或引擎的实现。 |
+| dimension hierarchy | 维度层级 | 在数据模型中定义维度成员从汇总到明细的有序层次及层级字段。 | 属于 Model，而不是 Standard；层级字段可以引用已发布的数据元修订以获得统一语义。跨模型复用通过 Model 的公共/一致性维度实现。 |
+| standard document revision | 标准文档修订 | 标准来源文档一次不可变的内容快照及其版本、来源和生效信息。 | 属于 Standard。Copilot 可从修订内容提取标准候选项，但提取结果必须保留页码、章节或文本片段等证据，并经人工审核后才能发布为正式标准修订。 |
+| standard revision status | 标准修订状态 | 可正式发布的标准定义修订所共用的审核发布状态。 | 数据元、码值集、指标定义和标准文档等发布型定义统一使用 `draft`、`in_review`、`published`、`withdrawn`；`published` 只表示审核通过且定义不可变，不等同于当前生效。同一稳定身份至多有一个可编辑草稿，可以有多个生效区间不重叠的已发布修订。 |
 | effective standard revision | 当前生效标准修订 | 在指定业务时点满足 `effective_from <= as_of < effective_to` 的已发布修订；`effective_to` 为空表示无上界。 | Standard 按时点动态解析，不保存 `current_revision_id` 缓存；未显式传入 `as_of` 时使用服务端当前时间。同一稳定身份在任一时点至多解析出一个修订。 |
-| owning domain | 归属业务域 | 对标准对象承担定义、维护和审批责任的主要业务域。 | 码值集归属域不限制其他业务域引用；Tenant 自定义码值集必须指定归属域，平台内置码值集由平台治理。 |
+| owning domain | 归属业务域 | 对标准对象承担定义、维护和审批责任的主要业务域。 | 仅 `domain` 范围的标准对象必须指定归属域；归属域不限制其他业务域引用。平台级对象由平台治理，租户公共对象由租户治理。 |
+| standard mapping | 标准映射 | 将实际数据资源的字段或组件与确定的数据元修订建立的可治理语义关联。 | 映射事实由 Catalog 拥有，必须记录目标组件、数据元修订、来源、置信度和审核状态；AI 只产生候选映射，不能直接形成已审核事实。 |
+| standard conformance assessment | 标准符合性评估 | 按确定的标准修订检查实际数据资源，并形成结果、证据、问题及趋势的质量事实。 | 规则应用、执行和结果由 Quality 拥有；Standard 只聚合展示覆盖率和符合性，不复制映射或执行结果。 |
 | data dictionary | 数据字典 | 对实际数据结构及其业务解释形成的查询或导出视图。 | 由 Meta 的物理字段事实、Catalog 的语义关联和 Standard 在查询时点生效的数据元/码值解释组合生成；不是 Standard 内新的持久化主资源。 |
 
 ## 数据安全与隐私保护
@@ -108,14 +119,18 @@
 |---|---|---|---|
 | Security module | 数据安全模块 | ADDP 中拥有敏感类型、安全分类分级、敏感发现、资源安全评估、保护策略和保护投影的独立 owner 模块。 | 稳定技术名为 `Security`，产品入口使用“数据安全与隐私保护”；不接管 IAM、资源授权或业务数据代理。 |
 | professional resource reference | 专业资源引用 | 跨模块精确引用 owner 稳定专业资源身份的强类型坐标。 | 由 `owner_module + resource_type + resource_identity + optional component_key` 组成；它不是 CatalogEntry ID，也不是可以解析或猜测的通用字符串。 |
-| SensitiveDataType | 敏感数据类型 | 描述需要保护的数据语义类型。 | 例如手机号、身份证号、邮箱、银行卡号和精确位置；不等同于字段的技术数据类型。 |
-| SecurityClassification | 安全分类 | Security 对保护对象进行安全语义组织的稳定定义。 | 与 Standard 业务域、术语或数据元正交，不保留双事实源。 |
-| SecurityGrade | 安全等级 | Security 对保护强度、审批与使用限制进行有序表达的稳定定义。 | 等级只是策略编译输入，不直接替代 Owner 资源授权。 |
-| ProtectionEnrollment | 保护纳管 | 将确定专业资源显式纳入 Security 发现、评估和保护生命周期的聚合。 | 首期只在 DataItem 级创建纳管，字段组件由 Detector 发现，不接受人工填写字段路径；未纳管资源沿用原路径，纳管必须先安装 Owner 门禁再开始发现。 |
+| SensitiveDataType | 敏感数据类型 | 描述需要保护的数据语义类型。 | 例如手机号、身份证号、邮箱、银行卡号和精确位置；不等同于字段的技术数据类型。每个类型选择一个安全分类和自动发现后的初始安全等级，但不保存检测算法或识别阈值。产品界面在“敏感数据定义”中维护。 |
+| SecurityClassification | 安全分类 | Security 对保护对象按业务或合规语义进行组织的稳定定义。 | 与 SecurityGrade 相互独立，也与 Standard 业务域、术语或数据元正交，不保留双事实源；产品界面称“分类目录”。 |
+| SecurityGrade | 安全等级 | Security 对保护强度、审批与使用限制进行有序表达的稳定定义。 | 与 SecurityClassification 相互独立；等级只是策略编译输入，不直接替代 Owner 资源授权；产品界面称“保护等级”。 |
+| DetectorCapability | 检测能力 | Security 随平台版本安装、由可信代码实现的版本化敏感识别能力。 | 平台级只读注册表；公开描述能力键、目标形态、证据来源、适用资源类型、实现方法、隐私边界和已知局限，不允许租户上传脚本、SQL 或任意正则。 |
+| Detector | 检测器绑定 | 租户选择一个已安装 DetectorCapability，将其绑定到一个 SensitiveDataType，并配置自动采用置信度的版本化配置。 | 只决定能力是否参与发现、识别结果属于哪种敏感类型，以及多高置信度可在人工复核前触发保守保护；不承载可执行代码。产品界面称“识别方式”，放在对应敏感类型下。 |
+| definition profile | 推荐定义方案 | Security 随平台版本提供、可显式应用到 Tenant 的分类目录和保护等级模板。 | 读取推荐方案不写库；应用操作在单个事务中按稳定编码补齐缺失定义，不覆盖 Tenant 已有同编码定义，也不创建第二套运行时事实。应用后仍由 SecurityClassification 和 SecurityGrade 作为唯一事实源。 |
+| ProtectionEnrollment | 保护纳管 | 将确定专业资源显式纳入 Security 发现、评估和保护生命周期的聚合。 | 在 DataItem 级创建纳管；字段组件来自 Detector Finding，或由治理人员从 Meta 当前字段事实中选择后直接形成正式 Assessment，均不得自由填写字段路径。未纳管资源沿用原路径，纳管必须先安装 Owner 门禁再开始发现。产品页面称“受保护资源”，“纳入数据保护”是创建该聚合的用户动作。 |
 | protection target snapshot | 保护目标快照 | ProtectionEnrollment 创建时根据标准 ResourceLocator 冻结的最小目标展示与身份前像，包含 Engine ID、DataItem 原生类型和 full_name。 | 仅用于人类可读展示、审计和重新计算 item fingerprint；不是 Meta DataItem 副本，不包含 attributes、字段、样本或 Catalog 身份。 |
-| SensitiveFinding | 敏感发现 | Detector 根据专业事实和受控样本生成的、带证据与置信度的候选结论。 | Finding 不是正式治理事实；达到保护阈值时可编译保守基线，防止审核滞后导致明文泄露。 |
-| ResourceSecurityAssessment | 资源安全评估 | 对确定专业资源或组件做出的正式安全分类分级结论。 | 直接绑定专业资源引用；Catalog 可联邦展示，但不复制或改绑该事实。 |
-| ProtectionBaseline | 保护基线 | 对敏感类型、安全等级或高置信 Finding 规定最低保护效果的规则。 | Owner 可以执行更严结果，不得降低基线。 |
+| SensitiveFinding | 敏感发现 | Detector 根据专业事实和受控样本生成的、带证据与置信度的候选结论。 | Finding 不是正式治理事实；达到对应 Detector 绑定的自动采用置信度时可编译保守基线，防止审核滞后导致明文泄露。 |
+| SensitiveDiscoveryQualitySummary | 敏感发现质量摘要 | Security 根据现有 Finding、不可变复核和 Assessment 当前修订即时聚合的只读质量观察。 | 当前候选只取各在保护 Enrollment 的最新成功发现；历史人工复核按资源、组件和检测能力版本折叠为最新结论，避免重复发现放大样本。人工补充只作为可能漏检的线索，不直接归因于某个 Detector，也不持久化为新的业务事实。 |
+| ResourceSecurityAssessment | 资源安全评估 | 对确定专业资源或组件做出的正式安全分类分级结论。 | 可由 Finding 复核确认/调整形成，也可由治理人员从 Meta 当前组件清单中人工指定；撤销通过不可变修订表达，不删除历史。Catalog 可联邦展示，但不复制或改绑该事实。 |
+| ProtectionBaseline | 保护基线 | 对敏感类型与安全等级组合规定最低保护效果的规则。 | Owner 可以执行更严结果，不得降低基线；产品页面称“默认保护规则”，强调它是未另行收紧时自动采用的完整规则，而不是等待后续配置的半成品。 |
 | ProtectionPolicy | 保护策略 | 针对一个正式资源安全评估、消费 Owner 和动作，对保护基线作显式收紧的可版本化控制面决策。 | 无显式策略时仍执行 Assessment 对应的 ProtectionBaseline；首期策略只能收紧为 `mask|suppress|deny`，不能放宽基线，也不承载授权或受控例外。策略由 Security 拥有，不在 Manager、Transfer、Develop 或 Service 中复制编辑。 |
 | ProtectionProjection | 保护投影 | Security 为某个 Owner 出口编译的、带版本、有效期、校验和发布游标的最小可执行契约。 | Owner 后台拉取并本地执行；用户数据请求不逐次调用 Security。 |
 | protection effect | 保护效果 | Owner 服务端数据出口对返回结果执行的确定性处理结果。 | 严格度固定为 `deny > suppress > mask > allow`；受保护资源投影异常时不得退回明文。 |
@@ -319,7 +334,7 @@
 | Notebook Interactive Session | Notebook 交互会话 | Develop 为一个 Tenant、User、Notebook Task 和 Script Engine 临时创建的隔离 JupyterLab 会话。 | 由已鉴权 API 创建，浏览器只访问 Develop 同源代理；会话关闭、过期或 Develop 重启后失效，Runtime 在清理前把 Notebook 保存回 owner 路径。它不是共享 Lab，也不是任务执行记录。 |
 | Notebook Native Engine Facade | Notebook 原生引擎门面 | `common-python` 面向 Notebook 使用者提供、按具体 Engine 原生术语组织的只读 Python 客户端。 | 例如 PostgreSQL 的 `schemas()` / `tables(schema=...)`、MongoDB 的 `databases()` / `collections(database=...)`。它只把用户表达编译为统一 Engine Catalog 请求，不新增引擎专用后端契约，不模拟完整原生驱动。 |
 | workflow_def | 工作流定义 | ADDP 工作流运行时协议中的 DAG 定义结构。 | 由 ADDP 前端和后端消费；不得直接等同于某个引擎的私有 DAG JSON。 |
-| SuperMap iObjects C++ | SuperMap iObjects C++ | SuperMap 提供的 C++ 数据访问、空间分析、CAD 渲染和三维转换 SDK。 | 作为 `supermap_workflow` 的运行时内部依赖，不直接暴露给 ADDP 前端；完整 SDK 母版不进入 ADDP 仓库或最终运行镜像。 |
+| SuperMap iObjects C++ | SuperMap iObjects C++ | SuperMap 提供的 C++ 数据访问、空间分析和三维转换 SDK。 | 作为 `supermap_workflow` 的运行时内部依赖，不直接暴露给 ADDP 前端；完整 SDK 母版不进入 ADDP 仓库或最终运行镜像。 |
 | supermap_workflow | SuperMap 工作流运行时 | ADDP 工作流运行时类型，对外实现 `addp.workflow/v1`，对内使用 SuperMap iObjects C++ API 和类型化内存句柄执行 DAG。 | 第一阶段只支持普通 DAG，不实现条件、循环或子工作流；实现与部署见 `engines/supermap-workflow/README.md`。 |
 | SuperMap SDX+ for PostGIS | SuperMap SDX+ for PostGIS | 基于 PostgreSQL/PostGIS geometry 的 SuperMap 空间工作区，稳定 workspace 身份为 `supermap/sdx_postgis`。 | geometry 使用 PostGIS 原生编码；与 SuperMap SDX+ for PostgreSQL 不得存在于同一 PostgreSQL 实例。 |
 | SuperMap SDX+ for PostgreSQL | SuperMap SDX+ for PostgreSQL | 基于 PostgreSQL、由 SuperMap 私有 geometry 编码承载的空间工作区，稳定 workspace 身份为 `supermap/sdx_postgresql`。 | 表结构、记录数、Bounds 和空间索引由 SuperMap iObjects C++ SDK 维护；不得把私有 geometry Blob 暴露给 Transfer 或 Common Spatial。 |

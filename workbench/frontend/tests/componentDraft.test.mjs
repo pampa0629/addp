@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { buildComponentConfiguration, buildQueryRequest, createParameterDraft, hasParameterValue } from '../src/utils/componentDraft.mjs'
+import { buildComponentConfiguration, buildQueryRequest, createNamedParameterDraft, createParameterDraft, hasParameterValue } from '../src/utils/componentDraft.mjs'
 
 const descriptor = {
   ref: { service_type: 'query', service_id: 9 },
@@ -15,6 +15,7 @@ test('compiles a reusable application component without service or domain field 
     parameters: [{ key: 'minimum', label: 'Minimum', controlType: 'number', required: false, field: 'amount', operator: 'gte', fieldType: 'decimal', value: '12.5' }],
   }
   assert.deepEqual(buildQueryRequest(descriptor, draft, 'cursor-2', 'csv'), {
+    parameters: {},
     select: ['id', 'amount'], filter: { field: 'amount', op: 'gte', value: 12.5 },
     order_by: [{ field: 'id', direction: 'asc' }], page: { limit: 50, cursor: 'cursor-2' }, format: 'csv',
   })
@@ -91,8 +92,27 @@ test('keeps an optional boolean parameter unset until the user chooses true or f
 test('creates a parameter only from a descriptor field with an executable operator', () => {
   assert.deepEqual(createParameterDraft({ name: 'person_id', type: 'string', operators: ['eq', 'in'] }, 2), {
     key: 'parameter_3', label: 'person_id', controlType: 'text', required: false,
+    bindingKind: 'filter',
     field: 'person_id', operator: 'eq', fieldType: 'string', value: '',
   })
   assert.equal(createParameterDraft({ name: 'opaque', type: 'string', operators: [] }), null)
   assert.equal(createParameterDraft({ name: 'broken', type: 'string', operators: null }), null)
+})
+
+test('compiles service named parameters into the same structured request and component snapshot', () => {
+  const named = createNamedParameterDraft({ name: 'person_id_a', type: 'string', required: true, description: 'First person' })
+  named.value = 'person-1'
+  const draft = {
+    name: 'overlap', description: '', columns: ['overlap_count'], pageLimit: 1, rendererType: 'table',
+    parameters: [named],
+  }
+  assert.deepEqual(buildQueryRequest(descriptor, draft), {
+    parameters: { person_id_a: 'person-1' },
+    select: ['overlap_count'], filter: null,
+    order_by: [{ field: 'id', direction: 'asc' }], page: { limit: 1, cursor: '' }, format: 'json',
+  })
+  const component = buildComponentConfiguration(descriptor, draft, 'overlap-component')
+  assert.deepEqual(component.query_template.parameter_filters, [])
+  assert.deepEqual(component.query_template.named_parameter_bindings, [{ parameter_key: 'person_id_a', name: 'person_id_a' }])
+  assert.equal(component.default_parameter_values.person_id_a, 'person-1')
 })

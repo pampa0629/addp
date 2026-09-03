@@ -43,6 +43,15 @@
       "stewardId": "Steward User ID",
       "stewardIdPlaceholder": "Enter the data steward user ID",
       "selectDomain": "Select Domain",
+      "scopeLabel": "Scope",
+      "selectScope": "Select scope",
+      "ownerDomainLabel": "Owning Domain",
+      "ownerDomainRequired": "Please select an owning domain",
+      "scopeValue": {
+        "platform": "Platform",
+        "tenant_common": "Tenant Common",
+        "domain": "Domain-specific"
+      },
       "selectStatus": "Select Status",
       "domainOptional": "Select Domain (optional)",
       "remove": "Remove",
@@ -233,7 +242,6 @@
       "typeLabel": "Type",
       "descriptionLabel": "Description",
       "descriptionRequired": "Please enter a description",
-      "domainRequired": "Please select an owning domain",
       "valueType": "Value Type",
       "origin": "Origin",
       "originValue": {

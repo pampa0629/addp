@@ -673,75 +673,6 @@ func TestIntegrationPostgresManagerPointCloudCOPCConcurrentClaimAndStart(t *test
 	}
 }
 
-func TestIntegrationPostgresManagerCADPreviewConcurrentClaimAndStart(t *testing.T) {
-	if os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {
-		t.Skip("set ADDP_POSTGRES_INTEGRATION=1 to run PostgreSQL integration test")
-	}
-	db, err := gorm.Open(postgres.Open(managerTileCacheRepositoryIntegrationDSN()), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open PostgreSQL: %v", err)
-	}
-	if err := db.Exec("CREATE SCHEMA IF NOT EXISTS manager").Error; err != nil {
-		t.Fatalf("create manager schema: %v", err)
-	}
-	if err := commonExecution.EnsureStore(db); err != nil {
-		t.Fatalf("ensure common execution store: %v", err)
-	}
-	if err := db.AutoMigrate(&models.CADPreviewTask{}, &models.CADPreview{}); err != nil {
-		t.Fatalf("migrate manager CAD preview tables: %v", err)
-	}
-	tenantID := uint(time.Now().UnixNano()%100000000 + 890000000)
-	t.Cleanup(func() {
-		_ = db.Unscoped().Where("tenant_id = ?", tenantID).Delete(&models.CADPreview{}).Error
-		_ = db.Where("tenant_id = ?", int(tenantID)).Delete(&commonExecution.TaskExecution{}).Error
-		_ = db.Unscoped().Where("tenant_id = ?", tenantID).Delete(&models.CADPreviewTask{}).Error
-	})
-	task := models.CADPreviewTask{TenantID: tenantID, Name: "manager-cad-preview-integration", Enabled: true,
-		Config: commonModels.JSONMap{"source": commonModels.JSONMap{"item_fingerprint": fmt.Sprintf("manager-cad-pg-%d", tenantID)}}}
-	if err := db.Create(&task).Error; err != nil {
-		t.Fatalf("create CAD preview task: %v", err)
-	}
-	repo := NewCADPreviewRepository(db)
-	createdAt := time.Now().UTC()
-	start := make(chan struct{})
-	results := make(chan error, 2)
-	for _, executionID := range []string{fmt.Sprintf("manager-cad-pg-%d-a", tenantID), fmt.Sprintf("manager-cad-pg-%d-b", tenantID)} {
-		executionID := executionID
-		go func() {
-			<-start
-			_, claimErr := repo.ClaimExecution(context.Background(), task.ID, tenantID,
-				newManagerRepositoryTestExecution(executionID, int(tenantID), commonExecution.TaskTypeCADPreviewGeneration, createdAt), false)
-			results <- claimErr
-		}()
-	}
-	close(start)
-	successes, conflicts := 0, 0
-	for range 2 {
-		switch claimErr := <-results; {
-		case claimErr == nil:
-			successes++
-		case errors.Is(claimErr, commonAPI.ErrConflict):
-			conflicts++
-		default:
-			t.Fatalf("concurrent claim error: %v", claimErr)
-		}
-	}
-	if successes != 1 || conflicts != 1 {
-		t.Fatalf("claim results success=%d conflict=%d, want 1/1", successes, conflicts)
-	}
-	var executions []commonExecution.TaskExecution
-	if err := db.Where("tenant_id = ? AND module = ? AND task_type = ? AND source_task_id = ?",
-		int(tenantID), commonExecution.ModuleManager, commonExecution.TaskTypeCADPreviewGeneration, fmt.Sprint(task.ID)).Find(&executions).Error; err != nil {
-		t.Fatalf("load claimed executions: %v", err)
-	}
-	if len(executions) != 1 || executions[0].Status != commonExecution.ExecutionStatusPending || executions[0].StartedAt != nil {
-		t.Fatalf("claimed executions = %#v", executions)
-	}
-	if err := repo.StartExecution(context.Background(), task.ID, tenantID, executions[0].ExecutionID, createdAt.Add(time.Second)); err != nil {
-		t.Fatalf("start claimed execution: %v", err)
-	}
-}
-
 func TestIntegrationPostgresManagerModel3DTilesConcurrentClaimAndStart(t *testing.T) {
 	if os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {
 		t.Skip("set ADDP_POSTGRES_INTEGRATION=1 to run PostgreSQL integration test")
@@ -845,7 +776,7 @@ func TestIntegrationPostgresManagerManagedTaskSemanticIdentityIndexes(t *testing
 	})
 	fingerprint := fmt.Sprintf("manager-semantic-%d", tenantID)
 	tileConfig := commonModels.JSONMap{
-		"target": commonModels.JSONMap{"item_fingerprint": fingerprint},
+		"target":       commonModels.JSONMap{"item_fingerprint": fingerprint},
 		"profile_hash": "profile-a",
 	}
 	if err := db.Create(&models.TileCacheTask{TenantID: tenantID, Name: "tile-a", Enabled: true, Config: tileConfig}).Error; err != nil {

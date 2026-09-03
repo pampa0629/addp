@@ -45,7 +45,8 @@ func (j *JSONB) Scan(value interface{}) error {
 type Element struct {
 	ID              int64       `gorm:"primaryKey;autoIncrement" json:"id"`
 	TenantID        int64       `gorm:"not null;index;uniqueIndex:uq_standard_elements_tenant_code" json:"tenant_id"`
-	DomainID        *int64      `gorm:"index" json:"domain_id,omitempty"`
+	ScopeType       string      `gorm:"size:20;not null;default:'tenant_common';index" json:"scope_type" enums:"platform,tenant_common,domain"`
+	OwnerDomainID   *int64      `gorm:"index" json:"owner_domain_id,omitempty"`
 	Code            string      `gorm:"size:100;not null;uniqueIndex:uq_standard_elements_tenant_code" json:"code"`
 	StewardID       *int64      `json:"steward_id,omitempty"`
 	Tags            StringArray `gorm:"type:jsonb;serializer:json" json:"tags"`
@@ -114,6 +115,8 @@ type ElementAggregate struct {
 type PublishedElementReference struct {
 	ID             int64  `json:"id"`
 	TenantID       int64  `json:"tenant_id"`
+	ScopeType      string `json:"scope_type" enums:"platform,tenant_common,domain"`
+	OwnerDomainID  *int64 `json:"owner_domain_id,omitempty"`
 	Name           string `json:"name"`
 	Code           string `json:"code"`
 	Status         string `json:"status"`
@@ -124,7 +127,8 @@ type PublishedElementReference struct {
 }
 
 type CreateElementRequest struct {
-	DomainID          *int64                 `json:"domain_id,omitempty"`
+	ScopeType         string                 `json:"scope_type" binding:"required" enums:"tenant_common,domain"`
+	OwnerDomainID     *int64                 `json:"owner_domain_id,omitempty"`
 	Code              string                 `json:"code" binding:"required"`
 	StewardID         *int64                 `json:"steward_id,omitempty"`
 	Tags              []string               `json:"tags"`
@@ -149,10 +153,11 @@ type CreateElementRequest struct {
 }
 
 type UpdateElementRequest struct {
-	Version   int64    `json:"version" binding:"required,gt=0" minimum:"1"`
-	DomainID  *int64   `json:"domain_id,omitempty"`
-	StewardID *int64   `json:"steward_id,omitempty"`
-	Tags      []string `json:"tags"`
+	Version       int64    `json:"version" binding:"required,gt=0" minimum:"1"`
+	ScopeType     string   `json:"scope_type" binding:"required" enums:"tenant_common,domain"`
+	OwnerDomainID *int64   `json:"owner_domain_id,omitempty"`
+	StewardID     *int64   `json:"steward_id,omitempty"`
+	Tags          []string `json:"tags"`
 }
 
 type CreateElementRevisionRequest struct {

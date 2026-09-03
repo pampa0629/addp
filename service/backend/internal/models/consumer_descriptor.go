@@ -63,14 +63,23 @@ type ConsumerOperation struct {
 }
 
 type StructuredQueryInputContract struct {
-	Kind             string                 `json:"kind" enums:"structured_query"`
-	Fields           []ConsumerQueryField   `json:"fields"`
-	DefaultSelection []string               `json:"default_selection"`
-	Filter           ConsumerFilterContract `json:"filter"`
-	Order            ConsumerOrderContract  `json:"order"`
-	Page             ConsumerPageContract   `json:"page"`
-	Formats          []string               `json:"formats"`
-	Intent           ConsumerQueryIntent    `json:"intent"`
+	Kind             string                   `json:"kind" enums:"structured_query"`
+	NamedParameters  []ConsumerNamedParameter `json:"named_parameters"`
+	Fields           []ConsumerQueryField     `json:"fields"`
+	DefaultSelection []string                 `json:"default_selection"`
+	Filter           ConsumerFilterContract   `json:"filter"`
+	Order            ConsumerOrderContract    `json:"order"`
+	Page             ConsumerPageContract     `json:"page"`
+	Formats          []string                 `json:"formats"`
+	Intent           ConsumerQueryIntent      `json:"intent"`
+}
+
+type ConsumerNamedParameter struct {
+	Name        string             `json:"name"`
+	Type        datatype.FieldType `json:"type"`
+	Required    bool               `json:"required"`
+	Description string             `json:"description,omitempty"`
+	Default     interface{}        `json:"default,omitempty" swaggertype:"object"`
 }
 
 type ConsumerQueryField struct {

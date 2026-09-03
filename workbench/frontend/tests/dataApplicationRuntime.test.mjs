@@ -36,6 +36,7 @@ test('builds a component query only from explicit application parameter bindings
   const values = initialApplicationParameterValues(snapshot)
   assert.deepEqual(values, { minimum_amount: 10, missing_rows: false })
   assert.deepEqual(buildComponentQuery(snapshot, component, values, 'next-page-cursor'), {
+    parameters: {},
     select: ['id', 'amount'],
     filter: { and: [
       { field: 'active', op: 'eq', value: true },
@@ -46,6 +47,27 @@ test('builds a component query only from explicit application parameter bindings
     format: 'json',
   })
   assert.equal(buildComponentQuery(snapshot, component, values, '', 'csv').format, 'csv')
+})
+
+test('binds application parameters to service named parameters without creating field filters', () => {
+  const namedComponent = structuredClone(component)
+  namedComponent.query_template.parameter_filters = []
+  namedComponent.query_template.named_parameter_bindings = [
+    { parameter_key: 'first-person', name: 'person_id_a' },
+    { parameter_key: 'second-person', name: 'person_id_b' },
+  ]
+  const namedSnapshot = structuredClone(snapshot)
+  namedSnapshot.parameters = [
+    { key: 'person-a', required: true },
+    { key: 'person-b', required: true },
+  ]
+  namedSnapshot.parameter_bindings = [
+    { application_parameter_key: 'person-a', component_id: namedComponent.id, component_parameter_key: 'first-person' },
+    { application_parameter_key: 'person-b', component_id: namedComponent.id, component_parameter_key: 'second-person' },
+  ]
+  const query = buildComponentQuery(namedSnapshot, namedComponent, { 'person-a': 'a', 'person-b': 'b' })
+  assert.deepEqual(query.parameters, { person_id_a: 'a', person_id_b: 'b' })
+  assert.deepEqual(query.filter, { field: 'active', op: 'eq', value: true })
 })
 
 test('maps a result selection atomically to application parameters and deduplicated component targets', () => {

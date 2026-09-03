@@ -24,7 +24,8 @@ func NewElementHandler(svc *service.ElementService) *ElementHandler { return &El
 // @Tags Standard
 // @Produce json
 // @Param ids query string false "数据元 ID 集合，逗号分隔，最多 100 个 | Data element IDs, comma-separated, maximum 100"
-// @Param domain_id query int false "归属业务域 ID | Owning domain ID"
+// @Param scope_type query string false "适用范围 | Scope" Enums(platform,tenant_common,domain)
+// @Param owner_domain_id query int false "归属业务域 ID，仅 domain 范围适用 | Owning domain ID, only for domain scope"
 // @Param status query string false "修订状态 | Revision status" Enums(draft,in_review,published,withdrawn)
 // @Param keyword query string false "关键字 | Keyword"
 // @Param as_of query string false "生效时点（RFC3339，默认服务端当前时间） | Effective point in time (RFC3339, defaults to server time)"
@@ -50,17 +51,26 @@ func (h *ElementHandler) ListElements(c *gin.Context) {
 		return
 	}
 	opts := repository.ListElementOptions{IDs: ids, Status: status, Keyword: c.Query("keyword")}
+	if opts.ScopeType, err = parseOptionalStandardScope(c); err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
 	if opts.AsOf, err = parseOptionalAsOf(c); err != nil {
 		respondError(c, http.StatusBadRequest, err)
 		return
 	}
-	if value := c.Query("domain_id"); value != "" {
+	ownerDomainValues := c.Request.URL.Query()["owner_domain_id"]
+	if len(ownerDomainValues) > 1 {
+		respondError(c, http.StatusBadRequest, fmt.Errorf("duplicate owner_domain_id query parameter"))
+		return
+	}
+	if value := c.Query("owner_domain_id"); value != "" {
 		id, parseErr := strconv.ParseInt(value, 10, 64)
 		if parseErr != nil || id <= 0 {
-			respondError(c, http.StatusBadRequest, fmt.Errorf("invalid domain_id"))
+			respondError(c, http.StatusBadRequest, fmt.Errorf("invalid owner_domain_id"))
 			return
 		}
-		opts.DomainID = &id
+		opts.OwnerDomainID = &id
 	}
 	if value := c.Query("page"); value != "" {
 		opts.Page, _ = strconv.Atoi(value)

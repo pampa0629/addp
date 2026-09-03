@@ -56,62 +56,6 @@ func TestFileSingleDetectedItemInputKeepsStorageFacts(t *testing.T) {
 	}
 }
 
-func TestCatalogInputsRequireStrictDeepEnrichForCAD(t *testing.T) {
-	t.Parallel()
-
-	resource := &commonModels.Engine{ID: 9, EngineType: "nfs"}
-	parent := &models.MetaNode{ID: 3, FullName: "cad"}
-	size := int64(42)
-	detected := &metaitem.DetectedItem{ResolvedItem: dataitem.ResolvedItem{
-		DataType:           datatype.CAD,
-		Format:             string(format.FormatDWG),
-		Layout:             format.LayoutSingle,
-		PrimaryContentPath: "cad/sample.dwg",
-		SizeBytes:          &size,
-	}}
-	file := metaitem.StorageFileRef{
-		Name:              "sample.dwg",
-		Path:              "cad/sample.dwg",
-		EngineCatalogPath: plugin.FileItemPath(resource.ID, "cad/sample.dwg"),
-		Size:              size,
-	}
-	filePlan, ok := scanresource.PlanFileDetectedItem(resource.ID, "cad", detected, "file")
-	if !ok {
-		t.Fatal("file item plan should be created")
-	}
-	objectResource := scanresource.StorageResource{
-		RootName:          "data",
-		Path:              "cad/sample.dwg",
-		FullPath:          "data/cad/sample.dwg",
-		NodeType:          "object",
-		Format:            string(format.FormatDWG),
-		SizeBytes:         size,
-		EngineCatalogPath: plugin.ObjectItemPath(resource.ID, "data", "cad/sample.dwg"),
-	}
-	objectPlan := scanresource.PlanObjectSingleItem(resource.ID, objectResource, objectResource.Path, "object")
-
-	inputs := map[string]input{
-		"file single":   FileSingleInput(resource, 1, parent, file, detected, "file", file.Name, file.Path, nil, nil, models.ScannedDepthDeep),
-		"file detected": FileDetectedInput(resource, 1, parent, filePlan, detected, nil, nil, models.ScannedDepthDeep),
-		"object single": ObjectSingleInput(resource, 1, resource.ID, parent, objectPlan, objectResource, nil, objectResource.Path, nil, nil, models.ScannedDepthDeep),
-	}
-	for name, input := range inputs {
-		input := input
-		t.Run(name, func(t *testing.T) {
-			if !input.StrictDeepEnrich {
-				t.Fatal("CAD catalog input must fail deep enrichment instead of persisting basic attributes as deep")
-			}
-		})
-	}
-
-	nonCAD := *detected
-	nonCAD.DataType = datatype.Table
-	nonCAD.Format = string(format.FormatCSV)
-	if got := FileSingleInput(resource, 1, parent, file, &nonCAD, "file", file.Name, file.Path, nil, nil, models.ScannedDepthDeep); got.StrictDeepEnrich {
-		t.Fatal("non-CAD catalog input must keep the existing best-effort deep enrichment behavior")
-	}
-}
-
 func TestFileDetectedItemInputKeepsCatalogAndIndexPaths(t *testing.T) {
 	t.Parallel()
 

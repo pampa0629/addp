@@ -13,8 +13,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 421 {
-		t.Fatalf("descriptor count = %d, want 421", len(descriptors))
+	if len(descriptors) != 426 {
+		t.Fatalf("descriptor count = %d, want 426", len(descriptors))
 	}
 	if descriptors[0].Key != "agent.configuration.read" || descriptors[len(descriptors)-1].Key != "workbench.resource_grant.revoke" {
 		t.Fatalf("descriptor boundary keys = %q, %q", descriptors[0].Key, descriptors[len(descriptors)-1].Key)
@@ -359,12 +359,17 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"quality.rule_application.delete",
 		"quality.rule_application.read",
 		"quality.rule_application.update",
+		"security.assessment.create",
 		"security.assessment.read",
 		"security.assessment.update",
 		"security.classification.create",
 		"security.classification.delete",
 		"security.classification.read",
 		"security.classification.update",
+		"security.detector.create",
+		"security.detector.delete",
+		"security.detector.read",
+		"security.detector.update",
 		"security.enrollment.create",
 		"security.enrollment.read",
 		"security.enrollment.update",

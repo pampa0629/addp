@@ -44,6 +44,7 @@ Service 模块将服务分为三大类：
 
 **方式二：SQL 配置（SQL 模式）**
 - 编写自定义 SQL 查询语句
+- 可以声明强类型标量命名参数，并在 SQL 中使用 `:name`；命名参数只用于影响固定 SQL 内部计算，不用于动态表名、字段名或 SQL 片段
 - 新建服务选择查询引擎时，默认 SQL 从该引擎当前业务 Catalog 中选择有数据的真实表生成；返回表单前必须通过同一只读执行链路以最多 10 行完成验证
 - 默认 SQL 是不含 `LIMIT/OFFSET` 的基础查询，发布后由 Service 在外层统一追加分页；工作台样例中的展示行数限制不属于查询服务定义
 - 手动指定空间字段配置
@@ -65,7 +66,7 @@ Service 模块将服务分为三大类：
 
 **REST API（默认启用）**
 - 端点：`POST /api/query/{serviceName}/query`
-- 请求体：`select`、结构化 `filter`、`order_by`、`page.limit`、`page.cursor`、`format`
+- 请求体：`parameters`、`select`、结构化 `filter`、`order_by`、`page.limit`、`page.cursor`、`format`；`parameters` 只接受服务发布契约中声明的命名参数
 - 输出格式：JSON、CSV、GeoJSON（有空间字段时）
 
 **OGC API Features（自动启用）**

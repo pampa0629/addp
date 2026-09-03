@@ -258,6 +258,8 @@ func (c *StandardClient) ListReferenceCandidates(
 type ElementResponse struct {
 	ID              int64                    `json:"id"`
 	TenantID        int64                    `json:"tenant_id"`
+	ScopeType       string                   `json:"scope_type"`
+	OwnerDomainID   *int64                   `json:"owner_domain_id,omitempty"`
 	Code            string                   `json:"code"`
 	LifecycleState  string                   `json:"lifecycle_state"`
 	CurrentRevision *ElementRevisionResponse `json:"current_revision"`
@@ -284,7 +286,8 @@ type ElementRevisionBinding struct {
 	ElementID       int64                            `json:"element_id,string"`
 	RevisionID      int64                            `json:"element_revision_id,string"`
 	RevisionNo      int64                            `json:"revision_no"`
-	DomainID        *int64                           `json:"domain_id,omitempty,string"`
+	ScopeType       string                           `json:"scope_type"`
+	OwnerDomainID   *int64                           `json:"owner_domain_id,omitempty,string"`
 	Code            string                           `json:"code"`
 	Name            string                           `json:"name"`
 	Definition      string                           `json:"definition"`
@@ -324,6 +327,9 @@ type StandardCodeSetRevisionSnapshot struct {
 	CodeSetID     int64                      `json:"code_set_id,string"`
 	RevisionID    int64                      `json:"revision_id,string"`
 	RevisionNo    int64                      `json:"revision_no"`
+	ScopeType     string                     `json:"scope_type"`
+	OwnerDomainID *int64                     `json:"owner_domain_id,omitempty,string"`
+	Origin        string                     `json:"origin"`
 	Code          string                     `json:"code"`
 	Name          string                     `json:"name"`
 	Description   string                     `json:"description"`
@@ -489,8 +495,13 @@ func (c *StandardClient) ResolveElementRevisionSnapshots(ctx context.Context, el
 				result[resolution.ElementID] = nil
 				continue
 			}
-			if resolution.Snapshot == nil || resolution.Snapshot.ElementID != resolution.ElementID || resolution.Snapshot.RevisionID <= 0 || resolution.Snapshot.RevisionNo <= 0 || strings.TrimSpace(resolution.Snapshot.DataType) == "" || resolution.Snapshot.EffectiveFrom.IsZero() {
+			if resolution.Snapshot == nil || resolution.Snapshot.ElementID != resolution.ElementID || resolution.Snapshot.RevisionID <= 0 || resolution.Snapshot.RevisionNo <= 0 || strings.TrimSpace(resolution.Snapshot.DataType) == "" || resolution.Snapshot.EffectiveFrom.IsZero() || !validStandardOwnership(resolution.Snapshot.ScopeType, resolution.Snapshot.OwnerDomainID) {
 				return nil, errors.New("standard resolve element revisions returned an invalid snapshot")
+			}
+			if codeSet := resolution.Snapshot.CodeSetRevision; codeSet != nil {
+				if !validStandardOwnership(codeSet.ScopeType, codeSet.OwnerDomainID) || !validStandardCodeSetOrigin(codeSet.Origin, codeSet.ScopeType) {
+					return nil, errors.New("standard resolve element revisions returned an invalid code set snapshot")
+				}
 			}
 			result[resolution.ElementID] = resolution.Snapshot
 		}
@@ -499,6 +510,22 @@ func (c *StandardClient) ResolveElementRevisionSnapshots(ctx context.Context, el
 		return nil, errors.New("standard resolve element revisions returned incomplete results")
 	}
 	return result, nil
+}
+
+func validStandardCodeSetOrigin(origin, scopeType string) bool {
+	return (origin == "platform" && scopeType == "platform") ||
+		(origin == "tenant" && (scopeType == "tenant_common" || scopeType == "domain"))
+}
+
+func validStandardOwnership(scopeType string, ownerDomainID *int64) bool {
+	switch scopeType {
+	case "platform", "tenant_common":
+		return ownerDomainID == nil
+	case "domain":
+		return ownerDomainID != nil && *ownerDomainID > 0
+	default:
+		return false
+	}
 }
 
 func (c *StandardClient) ListElementSummaries(ctx context.Context, elementIDs []int64) ([]ElementSummary, error) {

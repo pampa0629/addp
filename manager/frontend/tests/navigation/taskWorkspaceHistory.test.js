@@ -2,7 +2,6 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const taskWorkspaceViews = [
-  'CADPreviewManagement.vue',
   'GaussianSplatKSplat.vue',
   'Model3DGLB.vue',
   'PointCloudCOPC.vue',

@@ -132,18 +132,6 @@ func ManagerTaskProviderDeclaration() (*commonModels.TaskProviderDeclaration, er
 				"edit_url":                  "/manager/point-cloud-copc?task_id=:id",
 				"deprecated":                false,
 			},
-			{
-				"type":                      "cad_preview_generation",
-				"display_name":              "CAD 栅格预览生成",
-				"description":               "使用 SuperMap 直接渲染 DWG 或 DXF Dataset，生成 Manager 受管的 WebP 瓦片预览 artifact",
-				"definition_schema":         map[string]interface{}{"type": "object"},
-				"supports_schedule":         false,
-				"supports_cancel":           false,
-				"supports_inline_execution": false,
-				"create_url":                "/manager/spatial-quick-view/cad-preview?create=1",
-				"edit_url":                  "/manager/spatial-quick-view/cad-preview?task_id=:id",
-				"deprecated":                false,
-			},
 		},
 	}
 
@@ -156,7 +144,7 @@ func ManagerTaskProviderDeclaration() (*commonModels.TaskProviderDeclaration, er
 
 	return &commonModels.TaskProviderDeclaration{
 		DisplayName: "数据管理",
-		Description: "矢量物化视图、矢量瓦片缓存、栅格快显 COG、栅格 mosaic、CAD 栅格预览、三维模型 3D Tiles、三维模型 GLB 快显、3DGS - KSplat 快显和对象存储向量化任务",
+		Description: "矢量物化视图、矢量瓦片缓存、栅格快显 COG、栅格 mosaic、三维模型 3D Tiles、三维模型 GLB 快显、3DGS - KSplat 快显和对象存储向量化任务",
 
 		// API 端点配置（相对于 base_url，支持 {task_type}/{id} 占位符）
 		TaskListEndpoint:    "/api/v1/manager/tasks",

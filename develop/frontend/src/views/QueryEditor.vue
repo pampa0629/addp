@@ -362,7 +362,7 @@
                       />
                     </el-select>
                   </el-form-item>
-                  <el-form-item v-if="parameter.type !== 'relation'" :label="t('develop.query.parameterDefault')">
+                  <el-form-item v-if="parameter.type !== 'relation'" class="parameter-default-scalar" :label="t('develop.query.parameterDefault')">
 					<div class="scalar-default-value">
 					  <el-checkbox
 						:model-value="hasQueryParameterDefault(parameter)"
@@ -2904,7 +2904,8 @@ onBeforeUnmount(() => {
   grid-column: 1 / -1;
 }
 
-.parameter-default-resource {
+.parameter-default-resource,
+.parameter-default-scalar {
   grid-column: 1 / -1;
 }
 

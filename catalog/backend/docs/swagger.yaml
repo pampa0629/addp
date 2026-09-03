@@ -35,11 +35,18 @@ definitions:
         type: array
       name:
         type: string
+      origin:
+        type: string
+      owner_domain_id:
+        example: "0"
+        type: string
       revision_id:
         example: "0"
         type: string
       revision_no:
         type: integer
+      scope_type:
+        type: string
       status:
         type: string
       value_type:
@@ -458,9 +465,6 @@ definitions:
         type: string
       definition:
         type: string
-      domain_id:
-        example: "0"
-        type: string
       effective_from:
         type: string
       effective_to:
@@ -483,6 +487,9 @@ definitions:
         type: string
       nullable:
         type: boolean
+      owner_domain_id:
+        example: "0"
+        type: string
       precision_num:
         type: integer
       range_constraint:
@@ -491,6 +498,8 @@ definitions:
         type: integer
       scale:
         type: integer
+      scope_type:
+        type: string
       unit_id:
         example: "0"
         type: string

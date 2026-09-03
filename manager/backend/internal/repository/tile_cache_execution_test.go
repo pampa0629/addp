@@ -716,50 +716,6 @@ func TestPointCloudCOPCExecutionLifecycleIsAtomic(t *testing.T) {
 	}
 }
 
-func TestCADPreviewExecutionLifecycleIsAtomic(t *testing.T) {
-	db := newTileCacheExecutionRepositoryTestDB(t)
-	repo := NewCADPreviewRepository(db)
-	task := createCADPreviewExecutionRepositoryTestTask(t, db, 19)
-	createdAt := time.Date(2026, 7, 17, 10, 0, 0, 0, time.UTC)
-	exec := newManagerRepositoryTestExecution("manager-cad-preview-atomic-1", 19, commonExecution.TaskTypeCADPreviewGeneration, createdAt)
-	claimed, err := repo.ClaimExecution(context.Background(), task.ID, task.TenantID, exec, false)
-	if err != nil {
-		t.Fatalf("ClaimExecution: %v", err)
-	}
-	if claimed.LastExecutionStatus == nil || *claimed.LastExecutionStatus != commonExecution.ExecutionStatusPending {
-		t.Fatalf("claimed task status = %#v", claimed.LastExecutionStatus)
-	}
-	duplicate := newManagerRepositoryTestExecution("manager-cad-preview-duplicate", 19, commonExecution.TaskTypeCADPreviewGeneration, createdAt)
-	if _, err := repo.ClaimExecution(context.Background(), task.ID, task.TenantID, duplicate, false); !errors.Is(err, commonAPI.ErrConflict) {
-		t.Fatalf("duplicate ClaimExecution error = %v, want conflict", err)
-	}
-	startedAt := createdAt.Add(time.Minute)
-	if err := repo.StartExecution(context.Background(), task.ID, task.TenantID, exec.ExecutionID, startedAt); err != nil {
-		t.Fatalf("StartExecution: %v", err)
-	}
-	result := createCADPreviewExecutionRepositoryTestResult(t, db, task, exec.ExecutionID)
-	completedAt := startedAt.Add(2 * time.Minute)
-	if err := repo.CompleteExecution(context.Background(), task.ID, task.TenantID, exec.ExecutionID, result.ID,
-		map[string]interface{}{"status": models.CADPreviewStatusReady, "error_message": ""},
-		map[string]interface{}{"status": commonExecution.ExecutionStatusSuccess, "completed_at": completedAt, "progress": 100}, completedAt); err != nil {
-		t.Fatalf("CompleteExecution: %v", err)
-	}
-	var storedExecution commonExecution.TaskExecution
-	if err := db.Where("execution_id = ?", exec.ExecutionID).First(&storedExecution).Error; err != nil {
-		t.Fatalf("reload completed execution: %v", err)
-	}
-	if storedExecution.Status != commonExecution.ExecutionStatusSuccess || storedExecution.CompletedAt == nil {
-		t.Fatalf("completed execution = %#v", storedExecution)
-	}
-	var storedResult models.CADPreview
-	if err := db.First(&storedResult, result.ID).Error; err != nil {
-		t.Fatalf("reload completed result: %v", err)
-	}
-	if storedResult.Status != models.CADPreviewStatusReady {
-		t.Fatalf("completed result status = %s", storedResult.Status)
-	}
-}
-
 func TestModel3DTilesExecutionRequiresConfirmationAndFencesResult(t *testing.T) {
 	db := newTileCacheExecutionRepositoryTestDB(t)
 	repo := NewModel3DTilesRepository(db)
@@ -963,24 +919,6 @@ func newTileCacheExecutionRepositoryTestDB(t *testing.T) *gorm.DB {
 	)`).Error; err != nil {
 		t.Fatalf("create point cloud COPC result table: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE manager.cad_preview_tasks (
-		id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, name TEXT NOT NULL,
-		description TEXT, enabled BOOLEAN, schedule TEXT, next_run_at DATETIME, last_run_at DATETIME,
-		last_execution_id TEXT, last_execution_status TEXT, config JSON, created_by INTEGER,
-		created_at DATETIME, updated_at DATETIME, deleted_at DATETIME
-	)`).Error; err != nil {
-		t.Fatalf("create CAD preview task table: %v", err)
-	}
-	if err := db.Exec(`CREATE TABLE manager.cad_previews (
-		id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, item_fingerprint TEXT NOT NULL,
-		item_id INTEGER, locator TEXT, task_id INTEGER, last_execution_id TEXT, source_engine_id INTEGER,
-		source_format TEXT, source_size_bytes INTEGER, storage_ref TEXT, manifest_ref TEXT, thumbnail_ref TEXT,
-		tile_count INTEGER, tile_size INTEGER, min_zoom INTEGER, max_zoom INTEGER, bounds JSON,
-		status TEXT, metadata JSON, error_message TEXT, created_by INTEGER,
-		created_at DATETIME, updated_at DATETIME, deleted_at DATETIME
-	)`).Error; err != nil {
-		t.Fatalf("create CAD preview result table: %v", err)
-	}
 	if err := db.Exec(`CREATE TABLE manager.model3d_tiles_tasks (
 		id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, name TEXT NOT NULL,
 		description TEXT, enabled BOOLEAN, schedule TEXT, next_run_at DATETIME, last_run_at DATETIME,
@@ -1178,30 +1116,6 @@ func createPointCloudCOPCExecutionRepositoryTestResult(
 	}
 	if err := db.Create(&result).Error; err != nil {
 		t.Fatalf("create point cloud COPC result: %v", err)
-	}
-	return result
-}
-
-func createCADPreviewExecutionRepositoryTestTask(t *testing.T, db *gorm.DB, tenantID uint) models.CADPreviewTask {
-	t.Helper()
-	task := models.CADPreviewTask{TenantID: tenantID, Name: "cad-preview", Enabled: true,
-		Config: commonModels.JSONMap{"version": 1, "source": commonModels.JSONMap{"item_fingerprint": "cad-fp"}}}
-	if err := db.Create(&task).Error; err != nil {
-		t.Fatalf("create CAD preview task: %v", err)
-	}
-	return task
-}
-
-func createCADPreviewExecutionRepositoryTestResult(t *testing.T, db *gorm.DB, task models.CADPreviewTask, executionID string) models.CADPreview {
-	t.Helper()
-	result := models.CADPreview{
-		TenantID: task.TenantID, ItemFingerprint: "cad-fp", TaskID: &task.ID, LastExecutionID: &executionID,
-		SourceEngineID: 11, SourceFormat: "dwg", StorageRef: `{"type":"object","bucket":"manager","object":"cad-fp"}`,
-		ManifestRef: "manifest.json", Status: models.CADPreviewStatusBuilding,
-		Bounds: commonModels.JSONMap{}, Metadata: commonModels.JSONMap{},
-	}
-	if err := db.Create(&result).Error; err != nil {
-		t.Fatalf("create CAD preview result: %v", err)
 	}
 	return result
 }

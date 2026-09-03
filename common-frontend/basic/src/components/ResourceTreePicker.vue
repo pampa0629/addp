@@ -746,6 +746,18 @@ const syncExternalSelection = async (engineId, initialLocator) => {
   const externalEngineIds = normalizeEngineIds(engineId)
   const locatorEngineId = parseLocatorSafe(initialLocator || '').engineId
   const locatorMatchesEngine = locatorEngineId && externalEngineIds.includes(locatorEngineId)
+  const locatorAlreadySelected = Boolean(
+    initialLocator &&
+    currentSelection.value?.identity?.locator === initialLocator &&
+    selectedEngineIds.value.includes(locatorEngineId) &&
+    hasLoadedRootForEngine(locatorEngineId)
+  )
+
+  // A controlled form commonly persists the selected locator immediately. That
+  // prop echo is not a new restore request and must not emit a duplicate select.
+  if (locatorAlreadySelected) {
+    return
+  }
 
   if (initialLocator && (externalEngineIds.length === 0 || locatorMatchesEngine)) {
     await restoreInitialLocator(initialLocator)

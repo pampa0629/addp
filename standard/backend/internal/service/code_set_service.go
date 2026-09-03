@@ -22,10 +22,8 @@ func NewCodeSetService(repo *repository.CodeSetRepository, refs *repository.Tena
 }
 
 func (s *CodeSetService) CreateCodeSet(tenantID, userID int64, req *models.CreateCodeSetRequest) (*models.CodeSetAggregate, error) {
-	if req.DomainID == nil {
-		return nil, fmt.Errorf("%w: domain_id is required", ErrInvalidStandardRevision)
-	}
-	if err := s.refs.RequireDomain(tenantID, req.DomainID); err != nil {
+	scopeType, err := validateTenantStandardScope(s.refs, tenantID, req.ScopeType, req.OwnerDomainID)
+	if err != nil {
 		return nil, err
 	}
 	if err := validateCodeSetRevision(req.Name, req.Description, req.ValueType, req.ChangeSummary, req.EffectiveFrom, req.EffectiveTo); err != nil {
@@ -38,7 +36,7 @@ func (s *CodeSetService) CreateCodeSet(tenantID, userID int64, req *models.Creat
 	if exists {
 		return nil, commonapi.ErrConflict
 	}
-	identity := &models.CodeSet{TenantID: tenantID, DomainID: req.DomainID, Code: strings.TrimSpace(req.Code), Origin: models.CodeSetOriginTenant, StewardID: req.StewardID, Tags: req.Tags, CreatedBy: userID, LifecycleState: "active"}
+	identity := &models.CodeSet{TenantID: tenantID, ScopeType: scopeType, OwnerDomainID: req.OwnerDomainID, Code: strings.TrimSpace(req.Code), Origin: models.CodeSetOriginTenant, StewardID: req.StewardID, Tags: req.Tags, CreatedBy: userID, LifecycleState: "active"}
 	revision := &models.CodeSetRevision{Name: strings.TrimSpace(req.Name), Description: strings.TrimSpace(req.Description), ValueType: req.ValueType, ChangeSummary: strings.TrimSpace(req.ChangeSummary), EffectiveFrom: req.EffectiveFrom, EffectiveTo: req.EffectiveTo, CreatedBy: userID}
 	if err := s.repo.Create(identity, revision); err != nil {
 		return nil, err
@@ -54,17 +52,11 @@ func (s *CodeSetService) GetCodeSetAt(id, tenantID int64, asOf time.Time) (*mode
 	return s.repo.GetAggregateAt(id, tenantID, asOf)
 }
 
-func (s *CodeSetService) ListCodeSets(tenantID int64, domainID *int64, keyword, status string, page, pageSize int, asOf time.Time) ([]models.CodeSetAggregate, int64, error) {
-	return s.repo.List(tenantID, domainID, keyword, status, page, pageSize, asOf)
+func (s *CodeSetService) ListCodeSets(tenantID int64, opts repository.ListCodeSetOptions) ([]models.CodeSetAggregate, int64, error) {
+	return s.repo.List(tenantID, opts)
 }
 
 func (s *CodeSetService) UpdateCodeSet(id, tenantID, userID int64, req *models.UpdateCodeSetRequest) (*models.CodeSetAggregate, error) {
-	if req.DomainID == nil {
-		return nil, fmt.Errorf("%w: domain_id is required", ErrInvalidStandardRevision)
-	}
-	if err := s.refs.RequireDomain(tenantID, req.DomainID); err != nil {
-		return nil, err
-	}
 	identity, err := s.repo.GetByID(id, tenantID)
 	if err != nil {
 		return nil, err
@@ -72,7 +64,11 @@ func (s *CodeSetService) UpdateCodeSet(id, tenantID, userID int64, req *models.U
 	if identity.Origin == models.CodeSetOriginPlatform {
 		return nil, ErrPlatformCodeSetImmutable
 	}
-	identity.DomainID, identity.StewardID, identity.Tags, identity.UpdatedBy = req.DomainID, req.StewardID, req.Tags, &userID
+	scopeType, err := validateTenantStandardScope(s.refs, tenantID, req.ScopeType, req.OwnerDomainID)
+	if err != nil {
+		return nil, err
+	}
+	identity.ScopeType, identity.OwnerDomainID, identity.StewardID, identity.Tags, identity.UpdatedBy = scopeType, req.OwnerDomainID, req.StewardID, req.Tags, &userID
 	if err := s.repo.UpdateIdentity(identity, req.Version); err != nil {
 		return nil, err
 	}

@@ -9,6 +9,7 @@
       :rows="rows"
       :columns="config.columns || []"
       :fields="descriptor?.output_contract?.fields || []"
+      height="100%"
       @result-select="emit('result-select', $event)"
     />
     <el-alert

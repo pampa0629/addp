@@ -235,33 +235,18 @@
         <div class="form-section-title">{{ t('manager.vectorization.resourceScope') }}</div>
         <el-form-item :label="t('manager.vectorization.resource')" prop="target.locator">
           <div class="resource-picker">
-            <ResourceTree
-              :tree-data="resourceTreeData"
-              :loading="resourceLoading"
-              :show-refresh-button="true"
+            <ResourceTreePicker
+              v-model="resourceSelection"
+              mode="any"
+              :initial-locator="form.target.locator"
+              :engine-filter="isStorageEngine"
+              :selectable-filter="isSelectableVectorizationTarget"
               :show-count="false"
-              :expanded-keys="resourceExpandedKeys"
-              :current-node-key="resourceCurrentKey"
-              :default-expand-root="false"
-              :expand-on-click-node="true"
+              :show-selection-summary="false"
               :title="t('manager.vectorization.resourceTreeTitle')"
-              height="320px"
-              @refresh="loadResourceTrees(true)"
-              @node-click="handleResourceNodeClick"
-              @node-expand="handleResourceNodeExpand"
-              @update:expanded-keys="resourceExpandedKeys = $event"
-              @update:current-node-key="resourceCurrentKey = $event"
-            >
-              <template #node-label="{ data }">
-                <span class="resource-node-label">
-                  <el-icon v-if="isResourceRootNode(data)" class="resource-root-caret"><ArrowDown /></el-icon>
-                  <span class="resource-node-text">{{ data.label }}</span>
-                  <el-tag v-if="selectableResourceType(data)" size="small" type="success">
-                    {{ selectableResourceType(data) }}
-                  </el-tag>
-                </span>
-              </template>
-            </ResourceTree>
+              tree-height="320px"
+              @select="handleResourceSelection"
+            />
             <div v-if="form.target.locator" class="selected-resource">
               <div class="selected-resource__main">
                 <el-tag size="small" :type="form.target.scope === 'item' ? 'success' : 'primary'">
@@ -307,33 +292,20 @@
     </el-dialog>
 
     <el-dialog v-model="resultNodeDialogVisible" :title="t('manager.vectorization.selectNode')" width="760px">
-      <ResourceTree
-        :tree-data="resultResourceTreeData"
-        :loading="resultResourceLoading"
-        :show-refresh-button="true"
+      <ResourceTreePicker
+        v-model="resultResourceSelection"
+        mode="node"
+        :engine-id="resultFilters.engine_id"
+        :engine-filter="isStorageEngine"
+        :node-filter="isVisibleResultNode"
+        :selectable-filter="isSelectableResultNode"
+        :show-engine-selector="!resultFilters.engine_id"
         :show-count="false"
-        :expanded-keys="resultResourceExpandedKeys"
-        :current-node-key="resultResourceCurrentKey"
-        :default-expand-root="false"
-        :expand-on-click-node="true"
+        :show-selection-summary="false"
         :title="t('manager.vectorization.resourceTreeTitle')"
-        height="420px"
-        @refresh="loadResultResourceTrees(true)"
-        @node-click="handleResultResourceNodeClick"
-        @node-expand="handleResultResourceNodeExpand"
-        @update:expanded-keys="resultResourceExpandedKeys = $event"
-        @update:current-node-key="resultResourceCurrentKey = $event"
-      >
-        <template #node-label="{ data }">
-          <span class="resource-node-label">
-            <el-icon v-if="isResourceRootNode(data)" class="resource-root-caret"><ArrowDown /></el-icon>
-            <span class="resource-node-text">{{ data.label }}</span>
-            <el-tag v-if="isSelectableResultNode(data)" size="small" type="primary">
-              {{ t('manager.vectorization.targetNode') }}
-            </el-tag>
-          </span>
-        </template>
-      </ResourceTree>
+        tree-height="420px"
+        @select="handleResultResourceSelection"
+      />
       <template #footer>
         <el-button @click="clearResultNodeFilterAndClose">{{ t('manager.vectorization.clear') }}</el-button>
         <el-button @click="resultNodeDialogVisible = false">{{ t('manager.vectorization.cancel') }}</el-button>
@@ -396,12 +368,11 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { navigateManagerRoute } from '@/utils/moduleNavigation'
 import { resolveManagerTaskWorkspaceRouteState } from '@/utils/taskWorkspaceRoute'
-import { ArrowDown, Close, Plus, Refresh } from '@element-plus/icons-vue'
+import { Close, Plus, Refresh } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { engineRootLocator, openMonitorExecution, parseLocatorSafe, ResourceTree, ScheduleConfig, ScheduleDisplay, catalogRootTypeForEngine } from '@addp/common-frontend'
+import { openMonitorExecution, parseLocatorSafe, ResourceTreePicker, ScheduleConfig, ScheduleDisplay } from '@addp/common-frontend'
 import client from '../api/client'
-import { dataExplorerAPI } from '../api/dataExplorer'
 import { formatDateTime } from '../utils/formatters'
 import {
   DEFAULT_VECTOR_MAX_FILE_SIZE_MB,
@@ -409,7 +380,6 @@ import {
   isVectorizableObjectNode,
   isVectorizableRangeNode
 } from '../utils/vectorization'
-import { mergeAncestorChainIntoResourceTree } from '../utils/tileCacheResourceTree'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -435,10 +405,7 @@ const revectorizingId = ref(null)
 const resultFilters = reactive(defaultResultFilters())
 const engineOptions = ref([])
 const resultNodeDialogVisible = ref(false)
-const resultResourceTreeData = ref([])
-const resultResourceExpandedKeys = ref([])
-const resultResourceCurrentKey = ref('')
-const resultResourceLoading = ref(false)
+const resultResourceSelection = ref(null)
 const selectedResultNode = ref(null)
 
 const tasks = ref([])
@@ -447,10 +414,7 @@ const tasksPage = ref(1)
 const tasksPageSize = ref(20)
 const tasksTotal = ref(0)
 const executingId = ref(null)
-const resourceTreeData = ref([])
-const resourceExpandedKeys = ref([])
-const resourceCurrentKey = ref('')
-const resourceLoading = ref(false)
+const resourceSelection = ref(null)
 
 const formRef = ref(null)
 const formDialogVisible = ref(false)
@@ -462,7 +426,6 @@ const detailDialogVisible = ref(false)
 const selectedTask = ref(null)
 const embeddingStatuses = ['ready', 'outdated', 'failed', 'unsupported', 'missing_source']
 const storageEngineTypes = new Set(['minio', 's3', 'nfs', 'nas'])
-const resourceRootTypes = new Set(['root', 'server', 'service'])
 const supportedExtensions = SUPPORTED_VECTOR_EXTENSIONS
 
 const formTitle = computed(() => editingId.value ? t('manager.vectorization.editTitle') : t('manager.vectorization.createTitle'))
@@ -548,7 +511,7 @@ const resetForm = (task = null) => {
     })
   }
   editingId.value = task?.id || null
-  resourceCurrentKey.value = form.target.locator || ''
+  resourceSelection.value = null
 }
 
 const taskPayload = () => {
@@ -665,15 +628,12 @@ const handleResultEngineChange = () => {
   if (selectedResultNode.value && Number(selectedResultNode.value.engine_id) !== Number(resultFilters.engine_id || 0)) {
     clearResultNodeFilter(false)
   }
-  if (resultNodeDialogVisible.value) {
-    loadResultResourceTrees(true)
-  }
 }
 
 const clearResultNodeFilter = (apply = true) => {
   resultFilters.node_id = null
   selectedResultNode.value = null
-  resultResourceCurrentKey.value = ''
+  resultResourceSelection.value = null
   if (apply) {
     applyResultFilters()
   }
@@ -692,7 +652,6 @@ const handleTasksSizeChange = () => {
 const openCreateDialog = async () => {
   resetForm()
   formDialogVisible.value = true
-  await loadResourceTrees()
 }
 
 const requestCreateDialog = async () => {
@@ -718,8 +677,6 @@ const clearFormDialogRoute = async () => {
 const openEditDialog = async (task) => {
   resetForm(task)
   formDialogVisible.value = true
-  await loadResourceTrees()
-  await revealSelectedResource()
 }
 
 const requestEditTask = async (task) => {
@@ -826,376 +783,90 @@ const loadStorageEngines = async (force = false) => {
   return engineOptions.value
 }
 
-const loadResourceTrees = async (force = false) => {
-  if (resourceTreeData.value.length && !force) {
-    return
-  }
-  resourceLoading.value = true
-  try {
-    const engines = await loadStorageEngines(force)
-    resourceTreeData.value = engines.map(resourceRootNode)
-    resourceExpandedKeys.value = []
-  } catch (error) {
-    console.error('加载向量化资源树失败:', error)
-    ElMessage.error(t('manager.vectorization.loadResourceTreeFailed'))
-  } finally {
-    resourceLoading.value = false
-  }
-}
-
-const loadResultResourceTrees = async (force = false) => {
-  if (resultResourceTreeData.value.length && !force) {
-    return
-  }
-  resultResourceLoading.value = true
-  try {
-    const engines = await loadStorageEngines(force)
-    const engineID = Number(resultFilters.engine_id || 0)
-    const filtered = engineID > 0 ? engines.filter((engine) => Number(engine.id) === engineID) : engines
-    resultResourceTreeData.value = filtered.map(resourceRootNode)
-    resultResourceExpandedKeys.value = []
-  } catch (error) {
-    console.error('加载向量化结果资源树失败:', error)
-    ElMessage.error(t('manager.vectorization.loadResourceTreeFailed'))
-  } finally {
-    resultResourceLoading.value = false
-  }
-}
-
-const resourceRootNode = (engine) => {
-  const type = catalogRootTypeForEngine(engine)
-  const locator = engineRootLocator(engine, type)
-  return {
-    id: locator,
-    locator,
-    label: engine.name,
-    type,
-    icon: 'Folder',
-    engineId: engine.id,
-    engineType: engine.engine_type,
-    engineName: engine.name,
-    children: [],
-    hasChildren: true,
-    loaded: false
-  }
-}
-
-const normalizeResourceNode = (node, engine, loaded = true) => {
-  if (!node) return null
-  const locator = node.locator || node.id || ''
-  return {
-    ...node,
-    id: locator || node.id,
-    locator,
-    label: node.label || node.name || engine?.name || locator,
-    engineId: node.engineId || engine?.id || locatorEngineID(locator),
-    engineType: node.engineType || engine?.engine_type || '',
-    engineName: node.engineName || engine?.name || '',
-    loaded,
-    children: Array.isArray(node.children)
-      ? node.children.map((child) => normalizeResourceNode(child, engine)).filter(Boolean)
-      : []
-  }
-}
-
-const normalizeResultResourceNode = (node, engine, loaded = true) => {
-  const normalized = normalizeResourceNode(node, engine, loaded)
-  if (!normalized) return null
-  normalized.children = (normalized.children || [])
-    .filter((child) => !isVectorizableObjectNode(child))
-    .map((child) => normalizeResultResourceNode(child, engine))
-    .filter(Boolean)
-  return normalized
-}
-
-const revealSelectedResource = async () => {
-  const locator = String(form.target.locator || '').trim()
-  if (!locator) return
-  const engineID = Number(form.target.engine_id || locatorEngineID(locator))
-  if (!engineID) return
-  resourceLoading.value = true
-  try {
-    const response = await dataExplorerAPI.getTreeAncestors(engineID, locator)
-    const chain = Array.isArray(response?.ancestors) ? response.ancestors : []
-    if (!chain.length) return
-    const engine = engineOptions.value.find((item) => Number(item.id) === engineID) || null
-    const merged = mergeAncestorChainIntoResourceTree(resourceTreeData.value, chain, {
-      engine,
-      parseLocator: safeParseLocator
-    })
-    resourceTreeData.value = merged.nodes
-    const expanded = new Set(resourceExpandedKeys.value)
-    for (const key of merged.expandedKeys) {
-      expanded.add(key)
-    }
-    resourceExpandedKeys.value = Array.from(expanded)
-    resourceCurrentKey.value = response?.target_locator || merged.target?.locator || merged.target?.id || locator
-  } catch (error) {
-    console.error('定位向量化资源失败:', error)
-    ElMessage.error(t('manager.vectorization.loadResourceTreeFailed'))
-  } finally {
-    resourceLoading.value = false
-  }
-}
-
-const handleResourceNodeExpand = async (node) => {
-  const locator = node?.locator || node?.id
-  if (!locator || !node?.hasChildren || (node.children || []).length > 0) {
-    return
-  }
-  if (isResourceRootNode(node) && !node.loaded) {
-    await loadResourceTreeRoot(node)
-    return
-  }
-  await loadResourceNodeChildren(node)
-}
-
-const handleResourceNodeClick = async (node) => {
-  const locator = node?.locator || node?.id
-  resourceCurrentKey.value = locator || ''
-  if (isResourceRootNode(node) && !node.loaded) {
-    await loadResourceTreeRoot(node)
-    return
-  }
-  if (node?.hasChildren && (node.children || []).length === 0) {
-    await loadResourceNodeChildren(node)
-  }
-  const selection = selectionFromResourceNode(node)
-  if (!selection) {
-    return
-  }
-  Object.assign(form.target, selection)
-}
-
 const openResultNodeDialog = async () => {
+  resultResourceSelection.value = null
   resultNodeDialogVisible.value = true
-  await loadResultResourceTrees(true)
 }
 
-const handleResultResourceNodeExpand = async (node) => {
-  const locator = node?.locator || node?.id
-  if (!locator || !node?.hasChildren || (node.children || []).length > 0) {
-    return
-  }
-  if (isResourceRootNode(node) && !node.loaded) {
-    await loadResultResourceTreeRoot(node)
-    return
-  }
-  await loadResultResourceNodeChildren(node)
-}
-
-const handleResultResourceNodeClick = async (node) => {
-  const locator = node?.locator || node?.id
-  resultResourceCurrentKey.value = locator || ''
-  if (isResourceRootNode(node) && !node.loaded) {
-    await loadResultResourceTreeRoot(node)
-    return
-  }
-  if (node?.hasChildren && (node.children || []).length === 0) {
-    await loadResultResourceNodeChildren(node)
-  }
-  if (!isSelectableResultNode(node)) {
-    return
-  }
+const handleResultResourceSelection = (selection) => {
+  const locator = String(selection?.identity?.locator || '')
   const loc = safeParseLocator(locator)
-  resultFilters.engine_id = Number(node.engineId || loc?.engineId || 0) || null
+  if (!loc?.nodeId) return
+  resultFilters.engine_id = Number(selection?.identity?.engine_id || loc.engineId || 0) || null
   resultFilters.node_id = Number(loc?.nodeId || 0) || null
   selectedResultNode.value = {
-    engine_id: Number(node.engineId || loc?.engineId || 0),
+    engine_id: Number(selection?.identity?.engine_id || loc.engineId || 0),
     node_id: Number(loc?.nodeId || 0),
     locator,
-    label: node.label || targetNameFromLocator(locator)
+    label: selection?.display?.label || targetNameFromLocator(locator)
   }
   resultNodeDialogVisible.value = false
   applyResultFilters()
 }
 
-const loadResultResourceTreeRoot = async (node) => {
-  const engineID = Number(node?.engineId || locatorEngineID(node?.locator || node?.id))
-  if (!engineID) return
-  resultResourceLoading.value = true
-  try {
-    const tree = await dataExplorerAPI.getTree(engineID, 2)
-    const engine = {
-      id: node.engineId,
-      engine_type: node.engineType,
-      name: node.engineName
-    }
-    const normalized = normalizeResultResourceNode(tree, engine, true)
-    if (!normalized) return
-    resultResourceTreeData.value = replaceResourceNode(resultResourceTreeData.value, node.locator || node.id, normalized)
-    if (!resultResourceExpandedKeys.value.includes(normalized.id)) {
-      resultResourceExpandedKeys.value = [...resultResourceExpandedKeys.value, normalized.id]
-    }
-  } catch (error) {
-    console.error('加载向量化结果资源树失败:', error)
-    ElMessage.error(t('manager.vectorization.loadResourceTreeFailed'))
-  } finally {
-    resultResourceLoading.value = false
-  }
-}
+const nodeWithEngineContext = (node, context = {}) => ({
+  ...node,
+  engineId: Number(node?.engineId || context?.locator?.engineId || context?.engine?.id || 0),
+  engineType: node?.engineType || node?.engine_type || context?.engine?.engine_type || '',
+  engineName: node?.engineName || node?.engine_name || context?.engine?.name || ''
+})
 
-const loadResultResourceNodeChildren = async (node) => {
-  const locator = node?.locator || node?.id
-  const engineID = Number(node?.engineId || locatorEngineID(locator))
-  if (!locator || !engineID) return
-  resultResourceLoading.value = true
-  try {
-    const response = await dataExplorerAPI.getNodeChildren(engineID, locator)
-    const engine = {
-      id: node.engineId,
-      engine_type: node.engineType,
-      name: node.engineName
-    }
-    const children = (response.children || [])
-      .map((child) => normalizeResultResourceNode(child, engine))
-      .filter((child) => child && !isVectorizableObjectNode(child))
-    resultResourceTreeData.value = updateResourceNodeChildren(resultResourceTreeData.value, locator, children)
-  } catch (error) {
-    console.error('加载向量化结果资源子节点失败:', error)
-    ElMessage.error(t('manager.vectorization.loadResourceTreeFailed'))
-  } finally {
-    resultResourceLoading.value = false
-  }
-}
+const isStorageEngine = (engine) => storageEngineTypes.has(String(engine?.engine_type || '').toLowerCase())
 
-const loadResourceTreeRoot = async (node) => {
-  const engineID = Number(node?.engineId || locatorEngineID(node?.locator || node?.id))
-  if (!engineID) return
-  resourceLoading.value = true
-  try {
-    const tree = await dataExplorerAPI.getTree(engineID, 2)
-    const engine = {
-      id: node.engineId,
-      engine_type: node.engineType,
-      name: node.engineName
-    }
-    const normalized = normalizeResourceNode(tree, engine, true)
-    if (!normalized) return
-    resourceTreeData.value = replaceResourceNode(resourceTreeData.value, node.locator || node.id, normalized)
-    if (!resourceExpandedKeys.value.includes(normalized.id)) {
-      resourceExpandedKeys.value = [...resourceExpandedKeys.value, normalized.id]
-    }
-  } catch (error) {
-    console.error('加载向量化资源树失败:', error)
-    ElMessage.error(t('manager.vectorization.loadResourceTreeFailed'))
-  } finally {
-    resourceLoading.value = false
-  }
-}
-
-const loadResourceNodeChildren = async (node) => {
-  const locator = node?.locator || node?.id
-  const engineID = Number(node?.engineId || locatorEngineID(locator))
-  if (!locator || !engineID) return
-  resourceLoading.value = true
-  try {
-    const response = await dataExplorerAPI.getNodeChildren(engineID, locator)
-    const engine = {
-      id: node.engineId,
-      engine_type: node.engineType,
-      name: node.engineName
-    }
-    const children = (response.children || []).map((child) => normalizeResourceNode(child, engine)).filter(Boolean)
-    resourceTreeData.value = updateResourceNodeChildren(resourceTreeData.value, locator, children)
-  } catch (error) {
-    console.error('加载向量化资源子节点失败:', error)
-    ElMessage.error(t('manager.vectorization.loadResourceTreeFailed'))
-  } finally {
-    resourceLoading.value = false
-  }
-}
-
-const replaceResourceNode = (nodes, locator, replacement) => {
-  return nodes.map((node) => {
-    const nodeLocator = node.locator || node.id
-    if (nodeLocator === locator) {
-      return replacement
-    }
-    if (node.children?.length) {
-      return {
-        ...node,
-        children: replaceResourceNode(node.children, locator, replacement)
-      }
-    }
-    return node
-  })
-}
-
-const updateResourceNodeChildren = (nodes, locator, children) => {
-  return nodes.map((node) => {
-    const nodeLocator = node.locator || node.id
-    if (nodeLocator === locator) {
-      return {
-        ...node,
-        children,
-        hasChildren: children.length > 0 || node.hasChildren
-      }
-    }
-    if (node.children?.length) {
-      return {
-        ...node,
-        children: updateResourceNodeChildren(node.children, locator, children)
-      }
-    }
-    return node
-  })
-}
-
-const isResourceRootNode = (node) => {
-  const locator = String(node?.locator || node?.id || '')
-  return resourceRootTypes.has(String(node?.type || '').toLowerCase()) && locator.includes('/path/?')
-}
-
-const selectionFromResourceNode = (node) => {
+const selectionFromResourceNode = (node, context = {}) => {
   if (!node) return null
-  const locator = node.locator || node.id || ''
+  const contextualNode = nodeWithEngineContext(node, context)
+  const locator = contextualNode.locator || contextualNode.id || ''
   const loc = safeParseLocator(locator)
-  if (isVectorizableObjectNode(node) && loc?.itemId) {
+  if (isVectorizableObjectNode(contextualNode) && loc?.itemId) {
     return {
       scope: 'item',
-      engine_id: Number(node.engineId || loc.engineId),
+      engine_id: Number(contextualNode.engineId || loc.engineId),
       item_id: Number(loc.itemId),
       node_id: 0,
       locator,
-      label: node.label || targetNameFromLocator(locator),
-      engine_name: node.engineName || '',
+      label: contextualNode.label || targetNameFromLocator(locator),
+      engine_name: contextualNode.engineName || '',
       recursive: false
     }
   }
-  if (isVectorizableRangeNode(node) && loc?.nodeId) {
+  if (isVectorizableRangeNode(contextualNode) && loc?.nodeId) {
     return {
       scope: 'node',
-      engine_id: Number(node.engineId || loc.engineId),
+      engine_id: Number(contextualNode.engineId || loc.engineId),
       item_id: 0,
       node_id: Number(loc.nodeId),
       locator,
-      label: node.label || targetNameFromLocator(locator),
-      engine_name: node.engineName || '',
+      label: contextualNode.label || targetNameFromLocator(locator),
+      engine_name: contextualNode.engineName || '',
       recursive: form.target.recursive !== false
     }
   }
   return null
 }
 
-const selectableResourceType = (node) => {
-  const selection = selectionFromResourceNode(node)
-  if (!selection) return ''
-  return targetScopeLabel(selection.scope)
+const isSelectableVectorizationTarget = (node, context) => Boolean(selectionFromResourceNode(node, context))
+
+const handleResourceSelection = (selection) => {
+  const target = selectionFromResourceNode(selection?.raw?.node, {
+    engine: selection?.raw?.engine,
+    locator: safeParseLocator(selection?.identity?.locator || '')
+  })
+  if (target) Object.assign(form.target, target)
 }
 
-const isSelectableResultNode = (node) => {
+const isVisibleResultNode = (node, context) => {
+  return !isVectorizableObjectNode(nodeWithEngineContext(node, context))
+}
+
+const isSelectableResultNode = (node, context) => {
   const loc = safeParseLocator(node?.locator || node?.id || '')
-  return isVectorizableRangeNode(node) && Number(loc?.nodeId || 0) > 0
+  return isVectorizableRangeNode(nodeWithEngineContext(node, context)) && Number(loc?.nodeId || 0) > 0
 }
 
 const safeParseLocator = (locator) => {
   const parsed = parseLocatorSafe(locator)
   return parsed.engineId ? parsed : null
-}
-
-const locatorEngineID = (locator) => {
-  return Number(safeParseLocator(locator)?.engineId || 0)
 }
 
 const targetNameFromLocator = (locator) => {
@@ -1477,20 +1148,6 @@ onMounted(async () => {
   flex-direction: column;
   gap: 10px;
   width: 100%;
-}
-
-.resource-node-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  max-width: 100%;
-  min-width: 0;
-}
-
-.resource-node-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .selected-resource {

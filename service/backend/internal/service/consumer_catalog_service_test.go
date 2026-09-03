@@ -13,6 +13,10 @@ import (
 
 func TestBuildQueryConsumerDescriptorProjectsOnlyPublicContract(t *testing.T) {
 	service := consumerDescriptorTestService()
+	service.NamedParameters = []models.QueryServiceNamedParameter{{
+		Name: "threshold", Type: datatype.FieldTypeDouble, Required: false, Default: 0.5, Description: "Minimum score",
+	}}
+	service.SqlQuery = "SELECT * FROM secret_source WHERE value >= :threshold"
 	descriptor, err := BuildQueryConsumerDescriptor(service)
 	if err != nil {
 		t.Fatal(err)
@@ -27,6 +31,9 @@ func TestBuildQueryConsumerDescriptorProjectsOnlyPublicContract(t *testing.T) {
 	}
 	if len(descriptor.InputContract.DefaultSelection) != 3 || descriptor.InputContract.Filter.MaxInValues != 1000 {
 		t.Fatalf("unexpected structured query defaults: %#v", descriptor.InputContract)
+	}
+	if len(descriptor.InputContract.NamedParameters) != 1 || descriptor.InputContract.NamedParameters[0].Name != "threshold" || descriptor.InputContract.NamedParameters[0].Default != 0.5 {
+		t.Fatalf("unexpected named parameters: %#v", descriptor.InputContract.NamedParameters)
 	}
 	if got := descriptor.InputContract.Fields[1].Operators; !containsConsumerValue(got, "gte") {
 		t.Fatalf("numeric filter operators = %#v", got)
@@ -94,17 +101,19 @@ func TestConsumerContractFingerprintChangesOnlyWithPublicContract(t *testing.T) 
 
 func TestQueryShapeFingerprintExcludesFilterLiterals(t *testing.T) {
 	request := &models.QueryExecutionRequest{
-		Select:  []string{"category", "value"},
-		Filter:  &models.QueryFilter{Field: "category", Op: "eq", Value: "secret-a"},
-		OrderBy: []models.QueryOrder{{Field: "id", Direction: "asc"}},
-		Page:    models.QueryPageRequest{Limit: 100, Cursor: "secret-cursor-a"},
-		Format:  "json",
+		Parameters: map[string]interface{}{"threshold": 10},
+		Select:     []string{"category", "value"},
+		Filter:     &models.QueryFilter{Field: "category", Op: "eq", Value: "secret-a"},
+		OrderBy:    []models.QueryOrder{{Field: "id", Direction: "asc"}},
+		Page:       models.QueryPageRequest{Limit: 100, Cursor: "secret-cursor-a"},
+		Format:     "json",
 	}
 	first, err := QueryShapeFingerprint(request)
 	if err != nil {
 		t.Fatal(err)
 	}
 	request.Filter.Value = "secret-b"
+	request.Parameters["threshold"] = 20
 	request.Page.Cursor = "secret-cursor-b"
 	second, err := QueryShapeFingerprint(request)
 	if err != nil {
@@ -113,6 +122,15 @@ func TestQueryShapeFingerprintExcludesFilterLiterals(t *testing.T) {
 	if first != second {
 		t.Fatalf("literal-only change altered query shape: %s != %s", first, second)
 	}
+	request.Parameters["other"] = true
+	parameterShape, err := QueryShapeFingerprint(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parameterShape == first {
+		t.Fatal("named parameter key change did not alter query shape")
+	}
+	delete(request.Parameters, "other")
 	request.Filter.Op = "ne"
 	third, err := QueryShapeFingerprint(request)
 	if err != nil {

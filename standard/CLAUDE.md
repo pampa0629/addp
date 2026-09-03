@@ -4,7 +4,7 @@
 
 数据元 `quality_rules` 的结构和校验必须遵守 [ADDP 数据质量规范](../docs/spec/addp数据质量规范.md)。每条规则必须有由 Standard 首次创建时生成且编辑过程中保持不变的 `rule_key`；Standard 只拥有规则定义，不拥有物理字段应用、规则执行、评分或质量问题。
 
-Standard 定义 Domain、Glossary、Element、Metric、CodeSet 和 Unit 等可复用业务语义，但不拥有这些语义与具体 DataItem、CatalogEntry 或 CatalogComponent 的应用关系。具体资源的语义关联只由独立 Catalog 模块保存；Standard 不依赖 Meta 或 Catalog，不保存 `catalog_entry_id` 或反向资源列表。Standard 向 Catalog 提供两类互不混用的同 Tenant 契约：Domain、Glossary、Element 精确语义引用校验，以及 Metric 的 owner-local 变化流和当前专业摘要动态解析。安全分类、安全等级、敏感类型和保护基线统一属于 Security，Standard 不保存第二份安全事实。
+Standard 定义 Domain、Glossary、Element、MetricDefinition、CodeSet、Unit 和标准来源文档等可复用业务语义，但不拥有这些语义与具体 DataItem、CatalogEntry 或 CatalogComponent 的应用关系。具体字段/组件到标准修订的映射只由 Catalog 保存；规则应用、执行、符合性结果和问题只由 Quality 保存。Standard 不依赖 Meta 或 Catalog，不保存 `catalog_entry_id`、反向资源列表或质量执行事实。安全分类、安全等级、敏感类型和保护基线统一属于 Security，Standard 不保存第二份安全事实。
 
 Metric 的指标依赖与基准指标关系通过当前 User Token 读取 `GET /metrics/:id/relations` 一跳图；它要求 `standard.metric.read`，只读 Standard 本地事实，不调用 Catalog 或 Model，也不使用 `standard.catalog.read` 机器权限替代用户权限。数据元、Domain、指标分类和单位继续留在 Metric 专业详情中，本阶段不伪造为企业目录节点。
 
@@ -17,9 +17,10 @@ Metric 的指标依赖与基准指标关系通过当前 User Token 读取 `GET /
 - 数据元（Element）：数据标准的核心原子对象，定义数据规格和质量规则
 - 码值集（CodeSet）：系统/自定义码值集及码值项
 - 计量单位（Unit）：按度量类别组织的计量单位
-- 指标（Metric）：原子/派生/复合三类指标，支持依赖关系
-- 标准文档（Document）：文档上传与多维关联（数据元/术语/指标）
-- 维度层级（DimensionHierarchy）：业务上的上下钻路径定义
+- 指标定义（MetricDefinition）：指标业务含义、统计口径、单位、责任归属和适用范围；不保存模型粒度、连接、过滤或可执行表达式
+- 标准文档（Document）：标准来源及其不可变文档修订、提取证据和审核关系
+
+维度层级、公共/一致性维度和指标实现统一属于 Model。当前 `standard.dimension_hierarchies` 及 Metric 中的实现型字段是待迁移旧实现，不得据此继续扩展 Standard；迁移完成时必须删除旧表、API、权限和前端路由，不保留双轨。
 
 **端口**:
 - 后端: `8110`（环境变量 `STANDARD_BACKEND_PORT`）
@@ -28,6 +29,15 @@ Metric 的指标依赖与基准指标关系通过当前 User Token 读取 `GET /
 **数据库 Schema**: `standard`
 
 **外部存储**: MinIO（存储标准文档文件，bucket 名为 `standard`）
+
+## 已确认的目标边界与迁移顺序
+
+- 业务域只表达业务语义与治理责任，不表达可见范围、审核容器或目录分类。
+- 发布型标准采用“稳定身份 + 不可变修订”；统一状态为 `draft → in_review → published → withdrawn`，按半开生效区间动态解析当前修订。
+- 标准对象显式保存 `scope_type=platform|tenant_common|domain`；仅 `domain` 必须指定 `owner_domain_id`。码值集不得再以“租户自定义”为由强制归属业务域。
+- StandardCollection 独立承担成员、维护人、权限和审核流程；StandardCategory 只承担浏览导航，两者均不得替代业务域和适用范围。
+- Copilot 只生成标准候选，必须保留文档修订、页码/章节/文本片段等来源证据；人工审核发布后才成为正式标准修订。
+- 首批改造先统一 Element、CodeSet 的 Scope 与归属域；下一批在完整设计成员、维护人、权限和审核流程后实现 StandardCollection。随后整体迁移 DimensionHierarchy 到 Model，再拆分 MetricDefinition / MetricImplementation，最后补齐文档修订、提取证据和 Catalog → Quality 落标闭环。
 
 文档文件采用“新对象上传、数据库切换引用、旧对象补偿清理”的顺序。失效对象记录在 `standard.document_file_cleanups`，该表仅用于物理清理重试，不作为文档当前文件引用。
 
@@ -86,7 +96,9 @@ standard/
             └── DDLPreviewDialog.vue
 ```
 
-## 数据库表结构
+## 当前数据库表结构
+
+本节记录迁移前实现，用于定位代码，不代表目标模型。目标模型以平台术语表和核心对象 ER 图为准；改造时直接替换旧字段与旧资源，不增加兼容字段或并行 API。
 
 ### `standard.domains` — 业务域（树形）
 
@@ -120,7 +132,8 @@ standard/
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | code | string | Tenant 内唯一且不可变的标准编码 |
-| domain_id | int64? | 归属业务域 |
+| scope_type | string | `platform` / `tenant_common` / `domain`；租户公开写接口只允许后两者 |
+| owner_domain_id | int64? | 归属业务域；仅 `scope_type=domain` 时必填 |
 | steward_id | int64? | 数据责任人 |
 | tags | StringArray | 标签 |
 | draft_revision_id | int64? | 当前唯一可编辑草稿 |
@@ -152,7 +165,8 @@ standard/
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | code | string | Tenant 内唯一且不可变的标准编码 |
-| domain_id | int64? | 归属业务域；Tenant 自定义码值集必填 |
+| scope_type | string | `platform` / `tenant_common` / `domain`；Tenant 来源只能为后两者 |
+| owner_domain_id | int64? | 归属业务域；仅 `scope_type=domain` 时必填 |
 | origin | string | `platform` / `tenant`，只能由服务端决定 |
 | steward_id | int64? | 数据责任人 |
 | draft_revision_id | int64? | 当前唯一草稿 |
@@ -205,7 +219,7 @@ standard/
 | parent_id | int64? | 父节点 |
 | name / code | string | 类别名 / 标识 |
 
-### `standard.metrics` — 指标定义
+### `standard.metrics` — 当前指标实现（待拆为 MetricDefinition 修订）
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -232,7 +246,7 @@ standard/
 | from_metric_id / to_metric_id | int64 | 依赖关系方向 |
 | coefficient | float? | 权重系数（可选） |
 
-### `standard.documents` — 标准文档
+### `standard.documents` — 当前标准文档实现（待拆稳定身份与修订）
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -248,11 +262,11 @@ standard/
 
 文档与数据元、术语、指标的多对多关联，每条关联记录 `reference_location`（引用位置）。
 
-### `standard.dimension_hierarchies` — 维度层级
+### `standard.dimension_hierarchies` — 待迁出的旧维度层级
 
-定义业务意义上的上下钻路径（如时间：年→季→月→日）。
+当前定义业务意义上的上下钻路径（如时间：年→季→月→日）。该资源将整体迁入 Model，Standard 不再提供层级 API。
 
-### `standard.dimension_hierarchy_levels` — 维度层级的每一层
+### `standard.dimension_hierarchy_levels` — 待迁出的旧维度层级成员
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -262,21 +276,21 @@ standard/
 | element_id | int64? | 引用 `standard.elements`（层次对应的数据元） |
 | sort_order | int | 显示顺序 |
 
-## API 端点（`/api/standard`）
+## API 端点（`/api/v1/standard`）
 
 ### 业务域
 ```
-GET/POST /api/standard/domains
-GET/PUT/DELETE /api/standard/domains/:id
+GET/POST /api/v1/standard/domains
+GET/PUT/DELETE /api/v1/standard/domains/:id
 ```
 
 ### 业务术语
 ```
-GET/POST /api/standard/glossaries
-GET/PUT/DELETE /api/standard/glossaries/:id
-POST /api/standard/glossaries/:id/approve     # 草稿→已发布
-POST /api/standard/glossaries/:id/deprecate   # 已发布→已弃用
-GET/PUT /api/standard/glossaries/:id/elements # 关联数据元
+GET/POST /api/v1/standard/glossaries
+GET/PUT/DELETE /api/v1/standard/glossaries/:id
+POST /api/v1/standard/glossaries/:id/approve     # 草稿→已发布
+POST /api/v1/standard/glossaries/:id/deprecate   # 已发布→已弃用
+GET/PUT /api/v1/standard/glossaries/:id/elements # 关联数据元
 ```
 
 ### 数据元
@@ -306,21 +320,21 @@ PUT/DELETE /api/v1/standard/code-sets/:id/revisions/:revision_id/items/:item_id
 
 ### 计量单位
 ```
-GET/POST /api/standard/measurement-categories
-PUT/DELETE /api/standard/measurement-categories/:id
-GET/POST /api/standard/units
-GET/PUT/DELETE /api/standard/units/:id
+GET/POST /api/v1/standard/measurement-categories
+PUT/DELETE /api/v1/standard/measurement-categories/:id
+GET/POST /api/v1/standard/units
+GET/PUT/DELETE /api/v1/standard/units/:id
 ```
 
 ### 指标
 ```
-GET/POST /api/standard/metric-categories
-PUT/DELETE /api/standard/metric-categories/:id
+GET/POST /api/v1/standard/metric-categories
+PUT/DELETE /api/v1/standard/metric-categories/:id
 
-GET/POST /api/standard/metrics
-GET/PUT/DELETE /api/standard/metrics/:id
-POST /api/standard/metrics/:id/approve
-POST /api/standard/metrics/:id/deprecate
+GET/POST /api/v1/standard/metrics
+GET/PUT/DELETE /api/v1/standard/metrics/:id
+POST /api/v1/standard/metrics/:id/approve
+POST /api/v1/standard/metrics/:id/deprecate
 
 GET /api/v1/standard/catalog-resources/changes
 POST /api/v1/standard/runtime/catalog-references/resolve
@@ -328,18 +342,18 @@ POST /api/v1/standard/runtime/catalog-references/resolve
 
 ### 标准文档
 ```
-GET/POST /api/standard/documents
-GET/PUT/DELETE /api/standard/documents/:id
-POST /api/standard/documents/:id/upload    # 上传文件到 MinIO
-GET /api/standard/documents/:id/download   # 从 MinIO 下载
-GET/PUT /api/standard/documents/:id/mappings # 多维关联（数据元/术语/指标）
+GET/POST /api/v1/standard/documents
+GET/PUT/DELETE /api/v1/standard/documents/:id
+POST /api/v1/standard/documents/:id/upload    # 上传文件到 MinIO
+GET /api/v1/standard/documents/:id/download   # 从 MinIO 下载
+GET/PUT /api/v1/standard/documents/:id/mappings # 多维关联（数据元/术语/指标）
 ```
 
 ### 维度层级
 ```
-GET/POST /api/standard/dimension-hierarchies
-GET/PUT/DELETE /api/standard/dimension-hierarchies/:id
-GET/POST/PUT/DELETE /api/standard/dimension-hierarchies/:id/levels
+GET/POST /api/v1/standard/dimension-hierarchies
+GET/PUT/DELETE /api/v1/standard/dimension-hierarchies/:id
+GET/POST/PUT/DELETE /api/v1/standard/dimension-hierarchies/:id/levels
 ```
 
 ## 前端路由
@@ -356,19 +370,19 @@ GET/POST/PUT/DELETE /api/standard/dimension-hierarchies/:id/levels
 /standard/metrics                    # 指标列表
 /standard/metrics/:id                # 指标详情（依赖关系、关联数据元）
 /standard/documents                  # 标准文档库
-/standard/dimension-hierarchies      # 维度层级列表
-/standard/dimension-hierarchies/:id  # 维度层级详情（层次定义）
+/standard/dimension-hierarchies      # 待迁移旧入口；迁入 Model 后删除
+/standard/dimension-hierarchies/:id  # 待迁移旧入口；不保留兼容路由
 ```
 
 ## 模块依赖关系
 
 **依赖**:
 - **System 模块**: JWT 认证、用户信息（`SYSTEM_URL`）
-- **Model 模块**: 删除业务域、数据元、维度层级和指标前冻结 Model 标准引用删除屏障并执行权威影响扫描（`MODEL_URL`）
+- **Model 模块**: 删除业务域、数据元和指标定义前冻结 Model 标准引用删除屏障并执行权威影响扫描（`MODEL_URL`）；维度层级迁移后是 Model 本地聚合
 - **MinIO**: 标准文档文件存储（bucket: `standard`）
 
 **被依赖**（其他模块调用 Standard 的 API）:
-- **Model 模块**: 验证 domain_id、element_id、hierarchy_id、metric_id；代理标准对象查询
+- **Model 模块**: 验证 domain_id、element_id / element_revision_id、metric_definition_revision_id；维度层级只校验 Model 本地事实
 
 `/api/v1/standard` 路由只接受 canonical Bearer Tenant AuthContext；文档下载还可使用 Standard owner 的 Browser Resource Ticket。Catalog 对 Domain、Glossary、Element 语义引用的校验只走 `/api/v1/standard/references/resolve`；Metric 目录来源只走 `/catalog-resources/changes` 与 `/runtime/catalog-references/resolve`，两类契约不可混用，也不提供面向 Asset 的自动发现接口。
 
@@ -384,15 +398,15 @@ Standard 是以下第一批 Permission 的唯一 owner：
 - `standard.document.*`
 - `standard.glossary.*`
 - `standard.unit.*`
-- `standard.dimension_hierarchy.*`
+- `standard.dimension_hierarchy.*`（当前待迁移权限；维度层级迁入 Model 后删除）
 
 机器可读事实源是 [authorization/permissions.yaml](authorization/permissions.yaml)。该 Manifest 由 `common/authorization` 在构建/发布期统一发现、校验和聚合，Standard 服务启动时不向 System 动态注册 Permission。
 
-Measurement Category 是 Unit 聚合内子资源，Dimension Hierarchy Level 是 Dimension Hierarchy 聚合内子资源。Document 与 Element、Glossary、Metric 的关联操作按涉及资源 Permission 做 all-of 校验，不借用宽泛 Key 或前缀匹配授权。
+Measurement Category 是 Unit 聚合内子资源。当前 Dimension Hierarchy Level 随旧 DimensionHierarchy 一并迁入 Model，迁移完成后 Standard 不再拥有这两类资源。Document 与 Element、Glossary、Metric 的关联操作按涉及资源 Permission 做 all-of 校验，不借用宽泛 Key 或前缀匹配授权。
 
 ## 特殊设计
 
-### 指标三种类型的关系
+### 当前指标三种类型关系（待拆分）
 
 ```
 atomic（原子指标）

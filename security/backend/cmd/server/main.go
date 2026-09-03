@@ -42,10 +42,15 @@ func main() {
 	if err := commonexecution.EnsureStore(db); err != nil {
 		log.Fatalf("Security execution store migration failed: %v", err)
 	}
+	tokenSource, err := commonclient.NewOAuthServiceTokenSource(cfg.SystemURL, "addp-security", cfg.ServiceClientSecret, nil)
+	if err != nil {
+		log.Fatalf("Security service token source failed: %v", err)
+	}
+	metaClient := commonclient.NewMetaClient(cfg.MetaURL, tokenSource)
 	definitions := service.NewDefinitionService(db)
 	enrollments := service.NewEnrollmentService(db)
 	discoveries := service.NewDiscoveryService(db, nil)
-	assessments := service.NewAssessmentService(db)
+	assessments := service.NewAssessmentService(db, func(tenantID uint) service.SecurityFactsReader { return metaClient.WithTenantID(tenantID) })
 	policies := service.NewPolicyService(db)
 	lifecycle := modulelifecycle.NewBusiness("security", commonclient.ModuleRuntimeRoleBackend)
 	router := api.SetupRouter(definitions, enrollments, discoveries, assessments, policies, cfg.SystemURL, lifecycle)
@@ -59,10 +64,6 @@ func main() {
 			stop()
 		}
 	}()
-	tokenSource, err := commonclient.NewOAuthServiceTokenSource(cfg.SystemURL, "addp-security", cfg.ServiceClientSecret, nil)
-	if err != nil {
-		log.Fatalf("Security service token source failed: %v", err)
-	}
 	systemClient := commonclient.NewSystemServiceClient(cfg.SystemURL, tokenSource, nil)
 	serviceURL := commonconfig.BuildServiceURL(commonconfig.GetServiceHost(), cfg.Port)
 	registration := systemClient.RegisterAndHeartbeat(ctx, &commonclient.ModuleRegistrationRequest{ModuleName: "security", ModuleURL: serviceURL, RoutePrefix: "/security", HealthCheckURL: serviceURL + "/health/ready", Metadata: map[string]interface{}{"module": "security"}})

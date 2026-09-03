@@ -31,6 +31,7 @@ func TestUpdateServiceRejectsInvalidActiveRESTContract(t *testing.T) {
 		schema_name TEXT,
 		table_name TEXT,
 		sql_query TEXT,
+		named_parameters JSON NOT NULL DEFAULT '[]',
 		data_config JSON NOT NULL,
 		protocols JSON NOT NULL,
 		public_access BOOLEAN,

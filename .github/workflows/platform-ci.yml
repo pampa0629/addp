@@ -36,6 +36,11 @@ jobs:
           go-version-file: common/go.mod
           cache: false
 
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+
       - name: Check changed commits for whitespace errors
         env:
           ADDP_CI_BEFORE: ${{ github.event.before }}
@@ -355,6 +360,7 @@ jobs:
           - module: develop
             name: Develop
             target: test-develop-frontend
+            playwright: true
           - module: graph
             name: Graph
             target: test-graph-frontend
@@ -364,6 +370,7 @@ jobs:
           - module: manager
             name: Manager
             target: test-manager-frontend
+            playwright: true
           - module: meta
             name: Meta
             target: test-meta-frontend
@@ -415,6 +422,11 @@ jobs:
         uses: ./.github/actions/prepare-frontend-gate
         with:
           frontend-directory: ${{ matrix.module }}/frontend
+
+      - name: Install Chromium for ${{ matrix.name }} Playwright tests
+        if: steps.selection.outputs.run == 'true' && matrix.playwright == true
+        working-directory: ${{ matrix.module }}/frontend
+        run: npx playwright install --with-deps chromium
 
       - name: Run ${{ matrix.name }} frontend gate
         if: steps.selection.outputs.run == 'true'

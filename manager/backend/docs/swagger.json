@@ -8,429 +8,6 @@
     "host": "localhost:8081",
     "basePath": "/api/v1/manager",
     "paths": {
-        "/cad-preview-tasks": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Manager"
-                ],
-                "summary": "列出 CAD 预览生成任务 | List CAD preview generation tasks",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "页码 | Page",
-                        "name": "page",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "每页数量 | Page size",
-                        "name": "page_size",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "任务列表 | Task list",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "manager.derived_artifact.read"
-                ]
-            },
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Manager"
-                ],
-                "summary": "创建 CAD 预览生成任务 | Create CAD preview generation task",
-                "parameters": [
-                    {
-                        "description": "任务配置 | Task configuration",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.CADPreviewTaskRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "Created",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.CADPreviewTaskResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "manager.derived_artifact.create"
-                ]
-            }
-        },
-        "/cad-preview-tasks/{id}": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Manager"
-                ],
-                "summary": "获取 CAD 预览生成任务 | Get CAD preview generation task",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "任务 ID | Task ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.CADPreviewTaskResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "manager.derived_artifact.read"
-                ]
-            },
-            "put": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Manager"
-                ],
-                "summary": "更新 CAD 预览生成任务 | Update CAD preview generation task",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "任务 ID | Task ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "任务配置 | Task configuration",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.CADPreviewTaskRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.CADPreviewTaskResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "manager.derived_artifact.update"
-                ]
-            },
-            "delete": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "tags": [
-                    "Manager"
-                ],
-                "summary": "删除 CAD 预览生成任务 | Delete CAD preview generation task",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "任务 ID | Task ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "204": {
-                        "description": "No Content"
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "manager.derived_artifact.delete"
-                ]
-            }
-        },
-        "/cad-previews": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Manager"
-                ],
-                "summary": "列出 CAD 预览结果 | List CAD preview results",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "任务 ID | Task ID",
-                        "name": "task_id",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "结果状态 | Result status",
-                        "name": "status",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "关键词 | Keyword",
-                        "name": "q",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "页码 | Page",
-                        "name": "page",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "每页数量 | Page size",
-                        "name": "page_size",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "manager.derived_artifact.read"
-                ]
-            }
-        },
-        "/cad-previews/{id}": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Manager"
-                ],
-                "summary": "获取 CAD 预览结果 | Get CAD preview result",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "CAD preview ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_manager_internal_models.CADPreview"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "manager.derived_artifact.read"
-                ]
-            },
-            "delete": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "tags": [
-                    "Manager"
-                ],
-                "summary": "删除 CAD 预览结果 | Delete CAD preview result",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "CAD preview ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "204": {
-                        "description": "No Content"
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "manager.derived_artifact.delete"
-                ]
-            }
-        },
-        "/cad-previews/{id}/manifest": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Manager"
-                ],
-                "summary": "读取 CAD 预览清单 | Read CAD preview manifest",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "CAD preview ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "resource_ticket",
-                "x-addp-required-permissions": [
-                    "manager.derived_artifact.read"
-                ]
-            }
-        },
-        "/cad-previews/{id}/tiles/{z}/{x}/{y}": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "image/webp"
-                ],
-                "tags": [
-                    "Manager"
-                ],
-                "summary": "读取 CAD 预览瓦片 | Read CAD preview tile",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "CAD preview ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "integer",
-                        "description": "Zoom",
-                        "name": "z",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "integer",
-                        "description": "Tile X",
-                        "name": "x",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "integer",
-                        "description": "Tile Y",
-                        "name": "y",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "WebP tile"
-                    }
-                },
-                "x-addp-auth-mode": "resource_ticket",
-                "x-addp-required-permissions": [
-                    "manager.derived_artifact.read"
-                ]
-            }
-        },
         "/config/map": {
             "get": {
                 "security": [
@@ -3959,7 +3536,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "前端只提交 Resource Locator 和后端 capability 返回的 action。后端基于同一份快显能力事实创建并执行对应任务，支持生成矢量瓦片缓存、栅格 COG、CAD 栅格预览、三维模型 GLB、3D Tiles、S3M、3DGS KSplat 和点云 COPC 快显。 | Execute a backend-declared quick view action by Resource Locator. The backend creates and executes the corresponding task from capability facts, including 3D Tiles and S3M quick-view generation.",
+                "description": "前端只提交 Resource Locator 和后端 capability 返回的 action。后端基于同一份快显能力事实创建并执行对应任务，支持生成矢量瓦片缓存、栅格 COG、三维模型 GLB、3D Tiles、S3M、3DGS KSplat 和点云 COPC 快显。 | Execute a backend-declared quick view action by Resource Locator. The backend creates and executes the corresponding task from capability facts, including 3D Tiles and S3M quick-view generation.",
                 "consumes": [
                     "application/json"
                 ],
@@ -5976,7 +5553,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "列出 Manager 模块的任务（矢量瓦片缓存生成、矢量物化视图、栅格快显 COG、栅格 mosaic、CAD 栅格预览、三维模型与点云快显、向量化任务）| List Manager module tasks",
+                "description": "列出 Manager 模块的任务（矢量瓦片缓存生成、矢量物化视图、栅格快显 COG、栅格 mosaic、三维模型与点云快显、向量化任务）| List Manager module tasks",
                 "produces": [
                     "application/json"
                 ],
@@ -5987,7 +5564,7 @@
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务类型过滤：vector_tile_cache_generation|vector_tile_set_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding | Task type filter",
+                        "description": "任务类型过滤：vector_tile_cache_generation|vector_tile_set_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|embedding | Task type filter",
                         "name": "task_type",
                         "in": "query"
                     },
@@ -6050,7 +5627,7 @@
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务类型：vector_tile_cache_generation|vector_tile_set_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding | Task type",
+                        "description": "任务类型：vector_tile_cache_generation|vector_tile_set_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|embedding | Task type",
                         "name": "task_type",
                         "in": "path",
                         "required": true
@@ -6112,7 +5689,7 @@
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "任务类型：vector_tile_cache_generation|vector_tile_set_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|cad_preview_generation|embedding | Task type",
+                        "description": "任务类型：vector_tile_cache_generation|vector_tile_set_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|embedding | Task type",
                         "name": "task_type",
                         "in": "path",
                         "required": true
@@ -7913,83 +7490,6 @@
                 "value": {}
             }
         },
-        "github_com_addp_manager_internal_models.CADPreview": {
-            "type": "object",
-            "properties": {
-                "bounds": {
-                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "created_by": {
-                    "type": "integer"
-                },
-                "error_message": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "item_fingerprint": {
-                    "type": "string"
-                },
-                "item_id": {
-                    "type": "integer"
-                },
-                "last_execution_id": {
-                    "type": "string"
-                },
-                "locator": {
-                    "type": "string"
-                },
-                "manifest_ref": {
-                    "type": "string"
-                },
-                "max_zoom": {
-                    "type": "integer"
-                },
-                "metadata": {
-                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
-                },
-                "min_zoom": {
-                    "type": "integer"
-                },
-                "source_engine_id": {
-                    "type": "integer"
-                },
-                "source_format": {
-                    "type": "string"
-                },
-                "source_size_bytes": {
-                    "type": "integer"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "storage_ref": {
-                    "type": "string"
-                },
-                "task_id": {
-                    "type": "integer"
-                },
-                "tenant_id": {
-                    "type": "integer"
-                },
-                "thumbnail_ref": {
-                    "type": "string"
-                },
-                "tile_count": {
-                    "type": "integer"
-                },
-                "tile_size": {
-                    "type": "integer"
-                },
-                "updated_at": {
-                    "type": "string"
-                }
-            }
-        },
         "github_com_addp_manager_internal_models.GaussianSplatKSplat": {
             "type": "object",
             "properties": {
@@ -8985,26 +8485,6 @@
                 }
             }
         },
-        "github_com_addp_manager_internal_service.QuickViewCADInfo": {
-            "type": "object",
-            "properties": {
-                "format": {
-                    "type": "string"
-                },
-                "preview_url": {
-                    "type": "string"
-                },
-                "recommended_action": {
-                    "type": "string"
-                },
-                "size_bytes": {
-                    "type": "integer"
-                },
-                "unavailable_reason": {
-                    "type": "string"
-                }
-            }
-        },
         "github_com_addp_manager_internal_service.QuickViewCapability": {
             "type": "object",
             "properties": {
@@ -9016,9 +8496,6 @@
                     "items": {
                         "type": "string"
                     }
-                },
-                "cad": {
-                    "$ref": "#/definitions/github_com_addp_manager_internal_service.QuickViewCADInfo"
                 },
                 "can_generate_vector_tile_cache": {
                     "type": "boolean"
@@ -10012,64 +9489,6 @@
                 },
                 "tile_budget": {
                     "type": "integer"
-                }
-            }
-        },
-        "internal_api.CADPreviewTaskRequest": {
-            "type": "object",
-            "properties": {
-                "config": {
-                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "enabled": {
-                    "type": "boolean"
-                },
-                "name": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_api.CADPreviewTaskResponse": {
-            "type": "object",
-            "properties": {
-                "config": {
-                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "created_by": {
-                    "type": "integer"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "enabled": {
-                    "type": "boolean"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "last_execution_id": {
-                    "type": "string"
-                },
-                "last_execution_status": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "task_type": {
-                    "type": "string"
-                },
-                "tenant_id": {
-                    "type": "integer"
-                },
-                "updated_at": {
-                    "type": "string"
                 }
             }
         },

@@ -1,4 +1,4 @@
-.PHONY: help build build-images select-image-services local-ci test test-changed test-module test-platform test-local-ci-runner test-book test-engine-startup-isolation test-integration test-online test-online-runner test-release test-release-runner test-go test-agent-frontend test-asset-frontend test-catalog-frontend test-console-frontend test-copilot test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-security-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-workbench-frontend test-execution-fixtures test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-common-postgres test-manager-mongodb-security test-system-iam-postgres test-asset-postgres test-meta-postgres test-catalog-postgres test-develop-postgres test-model-postgres test-quality-postgres test-security-postgres test-service-postgres test-standard-postgres test-transfer-postgres test-workbench-postgres test-arcgis-open-formats \
+.PHONY: help build build-images select-image-services local-ci test test-changed test-module test-platform test-local-ci-runner test-book test-engine-startup-isolation test-integration test-online test-online-runner test-release test-release-runner test-go test-agent-frontend test-asset-frontend test-catalog-frontend test-common-frontend test-console-frontend test-copilot test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-security-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-workbench-frontend test-execution-fixtures test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-common-postgres test-manager-mongodb-security test-system-iam-postgres test-asset-postgres test-meta-postgres test-catalog-postgres test-develop-postgres test-model-postgres test-quality-postgres test-security-postgres test-service-postgres test-standard-postgres test-transfer-postgres test-workbench-postgres test-arcgis-open-formats \
         build-iam-bootstrap build-iam-recovery build-iam-migration-repair \
         dev-start dev-restart dev-stop infra-up infra-down infra-restart infra-status prod-start prod-restart prod-stop prod-health ports-validate
 
@@ -212,6 +212,7 @@ test-release-runner: ## 运行 T5 分发器和 CI 登记检查的确定性测试
 	@python3 scripts/ci/check-release-ci-registration.py --repository "$(CURDIR)"
 
 test-platform: ## 运行无外部服务依赖的平台一致性门禁
+	@$(MAKE) test-common-frontend
 	@$(MAKE) test-book
 	@$(MAKE) test-local-ci-runner
 	@bash scripts/utils/check-deps-version.sh
@@ -279,8 +280,12 @@ test-console-frontend: ## 运行 Console 前端确定性测试与构建
 	@cd console/frontend && npm test
 	@cd console/frontend && npm run build
 
+test-common-frontend: ## 运行共享前端组件、契约与唯一所有权门禁
+	@npm --prefix common-frontend test
+
 test-develop-frontend: ## 运行 Develop 前端确定性测试与构建
 	@cd develop/frontend && npm run test:workflow
+	@cd develop/frontend && npm run test:e2e
 	@cd develop/frontend && npm run build
 
 test-graph-frontend: ## 运行 Graph 前端确定性测试与构建
@@ -293,6 +298,7 @@ test-inference-frontend: ## 运行 Inference 前端确定性测试与构建
 
 test-manager-frontend: ## 运行 Manager 前端确定性测试与构建
 	@cd manager/frontend && npm test
+	@cd manager/frontend && npm run test:e2e
 	@cd manager/frontend && npm run build
 
 test-meta-frontend: ## 运行 Meta 前端确定性测试与构建

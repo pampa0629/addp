@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/addp/common/engine/plugin"
+	_ "github.com/addp/common/format/builtin"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
@@ -477,6 +478,57 @@ func TestFilesystemDeepScanExtractsDOCXHeaderFooter(t *testing.T) {
 	}
 	if got := commonJSON.String(item.Attributes, "storage", "content_hash_algorithm"); got != "sha256" {
 		t.Fatalf("storage.content_hash_algorithm = %q, want sha256", got)
+	}
+}
+
+func TestFilesystemDeepScanPersistsDWGWithoutWorkflowRuntime(t *testing.T) {
+	db := openObjectCatalogScanTestDB(t)
+	repo := metaRepo.NewScanRepository(db)
+	svc := NewFilesystemCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
+	parentNode, err := repo.UpsertNode(1, 26, nil, "dir", "cad", strPtr("cad"), models.JSONMap{"schema_version": 1, "storage": map[string]interface{}{"path": "cad"}})
+	if err != nil {
+		t.Fatalf("create CAD node: %v", err)
+	}
+	content := "AC1032" + strings.Repeat("\x00", 64)
+	sizeBytes := int64(len(content))
+	provider := filesystemScanTestProvider{
+		files: []plugin.EngineCatalogEntry{{
+			Name: "drawing.dwg",
+			Path: plugin.FileItemPath(26, "cad/drawing.dwg"),
+			Term: plugin.EngineCatalogTermFile,
+			Kind: plugin.EngineCatalogKindFile,
+			Role: plugin.EngineCatalogRoleLeaf,
+			Storage: &plugin.EngineCatalogStorageFacts{
+				Path:      "cad/drawing.dwg",
+				SizeBytes: &sizeBytes,
+			},
+		}},
+		content: content,
+	}
+	resource := &commonModels.Engine{ID: 26, EngineType: provider.Type()}
+
+	items, _, err := svc.scanDirectory(context.Background(), provider, provider, nil, resource, 1, "cad", parentNode, false, plugin.EngineCatalogTermFile, models.ScannedDepthDeep, true)
+	if err != nil {
+		t.Fatalf("scanDirectory() error = %v", err)
+	}
+	if items != 1 {
+		t.Fatalf("items = %d, want 1", items)
+	}
+	item, ok, err := repo.FindItemByFullName(1, 26, "cad/drawing.dwg")
+	if err != nil {
+		t.Fatalf("FindItemByFullName() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("DWG item was not persisted")
+	}
+	if got := commonJSON.String(item.Attributes, "item", "data_type"); got != "cad" {
+		t.Fatalf("item.data_type = %q, want cad", got)
+	}
+	if got := commonJSON.String(item.Attributes, "item", "format"); got != "dwg" {
+		t.Fatalf("item.format = %q, want dwg", got)
+	}
+	if got := commonJSON.String(item.Attributes, "format_info.dwg", "format_version"); got != "AC1032" {
+		t.Fatalf("format_info.dwg.format_version = %q, want AC1032", got)
 	}
 }
 

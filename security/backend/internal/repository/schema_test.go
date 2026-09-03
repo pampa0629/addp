@@ -18,7 +18,7 @@ func TestMigrateCreatesOnlySecurityOwnedTables(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, table := range []string{
-		"security_classifications", "security_grades", "sensitive_data_types", "protection_baselines",
+		"security_classifications", "security_grades", "sensitive_data_types", "detectors", "protection_baselines",
 		"protection_enrollments", "protection_projections", "protection_projection_changes", "protection_projection_acknowledgements",
 		"sensitive_findings", "sensitive_finding_reviews", "resource_security_assessments", "resource_security_assessment_revisions",
 		"protection_policies", "protection_policy_revisions",
@@ -30,5 +30,44 @@ func TestMigrateCreatesOnlySecurityOwnedTables(t *testing.T) {
 		if count != 1 {
 			t.Fatalf("table %s count = %d", table, count)
 		}
+	}
+	var detectorColumns []struct{ Name string }
+	if err := db.Raw("PRAGMA security.table_info(detectors)").Scan(&detectorColumns).Error; err != nil {
+		t.Fatal(err)
+	}
+	hasThreshold := false
+	for _, column := range detectorColumns {
+		if column.Name == "confidence_threshold" {
+			hasThreshold = true
+		}
+	}
+	if !hasThreshold {
+		t.Fatal("detectors.confidence_threshold was not created")
+	}
+	var typeColumns []struct{ Name string }
+	if err := db.Raw("PRAGMA security.table_info(sensitive_data_types)").Scan(&typeColumns).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, column := range typeColumns {
+		if column.Name == "protection_threshold" {
+			t.Fatal("legacy sensitive_data_types.protection_threshold still exists")
+		}
+	}
+	var revisionColumns []struct {
+		Name    string
+		NotNull int `gorm:"column:notnull"`
+	}
+	if err := db.Raw("PRAGMA security.table_info(resource_security_assessment_revisions)").Scan(&revisionColumns).Error; err != nil {
+		t.Fatal(err)
+	}
+	revisionColumnByName := make(map[string]int, len(revisionColumns))
+	for _, column := range revisionColumns {
+		revisionColumnByName[column.Name] = column.NotNull
+	}
+	if revisionColumnByName["source_kind"] != 1 || revisionColumnByName["conclusion"] != 1 {
+		t.Fatalf("assessment revision governance columns = %#v", revisionColumnByName)
+	}
+	if revisionColumnByName["source_finding_id"] != 0 || revisionColumnByName["source_review_id"] != 0 {
+		t.Fatalf("manual assessment source columns must be nullable: %#v", revisionColumnByName)
 	}
 }

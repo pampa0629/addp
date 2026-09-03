@@ -1105,6 +1105,17 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_workbench_internal_models.ComponentNamedParameterBinding": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "parameter_key": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_workbench_internal_models.ComponentParameterDefinition": {
             "type": "object",
             "properties": {
@@ -1144,6 +1155,12 @@ const docTemplate = `{
                 },
                 "format": {
                     "type": "string"
+                },
+                "named_parameter_bindings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_workbench_internal_models.ComponentNamedParameterBinding"
+                    }
                 },
                 "order_by": {
                     "type": "array",

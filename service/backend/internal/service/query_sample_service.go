@@ -43,6 +43,7 @@ func (s *QuerySampleService) DescribeFederatedSQL(
 	userAccessToken string,
 	runtimeEngineID uint,
 	query string,
+	parameters map[string]interface{},
 ) (*serviceModels.QueryServiceOutputContract, error) {
 	if s == nil || s.system == nil || s.issuer == nil || s.catalog == nil || tenantID == 0 || runtimeEngineID == 0 ||
 		!strings.HasPrefix(userAccessToken, "addp_at_") || strings.TrimSpace(query) == "" {
@@ -100,7 +101,7 @@ func (s *QuerySampleService) DescribeFederatedSQL(
 		ExecutionID: executionID.String(), ExecutionAuthorizationID: issued.ID,
 		SourceEngineIDs: sourceEngineIDs, ObjectTables: objectTables,
 		Query: query, Language: "sql",
-		Options:           plugin.QueryOptions{Limit: 1, Timeout: 30 * time.Second, ReadOnly: true, Describe: true, Spatial: true},
+		Options:           plugin.QueryOptions{Limit: 1, Timeout: 30 * time.Second, ReadOnly: true, Describe: true, Spatial: true, Parameters: parameters},
 		CallerAccessToken: callerToken,
 	})
 	if err != nil {

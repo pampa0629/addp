@@ -60,15 +60,28 @@ func (r *CodeSetRepository) GetAggregateAt(id, tenantID int64, asOf time.Time) (
 	return result, nil
 }
 
-func (r *CodeSetRepository) List(tenantID int64, domainID *int64, keyword, status string, page, pageSize int, asOf time.Time) ([]models.CodeSetAggregate, int64, error) {
+type ListCodeSetOptions struct {
+	OwnerDomainID *int64
+	ScopeType     string
+	Keyword       string
+	Status        string
+	Page          int
+	PageSize      int
+	AsOf          time.Time
+}
+
+func (r *CodeSetRepository) List(tenantID int64, opts ListCodeSetOptions) ([]models.CodeSetAggregate, int64, error) {
 	query := r.db.Model(&models.CodeSet{}).Where("code_sets.tenant_id = ?", tenantID)
-	if domainID != nil {
-		query = query.Where("code_sets.domain_id = ?", *domainID)
+	if opts.OwnerDomainID != nil {
+		query = query.Where("code_sets.owner_domain_id = ?", *opts.OwnerDomainID)
 	}
-	if status != "" {
-		query = query.Joins("JOIN standard.code_set_revisions status_revision ON status_revision.code_set_id = code_sets.id AND status_revision.status = ?", status)
+	if opts.ScopeType != "" {
+		query = query.Where("code_sets.scope_type = ?", opts.ScopeType)
 	}
-	if keyword = strings.TrimSpace(keyword); keyword != "" {
+	if opts.Status != "" {
+		query = query.Joins("JOIN standard.code_set_revisions status_revision ON status_revision.code_set_id = code_sets.id AND status_revision.status = ?", opts.Status)
+	}
+	if keyword := strings.TrimSpace(opts.Keyword); keyword != "" {
 		pattern := "%" + keyword + "%"
 		query = query.Where(`code_sets.code ILIKE ? OR EXISTS (
 			SELECT 1 FROM standard.code_set_revisions csr
@@ -79,19 +92,19 @@ func (r *CodeSetRepository) List(tenantID int64, domainID *int64, keyword, statu
 	if err := query.Distinct("code_sets.id").Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
-	if page < 1 {
-		page = 1
+	if opts.Page < 1 {
+		opts.Page = 1
 	}
-	if pageSize < 1 {
-		pageSize = 20
+	if opts.PageSize < 1 {
+		opts.PageSize = 20
 	}
 	var identities []models.CodeSet
-	if err := query.Distinct("code_sets.*").Order("code_sets.created_at DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&identities).Error; err != nil {
+	if err := query.Distinct("code_sets.*").Order("code_sets.created_at DESC").Offset((opts.Page - 1) * opts.PageSize).Limit(opts.PageSize).Find(&identities).Error; err != nil {
 		return nil, 0, err
 	}
 	items := make([]models.CodeSetAggregate, 0, len(identities))
 	for _, identity := range identities {
-		aggregate, err := r.GetAggregateAt(identity.ID, tenantID, asOf)
+		aggregate, err := r.GetAggregateAt(identity.ID, tenantID, opts.AsOf)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -102,7 +115,7 @@ func (r *CodeSetRepository) List(tenantID int64, domainID *int64, keyword, statu
 
 func (r *CodeSetRepository) UpdateIdentity(codeSet *models.CodeSet, expectedVersion int64) error {
 	if err := updateVersioned(r.db, codeSet, codeSet.ID, codeSet.TenantID, expectedVersion, map[string]interface{}{
-		"domain_id": codeSet.DomainID, "steward_id": codeSet.StewardID, "tags": codeSet.Tags, "updated_by": codeSet.UpdatedBy,
+		"scope_type": codeSet.ScopeType, "owner_domain_id": codeSet.OwnerDomainID, "steward_id": codeSet.StewardID, "tags": codeSet.Tags, "updated_by": codeSet.UpdatedBy,
 	}); err != nil {
 		return err
 	}

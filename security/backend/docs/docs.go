@@ -32,6 +32,12 @@ const docTemplate = `{
                 "summary": "正式安全评估列表 | List formal security assessments",
                 "parameters": [
                     {
+                        "type": "string",
+                        "description": "纳管 ID | Enrollment ID",
+                        "name": "enrollment_id",
+                        "in": "query"
+                    },
+                    {
                         "type": "integer",
                         "description": "页码 | Page number",
                         "name": "page",
@@ -91,6 +97,101 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "security.assessment.read"
+                ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "从服务端校验过的 Meta 当前组件创建来源为 manual 的正式敏感评估，并通过唯一编译器发布保护投影；浏览器不能提交组件结构或自由文本路径 | Create a formal sensitive assessment with manual source from a server-validated current Meta component and publish protection projections through the only compiler; clients cannot submit component structures or free-form paths",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Security Assessment"
+                ],
+                "summary": "人工指定敏感组件 | Create manual security assessment",
+                "parameters": [
+                    {
+                        "description": "人工指定请求 | Manual assessment request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.CreateManualAssessmentRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ResourceSecurityAssessmentResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "security.assessment.create"
                 ]
             }
         },
@@ -174,6 +275,108 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "security.assessment.read"
+                ]
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "携带资源版本追加 not_sensitive 不可变修订并通过唯一编译器移除当前字段规则；不删除 Finding、复核或历史评估 | Append an immutable not_sensitive revision with resource-version concurrency and remove the current field rule through the only compiler; findings, reviews, and assessment history are retained",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Security Assessment"
+                ],
+                "summary": "撤销正式安全评估 | Revoke formal security assessment",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Assessment ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "撤销请求 | Revocation request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.RevokeAssessmentRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ResourceSecurityAssessmentResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "security.assessment.update"
                 ]
             }
         },
@@ -678,6 +881,718 @@ const docTemplate = `{
                 ]
             }
         },
+        "/definition-profile-applications": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "在单个事务中按稳定编码补齐缺失的分类与等级，不覆盖已有同编码定义 | Transactionally add missing classifications and grades by stable code without overwriting existing definitions",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Security Definition Profile"
+                ],
+                "summary": "应用推荐定义方案 | Apply recommended definition profile",
+                "parameters": [
+                    {
+                        "description": "推荐定义方案 | Recommended definition profile",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_security_internal_models.DefinitionProfileApplicationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_security_internal_models.DefinitionProfileApplication"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "security.classification.create",
+                    "security.grade.create"
+                ]
+            }
+        },
+        "/definition-profiles": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回平台随版本提供的只读分类与等级模板；读取不会修改租户数据 | Return read-only classification and grade templates installed with the platform; listing does not mutate tenant data",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Security Definition Profile"
+                ],
+                "summary": "推荐定义方案列表 | List recommended definition profiles",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_security_internal_models.DefinitionProfile"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "security.classification.read",
+                    "security.grade.read"
+                ]
+            }
+        },
+        "/detector-capabilities": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回当前平台版本内置的只读可信检测能力及其目标、证据来源、适用范围、实现方法、隐私边界和已知局限，不返回可执行代码 | Return trusted read-only detector capabilities installed with this platform version, including target, evidence source, scope, implementation method, privacy boundary, and known limitations, without executable code",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Detector"
+                ],
+                "summary": "已安装检测能力 | List installed detector capabilities",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_security_internal_models.DetectorCapability"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "security.detector.read"
+                ]
+            }
+        },
+        "/detectors": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Detector"
+                ],
+                "summary": "检测器绑定列表 | List detector bindings",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_security_internal_models.Detector"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "security.detector.read"
+                ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "将一个平台已安装检测能力绑定到当前租户的敏感数据类型，并为已有受保护资源安排重新发现 | Bind an installed capability to a tenant sensitive data type and queue rediscovery for existing protected resources",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Detector"
+                ],
+                "summary": "创建检测器绑定 | Create detector binding",
+                "parameters": [
+                    {
+                        "description": "检测器绑定 | Detector binding",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_security_internal_models.DetectorRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_security_internal_models.Detector"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "security.detector.create"
+                ]
+            }
+        },
+        "/detectors/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Detector"
+                ],
+                "summary": "检测器绑定详情 | Get detector binding",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "检测器绑定 ID | Detector binding ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_security_internal_models.Detector"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "security.detector.read"
+                ]
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Detector"
+                ],
+                "summary": "更新检测器绑定 | Update detector binding",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "检测器绑定 ID | Detector binding ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "检测器绑定 | Detector binding",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_security_internal_models.DetectorRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_security_internal_models.Detector"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "security.detector.update"
+                ]
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Detector"
+                ],
+                "summary": "删除检测器绑定 | Delete detector binding",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "检测器绑定 ID | Detector binding ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "资源版本 | Resource version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_security_internal_models.DeleteDetectorRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "security.detector.delete"
+                ]
+            }
+        },
+        "/discovery-quality": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "即时聚合当前候选、按资源组件和能力版本去重的人工复核证据，以及人工补充线索；不读取原始数据、不持久化第二份统计事实，可按敏感数据类型过滤 | Aggregate current findings, human review evidence deduplicated by enrolled component and capability version, and manual supplement signals on demand; no raw data is read and no duplicate statistics fact is persisted; optionally filter by sensitive data type",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sensitive Finding"
+                ],
+                "summary": "敏感发现质量摘要 | Get sensitive discovery quality summary",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "敏感数据类型 ID | Sensitive data type ID",
+                        "name": "sensitive_data_type_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.SensitiveDiscoveryQualitySummary"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "security.finding.read"
+                ]
+            }
+        },
         "/findings": {
             "get": {
                 "security": [
@@ -685,7 +1600,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "分页返回当前租户不含原始敏感值的不可变检测发现及可选初审记录，可按纳管与来源快照精确过滤 | Return immutable, value-free detector findings with optional first reviews for the current tenant, optionally filtered by enrollment and source snapshot",
+                "description": "分页返回当前租户不含原始敏感值的不可变检测发现、目标资源快照、可选初审记录，以及由当前检测绑定、正式评估、默认保护规则和真实出口投影批量组装的只读解释链；可按纳管、来源快照、发现执行、当前快照、复核状态、敏感类型和识别能力版本筛选 | Return immutable, value-free detector findings with target snapshots, optional first reviews, and a read-only explanation chain batch-assembled from current control-plane facts; filter by enrollment, source snapshot, discovery execution, current snapshot, review state, sensitive type, and detector version",
                 "produces": [
                     "application/json"
                 ],
@@ -716,6 +1631,36 @@ const docTemplate = `{
                         "type": "string",
                         "description": "精确来源快照哈希 | Exact source snapshot hash",
                         "name": "source_snapshot_hash",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "发现执行 ID | Discovery execution ID",
+                        "name": "discovery_execution_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "快照范围：all/current，默认 all | Snapshot scope: all/current, default all",
+                        "name": "snapshot_scope",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "复核状态：all/pending/reviewed，默认 all | Review state: all/pending/reviewed, default all",
+                        "name": "review_state",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "敏感数据类型 ID | Sensitive data type ID",
+                        "name": "sensitive_data_type_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "精确识别能力版本 | Exact detector capability version",
+                        "name": "detector_version",
                         "in": "query"
                     }
                 ],
@@ -776,7 +1721,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "返回单个不含原始敏感值的检测证据及可选初审记录 | Return one value-free detector observation with its optional first review",
+                "description": "返回单个不含原始敏感值的检测证据、可选初审记录，以及由当前控制面事实组装的只读保护解释链 | Return one value-free detector observation with its optional first review and a read-only protection explanation assembled from current control-plane facts",
                 "produces": [
                     "application/json"
                 ],
@@ -1775,7 +2720,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "分页返回当前租户的显式保护纳管、最近成功发现摘要及必要 Owner 激活进度 | Return explicit protection enrollments, latest successful discovery summaries, and required-owner activation progress for the current tenant",
+                "description": "分页返回当前租户的显式保护纳管、最近成功发现摘要，以及必要 Owner 的投影安装确认状态和已安装 action/effect 规则；安装确认不表示某次数据请求已执行成功 | Return explicit protection enrollments, latest successful discovery summaries, required-owner projection installation acknowledgements, and installed action/effect rules for the current tenant; installation acknowledgement does not mean a data request has executed successfully",
                 "produces": [
                     "application/json"
                 ],
@@ -1804,7 +2749,7 @@ const docTemplate = `{
                         ],
                         "type": "string",
                         "default": "current",
-                        "description": "生命周期视图，current 为保护中，released 为已退出，all 为全部；默认 current | Lifecycle view: current for in-progress protection, released for exited history, all for both; current by default",
+                        "description": "生命周期视图，current 为保护中，released 为按退出完成时间倒序的已退出历史，all 为全部；默认 current | Lifecycle view: current for in-progress protection, released for exited history ordered by completion time descending, all for both; current by default",
                         "name": "scope",
                         "in": "query"
                     }
@@ -1952,7 +2897,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "返回纳管状态、最近成功发现摘要、资源版本和每个必要 Owner 的安装确认进度 | Return enrollment state, latest successful discovery summary, resource version, and installation acknowledgement progress for every required owner",
+                "description": "返回纳管状态、最近成功发现摘要、资源版本，以及每个必要 Owner 的投影安装确认状态和已安装 action/effect 规则；具体请求仍由 Owner 按运行时能力执行或保守拒绝 | Return enrollment state, latest successful discovery summary, resource version, and each required owner's projection installation acknowledgement and installed action/effect rules; each request is still executed or conservatively denied by the owner according to runtime capability",
                 "produces": [
                     "application/json"
                 ],
@@ -2025,6 +2970,90 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "security.enrollment.read"
+                ]
+            }
+        },
+        "/protection-enrollments/{id}/components": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "使用 Security 服务身份实时读取该纳管资源的 Meta 当前字段事实，只返回尚未形成正式 Assessment 且不含业务值的可选组件；已经确认、调整或撤销过的组件均不再列出，也不接受自由文本字段路径 | Read the enrolled resource's current Meta field facts with the Security service identity and return only value-free selectable components that have never formed a formal Assessment; components that were confirmed, adjusted, or revoked are omitted, and free-form component paths are not accepted",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Security Assessment"
+                ],
+                "summary": "可人工指定组件列表 | List components available for manual assessment",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Enrollment ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.AssessmentComponentListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "security.enrollment.read",
+                    "security.assessment.read"
                 ]
             }
         },
@@ -2129,6 +3158,110 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "security.enrollment.update"
+                ]
+            }
+        },
+        "/protection-enrollments/{id}/re-enrollments": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "从已退出记录冻结的目标引用创建全新的 activating 纳管并重新经过四个必要 Owner 的保护激活屏障；旧记录及其退出审计保持只读，同一目标已有未退出纳管时冲突 | Create a new activating enrollment from the target reference frozen in a released record and run the four required owners through the protection activation barrier again; the old record and exit audit remain read-only, and an existing live enrollment for the same target causes a conflict",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Protection Enrollment"
+                ],
+                "summary": "重新纳入数据保护 | Re-enroll data protection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "已退出纳管 ID | Released enrollment ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "已退出记录版本 | Released record version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_security_internal_models.ReEnrollProtectionEnrollmentRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_security_internal_models.ProtectionEnrollmentResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "security.enrollment.create"
                 ]
             }
         },
@@ -3479,6 +4612,14 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_security_internal_models.AssessmentComponentOption": {
+            "type": "object",
+            "properties": {
+                "component": {
+                    "$ref": "#/definitions/dataprotection.Component"
+                }
+            }
+        },
         "github_com_addp_security_internal_models.CreateProtectionDiscoveryExecutionRequest": {
             "type": "object",
             "required": [
@@ -3497,6 +4638,51 @@ const docTemplate = `{
             ],
             "properties": {
                 "locator": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_security_internal_models.DefinitionProfile": {
+            "type": "object",
+            "properties": {
+                "classification_count": {
+                    "type": "integer"
+                },
+                "description_i18n_key": {
+                    "type": "string"
+                },
+                "grade_count": {
+                    "type": "integer"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "name_i18n_key": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_security_internal_models.DefinitionProfileApplication": {
+            "type": "object",
+            "properties": {
+                "created_classifications": {
+                    "type": "integer"
+                },
+                "created_grades": {
+                    "type": "integer"
+                },
+                "profile_key": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_security_internal_models.DefinitionProfileApplicationRequest": {
+            "type": "object",
+            "required": [
+                "profile_key"
+            ],
+            "properties": {
+                "profile_key": {
                     "type": "string"
                 }
             }
@@ -3531,6 +4717,17 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_security_internal_models.DeleteDetectorRequest": {
+            "type": "object",
+            "required": [
+                "version"
+            ],
+            "properties": {
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_security_internal_models.DeleteProtectionBaselineRequest": {
             "type": "object",
             "required": [
@@ -3539,6 +4736,187 @@ const docTemplate = `{
             "properties": {
                 "version": {
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_security_internal_models.Detector": {
+            "type": "object",
+            "properties": {
+                "capability_key": {
+                    "type": "string"
+                },
+                "confidence_threshold": {
+                    "type": "number"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "string",
+                    "example": "0"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "0"
+                },
+                "sensitive_data_type_id": {
+                    "type": "string",
+                    "example": "0"
+                },
+                "tenant_id": {
+                    "type": "string",
+                    "example": "0"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "string",
+                    "example": "0"
+                },
+                "version": {
+                    "type": "string",
+                    "example": "0"
+                }
+            }
+        },
+        "github_com_addp_security_internal_models.DetectorCapability": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "description_i18n_key": {
+                    "type": "string"
+                },
+                "evidence_source": {
+                    "type": "string"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "limitations_i18n_key": {
+                    "type": "string"
+                },
+                "method_i18n_key": {
+                    "type": "string"
+                },
+                "name_i18n_key": {
+                    "type": "string"
+                },
+                "privacy_i18n_key": {
+                    "type": "string"
+                },
+                "recommended_threshold": {
+                    "type": "number"
+                },
+                "supported_field_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "supported_item_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "target_kind": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_security_internal_models.DetectorRequest": {
+            "type": "object",
+            "required": [
+                "capability_key",
+                "confidence_threshold",
+                "sensitive_data_type_id"
+            ],
+            "properties": {
+                "capability_key": {
+                    "type": "string"
+                },
+                "confidence_threshold": {
+                    "type": "number"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "sensitive_data_type_id": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_security_internal_models.FindingOutletProtection": {
+            "type": "object",
+            "properties": {
+                "acknowledged": {
+                    "type": "boolean"
+                },
+                "consumer_owner": {
+                    "type": "string"
+                },
+                "projection_state": {
+                    "type": "string"
+                },
+                "rules": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_security_internal_models.FindingOutletProtectionRule"
+                    }
+                }
+            }
+        },
+        "github_com_addp_security_internal_models.FindingOutletProtectionRule": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "algorithm": {
+                    "type": "string"
+                },
+                "effect": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_security_internal_models.FindingProtectionBaseline": {
+            "type": "object",
+            "properties": {
+                "algorithm": {
+                    "type": "string"
+                },
+                "effect": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "0"
+                },
+                "invalid_value_effect": {
+                    "type": "string"
+                },
+                "keep_prefix": {
+                    "type": "integer"
+                },
+                "keep_suffix": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "string",
+                    "example": "0"
                 }
             }
         },
@@ -3712,6 +5090,9 @@ const docTemplate = `{
                 "last_discovered_at": {
                     "type": "string"
                 },
+                "latest_discovery_execution_id": {
+                    "type": "string"
+                },
                 "latest_source_snapshot_hash": {
                     "type": "string"
                 },
@@ -3770,12 +5151,6 @@ const docTemplate = `{
                 "consumer_owner": {
                     "type": "string"
                 },
-                "effects": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
                 "projection_id": {
                     "type": "string"
                 },
@@ -3786,6 +5161,23 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "revision": {
+                    "type": "string"
+                },
+                "rules": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_security_internal_models.ProtectionOwnerRuleSummary"
+                    }
+                }
+            }
+        },
+        "github_com_addp_security_internal_models.ProtectionOwnerRuleSummary": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "effect": {
                     "type": "string"
                 }
             }
@@ -3880,6 +5272,17 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_security_internal_models.ReEnrollProtectionEnrollmentRequest": {
+            "type": "object",
+            "required": [
+                "version"
+            ],
+            "properties": {
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_security_internal_models.ReleaseProtectionEnrollmentRequest": {
             "type": "object",
             "required": [
@@ -3952,6 +5355,9 @@ const docTemplate = `{
                 "component": {
                     "$ref": "#/definitions/dataprotection.Component"
                 },
+                "conclusion": {
+                    "type": "string"
+                },
                 "created_at": {
                     "type": "string"
                 },
@@ -3981,6 +5387,9 @@ const docTemplate = `{
                     "example": "0"
                 },
                 "source_finding_id": {
+                    "type": "string"
+                },
+                "source_kind": {
                     "type": "string"
                 },
                 "source_review_id": {
@@ -4108,9 +5517,6 @@ const docTemplate = `{
                 "name": {
                     "type": "string"
                 },
-                "protection_threshold": {
-                    "type": "number"
-                },
                 "security_classification_id": {
                     "type": "string",
                     "example": "0"
@@ -4153,14 +5559,91 @@ const docTemplate = `{
                 "name": {
                     "type": "string"
                 },
-                "protection_threshold": {
-                    "type": "number"
-                },
                 "security_classification_id": {
                     "type": "integer"
                 },
                 "version": {
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_security_internal_models.SensitiveDiscoveryCapabilityQuality": {
+            "type": "object",
+            "properties": {
+                "adjusted_count": {
+                    "type": "integer"
+                },
+                "awaiting_review_count": {
+                    "type": "integer"
+                },
+                "capability_key": {
+                    "type": "string"
+                },
+                "confirmed_count": {
+                    "type": "integer"
+                },
+                "current_finding_count": {
+                    "type": "integer"
+                },
+                "detector_code": {
+                    "type": "string"
+                },
+                "rejected_count": {
+                    "type": "integer"
+                },
+                "reviewed_sample_count": {
+                    "type": "integer"
+                },
+                "sensitive_confirmation_rate": {
+                    "type": "number"
+                },
+                "sensitive_data_type_id": {
+                    "type": "string",
+                    "example": "0"
+                }
+            }
+        },
+        "github_com_addp_security_internal_models.SensitiveFindingExplanation": {
+            "type": "object",
+            "properties": {
+                "assessment_id": {
+                    "type": "string"
+                },
+                "automatic_adoption_threshold": {
+                    "type": "number"
+                },
+                "baseline": {
+                    "$ref": "#/definitions/github_com_addp_security_internal_models.FindingProtectionBaseline"
+                },
+                "capability": {
+                    "$ref": "#/definitions/github_com_addp_security_internal_models.DetectorCapability"
+                },
+                "decision_state": {
+                    "type": "string"
+                },
+                "effective_security_classification_id": {
+                    "type": "string",
+                    "example": "0"
+                },
+                "effective_security_grade_id": {
+                    "type": "string",
+                    "example": "0"
+                },
+                "effective_sensitive_data_type_id": {
+                    "type": "string",
+                    "example": "0"
+                },
+                "governance_source": {
+                    "type": "string"
+                },
+                "meets_automatic_threshold": {
+                    "type": "boolean"
+                },
+                "outlets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_security_internal_models.FindingOutletProtection"
+                    }
                 }
             }
         },
@@ -4185,11 +5668,17 @@ const docTemplate = `{
                 "detector_version": {
                     "type": "string"
                 },
+                "discovery_execution_id": {
+                    "type": "string"
+                },
                 "enrollment_id": {
                     "type": "string"
                 },
                 "evidence": {
                     "$ref": "#/definitions/models.JSONMap"
+                },
+                "explanation": {
+                    "$ref": "#/definitions/github_com_addp_security_internal_models.SensitiveFindingExplanation"
                 },
                 "id": {
                     "type": "string"
@@ -4206,6 +5695,9 @@ const docTemplate = `{
                 },
                 "source_snapshot_hash": {
                     "type": "string"
+                },
+                "target_snapshot": {
+                    "$ref": "#/definitions/github_com_addp_security_internal_models.ProtectionTargetSnapshot"
                 }
             }
         },
@@ -4241,6 +5733,20 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api.AssessmentComponentListResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_security_internal_models.AssessmentComponentOption"
+                    }
+                },
+                "source_snapshot_hash": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_api.AssessmentRevisionRequest": {
             "type": "object",
             "required": [
@@ -4262,6 +5768,40 @@ const docTemplate = `{
                     "example": "0"
                 },
                 "version": {
+                    "type": "string",
+                    "example": "0"
+                }
+            }
+        },
+        "internal_api.CreateManualAssessmentRequest": {
+            "type": "object",
+            "required": [
+                "component_key",
+                "enrollment_id",
+                "enrollment_version",
+                "rationale",
+                "security_grade_id",
+                "sensitive_data_type_id"
+            ],
+            "properties": {
+                "component_key": {
+                    "type": "string"
+                },
+                "enrollment_id": {
+                    "type": "string"
+                },
+                "enrollment_version": {
+                    "type": "string",
+                    "example": "0"
+                },
+                "rationale": {
+                    "type": "string"
+                },
+                "security_grade_id": {
+                    "type": "string",
+                    "example": "0"
+                },
+                "sensitive_data_type_id": {
                     "type": "string",
                     "example": "0"
                 }
@@ -4460,6 +6000,22 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api.RevokeAssessmentRequest": {
+            "type": "object",
+            "required": [
+                "rationale",
+                "version"
+            ],
+            "properties": {
+                "rationale": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string",
+                    "example": "0"
+                }
+            }
+        },
         "internal_api.RevokeProtectionPolicyRequest": {
             "type": "object",
             "required": [
@@ -4471,6 +6027,48 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "version": {
+                    "type": "string",
+                    "example": "0"
+                }
+            }
+        },
+        "internal_api.SensitiveDiscoveryQualitySummary": {
+            "type": "object",
+            "properties": {
+                "active_manual_assessment_count": {
+                    "type": "integer"
+                },
+                "adjusted_count": {
+                    "type": "integer"
+                },
+                "awaiting_review_count": {
+                    "type": "integer"
+                },
+                "capabilities": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_security_internal_models.SensitiveDiscoveryCapabilityQuality"
+                    }
+                },
+                "confirmed_count": {
+                    "type": "integer"
+                },
+                "current_finding_count": {
+                    "type": "integer"
+                },
+                "rejected_count": {
+                    "type": "integer"
+                },
+                "reviewed_sample_count": {
+                    "type": "integer"
+                },
+                "revoked_manual_assessment_count": {
+                    "type": "integer"
+                },
+                "sensitive_confirmation_rate": {
+                    "type": "number"
+                },
+                "sensitive_data_type_id": {
                     "type": "string",
                     "example": "0"
                 }
@@ -4520,11 +6118,17 @@ const docTemplate = `{
                 "detector_version": {
                     "type": "string"
                 },
+                "discovery_execution_id": {
+                    "type": "string"
+                },
                 "enrollment_id": {
                     "type": "string"
                 },
                 "evidence": {
                     "$ref": "#/definitions/models.JSONMap"
+                },
+                "explanation": {
+                    "$ref": "#/definitions/github_com_addp_security_internal_models.SensitiveFindingExplanation"
                 },
                 "id": {
                     "type": "string"
@@ -4541,6 +6145,9 @@ const docTemplate = `{
                 },
                 "source_snapshot_hash": {
                     "type": "string"
+                },
+                "target_snapshot": {
+                    "$ref": "#/definitions/github_com_addp_security_internal_models.ProtectionTargetSnapshot"
                 }
             }
         },

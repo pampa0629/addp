@@ -7,10 +7,11 @@
 数据质量闭环由以下事实构成：
 
 1. Standard 定义可复用的数据元质量规则。
-2. Quality 将一份规则快照应用到确定的 PostgreSQL 表字段。
-3. Quality 以持久 execution 执行字段检查或物化门禁，并把结果摘要写入 `common.task_executions.metadata`。
-4. 未通过的规则维护为当前质量问题，后续 execution 更新同一问题，而不是重复创建同义工单。
-5. Monitor 读取统一 execution 事实；其他模块不得复制 Quality 的执行历史或评分存储。
+2. Catalog 将实际字段/组件映射到确定的数据元修订，并拥有映射的审核状态与版本。
+3. Quality 基于已审核 Catalog 映射创建规则应用，冻结映射版本、数据元修订和编译规则快照。
+4. Quality 以持久 execution 执行字段检查或物化门禁，并把结果摘要写入 `common.task_executions.metadata`。
+5. 未通过的规则维护为当前质量问题，后续 execution 更新同一问题，而不是重复创建同义工单。
+6. Monitor 读取统一 execution 事实；Standard 可以聚合展示落标覆盖与符合性，但其他模块不得复制 Quality 的执行历史或评分存储。
 
 字段检查第一版只支持 PostgreSQL 单表字段规则。物化门禁第一版只支持同一 PostgreSQL Engine 上 Model staging 的六类强类型断言。Quality 不提供 owner 定时调度、事件触发、自定义 SQL 规则或其他数据库方言。
 
@@ -19,7 +20,8 @@
 | 模块 | 职责 | 禁止事项 |
 | --- | --- | --- |
 | Standard | 拥有数据元及其版本化质量规则定义；校验规则结构 | 不连接业务数据引擎，不执行质量 SQL，不保存字段应用关系 |
-| Quality | 拥有规则应用、检查任务、物化门禁任务、执行 worker、评分和问题状态 | 不修改 Standard 数据元，不创建或发布 Model 物化表，不复制引擎凭据，不自建 execution 历史表 |
+| Catalog | 拥有实际字段/组件到确定数据元修订的标准映射、审核状态和并发版本 | 不执行质量规则，不复制数据元定义或 Quality 结果 |
+| Quality | 拥有基于标准映射的规则应用、检查任务、物化门禁任务、执行 worker、符合性结果、评分和问题状态 | 不修改 Standard 数据元，不创建第二套字段标准映射，不创建或发布 Model 物化表，不复制引擎凭据，不自建 execution 历史表 |
 | Model | 验证逻辑表与本次 staging 批次，通过物化读上下文向 Quality 返回受控定位与列事实 | 不解释质量断言，不代替 Quality 判定门禁结果 |
 | Common | 提供版本化规则契约 codec、统一 execution 存储、SQL 方言标识符引用和数据库连接桥等稳定共享能力 | 不拥有规则定义、应用关系、评分或问题模型 |
 | System | 拥有 Engine Instance、认证授权和 Execution Authorization | 不替 Quality 解释规则或计算评分 |
@@ -103,7 +105,7 @@ rule_key = digest 前 128 位，并按 RFC 9562 设置 version=8、variant=10
 
 ### 3.3 保存与快照
 
-Standard 在创建和更新数据元时校验完整规则文档。Quality 创建规则应用时从 Standard 读取并再次校验规则文档，只保存其中 `enabled=true` 的规则快照及其 `schema_version`，包括每条规则的 `rule_key`。
+Standard 在创建和更新数据元修订时校验完整规则文档，并在发布时生成不可变的 `compiled_quality_rules`。Quality 创建或显式刷新规则应用时，先从 Catalog 读取已审核 StandardMapping，再从 Standard 按其中的 `element_revision_id` 读取并校验编译规则，只保存其中 `enabled=true` 的规则快照及其 `schema_version`，包括每条规则的 `rule_key`。
 
 规则应用快照是后续 execution 的事实来源。Standard 数据元规则改变后，不得静默修改已有规则应用；用户必须显式重新创建或刷新规则应用。每次 execution 还必须把实际使用的规则应用 ID、规则快照和目标范围写入 `execution_config`，保证历史可审计。
 
@@ -115,21 +117,21 @@ Quality execution 配置唯一版本为 `addp.quality.execution-config/v1`，至
 
 ### 4.1 规则应用
 
-一条 RuleApplication 表示：某个数据元的规则快照被应用于一个确定的 PostgreSQL Engine Instance、schema、table 和 column。
+一条 RuleApplication 表示：某条已审核 Catalog StandardMapping 所引用的数据元修订规则快照，被应用于该映射指向的确定 PostgreSQL 字段。
 
-RuleApplication 只持久化 `element_id` 和质量规则快照，不复制数据元名称或编码。Quality 列表 API 必须通过租户服务身份按当前页 `element_id` 集合从 Standard 批量读取当前摘要，并在响应中投影只读 `element: {id, name, code}`；该投影不是历史快照，也不得要求浏览器额外拥有 `standard.element.read`。Standard 不可用或引用失效时列表请求整体失败，不能静默退回裸 ID 或逐条请求。
+RuleApplication 持久化 `standard_mapping_id + standard_mapping_version + element_revision_id`、执行所需目标快照和质量规则快照，不复制或编辑 Catalog 映射。创建与显式刷新时必须验证映射属于当前 Tenant、状态为已审核、版本与请求一致，并验证其数据元修订已经发布。Catalog 或 Standard 不可达时创建/刷新整体失败；已有规则应用继续使用自身快照执行，不在 worker 运行时回读上游。
 
 稳定身份为：
 
 ```text
-tenant_id + element_id + engine_id + schema_name + table_name + column_name
+tenant_id + standard_mapping_id
 ```
 
-数据库必须对该身份建立唯一约束。重复创建应返回冲突，不得产生两条同时生效的同义应用。`schema_name`、`table_name` 和 `column_name` 都必须明确提供；Quality 不隐式补充 PostgreSQL 默认 schema，避免请求含义与持久化身份不一致。
+数据库必须对该身份建立唯一约束。重复创建应返回冲突，不得产生两条同时生效的同义应用。StandardMapping 版本或数据元修订变化后，Quality 不得静默跟随；用户必须显式刷新原 RuleApplication，在同一并发更新中替换映射版本、修订、目标和规则快照。历史 execution 保留原快照。
 
-规则应用创建页必须通过 System 的实时 Engine Catalog 按 Engine Instance 级联选择 schema、table 和 column，不能继续把它们作为自由文本。System Engine Catalog 列表只返回层级节点，表字段通过同一 Engine Catalog 控制面的按需 facts 接口读取。Engine Catalog 只负责创建时的资源发现和归属校验，不改变 RuleApplication 的稳定身份，也不新增 `item_id`、ResourceLocator 或 EngineCatalogPath 持久字段。Quality 后端必须在保存前再次从 System Engine Catalog 确认 schema、table 和 column 属于当前 Tenant 的目标 Engine，不能只信任前端提交值，也不能依赖 Meta 是否已完成扫描。
+规则应用创建页只允许从 Catalog 返回的已审核 StandardMapping 候选中选择，不再让用户分别选择数据元和自由拼装物理字段。Quality 后端必须通过 Catalog owner API 解析映射、目标 CatalogComponent 和当前专业资源定位，再确认目标能够解析为当前支持的 PostgreSQL Engine/schema/table/column。浏览器不得提交可覆盖 Catalog 映射的数据元修订或目标坐标。
 
-数据元候选是 Quality 创建工作流所需的跨模块只读投影。浏览器必须通过 Quality 的 `GET /rule-applications/element-candidates` 搜索，Quality 使用租户服务身份从 Standard 读取并只返回 `id + name + code + quality_rules`；不得让仅持有 `quality.rule_application.create` 的浏览器额外依赖 `standard.element.read`，也不得保留浏览器直连 Standard 的并行路径。用户选择数据元后，创建页必须展示将被冻结的全部启用规则及其类型、级别、参数和说明；没有启用规则时前端阻止提交，后端仍执行同一事实校验。
+标准映射候选是 Quality 创建工作流所需的跨模块只读投影。浏览器通过 Quality 的候选接口搜索，Quality 使用租户服务身份从 Catalog 读取并返回映射、目标组件和数据元修订的必要摘要；不得让浏览器直连 Catalog 与 Standard 后自行拼接，也不得保留旧 `element-candidates` 并行路径。创建页必须展示将被冻结的目标、标准修订和全部启用规则；没有启用规则时前端阻止提交，后端仍执行同一事实校验。
 
 RuleApplication 是当前生效的规则快照，不是执行历史。删除时必须遵循：
 

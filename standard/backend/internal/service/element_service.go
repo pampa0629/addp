@@ -29,7 +29,8 @@ func NewElementService(repo *repository.ElementRepository, codeSets *repository.
 }
 
 func (s *ElementService) CreateElement(req *models.CreateElementRequest, tenantID, userID int64) (*models.ElementAggregate, error) {
-	if err := s.validateStableReferences(tenantID, req.DomainID); err != nil {
+	scopeType, err := validateTenantStandardScope(s.refs, tenantID, req.ScopeType, req.OwnerDomainID)
+	if err != nil {
 		return nil, err
 	}
 	revision, err := s.revisionFromCreate(req, tenantID, userID)
@@ -43,7 +44,7 @@ func (s *ElementService) CreateElement(req *models.CreateElementRequest, tenantI
 	if exists {
 		return nil, commonapi.ErrConflict
 	}
-	element := &models.Element{TenantID: tenantID, DomainID: req.DomainID, Code: strings.TrimSpace(req.Code), StewardID: req.StewardID, Tags: req.Tags, CreatedBy: userID, LifecycleState: "active"}
+	element := &models.Element{TenantID: tenantID, ScopeType: scopeType, OwnerDomainID: req.OwnerDomainID, Code: strings.TrimSpace(req.Code), StewardID: req.StewardID, Tags: req.Tags, CreatedBy: userID, LifecycleState: "active"}
 	if err := s.repo.Create(element, revision); err != nil {
 		return nil, err
 	}
@@ -63,14 +64,15 @@ func (s *ElementService) ListElements(tenantID int64, opts repository.ListElemen
 }
 
 func (s *ElementService) UpdateElement(id, tenantID, userID int64, req *models.UpdateElementRequest) (*models.ElementAggregate, error) {
-	if err := s.validateStableReferences(tenantID, req.DomainID); err != nil {
+	scopeType, err := validateTenantStandardScope(s.refs, tenantID, req.ScopeType, req.OwnerDomainID)
+	if err != nil {
 		return nil, err
 	}
 	element, err := s.repo.GetByID(id, tenantID)
 	if err != nil {
 		return nil, err
 	}
-	element.DomainID, element.StewardID, element.Tags, element.UpdatedBy = req.DomainID, req.StewardID, req.Tags, &userID
+	element.ScopeType, element.OwnerDomainID, element.StewardID, element.Tags, element.UpdatedBy = scopeType, req.OwnerDomainID, req.StewardID, req.Tags, &userID
 	if err := s.repo.UpdateIdentity(element, req.Version); err != nil {
 		return nil, err
 	}
@@ -175,10 +177,6 @@ func (s *ElementService) GetPublishedQualityRulesAt(id, tenantID int64, asOf tim
 		return nil, nil, err
 	}
 	return revision, &document, nil
-}
-
-func (s *ElementService) validateStableReferences(tenantID int64, domainID *int64) error {
-	return s.refs.RequireDomain(tenantID, domainID)
 }
 
 func (s *ElementService) revisionFromCreate(req *models.CreateElementRequest, tenantID, userID int64) (*models.ElementRevision, error) {

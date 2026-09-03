@@ -42,7 +42,7 @@ func (r *ReferenceResolutionRepository) ResolveElements(ctx context.Context, ten
 	}
 	asOf := time.Now().UTC()
 	err := r.db.WithContext(ctx).Table("standard.elements AS e").
-		Select("e.id, e.tenant_id, e.code, e.lifecycle_state, e.version, er.id AS revision_id, er.revision_no, er.name, er.status").
+		Select("e.id, e.tenant_id, e.scope_type, e.owner_domain_id, e.code, e.lifecycle_state, e.version, er.id AS revision_id, er.revision_no, er.name, er.status").
 		Joins("JOIN standard.element_revisions er ON er.element_id = e.id AND er.status = ? AND er.effective_from <= ? AND (er.effective_to IS NULL OR er.effective_to > ?)", models.RevisionStatusPublished, asOf, asOf).
 		Where("e.tenant_id = ? AND e.lifecycle_state = ? AND e.id IN ?", tenantID, "active", ids).Scan(&result).Error
 	return result, wrapDBError(err)
@@ -94,7 +94,7 @@ func (r *ReferenceResolutionRepository) ListElementCandidates(ctx context.Contex
 		return nil, 0, wrapDBError(err)
 	}
 	items := make([]models.PublishedElementReference, 0)
-	err := query.Select("e.id, e.tenant_id, e.code, e.lifecycle_state, e.version, er.id AS revision_id, er.revision_no, er.name, er.status").
+	err := query.Select("e.id, e.tenant_id, e.scope_type, e.owner_domain_id, e.code, e.lifecycle_state, e.version, er.id AS revision_id, er.revision_no, er.name, er.status").
 		Order("LOWER(er.name) ASC, e.id ASC").Offset((page - 1) * pageSize).Limit(pageSize).Scan(&items).Error
 	return items, total, wrapDBError(err)
 }

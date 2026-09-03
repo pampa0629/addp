@@ -124,6 +124,27 @@ addp-deploy-*.tar.gz
 # Build artifacts (unified - all binaries in dist/)
 dist/
 labs/vector/clip-service/clip_cn_vit-b-16.pt
+
+# Accidental `go build ./cmd/server` outputs created from module backend roots
+asset/backend/server
+catalog/backend/server
+develop/backend/server
+graph/backend/server
+inference/backend/server
+manager/backend/server
+meta/backend/server
+model/backend/server
+monitor/backend/server
+orchestrator/backend/server
+portal/backend/server
+quality/backend/server
+security/backend/server
+service/backend/server
+standard/backend/server
+system/backend/server
+transfer/backend/server
+workbench/backend/server
+
 develop/backend/cmd/server/server
 manager/backend/cmd/server/server
 meta/backend/cmd/server/server
@@ -138,7 +159,6 @@ asset/backend/cmd/server/server
 console/backend/cmd/server/server
 meta/backend/meta-worker
 manager/backend/manager-backend
-manager/backend/server
 *.go.bak
 .claude/settings.local.json
 data/hunan /data.meta

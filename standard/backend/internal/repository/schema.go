@@ -165,7 +165,12 @@ func prepareStandardSchemaMigration(db *gorm.DB) error {
 	END $do$`,
 		`DO $do$ BEGIN
 			IF to_regclass('standard.code_sets') IS NOT NULL THEN
-				ALTER TABLE standard.code_sets ADD COLUMN IF NOT EXISTS domain_id BIGINT;
+				IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'standard' AND table_name = 'code_sets' AND column_name = 'domain_id')
+					AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'standard' AND table_name = 'code_sets' AND column_name = 'owner_domain_id') THEN
+					ALTER TABLE standard.code_sets RENAME COLUMN domain_id TO owner_domain_id;
+				END IF;
+				ALTER TABLE standard.code_sets ADD COLUMN IF NOT EXISTS owner_domain_id BIGINT;
+				ALTER TABLE standard.code_sets ADD COLUMN IF NOT EXISTS scope_type VARCHAR(20);
 				ALTER TABLE standard.code_sets ADD COLUMN IF NOT EXISTS origin VARCHAR(20) NOT NULL DEFAULT 'tenant';
 				ALTER TABLE standard.code_sets ADD COLUMN IF NOT EXISTS steward_id BIGINT;
 				ALTER TABLE standard.code_sets ADD COLUMN IF NOT EXISTS tags JSONB;
@@ -174,12 +179,33 @@ func prepareStandardSchemaMigration(db *gorm.DB) error {
 				ALTER TABLE standard.code_sets ADD COLUMN IF NOT EXISTS created_by BIGINT NOT NULL DEFAULT 0;
 				ALTER TABLE standard.code_sets ADD COLUMN IF NOT EXISTS updated_by BIGINT;
 				ALTER TABLE standard.code_sets ADD COLUMN IF NOT EXISTS lifecycle_state VARCHAR(16) NOT NULL DEFAULT 'active';
+				UPDATE standard.code_sets
+				SET scope_type = CASE
+					WHEN origin = 'platform' THEN 'platform'
+					WHEN owner_domain_id IS NOT NULL THEN 'domain'
+					ELSE 'tenant_common'
+				END
+				WHERE scope_type IS NULL OR scope_type NOT IN ('platform', 'tenant_common', 'domain');
+				UPDATE standard.code_sets SET owner_domain_id = NULL WHERE scope_type = 'platform';
+				ALTER TABLE standard.code_sets ALTER COLUMN scope_type SET DEFAULT 'tenant_common';
+				ALTER TABLE standard.code_sets ALTER COLUMN scope_type SET NOT NULL;
 			END IF;
 		END $do$`,
 		`DO $do$ BEGIN
 			IF to_regclass('standard.elements') IS NOT NULL THEN
+				IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'standard' AND table_name = 'elements' AND column_name = 'domain_id')
+					AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'standard' AND table_name = 'elements' AND column_name = 'owner_domain_id') THEN
+					ALTER TABLE standard.elements RENAME COLUMN domain_id TO owner_domain_id;
+				END IF;
+				ALTER TABLE standard.elements ADD COLUMN IF NOT EXISTS owner_domain_id BIGINT;
+				ALTER TABLE standard.elements ADD COLUMN IF NOT EXISTS scope_type VARCHAR(20);
 				ALTER TABLE standard.elements ADD COLUMN IF NOT EXISTS current_revision_id BIGINT;
 				ALTER TABLE standard.elements ADD COLUMN IF NOT EXISTS draft_revision_id BIGINT;
+				UPDATE standard.elements
+				SET scope_type = CASE WHEN owner_domain_id IS NULL THEN 'tenant_common' ELSE 'domain' END
+				WHERE scope_type IS NULL OR scope_type NOT IN ('platform', 'tenant_common', 'domain');
+				ALTER TABLE standard.elements ALTER COLUMN scope_type SET DEFAULT 'tenant_common';
+				ALTER TABLE standard.elements ALTER COLUMN scope_type SET NOT NULL;
 			END IF;
 		END $do$`,
 	}
@@ -430,6 +456,8 @@ func postgresStandardSchemaStatements() []string {
 
 		"DROP INDEX IF EXISTS standard.idx_codeset_tenant_code",
 		"DROP INDEX IF EXISTS standard.idx_codeitem_set_code",
+		"DROP INDEX IF EXISTS standard.idx_standard_elements_domain_id",
+		"DROP INDEX IF EXISTS standard.idx_standard_code_sets_domain_id",
 		"ALTER TABLE standard.measurement_categories DROP CONSTRAINT IF EXISTS measurement_categories_tenant_id_code_key",
 		"ALTER TABLE standard.element_revisions DROP CONSTRAINT IF EXISTS fk_standard_element_revisions_classification",
 		"ALTER TABLE standard.element_revisions DROP COLUMN IF EXISTS classification_id",
@@ -448,8 +476,12 @@ func postgresStandardSchemaStatements() []string {
 		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.element_revisions'::regclass AND conname = 'ck_standard_element_revisions_status') THEN ALTER TABLE standard.element_revisions ADD CONSTRAINT ck_standard_element_revisions_status CHECK (status IN ('draft','in_review','published','withdrawn')); END IF; END $do$",
 		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.element_revisions'::regclass AND conname = 'ck_standard_element_revisions_effective_interval') THEN ALTER TABLE standard.element_revisions ADD CONSTRAINT ck_standard_element_revisions_effective_interval CHECK ((status <> 'published' OR effective_from IS NOT NULL) AND (effective_to IS NULL OR (effective_from IS NOT NULL AND effective_from < effective_to))); END IF; END $do$",
 		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.element_revisions'::regclass AND conname = 'ck_standard_element_revisions_value_domain') THEN ALTER TABLE standard.element_revisions ADD CONSTRAINT ck_standard_element_revisions_value_domain CHECK ((value_domain_kind = 'unrestricted' AND range_constraint IS NULL AND code_set_revision_id IS NULL) OR (value_domain_kind = 'range' AND range_constraint IS NOT NULL AND code_set_revision_id IS NULL) OR (value_domain_kind = 'enumeration' AND range_constraint IS NULL AND code_set_revision_id IS NOT NULL)); END IF; END $do$",
+		"ALTER TABLE standard.elements DROP CONSTRAINT IF EXISTS ck_standard_elements_scope",
+		"ALTER TABLE standard.elements ADD CONSTRAINT ck_standard_elements_scope CHECK ((scope_type = 'platform' AND owner_domain_id IS NULL) OR (scope_type = 'tenant_common' AND owner_domain_id IS NULL) OR (scope_type = 'domain' AND owner_domain_id IS NOT NULL))",
 		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.code_sets'::regclass AND conname = 'ck_standard_code_sets_origin') THEN ALTER TABLE standard.code_sets ADD CONSTRAINT ck_standard_code_sets_origin CHECK (origin IN ('platform','tenant')); END IF; END $do$",
-		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.code_sets'::regclass AND conname = 'ck_standard_code_sets_tenant_domain') THEN ALTER TABLE standard.code_sets ADD CONSTRAINT ck_standard_code_sets_tenant_domain CHECK (origin <> 'tenant' OR domain_id IS NOT NULL); END IF; END $do$",
+		"ALTER TABLE standard.code_sets DROP CONSTRAINT IF EXISTS ck_standard_code_sets_tenant_domain",
+		"ALTER TABLE standard.code_sets DROP CONSTRAINT IF EXISTS ck_standard_code_sets_scope",
+		"ALTER TABLE standard.code_sets ADD CONSTRAINT ck_standard_code_sets_scope CHECK ((origin = 'platform' AND scope_type = 'platform' AND owner_domain_id IS NULL) OR (origin = 'tenant' AND scope_type = 'tenant_common' AND owner_domain_id IS NULL) OR (origin = 'tenant' AND scope_type = 'domain' AND owner_domain_id IS NOT NULL))",
 		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.code_set_revisions'::regclass AND conname = 'ck_standard_code_set_revisions_status') THEN ALTER TABLE standard.code_set_revisions ADD CONSTRAINT ck_standard_code_set_revisions_status CHECK (status IN ('draft','in_review','published','withdrawn')); END IF; END $do$",
 		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.code_set_revisions'::regclass AND conname = 'ck_standard_code_set_revisions_effective_interval') THEN ALTER TABLE standard.code_set_revisions ADD CONSTRAINT ck_standard_code_set_revisions_effective_interval CHECK ((status <> 'published' OR effective_from IS NOT NULL) AND (effective_to IS NULL OR (effective_from IS NOT NULL AND effective_from < effective_to))); END IF; END $do$",
 		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.code_set_revisions'::regclass AND conname = 'ck_standard_code_set_revisions_value_type') THEN ALTER TABLE standard.code_set_revisions ADD CONSTRAINT ck_standard_code_set_revisions_value_type CHECK (value_type IN ('string','int','bigint')); END IF; END $do$",
@@ -512,6 +544,10 @@ func postgresStandardSchemaStatements() []string {
 		{"standard.document_metric_mappings", "document_metric_mappings_document_id_fkey"},
 		{"standard.dimension_hierarchy_levels", "fk_standard_dimension_hierarchies_levels"},
 		{"standard.elements", "elements_unit_id_fkey"},
+		{"standard.elements", "fk_standard_elements_domain"},
+		{"standard.elements", "elements_domain_id_fkey"},
+		{"standard.code_sets", "fk_standard_code_sets_domain"},
+		{"standard.code_sets", "code_sets_domain_id_fkey"},
 		{"standard.metric_categories", "metric_categories_parent_id_fkey"},
 		{"standard.metric_dependencies", "metric_dependencies_from_metric_id_fkey"},
 		{"standard.metric_dependencies", "metric_dependencies_to_metric_id_fkey"},
@@ -534,12 +570,12 @@ func postgresStandardSchemaStatements() []string {
 	}{
 		{"standard.domains", "fk_standard_domains_parent", "parent_id", "standard.domains(id)", "RESTRICT"},
 		{"standard.glossaries", "fk_standard_glossaries_domain", "domain_id", "standard.domains(id)", "RESTRICT"},
-		{"standard.elements", "fk_standard_elements_domain", "domain_id", "standard.domains(id)", "RESTRICT"},
+		{"standard.elements", "fk_standard_elements_owner_domain", "owner_domain_id", "standard.domains(id)", "RESTRICT"},
 		{"standard.elements", "fk_standard_elements_draft_revision", "draft_revision_id", "standard.element_revisions(id)", "SET NULL"},
 		{"standard.element_revisions", "fk_standard_element_revisions_element", "element_id", "standard.elements(id)", "CASCADE"},
 		{"standard.element_revisions", "fk_standard_element_revisions_unit", "unit_id", "standard.units(id)", "RESTRICT"},
 		{"standard.element_revisions", "fk_standard_element_revisions_code_set_revision", "code_set_revision_id", "standard.code_set_revisions(id)", "RESTRICT"},
-		{"standard.code_sets", "fk_standard_code_sets_domain", "domain_id", "standard.domains(id)", "RESTRICT"},
+		{"standard.code_sets", "fk_standard_code_sets_owner_domain", "owner_domain_id", "standard.domains(id)", "RESTRICT"},
 		{"standard.code_sets", "fk_standard_code_sets_draft_revision", "draft_revision_id", "standard.code_set_revisions(id)", "SET NULL"},
 		{"standard.code_set_revisions", "fk_standard_code_set_revisions_code_set", "code_set_id", "standard.code_sets(id)", "CASCADE"},
 		{"standard.code_set_revision_items", "fk_standard_code_set_revision_items_revision", "code_set_revision_id", "standard.code_set_revisions(id)", "CASCADE"},

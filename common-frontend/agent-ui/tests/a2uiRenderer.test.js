@@ -21,6 +21,12 @@ const presentationI18n = createI18n({
         mapTruncated: '地图样本', tableSummary: '显示 {visible} / {total} 行',
         truncated: '受限样本', nullValue: '空值'
       } } },
+      common: { copy: '复制', copySuccess: '复制成功', copyFailed: '复制失败' },
+      tabularResult: {
+        array: '数组', object: '对象', emptyArray: '空数组', emptyObject: '空对象',
+        arraySummary: '{count} 项', objectSummary: '{count} 个字段：{keys}',
+        objectSummaryMore: '{count} 个字段：{keys}...'
+      },
       map: {
         featureId: '要素 ID', unknown: '未知', unknownGeometry: '未知几何',
         nullValue: '空值', noFieldData: '暂无字段', geometryPoint: '点', geometryMultiPoint: '多点',
@@ -200,8 +206,11 @@ describe('ADDP A2UI renderer', () => {
         stubs: {
           'el-table': { template: '<div class="table-stub"><slot /></div>' },
           'el-table-column': { template: '<span class="column-stub" />' },
+          'el-dialog': { template: '<div class="dialog-stub"><slot /><slot name="footer" /></div>' },
+          'el-button': ElButtonStub,
           MapContainer: { props: ['features', 'featuresOnly'], template: '<div class="map-stub" />' }
-        }
+        },
+        directives: { loading: {} }
       }
     })
 

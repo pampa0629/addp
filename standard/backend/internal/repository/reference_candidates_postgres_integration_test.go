@@ -76,7 +76,7 @@ func TestPostgresReferenceCandidatesFilterAndPaginateOwnerFacts(t *testing.T) {
 		t.Fatalf("glossaries=%#v total=%d err=%v", glossaries, total, err)
 	}
 	elements, total, err := repository.ListElementCandidates(context.Background(), tenantID, "customer", 1, 20)
-	if err != nil || total != 1 || len(elements) != 1 || elements[0].Code != "customer_id"+codeSuffix {
+	if err != nil || total != 1 || len(elements) != 1 || elements[0].Code != "customer_id"+codeSuffix || elements[0].ScopeType != models.StandardScopeTenantCommon || elements[0].OwnerDomainID != nil {
 		t.Fatalf("elements=%#v total=%d err=%v", elements, total, err)
 	}
 }

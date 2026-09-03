@@ -20,6 +20,18 @@ const (
 	SQLPlaceholderColon    SQLPlaceholderStyle = "colon"
 )
 
+// SQLPlaceholderStyleForEngine 返回指定 SQL 引擎驱动使用的位置参数占位符。
+func SQLPlaceholderStyleForEngine(engineType string) SQLPlaceholderStyle {
+	switch strings.ToLower(strings.TrimSpace(engineType)) {
+	case "postgres", "postgresql", "postgis":
+		return SQLPlaceholderDollar
+	case "oracle":
+		return SQLPlaceholderColon
+	default:
+		return SQLPlaceholderQuestion
+	}
+}
+
 func References(language, query string) ([]string, error) {
 	switch strings.ToLower(strings.TrimSpace(language)) {
 	case "sql":

@@ -25,7 +25,7 @@ func TestCompileQueryPlanBindsFilterAndBuildsCompositeKeyset(t *testing.T) {
 		OrderBy: []models.QueryOrder{{Field: "score", Direction: "desc"}},
 		Page:    models.QueryPageRequest{Limit: 2},
 	}
-	plan, err := compileQueryPlan(queryService, request, queryProtocolREST, "postgresql", "SELECT id, name, score FROM public.items LIMIT 100", codec)
+	plan, err := compileQueryPlan(queryService, request, queryProtocolREST, "postgresql", "SELECT id, name, score FROM public.items LIMIT 100", nil, nil, codec)
 	if err != nil {
 		t.Fatalf("compileQueryPlan() error = %v", err)
 	}
@@ -50,7 +50,7 @@ func TestCompileQueryPlanBindsFilterAndBuildsCompositeKeyset(t *testing.T) {
 		t.Fatalf("encodeCursor() error = %v", err)
 	}
 	request.Page.Cursor = cursor
-	nextPlan, err := compileQueryPlan(queryService, request, queryProtocolREST, "postgresql", "SELECT id, name, score FROM public.items LIMIT 100", codec)
+	nextPlan, err := compileQueryPlan(queryService, request, queryProtocolREST, "postgresql", "SELECT id, name, score FROM public.items LIMIT 100", nil, nil, codec)
 	if err != nil {
 		t.Fatalf("compileQueryPlan(cursor) error = %v", err)
 	}
@@ -62,7 +62,7 @@ func TestCompileQueryPlanBindsFilterAndBuildsCompositeKeyset(t *testing.T) {
 	}
 
 	request.Select = []string{"id"}
-	if _, err := compileQueryPlan(queryService, request, queryProtocolREST, "postgresql", "SELECT id, name, score FROM public.items", codec); !errors.Is(err, ErrInvalidQueryCursor) {
+	if _, err := compileQueryPlan(queryService, request, queryProtocolREST, "postgresql", "SELECT id, name, score FROM public.items", nil, nil, codec); !errors.Is(err, ErrInvalidQueryCursor) {
 		t.Fatalf("query-shape mismatch error = %v, want ErrInvalidQueryCursor", err)
 	}
 }
@@ -77,6 +77,8 @@ func TestCompileQueryPlanUsesOracleSubqueryAndFetchSyntax(t *testing.T) {
 		queryProtocolREST,
 		"oracle",
 		`SELECT "ID" AS "id", "NAME" AS "name", "SCORE" AS "score" FROM "BUSINESS"."ITEMS"`,
+		nil,
+		nil,
 		newQueryTokenCodec([]byte("0123456789abcdef0123456789abcdef")),
 	)
 	if err != nil {

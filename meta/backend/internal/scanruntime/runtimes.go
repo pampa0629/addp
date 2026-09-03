@@ -19,21 +19,6 @@ type Runtimes struct {
 	EngineCatalogContentScanner *scanadapter.EngineCatalogContentScanner
 }
 
-func (r *Runtimes) SetCADInspector(inspector metaenrich.CADInspector) {
-	if r == nil {
-		return
-	}
-	if r.ObjectCatalog != nil {
-		r.ObjectCatalog.cadInspector = inspector
-	}
-	if r.FilesystemCatalog != nil {
-		r.FilesystemCatalog.cadInspector = inspector
-	}
-	if r.ItemRefresh != nil {
-		r.ItemRefresh.cadInspector = inspector
-	}
-}
-
 func (r *Runtimes) SetContainerInspector(inspector metaenrich.ContainerInspector) {
 	if r == nil {
 		return

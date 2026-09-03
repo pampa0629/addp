@@ -152,6 +152,30 @@ func TestMigrateAgainstPostgres(t *testing.T) {
 	if currentRevisionColumns != 0 {
 		t.Fatalf("current revision pointer columns remaining = %d", currentRevisionColumns)
 	}
+	var legacyOwnershipColumns int64
+	if err := tx.Raw(`SELECT COUNT(*) FROM information_schema.columns
+		WHERE table_schema = 'standard' AND table_name IN ('elements', 'code_sets') AND column_name = 'domain_id'`).Scan(&legacyOwnershipColumns).Error; err != nil {
+		t.Fatalf("query legacy ownership columns: %v", err)
+	}
+	if legacyOwnershipColumns != 0 {
+		t.Fatalf("legacy ownership columns remaining = %d", legacyOwnershipColumns)
+	}
+	var migratedOwnership struct {
+		ElementScopeType string
+		ElementOwnerID   *int64
+		CodeSetScopeType string
+		CodeSetOwnerID   *int64
+	}
+	if err := tx.Raw(`SELECT e.scope_type AS element_scope_type, e.owner_domain_id AS element_owner_id,
+		cs.scope_type AS code_set_scope_type, cs.owner_domain_id AS code_set_owner_id
+		FROM standard.elements e CROSS JOIN standard.code_sets cs
+		WHERE e.id = 201 AND cs.id = 101`).Scan(&migratedOwnership).Error; err != nil {
+		t.Fatalf("load migrated ownership: %v", err)
+	}
+	if migratedOwnership.ElementScopeType != models.StandardScopeTenantCommon || migratedOwnership.ElementOwnerID != nil ||
+		migratedOwnership.CodeSetScopeType != models.StandardScopeDomain || migratedOwnership.CodeSetOwnerID == nil || *migratedOwnership.CodeSetOwnerID != 501 {
+		t.Fatalf("migrated ownership = %#v", migratedOwnership)
+	}
 	var legacyItemTable int64
 	if err := tx.Raw(`SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'standard' AND table_name = 'code_items'`).Scan(&legacyItemTable).Error; err != nil {
 		t.Fatalf("query legacy code item table: %v", err)
@@ -306,7 +330,7 @@ func TestPostgresDeletePolicies(t *testing.T) {
 	}
 }
 
-func TestPostgresTenantCodeSetRequiresDomain(t *testing.T) {
+func TestPostgresCodeSetScopeConstraint(t *testing.T) {
 	dsn := os.Getenv("STANDARD_POSTGRES_TEST_DSN")
 	if dsn == "" {
 		t.Skip("STANDARD_POSTGRES_TEST_DSN is not set")
@@ -336,6 +360,7 @@ func TestPostgresTenantCodeSetRequiresDomain(t *testing.T) {
 
 	invalid := models.CodeSet{
 		TenantID:       tenantID,
+		ScopeType:      models.StandardScopeDomain,
 		Code:           "missing-domain",
 		Origin:         models.CodeSetOriginTenant,
 		CreatedBy:      1,
@@ -347,7 +372,8 @@ func TestPostgresTenantCodeSetRequiresDomain(t *testing.T) {
 
 	valid := models.CodeSet{
 		TenantID:       tenantID,
-		DomainID:       &domain.ID,
+		ScopeType:      models.StandardScopeDomain,
+		OwnerDomainID:  &domain.ID,
 		Code:           "with-domain",
 		Origin:         models.CodeSetOriginTenant,
 		CreatedBy:      1,
@@ -356,12 +382,24 @@ func TestPostgresTenantCodeSetRequiresDomain(t *testing.T) {
 	if err := db.Create(&valid).Error; err != nil {
 		t.Fatalf("create tenant code set with domain: %v", err)
 	}
-	if err := db.Model(&models.CodeSet{}).Where("id = ?", valid.ID).Update("domain_id", nil).Error; err == nil {
+	if err := db.Model(&models.CodeSet{}).Where("id = ?", valid.ID).Update("owner_domain_id", nil).Error; err == nil {
 		t.Fatal("clearing a tenant code set domain should be rejected")
+	}
+	tenantCommon := models.CodeSet{
+		TenantID:       tenantID,
+		ScopeType:      models.StandardScopeTenantCommon,
+		Code:           "tenant-common",
+		Origin:         models.CodeSetOriginTenant,
+		CreatedBy:      1,
+		LifecycleState: "active",
+	}
+	if err := db.Create(&tenantCommon).Error; err != nil {
+		t.Fatalf("create tenant-common code set: %v", err)
 	}
 
 	platform := models.CodeSet{
 		TenantID:       tenantID,
+		ScopeType:      models.StandardScopePlatform,
 		Code:           "platform-without-domain",
 		Origin:         models.CodeSetOriginPlatform,
 		CreatedBy:      1,
@@ -369,5 +407,58 @@ func TestPostgresTenantCodeSetRequiresDomain(t *testing.T) {
 	}
 	if err := db.Create(&platform).Error; err != nil {
 		t.Fatalf("create platform code set without domain: %v", err)
+	}
+}
+
+func TestPostgresElementScopeConstraint(t *testing.T) {
+	dsn := os.Getenv("STANDARD_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("STANDARD_POSTGRES_TEST_DSN is not set")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("open postgres: %v", err)
+	}
+	if err := Migrate(db); err != nil {
+		t.Fatalf("Migrate() error = %v", err)
+	}
+
+	tenantID := int64(9_000_000_003)
+	defer func() {
+		_ = db.Where("tenant_id = ?", tenantID).Delete(&models.Element{}).Error
+		_ = db.Where("tenant_id = ?", tenantID).Delete(&models.Domain{}).Error
+	}()
+	domain := models.Domain{TenantID: tenantID, Name: "Element domain", Code: "element-domain", CreatedBy: 1}
+	if err := db.Create(&domain).Error; err != nil {
+		t.Fatalf("create domain: %v", err)
+	}
+
+	invalid := models.Element{TenantID: tenantID, ScopeType: models.StandardScopeDomain, Code: "missing-owner", CreatedBy: 1, LifecycleState: "active"}
+	if err := db.Create(&invalid).Error; err == nil {
+		t.Fatal("domain-scoped element without owner should be rejected")
+	}
+	valid := models.Element{TenantID: tenantID, ScopeType: models.StandardScopeDomain, OwnerDomainID: &domain.ID, Code: "owned", CreatedBy: 1, LifecycleState: "active"}
+	if err := db.Create(&valid).Error; err != nil {
+		t.Fatalf("create domain-scoped element: %v", err)
+	}
+	if err := db.Model(&models.Element{}).Where("id = ?", valid.ID).Update("owner_domain_id", nil).Error; err == nil {
+		t.Fatal("clearing a domain-scoped element owner should be rejected")
+	}
+	tenantCommon := models.Element{TenantID: tenantID, ScopeType: models.StandardScopeTenantCommon, Code: "tenant-common", CreatedBy: 1, LifecycleState: "active"}
+	if err := db.Create(&tenantCommon).Error; err != nil {
+		t.Fatalf("create tenant-common element: %v", err)
+	}
+	platform := models.Element{TenantID: tenantID, ScopeType: models.StandardScopePlatform, Code: "platform", CreatedBy: 1, LifecycleState: "active"}
+	if err := db.Create(&platform).Error; err != nil {
+		t.Fatalf("create platform element: %v", err)
+	}
+	if err := Migrate(db); err != nil {
+		t.Fatalf("repeat Migrate() with platform element: %v", err)
+	}
+	if err := db.First(&platform, platform.ID).Error; err != nil {
+		t.Fatalf("reload platform element: %v", err)
+	}
+	if platform.ScopeType != models.StandardScopePlatform || platform.OwnerDomainID != nil {
+		t.Fatalf("platform element ownership changed after repeated migration: %#v", platform)
 	}
 }

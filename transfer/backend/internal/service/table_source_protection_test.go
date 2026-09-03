@@ -9,7 +9,7 @@ import (
 	"github.com/addp/transfer/internal/executor"
 )
 
-func TestPrepareBoundedTableSourceProtectionOpensOnlyPostgresNativeAndQuery(t *testing.T) {
+func TestPrepareBoundedTableSourceProtectionUsesNativePipelineAcrossEnginesAndRestrictsQueryProtection(t *testing.T) {
 	tests := []struct {
 		name         string
 		engineType   string
@@ -18,10 +18,12 @@ func TestPrepareBoundedTableSourceProtectionOpensOnlyPostgresNativeAndQuery(t *t
 		wantResource int
 	}{
 		{name: "postgres native", engineType: "postgresql", kind: executor.TableEndpointNative, wantPrepare: 1},
+		{name: "mysql native", engineType: "mysql", kind: executor.TableEndpointNative, wantPrepare: 1},
+		{name: "oracle native", engineType: "oracle", kind: executor.TableEndpointNative, wantPrepare: 1},
 		{name: "postgres query", engineType: "postgresql", kind: executor.TableEndpointQuery, wantPrepare: 1},
 		{name: "postgres encoded", engineType: "postgresql", kind: executor.TableEndpointEncoded, wantResource: 1},
 		{name: "mongodb query", engineType: "mongodb", kind: executor.TableEndpointQuery, wantResource: 1},
-		{name: "mysql native", engineType: "mysql", kind: executor.TableEndpointNative, wantResource: 1},
+		{name: "mysql query", engineType: "mysql", kind: executor.TableEndpointQuery, wantResource: 1},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

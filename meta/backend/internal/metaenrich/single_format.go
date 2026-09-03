@@ -20,21 +20,34 @@ func DetectSingleFileFormat(
 	catalogPath plugin.EngineCatalogPath,
 	fallbackPath string,
 ) (format.FormatType, error) {
+	peek, err := readSingleFilePeek(ctx, contentReader, connInfo, catalogPath)
+	if err != nil {
+		return format.FormatUnknown, err
+	}
+	return format.DetectFormat(fallbackPath, peek), nil
+}
+
+func readSingleFilePeek(
+	ctx context.Context,
+	contentReader plugin.ContentReadableProvider,
+	connInfo plugin.ConnectionInfo,
+	catalogPath plugin.EngineCatalogPath,
+) ([]byte, error) {
 	if contentReader == nil {
-		return format.FormatUnknown, nil
+		return nil, nil
 	}
 
 	reader, err := openSingleFilePeekReader(ctx, contentReader, connInfo, catalogPath)
 	if err != nil {
-		return format.FormatUnknown, err
+		return nil, err
 	}
 	defer reader.Close()
 
 	peek, err := io.ReadAll(io.LimitReader(reader, singleFileFormatPeekBytes))
 	if err != nil {
-		return format.FormatUnknown, err
+		return nil, err
 	}
-	return format.DetectFormat(fallbackPath, peek), nil
+	return peek, nil
 }
 
 // ApplySingleFileFormat 将识别出的格式写回 detected item。

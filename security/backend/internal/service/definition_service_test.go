@@ -51,6 +51,116 @@ func TestProtectionBaselineChangesRecompileAffectedEnrollmentAtomically(t *testi
 	assertLatestManagerProjection(t, enrollments, 7, dataprotection.ProjectionStateActive, dataprotection.EffectMask, 5)
 }
 
+func TestDetectorBindingUsesOnlyInstalledCapabilitiesAndProtectsTypeReference(t *testing.T) {
+	db := openSecurityTestDB(t)
+	svc := newTestDefinitionService(db)
+	classification, err := svc.CreateClassification(models.DefinitionRequest{Code: "personal", Name: "个人信息"}, 7, 11)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grade, err := svc.CreateGrade(models.DefinitionRequest{Code: "l2", Name: "二级", RiskOrder: 2}, 7, 11)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dataType, err := svc.CreateType(models.SensitiveDataTypeRequest{Code: "contact", Name: "联系方式", SecurityClassificationID: classification.ID, DefaultSecurityGradeID: grade.ID}, 7, 11)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.CreateDetector(models.DetectorRequest{CapabilityKey: "tenant.script/v1", SensitiveDataTypeID: dataType.ID, ConfidenceThreshold: 0.9}, 7, 11); !errors.Is(err, commonapi.ErrBadRequest) {
+		t.Fatalf("unknown capability error = %v", err)
+	}
+	binding, err := svc.CreateDetector(models.DetectorRequest{CapabilityKey: models.FindingDetectorPhoneMetadataV2, SensitiveDataTypeID: dataType.ID, ConfidenceThreshold: 0.9}, 7, 11)
+	if err != nil || !binding.Enabled || binding.ConfidenceThreshold != 0.9 || binding.Version != 1 {
+		t.Fatalf("binding = %#v, err=%v", binding, err)
+	}
+	if _, err := svc.CreateDetector(models.DetectorRequest{CapabilityKey: models.FindingDetectorPhoneMetadataV2, SensitiveDataTypeID: dataType.ID, ConfidenceThreshold: 0.9}, 7, 11); !errors.Is(err, commonapi.ErrConflict) {
+		t.Fatalf("duplicate capability error = %v", err)
+	}
+	if err := svc.DeleteType(dataType.ID, 7); !errors.Is(err, commonapi.ErrConflict) {
+		t.Fatalf("delete referenced type error = %v", err)
+	}
+	if err := svc.DeleteDetector(binding.ID, 7, 11, binding.Version+1); !errors.Is(err, repository.ErrVersionConflict) {
+		t.Fatalf("stale delete error = %v", err)
+	}
+	if err := svc.DeleteDetector(binding.ID, 7, 11, binding.Version); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.DeleteType(dataType.ID, 7); err != nil {
+		t.Fatal(err)
+	}
+
+	capabilities := svc.ListDetectorCapabilities()
+	if len(capabilities) != 3 || capabilities[0].Key != models.FindingDetectorPhoneMetadataV2 || capabilities[1].Key != models.FindingDetectorEmailMetadataV1 {
+		t.Fatalf("capabilities = %#v", capabilities)
+	}
+	capabilities[0].SupportedItemTypes[0] = "mutated"
+	if current := svc.ListDetectorCapabilities(); current[0].SupportedItemTypes[0] == "mutated" {
+		t.Fatal("detector capability registry leaked mutable slices")
+	}
+	if current := svc.ListDetectorCapabilities(); current[0].RecommendedThreshold != 0.9 {
+		t.Fatalf("recommended threshold = %v", current[0].RecommendedThreshold)
+	}
+	for _, capability := range svc.ListDetectorCapabilities() {
+		if capability.MethodI18nKey == "" || capability.PrivacyI18nKey == "" || capability.LimitationsI18nKey == "" {
+			t.Fatalf("capability explanation contract is incomplete: %#v", capability)
+		}
+	}
+}
+
+func TestDefinitionProfileExplicitlyAddsOnlyMissingTenantDefinitions(t *testing.T) {
+	db := openSecurityTestDB(t)
+	svc := newTestDefinitionService(db)
+	if profiles := svc.ListDefinitionProfiles(); len(profiles) != 1 || profiles[0].Key != recommendedDefinitionProfileKey || profiles[0].ClassificationCount != 5 || profiles[0].GradeCount != 4 {
+		t.Fatalf("profiles = %#v", profiles)
+	}
+	existing, err := svc.CreateGrade(models.DefinitionRequest{Code: "l3", Name: "租户自定义三级", RiskOrder: 30}, 7, 11)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := svc.ApplyDefinitionProfile(recommendedDefinitionProfileKey, "en", 7, 12)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.CreatedClassifications != 5 || result.CreatedGrades != 3 {
+		t.Fatalf("application result = %#v", result)
+	}
+	classifications, err := svc.ListClassifications(7)
+	if err != nil || len(classifications) != 5 {
+		t.Fatalf("classifications = %#v, err=%v", classifications, err)
+	}
+	var personalID int64
+	var sensitivePersonal *models.SecurityClassification
+	for index := range classifications {
+		switch classifications[index].Code {
+		case "personal_information":
+			personalID = classifications[index].ID
+			if classifications[index].Name != "Personal information" {
+				t.Fatalf("localized classification = %#v", classifications[index])
+			}
+		case "sensitive_personal_information":
+			sensitivePersonal = &classifications[index]
+		}
+	}
+	if sensitivePersonal == nil || sensitivePersonal.ParentID == nil || *sensitivePersonal.ParentID != personalID {
+		t.Fatalf("sensitive personal classification = %#v, personal id=%d", sensitivePersonal, personalID)
+	}
+	storedExisting, err := svc.GetGrade(existing.ID, 7)
+	if err != nil || storedExisting.Name != "租户自定义三级" || storedExisting.RiskOrder != 30 {
+		t.Fatalf("existing grade overwritten = %#v, err=%v", storedExisting, err)
+	}
+	second, err := svc.ApplyDefinitionProfile(recommendedDefinitionProfileKey, "en", 7, 12)
+	if err != nil || second.CreatedClassifications != 0 || second.CreatedGrades != 0 {
+		t.Fatalf("idempotent application = %#v, err=%v", second, err)
+	}
+	otherTenant, err := svc.ListClassifications(8)
+	if err != nil || len(otherTenant) != 0 {
+		t.Fatalf("other tenant classifications = %#v, err=%v", otherTenant, err)
+	}
+	if _, err := svc.ApplyDefinitionProfile("unknown", "en", 7, 12); !errors.Is(err, commonapi.ErrBadRequest) {
+		t.Fatalf("unknown profile error = %v", err)
+	}
+}
+
 func TestProtectionBaselineUpdateRollsBackWhenProjectionCannotPublish(t *testing.T) {
 	db, _, finding, dataType, grade := prepareReviewablePhoneFinding(t)
 	svc := newTestDefinitionService(db)
@@ -79,6 +189,43 @@ func TestProtectionBaselineUpdateRollsBackWhenProjectionCannotPublish(t *testing
 	}
 }
 
+func TestCandidateCompilerUsesDetectorBindingConfidenceThreshold(t *testing.T) {
+	db, enrollments, finding, dataType, grade := prepareReviewablePhoneFinding(t)
+	if err := db.Model(&models.SensitiveFinding{}).Where("id = ?", finding.ID).Update("confidence", 0.8).Error; err != nil {
+		t.Fatal(err)
+	}
+	var baseline models.ProtectionBaseline
+	if err := db.Where("tenant_id = ? AND sensitive_data_type_id = ? AND security_grade_id = ?", 7, dataType.ID, grade.ID).First(&baseline).Error; err != nil {
+		t.Fatal(err)
+	}
+	svc := newTestDefinitionService(db)
+	updated, err := svc.UpdateBaseline(baseline.ID, 7, 31, models.ProtectionBaselineRequest{
+		SensitiveDataTypeID: dataType.ID, SecurityGradeID: grade.ID,
+		Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV1,
+		KeepPrefix: 3, KeepSuffix: 4, InvalidValueEffect: dataprotection.EffectSuppress,
+		Version: baseline.Version,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertLatestManagerProjection(t, enrollments, 7, dataprotection.ProjectionStateEnrolling, "", 3)
+
+	if err := db.Model(&models.Detector{}).
+		Where("tenant_id = ? AND capability_key = ?", 7, models.FindingDetectorPhoneMetadataV2).
+		Update("confidence_threshold", 0.7).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.UpdateBaseline(updated.ID, 7, 31, models.ProtectionBaselineRequest{
+		SensitiveDataTypeID: dataType.ID, SecurityGradeID: grade.ID,
+		Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV1,
+		KeepPrefix: 3, KeepSuffix: 4, InvalidValueEffect: dataprotection.EffectSuppress,
+		Version: updated.Version,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	assertLatestManagerProjection(t, enrollments, 7, dataprotection.ProjectionStateActive, dataprotection.EffectMask, 4)
+}
+
 func TestSensitiveDataTypeDefaultGradeChangeRecompilesOnlyCandidateFinding(t *testing.T) {
 	db, enrollments, finding, dataType, oldGrade := prepareReviewablePhoneFinding(t)
 	svc := newTestDefinitionService(db)
@@ -89,7 +236,7 @@ func TestSensitiveDataTypeDefaultGradeChangeRecompilesOnlyCandidateFinding(t *te
 	updated, err := svc.UpdateType(dataType.ID, 7, 31, models.SensitiveDataTypeRequest{
 		Name: dataType.Name, Description: dataType.Description,
 		SecurityClassificationID: dataType.SecurityClassificationID, DefaultSecurityGradeID: newGrade.ID,
-		ProtectionThreshold: dataType.ProtectionThreshold, Version: dataType.Version,
+		Version: dataType.Version,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -99,7 +246,7 @@ func TestSensitiveDataTypeDefaultGradeChangeRecompilesOnlyCandidateFinding(t *te
 	}
 	assertLatestManagerProjection(t, enrollments, 7, dataprotection.ProjectionStateEnrolling, "", 3)
 
-	assessments := NewAssessmentService(db)
+	assessments := NewAssessmentService(db, nil)
 	if _, err := assessments.ReviewFinding(context.Background(), 7, 32, finding.ID, models.FindingReviewRequest{
 		Decision: models.FindingReviewDecisionConfirm, Rationale: "按当前类型默认等级确认",
 	}); err != nil {
@@ -113,7 +260,7 @@ func TestSensitiveDataTypeDefaultGradeChangeRecompilesOnlyCandidateFinding(t *te
 	if _, err := svc.UpdateType(dataType.ID, 7, 31, models.SensitiveDataTypeRequest{
 		Name: current.Name, Description: current.Description,
 		SecurityClassificationID: current.SecurityClassificationID, DefaultSecurityGradeID: oldGrade.ID,
-		ProtectionThreshold: current.ProtectionThreshold, Version: current.Version,
+		Version: current.Version,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -124,14 +271,17 @@ func TestSensitiveDataTypeChangeDoesNotRecompileStaleFinding(t *testing.T) {
 	db, enrollments, finding, dataType, _ := prepareReviewablePhoneFinding(t)
 	if err := db.Model(&models.ProtectionEnrollment{}).
 		Where("tenant_id = ? AND id = ?", 7, finding.EnrollmentID).
-		Update("latest_source_snapshot_hash", "sha256:new-structure-without-phone").Error; err != nil {
+		Updates(map[string]interface{}{
+			"latest_source_snapshot_hash":   "sha256:new-structure-without-phone",
+			"latest_discovery_execution_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+		}).Error; err != nil {
 		t.Fatal(err)
 	}
 	svc := newTestDefinitionService(db)
 	if _, err := svc.UpdateType(dataType.ID, 7, 31, models.SensitiveDataTypeRequest{
 		Name: dataType.Name, Description: dataType.Description,
 		SecurityClassificationID: dataType.SecurityClassificationID, DefaultSecurityGradeID: dataType.DefaultSecurityGradeID,
-		ProtectionThreshold: 0.95, Version: dataType.Version,
+		Version: dataType.Version,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +354,7 @@ func TestDefinitionServiceBuildsPhoneProtectionBaselineWithoutStandardIDs(t *tes
 	svc := newTestDefinitionService(db)
 	classification, _ := svc.CreateClassification(models.DefinitionRequest{Code: "personal_information", Name: "个人信息"}, 7, 11)
 	grade, _ := svc.CreateGrade(models.DefinitionRequest{Code: "l3", Name: "较高风险", RiskOrder: 3}, 7, 11)
-	dataType, err := svc.CreateType(models.SensitiveDataTypeRequest{Code: "phone_number", Name: "手机号码", SecurityClassificationID: classification.ID, DefaultSecurityGradeID: grade.ID, ProtectionThreshold: 0.9}, 7, 11)
+	dataType, err := svc.CreateType(models.SensitiveDataTypeRequest{Code: "phone_number", Name: "手机号码", SecurityClassificationID: classification.ID, DefaultSecurityGradeID: grade.ID}, 7, 11)
 	if err != nil {
 		t.Fatalf("CreateType() error = %v", err)
 	}
@@ -234,7 +384,7 @@ func TestDefinitionServiceRejectsDeletingReferencedDefinitions(t *testing.T) {
 	svc := newTestDefinitionService(db)
 	classification, _ := svc.CreateClassification(models.DefinitionRequest{Code: "personal", Name: "个人信息"}, 7, 11)
 	grade, _ := svc.CreateGrade(models.DefinitionRequest{Code: "l3", Name: "三级", RiskOrder: 3}, 7, 11)
-	dataType, _ := svc.CreateType(models.SensitiveDataTypeRequest{Code: "phone", Name: "手机号码", SecurityClassificationID: classification.ID, DefaultSecurityGradeID: grade.ID, ProtectionThreshold: 0.9}, 7, 11)
+	dataType, _ := svc.CreateType(models.SensitiveDataTypeRequest{Code: "phone", Name: "手机号码", SecurityClassificationID: classification.ID, DefaultSecurityGradeID: grade.ID}, 7, 11)
 	_, _ = svc.CreateBaseline(models.ProtectionBaselineRequest{SensitiveDataTypeID: dataType.ID, SecurityGradeID: grade.ID, Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV1, KeepPrefix: 3, KeepSuffix: 4}, 7, 11)
 
 	for name, deleteDefinition := range map[string]func() error{
@@ -253,7 +403,7 @@ func TestDefinitionServiceRequiresStableMaskingAlgorithm(t *testing.T) {
 	svc := newTestDefinitionService(db)
 	classification, _ := svc.CreateClassification(models.DefinitionRequest{Code: "personal", Name: "个人信息"}, 7, 11)
 	grade, _ := svc.CreateGrade(models.DefinitionRequest{Code: "l3", Name: "三级", RiskOrder: 3}, 7, 11)
-	dataType, _ := svc.CreateType(models.SensitiveDataTypeRequest{Code: "phone", Name: "手机号码", SecurityClassificationID: classification.ID, DefaultSecurityGradeID: grade.ID, ProtectionThreshold: 0.9}, 7, 11)
+	dataType, _ := svc.CreateType(models.SensitiveDataTypeRequest{Code: "phone", Name: "手机号码", SecurityClassificationID: classification.ID, DefaultSecurityGradeID: grade.ID}, 7, 11)
 
 	_, err := svc.CreateBaseline(models.ProtectionBaselineRequest{SensitiveDataTypeID: dataType.ID, SecurityGradeID: grade.ID, Effect: dataprotection.EffectMask, Algorithm: "mask.keep_prefix_suffix", KeepPrefix: 3, KeepSuffix: 4}, 7, 11)
 	if !errors.Is(err, commonapi.ErrBadRequest) {

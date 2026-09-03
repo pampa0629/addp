@@ -103,7 +103,7 @@ Manager、Service、Asset、Portal 等宿主页面可以直接嵌入同一个查
 common-frontend/
 ├── basic/          # 基础 UI 组件 (无地图依赖)
 │   └── src/
-│       ├── components/  - StorageEngineForm, ResourceTree
+│       ├── components/  - StorageEngineForm, ResourceTree, TabularResultRenderer, DataPagination
 │       ├── previews.js  - ImagePreview, MarkdownPreview, PdfPreview 等按需预览入口
 │       ├── utils/       - 格式化器, 类型工具
 │       ├── types/       - FieldType, FormatType, EngineType
@@ -169,6 +169,7 @@ import { TablePreview, GeoJsonPreview } from '@common-ui-map'
 **关键组件**:
 
 - **预览组件**: GeoJsonPreview, TablePreview, ImagePreview（`ImagePreview` 等文件预览组件从 `@common-ui/previews` 导入）
+- **表格结果组件**: `TabularResultRenderer` 是表格预览与有界查询结果的唯一基础表格实现；`DataPagination` 是预览场景的唯一受控分页实现。分页组件只表达页码、每页数量和总数，不决定客户端切片或服务端加载策略
 - **资源选择组件**: ResourceTree, ResourceTreePicker
 - **表单组件**: StorageEngineForm (PostgreSQL/MySQL/Doris/ClickHouse/MongoDB/Neo4j/MinIO/S3/NFS/Spark 配置)
 - **地图组件**: MapContainer, OpenLayersRenderer, GaodeMapRenderer

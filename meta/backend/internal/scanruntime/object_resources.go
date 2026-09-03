@@ -195,7 +195,7 @@ func (s *ObjectStorageCatalogRuntime) persistObjectResources(
 			"currentParent_name", currentParent.Name,
 			"objectName", itemPlan.ObjectName)
 
-		result, err := scanprocessor.New(s.repo, s.indexer, s.log).WithCADInspector(s.cadInspector).WithContainerInspector(s.containerInspector).Process(ctx, scanprocessor.ObjectSingleInput(
+		result, err := scanprocessor.New(s.repo, s.indexer, s.log).WithContainerInspector(s.containerInspector).Process(ctx, scanprocessor.ObjectSingleInput(
 			resource,
 			tenantID,
 			engineID,

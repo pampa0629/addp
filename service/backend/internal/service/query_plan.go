@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"reflect"
 	"strings"
 
@@ -40,6 +41,8 @@ func compileQueryPlan(
 	protocol queryProtocol,
 	engineType string,
 	baseSQL string,
+	baseArgs []interface{},
+	parameters map[string]interface{},
 	codec *queryTokenCodec,
 ) (*compiledQueryPlan, error) {
 	if service == nil || request == nil || codec == nil {
@@ -100,7 +103,7 @@ func compileQueryPlan(
 		limit = maxFeatures
 	}
 
-	queryHash, err := structuredQueryHash(selected, request.Filter, orderBy)
+	queryHash, err := structuredQueryHash(parameters, selected, request.Filter, orderBy)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +131,7 @@ func compileQueryPlan(
 		selectSQL = append(selectSQL, qualified)
 	}
 
-	args := make([]interface{}, 0)
+	args := append([]interface{}(nil), baseArgs...)
 	whereParts := make([]string, 0, 2)
 	if request.Filter != nil {
 		filterSQL, filterErr := compileFilter(request.Filter, service, protocol, engineType, fields, &args)
@@ -386,9 +389,24 @@ func normalizeBoundValue(value interface{}, fieldType datatype.FieldType) (inter
 			if fieldType == datatype.FieldTypeInt || fieldType == datatype.FieldTypeBigInt {
 				return typed.Int64()
 			}
-			return typed.Float64()
-		case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, float32, float64:
+			number, err := typed.Float64()
+			if err != nil || math.IsInf(number, 0) || math.IsNaN(number) {
+				return nil, fmt.Errorf("field %s requires a finite numeric value", fieldType)
+			}
+			return number, nil
+		case int, int8, int16, int32, int64, uint, uint8, uint16, uint32:
 			return value, nil
+		case float32:
+			number := float64(typed)
+			if math.IsInf(number, 0) || math.IsNaN(number) || ((fieldType == datatype.FieldTypeInt || fieldType == datatype.FieldTypeBigInt) && math.Trunc(number) != number) {
+				return nil, fmt.Errorf("field %s requires a valid numeric value", fieldType)
+			}
+			return typed, nil
+		case float64:
+			if math.IsInf(typed, 0) || math.IsNaN(typed) || ((fieldType == datatype.FieldTypeInt || fieldType == datatype.FieldTypeBigInt) && math.Trunc(typed) != typed) {
+				return nil, fmt.Errorf("field %s requires a valid numeric value", fieldType)
+			}
+			return typed, nil
 		default:
 			return nil, fmt.Errorf("field %s requires a numeric value", fieldType)
 		}
@@ -521,12 +539,13 @@ func compileCursorPredicate(orderBy []models.QueryOrder, values []interface{}, f
 	return "(" + strings.Join(parts, " OR ") + ")", nil
 }
 
-func structuredQueryHash(selected []string, filter *models.QueryFilter, orderBy []models.QueryOrder) (string, error) {
+func structuredQueryHash(parameters map[string]interface{}, selected []string, filter *models.QueryFilter, orderBy []models.QueryOrder) (string, error) {
 	payload := struct {
-		Select  []string            `json:"select"`
-		Filter  *models.QueryFilter `json:"filter,omitempty"`
-		OrderBy []models.QueryOrder `json:"order_by"`
-	}{Select: selected, Filter: filter, OrderBy: orderBy}
+		Parameters map[string]interface{} `json:"parameters,omitempty"`
+		Select     []string               `json:"select"`
+		Filter     *models.QueryFilter    `json:"filter,omitempty"`
+		OrderBy    []models.QueryOrder    `json:"order_by"`
+	}{Parameters: parameters, Select: selected, Filter: filter, OrderBy: orderBy}
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return "", err

@@ -14,7 +14,7 @@ Transfer 模块是 ADDP 的数据传输中枢，统一负责 `sync` 任务、任
 
 table 类型 Transfer 主链路已经稳定：native table、encoded single file/object、encoded multi refs 和 encoded whole scope 都统一走 planner + executor + common provider，不按具体引擎组合建立专用通道。后续新增 table 能力应优先补 `common/engine` 或 `common/format`，不要在 Transfer 内恢复私有 reader / writer。
 
-Security 对 Transfer 的稳定动作名为 `export`，它表示受保护数据离开源 DataItem，不是 Transfer `task_type`。PostgreSQL `bounded + snapshot` 结构化 TablePipeline 必须在字段映射、类型转换、空间处理和目标 writer 前遮盖/抑制；原生表按精确 Locator 与当前表结构校验，查询源从同一 PreparedQuery 取得 ReadSet 和 OutputLineage。MongoDB collection 到 `mongodb_extended_jsonl` 的原始记录格式导出按精确 Locator 与 Meta 当前字段结构校验同一 `export` 投影，在 Provider 保留 BSON 标量的文档对象上完成保护后才编码 Canonical Extended JSON。Security 生成引擎无关的动作投影，Transfer 只在已实现并验证字段级保护执行器的源引擎和执行形态上开放；其他非 PostgreSQL 源、raw copy、watermark incremental、Kafka replay、encoded source 和 continuous/CDC 在各自执行器完成前仍资源级失效关闭。
+Security 对 Transfer 的稳定动作名为 `export`，它表示受保护数据离开源 DataItem，不是 Transfer `task_type`。`bounded + snapshot` 的统一 Native TablePipeline 必须在字段映射、类型转换、空间处理和目标 writer 前遮盖/抑制；原生表不按 `engine_type` 建立保护分支，统一按精确 Locator 与当前表结构校验并处理 `BatchData`。查询源从同一 PreparedQuery 取得 ReadSet 和 OutputLineage，当前仅 PostgreSQL 具备该可证明查询依赖能力。MongoDB collection 到 `mongodb_extended_jsonl` 的原始记录格式导出按精确 Locator 与 Meta 当前字段结构校验同一 `export` 投影，在 Provider 保留 BSON 标量的文档对象上完成保护后才编码 Canonical Extended JSON。Security 生成引擎无关的动作投影，Transfer 只在已实现并验证字段级保护执行器的执行形态上开放；非 PostgreSQL 查询源、raw copy、watermark incremental、Kafka replay、encoded source 和 continuous/CDC 在各自执行器完成前仍资源级失效关闭。
 
 只读原生查询结果到 table 的 bounded 搬运属于同一主链路：source 必须消费 `common/engine.QueryReadSessionProvider`，target 继续消费 table write session。MongoDB 嵌套 BSON 的路径投影、数组展开、去重和关系合并由只读 MQL 在源端完成；Transfer 只搬运最终扁平行、执行显式字段映射和严格类型转换，不提供递归 JSON 自动摊平器。
 

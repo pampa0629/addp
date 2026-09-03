@@ -30,6 +30,7 @@ export function buildComponentQuery(snapshot, component, values, cursor = '', fo
   )
   const parameterByKey = new Map((snapshot?.parameters || []).map((parameter) => [parameter.key, parameter]))
   const filters = []
+	const parameters = {}
   if (component.query_template.fixed_filter) filters.push(structuredClone(component.query_template.fixed_filter))
   for (const parameterFilter of component.query_template.parameter_filters || []) {
     const applicationKey = bindingByTarget.get(parameterFilter.parameter_key)
@@ -43,7 +44,18 @@ export function buildComponentQuery(snapshot, component, values, cursor = '', fo
     if (!['is_null', 'is_not_null'].includes(parameterFilter.operator)) filter.value = structuredClone(value)
     filters.push(filter)
   }
+	for (const namedBinding of component.query_template.named_parameter_bindings || []) {
+	  const applicationKey = bindingByTarget.get(namedBinding.parameter_key)
+	  const parameter = parameterByKey.get(applicationKey)
+	  const value = values?.[applicationKey]
+	  if (!parameter || !hasValue(value, 'eq')) {
+	    if (parameter?.required) throw new Error(`missing required application parameter: ${applicationKey}`)
+	    continue
+	  }
+	  parameters[namedBinding.name] = structuredClone(value)
+	}
   return {
+	parameters,
     select: [...component.query_template.select],
     filter: combineFilters(filters),
     order_by: [...(component.query_template.order_by || [])],
@@ -122,8 +134,9 @@ export function canHideApplicationParameters(snapshot) {
     if (bindings.length === 0) return false
     for (const binding of bindings) {
       const component = (snapshot?.components || []).find((item) => item.id === binding.component_id)
-      const filter = component?.query_template?.parameter_filters?.find((item) => item.parameter_key === binding.component_parameter_key)
-      if (!filter || !hasValue(parameter.default_value, filter.operator)) return false
+	  const filter = component?.query_template?.parameter_filters?.find((item) => item.parameter_key === binding.component_parameter_key)
+	  const named = component?.query_template?.named_parameter_bindings?.find((item) => item.parameter_key === binding.component_parameter_key)
+	  if ((!filter && !named) || !hasValue(parameter.default_value, filter?.operator || 'eq')) return false
     }
   }
   return true

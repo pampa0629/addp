@@ -22,13 +22,8 @@ import (
 // fileCatalogPreviewProvider 文件系统类存储引擎预览插件（NFS/对象存储等）
 // 使用 EngineCatalogProvider / EngineCatalogFactsProvider / ContentReadableProvider 读取，不依赖具体客户端。
 type fileCatalogPreviewProvider struct {
-	metadataRepo   *repository.MetadataRepository
-	cadPreviewRepo *repository.CADPreviewRepository
-	content        *objectcontent.ObjectContentRegistry
-}
-
-func (p *fileCatalogPreviewProvider) SetCADPreviewRepository(repo *repository.CADPreviewRepository) {
-	p.cadPreviewRepo = repo
+	metadataRepo *repository.MetadataRepository
+	content      *objectcontent.ObjectContentRegistry
 }
 
 func NewFileCatalogPreviewProvider(metadataRepo *repository.MetadataRepository, content *objectcontent.ObjectContentRegistry) PreviewProvider {
@@ -185,14 +180,7 @@ func (p *fileCatalogPreviewProvider) previewFile(
 			Size:        meta.Size,
 			Attributes:  preview.Object.Attributes,
 		}
-		if isCADObjectContentRequest(contentReq) {
-			url, err := resolveCADPreviewURL(ctx, p.cadPreviewRepo, req, contentReq)
-			if err != nil {
-				return nil, err
-			}
-			contentReq.PreviewURL = url
-			preview.Object.URL = url
-		} else if url := buildFileStorageStreamURL(engine.ID, contentPath); url != "" {
+		if url := buildFileStorageStreamURL(engine.ID, contentPath); url != "" {
 			contentReq.PreviewURL = url
 			preview.Object.URL = url
 		}

@@ -2,7 +2,11 @@
 
 ## 一、模块边界
 
-Model 是 Tenant 级数据架构与建模事实的 owner，管理业务实体、实体关系、逻辑模型、数仓分层以及逻辑模型到 Standard 指标的引用。Standard 继续拥有业务域、数据元、维度层级和指标；Model 只保存经过 Standard API 验证的引用，不代理或复制 Standard 资源。
+Model 是 Tenant 级数据架构与建模事实的 owner，管理业务实体、实体关系、逻辑模型、数仓分层、公共/一致性维度、维度层级和指标实现。Standard 拥有业务域、数据元、码值集和指标定义等业务语义契约；Model 保存经过 Standard API 验证的长期引用，并在聚合审批或指标实现发布时冻结确定的标准修订，不代理或复制 Standard 资源。
+
+维度层级是模型内部结构，只能引用 Model 的 LogicalTable / LogicalField，并可通过字段冻结的数据元修订获得统一语义。当前由 Standard 提供的 DimensionHierarchy、Model 字段上的 `hierarchy_id + hierarchy_level` 以及对应删除屏障属于待迁移旧路线；迁移必须把资源、成员、API、权限和前端入口整体移入 Model，然后删除 Standard 旧路线。
+
+指标定义与指标实现必须分离：Standard MetricDefinitionRevision 只描述业务含义、统计口径、单位和非引擎可执行的语义表达；Model MetricImplementation 冻结 `metric_definition_revision_id`，并拥有粒度、事实来源、维度、连接、过滤和可执行表达式。同一指标定义可存在多个模型实现。当前 FactMetricMapping 和 Standard Metric 的 `derivation_config` 属于待替换实现，不得继续扩展。
 
 Model 是逻辑表物化的结构控制面 owner。逻辑表的 `materialization` 保存目标父节点 ResourceLocator、目标名称和分区设计；物理 staging 创建、受控 DDL、结构校验、封存、原子发布和回收必须由 Model 根据已审批逻辑模型执行。任何通用 writer 只获得 prepare 稳定输出的 staging ResourceLocator，并通过自身的 Engine 写能力向已存在表写入；Model 不识别、调用或依赖具体 writer 业务模块。Orchestrator 使用 TaskProvider outputs 与显式参数绑定组织准备、计算、封存、质量门禁与发布顺序。
 
@@ -10,9 +14,9 @@ Model 是逻辑表物化的结构控制面 owner。逻辑表的 `materialization
 
 Model Entity 与 LogicalTable 是企业目录的专业资源来源。所有已持久化资源，包括 `draft`，都通过 Model owner-local 可恢复变化源自动建立 CatalogEntry；Catalog 不调用 Model 列表 API 轮询全表，也不向 Model 回写 CatalogEntry ID。
 
-Model 继续权威拥有完整 Entity、LogicalTable、属性、字段、物化配置、专业生命周期，以及 `domain_id`、`element_id`、`metric_id` 和建模关系。Catalog 只保存稳定来源引用与名称、编码、对象种类、专业状态等最小最后观察摘要；完整详情通过 Model 的 Catalog 专用批量解析接口动态读取。Catalog 投影不得用于恢复 Model，不得接受编辑，也不得被 Model 反向读取为专业事实。
+Model 继续权威拥有完整 Entity、LogicalTable、属性、字段、物化配置、专业生命周期，以及 `domain_id`、`element_id + element_revision_id`、DimensionHierarchy、MetricImplementation 和建模关系。Catalog 只保存稳定来源引用与名称、编码、对象种类、专业状态等最小最后观察摘要；完整详情通过 Model 的 Catalog 专用批量解析接口动态读取。Catalog 投影不得用于恢复 Model，不得接受编辑，也不得被 Model 反向读取为专业事实。
 
-Model 的 Domain、Element、Metric 和模型关系是专业内生关系，不复制为 Catalog 人工语义关联。Catalog 可以将其展示为 owner 声明关系和搜索分面；修改仍使用 Model 唯一写路径。Catalog 自身继续拥有目录业务名称、补充说明、责任、治理、收藏、集合及不与 Model 内生关系冲突的企业关联。
+Model 的 Domain、ElementRevision、MetricDefinitionRevision 和模型关系是专业内生关系，不复制为 Catalog 人工语义关联。Catalog 可以将其展示为 owner 声明关系和搜索分面；修改仍使用 Model 唯一写路径。Catalog 自身继续拥有目录业务名称、补充说明、责任、治理、收藏、集合，以及实际字段/组件到标准修订的落标映射。
 
 Model 面向当前 User AuthContext 提供 `GET /entities/{id}/relations` 与 `GET /logical-tables/{id}/relations` 一跳专业关系图。Entity 路由同时要求 `model.entity.read` 与 `model.entity_relation.read`；LogicalTable 路由要求 `model.logical_model.read`。响应遵循 `addp.professional_relations/v1`，只读取 Model 权威表，不调用 Standard、Catalog 或其他 owner，不保存 CatalogEntry ID，也不把 owner 不可达提升为 Model Ready 条件。
 
@@ -74,14 +78,14 @@ Model 资源当前全部属于 Tenant，不存在 Department 或 Project Group R
 
 `model.catalog.read` 是不可由租户自定义的 Tenant Scope 机器权限，只授予 `tenant.catalog_runtime`，并由 Model 的变化流和 Catalog 批量解析路由同时校验固定 `addp-catalog` OAuth Client。该权限不授予用户读取 Model 管理 API，也不允许 Catalog 写入 Model。
 
-Model 在写入前校验 Standard 引用时，不转发或保存 User Access Token。`addp-model` 使用当前 Tenant 的 Service Access Token 和专用 `tenant.model_runtime`，且该角色只包含 `standard.domain.read`、`standard.element.read`、`standard.dimension_hierarchy.read` 与 `standard.metric.read`。Standard 协调被 Model 引用资源的删除时，`addp-standard` 使用当前 Tenant 的 Service Access Token 和专用 `tenant.standard_runtime`，该角色只包含 `model.standard_reference.update`。平台控制面的 Runtime Role 不参与 Tenant 业务引用校验或删除协调。
+Model 在写入前校验 Standard 引用时，不转发或保存 User Access Token。`addp-model` 使用当前 Tenant 的 Service Access Token 和专用 `tenant.model_runtime`，目标上只读取 Standard 的 Domain、Element/ElementRevision 与 MetricDefinition/MetricDefinitionRevision；维度层级迁移完成后必须删除 `standard.dimension_hierarchy.read`。Standard 协调被 Model 引用资源的删除时，`addp-standard` 使用当前 Tenant 的 Service Access Token 和专用 `tenant.standard_runtime`，该角色只包含 `model.standard_reference.update`。平台控制面的 Runtime Role 不参与 Tenant 业务引用校验或删除协调。
 
 Permission Guard 只判断候选能力，Repository 和 Service 仍必须对每个资源及其子资源执行 Tenant 隔离。任何父子写入、删除和关系创建都必须验证完整归属，不能只依赖请求中的全局 ID。
 
 ## 三、聚合与引用
 
 - Entity 聚合包含 EntityAttribute；EntityRelation 是连接两个 Entity 聚合的独立关系事实。
-- LogicalTable 聚合包含 LogicalField、TableRelation 和 FactMetricMapping。
+- LogicalTable 聚合包含 LogicalField、TableRelation、DimensionHierarchy 和 MetricImplementation；维度层级成员只能引用同一 LogicalTable 的字段，MetricImplementation 只允许归属事实表。
 - LogicalTable 的可选 Entity 引用只表达概念模型来源，不自动同步属性与字段。需要重新生成时必须由显式操作整体替换，不能隐式双向同步。
 - DWLayer 是 Tenant 可配置事实。LogicalTable 必须引用已存在的 DWLayer，前端不得维护固定分层枚举作为第二事实源。
 - Model 内部引用由数据库外键、唯一约束和 CHECK 约束保证；跨 Standard Schema 的引用先由 Standard HTTP API 验证，再在 Model 写事务中锁定对应的标准引用删除屏障。后台调用、Mermaid 导入和普通 API 写入必须使用同一屏障路径。
@@ -96,9 +100,9 @@ EntityAttribute 与 LogicalField 在草稿阶段只维护长期引用 `element_i
 
 ### Standard 引用删除屏障
 
-Standard 的业务域、数据元、维度层级和指标被 Model 引用时，不使用跨 Schema 外键，也不允许 Standard 直接读取 Model 私有表。Standard 硬删除这些资源必须通过 Model 的标准引用删除屏障完成影响评估；一次性“查询无引用后直接删除”存在检查与删除之间的竞态，禁止作为正式路径。
+Standard 的业务域、数据元和指标定义被 Model 引用时，不使用跨 Schema 外键，也不允许 Standard 直接读取 Model 私有表。Standard 硬删除这些稳定身份必须通过 Model 的标准引用删除屏障完成影响评估；已发布且被模型冻结引用的修订不得硬删除。一次性“查询无引用后直接删除”存在检查与删除之间的竞态，禁止作为正式路径。DimensionHierarchy 迁入 Model 后是本地聚合，不再参与跨 Standard 删除协调。
 
-Model 为 `(tenant_id, resource_type, resource_id)` 维护单行屏障，状态只允许 `open`、`frozen`、`deleted`。任何可能写入 `domain_id`、`element_id`、`hierarchy_id` 或 `metric_id` 的事务，必须按稳定顺序创建并锁定对应屏障行，只有 `open` 才允许继续；屏障状态检查、Model 业务写入、资源版本和 Tenant 实体模型集合 `revision` 推进必须处于同一事务。Standard HTTP 校验仍在本地事务前完成，不能持有 Model 行锁等待网络。
+Model 为 `(tenant_id, resource_type, resource_id)` 维护单行屏障，状态只允许 `open`、`frozen`、`deleted`。任何可能写入 `domain_id`、`element_id` 或 `metric_definition_id` 的事务，必须按稳定顺序创建并锁定对应屏障行，只有 `open` 才允许继续；屏障状态检查、Model 业务写入、资源版本和 Tenant 实体模型集合 `revision` 推进必须处于同一事务。Standard HTTP 校验仍在本地事务前完成，不能持有 Model 行锁等待网络。
 
 Standard 删除遵循唯一顺序：Standard 先持久化删除协调记录并将资源置为 `deleting`，再由同一删除协调流程串行锁定 Standard 资源行，调用 Model 原子冻结屏障并权威扫描当前引用。协调流程必须在释放 Standard 资源行锁前完成冻结、引用分支和本地硬删除；这样用户重试、后台补偿和并发删除不会同时执行本地删除。有引用时必须先让 Model 恢复 `open`，再提交 Standard `active`；任一恢复步骤失败都保留 `deleting` 协调记录，供后台补偿继续处理。无引用时 Standard 硬删除资源并保留协调记录，直到 Model 屏障终止为 `deleted` 成功；因此即使资源已硬删除而终态通知响应丢失，后台补偿仍能完成终态收敛。冻结事务与所有新增引用事务锁定同一屏障行：冻结前完成的写入必然进入权威扫描，冻结后到达的写入必然失败，因此不存在在途请求越过扫描的窗口。
 
@@ -112,13 +116,13 @@ Entity 和 LogicalTable 当前生命周期统一为 `draft` 与 `approved`。只
 
 ### 完整更新语义
 
-Model 资源统一使用 `PUT` 表达完整更新，不提供并行的部分更新路径。请求必须携带资源的完整可编辑状态；`domain_id`、`entity_id`、`element_id`、`hierarchy_id`、`hierarchy_level`、`length` 等可空字段使用 JSON `null` 表示解除引用或清空值。缺失的可空字段与 `null` 含义一致，不能被解释为保留旧值；必填字段缺失或为空必须返回 `400 invalid_request`。
+Model 资源统一使用 `PUT` 表达完整更新，不提供并行的部分更新路径。请求必须携带资源的完整可编辑状态；`domain_id`、`entity_id`、`element_id`、`length` 等可空字段使用 JSON `null` 表示解除引用或清空值。缺失的可空字段与 `null` 含义一致，不能被解释为保留旧值；必填字段缺失或为空必须返回 `400 invalid_request`。维度层级及成员通过 Model 聚合写接口维护，不在 LogicalField 上保留 `hierarchy_id` 或 `hierarchy_level` 双重事实。
 
 前端保存详情和子资源时必须提交完整表单状态。对于当前页面不直接编辑但属于资源状态的字段，例如逻辑表的来源实体 `entity_id` 和属性、字段的 `sort_order`，前端也必须从已加载资源中原样带回，不能依赖后端保留旧值。
 
 ### 并发版本与聚合写入
 
-Model 遵循平台 API 规范中的资源并发版本规则。`Entity`、`LogicalTable`、`DWLayer` 和 `EntityRelation` 是独立版本主体，数据库均保存非空 `BIGINT version`，创建时从 `1` 开始。`EntityAttribute` 共用所属 `Entity.version`；`LogicalField`、`TableRelation` 和 `FactMetricMapping` 共用所属事实侧 `LogicalTable.version`，这些聚合子资源不得再建立自己的并发版本。
+Model 遵循平台 API 规范中的资源并发版本规则。`Entity`、`LogicalTable`、`DWLayer` 和 `EntityRelation` 是独立版本主体，数据库均保存非空 `BIGINT version`，创建时从 `1` 开始。`EntityAttribute` 共用所属 `Entity.version`；`LogicalField`、`TableRelation`、`DimensionHierarchy`、层级成员和 `MetricImplementation` 共用所属 LogicalTable 的 `version`，这些聚合子资源不得再建立自己的并发版本。
 
 | 写入对象 | 并发版本主体 | 事务边界 |
 | --- | --- | --- |
@@ -127,7 +131,8 @@ Model 遵循平台 API 规范中的资源并发版本规则。`Entity`、`Logica
 | LogicalTable 基本信息、审批、重新打开、删除 | LogicalTable | 按 `tenant_id + id + version` 条件写入并推进 LogicalTable 版本 |
 | LogicalField 新增、更新、删除 | 所属 LogicalTable | 校验 LogicalTable 为 `draft`、写入字段并推进 LogicalTable 版本 |
 | TableRelation 新增、删除 | 事实侧 LogicalTable | 锁定并校验事实表和维度表均为 `draft`，写入关系并只推进事实表版本 |
-| FactMetricMapping 新增、删除 | 事实侧 LogicalTable | 校验事实表为 `draft`、写入指标映射并推进事实表版本 |
+| DimensionHierarchy 及层级成员新增、更新、删除 | 所属维度 LogicalTable | 校验维度表为 `draft`、层级字段均属于该表、`level_num` 从 1 开始且不重复，写入并推进 LogicalTable 版本 |
+| MetricImplementation 新增、更新、删除 | 所属事实 LogicalTable | 校验事实表为 `draft`、指标定义修订已发布且实现契约完整，写入并推进 LogicalTable 版本 |
 | EntityRelation 更新、删除 | EntityRelation | `PUT` 携带完整端点和关系定义；校验关系版本，同时锁定并校验变更前后涉及的全部 Entity 均为 `draft` |
 | EntityRelation 创建 | 创建时无关系版本 | 同一事务锁定并校验两端 Entity 均为 `draft`，新关系版本从 `1` 开始 |
 | DWLayer 更新、删除 | DWLayer | 更新按版本条件写入；删除在同一事务完成版本校验、LogicalTable 引用检查和删除 |
@@ -146,7 +151,7 @@ Model 遵循平台 API 规范中的资源并发版本规则。`Entity`、`Logica
 
 ### 请求与过滤参数约束
 
-Model 的跨资源 ID 必须是正整数；可选引用只允许 `null` 或正整数，不允许使用 `0`、负数或无效字符串表达“未选择”。`sort_order` 和 `hierarchy_level` 必须大于等于 0，逻辑字段 `length` 非空时必须大于 0。`hierarchy_id` 与 `hierarchy_level` 必须同时为空或同时存在，不能保存不完整的维度层级引用。名称、编码、列名、分层编码和关系名称必须在数据库字段定义的字符长度内；Mermaid 导入遵守同一限制，不能把超长输入推迟到数据库报错。上述规则由 HTTP 请求绑定、Service 领域校验和数据库约束共同保证，后台调用不得绕过 Service 校验。
+Model 的跨资源 ID 必须是正整数；可选引用只允许 `null` 或正整数，不允许使用 `0`、负数或无效字符串表达“未选择”。`sort_order` 必须大于等于 0，维度层级 `level_num` 必须从 1 开始，逻辑字段 `length` 非空时必须大于 0。名称、编码、列名、分层编码和关系名称必须在数据库字段定义的字符长度内；Mermaid 导入遵守同一限制，不能把超长输入推迟到数据库报错。上述规则由 HTTP 请求绑定、Service 领域校验和数据库约束共同保证，后台调用不得绕过 Service 校验。
 
 Entity 和 LogicalTable 列表的 `status` 只允许 `draft`、`approved`；LogicalTable 的 `table_type` 只允许 `entity`、`fact`、`dimension`。`layer` 不是固定枚举，必须按当前 Tenant 的 DWLayer 事实校验；未知过滤值返回 `400 invalid_request`，不能静默返回空列表。单值过滤参数重复提交同样视为无效请求。
 

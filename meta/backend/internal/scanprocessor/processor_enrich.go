@@ -27,7 +27,6 @@ func (p Processor) enrichDeep(ctx context.Context, input *input, attrs models.JS
 		SizeBytes:            input.SizeBytes,
 		IncludeAccessIndex:   input.IncludeAccessIndex,
 		EngineCatalogPathFor: input.EngineCatalogPathFor,
-		CADInspector:         p.cadInspector,
 		FormatDetector:       p.formatDetector,
 		ContainerInspector:   p.containerInspector,
 		SourceEngine:         input.Resource,

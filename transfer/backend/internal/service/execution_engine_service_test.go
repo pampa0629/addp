@@ -642,11 +642,16 @@ func TestEncodedRecordManagerInfraExportCommitsStableOutputAndFinishesSuccess(t 
 	const sourceType = "manager-infra-export-source-test"
 	sourcePlugin := &managerInfraExportSourcePlugin{}
 	targetPlugin := &managerInfraExportTargetPlugin{}
+	previousMinIO, previousMinIOErr := engineplugin.Get("minio")
 	engineplugin.Register(sourcePlugin)
 	engineplugin.Register(targetPlugin)
 	t.Cleanup(func() {
 		engineplugin.Unregister(sourceType)
-		engineplugin.Unregister("minio")
+		if previousMinIOErr == nil {
+			engineplugin.Register(previousMinIO)
+		} else {
+			engineplugin.Unregister("minio")
+		}
 	})
 
 	config := map[string]interface{}{
@@ -719,6 +724,17 @@ func TestEncodedRecordManagerInfraExportCommitsStableOutputAndFinishesSuccess(t 
 	}
 	if outputs["row_count"] != float64(1) {
 		t.Fatalf("outputs.row_count = %#v", outputs["row_count"])
+	}
+	lineagePayload, err := json.Marshal(stored.Metadata["lineage_facts"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lineage commonExecution.LineageFacts
+	if err := json.Unmarshal(lineagePayload, &lineage); err != nil {
+		t.Fatal(err)
+	}
+	if len(lineage.Outputs) != 1 || lineage.Outputs[0].Locator != "addp-infra://minio/manager/tenant_7/export/20260902/session-id/Persons.ejsonl?type=object" {
+		t.Fatalf("lineage outputs = %#v", lineage.Outputs)
 	}
 }
 

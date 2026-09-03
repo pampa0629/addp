@@ -27,8 +27,9 @@ type QueryServiceOutputContract struct {
 
 // SQLQueryOutputContractRequest 请求检测一个 SQL 查询的输出契约。
 type SQLQueryOutputContractRequest struct {
-	EngineID uint   `json:"engine_id" binding:"required"`
-	SQL      string `json:"sql" binding:"required"`
+	EngineID   uint                   `json:"engine_id" binding:"required"`
+	SQL        string                 `json:"sql" binding:"required"`
+	Parameters map[string]interface{} `json:"parameters,omitempty" swaggertype:"object"`
 }
 
 // QueryServiceDependencySnapshot 是查询服务运行和对外契约依赖的冻结事实。

@@ -1,12 +1,19 @@
 <template>
-  <router-view />
+  <el-config-provider :locale="elementLocale">
+    <router-view />
+  </el-config-provider>
 </template>
 
 <script setup>
-import { onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
+import zhCn from 'element-plus/es/locale/lang/zh-cn'
+import enLocale from 'element-plus/es/locale/lang/en'
 import { useAuthStore } from './store/auth'
 
 const authStore = useAuthStore()
+const { locale } = useI18n()
+const elementLocale = computed(() => locale.value === 'zh-cn' ? zhCn : enLocale)
 
 onMounted(async () => {
   // 如果有 token，尝试获取用户信息

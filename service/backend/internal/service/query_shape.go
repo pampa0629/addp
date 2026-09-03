@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/addp/service/internal/models"
@@ -17,12 +18,13 @@ func QueryShapeFingerprint(request *models.QueryExecutionRequest) (string, error
 		return "", nil
 	}
 	shape := queryShape{
-		Select:    append([]string(nil), request.Select...),
-		Filter:    queryFilterShapeOf(request.Filter),
-		OrderBy:   append([]models.QueryOrder(nil), request.OrderBy...),
-		Limit:     request.Page.Limit,
-		HasCursor: strings.TrimSpace(request.Page.Cursor) != "",
-		Format:    strings.ToLower(strings.TrimSpace(request.Format)),
+		Parameters: queryParameterNames(request.Parameters),
+		Select:     append([]string(nil), request.Select...),
+		Filter:     queryFilterShapeOf(request.Filter),
+		OrderBy:    append([]models.QueryOrder(nil), request.OrderBy...),
+		Limit:      request.Page.Limit,
+		HasCursor:  strings.TrimSpace(request.Page.Cursor) != "",
+		Format:     strings.ToLower(strings.TrimSpace(request.Format)),
 	}
 	encoded, err := json.Marshal(shape)
 	if err != nil {
@@ -33,12 +35,22 @@ func QueryShapeFingerprint(request *models.QueryExecutionRequest) (string, error
 }
 
 type queryShape struct {
-	Select    []string            `json:"select"`
-	Filter    *queryFilterShape   `json:"filter,omitempty"`
-	OrderBy   []models.QueryOrder `json:"order_by"`
-	Limit     int                 `json:"limit"`
-	HasCursor bool                `json:"has_cursor"`
-	Format    string              `json:"format"`
+	Parameters []string            `json:"parameters"`
+	Select     []string            `json:"select"`
+	Filter     *queryFilterShape   `json:"filter,omitempty"`
+	OrderBy    []models.QueryOrder `json:"order_by"`
+	Limit      int                 `json:"limit"`
+	HasCursor  bool                `json:"has_cursor"`
+	Format     string              `json:"format"`
+}
+
+func queryParameterNames(parameters map[string]interface{}) []string {
+	names := make([]string, 0, len(parameters))
+	for name := range parameters {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 type queryFilterShape struct {

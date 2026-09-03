@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/json"
 	"errors"
+	"sort"
 	"strings"
 	"time"
 
@@ -14,18 +15,19 @@ import (
 )
 
 type protectionCandidate struct {
-	AssessmentID        string
-	SensitiveDataTypeID int64
-	SecurityGradeID     int64
-	Component           dataprotection.Component
-	Formal              bool
+	AssessmentID             string
+	SensitiveDataTypeID      int64
+	SecurityClassificationID int64
+	SecurityGradeID          int64
+	Component                dataprotection.Component
+	Formal                   bool
 }
 
 // compileProtectionProjections is the only Security path that turns provisional
 // Findings or formal Assessment revisions into executable owner changes.
 func compileProtectionProjections(tx *gorm.DB, enrollment models.ProtectionEnrollment, sourceSnapshotHash string, now time.Time, consumerOwners []string) error {
 	var findings []models.SensitiveFinding
-	if err := tx.Where("tenant_id = ? AND enrollment_id = ? AND source_snapshot_hash = ?", enrollment.TenantID, enrollment.ID, sourceSnapshotHash).Order("component_key ASC, created_at ASC").Find(&findings).Error; err != nil {
+	if err := tx.Where("tenant_id = ? AND enrollment_id = ? AND discovery_execution_id = ?", enrollment.TenantID, enrollment.ID, enrollment.LatestDiscoveryExecutionID).Order("component_key ASC, created_at ASC").Find(&findings).Error; err != nil {
 		return err
 	}
 	candidates := make(map[string]protectionCandidate, len(findings))
@@ -42,17 +44,45 @@ func compileProtectionProjections(tx *gorm.DB, enrollment models.ProtectionEnrol
 			candidates[finding.ComponentKey] = candidate
 		}
 	}
+	var assessments []models.ResourceSecurityAssessment
+	if err := tx.Where("tenant_id = ? AND enrollment_id = ?", enrollment.TenantID, enrollment.ID).Find(&assessments).Error; err != nil {
+		return err
+	}
+	if len(assessments) > 0 {
+		assessmentByID := make(map[string]models.ResourceSecurityAssessment, len(assessments))
+		assessmentIDs := make([]string, 0, len(assessments))
+		for _, assessment := range assessments {
+			assessmentByID[assessment.ID] = assessment
+			assessmentIDs = append(assessmentIDs, assessment.ID)
+		}
+		var revisions []models.ResourceSecurityAssessmentRevision
+		if err := tx.Where("tenant_id = ? AND assessment_id IN ?", enrollment.TenantID, assessmentIDs).Find(&revisions).Error; err != nil {
+			return err
+		}
+		for _, revision := range revisions {
+			assessment, exists := assessmentByID[revision.AssessmentID]
+			if !exists || assessment.CurrentRevision != revision.Revision || revision.Conclusion != models.AssessmentConclusionSensitive {
+				continue
+			}
+			candidates[assessment.ComponentKey] = protectionCandidate{
+				AssessmentID: assessment.ID, SensitiveDataTypeID: revision.SensitiveDataTypeID,
+				SecurityClassificationID: revision.SecurityClassificationID, SecurityGradeID: revision.SecurityGradeID,
+				Component: revision.Component, Formal: true,
+			}
+		}
+	}
 
 	managerRules := make([]dataprotection.Rule, 0, len(candidates)*2)
 	developRules := make([]dataprotection.Rule, 0, len(candidates))
 	serviceRules := make([]dataprotection.Rule, 0, len(candidates))
 	transferRules := make([]dataprotection.Rule, 0, len(candidates))
-	for _, finding := range findings {
-		candidate, exists := candidates[finding.ComponentKey]
-		if !exists {
-			continue
-		}
-		delete(candidates, finding.ComponentKey)
+	componentKeys := make([]string, 0, len(candidates))
+	for componentKey := range candidates {
+		componentKeys = append(componentKeys, componentKey)
+	}
+	sort.Strings(componentKeys)
+	for _, componentKey := range componentKeys {
+		candidate := candidates[componentKey]
 		var baseline models.ProtectionBaseline
 		if err := tx.Where("tenant_id = ? AND sensitive_data_type_id = ? AND security_grade_id = ? AND enabled = ?", enrollment.TenantID, candidate.SensitiveDataTypeID, candidate.SecurityGradeID, true).First(&baseline).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -137,33 +167,83 @@ func managerProfileDecision(preview dataprotection.Decision) (dataprotection.Dec
 
 func resolveProtectionCandidate(tx *gorm.DB, enrollment models.ProtectionEnrollment, finding models.SensitiveFinding) (protectionCandidate, bool, error) {
 	var assessment models.ResourceSecurityAssessment
+	var assessmentRevision models.ResourceSecurityAssessmentRevision
+	var assessmentPointer *models.ResourceSecurityAssessment
+	var revisionPointer *models.ResourceSecurityAssessmentRevision
 	err := tx.Where("tenant_id = ? AND enrollment_id = ? AND component_key = ?", enrollment.TenantID, enrollment.ID, finding.ComponentKey).First(&assessment).Error
 	if err == nil {
-		var revision models.ResourceSecurityAssessmentRevision
-		if err := tx.Where("tenant_id = ? AND assessment_id = ? AND revision = ?", enrollment.TenantID, assessment.ID, assessment.CurrentRevision).First(&revision).Error; err != nil {
+		if err := tx.Where("tenant_id = ? AND assessment_id = ? AND revision = ?", enrollment.TenantID, assessment.ID, assessment.CurrentRevision).First(&assessmentRevision).Error; err != nil {
 			return protectionCandidate{}, false, err
 		}
-		if revision.Component.SchemaFingerprint == finding.Component.SchemaFingerprint {
-			return protectionCandidate{AssessmentID: assessment.ID, SensitiveDataTypeID: revision.SensitiveDataTypeID, SecurityGradeID: revision.SecurityGradeID, Component: finding.Component, Formal: true}, true, nil
-		}
+		assessmentPointer = &assessment
+		revisionPointer = &assessmentRevision
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return protectionCandidate{}, false, err
 	}
 
 	var review models.SensitiveFindingReview
+	var reviewPointer *models.SensitiveFindingReview
 	if err := tx.Where("tenant_id = ? AND finding_id = ?", enrollment.TenantID, finding.ID).First(&review).Error; err == nil {
-		return protectionCandidate{}, false, nil
+		reviewPointer = &review
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return protectionCandidate{}, false, err
+	}
+	if reviewPointer != nil || (revisionPointer != nil && revisionPointer.Component.SchemaFingerprint == finding.Component.SchemaFingerprint) {
+		candidate, include, _, _ := resolveProtectionCandidateFromFacts(finding, assessmentPointer, revisionPointer, reviewPointer, nil, nil)
+		return candidate, include, nil
 	}
 	var dataType models.SensitiveDataType
 	if err := tx.Where("tenant_id = ? AND id = ?", enrollment.TenantID, finding.SensitiveDataTypeID).First(&dataType).Error; err != nil {
 		return protectionCandidate{}, false, err
 	}
-	if finding.Confidence < dataType.ProtectionThreshold {
-		return protectionCandidate{}, false, nil
+	var detector models.Detector
+	if err := tx.Where(
+		"tenant_id = ? AND capability_key = ? AND sensitive_data_type_id = ? AND enabled = ?",
+		enrollment.TenantID, finding.DetectorVersion, finding.SensitiveDataTypeID, true,
+	).First(&detector).Error; errors.Is(err, gorm.ErrRecordNotFound) {
+		candidate, include, _, _ := resolveProtectionCandidateFromFacts(finding, assessmentPointer, revisionPointer, reviewPointer, &dataType, nil)
+		return candidate, include, nil
+	} else if err != nil {
+		return protectionCandidate{}, false, err
 	}
-	return protectionCandidate{SensitiveDataTypeID: dataType.ID, SecurityGradeID: dataType.DefaultSecurityGradeID, Component: finding.Component}, true, nil
+	candidate, include, _, _ := resolveProtectionCandidateFromFacts(finding, assessmentPointer, revisionPointer, reviewPointer, &dataType, &detector)
+	return candidate, include, nil
+}
+
+func resolveProtectionCandidateFromFacts(
+	finding models.SensitiveFinding,
+	assessment *models.ResourceSecurityAssessment,
+	revision *models.ResourceSecurityAssessmentRevision,
+	review *models.SensitiveFindingReview,
+	dataType *models.SensitiveDataType,
+	detector *models.Detector,
+) (protectionCandidate, bool, string, string) {
+	if assessment != nil && revision != nil && revision.Component.SchemaFingerprint == finding.Component.SchemaFingerprint {
+		if revision.Conclusion == models.AssessmentConclusionNotSensitive {
+			return protectionCandidate{}, false, models.FindingDecisionRevoked, models.FindingGovernanceAssessment
+		}
+		return protectionCandidate{
+			AssessmentID: assessment.ID, SensitiveDataTypeID: revision.SensitiveDataTypeID,
+			SecurityClassificationID: revision.SecurityClassificationID, SecurityGradeID: revision.SecurityGradeID,
+			Component: finding.Component, Formal: true,
+		}, true, models.FindingDecisionFormal, models.FindingGovernanceAssessment
+	}
+	if review != nil {
+		if review.Decision == models.FindingReviewDecisionReject {
+			return protectionCandidate{}, false, models.FindingDecisionRejected, ""
+		}
+		return protectionCandidate{}, false, models.FindingDecisionSuperseded, ""
+	}
+	if dataType == nil || detector == nil || !detector.Enabled || detector.CapabilityKey != finding.DetectorVersion || detector.SensitiveDataTypeID != finding.SensitiveDataTypeID {
+		return protectionCandidate{}, false, models.FindingDecisionDetectorInactive, ""
+	}
+	if finding.Confidence < detector.ConfidenceThreshold {
+		return protectionCandidate{}, false, models.FindingDecisionAwaitingReview, ""
+	}
+	return protectionCandidate{
+		SensitiveDataTypeID: dataType.ID, SecurityClassificationID: dataType.SecurityClassificationID,
+		SecurityGradeID: dataType.DefaultSecurityGradeID, Component: finding.Component,
+	}, true, models.FindingDecisionAutomatic, models.FindingGovernanceDetectorDefault
 }
 
 func protectionDecisionFromBaseline(baseline models.ProtectionBaseline) (dataprotection.Decision, error) {

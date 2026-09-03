@@ -124,16 +124,31 @@ describe('Console navigation bridge', () => {
     expect(viteSource).toContain("'/data-apps'")
   })
 
-  it('keeps Security protection enrollment reachable from Console', () => {
+  it('exposes the consolidated Security information architecture', () => {
     const configSource = readFileSync(new URL('../src/config/portalConfig.js', import.meta.url), 'utf8')
     const searchSource = readFileSync(new URL('../src/config/searchIndex.js', import.meta.url), 'utf8')
     const zhCn = JSON.parse(readFileSync(new URL('../src/i18n/zh-cn.json', import.meta.url), 'utf8'))
     const en = JSON.parse(readFileSync(new URL('../src/i18n/en.json', import.meta.url), 'utf8'))
 
+    expect(configSource).toContain("security:     '/security/sensitive-data-definitions'")
+    expect(configSource).toContain("index: '/security/classification-grading'")
+    expect(configSource).toContain("index: '/security/sensitive-data-definitions'")
+    expect(configSource).toContain("index: '/security/protection-baselines'")
     expect(configSource).toContain("index: '/security/protection-enrollments'")
+    expect(configSource).not.toContain("index: '/security/sensitive-data-types'")
+    expect(configSource).not.toContain("index: '/security/classifications'")
+    expect(configSource).not.toContain("index: '/security/grades'")
+    expect(searchSource).toContain("route: '/security/classification-grading'")
+    expect(searchSource).toContain("route: '/security/sensitive-data-definitions'")
     expect(searchSource).toContain("route: '/security/protection-enrollments'")
-    expect(zhCn.console.menus.security.protectionEnrollments).toBe('保护纳管')
-    expect(en.console.menus.security.protectionEnrollments).toBe('Protection Enrollments')
+    expect(zhCn.console.menus.security.classificationGrading).toBe('分类分级体系')
+    expect(zhCn.console.menus.security.sensitiveDataDefinitions).toBe('敏感数据定义')
+    expect(zhCn.console.menus.security.defaultProtectionRules).toBe('默认保护规则')
+    expect(zhCn.console.menus.security.protectedResources).toBe('受保护资源')
+    expect(en.console.menus.security.classificationGrading).toBe('Classification & Grading')
+    expect(en.console.menus.security.sensitiveDataDefinitions).toBe('Sensitive Data Definitions')
+    expect(en.console.menus.security.defaultProtectionRules).toBe('Default Protection Rules')
+    expect(en.console.menus.security.protectedResources).toBe('Protected Resources')
   })
 
   it('localizes the Workbench module name for every Console discovery surface', () => {

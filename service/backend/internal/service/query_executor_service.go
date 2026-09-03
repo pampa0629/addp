@@ -96,7 +96,11 @@ func (s *QueryExecutorService) executeDirectQuery(
 	if err != nil {
 		return nil, err
 	}
-	plan, err := compileQueryPlan(queryService, request, protocol, engine.EngineType, baseSQL, s.tokenCodec)
+	baseSQL, baseArgs, resolvedParameters, err := bindQueryServiceNamedParameters(queryService, engine.EngineType, baseSQL, request.Parameters)
+	if err != nil {
+		return nil, err
+	}
+	plan, err := compileQueryPlan(queryService, request, protocol, engine.EngineType, baseSQL, baseArgs, resolvedParameters, s.tokenCodec)
 	if err != nil {
 		return nil, err
 	}
@@ -193,7 +197,11 @@ func (s *QueryExecutorService) executeFederatedQuery(
 	if len(sourceEngineIDs) == 0 {
 		return nil, fmt.Errorf("query service dependency snapshot has no source engine")
 	}
-	plan, err := compileQueryPlan(queryService, request, protocol, runtimeDescriptor.EngineType, baseSQL, s.tokenCodec)
+	boundSQL, baseArgs, resolvedParameters, err := bindQueryServiceNamedParameters(queryService, runtimeDescriptor.EngineType, baseSQL, request.Parameters)
+	if err != nil {
+		return nil, err
+	}
+	plan, err := compileQueryPlan(queryService, request, protocol, runtimeDescriptor.EngineType, boundSQL, baseArgs, resolvedParameters, s.tokenCodec)
 	if err != nil {
 		return nil, err
 	}

@@ -15,7 +15,7 @@ import (
 
 func TestProtectionPolicyTightensAndRevokeFallsBackToBaseline(t *testing.T) {
 	db, enrollments, finding, _, _ := prepareReviewablePhoneFinding(t)
-	assessments := NewAssessmentService(db)
+	assessments := NewAssessmentService(db, nil)
 	reviewed, err := assessments.ReviewFinding(context.Background(), 7, 21, finding.ID, models.FindingReviewRequest{
 		Decision: models.FindingReviewDecisionConfirm, Rationale: "确认手机号字段",
 	})
@@ -84,7 +84,7 @@ func TestProtectionPolicyTightensAndRevokeFallsBackToBaseline(t *testing.T) {
 
 func TestManagerPolicyDoesNotTightenDevelopOrServiceProjection(t *testing.T) {
 	db, enrollments, finding, _, _ := prepareReviewablePhoneFinding(t)
-	reviewed, err := NewAssessmentService(db).ReviewFinding(context.Background(), 7, 21, finding.ID, models.FindingReviewRequest{
+	reviewed, err := NewAssessmentService(db, nil).ReviewFinding(context.Background(), 7, 21, finding.ID, models.FindingReviewRequest{
 		Decision: models.FindingReviewDecisionConfirm, Rationale: "确认手机号字段",
 	})
 	if err != nil {

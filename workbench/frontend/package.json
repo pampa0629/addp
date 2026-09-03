@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --port 5190",
-    "test": "node --test tests/*.test.mjs ../../common-frontend/basic/tests/tabularResult.test.mjs ../../common-frontend/basic/tests/scalarValueResult.test.mjs ../../common-frontend/chart/tests/chartResult.test.mjs ../../common-frontend/map/tests/geoJSONResult.test.mjs ../../common-frontend/map/tests/thematicMap.test.mjs",
+    "test": "node --test tests/*.test.mjs",
     "build": "vite build",
     "preview": "vite preview"
   },

@@ -19,7 +19,6 @@ type ObjectStorageCatalogRuntime struct {
 	log                *slog.Logger
 	repo               *metaRepo.ScanRepository   // 数据访问层
 	indexer            scanprocessor.AssetIndexer // 索引服务
-	cadInspector       metaenrich.CADInspector
 	containerInspector metaenrich.ContainerInspector
 }
 

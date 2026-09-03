@@ -53,64 +53,107 @@ func (s *EnrollmentService) Create(ctx context.Context, tenantID, userID int64, 
 		ResourceIdentity: commonmodels.GenerateItemFingerprint(locator.EngineID, fullName),
 	}
 	now := s.now().UTC()
-	enrollment := models.ProtectionEnrollment{
-		ID: uuid.NewString(), TenantID: tenantID,
-		TargetOwner: target.OwnerModule, TargetType: target.ResourceType,
-		TargetIdentity: target.ResourceIdentity, TargetEngineID: locator.EngineID,
-		TargetItemType: itemType, TargetFullName: fullName,
-		State: models.EnrollmentStateActivating, Version: 1, CreatedBy: userID,
-		CreatedAt: now, UpdatedAt: now,
-	}
+	var enrollment models.ProtectionEnrollment
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(&enrollment).Error; err != nil {
-			if repository.IsConflict(err) {
-				return commonapi.ErrConflict
-			}
-			return err
-		}
-		for _, owner := range requiredProtectionOwners {
-			projection := dataprotection.Projection{
-				SchemaVersion: dataprotection.ProjectionSchemaV1,
-				ProjectionID:  uuid.NewString(), Revision: revisionString(1),
-				ConsumerOwner: owner, State: dataprotection.ProjectionStateEnrolling,
-				Target: target, Rules: []dataprotection.Rule{},
-				ValidFrom: now, ExpiresAt: now.Add(24 * time.Hour),
-			}
-			if err := projection.Seal(); err != nil {
-				return err
-			}
-			payload, err := json.Marshal(projection)
-			if err != nil {
-				return err
-			}
-			payloadText := string(payload)
-			change := models.ProtectionProjectionChange{
-				ChangeID: uuid.NewString(), TenantID: tenantID, EnrollmentID: enrollment.ID,
-				ConsumerOwner: owner, Operation: dataprotection.ChangeOperationUpsert,
-				ProjectionID: projection.ProjectionID, Revision: projection.Revision,
-				TargetOwner: target.OwnerModule, TargetType: target.ResourceType,
-				TargetIdentity:    target.ResourceIdentity,
-				ProjectionPayload: &payloadText, CreatedAt: now,
-			}
-			if err := tx.Create(&change).Error; err != nil {
-				return err
-			}
-			record := models.ProtectionProjectionRecord{
-				ID: projection.ProjectionID, TenantID: tenantID, EnrollmentID: enrollment.ID,
-				ConsumerOwner: owner, Revision: projection.Revision, State: projection.State,
-				ProjectionPayload: payloadText, PublishedSequence: change.Sequence,
-				CreatedAt: now, UpdatedAt: now,
-			}
-			if err := tx.Create(&record).Error; err != nil {
-				return err
-			}
-		}
-		return nil
+		var createErr error
+		enrollment, createErr = createProtectionEnrollment(tx, tenantID, userID, target, models.ProtectionTargetSnapshot{
+			EngineID: locator.EngineID, ItemType: itemType, FullName: fullName,
+		}, now)
+		return createErr
 	})
 	if err != nil {
 		return nil, err
 	}
 	return s.Get(ctx, tenantID, enrollment.ID)
+}
+
+func (s *EnrollmentService) ReEnroll(ctx context.Context, tenantID, userID int64, id string, request models.ReEnrollProtectionEnrollmentRequest) (*models.ProtectionEnrollmentResponse, error) {
+	if tenantID <= 0 || userID <= 0 || uuid.Validate(id) != nil || request.Version <= 0 {
+		return nil, commonapi.ErrBadRequest
+	}
+	now := s.now().UTC()
+	var created models.ProtectionEnrollment
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var source models.ProtectionEnrollment
+		query := tx
+		if tx.Dialector.Name() == "postgres" {
+			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+		}
+		if err := query.Where("tenant_id = ? AND id = ?", tenantID, id).First(&source).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return commonapi.ErrNotFound
+			}
+			return err
+		}
+		if source.Version != request.Version {
+			return repository.ErrVersionConflict
+		}
+		if source.State != models.EnrollmentStateReleased {
+			return commonapi.ErrConflict
+		}
+		var createErr error
+		created, createErr = createProtectionEnrollment(tx, tenantID, userID, source.Target(), source.TargetSnapshot(), now)
+		return createErr
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s.Get(ctx, tenantID, created.ID)
+}
+
+func createProtectionEnrollment(tx *gorm.DB, tenantID, userID int64, target dataprotection.ResourceReference, snapshot models.ProtectionTargetSnapshot, now time.Time) (models.ProtectionEnrollment, error) {
+	enrollment := models.ProtectionEnrollment{
+		ID: uuid.NewString(), TenantID: tenantID,
+		TargetOwner: target.OwnerModule, TargetType: target.ResourceType,
+		TargetIdentity: target.ResourceIdentity, TargetEngineID: snapshot.EngineID,
+		TargetItemType: snapshot.ItemType, TargetFullName: snapshot.FullName,
+		State: models.EnrollmentStateActivating, Version: 1, CreatedBy: userID,
+		CreatedAt: now, UpdatedAt: now,
+	}
+	if err := tx.Create(&enrollment).Error; err != nil {
+		if repository.IsConflict(err) {
+			return models.ProtectionEnrollment{}, commonapi.ErrConflict
+		}
+		return models.ProtectionEnrollment{}, err
+	}
+	for _, owner := range requiredProtectionOwners {
+		projection := dataprotection.Projection{
+			SchemaVersion: dataprotection.ProjectionSchemaV1,
+			ProjectionID:  uuid.NewString(), Revision: revisionString(1),
+			ConsumerOwner: owner, State: dataprotection.ProjectionStateEnrolling,
+			Target: target, Rules: []dataprotection.Rule{},
+			ValidFrom: now, ExpiresAt: now.Add(24 * time.Hour),
+		}
+		if err := projection.Seal(); err != nil {
+			return models.ProtectionEnrollment{}, err
+		}
+		payload, err := json.Marshal(projection)
+		if err != nil {
+			return models.ProtectionEnrollment{}, err
+		}
+		payloadText := string(payload)
+		change := models.ProtectionProjectionChange{
+			ChangeID: uuid.NewString(), TenantID: tenantID, EnrollmentID: enrollment.ID,
+			ConsumerOwner: owner, Operation: dataprotection.ChangeOperationUpsert,
+			ProjectionID: projection.ProjectionID, Revision: projection.Revision,
+			TargetOwner: target.OwnerModule, TargetType: target.ResourceType,
+			TargetIdentity:    target.ResourceIdentity,
+			ProjectionPayload: &payloadText, CreatedAt: now,
+		}
+		if err := tx.Create(&change).Error; err != nil {
+			return models.ProtectionEnrollment{}, err
+		}
+		record := models.ProtectionProjectionRecord{
+			ID: projection.ProjectionID, TenantID: tenantID, EnrollmentID: enrollment.ID,
+			ConsumerOwner: owner, Revision: projection.Revision, State: projection.State,
+			ProjectionPayload: payloadText, PublishedSequence: change.Sequence,
+			CreatedAt: now, UpdatedAt: now,
+		}
+		if err := tx.Create(&record).Error; err != nil {
+			return models.ProtectionEnrollment{}, err
+		}
+	}
+	return enrollment, nil
 }
 
 func (s *EnrollmentService) List(ctx context.Context, tenantID int64, scope string, page, pageSize int64) (*models.ProtectionEnrollmentListResponse, error) {
@@ -125,7 +168,11 @@ func (s *EnrollmentService) List(ctx context.Context, tenantID int64, scope stri
 		return nil, err
 	}
 	var enrollments []models.ProtectionEnrollment
-	if err := applyEnrollmentListScope(s.db.WithContext(ctx).Where("tenant_id = ?", tenantID), scope).Order("created_at DESC, id ASC").Offset(int((page - 1) * pageSize)).Limit(int(pageSize)).Find(&enrollments).Error; err != nil {
+	order := "created_at DESC, id ASC"
+	if scope == models.EnrollmentListScopeReleased {
+		order = "released_at DESC, id ASC"
+	}
+	if err := applyEnrollmentListScope(s.db.WithContext(ctx).Where("tenant_id = ?", tenantID), scope).Order(order).Offset(int((page - 1) * pageSize)).Limit(int(pageSize)).Find(&enrollments).Error; err != nil {
 		return nil, err
 	}
 	data, err := s.buildResponses(ctx, enrollments)
@@ -244,12 +291,12 @@ func (s *EnrollmentService) Release(ctx context.Context, tenantID, actorID int64
 }
 
 func validateNoSupportedFindingsRelease(tx *gorm.DB, enrollment models.ProtectionEnrollment) error {
-	if enrollment.LastDiscoveredAt == nil || strings.TrimSpace(enrollment.LatestSourceSnapshotHash) == "" {
+	if enrollment.LastDiscoveredAt == nil || strings.TrimSpace(enrollment.LatestDiscoveryExecutionID) == "" {
 		return ErrNoSupportedFindingsReleaseUnavailable
 	}
 	var findingCount int64
 	if err := tx.Model(&models.SensitiveFinding{}).
-		Where("tenant_id = ? AND enrollment_id = ? AND source_snapshot_hash = ?", enrollment.TenantID, enrollment.ID, enrollment.LatestSourceSnapshotHash).
+		Where("tenant_id = ? AND enrollment_id = ? AND discovery_execution_id = ?", enrollment.TenantID, enrollment.ID, enrollment.LatestDiscoveryExecutionID).
 		Count(&findingCount).Error; err != nil {
 		return err
 	}
@@ -489,7 +536,7 @@ func (s *EnrollmentService) buildResponses(ctx context.Context, enrollments []mo
 	var findingCounts []findingCountRow
 	if err := s.db.WithContext(ctx).Model(&models.SensitiveFinding{}).
 		Select("security.sensitive_findings.enrollment_id, COUNT(*) AS finding_count, COUNT(security.sensitive_finding_reviews.id) AS reviewed_count").
-		Joins("JOIN security.protection_enrollments ON security.protection_enrollments.tenant_id = security.sensitive_findings.tenant_id AND security.protection_enrollments.id = security.sensitive_findings.enrollment_id AND security.protection_enrollments.latest_source_snapshot_hash = security.sensitive_findings.source_snapshot_hash").
+		Joins("JOIN security.protection_enrollments ON security.protection_enrollments.tenant_id = security.sensitive_findings.tenant_id AND security.protection_enrollments.id = security.sensitive_findings.enrollment_id AND security.protection_enrollments.latest_discovery_execution_id = security.sensitive_findings.discovery_execution_id").
 		Joins("LEFT JOIN security.sensitive_finding_reviews ON security.sensitive_finding_reviews.tenant_id = security.sensitive_findings.tenant_id AND security.sensitive_finding_reviews.finding_id = security.sensitive_findings.id").
 		Where("security.sensitive_findings.tenant_id = ? AND security.sensitive_findings.enrollment_id IN ?", tenantID, enrollmentIDs).
 		Group("security.sensitive_findings.enrollment_id").
@@ -506,7 +553,7 @@ func (s *EnrollmentService) buildResponses(ctx context.Context, enrollments []mo
 			return nil, err
 		}
 		discoverySummary := models.ProtectionDiscoverySummary{Status: models.DiscoverySummaryStatusNotCompleted}
-		if enrollment.LastDiscoveredAt != nil && strings.TrimSpace(enrollment.LatestSourceSnapshotHash) != "" {
+		if enrollment.LastDiscoveredAt != nil && strings.TrimSpace(enrollment.LatestDiscoveryExecutionID) != "" {
 			discoverySummary.Status = models.DiscoverySummaryStatusCompleted
 			counts := findingCountByEnrollment[enrollment.ID]
 			discoverySummary.FindingCount = counts.FindingCount
@@ -519,7 +566,8 @@ func (s *EnrollmentService) buildResponses(ctx context.Context, enrollments []mo
 			ReleaseRequestedBy: enrollment.ReleaseRequestedBy, ReleaseRequestedAt: enrollment.ReleaseRequestedAt,
 			ReleaseSourceSnapshotHash: enrollment.ReleaseSourceSnapshotHash,
 			LatestSourceSnapshotHash:  enrollment.LatestSourceSnapshotHash, LastDiscoveredAt: enrollment.LastDiscoveredAt,
-			DiscoverySummary: discoverySummary, OwnerProgress: progress, CreatedBy: enrollment.CreatedBy,
+			LatestDiscoveryExecutionID: enrollment.LatestDiscoveryExecutionID,
+			DiscoverySummary:           discoverySummary, OwnerProgress: progress, CreatedBy: enrollment.CreatedBy,
 			ReleasedAt: enrollment.ReleasedAt, CreatedAt: enrollment.CreatedAt, UpdatedAt: enrollment.UpdatedAt,
 		})
 	}
@@ -536,13 +584,13 @@ func buildOwnerProgress(enrollment models.ProtectionEnrollment, projections []mo
 			}
 		}
 		acknowledgement, exists := ackByOwner[projection.ConsumerOwner]
-		effects, err := projectionEffects(projection)
+		rules, err := projectionRuleSummaries(projection)
 		if err != nil {
 			return nil, err
 		}
 		item := models.ProtectionOwnerProgress{
 			ConsumerOwner: projection.ConsumerOwner, ProjectionID: projection.ID,
-			Revision: projection.Revision, ProjectionState: projection.State, Effects: effects,
+			Revision: projection.Revision, ProjectionState: projection.State, Rules: rules,
 			PublishedCursor: encodeProjectionCursor(requiredSequence),
 			Acknowledged:    exists && acknowledgement.Sequence >= requiredSequence,
 		}
@@ -555,26 +603,34 @@ func buildOwnerProgress(enrollment models.ProtectionEnrollment, projections []mo
 	return progress, nil
 }
 
-func projectionEffects(record models.ProtectionProjectionRecord) ([]string, error) {
+func projectionRuleSummaries(record models.ProtectionProjectionRecord) ([]models.ProtectionOwnerRuleSummary, error) {
 	if record.State == dataprotection.ProjectionStateEnrolling {
-		return []string{dataprotection.EffectDeny}, nil
+		return []models.ProtectionOwnerRuleSummary{}, nil
 	}
 	var projection dataprotection.Projection
 	if err := json.Unmarshal([]byte(record.ProjectionPayload), &projection); err != nil {
 		return nil, fmt.Errorf("decode protection projection %s: %w", record.ID, err)
 	}
-	seen := make(map[string]struct{}, len(projection.Rules))
+	seen := make(map[string]models.ProtectionOwnerRuleSummary, len(projection.Rules))
 	for _, rule := range projection.Rules {
-		if effect := strings.TrimSpace(rule.Decision.Effect); effect != "" {
-			seen[effect] = struct{}{}
+		action := strings.TrimSpace(rule.Action)
+		effect := strings.TrimSpace(rule.Decision.Effect)
+		if action != "" && effect != "" {
+			key := action + "\x00" + effect
+			seen[key] = models.ProtectionOwnerRuleSummary{Action: action, Effect: effect}
 		}
 	}
-	effects := make([]string, 0, len(seen))
-	for effect := range seen {
-		effects = append(effects, effect)
+	rules := make([]models.ProtectionOwnerRuleSummary, 0, len(seen))
+	for _, rule := range seen {
+		rules = append(rules, rule)
 	}
-	sort.Strings(effects)
-	return effects, nil
+	sort.Slice(rules, func(i, j int) bool {
+		if rules[i].Action == rules[j].Action {
+			return rules[i].Effect < rules[j].Effect
+		}
+		return rules[i].Action < rules[j].Action
+	})
+	return rules, nil
 }
 
 func newDiscoveryExecution(enrollment models.ProtectionEnrollment, actorID int, triggerType string, now time.Time) commonexecution.TaskExecution {

@@ -168,7 +168,7 @@ func BindSQLRuntimeParameters(dialect, sql string, opts QueryOptions) (string, [
 	if opts.Parameters == nil {
 		return sql, opts.Args, nil
 	}
-	boundSQL, boundArgs, err := commonquery.BindSQL(sql, opts.Parameters, sqlPlaceholderStyle(dialect))
+	boundSQL, boundArgs, err := commonquery.BindSQL(sql, opts.Parameters, commonquery.SQLPlaceholderStyleForEngine(dialect))
 	if err != nil {
 		return "", nil, fmt.Errorf("bind SQL query parameters: %w", err)
 	}
@@ -339,17 +339,6 @@ func cloneQueryValue(value interface{}) interface{} {
 		return cloneQueryValueMap(typed)
 	default:
 		return value
-	}
-}
-
-func sqlPlaceholderStyle(engineType string) commonquery.SQLPlaceholderStyle {
-	switch strings.ToLower(strings.TrimSpace(engineType)) {
-	case "postgres", "postgresql", "postgis":
-		return commonquery.SQLPlaceholderDollar
-	case "oracle":
-		return commonquery.SQLPlaceholderColon
-	default:
-		return commonquery.SQLPlaceholderQuestion
 	}
 }
 

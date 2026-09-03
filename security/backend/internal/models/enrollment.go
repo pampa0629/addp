@@ -25,27 +25,28 @@ const (
 )
 
 type ProtectionEnrollment struct {
-	ID                        string     `gorm:"type:uuid;primaryKey" json:"id"`
-	TenantID                  int64      `gorm:"not null;index" json:"-"`
-	TargetOwner               string     `gorm:"size:32;not null" json:"target_owner_module"`
-	TargetType                string     `gorm:"size:64;not null" json:"target_resource_type"`
-	TargetIdentity            string     `gorm:"type:text;not null" json:"target_resource_identity"`
-	TargetEngineID            uint       `gorm:"not null;default:0" json:"target_engine_id"`
-	TargetItemType            string     `gorm:"size:64;not null;default:''" json:"target_item_type"`
-	TargetFullName            string     `gorm:"type:text;not null;default:''" json:"target_full_name"`
-	State                     string     `gorm:"size:16;not null;index" json:"state"`
-	Version                   int64      `gorm:"not null;default:1" json:"version,string"`
-	ReleaseReason             string     `gorm:"type:text;not null;default:''" json:"release_reason,omitempty"`
-	ReleaseBasis              string     `gorm:"size:32;not null;default:''" json:"release_basis,omitempty"`
-	ReleaseRequestedBy        *int64     `json:"release_requested_by,omitempty,string"`
-	ReleaseRequestedAt        *time.Time `json:"release_requested_at,omitempty"`
-	ReleaseSourceSnapshotHash string     `gorm:"size:80;not null;default:''" json:"release_source_snapshot_hash,omitempty"`
-	LatestSourceSnapshotHash  string     `gorm:"size:80;not null;default:''" json:"latest_source_snapshot_hash,omitempty"`
-	LastDiscoveredAt          *time.Time `json:"last_discovered_at,omitempty"`
-	CreatedBy                 int64      `gorm:"not null" json:"created_by,string"`
-	ReleasedAt                *time.Time `json:"released_at,omitempty"`
-	CreatedAt                 time.Time  `json:"created_at"`
-	UpdatedAt                 time.Time  `json:"updated_at"`
+	ID                         string     `gorm:"type:uuid;primaryKey" json:"id"`
+	TenantID                   int64      `gorm:"not null;index" json:"-"`
+	TargetOwner                string     `gorm:"size:32;not null" json:"target_owner_module"`
+	TargetType                 string     `gorm:"size:64;not null" json:"target_resource_type"`
+	TargetIdentity             string     `gorm:"type:text;not null" json:"target_resource_identity"`
+	TargetEngineID             uint       `gorm:"not null;default:0" json:"target_engine_id"`
+	TargetItemType             string     `gorm:"size:64;not null;default:''" json:"target_item_type"`
+	TargetFullName             string     `gorm:"type:text;not null;default:''" json:"target_full_name"`
+	State                      string     `gorm:"size:16;not null;index" json:"state"`
+	Version                    int64      `gorm:"not null;default:1" json:"version,string"`
+	ReleaseReason              string     `gorm:"type:text;not null;default:''" json:"release_reason,omitempty"`
+	ReleaseBasis               string     `gorm:"size:32;not null;default:''" json:"release_basis,omitempty"`
+	ReleaseRequestedBy         *int64     `json:"release_requested_by,omitempty,string"`
+	ReleaseRequestedAt         *time.Time `json:"release_requested_at,omitempty"`
+	ReleaseSourceSnapshotHash  string     `gorm:"size:80;not null;default:''" json:"release_source_snapshot_hash,omitempty"`
+	LatestSourceSnapshotHash   string     `gorm:"size:80;not null;default:''" json:"latest_source_snapshot_hash,omitempty"`
+	LatestDiscoveryExecutionID string     `gorm:"size:255;not null;default:''" json:"latest_discovery_execution_id,omitempty"`
+	LastDiscoveredAt           *time.Time `json:"last_discovered_at,omitempty"`
+	CreatedBy                  int64      `gorm:"not null" json:"created_by,string"`
+	ReleasedAt                 *time.Time `json:"released_at,omitempty"`
+	CreatedAt                  time.Time  `json:"created_at"`
+	UpdatedAt                  time.Time  `json:"updated_at"`
 }
 
 func (ProtectionEnrollment) TableName() string { return "security.protection_enrollments" }
@@ -114,6 +115,10 @@ type CreateProtectionEnrollmentRequest struct {
 	Locator string `json:"locator" binding:"required"`
 }
 
+type ReEnrollProtectionEnrollmentRequest struct {
+	Version int64 `json:"version" binding:"required"`
+}
+
 type ProtectionTargetSnapshot struct {
 	EngineID uint   `json:"engine_id"`
 	ItemType string `json:"item_type"`
@@ -138,14 +143,19 @@ type ProtectionDiscoveryExecutionResponse struct {
 }
 
 type ProtectionOwnerProgress struct {
-	ConsumerOwner   string     `json:"consumer_owner"`
-	ProjectionID    string     `json:"projection_id"`
-	Revision        string     `json:"revision"`
-	ProjectionState string     `json:"projection_state"`
-	Effects         []string   `json:"effects"`
-	PublishedCursor string     `json:"published_cursor"`
-	Acknowledged    bool       `json:"acknowledged"`
-	AcknowledgedAt  *time.Time `json:"acknowledged_at,omitempty"`
+	ConsumerOwner   string                       `json:"consumer_owner"`
+	ProjectionID    string                       `json:"projection_id"`
+	Revision        string                       `json:"revision"`
+	ProjectionState string                       `json:"projection_state"`
+	Rules           []ProtectionOwnerRuleSummary `json:"rules"`
+	PublishedCursor string                       `json:"published_cursor"`
+	Acknowledged    bool                         `json:"acknowledged"`
+	AcknowledgedAt  *time.Time                   `json:"acknowledged_at,omitempty"`
+}
+
+type ProtectionOwnerRuleSummary struct {
+	Action string `json:"action"`
+	Effect string `json:"effect"`
 }
 
 type ProtectionDiscoverySummary struct {
@@ -156,24 +166,25 @@ type ProtectionDiscoverySummary struct {
 }
 
 type ProtectionEnrollmentResponse struct {
-	ID                        string                           `json:"id"`
-	Target                    dataprotection.ResourceReference `json:"target"`
-	TargetSnapshot            ProtectionTargetSnapshot         `json:"target_snapshot"`
-	State                     string                           `json:"state"`
-	Version                   int64                            `json:"version,string"`
-	ReleaseReason             string                           `json:"release_reason,omitempty"`
-	ReleaseBasis              string                           `json:"release_basis,omitempty"`
-	ReleaseRequestedBy        *int64                           `json:"release_requested_by,omitempty,string"`
-	ReleaseRequestedAt        *time.Time                       `json:"release_requested_at,omitempty"`
-	ReleaseSourceSnapshotHash string                           `json:"release_source_snapshot_hash,omitempty"`
-	LatestSourceSnapshotHash  string                           `json:"latest_source_snapshot_hash,omitempty"`
-	LastDiscoveredAt          *time.Time                       `json:"last_discovered_at,omitempty"`
-	DiscoverySummary          ProtectionDiscoverySummary       `json:"discovery_summary"`
-	OwnerProgress             []ProtectionOwnerProgress        `json:"owner_progress"`
-	CreatedBy                 int64                            `json:"created_by,string"`
-	ReleasedAt                *time.Time                       `json:"released_at,omitempty"`
-	CreatedAt                 time.Time                        `json:"created_at"`
-	UpdatedAt                 time.Time                        `json:"updated_at"`
+	ID                         string                           `json:"id"`
+	Target                     dataprotection.ResourceReference `json:"target"`
+	TargetSnapshot             ProtectionTargetSnapshot         `json:"target_snapshot"`
+	State                      string                           `json:"state"`
+	Version                    int64                            `json:"version,string"`
+	ReleaseReason              string                           `json:"release_reason,omitempty"`
+	ReleaseBasis               string                           `json:"release_basis,omitempty"`
+	ReleaseRequestedBy         *int64                           `json:"release_requested_by,omitempty,string"`
+	ReleaseRequestedAt         *time.Time                       `json:"release_requested_at,omitempty"`
+	ReleaseSourceSnapshotHash  string                           `json:"release_source_snapshot_hash,omitempty"`
+	LatestSourceSnapshotHash   string                           `json:"latest_source_snapshot_hash,omitempty"`
+	LatestDiscoveryExecutionID string                           `json:"latest_discovery_execution_id,omitempty"`
+	LastDiscoveredAt           *time.Time                       `json:"last_discovered_at,omitempty"`
+	DiscoverySummary           ProtectionDiscoverySummary       `json:"discovery_summary"`
+	OwnerProgress              []ProtectionOwnerProgress        `json:"owner_progress"`
+	CreatedBy                  int64                            `json:"created_by,string"`
+	ReleasedAt                 *time.Time                       `json:"released_at,omitempty"`
+	CreatedAt                  time.Time                        `json:"created_at"`
+	UpdatedAt                  time.Time                        `json:"updated_at"`
 }
 
 type ProtectionEnrollmentListResponse struct {

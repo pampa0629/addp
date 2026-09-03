@@ -3969,6 +3969,26 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_service_internal_models.ConsumerNamedParameter": {
+            "type": "object",
+            "properties": {
+                "default": {
+                    "type": "object"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "required": {
+                    "type": "boolean"
+                },
+                "type": {
+                    "$ref": "#/definitions/datatype.FieldType"
+                }
+            }
+        },
         "github_com_addp_service_internal_models.ConsumerOperation": {
             "type": "object",
             "properties": {
@@ -4304,6 +4324,13 @@ const docTemplate = `{
                     "type": "integer",
                     "maximum": 10000,
                     "minimum": 1
+                },
+                "named_parameters": {
+                    "description": "SQL 中使用 :name 引用的强类型标量参数。",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_service_internal_models.QueryServiceNamedParameter"
+                    }
                 },
                 "output_contract": {
                     "description": "SQL 模式检测得到的输出契约；快照时间和 hash 由 Service 生成。",
@@ -4678,6 +4705,9 @@ const docTemplate = `{
                 "page": {
                     "$ref": "#/definitions/github_com_addp_service_internal_models.QueryPageRequest"
                 },
+                "parameters": {
+                    "type": "object"
+                },
                 "select": {
                     "type": "array",
                     "items": {
@@ -4833,6 +4863,12 @@ const docTemplate = `{
                 "max_features": {
                     "type": "integer"
                 },
+                "named_parameters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_service_internal_models.QueryServiceNamedParameter"
+                    }
+                },
                 "protocols": {
                     "type": "object",
                     "additionalProperties": true
@@ -4914,6 +4950,26 @@ const docTemplate = `{
                 },
                 "verification_status": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.QueryServiceNamedParameter": {
+            "type": "object",
+            "properties": {
+                "default": {
+                    "type": "object"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "required": {
+                    "type": "boolean"
+                },
+                "type": {
+                    "$ref": "#/definitions/datatype.FieldType"
                 }
             }
         },
@@ -5151,6 +5207,9 @@ const docTemplate = `{
                 "engine_id": {
                     "type": "integer"
                 },
+                "parameters": {
+                    "type": "object"
+                },
                 "sql": {
                     "type": "string"
                 }
@@ -5188,6 +5247,12 @@ const docTemplate = `{
                     "enum": [
                         "structured_query"
                     ]
+                },
+                "named_parameters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_service_internal_models.ConsumerNamedParameter"
+                    }
                 },
                 "order": {
                     "$ref": "#/definitions/github_com_addp_service_internal_models.ConsumerOrderContract"

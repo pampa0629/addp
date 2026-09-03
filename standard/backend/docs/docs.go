@@ -110,9 +110,20 @@ const docTemplate = `{
                 "summary": "获取码值集列表 | List code sets",
                 "parameters": [
                     {
+                        "enum": [
+                            "platform",
+                            "tenant_common",
+                            "domain"
+                        ],
+                        "type": "string",
+                        "description": "适用范围 | Scope",
+                        "name": "scope_type",
+                        "in": "query"
+                    },
+                    {
                         "type": "integer",
-                        "description": "归属业务域 ID | Owning domain ID",
-                        "name": "domain_id",
+                        "description": "归属业务域 ID，仅 domain 范围适用 | Owning domain ID, only for domain scope",
+                        "name": "owner_domain_id",
                         "in": "query"
                     },
                     {
@@ -2094,9 +2105,20 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "enum": [
+                            "platform",
+                            "tenant_common",
+                            "domain"
+                        ],
+                        "type": "string",
+                        "description": "适用范围 | Scope",
+                        "name": "scope_type",
+                        "in": "query"
+                    },
+                    {
                         "type": "integer",
-                        "description": "归属业务域 ID | Owning domain ID",
-                        "name": "domain_id",
+                        "description": "归属业务域 ID，仅 domain 范围适用 | Owning domain ID, only for domain scope",
+                        "name": "owner_domain_id",
                         "in": "query"
                     },
                     {
@@ -5496,9 +5518,6 @@ const docTemplate = `{
                 "current_revision": {
                     "$ref": "#/definitions/github_com_addp_standard_internal_models.CodeSetRevision"
                 },
-                "domain_id": {
-                    "type": "integer"
-                },
                 "draft_revision": {
                     "$ref": "#/definitions/github_com_addp_standard_internal_models.CodeSetRevision"
                 },
@@ -5513,6 +5532,17 @@ const docTemplate = `{
                 },
                 "origin": {
                     "type": "string"
+                },
+                "owner_domain_id": {
+                    "type": "integer"
+                },
+                "scope_type": {
+                    "type": "string",
+                    "enum": [
+                        "platform",
+                        "tenant_common",
+                        "domain"
+                    ]
                 },
                 "steward_id": {
                     "type": "integer"
@@ -5673,8 +5703,8 @@ const docTemplate = `{
                 "change_summary",
                 "code",
                 "description",
-                "domain_id",
                 "name",
+                "scope_type",
                 "value_type"
             ],
             "properties": {
@@ -5687,9 +5717,6 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
-                "domain_id": {
-                    "type": "integer"
-                },
                 "effective_from": {
                     "type": "string"
                 },
@@ -5698,6 +5725,16 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string"
+                },
+                "owner_domain_id": {
+                    "type": "integer"
+                },
+                "scope_type": {
+                    "type": "string",
+                    "enum": [
+                        "tenant_common",
+                        "domain"
+                    ]
                 },
                 "steward_id": {
                     "type": "integer"
@@ -5737,6 +5774,7 @@ const docTemplate = `{
                 "data_type",
                 "definition",
                 "name",
+                "scope_type",
                 "value_domain_kind"
             ],
             "properties": {
@@ -5757,9 +5795,6 @@ const docTemplate = `{
                 },
                 "definition": {
                     "type": "string"
-                },
-                "domain_id": {
-                    "type": "integer"
                 },
                 "effective_from": {
                     "type": "string"
@@ -5789,6 +5824,9 @@ const docTemplate = `{
                 "nullable": {
                     "type": "boolean"
                 },
+                "owner_domain_id": {
+                    "type": "integer"
+                },
                 "precision_num": {
                     "type": "integer"
                 },
@@ -5797,6 +5835,13 @@ const docTemplate = `{
                 },
                 "scale": {
                     "type": "integer"
+                },
+                "scope_type": {
+                    "type": "string",
+                    "enum": [
+                        "tenant_common",
+                        "domain"
+                    ]
                 },
                 "steward_id": {
                     "type": "integer"
@@ -6004,9 +6049,6 @@ const docTemplate = `{
                 "current_revision": {
                     "$ref": "#/definitions/github_com_addp_standard_internal_models.ElementRevision"
                 },
-                "domain_id": {
-                    "type": "integer"
-                },
                 "draft_revision": {
                     "$ref": "#/definitions/github_com_addp_standard_internal_models.ElementRevision"
                 },
@@ -6018,6 +6060,17 @@ const docTemplate = `{
                 },
                 "lifecycle_state": {
                     "type": "string"
+                },
+                "owner_domain_id": {
+                    "type": "integer"
+                },
+                "scope_type": {
+                    "type": "string",
+                    "enum": [
+                        "platform",
+                        "tenant_common",
+                        "domain"
+                    ]
                 },
                 "steward_id": {
                     "type": "integer"
@@ -6774,12 +6827,19 @@ const docTemplate = `{
         "github_com_addp_standard_internal_models.UpdateCodeSetRequest": {
             "type": "object",
             "required": [
-                "domain_id",
+                "scope_type",
                 "version"
             ],
             "properties": {
-                "domain_id": {
+                "owner_domain_id": {
                     "type": "integer"
+                },
+                "scope_type": {
+                    "type": "string",
+                    "enum": [
+                        "tenant_common",
+                        "domain"
+                    ]
                 },
                 "steward_id": {
                     "type": "integer"
@@ -6905,11 +6965,19 @@ const docTemplate = `{
         "github_com_addp_standard_internal_models.UpdateElementRequest": {
             "type": "object",
             "required": [
+                "scope_type",
                 "version"
             ],
             "properties": {
-                "domain_id": {
+                "owner_domain_id": {
                     "type": "integer"
+                },
+                "scope_type": {
+                    "type": "string",
+                    "enum": [
+                        "tenant_common",
+                        "domain"
+                    ]
                 },
                 "steward_id": {
                     "type": "integer"
@@ -7270,12 +7338,31 @@ const docTemplate = `{
                 "name": {
                     "type": "string"
                 },
+                "origin": {
+                    "type": "string",
+                    "enum": [
+                        "platform",
+                        "tenant"
+                    ]
+                },
+                "owner_domain_id": {
+                    "type": "string",
+                    "example": ""
+                },
                 "revision_id": {
                     "type": "string",
                     "example": ""
                 },
                 "revision_no": {
                     "type": "integer"
+                },
+                "scope_type": {
+                    "type": "string",
+                    "enum": [
+                        "platform",
+                        "tenant_common",
+                        "domain"
+                    ]
                 },
                 "status": {
                     "type": "string",
@@ -7377,10 +7464,6 @@ const docTemplate = `{
                 "definition": {
                     "type": "string"
                 },
-                "domain_id": {
-                    "type": "string",
-                    "example": ""
-                },
                 "effective_from": {
                     "type": "string"
                 },
@@ -7413,6 +7496,10 @@ const docTemplate = `{
                 "nullable": {
                     "type": "boolean"
                 },
+                "owner_domain_id": {
+                    "type": "string",
+                    "example": ""
+                },
                 "precision_num": {
                     "type": "integer"
                 },
@@ -7424,6 +7511,14 @@ const docTemplate = `{
                 },
                 "scale": {
                     "type": "integer"
+                },
+                "scope_type": {
+                    "type": "string",
+                    "enum": [
+                        "platform",
+                        "tenant_common",
+                        "domain"
+                    ]
                 },
                 "unit_id": {
                     "type": "string",

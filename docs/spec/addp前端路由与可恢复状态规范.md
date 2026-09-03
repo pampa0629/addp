@@ -89,6 +89,9 @@ Develop TaskProvider 的 canonical 前端路由为：
 | Quality | 问题工单列表筛选与分页 | `status`、`engine_id`、`page`、`page_size` |
 | Quality | 检查任务列表、创建与编辑 | `page`、`page_size`、`create=1`、`task_id`；创建和编辑保留分页上下文，默认列表省略 |
 | Quality | 物化门禁任务列表、创建与编辑 | `page`、`page_size`、`create=1`、`task_id`；创建和编辑保留分页上下文，默认列表省略 |
+| Security | 分类分级体系 | path `/classification-grading`，以 `tab=grades` 恢复“保护等级”页签；默认“分类目录”页签省略 `tab` |
+| Security | 敏感数据定义 | path `/sensitive-data-definitions`；识别方式作为对应敏感类型的从属配置，不使用路由 Tab |
+| Security | 受保护资源与待复核候选 | path `/protection-enrollments`；以 `tab=review-queue` 恢复“待复核候选”子视图，默认“受保护资源”省略 `tab`；候选子视图使用 `sensitive_data_type_id`、`detector_version`、`page`、`page_size` 恢复筛选与分页，默认值省略 |
 | Asset | 资产分类、申请与反馈 Tab | `category_id`、`tab` |
 | Catalog | 已治理资源 / 资源盘点筛选、分页与条目详情 | `view`、`search`、`entry_type`、`source_status`、`governance_status`、`visibility`、`primary_domain_id`、`accountable_department_id`、`source_engine_id`、`page`、`page_size`；默认 `view=governance` 省略，资源盘点显式使用 `view=inventory`；详情 path `/entries/:id`，以 `tab=curation\|professional\|relations` 恢复非默认子视图，并以同名列表 query 保留返回上下文 |
 | Meta | 扫描引擎与扫描任务入口 | `engine_id`、`task_id`；二者并存时任务所属引擎为事实源 |

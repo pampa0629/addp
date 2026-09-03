@@ -21,8 +21,6 @@ Manager 通过本地保护投影统一约束预览、剖析和全文索引写入
 - `manager.vector_tile_set_tasks`：业务矢量瓦片集生成任务定义，TaskProvider `task_type=vector_tile_set_generation`，结果固定为 Business PMTiles + Meta item；Manager 不建立业务结果表。
 - `manager.point_cloud_copc`：点云 COPC 快显结果，只登记 Manager 生成并拥有生命周期的 infra MinIO COPC artifact；源 `format=copc` item 直接基础预览，不进入该表。
 - `manager.point_cloud_copc_tasks`：点云 COPC 快显任务定义，TaskProvider `task_type=point_cloud_copc_generation`，源必须是 `format=las|laz|e57|pcd|xyz` 的 point_cloud item。
-- `manager.cad_previews`：二维 DWG / DXF 的受管栅格瓦片预览结果，记录 manifest、thumbnail、瓦片范围和 Manager infra MinIO 引用。
-- `manager.cad_preview_tasks`：CAD 栅格预览任务定义，TaskProvider `task_type=cad_preview_generation`，源必须是 `data_type=cad + format=dwg|dxf + layout=single`。
 - `manager.embedding_configuration`：Manager 平台向量化业务策略单例，只保存距离阈值、文件大小、并发等 Manager-owned 策略。
 - `manager.inference_scenario_bindings`：Manager-owned 的 `semantic_search_embedding` 场景绑定；保存平台默认和租户覆盖的 Inference Model Profile ID，不保存 Provider、端点、模型名或凭据。
 - `manager.model3d_tiles`：分块三维模型瓦片快显结果，`target_format=3d_tiles|s3m`；同一源 item 的两种格式分别登记为独立结果并写入 Manager infra MinIO。
@@ -76,7 +74,7 @@ manager/
 - 空间要素辅助：`GET /engines/:id/spatial/features/:feature_id/centroid`、`GET /engines/:id/spatial/features/:feature_id/geometry`。
 - 预览状态与 Quick View：`GET /preview-state?locator={ResourceLocator}` 返回任意 data item 的用户预览设置，`PATCH /preview-state/view-state` 更新地图视口、三维相机或表格可见字段，`PATCH /preview-state/preferred-mode` 更新空间显示模式；Quick View 统一使用 ResourceLocator 入口，`GET /quick-view/capability?locator={ResourceLocator}` 返回快显能力状态，`GET /quick-view/flatgeobuf?locator={ResourceLocator}` 返回中小规模矢量 FlatGeobuf 快显材料，`GET /quick-view/geojson?locator={ResourceLocator}` 保留为 GeoJSON 调试/人类可读出口，`GET /quick-view/tiles/:z/:x/:y.mvt?locator={ResourceLocator}` 从实时源或 infra PMTiles 返回 MVT，`GET /raster_cog/:id/content` 返回 ready raster COG 内容；业务 PMTiles 通过 `vector_tile_set_generation` 生成或由合格缓存固化。
 - 点云快显：`GET /point_cloud_copc/:id/content` 返回 ready COPC 快显内容；LAS / LAZ / E57 / PCD / XYZ 通过 `point_cloud_copc_generation` 生成 Manager 私有 COPC artifact，源 COPC 直接基础预览。
-- CAD 预览：`GET /cad-previews/:id/manifest` 返回 ready manifest，`GET /cad-previews/:id/tiles/:z/:x/:y` 返回 WebP 瓦片；DWG / DXF 通过 `cad_preview_generation` 调用 SuperMap 直接渲染 Dataset，前端不读取源 CAD 文件、不重画 entity。
+- CAD 预览：`data_type=cad + format=dwg|dxf + layout=single` 的源文件由普通 Preview API 返回受控 `storage-stream` URL；Manager 前端仅在进入 CAD 预览时加载 LibreDWG Worker/WASM 和 WebGL renderer，在浏览器内解析并绘制，不创建 Manager 快显任务或派生产物。
 - 分块三维模型瓦片：`GET /model3d_tiles` 查询 Manager 受管结果，`GET /model3d_tiles/:id/assets/*asset_path` 返回 ready 3D Tiles / S3M 目录资源；生成入口统一由 Quick View action 驱动，独立管理页只负责任务、结果、监控与预览入口。
 - 任务提供者：`GET /tasks`、`GET /tasks/:task_type/:id`、`POST /tasks/:task_type/:id/execute`、`GET /executions/:execution_id`。
 - 数据进出与向量化：`POST /uploads`、`POST /imports`、`POST /exports`、`GET /exports/:id/file`、`POST /embedding_executions`、`GET /embeddings`、`GET /items/:item_id/embedding`。
@@ -105,7 +103,7 @@ manager/
 - 栅格快显 COG生成结果统一使用 `manager.raster_cog`，任务定义统一使用 `manager.raster_cog_tasks` / `raster_cog_generation`；不得写入 `vector_tile_cache` 或 `vector_materialized_view_generation`，不得让前端感知 NFS path、业务 MinIO bucket/object 或底层 `storage_ref`。
 - 栅格 mosaic 生成任务统一使用 `manager.raster_mosaic_tasks` / `raster_mosaic_generation`；创建入口是资源树 node，目标是用户选择的业务存储，结果是 `data_type=media`、`format=raster_mosaic`、`layout=whole` 的业务 item。mosaic 的 leaf COG、overview COG、index、manifest 和可选 tiles 都不写入 Manager infra MinIO，不进入 `manager.raster_cog`。
 - 点云 COPC 快显任务统一使用 `manager.point_cloud_copc_tasks` / `point_cloud_copc_generation`；源必须是 `data_type=point_cloud + layout=single + format=las|laz|e57|pcd|xyz`，结果写入 `manager.point_cloud_copc` 和 Manager infra MinIO，不自动升格为业务 data item。源 `format=copc` 只走基础预览，不创建二次快显任务；XYZ 第一阶段只支持简单确定性文本 XYZ。
-- CAD 栅格预览任务统一使用 `manager.cad_preview_tasks` / `cad_preview_generation`；源必须是 `data_type=cad + layout=single + format=dwg|dxf`。后端只把 ready artifact 的受控 manifest URL 交给 `frontend_renderer=cad`，不得把源 CAD `storage-stream` URL 交给 CAD renderer。
+- CAD 基础预览只允许 `data_type=cad + layout=single + format=dwg|dxf`，统一通过受控 `storage-stream` 把源文件交给 `frontend_renderer=cad`。浏览器收到源文件即具备保存其内容的能力，因此该入口必须使用 `manager.data_item.read`，且产品权限语义不得声称“可预览但不可取得源文件”。
 - 分块三维模型瓦片任务统一使用 `manager.model3d_tiles_tasks` / `model3d_tiles_generation`，结果统一进入 `manager.model3d_tiles`；`target_format=3d_tiles` 调用 `osgb_scene_to_3dtiles`，`target_format=s3m` 调用 `osgb_scene_to_s3m`。不得恢复写业务存储并触发 Meta scan 的旧 Manager 路径。
 - Manager 受管快显任务的语义身份统一为 `tenant_id + item_fingerprint + artifact_variant`。重复创建必须复用原任务 ID，重复执行必须新建 execution 并刷新同一当前结果；`item_id`、`locator`、`source_engine_id` 只作执行与回查事实。派生变体、并发唯一约束和业务派生任务的例外见 `manager/docs/快显实现规范.md`。
 - Raster COG 与 Model3D Tiles 是来源驱动的只读任务定义：只允许 Data Explorer 的 Quick View action 按源事实派生，不提供直接创建或更新任务配置的 API。管理页任务 Tab 的 `task_id` 打开只读任务定义，结果 Tab 的 `task_id` 只筛选该任务结果。

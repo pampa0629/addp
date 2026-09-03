@@ -34,11 +34,6 @@ export const buildDynamicSchemaColumnDescriptors = (columns, columnMetadata) => 
   })
 }
 
-export const dynamicSchemaCellValue = (row, descriptor) => {
-  const path = Array.isArray(descriptor?.path) ? descriptor.path : []
-  return path.reduce((value, segment) => value?.[segment], row)
-}
-
 export const buildTablePreviewColumnDescriptors = ({
   columns,
   columnMetadata,

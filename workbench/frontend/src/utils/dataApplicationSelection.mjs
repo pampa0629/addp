@@ -33,9 +33,16 @@ export function selectionParameterType(snapshot, descriptors, applicationParamet
   for (const binding of targets) {
     const component = (snapshot?.components || []).find((item) => item.id === binding.component_id)
     const parameterFilter = (component?.query_template?.parameter_filters || []).find((filter) => filter.parameter_key === binding.component_parameter_key)
-    const field = (descriptors?.[binding.component_id]?.input_contract?.fields || []).find((item) => item.name === parameterFilter?.field)
-    if (!field || !isSelectionScalarOperator(parameterFilter.operator)) return ''
-    types.add(field.type)
+	  if (parameterFilter) {
+		const field = (descriptors?.[binding.component_id]?.input_contract?.fields || []).find((item) => item.name === parameterFilter.field)
+		if (!field || !isSelectionScalarOperator(parameterFilter.operator)) return ''
+		types.add(field.type)
+		continue
+	  }
+	  const namedBinding = (component?.query_template?.named_parameter_bindings || []).find((item) => item.parameter_key === binding.component_parameter_key)
+	  const namedParameter = (descriptors?.[binding.component_id]?.input_contract?.named_parameters || []).find((item) => item.name === namedBinding?.name)
+	  if (!namedParameter || !isSelectionScalarType(namedParameter.type)) return ''
+	  types.add(namedParameter.type)
   }
   return types.size === 1 ? [...types][0] : ''
 }

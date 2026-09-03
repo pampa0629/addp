@@ -3,7 +3,7 @@
 本文档从业务语义层面提炼 ADDP 的核心对象及其关系。
 元模型中的对象是**业务概念**，不直接对应数据库表：一个业务对象可能跨多张表，多个对象也可能共享一张表的不同行。
 
-Mermaid 图的字段与 PG 表字段保持一致，便于发现并修正字段设计问题。
+Mermaid 图默认与 PG 表字段保持一致，便于发现并修正字段设计问题；明确标注为“目标元模型”的章节允许先描述已确认的目标状态，并必须在待改造项中列出当前实现偏差。
 
 > IAM 概念以 [ADDP 账号与权限体系](addp账号与权限体系图.md) 为准。本文不展示旧 `user_type` 和 User 单 Tenant 表结构；IAM 具体字段、关系与迁移边界见 [System IAM 数据模型与迁移规范](../../system/docs/IAM数据模型与迁移规范.md)。
 
@@ -857,6 +857,8 @@ erDiagram
 
 ### 2.6 Standard 模块对象图
 
+> 本节描述 Standard 的目标元模型。稳定身份负责长期引用，修订负责审核、发布、生效和历史追溯；下方“待改造项”用于标识当前实现与目标模型之间的差异。
+
 ```mermaid
 erDiagram
     Domain {
@@ -871,24 +873,51 @@ erDiagram
         timestamp updated_at
     }
 
+    StandardCollection {
+        uint id PK
+        uint tenant_id FK
+        string code UK
+        string name
+        string description
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    StandardCategory {
+        uint id PK
+        uint tenant_id FK
+        uint parent_id FK "自引用"
+        string object_type "element|code_set|metric|document|glossary"
+        string code
+        string name
+        int sort_order
+    }
+
     Element {
         uint id PK
         uint tenant_id FK
-        uint domain_id FK
-        uint code_set_id FK "枚举类型时关联"
-        uint unit_id FK "可选"
-        string name
+        uint owner_domain_id FK "scope_type=domain 时必填"
+        uint category_id FK "仅导航"
         string code UK
-        string data_type "string|integer|float|date|datetime|boolean|enum"
-        int length
-        int precision_num
-        int scale
-        bool nullable
-        string default_value
+        string scope_type "platform|tenant_common|domain"
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    ElementRevision {
+        uint id PK
+        uint element_id FK
+        int revision_no
+        string status "draft|in_review|published|withdrawn"
+        string name
         string definition
-        json quality_rules "质量规则(JSONB)"
-        string[] example_values
-        string status "draft|approved|deprecated"
+        string data_type
+        string value_domain_type "unrestricted|range|enumeration"
+        json range_config "连续值域结构"
+        uint code_set_revision_id FK "枚举值域时必填"
+        uint unit_id FK "可选"
+        timestamp effective_from
+        timestamp effective_to
         timestamp created_at
         timestamp updated_at
     }
@@ -896,24 +925,34 @@ erDiagram
     CodeSet {
         uint id PK
         uint tenant_id FK
+        uint owner_domain_id FK "scope_type=domain 时必填"
+        uint category_id FK "仅导航"
         string code UK
+        string scope_type "platform|tenant_common|domain"
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    CodeSetRevision {
+        uint id PK
+        uint code_set_id FK
+        int revision_no
+        string status "draft|in_review|published|withdrawn"
         string name
-        string type "system|custom"
-        string description
+        string definition
+        timestamp effective_from
+        timestamp effective_to
         timestamp created_at
         timestamp updated_at
     }
 
     CodeItem {
         uint id PK
-        uint code_set_id FK
+        uint code_set_revision_id FK
         string code
-        string value
+        string name
         string description
         int sort_order
-        bool is_active
-        timestamp created_at
-        timestamp updated_at
     }
 
     MeasurementCategory {
@@ -934,31 +973,29 @@ erDiagram
         timestamp updated_at
     }
 
-    MetricCategory {
+    MetricDefinition {
         uint id PK
         uint tenant_id FK
-        uint parent_id FK "自引用"
-        string name
-        string description
-        int sort_order
+        uint category_id FK
+        uint owner_domain_id FK "scope_type=domain 时必填"
+        string code UK
+        string scope_type "platform|tenant_common|domain"
         timestamp created_at
         timestamp updated_at
     }
 
-    Metric {
+    MetricDefinitionRevision {
         uint id PK
-        uint tenant_id FK
-        uint category_id FK
-        uint domain_id FK
-        uint unit_id FK "可选"
-        uint base_metric_id FK "派生指标的基础指标"
+        uint metric_definition_id FK
+        int revision_no
+        string status "draft|in_review|published|withdrawn"
         string name
-        string code UK
-        string type "atomic|derived|composite"
-        string formula "派生/复合指标的计算公式"
-        json derivation_config "派生配置(JSONB)"
         string definition
-        string status "draft|approved|deprecated"
+        string statistical_caliber "业务统计口径"
+        string semantic_formula "非引擎可执行的业务表达"
+        uint unit_id FK "可选"
+        timestamp effective_from
+        timestamp effective_to
         timestamp created_at
         timestamp updated_at
     }
@@ -966,12 +1003,25 @@ erDiagram
     Glossary {
         uint id PK
         uint tenant_id FK
-        uint domain_id FK "可选"
+        uint owner_domain_id FK "scope_type=domain 时必填"
+        uint category_id FK "仅导航"
+        string code UK
+        string scope_type "platform|tenant_common|domain"
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    GlossaryRevision {
+        uint id PK
+        uint glossary_id FK
+        int revision_no
+        string status "draft|in_review|published|withdrawn"
         string name
         string[] alias
         string definition
-        string status "draft|approved|deprecated"
         int64[] related_ids "关联术语ID数组"
+        timestamp effective_from
+        timestamp effective_to
         timestamp created_at
         timestamp updated_at
     }
@@ -979,39 +1029,81 @@ erDiagram
     Document {
         uint id PK
         uint tenant_id FK
-        string name
+        uint owner_domain_id FK "scope_type=domain 时必填"
+        uint category_id FK "仅导航"
+        string code UK
+        string scope_type "platform|tenant_common|domain"
         string doc_type
         string source_org
-        string version
-        string file_key "MinIO 文件路径"
-        string file_name
         timestamp created_at
         timestamp updated_at
     }
 
+    DocumentRevision {
+        uint id PK
+        uint document_id FK
+        int revision_no
+        string status "draft|in_review|published|withdrawn"
+        string name
+        string version_label
+        string file_key "MinIO 文件路径"
+        string file_name
+        timestamp effective_from
+        timestamp effective_to
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    ExtractionEvidence {
+        uint id PK
+        uint document_revision_id FK
+        string locator "页码/章节/文本片段位置"
+        string excerpt_hash "证据内容摘要"
+        string candidate_type
+        uint candidate_revision_id "审核后指向正式修订"
+        string review_status
+    }
+
     Domain ||--o{ Domain : "父子域(self-ref)"
-    Domain ||--o{ Element : "归属"
-    Domain ||--o{ Metric : "归属"
-    Domain ||--o{ Glossary : "归属(可选)"
-    CodeSet ||--o{ CodeItem : "含码值"
-    CodeSet ||--o{ Element : "值域约束(可选)"
+    Domain ||--o{ Element : "治理归属(scope=domain)"
+    Domain ||--o{ CodeSet : "治理归属(scope=domain)"
+    Domain ||--o{ MetricDefinition : "治理归属(scope=domain)"
+    Domain ||--o{ Glossary : "治理归属(scope=domain)"
+    Domain ||--o{ Document : "治理归属(scope=domain)"
+    StandardCollection }o--o{ Element : "治理成员"
+    StandardCollection }o--o{ CodeSet : "治理成员"
+    StandardCollection }o--o{ MetricDefinition : "治理成员"
+    StandardCollection }o--o{ Glossary : "治理成员"
+    StandardCollection }o--o{ Document : "治理成员"
+    StandardCategory ||--o{ StandardCategory : "父子分类(self-ref)"
+    StandardCategory ||--o{ Element : "导航分类"
+    StandardCategory ||--o{ CodeSet : "导航分类"
+    StandardCategory ||--o{ MetricDefinition : "导航分类"
+    StandardCategory ||--o{ Glossary : "导航分类"
+    StandardCategory ||--o{ Document : "导航分类"
+    Element ||--o{ ElementRevision : "含修订"
+    CodeSet ||--o{ CodeSetRevision : "含修订"
+    CodeSetRevision ||--o{ CodeItem : "含码值"
+    CodeSetRevision ||--o{ ElementRevision : "枚举值域约束"
     MeasurementCategory ||--o{ Unit : "含单位"
-    Unit ||--o{ Element : "计量单位(可选)"
-    Unit ||--o{ Metric : "计量单位(可选)"
-    MetricCategory ||--o{ MetricCategory : "父子分类(self-ref)"
-    MetricCategory ||--o{ Metric : "归属"
-    Metric ||--o| Metric : "基础指标(self-ref,派生时)"
-    Document }o--o{ Element : "关联"
-    Document }o--o{ Glossary : "关联"
-    Document }o--o{ Metric : "关联"
+    Unit ||--o{ ElementRevision : "计量单位(可选)"
+    Unit ||--o{ MetricDefinitionRevision : "计量单位(可选)"
+    MetricDefinition ||--o{ MetricDefinitionRevision : "含修订"
+    Glossary ||--o{ GlossaryRevision : "含修订"
+    Document ||--o{ DocumentRevision : "含修订"
+    DocumentRevision ||--o{ ExtractionEvidence : "含提取证据"
 ```
 
-**⚠️ 发现的问题**：
+**待改造项**：
 
 | # | 问题描述 | 当前状态 | 影响 |
 |---|----------|----------|------|
-| ST-1 | `Glossary.related_ids` 用 int64[] 数组存储关联术语 ID，无法做 FK 约束 | 应用层维护 | 合理，同表自引用用数组比关联表轻量 |
-| ST-2 | `Element` 无独立的 `DimensionHierarchy` 关联（维度层级定义在 Model 模块中），Standard 与 Model 的层级定义分离 | 设计如此 | 维度层级是建模概念，放 Model 更合理 |
+| ST-1 | 当前只有数据元和码值集采用稳定身份 + 不可变修订；术语、指标和文档仍是可变资源 | 待迁移 | 正式发布后的口径和来源无法被精确冻结，历史追溯链不完整 |
+| ST-2 | 当前 `DimensionHierarchy` 仍由 Standard 存储，Model 通过软引用使用 | 待迁移 | 与“维度层级属于建模结构”的边界冲突；应整体迁入 Model，不保留两套层级资源 |
+| ST-4 | 当前缺少 StandardCollection，分类、业务域和审核容器容易混用 | 待设计与实现 | 无法独立配置跨域标准包的成员、维护人、权限和审核流程 |
+| ST-5 | 当前指标同时保存业务公式和 `derivation_config` | 待迁移 | Standard 与 Model 的计算实现职责混杂；Standard 只保留语义口径，具体实现迁入 Model |
+| ST-6 | 当前标准文档没有不可变修订与提取证据模型 | 待迁移 | Copilot 提取结果无法稳定回溯到来源版本、页码或章节，也无法建立可靠审核链 |
+| ST-7 | 码值层级与跨码值集映射尚未形成规范 | 待讨论 | 需要先区分标准间语义映射与 Transfer 的资产级转换执行，再决定是否建立父子码项和 crosswalk 资源 |
 
 ---
 
@@ -1045,7 +1137,7 @@ erDiagram
     EntityAttribute {
         uint id PK
         uint entity_id FK
-        uint element_id FK "软引用 Standard.Element"
+        uint element_revision_id FK "软引用 Standard.ElementRevision"
         string name
         string column_name
         string data_type
@@ -1083,15 +1175,13 @@ erDiagram
     LogicalField {
         uint id PK
         uint table_id FK
-        uint element_id FK "软引用 Standard.Element(可选)"
-        uint hierarchy_id FK "软引用 DimensionHierarchy(可选)"
+        uint element_revision_id FK "软引用 Standard.ElementRevision(可选)"
         string name
         string column_name
         string data_type
         bool is_pk
         bool is_partition
         string field_role "regular|measure_additive|measure_semi|measure_non|dimension_fk|degenerate_dim"
-        int hierarchy_level
         int sort_order
     }
 
@@ -1124,13 +1214,18 @@ erDiagram
         string level_name
     }
 
-    FactMetricMapping {
+    MetricImplementation {
         uint id PK
         uint tenant_id FK
         uint fact_table_id FK
-        uint metric_id FK "软引用 Standard.Metric"
-        uint field_id FK "可选，关联具体字段"
-        string note
+        uint metric_definition_revision_id FK "软引用 Standard.MetricDefinitionRevision"
+        string name
+        string grain "计算粒度"
+        json source_config "事实来源与字段"
+        json dimension_config "参与维度与连接"
+        json filter_config "过滤条件"
+        json expression_config "可执行表达式"
+        string status
     }
 
     DWLayer ||--o{ LogicalTable : "所在层"
@@ -1140,7 +1235,7 @@ erDiagram
     LogicalTable ||--o{ LogicalField : "含字段"
     LogicalTable ||--o{ TableRelation : "源表关系"
     LogicalTable ||--o{ DimensionHierarchy : "含维度层级(维度表)"
-    LogicalTable ||--o{ FactMetricMapping : "指标映射(事实表)"
+    LogicalTable ||--o{ MetricImplementation : "指标实现(事实表)"
     DimensionHierarchy ||--o{ DimensionHierarchyLevel : "含层级"
     DimensionHierarchyLevel }o--|| LogicalField : "关联字段"
 ```
@@ -1149,9 +1244,10 @@ erDiagram
 
 | # | 问题描述 | 当前状态 | 影响 |
 |---|----------|----------|------|
-| MO-1 | `LogicalField.element_id` 软引用 `Standard.Element`，无 DB FK，一致性依赖应用层 | 跨 schema 设计如此 | 合理 |
-| MO-2 | `FactMetricMapping.metric_id` 软引用 `Standard.Metric`，无 DB FK | 跨 schema 设计如此 | 合理 |
+| MO-1 | 当前 EntityAttribute / LogicalField 已逐步增加 `element_revision_id`，但仍需确认所有审批、导入和展示路径只以确定修订作为正式引用 | 待收口 | 跨 schema 无 DB FK 是合理边界，但正式模型不能动态跟随数据元当前版本 |
+| MO-2 | 当前 `FactMetricMapping.metric_id` 只引用可变的 `Standard.Metric`，且没有完整计算实现契约 | 待迁移 | 应替换为 Model 所属的 MetricImplementation，并冻结 `metric_definition_revision_id` |
 | MO-3 | `Entity` 和 `LogicalTable` 都有 `domain_id`，都软引用 `Standard.Domain`，两者的关系（Entity 是 LogicalTable 的模板）通过 `LogicalTable.entity_id` 可选关联，但未强制 | 设计如此 | 允许逻辑表不依赖实体直接建模 |
+| MO-4 | 当前 Model 仍引用 Standard 的 `dimension_hierarchy_id`，并在字段上保存 `hierarchy_level` | 待迁移 | 层级与层级成员必须由 Model 单独拥有，层级序号统一从 1 开始，不保留 Standard 旧资源 |
 
 ---
 
@@ -1200,6 +1296,14 @@ graph LR
 
     subgraph QLT["Quality"]
         CheckTask
+        RuleApplication
+        ConformanceResult
+    end
+
+    subgraph CAT["Catalog"]
+        CatalogEntry
+        CatalogComponent
+        StandardMapping
     end
 
     subgraph GPH["Graph"]
@@ -1221,8 +1325,11 @@ graph LR
     subgraph STD["Standard"]
         Domain
         Element
-        Metric
+        ElementRevision
+        MetricDefinition
+        MetricDefinitionRevision
         CodeSet
+        CodeSetRevision
         Unit
     end
 
@@ -1230,7 +1337,8 @@ graph LR
         DWLayer
         LogicalTable
         LogicalField
-        FactMetricMapping
+        DimensionHierarchy
+        MetricImplementation
         Entity
     end
 
@@ -1292,21 +1400,33 @@ graph LR
 
     %% Standard 内部
     Domain --> Element
-    Domain --> Metric
-    CodeSet --> Element
-    Unit --> Metric
+    Domain --> MetricDefinition
+    Element --> ElementRevision
+    CodeSet --> CodeSetRevision
+    CodeSetRevision --> ElementRevision
+    MetricDefinition --> MetricDefinitionRevision
+    Unit --> MetricDefinitionRevision
 
     %% Model 内部
     DWLayer --> LogicalTable
     LogicalTable --> LogicalField
-    LogicalTable --> FactMetricMapping
+    LogicalTable --> DimensionHierarchy
+    LogicalTable --> MetricImplementation
     Entity --> LogicalTable
 
     %% Model → Standard 软引用（跨 schema）
-    LogicalField -.->|"软引用 Standard.Element"| Element
-    FactMetricMapping -.->|"软引用 Standard.Metric"| Metric
+    LogicalField -.->|"冻结 Standard.ElementRevision"| ElementRevision
+    MetricImplementation -.->|"冻结 Standard.MetricDefinitionRevision"| MetricDefinitionRevision
     LogicalTable -.->|"软引用 Standard.Domain"| Domain
     Entity -.->|"软引用 Standard.Domain"| Domain
+
+    %% 标准落标与符合性事实链
+    CatalogEntry --> CatalogComponent
+    CatalogComponent --> StandardMapping
+    StandardMapping -.->|"引用确定标准修订"| ElementRevision
+    RuleApplication -.->|"检查确定映射与修订"| StandardMapping
+    CheckTask --> ConformanceResult
+    RuleApplication --> ConformanceResult
 ```
 
 **说明**：
@@ -1328,12 +1448,13 @@ graph TD
     DEV["Develop\nDevTask"]
     ORC["Orchestrator\nOrchestration"]
     MGR["Manager\nTileCacheTask / TileCache / PreviewState / EmbeddingTask / Embedding"]
-    QLT["Quality\nCheckTask"]
+    QLT["Quality\nRuleApplication / CheckTask / ConformanceResult"]
     GPH["Graph\nGraphBuildTask"]
     MON["Monitor (公共)\nTaskExecution"]
     SVC["Service\nQueryService / TileService / RegisteredService"]
-    STD["Standard\nDomain / Element / Metric / CodeSet / Unit"]
-    MOD["Model\nLogicalTable / LogicalField / Entity / FactMetricMapping"]
+    CAT["Catalog\nCatalogEntry / CatalogComponent / StandardMapping"]
+    STD["Standard\nDomain / ElementRevision / CodeSetRevision / MetricDefinitionRevision"]
+    MOD["Model\nLogicalTable / LogicalField / Entity / DimensionHierarchy / MetricImplementation"]
 
     SYS -->|"提供 Engine"| META
     SYS -->|"提供 Engine"| TRF
@@ -1345,6 +1466,7 @@ graph TD
     SYS -->|"Module 注册"| ORC
 
     META -->|"DataItem 可选关联"| SVC
+    META -->|"物理资源与组件事实"| CAT
     ORC -->|"编排步骤(JSONB调用)"| META
     ORC -->|"编排步骤(JSONB调用)"| TRF
     ORC -->|"编排步骤(JSONB调用)"| DEV
@@ -1361,8 +1483,12 @@ graph TD
     QLT --> MON
     GPH --> MON
 
-    STD -.->|"Element/Metric 软引用"| MOD
+    STD -.->|"发布修订供冻结引用"| MOD
     STD -.->|"Domain 软引用"| MOD
+    STD -.->|"发布修订供映射"| CAT
+    CAT -.->|"标准映射"| QLT
+    STD -.->|"标准约束"| QLT
+    QLT -.->|"符合性聚合展示"| STD
 ```
 
 ---
@@ -1386,7 +1512,7 @@ graph TD
 | SV-2 | Service  | 三类服务无统一父表，服务目录需 UNION 查询                             | 低     | 待讨论     |
 | SV-3 | Service  | RegisteredService.auth_config 加密存储，敏感信息与业务信息混存        | —      | 已确认合理 |
 | ST-1 | Standard | Glossary.related_ids 用 int64[] 存关联 ID，无 FK 约束                 | —      | 已确认合理 |
-| ST-2 | Standard | 维度层级（DimensionHierarchy）定义在 Model 模块而非 Standard 模块     | —      | 已确认合理 |
-| MO-1 | Model    | LogicalField.element_id 软引用 Standard.Element，无 DB FK             | —      | 已确认合理 |
-| MO-2 | Model    | FactMetricMapping.metric_id 软引用 Standard.Metric，无 DB FK          | —      | 已确认合理 |
+| ST-2 | Standard | 当前 DimensionHierarchy 实现在 Standard，与已确认的 Model 所有权冲突 | 高 | 待整体迁移到 Model 并删除 Standard 旧路线 |
+| MO-1 | Model    | 正式模型必须冻结 Standard.ElementRevision，不能只动态引用 Element | 高 | 已有冻结字段，待收口全部审批与消费路径 |
+| MO-2 | Model    | 当前 FactMetricMapping 只引用可变 Standard.Metric，缺少指标实现契约 | 高 | 待替换为 MetricImplementation 并冻结 MetricDefinitionRevision |
 | MO-3 | Model    | Entity 和 LogicalTable 都软引用 Domain，LogicalTable 可不经 Entity 直接建模 | —  | 已确认合理 |

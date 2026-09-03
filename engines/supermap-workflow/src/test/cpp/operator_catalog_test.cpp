@@ -20,8 +20,6 @@ int main(int argc, char** argv) {
   require(argc == 2, "operator catalog path argument");
   const auto catalog = addp::workflow::OperatorCatalog::load(argv[1]);
   const std::set<std::string> expected = {
-      "cad.inspect",
-      "cad.render_preview",
       "dataset.info",
       "dataset.project",
       "dataset.save",
@@ -61,11 +59,10 @@ int main(int argc, char** argv) {
   for (const auto& descriptor : catalog.descriptors()) {
     actual.insert(descriptor.at("id").get<std::string>());
   }
-  require(actual == expected, "catalog keeps all 35 C++ runtime operators");
+  require(actual == expected, "catalog keeps all 33 C++ runtime operators");
   require(catalog.default_output_port("datasource.open") == "datasource", "default port");
   require(catalog.supports_mode("osgb_scene_to_s3m", "workflow"), "S3M workflow mode");
   require(catalog.supports_mode("osgb_scene_to_s3m", "direct"), "S3M direct mode");
-  require(!catalog.supports_mode("cad.inspect", "workflow"), "CAD inspect is direct-only");
   require(!catalog.supports_mode("table.read_open", "workflow"), "table sessions are direct-only");
   return 0;
 }

@@ -239,7 +239,7 @@ func (h *ResourceCapabilityHandler) GetSQLOutputContract(c *gin.Context) {
 				return
 			}
 			contract, describeErr := h.querySamples.DescribeFederatedSQL(
-				c.Request.Context(), tenantIDValue(c), userAccessToken, req.EngineID, req.SQL,
+				c.Request.Context(), tenantIDValue(c), userAccessToken, req.EngineID, req.SQL, req.Parameters,
 			)
 			if describeErr != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.TWithDetail(c, servicei18n.MsgSQLOutputContractFailed, describeErr.Error())})
@@ -263,7 +263,12 @@ func (h *ResourceCapabilityHandler) GetSQLOutputContract(c *gin.Context) {
 		return
 	}
 
-	contract, err := h.detectSQLOutputContract(c.Request.Context(), db, engine.EngineType, req.SQL)
+	boundSQL, args, err := commonquery.BindSQL(req.SQL, req.Parameters, commonquery.SQLPlaceholderQuestion)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.TWithDetail(c, commoni18n.MsgInvalidParams, err.Error())})
+		return
+	}
+	contract, err := h.detectSQLOutputContract(c.Request.Context(), db, engine.EngineType, boundSQL, args)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.TWithDetail(c, servicei18n.MsgSQLOutputContractFailed, err.Error())})
 		return
@@ -276,10 +281,11 @@ func (h *ResourceCapabilityHandler) detectSQLOutputContract(
 	db *gorm.DB,
 	engineType string,
 	query string,
+	args []interface{},
 ) (*serviceModels.QueryServiceOutputContract, error) {
 	query = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(query), ";"))
 	testSQL := fmt.Sprintf("SELECT * FROM (%s) AS subquery LIMIT 1", query)
-	rows, err := db.WithContext(ctx).Raw(testSQL).Rows()
+	rows, err := db.WithContext(ctx).Raw(testSQL, args...).Rows()
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute SQL: %w", err)
 	}
@@ -343,7 +349,7 @@ func (h *ResourceCapabilityHandler) detectSQLOutputContract(
 
 	var sridValue sql.NullInt64
 	var geometryTypeValue sql.NullString
-	if err := db.WithContext(ctx).Raw(metaSQL).Row().Scan(&sridValue, &geometryTypeValue); err != nil && err != sql.ErrNoRows {
+	if err := db.WithContext(ctx).Raw(metaSQL, args...).Row().Scan(&sridValue, &geometryTypeValue); err != nil && err != sql.ErrNoRows {
 		return nil, fmt.Errorf("detect geometry metadata failed: %w", err)
 	}
 	geometryType := "Geometry"
@@ -364,7 +370,7 @@ func (h *ResourceCapabilityHandler) detectSQLOutputContract(
 	`, quotedGeometryColumn, query)
 
 	var minX, minY, maxX, maxY *float64
-	err = db.WithContext(ctx).Raw(extentSQL).Row().Scan(&minX, &minY, &maxX, &maxY)
+	err = db.WithContext(ctx).Raw(extentSQL, args...).Row().Scan(&minX, &minY, &maxX, &maxY)
 
 	var extent *datatype.BoundingBox
 	if err == nil && minX != nil && minY != nil && maxX != nil && maxY != nil {

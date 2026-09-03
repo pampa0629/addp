@@ -492,7 +492,13 @@ func prepareBoundedTableSourceProtection(
 			return nil, err
 		}
 		return nil, nil
-	case executor.TableEndpointNative, executor.TableEndpointQuery:
+	case executor.TableEndpointNative:
+		protector, err := gate.PrepareBoundedTableProtection(ctx, tenantID, config)
+		if err != nil {
+			return nil, fmt.Errorf("prepare bounded table source protection: %w", err)
+		}
+		return protector, nil
+	case executor.TableEndpointQuery:
 		if sourceEngineType != "postgresql" {
 			if err := gate.RequireSourceConfig(ctx, tenantID, config); err != nil {
 				return nil, err

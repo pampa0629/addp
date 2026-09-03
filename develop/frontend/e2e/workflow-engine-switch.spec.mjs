@@ -1,13 +1,27 @@
 import { expect, test } from '@playwright/test'
 
 const SAVED_TASK_ID = 42
-const ENGINE_A = { id: 1, name: 'Engine A', engine_type: 'engine_a' }
-const ENGINE_B = { id: 2, name: 'Engine B', engine_type: 'engine_b' }
+const ENGINE_A = {
+  id: 1,
+  name: 'Engine A',
+  engine_type: 'engine_a',
+  lifecycle_state: 'active',
+  connection_status: 'online'
+}
+const ENGINE_B = {
+  id: 2,
+  name: 'Engine B',
+  engine_type: 'engine_b',
+  lifecycle_state: 'active',
+  connection_status: 'online'
+}
 const RESOURCE_ENGINE = {
   id: 7,
   name: 'Fixture PostgreSQL',
   engine_type: 'postgresql',
-  engine_family: 'tabular'
+  engine_family: 'tabular',
+  lifecycle_state: 'active',
+  connection_status: 'online'
 }
 const RESOURCE_LOCATOR = `addp://engine/${RESOURCE_ENGINE.id}/path/public/roads?type=table&item_id=701`
 
@@ -136,7 +150,7 @@ test('keeps dialog and canvas keyboard focus predictable', async ({ page }) => {
   const executeTrigger = primaryExecuteButton(page)
   await executeTrigger.click()
   const executeDialog = page.getByRole('dialog', { name: '执行工作流', exact: true })
-  await expect(executeDialog.getByRole('radio', { name: '工作流配置', exact: true })).toBeFocused()
+  await expect(executeDialog.getByRole('radio', { name: '任务默认值', exact: true })).toBeFocused()
   await page.keyboard.press('Escape')
   await expect(executeDialog).not.toBeVisible()
   await expect(executeTrigger).toBeFocused()
@@ -607,7 +621,7 @@ async function requestEngineSwitch(page, engine) {
   const select = page.locator('.engine-select .el-select__wrapper')
   await expect(select).toHaveCount(1)
   await select.click()
-  await page.getByRole('option', { name: `${engine.name} ${engine.engine_type}`, exact: true }).click()
+  await page.getByRole('option', { name: `${engine.name} ${engine.engine_type} 在线`, exact: true }).click()
   await expect(engineSwitchDialog(page)).toBeVisible()
 }
 

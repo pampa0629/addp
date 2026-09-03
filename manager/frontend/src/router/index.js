@@ -72,12 +72,6 @@ const routes = [
         meta: { requiresAuth: true, title: '栅格快显 - Mosaic-addp' }
       },
       {
-        path: 'spatial-quick-view/cad-preview',
-        name: 'CADPreviewManagement',
-        component: () => import('../views/CADPreviewManagement.vue'),
-        meta: { requiresAuth: true, title: 'CAD 快显-addp' }
-      },
-      {
         path: 'model-3d-glb',
         name: 'Model3DGLB',
         component: () => import('../views/Model3DGLB.vue'),

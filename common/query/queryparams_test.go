@@ -22,6 +22,23 @@ func TestBindSQLUsesDriverPlaceholdersAndIgnoresQuotedText(t *testing.T) {
 	}
 }
 
+func TestSQLPlaceholderStyleForEngine(t *testing.T) {
+	tests := []struct {
+		engineType string
+		want       SQLPlaceholderStyle
+	}{
+		{engineType: "postgresql", want: SQLPlaceholderDollar},
+		{engineType: "PostGIS", want: SQLPlaceholderDollar},
+		{engineType: "oracle", want: SQLPlaceholderColon},
+		{engineType: "mysql", want: SQLPlaceholderQuestion},
+	}
+	for _, tt := range tests {
+		if got := SQLPlaceholderStyleForEngine(tt.engineType); got != tt.want {
+			t.Fatalf("SQLPlaceholderStyleForEngine(%q) = %q, want %q", tt.engineType, got, tt.want)
+		}
+	}
+}
+
 func TestBindSQLUsesOracleColonPlaceholders(t *testing.T) {
 	bound, args, err := BindSQL(
 		`SELECT * FROM members WHERE status = :status AND score > :score`,

@@ -14,8 +14,39 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 117 {
-		t.Fatalf("LatestVersion = %d, want 117", catalog.LatestVersion)
+	if catalog.LatestVersion != 119 {
+		t.Fatalf("LatestVersion = %d, want 119", catalog.LatestVersion)
+	}
+}
+
+func TestSecurityManualAssessmentMigrationCreatesExactPermission(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000119_iam_security_manual_assessment.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 119: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'security.assessment.create'", "'tenant.administrator'", "'tenant.governance_manager'",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 119 missing %q", fragment)
+		}
+	}
+}
+
+func TestSecurityDetectorMigrationCreatesExactCRUDPermissions(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000118_iam_security_detector.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 118: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'security.detector.create'", "'security.detector.delete'", "'security.detector.read'", "'security.detector.update'",
+		"'tenant.administrator'", "'tenant.governance_manager'",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 118 missing %q", fragment)
+		}
 	}
 }
 

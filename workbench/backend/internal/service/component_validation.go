@@ -25,6 +25,7 @@ func validateComponentConfiguration(input models.ComponentConfiguration, descrip
 		return fmt.Errorf("%w: invalid name or description", ErrInvalidComponentConfiguration)
 	}
 	queryFields := make(map[string]models.ConsumerQueryField, len(descriptor.InputContract.Fields))
+	namedParameters := make(map[string]models.ConsumerNamedParameter, len(descriptor.InputContract.NamedParameters))
 	outputFields := make(map[string]models.ConsumerOutputField, len(descriptor.OutputContract.Fields))
 	for _, field := range descriptor.InputContract.Fields {
 		if field.Name == "" {
@@ -32,10 +33,22 @@ func validateComponentConfiguration(input models.ComponentConfiguration, descrip
 		}
 		queryFields[field.Name] = field
 	}
+	for _, parameter := range descriptor.InputContract.NamedParameters {
+		if strings.TrimSpace(parameter.Name) == "" || !selectionScalarFieldType(parameter.Type) {
+			return fmt.Errorf("%w: invalid service named parameter", ErrInvalidComponentConfiguration)
+		}
+		if _, duplicate := namedParameters[parameter.Name]; duplicate || (parameter.Required && parameter.Default != nil) || (!parameter.Required && parameter.Default == nil) {
+			return fmt.Errorf("%w: invalid service named parameter", ErrInvalidComponentConfiguration)
+		}
+		if parameter.Default != nil && validateScalarValue(parameter.Default, parameter.Type) != nil {
+			return fmt.Errorf("%w: invalid service named parameter default", ErrInvalidComponentConfiguration)
+		}
+		namedParameters[parameter.Name] = parameter
+	}
 	for _, field := range descriptor.OutputContract.Fields {
 		outputFields[field.Name] = field
 	}
-	parameterKeys := make(map[string]struct{}, len(input.ParameterDefinitions))
+	parameterKeys := make(map[string]models.ComponentParameterDefinition, len(input.ParameterDefinitions))
 	for _, parameter := range input.ParameterDefinitions {
 		key := strings.TrimSpace(parameter.Key)
 		if key == "" || strings.TrimSpace(parameter.Label) == "" || !allowedControlType(parameter.ControlType) {
@@ -44,7 +57,7 @@ func validateComponentConfiguration(input models.ComponentConfiguration, descrip
 		if _, exists := parameterKeys[key]; exists {
 			return fmt.Errorf("%w: duplicate parameter key", ErrInvalidComponentConfiguration)
 		}
-		parameterKeys[key] = struct{}{}
+		parameterKeys[key] = parameter
 	}
 	for key := range input.DefaultParameterValues {
 		if _, exists := parameterKeys[key]; !exists {
@@ -67,7 +80,7 @@ func validateComponentConfiguration(input models.ComponentConfiguration, descrip
 		}
 		selectedFields[fieldName] = struct{}{}
 	}
-	parameterBindings := make(map[string]models.ComponentParameterFilter, len(input.QueryTemplate.ParameterFilters))
+	parameterBindings := make(map[string]string, len(input.QueryTemplate.ParameterFilters)+len(input.QueryTemplate.NamedParameterBindings))
 	for _, binding := range input.QueryTemplate.ParameterFilters {
 		if _, exists := parameterKeys[binding.ParameterKey]; !exists {
 			return fmt.Errorf("%w: unknown parameter binding", ErrInvalidComponentConfiguration)
@@ -79,14 +92,49 @@ func validateComponentConfiguration(input models.ComponentConfiguration, descrip
 		if !exists || !field.Filterable || !contains(field.Operators, binding.Operator) {
 			return fmt.Errorf("%w: invalid parameter filter", ErrInvalidComponentConfiguration)
 		}
-		parameterBindings[binding.ParameterKey] = binding
+		parameterBindings[binding.ParameterKey] = "filter"
+	}
+	boundNamedParameters := make(map[string]struct{}, len(input.QueryTemplate.NamedParameterBindings))
+	for _, binding := range input.QueryTemplate.NamedParameterBindings {
+		definition, exists := parameterKeys[binding.ParameterKey]
+		if !exists {
+			return fmt.Errorf("%w: unknown named parameter binding", ErrInvalidComponentConfiguration)
+		}
+		serviceParameter, exists := namedParameters[binding.Name]
+		if !exists || !controlSupportsNamedParameter(definition.ControlType, serviceParameter.Type) || (serviceParameter.Required && !definition.Required) {
+			return fmt.Errorf("%w: invalid named parameter binding", ErrInvalidComponentConfiguration)
+		}
+		if _, duplicate := parameterBindings[binding.ParameterKey]; duplicate {
+			return fmt.Errorf("%w: duplicate parameter binding", ErrInvalidComponentConfiguration)
+		}
+		if _, duplicate := boundNamedParameters[binding.Name]; duplicate {
+			return fmt.Errorf("%w: duplicate service named parameter binding", ErrInvalidComponentConfiguration)
+		}
+		parameterBindings[binding.ParameterKey] = "named"
+		boundNamedParameters[binding.Name] = struct{}{}
+	}
+	for name, parameter := range namedParameters {
+		if parameter.Required {
+			if _, bound := boundNamedParameters[name]; !bound {
+				return fmt.Errorf("%w: required service named parameter is not bound", ErrInvalidComponentConfiguration)
+			}
+		}
 	}
 	if len(parameterBindings) != len(parameterKeys) {
 		return fmt.Errorf("%w: every parameter requires one binding", ErrInvalidComponentConfiguration)
 	}
 	for key, raw := range input.DefaultParameterValues {
-		binding := parameterBindings[key]
-		if err := validateRawFilterValue(raw, queryFields[binding.Field], binding.Operator, descriptor.InputContract.Filter.MaxInValues); err != nil {
+		if filter, exists := componentParameterFilterFromTemplate(input.QueryTemplate, key); exists {
+			if err := validateRawFilterValue(raw, queryFields[filter.Field], filter.Operator, descriptor.InputContract.Filter.MaxInValues); err != nil {
+				return fmt.Errorf("%w: invalid default parameter %s: %v", ErrInvalidComponentConfiguration, key, err)
+			}
+			continue
+		}
+		binding, exists := componentNamedParameterBindingFromTemplate(input.QueryTemplate, key)
+		if !exists {
+			return fmt.Errorf("%w: invalid default parameter %s", ErrInvalidComponentConfiguration, key)
+		}
+		if err := validateRawNamedParameterValue(raw, namedParameters[binding.Name].Type); err != nil {
 			return fmt.Errorf("%w: invalid default parameter %s: %v", ErrInvalidComponentConfiguration, key, err)
 		}
 	}
@@ -101,6 +149,43 @@ func validateComponentConfiguration(input models.ComponentConfiguration, descrip
 		}
 	}
 	return validateRenderer(input.RendererType, input.RendererConfig, descriptor, outputFields, selectedFields, input.QueryTemplate.OrderBy)
+}
+
+func controlSupportsNamedParameter(controlType string, fieldType datatype.FieldType) bool {
+	switch fieldType {
+	case datatype.FieldTypeBool:
+		return controlType == "select" || controlType == "checkbox"
+	case datatype.FieldTypeInt, datatype.FieldTypeBigInt, datatype.FieldTypeFloat, datatype.FieldTypeDouble, datatype.FieldTypeDecimal:
+		return controlType == "number"
+	case datatype.FieldTypeDate:
+		return controlType == "date"
+	case datatype.FieldTypeTimestamp:
+		return controlType == "datetime"
+	default:
+		return controlType == "text"
+	}
+}
+
+func componentParameterFilterFromTemplate(template models.ComponentQueryTemplate, key string) (models.ComponentParameterFilter, bool) {
+	for _, filter := range template.ParameterFilters {
+		if filter.ParameterKey == key {
+			return filter, true
+		}
+	}
+	return models.ComponentParameterFilter{}, false
+}
+
+func componentNamedParameterBindingFromTemplate(template models.ComponentQueryTemplate, key string) (models.ComponentNamedParameterBinding, bool) {
+	for _, binding := range template.NamedParameterBindings {
+		if binding.ParameterKey == key {
+			return binding, true
+		}
+	}
+	return models.ComponentNamedParameterBinding{}, false
+}
+
+func validateRawNamedParameterValue(raw json.RawMessage, fieldType datatype.FieldType) error {
+	return validateRawFilterValue(raw, models.ConsumerQueryField{Type: fieldType}, "eq", 1)
 }
 
 func validConsumerOperation(descriptor *models.ConsumerDescriptor) bool {

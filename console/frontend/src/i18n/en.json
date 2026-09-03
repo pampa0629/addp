@@ -269,7 +269,7 @@
       },
       "security": {
         "label": "Data Security & Privacy",
-        "desc": "Sensitive data types, classifications, grades, and protection baselines"
+        "desc": "Classification and grading, sensitive data definitions, default protection rules, and protected resources"
       },
       "develop": {
         "label": "Data Development",
@@ -383,11 +383,10 @@
       },
       "security": {
         "label": "Data Security",
-        "sensitiveDataTypes": "Sensitive Data Types",
-        "classifications": "Security Classifications",
-        "grades": "Security Grades",
-        "protectionBaselines": "Protection Baselines",
-        "protectionEnrollments": "Protection Enrollments"
+        "classificationGrading": "Classification & Grading",
+        "sensitiveDataDefinitions": "Sensitive Data Definitions",
+        "defaultProtectionRules": "Default Protection Rules",
+        "protectedResources": "Protected Resources"
       },
       "develop": {
         "label": "Data Development",

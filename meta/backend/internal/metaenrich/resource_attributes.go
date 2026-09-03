@@ -21,7 +21,6 @@ type ResourceAttributesInput struct {
 	SizeBytes            int64
 	IncludeAccessIndex   bool
 	EngineCatalogPathFor func(string) plugin.EngineCatalogPath
-	CADInspector         CADInspector
 	FormatDetector       RuntimeFormatDetector
 	ContainerInspector   ContainerInspector
 	SourceEngine         *commonModels.Engine
@@ -65,8 +64,10 @@ func EnrichResourceAttributes(ctx context.Context, attrs models.JSONMap, input R
 	if len(item.Fields) > 0 {
 		metaattr.SetTableFields(attrs, item.Fields)
 	}
-	if err := EnrichSingleCADItem(ctx, attrs, input.CADInspector, input.SourceEngine, input.TenantID, item, input.PhysicalPath, input.SizeBytes); err != nil {
-		return item, item.Fields, err
+	if canReadContent {
+		if err := EnrichSingleCADItem(ctx, attrs, input.ContentReader, input.ConnInfo, input.EngineID, item, input.PhysicalPath, input.SizeBytes, input.EngineCatalogPathFor); err != nil {
+			return item, item.Fields, err
+		}
 	}
 
 	if canReadContent && (item.Layout == format.LayoutSingle || item.Layout == format.LayoutMulti) {

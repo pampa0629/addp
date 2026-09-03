@@ -11,6 +11,7 @@ import (
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/security/internal/models"
+	"github.com/addp/security/internal/repository"
 	"gorm.io/gorm"
 )
 
@@ -31,7 +32,7 @@ func TestEnrollmentRequiresEveryOwnerAcknowledgementBeforeEnrolling(t *testing.T
 		t.Fatalf("target snapshot = %#v", created.TargetSnapshot)
 	}
 	for _, progress := range created.OwnerProgress {
-		if progress.ProjectionState != dataprotection.ProjectionStateEnrolling || len(progress.Effects) != 1 || progress.Effects[0] != dataprotection.EffectDeny {
+		if progress.ProjectionState != dataprotection.ProjectionStateEnrolling || len(progress.Rules) != 0 {
 			t.Fatalf("initial owner progress = %#v", progress)
 		}
 	}
@@ -61,9 +62,40 @@ func TestEnrollmentRequiresEveryOwnerAcknowledgementBeforeEnrolling(t *testing.T
 	}
 }
 
+func TestProjectionRuleSummariesExposeInstalledActionEffects(t *testing.T) {
+	record := models.ProtectionProjectionRecord{
+		ID:    "projection-1",
+		State: dataprotection.ProjectionStateActive,
+		ProjectionPayload: `{
+			"rules": [
+				{"action":"preview","decision":{"effect":"mask"}},
+				{"action":"profile","decision":{"effect":"suppress"}},
+				{"action":"preview","decision":{"effect":"mask"}}
+			]
+		}`,
+	}
+
+	rules, err := projectionRuleSummaries(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []models.ProtectionOwnerRuleSummary{
+		{Action: "preview", Effect: dataprotection.EffectMask},
+		{Action: "profile", Effect: dataprotection.EffectSuppress},
+	}
+	if len(rules) != len(want) {
+		t.Fatalf("rule summaries = %#v, want %#v", rules, want)
+	}
+	for index := range want {
+		if rules[index] != want[index] {
+			t.Fatalf("rule summaries = %#v, want %#v", rules, want)
+		}
+	}
+}
+
 func TestExplicitRediscoveryIsUniqueAndRenewsLatestSchemaProjection(t *testing.T) {
 	db, enrollments, finding, _, _ := prepareReviewablePhoneFinding(t)
-	assessments := NewAssessmentService(db)
+	assessments := NewAssessmentService(db, nil)
 	if _, err := assessments.ReviewFinding(context.Background(), 7, 21, finding.ID, models.FindingReviewRequest{Decision: models.FindingReviewDecisionConfirm, Rationale: "确认手机号字段"}); err != nil {
 		t.Fatal(err)
 	}
@@ -168,6 +200,50 @@ func TestEnrollmentReleaseWaitsForEveryOwnerAndRemovesFeedProjection(t *testing.
 	}
 }
 
+func TestReleasedEnrollmentCanCreateANewProtectionLifecycle(t *testing.T) {
+	db := openSecurityTestDB(t)
+	svc := NewEnrollmentService(db)
+	created, err := svc.Create(context.Background(), 7, 11, testDataItemEnrollmentRequest(11, resourcetree.TypeCollection, "Outdoor.Persons"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	releasedAt := time.Date(2026, 9, 3, 10, 0, 0, 0, time.UTC)
+	if err := db.Model(&models.ProtectionEnrollment{}).Where("tenant_id = ? AND id = ?", 7, created.ID).Updates(map[string]any{
+		"state": models.EnrollmentStateReleased, "release_basis": models.ReleaseBasisManual,
+		"release_reason": "test release", "released_at": releasedAt,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	source, err := svc.Get(context.Background(), 7, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.ReEnroll(context.Background(), 7, 21, source.ID, models.ReEnrollProtectionEnrollmentRequest{Version: source.Version + 1}); !errors.Is(err, repository.ErrVersionConflict) {
+		t.Fatalf("stale re-enrollment error = %v", err)
+	}
+
+	reenrolled, err := svc.ReEnroll(context.Background(), 7, 21, source.ID, models.ReEnrollProtectionEnrollmentRequest{Version: source.Version})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reenrolled.ID == source.ID || reenrolled.State != models.EnrollmentStateActivating || reenrolled.CreatedBy != 21 || len(reenrolled.OwnerProgress) != len(requiredProtectionOwners) {
+		t.Fatalf("new enrollment = %#v", reenrolled)
+	}
+	if reenrolled.Target != source.Target || reenrolled.TargetSnapshot != source.TargetSnapshot {
+		t.Fatalf("re-enrolled target changed: source=%#v new=%#v", source, reenrolled)
+	}
+	unchanged, err := svc.Get(context.Background(), 7, source.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unchanged.State != models.EnrollmentStateReleased || unchanged.ReleaseReason != "test release" || unchanged.ReleasedAt == nil || !unchanged.ReleasedAt.Equal(releasedAt) {
+		t.Fatalf("released audit changed = %#v", unchanged)
+	}
+	if _, err := svc.ReEnroll(context.Background(), 7, 21, source.ID, models.ReEnrollProtectionEnrollmentRequest{Version: source.Version}); !errors.Is(err, commonapi.ErrConflict) {
+		t.Fatalf("duplicate live re-enrollment error = %v", err)
+	}
+}
+
 func TestZeroFindingDiscoverySummaryAndAuditedRelease(t *testing.T) {
 	db, svc, current := prepareZeroFindingEnrollment(t)
 	if current.DiscoverySummary.Status != models.DiscoverySummaryStatusCompleted || current.DiscoverySummary.FindingCount != 0 {
@@ -215,7 +291,22 @@ func TestEnrollmentListSeparatesCurrentAndReleasedHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Model(&models.ProtectionEnrollment{}).Where("tenant_id = ? AND id = ?", 7, released.ID).Update("state", models.EnrollmentStateReleased).Error; err != nil {
+	earlierCreatedLaterReleased, err := svc.Create(context.Background(), 7, 11, testDataItemEnrollmentRequest(3, resourcetree.TypeTable, "outdoor.ods_outdoor_activities"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	createdLater := time.Date(2026, 9, 2, 10, 0, 0, 0, time.UTC)
+	createdEarlier := createdLater.Add(-time.Hour)
+	releasedEarlier := createdLater.Add(time.Hour)
+	releasedLater := releasedEarlier.Add(time.Hour)
+	if err := db.Model(&models.ProtectionEnrollment{}).Where("tenant_id = ? AND id = ?", 7, released.ID).Updates(map[string]any{
+		"state": models.EnrollmentStateReleased, "created_at": createdLater, "released_at": releasedEarlier,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&models.ProtectionEnrollment{}).Where("tenant_id = ? AND id = ?", 7, earlierCreatedLaterReleased.ID).Updates(map[string]any{
+		"state": models.EnrollmentStateReleased, "created_at": createdEarlier, "released_at": releasedLater,
+	}).Error; err != nil {
 		t.Fatal(err)
 	}
 
@@ -231,7 +322,7 @@ func TestEnrollmentListSeparatesCurrentAndReleasedHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if releasedList.Total != 1 || len(releasedList.Data) != 1 || releasedList.Data[0].ID != released.ID {
+	if releasedList.Total != 2 || len(releasedList.Data) != 2 || releasedList.Data[0].ID != earlierCreatedLaterReleased.ID || releasedList.Data[1].ID != released.ID {
 		t.Fatalf("released list = %#v", releasedList)
 	}
 
@@ -239,7 +330,7 @@ func TestEnrollmentListSeparatesCurrentAndReleasedHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if allList.Total != 2 || len(allList.Data) != 2 {
+	if allList.Total != 3 || len(allList.Data) != 3 {
 		t.Fatalf("all list = %#v", allList)
 	}
 

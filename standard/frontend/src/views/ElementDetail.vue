@@ -50,8 +50,15 @@
                 </el-form-item>
               </el-col>
               <el-col :xs="24" :sm="12">
-                <el-form-item :label="$t('standard.glossary.domainLabel')">
-                  <el-select v-model="element.domain_id" clearable class="field-control">
+                <el-form-item :label="$t('standard.common.scopeLabel')">
+                  <el-select v-model="element.scope_type" class="field-control">
+                    <el-option v-for="scope in scopeOptions" :key="scope" :label="scopeLabel(scope)" :value="scope" :disabled="scope === 'platform'" />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+              <el-col v-if="requiresOwnerDomain(element.scope_type)" :xs="24" :sm="12">
+                <el-form-item :label="$t('standard.common.ownerDomainLabel')" required>
+                  <el-select v-model="element.owner_domain_id" class="field-control">
                     <el-option v-for="domain in domains" :key="domain.id" :label="domain.name" :value="domain.id" />
                   </el-select>
                 </el-form-item>
@@ -300,6 +307,7 @@ import {
   supportsFormat,
   supportsLength
 } from '../utils/standardRevisionForm'
+import { EDITABLE_STANDARD_SCOPES, buildStandardOwnership, requiresOwnerDomain, standardScopeLabelKey } from '../utils/standardScope'
 
 const route = useRoute()
 const router = useRouter()
@@ -320,7 +328,8 @@ const uniqueEnabled = ref(false)
 const uniqueRuleKey = ref('')
 
 const dateTimeValueFormat = 'YYYY-MM-DDTHH:mm:ssZ'
-const identityEditable = computed(() => canUpdate.value && Boolean(element.value.id) && element.value.lifecycle_state !== 'deleting')
+const scopeOptions = ['platform', ...EDITABLE_STANDARD_SCOPES]
+const identityEditable = computed(() => canUpdate.value && Boolean(element.value.id) && element.value.scope_type !== 'platform' && element.value.lifecycle_state !== 'deleting')
 const editable = computed(() => canUpdate.value && revision.status === 'draft' && element.value.draft_revision_id === revision.id)
 const reviewing = computed(() => revision.status === 'in_review' && element.value.draft_revision_id === revision.id)
 const compatibleCodeSets = computed(() => publishedCodeSets.value.filter(codeSet => (
@@ -341,6 +350,7 @@ const statusType = status => ({
   published: 'success',
   withdrawn: 'danger'
 }[status] || 'info')
+const scopeLabel = scope => scope ? t(standardScopeLabelKey(scope)) : '-'
 const formatTime = value => formatStandardDateTime(value, locale.value)
 
 function setRevision(value) {
@@ -397,12 +407,16 @@ async function loadCodeSetOptions() {
 }
 
 async function saveIdentity() {
+  if (requiresOwnerDomain(element.value.scope_type) && !element.value.owner_domain_id) {
+    ElMessage.error(t('standard.common.ownerDomainRequired'))
+    return
+  }
   savingIdentity.value = true
   announcement.value = t('standard.common.saving')
   try {
     element.value = await elementAPI.update(element.value.id, {
       version: element.value.version,
-      domain_id: element.value.domain_id ?? null,
+      ...buildStandardOwnership(element.value.scope_type, element.value.owner_domain_id),
       steward_id: element.value.steward_id ?? null,
       tags: element.value.tags || []
     })
@@ -416,6 +430,10 @@ async function saveIdentity() {
     savingIdentity.value = false
   }
 }
+
+watch(() => element.value.scope_type, scope => {
+  if (!requiresOwnerDomain(scope)) element.value.owner_domain_id = null
+})
 
 async function saveRevision() {
   savingRevision.value = true

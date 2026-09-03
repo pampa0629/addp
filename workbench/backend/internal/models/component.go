@@ -35,18 +35,24 @@ type ComponentParameterDefinition struct {
 }
 
 type ComponentQueryTemplate struct {
-	Select           []string                   `json:"select"`
-	FixedFilter      *QueryFilter               `json:"fixed_filter"`
-	ParameterFilters []ComponentParameterFilter `json:"parameter_filters"`
-	OrderBy          []QueryOrder               `json:"order_by"`
-	PageLimit        int                        `json:"page_limit"`
-	Format           string                     `json:"format"`
+	Select                 []string                         `json:"select"`
+	FixedFilter            *QueryFilter                     `json:"fixed_filter"`
+	ParameterFilters       []ComponentParameterFilter       `json:"parameter_filters"`
+	NamedParameterBindings []ComponentNamedParameterBinding `json:"named_parameter_bindings"`
+	OrderBy                []QueryOrder                     `json:"order_by"`
+	PageLimit              int                              `json:"page_limit"`
+	Format                 string                           `json:"format"`
 }
 
 type ComponentParameterFilter struct {
 	ParameterKey string `json:"parameter_key"`
 	Field        string `json:"field"`
 	Operator     string `json:"operator"`
+}
+
+type ComponentNamedParameterBinding struct {
+	ParameterKey string `json:"parameter_key"`
+	Name         string `json:"name"`
 }
 
 type QueryOrder struct {

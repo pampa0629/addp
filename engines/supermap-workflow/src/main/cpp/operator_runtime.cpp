@@ -1,5 +1,4 @@
 #include "operator_runtime.hpp"
-#include "cad_runtime.hpp"
 #include "resource_host.hpp"
 #include "runtime_access.hpp"
 #include "s3m_runtime.hpp"
@@ -295,8 +294,6 @@ std::string asset_ref_for(const Json& task) {
 
 OperatorRuntime::OperatorRuntime(addp::workflow::OperatorCatalog catalog)
     : catalog_(std::move(catalog)) {
-  direct_handlers_.emplace("cad.inspect", inspect_cad);
-  direct_handlers_.emplace("cad.render_preview", render_cad_preview);
   direct_handlers_.emplace("datasource.upgrade_udbx", upgrade_udbx);
   direct_handlers_.emplace(
       "datasource.enable_postgis",

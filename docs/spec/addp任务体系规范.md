@@ -257,13 +257,11 @@ Common 不维护全量业务 `task_type` 编译期枚举。稳定 execution type
 | Meta | `scan` | `meta.scan_tasks` |
 | Transfer | `sync` | `transfer.transfer_tasks` |
 | Develop | `query` / `workflow` / `script` | `develop.dev_tasks` |
-| Manager | `vector_tile_cache_generation` / `vector_tile_set_generation` / `vector_materialized_view_generation` / `embedding` / `raster_cog_generation` / `raster_mosaic_generation` / `model_3d_glb_generation` / `model3d_tiles_generation` / `gaussian_splat_ksplat_generation` / `point_cloud_copc_generation` / `cad_preview_generation` | `manager.vector_tile_cache_tasks` / `manager.vector_tile_set_tasks` / `manager.vector_materialized_view_tasks` / `manager.embedding_tasks` / `manager.raster_cog_tasks` / `manager.raster_mosaic_tasks` / `manager.model_3d_glb_tasks` / `manager.model3d_tiles_tasks` / `manager.gaussian_splat_ksplat_tasks` / `manager.point_cloud_copc_tasks` / `manager.cad_preview_tasks` |
+| Manager | `vector_tile_cache_generation` / `vector_tile_set_generation` / `vector_materialized_view_generation` / `embedding` / `raster_cog_generation` / `raster_mosaic_generation` / `model_3d_glb_generation` / `model3d_tiles_generation` / `gaussian_splat_ksplat_generation` / `point_cloud_copc_generation` | `manager.vector_tile_cache_tasks` / `manager.vector_tile_set_tasks` / `manager.vector_materialized_view_tasks` / `manager.embedding_tasks` / `manager.raster_cog_tasks` / `manager.raster_mosaic_tasks` / `manager.model_3d_glb_tasks` / `manager.model3d_tiles_tasks` / `manager.gaussian_splat_ksplat_tasks` / `manager.point_cloud_copc_tasks` |
 | Quality | `check` / `materialization_gate` | `quality.check_tasks` / `quality.materialization_gate_tasks` |
 | Model | `materialization_prepare` / `materialization_seal` / `materialization_publish` / `materialization_group_publish` | 已审批 `model.logical_tables` / `model.materialization_groups` |
 | Graph | `kg_build` | `graph.build_tasks` |
 | Orchestrator | `orchestration` | `orchestrator.orchestrations` |
-
-Manager 的 `cad_preview_generation` 只接受 `data_type=cad + format=dwg|dxf + layout=single` 源 item；结果登记到 `manager.cad_previews`，manifest、thumbnail 和 WebP 瓦片存放于 Manager infra MinIO，不自动升格为业务 data item。
 
 Manager 表格数据剖析首期使用 `task_type=data_profiling` 的 ad-hoc execution，结果归 Manager 私有结果表，`source_task_id` 为空。首期不存在 `manager.data_profile_tasks`，因此 `data_profiling` 不加入上表的 TaskProvider 任务类型，不进入 Orchestrator 任务选择。未来只有在用户可以显式保存可重复剖析配置后，才能先更新数据剖析规范和本规范，再新增持久任务定义并声明 TaskProvider capability。`sample` / `full` 是 execution config 中的剖析模式，不得拆成两个 task type。
 
@@ -585,9 +583,9 @@ Infra Kafka/Kafka Connect 部署基线（工作包 3A 已冻结，3B 实现）�
 
 Manager 的快显和业务派生任务细节由 Manager 专题确认。本文只要求 Manager 用同一个 provider 声明多个任务类型，并按 `module + task_type + source_task_id` 关联执行记录。快显缓存生成任务类型为 `vector_tile_cache_generation`，任务定义表为 `manager.vector_tile_cache_tasks`，结果表为 `manager.vector_tile_cache`，结果是 Manager infra PMTiles artifact；业务矢量瓦片集生成任务类型为 `vector_tile_set_generation`，任务定义表为 `manager.vector_tile_set_tasks`，结果是 Business 存储中 `data_type=media + format=pmtiles + layout=single` 的 Meta item，不设 Manager 结果表。两者按源能力选择唯一生成路径：PostgreSQL/PostGIS 表由 Manager 原生 `ST_AsMVT` 生成，MySQL、Oracle 等标准 EWKB 可读数据库表由 Manager 物化临时 FlatGeobuf 后调用 GeoPython Workflow `vector_to_pmtiles`，NFS、MinIO/S3 文件或对象由受控访问计划调用同一 operator；MVT 是 PMTiles 内部 tile encoding，不是任务类型。矢量物化视图、栅格、三维、点云与 embedding 的既有任务边界保持不变。
 
-Manager 已有结果动作统一适用于 `vector_tile_cache_generation`、`vector_materialized_view_generation`、`raster_cog_generation`、`model_3d_glb_generation`、`model3d_tiles_generation`、`gaussian_splat_ksplat_generation`、`point_cloud_copc_generation` 和 `cad_preview_generation`。这些任务的标准执行参数只允许 `existing_result_action:string`，当前枚举只有 `overwrite`；结果表中存在与任务语义身份对应的未删除结果时，服务端必须要求 `parameters.existing_result_action=overwrite` 才能刷新。该动作只作用于本次 execution，不改写 owner 任务定义。
+Manager 已有结果动作统一适用于 `vector_tile_cache_generation`、`vector_materialized_view_generation`、`raster_cog_generation`、`model_3d_glb_generation`、`model3d_tiles_generation`、`gaussian_splat_ksplat_generation` 和 `point_cloud_copc_generation`。这些任务的标准执行参数只允许 `existing_result_action:string`，当前枚举只有 `overwrite`；结果表中存在与任务语义身份对应的未删除结果时，服务端必须要求 `parameters.existing_result_action=overwrite` 才能刷新。该动作只作用于本次 execution，不改写 owner 任务定义。
 
-上述八类 Manager 受管当前结果任务当前统一声明 `supports_schedule=false`，Manager 不为它们启动 owner scheduler；这不限制 Orchestrator 定时 Pipeline 调用。需要周期性刷新时，由用户在 Orchestrator Step 参数中显式配置 `existing_result_action=overwrite`，Orchestrator 每次调用原样提交。`embedding` 的独立逐 item 调度语义不在此限制内。
+上述七类 Manager 受管当前结果任务当前统一声明 `supports_schedule=false`，Manager 不为它们启动 owner scheduler；这不限制 Orchestrator 定时 Pipeline 调用。需要周期性刷新时，由用户在 Orchestrator Step 参数中显式配置 `existing_result_action=overwrite`，Orchestrator 每次调用原样提交。`embedding` 的独立逐 item 调度语义不在此限制内。
 
 `raster_mosaic_generation` 与 `vector_tile_set_generation` 的结果是用户业务存储中的派生 data item，Manager 不拥有其生命周期，因此不使用当前结果覆盖确认；重跑按任务配置和目标数据集自身的幂等/恢复规则执行。`embedding` 的批量结果更新具有逐 item 跳过、过期重建等独立语义，也不使用本确认参数。这三者的具体任务详情必须返回空的闭合 `execution_contract.input_schema`，执行入口必须拒绝非空 `parameters`。
 

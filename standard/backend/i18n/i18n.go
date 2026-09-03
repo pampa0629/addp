@@ -29,6 +29,7 @@ const (
 	MsgResourceConflict               = "standard.common.resource_conflict"
 	MsgVersionConflict                = "standard.common.version_conflict"
 	MsgInvalidResourceReference       = "standard.common.invalid_resource_reference"
+	MsgInvalidStandardScope           = "standard.scope.invalid"
 	MsgInvalidStandardRevision        = "standard.revision.invalid"
 	MsgInvalidRevisionTransition      = "standard.revision.invalid_transition"
 	MsgEffectiveIntervalConflict      = "standard.revision.effective_interval_conflict"

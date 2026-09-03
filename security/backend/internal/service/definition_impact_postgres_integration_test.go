@@ -3,10 +3,12 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"testing"
 	"time"
 
+	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/dataprotection"
 	commonmodels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
@@ -16,6 +18,58 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
+
+func TestEnrollmentLifecycleAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("SECURITY_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("SECURITY_POSTGRES_TEST_DSN is not set")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx := db.Begin()
+	if tx.Error != nil {
+		t.Fatal(tx.Error)
+	}
+	defer tx.Rollback()
+	if err := tx.Exec("DROP SCHEMA IF EXISTS security CASCADE").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.Migrate(tx); err != nil {
+		t.Fatal(err)
+	}
+
+	service := NewEnrollmentService(tx)
+	created, err := service.Create(context.Background(), 7, 11, testDataItemEnrollmentRequest(2, resourcetree.TypeTable, "business.customers"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Model(&models.ProtectionEnrollment{}).Where("tenant_id = ? AND id = ?", 7, created.ID).Updates(map[string]any{
+		"state": models.EnrollmentStateReleased, "release_basis": models.ReleaseBasisManual,
+		"release_reason": "postgres lifecycle test", "released_at": time.Now().UTC(),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	source, err := service.Get(context.Background(), 7, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reenrolled, err := service.ReEnroll(context.Background(), 7, 21, source.ID, models.ReEnrollProtectionEnrollmentRequest{Version: source.Version})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reenrolled.ID == source.ID || reenrolled.State != models.EnrollmentStateActivating || reenrolled.Target != source.Target {
+		t.Fatalf("postgres re-enrollment = %#v", reenrolled)
+	}
+	if _, err := service.ReEnroll(context.Background(), 7, 21, source.ID, models.ReEnrollProtectionEnrollmentRequest{Version: source.Version}); !errors.Is(err, commonapi.ErrConflict) {
+		t.Fatalf("postgres duplicate active lifecycle error = %v", err)
+	}
+	unchanged, err := service.Get(context.Background(), 7, source.ID)
+	if err != nil || unchanged.State != models.EnrollmentStateReleased || unchanged.ReleaseReason != "postgres lifecycle test" {
+		t.Fatalf("postgres released audit = %#v, err=%v", unchanged, err)
+	}
+}
 
 func TestDefinitionImpactAgainstPostgres(t *testing.T) {
 	dsn := os.Getenv("SECURITY_POSTGRES_TEST_DSN")
@@ -49,14 +103,14 @@ func TestDefinitionImpactAgainstPostgres(t *testing.T) {
 	}
 	phoneType, err := definitions.CreateType(models.SensitiveDataTypeRequest{
 		Code: "phone", Name: "手机号", SecurityClassificationID: classification.ID,
-		DefaultSecurityGradeID: grade.ID, ProtectionThreshold: 0.9,
+		DefaultSecurityGradeID: grade.ID,
 	}, 7, 11)
 	if err != nil {
 		t.Fatal(err)
 	}
 	otherType, err := definitions.CreateType(models.SensitiveDataTypeRequest{
 		Code: "other", Name: "其他", SecurityClassificationID: classification.ID,
-		DefaultSecurityGradeID: grade.ID, ProtectionThreshold: 0.9,
+		DefaultSecurityGradeID: grade.ID,
 	}, 7, 11)
 	if err != nil {
 		t.Fatal(err)
@@ -69,9 +123,23 @@ func TestDefinitionImpactAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := definitions.CreateDetector(models.DetectorRequest{CapabilityKey: models.FindingDetectorPhoneMetadataV2, SensitiveDataTypeID: phoneType.ID, ConfidenceThreshold: 0.9}, 7, 11); err != nil {
+		t.Fatal(err)
+	}
 
 	phoneEnrollment := createPostgresImpactEnrollment(t, tx, phoneType.ID, "phone", "sha256:phone")
 	otherEnrollment := createPostgresImpactEnrollment(t, tx, otherType.ID, "other", "sha256:other")
+	queueTypeID := phoneType.ID
+	queue, err := NewDiscoveryService(tx, nil).ListFindings(context.Background(), 7, FindingListFilter{
+		SnapshotScope: models.FindingSnapshotScopeCurrent, ReviewState: models.FindingReviewStatePending,
+		SensitiveDataTypeID: &queueTypeID, DetectorVersion: models.FindingDetectorPhoneMetadataV2,
+	}, 1, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if queue.Total != 1 || queue.Data[0].EnrollmentID != phoneEnrollment.ID || queue.Data[0].Review != nil || queue.Data[0].TargetSnapshot.FullName != "public.phone" {
+		t.Fatalf("postgres current pending queue = %#v", queue)
+	}
 	enabled := true
 	updated, err := definitions.UpdateBaseline(baseline.ID, 7, 12, models.ProtectionBaselineRequest{
 		SensitiveDataTypeID: phoneType.ID, SecurityGradeID: grade.ID,
@@ -113,21 +181,22 @@ func createPostgresImpactEnrollment(t *testing.T, db *gorm.DB, dataTypeID int64,
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
+	discoveryExecutionID := uuid.NewString()
 	component := dataprotection.Component{
 		Key: "userInfo.phone", Path: []dataprotection.PathSegment{{Name: "userInfo", Container: "object"}, {Name: "phone", Container: "scalar"}},
 		ValueType: "string", SchemaFingerprint: "sha256:schema-" + identity,
 	}
 	finding := models.SensitiveFinding{
-		ID: uuid.NewString(), TenantID: 7, EnrollmentID: created.ID, ComponentKey: component.Key,
-		SensitiveDataTypeID: dataTypeID, DetectorCode: models.FindingDetectorPhoneMetadataV1,
-		DetectorVersion: "v1", Confidence: 0.99, Evidence: commonmodels.JSONMap{"signal": "field_name"},
+		ID: uuid.NewString(), TenantID: 7, EnrollmentID: created.ID, DiscoveryExecutionID: discoveryExecutionID, ComponentKey: component.Key,
+		SensitiveDataTypeID: dataTypeID, DetectorCode: models.FindingDetectorPhoneMetadataV2,
+		DetectorVersion: models.FindingDetectorPhoneMetadataV2, Confidence: 0.99, Evidence: commonmodels.JSONMap{"signal": "field_name"},
 		Component: component, SourceSnapshotHash: snapshotHash, ObservedAt: now, CreatedAt: now,
 	}
 	if err := db.Create(&finding).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Model(&models.ProtectionEnrollment{}).Where("tenant_id = ? AND id = ?", 7, created.ID).Updates(map[string]interface{}{
-		"state": models.EnrollmentStateActive, "latest_source_snapshot_hash": snapshotHash, "last_discovered_at": now,
+		"state": models.EnrollmentStateActive, "latest_source_snapshot_hash": snapshotHash, "latest_discovery_execution_id": discoveryExecutionID, "last_discovered_at": now,
 	}).Error; err != nil {
 		t.Fatal(err)
 	}

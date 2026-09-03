@@ -75,7 +75,8 @@ func setupStandardCleanupTestDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE standard.elements (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			tenant_id INTEGER NOT NULL,
-			domain_id INTEGER,
+			scope_type TEXT NOT NULL,
+			owner_domain_id INTEGER,
 			code TEXT NOT NULL,
 			steward_id INTEGER,
 			tags TEXT,
@@ -100,7 +101,8 @@ func setupStandardCleanupTestDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE standard.code_sets (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			tenant_id INTEGER NOT NULL,
-			domain_id INTEGER,
+			scope_type TEXT NOT NULL,
+			owner_domain_id INTEGER,
 			code TEXT NOT NULL,
 			origin TEXT NOT NULL,
 			steward_id INTEGER,
@@ -449,7 +451,7 @@ func seedStandardCleanupTenantState(t *testing.T, db *gorm.DB, tenantID int64, w
 	if err := db.Create(&deprecatedGlossary).Error; err != nil {
 		t.Fatalf("create deprecated glossary: %v", err)
 	}
-	codeSet := models.CodeSet{TenantID: tenantID, DomainID: &domain.ID, Code: "codeset_" + suffix, Origin: models.CodeSetOriginTenant, CreatedBy: 1, LifecycleState: "active"}
+	codeSet := models.CodeSet{TenantID: tenantID, ScopeType: models.StandardScopeDomain, OwnerDomainID: &domain.ID, Code: "codeset_" + suffix, Origin: models.CodeSetOriginTenant, CreatedBy: 1, LifecycleState: "active"}
 	if err := db.Create(&codeSet).Error; err != nil {
 		t.Fatalf("create code set: %v", err)
 	}
@@ -470,7 +472,7 @@ func seedStandardCleanupTenantState(t *testing.T, db *gorm.DB, tenantID int64, w
 		t.Fatalf("create unit: %v", err)
 	}
 	element := models.Element{
-		TenantID: tenantID, DomainID: &domain.ID, Code: "amount_" + suffix,
+		TenantID: tenantID, ScopeType: models.StandardScopeDomain, OwnerDomainID: &domain.ID, Code: "amount_" + suffix,
 		CreatedBy: 1, LifecycleState: "active",
 	}
 	if err := db.Create(&element).Error; err != nil {

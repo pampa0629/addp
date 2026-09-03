@@ -108,17 +108,21 @@
             <div class="section-header">
               <strong>{{ t('workbench.parameters') }}</strong>
               <div class="parameter-actions">
-                <span v-if="parameterizableFields.length === 0">{{ t('workbench.noFilterableFields') }}</span>
+                <span v-if="parameterizableFields.length === 0 && draft.parameters.length === 0">{{ t('workbench.noParameters') }}</span>
                 <el-button link type="primary" :disabled="parameterizableFields.length === 0" @click="addParameter">{{ t('workbench.addParameter') }}</el-button>
               </div>
             </div>
             <div v-for="(parameter, index) in draft.parameters" :key="index" class="parameter">
               <el-input v-model="parameter.key" :placeholder="t('workbench.parameterKey')" />
               <el-input v-model="parameter.label" :placeholder="t('workbench.parameterLabel')" />
-              <el-select v-model="parameter.field" @change="syncParameter(parameter)">
+              <el-input v-if="parameter.bindingKind === 'named'" :model-value="parameter.name" disabled />
+              <el-select v-else v-model="parameter.field" @change="syncParameter(parameter)">
                 <el-option v-for="field in parameterizableFields" :key="field.name" :label="field.comment || field.name" :value="field.name" />
               </el-select>
-              <el-select v-model="parameter.operator" @change="syncParameterControl(parameter)">
+              <el-tag v-if="parameter.bindingKind === 'named'" type="warning">
+                {{ parameter.required ? t('workbench.requiredServiceParameter') : t('workbench.optionalServiceParameter') }}
+              </el-tag>
+              <el-select v-else v-model="parameter.operator" @change="syncParameterControl(parameter)">
                 <el-option v-for="operator in operatorsFor(parameter.field)" :key="operator" :label="operator" :value="operator" />
               </el-select>
               <el-input-number v-if="parameter.controlType === 'number'" v-model="parameter.value" :controls="false" @change="resetResult" />
@@ -133,7 +137,7 @@
               </div>
               <el-date-picker v-else-if="parameter.controlType === 'date' || parameter.controlType === 'datetime'" v-model="parameter.value" :type="parameter.controlType === 'datetime' ? 'datetime' : 'date'" :value-format="parameter.controlType === 'datetime' ? 'YYYY-MM-DDTHH:mm:ssZ' : 'YYYY-MM-DD'" @change="resetResult" />
               <el-input v-else v-model="parameter.value" :placeholder="t('workbench.defaultValue')" @change="resetResult" />
-              <el-button link type="danger" @click="removeParameter(index)">{{ t('workbench.delete') }}</el-button>
+              <el-button link type="danger" :disabled="parameter.bindingKind === 'named'" @click="removeParameter(index)">{{ t('workbench.delete') }}</el-button>
             </div>
           </template>
         </el-form>
@@ -166,7 +170,7 @@ import { computed, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { executeDescriptorOperation, getConsumerDescriptor, listConsumerServices } from '../api/services'
-import { buildComponentConfiguration, buildQueryRequest, controlTypeFor, createParameterDraft, draftFromComponent, emptyControlValue, hasParameterValue } from '../utils/componentDraft.mjs'
+import { buildComponentConfiguration, buildQueryRequest, controlTypeFor, createNamedParameterDraft, createParameterDraft, draftFromComponent, emptyControlValue, hasParameterValue } from '../utils/componentDraft.mjs'
 import { boundedExportHasMore, descriptorSupportsExport, downloadBoundedExport, exportFormatForRenderer } from '../utils/boundedExport.mjs'
 import WorkbenchRendererHost from './WorkbenchRendererHost.vue'
 
@@ -221,7 +225,15 @@ const rendererConfig = computed(() => draft.rendererType === 'chart'
 const contractChanged = computed(() => Boolean(props.component?.contract_fingerprint && descriptor.value && props.component.contract_fingerprint !== descriptor.value.contract_fingerprint))
 const validDraft = computed(() => {
   if (!descriptor.value || !draft.name.trim() || draft.columns.length === 0) return false
-  if (draft.parameters.some((parameter) => !parameter.key.trim() || !parameter.label.trim() || (parameter.required && !hasParameterValue(parameter)))) return false
+  const parameterKeys = new Set()
+  const descriptorNamedParameters = new Map((descriptor.value.input_contract.named_parameters || []).map((parameter) => [parameter.name, parameter]))
+  if (draft.parameters.some((parameter) => {
+	if (!parameter.key.trim() || !parameter.label.trim() || parameterKeys.has(parameter.key) || (parameter.required && !hasParameterValue(parameter))) return true
+	parameterKeys.add(parameter.key)
+	if (parameter.bindingKind !== 'named') return false
+	const serviceParameter = descriptorNamedParameters.get(parameter.name)
+	return !serviceParameter || serviceParameter.type !== parameter.fieldType || serviceParameter.required !== parameter.required
+  })) return false
   if (draft.rendererType === 'value') {
     const fields = draft.valueItems.map((item) => item.field)
     return draft.pageLimit === 1 && fields.length > 0 && fields.length <= 4 && new Set(fields).size === fields.length && draft.valueItems.every((item) => item.field && String(item.label || '').trim() && Number.isInteger(item.precision) && item.precision >= 0 && item.precision <= 8)
@@ -274,7 +286,17 @@ async function selectService() {
   try {
     const { data } = await getConsumerDescriptor(summary.ref)
     descriptor.value = data
-    assignDraft({ ...emptyDraft(), name: data.title, description: data.description || '', columns: [...(data.input_contract.default_selection || [])], pageLimit: data.input_contract.page.default_limit })
+    const namedParameters = (data.input_contract.named_parameters || [])
+      .map((parameter, index) => createNamedParameterDraft(parameter, index))
+      .filter(Boolean)
+    assignDraft({
+      ...emptyDraft(),
+      name: data.title,
+      description: data.description || '',
+      columns: [...(data.input_contract.default_selection || [])],
+      pageLimit: data.input_contract.page.default_limit,
+      parameters: namedParameters,
+    })
     initializeRenderer()
   } catch (error) {
     descriptor.value = null

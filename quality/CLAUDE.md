@@ -14,7 +14,7 @@
 
 **Quality 模块** 是 ADDP 平台的数据质量管理中心，负责：
 
-- 规则应用管理（RuleApplication）：将 Standard 模块定义的数据元质量规则，映射到具体数据库的表字段
+- 规则应用管理（RuleApplication）：基于 Catalog 已审核的字段/组件标准映射，冻结数据元修订、目标和编译质量规则快照
 - 检查任务管理（CheckTask）：定义和执行确定 PostgreSQL 引擎、Schema、表范围的质量检查任务
 - 物化门禁管理（MaterializationGateTask）：对同一父编排中的 Model 物化组 staging 执行强类型发布前断言
 - 质量检查执行：通过持久 worker、安全 SQL 编译和 Execution Authorization 执行规则并计算表级/字段级质量评分
@@ -26,6 +26,14 @@
 - 前端: `5183`（开发环境）/ `8113`（Docker 环境）
 
 **数据库 Schema**: `quality`
+
+## 已确认的落标边界
+
+- Catalog 是实际字段/组件到 Standard 数据元修订映射的唯一 owner；Quality 不允许直接创建第二套 `element_id + 物理字段` 映射。
+- RuleApplication 使用 `standard_mapping_id` 作为稳定关联，并冻结 `standard_mapping_version + element_revision_id + target_snapshot + rule_config`。Catalog 映射变化后必须由用户显式刷新，不得静默跟随。
+- 创建和刷新 RuleApplication 时由 Quality 服务端依次解析 Catalog 映射和 Standard 数据元修订；worker 只消费 Quality 已冻结的 execution 快照，不在执行期回读上游。
+- Quality 拥有规则应用、执行、符合性结果、评分和 Issue；Standard 只可聚合展示，不保存这些事实。
+- 当前 `element_id + engine_id + schema_name + table_name + column_name` 身份和 `element-candidates` API 是待替换旧路线；迁移时直接删除，不保留兼容字段或并行候选入口。
 
 ## 目录结构
 
@@ -82,7 +90,9 @@ quality/
             └── IssueList.vue                 # 质量问题工单列表
 ```
 
-## 数据库表结构
+## 当前数据库表结构
+
+本节记录迁移前实现，用于定位代码。目标 RuleApplication 身份和快照字段以 [ADDP 数据质量规范](../docs/spec/addp数据质量规范.md) 为准。
 
 所有模型使用 PostgreSQL Schema `quality`（通过 GORM 的 `TableName()` 方法指定）。
 
@@ -92,7 +102,7 @@ quality/
 |------|------|------|
 | id | int64 PK | 主键 |
 | tenant_id | int64 | 租户 ID，带索引 |
-| element_id | int64 | 引用 `standard.elements.id`（数据元） |
+| element_id | int64 | 当前旧引用；迁移后替换为 `standard_mapping_id + standard_mapping_version + element_revision_id` |
 | engine_id | int64 | 目标数据库引擎 ID |
 | schema_name | string | 目标 Schema 名 |
 | table_name | string | 目标表名 |
@@ -152,15 +162,16 @@ quality/
 
 ### 规则应用
 ```
-GET    /api/v1/quality/rule-applications          # 列表（支持过滤：engine_id, schema_name, table_name；返回 Standard 当前数据元摘要投影）
-GET    /api/v1/quality/rule-applications/element-candidates # 创建页数据元候选（Quality 服务身份投影）
-POST   /api/v1/quality/rule-applications          # 创建（传入 element_id，后端自动获取质量规则快照）
+GET    /api/v1/quality/rule-applications          # 列表（支持过滤目标与映射状态）
+GET    /api/v1/quality/rule-applications/standard-mapping-candidates # 创建页已审核标准映射候选
+POST   /api/v1/quality/rule-applications          # 创建（传入 standard_mapping_id + standard_mapping_version）
 GET    /api/v1/quality/rule-applications/:id      # 详情
 PUT    /api/v1/quality/rule-applications/:id      # 显式启停，请求体必须为 {"enabled": true|false}
+POST   /api/v1/quality/rule-applications/:id/refresh # 显式刷新映射版本、目标、数据元修订与规则快照
 DELETE /api/v1/quality/rule-applications/:id      # 删除
 ```
 
-规则应用创建页不得由浏览器直连 Standard 搜索数据元；候选统一通过 Quality API 返回 `id/name/code/quality_rules`，权限只依赖 `quality.rule_application.create`。
+规则应用创建页不得由浏览器直连 Catalog 与 Standard 后自行拼接；候选统一通过 Quality API 返回已审核 StandardMapping、目标组件、数据元修订和规则摘要，权限只依赖 `quality.rule_application.create`。旧 `element-candidates` 路由迁移时直接删除。
 
 ### 检查任务
 ```
@@ -349,13 +360,13 @@ Quality 的执行历史是 `common.task_executions` 的跨模块统一投影，�
 
 ### 规则配置快照
 
-创建 RuleApplication 时，后端从 Standard 拉取严格版本化的 `addp.quality.rules/v1` 文档，只保留启用规则并写入 `rule_config`。触发任务时再次把当前启用 RuleApplication 冻结到 execution 的 `execution_config`；worker 只消费 execution 快照，不回读实时配置。
+创建或显式刷新 RuleApplication 时，后端先从 Catalog 解析已审核 StandardMapping，再按其 `element_revision_id` 从 Standard 拉取严格版本化的 `addp.quality.rules/v1` 编译规则文档，只保留启用规则并写入 `rule_config`，同时冻结映射版本和目标快照。触发任务时再次把当前启用 RuleApplication 冻结到 execution 的 `execution_config`；worker 只消费 execution 快照，不回读实时配置。
 
 Quality execution 配置唯一版本为 `addp.quality.execution-config/v1`。任务触发时同时冻结 `QUALITY_CHECK_TIMEOUT` 对应的 `check_timeout_ms`；worker 对授权消费、目标连接和全部规则 SQL 使用同一个截止时间。超时必须取消目标 PostgreSQL 语句并写 `timeout + quality.execution.timeout`，不能写成普通 SQL 失败，也不能生成部分评分或更新 Issue。
 
 独立 `quality-worker` 进程使用 `QUALITY_WORKER_CONCURRENCY` 个有界执行槽位并行领取不同 CheckTask，默认并发数为 4。`quality-backend` 只负责 API、任务定义、授权签发和 execution 创建，不执行检查。所有 Worker 槽位和多实例通过 PostgreSQL claim、attempt 与 `lease_token` 协调；同一 CheckTask 的 active execution 限制保持不变。lease 恢复扫描每个 Worker 进程只运行一份，不随执行槽位数重复。
 
-RuleApplication 只保存 `element_id` 和规则快照，不复制数据元名称或编码。列表 API 使用 Quality 租户服务身份按当前页 ID 集合从 Standard 批量解析 `element: {id, name, code}`；这是当前展示投影，不是历史事实。浏览器不直接调用 Standard 来补全列表，也不保留搜索缓存到裸 ID 的展示旁路。
+RuleApplication 只保存 `standard_mapping_id + standard_mapping_version + element_revision_id`、目标快照和规则快照，不复制可编辑的 Catalog 映射或数据元定义。列表 API 使用 Quality 租户服务身份按当前页映射集合批量解析必要展示摘要；这是当前展示投影，不改变已冻结修订和目标。浏览器不直接调用 Catalog 或 Standard 来补全列表，也不保留裸 ID 展示旁路。
 
 规则应用与检查任务前端都读取 `active,disabled` PostgreSQL 用于历史绑定名称回显，表格同时显示引擎名称和 ID；创建或更新表单只允许 `active` 引擎，提交前再次校验生命周期。`deleting` 不进入正常展示或选择。
 
@@ -371,7 +382,7 @@ open（待处理）
 
 RuleApplication 是当前配置，execution metadata 才是历史事实。存在已冻结该规则应用的 `pending|running` execution 时禁止删除；其余删除必须在同一事务中清理对应 Issue，并保留已完成 execution 历史。
 
-规则应用创建使用 System 实时 Catalog 级联选择 schema、table 和 column；表字段通过 Catalog facts 按需读取，后端保存前按当前 Tenant 和 Engine 再次校验三者归属。Catalog 只是创建时选择与校验来源，持久身份仍是 `engine_id + schema_name + table_name + column_name`，不保存第二套 `item_id` 或 ResourceLocator，也不依赖 Meta 扫描快照。
+规则应用创建只选择 Catalog 已审核的 StandardMapping。Quality 后端通过 Catalog owner 契约解析目标组件与专业资源定位，并确认其可转换为当前支持的 PostgreSQL Engine/schema/table/column；持久身份是 `tenant_id + standard_mapping_id`，物理坐标只是执行目标快照，不是第二套落标关系。
 
 规则应用启停只影响未来 execution；已有 `pending|running` execution 继续消费冻结快照。手动停用不改变已有 Issue，停止检查不等于问题已解决或已忽略。重新启用前必须重新校验绑定 Engine 仍为当前 Tenant 的 active PostgreSQL Engine，停用不依赖 Engine 可用性。更新请求必须显式提供布尔 `enabled`，repository 只更新启用状态与审计字段，不使用整行 `Save`。
 

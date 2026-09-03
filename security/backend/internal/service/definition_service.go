@@ -6,9 +6,11 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/dataprotection"
+	commonexecution "github.com/addp/common/execution"
 	"github.com/addp/security/internal/models"
 	"github.com/addp/security/internal/repository"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type DefinitionService struct {
@@ -16,6 +18,7 @@ type DefinitionService struct {
 	classifications *repository.Repository[models.SecurityClassification]
 	grades          *repository.Repository[models.SecurityGrade]
 	types           *repository.Repository[models.SensitiveDataType]
+	detectors       *repository.Repository[models.Detector]
 	baselines       *repository.Repository[models.ProtectionBaseline]
 	now             func() time.Time
 }
@@ -26,6 +29,7 @@ func NewDefinitionService(db *gorm.DB) *DefinitionService {
 		classifications: repository.New[models.SecurityClassification](db),
 		grades:          repository.New[models.SecurityGrade](db),
 		types:           repository.New[models.SensitiveDataType](db),
+		detectors:       repository.New[models.Detector](db),
 		baselines:       repository.New[models.ProtectionBaseline](db),
 		now:             time.Now,
 	}
@@ -155,10 +159,7 @@ func (s *DefinitionService) CreateType(req models.SensitiveDataTypeRequest, tena
 	if err := s.validateTypeRefs(req.SecurityClassificationID, req.DefaultSecurityGradeID, tenantID); err != nil {
 		return nil, err
 	}
-	if req.ProtectionThreshold <= 0 || req.ProtectionThreshold > 1 {
-		return nil, commonapi.ErrBadRequest
-	}
-	row := &models.SensitiveDataType{TenantID: tenantID, Code: strings.TrimSpace(req.Code), Name: strings.TrimSpace(req.Name), Description: strings.TrimSpace(req.Description), SecurityClassificationID: req.SecurityClassificationID, DefaultSecurityGradeID: req.DefaultSecurityGradeID, ProtectionThreshold: req.ProtectionThreshold, CreatedBy: userID}
+	row := &models.SensitiveDataType{TenantID: tenantID, Code: strings.TrimSpace(req.Code), Name: strings.TrimSpace(req.Name), Description: strings.TrimSpace(req.Description), SecurityClassificationID: req.SecurityClassificationID, DefaultSecurityGradeID: req.DefaultSecurityGradeID, CreatedBy: userID}
 	if row.Code == "" || row.Name == "" {
 		return nil, commonapi.ErrBadRequest
 	}
@@ -171,9 +172,6 @@ func (s *DefinitionService) UpdateType(id, tenantID, userID int64, req models.Se
 	if strings.TrimSpace(req.Name) == "" {
 		return nil, commonapi.ErrBadRequest
 	}
-	if req.ProtectionThreshold <= 0 || req.ProtectionThreshold > 1 {
-		return nil, commonapi.ErrBadRequest
-	}
 	var updated *models.SensitiveDataType
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		definitions := s.withDB(tx)
@@ -184,14 +182,14 @@ func (s *DefinitionService) UpdateType(id, tenantID, userID int64, req models.Se
 		if err != nil {
 			return err
 		}
-		if err := definitions.types.Update(id, tenantID, req.Version, map[string]interface{}{"name": strings.TrimSpace(req.Name), "description": strings.TrimSpace(req.Description), "security_classification_id": req.SecurityClassificationID, "default_security_grade_id": req.DefaultSecurityGradeID, "protection_threshold": req.ProtectionThreshold, "updated_by": userID}); err != nil {
+		if err := definitions.types.Update(id, tenantID, req.Version, map[string]interface{}{"name": strings.TrimSpace(req.Name), "description": strings.TrimSpace(req.Description), "security_classification_id": req.SecurityClassificationID, "default_security_grade_id": req.DefaultSecurityGradeID, "updated_by": userID}); err != nil {
 			return err
 		}
 		updated, err = definitions.types.Get(id, tenantID)
 		if err != nil {
 			return err
 		}
-		if current.DefaultSecurityGradeID != updated.DefaultSecurityGradeID || current.ProtectionThreshold != updated.ProtectionThreshold {
+		if current.DefaultSecurityGradeID != updated.DefaultSecurityGradeID {
 			return recompileCandidateTypeImpact(tx, tenantID, id, s.now().UTC())
 		}
 		return nil
@@ -207,6 +205,9 @@ func (s *DefinitionService) DeleteType(id, tenantID int64) error {
 		if err := rejectReferences(definitions.baselines, tenantID, "sensitive_data_type_id = ?", id); err != nil {
 			return err
 		}
+		if err := rejectReferences(definitions.detectors, tenantID, "sensitive_data_type_id = ?", id); err != nil {
+			return err
+		}
 		if err := rejectReferences(repository.New[models.SensitiveFinding](tx), tenantID, "sensitive_data_type_id = ?", id); err != nil {
 			return err
 		}
@@ -218,6 +219,157 @@ func (s *DefinitionService) DeleteType(id, tenantID int64) error {
 		}
 		return definitions.types.Delete(id, tenantID)
 	})
+}
+
+func (s *DefinitionService) ListDetectorCapabilities() []models.DetectorCapability {
+	return ListDetectorCapabilities()
+}
+
+func (s *DefinitionService) ListDetectors(tenantID int64) ([]models.Detector, error) {
+	return s.detectors.List(tenantID)
+}
+
+func (s *DefinitionService) GetDetector(id, tenantID int64) (*models.Detector, error) {
+	return s.detectors.Get(id, tenantID)
+}
+
+func (s *DefinitionService) CreateDetector(req models.DetectorRequest, tenantID, userID int64) (*models.Detector, error) {
+	capabilityKey := strings.TrimSpace(req.CapabilityKey)
+	if tenantID <= 0 || userID <= 0 || req.SensitiveDataTypeID <= 0 || req.ConfidenceThreshold <= 0 || req.ConfidenceThreshold > 1 {
+		return nil, commonapi.ErrBadRequest
+	}
+	if _, ok := detectorCapability(capabilityKey); !ok {
+		return nil, commonapi.ErrBadRequest
+	}
+	enabled := true
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+	row := &models.Detector{
+		TenantID: tenantID, CapabilityKey: capabilityKey, SensitiveDataTypeID: req.SensitiveDataTypeID,
+		ConfidenceThreshold: req.ConfidenceThreshold, Enabled: enabled, CreatedBy: userID,
+	}
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		definitions := s.withDB(tx)
+		if _, err := definitions.types.Get(row.SensitiveDataTypeID, tenantID); err != nil {
+			return err
+		}
+		if err := definitions.detectors.Create(row); err != nil {
+			return err
+		}
+		return queueDetectorImpactDiscovery(tx, tenantID, userID, s.now().UTC())
+	})
+	if err != nil {
+		return nil, err
+	}
+	return row, nil
+}
+
+func (s *DefinitionService) UpdateDetector(id, tenantID, userID int64, req models.DetectorRequest) (*models.Detector, error) {
+	capabilityKey := strings.TrimSpace(req.CapabilityKey)
+	if tenantID <= 0 || userID <= 0 || id <= 0 || req.Version <= 0 || req.SensitiveDataTypeID <= 0 || req.ConfidenceThreshold <= 0 || req.ConfidenceThreshold > 1 || req.Enabled == nil {
+		return nil, commonapi.ErrBadRequest
+	}
+	if _, ok := detectorCapability(capabilityKey); !ok {
+		return nil, commonapi.ErrBadRequest
+	}
+	var updated *models.Detector
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		definitions := s.withDB(tx)
+		if _, err := definitions.types.Get(req.SensitiveDataTypeID, tenantID); err != nil {
+			return err
+		}
+		current, err := definitions.detectors.Get(id, tenantID)
+		if err != nil {
+			return err
+		}
+		if err := definitions.detectors.Update(id, tenantID, req.Version, map[string]interface{}{
+			"capability_key": capabilityKey, "sensitive_data_type_id": req.SensitiveDataTypeID,
+			"confidence_threshold": req.ConfidenceThreshold, "enabled": *req.Enabled, "updated_by": userID,
+		}); err != nil {
+			return err
+		}
+		updated, err = definitions.detectors.Get(id, tenantID)
+		if err != nil {
+			return err
+		}
+		if current.CapabilityKey != updated.CapabilityKey || current.SensitiveDataTypeID != updated.SensitiveDataTypeID || current.ConfidenceThreshold != updated.ConfidenceThreshold || current.Enabled != updated.Enabled {
+			return queueDetectorImpactDiscovery(tx, tenantID, userID, s.now().UTC())
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return updated, nil
+}
+
+func (s *DefinitionService) DeleteDetector(id, tenantID, userID, version int64) error {
+	if tenantID <= 0 || userID <= 0 || id <= 0 || version <= 0 {
+		return commonapi.ErrBadRequest
+	}
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		result := tx.Where("id = ? AND tenant_id = ? AND version = ?", id, tenantID, version).Delete(&models.Detector{})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			var count int64
+			if err := tx.Model(&models.Detector{}).Where("id = ? AND tenant_id = ?", id, tenantID).Count(&count).Error; err != nil {
+				return err
+			}
+			if count == 0 {
+				return commonapi.ErrNotFound
+			}
+			return repository.ErrVersionConflict
+		}
+		return queueDetectorImpactDiscovery(tx, tenantID, userID, s.now().UTC())
+	})
+}
+
+func queueDetectorImpactDiscovery(tx *gorm.DB, tenantID, actorID int64, now time.Time) error {
+	var enrollments []models.ProtectionEnrollment
+	if err := tx.Where("tenant_id = ? AND state IN ?", tenantID, []string{models.EnrollmentStateEnrolling, models.EnrollmentStateActive}).Order("id ASC").Find(&enrollments).Error; err != nil {
+		return err
+	}
+	if len(enrollments) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(enrollments))
+	for _, enrollment := range enrollments {
+		ids = append(ids, enrollment.ID)
+	}
+	var active []commonexecution.TaskExecution
+	activeQuery := tx
+	if tx.Dialector.Name() == "postgres" {
+		activeQuery = activeQuery.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	if err := activeQuery.Where(
+		"tenant_id = ? AND module = ? AND task_type = ? AND source = ? AND source_task_id IN ? AND status IN ?",
+		tenantID, commonexecution.ModuleSecurity, commonexecution.TaskTypeSensitiveDataDiscovery, commonexecution.ModuleSecurity,
+		ids, []string{commonexecution.ExecutionStatusPending, commonexecution.ExecutionStatusRunning},
+	).Find(&active).Error; err != nil {
+		return err
+	}
+	busy := make(map[string]struct{}, len(active))
+	for _, execution := range active {
+		if execution.SourceTaskID != nil {
+			if execution.Status == commonexecution.ExecutionStatusRunning {
+				return commonapi.ErrConflict
+			}
+			busy[*execution.SourceTaskID] = struct{}{}
+		}
+	}
+	for _, enrollment := range enrollments {
+		if _, exists := busy[enrollment.ID]; exists {
+			continue
+		}
+		execution := newDiscoveryExecution(enrollment, int(actorID), commonexecution.TriggerTypeEvent, now)
+		if err := tx.Create(&execution).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 func (s *DefinitionService) validateTypeRefs(classificationID, gradeID, tenantID int64) error {
 	if _, err := s.classifications.Get(classificationID, tenantID); err != nil {

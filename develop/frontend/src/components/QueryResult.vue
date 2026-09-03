@@ -19,6 +19,17 @@
         {{ t('develop.queryResult.executionTime') }} <strong>{{ result.execution_time_ms }}ms</strong>
       </span>
 
+      <el-tooltip
+        v-if="result.truncated"
+        :content="truncatedMessage"
+        placement="top"
+      >
+        <el-tag class="truncated-status" type="warning" effect="plain" size="small">
+          <el-icon><WarningFilled /></el-icon>
+          <span class="truncated-status__text">{{ truncatedMessage }}</span>
+        </el-tag>
+      </el-tooltip>
+
       <div class="summary-actions">
         <el-tooltip v-if="result.execution_id" :content="t('develop.queryResult.executionDetail')">
           <el-button circle size="small" :aria-label="t('develop.queryResult.executionDetail')" @click="openExecution">
@@ -39,15 +50,6 @@
       :percentage="result.progress || 0"
       :indeterminate="!result.progress"
       :duration="2"
-    />
-
-    <el-alert
-      v-if="result?.truncated"
-      class="result-alert"
-      type="warning"
-      :title="t('develop.queryResult.truncated', { limit: result.result_limit })"
-      :closable="false"
-      show-icon
     />
 
     <el-alert
@@ -73,17 +75,26 @@
     </div>
 
     <div v-else-if="hasRows" class="result-grid">
-      <el-auto-resizer>
-        <template #default="{ height, width }">
-          <el-table-v2
-            :columns="tableColumns"
-            :data="result.rows"
-            :width="width"
-            :height="height"
-            fixed
-          />
-        </template>
-      </el-auto-resizer>
+      <div class="result-table">
+        <TabularResultRenderer
+          :rows="pagedRows"
+          :columns="tableColumns"
+          height="100%"
+          null-text="NULL"
+          copy-on-dblclick
+        />
+      </div>
+
+      <DataPagination
+        v-if="showPagination"
+        v-model:current-page="currentPage"
+        v-model:page-size="pageSize"
+        class="result-pagination"
+        :page-sizes="pageSizeOptions"
+        :total="loadedRowCount"
+        :pager-count="5"
+        size="small"
+      />
     </div>
 
     <el-empty
@@ -102,31 +113,27 @@
       :image-size="72"
     />
 
-    <el-dialog v-model="jsonVisible" title="JSON" width="min(680px, calc(100vw - 24px))" class="addp-dialog">
-      <pre class="json-value">{{ jsonValue }}</pre>
-      <template #footer>
-        <el-button @click="copyText(jsonValue)">
-          <el-icon><CopyDocument /></el-icon>
-          {{ t('develop.queryResult.copy') }}
-        </el-button>
-      </template>
-    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { computed, h, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import {
   CircleCloseFilled,
-  CopyDocument,
   Download,
   Loading,
   SuccessFilled,
-  View
+  View,
+  WarningFilled
 } from '@element-plus/icons-vue'
-import { openMonitorExecution } from '@addp/common-frontend'
+import {
+  DataPagination,
+  openMonitorExecution,
+  paginateRows,
+  TabularResultRenderer
+} from '@addp/common-frontend'
 import { buildQueryResultCSV, queryErrorMessage } from '@/utils/queryWorkbench.mjs'
 
 const { t } = useI18n()
@@ -141,10 +148,14 @@ const props = defineProps({
   }
 })
 
-const jsonVisible = ref(false)
-const jsonValue = ref('')
+const pageSizeOptions = Object.freeze([10, 20, 50, 100])
+const currentPage = ref(1)
+const pageSize = ref(20)
 const isRunning = computed(() => ['pending', 'running'].includes(props.result?.status))
 const hasRows = computed(() => Array.isArray(props.result?.rows) && props.result.rows.length > 0)
+const loadedRowCount = computed(() => hasRows.value ? props.result.rows.length : 0)
+const showPagination = computed(() => loadedRowCount.value > pageSizeOptions[0])
+const pagedRows = computed(() => paginateRows(props.result?.rows, currentPage.value, pageSize.value))
 const statusType = computed(() => {
   if (isRunning.value) return 'primary'
   if (props.result?.success && Number(props.result?.rows_count || 0) === 0) return 'warning'
@@ -162,48 +173,18 @@ const statusLabel = computed(() => {
 })
 const errorMessage = computed(() => queryErrorMessage(props.result?.error_code, props.result?.error, t))
 const noDataHint = computed(() => t('develop.queryResult.noDataHint'))
+const truncatedMessage = computed(() => t('develop.queryResult.truncated', {
+  limit: props.result?.result_limit
+}))
 
-const formatValue = (value) => {
-  if (value === null) return 'NULL'
-  if (value === undefined) return ''
-  if (typeof value === 'object') return JSON.stringify(value)
-  return String(value)
-}
-
-const openJSON = (value) => {
-  if (value === null || typeof value !== 'object') return
-  jsonValue.value = JSON.stringify(value, null, 2)
-  jsonVisible.value = true
-}
-
-const copyText = async (value) => {
-  try {
-    await navigator.clipboard.writeText(String(value ?? ''))
-    ElMessage.success(t('develop.queryResult.copySuccess'))
-  } catch (error) {
-    ElMessage.error(t('develop.queryResult.copyFailed') + error.message)
-  }
-}
+watch(() => props.result?.rows, () => {
+  currentPage.value = 1
+})
 
 const tableColumns = computed(() => (props.result?.columns || []).map(column => ({
   key: column,
-  dataKey: column,
-  title: column,
-  width: Math.max(140, Math.min(320, String(column).length * 12 + 72)),
-  cellRenderer: ({ cellData }) => h('span', {
-    class: ['result-cell', {
-      'is-null': cellData === null,
-      'is-number': typeof cellData === 'number',
-      'is-object': cellData !== null && typeof cellData === 'object'
-    }],
-    title: formatValue(cellData),
-    tabindex: 0,
-    onClick: () => openJSON(cellData),
-    onDblclick: () => copyText(formatValue(cellData)),
-    onKeydown: event => {
-      if (event.key === 'Enter') openJSON(cellData)
-    }
-  }, formatValue(cellData))
+  label: column,
+  minWidth: Math.max(140, Math.min(320, String(column).length * 12 + 72))
 })))
 
 const openExecution = () => openMonitorExecution(props.result.execution_id)
@@ -263,6 +244,24 @@ const exportCSV = () => {
   margin-left: auto;
 }
 
+.truncated-status {
+  min-width: 0;
+  max-width: min(360px, 45%);
+  flex: 0 1 auto;
+}
+
+.truncated-status .el-icon {
+  flex: 0 0 auto;
+  margin-right: 4px;
+}
+
+.truncated-status__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .execution-progress {
   width: 100%;
 }
@@ -274,50 +273,30 @@ const exportCSV = () => {
 .result-grid {
   flex: 1;
   min-height: 160px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   padding: 8px 12px 12px;
+}
+
+.result-table {
+  flex: 1;
+  min-height: 120px;
+  display: flex;
+  overflow: hidden;
+}
+
+.result-pagination {
+  flex: 0 0 auto;
+  align-self: flex-end;
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 .custom-result-content {
   flex: 1;
   min-height: 0;
   overflow: hidden;
-}
-
-:deep(.result-cell) {
-  display: block;
-  width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--addp-text-primary);
-  cursor: default;
-}
-
-:deep(.result-cell.is-null) {
-  color: var(--addp-text-tertiary);
-  font-style: italic;
-}
-
-:deep(.result-cell.is-number) {
-  color: var(--el-color-primary);
-}
-
-:deep(.result-cell.is-object) {
-  cursor: pointer;
-  color: var(--el-color-success);
-}
-
-.json-value {
-  max-height: 60vh;
-  margin: 0;
-  padding: 12px;
-  overflow: auto;
-  background: var(--addp-bg-secondary);
-  color: var(--addp-text-primary);
-  border: 1px solid var(--addp-border-color);
-  border-radius: 4px;
-  white-space: pre-wrap;
-  word-break: break-word;
 }
 
 .el-empty {

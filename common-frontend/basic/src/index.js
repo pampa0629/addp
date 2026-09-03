@@ -10,8 +10,17 @@ export { default as AuthLoginFlow } from './components/AuthLoginFlow.vue'
 export { default as StatusAnnouncer } from './components/StatusAnnouncer.vue'
 export { default as ExecutionParameterForm } from './components/ExecutionParameterForm.vue'
 export { default as TabularResultRenderer } from './components/TabularResultRenderer.vue'
+export { default as DataPagination } from './components/DataPagination.vue'
 export { default as ScalarValueRenderer } from './components/ScalarValueRenderer.vue'
-export { formatResultCell } from './utils/tabularResult'
+export {
+  formatResultCell,
+  isStructuredResultValue,
+  lastPage,
+  normalizeTabularColumns,
+  paginateRows,
+  safeStructuredResultJSON,
+  tabularCellValue
+} from './utils/tabularResult'
 export { formatScalarValue, validateScalarValueResult } from './utils/scalarValueResult.mjs'
 
 // Schedule Components
@@ -23,6 +32,7 @@ export { formatBytes, formatDate, safeStringify } from './utils/formatters'
 export * from './utils/schedule'
 export * from './utils/index'
 export * from './utils/fieldTypes'
+export * from './utils/dynamicSchemaColumns'
 export * from './utils/engineDisplay'
 export * from './utils/engineAvailability'
 export * from './utils/transientRequest'

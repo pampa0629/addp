@@ -709,41 +709,6 @@
       ]
     },
     {
-      "id": "cad.inspect",
-      "name": "cad.inspect",
-      "display_name": "检查 CAD 图纸",
-      "engine_type": "supermap_workflow",
-      "category": "CAD",
-      "category_path": [
-        "CAD"
-      ],
-      "description": "只读打开 DWG 或 DXF 并返回 Dataset 元数据、记录数和范围；不遍历 Geometry。",
-      "brief_description": "检查 CAD 图纸",
-      "execution_modes": [
-        "direct"
-      ],
-      "effects": [
-        "read"
-      ],
-      "parameters": [
-        {
-          "name": "access_plan",
-          "type": "object",
-          "param_type": "param",
-          "required": true,
-          "description": "ADDP 工作流资源访问计划。"
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "inspection",
-          "type": "addp.cad.inspect/v1",
-          "description": "CAD 图纸轻量检查结果。",
-          "is_default": true
-        }
-      ]
-    },
-    {
       "id": "dataset.save",
       "name": "dataset.save",
       "display_name": "保存数据集",
@@ -795,56 +760,6 @@
           "name": "saved_dataset",
           "type": "supermap.dataset",
           "description": "保存后的 DatasetVector 引用。",
-          "is_default": true
-        }
-      ]
-    },
-    {
-      "id": "cad.render_preview",
-      "name": "cad.render_preview",
-      "display_name": "渲染 CAD 预览",
-      "engine_type": "supermap_workflow",
-      "category": "CAD",
-      "category_path": [
-        "CAD"
-      ],
-      "description": "使用 SuperMap Map/Layer 直接渲染 DWG 或 DXF Dataset，生成受管 WebP 瓦片。",
-      "brief_description": "渲染 CAD 预览",
-      "execution_modes": [
-        "direct"
-      ],
-      "effects": [
-        "read",
-        "write"
-      ],
-      "parameters": [
-        {
-          "name": "access_plan",
-          "type": "object",
-          "param_type": "param",
-          "required": true,
-          "description": "ADDP 工作流源文件与目标 artifact 访问计划。"
-        },
-        {
-          "name": "tile_size",
-          "type": "integer",
-          "param_type": "param",
-          "required": false,
-          "description": "瓦片边长，默认 512。"
-        },
-        {
-          "name": "max_zoom",
-          "type": "integer",
-          "param_type": "param",
-          "required": false,
-          "description": "最大缩放级别，默认 4，最大 8。"
-        }
-      ],
-      "output_ports": [
-        {
-          "name": "preview",
-          "type": "addp.cad.render-preview/v1",
-          "description": "CAD 栅格瓦片预览产物摘要。",
           "is_default": true
         }
       ]
@@ -1693,5 +1608,5 @@
       ]
     }
   ],
-  "count": 35
+  "count": 33
 }

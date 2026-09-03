@@ -3164,7 +3164,7 @@ func assertSecurityModuleRuntimeConstraints(t *testing.T, db *sql.DB, hasMetaFac
 	expectedSecurityPermissions, expectedGovernancePermissions := 21, 19
 	expectedTenantRuntime := 0
 	if hasMetaFactsRuntime {
-		expectedSecurityPermissions, expectedGovernancePermissions, expectedTenantRuntime = 29, 27, 1
+		expectedSecurityPermissions, expectedGovernancePermissions, expectedTenantRuntime = 34, 32, 1
 	}
 	if permissionCount != expectedSecurityPermissions || retiredStandardPermissionCount != 4 || retiredStandardRolePermissionCount != 0 || runtimeRoleCount != 1 ||
 		principalCount != 1 || clientCount != 1 || assignmentCount != 1 ||

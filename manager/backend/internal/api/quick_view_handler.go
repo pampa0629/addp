@@ -65,7 +65,6 @@ type QuickViewHandler struct {
 	model3DGLBTaskSvc          *service.Model3DGLBTaskService
 	gaussianSplatKSplatTaskSvc *service.GaussianSplatKSplatTaskService
 	pointCloudCOPCTaskSvc      *service.PointCloudCOPCTaskService
-	cadPreviewTaskSvc          *service.CADPreviewTaskService
 	model3DTilesTaskSvc        *service.Model3DTilesTaskService
 }
 
@@ -77,12 +76,11 @@ func (h *QuickViewHandler) SetTileCacheTaskService(tileCacheTaskSvc *service.Til
 	h.tileCacheTaskSvc = tileCacheTaskSvc
 }
 
-func (h *QuickViewHandler) SetArtifactTaskServices(rasterCOGTaskSvc *service.RasterCOGTaskService, model3DGLBTaskSvc *service.Model3DGLBTaskService, gaussianSplatKSplatTaskSvc *service.GaussianSplatKSplatTaskService, pointCloudCOPCTaskSvc *service.PointCloudCOPCTaskService, cadPreviewTaskSvc *service.CADPreviewTaskService, model3DTilesTaskSvc *service.Model3DTilesTaskService) {
+func (h *QuickViewHandler) SetArtifactTaskServices(rasterCOGTaskSvc *service.RasterCOGTaskService, model3DGLBTaskSvc *service.Model3DGLBTaskService, gaussianSplatKSplatTaskSvc *service.GaussianSplatKSplatTaskService, pointCloudCOPCTaskSvc *service.PointCloudCOPCTaskService, model3DTilesTaskSvc *service.Model3DTilesTaskService) {
 	h.rasterCOGTaskSvc = rasterCOGTaskSvc
 	h.model3DGLBTaskSvc = model3DGLBTaskSvc
 	h.gaussianSplatKSplatTaskSvc = gaussianSplatKSplatTaskSvc
 	h.pointCloudCOPCTaskSvc = pointCloudCOPCTaskSvc
-	h.cadPreviewTaskSvc = cadPreviewTaskSvc
 	h.model3DTilesTaskSvc = model3DTilesTaskSvc
 }
 
@@ -173,7 +171,7 @@ func (h *QuickViewHandler) GetQuickViewCapabilityByLocator(c *gin.Context) {
 
 // ExecuteQuickViewAction 执行 locator 快显动作
 // @Summary 执行 locator 快显动作 | Execute locator quick view action
-// @Description 前端只提交 Resource Locator 和后端 capability 返回的 action。后端基于同一份快显能力事实创建并执行对应任务，支持生成矢量瓦片缓存、栅格 COG、CAD 栅格预览、三维模型 GLB、3D Tiles、S3M、3DGS KSplat 和点云 COPC 快显。 | Execute a backend-declared quick view action by Resource Locator. The backend creates and executes the corresponding task from capability facts, including 3D Tiles and S3M quick-view generation.
+// @Description 前端只提交 Resource Locator 和后端 capability 返回的 action。后端基于同一份快显能力事实创建并执行对应任务，支持生成矢量瓦片缓存、栅格 COG、三维模型 GLB、3D Tiles、S3M、3DGS KSplat 和点云 COPC 快显。 | Execute a backend-declared quick view action by Resource Locator. The backend creates and executes the corresponding task from capability facts, including 3D Tiles and S3M quick-view generation.
 // @Tags Manager
 // @Accept json
 // @Produce json
@@ -246,9 +244,6 @@ func (h *QuickViewHandler) ExecuteQuickViewAction(c *gin.Context) {
 	case service.QuickViewActionGeneratePointCloudCOPC:
 		taskType = commonExecution.TaskTypePointCloudCOPCGeneration
 		taskID, executionID, err = h.createAndExecutePointCloudCOPCTask(c.Request.Context(), userID, capability, source, overwriteExistingResult)
-	case service.QuickViewActionGenerateCADPreview:
-		taskType = commonExecution.TaskTypeCADPreviewGeneration
-		taskID, executionID, err = h.createAndExecuteCADPreviewTask(c.Request.Context(), userID, capability, source, overwriteExistingResult)
 	case service.QuickViewActionGenerateModel3D3DTiles, service.QuickViewActionGenerateModel3DS3M:
 		taskType = commonExecution.TaskTypeModel3DTilesGeneration
 		targetFormat := models.Model3DTilesTargetFormat3DTiles
@@ -862,60 +857,6 @@ func (h *QuickViewHandler) createAndExecutePointCloudCOPCTask(ctx context.Contex
 	return task.ID, executionID, nil
 }
 
-func (h *QuickViewHandler) createAndExecuteCADPreviewTask(ctx context.Context, userID uint, capability *service.QuickViewCapability, source service.QuickViewSource, overwriteExistingResult bool) (uint, string, error) {
-	if h.cadPreviewTaskSvc == nil {
-		return 0, "", errors.New("CAD preview task service is not initialized")
-	}
-	config, err := cadPreviewTaskConfigFromQuickView(capability, source)
-	if err != nil {
-		return 0, "", err
-	}
-	task := models.CADPreviewTask{
-		TenantID:  capability.TenantID,
-		Name:      quickViewActionTaskName("CAD 栅格瓦片预览", capability),
-		Enabled:   true,
-		Config:    config,
-		CreatedBy: &userID,
-	}
-	if err := h.cadPreviewTaskSvc.Create(ctx, &task); err != nil {
-		return 0, "", err
-	}
-	executionID, err := h.cadPreviewTaskSvc.Execute(ctx, task.ID, capability.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, overwriteExistingResult)
-	if err != nil {
-		return task.ID, "", err
-	}
-	return task.ID, executionID, nil
-}
-
-func cadPreviewTaskConfigFromQuickView(capability *service.QuickViewCapability, source service.QuickViewSource) (commonModels.JSONMap, error) {
-	if capability == nil || capability.SourceKind != service.QuickViewSourceKindCAD || source.CAD == nil {
-		return nil, errors.New("quick view source is not a CAD preview generation source")
-	}
-	if source.EngineID == 0 || strings.TrimSpace(capability.Locator) == "" || strings.TrimSpace(capability.ItemFingerprint) == "" {
-		return nil, errors.New("quick view capability missing CAD source identity")
-	}
-	parsed, err := resourcetree.ParseURI(capability.Locator)
-	if err != nil || parsed.EngineID != source.EngineID {
-		return nil, errors.New("quick view CAD locator is invalid or engine_id does not match")
-	}
-	itemID := uint(0)
-	if parsed.ItemID != nil {
-		itemID = *parsed.ItemID
-	}
-	return commonModels.JSONMap{
-		"source": commonModels.JSONMap{
-			"item_locator":      capability.Locator,
-			"source_engine_id":  source.EngineID,
-			"item_fingerprint":  capability.ItemFingerprint,
-			"item_id":           itemID,
-			"format":            source.CAD.Format,
-			"source_size_bytes": source.CAD.SourceSizeBytes,
-		},
-		"result":  commonModels.JSONMap{},
-		"options": commonModels.JSONMap{"tile_size": 512, "max_zoom": 4},
-	}, nil
-}
-
 func (h *QuickViewHandler) createAndExecuteTileCacheTask(ctx context.Context, userID uint, capability *service.QuickViewCapability, source service.QuickViewSource, overwriteExistingResult bool) (uint, string, error) {
 	if h.tileCacheTaskSvc == nil {
 		return 0, "", errors.New("vector tile cache task service is not initialized")
@@ -1220,18 +1161,6 @@ func quickViewSourceFromPreview(locator string, tenantID *uint, result *preview.
 		source.FlatGeobufURL = locatorQuickViewFlatGeobufURL(source.Identity.Locator, tablePreview)
 	}
 	if tablePreview.Object != nil {
-		cad := service.CADPreviewSourceFromAttributes(tablePreview.Object.Attributes)
-		if cad != nil {
-			source.EngineID = tablePreview.Object.EngineID
-			if tablePreview.Object.Content != nil {
-				cad.PreviewURL = strings.TrimSpace(tablePreview.Object.Content.URL)
-			}
-			source.CAD = cad
-			source.DirectFlatGeobuf = false
-			source.FlatGeobufURL = ""
-			source.CanTile = false
-			return source
-		}
 		pointCloud := service.PointCloudCOPCSourceFromAttributes(tablePreview.Object.Attributes)
 		if pointCloud != nil {
 			source.EngineID = tablePreview.Object.EngineID

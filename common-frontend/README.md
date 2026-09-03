@@ -9,6 +9,16 @@ ADDP 平台前端共享组件库，提供跨模块复用的 Vue 3 组件、工�
 npm install file:../../common-frontend
 ```
 
+## 测试
+
+共享组件、结果契约和唯一所有权测试由 `common-frontend` 自己维护，统一入口为：
+
+```bash
+npm --prefix common-frontend test
+```
+
+根 `make test-platform` 会调用该入口。业务模块只验证自身的协议适配和组合行为，不再代跑共享组件测试。
+
 ## 使用
 
 ### 导入预览组件
@@ -255,7 +265,8 @@ import {
 
 已发布数据服务的消费结果使用三组共享 primitive，业务模块只负责根据自身配置分派 renderer：
 
-- `basic/src/components/TabularResultRenderer.vue`：按显式列配置展示有界表格结果；
+- `basic/src/components/TabularResultRenderer.vue`：表格预览与有界结果的唯一基础表格实现，按显式列配置展示标量和结构化值；
+- `basic/src/components/DataPagination.vue`：预览场景的唯一受控分页组件，只表达分页状态和变化事件，不决定客户端切片或服务端加载；
 - `basic/src/components/ScalarValueRenderer.vue`：显示服务已返回的唯一行数值结果，不在浏览器求和、计数或猜测口径；
 - `chart/src/ChartRenderer.vue`：展示 `bar | line | pie`，只使用服务已返回的明细值，不在浏览器聚合；
 - `map/src/components/GeoJSONResultRenderer.vue`：只读取 Consumer Descriptor 明确声明的 geometry 字段和 CRS，并可使用显式 label、tooltip 与 `uniform | categorical | continuous` 受控主题样式；不猜测业务字段，不接受原始颜色或任意样式 DSL。
@@ -263,6 +274,8 @@ import {
 Value、Chart 和 Map 只接受单次查询得到的完整有界结果；`has_more=true` 时必须拒绝渲染，Value 还必须恰好一行，Chart 和 Map 还必须遵守各自结果上限。Workbench 等消费模块应在自己的 Renderer Host 中按需加载这些组件，不得复制 renderer，也不得把 Service、Outdoor 或其他 owner 的 DTO 写入共享层。
 
 三组结果 renderer 在用户选择当前结果时统一发出 `result-select`，payload 只包含 `{ row_index }`。`row_index` 始终指向宿主传入的原始 `rows`，renderer 不携带字段值、参数名、目标组件或查询片段；宿主负责根据自己的声明式配置解释选择。数据更新、resize 和重绘不得发出该事件。
+
+Manager 表格预览、容器内表格预览、Develop 查询结果、Workbench 表格结果和 Agent UI 的 `TablePreview` 协议适配器必须组合上述基础表格，不得分别维护 `el-table`、结构化值详情或单元格格式化实现。Manager 的服务端分页与 Develop 的客户端分页仍由各自宿主负责；二者只共享受控分页界面和事件契约。
 
 ### Agent UI 协议组件
 

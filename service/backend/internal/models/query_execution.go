@@ -2,11 +2,12 @@ package models
 
 // QueryExecutionRequest 是已发布查询服务唯一的结构化查询输入。
 type QueryExecutionRequest struct {
-	Select  []string         `json:"select,omitempty"`
-	Filter  *QueryFilter     `json:"filter,omitempty"`
-	OrderBy []QueryOrder     `json:"order_by,omitempty"`
-	Page    QueryPageRequest `json:"page"`
-	Format  string           `json:"format,omitempty" enums:"json,csv,geojson"`
+	Parameters map[string]interface{} `json:"parameters,omitempty" swaggertype:"object"`
+	Select     []string               `json:"select,omitempty"`
+	Filter     *QueryFilter           `json:"filter,omitempty"`
+	OrderBy    []QueryOrder           `json:"order_by,omitempty"`
+	Page       QueryPageRequest       `json:"page"`
+	Format     string                 `json:"format,omitempty" enums:"json,csv,geojson"`
 }
 
 // QueryFilter 使用叶子谓词或 and/or/not 中的一种表达过滤条件。

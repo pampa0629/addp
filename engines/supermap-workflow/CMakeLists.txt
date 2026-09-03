@@ -32,7 +32,6 @@ if(SUPERMAP_SDK_ROOT)
   target_compile_definitions(addp_workflow_core PUBLIC _GLIBCXX_USE_CXX11_ABI=0)
 
   add_library(addp_supermap_runtime
-    src/main/cpp/cad_runtime.cpp
     src/main/cpp/operator_runtime.cpp
     src/main/cpp/runtime_access.cpp
     src/main/cpp/s3m_runtime.cpp

@@ -56,6 +56,9 @@ func (s *QueryServiceService) CreateService(ctx context.Context, req *models.Cre
 		if req.SqlQuery != "" {
 			return nil, errors.New("sql_query should not be provided in table mode")
 		}
+		if len(req.NamedParameters) > 0 {
+			return nil, errors.New("named_parameters should not be provided in table mode")
+		}
 		tableRef, err = tableResourceRefFromRequest(req)
 		if err != nil {
 			return nil, err
@@ -69,6 +72,10 @@ func (s *QueryServiceService) CreateService(ctx context.Context, req *models.Cre
 		}
 		if err := commonquery.RequireReadOnly(req.SqlQuery); err != nil {
 			return nil, fmt.Errorf("sql_query must be read-only: %w", err)
+		}
+		req.NamedParameters, err = validateQueryServiceNamedParameters(req.ConfigType, req.SqlQuery, req.NamedParameters)
+		if err != nil {
+			return nil, err
 		}
 		if req.OutputContract == nil || req.OutputContract.Table == nil || len(req.OutputContract.Table.Fields) == 0 {
 			return nil, errors.New("sql mode requires a detected output_contract")
@@ -185,9 +192,10 @@ func (s *QueryServiceService) CreateService(ctx context.Context, req *models.Cre
 		EngineID:        req.EngineID,
 		RuntimeEngineID: req.RuntimeEngineID,
 
-		SchemaName:  req.SchemaName,
-		TargetTable: req.TableName,
-		SqlQuery:    req.SqlQuery,
+		SchemaName:      req.SchemaName,
+		TargetTable:     req.TableName,
+		SqlQuery:        req.SqlQuery,
+		NamedParameters: append([]models.QueryServiceNamedParameter(nil), req.NamedParameters...),
 
 		DataConfig: dataConfig,
 		Protocols:  protocols,
@@ -1015,6 +1023,7 @@ func (s *QueryServiceService) convertToDTO(service *models.QueryService) *models
 		CreatedAt: service.CreatedAt,
 		UpdatedAt: service.UpdatedAt,
 	}
+	dto.NamedParameters = append([]models.QueryServiceNamedParameter(nil), service.NamedParameters...)
 
 	// 根据配置类型设置相应字段
 	if service.IsTableMode() {

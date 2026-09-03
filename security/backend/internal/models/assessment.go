@@ -10,6 +10,12 @@ const (
 	FindingReviewDecisionConfirm = "confirm"
 	FindingReviewDecisionAdjust  = "adjust"
 	FindingReviewDecisionReject  = "reject"
+
+	AssessmentRevisionSourceFinding = "finding"
+	AssessmentRevisionSourceManual  = "manual"
+
+	AssessmentConclusionSensitive    = "sensitive"
+	AssessmentConclusionNotSensitive = "not_sensitive"
 )
 
 // SensitiveFindingReview is the immutable first governance decision for one Finding.
@@ -50,8 +56,10 @@ type ResourceSecurityAssessmentRevision struct {
 	TenantID                 int64                    `gorm:"not null;index" json:"-"`
 	AssessmentID             string                   `gorm:"type:uuid;not null;index;uniqueIndex:uq_security_assessment_revision" json:"assessment_id"`
 	Revision                 int64                    `gorm:"not null;uniqueIndex:uq_security_assessment_revision" json:"revision"`
-	SourceFindingID          string                   `gorm:"type:uuid;not null" json:"source_finding_id"`
-	SourceReviewID           string                   `gorm:"type:uuid;not null" json:"source_review_id"`
+	SourceKind               string                   `gorm:"size:16;not null;default:finding" json:"source_kind"`
+	Conclusion               string                   `gorm:"size:16;not null;default:sensitive" json:"conclusion"`
+	SourceFindingID          *string                  `gorm:"type:uuid" json:"source_finding_id,omitempty"`
+	SourceReviewID           *string                  `gorm:"type:uuid" json:"source_review_id,omitempty"`
 	SensitiveDataTypeID      int64                    `gorm:"not null" json:"sensitive_data_type_id,string"`
 	SecurityClassificationID int64                    `gorm:"not null" json:"security_classification_id,string"`
 	SecurityGradeID          int64                    `gorm:"not null" json:"security_grade_id,string"`
@@ -78,6 +86,29 @@ type AssessmentRevisionRequest struct {
 	SensitiveDataTypeID int64  `json:"sensitive_data_type_id,string" binding:"required"`
 	SecurityGradeID     int64  `json:"security_grade_id,string" binding:"required"`
 	Rationale           string `json:"rationale" binding:"required"`
+}
+
+type CreateManualAssessmentRequest struct {
+	EnrollmentID        string `json:"enrollment_id" binding:"required"`
+	EnrollmentVersion   int64  `json:"enrollment_version,string" binding:"required"`
+	ComponentKey        string `json:"component_key" binding:"required"`
+	SensitiveDataTypeID int64  `json:"sensitive_data_type_id,string" binding:"required"`
+	SecurityGradeID     int64  `json:"security_grade_id,string" binding:"required"`
+	Rationale           string `json:"rationale" binding:"required"`
+}
+
+type RevokeAssessmentRequest struct {
+	Version   int64  `json:"version,string" binding:"required"`
+	Rationale string `json:"rationale" binding:"required"`
+}
+
+type AssessmentComponentOption struct {
+	Component dataprotection.Component `json:"component"`
+}
+
+type AssessmentComponentListResponse struct {
+	Data               []AssessmentComponentOption `json:"data"`
+	SourceSnapshotHash string                      `json:"source_snapshot_hash"`
 }
 
 type FindingReviewResponse struct {

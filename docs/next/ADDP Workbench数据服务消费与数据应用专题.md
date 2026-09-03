@@ -239,6 +239,7 @@ Workbench View
         "operator": "gte"
       }
     ],
+    "named_parameter_bindings": [],
     "order_by": [
       {"field": "activity_count", "direction": "desc"}
     ],
@@ -254,6 +255,7 @@ Workbench View
 - `parameter_definitions` 只保存用户交互配置，不保存或重新定义字段数据类型；
 - `fixed_filter` 使用 Service `QueryFilter` 的结构化 AST 并只包含已校验字面值；
 - `parameter_filters` 每项把一个 View 参数绑定到一个服务字段和操作符，不使用字符串占位符；
+- `named_parameter_bindings` 每项把一个 Component 参数绑定到 Descriptor 声明的服务命名参数；同一 Component 参数只能在字段筛选和服务命名参数中选择一种绑定；
 - 第一阶段所有已提交的参数谓词与 `fixed_filter` 使用 `AND` 组合，不建设动态布尔表达式编辑器；
 - 未提交的非必填参数不生成谓词，未提交的必填参数在前端和 Workbench 编译层都必须拒绝；
 - `page_limit` 是每次读取上限并必须不超过 Descriptor 声明的上限；cursor 只存在当前 Explore Session；
@@ -730,9 +732,16 @@ Workbench 根据 Consumer Descriptor 中的字段类型、允许操作符和空�
 
 统计周期、基准日期、阈值或算法模式等参数可能不直接对应输出字段。它们必须由 Service 作为强类型 Input Contract 明确发布，并由 Service 负责绑定和校验。Workbench 只负责渲染控件和提交类型化值。
 
-第一阶段明确不增加服务级命名参数，Consumer Descriptor 不返回 `named_parameters`，现有唯一 `QueryExecutionRequest` 不增加 `parameters`。Outdoor 第一批场景使用已物化结果上的字段筛选；Top 10 属于上游固定计算口径，不在 Workbench 查看时重新传入 `top_n`。
+Outdoor 两人活动重叠度已经形成无法表达为输出字段筛选的真实用例：两个人员标识必须在 SQL 内部参与活动集合、交集和分母计算，不能先生成所有人员对再筛选。现行契约因此正式支持服务级命名参数：
 
-后续只有在出现无法表达为输出字段筛选的真实用例后，才修订本专题和 Service 执行契约。届时必须扩展现有唯一执行请求，不增加第二个执行端点、字符串替换或 Workbench 私有参数语法。
+- Query Service 的 SQL 模式在发布时声明 `named_parameters`，每项包含稳定名称、通用字段类型、必填性、说明和可选默认值；表模式不得声明命名参数；
+- SQL 只使用 `:name` 引用标量值，参数定义与 SQL 引用必须完全一致；不支持关系、字段名、表名、排序表达式或 SQL 片段参数；
+- 现有唯一 `QueryExecutionRequest` 增加 `parameters` 对象，不增加第二个端点或第二种执行协议；
+- Service 在执行前拒绝缺失、额外和类型错误的参数，并通过共享查询运行层使用数据库绑定参数；禁止字符串替换；
+- Consumer Descriptor 的 `input_contract.named_parameters` 是 Workbench 唯一可见的服务参数事实，并纳入 `contract_fingerprint`；
+- Data Application Component 用现有 Parameter Definition 和 Parameter Binding 把 Application Parameter 映射到字段筛选参数或服务命名参数，不保存 SQL。
+
+字段筛选与服务命名参数可以同时存在：前者只约束固定查询的输出字段，后者参与固定 SQL 内部计算。两者都编译进同一个结构化执行请求。
 
 ### 7.3 参数选项
 
@@ -744,6 +753,8 @@ Workbench 根据 Consumer Descriptor 中的字段类型、允许操作符和空�
 - 用户手工输入。
 
 Workbench 不对底层字段执行无界 `SELECT DISTINCT`，不直接查询来源表，也不把样例值当成完整候选集。
+
+Outdoor 人员选择不增加“按 ID 查询昵称”的专用服务。人员指标 Query Service 直接输出 `person_id + person_nickname + 指标`，两个同源人员列表 Component 分别通过 Selection Binding 写入 `person_id_a` 和 `person_id_b`；重叠度 Component 将这两个 Application Parameter 绑定到服务命名参数。昵称用于展示，稳定人员 ID 用于计算。
 
 ### 7.4 保存与运行
 
@@ -774,6 +785,15 @@ Data Application Component 保存参数定义、查询模板和默认值。运�
       "sortable": false
     }
   ],
+  "named_parameters": [
+    {
+      "name": "threshold",
+      "type": "decimal",
+      "required": false,
+      "description": "最低阈值",
+      "default": 0.5
+    }
+  ],
   "default_select": ["person_id", "activity_count"],
   "stable_order": ["person_id"],
   "filter_expression": {
@@ -792,7 +812,7 @@ Data Application Component 保存参数定义、查询模板和默认值。运�
 
 `value_type` 复用 ADDP 通用 `FieldType`，不再定义 Workbench 私有类型集。`filter_operators`、`sortable`、限制和格式必须与 Service 真实校验逻辑同源生成，不得由投影层手工维护一份可漂移清单。
 
-本结构是第一阶段的完整输入契约，不使用空 `named_parameters` 作为未来能力占位。
+`named_parameters` 只在服务真实声明命名参数时包含条目；没有命名参数时返回空数组，不作为未来能力占位或 Workbench 私有扩展点。
 
 ## 八、渲染体系
 
@@ -1122,7 +1142,7 @@ CatalogEntry 标识 Data Application 聚合根，不标识单个发布 Revision�
 - [x] 确认 Service 只声明输入/输出契约，不声明 Workbench renderer；
 - [x] 确认 Service 拥有 Consumer Catalog，且列表只返回当前可执行服务；
 - [x] 确认 ServiceReference 使用 `service_type + 正整数 service_id` 和唯一详情 URL；
-- [x] 确认 Query Service 第一阶段只开放字段筛选，不增加服务级命名参数；
+- [x] 确认 Query Service 同时支持输出字段筛选和 SQL 模式强类型标量命名参数，并由唯一执行请求承载；
 - [x] 确认 Data Application 唯一 CRUD、发布、运行 API、owner 边界和权限矩阵；
 - [x] 确认 renderer primitive 按 `common-frontend/basic | chart | map` 依赖边界共享，Workbench 只保留 Renderer Host；
 - [x] 确认第一阶段 Chart 为 `bar | line | pie`，Map 只消费有界完整 GeoJSON；

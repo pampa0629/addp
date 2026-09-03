@@ -27,6 +27,9 @@ type CodeSetRevisionSnapshot struct {
 	CodeSetID     int64              `json:"code_set_id,string" swaggertype:"string"`
 	RevisionID    int64              `json:"revision_id,string" swaggertype:"string"`
 	RevisionNo    int64              `json:"revision_no"`
+	ScopeType     string             `json:"scope_type" enums:"platform,tenant_common,domain"`
+	OwnerDomainID *int64             `json:"owner_domain_id,omitempty,string" swaggertype:"string"`
+	Origin        string             `json:"origin" enums:"platform,tenant"`
 	Code          string             `json:"code"`
 	Name          string             `json:"name"`
 	Description   string             `json:"description"`
@@ -41,7 +44,8 @@ type ElementRevisionSnapshot struct {
 	ElementID         int64                    `json:"element_id,string" swaggertype:"string"`
 	ElementRevisionID int64                    `json:"element_revision_id,string" swaggertype:"string"`
 	RevisionNo        int64                    `json:"revision_no"`
-	DomainID          *int64                   `json:"domain_id,omitempty,string" swaggertype:"string"`
+	ScopeType         string                   `json:"scope_type" enums:"platform,tenant_common,domain"`
+	OwnerDomainID     *int64                   `json:"owner_domain_id,omitempty,string" swaggertype:"string"`
 	Code              string                   `json:"code"`
 	Name              string                   `json:"name"`
 	Definition        string                   `json:"definition"`
@@ -136,7 +140,7 @@ func (s *ElementRevisionResolutionService) Resolve(
 		}
 		snapshot := &ElementRevisionSnapshot{
 			ElementID: element.ID, ElementRevisionID: revision.ID, RevisionNo: revision.RevisionNo,
-			DomainID: element.DomainID, Code: element.Code, Name: revision.Name, Definition: revision.Definition,
+			ScopeType: element.ScopeType, OwnerDomainID: element.OwnerDomainID, Code: element.Code, Name: revision.Name, Definition: revision.Definition,
 			DataType: revision.DataType, Length: revision.Length, PrecisionNum: revision.PrecisionNum, Scale: revision.Scale,
 			Nullable: revision.Nullable, DefaultValue: revision.DefaultValue, Format: revision.Format,
 			ValueDomainKind: revision.ValueDomainKind, RangeConstraint: revision.RangeConstraint,
@@ -167,6 +171,7 @@ func codeSetSnapshot(record repository.ResolvedCodeSetRevision) *CodeSetRevision
 	}
 	return &CodeSetRevisionSnapshot{
 		CodeSetID: record.CodeSet.ID, RevisionID: revision.ID, RevisionNo: revision.RevisionNo,
+		ScopeType: record.CodeSet.ScopeType, OwnerDomainID: record.CodeSet.OwnerDomainID, Origin: record.CodeSet.Origin,
 		Code: record.CodeSet.Code, Name: revision.Name, Description: revision.Description, ValueType: revision.ValueType,
 		Status: revision.Status, EffectiveFrom: utcTimePointer(revision.EffectiveFrom), EffectiveTo: utcTimePointer(revision.EffectiveTo), Items: items,
 	}

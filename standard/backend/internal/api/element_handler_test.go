@@ -25,9 +25,9 @@ func TestListElementsFiltersByCanonicalIDs(t *testing.T) {
 		element  models.Element
 		revision models.ElementRevision
 	}{
-		{models.Element{ID: 11, TenantID: 7, Code: "customer_id", CreatedBy: 1, LifecycleState: "active"}, models.ElementRevision{Name: "Customer ID", Definition: "Customer identifier", DataType: "string", Status: models.RevisionStatusDraft, RevisionNo: 1, ValueDomainKind: models.ValueDomainUnrestricted, ChangeSummary: "initial", CreatedBy: 1}},
-		{models.Element{ID: 12, TenantID: 7, Code: "order_id", CreatedBy: 1, LifecycleState: "active"}, models.ElementRevision{Name: "Order ID", Definition: "Order identifier", DataType: "string", Status: models.RevisionStatusDraft, RevisionNo: 1, ValueDomainKind: models.ValueDomainUnrestricted, ChangeSummary: "initial", CreatedBy: 1}},
-		{models.Element{ID: 13, TenantID: 8, Code: "other", CreatedBy: 1, LifecycleState: "active"}, models.ElementRevision{Name: "Other tenant", Definition: "Other", DataType: "string", Status: models.RevisionStatusDraft, RevisionNo: 1, ValueDomainKind: models.ValueDomainUnrestricted, ChangeSummary: "initial", CreatedBy: 1}},
+		{models.Element{ID: 11, TenantID: 7, ScopeType: models.StandardScopeTenantCommon, Code: "customer_id", CreatedBy: 1, LifecycleState: "active"}, models.ElementRevision{Name: "Customer ID", Definition: "Customer identifier", DataType: "string", Status: models.RevisionStatusDraft, RevisionNo: 1, ValueDomainKind: models.ValueDomainUnrestricted, ChangeSummary: "initial", CreatedBy: 1}},
+		{models.Element{ID: 12, TenantID: 7, ScopeType: models.StandardScopeTenantCommon, Code: "order_id", CreatedBy: 1, LifecycleState: "active"}, models.ElementRevision{Name: "Order ID", Definition: "Order identifier", DataType: "string", Status: models.RevisionStatusDraft, RevisionNo: 1, ValueDomainKind: models.ValueDomainUnrestricted, ChangeSummary: "initial", CreatedBy: 1}},
+		{models.Element{ID: 13, TenantID: 8, ScopeType: models.StandardScopeTenantCommon, Code: "other", CreatedBy: 1, LifecycleState: "active"}, models.ElementRevision{Name: "Other tenant", Definition: "Other", DataType: "string", Status: models.RevisionStatusDraft, RevisionNo: 1, ValueDomainKind: models.ValueDomainUnrestricted, ChangeSummary: "initial", CreatedBy: 1}},
 	} {
 		if err := db.Create(&fixture.element).Error; err != nil {
 			t.Fatalf("create element: %v", err)
@@ -131,7 +131,8 @@ func newElementHandlerTestDB(t *testing.T) *gorm.DB {
 	if err := db.Exec(`CREATE TABLE standard.elements (
 		id INTEGER PRIMARY KEY,
 		tenant_id INTEGER NOT NULL,
-		domain_id INTEGER,
+		scope_type TEXT NOT NULL,
+		owner_domain_id INTEGER,
 		code TEXT NOT NULL,
 		steward_id INTEGER,
 		tags BLOB,

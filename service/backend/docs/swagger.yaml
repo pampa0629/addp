@@ -423,6 +423,19 @@ definitions:
       srid:
         type: integer
     type: object
+  github_com_addp_service_internal_models.ConsumerNamedParameter:
+    properties:
+      default:
+        type: object
+      description:
+        type: string
+      name:
+        type: string
+      required:
+        type: boolean
+      type:
+        $ref: '#/definitions/datatype.FieldType'
+    type: object
   github_com_addp_service_internal_models.ConsumerOperation:
     properties:
       input_kind:
@@ -648,6 +661,11 @@ definitions:
         maximum: 10000
         minimum: 1
         type: integer
+      named_parameters:
+        description: SQL 中使用 :name 引用的强类型标量参数。
+        items:
+          $ref: '#/definitions/github_com_addp_service_internal_models.QueryServiceNamedParameter'
+        type: array
       output_contract:
         allOf:
         - $ref: '#/definitions/github_com_addp_service_internal_models.QueryServiceOutputContract'
@@ -914,6 +932,8 @@ definitions:
         type: array
       page:
         $ref: '#/definitions/github_com_addp_service_internal_models.QueryPageRequest'
+      parameters:
+        type: object
       select:
         items:
           type: string
@@ -1021,6 +1041,10 @@ definitions:
         type: array
       max_features:
         type: integer
+      named_parameters:
+        items:
+          $ref: '#/definitions/github_com_addp_service_internal_models.QueryServiceNamedParameter'
+        type: array
       protocols:
         additionalProperties: true
         type: object
@@ -1077,6 +1101,19 @@ definitions:
         $ref: '#/definitions/datatype.TableInfo'
       verification_status:
         type: string
+    type: object
+  github_com_addp_service_internal_models.QueryServiceNamedParameter:
+    properties:
+      default:
+        type: object
+      description:
+        type: string
+      name:
+        type: string
+      required:
+        type: boolean
+      type:
+        $ref: '#/definitions/datatype.FieldType'
     type: object
   github_com_addp_service_internal_models.QueryServiceOutputContract:
     properties:
@@ -1233,6 +1270,8 @@ definitions:
     properties:
       engine_id:
         type: integer
+      parameters:
+        type: object
       sql:
         type: string
     required:
@@ -1261,6 +1300,10 @@ definitions:
         enum:
         - structured_query
         type: string
+      named_parameters:
+        items:
+          $ref: '#/definitions/github_com_addp_service_internal_models.ConsumerNamedParameter'
+        type: array
       order:
         $ref: '#/definitions/github_com_addp_service_internal_models.ConsumerOrderContract'
       page:

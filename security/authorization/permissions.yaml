@@ -1,7 +1,15 @@
 schema_version: addp.permission_manifest/v1
 owner_module: security
-manifest_version: 4
+manifest_version: 6
 permissions:
+  - key: security.assessment.create
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.security.assessment.create.name
+    description_i18n_key: permissions.security.assessment.create.description
   - key: security.assessment.read
     allowed_scope_types: [tenant, department, project_group]
     risk_level: medium
@@ -50,6 +58,38 @@ permissions:
     status: active
     name_i18n_key: permissions.security.classification.update.name
     description_i18n_key: permissions.security.classification.update.description
+  - key: security.detector.create
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.security.detector.create.name
+    description_i18n_key: permissions.security.detector.create.description
+  - key: security.detector.delete
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.security.detector.delete.name
+    description_i18n_key: permissions.security.detector.delete.description
+  - key: security.detector.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: low
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.security.detector.read.name
+    description_i18n_key: permissions.security.detector.read.description
+  - key: security.detector.update
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.security.detector.update.name
+    description_i18n_key: permissions.security.detector.update.description
   - key: security.enrollment.create
     allowed_scope_types: [tenant, department, project_group]
     risk_level: high
