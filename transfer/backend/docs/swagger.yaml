@@ -96,6 +96,27 @@ definitions:
       stopped_at:
         type: string
     type: object
+  github_com_addp_transfer_internal_models.CreateAdHocExecutionRequest:
+    properties:
+      auto_scan_metadata:
+        type: boolean
+      batch_size:
+        type: integer
+      config:
+        $ref: '#/definitions/github_com_addp_transfer_internal_models.TableTransferTaskConfigDoc'
+      name:
+        type: string
+    required:
+    - config
+    - name
+    type: object
+  github_com_addp_transfer_internal_models.CreateAdHocExecutionResponse:
+    properties:
+      execution_id:
+        type: string
+      status:
+        type: string
+    type: object
   github_com_addp_transfer_internal_models.CreateTaskRequestDoc:
     properties:
       auto_scan_metadata:
@@ -584,8 +605,21 @@ definitions:
         example: snapshot
         type: string
     type: object
+  github_com_addp_transfer_internal_models.TransferQueryInputDoc:
+    properties:
+      locator:
+        example: addp://engine/9/path/public/orders?type=table&item_id=42
+        type: string
+      name:
+        example: orders
+        type: string
+    type: object
   github_com_addp_transfer_internal_models.TransferQuerySourceDoc:
     properties:
+      inputs:
+        items:
+          $ref: '#/definitions/github_com_addp_transfer_internal_models.TransferQueryInputDoc'
+        type: array
       language:
         example: mql
         type: string
@@ -1231,6 +1265,48 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - transfer.task.read
+    post:
+      consumes:
+      - application/json
+      description: 模块 Service Client 创建不带 Transfer 任务定义的一次性 bounded sync execution；调用来源由认证
+        Client ID 推导，响应只返回统一 execution_id。| A module Service Client creates a one-off
+        bounded sync execution without a Transfer task definition; the source module
+        is derived from the authenticated Client ID and the response contains only
+        the unified execution_id.
+      parameters:
+      - description: 一次性同步执行 | One-off sync execution
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_transfer_internal_models.CreateAdHocExecutionRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/github_com_addp_transfer_internal_models.CreateAdHocExecutionResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建一次性同步执行 | Create one-off sync execution
+      tags:
+      - 执行管理 | Execution Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - transfer.execution.create
   /executions/{execution_id}:
     get:
       parameters:
@@ -1325,6 +1401,44 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - transfer.task.read
+  /executions/{execution_id}/result:
+    get:
+      description: 仅返回 source 与当前模块 Service Client 一致、且没有 Transfer 任务定义的一次性 execution。|
+        Returns only a one-off execution whose source matches the authenticated module
+        Service Client and which has no Transfer task definition.
+      parameters:
+      - description: 执行ID | Execution ID
+        in: path
+        name: execution_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_transfer_internal_models.TaskExecution'
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取模块一次性执行结果 | Get module-owned one-off execution result
+      tags:
+      - 执行管理 | Execution Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - transfer.execution.read
   /executions/{execution_id}/retry:
     post:
       description: 为允许重试的失败 bounded execution 创建 restartable retry；continuous execution

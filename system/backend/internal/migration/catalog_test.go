@@ -14,8 +14,78 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 121 {
-		t.Fatalf("LatestVersion = %d, want 121", catalog.LatestVersion)
+	if catalog.LatestVersion != 125 {
+		t.Fatalf("LatestVersion = %d, want 125", catalog.LatestVersion)
+	}
+}
+
+func TestDevelopTransferExecutionMigrationGrantsExactRuntimePermission(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000124_iam_develop_transfer_execution.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 124: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'transfer.execution.create'", "'tenant.develop_runtime'", "'tenant.manager_runtime'", "'product'",
+		"ON CONFLICT (role_id, permission_id) DO NOTHING",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 124 missing %q", fragment)
+		}
+	}
+	if got := fmt.Sprintf("%x", sha256.Sum256(data)); got != "e209c1c09bb90fb68350f5d65d1fc2e678059bf65ee73bf5b0fbd3703f26dd2f" {
+		t.Fatalf("migration 124 checksum = %s, want applied checksum", got)
+	}
+}
+
+func TestTransferExecutionReadMigrationGrantsExactRuntimePermission(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000125_iam_transfer_execution_read.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 125: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'transfer.execution.read'", "'tenant.develop_runtime'", "'tenant.manager_runtime'", "'product'",
+		"ON CONFLICT (role_id, permission_id) DO NOTHING",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 125 missing %q", fragment)
+		}
+	}
+	if got := fmt.Sprintf("%x", sha256.Sum256(data)); got != "854455089f84d8130467841ceef1446916e6e4376c27857b1ff8b4a2cb99310e" {
+		t.Fatalf("migration 125 checksum = %s, want applied checksum", got)
+	}
+}
+
+func TestModelMaterializedTargetDeleteMigrationCreatesExactPermission(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000123_iam_model_materialized_target_delete.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 123: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'model.materialized_target.delete'", "'critical'", "ARRAY['tenant']::text[]",
+		"'tenant.data_architect'", "'product'",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 123 missing %q", fragment)
+		}
+	}
+}
+
+func TestStandardMetricPublishMigrationCreatesExactPermission(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000122_iam_standard_metric_publish.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 122: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'standard.metric.publish'", "'tenant.governance_manager'",
+		"'standard.metric.approve'", "'standard.metric.offline'",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 122 missing %q", fragment)
+		}
 	}
 }
 

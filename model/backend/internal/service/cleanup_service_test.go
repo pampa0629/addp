@@ -142,14 +142,23 @@ func setupModelCleanupTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
-		`CREATE TABLE model.fact_metric_mappings (
+		`CREATE TABLE model.metric_implementations (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			tenant_id INTEGER NOT NULL,
 			fact_table_id INTEGER NOT NULL,
-			metric_id INTEGER NOT NULL,
-			field_id INTEGER,
+			metric_definition_id INTEGER NOT NULL,
+			metric_definition_revision_id INTEGER NOT NULL,
+			name TEXT NOT NULL,
+			grain TEXT NOT NULL,
+			source_config TEXT NOT NULL,
+			dimension_config TEXT NOT NULL,
+			filter_config TEXT NOT NULL,
+			expression_config TEXT NOT NULL,
+			status TEXT NOT NULL,
 			note TEXT,
 			created_by INTEGER NOT NULL,
+			updated_by INTEGER,
+			updated_at DATETIME,
 			created_at DATETIME
 		)`,
 	} {
@@ -230,7 +239,7 @@ func TestModelCleanupTenantDeletedPhysicalDeletesOwnedState(t *testing.T) {
 	}
 	if stats.DWLayers != 1 || stats.Entities != 2 || stats.EntityAttributes != 1 || stats.EntityRelations != 1 ||
 		stats.LogicalTables != 2 || stats.LogicalFields != 2 || stats.DimensionHierarchies != 1 ||
-		stats.DimensionHierarchyLevels != 1 || stats.TableRelations != 1 || stats.FactMetricMappings != 1 {
+		stats.DimensionHierarchyLevels != 1 || stats.TableRelations != 1 || stats.MetricImplementations != 1 {
 		t.Fatalf("unexpected tenant scan stats: %+v", stats)
 	}
 
@@ -260,7 +269,7 @@ func TestModelCleanupTenantDeletedPhysicalDeletesOwnedState(t *testing.T) {
 		dimensionHierarchies:     1,
 		dimensionHierarchyLevels: 1,
 		tableRelations:           1,
-		factMetricMappings:       1,
+		metricImplementations:    1,
 	})
 }
 
@@ -312,9 +321,9 @@ func seedModelCleanupTenantState(t *testing.T, db *gorm.DB, tenantID int64) (int
 	if err := db.Create(&tableRelation).Error; err != nil {
 		t.Fatalf("create table relation: %v", err)
 	}
-	mapping := models.FactMetricMapping{TenantID: tenantID, FactTableID: factTable.ID, MetricID: 9, FieldID: &factField.ID, CreatedBy: 1}
-	if err := db.Create(&mapping).Error; err != nil {
-		t.Fatalf("create fact metric mapping: %v", err)
+	implementation := models.MetricImplementation{TenantID: tenantID, FactTableID: factTable.ID, MetricDefinitionID: 9, MetricDefinitionRevisionID: 19, Name: "Customer Count", Grain: "customer", SourceConfig: models.JSONB{"field_ids": []int64{factField.ID}}, DimensionConfig: models.JSONB{}, FilterConfig: models.JSONB{}, ExpressionConfig: models.JSONB{"engine": "sql", "expression": "COUNT(*)"}, Status: models.MetricImplementationActive, CreatedBy: 1}
+	if err := db.Create(&implementation).Error; err != nil {
+		t.Fatalf("create metric implementation: %v", err)
 	}
 	hierarchy := models.DimensionHierarchy{TenantID: tenantID, TableID: dimTable.ID, Name: "Geography"}
 	if err := db.Create(&hierarchy).Error; err != nil {
@@ -338,7 +347,7 @@ type modelCleanupCountExpectation struct {
 	dimensionHierarchies     int64
 	dimensionHierarchyLevels int64
 	tableRelations           int64
-	factMetricMappings       int64
+	metricImplementations    int64
 }
 
 func assertModelCleanupCount(t *testing.T, db *gorm.DB, expected modelCleanupCountExpectation) {
@@ -354,7 +363,7 @@ func assertModelCleanupCount(t *testing.T, db *gorm.DB, expected modelCleanupCou
 		{name: "logical_tables", model: &models.LogicalTable{}, expected: expected.logicalTables},
 		{name: "dimension_hierarchies", model: &models.DimensionHierarchy{}, expected: expected.dimensionHierarchies},
 		{name: "table_relations", model: &models.TableRelation{}, expected: expected.tableRelations},
-		{name: "fact_metric_mappings", model: &models.FactMetricMapping{}, expected: expected.factMetricMappings},
+		{name: "metric_implementations", model: &models.MetricImplementation{}, expected: expected.metricImplementations},
 	} {
 		var count int64
 		if err := db.Model(item.model).Where("tenant_id = ?", expected.tenantID).Count(&count).Error; err != nil {

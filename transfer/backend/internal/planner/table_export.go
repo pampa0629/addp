@@ -60,6 +60,15 @@ type QuerySourceSpec struct {
 	Language   string                 `json:"language"`
 	Statement  string                 `json:"statement"`
 	Parameters map[string]interface{} `json:"parameters,omitempty"`
+	Inputs     []QueryInputSpec       `json:"inputs,omitempty"`
+}
+
+// QueryInputSpec is a relation binding resolved by the query owner before the
+// Transfer execution is created. It is an execution fact, not a SQL parser
+// hint: Transfer validates the locator and uses it only for complete lineage.
+type QueryInputSpec struct {
+	Name    string `json:"name"`
+	Locator string `json:"locator"`
 }
 
 type TableExportTaskSpec struct {
@@ -1171,6 +1180,9 @@ func validateQuerySource(source EndpointSpec, transforms []TransformSpec) error 
 	if err := commonquery.ValidateDefinitions(references, source.Query.Parameters); err != nil {
 		return fmt.Errorf("invalid query source parameters: %w", err)
 	}
+	if err := validateQueryInputs(source); err != nil {
+		return err
+	}
 	var mapping *TransformSpec
 	for i := range transforms {
 		if strings.EqualFold(strings.TrimSpace(transforms[i].Type), "field_mapping") {
@@ -1186,6 +1198,40 @@ func validateQuerySource(source EndpointSpec, transforms []TransformSpec) error 
 	for i, field := range mapping.Fields {
 		if strings.TrimSpace(field.Source) == "" || strings.TrimSpace(field.TargetType) == "" {
 			return fmt.Errorf("query source field_mapping field %d requires source and target_type", i)
+		}
+	}
+	return nil
+}
+
+func validateQueryInputs(source EndpointSpec) error {
+	if source.Query == nil || len(source.Query.Inputs) == 0 {
+		return nil
+	}
+	anchor, err := source.ResourceLocator()
+	if err != nil || anchor == nil || anchor.EngineID == 0 {
+		return fmt.Errorf("query source locator is invalid")
+	}
+	names := make(map[string]struct{}, len(source.Query.Inputs))
+	previousName := ""
+	for i, input := range source.Query.Inputs {
+		name := strings.TrimSpace(input.Name)
+		if name == "" {
+			return fmt.Errorf("query source input %d name is required", i)
+		}
+		if _, exists := names[name]; exists {
+			return fmt.Errorf("query source input name %q is duplicated", name)
+		}
+		if i > 0 && name < previousName {
+			return fmt.Errorf("query source inputs must be sorted by name")
+		}
+		names[name] = struct{}{}
+		previousName = name
+		locator, err := resourcetree.ParseURI(strings.TrimSpace(input.Locator))
+		if err != nil || locator == nil || locator.EngineID == 0 {
+			return fmt.Errorf("query source input %q locator is invalid", name)
+		}
+		if locator.EngineID != anchor.EngineID {
+			return fmt.Errorf("query source input %q must use source engine %d", name, anchor.EngineID)
 		}
 	}
 	return nil

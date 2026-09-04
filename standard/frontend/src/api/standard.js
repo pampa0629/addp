@@ -106,12 +106,18 @@ export const metricCategoryAPI = {
 
 export const metricAPI = {
   list(params) { return client.get('/standard/metrics', { params }) },
-  get(id) { return client.get(`/standard/metrics/${id}`) },
+  get(id, params) { return client.get(`/standard/metrics/${id}`, { params }) },
   create(data) { return client.post('/standard/metrics', data) },
   update(id, data) { return client.put(`/standard/metrics/${id}`, data) },
   delete(id) { return client.delete(`/standard/metrics/${id}`) },
-  approve(id, version) { return client.post(`/standard/metrics/${id}/approve`, { version }) },
-  deprecate(id, version) { return client.post(`/standard/metrics/${id}/deprecate`, { version }) }
+  listRevisions(id) { return client.get(`/standard/metrics/${id}/revisions`) },
+  getRevision(id, revisionId) { return client.get(`/standard/metrics/${id}/revisions/${revisionId}`) },
+  createRevision(id, data) { return client.post(`/standard/metrics/${id}/revisions`, data) },
+  updateRevision(id, revisionId, data) { return client.put(`/standard/metrics/${id}/revisions/${revisionId}`, data) },
+  submitRevision(id, revisionId, version) { return client.post(`/standard/metrics/${id}/revisions/${revisionId}/submit`, { version }) },
+  returnRevision(id, revisionId, version) { return client.post(`/standard/metrics/${id}/revisions/${revisionId}/return`, { version }) },
+  publishRevision(id, revisionId, version) { return client.post(`/standard/metrics/${id}/revisions/${revisionId}/publish`, { version }) },
+  withdrawRevision(id, revisionId, version) { return client.post(`/standard/metrics/${id}/revisions/${revisionId}/withdraw`, { version }) }
 }
 
 // ========== 标准文档 API ==========

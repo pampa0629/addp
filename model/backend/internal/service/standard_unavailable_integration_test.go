@@ -30,7 +30,7 @@ func TestStandardPermissionFailureMapsToUnavailableAcrossModelServices(t *testin
 	relationRepo := repository.NewEntityRelationRepository(db)
 	tableRepo := repository.NewLogicalTableRepository(db)
 	layerRepo := repository.NewDWLayerRepository(db)
-	metricRepo := repository.NewFactMetricRepository(db)
+	metricRepo := repository.NewMetricImplementationRepository(db)
 
 	entityService := NewEntityService(entityRepo, relationRepo)
 	entityService.SetStandardClient(standardClient)
@@ -57,9 +57,9 @@ func TestStandardPermissionFailureMapsToUnavailableAcrossModelServices(t *testin
 	})
 	requireUnavailableDomainError(t, err)
 
-	factMetricService := NewFactMetricService(metricRepo, tableRepo)
-	factMetricService.SetStandardClient(standardClient)
-	_, err = factMetricService.AddMetric(table.ID, 1, 1, &models.CreateFactMetricMappingRequest{MetricID: 9})
+	metricImplementationService := NewMetricImplementationService(metricRepo, tableRepo)
+	metricImplementationService.SetStandardClient(standardClient)
+	_, err = metricImplementationService.Create(table.ID, 1, 1, metricImplementationRequest(table.Version, 1))
 	requireUnavailableDomainError(t, err)
 }
 

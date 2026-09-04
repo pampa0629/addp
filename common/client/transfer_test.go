@@ -2,10 +2,64 @@ package client
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 )
+
+func TestTransferClientCreateExecutionUsesOneOffExecutionRoute(t *testing.T) {
+	t.Parallel()
+
+	var request CreateTransferExecutionRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/transfer/executions" {
+			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer addp_at_transfer_token" {
+			t.Fatalf("Authorization = %q", r.Header.Get("Authorization"))
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"execution_id":"transfer-exec-1","status":"pending"}`))
+	}))
+	defer server.Close()
+
+	client := NewTransferClient(server.URL, staticTenantToken("addp_at_transfer_token"))
+	result, err := client.CreateExecution(context.Background(), &CreateTransferExecutionRequest{
+		Name: "query export", TenantID: 7,
+		Config: TransferExecutionConfig{
+			Runtime: TransferExecutionRuntime{Boundary: "bounded"},
+			Load:    TransferExecutionLoad{Mode: "snapshot"},
+			Source: TransferExecutionEndpoint{
+				Locator: "addp://engine/1/path/public/orders?type=table", DataType: "table", Representation: "native",
+				Query: &TransferExecutionQuery{
+					Language: "sql", Statement: "SELECT * FROM orders",
+					Inputs: []TransferExecutionQueryInput{{Name: "orders", Locator: "addp://engine/1/path/public/orders?type=table&item_id=42"}},
+				},
+			},
+			Target: TransferExecutionEndpoint{
+				ParentLocator: "addp://engine/2/path/exports?type=directory", Name: "orders.csv",
+				DataType: "table", Representation: "encoded", Format: "csv",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateExecution() error = %v", err)
+	}
+	if result.ExecutionID != "transfer-exec-1" || result.Status != "pending" {
+		t.Fatalf("result = %#v", result)
+	}
+	if request.TenantID != 0 || request.Config.Target.Name != "orders.csv" {
+		t.Fatalf("request = %#v", request)
+	}
+	if request.Config.Source.Query == nil || len(request.Config.Source.Query.Inputs) != 1 || request.Config.Source.Query.Inputs[0].Name != "orders" || request.Config.Source.Query.Inputs[0].Locator != "addp://engine/1/path/public/orders?type=table&item_id=42" {
+		t.Fatalf("query inputs = %#v", request.Config.Source.Query)
+	}
+}
 
 func TestTransferClientCreateTaskParsesDirectResponse(t *testing.T) {
 	t.Parallel()
@@ -136,8 +190,8 @@ func TestTransferClientGetExecutionParsesDirectResponse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetExecution() error = %v", err)
 	}
-	if gotPath != "/api/v1/transfer/executions/exec-uuid-21" {
-		t.Fatalf("path = %q, want transfer execution path", gotPath)
+	if gotPath != "/api/v1/transfer/executions/exec-uuid-21/result" {
+		t.Fatalf("path = %q, want module-owned transfer execution result path", gotPath)
 	}
 	if gotAuth != "Bearer addp_at_transfer_token" {
 		t.Fatalf("authorization header = %q", gotAuth)

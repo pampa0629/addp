@@ -4,6 +4,7 @@
       <div><h2>{{ isCreate ? t('workbench.createDataApplication') : (application.name || t('workbench.dataApplication')) }}</h2><p>{{ t('workbench.dataApplicationEditorSubtitle') }}</p></div>
       <div class="actions">
         <el-button @click="router.push('/applications')">{{ t('workbench.cancel') }}</el-button>
+        <el-button data-testid="draft-preview-action" @click="openDraftPreview">{{ t('workbench.previewApplication') }}</el-button>
         <el-button :loading="saving" type="primary" @click="save">{{ isCreate ? t('workbench.createDraft') : t('workbench.saveDraft') }}</el-button>
         <el-button v-if="application.publication_status === 'unpublished'" :disabled="dirty" :loading="publishing" type="success" @click="publish">{{ t('workbench.publish') }}</el-button>
         <el-button v-else-if="application.publication_status === 'offline' || application.has_unpublished_changes" :disabled="dirty" :loading="publishing" type="success" @click="publish">{{ t('workbench.publishRevision') }}</el-button>
@@ -150,6 +151,9 @@
     </el-card>
     <ApplicationComponentEditor v-model="componentEditorVisible" :component="editingComponent" @save="saveComponent" />
     <SpatialExplorationWizard v-model="spatialWizardVisible" @apply="applySpatialExploration" />
+    <el-dialog v-model="draftPreviewVisible" class="draft-preview-dialog" fullscreen destroy-on-close :title="t('workbench.draftPreviewTitle')">
+      <DataApplicationCanvas v-if="draftPreviewApplication" :application="draftPreviewApplication" mode="draft-preview" embedded />
+    </el-dialog>
   </div>
 </template>
 
@@ -160,12 +164,13 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { createDataApplication, getDataApplication, offlineDataApplication, publishDataApplication, updateDataApplication } from '../api/dataApplications'
 import { getConsumerDescriptor } from '../api/services'
-import { confirmDataApplicationAction, normalizedApplicationSnapshot } from '../utils/dataApplicationDraft.mjs'
+import { buildDataApplicationPreview, confirmDataApplicationAction, normalizedApplicationSnapshot } from '../utils/dataApplicationDraft.mjs'
 import { APPLICATION_PRESENTATION_SECTIONS, canHideApplicationParameters } from '../utils/dataApplicationRuntime.mjs'
 import { affectedSelectionComponentIDs, compatibleSelectionParameters as compatibleSelectionParameterList, selectionSourceFields } from '../utils/dataApplicationSelection.mjs'
 import { navigateWorkbenchRoute, openDataApplicationRuntime } from '../utils/moduleNavigation'
 import ApplicationComponentEditor from '../components/ApplicationComponentEditor.vue'
 import ApplicationParameterValueInput from '../components/ApplicationParameterValueInput.vue'
+import DataApplicationCanvas from '../components/DataApplicationCanvas.vue'
 import SpatialExplorationWizard from '../components/SpatialExplorationWizard.vue'
 
 const { t } = useI18n()
@@ -180,6 +185,8 @@ const offlining = ref(false)
 const baseline = ref('')
 const componentEditorVisible = ref(false)
 const spatialWizardVisible = ref(false)
+const draftPreviewVisible = ref(false)
+const draftPreviewApplication = ref(null)
 const editingComponent = ref(null)
 const application = reactive(emptyApplication())
 const descriptorByComponent = reactive({})
@@ -346,6 +353,15 @@ function normalizedSnapshot() {
   return normalizedApplicationSnapshot(application.snapshot)
 }
 
+function openDraftPreview() {
+  if (!validatePresentationSections()) return
+  if (!application.name.trim() || !application.snapshot.page.title.trim() || application.snapshot.components.length === 0) {
+    return ElMessage.warning(t('workbench.incompleteDataApplicationPreview'))
+  }
+  draftPreviewApplication.value = buildDataApplicationPreview(application)
+  draftPreviewVisible.value = true
+}
+
 async function load() {
   if (isCreate.value) {
     baseline.value = serializeDraft()
@@ -506,5 +522,5 @@ onMounted(load)
 </script>
 
 <style scoped>
-.page{display:flex;flex-direction:column;gap:16px}.page-header,.actions,.card-header,.layout-actions,.component-heading,.component-actions,.selection-binding-heading,.selection-binding-actions{display:flex;align-items:center}.page-header,.card-header,.component-heading,.selection-binding-heading{justify-content:space-between}.actions,.layout-actions,.component-actions,.selection-binding-actions{gap:8px;flex-wrap:wrap}.page-header h2{margin:0;color:var(--addp-text-primary)}.page-header p,.card-header span,.component-heading span,.component-heading small,.selection-binding-actions span,.presentation-sections>span{color:var(--addp-text-secondary)}.page-header p{margin:6px 0 0}.card-header>div:first-child{display:flex;flex-direction:column;gap:4px}.card-header span,.selection-binding-actions span,.presentation-sections>span{font-size:12px}.full{width:100%}.presentation-sections{display:flex;flex-direction:column;gap:6px}.components,.selection-bindings{display:flex;flex-direction:column;gap:12px}.component-card,.selection-binding-card{padding:16px;border:1px solid var(--addp-border-color);border-radius:8px}.component-heading,.selection-binding-heading{margin-bottom:12px}.component-heading>div:first-child{display:flex;gap:12px;align-items:center}.selection-binding-heading>.el-select{width:min(320px,100%)}@media(max-width:900px){.component-heading,.selection-binding-heading{align-items:stretch;flex-direction:column}.component-actions,.selection-binding-actions{justify-content:space-between}}
+.page{display:flex;flex-direction:column;gap:16px}.page-header,.actions,.card-header,.layout-actions,.component-heading,.component-actions,.selection-binding-heading,.selection-binding-actions{display:flex;align-items:center}.page-header,.card-header,.component-heading,.selection-binding-heading{justify-content:space-between}.actions,.layout-actions,.component-actions,.selection-binding-actions{gap:8px;flex-wrap:wrap}.page-header h2{margin:0;color:var(--addp-text-primary)}.page-header p,.card-header span,.component-heading span,.component-heading small,.selection-binding-actions span,.presentation-sections>span{color:var(--addp-text-secondary)}.page-header p{margin:6px 0 0}.card-header>div:first-child{display:flex;flex-direction:column;gap:4px}.card-header span,.selection-binding-actions span,.presentation-sections>span{font-size:12px}.full{width:100%}.presentation-sections{display:flex;flex-direction:column;gap:6px}.components,.selection-bindings{display:flex;flex-direction:column;gap:12px}.component-card,.selection-binding-card{padding:16px;border:1px solid var(--addp-border-color);border-radius:8px}.component-heading,.selection-binding-heading{margin-bottom:12px}.component-heading>div:first-child{display:flex;gap:12px;align-items:center}.selection-binding-heading>.el-select{width:min(320px,100%)}:deep(.draft-preview-dialog .el-dialog__body){padding:0;overflow:hidden}@media(max-width:900px){.component-heading,.selection-binding-heading{align-items:stretch;flex-direction:column}.component-actions,.selection-binding-actions{justify-content:space-between}}
 </style>

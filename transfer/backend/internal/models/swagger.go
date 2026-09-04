@@ -99,9 +99,16 @@ type TransferSourceEndpointDoc struct {
 }
 
 type TransferQuerySourceDoc struct {
-	Language   string                 `json:"language" example:"mql"`
-	Statement  string                 `json:"statement" example:"{\"aggregate\":\"orders\",\"pipeline\":[{\"$project\":{\"customer_id\":\"$customer.id\",\"_id\":0}}]}"`
-	Parameters map[string]interface{} `json:"parameters,omitempty"`
+	Language   string                  `json:"language" example:"mql"`
+	Statement  string                  `json:"statement" example:"{\"aggregate\":\"orders\",\"pipeline\":[{\"$project\":{\"customer_id\":\"$customer.id\",\"_id\":0}}]}"`
+	Parameters map[string]interface{}  `json:"parameters,omitempty"`
+	Inputs     []TransferQueryInputDoc `json:"inputs,omitempty"`
+}
+
+// TransferQueryInputDoc 是调用方已经解析完成的查询关系输入。
+type TransferQueryInputDoc struct {
+	Name    string `json:"name" example:"orders"`
+	Locator string `json:"locator" example:"addp://engine/9/path/public/orders?type=table&item_id=42"`
 }
 
 type TransferChangeStreamDoc struct {

@@ -5,6 +5,15 @@ export function normalizedApplicationSnapshot(snapshot) {
   return normalized
 }
 
+export function buildDataApplicationPreview(application) {
+  return {
+    name: application.name.trim(),
+    description: application.description.trim(),
+    revision_number: 0,
+    snapshot: normalizedApplicationSnapshot(application.snapshot),
+  }
+}
+
 export async function confirmDataApplicationAction(confirm, message) {
   try {
     await confirm(message)

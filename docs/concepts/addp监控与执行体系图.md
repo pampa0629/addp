@@ -99,7 +99,7 @@ graph TB
 | `completed_at` | timestamp | 完成时间 |
 | `execution_time_ms` | bigint | 执行时长 (毫秒) |
 | `metadata` | jsonb | 结果摘要、步骤结果、模块扩展信息 |
-| `error_details` | jsonb | 错误类型、消息和诊断信息 |
+| `error_details` | jsonb | 仅保存失败、超时或取消的错误类型、消息和诊断信息；成功 execution 必须为空 |
 
 ### 执行运行时角色矩阵
 

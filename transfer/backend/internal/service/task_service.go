@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	commonAPI "github.com/addp/common/api"
+	commonAuthorization "github.com/addp/common/authorization"
 	commonClient "github.com/addp/common/client"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
@@ -46,7 +48,7 @@ type SchemaChangeInspector interface {
 }
 
 type TaskExecutionEngine interface {
-	ExecuteTask(ctx context.Context, taskID, executionID uint) error
+	ExecuteExecution(ctx context.Context, executionID uint) error
 	PrepareReplayExecution(ctx context.Context, tenantID uint, taskConfig map[string]interface{}, request ReplayExecutionRequest, executionApplyIdentity string) (*ReplayExecutionPreparation, error)
 }
 
@@ -471,6 +473,67 @@ func (s *TaskService) StartTask(ctx context.Context, id, tenantID, userID uint) 
 	return s.StartTaskWithContext(ctx, id, tenantID, userID, commonExecution.TriggerTypeManual, commonExecution.ModuleTransfer, nil)
 }
 
+// CreateAdHocExecution creates a bounded sync execution without a persistent
+// Transfer task definition. The execution config is the complete frozen input.
+func (s *TaskService) CreateAdHocExecution(
+	ctx context.Context,
+	req *models.CreateAdHocExecutionRequest,
+	sourceModule string,
+	tenantID, userID uint,
+) (*models.CreateAdHocExecutionResponse, error) {
+	if s == nil || s.executionService == nil || req == nil || tenantID == 0 {
+		return nil, fmt.Errorf("%w: ad-hoc execution context is incomplete", ErrInvalidTaskConfig)
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		return nil, fmt.Errorf("%w: name is required", ErrInvalidTaskConfig)
+	}
+	source := strings.TrimSpace(sourceModule)
+	if commonAuthorization.ValidateOwnerModuleName(source) != nil {
+		return nil, fmt.Errorf("%w: source module is required", ErrInvalidTaskConfig)
+	}
+	configBytes, err := json.Marshal(req.Config)
+	if err != nil {
+		return nil, fmt.Errorf("%w: encode config: %v", ErrInvalidTaskConfig, err)
+	}
+	config := map[string]interface{}{}
+	if err := json.Unmarshal(configBytes, &config); err != nil {
+		return nil, fmt.Errorf("%w: decode config: %v", ErrInvalidTaskConfig, err)
+	}
+	batchSize := req.BatchSize
+	if batchSize <= 0 {
+		batchSize = 1000
+	}
+	if err := s.validateTaskConfig(ctx, tenantID, config, batchSize); err != nil {
+		return nil, err
+	}
+	boundary, err := planner.TaskRuntimeBoundary(config)
+	if err != nil || boundary != commonExecution.ExecutionBoundaryBounded {
+		return nil, fmt.Errorf("%w: ad-hoc execution must be bounded", ErrInvalidTaskConfig)
+	}
+	now := time.Now()
+	triggeredBy := int(userID)
+	record := &commonExecution.TaskExecution{
+		TenantID: int(tenantID), ExecutionID: uuid.NewString(), Module: commonExecution.ModuleTransfer,
+		TaskType: commonExecution.TaskTypeSync, Source: source,
+		Status: commonExecution.ExecutionStatusPending, Progress: 0,
+		ExecutionBoundary: commonExecution.ExecutionBoundaryBounded, MaxAttempts: 1,
+		TriggerType: commonExecution.TriggerTypeManual, TriggeredBy: &triggeredBy,
+		ExecutionConfig: config,
+		Metadata: commonModels.JSONMap{"ad_hoc": commonModels.JSONMap{
+			"name": name, "batch_size": batchSize, "auto_scan_metadata": req.AutoScanMetadata,
+		}},
+		CreatedAt: now, UpdatedAt: now,
+	}
+	if userID == 0 {
+		record.TriggeredBy = nil
+	}
+	if err := s.executionService.taskExecutionRepo.Create(ctx, record); err != nil {
+		return nil, fmt.Errorf("create ad-hoc transfer execution: %w", err)
+	}
+	return &models.CreateAdHocExecutionResponse{ExecutionID: record.ExecutionID, Status: record.Status}, nil
+}
+
 // ReplayTask 为业务 Kafka continuous owner task 创建独立 bounded replay execution。
 // 它不 claim owner task、不修改 desired_state/status/last_execution，也不创建 sync state。
 func (s *TaskService) ReplayTask(ctx context.Context, id, tenantID, userID uint, req models.ReplayTaskRequest) (*models.TaskExecution, error) {
@@ -835,9 +898,9 @@ func transferTaskNextRunAt(schedule string, enabled bool, now time.Time) (*time.
 	return nextTransferRunAt(schedule, now)
 }
 
-// ExecuteTask 执行任务（由 Worker 调用，委托给 ExecutionEngineService）
-func (s *TaskService) ExecuteTask(ctx context.Context, taskID, executionID uint) error {
-	return s.executionEngine.ExecuteTask(ctx, taskID, executionID)
+// ExecuteExecution 执行已领取的 bounded execution。
+func (s *TaskService) ExecuteExecution(ctx context.Context, executionID uint) error {
+	return s.executionEngine.ExecuteExecution(ctx, executionID)
 }
 
 // GetStatistics 获取任务统计信息

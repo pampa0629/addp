@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# develop-postgres-gate.sh - Run Develop owner-local catalog change tests against a disposable database.
+# develop-postgres-gate.sh - Run Develop owner-local PostgreSQL schema and catalog tests.
 
 set -euo pipefail
 
@@ -17,7 +17,9 @@ case "$DEVELOP_POSTGRES_TEST_DSN" in postgres://*/*|postgresql://*/*) ;; *) echo
 case "$database" in *test*|*disposable*) ;; *) echo "DEVELOP_POSTGRES_TEST_DSN must identify a disposable test database" >&2; exit 1 ;; esac
 
 cd "$ROOT_DIR/develop/backend"
-go test ./internal/repository -run '^TestCatalogDevTaskChangeFeedAgainstPostgres$' -count=1 -v 2>&1 | tee "$WORK_DIR/develop.log"
+go test ./internal/repository \
+    -run '^(TestCatalogDevTaskChangeFeedAgainstPostgres|TestExportSessionScopeAgainstPostgres)$' \
+    -count=1 -v 2>&1 | tee "$WORK_DIR/develop.log"
 if grep -q -- '--- SKIP:' "$WORK_DIR/develop.log"; then
     echo "Develop PostgreSQL gate refuses skipped tests" >&2
     exit 1

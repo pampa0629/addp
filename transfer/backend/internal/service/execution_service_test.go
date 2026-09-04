@@ -83,9 +83,9 @@ func TestGetExecutionLogsIncludesTerminalFailure(t *testing.T) {
 	task := createExecutionServiceTestTask(t, db)
 	execution := createExecutionServiceTestExecution(t, db, task, commonExecution.ExecutionStatusFailed)
 	execution.ErrorDetails = commonModels.JSONMap{
-		"logs":    "2026-07-31T22:38:05Z batch=0\n",
 		"message": "failed to write target geometry",
 	}
+	execution.Metadata = commonModels.JSONMap{executionLogsMetadataKey: "2026-07-31T22:38:05Z batch=0\n"}
 	if err := db.Save(&execution).Error; err != nil {
 		t.Fatalf("save execution error details: %v", err)
 	}
@@ -98,6 +98,28 @@ func TestGetExecutionLogsIncludesTerminalFailure(t *testing.T) {
 	want := "2026-07-31T22:38:05Z batch=0\nERROR failed to write target geometry"
 	if logs != want {
 		t.Fatalf("logs = %q, want %q", logs, want)
+	}
+}
+
+func TestAppendLogKeepsErrorDetailsEmpty(t *testing.T) {
+	ctx := context.Background()
+	db := newExecutionServiceTestDB(t)
+	task := createExecutionServiceTestTask(t, db)
+	execution := createExecutionServiceTestExecution(t, db, task, commonExecution.ExecutionStatusPending)
+	service := NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
+
+	if err := service.AppendLog(ctx, uint(execution.ID), "batch=1 records_written=100"); err != nil {
+		t.Fatalf("AppendLog() error = %v", err)
+	}
+	var stored commonExecution.TaskExecution
+	if err := db.First(&stored, execution.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(stored.ErrorDetails) != 0 {
+		t.Fatalf("error_details = %#v, want empty", stored.ErrorDetails)
+	}
+	if stored.Metadata[executionLogsMetadataKey] != "batch=1 records_written=100\n" {
+		t.Fatalf("metadata = %#v", stored.Metadata)
 	}
 }
 
@@ -249,6 +271,39 @@ func TestUpdateExecutionMergesMetadataAndDTOExposesIt(t *testing.T) {
 	dtoRefs, ok := dto.Metadata["target_refs"].([]interface{})
 	if !ok || len(dtoRefs) != 1 {
 		t.Fatalf("dto target_refs = %#v, want one ref", dto.Metadata["target_refs"])
+	}
+}
+
+func TestGetOwnedExecutionByExecutionIDRequiresMatchingAdHocSource(t *testing.T) {
+	ctx := context.Background()
+	db := newExecutionServiceTestDB(t)
+	execution := commonExecution.TaskExecution{
+		TenantID: 7, ExecutionID: "develop-export-execution", Module: commonExecution.ModuleTransfer,
+		TaskType: commonExecution.TaskTypeSync, Source: commonExecution.ModuleDevelop,
+		Status: commonExecution.ExecutionStatusSuccess, TriggerType: commonExecution.TriggerTypeManual,
+		Metadata: commonModels.JSONMap{"target_refs": []interface{}{map[string]interface{}{"path": "tenant_7/export/develop/result.csv"}}},
+	}
+	if err := db.Create(&execution).Error; err != nil {
+		t.Fatal(err)
+	}
+	service := NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
+
+	result, err := service.GetOwnedExecutionByExecutionID(ctx, execution.ExecutionID, 7, commonExecution.ModuleDevelop)
+	if err != nil || result.ExecutionID != execution.ExecutionID {
+		t.Fatalf("matching source result=%#v error=%v", result, err)
+	}
+	if _, err := service.GetOwnedExecutionByExecutionID(ctx, execution.ExecutionID, 7, commonExecution.ModuleManager); err == nil {
+		t.Fatal("different source read succeeded")
+	}
+
+	task := createExecutionServiceTestTask(t, db)
+	linked := createExecutionServiceTestExecution(t, db, task, commonExecution.ExecutionStatusSuccess)
+	linked.Source = commonExecution.ModuleDevelop
+	if err := db.Save(&linked).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.GetOwnedExecutionByExecutionID(ctx, linked.ExecutionID, 7, commonExecution.ModuleDevelop); err == nil {
+		t.Fatal("task-linked execution read succeeded through one-off result path")
 	}
 }
 

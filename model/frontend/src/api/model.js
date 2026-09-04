@@ -211,17 +211,17 @@ export const logicalTableAPI = {
   decommissionMaterializedTarget(id, data) {
     return client.delete(`/model/logical-tables/${id}/materialized-target`, { data })
   },
-  // 获取事实表关联的指标列表
-  listMetrics(tableId) {
-    return client.get(`/model/logical-tables/${tableId}/metrics`)
+  listMetricImplementations(tableId) {
+    return client.get(`/model/logical-tables/${tableId}/metric-implementations`)
   },
-  // 关联指标到事实表
-  addMetric(tableId, data) {
-    return client.post(`/model/logical-tables/${tableId}/metrics`, data)
+  createMetricImplementation(tableId, data) {
+    return client.post(`/model/logical-tables/${tableId}/metric-implementations`, data)
   },
-  // 解除指标关联
-  removeMetric(tableId, mappingId, version) {
-    return client.delete(`/model/logical-tables/${tableId}/metrics/${mappingId}`, { data: { version } })
+  updateMetricImplementation(tableId, implementationId, data) {
+    return client.put(`/model/logical-tables/${tableId}/metric-implementations/${implementationId}`, data)
+  },
+  deleteMetricImplementation(tableId, implementationId, version) {
+    return client.delete(`/model/logical-tables/${tableId}/metric-implementations/${implementationId}`, { data: { version } })
   },
   // 获取事实表关联的维度表列表
   listDimensionRelations(tableId) {
@@ -285,6 +285,6 @@ export const standardMetricAPI = {
     return standardClient.get('/standard/metrics', { params })
   },
   listAll(params) {
-    return listAll(standardClient, '/standard/metrics', params)
+    return listAll(standardClient, '/standard/metrics', { status: 'published', ...params })
   }
 }

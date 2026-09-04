@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	commonapi "github.com/addp/common/api"
+	"github.com/addp/standard/internal/models"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -69,14 +70,17 @@ func TestEnsureSchemaRejectsExistingDuplicates(t *testing.T) {
 
 func TestMetricDependencyCycleDetectsIndirectCycle(t *testing.T) {
 	db := openStandardSchemaTestDB(t)
-	if err := db.Exec(`INSERT INTO standard.metrics (id, tenant_id, code) VALUES (1, 10, 'a'), (2, 10, 'b'), (3, 10, 'c'), (4, 20, 'foreign'), (5, 10, 'leaf')`).Error; err != nil {
+	if err := db.Exec(`INSERT INTO standard.metric_definitions (id, tenant_id, code) VALUES (1, 10, 'a'), (2, 10, 'b'), (3, 10, 'c'), (4, 20, 'foreign'), (5, 10, 'leaf')`).Error; err != nil {
 		t.Fatalf("seed metrics: %v", err)
 	}
-	if err := db.Exec(`INSERT INTO standard.metric_dependencies (id, from_metric_id, to_metric_id) VALUES (1, 1, 2), (2, 2, 3), (3, 4, 1)`).Error; err != nil {
+	if err := db.Exec(`INSERT INTO standard.metric_definition_revisions (id, metric_definition_id, revision_no) VALUES (11, 1, 1), (12, 2, 1), (13, 3, 1), (14, 4, 1)`).Error; err != nil {
+		t.Fatalf("seed metric revisions: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO standard.metric_definition_revision_dependencies (id, metric_definition_revision_id, dependency_definition_id, relation_kind) VALUES (1, 11, 2, 'base'), (2, 12, 3, 'base'), (3, 14, 1, 'base')`).Error; err != nil {
 		t.Fatalf("seed metric dependencies: %v", err)
 	}
 
-	cycle, err := metricDependencyCycle(db, 3, 10, []int64{1})
+	cycle, err := metricDependencyCycle(db, 3, 10, []models.MetricDefinitionRevisionDependency{{DependencyDefinitionID: 1}})
 	if err != nil {
 		t.Fatalf("metricDependencyCycle() error = %v", err)
 	}
@@ -84,7 +88,7 @@ func TestMetricDependencyCycleDetectsIndirectCycle(t *testing.T) {
 		t.Fatal("expected 3 -> 1 -> 2 -> 3 to be rejected")
 	}
 
-	cycle, err = metricDependencyCycle(db, 3, 10, []int64{5, 5})
+	cycle, err = metricDependencyCycle(db, 3, 10, []models.MetricDefinitionRevisionDependency{{DependencyDefinitionID: 5}})
 	if err != nil {
 		t.Fatalf("metricDependencyCycle() error = %v", err)
 	}
@@ -121,8 +125,10 @@ func TestPostgresSchemaStatementsDefineDeletePolicies(t *testing.T) {
 		"CONSTRAINT ck_standard_elements_scope CHECK",
 		"CONSTRAINT ck_standard_code_sets_scope CHECK",
 		"CONSTRAINT fk_standard_glossary_element_mappings_element FOREIGN KEY (element_id) REFERENCES standard.elements(id) ON DELETE CASCADE",
-		"CONSTRAINT fk_standard_metric_dependencies_to FOREIGN KEY (to_metric_id) REFERENCES standard.metrics(id) ON DELETE RESTRICT",
-		"CONSTRAINT fk_standard_document_metric_mappings_metric FOREIGN KEY (metric_id) REFERENCES standard.metrics(id) ON DELETE CASCADE",
+		"CONSTRAINT fk_standard_metric_revision_dependencies_definition FOREIGN KEY (dependency_definition_id) REFERENCES standard.metric_definitions(id) ON DELETE RESTRICT",
+		"CONSTRAINT ck_standard_metric_definition_revisions_effective_interval CHECK",
+		"CREATE TRIGGER trg_standard_metric_revision_effective_interval",
+		"CONSTRAINT fk_standard_document_metric_mappings_metric FOREIGN KEY (metric_id) REFERENCES standard.metric_definitions(id) ON DELETE CASCADE",
 		"CONSTRAINT ck_standard_collection_events_type CHECK",
 		"CONSTRAINT fk_standard_collection_events_revision FOREIGN KEY (revision_id) REFERENCES standard.standard_collection_revisions(id) ON DELETE CASCADE",
 	} {
@@ -156,9 +162,9 @@ func openStandardSchemaTestDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE standard.code_set_revision_items (id INTEGER PRIMARY KEY, code_set_revision_id INTEGER NOT NULL, code TEXT NOT NULL)`,
 		`CREATE TABLE standard.measurement_categories (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, code TEXT NOT NULL)`,
 		`CREATE TABLE standard.metric_categories (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, code TEXT NOT NULL)`,
-		`CREATE TABLE standard.metrics (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, code TEXT NOT NULL)`,
-		`CREATE TABLE standard.metric_element_mappings (id INTEGER PRIMARY KEY, metric_id INTEGER NOT NULL, element_id INTEGER NOT NULL)`,
-		`CREATE TABLE standard.metric_dependencies (id INTEGER PRIMARY KEY, from_metric_id INTEGER NOT NULL, to_metric_id INTEGER NOT NULL)`,
+		`CREATE TABLE standard.metric_definitions (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, code TEXT NOT NULL)`,
+		`CREATE TABLE standard.metric_definition_revisions (id INTEGER PRIMARY KEY, metric_definition_id INTEGER NOT NULL, revision_no INTEGER NOT NULL)`,
+		`CREATE TABLE standard.metric_definition_revision_dependencies (id INTEGER PRIMARY KEY, metric_definition_revision_id INTEGER NOT NULL, dependency_definition_id INTEGER NOT NULL, dependency_revision_id INTEGER, relation_kind TEXT NOT NULL)`,
 		`CREATE TABLE standard.document_element_mappings (id INTEGER PRIMARY KEY, document_id INTEGER NOT NULL, element_id INTEGER NOT NULL)`,
 		`CREATE TABLE standard.document_glossary_mappings (id INTEGER PRIMARY KEY, document_id INTEGER NOT NULL, glossary_id INTEGER NOT NULL)`,
 		`CREATE TABLE standard.document_metric_mappings (id INTEGER PRIMARY KEY, document_id INTEGER NOT NULL, metric_id INTEGER NOT NULL)`,

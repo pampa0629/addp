@@ -74,7 +74,7 @@ func (h *ExportHandler) GetExport(c *gin.Context) {
 	if !ok {
 		return
 	}
-	result, err := h.exportService.GetExport(c.Request.Context(), id, auth.GetTenantID(c))
+	result, err := h.exportService.GetExport(c.Request.Context(), id, auth.GetTenantID(c), auth.GetUserID(c))
 	if err != nil {
 		exportError(c, err)
 		return
@@ -101,7 +101,7 @@ func (h *ExportHandler) DownloadExportFile(c *gin.Context) {
 	if !ok {
 		return
 	}
-	file, err := h.exportService.OpenExportFile(c.Request.Context(), id, auth.GetTenantID(c))
+	file, err := h.exportService.OpenExportFile(c.Request.Context(), id, auth.GetTenantID(c), auth.GetUserID(c))
 	if err != nil {
 		exportError(c, err)
 		return

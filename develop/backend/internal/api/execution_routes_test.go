@@ -26,6 +26,31 @@ func TestExecutionRoutesUseExecutionIDWildcard(t *testing.T) {
 	executions.POST("/:execution_id/retry", func(c *gin.Context) {})
 }
 
+func TestDevelopExportResourceRequestMatcher(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, path := range []string{
+		"/api/v1/develop/exports/7/file",
+		"/api/v1/develop/exports/123/file",
+	} {
+		context, _ := gin.CreateTestContext(httptest.NewRecorder())
+		context.Request = httptest.NewRequest(http.MethodGet, path, nil)
+		if !isDevelopExportResourceRequest(context) {
+			t.Fatalf("export file path was not classified as a Resource Ticket route: %s", path)
+		}
+	}
+	for _, path := range []string{
+		"/api/v1/develop/exports/7",
+		"/api/v1/develop/executions/7/exports",
+		"/api/v1/develop/exports/7/file/extra",
+	} {
+		context, _ := gin.CreateTestContext(httptest.NewRecorder())
+		context.Request = httptest.NewRequest(http.MethodGet, path, nil)
+		if isDevelopExportResourceRequest(context) {
+			t.Fatalf("ordinary API path was classified as a Resource Ticket route: %s", path)
+		}
+	}
+}
+
 func TestProviderDevTaskListResponseUsesStandardItemsShape(t *testing.T) {
 	now := time.Now()
 	body, err := json.Marshal(models.ListProviderDevTasksResponse{
@@ -95,7 +120,7 @@ func TestProviderExecutionUsesOnlyStableMetadataOutputs(t *testing.T) {
 		t.Fatal(err)
 	}
 	executor := service.NewDevExecutor(nil, repo, nil, nil, nil, nil, nil, nil, 1000)
-	handler := NewExecutionHandler(executor, nil)
+	handler := NewExecutionHandler(executor, nil, nil)
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
 		setTenantAuthContextForTest(c, 7, 1)

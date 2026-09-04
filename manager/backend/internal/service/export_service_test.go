@@ -5,42 +5,33 @@ import (
 
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/builtin"
-	"github.com/addp/manager/internal/models"
 )
 
 func TestBuildTableExportTaskConfigUsesTransferSyncShape(t *testing.T) {
-	config := buildTableExportTaskConfig(
+	config := buildTableExportExecutionConfig(
 		"addp://engine/8/path/public/roads?type=table&item_id=54",
 		"addp-infra://minio/manager/tenant_7/export/20260620/session-1?type=prefix",
 		"roads.geojson",
 		format.FormatGeoJSON,
 	)
-	if _, ok := config["mode"]; ok {
-		t.Fatalf("config = %#v, must not contain legacy mode", config)
+	if config.Runtime.Boundary != "bounded" {
+		t.Fatalf("runtime = %#v, want bounded", config.Runtime)
 	}
-	runtime := config["runtime"].(map[string]interface{})
-	if runtime["boundary"] != "bounded" {
-		t.Fatalf("runtime = %#v, want bounded", runtime)
-	}
-	load := config["load"].(map[string]interface{})
-	if load["mode"] != "snapshot" {
-		t.Fatalf("load = %#v, want snapshot", load)
+	if config.Load.Mode != "snapshot" {
+		t.Fatalf("load = %#v, want snapshot", config.Load)
 	}
 
-	source := config["source"].(map[string]interface{})
-	if source["locator"] != "addp://engine/8/path/public/roads?type=table&item_id=54" ||
-		source["representation"] != "native" ||
-		source["data_type"] != "table" {
+	source := config.Source
+	if source.Locator != "addp://engine/8/path/public/roads?type=table&item_id=54" ||
+		source.Representation != "native" || source.DataType != "table" {
 		t.Fatalf("source config = %#v", source)
 	}
-	target := config["target"].(map[string]interface{})
-	if target["parent_locator"] != "addp-infra://minio/manager/tenant_7/export/20260620/session-1?type=prefix" ||
-		target["name"] != "roads.geojson" ||
-		target["representation"] != "encoded" ||
-		target["format"] != "geojson" {
+	target := config.Target
+	if target.ParentLocator != "addp-infra://minio/manager/tenant_7/export/20260620/session-1?type=prefix" ||
+		target.Name != "roads.geojson" || target.Representation != "encoded" || target.Format != "geojson" {
 		t.Fatalf("target config = %#v", target)
 	}
-	policy := target["policy"].(map[string]interface{})
+	policy := target.Policy
 	if _, ok := policy["write_mode"]; ok {
 		t.Fatalf("policy = %#v, must not contain legacy write_mode", policy)
 	}
@@ -50,18 +41,18 @@ func TestBuildTableExportTaskConfigUsesTransferSyncShape(t *testing.T) {
 }
 
 func TestBuildEncodedRecordExportTaskConfigUsesNativeCollectionShape(t *testing.T) {
-	config := buildEncodedRecordExportTaskConfig(
+	config := buildEncodedRecordExportExecutionConfig(
 		"addp://engine/11/path/Outdoor/Persons?type=collection&item_id=81",
 		"addp-infra://minio/manager/tenant_7/export/20260902/session-1?type=prefix",
 		"Persons.ejsonl",
 		format.FormatMongoDBExtendedJSONL,
 	)
-	source := config["source"].(map[string]interface{})
-	if source["representation"] != "native" || source["data_type"] != "unknown" || source["format"] != nil {
+	source := config.Source
+	if source.Representation != "native" || source.DataType != "unknown" || source.Format != "" {
 		t.Fatalf("source = %#v", source)
 	}
-	target := config["target"].(map[string]interface{})
-	if target["representation"] != "encoded" || target["format"] != "mongodb_extended_jsonl" || target["name"] != "Persons.ejsonl" {
+	target := config.Target
+	if target.Representation != "encoded" || target.Format != "mongodb_extended_jsonl" || target.Name != "Persons.ejsonl" {
 		t.Fatalf("target = %#v", target)
 	}
 }
@@ -72,80 +63,5 @@ func TestSupportedExportFormatIncludesSingleAndMultiRefWriters(t *testing.T) {
 	}
 	if !supportedExportFormat(format.FormatShapefile) {
 		t.Fatal("shapefile multi-ref export should be supported")
-	}
-}
-
-func TestExportFileNamesKeepTransferTargetAndUserDownloadSeparate(t *testing.T) {
-	if got := withExportExtension("roads", format.FormatShapefile); got != "roads.shp" {
-		t.Fatalf("withExportExtension(shapefile) = %q, want roads.shp", got)
-	}
-	if got := exportDownloadFileName("roads", format.FormatShapefile); got != "roads.zip" {
-		t.Fatalf("exportDownloadFileName(shapefile) = %q, want roads.zip", got)
-	}
-	if got := exportDownloadFileName("roads", format.FormatCSV); got != "roads.csv" {
-		t.Fatalf("exportDownloadFileName(csv) = %q, want roads.csv", got)
-	}
-	if got := exportDownloadFileName("Persons", format.FormatMongoDBExtendedJSONL); got != "Persons.ejsonl" {
-		t.Fatalf("exportDownloadFileName(mongodb_extended_jsonl) = %q, want Persons.ejsonl", got)
-	}
-}
-
-func TestExportArtifactManifestJSONBuildsZipEntriesFromTargetRefs(t *testing.T) {
-	session := &models.ExportSession{
-		Format:        string(format.FormatShapefile),
-		FileName:      "roads.zip",
-		TargetLocator: "addp-infra://minio/manager/tenant_7/export/20260621/session/roads.shp?type=object",
-	}
-	manifestJSON := exportArtifactManifestJSON(session, models.JSONMap{
-		"target_refs": []interface{}{
-			map[string]interface{}{"path": "tenant_7/export/20260621/session/roads.shp", "role": "main", "required": true, "primary": true, "extension": ".shp"},
-			map[string]interface{}{"path": "tenant_7/export/20260621/session/roads.shx", "role": "shx", "required": true, "primary": false, "extension": ".shx"},
-			map[string]interface{}{"path": "tenant_7/export/20260621/session/roads.dbf", "role": "dbf", "required": true, "primary": false, "extension": ".dbf"},
-		},
-	})
-	manifest := exportArtifactManifestFromJSON(manifestJSON)
-	if manifest.SchemaVersion != exportArtifactManifestVersion || manifest.Layout != format.LayoutMulti {
-		t.Fatalf("manifest = %#v, want multi manifest", manifest)
-	}
-	if manifest.Download.Kind != "zip" || manifest.Download.FileName != "roads.zip" {
-		t.Fatalf("download = %#v, want zip roads.zip", manifest.Download)
-	}
-	wantEntries := []string{"roads.shp", "roads.shx", "roads.dbf"}
-	if len(manifest.Refs) != len(wantEntries) {
-		t.Fatalf("refs = %#v, want %d refs", manifest.Refs, len(wantEntries))
-	}
-	for i, want := range wantEntries {
-		if manifest.Refs[i].Entry != want {
-			t.Fatalf("entry[%d] = %q, want %q", i, manifest.Refs[i].Entry, want)
-		}
-	}
-}
-
-func TestExportStatusFromTransferStatus(t *testing.T) {
-	cases := map[string]string{
-		"pending":   models.ExportSessionStatusPending,
-		"running":   models.ExportSessionStatusRunning,
-		"success":   models.ExportSessionStatusSuccess,
-		"failed":    models.ExportSessionStatusFailed,
-		"timeout":   models.ExportSessionStatusFailed,
-		"cancelled": models.ExportSessionStatusFailed,
-	}
-	for input, want := range cases {
-		if got := exportStatusFromTransferStatus(input); got != want {
-			t.Fatalf("exportStatusFromTransferStatus(%q) = %q, want %q", input, got, want)
-		}
-	}
-}
-
-func TestManagerInfraObjectPathValidatesBucket(t *testing.T) {
-	got, err := managerInfraObjectPath("addp-infra://minio/manager/tenant_7/export/20260620/session/roads.csv?type=object", "manager")
-	if err != nil {
-		t.Fatalf("managerInfraObjectPath() error = %v", err)
-	}
-	if got != "tenant_7/export/20260620/session/roads.csv" {
-		t.Fatalf("object path = %q", got)
-	}
-	if _, err := managerInfraObjectPath("addp-infra://minio/other/tenant_7/export/roads.csv?type=object", "manager"); err == nil {
-		t.Fatal("managerInfraObjectPath() accepted different bucket")
 	}
 }

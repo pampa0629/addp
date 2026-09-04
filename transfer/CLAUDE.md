@@ -2,11 +2,12 @@
 
 ## 模块定位
 
-Transfer 模块是 ADDP 的数据传输中枢，统一负责 `sync` 任务、任务配置、字段映射 / 转换编排、写后 Meta 扫描触发和执行运行时。bounded execution 由独立 `transfer-bounded-worker` 通过 PostgreSQL execution claim 承担；continuous execution 由独立 `transfer-continuous-worker`/supervisor 承担。导入 / 导出是 Manager 等调用方的用户动作语义，不是 Transfer 的 `task_type`。
+Transfer 模块是 ADDP 的数据传输中枢，统一负责 `sync` 任务、任务配置、字段映射 / 转换编排、写后 Meta 扫描触发和执行运行时。bounded execution 由独立 `transfer-bounded-worker` 通过 PostgreSQL execution claim 承担；continuous execution 由独立 `transfer-continuous-worker`/supervisor 承担。导入 / 导出是 Manager、Develop 等调用方的用户动作语义，不是 Transfer 的 `task_type`。可复用同步配置才创建 `transfer.transfer_tasks`；一次性导出使用 `POST /api/v1/transfer/executions` 直接创建 `source_task_id=null` 的 bounded `sync` execution，响应只暴露统一 `execution_id`。
 
 当前主路径基于 `common/engine`、`common/format`、`common/contentio` 和 `common/engine/contentadapter`：
 
 - Transfer 负责任务 JSON、planner、policy、transform、worker、checkpoint、日志、指标和写后 Meta 扫描触发。
+- 一次性执行入口只允许已认证且具备不可委派 `transfer.execution.create` Permission 的模块 Service Client 调用，execution 的 `source` 必须由 `addp-<module>` Client ID 推导，调用方请求不得自报 `source_module`。同一模块使用不可委派 `transfer.execution.read` 回查自己创建的 execution，Transfer 必须再次按 Client ID 校验 `source`，不能借此读取其他模块或用户任务 execution。入口接受强类型 source / target / fields 契约，并在 Transfer 内转换为唯一 planner 配置；查询调用方必须把已解析的全部关系输入按稳定顺序写入 `source.query.inputs[]`，Transfer 校验其标准 ResourceLocator 与 source Engine 一致并据此记录完整血缘，不解析查询文本反推资源。调用方不得创建临时 Transfer task，也不得保存 Transfer task ID。bounded worker 必须同时执行有任务定义和无任务定义的 `sync` execution，并只在 `source_task_id` 存在时更新任务摘要。
 - 具体 engine-native 读写由 `common/engine` 提供。
 - 具体格式和数据类型读写由 `common/format` 提供。
 - content 的定位、读取、写入、range 和 scope list 由 `common/contentio` 表达；multi ref 的组织规则和读写语义由 `common/format` / `common/dataitem` / Transfer 编排层表达；engine content provider 到 contentio 的桥接由 `common/engine/contentadapter` 提供。
@@ -14,7 +15,7 @@ Transfer 模块是 ADDP 的数据传输中枢，统一负责 `sync` 任务、任
 
 table 类型 Transfer 主链路已经稳定：native table、encoded single file/object、encoded multi refs 和 encoded whole scope 都统一走 planner + executor + common provider，不按具体引擎组合建立专用通道。后续新增 table 能力应优先补 `common/engine` 或 `common/format`，不要在 Transfer 内恢复私有 reader / writer。
 
-Security 对 Transfer 的稳定动作名为 `export`，它表示受保护数据离开源 DataItem，不是 Transfer `task_type`。`bounded + snapshot` 的统一 Native TablePipeline 必须在字段映射、类型转换、空间处理和目标 writer 前遮盖/抑制；原生表不按 `engine_type` 建立保护分支，统一按精确 Locator 与当前表结构校验并处理 `BatchData`。查询源从同一 PreparedQuery 取得 ReadSet 和 OutputLineage，当前仅 PostgreSQL 具备该可证明查询依赖能力。MongoDB collection 到 `mongodb_extended_jsonl` 的原始记录格式导出按精确 Locator 与 Meta 当前字段结构校验同一 `export` 投影，在 Provider 保留 BSON 标量的文档对象上完成保护后才编码 Canonical Extended JSON。Security 生成引擎无关的动作投影，Transfer 只在已实现并验证字段级保护执行器的执行形态上开放；非 PostgreSQL 查询源、raw copy、watermark incremental、Kafka replay、encoded source 和 continuous/CDC 在各自执行器完成前仍资源级失效关闭。
+Security 对 Transfer 的稳定动作名为 `export`，它表示受保护数据离开源 DataItem，不是 Transfer `task_type`。`bounded + snapshot` 的统一 Native TablePipeline 必须在字段映射、类型转换、空间处理和目标 writer 前遮盖/抑制；原生表不按 `engine_type` 建立保护分支，统一按精确 Locator 与当前表结构校验并处理 `BatchData`。查询源必须从同一 PreparedQuery 取得 ReadSet 和 OutputLineage；当前已验证 PostgreSQL 可证明查询，以及只包含 `$match`、`$unwind`、`$project`、`$sort` 透明阶段的 MongoDB aggregate，其他无法证明完整输出血缘的查询继续失效关闭。MongoDB collection 到 `mongodb_extended_jsonl` 的原始记录格式导出按精确 Locator 与 Meta 当前字段结构校验同一 `export` 投影，在 Provider 保留 BSON 标量的文档对象上完成保护后才编码 Canonical Extended JSON。Security 生成引擎无关的动作投影，Transfer 只在已实现并验证字段级保护执行器的执行形态上开放；raw copy、watermark incremental、Kafka replay、encoded source、continuous/CDC 以及其他无法证明完整字段身份和输出血缘的查询，在各自执行器完成前仍资源级失效关闭。
 
 只读原生查询结果到 table 的 bounded 搬运属于同一主链路：source 必须消费 `common/engine.QueryReadSessionProvider`，target 继续消费 table write session。MongoDB 嵌套 BSON 的路径投影、数组展开、去重和关系合并由只读 MQL 在源端完成；Transfer 只搬运最终扁平行、执行显式字段映射和严格类型转换，不提供递归 JSON 自动摊平器。
 
@@ -54,7 +55,7 @@ transfer/
 
 ## 核心 API
 
-Transfer 是 `transfer.task.*` 和 `transfer.task_provider.*` 的 Permission owner；定义只存在于 `authorization/permissions.yaml`，通过 `common/authorization` 发布期聚合，不在服务启动时动态注册。用户任务管理只使用 `transfer.task.*`；Orchestrator Runtime 只使用 `transfer.task_provider.read|execute`，并由固定 `addp-orchestrator` Service Client Guard 收窄。`transfer.task.cancel` 是 IAM 目标目录能力，当前真实执行取消仍未实现，首次 SQL seed 前必须通过路由覆盖门禁处理。
+Transfer 是 `transfer.execution.*`、`transfer.task.*` 和 `transfer.task_provider.*` 的 Permission owner；定义只存在于 `authorization/permissions.yaml`，通过 `common/authorization` 发布期聚合，不在服务启动时动态注册。模块 Runtime 创建一次性执行使用不可委派的 `transfer.execution.create`，按来源隔离回查结果使用不可委派的 `transfer.execution.read`；用户任务管理只使用 `transfer.task.*`；Orchestrator Runtime 只使用 `transfer.task_provider.read|execute`，并由固定 `addp-orchestrator` Service Client Guard 收窄。`transfer.task.cancel` 是 IAM 目标目录能力，当前真实执行取消仍未实现，首次 SQL seed 前必须通过路由覆盖门禁处理。
 
 路由前缀：`/api/v1/transfer`。
 
@@ -67,7 +68,7 @@ Transfer 是 `transfer.task.*` 和 `transfer.task_provider.*` 的 Permission own
 - 业务 Kafka DLQ 只读管理：`GET /task-definitions/:id/dead-letters`、`GET /task-definitions/:id/dead-letters/:identity`。只公开 tenant/task scoped 安全控制索引，不返回 Infra Kafka payload reference 或原始 key/value/headers。
 - 字段映射：字段映射写入 `config.transforms[type=field_mapping]`，不提供独立 mappings 主路径。
 - 对象存储目录选择统一走 Meta resource-tree；Transfer 不再保留私有 object-storage 浏览 API。
-- 执行记录：`GET /executions`、`GET /executions/statistics`、`GET /executions/:execution_id`。
+- 执行记录：用户管理接口为 `GET /executions`、`GET /executions/statistics`、`GET /executions/:execution_id`；模块一次性 execution 的来源隔离回查接口为 `GET /executions/:execution_id/result`。
 - 执行管理：`POST /executions/:execution_id/retry`、`GET /executions/:execution_id/progress|logs` 按统一 `execution_id` 定位执行记录；当前没有真实 worker 中断能力，因此不提供 cancel/stop API，TaskProvider 保持 `supports_cancel=false`。
 - 转换器：`GET /transforms`、`GET /transforms/stats`、`GET /transforms/:name`、`POST /transforms/:name/validate|test`。
 

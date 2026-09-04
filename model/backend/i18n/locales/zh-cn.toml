@@ -112,6 +112,15 @@ other = "逻辑表编码已存在"
 [model.logical_table.state_conflict]
 other = "逻辑表当前状态不允许此操作"
 
+[model.logical_table.materialization_configured]
+other = "逻辑表仍保留物化目标配置，请先显式清空配置"
+
+[model.logical_table.materialization_batch_active]
+other = "逻辑表仍有未终结的物化批次，不能删除"
+
+[model.logical_table.materialization_group_member]
+other = "逻辑表仍属于物化组，请先将其移出物化组"
+
 [model.logical_table.approval_fields_required]
 other = "逻辑表至少需要一个字段才能审批"
 
@@ -133,11 +142,11 @@ other = "数仓分层编码已存在"
 [model.dw_layer.in_use]
 other = "数仓分层仍被逻辑表引用，不能删除"
 
-[model.fact_metric.invalid_mapping_id]
-other = "无效的指标映射ID"
+[model.metric_implementation.invalid_id]
+other = "无效的指标实现 ID"
 
-[model.fact_metric.conflict]
-other = "该指标已关联到此事实表"
+[model.metric_implementation.conflict]
+other = "指标实现名称与定义修订重复"
 
 [model.table_relation.invalid_relation_id]
 other = "无效的关联关系ID"

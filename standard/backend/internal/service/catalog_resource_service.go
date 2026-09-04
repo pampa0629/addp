@@ -21,7 +21,7 @@ var ErrInvalidCatalogResourceRequest = errors.New("invalid catalog resource requ
 
 type CatalogResourceRepository interface {
 	ListChanges(context.Context, int64, int64, int) ([]models.CatalogResourceChangeRow, error)
-	ListMetrics(context.Context, int64, []int64) ([]models.Metric, error)
+	ListMetrics(context.Context, int64, []int64) ([]models.MetricDefinitionAggregate, error)
 }
 
 type CatalogResourceService struct{ repository CatalogResourceRepository }
@@ -88,7 +88,7 @@ func (s *CatalogResourceService) Resolve(ctx context.Context, tenantID int64, re
 	if err != nil {
 		return nil, err
 	}
-	metricByID := make(map[int64]models.Metric, len(metrics))
+	metricByID := make(map[int64]models.MetricDefinitionAggregate, len(metrics))
 	for _, metric := range metrics {
 		metricByID[metric.ID] = metric
 	}
@@ -96,7 +96,10 @@ func (s *CatalogResourceService) Resolve(ctx context.Context, tenantID int64, re
 	for index, reference := range references {
 		result := models.CatalogReferenceResolution{SourceType: reference.SourceType, SourceIdentity: reference.SourceIdentity}
 		if metric, exists := metricByID[ids[index]]; exists {
-			result.Found, result.Status, result.Version = true, metric.Status, metric.Version
+			result.Found, result.Status, result.Version = true, metric.LifecycleState, metric.Version
+			if revision := displayMetricRevision(metric); revision != nil {
+				result.Status = revision.Status
+			}
 			result.Summary = metricCatalogSummary(metric)
 			result.DetailPath = "/standard/metrics/" + reference.SourceIdentity
 		}
@@ -105,22 +108,31 @@ func (s *CatalogResourceService) Resolve(ctx context.Context, tenantID int64, re
 	return &models.ResolveCatalogReferencesResponse{Results: results}, nil
 }
 
-func metricCatalogSummary(metric models.Metric) map[string]any {
+func metricCatalogSummary(metric models.MetricDefinitionAggregate) map[string]any {
 	result := map[string]any{
-		"name": metric.Name, "code": metric.Code, "object_kind": "metric",
-		"metric_type": metric.Type, "metric_status": metric.Status,
+		"name": metric.Code, "code": metric.Code, "object_kind": "metric",
 		"lifecycle_state": metric.LifecycleState,
 	}
-	if metric.DomainID != nil {
-		result["domain_id"] = strconv.FormatInt(*metric.DomainID, 10)
+	if revision := displayMetricRevision(metric); revision != nil {
+		result["name"], result["metric_type"], result["metric_status"] = revision.Name, revision.MetricType, revision.Status
+		if revision.UnitID != nil {
+			result["unit_id"] = strconv.FormatInt(*revision.UnitID, 10)
+		}
+	}
+	if metric.OwnerDomainID != nil {
+		result["domain_id"] = strconv.FormatInt(*metric.OwnerDomainID, 10)
 	}
 	if metric.CategoryID != nil {
 		result["category_id"] = strconv.FormatInt(*metric.CategoryID, 10)
 	}
-	if metric.UnitID != nil {
-		result["unit_id"] = strconv.FormatInt(*metric.UnitID, 10)
-	}
 	return result
+}
+
+func displayMetricRevision(metric models.MetricDefinitionAggregate) *models.MetricDefinitionRevision {
+	if metric.DraftRevision != nil {
+		return metric.DraftRevision
+	}
+	return metric.CurrentRevision
 }
 
 func parseCanonicalPositiveID(value string) (int64, error) {

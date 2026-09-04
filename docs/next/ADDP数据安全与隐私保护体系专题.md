@@ -505,7 +505,7 @@ Owner Projection 按已实现执行器逐项升级：Manager 生成 `preview|pro
 
 Develop 已在同一 PreparedQuery 上完成 `ReadSet -> OutputLineage -> Execute -> query 结果保护`，PostgreSQL 与 MongoDB 的直接字段、显式别名和受支持 wildcard 可以执行字段级遮盖或抑制，派生敏感输出与不完整血缘继续拒绝。2026-09-02，Service 复用同一 owner-neutral 保护计划并使用独立 `service_execute` 动作，首期完成已发布 QueryService 的 REST Query 与 OGC API Features 共享直接查询内核；PostgreSQL Provider 同步支持单来源直接投影子查询的递归血缘组合，派生敏感输出仍拒绝。Service cursor 与 feature ID 已无兼容地改为 AEAD 不透明令牌，避免排序键或稳定键通过仅签名载荷泄露。联邦、图、旧 Data API、查询样例和瓦片在各自动作执行器完成前继续资源级拒绝。
 
-Transfer 切片已冻结 `export` 动作边界，不恢复旧 `export` 任务类型。当前开放两条由引擎和输出形态明确约束的执行路径：PostgreSQL 源的结构化 `bounded + snapshot` TablePipeline，原生表按精确 Locator 与表结构匹配，查询源在同一 PreparedQuery 上完成 ReadSet 和 OutputLineage，每批数据先遮盖/抑制，再进入字段映射、类型转换、空间处理和 CSV/JSON/数据库 writer；MongoDB 集合到 `mongodb_extended_jsonl` 的原始记录导出，在编码为 Canonical Extended JSON 之前先按真实嵌套字段路径执行遮盖或抑制。Security 继续生成引擎无关的 `export` 投影，Transfer 根据源引擎、读取模式和输出形态决定是否可执行。除上述 MongoDB 路径外的其他非 PostgreSQL 源、raw copy、watermark incremental、Kafka replay、encoded source 与 continuous/CDC 仍资源级拒绝，不借用本动作放开。
+Transfer 切片已冻结 `export` 动作边界，不恢复旧 `export` 任务类型。当前开放三类由读取方式和输出形态明确约束的执行路径：统一 Native TablePipeline 结构化 `bounded + snapshot` 导出；在同一 PreparedQuery 上完成 ReadSet 和 OutputLineage 的 PostgreSQL 可证明查询与 MongoDB 透明 aggregate 查询；MongoDB 集合到 `mongodb_extended_jsonl` 的原始记录导出。所有已支持路径都先按精确 Locator、实时结构和结果血缘执行遮盖或抑制，再进入字段映射、类型转换、空间处理、目标 writer 或 Canonical Extended JSON 编码。Security 继续生成引擎无关的 `export` 投影，Transfer 根据读取方式、输出形态以及 Provider 能否证明完整字段身份和输出血缘决定是否可执行；其他查询、raw copy、watermark incremental、Kafka replay、encoded source 与 continuous/CDC 仍资源级拒绝，不借用已有执行器放开。
 
 ### 阶段 7：全域数据与隐私合规深化
 

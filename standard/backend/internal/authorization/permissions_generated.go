@@ -35,10 +35,9 @@ const (
 	PermissionStandardGlossaryOffline            = "standard.glossary.offline"
 	PermissionStandardGlossaryRead               = "standard.glossary.read"
 	PermissionStandardGlossaryUpdate             = "standard.glossary.update"
-	PermissionStandardMetricApprove              = "standard.metric.approve"
 	PermissionStandardMetricCreate               = "standard.metric.create"
 	PermissionStandardMetricDelete               = "standard.metric.delete"
-	PermissionStandardMetricOffline              = "standard.metric.offline"
+	PermissionStandardMetricPublish              = "standard.metric.publish"
 	PermissionStandardMetricRead                 = "standard.metric.read"
 	PermissionStandardMetricUpdate               = "standard.metric.update"
 	PermissionStandardUnitCreate                 = "standard.unit.create"
@@ -79,10 +78,9 @@ var permissionKeys = [...]string{
 	"standard.glossary.offline",
 	"standard.glossary.read",
 	"standard.glossary.update",
-	"standard.metric.approve",
 	"standard.metric.create",
 	"standard.metric.delete",
-	"standard.metric.offline",
+	"standard.metric.publish",
 	"standard.metric.read",
 	"standard.metric.update",
 	"standard.unit.create",

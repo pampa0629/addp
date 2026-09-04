@@ -3,12 +3,12 @@ package service
 import (
 	"context"
 	"fmt"
-	commonExecution "github.com/addp/common/execution"
 	"log/slog"
 	"strings"
 	"sync"
 	"time"
 
+	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/transfer/internal/models"
@@ -26,6 +26,8 @@ type ExecutionService struct {
 	logger            *slog.Logger
 	activeLeases      sync.Map
 }
+
+const executionLogsMetadataKey = "execution_logs"
 
 func (s *ExecutionService) BindBoundedLease(executionID uint, lease commonExecution.Lease) {
 	s.activeLeases.Store(executionID, lease)
@@ -79,6 +81,9 @@ func (s *ExecutionService) convertToTransferExecution(exec *commonExecution.Task
 	// checkpoint 数据存在 metadata JSONB 中
 	if exec.Metadata != nil {
 		transferExec.Metadata = exec.Metadata
+		if logs, ok := exec.Metadata[executionLogsMetadataKey].(string); ok {
+			transferExec.Logs = logs
+		}
 		if offset, ok := exec.Metadata["checkpoint_offset"].(float64); ok {
 			v := int64(offset)
 			transferExec.CheckpointOffset = v
@@ -106,10 +111,6 @@ func (s *ExecutionService) convertToTransferExecution(exec *commonExecution.Task
 	if exec.ErrorDetails != nil {
 		if errMsg, ok := exec.ErrorDetails["message"].(string); ok {
 			transferExec.ErrorMsg = errMsg
-		}
-		// 如果有 logs 字段，也提取出来
-		if logs, ok := exec.ErrorDetails["logs"].(string); ok {
-			transferExec.Logs = logs
 		}
 	}
 
@@ -155,6 +156,21 @@ func (s *ExecutionService) GetExecutionByExecutionID(ctx context.Context, execut
 	execution, err := s.GetTaskProviderExecutionByExecutionID(ctx, executionID, tenantID)
 	if err != nil {
 		return nil, err
+	}
+	return s.convertToTransferExecution(execution), nil
+}
+
+// GetOwnedExecutionByExecutionID returns a one-off execution only when its
+// recorded source matches the authenticated caller module. This is the narrow
+// status path used by Manager/Develop export sessions and does not grant access
+// to Transfer task executions or executions created by another module.
+func (s *ExecutionService) GetOwnedExecutionByExecutionID(ctx context.Context, executionID string, tenantID uint, sourceModule string) (*models.TaskExecution, error) {
+	execution, err := s.GetTaskProviderExecutionByExecutionID(ctx, executionID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if execution.SourceTaskID != nil || strings.TrimSpace(execution.Source) != strings.TrimSpace(sourceModule) {
+		return nil, fmt.Errorf("execution not found or access denied")
 	}
 	return s.convertToTransferExecution(execution), nil
 }
@@ -694,21 +710,21 @@ func (s *ExecutionService) AppendLog(ctx context.Context, id uint, logLine strin
 		return err
 	}
 
-	// 追加日志到 error_details.logs 字段
-	errorDetails := execution.ErrorDetails
-	if errorDetails == nil {
-		errorDetails = commonModels.JSONMap{}
+	// 正常进度日志属于执行元数据；error_details 只保存真实错误。
+	metadata := execution.Metadata
+	if metadata == nil {
+		metadata = commonModels.JSONMap{}
 	}
 
 	existingLogs := ""
-	if logs, ok := errorDetails["logs"].(string); ok {
+	if logs, ok := metadata[executionLogsMetadataKey].(string); ok {
 		existingLogs = logs
 	}
 
-	errorDetails["logs"] = existingLogs + logLine + "\n"
+	metadata[executionLogsMetadataKey] = existingLogs + logLine + "\n"
 
 	return s.updateExecutionFields(ctx, execution, map[string]interface{}{
-		"error_details": errorDetails,
+		"metadata": metadata,
 	})
 }
 

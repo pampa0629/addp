@@ -22,13 +22,13 @@ func TestProfessionalRelationsExposeOwnerFactsWithoutCatalogCopies(t *testing.T)
 		`CREATE TABLE model.logical_tables (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, entity_id INTEGER, name TEXT, code TEXT, status TEXT, table_type TEXT)`,
 		`CREATE TABLE model.logical_fields (id INTEGER PRIMARY KEY, table_id INTEGER NOT NULL, element_revision_id INTEGER, name TEXT)`,
 		`CREATE TABLE model.table_relations (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, source_table INTEGER NOT NULL, source_field INTEGER NOT NULL, target_table INTEGER NOT NULL, target_field INTEGER NOT NULL, relation_type TEXT)`,
-		`CREATE TABLE model.fact_metric_mappings (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, fact_table_id INTEGER NOT NULL, metric_id INTEGER NOT NULL, field_id INTEGER, note TEXT, created_at DATETIME)`,
+		`CREATE TABLE model.metric_implementations (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, fact_table_id INTEGER NOT NULL, metric_definition_id INTEGER NOT NULL, metric_definition_revision_id INTEGER NOT NULL, name TEXT NOT NULL, grain TEXT NOT NULL, source_config TEXT NOT NULL, dimension_config TEXT NOT NULL, filter_config TEXT NOT NULL, expression_config TEXT NOT NULL, status TEXT NOT NULL, note TEXT, created_by INTEGER NOT NULL, updated_by INTEGER, created_at DATETIME, updated_at DATETIME)`,
 		`INSERT INTO model.entities VALUES (1, 7, 'Order', 'order', 'approved'), (2, 7, 'Customer', 'customer', 'approved'), (3, 8, 'Other', 'other', 'approved')`,
 		`INSERT INTO model.entity_relations VALUES (11, 7, 1, 2, 'one_to_many', 'contains', 'Customer has orders', CURRENT_TIMESTAMP)`,
 		`INSERT INTO model.logical_tables VALUES (21, 7, 1, 'Fact order', 'fact_order', 'approved', 'fact'), (22, 7, NULL, 'Dim customer', 'dim_customer', 'approved', 'dimension')`,
 		`INSERT INTO model.logical_fields VALUES (31, 21, NULL, 'customer_id'), (32, 22, NULL, 'id')`,
 		`INSERT INTO model.table_relations VALUES (41, 7, 21, 31, 22, 32, 'fk')`,
-		`INSERT INTO model.fact_metric_mappings VALUES (51, 7, 21, 61, 31, 'amount metric', CURRENT_TIMESTAMP)`,
+		`INSERT INTO model.metric_implementations (id, tenant_id, fact_table_id, metric_definition_id, metric_definition_revision_id, name, grain, source_config, dimension_config, filter_config, expression_config, status, note, created_by, created_at) VALUES (51, 7, 21, 61, 71, 'Amount', 'order', '{"field_ids":[31]}', '{}', '{}', '{"engine":"sql","expression":"SUM(amount)"}', 'active', 'amount metric', 1, CURRENT_TIMESTAMP)`,
 	} {
 		if err := db.Exec(statement).Error; err != nil {
 			t.Fatalf("execute %q: %v", statement, err)
@@ -49,7 +49,7 @@ func TestProfessionalRelationsExposeOwnerFactsWithoutCatalogCopies(t *testing.T)
 	}
 
 	tableService := NewTableRelationService(repository.NewTableRelationRepository(db), repository.NewLogicalTableRepository(db))
-	tableService.SetProfessionalRelationSources(entityRepo, repository.NewFactMetricRepository(db))
+	tableService.SetProfessionalRelationSources(entityRepo, repository.NewMetricImplementationRepository(db))
 	tableGraph, err := tableService.GetProfessionalRelations(7, 21, 100)
 	if err != nil {
 		t.Fatal(err)
@@ -131,13 +131,16 @@ func TestPostgresProfessionalRelationsUseOwnerSchemaAndTenantBoundary(t *testing
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := tx.Create(&models.FactMetricMapping{
-		TenantID: tenantID, FactTableID: fact.ID, MetricID: 9001, FieldID: &sourceField.ID, CreatedBy: 1,
+	if err := tx.Create(&models.MetricImplementation{
+		TenantID: tenantID, FactTableID: fact.ID, MetricDefinitionID: 9001, MetricDefinitionRevisionID: 9101,
+		Name: "Customer Count", Grain: "customer", SourceConfig: models.JSONB{"field_ids": []int64{sourceField.ID}},
+		DimensionConfig: models.JSONB{}, FilterConfig: models.JSONB{}, ExpressionConfig: models.JSONB{"engine": "sql", "expression": "COUNT(*)"},
+		Status: models.MetricImplementationActive, CreatedBy: 1,
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
 	tableService := NewTableRelationService(repository.NewTableRelationRepository(tx), repository.NewLogicalTableRepository(tx))
-	tableService.SetProfessionalRelationSources(entityRepo, repository.NewFactMetricRepository(tx))
+	tableService.SetProfessionalRelationSources(entityRepo, repository.NewMetricImplementationRepository(tx))
 	tableGraph, err := tableService.GetProfessionalRelations(tenantID, fact.ID, 100)
 	if err != nil {
 		t.Fatal(err)

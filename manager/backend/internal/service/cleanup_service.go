@@ -12,6 +12,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/events"
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/exportartifact"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
@@ -38,12 +39,7 @@ type CleanupService struct {
 	stopCh           chan struct{}
 }
 
-type ExportCleanupOptions struct {
-	SuccessRetention time.Duration
-	FailedRetention  time.Duration
-	MaxRunningAge    time.Duration
-	Interval         time.Duration
-}
+type ExportCleanupOptions = exportartifact.CleanupOptions
 
 type ManagerCleanupStats struct {
 	PreviewStates            int      `json:"preview_states"`
@@ -72,7 +68,7 @@ func NewCleanupService(
 	minioBucket string,
 	exportCleanup ExportCleanupOptions,
 ) *CleanupService {
-	exportCleanup = normalizeExportCleanupOptions(exportCleanup)
+	exportCleanup = exportartifact.NormalizeCleanupOptions(exportCleanup)
 	return &CleanupService{
 		redis:            redisClient,
 		metaClient:       metaClient,
@@ -112,22 +108,6 @@ func (s *CleanupService) Stop() {
 	close(s.stopCh)
 }
 
-func normalizeExportCleanupOptions(opts ExportCleanupOptions) ExportCleanupOptions {
-	if opts.SuccessRetention <= 0 {
-		opts.SuccessRetention = 24 * time.Hour
-	}
-	if opts.FailedRetention <= 0 {
-		opts.FailedRetention = 6 * time.Hour
-	}
-	if opts.MaxRunningAge <= 0 {
-		opts.MaxRunningAge = 6 * time.Hour
-	}
-	if opts.Interval <= 0 {
-		opts.Interval = 30 * time.Minute
-	}
-	return opts
-}
-
 func (s *CleanupService) runExportSessionCleanup(ctx context.Context) {
 	s.cleanupExportSessionsOnce(ctx)
 	ticker := time.NewTicker(s.exportCleanup.Interval)
@@ -149,116 +129,14 @@ func (s *CleanupService) cleanupExportSessionsOnce(ctx context.Context) {
 	if s == nil || s.exportRepo == nil || s.minioClient == nil || s.minioBucket == "" {
 		return
 	}
-	now := time.Now()
-	expiredRunningBefore := now.Add(-s.exportCleanup.MaxRunningAge)
-	if affected, err := s.exportRepo.MarkRunningExpired(ctx, expiredRunningBefore); err != nil {
-		s.log.Warn("标记超时导出会话失败", "error", err)
-	} else if affected > 0 {
-		s.log.Info("已标记超时导出会话", "count", affected)
-	}
-
-	successBefore := now.Add(-s.exportCleanup.SuccessRetention)
-	failedBefore := now.Add(-s.exportCleanup.FailedRetention)
-	for {
-		sessions, err := s.exportRepo.ListExpiredFinalSessions(ctx, successBefore, failedBefore, 100)
-		if err != nil {
-			s.log.Warn("查询过期导出会话失败", "error", err)
-			return
-		}
-		if len(sessions) == 0 {
-			return
-		}
-		for _, session := range sessions {
-			if session == nil {
-				continue
-			}
-			if err := s.cleanupExportSession(ctx, session); err != nil {
-				s.log.Warn("清理导出会话失败", "session_id", session.ID, "error", err)
-				continue
-			}
-		}
-		if len(sessions) < 100 {
-			return
-		}
-	}
-}
-
-func (s *CleanupService) cleanupExportSession(ctx context.Context, session *models.ExportSession) error {
-	if session == nil {
-		return nil
-	}
-	prefix, err := s.exportSessionCleanupPrefix(session)
+	result, err := exportartifact.CleanupExpiredOnce(ctx, s.exportRepo, s.minioClient, s.minioBucket, s.exportCleanup, time.Now())
 	if err != nil {
-		return err
+		s.log.Warn("清理导出暂存失败", "error", err)
+		return
 	}
-	if prefix != "" {
-		deleted, err := s.deleteMinIOPrefix(ctx, prefix)
-		if err != nil {
-			return err
-		}
-		if deleted > 0 {
-			s.log.Info("已清理导出暂存对象", "session_id", session.ID, "deleted", deleted)
-		}
+	if result.MarkedExpired > 0 || result.DeletedSessions > 0 {
+		s.log.Info("已清理导出暂存", "marked_expired", result.MarkedExpired, "sessions", result.DeletedSessions, "objects", result.DeletedObjects)
 	}
-	return s.exportRepo.Delete(ctx, session.ID, session.TenantID)
-}
-
-func (s *CleanupService) exportSessionCleanupPrefix(session *models.ExportSession) (string, error) {
-	parent := strings.TrimSpace(session.TargetParentLocator)
-	if parent != "" {
-		loc, err := parseManagerInfraLocator(parent)
-		if err != nil {
-			return "", err
-		}
-		if loc.bucket != s.minioBucket {
-			return "", fmt.Errorf("export session bucket mismatch")
-		}
-		return strings.Trim(loc.objectPath, "/") + "/", nil
-	}
-	locator := strings.TrimSpace(session.TargetLocator)
-	if locator == "" {
-		return "", nil
-	}
-	loc, err := parseManagerInfraLocator(locator)
-	if err != nil {
-		return "", err
-	}
-	if loc.bucket != s.minioBucket {
-		return "", fmt.Errorf("export session bucket mismatch")
-	}
-	path := strings.Trim(loc.objectPath, "/")
-	if path == "" {
-		return "", nil
-	}
-	if idx := strings.LastIndex(path, "/"); idx > 0 {
-		return path[:idx+1], nil
-	}
-	return "", nil
-}
-
-func (s *CleanupService) deleteMinIOPrefix(ctx context.Context, prefix string) (int, error) {
-	prefix = strings.TrimPrefix(strings.TrimSpace(prefix), "/")
-	if prefix == "" {
-		return 0, nil
-	}
-	deleted := 0
-	objectCh := s.minioClient.ListObjects(ctx, s.minioBucket, minio.ListObjectsOptions{
-		Prefix:    prefix,
-		Recursive: true,
-	})
-	for object := range objectCh {
-		if object.Err != nil {
-			return deleted, object.Err
-		}
-		if strings.TrimSpace(object.Key) == "" {
-			continue
-		}
-		if err := s.minioClient.RemoveObject(ctx, s.minioBucket, object.Key, minio.RemoveObjectOptions{}); err != nil {
-			return deleted, err
-		}
-		deleted++
-	}
-	return deleted, nil
 }
 
 func (s *CleanupService) consumeCleanupRequests(ctx context.Context) {

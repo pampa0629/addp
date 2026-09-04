@@ -37,8 +37,16 @@ func (r *TenantReferenceRepository) RequireMetricCategory(tenantID int64, id *in
 	return r.requireOne(&models.MetricCategory{}, tenantID, id)
 }
 
+func (r *TenantReferenceRepository) RequireMetricDefinition(tenantID, id int64) error {
+	return r.requireActiveOne(&models.MetricDefinition{}, tenantID, &id)
+}
+
 func (r *TenantReferenceRepository) RequireMetric(tenantID int64, id *int64) error {
-	return r.requireActiveOne(&models.Metric{}, tenantID, id)
+	return r.requireActiveOne(&models.MetricDefinition{}, tenantID, id)
+}
+
+func (r *TenantReferenceRepository) RequireMetrics(tenantID int64, ids []int64) error {
+	return r.requireActiveMany(&models.MetricDefinition{}, tenantID, ids)
 }
 
 func (r *TenantReferenceRepository) RequireElement(tenantID, id int64) error {
@@ -87,10 +95,6 @@ func (r *TenantReferenceRepository) RequireGlossaries(tenantID int64, ids []int6
 	return r.requireMany(&models.Glossary{}, tenantID, ids)
 }
 
-func (r *TenantReferenceRepository) RequireMetrics(tenantID int64, ids []int64) error {
-	return r.requireActiveMany(&models.Metric{}, tenantID, ids)
-}
-
 // ResolveCollectionMembers 校验标准集成员属于当前租户，并返回最小显示摘要。
 // 标准集绑定稳定身份，因此数据元和码值集不要求已经发布。
 func (r *TenantReferenceRepository) ResolveCollectionMembers(tenantID int64, inputs []models.StandardCollectionMemberInput) ([]models.StandardCollectionMember, error) {
@@ -115,7 +119,7 @@ func (r *TenantReferenceRepository) ResolveCollectionMembers(tenantID int64, inp
 		case models.CollectionMemberCodeSet:
 			err = r.requireActiveMany(&models.CodeSet{}, tenantID, ids)
 		case models.CollectionMemberMetric:
-			err = r.requireActiveMany(&models.Metric{}, tenantID, ids)
+			err = r.requireActiveMany(&models.MetricDefinition{}, tenantID, ids)
 		case models.CollectionMemberGlossary:
 			err = r.requireMany(&models.Glossary{}, tenantID, ids)
 		case models.CollectionMemberDocument:
@@ -158,7 +162,9 @@ func (r *TenantReferenceRepository) ResolveCollectionMembers(tenantID int64, inp
 		}
 	}
 	if ids := idsByType[models.CollectionMemberMetric]; len(ids) > 0 {
-		if err := load(models.CollectionMemberMetric, r.db.Model(&models.Metric{}).Select("id, name, code").Where("tenant_id=? AND id IN ?", tenantID, ids)); err != nil {
+		if err := load(models.CollectionMemberMetric, r.db.Raw(`SELECT m.id, m.code,
+			COALESCE((SELECT mr.name FROM standard.metric_definition_revisions mr WHERE mr.metric_definition_id=m.id ORDER BY CASE mr.status WHEN 'draft' THEN 0 WHEN 'in_review' THEN 1 WHEN 'published' THEN 2 ELSE 3 END, mr.revision_no DESC LIMIT 1), m.code) AS name
+			FROM standard.metric_definitions m WHERE m.tenant_id=? AND m.id IN ?`, tenantID, ids)); err != nil {
 			return nil, err
 		}
 	}

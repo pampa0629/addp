@@ -152,6 +152,8 @@ func TestIAMOAuthClientCredentialsAuthContextAgainstPostgres(t *testing.T) {
 			"security.protection_projection.update",
 			"system.engine.read",
 			"system.engine_descriptor.read",
+			"transfer.execution.create",
+			"transfer.execution.read",
 			"transfer.task.create",
 			"transfer.task.execute",
 			"transfer.task.read",

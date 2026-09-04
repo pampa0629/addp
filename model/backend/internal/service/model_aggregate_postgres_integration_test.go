@@ -3,13 +3,17 @@ package service
 import (
 	"context"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/addp/common/events"
+	commonExecution "github.com/addp/common/execution"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/model/internal/migration"
 	"github.com/addp/model/internal/models"
 	"github.com/addp/model/internal/repository"
+	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -168,9 +172,9 @@ func TestPostgresLogicalTableAssociationsShareAggregateVersion(t *testing.T) {
 
 	tableRepo := repository.NewLogicalTableRepository(tx)
 	relationRepo := repository.NewTableRelationRepository(tx)
-	metricRepo := repository.NewFactMetricRepository(tx)
+	metricRepo := repository.NewMetricImplementationRepository(tx)
 	relationSvc := NewTableRelationService(relationRepo, tableRepo)
-	metricSvc := NewFactMetricService(metricRepo, tableRepo)
+	metricSvc := NewMetricImplementationService(metricRepo, tableRepo)
 
 	relationResult, err := relationSvc.AddDimensionRelation(fact.ID, tenantID, &models.CreateTableRelationRequest{
 		Version: 1, TargetTable: dimension.ID, SourceField: factField.ID,
@@ -184,11 +188,13 @@ func TestPostgresLogicalTableAssociationsShareAggregateVersion(t *testing.T) {
 	}
 
 	metricID := tenantID + 2
-	_, err = metricSvc.AddMetric(fact.ID, tenantID, userID, &models.CreateFactMetricMappingRequest{
-		Version: 1, MetricID: metricID, FieldID: &factField.ID, Note: "stale metric mapping",
-	})
+	staleRequest := metricImplementationRequest(1, factField.ID)
+	staleRequest.MetricDefinitionID = metricID
+	staleRequest.MetricDefinitionRevisionID = metricID + 1000
+	staleRequest.Note = "stale metric implementation"
+	_, err = metricSvc.Create(fact.ID, tenantID, userID, staleRequest)
 	requireDomainErrorCode(t, err, "resource_version_conflict")
-	assertFactMetricMappingCount(t, tx, fact.ID, tenantID, 0)
+	assertMetricImplementationCount(t, tx, fact.ID, tenantID, 0)
 	var staleGuardCount int64
 	if err := tx.Model(&models.StandardReferenceGuard{}).
 		Where("tenant_id = ? AND resource_type = ? AND resource_id = ?", tenantID, models.StandardResourceMetric, metricID).
@@ -199,26 +205,28 @@ func TestPostgresLogicalTableAssociationsShareAggregateVersion(t *testing.T) {
 		t.Fatalf("reference guard count after stale metric mapping = %d, want 0", staleGuardCount)
 	}
 
-	metricResult, err := metricSvc.AddMetric(fact.ID, tenantID, userID, &models.CreateFactMetricMappingRequest{
-		Version: relationResult.Version, MetricID: metricID, FieldID: &factField.ID, Note: "current metric mapping",
-	})
+	currentRequest := metricImplementationRequest(relationResult.Version, factField.ID)
+	currentRequest.MetricDefinitionID = metricID
+	currentRequest.MetricDefinitionRevisionID = metricID + 1000
+	currentRequest.Note = "current metric implementation"
+	metricResult, err := metricSvc.Create(fact.ID, tenantID, userID, currentRequest)
 	if err != nil {
-		t.Fatalf("add PostgreSQL fact metric mapping: %v", err)
+		t.Fatalf("create PostgreSQL metric implementation: %v", err)
 	}
 	if metricResult.Version != 3 {
-		t.Fatalf("version after metric mapping = %d, want 3", metricResult.Version)
+		t.Fatalf("version after metric implementation = %d, want 3", metricResult.Version)
 	}
 
 	_, err = relationSvc.RemoveDimensionRelation(relationResult.Relation.ID, fact.ID, tenantID, relationResult.Version)
 	requireDomainErrorCode(t, err, "resource_version_conflict")
-	_, err = metricSvc.RemoveMetric(metricResult.Mapping.ID, fact.ID, tenantID, relationResult.Version)
+	_, err = metricSvc.Delete(metricResult.Implementation.ID, fact.ID, tenantID, relationResult.Version)
 	requireDomainErrorCode(t, err, "resource_version_conflict")
 	assertTableRelationCount(t, tx, fact.ID, tenantID, 1)
-	assertFactMetricMappingCount(t, tx, fact.ID, tenantID, 1)
+	assertMetricImplementationCount(t, tx, fact.ID, tenantID, 1)
 
-	metricDelete, err := metricSvc.RemoveMetric(metricResult.Mapping.ID, fact.ID, tenantID, metricResult.Version)
+	metricDelete, err := metricSvc.Delete(metricResult.Implementation.ID, fact.ID, tenantID, metricResult.Version)
 	if err != nil {
-		t.Fatalf("remove PostgreSQL fact metric mapping: %v", err)
+		t.Fatalf("delete PostgreSQL metric implementation: %v", err)
 	}
 	if metricDelete.Version != 4 {
 		t.Fatalf("version after metric removal = %d, want 4", metricDelete.Version)
@@ -233,7 +241,7 @@ func TestPostgresLogicalTableAssociationsShareAggregateVersion(t *testing.T) {
 		t.Fatalf("version after relation removal = %d, want 5", relationDelete.Version)
 	}
 	assertTableRelationCount(t, tx, fact.ID, tenantID, 0)
-	assertFactMetricMappingCount(t, tx, fact.ID, tenantID, 0)
+	assertMetricImplementationCount(t, tx, fact.ID, tenantID, 0)
 
 	reloadedFact, err := tableRepo.GetByID(fact.ID, tenantID)
 	if err != nil {
@@ -417,6 +425,65 @@ func TestPostgresLogicalTableDeleteAdvancesEachSurvivingFactOnce(t *testing.T) {
 	}
 }
 
+func TestPostgresLogicalTableDeleteRemovesTerminalBatchesAndPreservesExecutionAudit(t *testing.T) {
+	tx, tenantID := beginModelAggregatePostgresTransaction(t)
+	userID := tenantID + 1
+	layer := models.DWLayer{TenantID: tenantID, LayerCode: "pg_delete_history", LayerName: "PostgreSQL Delete History", Version: 1}
+	if err := tx.Create(&layer).Error; err != nil {
+		t.Fatalf("create delete history DW layer: %v", err)
+	}
+	table := models.LogicalTable{
+		TenantID: tenantID, Name: "Historical Materialization", Code: "pg_delete_history",
+		TableType: "fact", Layer: layer.LayerCode, Status: "draft", GrainDescription: "one row",
+		Version: 1, Materialization: models.JSONB{}, CreatedBy: userID,
+	}
+	if err := tx.Create(&table).Error; err != nil {
+		t.Fatalf("create delete history logical table: %v", err)
+	}
+
+	prepareExecutionID := uuid.NewString()
+	sourceTaskID := strconv.FormatInt(table.ID, 10)
+	now := time.Now().UTC()
+	execution := commonExecution.TaskExecution{
+		TenantID: int(tenantID), ExecutionID: prepareExecutionID, Module: commonExecution.ModuleModel,
+		TaskType: commonExecution.TaskTypeMaterializationPrepare, Source: commonExecution.ModuleOrchestrator,
+		SourceTaskID: &sourceTaskID, Status: commonExecution.ExecutionStatusSuccess,
+		ExecutionBoundary: commonExecution.ExecutionBoundaryBounded, TriggerType: commonExecution.TriggerTypeManual,
+		ExecutionConfig: commonModels.JSONMap{}, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := tx.Create(&execution).Error; err != nil {
+		t.Fatalf("create materialization execution audit: %v", err)
+	}
+	batch := models.MaterializationBatch{
+		ID: uuid.NewString(), TenantID: tenantID, LogicalTableID: table.ID, LogicalTableVersion: table.Version,
+		EngineID: 1, TargetParentLocator: "addp://engine/1/path/public?type=schema",
+		TargetName: table.Code, StagingName: table.Code + "_staging", SchemaFingerprint: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		Status: models.MaterializationBatchPublished, PrepareExecutionID: prepareExecutionID, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := tx.Create(&batch).Error; err != nil {
+		t.Fatalf("create terminal materialization batch: %v", err)
+	}
+
+	svc := NewLogicalTableService(repository.NewLogicalTableRepository(tx), repository.NewEntityRepository(tx), repository.NewDWLayerRepository(tx))
+	if err := svc.DeleteLogicalTable(table.ID, tenantID, table.Version); err != nil {
+		t.Fatalf("delete logical table with terminal materialization history: %v", err)
+	}
+
+	var tableCount, batchCount, executionCount int64
+	if err := tx.Model(&models.LogicalTable{}).Where("id = ? AND tenant_id = ?", table.ID, tenantID).Count(&tableCount).Error; err != nil {
+		t.Fatalf("count deleted logical table: %v", err)
+	}
+	if err := tx.Model(&models.MaterializationBatch{}).Where("id = ? AND tenant_id = ?", batch.ID, tenantID).Count(&batchCount).Error; err != nil {
+		t.Fatalf("count deleted materialization batch: %v", err)
+	}
+	if err := tx.Model(&commonExecution.TaskExecution{}).Where("execution_id = ? AND tenant_id = ?", prepareExecutionID, tenantID).Count(&executionCount).Error; err != nil {
+		t.Fatalf("count preserved execution audit: %v", err)
+	}
+	if tableCount != 0 || batchCount != 0 || executionCount != 1 {
+		t.Fatalf("delete closure counts table=%d batch=%d execution=%d, want 0, 0, 1", tableCount, batchCount, executionCount)
+	}
+}
+
 func assertEntityModelRevision(t *testing.T, db *gorm.DB, tenantID, expected int64) {
 	t.Helper()
 	var revision models.EntityModelRevision
@@ -453,15 +520,15 @@ func assertTableRelationCount(t *testing.T, db *gorm.DB, factTableID, tenantID, 
 	}
 }
 
-func assertFactMetricMappingCount(t *testing.T, db *gorm.DB, factTableID, tenantID, expected int64) {
+func assertMetricImplementationCount(t *testing.T, db *gorm.DB, factTableID, tenantID, expected int64) {
 	t.Helper()
 	var count int64
-	if err := db.Model(&models.FactMetricMapping{}).
+	if err := db.Model(&models.MetricImplementation{}).
 		Where("fact_table_id = ? AND tenant_id = ?", factTableID, tenantID).Count(&count).Error; err != nil {
-		t.Fatalf("count fact metric mappings: %v", err)
+		t.Fatalf("count metric implementations: %v", err)
 	}
 	if count != expected {
-		t.Fatalf("fact metric mapping count = %d, want %d", count, expected)
+		t.Fatalf("metric implementation count = %d, want %d", count, expected)
 	}
 }
 
@@ -597,7 +664,7 @@ func TestPostgresPhysicalCleanupDeletesOnlyTargetTenantAtomically(t *testing.T) 
 		dimensionHierarchies:     1,
 		dimensionHierarchyLevels: 1,
 		tableRelations:           1,
-		factMetricMappings:       1,
+		metricImplementations:    1,
 	})
 	var revision models.EntityModelRevision
 	if err := tx.Where("tenant_id = ?", tenantID).First(&revision).Error; err != nil {

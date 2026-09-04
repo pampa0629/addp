@@ -544,6 +544,79 @@ const docTemplate = `{
                 ]
             }
         },
+        "/executions/{execution_id}/exports": {
+            "post": {
+                "description": "使用已成功查询 execution 的冻结查询与参数创建一次性 Transfer execution，结果暂存到 infra 并通过导出会话下载。| Create a one-off Transfer execution from the frozen query and parameters of a successful query execution, stage it in infra, and download it through the export session.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Execution"
+                ],
+                "summary": "导出全部查询结果 | Export all query results",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "查询执行 ID | Query execution ID",
+                        "name": "execution_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "导出格式与文件名 | Export format and file name",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.CreateQueryExportRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.CreateQueryExportResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.task.execute",
+                    "develop.data_read.execute"
+                ]
+            }
+        },
         "/executions/{execution_id}/logs": {
             "get": {
                 "produces": [
@@ -613,6 +686,94 @@ const docTemplate = `{
                 ],
                 "x-addp-required-permissions": [
                     "develop.task.execute"
+                ]
+            }
+        },
+        "/exports/{id}": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Execution"
+                ],
+                "summary": "获取查询导出会话 | Get query export session",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "导出会话 ID | Export session ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_develop_backend_internal_models.CreateQueryExportResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "develop.task.read"
+                ]
+            }
+        },
+        "/exports/{id}/file": {
+            "get": {
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "Execution"
+                ],
+                "summary": "下载查询导出文件 | Download query export file",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "导出会话 ID | Export session ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "下载内容流 | Download content stream"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "resource_ticket",
+                "x-addp-required-permissions": [
+                    "develop.task.read"
                 ]
             }
         },
@@ -3573,6 +3734,55 @@ const docTemplate = `{
                 "name": {
                     "type": "string",
                     "example": "analysis"
+                }
+            }
+        },
+        "github_com_addp_develop_backend_internal_models.CreateQueryExportRequest": {
+            "type": "object",
+            "required": [
+                "file_name"
+            ],
+            "properties": {
+                "file_name": {
+                    "type": "string"
+                },
+                "format": {
+                    "type": "string",
+                    "enum": [
+                        "csv"
+                    ]
+                }
+            }
+        },
+        "github_com_addp_develop_backend_internal_models.CreateQueryExportResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "download_url": {
+                    "type": "string"
+                },
+                "error_message": {
+                    "type": "string"
+                },
+                "file_name": {
+                    "type": "string"
+                },
+                "format": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "transfer_execution_id": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
                 }
             }
         },

@@ -21,6 +21,17 @@ func NewMaterializationBatchRepository(db *gorm.DB) *MaterializationBatchReposit
 	return &MaterializationBatchRepository{db: db}
 }
 
+func (r *MaterializationBatchRepository) LockByLogicalTable(
+	ctx context.Context,
+	tenantID, logicalTableID int64,
+) ([]models.MaterializationBatch, error) {
+	var batches []models.MaterializationBatch
+	err := r.db.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("tenant_id = ? AND logical_table_id = ?", tenantID, logicalTableID).
+		Order("created_at ASC, id ASC").Find(&batches).Error
+	return batches, err
+}
+
 type ResolveMaterializationReadInput struct {
 	TenantID          int64
 	ParentExecutionID string

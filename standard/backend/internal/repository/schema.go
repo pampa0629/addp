@@ -27,6 +27,9 @@ func Migrate(db *gorm.DB) error {
 		if err := prepareStandardSchemaMigration(tx); err != nil {
 			return err
 		}
+		if err := prepareMetricDefinitionMigration(tx); err != nil {
+			return err
+		}
 		if err := removeLegacyDimensionHierarchyTables(tx); err != nil {
 			return err
 		}
@@ -47,9 +50,9 @@ func Migrate(db *gorm.DB) error {
 			&models.MeasurementCategory{},
 			&models.Unit{},
 			&models.MetricCategory{},
-			&models.Metric{},
-			&models.MetricElementMapping{},
-			&models.MetricDependency{},
+			&models.MetricDefinition{},
+			&models.MetricDefinitionRevision{},
+			&models.MetricDefinitionRevisionDependency{},
 			&models.Document{},
 			&models.DocumentFileCleanup{},
 			&models.DocumentElementMapping{},
@@ -61,6 +64,9 @@ func Migrate(db *gorm.DB) error {
 			return fmt.Errorf("auto migrate standard schema: %w", err)
 		}
 		if err := migrateStandardRevisionData(tx); err != nil {
+			return err
+		}
+		if err := migrateMetricDefinitionData(tx); err != nil {
 			return err
 		}
 		if err := migrateStandardCatalogMetricChanges(tx); err != nil {
@@ -77,6 +83,118 @@ func removeLegacyDimensionHierarchyTables(db *gorm.DB) error {
 	} {
 		if err := db.Exec(statement).Error; err != nil {
 			return fmt.Errorf("remove legacy Standard dimension hierarchy tables: %w", err)
+		}
+	}
+	return nil
+}
+
+func prepareMetricDefinitionMigration(db *gorm.DB) error {
+	if db.Dialector.Name() != "postgres" {
+		return nil
+	}
+	statements := []string{
+		`DO $do$ BEGIN IF to_regclass('standard.metrics') IS NOT NULL THEN
+			DROP TRIGGER IF EXISTS trg_standard_metric_catalog_change ON standard.metrics;
+		END IF; END $do$`,
+		`DO $do$ BEGIN
+			IF to_regclass('standard.metrics') IS NOT NULL AND to_regclass('standard.metric_definitions') IS NULL THEN
+				ALTER TABLE standard.metrics RENAME TO metric_definitions;
+			END IF;
+		END $do$`,
+		`DO $do$ BEGIN
+			IF to_regclass('standard.metric_definitions') IS NOT NULL THEN
+				IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='standard' AND table_name='metric_definitions' AND column_name='domain_id')
+					AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='standard' AND table_name='metric_definitions' AND column_name='owner_domain_id') THEN
+					ALTER TABLE standard.metric_definitions RENAME COLUMN domain_id TO owner_domain_id;
+				END IF;
+				ALTER TABLE standard.metric_definitions ADD COLUMN IF NOT EXISTS scope_type VARCHAR(20);
+				ALTER TABLE standard.metric_definitions ADD COLUMN IF NOT EXISTS owner_domain_id BIGINT;
+				ALTER TABLE standard.metric_definitions ADD COLUMN IF NOT EXISTS draft_revision_id BIGINT;
+				UPDATE standard.metric_definitions SET scope_type=CASE WHEN owner_domain_id IS NULL THEN 'tenant_common' ELSE 'domain' END WHERE scope_type IS NULL;
+				ALTER TABLE standard.metric_definitions ALTER COLUMN scope_type SET DEFAULT 'tenant_common';
+				ALTER TABLE standard.metric_definitions ALTER COLUMN scope_type SET NOT NULL;
+			END IF;
+		END $do$`,
+	}
+	for _, statement := range statements {
+		if err := db.Exec(statement).Error; err != nil {
+			return fmt.Errorf("prepare MetricDefinition migration: %w", err)
+		}
+	}
+	return nil
+}
+
+func migrateMetricDefinitionData(db *gorm.DB) error {
+	if db.Dialector.Name() != "postgres" {
+		return nil
+	}
+	statements := []string{
+		`DO $do$ BEGIN
+			IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='standard' AND table_name='metric_definitions' AND column_name='name') THEN
+				INSERT INTO standard.metric_definition_revisions (
+					metric_definition_id, revision_no, status, metric_type, name, definition, statistical_caliber,
+					semantic_formula, unit_id, change_summary, effective_from, effective_to,
+					created_by, updated_by, created_at, updated_at
+				)
+				SELECT m.id, 1,
+					CASE m.status WHEN 'approved' THEN 'published' WHEN 'deprecated' THEN 'withdrawn' ELSE 'draft' END,
+					CASE WHEN m.type IN ('atomic','derived','composite') THEN m.type ELSE 'atomic' END,
+					m.name, COALESCE(NULLIF(m.definition,''), m.name), COALESCE(NULLIF(m.definition,''), m.name),
+					COALESCE(m.formula,''), m.unit_id, '从旧指标模型迁移',
+					CASE WHEN m.status IN ('approved','deprecated') THEN COALESCE(m.created_at,NOW()) ELSE NULL END,
+					CASE WHEN m.status='deprecated' THEN COALESCE(m.updated_at,NOW()) ELSE NULL END,
+					m.created_by, m.updated_by, m.created_at, m.updated_at
+				FROM standard.metric_definitions m
+				WHERE NOT EXISTS (SELECT 1 FROM standard.metric_definition_revisions r WHERE r.metric_definition_id=m.id);
+			END IF;
+		END $do$`,
+		`DO $do$ BEGIN
+			IF to_regclass('standard.metric_dependencies') IS NOT NULL THEN
+				INSERT INTO standard.metric_definition_revision_dependencies (
+					metric_definition_revision_id, dependency_definition_id, dependency_revision_id, relation_kind, coefficient, note, created_at
+				)
+				SELECT source_revision.id, dependency.to_metric_id,
+					CASE WHEN source_revision.status IN ('published','withdrawn') THEN target_revision.id ELSE NULL END,
+					'component', dependency.coefficient, dependency.note, dependency.created_at
+				FROM standard.metric_dependencies dependency
+				JOIN standard.metric_definition_revisions source_revision ON source_revision.metric_definition_id=dependency.from_metric_id AND source_revision.revision_no=1
+				JOIN standard.metric_definition_revisions target_revision ON target_revision.metric_definition_id=dependency.to_metric_id AND target_revision.revision_no=1
+				ON CONFLICT DO NOTHING;
+			END IF;
+		END $do$`,
+		`DO $do$ BEGIN
+			IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='standard' AND table_name='metric_definitions' AND column_name='base_metric_id') THEN
+				INSERT INTO standard.metric_definition_revision_dependencies (
+					metric_definition_revision_id, dependency_definition_id, dependency_revision_id, relation_kind, created_at
+				)
+				SELECT source_revision.id, m.base_metric_id,
+					CASE WHEN source_revision.status IN ('published','withdrawn') THEN target_revision.id ELSE NULL END,
+					'base', COALESCE(m.created_at,NOW())
+				FROM standard.metric_definitions m
+				JOIN standard.metric_definition_revisions source_revision ON source_revision.metric_definition_id=m.id AND source_revision.revision_no=1
+				JOIN standard.metric_definition_revisions target_revision ON target_revision.metric_definition_id=m.base_metric_id AND target_revision.revision_no=1
+				WHERE m.base_metric_id IS NOT NULL
+				ON CONFLICT DO NOTHING;
+			END IF;
+		END $do$`,
+		`UPDATE standard.metric_definitions m SET draft_revision_id=r.id
+		 FROM standard.metric_definition_revisions r
+		 WHERE r.metric_definition_id=m.id AND r.status IN ('draft','in_review') AND m.draft_revision_id IS NULL`,
+		"DROP TABLE IF EXISTS standard.metric_element_mappings CASCADE",
+		"DROP TABLE IF EXISTS standard.metric_dependencies CASCADE",
+		"ALTER TABLE standard.metric_definitions DROP COLUMN IF EXISTS name CASCADE",
+		"ALTER TABLE standard.metric_definitions DROP COLUMN IF EXISTS type CASCADE",
+		"ALTER TABLE standard.metric_definitions DROP COLUMN IF EXISTS definition CASCADE",
+		"ALTER TABLE standard.metric_definitions DROP COLUMN IF EXISTS formula CASCADE",
+		"ALTER TABLE standard.metric_definitions DROP COLUMN IF EXISTS unit_id CASCADE",
+		"ALTER TABLE standard.metric_definitions DROP COLUMN IF EXISTS base_metric_id CASCADE",
+		"ALTER TABLE standard.metric_definitions DROP COLUMN IF EXISTS derivation_config CASCADE",
+		"ALTER TABLE standard.metric_definitions DROP COLUMN IF EXISTS status CASCADE",
+		"ALTER TABLE standard.metric_definitions DROP COLUMN IF EXISTS domain_id CASCADE",
+	}
+	for _, statement := range statements {
+		if err := db.Exec(statement).Error; err != nil {
+			return fmt.Errorf("migrate MetricDefinition data: %w", err)
 		}
 	}
 	return nil
@@ -101,33 +219,44 @@ func migrateStandardCatalogMetricChanges(db *gorm.DB) error {
 			'upsert',
 			metric.version,
 			jsonb_strip_nulls(jsonb_build_object(
-				'name', metric.name,
+				'name', revision.name,
 				'code', metric.code,
 				'object_kind', 'metric',
-				'metric_type', metric.type,
-				'metric_status', metric.status,
+				'metric_type', revision.metric_type,
+				'metric_status', revision.status,
 				'lifecycle_state', metric.lifecycle_state,
-				'domain_id', CASE WHEN metric.domain_id IS NULL THEN NULL ELSE metric.domain_id::TEXT END,
+				'domain_id', CASE WHEN metric.owner_domain_id IS NULL THEN NULL ELSE metric.owner_domain_id::TEXT END,
 				'category_id', CASE WHEN metric.category_id IS NULL THEN NULL ELSE metric.category_id::TEXT END,
-				'unit_id', CASE WHEN metric.unit_id IS NULL THEN NULL ELSE metric.unit_id::TEXT END
+				'unit_id', CASE WHEN revision.unit_id IS NULL THEN NULL ELSE revision.unit_id::TEXT END
 			)),
 			COALESCE(metric.updated_at, metric.created_at, NOW())
-		FROM standard.metrics AS metric
+		FROM standard.metric_definitions AS metric
+		LEFT JOIN LATERAL (
+			SELECT r.* FROM standard.metric_definition_revisions r
+			WHERE r.metric_definition_id=metric.id
+			ORDER BY CASE r.status WHEN 'draft' THEN 0 WHEN 'in_review' THEN 1 WHEN 'published' THEN 2 ELSE 3 END, r.revision_no DESC LIMIT 1
+		) revision ON TRUE
 		WHERE NOT EXISTS (
-			SELECT 1 FROM standard.data_migrations WHERE version = 2026082601
+			SELECT 1 FROM standard.data_migrations WHERE version = 2026090401
 		)
 		ORDER BY metric.id`,
 		`INSERT INTO standard.data_migrations (version, name)
-		VALUES (2026082601, 'catalog_metric_change_feed_v1')
+		VALUES (2026090401, 'catalog_metric_definition_change_feed_v2')
 		ON CONFLICT (version) DO NOTHING`,
 		`CREATE OR REPLACE FUNCTION standard.capture_metric_catalog_change()
 		RETURNS TRIGGER
 		LANGUAGE plpgsql
 		AS $function$
 		DECLARE
-			changed standard.metrics%ROWTYPE;
+			changed standard.metric_definitions%ROWTYPE;
+			revision standard.metric_definition_revisions%ROWTYPE;
 		BEGIN
 			changed := CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+			IF TG_OP <> 'DELETE' THEN
+				SELECT r.* INTO revision FROM standard.metric_definition_revisions r
+				WHERE r.metric_definition_id=changed.id
+				ORDER BY CASE r.status WHEN 'draft' THEN 0 WHEN 'in_review' THEN 1 WHEN 'published' THEN 2 ELSE 3 END, r.revision_no DESC LIMIT 1;
+			END IF;
 			INSERT INTO standard.catalog_resource_changes (
 				tenant_id, source_type, source_identity, operation, resource_version, snapshot, observed_at
 			) VALUES (
@@ -137,24 +266,24 @@ func migrateStandardCatalogMetricChanges(db *gorm.DB) error {
 				CASE WHEN TG_OP = 'DELETE' THEN 'missing' ELSE 'upsert' END,
 				changed.version,
 				jsonb_strip_nulls(jsonb_build_object(
-					'name', changed.name,
+					'name', revision.name,
 					'code', changed.code,
 					'object_kind', 'metric',
-					'metric_type', changed.type,
-					'metric_status', changed.status,
+					'metric_type', revision.metric_type,
+					'metric_status', revision.status,
 					'lifecycle_state', changed.lifecycle_state,
-					'domain_id', CASE WHEN changed.domain_id IS NULL THEN NULL ELSE changed.domain_id::TEXT END,
+					'domain_id', CASE WHEN changed.owner_domain_id IS NULL THEN NULL ELSE changed.owner_domain_id::TEXT END,
 					'category_id', CASE WHEN changed.category_id IS NULL THEN NULL ELSE changed.category_id::TEXT END,
-					'unit_id', CASE WHEN changed.unit_id IS NULL THEN NULL ELSE changed.unit_id::TEXT END
+					'unit_id', CASE WHEN revision.unit_id IS NULL THEN NULL ELSE revision.unit_id::TEXT END
 				)),
 				NOW()
 			);
 			RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
 		END;
 		$function$`,
-		`DROP TRIGGER IF EXISTS trg_standard_metric_catalog_change ON standard.metrics`,
+		`DROP TRIGGER IF EXISTS trg_standard_metric_catalog_change ON standard.metric_definitions`,
 		`CREATE TRIGGER trg_standard_metric_catalog_change
-		AFTER INSERT OR UPDATE OR DELETE ON standard.metrics
+		AFTER INSERT OR UPDATE OR DELETE ON standard.metric_definitions
 		FOR EACH ROW EXECUTE FUNCTION standard.capture_metric_catalog_change()`,
 	}
 	for _, statement := range statements {
@@ -409,10 +538,13 @@ func postgresStandardSchemaStatements() []string {
 	statements := []string{
 		"DROP TRIGGER IF EXISTS trg_standard_element_revision_effective_interval ON standard.element_revisions",
 		"DROP TRIGGER IF EXISTS trg_standard_code_set_revision_effective_interval ON standard.code_set_revisions",
+		"DROP TRIGGER IF EXISTS trg_standard_metric_revision_effective_interval ON standard.metric_definition_revisions",
 		"ALTER TABLE standard.element_revisions DROP CONSTRAINT IF EXISTS ck_standard_element_revisions_status",
 		"ALTER TABLE standard.code_set_revisions DROP CONSTRAINT IF EXISTS ck_standard_code_set_revisions_status",
+		"ALTER TABLE standard.metric_definition_revisions DROP CONSTRAINT IF EXISTS ck_standard_metric_definition_revisions_status",
 		"ALTER TABLE standard.element_revisions DROP CONSTRAINT IF EXISTS ck_standard_element_revisions_effective_interval",
 		"ALTER TABLE standard.code_set_revisions DROP CONSTRAINT IF EXISTS ck_standard_code_set_revisions_effective_interval",
+		"ALTER TABLE standard.metric_definition_revisions DROP CONSTRAINT IF EXISTS ck_standard_metric_definition_revisions_effective_interval",
 		"UPDATE standard.element_revisions SET status = 'published' WHERE status = 'superseded'",
 		"UPDATE standard.code_set_revisions SET status = 'published' WHERE status = 'superseded'",
 		`WITH base AS (
@@ -437,8 +569,20 @@ func postgresStandardSchemaStatements() []string {
 		UPDATE standard.code_set_revisions AS revision
 		SET effective_from = normalized.normalized_from
 		FROM normalized WHERE normalized.id = revision.id`,
+		`WITH base AS (
+			SELECT id, metric_definition_id, revision_no,
+				COALESCE(effective_from, published_at, created_at, NOW()) AS base_from
+			FROM standard.metric_definition_revisions WHERE status = 'published'
+		), normalized AS (
+			SELECT id, base_from + (ROW_NUMBER() OVER (PARTITION BY metric_definition_id, base_from ORDER BY revision_no, id) - 1) * INTERVAL '1 microsecond' AS normalized_from
+			FROM base
+		)
+		UPDATE standard.metric_definition_revisions AS revision
+		SET effective_from = normalized.normalized_from
+		FROM normalized WHERE normalized.id = revision.id`,
 		"UPDATE standard.element_revisions SET effective_to = NULL WHERE status = 'published' AND effective_to <= effective_from",
 		"UPDATE standard.code_set_revisions SET effective_to = NULL WHERE status = 'published' AND effective_to <= effective_from",
+		"UPDATE standard.metric_definition_revisions SET effective_to = NULL WHERE status = 'published' AND effective_to <= effective_from",
 		`WITH ordered AS (
 			SELECT id, LEAD(effective_from) OVER (PARTITION BY element_id ORDER BY effective_from, revision_no, id) AS next_from
 			FROM standard.element_revisions WHERE status = 'published'
@@ -451,6 +595,13 @@ func postgresStandardSchemaStatements() []string {
 			FROM standard.code_set_revisions WHERE status = 'published'
 		)
 		UPDATE standard.code_set_revisions AS revision SET effective_to = ordered.next_from
+		FROM ordered WHERE ordered.id = revision.id AND ordered.next_from IS NOT NULL
+			AND (revision.effective_to IS NULL OR revision.effective_to > ordered.next_from)`,
+		`WITH ordered AS (
+			SELECT id, LEAD(effective_from) OVER (PARTITION BY metric_definition_id ORDER BY effective_from, revision_no, id) AS next_from
+			FROM standard.metric_definition_revisions WHERE status = 'published'
+		)
+		UPDATE standard.metric_definition_revisions AS revision SET effective_to = ordered.next_from
 		FROM ordered WHERE ordered.id = revision.id AND ordered.next_from IS NOT NULL
 			AND (revision.effective_to IS NULL OR revision.effective_to > ordered.next_from)`,
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_domains_tenant_code ON standard.domains (tenant_id, code)",
@@ -466,9 +617,9 @@ func postgresStandardSchemaStatements() []string {
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_code_set_revision_items_revision_code ON standard.code_set_revision_items (code_set_revision_id, code)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_measurement_categories_tenant_code ON standard.measurement_categories (tenant_id, code)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_metric_categories_tenant_code ON standard.metric_categories (tenant_id, code)",
-		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_metrics_tenant_code ON standard.metrics (tenant_id, code)",
-		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_metric_element_mappings_metric_element ON standard.metric_element_mappings (metric_id, element_id)",
-		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_metric_dependencies_from_to ON standard.metric_dependencies (from_metric_id, to_metric_id)",
+		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_metric_definitions_tenant_code ON standard.metric_definitions (tenant_id, code)",
+		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_metric_definition_revisions_definition_no ON standard.metric_definition_revisions (metric_definition_id, revision_no)",
+		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_metric_revision_dependencies ON standard.metric_definition_revision_dependencies (metric_definition_revision_id, dependency_definition_id, relation_kind)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_document_element_mappings_document_element ON standard.document_element_mappings (document_id, element_id)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_document_glossary_mappings_document_glossary ON standard.document_glossary_mappings (document_id, glossary_id)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_document_metric_mappings_document_metric ON standard.document_metric_mappings (document_id, metric_id)",
@@ -485,9 +636,7 @@ func postgresStandardSchemaStatements() []string {
 		"ALTER TABLE standard.element_revisions DROP COLUMN IF EXISTS security_level",
 		"DROP TABLE IF EXISTS standard.grading_levels CASCADE",
 		"DROP TABLE IF EXISTS standard.classifications CASCADE",
-		"ALTER TABLE standard.metrics DROP CONSTRAINT IF EXISTS metrics_tenant_id_code_key",
-		"ALTER TABLE standard.metric_element_mappings DROP CONSTRAINT IF EXISTS metric_element_mappings_metric_id_element_id_key",
-		"ALTER TABLE standard.metric_dependencies DROP CONSTRAINT IF EXISTS metric_dependencies_from_metric_id_to_metric_id_key",
+		"ALTER TABLE standard.metric_definitions DROP CONSTRAINT IF EXISTS metrics_tenant_id_code_key",
 		"ALTER TABLE standard.document_element_mappings DROP CONSTRAINT IF EXISTS document_element_mappings_document_id_element_id_key",
 		"ALTER TABLE standard.document_glossary_mappings DROP CONSTRAINT IF EXISTS document_glossary_mappings_document_id_glossary_id_key",
 		"ALTER TABLE standard.document_metric_mappings DROP CONSTRAINT IF EXISTS document_metric_mappings_document_id_metric_id_key",
@@ -496,7 +645,13 @@ func postgresStandardSchemaStatements() []string {
 		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.standard_collection_members'::regclass AND conname = 'ck_standard_collection_members_type') THEN ALTER TABLE standard.standard_collection_members ADD CONSTRAINT ck_standard_collection_members_type CHECK (member_type IN ('element','code_set','metric','glossary','document')); END IF; END $do$",
 		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.standard_collection_assignments'::regclass AND conname = 'ck_standard_collection_assignments_role') THEN ALTER TABLE standard.standard_collection_assignments ADD CONSTRAINT ck_standard_collection_assignments_role CHECK (role IN ('owner','maintainer','reviewer')); END IF; END $do$",
 		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.standard_collection_events'::regclass AND conname = 'ck_standard_collection_events_type') THEN ALTER TABLE standard.standard_collection_events ADD CONSTRAINT ck_standard_collection_events_type CHECK (event_type IN ('created','draft_created','draft_updated','submitted','returned','published','assignments_replaced')); END IF; END $do$",
-		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.metric_dependencies'::regclass AND conname = 'ck_standard_metric_dependencies_distinct') THEN ALTER TABLE standard.metric_dependencies ADD CONSTRAINT ck_standard_metric_dependencies_distinct CHECK (from_metric_id <> to_metric_id); END IF; END $do$",
+		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.metric_definition_revisions'::regclass AND conname = 'ck_standard_metric_definition_revisions_status') THEN ALTER TABLE standard.metric_definition_revisions ADD CONSTRAINT ck_standard_metric_definition_revisions_status CHECK (status IN ('draft','in_review','published','withdrawn')); END IF; END $do$",
+		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.metric_definition_revisions'::regclass AND conname = 'ck_standard_metric_definition_revisions_type') THEN ALTER TABLE standard.metric_definition_revisions ADD CONSTRAINT ck_standard_metric_definition_revisions_type CHECK (metric_type IN ('atomic','derived','composite')); END IF; END $do$",
+		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.metric_definition_revisions'::regclass AND conname = 'ck_standard_metric_definition_revisions_effective_interval') THEN ALTER TABLE standard.metric_definition_revisions ADD CONSTRAINT ck_standard_metric_definition_revisions_effective_interval CHECK ((status <> 'published' OR effective_from IS NOT NULL) AND (effective_to IS NULL OR (effective_from IS NOT NULL AND effective_from < effective_to))); END IF; END $do$",
+		"ALTER TABLE standard.metric_definitions DROP CONSTRAINT IF EXISTS ck_standard_metric_definitions_scope",
+		"ALTER TABLE standard.metric_definitions ADD CONSTRAINT ck_standard_metric_definitions_scope CHECK ((scope_type = 'platform' AND owner_domain_id IS NULL) OR (scope_type = 'tenant_common' AND owner_domain_id IS NULL) OR (scope_type = 'domain' AND owner_domain_id IS NOT NULL))",
+		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.metric_definition_revision_dependencies'::regclass AND conname = 'ck_standard_metric_revision_dependencies_distinct') THEN ALTER TABLE standard.metric_definition_revision_dependencies ADD CONSTRAINT ck_standard_metric_revision_dependencies_distinct CHECK (metric_definition_revision_id > 0 AND dependency_definition_id > 0); END IF; END $do$",
+		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.metric_definition_revision_dependencies'::regclass AND conname = 'ck_standard_metric_revision_dependencies_kind') THEN ALTER TABLE standard.metric_definition_revision_dependencies ADD CONSTRAINT ck_standard_metric_revision_dependencies_kind CHECK (relation_kind IN ('base','component')); END IF; END $do$",
 		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.element_revisions'::regclass AND conname = 'ck_standard_element_revisions_status') THEN ALTER TABLE standard.element_revisions ADD CONSTRAINT ck_standard_element_revisions_status CHECK (status IN ('draft','in_review','published','withdrawn')); END IF; END $do$",
 		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.element_revisions'::regclass AND conname = 'ck_standard_element_revisions_effective_interval') THEN ALTER TABLE standard.element_revisions ADD CONSTRAINT ck_standard_element_revisions_effective_interval CHECK ((status <> 'published' OR effective_from IS NOT NULL) AND (effective_to IS NULL OR (effective_from IS NOT NULL AND effective_from < effective_to))); END IF; END $do$",
 		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.element_revisions'::regclass AND conname = 'ck_standard_element_revisions_value_domain') THEN ALTER TABLE standard.element_revisions ADD CONSTRAINT ck_standard_element_revisions_value_domain CHECK ((value_domain_kind = 'unrestricted' AND range_constraint IS NULL AND code_set_revision_id IS NULL) OR (value_domain_kind = 'range' AND range_constraint IS NOT NULL AND code_set_revision_id IS NULL) OR (value_domain_kind = 'enumeration' AND range_constraint IS NULL AND code_set_revision_id IS NOT NULL)); END IF; END $do$",
@@ -548,10 +703,29 @@ func postgresStandardSchemaStatements() []string {
 		`CREATE TRIGGER trg_standard_code_set_revision_effective_interval
 		BEFORE INSERT OR UPDATE OF code_set_id, status, effective_from, effective_to ON standard.code_set_revisions
 		FOR EACH ROW EXECUTE FUNCTION standard.enforce_code_set_revision_effective_interval()`,
+		`CREATE OR REPLACE FUNCTION standard.enforce_metric_revision_effective_interval()
+		RETURNS TRIGGER LANGUAGE plpgsql AS $function$
+		BEGIN
+			IF NEW.status = 'published' AND EXISTS (
+				SELECT 1 FROM standard.metric_definition_revisions AS existing
+				WHERE existing.metric_definition_id = NEW.metric_definition_id
+					AND existing.id <> NEW.id
+					AND existing.status = 'published'
+					AND tstzrange(existing.effective_from, existing.effective_to, '[)') && tstzrange(NEW.effective_from, NEW.effective_to, '[)')
+			) THEN
+				RAISE EXCEPTION 'published metric definition revision effective intervals overlap' USING ERRCODE = '23514';
+			END IF;
+			RETURN NEW;
+		END;
+		$function$`,
+		"DROP TRIGGER IF EXISTS trg_standard_metric_revision_effective_interval ON standard.metric_definition_revisions",
+		`CREATE TRIGGER trg_standard_metric_revision_effective_interval
+		BEFORE INSERT OR UPDATE OF metric_definition_id, status, effective_from, effective_to ON standard.metric_definition_revisions
+		FOR EACH ROW EXECUTE FUNCTION standard.enforce_metric_revision_effective_interval()`,
 
 		"CREATE INDEX IF NOT EXISTS idx_standard_glossary_element_mappings_element ON standard.glossary_element_mappings (element_id)",
-		"CREATE INDEX IF NOT EXISTS idx_standard_metric_element_mappings_element ON standard.metric_element_mappings (element_id)",
-		"CREATE INDEX IF NOT EXISTS idx_standard_metric_dependencies_to_metric ON standard.metric_dependencies (to_metric_id)",
+		"CREATE INDEX IF NOT EXISTS idx_standard_metric_revision_dependencies_definition ON standard.metric_definition_revision_dependencies (dependency_definition_id)",
+		"CREATE INDEX IF NOT EXISTS idx_standard_metric_revision_dependencies_revision ON standard.metric_definition_revision_dependencies (dependency_revision_id)",
 		"CREATE INDEX IF NOT EXISTS idx_standard_document_element_mappings_element ON standard.document_element_mappings (element_id)",
 		"CREATE INDEX IF NOT EXISTS idx_standard_document_glossary_mappings_glossary ON standard.document_glossary_mappings (glossary_id)",
 		"CREATE INDEX IF NOT EXISTS idx_standard_document_metric_mappings_metric ON standard.document_metric_mappings (metric_id)",
@@ -571,12 +745,9 @@ func postgresStandardSchemaStatements() []string {
 		{"standard.code_sets", "fk_standard_code_sets_domain"},
 		{"standard.code_sets", "code_sets_domain_id_fkey"},
 		{"standard.metric_categories", "metric_categories_parent_id_fkey"},
-		{"standard.metric_dependencies", "metric_dependencies_from_metric_id_fkey"},
-		{"standard.metric_dependencies", "metric_dependencies_to_metric_id_fkey"},
-		{"standard.metric_element_mappings", "metric_element_mappings_metric_id_fkey"},
-		{"standard.metrics", "metrics_base_metric_id_fkey"},
-		{"standard.metrics", "metrics_category_id_fkey"},
-		{"standard.metrics", "metrics_unit_id_fkey"},
+		{"standard.metric_definitions", "metrics_base_metric_id_fkey"},
+		{"standard.metric_definitions", "metrics_category_id_fkey"},
+		{"standard.metric_definitions", "metrics_unit_id_fkey"},
 		{"standard.units", "fk_standard_units_category"},
 		{"standard.units", "units_category_id_fkey"},
 	} {
@@ -610,22 +781,22 @@ func postgresStandardSchemaStatements() []string {
 		{"standard.code_set_revision_items", "fk_standard_code_set_revision_items_replacement", "replacement_item_id", "standard.code_set_revision_items(id)", "RESTRICT"},
 		{"standard.units", "fk_standard_units_measurement_category", "category_id", "standard.measurement_categories(id)", "RESTRICT"},
 		{"standard.metric_categories", "fk_standard_metric_categories_parent", "parent_id", "standard.metric_categories(id)", "RESTRICT"},
-		{"standard.metrics", "fk_standard_metrics_category", "category_id", "standard.metric_categories(id)", "RESTRICT"},
-		{"standard.metrics", "fk_standard_metrics_domain", "domain_id", "standard.domains(id)", "RESTRICT"},
-		{"standard.metrics", "fk_standard_metrics_unit", "unit_id", "standard.units(id)", "RESTRICT"},
-		{"standard.metrics", "fk_standard_metrics_base_metric", "base_metric_id", "standard.metrics(id)", "RESTRICT"},
+		{"standard.metric_definitions", "fk_standard_metric_definitions_category", "category_id", "standard.metric_categories(id)", "RESTRICT"},
+		{"standard.metric_definitions", "fk_standard_metric_definitions_owner_domain", "owner_domain_id", "standard.domains(id)", "RESTRICT"},
+		{"standard.metric_definitions", "fk_standard_metric_definitions_draft_revision", "draft_revision_id", "standard.metric_definition_revisions(id)", "SET NULL"},
+		{"standard.metric_definition_revisions", "fk_standard_metric_definition_revisions_definition", "metric_definition_id", "standard.metric_definitions(id)", "CASCADE"},
+		{"standard.metric_definition_revisions", "fk_standard_metric_definition_revisions_unit", "unit_id", "standard.units(id)", "RESTRICT"},
+		{"standard.metric_definition_revision_dependencies", "fk_standard_metric_revision_dependencies_revision", "metric_definition_revision_id", "standard.metric_definition_revisions(id)", "CASCADE"},
+		{"standard.metric_definition_revision_dependencies", "fk_standard_metric_revision_dependencies_definition", "dependency_definition_id", "standard.metric_definitions(id)", "RESTRICT"},
+		{"standard.metric_definition_revision_dependencies", "fk_standard_metric_revision_dependencies_frozen_revision", "dependency_revision_id", "standard.metric_definition_revisions(id)", "RESTRICT"},
 		{"standard.glossary_element_mappings", "fk_standard_glossary_element_mappings_glossary", "glossary_id", "standard.glossaries(id)", "CASCADE"},
 		{"standard.glossary_element_mappings", "fk_standard_glossary_element_mappings_element", "element_id", "standard.elements(id)", "CASCADE"},
-		{"standard.metric_element_mappings", "fk_standard_metric_element_mappings_metric", "metric_id", "standard.metrics(id)", "CASCADE"},
-		{"standard.metric_element_mappings", "fk_standard_metric_element_mappings_element", "element_id", "standard.elements(id)", "CASCADE"},
-		{"standard.metric_dependencies", "fk_standard_metric_dependencies_from", "from_metric_id", "standard.metrics(id)", "CASCADE"},
-		{"standard.metric_dependencies", "fk_standard_metric_dependencies_to", "to_metric_id", "standard.metrics(id)", "RESTRICT"},
 		{"standard.document_element_mappings", "fk_standard_document_element_mappings_document", "document_id", "standard.documents(id)", "CASCADE"},
 		{"standard.document_element_mappings", "fk_standard_document_element_mappings_element", "element_id", "standard.elements(id)", "CASCADE"},
 		{"standard.document_glossary_mappings", "fk_standard_document_glossary_mappings_document", "document_id", "standard.documents(id)", "CASCADE"},
 		{"standard.document_glossary_mappings", "fk_standard_document_glossary_mappings_glossary", "glossary_id", "standard.glossaries(id)", "CASCADE"},
 		{"standard.document_metric_mappings", "fk_standard_document_metric_mappings_document", "document_id", "standard.documents(id)", "CASCADE"},
-		{"standard.document_metric_mappings", "fk_standard_document_metric_mappings_metric", "metric_id", "standard.metrics(id)", "CASCADE"},
+		{"standard.document_metric_mappings", "fk_standard_document_metric_mappings_metric", "metric_id", "standard.metric_definitions(id)", "CASCADE"},
 	} {
 		statements = append(statements, postgresForeignKeyStatement(foreignKey.table, foreignKey.name, foreignKey.columns, foreignKey.references, foreignKey.onDelete))
 	}
@@ -654,9 +825,9 @@ func sqliteStandardSchemaStatements() []string {
 		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_code_set_revision_items_revision_code ON code_set_revision_items (code_set_revision_id, code)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_measurement_categories_tenant_code ON measurement_categories (tenant_id, code)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_metric_categories_tenant_code ON metric_categories (tenant_id, code)",
-		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_metrics_tenant_code ON metrics (tenant_id, code)",
-		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_metric_element_mappings_metric_element ON metric_element_mappings (metric_id, element_id)",
-		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_metric_dependencies_from_to ON metric_dependencies (from_metric_id, to_metric_id)",
+		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_metric_definitions_tenant_code ON metric_definitions (tenant_id, code)",
+		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_metric_definition_revisions_definition_no ON metric_definition_revisions (metric_definition_id, revision_no)",
+		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_metric_revision_dependencies ON metric_definition_revision_dependencies (metric_definition_revision_id, dependency_definition_id, relation_kind)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_document_element_mappings_document_element ON document_element_mappings (document_id, element_id)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_document_glossary_mappings_document_glossary ON document_glossary_mappings (document_id, glossary_id)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_document_metric_mappings_document_metric ON document_metric_mappings (document_id, metric_id)",
@@ -667,8 +838,8 @@ func sqliteStandardSchemaStatements() []string {
 		"DROP INDEX IF EXISTS standard.idx_codeitem_set_code",
 
 		"CREATE INDEX IF NOT EXISTS standard.idx_standard_glossary_element_mappings_element ON glossary_element_mappings (element_id)",
-		"CREATE INDEX IF NOT EXISTS standard.idx_standard_metric_element_mappings_element ON metric_element_mappings (element_id)",
-		"CREATE INDEX IF NOT EXISTS standard.idx_standard_metric_dependencies_to_metric ON metric_dependencies (to_metric_id)",
+		"CREATE INDEX IF NOT EXISTS standard.idx_standard_metric_revision_dependencies_definition ON metric_definition_revision_dependencies (dependency_definition_id)",
+		"CREATE INDEX IF NOT EXISTS standard.idx_standard_metric_revision_dependencies_revision ON metric_definition_revision_dependencies (dependency_revision_id)",
 		"CREATE INDEX IF NOT EXISTS standard.idx_standard_document_element_mappings_element ON document_element_mappings (element_id)",
 		"CREATE INDEX IF NOT EXISTS standard.idx_standard_document_glossary_mappings_glossary ON document_glossary_mappings (glossary_id)",
 		"CREATE INDEX IF NOT EXISTS standard.idx_standard_document_metric_mappings_metric ON document_metric_mappings (metric_id)",

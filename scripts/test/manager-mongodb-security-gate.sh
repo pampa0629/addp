@@ -21,7 +21,7 @@ fi
 cd "$ROOT_DIR/common"
 ADDP_MONGODB_SCHEMA_E2E=1 \
     go test ./engine/plugins/mongodb \
-    -run '^(TestIntegrationPreparedQueryReadSetAndExecutionUseOutdoorPersonsPlan|TestIntegrationEncodedRecordReadSessionExportsOutdoorPersonsCanonicalExtendedJSON)$' \
+    -run '^(TestIntegrationPreparedQueryReadSetAndExecutionUseOutdoorPersonsPlan|TestIntegrationPreparedAggregateOutputLineageUsesOutdoorTransferProjection|TestIntegrationEncodedRecordReadSessionExportsOutdoorPersonsCanonicalExtendedJSON)$' \
     -count=1 -v 2>&1 | tee "$WORK_DIR/common-mongodb-query-protection.log"
 
 if grep -q -- '--- SKIP:' "$WORK_DIR/common-mongodb-query-protection.log"; then
@@ -32,7 +32,7 @@ fi
 cd "$ROOT_DIR/transfer/backend"
 ADDP_MONGODB_SECURITY_E2E=1 \
     go test ./internal/protection \
-    -run '^TestIntegrationMongoEncodedRecordExportMasksOutdoorPersonsBeforeCanonicalExtendedJSON$' \
+    -run '^(TestIntegrationMongoEncodedRecordExportMasksOutdoorPersonsBeforeCanonicalExtendedJSON|TestIntegrationMongoAggregateTransferProtectsOnlyProjectedOutdoorPersonFields)$' \
     -count=1 -v 2>&1 | tee "$WORK_DIR/transfer-mongodb-export-protection.log"
 
 if grep -q -- '--- SKIP:' "$WORK_DIR/transfer-mongodb-export-protection.log"; then

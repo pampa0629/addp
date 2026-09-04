@@ -841,6 +841,24 @@ func TestTargetLineageLocatorBuildsInfraObjectIdentity(t *testing.T) {
 	}
 }
 
+func TestTransferLineageInputsUsesAllResolvedQueryRelations(t *testing.T) {
+	inputs := transferLineageInputs(planner.EndpointSpec{
+		Locator: "addp://engine/11/path/public/activities?type=table",
+		Query: &planner.QuerySourceSpec{Inputs: []planner.QueryInputSpec{
+			{Name: "activities", Locator: "addp://engine/11/path/public/activities?type=table&item_id=22"},
+			{Name: "persons", Locator: "addp://engine/11/path/public/persons?type=table&item_id=23"},
+		}},
+	})
+
+	if len(inputs) != 2 || inputs[0].Port != "activities" || inputs[0].ItemID == nil || *inputs[0].ItemID != 22 ||
+		inputs[1].Port != "persons" || inputs[1].ItemID == nil || *inputs[1].ItemID != 23 {
+		t.Fatalf("transferLineageInputs() = %#v", inputs)
+	}
+	if got := lineageInputPorts(inputs); !reflect.DeepEqual(got, []string{"activities", "persons"}) {
+		t.Fatalf("lineageInputPorts() = %#v", got)
+	}
+}
+
 func TestAttachSourceMetaAttributesRejectsEngineMismatch(t *testing.T) {
 	t.Parallel()
 

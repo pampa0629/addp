@@ -8439,14 +8439,8 @@ const docTemplate = `{
                 "status": {
                     "type": "string"
                 },
-                "target_locator": {
-                    "type": "string"
-                },
                 "transfer_execution_id": {
                     "type": "string"
-                },
-                "transfer_task_id": {
-                    "type": "integer"
                 },
                 "updated_at": {
                     "type": "string"

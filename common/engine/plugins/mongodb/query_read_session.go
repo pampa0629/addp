@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	commonquery "github.com/addp/common/query"
 	"go.mongodb.org/mongo-driver/bson"
@@ -144,6 +146,12 @@ func (q *mongoPreparedQuery) resolveOutputLineage(ctx context.Context) (*plugin.
 		} else {
 			sources[primary].IdentityOutput = true
 		}
+	case "aggregate":
+		bindings, err := mongoAggregateOutputBindings(q.plan.document["pipeline"], sources[primary].Fields)
+		if err != nil {
+			return nil, err
+		}
+		sources[primary].Bindings = bindings
 	case "count":
 	case "distinct":
 		field, ok := q.plan.document["key"].(string)
@@ -210,6 +218,353 @@ func splitMongoFieldPath(value string) []string {
 	}
 	return parts
 }
+
+type mongoAggregateOutputDependency struct {
+	sourcePath     []string
+	transformation string
+}
+
+type mongoAggregateOutputValue struct {
+	outputPath   []string
+	dependencies []mongoAggregateOutputDependency
+}
+
+func mongoAggregateOutputBindings(value interface{}, fields []datatype.FieldInfo) ([]plugin.QueryOutputBinding, error) {
+	pipeline, ok := mongoAggregatePipeline(value)
+	if !ok {
+		return nil, fmt.Errorf("%w: MongoDB aggregate pipeline must be an array", plugin.ErrQueryOutputLineageUnresolved)
+	}
+	current := make(map[string]mongoAggregateOutputValue, len(fields))
+	for _, field := range fields {
+		path := append([]string(nil), field.Path...)
+		if len(path) == 0 {
+			path = splitMongoFieldPath(field.Name)
+		}
+		if len(path) == 0 {
+			return nil, fmt.Errorf("%w: MongoDB source field path is invalid", plugin.ErrQueryOutputLineageUnresolved)
+		}
+		current[mongoOutputPathKey(path)] = mongoAggregateOutputValue{
+			outputPath: path,
+			dependencies: []mongoAggregateOutputDependency{{
+				sourcePath: append([]string(nil), path...), transformation: plugin.QueryOutputTransformationDirect,
+			}},
+		}
+	}
+	for stageIndex, rawStage := range pipeline {
+		stage, ok := mongoStageDocument(rawStage)
+		if !ok || len(stage) != 1 {
+			return nil, fmt.Errorf("%w: MongoDB aggregate stage %d must contain exactly one operator", plugin.ErrQueryOutputLineageUnresolved, stageIndex)
+		}
+		for operator, argument := range stage {
+			switch operator {
+			case "$match", "$sort":
+				if _, ok := mongoStageDocument(argument); !ok {
+					return nil, fmt.Errorf("%w: MongoDB %s stage must be an object", plugin.ErrQueryOutputLineageUnresolved, operator)
+				}
+			case "$unwind":
+				var err error
+				current, err = applyMongoTransparentUnwind(current, argument)
+				if err != nil {
+					return nil, fmt.Errorf("%w: MongoDB aggregate stage %d: %v", plugin.ErrQueryOutputLineageUnresolved, stageIndex, err)
+				}
+			case "$project":
+				var err error
+				current, err = applyMongoTransparentProject(current, argument)
+				if err != nil {
+					return nil, fmt.Errorf("%w: MongoDB aggregate stage %d: %v", plugin.ErrQueryOutputLineageUnresolved, stageIndex, err)
+				}
+			default:
+				return nil, fmt.Errorf("%w: MongoDB aggregate stage %s is not transparent", plugin.ErrQueryOutputLineageUnresolved, operator)
+			}
+		}
+	}
+	bindings := make([]plugin.QueryOutputBinding, 0, len(current))
+	seen := make(map[string]struct{})
+	for _, output := range current {
+		for _, dependency := range output.dependencies {
+			key := mongoOutputPathKey(dependency.sourcePath) + "\x01" + mongoOutputPathKey(output.outputPath) + "\x01" + dependency.transformation
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			seen[key] = struct{}{}
+			bindings = append(bindings, plugin.QueryOutputBinding{
+				SourcePath:     append([]string(nil), dependency.sourcePath...),
+				OutputPath:     append([]string(nil), output.outputPath...),
+				Transformation: dependency.transformation,
+			})
+		}
+	}
+	sort.Slice(bindings, func(i, j int) bool {
+		leftOutput, rightOutput := mongoOutputPathKey(bindings[i].OutputPath), mongoOutputPathKey(bindings[j].OutputPath)
+		if leftOutput != rightOutput {
+			return leftOutput < rightOutput
+		}
+		leftSource, rightSource := mongoOutputPathKey(bindings[i].SourcePath), mongoOutputPathKey(bindings[j].SourcePath)
+		if leftSource != rightSource {
+			return leftSource < rightSource
+		}
+		return bindings[i].Transformation < bindings[j].Transformation
+	})
+	return bindings, nil
+}
+
+func mongoAggregatePipeline(value interface{}) ([]interface{}, bool) {
+	switch current := value.(type) {
+	case []interface{}:
+		return current, true
+	case primitive.A:
+		return []interface{}(current), true
+	default:
+		return nil, false
+	}
+}
+
+func applyMongoTransparentUnwind(
+	current map[string]mongoAggregateOutputValue,
+	argument interface{},
+) (map[string]mongoAggregateOutputValue, error) {
+	pathValue := ""
+	indexName := ""
+	switch value := argument.(type) {
+	case string:
+		pathValue = value
+	default:
+		document, ok := mongoStageDocument(argument)
+		if !ok {
+			return nil, fmt.Errorf("MongoDB $unwind must be a field path or object")
+		}
+		pathValue, _ = document["path"].(string)
+		if rawIndex, exists := document["includeArrayIndex"]; exists {
+			indexName, ok = rawIndex.(string)
+			if !ok || len(splitMongoFieldPath(indexName)) != 1 {
+				return nil, fmt.Errorf("MongoDB $unwind includeArrayIndex must be one field name")
+			}
+		}
+	}
+	path := mongoFieldReferencePath(pathValue)
+	if len(path) == 0 {
+		return nil, fmt.Errorf("MongoDB $unwind path must be a field reference")
+	}
+	value, exists := current[mongoOutputPathKey(path)]
+	if !exists {
+		return nil, fmt.Errorf("MongoDB $unwind path is absent from the current output")
+	}
+	if indexName != "" {
+		dependencies := make([]mongoAggregateOutputDependency, len(value.dependencies))
+		for index, dependency := range value.dependencies {
+			dependencies[index] = mongoAggregateOutputDependency{
+				sourcePath: append([]string(nil), dependency.sourcePath...), transformation: plugin.QueryOutputTransformationDerived,
+			}
+		}
+		indexPath := []string{indexName}
+		current = cloneMongoAggregateOutput(current)
+		current[mongoOutputPathKey(indexPath)] = mongoAggregateOutputValue{outputPath: indexPath, dependencies: dependencies}
+	}
+	return current, nil
+}
+
+func applyMongoTransparentProject(
+	current map[string]mongoAggregateOutputValue,
+	argument interface{},
+) (map[string]mongoAggregateOutputValue, error) {
+	project, ok := mongoStageDocument(argument)
+	if !ok || len(project) == 0 {
+		return nil, fmt.Errorf("MongoDB $project must be a non-empty object")
+	}
+	excluded := make([][]string, 0)
+	hasInclusion := false
+	for name, expression := range project {
+		path := splitMongoFieldPath(name)
+		if len(path) == 0 {
+			return nil, fmt.Errorf("MongoDB $project output path is invalid")
+		}
+		if mongoProjectionExcludes(expression) {
+			if name != "_id" {
+				excluded = append(excluded, path)
+			}
+			continue
+		}
+		hasInclusion = true
+	}
+	if hasInclusion && len(excluded) > 0 {
+		return nil, fmt.Errorf("MongoDB $project cannot mix field exclusion with projected values")
+	}
+	if !hasInclusion {
+		result := cloneMongoAggregateOutput(current)
+		for name, expression := range project {
+			if !mongoProjectionExcludes(expression) {
+				return nil, fmt.Errorf("MongoDB exclusion projection contains a projected value")
+			}
+			removeMongoOutputPrefix(result, splitMongoFieldPath(name))
+		}
+		return result, nil
+	}
+
+	result := make(map[string]mongoAggregateOutputValue)
+	if _, explicitID := project["_id"]; !explicitID {
+		if err := copyMongoProjectedReference(result, current, []string{"_id"}, []string{"_id"}); err != nil {
+			return nil, err
+		}
+	}
+	for name, expression := range project {
+		if mongoProjectionExcludes(expression) {
+			continue
+		}
+		outputPath := splitMongoFieldPath(name)
+		sourcePath, err := mongoTransparentProjectionSource(name, expression)
+		if err != nil {
+			return nil, err
+		}
+		if err := copyMongoProjectedReference(result, current, sourcePath, outputPath); err != nil {
+			return nil, err
+		}
+	}
+	return result, nil
+}
+
+func mongoTransparentProjectionSource(name string, expression interface{}) ([]string, error) {
+	if mongoProjectionIncludes(expression) {
+		path := splitMongoFieldPath(name)
+		if len(path) == 0 {
+			return nil, fmt.Errorf("MongoDB included field path is invalid")
+		}
+		return path, nil
+	}
+	if reference, ok := expression.(string); ok {
+		path := mongoFieldReferencePath(reference)
+		if len(path) == 0 {
+			return nil, fmt.Errorf("MongoDB $project string value must be a field reference")
+		}
+		return path, nil
+	}
+	document, ok := mongoStageDocument(expression)
+	if !ok || len(document) != 1 {
+		return nil, fmt.Errorf("MongoDB $project expression is not transparent")
+	}
+	rawIfNull, ok := document["$ifNull"]
+	if !ok {
+		return nil, fmt.Errorf("MongoDB $project expression is not transparent")
+	}
+	values, ok := mongoAggregatePipeline(rawIfNull)
+	if !ok || len(values) != 2 || values[1] != nil {
+		return nil, fmt.Errorf("MongoDB $ifNull is transparent only for [field, null]")
+	}
+	reference, ok := values[0].(string)
+	if !ok {
+		return nil, fmt.Errorf("MongoDB $ifNull source must be a field reference")
+	}
+	path := mongoFieldReferencePath(reference)
+	if len(path) == 0 {
+		return nil, fmt.Errorf("MongoDB $ifNull source must be a field reference")
+	}
+	return path, nil
+}
+
+func copyMongoProjectedReference(
+	target map[string]mongoAggregateOutputValue,
+	current map[string]mongoAggregateOutputValue,
+	sourcePath []string,
+	outputPath []string,
+) error {
+	matched := false
+	for _, value := range current {
+		if !mongoPathHasPrefix(value.outputPath, sourcePath) {
+			continue
+		}
+		matched = true
+		destination := append(append([]string(nil), outputPath...), value.outputPath[len(sourcePath):]...)
+		dependencies := make([]mongoAggregateOutputDependency, len(value.dependencies))
+		for index, dependency := range value.dependencies {
+			dependencies[index] = mongoAggregateOutputDependency{
+				sourcePath: append([]string(nil), dependency.sourcePath...), transformation: dependency.transformation,
+			}
+		}
+		target[mongoOutputPathKey(destination)] = mongoAggregateOutputValue{outputPath: destination, dependencies: dependencies}
+	}
+	if !matched {
+		return fmt.Errorf("MongoDB $project source path %q is absent from the current output", strings.Join(sourcePath, "."))
+	}
+	return nil
+}
+
+func cloneMongoAggregateOutput(source map[string]mongoAggregateOutputValue) map[string]mongoAggregateOutputValue {
+	result := make(map[string]mongoAggregateOutputValue, len(source))
+	for key, value := range source {
+		cloned := mongoAggregateOutputValue{outputPath: append([]string(nil), value.outputPath...)}
+		cloned.dependencies = make([]mongoAggregateOutputDependency, len(value.dependencies))
+		for index, dependency := range value.dependencies {
+			cloned.dependencies[index] = mongoAggregateOutputDependency{
+				sourcePath: append([]string(nil), dependency.sourcePath...), transformation: dependency.transformation,
+			}
+		}
+		result[key] = cloned
+	}
+	return result
+}
+
+func removeMongoOutputPrefix(values map[string]mongoAggregateOutputValue, prefix []string) {
+	for key, value := range values {
+		if mongoPathHasPrefix(value.outputPath, prefix) {
+			delete(values, key)
+		}
+	}
+}
+
+func mongoPathHasPrefix(path, prefix []string) bool {
+	if len(prefix) > len(path) {
+		return false
+	}
+	for index := range prefix {
+		if path[index] != prefix[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func mongoFieldReferencePath(value string) []string {
+	value = strings.TrimSpace(value)
+	if !strings.HasPrefix(value, "$") || strings.HasPrefix(value, "$$") {
+		return nil
+	}
+	return splitMongoFieldPath(strings.TrimPrefix(value, "$"))
+}
+
+func mongoProjectionIncludes(value interface{}) bool {
+	switch current := value.(type) {
+	case bool:
+		return current
+	case float64:
+		return current == 1
+	case int:
+		return current == 1
+	case int32:
+		return current == 1
+	case int64:
+		return current == 1
+	default:
+		return false
+	}
+}
+
+func mongoProjectionExcludes(value interface{}) bool {
+	switch current := value.(type) {
+	case bool:
+		return !current
+	case float64:
+		return current == 0
+	case int:
+		return current == 0
+	case int32:
+		return current == 0
+	case int64:
+		return current == 0
+	default:
+		return false
+	}
+}
+
+func mongoOutputPathKey(path []string) string { return strings.Join(path, "\x00") }
 
 func (q *mongoPreparedQuery) consumeForReadSession() (*mongoQueryReadPlan, plugin.ConnectionInfo, error) {
 	q.mu.Lock()

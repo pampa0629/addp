@@ -39,7 +39,7 @@ type StandardCleanupStats struct {
 	Units                    int      `json:"units"`
 	MetricCategories         int      `json:"metric_categories"`
 	Metrics                  int      `json:"metrics"`
-	MetricElementMappings    int      `json:"metric_element_mappings"`
+	MetricRevisions          int      `json:"metric_revisions"`
 	MetricDependencies       int      `json:"metric_dependencies"`
 	Documents                int      `json:"documents"`
 	DocumentElementMappings  int      `json:"document_element_mappings"`
@@ -222,9 +222,9 @@ type standardCleanupCandidates struct {
 	measurementCategories    []models.MeasurementCategory
 	units                    []models.Unit
 	metricCategories         []models.MetricCategory
-	metrics                  []models.Metric
-	metricElementMappings    []models.MetricElementMapping
-	metricDependencies       []models.MetricDependency
+	metrics                  []models.MetricDefinition
+	metricRevisions          []models.MetricDefinitionRevision
+	metricDependencies       []models.MetricDefinitionRevisionDependency
 	documents                []models.Document
 	documentElementMappings  []models.DocumentElementMapping
 	documentGlossaryMappings []models.DocumentGlossaryMapping
@@ -244,7 +244,7 @@ func (c standardCleanupCandidates) stats() *StandardCleanupStats {
 		Units:                    len(c.units),
 		MetricCategories:         len(c.metricCategories),
 		Metrics:                  len(c.metrics),
-		MetricElementMappings:    len(c.metricElementMappings),
+		MetricRevisions:          len(c.metricRevisions),
 		MetricDependencies:       len(c.metricDependencies),
 		Documents:                len(c.documents),
 		DocumentElementMappings:  len(c.documentElementMappings),
@@ -326,13 +326,14 @@ func (s *CleanupService) listTenantCandidates(ctx context.Context, tenantID int6
 	}
 	metricIDs := standardMetricIDs(candidates.metrics)
 	if len(metricIDs) > 0 {
-		if err := s.db.WithContext(ctx).Where("metric_id IN ?", metricIDs).Find(&candidates.metricElementMappings).Error; err != nil {
+		if err := s.db.WithContext(ctx).Where("metric_definition_id IN ?", metricIDs).Find(&candidates.metricRevisions).Error; err != nil {
 			return candidates, err
 		}
-		if err := s.db.WithContext(ctx).
-			Where("from_metric_id IN ? OR to_metric_id IN ?", metricIDs, metricIDs).
-			Find(&candidates.metricDependencies).Error; err != nil {
-			return candidates, err
+		revisionIDs := standardMetricRevisionIDs(candidates.metricRevisions)
+		if len(revisionIDs) > 0 {
+			if err := s.db.WithContext(ctx).Where("metric_definition_revision_id IN ?", revisionIDs).Find(&candidates.metricDependencies).Error; err != nil {
+				return candidates, err
+			}
 		}
 	}
 
@@ -393,12 +394,21 @@ func (s *CleanupService) logicalCleanup(ctx context.Context, candidates standard
 		stats.DeprecatedElements++
 	}
 	for _, metric := range candidates.metrics {
-		if metric.Status == "deprecated" {
+		var publishedCount int64
+		if err := s.db.WithContext(ctx).Model(&models.MetricDefinitionRevision{}).Where("metric_definition_id = ? AND status = ?", metric.ID, models.RevisionStatusPublished).Count(&publishedCount).Error; err != nil {
+			stats.Errors = append(stats.Errors, fmt.Sprintf("inspect metric %d revisions failed: %v", metric.ID, err))
+			continue
+		}
+		if publishedCount == 0 {
 			stats.SkippedItems++
 			continue
 		}
-		if err := s.db.WithContext(ctx).Model(&models.Metric{}).Where("id = ?", metric.ID).
-			Updates(map[string]interface{}{"status": "deprecated", "version": gorm.Expr("version + 1")}).Error; err != nil {
+		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if err := tx.Model(&models.MetricDefinitionRevision{}).Where("metric_definition_id = ? AND status = ?", metric.ID, models.RevisionStatusPublished).Update("status", models.RevisionStatusWithdrawn).Error; err != nil {
+				return err
+			}
+			return tx.Model(&models.MetricDefinition{}).Where("id = ?", metric.ID).Update("version", gorm.Expr("version + 1")).Error
+		}); err != nil {
 			stats.Errors = append(stats.Errors, fmt.Sprintf("deprecate metric %d failed: %v", metric.ID, err))
 			continue
 		}
@@ -430,12 +440,12 @@ func (s *CleanupService) physicalCleanup(ctx context.Context, candidates standar
 		{model: &models.DocumentElementMapping{}, ids: standardDocumentElementMappingIDs(documentElementMappingsToDelete), name: "document element mappings"},
 		{model: &models.DocumentGlossaryMapping{}, ids: standardDocumentGlossaryMappingIDs(documentGlossaryMappingsToDelete), name: "document glossary mappings"},
 		{model: &models.DocumentMetricMapping{}, ids: standardDocumentMetricMappingIDs(documentMetricMappingsToDelete), name: "document metric mappings"},
-		{model: &models.MetricDependency{}, ids: standardMetricDependencyIDs(candidates.metricDependencies), name: "metric dependencies"},
-		{model: &models.MetricElementMapping{}, ids: standardMetricElementMappingIDs(candidates.metricElementMappings), name: "metric element mappings"},
+		{model: &models.MetricDefinitionRevisionDependency{}, ids: standardMetricDependencyIDs(candidates.metricDependencies), name: "metric revision dependencies"},
+		{model: &models.MetricDefinitionRevision{}, ids: standardMetricRevisionIDs(candidates.metricRevisions), name: "metric revisions"},
 		{model: &models.CodeSetRevisionItem{}, ids: standardCodeItemIDs(candidates.codeItems), name: "code items"},
 		{model: &models.Unit{}, ids: standardUnitIDs(candidates.units), name: "units"},
 		{model: &models.Document{}, ids: standardDocumentIDs(documentsToDelete), name: "documents"},
-		{model: &models.Metric{}, ids: standardMetricIDs(candidates.metrics), name: "metrics"},
+		{model: &models.MetricDefinition{}, ids: standardMetricIDs(candidates.metrics), name: "metrics"},
 		{model: &models.MetricCategory{}, ids: standardMetricCategoryIDs(candidates.metricCategories), name: "metric categories"},
 		{model: &models.Element{}, ids: standardElementIDs(candidates.elements), name: "elements"},
 		{model: &models.Glossary{}, ids: standardGlossaryIDs(candidates.glossaries), name: "glossaries"},
@@ -658,7 +668,7 @@ func standardCandidateRecordCount(stats *StandardCleanupStats) int {
 		stats.Units +
 		stats.MetricCategories +
 		stats.Metrics +
-		stats.MetricElementMappings +
+		stats.MetricRevisions +
 		stats.MetricDependencies +
 		stats.Documents +
 		stats.DocumentElementMappings +
@@ -753,7 +763,7 @@ func standardMetricCategoryIDs(items []models.MetricCategory) []int64 {
 	return ids
 }
 
-func standardMetricIDs(items []models.Metric) []int64 {
+func standardMetricIDs(items []models.MetricDefinition) []int64 {
 	ids := make([]int64, 0, len(items))
 	for _, item := range items {
 		ids = append(ids, item.ID)
@@ -761,7 +771,7 @@ func standardMetricIDs(items []models.Metric) []int64 {
 	return ids
 }
 
-func standardMetricElementMappingIDs(items []models.MetricElementMapping) []int64 {
+func standardMetricRevisionIDs(items []models.MetricDefinitionRevision) []int64 {
 	ids := make([]int64, 0, len(items))
 	for _, item := range items {
 		ids = append(ids, item.ID)
@@ -769,7 +779,7 @@ func standardMetricElementMappingIDs(items []models.MetricElementMapping) []int6
 	return ids
 }
 
-func standardMetricDependencyIDs(items []models.MetricDependency) []int64 {
+func standardMetricDependencyIDs(items []models.MetricDefinitionRevisionDependency) []int64 {
 	ids := make([]int64, 0, len(items))
 	for _, item := range items {
 		ids = append(ids, item.ID)

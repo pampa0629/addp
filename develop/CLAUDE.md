@@ -78,6 +78,8 @@ Worker 使用 PostgreSQL AST 验证关系作用域，只把与已声明 `type=re
 
 查询工作台即时执行和 Develop 手动任务执行使用同一参数解析与 PostgreSQL AST 编译器，但不接收 `target_locator`：关系参数应用默认绑定及本次覆盖后编译为只读物理表查询，返回受限结果预览。Orchestrator 执行在相同有效输入上增加独立结果目标并由 Worker 编译为写入；输出目标不是查询参数。
 
+查询结果区必须区分有限预览与全部结果导出：预览只用于有界展示，不提供“下载预览”旁路；单 Engine 表格查询 execution 成功后提供“导出全部结果”，不以预览是否截断为前提，DuckDB 联邦查询在具备统一流式查询 Provider 前不得显示该入口。完整导出由 `POST /api/v1/develop/executions/{execution_id}/exports` 从该 execution 冻结的查询内容、有效值参数、全部有效关系输入、Engine 与结果字段构造只读查询快照，再通过 Common 强类型 Transfer Client 创建无任务定义的 bounded `sync` execution；关系输入必须按参数名稳定排序写入 `source.query.inputs[]`，供 Transfer 校验和记录完整执行血缘，不得只挑一个输入或重新解析 SQL 推断资源。Develop 使用 Common 导出会话能力把产物暂存到 infra，在 Workbench 内轮询并下载到本地；不选择业务存储、不触发 Meta scan、不保存 Transfer task ID。格式、文件名、状态与下载交互必须复用 `common-frontend` 的唯一导出组件。
+
 查询、工作流和脚本的 TaskProvider 稳定输出统一只写入 `common.task_executions.metadata.outputs`；不得保存或读取旧的 `metadata.result.outputs`。`GET /task-provider/executions/:execution_id` 使用 `common/taskprovider` 标准状态响应把同一对象投影为顶层闭合 `outputs`，用户执行详情可以附带任务信息，但不得形成第二套输出提取规则。
 
 独立 `develop-query-worker` 固定领取 `module=develop + task_type=query + source=orchestrator` 的 bounded execution；Backend 不得同时启动这些查询。Worker 只消费 execution 中冻结的解析后 `content`、`engine_id`、timeout 和已解析运行时参数，不在领取后重读可变任务定义。所有 Orchestrator 查询在租约失效后都收敛失败，动态目标不进行跨 lease 重放。查询工作台和 `source=develop` 的手动查询继续由 Backend 即时异步执行，不进入该 Worker 队列。

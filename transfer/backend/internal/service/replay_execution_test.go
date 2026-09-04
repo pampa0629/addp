@@ -85,7 +85,7 @@ func TestExecutionEngineRunsReplayWithoutUpdatingOwnerTask(t *testing.T) {
 	server := replaySystemEngineServer(t)
 	defer server.Close()
 	executionService := NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
-	claimed, lease, _, err := repository.NewTaskRepository(db).ClaimNextBoundedExecution(context.Background(), "replay-test-worker", time.Now(), time.Minute)
+	claimed, lease, err := repository.NewTaskRepository(db).ClaimNextBoundedExecution(context.Background(), "replay-test-worker", time.Now(), time.Minute)
 	if err != nil || claimed == nil || lease == nil {
 		t.Fatalf("claim replay execution = %#v %#v, %v", claimed, lease, err)
 	}
@@ -102,7 +102,7 @@ func TestExecutionEngineRunsReplayWithoutUpdatingOwnerTask(t *testing.T) {
 	engineService.SetProtectionGate(allowTransferSourceProtectionGate{})
 
 	execCtx := commonExecution.ContextWithLease(context.Background(), *lease)
-	if err := engineService.ExecuteTask(execCtx, task.ID, uint(execution.ID)); err != nil {
+	if err := engineService.ExecuteExecution(execCtx, uint(execution.ID)); err != nil {
 		t.Fatalf("ExecuteTask() error = %v", err)
 	}
 	if runtime.applyIdentity != applyIdentity || runtime.ranges[0].StartOffset != 10 {

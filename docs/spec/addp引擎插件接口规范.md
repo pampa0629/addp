@@ -502,7 +502,7 @@ Provider 不得为了提高提示数量把 `sampled` 或 `unknown` 提升为 `co
 
 1. 只能在成功取得同一 PreparedQuery 的完整 `ReadSet()` 后解析；source path 必须与 ReadSet 精确一一对应，不得增加调用方提交的资源或遗漏 View、JOIN、`$lookup` 等间接依赖。
 2. `Fields` 必须来自当前 Engine Catalog Provider 的实时结构事实，并足以使用 `TableSchemaSnapshotHash` 与保护投影比较；不得使用查询结果列名、Meta 缓存或调用方 DTO 伪造源结构。
-3. `direct` binding 必须给出规范源字段路径和结果字段路径；别名属于 direct。只要字段值参与表达式、拼接、函数、聚合、复合对象构造或不能证明为原值直传，就必须标记 `derived` 或把该 source 标记为 `OpaqueOutput`。
+3. `direct` binding 必须给出规范源字段路径和结果字段路径；别名属于 direct。只允许一种不改变非空原值的空值归一化继续视为 direct：MongoDB `$ifNull: ["$field", null]`。其他字段值参与表达式、拼接、函数、聚合、复合对象构造或不能证明为原值直传时，必须标记 `derived` 或把该 source 标记为 `OpaqueOutput`。
 4. Provider 可以用空 bindings 表示当前 source 不向结果返回任何字段值，例如 `count(*)`；但只有在原生 AST / command 证明输出无字段值依赖时才能这样声明。
 5. 无法证明完整输出来源时返回类型化 `ErrQueryOutputLineageUnresolved`，不得按结果列名猜测、把缺失 binding 当成安全或在 Owner 中再次解析查询文本。
 
@@ -519,13 +519,13 @@ PostgreSQL Provider 的首个可信切片使用 PostgreSQL AST 和当前连接�
 
 - 未限定关系名必须按当前连接的 `search_path` 解析，CTE 名只在对应语法作用域内排除；
 - 普通表、分区表和物化视图以其自身的 Engine Catalog leaf 进入集合；普通视图还必须递归纳入其绑定的底层关系 leaf；
-- 普通标量、聚合和窗口函数必须按当前连接目录解析可见候选；只有全部可匹配候选都属于 `pg_catalog`、由 PostgreSQL `internal` 语言实现、不是集合返回或 `SECURITY DEFINER`，且波动性为 `IMMUTABLE|STABLE` 时，才能证明该调用不新增 Engine Catalog leaf，并继续递归检查参数、过滤和窗口表达式；不得维护函数名白名单；
-- `VOLATILE` 函数、表函数、集合返回函数、用户或扩展 schema 函数、非 `internal` 实现以及任何候选无法完整证明的调用必须 unresolved；函数重载、默认参数、variadic 和当前 `search_path` 必须纳入候选闭包，不能按同名某一个安全函数缩小判断；
+- 普通标量、聚合和窗口函数必须按当前连接目录解析可见候选。只有每个可匹配候选都同时满足不是集合返回、不是 `SECURITY DEFINER`、波动性为 `IMMUTABLE|STABLE`，且属于以下任一可验证信任边界时，才能证明该调用不新增 Engine Catalog leaf：① `pg_catalog` 中由 PostgreSQL `internal` 语言实现的内置函数；② 函数 OID 通过 `pg_depend` 证明归属当前 Provider 明确信任的已安装扩展。PostgreSQL Provider 当前只信任 `postgis` 扩展成员，用于完成已声明的原生空间编码和筛选能力；信任依据是扩展成员身份而不是 schema 名、函数名或实现语言，不得维护函数名白名单。通过信任检查后仍必须递归检查参数、过滤和窗口表达式；
+- `VOLATILE` 函数、表函数、集合返回函数、非可信扩展成员的用户或扩展 schema 函数，以及任何候选无法完整证明的调用必须 unresolved；函数重载、默认参数、variadic 和当前 `search_path` 必须纳入候选闭包，不能按同名某一个安全函数缩小判断；
 - 普通视图继续按 `pg_rewrite/pg_depend` 展开绑定关系；视图依赖的非可信用户函数必须 unresolved。外部表、临时表、系统目录或其他无法证明为 Engine Catalog leaf 的来源同样 unresolved。
 
 查询 Provider 对外提供可读数据出口时，必须使用 `PrepareQuery()` 唯一主路。暂未能完整解析某种语言/方言的 PreparedQuery 必须在 `ReadSet()` 返回类型化 unresolved 错误，且 Provider 不得对受保护 Owner 声称已安装资源门禁；不保留独立 `ResolveQueryReadSet()`、再次提交查询或“仅用 `TargetPath`”的兼容路线。
 
-首个 `QueryOutputLineage` 验证范围固定为 PostgreSQL 和 MongoDB。PostgreSQL 对直接列、显式别名和可证明的单来源 `*` 产生 direct / identity 映射；表达式依赖标记为 derived，View 底层依赖、无法消歧的多来源 wildcard 等不能证明字段映射的 source 标记 opaque。MongoDB `find` 的原结构输出声明 identity，`distinct` 把指定源字段 direct 映射到 `value`，`count` 声明无字段值输出；首期 aggregate 即使 ReadSet 完整，也在无法证明 pipeline 字段变换时返回 output-lineage unresolved。未纳管 Tenant 不调用 `OutputLineage()`，不会承担结构读取或结果来源分析成本。
+首个 `QueryOutputLineage` 验证范围固定为 PostgreSQL 和 MongoDB。PostgreSQL 对直接列、显式别名和可证明的单来源 `*` 产生 direct / identity 映射；表达式依赖标记为 derived，View 底层依赖、无法消歧的多来源 wildcard 等不能证明字段映射的 source 标记 opaque。MongoDB `find` 的原结构输出声明 identity，`distinct` 把指定源字段 direct 映射到 `value`，`count` 声明无字段值输出。MongoDB aggregate 只对按顺序完全由 `$match`、`$unwind`、`$project`、`$sort` 组成的透明管道产生输出血缘：`$project` 只接受字段保留、字段排除、直接字段别名和 `$ifNull: ["$field", null]`，`$unwind.includeArrayIndex` 作为数组结构派生值记录；任一其他阶段、表达式、复合对象、动态字段路径或无法从前序输出唯一回溯到源字段的引用必须返回 output-lineage unresolved。未纳管 Tenant 不调用 `OutputLineage()`，不会承担结构读取或结果来源分析成本。
 
 生产搬运需要连续消费只读查询结果时使用 `QueryReadSessionProvider`，不能循环调用返回有界 `QueryResult` 的预览接口：
 
@@ -574,7 +574,7 @@ type FederatedQueryRequest struct {
 }
 ```
 
-`QueryOptions.Args` 是驱动参数绑定值，Runtime 不得把它插值回 SQL 文本。`QueryOptions.Describe=true` 表示只返回查询输出结构，不读取业务结果行；联邦 Runtime 必须在完成授权、挂载和对象表改写后使用引擎原生 describe 能力执行，不能通过实际扫描整份结果推断字段。`Describe` 不是独立查询路由，也不能绕过只读校验、Execution Authorization 或资源限制。
+`QueryOptions.Args` 是驱动参数绑定值，Runtime 不得把它插值回 SQL 文本。产生带 `Args` 查询计划的调用方必须同时生成当前方言的位置占位符：PostgreSQL 使用 `$1/$2…`，Oracle 使用 `:1/:2…`，MySQL 等问号方言使用 `?`；占位符序号必须继续已有 `Args` 的长度，不得由 Provider 二次扫描或改写 SQL 补救。仓库内 SQL 计划生成器统一通过 `common/query.Dialect.Placeholder` 取得占位符。`QueryOptions.Describe=true` 表示只返回查询输出结构，不读取业务结果行；联邦 Runtime 必须在完成授权、挂载和对象表改写后使用引擎原生 describe 能力执行，不能通过实际扫描整份结果推断字段。`Describe` 不是独立查询路由，也不能绕过只读校验、Execution Authorization 或资源限制。
 
 `QueryOptions.Parameters` 是普通查询的命名类型化参数值，仅当 `capabilities.compute.query.parameters` 对当前语言声明支持时允许非空。SQL Provider 把 `:name` 编译为方言占位符并写入 `Args` 后调用数据库驱动；Cypher Provider 把 Map 直接交给 Neo4j Driver；MongoDB Provider 先解析 JSON，再把仅包含 `{\"$param\":\"name\"}` 的值节点替换为原始类型值。Provider 必须校验查询引用和参数集合完全一致，禁止字符串插值、字面量格式化和动态标识符替换。
 

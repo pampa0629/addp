@@ -25,10 +25,9 @@ const allStandardPermissions = [
   'standard.glossary.offline',
   'standard.glossary.read',
   'standard.glossary.update',
-  'standard.metric.approve',
   'standard.metric.create',
   'standard.metric.delete',
-  'standard.metric.offline',
+  'standard.metric.publish',
   'standard.metric.read',
   'standard.metric.update',
   'standard.unit.create',
@@ -404,7 +403,7 @@ test('submits a data element only once when confirmation fires twice', async ({ 
   expect(backend.getActionRequests().filter(path => path === '/api/v1/standard/elements/41/revisions/411/submit')).toHaveLength(1)
 })
 
-test('moves a metric through approve and deprecate states', async ({ page }) => {
+test('moves a metric revision through submit, publish and withdraw states', async ({ page }) => {
   const backend = await installMockBackend(page, {
     elements: [{
       id: 41,
@@ -428,25 +427,20 @@ test('moves a metric through approve and deprecate states', async ({ page }) => 
   })
   await page.goto('/metrics/51')
 
-  await expect(page.getByText('草稿', { exact: true })).toBeVisible()
-  await expect(page.getByText('活动参与人数数据元', { exact: true })).toBeVisible()
-  await expect(page.getByText('participant_count_element', { exact: true })).toBeVisible()
-  await page.getByRole('button', { name: '审批' }).click()
-  let confirm = page.getByRole('dialog', { name: '提示' })
-  await expect(confirm).toContainText('确认审批通过？')
-  await confirm.getByRole('button', { name: '确定' }).click()
-  await expect(page.getByText('已审批', { exact: true })).toBeVisible()
+  await expect(page.locator('.page-header .el-tag').filter({ hasText: 'R1 · 草稿' })).toBeVisible()
+  await page.getByRole('button', { name: '提交审核' }).click()
+  await expect(page.locator('.page-header .el-tag').filter({ hasText: 'R1 · 审核中' })).toBeVisible()
 
-  await page.getByRole('button', { name: '废弃' }).click()
-  confirm = page.getByRole('dialog', { name: '提示' })
-  await expect(confirm).toContainText('确认废弃该指标？')
-  await confirm.getByRole('button', { name: '确定' }).click()
-  await expect(page.locator('.page-header .el-tag').filter({ hasText: '已废弃' })).toBeVisible()
-  await expect(page.getByRole('button', { name: '废弃' })).toHaveCount(0)
+  await page.getByRole('button', { name: '发布' }).click()
+  await expect(page.locator('.page-header .el-tag').filter({ hasText: 'R1 · 已发布' })).toBeVisible()
+
+  await page.getByRole('button', { name: '撤回' }).click()
+  await expect(page.locator('.page-header .el-tag').filter({ hasText: 'R1 · 已撤回' })).toBeVisible()
 
   expect(backend.getActionRequests()).toEqual(expect.arrayContaining([
-    '/api/v1/standard/metrics/51/approve',
-    '/api/v1/standard/metrics/51/deprecate'
+    '/api/v1/standard/metrics/51/revisions/511/submit',
+    '/api/v1/standard/metrics/51/revisions/511/publish',
+    '/api/v1/standard/metrics/51/revisions/511/withdraw'
   ]))
 })
 
@@ -716,7 +710,40 @@ async function installMockBackend(page, options = {}) {
   let metricDocumentLinked = false
   const documents = (options.documents || []).map(item => ({ ...item }))
   const elements = (options.elements || []).map(item => ({ ...item }))
-  const metrics = (options.metrics || []).map(item => ({ ...item }))
+  const metrics = (options.metrics || []).map(item => {
+    if (item.current_revision || item.draft_revision) return structuredClone(item)
+    const revision = {
+      id: item.id * 10 + 1,
+      metric_definition_id: item.id,
+      revision_no: 1,
+      name: item.name,
+      definition: item.definition || `${item.name}定义`,
+      statistical_caliber: item.statistical_caliber || item.definition || `${item.name}口径`,
+      semantic_formula: item.formula || '',
+      metric_type: item.type || 'atomic',
+      unit_id: null,
+      dependencies: [],
+      change_summary: '初始修订',
+      effective_from: '2026-08-12T08:00:00Z',
+      status: item.status === 'approved' ? 'published' : item.status === 'deprecated' ? 'withdrawn' : item.status,
+      created_at: item.created_at || '2026-08-12T08:00:00Z'
+    }
+    const hasDraft = revision.status === 'draft' || revision.status === 'in_review'
+    return {
+      id: item.id,
+      code: item.code,
+      scope_type: item.domain_id ? 'domain' : 'tenant_common',
+      owner_domain_id: item.domain_id || null,
+      category_id: item.category_id || null,
+      steward_id: null,
+      tags: item.tags || [],
+      lifecycle_state: 'active',
+      version: item.version || 1,
+      draft_revision_id: hasDraft ? revision.id : null,
+      draft_revision: hasDraft ? revision : null,
+      current_revision: hasDraft ? null : revision
+    }
+  })
   const elementAggregates = elements.map(item => {
     const revision = {
       id: item.id * 10 + 1,
@@ -830,16 +857,34 @@ async function installMockBackend(page, options = {}) {
       }
       return fulfillJSON(route, element || {})
     }
-    if (request.method() === 'POST' && path === '/api/v1/standard/metrics/51/approve') {
+    if (request.method() === 'POST' && path === '/api/v1/standard/metrics/51/revisions/511/submit') {
       actionRequests.push(path)
       const metric = metrics.find(item => item.id === 51)
-      if (metric) metric.status = 'approved'
+      if (metric?.draft_revision) {
+        metric.draft_revision.status = 'in_review'
+        metric.version += 1
+      }
       return fulfillJSON(route, metric || {})
     }
-    if (request.method() === 'POST' && path === '/api/v1/standard/metrics/51/deprecate') {
+    if (request.method() === 'POST' && path === '/api/v1/standard/metrics/51/revisions/511/publish') {
       actionRequests.push(path)
       const metric = metrics.find(item => item.id === 51)
-      if (metric) metric.status = 'deprecated'
+      if (metric?.draft_revision) {
+        metric.draft_revision.status = 'published'
+        metric.current_revision = metric.draft_revision
+        metric.draft_revision = null
+        metric.draft_revision_id = null
+        metric.version += 1
+      }
+      return fulfillJSON(route, metric || {})
+    }
+    if (request.method() === 'POST' && path === '/api/v1/standard/metrics/51/revisions/511/withdraw') {
+      actionRequests.push(path)
+      const metric = metrics.find(item => item.id === 51)
+      if (metric?.current_revision) {
+        metric.current_revision.status = 'withdrawn'
+        metric.version += 1
+      }
       return fulfillJSON(route, metric || {})
     }
     if (request.method() === 'POST' && path === '/api/v1/standard/metrics/51/documents') {
@@ -924,6 +969,11 @@ async function installMockBackend(page, options = {}) {
     if (path === '/api/v1/standard/metric-categories') return fulfillJSON(route, [])
     if (path === '/api/v1/standard/metrics') return fulfillJSON(route, { data: metrics, total: metrics.length })
     if (path === '/api/v1/standard/metrics/51') return fulfillJSON(route, metrics.find(item => item.id === 51) || {})
+    if (path === '/api/v1/standard/metrics/51/revisions') {
+      const metric = metrics.find(item => item.id === 51)
+      const revision = metric?.draft_revision || metric?.current_revision
+      return fulfillJSON(route, revision ? [revision] : [])
+    }
     if (path === '/api/v1/standard/metrics/51/documents') {
       metricDocumentListRequests += 1
       return fulfillJSON(route, metricDocumentLinked ? documents : [])

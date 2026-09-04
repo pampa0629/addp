@@ -601,6 +601,29 @@ func (c *StandardClient) ValidateDomain(ctx context.Context, domainID int64) err
 	return c.validateTenantReference(ctx, fmt.Sprintf("/api/v1/standard/domains/%d", domainID), "domain")
 }
 
-func (c *StandardClient) ValidateMetric(ctx context.Context, metricID int64) error {
-	return c.validateTenantReference(ctx, fmt.Sprintf("/api/v1/standard/metrics/%d", metricID), "metric")
+type PublishedMetricDefinitionRevision struct {
+	ID             int64  `json:"id"`
+	TenantID       int64  `json:"tenant_id"`
+	Code           string `json:"code"`
+	Name           string `json:"name"`
+	MetricType     string `json:"metric_type"`
+	Status         string `json:"status"`
+	LifecycleState string `json:"lifecycle_state"`
+	RevisionID     int64  `json:"revision_id"`
+	RevisionNo     int64  `json:"revision_no"`
+}
+
+func (c *StandardClient) GetPublishedMetricDefinitionRevision(ctx context.Context, definitionID, revisionID int64) (*PublishedMetricDefinitionRevision, error) {
+	if definitionID <= 0 || revisionID <= 0 {
+		return nil, errors.New("metric definition and revision IDs must be positive")
+	}
+	var result PublishedMetricDefinitionRevision
+	path := fmt.Sprintf("/api/v1/standard/metrics/%d/revisions/%d/published-reference", definitionID, revisionID)
+	if err := c.doJSON(ctx, http.MethodGet, path, nil, &result); err != nil {
+		return nil, fmt.Errorf("standard get published metric definition revision: %w", err)
+	}
+	if result.ID != definitionID || result.RevisionID != revisionID || result.Status != "published" || result.LifecycleState != "active" || result.RevisionNo <= 0 || strings.TrimSpace(result.Name) == "" {
+		return nil, errors.New("standard returned an invalid published metric definition revision")
+	}
+	return &result, nil
 }

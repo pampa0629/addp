@@ -493,6 +493,20 @@ type CreateTaskRequest struct {
 	AutoScanMetadata *bool                  `json:"auto_scan_metadata"`
 }
 
+// CreateAdHocExecutionRequest creates a one-off bounded sync execution. It
+// shares the stable endpoint contract with sync tasks but has no task identity.
+type CreateAdHocExecutionRequest struct {
+	Name             string                     `json:"name" binding:"required"`
+	Config           TableTransferTaskConfigDoc `json:"config" binding:"required"`
+	BatchSize        int                        `json:"batch_size,omitempty"`
+	AutoScanMetadata bool                       `json:"auto_scan_metadata,omitempty"`
+}
+
+type CreateAdHocExecutionResponse struct {
+	ExecutionID string `json:"execution_id"`
+	Status      string `json:"status"`
+}
+
 // UpdateTaskRequest 更新任务请求
 type UpdateTaskRequest struct {
 	Name             *string                `json:"name"`

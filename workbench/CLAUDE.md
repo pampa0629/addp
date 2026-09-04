@@ -24,6 +24,7 @@ Workbench 是面向数据消费者、以已发布 Service 为唯一数据入口�
 - Application Display Mode 是同一 Data Application 页面的运行呈现方式；当前只允许 `desktop | wallboard`。全屏只保存在浏览器会话中，不能进入发布快照；wallboard 不能拥有第二套 Component、查询、授权或数据源。
 - Application Refresh Policy 只允许 wallboard 使用关闭、30 秒、60 秒、300 秒四档浏览器前台刷新；页面不可见时暂停，当前查询未完成时跳过本轮，不能创建 Task、Schedule、Execution 或后台刷新旁路。
 - Application Presentation Sections 只允许 wallboard 从 `title | parameters | query_actions` 中隐藏运行页区块；修订与刷新状态、全屏入口、Component 标题和错误提示始终显示。隐藏查询操作必须启用自动刷新，隐藏参数区必须保证全部必填参数有可执行默认值。
+- 保存前整页预览只消费编辑器当前内存 Snapshot 的归一化副本，并与已发布运行页复用唯一应用运行画布；不得新增预览路由、Backend API、临时持久对象、查询代理或第二套查询状态，关闭预览即销毁全部运行会话状态。
 - 创建、更新和发布 Data Application 时使用当前 User Bearer 重新校验每个 Component 的 Descriptor；运行端由浏览器使用当前 User Bearer 调用 Service，全链路不保存 Token。
 - 列表、管理详情和删除只读取 Workbench 自身事实，不因 Service 不可达而失败。
 - Workbench 不代理真实数据查询，浏览器按 Descriptor operation 直接调用 Service。

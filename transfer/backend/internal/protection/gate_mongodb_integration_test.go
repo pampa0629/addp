@@ -38,10 +38,7 @@ func TestIntegrationMongoEncodedRecordExportMasksOutdoorPersonsBeforeCanonicalEx
 		t.Fatalf("prepare encoded record protection: %v", err)
 	}
 
-	port, err := strconv.Atoi(transferMongoEnvOrDefault("ADDP_TEST_MONGODB_PORT", "27017"))
-	if err != nil || port <= 0 {
-		t.Fatal("ADDP_TEST_MONGODB_PORT must be a positive integer")
-	}
+	port := mustTransferMongoPort(t)
 	provider := &mongodb.MongoDBPlugin{}
 	session, err := provider.OpenEncodedRecordReadSession(t.Context(), plugin.ConnectionInfo{
 		"host":        transferMongoEnvOrDefault("ADDP_TEST_MONGODB_HOST", "127.0.0.1"),
@@ -95,6 +92,136 @@ func TestIntegrationMongoEncodedRecordExportMasksOutdoorPersonsBeforeCanonicalEx
 	if maskedPhones == 0 {
 		t.Fatal("protected MongoDB export contained no masked phone")
 	}
+}
+
+func TestIntegrationMongoAggregateTransferProtectsOnlyProjectedOutdoorPersonFields(t *testing.T) {
+	if os.Getenv("ADDP_MONGODB_SECURITY_E2E") != "1" {
+		t.Skip("set ADDP_MONGODB_SECURITY_E2E=1 to run the MongoDB protection integration gate")
+	}
+
+	model := plugin.DynamicSchemaCatalogModel()
+	path := plugin.EngineCatalogBranchLeafPath(model, 11, plugin.EngineCatalogTermDatabase, "Outdoor", plugin.EngineCatalogTermCollection, plugin.EngineCatalogKindCollection, "Persons")
+	connection := plugin.ConnectionInfo{
+		"host":        transferMongoEnvOrDefault("ADDP_TEST_MONGODB_HOST", "127.0.0.1"),
+		"port":        mustTransferMongoPort(t),
+		"user":        transferMongoEnvOrDefault("ADDP_TEST_MONGODB_USER", "admin"),
+		"password":    transferMongoEnvOrDefault("ADDP_TEST_MONGODB_PASSWORD", "admin_password"),
+		"auth_source": transferMongoEnvOrDefault("ADDP_TEST_MONGODB_AUTH_SOURCE", "admin"),
+		"database":    "Outdoor",
+	}
+	provider := &mongodb.MongoDBPlugin{}
+	facts, err := provider.DescribeEngineCatalogFacts(t.Context(), connection, path, plugin.EngineCatalogFactsOptions{})
+	if err != nil || facts == nil || facts.Table == nil {
+		t.Fatalf("describe Outdoor.Persons fields: facts=%#v error=%v", facts, err)
+	}
+	fields := facts.Table.Fields
+	store := transferProjectionStore(t)
+	installActiveTransferProjectionForComponent(t, store, model, path, fields, dataprotection.Component{
+		Key: "userInfo.phone", Path: []dataprotection.PathSegment{{Name: "userInfo", Container: "object"}, {Name: "phone", Container: "scalar"}}, ValueType: string(datatype.FieldTypeString),
+	})
+	gate := NewGate(store, fakeEngineGetter{engine: &commonmodels.Engine{ID: 11, EngineType: "mongodb"}})
+	protector, err := gate.PrepareBoundedTableProtection(t.Context(), 7, map[string]interface{}{
+		"source": map[string]interface{}{"locator": "addp://engine/11/path/Outdoor/Persons?type=collection&item_id=51657"},
+	})
+	if err != nil {
+		t.Fatalf("prepare bounded table protection: %v", err)
+	}
+
+	targetPath := plugin.EngineCatalogPath{
+		Version:  plugin.EngineCatalogPathVersion,
+		EngineID: 11,
+		Segments: []plugin.EngineCatalogSegment{
+			{Term: plugin.EngineCatalogTermServer, Kind: plugin.EngineCatalogTermServer},
+			{Term: plugin.EngineCatalogTermDatabase, Kind: plugin.EngineCatalogKindNamespace, Name: "Outdoor"},
+		},
+	}
+	withoutPhone, err := provider.PrepareQuery(t.Context(), connection, plugin.QueryRequest{
+		EngineID: 11, Language: "mql", TargetPath: &targetPath, Options: plugin.QueryOptions{ReadOnly: true},
+		Query: `{"aggregate":"Persons","pipeline":[{"$project":{"_id":"$_id","_openid":{"$ifNull":["$_openid",null]},"userInfo__nickName":{"$ifNull":["$userInfo.nickName",null]}}}]}`,
+	})
+	if err != nil {
+		t.Fatalf("prepare projection without phone: %v", err)
+	}
+	protectWithoutPhone, err := protector.PrepareQueryProtection(t.Context(), withoutPhone)
+	if err != nil {
+		t.Fatalf("prepare protection for projection without phone: %v", err)
+	}
+	withoutPhoneSession, err := provider.OpenQueryReadSession(t.Context(), withoutPhone)
+	if err != nil {
+		t.Fatalf("open projection without phone: %v", err)
+	}
+	withoutPhoneBatch, err := withoutPhoneSession.ReadBatch(t.Context(), 10)
+	if closeErr := withoutPhoneSession.Close(t.Context()); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		t.Fatalf("read projection without phone: %v", err)
+	}
+	withoutPhoneResult := &plugin.QueryResult{Rows: withoutPhoneBatch.Rows}
+	if err := protectWithoutPhone(withoutPhoneResult); err != nil {
+		t.Fatalf("protect projection without phone: %v", err)
+	}
+	for _, row := range withoutPhoneResult.Rows {
+		if _, exists := row["userInfo__phone"]; exists {
+			t.Fatal("projection without phone unexpectedly returned the protected field")
+		}
+	}
+
+	withPhone, err := provider.PrepareQuery(t.Context(), connection, plugin.QueryRequest{
+		EngineID: 11, Language: "mql", TargetPath: &targetPath, Options: plugin.QueryOptions{ReadOnly: true},
+		Query: `{"aggregate":"Persons","pipeline":[{"$project":{"_id":0,"phone":{"$ifNull":["$userInfo.phone",null]}}}]}`,
+	})
+	if err != nil {
+		t.Fatalf("prepare projection with phone: %v", err)
+	}
+	protectWithPhone, err := protector.PrepareQueryProtection(t.Context(), withPhone)
+	if err != nil {
+		t.Fatalf("prepare protection for projection with phone: %v", err)
+	}
+	withPhoneSession, err := provider.OpenQueryReadSession(t.Context(), withPhone)
+	if err != nil {
+		t.Fatalf("open projection with phone: %v", err)
+	}
+	defer withPhoneSession.Close(t.Context()) //nolint:errcheck
+	maskedPhones := 0
+	for batchIndex := 0; batchIndex < 5; batchIndex++ {
+		batch, readErr := withPhoneSession.ReadBatch(t.Context(), 50)
+		if readErr != nil {
+			t.Fatalf("read projection with phone: %v", readErr)
+		}
+		if len(batch.Rows) == 0 {
+			break
+		}
+		result := &plugin.QueryResult{Columns: []string{"phone"}, Rows: batch.Rows}
+		if err := protectWithPhone(result); err != nil {
+			t.Fatalf("protect projection with phone: %v", err)
+		}
+		for _, row := range result.Rows {
+			phone, exists := row["phone"].(string)
+			if !exists {
+				continue
+			}
+			if !isTransferMaskedMainlandPhone(phone) {
+				t.Fatal("protected MongoDB aggregate emitted an unmasked phone")
+			}
+			maskedPhones++
+		}
+		if maskedPhones > 0 {
+			break
+		}
+	}
+	if maskedPhones == 0 {
+		t.Fatal("protected MongoDB aggregate contained no masked phone")
+	}
+}
+
+func mustTransferMongoPort(t *testing.T) int {
+	t.Helper()
+	port, err := strconv.Atoi(transferMongoEnvOrDefault("ADDP_TEST_MONGODB_PORT", "27017"))
+	if err != nil || port <= 0 {
+		t.Fatal("ADDP_TEST_MONGODB_PORT must be a positive integer")
+	}
+	return port
 }
 
 func transferMongoEnvOrDefault(name, fallback string) string {

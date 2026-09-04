@@ -311,6 +311,9 @@ func connectDatabase(cfg *config.Config) (*gorm.DB, error) {
 	if err := transferRepo.MigrateCaptureProviderResources(db); err != nil {
 		return nil, err
 	}
+	if err := transferRepo.MigrateExecutionLogs(db); err != nil {
+		return nil, err
+	}
 	if err := db.AutoMigrate(transferSchemaModels()...); err != nil {
 		return nil, fmt.Errorf("auto-migrate transfer models: %w", err)
 	}

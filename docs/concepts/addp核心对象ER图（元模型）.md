@@ -1036,6 +1036,16 @@ erDiagram
         timestamp updated_at
     }
 
+    MetricDefinitionRevisionDependency {
+        uint id PK
+        uint metric_definition_revision_id FK
+        uint dependency_definition_id FK "草稿维护稳定身份"
+        uint dependency_revision_id FK "发布时冻结"
+        string relation_kind "base|component"
+        decimal coefficient "可选"
+        string note
+    }
+
     Glossary {
         uint id PK
         uint tenant_id FK
@@ -1130,6 +1140,9 @@ erDiagram
     Unit ||--o{ ElementRevision : "计量单位(可选)"
     Unit ||--o{ MetricDefinitionRevision : "计量单位(可选)"
     MetricDefinition ||--o{ MetricDefinitionRevision : "含修订"
+    MetricDefinitionRevision ||--o{ MetricDefinitionRevisionDependency : "含语义依赖"
+    MetricDefinitionRevisionDependency }o--|| MetricDefinition : "引用稳定身份"
+    MetricDefinitionRevisionDependency }o--o| MetricDefinitionRevision : "发布时冻结"
     Glossary ||--o{ GlossaryRevision : "含修订"
     Document ||--o{ DocumentRevision : "含修订"
     DocumentRevision ||--o{ ExtractionEvidence : "含提取证据"
@@ -1139,10 +1152,10 @@ erDiagram
 
 | # | 问题描述 | 当前状态 | 影响 |
 |---|----------|----------|------|
-| ST-1 | 当前只有数据元和码值集采用稳定身份 + 不可变修订；术语、指标和文档仍是可变资源 | 待迁移 | 正式发布后的口径和来源无法被精确冻结，历史追溯链不完整 |
+| ST-1 | 数据元、码值集和指标已采用稳定身份 + 不可变修订；术语和文档仍是可变资源 | 待迁移 | 术语与文档正式发布后的口径和来源仍无法被精确冻结，历史追溯链不完整 |
 | ST-2 | `DimensionHierarchy` 已整体迁入 Model，Standard 旧表、API、权限与前端入口已删除 | ✅ 已实现 | 维度层级成为 LogicalTable 聚合内单一事实，不再跨模块软引用 |
 | ST-4 | StandardCollection 已按“稳定身份 + 治理配置修订 + 成员快照 + 对象级职责分配 + 不可变治理事件”实现 | ✅ 已实现 | 可独立配置跨域标准集的成员、维护人、对象级权限和审核流程，且不改变成员自身发布状态 |
-| ST-5 | 当前指标同时保存业务公式和 `derivation_config` | 待迁移 | Standard 与 Model 的计算实现职责混杂；Standard 只保留语义口径，具体实现迁入 Model |
+| ST-5 | 指标定义与指标实现已经拆分 | ✅ 已实现 | Standard 只保留修订级语义口径与冻结的语义依赖；粒度、来源、连接、过滤和可执行表达式归 Model MetricImplementation 所有 |
 | ST-6 | 当前标准文档没有不可变修订与提取证据模型 | 待迁移 | Copilot 提取结果无法稳定回溯到来源版本、页码或章节，也无法建立可靠审核链 |
 | ST-7 | 码值层级与跨码值集映射尚未形成规范 | 待讨论 | 需要先区分标准间语义映射与 Transfer 的资产级转换执行，再决定是否建立父子码项和 crosswalk 资源 |
 
@@ -1259,6 +1272,7 @@ erDiagram
         uint id PK
         uint tenant_id FK
         uint fact_table_id FK
+        uint metric_definition_id FK "软引用 Standard.MetricDefinition 稳定身份"
         uint metric_definition_revision_id FK "软引用 Standard.MetricDefinitionRevision"
         string name
         string grain "计算粒度"
@@ -1286,7 +1300,7 @@ erDiagram
 | # | 问题描述 | 当前状态 | 影响 |
 |---|----------|----------|------|
 | MO-1 | 当前 EntityAttribute / LogicalField 已逐步增加 `element_revision_id`，但仍需确认所有审批、导入和展示路径只以确定修订作为正式引用 | 待收口 | 跨 schema 无 DB FK 是合理边界，但正式模型不能动态跟随数据元当前版本 |
-| MO-2 | 当前 `FactMetricMapping.metric_id` 只引用可变的 `Standard.Metric`，且没有完整计算实现契约 | 待迁移 | 应替换为 Model 所属的 MetricImplementation，并冻结 `metric_definition_revision_id` |
+| MO-2 | 旧 `FactMetricMapping` 已整体替换为 Model 所属的 MetricImplementation | ✅ 已实现 | 同时保存稳定定义身份并冻结 `metric_definition_revision_id`，完整拥有粒度、来源、连接、过滤与可执行表达式 |
 | MO-3 | `Entity` 和 `LogicalTable` 都有 `domain_id`，都软引用 `Standard.Domain`，两者的关系（Entity 是 LogicalTable 的模板）通过 `LogicalTable.entity_id` 可选关联，但未强制 | 设计如此 | 允许逻辑表不依赖实体直接建模 |
 | MO-4 | Model 已独占 DimensionHierarchy 与层级成员，LogicalField 不再保存 `hierarchy_id + hierarchy_level` | ✅ 已实现 | 层级序号从 1 开始，成员只引用同一 LogicalTable 的字段并共用父版本 |
 
@@ -1555,5 +1569,5 @@ graph TD
 | ST-1 | Standard | Glossary.related_ids 用 int64[] 存关联 ID，无 FK 约束                 | —      | 已确认合理 |
 | ST-2 | Standard | DimensionHierarchy 所有权与实现已统一迁入 Model | — | ✅ 已完成，Standard 旧路线已删除 |
 | MO-1 | Model    | 正式模型必须冻结 Standard.ElementRevision，不能只动态引用 Element | 高 | 已有冻结字段，待收口全部审批与消费路径 |
-| MO-2 | Model    | 当前 FactMetricMapping 只引用可变 Standard.Metric，缺少指标实现契约 | 高 | 待替换为 MetricImplementation 并冻结 MetricDefinitionRevision |
+| MO-2 | Model    | 指标实现必须引用确定的 Standard 指标定义修订 | — | ✅ 已由 MetricImplementation 冻结 MetricDefinitionRevision，旧 FactMetricMapping 已删除 |
 | MO-3 | Model    | Entity 和 LogicalTable 都软引用 Domain，LogicalTable 可不经 Entity 直接建模 | —  | 已确认合理 |

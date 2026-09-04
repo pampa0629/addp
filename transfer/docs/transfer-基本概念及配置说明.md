@@ -31,6 +31,8 @@
 
 Transfer 执行记录使用统一表 `common.task_executions`。Transfer API 会将统一执行记录投影为模块 DTO。
 
+可复用同步配置使用 `transfer.transfer_tasks`；Manager 数据导出、Develop 查询完整结果导出等一次性动作通过 `POST /api/v1/transfer/executions` 直接创建 bounded `sync` ad-hoc execution，`source_task_id` 为空。该入口不创建临时任务定义，调用方只持有统一 `execution_id`。模块 Runtime 使用 `GET /api/v1/transfer/executions/{execution_id}/result` 回查自己创建的一次性 execution；Transfer 从 Service Client 身份再次推导来源模块并与 execution `source` 精确匹配，其他来源一律按不存在处理。请求使用强类型 source / target / fields 契约，Transfer 在内部生成唯一 planner 配置并继续使用相同 worker、checkpoint、保护和输出主链路。查询 source 可在 `query.inputs[]` 提交本次执行已经解析完成的关系输入 `{name, locator}`；Transfer 只接受与 source locator 同 Engine 的标准 ResourceLocator，并使用这些输入生成完整执行血缘，不解析查询文本反推资源。Develop 的 CSV 查询导出必须按参数名稳定排序提交全部有效关系输入，并把冻结结果的有序列名提交为同名 `field_mapping` 投影；`target_type=unknown` 表示保留 Provider 返回值且不做类型转换，不能用有界预览样本猜测类型。
+
 | 字段 | 当前语义 |
 |---|---|
 | `records_read` / `records_written` | table Transfer 的行数指标；raw copy 第一版固定为 `1/1`。 |

@@ -210,7 +210,13 @@ func TestTransparentPostgresReadFunctionBoundary(t *testing.T) {
 		"trusted stable window": {
 			OID: 3100, Schema: "pg_catalog", Name: "row_number", Language: "internal", Kind: "w", Volatility: "s",
 		},
-		"user schema":      {OID: 1, Schema: "public", Language: "internal", Kind: "f", Volatility: "i"},
+		"trusted postgis extension member": {
+			OID: 18614, Schema: "public", Name: "st_asgeojson", Language: "c", Kind: "f", Volatility: "i", Extension: "postgis",
+		},
+		"user schema": {OID: 1, Schema: "public", Language: "internal", Kind: "f", Volatility: "i"},
+		"untrusted extension member": {
+			OID: 2, Schema: "public", Language: "c", Kind: "f", Volatility: "i", Extension: "vector",
+		},
 		"non-internal":     {OID: 1, Schema: "pg_catalog", Language: "c", Kind: "f", Volatility: "i"},
 		"set returning":    {OID: 1, Schema: "pg_catalog", Language: "internal", Kind: "f", Volatility: "i", ReturnsSet: true},
 		"security definer": {OID: 1, Schema: "pg_catalog", Language: "internal", Kind: "f", Volatility: "i", SecurityDefiner: true},
@@ -221,7 +227,7 @@ func TestTransparentPostgresReadFunctionBoundary(t *testing.T) {
 	for name, function := range tests {
 		t.Run(name, func(t *testing.T) {
 			got := isTransparentPostgresReadFunction(function)
-			want := name == "trusted scalar" || name == "trusted aggregate" || name == "trusted stable window"
+			want := name == "trusted scalar" || name == "trusted aggregate" || name == "trusted stable window" || name == "trusted postgis extension member"
 			if got != want {
 				t.Fatalf("isTransparentPostgresReadFunction() = %v, want %v for %#v", got, want, function)
 			}

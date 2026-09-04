@@ -1,506 +1,85 @@
 <template>
-  <div class="metric-list">
-    <div class="page-header">
-      <div class="header-left">
-        <h2>{{ $t('standard.metric.title') }}</h2>
-        <el-radio-group v-model="filterType" size="small" @change="handleFilterChange">
-          <el-radio-button value="">{{ $t('standard.metric.all') }}</el-radio-button>
-          <el-radio-button value="atomic">{{ $t('standard.metric.atomic') }}</el-radio-button>
-          <el-radio-button value="derived">{{ $t('standard.metric.derived') }}</el-radio-button>
-          <el-radio-button value="composite">{{ $t('standard.metric.composite') }}</el-radio-button>
-        </el-radio-group>
-      </div>
-      <el-button v-if="canCreate" type="primary" @click="openCreateDialog">{{ $t('standard.metric.create') }}</el-button>
-    </div>
-
-    <el-row :gutter="16">
-      <!-- 左侧：指标目录 -->
-      <el-col :span="5">
-        <el-card class="category-card">
-          <template #header>
-            <div class="card-header">
-              <span>{{ $t('standard.metric.categoryTitle') }}</span>
-              <el-button v-if="canManageCategories" link size="small" @click="showCategoryDialog = true">{{ $t('standard.metric.categoryManageBtn') }}</el-button>
-            </div>
-          </template>
-          <div class="category-item" :class="{ active: !selectedCategoryID }" @click="selectCategory(null)">
-            {{ $t('standard.metric.allMetrics') }}
-          </div>
-          <el-tree
-            :data="categoryTree"
-            :props="{ label: 'name', children: 'children' }"
-            node-key="id"
-            :highlight-current="false"
-            @node-click="(data) => selectCategory(data.id)"
-          >
-            <template #default="{ data }">
-              <div :class="['cat-node', { active: selectedCategoryID === data.id }]">
-                {{ data.name }}
-              </div>
-            </template>
-          </el-tree>
-        </el-card>
-      </el-col>
-
-      <!-- 右侧：指标列表 -->
-      <el-col :span="19">
-        <el-card>
-          <div class="toolbar">
-            <el-input v-model="keyword" :placeholder="$t('standard.metric.searchPlaceholder')" clearable @change="handleFilterChange" style="width:280px" />
-            <el-select v-model="filterStatus" :placeholder="$t('standard.common.status')" clearable @change="handleFilterChange" style="width:120px">
-              <el-option :label="$t('standard.common.draft')" value="draft" />
-              <el-option :label="$t('standard.common.approved')" value="approved" />
-              <el-option :label="$t('standard.common.deprecated')" value="deprecated" />
-            </el-select>
-          </div>
-
-          <el-table :data="metrics" v-loading="loading" size="small" @row-click="openDetail">
-            <el-table-column :label="$t('standard.metric.nameLabel')" prop="name" min-width="140" />
-            <el-table-column :label="$t('standard.common.code')" prop="code" width="140" />
-            <el-table-column :label="$t('standard.common.type')" width="90">
-              <template #default="{ row }">
-                <el-tag size="small" :type="typeTagType(row.type)">{{ typeLabel(row.type) }}</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column :label="$t('standard.metric.definitionLabel')" prop="definition" show-overflow-tooltip min-width="200" />
-            <el-table-column :label="$t('standard.common.status')" width="85">
-              <template #default="{ row }">
-                <el-tag size="small" :type="statusType(row.status)">{{ statusLabel(row.status) }}</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column :label="$t('standard.common.actions')" width="200" fixed="right">
-              <template #default="{ row }">
-                <div class="table-actions">
-                <el-button link size="small" @click.stop="openDetail(row)">{{ $t('standard.common.detail') }}</el-button>
-                <el-button v-if="canApprove && row.status === 'draft'" link size="small" type="success" :loading="isActionLocked(`metric:${row.id}`)" @click.stop="approveMetric(row)">{{ $t('standard.common.approve') }}</el-button>
-                <el-button v-if="canDelete" link size="small" type="danger" :disabled="isActionLocked(`metric:${row.id}`)" @click.stop="deleteMetric(row)">{{ $t('standard.common.delete') }}</el-button>
-                </div>
-              </template>
-            </el-table-column>
-          </el-table>
-
-          <div class="pagination">
-            <el-pagination
-              v-model:current-page="page"
-              v-model:page-size="pageSize"
-              :total="total"
-              :page-sizes="[20, 50]"
-              layout="total, sizes, prev, pager, next"
-              @change="handlePageChange"
-            />
-          </div>
-        </el-card>
-      </el-col>
-    </el-row>
-
-    <!-- 新增指标对话框 -->
-    <el-dialog v-model="showCreateDialog" :title="$t('standard.metric.createTitle')" width="600px">
-      <el-form ref="formRef" :model="form" :rules="metricRules" label-width="100px">
-        <el-row :gutter="16">
-          <el-col :span="12">
-            <el-form-item :label="$t('standard.metric.nameLabel')" prop="name">
-              <el-input v-model="form.name" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item :label="$t('standard.metric.codeLabel')" prop="code">
-              <el-input v-model="form.code" />
-            </el-form-item>
-          </el-col>
-        </el-row>
-        <el-row :gutter="16">
-          <el-col :span="12">
-            <el-form-item :label="$t('standard.metric.typeLabel')" prop="type">
-              <el-select v-model="form.type" style="width:100%">
-                <el-option :label="$t('standard.metric.atomic')" value="atomic" />
-                <el-option :label="$t('standard.metric.derived')" value="derived" />
-                <el-option :label="$t('standard.metric.composite')" value="composite" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item :label="$t('standard.metric.categoryLabel')">
-              <el-tree-select
-                v-model="form.category_id"
-                :data="categoryTree"
-                :props="{ label: 'name', value: 'id', children: 'children' }"
-                clearable style="width:100%"
-              />
-            </el-form-item>
-          </el-col>
-        </el-row>
-        <el-form-item :label="$t('standard.glossary.domainLabel')">
-          <el-select v-model="form.domain_id" filterable :placeholder="$t('standard.common.domainOptional')" style="width: 100%">
-            <el-option v-for="domain in domainList" :key="domain.id" :label="domain.name" :value="domain.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="$t('standard.metric.definitionLabel')">
-          <el-input v-model="form.definition" type="textarea" :rows="3" :placeholder="$t('standard.metric.definitionPlaceholder')" />
-        </el-form-item>
-        <el-form-item :label="$t('standard.metric.derivationConfigLabel')">
-          <el-input
-            v-model="derivationConfigText"
-            class="derivation-config-input"
-            type="textarea"
-            :rows="10"
-            resize="vertical"
-            :placeholder="$t('standard.metric.derivationConfigPlaceholder')"
-          />
-        </el-form-item>
-        <el-form-item :label="$t('standard.metric.formulaLabel')" v-if="form.type === 'composite'">
-          <el-input v-model="form.formula" type="textarea" :rows="2" :placeholder="$t('standard.metric.formulaPlaceholder')" />
-        </el-form-item>
-        <el-form-item :label="$t('standard.metric.baseMetricLabel')" v-if="form.type === 'derived'">
-          <el-select v-model="form.base_metric_id" filterable clearable style="width:100%" :placeholder="$t('standard.metric.baseMetricPlaceholder')">
-            <el-option v-for="m in atomicMetrics" :key="m.id" :label="`${m.name}（${m.code}）`" :value="m.id" />
-          </el-select>
-        </el-form-item>
+  <div class="page-shell">
+    <div class="page-header"><h2>{{ t('standard.metric.title') }}</h2><div class="header-actions"><el-button v-if="canCreate||canUpdate||canDelete" @click="categoryDialog=true">{{ t('standard.metric.categoryManageBtn') }}</el-button><el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreate">{{ t('standard.metric.create') }}</el-button></div></div>
+    <el-card shadow="never" class="filter-card"><el-row :gutter="12">
+      <el-col :span="6"><el-input v-model="filters.keyword" :prefix-icon="Search" clearable :placeholder="t('standard.metric.searchPlaceholder')" @change="search" /></el-col>
+      <el-col :span="4"><el-select v-model="filters.metric_type" clearable :placeholder="t('standard.metric.typeLabel')" style="width:100%" @change="search"><el-option v-for="type in metricTypes" :key="type" :value="type" :label="typeLabel(type)" /></el-select></el-col>
+      <el-col :span="4"><el-select v-model="filters.scope_type" clearable :placeholder="t('standard.common.selectScope')" style="width:100%" @change="search"><el-option v-for="scope in scopeOptions" :key="scope" :value="scope" :label="scopeLabel(scope)" /></el-select></el-col>
+      <el-col :span="5"><el-select v-model="filters.owner_domain_id" clearable :placeholder="t('standard.common.selectDomain')" style="width:100%" @change="search"><el-option v-for="domain in domains" :key="domain.id" :value="domain.id" :label="domain.name" /></el-select></el-col>
+      <el-col :span="4"><el-select v-model="filters.status" clearable :placeholder="t('standard.common.selectStatus')" style="width:100%" @change="search"><el-option v-for="status in statuses" :key="status" :value="status" :label="statusLabel(status)" /></el-select></el-col>
+    </el-row></el-card>
+    <el-card shadow="never">
+      <el-table :data="metrics" v-loading="loading" stripe>
+        <el-table-column :label="t('standard.metric.nameLabel')" min-width="140"><template #default="{row}"><el-link type="primary" @click="detail(row.id)">{{ workingRevision(row)?.name || row.code }}</el-link></template></el-table-column>
+        <el-table-column :label="t('standard.metric.codeLabel')" prop="code" width="135" />
+        <el-table-column :label="t('standard.metric.typeLabel')" width="100"><template #default="{row}"><el-tag size="small">{{ typeLabel(workingRevision(row)?.metric_type) }}</el-tag></template></el-table-column>
+        <el-table-column :label="t('standard.common.scopeLabel')" width="105"><template #default="{row}">{{ scopeLabel(row.scope_type) }}</template></el-table-column>
+        <el-table-column :label="t('standard.common.ownerDomainLabel')" width="120"><template #default="{row}">{{ domainName(row.owner_domain_id) }}</template></el-table-column>
+        <el-table-column :label="t('standard.revision.number')" width="75"><template #default="{row}">{{ workingRevision(row) ? `R${workingRevision(row).revision_no}` : '-' }}</template></el-table-column>
+        <el-table-column :label="t('standard.common.status')" width="95"><template #default="{row}"><el-tag :type="statusType(workingRevision(row)?.status)" size="small">{{ statusLabel(workingRevision(row)?.status) }}</el-tag></template></el-table-column>
+        <el-table-column :label="t('standard.common.actions')" width="125" fixed="right"><template #default="{row}"><el-button link type="primary" @click="detail(row.id)">{{ t('standard.common.detail') }}</el-button><el-button v-if="canDelete" link type="danger" @click="remove(row)">{{ t('standard.common.delete') }}</el-button></template></el-table-column>
+      </el-table>
+      <el-pagination v-if="total" class="pagination" :total="total" :page-size="filters.page_size" :current-page="filters.page" layout="total, prev, pager, next" @current-change="page=>{filters.page=page;load()}" />
+    </el-card>
+    <el-dialog v-model="dialog" :title="t('standard.metric.createTitle')" width="700px">
+      <el-form ref="formRef" :model="form" :rules="rules" label-width="140px">
+        <el-row :gutter="12"><el-col :span="12"><el-form-item :label="t('standard.metric.codeLabel')" prop="code"><el-input v-model="form.code" /></el-form-item></el-col><el-col :span="12"><el-form-item :label="t('standard.metric.nameLabel')" prop="name"><el-input v-model="form.name" /></el-form-item></el-col></el-row>
+        <el-row :gutter="12"><el-col :span="12"><el-form-item :label="t('standard.metric.typeLabel')" prop="metric_type"><el-select v-model="form.metric_type" style="width:100%"><el-option v-for="type in metricTypes" :key="type" :value="type" :label="typeLabel(type)" /></el-select></el-form-item></el-col><el-col :span="12"><el-form-item :label="t('standard.metric.categoryLabel')"><el-tree-select v-model="form.category_id" :data="categoryTree" :props="{label:'name',value:'id',children:'children'}" clearable style="width:100%" /></el-form-item></el-col></el-row>
+        <el-row :gutter="12"><el-col :span="12"><el-form-item :label="t('standard.common.scopeLabel')" prop="scope_type"><el-select v-model="form.scope_type" style="width:100%"><el-option v-for="scope in editableScopes" :key="scope" :value="scope" :label="scopeLabel(scope)" /></el-select></el-form-item></el-col><el-col :span="12"><el-form-item v-if="requiresOwnerDomain(form.scope_type)" :label="t('standard.common.ownerDomainLabel')" prop="owner_domain_id"><el-select v-model="form.owner_domain_id" style="width:100%"><el-option v-for="domain in domains" :key="domain.id" :value="domain.id" :label="domain.name" /></el-select></el-form-item></el-col></el-row>
+        <el-row :gutter="12"><el-col :span="12"><el-form-item :label="t('standard.metric.unitLabel')"><el-select v-model="form.unit_id" clearable filterable style="width:100%"><el-option v-for="unit in units" :key="unit.id" :value="unit.id" :label="`${unit.name} (${unit.symbol || '-'})`" /></el-select></el-form-item></el-col><el-col :span="12"><el-form-item :label="t('standard.common.stewardId')"><el-input-number v-model="form.steward_id" :min="1" controls-position="right" style="width:100%" /></el-form-item></el-col></el-row>
+        <el-form-item :label="t('standard.common.tags')"><el-select v-model="form.tags" multiple filterable allow-create default-first-option style="width:100%" :placeholder="t('standard.metric.tagsPlaceholder')" /></el-form-item>
+        <el-form-item :label="t('standard.metric.definitionLabel')" prop="definition"><el-input v-model="form.definition" type="textarea" :rows="2" /></el-form-item>
+        <el-form-item :label="t('standard.metric.statisticalCaliber')" prop="statistical_caliber"><el-input v-model="form.statistical_caliber" type="textarea" :rows="3" /></el-form-item>
+        <el-form-item :label="t('standard.metric.semanticFormula')"><el-input v-model="form.semantic_formula" type="textarea" :rows="2" /></el-form-item>
+        <el-form-item v-if="form.metric_type !== 'atomic'" :label="t('standard.metric.dependencies')" prop="dependency_ids"><el-select v-model="form.dependency_ids" multiple filterable style="width:100%"><el-option v-for="item in dependencyCandidates" :key="item.id" :value="item.id" :label="`${workingRevision(item)?.name || item.code} (${item.code})`" /></el-select></el-form-item>
+        <el-form-item :label="t('standard.revision.changeSummary')" prop="change_summary"><el-input v-model="form.change_summary" /></el-form-item>
       </el-form>
-      <template #footer>
-        <el-button @click="showCreateDialog = false">{{ $t('standard.common.cancel') }}</el-button>
-        <el-button type="primary" @click="createMetric" :loading="saving">{{ $t('standard.metric.create') }}</el-button>
-      </template>
+      <template #footer><el-button @click="dialog=false">{{ t('standard.common.cancel') }}</el-button><el-button type="primary" :loading="creating" @click="create">{{ t('standard.common.confirm') }}</el-button></template>
     </el-dialog>
-
-    <!-- 指标目录管理对话框 -->
-    <el-dialog v-model="showCategoryDialog" :title="$t('standard.metric.categoryManage')" width="500px">
-      <div class="category-manage">
-        <el-tree
-          :data="categoryTree"
-          :props="{ label: 'name', children: 'children' }"
-          node-key="id"
-          default-expand-all
-        >
-          <template #default="{ data }">
-            <div class="tree-node">
-              <span class="tree-name">{{ data.name }}</span>
-              <span class="tree-code">{{ data.code }}</span>
-              <div class="tree-actions">
-                <el-button v-if="canCreate" link size="small" @click.stop="addSubCategory(data.id)">{{ $t('standard.metric.addSubCategory') }}</el-button>
-                <el-button v-if="canDelete" link size="small" type="danger" :loading="isActionLocked(`metric-category:${data.id}`)" @click.stop="deleteCategory(data)">{{ $t('standard.common.delete') }}</el-button>
-              </div>
-            </div>
-          </template>
-        </el-tree>
-        <el-divider />
-        <el-form v-if="canCreate" :model="categoryForm" label-width="80px" size="small">
-          <el-row :gutter="12">
-            <el-col :span="12">
-              <el-form-item :label="$t('standard.common.name')">
-                <el-input v-model="categoryForm.name" />
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
-              <el-form-item :label="$t('standard.common.code')">
-                <el-input v-model="categoryForm.code" />
-              </el-form-item>
-            </el-col>
-          </el-row>
-          <el-form-item :label="$t('standard.metric.categoryLabel')">
-            <el-tree-select
-              v-model="categoryForm.parent_id"
-              :data="categoryTree"
-              :props="{ label: 'name', value: 'id', children: 'children' }"
-              clearable :placeholder="$t('standard.metric.categoryParentPlaceholder')" style="width:100%"
-            />
-          </el-form-item>
-          <el-form-item>
-            <el-button type="primary" @click="createCategory" :loading="saving">{{ $t('standard.metric.addCategory') }}</el-button>
-          </el-form-item>
-        </el-form>
-      </div>
+    <el-dialog v-model="categoryDialog" :title="t('standard.metric.categoryManage')" width="720px">
+      <el-form v-if="canCreate||canUpdate" :model="categoryForm" label-width="100px">
+        <el-row :gutter="12"><el-col :span="12"><el-form-item :label="t('standard.metric.nameLabel')" required><el-input v-model="categoryForm.name" /></el-form-item></el-col><el-col :span="12"><el-form-item :label="t('standard.metric.codeLabel')" required><el-input v-model="categoryForm.code" :disabled="Boolean(editingCategory)" /></el-form-item></el-col></el-row>
+        <el-row :gutter="12"><el-col :span="12"><el-form-item :label="t('standard.metric.categoryLabel')"><el-select v-model="categoryForm.parent_id" clearable style="width:100%" :placeholder="t('standard.metric.categoryParentPlaceholder')"><el-option v-for="item in categories" :key="item.id" :value="item.id" :label="item.name" :disabled="item.id===editingCategory?.id" /></el-select></el-form-item></el-col><el-col :span="12"><el-form-item :label="t('standard.common.sortOrder')"><el-input-number v-model="categoryForm.sort_order" :min="0" controls-position="right" style="width:100%" /></el-form-item></el-col></el-row>
+        <el-form-item :label="t('standard.common.description')"><el-input v-model="categoryForm.description" /></el-form-item>
+        <el-form-item><el-button type="primary" :loading="savingCategory" @click="saveCategory">{{ editingCategory ? t('standard.common.save') : t('standard.metric.addCategory') }}</el-button><el-button v-if="editingCategory" @click="resetCategoryForm">{{ t('standard.common.cancel') }}</el-button></el-form-item>
+      </el-form>
+      <el-table :data="categories" stripe><el-table-column prop="name" :label="t('standard.metric.nameLabel')" /><el-table-column prop="code" :label="t('standard.metric.codeLabel')" /><el-table-column :label="t('standard.metric.categoryLabel')"><template #default="{row}">{{ categories.find(item=>item.id===row.parent_id)?.name||'-' }}</template></el-table-column><el-table-column :label="t('standard.common.actions')" width="130"><template #default="{row}"><el-button v-if="canUpdate" link type="primary" @click="editCategory(row)">{{ t('standard.common.edit') }}</el-button><el-button v-if="canDelete" link type="danger" @click="deleteCategory(row)">{{ t('standard.common.delete') }}</el-button></template></el-table-column></el-table>
     </el-dialog>
-
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { useI18n } from 'vue-i18n'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { domainAPI, metricAPI, metricCategoryAPI } from '../api/standard'
-import { navigateStandardRoute } from '@/utils/moduleNavigation'
-import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
-import { useStandardPermissions } from '../composables/useStandardPermissions'
-import { useActionLock } from '../composables/useActionLock'
-import { createLatestRequestCoordinator } from '@common-ui'
-import { parseMetricDerivationConfig } from '../utils/metricDerivationConfig'
-
-const { t } = useI18n()
-const { canCreate, canDelete, canApprove } = useStandardPermissions('metric')
-const { isLocked: isActionLocked, runLocked } = useActionLock()
-const canManageCategories = computed(() => canCreate.value || canDelete.value)
-const router = useRouter()
-const route = useRoute()
-const metrics = ref([])
-const categories = ref([])
-const domainList = ref([])
-const atomicMetrics = ref([])
-const loading = ref(false)
-const saving = ref(false)
-const page = ref(Number(route.query.page) > 0 ? Number(route.query.page) : 1)
-const pageSize = ref(Number(route.query.page_size) > 0 ? Number(route.query.page_size) : 20)
-const total = ref(0)
-const keyword = ref(typeof route.query.keyword === 'string' ? route.query.keyword : '')
-const filterType = ref(typeof route.query.type === 'string' ? route.query.type : '')
-const filterStatus = ref(typeof route.query.status === 'string' ? route.query.status : '')
-const selectedCategoryID = ref(route.query.category_id ? Number(route.query.category_id) : null)
-
-const showCreateDialog = ref(false)
-const showCategoryDialog = ref(false)
-const formRef = ref(null)
-const listRequests = createLatestRequestCoordinator()
-
-const form = ref({ name: '', code: '', type: 'atomic', definition: '', formula: '', category_id: null, domain_id: null, base_metric_id: null })
-const derivationConfigText = ref('')
-const categoryForm = ref({ name: '', code: '', parent_id: null })
-const metricRules = computed(() => ({
-  name: [{ required: true, message: t('standard.metric.nameRequired'), trigger: 'blur' }],
-  code: [{ required: true, message: t('standard.metric.codeRequired'), trigger: 'blur' }],
-  type: [{ required: true, message: t('standard.metric.typeRequired'), trigger: 'change' }]
-}))
-
-const categoryTree = computed(() => buildTree(categories.value))
-function buildTree(list, parentId = null) {
-  return list.filter(i => (i.parent_id || null) === parentId).map(i => ({ ...i, children: buildTree(list, i.id) }))
-}
-
-const flattenDomains = (nodes) => {
-  const result = []
-  const traverse = (list) => {
-    for (const node of list) {
-      result.push(node)
-      if (node.children) traverse(node.children)
-    }
-  }
-  traverse(nodes)
-  return result
-}
-
-const typeLabel = (type) => ({ atomic: t('standard.metric.atomicShort'), derived: t('standard.metric.derivedShort'), composite: t('standard.metric.compositeShort') }[type] || type)
-const typeTagType = (type) => ({ atomic: 'primary', derived: 'warning', composite: 'success' }[type] || '')
-const statusLabel = (s) => ({ draft: t('standard.common.draft'), approved: t('standard.common.approved'), deprecated: t('standard.common.deprecated') }[s] || s)
-const statusType = (s) => ({ draft: 'info', approved: 'success', deprecated: 'warning' }[s] || '')
-
-const loadMetrics = async () => {
-  const params = { page: page.value, page_size: pageSize.value, keyword: keyword.value, type: filterType.value, status: filterStatus.value }
-  if (selectedCategoryID.value) params.category_id = selectedCategoryID.value
-  const request = listRequests.begin(JSON.stringify(params))
-  loading.value = true
-  try {
-    const res = await metricAPI.list(params)
-    if (!listRequests.isCurrent(request, JSON.stringify(params))) return
-    metrics.value = res.data || []
-    total.value = res.total || 0
-  } catch (e) {
-    if (!listRequests.isCurrent(request, JSON.stringify(params))) return
-    metrics.value = []
-    total.value = 0
-    ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.loadFailed'))
-  } finally {
-    if (listRequests.isCurrent(request, JSON.stringify(params))) loading.value = false
-  }
-}
-
-const syncQuery = () => {
-  const query = {}
-  if (keyword.value) query.keyword = keyword.value
-  if (filterType.value) query.type = filterType.value
-  if (filterStatus.value) query.status = filterStatus.value
-  if (selectedCategoryID.value) query.category_id = String(selectedCategoryID.value)
-  if (page.value !== 1) query.page = String(page.value)
-  if (pageSize.value !== 20) query.page_size = String(pageSize.value)
-  navigateStandardRoute(router, { path: '/metrics', query }, { history: 'replace' })
-}
-
-const handleFilterChange = () => {
-  page.value = 1
-  syncQuery()
-  loadMetrics()
-}
-
-const handlePageChange = () => {
-  syncQuery()
-  loadMetrics()
-}
-
-const loadCategories = async () => {
-  try {
-    const res = await metricCategoryAPI.list()
-    categories.value = res || []
-  } catch (e) {
-    categories.value = []
-    ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.loadFailed'))
-  }
-}
-
-const loadDomains = async () => {
-  try {
-    const res = await domainAPI.list()
-    domainList.value = flattenDomains(res || [])
-  } catch (e) {
-    domainList.value = []
-  }
-}
-
-const loadAtomicMetrics = async () => {
-  try {
-    const res = await metricAPI.list({ type: 'atomic', page_size: 500 })
-    atomicMetrics.value = res.data || []
-  } catch (e) {
-    atomicMetrics.value = []
-  }
-}
-
-const selectCategory = (id) => {
-  selectedCategoryID.value = id
-  page.value = 1
-  syncQuery()
-  loadMetrics()
-}
-
-const createMetric = async () => {
-  if (saving.value || !formRef.value) return
-  saving.value = true
-  try {
-    await formRef.value.validate()
-  } catch {
-    saving.value = false
-    return
-  }
-  try {
-    const payload = { ...form.value, derivation_config: parseMetricDerivationConfig(derivationConfigText.value) }
-    await metricAPI.create(payload)
-    ElMessage.success(t('standard.common.createSuccess'))
-    showCreateDialog.value = false
-    form.value = { name: '', code: '', type: 'atomic', definition: '', formula: '', category_id: null, domain_id: null, base_metric_id: null }
-    derivationConfigText.value = ''
-    loadMetrics()
-  } catch (e) {
-    if (e instanceof SyntaxError || e?.message === 'metric derivation config must be a JSON object') {
-      ElMessage.error(t('standard.metric.derivationConfigInvalid'))
-      return
-    }
-    ElMessage.error(getStandardErrorMessage(e, t))
-  } finally {
-    saving.value = false
-  }
-}
-
-const openCreateDialog = () => {
-  form.value = { name: '', code: '', type: filterType.value || 'atomic', definition: '', formula: '', category_id: selectedCategoryID.value, domain_id: null, base_metric_id: null }
-  derivationConfigText.value = ''
-  showCreateDialog.value = true
-}
-
-const openDetail = (row) => {
-  navigateStandardRoute(router, { path: `/metrics/${row.id}`, query: route.query })
-}
-
-const approveMetric = async (row) => {
-  await runLocked(`metric:${row.id}`, async () => {
-    try {
-      await ElMessageBox.confirm(t('standard.metric.confirmApprove'), t('standard.common.hint'), { type: 'info' })
-      await metricAPI.approve(row.id, row.version)
-      ElMessage.success(t('standard.common.approveSuccess'))
-      await loadMetrics()
-    } catch (e) {
-      if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.approveFailed'))
-    }
-  })
-}
-
-const deleteMetric = async (row) => {
-  await runLocked(`metric:${row.id}`, async () => {
-    try {
-      await ElMessageBox.confirm(t('standard.metric.confirmDelete', { name: row.name }), t('standard.common.hint'), { type: 'warning' })
-      await metricAPI.delete(row.id)
-      ElMessage.success(t('standard.common.deleteSuccess'))
-      await loadMetrics()
-    } catch (e) {
-      if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.deleteFailed'))
-    }
-  })
-}
-
-const createCategory = async () => {
-  if (saving.value) return
-  saving.value = true
-  try {
-    await metricCategoryAPI.create(categoryForm.value)
-    ElMessage.success(t('standard.common.createSuccess'))
-    categoryForm.value = { name: '', code: '', parent_id: null }
-    await loadCategories()
-  } catch (e) {
-    ElMessage.error(getStandardErrorMessage(e, t))
-  } finally {
-    saving.value = false
-  }
-}
-
-const addSubCategory = (parentId) => {
-  categoryForm.value = { name: '', code: '', parent_id: parentId }
-}
-
-const deleteCategory = async (data) => {
-  await runLocked(`metric-category:${data.id}`, async () => {
-    try {
-      await ElMessageBox.confirm(t('standard.metric.confirmDeleteCategory', { name: data.name }), t('standard.common.hint'), { type: 'warning' })
-      await metricCategoryAPI.delete(data.id)
-      ElMessage.success(t('standard.common.deleteSuccess'))
-      await loadCategories()
-    } catch (e) {
-      if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.deleteFailed'))
-    }
-  })
-}
-
-onMounted(async () => {
-  await loadCategories()
-  await loadDomains()
-  if (selectedCategoryID.value && !categories.value.some(category => category.id === selectedCategoryID.value)) {
-    selectedCategoryID.value = null
-    syncQuery()
-  }
-  await Promise.all([loadMetrics(), loadAtomicMetrics()])
-})
+import {computed,onMounted,reactive,ref,watch} from 'vue'
+import {useRouter} from 'vue-router'
+import {useI18n} from 'vue-i18n'
+import {ElMessage,ElMessageBox} from 'element-plus'
+import {Plus,Search} from '@element-plus/icons-vue'
+import {domainAPI,metricAPI,metricCategoryAPI,unitAPI} from '../api/standard'
+import {useStandardPermissions} from '../composables/useStandardPermissions'
+import {getStandardErrorMessage,isCanceledInteraction} from '../utils/apiError'
+import {navigateStandardRoute} from '@/utils/moduleNavigation'
+import {EDITABLE_STANDARD_SCOPES,buildStandardOwnership,requiresOwnerDomain,standardScopeLabelKey} from '../utils/standardScope'
+const router=useRouter(),{t}=useI18n(),{canCreate,canUpdate,canDelete}=useStandardPermissions('metric')
+const metricTypes=['atomic','derived','composite'],statuses=['draft','in_review','published','withdrawn'],scopeOptions=['platform','tenant_common','domain'],editableScopes=EDITABLE_STANDARD_SCOPES
+const metrics=ref([]),domains=ref([]),categories=ref([]),units=ref([]),dependencyCandidates=ref([]),total=ref(0),loading=ref(false),creating=ref(false),dialog=ref(false),formRef=ref()
+const categoryDialog=ref(false),savingCategory=ref(false),editingCategory=ref(null),categoryForm=reactive({name:'',code:'',description:'',parent_id:null,sort_order:0})
+const filters=reactive({keyword:'',metric_type:'',scope_type:'',owner_domain_id:null,status:'',page:1,page_size:20})
+const blank=()=>({code:'',name:'',metric_type:'atomic',category_id:null,scope_type:'tenant_common',owner_domain_id:null,steward_id:null,tags:[],unit_id:null,definition:'',statistical_caliber:'',semantic_formula:'',dependency_ids:[],change_summary:''});const form=reactive(blank())
+const rules=computed(()=>({code:[{required:true,message:t('standard.metric.codeRequired')}],name:[{required:true,message:t('standard.metric.nameRequired')}],metric_type:[{required:true,message:t('standard.metric.typeRequired')}],definition:[{required:true,message:t('standard.metric.definitionRequired')}],statistical_caliber:[{required:true,message:t('standard.metric.caliberRequired')}],scope_type:[{required:true,message:t('standard.common.selectScope')}],owner_domain_id:requiresOwnerDomain(form.scope_type)?[{required:true,message:t('standard.common.ownerDomainRequired')}]:[],dependency_ids:form.metric_type==='derived'?[{validator:(_,v,done)=>v?.length===1?done():done(new Error(t('standard.metric.derivedDependencyRequired')))}]:form.metric_type==='composite'?[{validator:(_,v,done)=>v?.length?done():done(new Error(t('standard.metric.compositeDependencyRequired')))}]:[],change_summary:[{required:true,message:t('standard.revision.changeSummaryRequired')}]}))
+const workingRevision=row=>row.draft_revision||row.current_revision
+const typeLabel=type=>type?t(`standard.metric.${type}`):'-',statusLabel=status=>status?t(`standard.revision.status.${status}`):'-',statusType=status=>({draft:'info',in_review:'warning',published:'success',withdrawn:'danger'}[status]||'info'),scopeLabel=scope=>scope?t(standardScopeLabelKey(scope)):'-'
+const flatten=nodes=>nodes.flatMap(node=>[node,...flatten(node.children||[])]),domainName=id=>domains.value.find(item=>item.id===id)?.name||'-',buildTree=(list,parent=null)=>list.filter(item=>(item.parent_id||null)===parent).map(item=>({...item,children:buildTree(list,item.id)})),categoryTree=computed(()=>buildTree(categories.value))
+const load=async()=>{loading.value=true;try{const params=Object.fromEntries(Object.entries(filters).filter(([,v])=>v!==''&&v!=null));const result=await metricAPI.list(params);metrics.value=result.data||[];total.value=result.total||0}catch(error){ElMessage.error(getStandardErrorMessage(error,t,'standard.common.loadFailed'))}finally{loading.value=false}}
+const loadReferences=async()=>{try{const [domainRows,categoryRows,unitRows,candidates]=await Promise.all([domainAPI.list(),metricCategoryAPI.list(),unitAPI.list(),metricAPI.list({page_size:500})]);domains.value=flatten(domainRows||[]);categories.value=categoryRows||[];units.value=unitRows||[];dependencyCandidates.value=candidates.data||[]}catch{domains.value=[];categories.value=[];units.value=[];dependencyCandidates.value=[]}}
+const search=()=>{filters.page=1;load()},detail=id=>navigateStandardRoute(router,`/metrics/${id}`),openCreate=()=>{Object.assign(form,blank());dialog.value=true}
+const resetCategoryForm=()=>{editingCategory.value=null;Object.assign(categoryForm,{name:'',code:'',description:'',parent_id:null,sort_order:0})}
+const editCategory=row=>{editingCategory.value=row;Object.assign(categoryForm,{name:row.name,code:row.code,description:row.description||'',parent_id:row.parent_id||null,sort_order:row.sort_order||0})}
+const saveCategory=async()=>{if(!categoryForm.name.trim()||!categoryForm.code.trim())return; savingCategory.value=true;try{if(editingCategory.value){await metricCategoryAPI.update(editingCategory.value.id,{version:editingCategory.value.version,name:categoryForm.name.trim(),description:categoryForm.description.trim(),parent_id:categoryForm.parent_id,sort_order:categoryForm.sort_order})}else{await metricCategoryAPI.create({...categoryForm,name:categoryForm.name.trim(),code:categoryForm.code.trim(),description:categoryForm.description.trim()})}categories.value=await metricCategoryAPI.list();resetCategoryForm();ElMessage.success(t('standard.common.saveSuccess'))}catch(error){ElMessage.error(getStandardErrorMessage(error,t))}finally{savingCategory.value=false}}
+const deleteCategory=async row=>{try{await ElMessageBox.confirm(t('standard.metric.confirmDeleteCategory',{name:row.name}),t('standard.common.hint'),{type:'warning'});await metricCategoryAPI.delete(row.id);categories.value=await metricCategoryAPI.list();if(editingCategory.value?.id===row.id)resetCategoryForm();ElMessage.success(t('standard.common.deleteSuccess'))}catch(error){if(!isCanceledInteraction(error))ElMessage.error(getStandardErrorMessage(error,t,'standard.common.deleteFailed'))}}
+const create=async()=>{if(!await formRef.value.validate().catch(()=>false))return;creating.value=true;try{const relation_kind=form.metric_type==='derived'?'base':'component';const row=await metricAPI.create({...form,...buildStandardOwnership(form.scope_type,form.owner_domain_id),dependencies:form.dependency_ids.map(metric_definition_id=>({metric_definition_id,relation_kind}))});dialog.value=false;ElMessage.success(t('standard.common.createSuccess'));detail(row.id)}catch(error){ElMessage.error(getStandardErrorMessage(error,t))}finally{creating.value=false}}
+const remove=async row=>{try{await ElMessageBox.confirm(t('standard.metric.confirmDelete',{name:workingRevision(row)?.name||row.code}),t('standard.common.hint'),{type:'warning'});await metricAPI.delete(row.id);ElMessage.success(t('standard.common.deleteSuccess'));load()}catch(error){if(!isCanceledInteraction(error))ElMessage.error(getStandardErrorMessage(error,t,'standard.common.deleteFailed'))}}
+watch(()=>form.scope_type,scope=>{if(!requiresOwnerDomain(scope))form.owner_domain_id=null});watch(()=>form.metric_type,()=>{form.dependency_ids=[]})
+onMounted(()=>{loadReferences();load()})
 </script>
 
-<style scoped>
-.metric-list { min-height: 100%; padding: 20px; color: var(--addp-text-primary); background: var(--addp-bg-secondary); }
-
-.derivation-config-input :deep(textarea) {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  line-height: 1.5;
-}
-.page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-.header-left { display: flex; align-items: center; gap: 16px; }
-.header-left h2 { margin: 0; font-size: 18px; color: var(--addp-text-primary); }
-.card-header { display: flex; justify-content: space-between; align-items: center; }
-.metric-list :deep(.el-card) { background: var(--addp-bg-primary); border-color: var(--addp-border-color); box-shadow: var(--addp-shadow-card); }
-.category-item { padding: 8px 12px; cursor: pointer; border-radius: 4px; font-size: 13px; color: var(--addp-text-primary); }
-.category-item.active, .cat-node.active { color: var(--el-color-primary); font-weight: 500; }
-.category-item:hover { background: var(--addp-bg-secondary); }
-.cat-node { padding: 2px 0; font-size: 13px; }
-.toolbar { display: flex; gap: 10px; margin-bottom: 16px; }
-.pagination { margin-top: 16px; display: flex; justify-content: flex-end; }
-.table-actions { display: inline-flex; align-items: center; gap: 8px; min-width: max-content; white-space: nowrap; }
-.table-actions :deep(.el-button) { white-space: nowrap; }
-.tree-node { display: flex; align-items: center; gap: 8px; min-width: 0; width: 100%; }
-.tree-name, .tree-code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tree-name { flex: 1 1 auto; }
-.tree-code { flex: 0 1 auto; font-size: 12px; color: var(--addp-text-secondary); }
-.tree-actions { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; min-width: max-content; white-space: nowrap; }
-.category-manage { max-height: 400px; overflow-y: auto; }
-
-@media (max-width: 768px) {
-  .metric-list { padding: 12px; }
-  .page-header, .header-left { align-items: flex-start; flex-wrap: wrap; }
-  .metric-list :deep(.el-row) { margin-left: 0 !important; margin-right: 0 !important; }
-  .metric-list :deep(.el-col) { max-width: 100%; flex: 0 0 100%; }
-  .metric-list :deep(.el-col + .el-col) { margin-top: 12px; }
-  .toolbar { flex-wrap: wrap; }
-  .toolbar :deep(.el-input) { width: 100% !important; }
-}
-</style>
+<style scoped>.page-shell{min-height:100%;padding:20px;background:var(--addp-bg-secondary);color:var(--addp-text-primary)}.page-header,.header-actions{display:flex;justify-content:space-between;align-items:center}.header-actions{gap:8px}.page-header{margin-bottom:16px}.filter-card{margin-bottom:12px}.pagination{display:flex;justify-content:flex-end;margin-top:16px}.page-shell :deep(.el-card){background:var(--addp-bg-primary);border-color:var(--addp-border-color)}</style>

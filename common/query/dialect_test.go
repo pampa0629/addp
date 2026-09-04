@@ -29,6 +29,30 @@ func TestQuoteIdentifier(t *testing.T) {
 	}
 }
 
+func TestDialectPlaceholderUsesDriverSyntax(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		engineType string
+		position   int
+		want       string
+	}{
+		{engineType: "postgresql", position: 3, want: "$3"},
+		{engineType: "postgis", position: 2, want: "$2"},
+		{engineType: "oracle", position: 4, want: ":4"},
+		{engineType: "mysql", position: 9, want: "?"},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.engineType, func(t *testing.T) {
+			t.Parallel()
+			if got := ForEngine(tt.engineType).Placeholder(tt.position); got != tt.want {
+				t.Fatalf("Placeholder() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestSelectTableSQL(t *testing.T) {
 	t.Parallel()
 

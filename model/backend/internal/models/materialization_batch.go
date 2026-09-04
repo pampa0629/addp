@@ -12,6 +12,23 @@ const (
 	MaterializationBatchAborted    = "aborted"
 )
 
+func MaterializationBatchTerminalStatuses() []string {
+	return []string{
+		MaterializationBatchPublished,
+		MaterializationBatchFailed,
+		MaterializationBatchAborted,
+	}
+}
+
+func IsMaterializationBatchTerminal(status string) bool {
+	switch status {
+	case MaterializationBatchPublished, MaterializationBatchFailed, MaterializationBatchAborted:
+		return true
+	default:
+		return false
+	}
+}
+
 // MaterializationBatch records one controlled physical-table replacement.
 // The physical DDL is derived from an approved LogicalTable; callers never
 // submit SQL or physical table names through the execution API.

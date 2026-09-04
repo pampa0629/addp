@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -12,164 +13,155 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// MetricHandler 指标 Handler
-type MetricHandler struct {
-	svc *service.MetricService
-}
+type MetricHandler struct{ svc *service.MetricService }
 
-func NewMetricHandler(svc *service.MetricService) *MetricHandler {
-	return &MetricHandler{svc: svc}
-}
-
-// --- 指标目录 ---
+func NewMetricHandler(svc *service.MetricService) *MetricHandler { return &MetricHandler{svc: svc} }
 
 // @Summary 获取指标分类列表 | List metric categories
 // @Tags Standard
 // @Produce json
 // @Success 200 {array} models.MetricCategory
-// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
-// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.metric.read"]
 // @Router /metric-categories [get]
 // @Security BearerAuth
 func (h *MetricHandler) ListCategories(c *gin.Context) {
-	tenantID := getTenantID(c)
-	cats, err := h.svc.ListCategories(tenantID)
+	items, err := h.svc.ListCategories(getTenantID(c))
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
-	c.JSON(http.StatusOK, cats)
+	c.JSON(http.StatusOK, items)
 }
 
 // @Summary 创建指标分类 | Create metric category
 // @Tags Standard
+// @Accept json
 // @Produce json
+// @Param request body models.CreateMetricCategoryRequest true "指标分类 | Metric category"
 // @Success 201 {object} models.MetricCategory
-// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
-// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.metric.create"]
 // @Router /metric-categories [post]
 // @Security BearerAuth
 func (h *MetricHandler) CreateCategory(c *gin.Context) {
 	var req models.CreateMetricCategoryRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		respondError(c, http.StatusBadRequest, err)
+	if !bindJSON(c, &req) {
 		return
 	}
-	tenantID := getTenantID(c)
-	userID := getUserID(c)
-	cat, err := h.svc.CreateCategory(&req, tenantID, userID)
+	item, err := h.svc.CreateCategory(&req, getTenantID(c), getUserID(c))
 	if err != nil {
 		respondError(c, http.StatusBadRequest, err)
 		return
 	}
-	c.JSON(http.StatusCreated, cat)
+	c.JSON(http.StatusCreated, item)
 }
 
 // @Summary 更新指标分类 | Update metric category
 // @Tags Standard
-// @Param request body models.UpdateMetricCategoryRequest true "更新指标分类 | Update metric category"
-// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
+// @Accept json
 // @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
-// @Failure 403 {object} map[string]string "无权访问 | Access denied"
+// @Param request body models.UpdateMetricCategoryRequest true "完整分类及并发版本 | Full category and concurrency version"
+// @Success 200 {object} models.MetricCategory
+// @Failure 409 {object} map[string]string "版本冲突 | Version conflict"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.metric.update"]
 // @Router /metric-categories/{id} [put]
 // @Security BearerAuth
 func (h *MetricHandler) UpdateCategory(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
+	id, ok := elementPathID(c, "id")
+	if !ok {
 		return
 	}
 	var req models.UpdateMetricCategoryRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		respondError(c, http.StatusBadRequest, err)
+	if !bindJSON(c, &req) {
 		return
 	}
-	tenantID := getTenantID(c)
-	userID := getUserID(c)
-	cat, err := h.svc.UpdateCategory(id, tenantID, userID, &req)
+	item, err := h.svc.UpdateCategory(id, getTenantID(c), getUserID(c), &req)
 	if err != nil {
 		respondError(c, http.StatusBadRequest, err)
 		return
 	}
-	c.JSON(http.StatusOK, cat)
+	c.JSON(http.StatusOK, item)
 }
 
 // @Summary 删除指标分类 | Delete metric category
 // @Tags Standard
 // @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Failure 404 {object} map[string]string "指标不存在 | Metric not found"
-// @Failure 409 {object} map[string]interface{} "资源仍被 Model 引用 | Resource is still referenced by Model"
-// @Failure 503 {object} map[string]string "Model 引用删除屏障不可用 | Model reference deletion guard unavailable"
-// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
-// @Failure 403 {object} map[string]string "无权访问 | Access denied"
+// @Success 200 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.metric.delete"]
 // @Router /metric-categories/{id} [delete]
 // @Security BearerAuth
 func (h *MetricHandler) DeleteCategory(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
+	id, ok := elementPathID(c, "id")
+	if !ok {
 		return
 	}
-	tenantID := getTenantID(c)
-	if err := h.svc.DeleteCategory(id, tenantID); err != nil {
+	if err := h.svc.DeleteCategory(id, getTenantID(c)); err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgDeleteSuccess)})
 }
 
-// --- 指标定义 ---
-
-// @Summary 获取指标列表 | List metrics
+// @Summary 获取指标定义列表 | List metric definitions
 // @Tags Standard
 // @Produce json
+// @Param category_id query int false "分类 ID | Category ID"
+// @Param owner_domain_id query int false "归属业务域 ID | Owning domain ID"
+// @Param scope_type query string false "适用范围 | Scope" Enums(platform,tenant_common,domain)
+// @Param metric_type query string false "指标类型 | Metric type" Enums(atomic,derived,composite)
+// @Param status query string false "修订状态 | Revision status" Enums(draft,in_review,published,withdrawn)
+// @Param keyword query string false "关键字 | Keyword"
+// @Param as_of query string false "生效时点 | Effective point in time"
 // @Success 200 {object} models.PaginatedMetricResponse
-// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
-// @Failure 403 {object} map[string]string "无权访问 | Access denied"
+// @Failure 400 {object} map[string]string "请求无效 | Invalid request"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.metric.read"]
 // @Router /metrics [get]
 // @Security BearerAuth
 func (h *MetricHandler) ListMetrics(c *gin.Context) {
-	tenantID := getTenantID(c)
-	opts := repository.ListMetricOptions{
-		Type:    c.Query("type"),
-		Status:  c.Query("status"),
-		Keyword: c.Query("keyword"),
+	opts := repository.ListMetricOptions{MetricType: c.Query("metric_type"), Keyword: c.Query("keyword")}
+	var err error
+	if opts.ScopeType, err = parseOptionalStandardScope(c); err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
 	}
-	if catIDStr := c.Query("category_id"); catIDStr != "" {
-		if id, err := strconv.ParseInt(catIDStr, 10, 64); err == nil {
-			opts.CategoryID = &id
+	if opts.Status, err = parseOptionalRevisionStatus(c); err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
+	if opts.AsOf, err = parseOptionalAsOf(c); err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
+	if opts.MetricType != "" && opts.MetricType != models.MetricTypeAtomic && opts.MetricType != models.MetricTypeDerived && opts.MetricType != models.MetricTypeComposite {
+		respondError(c, http.StatusBadRequest, fmt.Errorf("invalid metric_type"))
+		return
+	}
+	for key, target := range map[string]**int64{"category_id": &opts.CategoryID, "owner_domain_id": &opts.OwnerDomainID} {
+		if raw := c.Query(key); raw != "" {
+			id, e := strconv.ParseInt(raw, 10, 64)
+			if e != nil || id <= 0 {
+				respondError(c, http.StatusBadRequest, fmt.Errorf("invalid %s", key))
+				return
+			}
+			*target = &id
 		}
 	}
-	if pageStr := c.Query("page"); pageStr != "" {
-		if p, err := strconv.Atoi(pageStr); err == nil {
-			opts.Page = p
-		}
+	if raw := c.Query("page"); raw != "" {
+		opts.Page, _ = strconv.Atoi(raw)
 	}
-	if psStr := c.Query("page_size"); psStr != "" {
-		if ps, err := strconv.Atoi(psStr); err == nil {
-			opts.PageSize = ps
-		}
+	if raw := c.Query("page_size"); raw != "" {
+		opts.PageSize, _ = strconv.Atoi(raw)
 	}
-	metrics, total, err := h.svc.ListMetrics(tenantID, opts)
+	items, total, err := h.svc.ListMetrics(getTenantID(c), opts)
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
-	page := opts.Page
-	pageSize := opts.PageSize
+	page, pageSize := opts.Page, opts.PageSize
 	if page < 1 {
 		page = 1
 	}
@@ -180,245 +172,326 @@ func (h *MetricHandler) ListMetrics(c *gin.Context) {
 	if totalPages < 1 {
 		totalPages = 1
 	}
-	c.JSON(http.StatusOK, gin.H{"data": metrics, "total": total, "page": page, "page_size": pageSize, "total_pages": totalPages})
+	c.JSON(http.StatusOK, gin.H{"data": items, "total": total, "page": page, "page_size": pageSize, "total_pages": totalPages})
 }
 
-// @Summary 获取指标详情 | Get metric detail
+// @Summary 创建指标定义及首个草稿修订 | Create metric definition with initial draft revision
 // @Tags Standard
+// @Accept json
 // @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
-// @Failure 403 {object} map[string]string "无权访问 | Access denied"
-// @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["standard.metric.read"]
-// @Router /metrics/{id} [get]
-// @Security BearerAuth
-func (h *MetricHandler) GetMetric(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
-		return
-	}
-	tenantID := getTenantID(c)
-	metric, err := h.svc.GetMetric(id, tenantID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, sysi18n.MsgMetricNotFound)})
-		return
-	}
-
-	elements, _ := h.svc.GetElementMappings(id, tenantID)
-	deps, _ := h.svc.GetDependencies(id, tenantID)
-
-	type MetricDetailResponse struct {
-		*models.Metric
-		ElementIDs    []int64 `json:"element_ids"`
-		DependencyIDs []int64 `json:"dependency_ids"`
-	}
-	c.JSON(http.StatusOK, MetricDetailResponse{
-		Metric:        metric,
-		ElementIDs:    extractElementIDs(elements),
-		DependencyIDs: extractDependencyIDs(deps),
-	})
-}
-
-// @Summary 查询 Metric 专业关系图 | Get Metric professional relation graph
-// @Description 返回当前 Metric 的基准指标和直接依赖关系；只使用当前 User AuthContext，不面向 Catalog Service Token 扩权 | Return the Metric base and direct dependency relations under the current User AuthContext; no Catalog service-token elevation
-// @Tags Professional Relations
-// @Produce json
-// @Param id path int true "Metric ID"
-// @Param limit query int false "最大边数量，默认100，最大200 | Maximum edges, default 100, maximum 200"
-// @Success 200 {object} models.ProfessionalRelationsResponse
-// @Failure 400 {object} map[string]string "请求无效 | Invalid request"
-// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
-// @Failure 403 {object} map[string]string "无权访问 | Access denied"
-// @Failure 404 {object} map[string]string "Metric 不存在 | Metric not found"
-// @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["standard.metric.read"]
-// @Router /metrics/{id}/relations [get]
-// @Security BearerAuth
-func (h *MetricHandler) GetProfessionalRelations(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil || id <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID), "error_code": "invalid_id"})
-		return
-	}
-	limit := 100
-	if rawLimit := c.Query("limit"); rawLimit != "" {
-		limit, err = strconv.Atoi(rawLimit)
-		if err != nil || limit < 1 || limit > 200 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidParams), "error_code": "invalid_limit"})
-			return
-		}
-	}
-	response, err := h.svc.GetProfessionalRelations(id, getTenantID(c), limit)
-	if err != nil {
-		respondError(c, http.StatusNotFound, err)
-		return
-	}
-	c.JSON(http.StatusOK, response)
-}
-
-// @Summary 创建指标 | Create metric
-// @Tags Standard
-// @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
-// @Failure 403 {object} map[string]string "无权访问 | Access denied"
+// @Param request body models.CreateMetricRequest true "指标定义与首个草稿 | Metric definition and initial draft"
+// @Success 201 {object} models.MetricDefinitionAggregate
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.metric.create"]
 // @Router /metrics [post]
 // @Security BearerAuth
 func (h *MetricHandler) CreateMetric(c *gin.Context) {
 	var req models.CreateMetricRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		respondError(c, http.StatusBadRequest, err)
+	if !bindJSON(c, &req) {
 		return
 	}
-	tenantID := getTenantID(c)
-	userID := getUserID(c)
-	metric, err := h.svc.CreateMetric(&req, tenantID, userID)
+	item, err := h.svc.CreateMetric(&req, getTenantID(c), getUserID(c))
 	if err != nil {
 		respondError(c, http.StatusBadRequest, err)
 		return
 	}
-	c.JSON(http.StatusCreated, metric)
+	c.JSON(http.StatusCreated, item)
 }
 
-// @Summary 更新指标 | Update metric
+// @Summary 获取指标定义聚合 | Get metric definition aggregate
 // @Tags Standard
 // @Produce json
-// @Param request body models.UpdateMetricRequest true "更新指标 | Update metric"
-// @Success 200 {object} map[string]interface{}
-// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
-// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
-// @Failure 403 {object} map[string]string "无权访问 | Access denied"
+// @Param as_of query string false "生效时点 | Effective point in time"
+// @Success 200 {object} models.MetricDefinitionAggregate
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.metric.read"]
+// @Router /metrics/{id} [get]
+// @Security BearerAuth
+func (h *MetricHandler) GetMetric(c *gin.Context) {
+	id, ok := elementPathID(c, "id")
+	if !ok {
+		return
+	}
+	asOf, err := parseOptionalAsOf(c)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
+	item, err := h.svc.GetMetricAt(id, getTenantID(c), asOf)
+	if err != nil {
+		respondError(c, http.StatusNotFound, err)
+		return
+	}
+	c.JSON(http.StatusOK, item)
+}
+
+// @Summary 查询指标定义专业关系图 | Get metric definition professional relation graph
+// @Tags Professional Relations
+// @Produce json
+// @Param limit query int false "最大边数量 | Maximum edges"
+// @Success 200 {object} models.ProfessionalRelationsResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.metric.read"]
+// @Router /metrics/{id}/relations [get]
+// @Security BearerAuth
+func (h *MetricHandler) GetProfessionalRelations(c *gin.Context) {
+	id, ok := elementPathID(c, "id")
+	if !ok {
+		return
+	}
+	limit := 100
+	if raw := c.Query("limit"); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 1 || value > 200 {
+			respondError(c, http.StatusBadRequest, fmt.Errorf("invalid limit"))
+			return
+		}
+		limit = value
+	}
+	result, err := h.svc.GetProfessionalRelations(id, getTenantID(c), limit)
+	if err != nil {
+		respondError(c, http.StatusNotFound, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// @Summary 更新指标定义归属信息 | Update metric definition ownership
+// @Tags Standard
+// @Accept json
+// @Produce json
+// @Param request body models.UpdateMetricRequest true "归属信息及并发版本 | Ownership and concurrency version"
+// @Success 200 {object} models.MetricDefinitionAggregate
+// @Failure 409 {object} map[string]string "版本冲突 | Version conflict"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.metric.update"]
 // @Router /metrics/{id} [put]
 // @Security BearerAuth
 func (h *MetricHandler) UpdateMetric(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
+	id, ok := elementPathID(c, "id")
+	if !ok {
 		return
 	}
 	var req models.UpdateMetricRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		respondError(c, http.StatusBadRequest, err)
+	if !bindJSON(c, &req) {
 		return
 	}
-	tenantID := getTenantID(c)
-	userID := getUserID(c)
-	metric, err := h.svc.UpdateMetric(id, tenantID, userID, &req)
+	item, err := h.svc.UpdateMetric(id, getTenantID(c), getUserID(c), &req)
 	if err != nil {
 		respondError(c, http.StatusBadRequest, err)
 		return
 	}
-	c.JSON(http.StatusOK, metric)
+	c.JSON(http.StatusOK, item)
 }
 
-// @Summary 删除指标 | Delete metric
+// @Summary 删除指标定义稳定身份 | Delete metric definition identity
 // @Tags Standard
 // @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Failure 409 {object} map[string]string
-// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
-// @Failure 403 {object} map[string]string "无权访问 | Access denied"
+// @Success 200 {object} map[string]string
+// @Failure 409 {object} map[string]string "仍被引用 | Still referenced"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.metric.delete"]
 // @Router /metrics/{id} [delete]
 // @Security BearerAuth
 func (h *MetricHandler) DeleteMetric(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
+	id, ok := elementPathID(c, "id")
+	if !ok {
 		return
 	}
-	tenantID := getTenantID(c)
-	if err := h.svc.DeleteMetric(c.Request.Context(), id, tenantID); err != nil {
+	if err := h.svc.DeleteMetric(c.Request.Context(), id, getTenantID(c)); err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgDeleteSuccess)})
 }
 
-// @Summary 审批指标 | Approve metric
+// @Summary 获取指标定义修订历史 | List metric definition revisions
 // @Tags Standard
 // @Produce json
-// @Param request body models.VersionRequest true "当前资源版本 | Current resource version"
-// @Success 200 {object} map[string]interface{}
-// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
-// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
-// @Failure 403 {object} map[string]string "无权访问 | Access denied"
+// @Success 200 {array} models.MetricDefinitionRevision
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["standard.metric.approve"]
-// @Router /metrics/{id}/approve [post]
+// @x-addp-required-permissions ["standard.metric.read"]
+// @Router /metrics/{id}/revisions [get]
 // @Security BearerAuth
-func (h *MetricHandler) ApproveMetric(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
+func (h *MetricHandler) ListMetricRevisions(c *gin.Context) {
+	id, ok := elementPathID(c, "id")
+	if !ok {
 		return
 	}
-	var req models.VersionRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	items, err := h.svc.ListRevisions(id, getTenantID(c))
+	if err != nil {
+		respondError(c, http.StatusNotFound, err)
+		return
+	}
+	c.JSON(http.StatusOK, items)
+}
+
+// @Summary 从最近修订创建指标定义草稿 | Create metric definition draft from latest revision
+// @Tags Standard
+// @Accept json
+// @Produce json
+// @Param request body models.CreateMetricRevisionRequest true "并发版本与变更说明 | Version and change summary"
+// @Success 201 {object} models.MetricDefinitionAggregate
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.metric.update"]
+// @Router /metrics/{id}/revisions [post]
+// @Security BearerAuth
+func (h *MetricHandler) CreateMetricRevision(c *gin.Context) {
+	id, ok := elementPathID(c, "id")
+	if !ok {
+		return
+	}
+	var req models.CreateMetricRevisionRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	item, err := h.svc.CreateRevision(id, getTenantID(c), getUserID(c), &req)
+	if err != nil {
+		respondError(c, http.StatusConflict, err)
+		return
+	}
+	c.JSON(http.StatusCreated, item)
+}
+
+// @Summary 获取指标定义修订 | Get metric definition revision
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} models.MetricDefinitionRevision
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.metric.read"]
+// @Router /metrics/{id}/revisions/{revision_id} [get]
+// @Security BearerAuth
+func (h *MetricHandler) GetMetricRevision(c *gin.Context) {
+	id, revisionID, ok := elementRevisionPath(c)
+	if !ok {
+		return
+	}
+	item, err := h.svc.GetRevision(id, revisionID, getTenantID(c))
+	if err != nil {
+		respondError(c, http.StatusNotFound, err)
+		return
+	}
+	c.JSON(http.StatusOK, item)
+}
+
+// @Summary 更新指标定义草稿修订 | Update metric definition draft revision
+// @Tags Standard
+// @Accept json
+// @Produce json
+// @Param request body models.UpdateMetricRevisionRequest true "完整草稿及并发版本 | Full draft and concurrency version"
+// @Success 200 {object} models.MetricDefinitionAggregate
+// @Failure 409 {object} map[string]string "状态或版本冲突 | State or version conflict"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.metric.update"]
+// @Router /metrics/{id}/revisions/{revision_id} [put]
+// @Security BearerAuth
+func (h *MetricHandler) UpdateMetricRevision(c *gin.Context) {
+	id, revisionID, ok := elementRevisionPath(c)
+	if !ok {
+		return
+	}
+	var req models.UpdateMetricRevisionRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	item, err := h.svc.UpdateRevision(id, revisionID, getTenantID(c), getUserID(c), &req)
+	if err != nil {
 		respondError(c, http.StatusBadRequest, err)
 		return
 	}
-	tenantID := getTenantID(c)
-	userID := getUserID(c)
-	if err := h.svc.ApproveMetric(id, tenantID, userID, req.Version); err != nil {
-		respondError(c, http.StatusInternalServerError, err)
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgApproveSuccess)})
+	c.JSON(http.StatusOK, item)
 }
 
-// @Summary 废弃指标 | Deprecate metric
+// @Summary 提交指标定义修订审核 | Submit metric definition revision for review
+// @Tags Standard
+// @Accept json
+// @Produce json
+// @Param request body models.RevisionActionRequest true "当前资源版本 | Current resource version"
+// @Success 200 {object} models.MetricDefinitionAggregate
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.metric.update"]
+// @Router /metrics/{id}/revisions/{revision_id}/submit [post]
+// @Security BearerAuth
+func (h *MetricHandler) SubmitMetricRevision(c *gin.Context) {
+	h.revisionAction(c, h.svc.SubmitRevision)
+}
+
+// @Summary 退回指标定义修订 | Return metric definition revision
+// @Tags Standard
+// @Accept json
+// @Produce json
+// @Param request body models.RevisionActionRequest true "当前资源版本 | Current resource version"
+// @Success 200 {object} models.MetricDefinitionAggregate
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.metric.publish"]
+// @Router /metrics/{id}/revisions/{revision_id}/return [post]
+// @Security BearerAuth
+func (h *MetricHandler) ReturnMetricRevision(c *gin.Context) {
+	h.revisionAction(c, h.svc.ReturnRevision)
+}
+
+// @Summary 发布指标定义修订 | Publish metric definition revision
+// @Tags Standard
+// @Accept json
+// @Produce json
+// @Param request body models.RevisionActionRequest true "当前资源版本 | Current resource version"
+// @Success 200 {object} models.MetricDefinitionAggregate
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.metric.publish"]
+// @Router /metrics/{id}/revisions/{revision_id}/publish [post]
+// @Security BearerAuth
+func (h *MetricHandler) PublishMetricRevision(c *gin.Context) {
+	h.revisionAction(c, h.svc.PublishRevision)
+}
+
+// @Summary 撤回指标定义发布修订 | Withdraw published metric definition revision
+// @Tags Standard
+// @Accept json
+// @Produce json
+// @Param request body models.RevisionActionRequest true "当前资源版本 | Current resource version"
+// @Success 200 {object} models.MetricDefinitionAggregate
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.metric.publish"]
+// @Router /metrics/{id}/revisions/{revision_id}/withdraw [post]
+// @Security BearerAuth
+func (h *MetricHandler) WithdrawMetricRevision(c *gin.Context) {
+	h.revisionAction(c, h.svc.WithdrawRevision)
+}
+
+// @Summary 解析已发布指标定义修订 | Resolve published metric definition revision
 // @Tags Standard
 // @Produce json
-// @Param request body models.VersionRequest true "当前资源版本 | Current resource version"
-// @Success 200 {object} map[string]interface{}
-// @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
-// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
-// @Failure 403 {object} map[string]string "无权访问 | Access denied"
+// @Success 200 {object} models.PublishedMetricDefinitionReference
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["standard.metric.offline"]
-// @Router /metrics/{id}/deprecate [post]
+// @x-addp-required-permissions ["standard.metric.read"]
+// @Router /metrics/{id}/revisions/{revision_id}/published-reference [get]
 // @Security BearerAuth
-func (h *MetricHandler) DeprecateMetric(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+func (h *MetricHandler) GetPublishedReference(c *gin.Context) {
+	id, revisionID, ok := elementRevisionPath(c)
+	if !ok {
+		return
+	}
+	item, err := h.svc.GetPublishedReference(id, revisionID, getTenantID(c))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
+		respondError(c, http.StatusNotFound, err)
 		return
 	}
-	var req models.VersionRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		respondError(c, http.StatusBadRequest, err)
-		return
-	}
-	tenantID := getTenantID(c)
-	userID := getUserID(c)
-	if err := h.svc.DeprecateMetric(id, tenantID, userID, req.Version); err != nil {
-		respondError(c, http.StatusInternalServerError, err)
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, sysi18n.MsgDeprecateSuccess)})
+	c.JSON(http.StatusOK, item)
 }
 
-// 辅助函数
-func extractElementIDs(mappings []models.MetricElementMapping) []int64 {
-	ids := make([]int64, 0, len(mappings))
-	for _, m := range mappings {
-		ids = append(ids, m.ElementID)
+func (h *MetricHandler) revisionAction(c *gin.Context, action func(int64, int64, int64, int64, int64) (*models.MetricDefinitionAggregate, error)) {
+	id, revisionID, ok := elementRevisionPath(c)
+	if !ok {
+		return
 	}
-	return ids
-}
-
-func extractDependencyIDs(deps []models.MetricDependency) []int64 {
-	ids := make([]int64, 0, len(deps))
-	for _, d := range deps {
-		ids = append(ids, d.ToMetricID)
+	var req models.RevisionActionRequest
+	if !bindJSON(c, &req) {
+		return
 	}
-	return ids
+	item, err := action(id, revisionID, getTenantID(c), getUserID(c), req.Version)
+	if err != nil {
+		respondError(c, http.StatusConflict, err)
+		return
+	}
+	c.JSON(http.StatusOK, item)
 }

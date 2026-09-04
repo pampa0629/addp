@@ -2,6 +2,8 @@ package api
 
 import (
 	"errors"
+	"io"
+	"mime"
 	"net/http"
 	"strconv"
 	"strings"
@@ -9,6 +11,7 @@ import (
 	commonAPI "github.com/addp/common/api"
 	commonClient "github.com/addp/common/client"
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/exportartifact"
 	commonAuth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	"github.com/addp/common/taskprovider"
@@ -23,6 +26,7 @@ import (
 type ExecutionHandler struct {
 	devExecutor     *service.DevExecutor
 	approvalService *service.ToolApprovalService
+	queryExports    *service.QueryExportService
 }
 
 type executeDevTaskRequest struct {
@@ -30,10 +34,134 @@ type executeDevTaskRequest struct {
 }
 
 // NewExecutionHandler 创建执行记录处理器
-func NewExecutionHandler(devExecutor *service.DevExecutor, approvalService *service.ToolApprovalService) *ExecutionHandler {
+func NewExecutionHandler(devExecutor *service.DevExecutor, approvalService *service.ToolApprovalService, queryExports *service.QueryExportService) *ExecutionHandler {
 	return &ExecutionHandler{
 		devExecutor:     devExecutor,
 		approvalService: approvalService,
+		queryExports:    queryExports,
+	}
+}
+
+// CreateQueryExport 基于成功查询 execution 创建全部结果导出会话。
+// @Summary 导出全部查询结果 | Export all query results
+// @Description 使用已成功查询 execution 的冻结查询与参数创建一次性 Transfer execution，结果暂存到 infra 并通过导出会话下载。| Create a one-off Transfer execution from the frozen query and parameters of a successful query execution, stage it in infra, and download it through the export session.
+// @Tags Execution
+// @Accept json
+// @Produce json
+// @Param execution_id path string true "查询执行 ID | Query execution ID"
+// @Param body body models.CreateQueryExportRequest true "导出格式与文件名 | Export format and file name"
+// @Success 202 {object} models.CreateQueryExportResponse
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 503 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.task.execute","develop.data_read.execute"]
+// @Router /executions/{execution_id}/exports [post]
+func (h *ExecutionHandler) CreateQueryExport(c *gin.Context) {
+	if h == nil || h.queryExports == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": commoni18n.T(c, developi18n.MsgQueryExportUnavailable), "error_code": "query_export_unavailable",
+		})
+		return
+	}
+	var req models.CreateQueryExportRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": commoni18n.T(c, developi18n.MsgQueryExportInvalid), "error_code": "invalid_query_export", "details": err.Error(),
+		})
+		return
+	}
+	result, err := h.queryExports.Create(c.Request.Context(), c.Param("execution_id"), req, tenantIDValue(c), commonAuth.GetUserID(c))
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrQueryExportNotFound):
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": commoni18n.T(c, developi18n.MsgQueryExportNotFound), "error_code": "query_export_source_not_found",
+			})
+		case errors.Is(err, service.ErrQueryExportInvalid):
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": commoni18n.T(c, developi18n.MsgQueryExportInvalid), "error_code": "invalid_query_export", "details": err.Error(),
+			})
+		default:
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"error": commoni18n.T(c, developi18n.MsgQueryExportUnavailable), "error_code": "query_export_unavailable", "details": err.Error(),
+			})
+		}
+		return
+	}
+	c.JSON(http.StatusAccepted, result)
+}
+
+// GetQueryExport 获取当前用户的查询导出会话。
+// @Summary 获取查询导出会话 | Get query export session
+// @Tags Execution
+// @Produce json
+// @Param id path int true "导出会话 ID | Export session ID"
+// @Success 200 {object} models.CreateQueryExportResponse
+// @Failure 404 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["develop.task.read"]
+// @Router /exports/{id} [get]
+func (h *ExecutionHandler) GetQueryExport(c *gin.Context) {
+	id, ok := queryExportSessionID(c)
+	if !ok {
+		return
+	}
+	result, err := h.queryExports.Get(c.Request.Context(), id, tenantIDValue(c), commonAuth.GetUserID(c))
+	if err != nil {
+		queryExportError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// DownloadQueryExport 下载当前用户已完成的查询导出文件。
+// @Summary 下载查询导出文件 | Download query export file
+// @Tags Execution
+// @Produce octet-stream
+// @Param id path int true "导出会话 ID | Export session ID"
+// @Success 200 "下载内容流 | Download content stream"
+// @Failure 404 {object} map[string]string
+// @Failure 409 {object} map[string]string
+// @x-addp-auth-mode "resource_ticket"
+// @x-addp-required-permissions ["develop.task.read"]
+// @Router /exports/{id}/file [get]
+func (h *ExecutionHandler) DownloadQueryExport(c *gin.Context) {
+	id, ok := queryExportSessionID(c)
+	if !ok {
+		return
+	}
+	file, err := h.queryExports.Open(c.Request.Context(), id, tenantIDValue(c), commonAuth.GetUserID(c))
+	if err != nil {
+		queryExportError(c, err)
+		return
+	}
+	defer file.Reader.Close()
+	c.Header("Content-Type", file.ContentType)
+	if disposition := mime.FormatMediaType("attachment", map[string]string{"filename": file.FileName}); disposition != "" {
+		c.Header("Content-Disposition", disposition)
+	}
+	c.Status(http.StatusOK)
+	_, _ = io.Copy(c.Writer, file.Reader)
+}
+
+func queryExportSessionID(c *gin.Context) (uint, bool) {
+	id, err := strconv.ParseUint(strings.TrimSpace(c.Param("id")), 10, 32)
+	if err != nil || id == 0 {
+		commonAPI.BadRequestError(c, "invalid export session id")
+		return 0, false
+	}
+	return uint(id), true
+}
+
+func queryExportError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, exportartifact.ErrSessionNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, developi18n.MsgQueryExportNotFound), "error_code": "query_export_not_found"})
+	case errors.Is(err, exportartifact.ErrNotReady):
+		c.JSON(http.StatusConflict, gin.H{"error": commoni18n.T(c, developi18n.MsgQueryExportUnavailable), "error_code": "query_export_not_ready"})
+	default:
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": commoni18n.T(c, developi18n.MsgQueryExportUnavailable), "error_code": "query_export_unavailable"})
 	}
 }
 

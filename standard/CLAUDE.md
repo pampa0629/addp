@@ -233,30 +233,30 @@ standard/
 | parent_id | int64? | 父节点 |
 | name / code | string | 类别名 / 标识 |
 
-### `standard.metrics` — 当前指标实现（待拆为 MetricDefinition 修订）
+### `standard.metric_definitions` / `standard.metric_definition_revisions` — 指标定义
+
+指标定义使用“稳定身份 + 不可变修订”模型。稳定身份保存 `code`、`scope_type`、`owner_domain_id`、分类、责任人、标签和并发 `version`；修订保存 `metric_type`、名称、业务定义、统计口径、非引擎可执行的语义公式、单位、生效区间与统一发布状态。
+
+`standard.metric_definition_revision_dependencies` 保存修订级语义依赖。草稿依赖 `dependency_definition_id`，发布时必须解析并冻结 `dependency_revision_id`；`atomic` 不允许依赖，`derived` 必须且只能有一个 `base`，`composite` 必须至少有一个 `component`。该表不保存模型表、字段、连接、过滤或可执行表达式。
+
+公开路径继续以稳定产品资源名 `/metrics` 表示 MetricDefinition；修订使用 `/metrics/:id/revisions`，审核动作统一为 `submit`、`return`、`publish`、`withdraw`。旧 `approve`、`deprecate` 路径和扁平字段不保留。
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| category_id / domain_id | int64? | 所属分类 / 业务域 |
-| name / code | string | 指标名 / 英文标识 |
-| type | string | `atomic`（原子）/ `derived`（派生）/ `composite`（复合） |
-| definition | text | 定义 |
-| formula | text | 计算公式（复合指标） |
-| unit_id | int64? | 引用 `standard.units` |
-| base_metric_id | int64? | 基础指标（派生指标用） |
-| derivation_config | JSONB | 语义计算配置（聚合、过滤、去重等）；只保存结构化计划，不保存引擎查询文本 |
-| status | string | `draft` / `approved` / `deprecated` |
-| steward_id | int64? | 数据责任人 |
-| tags | StringArray | 标签 |
-
-### `standard.metric_element_mappings` — 指标与数据元关联
-
-原子指标与数据元之间的映射，记录指标来源于哪个数据元。
-
-### `standard.metric_dependencies` — 复合指标依赖关系
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
+| `metric_definitions.category_id` | int64? | 所属指标分类 |
+| `metric_definitions.scope_type / owner_domain_id` | string / int64? | 适用范围与归属业务域 |
+| `metric_definitions.code` | string | 稳定英文标识 |
+| `metric_definitions.steward_id / tags` | int64? / StringArray | 责任人与标签 |
+| `metric_definitions.draft_revision_id / version` | int64? / int64 | 工作修订指针与聚合并发版本 |
+| `metric_definition_revisions.metric_type` | string | `atomic` / `derived` / `composite` |
+| `metric_definition_revisions.name / definition / statistical_caliber` | string / text | 名称、业务定义与统计口径 |
+| `metric_definition_revisions.semantic_formula` | text | 非引擎可执行的语义公式 |
+| `metric_definition_revisions.unit_id` | int64? | 引用 `standard.units` |
+| `metric_definition_revisions.status` | string | `draft` / `in_review` / `published` / `withdrawn` |
+| `metric_definition_revisions.effective_from / effective_to` | timestamp? | 发布生效区间，数据库保证同一定义的已发布区间不重叠 |
+| `metric_definition_revision_dependencies.dependency_definition_id` | int64 | 依赖指标稳定身份 |
+| `metric_definition_revision_dependencies.dependency_revision_id` | int64? | 发布时冻结的依赖修订 |
+| `metric_definition_revision_dependencies.relation_kind` | string | `base` / `component` |
 | from_metric_id / to_metric_id | int64 | 依赖关系方向 |
 | coefficient | float? | 权重系数（可选） |
 
@@ -347,8 +347,12 @@ PUT/DELETE /api/v1/standard/metric-categories/:id
 
 GET/POST /api/v1/standard/metrics
 GET/PUT/DELETE /api/v1/standard/metrics/:id
-POST /api/v1/standard/metrics/:id/approve
-POST /api/v1/standard/metrics/:id/deprecate
+GET/POST /api/v1/standard/metrics/:id/revisions
+GET/PUT /api/v1/standard/metrics/:id/revisions/:revision_id
+POST /api/v1/standard/metrics/:id/revisions/:revision_id/submit
+POST /api/v1/standard/metrics/:id/revisions/:revision_id/return
+POST /api/v1/standard/metrics/:id/revisions/:revision_id/publish
+POST /api/v1/standard/metrics/:id/revisions/:revision_id/withdraw
 
 GET /api/v1/standard/catalog-resources/changes
 POST /api/v1/standard/runtime/catalog-references/resolve
@@ -414,19 +418,17 @@ Measurement Category 是 Unit 聚合内子资源。DimensionHierarchy 与层级�
 
 ## 特殊设计
 
-### 当前指标三种类型关系（待拆分）
+### 指标三种类型关系
 
 ```
 atomic（原子指标）
-  ├─ 关联一个或多个 elements（数据来源）
-  └─ 作为 derived 的 base_metric_id
+  └─ 不包含语义依赖；物理来源由 Model MetricImplementation 定义
 
 derived（派生指标）
-  ├─ base_metric_id → atomic 指标
-  └─ derivation_config（JSONB）存储结构化语义计算计划
+  └─ 修订中必须且只能包含一个 base 依赖，发布时冻结其已发布修订
 
 composite（复合指标）
-  └─ metric_dependencies 表记录依赖哪些 atomic/derived 指标
+  └─ 修订中包含一个或多个 component 依赖，发布时冻结各依赖修订
 ```
 
 ### 数据元与码值集的修订状态流转

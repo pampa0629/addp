@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/addp/common/exportartifact"
 	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/manager/internal/config"
 	"github.com/addp/manager/internal/models"
@@ -31,11 +32,16 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 		&models.EmbeddingConfiguration{},
 		&models.InferenceScenarioBinding{},
 		&models.QuickViewPolicy{},
-		&models.ExportSession{},
 		&models.BaseMapProvider{},
 	)
 	if err != nil {
 		return nil, err
+	}
+	if err := exportartifact.EnsureStore(db, "manager.export_sessions"); err != nil {
+		return nil, fmt.Errorf("failed to ensure export session store: %w", err)
+	}
+	if err := dropLegacyExportSessionTransferTaskID(db); err != nil {
+		return nil, fmt.Errorf("failed to remove legacy export session transfer task identity: %w", err)
 	}
 
 	if err := ensureEmbeddingArtifactStateSchema(db, models.EmbeddingVectorDimension); err != nil {
@@ -106,6 +112,13 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	db.Exec(fmt.Sprintf("SET search_path TO %s", cfg.DBSchema))
 
 	return db, nil
+}
+
+func dropLegacyExportSessionTransferTaskID(db *gorm.DB) error {
+	if db == nil || !db.Migrator().HasColumn("manager.export_sessions", "transfer_task_id") {
+		return nil
+	}
+	return db.Migrator().DropColumn("manager.export_sessions", "transfer_task_id")
 }
 
 func ensureBaseMapProviderSchema(db *gorm.DB) error {

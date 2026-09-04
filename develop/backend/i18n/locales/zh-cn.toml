@@ -70,6 +70,15 @@ other = "所选资源不是当前引擎的可查询数据项"
 [develop.query.confirmation_required]
 other = "该查询属于高风险操作，请重新预检并确认后再执行"
 
+[develop.query.export_invalid]
+other = "当前查询结果不能导出，请重新执行查询后再试"
+
+[develop.query.export_not_found]
+other = "查询执行不存在或已不可访问"
+
+[develop.query.export_unavailable]
+other = "完整结果导出服务暂时不可用，请稍后重试"
+
 [develop.notebook.execution_permission_denied]
 other = "当前账号没有执行 Notebook 的权限"
 

@@ -41,10 +41,17 @@ test('entity and logical table details preserve unsaved drafts across navigation
   }
 })
 
-test('logical table details load metric names before rendering persisted mappings', async () => {
+test('logical table details render executable metric implementations against published definitions', async () => {
   const source = await readFile(new URL('../src/views/LogicalTableDetail.vue', import.meta.url), 'utf8')
+  const api = await readFile(new URL('../src/api/model.js', import.meta.url), 'utf8')
+  assert.match(source, /@click="openMetricDialog\(\)"/)
   assert.match(source, /Promise\.all\(\[loadFields\(\), loadMetrics\(\), loadAvailableMetrics\(\)\]\)/)
   assert.match(source, /const metricNameMap = computed\(\(\) => \{/)
+  assert.match(source, /metric_definition_revision_id/)
+  assert.match(source, /source_config: \{ field_ids: metricForm\.field_ids \}/)
+  assert.match(source, /expression_config: \{ engine:/)
+  assert.match(api, /metric-implementations/)
+  assert.doesNotMatch(api, /logical-tables\/\$\{tableId\}\/metrics/)
 })
 
 test('logical table materialization binds a schema locator and target name', async () => {

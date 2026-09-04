@@ -17,7 +17,7 @@
 - 查询语言和结果形态来自 Engine capability，不按引擎类型硬编码。
 - 执行时优先使用 Monaco 当前选区，没有选区时执行全文。
 - 即时查询创建统一 execution，并在当前页面轮询结果和提供统一监控入口。
-- 服务端限制结果预览规模，前端显示截断状态并只导出当前预览。
+- 服务端限制结果预览规模，前端显示截断状态；预览不提供下载旁路，“导出全部结果”由 Develop 使用冻结查询、执行参数和本次结果的有序列名生成同名投影，再交给 Transfer 流式写入 infra 临时产物并下载到本地。CSV 投影以 `unknown` 表达“不执行字段类型转换”，不得根据预览样本猜测字段类型。
 - 未保存内容在离开页面或加载其他任务前进行防丢失确认。
 - 当前查询可保存为任务，支持名称、描述、标签和超时时间。
 - 查询参数统一支持可选任务默认值和本次执行覆盖；没有默认值的任意类型参数都在执行时填写。数据表参数通过资源选择器保存已有表默认绑定，SQL 直接以裸参数名引用。
@@ -59,10 +59,15 @@ DuckDB 执行前从 SQL 中解析已注册的 Source Engine 引用，为本次 e
 |------|------|------|
 | POST | `/api/v1/develop/executions` | 创建 `dev_type=query` 的 ad-hoc execution |
 | GET | `/api/v1/develop/executions/{execution_id}` | 回查状态、错误和受限结果预览 |
+| POST | `/api/v1/develop/executions/{execution_id}/exports` | 基于成功查询 execution 的冻结快照创建全部结果导出会话，返回会话状态和下载入口 |
+| GET | `/api/v1/develop/exports/{id}` | 获取当前用户的导出会话状态 |
+| GET | `/api/v1/develop/exports/{id}/file` | 下载当前用户已完成的临时导出文件 |
 
 即时查询 execution 使用 `module=develop`、`task_type=query`、`source_task_id=null`。请求在 `execution_config` 中保存查询内容、真实 Engine ID 和 timeout 快照。查询工作台不调用同步返回结果的 `/develop/execute`。
 
 成功结果位于 `metadata.result`，至少包含 `columns`、`rows_count`、`rows_affected`、`effect`、`result_kind`、`result_limit`、`truncated` 和 `summary.preview_rows`；图查询可以附带 `graph_data`。结果预览上限由服务端 `QUERY_RESULT_LIMIT` 控制，默认 500 行。
+
+完整导出不使用 `metadata.result.rows`。该入口在单 Engine 表格查询成功后显示，不以预览是否截断为前提；DuckDB 联邦查询在具备统一流式查询 Provider 前不提供完整导出。用户只选择格式并填写文件名，Develop 后端从原查询 execution 恢复冻结查询与有效参数，通过 `common/exportartifact` 创建 Transfer `source_task_id=null` 的 bounded `sync` execution，将结果暂存到 infra；页面轮询导出会话，完成后通过 Resource Ticket 保护的文件入口直接下载。前端不得选择业务存储、提交或展示 Transfer task ID，也不得自行拼装 Transfer planner 配置、infra 路径或预览 CSV。
 
 ### 查询任务管理 API
 
@@ -268,7 +273,7 @@ CREATE TABLE common.task_executions (
 ### 计划中的功能
 
 1. **结果通知**: 执行完成后通过邮件/Webhook 通知
-2. **结果导出**: 支持将查询结果导出为 CSV/Excel
+2. **结果导出**：当前支持把全部查询结果临时导出为 CSV 并下载到本地；保存为业务数据资源属于独立能力。
 3. **执行队列**: 并发控制和优先级管理
 4. **任务依赖**: 支持任务之间的依赖关系
 5. **版本管理**: SQL 内容的版本历史

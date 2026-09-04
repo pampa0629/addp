@@ -112,6 +112,15 @@ other = "Logical table code already exists"
 [model.logical_table.state_conflict]
 other = "The logical table state does not allow this operation"
 
+[model.logical_table.materialization_configured]
+other = "The logical table still has a materialization target configuration; clear it explicitly first"
+
+[model.logical_table.materialization_batch_active]
+other = "The logical table still has a non-terminal materialization batch and cannot be deleted"
+
+[model.logical_table.materialization_group_member]
+other = "The logical table still belongs to a materialization group; remove it from the group first"
+
 [model.logical_table.approval_fields_required]
 other = "The logical table must have at least one field before approval"
 
@@ -133,11 +142,11 @@ other = "DW layer code already exists"
 [model.dw_layer.in_use]
 other = "The DW layer is still referenced by logical tables and cannot be deleted"
 
-[model.fact_metric.invalid_mapping_id]
-other = "Invalid metric mapping ID"
+[model.metric_implementation.invalid_id]
+other = "Invalid metric implementation ID"
 
-[model.fact_metric.conflict]
-other = "The metric is already associated with this fact table"
+[model.metric_implementation.conflict]
+other = "Metric implementation name and definition revision already exist"
 
 [model.table_relation.invalid_relation_id]
 other = "Invalid relation ID"

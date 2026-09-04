@@ -1,5 +1,5 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 83
+manifest_version: 84
 roles:
   - key: platform.agent_runtime
     role_type: platform_builtin
@@ -642,6 +642,8 @@ roles:
       - system.engine_descriptor.read
       - system.execution_authorization.execute
       - system.notebook_session_authorization.execute
+      - transfer.execution.create
+      - transfer.execution.read
   - key: tenant.geopython_runtime
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.geopython_runtime.name
@@ -737,10 +739,9 @@ roles:
       - standard.glossary.offline
       - standard.glossary.read
       - standard.glossary.update
-      - standard.metric.approve
       - standard.metric.create
       - standard.metric.delete
-      - standard.metric.offline
+      - standard.metric.publish
       - standard.metric.read
       - standard.metric.update
       - standard.unit.create
@@ -822,6 +823,8 @@ roles:
       - security.protection_projection.update
       - system.engine.read
       - system.engine_descriptor.read
+      - transfer.execution.create
+      - transfer.execution.read
       - transfer.task.create
       - transfer.task.execute
       - transfer.task.read

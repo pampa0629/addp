@@ -19,7 +19,7 @@
 
 Model Entity / LogicalTable 是企业 Catalog 的专业资源来源。Model 权威拥有完整对象、属性、字段、Domain / ElementRevision / MetricDefinitionRevision 引用、维度层级、指标实现和建模关系；Catalog 只通过 owner-local 变化源自动建立企业身份，并动态读取当前专业摘要，不保存或编辑这些专业事实的副本。变化捕获、动态解析 API、`model.catalog.read` 权限和软依赖边界以 [Model 概念与数据约束规范](docs/model概念与数据约束规范.md) 为准。
 
-DimensionHierarchy 已整体迁入 Model，`logical_fields.hierarchy_id + hierarchy_level` 以及对 `standard.dimension_hierarchies` 的依赖已经删除。`fact_metric_mappings` 仍是待迁移旧实现，后续必须直接替换为 Model-owned MetricImplementation，不保留兼容路线。
+DimensionHierarchy 已整体迁入 Model，`logical_fields.hierarchy_id + hierarchy_level` 以及对 `standard.dimension_hierarchies` 的依赖已经删除。旧 `fact_metric_mappings` 已由 Model-owned MetricImplementation 整体替换，不保留兼容路线。
 
 Model Entity 与 LogicalTable 的专业关系通过当前 User Token 读取 `/:id/relations` 一跳图；它与只供 `addp-catalog` 机器同步使用的变化流、批量摘要解析严格分离。该查询只读 Model 本地事实，不调用 Catalog 或 Standard，不保存 CatalogEntry 反向引用。
 
@@ -49,13 +49,13 @@ model/
 │       │   ├── entity_relation_handler.go
 │       │   ├── logical_table_handler.go
 │       │   ├── table_relation_handler.go   # 事实表-维度表关联
-│       │   ├── fact_metric_handler.go      # 事实表-指标关联
+│       │   ├── metric_implementation_handler.go # 指标实现
 │       │   └── dw_layer_handler.go
 │       ├── config/config.go
 │       ├── models/
 │       │   ├── entity.go            # Entity, EntityAttribute, EntityRelation
 │       │   ├── logical_table.go     # LogicalTable, LogicalField, TableRelation
-│       │   ├── fact_metric_mapping.go
+│       │   ├── metric_implementation.go
 │       │   ├── dw_layer.go
 │       │   └── common_types.go      # JSONB 等共用类型
 │       ├── repository/              # 数据访问层
@@ -81,7 +81,7 @@ model/
 
 ## 当前数据库表结构
 
-本节记录迁移前实现，用于定位代码；目标聚合与边界以 [Model 概念与数据约束规范](docs/model概念与数据约束规范.md) 为准。
+本节记录当前实现；聚合与边界以 [Model 概念与数据约束规范](docs/model概念与数据约束规范.md) 为准。
 
 ### `model.entities` — 业务实体
 
@@ -152,14 +152,17 @@ model/
 | relation_type | string | `fk`（外键关联）/ `join`（宽泛关联） |
 | tenant_id | int64 | 租户隔离 |
 
-### `model.fact_metric_mappings` — 待替换的事实表与指标关联
+### `model.metric_implementations` — 指标实现
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| fact_table_id | int64 | 事实表 ID |
-| metric_id | int64 | 引用 `standard.metrics`（无 DB FK） |
-| field_id | int64? | 对应的逻辑表字段（可选） |
-| note | text | 备注 |
+| fact_table_id | int64 | 所属事实表 ID，共用父 LogicalTable 版本 |
+| metric_definition_id | int64 | Standard 指标定义稳定身份，用于引用屏障 |
+| metric_definition_revision_id | int64 | 冻结的已发布 Standard 指标定义修订 |
+| name / grain | string | 实现名称 / 计算粒度 |
+| source_config / dimension_config | JSONB | 事实来源与字段 / 参与维度与连接 |
+| filter_config / expression_config | JSONB | 过滤条件 / 可执行表达式 |
+| status | string | `active` / `disabled` |
 
 ### `model.dw_layers` — 数仓分层
 
@@ -216,7 +219,7 @@ POST   /api/v1/model/logical-tables                          # 创建
 GET/PUT/DELETE /api/v1/model/logical-tables/:id              # 详情/更新/删除
 GET/POST/PUT/DELETE /api/v1/model/logical-tables/:id/fields  # 字段 CRUD
 POST   /api/v1/model/logical-tables/:id/preview-ddl          # 预览 DDL
-GET/POST/DELETE .../metrics                               # 事实表关联指标
+GET/POST/PUT/DELETE .../metric-implementations            # 事实表指标实现
 GET/POST/DELETE .../dimension-relations                   # 事实表关联维度表（含字段映射）
 GET/POST/PUT/DELETE .../dimension-hierarchies             # 维度表聚合内层级及成员
 ```

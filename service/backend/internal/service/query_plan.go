@@ -342,7 +342,7 @@ func compileFilterNode(filter *models.QueryFilter, service *models.QueryService,
 		}
 		operators := map[string]string{"eq": "=", "ne": "<>", "lt": "<", "lte": "<=", "gt": ">", "gte": ">="}
 		*args = append(*args, value)
-		return "(" + column + " " + operators[op] + " ?)", nil
+		return "(" + column + " " + operators[op] + " " + dialect.Placeholder(len(*args)) + ")", nil
 	case "in":
 		values, ok := interfaceSlice(filter.Value)
 		if !ok || len(values) == 0 || len(values) > 1000 {
@@ -357,8 +357,8 @@ func compileFilterNode(filter *models.QueryFilter, service *models.QueryService,
 			if err != nil || !isStableOrderFieldType(field.Type) {
 				return "", fmt.Errorf("%w: invalid in value for field %s", ErrInvalidStructuredQuery, field.Name)
 			}
-			placeholders[index] = "?"
 			*args = append(*args, normalized)
+			placeholders[index] = dialect.Placeholder(len(*args))
 		}
 		return "(" + column + " IN (" + strings.Join(placeholders, ", ") + "))", nil
 	case "is_null":
@@ -465,33 +465,37 @@ func compileBBoxFilter(value interface{}, service *models.QueryService, protocol
 		return "", fmt.Errorf("%w: bbox_intersects bounds are invalid", ErrInvalidStructuredQuery)
 	}
 	srid := service.GetSRID()
+	dialect := commonquery.ForEngine(engineType)
 	switch strings.ToLower(strings.TrimSpace(engineType)) {
 	case "postgresql":
-		*args = append(*args, coordinates[0], coordinates[1], coordinates[2], coordinates[3])
+		coordinatePlaceholders := appendQueryPlaceholders(dialect, args, coordinates[0], coordinates[1], coordinates[2], coordinates[3])
 		if protocol == queryProtocolOGC && srid > 0 && srid != 4326 {
-			*args = append(*args, srid)
-			return fmt.Sprintf("(ST_Intersects(%s, ST_Transform(ST_MakeEnvelope(?, ?, ?, ?, 4326), ?)))", column), nil
+			targetSRID := appendQueryPlaceholders(dialect, args, srid)[0]
+			return fmt.Sprintf("(ST_Intersects(%s, ST_Transform(ST_MakeEnvelope(%s, %s, %s, %s, 4326), %s)))", column,
+				coordinatePlaceholders[0], coordinatePlaceholders[1], coordinatePlaceholders[2], coordinatePlaceholders[3], targetSRID), nil
 		}
 		if srid <= 0 {
 			srid = 4326
 		}
-		*args = append(*args, srid)
-		return fmt.Sprintf("(ST_Intersects(%s, ST_MakeEnvelope(?, ?, ?, ?, ?)))", column), nil
+		envelopeSRID := appendQueryPlaceholders(dialect, args, srid)[0]
+		return fmt.Sprintf("(ST_Intersects(%s, ST_MakeEnvelope(%s, %s, %s, %s, %s)))", column,
+			coordinatePlaceholders[0], coordinatePlaceholders[1], coordinatePlaceholders[2], coordinatePlaceholders[3], envelopeSRID), nil
 	case "duckdb":
-		*args = append(*args, coordinates[0], coordinates[1], coordinates[2], coordinates[3])
-		envelope := "ST_MakeEnvelope(?, ?, ?, ?)"
+		coordinatePlaceholders := appendQueryPlaceholders(dialect, args, coordinates[0], coordinates[1], coordinates[2], coordinates[3])
+		envelope := fmt.Sprintf("ST_MakeEnvelope(%s, %s, %s, %s)", coordinatePlaceholders[0], coordinatePlaceholders[1], coordinatePlaceholders[2], coordinatePlaceholders[3])
 		if protocol == queryProtocolOGC && srid > 0 && srid != 4326 {
 			envelope = fmt.Sprintf("ST_Transform(%s, 'EPSG:4326', 'EPSG:%d', always_xy := true)", envelope, srid)
 		}
 		return fmt.Sprintf("(ST_Intersects(%s, %s))", column, envelope), nil
 	case "mysql":
-		*args = append(*args, coordinates[0], coordinates[1], coordinates[2], coordinates[3])
+		coordinatePlaceholders := appendQueryPlaceholders(dialect, args, coordinates[0], coordinates[1], coordinates[2], coordinates[3])
 		envelopeSRID := 4326
 		if protocol != queryProtocolOGC && srid > 0 {
 			envelopeSRID = srid
 		}
-		*args = append(*args, envelopeSRID)
-		envelope := "ST_Envelope(ST_GeomFromText(CONCAT('LINESTRING(', ?, ' ', ?, ',', ?, ' ', ?, ')'), ?))"
+		sridPlaceholder := appendQueryPlaceholders(dialect, args, envelopeSRID)[0]
+		envelope := fmt.Sprintf("ST_Envelope(ST_GeomFromText(CONCAT('LINESTRING(', %s, ' ', %s, ',', %s, ' ', %s, ')'), %s))",
+			coordinatePlaceholders[0], coordinatePlaceholders[1], coordinatePlaceholders[2], coordinatePlaceholders[3], sridPlaceholder)
 		if protocol == queryProtocolOGC && srid > 0 && srid != 4326 {
 			envelope = fmt.Sprintf("ST_Transform(%s, %d)", envelope, srid)
 		}
@@ -499,6 +503,15 @@ func compileBBoxFilter(value interface{}, service *models.QueryService, protocol
 	default:
 		return "", fmt.Errorf("%w: bbox_intersects is not supported by the selected runtime", ErrInvalidStructuredQuery)
 	}
+}
+
+func appendQueryPlaceholders(dialect commonquery.Dialect, args *[]interface{}, values ...interface{}) []string {
+	placeholders := make([]string, len(values))
+	for index, value := range values {
+		*args = append(*args, value)
+		placeholders[index] = dialect.Placeholder(len(*args))
+	}
+	return placeholders
 }
 
 func supportsGeoJSONProjection(engineType string) bool {
@@ -525,15 +538,15 @@ func compileCursorPredicate(orderBy []models.QueryOrder, values []interface{}, f
 			if normalizeErr != nil || previousValue == nil {
 				return "", ErrInvalidQueryCursor
 			}
-			conditions = append(conditions, "addp_source."+dialect.QuoteIdentifier(orderBy[previous].Field)+" = ?")
 			*args = append(*args, previousValue)
+			conditions = append(conditions, "addp_source."+dialect.QuoteIdentifier(orderBy[previous].Field)+" = "+dialect.Placeholder(len(*args)))
 		}
 		operator := ">"
 		if order.Direction == "desc" {
 			operator = "<"
 		}
-		conditions = append(conditions, "addp_source."+dialect.QuoteIdentifier(order.Field)+" "+operator+" ?")
 		*args = append(*args, value)
+		conditions = append(conditions, "addp_source."+dialect.QuoteIdentifier(order.Field)+" "+operator+" "+dialect.Placeholder(len(*args)))
 		parts[index] = "(" + strings.Join(conditions, " AND ") + ")"
 	}
 	return "(" + strings.Join(parts, " OR ") + ")", nil

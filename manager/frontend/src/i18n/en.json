@@ -917,17 +917,6 @@
       "uploadSuccess": "Upload successful",
       "uploadFailed": "Upload failed: {msg}"
     },
-    "export": {
-      "title": "Export Data",
-      "format": "Format",
-      "formatPlaceholder": "Select an export format",
-      "formatRequired": "Please select an export format",
-      "fileName": "File Name",
-      "fileNamePlaceholder": "Enter a file name",
-      "fileNameRequired": "Please enter a file name",
-      "cancel": "Cancel",
-      "start": "Start Export"
-    },
     "explorer": {
       "storageEngines": "Storage Engines",
       "engine": "Engine",
@@ -1010,7 +999,7 @@
       "graphSampleProperties": "Properties",
       "uploadData": "Upload Data",
       "importData": "Import Data",
-      "exportData": "Export",
+      "exportData": "Export All Results",
       "downloadPage": "Download",
       "loadingSchemaGraph": "Loading schema graph...",
       "noSchemaData": "No schema data available",

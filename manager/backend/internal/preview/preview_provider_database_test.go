@@ -273,7 +273,7 @@ func TestDatabaseTablePreviewProviderBindsProfileConditionsBeforePaging(t *testi
 		t.Fatalf("queryData() error = %v", err)
 	}
 	call := reader.readBatchCalls[0]
-	if !strings.Contains(call.Query, `WHERE ("status" = ?)`) || strings.Contains(call.Query, "active") {
+	if !strings.Contains(call.Query, `WHERE ("status" = $1)`) || strings.Contains(call.Query, "active") {
 		t.Fatalf("parameterized query = %q", call.Query)
 	}
 	if !reflect.DeepEqual(call.Args, []interface{}{"active"}) {

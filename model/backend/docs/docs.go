@@ -2103,6 +2103,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "仅当逻辑表为草稿、不属于物化组、已显式清空物化配置且不存在非终态物化批次时，删除终态物化批次操作状态和逻辑表聚合；通用任务执行审计继续保留。| Delete terminal materialization batch operation state and the logical-table aggregate only when the table is a draft, is not in a materialization group, has an explicitly cleared materialization configuration, and has no non-terminal materialization batch; common task execution audit history is preserved.",
                 "produces": [
                     "application/json"
                 ],
@@ -2160,7 +2161,7 @@ const docTemplate = `{
                         }
                     },
                     "409": {
-                        "description": "逻辑表状态或关联冲突 | Logical table state or relation conflict",
+                        "description": "版本、状态、关联、物化组、物化配置或非终态批次冲突 | Version, state, relation, materialization group, materialization configuration, or non-terminal batch conflict",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
@@ -3475,7 +3476,7 @@ const docTemplate = `{
                 ]
             }
         },
-        "/logical-tables/{id}/metrics": {
+        "/logical-tables/{id}/metric-implementations": {
             "get": {
                 "security": [
                     {
@@ -3488,11 +3489,11 @@ const docTemplate = `{
                 "tags": [
                     "Model"
                 ],
-                "summary": "查询事实表关联指标列表 | List fact table metric mappings",
+                "summary": "查询事实表指标实现 | List fact table metric implementations",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "事实表ID | Fact table ID",
+                        "description": "事实表 ID | Fact table ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -3500,34 +3501,34 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "指标关联列表 | Metric mapping list",
+                        "description": "OK",
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/github_com_addp_model_internal_models.FactMetricMapping"
+                                "$ref": "#/definitions/github_com_addp_model_internal_models.MetricImplementation"
                             }
                         }
                     },
                     "400": {
-                        "description": "事实表 ID 或表类型无效 | Invalid fact table ID or table type",
+                        "description": "请求无效 | Invalid request",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
                     },
                     "401": {
-                        "description": "未认证 | Authentication required",
+                        "description": "未认证 | Unauthorized",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
                     },
                     "403": {
-                        "description": "权限不足 | Permission denied",
+                        "description": "无权限 | Forbidden",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
                     },
                     "404": {
-                        "description": "逻辑表不存在 | Logical table not found",
+                        "description": "事实表不存在 | Fact table not found",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
@@ -3553,64 +3554,58 @@ const docTemplate = `{
                 "tags": [
                     "Model"
                 ],
-                "summary": "添加事实表指标关联 | Add fact table metric mapping",
+                "summary": "创建指标实现 | Create metric implementation",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "事实表ID | Fact table ID",
+                        "description": "事实表 ID | Fact table ID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "创建请求 | Create request",
+                        "description": "完整指标实现与父版本 | Full metric implementation and parent version",
                         "name": "body",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.CreateFactMetricMappingRequest"
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.CreateMetricImplementationRequest"
                         }
                     }
                 ],
                 "responses": {
                     "201": {
-                        "description": "已创建的关联 | Created mapping",
+                        "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.FactMetricMutationResponse"
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.MetricImplementationMutationResponse"
                         }
                     },
                     "400": {
-                        "description": "请求的表类型无效 | Invalid table type",
+                        "description": "请求无效 | Invalid request",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
                     },
                     "401": {
-                        "description": "未认证 | Authentication required",
+                        "description": "未认证 | Unauthorized",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
                     },
                     "403": {
-                        "description": "权限不足 | Permission denied",
+                        "description": "无权限 | Forbidden",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
                     },
                     "404": {
-                        "description": "逻辑表或字段不存在 | Logical table or field not found",
+                        "description": "事实表、字段或指标定义修订不存在 | Fact table, field, or metric definition revision not found",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
                     },
                     "409": {
-                        "description": "逻辑表状态或指标关联冲突 | Logical table state or metric mapping conflict",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
-                        }
-                    },
-                    "503": {
-                        "description": "数据标准服务不可用 | Data Standard service unavailable",
+                        "description": "版本、状态或唯一性冲突 | Version, state, or uniqueness conflict",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
@@ -3622,12 +3617,15 @@ const docTemplate = `{
                 ]
             }
         },
-        "/logical-tables/{id}/metrics/{mid}": {
-            "delete": {
+        "/logical-tables/{id}/metric-implementations/{implementation_id}": {
+            "put": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
+                ],
+                "consumes": [
+                    "application/json"
                 ],
                 "produces": [
                     "application/json"
@@ -3635,19 +3633,103 @@ const docTemplate = `{
                 "tags": [
                     "Model"
                 ],
-                "summary": "删除事实表指标关联 | Remove fact table metric mapping",
+                "summary": "更新指标实现 | Update metric implementation",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "事实表ID | Fact table ID",
+                        "description": "事实表 ID | Fact table ID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "integer",
-                        "description": "关联ID | Mapping ID",
-                        "name": "mid",
+                        "description": "指标实现 ID | Metric implementation ID",
+                        "name": "implementation_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "完整指标实现与父版本 | Full metric implementation and parent version",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.UpdateMetricImplementationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.MetricImplementationMutationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求无效 | Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "无权限 | Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "指标实现、字段或指标定义修订不存在 | Metric implementation, field, or metric definition revision not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "版本、状态或唯一性冲突 | Version, state, or uniqueness conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.logical_model.update"
+                ]
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "删除指标实现 | Delete metric implementation",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "事实表 ID | Fact table ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "指标实现 ID | Metric implementation ID",
+                        "name": "implementation_id",
                         "in": "path",
                         "required": true
                     },
@@ -3663,37 +3745,37 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "删除成功 | Removed successfully",
+                        "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.VersionResponse"
                         }
                     },
                     "400": {
-                        "description": "事实表或关联 ID 无效 | Invalid fact table or mapping ID",
+                        "description": "请求无效 | Invalid request",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
                     },
                     "401": {
-                        "description": "未认证 | Authentication required",
+                        "description": "未认证 | Unauthorized",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
                     },
                     "403": {
-                        "description": "权限不足 | Permission denied",
+                        "description": "无权限 | Forbidden",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
                     },
                     "404": {
-                        "description": "逻辑表或指标关联不存在 | Logical table or metric mapping not found",
+                        "description": "指标实现或事实表不存在 | Metric implementation or fact table not found",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
                     },
                     "409": {
-                        "description": "逻辑表状态冲突 | Logical table state conflict",
+                        "description": "版本或状态冲突 | Version or state conflict",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
                         }
@@ -5082,30 +5164,6 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_model_internal_models.CreateFactMetricMappingRequest": {
-            "type": "object",
-            "required": [
-                "metric_id",
-                "version"
-            ],
-            "properties": {
-                "field_id": {
-                    "type": "integer",
-                    "minimum": 1
-                },
-                "metric_id": {
-                    "type": "integer",
-                    "minimum": 1
-                },
-                "note": {
-                    "type": "string"
-                },
-                "version": {
-                    "type": "integer",
-                    "minimum": 1
-                }
-            }
-        },
         "github_com_addp_model_internal_models.CreateLogicalFieldRequest": {
             "type": "object",
             "required": [
@@ -5232,6 +5290,68 @@ const docTemplate = `{
                         "fact",
                         "dimension"
                     ]
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.CreateMetricImplementationRequest": {
+            "type": "object",
+            "required": [
+                "dimension_config",
+                "expression_config",
+                "filter_config",
+                "grain",
+                "metric_definition_id",
+                "metric_definition_revision_id",
+                "name",
+                "source_config",
+                "status",
+                "version"
+            ],
+            "properties": {
+                "dimension_config": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "expression_config": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "filter_config": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "grain": {
+                    "type": "string"
+                },
+                "metric_definition_id": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "metric_definition_revision_id": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 200
+                },
+                "note": {
+                    "type": "string"
+                },
+                "source_config": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "active",
+                        "disabled"
+                    ]
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
                 }
             }
         },
@@ -5570,49 +5690,6 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_model_internal_models.FactMetricMapping": {
-            "type": "object",
-            "properties": {
-                "created_at": {
-                    "type": "string"
-                },
-                "created_by": {
-                    "type": "integer"
-                },
-                "fact_table_id": {
-                    "description": "→ model.logical_tables (table_type='fact')",
-                    "type": "integer"
-                },
-                "field_id": {
-                    "description": "→ model.logical_fields（可选，哪个字段是该指标的计算基础）",
-                    "type": "integer"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "metric_id": {
-                    "description": "→ standard.metrics（无 DB FK 约束，跨 schema）",
-                    "type": "integer"
-                },
-                "note": {
-                    "type": "string"
-                },
-                "tenant_id": {
-                    "type": "integer"
-                }
-            }
-        },
-        "github_com_addp_model_internal_models.FactMetricMutationResponse": {
-            "type": "object",
-            "properties": {
-                "mapping": {
-                    "$ref": "#/definitions/github_com_addp_model_internal_models.FactMetricMapping"
-                },
-                "version": {
-                    "type": "integer"
-                }
-            }
-        },
         "github_com_addp_model_internal_models.JSONB": {
             "type": "object",
             "additionalProperties": true
@@ -5910,6 +5987,77 @@ const docTemplate = `{
                 "message": {
                     "type": "string",
                     "example": "操作成功"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.MetricImplementation": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "dimension_config": {
+                    "$ref": "#/definitions/github_com_addp_model_internal_models.JSONB"
+                },
+                "expression_config": {
+                    "$ref": "#/definitions/github_com_addp_model_internal_models.JSONB"
+                },
+                "fact_table_id": {
+                    "type": "integer"
+                },
+                "filter_config": {
+                    "$ref": "#/definitions/github_com_addp_model_internal_models.JSONB"
+                },
+                "grain": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "metric_definition_id": {
+                    "type": "integer"
+                },
+                "metric_definition_revision_id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "source_config": {
+                    "$ref": "#/definitions/github_com_addp_model_internal_models.JSONB"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "active",
+                        "disabled"
+                    ]
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.MetricImplementationMutationResponse": {
+            "type": "object",
+            "properties": {
+                "implementation": {
+                    "$ref": "#/definitions/github_com_addp_model_internal_models.MetricImplementation"
+                },
+                "version": {
+                    "type": "integer"
                 }
             }
         },
@@ -6527,6 +6675,68 @@ const docTemplate = `{
                         "entity",
                         "fact",
                         "dimension"
+                    ]
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.UpdateMetricImplementationRequest": {
+            "type": "object",
+            "required": [
+                "dimension_config",
+                "expression_config",
+                "filter_config",
+                "grain",
+                "metric_definition_id",
+                "metric_definition_revision_id",
+                "name",
+                "source_config",
+                "status",
+                "version"
+            ],
+            "properties": {
+                "dimension_config": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "expression_config": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "filter_config": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "grain": {
+                    "type": "string"
+                },
+                "metric_definition_id": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "metric_definition_revision_id": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 200
+                },
+                "note": {
+                    "type": "string"
+                },
+                "source_config": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "active",
+                        "disabled"
                     ]
                 },
                 "version": {

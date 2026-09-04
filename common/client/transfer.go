@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -64,6 +65,80 @@ type TransferTaskResponse struct {
 type TriggerTaskResponse struct {
 	ID          uint   `json:"id"`           // 对应 TaskExecution.ID，仅用于内部关联
 	ExecutionID string `json:"execution_id"` // 对应 common.task_executions.execution_id，前端和 Monitor 使用该 UUID
+	Status      string `json:"status"`
+}
+
+// CreateTransferExecutionRequest creates a one-off bounded sync execution.
+// It deliberately exposes the stable transfer endpoint contract instead of a
+// Transfer task definition or its private database identity.
+type CreateTransferExecutionRequest struct {
+	Name             string                  `json:"name"`
+	Config           TransferExecutionConfig `json:"config"`
+	BatchSize        int                     `json:"batch_size,omitempty"`
+	AutoScanMetadata bool                    `json:"auto_scan_metadata,omitempty"`
+	TenantID         uint                    `json:"-"`
+}
+
+type TransferExecutionConfig struct {
+	Runtime    TransferExecutionRuntime     `json:"runtime"`
+	Load       TransferExecutionLoad        `json:"load"`
+	Source     TransferExecutionEndpoint    `json:"source"`
+	Target     TransferExecutionEndpoint    `json:"target"`
+	Transforms []TransferExecutionTransform `json:"transforms,omitempty"`
+	BatchSize  int                          `json:"batch_size,omitempty"`
+}
+
+type TransferExecutionRuntime struct {
+	Boundary string `json:"boundary"`
+}
+
+type TransferExecutionLoad struct {
+	Mode string `json:"mode"`
+}
+
+type TransferExecutionEndpoint struct {
+	Locator        string                  `json:"locator,omitempty"`
+	ParentLocator  string                  `json:"parent_locator,omitempty"`
+	Name           string                  `json:"name,omitempty"`
+	DataType       string                  `json:"data_type"`
+	Representation string                  `json:"representation"`
+	Format         string                  `json:"format,omitempty"`
+	Options        map[string]interface{}  `json:"options,omitempty"`
+	Policy         map[string]interface{}  `json:"policy,omitempty"`
+	Query          *TransferExecutionQuery `json:"query,omitempty"`
+}
+
+type TransferExecutionQuery struct {
+	Language   string                        `json:"language"`
+	Statement  string                        `json:"statement"`
+	Parameters map[string]interface{}        `json:"parameters,omitempty"`
+	Inputs     []TransferExecutionQueryInput `json:"inputs,omitempty"`
+}
+
+// TransferExecutionQueryInput is one relation binding already resolved by the
+// query owner. Transfer validates the locator and records it as an input fact;
+// it never parses query text to infer lineage.
+type TransferExecutionQueryInput struct {
+	Name    string `json:"name"`
+	Locator string `json:"locator"`
+}
+
+type TransferExecutionTransform struct {
+	Type    string                          `json:"type"`
+	Version string                          `json:"version,omitempty"`
+	Mode    string                          `json:"mode,omitempty"`
+	Fields  []TransferExecutionFieldMapping `json:"fields,omitempty"`
+}
+
+type TransferExecutionFieldMapping struct {
+	Source     string `json:"source"`
+	Target     string `json:"target"`
+	TargetType string `json:"target_type"`
+	Nullable   bool   `json:"nullable,omitempty"`
+}
+
+type CreateTransferExecutionResponse struct {
+	ExecutionID string `json:"execution_id"`
 	Status      string `json:"status"`
 }
 
@@ -157,9 +232,49 @@ func (c *TransferClient) TriggerTask(taskID, tenantID uint) (*TriggerTaskRespons
 	return &result, nil
 }
 
-// GetExecution 根据 Transfer execution UUID 查询执行详情。
+// CreateExecution creates a one-off bounded sync execution without persisting
+// a Transfer task definition.
+func (c *TransferClient) CreateExecution(ctx context.Context, req *CreateTransferExecutionRequest) (*CreateTransferExecutionResponse, error) {
+	if req == nil {
+		return nil, errors.New("Transfer execution request is required")
+	}
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/v1/transfer/executions", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if err := c.addAuthWithTenant(httpReq, req.TenantID); err != nil {
+		return nil, err
+	}
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+	if resp.StatusCode != http.StatusAccepted {
+		return nil, fmt.Errorf("create execution failed with status %d: %s", resp.StatusCode, string(respBody))
+	}
+	var result CreateTransferExecutionResponse
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	if strings.TrimSpace(result.ExecutionID) == "" {
+		return nil, errors.New("empty response data")
+	}
+	return &result, nil
+}
+
+// GetExecution queries the caller module's own one-off Transfer execution.
 func (c *TransferClient) GetExecution(executionID string, tenantID uint) (*TransferExecutionResponse, error) {
-	url := fmt.Sprintf("%s/api/v1/transfer/executions/%s", c.baseURL, executionID)
+	url := fmt.Sprintf("%s/api/v1/transfer/executions/%s/result", c.baseURL, executionID)
 
 	httpReq, err := http.NewRequest("GET", url, nil)
 	if err != nil {

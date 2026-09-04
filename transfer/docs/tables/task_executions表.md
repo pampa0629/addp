@@ -72,16 +72,16 @@ Transfer 将 checkpoint 观测信息写入 `metadata`：
 4. Transfer 只保存 `resume_marker` / `commit_marker`，不解析 marker 内部位置字段。
 5. 保存 marker 不表示当前执行可从 checkpoint 后自动恢复。
 
-## 四、error_details 中的日志和错误
+## 四、执行日志和错误
 
-Transfer 将失败信息和简短执行日志写入 `error_details`：
+Transfer 将简短执行日志写入 `metadata.execution_logs`，只把真实失败、超时或取消信息写入 `error_details`：
 
 | 字段 | 说明 |
 |---|---|
-| `message` | 失败错误消息。 |
-| `logs` | 执行过程中的简短日志。 |
+| `metadata.execution_logs` | 执行过程中的简短日志。 |
+| `error_details.message` | 失败、超时或取消的错误消息。 |
 
-如果后续日志量增大，应拆到独立日志表或对象存储；当前表内日志只作为执行详情辅助信息。
+成功 execution 的 `error_details` 必须为空。Monitor 将 `metadata.execution_logs` 作为中性“执行日志”展示，只对真实 `error_details` 使用错误样式。如果后续日志量增大，应拆到独立日志表或对象存储；当前表内日志只作为执行详情辅助信息。
 
 ## 五、恢复语义
 

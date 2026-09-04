@@ -27,12 +27,9 @@ func TestCatalogResourceRoutesRequireCatalogServiceAndResolveCurrentMetric(t *te
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, source_type TEXT NOT NULL,
 			source_identity INTEGER NOT NULL, operation TEXT NOT NULL, resource_version INTEGER NOT NULL,
 			snapshot JSON NOT NULL, observed_at DATETIME NOT NULL)`,
-		`CREATE TABLE standard.metrics (
-			id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, category_id INTEGER, domain_id INTEGER,
-			name TEXT NOT NULL, code TEXT NOT NULL, type TEXT NOT NULL, definition TEXT NOT NULL, formula TEXT NOT NULL,
-			unit_id INTEGER, base_metric_id INTEGER, derivation_config JSON, status TEXT NOT NULL, steward_id INTEGER,
-			tags JSON, created_by INTEGER NOT NULL, updated_by INTEGER, created_at DATETIME, updated_at DATETIME,
-			version INTEGER NOT NULL, lifecycle_state TEXT NOT NULL)`,
+		`CREATE TABLE standard.metric_definitions (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, category_id INTEGER, scope_type TEXT NOT NULL, owner_domain_id INTEGER, code TEXT NOT NULL, steward_id INTEGER, tags TEXT, draft_revision_id INTEGER, created_by INTEGER NOT NULL, updated_by INTEGER, created_at DATETIME, updated_at DATETIME, version INTEGER NOT NULL DEFAULT 1, lifecycle_state TEXT NOT NULL DEFAULT 'active')`,
+		`CREATE TABLE standard.metric_definition_revisions (id INTEGER PRIMARY KEY, metric_definition_id INTEGER NOT NULL, revision_no INTEGER NOT NULL, status TEXT NOT NULL, metric_type TEXT NOT NULL, name TEXT NOT NULL, definition TEXT NOT NULL, statistical_caliber TEXT NOT NULL, semantic_formula TEXT, unit_id INTEGER, change_summary TEXT NOT NULL, effective_from DATETIME, effective_to DATETIME, submitted_by INTEGER, submitted_at DATETIME, published_by INTEGER, published_at DATETIME, created_by INTEGER NOT NULL, updated_by INTEGER, created_at DATETIME, updated_at DATETIME)`,
+		`CREATE TABLE standard.metric_definition_revision_dependencies (id INTEGER PRIMARY KEY, metric_definition_revision_id INTEGER NOT NULL, dependency_definition_id INTEGER NOT NULL, dependency_revision_id INTEGER, relation_kind TEXT NOT NULL, coefficient REAL, note TEXT, created_at DATETIME)`,
 	} {
 		if err := db.Exec(statement).Error; err != nil {
 			t.Fatal(err)
@@ -45,9 +42,14 @@ func TestCatalogResourceRoutesRequireCatalogServiceAndResolveCurrentMetric(t *te
 		       (8, 'metric', 10, 'upsert', 1, '{"name":"Other tenant"}', ?)`, now, now).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec(`INSERT INTO standard.metrics
-		(id, tenant_id, domain_id, name, code, type, definition, formula, derivation_config, status, tags, created_by, version, lifecycle_state)
-		VALUES (9, 7, 31, 'Current order amount', 'order_amount', 'atomic', '', '', '{}', 'approved', '[]', 1, 3, 'active')`).Error; err != nil {
+	if err := db.Exec(`INSERT INTO standard.metric_definitions
+		(id, tenant_id, owner_domain_id, scope_type, code, tags, created_by, version, lifecycle_state)
+		VALUES (9, 7, 31, 'domain', 'order_amount', '[]', 1, 3, 'active')`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO standard.metric_definition_revisions
+		(id, metric_definition_id, revision_no, status, metric_type, name, definition, statistical_caliber, change_summary, effective_from, created_by)
+		VALUES (19, 9, 1, 'published', 'atomic', 'Current order amount', 'Order amount', 'All completed orders', 'Initial', ?, 1)`, now.Add(-time.Hour)).Error; err != nil {
 		t.Fatal(err)
 	}
 	authServer := authtest.NewTenantServiceAuthContextServer(t, "7", map[string]authtest.TenantServiceIdentity{

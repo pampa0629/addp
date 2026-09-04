@@ -16,6 +16,23 @@ func TestPostgreSQLPartitionedChangeApplyDeclaresUpsertDeleteAndSkip(t *testing.
 	}
 }
 
+func TestPostgreSQLPrepareQueryAcceptsBoundPositionalArguments(t *testing.T) {
+	prepared, err := (&PostgreSQLPlugin{}).PrepareQuery(t.Context(), plugin.ConnectionInfo{}, plugin.QueryRequest{
+		Language: "sql",
+		Query:    `SELECT * FROM public.items WHERE city = $1`,
+		Options: plugin.QueryOptions{
+			ReadOnly: true,
+			Args:     []interface{}{"长沙市"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("PrepareQuery() error = %v", err)
+	}
+	if prepared == nil {
+		t.Fatal("PrepareQuery() returned nil plan")
+	}
+}
+
 func TestPostgreSQLIsSystemSchema(t *testing.T) {
 	plugin := &PostgreSQLPlugin{}
 

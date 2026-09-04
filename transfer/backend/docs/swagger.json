@@ -101,6 +101,65 @@
                 "x-addp-required-permissions": [
                     "transfer.task.read"
                 ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "模块 Service Client 创建不带 Transfer 任务定义的一次性 bounded sync execution；调用来源由认证 Client ID 推导，响应只返回统一 execution_id。| A module Service Client creates a one-off bounded sync execution without a Transfer task definition; the source module is derived from the authenticated Client ID and the response contains only the unified execution_id.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "执行管理 | Execution Management"
+                ],
+                "summary": "创建一次性同步执行 | Create one-off sync execution",
+                "parameters": [
+                    {
+                        "description": "一次性同步执行 | One-off sync execution",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_transfer_internal_models.CreateAdHocExecutionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_transfer_internal_models.CreateAdHocExecutionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "transfer.execution.create"
+                ]
             }
         },
         "/executions/statistics": {
@@ -306,6 +365,62 @@
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "transfer.task.read"
+                ]
+            }
+        },
+        "/executions/{execution_id}/result": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅返回 source 与当前模块 Service Client 一致、且没有 Transfer 任务定义的一次性 execution。| Returns only a one-off execution whose source matches the authenticated module Service Client and which has no Transfer task definition.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "执行管理 | Execution Management"
+                ],
+                "summary": "获取模块一次性执行结果 | Get module-owned one-off execution result",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "执行ID | Execution ID",
+                        "name": "execution_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_transfer_internal_models.TaskExecution"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "transfer.execution.read"
                 ]
             }
         },
@@ -2167,6 +2282,38 @@
                 }
             }
         },
+        "github_com_addp_transfer_internal_models.CreateAdHocExecutionRequest": {
+            "type": "object",
+            "required": [
+                "config",
+                "name"
+            ],
+            "properties": {
+                "auto_scan_metadata": {
+                    "type": "boolean"
+                },
+                "batch_size": {
+                    "type": "integer"
+                },
+                "config": {
+                    "$ref": "#/definitions/github_com_addp_transfer_internal_models.TableTransferTaskConfigDoc"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_transfer_internal_models.CreateAdHocExecutionResponse": {
+            "type": "object",
+            "properties": {
+                "execution_id": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_transfer_internal_models.CreateTaskRequestDoc": {
             "type": "object",
             "properties": {
@@ -2872,9 +3019,28 @@
                 }
             }
         },
+        "github_com_addp_transfer_internal_models.TransferQueryInputDoc": {
+            "type": "object",
+            "properties": {
+                "locator": {
+                    "type": "string",
+                    "example": "addp://engine/9/path/public/orders?type=table\u0026item_id=42"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "orders"
+                }
+            }
+        },
         "github_com_addp_transfer_internal_models.TransferQuerySourceDoc": {
             "type": "object",
             "properties": {
+                "inputs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_transfer_internal_models.TransferQueryInputDoc"
+                    }
+                },
                 "language": {
                     "type": "string",
                     "example": "mql"

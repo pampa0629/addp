@@ -5,6 +5,7 @@ import (
 	"log"
 
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/common/exportartifact"
 	"github.com/addp/develop/backend/internal/config"
 	"github.com/addp/develop/backend/internal/models"
 	"gorm.io/driver/postgres"
@@ -21,6 +22,9 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 
 	if err := commonExecution.EnsureStore(db); err != nil {
 		return nil, fmt.Errorf("failed to ensure execution store: %w", err)
+	}
+	if err := exportartifact.EnsureStore(db, "develop.export_sessions"); err != nil {
+		return nil, fmt.Errorf("failed to ensure export session store: %w", err)
 	}
 
 	// AutoMigrate - 确保表结构最新

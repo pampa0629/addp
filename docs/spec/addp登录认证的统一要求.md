@@ -106,7 +106,7 @@ Access Token 只能保存在当前 JavaScript 运行时内存中：
 - 与当前 Refresh Token Family 关联，退出、Family 撤销或旧 Refresh Token 重用时同步撤销；
 - 有效期不超过当前 User Access Token，默认 15 分钟；
 - 通过 `addp_resource_access_ticket` HttpOnly Cookie 传输，不返回给 JavaScript；
-- 每个 Owner 使用独立 Path，例如 Manager 为 `/api/v1/manager`、Standard 为 `/api/v1/standard`；
+- 每个 Owner 使用独立 Path，例如 Develop 为 `/api/v1/develop`、Manager 为 `/api/v1/manager`、Standard 为 `/api/v1/standard`；Develop 仅将该票据用于导出会话文件等浏览器原生 GET/HEAD 资源，不得用于普通 JSON API；
 - Owner 只允许明确声明的 GET/HEAD 资源路由消费，普通业务 API 不接受该票据；
 - 不进入 URL、浏览器历史、Referrer、日志或前端持久化存储。
 

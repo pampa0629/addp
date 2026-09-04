@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import {
   buildQueryExecutionContract,
-  buildQueryResultCSV,
   formatGeneratedQueryForEditor,
   formatMQLQuery,
   formatterLanguageForQuery,
@@ -186,10 +185,5 @@ assert.deepEqual(result.rows, [{ id: 1 }])
 assert.equal(result.execution_id, 'execution-1')
 assert.equal(result.truncated, true)
 assert.equal(result.effect, 'read')
-
-assert.equal(
-  buildQueryResultCSV(['name', 'payload'], [{ name: 'a,"b"\nline', payload: { ok: true } }]),
-  'name,payload\r\n"a,""b""\nline","{""ok"":true}"'
-)
 
 console.log('query workbench tests passed')

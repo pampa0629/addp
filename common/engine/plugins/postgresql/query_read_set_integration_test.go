@@ -59,6 +59,41 @@ func TestIntegrationResolvePostgresQueryReadSetAllowsTrustedBuiltins(t *testing.
 	assertPostgresReadPath(t, readSet.Paths[0], 91, schemaName, tableName, plugin.EngineCatalogKindTable)
 }
 
+func TestIntegrationResolvePostgresQueryReadSetAllowsTrustedPostGISFunctions(t *testing.T) {
+	db, pg, connInfo := openPostgresPrepareIntegration(t, false)
+	defer db.Close()
+
+	ctx := context.Background()
+	schemaName := "common_pg_it"
+	tableName := fmt.Sprintf("read_set_postgis_%d", time.Now().UnixNano())
+	createPostgresPrepareBaseTable(t, ctx, db, schemaName, tableName, `"id" bigint NOT NULL, "shape" geometry(Point, 4326)`)
+	defer dropPostgresPrepareTable(db, schemaName, tableName)
+
+	query := fmt.Sprintf(`
+		SELECT id, ST_AsGeoJSON(shape) AS shape
+		FROM "%s"."%s"
+		WHERE ST_Intersects(shape, ST_MakeEnvelope($1, $2, $3, $4, $5))
+	`, schemaName, tableName)
+	prepared, err := pg.PrepareQuery(ctx, connInfo, plugin.QueryRequest{
+		EngineID: 91, Language: "sql", Query: query,
+		Options: plugin.QueryOptions{
+			ReadOnly: true,
+			Args:     []interface{}{112.5, 27.5, 114.5, 29.5, 4326},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	readSet, err := prepared.ReadSet(ctx)
+	if err != nil {
+		t.Fatalf("PreparedQuery.ReadSet failed: %v", err)
+	}
+	if len(readSet.Paths) != 1 {
+		t.Fatalf("paths = %#v, want one", readSet.Paths)
+	}
+	assertPostgresReadPath(t, readSet.Paths[0], 91, schemaName, tableName, plugin.EngineCatalogKindTable)
+}
+
 func TestIntegrationResolvePostgresQueryReadSetRejectsUserFunction(t *testing.T) {
 	db, pg, connInfo := openPostgresPrepareIntegration(t, false)
 	defer db.Close()

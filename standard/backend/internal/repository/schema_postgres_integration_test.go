@@ -185,6 +185,65 @@ func TestMigrateAgainstPostgres(t *testing.T) {
 	}
 }
 
+func TestPostgresMetricRevisionEffectiveIntervals(t *testing.T) {
+	dsn := os.Getenv("STANDARD_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("STANDARD_POSTGRES_TEST_DSN is not set")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open postgres: %v", err)
+	}
+	if err := Migrate(db); err != nil {
+		t.Fatalf("migrate standard schema: %v", err)
+	}
+
+	tenantID := time.Now().UnixNano()
+	metric := models.MetricDefinition{
+		TenantID: tenantID, Code: "effective_interval", ScopeType: models.StandardScopeTenantCommon,
+		Tags: models.StringArray{}, CreatedBy: 1, Version: 1, LifecycleState: "active",
+	}
+	first := models.MetricDefinitionRevision{
+		MetricType: models.MetricTypeAtomic, Name: "Effective interval", Definition: "definition",
+		StatisticalCaliber: "caliber", ChangeSummary: "initial", CreatedBy: 1,
+	}
+	if err := NewMetricRepository(db).Create(&metric, &first, nil); err != nil {
+		t.Fatalf("create metric: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = db.Exec("DELETE FROM standard.metric_definitions WHERE tenant_id = ?", tenantID).Error
+	})
+
+	boundary := time.Now().UTC().Truncate(time.Microsecond)
+	firstFrom := boundary.Add(-time.Hour)
+	if err := db.Model(&first).Updates(map[string]any{
+		"status": models.RevisionStatusPublished, "effective_from": firstFrom, "effective_to": boundary,
+	}).Error; err != nil {
+		t.Fatalf("publish first metric revision: %v", err)
+	}
+
+	overlapFrom := boundary.Add(-time.Minute)
+	overlapTo := boundary.Add(time.Hour)
+	overlap := models.MetricDefinitionRevision{
+		MetricDefinitionID: metric.ID, RevisionNo: 2, Status: models.RevisionStatusPublished,
+		MetricType: models.MetricTypeAtomic, Name: "Overlap", Definition: "definition",
+		StatisticalCaliber: "caliber", ChangeSummary: "overlap", EffectiveFrom: &overlapFrom,
+		EffectiveTo: &overlapTo, CreatedBy: 1,
+	}
+	if err := db.Create(&overlap).Error; err == nil {
+		t.Fatal("overlapping published metric revision should be rejected")
+	}
+
+	adjacent := models.MetricDefinitionRevision{
+		MetricDefinitionID: metric.ID, RevisionNo: 2, Status: models.RevisionStatusPublished,
+		MetricType: models.MetricTypeAtomic, Name: "Adjacent", Definition: "definition",
+		StatisticalCaliber: "caliber", ChangeSummary: "adjacent", EffectiveFrom: &boundary, CreatedBy: 1,
+	}
+	if err := db.Create(&adjacent).Error; err != nil {
+		t.Fatalf("adjacent published metric revision should be allowed: %v", err)
+	}
+}
+
 func TestMigrateRenamesLegacyDocumentVersion(t *testing.T) {
 	dsn := os.Getenv("STANDARD_POSTGRES_TEST_DSN")
 	if dsn == "" {

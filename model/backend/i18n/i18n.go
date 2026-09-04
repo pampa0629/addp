@@ -49,6 +49,9 @@ const (
 	MsgDDLPreviewInvalid               = "model.logical_table.ddl_preview_invalid"
 	MsgTableCodeConflict               = "model.logical_table.code_conflict"
 	MsgTableStateConflict              = "model.logical_table.state_conflict"
+	MsgTableMaterializationConfigured  = "model.logical_table.materialization_configured"
+	MsgTableMaterializationBatchActive = "model.logical_table.materialization_batch_active"
+	MsgTableMaterializationGroupMember = "model.logical_table.materialization_group_member"
 	MsgTableFieldsRequired             = "model.logical_table.approval_fields_required"
 	MsgTablePrimaryKeyRequired         = "model.logical_table.approval_primary_key_required"
 	MsgFieldNotFound                   = "model.logical_table.field_not_found"
@@ -78,9 +81,9 @@ const (
 	MsgLayerCodeConflict = "model.dw_layer.code_conflict"
 	MsgLayerInUse        = "model.dw_layer.in_use"
 
-	// 指标映射
-	MsgInvalidMappingID = "model.fact_metric.invalid_mapping_id"
-	MsgMetricConflict   = "model.fact_metric.conflict"
+	// 指标实现
+	MsgInvalidMetricImplementationID = "model.metric_implementation.invalid_id"
+	MsgMetricImplementationConflict  = "model.metric_implementation.conflict"
 
 	// 维度关联
 	MsgInvalidRelationID = "model.table_relation.invalid_relation_id"

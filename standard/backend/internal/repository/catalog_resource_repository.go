@@ -2,8 +2,10 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	commonapi "github.com/addp/common/api"
 	"github.com/addp/standard/internal/models"
 	"gorm.io/gorm"
 )
@@ -29,13 +31,21 @@ func (r *CatalogResourceRepository) ListChanges(ctx context.Context, tenantID, a
 	return rows, nil
 }
 
-func (r *CatalogResourceRepository) ListMetrics(ctx context.Context, tenantID int64, ids []int64) ([]models.Metric, error) {
-	var rows []models.Metric
+func (r *CatalogResourceRepository) ListMetrics(ctx context.Context, tenantID int64, ids []int64) ([]models.MetricDefinitionAggregate, error) {
+	rows := make([]models.MetricDefinitionAggregate, 0, len(ids))
 	if len(ids) == 0 {
 		return rows, nil
 	}
-	if err := r.db.WithContext(ctx).Where("tenant_id = ? AND id IN ?", tenantID, ids).Find(&rows).Error; err != nil {
-		return nil, fmt.Errorf("resolve Standard catalog metrics: %w", err)
+	metricRepo := NewMetricRepository(r.db.WithContext(ctx))
+	for _, id := range ids {
+		item, err := metricRepo.GetAggregate(id, tenantID)
+		if errors.Is(err, commonapi.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("resolve Standard catalog metric %d: %w", id, err)
+		}
+		rows = append(rows, *item)
 	}
 	return rows, nil
 }

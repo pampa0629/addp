@@ -8,6 +8,8 @@ Manager 模块负责数据探查、数据预览、表格数据剖析、混合检
 
 Manager 通过本地保护投影统一约束预览、剖析和全文索引写入，用户请求不调用 Security。`profile=suppress` 在持久化前删除敏感字段及全部祖先容器的字段剖析对象和对应全局观察，防止父级 Top N 携带敏感叶子值；`search_index=mask` 在写入 Meilisearch 前覆盖正文及所有正文派生字符串。投影变化与历史剖析结果、条件值和既有全文索引记录的清除，以及 cursor 保存共用本地安装屏障；启动时对已安装投影重放清理。
 
+Manager 的一次性数据库 item 导出通过 Common 强类型 Client 直接创建 Transfer bounded `sync` ad-hoc execution，不创建临时 `transfer.transfer_tasks`。`manager.export_sessions` 只保存 Transfer 的统一 `execution_id` 和短生命周期下载会话事实，不保存 Transfer task ID；状态回查、artifact manifest、发起用户隔离与 infra 暂存清理由 `common/exportartifact` 提供唯一实现，Manager 只负责资源校验和格式能力适配。Manager 导入保留持久 `sync` 任务语义，不与一次性导出混用。
+
 空间快显与瓦片缓存的目标边界：
 
 - `manager.preview_state`：预览状态，表达某个 data item 的用户预览模式偏好与轻量交互设置（包括表格可见字段）；是否可快显、推荐渲染源和默认瓦片缓存结果由 Quick View Capability API 动态合成。

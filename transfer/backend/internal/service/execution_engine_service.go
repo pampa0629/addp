@@ -82,22 +82,21 @@ func (s *ExecutionEngineService) SetProtectionGate(gate sourceProtectionGate) {
 	s.protectionGate = gate
 }
 
-// ExecuteTask 执行任务（由 Worker 调用）
-func (s *ExecutionEngineService) ExecuteTask(ctx context.Context, taskID, executionID uint) error {
-	s.logger.Info("executing task", "task_id", taskID, "execution_id", executionID)
-
-	task, err := s.taskRepo.GetByID(taskID)
-	if err != nil {
-		return fmt.Errorf("failed to get task: %w", err)
-	}
-	execution, err := s.executionService.taskExecutionRepo.GetByID(ctx, int64(executionID), int(task.TenantID))
+// ExecuteExecution executes the frozen config owned by a claimed bounded
+// execution. A source task is optional for ad-hoc sync executions.
+func (s *ExecutionEngineService) ExecuteExecution(ctx context.Context, executionID uint) error {
+	execution, err := s.executionService.taskExecutionRepo.GetByID(ctx, int64(executionID), 0)
 	if err != nil {
 		return fmt.Errorf("failed to get execution: %w", err)
 	}
-	executionTaskID, err := commonExecution.ParseSourceTaskIDUint(execution.SourceTaskID)
-	if err != nil || execution.Module != commonExecution.ModuleTransfer || execution.TaskType != commonExecution.TaskTypeSync || executionTaskID != task.ID {
-		return fmt.Errorf("execution does not belong to transfer task %d", task.ID)
+	if execution.Module != commonExecution.ModuleTransfer || execution.TaskType != commonExecution.TaskTypeSync {
+		return fmt.Errorf("execution is not a transfer sync execution")
 	}
+	task, err := s.runtimeTaskForExecution(execution)
+	if err != nil {
+		return err
+	}
+	s.logger.Info("executing sync", "task_id", task.ID, "execution_id", executionID, "ad_hoc", execution.SourceTaskID == nil)
 	if isReplayExecutionConfig(execution.ExecutionConfig) {
 		if s.protectionGate == nil {
 			return fmt.Errorf("transfer source protection gate is not configured")
@@ -110,6 +109,46 @@ func (s *ExecutionEngineService) ExecuteTask(ctx context.Context, taskID, execut
 	runtimeTask := *task
 	runtimeTask.Config = execution.ExecutionConfig
 	return s.executeCommonTransferTask(ctx, &runtimeTask, execution, executionID)
+}
+
+func (s *ExecutionEngineService) runtimeTaskForExecution(execution *commonExecution.TaskExecution) (*models.TransferTask, error) {
+	if execution == nil || execution.TenantID <= 0 {
+		return nil, fmt.Errorf("transfer execution context is invalid")
+	}
+	if execution.SourceTaskID != nil {
+		taskID, err := commonExecution.ParseSourceTaskIDUint(execution.SourceTaskID)
+		if err != nil {
+			return nil, fmt.Errorf("transfer execution has invalid source task: %w", err)
+		}
+		task, err := s.taskRepo.GetByID(taskID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get task: %w", err)
+		}
+		if int(task.TenantID) != execution.TenantID {
+			return nil, fmt.Errorf("execution does not belong to transfer task %d", task.ID)
+		}
+		return task, nil
+	}
+	batchSize := 1000
+	autoScanMetadata := false
+	name := "ad-hoc sync"
+	if adHoc, ok := execution.Metadata["ad_hoc"].(map[string]interface{}); ok {
+		if value, ok := adHoc["batch_size"].(float64); ok && value > 0 {
+			batchSize = int(value)
+		} else if value, ok := adHoc["batch_size"].(int); ok && value > 0 {
+			batchSize = value
+		}
+		if value, ok := adHoc["auto_scan_metadata"].(bool); ok {
+			autoScanMetadata = value
+		}
+		if value, ok := adHoc["name"].(string); ok && strings.TrimSpace(value) != "" {
+			name = strings.TrimSpace(value)
+		}
+	}
+	return &models.TransferTask{
+		TenantID: uint(execution.TenantID), Name: name, TaskType: commonExecution.TaskTypeSync,
+		Config: execution.ExecutionConfig, BatchSize: batchSize, AutoScanMetadata: autoScanMetadata,
+	}, nil
 }
 
 func (s *ExecutionEngineService) executeCommonTransferTask(ctx context.Context, task *models.TransferTask, execution *commonExecution.TaskExecution, executionID uint) error {
@@ -258,7 +297,7 @@ func (s *ExecutionEngineService) executeWatermarkIncrementalTask(ctx context.Con
 	if task.AutoScanMetadata && metrics.RecordsWritten > 0 {
 		s.triggerMetadataScan(task, executionID, spec, build.Plan.Target, nil)
 	}
-	if err := s.writeTransferLineageFacts(ctx, task, executionID, spec.Source.Locator, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, spec.Target.Policy); err != nil {
+	if err := s.writeTransferLineageFacts(ctx, task, executionID, spec.Source, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, spec.Target.Policy); err != nil {
 		s.logger.Warn("failed to persist transfer lineage facts", "error", err, "execution_id", executionID)
 	}
 	if err := s.writeBoundedExecutionOutputs(ctx, executionID, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, metrics.RecordsWritten); err != nil {
@@ -404,7 +443,7 @@ func (s *ExecutionEngineService) executeCommonTableTransferTask(ctx context.Cont
 	if task.AutoScanMetadata {
 		s.triggerMetadataScan(task, executionID, spec, buildResult.Plan.Target, metrics.TargetRefs)
 	}
-	if err := s.writeTransferLineageFacts(ctx, task, executionID, spec.Source.Locator, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, spec.Target.Policy); err != nil {
+	if err := s.writeTransferLineageFacts(ctx, task, executionID, spec.Source, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, spec.Target.Policy); err != nil {
 		s.logger.Warn("failed to persist transfer lineage facts", "error", err, "execution_id", executionID)
 	}
 	if err := s.writeBoundedExecutionOutputs(ctx, executionID, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, metrics.RecordsWritten); err != nil {
@@ -443,7 +482,7 @@ func (s *ExecutionEngineService) runCommonTableTransferData(
 		return nil, nil, fmt.Errorf("configure instance table providers: %w", err)
 	}
 	tableExecutor.SourceProtector, err = prepareBoundedTableSourceProtection(
-		ctx, s.protectionGate, task.TenantID, task.Config, buildResult.SourceEngineType, buildResult.Plan.Source.Kind,
+		ctx, s.protectionGate, task.TenantID, task.Config, buildResult.Plan.Source.Kind,
 	)
 	if err != nil {
 		return nil, nil, err
@@ -480,7 +519,6 @@ func prepareBoundedTableSourceProtection(
 	gate sourceProtectionGate,
 	tenantID uint,
 	config map[string]interface{},
-	sourceEngineType string,
 	sourceKind executor.TableEndpointKind,
 ) (executor.TableSourceProtector, error) {
 	if gate == nil {
@@ -492,19 +530,7 @@ func prepareBoundedTableSourceProtection(
 			return nil, err
 		}
 		return nil, nil
-	case executor.TableEndpointNative:
-		protector, err := gate.PrepareBoundedTableProtection(ctx, tenantID, config)
-		if err != nil {
-			return nil, fmt.Errorf("prepare bounded table source protection: %w", err)
-		}
-		return protector, nil
-	case executor.TableEndpointQuery:
-		if sourceEngineType != "postgresql" {
-			if err := gate.RequireSourceConfig(ctx, tenantID, config); err != nil {
-				return nil, err
-			}
-			return nil, nil
-		}
+	case executor.TableEndpointNative, executor.TableEndpointQuery:
 		protector, err := gate.PrepareBoundedTableProtection(ctx, tenantID, config)
 		if err != nil {
 			return nil, fmt.Errorf("prepare bounded table source protection: %w", err)
@@ -602,7 +628,7 @@ func (s *ExecutionEngineService) executeRuntimeTargetTableTransferTask(
 	if err != nil {
 		return s.failRuntimeTargetTransfer(ctx, task, executionID, err)
 	}
-	if err := s.writeTransferLineageFacts(ctx, task, executionID, resolvedSpec.Source.Locator, resolvedSpec.Target.Locator, resolvedSpec.Target.ParentLocator, resolvedSpec.Target.Name, resolvedSpec.Target.Policy); err != nil {
+	if err := s.writeTransferLineageFacts(ctx, task, executionID, resolvedSpec.Source, resolvedSpec.Target.Locator, resolvedSpec.Target.ParentLocator, resolvedSpec.Target.Name, resolvedSpec.Target.Policy); err != nil {
 		s.logger.Warn("failed to persist runtime-target transfer lineage facts", "error", err, "execution_id", executionID)
 	}
 	if err := s.writeBoundedExecutionOutputs(ctx, executionID, targetLocator, "", "", metrics.RecordsWritten); err != nil {
@@ -889,7 +915,7 @@ func (s *ExecutionEngineService) executeCommonRawCopyTask(ctx context.Context, t
 	if task.AutoScanMetadata {
 		s.triggerRawCopyMetadataScan(task, executionID, spec, buildResult.Plan.Target)
 	}
-	if err := s.writeTransferLineageFacts(ctx, task, executionID, spec.Source.Locator, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, spec.Target.Policy); err != nil {
+	if err := s.writeTransferLineageFacts(ctx, task, executionID, spec.Source, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, spec.Target.Policy); err != nil {
 		s.logger.Warn("failed to persist raw copy lineage facts", "error", err, "execution_id", executionID)
 	}
 	if err := s.writeBoundedExecutionOutputs(ctx, executionID, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, metrics.RecordsWritten); err != nil {
@@ -940,7 +966,7 @@ func (s *ExecutionEngineService) executeCommonEncodedRecordExportTask(ctx contex
 		return wrapped
 	}
 	s.updateEncodedRecordExportMetrics(executionID, metrics)
-	if err := s.writeTransferLineageFacts(ctx, task, executionID, spec.Source.Locator, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, spec.Target.Policy); err != nil {
+	if err := s.writeTransferLineageFacts(ctx, task, executionID, spec.Source, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, spec.Target.Policy); err != nil {
 		s.logger.Warn("failed to persist encoded record export lineage facts", "error", err, "execution_id", executionID)
 	}
 	if err := s.writeBoundedExecutionOutputs(ctx, executionID, spec.Target.Locator, spec.Target.ParentLocator, spec.Target.Name, metrics.RecordsWritten); err != nil {
@@ -953,14 +979,11 @@ func (s *ExecutionEngineService) executeCommonEncodedRecordExportTask(ctx contex
 	return nil
 }
 
-func (s *ExecutionEngineService) writeTransferLineageFacts(ctx context.Context, task *models.TransferTask, executionID uint, sourceLocator, targetLocator, targetParentLocator, targetName string, targetPolicy map[string]interface{}) error {
+func (s *ExecutionEngineService) writeTransferLineageFacts(ctx context.Context, task *models.TransferTask, executionID uint, source planner.EndpointSpec, targetLocator, targetParentLocator, targetName string, targetPolicy map[string]interface{}) error {
 	if s == nil || s.executionService == nil || task == nil {
 		return nil
 	}
-	input := commonExecution.LineageResourceRef{Port: "source", Locator: strings.TrimSpace(sourceLocator)}
-	if locator, err := resourcetree.ParseURI(input.Locator); err == nil && locator.ItemID != nil {
-		input.ItemID = locator.ItemID
-	}
+	inputs := transferLineageInputs(source)
 	outputLocator := strings.TrimSpace(targetLocator)
 	if outputLocator == "" {
 		outputLocator = targetLineageLocator(targetParentLocator, targetName)
@@ -978,12 +1001,41 @@ func (s *ExecutionEngineService) writeTransferLineageFacts(ctx context.Context, 
 	output.WriteMode = writeMode
 	facts := commonExecution.LineageFacts{
 		SchemaVersion:      commonExecution.LineageFactsSchemaVersion,
-		Inputs:             []commonExecution.LineageResourceRef{input},
+		Inputs:             inputs,
 		Outputs:            []commonExecution.LineageResourceRef{output},
-		Operations:         []commonExecution.LineageOperation{{Kind: "derive", Operator: "transfer", InputPorts: []string{"source"}, OutputPorts: []string{"target"}}},
+		Operations:         []commonExecution.LineageOperation{{Kind: "derive", Operator: "transfer", InputPorts: lineageInputPorts(inputs), OutputPorts: []string{"target"}}},
 		RuntimeExecutionID: executionIDString(s, ctx, executionID),
 	}
 	return s.executionService.UpdateExecution(ctx, executionID, map[string]interface{}{"metadata": map[string]interface{}{"lineage_facts": facts}})
+}
+
+func transferLineageInputs(source planner.EndpointSpec) []commonExecution.LineageResourceRef {
+	if source.Query != nil && len(source.Query.Inputs) > 0 {
+		inputs := make([]commonExecution.LineageResourceRef, 0, len(source.Query.Inputs))
+		for _, queryInput := range source.Query.Inputs {
+			inputs = append(inputs, lineageResourceRef(queryInput.Name, queryInput.Locator))
+		}
+		return inputs
+	}
+	return []commonExecution.LineageResourceRef{lineageResourceRef("source", source.Locator)}
+}
+
+func lineageResourceRef(port, locator string) commonExecution.LineageResourceRef {
+	ref := commonExecution.LineageResourceRef{Port: strings.TrimSpace(port), Locator: strings.TrimSpace(locator)}
+	if parsed, err := resourcetree.ParseURI(ref.Locator); err == nil && parsed.ItemID != nil {
+		ref.ItemID = parsed.ItemID
+	}
+	return ref
+}
+
+func lineageInputPorts(inputs []commonExecution.LineageResourceRef) []string {
+	ports := make([]string, 0, len(inputs))
+	for _, input := range inputs {
+		if port := strings.TrimSpace(input.Port); port != "" {
+			ports = append(ports, port)
+		}
+	}
+	return ports
 }
 
 func targetLineageLocator(parentURI, name string) string {
@@ -1172,7 +1224,7 @@ func (s *ExecutionEngineService) tableProgressCallback(task *models.TransferTask
 		}); err != nil {
 			return fmt.Errorf("update checkpoint: %w", err)
 		}
-		if task != nil {
+		if task != nil && task.ID != 0 {
 			progress := runningProgress(event.BatchIndex)
 			if err := s.taskRepo.UpdateFields(task.ID, map[string]interface{}{"progress": progress}); err != nil {
 				s.logger.Warn("failed to update task progress", "error", err, "task_id", task.ID, "progress", progress)
@@ -1228,7 +1280,7 @@ func (s *ExecutionEngineService) rawCopyProgressCallback(task *models.TransferTa
 		}); err != nil {
 			return fmt.Errorf("update raw copy checkpoint: %w", err)
 		}
-		if task != nil {
+		if task != nil && task.ID != 0 {
 			progress := 99.0
 			if event.Final {
 				progress = 100.0
@@ -1279,7 +1331,7 @@ func (s *ExecutionEngineService) encodedRecordExportProgressCallback(task *model
 		}); err != nil {
 			return fmt.Errorf("update encoded record export checkpoint: %w", err)
 		}
-		if task != nil {
+		if task != nil && task.ID != 0 {
 			progress := runningProgress(event.BatchIndex)
 			if event.Final {
 				progress = 100

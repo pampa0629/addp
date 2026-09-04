@@ -399,16 +399,3 @@ export function queryErrorMessage(errorCode, fallback, translate) {
   }
   return fallback || ''
 }
-
-export function csvCell(value) {
-  if (value === null) return 'NULL'
-  if (value === undefined) return ''
-  const text = typeof value === 'object' ? JSON.stringify(value) : String(value)
-  return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text
-}
-
-export function buildQueryResultCSV(columns = [], rows = []) {
-  const header = columns.map(csvCell).join(',')
-  const body = rows.map(row => columns.map(column => csvCell(row?.[column])).join(','))
-  return [header, ...body].join('\r\n')
-}

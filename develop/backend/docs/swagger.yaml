@@ -323,6 +323,38 @@ definitions:
     - kernel
     - name
     type: object
+  github_com_addp_develop_backend_internal_models.CreateQueryExportRequest:
+    properties:
+      file_name:
+        type: string
+      format:
+        enum:
+        - csv
+        type: string
+    required:
+    - file_name
+    type: object
+  github_com_addp_develop_backend_internal_models.CreateQueryExportResponse:
+    properties:
+      created_at:
+        type: string
+      download_url:
+        type: string
+      error_message:
+        type: string
+      file_name:
+        type: string
+      format:
+        type: string
+      id:
+        type: integer
+      status:
+        type: string
+      transfer_execution_id:
+        type: string
+      updated_at:
+        type: string
+    type: object
   github_com_addp_develop_backend_internal_models.DAGEditorLayoutSwagger:
     properties:
       nodes:
@@ -2130,6 +2162,58 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - develop.task.read
+  /executions/{execution_id}/exports:
+    post:
+      consumes:
+      - application/json
+      description: 使用已成功查询 execution 的冻结查询与参数创建一次性 Transfer execution，结果暂存到 infra
+        并通过导出会话下载。| Create a one-off Transfer execution from the frozen query and
+        parameters of a successful query execution, stage it in infra, and download
+        it through the export session.
+      parameters:
+      - description: 查询执行 ID | Query execution ID
+        in: path
+        name: execution_id
+        required: true
+        type: string
+      - description: 导出格式与文件名 | Export format and file name
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_develop_backend_internal_models.CreateQueryExportRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.CreateQueryExportResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 导出全部查询结果 | Export all query results
+      tags:
+      - Execution
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - develop.task.execute
+      - develop.data_read.execute
   /executions/{execution_id}/logs:
     get:
       parameters:
@@ -2205,6 +2289,64 @@ paths:
       tags:
       - Execution
       x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - develop.task.read
+  /exports/{id}:
+    get:
+      parameters:
+      - description: 导出会话 ID | Export session ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.CreateQueryExportResponse'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 获取查询导出会话 | Get query export session
+      tags:
+      - Execution
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - develop.task.read
+  /exports/{id}/file:
+    get:
+      parameters:
+      - description: 导出会话 ID | Export session ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: 下载内容流 | Download content stream
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 下载查询导出文件 | Download query export file
+      tags:
+      - Execution
+      x-addp-auth-mode: resource_ticket
       x-addp-required-permissions:
       - develop.task.read
   /notebook-copilot-sessions/{session_id}/generate:

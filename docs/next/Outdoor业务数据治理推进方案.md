@@ -538,7 +538,9 @@ Standard 指标 `outdoor_actual_participation_activity_count` 已通过登录 Co
 
 ### 13.9 第四个指标：当前负责或实际参加的不同活动数（2026-08-25）
 
-已在 Standard 创建并审批 `outdoor_responsible_or_actual_activity_count`（指标 ID `7`，当前版本 `4`），所属业务域为“户外域”。指标粒度为人员，计算对象是两个集合的并集。其语义计算配置已通过指标详情页正式保存，数据库确认 `derivation_config` 为 JSON object，操作为 `count_distinct_document_and_array_elements`；不保存模型生成的 MQL 文本。
+曾在旧版 Standard 创建并审批 `outdoor_responsible_or_actual_activity_count`（旧指标 ID `7`、版本 `4`），所属业务域为“户外域”。指标粒度为人员，计算对象是两个集合的并集；旧实现曾把 `count_distinct_document_and_array_elements` 结构化计算配置保存在 Standard 指标中。
+
+指标定义/实现拆分后，该记录只作为历史验证证据：Standard 应重建业务定义修订，原粒度、来源、过滤、去重和 MongoDB 可执行配置应在 Model MetricImplementation 中重建并冻结对应 MetricDefinitionRevision。旧 `derivation_config` 已随迁移删除，不自动伪造新实现。
 
 指标计算对象是两个集合的并集：
 

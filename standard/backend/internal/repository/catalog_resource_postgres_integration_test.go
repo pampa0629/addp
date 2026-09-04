@@ -25,16 +25,16 @@ func TestPostgresCatalogMetricChangeFeedCapturesOwnerLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	tenantID := time.Now().UnixNano()
-	metric := models.Metric{
-		TenantID: tenantID, Name: "Catalog metric", Code: fmt.Sprintf("catalog_metric_%d", tenantID),
-		Type: "atomic", DerivationConfig: models.JSONB{}, Status: "draft", Tags: models.StringArray{},
-		CreatedBy: 1, Version: 1, LifecycleState: "active",
+	metric := models.MetricDefinition{
+		TenantID: tenantID, Code: fmt.Sprintf("catalog_metric_%d", tenantID), ScopeType: "tenant_common",
+		Tags: models.StringArray{}, CreatedBy: 1, Version: 1, LifecycleState: "active",
 	}
-	if err := db.Create(&metric).Error; err != nil {
+	revision := models.MetricDefinitionRevision{MetricType: models.MetricTypeAtomic, Name: "Catalog metric", Definition: "Catalog metric", StatisticalCaliber: "All records", ChangeSummary: "Initial", CreatedBy: 1}
+	if err := NewMetricRepository(db).Create(&metric, &revision, nil); err != nil {
 		t.Fatalf("create metric: %v", err)
 	}
 	t.Cleanup(func() {
-		_ = db.Exec("DELETE FROM standard.metrics WHERE tenant_id = ?", tenantID).Error
+		_ = db.Exec("DELETE FROM standard.metric_definitions WHERE tenant_id = ?", tenantID).Error
 		_ = db.Exec("DELETE FROM standard.catalog_resource_changes WHERE tenant_id = ?", tenantID).Error
 	})
 	repository := NewCatalogResourceRepository(db)
@@ -42,11 +42,15 @@ func TestPostgresCatalogMetricChangeFeedCapturesOwnerLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(changes) != 1 || changes[0].SourceType != models.CatalogSourceTypeMetric || changes[0].Operation != "upsert" || changes[0].Snapshot["metric_type"] != "atomic" {
+	if len(changes) == 0 || changes[len(changes)-1].SourceType != models.CatalogSourceTypeMetric || changes[len(changes)-1].Operation != "upsert" || changes[len(changes)-1].Snapshot["metric_type"] != "atomic" {
 		t.Fatalf("initial changes = %#v", changes)
 	}
-	lastID := changes[0].ID
-	if err := db.Model(&metric).Updates(map[string]any{"name": "Catalog metric current", "status": "approved", "version": 2}).Error; err != nil {
+	lastID := changes[len(changes)-1].ID
+	effectiveFrom := time.Now().UTC()
+	if err := db.Model(&revision).Updates(map[string]any{"name": "Catalog metric current", "status": models.RevisionStatusPublished, "effective_from": effectiveFrom}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&metric).Updates(map[string]any{"version": 2}).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Delete(&metric).Error; err != nil {

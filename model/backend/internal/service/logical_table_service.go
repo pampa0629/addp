@@ -223,6 +223,15 @@ func (s *LogicalTableService) UpdateLogicalTable(id, tenantID, userID int64, req
 				return apperrors.Conflict("dimension_hierarchy_table_type_conflict", i18n.MsgDimensionHierarchyConflict)
 			}
 		}
+		if table.TableType == "fact" && req.TableType != "fact" {
+			var implementationCount int64
+			if err := tx.Model(&models.MetricImplementation{}).Where("fact_table_id = ? AND tenant_id = ?", id, tenantID).Count(&implementationCount).Error; err != nil {
+				return err
+			}
+			if implementationCount > 0 {
+				return apperrors.Conflict("metric_implementation_table_type_conflict", i18n.MsgMetricImplementationConflict)
+			}
+		}
 		normalizedMaterialization := normalizeMaterialization(req.Materialization)
 		previewTable := previewLogicalTableWithMaterialization(table, normalizedMaterialization)
 		if err := validateMaterialization(previewTable, fields); err != nil {
@@ -282,7 +291,19 @@ func (s *LogicalTableService) DeleteLogicalTable(id, tenantID, version int64) er
 			return err
 		}
 		if grouped {
-			return apperrors.Conflict("materialization_group_member_conflict", i18n.MsgTableStateConflict)
+			return apperrors.Conflict("materialization_group_member_conflict", i18n.MsgTableMaterializationGroupMember)
+		}
+		if len(table.Materialization) != 0 {
+			return apperrors.Conflict("logical_table_materialization_configured", i18n.MsgTableMaterializationConfigured)
+		}
+		batches, err := repository.NewMaterializationBatchRepository(tx).LockByLogicalTable(context.Background(), tenantID, id)
+		if err != nil {
+			return err
+		}
+		for _, batch := range batches {
+			if !models.IsMaterializationBatchTerminal(batch.Status) {
+				return apperrors.Conflict("logical_table_materialization_batch_active", i18n.MsgTableMaterializationBatchActive)
+			}
 		}
 		relations, err := repository.NewTableRelationRepository(tx).ListByTable(id, tenantID)
 		if err != nil {

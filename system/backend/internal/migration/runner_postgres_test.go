@@ -86,6 +86,118 @@ func TestManagerTransferRuntimeForwardMigrationsAgainstPostgres(t *testing.T) {
 	}
 }
 
+func TestDevelopTransferExecutionForwardMigrationAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("set ADDP_SYSTEM_POSTGRES_TEST_DSN to a disposable PostgreSQL 15+ database")
+	}
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
+
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`DROP SCHEMA IF EXISTS system CASCADE; DROP SCHEMA IF EXISTS common CASCADE`); err != nil {
+		t.Fatalf("reset Develop Transfer execution migration schemas: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	through123, through124 := migrationFilesBeforeAndThrough(t, "000124_iam_develop_transfer_execution.up.sql")
+	if err := (&Runner{DSN: dsn, FS: through123, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply migrations through 123: %v", err)
+	}
+
+	countPermissions := func() int {
+		t.Helper()
+		var count int
+		if err := db.QueryRow(`
+			SELECT count(*)
+			FROM system.role_permissions role_permission
+			JOIN system.roles role ON role.id = role_permission.role_id
+			JOIN system.permissions permission ON permission.id = role_permission.permission_id
+			WHERE role.tenant_id IS NULL
+			  AND role.role_key IN ('tenant.develop_runtime', 'tenant.manager_runtime')
+			  AND permission.permission_key = 'transfer.execution.create'
+		`).Scan(&count); err != nil {
+			t.Fatalf("count Develop Transfer execution permission: %v", err)
+		}
+		return count
+	}
+	if count := countPermissions(); count != 0 {
+		t.Fatalf("module runtime Transfer execution permissions before migration 124 = %d, want 0", count)
+	}
+	if err := (&Runner{DSN: dsn, FS: through124, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply Develop Transfer execution migration 124: %v", err)
+	}
+
+	var version int
+	var dirty bool
+	if err := db.QueryRow(`SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
+		t.Fatalf("read migration 124 version: %v", err)
+	}
+	if count := countPermissions(); version != 124 || dirty || count != 2 {
+		t.Fatalf("migration 124 state=(%d,%t) module runtime Transfer execution permissions=%d, want (124,false,2)", version, dirty, count)
+	}
+}
+
+func TestTransferExecutionReadForwardMigrationAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("set ADDP_SYSTEM_POSTGRES_TEST_DSN to a disposable PostgreSQL 15+ database")
+	}
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
+
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`DROP SCHEMA IF EXISTS system CASCADE; DROP SCHEMA IF EXISTS common CASCADE`); err != nil {
+		t.Fatalf("reset Transfer execution read migration schemas: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	through124, through125 := migrationFilesBeforeAndThrough(t, "000125_iam_transfer_execution_read.up.sql")
+	if err := (&Runner{DSN: dsn, FS: through124, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply migrations through 124: %v", err)
+	}
+
+	countPermissions := func() int {
+		t.Helper()
+		var count int
+		if err := db.QueryRow(`
+			SELECT count(*)
+			FROM system.role_permissions role_permission
+			JOIN system.roles role ON role.id = role_permission.role_id
+			JOIN system.permissions permission ON permission.id = role_permission.permission_id
+			WHERE role.tenant_id IS NULL
+			  AND role.role_key IN ('tenant.develop_runtime', 'tenant.manager_runtime')
+			  AND permission.permission_key = 'transfer.execution.read'
+		`).Scan(&count); err != nil {
+			t.Fatalf("count Transfer execution read permission: %v", err)
+		}
+		return count
+	}
+	if count := countPermissions(); count != 0 {
+		t.Fatalf("module runtime Transfer execution read permissions before migration 125 = %d, want 0", count)
+	}
+	if err := (&Runner{DSN: dsn, FS: through125, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply Transfer execution read migration 125: %v", err)
+	}
+
+	var version int
+	var dirty bool
+	if err := db.QueryRow(`SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
+		t.Fatalf("read migration 125 version: %v", err)
+	}
+	if count := countPermissions(); version != 125 || dirty || count != 2 {
+		t.Fatalf("migration 125 state=(%d,%t) module runtime Transfer execution read permissions=%d, want (125,false,2)", version, dirty, count)
+	}
+}
+
 func TestStandardReferenceRuntimeForwardMigrationAgainstPostgres(t *testing.T) {
 	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
 	if dsn == "" {
@@ -3363,11 +3475,11 @@ func assertServicePrincipalRuntimeConstraints(t *testing.T, db *sql.DB) {
 		t.Fatalf("read platform.manager_runtime permissions: %v", err)
 	}
 	if catalogTenantPermissions != "develop.catalog.read,iam.department.read,iam.project_group.read,iam.tenant_membership.read,meta.catalog.read,model.catalog.read,quality.catalog.read,service.catalog.read,standard.catalog.read,standard.domain.read,standard.element.read,standard.glossary.read,system.engine_descriptor.read,workbench.catalog.read" ||
-		managerTenantPermissions != "inference.runtime.execute,meta.catalog.read,meta.scan_task.execute,security.protection_projection.read,security.protection_projection.update,system.engine_descriptor.read,system.engine.read,transfer.task.create,transfer.task.execute,transfer.task.read" ||
+		managerTenantPermissions != "inference.runtime.execute,meta.catalog.read,meta.scan_task.execute,security.protection_projection.read,security.protection_projection.update,system.engine_descriptor.read,system.engine.read,transfer.execution.create,transfer.execution.read,transfer.task.create,transfer.task.execute,transfer.task.read" ||
 		metaTenantPermissions != "audit.tenant_event.create,manager.content_index.update,system.engine_descriptor.read,system.engine.read" ||
 		serviceTenantPermissions != "audit.tenant_event.create,meta.catalog.read,meta.lineage.create,security.protection_projection.read,security.protection_projection.update,system.engine_descriptor.read,system.engine.read,system.execution_authorization.execute" ||
 		transferTenantPermissions != "meta.catalog.read,meta.inspect.execute,meta.scan_task.execute,security.protection_projection.read,security.protection_projection.update,system.engine_descriptor.read,system.engine.read,system.execution_authorization.execute" ||
-		developTenantPermissions != "meta.catalog.read,meta.scan_task.execute,security.protection_projection.read,security.protection_projection.update,system.engine_descriptor.read,system.execution_authorization.execute,system.notebook_session_authorization.execute" ||
+		developTenantPermissions != "meta.catalog.read,meta.scan_task.execute,security.protection_projection.read,security.protection_projection.update,system.engine_descriptor.read,system.execution_authorization.execute,system.notebook_session_authorization.execute,transfer.execution.create,transfer.execution.read" ||
 		copilotTenantPermissions != "develop.task.read,inference.runtime.execute,system.engine_descriptor.read" ||
 		qualityTenantPermissions != "meta.catalog.read,model.materialization_group.read,model.materialization_read.execute,standard.element.read,system.engine.read,system.execution_authorization.execute" ||
 		catalogPlatformPermissions != "platform.tenant.read,system.runtime_registry.update" ||
@@ -3783,8 +3895,8 @@ func assertAuthorizationCatalogRetirement(t *testing.T, db *sql.DB) {
 	`).Scan(&activePermissionCount, &disabledPermissionCount); err != nil {
 		t.Fatalf("read retired Permission counts: %v", err)
 	}
-	if activePermissionCount < 345 || disabledPermissionCount != 70 {
-		t.Fatalf("Permission status counts = active:%d disabled:%d, want at least 345 and exactly 70", activePermissionCount, disabledPermissionCount)
+	if activePermissionCount < 345 || disabledPermissionCount != 72 {
+		t.Fatalf("Permission status counts = active:%d disabled:%d, want at least 345 and exactly 72", activePermissionCount, disabledPermissionCount)
 	}
 
 	var disabledRoles string
@@ -3826,19 +3938,20 @@ func assertStandardAuthorizationCatalog(t *testing.T, db *sql.DB) {
 	`).Scan(&permissionCount); err != nil {
 		t.Fatalf("read Standard authorization permissions: %v", err)
 	}
-	if permissionCount != 41 {
-		t.Fatalf("Standard authorization permission count = %d, want 41", permissionCount)
+	if permissionCount != 40 {
+		t.Fatalf("Standard authorization permission count = %d, want 40", permissionCount)
 	}
-	var publishPermissionCount, disabledApproveCount int
+	var publishPermissionCount, disabledApproveCount, disabledLegacyMetricPermissionCount int
 	if err := db.QueryRow(`
-		SELECT count(*) FILTER (WHERE permission_key IN ('standard.element.publish', 'standard.code_set.publish') AND status = 'active'),
-		       count(*) FILTER (WHERE permission_key = 'standard.element.approve' AND status = 'disabled')
+		SELECT count(*) FILTER (WHERE permission_key IN ('standard.element.publish', 'standard.code_set.publish', 'standard.metric.publish') AND status = 'active'),
+		       count(*) FILTER (WHERE permission_key = 'standard.element.approve' AND status = 'disabled'),
+		       count(*) FILTER (WHERE permission_key IN ('standard.metric.approve', 'standard.metric.offline') AND status = 'disabled')
 		FROM system.permissions
-	`).Scan(&publishPermissionCount, &disabledApproveCount); err != nil {
+	`).Scan(&publishPermissionCount, &disabledApproveCount, &disabledLegacyMetricPermissionCount); err != nil {
 		t.Fatalf("read Standard revision publish permissions: %v", err)
 	}
-	if publishPermissionCount != 2 || disabledApproveCount != 1 {
-		t.Fatalf("Standard revision permission transition = publish:%d disabled_approve:%d, want 2 and 1", publishPermissionCount, disabledApproveCount)
+	if publishPermissionCount != 3 || disabledApproveCount != 1 || disabledLegacyMetricPermissionCount != 2 {
+		t.Fatalf("Standard revision permission transition = publish:%d disabled_element_approve:%d disabled_metric_legacy:%d, want 3, 1 and 2", publishPermissionCount, disabledApproveCount, disabledLegacyMetricPermissionCount)
 	}
 
 	var rolePermissionCount int
@@ -3854,8 +3967,8 @@ func assertStandardAuthorizationCatalog(t *testing.T, db *sql.DB) {
 	`).Scan(&rolePermissionCount); err != nil {
 		t.Fatalf("read Governance Manager Standard permissions: %v", err)
 	}
-	if rolePermissionCount != 40 {
-		t.Fatalf("Governance Manager Standard permission count = %d, want 40", rolePermissionCount)
+	if rolePermissionCount != 39 {
+		t.Fatalf("Governance Manager Standard permission count = %d, want 39", rolePermissionCount)
 	}
 
 	var retiredHierarchyPermissions, retiredHierarchyBindings int

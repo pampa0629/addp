@@ -5,4 +5,4 @@ const (
 	BrowserResourceAccessScope            = "resource:read"
 )
 
-var BrowserResourceAccessOwners = []string{"manager", "standard"}
+var BrowserResourceAccessOwners = []string{"develop", "manager", "standard"}

@@ -99,9 +99,9 @@ func TestBoundedExecutionClaimUsesDatabaseLeaseAndRecoveryFailsClosed(t *testing
 	}
 
 	now := time.Now().UTC()
-	claimed, lease, claimedTask, err := repo.ClaimNextBoundedExecution(context.Background(), "transfer-bounded-worker-1", now, time.Minute)
-	if err != nil || claimed == nil || lease == nil || claimedTask == nil {
-		t.Fatalf("ClaimNextBoundedExecution = %#v %#v %#v, %v", claimed, lease, claimedTask, err)
+	claimed, lease, err := repo.ClaimNextBoundedExecution(context.Background(), "transfer-bounded-worker-1", now, time.Minute)
+	if err != nil || claimed == nil || lease == nil {
+		t.Fatalf("ClaimNextBoundedExecution = %#v %#v, %v", claimed, lease, err)
 	}
 	if claimed.Status != commonExecution.ExecutionStatusRunning || lease.Token == "" || lease.Attempt != 1 {
 		t.Fatalf("claim = %#v lease = %#v", claimed, lease)
@@ -147,7 +147,7 @@ func TestRuntimeTargetExpiredLeaseFailsClosed(t *testing.T) {
 	}
 
 	now := time.Now().UTC()
-	claimed, lease, _, err := repo.ClaimNextBoundedExecution(context.Background(), "transfer-bounded-worker-1", now, time.Minute)
+	claimed, lease, err := repo.ClaimNextBoundedExecution(context.Background(), "transfer-bounded-worker-1", now, time.Minute)
 	if err != nil || claimed == nil || lease == nil || lease.Attempt != 1 {
 		t.Fatalf("first claim execution=%#v lease=%#v error=%v", claimed, lease, err)
 	}
@@ -171,7 +171,7 @@ func TestRuntimeTargetExpiredLeaseFailsClosed(t *testing.T) {
 		failed.ActorPrincipalID == nil || *failed.ActorPrincipalID != principalID {
 		t.Fatalf("failed execution = %#v", failed)
 	}
-	claimedAgain, leaseAgain, _, err := repo.ClaimNextBoundedExecution(context.Background(), "transfer-bounded-worker-2", now.Add(3*time.Minute), time.Minute)
+	claimedAgain, leaseAgain, err := repo.ClaimNextBoundedExecution(context.Background(), "transfer-bounded-worker-2", now.Add(3*time.Minute), time.Minute)
 	if err != nil || claimedAgain != nil || leaseAgain != nil {
 		t.Fatalf("second claim execution=%#v lease=%#v error=%v", claimedAgain, leaseAgain, err)
 	}

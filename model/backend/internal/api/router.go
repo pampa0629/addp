@@ -30,7 +30,7 @@ func SetupRouter(
 	entityRelationSvc *service.EntityRelationService,
 	logicalTableSvc *service.LogicalTableService,
 	dwLayerSvc *service.DWLayerService,
-	factMetricSvc *service.FactMetricService,
+	metricImplementationSvc *service.MetricImplementationService,
 	tableRelationSvc *service.TableRelationService,
 	dimensionHierarchySvc *service.DimensionHierarchyService,
 	standardReferenceGuardSvc *service.StandardReferenceGuardService,
@@ -71,7 +71,7 @@ func SetupRouter(
 	entityRelationHandler := NewEntityRelationHandler(entityRelationSvc)
 	logicalTableHandler := NewLogicalTableHandler(logicalTableSvc)
 	dwLayerHandler := NewDWLayerHandler(dwLayerSvc)
-	factMetricHandler := NewFactMetricHandler(factMetricSvc)
+	metricImplementationHandler := NewMetricImplementationHandler(metricImplementationSvc)
 	tableRelationHandler := NewTableRelationHandler(tableRelationSvc)
 	dimensionHierarchyHandler := NewDimensionHierarchyHandler(dimensionHierarchySvc)
 	standardReferenceGuardHandler := NewStandardReferenceGuardHandler(standardReferenceGuardSvc)
@@ -174,10 +174,10 @@ func SetupRouter(
 			logicalTables.PUT("/:id/fields/:fid", permission(modelauthorization.PermissionModelLogicalModelUpdate), logicalTableHandler.UpdateField)
 			logicalTables.DELETE("/:id/fields/:fid", permission(modelauthorization.PermissionModelLogicalModelDelete), logicalTableHandler.DeleteField)
 			logicalTables.POST("/:id/preview-ddl", permission(modelauthorization.PermissionModelLogicalModelRead), logicalTableHandler.PreviewDDL)
-			// 事实表关联指标（仅对 table_type='fact' 的表有意义）
-			logicalTables.GET("/:id/metrics", permission(modelauthorization.PermissionModelLogicalModelRead), factMetricHandler.ListMetrics)
-			logicalTables.POST("/:id/metrics", permission(modelauthorization.PermissionModelLogicalModelUpdate), factMetricHandler.AddMetric)
-			logicalTables.DELETE("/:id/metrics/:mid", permission(modelauthorization.PermissionModelLogicalModelUpdate), factMetricHandler.RemoveMetric)
+			logicalTables.GET("/:id/metric-implementations", permission(modelauthorization.PermissionModelLogicalModelRead), metricImplementationHandler.List)
+			logicalTables.POST("/:id/metric-implementations", permission(modelauthorization.PermissionModelLogicalModelUpdate), metricImplementationHandler.Create)
+			logicalTables.PUT("/:id/metric-implementations/:implementation_id", permission(modelauthorization.PermissionModelLogicalModelUpdate), metricImplementationHandler.Update)
+			logicalTables.DELETE("/:id/metric-implementations/:implementation_id", permission(modelauthorization.PermissionModelLogicalModelUpdate), metricImplementationHandler.Delete)
 			// 事实表关联维度表
 			logicalTables.GET("/:id/dimension-relations", permission(modelauthorization.PermissionModelLogicalModelRead), tableRelationHandler.ListDimensionRelations)
 			logicalTables.POST("/:id/dimension-relations", permission(modelauthorization.PermissionModelLogicalModelUpdate), tableRelationHandler.AddDimensionRelation)

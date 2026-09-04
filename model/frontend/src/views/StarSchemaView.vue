@@ -134,7 +134,7 @@
               </el-card>
             </el-col>
 
-            <!-- 关联指标 -->
+            <!-- 指标实现 -->
             <el-col :xs="24" :lg="12">
               <el-card shadow="never" v-loading="loadingMetrics">
                 <template #header>
@@ -142,9 +142,9 @@
                 </template>
                 <div v-if="factMetrics.length === 0" class="empty-hint">{{ t('model.star_schema.no_metrics') }}</div>
                 <div v-for="m in factMetrics" :key="m.id" class="metric-item">
-                  <span class="metric-name">{{ metricNameMap[m.metric_id] || `指标#${m.metric_id}` }}</span>
-                  <el-tag :type="metricTypeTagType(metricTypeMap[m.metric_id])" size="small">
-                    {{ metricTypeLabel(metricTypeMap[m.metric_id]) }}
+                  <span class="metric-name">{{ m.name }}</span>
+                  <el-tag :type="metricTypeTagType(metricTypeMap[m.metric_definition_id])" size="small">
+                    {{ metricNameMap[m.metric_definition_id] || `指标#${m.metric_definition_id}` }} · {{ metricTypeLabel(metricTypeMap[m.metric_definition_id]) }}
                   </el-tag>
                 </div>
               </el-card>
@@ -293,13 +293,13 @@ const canModifyDimensionRelation = relation => {
 
 const metricNameMap = computed(() => {
   const map = {}
-  allMetrics.value.forEach(m => { map[m.id] = m.name })
+  allMetrics.value.forEach(m => { map[m.id] = m.current_revision?.name || m.code })
   return map
 })
 
 const metricTypeMap = computed(() => {
   const map = {}
-  allMetrics.value.forEach(m => { map[m.id] = m.metric_type })
+  allMetrics.value.forEach(m => { map[m.id] = m.current_revision?.metric_type })
   return map
 })
 
@@ -325,7 +325,7 @@ const mermaidCode = computed(() => {
 
   factMetrics.value.forEach(m => {
     const mId = `M${m.id}`
-    const mName = metricNameMap.value[m.metric_id] || `指标#${m.metric_id}`
+    const mName = m.name || metricNameMap.value[m.metric_definition_id] || `指标#${m.metric_definition_id}`
     lines.push(`  ${mId}["${mName}\\n${t('model.star_schema.metric_label')}"]`)
     lines.push(`  style ${mId} fill:${theme.categories[1]},stroke:${theme.nodeStroke},color:${theme.labelLight}`)
     lines.push(`  ${factId} --> ${mId}`)
@@ -414,7 +414,7 @@ const loadSelectedTable = async (table) => {
     const [fieldsRes, relationsRes, metricsRes] = await Promise.all([
       logicalTableAPI.getFields(table.id),
       logicalTableAPI.listDimensionRelations(table.id),
-      logicalTableAPI.listMetrics(table.id),
+      logicalTableAPI.listMetricImplementations(table.id),
     ])
     if (requestGeneration !== selectionGeneration) return
     tableFields.value = fieldsRes || []

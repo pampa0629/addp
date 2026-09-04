@@ -250,14 +250,6 @@ permissions:
     status: active
     name_i18n_key: permissions.standard.glossary.update.name
     description_i18n_key: permissions.standard.glossary.update.description
-  - key: standard.metric.approve
-    allowed_scope_types: [tenant, department, project_group]
-    risk_level: high
-    tenant_customizable: true
-    delegable: false
-    status: active
-    name_i18n_key: permissions.standard.metric.approve.name
-    description_i18n_key: permissions.standard.metric.approve.description
   - key: standard.metric.create
     allowed_scope_types: [tenant, department, project_group]
     risk_level: medium
@@ -274,14 +266,14 @@ permissions:
     status: active
     name_i18n_key: permissions.standard.metric.delete.name
     description_i18n_key: permissions.standard.metric.delete.description
-  - key: standard.metric.offline
+  - key: standard.metric.publish
     allowed_scope_types: [tenant, department, project_group]
     risk_level: high
     tenant_customizable: true
     delegable: false
     status: active
-    name_i18n_key: permissions.standard.metric.offline.name
-    description_i18n_key: permissions.standard.metric.offline.description
+    name_i18n_key: permissions.standard.metric.publish.name
+    description_i18n_key: permissions.standard.metric.publish.description
   - key: standard.metric.read
     allowed_scope_types: [tenant, department, project_group]
     risk_level: low

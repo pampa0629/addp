@@ -13,8 +13,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 429 {
-		t.Fatalf("descriptor count = %d, want 429", len(descriptors))
+	if len(descriptors) != 430 {
+		t.Fatalf("descriptor count = %d, want 430", len(descriptors))
 	}
 	if descriptors[0].Key != "agent.configuration.read" || descriptors[len(descriptors)-1].Key != "workbench.resource_grant.revoke" {
 		t.Fatalf("descriptor boundary keys = %q, %q", descriptors[0].Key, descriptors[len(descriptors)-1].Key)
@@ -78,6 +78,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"security.protection_projection.update",
 		"system.engine.read",
 		"system.engine_descriptor.read",
+		"transfer.execution.create",
+		"transfer.execution.read",
 		"transfer.task.create",
 		"transfer.task.execute",
 		"transfer.task.read",
@@ -281,6 +283,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"system.engine_descriptor.read",
 		"system.execution_authorization.execute",
 		"system.notebook_session_authorization.execute",
+		"transfer.execution.create",
+		"transfer.execution.read",
 	})
 	assertRepositoryRolePermissions(t, roles, "tenant.service_publisher", []string{
 		"manager.content.read",
@@ -421,10 +425,9 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"standard.glossary.offline",
 		"standard.glossary.read",
 		"standard.glossary.update",
-		"standard.metric.approve",
 		"standard.metric.create",
 		"standard.metric.delete",
-		"standard.metric.offline",
+		"standard.metric.publish",
 		"standard.metric.read",
 		"standard.metric.update",
 		"standard.unit.create",

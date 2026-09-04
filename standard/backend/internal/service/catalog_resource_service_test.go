@@ -10,14 +10,14 @@ import (
 
 type catalogResourceRepositoryStub struct {
 	changes []models.CatalogResourceChangeRow
-	metrics []models.Metric
+	metrics []models.MetricDefinitionAggregate
 }
 
 func (s *catalogResourceRepositoryStub) ListChanges(context.Context, int64, int64, int) ([]models.CatalogResourceChangeRow, error) {
 	return s.changes, nil
 }
 
-func (s *catalogResourceRepositoryStub) ListMetrics(context.Context, int64, []int64) ([]models.Metric, error) {
+func (s *catalogResourceRepositoryStub) ListMetrics(context.Context, int64, []int64) ([]models.MetricDefinitionAggregate, error) {
 	return s.metrics, nil
 }
 
@@ -39,9 +39,9 @@ func TestCatalogResourceServiceListsOpaqueVersionedMetricChanges(t *testing.T) {
 
 func TestCatalogResourceServiceResolvesMetricsInRequestOrder(t *testing.T) {
 	domainID, categoryID, unitID := int64(31), int64(41), int64(51)
-	service := NewCatalogResourceService(&catalogResourceRepositoryStub{metrics: []models.Metric{{
-		ID: 9, TenantID: 7, Name: "Order amount", Code: "order_amount", Type: "atomic",
-		Status: "approved", LifecycleState: "active", Version: 4, DomainID: &domainID, CategoryID: &categoryID, UnitID: &unitID,
+	service := NewCatalogResourceService(&catalogResourceRepositoryStub{metrics: []models.MetricDefinitionAggregate{{
+		MetricDefinition: models.MetricDefinition{ID: 9, TenantID: 7, Code: "order_amount", LifecycleState: "active", Version: 4, OwnerDomainID: &domainID, CategoryID: &categoryID},
+		CurrentRevision:  &models.MetricDefinitionRevision{ID: 19, MetricDefinitionID: 9, RevisionNo: 1, Name: "Order amount", MetricType: "atomic", Status: models.RevisionStatusPublished, UnitID: &unitID},
 	}}})
 	result, err := service.Resolve(context.Background(), 7, []models.CatalogReference{
 		{SourceType: "metric", SourceIdentity: "9"}, {SourceType: "metric", SourceIdentity: "10"},

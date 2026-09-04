@@ -36,11 +36,15 @@
             <el-icon><View /></el-icon>
           </el-button>
         </el-tooltip>
-        <el-tooltip v-if="hasRows" :content="t('develop.queryResult.exportCsv')">
-          <el-button circle size="small" type="primary" :aria-label="t('develop.queryResult.exportCsv')" @click="exportCSV">
-            <el-icon><Download /></el-icon>
-          </el-button>
-        </el-tooltip>
+        <el-button
+          v-if="canExportFullResult"
+          size="small"
+          :aria-label="t('develop.queryResult.exportFull')"
+          @click="emit('export-full')"
+        >
+          <el-icon><Download /></el-icon>
+          {{ t('develop.queryResult.exportFull') }}
+        </el-button>
       </div>
     </div>
 
@@ -119,7 +123,6 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ElMessage } from 'element-plus'
 import {
   CircleCloseFilled,
   Download,
@@ -134,15 +137,20 @@ import {
   paginateRows,
   TabularResultRenderer
 } from '@addp/common-frontend'
-import { buildQueryResultCSV, queryErrorMessage } from '@/utils/queryWorkbench.mjs'
+import { queryErrorMessage } from '@/utils/queryWorkbench.mjs'
 
 const { t } = useI18n()
+const emit = defineEmits(['export-full'])
 const props = defineProps({
   result: {
     type: Object,
     default: null
   },
   customContent: {
+    type: Boolean,
+    default: false
+  },
+  fullExportSupported: {
     type: Boolean,
     default: false
   }
@@ -153,6 +161,12 @@ const currentPage = ref(1)
 const pageSize = ref(20)
 const isRunning = computed(() => ['pending', 'running'].includes(props.result?.status))
 const hasRows = computed(() => Array.isArray(props.result?.rows) && props.result.rows.length > 0)
+const canExportFullResult = computed(() => Boolean(
+  props.result?.success
+  && props.result?.result_kind === 'table'
+  && props.result?.execution_id
+  && props.fullExportSupported
+))
 const loadedRowCount = computed(() => hasRows.value ? props.result.rows.length : 0)
 const showPagination = computed(() => loadedRowCount.value > pageSizeOptions[0])
 const pagedRows = computed(() => paginateRows(props.result?.rows, currentPage.value, pageSize.value))
@@ -189,24 +203,6 @@ const tableColumns = computed(() => (props.result?.columns || []).map(column => 
 
 const openExecution = () => openMonitorExecution(props.result.execution_id)
 
-const exportCSV = () => {
-  if (!hasRows.value) {
-    ElMessage.warning(t('develop.queryResult.noExportData'))
-    return
-  }
-  try {
-    const csv = buildQueryResultCSV(props.result.columns, props.result.rows)
-    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' })
-    const link = document.createElement('a')
-    link.href = URL.createObjectURL(blob)
-    link.download = `query_result_${Date.now()}.csv`
-    link.click()
-    URL.revokeObjectURL(link.href)
-    ElMessage.success(t('develop.queryResult.exportSuccess'))
-  } catch (error) {
-    ElMessage.error(t('develop.queryResult.exportFailed') + error.message)
-  }
-}
 </script>
 
 <style scoped>

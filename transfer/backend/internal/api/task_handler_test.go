@@ -228,7 +228,7 @@ func TestExecutionHandlerRetrySchemaBlockedCDCReturnsConflict(t *testing.T) {
 		setTransferTestAuthContext(t, c, 7, 9)
 		c.Next()
 	})
-	router.POST("/executions/:execution_id/retry", NewExecutionHandler(executionSvc).RetryExecution)
+	router.POST("/executions/:execution_id/retry", NewExecutionHandler(executionSvc, nil).RetryExecution)
 	req := httptest.NewRequest(http.MethodPost, "/executions/blocked-cdc-execution/retry", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -253,7 +253,7 @@ func TestExecutionHandlerSeparatesTaskProviderOutputsFromUserDTO(t *testing.T) {
 		t.Fatal(err)
 	}
 	executionSvc := service.NewExecutionService(db, commonExecution.NewTaskExecutionRepository(db))
-	handler := NewExecutionHandler(executionSvc)
+	handler := NewExecutionHandler(executionSvc, nil)
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
 		setTransferTestAuthContext(t, c, 7, 9)

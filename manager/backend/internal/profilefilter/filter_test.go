@@ -29,7 +29,7 @@ func TestNormalizeAndCompileConditionScope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}
-	if !strings.Contains(whereClause, `"amount" BETWEEN ? AND ?`) || !strings.Contains(whereClause, `"name" LIKE ? ESCAPE '!'`) {
+	if !strings.Contains(whereClause, `"amount" BETWEEN $1 AND $2`) || !strings.Contains(whereClause, `"name" LIKE $3 ESCAPE '!'`) {
 		t.Fatalf("where clause = %q", whereClause)
 	}
 	if !reflect.DeepEqual(args, []interface{}{10.0, 20.0, "%A!_!%%"}) {

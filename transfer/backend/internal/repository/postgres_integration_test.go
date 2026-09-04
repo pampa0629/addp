@@ -11,6 +11,7 @@ import (
 
 	"github.com/addp/common/engine/plugins/postgresql"
 	commonExecution "github.com/addp/common/execution"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/testpg"
 	"github.com/google/uuid"
@@ -22,6 +23,52 @@ type runtimeLeaseMigrationFixture models.RuntimeLease
 
 func (runtimeLeaseMigrationFixture) TableName() string {
 	return "transfer_runtime_lease_migration_test.runtime_leases"
+}
+
+func TestIntegrationPostgresExecutionLogsMigrateOutOfErrorDetails(t *testing.T) {
+	if os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {
+		t.Skip("set ADDP_POSTGRES_INTEGRATION=1 to run PostgreSQL integration test")
+	}
+	connInfo := testpg.ConnInfoFromEnv(t)
+	dsn, err := (&postgresql.PostgreSQLPlugin{}).BuildDSN(connInfo)
+	if err != nil {
+		t.Fatalf("BuildDSN failed: %v", err)
+	}
+	db, err := gorm.Open(postgresdriver.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open PostgreSQL failed: %v", err)
+	}
+	if err := commonExecution.EnsureStore(db); err != nil {
+		t.Fatalf("ensure common execution store: %v", err)
+	}
+	execution := &commonExecution.TaskExecution{
+		TenantID: 999999, ExecutionID: uuid.NewString(), Module: commonExecution.ModuleTransfer,
+		TaskType: commonExecution.TaskTypeSync, Source: commonExecution.ModuleDevelop,
+		Status: commonExecution.ExecutionStatusSuccess, ExecutionBoundary: commonExecution.ExecutionBoundaryBounded,
+		TriggerType: commonExecution.TriggerTypeManual,
+		Metadata:    commonModels.JSONMap{"target_refs": []interface{}{}},
+		ErrorDetails: commonModels.JSONMap{
+			"logs": "batch=1 records_written=100\n",
+		},
+	}
+	if err := db.Create(execution).Error; err != nil {
+		t.Fatalf("create legacy execution: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Delete(&commonExecution.TaskExecution{}, execution.ID).Error })
+
+	if err := MigrateExecutionLogs(db); err != nil {
+		t.Fatalf("MigrateExecutionLogs() error = %v", err)
+	}
+	var stored commonExecution.TaskExecution
+	if err := db.First(&stored, execution.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(stored.ErrorDetails) != 0 {
+		t.Fatalf("error_details = %#v, want empty", stored.ErrorDetails)
+	}
+	if stored.Metadata["execution_logs"] != "batch=1 records_written=100\n" {
+		t.Fatalf("metadata = %#v", stored.Metadata)
+	}
 }
 
 func TestIntegrationPostgresRuntimeLeaseSQLMigrationMatchesGORMModel(t *testing.T) {

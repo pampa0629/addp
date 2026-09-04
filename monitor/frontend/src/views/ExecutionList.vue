@@ -465,12 +465,12 @@
         </div>
 
         <!-- 错误详情 -->
-        <div v-if="currentExecution.error_details" class="detail-section">
+        <div v-if="executionErrorDetails" class="detail-section">
           <h4>{{ t('monitor.execution.detail.error') }}</h4>
           <el-alert
             type="error"
             :closable="false"
-            :description="JSON.stringify(currentExecution.error_details, null, 2)"
+            :description="JSON.stringify(executionErrorDetails, null, 2)"
           />
         </div>
       </div>
@@ -605,6 +605,13 @@ const currentExecutionMetadata = computed(() => normalizeObject(currentExecution
 const hasExecutionMetadata = computed(() => Object.keys(currentExecutionMetadata.value).length > 0)
 
 const executionMetadataText = computed(() => JSON.stringify(currentExecutionMetadata.value, null, 2))
+
+const executionErrorDetails = computed(() => {
+	const status = currentExecution.value?.status
+	if (!['failed', 'timeout', 'cancelled'].includes(status)) return null
+	const details = normalizeObject(currentExecution.value?.error_details)
+	return Object.keys(details).length > 0 ? details : null
+})
 
 const metadataSummaryItems = computed(() => buildMetadataSummaryItems(currentExecutionMetadata.value))
 const workflowResultPreview = computed(() => currentExecutionMetadata.value?.result?.final_result)

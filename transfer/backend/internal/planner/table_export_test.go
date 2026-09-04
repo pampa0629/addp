@@ -121,6 +121,64 @@ func TestQuerySourceRequiresExplicitTypedProjectMapping(t *testing.T) {
 	}
 }
 
+func TestValidateQueryInputsAcceptsSameEngineResourceLocators(t *testing.T) {
+	source := EndpointSpec{
+		Locator: "addp://engine/11/path/public/activities?type=table",
+		Query: &QuerySourceSpec{Inputs: []QueryInputSpec{
+			{Name: "activities", Locator: "addp://engine/11/path/public/activities?type=table&item_id=22"},
+			{Name: "persons", Locator: "addp://engine/11/path/public/persons?type=table&item_id=23"},
+		}},
+	}
+
+	if err := validateQueryInputs(source); err != nil {
+		t.Fatalf("validateQueryInputs() error = %v", err)
+	}
+}
+
+func TestValidateQueryInputsRejectsDifferentEngine(t *testing.T) {
+	source := EndpointSpec{
+		Locator: "addp://engine/11/path/public/activities?type=table",
+		Query: &QuerySourceSpec{Inputs: []QueryInputSpec{
+			{Name: "persons", Locator: "addp://engine/12/path/public/persons?type=table&item_id=23"},
+		}},
+	}
+
+	err := validateQueryInputs(source)
+	if err == nil || !strings.Contains(err.Error(), "must use source engine 11") {
+		t.Fatalf("validateQueryInputs() error = %v", err)
+	}
+}
+
+func TestValidateQueryInputsRejectsDuplicateNames(t *testing.T) {
+	source := EndpointSpec{
+		Locator: "addp://engine/11/path/public/activities?type=table",
+		Query: &QuerySourceSpec{Inputs: []QueryInputSpec{
+			{Name: "activities", Locator: "addp://engine/11/path/public/activities?type=table"},
+			{Name: "activities", Locator: "addp://engine/11/path/public/archive_activities?type=table"},
+		}},
+	}
+
+	err := validateQueryInputs(source)
+	if err == nil || !strings.Contains(err.Error(), "is duplicated") {
+		t.Fatalf("validateQueryInputs() error = %v", err)
+	}
+}
+
+func TestValidateQueryInputsRejectsUnstableOrder(t *testing.T) {
+	source := EndpointSpec{
+		Locator: "addp://engine/11/path/public/activities?type=table",
+		Query: &QuerySourceSpec{Inputs: []QueryInputSpec{
+			{Name: "persons", Locator: "addp://engine/11/path/public/persons?type=table"},
+			{Name: "activities", Locator: "addp://engine/11/path/public/activities?type=table"},
+		}},
+	}
+
+	err := validateQueryInputs(source)
+	if err == nil || !strings.Contains(err.Error(), "must be sorted by name") {
+		t.Fatalf("validateQueryInputs() error = %v", err)
+	}
+}
+
 func TestParseInfraLocatorURIForMinioObject(t *testing.T) {
 	loc, err := ParseInfraLocatorURI("addp-infra://minio/manager/tenant_7/import/20260619/upload/roads.shp?type=object")
 	if err != nil {

@@ -39,6 +39,7 @@ type postgresResolvedFunction struct {
 	ReturnsSet      bool
 	Volatility      string
 	SecurityDefiner bool
+	Extension       string
 }
 
 type postgresQueryReadDependencies struct {
@@ -345,8 +346,7 @@ func validatePostgresFunctionReferences(
 }
 
 func isTransparentPostgresReadFunction(function postgresResolvedFunction) bool {
-	if function.OID == 0 || function.Schema != "pg_catalog" || function.Language != "internal" ||
-		function.ReturnsSet || function.SecurityDefiner {
+	if function.OID == 0 || function.ReturnsSet || function.SecurityDefiner {
 		return false
 	}
 	switch function.Kind {
@@ -354,7 +354,12 @@ func isTransparentPostgresReadFunction(function postgresResolvedFunction) bool {
 	default:
 		return false
 	}
-	return function.Volatility == "i" || function.Volatility == "s"
+	if function.Volatility != "i" && function.Volatility != "s" {
+		return false
+	}
+	trustedBuiltin := function.Schema == "pg_catalog" && function.Language == "internal"
+	trustedExtension := strings.EqualFold(strings.TrimSpace(function.Extension), "postgis")
+	return trustedBuiltin || trustedExtension
 }
 
 func postgresReadRelationKind(relkind string) (string, error) {
@@ -397,10 +402,16 @@ func (c *postgresDatabaseReadCatalog) ResolveRelation(ctx context.Context, refer
 func (c *postgresDatabaseReadCatalog) FunctionCandidates(ctx context.Context, reference postgresFunctionReference) ([]postgresResolvedFunction, error) {
 	rows, err := c.db.QueryContext(ctx, `
 		SELECT proc.oid::bigint, namespace.nspname, proc.proname, language.lanname,
-		       proc.prokind::text, proc.proretset, proc.provolatile::text, proc.prosecdef
+		       proc.prokind::text, proc.proretset, proc.provolatile::text, proc.prosecdef,
+		       COALESCE(extension.extname, '')
 		FROM pg_catalog.pg_proc proc
 		JOIN pg_catalog.pg_namespace namespace ON namespace.oid = proc.pronamespace
 		JOIN pg_catalog.pg_language language ON language.oid = proc.prolang
+		LEFT JOIN pg_catalog.pg_depend extension_dependency
+		  ON extension_dependency.classid = 'pg_catalog.pg_proc'::pg_catalog.regclass
+		 AND extension_dependency.objid = proc.oid
+		 AND extension_dependency.deptype = 'e'
+		LEFT JOIN pg_catalog.pg_extension extension ON extension.oid = extension_dependency.refobjid
 		WHERE proc.proname = $1
 		  AND (($2 <> '' AND namespace.nspname = $2) OR ($2 = '' AND pg_catalog.pg_function_is_visible(proc.oid)))
 		  AND $3::integer >= proc.pronargs::integer - proc.pronargdefaults::integer
@@ -417,7 +428,7 @@ func (c *postgresDatabaseReadCatalog) FunctionCandidates(ctx context.Context, re
 		var function postgresResolvedFunction
 		if err := rows.Scan(
 			&function.OID, &function.Schema, &function.Name, &function.Language,
-			&function.Kind, &function.ReturnsSet, &function.Volatility, &function.SecurityDefiner,
+			&function.Kind, &function.ReturnsSet, &function.Volatility, &function.SecurityDefiner, &function.Extension,
 		); err != nil {
 			return nil, err
 		}
@@ -465,7 +476,8 @@ func (c *postgresDatabaseReadCatalog) ViewDependencies(ctx context.Context, oid 
 func (c *postgresDatabaseReadCatalog) ViewFunctionDependencies(ctx context.Context, oid int64) ([]postgresResolvedFunction, error) {
 	rows, err := c.db.QueryContext(ctx, `
 		SELECT DISTINCT function.oid::bigint, namespace.nspname, function.proname, language.lanname,
-		       function.prokind::text, function.proretset, function.provolatile::text, function.prosecdef
+		       function.prokind::text, function.proretset, function.provolatile::text, function.prosecdef,
+		       COALESCE(extension.extname, '')
 		FROM pg_catalog.pg_rewrite rewrite
 		JOIN pg_catalog.pg_depend depend
 		  ON depend.classid = 'pg_catalog.pg_rewrite'::pg_catalog.regclass
@@ -474,6 +486,11 @@ func (c *postgresDatabaseReadCatalog) ViewFunctionDependencies(ctx context.Conte
 		JOIN pg_catalog.pg_proc function ON function.oid = depend.refobjid
 		JOIN pg_catalog.pg_namespace namespace ON namespace.oid = function.pronamespace
 		JOIN pg_catalog.pg_language language ON language.oid = function.prolang
+		LEFT JOIN pg_catalog.pg_depend extension_dependency
+		  ON extension_dependency.classid = 'pg_catalog.pg_proc'::pg_catalog.regclass
+		 AND extension_dependency.objid = function.oid
+		 AND extension_dependency.deptype = 'e'
+		LEFT JOIN pg_catalog.pg_extension extension ON extension.oid = extension_dependency.refobjid
 		WHERE rewrite.ev_class = $1::oid
 		  AND depend.deptype = 'n'
 		ORDER BY 2, 3, 1
@@ -487,7 +504,7 @@ func (c *postgresDatabaseReadCatalog) ViewFunctionDependencies(ctx context.Conte
 		var function postgresResolvedFunction
 		if err := rows.Scan(
 			&function.OID, &function.Schema, &function.Name, &function.Language,
-			&function.Kind, &function.ReturnsSet, &function.Volatility, &function.SecurityDefiner,
+			&function.Kind, &function.ReturnsSet, &function.Volatility, &function.SecurityDefiner, &function.Extension,
 		); err != nil {
 			return nil, err
 		}

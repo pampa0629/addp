@@ -238,6 +238,8 @@
             <QueryResult
               :result="executionResult"
               :custom-content="resultViewMode === 'graph' && hasGraphData"
+              :full-export-supported="!federatedQuery"
+              @export-full="openFullExportDialog"
             >
               <GraphResultView
                 v-if="resultViewMode === 'graph' && hasGraphData"
@@ -493,6 +495,15 @@
       </template>
     </el-dialog>
 
+    <ExportDialog
+      v-model="fullExportDialogVisible"
+      :formats="fullExportFormats"
+      :default-file-name="fullExportFileName"
+      :exporting="fullExportSubmitting"
+      :hint="t('develop.queryResult.exportFullHint')"
+      @confirm="submitFullExport"
+    />
+
     <el-dialog
       v-model="queryClarificationVisible"
       class="addp-dialog"
@@ -746,6 +757,7 @@ import {
 import { format } from 'sql-formatter'
 import {
   ResourceTreePicker,
+  ExportDialog,
   ExecutionParameterForm,
   StatusAnnouncer,
   getResourceFields,
@@ -755,8 +767,10 @@ import {
   engineSelectionState,
   isEngineSelectable,
   listResourceTreeEngines,
+  downloadFromUrl,
   parseLocator,
   useResizable,
+  waitForExportSession,
   useConsolePageDescriptor
 } from '@common-ui'
 import { GraphResultView } from '@addp/common-frontend/graph'
@@ -764,7 +778,7 @@ import MonacoEditor from '../components/MonacoEditor.vue'
 import QueryResult from '../components/QueryResult.vue'
 import SaveQueryDialog from '../components/SaveQueryDialog.vue'
 import { getSampleQuery, preflightQuery, saveQueryTask, testConnection, updateQueryTask } from '../api/query.js'
-import { createExecution, getExecution } from '../api/execution.js'
+import { createExecution, createQueryExport, getExecution, getQueryExport } from '../api/execution.js'
 import { listEngines } from '../api/engines.js'
 import { getDevTask } from '../api/devTask.js'
 import { generateQueryFromNL } from '../api/copilot.js'
@@ -849,6 +863,11 @@ const relationDefaultSelection = ref(null)
 const executionParameterDialogVisible = ref(false)
 const executionParameterOverrides = ref({})
 const executionParameterFormRef = ref(null)
+const fullExportDialogVisible = ref(false)
+const fullExportFileName = ref('')
+const fullExportSubmitting = ref(false)
+const fullExportFormats = Object.freeze(['csv'])
+let fullExportAbortController = null
 const isCompact = ref(false)
 const announcement = ref('')
 const queryAiOpen = ref(false)
@@ -1678,6 +1697,56 @@ const clearResult = () => {
   resultViewMode.value = 'table'
 }
 
+const exportFileName = () => {
+  const baseName = String(currentTaskName.value || 'query_result')
+    .trim()
+    .replace(/[^\p{L}\p{N}._-]+/gu, '_')
+    .replace(/^_+|_+$/g, '') || 'query_result'
+  const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '_').slice(0, 15)
+  return `${baseName}_${timestamp}.csv`
+}
+
+const openFullExportDialog = () => {
+  if (!executionResult.value?.execution_id) return
+  fullExportFileName.value = exportFileName()
+  fullExportDialogVisible.value = true
+}
+
+const submitFullExport = async ({ format: exportFormat, fileName }) => {
+  const executionID = executionResult.value?.execution_id
+  const normalizedFileName = String(fileName || '').trim()
+  if (!executionID || !normalizedFileName || fullExportSubmitting.value) return
+  fullExportSubmitting.value = true
+  fullExportAbortController?.abort()
+  fullExportAbortController = new AbortController()
+  try {
+    const created = await createQueryExport(executionID, {
+      format: exportFormat,
+      file_name: normalizedFileName
+    })
+    if (!created?.id) throw new Error(t('develop.queryResult.exportSessionIdMissing'))
+    fullExportDialogVisible.value = false
+    ElMessage.success(t('develop.queryResult.exportFullSubmitted'))
+    announcement.value = t('develop.queryResult.exportFullSubmitted')
+    const ready = await waitForExportSession(getQueryExport, created.id, {
+      signal: fullExportAbortController.signal,
+      failedMessage: t('develop.queryResult.exportFullFailed'),
+      timeoutMessage: t('develop.queryResult.exportTimeout')
+    })
+    downloadFromUrl(ready.download_url, ready.file_name || normalizedFileName)
+    ElMessage.success(t('develop.queryResult.exportDownloaded'))
+    announcement.value = t('develop.queryResult.exportDownloaded')
+  } catch (error) {
+    if (error?.name === 'AbortError') return
+    const detail = error?.response?.data?.error || error?.response?.data?.details || error?.message || ''
+    ElMessage.error(detail || t('develop.queryResult.exportFullFailed'))
+    announcement.value = detail || t('develop.queryResult.exportFullFailed')
+  } finally {
+    fullExportSubmitting.value = false
+    fullExportAbortController = null
+  }
+}
+
 const queryWarningMessage = warning => ({
   target_unknown: t('develop.query.warningTargetUnknown'),
   target_required: t('develop.query.warningTargetRequired'),
@@ -2387,6 +2456,8 @@ watch(queryParameterPanelWidth, width => {
 })
 
 onBeforeUnmount(() => {
+  fullExportAbortController?.abort()
+  fullExportAbortController = null
   executionRequestSequence += 1
   sampleRequests.invalidate()
   catalogEngineRequestSequence += 1

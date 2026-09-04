@@ -55,6 +55,8 @@ test('localizes the standalone module name instead of using one language for eve
   assert.equal(en.workbench.noData, 'No data')
   assert.equal(zhCn.workbench.spatialWizard.open, '从空间探索向导创建')
   assert.equal(en.workbench.spatialWizard.open, 'Create from spatial exploration wizard')
+  assert.equal(zhCn.workbench.previewApplication, '预览应用')
+  assert.equal(en.workbench.previewApplication, 'Preview application')
 })
 
 test('spatial exploration wizard compiles existing application concepts without a template runtime path', () => {
@@ -71,7 +73,7 @@ test('spatial exploration wizard compiles existing application concepts without 
 
 test('data application components own service selection, rendering, parameters, and preview', () => {
   const editor = readSource('../src/components/ApplicationComponentEditor.vue')
-  const runtime = readSource('../src/views/DataApplicationRuntime.vue')
+  const canvas = readSource('../src/components/DataApplicationCanvas.vue')
   const rendererHost = readSource('../src/components/WorkbenchRendererHost.vue')
   const draft = readSource('../src/utils/componentDraft.mjs')
   assert.match(editor, /listConsumerServices\(\{ service_type: ['"]query['"]/) // catalog is capability-scoped
@@ -81,8 +83,25 @@ test('data application components own service selection, rendering, parameters, 
   assert.match(draft, /export function createParameterDraft/)
   assert.match(editor, /executeDescriptorOperation\(operation, buildQueryRequest/)
   assert.match(editor, /:result-ready="queryCompleted"/)
-  assert.match(runtime, /:result-ready="state\(placement\.component_id\)\.query_completed"/)
+  assert.match(canvas, /:result-ready="state\(placement\.component_id\)\.query_completed"/)
   assert.match(rendererHost, /rendererType === 'value' && !resultReady/)
+})
+
+test('draft preview and published runtime reuse one Workbench application canvas', () => {
+  const editor = readSource('../src/views/DataApplicationEditor.vue')
+  const runtime = readSource('../src/views/DataApplicationRuntime.vue')
+  const canvas = readSource('../src/components/DataApplicationCanvas.vue')
+  const router = readSource('../src/router/index.js')
+
+  assert.match(editor, /<DataApplicationCanvas[^>]*:application="draftPreviewApplication"[^>]*mode="draft-preview"/)
+  assert.match(editor, /buildDataApplicationPreview\(application\)/)
+  assert.match(runtime, /<DataApplicationCanvas[^>]*:application="application"/)
+  assert.doesNotMatch(runtime, /WorkbenchRendererHost|executeDescriptorOperation|getConsumerDescriptor/)
+  assert.match(canvas, /WorkbenchRendererHost/)
+  assert.match(canvas, /executeDescriptorOperation/)
+  assert.match(canvas, /getConsumerDescriptor/)
+  assert.equal((canvas.match(/WorkbenchRendererHost/g) || []).length >= 2, true)
+  assert.doesNotMatch(router, /\/preview/)
 })
 
 test('data application editor clones persisted reactive components through their raw value', () => {

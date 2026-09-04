@@ -107,6 +107,40 @@ func TestUniqueConflictResponsesAreLocalizedWithStableCodes(t *testing.T) {
 	}
 }
 
+func TestLogicalTableDeleteConflictsAreLocalizedWithStableCodes(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	tests := []struct {
+		code      string
+		messageID string
+		zh        string
+		en        string
+	}{
+		{code: "materialization_group_member_conflict", messageID: i18n.MsgTableMaterializationGroupMember, zh: "逻辑表仍属于物化组，请先将其移出物化组", en: "The logical table still belongs to a materialization group; remove it from the group first"},
+		{code: "logical_table_materialization_configured", messageID: i18n.MsgTableMaterializationConfigured, zh: "逻辑表仍保留物化目标配置，请先显式清空配置", en: "The logical table still has a materialization target configuration; clear it explicitly first"},
+		{code: "logical_table_materialization_batch_active", messageID: i18n.MsgTableMaterializationBatchActive, zh: "逻辑表仍有未终结的物化批次，不能删除", en: "The logical table still has a non-terminal materialization batch and cannot be deleted"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.code, func(t *testing.T) {
+			responseForLanguage := func(language string) (int, gin.H) {
+				c, _ := gin.CreateTestContext(httptest.NewRecorder())
+				c.Request = httptest.NewRequest("DELETE", "/api/v1/model/logical-tables/1", nil)
+				c.Request.Header.Set("Accept-Language", language)
+				commoni18n.I18nMiddleware()(c)
+				return serviceErrorResponse(c, apperrors.Conflict(tt.code, tt.messageID))
+			}
+
+			zhStatus, zhResponse := responseForLanguage("zh-CN")
+			enStatus, enResponse := responseForLanguage("en")
+			if zhStatus != http.StatusConflict || enStatus != http.StatusConflict ||
+				zhResponse["error_code"] != tt.code || enResponse["error_code"] != tt.code ||
+				zhResponse["error"] != tt.zh || enResponse["error"] != tt.en {
+				t.Fatalf("unexpected localized delete conflict responses: zh=%d %#v en=%d %#v", zhStatus, zhResponse, enStatus, enResponse)
+			}
+		})
+	}
+}
+
 func TestApprovalValidationResponsesAreLocalizedWithStableCodes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	tests := []struct {

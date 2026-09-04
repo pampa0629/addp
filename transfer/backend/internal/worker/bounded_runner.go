@@ -87,14 +87,14 @@ func (r *BoundedRunner) workerLoop(ctx context.Context, workerID string, canClai
 
 func (r *BoundedRunner) processNext(ctx context.Context, workerID string) bool {
 	now := time.Now().UTC()
-	execution, lease, task, err := r.tasks.ClaimNextBoundedExecution(ctx, workerID, now, r.config.LeaseDuration)
+	execution, lease, err := r.tasks.ClaimNextBoundedExecution(ctx, workerID, now, r.config.LeaseDuration)
 	if err != nil {
 		if ctx.Err() == nil {
 			r.logger.Error("claim bounded execution failed", "worker_id", workerID, "error", err)
 		}
 		return false
 	}
-	if execution == nil || lease == nil || task == nil {
+	if execution == nil || lease == nil {
 		return false
 	}
 	r.active.Add(1)
@@ -105,7 +105,7 @@ func (r *BoundedRunner) processNext(ctx context.Context, workerID string) bool {
 	r.executions.BindBoundedLease(executionID, *lease)
 	heartbeatDone := make(chan error, 1)
 	go r.heartbeat(execCtx, cancel, *lease, heartbeatDone)
-	execErr := r.service.ExecuteTask(execCtx, task.ID, executionID)
+	execErr := r.service.ExecuteExecution(execCtx, executionID)
 	cancel()
 	heartbeatErr := <-heartbeatDone
 	if heartbeatErr != nil {

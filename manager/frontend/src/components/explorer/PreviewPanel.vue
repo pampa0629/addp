@@ -486,13 +486,12 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { MagicStick, Download, Location, Collection, Document, View, Refresh, Select, InfoFilled, WarningFilled, Grid } from '@element-plus/icons-vue'
 import { getPreviewComponent } from '@/plugins/previews'
-import { parseLocator } from '@addp/common-frontend'
+import { downloadFromUrl, ExportDialog, parseLocator, waitForExportSession } from '@addp/common-frontend'
 import client from '@/api/client'
 import { dataExplorerAPI } from '@/api/dataExplorer'
 import { quickViewAPI } from '@/api/quickView'
 import { useCurrentResultConfirmation } from '@/composables/useCurrentResultConfirmation'
 import { toQuickViewExistingResultPayload } from '@/utils/currentResultConfirmation'
-import ExportDialog from '@/components/explorer/ExportDialog.vue'
 import FlatGeobufQuickView from '@/components/map/FlatGeobufQuickView.vue'
 import VectorTilePreview from '@/components/map/VectorTilePreview.vue'
 import RasterTIFFQuickView from '@/components/map/RasterTIFFQuickView.vue'
@@ -597,20 +596,10 @@ const mvtGridVisible = ref(false)
 const resourceActions = ref(null)
 const exportDialogVisible = ref(false)
 const exporting = ref(false)
-let exportPollTimer = null
+let exportAbortController = null
 let quickViewRequestSeq = 0
 let quickViewStateSaveTimer = 0
 let quickViewStatusLocator = ''
-
-const downloadFromUrl = (url, fileName) => {
-  const link = document.createElement('a')
-  link.href = url
-  link.download = fileName || 'download'
-  link.rel = 'noopener'
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
-}
 
 // 获取预览插件信息
 const activePlugin = computed(() => {
@@ -1201,23 +1190,6 @@ const handleDownload = async () => {
   }
 }
 
-const waitForExportReady = async (sessionId) => {
-  for (let i = 0; i < 60; i += 1) {
-    const response = await dataExplorerAPI.getExport(sessionId)
-    const session = response?.data || response
-    if (session?.status === 'success' && session?.download_url) {
-      return session
-    }
-    if (session?.status === 'failed') {
-      throw new Error(session?.error_message || t('manager.explorer.exportFailedUnknown'))
-    }
-    await new Promise(resolve => {
-      exportPollTimer = window.setTimeout(resolve, 1500)
-    })
-  }
-  throw new Error(t('manager.explorer.exportTimeout'))
-}
-
 const openExportDialog = () => {
   if (exporting.value) return
   exportDialogVisible.value = true
@@ -1227,6 +1199,8 @@ const handleExport = async ({ format, fileName }) => {
   const locator = props.selectedNode?.locator || ''
   if (!locator || !format || exporting.value) return
   exporting.value = true
+  exportAbortController?.abort()
+  exportAbortController = new AbortController()
   try {
     const response = await dataExplorerAPI.createExport({
       source_item_locator: locator,
@@ -1236,14 +1210,20 @@ const handleExport = async ({ format, fileName }) => {
     const created = response?.data || response
     exportDialogVisible.value = false
     ElMessage.success(t('manager.explorer.exportSubmitted'))
-    const ready = await waitForExportReady(created.id)
-    await downloadFromUrl(ready.download_url, ready.file_name || fileName || defaultExportFileName.value)
+    const ready = await waitForExportSession(dataExplorerAPI.getExport, created.id, {
+      signal: exportAbortController.signal,
+      failedMessage: t('manager.explorer.exportFailedUnknown'),
+      timeoutMessage: t('manager.explorer.exportTimeout')
+    })
+    downloadFromUrl(ready.download_url, ready.file_name || fileName || defaultExportFileName.value)
     ElMessage.success(t('manager.explorer.downloadStarted'))
   } catch (error) {
+    if (error?.name === 'AbortError') return
     console.error('导出失败:', error)
     ElMessage.error(t('manager.explorer.exportFailed', { error: error.response?.data?.error || error.message || error }))
   } finally {
     exporting.value = false
+    exportAbortController = null
   }
 }
 
@@ -1258,6 +1238,9 @@ watch(
 watch(
   () => props.selectedNode?.locator || '',
   async (locator) => {
+    exportAbortController?.abort()
+    exportAbortController = null
+    exporting.value = false
     resourceActions.value = null
     exportDialogVisible.value = false
     if (!locator) return
@@ -1285,10 +1268,8 @@ watch(
 onUnmounted(() => {
   downloading.value = false
   exporting.value = false
-  if (exportPollTimer) {
-    window.clearTimeout(exportPollTimer)
-    exportPollTimer = null
-  }
+  exportAbortController?.abort()
+  exportAbortController = null
   if (quickViewStateSaveTimer) {
     window.clearTimeout(quickViewStateSaveTimer)
     quickViewStateSaveTimer = 0

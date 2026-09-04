@@ -917,17 +917,6 @@
       "uploadSuccess": "上传成功",
       "uploadFailed": "上传失败：{msg}"
     },
-    "export": {
-      "title": "导出数据",
-      "format": "格式",
-      "formatPlaceholder": "请选择导出格式",
-      "formatRequired": "请选择导出格式",
-      "fileName": "文件名",
-      "fileNamePlaceholder": "请输入文件名",
-      "fileNameRequired": "请输入文件名",
-      "cancel": "取消",
-      "start": "开始导出"
-    },
     "explorer": {
       "storageEngines": "存储引擎",
       "engine": "引擎",
@@ -1010,7 +999,7 @@
       "graphSampleProperties": "属性",
       "uploadData": "上传数据",
       "importData": "导入数据",
-      "exportData": "导出",
+      "exportData": "导出全部结果",
       "downloadPage": "下载",
       "loadingSchemaGraph": "正在加载 Schema 图...",
       "noSchemaData": "暂无 Schema 数据",

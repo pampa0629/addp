@@ -166,7 +166,7 @@ test-meta-postgres: ## 使用一次性 PostgreSQL 数据库运行 Meta 迁移集
 test-catalog-postgres: ## 使用一次性 PostgreSQL 数据库运行 Catalog 约束集成门禁
 	@bash scripts/test/catalog-postgres-gate.sh
 
-test-develop-postgres: ## 使用一次性 PostgreSQL 数据库运行 Develop 目录变化集成门禁
+test-develop-postgres: ## 使用测试 PostgreSQL 数据库运行 Develop schema 与目录变化集成门禁
 	@bash scripts/test/develop-postgres-gate.sh
 
 test-model-postgres: ## 使用一次性 PostgreSQL 数据库运行 Model 物化与事务集成门禁
@@ -184,7 +184,7 @@ test-service-postgres: ## 使用一次性 PostgreSQL 数据库运行 Service 数
 test-standard-postgres: ## 使用一次性 PostgreSQL 数据库运行 Standard 集成门禁
 	@bash scripts/test/standard-postgres-gate.sh
 
-test-transfer-postgres: ## 使用一次性 PostgreSQL 数据库运行 Transfer 受保护导出集成门禁
+test-transfer-postgres: ## 使用测试 PostgreSQL 数据库运行 Transfer schema 与受保护导出集成门禁
 	@bash scripts/test/transfer-postgres-gate.sh
 
 test-workbench-postgres: ## 使用一次性 PostgreSQL 数据库运行 Workbench Data Application 集成门禁

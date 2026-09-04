@@ -13,10 +13,9 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-func (r *TaskRepository) ClaimNextBoundedExecution(ctx context.Context, workerID string, now time.Time, leaseDuration time.Duration) (*commonExecution.TaskExecution, *commonExecution.Lease, *models.TransferTask, error) {
+func (r *TaskRepository) ClaimNextBoundedExecution(ctx context.Context, workerID string, now time.Time, leaseDuration time.Duration) (*commonExecution.TaskExecution, *commonExecution.Lease, error) {
 	var execution *commonExecution.TaskExecution
 	var lease *commonExecution.Lease
-	var task models.TransferTask
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var err error
 		execution, lease, err = commonExecution.ClaimNext(ctx, tx, commonExecution.ClaimOptions{
@@ -26,10 +25,14 @@ func (r *TaskRepository) ClaimNextBoundedExecution(ctx context.Context, workerID
 		if err != nil || execution == nil {
 			return err
 		}
+		if execution.SourceTaskID == nil {
+			return nil
+		}
 		taskID, err := commonExecution.ParseSourceTaskIDUint(execution.SourceTaskID)
 		if err != nil {
 			return fmt.Errorf("transfer execution %s has invalid source task: %w", execution.ExecutionID, err)
 		}
+		var task models.TransferTask
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND tenant_id = ?", taskID, execution.TenantID).First(&task).Error; err != nil {
 			return err
 		}
@@ -51,12 +54,12 @@ func (r *TaskRepository) ClaimNextBoundedExecution(ctx context.Context, workerID
 		return nil
 	})
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 	if execution == nil {
-		return nil, nil, nil, nil
+		return nil, nil, nil
 	}
-	return execution, lease, &task, nil
+	return execution, lease, nil
 }
 
 // FailExpiredBoundedExecutions fails closed. A runtime-bound existing table may

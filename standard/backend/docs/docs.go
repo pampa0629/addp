@@ -4126,24 +4126,6 @@ const docTemplate = `{
                                 "$ref": "#/definitions/github_com_addp_standard_internal_models.MetricCategory"
                             }
                         }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -4157,6 +4139,9 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -4164,29 +4149,22 @@ const docTemplate = `{
                     "Standard"
                 ],
                 "summary": "创建指标分类 | Create metric category",
+                "parameters": [
+                    {
+                        "description": "指标分类 | Metric category",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.CreateMetricCategoryRequest"
+                        }
+                    }
+                ],
                 "responses": {
                     "201": {
                         "description": "Created",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_standard_internal_models.MetricCategory"
-                        }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
                         }
                     }
                 },
@@ -4203,6 +4181,9 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -4212,7 +4193,7 @@ const docTemplate = `{
                 "summary": "更新指标分类 | Update metric category",
                 "parameters": [
                     {
-                        "description": "更新指标分类 | Update metric category",
+                        "description": "完整分类及并发版本 | Full category and concurrency version",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -4225,30 +4206,11 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.MetricCategory"
                         }
                     },
                     "409": {
-                        "description": "资源版本冲突 | Resource version conflict",
+                        "description": "版本冲突 | Version conflict",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -4280,47 +4242,6 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "指标不存在 | Metric not found",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "409": {
-                        "description": "资源仍被 Model 引用 | Resource is still referenced by Model",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "503": {
-                        "description": "Model 引用删除屏障不可用 | Model reference deletion guard unavailable",
-                        "schema": {
-                            "type": "object",
                             "additionalProperties": {
                                 "type": "string"
                             }
@@ -4346,7 +4267,67 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "获取指标列表 | List metrics",
+                "summary": "获取指标定义列表 | List metric definitions",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "分类 ID | Category ID",
+                        "name": "category_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "归属业务域 ID | Owning domain ID",
+                        "name": "owner_domain_id",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "platform",
+                            "tenant_common",
+                            "domain"
+                        ],
+                        "type": "string",
+                        "description": "适用范围 | Scope",
+                        "name": "scope_type",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "atomic",
+                            "derived",
+                            "composite"
+                        ],
+                        "type": "string",
+                        "description": "指标类型 | Metric type",
+                        "name": "metric_type",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "draft",
+                            "in_review",
+                            "published",
+                            "withdrawn"
+                        ],
+                        "type": "string",
+                        "description": "修订状态 | Revision status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "关键字 | Keyword",
+                        "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "生效时点 | Effective point in time",
+                        "name": "as_of",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -4354,17 +4335,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_standard_internal_models.PaginatedMetricResponse"
                         }
                     },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
+                    "400": {
+                        "description": "请求无效 | Invalid request",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -4384,37 +4356,32 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Standard"
                 ],
-                "summary": "创建指标 | Create metric",
+                "summary": "创建指标定义及首个草稿修订 | Create metric definition with initial draft revision",
+                "parameters": [
+                    {
+                        "description": "指标定义与首个草稿 | Metric definition and initial draft",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.CreateMetricRequest"
+                        }
+                    }
+                ],
                 "responses": {
-                    "200": {
-                        "description": "OK",
+                    "201": {
+                        "description": "Created",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.MetricDefinitionAggregate"
                         }
                     }
                 },
@@ -4437,31 +4404,20 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "获取指标详情 | Get metric detail",
+                "summary": "获取指标定义聚合 | Get metric definition aggregate",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "生效时点 | Effective point in time",
+                        "name": "as_of",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.MetricDefinitionAggregate"
                         }
                     }
                 },
@@ -4476,16 +4432,19 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Standard"
                 ],
-                "summary": "更新指标 | Update metric",
+                "summary": "更新指标定义归属信息 | Update metric definition ownership",
                 "parameters": [
                     {
-                        "description": "更新指标 | Update metric",
+                        "description": "归属信息及并发版本 | Ownership and concurrency version",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -4498,30 +4457,11 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.MetricDefinitionAggregate"
                         }
                     },
                     "409": {
-                        "description": "资源版本冲突 | Resource version conflict",
+                        "description": "版本冲突 | Version conflict",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -4547,26 +4487,10 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "删除指标 | Delete metric",
+                "summary": "删除指标定义稳定身份 | Delete metric definition identity",
                 "responses": {
                     "200": {
                         "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -4575,7 +4499,7 @@ const docTemplate = `{
                         }
                     },
                     "409": {
-                        "description": "Conflict",
+                        "description": "仍被引用 | Still referenced",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -4587,140 +4511,6 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "standard.metric.delete"
-                ]
-            }
-        },
-        "/metrics/{id}/approve": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "审批指标 | Approve metric",
-                "parameters": [
-                    {
-                        "description": "当前资源版本 | Current resource version",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_standard_internal_models.VersionRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "409": {
-                        "description": "资源版本冲突 | Resource version conflict",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "standard.metric.approve"
-                ]
-            }
-        },
-        "/metrics/{id}/deprecate": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "废弃指标 | Deprecate metric",
-                "parameters": [
-                    {
-                        "description": "当前资源版本 | Current resource version",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_standard_internal_models.VersionRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "409": {
-                        "description": "资源版本冲突 | Resource version conflict",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "standard.metric.offline"
                 ]
             }
         },
@@ -4983,25 +4773,17 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "返回当前 Metric 的基准指标和直接依赖关系；只使用当前 User AuthContext，不面向 Catalog Service Token 扩权 | Return the Metric base and direct dependency relations under the current User AuthContext; no Catalog service-token elevation",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Professional Relations"
                 ],
-                "summary": "查询 Metric 专业关系图 | Get Metric professional relation graph",
+                "summary": "查询指标定义专业关系图 | Get metric definition professional relation graph",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "Metric ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "integer",
-                        "description": "最大边数量，默认100，最大200 | Maximum edges, default 100, maximum 200",
+                        "description": "最大边数量 | Maximum edges",
                         "name": "limit",
                         "in": "query"
                     }
@@ -5012,36 +4794,148 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_standard_internal_models.ProfessionalRelationsResponse"
                         }
-                    },
-                    "400": {
-                        "description": "请求无效 | Invalid request",
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.metric.read"
+                ]
+            }
+        },
+        "/metrics/{id}/revisions": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "获取指标定义修订历史 | List metric definition revisions",
+                "responses": {
+                    "200": {
+                        "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_standard_internal_models.MetricDefinitionRevision"
                             }
                         }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.metric.read"
+                ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "从最近修订创建指标定义草稿 | Create metric definition draft from latest revision",
+                "parameters": [
+                    {
+                        "description": "并发版本与变更说明 | Version and change summary",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.CreateMetricRevisionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.MetricDefinitionAggregate"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.metric.update"
+                ]
+            }
+        },
+        "/metrics/{id}/revisions/{revision_id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "获取指标定义修订 | Get metric definition revision",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.MetricDefinitionRevision"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.metric.read"
+                ]
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "更新指标定义草稿修订 | Update metric definition draft revision",
+                "parameters": [
+                    {
+                        "description": "完整草稿及并发版本 | Full draft and concurrency version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.UpdateMetricRevisionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.MetricDefinitionAggregate"
                         }
                     },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "Metric 不存在 | Metric not found",
+                    "409": {
+                        "description": "状态或版本冲突 | State or version conflict",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -5052,7 +4946,203 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
+                    "standard.metric.update"
+                ]
+            }
+        },
+        "/metrics/{id}/revisions/{revision_id}/publish": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "发布指标定义修订 | Publish metric definition revision",
+                "parameters": [
+                    {
+                        "description": "当前资源版本 | Current resource version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.MetricDefinitionAggregate"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.metric.publish"
+                ]
+            }
+        },
+        "/metrics/{id}/revisions/{revision_id}/published-reference": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "解析已发布指标定义修订 | Resolve published metric definition revision",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.PublishedMetricDefinitionReference"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
                     "standard.metric.read"
+                ]
+            }
+        },
+        "/metrics/{id}/revisions/{revision_id}/return": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "退回指标定义修订 | Return metric definition revision",
+                "parameters": [
+                    {
+                        "description": "当前资源版本 | Current resource version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.MetricDefinitionAggregate"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.metric.publish"
+                ]
+            }
+        },
+        "/metrics/{id}/revisions/{revision_id}/submit": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "提交指标定义修订审核 | Submit metric definition revision for review",
+                "parameters": [
+                    {
+                        "description": "当前资源版本 | Current resource version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.MetricDefinitionAggregate"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.metric.update"
+                ]
+            }
+        },
+        "/metrics/{id}/revisions/{revision_id}/withdraw": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "撤回指标定义发布修订 | Withdraw published metric definition revision",
+                "parameters": [
+                    {
+                        "description": "当前资源版本 | Current resource version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.MetricDefinitionAggregate"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.metric.publish"
                 ]
             }
         },
@@ -6156,6 +6246,123 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_standard_internal_models.CreateMetricCategoryRequest": {
+            "type": "object",
+            "required": [
+                "code",
+                "name"
+            ],
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "parent_id": {
+                    "type": "integer"
+                },
+                "sort_order": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.CreateMetricRequest": {
+            "type": "object",
+            "required": [
+                "change_summary",
+                "code",
+                "definition",
+                "metric_type",
+                "name",
+                "scope_type",
+                "statistical_caliber"
+            ],
+            "properties": {
+                "category_id": {
+                    "type": "integer"
+                },
+                "change_summary": {
+                    "type": "string"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "definition": {
+                    "type": "string"
+                },
+                "dependencies": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_standard_internal_models.MetricDefinitionDependencyInput"
+                    }
+                },
+                "effective_from": {
+                    "type": "string"
+                },
+                "effective_to": {
+                    "type": "string"
+                },
+                "metric_type": {
+                    "type": "string",
+                    "enum": [
+                        "atomic",
+                        "derived",
+                        "composite"
+                    ]
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner_domain_id": {
+                    "type": "integer"
+                },
+                "scope_type": {
+                    "type": "string",
+                    "enum": [
+                        "tenant_common",
+                        "domain"
+                    ]
+                },
+                "semantic_formula": {
+                    "type": "string"
+                },
+                "statistical_caliber": {
+                    "type": "string"
+                },
+                "steward_id": {
+                    "type": "integer"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "unit_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.CreateMetricRevisionRequest": {
+            "type": "object",
+            "required": [
+                "change_summary",
+                "version"
+            ],
+            "properties": {
+                "change_summary": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
         "github_com_addp_standard_internal_models.CreateStandardCollectionRequest": {
             "type": "object",
             "required": [
@@ -6538,82 +6745,6 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_standard_internal_models.Metric": {
-            "type": "object",
-            "properties": {
-                "base_metric_id": {
-                    "description": "派生指标的基准原子指标",
-                    "type": "integer"
-                },
-                "category_id": {
-                    "type": "integer"
-                },
-                "code": {
-                    "type": "string"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "created_by": {
-                    "type": "integer"
-                },
-                "definition": {
-                    "description": "业务口径描述",
-                    "type": "string"
-                },
-                "derivation_config": {
-                    "$ref": "#/definitions/github_com_addp_standard_internal_models.JSONB"
-                },
-                "domain_id": {
-                    "description": "辅助标注，关联的主业务域",
-                    "type": "integer"
-                },
-                "formula": {
-                    "description": "复合指标：计算公式描述",
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "lifecycle_state": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "steward_id": {
-                    "type": "integer"
-                },
-                "tags": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "tenant_id": {
-                    "type": "integer"
-                },
-                "type": {
-                    "description": "atomic/derived/composite",
-                    "type": "string"
-                },
-                "unit_id": {
-                    "type": "integer"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "updated_by": {
-                    "type": "integer"
-                },
-                "version": {
-                    "type": "integer"
-                }
-            }
-        },
         "github_com_addp_standard_internal_models.MetricCategory": {
             "type": "object",
             "properties": {
@@ -6652,6 +6783,207 @@ const docTemplate = `{
                 },
                 "version": {
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.MetricDefinitionAggregate": {
+            "type": "object",
+            "properties": {
+                "category_id": {
+                    "type": "integer"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "current_revision": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_models.MetricDefinitionRevision"
+                },
+                "draft_revision": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_models.MetricDefinitionRevision"
+                },
+                "draft_revision_id": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "lifecycle_state": {
+                    "type": "string"
+                },
+                "owner_domain_id": {
+                    "type": "integer"
+                },
+                "scope_type": {
+                    "type": "string",
+                    "enum": [
+                        "platform",
+                        "tenant_common",
+                        "domain"
+                    ]
+                },
+                "steward_id": {
+                    "type": "integer"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.MetricDefinitionDependencyInput": {
+            "type": "object",
+            "required": [
+                "metric_definition_id",
+                "relation_kind"
+            ],
+            "properties": {
+                "coefficient": {
+                    "type": "number"
+                },
+                "metric_definition_id": {
+                    "type": "integer"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "relation_kind": {
+                    "type": "string",
+                    "enum": [
+                        "base",
+                        "component"
+                    ]
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.MetricDefinitionRevision": {
+            "type": "object",
+            "properties": {
+                "change_summary": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "definition": {
+                    "type": "string"
+                },
+                "dependencies": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_standard_internal_models.MetricDefinitionRevisionDependency"
+                    }
+                },
+                "effective_from": {
+                    "type": "string"
+                },
+                "effective_to": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "metric_definition_id": {
+                    "type": "integer"
+                },
+                "metric_type": {
+                    "type": "string",
+                    "enum": [
+                        "atomic",
+                        "derived",
+                        "composite"
+                    ]
+                },
+                "name": {
+                    "type": "string"
+                },
+                "published_at": {
+                    "type": "string"
+                },
+                "published_by": {
+                    "type": "integer"
+                },
+                "revision_no": {
+                    "type": "integer"
+                },
+                "semantic_formula": {
+                    "type": "string"
+                },
+                "statistical_caliber": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "submitted_at": {
+                    "type": "string"
+                },
+                "submitted_by": {
+                    "type": "integer"
+                },
+                "unit_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.MetricDefinitionRevisionDependency": {
+            "type": "object",
+            "properties": {
+                "coefficient": {
+                    "type": "number"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "dependency_definition_id": {
+                    "type": "integer"
+                },
+                "dependency_revision_id": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "metric_definition_revision_id": {
+                    "type": "integer"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "relation_kind": {
+                    "type": "string",
+                    "enum": [
+                        "base",
+                        "component"
+                    ]
                 }
             }
         },
@@ -6753,7 +7085,7 @@ const docTemplate = `{
                 "data": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_addp_standard_internal_models.Metric"
+                        "$ref": "#/definitions/github_com_addp_standard_internal_models.MetricDefinitionAggregate"
                     }
                 },
                 "page": {
@@ -6872,6 +7204,47 @@ const docTemplate = `{
                     "$ref": "#/definitions/github_com_addp_standard_internal_models.JSONB"
                 },
                 "revision_no": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.PublishedMetricDefinitionReference": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "lifecycle_state": {
+                    "type": "string"
+                },
+                "metric_type": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner_domain_id": {
+                    "type": "integer"
+                },
+                "revision_id": {
+                    "type": "integer"
+                },
+                "revision_no": {
+                    "type": "integer"
+                },
+                "scope_type": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "version": {
                     "type": "integer"
                 }
             }
@@ -7634,6 +8007,7 @@ const docTemplate = `{
         "github_com_addp_standard_internal_models.UpdateMetricCategoryRequest": {
             "type": "object",
             "required": [
+                "name",
                 "version"
             ],
             "properties": {
@@ -7650,49 +8024,30 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "version": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 1
                 }
             }
         },
         "github_com_addp_standard_internal_models.UpdateMetricRequest": {
             "type": "object",
             "required": [
+                "scope_type",
                 "version"
             ],
             "properties": {
-                "base_metric_id": {
-                    "type": "integer"
-                },
                 "category_id": {
                     "type": "integer"
                 },
-                "definition": {
-                    "type": "string"
-                },
-                "dependency_ids": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "derivation_config": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "domain_id": {
+                "owner_domain_id": {
                     "type": "integer"
                 },
-                "element_ids": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "formula": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
+                "scope_type": {
+                    "type": "string",
+                    "enum": [
+                        "tenant_common",
+                        "domain"
+                    ]
                 },
                 "steward_id": {
                     "type": "integer"
@@ -7703,14 +8058,64 @@ const docTemplate = `{
                         "type": "string"
                     }
                 },
-                "type": {
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.UpdateMetricRevisionRequest": {
+            "type": "object",
+            "required": [
+                "change_summary",
+                "definition",
+                "metric_type",
+                "name",
+                "statistical_caliber",
+                "version"
+            ],
+            "properties": {
+                "change_summary": {
+                    "type": "string"
+                },
+                "definition": {
+                    "type": "string"
+                },
+                "dependencies": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_standard_internal_models.MetricDefinitionDependencyInput"
+                    }
+                },
+                "effective_from": {
+                    "type": "string"
+                },
+                "effective_to": {
+                    "type": "string"
+                },
+                "metric_type": {
+                    "type": "string",
+                    "enum": [
+                        "atomic",
+                        "derived",
+                        "composite"
+                    ]
+                },
+                "name": {
+                    "type": "string"
+                },
+                "semantic_formula": {
+                    "type": "string"
+                },
+                "statistical_caliber": {
                     "type": "string"
                 },
                 "unit_id": {
                     "type": "integer"
                 },
                 "version": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 1
                 }
             }
         },

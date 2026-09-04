@@ -179,7 +179,7 @@ func standardReferenceDeletionModel(resourceType string) (interface{}, error) {
 	case "element":
 		return &models.Element{}, nil
 	case "metric":
-		return &models.Metric{}, nil
+		return &models.MetricDefinition{}, nil
 	default:
 		return nil, commonapi.ErrBadRequest
 	}

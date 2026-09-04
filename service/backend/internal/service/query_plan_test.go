@@ -29,7 +29,7 @@ func TestCompileQueryPlanBindsFilterAndBuildsCompositeKeyset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileQueryPlan() error = %v", err)
 	}
-	if strings.Contains(plan.SQL, "OR 1=1") || !strings.Contains(plan.SQL, `"name" = ?`) {
+	if strings.Contains(plan.SQL, "OR 1=1") || !strings.Contains(plan.SQL, `"name" = $1`) {
 		t.Fatalf("filter was not parameterized: %s", plan.SQL)
 	}
 	if !strings.Contains(plan.SQL, `ORDER BY addp_source."score" DESC, addp_source."id" ASC LIMIT 3`) {
@@ -54,7 +54,7 @@ func TestCompileQueryPlanBindsFilterAndBuildsCompositeKeyset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compileQueryPlan(cursor) error = %v", err)
 	}
-	if !strings.Contains(nextPlan.SQL, `(addp_source."score" < ?) OR (addp_source."score" = ? AND addp_source."id" > ?)`) {
+	if !strings.Contains(nextPlan.SQL, `(addp_source."score" < $2) OR (addp_source."score" = $3 AND addp_source."id" > $4)`) {
 		t.Fatalf("unexpected keyset predicate: %s", nextPlan.SQL)
 	}
 	if !reflect.DeepEqual(nextPlan.Args, []interface{}{"x' OR 1=1 --", 9.5, 9.5, int64(7)}) {
@@ -64,6 +64,35 @@ func TestCompileQueryPlanBindsFilterAndBuildsCompositeKeyset(t *testing.T) {
 	request.Select = []string{"id"}
 	if _, err := compileQueryPlan(queryService, request, queryProtocolREST, "postgresql", "SELECT id, name, score FROM public.items", nil, nil, codec); !errors.Is(err, ErrInvalidQueryCursor) {
 		t.Fatalf("query-shape mismatch error = %v, want ErrInvalidQueryCursor", err)
+	}
+}
+
+func TestCompileQueryPlanContinuesExistingPostgreSQLArgs(t *testing.T) {
+	t.Parallel()
+
+	queryService := testPublishedQueryService()
+	plan, err := compileQueryPlan(
+		queryService,
+		&models.QueryExecutionRequest{
+			Select: []string{"id", "name"},
+			Filter: &models.QueryFilter{Field: "name", Op: "eq", Value: "active"},
+			Page:   models.QueryPageRequest{Limit: 2},
+		},
+		queryProtocolREST,
+		"postgresql",
+		"SELECT id, name, score FROM public.items WHERE score > $1",
+		[]interface{}{10},
+		nil,
+		newQueryTokenCodec([]byte("0123456789abcdef0123456789abcdef")),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(plan.SQL, `addp_source."name" = $2`) {
+		t.Fatalf("query did not continue existing positional arguments: %s", plan.SQL)
+	}
+	if !reflect.DeepEqual(plan.Args, []interface{}{10, "active"}) {
+		t.Fatalf("args = %#v", plan.Args)
 	}
 }
 
@@ -89,6 +118,70 @@ func TestCompileQueryPlanUsesOracleSubqueryAndFetchSyntax(t *testing.T) {
 	}
 	if !strings.Contains(plan.SQL, `) addp_source ORDER BY addp_source."id" ASC FETCH FIRST 3 ROWS ONLY`) {
 		t.Fatalf("unexpected Oracle query plan: %s", plan.SQL)
+	}
+}
+
+func TestCompileQueryPlanUsesOracleParameterSyntax(t *testing.T) {
+	t.Parallel()
+
+	queryService := testPublishedQueryService()
+	plan, err := compileQueryPlan(
+		queryService,
+		&models.QueryExecutionRequest{
+			Select: []string{"id", "name"},
+			Filter: &models.QueryFilter{Field: "name", Op: "eq", Value: "active"},
+			Page:   models.QueryPageRequest{Limit: 2},
+		},
+		queryProtocolREST,
+		"oracle",
+		`SELECT "ID" AS "id", "NAME" AS "name", "SCORE" AS "score" FROM "BUSINESS"."ITEMS"`,
+		nil,
+		nil,
+		newQueryTokenCodec([]byte("0123456789abcdef0123456789abcdef")),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(plan.SQL, `addp_source."name" = :1`) {
+		t.Fatalf("Oracle query did not use positional parameter syntax: %s", plan.SQL)
+	}
+}
+
+func TestCompileQueryPlanUsesPostgreSQLPlaceholdersForSpatialFilter(t *testing.T) {
+	t.Parallel()
+
+	queryService := testPublishedQueryService()
+	srid := 4490
+	snapshot := queryService.SourceSnapshot()
+	snapshot.Table.Fields = append(snapshot.Table.Fields, datatype.FieldInfo{Name: "shape", Type: datatype.FieldTypeGeometry})
+	snapshot.Spatial = &datatype.SpatialInfo{
+		GeometryColumns:       []datatype.GeometryColumnInfo{{Name: "shape", SRID: &srid}},
+		PrimaryGeometryColumn: "shape",
+	}
+	queryService.DataConfig[models.QueryServiceSourceSnapshotKey] = commonJSON.MapFromStruct(snapshot)
+	plan, err := compileQueryPlan(
+		queryService,
+		&models.QueryExecutionRequest{
+			Select: []string{"id", "shape"},
+			Filter: &models.QueryFilter{Field: "shape", Op: "bbox_intersects", Value: []interface{}{112.5, 27.5, 114.5, 29.5}},
+			Page:   models.QueryPageRequest{Limit: 2},
+		},
+		queryProtocolOGC,
+		"postgresql",
+		"SELECT id, shape FROM public.items",
+		nil,
+		nil,
+		newQueryTokenCodec([]byte("0123456789abcdef0123456789abcdef")),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `ST_Transform(ST_MakeEnvelope($1, $2, $3, $4, 4326), $5)`
+	if !strings.Contains(plan.SQL, want) {
+		t.Fatalf("spatial query did not use PostgreSQL placeholders: %s", plan.SQL)
+	}
+	if !reflect.DeepEqual(plan.Args, []interface{}{112.5, 27.5, 114.5, 29.5, 4490}) {
+		t.Fatalf("args = %#v", plan.Args)
 	}
 }
 

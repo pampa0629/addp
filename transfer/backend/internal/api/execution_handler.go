@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	commonAPI "github.com/addp/common/api"
+	commonAuthorization "github.com/addp/common/authorization"
 	commonAuth "github.com/addp/common/middleware/auth"
 	i18nmiddleware "github.com/addp/common/middleware/i18n"
 	"github.com/addp/common/taskprovider"
@@ -18,13 +19,71 @@ import (
 // ExecutionHandler 执行记录管理 API Handler
 type ExecutionHandler struct {
 	executionService *service.ExecutionService
+	taskService      *service.TaskService
 }
 
 // NewExecutionHandler 创建 ExecutionHandler
-func NewExecutionHandler(executionService *service.ExecutionService) *ExecutionHandler {
+func NewExecutionHandler(executionService *service.ExecutionService, taskService *service.TaskService) *ExecutionHandler {
 	return &ExecutionHandler{
 		executionService: executionService,
+		taskService:      taskService,
 	}
+}
+
+// CreateExecution 创建一次性 bounded sync execution。
+// @Summary 创建一次性同步执行 | Create one-off sync execution
+// @Description 模块 Service Client 创建不带 Transfer 任务定义的一次性 bounded sync execution；调用来源由认证 Client ID 推导，响应只返回统一 execution_id。| A module Service Client creates a one-off bounded sync execution without a Transfer task definition; the source module is derived from the authenticated Client ID and the response contains only the unified execution_id.
+// @Tags 执行管理 | Execution Management
+// @Accept json
+// @Produce json
+// @Param request body models.CreateAdHocExecutionRequest true "一次性同步执行 | One-off sync execution"
+// @Success 202 {object} models.CreateAdHocExecutionResponse
+// @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["transfer.execution.create"]
+// @Router /executions [post]
+// @Security BearerAuth
+func (h *ExecutionHandler) CreateExecution(c *gin.Context) {
+	if h == nil || h.taskService == nil {
+		commonAPI.InternalServerError(c, "transfer execution service is unavailable")
+		return
+	}
+	var req models.CreateAdHocExecutionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		commonAPI.BadRequestError(c, err.Error())
+		return
+	}
+	sourceModule, ok := transferExecutionSourceModule(c)
+	if !ok {
+		commonAPI.ForbiddenError(c, "one-off transfer execution requires a module service client")
+		return
+	}
+	result, err := h.taskService.CreateAdHocExecution(
+		c.Request.Context(), &req, sourceModule, commonAuth.GetTenantID(c), commonAuth.GetUserID(c),
+	)
+	if err != nil {
+		if errors.Is(err, service.ErrInvalidTaskConfig) {
+			commonAPI.BadRequestError(c, err.Error())
+			return
+		}
+		commonAPI.InternalServerError(c, err.Error())
+		return
+	}
+	c.JSON(http.StatusAccepted, result)
+}
+
+func transferExecutionSourceModule(c *gin.Context) (string, bool) {
+	authContext, exists := commonAuth.AuthContextFromGin(c)
+	clientID := strings.TrimSpace(commonAuth.GetClientID(c))
+	if !exists || authContext.Principal.Type != "service_principal" || !strings.HasPrefix(clientID, "addp-") {
+		return "", false
+	}
+	module := strings.TrimPrefix(clientID, "addp-")
+	if commonAuthorization.ValidateOwnerModuleName(module) != nil {
+		return "", false
+	}
+	return module, true
 }
 
 // GetExecution 获取执行记录详情
@@ -40,6 +99,39 @@ func NewExecutionHandler(executionService *service.ExecutionService) *ExecutionH
 // @Security BearerAuth
 func (h *ExecutionHandler) GetExecution(c *gin.Context) {
 	h.getExecution(c)
+}
+
+// GetOwnedExecutionResult 获取当前模块自己创建的一次性执行结果。
+// @Summary 获取模块一次性执行结果 | Get module-owned one-off execution result
+// @Description 仅返回 source 与当前模块 Service Client 一致、且没有 Transfer 任务定义的一次性 execution。| Returns only a one-off execution whose source matches the authenticated module Service Client and which has no Transfer task definition.
+// @Tags 执行管理 | Execution Management
+// @Produce json
+// @Param execution_id path string true "执行ID | Execution ID"
+// @Success 200 {object} models.TaskExecution
+// @Failure 403 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["transfer.execution.read"]
+// @Router /executions/{execution_id}/result [get]
+// @Security BearerAuth
+func (h *ExecutionHandler) GetOwnedExecutionResult(c *gin.Context) {
+	if h == nil || h.executionService == nil {
+		commonAPI.InternalServerError(c, "transfer execution service is unavailable")
+		return
+	}
+	sourceModule, ok := transferExecutionSourceModule(c)
+	if !ok {
+		commonAPI.ForbiddenError(c, "one-off transfer execution result requires a module service client")
+		return
+	}
+	execution, err := h.executionService.GetOwnedExecutionByExecutionID(
+		c.Request.Context(), c.Param("execution_id"), commonAuth.GetTenantID(c), sourceModule,
+	)
+	if err != nil {
+		commonAPI.NotFoundError(c, "Execution not found")
+		return
+	}
+	c.JSON(http.StatusOK, execution)
 }
 
 // ProviderGetExecution 获取 TaskProvider 执行状态。

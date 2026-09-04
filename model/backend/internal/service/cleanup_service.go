@@ -40,7 +40,7 @@ type ModelCleanupStats struct {
 	DimensionHierarchies     int      `json:"dimension_hierarchies"`
 	DimensionHierarchyLevels int      `json:"dimension_hierarchy_levels"`
 	TableRelations           int      `json:"table_relations"`
-	FactMetricMappings       int      `json:"fact_metric_mappings"`
+	MetricImplementations    int      `json:"metric_implementations"`
 	DraftedEntities          int      `json:"drafted_entities,omitempty"`
 	DraftedTables            int      `json:"drafted_tables,omitempty"`
 	DeletedRecords           int      `json:"deleted_records,omitempty"`
@@ -228,7 +228,7 @@ type modelCleanupCandidates struct {
 	dimensionHierarchies     []models.DimensionHierarchy
 	dimensionHierarchyLevels []models.DimensionHierarchyLevel
 	tableRelations           []models.TableRelation
-	factMetricMappings       []models.FactMetricMapping
+	metricImplementations    []models.MetricImplementation
 }
 
 func (c modelCleanupCandidates) stats() *ModelCleanupStats {
@@ -242,7 +242,7 @@ func (c modelCleanupCandidates) stats() *ModelCleanupStats {
 		DimensionHierarchies:     len(c.dimensionHierarchies),
 		DimensionHierarchyLevels: len(c.dimensionHierarchyLevels),
 		TableRelations:           len(c.tableRelations),
-		FactMetricMappings:       len(c.factMetricMappings),
+		MetricImplementations:    len(c.metricImplementations),
 	}
 }
 
@@ -304,7 +304,7 @@ func (s *CleanupService) listTenantCandidates(ctx context.Context, tenantID int6
 	if err := s.db.WithContext(ctx).Where("tenant_id = ?", tenantID).Find(&candidates.tableRelations).Error; err != nil {
 		return candidates, err
 	}
-	if err := s.db.WithContext(ctx).Where("tenant_id = ?", tenantID).Find(&candidates.factMetricMappings).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("tenant_id = ?", tenantID).Find(&candidates.metricImplementations).Error; err != nil {
 		return candidates, err
 	}
 	return candidates, nil
@@ -394,7 +394,7 @@ func (s *CleanupService) physicalCleanup(ctx context.Context, candidates modelCl
 		name         string
 		tenantScoped bool
 	}{
-		{model: &models.FactMetricMapping{}, ids: factMetricMappingIDs(candidates.factMetricMappings), name: "fact metric mappings", tenantScoped: true},
+		{model: &models.MetricImplementation{}, ids: metricImplementationIDs(candidates.metricImplementations), name: "metric implementations", tenantScoped: true},
 		{model: &models.DimensionHierarchyLevel{}, ids: dimensionHierarchyLevelIDs(candidates.dimensionHierarchyLevels), name: "dimension hierarchy levels"},
 		{model: &models.DimensionHierarchy{}, ids: dimensionHierarchyIDs(candidates.dimensionHierarchies), name: "dimension hierarchies", tenantScoped: true},
 		{model: &models.TableRelation{}, ids: tableRelationIDs(candidates.tableRelations), name: "table relations", tenantScoped: true},
@@ -627,7 +627,7 @@ func modelCandidateRecordCount(stats *ModelCleanupStats) int {
 		stats.DimensionHierarchies +
 		stats.DimensionHierarchyLevels +
 		stats.TableRelations +
-		stats.FactMetricMappings
+		stats.MetricImplementations
 }
 
 func modelRiskLevelForCount(count int) string {
@@ -716,7 +716,7 @@ func tableRelationIDs(items []models.TableRelation) []int64 {
 	return ids
 }
 
-func factMetricMappingIDs(items []models.FactMetricMapping) []int64 {
+func metricImplementationIDs(items []models.MetricImplementation) []int64 {
 	ids := make([]int64, 0, len(items))
 	for _, item := range items {
 		ids = append(ids, item.ID)

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/execution/executiontest"
@@ -80,6 +81,76 @@ func TestValidateNewTaskConfigStillAcceptsTableTransfer(t *testing.T) {
 	}, 1000)
 	if err != nil {
 		t.Fatalf("validateNewTaskConfig() error = %v", err)
+	}
+}
+
+func TestValidateNewTaskConfigAcceptsQueryCSVExportWithIdentityProjection(t *testing.T) {
+	err := validateNewTaskConfig(map[string]interface{}{
+		"runtime": map[string]interface{}{"boundary": "bounded"},
+		"load":    map[string]interface{}{"mode": "snapshot"},
+		"source": map[string]interface{}{
+			"locator": "addp://engine/1/path/public/orders?type=table", "data_type": "table", "representation": "native",
+			"query": map[string]interface{}{"language": "sql", "statement": "SELECT id, total FROM public.orders"},
+		},
+		"target": map[string]interface{}{
+			"parent_locator": "addp-infra://minio/manager/tenant_7/export/develop/run-1?type=prefix", "name": "orders.csv",
+			"data_type": "table", "representation": "encoded", "format": string(format.FormatCSV),
+			"policy": map[string]interface{}{"apply_mode": "replace"},
+		},
+		"transforms": []interface{}{map[string]interface{}{
+			"type": "field_mapping", "version": "v1", "mode": "project",
+			"fields": []interface{}{
+				map[string]interface{}{"source": "id", "target": "id", "target_type": "unknown", "nullable": true},
+				map[string]interface{}{"source": "total", "target": "total", "target_type": "unknown", "nullable": true},
+			},
+		}},
+	}, 1000)
+	if err != nil {
+		t.Fatalf("validateNewTaskConfig() error = %v", err)
+	}
+}
+
+func TestCreateAdHocExecutionPersistsNoTransferTaskDefinition(t *testing.T) {
+	db := newTransferTaskServiceTestDB(t)
+	executionRepository := commonExecution.NewTaskExecutionRepository(db)
+	taskService := NewTaskService(db, nil, nil)
+	taskService.SetExecutionService(NewExecutionService(db, executionRepository))
+
+	result, err := taskService.CreateAdHocExecution(context.Background(), &models.CreateAdHocExecutionRequest{
+		Name: "query export", BatchSize: 1000,
+		Config: models.TableTransferTaskConfigDoc{
+			Runtime: models.TransferRuntimeDoc{Boundary: commonExecution.ExecutionBoundaryBounded},
+			Load:    models.TransferLoadDoc{Mode: "snapshot"},
+			Source: models.TransferSourceEndpointDoc{
+				Locator: "addp://engine/1/path/public/orders?type=table", DataType: "table", Representation: "native",
+			},
+			Target: models.TransferTargetEndpointDoc{
+				ParentLocator: "addp://engine/2/path/exports?type=directory", Name: "orders.csv",
+				DataType: "table", Representation: "encoded", Format: "csv",
+				Policy: models.TransferTargetPolicyDoc{ApplyMode: "replace"},
+			},
+		},
+	}, "asset", 7, 9)
+	if err != nil {
+		t.Fatalf("CreateAdHocExecution() error = %v", err)
+	}
+	var taskCount int64
+	if err := db.Model(&models.TransferTask{}).Count(&taskCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if taskCount != 0 {
+		t.Fatalf("transfer task definition count = %d, want 0", taskCount)
+	}
+	execution, err := executionRepository.GetByExecutionID(context.Background(), result.ExecutionID, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if execution.SourceTaskID != nil || execution.Source != "asset" || execution.MaxAttempts != 1 {
+		t.Fatalf("ad-hoc execution = %#v", execution)
+	}
+	claimed, lease, err := taskService.taskRepo.ClaimNextBoundedExecution(context.Background(), "transfer-test-worker", time.Now(), time.Minute)
+	if err != nil || claimed == nil || lease == nil || claimed.ExecutionID != result.ExecutionID {
+		t.Fatalf("claim = %#v lease = %#v error = %v", claimed, lease, err)
 	}
 }
 
@@ -282,7 +353,7 @@ type fakeReplayTaskExecutionEngine struct {
 	applyIdentity string
 }
 
-func (e *fakeReplayTaskExecutionEngine) ExecuteTask(context.Context, uint, uint) error { return nil }
+func (e *fakeReplayTaskExecutionEngine) ExecuteExecution(context.Context, uint) error { return nil }
 
 func (e *fakeReplayTaskExecutionEngine) PrepareReplayExecution(_ context.Context, _ uint, taskConfig map[string]interface{}, request ReplayExecutionRequest, executionApplyIdentity string) (*ReplayExecutionPreparation, error) {
 	e.applyIdentity = executionApplyIdentity

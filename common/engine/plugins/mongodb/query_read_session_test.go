@@ -5,10 +5,126 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
+
+func TestMongoAggregateOutputLineageSupportsTransparentOutdoorProjection(t *testing.T) {
+	fields := []datatype.FieldInfo{
+		{Name: "_id", Path: []string{"_id"}, Type: datatype.FieldTypeString},
+		{Name: "_openid", Path: []string{"_openid"}, Type: datatype.FieldTypeString},
+		{Name: "userInfo", Path: []string{"userInfo"}, Type: datatype.FieldTypeJSON},
+		{Name: "userInfo.nickName", Path: []string{"userInfo", "nickName"}, Type: datatype.FieldTypeString},
+		{Name: "userInfo.phone", Path: []string{"userInfo", "phone"}, Type: datatype.FieldTypeString},
+	}
+	pipeline := decodeMongoPipelineForTest(t, `[
+		{"$match":{"_id":{"$type":"string","$ne":""}}},
+		{"$project":{
+			"_id":"$_id",
+			"_openid":{"$ifNull":["$_openid",null]},
+			"userInfo__nickName":{"$ifNull":["$userInfo.nickName",null]}
+		}},
+		{"$sort":{"_id":1}}
+	]`)
+
+	bindings, err := mongoAggregateOutputBindings(pipeline, fields)
+	if err != nil {
+		t.Fatalf("mongoAggregateOutputBindings() error = %v", err)
+	}
+	assertMongoOutputBinding(t, bindings, []string{"_id"}, []string{"_id"}, plugin.QueryOutputTransformationDirect)
+	assertMongoOutputBinding(t, bindings, []string{"_openid"}, []string{"_openid"}, plugin.QueryOutputTransformationDirect)
+	assertMongoOutputBinding(t, bindings, []string{"userInfo", "nickName"}, []string{"userInfo__nickName"}, plugin.QueryOutputTransformationDirect)
+	assertNoMongoOutputBinding(t, bindings, []string{"userInfo", "phone"})
+}
+
+func TestMongoAggregateOutputLineageTracksUnwindIndexAndFlattenedMemberFields(t *testing.T) {
+	fields := []datatype.FieldInfo{
+		{Name: "_id", Path: []string{"_id"}, Type: datatype.FieldTypeString},
+		{Name: "members", Path: []string{"members"}, Type: datatype.FieldTypeArray, ElementType: datatype.FieldTypeJSON},
+		{Name: "members.personid", Path: []string{"members", "personid"}, Type: datatype.FieldTypeString},
+		{Name: "members.userInfo.phone", Path: []string{"members", "userInfo", "phone"}, Type: datatype.FieldTypeString},
+	}
+	pipeline := decodeMongoPipelineForTest(t, `[
+		{"$unwind":{"path":"$members","includeArrayIndex":"members__index","preserveNullAndEmptyArrays":false}},
+		{"$project":{
+			"_id":"$_id",
+			"members__personid":{"$ifNull":["$members.personid",null]},
+			"members__userInfo__phone":{"$ifNull":["$members.userInfo.phone",null]},
+			"members__index":1
+		}}
+	]`)
+
+	bindings, err := mongoAggregateOutputBindings(pipeline, fields)
+	if err != nil {
+		t.Fatalf("mongoAggregateOutputBindings() error = %v", err)
+	}
+	assertMongoOutputBinding(t, bindings, []string{"members", "personid"}, []string{"members__personid"}, plugin.QueryOutputTransformationDirect)
+	assertMongoOutputBinding(t, bindings, []string{"members", "userInfo", "phone"}, []string{"members__userInfo__phone"}, plugin.QueryOutputTransformationDirect)
+	assertMongoOutputBinding(t, bindings, []string{"members"}, []string{"members__index"}, plugin.QueryOutputTransformationDerived)
+}
+
+func TestMongoAggregateOutputLineageRejectsNonTransparentPipeline(t *testing.T) {
+	fields := []datatype.FieldInfo{{Name: "userInfo.phone", Path: []string{"userInfo", "phone"}, Type: datatype.FieldTypeString}}
+	tests := []struct {
+		name     string
+		pipeline string
+	}{
+		{name: "group", pipeline: `[{"$group":{"_id":"$userInfo.phone"}}]`},
+		{name: "computed projection", pipeline: `[{"$project":{"phone":{"$concat":["$userInfo.phone","!"]}}}]`},
+		{name: "non-null fallback", pipeline: `[{"$project":{"phone":{"$ifNull":["$userInfo.phone","unknown"]}}}]`},
+		{name: "lookup", pipeline: `[{"$lookup":{"from":"Groups","localField":"group_id","foreignField":"_id","as":"groups"}}]`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := mongoAggregateOutputBindings(decodeMongoPipelineForTest(t, test.pipeline), fields)
+			if !errors.Is(err, plugin.ErrQueryOutputLineageUnresolved) {
+				t.Fatalf("mongoAggregateOutputBindings() error = %v", err)
+			}
+		})
+	}
+}
+
+func decodeMongoPipelineForTest(t *testing.T, input string) []interface{} {
+	t.Helper()
+	var pipeline []interface{}
+	if err := bson.UnmarshalExtJSON([]byte(input), false, &pipeline); err != nil {
+		t.Fatalf("decode pipeline: %v", err)
+	}
+	return pipeline
+}
+
+func assertMongoOutputBinding(t *testing.T, bindings []plugin.QueryOutputBinding, sourcePath, outputPath []string, transformation string) {
+	t.Helper()
+	for _, binding := range bindings {
+		if sameMongoTestPath(binding.SourcePath, sourcePath) && sameMongoTestPath(binding.OutputPath, outputPath) && binding.Transformation == transformation {
+			return
+		}
+	}
+	t.Fatalf("binding %v -> %v (%s) not found in %#v", sourcePath, outputPath, transformation, bindings)
+}
+
+func assertNoMongoOutputBinding(t *testing.T, bindings []plugin.QueryOutputBinding, sourcePath []string) {
+	t.Helper()
+	for _, binding := range bindings {
+		if sameMongoTestPath(binding.SourcePath, sourcePath) {
+			t.Fatalf("unexpected binding for %v: %#v", sourcePath, binding)
+		}
+	}
+}
+
+func sameMongoTestPath(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
+}
 
 func TestPreparedQueryReadSetIncludesMongoCrossCollectionStages(t *testing.T) {
 	request := plugin.QueryRequest{

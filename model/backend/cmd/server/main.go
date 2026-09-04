@@ -80,7 +80,7 @@ func main() {
 	entityRelationRepo := repository.NewEntityRelationRepository(db)
 	logicalTableRepo := repository.NewLogicalTableRepository(db)
 	dwLayerRepo := repository.NewDWLayerRepository(db)
-	factMetricRepo := repository.NewFactMetricRepository(db)
+	metricImplementationRepo := repository.NewMetricImplementationRepository(db)
 	tableRelationRepo := repository.NewTableRelationRepository(db)
 	dimensionHierarchyRepo := repository.NewDimensionHierarchyRepository(db)
 	standardReferenceGuardRepo := repository.NewStandardReferenceGuardRepository(db)
@@ -95,10 +95,10 @@ func main() {
 	logicalTableSvc := service.NewLogicalTableService(logicalTableRepo, entityRepo, dwLayerRepo)
 	logicalTableSvc.SetStandardClient(standardClient)
 	dwLayerSvc := service.NewDWLayerService(dwLayerRepo)
-	factMetricSvc := service.NewFactMetricService(factMetricRepo, logicalTableRepo)
-	factMetricSvc.SetStandardClient(standardClient)
+	metricImplementationSvc := service.NewMetricImplementationService(metricImplementationRepo, logicalTableRepo)
+	metricImplementationSvc.SetStandardClient(standardClient)
 	tableRelationSvc := service.NewTableRelationService(tableRelationRepo, logicalTableRepo)
-	tableRelationSvc.SetProfessionalRelationSources(entityRepo, factMetricRepo)
+	tableRelationSvc.SetProfessionalRelationSources(entityRepo, metricImplementationRepo)
 	dimensionHierarchySvc := service.NewDimensionHierarchyService(dimensionHierarchyRepo, logicalTableRepo)
 	standardReferenceGuardSvc := service.NewStandardReferenceGuardService(standardReferenceGuardRepo)
 	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db)
@@ -122,7 +122,7 @@ func main() {
 		entityRelationSvc,
 		logicalTableSvc,
 		dwLayerSvc,
-		factMetricSvc,
+		metricImplementationSvc,
 		tableRelationSvc,
 		dimensionHierarchySvc,
 		standardReferenceGuardSvc,

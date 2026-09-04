@@ -182,7 +182,7 @@ func (r *DocumentRepository) GetMetricMappings(docID, tenantID int64) ([]models.
 	var mappings []models.DocumentMetricMapping
 	err := r.db.Model(&models.DocumentMetricMapping{}).
 		Select("standard.document_metric_mappings.*, m.name").
-		Joins("JOIN standard.metrics m ON m.id = standard.document_metric_mappings.metric_id AND m.tenant_id = ?", tenantID).
+		Joins("JOIN standard.metric_definitions m ON m.id = standard.document_metric_mappings.metric_id AND m.tenant_id = ?", tenantID).
 		Where("standard.document_metric_mappings.document_id = ?", docID).
 		Find(&mappings).Error
 	return mappings, err

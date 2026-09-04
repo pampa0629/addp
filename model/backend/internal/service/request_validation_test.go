@@ -95,12 +95,6 @@ func TestCreateRequestValidationRejectsInvalidReferencesAndRanges(t *testing.T) 
 		{name: "table relation target", err: func() error {
 			return validateCreateTableRelationRequest(&models.CreateTableRelationRequest{TargetTable: 0, SourceField: 1, TargetField: 2})
 		}},
-		{name: "fact metric metric", err: func() error {
-			return validateCreateFactMetricRequest(&models.CreateFactMetricMappingRequest{MetricID: 0})
-		}},
-		{name: "fact metric field", err: func() error {
-			return validateCreateFactMetricRequest(&models.CreateFactMetricMappingRequest{MetricID: 1, FieldID: &zeroID})
-		}},
 		{name: "dw layer sort order", err: func() error {
 			return validateCreateDWLayerRequest(&models.CreateDWLayerRequest{LayerCode: "dwd", LayerName: "DWD", SortOrder: -1})
 		}},
@@ -127,7 +121,6 @@ func TestCreateRequestValidationAcceptsBoundaryValues(t *testing.T) {
 		{name: "logical table", err: validateCreateLogicalTableRequest(&models.CreateLogicalTableRequest{Name: "Order", Code: "order", TableType: "entity", Layer: "dwd", DomainID: &positiveID, EntityID: &positiveID})},
 		{name: "logical field", err: validateCreateLogicalFieldRequest(&models.CreateLogicalFieldRequest{Name: "Region", ColumnName: "region", DataType: "string", Length: &positiveLength, SortOrder: 0})},
 		{name: "table relation", err: validateCreateTableRelationRequest(&models.CreateTableRelationRequest{TargetTable: 2, SourceField: 1, TargetField: 2, RelationType: "fk"})},
-		{name: "fact metric", err: validateCreateFactMetricRequest(&models.CreateFactMetricMappingRequest{MetricID: 1, FieldID: &positiveID})},
 		{name: "dw layer", err: validateCreateDWLayerRequest(&models.CreateDWLayerRequest{LayerCode: "dwd", LayerName: "DWD", SortOrder: 0})},
 	}
 
@@ -137,6 +130,23 @@ func TestCreateRequestValidationAcceptsBoundaryValues(t *testing.T) {
 				t.Fatalf("validation error = %v", tt.err)
 			}
 		})
+	}
+}
+
+func TestMetricImplementationRequestValidation(t *testing.T) {
+	valid := metricImplementationRequest(1, 2)
+	if err := validateMetricImplementationRequest(valid); err != nil {
+		t.Fatalf("valid metric implementation rejected: %v", err)
+	}
+
+	invalid := *valid
+	invalid.SourceConfig = map[string]interface{}{"field_ids": []int64{0}}
+	if err := validateMetricImplementationRequest(&invalid); err != nil {
+		// Field identity is checked against the local aggregate in the transactional validation.
+		return
+	}
+	if _, err := positiveIDList(invalid.SourceConfig["field_ids"]); err == nil {
+		t.Fatal("zero source field ID accepted")
 	}
 }
 

@@ -95,6 +95,37 @@ func TestIntegrationPreparedQueryReadSetAndExecutionUseOutdoorPersonsPlan(t *tes
 	}
 }
 
+func TestIntegrationPreparedAggregateOutputLineageUsesOutdoorTransferProjection(t *testing.T) {
+	if os.Getenv("ADDP_MONGODB_SCHEMA_E2E") != "1" {
+		t.Skip("set ADDP_MONGODB_SCHEMA_E2E=1 to run against Business MongoDB")
+	}
+	provider := &MongoDBPlugin{}
+	prepared, err := provider.PrepareQuery(t.Context(), plugin.ConnectionInfo{
+		"host": "localhost", "port": 27017, "user": "admin", "password": "admin_password", "auth_source": "admin", "database": "Outdoor",
+	}, plugin.QueryRequest{
+		EngineID: 11,
+		Language: "mql",
+		Query: `{"aggregate":"Persons","pipeline":[
+			{"$match":{"_id":{"$type":"string","$ne":""}}},
+			{"$project":{"_id":"$_id","_openid":{"$ifNull":["$_openid",null]},"userInfo__nickName":{"$ifNull":["$userInfo.nickName",null]}}},
+			{"$sort":{"_id":1}}
+		]}`,
+		Options: plugin.QueryOptions{ReadOnly: true},
+	})
+	if err != nil {
+		t.Fatalf("PrepareQuery() error = %v", err)
+	}
+	lineage, err := prepared.OutputLineage(t.Context())
+	if err != nil {
+		t.Fatalf("PreparedQuery.OutputLineage() error = %v", err)
+	}
+	if len(lineage.Sources) != 1 || lineage.Sources[0].OpaqueOutput || lineage.Sources[0].IdentityOutput {
+		t.Fatalf("aggregate output lineage = %#v", lineage)
+	}
+	assertMongoOutputBinding(t, lineage.Sources[0].Bindings, []string{"userInfo", "nickName"}, []string{"userInfo__nickName"}, plugin.QueryOutputTransformationDirect)
+	assertNoMongoOutputBinding(t, lineage.Sources[0].Bindings, []string{"userInfo", "phone"})
+}
+
 func TestMapMongoArrayElementTypeOmitsUnknownSample(t *testing.T) {
 	if got := mapMongoArrayElementType(""); got != "" {
 		t.Fatalf("empty element type = %q, want omitted", got)

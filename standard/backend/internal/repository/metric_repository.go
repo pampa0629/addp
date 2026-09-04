@@ -2,164 +2,395 @@ package repository
 
 import (
 	"errors"
+	"strings"
+	"time"
 
 	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/standard/internal/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var ErrMetricDependencyCycle = errors.New("metric dependency cycle")
 
 const standardMetricDependencyLockBase int64 = 2026081100000000
 
-// MetricCategoryRepository 指标目录仓库
-type MetricCategoryRepository struct {
-	db *gorm.DB
-}
+type MetricCategoryRepository struct{ db *gorm.DB }
 
 func NewMetricCategoryRepository(db *gorm.DB) *MetricCategoryRepository {
 	return &MetricCategoryRepository{db: db}
 }
-
 func (r *MetricCategoryRepository) List(tenantID int64) ([]models.MetricCategory, error) {
 	var list []models.MetricCategory
 	err := r.db.Where("tenant_id = ?", tenantID).Order("sort_order ASC, id ASC").Find(&list).Error
 	return list, err
 }
-
 func (r *MetricCategoryRepository) GetByID(id, tenantID int64) (*models.MetricCategory, error) {
-	var c models.MetricCategory
-	err := r.db.Where("id = ? AND tenant_id = ?", id, tenantID).First(&c).Error
-	return &c, commonrepo.WrapDBError(err)
+	var item models.MetricCategory
+	err := r.db.Where("id = ? AND tenant_id = ?", id, tenantID).First(&item).Error
+	return &item, commonrepo.WrapDBError(err)
 }
-
-func (r *MetricCategoryRepository) Create(c *models.MetricCategory) error {
-	return wrapDBError(r.db.Create(c).Error)
+func (r *MetricCategoryRepository) Create(item *models.MetricCategory) error {
+	return wrapDBError(r.db.Create(item).Error)
 }
-
-func (r *MetricCategoryRepository) Update(c *models.MetricCategory, expectedVersion int64) error {
-	if err := updateVersioned(r.db, c, c.ID, c.TenantID, expectedVersion, map[string]interface{}{
-		"name": c.Name, "description": c.Description, "parent_id": c.ParentID,
-		"sort_order": c.SortOrder, "updated_by": c.UpdatedBy,
+func (r *MetricCategoryRepository) Update(item *models.MetricCategory, expectedVersion int64) error {
+	if err := updateVersioned(r.db, item, item.ID, item.TenantID, expectedVersion, map[string]interface{}{
+		"name": item.Name, "description": item.Description, "parent_id": item.ParentID, "sort_order": item.SortOrder, "updated_by": item.UpdatedBy,
 	}); err != nil {
 		return err
 	}
-	c.Version = expectedVersion + 1
+	item.Version = expectedVersion + 1
 	return nil
 }
-
 func (r *MetricCategoryRepository) Delete(id, tenantID int64) error {
 	return deleteInTransaction(r.db, &models.MetricCategory{}, "id = ? AND tenant_id = ?", id, tenantID)
 }
-
 func (r *MetricCategoryRepository) ExistsByCode(code string, tenantID int64) (bool, error) {
 	var count int64
-	err := r.db.Model(&models.MetricCategory{}).
-		Where("code = ? AND tenant_id = ?", code, tenantID).
-		Count(&count).Error
+	err := r.db.Model(&models.MetricCategory{}).Where("code = ? AND tenant_id = ?", code, tenantID).Count(&count).Error
 	return count > 0, err
 }
 
-// MetricRepository 指标仓库
-type MetricRepository struct {
-	db *gorm.DB
-}
+type MetricRepository struct{ db *gorm.DB }
 
-func NewMetricRepository(db *gorm.DB) *MetricRepository {
-	return &MetricRepository{db: db}
-}
+func NewMetricRepository(db *gorm.DB) *MetricRepository { return &MetricRepository{db: db} }
 
 type ListMetricOptions struct {
-	CategoryID *int64
-	Type       string
-	Status     string
-	Keyword    string
-	Page       int
-	PageSize   int
+	CategoryID    *int64
+	OwnerDomainID *int64
+	ScopeType     string
+	MetricType    string
+	Status        string
+	Keyword       string
+	Page          int
+	PageSize      int
+	AsOf          time.Time
 }
 
-func (r *MetricRepository) List(tenantID int64, opts ListMetricOptions) ([]models.Metric, int64, error) {
-	query := r.db.Model(&models.Metric{}).Where("tenant_id = ?", tenantID)
-	if opts.CategoryID != nil {
-		query = query.Where("category_id = ?", *opts.CategoryID)
-	}
-	if opts.Type != "" {
-		query = query.Where("type = ?", opts.Type)
-	}
-	if opts.Status != "" {
-		query = query.Where("status = ?", opts.Status)
-	}
-	if opts.Keyword != "" {
-		query = query.Where("name ILIKE ? OR code ILIKE ? OR definition ILIKE ?",
-			"%"+opts.Keyword+"%", "%"+opts.Keyword+"%", "%"+opts.Keyword+"%")
-	}
+func (r *MetricRepository) Create(identity *models.MetricDefinition, revision *models.MetricDefinitionRevision, dependencies []models.MetricDefinitionRevisionDependency) error {
+	return wrapDBError(r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(identity).Error; err != nil {
+			return err
+		}
+		revision.MetricDefinitionID, revision.RevisionNo, revision.Status = identity.ID, 1, models.RevisionStatusDraft
+		if err := tx.Omit("Dependencies").Create(revision).Error; err != nil {
+			return err
+		}
+		if err := replaceMetricRevisionDependencies(tx, revision.ID, dependencies, false); err != nil {
+			return err
+		}
+		identity.DraftRevisionID = &revision.ID
+		return tx.Model(&models.MetricDefinition{}).Where("id = ? AND tenant_id = ?", identity.ID, identity.TenantID).Update("draft_revision_id", revision.ID).Error
+	}))
+}
 
+func (r *MetricRepository) GetByID(id, tenantID int64) (*models.MetricDefinition, error) {
+	var item models.MetricDefinition
+	err := r.db.Where("id = ? AND tenant_id = ?", id, tenantID).First(&item).Error
+	return &item, commonrepo.WrapDBError(err)
+}
+
+func (r *MetricRepository) GetAggregate(id, tenantID int64) (*models.MetricDefinitionAggregate, error) {
+	return r.GetAggregateAt(id, tenantID, time.Time{})
+}
+func (r *MetricRepository) GetAggregateAt(id, tenantID int64, asOf time.Time) (*models.MetricDefinitionAggregate, error) {
+	identity, err := r.GetByID(id, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	result := &models.MetricDefinitionAggregate{MetricDefinition: *identity}
+	if revision, loadErr := r.getEffectiveRevision(r.db, id, asOf); loadErr == nil {
+		result.CurrentRevision = revision
+	} else if !errors.Is(loadErr, gorm.ErrRecordNotFound) {
+		return nil, loadErr
+	}
+	if identity.DraftRevisionID != nil {
+		revision, loadErr := r.getRevisionByID(r.db, *identity.DraftRevisionID, id)
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		result.DraftRevision = revision
+	}
+	return result, nil
+}
+
+func (r *MetricRepository) List(tenantID int64, opts ListMetricOptions) ([]models.MetricDefinitionAggregate, int64, error) {
+	query := r.db.Model(&models.MetricDefinition{}).Where("metric_definitions.tenant_id = ?", tenantID)
+	if opts.CategoryID != nil {
+		query = query.Where("metric_definitions.category_id = ?", *opts.CategoryID)
+	}
+	if opts.OwnerDomainID != nil {
+		query = query.Where("metric_definitions.owner_domain_id = ?", *opts.OwnerDomainID)
+	}
+	if opts.ScopeType != "" {
+		query = query.Where("metric_definitions.scope_type = ?", opts.ScopeType)
+	}
+	if opts.Status != "" || opts.MetricType != "" {
+		query = query.Joins("JOIN standard.metric_definition_revisions filter_revision ON filter_revision.metric_definition_id = metric_definitions.id")
+		if opts.Status != "" {
+			query = query.Where("filter_revision.status = ?", opts.Status)
+		}
+		if opts.MetricType != "" {
+			query = query.Where("filter_revision.metric_type = ?", opts.MetricType)
+		}
+	}
+	if keyword := strings.TrimSpace(opts.Keyword); keyword != "" {
+		pattern := "%" + keyword + "%"
+		query = query.Where(`metric_definitions.code ILIKE ? OR EXISTS (SELECT 1 FROM standard.metric_definition_revisions mr WHERE mr.metric_definition_id = metric_definitions.id AND (mr.name ILIKE ? OR mr.definition ILIKE ? OR mr.statistical_caliber ILIKE ?))`, pattern, pattern, pattern, pattern)
+	}
 	var total int64
-	if err := query.Count(&total).Error; err != nil {
+	if err := query.Distinct("metric_definitions.id").Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
-
 	if opts.Page <= 0 {
 		opts.Page = 1
 	}
 	if opts.PageSize <= 0 {
 		opts.PageSize = 20
 	}
-	offset := (opts.Page - 1) * opts.PageSize
-
-	var metrics []models.Metric
-	err := query.Order("created_at DESC").Offset(offset).Limit(opts.PageSize).Find(&metrics).Error
-	return metrics, total, err
-}
-
-func (r *MetricRepository) GetByID(id, tenantID int64) (*models.Metric, error) {
-	var m models.Metric
-	err := r.db.Where("id = ? AND tenant_id = ?", id, tenantID).First(&m).Error
-	return &m, commonrepo.WrapDBError(err)
-}
-
-func (r *MetricRepository) GetByIDs(ids []int64, tenantID int64) ([]models.Metric, error) {
-	if len(ids) == 0 {
-		return []models.Metric{}, nil
+	var identities []models.MetricDefinition
+	if err := query.Distinct("metric_definitions.*").Order("metric_definitions.created_at DESC").Offset((opts.Page - 1) * opts.PageSize).Limit(opts.PageSize).Find(&identities).Error; err != nil {
+		return nil, 0, err
 	}
-	var metrics []models.Metric
-	err := r.db.Where("tenant_id = ? AND id IN ?", tenantID, ids).Order("id ASC").Find(&metrics).Error
-	return metrics, commonrepo.WrapDBError(err)
+	items := make([]models.MetricDefinitionAggregate, 0, len(identities))
+	for _, identity := range identities {
+		aggregate, err := r.GetAggregateAt(identity.ID, tenantID, opts.AsOf)
+		if err != nil {
+			return nil, 0, err
+		}
+		items = append(items, *aggregate)
+	}
+	return items, total, nil
 }
 
-func (r *MetricRepository) Create(m *models.Metric) error {
-	return wrapDBError(r.db.Create(m).Error)
+func (r *MetricRepository) GetByIDs(ids []int64, tenantID int64) ([]models.MetricDefinitionAggregate, error) {
+	if len(ids) == 0 {
+		return []models.MetricDefinitionAggregate{}, nil
+	}
+	items := make([]models.MetricDefinitionAggregate, 0, len(ids))
+	for _, id := range ids {
+		item, err := r.GetAggregate(id, tenantID)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, *item)
+	}
+	return items, nil
 }
 
-func (r *MetricRepository) Update(m *models.Metric, expectedVersion int64) error {
-	if err := updateVersioned(r.db, m, m.ID, m.TenantID, expectedVersion, map[string]interface{}{
-		"category_id": m.CategoryID, "domain_id": m.DomainID, "name": m.Name, "type": m.Type,
-		"definition": m.Definition, "formula": m.Formula, "unit_id": m.UnitID, "base_metric_id": m.BaseMetricID,
-		"derivation_config": m.DerivationConfig, "steward_id": m.StewardID, "tags": m.Tags, "updated_by": m.UpdatedBy,
+func (r *MetricRepository) UpdateIdentity(item *models.MetricDefinition, expectedVersion int64) error {
+	if err := updateVersioned(r.db, item, item.ID, item.TenantID, expectedVersion, map[string]interface{}{
+		"category_id": item.CategoryID, "scope_type": item.ScopeType, "owner_domain_id": item.OwnerDomainID,
+		"steward_id": item.StewardID, "tags": item.Tags, "updated_by": item.UpdatedBy,
 	}); err != nil {
 		return err
 	}
-	m.Version = expectedVersion + 1
+	item.Version = expectedVersion + 1
 	return nil
 }
 
+func (r *MetricRepository) ListRevisions(metricID, tenantID int64) ([]models.MetricDefinitionRevision, error) {
+	if _, err := r.GetByID(metricID, tenantID); err != nil {
+		return nil, err
+	}
+	var revisions []models.MetricDefinitionRevision
+	err := r.db.Preload("Dependencies").Where("metric_definition_id = ?", metricID).Order("revision_no DESC").Find(&revisions).Error
+	return revisions, wrapDBError(err)
+}
+
+func (r *MetricRepository) GetRevision(metricID, revisionID, tenantID int64) (*models.MetricDefinitionRevision, error) {
+	var revision models.MetricDefinitionRevision
+	err := r.db.Table("standard.metric_definition_revisions AS mr").Select("mr.*").
+		Joins("JOIN standard.metric_definitions m ON m.id = mr.metric_definition_id").
+		Where("mr.id = ? AND mr.metric_definition_id = ? AND m.tenant_id = ?", revisionID, metricID, tenantID).First(&revision).Error
+	if err == nil {
+		err = r.db.Where("metric_definition_revision_id = ?", revision.ID).Order("id ASC").Find(&revision.Dependencies).Error
+	}
+	return &revision, commonrepo.WrapDBError(err)
+}
+
+func (r *MetricRepository) CreateDraft(metricID, tenantID, userID, expectedVersion int64, changeSummary string) error {
+	return wrapDBError(r.db.Transaction(func(tx *gorm.DB) error {
+		var identity models.MetricDefinition
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND tenant_id = ?", metricID, tenantID).First(&identity).Error; err != nil {
+			return commonrepo.WrapDBError(err)
+		}
+		if identity.Version != expectedVersion {
+			return ErrVersionConflict
+		}
+		if identity.DraftRevisionID != nil {
+			return ErrDraftAlreadyExists
+		}
+		var source models.MetricDefinitionRevision
+		if err := tx.Where("metric_definition_id = ?", metricID).Order("revision_no DESC").First(&source).Error; err != nil {
+			return err
+		}
+		var dependencies []models.MetricDefinitionRevisionDependency
+		if err := tx.Where("metric_definition_revision_id = ?", source.ID).Find(&dependencies).Error; err != nil {
+			return err
+		}
+		source.ID, source.RevisionNo, source.Status = 0, source.RevisionNo+1, models.RevisionStatusDraft
+		source.ChangeSummary = changeSummary
+		source.SubmittedBy, source.SubmittedAt, source.PublishedBy, source.PublishedAt = nil, nil, nil, nil
+		source.CreatedBy, source.UpdatedBy, source.CreatedAt, source.UpdatedAt = userID, nil, time.Time{}, time.Time{}
+		if err := tx.Omit("Dependencies").Create(&source).Error; err != nil {
+			return err
+		}
+		for index := range dependencies {
+			dependencies[index].ID = 0
+			dependencies[index].MetricDefinitionRevisionID = source.ID
+			dependencies[index].DependencyRevisionID = nil
+			dependencies[index].CreatedAt = time.Time{}
+		}
+		if err := replaceMetricRevisionDependencies(tx, source.ID, dependencies, false); err != nil {
+			return err
+		}
+		return updateVersioned(tx, &models.MetricDefinition{}, metricID, tenantID, expectedVersion, map[string]interface{}{"draft_revision_id": source.ID, "updated_by": userID})
+	}))
+}
+
+func (r *MetricRepository) UpdateDraft(metricID, revisionID, tenantID, userID, expectedVersion int64, revision *models.MetricDefinitionRevision, dependencies []models.MetricDefinitionRevisionDependency) error {
+	return wrapDBError(r.db.Transaction(func(tx *gorm.DB) error {
+		if err := lockMetricDependencies(tx, tenantID); err != nil {
+			return err
+		}
+		if err := r.requireRevisionState(tx, metricID, revisionID, tenantID, models.RevisionStatusDraft, true); err != nil {
+			return err
+		}
+		if cycle, err := metricDependencyCycle(tx, metricID, tenantID, dependencies); err != nil {
+			return err
+		} else if cycle {
+			return ErrMetricDependencyCycle
+		}
+		if err := updateVersioned(tx, &models.MetricDefinition{}, metricID, tenantID, expectedVersion, map[string]interface{}{"updated_by": userID}); err != nil {
+			return err
+		}
+		if err := requireAffectedRow(tx.Model(&models.MetricDefinitionRevision{}).Where("id = ? AND metric_definition_id = ? AND status = ?", revisionID, metricID, models.RevisionStatusDraft).Updates(map[string]interface{}{
+			"metric_type": revision.MetricType, "name": revision.Name, "definition": revision.Definition, "statistical_caliber": revision.StatisticalCaliber,
+			"semantic_formula": revision.SemanticFormula, "unit_id": revision.UnitID, "change_summary": revision.ChangeSummary,
+			"effective_from": revision.EffectiveFrom, "effective_to": revision.EffectiveTo, "updated_by": userID,
+		})); err != nil {
+			return err
+		}
+		return replaceMetricRevisionDependencies(tx, revisionID, dependencies, false)
+	}))
+}
+
+func (r *MetricRepository) TransitionRevision(metricID, revisionID, tenantID, userID, expectedVersion int64, from, to string) error {
+	return wrapDBError(r.db.Transaction(func(tx *gorm.DB) error {
+		if err := r.requireRevisionState(tx, metricID, revisionID, tenantID, from, from != models.RevisionStatusPublished); err != nil {
+			return err
+		}
+		if err := updateVersioned(tx, &models.MetricDefinition{}, metricID, tenantID, expectedVersion, map[string]interface{}{"updated_by": userID}); err != nil {
+			return err
+		}
+		updates := map[string]interface{}{"status": to, "updated_by": userID}
+		if to == models.RevisionStatusInReview {
+			updates["submitted_by"] = userID
+			updates["submitted_at"] = gorm.Expr("CURRENT_TIMESTAMP")
+		}
+		if to == models.RevisionStatusDraft {
+			updates["submitted_by"] = nil
+			updates["submitted_at"] = nil
+		}
+		return requireAffectedRow(tx.Model(&models.MetricDefinitionRevision{}).Where("id = ? AND metric_definition_id = ? AND status = ?", revisionID, metricID, from).Updates(updates))
+	}))
+}
+
+func (r *MetricRepository) PublishRevision(metricID, revisionID, tenantID, userID, expectedVersion int64) error {
+	return wrapDBError(r.db.Transaction(func(tx *gorm.DB) error {
+		if err := lockMetricDependencies(tx, tenantID); err != nil {
+			return err
+		}
+		var identity models.MetricDefinition
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND tenant_id = ?", metricID, tenantID).First(&identity).Error; err != nil {
+			return commonrepo.WrapDBError(err)
+		}
+		if identity.Version != expectedVersion {
+			return ErrVersionConflict
+		}
+		if identity.DraftRevisionID == nil || *identity.DraftRevisionID != revisionID {
+			return ErrInvalidRevisionTransition
+		}
+		var revision models.MetricDefinitionRevision
+		if err := tx.Where("id = ? AND metric_definition_id = ? AND status = ?", revisionID, metricID, models.RevisionStatusInReview).First(&revision).Error; err != nil {
+			return ErrInvalidRevisionTransition
+		}
+		if revision.EffectiveFrom == nil {
+			return ErrInvalidRevisionTransition
+		}
+		var dependencies []models.MetricDefinitionRevisionDependency
+		if err := tx.Where("metric_definition_revision_id = ?", revisionID).Find(&dependencies).Error; err != nil {
+			return err
+		}
+		for index := range dependencies {
+			resolved, err := effectiveMetricRevision(tx, dependencies[index].DependencyDefinitionID, tenantID, *revision.EffectiveFrom)
+			if err != nil {
+				return commonrepo.WrapDBError(err)
+			}
+			dependencies[index].DependencyRevisionID = &resolved.ID
+		}
+		if err := replaceMetricRevisionDependencies(tx, revisionID, dependencies, true); err != nil {
+			return err
+		}
+		var published []models.MetricDefinitionRevision
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("metric_definition_id = ? AND status = ?", metricID, models.RevisionStatusPublished).Order("effective_from ASC, revision_no ASC").Find(&published).Error; err != nil {
+			return err
+		}
+		for index := range published {
+			candidate := &published[index]
+			if candidate.EffectiveFrom == nil {
+				return ErrEffectiveIntervalConflict
+			}
+			if candidate.EffectiveTo == nil && candidate.EffectiveFrom.Before(*revision.EffectiveFrom) {
+				if err := tx.Model(&models.MetricDefinitionRevision{}).Where("id = ? AND status = ?", candidate.ID, models.RevisionStatusPublished).Update("effective_to", revision.EffectiveFrom).Error; err != nil {
+					return err
+				}
+				closed := *revision.EffectiveFrom
+				candidate.EffectiveTo = &closed
+			}
+			if intervalsOverlap(*candidate.EffectiveFrom, candidate.EffectiveTo, *revision.EffectiveFrom, revision.EffectiveTo) {
+				return ErrEffectiveIntervalConflict
+			}
+		}
+		if err := requireAffectedRow(tx.Model(&models.MetricDefinitionRevision{}).Where("id = ? AND metric_definition_id = ? AND status = ?", revisionID, metricID, models.RevisionStatusInReview).Updates(map[string]interface{}{
+			"status": models.RevisionStatusPublished, "published_by": userID, "published_at": gorm.Expr("CURRENT_TIMESTAMP"), "updated_by": userID,
+		})); err != nil {
+			return err
+		}
+		return updateVersioned(tx, &models.MetricDefinition{}, metricID, tenantID, expectedVersion, map[string]interface{}{"draft_revision_id": nil, "updated_by": userID})
+	}))
+}
+
+func (r *MetricRepository) WithdrawPublished(metricID, revisionID, tenantID, userID, expectedVersion int64) error {
+	return wrapDBError(r.db.Transaction(func(tx *gorm.DB) error {
+		if err := updateVersioned(tx, &models.MetricDefinition{}, metricID, tenantID, expectedVersion, map[string]interface{}{"updated_by": userID}); err != nil {
+			return err
+		}
+		if err := requireAffectedRow(tx.Model(&models.MetricDefinitionRevision{}).Where("id = ? AND metric_definition_id = ? AND status = ?", revisionID, metricID, models.RevisionStatusPublished).Updates(map[string]interface{}{"status": models.RevisionStatusWithdrawn, "updated_by": userID})); err != nil {
+			return ErrInvalidRevisionTransition
+		}
+		return nil
+	}))
+}
+
+func (r *MetricRepository) GetEffectiveRevision(metricID, tenantID int64, asOf time.Time) (*models.MetricDefinitionRevision, error) {
+	revision, err := effectiveMetricRevision(r.db, metricID, tenantID, asOf)
+	if err == nil {
+		err = r.db.Where("metric_definition_revision_id = ?", revision.ID).Order("id ASC").Find(&revision.Dependencies).Error
+	}
+	return revision, commonrepo.WrapDBError(err)
+}
+
 func (r *MetricRepository) Delete(id, tenantID int64) error {
-	return deleteInTransaction(r.db, &models.Metric{}, "id = ? AND tenant_id = ?", id, tenantID)
+	return deleteInTransaction(r.db, &models.MetricDefinition{}, "id = ? AND tenant_id = ?", id, tenantID)
 }
-
 func (r *MetricRepository) DeleteTx(tx *gorm.DB, id, tenantID int64) error {
-	return requireAffectedRow(tx.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.Metric{}))
+	return requireAffectedRow(tx.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.MetricDefinition{}))
 }
-
-func (r *MetricRepository) UpdateStatus(id, tenantID, expectedVersion int64, status string, updatedBy int64) error {
-	return updateVersioned(r.db, &models.Metric{}, id, tenantID, expectedVersion, map[string]interface{}{
-		"status": status, "updated_by": updatedBy,
-	})
-}
-
-func (r *MetricRepository) ExistsByCode(code string, tenantID int64, excludeID int64) (bool, error) {
+func (r *MetricRepository) ExistsByCode(code string, tenantID, excludeID int64) (bool, error) {
 	var count int64
-	query := r.db.Model(&models.Metric{}).Where("code = ? AND tenant_id = ?", code, tenantID)
+	query := r.db.Model(&models.MetricDefinition{}).Where("code = ? AND tenant_id = ?", code, tenantID)
 	if excludeID > 0 {
 		query = query.Where("id != ?", excludeID)
 	}
@@ -167,180 +398,84 @@ func (r *MetricRepository) ExistsByCode(code string, tenantID int64, excludeID i
 	return count > 0, err
 }
 
-// GetElementMappings 获取指标关联的数据元
-func (r *MetricRepository) GetElementMappings(metricID, tenantID int64) ([]models.MetricElementMapping, error) {
-	var mappings []models.MetricElementMapping
-	err := r.db.Model(&models.MetricElementMapping{}).
-		Joins("JOIN standard.elements e ON e.id = standard.metric_element_mappings.element_id AND e.tenant_id = ?", tenantID).
-		Where("standard.metric_element_mappings.metric_id = ?", metricID).
-		Find(&mappings).Error
-	return mappings, err
+func (r *MetricRepository) getRevisionByID(db *gorm.DB, id, metricID int64) (*models.MetricDefinitionRevision, error) {
+	var revision models.MetricDefinitionRevision
+	err := db.Where("id = ? AND metric_definition_id = ?", id, metricID).First(&revision).Error
+	if err == nil {
+		err = db.Where("metric_definition_revision_id = ?", id).Order("id ASC").Find(&revision.Dependencies).Error
+	}
+	return &revision, commonrepo.WrapDBError(err)
 }
-
-// SetElementMappings 设置指标关联数据元（全量替换）
-func (r *MetricRepository) SetElementMappings(metricID int64, elementIDs []int64) error {
-	return wrapDBError(r.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("metric_id = ?", metricID).Delete(&models.MetricElementMapping{}).Error; err != nil {
-			return err
-		}
-		for _, eid := range elementIDs {
-			m := models.MetricElementMapping{MetricID: metricID, ElementID: eid}
-			if err := tx.Create(&m).Error; err != nil {
-				return err
-			}
-		}
-		return nil
-	}))
+func (r *MetricRepository) getEffectiveRevision(db *gorm.DB, metricID int64, asOf time.Time) (*models.MetricDefinitionRevision, error) {
+	revision, err := effectiveMetricRevision(db, metricID, 0, asOf)
+	if err == nil {
+		err = db.Where("metric_definition_revision_id = ?", revision.ID).Order("id ASC").Find(&revision.Dependencies).Error
+	}
+	return revision, err
 }
-
-// GetDependencies 获取复合指标依赖的指标列表
-func (r *MetricRepository) GetDependencies(metricID, tenantID int64) ([]models.MetricDependency, error) {
-	var deps []models.MetricDependency
-	err := r.db.Model(&models.MetricDependency{}).
-		Joins("JOIN standard.metrics m ON m.id = standard.metric_dependencies.to_metric_id AND m.tenant_id = ?", tenantID).
-		Where("standard.metric_dependencies.from_metric_id = ?", metricID).
-		Find(&deps).Error
-	return deps, err
+func effectiveMetricRevision(db *gorm.DB, metricID, tenantID int64, asOf time.Time) (*models.MetricDefinitionRevision, error) {
+	var revision models.MetricDefinitionRevision
+	query := db.Table("standard.metric_definition_revisions AS mr").Select("mr.*").Joins("JOIN standard.metric_definitions m ON m.id = mr.metric_definition_id").Where("m.id = ? AND m.lifecycle_state = ?", metricID, "active")
+	if tenantID > 0 {
+		query = query.Where("m.tenant_id = ?", tenantID)
+	}
+	err := effectiveAt(query, "mr", asOf).Order("mr.effective_from DESC, mr.revision_no DESC").First(&revision).Error
+	return &revision, err
 }
-
-func (r *MetricRepository) GetDependenciesByMetric(metricID, tenantID int64) ([]models.MetricDependency, error) {
-	var dependencies []models.MetricDependency
-	err := r.db.Model(&models.MetricDependency{}).
-		Joins("JOIN standard.metrics source ON source.id = standard.metric_dependencies.from_metric_id AND source.tenant_id = ?", tenantID).
-		Joins("JOIN standard.metrics target ON target.id = standard.metric_dependencies.to_metric_id AND target.tenant_id = ?", tenantID).
-		Where("standard.metric_dependencies.from_metric_id = ? OR standard.metric_dependencies.to_metric_id = ?", metricID, metricID).
-		Order("standard.metric_dependencies.id ASC").
-		Find(&dependencies).Error
-	return dependencies, commonrepo.WrapDBError(err)
-}
-
-// SetDependencies 设置复合指标依赖（全量替换）
-func (r *MetricRepository) SetDependencies(metricID int64, depIDs []int64) error {
-	return wrapDBError(r.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("from_metric_id = ?", metricID).Delete(&models.MetricDependency{}).Error; err != nil {
-			return err
-		}
-		for _, did := range depIDs {
-			d := models.MetricDependency{FromMetricID: metricID, ToMetricID: did}
-			if err := tx.Create(&d).Error; err != nil {
-				return err
-			}
-		}
-		return nil
-	}))
-}
-
-func (r *MetricRepository) CreateWithRelations(metric *models.Metric, elementIDs, dependencyIDs []int64) error {
-	return wrapDBError(r.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(metric).Error; err != nil {
-			return err
-		}
-		if err := lockMetricDependencies(tx, metric.TenantID); err != nil {
-			return err
-		}
-		if cycle, err := metricDependencyCycle(tx, metric.ID, metric.TenantID, dependencyIDs); err != nil {
-			return err
-		} else if cycle {
-			return ErrMetricDependencyCycle
-		}
-		if err := replaceMetricElements(tx, metric.ID, elementIDs); err != nil {
-			return err
-		}
-		return replaceMetricDependencies(tx, metric.ID, dependencyIDs)
-	}))
-}
-
-func (r *MetricRepository) UpdateWithRelations(metric *models.Metric, elementIDs, dependencyIDs []int64, expectedVersion int64) error {
-	return wrapDBError(r.db.Transaction(func(tx *gorm.DB) error {
-		if dependencyIDs != nil {
-			if err := lockMetricDependencies(tx, metric.TenantID); err != nil {
-				return err
-			}
-			cycle, err := metricDependencyCycle(tx, metric.ID, metric.TenantID, dependencyIDs)
-			if err != nil {
-				return err
-			}
-			if cycle {
-				return ErrMetricDependencyCycle
-			}
-		}
-		if err := updateVersioned(tx, metric, metric.ID, metric.TenantID, expectedVersion, map[string]interface{}{
-			"category_id": metric.CategoryID, "domain_id": metric.DomainID, "name": metric.Name, "type": metric.Type,
-			"definition": metric.Definition, "formula": metric.Formula, "unit_id": metric.UnitID,
-			"base_metric_id": metric.BaseMetricID, "derivation_config": metric.DerivationConfig,
-			"steward_id": metric.StewardID, "tags": metric.Tags, "updated_by": metric.UpdatedBy,
-		}); err != nil {
-			return err
-		}
-		if elementIDs != nil {
-			if err := replaceMetricElements(tx, metric.ID, elementIDs); err != nil {
-				return err
-			}
-		}
-		if dependencyIDs != nil {
-			return replaceMetricDependencies(tx, metric.ID, dependencyIDs)
-		}
-		metric.Version = expectedVersion + 1
-		return nil
-	}))
-}
-
-func replaceMetricElements(tx *gorm.DB, metricID int64, elementIDs []int64) error {
-	if err := tx.Where("metric_id = ?", metricID).Delete(&models.MetricElementMapping{}).Error; err != nil {
+func (r *MetricRepository) requireRevisionState(tx *gorm.DB, metricID, revisionID, tenantID int64, status string, requireDraftPointer bool) error {
+	query := tx.Table("standard.metric_definition_revisions AS mr").Joins("JOIN standard.metric_definitions m ON m.id = mr.metric_definition_id").Where("mr.id = ? AND mr.metric_definition_id = ? AND m.tenant_id = ? AND mr.status = ?", revisionID, metricID, tenantID, status)
+	if requireDraftPointer {
+		query = query.Where("m.draft_revision_id = mr.id")
+	}
+	var count int64
+	if err := query.Count(&count).Error; err != nil {
 		return err
 	}
-	for _, elementID := range uniqueInt64s(elementIDs) {
-		if err := tx.Create(&models.MetricElementMapping{MetricID: metricID, ElementID: elementID}).Error; err != nil {
+	if count != 1 {
+		return ErrInvalidRevisionTransition
+	}
+	return nil
+}
+
+func replaceMetricRevisionDependencies(tx *gorm.DB, revisionID int64, dependencies []models.MetricDefinitionRevisionDependency, preserveRevision bool) error {
+	if err := tx.Where("metric_definition_revision_id = ?", revisionID).Delete(&models.MetricDefinitionRevisionDependency{}).Error; err != nil {
+		return err
+	}
+	for _, dependency := range dependencies {
+		dependency.ID, dependency.MetricDefinitionRevisionID, dependency.CreatedAt = 0, revisionID, time.Time{}
+		if !preserveRevision {
+			dependency.DependencyRevisionID = nil
+		}
+		if err := tx.Create(&dependency).Error; err != nil {
 			return err
 		}
 	}
 	return nil
 }
-
-func replaceMetricDependencies(tx *gorm.DB, metricID int64, dependencyIDs []int64) error {
-	if err := tx.Where("from_metric_id = ?", metricID).Delete(&models.MetricDependency{}).Error; err != nil {
-		return err
-	}
-	for _, dependencyID := range uniqueInt64s(dependencyIDs) {
-		if err := tx.Create(&models.MetricDependency{FromMetricID: metricID, ToMetricID: dependencyID}).Error; err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func lockMetricDependencies(db *gorm.DB, tenantID int64) error {
 	if db.Dialector.Name() != "postgres" {
 		return nil
 	}
 	return db.Exec("SELECT pg_advisory_xact_lock(?)", standardMetricDependencyLockBase+tenantID).Error
 }
-
-func metricDependencyCycle(db *gorm.DB, metricID, tenantID int64, dependencyIDs []int64) (bool, error) {
+func metricDependencyCycle(db *gorm.DB, metricID, tenantID int64, dependencies []models.MetricDefinitionRevisionDependency) (bool, error) {
 	type edge struct {
-		FromMetricID int64 `gorm:"column:from_metric_id"`
-		ToMetricID   int64 `gorm:"column:to_metric_id"`
+		FromID int64 `gorm:"column:from_id"`
+		ToID   int64 `gorm:"column:to_id"`
 	}
-
 	var edges []edge
-	err := db.Model(&models.MetricDependency{}).
-		Select("standard.metric_dependencies.from_metric_id, standard.metric_dependencies.to_metric_id").
-		Joins("JOIN standard.metrics source ON source.id = standard.metric_dependencies.from_metric_id AND source.tenant_id = ?", tenantID).
-		Joins("JOIN standard.metrics target ON target.id = standard.metric_dependencies.to_metric_id AND target.tenant_id = ?", tenantID).
-		Where("standard.metric_dependencies.from_metric_id <> ?", metricID).
-		Find(&edges).Error
+	err := db.Table("standard.metric_definition_revision_dependencies AS d").Select("r.metric_definition_id AS from_id, d.dependency_definition_id AS to_id").Joins("JOIN standard.metric_definition_revisions r ON r.id = d.metric_definition_revision_id").Joins("JOIN standard.metric_definitions m ON m.id = r.metric_definition_id AND m.tenant_id = ?", tenantID).Where("r.metric_definition_id <> ?", metricID).Scan(&edges).Error
 	if err != nil {
 		return false, err
 	}
-
-	graph := make(map[int64][]int64, len(edges)+1)
+	graph := map[int64][]int64{}
 	for _, item := range edges {
-		graph[item.FromMetricID] = append(graph[item.FromMetricID], item.ToMetricID)
+		graph[item.FromID] = append(graph[item.FromID], item.ToID)
 	}
-	graph[metricID] = uniqueInt64s(dependencyIDs)
-
-	visiting := make(map[int64]bool)
-	visited := make(map[int64]bool)
+	for _, dependency := range dependencies {
+		graph[metricID] = append(graph[metricID], dependency.DependencyDefinitionID)
+	}
+	visiting, visited := map[int64]bool{}, map[int64]bool{}
 	var visit func(int64) bool
 	visit = func(current int64) bool {
 		if visiting[current] {

@@ -45,6 +45,20 @@ func (d Dialect) QuoteIdentifier(identifier string) string {
 	return quote + strings.ReplaceAll(identifier, quote, quote+quote) + quote
 }
 
+// Placeholder returns the driver placeholder for a one-based argument
+// position. Callers that already have bound arguments must pass the next
+// position so numbered dialects continue the existing sequence.
+func (d Dialect) Placeholder(position int) string {
+	switch SQLPlaceholderStyleForEngine(d.engineType) {
+	case SQLPlaceholderDollar:
+		return fmt.Sprintf("$%d", position)
+	case SQLPlaceholderColon:
+		return fmt.Sprintf(":%d", position)
+	default:
+		return "?"
+	}
+}
+
 func (d Dialect) QualifiedTable(namespace, table string) string {
 	if strings.TrimSpace(namespace) == "" {
 		return d.QuoteIdentifier(table)

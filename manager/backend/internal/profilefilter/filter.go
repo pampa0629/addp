@@ -274,23 +274,29 @@ func SQL(scope dataprofile.DataScope, dialect commonquery.Dialect, tableAlias st
 		switch condition.Operator {
 		case "eq", "ne", "gt", "gte", "lt", "lte":
 			symbols := map[string]string{"eq": "=", "ne": "<>", "gt": ">", "gte": ">=", "lt": "<", "lte": "<="}
-			clauses = append(clauses, column+" "+symbols[condition.Operator]+" ?")
 			args = append(args, condition.Value)
+			clauses = append(clauses, column+" "+symbols[condition.Operator]+" "+dialect.Placeholder(len(args)))
 		case "is_null":
 			clauses = append(clauses, column+" IS NULL")
 		case "is_not_null":
 			clauses = append(clauses, column+" IS NOT NULL")
 		case "between":
-			clauses = append(clauses, column+" BETWEEN ? AND ?")
-			args = append(args, condition.Values[0], condition.Values[1])
+			args = append(args, condition.Values[0])
+			lower := dialect.Placeholder(len(args))
+			args = append(args, condition.Values[1])
+			upper := dialect.Placeholder(len(args))
+			clauses = append(clauses, column+" BETWEEN "+lower+" AND "+upper)
 		case "in", "not_in":
-			placeholders := strings.TrimSuffix(strings.Repeat("?,", len(condition.Values)), ",")
+			placeholders := make([]string, len(condition.Values))
+			for index, value := range condition.Values {
+				args = append(args, value)
+				placeholders[index] = dialect.Placeholder(len(args))
+			}
 			keyword := " IN "
 			if condition.Operator == "not_in" {
 				keyword = " NOT IN "
 			}
-			clauses = append(clauses, column+keyword+"("+placeholders+")")
-			args = append(args, condition.Values...)
+			clauses = append(clauses, column+keyword+"("+strings.Join(placeholders, ",")+")")
 		case "contains", "starts_with":
 			text := escapeLikeValue(fmt.Sprint(condition.Value))
 			if condition.Operator == "contains" {
@@ -298,8 +304,8 @@ func SQL(scope dataprofile.DataScope, dialect commonquery.Dialect, tableAlias st
 			} else {
 				text += "%"
 			}
-			clauses = append(clauses, column+" LIKE ? ESCAPE '!'")
 			args = append(args, text)
+			clauses = append(clauses, column+" LIKE "+dialect.Placeholder(len(args))+" ESCAPE '!'")
 		default:
 			return "", nil, fmt.Errorf("%w: unsupported condition operator", ErrInvalidScope)
 		}

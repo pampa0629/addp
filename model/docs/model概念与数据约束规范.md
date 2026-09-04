@@ -6,7 +6,7 @@ Model 是 Tenant 级数据架构与建模事实的 owner，管理业务实体、
 
 维度层级是模型内部结构，只能引用 Model 的 LogicalTable / LogicalField，并可通过字段冻结的数据元修订获得统一语义。DimensionHierarchy、层级成员、API 和前端编辑入口已整体归入 Model；Standard 旧表、API、权限与前端路线以及 LogicalField 上的 `hierarchy_id + hierarchy_level` 已删除。
 
-指标定义与指标实现必须分离：Standard MetricDefinitionRevision 只描述业务含义、统计口径、单位和非引擎可执行的语义表达；Model MetricImplementation 冻结 `metric_definition_revision_id`，并拥有粒度、事实来源、维度、连接、过滤和可执行表达式。同一指标定义可存在多个模型实现。当前 FactMetricMapping 和 Standard Metric 的 `derivation_config` 属于待替换实现，不得继续扩展。
+指标定义与指标实现必须分离：Standard MetricDefinitionRevision 只描述业务含义、统计口径、单位、非引擎可执行的语义表达，以及修订级指标语义依赖；依赖在草稿中引用指标定义稳定身份，发布时冻结为确定的已发布修订。Model MetricImplementation 同时保存 `metric_definition_id` 并冻结 `metric_definition_revision_id`，拥有粒度、事实来源、维度、连接、过滤和可执行表达式。同一指标定义可存在多个模型实现。FactMetricMapping 和 Standard Metric 的 `derivation_config` 是旧实现，迁移时直接删除，不保留并行路径。
 
 Model 是逻辑表物化的结构控制面 owner。逻辑表的 `materialization` 保存目标父节点 ResourceLocator、目标名称和分区设计；物理 staging 创建、受控 DDL、结构校验、封存、原子发布和回收必须由 Model 根据已审批逻辑模型执行。任何通用 writer 只获得 prepare 稳定输出的 staging ResourceLocator，并通过自身的 Engine 写能力向已存在表写入；Model 不识别、调用或依赖具体 writer 业务模块。Orchestrator 使用 TaskProvider outputs 与显式参数绑定组织准备、计算、封存、质量门禁与发布顺序。
 
@@ -68,6 +68,14 @@ Model prepare -> generic writer -> Model seal -> Quality materialization gate ->
 - 删除前必须读取物理表管理标记。目标不存在按幂等成功处理；目标存在时标记必须合法且 LogicalTable ID 与当前逻辑表一致，结构指纹和历史 batch ID 只作为该物理产物版本事实，不阻止退役。未标记、标记损坏或属于其他 LogicalTable 的物理表一律拒绝。
 - 物理操作只允许对配置解析出的精确限定表执行 `DROP TABLE`，不接受级联删除。物理删除成功后不修改 LogicalTable 配置或并发版本；后续如需删除逻辑模型，必须按既有流程先重新打开为 `draft`，再通过 LogicalTable 删除接口提交当时版本。
 - Model 不调用 Catalog、Service、Develop、Quality 或 Orchestrator 检查引用。治理流程必须先由各 owner 删除对该逻辑表或物理目标的配置引用，再移出 MaterializationGroup、退役物理目标，最后删除逻辑模型；模块边界不能由 Model 的 DDL 操作穿透。
+
+### 逻辑表删除闭环
+
+- LogicalTable 删除是 Model 聚合删除，不负责物理 DDL。删除前必须在同一控制库事务中锁定 LogicalTable，并确认资源版本匹配、状态为 `draft`、不属于任何 MaterializationGroup、`materialization` 已通过 LogicalTable 完整更新显式清空，且不存在 `preparing|prepared|sealed|publishing` 非终态 MaterializationBatch。物理目标退役不会代替清空配置，也不会隐式推进 LogicalTable 版本。
+- `published|failed|aborted` MaterializationBatch 是依附于 LogicalTable 的终态物化操作状态，不是跨逻辑定义独立保留的审计资源。满足全部删除前置条件后，Model 必须在删除 LogicalTable 的同一事务中先删除该 Tenant、该 LogicalTable 的全部终态批次，再删除逻辑表聚合；任一步失败必须整体回滚。
+- `common.task_executions` 是跨模块通用执行审计历史，不属于 LogicalTable 聚合。删除终态 MaterializationBatch 不得删除、级联删除或改写对应 TaskExecution；历史执行中的 `source_task_id`、执行血缘与结果继续保留，并允许其引用已经删除的业务任务定义。
+- `materialization_batches.logical_table_id` 继续使用 `ON DELETE RESTRICT`，作为绕过 Service 事务时的数据库保护；不得改为外键级联，也不得新增 LogicalTable “退役”状态或第二条强制删除路径。
+- 删除前置条件冲突统一返回 HTTP `409`，物化组成员、配置未清空和非终态批次分别使用稳定错误码 `materialization_group_member_conflict`、`logical_table_materialization_configured`、`logical_table_materialization_batch_active`；不得把数据库外键错误作为正常业务响应。
 
 ### TaskProvider 与封存交接
 
@@ -143,6 +151,8 @@ Model 遵循平台 API 规范中的资源并发版本规则。`Entity`、`Logica
 | TableRelation 新增、删除 | 事实侧 LogicalTable | 锁定并校验事实表和维度表均为 `draft`，写入关系并只推进事实表版本 |
 | DimensionHierarchy 及层级成员新增、更新、删除 | 所属维度 LogicalTable | 校验维度表为 `draft`、层级字段均属于该表、`level_num` 从 1 开始且不重复，写入并推进 LogicalTable 版本 |
 | MetricImplementation 新增、更新、删除 | 所属事实 LogicalTable | 校验事实表为 `draft`、指标定义修订已发布且实现契约完整，写入并推进 LogicalTable 版本 |
+
+MetricImplementation 的 `source_config` 与 `expression_config` 必须是非空 JSON 对象，`dimension_config` 与 `filter_config` 必须是 JSON 对象。当前唯一契约要求 `source_config.field_ids` 是至少包含一个当前事实表字段 ID 的数组，`expression_config.engine` 和 `expression_config.expression` 是非空字符串；扩展配置必须在本规范先定义后实现，不能由前端任意创造第二套结构。`metric_definition_id` 与 `metric_definition_revision_id` 必须经 Standard API 验证属于同一指标定义，且修订状态为 `published`。实现状态固定为 `active|disabled`，它只控制该实现是否可用于后续计算选择，不改变所冻结定义修订的有效性。
 | EntityRelation 更新、删除 | EntityRelation | `PUT` 携带完整端点和关系定义；校验关系版本，同时锁定并校验变更前后涉及的全部 Entity 均为 `draft` |
 | EntityRelation 创建 | 创建时无关系版本 | 同一事务锁定并校验两端 Entity 均为 `draft`，新关系版本从 `1` 开始 |
 | DWLayer 更新、删除 | DWLayer | 更新按版本条件写入；删除在同一事务完成版本校验、LogicalTable 引用检查和删除 |

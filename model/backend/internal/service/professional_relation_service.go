@@ -164,8 +164,8 @@ func (s *TableRelationService) GetProfessionalRelations(tenantID, tableID int64,
 		appendEdge(edge)
 	}
 
-	if s.factMetricRepo != nil {
-		mappings, mappingErr := s.factMetricRepo.ListByFactTable(tableID, tenantID)
+	if s.metricImplementationRepo != nil {
+		mappings, mappingErr := s.metricImplementationRepo.ListByFactTable(tableID, tenantID)
 		if mappingErr != nil {
 			return nil, mappingErr
 		}
@@ -174,18 +174,12 @@ func (s *TableRelationService) GetProfessionalRelations(tenantID, tableID int64,
 				response.Truncated = true
 				break
 			}
-			metricKey := standardProfessionalKey("metric", mapping.MetricID)
+			metricKey := standardProfessionalKey("metric", mapping.MetricDefinitionID)
 			appendProfessionalNode(&response.Nodes, seen, models.ProfessionalRelationNode{ProfessionalResourceKey: metricKey})
 			edge := models.ProfessionalRelationEdge{
-				ID:           fmt.Sprintf("model:fact_metric_mapping:%d", mapping.ID),
+				ID:           fmt.Sprintf("model:metric_implementation:%d", mapping.ID),
 				RelationKind: "model.logical_table.supports_metric",
 				Source:       response.Subject, Target: metricKey, Note: mapping.Note,
-			}
-			if mapping.FieldID != nil {
-				edge.SourceComponent = &models.ProfessionalRelationComponent{ResourceID: strconv.FormatInt(*mapping.FieldID, 10)}
-				if field, fieldErr := s.tableRepo.GetFieldByID(*mapping.FieldID, tableID); fieldErr == nil {
-					edge.SourceComponent.Name = field.Name
-				}
 			}
 			appendEdge(edge)
 		}

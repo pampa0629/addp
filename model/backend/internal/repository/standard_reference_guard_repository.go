@@ -147,7 +147,7 @@ func standardReferenceScans(resourceType string) []standardReferenceScan {
 		}
 	case models.StandardResourceMetric:
 		return []standardReferenceScan{
-			{OwnerType: "fact_metric_mapping", Table: "model.fact_metric_mappings AS owner", Tenant: "owner.tenant_id", Field: "metric_id", Column: "owner.metric_id"},
+			{OwnerType: "metric_implementation", Table: "model.metric_implementations AS owner", Tenant: "owner.tenant_id", Field: "metric_definition_id", Column: "owner.metric_definition_id"},
 		}
 	default:
 		return nil

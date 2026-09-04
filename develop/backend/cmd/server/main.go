@@ -18,6 +18,7 @@ import (
 	"github.com/addp/common/dataprotection/projectionstore"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/events"
+	"github.com/addp/common/exportartifact"
 	"github.com/addp/common/modulelifecycle"
 	"github.com/addp/develop/backend/internal/api"
 	developauthorization "github.com/addp/develop/backend/internal/authorization"
@@ -25,6 +26,8 @@ import (
 	developprotection "github.com/addp/develop/backend/internal/protection"
 	"github.com/addp/develop/backend/internal/repository"
 	"github.com/addp/develop/backend/internal/service"
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -138,8 +141,20 @@ func main() {
 	devExecutor := service.NewDevExecutor(devTaskRepo, taskExecutionRepo, workflowEngine, operatorDiscovery, metaClient, sqlEngine, federatedQueryService, notebookExecutionService, cfg.QueryResultLimit)
 	log.Printf("✅ DevExecutor 初始化完成（使用统一执行表）")
 	toolApprovalService := service.NewToolApprovalService(db, devExecutor)
+	transferClient := commonClient.NewTransferClient(cfg.TransferServiceURL, serviceTokenSource)
+	minioConfig := commonConfig.LoadBuiltinMinIOConfig()
+	minioClient, err := minio.New(minioConfig.Endpoint, &minio.Options{
+		Creds: credentials.NewStaticV4(minioConfig.AccessKey, minioConfig.SecretKey, ""), Secure: minioConfig.UseSSL,
+	})
+	if err != nil {
+		log.Fatalf("Develop 导出暂存 MinIO 初始化失败: %v", err)
+	}
+	exportStore := exportartifact.NewGormStore(db, "develop.export_sessions")
+	exportService := exportartifact.NewService(transferClient, exportStore, minioClient, "manager", "develop", "/api/v1/develop/exports")
+	queryExportService := service.NewQueryExportService(devExecutor, exportService)
 
 	cleanupService := service.NewCleanupService(db, redisClient, taskExecutionRepo)
+	cleanupService.SetExportArtifacts(exportStore, minioClient, "manager", exportartifact.CleanupOptions{})
 	if err := cleanupService.Start(context.Background()); err != nil {
 		log.Printf("Develop 资源回收服务启动失败: %v", err)
 	}
@@ -147,7 +162,7 @@ func main() {
 
 	// ========== Handler 层 ==========
 	devTaskHandler := api.NewDevTaskHandler(devTaskService, operatorDiscovery)
-	executionHandler := api.NewExecutionHandler(devExecutor, toolApprovalService)
+	executionHandler := api.NewExecutionHandler(devExecutor, toolApprovalService, queryExportService)
 	toolApprovalHandler := api.NewToolApprovalHandler(toolApprovalService)
 	operatorHandler := api.NewOperatorHandler(operatorDiscovery)
 	engineHandler := api.NewEngineHandler(systemServiceClient)

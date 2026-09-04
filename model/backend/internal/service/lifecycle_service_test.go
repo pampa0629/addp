@@ -98,10 +98,13 @@ func setupLifecycleServiceTestDB(t *testing.T) *gorm.DB {
 			target_table INTEGER NOT NULL, target_field INTEGER NOT NULL,
 			relation_type TEXT NOT NULL, created_at DATETIME, updated_at DATETIME
 		)`,
-		`CREATE TABLE model.fact_metric_mappings (
+		`CREATE TABLE model.metric_implementations (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL,
-			fact_table_id INTEGER NOT NULL, metric_id INTEGER NOT NULL, field_id INTEGER,
-			note TEXT, created_by INTEGER NOT NULL, created_at DATETIME
+			fact_table_id INTEGER NOT NULL, metric_definition_id INTEGER NOT NULL,
+			metric_definition_revision_id INTEGER NOT NULL, name TEXT NOT NULL, grain TEXT NOT NULL,
+			source_config TEXT NOT NULL, dimension_config TEXT NOT NULL, filter_config TEXT NOT NULL,
+			expression_config TEXT NOT NULL, status TEXT NOT NULL, note TEXT,
+			created_by INTEGER NOT NULL, updated_by INTEGER, created_at DATETIME, updated_at DATETIME
 		)`,
 		`CREATE TABLE model.materialization_groups (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL,
@@ -218,7 +221,7 @@ func TestLogicalTableApprovalReportsMissingAggregateRequirements(t *testing.T) {
 func TestLogicalModelLifecycleRejectsApprovedIndirectWrites(t *testing.T) {
 	db := setupLifecycleServiceTestDB(t)
 	tableRepo := repository.NewLogicalTableRepository(db)
-	metricRepo := repository.NewFactMetricRepository(db)
+	metricRepo := repository.NewMetricImplementationRepository(db)
 	relationRepo := repository.NewTableRelationRepository(db)
 	fact := models.LogicalTable{TenantID: 1, Name: "Orders", Code: "orders", TableType: "fact", Status: "approved", CreatedBy: 1}
 	dimension := models.LogicalTable{TenantID: 1, Name: "Customer", Code: "customer", TableType: "dimension", Status: "draft", CreatedBy: 1}
@@ -229,9 +232,9 @@ func TestLogicalModelLifecycleRejectsApprovedIndirectWrites(t *testing.T) {
 		t.Fatalf("create dimension table: %v", err)
 	}
 
-	metricService := NewFactMetricService(metricRepo, tableRepo)
-	_, err := metricService.AddMetric(fact.ID, 1, 1, &models.CreateFactMetricMappingRequest{Version: fact.Version, MetricID: 9})
-	requireDomainErrorCode(t, err, "fact_metric_state_conflict")
+	metricService := NewMetricImplementationService(metricRepo, tableRepo)
+	_, err := metricService.Create(fact.ID, 1, 1, metricImplementationRequest(fact.Version, 1))
+	requireDomainErrorCode(t, err, "metric_implementation_state_conflict")
 
 	tableRelationService := NewTableRelationService(relationRepo, tableRepo)
 	_, err = tableRelationService.AddDimensionRelation(fact.ID, 1, &models.CreateTableRelationRequest{
@@ -490,6 +493,110 @@ func TestLogicalTableDeleteAdvancesSurvivingFactVersion(t *testing.T) {
 	}
 	if relationCount != 0 {
 		t.Fatalf("relation count = %d, want 0", relationCount)
+	}
+}
+
+func TestLogicalTableDeleteRequiresMaterializationConfigurationRemoval(t *testing.T) {
+	db := setupLifecycleServiceTestDB(t)
+	tableRepo := repository.NewLogicalTableRepository(db)
+	table := models.LogicalTable{
+		TenantID: 1, Name: "Orders", Code: "orders", TableType: "fact", Status: "draft", CreatedBy: 1,
+		Materialization: models.JSONB{
+			"target_parent_locator": "addp://engine/1/path/public?type=schema",
+			"target_name":           "orders",
+		},
+	}
+	if err := db.Create(&table).Error; err != nil {
+		t.Fatalf("create logical table: %v", err)
+	}
+
+	err := NewLogicalTableService(
+		tableRepo,
+		repository.NewEntityRepository(db),
+		repository.NewDWLayerRepository(db),
+	).DeleteLogicalTable(table.ID, 1, table.Version)
+	requireDomainErrorCode(t, err, "logical_table_materialization_configured")
+
+	assertServiceRecordCount(t, db, &models.LogicalTable{}, 1, "id = ?", table.ID)
+}
+
+func TestLogicalTableDeleteRejectsNonTerminalMaterializationBatch(t *testing.T) {
+	db := setupLifecycleServiceTestDB(t)
+	tableRepo := repository.NewLogicalTableRepository(db)
+	table := models.LogicalTable{
+		TenantID: 1, Name: "Orders", Code: "orders", TableType: "fact", Status: "draft", CreatedBy: 1,
+		Materialization: models.JSONB{},
+	}
+	if err := db.Create(&table).Error; err != nil {
+		t.Fatalf("create logical table: %v", err)
+	}
+	batch := lifecycleMaterializationBatch(table, models.MaterializationBatchSealed)
+	if err := db.Create(&batch).Error; err != nil {
+		t.Fatalf("create sealed materialization batch: %v", err)
+	}
+
+	err := NewLogicalTableService(
+		tableRepo,
+		repository.NewEntityRepository(db),
+		repository.NewDWLayerRepository(db),
+	).DeleteLogicalTable(table.ID, 1, table.Version)
+	requireDomainErrorCode(t, err, "logical_table_materialization_batch_active")
+
+	assertServiceRecordCount(t, db, &models.LogicalTable{}, 1, "id = ?", table.ID)
+	assertServiceRecordCount(t, db, &models.MaterializationBatch{}, 1, "logical_table_id = ?", table.ID)
+}
+
+func TestLogicalTableDeleteRemovesTerminalMaterializationBatches(t *testing.T) {
+	db := setupLifecycleServiceTestDB(t)
+	tableRepo := repository.NewLogicalTableRepository(db)
+	table := models.LogicalTable{
+		TenantID: 1, Name: "Orders", Code: "orders", TableType: "fact", Status: "draft", CreatedBy: 1,
+		Materialization: models.JSONB{},
+	}
+	if err := db.Create(&table).Error; err != nil {
+		t.Fatalf("create logical table: %v", err)
+	}
+	for _, status := range []string{
+		models.MaterializationBatchPublished,
+		models.MaterializationBatchFailed,
+		models.MaterializationBatchAborted,
+	} {
+		batch := lifecycleMaterializationBatch(table, status)
+		if err := db.Create(&batch).Error; err != nil {
+			t.Fatalf("create %s materialization batch: %v", status, err)
+		}
+	}
+
+	if err := NewLogicalTableService(
+		tableRepo,
+		repository.NewEntityRepository(db),
+		repository.NewDWLayerRepository(db),
+	).DeleteLogicalTable(table.ID, 1, table.Version); err != nil {
+		t.Fatalf("delete logical table with terminal batches: %v", err)
+	}
+
+	assertServiceRecordCount(t, db, &models.LogicalTable{}, 0, "id = ?", table.ID)
+	assertServiceRecordCount(t, db, &models.MaterializationBatch{}, 0, "logical_table_id = ?", table.ID)
+}
+
+func lifecycleMaterializationBatch(table models.LogicalTable, status string) models.MaterializationBatch {
+	return models.MaterializationBatch{
+		ID: "batch-" + status, TenantID: table.TenantID, LogicalTableID: table.ID,
+		LogicalTableVersion: table.Version, EngineID: 1,
+		TargetParentLocator: "addp://engine/1/path/public?type=schema", TargetName: table.Code,
+		StagingName: table.Code + "_" + status, SchemaFingerprint: "fingerprint", Status: status,
+		PrepareExecutionID: "prepare-" + status,
+	}
+}
+
+func assertServiceRecordCount(t *testing.T, db *gorm.DB, model any, want int64, query string, args ...any) {
+	t.Helper()
+	var count int64
+	if err := db.Model(model).Where(query, args...).Count(&count).Error; err != nil {
+		t.Fatalf("count records: %v", err)
+	}
+	if count != want {
+		t.Fatalf("record count = %d, want %d", count, want)
 	}
 }
 
@@ -771,7 +878,7 @@ func TestAggregateChildrenRejectCrossTenantParentsAndTargets(t *testing.T) {
 	entityRepo := repository.NewEntityRepository(db)
 	relationRepo := repository.NewEntityRelationRepository(db)
 	tableRepo := repository.NewLogicalTableRepository(db)
-	metricRepo := repository.NewFactMetricRepository(db)
+	metricRepo := repository.NewMetricImplementationRepository(db)
 	tableRelationRepo := repository.NewTableRelationRepository(db)
 
 	localEntity := models.Entity{TenantID: 1, Name: "Local", Code: "local", Status: "draft", CreatedBy: 1}
@@ -830,10 +937,10 @@ func TestAggregateChildrenRejectCrossTenantParentsAndTargets(t *testing.T) {
 	_, err = logicalTableSvc.DeleteField(foreignField.ID, localFact.ID, 1, localFact.Version)
 	requireDomainErrorCode(t, err, "logical_field_not_found")
 
-	metricSvc := NewFactMetricService(metricRepo, tableRepo)
-	_, err = metricSvc.ListMetrics(foreignFact.ID, 1)
+	metricSvc := NewMetricImplementationService(metricRepo, tableRepo)
+	_, err = metricSvc.List(foreignFact.ID, 1)
 	requireDomainErrorCode(t, err, "logical_table_not_found")
-	_, err = metricSvc.AddMetric(foreignFact.ID, 1, 1, &models.CreateFactMetricMappingRequest{MetricID: 9})
+	_, err = metricSvc.Create(foreignFact.ID, 1, 1, metricImplementationRequest(foreignFact.Version, foreignField.ID))
 	requireDomainErrorCode(t, err, "logical_table_not_found")
 
 	tableRelationSvc := NewTableRelationService(tableRelationRepo, tableRepo)
@@ -843,4 +950,14 @@ func TestAggregateChildrenRejectCrossTenantParentsAndTargets(t *testing.T) {
 	requireDomainErrorCode(t, err, "logical_table_not_found")
 	_, err = tableRelationSvc.ListDimensionRelations(foreignFact.ID, 1)
 	requireDomainErrorCode(t, err, "logical_table_not_found")
+}
+
+func metricImplementationRequest(version, fieldID int64) *models.CreateMetricImplementationRequest {
+	return &models.CreateMetricImplementationRequest{
+		Version: version, MetricDefinitionID: 9, MetricDefinitionRevisionID: 19,
+		Name: "Order Count", Grain: "order", SourceConfig: map[string]interface{}{"field_ids": []int64{fieldID}},
+		DimensionConfig: map[string]interface{}{}, FilterConfig: map[string]interface{}{},
+		ExpressionConfig: map[string]interface{}{"engine": "sql", "expression": "COUNT(*)"},
+		Status:           models.MetricImplementationActive,
+	}
 }

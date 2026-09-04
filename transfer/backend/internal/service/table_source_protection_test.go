@@ -9,26 +9,21 @@ import (
 	"github.com/addp/transfer/internal/executor"
 )
 
-func TestPrepareBoundedTableSourceProtectionUsesNativePipelineAcrossEnginesAndRestrictsQueryProtection(t *testing.T) {
+func TestPrepareBoundedTableSourceProtectionUsesPreparedQueryAcrossEngines(t *testing.T) {
 	tests := []struct {
 		name         string
-		engineType   string
 		kind         executor.TableEndpointKind
 		wantPrepare  int
 		wantResource int
 	}{
-		{name: "postgres native", engineType: "postgresql", kind: executor.TableEndpointNative, wantPrepare: 1},
-		{name: "mysql native", engineType: "mysql", kind: executor.TableEndpointNative, wantPrepare: 1},
-		{name: "oracle native", engineType: "oracle", kind: executor.TableEndpointNative, wantPrepare: 1},
-		{name: "postgres query", engineType: "postgresql", kind: executor.TableEndpointQuery, wantPrepare: 1},
-		{name: "postgres encoded", engineType: "postgresql", kind: executor.TableEndpointEncoded, wantResource: 1},
-		{name: "mongodb query", engineType: "mongodb", kind: executor.TableEndpointQuery, wantResource: 1},
-		{name: "mysql query", engineType: "mysql", kind: executor.TableEndpointQuery, wantResource: 1},
+		{name: "native", kind: executor.TableEndpointNative, wantPrepare: 1},
+		{name: "query", kind: executor.TableEndpointQuery, wantPrepare: 1},
+		{name: "encoded", kind: executor.TableEndpointEncoded, wantResource: 1},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			gate := &recordingSourceProtectionGate{}
-			if _, err := prepareBoundedTableSourceProtection(t.Context(), gate, 7, map[string]interface{}{"source": map[string]interface{}{"locator": "fixture"}}, test.engineType, test.kind); err != nil {
+			if _, err := prepareBoundedTableSourceProtection(t.Context(), gate, 7, map[string]interface{}{"source": map[string]interface{}{"locator": "fixture"}}, test.kind); err != nil {
 				t.Fatal(err)
 			}
 			if gate.prepareCalls != test.wantPrepare || gate.resourceCalls != test.wantResource {

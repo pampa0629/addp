@@ -400,7 +400,7 @@ func (s *DocumentService) CreateAndLinkMetric(req *models.CreateLinkedDocumentRe
 	}
 	doc := newDocument(&req.CreateDocumentRequest, tenantID, userID)
 	mapping := &models.DocumentMetricMapping{DocumentID: doc.ID, MetricID: metricID}
-	if err := s.repo.CreateWithMappingVersioned(doc, mapping, &models.Metric{}, metricID, tenantID, req.Version); err != nil {
+	if err := s.repo.CreateWithMappingVersioned(doc, mapping, &models.MetricDefinition{}, metricID, tenantID, req.Version); err != nil {
 		return nil, err
 	}
 	return &models.LinkedDocumentMutationResponse{Document: doc, Version: req.Version + 1}, nil
@@ -439,7 +439,7 @@ func (s *DocumentService) LinkDocToMetric(docID, tenantID, metricID, version int
 		return err
 	}
 	mapping := &models.DocumentMetricMapping{DocumentID: docID, MetricID: metricID}
-	return s.repo.MutateMappingVersioned(&models.Metric{}, metricID, tenantID, version, mapping, true, "document_id = ? AND metric_id = ?", docID, metricID)
+	return s.repo.MutateMappingVersioned(&models.MetricDefinition{}, metricID, tenantID, version, mapping, true, "document_id = ? AND metric_id = ?", docID, metricID)
 }
 
 // ===== 解除文档与标准项的关联 =====
@@ -471,5 +471,5 @@ func (s *DocumentService) UnlinkDocFromMetric(docID, tenantID, metricID, version
 	if err := s.refs.RequireMetric(tenantID, &metricID); err != nil {
 		return err
 	}
-	return s.repo.MutateMappingVersioned(&models.Metric{}, metricID, tenantID, version, &models.DocumentMetricMapping{}, false, "document_id = ? AND metric_id = ?", docID, metricID)
+	return s.repo.MutateMappingVersioned(&models.MetricDefinition{}, metricID, tenantID, version, &models.DocumentMetricMapping{}, false, "document_id = ? AND metric_id = ?", docID, metricID)
 }

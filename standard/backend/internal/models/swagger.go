@@ -42,11 +42,11 @@ type PaginatedCodeSetResponse struct {
 
 // PaginatedMetricResponse 指标分页列表响应。
 type PaginatedMetricResponse struct {
-	Data       []Metric `json:"data"`
-	Total      int64    `json:"total"`
-	Page       int      `json:"page"`
-	PageSize   int      `json:"page_size"`
-	TotalPages int      `json:"total_pages"`
+	Data       []MetricDefinitionAggregate `json:"data"`
+	Total      int64                       `json:"total"`
+	Page       int                         `json:"page"`
+	PageSize   int                         `json:"page_size"`
+	TotalPages int                         `json:"total_pages"`
 }
 
 // PaginatedDocumentResponse 标准文档分页列表响应。

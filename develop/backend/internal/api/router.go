@@ -1,6 +1,8 @@
 package api
 
 import (
+	"strings"
+
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/middleware/audit"
 	commonAuth "github.com/addp/common/middleware/auth"
@@ -87,6 +89,10 @@ func SetupRouter(
 	// 用户 API 只接受 canonical Bearer AuthContext。
 	api := router.Group("/api/v1/develop")
 	api.Use(
+		commonAuth.MustNewOptionalResourceTicketMiddleware(commonAuth.ResourceTicketMiddlewareConfig{
+			SystemURL: cfg.SystemServiceURL, Owner: "develop",
+			RequiredPermissions: []string{developauthorization.PermissionDevelopTaskRead},
+		}, isDevelopExportResourceRequest),
 		commonAuth.MustNewMiddleware(commonAuth.MiddlewareConfig{SystemURL: cfg.SystemServiceURL}),
 		commonAuth.MustNewContextGuard("tenant"),
 		commonAuth.MustNewDelegatedPolicyGuard("develop", map[string]commonAuth.DelegatedRoutePolicyEntry{
@@ -125,6 +131,11 @@ func SetupRouter(
 			taskProvider.POST("/tasks/:task_type/:id/execute", permission(developauthorization.PermissionDevelopTaskProviderExecute), executionHandler.ProviderExecuteDevTask)
 			taskProvider.GET("/executions/:execution_id", permission(developauthorization.PermissionDevelopTaskProviderRead), executionHandler.ProviderGetExecution)
 		}
+		exports := api.Group("/exports")
+		{
+			exports.GET("/:id", permission(developauthorization.PermissionDevelopTaskRead), executionHandler.GetQueryExport)
+			exports.GET("/:id/file", permission(developauthorization.PermissionDevelopTaskRead), executionHandler.DownloadQueryExport)
+		}
 
 		// ========== 开发任务定义管理 ==========
 		taskDefinitions := api.Group("/task-definitions")
@@ -146,6 +157,14 @@ func SetupRouter(
 			executions.POST("", permission(developauthorization.PermissionDevelopTaskExecute), executionHandler.ExecuteContent)
 			executions.GET("", permission(developauthorization.PermissionDevelopTaskRead), executionHandler.ListExecutions)
 			executions.GET("/statistics", permission(developauthorization.PermissionDevelopTaskRead), executionHandler.GetExecutionStatistics)
+			executions.POST(
+				"/:execution_id/exports",
+				permission(
+					developauthorization.PermissionDevelopTaskExecute,
+					developauthorization.PermissionDevelopDataReadExecute,
+				),
+				executionHandler.CreateQueryExport,
+			)
 			executions.GET("/:execution_id", permission(developauthorization.PermissionDevelopTaskRead), executionHandler.GetExecution)
 			executions.GET("/:execution_id/logs", permission(developauthorization.PermissionDevelopTaskRead), executionHandler.GetExecutionLogs)
 			executions.POST("/:execution_id/retry", permission(developauthorization.PermissionDevelopTaskExecute), executionHandler.RetryExecution)
@@ -213,4 +232,10 @@ func SetupRouter(
 	}
 
 	return router
+}
+
+func isDevelopExportResourceRequest(c *gin.Context) bool {
+	path := strings.TrimPrefix(c.Request.URL.Path, "/api/v1/develop")
+	segments := strings.Split(strings.Trim(path, "/"), "/")
+	return len(segments) == 3 && segments[0] == "exports" && segments[2] == "file"
 }

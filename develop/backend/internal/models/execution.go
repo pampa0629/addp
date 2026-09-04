@@ -45,6 +45,23 @@ type CreateExecutionRequest struct {
 	RequestFingerprint     string                 `json:"request_fingerprint,omitempty" binding:"omitempty,len=64,hexadecimal"`
 }
 
+type CreateQueryExportRequest struct {
+	Format   string `json:"format" binding:"omitempty,oneof=csv"`
+	FileName string `json:"file_name" binding:"required"`
+}
+
+type CreateQueryExportResponse struct {
+	ID                  uint   `json:"id"`
+	Format              string `json:"format"`
+	FileName            string `json:"file_name"`
+	TransferExecutionID string `json:"transfer_execution_id"`
+	Status              string `json:"status"`
+	ErrorMessage        string `json:"error_message,omitempty"`
+	DownloadURL         string `json:"download_url,omitempty"`
+	CreatedAt           string `json:"created_at,omitempty"`
+	UpdatedAt           string `json:"updated_at,omitempty"`
+}
+
 // UpdateExecutionRequest 更新执行状态请求
 type UpdateExecutionRequest struct {
 	Status          string                 `json:"status" binding:"omitempty,oneof=pending running success failed timeout cancelled"`

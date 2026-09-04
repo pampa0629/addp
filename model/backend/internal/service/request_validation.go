@@ -92,13 +92,6 @@ func validateCreateTableRelationRequest(req *models.CreateTableRelationRequest) 
 	return nil
 }
 
-func validateCreateFactMetricRequest(req *models.CreateFactMetricMappingRequest) error {
-	if req == nil || req.MetricID <= 0 || !validOptionalID(req.FieldID) {
-		return invalidRequest()
-	}
-	return nil
-}
-
 func validateCreateDWLayerRequest(req *models.CreateDWLayerRequest) error {
 	if req == nil || !modelCodePattern.MatchString(req.LayerCode) || utf8.RuneCountInString(req.LayerCode) > 20 ||
 		!validRequiredString(req.LayerName, 100) || req.SortOrder < 0 {

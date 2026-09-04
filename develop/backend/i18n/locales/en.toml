@@ -70,6 +70,15 @@ other = "The selected resource is not a queryable data item for the current engi
 [develop.query.confirmation_required]
 other = "This query is high risk. Preflight and confirm it before execution."
 
+[develop.query.export_invalid]
+other = "The current query result cannot be exported. Run the query again and retry."
+
+[develop.query.export_not_found]
+other = "The query execution does not exist or is no longer accessible."
+
+[develop.query.export_unavailable]
+other = "Full result export is temporarily unavailable. Try again later."
+
 [develop.notebook.execution_permission_denied]
 other = "Your account is not allowed to execute notebooks."
 

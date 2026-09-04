@@ -1,5 +1,16 @@
 {
   "common": {
+    "export": {
+      "title": "Export All Results",
+      "format": "Export format",
+      "formatPlaceholder": "Select an export format",
+      "formatRequired": "Select an export format",
+      "fileName": "File name",
+      "fileNamePlaceholder": "Enter a file name",
+      "fileNameRequired": "Enter a file name",
+      "hint": "The system rereads all data in the background, creates a temporary file, and downloads it when ready.",
+      "start": "Start Export"
+    },
     "executionParameters": {
 	  "title": "Execution parameters",
       "workflowConfiguration": "Task default",

@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/addp/common/datatype"
+	"github.com/addp/common/exportartifact"
 	commonModels "github.com/addp/common/models"
 )
 
@@ -22,35 +23,14 @@ type SearchHistory struct {
 }
 
 const (
-	ExportSessionStatusPending = "pending"
-	ExportSessionStatusRunning = "running"
-	ExportSessionStatusSuccess = "success"
-	ExportSessionStatusFailed  = "failed"
+	ExportSessionStatusPending = exportartifact.StatusPending
+	ExportSessionStatusRunning = exportartifact.StatusRunning
+	ExportSessionStatusSuccess = exportartifact.StatusSuccess
+	ExportSessionStatusFailed  = exportartifact.StatusFailed
 )
 
-// ExportSession 记录 Manager 用户发起的数据库 item 导出会话。
-// 导出产物暂存在 ADDP infra，不进入业务库，也不登记为 Meta item。
-type ExportSession struct {
-	ID                  uint      `json:"id" gorm:"primaryKey"`
-	TenantID            uint      `json:"tenant_id" gorm:"not null;index:idx_export_sessions_tenant_status_created,priority:1"`
-	UserID              uint      `json:"user_id" gorm:"not null;index"`
-	SourceItemLocator   string    `json:"source_item_locator" gorm:"type:text;not null"`
-	Format              string    `json:"format" gorm:"size:64;not null"`
-	FileName            string    `json:"file_name" gorm:"size:512;not null"`
-	TargetParentLocator string    `json:"target_parent_locator" gorm:"type:text;not null"`
-	TargetLocator       string    `json:"target_locator" gorm:"type:text;not null"`
-	ArtifactManifest    JSONMap   `json:"artifact_manifest,omitempty" gorm:"type:jsonb"`
-	TransferTaskID      uint      `json:"transfer_task_id" gorm:"not null;index"`
-	TransferExecutionID string    `json:"transfer_execution_id" gorm:"size:64;not null;index"`
-	Status              string    `json:"status" gorm:"size:32;not null;index:idx_export_sessions_tenant_status_created,priority:2"`
-	ErrorMessage        string    `json:"error_message,omitempty" gorm:"type:text"`
-	CreatedAt           time.Time `json:"created_at" gorm:"index:idx_export_sessions_tenant_status_created,priority:3,sort:desc"`
-	UpdatedAt           time.Time `json:"updated_at"`
-}
-
-func (ExportSession) TableName() string {
-	return "manager.export_sessions"
-}
+// ExportSession 使用平台唯一的短生命周期导出会话模型。
+type ExportSession = exportartifact.Session
 
 // JSONMap is now imported from common/models
 // Use commonModels.JSONMap instead

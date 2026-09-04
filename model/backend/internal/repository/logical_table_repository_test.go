@@ -86,15 +86,32 @@ func setupLogicalTableRepositoryTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
-		`CREATE TABLE model.fact_metric_mappings (
+		`CREATE TABLE model.metric_implementations (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			tenant_id INTEGER NOT NULL,
 			fact_table_id INTEGER NOT NULL,
-			metric_id INTEGER NOT NULL,
-			field_id INTEGER,
+			metric_definition_id INTEGER NOT NULL,
+			metric_definition_revision_id INTEGER NOT NULL,
+			name TEXT NOT NULL,
+			grain TEXT NOT NULL,
+			source_config TEXT NOT NULL,
+			dimension_config TEXT NOT NULL,
+			filter_config TEXT NOT NULL,
+			expression_config TEXT NOT NULL,
+			status TEXT NOT NULL,
 			note TEXT,
 			created_by INTEGER NOT NULL,
+			updated_by INTEGER,
+			updated_at DATETIME,
 			created_at DATETIME
+		)`,
+		`CREATE TABLE model.materialization_batches (
+			id TEXT PRIMARY KEY, tenant_id INTEGER NOT NULL, logical_table_id INTEGER NOT NULL,
+			logical_table_version INTEGER NOT NULL, engine_id INTEGER NOT NULL,
+			target_parent_locator TEXT NOT NULL, target_name TEXT NOT NULL, staging_name TEXT NOT NULL,
+			schema_fingerprint TEXT NOT NULL, expected_target_marker TEXT, status TEXT NOT NULL,
+			prepare_execution_id TEXT NOT NULL, writer_execution_id TEXT, seal_execution_id TEXT,
+			publish_execution_id TEXT, published_at DATETIME, created_at DATETIME, updated_at DATETIME
 		)`,
 	} {
 		if err := db.Exec(ddl).Error; err != nil {
@@ -143,12 +160,21 @@ func TestLogicalTableDeleteRemovesAggregateInOneTenant(t *testing.T) {
 		t.Fatalf("create dimension field: %v", err)
 	}
 	relation := models.TableRelation{TenantID: 1, SourceTable: table.ID, SourceField: factField.ID, TargetTable: dimension.ID, TargetField: dimensionField.ID, RelationType: "fk"}
-	mapping := models.FactMetricMapping{TenantID: 1, FactTableID: table.ID, MetricID: 9, CreatedBy: 1}
+	implementation := models.MetricImplementation{TenantID: 1, FactTableID: table.ID, MetricDefinitionID: 9, MetricDefinitionRevisionID: 19, Name: "Order Count", Grain: "order", SourceConfig: models.JSONB{"field_ids": []int64{factField.ID}}, DimensionConfig: models.JSONB{}, FilterConfig: models.JSONB{}, ExpressionConfig: models.JSONB{"engine": "sql", "expression": "COUNT(*)"}, Status: models.MetricImplementationActive, CreatedBy: 1}
 	if err := db.Create(&relation).Error; err != nil {
 		t.Fatalf("create table relation: %v", err)
 	}
-	if err := db.Create(&mapping).Error; err != nil {
-		t.Fatalf("create metric mapping: %v", err)
+	if err := db.Create(&implementation).Error; err != nil {
+		t.Fatalf("create metric implementation: %v", err)
+	}
+	batch := models.MaterializationBatch{
+		ID: "published-batch", TenantID: 1, LogicalTableID: table.ID, LogicalTableVersion: table.Version,
+		EngineID: 1, TargetParentLocator: "addp://engine/1/path/public?type=schema", TargetName: "orders",
+		StagingName: "orders_staging", SchemaFingerprint: "fingerprint", Status: models.MaterializationBatchPublished,
+		PrepareExecutionID: "prepare-orders",
+	}
+	if err := db.Create(&batch).Error; err != nil {
+		t.Fatalf("create terminal materialization batch: %v", err)
 	}
 
 	if err := NewLogicalTableRepository(db).Delete(table.ID, 1, table.Version); err != nil {
@@ -158,7 +184,8 @@ func TestLogicalTableDeleteRemovesAggregateInOneTenant(t *testing.T) {
 	assertRepositoryRecordCount(t, db, &models.LogicalTable{}, 0, "id = ?", table.ID)
 	assertRepositoryRecordCount(t, db, &models.LogicalField{}, 0, "table_id = ?", table.ID)
 	assertRepositoryRecordCount(t, db, &models.TableRelation{}, 0, "source_table = ? OR target_table = ?", table.ID, table.ID)
-	assertRepositoryRecordCount(t, db, &models.FactMetricMapping{}, 0, "fact_table_id = ?", table.ID)
+	assertRepositoryRecordCount(t, db, &models.MetricImplementation{}, 0, "fact_table_id = ?", table.ID)
+	assertRepositoryRecordCount(t, db, &models.MaterializationBatch{}, 0, "logical_table_id = ?", table.ID)
 	assertRepositoryRecordCount(t, db, &models.LogicalTable{}, 1, "id = ?", dimension.ID)
 }
 

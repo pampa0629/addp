@@ -1,6 +1,6 @@
 # ADDP Workbench 数据服务消费与数据应用专题
 
-状态：概念设计已确认；Phase 1 至 Phase 4B 已实现并完成标准门禁及真实浏览器生命周期验收；Phase 6 的通用 Value renderer、Map 专题样式、领域事实禁止门禁、Value + Map + Chart + Table 正式组合应用及空间探索创作向导均已完成真实浏览器验收。Tile / OGC Features 只在真实数据量超过有界 GeoJSON 上限后启动。
+状态：概念设计已确认；Phase 1 至 Phase 4B 已实现并完成标准门禁及真实浏览器生命周期验收；Phase 6 的通用 Value renderer、Map 专题样式、领域事实禁止门禁、Value + Map + Chart + Table 正式组合应用、空间探索创作向导及保存前整页预览均已完成真实浏览器验收。Tile / OGC Features 只在真实数据量超过有界 GeoJSON 上限后启动。
 
 本文跟进 ADDP `workbench` 模块的概念、边界、阶段计划与实施状态。Workbench 是平台级、领域无关的数据服务消费模块，不属于 Outdoor 业务专用能力。Outdoor 只作为首个真实验收场景；后续任何满足消费契约的数据服务都应能以同一主路径接入，禁止在 Workbench 核心模型、API、渲染判断或权限逻辑中硬编码 Outdoor 表、字段、指标或页面。
 
@@ -1027,6 +1027,22 @@ Data Application Component 当前结构化查询
 
 普通查询与显式导出继续使用同一个 Query Service operation。客户端通过 Descriptor 声明的可选请求头 `X-ADDP-Query-Intent: query | export` 表达用途，缺省为 `query`；该头不授予额外能力，只用于 owner 审计事件分类。Gateway 共享 CORS 必须允许该请求头，并暴露 `X-ADDP-Has-More`、`X-ADDP-Next-Cursor`、`X-ADDP-Service-Version` 和 Request ID 等有界响应事实。CSV 与 GeoJSON 必须返回相同的分页和服务版本响应头。
 
+### 8.9 保存前整页预览
+
+保存前整页预览用于让创作者在不写入草稿、不发布 Revision 的前提下，以最终运行布局检查当前内存中的 Data Application Snapshot。它不是新的 Data Application 状态、页面类型或运行入口。
+
+固定边界如下：
+
+1. 编辑器打开预览时，先按保存载荷的归一化规则复制当前名称、说明和 Snapshot；预览只消费这份不可回写的内存副本；
+2. 已发布运行页和保存前预览必须复用同一个 Workbench 应用运行画布、Component 查询状态、参数联动、renderer、cursor、导出、全屏和自动刷新实现；运行页只负责读取当前发布 Revision，编辑器只负责提供当前草稿副本；
+3. 预览继续按 Component 保存的 `service_ref + contract_fingerprint` 读取 Consumer Descriptor，并由当前用户 Bearer 直接调用 Descriptor operation；契约变化和权限错误按正式运行规则阻断；
+4. 预览使用覆盖创作端的全页对话层，不增加 `/preview` 路由、Backend API、临时数据库记录、未发布 Runtime API、查询代理或第二套认证；
+5. 关闭预览时销毁全部参数值、查询结果、cursor、错误和定时器；预览中的输入、选择联动和刷新都不修改编辑器草稿；
+6. 只有名称、页面标题和至少一个 Component 齐备且呈现区块约束通过时才允许打开；更深的 Descriptor 与查询错误由唯一运行画布按真实执行结果展示；
+7. `desktop | wallboard` 只影响同一画布的布局。预览容器可以约束画布高度，但不能拥有专用 Component 配置或查询分支。
+
+应用运行画布属于 `workbench/frontend`，因为它组合 Data Application Snapshot、Service Consumer Descriptor、Parameter Binding 与 Selection Binding；Table、Value、Chart、Map 等纯结果 renderer 继续由 `common-frontend` 唯一实现。不得为了预览在编辑器中复制一套 renderer 编排或查询逻辑。
+
 ## 九、权限与身份
 
 ### 9.1 用户交互
@@ -1234,6 +1250,7 @@ Workbench 不因为 Phase 5 增强而取得数据建模、SQL、指标定义或�
 - [x] 完成通用性合同门禁，禁止 Workbench 生产代码和默认配置出现验收领域事实；
 - [x] 使用一个空间 Query Service 和一个已聚合 Query Service 配置 Value + Map + Chart + Table 应用，完成参数与选择联动验收；
 - [x] 实现只编译现有 Snapshot 概念的空间探索创作向导，并完成无持久副作用浏览器验收；
+- [x] 实现保存前整页预览，并让创作端与已发布运行端复用唯一应用运行画布；
 - [ ] 数据量超过有界 GeoJSON 上限前，先定义 Tile / OGC Features 的稳定消费契约，不增加无界 Query Service 旁路。
 
 ## 十三、第一阶段明确延期
@@ -1739,13 +1756,44 @@ Workbench 正式发布长期 Data Application `farmland-spatial-consumption`（I
 
 本轮 `make test-workbench-frontend` 通过 47 项测试及 production build；通用性门禁继续递归拒绝验收领域事实进入 Workbench 生产源码。Backend、API、数据库、Swagger 与 CI 入口均未改变，不需要重跑 PostgreSQL 或 Swagger 门禁；全量 ADDP keepalive 已重新启动并恢复 Console、Gateway、Workbench Backend 与 Workbench Frontend Ready。
 
+### 14.23 保存前整页预览与唯一运行画布（2026-09-04）
+
+本轮按 8.9 的边界实现保存前整页预览。原 `DataApplicationRuntime` 中的参数输入、Descriptor 指纹校验、查询、cursor、有限导出、Selection Binding、全屏、自动刷新、布局和 renderer 编排已整体收敛到 Workbench 自有的唯一 `DataApplicationCanvas`；正式运行页只读取当前发布 Revision 后传入画布，编辑器则按草稿保存的同一归一化规则生成脱离原对象的内存副本，通过全页对话层传入同一画布。未增加路由、Backend API、数据库记录、Service 查询协议、认证路径或临时应用。
+
+预览入口使用中英文 i18n，并显式显示“未保存预览”状态。打开前要求应用名称、页面标题和至少一个 Component 齐备，继续执行现有呈现区块约束；预览加载时重新读取每个 Component 的 Consumer Descriptor，契约指纹不一致时与正式运行页一样停止查询。相关提示已改为不限定发布态的“当前应用配置停止查询”，因此同一画布在草稿预览和发布运行两种宿主下都保持准确。
+
+真实浏览器验收先在一个历史空间应用上把页面标题临时改为未保存值：预览正确显示该值且浏览器 URL 保持编辑路由，四个过期契约组件按唯一指纹规则阻断，没有误用当前 Descriptor。随后使用当前契约有效的正式应用重复验收：未保存标题和“未保存预览”状态正确显示，查询全部组件成功返回真实结果；点击人员列表行后，预览内部应用参数更新并触发既有联动查询，关闭预览后编辑器仍保留原默认参数，预览选择值没有回写草稿。再直接打开 `/data-apps/:application_id`，发布修订标签、同一画布和真实查询均正常，浏览器控制台无错误。全程没有点击保存、发布、下线或删除，没有创建或修改持久 Data Application。
+
+本轮 `make test-workbench-frontend` 通过 39 项测试及 production build；新增门禁覆盖预览副本与原草稿隔离、与保存载荷使用同一 Snapshot 归一化规则、创作端和发布运行端共用唯一应用画布、运行页不再拥有 Descriptor 或查询实现，以及不存在 `/preview` 路由。Backend、API、数据库、Swagger、根 Makefile 和 CI 编排均未改变，不需要重跑 PostgreSQL 或 Swagger 门禁。
+
+### 14.24 跨方言参数占位符与 PostGIS 读取集证明修复（2026-09-04）
+
+保存前整页预览继续使用长期应用 `farmland-spatial-consumption` 做运行态复核时，参数化查询先后暴露两个不属于 Workbench renderer 的 Service / Engine 主路径问题：结构化查询规划器固定生成 `?` 占位符，导致 PostgreSQL 筛选 SQL 在 Prepared Query 阶段报语法错误；修复占位符后，空间查询又因 PostgreSQL 读取集只能证明 `pg_catalog` / `internal` 函数而拒绝平台自身声明支持的 PostGIS `ST_AsGeoJSON`、`ST_Intersects` 和 `ST_MakeEnvelope`。Workbench 没有增加改写 SQL、绕过保护门禁或针对空间样例的兼容逻辑。
+
+统一主路径已经收敛为：所有结构化 SQL 生成器根据 Engine Dialect 直接产生最终占位符，PostgreSQL 使用 `$1...$n`、Oracle 使用 `:1...:n`，其他当前方言使用 `?`；Provider 不再二次扫描或改写 SQL。PostgreSQL 读取集证明仍拒绝未知函数，只在候选函数满足非集合返回、非 `SECURITY DEFINER`、`IMMUTABLE | STABLE` 等安全条件后，信任 `pg_catalog` / `internal` 内建函数，或通过 `pg_depend -> pg_extension` 证明属于 Provider 明确声明的受信任扩展。当前唯一受信任扩展为 `postgis`，没有函数名白名单，也没有把其他扩展一并放行。正式规则已同步到 `docs/spec/addp引擎插件接口规范.md`。
+
+最小充分验证已经覆盖：
+
+- Service Query Plan 的 PostgreSQL、Oracle、既有基础参数序号、PostGIS bbox 占位符回归；
+- Manager Profile Filter 与 Preview 的 PostgreSQL 占位符回归；
+- PostgreSQL Provider Prepared Query 与读取集单元测试；
+- `make test-common-postgres` 的真实 PostGIS 表、`ST_AsGeoJSON`、`ST_Intersects`、`ST_MakeEnvelope` 和 `$1...$5` 集成查询；
+- `SERVICE_POSTGRES_TEST_DSN='postgres://addp:***@localhost:15432/addp_test?sslmode=disable' make test-service-postgres`；
+- `GOWORK=off go test ./internal/service -count=1`、`GOWORK=off go test ./internal/profilefilter ./internal/preview -count=1`、`GOWORK=off go test ./query ./engine/plugins/postgresql -count=1`。
+
+用户按标准方式重启全套服务后，Service、Workbench 与 Manager 均加载新构建。浏览器在不保存草稿的整页预览中重新读取四个 Component 的当前 Consumer Descriptor：默认“长沙市”一次查询成功返回 10 个地块、面积合计 0.1094、连续设色五档地图和 10 条明细；把参数改为“株洲市”后，三类受绑定组件同步变为 10 个地块、面积合计 0.9892、更新后的地图图例和 10 条株洲市明细。没有再出现 PostgreSQL 占位符语法错误或 PostGIS 读取集拒绝。Chart Selection Binding 本轮未改动，其真实点击联动证据仍以 14.21 的既有验收为准。
+
+`make test-module MODULE=service` 当前在 T0 Authorization 覆盖检查处被同工作树中尚未收口的 Standard 权限改动阻断；根 `make test-go` 当前被 Asset `go.mod/go.sum` 的并行依赖变更阻断。两项都发生在进入本轮目标测试之前，不属于本次占位符或 PostGIS 修复；本轮已运行并通过上述对应模块、真实 PostgreSQL 与 PostGIS 门禁，不能把并行变更造成的总门禁失败写成通过。
+
+用户确认持久变更后，四个 Component 的当前契约已通过普通编辑器主路径保存，并发布为 Data Application `c4c0aa6e-70b1-49e8-8ade-8db92f5c6e33` 的不可变 Revision 2；没有自动保存、静默刷新指纹或修改其他应用。最终运行入口显示“发布修订 2”，默认“长沙市”查询返回 10 个地块、面积合计 0.1094、连续设色五档地图和 10 条明细；运行页把参数改为“株洲市”后，再次返回 10 个地块、面积合计 0.9892、更新后的五档地图和 10 条株洲市明细，四种 renderer 均无契约告警或查询错误。
+
 ## 十五、概念设计状态
 
 当前没有待确认的 Phase 0 概念问题。Phase 5 的 Selection Binding 同页联动、`desktop | wallboard` 展示模式、浏览器会话级全屏、Application Refresh Policy 和 Application Presentation Sections 已完成设计、实现、标准模块门禁与真实浏览器验收；Data Application 资产运营指标的事实源、模块归属以及 Asset 自有 `application` / 具体 Asset 运营分组也已完成运行态复核。外部 BI 的 owner 边界、消费契约、用户委托 OAuth 单一路线和 System 外部 OAuth Client 注册治理已经完成；无副作用运行态 UI 验收已通过，持久 Client 浏览器生命周期、真实 BI Connector 端到端验证与正式接入指南尚未完成。
 
-14.19 的 Data Application 直接创作收口、Outdoor 双服务真实验收、14.20 的 Business MySQL 本地异构验收，以及 14.21–14.22 的 Phase 6 场景化组合和空间探索创作向导均已完成。验收数据只作运行证据，没有进入 Workbench 领域模型、生产代码或默认配置。Phase 6 当前确认范围已经收口；真实数据量没有超过有界 GeoJSON 上限前不启动 Tile / OGC Features，也不继续堆叠 renderer。
+14.19 的 Data Application 直接创作收口、Outdoor 双服务真实验收、14.20 的 Business MySQL 本地异构验收，以及 14.21–14.23 的 Phase 6 场景化组合、空间探索创作向导和保存前整页预览均已完成。验收数据只作运行证据，没有进入 Workbench 领域模型、生产代码或默认配置。Phase 6 当前确认范围已经收口；真实数据量没有超过有界 GeoJSON 上限前不启动 Tile / OGC Features，也不继续堆叠 renderer。
 
-专题既定后续重新回到真实 BI Connector 验证与接入指南；具备专用 runner 后再补跑仍在等待的 `workbench-service-consumption` T4，本地验收不能替代该 Online Gate。若继续优先改善 Workbench 创作体验，下一项应先讨论“保存前整页预览”是否具有独立价值，以及如何复用唯一 Runtime 画布而不引入第二套查询或运行状态，在设计确认前不直接实现。不要修改 Service 查询路由、引入 API Key 私有授权、复用内置 Client 或增加 Workbench 代理。跨模块综合统计和 Workbench 运行埋点继续暂缓；只有确认成功打开次数、独立访问用户和 Revision 分布确有独立产品价值时，才进入 Workbench owner 运行准入事实设计。在独立价值确认前不进入多页面、`mobile`、页面轮播、通用动作、后台定时任务或第二套运行状态。若后续实现与现有公开契约冲突，必须先回到本专题及正式规范修订设计，不得增加兼容路由、兼容字段或 Workbench 私有旁路。
+14.24 的历史契约清理已经通过用户确认完成，长期应用当前发布 Revision 2。下一项产品建设优先回到真实 BI Connector 验证与接入指南，因为 Workbench 自有最终应用创作与运行体验已经形成闭环，而外部消费仍只有已确认的契约和 OAuth Client 治理、没有经过真实 Connector 验证的可执行指南。具备专用 runner 后再补跑仍在等待的 `workbench-service-consumption` T4，本地验收不能替代该 Online Gate。不要修改 Service 查询路由、引入 API Key 私有授权、复用内置 Client 或增加 Workbench 代理。跨模块综合统计和 Workbench 运行埋点继续暂缓；只有确认成功打开次数、独立访问用户和 Revision 分布确有独立产品价值时，才进入 Workbench owner 运行准入事实设计。在独立价值确认前不进入多页面、`mobile`、页面轮播、通用动作、后台定时任务或第二套运行状态。若后续实现与现有公开契约冲突，必须先回到本专题及正式规范修订设计，不得增加兼容路由、兼容字段或 Workbench 私有旁路。
 
 ## 十六、相关文档
 

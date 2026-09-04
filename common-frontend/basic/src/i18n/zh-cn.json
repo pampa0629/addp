@@ -1,5 +1,16 @@
 {
   "common": {
+    "export": {
+      "title": "导出全部结果",
+      "format": "导出格式",
+      "formatPlaceholder": "请选择导出格式",
+      "formatRequired": "请选择导出格式",
+      "fileName": "文件名",
+      "fileNamePlaceholder": "请输入文件名",
+      "fileNameRequired": "请输入文件名",
+      "hint": "系统将在后台重新读取全部数据并生成临时文件，完成后自动下载到本地。",
+      "start": "开始导出"
+    },
     "executionParameters": {
 	  "title": "执行参数",
       "workflowConfiguration": "任务默认值",

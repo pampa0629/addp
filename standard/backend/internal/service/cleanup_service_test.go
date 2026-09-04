@@ -173,22 +173,16 @@ func setupStandardCleanupTestDB(t *testing.T) *gorm.DB {
 			updated_at DATETIME,
 			version INTEGER NOT NULL DEFAULT 1
 		)`,
-		`CREATE TABLE standard.metrics (
+		`CREATE TABLE standard.metric_definitions (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			tenant_id INTEGER NOT NULL,
 			category_id INTEGER,
-			domain_id INTEGER,
-			name TEXT NOT NULL,
+			scope_type TEXT NOT NULL,
+			owner_domain_id INTEGER,
 			code TEXT NOT NULL,
-			type TEXT NOT NULL,
-			definition TEXT,
-			formula TEXT,
-			unit_id INTEGER,
-			base_metric_id INTEGER,
-			derivation_config TEXT,
-			status TEXT,
 			steward_id INTEGER,
 			tags TEXT,
+			draft_revision_id INTEGER,
 			created_by INTEGER NOT NULL,
 			updated_by INTEGER,
 			created_at DATETIME,
@@ -196,17 +190,21 @@ func setupStandardCleanupTestDB(t *testing.T) *gorm.DB {
 			version INTEGER NOT NULL DEFAULT 1,
 			lifecycle_state TEXT NOT NULL DEFAULT 'active'
 		)`,
-		`CREATE TABLE standard.metric_element_mappings (
+		`CREATE TABLE standard.metric_definition_revisions (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			metric_id INTEGER NOT NULL,
-			element_id INTEGER NOT NULL,
-			note TEXT,
-			created_at DATETIME
+			metric_definition_id INTEGER NOT NULL, revision_no INTEGER NOT NULL, status TEXT NOT NULL,
+			metric_type TEXT NOT NULL, name TEXT NOT NULL, definition TEXT NOT NULL,
+			statistical_caliber TEXT NOT NULL, semantic_formula TEXT, unit_id INTEGER,
+			change_summary TEXT NOT NULL, effective_from DATETIME, effective_to DATETIME,
+			submitted_by INTEGER, submitted_at DATETIME, published_by INTEGER, published_at DATETIME,
+			created_by INTEGER NOT NULL, updated_by INTEGER, created_at DATETIME, updated_at DATETIME
 		)`,
-		`CREATE TABLE standard.metric_dependencies (
+		`CREATE TABLE standard.metric_definition_revision_dependencies (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			from_metric_id INTEGER NOT NULL,
-			to_metric_id INTEGER NOT NULL,
+			metric_definition_revision_id INTEGER NOT NULL,
+			dependency_definition_id INTEGER NOT NULL,
+			dependency_revision_id INTEGER,
+			relation_kind TEXT NOT NULL,
 			coefficient REAL,
 			note TEXT,
 			created_at DATETIME
@@ -317,12 +315,12 @@ func TestStandardCleanupTenantDeletedLogicalDeprecatesStatefulDefinitions(t *tes
 	if elementRevision.Status != models.RevisionStatusWithdrawn {
 		t.Fatalf("expected element revision withdrawn, got %s", elementRevision.Status)
 	}
-	var metric models.Metric
-	if err := db.First(&metric, ids.metricID).Error; err != nil {
-		t.Fatalf("load metric: %v", err)
+	var metricRevision models.MetricDefinitionRevision
+	if err := db.Where("metric_definition_id = ?", ids.metricID).First(&metricRevision).Error; err != nil {
+		t.Fatalf("load metric revision: %v", err)
 	}
-	if metric.Status != "deprecated" {
-		t.Fatalf("expected metric deprecated, got %s", metric.Status)
+	if metricRevision.Status != models.RevisionStatusWithdrawn {
+		t.Fatalf("expected metric revision withdrawn, got %s", metricRevision.Status)
 	}
 
 	var document models.Document
@@ -344,16 +342,16 @@ func TestStandardCleanupTenantDeletedPhysicalDeletesOwnedState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ScanReclaimCandidates: %v", err)
 	}
-	if standardCandidateRecordCount(stats) != 19 {
-		t.Fatalf("expected 19 scanned records, got %+v", stats)
+	if standardCandidateRecordCount(stats) != 20 {
+		t.Fatalf("expected 20 scanned records, got %+v", stats)
 	}
 
 	stats, err = svc.ExecuteCleanup(context.Background(), 1, events.CleanupModePhysical, map[string]interface{}{"tenant_id": 1})
 	if err != nil {
 		t.Fatalf("ExecuteCleanup: %v", err)
 	}
-	if stats.DeletedRecords != 19 {
-		t.Fatalf("expected 19 deleted records, got %+v", stats)
+	if stats.DeletedRecords != 20 {
+		t.Fatalf("expected 20 deleted records, got %+v", stats)
 	}
 	assertStandardCleanupCounts(t, db, standardCleanupCountExpectation{
 		tenantID:                 2,
@@ -367,7 +365,7 @@ func TestStandardCleanupTenantDeletedPhysicalDeletesOwnedState(t *testing.T) {
 		units:                    1,
 		metricCategories:         1,
 		metrics:                  2,
-		metricElementMappings:    1,
+		metricRevisions:          2,
 		metricDependencies:       1,
 		documents:                1,
 		documentElementMappings:  1,
@@ -464,18 +462,23 @@ func seedStandardCleanupTenantState(t *testing.T, db *gorm.DB, tenantID int64, w
 	if err := db.Create(&metricCategory).Error; err != nil {
 		t.Fatalf("create metric category: %v", err)
 	}
-	metric := models.Metric{TenantID: tenantID, CategoryID: &metricCategory.ID, DomainID: &domain.ID, Name: "Revenue " + suffix, Code: "revenue_" + suffix, Type: "atomic", Status: "approved", CreatedBy: 1}
+	metric := models.MetricDefinition{TenantID: tenantID, CategoryID: &metricCategory.ID, ScopeType: models.StandardScopeDomain, OwnerDomainID: &domain.ID, Code: "revenue_" + suffix, Tags: models.StringArray{}, CreatedBy: 1, LifecycleState: "active"}
 	if err := db.Create(&metric).Error; err != nil {
 		t.Fatalf("create metric: %v", err)
 	}
-	deprecatedMetric := models.Metric{TenantID: tenantID, CategoryID: &metricCategory.ID, DomainID: &domain.ID, Name: "Old Revenue " + suffix, Code: "old_revenue_" + suffix, Type: "atomic", Status: "deprecated", CreatedBy: 1}
+	metricRevision := models.MetricDefinitionRevision{MetricDefinitionID: metric.ID, RevisionNo: 1, Status: models.RevisionStatusPublished, MetricType: models.MetricTypeAtomic, Name: "Revenue " + suffix, Definition: "Revenue", StatisticalCaliber: "All revenue", ChangeSummary: "initial", CreatedBy: 1}
+	if err := db.Create(&metricRevision).Error; err != nil {
+		t.Fatalf("create metric revision: %v", err)
+	}
+	deprecatedMetric := models.MetricDefinition{TenantID: tenantID, CategoryID: &metricCategory.ID, ScopeType: models.StandardScopeDomain, OwnerDomainID: &domain.ID, Code: "old_revenue_" + suffix, Tags: models.StringArray{}, CreatedBy: 1, LifecycleState: "active"}
 	if err := db.Create(&deprecatedMetric).Error; err != nil {
 		t.Fatalf("create deprecated metric: %v", err)
 	}
-	if err := db.Create(&models.MetricElementMapping{MetricID: metric.ID, ElementID: element.ID}).Error; err != nil {
-		t.Fatalf("create metric element mapping: %v", err)
+	deprecatedMetricRevision := models.MetricDefinitionRevision{MetricDefinitionID: deprecatedMetric.ID, RevisionNo: 1, Status: models.RevisionStatusWithdrawn, MetricType: models.MetricTypeAtomic, Name: "Old Revenue " + suffix, Definition: "Old revenue", StatisticalCaliber: "Legacy", ChangeSummary: "initial", CreatedBy: 1}
+	if err := db.Create(&deprecatedMetricRevision).Error; err != nil {
+		t.Fatalf("create deprecated metric revision: %v", err)
 	}
-	if err := db.Create(&models.MetricDependency{FromMetricID: metric.ID, ToMetricID: deprecatedMetric.ID}).Error; err != nil {
+	if err := db.Create(&models.MetricDefinitionRevisionDependency{MetricDefinitionRevisionID: metricRevision.ID, DependencyDefinitionID: deprecatedMetric.ID, DependencyRevisionID: &deprecatedMetricRevision.ID, RelationKind: models.MetricDependencyComponent}).Error; err != nil {
 		t.Fatalf("create metric dependency: %v", err)
 	}
 	fileKey := ""
@@ -517,7 +520,7 @@ type standardCleanupCountExpectation struct {
 	units                    int64
 	metricCategories         int64
 	metrics                  int64
-	metricElementMappings    int64
+	metricRevisions          int64
 	metricDependencies       int64
 	documents                int64
 	documentElementMappings  int64
@@ -535,13 +538,13 @@ func assertStandardCleanupCounts(t *testing.T, db *gorm.DB, expected standardCle
 	assertStandardCleanupCount(t, db, &models.MeasurementCategory{}, "tenant_id = ?", []interface{}{expected.tenantID}, expected.measurementCategories, "measurement categories")
 	assertStandardCleanupCount(t, db, &models.Unit{}, "tenant_id = ?", []interface{}{expected.tenantID}, expected.units, "units")
 	assertStandardCleanupCount(t, db, &models.MetricCategory{}, "tenant_id = ?", []interface{}{expected.tenantID}, expected.metricCategories, "metric categories")
-	assertStandardCleanupCount(t, db, &models.Metric{}, "tenant_id = ?", []interface{}{expected.tenantID}, expected.metrics, "metrics")
+	assertStandardCleanupCount(t, db, &models.MetricDefinition{}, "tenant_id = ?", []interface{}{expected.tenantID}, expected.metrics, "metrics")
 	assertStandardCleanupCount(t, db, &models.Document{}, "tenant_id = ?", []interface{}{expected.tenantID}, expected.documents, "documents")
 	assertStandardCleanupCount(t, db, &models.StandardReferenceDeletion{}, "tenant_id = ?", []interface{}{expected.tenantID}, expected.referenceDeletions, "reference deletions")
 	assertStandardCleanupCount(t, db, &models.CodeSetRevisionItem{}, "", nil, expected.codeItems, "code items")
 	assertStandardCleanupCount(t, db, &models.GlossaryElementMapping{}, "", nil, expected.glossaryElementMappings, "glossary element mappings")
-	assertStandardCleanupCount(t, db, &models.MetricElementMapping{}, "", nil, expected.metricElementMappings, "metric element mappings")
-	assertStandardCleanupCount(t, db, &models.MetricDependency{}, "", nil, expected.metricDependencies, "metric dependencies")
+	assertStandardCleanupCount(t, db, &models.MetricDefinitionRevision{}, "", nil, expected.metricRevisions, "metric revisions")
+	assertStandardCleanupCount(t, db, &models.MetricDefinitionRevisionDependency{}, "", nil, expected.metricDependencies, "metric dependencies")
 	assertStandardCleanupCount(t, db, &models.DocumentElementMapping{}, "", nil, expected.documentElementMappings, "document element mappings")
 	assertStandardCleanupCount(t, db, &models.DocumentGlossaryMapping{}, "", nil, expected.documentGlossaryMappings, "document glossary mappings")
 	assertStandardCleanupCount(t, db, &models.DocumentMetricMapping{}, "", nil, expected.documentMetricMappings, "document metric mappings")
