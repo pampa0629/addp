@@ -52,9 +52,7 @@ export const buildLogicalFieldUpdateRequest = (form, version) => ({
   nullable: Boolean(form.nullable),
   is_pk: Boolean(form.is_pk),
   is_partition: Boolean(form.is_partition),
-  sort_order: form.sort_order ?? 0,
-  hierarchy_id: form.hierarchy_id ?? null,
-  hierarchy_level: form.hierarchy_level ?? null
+  sort_order: form.sort_order ?? 0
 })
 
 export const buildDWLayerUpdateRequest = (form, layer) => ({

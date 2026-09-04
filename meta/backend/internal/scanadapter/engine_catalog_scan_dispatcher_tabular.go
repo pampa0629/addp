@@ -43,8 +43,12 @@ func (d *EngineCatalogScanDispatcher) dispatchTabularScan(ctx context.Context, e
 		return result, err
 	}
 	if fullEngineScan {
-		d.softDeleteMissingTabularNamespaces(req.Resource, req.TenantID, plan.BranchTerm, visibleNamespaces)
-		d.finalizeEngineCatalogRootAfterScan(req.Resource, req.TenantID, result.Items, req.ScanDepth)
+		if err := d.softDeleteMissingTabularNamespaces(req.Resource, req.TenantID, plan.BranchTerm, visibleNamespaces); err != nil {
+			return result, err
+		}
+		if err := d.finalizeEngineCatalogRootAfterScan(req.Resource, req.TenantID, result.Items, req.ScanDepth); err != nil {
+			return result, err
+		}
 	}
 	return result, nil
 }
@@ -80,7 +84,7 @@ func (d *EngineCatalogScanDispatcher) scanResourceNamespaces(
 	totalTables := 0
 	totalFields := 0
 	total := len(namespaces)
-	var scanErrors []error
+	failures := &scanflow.FailedTargetCollector{}
 	if reporter != nil {
 		reporter.SetTotal(total)
 	}
@@ -124,7 +128,14 @@ func (d *EngineCatalogScanDispatcher) scanResourceNamespaces(
 				if reporter != nil {
 					reporter.Message(fmt.Sprintf("命名空间 %s 扫描失败: %v", namespace, err))
 				}
-				scanErrors = append(scanErrors, fmt.Errorf("%s: %w", namespace, err))
+				failures.Add(namespace, err)
+				completed++
+				if reporter != nil {
+					reporter.Advance(namespace, completed, total, map[string]interface{}{"tables": tables, "fields": fields})
+				}
+				totalNamespaces += schemas
+				totalTables += tables
+				totalFields += fields
 				return
 			}
 			totalNamespaces += schemas
@@ -147,20 +158,17 @@ func (d *EngineCatalogScanDispatcher) scanResourceNamespaces(
 		"fields_scanned", totalFields,
 	)...)
 
-	if len(scanErrors) > 0 {
-		return totalNamespaces, totalTables, totalFields, fmt.Errorf("failed to scan %d namespace(s): %v", len(scanErrors), scanErrors[0])
-	}
-
-	return totalNamespaces, totalTables, totalFields, nil
+	return totalNamespaces, totalTables, totalFields, failures.Err()
 }
 
-func (d *EngineCatalogScanDispatcher) softDeleteMissingTabularNamespaces(resource *commonModels.Engine, tenantID uint, namespaceTerm string, scannedNamespaces map[string]bool) {
+func (d *EngineCatalogScanDispatcher) softDeleteMissingTabularNamespaces(resource *commonModels.Engine, tenantID uint, namespaceTerm string, scannedNamespaces map[string]bool) error {
 	var existingNamespaces []models.MetaNode
 	if err := d.db.Where("tenant_id = ? AND engine_id = ? AND node_type = ?",
 		tenantID, resource.ID, namespaceTerm).Find(&existingNamespaces).Error; err != nil {
 		d.log.Warn("查询已存在 namespace 节点失败", "namespace_term", namespaceTerm, "error", err)
-		return
+		return err
 	}
+	failures := &scanflow.FailedTargetCollector{}
 
 	d.log.Info("开始检查需要清理的 namespace",
 		"engine_id", resource.ID,
@@ -175,10 +183,13 @@ func (d *EngineCatalogScanDispatcher) softDeleteMissingTabularNamespaces(resourc
 		d.log.Info("namespace 已不存在，标记删除", "engine_id", resource.ID, "namespace", namespaceNode.Name)
 		if err := d.db.Delete(&namespaceNode).Error; err != nil {
 			d.log.Warn("软删除 namespace 节点失败", "namespace", namespaceNode.Name, "error", err)
+			failures.Add(namespaceNode.Name, err)
 			continue
 		}
 		if err := d.db.Where("node_id = ?", namespaceNode.ID).Delete(&models.MetaItem{}).Error; err != nil {
 			d.log.Warn("软删除 namespace 下的 item 失败", "namespace", namespaceNode.Name, "error", err)
+			failures.Add(namespaceNode.Name, err)
 		}
 	}
+	return failures.Err()
 }

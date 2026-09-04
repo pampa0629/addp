@@ -208,6 +208,9 @@ export const logicalTableAPI = {
   previewDDL(id, data) {
     return client.post(`/model/logical-tables/${id}/preview-ddl`, data)
   },
+  decommissionMaterializedTarget(id, data) {
+    return client.delete(`/model/logical-tables/${id}/materialized-target`, { data })
+  },
   // 获取事实表关联的指标列表
   listMetrics(tableId) {
     return client.get(`/model/logical-tables/${tableId}/metrics`)
@@ -231,6 +234,27 @@ export const logicalTableAPI = {
   // 删除维度表关联
   removeDimensionRelation(tableId, relationId, version) {
     return client.delete(`/model/logical-tables/${tableId}/dimension-relations/${relationId}`, { data: { version } })
+  },
+  listDimensionHierarchies(tableId) {
+    return client.get(`/model/logical-tables/${tableId}/dimension-hierarchies`)
+  },
+  createDimensionHierarchy(tableId, data) {
+    return client.post(`/model/logical-tables/${tableId}/dimension-hierarchies`, data)
+  },
+  updateDimensionHierarchy(tableId, hierarchyId, data) {
+    return client.put(`/model/logical-tables/${tableId}/dimension-hierarchies/${hierarchyId}`, data)
+  },
+  deleteDimensionHierarchy(tableId, hierarchyId, version) {
+    return client.delete(`/model/logical-tables/${tableId}/dimension-hierarchies/${hierarchyId}`, { data: { version } })
+  },
+  createDimensionHierarchyLevel(tableId, hierarchyId, data) {
+    return client.post(`/model/logical-tables/${tableId}/dimension-hierarchies/${hierarchyId}/levels`, data)
+  },
+  updateDimensionHierarchyLevel(tableId, hierarchyId, levelId, data) {
+    return client.put(`/model/logical-tables/${tableId}/dimension-hierarchies/${hierarchyId}/levels/${levelId}`, data)
+  },
+  deleteDimensionHierarchyLevel(tableId, hierarchyId, levelId, version) {
+    return client.delete(`/model/logical-tables/${tableId}/dimension-hierarchies/${hierarchyId}/levels/${levelId}`, { data: { version } })
   }
 }
 
@@ -253,15 +277,6 @@ export const materializationGroupAPI = {
   },
   delete(id, version) {
     return client.delete(`/model/materialization-groups/${id}`, { data: { version } })
-  }
-}
-
-export const dimensionHierarchyAPI = {
-  list(params) {
-    return standardClient.get('/standard/dimension-hierarchies', { params })
-  },
-  get(id) {
-    return standardClient.get(`/standard/dimension-hierarchies/${id}`)
   }
 }
 

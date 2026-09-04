@@ -97,20 +97,48 @@ func RunningExecutionFields(now time.Time) map[string]interface{} {
 	}
 }
 
-func FailedExecutionFields(scanErr error, completedAt time.Time, durationMs int64, now time.Time) map[string]interface{} {
+func FailedExecutionFields(resp *metaModels.ScanResponse, storageType string, scanErr error, completedAt time.Time, durationMs int64, now time.Time) map[string]interface{} {
+	errorDetails := commonModels.JSONMap{
+		"message": scanErr.Error(),
+	}
+	if count, samples := scanflow.FailedTargetDetails(scanErr); count > 0 {
+		errorDetails["failed_targets_count"] = count
+		errorDetails["failed_target_samples"] = samples
+	}
 	return map[string]interface{}{
 		"status":            commonExecution.ExecutionStatusFailed,
 		"completed_at":      completedAt,
 		"execution_time_ms": durationMs,
-		"current_step":      fmt.Sprintf("执行失败: %v", scanErr),
-		"error_details": commonModels.JSONMap{
-			"message": scanErr.Error(),
-		},
-		"updated_at": now,
+		"current_step":      boundedExecutionStep(fmt.Sprintf("执行失败: %v", scanErr)),
+		"error_details":     errorDetails,
+		"metadata":          scanExecutionMetadata(resp, storageType),
+		"updated_at":        now,
 	}
 }
 
+func boundedExecutionStep(value string) string {
+	const maxRunes = 255
+	runes := []rune(value)
+	if len(runes) <= maxRunes {
+		return value
+	}
+	return string(runes[:maxRunes])
+}
+
 func SuccessfulExecutionFields(resp *metaModels.ScanResponse, storageType string, completedAt time.Time, durationMs int64, now time.Time) map[string]interface{} {
+	metadata := scanExecutionMetadata(resp, storageType)
+	return map[string]interface{}{
+		"status":            commonExecution.ExecutionStatusSuccess,
+		"completed_at":      completedAt,
+		"execution_time_ms": durationMs,
+		"progress":          100,
+		"current_step":      "执行完成",
+		"metadata":          metadata,
+		"updated_at":        now,
+	}
+}
+
+func scanExecutionMetadata(resp *metaModels.ScanResponse, storageType string) commonModels.JSONMap {
 	metadata := commonModels.JSONMap{
 		"storage_type": storageType,
 	}
@@ -129,15 +157,7 @@ func SuccessfulExecutionFields(resp *metaModels.ScanResponse, storageType string
 			}
 		}
 	}
-	return map[string]interface{}{
-		"status":            commonExecution.ExecutionStatusSuccess,
-		"completed_at":      completedAt,
-		"execution_time_ms": durationMs,
-		"progress":          100,
-		"current_step":      "执行完成",
-		"metadata":          metadata,
-		"updated_at":        now,
-	}
+	return metadata
 }
 
 func TaskStatusBackfillFields(executionID string, status string, completedAt time.Time, now time.Time) map[string]interface{} {

@@ -14,7 +14,7 @@ import (
 )
 
 func TestEntityApprovalFreezesAndReopenClearsElementRevision(t *testing.T) {
-	server := newElementRevisionSnapshotServer(t, `{"results":[{"element_id":"41","found":true,"snapshot":{"element_id":"41","element_revision_id":"4103","revision_no":3,"code":"customer_id","name":"Customer ID","definition":"Customer identifier","data_type":"bigint","nullable":false,"value_domain_kind":"unrestricted","example_values":[],"effective_from":"2026-01-01T00:00:00Z"}}]}`)
+	server := newElementRevisionSnapshotServer(t, `{"results":[{"element_id":"41","found":true,"snapshot":{"element_id":"41","element_revision_id":"4103","revision_no":3,"scope_type":"tenant_common","code":"customer_id","name":"Customer ID","definition":"Customer identifier","data_type":"bigint","nullable":false,"value_domain_kind":"unrestricted","example_values":[],"effective_from":"2026-01-01T00:00:00Z"}}]}`)
 	defer server.Close()
 
 	db := setupLifecycleServiceTestDB(t)
@@ -53,7 +53,7 @@ func TestEntityApprovalFreezesAndReopenClearsElementRevision(t *testing.T) {
 }
 
 func TestLogicalTableApprovalFreezesAndReopenClearsElementRevision(t *testing.T) {
-	server := newElementRevisionSnapshotServer(t, `{"results":[{"element_id":"51","found":true,"snapshot":{"element_id":"51","element_revision_id":"5102","revision_no":2,"code":"order_id","name":"Order ID","definition":"Order identifier","data_type":"bigint","nullable":false,"value_domain_kind":"unrestricted","example_values":[],"effective_from":"2026-01-01T00:00:00Z"}}]}`)
+	server := newElementRevisionSnapshotServer(t, `{"results":[{"element_id":"51","found":true,"snapshot":{"element_id":"51","element_revision_id":"5102","revision_no":2,"scope_type":"tenant_common","code":"order_id","name":"Order ID","definition":"Order identifier","data_type":"bigint","nullable":false,"value_domain_kind":"unrestricted","example_values":[],"effective_from":"2026-01-01T00:00:00Z"}}]}`)
 	defer server.Close()
 
 	db := setupLifecycleServiceTestDB(t)

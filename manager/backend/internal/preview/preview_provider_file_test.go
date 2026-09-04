@@ -2160,6 +2160,7 @@ func TestRefFilePreviewProviderOpensRasterMosaicLeafRef(t *testing.T) {
 			EngineType:     enginePlugin.Type(),
 			ConnectionInfo: models.ConnectionInfo{"bucket": "bucket"},
 		},
+		Locator:  "addp://engine/9/path/bucket/mosaics/srtm?type=object&item_id=107",
 		ItemType: "object",
 		NodeType: "object",
 		Schema:   "bucket",

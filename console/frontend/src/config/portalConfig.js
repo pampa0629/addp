@@ -251,11 +251,11 @@ export const SIDEBAR_MENUS = {
     label: 'console.menus.standard.label', icon: Reading,
     items: [
       { index: '/standard/domains',              icon: Share,        label: 'console.menus.standard.domains' },
+      { index: '/standard/collections',          icon: FolderOpened, label: 'console.menus.standard.collections' },
       { index: '/standard/glossaries',           icon: Document,     label: 'console.menus.standard.glossaries' },
       { index: '/standard/elements',             icon: DataBoard,    label: 'console.menus.standard.elements' },
       { index: '/standard/code-sets',            icon: List,         label: 'console.menus.standard.codeSets' },
       { index: '/standard/units',                icon: Odometer,     label: 'console.menus.standard.units' },
-      { index: '/standard/dimension-hierarchies',icon: SortDown,     label: 'console.menus.standard.dimensionHierarchies' },
       { index: '/standard/metrics',              icon: TrendCharts,  label: 'console.menus.standard.metrics', recentLabel: 'console.menus.standard.recentMetrics' },
       { index: '/standard/documents',            icon: FolderOpened, label: 'console.menus.standard.documents' },
     ],

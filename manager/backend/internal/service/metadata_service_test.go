@@ -238,7 +238,7 @@ func TestResolveStorageDownloadPlanUsesSingleStorageRef(t *testing.T) {
 		systemClient: testSystemClient(t, 9, "nfs", nil),
 	}
 	tenantID := uint(11)
-	plan, err := svc.ResolveStorageDownloadPlan(t.Context(), 9, "raw/test.parquet", &tenantID)
+	plan, err := resolveStorageDownloadPlanForTest(t, svc, 9, "raw/test.parquet", &tenantID)
 	if err != nil {
 		t.Fatalf("ResolveStorageDownloadPlan() error = %v", err)
 	}
@@ -257,7 +257,7 @@ func TestResolveStorageDownloadPlanRejectsKnownMultiFormatWithoutMetaItem(t *tes
 		systemClient: testSystemClient(t, 9, "nfs", nil),
 	}
 	tenantID := uint(11)
-	_, err := svc.ResolveStorageDownloadPlan(t.Context(), 9, "shp/farmland.shp", &tenantID)
+	_, err := resolveStorageDownloadPlanForTest(t, svc, 9, "shp/farmland.shp", &tenantID)
 	if !errors.Is(err, ErrDownloadNotSupported) {
 		t.Fatalf("ResolveStorageDownloadPlan() error = %v, want ErrDownloadNotSupported", err)
 	}
@@ -289,7 +289,7 @@ func TestResolveStorageDownloadPlanUsesMetaMultiRefs(t *testing.T) {
 		}`),
 	}
 	tenantID := uint(11)
-	plan, err := svc.ResolveStorageDownloadPlan(t.Context(), 9, "bucket/roads/roads.shp", &tenantID)
+	plan, err := resolveStorageDownloadPlanForTest(t, svc, 9, "bucket/roads/roads.shp", &tenantID)
 	if err != nil {
 		t.Fatalf("ResolveStorageDownloadPlan() error = %v", err)
 	}
@@ -338,7 +338,7 @@ func TestOpenStorageDownloadPlanBundlesNFSShapefileRefs(t *testing.T) {
 	}
 
 	tenantID := uint(11)
-	plan, err := svc.ResolveStorageDownloadPlan(t.Context(), 26, "shp/farmland.shp", &tenantID)
+	plan, err := resolveStorageDownloadPlanForTest(t, svc, 26, "shp/farmland.shp", &tenantID)
 	if err != nil {
 		t.Fatalf("ResolveStorageDownloadPlan() error = %v", err)
 	}
@@ -410,7 +410,7 @@ func TestOpenStorageDownloadPlanBundlesObjectShapefileRefs(t *testing.T) {
 	}
 
 	tenantID := uint(11)
-	plan, err := svc.ResolveStorageDownloadPlan(t.Context(), 9, "gischain/data/farmland.shp", &tenantID)
+	plan, err := resolveStorageDownloadPlanForTest(t, svc, 9, "gischain/data/farmland.shp", &tenantID)
 	if err != nil {
 		t.Fatalf("ResolveStorageDownloadPlan() error = %v", err)
 	}
@@ -482,7 +482,7 @@ func TestOpenStorageDownloadPlanFailsBeforeWritingWhenRequiredRefMissing(t *test
 	}
 
 	tenantID := uint(11)
-	plan, err := svc.ResolveStorageDownloadPlan(t.Context(), 26, "shp/farmland.shp", &tenantID)
+	plan, err := resolveStorageDownloadPlanForTest(t, svc, 26, "shp/farmland.shp", &tenantID)
 	if err != nil {
 		t.Fatalf("ResolveStorageDownloadPlan() error = %v", err)
 	}
@@ -506,7 +506,7 @@ func TestResolveStorageDownloadPlanRejectsMultiItemWithoutRefs(t *testing.T) {
 		}`),
 	}
 	tenantID := uint(11)
-	_, err := svc.ResolveStorageDownloadPlan(t.Context(), 9, "bucket/roads/roads.shp", &tenantID)
+	_, err := resolveStorageDownloadPlanForTest(t, svc, 9, "bucket/roads/roads.shp", &tenantID)
 	if !errors.Is(err, ErrDownloadNotSupported) {
 		t.Fatalf("ResolveStorageDownloadPlan() error = %v, want ErrDownloadNotSupported", err)
 	}
@@ -536,10 +536,107 @@ func TestResolveStorageDownloadPlanRejectsMultiRefsWithoutPrimary(t *testing.T) 
 		}`),
 	}
 	tenantID := uint(11)
-	_, err := svc.ResolveStorageDownloadPlan(t.Context(), 9, "bucket/roads/roads.shp", &tenantID)
+	_, err := resolveStorageDownloadPlanForTest(t, svc, 9, "bucket/roads/roads.shp", &tenantID)
 	if !errors.Is(err, ErrDownloadNotSupported) {
 		t.Fatalf("ResolveStorageDownloadPlan() error = %v, want ErrDownloadNotSupported", err)
 	}
+}
+
+func TestResolveStorageStreamTargetValidatesDataItemLeafOwnership(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		itemJSON   string
+		locator    string
+		storageRef string
+		wantErr    bool
+	}{
+		{
+			name:       "single exact leaf",
+			itemJSON:   `{"id":1,"tenant_id":11,"engine_id":9,"item_type":"object","full_name":"bucket/media/photo.jpg","attributes":{"item":{"layout":"single","format":"jpeg"},"storage":{"physical_path":"media/photo.jpg","bucket":"bucket"}}}`,
+			locator:    "addp://engine/9/path/bucket/media/photo.jpg?type=object&item_id=1",
+			storageRef: "bucket/media/photo.jpg",
+		},
+		{
+			name:       "whole descendant",
+			itemJSON:   `{"id":2,"tenant_id":11,"engine_id":9,"item_type":"object","full_name":"bucket/tiles/city","attributes":{"item":{"layout":"whole","format":"3dtiles"},"storage":{"physical_path":"tiles/city","bucket":"bucket"}}}`,
+			locator:    "addp://engine/9/path/bucket/tiles/city?type=object&item_id=2",
+			storageRef: "bucket/tiles/city/Data/0.b3dm",
+		},
+		{
+			name:       "whole sibling rejected",
+			itemJSON:   `{"id":3,"tenant_id":11,"engine_id":9,"item_type":"object","full_name":"bucket/tiles/city","attributes":{"item":{"layout":"whole","format":"3dtiles"},"storage":{"physical_path":"tiles/city","bucket":"bucket"}}}`,
+			locator:    "addp://engine/9/path/bucket/tiles/city?type=object&item_id=3",
+			storageRef: "bucket/tiles/city-copy/secret.bin",
+			wantErr:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := &MetadataService{
+				systemClient: testSystemClient(t, 9, "minio", nil),
+				metaClient:   testMetaItemByIDClient(t, tt.itemJSON),
+			}
+			tenantID := uint(11)
+			target, err := svc.ResolveStorageStreamTarget(t.Context(), tt.locator, tt.storageRef, &tenantID)
+			if tt.wantErr {
+				if !errors.Is(err, ErrDownloadNotSupported) {
+					t.Fatalf("ResolveStorageStreamTarget() error = %v, want ErrDownloadNotSupported", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ResolveStorageStreamTarget() error = %v", err)
+			}
+			if target.StorageRef != tt.storageRef || target.ItemFingerprint == "" {
+				t.Fatalf("target = %#v, want normalized ref and fingerprint", target)
+			}
+		})
+	}
+}
+
+func TestResolveStorageAssetTargetValidatesRouteIdentityAndLeafOwnership(t *testing.T) {
+	t.Parallel()
+
+	itemJSON := `{"id":2,"tenant_id":11,"engine_id":9,"item_type":"object","full_name":"bucket/tiles/city","attributes":{"item":{"layout":"whole","format":"s3m"},"storage":{"physical_path":"tiles/city","bucket":"bucket"}}}`
+	svc := &MetadataService{
+		systemClient: testSystemClient(t, 9, "minio", nil),
+		metaClient:   testMetaItemByIDClient(t, itemJSON),
+	}
+	tenantID := uint(11)
+
+	target, err := svc.ResolveStorageAssetTarget(t.Context(), 9, 2, "bucket/tiles/city/Data/0.s3m", &tenantID)
+	if err != nil {
+		t.Fatalf("ResolveStorageAssetTarget() error = %v", err)
+	}
+	if target.StorageRef != "bucket/tiles/city/Data/0.s3m" || target.ItemFingerprint == "" {
+		t.Fatalf("target = %#v, want verified descendant and fingerprint", target)
+	}
+
+	_, err = svc.ResolveStorageAssetTarget(t.Context(), 9, 2, "bucket/tiles/city-copy/secret.bin", &tenantID)
+	if !errors.Is(err, ErrDownloadNotSupported) {
+		t.Fatalf("ResolveStorageAssetTarget() sibling error = %v, want ErrDownloadNotSupported", err)
+	}
+	_, err = svc.ResolveStorageAssetTarget(t.Context(), 10, 2, "bucket/tiles/city/Data/0.s3m", &tenantID)
+	if err == nil {
+		t.Fatal("ResolveStorageAssetTarget() accepted mismatched engine identity")
+	}
+}
+
+func resolveStorageDownloadPlanForTest(t *testing.T, svc *MetadataService, resourceID uint, storageRef string, tenantID *uint) (*models.DownloadPlan, error) {
+	t.Helper()
+	resource, err := svc.getResourceForTenant(t.Context(), resourceID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	_, displayPath, err := streamStorageRefPath(resource.EngineType, resource.ID, storageRef)
+	if err != nil {
+		return nil, err
+	}
+	item := svc.downloadMetaItem(resource.ID, displayPath, tenantID)
+	return svc.resolveStorageDownloadPlan(t.Context(), resource.ID, resource.EngineType, displayPath, item, tenantID)
 }
 
 func testSystemClient(t *testing.T, engineID uint, engineType string, connInfo map[string]interface{}) *client.SystemClient {
@@ -568,6 +665,20 @@ func testMetaItemClient(t *testing.T, itemJSON string) *client.MetaClient {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/meta/items/by-catalog-path" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(itemJSON))
+	}))
+	t.Cleanup(server.Close)
+	return newServiceTestMetaClient(server.URL)
+}
+
+func testMetaItemByIDClient(t *testing.T, itemJSON string) *client.MetaClient {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, "/api/v1/meta/items/") {
 			http.NotFound(w, r)
 			return
 		}

@@ -582,20 +582,22 @@ func TestPostgresPhysicalCleanupDeletesOnlyTargetTenantAtomically(t *testing.T) 
 	if err != nil {
 		t.Fatalf("execute PostgreSQL physical cleanup: %v", err)
 	}
-	if len(stats.Errors) != 0 || stats.DeletedRecords != 11 {
-		t.Fatalf("PostgreSQL physical cleanup stats = %+v, want 11 deleted records", stats)
+	if len(stats.Errors) != 0 || stats.DeletedRecords != 13 {
+		t.Fatalf("PostgreSQL physical cleanup stats = %+v, want 13 deleted records", stats)
 	}
 	assertModelCleanupCount(t, tx, modelCleanupCountExpectation{tenantID: tenantID})
 	assertModelCleanupCount(t, tx, modelCleanupCountExpectation{
-		tenantID:           otherTenantID,
-		dwLayers:           1,
-		entities:           2,
-		entityAttributes:   1,
-		entityRelations:    1,
-		logicalTables:      2,
-		logicalFields:      2,
-		tableRelations:     1,
-		factMetricMappings: 1,
+		tenantID:                 otherTenantID,
+		dwLayers:                 1,
+		entities:                 2,
+		entityAttributes:         1,
+		entityRelations:          1,
+		logicalTables:            2,
+		logicalFields:            2,
+		dimensionHierarchies:     1,
+		dimensionHierarchyLevels: 1,
+		tableRelations:           1,
+		factMetricMappings:       1,
 	})
 	var revision models.EntityModelRevision
 	if err := tx.Where("tenant_id = ?", tenantID).First(&revision).Error; err != nil {

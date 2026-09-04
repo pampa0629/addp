@@ -64,7 +64,7 @@ func TestCatalogResourceRoutesRequireCatalogServiceAndResolveCurrentOwner(t *tes
 	})
 	defer authServer.Close()
 	catalogService := service.NewCatalogResourceService(repository.NewCatalogResourceRepository(db))
-	router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, catalogService, nil, authServer.URL, nil, modulelifecycle.NewStandalone("model"))
+	router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, catalogService, nil, authServer.URL, nil, modulelifecycle.NewStandalone("model"))
 
 	changesResponse := performModelCatalogRequest(router, http.MethodGet, "/api/v1/model/catalog-resources/changes", "catalog-token", nil)
 	if changesResponse.Code != http.StatusOK {

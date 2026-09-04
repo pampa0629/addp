@@ -2248,6 +2248,603 @@ const docTemplate = `{
                 ]
             }
         },
+        "/logical-tables/{id}/dimension-hierarchies": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "查询一个维度逻辑表内定义的全部下钻层级 | List all drill-down hierarchies defined in a dimension logical table",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "查询维度层级 | List dimension hierarchies",
+                "parameters": [
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "逻辑表ID | Logical table ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "维度层级列表 | Dimension hierarchy list",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_model_internal_models.DimensionHierarchy"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "逻辑表ID或类型无效 | Invalid logical table ID or type",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "逻辑表不存在 | Logical table not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.logical_model.read"
+                ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "在维度逻辑表聚合内创建下钻层级并推进父资源版本 | Create a drill-down hierarchy inside a dimension logical-table aggregate and advance the parent version",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "创建维度层级 | Create dimension hierarchy",
+                "parameters": [
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "逻辑表ID | Logical table ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "创建请求 | Create request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.CreateDimensionHierarchyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "创建结果与父资源新版本 | Created hierarchy and new parent version",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.DimensionHierarchyMutationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求或逻辑表类型无效 | Invalid request or logical table type",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "逻辑表不存在 | Logical table not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "父资源版本、状态或层级名称冲突 | Parent version, state, or hierarchy name conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.logical_model.update"
+                ]
+            }
+        },
+        "/logical-tables/{id}/dimension-hierarchies/{hid}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "更新维度层级 | Update dimension hierarchy",
+                "parameters": [
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "逻辑表ID | Logical table ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "维度层级ID | Dimension hierarchy ID",
+                        "name": "hid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "更新请求 | Update request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.UpdateDimensionHierarchyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新结果与父资源新版本 | Updated hierarchy and new parent version",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.DimensionHierarchyMutationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求或ID无效 | Invalid request or ID",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "逻辑表或维度层级不存在 | Logical table or hierarchy not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "父资源版本、状态或层级名称冲突 | Parent version, state, or hierarchy name conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.logical_model.update"
+                ]
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "删除维度层级 | Delete dimension hierarchy",
+                "parameters": [
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "逻辑表ID | Logical table ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "维度层级ID | Dimension hierarchy ID",
+                        "name": "hid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "父资源版本 | Parent resource version",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.VersionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "父资源新版本 | New parent version",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.VersionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求或ID无效 | Invalid request or ID",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "逻辑表或维度层级不存在 | Logical table or hierarchy not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "父资源版本或状态冲突 | Parent version or state conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.logical_model.update"
+                ]
+            }
+        },
+        "/logical-tables/{id}/dimension-hierarchies/{hid}/levels": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "创建维度层级成员 | Create dimension hierarchy level",
+                "parameters": [
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "逻辑表ID | Logical table ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "维度层级ID | Dimension hierarchy ID",
+                        "name": "hid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "层级成员 | Hierarchy level",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.UpsertDimensionHierarchyLevelRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "创建结果与父资源新版本 | Created level and new parent version",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.DimensionHierarchyLevelMutationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求无效 | Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "逻辑表、维度层级或字段不存在 | Logical table, hierarchy, or field not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "父资源版本、状态、层级序号或字段冲突 | Parent version, state, level number, or field conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.logical_model.update"
+                ]
+            }
+        },
+        "/logical-tables/{id}/dimension-hierarchies/{hid}/levels/{lid}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "更新维度层级成员 | Update dimension hierarchy level",
+                "parameters": [
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "逻辑表ID | Logical table ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "维度层级ID | Dimension hierarchy ID",
+                        "name": "hid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "层级成员ID | Hierarchy level ID",
+                        "name": "lid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "层级成员 | Hierarchy level",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.UpsertDimensionHierarchyLevelRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新结果与父资源新版本 | Updated level and new parent version",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.DimensionHierarchyLevelMutationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求或ID无效 | Invalid request or ID",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "逻辑表、维度层级、成员或字段不存在 | Logical table, hierarchy, level, or field not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "父资源版本、状态、层级序号或字段冲突 | Parent version, state, level number, or field conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.logical_model.update"
+                ]
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "删除维度层级成员 | Delete dimension hierarchy level",
+                "parameters": [
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "逻辑表ID | Logical table ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "维度层级ID | Dimension hierarchy ID",
+                        "name": "hid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "层级成员ID | Hierarchy level ID",
+                        "name": "lid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "父资源版本 | Parent resource version",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.VersionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "父资源新版本 | New parent version",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.VersionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求或ID无效 | Invalid request or ID",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足 | Permission denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "逻辑表、维度层级或成员不存在 | Logical table, hierarchy, or level not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "父资源版本或状态冲突 | Parent version or state conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.logical_model.update"
+                ]
+            }
+        },
         "/logical-tables/{id}/dimension-relations": {
             "get": {
                 "security": [
@@ -2789,6 +3386,92 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "model.logical_model.delete"
+                ]
+            }
+        },
+        "/logical-tables/{id}/materialized-target": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "校验逻辑表版本、精确目标确认、物化组和活跃批次后，仅删除由当前逻辑表管理标记拥有的 PostgreSQL 物理表；不修改逻辑表配置。| After validating the logical-table version, exact target confirmation, materialization-group membership, and active batches, delete only the PostgreSQL table owned by the current logical-table marker; the logical-table definition is unchanged.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Model"
+                ],
+                "summary": "退役逻辑表物化目标 | Decommission logical-table materialized target",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "逻辑表 ID | Logical table ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "物化目标精确确认 | Exact materialized target confirmation",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.MaterializedTargetDecommissionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "退役成功或目标已不存在 | Decommissioned or target already absent",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.MessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求或目标确认无效 | Invalid request or target confirmation",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "未认证 | Authentication required",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "权限不足或没有目标引擎 DDL 权限 | Permission denied or target engine DDL access denied",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "逻辑表不存在 | Logical table not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "版本、目标确认、所有权、物化组或活跃批次冲突 | Version, target confirmation, ownership, materialization group, or active batch conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "System 或目标引擎暂时不可用 | System or target engine unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_model_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "model.materialized_target.delete"
                 ]
             }
         },
@@ -3768,7 +4451,6 @@ const docTemplate = `{
                         "enum": [
                             "domain",
                             "element",
-                            "dimension_hierarchy",
                             "metric"
                         ],
                         "type": "string",
@@ -4267,6 +4949,26 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_model_internal_models.CreateDimensionHierarchyRequest": {
+            "type": "object",
+            "required": [
+                "name",
+                "version"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 200
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
         "github_com_addp_model_internal_models.CreateEntityAttributeRequest": {
             "type": "object",
             "required": [
@@ -4454,14 +5156,6 @@ const docTemplate = `{
                         "degenerate_dim"
                     ]
                 },
-                "hierarchy_id": {
-                    "type": "integer",
-                    "minimum": 1
-                },
-                "hierarchy_level": {
-                    "type": "integer",
-                    "minimum": 0
-                },
                 "is_partition": {
                     "type": "boolean"
                 },
@@ -4619,6 +5313,86 @@ const docTemplate = `{
                 },
                 "updated_at": {
                     "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.DimensionHierarchy": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "levels": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_model_internal_models.DimensionHierarchyLevel"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "table_id": {
+                    "type": "integer"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.DimensionHierarchyLevel": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "field_id": {
+                    "type": "integer"
+                },
+                "hierarchy_id": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "level_name": {
+                    "type": "string"
+                },
+                "level_num": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.DimensionHierarchyLevelMutationResponse": {
+            "type": "object",
+            "properties": {
+                "level": {
+                    "$ref": "#/definitions/github_com_addp_model_internal_models.DimensionHierarchyLevel"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.DimensionHierarchyMutationResponse": {
+            "type": "object",
+            "properties": {
+                "hierarchy": {
+                    "$ref": "#/definitions/github_com_addp_model_internal_models.DimensionHierarchy"
                 },
                 "version": {
                     "type": "integer"
@@ -4851,6 +5625,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "created_at": {
+                    "description": "枚举：regular / measure_additive / measure_semi / measure_non / dimension_fk / degenerate_dim",
                     "type": "string"
                 },
                 "data_type": {
@@ -4873,14 +5648,6 @@ const docTemplate = `{
                 },
                 "field_role": {
                     "type": "string"
-                },
-                "hierarchy_id": {
-                    "description": "枚举：regular / measure_additive / measure_semi / measure_non / dimension_fk / degenerate_dim",
-                    "type": "integer"
-                },
-                "hierarchy_level": {
-                    "description": "在层级中对应的层次编号",
-                    "type": "integer"
                 },
                 "id": {
                     "type": "integer"
@@ -5073,6 +5840,26 @@ const docTemplate = `{
                 },
                 "tenant_id": {
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.MaterializedTargetDecommissionRequest": {
+            "type": "object",
+            "required": [
+                "target_name",
+                "target_parent_locator",
+                "version"
+            ],
+            "properties": {
+                "target_name": {
+                    "type": "string"
+                },
+                "target_parent_locator": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
                 }
             }
         },
@@ -5465,6 +6252,26 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_model_internal_models.UpdateDimensionHierarchyRequest": {
+            "type": "object",
+            "required": [
+                "name",
+                "version"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 200
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
         "github_com_addp_model_internal_models.UpdateEntityAttributeRequest": {
             "type": "object",
             "required": [
@@ -5644,16 +6451,6 @@ const docTemplate = `{
                         "degenerate_dim"
                     ]
                 },
-                "hierarchy_id": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "x-nullable": true
-                },
-                "hierarchy_level": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "x-nullable": true
-                },
                 "is_partition": {
                     "type": "boolean"
                 },
@@ -5731,6 +6528,33 @@ const docTemplate = `{
                         "fact",
                         "dimension"
                     ]
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
+        "github_com_addp_model_internal_models.UpsertDimensionHierarchyLevelRequest": {
+            "type": "object",
+            "required": [
+                "field_id",
+                "level_name",
+                "level_num",
+                "version"
+            ],
+            "properties": {
+                "field_id": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "level_name": {
+                    "type": "string",
+                    "maxLength": 100
+                },
+                "level_num": {
+                    "type": "integer",
+                    "minimum": 1
                 },
                 "version": {
                     "type": "integer",

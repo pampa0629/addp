@@ -117,7 +117,7 @@
           </div>
           <div v-else class="element-list">
             <div v-for="e in relatedElements" :key="e.id" class="element-item">
-              <div class="element-name">{{ e.name }}</div>
+              <div class="element-name">{{ (e.draft_revision || e.current_revision)?.name || '-' }}</div>
               <div class="element-code">{{ e.code }}</div>
             </div>
           </div>

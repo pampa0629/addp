@@ -70,7 +70,7 @@ func (s *ScanExecutionService) executeRun(ctx context.Context, executionID strin
 	durationMs := completeTime.Sub(start).Milliseconds()
 
 	if scanErr != nil {
-		if err := s.completeExecutionWithFailure(ctx, exec, scanErr, completeTime, durationMs); err != nil {
+		if err := s.completeExecutionWithFailure(ctx, exec, resp, execConfig.StorageType, scanErr, completeTime, durationMs); err != nil {
 			return err
 		}
 		return scanErr

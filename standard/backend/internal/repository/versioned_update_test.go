@@ -189,25 +189,6 @@ func TestCodeItemMutationRejectsStaleParentVersionWithoutSideEffect(t *testing.T
 	assertParentVersionAndChildValue(t, db, "code_sets", "code_set_revision_items", "label", "First")
 }
 
-func TestHierarchyLevelMutationRejectsStaleParentVersionWithoutSideEffect(t *testing.T) {
-	db := openVersionedTestDB(t,
-		`CREATE TABLE standard.dimension_hierarchies (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, updated_at DATETIME, version INTEGER NOT NULL DEFAULT 1)`,
-		`CREATE TABLE standard.dimension_hierarchy_levels (id INTEGER PRIMARY KEY, hierarchy_id INTEGER NOT NULL, level_num INTEGER, name TEXT, element_id INTEGER, description TEXT, sort_order INTEGER, updated_at DATETIME)`,
-		`INSERT INTO standard.dimension_hierarchies (id, tenant_id, version) VALUES (1, 7, 1)`,
-		`INSERT INTO standard.dimension_hierarchy_levels (id, hierarchy_id, level_num, name) VALUES (1, 1, 1, 'Original')`,
-	)
-	repo := NewDimensionHierarchyRepository(db)
-	first := &models.DimensionHierarchyLevel{ID: 1, HierarchyID: 1, LevelNum: 1, Name: "First"}
-	if err := repo.UpdateLevel(first, 7, 1); err != nil {
-		t.Fatalf("first update level: %v", err)
-	}
-	stale := &models.DimensionHierarchyLevel{ID: 1, HierarchyID: 1, LevelNum: 1, Name: "Stale"}
-	if err := repo.UpdateLevel(stale, 7, 1); !errors.Is(err, ErrVersionConflict) {
-		t.Fatalf("stale update level error = %v, want ErrVersionConflict", err)
-	}
-	assertParentVersionAndChildValue(t, db, "dimension_hierarchies", "dimension_hierarchy_levels", "name", "First")
-}
-
 func assertParentVersionAndChildValue(t *testing.T, db *gorm.DB, parentTable, childTable, childColumn, expectedValue string) {
 	t.Helper()
 	var version int64

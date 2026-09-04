@@ -13,8 +13,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 426 {
-		t.Fatalf("descriptor count = %d, want 426", len(descriptors))
+	if len(descriptors) != 429 {
+		t.Fatalf("descriptor count = %d, want 429", len(descriptors))
 	}
 	if descriptors[0].Key != "agent.configuration.read" || descriptors[len(descriptors)-1].Key != "workbench.resource_grant.revoke" {
 		t.Fatalf("descriptor boundary keys = %q, %q", descriptors[0].Key, descriptors[len(descriptors)-1].Key)
@@ -63,7 +63,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"model.materialization_group.delete",
 		"model.materialization_group.read",
 		"model.materialization_group.update",
-		"standard.dimension_hierarchy.read",
+		"model.materialized_target.delete",
 		"standard.domain.read",
 		"standard.element.read",
 		"standard.metric.read",
@@ -90,7 +90,6 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	})
 	assertRepositoryRolePrincipalTypes(t, roles, "tenant.model_runtime", []string{"service_principal"})
 	assertRepositoryRolePermissions(t, roles, "tenant.model_runtime", []string{
-		"standard.dimension_hierarchy.read",
 		"standard.domain.read",
 		"standard.element.read",
 		"standard.metric.read",
@@ -110,6 +109,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	})
 	assertRepositoryRolePrincipalTypes(t, roles, "tenant.standard_runtime", []string{"service_principal"})
 	assertRepositoryRolePermissions(t, roles, "tenant.standard_runtime", []string{
+		"iam.tenant_membership.read",
 		"model.standard_reference.update",
 	})
 	assertRepositoryRolePermissions(t, roles, "tenant.transfer_runtime", []string{
@@ -396,10 +396,12 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"standard.code_set.publish",
 		"standard.code_set.read",
 		"standard.code_set.update",
-		"standard.dimension_hierarchy.create",
-		"standard.dimension_hierarchy.delete",
-		"standard.dimension_hierarchy.read",
-		"standard.dimension_hierarchy.update",
+		"standard.collection.create",
+		"standard.collection.delete",
+		"standard.collection.publish",
+		"standard.collection.read",
+		"standard.collection.update",
+		"standard.collection_assignment.update",
 		"standard.document.create",
 		"standard.document.delete",
 		"standard.document.read",

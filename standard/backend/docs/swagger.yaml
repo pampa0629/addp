@@ -338,56 +338,36 @@ definitions:
     - name
     - version
     type: object
-  github_com_addp_standard_internal_models.DimensionHierarchy:
+  github_com_addp_standard_internal_models.CreateStandardCollectionRequest:
     properties:
+      change_summary:
+        type: string
       code:
         type: string
-      created_at:
-        type: string
-      created_by:
-        type: integer
       description:
         type: string
-      domain_id:
-        type: integer
-      id:
-        type: integer
-      levels:
+      members:
         items:
-          $ref: '#/definitions/github_com_addp_standard_internal_models.DimensionHierarchyLevel'
+          $ref: '#/definitions/github_com_addp_standard_internal_models.StandardCollectionMemberInput'
         type: array
-      lifecycle_state:
-        type: string
       name:
         type: string
-      tenant_id:
-        type: integer
-      updated_at:
-        type: string
-      updated_by:
-        type: integer
-      version:
-        type: integer
+    required:
+    - change_summary
+    - code
+    - description
+    - name
     type: object
-  github_com_addp_standard_internal_models.DimensionHierarchyLevel:
+  github_com_addp_standard_internal_models.CreateStandardCollectionRevisionRequest:
     properties:
-      description:
+      change_summary:
         type: string
-      element_id:
-        description: 可选关联 standard.elements，目标删除时置空
+      version:
+        minimum: 1
         type: integer
-      hierarchy_id:
-        type: integer
-      id:
-        type: integer
-      level_num:
-        description: 1=最粗粒度，数字越大粒度越细
-        type: integer
-      name:
-        description: e.g., "年", "季度", "月", "日"
-        type: string
-      sort_order:
-        type: integer
+    required:
+    - change_summary
+    - version
     type: object
   github_com_addp_standard_internal_models.Document:
     properties:
@@ -848,6 +828,20 @@ definitions:
       min_inclusive:
         type: boolean
     type: object
+  github_com_addp_standard_internal_models.ReplaceStandardCollectionAssignmentsRequest:
+    properties:
+      assignments:
+        items:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.StandardCollectionAssignmentInput'
+        minItems: 1
+        type: array
+      version:
+        minimum: 1
+        type: integer
+    required:
+    - assignments
+    - version
+    type: object
   github_com_addp_standard_internal_models.ResolveCatalogReferencesRequest:
     properties:
       references:
@@ -902,6 +896,194 @@ definitions:
         type: integer
     required:
     - version
+    type: object
+  github_com_addp_standard_internal_models.StandardCollectionAggregate:
+    properties:
+      assignments:
+        items:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.StandardCollectionAssignment'
+        type: array
+      code:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      current_revision:
+        $ref: '#/definitions/github_com_addp_standard_internal_models.StandardCollectionRevision'
+      draft_revision:
+        $ref: '#/definitions/github_com_addp_standard_internal_models.StandardCollectionRevision'
+      draft_revision_id:
+        type: integer
+      id:
+        type: integer
+      my_roles:
+        items:
+          type: string
+        type: array
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+      updated_by:
+        type: integer
+      version:
+        type: integer
+    type: object
+  github_com_addp_standard_internal_models.StandardCollectionAssignment:
+    properties:
+      collection_id:
+        type: integer
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      id:
+        type: integer
+      principal_code:
+        type: string
+      principal_id:
+        type: integer
+      principal_name:
+        type: string
+      referenceable:
+        type: boolean
+      role:
+        enum:
+        - owner
+        - maintainer
+        - reviewer
+        type: string
+    type: object
+  github_com_addp_standard_internal_models.StandardCollectionAssignmentInput:
+    properties:
+      principal_id:
+        minimum: 1
+        type: integer
+      role:
+        enum:
+        - owner
+        - maintainer
+        - reviewer
+        type: string
+    required:
+    - principal_id
+    - role
+    type: object
+  github_com_addp_standard_internal_models.StandardCollectionEvent:
+    properties:
+      actor_code:
+        type: string
+      actor_id:
+        type: integer
+      actor_name:
+        type: string
+      collection_id:
+        type: integer
+      created_at:
+        type: string
+      detail:
+        $ref: '#/definitions/github_com_addp_standard_internal_models.JSONB'
+      event_type:
+        enum:
+        - created
+        - draft_created
+        - draft_updated
+        - submitted
+        - returned
+        - published
+        - assignments_replaced
+        type: string
+      id:
+        type: integer
+      referenceable:
+        type: boolean
+      revision_id:
+        type: integer
+    type: object
+  github_com_addp_standard_internal_models.StandardCollectionMember:
+    properties:
+      code:
+        type: string
+      collection_revision_id:
+        type: integer
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      id:
+        type: integer
+      member_id:
+        type: integer
+      member_type:
+        enum:
+        - element
+        - code_set
+        - metric
+        - glossary
+        - document
+        type: string
+      name:
+        type: string
+    type: object
+  github_com_addp_standard_internal_models.StandardCollectionMemberInput:
+    properties:
+      member_id:
+        minimum: 1
+        type: integer
+      member_type:
+        enum:
+        - element
+        - code_set
+        - metric
+        - glossary
+        - document
+        type: string
+    required:
+    - member_id
+    - member_type
+    type: object
+  github_com_addp_standard_internal_models.StandardCollectionRevision:
+    properties:
+      change_summary:
+        type: string
+      collection_id:
+        type: integer
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      description:
+        type: string
+      id:
+        type: integer
+      members:
+        items:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.StandardCollectionMember'
+        type: array
+      name:
+        type: string
+      published_at:
+        type: string
+      published_by:
+        type: integer
+      revision_no:
+        type: integer
+      status:
+        enum:
+        - draft
+        - in_review
+        - published
+        - withdrawn
+        type: string
+      submitted_at:
+        type: string
+      submitted_by:
+        type: integer
+      updated_at:
+        type: string
+      updated_by:
+        type: integer
     type: object
   github_com_addp_standard_internal_models.Unit:
     properties:
@@ -994,19 +1176,6 @@ definitions:
     - description
     - name
     - value_type
-    - version
-    type: object
-  github_com_addp_standard_internal_models.UpdateDimensionHierarchyRequest:
-    properties:
-      description:
-        type: string
-      domain_id:
-        type: integer
-      name:
-        type: string
-      version:
-        type: integer
-    required:
     - version
     type: object
   github_com_addp_standard_internal_models.UpdateDocumentRequest:
@@ -1216,6 +1385,27 @@ definitions:
     required:
     - version
     type: object
+  github_com_addp_standard_internal_models.UpdateStandardCollectionRevisionRequest:
+    properties:
+      change_summary:
+        type: string
+      description:
+        type: string
+      members:
+        items:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.StandardCollectionMemberInput'
+        type: array
+      name:
+        type: string
+      version:
+        minimum: 1
+        type: integer
+    required:
+    - change_summary
+    - description
+    - name
+    - version
+    type: object
   github_com_addp_standard_internal_models.UpdateUnitRequest:
     properties:
       description:
@@ -1229,25 +1419,6 @@ definitions:
       version:
         type: integer
     required:
-    - version
-    type: object
-  github_com_addp_standard_internal_models.UpsertHierarchyLevelRequest:
-    properties:
-      description:
-        type: string
-      element_id:
-        type: integer
-      level_num:
-        type: integer
-      name:
-        type: string
-      sort_order:
-        type: integer
-      version:
-        type: integer
-    required:
-    - level_num
-    - name
     - version
     type: object
   github_com_addp_standard_internal_models.VersionRequest:
@@ -2026,261 +2197,166 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - standard.code_set.publish
-  /dimension-hierarchies:
+  /collection-user-candidates:
     get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              $ref: '#/definitions/github_com_addp_standard_internal_models.DimensionHierarchy'
-            type: array
-        "401":
-          description: 需要登录 | Authentication required
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "403":
-          description: 无权访问 | Access denied
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取维度层级列表 | List dimension hierarchies
-      tags:
-      - Standard
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - standard.dimension_hierarchy.read
-    post:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-        "401":
-          description: 需要登录 | Authentication required
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "403":
-          description: 无权访问 | Access denied
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 创建维度层级 | Create dimension hierarchy
-      tags:
-      - Standard
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - standard.dimension_hierarchy.create
-  /dimension-hierarchies/{id}:
-    delete:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-        "401":
-          description: 需要登录 | Authentication required
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "403":
-          description: 无权访问 | Access denied
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "404":
-          description: 维度层级不存在 | Dimension hierarchy not found
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "409":
-          description: 资源仍被 Model 引用 | Resource is still referenced by Model
-          schema:
-            additionalProperties: true
-            type: object
-        "503":
-          description: Model 引用删除屏障不可用 | Model reference deletion guard unavailable
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 删除维度层级 | Delete dimension hierarchy
-      tags:
-      - Standard
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - standard.dimension_hierarchy.delete
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-        "401":
-          description: 需要登录 | Authentication required
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "403":
-          description: 无权访问 | Access denied
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取维度层级详情 | Get dimension hierarchy detail
-      tags:
-      - Standard
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - standard.dimension_hierarchy.read
-    put:
       parameters:
-      - description: 更新维度层级 | Update dimension hierarchy
+      - description: 名称或用户名 | Name or username
+        in: query
+        name: search
+        type: string
+      - description: 页码 | Page
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量 | Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              data:
+                items:
+                  type: object
+                type: array
+              page:
+                type: integer
+              page_size:
+                type: integer
+              total:
+                type: integer
+              total_pages:
+                type: integer
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 查询标准集职责用户候选 | List collection assignment user candidates
+      tags:
+      - Standard Collections
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.collection_assignment.update
+  /collections:
+    get:
+      parameters:
+      - description: 名称、编码或说明 | Name, code, or description
+        in: query
+        name: keyword
+        type: string
+      - description: 当前治理状态 | Current governance status
+        enum:
+        - draft
+        - in_review
+        - published
+        in: query
+        name: status
+        type: string
+      - description: 页码 | Page
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量 | Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              data:
+                items:
+                  $ref: '#/definitions/github_com_addp_standard_internal_models.StandardCollectionAggregate'
+                type: array
+              page:
+                type: integer
+              page_size:
+                type: integer
+              total:
+                type: integer
+              total_pages:
+                type: integer
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 查询标准集 | List standard collections
+      tags:
+      - Standard Collections
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.collection.read
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 标准集首个草稿 | Initial collection draft
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/github_com_addp_standard_internal_models.UpdateDimensionHierarchyRequest'
+          $ref: '#/definitions/github_com_addp_standard_internal_models.CreateStandardCollectionRequest'
       produces:
       - application/json
       responses:
-        "200":
-          description: OK
+        "201":
+          description: Created
           schema:
-            additionalProperties: true
-            type: object
-        "401":
-          description: 需要登录 | Authentication required
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "403":
-          description: 无权访问 | Access denied
+            $ref: '#/definitions/github_com_addp_standard_internal_models.StandardCollectionAggregate'
+        "400":
+          description: Bad Request
           schema:
             additionalProperties:
               type: string
             type: object
         "409":
-          description: 资源版本冲突 | Resource version conflict
+          description: Conflict
           schema:
             additionalProperties:
               type: string
             type: object
       security:
       - BearerAuth: []
-      summary: 更新维度层级 | Update dimension hierarchy
+      summary: 创建标准集 | Create a standard collection
       tags:
-      - Standard
+      - Standard Collections
       x-addp-auth-mode: permission
       x-addp-required-permissions:
-      - standard.dimension_hierarchy.update
-  /dimension-hierarchies/{id}/levels:
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              $ref: '#/definitions/github_com_addp_standard_internal_models.DimensionHierarchyLevel'
-            type: array
-        "401":
-          description: 需要登录 | Authentication required
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "403":
-          description: 无权访问 | Access denied
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取维度层级的层次列表 | List hierarchy levels
-      tags:
-      - Standard
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - standard.dimension_hierarchy.read
-    post:
-      parameters:
-      - description: 创建层次及当前维度层级版本 | Create level with current hierarchy version
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/github_com_addp_standard_internal_models.UpsertHierarchyLevelRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-        "401":
-          description: 需要登录 | Authentication required
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "403":
-          description: 无权访问 | Access denied
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "409":
-          description: 资源版本冲突 | Resource version conflict
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 创建层次 | Create hierarchy level
-      tags:
-      - Standard
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - standard.dimension_hierarchy.update
-  /dimension-hierarchies/{id}/levels/{lid}:
+      - standard.collection.create
+  /collections/{id}:
     delete:
+      consumes:
+      - application/json
       parameters:
-      - description: 当前维度层级版本 | Current hierarchy version
+      - description: 标准集 ID | Collection ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 当前资源版本 | Current resource version
         in: body
         name: request
         required: true
@@ -2292,76 +2368,331 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
-        "401":
-          description: 需要登录 | Authentication required
-          schema:
             additionalProperties:
               type: string
             type: object
         "403":
-          description: 无权访问 | Access denied
+          description: Forbidden
           schema:
             additionalProperties:
               type: string
             type: object
         "409":
-          description: 资源版本冲突 | Resource version conflict
+          description: Conflict
           schema:
             additionalProperties:
               type: string
             type: object
       security:
       - BearerAuth: []
-      summary: 删除层次 | Delete hierarchy level
+      summary: 删除未发布标准集 | Delete an unpublished standard collection
       tags:
-      - Standard
+      - Standard Collections
       x-addp-auth-mode: permission
       x-addp-required-permissions:
-      - standard.dimension_hierarchy.update
-    put:
+      - standard.collection.delete
+    get:
       parameters:
-      - description: 更新层次及当前维度层级版本 | Update level with current hierarchy version
-        in: body
-        name: request
+      - description: 标准集 ID | Collection ID
+        in: path
+        name: id
         required: true
-        schema:
-          $ref: '#/definitions/github_com_addp_standard_internal_models.UpsertHierarchyLevelRequest'
+        type: integer
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
-        "401":
-          description: 需要登录 | Authentication required
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "403":
-          description: 无权访问 | Access denied
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "409":
-          description: 资源版本冲突 | Resource version conflict
+            $ref: '#/definitions/github_com_addp_standard_internal_models.StandardCollectionAggregate'
+        "404":
+          description: Not Found
           schema:
             additionalProperties:
               type: string
             type: object
       security:
       - BearerAuth: []
-      summary: 更新层次 | Update hierarchy level
+      summary: 获取标准集详情 | Get standard collection detail
       tags:
-      - Standard
+      - Standard Collections
       x-addp-auth-mode: permission
       x-addp-required-permissions:
-      - standard.dimension_hierarchy.update
+      - standard.collection.read
+  /collections/{id}/assignments:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 标准集 ID | Collection ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 完整职责分配 | Complete assignments
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.ReplaceStandardCollectionAssignmentsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_standard_internal_models.StandardCollectionAggregate'
+      security:
+      - BearerAuth: []
+      summary: 替换标准集职责分配 | Replace standard collection assignments
+      tags:
+      - Standard Collections
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.collection_assignment.update
+  /collections/{id}/events:
+    get:
+      parameters:
+      - description: 标准集 ID | Collection ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 页码 | Page
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量 | Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              data:
+                items:
+                  $ref: '#/definitions/github_com_addp_standard_internal_models.StandardCollectionEvent'
+                type: array
+              page:
+                type: integer
+              page_size:
+                type: integer
+              total:
+                type: integer
+              total_pages:
+                type: integer
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 查询标准集审核事件 | List standard collection governance events
+      tags:
+      - Standard Collections
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.collection.read
+  /collections/{id}/revisions:
+    get:
+      parameters:
+      - description: 标准集 ID | Collection ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_addp_standard_internal_models.StandardCollectionRevision'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: 查询标准集修订 | List standard collection revisions
+      tags:
+      - Standard Collections
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.collection.read
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 标准集 ID | Collection ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 新修订 | New revision
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.CreateStandardCollectionRevisionRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_addp_standard_internal_models.StandardCollectionAggregate'
+      security:
+      - BearerAuth: []
+      summary: 创建标准集草稿修订 | Create a standard collection draft revision
+      tags:
+      - Standard Collections
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.collection.update
+  /collections/{id}/revisions/{revision_id}:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 标准集 ID | Collection ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 修订 ID | Revision ID
+        in: path
+        name: revision_id
+        required: true
+        type: integer
+      - description: 完整草稿 | Complete draft
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.UpdateStandardCollectionRevisionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_standard_internal_models.StandardCollectionAggregate'
+      security:
+      - BearerAuth: []
+      summary: 更新标准集草稿 | Update a standard collection draft
+      tags:
+      - Standard Collections
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.collection.update
+  /collections/{id}/revisions/{revision_id}/publish:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 标准集 ID | Collection ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 修订 ID | Revision ID
+        in: path
+        name: revision_id
+        required: true
+        type: integer
+      - description: 当前资源版本 | Current resource version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_standard_internal_models.StandardCollectionAggregate'
+      security:
+      - BearerAuth: []
+      summary: 发布标准集修订 | Publish a standard collection revision
+      tags:
+      - Standard Collections
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.collection.publish
+  /collections/{id}/revisions/{revision_id}/return:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 标准集 ID | Collection ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 修订 ID | Revision ID
+        in: path
+        name: revision_id
+        required: true
+        type: integer
+      - description: 当前资源版本 | Current resource version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_standard_internal_models.StandardCollectionAggregate'
+      security:
+      - BearerAuth: []
+      summary: 退回标准集修订 | Return a standard collection revision
+      tags:
+      - Standard Collections
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.collection.publish
+  /collections/{id}/revisions/{revision_id}/submit:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 标准集 ID | Collection ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 修订 ID | Revision ID
+        in: path
+        name: revision_id
+        required: true
+        type: integer
+      - description: 当前资源版本 | Current resource version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_standard_internal_models.StandardCollectionAggregate'
+      security:
+      - BearerAuth: []
+      summary: 提交标准集修订审核 | Submit a standard collection revision
+      tags:
+      - Standard Collections
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.collection.update
   /documents:
     get:
       produces:

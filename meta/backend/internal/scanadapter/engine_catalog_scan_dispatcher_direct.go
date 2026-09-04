@@ -17,7 +17,7 @@ func (d *EngineCatalogScanDispatcher) dispatchDirectLeafScan(ctx context.Context
 	}
 	items, err := d.directLeafScan.ScanRoot(ctx, enginePlugin, req.Resource, req.TenantID, req.ScanDepth, req.Force)
 	if err != nil {
-		return scanflow.DispatchResult{}, err
+		return scanflow.DispatchResult{Items: items}, err
 	}
 	if req.Reporter != nil {
 		req.Reporter.SetTotal(items)

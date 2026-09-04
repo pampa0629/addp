@@ -231,8 +231,8 @@ AI 模型接入、在线厂商账号、内网模型服务、模型档案、场�
 处理业务域、数据元、维度层级、指标、业务实体、逻辑模型、数仓分层、Mermaid 模型导入或 Standard 引用约束时，建议按以下顺序阅读：
 
 1. [术语表](concepts/addp术语表.md)：确认数据标准、业务实体、逻辑模型和数仓分层术语。
-2. [Standard 模块说明](../standard/CLAUDE.md)：确认业务域、数据元、维度层级和指标的事实所有权。
-3. [Model 模块说明](../model/CLAUDE.md)：查看 Model 当前实现、API、权限和验证方式。
+2. [Standard 模块说明](../standard/CLAUDE.md)：确认业务域、数据元和指标定义的事实所有权。
+3. [Model 模块说明](../model/CLAUDE.md)：确认维度层级、指标实现、Model 当前 API、权限和验证方式。
 4. [Model 概念与数据约束规范](../model/docs/model概念与数据约束规范.md)：确认聚合、生命周期、并发版本、Mermaid 集合修订和 Standard 引用删除屏障。
 
 ## 资源回收与生命周期主题

@@ -1,10 +1,11 @@
 package scantask
 
 import (
-	commonExecution "github.com/addp/common/execution"
+	"errors"
 	"testing"
 	"time"
 
+	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scanflow"
@@ -101,6 +102,25 @@ func TestExecutionStatusFields(t *testing.T) {
 	extraction := metadata["extraction"].(commonModels.JSONMap)
 	if extraction["documents"] != 1 || extraction["indexed"] != 1 {
 		t.Fatalf("extraction metadata = %#v", extraction)
+	}
+
+	failures := &scanflow.FailedTargetCollector{}
+	failures.Add("cad/broken.dwg", errors.New("permission denied"))
+	failed := FailedExecutionFields(resp, "nfs", failures.Err(), now, 456, now)
+	if failed["status"] != commonExecution.ExecutionStatusFailed {
+		t.Fatalf("failed fields = %#v", failed)
+	}
+	failedMetadata := failed["metadata"].(commonModels.JSONMap)
+	if failedMetadata["items_scanned"] != 2 || failedMetadata["storage_type"] != "nfs" {
+		t.Fatalf("failed metadata = %#v", failedMetadata)
+	}
+	errorDetails := failed["error_details"].(commonModels.JSONMap)
+	if errorDetails["failed_targets_count"] != 1 {
+		t.Fatalf("error details = %#v", errorDetails)
+	}
+	samples := errorDetails["failed_target_samples"].([]scanflow.FailedTargetSample)
+	if len(samples) != 1 || samples[0].Target != "cad/broken.dwg" {
+		t.Fatalf("failure samples = %#v", samples)
 	}
 
 	backfill := TaskStatusBackfillFields("exec-1", commonExecution.ExecutionStatusSuccess, now, now)

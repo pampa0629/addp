@@ -327,19 +327,10 @@ func (s *Storage) RotateRefreshToken(ctx context.Context, requestID string, refr
 		return fosite.ErrSerializationFailure
 	}
 	if family.IssuedAuthorizationVersion < principal.AuthorizationVersion {
-		previousVersion := family.IssuedAuthorizationVersion
 		if err := repository.AdvanceRefreshTokenFamilyAuthorizationVersion(ctx, family.ID, principal.AuthorizationVersion); err != nil {
 			return repositoryErrorToFosite(err)
 		}
 		family.IssuedAuthorizationVersion = principal.AuthorizationVersion
-		updateTransactionAudit(ctx, func(event *iam.AuditEvent) {
-			if event.Details == nil {
-				event.Details = make(map[string]any)
-			}
-			event.Details["previous_authorization_version"] = previousVersion
-			event.Details["authorization_version"] = principal.AuthorizationVersion
-			event.Details["authorization_version_advanced"] = true
-		})
 	}
 	if err := repository.MarkRefreshTokenUsed(ctx, token.ID, now); err != nil {
 		return fosite.ErrSerializationFailure

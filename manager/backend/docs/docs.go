@@ -5421,7 +5421,7 @@ const docTemplate = `{
                 ]
             }
         },
-        "/storage-assets/{engine_id}/{storage_ref}": {
+        "/storage-assets/{engine_id}/items/{item_id}/{storage_ref}": {
             "get": {
                 "security": [
                     {
@@ -5441,6 +5441,13 @@ const docTemplate = `{
                         "type": "integer",
                         "description": "存储引擎ID | Engine ID",
                         "name": "engine_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Meta DataItem ID",
+                        "name": "item_id",
                         "in": "path",
                         "required": true
                     },
@@ -5504,9 +5511,9 @@ const docTemplate = `{
                 "summary": "存储内容流式传输 | Storage content streaming",
                 "parameters": [
                     {
-                        "type": "integer",
-                        "description": "存储引擎ID | Engine ID",
-                        "name": "engine_id",
+                        "type": "string",
+                        "description": "带 item_id 的存储数据项定位符 | Storage DataItem locator with item_id",
+                        "name": "locator",
                         "in": "query",
                         "required": true
                     },

@@ -241,6 +241,27 @@
       "role_label_fk": "维度FK",
       "role_label_degenerate": "退化维"
     },
+    "dimension_hierarchy": {
+      "title": "维度层级",
+      "help": "定义当前维度表内的下钻路径；层级成员只能引用本表字段。",
+      "add": "新增层级",
+      "empty": "当前维度表尚未定义层级",
+      "edit": "编辑层级",
+      "name": "层级名称",
+      "description": "描述",
+      "name_required": "请输入层级名称",
+      "delete_confirm": "确定删除层级“{name}”吗？",
+      "add_level": "新增层级成员",
+      "edit_level": "编辑层级成员",
+      "level_num": "层级序号",
+      "level_name": "层级名称",
+      "field": "维度字段",
+      "delete_level_confirm": "确定删除层级成员“{name}”吗？",
+      "level_num_required": "请输入层级序号",
+      "level_name_required": "请输入层级名称",
+      "field_required": "请选择维度字段",
+      "load_failed": "加载维度层级失败"
+    },
     "metric": {
       "title": "关联指标",
       "add": "关联指标",
@@ -266,7 +287,17 @@
       "target_name": "目标表名",
       "target_name_placeholder": "小写字母、数字和下划线",
       "partition_by": "分区字段",
-      "partition_type": "分区类型"
+      "partition_type": "分区类型",
+      "decommission": "退役物化目标",
+      "decommission_title": "退役物化目标",
+      "decommission_warning": "此操作将永久删除目标物理表，且不会修改逻辑表定义。请先移除物化组和其他模块中的引用。",
+      "engine": "目标引擎",
+      "engine_unknown": "引擎名称暂不可用",
+      "engine_load_failed": "无法读取目标引擎名称",
+      "confirm_label": "输入 {target} 以确认删除",
+      "confirm_decommission": "确认退役",
+      "decommission_success": "物化目标已退役",
+      "decommission_failed": "物化目标退役失败"
     },
     "dw_layer": {
       "title": "数仓分层配置",

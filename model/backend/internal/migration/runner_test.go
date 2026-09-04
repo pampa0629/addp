@@ -129,6 +129,43 @@ func TestMaterializationPartitionNormalizationMigrationRemovesEmptyDesign(t *tes
 	}
 }
 
+func TestMaterializationTargetPredecessorMigrationPersistsCompareAndSwapState(t *testing.T) {
+	content, err := fs.ReadFile(migrationFiles, "sql/017_capture_materialization_target_predecessor.up.sql")
+	if err != nil {
+		t.Fatalf("read materialization predecessor migration: %v", err)
+	}
+	sql := string(content)
+	for _, fragment := range []string{
+		"ADD COLUMN expected_target_marker TEXT",
+		"NULL means the target did not exist",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("materialization predecessor migration missing %s", fragment)
+		}
+	}
+}
+
+func TestDimensionHierarchyMigrationEstablishesModelOwnedAggregate(t *testing.T) {
+	content, err := fs.ReadFile(migrationFiles, "sql/018_move_dimension_hierarchies_to_model.up.sql")
+	if err != nil {
+		t.Fatalf("read dimension hierarchy migration: %v", err)
+	}
+	sql := string(content)
+	for _, fragment := range []string{
+		"DROP COLUMN IF EXISTS hierarchy_id",
+		"DROP COLUMN IF EXISTS hierarchy_level",
+		"CREATE TABLE model.dimension_hierarchies",
+		"CREATE TABLE model.dimension_hierarchy_levels",
+		"FOREIGN KEY (table_id, tenant_id)",
+		"FOREIGN KEY (field_id)",
+		"CHECK (resource_type IN ('domain', 'element', 'metric'))",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("dimension hierarchy migration missing %s", fragment)
+		}
+	}
+}
+
 func TestMaterializationExecutionIDMigrationUsesCommonExecutionIdentityType(t *testing.T) {
 	content, err := fs.ReadFile(migrationFiles, "sql/010_normalize_materialization_execution_ids.up.sql")
 	if err != nil {

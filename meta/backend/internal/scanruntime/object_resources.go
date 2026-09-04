@@ -32,6 +32,7 @@ func (s *ObjectStorageCatalogRuntime) persistObjectResources(
 ) (int, scanflow.ExtractionCounts, error) {
 	objects := 0
 	extractionStats := scanflow.ExtractionCounts{}
+	failures := &scanflow.FailedTargetCollector{}
 	connInfo := plugin.ConnectionInfo(resource.ConnectionInfo)
 	enginePlugin, err := plugin.Get(resource.EngineType)
 	if err != nil {
@@ -63,13 +64,14 @@ func (s *ObjectStorageCatalogRuntime) persistObjectResources(
 	compositeSkipPaths, compositeItems, compositeWarnings := scanflow.DetectObjectCatalogCompositeItems(ctx, readableProvider, connInfo, engineID, resources, strings.EqualFold(scanDepth, "deep"))
 	for _, warning := range compositeWarnings {
 		s.log.Warn("对象 catalog 组合项检测失败", "bucket", warning.Bucket, "prefix", warning.Prefix, "error", warning.Err)
+		failures.Add(strings.Trim(strings.Join([]string{warning.Bucket, warning.Prefix}, "/"), "/"), warning.Err)
 	}
 	compositeCount, compositeExtractionStats, err := s.persistObjectCatalogCompositeItems(ctx, resource, tenantID, engineID, bucketNode, basePrefixNode, compositeItems, stats, includeBucketAggregate, scanPathPrefix, scannedFingerprints, itemTerm, readableProvider, connInfo, scanDepth)
-	if err != nil {
-		return objects, extractionStats, err
-	}
 	objects += compositeCount
 	extractionStats = scanflow.MergeExtractionCounts(extractionStats, compositeExtractionStats)
+	if err != nil {
+		failures.Add(scanPathPrefix, err)
+	}
 
 	for _, catalogResource := range resources {
 		if err := ctx.Err(); err != nil {
@@ -127,12 +129,17 @@ func (s *ObjectStorageCatalogRuntime) persistObjectResources(
 				attrs := scanresource.ObjectPrefixNodeAttributes(catalogResource.RootName, strings.Join(pathPlan.Segments[:idx+1], "/")+"/")
 				childNode, err := s.repo.UpsertNode(tenantID, engineID, currentParent, "prefix", segment, &fullName, attrs)
 				if err != nil {
-					return objects, extractionStats, err
+					failures.Add(catalogResource.Path, err)
+					currentParent = nil
+					break
 				}
 				currentParent = childNode
 				parentChain = append(parentChain, childNode)
 				scanflow.EnsureObjectCatalogNodeAggregate(stats, childNode)
 			}
+		}
+		if currentParent == nil {
+			continue
 		}
 
 		if catalogResource.NodeType != "object" {
@@ -149,7 +156,8 @@ func (s *ObjectStorageCatalogRuntime) persistObjectResources(
 
 		existingItem, itemExists, err := s.repo.FindItemByFingerprintUnscoped(itemPlan.Fingerprint)
 		if err != nil {
-			return objects, extractionStats, err
+			failures.Add(catalogResource.Path, err)
+			continue
 		}
 		needsUpdate := force || scanchange.ShouldUpdateStorageResource(existingItem, catalogResource) || !itemExists
 		if strings.EqualFold(scanDepth, "deep") && existingItem != nil && existingItem.ScannedDepth != models.ScannedDepthDeep {
@@ -209,7 +217,9 @@ func (s *ObjectStorageCatalogRuntime) persistObjectResources(
 			scanDepth,
 		))
 		if err != nil {
-			return objects, extractionStats, err
+			extractionStats = scanflow.MergeExtractionCounts(extractionStats, result.Extraction)
+			failures.Add(catalogResource.Path, err)
+			continue
 		}
 		extractionStats = scanflow.MergeExtractionCounts(extractionStats, result.Extraction)
 
@@ -227,5 +237,5 @@ func (s *ObjectStorageCatalogRuntime) persistObjectResources(
 	if includeBucketAggregate {
 		scanflow.EnsureObjectCatalogNodeAggregate(stats, bucketNode)
 	}
-	return objects, extractionStats, nil
+	return objects, extractionStats, failures.Err()
 }

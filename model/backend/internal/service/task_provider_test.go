@@ -67,17 +67,25 @@ func TestMaterializationPartitionDetectionRequiresNonEmptyField(t *testing.T) {
 	}
 }
 
-func TestMaterializationMarkerBindsLogicalTableAndFingerprint(t *testing.T) {
+func TestMaterializationMarkerSeparatesOwnerFromSchemaVersion(t *testing.T) {
 	fingerprint := strings.Repeat("a", 64)
 	marker := materializationMarker(7, fingerprint, "batch-1")
-	if !materializationMarkerMatchesOwner(marker, 7, fingerprint) {
+	parsed, ok := parseMaterializationMarker(marker)
+	if !ok || parsed.LogicalTableID != 7 || parsed.SchemaFingerprint != fingerprint || parsed.BatchID != "batch-1" {
+		t.Fatalf("parsed marker = %#v, ok = %v", parsed, ok)
+	}
+	if !materializationMarkerOwnedBy(marker, 7) {
 		t.Fatal("marker does not match its owner")
 	}
-	if materializationMarkerMatchesOwner(marker, 8, fingerprint) {
+	if materializationMarkerOwnedBy(marker, 8) {
 		t.Fatal("marker matched a different logical table")
 	}
-	if materializationMarkerMatchesOwner(marker, 7, strings.Repeat("b", 64)) {
-		t.Fatal("marker matched a different schema fingerprint")
+	oldSchemaMarker := materializationMarker(7, strings.Repeat("b", 64), "batch-0")
+	if !materializationMarkerOwnedBy(oldSchemaMarker, 7) {
+		t.Fatal("old schema version lost the same logical-table ownership")
+	}
+	if _, ok := parseMaterializationMarker(materializationMarkerPrefix + "7:" + strings.Repeat("z", 64) + ":batch"); ok {
+		t.Fatal("invalid fingerprint was accepted")
 	}
 }
 

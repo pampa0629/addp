@@ -81,6 +81,35 @@ func TestIAMCatalogReferenceHandlerListsCandidatesWithCurrentTenant(t *testing.T
 	}
 }
 
+func TestIAMCatalogReferenceHandlerStandardGovernanceUsersAreStandardOnly(t *testing.T) {
+	service := &fakeIAMCatalogReferenceService{results: []iam.CatalogReferenceResolution{{
+		SubjectType: iam.CatalogSubjectTypeUser, ID: 9, Found: true, Referenceable: true, Name: "Alice", Status: "active",
+	}}}
+	handler, err := NewIAMCatalogReferenceHandler(service)
+	if err != nil {
+		t.Fatal(err)
+	}
+	router := gin.New()
+	router.POST("/standard-users", withCatalogReferenceAuthContext(t, "addp-standard"), handler.ResolveStandardGovernanceUsers)
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/standard-users", strings.NewReader(`{"references":[{"subject_type":"user","id":"9"}]}`))
+	request.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || service.clientID != "addp-standard" || len(service.references) != 1 || service.references[0].SubjectType != iam.CatalogSubjectTypeUser {
+		t.Fatalf("status=%d service=%#v body=%s", response.Code, service, response.Body.String())
+	}
+
+	rejected := gin.New()
+	rejected.POST("/standard-users", withCatalogReferenceAuthContext(t, "addp-catalog"), handler.ResolveStandardGovernanceUsers)
+	response = httptest.NewRecorder()
+	request = httptest.NewRequest(http.MethodPost, "/standard-users", strings.NewReader(`{"references":[{"subject_type":"user","id":"9"}]}`))
+	request.Header.Set("Content-Type", "application/json")
+	rejected.ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("catalog client status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 type fakeIAMCatalogReferenceService struct {
 	called               bool
 	tenantID             int64

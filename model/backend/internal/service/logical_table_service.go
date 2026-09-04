@@ -28,7 +28,7 @@ func (s *LogicalTableService) SetStandardClient(client *commonClient.StandardCli
 	s.standard = client
 }
 
-func (s *LogicalTableService) validateReferences(tenantID int64, domainID, elementID, hierarchyID *int64) error {
+func (s *LogicalTableService) validateReferences(tenantID int64, domainID, elementID *int64) error {
 	if s.standard == nil {
 		return nil
 	}
@@ -41,11 +41,6 @@ func (s *LogicalTableService) validateReferences(tenantID int64, domainID, eleme
 	if elementID != nil && *elementID > 0 {
 		if err := client.ValidateElement(context.Background(), *elementID); err != nil {
 			return standardReferenceError(err, "element_not_found")
-		}
-	}
-	if hierarchyID != nil && *hierarchyID > 0 {
-		if err := client.ValidateDimensionHierarchy(context.Background(), *hierarchyID); err != nil {
-			return standardReferenceError(err, "hierarchy_not_found")
 		}
 	}
 	return nil
@@ -124,7 +119,7 @@ func (s *LogicalTableService) CreateLogicalTable(req *models.CreateLogicalTableR
 	if err := validateLogicalTableShape(req.TableType, req.SCDType, req.GrainDescription); err != nil {
 		return nil, err
 	}
-	if err := s.validateReferences(tenantID, req.DomainID, nil, nil); err != nil {
+	if err := s.validateReferences(tenantID, req.DomainID, nil); err != nil {
 		return nil, err
 	}
 	err := s.repo.DB().Transaction(func(tx *gorm.DB) error {
@@ -190,7 +185,7 @@ func (s *LogicalTableService) UpdateLogicalTable(id, tenantID, userID int64, req
 		return nil, apperrors.Validation("invalid_request", i18n.MsgValidationFailed)
 	}
 
-	if err := s.validateReferences(tenantID, req.DomainID, nil, nil); err != nil {
+	if err := s.validateReferences(tenantID, req.DomainID, nil); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(req.Layer) == "" {
@@ -218,6 +213,15 @@ func (s *LogicalTableService) UpdateLogicalTable(id, tenantID, userID int64, req
 		fields, err := repository.NewLogicalTableRepository(tx).GetFields(id)
 		if err != nil {
 			return err
+		}
+		if table.TableType == "dimension" && req.TableType != "dimension" {
+			var hierarchyCount int64
+			if err := tx.Model(&models.DimensionHierarchy{}).Where("table_id = ? AND tenant_id = ?", id, tenantID).Count(&hierarchyCount).Error; err != nil {
+				return err
+			}
+			if hierarchyCount > 0 {
+				return apperrors.Conflict("dimension_hierarchy_table_type_conflict", i18n.MsgDimensionHierarchyConflict)
+			}
 		}
 		normalizedMaterialization := normalizeMaterialization(req.Materialization)
 		previewTable := previewLogicalTableWithMaterialization(table, normalizedMaterialization)
@@ -437,7 +441,7 @@ func (s *LogicalTableService) CreateField(tableID, tenantID int64, req *models.C
 	if err := validateCreateLogicalFieldRequest(req); err != nil {
 		return nil, err
 	}
-	if err := s.validateReferences(tenantID, nil, req.ElementID, req.HierarchyID); err != nil {
+	if err := s.validateReferences(tenantID, nil, req.ElementID); err != nil {
 		return nil, err
 	}
 	if req.IsPK && req.Nullable {
@@ -448,28 +452,25 @@ func (s *LogicalTableService) CreateField(tableID, tenantID int64, req *models.C
 		fieldRole = "regular"
 	}
 	field := models.LogicalField{
-		TableID:        tableID,
-		ElementID:      req.ElementID,
-		Name:           req.Name,
-		ColumnName:     req.ColumnName,
-		DataType:       req.DataType,
-		Length:         req.Length,
-		Nullable:       req.Nullable,
-		IsPK:           req.IsPK,
-		IsPartition:    req.IsPartition,
-		DefaultValue:   req.DefaultValue,
-		Description:    req.Description,
-		SortOrder:      req.SortOrder,
-		FieldRole:      fieldRole,
-		HierarchyID:    req.HierarchyID,
-		HierarchyLevel: req.HierarchyLevel,
+		TableID:      tableID,
+		ElementID:    req.ElementID,
+		Name:         req.Name,
+		ColumnName:   req.ColumnName,
+		DataType:     req.DataType,
+		Length:       req.Length,
+		Nullable:     req.Nullable,
+		IsPK:         req.IsPK,
+		IsPartition:  req.IsPartition,
+		DefaultValue: req.DefaultValue,
+		Description:  req.Description,
+		SortOrder:    req.SortOrder,
+		FieldRole:    fieldRole,
 	}
 
 	response := &models.LogicalFieldMutationResponse{Field: field}
 	err := s.repo.DB().Transaction(func(tx *gorm.DB) error {
 		if err := lockStandardReferences(tx, tenantID,
-			standardReference(models.StandardResourceElement, req.ElementID),
-			standardReference(models.StandardResourceDimensionHierarchy, req.HierarchyID)); err != nil {
+			standardReference(models.StandardResourceElement, req.ElementID)); err != nil {
 			return err
 		}
 		table, err := repository.LockLogicalTable(tx, tableID, tenantID)
@@ -503,14 +504,14 @@ func (s *LogicalTableService) UpdateField(fieldID, tableID, tenantID int64, req 
 		return nil, apperrors.Validation("invalid_request", i18n.MsgValidationFailed)
 	}
 
-	if err := s.validateReferences(tenantID, nil, req.ElementID, req.HierarchyID); err != nil {
+	if err := s.validateReferences(tenantID, nil, req.ElementID); err != nil {
 		return nil, err
 	}
 	if !validRequiredString(req.Name, 200) || !modelCodePattern.MatchString(req.ColumnName) || utf8.RuneCountInString(req.ColumnName) > 200 ||
 		!validValue(req.DataType, modelDataTypes...) || !validValue(req.FieldRole, modelFieldRoles...) ||
-		!validOptionalID(req.ElementID) || !validOptionalID(req.HierarchyID) ||
+		!validOptionalID(req.ElementID) ||
 		req.Nullable == nil || req.IsPK == nil || req.IsPartition == nil || req.SortOrder == nil || *req.SortOrder < 0 ||
-		(req.Length != nil && *req.Length <= 0) || !validHierarchy(req.HierarchyID, req.HierarchyLevel) {
+		(req.Length != nil && *req.Length <= 0) {
 		return nil, apperrors.Validation("invalid_request", i18n.MsgValidationFailed)
 	}
 
@@ -520,8 +521,7 @@ func (s *LogicalTableService) UpdateField(fieldID, tableID, tenantID int64, req 
 	response := &models.LogicalFieldMutationResponse{}
 	err := s.repo.DB().Transaction(func(tx *gorm.DB) error {
 		if err := lockStandardReferences(tx, tenantID,
-			standardReference(models.StandardResourceElement, req.ElementID),
-			standardReference(models.StandardResourceDimensionHierarchy, req.HierarchyID)); err != nil {
+			standardReference(models.StandardResourceElement, req.ElementID)); err != nil {
 			return err
 		}
 		table, err := repository.LockLogicalTable(tx, tableID, tenantID)
@@ -554,8 +554,6 @@ func (s *LogicalTableService) UpdateField(fieldID, tableID, tenantID int64, req 
 		field.Description = req.Description
 		field.SortOrder = *req.SortOrder
 		field.FieldRole = req.FieldRole
-		field.HierarchyID = req.HierarchyID
-		field.HierarchyLevel = req.HierarchyLevel
 		if err := txRepo.UpdateField(field); err != nil {
 			return modelResourceError(err, "logical_field_column", i18n.MsgFieldColumnConflict)
 		}
@@ -582,6 +580,16 @@ func (s *LogicalTableService) DeleteField(fieldID, tableID, tenantID, version in
 		}
 		if table.Status != "draft" {
 			return apperrors.Conflict("logical_table_state_conflict", i18n.MsgTableStateConflict)
+		}
+		if _, err := repository.NewLogicalTableRepository(tx).GetFieldByID(fieldID, tableID); err != nil {
+			return apperrors.NotFound("logical_field_not_found", i18n.MsgFieldNotFound)
+		}
+		var hierarchyLevelCount int64
+		if err := tx.Model(&models.DimensionHierarchyLevel{}).Where("field_id = ?", fieldID).Count(&hierarchyLevelCount).Error; err != nil {
+			return err
+		}
+		if hierarchyLevelCount > 0 {
+			return apperrors.Conflict("dimension_hierarchy_field_in_use", i18n.MsgDimensionHierarchyFieldInUse)
 		}
 		if err := repository.NewLogicalTableRepository(tx).DeleteField(fieldID, tableID); err != nil {
 			return modelResourceError(err, "logical_field_not_found", i18n.MsgFieldNotFound)

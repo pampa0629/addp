@@ -73,6 +73,24 @@ other = "A published standard revision is required"
 [standard.code_set.platform_immutable]
 other = "Tenant users cannot modify platform code sets"
 
+[standard.collection.invalid]
+other = "The standard collection governance configuration, members, or assignments are invalid"
+
+[standard.collection.access_denied]
+other = "The current user does not have the required assignment on this standard collection"
+
+[standard.collection.reviewer_required]
+other = "At least one reviewer distinct from the submitter is required before review"
+
+[standard.collection.owner_required]
+other = "A standard collection must retain at least one owner"
+
+[standard.collection.self_approval]
+other = "The submitter cannot publish the same standard collection revision"
+
+[standard.collection.directory_unavailable]
+other = "The Standard governance user directory is temporarily unavailable"
+
 [standard.common.model_reference_conflict]
 other = "This Standard resource is still referenced by Model. Remove the references before deleting it"
 
@@ -151,11 +169,27 @@ other = "Metric dependencies cannot form a cycle"
 [standard.metric.referenced]
 other = "The metric is still referenced by a derived metric or dependency and cannot be deleted"
 
-[standard.dim_hierarchy.not_found]
-other = "Dimension hierarchy not found"
-
-[standard.dim_hierarchy.invalid_level_id]
-other = "Invalid level ID"
-
-[standard.dim_hierarchy.invalid_level_number]
-other = "Level number must be greater than 0"
+[permissions.standard.collection.publish.name]
+other = "Review and publish standard collections"
+[permissions.standard.collection.publish.description]
+other = "Return or publish assigned standard collection governance revisions"
+[permissions.standard.collection.create.name]
+other = "Create standard collections"
+[permissions.standard.collection.create.description]
+other = "Create a standard collection and its initial governance draft"
+[permissions.standard.collection.delete.name]
+other = "Delete standard collections"
+[permissions.standard.collection.delete.description]
+other = "Delete a standard collection that has never been published"
+[permissions.standard.collection.read.name]
+other = "View standard collections"
+[permissions.standard.collection.read.description]
+other = "View standard collections, governance revisions, and assignments"
+[permissions.standard.collection_assignment.update.name]
+other = "Configure standard collection assignments"
+[permissions.standard.collection_assignment.update.description]
+other = "Configure owners, maintainers, and reviewers for a standard collection"
+[permissions.standard.collection.update.name]
+other = "Maintain standard collections"
+[permissions.standard.collection.update.description]
+other = "Maintain and submit assigned standard collection governance drafts"

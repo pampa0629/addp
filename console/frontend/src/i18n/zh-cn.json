@@ -349,12 +349,12 @@
       },
       "standard": {
         "label": "数据标准",
-        "domains": "业务域管理",
+      "domains": "业务域管理",
+      "collections": "标准集管理",
         "glossaries": "业务术语",
         "elements": "数据元管理",
         "codeSets": "码值集管理",
         "units": "计量单位",
-        "dimensionHierarchies": "维度层级",
         "metrics": "指标管理",
         "recentMetrics": "数据指标管理",
         "documents": "标准文档"

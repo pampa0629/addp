@@ -22,6 +22,7 @@ export const SEARCH_INDEX = [
   { labelKey: 'console.menus.manager.gaussianSplatQuickView', module: 'manager', route: '/manager/gaussian-splat-ksplat', keywords: ['高斯泼溅快显', '高斯快显', 'KSplat', 'SPLAT', 'gaussian splat', 'gaussian splatting', 'ksplat'] },
   // 数据标准
   { labelKey: 'console.menus.standard.domains',      module: 'standard', route: '/standard/domains',      keywords: ['业务域', '业务领域', 'domain'] },
+  { labelKey: 'console.menus.standard.collections',  module: 'standard', route: '/standard/collections',  keywords: ['标准集', '标准包', '审核', 'standard collection'] },
   { labelKey: 'console.menus.standard.glossaries',   module: 'standard', route: '/standard/glossaries',   keywords: ['业务术语', '术语', 'glossary', 'term'] },
   { labelKey: 'console.menus.standard.elements',     module: 'standard', route: '/standard/elements',     keywords: ['数据元', '元素', 'element', 'standard'] },
   { labelKey: 'console.menus.standard.codeSets',     module: 'standard', route: '/standard/code-sets',    keywords: ['码值', '码值集', 'code', 'codeset'] },
@@ -41,7 +42,7 @@ export const SEARCH_INDEX = [
   // 数据安全
   { labelKey: 'console.menus.security.classificationGrading', module: 'security', route: '/security/classification-grading', keywords: ['分类分级体系', '安全分类', '安全等级', '分类目录', '保护等级', 'classification', 'grading', 'grade'] },
   { labelKey: 'console.menus.security.sensitiveDataDefinitions', module: 'security', route: '/security/sensitive-data-definitions', keywords: ['敏感数据定义', '敏感数据类型', '识别方式', '检测能力', '手机号', '隐私', 'sensitive data', 'detector', 'privacy'] },
-  { labelKey: 'console.menus.security.defaultProtectionRules', module: 'security', route: '/security/protection-baselines', keywords: ['默认保护规则', '保护基线', '脱敏', '遮蔽', 'mask', 'protection baseline', 'protection rule'] },
+  { labelKey: 'console.menus.security.defaultProtectionRules', module: 'security', route: '/security/protection-baselines', keywords: ['默认保护规则', '保护基线', '脱敏', '遮盖', 'mask', 'protection baseline', 'protection rule'] },
   { labelKey: 'console.menus.security.protectedResources', module: 'security', route: '/security/protection-enrollments', keywords: ['受保护资源', '保护纳管', '纳入数据保护', 'enrollment', 'protected resources'] },
   // 数据开发
   { labelKey: 'console.menus.develop.sql',      module: 'develop', route: '/develop/sql',      keywords: ['SQL', 'SQL工作台', '查询', '开发', 'workbench', 'query'] },

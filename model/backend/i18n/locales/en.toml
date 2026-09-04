@@ -91,6 +91,15 @@ other = "The logical table or materialization batch was not found"
 [model.materialization.unavailable]
 other = "Materialization authorization or the target engine is temporarily unavailable"
 
+[model.materialized_target.conflict]
+other = "The materialized target cannot be decommissioned in its current state"
+
+[model.materialized_target.forbidden]
+other = "DDL access to the target engine is not allowed"
+
+[model.materialized_target.unavailable]
+other = "Materialized target decommission is temporarily unavailable"
+
 [model.logical_table.invalid_field_id]
 other = "Invalid field ID"
 
@@ -141,3 +150,24 @@ other = "Both ends of the table relation must be drafts"
 
 [model.table_relation.conflict]
 other = "This field relation already exists"
+
+[model.dimension_hierarchy.dimension_table_required]
+other = "Only dimension logical tables can define dimension hierarchies"
+
+[model.dimension_hierarchy.not_found]
+other = "Dimension hierarchy not found"
+
+[model.dimension_hierarchy.conflict]
+other = "A hierarchy with the same name already exists in this dimension table"
+
+[model.dimension_hierarchy.field_not_found]
+other = "The hierarchy level field was not found or does not belong to this dimension table"
+
+[model.dimension_hierarchy.level_not_found]
+other = "Dimension hierarchy level not found"
+
+[model.dimension_hierarchy.level_conflict]
+other = "Level numbers and fields must be unique within a dimension hierarchy"
+
+[model.dimension_hierarchy.field_in_use]
+other = "The logical field is still referenced by a dimension hierarchy and cannot be deleted"

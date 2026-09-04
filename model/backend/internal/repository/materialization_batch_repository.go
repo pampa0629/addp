@@ -713,6 +713,23 @@ func (r *MaterializationBatchRepository) CompleteExecution(
 			return err
 		}
 		updates := map[string]interface{}{"status": batchStatus, "updated_at": now}
+		if taskType == commonExecution.TaskTypeMaterializationPrepare && executionStatus == commonExecution.ExecutionStatusSuccess {
+			marker, exists := metadata["expected_target_marker"]
+			if !exists {
+				return fmt.Errorf("%w: materialization prepare result has no target predecessor state", commonAPI.ErrConflict)
+			}
+			switch typed := marker.(type) {
+			case nil:
+				updates["expected_target_marker"] = nil
+			case string:
+				if strings.TrimSpace(typed) == "" {
+					return fmt.Errorf("%w: materialization prepare target predecessor marker is empty", commonAPI.ErrConflict)
+				}
+				updates["expected_target_marker"] = typed
+			default:
+				return fmt.Errorf("%w: materialization prepare target predecessor marker is invalid", commonAPI.ErrConflict)
+			}
+		}
 		if batchStatus == models.MaterializationBatchPublished {
 			updates["published_at"] = now
 		}

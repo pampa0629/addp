@@ -24,6 +24,18 @@ const routes = [
         meta: { requiresAuth: true, title: '业务域管理' }
       },
       {
+        path: 'collections',
+        name: 'StandardCollectionList',
+        component: () => import('../views/StandardCollectionList.vue'),
+        meta: { requiresAuth: true, title: '标准集管理' }
+      },
+      {
+        path: 'collections/:id',
+        name: 'StandardCollectionDetail',
+        component: () => import('../views/StandardCollectionDetail.vue'),
+        meta: { requiresAuth: true, title: '标准集详情' }
+      },
+      {
         path: 'glossaries',
         name: 'GlossaryList',
         component: () => import('../views/GlossaryList.vue'),
@@ -88,18 +100,6 @@ const routes = [
         name: 'DocumentDetail',
         component: () => import('../views/DocumentList.vue'),
         meta: { requiresAuth: true, title: '标准文档详情' }
-      },
-      {
-        path: 'dimension-hierarchies',
-        name: 'DimensionHierarchyList',
-        component: () => import('../views/DimensionHierarchyList.vue'),
-        meta: { requiresAuth: true, title: '维度层级' }
-      },
-      {
-        path: 'dimension-hierarchies/:id',
-        name: 'DimensionHierarchyDetail',
-        component: () => import('../views/DimensionHierarchyDetail.vue'),
-        meta: { requiresAuth: true, title: '维度层级详情' }
       }
     ]
   }

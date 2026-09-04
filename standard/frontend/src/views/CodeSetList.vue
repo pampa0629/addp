@@ -12,7 +12,7 @@
         <el-table-column :label="$t('standard.codeSet.origin')" width="100"><template #default="{row}"><el-tag size="small" type="info">{{ $t(`standard.codeSet.originValue.${row.origin}`) }}</el-tag></template></el-table-column>
         <el-table-column :label="$t('standard.revision.number')" width="80"><template #default="{row}">{{ working(row) ? `R${working(row).revision_no}` : '-' }}</template></el-table-column>
         <el-table-column :label="$t('standard.common.status')" width="110"><template #default="{row}"><el-tag size="small" :type="statusType(working(row)?.status)">{{ statusLabel(working(row)?.status) }}</el-tag></template></el-table-column>
-        <el-table-column :label="$t('standard.common.actions')" width="150" fixed="right"><template #default="{row}"><el-button link type="primary" @click="detail(row.id)">{{ $t('standard.common.detail') }}</el-button><el-button v-if="canDelete && row.origin !== 'platform'" link type="danger" @click="remove(row)">{{ $t('standard.common.delete') }}</el-button></template></el-table-column>
+        <el-table-column :label="$t('standard.common.actions')" width="150" fixed="right"><template #default="{row}"><div class="table-actions"><el-button link type="primary" @click="detail(row.id)">{{ $t('standard.common.detail') }}</el-button><el-button v-if="canDelete && row.origin !== 'platform'" link type="danger" @click="remove(row)">{{ $t('standard.common.delete') }}</el-button></div></template></el-table-column>
       </el-table>
       <el-pagination v-if="total" class="pagination" :total="total" :page-size="filters.page_size" :current-page="filters.page" layout="total, prev, pager, next" @current-change="p => { filters.page=p; load() }" />
     </el-card>
@@ -24,7 +24,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Search } from '@element-plus/icons-vue'
@@ -34,12 +34,12 @@ import { navigateStandardRoute } from '@/utils/moduleNavigation'
 import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
 import { EDITABLE_STANDARD_SCOPES, buildStandardOwnership, requiresOwnerDomain, standardScopeLabelKey } from '../utils/standardScope'
 
-const router=useRouter(), {t}=useI18n(), {canCreate,canDelete}=useStandardPermissions('code_set')
+const route=useRoute(), router=useRouter(), {t}=useI18n(), {canCreate,canDelete}=useStandardPermissions('code_set')
 const loading=ref(false), creating=ref(false), dialog=ref(false), formRef=ref(), rows=ref([]), domains=ref([]), total=ref(0)
 const statuses=['draft','in_review','published','withdrawn']
 const scopeOptions=['platform','tenant_common','domain']
 const editableScopes=EDITABLE_STANDARD_SCOPES
-const filters=reactive({keyword:'',scope_type:'',owner_domain_id:null,status:'',page:1,page_size:20})
+const filters=reactive({keyword:String(route.query.keyword||''),scope_type:String(route.query.scope_type||''),owner_domain_id:route.query.owner_domain_id?Number(route.query.owner_domain_id):null,status:String(route.query.status||''),page:Number(route.query.page)||1,page_size:Number(route.query.page_size)||20})
 const blank=()=>({code:'',name:'',scope_type:'tenant_common',owner_domain_id:null,value_type:'string',description:'',change_summary:''})
 const form=reactive(blank())
 const rules=computed(()=>({code:[{required:true,message:t('standard.codeSet.codeRequired')}],name:[{required:true,message:t('standard.codeSet.nameRequired')}],scope_type:[{required:true,message:t('standard.common.selectScope')}],owner_domain_id:requiresOwnerDomain(form.scope_type)?[{required:true,message:t('standard.common.ownerDomainRequired')}]:[],description:[{required:true,message:t('standard.codeSet.descriptionRequired')}],change_summary:[{required:true,message:t('standard.revision.changeSummaryRequired')}]}))
@@ -55,11 +55,11 @@ const search=()=>{filters.page=1;load()}
 const openCreate=()=>{Object.assign(form,blank());dialog.value=true}
 const create=async()=>{if(!await formRef.value.validate().catch(()=>false))return;creating.value=true;try{const row=await codeSetAPI.create({...form,...buildStandardOwnership(form.scope_type,form.owner_domain_id)});ElMessage.success(t('standard.common.createSuccess'));dialog.value=false;detail(row.id)}catch(e){ElMessage.error(getStandardErrorMessage(e,t))}finally{creating.value=false}}
 const remove=async row=>{try{await ElMessageBox.confirm(t('standard.codeSet.confirmDelete',{name:working(row)?.name||row.code}),t('standard.common.hint'),{type:'warning'});await codeSetAPI.delete(row.id);ElMessage.success(t('standard.common.deleteSuccess'));load()}catch(e){if(!isCanceledInteraction(e))ElMessage.error(getStandardErrorMessage(e,t))}}
-const detail=id=>navigateStandardRoute(router,`/code-sets/${id}`)
+const detail=id=>navigateStandardRoute(router,{path:`/code-sets/${id}`,query:route.query})
 watch(()=>form.scope_type,scope=>{if(!requiresOwnerDomain(scope))form.owner_domain_id=null})
 onMounted(()=>{loadDomains();load()})
 </script>
 
 <style scoped>
-.page-shell{min-height:100%;padding:20px;background:var(--addp-bg-secondary);color:var(--addp-text-primary)}.page-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}.filter-card{margin-bottom:12px}.pagination{display:flex;justify-content:flex-end;margin-top:16px}.page-shell :deep(.el-card){background:var(--addp-bg-primary);border-color:var(--addp-border-color)}
+.page-shell{min-height:100%;padding:20px;background:var(--addp-bg-secondary);color:var(--addp-text-primary)}.page-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}.filter-card{margin-bottom:12px}.table-actions{display:inline-flex;align-items:center;gap:8px;min-width:max-content;white-space:nowrap}.table-actions :deep(.el-button){margin-left:0;white-space:nowrap}.pagination{display:flex;justify-content:flex-end;margin-top:16px}.page-shell :deep(.el-card){background:var(--addp-bg-primary);border-color:var(--addp-border-color)}
 </style>

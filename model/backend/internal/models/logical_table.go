@@ -46,10 +46,8 @@ type LogicalField struct {
 	SortOrder         int    `gorm:"default:0" json:"sort_order"`
 	FieldRole         string `gorm:"size:30;default:'regular'" json:"field_role"`
 	// 枚举：regular / measure_additive / measure_semi / measure_non / dimension_fk / degenerate_dim
-	HierarchyID    *int64    `json:"hierarchy_id,omitempty"`    // → standard.dimension_hierarchies（无 DB FK 约束）
-	HierarchyLevel *int      `json:"hierarchy_level,omitempty"` // 在层级中对应的层次编号
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 func (LogicalField) TableName() string {
@@ -117,40 +115,36 @@ type CreateTableRelationRequest struct {
 
 // CreateLogicalFieldRequest 创建逻辑表字段请求
 type CreateLogicalFieldRequest struct {
-	Version        int64  `json:"version" binding:"required,gt=0" minimum:"1"`
-	ElementID      *int64 `json:"element_id,omitempty" binding:"omitempty,gt=0" minimum:"1"`
-	Name           string `json:"name" binding:"required,max=200" maxLength:"200"`
-	ColumnName     string `json:"column_name" binding:"required,max=200" maxLength:"200"`
-	DataType       string `json:"data_type" binding:"required,oneof=string int bigint float decimal date datetime bool json text geometry" enums:"string,int,bigint,float,decimal,date,datetime,bool,json,text,geometry"`
-	Length         *int   `json:"length,omitempty" binding:"omitempty,gt=0" minimum:"1"`
-	Nullable       bool   `json:"nullable"`
-	IsPK           bool   `json:"is_pk"`
-	IsPartition    bool   `json:"is_partition"`
-	DefaultValue   string `json:"default_value"`
-	Description    string `json:"description"`
-	SortOrder      int    `json:"sort_order" binding:"gte=0" minimum:"0"`
-	FieldRole      string `json:"field_role" binding:"omitempty,oneof=regular measure_additive measure_semi measure_non dimension_fk degenerate_dim" enums:"regular,measure_additive,measure_semi,measure_non,dimension_fk,degenerate_dim"`
-	HierarchyID    *int64 `json:"hierarchy_id,omitempty" binding:"omitempty,gt=0" minimum:"1"`
-	HierarchyLevel *int   `json:"hierarchy_level,omitempty" binding:"omitempty,gte=0" minimum:"0"`
+	Version      int64  `json:"version" binding:"required,gt=0" minimum:"1"`
+	ElementID    *int64 `json:"element_id,omitempty" binding:"omitempty,gt=0" minimum:"1"`
+	Name         string `json:"name" binding:"required,max=200" maxLength:"200"`
+	ColumnName   string `json:"column_name" binding:"required,max=200" maxLength:"200"`
+	DataType     string `json:"data_type" binding:"required,oneof=string int bigint float decimal date datetime bool json text geometry" enums:"string,int,bigint,float,decimal,date,datetime,bool,json,text,geometry"`
+	Length       *int   `json:"length,omitempty" binding:"omitempty,gt=0" minimum:"1"`
+	Nullable     bool   `json:"nullable"`
+	IsPK         bool   `json:"is_pk"`
+	IsPartition  bool   `json:"is_partition"`
+	DefaultValue string `json:"default_value"`
+	Description  string `json:"description"`
+	SortOrder    int    `json:"sort_order" binding:"gte=0" minimum:"0"`
+	FieldRole    string `json:"field_role" binding:"omitempty,oneof=regular measure_additive measure_semi measure_non dimension_fk degenerate_dim" enums:"regular,measure_additive,measure_semi,measure_non,dimension_fk,degenerate_dim"`
 }
 
 // UpdateLogicalFieldRequest 更新逻辑表字段请求
 type UpdateLogicalFieldRequest struct {
-	Version        int64  `json:"version" binding:"required,gt=0" minimum:"1"`
-	ElementID      *int64 `json:"element_id" binding:"omitempty,gt=0" minimum:"1" extensions:"x-nullable"`
-	Name           string `json:"name" binding:"required,max=200" maxLength:"200"`
-	ColumnName     string `json:"column_name" binding:"required,max=200" maxLength:"200"`
-	DataType       string `json:"data_type" binding:"required,oneof=string int bigint float decimal date datetime bool json text geometry" enums:"string,int,bigint,float,decimal,date,datetime,bool,json,text,geometry"`
-	Length         *int   `json:"length" binding:"omitempty,gt=0" minimum:"1" extensions:"x-nullable"`
-	Nullable       *bool  `json:"nullable" binding:"required"`
-	IsPK           *bool  `json:"is_pk" binding:"required"`
-	IsPartition    *bool  `json:"is_partition" binding:"required"`
-	DefaultValue   string `json:"default_value"`
-	Description    string `json:"description"`
-	SortOrder      *int   `json:"sort_order" binding:"required,gte=0" minimum:"0"`
-	FieldRole      string `json:"field_role" binding:"required,oneof=regular measure_additive measure_semi measure_non dimension_fk degenerate_dim" enums:"regular,measure_additive,measure_semi,measure_non,dimension_fk,degenerate_dim"`
-	HierarchyID    *int64 `json:"hierarchy_id" binding:"omitempty,gt=0" minimum:"1" extensions:"x-nullable"`
-	HierarchyLevel *int   `json:"hierarchy_level" binding:"omitempty,gte=0" minimum:"0" extensions:"x-nullable"`
+	Version      int64  `json:"version" binding:"required,gt=0" minimum:"1"`
+	ElementID    *int64 `json:"element_id" binding:"omitempty,gt=0" minimum:"1" extensions:"x-nullable"`
+	Name         string `json:"name" binding:"required,max=200" maxLength:"200"`
+	ColumnName   string `json:"column_name" binding:"required,max=200" maxLength:"200"`
+	DataType     string `json:"data_type" binding:"required,oneof=string int bigint float decimal date datetime bool json text geometry" enums:"string,int,bigint,float,decimal,date,datetime,bool,json,text,geometry"`
+	Length       *int   `json:"length" binding:"omitempty,gt=0" minimum:"1" extensions:"x-nullable"`
+	Nullable     *bool  `json:"nullable" binding:"required"`
+	IsPK         *bool  `json:"is_pk" binding:"required"`
+	IsPartition  *bool  `json:"is_partition" binding:"required"`
+	DefaultValue string `json:"default_value"`
+	Description  string `json:"description"`
+	SortOrder    *int   `json:"sort_order" binding:"required,gte=0" minimum:"0"`
+	FieldRole    string `json:"field_role" binding:"required,oneof=regular measure_additive measure_semi measure_non dimension_fk degenerate_dim" enums:"regular,measure_additive,measure_semi,measure_non,dimension_fk,degenerate_dim"`
 }
 
 type LogicalFieldMutationResponse struct {

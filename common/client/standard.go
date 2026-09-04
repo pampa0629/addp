@@ -601,10 +601,6 @@ func (c *StandardClient) ValidateDomain(ctx context.Context, domainID int64) err
 	return c.validateTenantReference(ctx, fmt.Sprintf("/api/v1/standard/domains/%d", domainID), "domain")
 }
 
-func (c *StandardClient) ValidateDimensionHierarchy(ctx context.Context, hierarchyID int64) error {
-	return c.validateTenantReference(ctx, fmt.Sprintf("/api/v1/standard/dimension-hierarchies/%d", hierarchyID), "hierarchy")
-}
-
 func (c *StandardClient) ValidateMetric(ctx context.Context, metricID int64) error {
 	return c.validateTenantReference(ctx, fmt.Sprintf("/api/v1/standard/metrics/%d", metricID), "metric")
 }

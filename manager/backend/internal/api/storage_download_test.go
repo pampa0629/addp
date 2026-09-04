@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/addp/common/client"
+	"github.com/addp/common/dataprotection"
+	"github.com/addp/common/dataprotection/projectionstore"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
@@ -34,6 +36,7 @@ func TestDownloadFileBundlesObjectShapefileByLocator(t *testing.T) {
 	systemClient := apiDownloadTestSystemClient(t, 9, engineType)
 	metaClient := apiDownloadTestMetaItemClient(t, `{
 		"id": 1,
+		"tenant_id": 1,
 		"engine_id": 9,
 		"item_type": "object",
 		"name": "farmland.shp",
@@ -51,7 +54,7 @@ func TestDownloadFileBundlesObjectShapefileByLocator(t *testing.T) {
 		}
 	}`)
 	metadataService := service.NewMetadataService(nil, systemClient, metaClient, nil, nil)
-	handler := NewDownloadHandler(metadataService)
+	handler := NewDownloadHandler(metadataService, apiDownloadProtectionGate{})
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
@@ -87,11 +90,124 @@ func TestDownloadFileBundlesObjectShapefileByLocator(t *testing.T) {
 	}
 }
 
+func TestDownloadFileDeniesManagedRawContent(t *testing.T) {
+	t.Parallel()
+
+	engineType := "api_locator_download_test_managed"
+	plugin.Register(newAPIDownloadTestObjectPlugin(engineType, map[string]string{
+		"bucket/report.pdf": "secret",
+	}))
+	t.Cleanup(func() { plugin.Unregister(engineType) })
+
+	metadataService := service.NewMetadataService(nil, apiDownloadTestSystemClient(t, 9, engineType), apiDownloadTestMetaItemClient(t, `{
+		"id": 1,
+		"tenant_id": 1,
+		"engine_id": 9,
+		"item_type": "object",
+		"name": "report.pdf",
+		"full_name": "bucket/report.pdf",
+		"attributes": {"item":{"layout":"single","format":"pdf"},"storage":{"physical_path":"report.pdf","bucket":"bucket"}}
+	}`), nil, nil)
+	handler := NewDownloadHandler(metadataService, apiDownloadProtectionGate{err: dataprotection.ErrDenied})
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		setTenantAuthContextForTest(c, 1, 1)
+		c.Next()
+	})
+	router.GET("/downloads/file", handler.DownloadFile)
+
+	locator := "addp://engine/9/path/bucket/report.pdf?type=object&item_id=1"
+	req := httptest.NewRequest(http.MethodGet, "/downloads/file?locator="+urlQueryEscape(locator), nil)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusForbidden || !strings.Contains(resp.Body.String(), "security_protection_required") {
+		t.Fatalf("response = %d %s, want stable protection denial", resp.Code, resp.Body.String())
+	}
+}
+
+func TestStorageStreamDeniesManagedRawContent(t *testing.T) {
+	t.Parallel()
+
+	engineType := "api_storage_stream_test_managed"
+	plugin.Register(newAPIDownloadTestObjectPlugin(engineType, map[string]string{
+		"bucket/report.pdf": "secret",
+	}))
+	t.Cleanup(func() { plugin.Unregister(engineType) })
+
+	metadataService := service.NewMetadataService(nil, apiDownloadTestSystemClient(t, 9, engineType), apiDownloadTestMetaItemClient(t, `{
+		"id": 1,
+		"tenant_id": 1,
+		"engine_id": 9,
+		"item_type": "object",
+		"name": "report.pdf",
+		"full_name": "bucket/report.pdf",
+		"attributes": {"item":{"layout":"single","format":"pdf"},"storage":{"physical_path":"report.pdf","bucket":"bucket"}}
+	}`), nil, nil)
+	handler := NewExplorerHandler(nil, nil, metadataService, apiDownloadProtectionGate{err: dataprotection.ErrDenied})
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		setTenantAuthContextForTest(c, 1, 1)
+		c.Next()
+	})
+	router.GET("/storage-stream", handler.StorageStream)
+
+	locator := "addp://engine/9/path/bucket/report.pdf?type=object&item_id=1"
+	req := httptest.NewRequest(http.MethodGet, "/storage-stream?locator="+urlQueryEscape(locator)+"&storage_ref=bucket%2Freport.pdf", nil)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusForbidden || !strings.Contains(resp.Body.String(), "security_protection_required") {
+		t.Fatalf("response = %d %s, want stable protection denial", resp.Code, resp.Body.String())
+	}
+}
+
+func TestStorageAssetDeniesManagedRawContent(t *testing.T) {
+	t.Parallel()
+
+	engineType := "api_storage_asset_test_managed"
+	plugin.Register(newAPIDownloadTestObjectPlugin(engineType, map[string]string{
+		"bucket/tiles/city/Data/0.s3m": "secret",
+	}))
+	t.Cleanup(func() { plugin.Unregister(engineType) })
+
+	metadataService := service.NewMetadataService(nil, apiDownloadTestSystemClient(t, 9, engineType), apiDownloadTestMetaItemClient(t, `{
+		"id": 1,
+		"tenant_id": 1,
+		"engine_id": 9,
+		"item_type": "object",
+		"name": "city",
+		"full_name": "bucket/tiles/city",
+		"attributes": {"item":{"layout":"whole","format":"s3m"},"storage":{"physical_path":"tiles/city","bucket":"bucket"}}
+	}`), nil, nil)
+	handler := NewExplorerHandler(nil, nil, metadataService, apiDownloadProtectionGate{err: dataprotection.ErrDenied})
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		setTenantAuthContextForTest(c, 1, 1)
+		c.Next()
+	})
+	router.GET("/storage-assets/:engine_id/items/:item_id/*storage_ref", handler.StorageAsset)
+
+	req := httptest.NewRequest(http.MethodGet, "/storage-assets/9/items/1/bucket/tiles/city/Data/0.s3m", nil)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusForbidden || !strings.Contains(resp.Body.String(), "security_protection_required") {
+		t.Fatalf("response = %d %s, want stable protection denial", resp.Code, resp.Body.String())
+	}
+}
+
 func TestDownloadFileRejectsDatabaseLocator(t *testing.T) {
 	t.Parallel()
 
 	metadataService := service.NewMetadataService(nil, apiDownloadTestSystemClient(t, 9, "postgresql"), nil, nil, nil)
-	handler := NewDownloadHandler(metadataService)
+	handler := NewDownloadHandler(metadataService, nil)
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
@@ -138,7 +254,7 @@ func apiDownloadTestSystemClient(t *testing.T, engineID uint, engineType string)
 func apiDownloadTestMetaItemClient(t *testing.T, itemJSON string) *client.MetaClient {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/meta/items/by-catalog-path" {
+		if r.URL.Path != "/api/v1/meta/items/1" {
 			http.NotFound(w, r)
 			return
 		}
@@ -149,6 +265,18 @@ func apiDownloadTestMetaItemClient(t *testing.T, itemJSON string) *client.MetaCl
 	return client.NewMetaClient(server.URL, client.ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
 		return "test-token", nil
 	}))
+}
+
+type apiDownloadProtectionGate struct {
+	err error
+}
+
+func (g apiDownloadProtectionGate) RequireUnmanaged(_ context.Context, _ int64, _ []dataprotection.ResourceReference, _ time.Time) error {
+	return g.err
+}
+
+func (g apiDownloadProtectionGate) Gate(_ int64, _ dataprotection.ResourceReference, _ time.Time) projectionstore.GateResult {
+	return projectionstore.GateResult{}
 }
 
 type apiDownloadTestFilePlugin struct {

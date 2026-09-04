@@ -178,8 +178,6 @@ func standardReferenceDeletionModel(resourceType string) (interface{}, error) {
 		return &models.Domain{}, nil
 	case "element":
 		return &models.Element{}, nil
-	case "dimension_hierarchy":
-		return &models.DimensionHierarchy{}, nil
 	case "metric":
 		return &models.Metric{}, nil
 	default:

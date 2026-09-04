@@ -13,6 +13,23 @@ export const domainAPI = {
   delete(id, version) { return client.delete(`/standard/domains/${id}`, { data: { version } }) }
 }
 
+// ========== 标准集 API ==========
+export const standardCollectionAPI = {
+  list(params) { return client.get('/standard/collections', { params }) },
+  create(data) { return client.post('/standard/collections', data) },
+  get(id) { return client.get(`/standard/collections/${id}`) },
+  delete(id, version) { return client.delete(`/standard/collections/${id}`, { data: { version } }) },
+  listRevisions(id) { return client.get(`/standard/collections/${id}/revisions`) },
+  listEvents(id, params) { return client.get(`/standard/collections/${id}/events`, { params }) },
+  createRevision(id, data) { return client.post(`/standard/collections/${id}/revisions`, data) },
+  updateRevision(id, revisionId, data) { return client.put(`/standard/collections/${id}/revisions/${revisionId}`, data) },
+  submitRevision(id, revisionId, version) { return client.post(`/standard/collections/${id}/revisions/${revisionId}/submit`, { version }) },
+  returnRevision(id, revisionId, version) { return client.post(`/standard/collections/${id}/revisions/${revisionId}/return`, { version }) },
+  publishRevision(id, revisionId, version) { return client.post(`/standard/collections/${id}/revisions/${revisionId}/publish`, { version }) },
+  replaceAssignments(id, data) { return client.put(`/standard/collections/${id}/assignments`, data) },
+  listUserCandidates(params) { return client.get('/standard/collection-user-candidates', { params }) }
+}
+
 // ========== 业务术语 API ==========
 export const glossaryAPI = {
   list(params) { return client.get('/standard/glossaries', { params }) },
@@ -136,17 +153,4 @@ export const metricDocumentAPI = {
   unlink(metricId, docId, version) { return client.delete(`/standard/metrics/${metricId}/documents/${docId}`, { data: { version } }) },
   uploadFile(docId, formData, version) { return documentAPI.uploadFile(docId, formData, version) },
   download(docId) { return documentAPI.download(docId) }
-}
-
-// ========== 维度层级 API ==========
-export const dimensionHierarchyAPI = {
-  list() { return client.get('/standard/dimension-hierarchies') },
-  get(id) { return client.get(`/standard/dimension-hierarchies/${id}`) },
-  create(data) { return client.post('/standard/dimension-hierarchies', data) },
-  update(id, data) { return client.put(`/standard/dimension-hierarchies/${id}`, data) },
-  delete(id) { return client.delete(`/standard/dimension-hierarchies/${id}`) },
-  getLevels(id) { return client.get(`/standard/dimension-hierarchies/${id}/levels`) },
-  createLevel(id, data) { return client.post(`/standard/dimension-hierarchies/${id}/levels`, data) },
-  updateLevel(id, levelId, data) { return client.put(`/standard/dimension-hierarchies/${id}/levels/${levelId}`, data) },
-  deleteLevel(id, levelId, version) { return client.delete(`/standard/dimension-hierarchies/${id}/levels/${levelId}`, { data: { version } }) }
 }

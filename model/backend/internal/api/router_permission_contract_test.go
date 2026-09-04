@@ -46,12 +46,20 @@ func TestModelRoutesEnforcePermissions(t *testing.T) {
 		{name: "logical table professional relations", method: http.MethodGet, path: "/api/v1/model/logical-tables/invalid/relations", permissions: []string{"model.logical_model.read"}, testAllowed: true},
 		{name: "logical table update", method: http.MethodPut, path: "/api/v1/model/logical-tables/1", permissions: []string{"model.logical_model.update"}, testAllowed: true},
 		{name: "logical table delete", method: http.MethodDelete, path: "/api/v1/model/logical-tables/1", permissions: []string{"model.logical_model.delete"}, testAllowed: true},
+		{name: "materialized target decommission", method: http.MethodDelete, path: "/api/v1/model/logical-tables/1/materialized-target", permissions: []string{"model.materialized_target.delete"}, testAllowed: true},
 		{name: "logical table approve", method: http.MethodPost, path: "/api/v1/model/logical-tables/1/approve", permissions: []string{"model.logical_model.update"}, testAllowed: true},
 		{name: "logical table reopen", method: http.MethodPost, path: "/api/v1/model/logical-tables/1/reopen", permissions: []string{"model.logical_model.update"}, testAllowed: true},
 		{name: "logical field list", method: http.MethodGet, path: "/api/v1/model/logical-tables/invalid/fields", permissions: []string{"model.logical_model.read"}, testAllowed: true},
 		{name: "logical field create", method: http.MethodPost, path: "/api/v1/model/logical-tables/1/fields", permissions: []string{"model.logical_model.create"}, testAllowed: true},
 		{name: "logical field update", method: http.MethodPut, path: "/api/v1/model/logical-tables/1/fields/1", permissions: []string{"model.logical_model.update"}, testAllowed: true},
 		{name: "logical field delete", method: http.MethodDelete, path: "/api/v1/model/logical-tables/1/fields/1", permissions: []string{"model.logical_model.delete"}, testAllowed: true},
+		{name: "dimension hierarchy list", method: http.MethodGet, path: "/api/v1/model/logical-tables/invalid/dimension-hierarchies", permissions: []string{"model.logical_model.read"}, testAllowed: true},
+		{name: "dimension hierarchy create", method: http.MethodPost, path: "/api/v1/model/logical-tables/1/dimension-hierarchies", permissions: []string{"model.logical_model.update"}, testAllowed: true},
+		{name: "dimension hierarchy update", method: http.MethodPut, path: "/api/v1/model/logical-tables/1/dimension-hierarchies/1", permissions: []string{"model.logical_model.update"}, testAllowed: true},
+		{name: "dimension hierarchy delete", method: http.MethodDelete, path: "/api/v1/model/logical-tables/1/dimension-hierarchies/1", permissions: []string{"model.logical_model.update"}, testAllowed: true},
+		{name: "dimension hierarchy level create", method: http.MethodPost, path: "/api/v1/model/logical-tables/1/dimension-hierarchies/1/levels", permissions: []string{"model.logical_model.update"}, testAllowed: true},
+		{name: "dimension hierarchy level update", method: http.MethodPut, path: "/api/v1/model/logical-tables/1/dimension-hierarchies/1/levels/1", permissions: []string{"model.logical_model.update"}, testAllowed: true},
+		{name: "dimension hierarchy level delete", method: http.MethodDelete, path: "/api/v1/model/logical-tables/1/dimension-hierarchies/1/levels/1", permissions: []string{"model.logical_model.update"}, testAllowed: true},
 		{name: "DDL preview", method: http.MethodPost, path: "/api/v1/model/logical-tables/1/preview-ddl", permissions: []string{"model.logical_model.read"}, testAllowed: true},
 		{name: "fact metric list", method: http.MethodGet, path: "/api/v1/model/logical-tables/invalid/metrics", permissions: []string{"model.logical_model.read"}, testAllowed: true},
 		{name: "fact metric add", method: http.MethodPost, path: "/api/v1/model/logical-tables/1/metrics", permissions: []string{"model.logical_model.update"}, testAllowed: true},
@@ -84,7 +92,7 @@ func TestModelRoutesEnforcePermissions(t *testing.T) {
 	authServer := authtest.NewTenantUserAuthContextServer(t, "7", authContexts)
 	defer authServer.Close()
 
-	router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, authServer.URL, nil, modulelifecycle.NewStandalone("model"))
+	router := SetupRouter(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, authServer.URL, nil, modulelifecycle.NewStandalone("model"))
 
 	for index, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

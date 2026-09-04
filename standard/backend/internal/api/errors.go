@@ -40,8 +40,6 @@ func respondError(c *gin.Context, status int, err error) {
 		useGenericMessage = false
 	case errors.Is(err, repository.ErrMetricDependencyCycle):
 		message = commoni18n.T(c, sysi18n.MsgMetricDependencyCycle)
-	case errors.Is(err, service.ErrInvalidHierarchyLevelNumber):
-		message = commoni18n.T(c, sysi18n.MsgInvalidHierarchyLevelNumber)
 	case errors.Is(err, service.ErrDomainParentCycle):
 		message = commoni18n.T(c, sysi18n.MsgDomainParentCycle)
 	case errors.Is(err, service.ErrDomainReferenced):
@@ -91,6 +89,35 @@ func respondError(c *gin.Context, status int, err error) {
 	case errors.Is(err, service.ErrPlatformCodeSetImmutable):
 		status = http.StatusConflict
 		message = commoni18n.T(c, sysi18n.MsgPlatformCodeSetImmutable)
+		useGenericMessage = false
+	case errors.Is(err, service.ErrInvalidStandardCollection):
+		message = commoni18n.T(c, sysi18n.MsgInvalidStandardCollection)
+		errorCode = "invalid_standard_collection"
+		useGenericMessage = false
+	case errors.Is(err, service.ErrStandardCollectionAccessDenied):
+		status = http.StatusForbidden
+		message = commoni18n.T(c, sysi18n.MsgStandardCollectionAccessDenied)
+		errorCode = "standard_collection_access_denied"
+		useGenericMessage = false
+	case errors.Is(err, service.ErrStandardCollectionReviewerRequired):
+		status = http.StatusConflict
+		message = commoni18n.T(c, sysi18n.MsgStandardCollectionReviewerRequired)
+		errorCode = "standard_collection_reviewer_required"
+		useGenericMessage = false
+	case errors.Is(err, service.ErrStandardCollectionOwnerRequired):
+		status = http.StatusConflict
+		message = commoni18n.T(c, sysi18n.MsgStandardCollectionOwnerRequired)
+		errorCode = "standard_collection_owner_required"
+		useGenericMessage = false
+	case errors.Is(err, service.ErrStandardCollectionSelfApproval):
+		status = http.StatusConflict
+		message = commoni18n.T(c, sysi18n.MsgStandardCollectionSelfApproval)
+		errorCode = "standard_collection_self_approval"
+		useGenericMessage = false
+	case errors.Is(err, service.ErrStandardGovernanceDirectoryUnavailable):
+		status = http.StatusServiceUnavailable
+		message = commoni18n.T(c, sysi18n.MsgStandardGovernanceDirectoryUnavailable)
+		errorCode = "standard_governance_directory_unavailable"
 		useGenericMessage = false
 	case errors.Is(err, repository.ErrVersionConflict):
 		status = http.StatusConflict

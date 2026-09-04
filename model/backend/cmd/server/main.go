@@ -82,6 +82,7 @@ func main() {
 	dwLayerRepo := repository.NewDWLayerRepository(db)
 	factMetricRepo := repository.NewFactMetricRepository(db)
 	tableRelationRepo := repository.NewTableRelationRepository(db)
+	dimensionHierarchyRepo := repository.NewDimensionHierarchyRepository(db)
 	standardReferenceGuardRepo := repository.NewStandardReferenceGuardRepository(db)
 	materializationRepo := repository.NewMaterializationBatchRepository(db)
 	materializationGroupRepo := repository.NewMaterializationGroupRepository(db)
@@ -98,9 +99,11 @@ func main() {
 	factMetricSvc.SetStandardClient(standardClient)
 	tableRelationSvc := service.NewTableRelationService(tableRelationRepo, logicalTableRepo)
 	tableRelationSvc.SetProfessionalRelationSources(entityRepo, factMetricRepo)
+	dimensionHierarchySvc := service.NewDimensionHierarchyService(dimensionHierarchyRepo, logicalTableRepo)
 	standardReferenceGuardSvc := service.NewStandardReferenceGuardService(standardReferenceGuardRepo)
 	taskExecutionRepo := commonExecution.NewTaskExecutionRepository(db)
 	materializationSvc := service.NewMaterializationService(systemClient, materializationRepo, logicalTableRepo, logicalTableSvc)
+	materializationSvc.SetExecutionAuthorizationIssuer(commonClient.NewSystemExecutionAuthorizationClient(cfg.SystemURL, nil))
 	materializationGroupSvc := service.NewMaterializationGroupService(materializationGroupRepo, materializationSvc)
 	catalogResourceSvc := service.NewCatalogResourceService(catalogResourceRepo)
 	materializationSvc.SetGroupService(materializationGroupSvc)
@@ -121,6 +124,7 @@ func main() {
 		dwLayerSvc,
 		factMetricSvc,
 		tableRelationSvc,
+		dimensionHierarchySvc,
 		standardReferenceGuardSvc,
 		materializationSvc,
 		materializationGroupSvc,

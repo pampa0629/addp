@@ -241,6 +241,27 @@
       "role_label_fk": "Dim FK",
       "role_label_degenerate": "Degenerate"
     },
+    "dimension_hierarchy": {
+      "title": "Dimension Hierarchies",
+      "help": "Define drill paths within this dimension table. Each level must reference a field from this table.",
+      "add": "Add Hierarchy",
+      "empty": "No hierarchy is defined for this dimension table",
+      "edit": "Edit Hierarchy",
+      "name": "Hierarchy Name",
+      "description": "Description",
+      "name_required": "Please enter a hierarchy name",
+      "delete_confirm": "Delete hierarchy “{name}”?",
+      "add_level": "Add Level",
+      "edit_level": "Edit Level",
+      "level_num": "Level Number",
+      "level_name": "Level Name",
+      "field": "Dimension Field",
+      "delete_level_confirm": "Delete level “{name}”?",
+      "level_num_required": "Please enter a level number",
+      "level_name_required": "Please enter a level name",
+      "field_required": "Please select a dimension field",
+      "load_failed": "Failed to load dimension hierarchies"
+    },
     "metric": {
       "title": "Associated Metrics",
       "add": "Associate Metric",
@@ -266,7 +287,17 @@
       "target_name": "Target Table Name",
       "target_name_placeholder": "Lowercase letters, digits, and underscores",
       "partition_by": "Partition Field",
-      "partition_type": "Partition Type"
+      "partition_type": "Partition Type",
+      "decommission": "Decommission Target",
+      "decommission_title": "Decommission Materialized Target",
+      "decommission_warning": "This permanently deletes the physical target table without changing the logical-table definition. Remove materialization-group and cross-module references first.",
+      "engine": "Target Engine",
+      "engine_unknown": "Engine name unavailable",
+      "engine_load_failed": "Failed to load the target engine name",
+      "confirm_label": "Enter {target} to confirm deletion",
+      "confirm_decommission": "Confirm Decommission",
+      "decommission_success": "Materialized target decommissioned",
+      "decommission_failed": "Failed to decommission materialized target"
     },
     "dw_layer": {
       "title": "DW Layer Configuration",

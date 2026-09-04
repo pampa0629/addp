@@ -16,6 +16,7 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
 	metaRepo "github.com/addp/meta/internal/repository"
+	"github.com/addp/meta/internal/scanflow"
 	"gorm.io/gorm"
 )
 
@@ -401,8 +402,11 @@ func TestFilesystemScanFilePathTargetDoesNotCreateNode(t *testing.T) {
 	resource := &commonModels.Engine{ID: 26, Name: "Business NFS", EngineType: provider.Type()}
 
 	result, err := svc.ScanPaths(context.Background(), resource, 1, []string{"README.md"}, models.ScannedDepthBasic, false, nil)
-	if err != nil {
-		t.Fatalf("ScanPaths() error = %v", err)
+	if err == nil {
+		t.Fatal("ScanPaths() error = nil, want failed target error")
+	}
+	if count, samples := scanflow.FailedTargetDetails(err); count != 1 || len(samples) != 1 || samples[0].Target != "README.md" {
+		t.Fatalf("failed target details = %d/%#v", count, samples)
 	}
 	if result.CatalogNodes != 0 || result.Items != 0 {
 		t.Fatalf("roots/items = %d/%d, want 0/0", result.CatalogNodes, result.Items)
@@ -415,6 +419,62 @@ func TestFilesystemScanFilePathTargetDoesNotCreateNode(t *testing.T) {
 	}
 	if count != 0 {
 		t.Fatalf("README.md node count = %d, want 0", count)
+	}
+}
+
+func TestFilesystemDeepScanReportsUnreadableDWGAsFailedTarget(t *testing.T) {
+	db := openObjectCatalogScanTestDB(t)
+	repo := metaRepo.NewScanRepository(db)
+	svc := NewFilesystemCatalogRuntime(db, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, nil)
+	sizeBytes := int64(128)
+	provider := filesystemScanTestProvider{
+		entriesByPath: map[string][]plugin.EngineCatalogEntry{
+			"cad": {
+				{
+					Name: "readme.txt",
+					Path: plugin.FileItemPath(26, "cad/readme.txt"),
+					Term: plugin.EngineCatalogTermFile,
+					Kind: plugin.EngineCatalogKindFile,
+					Role: plugin.EngineCatalogRoleLeaf,
+					Storage: &plugin.EngineCatalogStorageFacts{
+						Path:      "cad/readme.txt",
+						SizeBytes: &sizeBytes,
+					},
+				},
+				{
+					Name: "broken.dwg",
+					Path: plugin.FileItemPath(26, "cad/broken.dwg"),
+					Term: plugin.EngineCatalogTermFile,
+					Kind: plugin.EngineCatalogKindFile,
+					Role: plugin.EngineCatalogRoleLeaf,
+					Storage: &plugin.EngineCatalogStorageFacts{
+						Path:      "cad/broken.dwg",
+						SizeBytes: &sizeBytes,
+					},
+				},
+			},
+		},
+		contentByPath: map[string]string{
+			"cad/readme.txt": "hello",
+		},
+		contentErrByPath: map[string]error{
+			"cad/broken.dwg": fmt.Errorf("permission denied"),
+		},
+	}
+	plugin.Register(provider)
+	t.Cleanup(func() { plugin.Unregister(provider.Type()) })
+	resource := &commonModels.Engine{ID: 26, Name: "Business NFS", EngineType: provider.Type()}
+
+	result, err := svc.ScanPaths(context.Background(), resource, 1, []string{"cad"}, models.ScannedDepthDeep, true, nil)
+	if err == nil {
+		t.Fatal("ScanPaths() error = nil, want failed target error")
+	}
+	if result.Items != 1 {
+		t.Fatalf("items = %d, want the readable item to be retained", result.Items)
+	}
+	count, samples := scanflow.FailedTargetDetails(err)
+	if count != 1 || len(samples) != 1 || samples[0].Target != "cad/broken.dwg" {
+		t.Fatalf("failed target details = %d/%#v", count, samples)
 	}
 }
 
@@ -537,6 +597,9 @@ type filesystemScanTestProvider struct {
 	entriesByPath      map[string][]plugin.EngineCatalogEntry
 	missingDirectories map[string]bool
 	content            string
+	contentErr         error
+	contentByPath      map[string]string
+	contentErrByPath   map[string]error
 }
 
 func (p filesystemScanTestProvider) Type() string         { return "filesystem-scan-test" }
@@ -570,7 +633,16 @@ func (p filesystemScanTestProvider) ListChildren(_ context.Context, _ plugin.Con
 func (p filesystemScanTestProvider) ResolvePath(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath) (*plugin.EngineCatalogEntry, error) {
 	return nil, nil
 }
-func (p filesystemScanTestProvider) OpenContent(context.Context, plugin.ConnectionInfo, plugin.EngineCatalogPath, plugin.ReadOptions) (io.ReadCloser, error) {
+func (p filesystemScanTestProvider) OpenContent(_ context.Context, _ plugin.ConnectionInfo, path plugin.EngineCatalogPath, _ plugin.ReadOptions) (io.ReadCloser, error) {
+	if err := p.contentErrByPath[path.StringPath()]; err != nil {
+		return nil, err
+	}
+	if p.contentErr != nil {
+		return nil, p.contentErr
+	}
+	if content, ok := p.contentByPath[path.StringPath()]; ok {
+		return io.NopCloser(strings.NewReader(content)), nil
+	}
 	return io.NopCloser(strings.NewReader(p.content)), nil
 }
 

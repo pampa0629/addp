@@ -72,23 +72,16 @@ func validateCreateLogicalTableRequest(req *models.CreateLogicalTableRequest) er
 }
 
 func validateCreateLogicalFieldRequest(req *models.CreateLogicalFieldRequest) error {
-	if req == nil || !validOptionalID(req.ElementID) || !validOptionalID(req.HierarchyID) ||
+	if req == nil || !validOptionalID(req.ElementID) ||
 		!validRequiredString(req.Name, 200) || !modelCodePattern.MatchString(req.ColumnName) || utf8.RuneCountInString(req.ColumnName) > 200 ||
 		!validValue(req.DataType, modelDataTypes...) || req.SortOrder < 0 ||
-		(req.Length != nil && *req.Length <= 0) || !validHierarchy(req.HierarchyID, req.HierarchyLevel) {
+		(req.Length != nil && *req.Length <= 0) {
 		return invalidRequest()
 	}
 	if req.FieldRole != "" && !validValue(req.FieldRole, modelFieldRoles...) {
 		return invalidRequest()
 	}
 	return nil
-}
-
-func validHierarchy(hierarchyID *int64, hierarchyLevel *int) bool {
-	if hierarchyID == nil || hierarchyLevel == nil {
-		return hierarchyID == nil && hierarchyLevel == nil
-	}
-	return *hierarchyID > 0 && *hierarchyLevel >= 0
 }
 
 func validateCreateTableRelationRequest(req *models.CreateTableRelationRequest) error {

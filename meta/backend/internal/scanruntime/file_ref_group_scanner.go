@@ -77,7 +77,10 @@ func scanFileRefGroups(
 			return result, err
 		}
 		for _, detected := range detection.Items {
-			persisted, _, itemExtractionStats := runtime.persistFileCatalogDetectedItem(ctx, resource, tenantID, parentNode, candidates.DirPath, detected, itemTerm, contentReader, connInfo, scanDepth)
+			persisted, fullName, itemExtractionStats, persistErr := runtime.persistFileCatalogDetectedItem(ctx, resource, tenantID, parentNode, candidates.DirPath, detected, itemTerm, contentReader, connInfo, scanDepth)
+			if persistErr != nil {
+				return result, fmt.Errorf("failed to persist file ref group item %s: %w", fullName, persistErr)
+			}
 			if persisted {
 				result.Items++
 			}

@@ -36,7 +36,7 @@ func TestPostgresMaterializationGroupPhysicalPublishIsAtomicAndIdempotent(t *tes
 		batchID := uuid.NewString()
 		stagingName := targetName + "__staging"
 		expectedMarker := materializationMarker(logicalTableID, fingerprint, batchID)
-		oldMarker := materializationMarker(logicalTableID, fingerprint, uuid.NewString())
+		oldMarker := materializationMarker(logicalTableID, strings.Repeat("b", 64), uuid.NewString())
 		for _, statement := range []string{
 			"CREATE TABLE " + qualifiedIdentifier(schemaName, targetName) + " (value BIGINT NOT NULL)",
 			"INSERT INTO " + qualifiedIdentifier(schemaName, targetName) + " (value) VALUES (" + strconv.Itoa(index+1) + ")",
@@ -58,7 +58,7 @@ func TestPostgresMaterializationGroupPhysicalPublishIsAtomicAndIdempotent(t *tes
 		candidates = append(candidates, materializationPublishCandidate{
 			batch: models.MaterializationBatch{
 				ID: batchID, LogicalTableID: logicalTableID, SchemaFingerprint: fingerprint,
-				TargetName: targetName, StagingName: stagingName,
+				TargetName: targetName, StagingName: stagingName, ExpectedTargetMarker: &oldMarker,
 			},
 			schemaName: schemaName, expectedMarker: expectedMarker,
 			backupName: materializationTemporaryName(targetName, "backup", batchID),
@@ -88,6 +88,50 @@ func TestPostgresMaterializationGroupPhysicalPublishIsAtomicAndIdempotent(t *tes
 	if err := publishMaterializationCandidates(context.Background(), db, candidates); err != nil {
 		t.Fatalf("idempotent materialization group publish: %v", err)
 	}
+}
+
+func TestPostgresMaterializationPublishRejectsTargetChangedAfterPrepare(t *testing.T) {
+	dsn := os.Getenv("ADDP_TEST_MODEL_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("ADDP_TEST_MODEL_POSTGRES_DSN is not set")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open PostgreSQL: %v", err)
+	}
+	schemaName := "model_cas_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
+	if err := db.Exec("CREATE SCHEMA " + quoteIdentifier(schemaName)).Error; err != nil {
+		t.Fatalf("create physical test schema: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Exec("DROP SCHEMA " + quoteIdentifier(schemaName) + " CASCADE").Error })
+
+	batchID := uuid.NewString()
+	oldMarker := materializationMarker(7, strings.Repeat("a", 64), uuid.NewString())
+	changedMarker := materializationMarker(7, strings.Repeat("b", 64), uuid.NewString())
+	newMarker := materializationMarker(7, strings.Repeat("c", 64), batchID)
+	for _, statement := range []string{
+		"CREATE TABLE " + qualifiedIdentifier(schemaName, "metric") + " (value BIGINT NOT NULL)",
+		"COMMENT ON TABLE " + qualifiedIdentifier(schemaName, "metric") + " IS " + quoteSQLLiteral(changedMarker),
+		"CREATE TABLE " + qualifiedIdentifier(schemaName, "metric__staging") + " (value BIGINT NOT NULL)",
+		"COMMENT ON TABLE " + qualifiedIdentifier(schemaName, "metric__staging") + " IS " + quoteSQLLiteral(newMarker),
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatalf("prepare physical table: %v", err)
+		}
+	}
+	candidates := []materializationPublishCandidate{{
+		batch: models.MaterializationBatch{
+			ID: batchID, LogicalTableID: 7, SchemaFingerprint: strings.Repeat("c", 64),
+			TargetName: "metric", StagingName: "metric__staging", ExpectedTargetMarker: &oldMarker,
+		},
+		schemaName: schemaName, expectedMarker: newMarker,
+		backupName: materializationTemporaryName("metric", "backup", batchID),
+	}}
+	if err := publishMaterializationCandidates(context.Background(), db, candidates); err == nil {
+		t.Fatal("publish accepted a target changed after prepare")
+	}
+	assertMaterializationTableExists(t, db, schemaName, "metric", true)
+	assertMaterializationTableExists(t, db, schemaName, "metric__staging", true)
 }
 
 func assertMaterializationTableValue(t *testing.T, db *gorm.DB, schemaName, tableName string, expected int64) {

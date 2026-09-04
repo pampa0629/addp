@@ -42,6 +42,10 @@
               <el-icon><Grid /></el-icon>
               <span>{{ $t('standard.layout.domains') }}</span>
             </el-menu-item>
+            <el-menu-item index="/collections">
+              <el-icon><FolderOpened /></el-icon>
+              <span>{{ $t('standard.layout.collections') }}</span>
+            </el-menu-item>
             <el-menu-item index="/glossaries">
               <el-icon><Reading /></el-icon>
               <span>{{ $t('standard.layout.glossaries') }}</span>
@@ -57,10 +61,6 @@
             <el-menu-item index="/units">
               <el-icon><Odometer /></el-icon>
               <span>{{ $t('standard.layout.units') }}</span>
-            </el-menu-item>
-            <el-menu-item index="/dimension-hierarchies">
-              <el-icon><SortDown /></el-icon>
-              <span>{{ $t('standard.layout.dimensionHierarchies') }}</span>
             </el-menu-item>
             <el-menu-item index="/metrics">
               <el-icon><TrendCharts /></el-icon>
@@ -89,7 +89,7 @@ import {
   User, ArrowDown, SwitchButton, Document,
   Grid, Reading, Collection, DataAnalysis,
   List,
-  Odometer, TrendCharts, Files, SortDown
+  Odometer, TrendCharts, Files, FolderOpened
 } from '@element-plus/icons-vue'
 
 const router = useRouter()
@@ -104,13 +104,13 @@ onMounted(() => {
 const activeMenu = computed(() => {
   const path = route.path
   if (path.startsWith('/domains')) return '/domains'
+  if (path.startsWith('/collections')) return '/collections'
   if (path.startsWith('/glossaries')) return '/glossaries'
   if (path.startsWith('/elements')) return '/elements'
   if (path.startsWith('/code-sets')) return '/code-sets'
   if (path.startsWith('/units')) return '/units'
   if (path.startsWith('/metrics')) return '/metrics'
   if (path.startsWith('/documents')) return '/documents'
-  if (path.startsWith('/dimension-hierarchies')) return '/dimension-hierarchies'
   return path
 })
 

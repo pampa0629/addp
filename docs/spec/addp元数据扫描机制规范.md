@@ -115,6 +115,17 @@ Meta 扫描必须区分任务定义和执行记录：
 - `owner_module` 表达任务绑定在哪个模块的对象上。
 - `source` 表达这次 execution 是哪个模块触发的。
 
+### 扫描执行的失败聚合
+
+Meta 扫描允许在同一执行中继续处理多个目标，但不得因为“继续扫描”而丢失已发生的失败。
+
+1. 任一已请求的 path、namespace、branch 或 item 因枚举、读取、解析或持久化错误未能完成扫描时，本次 `TaskExecution` 终态必须是 `failed`；不得返回 `success`。
+2. 扫描器可继续处理其他独立目标，已成功落库的 node、item 和 field 事实保留，不因整体执行失败回滚。
+3. 失败执行的 `metadata` 仍应记录本次已处理的 `catalog_nodes_scanned`、`items_scanned`、`fields_scanned` 和可用的 extraction 统计。
+4. `error_details` 应记录 `failed_targets_count` 和 `failed_target_samples`。样本最多保留 20 个，每个样本只包含可安全展示的 `target` 和 `message`，避免错误信息无界增长。
+5. 有失败目标时不新增 `partial` 状态；公共执行状态仍严格遵循 `pending / running / success / failed / timeout / cancelled`。
+6. 由 capability 边界明确判定为不支持的可选 deep facts，或因未取得去重锁而明确跳过的重复扫描，不计为目标失败。
+
 例如 System 注册 engine 时创建的自动扫描任务：
 
 | 字段 | 取值 |

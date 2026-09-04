@@ -23,6 +23,7 @@
         <el-table-column :label="t('security.baseline.defaultProtection')" min-width="230">
           <template #default="{ row }">
             <div class="primary-text">{{ effectLabel(row.effect) }}</div>
+            <div class="secondary-text">{{ t(`security.baseline.effectImpact.${row.effect}`) }}</div>
             <div v-if="row.effect === 'mask'" class="secondary-text">
               {{ t('security.baseline.maskSummary', { prefix: row.keep_prefix, suffix: row.keep_suffix }) }}
             </div>
@@ -77,6 +78,10 @@
             <el-radio-button value="deny">{{ effectLabel('deny') }}</el-radio-button>
           </el-radio-group>
           <div class="field-help">{{ t(`security.baseline.effectHelp.${form.effect}`) }}</div>
+          <div class="effect-impact" role="status">
+            <span class="effect-impact-title">{{ t('security.baseline.effectImpactTitle') }}</span>
+            <span>{{ t(`security.baseline.effectImpact.${form.effect}`) }}</span>
+          </div>
         </el-form-item>
         <template v-if="form.effect === 'mask'">
           <el-form-item :label="t('security.fields.algorithm')">
@@ -228,6 +233,8 @@ onMounted(load)
 .table-panel { margin-top: 16px; overflow: hidden; border: 1px solid var(--addp-border-color); border-radius: 6px; background: var(--addp-bg-primary); }
 .primary-text { color: var(--addp-text-primary); font-weight: 600; }
 .secondary-text, .field-help { margin-top: 4px; color: var(--addp-text-tertiary); font-size: 12px; line-height: 1.5; }
+.effect-impact { display: flex; width: 100%; gap: 8px; margin-top: 10px; padding: 10px 12px; box-sizing: border-box; border: 1px solid var(--addp-border-color); border-radius: 6px; background: var(--addp-bg-secondary); color: var(--addp-text-secondary); font-size: 13px; line-height: 1.5; }
+.effect-impact-title { flex: 0 0 auto; color: var(--addp-text-primary); font-weight: 600; }
 .baseline-form { margin-top: 20px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .wide { width: 100%; }

@@ -73,6 +73,24 @@ other = "必须引用已发布的标准修订"
 [standard.code_set.platform_immutable]
 other = "平台内置码值集不允许由租户修改"
 
+[standard.collection.invalid]
+other = "标准集治理配置不完整或成员、职责分配无效"
+
+[standard.collection.access_denied]
+other = "当前用户没有该标准集所需的对象级职责"
+
+[standard.collection.reviewer_required]
+other = "提交审核前必须配置至少一名不同于提交人的审核人"
+
+[standard.collection.owner_required]
+other = "标准集必须保留至少一名所有者"
+
+[standard.collection.self_approval]
+other = "标准集修订的提交人不能发布同一修订"
+
+[standard.collection.directory_unavailable]
+other = "Standard 治理用户目录暂时不可用"
+
 [standard.common.model_reference_conflict]
 other = "该标准资源仍被数据模型引用，请先在 Model 中解除引用后再删除"
 
@@ -83,7 +101,7 @@ other = "数据模型引用检查暂时不可用，已停止删除，请稍后�
 other = "业务域父级不能是自身或其子级"
 
 [standard.domain.referenced]
-other = "业务域仍被子业务域、业务术语、数据元、指标或维度层级引用，无法删除"
+other = "业务域仍被子业务域、业务术语、数据元或指标引用，无法删除"
 
 [standard.metric_category.parent_cycle]
 other = "指标分类父级不能是自身或其子级"
@@ -151,11 +169,27 @@ other = "指标依赖不能形成环路"
 [standard.metric.referenced]
 other = "指标仍被派生指标或指标依赖引用，无法删除"
 
-[standard.dim_hierarchy.not_found]
-other = "维度层级不存在"
-
-[standard.dim_hierarchy.invalid_level_id]
-other = "无效的层级ID"
-
-[standard.dim_hierarchy.invalid_level_number]
-other = "层级编号必须大于 0"
+[permissions.standard.collection.publish.name]
+other = "审核发布标准集"
+[permissions.standard.collection.publish.description]
+other = "退回或发布分配给自己的标准集治理配置修订"
+[permissions.standard.collection.create.name]
+other = "创建标准集"
+[permissions.standard.collection.create.description]
+other = "创建标准集及首个治理配置草稿"
+[permissions.standard.collection.delete.name]
+other = "删除标准集"
+[permissions.standard.collection.delete.description]
+other = "删除尚未发布的标准集"
+[permissions.standard.collection.read.name]
+other = "查看标准集"
+[permissions.standard.collection.read.description]
+other = "查看标准集、治理配置修订和职责分配"
+[permissions.standard.collection_assignment.update.name]
+other = "配置标准集职责"
+[permissions.standard.collection_assignment.update.description]
+other = "配置标准集的所有者、维护人和审核人"
+[permissions.standard.collection.update.name]
+other = "维护标准集"
+[permissions.standard.collection.update.description]
+other = "维护分配给自己的标准集治理配置草稿并提交审核"

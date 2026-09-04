@@ -32,6 +32,7 @@ func SetupRouter(
 	dwLayerSvc *service.DWLayerService,
 	factMetricSvc *service.FactMetricService,
 	tableRelationSvc *service.TableRelationService,
+	dimensionHierarchySvc *service.DimensionHierarchyService,
 	standardReferenceGuardSvc *service.StandardReferenceGuardService,
 	materializationSvc *service.MaterializationService,
 	materializationGroupSvc *service.MaterializationGroupService,
@@ -72,10 +73,12 @@ func SetupRouter(
 	dwLayerHandler := NewDWLayerHandler(dwLayerSvc)
 	factMetricHandler := NewFactMetricHandler(factMetricSvc)
 	tableRelationHandler := NewTableRelationHandler(tableRelationSvc)
+	dimensionHierarchyHandler := NewDimensionHierarchyHandler(dimensionHierarchySvc)
 	standardReferenceGuardHandler := NewStandardReferenceGuardHandler(standardReferenceGuardSvc)
 	materializationHandler := NewMaterializationTaskProviderHandler(materializationSvc, taskExecutionRepo)
 	materializationReadContextHandler := NewMaterializationReadContextHandler(materializationSvc)
 	materializationGroupHandler := NewMaterializationGroupHandler(materializationGroupSvc)
+	materializedTargetHandler := NewMaterializedTargetHandler(materializationSvc)
 	catalogResourceHandler := NewCatalogResourceHandler(catalogResourceSvc)
 	professionalRelationHandler := NewProfessionalRelationHandler(entityRelationSvc, tableRelationSvc)
 
@@ -163,6 +166,7 @@ func SetupRouter(
 			logicalTables.GET("/:id/relations", permission(modelauthorization.PermissionModelLogicalModelRead), professionalRelationHandler.GetLogicalTableRelations)
 			logicalTables.PUT("/:id", permission(modelauthorization.PermissionModelLogicalModelUpdate), logicalTableHandler.UpdateLogicalTable)
 			logicalTables.DELETE("/:id", permission(modelauthorization.PermissionModelLogicalModelDelete), logicalTableHandler.DeleteLogicalTable)
+			logicalTables.DELETE("/:id/materialized-target", permission(modelauthorization.PermissionModelMaterializedTargetDelete), materializedTargetHandler.Decommission)
 			logicalTables.POST("/:id/approve", permission(modelauthorization.PermissionModelLogicalModelUpdate), logicalTableHandler.ApproveLogicalTable)
 			logicalTables.POST("/:id/reopen", permission(modelauthorization.PermissionModelLogicalModelUpdate), logicalTableHandler.ReopenLogicalTable)
 			logicalTables.GET("/:id/fields", permission(modelauthorization.PermissionModelLogicalModelRead), logicalTableHandler.GetFields)
@@ -178,6 +182,14 @@ func SetupRouter(
 			logicalTables.GET("/:id/dimension-relations", permission(modelauthorization.PermissionModelLogicalModelRead), tableRelationHandler.ListDimensionRelations)
 			logicalTables.POST("/:id/dimension-relations", permission(modelauthorization.PermissionModelLogicalModelUpdate), tableRelationHandler.AddDimensionRelation)
 			logicalTables.DELETE("/:id/dimension-relations/:rid", permission(modelauthorization.PermissionModelLogicalModelUpdate), tableRelationHandler.RemoveDimensionRelation)
+			// 维度表聚合内的维度层级与成员
+			logicalTables.GET("/:id/dimension-hierarchies", permission(modelauthorization.PermissionModelLogicalModelRead), dimensionHierarchyHandler.List)
+			logicalTables.POST("/:id/dimension-hierarchies", permission(modelauthorization.PermissionModelLogicalModelUpdate), dimensionHierarchyHandler.Create)
+			logicalTables.PUT("/:id/dimension-hierarchies/:hid", permission(modelauthorization.PermissionModelLogicalModelUpdate), dimensionHierarchyHandler.Update)
+			logicalTables.DELETE("/:id/dimension-hierarchies/:hid", permission(modelauthorization.PermissionModelLogicalModelUpdate), dimensionHierarchyHandler.Delete)
+			logicalTables.POST("/:id/dimension-hierarchies/:hid/levels", permission(modelauthorization.PermissionModelLogicalModelUpdate), dimensionHierarchyHandler.CreateLevel)
+			logicalTables.PUT("/:id/dimension-hierarchies/:hid/levels/:lid", permission(modelauthorization.PermissionModelLogicalModelUpdate), dimensionHierarchyHandler.UpdateLevel)
+			logicalTables.DELETE("/:id/dimension-hierarchies/:hid/levels/:lid", permission(modelauthorization.PermissionModelLogicalModelUpdate), dimensionHierarchyHandler.DeleteLevel)
 		}
 
 		// 数仓分层路由

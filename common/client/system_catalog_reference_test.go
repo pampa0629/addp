@@ -61,3 +61,43 @@ func TestSystemServiceClientListsCatalogReferenceCandidates(t *testing.T) {
 		t.Fatalf("result = %#v, err=%v", result, err)
 	}
 }
+
+func TestSystemServiceClientStandardGovernanceUsers(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/system/runtime/standard-governance-users/resolve":
+			_, _ = w.Write([]byte(`{"results":[{"subject_type":"user","id":"9","found":true,"referenceable":true,"name":"Alice","code":"alice","status":"active"}]}`))
+		case "/api/v1/system/runtime/standard-governance-users/candidates":
+			_, _ = w.Write([]byte(`{"data":[{"subject_type":"user","id":"9","name":"Alice","code":"alice","status":"active"}],"total":1,"page":1,"page_size":20,"total_pages":1}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	client := NewSystemServiceClient(server.URL, staticSystemServiceTokenSource("tenant-token"), server.Client()).WithTenantID(3)
+	users, err := client.ResolveStandardGovernanceUsers(context.Background(), []int64{9})
+	if err != nil || len(users) != 1 || users[0].Name != "Alice" || !users[0].Referenceable {
+		t.Fatalf("users=%#v err=%v", users, err)
+	}
+	if !users[0].Found {
+		t.Fatalf("resolved user should be marked found: %#v", users[0])
+	}
+	list, err := client.ListStandardGovernanceUsers(context.Background(), "alice", 1, 20)
+	if err != nil || list.Total != 1 || len(list.Data) != 1 || list.Data[0].ID != 9 {
+		t.Fatalf("list=%#v err=%v", list, err)
+	}
+}
+
+func TestSystemServiceClientStandardGovernanceUsersPreservesUnavailableReference(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"results":[{"subject_type":"user","id":"9","found":false,"referenceable":false}]}`))
+	}))
+	defer server.Close()
+	client := NewSystemServiceClient(server.URL, staticSystemServiceTokenSource("tenant-token"), server.Client()).WithTenantID(3)
+	users, err := client.ResolveStandardGovernanceUsers(context.Background(), []int64{9})
+	if err != nil || len(users) != 1 || users[0].Found || users[0].Referenceable {
+		t.Fatalf("users=%#v err=%v", users, err)
+	}
+}

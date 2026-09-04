@@ -12,7 +12,6 @@ import (
 
 	commonAPI "github.com/addp/common/api"
 	"github.com/addp/common/dataprotection"
-	"github.com/addp/common/dataprotection/projectionstore"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/logger"
 	manageri18n "github.com/addp/manager/i18n"
@@ -29,7 +28,12 @@ type ExplorerHandler struct {
 	explorerService *service.ExplorerService
 	previewResolver *preview.PreviewResolver
 	metadataService *service.MetadataService
-	protectionStore *projectionstore.Store
+	protectionStore explorerProtectionStore
+}
+
+type explorerProtectionStore interface {
+	managerprotection.LocalProjectionGate
+	managerprotection.UnmanagedDataItemGate
 }
 
 // NewExplorerHandler 创建 Explorer Handler
@@ -37,7 +41,7 @@ func NewExplorerHandler(
 	explorerService *service.ExplorerService,
 	previewResolver *preview.PreviewResolver,
 	metadataService *service.MetadataService,
-	protectionStore *projectionstore.Store,
+	protectionStore explorerProtectionStore,
 ) *ExplorerHandler {
 	return &ExplorerHandler{
 		explorerService: explorerService,
@@ -280,12 +284,12 @@ func (h *ExplorerHandler) ListEngines(c *gin.Context) {
 }
 
 // StorageStream 存储叶子内容流式传输（支持 Range 请求）
-// GET /api/v1/manager/storage-stream?engine_id=1&storage_ref=bucket/path/to/file
+// GET /api/v1/manager/storage-stream?locator=addp://engine/1/path/bucket/item?type=object&item_id=1&storage_ref=bucket/path/to/file
 // @Summary 存储内容流式传输 | Storage content streaming
 // @Description 支持 Range 请求的单存储叶子内容流式传输，用于图片、PDF、视频等在线预览；用户下载请使用 downloads/file。storage_ref 在对象存储中为 bucket/path，在文件系统中为文件路径 | Storage leaf content streaming with Range request support for online previews such as images, PDF, and video; use downloads/file for user downloads. storage_ref is bucket/path for object catalogs and file path for file catalogs
 // @Tags Manager
 // @Produce octet-stream
-// @Param engine_id query int true "存储引擎ID | Engine ID"
+// @Param locator query string true "带 item_id 的存储数据项定位符 | Storage DataItem locator with item_id"
 // @Param storage_ref query string true "存储内容引用 | Storage content reference"
 // @Success 200 "存储内容流 | Storage content stream"
 // @Success 206 "部分存储内容流 | Partial storage content stream"
@@ -299,30 +303,58 @@ func (h *ExplorerHandler) ListEngines(c *gin.Context) {
 func (h *ExplorerHandler) StorageStream(c *gin.Context) {
 	tenantID := tenantIDFromContext(c)
 
-	// 解析参数
-	engineIDStr := c.Query("engine_id")
+	// locator 定位受保护的逻辑 DataItem，storage_ref 只选择其范围内的叶子。
+	locatorURI := strings.TrimSpace(c.Query("locator"))
 	storageRef := c.Query("storage_ref")
 
-	if engineIDStr == "" || storageRef == "" {
-		managerError(c, http.StatusBadRequest, manageri18n.MsgMissingEngineIDOrStorageRef)
+	if locatorURI == "" {
+		missingLocator(c)
+		return
+	}
+	if storageRef == "" {
+		managerError(c, http.StatusBadRequest, manageri18n.MsgMissingParam)
 		return
 	}
 
-	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
+	target, err := h.metadataService.ResolveStorageStreamTarget(c.Request.Context(), locatorURI, storageRef, tenantID)
 	if err != nil {
-		invalidEngineID(c)
+		if err == service.ErrEngineAccessDenied || err == preview.ErrEngineAccessDenied {
+			accessDeniedToEngine(c)
+			return
+		}
+		if errors.Is(err, engineaccess.ErrUnavailable) {
+			engineUnavailable(c)
+			return
+		}
+		if errors.Is(err, service.ErrDownloadNotSupported) || strings.Contains(err.Error(), "locator") || strings.Contains(err.Error(), "storage_ref") {
+			commonAPI.BadRequestError(c, err.Error())
+			return
+		}
+		commonAPI.InternalServerError(c, err.Error())
+		return
+	}
+	h.streamStorageTarget(c, target, tenantID)
+}
+
+func (h *ExplorerHandler) streamStorageTarget(c *gin.Context, target *service.StorageDataItem, tenantID *uint) {
+	if target == nil {
+		commonAPI.InternalServerError(c, "storage target is not available")
+		return
+	}
+	if tenantID == nil || managerprotection.RequireUnmanagedDataItem(c.Request.Context(), h.protectionStore, *tenantID, target.ItemFingerprint, time.Now().UTC()) != nil {
+		protectionRequired(c)
 		return
 	}
 
 	// 获取 Range header
 	rangeHeader := c.GetHeader("Range")
 
-	logger.L().Info("存储内容流请求", "engine_id", engineID, "storage_ref", storageRef, "range", rangeHeader)
+	logger.L().Info("存储内容流请求", "engine_id", target.EngineID, "storage_ref", target.StorageRef, "range", rangeHeader)
 
 	reader, contentLength, contentRange, contentType, err := h.metadataService.StreamStorageContent(
 		c.Request.Context(),
-		uint(engineID),
-		storageRef,
+		target.EngineID,
+		target.StorageRef,
 		rangeHeader,
 		tenantID,
 	)
@@ -352,7 +384,7 @@ func (h *ExplorerHandler) StorageStream(c *gin.Context) {
 	// 设置响应头
 	c.Header("Content-Type", contentType)
 	c.Header("Accept-Ranges", "bytes")
-	c.Header("Content-Disposition", storageStreamContentDisposition(storageRef, contentType))
+	c.Header("Content-Disposition", storageStreamContentDisposition(target.StorageRef, contentType))
 
 	if contentRange != "" {
 		// Range 请求返回 206 Partial Content
@@ -373,12 +405,13 @@ func (h *ExplorerHandler) StorageStream(c *gin.Context) {
 }
 
 // StorageAsset 传输多文件预览数据集中的单个受控资源，路径型 URL 用于解析 manifest 内的相对引用。
-// GET /api/v1/manager/storage-assets/1/path/to/file
+// GET /api/v1/manager/storage-assets/1/items/2/path/to/file
 // @Summary 多文件预览资源传输 | Multi-file preview asset streaming
 // @Description 以路径型 URL 传输 S3M 等多文件预览数据集中的单个资源，支持 manifest 相对路径解析与 Range 请求；资源仍通过存储引擎和租户权限校验。 | Stream one asset from a multi-file preview dataset with path-relative URL resolution and Range support; storage-engine and tenant authorization still apply.
 // @Tags Manager
 // @Produce octet-stream
 // @Param engine_id path int true "存储引擎ID | Engine ID"
+// @Param item_id path int true "Meta DataItem ID"
 // @Param storage_ref path string true "存储内容引用 | Storage content reference"
 // @Success 200 "存储内容流 | Storage content stream"
 // @Success 206 "部分存储内容流 | Partial storage content stream"
@@ -387,14 +420,38 @@ func (h *ExplorerHandler) StorageStream(c *gin.Context) {
 // @Failure 416 {object} map[string]interface{} "Range 不可满足 | Range not satisfiable"
 // @x-addp-auth-mode "resource_ticket"
 // @x-addp-required-permissions ["manager.content.read"]
-// @Router /storage-assets/{engine_id}/{storage_ref} [get]
+// @Router /storage-assets/{engine_id}/items/{item_id}/{storage_ref} [get]
 // @Security BearerAuth
 func (h *ExplorerHandler) StorageAsset(c *gin.Context) {
-	query := c.Request.URL.Query()
-	query.Set("engine_id", c.Param("engine_id"))
-	query.Set("storage_ref", strings.TrimPrefix(c.Param("storage_ref"), "/"))
-	c.Request.URL.RawQuery = query.Encode()
-	h.StorageStream(c)
+	engineIDValue, err := strconv.ParseUint(c.Param("engine_id"), 10, 32)
+	if err != nil || engineIDValue == 0 {
+		invalidEngineID(c)
+		return
+	}
+	itemIDValue, err := strconv.ParseUint(c.Param("item_id"), 10, 32)
+	if err != nil || itemIDValue == 0 {
+		managerError(c, http.StatusBadRequest, manageri18n.MsgInvalidParam)
+		return
+	}
+	tenantID := tenantIDFromContext(c)
+	target, err := h.metadataService.ResolveStorageAssetTarget(c.Request.Context(), uint(engineIDValue), uint(itemIDValue), strings.TrimPrefix(c.Param("storage_ref"), "/"), tenantID)
+	if err != nil {
+		if err == service.ErrEngineAccessDenied || err == preview.ErrEngineAccessDenied {
+			accessDeniedToEngine(c)
+			return
+		}
+		if errors.Is(err, engineaccess.ErrUnavailable) {
+			engineUnavailable(c)
+			return
+		}
+		if errors.Is(err, service.ErrDownloadNotSupported) {
+			commonAPI.BadRequestError(c, err.Error())
+			return
+		}
+		commonAPI.InternalServerError(c, err.Error())
+		return
+	}
+	h.streamStorageTarget(c, target, tenantID)
 }
 
 func attachmentContentDisposition(fileName string) string {

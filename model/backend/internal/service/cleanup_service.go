@@ -31,19 +31,21 @@ type CleanupService struct {
 }
 
 type ModelCleanupStats struct {
-	DWLayers           int      `json:"dw_layers"`
-	Entities           int      `json:"entities"`
-	EntityAttributes   int      `json:"entity_attributes"`
-	EntityRelations    int      `json:"entity_relations"`
-	LogicalTables      int      `json:"logical_tables"`
-	LogicalFields      int      `json:"logical_fields"`
-	TableRelations     int      `json:"table_relations"`
-	FactMetricMappings int      `json:"fact_metric_mappings"`
-	DraftedEntities    int      `json:"drafted_entities,omitempty"`
-	DraftedTables      int      `json:"drafted_tables,omitempty"`
-	DeletedRecords     int      `json:"deleted_records,omitempty"`
-	SkippedItems       int      `json:"skipped_items,omitempty"`
-	Errors             []string `json:"errors,omitempty"`
+	DWLayers                 int      `json:"dw_layers"`
+	Entities                 int      `json:"entities"`
+	EntityAttributes         int      `json:"entity_attributes"`
+	EntityRelations          int      `json:"entity_relations"`
+	LogicalTables            int      `json:"logical_tables"`
+	LogicalFields            int      `json:"logical_fields"`
+	DimensionHierarchies     int      `json:"dimension_hierarchies"`
+	DimensionHierarchyLevels int      `json:"dimension_hierarchy_levels"`
+	TableRelations           int      `json:"table_relations"`
+	FactMetricMappings       int      `json:"fact_metric_mappings"`
+	DraftedEntities          int      `json:"drafted_entities,omitempty"`
+	DraftedTables            int      `json:"drafted_tables,omitempty"`
+	DeletedRecords           int      `json:"deleted_records,omitempty"`
+	SkippedItems             int      `json:"skipped_items,omitempty"`
+	Errors                   []string `json:"errors,omitempty"`
 }
 
 func NewCleanupService(db *gorm.DB, redisClient *redis.Client, taskExecRepo *commonExecution.TaskExecutionRepository) *CleanupService {
@@ -216,27 +218,31 @@ func (s *CleanupService) ExecuteCleanup(ctx context.Context, tenantID uint, clea
 }
 
 type modelCleanupCandidates struct {
-	TenantID           int64
-	dwLayers           []models.DWLayer
-	entities           []models.Entity
-	entityAttributes   []models.EntityAttribute
-	entityRelations    []models.EntityRelation
-	logicalTables      []models.LogicalTable
-	logicalFields      []models.LogicalField
-	tableRelations     []models.TableRelation
-	factMetricMappings []models.FactMetricMapping
+	TenantID                 int64
+	dwLayers                 []models.DWLayer
+	entities                 []models.Entity
+	entityAttributes         []models.EntityAttribute
+	entityRelations          []models.EntityRelation
+	logicalTables            []models.LogicalTable
+	logicalFields            []models.LogicalField
+	dimensionHierarchies     []models.DimensionHierarchy
+	dimensionHierarchyLevels []models.DimensionHierarchyLevel
+	tableRelations           []models.TableRelation
+	factMetricMappings       []models.FactMetricMapping
 }
 
 func (c modelCleanupCandidates) stats() *ModelCleanupStats {
 	return &ModelCleanupStats{
-		DWLayers:           len(c.dwLayers),
-		Entities:           len(c.entities),
-		EntityAttributes:   len(c.entityAttributes),
-		EntityRelations:    len(c.entityRelations),
-		LogicalTables:      len(c.logicalTables),
-		LogicalFields:      len(c.logicalFields),
-		TableRelations:     len(c.tableRelations),
-		FactMetricMappings: len(c.factMetricMappings),
+		DWLayers:                 len(c.dwLayers),
+		Entities:                 len(c.entities),
+		EntityAttributes:         len(c.entityAttributes),
+		EntityRelations:          len(c.entityRelations),
+		LogicalTables:            len(c.logicalTables),
+		LogicalFields:            len(c.logicalFields),
+		DimensionHierarchies:     len(c.dimensionHierarchies),
+		DimensionHierarchyLevels: len(c.dimensionHierarchyLevels),
+		TableRelations:           len(c.tableRelations),
+		FactMetricMappings:       len(c.factMetricMappings),
 	}
 }
 
@@ -283,6 +289,15 @@ func (s *CleanupService) listTenantCandidates(ctx context.Context, tenantID int6
 	}
 	if len(tableIDs) > 0 {
 		if err := s.db.WithContext(ctx).Where("table_id IN ?", tableIDs).Find(&candidates.logicalFields).Error; err != nil {
+			return candidates, err
+		}
+		if err := s.db.WithContext(ctx).Where("tenant_id = ? AND table_id IN ?", tenantID, tableIDs).Find(&candidates.dimensionHierarchies).Error; err != nil {
+			return candidates, err
+		}
+	}
+	hierarchyIDs := dimensionHierarchyIDs(candidates.dimensionHierarchies)
+	if len(hierarchyIDs) > 0 {
+		if err := s.db.WithContext(ctx).Where("hierarchy_id IN ?", hierarchyIDs).Find(&candidates.dimensionHierarchyLevels).Error; err != nil {
 			return candidates, err
 		}
 	}
@@ -380,6 +395,8 @@ func (s *CleanupService) physicalCleanup(ctx context.Context, candidates modelCl
 		tenantScoped bool
 	}{
 		{model: &models.FactMetricMapping{}, ids: factMetricMappingIDs(candidates.factMetricMappings), name: "fact metric mappings", tenantScoped: true},
+		{model: &models.DimensionHierarchyLevel{}, ids: dimensionHierarchyLevelIDs(candidates.dimensionHierarchyLevels), name: "dimension hierarchy levels"},
+		{model: &models.DimensionHierarchy{}, ids: dimensionHierarchyIDs(candidates.dimensionHierarchies), name: "dimension hierarchies", tenantScoped: true},
 		{model: &models.TableRelation{}, ids: tableRelationIDs(candidates.tableRelations), name: "table relations", tenantScoped: true},
 		{model: &models.LogicalField{}, ids: logicalFieldIDs(candidates.logicalFields), name: "logical fields"},
 		{model: &models.LogicalTable{}, ids: logicalTableIDs(candidates.logicalTables), name: "logical tables", tenantScoped: true},
@@ -607,6 +624,8 @@ func modelCandidateRecordCount(stats *ModelCleanupStats) int {
 		stats.EntityRelations +
 		stats.LogicalTables +
 		stats.LogicalFields +
+		stats.DimensionHierarchies +
+		stats.DimensionHierarchyLevels +
 		stats.TableRelations +
 		stats.FactMetricMappings
 }
@@ -666,6 +685,22 @@ func logicalTableIDs(items []models.LogicalTable) []int64 {
 }
 
 func logicalFieldIDs(items []models.LogicalField) []int64 {
+	ids := make([]int64, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.ID)
+	}
+	return ids
+}
+
+func dimensionHierarchyIDs(items []models.DimensionHierarchy) []int64 {
+	ids := make([]int64, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.ID)
+	}
+	return ids
+}
+
+func dimensionHierarchyLevelIDs(items []models.DimensionHierarchyLevel) []int64 {
 	ids := make([]int64, 0, len(items))
 	for _, item := range items {
 		ids = append(ids, item.ID)

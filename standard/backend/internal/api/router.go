@@ -26,7 +26,7 @@ func SetupRouter(
 	unitSvc *service.UnitService,
 	metricSvc *service.MetricService,
 	documentSvc *service.DocumentService,
-	dimHierarchySvc *service.DimensionHierarchyService,
+	collectionSvc *service.StandardCollectionService,
 	referenceResolutionSvc *service.ReferenceResolutionService,
 	elementRevisionResolutionSvc *service.ElementRevisionResolutionService,
 	catalogResourceSvc *service.CatalogResourceService,
@@ -59,7 +59,7 @@ func SetupRouter(
 	unitHandler := NewUnitHandler(unitSvc)
 	metricHandler := NewMetricHandler(metricSvc)
 	documentHandler := NewDocumentHandler(documentSvc)
-	dimHierarchyHandler := NewDimensionHierarchyHandler(dimHierarchySvc)
+	collectionHandler := NewStandardCollectionHandler(collectionSvc)
 	referenceResolutionHandler := NewReferenceResolutionHandler(referenceResolutionSvc)
 	elementRevisionResolutionHandler := NewElementRevisionResolutionHandler(elementRevisionResolutionSvc)
 	catalogResourceHandler := NewCatalogResourceHandler(catalogResourceSvc)
@@ -117,6 +117,23 @@ func SetupRouter(
 			domains.PUT("/:id", permission(standardauthorization.PermissionStandardDomainUpdate), domainHandler.UpdateDomain)
 			domains.DELETE("/:id", permission(standardauthorization.PermissionStandardDomainDelete), domainHandler.DeleteDomain)
 		}
+
+		collections := api.Group("/collections")
+		{
+			collections.GET("", permission(standardauthorization.PermissionStandardCollectionRead), collectionHandler.List)
+			collections.POST("", permission(standardauthorization.PermissionStandardCollectionCreate), collectionHandler.Create)
+			collections.GET("/:id", permission(standardauthorization.PermissionStandardCollectionRead), collectionHandler.Get)
+			collections.DELETE("/:id", permission(standardauthorization.PermissionStandardCollectionDelete), collectionHandler.Delete)
+			collections.GET("/:id/revisions", permission(standardauthorization.PermissionStandardCollectionRead), collectionHandler.ListRevisions)
+			collections.GET("/:id/events", permission(standardauthorization.PermissionStandardCollectionRead), collectionHandler.ListEvents)
+			collections.POST("/:id/revisions", permission(standardauthorization.PermissionStandardCollectionUpdate), collectionHandler.CreateRevision)
+			collections.PUT("/:id/revisions/:revision_id", permission(standardauthorization.PermissionStandardCollectionUpdate), collectionHandler.UpdateRevision)
+			collections.POST("/:id/revisions/:revision_id/submit", permission(standardauthorization.PermissionStandardCollectionUpdate), collectionHandler.Submit)
+			collections.POST("/:id/revisions/:revision_id/return", permission(standardauthorization.PermissionStandardCollectionPublish), collectionHandler.Return)
+			collections.POST("/:id/revisions/:revision_id/publish", permission(standardauthorization.PermissionStandardCollectionPublish), collectionHandler.Publish)
+			collections.PUT("/:id/assignments", permission(standardauthorization.PermissionStandardCollectionAssignmentUpdate), collectionHandler.ReplaceAssignments)
+		}
+		api.GET("/collection-user-candidates", permission(standardauthorization.PermissionStandardCollectionAssignmentUpdate), collectionHandler.ListUserCandidates)
 
 		glossaries := api.Group("/glossaries")
 		{
@@ -230,19 +247,6 @@ func SetupRouter(
 			documents.GET("/:id/download", permission(standardauthorization.PermissionStandardDocumentRead), documentHandler.DownloadFile)
 		}
 
-		// 维度层级
-		dimHierarchies := api.Group("/dimension-hierarchies")
-		{
-			dimHierarchies.GET("", permission(standardauthorization.PermissionStandardDimensionHierarchyRead), dimHierarchyHandler.List)
-			dimHierarchies.POST("", permission(standardauthorization.PermissionStandardDimensionHierarchyCreate), dimHierarchyHandler.Create)
-			dimHierarchies.GET("/:id", permission(standardauthorization.PermissionStandardDimensionHierarchyRead), dimHierarchyHandler.Get)
-			dimHierarchies.PUT("/:id", permission(standardauthorization.PermissionStandardDimensionHierarchyUpdate), dimHierarchyHandler.Update)
-			dimHierarchies.DELETE("/:id", permission(standardauthorization.PermissionStandardDimensionHierarchyDelete), dimHierarchyHandler.Delete)
-			dimHierarchies.GET("/:id/levels", permission(standardauthorization.PermissionStandardDimensionHierarchyRead), dimHierarchyHandler.ListLevels)
-			dimHierarchies.POST("/:id/levels", permission(standardauthorization.PermissionStandardDimensionHierarchyUpdate), dimHierarchyHandler.CreateLevel)
-			dimHierarchies.PUT("/:id/levels/:lid", permission(standardauthorization.PermissionStandardDimensionHierarchyUpdate), dimHierarchyHandler.UpdateLevel)
-			dimHierarchies.DELETE("/:id/levels/:lid", permission(standardauthorization.PermissionStandardDimensionHierarchyUpdate), dimHierarchyHandler.DeleteLevel)
-		}
 	}
 
 	return router

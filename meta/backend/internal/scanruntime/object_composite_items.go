@@ -28,6 +28,7 @@ func (s *ObjectStorageCatalogRuntime) persistObjectCatalogCompositeItems(
 ) (int, scanflow.ExtractionCounts, error) {
 	count := 0
 	extractionStats := scanflow.ExtractionCounts{}
+	failures := &scanflow.FailedTargetCollector{}
 	for _, composite := range items {
 		if err := ctx.Err(); err != nil {
 			return count, extractionStats, err
@@ -45,7 +46,8 @@ func (s *ObjectStorageCatalogRuntime) persistObjectCatalogCompositeItems(
 		}
 		parentNode, err := s.ensureObjectCatalogPrefixNodes(tenantID, engineID, bucketNode, basePrefixNode, itemPlan.ParentPath, scanPathPrefix, stats)
 		if err != nil {
-			return count, extractionStats, err
+			failures.Add(itemPlan.FullName, err)
+			continue
 		}
 
 		result, err := scanprocessor.New(s.repo, s.indexer, s.log).WithContainerInspector(s.containerInspector).Process(ctx, scanprocessor.ObjectCompositeInput(
@@ -60,7 +62,9 @@ func (s *ObjectStorageCatalogRuntime) persistObjectCatalogCompositeItems(
 			scanDepth,
 		))
 		if err != nil {
-			return count, extractionStats, err
+			extractionStats = scanflow.MergeExtractionCounts(extractionStats, result.Extraction)
+			failures.Add(itemPlan.FullName, err)
+			continue
 		}
 		extractionStats = scanflow.MergeExtractionCounts(extractionStats, result.Extraction)
 		count++
@@ -78,5 +82,5 @@ func (s *ObjectStorageCatalogRuntime) persistObjectCatalogCompositeItems(
 			agg.TotalSize += itemPlan.SizeBytes
 		}
 	}
-	return count, extractionStats, nil
+	return count, extractionStats, failures.Err()
 }

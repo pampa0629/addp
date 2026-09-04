@@ -115,34 +115,9 @@ const formattedSize = computed(() => {
   return formatBytes(sizeBytes.value)
 })
 
-const engineId = computed(() => {
-  return (
-    objectData.value?.engine_id ??
-    objectData.value?.engineId ??
-    props.data?.engineId ??
-    props.data?.engine_id ??
-    null
-  )
-})
-
-const storageRef = computed(() => {
-  return (
-    objectData.value?.storage_ref ||
-    objectData.value?.storageRef ||
-    ''
-  )
-})
-
-// 构建视频URL
 const videoSrc = computed(() => {
   if (videoError.value) return ''
-  if (!engineId.value || !storageRef.value) return ''
-
-  const params = new URLSearchParams()
-  params.set('engine_id', String(engineId.value))
-  params.set('storage_ref', storageRef.value)
-
-  return `/api/v1/manager/storage-stream?${params.toString()}`
+  return String(content.value?.url || objectData.value?.url || '').trim()
 })
 
 const contentMessage = computed(() => {

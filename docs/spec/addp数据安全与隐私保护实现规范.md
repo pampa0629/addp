@@ -425,6 +425,12 @@ Owner 从当前请求解析出专业资源身份后，只允许一条本地门�
 - 处理完成的结果、日志、错误、搜索文档、前端状态和 AI 上下文都不得包含该决策下的原值；
 - 审计只记录 Principal、Tenant、动作、目标、策略/投影版本、效果、结果和稳定原因码。
 
+Manager 的 `downloads/file` 原始下载、`storage-stream` 单叶子内容流与 `storage-assets` 多文件预览子资源都可能绕过结构化 `preview` 执行器，因此必须先定位到服务端校验的 Meta DataItem，再使用 Manager 本地投影索引判定。这些出口尚无对原始字节流的字段级执行器：未纳管 DataItem 继续原路径，命中任何 `enrolling|active` 本地投影时必须拒绝整个请求，不得借用 `preview` 规则处理或放行原始文件。
+
+`storage-stream` 必须同时接受 DataItem `locator` 和叶子 `storage_ref`：`locator` 是保护目标主身份，且必须包含 `item_id`；`storage_ref` 只表示该 DataItem 内实际读取的叶子。Manager 必须从 Meta 按 `item_id` 读取当前 item，校验 Tenant、Engine、item type 和 locator 路径，并按 `item.layout` 验证叶子归属：`single` 只允许主内容，`multi` 只允许 `item.refs`，`whole` 只允许 scope 边界内的子内容。不得接受调用方直传 fingerprint，也不得保留只依赖 `engine_id + storage_ref` 的无主身份路径。
+
+`storage-assets` 为保持 manifest 相对路径解析，必须在 URL 路径中携带 `engine_id + item_id`，形态固定为 `/storage-assets/{engine_id}/items/{item_id}/{storage_ref}`。相对子资源请求会自然保留 item 身份；Manager 仍必须按 ID 回查 Meta 并校验 `storage_ref` 在该 DataItem 范围内。不使用无法由相对 URL 继承的 query 参数作为唯一身份。
+
 Owner 可以使用最后一份未过期、checksum 正确且结构仍匹配的投影。Security 暂时不可达不影响当前数据请求；投影过期后必须拒绝已纳管动作。
 
 ### 10.1 Manager `profile` 动作

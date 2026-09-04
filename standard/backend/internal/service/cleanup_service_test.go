@@ -250,29 +250,6 @@ func setupStandardCleanupTestDB(t *testing.T) *gorm.DB {
 			reference_location TEXT,
 			created_at DATETIME
 		)`,
-		`CREATE TABLE standard.dimension_hierarchies (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			tenant_id INTEGER NOT NULL,
-			domain_id INTEGER,
-			name TEXT NOT NULL,
-			code TEXT NOT NULL,
-			description TEXT,
-			created_by INTEGER NOT NULL,
-			updated_by INTEGER,
-			created_at DATETIME,
-			updated_at DATETIME,
-			version INTEGER NOT NULL DEFAULT 1,
-			lifecycle_state TEXT NOT NULL DEFAULT 'active'
-		)`,
-		`CREATE TABLE standard.dimension_hierarchy_levels (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			hierarchy_id INTEGER NOT NULL,
-			level_num INTEGER NOT NULL,
-			name TEXT NOT NULL,
-			element_id INTEGER,
-			description TEXT,
-			sort_order INTEGER
-		)`,
 	} {
 		if err := db.Exec(ddl).Error; err != nil {
 			t.Fatalf("create standard cleanup table: %v", err)
@@ -367,16 +344,16 @@ func TestStandardCleanupTenantDeletedPhysicalDeletesOwnedState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ScanReclaimCandidates: %v", err)
 	}
-	if standardCandidateRecordCount(stats) != 21 {
-		t.Fatalf("expected 21 scanned records, got %+v", stats)
+	if standardCandidateRecordCount(stats) != 19 {
+		t.Fatalf("expected 19 scanned records, got %+v", stats)
 	}
 
 	stats, err = svc.ExecuteCleanup(context.Background(), 1, events.CleanupModePhysical, map[string]interface{}{"tenant_id": 1})
 	if err != nil {
 		t.Fatalf("ExecuteCleanup: %v", err)
 	}
-	if stats.DeletedRecords != 21 {
-		t.Fatalf("expected 21 deleted records, got %+v", stats)
+	if stats.DeletedRecords != 19 {
+		t.Fatalf("expected 19 deleted records, got %+v", stats)
 	}
 	assertStandardCleanupCounts(t, db, standardCleanupCountExpectation{
 		tenantID:                 2,
@@ -396,8 +373,6 @@ func TestStandardCleanupTenantDeletedPhysicalDeletesOwnedState(t *testing.T) {
 		documentElementMappings:  1,
 		documentGlossaryMappings: 1,
 		documentMetricMappings:   1,
-		dimensionHierarchies:     1,
-		dimensionHierarchyLevels: 1,
 		referenceDeletions:       1,
 	})
 }
@@ -522,14 +497,6 @@ func seedStandardCleanupTenantState(t *testing.T, db *gorm.DB, tenantID int64, w
 	if err := db.Create(&models.DocumentMetricMapping{DocumentID: document.ID, MetricID: metric.ID}).Error; err != nil {
 		t.Fatalf("create document metric mapping: %v", err)
 	}
-	hierarchy := models.DimensionHierarchy{TenantID: tenantID, DomainID: &domain.ID, Name: "Hierarchy " + suffix, Code: "hier_" + suffix, CreatedBy: 1}
-	if err := db.Create(&hierarchy).Error; err != nil {
-		t.Fatalf("create hierarchy: %v", err)
-	}
-	if err := db.Create(&models.DimensionHierarchyLevel{HierarchyID: hierarchy.ID, LevelNum: 1, Name: "Level " + suffix, ElementID: &element.ID}).Error; err != nil {
-		t.Fatalf("create hierarchy level: %v", err)
-	}
-
 	return standardCleanupSeedIDs{
 		glossaryID: glossary.ID,
 		elementID:  element.ID,
@@ -556,8 +523,6 @@ type standardCleanupCountExpectation struct {
 	documentElementMappings  int64
 	documentGlossaryMappings int64
 	documentMetricMappings   int64
-	dimensionHierarchies     int64
-	dimensionHierarchyLevels int64
 	referenceDeletions       int64
 }
 
@@ -572,7 +537,6 @@ func assertStandardCleanupCounts(t *testing.T, db *gorm.DB, expected standardCle
 	assertStandardCleanupCount(t, db, &models.MetricCategory{}, "tenant_id = ?", []interface{}{expected.tenantID}, expected.metricCategories, "metric categories")
 	assertStandardCleanupCount(t, db, &models.Metric{}, "tenant_id = ?", []interface{}{expected.tenantID}, expected.metrics, "metrics")
 	assertStandardCleanupCount(t, db, &models.Document{}, "tenant_id = ?", []interface{}{expected.tenantID}, expected.documents, "documents")
-	assertStandardCleanupCount(t, db, &models.DimensionHierarchy{}, "tenant_id = ?", []interface{}{expected.tenantID}, expected.dimensionHierarchies, "dimension hierarchies")
 	assertStandardCleanupCount(t, db, &models.StandardReferenceDeletion{}, "tenant_id = ?", []interface{}{expected.tenantID}, expected.referenceDeletions, "reference deletions")
 	assertStandardCleanupCount(t, db, &models.CodeSetRevisionItem{}, "", nil, expected.codeItems, "code items")
 	assertStandardCleanupCount(t, db, &models.GlossaryElementMapping{}, "", nil, expected.glossaryElementMappings, "glossary element mappings")
@@ -581,7 +545,6 @@ func assertStandardCleanupCounts(t *testing.T, db *gorm.DB, expected standardCle
 	assertStandardCleanupCount(t, db, &models.DocumentElementMapping{}, "", nil, expected.documentElementMappings, "document element mappings")
 	assertStandardCleanupCount(t, db, &models.DocumentGlossaryMapping{}, "", nil, expected.documentGlossaryMappings, "document glossary mappings")
 	assertStandardCleanupCount(t, db, &models.DocumentMetricMapping{}, "", nil, expected.documentMetricMappings, "document metric mappings")
-	assertStandardCleanupCount(t, db, &models.DimensionHierarchyLevel{}, "", nil, expected.dimensionHierarchyLevels, "dimension hierarchy levels")
 }
 
 func assertStandardCleanupCount(t *testing.T, db *gorm.DB, model interface{}, where string, args []interface{}, expected int64, name string) {

@@ -11,6 +11,7 @@ import (
 	"github.com/addp/meta/internal/metapath"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scanchange"
+	"github.com/addp/meta/internal/scanflow"
 )
 
 // scanTables 扫描Schema下的所有表。
@@ -48,6 +49,7 @@ func (s *DatabaseRuntime) scanTables(
 
 	totalTables := 0
 	totalFields := 0
+	failures := &scanflow.FailedTargetCollector{}
 	scannedTables := make(map[string]bool)
 
 	for i, tableInfo := range pluginTables {
@@ -87,6 +89,7 @@ func (s *DatabaseRuntime) scanTables(
 				"table", tableInfo.Name,
 				"error", err,
 			)
+			failures.Add(schemaName+"."+tableInfo.Name, err)
 			continue
 		}
 
@@ -104,6 +107,7 @@ func (s *DatabaseRuntime) scanTables(
 				"table", tableInfo.Name,
 				"error", err,
 			)
+			failures.Add(schemaName+"."+tableInfo.Name, err)
 			continue
 		}
 
@@ -120,7 +124,7 @@ func (s *DatabaseRuntime) scanTables(
 		totalFields += len(fields)
 	}
 
-	s.deleteRemovedTables(tenantID, engineID, schemaName, existingTableMap, scannedTables)
+	failures.Add(schemaName, s.deleteRemovedTables(tenantID, engineID, schemaName, existingTableMap, scannedTables))
 
 	s.log.Info("Schema 扫描完成",
 		"schema", schemaName,
@@ -128,7 +132,7 @@ func (s *DatabaseRuntime) scanTables(
 		"fields", totalFields,
 	)
 
-	return totalTables, totalFields, nil
+	return totalTables, totalFields, failures.Err()
 }
 
 func (s *DatabaseRuntime) listTables(
@@ -187,7 +191,8 @@ func (s *DatabaseRuntime) deleteRemovedTables(
 	schemaName string,
 	existingTableMap map[string]*models.MetaItem,
 	scannedTables map[string]bool,
-) {
+) error {
+	failures := &scanflow.FailedTargetCollector{}
 	for tableName, item := range existingTableMap {
 		if !scannedTables[tableName] {
 			s.log.Info("表已不存在，标记删除",
@@ -200,10 +205,12 @@ func (s *DatabaseRuntime) deleteRemovedTables(
 					"table", tableName,
 					"error", err,
 				)
+				failures.Add(schemaName+"."+tableName, err)
 			}
 			if s.tableIndexer != nil {
 				s.tableIndexer.DeleteTablesFromIndex(tenantID, engineID, schemaName)
 			}
 		}
 	}
+	return failures.Err()
 }

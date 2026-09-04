@@ -45,8 +45,6 @@ type StandardCleanupStats struct {
 	DocumentElementMappings  int      `json:"document_element_mappings"`
 	DocumentGlossaryMappings int      `json:"document_glossary_mappings"`
 	DocumentMetricMappings   int      `json:"document_metric_mappings"`
-	DimensionHierarchies     int      `json:"dimension_hierarchies"`
-	DimensionHierarchyLevels int      `json:"dimension_hierarchy_levels"`
 	ReferenceDeletions       int      `json:"reference_deletions"`
 	DeprecatedGlossaries     int      `json:"deprecated_glossaries,omitempty"`
 	DeprecatedElements       int      `json:"deprecated_elements,omitempty"`
@@ -231,8 +229,6 @@ type standardCleanupCandidates struct {
 	documentElementMappings  []models.DocumentElementMapping
 	documentGlossaryMappings []models.DocumentGlossaryMapping
 	documentMetricMappings   []models.DocumentMetricMapping
-	dimensionHierarchies     []models.DimensionHierarchy
-	dimensionHierarchyLevels []models.DimensionHierarchyLevel
 	referenceDeletions       []models.StandardReferenceDeletion
 }
 
@@ -254,8 +250,6 @@ func (c standardCleanupCandidates) stats() *StandardCleanupStats {
 		DocumentElementMappings:  len(c.documentElementMappings),
 		DocumentGlossaryMappings: len(c.documentGlossaryMappings),
 		DocumentMetricMappings:   len(c.documentMetricMappings),
-		DimensionHierarchies:     len(c.dimensionHierarchies),
-		DimensionHierarchyLevels: len(c.dimensionHierarchyLevels),
 		ReferenceDeletions:       len(c.referenceDeletions),
 	}
 }
@@ -358,15 +352,6 @@ func (s *CleanupService) listTenantCandidates(ctx context.Context, tenantID int6
 		}
 	}
 
-	if err := s.db.WithContext(ctx).Where("tenant_id = ?", tenantID).Find(&candidates.dimensionHierarchies).Error; err != nil {
-		return candidates, err
-	}
-	hierarchyIDs := standardDimensionHierarchyIDs(candidates.dimensionHierarchies)
-	if len(hierarchyIDs) > 0 {
-		if err := s.db.WithContext(ctx).Where("hierarchy_id IN ?", hierarchyIDs).Find(&candidates.dimensionHierarchyLevels).Error; err != nil {
-			return candidates, err
-		}
-	}
 	if err := s.db.WithContext(ctx).Where("tenant_id = ?", tenantID).Find(&candidates.referenceDeletions).Error; err != nil {
 		return candidates, err
 	}
@@ -447,13 +432,11 @@ func (s *CleanupService) physicalCleanup(ctx context.Context, candidates standar
 		{model: &models.DocumentMetricMapping{}, ids: standardDocumentMetricMappingIDs(documentMetricMappingsToDelete), name: "document metric mappings"},
 		{model: &models.MetricDependency{}, ids: standardMetricDependencyIDs(candidates.metricDependencies), name: "metric dependencies"},
 		{model: &models.MetricElementMapping{}, ids: standardMetricElementMappingIDs(candidates.metricElementMappings), name: "metric element mappings"},
-		{model: &models.DimensionHierarchyLevel{}, ids: standardDimensionHierarchyLevelIDs(candidates.dimensionHierarchyLevels), name: "dimension hierarchy levels"},
 		{model: &models.CodeSetRevisionItem{}, ids: standardCodeItemIDs(candidates.codeItems), name: "code items"},
 		{model: &models.Unit{}, ids: standardUnitIDs(candidates.units), name: "units"},
 		{model: &models.Document{}, ids: standardDocumentIDs(documentsToDelete), name: "documents"},
 		{model: &models.Metric{}, ids: standardMetricIDs(candidates.metrics), name: "metrics"},
 		{model: &models.MetricCategory{}, ids: standardMetricCategoryIDs(candidates.metricCategories), name: "metric categories"},
-		{model: &models.DimensionHierarchy{}, ids: standardDimensionHierarchyIDs(candidates.dimensionHierarchies), name: "dimension hierarchies"},
 		{model: &models.Element{}, ids: standardElementIDs(candidates.elements), name: "elements"},
 		{model: &models.Glossary{}, ids: standardGlossaryIDs(candidates.glossaries), name: "glossaries"},
 		{model: &models.MeasurementCategory{}, ids: standardMeasurementCategoryIDs(candidates.measurementCategories), name: "measurement categories"},
@@ -681,8 +664,6 @@ func standardCandidateRecordCount(stats *StandardCleanupStats) int {
 		stats.DocumentElementMappings +
 		stats.DocumentGlossaryMappings +
 		stats.DocumentMetricMappings +
-		stats.DimensionHierarchies +
-		stats.DimensionHierarchyLevels +
 		stats.ReferenceDeletions
 }
 
@@ -876,22 +857,6 @@ func standardDocumentGlossaryMappingIDs(items []models.DocumentGlossaryMapping) 
 }
 
 func standardDocumentMetricMappingIDs(items []models.DocumentMetricMapping) []int64 {
-	ids := make([]int64, 0, len(items))
-	for _, item := range items {
-		ids = append(ids, item.ID)
-	}
-	return ids
-}
-
-func standardDimensionHierarchyIDs(items []models.DimensionHierarchy) []int64 {
-	ids := make([]int64, 0, len(items))
-	for _, item := range items {
-		ids = append(ids, item.ID)
-	}
-	return ids
-}
-
-func standardDimensionHierarchyLevelIDs(items []models.DimensionHierarchyLevel) []int64 {
 	ids := make([]int64, 0, len(items))
 	for _, item := range items {
 		ids = append(ids, item.ID)

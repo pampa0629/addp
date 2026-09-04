@@ -16,7 +16,7 @@
         <el-table-column :label="$t('standard.common.ownerDomainLabel')" width="140"><template #default="{ row }">{{ domainName(row.owner_domain_id) }}</template></el-table-column>
         <el-table-column :label="$t('standard.revision.number')" width="90"><template #default="{ row }">{{ workingRevision(row) ? `R${workingRevision(row).revision_no}` : '-' }}</template></el-table-column>
         <el-table-column :label="$t('standard.common.status')" width="110"><template #default="{ row }"><el-tag :type="statusType(workingRevision(row)?.status)" size="small">{{ statusLabel(workingRevision(row)?.status) }}</el-tag></template></el-table-column>
-        <el-table-column :label="$t('standard.common.actions')" width="150" fixed="right"><template #default="{ row }"><el-button link type="primary" @click="goDetail(row.id)">{{ $t('standard.common.detail') }}</el-button><el-button v-if="canDelete" link type="danger" @click="remove(row)">{{ $t('standard.common.delete') }}</el-button></template></el-table-column>
+        <el-table-column :label="$t('standard.common.actions')" width="150" fixed="right"><template #default="{ row }"><div class="table-actions"><el-button link type="primary" @click="goDetail(row.id)">{{ $t('standard.common.detail') }}</el-button><el-button v-if="canDelete" link type="danger" @click="remove(row)">{{ $t('standard.common.delete') }}</el-button></div></template></el-table-column>
       </el-table>
       <el-pagination v-if="total" class="pagination" :total="total" :page-size="filters.page_size" :current-page="filters.page" layout="total, prev, pager, next" @current-change="page => { filters.page = page; load() }" />
     </el-card>
@@ -79,5 +79,5 @@ onMounted(() => { loadDomains(); load() })
 </script>
 
 <style scoped>
-.page-shell{min-height:100%;padding:20px;background:var(--addp-bg-secondary);color:var(--addp-text-primary)}.page-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}.filter-card{margin-bottom:12px}.table-card :deep(.el-card__body){padding-top:8px}.pagination{display:flex;justify-content:flex-end;margin-top:16px}.page-shell :deep(.el-card){background:var(--addp-bg-primary);border-color:var(--addp-border-color)}
+.page-shell{min-height:100%;padding:20px;background:var(--addp-bg-secondary);color:var(--addp-text-primary)}.page-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}.filter-card{margin-bottom:12px}.table-card :deep(.el-card__body){padding-top:8px}.table-actions{display:inline-flex;align-items:center;gap:8px;min-width:max-content;white-space:nowrap}.table-actions :deep(.el-button){margin-left:0;white-space:nowrap}.pagination{display:flex;justify-content:flex-end;margin-top:16px}.page-shell :deep(.el-card){background:var(--addp-bg-primary);border-color:var(--addp-border-color)}
 </style>

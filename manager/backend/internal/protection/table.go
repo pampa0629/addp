@@ -1,6 +1,7 @@
 package protection
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"time"
@@ -25,6 +26,31 @@ type LocalProjectionGate interface {
 	Gate(int64, dataprotection.ResourceReference, time.Time) projectionstore.GateResult
 }
 
+type UnmanagedDataItemGate interface {
+	RequireUnmanaged(context.Context, int64, []dataprotection.ResourceReference, time.Time) error
+}
+
+func DataItemTarget(itemFingerprint string) dataprotection.ResourceReference {
+	return dataprotection.ResourceReference{
+		OwnerModule:      "meta",
+		ResourceType:     "data_item",
+		ResourceIdentity: strings.TrimSpace(itemFingerprint),
+	}
+}
+
+// RequireUnmanagedDataItem is used by raw-content outlets that do not have a
+// component-level protection executor. Any managed state is denied.
+func RequireUnmanagedDataItem(ctx context.Context, gate UnmanagedDataItemGate, tenantID uint, itemFingerprint string, now time.Time) error {
+	itemFingerprint = strings.TrimSpace(itemFingerprint)
+	if gate == nil || tenantID == 0 || itemFingerprint == "" {
+		return ErrRequired
+	}
+	if err := gate.RequireUnmanaged(ctx, int64(tenantID), []dataprotection.ResourceReference{DataItemTarget(itemFingerprint)}, now); err != nil {
+		return ErrRequired
+	}
+	return nil
+}
+
 func DataItemGate(
 	gate LocalProjectionGate,
 	tenantID uint,
@@ -35,11 +61,7 @@ func DataItemGate(
 	if gate == nil || tenantID == 0 || itemFingerprint == "" {
 		return projectionstore.GateResult{Managed: true, Err: ErrRequired}
 	}
-	return gate.Gate(int64(tenantID), dataprotection.ResourceReference{
-		OwnerModule:      "meta",
-		ResourceType:     "data_item",
-		ResourceIdentity: itemFingerprint,
-	}, now)
+	return gate.Gate(int64(tenantID), DataItemTarget(itemFingerprint), now)
 }
 
 // TableRules validates locally installed rules for one Manager action against

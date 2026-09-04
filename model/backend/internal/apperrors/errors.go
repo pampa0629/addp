@@ -9,6 +9,7 @@ const (
 	KindValidation  Kind = "validation"
 	KindConflict    Kind = "conflict"
 	KindNotFound    Kind = "not_found"
+	KindForbidden   Kind = "forbidden"
 	KindUnavailable Kind = "unavailable"
 )
 
@@ -44,6 +45,7 @@ func Wrap(kind Kind, code, messageID string, cause error) error {
 func Validation(code, messageID string) error  { return New(KindValidation, code, messageID) }
 func Conflict(code, messageID string) error    { return New(KindConflict, code, messageID) }
 func NotFound(code, messageID string) error    { return New(KindNotFound, code, messageID) }
+func Forbidden(code, messageID string) error   { return New(KindForbidden, code, messageID) }
 func Unavailable(code, messageID string) error { return New(KindUnavailable, code, messageID) }
 
 func As(err error) (*DomainError, bool) {

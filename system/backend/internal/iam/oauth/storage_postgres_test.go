@@ -219,7 +219,20 @@ func TestStorageAgainstPostgres(t *testing.T) {
 		advancedAccessPlain := "addp_at_storage-postgres-access-3"
 		advancedAccessSignature := opaqueSignature(advancedAccessPlain)
 		advancedRefreshSignature := opaqueSignature("addp_rt_storage-postgres-refresh-3")
-		txCtx, err = storage.BeginTX(ctx)
+		authorizationAdvanceAuditContext := WithTransactionAudit(ctx, iam.AuditEvent{
+			EventName:  "oauth.token.issued",
+			Result:     iam.AuditResultSucceeded,
+			RiskLevel:  iam.AuditRiskMedium,
+			ModuleName: "system",
+			EntityType: "oauth_security_event",
+			EntityID:   "oauth.token.issued",
+			Details: map[string]any{
+				"client_id":  "addp-cli",
+				"grant_type": "refresh_token",
+				"scope":      "addp.api",
+			},
+		})
+		txCtx, err = storage.BeginTX(authorizationAdvanceAuditContext)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -237,6 +250,24 @@ func TestStorageAgainstPostgres(t *testing.T) {
 		}
 		if err := storage.Commit(txCtx); err != nil {
 			t.Fatalf("commit OAuth authorization-version rotation: %v", err)
+		}
+		authorizationAdvanceEvent, authorizationAdvanceCommitted := TransactionAuditCommitted(authorizationAdvanceAuditContext)
+		if !authorizationAdvanceCommitted || len(authorizationAdvanceEvent.Details) != 3 ||
+			authorizationAdvanceEvent.Details["client_id"] != "addp-cli" ||
+			authorizationAdvanceEvent.Details["grant_type"] != "refresh_token" ||
+			authorizationAdvanceEvent.Details["scope"] != "addp.api" {
+			t.Fatalf("authorization-version rotation audit = %#v, committed=%t", authorizationAdvanceEvent, authorizationAdvanceCommitted)
+		}
+		var authorizationAdvanceAuditCount int64
+		if err := db.Raw(`
+			SELECT count(*) FROM system.audit_logs
+			WHERE event_name = 'oauth.token.issued'
+			  AND details = '{"client_id":"addp-cli","grant_type":"refresh_token","scope":"addp.api"}'::jsonb
+		`).Scan(&authorizationAdvanceAuditCount).Error; err != nil {
+			t.Fatal(err)
+		}
+		if authorizationAdvanceAuditCount != 1 {
+			t.Fatalf("authorization-version rotation audit count = %d, want 1", authorizationAdvanceAuditCount)
 		}
 		var advancedFamily iam.RefreshTokenFamily
 		if err := db.Where("protocol_request_id = ?", requestID).Take(&advancedFamily).Error; err != nil {

@@ -45,10 +45,13 @@ describe('Security product information architecture', () => {
     expect(detectors).toContain('componentProps.capability.privacy_i18n_key')
     expect(detectors).toContain('componentProps.capability.limitations_i18n_key')
     expect(baselines).toContain('security.baseline.mappingHint')
+    expect(baselines).toContain('security.baseline.effectImpactTitle')
+    expect(baselines).toContain('security.baseline.effectImpact.${form.effect}')
   })
 
   it('uses user-facing names and relation selectors instead of numeric IDs', () => {
     const zhCn = JSON.parse(readSource('../src/i18n/zh-cn.json'))
+    const en = JSON.parse(readSource('../src/i18n/en.json'))
     const sensitiveTypes = readSource('../src/views/SensitiveDataTypeList.vue')
 
     expect(zhCn.security.resources.classificationGrading).toBe('分类分级体系')
@@ -58,6 +61,14 @@ describe('Security product information architecture', () => {
     expect(zhCn.security.fields.security_classification_id).toBe('所属分类')
     expect(zhCn.security.fields.default_security_grade_id).toBe('自动发现初始等级')
     expect(zhCn.security.fields.invalid_value_effect).toBe('不符合格式时')
+    expect(zhCn.security.baseline.effectImpact.mask).toContain('保留字段结构')
+    expect(zhCn.security.baseline.effectImpact.suppress).toContain('删除该字段及其值')
+    expect(zhCn.security.baseline.effectImpact.deny).toContain('拒绝整个数据请求')
+    expect(zhCn.security.options.effects.suppress).toBe('移除字段')
+    expect(zhCn.security.enrollment.effects.suppress).toBe('移除')
+    expect(JSON.stringify(zhCn)).not.toContain('抑制字段')
+    expect(en.security.options.effects.suppress).toBe('Remove field')
+    expect(en.security.enrollment.effects.suppress).toBe('Remove')
     expect(sensitiveTypes).toContain('form.security_classification_id')
     expect(sensitiveTypes).toContain('form.default_security_grade_id')
     expect(sensitiveTypes).not.toContain('protection_threshold')

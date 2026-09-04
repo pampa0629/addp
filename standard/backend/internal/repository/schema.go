@@ -27,8 +27,16 @@ func Migrate(db *gorm.DB) error {
 		if err := prepareStandardSchemaMigration(tx); err != nil {
 			return err
 		}
+		if err := removeLegacyDimensionHierarchyTables(tx); err != nil {
+			return err
+		}
 		if err := tx.AutoMigrate(
 			&models.Domain{},
+			&models.StandardCollection{},
+			&models.StandardCollectionRevision{},
+			&models.StandardCollectionMember{},
+			&models.StandardCollectionAssignment{},
+			&models.StandardCollectionEvent{},
 			&models.Glossary{},
 			&models.GlossaryElementMapping{},
 			&models.Element{},
@@ -47,8 +55,6 @@ func Migrate(db *gorm.DB) error {
 			&models.DocumentElementMapping{},
 			&models.DocumentGlossaryMapping{},
 			&models.DocumentMetricMapping{},
-			&models.DimensionHierarchy{},
-			&models.DimensionHierarchyLevel{},
 			&models.StandardReferenceDeletion{},
 			&models.CatalogResourceChangeRow{},
 		); err != nil {
@@ -62,6 +68,18 @@ func Migrate(db *gorm.DB) error {
 		}
 		return applyStandardSchemaStatements(tx)
 	})
+}
+
+func removeLegacyDimensionHierarchyTables(db *gorm.DB) error {
+	for _, statement := range []string{
+		"DROP TABLE IF EXISTS standard.dimension_hierarchy_levels",
+		"DROP TABLE IF EXISTS standard.dimension_hierarchies",
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			return fmt.Errorf("remove legacy Standard dimension hierarchy tables: %w", err)
+		}
+	}
+	return nil
 }
 
 func migrateStandardCatalogMetricChanges(db *gorm.DB) error {
@@ -436,6 +454,11 @@ func postgresStandardSchemaStatements() []string {
 		FROM ordered WHERE ordered.id = revision.id AND ordered.next_from IS NOT NULL
 			AND (revision.effective_to IS NULL OR revision.effective_to > ordered.next_from)`,
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_domains_tenant_code ON standard.domains (tenant_id, code)",
+		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_collections_tenant_code ON standard.standard_collections (tenant_id, code)",
+		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_collection_revisions_collection_no ON standard.standard_collection_revisions (collection_id, revision_no)",
+		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_collection_members_revision_member ON standard.standard_collection_members (collection_revision_id, member_type, member_id)",
+		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_collection_assignments_collection_principal_role ON standard.standard_collection_assignments (collection_id, principal_id, role)",
+		"CREATE INDEX IF NOT EXISTS idx_standard_collection_events_collection_id ON standard.standard_collection_events (collection_id, id DESC)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_elements_tenant_code ON standard.elements (tenant_id, code)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_element_revisions_element_no ON standard.element_revisions (element_id, revision_no)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_code_sets_tenant_code ON standard.code_sets (tenant_id, code)",
@@ -450,8 +473,6 @@ func postgresStandardSchemaStatements() []string {
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_document_glossary_mappings_document_glossary ON standard.document_glossary_mappings (document_id, glossary_id)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_document_metric_mappings_document_metric ON standard.document_metric_mappings (document_id, metric_id)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_document_file_cleanups_object_key ON standard.document_file_cleanups (object_key)",
-		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_dimension_hierarchies_tenant_code ON standard.dimension_hierarchies (tenant_id, code)",
-		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_dimension_hierarchy_levels_hierarchy_level ON standard.dimension_hierarchy_levels (hierarchy_id, level_num)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS uq_standard_reference_deletions_resource ON standard.reference_deletions (tenant_id, resource_type, resource_id)",
 
 		"DROP INDEX IF EXISTS standard.idx_codeset_tenant_code",
@@ -471,7 +492,10 @@ func postgresStandardSchemaStatements() []string {
 		"ALTER TABLE standard.document_glossary_mappings DROP CONSTRAINT IF EXISTS document_glossary_mappings_document_id_glossary_id_key",
 		"ALTER TABLE standard.document_metric_mappings DROP CONSTRAINT IF EXISTS document_metric_mappings_document_id_metric_id_key",
 
-		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.dimension_hierarchy_levels'::regclass AND conname = 'ck_standard_dimension_hierarchy_levels_level_num') THEN ALTER TABLE standard.dimension_hierarchy_levels ADD CONSTRAINT ck_standard_dimension_hierarchy_levels_level_num CHECK (level_num > 0); END IF; END $do$",
+		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.standard_collection_revisions'::regclass AND conname = 'ck_standard_collection_revisions_status') THEN ALTER TABLE standard.standard_collection_revisions ADD CONSTRAINT ck_standard_collection_revisions_status CHECK (status IN ('draft','in_review','published','withdrawn')); END IF; END $do$",
+		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.standard_collection_members'::regclass AND conname = 'ck_standard_collection_members_type') THEN ALTER TABLE standard.standard_collection_members ADD CONSTRAINT ck_standard_collection_members_type CHECK (member_type IN ('element','code_set','metric','glossary','document')); END IF; END $do$",
+		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.standard_collection_assignments'::regclass AND conname = 'ck_standard_collection_assignments_role') THEN ALTER TABLE standard.standard_collection_assignments ADD CONSTRAINT ck_standard_collection_assignments_role CHECK (role IN ('owner','maintainer','reviewer')); END IF; END $do$",
+		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.standard_collection_events'::regclass AND conname = 'ck_standard_collection_events_type') THEN ALTER TABLE standard.standard_collection_events ADD CONSTRAINT ck_standard_collection_events_type CHECK (event_type IN ('created','draft_created','draft_updated','submitted','returned','published','assignments_replaced')); END IF; END $do$",
 		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.metric_dependencies'::regclass AND conname = 'ck_standard_metric_dependencies_distinct') THEN ALTER TABLE standard.metric_dependencies ADD CONSTRAINT ck_standard_metric_dependencies_distinct CHECK (from_metric_id <> to_metric_id); END IF; END $do$",
 		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.element_revisions'::regclass AND conname = 'ck_standard_element_revisions_status') THEN ALTER TABLE standard.element_revisions ADD CONSTRAINT ck_standard_element_revisions_status CHECK (status IN ('draft','in_review','published','withdrawn')); END IF; END $do$",
 		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.element_revisions'::regclass AND conname = 'ck_standard_element_revisions_effective_interval') THEN ALTER TABLE standard.element_revisions ADD CONSTRAINT ck_standard_element_revisions_effective_interval CHECK ((status <> 'published' OR effective_from IS NOT NULL) AND (effective_to IS NULL OR (effective_from IS NOT NULL AND effective_from < effective_to))); END IF; END $do$",
@@ -531,7 +555,6 @@ func postgresStandardSchemaStatements() []string {
 		"CREATE INDEX IF NOT EXISTS idx_standard_document_element_mappings_element ON standard.document_element_mappings (element_id)",
 		"CREATE INDEX IF NOT EXISTS idx_standard_document_glossary_mappings_glossary ON standard.document_glossary_mappings (glossary_id)",
 		"CREATE INDEX IF NOT EXISTS idx_standard_document_metric_mappings_metric ON standard.document_metric_mappings (metric_id)",
-		"CREATE INDEX IF NOT EXISTS idx_standard_dimension_hierarchy_levels_element ON standard.dimension_hierarchy_levels (element_id)",
 	}
 
 	// 清理早期 AutoMigrate/手工迁移生成的非统一约束名，后续仅保留下方单一路线。
@@ -542,7 +565,6 @@ func postgresStandardSchemaStatements() []string {
 		{"standard.document_element_mappings", "document_element_mappings_document_id_fkey"},
 		{"standard.document_glossary_mappings", "document_glossary_mappings_document_id_fkey"},
 		{"standard.document_metric_mappings", "document_metric_mappings_document_id_fkey"},
-		{"standard.dimension_hierarchy_levels", "fk_standard_dimension_hierarchies_levels"},
 		{"standard.elements", "elements_unit_id_fkey"},
 		{"standard.elements", "fk_standard_elements_domain"},
 		{"standard.elements", "elements_domain_id_fkey"},
@@ -569,6 +591,12 @@ func postgresStandardSchemaStatements() []string {
 		onDelete   string
 	}{
 		{"standard.domains", "fk_standard_domains_parent", "parent_id", "standard.domains(id)", "RESTRICT"},
+		{"standard.standard_collections", "fk_standard_collections_draft_revision", "draft_revision_id", "standard.standard_collection_revisions(id)", "SET NULL"},
+		{"standard.standard_collection_revisions", "fk_standard_collection_revisions_collection", "collection_id", "standard.standard_collections(id)", "CASCADE"},
+		{"standard.standard_collection_members", "fk_standard_collection_members_revision", "collection_revision_id", "standard.standard_collection_revisions(id)", "CASCADE"},
+		{"standard.standard_collection_assignments", "fk_standard_collection_assignments_collection", "collection_id", "standard.standard_collections(id)", "CASCADE"},
+		{"standard.standard_collection_events", "fk_standard_collection_events_collection", "collection_id", "standard.standard_collections(id)", "CASCADE"},
+		{"standard.standard_collection_events", "fk_standard_collection_events_revision", "revision_id", "standard.standard_collection_revisions(id)", "CASCADE"},
 		{"standard.glossaries", "fk_standard_glossaries_domain", "domain_id", "standard.domains(id)", "RESTRICT"},
 		{"standard.elements", "fk_standard_elements_owner_domain", "owner_domain_id", "standard.domains(id)", "RESTRICT"},
 		{"standard.elements", "fk_standard_elements_draft_revision", "draft_revision_id", "standard.element_revisions(id)", "SET NULL"},
@@ -598,9 +626,6 @@ func postgresStandardSchemaStatements() []string {
 		{"standard.document_glossary_mappings", "fk_standard_document_glossary_mappings_glossary", "glossary_id", "standard.glossaries(id)", "CASCADE"},
 		{"standard.document_metric_mappings", "fk_standard_document_metric_mappings_document", "document_id", "standard.documents(id)", "CASCADE"},
 		{"standard.document_metric_mappings", "fk_standard_document_metric_mappings_metric", "metric_id", "standard.metrics(id)", "CASCADE"},
-		{"standard.dimension_hierarchies", "fk_standard_dimension_hierarchies_domain", "domain_id", "standard.domains(id)", "RESTRICT"},
-		{"standard.dimension_hierarchy_levels", "fk_standard_dimension_hierarchy_levels_hierarchy", "hierarchy_id", "standard.dimension_hierarchies(id)", "CASCADE"},
-		{"standard.dimension_hierarchy_levels", "fk_standard_dimension_hierarchy_levels_element", "element_id", "standard.elements(id)", "SET NULL"},
 	} {
 		statements = append(statements, postgresForeignKeyStatement(foreignKey.table, foreignKey.name, foreignKey.columns, foreignKey.references, foreignKey.onDelete))
 	}
@@ -617,6 +642,11 @@ func postgresForeignKeyStatement(table, name, columns, references, onDelete stri
 func sqliteStandardSchemaStatements() []string {
 	return []string{
 		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_domains_tenant_code ON domains (tenant_id, code)",
+		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_collections_tenant_code ON standard_collections (tenant_id, code)",
+		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_collection_revisions_collection_no ON standard_collection_revisions (collection_id, revision_no)",
+		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_collection_members_revision_member ON standard_collection_members (collection_revision_id, member_type, member_id)",
+		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_collection_assignments_collection_principal_role ON standard_collection_assignments (collection_id, principal_id, role)",
+		"CREATE INDEX IF NOT EXISTS standard.idx_standard_collection_events_collection_id ON standard_collection_events (collection_id, id DESC)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_elements_tenant_code ON elements (tenant_id, code)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_element_revisions_element_no ON element_revisions (element_id, revision_no)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_code_sets_tenant_code ON code_sets (tenant_id, code)",
@@ -631,8 +661,6 @@ func sqliteStandardSchemaStatements() []string {
 		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_document_glossary_mappings_document_glossary ON document_glossary_mappings (document_id, glossary_id)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_document_metric_mappings_document_metric ON document_metric_mappings (document_id, metric_id)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_document_file_cleanups_object_key ON document_file_cleanups (object_key)",
-		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_dimension_hierarchies_tenant_code ON dimension_hierarchies (tenant_id, code)",
-		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_dimension_hierarchy_levels_hierarchy_level ON dimension_hierarchy_levels (hierarchy_id, level_num)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS standard.uq_standard_reference_deletions_resource ON reference_deletions (tenant_id, resource_type, resource_id)",
 
 		"DROP INDEX IF EXISTS standard.idx_codeset_tenant_code",
@@ -644,6 +672,5 @@ func sqliteStandardSchemaStatements() []string {
 		"CREATE INDEX IF NOT EXISTS standard.idx_standard_document_element_mappings_element ON document_element_mappings (element_id)",
 		"CREATE INDEX IF NOT EXISTS standard.idx_standard_document_glossary_mappings_glossary ON document_glossary_mappings (glossary_id)",
 		"CREATE INDEX IF NOT EXISTS standard.idx_standard_document_metric_mappings_metric ON document_metric_mappings (metric_id)",
-		"CREATE INDEX IF NOT EXISTS standard.idx_standard_dimension_hierarchy_levels_element ON dimension_hierarchy_levels (element_id)",
 	}
 }

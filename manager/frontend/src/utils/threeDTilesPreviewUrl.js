@@ -1,11 +1,11 @@
 export function buildTilesetSource(url, origin = window.location.origin) {
   const parsed = parseStorageStreamURL(url, origin)
   if (!parsed) {
-    return { rootURL: url, engineID: '', storageRef: '', virtual: false }
+    return { rootURL: url, locator: '', storageRef: '', virtual: false }
   }
   return {
     rootURL: virtualTileURL(parsed.storageRef, origin),
-    engineID: parsed.engineID,
+    locator: parsed.locator,
     storageRef: parsed.storageRef,
     virtual: true
   }
@@ -20,10 +20,10 @@ export function parseStorageStreamURL(url, origin = window.location.origin) {
     return null
   }
   if (!parsed.pathname.endsWith('/api/v1/manager/storage-stream')) return null
-  const engineID = parsed.searchParams.get('engine_id') || ''
+  const locator = parsed.searchParams.get('locator') || ''
   const storageRef = parsed.searchParams.get('storage_ref') || ''
-  if (!engineID || !storageRef) return null
-  return { engineID, storageRef }
+  if (!locator || !storageRef) return null
+  return { locator, storageRef }
 }
 
 export function virtualTileURL(storageRef, origin = window.location.origin) {
@@ -52,7 +52,7 @@ export function resolveTileResourceURL(resourceURL, source, origin = window.loca
     .map((part) => decodeURIComponent(part))
     .join('/')
   const params = new URLSearchParams()
-  params.set('engine_id', source.engineID)
+  params.set('locator', source.locator)
   params.set('storage_ref', storageRef || source.storageRef)
   return `/api/v1/manager/storage-stream?${params.toString()}`
 }

@@ -5679,6 +5679,154 @@ const docTemplate = `{
                 ]
             }
         },
+        "/runtime/standard-governance-users/candidates": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅 addp-standard Tenant Service Principal 可按名称或用户名分页查询当前租户内可引用的活动用户 | Only the addp-standard tenant service principal may search referenceable active users in the current tenant by display name or username",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Runtime Standard Governance Users"
+                ],
+                "summary": "查询 Standard 治理用户候选 | List Standard governance user candidates",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "名称或用户名，最多 100 字符 | Name or username, maximum 100 characters",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码，默认 1 | Page number, default 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认 20，最大 50 | Page size, default 20 and maximum 50",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "data": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/internal_api.IAMCatalogReferenceCandidateResponse"
+                                    }
+                                },
+                                "page": {
+                                    "type": "integer"
+                                },
+                                "page_size": {
+                                    "type": "integer"
+                                },
+                                "total": {
+                                    "type": "integer"
+                                },
+                                "total_pages": {
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.tenant_membership.read"
+                ]
+            }
+        },
+        "/runtime/standard-governance-users/resolve": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅 addp-standard Tenant Service Principal 可按当前 Tenant 解析 User Principal；跨 Tenant、非用户和无有效成员关系均不可引用 | Only the addp-standard tenant service principal may resolve User Principals in the current tenant; cross-tenant, non-user, and inactive memberships are not referenceable",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Runtime Standard Governance Users"
+                ],
+                "summary": "精确批量解析 Standard 治理用户 | Resolve Standard governance users in batch",
+                "parameters": [
+                    {
+                        "description": "User 引用集合，最多 200 个 | User references, up to 200",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMCatalogReferenceBatchRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMCatalogReferenceBatchResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.tenant_membership.read"
+                ]
+            }
+        },
         "/runtime/task-authorization-subjects/{id}/resolve": {
             "post": {
                 "security": [

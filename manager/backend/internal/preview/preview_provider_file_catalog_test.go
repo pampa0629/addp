@@ -201,9 +201,10 @@ func TestFileCatalogImagePreviewUsesStorageStreamURL(t *testing.T) {
 	provider := NewFileCatalogPreviewProvider(nil, contentRegistry)
 
 	preview, err := provider.Preview(context.Background(), &PreviewRequest{
-		Engine: &models.Engine{EngineType: "nfs", ID: 26},
-		Schema: "geotiff",
-		Table:  "srtm_40_01.tif",
+		Engine:  &models.Engine{EngineType: "nfs", ID: 26},
+		Locator: "addp://engine/26/path/geotiff/srtm_40_01.tif?type=file&item_id=101",
+		Schema:  "geotiff",
+		Table:   "srtm_40_01.tif",
 		Attributes: map[string]interface{}{
 			"item": map[string]interface{}{
 				"data_type": "media",
@@ -225,7 +226,7 @@ func TestFileCatalogImagePreviewUsesStorageStreamURL(t *testing.T) {
 		t.Fatalf("content = %#v, want URL material image preview", content)
 	}
 	if !strings.Contains(content.URL, "/api/v1/manager/storage-stream?") ||
-		!strings.Contains(content.URL, "engine_id=26") ||
+		!strings.Contains(content.URL, "locator=") ||
 		!strings.Contains(content.URL, "storage_ref=geotiff%2Fsrtm_40_01.tif") {
 		t.Fatalf("content URL = %q, want file storage stream URL", content.URL)
 	}
@@ -259,9 +260,10 @@ func TestFileCatalogGLBPreviewUsesModel3DStorageStreamURL(t *testing.T) {
 	provider := NewFileCatalogPreviewProvider(nil, contentRegistry)
 
 	preview, err := provider.Preview(context.Background(), &PreviewRequest{
-		Engine: &models.Engine{EngineType: "nfs", ID: 26},
-		Schema: "models",
-		Table:  "building.glb",
+		Engine:  &models.Engine{EngineType: "nfs", ID: 26},
+		Locator: "addp://engine/26/path/models/building.glb?type=file&item_id=102",
+		Schema:  "models",
+		Table:   "building.glb",
 		Attributes: map[string]interface{}{
 			"item": map[string]interface{}{
 				"data_type": "model_3d",
@@ -331,6 +333,7 @@ func TestFileCatalogDirectModel3DSourcePreviewFormats(t *testing.T) {
 
 			preview, err := provider.Preview(context.Background(), &PreviewRequest{
 				Engine:          &models.Engine{EngineType: "nfs", ID: 26},
+				Locator:         "addp://engine/26/path/models/mesh" + tt.extension + "?type=file&item_id=103",
 				Schema:          "models",
 				Table:           "mesh" + tt.extension,
 				TenantID:        uintPtr(1),
@@ -471,9 +474,10 @@ func TestFileCatalog3DTilesPreviewUsesManifestStorageStreamURL(t *testing.T) {
 	provider := NewFileCatalogPreviewProvider(nil, contentRegistry)
 
 	preview, err := provider.Preview(context.Background(), &PreviewRequest{
-		Engine: &models.Engine{EngineType: "nfs", ID: 26},
-		Schema: "3d",
-		Table:  "mars3d-qx-dyt-3dtiles",
+		Engine:  &models.Engine{EngineType: "nfs", ID: 26},
+		Locator: "addp://engine/26/path/3d/mars3d-qx-dyt-3dtiles?type=file&item_id=104",
+		Schema:  "3d",
+		Table:   "mars3d-qx-dyt-3dtiles",
 		Attributes: map[string]interface{}{
 			"item": map[string]interface{}{
 				"data_type": "model_3d",
@@ -598,9 +602,10 @@ func TestFileCatalogGaussianSplatPLYPreviewReturnsURL(t *testing.T) {
 	provider := NewFileCatalogPreviewProvider(nil, contentRegistry)
 
 	preview, err := provider.Preview(context.Background(), &PreviewRequest{
-		Engine: &models.Engine{EngineType: "nfs", ID: 26},
-		Schema: "3d/gaussian",
-		Table:  "model.ply",
+		Engine:  &models.Engine{EngineType: "nfs", ID: 26},
+		Locator: "addp://engine/26/path/3d/gaussian/model.ply?type=file&item_id=105",
+		Schema:  "3d/gaussian",
+		Table:   "model.ply",
 		Attributes: map[string]interface{}{
 			"item": map[string]interface{}{
 				"data_type": "gaussian_splat",
@@ -659,6 +664,7 @@ func TestFileCatalogGaussianSplatPreviewKeepsSourceWhenKSplatReady(t *testing.T)
 
 	preview, err := provider.Preview(context.Background(), &PreviewRequest{
 		Engine:          &models.Engine{EngineType: "nfs", ID: 26},
+		Locator:         "addp://engine/26/path/3d/gaussian/model.ply?type=file&item_id=106",
 		Schema:          "3d/gaussian",
 		Table:           "model.ply",
 		TenantID:        uintPtr(1),

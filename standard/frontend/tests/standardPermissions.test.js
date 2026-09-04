@@ -9,7 +9,8 @@ describe('Standard permissions', () => {
   it('builds canonical permission keys for every Standard resource', () => {
     expect(STANDARD_PERMISSION_RESOURCES.map(resource => buildStandardPermission(resource, 'update'))).toEqual([
       'standard.code_set.update',
-      'standard.dimension_hierarchy.update',
+      'standard.collection.update',
+      'standard.collection_assignment.update',
       'standard.document.update',
       'standard.domain.update',
       'standard.element.update',

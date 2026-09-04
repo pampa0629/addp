@@ -57,6 +57,16 @@ test('logical table materialization binds a schema locator and target name', asy
   assert.doesNotMatch(source, /materializationForm\.table_name/)
 })
 
+test('materialized target decommission uses the exact persisted target and a dedicated permission', async () => {
+  const view = await readFile(new URL('../src/views/LogicalTableDetail.vue', import.meta.url), 'utf8')
+  const api = await readFile(new URL('../src/api/model.js', import.meta.url), 'utf8')
+  assert.match(view, /model\.materialized_target\.delete/)
+  assert.match(view, /decommissionConfirmation\.value !== decommissionTarget\.value\.confirmation/)
+  assert.match(view, /target_parent_locator: decommissionTarget\.value\.locator/)
+  assert.match(view, /target_name: decommissionTarget\.value\.targetName/)
+  assert.match(api, /logical-tables\/\$\{id\}\/materialized-target/)
+})
+
 test('PUT payloads preserve complete nullable and zero-valued model state', () => {
   assert.deepEqual(buildLogicalTableUpdateRequest(
     { name: 'Order', domain_id: null, table_type: 'entity', layer: 'dwd' },
@@ -73,10 +83,10 @@ test('PUT payloads preserve complete nullable and zero-valued model state', () =
 
   assert.deepEqual(buildLogicalFieldUpdateRequest({
     name: 'ID', element_id: null, length: null, nullable: false, is_pk: false,
-    is_partition: false, sort_order: 0, hierarchy_id: null, hierarchy_level: 0
+    is_partition: false, sort_order: 0
   }, 5), {
     name: 'ID', element_id: null, length: null, nullable: false, is_pk: false,
-    is_partition: false, sort_order: 0, hierarchy_id: null, hierarchy_level: 0, version: 5
+    is_partition: false, sort_order: 0, version: 5
   })
 
   assert.deepEqual(buildDWLayerUpdateRequest({ layer_name: 'DWD', sort_order: 0 }, { quality_sla: null, version: 6 }), {

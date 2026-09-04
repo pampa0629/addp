@@ -14,8 +14,25 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 119 {
-		t.Fatalf("LatestVersion = %d, want 119", catalog.LatestVersion)
+	if catalog.LatestVersion != 121 {
+		t.Fatalf("LatestVersion = %d, want 121", catalog.LatestVersion)
+	}
+}
+
+func TestStandardCollectionMigrationPublishesGovernancePermissionsAndRuntimeRead(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000120_iam_standard_governance_user_read.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 120: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'standard.collection.create'", "'standard.collection.delete'", "'standard.collection.publish'",
+		"'standard.collection.read'", "'standard.collection.update'", "'standard.collection_assignment.update'",
+		"'tenant.governance_manager'", "'iam.tenant_membership.read'", "'tenant.standard_runtime'",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 120 missing %q", fragment)
+		}
 	}
 }
 
@@ -847,6 +864,26 @@ func TestDataArchitectStandardReferenceMigration(t *testing.T) {
 	}
 	if strings.Contains(sql, "INSERT INTO system.role_assignments") {
 		t.Fatal("migration 62 must not assign roles to principals")
+	}
+}
+
+func TestRemoveStandardDimensionHierarchyPermissionMigration(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000121_iam_remove_standard_dimension_hierarchy.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 121: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'standard.dimension_hierarchy.create'",
+		"'standard.dimension_hierarchy.delete'",
+		"'standard.dimension_hierarchy.read'",
+		"'standard.dimension_hierarchy.update'",
+		"DELETE FROM system.role_permissions",
+		"SET status = 'disabled'",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 121 missing %q", fragment)
+		}
 	}
 }
 

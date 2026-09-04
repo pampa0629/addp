@@ -37,8 +37,5 @@ func (s *ObjectStorageCatalogRuntime) ScanRefGroups(
 	_ = force
 	scanDepth = scanflow.ScanDepthOrDefault(scanDepth, "deep")
 	result, err := scanObjectRefGroups(ctx, s, s.repo, resource, tenantID, groups, scanDepth, reporter)
-	if err != nil {
-		return scanflow.DispatchResult{}, err
-	}
-	return result, nil
+	return result, err
 }

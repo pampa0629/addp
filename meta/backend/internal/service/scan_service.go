@@ -175,6 +175,9 @@ func (s *ScanService) ScanEngineWithOptions(opts scanflow.Options) (*models.Scan
 		}
 		result, refreshErr := s.runtimes.ItemRefresh.RefreshKnownItemByIDWithPlugin(ctx, enginePlugin, resource, effectiveTenantID, opts.ItemID)
 		if refreshErr != nil {
+			failures := &scanflow.FailedTargetCollector{}
+			failures.Add(fmt.Sprintf("item:%d", opts.ItemID), refreshErr)
+			refreshErr = failures.Err()
 			if reporter != nil {
 				reporter.Message(fmt.Sprintf("扫描失败: %v", refreshErr))
 			}
@@ -208,10 +211,22 @@ func (s *ScanService) ScanEngineWithOptions(opts scanflow.Options) (*models.Scan
 	})
 
 	if err != nil {
+		if count, _ := scanflow.FailedTargetDetails(err); count == 0 {
+			failures := &scanflow.FailedTargetCollector{}
+			failures.Add(scanFailureTarget(resource, scope), err)
+			err = failures.Err()
+		}
 		if reporter != nil {
 			reporter.Message(fmt.Sprintf("扫描失败: %v", err))
 		}
-		return nil, err
+		completedAt := time.Now()
+		return scanflow.NewScanResponse(
+			"failed",
+			err.Error(),
+			scanflow.ScanCounts{CatalogNodes: result.CatalogNodes, Items: result.Items, Fields: result.Fields, Extraction: result.Extraction},
+			startTime,
+			completedAt,
+		), err
 	}
 
 	completedAt := time.Now()
@@ -237,6 +252,21 @@ func (s *ScanService) ScanEngineWithOptions(opts scanflow.Options) (*models.Scan
 		startTime,
 		completedAt,
 	), nil
+}
+
+func scanFailureTarget(resource *commonModels.Engine, scope scanflow.Scope) string {
+	if len(scope.CatalogPaths) > 0 {
+		return scope.CatalogPaths[0]
+	}
+	if len(scope.RefGroups) > 0 {
+		if primary := scanflow.ScanRefGroupPrimaryPath(scope.RefGroups[0]); primary != "" {
+			return primary
+		}
+	}
+	if resource != nil && strings.TrimSpace(resource.Name) != "" {
+		return resource.Name
+	}
+	return fmt.Sprintf("engine:%d", scope.EngineID)
 }
 
 func tenantIDForResource(resource *commonModels.Engine, fallback uint) uint {

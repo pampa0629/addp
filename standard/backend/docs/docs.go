@@ -750,7 +750,7 @@ const docTemplate = `{
                 ]
             }
         },
-        "/dimension-hierarchies": {
+        "/collection-user-candidates": {
             "get": {
                 "security": [
                     {
@@ -761,21 +761,146 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Standard"
+                    "Standard Collections"
                 ],
-                "summary": "获取维度层级列表 | List dimension hierarchies",
+                "summary": "查询标准集职责用户候选 | List collection assignment user candidates",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "名称或用户名 | Name or username",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码 | Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/github_com_addp_standard_internal_models.DimensionHierarchy"
+                            "type": "object",
+                            "properties": {
+                                "data": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object"
+                                    }
+                                },
+                                "page": {
+                                    "type": "integer"
+                                },
+                                "page_size": {
+                                    "type": "integer"
+                                },
+                                "total": {
+                                    "type": "integer"
+                                },
+                                "total_pages": {
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.collection_assignment.update"
+                ]
+            }
+        },
+        "/collections": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard Collections"
+                ],
+                "summary": "查询标准集 | List standard collections",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "名称、编码或说明 | Name, code, or description",
+                        "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "draft",
+                            "in_review",
+                            "published"
+                        ],
+                        "type": "string",
+                        "description": "当前治理状态 | Current governance status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码 | Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "data": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/github_com_addp_standard_internal_models.StandardCollectionAggregate"
+                                    }
+                                },
+                                "page": {
+                                    "type": "integer"
+                                },
+                                "page_size": {
+                                    "type": "integer"
+                                },
+                                "total": {
+                                    "type": "integer"
+                                },
+                                "total_pages": {
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
                             }
                         }
                     },
                     "401": {
-                        "description": "需要登录 | Authentication required",
+                        "description": "Unauthorized",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -784,7 +909,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "无权访问 | Access denied",
+                        "description": "Forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -795,7 +920,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "standard.dimension_hierarchy.read"
+                    "standard.collection.read"
                 ]
             },
             "post": {
@@ -804,23 +929,36 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "Standard"
+                    "Standard Collections"
                 ],
-                "summary": "创建维度层级 | Create dimension hierarchy",
-                "responses": {
-                    "200": {
-                        "description": "OK",
+                "summary": "创建标准集 | Create a standard collection",
+                "parameters": [
+                    {
+                        "description": "标准集首个草稿 | Initial collection draft",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.CreateStandardCollectionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.StandardCollectionAggregate"
                         }
                     },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
+                    "400": {
+                        "description": "Bad Request",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -828,8 +966,8 @@ const docTemplate = `{
                             }
                         }
                     },
-                    "403": {
-                        "description": "无权访问 | Access denied",
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -840,11 +978,11 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "standard.dimension_hierarchy.create"
+                    "standard.collection.create"
                 ]
             }
         },
-        "/dimension-hierarchies/{id}": {
+        "/collections/{id}": {
             "get": {
                 "security": [
                     {
@@ -855,163 +993,27 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Standard"
+                    "Standard Collections"
                 ],
-                "summary": "获取维度层级详情 | Get dimension hierarchy detail",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "standard.dimension_hierarchy.read"
-                ]
-            },
-            "put": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "更新维度层级 | Update dimension hierarchy",
+                "summary": "获取标准集详情 | Get standard collection detail",
                 "parameters": [
                     {
-                        "description": "更新维度层级 | Update dimension hierarchy",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_standard_internal_models.UpdateDimensionHierarchyRequest"
-                        }
+                        "type": "integer",
+                        "description": "标准集 ID | Collection ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "409": {
-                        "description": "资源版本冲突 | Resource version conflict",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "standard.dimension_hierarchy.update"
-                ]
-            },
-            "delete": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "删除维度层级 | Delete dimension hierarchy",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.StandardCollectionAggregate"
                         }
                     },
                     "404": {
-                        "description": "维度层级不存在 | Dimension hierarchy not found",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "409": {
-                        "description": "资源仍被 Model 引用 | Resource is still referenced by Model",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "503": {
-                        "description": "Model 引用删除屏障不可用 | Model reference deletion guard unavailable",
+                        "description": "Not Found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -1022,188 +1024,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "standard.dimension_hierarchy.delete"
-                ]
-            }
-        },
-        "/dimension-hierarchies/{id}/levels": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "获取维度层级的层次列表 | List hierarchy levels",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/github_com_addp_standard_internal_models.DimensionHierarchyLevel"
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "standard.dimension_hierarchy.read"
-                ]
-            },
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "创建层次 | Create hierarchy level",
-                "parameters": [
-                    {
-                        "description": "创建层次及当前维度层级版本 | Create level with current hierarchy version",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_standard_internal_models.UpsertHierarchyLevelRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "409": {
-                        "description": "资源版本冲突 | Resource version conflict",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "standard.dimension_hierarchy.update"
-                ]
-            }
-        },
-        "/dimension-hierarchies/{id}/levels/{lid}": {
-            "put": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "更新层次 | Update hierarchy level",
-                "parameters": [
-                    {
-                        "description": "更新层次及当前维度层级版本 | Update level with current hierarchy version",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_standard_internal_models.UpsertHierarchyLevelRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "409": {
-                        "description": "资源版本冲突 | Resource version conflict",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "standard.dimension_hierarchy.update"
+                    "standard.collection.read"
                 ]
             },
             "delete": {
@@ -1212,16 +1033,26 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "Standard"
+                    "Standard Collections"
                 ],
-                "summary": "删除层次 | Delete hierarchy level",
+                "summary": "删除未发布标准集 | Delete an unpublished standard collection",
                 "parameters": [
                     {
-                        "description": "当前维度层级版本 | Current hierarchy version",
+                        "type": "integer",
+                        "description": "标准集 ID | Collection ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "当前资源版本 | Current resource version",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -1235,20 +1066,13 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
                             "additionalProperties": {
                                 "type": "string"
                             }
                         }
                     },
                     "403": {
-                        "description": "无权访问 | Access denied",
+                        "description": "Forbidden",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -1257,7 +1081,7 @@ const docTemplate = `{
                         }
                     },
                     "409": {
-                        "description": "资源版本冲突 | Resource version conflict",
+                        "description": "Conflict",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -1268,7 +1092,436 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "standard.dimension_hierarchy.update"
+                    "standard.collection.delete"
+                ]
+            }
+        },
+        "/collections/{id}/assignments": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard Collections"
+                ],
+                "summary": "替换标准集职责分配 | Replace standard collection assignments",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "标准集 ID | Collection ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "完整职责分配 | Complete assignments",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.ReplaceStandardCollectionAssignmentsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.StandardCollectionAggregate"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.collection_assignment.update"
+                ]
+            }
+        },
+        "/collections/{id}/events": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard Collections"
+                ],
+                "summary": "查询标准集审核事件 | List standard collection governance events",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "标准集 ID | Collection ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码 | Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "data": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/github_com_addp_standard_internal_models.StandardCollectionEvent"
+                                    }
+                                },
+                                "page": {
+                                    "type": "integer"
+                                },
+                                "page_size": {
+                                    "type": "integer"
+                                },
+                                "total": {
+                                    "type": "integer"
+                                },
+                                "total_pages": {
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.collection.read"
+                ]
+            }
+        },
+        "/collections/{id}/revisions": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard Collections"
+                ],
+                "summary": "查询标准集修订 | List standard collection revisions",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "标准集 ID | Collection ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_standard_internal_models.StandardCollectionRevision"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.collection.read"
+                ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard Collections"
+                ],
+                "summary": "创建标准集草稿修订 | Create a standard collection draft revision",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "标准集 ID | Collection ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "新修订 | New revision",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.CreateStandardCollectionRevisionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.StandardCollectionAggregate"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.collection.update"
+                ]
+            }
+        },
+        "/collections/{id}/revisions/{revision_id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard Collections"
+                ],
+                "summary": "更新标准集草稿 | Update a standard collection draft",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "标准集 ID | Collection ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "修订 ID | Revision ID",
+                        "name": "revision_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "完整草稿 | Complete draft",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.UpdateStandardCollectionRevisionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.StandardCollectionAggregate"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.collection.update"
+                ]
+            }
+        },
+        "/collections/{id}/revisions/{revision_id}/publish": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard Collections"
+                ],
+                "summary": "发布标准集修订 | Publish a standard collection revision",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "标准集 ID | Collection ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "修订 ID | Revision ID",
+                        "name": "revision_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "当前资源版本 | Current resource version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.StandardCollectionAggregate"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.collection.publish"
+                ]
+            }
+        },
+        "/collections/{id}/revisions/{revision_id}/return": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard Collections"
+                ],
+                "summary": "退回标准集修订 | Return a standard collection revision",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "标准集 ID | Collection ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "修订 ID | Revision ID",
+                        "name": "revision_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "当前资源版本 | Current resource version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.StandardCollectionAggregate"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.collection.publish"
+                ]
+            }
+        },
+        "/collections/{id}/revisions/{revision_id}/submit": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard Collections"
+                ],
+                "summary": "提交标准集修订审核 | Submit a standard collection revision",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "标准集 ID | Collection ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "修订 ID | Revision ID",
+                        "name": "revision_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "当前资源版本 | Current resource version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.StandardCollectionAggregate"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.collection.update"
                 ]
             }
         },
@@ -5903,79 +6156,48 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_standard_internal_models.DimensionHierarchy": {
+        "github_com_addp_standard_internal_models.CreateStandardCollectionRequest": {
             "type": "object",
+            "required": [
+                "change_summary",
+                "code",
+                "description",
+                "name"
+            ],
             "properties": {
+                "change_summary": {
+                    "type": "string"
+                },
                 "code": {
                     "type": "string"
                 },
-                "created_at": {
-                    "type": "string"
-                },
-                "created_by": {
-                    "type": "integer"
-                },
                 "description": {
                     "type": "string"
                 },
-                "domain_id": {
-                    "type": "integer"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "levels": {
+                "members": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_addp_standard_internal_models.DimensionHierarchyLevel"
+                        "$ref": "#/definitions/github_com_addp_standard_internal_models.StandardCollectionMemberInput"
                     }
-                },
-                "lifecycle_state": {
-                    "type": "string"
                 },
                 "name": {
                     "type": "string"
-                },
-                "tenant_id": {
-                    "type": "integer"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "updated_by": {
-                    "type": "integer"
-                },
-                "version": {
-                    "type": "integer"
                 }
             }
         },
-        "github_com_addp_standard_internal_models.DimensionHierarchyLevel": {
+        "github_com_addp_standard_internal_models.CreateStandardCollectionRevisionRequest": {
             "type": "object",
+            "required": [
+                "change_summary",
+                "version"
+            ],
             "properties": {
-                "description": {
+                "change_summary": {
                     "type": "string"
                 },
-                "element_id": {
-                    "description": "可选关联 standard.elements，目标删除时置空",
-                    "type": "integer"
-                },
-                "hierarchy_id": {
-                    "type": "integer"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "level_num": {
-                    "description": "1=最粗粒度，数字越大粒度越细",
-                    "type": "integer"
-                },
-                "name": {
-                    "description": "e.g., \"年\", \"季度\", \"月\", \"日\"",
-                    "type": "string"
-                },
-                "sort_order": {
-                    "type": "integer"
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
                 }
             }
         },
@@ -6671,6 +6893,26 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_standard_internal_models.ReplaceStandardCollectionAssignmentsRequest": {
+            "type": "object",
+            "required": [
+                "assignments",
+                "version"
+            ],
+            "properties": {
+                "assignments": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_standard_internal_models.StandardCollectionAssignmentInput"
+                    }
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
         "github_com_addp_standard_internal_models.ResolveCatalogReferencesRequest": {
             "type": "object",
             "required": [
@@ -6750,6 +6992,279 @@ const docTemplate = `{
                     }
                 },
                 "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.StandardCollectionAggregate": {
+            "type": "object",
+            "properties": {
+                "assignments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_standard_internal_models.StandardCollectionAssignment"
+                    }
+                },
+                "code": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "current_revision": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_models.StandardCollectionRevision"
+                },
+                "draft_revision": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_models.StandardCollectionRevision"
+                },
+                "draft_revision_id": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "my_roles": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.StandardCollectionAssignment": {
+            "type": "object",
+            "properties": {
+                "collection_id": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "principal_code": {
+                    "type": "string"
+                },
+                "principal_id": {
+                    "type": "integer"
+                },
+                "principal_name": {
+                    "type": "string"
+                },
+                "referenceable": {
+                    "type": "boolean"
+                },
+                "role": {
+                    "type": "string",
+                    "enum": [
+                        "owner",
+                        "maintainer",
+                        "reviewer"
+                    ]
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.StandardCollectionAssignmentInput": {
+            "type": "object",
+            "required": [
+                "principal_id",
+                "role"
+            ],
+            "properties": {
+                "principal_id": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "role": {
+                    "type": "string",
+                    "enum": [
+                        "owner",
+                        "maintainer",
+                        "reviewer"
+                    ]
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.StandardCollectionEvent": {
+            "type": "object",
+            "properties": {
+                "actor_code": {
+                    "type": "string"
+                },
+                "actor_id": {
+                    "type": "integer"
+                },
+                "actor_name": {
+                    "type": "string"
+                },
+                "collection_id": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "detail": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_models.JSONB"
+                },
+                "event_type": {
+                    "type": "string",
+                    "enum": [
+                        "created",
+                        "draft_created",
+                        "draft_updated",
+                        "submitted",
+                        "returned",
+                        "published",
+                        "assignments_replaced"
+                    ]
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "referenceable": {
+                    "type": "boolean"
+                },
+                "revision_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.StandardCollectionMember": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "collection_revision_id": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "member_id": {
+                    "type": "integer"
+                },
+                "member_type": {
+                    "type": "string",
+                    "enum": [
+                        "element",
+                        "code_set",
+                        "metric",
+                        "glossary",
+                        "document"
+                    ]
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.StandardCollectionMemberInput": {
+            "type": "object",
+            "required": [
+                "member_id",
+                "member_type"
+            ],
+            "properties": {
+                "member_id": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "member_type": {
+                    "type": "string",
+                    "enum": [
+                        "element",
+                        "code_set",
+                        "metric",
+                        "glossary",
+                        "document"
+                    ]
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.StandardCollectionRevision": {
+            "type": "object",
+            "properties": {
+                "change_summary": {
+                    "type": "string"
+                },
+                "collection_id": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "members": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_standard_internal_models.StandardCollectionMember"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "published_at": {
+                    "type": "string"
+                },
+                "published_by": {
+                    "type": "integer"
+                },
+                "revision_no": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "draft",
+                        "in_review",
+                        "published",
+                        "withdrawn"
+                    ]
+                },
+                "submitted_at": {
+                    "type": "string"
+                },
+                "submitted_by": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
                     "type": "integer"
                 }
             }
@@ -6887,26 +7402,6 @@ const docTemplate = `{
                 "version": {
                     "type": "integer",
                     "minimum": 1
-                }
-            }
-        },
-        "github_com_addp_standard_internal_models.UpdateDimensionHierarchyRequest": {
-            "type": "object",
-            "required": [
-                "version"
-            ],
-            "properties": {
-                "description": {
-                    "type": "string"
-                },
-                "domain_id": {
-                    "type": "integer"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "version": {
-                    "type": "integer"
                 }
             }
         },
@@ -7219,6 +7714,36 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_standard_internal_models.UpdateStandardCollectionRevisionRequest": {
+            "type": "object",
+            "required": [
+                "change_summary",
+                "description",
+                "name",
+                "version"
+            ],
+            "properties": {
+                "change_summary": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "members": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_standard_internal_models.StandardCollectionMemberInput"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
         "github_com_addp_standard_internal_models.UpdateUnitRequest": {
             "type": "object",
             "required": [
@@ -7236,34 +7761,6 @@ const docTemplate = `{
                 },
                 "symbol": {
                     "type": "string"
-                },
-                "version": {
-                    "type": "integer"
-                }
-            }
-        },
-        "github_com_addp_standard_internal_models.UpsertHierarchyLevelRequest": {
-            "type": "object",
-            "required": [
-                "level_num",
-                "name",
-                "version"
-            ],
-            "properties": {
-                "description": {
-                    "type": "string"
-                },
-                "element_id": {
-                    "type": "integer"
-                },
-                "level_num": {
-                    "type": "integer"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "sort_order": {
-                    "type": "integer"
                 },
                 "version": {
                     "type": "integer"

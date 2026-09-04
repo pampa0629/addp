@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: standard
-manifest_version: 5
+manifest_version: 7
 permissions:
   - key: standard.catalog.read
     allowed_scope_types: [tenant]
@@ -50,38 +50,54 @@ permissions:
     status: active
     name_i18n_key: permissions.standard.code_set.update.name
     description_i18n_key: permissions.standard.code_set.update.description
-  - key: standard.dimension_hierarchy.create
+  - key: standard.collection.create
     allowed_scope_types: [tenant, department, project_group]
     risk_level: medium
     tenant_customizable: true
     delegable: false
     status: active
-    name_i18n_key: permissions.standard.dimension_hierarchy.create.name
-    description_i18n_key: permissions.standard.dimension_hierarchy.create.description
-  - key: standard.dimension_hierarchy.delete
+    name_i18n_key: permissions.standard.collection.create.name
+    description_i18n_key: permissions.standard.collection.create.description
+  - key: standard.collection.delete
     allowed_scope_types: [tenant, department, project_group]
     risk_level: high
     tenant_customizable: true
     delegable: false
     status: active
-    name_i18n_key: permissions.standard.dimension_hierarchy.delete.name
-    description_i18n_key: permissions.standard.dimension_hierarchy.delete.description
-  - key: standard.dimension_hierarchy.read
+    name_i18n_key: permissions.standard.collection.delete.name
+    description_i18n_key: permissions.standard.collection.delete.description
+  - key: standard.collection.publish
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.standard.collection.publish.name
+    description_i18n_key: permissions.standard.collection.publish.description
+  - key: standard.collection.read
     allowed_scope_types: [tenant, department, project_group]
     risk_level: low
     tenant_customizable: true
     delegable: false
     status: active
-    name_i18n_key: permissions.standard.dimension_hierarchy.read.name
-    description_i18n_key: permissions.standard.dimension_hierarchy.read.description
-  - key: standard.dimension_hierarchy.update
+    name_i18n_key: permissions.standard.collection.read.name
+    description_i18n_key: permissions.standard.collection.read.description
+  - key: standard.collection.update
     allowed_scope_types: [tenant, department, project_group]
     risk_level: medium
     tenant_customizable: true
     delegable: false
     status: active
-    name_i18n_key: permissions.standard.dimension_hierarchy.update.name
-    description_i18n_key: permissions.standard.dimension_hierarchy.update.description
+    name_i18n_key: permissions.standard.collection.update.name
+    description_i18n_key: permissions.standard.collection.update.description
+  - key: standard.collection_assignment.update
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.standard.collection_assignment.update.name
+    description_i18n_key: permissions.standard.collection_assignment.update.description
   - key: standard.document.create
     allowed_scope_types: [tenant, department, project_group]
     risk_level: medium

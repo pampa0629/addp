@@ -13,7 +13,7 @@ func TestManagerBrowserResourceRequestMatcher(t *testing.T) {
 	contentPaths := []string{
 		"/api/v1/manager/storage-stream",
 		"/api/v1/manager/downloads/file",
-		"/api/v1/manager/storage-assets/12/path/to/file.png",
+		"/api/v1/manager/storage-assets/12/items/34/path/to/file.png",
 		"/api/v1/manager/quick-view/flatgeobuf",
 		"/api/v1/manager/quick-view/geojson",
 	}

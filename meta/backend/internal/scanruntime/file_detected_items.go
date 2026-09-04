@@ -23,10 +23,10 @@ func (s *FilesystemCatalogRuntime) persistFileCatalogDetectedItem(
 	contentReader plugin.ContentReadableProvider,
 	connInfo plugin.ConnectionInfo,
 	scanDepth string,
-) (bool, string, scanflow.ExtractionCounts) {
+) (bool, string, scanflow.ExtractionCounts, error) {
 	itemPlan, ok := scanresource.PlanFileDetectedItem(resource.ID, dirPath, detected, itemTerm)
 	if !ok {
-		return false, "", scanflow.ExtractionCounts{}
+		return false, "", scanflow.ExtractionCounts{}, nil
 	}
 	result, err := scanprocessor.New(s.repo, s.indexer, s.log).WithContainerInspector(s.containerInspector).Process(ctx, scanprocessor.FileDetectedInput(
 		resource,
@@ -45,7 +45,7 @@ func (s *FilesystemCatalogRuntime) persistFileCatalogDetectedItem(
 			"full_name", itemPlan.FullName,
 			"error", err,
 		)
-		return false, itemPlan.FullName, result.Extraction
+		return false, itemPlan.FullName, result.Extraction, err
 	}
 	s.log.Info("识别到复合数据项",
 		"path", dirPath,
@@ -55,5 +55,5 @@ func (s *FilesystemCatalogRuntime) persistFileCatalogDetectedItem(
 		"data_type", detected.DataType,
 		"name", itemPlan.ItemName,
 	)
-	return true, itemPlan.FullName, result.Extraction
+	return true, itemPlan.FullName, result.Extraction, nil
 }

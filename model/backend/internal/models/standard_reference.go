@@ -3,10 +3,9 @@ package models
 import "time"
 
 const (
-	StandardResourceDomain             = "domain"
-	StandardResourceElement            = "element"
-	StandardResourceDimensionHierarchy = "dimension_hierarchy"
-	StandardResourceMetric             = "metric"
+	StandardResourceDomain  = "domain"
+	StandardResourceElement = "element"
+	StandardResourceMetric  = "metric"
 
 	StandardReferenceGuardOpen    = "open"
 	StandardReferenceGuardFrozen  = "frozen"

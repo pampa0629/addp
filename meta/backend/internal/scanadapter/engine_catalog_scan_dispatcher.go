@@ -112,7 +112,7 @@ func (d *EngineCatalogScanDispatcher) dispatchObjectCatalogScan(req scanflow.Dis
 	}
 	result, err := d.contentScanner.ScanObjectCatalog(req)
 	if err == nil {
-		d.finalizeEngineCatalogRootAfterScan(req.Resource, req.TenantID, result.Items, req.ScanDepth)
+		err = d.finalizeEngineCatalogRootAfterScan(req.Resource, req.TenantID, result.Items, req.ScanDepth)
 	}
 	return result, err
 }
@@ -127,7 +127,7 @@ func (d *EngineCatalogScanDispatcher) dispatchFileCatalogScan(req scanflow.Dispa
 	}
 	result, err := d.contentScanner.ScanFileCatalog(req)
 	if err == nil {
-		d.finalizeEngineCatalogRootAfterScan(req.Resource, req.TenantID, result.Items, req.ScanDepth)
+		err = d.finalizeEngineCatalogRootAfterScan(req.Resource, req.TenantID, result.Items, req.ScanDepth)
 	}
 	return result, err
 }

@@ -34,7 +34,7 @@ func TestObjectScanRefGroupsPersistsSingleShapefileItem(t *testing.T) {
 				{Path: "manager/a5.cpg", Role: "sidecar"},
 			},
 		},
-	}, models.ScannedDepthDeep, true, nil)
+	}, models.ScannedDepthBasic, true, nil)
 	if err != nil {
 		t.Fatalf("ScanRefGroups() error = %v", err)
 	}
@@ -78,7 +78,7 @@ func TestObjectScanRefGroupsPersistsSingleUploadedObjectItem(t *testing.T) {
 				{Path: "manager/ZX书单.rtf", Role: "main", Required: true},
 			},
 		},
-	}, models.ScannedDepthDeep, true, nil)
+	}, models.ScannedDepthBasic, true, nil)
 	if err != nil {
 		t.Fatalf("ScanRefGroups() error = %v", err)
 	}
@@ -220,7 +220,7 @@ func TestFileScanRefGroupsPersistsSingleShapefileItem(t *testing.T) {
 				{Path: "shp/a5.cpg", Role: "sidecar"},
 			},
 		},
-	}, models.ScannedDepthDeep, true, nil)
+	}, models.ScannedDepthBasic, true, nil)
 	if err != nil {
 		t.Fatalf("ScanRefGroups() error = %v", err)
 	}

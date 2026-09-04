@@ -60,7 +60,7 @@ func (p *RefFilePreviewProvider) Preview(ctx context.Context, req *PreviewReques
 		Format:      string(preview.Format),
 		Extension:   defaultExtension(ref.Ref.Path),
 		ContentType: previewContentType(preview.Format, refName),
-		PreviewURL:  buildStorageStreamURL(previewRequestEngineID(req), storageRef),
+		PreviewURL:  buildStorageStreamURL(req.Locator, previewRequestEngineID(req), storageRef),
 		Attributes: map[string]interface{}{
 			"item": map[string]interface{}{
 				"data_type": preview.DataType,

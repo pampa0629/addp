@@ -6,10 +6,6 @@ const allStandardPermissions = [
   'standard.code_set.publish',
   'standard.code_set.read',
   'standard.code_set.update',
-  'standard.dimension_hierarchy.create',
-  'standard.dimension_hierarchy.delete',
-  'standard.dimension_hierarchy.read',
-  'standard.dimension_hierarchy.update',
   'standard.document.create',
   'standard.document.delete',
   'standard.document.read',
@@ -68,7 +64,6 @@ const listPages = [
   ['/elements', '数据元管理'],
   ['/code-sets', '新建码值集'],
   ['/units', '计量单位管理'],
-  ['/dimension-hierarchies', '维度层级'],
   ['/metrics', '指标管理'],
   ['/documents', '全局文档库']
 ]
@@ -79,13 +74,12 @@ const visualPages = [
   ['/elements', '数据元管理', 'elements'],
   ['/code-sets', '新建码值集', 'code-sets'],
   ['/units', '计量单位管理', 'units'],
-  ['/dimension-hierarchies', '维度层级', 'dimension-hierarchies'],
   ['/metrics', '指标管理', 'metrics'],
   ['/documents', '全局文档库', 'documents']
 ]
 
 const narrowVisualPages = visualPages.filter(([, , name]) => (
-  ['domains', 'code-sets', 'dimension-hierarchies', 'documents'].includes(name)
+  ['domains', 'code-sets', 'documents'].includes(name)
 ))
 
 const themeVisualPages = narrowVisualPages
@@ -327,7 +321,7 @@ test('avoids page overflow and keeps table actions on one line at narrow width',
   await page.setViewportSize({ width: 720, height: 760 })
   await installMockBackend(page)
 
-  for (const path of ['/domains', '/code-sets', '/documents', '/dimension-hierarchies']) {
+  for (const path of ['/domains', '/code-sets', '/documents']) {
     await page.goto(path)
     await expect.poll(() => page.evaluate(() => ({
       clientWidth: document.documentElement.clientWidth,
@@ -348,15 +342,15 @@ test('avoids page overflow and keeps table actions on one line at narrow width',
 
 test('preserves code-set filters through detail and back navigation', async ({ page }) => {
   await installMockBackend(page)
-  await page.goto('/code-sets?keyword=gender&type=custom')
+  await page.goto('/code-sets?keyword=gender&scope_type=domain')
   await page.getByText('性别', { exact: true }).click()
-  await expect(page).toHaveURL(/\/code-sets\/31\?keyword=gender&type=custom$/)
+  await expect(page).toHaveURL(/\/code-sets\/31\?keyword=gender&scope_type=domain$/)
   await expect(page.getByText('性别', { exact: true }).first()).toBeVisible()
   await page.getByRole('button', { name: /返回/ }).click()
-  await expect(page).toHaveURL(/\/code-sets\?keyword=gender&type=custom$/)
+  await expect(page).toHaveURL(/\/code-sets\?keyword=gender&scope_type=domain$/)
 })
 
-test('updates a data element from draft to approved', async ({ page }) => {
+test('submits and publishes a draft data element revision', async ({ page }) => {
   const backend = await installMockBackend(page, {
     elements: [{
       id: 41,
@@ -368,18 +362,23 @@ test('updates a data element from draft to approved', async ({ page }) => {
       quality_rules: null
     }]
   })
-  await page.goto('/elements?status=draft')
+  await page.goto('/elements/41')
 
-  const row = page.getByRole('row').filter({ hasText: '活动编号' })
-  await expect(row.getByText('草稿', { exact: true })).toBeVisible()
-  await row.getByRole('button', { name: '审批' }).click()
+  await expect(page.getByText('R1 · 草稿', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '提交审核' }).click()
+  await page.getByRole('dialog', { name: '提示' }).getByRole('button', { name: '确定' }).click()
+  await expect(page.getByText('R1 · 审核中', { exact: true })).toBeVisible()
 
-  await expect(row.getByText('已审批', { exact: true })).toBeVisible()
-  await expect(row.getByRole('button', { name: '审批' })).toHaveCount(0)
-  expect(backend.getActionRequests()).toContain('/api/v1/standard/elements/41/approve')
+  await page.getByRole('button', { name: '发布' }).click()
+  await page.getByRole('dialog', { name: '提示' }).getByRole('button', { name: '确定' }).click()
+  await expect(page.getByText('R1 · 已发布', { exact: true })).toBeVisible()
+  expect(backend.getActionRequests()).toEqual([
+    '/api/v1/standard/elements/41/revisions/411/submit',
+    '/api/v1/standard/elements/41/revisions/411/publish'
+  ])
 })
 
-test('approves a data element only once when the row action fires twice', async ({ page }) => {
+test('submits a data element only once when confirmation fires twice', async ({ page }) => {
   const backend = await installMockBackend(page, {
     delayedElementApprove: true,
     elements: [{
@@ -392,17 +391,17 @@ test('approves a data element only once when the row action fires twice', async 
       quality_rules: null
     }]
   })
-  await page.goto('/elements?status=draft')
+  await page.goto('/elements/41')
 
-  const row = page.getByRole('row').filter({ hasText: '审批防重数据元' })
-  const approveButton = row.getByRole('button', { name: '审批' })
-  await approveButton.evaluate(button => {
+  await page.getByRole('button', { name: '提交审核' }).click()
+  const confirmButton = page.getByRole('dialog', { name: '提示' }).getByRole('button', { name: '确定' })
+  await confirmButton.evaluate(button => {
     button.click()
     button.click()
   })
 
-  await expect(row.getByText('已审批', { exact: true })).toBeVisible()
-  expect(backend.getActionRequests().filter(path => path === '/api/v1/standard/elements/41/approve')).toHaveLength(1)
+  await expect(page.getByText('R1 · 审核中', { exact: true })).toBeVisible()
+  expect(backend.getActionRequests().filter(path => path === '/api/v1/standard/elements/41/revisions/411/submit')).toHaveLength(1)
 })
 
 test('moves a metric through approve and deprecate states', async ({ page }) => {
@@ -451,39 +450,6 @@ test('moves a metric through approve and deprecate states', async ({ page }) => 
   ]))
 })
 
-test('adds and deletes a dimension hierarchy level', async ({ page }) => {
-  const backend = await installMockBackend(page, {
-    hierarchy: {
-      id: 61,
-      name: '时间维度',
-      code: 'time',
-      description: '时间上下钻',
-      version: 1,
-      levels: [{ id: 611, level_num: 1, name: '年', description: '年份', sort_order: 0 }]
-    }
-  })
-  await page.goto('/dimension-hierarchies/61')
-
-  await expect(page.getByRole('cell', { name: '年', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: '添加层级' }).click()
-  const levelDialog = page.getByRole('dialog', { name: '添加层次' })
-  await levelDialog.getByRole('textbox', { name: '* 层次名称' }).fill('月')
-  await levelDialog.getByRole('button', { name: '保存' }).click()
-  await expect(page.getByRole('cell', { name: '月', exact: true })).toBeVisible()
-
-  const monthRow = page.getByRole('row').filter({ hasText: '月' })
-  await monthRow.getByRole('button', { name: '删除' }).click()
-  const confirm = page.getByRole('dialog', { name: '提示' })
-  await expect(confirm).toContainText('确认删除层级「月」？')
-  await confirm.getByRole('button', { name: '确定' }).click()
-  await expect(page.getByRole('cell', { name: '月', exact: true })).toHaveCount(0)
-
-  expect(backend.getActionRequests()).toEqual(expect.arrayContaining([
-    '/api/v1/standard/dimension-hierarchies/61/levels',
-    '/api/v1/standard/dimension-hierarchies/61/levels/612'
-  ]))
-})
-
 test('shows the backend domain conflict message after confirmed deletion', async ({ page }) => {
   const backend = await installMockBackend(page, { domainDeleteConflict: true })
   await page.goto('/domains')
@@ -495,7 +461,7 @@ test('shows the backend domain conflict message after confirmed deletion', async
   await confirm.getByRole('button', { name: '确定' }).click()
 
   await expect(page.locator('.el-message--error')).toContainText(
-    '业务域仍被子业务域、业务术语、数据元、指标或维度层级引用，无法删除'
+    '业务域仍被子业务域、业务术语、数据元或指标引用，无法删除'
   )
   await expect(outdoorRow).toBeVisible()
   expect(backend.getDeleteRequests()).toEqual(['/api/v1/standard/domains/2'])
@@ -657,7 +623,7 @@ test('presents Standard pages as read-only when the role only has read permissio
     }]
   })
 
-  for (const path of ['/domains', '/glossaries', '/elements', '/code-sets', '/units', '/dimension-hierarchies', '/metrics', '/documents']) {
+  for (const path of ['/domains', '/glossaries', '/elements', '/code-sets', '/units', '/metrics', '/documents']) {
     await page.goto(path)
     await expect(page.getByRole('button', { name: /新建|新增|添加分类|录入文档/ })).toHaveCount(0)
     await expect(page.getByRole('button', { name: /审批|废弃|删除/ })).toHaveCount(0)
@@ -751,9 +717,59 @@ async function installMockBackend(page, options = {}) {
   const documents = (options.documents || []).map(item => ({ ...item }))
   const elements = (options.elements || []).map(item => ({ ...item }))
   const metrics = (options.metrics || []).map(item => ({ ...item }))
-  const hierarchy = options.hierarchy
-    ? { ...options.hierarchy, levels: options.hierarchy.levels.map(item => ({ ...item })) }
-    : null
+  const elementAggregates = elements.map(item => {
+    const revision = {
+      id: item.id * 10 + 1,
+      element_id: item.id,
+      revision_no: 1,
+      name: item.name,
+      definition: item.definition || `${item.name}定义`,
+      data_type: item.data_type,
+      nullable: true,
+      value_domain_kind: 'unrestricted',
+      example_values: [],
+      change_summary: '初始修订',
+      status: item.status === 'approved' ? 'published' : item.status,
+      created_at: '2026-08-12T08:00:00Z'
+    }
+    const hasDraft = revision.status === 'draft' || revision.status === 'in_review'
+    return {
+      id: item.id,
+      code: item.code,
+      scope_type: item.domain_id ? 'domain' : 'tenant_common',
+      owner_domain_id: item.domain_id || null,
+      tags: [],
+      lifecycle_state: 'active',
+      version: 1,
+      draft_revision_id: hasDraft ? revision.id : null,
+      draft_revision: hasDraft ? revision : null,
+      current_revision: hasDraft ? null : revision
+    }
+  })
+  const codeSetRevision = {
+    id: 311,
+    code_set_id: 31,
+    revision_no: 1,
+    name: '性别',
+    description: '性别码值',
+    value_type: 'string',
+    change_summary: '初始修订',
+    status: 'published',
+    items: [],
+    created_at: '2026-08-12T08:00:00Z'
+  }
+  const codeSetAggregate = {
+    id: 31,
+    code: 'gender',
+    scope_type: 'domain',
+    owner_domain_id: 2,
+    origin: 'tenant',
+    tags: [],
+    lifecycle_state: 'active',
+    version: 1,
+    current_revision: codeSetRevision,
+    draft_revision: null
+  }
   const permissions = options.permissions ?? allStandardPermissions
   const authContextPermissionsByToken = options.authContextPermissionsByToken || {}
   await page.addInitScript(({ theme }) => {
@@ -769,7 +785,7 @@ async function installMockBackend(page, options = {}) {
       deleteRequests.push(path)
       domainDeleteRequests.push({ id: 2, version: request.postDataJSON().version })
       return fulfillJSON(route, {
-        error: '业务域仍被子业务域、业务术语、数据元、指标或维度层级引用，无法删除'
+        error: '业务域仍被子业务域、业务术语、数据元或指标引用，无法删除'
       }, 409)
     }
     if (request.method() === 'PUT' && path === '/api/v1/standard/domains/2') {
@@ -788,22 +804,30 @@ async function installMockBackend(page, options = {}) {
     if (request.method() === 'PUT' && path === '/api/v1/standard/glossaries/21' && options.glossaryVersionConflict) {
       return fulfillJSON(route, { error: '资源已被其他用户修改，请刷新后重试' }, 409)
     }
-    if (request.method() === 'DELETE' && path === '/api/v1/standard/dimension-hierarchies/61/levels/612') {
-      actionRequests.push(path)
-      const index = hierarchy.levels.findIndex(level => level.id === 612)
-      if (index >= 0) hierarchy.levels.splice(index, 1)
-      hierarchy.version += 1
-      return fulfillJSON(route, { version: hierarchy.version })
-    }
     if (request.method() === 'DELETE') {
       deleteRequests.push(path)
       return fulfillJSON(route, {})
     }
-    if (request.method() === 'POST' && path === '/api/v1/standard/elements/41/approve') {
+    if (request.method() === 'POST' && path === '/api/v1/standard/elements/41/revisions/411/submit') {
       actionRequests.push(path)
       if (options.delayedElementApprove) await new Promise(resolve => setTimeout(resolve, 150))
-      const element = elements.find(item => item.id === 41)
-      if (element) element.status = 'approved'
+      const element = elementAggregates.find(item => item.id === 41)
+      if (element?.draft_revision) {
+        element.draft_revision.status = 'in_review'
+        element.version += 1
+      }
+      return fulfillJSON(route, element || {})
+    }
+    if (request.method() === 'POST' && path === '/api/v1/standard/elements/41/revisions/411/publish') {
+      actionRequests.push(path)
+      const element = elementAggregates.find(item => item.id === 41)
+      if (element?.draft_revision) {
+        element.draft_revision.status = 'published'
+        element.current_revision = element.draft_revision
+        element.draft_revision = null
+        element.draft_revision_id = null
+        element.version += 1
+      }
       return fulfillJSON(route, element || {})
     }
     if (request.method() === 'POST' && path === '/api/v1/standard/metrics/51/approve') {
@@ -817,13 +841,6 @@ async function installMockBackend(page, options = {}) {
       const metric = metrics.find(item => item.id === 51)
       if (metric) metric.status = 'deprecated'
       return fulfillJSON(route, metric || {})
-    }
-    if (request.method() === 'POST' && path === '/api/v1/standard/dimension-hierarchies/61/levels') {
-      actionRequests.push(path)
-      const level = { id: 612, ...request.postDataJSON() }
-      hierarchy.levels.push(level)
-      hierarchy.version += 1
-      return fulfillJSON(route, { level, version: hierarchy.version })
     }
     if (request.method() === 'POST' && path === '/api/v1/standard/metrics/51/documents') {
       actionRequests.push(path)
@@ -888,18 +905,20 @@ async function installMockBackend(page, options = {}) {
     if (path === '/api/v1/standard/glossaries/21') return fulfillJSON(route, glossaries[0])
     if (path === '/api/v1/standard/glossaries/21/elements') return fulfillJSON(route, [])
     if (path === '/api/v1/standard/glossaries/21/documents') return fulfillJSON(route, [])
-    if (path === '/api/v1/standard/elements') return fulfillJSON(route, { data: elements, total: elements.length })
-    if (path === '/api/v1/standard/elements/41') return fulfillJSON(route, elements.find(item => item.id === 41) || {})
+    if (path === '/api/v1/standard/elements') return fulfillJSON(route, { data: elementAggregates, total: elementAggregates.length })
+    if (path === '/api/v1/standard/elements/41') return fulfillJSON(route, elementAggregates.find(item => item.id === 41) || {})
+    if (path === '/api/v1/standard/elements/41/revisions') {
+      const element = elementAggregates.find(item => item.id === 41)
+      const revision = element?.draft_revision || element?.current_revision
+      return fulfillJSON(route, revision ? [revision] : [])
+    }
+    if (path === '/api/v1/standard/elements/41/documents') return fulfillJSON(route, [])
     if (path === '/api/v1/standard/code-sets') {
-      return fulfillJSON(route, {
-        data: [{ id: 31, code: 'gender', name: '性别', type: 'custom', description: '性别码值', version: 1, created_at: '2026-08-12T08:00:00Z' }],
-        total: 1
-      })
+      return fulfillJSON(route, { data: [codeSetAggregate], total: 1 })
     }
-    if (path === '/api/v1/standard/code-sets/31') {
-      return fulfillJSON(route, { id: 31, code: 'gender', name: '性别', type: 'custom', description: '性别码值', version: 1 })
-    }
-    if (path === '/api/v1/standard/code-sets/31/items') return fulfillJSON(route, [])
+    if (path === '/api/v1/standard/code-sets/31') return fulfillJSON(route, codeSetAggregate)
+    if (path === '/api/v1/standard/code-sets/31/revisions') return fulfillJSON(route, [codeSetRevision])
+    if (path === '/api/v1/standard/code-sets/31/documents') return fulfillJSON(route, [])
     if (path === '/api/v1/standard/measurement-categories') return fulfillJSON(route, [])
     if (path === '/api/v1/standard/units') return fulfillJSON(route, [])
     if (path === '/api/v1/standard/metric-categories') return fulfillJSON(route, [])
@@ -914,9 +933,6 @@ async function installMockBackend(page, options = {}) {
     if (path === '/api/v1/standard/documents/71/mappings') {
       return fulfillJSON(route, { elements: [], glossaries: [], metrics: [] })
     }
-    if (path === '/api/v1/standard/dimension-hierarchies') return fulfillJSON(route, hierarchy ? [hierarchy] : [])
-    if (path === '/api/v1/standard/dimension-hierarchies/61') return fulfillJSON(route, hierarchy || {})
-
     return fulfillJSON(route, {})
   })
 

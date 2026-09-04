@@ -28,8 +28,7 @@ func (r *StandardReferenceGuardRepository) DB() *gorm.DB { return r.db }
 
 func validStandardResourceType(resourceType string) bool {
 	switch resourceType {
-	case models.StandardResourceDomain, models.StandardResourceElement,
-		models.StandardResourceDimensionHierarchy, models.StandardResourceMetric:
+	case models.StandardResourceDomain, models.StandardResourceElement, models.StandardResourceMetric:
 		return true
 	default:
 		return false
@@ -145,10 +144,6 @@ func standardReferenceScans(resourceType string) []standardReferenceScan {
 		return []standardReferenceScan{
 			{OwnerType: "entity_attribute", Table: "model.entity_attributes AS owner", Join: "JOIN model.entities AS parent ON parent.id = owner.entity_id", Tenant: "parent.tenant_id", Field: "element_id", Column: "owner.element_id"},
 			{OwnerType: "logical_field", Table: "model.logical_fields AS owner", Join: "JOIN model.logical_tables AS parent ON parent.id = owner.table_id", Tenant: "parent.tenant_id", Field: "element_id", Column: "owner.element_id"},
-		}
-	case models.StandardResourceDimensionHierarchy:
-		return []standardReferenceScan{
-			{OwnerType: "logical_field", Table: "model.logical_fields AS owner", Join: "JOIN model.logical_tables AS parent ON parent.id = owner.table_id", Tenant: "parent.tenant_id", Field: "hierarchy_id", Column: "owner.hierarchy_id"},
 		}
 	case models.StandardResourceMetric:
 		return []standardReferenceScan{

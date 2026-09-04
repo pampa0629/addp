@@ -33,6 +33,17 @@ type MetadataService struct {
 	content      *objectcontent.ObjectContentRegistry
 }
 
+// StorageDataItem is a server-verified storage item identity. Callers must use
+// ItemFingerprint for protection decisions and never trust a client-provided
+// fingerprint.
+type StorageDataItem struct {
+	EngineID        uint
+	EngineType      string
+	StorageRef      string
+	ItemFingerprint string
+	Descriptor      dataitem.ItemDescriptor
+}
+
 var ErrEngineAccessDenied = errors.New("engine not accessible for current tenant")
 var ErrInvalidRange = errors.New("invalid range")
 var ErrDownloadNotSupported = errors.New("download not supported")
@@ -250,17 +261,7 @@ func (s *MetadataService) StreamStorageContent(
 	return reader, contentLength, contentRange, contentType, nil
 }
 
-func (s *MetadataService) ResolveStorageDownloadPlan(ctx context.Context, resourceID uint, storageRef string, tenantID *uint) (*models.DownloadPlan, error) {
-	resource, err := s.getResourceForTenant(ctx, resourceID, tenantID)
-	if err != nil {
-		return nil, err
-	}
-	_, displayPath, err := streamStorageRefPath(resource.EngineType, resource.ID, storageRef)
-	if err != nil {
-		return nil, err
-	}
-
-	item := s.downloadMetaItem(resource.ID, displayPath, tenantID)
+func (s *MetadataService) resolveStorageDownloadPlan(ctx context.Context, resourceID uint, engineType, displayPath string, item *commonModels.MetaItem, tenantID *uint) (*models.DownloadPlan, error) {
 	if item == nil && storageRefRequiresMetaRefs(displayPath) {
 		return nil, fmt.Errorf("%w: multi-ref storage item requires scanned meta item refs", ErrDownloadNotSupported)
 	}
@@ -269,7 +270,7 @@ func (s *MetadataService) ResolveStorageDownloadPlan(ctx context.Context, resour
 	if descriptor.Layout == format.LayoutMulti && len(refs) == 0 {
 		return nil, fmt.Errorf("%w: multi item is missing item.refs; rescan the node to rebuild related refs", ErrDownloadNotSupported)
 	}
-	refs = normalizeDownloadRefs(resource.EngineType, displayPath, refs)
+	refs = normalizeDownloadRefs(engineType, displayPath, refs)
 	if len(refs) == 0 {
 		refs = []models.DownloadRef{{
 			StorageRef: displayPath,
@@ -282,7 +283,7 @@ func (s *MetadataService) ResolveStorageDownloadPlan(ctx context.Context, resour
 	if err := validateDownloadPlanRefs(refs); err != nil {
 		return nil, err
 	}
-	if err := validateDownloadRefs(resource.EngineType, resource.ID, refs); err != nil {
+	if err := validateDownloadRefs(engineType, resourceID, refs); err != nil {
 		return nil, err
 	}
 
@@ -310,28 +311,169 @@ func (s *MetadataService) ResolveStorageDownloadPlan(ctx context.Context, resour
 	}, nil
 }
 
-func (s *MetadataService) ResolveStorageDownloadPlanByLocator(ctx context.Context, locatorURI string, tenantID *uint) (uint, *models.DownloadPlan, error) {
+func (s *MetadataService) ResolveStorageDownloadPlanByLocator(ctx context.Context, locatorURI string, tenantID *uint) (*StorageDataItem, *models.DownloadPlan, error) {
+	target, item, err := s.resolveStorageDataItem(ctx, locatorURI, tenantID)
+	if err != nil {
+		return nil, nil, err
+	}
+	plan, err := s.resolveStorageDownloadPlan(ctx, target.EngineID, target.EngineType, target.StorageRef, item, tenantID)
+	return target, plan, err
+}
+
+// ResolveStorageStreamTarget verifies that storageRef is a leaf owned by the
+// DataItem identified by locator. It returns the normalized ref used by the
+// engine content reader.
+func (s *MetadataService) ResolveStorageStreamTarget(ctx context.Context, locatorURI, storageRef string, tenantID *uint) (*StorageDataItem, error) {
+	target, _, err := s.resolveStorageDataItem(ctx, locatorURI, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	_, normalizedRef, err := streamStorageRefPath(target.EngineType, target.EngineID, storageRef)
+	if err != nil {
+		return nil, err
+	}
+	if !storageRefBelongsToDataItem(target.EngineType, target.StorageRef, normalizedRef, target.Descriptor) {
+		return nil, fmt.Errorf("%w: storage_ref is outside the locator DataItem", ErrDownloadNotSupported)
+	}
+	target.StorageRef = normalizedRef
+	return target, nil
+}
+
+// ResolveStorageAssetTarget resolves a path-style child asset URL. itemID is
+// embedded in the stable route so relative manifest references keep the owner
+// DataItem identity without relying on query-string inheritance.
+func (s *MetadataService) ResolveStorageAssetTarget(ctx context.Context, engineID, itemID uint, storageRef string, tenantID *uint) (*StorageDataItem, error) {
+	if tenantID == nil || *tenantID == 0 || engineID == 0 || itemID == 0 {
+		return nil, ErrEngineAccessDenied
+	}
+	resource, err := s.getResourceForTenant(ctx, engineID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if !storageCanRead(resource) {
+		return nil, fmt.Errorf("%w: engine does not support content read", ErrDownloadNotSupported)
+	}
+	if s.metaClient == nil {
+		return nil, fmt.Errorf("meta client is not available")
+	}
+	item, err := s.metaClient.WithTenantID(*tenantID).GetItemByID(itemID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve storage asset DataItem from Meta: %w", err)
+	}
+	if item == nil || item.ID != itemID || item.TenantID != *tenantID || item.EngineID != engineID || !isStorageItemType(resourcetree.ResourceType(item.ItemType)) {
+		return nil, fmt.Errorf("%w: asset route does not match the current Meta DataItem", ErrDownloadNotSupported)
+	}
+	itemLocator := resourcetree.LocatorFromFullName(item.EngineID, resource.EngineType, item.ItemType, item.FullName, &itemID)
+	if itemLocator == nil {
+		return nil, fmt.Errorf("%w: Meta DataItem cannot form a storage locator", ErrDownloadNotSupported)
+	}
+	target := &StorageDataItem{
+		EngineID:        item.EngineID,
+		EngineType:      resource.EngineType,
+		StorageRef:      storageRefFromLocator(resource.EngineType, itemLocator),
+		ItemFingerprint: commonModels.GenerateItemFingerprint(item.EngineID, item.FullName),
+		Descriptor:      dataitem.DescriptorFromAttributes(item.Attributes),
+	}
+	_, normalizedRef, err := streamStorageRefPath(target.EngineType, target.EngineID, storageRef)
+	if err != nil {
+		return nil, err
+	}
+	if !storageRefBelongsToDataItem(target.EngineType, target.StorageRef, normalizedRef, target.Descriptor) {
+		return nil, fmt.Errorf("%w: storage asset is outside the route DataItem", ErrDownloadNotSupported)
+	}
+	target.StorageRef = normalizedRef
+	return target, nil
+}
+
+func (s *MetadataService) resolveStorageDataItem(ctx context.Context, locatorURI string, tenantID *uint) (*StorageDataItem, *commonModels.MetaItem, error) {
 	locatorURI = strings.TrimSpace(locatorURI)
 	if locatorURI == "" {
-		return 0, nil, fmt.Errorf("locator is required")
+		return nil, nil, fmt.Errorf("locator is required")
 	}
 	loc, err := resourcetree.ParseURI(locatorURI)
 	if err != nil {
-		return 0, nil, err
+		return nil, nil, err
 	}
-	if !isStorageItemType(loc.Type) {
-		return 0, nil, fmt.Errorf("%w: locator must reference a storage item", ErrDownloadNotSupported)
+	if !isStorageItemType(loc.Type) || loc.ItemID == nil || *loc.ItemID == 0 {
+		return nil, nil, fmt.Errorf("%w: locator must reference a scanned storage item with item_id", ErrDownloadNotSupported)
+	}
+	if tenantID == nil || *tenantID == 0 {
+		return nil, nil, ErrEngineAccessDenied
 	}
 	resource, err := s.getResourceForTenant(ctx, loc.EngineID, tenantID)
 	if err != nil {
-		return 0, nil, err
+		return nil, nil, err
 	}
 	if !storageCanRead(resource) {
-		return 0, nil, fmt.Errorf("%w: engine does not support content read", ErrDownloadNotSupported)
+		return nil, nil, fmt.Errorf("%w: engine does not support content read", ErrDownloadNotSupported)
 	}
-	storageRef := storageRefFromLocator(resource.EngineType, loc)
-	plan, err := s.ResolveStorageDownloadPlan(ctx, loc.EngineID, storageRef, tenantID)
-	return loc.EngineID, plan, err
+	if s.metaClient == nil {
+		return nil, nil, fmt.Errorf("meta client is not available")
+	}
+	item, err := s.metaClient.WithTenantID(*tenantID).GetItemByID(*loc.ItemID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("resolve storage DataItem from Meta: %w", err)
+	}
+	if item == nil || item.ID != *loc.ItemID || item.TenantID != *tenantID || item.EngineID != loc.EngineID ||
+		!strings.EqualFold(strings.TrimSpace(item.ItemType), strings.TrimSpace(string(loc.Type))) ||
+		!equalLocatorPath(loc.Path, resourcetree.ParseFullNamePath(resource.EngineType, item.ItemType, item.FullName)) {
+		return nil, nil, fmt.Errorf("%w: locator does not match the current Meta DataItem", ErrDownloadNotSupported)
+	}
+	return &StorageDataItem{
+		EngineID:        item.EngineID,
+		EngineType:      resource.EngineType,
+		StorageRef:      storageRefFromLocator(resource.EngineType, loc),
+		ItemFingerprint: commonModels.GenerateItemFingerprint(item.EngineID, item.FullName),
+		Descriptor:      dataitem.DescriptorFromAttributes(item.Attributes),
+	}, item, nil
+}
+
+func equalLocatorPath(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func storageRefBelongsToDataItem(engineType, itemStorageRef, requestedStorageRef string, descriptor dataitem.ItemDescriptor) bool {
+	itemStorageRef = cleanStorageRef(itemStorageRef)
+	requestedStorageRef = cleanStorageRef(requestedStorageRef)
+	if itemStorageRef == "" || requestedStorageRef == "" {
+		return false
+	}
+	switch descriptor.Layout {
+	case format.LayoutSingle:
+		return requestedStorageRef == itemStorageRef
+	case format.LayoutMulti:
+		refs := normalizeDownloadRefs(engineType, itemStorageRef, downloadRefsFromDescriptor(descriptor))
+		for _, ref := range refs {
+			if cleanStorageRef(ref.StorageRef) == requestedStorageRef {
+				return true
+			}
+		}
+		return false
+	case format.LayoutWhole:
+		return requestedStorageRef == itemStorageRef || strings.HasPrefix(requestedStorageRef, itemStorageRef+"/")
+	default:
+		return false
+	}
+}
+
+func cleanStorageRef(value string) string {
+	value = strings.Trim(strings.ReplaceAll(strings.TrimSpace(value), "\\", "/"), "/")
+	if value == "" {
+		return ""
+	}
+	cleaned := path.Clean(value)
+	if cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, "../") {
+		return ""
+	}
+	return strings.Trim(cleaned, "/")
 }
 
 func storageRefFromLocator(engineType string, loc *resourcetree.ResourceLocator) string {

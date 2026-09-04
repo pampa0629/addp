@@ -148,3 +148,129 @@ func TestPostgresPrepareReclaimsOnlyTerminalParentBatchWithoutActiveChildren(t *
 		})
 	}
 }
+
+func TestPostgresPrepareCompletionPersistsTargetPredecessorAtomically(t *testing.T) {
+	dsn := os.Getenv("ADDP_TEST_MODEL_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("ADDP_TEST_MODEL_POSTGRES_DSN is not set")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("open PostgreSQL: %v", err)
+	}
+	if err := commonExecution.EnsureStore(db); err != nil {
+		t.Fatalf("ensure common execution store: %v", err)
+	}
+	if err := migration.Run(db); err != nil {
+		t.Fatalf("run model migrations: %v", err)
+	}
+	tx := db.Begin()
+	if tx.Error != nil {
+		t.Fatalf("begin transaction: %v", tx.Error)
+	}
+	t.Cleanup(func() { _ = tx.Rollback().Error })
+
+	ctx := context.Background()
+	tenantID := time.Now().UnixNano()
+	now := time.Now().UTC()
+	principalID, membershipID, authorizationVersion := int64(11), int64(13), int64(17)
+	layer := models.DWLayer{TenantID: tenantID, LayerCode: "dwd", LayerName: "Prepare CAS DWD", Version: 1}
+	if err := tx.Create(&layer).Error; err != nil {
+		t.Fatalf("create DW layer: %v", err)
+	}
+	table := models.LogicalTable{
+		TenantID: tenantID, Name: "Prepare CAS", Code: "prepare_cas", TableType: "fact", Layer: "dwd",
+		Status: "approved", GrainDescription: "one row", Version: 1, Materialization: models.JSONB{}, CreatedBy: 1,
+	}
+	if err := tx.Create(&table).Error; err != nil {
+		t.Fatalf("create logical table: %v", err)
+	}
+	parentID := uuid.NewString()
+	parent := commonExecution.TaskExecution{
+		TenantID: int(tenantID), ExecutionID: parentID, Module: commonExecution.ModuleOrchestrator,
+		TaskType: commonExecution.TaskTypeOrchestration, Source: commonExecution.ModuleOrchestrator,
+		Status: commonExecution.ExecutionStatusRunning, ExecutionBoundary: commonExecution.ExecutionBoundaryBounded,
+		TriggerType: commonExecution.TriggerTypeManual, ActorPrincipalID: &principalID,
+		ActorTenantMembershipID: &membershipID, IssuedAuthorizationVersion: &authorizationVersion,
+		ExecutionConfig: commonModels.JSONMap{}, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := tx.Create(&parent).Error; err != nil {
+		t.Fatalf("create parent execution: %v", err)
+	}
+
+	repo := NewMaterializationBatchRepository(tx)
+	authorizationID := int64(990)
+	prepare := func(targetName string) (*models.MaterializationBatch, commonExecution.Lease) {
+		batchID := uuid.NewString()
+		executionID := uuid.NewString()
+		batch := &models.MaterializationBatch{
+			ID: batchID, TenantID: tenantID, LogicalTableID: table.ID, LogicalTableVersion: table.Version,
+			EngineID: 9, TargetParentLocator: "addp://engine/9/path/public?type=schema", TargetName: targetName,
+			StagingName: targetName + "__staging", SchemaFingerprint: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+			Status: models.MaterializationBatchPreparing, PrepareExecutionID: executionID, CreatedAt: now, UpdatedAt: now,
+		}
+		execution := &commonExecution.TaskExecution{
+			TenantID: int(tenantID), ExecutionID: executionID, Module: commonExecution.ModuleModel,
+			TaskType: commonExecution.TaskTypeMaterializationPrepare, Source: commonExecution.ModuleOrchestrator,
+			ParentExecutionID: &parentID, Status: commonExecution.ExecutionStatusPending,
+			ExecutionBoundary: commonExecution.ExecutionBoundaryBounded, TriggerType: commonExecution.TriggerTypeManual,
+			ExecutionConfig: commonModels.JSONMap{"batch_id": batchID}, MaxAttempts: 3, CreatedAt: now, UpdatedAt: now,
+		}
+		if err := repo.CreatePrepareExecution(ctx, batch, execution, table.Name); err != nil {
+			t.Fatalf("create prepare execution: %v", err)
+		}
+		expiresAt := now.Add(time.Hour)
+		authorizationID++
+		if err := repo.AttachAuthorization(ctx, tenantID, executionID, map[string]interface{}{
+			"execution_authorization_id": authorizationID, "authorization_expires_at": expiresAt,
+		}); err != nil {
+			t.Fatalf("attach authorization: %v", err)
+		}
+		claimed, claimedBatch, err := repo.ClaimPendingExecution(ctx, commonExecution.TaskTypeMaterializationPrepare, "prepare-worker", now, time.Minute)
+		if err != nil || claimed == nil || claimedBatch == nil || claimedBatch.ID != batchID {
+			t.Fatalf("claim prepare execution: execution=%#v batch=%#v error=%v", claimed, claimedBatch, err)
+		}
+		lease, err := commonExecution.LeaseFromExecution(*claimed)
+		if err != nil {
+			t.Fatalf("read prepare lease: %v", err)
+		}
+		return batch, lease
+	}
+
+	marker := "addp:model-materialization:v1:7:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef:old-batch"
+	completedBatch, completedLease := prepare("persisted_target")
+	if err := repo.CompleteExecution(ctx, completedLease, completedBatch.ID,
+		commonExecution.TaskTypeMaterializationPrepare, commonExecution.ExecutionStatusSuccess,
+		models.MaterializationBatchPrepared, commonModels.JSONMap{"expected_target_marker": marker}, nil); err != nil {
+		t.Fatalf("complete prepare execution: %v", err)
+	}
+	var reloaded models.MaterializationBatch
+	if err := tx.First(&reloaded, "id = ?", completedBatch.ID).Error; err != nil {
+		t.Fatalf("reload completed batch: %v", err)
+	}
+	if reloaded.Status != models.MaterializationBatchPrepared || reloaded.ExpectedTargetMarker == nil || *reloaded.ExpectedTargetMarker != marker {
+		t.Fatalf("completed batch = %#v", reloaded)
+	}
+
+	rejectedBatch, rejectedLease := prepare("missing_predecessor_target")
+	err = repo.CompleteExecution(ctx, rejectedLease, rejectedBatch.ID,
+		commonExecution.TaskTypeMaterializationPrepare, commonExecution.ExecutionStatusSuccess,
+		models.MaterializationBatchPrepared, commonModels.JSONMap{"schema_version": "model.materialization/v1"}, nil)
+	if !errors.Is(err, commonAPI.ErrConflict) {
+		t.Fatalf("missing predecessor completion error = %v, want conflict", err)
+	}
+	reloaded = models.MaterializationBatch{}
+	if err := tx.First(&reloaded, "id = ?", rejectedBatch.ID).Error; err != nil {
+		t.Fatalf("reload rejected batch: %v", err)
+	}
+	if reloaded.Status != models.MaterializationBatchPreparing || reloaded.ExpectedTargetMarker != nil {
+		t.Fatalf("rejected batch changed = %#v", reloaded)
+	}
+	var rejectedExecution commonExecution.TaskExecution
+	if err := tx.First(&rejectedExecution, "tenant_id = ? AND execution_id = ?", tenantID, rejectedLease.ExecutionID).Error; err != nil {
+		t.Fatalf("reload rejected execution: %v", err)
+	}
+	if rejectedExecution.Status != commonExecution.ExecutionStatusRunning {
+		t.Fatalf("rejected execution status = %q, want running", rejectedExecution.Status)
+	}
+}

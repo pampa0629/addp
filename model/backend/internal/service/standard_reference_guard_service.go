@@ -31,8 +31,7 @@ func (s *StandardReferenceGuardService) SetState(tenantID int64, resourceType st
 
 func validStandardResourceType(value string) bool {
 	switch value {
-	case models.StandardResourceDomain, models.StandardResourceElement,
-		models.StandardResourceDimensionHierarchy, models.StandardResourceMetric:
+	case models.StandardResourceDomain, models.StandardResourceElement, models.StandardResourceMetric:
 		return true
 	default:
 		return false

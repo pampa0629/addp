@@ -19,7 +19,7 @@
 
 Model Entity / LogicalTable 是企业 Catalog 的专业资源来源。Model 权威拥有完整对象、属性、字段、Domain / ElementRevision / MetricDefinitionRevision 引用、维度层级、指标实现和建模关系；Catalog 只通过 owner-local 变化源自动建立企业身份，并动态读取当前专业摘要，不保存或编辑这些专业事实的副本。变化捕获、动态解析 API、`model.catalog.read` 权限和软依赖边界以 [Model 概念与数据约束规范](docs/model概念与数据约束规范.md) 为准。
 
-当前 `logical_fields.hierarchy_id + hierarchy_level`、`fact_metric_mappings` 以及对 `standard.dimension_hierarchies` 的依赖是待迁移旧实现。后续改造必须直接替换为 Model-owned DimensionHierarchy / MetricImplementation，并删除旧表、字段、API、权限和前端路径，不保留兼容路线。
+DimensionHierarchy 已整体迁入 Model，`logical_fields.hierarchy_id + hierarchy_level` 以及对 `standard.dimension_hierarchies` 的依赖已经删除。`fact_metric_mappings` 仍是待迁移旧实现，后续必须直接替换为 Model-owned MetricImplementation，不保留兼容路线。
 
 Model Entity 与 LogicalTable 的专业关系通过当前 User Token 读取 `/:id/relations` 一跳图；它与只供 `addp-catalog` 机器同步使用的变化流、批量摘要解析严格分离。该查询只读 Model 本地事实，不调用 Catalog 或 Standard，不保存 CatalogEntry 反向引用。
 
@@ -137,8 +137,11 @@ model/
 | element_id | int64? | 引用 `standard.elements`（无 DB FK） |
 | element_revision_id | int64? | LogicalTable 审批时冻结的数据元修订；草稿必须为空 |
 | field_role | string | `regular` / `measure_additive` / `measure_semi` / `measure_non` / `dimension_fk` / `degenerate_dim` |
-| hierarchy_id / hierarchy_level | int64? / int? | 维度层级关联（引用 standard.dimension_hierarchies） |
 | is_pk / is_partition | bool | 主键 / 分区字段 |
+
+### `model.dimension_hierarchies` / `model.dimension_hierarchy_levels` — 维度层级聚合
+
+维度层级归属一个 `table_type=dimension` 的 LogicalTable；层级成员通过 `field_id` 引用同一逻辑表的 LogicalField，`level_num` 从 1 开始且在层级内唯一。层级及成员不建立独立并发版本，所有写操作校验并推进父 LogicalTable 的 `version`。
 
 ### `model.table_relations` — 逻辑表间关系
 
@@ -215,6 +218,7 @@ GET/POST/PUT/DELETE /api/v1/model/logical-tables/:id/fields  # 字段 CRUD
 POST   /api/v1/model/logical-tables/:id/preview-ddl          # 预览 DDL
 GET/POST/DELETE .../metrics                               # 事实表关联指标
 GET/POST/DELETE .../dimension-relations                   # 事实表关联维度表（含字段映射）
+GET/POST/PUT/DELETE .../dimension-hierarchies             # 维度表聚合内层级及成员
 ```
 
 ## 前端路由
@@ -224,7 +228,7 @@ GET/POST/DELETE .../dimension-relations                   # 事实表关联维�
 /modeling/entities               # 业务实体列表
 /modeling/entities/:id           # 实体详情（属性、关系、Mermaid 图）
 /modeling/logical-tables         # 逻辑表列表
-/modeling/logical-tables/:id     # 逻辑表详情（字段设计、DDL 预览）
+/modeling/logical-tables/:id     # 逻辑表详情（字段、维度层级、DDL 预览）
 /modeling/er-diagram             # 全局 ER 图视图
 /modeling/star-schema            # 星型建模视图（事实表-维度表-指标三维关联）
 ```

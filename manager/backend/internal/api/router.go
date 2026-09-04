@@ -332,7 +332,7 @@ func SetupRouter(
 		explorerService := service.NewExplorerService(systemClient, metaClient, previewResolver)
 		explorerHandler := NewExplorerHandler(explorerService, previewResolver, metadataService, protectionStore)
 		metadataHandler := NewMetadataHandler(metadataService)
-		downloadHandler := NewDownloadHandler(metadataService)
+		downloadHandler := NewDownloadHandler(metadataService, protectionStore)
 
 		api.GET("/engines", permission(managerauthorization.PermissionManagerDataItemRead), explorerHandler.ListEngines) // 获取存储引擎选择项（只读）
 		api.POST("/engines/:id/items/refresh", permission(managerauthorization.PermissionManagerDataItemUpdate), metadataHandler.RefreshItem)
@@ -340,7 +340,7 @@ func SetupRouter(
 		api.GET("/resource-facts", permission(managerauthorization.PermissionManagerDataItemRead), explorerHandler.ResourceFacts)
 		api.GET("/downloads/file", permission(managerauthorization.PermissionManagerContentRead), downloadHandler.DownloadFile)
 		api.GET("/storage-stream", permission(managerauthorization.PermissionManagerContentRead), explorerHandler.StorageStream)
-		api.GET("/storage-assets/:engine_id/*storage_ref", permission(managerauthorization.PermissionManagerContentRead), explorerHandler.StorageAsset)
+		api.GET("/storage-assets/:engine_id/items/:item_id/*storage_ref", permission(managerauthorization.PermissionManagerContentRead), explorerHandler.StorageAsset)
 
 		// ============================================================
 		// 空间数据服务路由组

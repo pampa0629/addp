@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -264,7 +263,7 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 			Size:        preview.Object.SizeBytes,
 			Attributes:  preview.Object.Attributes,
 		}
-		if url := buildStorageStreamURL(resource.ID, preview.Object.StorageRef); url != "" {
+		if url := buildStorageStreamURL(req.Locator, resource.ID, preview.Object.StorageRef); url != "" {
 			contentReq.PreviewURL = url
 			preview.Object.URL = url
 		}
@@ -288,7 +287,7 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 		return preview, nil
 	}
 	if formatTypeFromMetaAttributes(combinedAttributes) == format.FormatS3M {
-		if applyS3MScenePreview(combinedAttributes, preview.Object, resource.ID, bucket, objectPath) {
+		if applyS3MScenePreview(combinedAttributes, preview.Object, req.Locator, resource.ID, bucket, objectPath) {
 			return preview, nil
 		}
 	}
@@ -378,7 +377,7 @@ func (p *objectCatalogPreviewProvider) Preview(ctx context.Context, req *Preview
 		if formatTypeFromMetaAttributes(combinedAttributes) == format.FormatPMTiles {
 			contentReq.PreviewURL = buildPMTilesTileURL(req.Locator)
 			preview.Object.URL = contentReq.PreviewURL
-		} else if url := buildStorageStreamURL(resource.ID, preview.Object.StorageRef); url != "" {
+		} else if url := buildStorageStreamURL(req.Locator, resource.ID, preview.Object.StorageRef); url != "" {
 			contentReq.PreviewURL = url
 			preview.Object.URL = url
 		}
@@ -523,13 +522,14 @@ func catalogEntrySizeBytes(node plugin.EngineCatalogEntry) int64 {
 	return *node.Storage.SizeBytes
 }
 
-func buildStorageStreamURL(engineID uint, storageRef string) string {
+func buildStorageStreamURL(locator string, engineID uint, storageRef string) string {
+	locator, _ = verifiedStorageItemLocator(locator, engineID)
 	storageRef = strings.Trim(storageRef, "/")
-	if engineID == 0 || storageRef == "" {
+	if locator == "" || engineID == 0 || storageRef == "" {
 		return ""
 	}
 	values := url.Values{}
-	values.Set("engine_id", strconv.FormatUint(uint64(engineID), 10))
+	values.Set("locator", locator)
 	values.Set("storage_ref", storageRef)
 	return "/api/v1/manager/storage-stream?" + values.Encode()
 }

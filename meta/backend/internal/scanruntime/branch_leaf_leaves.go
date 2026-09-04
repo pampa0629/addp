@@ -11,6 +11,7 @@ import (
 	"github.com/addp/meta/internal/metaattr"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scanchange"
+	"github.com/addp/meta/internal/scanflow"
 )
 
 func (s *BranchLeafRuntime) scanCatalogLeaves(
@@ -42,6 +43,7 @@ func (s *BranchLeafRuntime) scanCatalogLeaves(
 	}
 	totalItems := 0
 	totalFields := 0
+	failures := &scanflow.FailedTargetCollector{}
 
 	for i, node := range nodes {
 		itemType := catalogLeafItemType(node)
@@ -103,6 +105,7 @@ func (s *BranchLeafRuntime) scanCatalogLeaves(
 		if itemType == "graph" {
 			if scanCatalog.factsProvider == nil {
 				s.log.Warn("图 catalog leaf 缺少 facts provider", "branch", branchName, "leaf", itemName)
+				failures.Add(branchName+"."+itemName, fmt.Errorf("graph catalog leaf requires facts provider"))
 				continue
 			}
 			catalogFacts, err := scanCatalog.factsProvider.DescribeEngineCatalogFacts(ctx, scanCatalog.connInfo, node.Path, plugin.EngineCatalogFactsOptions{
@@ -111,11 +114,13 @@ func (s *BranchLeafRuntime) scanCatalogLeaves(
 			})
 			if err != nil {
 				s.log.Warn("图结构扫描失败", "branch", branchName, "leaf", itemName, "error", err)
+				failures.Add(branchName+"."+itemName, err)
 				continue
 			}
 			graphInfo = plugin.EngineCatalogFactsGraphInfo(catalogFacts)
 			if graphInfo == nil {
 				s.log.Warn("图结构扫描未返回 GraphInfo", "branch", branchName, "leaf", itemName)
+				failures.Add(branchName+"."+itemName, fmt.Errorf("graph facts did not include GraphInfo"))
 				continue
 			}
 			count := derefGraphNodeCount(graphInfo)
@@ -143,6 +148,7 @@ func (s *BranchLeafRuntime) scanCatalogLeaves(
 		_, err = s.repo.UpsertItemWithDepth(tenantID, resource.ID, branchNode, itemType, itemName, fullName, attrs, rowCount, &sizeBytes, nil, scanDepth)
 		if err != nil {
 			s.log.Warn("保存 branch leaf 元数据失败", "branch", branchName, "item", itemName, "item_type", itemType, "error", err)
+			failures.Add(branchName+"."+itemName, err)
 			continue
 		}
 
@@ -153,13 +159,13 @@ func (s *BranchLeafRuntime) scanCatalogLeaves(
 		if len(scanned) == 0 {
 			continue
 		}
-		s.softDeleteMissingItemsByType(tenantID, resource.ID, branchNode.ID, itemType, scanned)
+		failures.Add(branchName, s.softDeleteMissingItemsByType(tenantID, resource.ID, branchNode.ID, itemType, scanned))
 	}
 	for itemType := range itemTypes(existingItems) {
 		if _, ok := scannedByType[itemType]; ok {
 			continue
 		}
-		s.softDeleteMissingItemsByType(tenantID, resource.ID, branchNode.ID, itemType, map[string]bool{})
+		failures.Add(branchName, s.softDeleteMissingItemsByType(tenantID, resource.ID, branchNode.ID, itemType, map[string]bool{}))
 	}
-	return totalItems, totalFields, nil
+	return totalItems, totalFields, failures.Err()
 }

@@ -294,7 +294,7 @@ func TestQuickViewSourceFromPreviewDetectsRasterTIFFObject(t *testing.T) {
 	if !strings.Contains(source.Raster.PreviewURL, "/api/v1/manager/storage-stream?") {
 		t.Fatalf("preview_url = %q, want manager storage stream URL", source.Raster.PreviewURL)
 	}
-	if !strings.Contains(source.Raster.PreviewURL, "engine_id=26") || !strings.Contains(source.Raster.PreviewURL, "storage_ref=rasters%2Fsmall.tif") {
+	if !strings.Contains(source.Raster.PreviewURL, "locator=") || !strings.Contains(source.Raster.PreviewURL, "storage_ref=rasters%2Fsmall.tif") {
 		t.Fatalf("preview_url = %q, want file storage_ref", source.Raster.PreviewURL)
 	}
 }
@@ -877,7 +877,7 @@ func TestQuickViewSourceFromPreviewDetectsRasterTIFFObjectCatalogItem(t *testing
 	if !strings.Contains(source.Raster.PreviewURL, "/api/v1/manager/storage-stream?") {
 		t.Fatalf("preview_url = %q, want manager storage stream URL", source.Raster.PreviewURL)
 	}
-	if !strings.Contains(source.Raster.PreviewURL, "engine_id=9") || !strings.Contains(source.Raster.PreviewURL, "storage_ref=addp%2Fimage%2Fsrtm_40_01.tif") {
+	if !strings.Contains(source.Raster.PreviewURL, "locator=") || !strings.Contains(source.Raster.PreviewURL, "storage_ref=addp%2Fimage%2Fsrtm_40_01.tif") {
 		t.Fatalf("preview_url = %q, want object bucket/path storage_ref", source.Raster.PreviewURL)
 	}
 }

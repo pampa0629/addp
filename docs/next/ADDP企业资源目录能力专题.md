@@ -358,7 +358,8 @@ ADDP 当前已经形成由多个 owner 共同组成的治理型语义基础：St
 
 | 完整语义体系能力 | 当前 Owner / 现状 | 评估 | 后续边界 |
 | --- | --- | --- | --- |
-| 业务术语、别名、数据元、码值、单位和维度层级 | Standard 已有对应权威对象 | 已具备基础 | 继续由 Standard 定义，Catalog 只保存资源应用关系 |
+| 业务术语、别名、数据元、码值和单位 | Standard 已有对应权威对象 | 已具备基础 | 继续由 Standard 定义，Catalog 只保存资源应用关系 |
+| 维度层级 | Model 已有 LogicalTable 聚合内权威对象 | 已具备基础 | 继续由 Model 定义，Catalog 只保存必要的资源身份与关系投影 |
 | 指标名称、定义、公式、依赖、单位和生命周期 | Standard Metric 已有基础对象和结构化计算配置 | 部分具备 | 继续核查统计对象、事实粒度、业务时间、过滤范围、可分析维度、生效版本和服务方式，不在 Catalog 补字段 |
 | 业务实体及实体关系 | Model Entity 已有权威聚合 | 已具备基础 | 继续由 Model 维护，Catalog 只建立企业目录身份并动态读取专业事实 |
 | 事实表、维度表、度量字段、粒度和星型关系 | Model LogicalTable、LogicalField 和 TableRelation 已表达基础模型 | 已具备基础 | 聚合性质、业务时间与可用维度必须由 Model / Standard 的明确契约提供，Catalog 不推断 |

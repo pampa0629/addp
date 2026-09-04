@@ -95,8 +95,8 @@ func (s *DatabaseRuntime) ScanNamespace(ctx context.Context, p plugin.EnginePlug
 	// 3. 扫描表
 	tables, fields, err := s.scanTables(ctx, resource, scanCatalog, tenantID, engineID, schemaNode, namespaceName, scanDepth, force)
 	if err != nil {
-		s.repo.FinalizeNodeState(schemaNode, "pending", 0, 0, err.Error())
-		return 0, 0, 0, err
+		_ = s.repo.FinalizeNodeState(schemaNode, "failed", tables, 0, err.Error())
+		return 0, tables, fields, err
 	}
 
 	// 6. 完成扫描

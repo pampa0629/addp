@@ -2,6 +2,7 @@ package scanruntime
 
 import (
 	"context"
+	"errors"
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
@@ -27,7 +28,7 @@ type fileSingleItemScanInput struct {
 	isDeepScan    bool
 }
 
-func (s *FilesystemCatalogRuntime) scanSingleFileItem(input fileSingleItemScanInput) (string, bool, scanflow.ExtractionCounts) {
+func (s *FilesystemCatalogRuntime) scanSingleFileItem(input fileSingleItemScanInput) (string, bool, scanflow.ExtractionCounts, error) {
 	detected := metaitem.InferSingleResourceItem(input.file)
 	itemName := input.file.Name
 	fullName := metapath.JoinFSPath(input.parentNode.FullName, itemName)
@@ -37,7 +38,7 @@ func (s *FilesystemCatalogRuntime) scanSingleFileItem(input fileSingleItemScanIn
 		s.log.Warn("查询文件对象失败", "path", input.file.Path, "error", findErr)
 	}
 	if itemExists && !input.force && !fileItemNeedsScan(existingItem, input.file, input.isDeepScan) {
-		return fullName, true, scanflow.ExtractionCounts{}
+		return fullName, true, scanflow.ExtractionCounts{}, findErr
 	}
 
 	result, err := scanprocessor.New(s.repo, s.indexer, s.log).WithContainerInspector(s.containerInspector).Process(input.ctx, scanprocessor.FileSingleInput(
@@ -55,7 +56,7 @@ func (s *FilesystemCatalogRuntime) scanSingleFileItem(input fileSingleItemScanIn
 	))
 	if err != nil {
 		s.log.Warn("保存 single 文件对象失败", "path", input.file.Path, "error", err)
-		return fullName, false, result.Extraction
+		return fullName, false, result.Extraction, errors.Join(findErr, err)
 	}
 
 	if detected.DataType == datatype.Table && result.Item != nil {
@@ -64,7 +65,7 @@ func (s *FilesystemCatalogRuntime) scanSingleFileItem(input fileSingleItemScanIn
 			s.log.Info("识别到 single 文件表", "path", input.file.Path, "name", itemName, "format", detected.Format, "field_count", len(tableInfo.Fields))
 		}
 	}
-	return fullName, true, result.Extraction
+	return fullName, true, result.Extraction, findErr
 }
 
 func fileItemNeedsScan(existing *models.MetaItem, file metaitem.StorageFileRef, isDeepScan bool) bool {

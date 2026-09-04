@@ -52,7 +52,7 @@ func TestModelPutRequestsAcceptCompleteZeroAndNullableValues(t *testing.T) {
 		{name: "entity attribute", body: `{"version":1,"name":"ID","column_name":"id","data_type":"bigint","element_id":null,"is_pk":false,"nullable":false,"description":"","sort_order":0}`, target: &models.UpdateEntityAttributeRequest{}},
 		{name: "entity relation", body: `{"version":1,"source_entity":1,"target_entity":2,"relation_type":"one_to_many","name":"","description":""}`, target: &models.UpdateEntityRelationRequest{}},
 		{name: "logical table", body: `{"version":1,"name":"Order","domain_id":null,"entity_id":null,"table_type":"entity","layer":"dwd","grain_description":"","scd_type":0,"description":"","materialization":{}}`, target: &models.UpdateLogicalTableRequest{}},
-		{name: "logical field", body: `{"version":1,"name":"ID","column_name":"id","data_type":"bigint","element_id":null,"length":null,"nullable":false,"is_pk":false,"is_partition":false,"default_value":"","description":"","sort_order":0,"field_role":"regular","hierarchy_id":null,"hierarchy_level":null}`, target: &models.UpdateLogicalFieldRequest{}},
+		{name: "logical field", body: `{"version":1,"name":"ID","column_name":"id","data_type":"bigint","element_id":null,"length":null,"nullable":false,"is_pk":false,"is_partition":false,"default_value":"","description":"","sort_order":0,"field_role":"regular"}`, target: &models.UpdateLogicalFieldRequest{}},
 		{name: "dw layer", body: `{"version":1,"layer_name":"DWD","description":"","naming_rule":"","quality_sla":null,"sort_order":0}`, target: &models.UpdateDWLayerRequest{}},
 	}
 

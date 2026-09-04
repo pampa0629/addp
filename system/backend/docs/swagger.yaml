@@ -6844,6 +6844,106 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - system.runtime_registry.read
+  /runtime/standard-governance-users/candidates:
+    get:
+      description: 仅 addp-standard Tenant Service Principal 可按名称或用户名分页查询当前租户内可引用的活动用户
+        | Only the addp-standard tenant service principal may search referenceable
+        active users in the current tenant by display name or username
+      parameters:
+      - description: 名称或用户名，最多 100 字符 | Name or username, maximum 100 characters
+        in: query
+        name: search
+        type: string
+      - description: 页码，默认 1 | Page number, default 1
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量，默认 20，最大 50 | Page size, default 20 and maximum 50
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              data:
+                items:
+                  $ref: '#/definitions/internal_api.IAMCatalogReferenceCandidateResponse'
+                type: array
+              page:
+                type: integer
+              page_size:
+                type: integer
+              total:
+                type: integer
+              total_pages:
+                type: integer
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询 Standard 治理用户候选 | List Standard governance user candidates
+      tags:
+      - Runtime Standard Governance Users
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.tenant_membership.read
+  /runtime/standard-governance-users/resolve:
+    post:
+      consumes:
+      - application/json
+      description: 仅 addp-standard Tenant Service Principal 可按当前 Tenant 解析 User Principal；跨
+        Tenant、非用户和无有效成员关系均不可引用 | Only the addp-standard tenant service principal
+        may resolve User Principals in the current tenant; cross-tenant, non-user,
+        and inactive memberships are not referenceable
+      parameters:
+      - description: User 引用集合，最多 200 个 | User references, up to 200
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMCatalogReferenceBatchRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMCatalogReferenceBatchResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 精确批量解析 Standard 治理用户 | Resolve Standard governance users in batch
+      tags:
+      - Runtime Standard Governance Users
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.tenant_membership.read
   /runtime/task-authorization-subjects/{id}/resolve:
     post:
       consumes:

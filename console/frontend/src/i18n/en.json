@@ -349,12 +349,12 @@
       },
       "standard": {
         "label": "Data Standards",
-        "domains": "Business Domains",
+      "domains": "Business Domains",
+      "collections": "Standard Collections",
         "glossaries": "Glossaries",
         "elements": "Data Elements",
         "codeSets": "Code Sets",
         "units": "Units of Measure",
-        "dimensionHierarchies": "Dimension Hierarchies",
         "metrics": "Metrics",
         "recentMetrics": "Data Metric Management",
         "documents": "Standard Documents"

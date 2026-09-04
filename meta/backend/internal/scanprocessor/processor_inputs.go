@@ -49,6 +49,7 @@ func FileSingleInput(
 		DataUpdatedAt:        fileModifiedAtPtr(file.ModifiedAt),
 		ScanDepth:            scanDepth,
 		IncludeAccessIndex:   true,
+		StrictDeepEnrich:     true,
 	}
 }
 
@@ -81,6 +82,7 @@ func FileDetectedInput(
 		SizeBytes:            itemPlan.SizeBytes,
 		ScanDepth:            scanDepth,
 		IncludeAccessIndex:   true,
+		StrictDeepEnrich:     true,
 	}
 }
 
@@ -118,6 +120,7 @@ func ObjectSingleInput(
 		DataUpdatedAt:        catalogResource.LastModified,
 		ScanDepth:            scanDepth,
 		IncludeAccessIndex:   true,
+		StrictDeepEnrich:     true,
 	}
 }
 
@@ -151,6 +154,7 @@ func ObjectCompositeInput(
 		SizeBytes:            itemPlan.SizeBytes,
 		ScanDepth:            scanDepth,
 		IncludeAccessIndex:   true,
+		StrictDeepEnrich:     true,
 	}
 }
 

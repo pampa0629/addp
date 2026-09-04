@@ -188,6 +188,17 @@
         </el-card>
       </el-col>
 
+      <!-- 维度层级（仅维度表） -->
+      <el-col v-if="form.table_type === 'dimension'" :span="24" style="margin-top:16px">
+        <DimensionHierarchyEditor
+          :table-id="tableId"
+          :version="table.version"
+          :fields="fields"
+          :editable="canEdit && authStore.hasPermission('model.logical_model.update')"
+          @update-version="table.version = $event"
+        />
+      </el-col>
+
       <!-- 关联指标（仅事实表） -->
       <el-col v-if="form.table_type === 'fact'" :span="24" style="margin-top:16px">
         <el-card shadow="never">
@@ -231,7 +242,17 @@
       <el-col :span="24" style="margin-top:16px">
         <el-card shadow="never">
           <template #header>
-            <span class="card-title">{{ t('model.materialization.title') }}</span>
+            <div class="card-header-with-action">
+              <span class="card-title">{{ t('model.materialization.title') }}</span>
+              <el-button
+                v-if="canDecommissionTarget"
+                type="danger"
+                plain
+                @click="openDecommissionDialog"
+              >
+                {{ t('model.materialization.decommission') }}
+              </el-button>
+            </div>
           </template>
           <el-form :model="materializationForm" label-width="110px">
             <el-row :gutter="16">
@@ -423,6 +444,51 @@
 
     <!-- DDL 预览对话框 -->
     <DDLPreviewDialog v-model="ddlDialogVisible" :ddl="ddlContent" />
+
+    <el-dialog
+      v-model="decommissionDialogVisible"
+      class="addp-dialog"
+      :title="t('model.materialization.decommission_title')"
+      width="min(620px, calc(100vw - 32px))"
+    >
+      <el-alert
+        type="error"
+        :title="t('model.materialization.decommission_warning')"
+        :closable="false"
+        show-icon
+      />
+      <el-descriptions class="decommission-target" :column="1" border>
+        <el-descriptions-item :label="t('model.materialization.engine')">
+          {{ decommissionTarget.engineName || t('model.materialization.engine_unknown') }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('model.materialization.target_schema')">
+          {{ decommissionTarget.schemaName }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('model.materialization.target_name')">
+          {{ decommissionTarget.targetName }}
+        </el-descriptions-item>
+      </el-descriptions>
+      <el-form label-position="top">
+        <el-form-item :label="t('model.materialization.confirm_label', { target: decommissionTarget.confirmation })">
+          <el-input
+            v-model="decommissionConfirmation"
+            autocomplete="off"
+            :placeholder="decommissionTarget.confirmation"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="decommissionDialogVisible = false">{{ t('model.common.cancel') }}</el-button>
+        <el-button
+          type="danger"
+          :loading="decommissioning"
+          :disabled="decommissionConfirmation !== decommissionTarget.confirmation"
+          @click="handleDecommission"
+        >
+          {{ t('model.materialization.confirm_decommission') }}
+        </el-button>
+      </template>
+    </el-dialog>
     </template>
   </div>
 </template>
@@ -430,11 +496,12 @@
 <script setup>
 import { ref, reactive, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ResourceTreePicker, useConsolePageDescriptor } from '@common-ui'
+import { ResourceTreePicker, listResourceTreeEngines, parseLocator, useConsolePageDescriptor } from '@common-ui'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, Plus, Refresh, View } from '@element-plus/icons-vue'
 import { logicalTableAPI, domainAPI, elementAPI, standardMetricAPI, dwLayerAPI } from '../api/model'
 import DDLPreviewDialog from '../components/DDLPreviewDialog.vue'
+import DimensionHierarchyEditor from '../components/DimensionHierarchyEditor.vue'
 import { useI18n } from 'vue-i18n'
 import { navigateModelRoute } from '../utils/moduleNavigation'
 import { useAuthStore } from '../store/auth'
@@ -470,6 +537,10 @@ const fieldLoading = ref(false)
 const fieldSubmitting = ref(false)
 const fieldDialogVisible = ref(false)
 const ddlDialogVisible = ref(false)
+const decommissionDialogVisible = ref(false)
+const decommissionConfirmation = ref('')
+const decommissioning = ref(false)
+const decommissionEngineName = ref('')
 const editingField = ref(null)
 const fieldFormRef = ref(null)
 
@@ -510,6 +581,31 @@ const elements = ref([])
 const getElementName = id => elements.value.find(element => element.id === id)?.name
 const ddlContent = ref('')
 
+const decommissionTarget = computed(() => {
+  const materialization = table.value?.materialization || {}
+  const locator = materialization.target_parent_locator || ''
+  let parsed = {}
+  try {
+    parsed = parseLocator(locator)
+  } catch {
+    parsed = {}
+  }
+  const schemaName = parsed.path?.[parsed.path.length - 1] || ''
+  const targetName = materialization.target_name || ''
+  return {
+    locator,
+    schemaName,
+    targetName,
+    engineId: parsed.engineId || 0,
+    engineName: decommissionEngineName.value,
+    confirmation: schemaName && targetName ? `${schemaName}.${targetName}` : ''
+  }
+})
+const canDecommissionTarget = computed(() =>
+  authStore.hasPermission('model.materialized_target.delete') &&
+  Boolean(decommissionTarget.value.locator && decommissionTarget.value.targetName)
+)
+
 const metricForm = reactive({ metric_id: null, field_id: null, note: '' })
 
 // 度量字段（field_role 为 measure_* 的字段）
@@ -535,7 +631,7 @@ const fieldForm = reactive({
   name: '', column_name: '', data_type: 'string', length: null,
   nullable: true, is_pk: false, is_partition: false,
   default_value: '', element_id: null, description: '',
-  field_role: 'regular', hierarchy_id: null, hierarchy_level: null, sort_order: 0
+  field_role: 'regular', sort_order: 0
 })
 const fieldRules = {
   name: [{ required: true, message: t('model.field.name_required'), trigger: 'blur' }],
@@ -711,6 +807,44 @@ const handlePreviewDDL = async () => {
   }
 }
 
+const openDecommissionDialog = async () => {
+  if (!canDecommissionTarget.value) {
+    ElMessage.error(t('model.common.permission_denied'))
+    return
+  }
+  if (isDirty.value) {
+    ElMessage.warning(t('model.common.save_before_action'))
+    return
+  }
+  decommissionConfirmation.value = ''
+  decommissionEngineName.value = ''
+  decommissionDialogVisible.value = true
+  try {
+    const engines = await listResourceTreeEngines('/api/v1/meta', { engineFamilies: ['tabular'] })
+    decommissionEngineName.value = engines.find(engine => Number(engine.id) === decommissionTarget.value.engineId)?.name || ''
+  } catch (err) {
+    ElMessage.error(getModelErrorMessage(err, t, 'model.materialization.engine_load_failed'))
+  }
+}
+
+const handleDecommission = async () => {
+  if (decommissionConfirmation.value !== decommissionTarget.value.confirmation) return
+  decommissioning.value = true
+  try {
+    await logicalTableAPI.decommissionMaterializedTarget(tableId.value, {
+      version: table.value.version,
+      target_parent_locator: decommissionTarget.value.locator,
+      target_name: decommissionTarget.value.targetName
+    })
+    decommissionDialogVisible.value = false
+    ElMessage.success(t('model.materialization.decommission_success'))
+  } catch (err) {
+    ElMessage.error(getModelErrorMessage(err, t, 'model.materialization.decommission_failed'))
+  } finally {
+    decommissioning.value = false
+  }
+}
+
 const openFieldDialog = (field = null) => {
   editingField.value = field
   if (field) {
@@ -726,8 +860,6 @@ const openFieldDialog = (field = null) => {
       element_id: field.element_id ?? null,
       description: field.description || '',
       field_role: field.field_role || 'regular',
-      hierarchy_id: field.hierarchy_id ?? null,
-      hierarchy_level: field.hierarchy_level ?? null,
       sort_order: field.sort_order ?? 0
     })
   } else {
@@ -735,7 +867,7 @@ const openFieldDialog = (field = null) => {
       name: '', column_name: '', data_type: 'string', length: null,
       nullable: true, is_pk: false, is_partition: false,
       default_value: '', element_id: null, description: '',
-      field_role: 'regular', hierarchy_id: null, hierarchy_level: null, sort_order: 0
+      field_role: 'regular', sort_order: 0
     })
   }
   fieldDialogVisible.value = true
@@ -944,6 +1076,10 @@ watch(() => route.params.id, loadPage, { immediate: true })
 
 .revision-tag {
   margin-left: 6px;
+}
+
+.decommission-target {
+  margin: 16px 0;
 }
 
 @media (max-width: 767px) {

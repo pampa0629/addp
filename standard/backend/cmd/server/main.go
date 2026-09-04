@@ -83,7 +83,7 @@ func main() {
 	metricCatRepo := repository.NewMetricCategoryRepository(db)
 	metricRepo := repository.NewMetricRepository(db)
 	documentRepo := repository.NewDocumentRepository(db)
-	dimHierarchyRepo := repository.NewDimensionHierarchyRepository(db)
+	collectionRepo := repository.NewStandardCollectionRepository(db)
 	tenantReferenceRepo := repository.NewTenantReferenceRepository(db)
 	referenceResolutionRepo := repository.NewReferenceResolutionRepository(db)
 	catalogResourceRepo := repository.NewCatalogResourceRepository(db)
@@ -93,9 +93,6 @@ func main() {
 	})
 	standardReferenceDeletionSvc.RegisterLocalDelete("element", func(tx *gorm.DB, resourceID, tenantID int64) error {
 		return elementRepo.DeleteTx(tx, resourceID, tenantID)
-	})
-	standardReferenceDeletionSvc.RegisterLocalDelete("dimension_hierarchy", func(tx *gorm.DB, resourceID, tenantID int64) error {
-		return dimHierarchyRepo.DeleteTx(tx, resourceID, tenantID)
 	})
 	standardReferenceDeletionSvc.RegisterLocalDelete("metric", func(tx *gorm.DB, resourceID, tenantID int64) error {
 		return metricRepo.DeleteTx(tx, resourceID, tenantID)
@@ -124,8 +121,8 @@ func main() {
 		MaxFileSize: cfg.DocumentMaxFileSize,
 		Timeout:     cfg.DocumentStorageTimeout,
 	})
+	collectionSvc := service.NewStandardCollectionService(collectionRepo, tenantReferenceRepo, systemClient)
 	defer documentSvc.Stop()
-	dimHierarchySvc := service.NewDimensionHierarchyService(dimHierarchyRepo, tenantReferenceRepo, standardReferenceDeletionSvc)
 	referenceResolutionSvc := service.NewReferenceResolutionService(referenceResolutionRepo)
 	elementRevisionResolutionSvc := service.NewElementRevisionResolutionService(elementRepo, codeSetRepo)
 	catalogResourceSvc := service.NewCatalogResourceService(catalogResourceRepo)
@@ -148,7 +145,7 @@ func main() {
 		unitSvc,
 		metricSvc,
 		documentSvc,
-		dimHierarchySvc,
+		collectionSvc,
 		referenceResolutionSvc,
 		elementRevisionResolutionSvc,
 		catalogResourceSvc,

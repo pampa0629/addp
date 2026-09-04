@@ -13,6 +13,7 @@ Metric 的指标依赖与基准指标关系通过当前 User Token 读取 `GET /
 **Standard 模块** 是 ADDP 平台的数据标准和治理中心，负责：
 
 - 业务域（Domain）树形组织管理
+- 标准集（StandardCollection）：跨业务域成员快照、对象级职责、审核发布和不可变治理事件
 - 业务术语（Glossary）词典：别名、定义、状态流转、关联数据元
 - 数据元（Element）：数据标准的核心原子对象，定义数据规格和质量规则
 - 码值集（CodeSet）：系统/自定义码值集及码值项
@@ -20,7 +21,7 @@ Metric 的指标依赖与基准指标关系通过当前 User Token 读取 `GET /
 - 指标定义（MetricDefinition）：指标业务含义、统计口径、单位、责任归属和适用范围；不保存模型粒度、连接、过滤或可执行表达式
 - 标准文档（Document）：标准来源及其不可变文档修订、提取证据和审核关系
 
-维度层级、公共/一致性维度和指标实现统一属于 Model。当前 `standard.dimension_hierarchies` 及 Metric 中的实现型字段是待迁移旧实现，不得据此继续扩展 Standard；迁移完成时必须删除旧表、API、权限和前端路由，不保留双轨。
+维度层级、公共/一致性维度和指标实现统一属于 Model。`standard.dimension_hierarchies` 旧表、API、权限和前端路由已经删除；Metric 中的实现型字段仍是待拆分旧实现，不得据此继续扩展 Standard。
 
 **端口**:
 - 后端: `8110`（环境变量 `STANDARD_BACKEND_PORT`）
@@ -35,9 +36,10 @@ Metric 的指标依赖与基准指标关系通过当前 User Token 读取 `GET /
 - 业务域只表达业务语义与治理责任，不表达可见范围、审核容器或目录分类。
 - 发布型标准采用“稳定身份 + 不可变修订”；统一状态为 `draft → in_review → published → withdrawn`，按半开生效区间动态解析当前修订。
 - 标准对象显式保存 `scope_type=platform|tenant_common|domain`；仅 `domain` 必须指定 `owner_domain_id`。码值集不得再以“租户自定义”为由强制归属业务域。
-- StandardCollection 独立承担成员、维护人、权限和审核流程；StandardCategory 只承担浏览导航，两者均不得替代业务域和适用范围。
+- StandardCollection 采用“稳定身份 + 治理配置修订 + 成员快照 + 对象级职责分配”。集合修订只审核名称、说明和成员清单，不替代成员对象自身的修订发布；StandardCategory 只承担浏览导航，两者均不得替代业务域和适用范围。
+- StandardCollectionAssignment 只绑定当前租户的 User Principal，角色固定为 `owner|maintainer|reviewer`。模块 Permission 是粗粒度门禁，Assignment 是集合对象级门禁；Owner 可管理职责分配并维护草稿，Maintainer 可编辑和提交，Reviewer 可退回和发布，且发布者不得是提交者。
 - Copilot 只生成标准候选，必须保留文档修订、页码/章节/文本片段等来源证据；人工审核发布后才成为正式标准修订。
-- 首批改造先统一 Element、CodeSet 的 Scope 与归属域；下一批在完整设计成员、维护人、权限和审核流程后实现 StandardCollection。随后整体迁移 DimensionHierarchy 到 Model，再拆分 MetricDefinition / MetricImplementation，最后补齐文档修订、提取证据和 Catalog → Quality 落标闭环。
+- Element、CodeSet 的 Scope 与归属域已统一；StandardCollection 已按上述单一路径实现；DimensionHierarchy 已整体迁入 Model。下一批拆分 MetricDefinition / MetricImplementation，再补齐文档修订、提取证据和 Catalog → Quality 落标闭环。
 
 文档文件采用“新对象上传、数据库切换引用、旧对象补偿清理”的顺序。失效对象记录在 `standard.document_file_cleanups`，该表仅用于物理清理重试，不作为文档当前文件引用。
 
@@ -55,6 +57,7 @@ standard/
 │   └── internal/
 │       ├── api/
 │       │   ├── router.go              # 路由配置
+│       │   ├── standard_collection_handler.go
 │       │   ├── domain_handler.go
 │       │   ├── glossary_handler.go
 │       │   ├── element_handler.go
@@ -62,10 +65,10 @@ standard/
 │       │   ├── unit_handler.go
 │       │   ├── classification_handler.go
 │       │   ├── metric_handler.go
-│       │   ├── document_handler.go
-│       │   └── dimension_hierarchy_handler.go
+│       │   └── document_handler.go
 │       ├── config/config.go
 │       ├── models/
+│       │   ├── standard_collection.go
 │       │   ├── domain.go
 │       │   ├── glossary.go
 │       │   ├── element.go
@@ -74,7 +77,6 @@ standard/
 │       │   ├── classification.go
 │       │   ├── metric.go
 │       │   ├── document.go
-│       │   ├── dimension_hierarchy.go
 │       │   └── common_types.go        # StringArray, Int64Array, JSONB
 │       ├── repository/
 │       └── service/
@@ -84,13 +86,13 @@ standard/
         │   └── standard.js            # 所有 API 调用
         ├── views/
         │   ├── DomainList.vue
+        │   ├── StandardCollectionList.vue / StandardCollectionDetail.vue
         │   ├── GlossaryList.vue / GlossaryDetail.vue
         │   ├── ElementList.vue / ElementDetail.vue
         │   ├── CodeSetList.vue / CodeSetDetail.vue
         │   ├── UnitList.vue
         │   ├── MetricList.vue / MetricDetail.vue
-        │   ├── DocumentList.vue
-        │   └── DimensionHierarchyList.vue / DimensionHierarchyDetail.vue
+        │   └── DocumentList.vue
         └── components/
             ├── DocumentPanel.vue       # 通用文档关联面板
             └── DDLPreviewDialog.vue
@@ -98,7 +100,7 @@ standard/
 
 ## 当前数据库表结构
 
-本节记录迁移前实现，用于定位代码，不代表目标模型。目标模型以平台术语表和核心对象 ER 图为准；改造时直接替换旧字段与旧资源，不增加兼容字段或并行 API。
+本节记录当前实现。目标模型以平台术语表和核心对象 ER 图为准；改造时直接替换旧字段与旧资源，不增加兼容字段或并行 API。
 
 ### `standard.domains` — 业务域（树形）
 
@@ -108,6 +110,18 @@ standard/
 | name / code | string | 显示名 / 英文标识符 |
 | icon | string | 图标标识 |
 | sort_order | int | 同层排序 |
+
+### `standard.standard_collections` 与治理子表 — 标准集
+
+| 表 | 核心事实 |
+|------|------|
+| `standard_collections` | 租户内唯一且不可变的 `code`、当前草稿指针、并发 `version` |
+| `standard_collection_revisions` | 名称、说明、成员清单的修订身份和 `draft → in_review → published → withdrawn` 状态 |
+| `standard_collection_members` | 修订内冻结的 `member_type + member_id`；只引用标准对象稳定身份 |
+| `standard_collection_assignments` | 当前租户 User Principal 的 `owner / maintainer / reviewer` 对象级职责 |
+| `standard_collection_events` | 创建、草稿更新、提交、退回、发布和职责替换的不可变事件 |
+
+标准集不保存 `domain_id` 或 `scope_type`，允许跨业务域组织成员。发布新集合修订会在同一事务中撤回上一已发布修订。已发布标准集不能删除；职责人员后来停用或移除时，历史职责与事件仍可读取并明确显示为不可用，但不能再被新增到职责分配。
 
 ### `standard.glossaries` — 业务术语
 
@@ -262,26 +276,26 @@ standard/
 
 文档与数据元、术语、指标的多对多关联，每条关联记录 `reference_location`（引用位置）。
 
-### `standard.dimension_hierarchies` — 待迁出的旧维度层级
-
-当前定义业务意义上的上下钻路径（如时间：年→季→月→日）。该资源将整体迁入 Model，Standard 不再提供层级 API。
-
-### `standard.dimension_hierarchy_levels` — 待迁出的旧维度层级成员
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| hierarchy_id | int64 | 所属层级 |
-| level_num | int | 层次编号（从 1 开始） |
-| name | string | 层次名称（如"年"） |
-| element_id | int64? | 引用 `standard.elements`（层次对应的数据元） |
-| sort_order | int | 显示顺序 |
-
 ## API 端点（`/api/v1/standard`）
 
 ### 业务域
 ```
 GET/POST /api/v1/standard/domains
 GET/PUT/DELETE /api/v1/standard/domains/:id
+```
+
+### 标准集
+```
+GET/POST /api/v1/standard/collections
+GET/DELETE /api/v1/standard/collections/:id
+GET/POST /api/v1/standard/collections/:id/revisions
+GET /api/v1/standard/collections/:id/events
+PUT /api/v1/standard/collections/:id/revisions/:revision_id
+POST /api/v1/standard/collections/:id/revisions/:revision_id/submit
+POST /api/v1/standard/collections/:id/revisions/:revision_id/return
+POST /api/v1/standard/collections/:id/revisions/:revision_id/publish
+PUT /api/v1/standard/collections/:id/assignments
+GET /api/v1/standard/collection-user-candidates
 ```
 
 ### 业务术语
@@ -349,17 +363,12 @@ GET /api/v1/standard/documents/:id/download   # 从 MinIO 下载
 GET/PUT /api/v1/standard/documents/:id/mappings # 多维关联（数据元/术语/指标）
 ```
 
-### 维度层级
-```
-GET/POST /api/v1/standard/dimension-hierarchies
-GET/PUT/DELETE /api/v1/standard/dimension-hierarchies/:id
-GET/POST/PUT/DELETE /api/v1/standard/dimension-hierarchies/:id/levels
-```
-
 ## 前端路由
 
 ```
 /standard/domains                    # 业务域（树形管理）
+/standard/collections                # 标准集列表
+/standard/collections/:id            # 标准集配置、职责、修订与审核事件
 /standard/glossaries                 # 业务术语列表
 /standard/glossaries/:id             # 术语详情（属性、关联数据元、文档）
 /standard/elements                   # 数据元列表
@@ -370,15 +379,13 @@ GET/POST/PUT/DELETE /api/v1/standard/dimension-hierarchies/:id/levels
 /standard/metrics                    # 指标列表
 /standard/metrics/:id                # 指标详情（依赖关系、关联数据元）
 /standard/documents                  # 标准文档库
-/standard/dimension-hierarchies      # 待迁移旧入口；迁入 Model 后删除
-/standard/dimension-hierarchies/:id  # 待迁移旧入口；不保留兼容路由
 ```
 
 ## 模块依赖关系
 
 **依赖**:
-- **System 模块**: JWT 认证、用户信息（`SYSTEM_URL`）
-- **Model 模块**: 删除业务域、数据元和指标定义前冻结 Model 标准引用删除屏障并执行权威影响扫描（`MODEL_URL`）；维度层级迁移后是 Model 本地聚合
+- **System 模块**: JWT 认证；标准集职责候选与人员状态通过 `tenant.standard_runtime` 的 `iam.tenant_membership.read` 服务身份解析（`SYSTEM_URL`）
+- **Model 模块**: 删除业务域、数据元和指标定义前冻结 Model 标准引用删除屏障并执行权威影响扫描（`MODEL_URL`）；维度层级是 Model 本地聚合
 - **MinIO**: 标准文档文件存储（bucket: `standard`）
 
 **被依赖**（其他模块调用 Standard 的 API）:
@@ -391,6 +398,8 @@ GET/POST/PUT/DELETE /api/v1/standard/dimension-hierarchies/:id/levels
 Standard 是以下第一批 Permission 的唯一 owner：
 
 - `standard.domain.*`
+- `standard.collection.*`
+- `standard.collection_assignment.update`
 - `standard.element.*`
 - `standard.metric.*`
 - `standard.catalog.read`（仅 `addp-catalog` 的 `tenant.catalog_runtime`）
@@ -398,11 +407,10 @@ Standard 是以下第一批 Permission 的唯一 owner：
 - `standard.document.*`
 - `standard.glossary.*`
 - `standard.unit.*`
-- `standard.dimension_hierarchy.*`（当前待迁移权限；维度层级迁入 Model 后删除）
 
 机器可读事实源是 [authorization/permissions.yaml](authorization/permissions.yaml)。该 Manifest 由 `common/authorization` 在构建/发布期统一发现、校验和聚合，Standard 服务启动时不向 System 动态注册 Permission。
 
-Measurement Category 是 Unit 聚合内子资源。当前 Dimension Hierarchy Level 随旧 DimensionHierarchy 一并迁入 Model，迁移完成后 Standard 不再拥有这两类资源。Document 与 Element、Glossary、Metric 的关联操作按涉及资源 Permission 做 all-of 校验，不借用宽泛 Key 或前缀匹配授权。
+Measurement Category 是 Unit 聚合内子资源。DimensionHierarchy 与层级成员由 Model 独占拥有。Document 与 Element、Glossary、Metric 的关联操作按涉及资源 Permission 做 all-of 校验，不借用宽泛 Key 或前缀匹配授权。
 
 ## 特殊设计
 
@@ -436,6 +444,14 @@ draft → in_review → published → withdrawn
 - `withdrawn` 用于撤回错误发布，不代表创建新版本；稳定身份仍保留历史。
 - 数据元与码值集稳定身份各自最多持有一个草稿，可以有多个区间不重叠的已发布修订。
 
+### 标准集审核与职责边界
+
+- 创建者自动成为首位 `owner`；职责替换必须至少保留一名 `owner`。
+- `owner` 可维护草稿并管理职责，`maintainer` 可维护和提交，`reviewer` 可退回和发布；提交人与发布人必须不同。
+- 提交前必须至少有一个成员，并配置一名不同于提交人的审核人。
+- 集合修订只冻结集合名称、说明和成员稳定身份，不冻结或代替成员对象自己的发布修订。
+- 状态变化与职责替换在业务事务中追加 `standard_collection_events`，不以可变状态字段冒充审核历史。
+
 ### 值域与质量规则的单一事实源
 
 数据元修订必须在 `unrestricted`、`range`、`enumeration` 中三选一。`range` 只使用结构化 `range_constraint`；`enumeration` 必须绑定具体 `code_set_revision_id`。两者互斥，且绑定的码值集修订必须已经发布、值类型必须与数据元类型相容，码值集修订生效区间必须覆盖数据元修订生效区间。
@@ -461,7 +477,7 @@ Standard 通过唯一 `POST /api/v1/standard/runtime/element-revisions/resolve` 
 
 Standard 的 `elements`、`units`、`code_sets` 等被其他 Schema（model、metadata 等）引用时，**没有数据库级外键约束**，通过应用层 HTTP 调用 Standard API 进行 ID 存在性验证。
 
-Model 可引用的 Domain、Element、DimensionHierarchy 和 Metric 使用独立 `lifecycle_state=active|deleting`。硬删除时 Standard 先写入删除协调记录并进入 `deleting`，再由删除协调流程串行锁定 Standard 资源行，调用 Model 冻结 `(tenant_id, resource_type, resource_id)` 屏障并权威扫描引用；有引用时必须先恢复 Model `open`，再恢复 Standard `active` 并返回 `409 standard_resource_referenced`；无引用时才硬删除资源，协调记录保留到 Model 屏障终止为 `deleted` 成功。资源行锁覆盖冻结、扫描和本地删除，用户重试与后台补偿复用同一协调记录；后台定期补偿 `deleting` 或资源已删除但终态未收敛的协调记录。普通 check-then-delete、自动清空 Model 引用、跨 Schema 查询和绕过屏障的强制删除都不是合法路径。
+Model 可引用的 Domain、Element 和 Metric 使用独立 `lifecycle_state=active|deleting`。硬删除时 Standard 先写入删除协调记录并进入 `deleting`，再由删除协调流程串行锁定 Standard 资源行，调用 Model 冻结 `(tenant_id, resource_type, resource_id)` 屏障并权威扫描引用；有引用时必须先恢复 Model `open`，再恢复 Standard `active` 并返回 `409 standard_resource_referenced`；无引用时才硬删除资源，协调记录保留到 Model 屏障终止为 `deleted` 成功。资源行锁覆盖冻结、扫描和本地删除，用户重试与后台补偿复用同一协调记录；后台定期补偿 `deleting` 或资源已删除但终态未收敛的协调记录。普通 check-then-delete、自动清空 Model 引用、跨 Schema 查询和绕过屏障的强制删除都不是合法路径。
 
 ### 数据库约束与启动收敛
 
@@ -488,7 +504,7 @@ Standard 当前使用单一启动迁移入口 `repository.Migrate`：在同一�
 
 ## 前端公开路由
 
-- 模块内 Router 使用 `/domains`、`/glossaries`、`/elements`、`/code-sets`、`/metrics`、`/dimension-hierarchies` 等无模块前缀路径；Console 公开 URL 统一加 `/standard` 前缀。
-- 术语、数据元、码集、指标和维度层级详情使用 `/:id` 表达对象身份；详情返回使用明确列表路由，不依赖 `router.back()`。
+- 模块内 Router 使用 `/domains`、`/glossaries`、`/elements`、`/code-sets`、`/metrics` 等无模块前缀路径；Console 公开 URL 统一加 `/standard` 前缀。
+- 术语、数据元、码集和指标详情使用 `/:id` 表达对象身份；详情返回使用明确列表路由，不依赖 `router.back()`。
 - 创建成功进入详情使用 `replace`，列表进入详情和跨标准对象导航使用 `push`。
 - 业务导航统一调用 `frontend/src/utils/moduleNavigation.js`。

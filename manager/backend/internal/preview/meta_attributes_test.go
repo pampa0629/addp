@@ -79,10 +79,27 @@ func TestS3MManifestObjectPathUsesNestedConfigRef(t *testing.T) {
 
 func TestBuildStorageAssetURLPreservesPathSegments(t *testing.T) {
 	t.Parallel()
-	got := buildStorageAssetURL(26, "addp/三维模型/config/city.scp")
-	want := "/api/v1/manager/storage-assets/26/addp/%E4%B8%89%E7%BB%B4%E6%A8%A1%E5%9E%8B/config/city.scp"
+	got := buildStorageAssetURL("addp://engine/26/path/addp/三维模型?type=object&item_id=88", 26, "addp/三维模型/config/city.scp")
+	want := "/api/v1/manager/storage-assets/26/items/88/addp/%E4%B8%89%E7%BB%B4%E6%A8%A1%E5%9E%8B/config/city.scp"
 	if got != want {
 		t.Fatalf("asset URL = %q, want %q", got, want)
+	}
+}
+
+func TestStorageContentURLsRequireMatchingDataItemLocator(t *testing.T) {
+	t.Parallel()
+	valid := "addp://engine/26/path/addp/report.pdf?type=object&item_id=88"
+	if got := buildStorageStreamURL(valid, 26, "addp/report.pdf"); got == "" {
+		t.Fatal("buildStorageStreamURL() rejected a matching DataItem locator")
+	}
+	for _, locator := range []string{
+		"addp://engine/26/path/addp/report.pdf?type=object",
+		"addp://engine/27/path/addp/report.pdf?type=object&item_id=88",
+		"addp://engine/26/path/addp?type=bucket&item_id=88",
+	} {
+		if got := buildStorageStreamURL(locator, 26, "addp/report.pdf"); got != "" {
+			t.Fatalf("buildStorageStreamURL(%q) = %q, want no URL", locator, got)
+		}
 	}
 }
 
@@ -97,10 +114,10 @@ func TestApplyS3MScenePreviewBuildsControlledManifestURL(t *testing.T) {
 			},
 		},
 	}
-	if !applyS3MScenePreview(attrs, object, 26, "addp", "3d/city") {
+	if !applyS3MScenePreview(attrs, object, "addp://engine/26/path/addp/3d/city?type=object&item_id=89", 26, "addp", "3d/city") {
 		t.Fatal("applyS3MScenePreview() = false, want S3M preview")
 	}
-	wantURL := "/api/v1/manager/storage-assets/26/addp/3d/city/config/scene.scp"
+	wantURL := "/api/v1/manager/storage-assets/26/items/89/addp/3d/city/config/scene.scp"
 	if object.Content == nil || object.Content.FrontendRenderer != "s3m" || object.Content.URL != wantURL {
 		t.Fatalf("object = %#v, want controlled S3M URL", object)
 	}

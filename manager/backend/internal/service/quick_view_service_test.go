@@ -1304,7 +1304,7 @@ func TestRasterQuickViewSourceFromAttributesUsesMetaFacts(t *testing.T) {
 	if raster.DisplayRangeMethod != "metadata_statistics" {
 		t.Fatalf("display_range_method = %q, want metadata_statistics", raster.DisplayRangeMethod)
 	}
-	if !strings.Contains(raster.PreviewURL, "engine_id=26") || !strings.Contains(raster.PreviewURL, "storage_ref=rasters%2Flarge-cog.tif") {
+	if !strings.Contains(raster.PreviewURL, "locator=") || !strings.Contains(raster.PreviewURL, "storage_ref=rasters%2Flarge-cog.tif") {
 		t.Fatalf("preview_url = %q, want file storage_ref", raster.PreviewURL)
 	}
 	if reason := rasterUnavailableReason(raster, 50*1024*1024, 64*1000*1000); reason != RasterUnavailableReasonRequiresManagedCOG {
@@ -1344,7 +1344,7 @@ func TestRasterQuickViewSourceFromObjectLocatorUsesStorageStream(t *testing.T) {
 	if !strings.Contains(raster.PreviewURL, "/api/v1/manager/storage-stream?") {
 		t.Fatalf("preview_url = %q, want storage stream URL", raster.PreviewURL)
 	}
-	if !strings.Contains(raster.PreviewURL, "engine_id=9") || !strings.Contains(raster.PreviewURL, "storage_ref=addp%2Frasters%2Fsmall.tif") {
+	if !strings.Contains(raster.PreviewURL, "locator=") || !strings.Contains(raster.PreviewURL, "storage_ref=addp%2Frasters%2Fsmall.tif") {
 		t.Fatalf("preview_url = %q, want object bucket/path storage_ref", raster.PreviewURL)
 	}
 }

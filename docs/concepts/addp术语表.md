@@ -73,6 +73,7 @@
 | full_name | 逻辑全名 / 语义路径 | data item 在引擎内的稳定逻辑路径。 | 例如 `addp/image/开会.jpg`、`public.users`、`neo4j.graph`。它是定位和指纹的基础，但不是 URI。 |
 | ResourceLocator | 资源定位符 | 平台统一的资源 URI 定位形式。 | 形如 `addp://engine/{engine_id}/path/{resource_path}?type={type}&node_id={node_id}` 或 `...&item_id={item_id}`；`type` 表达 Engine Catalog 术语，`node_id` / `item_id` 表达真实 Meta 身份。 |
 | logical table materialization target | 逻辑表物化目标 | Model 中描述逻辑表准备落入哪个 Engine Instance 和父命名空间的设计事实。 | 使用 `target_parent_locator + target_name` 表达；Model 根据已审批逻辑表执行受控 DDL、staging 准备与原子发布。Transfer 负责跨引擎写入批次 staging，Develop 只负责目标引擎内的查询计算，Orchestrator 只编排顺序。 |
+| logical table materialized target decommission | 逻辑表物化目标退役 | Model 删除某个 LogicalTable 已登记、已确认且仍由该 LogicalTable 管理的物理目标，使物理产物先于逻辑模型安全退出使用。 | 这是 Model owner 的高风险同步命令，不是可编排任务；请求只提交逻辑表并发版本和精确目标确认，不接受 SQL、动态 Locator 或跨模块引用检查。 |
 | Materialization Batch | 物化批次 | Model 为一次逻辑表重算创建的 Tenant 级受控发布聚合，绑定逻辑表版本、目标 Engine、staging、结构指纹和 prepare/publish execution。 | 同一逻辑表同时最多一个活动批次；批次不接受调用方提交 SQL、Schema、表名或 DDL。 |
 | Materialization Read Context | 物化读上下文 | Model 面向同一父 Orchestrator execution 中的 Develop/Quality reader，对已完成有效 write attempt 生成的短期只读批次投影。 | 返回精确 staging locator、字段、结构指纹和批次身份；不返回凭据、DDL 或写入能力，也不替代 reader 自身的 Execution Authorization。 |
 | query parameter | 查询参数 | Develop 查询任务声明的命名输入，统一保存在 `content.query_parameters[]`。 | `type=relation` 表示绑定 ResourceLocator 的数据表参数；`string`、`integer`、`number`、`boolean` 表示类型化值参数。全部参数共享同一命名空间、默认值与单次执行覆盖语义，且名称唯一。 |
@@ -93,7 +94,10 @@
 |---|---|---|---|
 | business domain | 业务域 | 对业务能力、业务语义和治理责任进行稳定划分的组织边界。 | 业务域是跨 Standard、Model、Catalog、Quality 等模块复用的治理维度；它不是权限/审批容器、目录分类或可见范围。对象可由一个业务域负责，同时被其他业务域复用。 |
 | standard scope | 标准适用范围 | 描述标准对象在哪个治理范围内成立，固定为 `platform`、`tenant_common` 或 `domain`。 | `domain` 范围必须指定 `owner_domain_id`；`platform` 和 `tenant_common` 不强制归属业务域。适用范围回答“在哪里成立”，归属域回答“谁负责”，二者不可混用。 |
-| standard collection | 标准集 | 为标准对象提供成员维护、管理权限、审核流程和维护人配置的治理容器。 | 标准集可以跨业务域组织对象，不承担业务分类和复用范围语义；对象是否归属标准集不改变其稳定身份、适用范围或归属域。 |
+| standard collection | 标准集 | 为标准对象提供成员维护、对象级管理权限、审核流程和维护责任配置的稳定治理容器。 | 标准集可以跨业务域组织对象，不承担业务分类和复用范围语义；对象是否归属标准集不改变其稳定身份、适用范围、归属域或自身发布状态。 |
+| standard collection revision | 标准集修订 | 标准集名称、说明和成员清单的一次完整治理配置快照。 | 状态固定为 `draft`、`in_review`、`published`、`withdrawn`；发布后不可修改，后续调整必须创建新修订。成员引用标准稳定身份，不复制或替代成员自身的业务修订。 |
+| standard collection assignment | 标准集职责分配 | 将当前租户中的 User Principal 以 `owner`、`maintainer` 或 `reviewer` 角色绑定到标准集。 | `owner` 管理职责分配并具备维护能力，`maintainer` 编辑和提交集合修订，`reviewer` 退回或发布；发布者不得是该修订的提交者。模块 Permission 是进入能力的粗粒度门禁，职责分配是集合对象级门禁。 |
+| standard collection event | 标准集治理事件 | 对标准集创建、草稿创建或更新、提交、退回、发布和职责替换形成的不可变审计事实。 | 事件保存操作者、关联修订、时间和最小结构化详情；它不替代修订快照，也不得因当前职责人员失效而阻断历史读取。 |
 | standard category | 标准分类 | 为标准对象提供树形浏览、筛选和导航的分类节点。 | 分类仅用于信息架构，可以按对象类型设置不同分类树；不得用分类代替业务域、标准集、权限或审核状态。 |
 | data element | 数据元 | 对一个可复用业务数据概念的标准化定义，统一其名称、定义、表示方式、值域和责任归属。 | 数据元是 Standard 的稳定身份；业务含义和表示约束保存在不可变的数据元修订中。它不是数据库中的具体字段，也不承载安全分类分级。 |
 | data element revision | 数据元修订 | 数据元一次可审核、可发布的完整业务定义快照。 | API 与数据库使用 `revision_no` 表达业务版次；`published` 修订的业务定义不可修改，后续变更必须创建新修订。不得复用资源并发字段 `version`。 |
@@ -135,7 +139,7 @@
 | ProtectionProjection | 保护投影 | Security 为某个 Owner 出口编译的、带版本、有效期、校验和发布游标的最小可执行契约。 | Owner 后台拉取并本地执行；用户数据请求不逐次调用 Security。 |
 | protection effect | 保护效果 | Owner 服务端数据出口对返回结果执行的确定性处理结果。 | 严格度固定为 `deny > suppress > mask > allow`；受保护资源投影异常时不得退回明文。 |
 | dynamic masking | 动态遮盖 | 不改写源数据，在 Owner 服务端出口按投影将敏感值转换为可用但不暴露原值的形式。 | 例如手机号 `13661384499` 显示为 `136****4499`；浏览器不应接收原值。 |
-| suppression | 抑制 | 不向当前出口返回受保护字段、组件或资源内容的保守效果。 | 用于无安全遮盖算法、投影异常或 Owner 尚不具备组件级执行能力的场景。 |
+| suppression | 抑制 | 不向当前出口返回受保护字段、组件或资源内容的保守效果。 | 用于无安全遮盖算法、投影异常或 Owner 尚不具备组件级执行能力的场景。协议与技术文档使用 `suppress` / “抑制”；面向用户的结构化字段规则显示为“移除字段”，通用投影效果显示为“移除”。 |
 
 ## 数据类型与格式
 

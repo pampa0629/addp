@@ -66,7 +66,6 @@ func TestCreateRequestValidationRejectsInvalidReferencesAndRanges(t *testing.T) 
 	zeroID := int64(0)
 	negativeID := int64(-1)
 	zeroLength := 0
-	negativeLevel := -1
 
 	tests := []struct {
 		name string
@@ -89,12 +88,6 @@ func TestCreateRequestValidationRejectsInvalidReferencesAndRanges(t *testing.T) 
 		}},
 		{name: "logical field length", err: func() error {
 			return validateCreateLogicalFieldRequest(&models.CreateLogicalFieldRequest{Name: "ID", ColumnName: "id", DataType: "bigint", Length: &zeroLength})
-		}},
-		{name: "logical field hierarchy missing level", err: func() error {
-			return validateCreateLogicalFieldRequest(&models.CreateLogicalFieldRequest{Name: "Region", ColumnName: "region", DataType: "string", HierarchyID: &negativeID})
-		}},
-		{name: "logical field hierarchy missing id", err: func() error {
-			return validateCreateLogicalFieldRequest(&models.CreateLogicalFieldRequest{Name: "Region", ColumnName: "region", DataType: "string", HierarchyLevel: &negativeLevel})
 		}},
 		{name: "logical field sort order", err: func() error {
 			return validateCreateLogicalFieldRequest(&models.CreateLogicalFieldRequest{Name: "ID", ColumnName: "id", DataType: "bigint", SortOrder: -1})
@@ -123,7 +116,6 @@ func TestCreateRequestValidationRejectsInvalidReferencesAndRanges(t *testing.T) 
 func TestCreateRequestValidationAcceptsBoundaryValues(t *testing.T) {
 	positiveID := int64(1)
 	positiveLength := 1
-	zeroLevel := 0
 
 	tests := []struct {
 		name string
@@ -133,7 +125,7 @@ func TestCreateRequestValidationAcceptsBoundaryValues(t *testing.T) {
 		{name: "attribute", err: validateCreateEntityAttributeRequest(&models.CreateEntityAttributeRequest{Name: "ID", ColumnName: "id", DataType: "bigint", ElementID: &positiveID, SortOrder: 0})},
 		{name: "entity relation", err: validateCreateEntityRelationRequest(&models.CreateEntityRelationRequest{SourceEntity: 1, TargetEntity: 2, RelationType: "one_to_many"})},
 		{name: "logical table", err: validateCreateLogicalTableRequest(&models.CreateLogicalTableRequest{Name: "Order", Code: "order", TableType: "entity", Layer: "dwd", DomainID: &positiveID, EntityID: &positiveID})},
-		{name: "logical field", err: validateCreateLogicalFieldRequest(&models.CreateLogicalFieldRequest{Name: "Region", ColumnName: "region", DataType: "string", Length: &positiveLength, HierarchyID: &positiveID, HierarchyLevel: &zeroLevel, SortOrder: 0})},
+		{name: "logical field", err: validateCreateLogicalFieldRequest(&models.CreateLogicalFieldRequest{Name: "Region", ColumnName: "region", DataType: "string", Length: &positiveLength, SortOrder: 0})},
 		{name: "table relation", err: validateCreateTableRelationRequest(&models.CreateTableRelationRequest{TargetTable: 2, SourceField: 1, TargetField: 2, RelationType: "fk"})},
 		{name: "fact metric", err: validateCreateFactMetricRequest(&models.CreateFactMetricMappingRequest{MetricID: 1, FieldID: &positiveID})},
 		{name: "dw layer", err: validateCreateDWLayerRequest(&models.CreateDWLayerRequest{LayerCode: "dwd", LayerName: "DWD", SortOrder: 0})},

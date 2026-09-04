@@ -53,7 +53,7 @@ func (s *DirectLeafRuntime) ScanRoot(
 		return 0, err
 	}
 	fail := func(scanErr error) (int, error) {
-		_ = s.repo.FinalizeNodeState(rootNode, "pending", 0, 0, scanErr.Error())
+		_ = s.repo.FinalizeNodeState(rootNode, "failed", 0, 0, scanErr.Error())
 		return 0, scanErr
 	}
 
@@ -68,14 +68,19 @@ func (s *DirectLeafRuntime) ScanRoot(
 	}
 
 	keepFingerprints := make([]string, 0, len(entries))
+	failures := &scanflow.FailedTargetCollector{}
 	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return fail(err)
+		}
 		if entry.Role != plugin.EngineCatalogRoleLeaf {
 			continue
 		}
 		itemType := catalogLeafItemType(entry)
 		fullName := entry.Path.StringPath()
 		if itemType == "" || strings.TrimSpace(entry.Name) == "" || strings.TrimSpace(fullName) == "" {
-			return fail(fmt.Errorf("direct catalog leaf %q has incomplete identity", entry.Name))
+			failures.Add(entry.Name, fmt.Errorf("direct catalog leaf has incomplete identity"))
+			continue
 		}
 		attrs := models.JSONMap(metaattr.BuildAttributes(metaattr.DataItemAttributesInput{
 			Layout:   "single",
@@ -95,13 +100,18 @@ func (s *DirectLeafRuntime) ScanRoot(
 			scanDepth,
 		)
 		if err != nil {
-			return fail(fmt.Errorf("failed to save direct catalog leaf %q: %w", entry.Name, err))
+			failures.Add(entry.Name, fmt.Errorf("failed to save direct catalog leaf: %w", err))
+			continue
 		}
 		keepFingerprints = append(keepFingerprints, item.Fingerprint)
 	}
 
 	if err := s.repo.SoftDeleteItemsNotInList(rootNode.ID, keepFingerprints); err != nil {
-		return fail(fmt.Errorf("failed to delete missing direct catalog leaves: %w", err))
+		failures.Add(resource.Name, fmt.Errorf("failed to delete missing direct catalog leaves: %w", err))
+	}
+	if scanErr := failures.Err(); scanErr != nil {
+		_ = s.repo.FinalizeNodeState(rootNode, "failed", len(keepFingerprints), 0, scanErr.Error())
+		return len(keepFingerprints), scanErr
 	}
 	if err := s.repo.FinalizeNodeStateWithDepth(rootNode, "completed", len(keepFingerprints), 0, "", scanDepth); err != nil {
 		return 0, err

@@ -82,6 +82,8 @@ func scanObjectCatalogPaths(
 	scannedFingerprints := make(map[string]bool)
 
 	result := scanflow.DispatchResult{}
+	failures := &scanflow.FailedTargetCollector{}
+	failedBuckets := make(map[string]bool)
 	total := len(paths)
 	completed := 0
 	isDeepScan := strings.EqualFold(scanDepth, "deep")
@@ -104,6 +106,7 @@ func scanObjectCatalogPaths(
 		}
 		target, err := resolveObjectCatalogTarget(ctx, resource, catalogProvider, rawPath)
 		if err != nil {
+			failures.Add(rawPath, err)
 			completed++
 			if reporter != nil {
 				reporter.Message(fmt.Sprintf("对象路径 %s 解析失败: %v", rawPath, err))
@@ -114,6 +117,7 @@ func scanObjectCatalogPaths(
 		bucketName := target.Bucket
 		prefix := target.Prefix
 		if bucketName == "" {
+			failures.Add(rawPath, fmt.Errorf("object path is missing bucket"))
 			completed++
 			if reporter != nil {
 				reporter.Message(fmt.Sprintf("对象路径 %s 缺少 bucket 信息，已跳过", rawPath))
@@ -129,6 +133,8 @@ func scanObjectCatalogPaths(
 			objects, err = listObjectCatalogLeaves(ctx, resource, catalogProvider, bucketName, prefix, isDeepScan)
 		}
 		if err != nil {
+			failures.Add(rawPath, err)
+			failedBuckets[bucketName] = true
 			completed++
 			if reporter != nil {
 				reporter.Message(fmt.Sprintf("对象路径 %s 扫描失败: %v", rawPath, err))
@@ -182,15 +188,17 @@ func scanObjectCatalogPaths(
 			scanPathPrefix = scanresource.ParentObjectPath(target.Object)
 		}
 		objectCount, pathExtractionStats, err := runtime.persistObjectResources(ctx, resource, tenantID, engineID, bucketNode, resources, nodeStats, fullBucket, scanDepth, force, scanPathPrefix, scannedFingerprints, itemTerm)
+		result.Items += objectCount
+		result.Extraction = scanflow.MergeExtractionCounts(result.Extraction, pathExtractionStats)
 		if err != nil {
+			failures.Add(rawPath, err)
+			failedBuckets[bucketName] = true
 			completed++
 			if reporter != nil {
-				reporter.Advance(rawPath, completed, total, map[string]interface{}{"objects": 0})
+				reporter.Advance(rawPath, completed, total, map[string]interface{}{"objects": objectCount})
 			}
 			continue
 		}
-		result.Items += objectCount
-		result.Extraction = scanflow.MergeExtractionCounts(result.Extraction, pathExtractionStats)
 		completed++
 		if reporter != nil {
 			reporter.Advance(rawPath, completed, total, map[string]interface{}{"objects": objectCount})
@@ -203,6 +211,8 @@ func scanObjectCatalogPaths(
 				continue
 			}
 			if _, err := repo.SoftDeleteObjectMetaItemsMissingFingerprints(tenantID, engineID, bucketName, scannedFingerprints); err != nil {
+				failures.Add(bucketName, err)
+				failedBuckets[bucketName] = true
 				continue
 			}
 		}
@@ -215,12 +225,17 @@ func scanObjectCatalogPaths(
 					continue
 				}
 				if _, err := repo.SoftDeleteObjectMetaItemsMissingFingerprintsInPrefix(tenantID, engineID, bucketName, prefix, scannedFingerprints); err != nil {
+					failures.Add(bucketName+"/"+prefix, err)
+					failedBuckets[bucketName] = true
 					continue
 				}
 			}
 		}
-		if err := repo.HardDeleteInvalidEngineGraph(tenantID, engineID); err != nil && reporter != nil {
-			reporter.Message(fmt.Sprintf("清理对象 catalog 陈旧节点失败: %v", err))
+		if err := repo.HardDeleteInvalidEngineGraph(tenantID, engineID); err != nil {
+			failures.Add(resource.Name, err)
+			if reporter != nil {
+				reporter.Message(fmt.Sprintf("清理对象 catalog 陈旧节点失败: %v", err))
+			}
 		}
 	}
 
@@ -232,15 +247,23 @@ func scanObjectCatalogPaths(
 		if !ok {
 			continue
 		}
-		_ = repo.FinalizeNodeStateWithDepth(bucketNode, "completed", agg.ItemCount, agg.TotalSize, "", scanDepth)
+		if failedBuckets[bucketName] {
+			if err := repo.FinalizeNodeState(bucketNode, "failed", agg.ItemCount, agg.TotalSize, "one or more object scan targets failed"); err != nil {
+				failures.Add(bucketName, err)
+			}
+		} else if err := repo.FinalizeNodeStateWithDepth(bucketNode, "completed", agg.ItemCount, agg.TotalSize, "", scanDepth); err != nil {
+			failures.Add(bucketName, err)
+		}
 	}
 
 	for _, agg := range nodeStats {
 		if agg.Node.NodeType == "bucket" {
 			continue
 		}
-		_ = repo.FinalizeObjectCatalogPrefixNodeWithDepth(agg.Node, agg.ItemCount, agg.TotalSize, scanDepth)
+		if err := repo.FinalizeObjectCatalogPrefixNodeWithDepth(agg.Node, agg.ItemCount, agg.TotalSize, scanDepth); err != nil {
+			failures.Add(agg.Node.FullName, err)
+		}
 	}
 
-	return result, nil
+	return result, failures.Err()
 }

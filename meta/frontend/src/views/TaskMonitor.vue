@@ -135,7 +135,9 @@
         <el-table-column prop="completed_at" :label="t('meta.monitor.completedTime')" width="180">
           <template #default="{ row }">{{ formatDate(row.completed_at) }}</template>
         </el-table-column>
-        <el-table-column prop="progress_message" :label="t('meta.monitor.latestStatus')" min-width="240" show-overflow-tooltip />
+        <el-table-column :label="t('meta.monitor.latestStatus')" min-width="240" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.current_step || '-' }}</template>
+        </el-table-column>
       </el-table>
 
       <div class="pagination">

@@ -5,20 +5,23 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	commonAPI "github.com/addp/common/api"
 	"github.com/addp/manager/internal/engineaccess"
 	"github.com/addp/manager/internal/preview"
+	managerprotection "github.com/addp/manager/internal/protection"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
 )
 
 type DownloadHandler struct {
 	metadataService *service.MetadataService
+	protectionStore managerprotection.UnmanagedDataItemGate
 }
 
-func NewDownloadHandler(metadataService *service.MetadataService) *DownloadHandler {
-	return &DownloadHandler{metadataService: metadataService}
+func NewDownloadHandler(metadataService *service.MetadataService, protectionStore managerprotection.UnmanagedDataItemGate) *DownloadHandler {
+	return &DownloadHandler{metadataService: metadataService, protectionStore: protectionStore}
 }
 
 // DownloadFile 按 ResourceLocator 下载存储型数据项。
@@ -46,7 +49,8 @@ func (h *DownloadHandler) DownloadFile(c *gin.Context) {
 		missingLocator(c)
 		return
 	}
-	engineID, plan, err := h.metadataService.ResolveStorageDownloadPlanByLocator(c.Request.Context(), locator, tenantIDFromContext(c))
+	tenantID := tenantIDFromContext(c)
+	target, plan, err := h.metadataService.ResolveStorageDownloadPlanByLocator(c.Request.Context(), locator, tenantID)
 	if err != nil {
 		if errors.Is(err, engineaccess.ErrUnavailable) {
 			engineUnavailable(c)
@@ -66,7 +70,11 @@ func (h *DownloadHandler) DownloadFile(c *gin.Context) {
 		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
-	reader, err := h.metadataService.OpenStorageDownloadPlan(c.Request.Context(), engineID, plan, tenantIDFromContext(c))
+	if tenantID == nil || managerprotection.RequireUnmanagedDataItem(c.Request.Context(), h.protectionStore, *tenantID, target.ItemFingerprint, time.Now().UTC()) != nil {
+		protectionRequired(c)
+		return
+	}
+	reader, err := h.metadataService.OpenStorageDownloadPlan(c.Request.Context(), target.EngineID, plan, tenantID)
 	if err != nil {
 		if errors.Is(err, engineaccess.ErrUnavailable) {
 			engineUnavailable(c)

@@ -88,8 +88,8 @@ func (s *BranchLeafRuntime) ScanBranch(
 	totalObjects, totalFields, err = s.scanCatalogLeaves(ctx, scanCatalog, resource, tenantID, branchNode, branchName, scanDepth, force)
 
 	if err != nil {
-		s.repo.FinalizeNodeState(branchNode, "pending", 0, 0, err.Error())
-		return 0, 0, 0, err
+		_ = s.repo.FinalizeNodeState(branchNode, "failed", totalObjects, 0, err.Error())
+		return 0, totalObjects, totalFields, err
 	}
 
 	// 3. 完成扫描

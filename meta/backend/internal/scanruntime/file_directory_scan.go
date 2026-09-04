@@ -36,6 +36,7 @@ func (s *FilesystemCatalogRuntime) scanDirectory(
 
 	totalItems := 0
 	extractionStats := scanflow.ExtractionCounts{}
+	failures := &scanflow.FailedTargetCollector{}
 
 	claimedPaths := metaitem.ResourceClaimSet{}
 	scannedFileFullNames := make(map[string]bool, len(files))
@@ -48,12 +49,15 @@ func (s *FilesystemCatalogRuntime) scanDirectory(
 	}
 	if err := s.repo.HardDeleteItemsByNodeFullNames(parentNode.ID, ignoredFullNames); err != nil {
 		s.log.Warn("清理系统噪声文件数据项失败", "path", dirPath, "node_id", parentNode.ID, "error", err)
+		failures.Add(dirPath, err)
 	}
 	if err := s.repo.HardDeleteChildNodesByFullNames(parentNode.ID, ignoredFullNames); err != nil {
 		s.log.Warn("清理系统噪声目录节点失败", "path", dirPath, "node_id", parentNode.ID, "error", err)
+		failures.Add(dirPath, err)
 	}
 	if err := s.repo.HardDeleteChildNodesByFullNames(parentNode.ID, scannedFileFullNames); err != nil {
 		s.log.Warn("清理文件路径冲突节点失败", "path", dirPath, "node_id", parentNode.ID, "error", err)
+		failures.Add(dirPath, err)
 	}
 	scannedItemFullNames := make(map[string]bool)
 	scannedSubdirFullNames := make(map[string]bool)
@@ -63,9 +67,11 @@ func (s *FilesystemCatalogRuntime) scanDirectory(
 		}
 		if err := s.repo.HardDeleteItemsByNodeExceptFullNames(parentNode.ID, scannedItemFullNames); err != nil {
 			s.log.Warn("清理已消失的文件数据项失败", "path", dirPath, "node_id", parentNode.ID, "error", err)
+			failures.Add(dirPath, err)
 		}
 		if err := s.repo.HardDeleteChildNodesExceptFullNames(parentNode.ID, scannedSubdirFullNames); err != nil {
 			s.log.Warn("清理已消失的子目录节点失败", "path", dirPath, "node_id", parentNode.ID, "error", err)
+			failures.Add(dirPath, err)
 		}
 	}
 	applyDetection := func(detection *metaitem.DetectionResult) {
@@ -81,7 +87,7 @@ func (s *FilesystemCatalogRuntime) scanDirectory(
 			if detected == nil {
 				continue
 			}
-			persisted, fullName, itemExtractionStats := s.persistFileCatalogDetectedItem(ctx, resource, tenantID, parentNode, dirPath, detected, itemTerm, contentReader, connInfo, scanDepth)
+			persisted, fullName, itemExtractionStats, persistErr := s.persistFileCatalogDetectedItem(ctx, resource, tenantID, parentNode, dirPath, detected, itemTerm, contentReader, connInfo, scanDepth)
 			if fullName != "" {
 				scannedItemFullNames[fullName] = true
 			}
@@ -89,6 +95,9 @@ func (s *FilesystemCatalogRuntime) scanDirectory(
 				totalItems++
 			}
 			extractionStats = scanflow.MergeExtractionCounts(extractionStats, itemExtractionStats)
+			if persistErr != nil {
+				failures.Add(fullName, persistErr)
+			}
 		}
 	}
 
@@ -100,6 +109,7 @@ func (s *FilesystemCatalogRuntime) scanDirectory(
 				"path", dirPath,
 				"error", err,
 			)
+			failures.Add(dirPath, err)
 		}
 		applyDetection(detection)
 	} else if isDeepScan {
@@ -109,12 +119,13 @@ func (s *FilesystemCatalogRuntime) scanDirectory(
 				"path", dirPath,
 				"error", err,
 			)
+			failures.Add(dirPath, err)
 		}
 		if detection != nil {
 			applyDetection(detection)
 			if detection.Exclusive {
 				reconcileScannedDirectory()
-				return totalItems, extractionStats, nil
+				return totalItems, extractionStats, failures.Err()
 			}
 		}
 	}
@@ -123,7 +134,7 @@ func (s *FilesystemCatalogRuntime) scanDirectory(
 		if claimedPaths[file.Path] {
 			continue
 		}
-		fullName, persisted, fileExtractionStats := s.scanSingleFileItem(fileSingleItemScanInput{
+		fullName, persisted, fileExtractionStats, fileErr := s.scanSingleFileItem(fileSingleItemScanInput{
 			ctx:           ctx,
 			contentReader: contentReader,
 			connInfo:      connInfo,
@@ -143,6 +154,9 @@ func (s *FilesystemCatalogRuntime) scanDirectory(
 			extractionStats = scanflow.MergeExtractionCounts(extractionStats, fileExtractionStats)
 			totalItems++
 		}
+		if fileErr != nil {
+			failures.Add(file.Path, fileErr)
+		}
 	}
 
 	for _, subdir := range subdirs {
@@ -153,21 +167,34 @@ func (s *FilesystemCatalogRuntime) scanDirectory(
 		subdirNode, err := s.repo.UpsertNode(tenantID, resource.ID, parentNode, "dir", subdirName, &subdirFullName, subdirAttrs)
 		if err != nil {
 			s.log.Warn("创建子目录节点失败", "path", subdir.Path, "error", err)
+			failures.Add(subdir.Path, err)
 			continue
 		}
 
-		_ = s.repo.ResetNodeState(subdirNode, "running")
+		var nodeStateErr error
+		if err := s.repo.ResetNodeState(subdirNode, "running"); err != nil {
+			failures.Add(subdir.Path, err)
+			nodeStateErr = err
+		}
 		items, subdirExtractionStats, scanErr := s.scanDirectory(ctx, contentReader, catalogProvider, connInfo, resource, tenantID, subdir.Path, subdirNode, false, itemTerm, scanDepth, force)
 		extractionStats = scanflow.MergeExtractionCounts(extractionStats, subdirExtractionStats)
 		if scanErr != nil {
 			s.log.Warn("递归扫描子目录失败", "path", subdir.Path, "error", scanErr)
-			_ = s.repo.FinalizeNodeState(subdirNode, "failed", items, 0, scanErr.Error())
+			failures.Add(subdir.Path, scanErr)
+			nodeStateErr = scanErr
+		}
+		if nodeStateErr != nil {
+			if err := s.repo.FinalizeNodeState(subdirNode, "failed", items, 0, nodeStateErr.Error()); err != nil {
+				failures.Add(subdir.Path, err)
+			}
 		} else {
-			_ = s.repo.FinalizeNodeStateWithDepth(subdirNode, "completed", items, 0, "", scanDepth)
+			if err := s.repo.FinalizeNodeStateWithDepth(subdirNode, "completed", items, 0, "", scanDepth); err != nil {
+				failures.Add(subdir.Path, err)
+			}
 		}
 		totalItems += items
 	}
 
 	reconcileScannedDirectory()
-	return totalItems, extractionStats, nil
+	return totalItems, extractionStats, failures.Err()
 }

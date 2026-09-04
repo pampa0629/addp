@@ -1,6 +1,7 @@
 export const STANDARD_PERMISSION_RESOURCES = Object.freeze([
   'code_set',
-  'dimension_hierarchy',
+  'collection',
+  'collection_assignment',
   'document',
   'domain',
   'element',

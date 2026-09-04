@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -27,6 +28,7 @@ import (
 	"github.com/addp/model/internal/repository"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
@@ -37,19 +39,163 @@ const (
 )
 
 type MaterializationService struct {
-	systemClient     *commonClient.SystemServiceClient
-	repo             *repository.MaterializationBatchRepository
-	logicalTableRepo *repository.LogicalTableRepository
-	logicalTableSvc  *LogicalTableService
-	groupService     *MaterializationGroupService
-	workerID         string
-	workerCancel     context.CancelFunc
-	workerDone       chan struct{}
-	startOnce        sync.Once
+	systemClient        *commonClient.SystemServiceClient
+	authorizationIssuer *commonClient.SystemExecutionAuthorizationClient
+	repo                *repository.MaterializationBatchRepository
+	logicalTableRepo    *repository.LogicalTableRepository
+	logicalTableSvc     *LogicalTableService
+	groupService        *MaterializationGroupService
+	workerID            string
+	workerCancel        context.CancelFunc
+	workerDone          chan struct{}
+	startOnce           sync.Once
+}
+
+func (s *MaterializationService) SetExecutionAuthorizationIssuer(issuer *commonClient.SystemExecutionAuthorizationClient) {
+	s.authorizationIssuer = issuer
 }
 
 func (s *MaterializationService) SetGroupService(groupService *MaterializationGroupService) {
 	s.groupService = groupService
+}
+
+func (s *MaterializationService) DecommissionMaterializedTarget(
+	ctx context.Context,
+	logicalTableID, tenantID int64,
+	request models.MaterializedTargetDecommissionRequest,
+	userAccessToken string,
+) error {
+	if logicalTableID <= 0 || tenantID <= 0 || request.Version <= 0 || s.authorizationIssuer == nil || s.systemClient == nil {
+		return apperrors.Validation("materialized_target_request_invalid", modeli18n.MsgMaterializationInvalid)
+	}
+	requestedLocator, err := resourcetree.ParseURI(strings.TrimSpace(request.TargetParentLocator))
+	if err != nil || requestedLocator.EngineID == 0 || requestedLocator.Type != resourcetree.TypeSchema || len(requestedLocator.Path) == 0 ||
+		!identifierPattern.MatchString(strings.TrimSpace(request.TargetName)) {
+		return apperrors.Validation("materialized_target_confirmation_invalid", modeli18n.MsgMaterializationInvalid)
+	}
+
+	table, err := s.logicalTableRepo.GetByID(logicalTableID, tenantID)
+	if err != nil {
+		return materializationResourceError(err)
+	}
+	if err := requireVersion(table.Version, request.Version); err != nil {
+		return err
+	}
+	if !materializedTargetConfirmationMatches(table, request) {
+		return apperrors.Conflict("materialized_target_confirmation_mismatch", modeli18n.MsgMaterializedTargetConflict)
+	}
+
+	executionID := uuid.NewString()
+	issued, err := s.authorizationIssuer.Issue(ctx, strings.TrimSpace(userAccessToken), commonClient.IssueExecutionAuthorizationRequest{
+		Audience: commonExecution.AudienceModel, ExecutionID: executionID,
+		Accesses: []commonClient.ExecutionEngineAccessScope{{
+			EngineID: strconv.FormatUint(uint64(requestedLocator.EngineID), 10), Effects: []string{"read", "ddl"},
+		}},
+		ExpiresIn: materializationAuthorizationTTL,
+	})
+	if err != nil {
+		return materializedTargetAuthorizationError(err)
+	}
+
+	return s.logicalTableRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := validateMaterializedTargetDecommissionState(tx, logicalTableID, tenantID, request); err != nil {
+			return err
+		}
+
+		access, err := s.systemClient.WithTenantID(uint(tenantID)).GetExecutionEngineAccess(ctx, issued.ID, commonClient.ExecutionEngineAccessRequest{
+			ExecutionID: executionID, EngineID: strconv.FormatUint(uint64(requestedLocator.EngineID), 10),
+			RequiredEffects: []string{"read", "ddl"},
+		})
+		if err != nil {
+			return materializedTargetAuthorizationError(err)
+		}
+		engineType := strings.ToLower(strings.TrimSpace(access.Engine.EngineType))
+		if engineType != "postgres" && engineType != "postgresql" && engineType != "postgis" {
+			return apperrors.Conflict("materialized_target_engine_unsupported", modeli18n.MsgMaterializedTargetConflict)
+		}
+		pool, err := materializationPool(access.Engine)
+		if err != nil {
+			return apperrors.Wrap(apperrors.KindUnavailable, "materialized_target_engine_unavailable", modeli18n.MsgMaterializedTargetUnavailable, err)
+		}
+		schemaName := requestedLocator.Path[len(requestedLocator.Path)-1]
+		if err := pool.WithContext(ctx).Transaction(func(physicalTx *gorm.DB) error {
+			return dropOwnedMaterializedTarget(physicalTx, schemaName, strings.TrimSpace(request.TargetName), logicalTableID)
+		}); err != nil {
+			if errors.Is(err, errMaterializedTargetOwnershipMismatch) {
+				return apperrors.Conflict("materialized_target_ownership_mismatch", modeli18n.MsgMaterializedTargetConflict)
+			}
+			return apperrors.Wrap(apperrors.KindUnavailable, "materialized_target_drop_failed", modeli18n.MsgMaterializedTargetUnavailable, err)
+		}
+		return nil
+	})
+}
+
+func validateMaterializedTargetDecommissionState(
+	tx *gorm.DB,
+	logicalTableID, tenantID int64,
+	request models.MaterializedTargetDecommissionRequest,
+) error {
+	var locked models.LogicalTable
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ? AND tenant_id = ?", logicalTableID, tenantID).First(&locked).Error; err != nil {
+		return materializationResourceError(err)
+	}
+	if err := requireVersion(locked.Version, request.Version); err != nil {
+		return err
+	}
+	if !materializedTargetConfirmationMatches(&locked, request) {
+		return apperrors.Conflict("materialized_target_confirmation_mismatch", modeli18n.MsgMaterializedTargetConflict)
+	}
+	var groupCount int64
+	if err := tx.Model(&models.MaterializationGroupMember{}).
+		Where("tenant_id = ? AND logical_table_id = ?", tenantID, logicalTableID).Count(&groupCount).Error; err != nil {
+		return err
+	}
+	if groupCount != 0 {
+		return apperrors.Conflict("materialized_target_group_member", modeli18n.MsgMaterializedTargetConflict)
+	}
+	var activeBatchCount int64
+	if err := tx.Model(&models.MaterializationBatch{}).
+		Where("tenant_id = ? AND logical_table_id = ? AND status IN ?", tenantID, logicalTableID, []string{
+			models.MaterializationBatchPreparing, models.MaterializationBatchPrepared,
+			models.MaterializationBatchSealed, models.MaterializationBatchPublishing,
+		}).Count(&activeBatchCount).Error; err != nil {
+		return err
+	}
+	if activeBatchCount != 0 {
+		return apperrors.Conflict("materialized_target_batch_active", modeli18n.MsgMaterializedTargetConflict)
+	}
+	return nil
+}
+
+var errMaterializedTargetOwnershipMismatch = errors.New("materialized target ownership marker mismatch")
+
+func materializedTargetConfirmationMatches(table *models.LogicalTable, request models.MaterializedTargetDecommissionRequest) bool {
+	if table == nil {
+		return false
+	}
+	locator, locatorOK := materializationString(table.Materialization, "target_parent_locator")
+	targetName, nameOK := materializationString(table.Materialization, "target_name")
+	return locatorOK && nameOK && locator == strings.TrimSpace(request.TargetParentLocator) &&
+		targetName == strings.TrimSpace(request.TargetName)
+}
+
+func dropOwnedMaterializedTarget(tx *gorm.DB, schemaName, tableName string, logicalTableID int64) error {
+	comment, exists, err := physicalTableComment(tx, schemaName, tableName)
+	if err != nil || !exists {
+		return err
+	}
+	if !materializationMarkerOwnedBy(comment, logicalTableID) {
+		return errMaterializedTargetOwnershipMismatch
+	}
+	return tx.Exec("DROP TABLE " + qualifiedIdentifier(schemaName, tableName)).Error
+}
+
+func materializedTargetAuthorizationError(err error) error {
+	if status, ok := commonClient.SystemAPIStatusCode(err); ok && (status == http.StatusUnauthorized || status == http.StatusForbidden) {
+		return apperrors.Wrap(apperrors.KindForbidden, "materialized_target_engine_access_denied", modeli18n.MsgMaterializedTargetForbidden, err)
+	}
+	return apperrors.Wrap(apperrors.KindUnavailable, "materialized_target_authorization_unavailable", modeli18n.MsgMaterializedTargetUnavailable, err)
 }
 
 type MaterializationReadColumn struct {
@@ -704,6 +850,7 @@ func (s *MaterializationService) executePrepare(
 	if err != nil {
 		return nil, err
 	}
+	var expectedTargetMarker *string
 	err = pool.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := reclaimMaterializationStaging(tx, schemaName, reclaimable); err != nil {
 			return err
@@ -712,8 +859,12 @@ func (s *MaterializationService) executePrepare(
 		if err != nil {
 			return err
 		}
-		if targetExists && !materializationMarkerMatchesOwner(targetComment, batch.LogicalTableID, batch.SchemaFingerprint) {
-			return fmt.Errorf("target table is not managed by the same approved logical schema")
+		if targetExists {
+			if !materializationMarkerOwnedBy(targetComment, batch.LogicalTableID) {
+				return fmt.Errorf("target table is not managed by the same logical table")
+			}
+			marker := targetComment
+			expectedTargetMarker = &marker
 		}
 		stagingComment, stagingExists, err := physicalTableComment(tx, schemaName, batch.StagingName)
 		if err != nil {
@@ -739,8 +890,13 @@ func (s *MaterializationService) executePrepare(
 	if err != nil {
 		return nil, err
 	}
+	var expectedTargetMarkerValue interface{}
+	if expectedTargetMarker != nil {
+		expectedTargetMarkerValue = *expectedTargetMarker
+	}
 	return commonModels.JSONMap{
-		"schema_version": "model.materialization/v1",
+		"schema_version":         "model.materialization/v1",
+		"expected_target_marker": expectedTargetMarkerValue,
 		"outputs": commonModels.JSONMap{
 			"batch_id": batch.ID,
 			"staging_locator": (&resourcetree.ResourceLocator{
@@ -1032,8 +1188,12 @@ func publishMaterializationCandidates(
 			if stagingComment != candidate.expectedMarker {
 				return errors.New("staging table ownership marker does not match batch")
 			}
-			if targetExists && !materializationMarkerMatchesOwner(targetComment, candidate.batch.LogicalTableID, candidate.batch.SchemaFingerprint) {
-				return errors.New("target table schema marker does not match approved logical schema")
+			if candidate.batch.ExpectedTargetMarker == nil {
+				if targetExists {
+					return errors.New("materialization target appeared after prepare")
+				}
+			} else if !targetExists || targetComment != *candidate.batch.ExpectedTargetMarker {
+				return errors.New("materialization target changed after prepare")
 			}
 			if targetExists {
 				if _, backupExists, err := physicalTableComment(tx, candidate.schemaName, candidate.backupName); err != nil {
@@ -1135,16 +1295,36 @@ func materializationMarker(logicalTableID int64, fingerprint, batchID string) st
 	return materializationMarkerPrefix + strconv.FormatInt(logicalTableID, 10) + ":" + fingerprint + ":" + batchID
 }
 
-func materializationMarkerMatchesOwner(marker string, logicalTableID int64, fingerprint string) bool {
+type materializationOwnershipMarker struct {
+	LogicalTableID    int64
+	SchemaFingerprint string
+	BatchID           string
+}
+
+func parseMaterializationMarker(marker string) (materializationOwnershipMarker, bool) {
 	if !strings.HasPrefix(marker, materializationMarkerPrefix) {
-		return false
+		return materializationOwnershipMarker{}, false
 	}
 	remainder := strings.TrimPrefix(marker, materializationMarkerPrefix)
 	parts := strings.SplitN(remainder, ":", 3)
-	return len(parts) == 3 &&
-		parts[0] == strconv.FormatInt(logicalTableID, 10) &&
-		len(parts[1]) == 64 && parts[1] == fingerprint &&
-		strings.TrimSpace(parts[2]) != ""
+	if len(parts) != 3 || len(parts[1]) != 64 || strings.TrimSpace(parts[2]) == "" {
+		return materializationOwnershipMarker{}, false
+	}
+	logicalTableID, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil || logicalTableID <= 0 {
+		return materializationOwnershipMarker{}, false
+	}
+	if _, err := hex.DecodeString(parts[1]); err != nil {
+		return materializationOwnershipMarker{}, false
+	}
+	return materializationOwnershipMarker{
+		LogicalTableID: logicalTableID, SchemaFingerprint: parts[1], BatchID: parts[2],
+	}, true
+}
+
+func materializationMarkerOwnedBy(marker string, logicalTableID int64) bool {
+	parsed, ok := parseMaterializationMarker(marker)
+	return ok && parsed.LogicalTableID == logicalTableID
 }
 
 func qualifiedIdentifier(schemaName, tableName string) string {

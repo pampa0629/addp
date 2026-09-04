@@ -103,6 +103,18 @@ describe('Console navigation bridge', () => {
       .toContain('/catalog/governance/coverage')
   })
 
+  it('exposes Standard collections in navigation and search', () => {
+    const configSource = readFileSync(new URL('../src/config/portalConfig.js', import.meta.url), 'utf8')
+    const zhCn = JSON.parse(readFileSync(new URL('../src/i18n/zh-cn.json', import.meta.url), 'utf8'))
+    const en = JSON.parse(readFileSync(new URL('../src/i18n/en.json', import.meta.url), 'utf8'))
+
+    expect(configSource).toContain("index: '/standard/collections'")
+    expect(searchIndex('标准集', key => key === 'console.menus.standard.collections' ? zhCn.console.menus.standard.collections : key, ['standard.collection.read']).map(item => item.route))
+      .toContain('/standard/collections')
+    expect(zhCn.console.menus.standard.collections).toBe('标准集管理')
+    expect(en.console.menus.standard.collections).toBe('Standard Collections')
+  })
+
   it('keeps Workbench reachable as the general data-service consumer', () => {
     const configSource = readFileSync(new URL('../src/config/portalConfig.js', import.meta.url), 'utf8')
     expect(configSource).toContain("modules: ['develop', 'service', 'workbench', 'orchestrator', 'monitor']")

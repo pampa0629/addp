@@ -14,7 +14,7 @@ import (
 func (d *EngineCatalogScanDispatcher) dispatchBranchLeafScan(ctx context.Context, enginePlugin plugin.EnginePlugin, req scanflow.DispatchRequest) (scanflow.DispatchResult, error) {
 	catalogNodes, items, fields, err := d.scanBranchLeaves(ctx, enginePlugin, req.Resource, req.TenantID, scanflow.TopCatalogTargets(req.CatalogPaths), req.ScanDepth, req.Force, req.Mode, req.Reporter)
 	if err == nil {
-		d.finalizeEngineCatalogRootAfterScan(req.Resource, req.TenantID, items, req.ScanDepth)
+		err = d.finalizeEngineCatalogRootAfterScan(req.Resource, req.TenantID, items, req.ScanDepth)
 	}
 	return scanflow.DispatchResult{CatalogNodes: catalogNodes, Items: items, Fields: fields}, err
 }
@@ -62,6 +62,7 @@ func (d *EngineCatalogScanDispatcher) scanBranchLeaves(
 	totalCatalogNodes := 0
 	totalItems := 0
 	totalFields := 0
+	failures := &scanflow.FailedTargetCollector{}
 	total := len(branchNames)
 	if reporter != nil {
 		reporter.SetTotal(total)
@@ -106,6 +107,14 @@ func (d *EngineCatalogScanDispatcher) scanBranchLeaves(
 				if reporter != nil {
 					reporter.Message(fmt.Sprintf("catalog 分支 %s 扫描失败: %v", branch, err))
 				}
+				failures.Add(branch, err)
+				totalCatalogNodes += catalogNodes
+				totalItems += items
+				totalFields += fields
+				completed++
+				if reporter != nil {
+					reporter.Advance(branch, completed, total, map[string]interface{}{"items": items, "fields": fields})
+				}
 				return
 			}
 			totalCatalogNodes += catalogNodes
@@ -128,5 +137,5 @@ func (d *EngineCatalogScanDispatcher) scanBranchLeaves(
 		"fields_scanned", totalFields,
 	)...)
 
-	return totalCatalogNodes, totalItems, totalFields, nil
+	return totalCatalogNodes, totalItems, totalFields, failures.Err()
 }

@@ -298,14 +298,6 @@ func TestPostgresDeletePolicies(t *testing.T) {
 	if err := db.Create(&models.GlossaryElementMapping{GlossaryID: glossary.ID, ElementID: element.ID}).Error; err != nil {
 		t.Fatalf("create glossary-element mapping: %v", err)
 	}
-	hierarchy := models.DimensionHierarchy{TenantID: tenantID, Name: "hierarchy", Code: "delete-policy-hierarchy", CreatedBy: 1}
-	if err := db.Create(&hierarchy).Error; err != nil {
-		t.Fatalf("create dimension hierarchy: %v", err)
-	}
-	level := models.DimensionHierarchyLevel{HierarchyID: hierarchy.ID, LevelNum: 1, Name: "level", ElementID: &element.ID}
-	if err := db.Create(&level).Error; err != nil {
-		t.Fatalf("create hierarchy level: %v", err)
-	}
 	if err := NewElementRepository(db).Delete(element.ID, tenantID); err != nil {
 		t.Fatalf("delete element: %v", err)
 	}
@@ -315,15 +307,6 @@ func TestPostgresDeletePolicies(t *testing.T) {
 	}
 	if mappingCount != 0 {
 		t.Fatalf("glossary-element mapping count = %d, want 0", mappingCount)
-	}
-	if err := db.First(&level, level.ID).Error; err != nil {
-		t.Fatalf("reload hierarchy level: %v", err)
-	}
-	if level.ElementID != nil {
-		t.Fatalf("hierarchy level element_id = %d, want NULL", *level.ElementID)
-	}
-	if err := db.Delete(&hierarchy).Error; err != nil {
-		t.Fatalf("delete dimension hierarchy: %v", err)
 	}
 	if err := db.Delete(&glossary).Error; err != nil {
 		t.Fatalf("delete glossary: %v", err)
@@ -460,5 +443,57 @@ func TestPostgresElementScopeConstraint(t *testing.T) {
 	}
 	if platform.ScopeType != models.StandardScopePlatform || platform.OwnerDomainID != nil {
 		t.Fatalf("platform element ownership changed after repeated migration: %#v", platform)
+	}
+}
+
+func TestPostgresStandardCollectionGovernanceConstraints(t *testing.T) {
+	dsn := os.Getenv("STANDARD_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("STANDARD_POSTGRES_TEST_DSN is not set")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open postgres: %v", err)
+	}
+	if err := Migrate(db); err != nil {
+		t.Fatalf("Migrate() error = %v", err)
+	}
+
+	tenantID := int64(9_000_000_004)
+	defer func() { _ = db.Where("tenant_id = ?", tenantID).Delete(&models.StandardCollection{}).Error }()
+	repo := NewStandardCollectionRepository(db)
+	collection := &models.StandardCollection{TenantID: tenantID, Code: "governed", CreatedBy: 101}
+	revision := &models.StandardCollectionRevision{Name: "Governed", Description: "Governed standards", ChangeSummary: "initial", CreatedBy: 101}
+	if err := repo.Create(collection, revision, []models.StandardCollectionMember{{MemberType: models.CollectionMemberElement, MemberID: 501}}); err != nil {
+		t.Fatalf("create collection: %v", err)
+	}
+	if err := repo.ReplaceAssignments(collection.ID, tenantID, 101, 1, []models.StandardCollectionAssignment{
+		{PrincipalID: 101, Role: models.CollectionAssignmentOwner},
+		{PrincipalID: 102, Role: models.CollectionAssignmentReviewer},
+	}); err != nil {
+		t.Fatalf("replace assignments: %v", err)
+	}
+	if err := repo.Transition(collection.ID, revision.ID, tenantID, 101, 2, models.RevisionStatusDraft, models.RevisionStatusInReview); err != nil {
+		t.Fatalf("submit revision: %v", err)
+	}
+	if err := repo.Publish(collection.ID, revision.ID, tenantID, 102, 3); err != nil {
+		t.Fatalf("publish revision: %v", err)
+	}
+	events, eventTotal, err := repo.ListEvents(collection.ID, tenantID, 1, 20)
+	if err != nil || eventTotal != 4 || len(events) != 4 || events[0].EventType != models.CollectionEventPublished {
+		t.Fatalf("events=%#v total=%d err=%v", events, eventTotal, err)
+	}
+	items, total, err := repo.List(tenantID, 102, "Governed", models.RevisionStatusPublished, 1, 20)
+	if err != nil || total != 1 || len(items) != 1 || items[0].CurrentRevision == nil {
+		t.Fatalf("published collection list=%#v total=%d err=%v", items, total, err)
+	}
+
+	invalidAssignment := models.StandardCollectionAssignment{CollectionID: collection.ID, PrincipalID: 103, Role: "approver", CreatedBy: 101}
+	if err := db.Create(&invalidAssignment).Error; err == nil {
+		t.Fatal("non-canonical collection assignment role should be rejected")
+	}
+	invalidEvent := models.StandardCollectionEvent{CollectionID: collection.ID, EventType: "edited", ActorID: 101, Detail: models.JSONB{}}
+	if err := db.Create(&invalidEvent).Error; err == nil {
+		t.Fatal("non-canonical collection event type should be rejected")
 	}
 }

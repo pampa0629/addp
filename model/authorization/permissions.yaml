@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: model
-manifest_version: 11
+manifest_version: 12
 permissions:
   - key: model.catalog.read
     allowed_scope_types: [tenant]
@@ -194,6 +194,14 @@ permissions:
     status: active
     name_i18n_key: permissions.model.materialization_read.execute.name
     description_i18n_key: permissions.model.materialization_read.execute.description
+  - key: model.materialized_target.delete
+    allowed_scope_types: [tenant]
+    risk_level: critical
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.model.materialized_target.delete.name
+    description_i18n_key: permissions.model.materialized_target.delete.description
   - key: model.standard_reference.update
     allowed_scope_types: [tenant]
     risk_level: high

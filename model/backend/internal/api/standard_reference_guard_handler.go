@@ -25,7 +25,7 @@ func NewStandardReferenceGuardHandler(svc *service.StandardReferenceGuardService
 // @Tags StandardReference
 // @Accept json
 // @Produce json
-// @Param resource_type path string true "标准资源类型 | Standard resource type" Enums(domain,element,dimension_hierarchy,metric)
+// @Param resource_type path string true "标准资源类型 | Standard resource type" Enums(domain,element,metric)
 // @Param resource_id path int true "标准资源 ID | Standard resource ID" minimum(1)
 // @Param request body models.SetStandardReferenceGuardRequest true "目标屏障状态 | Desired guard state"
 // @Success 200 {object} models.StandardReferenceGuardResponse

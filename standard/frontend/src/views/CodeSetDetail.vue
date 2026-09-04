@@ -535,7 +535,7 @@ function replacementLabel(replacementItemID) {
 }
 
 const selectRevision = item => setRevision(item)
-const goBack = () => navigateStandardRoute(router, '/code-sets', { history: 'replace' })
+const goBack = () => navigateStandardRoute(router, { path: '/code-sets', query: route.query }, { history: 'replace' })
 
 watch(() => route.params.id, () => {
   load()

@@ -82,7 +82,15 @@ func setupLifecycleServiceTestDB(t *testing.T) *gorm.DB {
 			name TEXT NOT NULL, column_name TEXT NOT NULL, data_type TEXT NOT NULL,
 			length INTEGER, nullable BOOLEAN, is_pk BOOLEAN, is_partition BOOLEAN,
 			default_value TEXT, description TEXT, sort_order INTEGER, field_role TEXT,
-			hierarchy_id INTEGER, hierarchy_level INTEGER, created_at DATETIME, updated_at DATETIME
+			created_at DATETIME, updated_at DATETIME
+		)`,
+		`CREATE TABLE model.dimension_hierarchies (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, table_id INTEGER NOT NULL,
+			name TEXT NOT NULL, description TEXT, created_at DATETIME, updated_at DATETIME
+		)`,
+		`CREATE TABLE model.dimension_hierarchy_levels (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, hierarchy_id INTEGER NOT NULL, field_id INTEGER NOT NULL,
+			level_num INTEGER NOT NULL, level_name TEXT NOT NULL, created_at DATETIME, updated_at DATETIME
 		)`,
 		`CREATE TABLE model.table_relations (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL,
@@ -105,6 +113,14 @@ func setupLifecycleServiceTestDB(t *testing.T) *gorm.DB {
 			group_id INTEGER NOT NULL, tenant_id INTEGER NOT NULL,
 			logical_table_id INTEGER NOT NULL, position INTEGER NOT NULL,
 			PRIMARY KEY (group_id, logical_table_id)
+		)`,
+		`CREATE TABLE model.materialization_batches (
+			id TEXT PRIMARY KEY, tenant_id INTEGER NOT NULL, logical_table_id INTEGER NOT NULL,
+			logical_table_version INTEGER NOT NULL, engine_id INTEGER NOT NULL,
+			target_parent_locator TEXT NOT NULL, target_name TEXT NOT NULL, staging_name TEXT NOT NULL,
+			schema_fingerprint TEXT NOT NULL, expected_target_marker TEXT, status TEXT NOT NULL,
+			prepare_execution_id TEXT NOT NULL, writer_execution_id TEXT, seal_execution_id TEXT,
+			publish_execution_id TEXT, published_at DATETIME, created_at DATETIME, updated_at DATETIME
 		)`,
 		`CREATE TABLE model.standard_reference_guards (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -49,8 +49,5 @@ func (s *FilesystemCatalogRuntime) ScanPaths(
 ) (scanflow.DispatchResult, error) {
 	metaenrich.RegisterItemResolvers()
 	result, err := scanFilePaths(ctx, s, s.repo, resource, tenantID, paths, scanDepth, force, reporter)
-	if err != nil {
-		return scanflow.DispatchResult{}, err
-	}
-	return result, nil
+	return result, err
 }

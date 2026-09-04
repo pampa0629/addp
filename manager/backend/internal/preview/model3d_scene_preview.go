@@ -11,7 +11,7 @@ import (
 	"github.com/addp/manager/internal/objectcontent"
 )
 
-func applyS3MScenePreview(attrs map[string]interface{}, object *models.ObjectPreview, engineID uint, bucket, scopePath string) bool {
+func applyS3MScenePreview(attrs map[string]interface{}, object *models.ObjectPreview, locator string, engineID uint, bucket, scopePath string) bool {
 	if object == nil || formatTypeFromMetaAttributes(attrs) != format.FormatS3M {
 		return false
 	}
@@ -30,7 +30,7 @@ func applyS3MScenePreview(attrs map[string]interface{}, object *models.ObjectPre
 	if bucket != "" && !strings.HasPrefix(storageRef, strings.Trim(bucket, "/")+"/") {
 		storageRef = strings.Trim(path.Join(bucket, storageRef), "/")
 	}
-	url := buildStorageAssetURL(engineID, storageRef)
+	url := buildStorageAssetURL(locator, engineID, storageRef)
 	metadata := map[string]interface{}{
 		"source_format":     string(format.FormatS3M),
 		"manifest_ref":      strings.TrimPrefix(strings.Trim(manifestPath, "/"), strings.Trim(scopePath, "/")+"/"),

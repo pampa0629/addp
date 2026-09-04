@@ -40,6 +40,14 @@ type VersionResponse struct {
 	Version int64 `json:"version"`
 }
 
+// MaterializedTargetDecommissionRequest binds a destructive physical action to
+// the current logical-table version and exact configured target.
+type MaterializedTargetDecommissionRequest struct {
+	Version             int64  `json:"version" binding:"required,gt=0" minimum:"1"`
+	TargetParentLocator string `json:"target_parent_locator" binding:"required"`
+	TargetName          string `json:"target_name" binding:"required"`
+}
+
 // EntityModelRevision 是 Tenant 实体模型集合的并发边界。
 type EntityModelRevision struct {
 	TenantID int64 `gorm:"primaryKey" json:"tenant_id"`

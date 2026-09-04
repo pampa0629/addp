@@ -4,13 +4,17 @@ import (
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/meta/internal/models"
+	"github.com/addp/meta/internal/scanflow"
 )
 
 // softDeleteMissingItemsByType 按 item_type 软删除不存在的数据项。
-func (s *BranchLeafRuntime) softDeleteMissingItemsByType(tenantID, engineID, branchNodeID uint, itemType string, scanned map[string]bool) {
+func (s *BranchLeafRuntime) softDeleteMissingItemsByType(tenantID, engineID, branchNodeID uint, itemType string, scanned map[string]bool) error {
 	var items []models.MetaItem
-	s.db.Where("tenant_id = ? AND engine_id = ? AND node_id = ? AND item_type = ? AND deleted_at IS NULL",
-		tenantID, engineID, branchNodeID, itemType).Find(&items)
+	if err := s.db.Where("tenant_id = ? AND engine_id = ? AND node_id = ? AND item_type = ? AND deleted_at IS NULL",
+		tenantID, engineID, branchNodeID, itemType).Find(&items).Error; err != nil {
+		return err
+	}
+	failures := &scanflow.FailedTargetCollector{}
 
 	for _, item := range items {
 		if !scanned[item.Name] {
@@ -20,9 +24,12 @@ func (s *BranchLeafRuntime) softDeleteMissingItemsByType(tenantID, engineID, bra
 				"item_type", itemType,
 				"name", item.Name,
 			)
-			s.db.Delete(&item)
+			if err := s.db.Delete(&item).Error; err != nil {
+				failures.Add(item.FullName, err)
+			}
 		}
 	}
+	return failures.Err()
 }
 
 func catalogLeafItemType(node plugin.EngineCatalogEntry) string {

@@ -4,7 +4,7 @@
 
 Model 是 Tenant 级数据架构与建模事实的 owner，管理业务实体、实体关系、逻辑模型、数仓分层、公共/一致性维度、维度层级和指标实现。Standard 拥有业务域、数据元、码值集和指标定义等业务语义契约；Model 保存经过 Standard API 验证的长期引用，并在聚合审批或指标实现发布时冻结确定的标准修订，不代理或复制 Standard 资源。
 
-维度层级是模型内部结构，只能引用 Model 的 LogicalTable / LogicalField，并可通过字段冻结的数据元修订获得统一语义。当前由 Standard 提供的 DimensionHierarchy、Model 字段上的 `hierarchy_id + hierarchy_level` 以及对应删除屏障属于待迁移旧路线；迁移必须把资源、成员、API、权限和前端入口整体移入 Model，然后删除 Standard 旧路线。
+维度层级是模型内部结构，只能引用 Model 的 LogicalTable / LogicalField，并可通过字段冻结的数据元修订获得统一语义。DimensionHierarchy、层级成员、API 和前端编辑入口已整体归入 Model；Standard 旧表、API、权限与前端路线以及 LogicalField 上的 `hierarchy_id + hierarchy_level` 已删除。
 
 指标定义与指标实现必须分离：Standard MetricDefinitionRevision 只描述业务含义、统计口径、单位和非引擎可执行的语义表达；Model MetricImplementation 冻结 `metric_definition_revision_id`，并拥有粒度、事实来源、维度、连接、过滤和可执行表达式。同一指标定义可存在多个模型实现。当前 FactMetricMapping 和 Standard Metric 的 `derivation_config` 属于待替换实现，不得继续扩展。
 
@@ -33,11 +33,12 @@ Model prepare -> generic writer -> Model seal -> Quality materialization gate ->
 ```
 
 - `prepare` 只接受已审批且配置完整物化目标的 LogicalTable ID。Model 冻结逻辑表版本、物化目标和结构指纹，使用 `audience=model` 的 Execution Authorization 验证目标边界，并创建本批唯一可写 staging。稳定输出为 `batch_id + staging_locator`，不返回 DDL 或凭据。
-- 目标表不存在时允许首次发布；目标表已存在时，只有 Model 管理标记中的结构指纹与当前已审批逻辑表一致才允许重算。结构不一致、未受 Model 管理或包含尚未支持的分区设计时拒绝自动替换，不能把破坏性 Schema 迁移隐藏在重算中。
+- 目标表不存在时允许首次发布；目标表已存在时，Model 必须先解析完整管理标记并确认其中的 LogicalTable ID 与当前逻辑表一致。标记中的旧结构指纹可以不同，这表示同一 LogicalTable 的受控结构升级，不表示目标所有权失效；未受 Model 管理、标记损坏、属于其他 LogicalTable 或包含尚未支持分区设计的目标仍必须拒绝自动替换。
+- prepare 必须把事务中实际观察到的旧目标完整管理标记持久化为批次前置状态；目标不存在时持久化明确的“不存在”状态。该前置状态与本批新结构指纹含义分离，不能用当前结构指纹反推旧目标状态。
 - 通用 writer 任务定义不保存 LogicalTable ID、Model 上下文或 staging。Orchestrator 将 prepare 的 `staging_locator` 绑定到 writer 必填 `target_locator`；writer 使用从父 execution 派生的精确 Engine `read/write` 授权执行，稳定输出 `execution_id + target_locator + row_count`。
 - `seal` 接受 prepare 的 `batch_id`、writer 输出的 `execution_id` 和 `target_locator`。Model 必须校验 writer execution 为 `success`，与 prepare/seal 同 Tenant、同父 Orchestrator execution、同 Actor Principal/Tenant Membership/授权版本，且 locator 精确匹配批次 staging；随后校验字段顺序、物理类型、结构指纹和 Model 管理标记，成功后置为 `sealed`。Model 不校验 writer module 名称。
 - Quality 如需读取 staging，必须以同一父 Orchestrator execution 和当前 reader execution 向 Model 申请 Materialization Read Context；只能返回 sealed 批次的 staging locator、字段、批次和结构指纹。reader 仍使用自身从父 execution 派生的精确只读授权，不得读取 Model 私有表或借用 Model 的引擎授权。
-- `publish` 在同一目标数据库事务内完成旧目标暂存、staging 改名、旧目标删除和管理标记保留。事务失败必须保持原目标可用；重复执行按批次管理标记幂等收敛。
+- `publish` 在同一目标数据库事务内先以 prepare 持久化的前置状态执行 compare-and-swap 校验，再完成旧目标暂存、staging 改名、旧目标删除和管理标记保留。prepare 时目标不存在则 publish 时仍必须不存在；prepare 时目标存在则当前完整标记必须与前置标记逐字一致。任何并发发布、人工改标记或替换都会令整组发布失败。事务失败必须保持原目标可用；重复执行按本批管理标记幂等收敛。
 - 同一 Tenant 的同一物理目标同时最多一个 `preparing|prepared|sealed|publishing` 批次。并发重算返回冲突，不建立多批次竞争或“最后完成者覆盖”语义。新 prepare 只能接管父 Orchestrator execution 已为 `failed|timeout|cancelled`、且该父 execution 已无 `pending|running` 子 execution 的旧 `preparing|prepared|sealed` 批次；旧父仍运行、已成功或旧批次处于 `publishing` 时必须继续返回冲突。接管事务将旧批次标记为 `aborted`，新 prepare worker 使用本次精确 DDL 授权，在同一目标数据库事务中先回收该目标历史 `aborted|failed` staging，再创建新 staging。
 - 历史 staging 只有在表注释精确匹配该批次的 Model ownership marker 时才能删除；表已不存在按幂等成功处理，marker 不匹配则整个 prepare 失败且不得删除任何历史 staging。回收与新 staging 创建共用一个物理数据库事务；任一步失败必须整体回滚。不新增公开 abort TaskProvider、Orchestrator 专属补偿节点或 writer 回调。
 - 批次状态固定为 `preparing|prepared|sealed|publishing|published|failed|aborted`。prepare 失败进入 `failed`；seal 失败不提升批次；publish 失败恢复为 `sealed`，允许在同一 sealed 批次上重新发布；只有物理发布成功后才进入 `published`。
@@ -59,6 +60,15 @@ Model prepare -> generic writer -> Model seal -> Quality materialization gate ->
 - 发布必须按组定义的全部成员，解析同一父 execution 下的 sealed 批次，并在一个目标 PostgreSQL 事务内交换全部目标。任一成员不就绪、结构漂移或物理标记不匹配时整组拒绝，不部分发布。
 - 目标库事务提交后再收敛 Model 控制库状态；如响应丢失或进程崩溃，重试必须通过全部管理标记识别已提交结果并幂等收敛，不再次交换。
 
+### 物化目标退役
+
+- 物化目标退役是 Model owner 的高风险同步命令，不注册 TaskProvider、不进入 Orchestrator，也不允许 Develop、Transfer 或通用 SQL 任务代为执行。
+- 唯一路由为 `DELETE /api/v1/model/logical-tables/{id}/materialized-target`。请求必须提交当前 LogicalTable 正整数 `version`，并逐字提交当前 `target_parent_locator + target_name` 作为人机确认快照；不接受 SQL、另一个目标或服务端版本兜底。
+- Model 必须在控制库事务中锁定 LogicalTable，校验 Tenant、版本、当前物化配置、该表已不属于任何 MaterializationGroup，且不存在 `preparing|prepared|sealed|publishing` 批次；随后使用当前用户授权访问配置中的精确 Engine 和目标。
+- 删除前必须读取物理表管理标记。目标不存在按幂等成功处理；目标存在时标记必须合法且 LogicalTable ID 与当前逻辑表一致，结构指纹和历史 batch ID 只作为该物理产物版本事实，不阻止退役。未标记、标记损坏或属于其他 LogicalTable 的物理表一律拒绝。
+- 物理操作只允许对配置解析出的精确限定表执行 `DROP TABLE`，不接受级联删除。物理删除成功后不修改 LogicalTable 配置或并发版本；后续如需删除逻辑模型，必须按既有流程先重新打开为 `draft`，再通过 LogicalTable 删除接口提交当时版本。
+- Model 不调用 Catalog、Service、Develop、Quality 或 Orchestrator 检查引用。治理流程必须先由各 owner 删除对该逻辑表或物理目标的配置引用，再移出 MaterializationGroup、退役物理目标，最后删除逻辑模型；模块边界不能由 Model 的 DDL 操作穿透。
+
 ### TaskProvider 与封存交接
 
 已审批 LogicalTable 是来源驱动、不可变的物化任务定义，同一 LogicalTable ID 分别作为 `materialization_prepare`、`materialization_seal` 与 `materialization_publish` 的 TaskProvider task ID：
@@ -74,11 +84,11 @@ Model prepare -> generic writer -> Model seal -> Quality materialization gate ->
 
 Model 资源当前全部属于 Tenant，不存在 Department 或 Project Group Resource Scope Binding。所有 `model.*` Permission 只允许 Tenant Scope。`tenant.data_architect` 是面向 User Principal 的完整 Model 管理角色；`tenant.graph_runtime` 只保留 Graph 导入所需的 Entity 和 EntityRelation 只读权限。
 
-物化读取精确 Permission 为 `model.materialization_read.execute`，当前仅用于 Quality 读取 sealed 批次上下文；`model.materialization_group.read|create|update|delete` 用于 MaterializationGroup 业务资源。不存在面向 Transfer/Develop 的 Model 写入 Permission。Model prepare/seal/publish 通过本模块 TaskProvider 执行权限触发，writer 只持有目标 Engine 的精确 write effect。机器身份授权与用户资源管理权限不得互相替代。
+物化读取精确 Permission 为 `model.materialization_read.execute`，当前仅用于 Quality 读取 sealed 批次上下文；`model.materialization_group.read|create|update|delete` 用于 MaterializationGroup 业务资源；`model.materialized_target.delete` 只用于用户显式退役 LogicalTable 当前登记的物理目标。不存在面向 Transfer/Develop 的 Model 写入 Permission。Model prepare/seal/publish 通过本模块 TaskProvider 执行权限触发，writer 只持有目标 Engine 的精确 write effect。机器身份授权与用户资源管理权限不得互相替代。
 
 `model.catalog.read` 是不可由租户自定义的 Tenant Scope 机器权限，只授予 `tenant.catalog_runtime`，并由 Model 的变化流和 Catalog 批量解析路由同时校验固定 `addp-catalog` OAuth Client。该权限不授予用户读取 Model 管理 API，也不允许 Catalog 写入 Model。
 
-Model 在写入前校验 Standard 引用时，不转发或保存 User Access Token。`addp-model` 使用当前 Tenant 的 Service Access Token 和专用 `tenant.model_runtime`，目标上只读取 Standard 的 Domain、Element/ElementRevision 与 MetricDefinition/MetricDefinitionRevision；维度层级迁移完成后必须删除 `standard.dimension_hierarchy.read`。Standard 协调被 Model 引用资源的删除时，`addp-standard` 使用当前 Tenant 的 Service Access Token 和专用 `tenant.standard_runtime`，该角色只包含 `model.standard_reference.update`。平台控制面的 Runtime Role 不参与 Tenant 业务引用校验或删除协调。
+Model 在写入前校验 Standard 引用时，不转发或保存 User Access Token。`addp-model` 使用当前 Tenant 的 Service Access Token 和专用 `tenant.model_runtime`，目标上只读取 Standard 的 Domain、Element/ElementRevision 与 MetricDefinition/MetricDefinitionRevision，不再拥有 `standard.dimension_hierarchy.read`。Standard 协调被 Model 引用资源的删除时，`addp-standard` 使用当前 Tenant 的 Service Access Token 和专用 `tenant.standard_runtime`，该角色只包含 `model.standard_reference.update`。平台控制面的 Runtime Role 不参与 Tenant 业务引用校验或删除协调。
 
 Permission Guard 只判断候选能力，Repository 和 Service 仍必须对每个资源及其子资源执行 Tenant 隔离。任何父子写入、删除和关系创建都必须验证完整归属，不能只依赖请求中的全局 ID。
 

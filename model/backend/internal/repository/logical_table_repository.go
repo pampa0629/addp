@@ -127,6 +127,9 @@ func (r *LogicalTableRepository) Delete(id, tenantID, version int64) error {
 		if err := tx.Where("tenant_id = ? AND (source_table = ? OR target_table = ?)", tenantID, id, id).Delete(&models.TableRelation{}).Error; err != nil {
 			return commonrepo.WrapDBError(err)
 		}
+		if err := tx.Where("table_id = ? AND tenant_id = ?", id, tenantID).Delete(&models.DimensionHierarchy{}).Error; err != nil {
+			return commonrepo.WrapDBError(err)
+		}
 		if err := tx.Where("table_id = ?", id).Delete(&models.LogicalField{}).Error; err != nil {
 			return commonrepo.WrapDBError(err)
 		}

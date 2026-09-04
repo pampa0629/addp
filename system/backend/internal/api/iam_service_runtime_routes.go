@@ -67,6 +67,10 @@ func RegisterIAMServiceRuntimeRoutes(
 	if err != nil {
 		return err
 	}
+	standardGovernanceUserRead, err := middleware.NewIAMPermissionGuard("iam.tenant_membership.read")
+	if err != nil {
+		return err
+	}
 
 	runtimeRoutes := api.Group("/runtime")
 	runtimeRoutes.Use(runtime.Authentication, runtime.ServiceCredential)
@@ -103,6 +107,8 @@ func RegisterIAMServiceRuntimeRoutes(
 	runtimeRoutes.POST("/task-authorization-subjects/:id/resolve", tenantContext, taskAuthorizationResolve, runtime.TaskAuthorizationSubjectHandler.Resolve)
 	runtimeRoutes.POST("/catalog-references/resolve", tenantContext, catalogReferenceResolveRead, runtime.CatalogReferenceHandler.Resolve)
 	runtimeRoutes.GET("/catalog-references/candidates", tenantContext, catalogReferenceCandidateRead, runtime.CatalogReferenceHandler.ListCandidates)
+	runtimeRoutes.POST("/standard-governance-users/resolve", tenantContext, standardGovernanceUserRead, runtime.CatalogReferenceHandler.ResolveStandardGovernanceUsers)
+	runtimeRoutes.GET("/standard-governance-users/candidates", tenantContext, standardGovernanceUserRead, runtime.CatalogReferenceHandler.ListStandardGovernanceUsers)
 
 	api.POST("/tenant/audit/events", runtime.Authentication, runtime.ServiceCredential, tenantContext, tenantAuditCreate, runtime.InternalAuditHandler.CreateService)
 	return nil

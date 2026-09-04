@@ -54,8 +54,24 @@ func setupLogicalTableRepositoryTestDB(t *testing.T) *gorm.DB {
 			description TEXT,
 			sort_order INTEGER DEFAULT 0,
 			field_role TEXT,
-			hierarchy_id INTEGER,
-			hierarchy_level INTEGER,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE model.dimension_hierarchies (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			tenant_id INTEGER NOT NULL,
+			table_id INTEGER NOT NULL,
+			name TEXT NOT NULL,
+			description TEXT,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE model.dimension_hierarchy_levels (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			hierarchy_id INTEGER NOT NULL,
+			field_id INTEGER NOT NULL,
+			level_num INTEGER NOT NULL,
+			level_name TEXT NOT NULL,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,

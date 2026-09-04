@@ -2832,11 +2832,6 @@ func RasterQuickViewSourceFromAttributes(attrs map[string]interface{}, locator s
 	if raster.PreviewURL == "" && strings.TrimSpace(locator) != "" {
 		raster.PreviewURL = rasterStorageStreamURLFromLocator(locator, engineID)
 	}
-	if raster.PreviewURL == "" && engineID > 0 {
-		if storageRef := storageRefFromRasterAttributes(attrs); storageRef != "" {
-			raster.PreviewURL = rasterStorageStreamURL(engineID, storageRef)
-		}
-	}
 	return raster
 }
 
@@ -2929,16 +2924,17 @@ func rasterStorageStreamURLFromLocator(locator string, fallbackEngineID uint) st
 	if engineID == 0 {
 		return ""
 	}
-	return rasterStorageStreamURL(engineID, rasterStorageRefFromLocator(parsed))
+	return rasterStorageStreamURL(locator, engineID, rasterStorageRefFromLocator(parsed))
 }
 
-func rasterStorageStreamURL(engineID uint, storageRef string) string {
+func rasterStorageStreamURL(locator string, engineID uint, storageRef string) string {
+	locator = strings.TrimSpace(locator)
 	storageRef = strings.TrimSpace(storageRef)
-	if engineID == 0 || storageRef == "" {
+	if locator == "" || engineID == 0 || storageRef == "" {
 		return ""
 	}
 	values := url.Values{}
-	values.Set("engine_id", fmt.Sprintf("%d", engineID))
+	values.Set("locator", locator)
 	values.Set("storage_ref", storageRef)
 	return "/api/v1/manager/storage-stream?" + values.Encode()
 }

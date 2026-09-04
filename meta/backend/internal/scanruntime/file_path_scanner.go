@@ -47,6 +47,7 @@ func scanFilePaths(
 	}
 
 	result := scanflow.DispatchResult{}
+	failures := &scanflow.FailedTargetCollector{}
 	for i, rootPath := range resolvedPaths {
 		rootPath = metapath.SanitizeFSPath(rootPath)
 		if reporter != nil {
@@ -58,23 +59,37 @@ func scanFilePaths(
 		}
 
 		if _, _, err := runtime.listDirectory(ctx, resource, catalogProvider, connInfo, rootPath); err != nil {
+			failures.Add(rootPath, err)
 			continue
 		}
 
 		_, scanNode, err := runtime.ensureFilesystemScanRoot(tenantID, resource, enginePlugin, rootPath)
 		if err != nil {
+			failures.Add(rootPath, err)
 			continue
 		}
 
-		_ = repo.ResetNodeState(scanNode, "running")
+		var nodeStateErr error
+		if err := repo.ResetNodeState(scanNode, "running"); err != nil {
+			failures.Add(rootPath, err)
+			nodeStateErr = err
+		}
 		result.CatalogNodes++
 
 		items, pathExtractionStats, scanErr := runtime.scanDirectory(ctx, contentReader, catalogProvider, connInfo, resource, tenantID, rootPath, scanNode, rootPath == "", itemTerm, scanDepth, force)
 		result.Extraction = scanflow.MergeExtractionCounts(result.Extraction, pathExtractionStats)
 		if scanErr != nil {
-			_ = repo.FinalizeNodeState(scanNode, "failed", items, 0, scanErr.Error())
+			failures.Add(rootPath, scanErr)
+			nodeStateErr = scanErr
+		}
+		if nodeStateErr != nil {
+			if err := repo.FinalizeNodeState(scanNode, "failed", items, 0, nodeStateErr.Error()); err != nil {
+				failures.Add(rootPath, err)
+			}
 		} else {
-			_ = repo.FinalizeNodeStateWithDepth(scanNode, "completed", items, 0, "", scanDepth)
+			if err := repo.FinalizeNodeStateWithDepth(scanNode, "completed", items, 0, "", scanDepth); err != nil {
+				failures.Add(rootPath, err)
+			}
 		}
 		result.Items += items
 
@@ -83,5 +98,5 @@ func scanFilePaths(
 		}
 	}
 
-	return result, nil
+	return result, failures.Err()
 }

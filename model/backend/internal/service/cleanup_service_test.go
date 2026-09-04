@@ -110,8 +110,24 @@ func setupModelCleanupTestDB(t *testing.T) *gorm.DB {
 			description TEXT,
 			sort_order INTEGER DEFAULT 0,
 			field_role TEXT,
-			hierarchy_id INTEGER,
-			hierarchy_level INTEGER,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE model.dimension_hierarchies (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			tenant_id INTEGER NOT NULL,
+			table_id INTEGER NOT NULL,
+			name TEXT NOT NULL,
+			description TEXT,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE model.dimension_hierarchy_levels (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			hierarchy_id INTEGER NOT NULL,
+			field_id INTEGER NOT NULL,
+			level_num INTEGER NOT NULL,
+			level_name TEXT NOT NULL,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -213,7 +229,8 @@ func TestModelCleanupTenantDeletedPhysicalDeletesOwnedState(t *testing.T) {
 		t.Fatalf("ScanReclaimCandidates: %v", err)
 	}
 	if stats.DWLayers != 1 || stats.Entities != 2 || stats.EntityAttributes != 1 || stats.EntityRelations != 1 ||
-		stats.LogicalTables != 2 || stats.LogicalFields != 2 || stats.TableRelations != 1 || stats.FactMetricMappings != 1 {
+		stats.LogicalTables != 2 || stats.LogicalFields != 2 || stats.DimensionHierarchies != 1 ||
+		stats.DimensionHierarchyLevels != 1 || stats.TableRelations != 1 || stats.FactMetricMappings != 1 {
 		t.Fatalf("unexpected tenant scan stats: %+v", stats)
 	}
 
@@ -221,8 +238,8 @@ func TestModelCleanupTenantDeletedPhysicalDeletesOwnedState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteCleanup: %v", err)
 	}
-	if stats.DeletedRecords != 11 {
-		t.Fatalf("expected 11 deleted records, got %+v", stats)
+	if stats.DeletedRecords != 13 {
+		t.Fatalf("expected 13 deleted records, got %+v", stats)
 	}
 	var revision models.EntityModelRevision
 	if err := db.Where("tenant_id = ?", 1).First(&revision).Error; err != nil {
@@ -233,15 +250,17 @@ func TestModelCleanupTenantDeletedPhysicalDeletesOwnedState(t *testing.T) {
 	}
 	assertModelCleanupCount(t, db, modelCleanupCountExpectation{tenantID: 1})
 	assertModelCleanupCount(t, db, modelCleanupCountExpectation{
-		tenantID:           2,
-		dwLayers:           1,
-		entities:           2,
-		entityAttributes:   1,
-		entityRelations:    1,
-		logicalTables:      2,
-		logicalFields:      2,
-		tableRelations:     1,
-		factMetricMappings: 1,
+		tenantID:                 2,
+		dwLayers:                 1,
+		entities:                 2,
+		entityAttributes:         1,
+		entityRelations:          1,
+		logicalTables:            2,
+		logicalFields:            2,
+		dimensionHierarchies:     1,
+		dimensionHierarchyLevels: 1,
+		tableRelations:           1,
+		factMetricMappings:       1,
 	})
 }
 
@@ -297,19 +316,29 @@ func seedModelCleanupTenantState(t *testing.T, db *gorm.DB, tenantID int64) (int
 	if err := db.Create(&mapping).Error; err != nil {
 		t.Fatalf("create fact metric mapping: %v", err)
 	}
+	hierarchy := models.DimensionHierarchy{TenantID: tenantID, TableID: dimTable.ID, Name: "Geography"}
+	if err := db.Create(&hierarchy).Error; err != nil {
+		t.Fatalf("create dimension hierarchy: %v", err)
+	}
+	level := models.DimensionHierarchyLevel{HierarchyID: hierarchy.ID, FieldID: dimField.ID, LevelNum: 1, LevelName: "Customer"}
+	if err := db.Create(&level).Error; err != nil {
+		t.Fatalf("create dimension hierarchy level: %v", err)
+	}
 	return entity.ID, factTable.ID
 }
 
 type modelCleanupCountExpectation struct {
-	tenantID           int64
-	dwLayers           int64
-	entities           int64
-	entityAttributes   int64
-	entityRelations    int64
-	logicalTables      int64
-	logicalFields      int64
-	tableRelations     int64
-	factMetricMappings int64
+	tenantID                 int64
+	dwLayers                 int64
+	entities                 int64
+	entityAttributes         int64
+	entityRelations          int64
+	logicalTables            int64
+	logicalFields            int64
+	dimensionHierarchies     int64
+	dimensionHierarchyLevels int64
+	tableRelations           int64
+	factMetricMappings       int64
 }
 
 func assertModelCleanupCount(t *testing.T, db *gorm.DB, expected modelCleanupCountExpectation) {
@@ -323,6 +352,7 @@ func assertModelCleanupCount(t *testing.T, db *gorm.DB, expected modelCleanupCou
 		{name: "entities", model: &models.Entity{}, expected: expected.entities},
 		{name: "entity_relations", model: &models.EntityRelation{}, expected: expected.entityRelations},
 		{name: "logical_tables", model: &models.LogicalTable{}, expected: expected.logicalTables},
+		{name: "dimension_hierarchies", model: &models.DimensionHierarchy{}, expected: expected.dimensionHierarchies},
 		{name: "table_relations", model: &models.TableRelation{}, expected: expected.tableRelations},
 		{name: "fact_metric_mappings", model: &models.FactMetricMapping{}, expected: expected.factMetricMappings},
 	} {
@@ -367,5 +397,18 @@ func assertModelCleanupCount(t *testing.T, db *gorm.DB, expected modelCleanupCou
 	}
 	if fieldCount != expected.logicalFields {
 		t.Fatalf("expected tenant %d logical_fields count %d, got %d", expected.tenantID, expected.logicalFields, fieldCount)
+	}
+	var hierarchyIDs []int64
+	if err := db.Model(&models.DimensionHierarchy{}).Where("tenant_id = ?", expected.tenantID).Pluck("id", &hierarchyIDs).Error; err != nil {
+		t.Fatalf("load dimension hierarchy ids: %v", err)
+	}
+	var levelCount int64
+	if len(hierarchyIDs) > 0 {
+		if err := db.Model(&models.DimensionHierarchyLevel{}).Where("hierarchy_id IN ?", hierarchyIDs).Count(&levelCount).Error; err != nil {
+			t.Fatalf("count dimension hierarchy levels: %v", err)
+		}
+	}
+	if levelCount != expected.dimensionHierarchyLevels {
+		t.Fatalf("expected tenant %d dimension_hierarchy_levels count %d, got %d", expected.tenantID, expected.dimensionHierarchyLevels, levelCount)
 	}
 }

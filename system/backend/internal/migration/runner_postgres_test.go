@@ -3783,8 +3783,8 @@ func assertAuthorizationCatalogRetirement(t *testing.T, db *sql.DB) {
 	`).Scan(&activePermissionCount, &disabledPermissionCount); err != nil {
 		t.Fatalf("read retired Permission counts: %v", err)
 	}
-	if activePermissionCount < 345 || disabledPermissionCount != 66 {
-		t.Fatalf("Permission status counts = active:%d disabled:%d, want at least 345 and exactly 66", activePermissionCount, disabledPermissionCount)
+	if activePermissionCount < 345 || disabledPermissionCount != 70 {
+		t.Fatalf("Permission status counts = active:%d disabled:%d, want at least 345 and exactly 70", activePermissionCount, disabledPermissionCount)
 	}
 
 	var disabledRoles string
@@ -3826,8 +3826,8 @@ func assertStandardAuthorizationCatalog(t *testing.T, db *sql.DB) {
 	`).Scan(&permissionCount); err != nil {
 		t.Fatalf("read Standard authorization permissions: %v", err)
 	}
-	if permissionCount != 39 {
-		t.Fatalf("Standard authorization permission count = %d, want 39", permissionCount)
+	if permissionCount != 41 {
+		t.Fatalf("Standard authorization permission count = %d, want 41", permissionCount)
 	}
 	var publishPermissionCount, disabledApproveCount int
 	if err := db.QueryRow(`
@@ -3854,8 +3854,47 @@ func assertStandardAuthorizationCatalog(t *testing.T, db *sql.DB) {
 	`).Scan(&rolePermissionCount); err != nil {
 		t.Fatalf("read Governance Manager Standard permissions: %v", err)
 	}
-	if rolePermissionCount != 38 {
-		t.Fatalf("Governance Manager Standard permission count = %d, want 38", rolePermissionCount)
+	if rolePermissionCount != 40 {
+		t.Fatalf("Governance Manager Standard permission count = %d, want 40", rolePermissionCount)
+	}
+
+	var retiredHierarchyPermissions, retiredHierarchyBindings int
+	if err := db.QueryRow(`
+		SELECT
+			count(DISTINCT permission.id) FILTER (WHERE permission.status = 'disabled'),
+			count(role_permission.role_id)
+		FROM system.permissions permission
+		LEFT JOIN system.role_permissions role_permission ON role_permission.permission_id = permission.id
+		WHERE permission.permission_key IN (
+			'standard.dimension_hierarchy.create',
+			'standard.dimension_hierarchy.delete',
+			'standard.dimension_hierarchy.read',
+			'standard.dimension_hierarchy.update'
+		)
+	`).Scan(&retiredHierarchyPermissions, &retiredHierarchyBindings); err != nil {
+		t.Fatalf("read retired Standard dimension hierarchy permissions: %v", err)
+	}
+	if retiredHierarchyPermissions != 4 || retiredHierarchyBindings != 0 {
+		t.Fatalf("retired Standard dimension hierarchy permissions=%d bindings=%d, want 4 and 0", retiredHierarchyPermissions, retiredHierarchyBindings)
+	}
+
+	var collectionPermissionCount, runtimeMembershipReadCount int
+	if err := db.QueryRow(`
+		SELECT
+			count(*) FILTER (WHERE role.role_key = 'tenant.governance_manager' AND permission.permission_key IN (
+				'standard.collection.create', 'standard.collection.delete', 'standard.collection.publish',
+				'standard.collection.read', 'standard.collection.update', 'standard.collection_assignment.update'
+			)),
+			count(*) FILTER (WHERE role.role_key = 'tenant.standard_runtime' AND permission.permission_key = 'iam.tenant_membership.read')
+		FROM system.role_permissions role_permission
+		JOIN system.roles role ON role.id = role_permission.role_id
+		JOIN system.permissions permission ON permission.id = role_permission.permission_id
+		WHERE role.tenant_id IS NULL AND role_permission.source_type = 'product'
+	`).Scan(&collectionPermissionCount, &runtimeMembershipReadCount); err != nil {
+		t.Fatalf("read Standard collection role permissions: %v", err)
+	}
+	if collectionPermissionCount != 6 || runtimeMembershipReadCount != 1 {
+		t.Fatalf("Standard collection bindings = governance:%d runtime_user_read:%d, want 6 and 1", collectionPermissionCount, runtimeMembershipReadCount)
 	}
 }
 

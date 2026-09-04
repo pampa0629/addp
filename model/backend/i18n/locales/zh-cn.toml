@@ -91,6 +91,15 @@ other = "逻辑表或物化批次不存在"
 [model.materialization.unavailable]
 other = "逻辑表物化授权或目标引擎暂时不可用"
 
+[model.materialized_target.conflict]
+other = "物化目标当前状态不允许退役"
+
+[model.materialized_target.forbidden]
+other = "没有目标引擎的 DDL 权限"
+
+[model.materialized_target.unavailable]
+other = "物化目标退役暂时不可用"
+
 [model.logical_table.invalid_field_id]
 other = "无效的字段ID"
 
@@ -141,3 +150,24 @@ other = "表关系两端必须处于草稿状态"
 
 [model.table_relation.conflict]
 other = "该字段关联已存在"
+
+[model.dimension_hierarchy.dimension_table_required]
+other = "只有维度逻辑表可以定义维度层级"
+
+[model.dimension_hierarchy.not_found]
+other = "维度层级不存在"
+
+[model.dimension_hierarchy.conflict]
+other = "当前维度表中已存在同名层级"
+
+[model.dimension_hierarchy.field_not_found]
+other = "层级成员引用的字段不存在或不属于当前维度表"
+
+[model.dimension_hierarchy.level_not_found]
+other = "维度层级成员不存在"
+
+[model.dimension_hierarchy.level_conflict]
+other = "同一维度层级中的层级序号和字段不能重复"
+
+[model.dimension_hierarchy.field_in_use]
+other = "逻辑字段仍被维度层级引用，不能删除"

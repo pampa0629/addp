@@ -877,10 +877,46 @@ erDiagram
         uint id PK
         uint tenant_id FK
         string code UK
-        string name
-        string description
+        uint draft_revision_id FK
+        int version "并发控制"
         timestamp created_at
         timestamp updated_at
+    }
+
+    StandardCollectionRevision {
+        uint id PK
+        uint collection_id FK
+        int revision_no
+        string status "draft|in_review|published|withdrawn"
+        string name
+        string description
+        string change_summary
+        uint submitted_by
+        uint published_by
+    }
+
+    StandardCollectionMember {
+        uint id PK
+        uint collection_revision_id FK
+        string member_type "element|code_set|metric|glossary|document"
+        uint member_id "对应标准稳定身份"
+    }
+
+    StandardCollectionAssignment {
+        uint id PK
+        uint collection_id FK
+        uint principal_id "System User Principal"
+        string role "owner|maintainer|reviewer"
+    }
+
+    StandardCollectionEvent {
+        uint id PK
+        uint collection_id FK
+        uint revision_id FK
+        string event_type "created|draft_created|draft_updated|submitted|returned|published|assignments_replaced"
+        uint actor_id "System User Principal"
+        jsonb detail "最小事件详情"
+        timestamp created_at
     }
 
     StandardCategory {
@@ -1070,11 +1106,16 @@ erDiagram
     Domain ||--o{ MetricDefinition : "治理归属(scope=domain)"
     Domain ||--o{ Glossary : "治理归属(scope=domain)"
     Domain ||--o{ Document : "治理归属(scope=domain)"
-    StandardCollection }o--o{ Element : "治理成员"
-    StandardCollection }o--o{ CodeSet : "治理成员"
-    StandardCollection }o--o{ MetricDefinition : "治理成员"
-    StandardCollection }o--o{ Glossary : "治理成员"
-    StandardCollection }o--o{ Document : "治理成员"
+    StandardCollection ||--o{ StandardCollectionRevision : "含治理配置修订"
+    StandardCollection ||--o{ StandardCollectionAssignment : "职责分配"
+    StandardCollection ||--o{ StandardCollectionEvent : "不可变治理事件"
+    StandardCollectionRevision ||--o{ StandardCollectionEvent : "关联审核修订"
+    StandardCollectionRevision ||--o{ StandardCollectionMember : "冻结成员清单"
+    StandardCollectionMember }o--o{ Element : "成员稳定身份"
+    StandardCollectionMember }o--o{ CodeSet : "成员稳定身份"
+    StandardCollectionMember }o--o{ MetricDefinition : "成员稳定身份"
+    StandardCollectionMember }o--o{ Glossary : "成员稳定身份"
+    StandardCollectionMember }o--o{ Document : "成员稳定身份"
     StandardCategory ||--o{ StandardCategory : "父子分类(self-ref)"
     StandardCategory ||--o{ Element : "导航分类"
     StandardCategory ||--o{ CodeSet : "导航分类"
@@ -1099,8 +1140,8 @@ erDiagram
 | # | 问题描述 | 当前状态 | 影响 |
 |---|----------|----------|------|
 | ST-1 | 当前只有数据元和码值集采用稳定身份 + 不可变修订；术语、指标和文档仍是可变资源 | 待迁移 | 正式发布后的口径和来源无法被精确冻结，历史追溯链不完整 |
-| ST-2 | 当前 `DimensionHierarchy` 仍由 Standard 存储，Model 通过软引用使用 | 待迁移 | 与“维度层级属于建模结构”的边界冲突；应整体迁入 Model，不保留两套层级资源 |
-| ST-4 | 当前缺少 StandardCollection，分类、业务域和审核容器容易混用 | 待设计与实现 | 无法独立配置跨域标准包的成员、维护人、权限和审核流程 |
+| ST-2 | `DimensionHierarchy` 已整体迁入 Model，Standard 旧表、API、权限与前端入口已删除 | ✅ 已实现 | 维度层级成为 LogicalTable 聚合内单一事实，不再跨模块软引用 |
+| ST-4 | StandardCollection 已按“稳定身份 + 治理配置修订 + 成员快照 + 对象级职责分配 + 不可变治理事件”实现 | ✅ 已实现 | 可独立配置跨域标准集的成员、维护人、对象级权限和审核流程，且不改变成员自身发布状态 |
 | ST-5 | 当前指标同时保存业务公式和 `derivation_config` | 待迁移 | Standard 与 Model 的计算实现职责混杂；Standard 只保留语义口径，具体实现迁入 Model |
 | ST-6 | 当前标准文档没有不可变修订与提取证据模型 | 待迁移 | Copilot 提取结果无法稳定回溯到来源版本、页码或章节，也无法建立可靠审核链 |
 | ST-7 | 码值层级与跨码值集映射尚未形成规范 | 待讨论 | 需要先区分标准间语义映射与 Transfer 的资产级转换执行，再决定是否建立父子码项和 crosswalk 资源 |
@@ -1247,7 +1288,7 @@ erDiagram
 | MO-1 | 当前 EntityAttribute / LogicalField 已逐步增加 `element_revision_id`，但仍需确认所有审批、导入和展示路径只以确定修订作为正式引用 | 待收口 | 跨 schema 无 DB FK 是合理边界，但正式模型不能动态跟随数据元当前版本 |
 | MO-2 | 当前 `FactMetricMapping.metric_id` 只引用可变的 `Standard.Metric`，且没有完整计算实现契约 | 待迁移 | 应替换为 Model 所属的 MetricImplementation，并冻结 `metric_definition_revision_id` |
 | MO-3 | `Entity` 和 `LogicalTable` 都有 `domain_id`，都软引用 `Standard.Domain`，两者的关系（Entity 是 LogicalTable 的模板）通过 `LogicalTable.entity_id` 可选关联，但未强制 | 设计如此 | 允许逻辑表不依赖实体直接建模 |
-| MO-4 | 当前 Model 仍引用 Standard 的 `dimension_hierarchy_id`，并在字段上保存 `hierarchy_level` | 待迁移 | 层级与层级成员必须由 Model 单独拥有，层级序号统一从 1 开始，不保留 Standard 旧资源 |
+| MO-4 | Model 已独占 DimensionHierarchy 与层级成员，LogicalField 不再保存 `hierarchy_id + hierarchy_level` | ✅ 已实现 | 层级序号从 1 开始，成员只引用同一 LogicalTable 的字段并共用父版本 |
 
 ---
 
@@ -1512,7 +1553,7 @@ graph TD
 | SV-2 | Service  | 三类服务无统一父表，服务目录需 UNION 查询                             | 低     | 待讨论     |
 | SV-3 | Service  | RegisteredService.auth_config 加密存储，敏感信息与业务信息混存        | —      | 已确认合理 |
 | ST-1 | Standard | Glossary.related_ids 用 int64[] 存关联 ID，无 FK 约束                 | —      | 已确认合理 |
-| ST-2 | Standard | 当前 DimensionHierarchy 实现在 Standard，与已确认的 Model 所有权冲突 | 高 | 待整体迁移到 Model 并删除 Standard 旧路线 |
+| ST-2 | Standard | DimensionHierarchy 所有权与实现已统一迁入 Model | — | ✅ 已完成，Standard 旧路线已删除 |
 | MO-1 | Model    | 正式模型必须冻结 Standard.ElementRevision，不能只动态引用 Element | 高 | 已有冻结字段，待收口全部审批与消费路径 |
 | MO-2 | Model    | 当前 FactMetricMapping 只引用可变 Standard.Metric，缺少指标实现契约 | 高 | 待替换为 MetricImplementation 并冻结 MetricDefinitionRevision |
 | MO-3 | Model    | Entity 和 LogicalTable 都软引用 Domain，LogicalTable 可不经 Entity 直接建模 | —  | 已确认合理 |
