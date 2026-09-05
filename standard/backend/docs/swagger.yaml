@@ -244,6 +244,72 @@ definitions:
     - change_summary
     - version
     type: object
+  github_com_addp_standard_internal_models.CreateDocumentExtractionRequest:
+    properties:
+      version:
+        minimum: 1
+        type: integer
+    required:
+    - version
+    type: object
+  github_com_addp_standard_internal_models.CreateDocumentRequest:
+    properties:
+      change_summary:
+        type: string
+      code:
+        type: string
+      description:
+        type: string
+      doc_type:
+        enum:
+        - national
+        - industry
+        - internal
+        - reference
+        type: string
+      effective_from:
+        type: string
+      effective_to:
+        type: string
+      name:
+        type: string
+      owner_domain_id:
+        type: integer
+      publish_date:
+        type: string
+      scope_type:
+        enum:
+        - tenant_common
+        - domain
+        type: string
+      source_org:
+        type: string
+      steward_id:
+        type: integer
+      tags:
+        items:
+          type: string
+        type: array
+      version_label:
+        type: string
+    required:
+    - change_summary
+    - code
+    - doc_type
+    - name
+    - scope_type
+    type: object
+  github_com_addp_standard_internal_models.CreateDocumentRevisionRequest:
+    properties:
+      change_summary:
+        type: string
+      version:
+        minimum: 1
+        type: integer
+    required:
+    - change_summary
+    - version
+    type: object
   github_com_addp_standard_internal_models.CreateElementRequest:
     properties:
       change_summary:
@@ -320,22 +386,111 @@ definitions:
     - change_summary
     - version
     type: object
-  github_com_addp_standard_internal_models.CreateLinkedDocumentRequest:
+  github_com_addp_standard_internal_models.CreateGlossaryRequest:
     properties:
-      description:
+      alias:
+        items:
+          type: string
+        type: array
+      change_summary:
         type: string
-      doc_type:
+      code:
         type: string
-      document_version:
+      definition:
+        type: string
+      effective_from:
+        type: string
+      effective_to:
+        type: string
+      example:
         type: string
       name:
         type: string
-      source_org:
+      note:
+        type: string
+      owner_domain_id:
+        type: integer
+      related_ids:
+        items:
+          type: integer
+        type: array
+      scope_type:
+        enum:
+        - tenant_common
+        - domain
+        type: string
+      steward_id:
+        type: integer
+      tags:
+        items:
+          type: string
+        type: array
+    required:
+    - change_summary
+    - code
+    - definition
+    - name
+    - scope_type
+    type: object
+  github_com_addp_standard_internal_models.CreateGlossaryRevisionRequest:
+    properties:
+      change_summary:
         type: string
       version:
+        minimum: 1
         type: integer
     required:
+    - change_summary
+    - version
+    type: object
+  github_com_addp_standard_internal_models.CreateLinkedDocumentRequest:
+    properties:
+      change_summary:
+        type: string
+      code:
+        type: string
+      description:
+        type: string
+      doc_type:
+        enum:
+        - national
+        - industry
+        - internal
+        - reference
+        type: string
+      effective_from:
+        type: string
+      effective_to:
+        type: string
+      name:
+        type: string
+      owner_domain_id:
+        type: integer
+      publish_date:
+        type: string
+      scope_type:
+        enum:
+        - tenant_common
+        - domain
+        type: string
+      source_org:
+        type: string
+      steward_id:
+        type: integer
+      tags:
+        items:
+          type: string
+        type: array
+      version:
+        type: integer
+      version_label:
+        type: string
+    required:
+    - change_summary
+    - code
+    - doc_type
     - name
+    - scope_type
     - version
     type: object
   github_com_addp_standard_internal_models.CreateMetricCategoryRequest:
@@ -450,34 +605,49 @@ definitions:
     - change_summary
     - version
     type: object
-  github_com_addp_standard_internal_models.Document:
+  github_com_addp_standard_internal_models.DocumentAggregate:
     properties:
+      code:
+        type: string
       created_at:
         type: string
       created_by:
         type: integer
-      description:
-        type: string
+      current_revision:
+        $ref: '#/definitions/github_com_addp_standard_internal_models.DocumentRevision'
       doc_type:
-        description: national/industry/internal/reference
+        enum:
+        - national
+        - industry
+        - internal
+        - reference
         type: string
-      document_version:
-        type: string
-      file_key:
-        description: MinIO 存储路径
-        type: string
-      file_name:
-        type: string
-      file_size:
+      draft_revision:
+        $ref: '#/definitions/github_com_addp_standard_internal_models.DocumentRevision'
+      draft_revision_id:
         type: integer
+      has_publication_history:
+        type: boolean
       id:
         type: integer
-      name:
+      lifecycle_state:
         type: string
-      publish_date:
+      owner_domain_id:
+        type: integer
+      scope_type:
+        enum:
+        - platform
+        - tenant_common
+        - domain
         type: string
       source_org:
         type: string
+      steward_id:
+        type: integer
+      tags:
+        items:
+          type: string
+        type: array
       tenant_id:
         type: integer
       updated_at:
@@ -486,6 +656,146 @@ definitions:
         type: integer
       version:
         type: integer
+    type: object
+  github_com_addp_standard_internal_models.DocumentExtraction:
+    properties:
+      candidates:
+        items:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.DocumentExtractionCandidate'
+        type: array
+      created_at:
+        type: string
+      document_revision_id:
+        type: integer
+      id:
+        type: integer
+      requested_by:
+        type: integer
+      status:
+        enum:
+        - completed
+        type: string
+      tenant_id:
+        type: integer
+    type: object
+  github_com_addp_standard_internal_models.DocumentExtractionCandidate:
+    properties:
+      candidate_type:
+        enum:
+        - glossary
+        - element
+        - code_set
+        - metric
+        type: string
+      code:
+        type: string
+      created_at:
+        type: string
+      definition:
+        type: string
+      evidences:
+        items:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.DocumentExtractionEvidence'
+        type: array
+      extraction_id:
+        type: integer
+      id:
+        type: integer
+      name:
+        type: string
+      payload:
+        type: object
+      reviewed_at:
+        type: string
+      reviewed_by:
+        type: integer
+      status:
+        enum:
+        - pending
+        - retained
+        - rejected
+        type: string
+      updated_at:
+        type: string
+      version:
+        type: integer
+    type: object
+  github_com_addp_standard_internal_models.DocumentExtractionEvidence:
+    properties:
+      candidate_id:
+        type: integer
+      created_at:
+        type: string
+      document_revision_id:
+        type: integer
+      end_line:
+        type: integer
+      excerpt:
+        type: string
+      excerpt_hash:
+        type: string
+      id:
+        type: integer
+      section_path:
+        type: string
+      start_line:
+        type: integer
+    type: object
+  github_com_addp_standard_internal_models.DocumentRevision:
+    properties:
+      change_summary:
+        type: string
+      content_sha256:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      description:
+        type: string
+      document_id:
+        type: integer
+      effective_from:
+        type: string
+      effective_to:
+        type: string
+      file_key:
+        type: string
+      file_name:
+        type: string
+      file_size:
+        type: integer
+      id:
+        type: integer
+      media_type:
+        type: string
+      name:
+        type: string
+      publish_date:
+        type: string
+      published_at:
+        type: string
+      published_by:
+        type: integer
+      revision_no:
+        type: integer
+      status:
+        enum:
+        - draft
+        - in_review
+        - published
+        - withdrawn
+        type: string
+      submitted_at:
+        type: string
+      submitted_by:
+        type: integer
+      updated_at:
+        type: string
+      updated_by:
+        type: integer
+      version_label:
+        type: string
     type: object
   github_com_addp_standard_internal_models.ElementAggregate:
     properties:
@@ -595,34 +905,33 @@ definitions:
       value_domain_kind:
         type: string
     type: object
-  github_com_addp_standard_internal_models.Glossary:
+  github_com_addp_standard_internal_models.GlossaryAggregate:
     properties:
-      alias:
-        items:
-          type: string
-        type: array
+      code:
+        type: string
       created_at:
         type: string
       created_by:
         type: integer
-      definition:
-        type: string
-      domain_id:
+      current_revision:
+        $ref: '#/definitions/github_com_addp_standard_internal_models.GlossaryRevision'
+      draft_revision:
+        $ref: '#/definitions/github_com_addp_standard_internal_models.GlossaryRevision'
+      draft_revision_id:
         type: integer
-      example:
-        type: string
+      has_publication_history:
+        type: boolean
       id:
         type: integer
-      name:
+      lifecycle_state:
         type: string
-      note:
-        type: string
-      related_ids:
-        items:
-          type: integer
-        type: array
-      status:
-        description: draft/approved/deprecated
+      owner_domain_id:
+        type: integer
+      scope_type:
+        enum:
+        - platform
+        - tenant_common
+        - domain
         type: string
       steward_id:
         type: integer
@@ -637,6 +946,60 @@ definitions:
       updated_by:
         type: integer
       version:
+        type: integer
+    type: object
+  github_com_addp_standard_internal_models.GlossaryRevision:
+    properties:
+      alias:
+        items:
+          type: string
+        type: array
+      change_summary:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      definition:
+        type: string
+      effective_from:
+        type: string
+      effective_to:
+        type: string
+      example:
+        type: string
+      glossary_id:
+        type: integer
+      id:
+        type: integer
+      name:
+        type: string
+      note:
+        type: string
+      published_at:
+        type: string
+      published_by:
+        type: integer
+      related_ids:
+        items:
+          type: integer
+        type: array
+      revision_no:
+        type: integer
+      status:
+        enum:
+        - draft
+        - in_review
+        - published
+        - withdrawn
+        type: string
+      submitted_at:
+        type: string
+      submitted_by:
+        type: integer
+      updated_at:
+        type: string
+      updated_by:
         type: integer
     type: object
   github_com_addp_standard_internal_models.JSONB:
@@ -856,7 +1219,7 @@ definitions:
     properties:
       data:
         items:
-          $ref: '#/definitions/github_com_addp_standard_internal_models.Document'
+          $ref: '#/definitions/github_com_addp_standard_internal_models.DocumentAggregate'
         type: array
       page:
         type: integer
@@ -886,7 +1249,7 @@ definitions:
     properties:
       data:
         items:
-          $ref: '#/definitions/github_com_addp_standard_internal_models.Glossary'
+          $ref: '#/definitions/github_com_addp_standard_internal_models.GlossaryAggregate'
         type: array
       page:
         type: integer
@@ -979,6 +1342,35 @@ definitions:
       quality_rules:
         $ref: '#/definitions/github_com_addp_standard_internal_models.JSONB'
       revision_no:
+        type: integer
+    type: object
+  github_com_addp_standard_internal_models.PublishedElementReference:
+    properties:
+      code:
+        type: string
+      id:
+        type: integer
+      lifecycle_state:
+        type: string
+      name:
+        type: string
+      owner_domain_id:
+        type: integer
+      revision_id:
+        type: integer
+      revision_no:
+        type: integer
+      scope_type:
+        enum:
+        - platform
+        - tenant_common
+        - domain
+        type: string
+      status:
+        type: string
+      tenant_id:
+        type: integer
+      version:
         type: integer
     type: object
   github_com_addp_standard_internal_models.PublishedMetricDefinitionReference:
@@ -1077,7 +1469,6 @@ definitions:
       locations:
         additionalProperties:
           type: string
-        description: 'key: "element_1" / "glossary_2" / "metric_3"'
         type: object
       metric_ids:
         items:
@@ -1369,21 +1760,74 @@ definitions:
     - value_type
     - version
     type: object
+  github_com_addp_standard_internal_models.UpdateDocumentExtractionCandidateRequest:
+    properties:
+      status:
+        enum:
+        - retained
+        - rejected
+        type: string
+      version:
+        minimum: 1
+        type: integer
+    required:
+    - status
+    - version
+    type: object
   github_com_addp_standard_internal_models.UpdateDocumentRequest:
     properties:
-      description:
-        type: string
       doc_type:
+        enum:
+        - national
+        - industry
+        - internal
+        - reference
         type: string
-      document_version:
-        type: string
-      name:
+      owner_domain_id:
+        type: integer
+      scope_type:
+        enum:
+        - tenant_common
+        - domain
         type: string
       source_org:
         type: string
+      steward_id:
+        type: integer
+      tags:
+        items:
+          type: string
+        type: array
       version:
+        minimum: 1
         type: integer
     required:
+    - doc_type
+    - scope_type
+    - version
+    type: object
+  github_com_addp_standard_internal_models.UpdateDocumentRevisionRequest:
+    properties:
+      change_summary:
+        type: string
+      description:
+        type: string
+      effective_from:
+        type: string
+      effective_to:
+        type: string
+      name:
+        type: string
+      publish_date:
+        type: string
+      version:
+        minimum: 1
+        type: integer
+      version_label:
+        type: string
+    required:
+    - change_summary
+    - name
     - version
     type: object
   github_com_addp_standard_internal_models.UpdateDomainRequest:
@@ -1477,25 +1921,26 @@ definitions:
     - value_domain_kind
     - version
     type: object
-  github_com_addp_standard_internal_models.UpdateGlossaryRequest:
+  github_com_addp_standard_internal_models.UpdateGlossaryElementsRequest:
     properties:
-      alias:
-        items:
-          type: string
-        type: array
-      definition:
-        type: string
-      domain_id:
-        type: integer
       element_ids:
         items:
           type: integer
         type: array
-      example:
-        type: string
-      name:
-        type: string
-      note:
+      version:
+        minimum: 1
+        type: integer
+    required:
+    - version
+    type: object
+  github_com_addp_standard_internal_models.UpdateGlossaryRequest:
+    properties:
+      owner_domain_id:
+        type: integer
+      scope_type:
+        enum:
+        - tenant_common
+        - domain
         type: string
       steward_id:
         type: integer
@@ -1504,8 +1949,43 @@ definitions:
           type: string
         type: array
       version:
+        minimum: 1
         type: integer
     required:
+    - scope_type
+    - version
+    type: object
+  github_com_addp_standard_internal_models.UpdateGlossaryRevisionRequest:
+    properties:
+      alias:
+        items:
+          type: string
+        type: array
+      change_summary:
+        type: string
+      definition:
+        type: string
+      effective_from:
+        type: string
+      effective_to:
+        type: string
+      example:
+        type: string
+      name:
+        type: string
+      note:
+        type: string
+      related_ids:
+        items:
+          type: integer
+        type: array
+      version:
+        minimum: 1
+        type: integer
+    required:
+    - change_summary
+    - definition
+    - name
     - version
     type: object
   github_com_addp_standard_internal_models.UpdateMeasurementCategoryRequest:
@@ -2909,8 +3389,66 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - standard.collection.update
+  /document-extraction-candidates/{candidate_id}:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 裁决状态及并发版本 | Decision and concurrency version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.UpdateDocumentExtractionCandidateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_standard_internal_models.DocumentExtractionCandidate'
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 裁决文档提炼候选 | Review document extraction candidate
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.document.update
   /documents:
     get:
+      parameters:
+      - description: 适用范围 | Scope
+        enum:
+        - platform
+        - tenant_common
+        - domain
+        in: query
+        name: scope_type
+        type: string
+      - description: 归属业务域 ID | Owning domain ID
+        in: query
+        name: owner_domain_id
+        type: integer
+      - description: 修订状态 | Revision status
+        enum:
+        - draft
+        - in_review
+        - published
+        - withdrawn
+        in: query
+        name: status
+        type: string
+      - description: 生效时点（RFC3339） | Effective point in time (RFC3339)
+        in: query
+        name: as_of
+        type: string
       produces:
       - application/json
       responses:
@@ -2939,13 +3477,20 @@ paths:
       x-addp-required-permissions:
       - standard.document.read
     post:
+      parameters:
+      - description: 文档身份和首个草稿修订 | Document identity and initial draft revision
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.CreateDocumentRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/github_com_addp_standard_internal_models.Document'
+            $ref: '#/definitions/github_com_addp_standard_internal_models.DocumentAggregate'
         "401":
           description: 需要登录 | Authentication required
           schema:
@@ -2997,13 +3542,18 @@ paths:
       x-addp-required-permissions:
       - standard.document.delete
     get:
+      parameters:
+      - description: 生效时点（RFC3339） | Effective point in time (RFC3339)
+        in: query
+        name: as_of
+        type: string
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_addp_standard_internal_models.Document'
+            $ref: '#/definitions/github_com_addp_standard_internal_models.DocumentAggregate'
         "401":
           description: 需要登录 | Authentication required
           schema:
@@ -3038,7 +3588,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_addp_standard_internal_models.Document'
+            $ref: '#/definitions/github_com_addp_standard_internal_models.DocumentAggregate'
         "401":
           description: 需要登录 | Authentication required
           schema:
@@ -3065,7 +3615,7 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - standard.document.update
-  /documents/{id}/download:
+  /documents/{id}/extractions:
     get:
       produces:
       - application/json
@@ -3073,38 +3623,15 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
-        "401":
-          description: 需要登录 | Authentication required
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "403":
-          description: 无权访问 | Access denied
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "404":
-          description: Not Found
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "502":
-          description: Bad Gateway
-          schema:
-            additionalProperties:
-              type: string
-            type: object
+            items:
+              $ref: '#/definitions/github_com_addp_standard_internal_models.DocumentExtraction'
+            type: array
       security:
       - BearerAuth: []
-      summary: 下载文档文件 | Download document file
+      summary: 获取文档提炼批次 | List document extraction batches
       tags:
       - Standard
-      x-addp-auth-mode: resource_ticket
+      x-addp-auth-mode: permission
       x-addp-required-permissions:
       - standard.document.read
   /documents/{id}/mappings:
@@ -3179,7 +3706,184 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - standard.document.update
-  /documents/{id}/upload:
+  /documents/{id}/revisions:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_addp_standard_internal_models.DocumentRevision'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: 获取文档修订历史 | List document revisions
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.document.read
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 并发版本和变更说明 | Version and change summary
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.CreateDocumentRevisionRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_addp_standard_internal_models.DocumentAggregate'
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建文档草稿修订 | Create document draft revision
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.document.update
+  /documents/{id}/revisions/{revision_id}:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_standard_internal_models.DocumentRevision'
+      security:
+      - BearerAuth: []
+      summary: 获取文档修订 | Get document revision
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.document.read
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 完整草稿及并发版本 | Full draft and concurrency version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.UpdateDocumentRevisionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_standard_internal_models.DocumentAggregate'
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新文档草稿修订 | Update document draft revision
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.document.update
+  /documents/{id}/revisions/{revision_id}/extractions:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 当前资源版本 | Current resource version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.CreateDocumentExtractionRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_addp_standard_internal_models.DocumentExtraction'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 从文档修订提炼标准候选 | Extract standard candidates from document revision
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.document_extraction.create
+  /documents/{id}/revisions/{revision_id}/file:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "502":
+          description: Bad Gateway
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 下载文档文件 | Download document file
+      tags:
+      - Standard
+      x-addp-auth-mode: resource_ticket
+      x-addp-required-permissions:
+      - standard.document.read
     post:
       consumes:
       - multipart/form-data
@@ -3234,12 +3938,116 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: 上传文档文件 | Upload document file
+      summary: 上传文档修订文件 | Upload document revision file
       tags:
       - Standard
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - standard.document.update
+  /documents/{id}/revisions/{revision_id}/publish:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 当前资源版本 | Current resource version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_standard_internal_models.DocumentAggregate'
+      security:
+      - BearerAuth: []
+      summary: 发布文档修订 | Publish document revision
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.document.publish
+  /documents/{id}/revisions/{revision_id}/return:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 当前资源版本 | Current resource version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_standard_internal_models.DocumentAggregate'
+      security:
+      - BearerAuth: []
+      summary: 退回文档修订 | Return document revision to draft
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.document.publish
+  /documents/{id}/revisions/{revision_id}/submit:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 当前资源版本 | Current resource version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_standard_internal_models.DocumentAggregate'
+      security:
+      - BearerAuth: []
+      summary: 提交文档修订审核 | Submit document revision for review
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.document.update
+  /documents/{id}/revisions/{revision_id}/withdraw:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 当前资源版本 | Current resource version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_standard_internal_models.DocumentAggregate'
+      security:
+      - BearerAuth: []
+      summary: 撤回文档发布修订 | Withdraw published document revision
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.document.publish
   /domains:
     get:
       produces:
@@ -3609,7 +4417,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/github_com_addp_standard_internal_models.Document'
+              $ref: '#/definitions/github_com_addp_standard_internal_models.DocumentAggregate'
             type: array
         "401":
           description: 需要登录 | Authentication required
@@ -3991,6 +4799,41 @@ paths:
       - standard.element.publish
   /glossaries:
     get:
+      parameters:
+      - description: 关联数据元 ID | Related data element ID
+        in: query
+        name: element_id
+        type: integer
+      - description: 适用范围 | Scope
+        enum:
+        - platform
+        - tenant_common
+        - domain
+        in: query
+        name: scope_type
+        type: string
+      - description: 归属业务域 ID，仅 domain 范围适用 | Owning domain ID, only for domain scope
+        in: query
+        name: owner_domain_id
+        type: integer
+      - description: 修订状态 | Revision status
+        enum:
+        - draft
+        - in_review
+        - published
+        - withdrawn
+        in: query
+        name: status
+        type: string
+      - description: 关键字 | Keyword
+        in: query
+        name: keyword
+        type: string
+      - description: 生效时点（RFC3339，默认服务端当前时间） | Effective point in time (RFC3339, defaults
+          to server time)
+        in: query
+        name: as_of
+        type: string
       produces:
       - application/json
       responses:
@@ -3998,14 +4841,8 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/github_com_addp_standard_internal_models.PaginatedGlossaryResponse'
-        "401":
-          description: 需要登录 | Authentication required
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "403":
-          description: 无权访问 | Access denied
+        "400":
+          description: 请求无效 | Invalid request
           schema:
             additionalProperties:
               type: string
@@ -4019,29 +4856,31 @@ paths:
       x-addp-required-permissions:
       - standard.glossary.read
     post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 业务术语和首个草稿 | Glossary and initial draft
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.CreateGlossaryRequest'
       produces:
       - application/json
       responses:
-        "200":
-          description: OK
+        "201":
+          description: Created
           schema:
-            additionalProperties: true
-            type: object
-        "401":
-          description: 需要登录 | Authentication required
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "403":
-          description: 无权访问 | Access denied
+            $ref: '#/definitions/github_com_addp_standard_internal_models.GlossaryAggregate'
+        "400":
+          description: 请求无效 | Invalid request
           schema:
             additionalProperties:
               type: string
             type: object
       security:
       - BearerAuth: []
-      summary: 创建业务术语 | Create glossary
+      summary: 创建业务术语及首个草稿修订 | Create glossary with initial draft revision
       tags:
       - Standard
       x-addp-auth-mode: permission
@@ -4055,60 +4894,50 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
-        "401":
-          description: 需要登录 | Authentication required
-          schema:
             additionalProperties:
               type: string
             type: object
-        "403":
-          description: 无权访问 | Access denied
+        "409":
+          description: 存在发布历史 | Publication history exists
           schema:
             additionalProperties:
               type: string
             type: object
       security:
       - BearerAuth: []
-      summary: 删除业务术语 | Delete glossary
+      summary: 删除从未发布的业务术语 | Delete a never-published glossary
       tags:
       - Standard
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - standard.glossary.delete
     get:
+      parameters:
+      - description: 生效时点（RFC3339，默认服务端当前时间） | Effective point in time (RFC3339, defaults
+          to server time)
+        in: query
+        name: as_of
+        type: string
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
-        "401":
-          description: 需要登录 | Authentication required
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "403":
-          description: 无权访问 | Access denied
-          schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/github_com_addp_standard_internal_models.GlossaryAggregate'
       security:
       - BearerAuth: []
-      summary: 获取业务术语详情 | Get glossary detail
+      summary: 获取业务术语聚合 | Get glossary aggregate
       tags:
       - Standard
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - standard.glossary.read
     put:
+      consumes:
+      - application/json
       parameters:
-      - description: 更新业务术语及关联数据元 | Update glossary and related elements
+      - description: 归属信息及并发版本 | Ownership and concurrency version
         in: body
         name: request
         required: true
@@ -4120,20 +4949,7 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
-        "401":
-          description: 需要登录 | Authentication required
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "403":
-          description: 无权访问 | Access denied
-          schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/github_com_addp_standard_internal_models.GlossaryAggregate'
         "409":
           description: 资源版本冲突 | Resource version conflict
           schema:
@@ -4142,98 +4958,12 @@ paths:
             type: object
       security:
       - BearerAuth: []
-      summary: 更新业务术语 | Update glossary
+      summary: 更新业务术语归属信息 | Update glossary ownership
       tags:
       - Standard
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - standard.glossary.update
-  /glossaries/{id}/approve:
-    post:
-      parameters:
-      - description: 当前资源版本 | Current resource version
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/github_com_addp_standard_internal_models.VersionRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-        "401":
-          description: 需要登录 | Authentication required
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "403":
-          description: 无权访问 | Access denied
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "409":
-          description: 资源版本冲突 | Resource version conflict
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 审批业务术语 | Approve glossary
-      tags:
-      - Standard
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - standard.glossary.approve
-  /glossaries/{id}/deprecate:
-    post:
-      parameters:
-      - description: 当前资源版本 | Current resource version
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/github_com_addp_standard_internal_models.VersionRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-        "401":
-          description: 需要登录 | Authentication required
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "403":
-          description: 无权访问 | Access denied
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "409":
-          description: 资源版本冲突 | Resource version conflict
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 废弃业务术语 | Deprecate glossary
-      tags:
-      - Standard
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - standard.glossary.offline
   /glossaries/{id}/documents:
     get:
       produces:
@@ -4243,7 +4973,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/github_com_addp_standard_internal_models.Document'
+              $ref: '#/definitions/github_com_addp_standard_internal_models.DocumentAggregate'
             type: array
         "401":
           description: 需要登录 | Authentication required
@@ -4405,20 +5135,9 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
-        "401":
-          description: 需要登录 | Authentication required
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "403":
-          description: 无权访问 | Access denied
-          schema:
-            additionalProperties:
-              type: string
-            type: object
+            items:
+              $ref: '#/definitions/github_com_addp_standard_internal_models.PublishedElementReference'
+            type: array
       security:
       - BearerAuth: []
       summary: 获取术语关联的数据元 | Get element mappings of glossary
@@ -4428,6 +5147,240 @@ paths:
       x-addp-required-permissions:
       - standard.glossary.read
       - standard.element.read
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 数据元身份及并发版本 | Element identities and concurrency version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.UpdateGlossaryElementsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_standard_internal_models.GlossaryAggregate'
+        "409":
+          description: 资源版本冲突 | Resource version conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 替换术语关联的数据元 | Replace element mappings of glossary
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.glossary.update
+      - standard.element.read
+  /glossaries/{id}/revisions:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_addp_standard_internal_models.GlossaryRevision'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: 获取业务术语修订历史 | List glossary revisions
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.glossary.read
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 并发版本和变更说明 | Version and change summary
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.CreateGlossaryRevisionRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_addp_standard_internal_models.GlossaryAggregate'
+        "409":
+          description: 草稿已存在或版本冲突 | Draft exists or version conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 从最近修订创建新草稿 | Create a new glossary draft from latest revision
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.glossary.update
+  /glossaries/{id}/revisions/{revision_id}:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_standard_internal_models.GlossaryRevision'
+      security:
+      - BearerAuth: []
+      summary: 获取业务术语修订 | Get glossary revision
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.glossary.read
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 完整草稿及并发版本 | Full draft and concurrency version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.UpdateGlossaryRevisionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_standard_internal_models.GlossaryAggregate'
+        "409":
+          description: 状态或版本冲突 | State or version conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新业务术语草稿修订 | Update glossary draft revision
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.glossary.update
+  /glossaries/{id}/revisions/{revision_id}/publish:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 当前资源版本 | Current resource version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_standard_internal_models.GlossaryAggregate'
+      security:
+      - BearerAuth: []
+      summary: 发布业务术语修订 | Publish glossary revision
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.glossary.publish
+  /glossaries/{id}/revisions/{revision_id}/return:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 当前资源版本 | Current resource version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_standard_internal_models.GlossaryAggregate'
+      security:
+      - BearerAuth: []
+      summary: 退回业务术语修订 | Return glossary revision to draft
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.glossary.publish
+  /glossaries/{id}/revisions/{revision_id}/submit:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 当前资源版本 | Current resource version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_standard_internal_models.GlossaryAggregate'
+      security:
+      - BearerAuth: []
+      summary: 提交业务术语修订审核 | Submit glossary revision for review
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.glossary.update
+  /glossaries/{id}/revisions/{revision_id}/withdraw:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 当前资源版本 | Current resource version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_standard_internal_models.GlossaryAggregate'
+      security:
+      - BearerAuth: []
+      summary: 撤回业务术语发布修订 | Withdraw published glossary revision
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.glossary.publish
   /measurement-categories:
     get:
       produces:
@@ -4835,7 +5788,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/github_com_addp_standard_internal_models.Document'
+              $ref: '#/definitions/github_com_addp_standard_internal_models.DocumentAggregate'
             type: array
         "401":
           description: 需要登录 | Authentication required

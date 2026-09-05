@@ -871,6 +871,29 @@ func TestLogicalTableWritesCanonicalizeUnpartitionedMaterialization(t *testing.T
 	if _, exists := reloaded.Materialization["partition_type"]; exists {
 		t.Fatalf("persisted materialization is not canonical: %#v", reloaded.Materialization)
 	}
+
+	cleared, err := svc.UpdateLogicalTable(table.ID, 1, 1, &models.UpdateLogicalTableRequest{
+		Version: updated.Version, Name: table.Name, TableType: table.TableType, Layer: table.Layer,
+		SCDType: intPointer(0), Materialization: map[string]interface{}{
+			"target_parent_locator": " ",
+			"target_name":           "",
+			"partition_by":          "",
+			"partition_type":        "range",
+		},
+	})
+	if err != nil {
+		t.Fatalf("clear logical table materialization: %v", err)
+	}
+	if len(cleared.Materialization) != 0 {
+		t.Fatalf("cleared materialization is not canonical: %#v", cleared.Materialization)
+	}
+	reloaded, err = repository.NewLogicalTableRepository(db).GetByID(table.ID, 1)
+	if err != nil {
+		t.Fatalf("reload cleared logical table: %v", err)
+	}
+	if len(reloaded.Materialization) != 0 {
+		t.Fatalf("persisted cleared materialization is not canonical: %#v", reloaded.Materialization)
+	}
 }
 
 func TestAggregateChildrenRejectCrossTenantParentsAndTargets(t *testing.T) {

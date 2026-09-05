@@ -95,7 +95,7 @@ func postgresReadSessionQuery(ctx context.Context, db *sql.DB, path plugin.Engin
 			selectExpr = expr
 		}
 	}
-	return commonquery.ForEngine("postgresql").SelectTableSQL(selectExpr, schema, table, "", "", 0, 0), fields, postgresSpatialInfoFromFieldsWithHints(fields, opts.Hints), nil
+	return commonquery.ForDialect("postgresql").SelectTableSQL(selectExpr, schema, table, "", "", 0, 0), fields, postgresSpatialInfoFromFieldsWithHints(fields, opts.Hints), nil
 }
 
 func postgresSelectedFields(fields []datatype.FieldInfo, hints map[string]interface{}) ([]datatype.FieldInfo, error) {
@@ -149,7 +149,7 @@ func postgresSelectExprForFields(fields []datatype.FieldInfo) string {
 	if len(fields) == 0 {
 		return "*"
 	}
-	dialect := commonquery.ForEngine("postgresql")
+	dialect := commonquery.ForDialect("postgresql")
 	exprs := make([]string, 0, len(fields))
 	for _, field := range fields {
 		name := strings.TrimSpace(field.Name)
@@ -188,7 +188,7 @@ func postgresGeoJSONSelectExpr(columns []postgresColumnInfo, hints map[string]in
 			selected[field.Name] = true
 		}
 	}
-	dialect := commonquery.ForEngine("postgresql")
+	dialect := commonquery.ForDialect("postgresql")
 	exprs := make([]string, 0, len(columns))
 	for _, column := range columns {
 		if len(selected) > 0 && !selected[column.Name] {
@@ -221,7 +221,7 @@ func postgresEWKBSelectExpr(columns []postgresColumnInfo, hints map[string]inter
 			selected[field.Name] = true
 		}
 	}
-	dialect := commonquery.ForEngine("postgresql")
+	dialect := commonquery.ForDialect("postgresql")
 	exprs := make([]string, 0, len(columns))
 	for _, column := range columns {
 		if len(selected) > 0 && !selected[column.Name] {

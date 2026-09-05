@@ -20,10 +20,10 @@
 ### Engine Instance 身份与生命周期
 
 - `engine_id` 是 Engine Instance 的平台身份，不是可重定向到任意物理引擎的连接槽位。
-- 插件通过 `ConnectionIdentityFields()` 声明 Engine Instance 身份字段。PostgreSQL 一类数据库通常使用 `host + port + database`；MongoDB 使用 `host + port + user + auth_source`，其中 `database` 仅是可选初始数据库；对象存储通常使用 `endpoint`，NFS 使用 `server + export_path`。
+- 可注册插件通过 `ConnectionSpec()` 统一声明连接字段；其中 `identity=true` 的字段构成 Engine Instance 身份。PostgreSQL 一类数据库通常使用 `host + port + database`；MongoDB 使用 `host + port + user + auth_source`，其中 `database` 仅是可选初始数据库；对象存储通常使用 `endpoint`，NFS 使用 `server + export_path`。
 - 名称、描述、凭据和非身份连接参数可以原地更新；任何身份字段变化都必须创建新的 Engine Instance，不得保留原 ID 并改指向另一物理端点。
 - `engine_id` 由数据库 identity sequence 单调分配，永久保留且不得回收、复用、手工指定或通过重置 sequence 重新分配。删除 Engine Instance 不释放其 ID。
-- System 根据 `tenant scope + engine_type + ConnectionIdentityFields()` 规范化生成持久身份键。相同身份的重复注册是幂等操作：`active` 或 `disabled` 实例返回原 ID，不创建重复记录，也不绕过管理员禁用状态；`deleting` 实例拒绝注册；`deleted` 实例返回“需要恢复”的冲突，必须通过显式恢复操作继续沿用原 ID。名称相同不构成同一实例，身份字段不同必须创建新 ID。
+- System 根据 `tenant scope + engine_type + ConnectionSpec identity fields` 规范化生成持久身份键。相同身份的重复注册是幂等操作：`active` 或 `disabled` 实例返回原 ID，不创建重复记录，也不绕过管理员禁用状态；`deleting` 实例拒绝注册；`deleted` 实例返回“需要恢复”的冲突，必须通过显式恢复操作继续沿用原 ID。名称相同不构成同一实例，身份字段不同必须创建新 ID。
 - 生命周期统一为 `active`、`disabled`、`deleting`、`deleted`。业务选择器展示已注册、`active` 且目标 capability 匹配的引擎；`connection_status` 不负责隐藏选择项，而是决定其是否可选。只有 `online` 实例可建立新绑定或发起使用，离线、未知或检测中的实例保留展示并明确禁选。删除前先在原生命周期执行只读影响评估；用户确认后才进入 `deleting`，冻结新绑定和新执行并保留连接配置供权威复扫和 cleanup 使用。参与模块不可用、存在运行任务或复扫影响变化时删除必须暂停；cleanup 完成后转为 `deleted` 墓碑，保留 ID、Tenant、类型、身份键和删除审计，移除敏感凭据并退出普通列表、选择器、Runtime Descriptor 和执行路径。System 不物理删除墓碑。
 - 生命周期是平台管理意图，表示引擎实例是否被启用；连通性观测是 System 最近一次检测的运行事实，两者独立维护。连通性观测只更新 `connection_status`、`last_check_at` 和 `check_message`，不得递增 Engine Instance 聚合根 `version`，也不得改变资源 `updated_at`；否则后台巡检会使用户编辑基线无效。`active + offline` 表示实例仍被启用但当前不是可用引擎候选，不表示生命周期已自动停用。System 引擎管理清单必须继续展示该实例，供用户查看失败原因、修改连接、重新测试或删除。
 - 业务模块返回的新建任务、查询、工作流、Notebook、扫描、传输等引擎选择列表，应包含 `active + capability matched` 的注册选择项并返回 `connection_status`；只有 `active + online + capability matched` 的 Engine Instance 才是当前可执行候选。Backend 候选接口或共享选择层必须给出该判定，前端必须展示但禁用非 `online` 项；真正绑定或执行时 Backend 必须根据 System 当前事实再次校验，不得依赖前端状态。
@@ -341,7 +341,7 @@ pg.sql("SELECT * FROM public.farmland WHERE id > $1", params=[100], max_rows=100
 
 | 引擎族 | 引擎 |
 | --- | --- |
-| 表格型 | PostgreSQL、MySQL、Doris、ClickHouse、Spark SQL |
+| 表格型 | PostgreSQL、Oracle、MySQL、OceanBase、Doris、ClickHouse、Spark SQL |
 | 动态 schema 记录集合型 | MongoDB |
 | 图数据库 | Neo4j |
 | 对象存储 | MinIO、S3 |
@@ -371,7 +371,7 @@ pg.sql("SELECT * FROM public.farmland WHERE id > $1", params=[100], max_rows=100
 - Jupyter 必须由 Develop 创建受控计算会话，不向 Notebook 注入长期明文 Engine 连接，不直接返回共享 Lab 作为数据访问主路径。Notebook 只能获得按 Execution Authorization 收窄的临时访问能力。
 - Kafka topic 通过 `service -> topic` Engine Catalog 暴露；partition 只作为 ChangeStreamReader assignment、position 和 diagnostics，不进入资源树。
 - 业务 Kafka 是 System Engine；Infra Kafka 来自 ADDP 部署配置，不注册 Engine Instance，但复用相同 Kafka client/reader 底层实现。
-- SQL metadata 复用只允许在事实来源和语义一致的引擎家族内发生，例如 MySQL/Doris 共享 `information_schema` helper；PostgreSQL、ClickHouse、Spark SQL 等差异较大的实现保留在各自插件内。
+- SQL metadata 复用只允许在事实来源和语义一致的引擎家族内发生，例如 MySQL、OceanBase MySQL 模式和 Doris 共享 `information_schema` helper；PostgreSQL、ClickHouse、Spark SQL 等差异较大的实现保留在各自插件内。共享协议或 SQL 方言不改变 `engine_type`；所有方言差异必须由 `SQLQueryRuntimeProvider.SQLDialect()` 声明，上层不维护兼容引擎白名单。
 - AI 调用统一走 `InferenceRuntimeProvider` 和 `addp.inference/v1`。调用方不得直连 OpenAI、DashScope、Ollama 或其他厂商协议，也不得读取厂商 API Key。
 - 第一版只允许一个 active、平台内置且声明 `compute.inference.supported=true` 的 Inference Runtime Engine Instance。调用方必须通过 System Runtime Descriptor 精确解析该实例；零个或多个候选都明确失败，不得使用模块环境变量、固定端口、列表第一项或隐藏 fallback 选择 Runtime。
 - `compute.inference` 只声明 Runtime 支持的统一操作和输入模态，不保存动态 Provider、Deployment 或 Profile 列表；动态资源由 Inference 控制面查询。

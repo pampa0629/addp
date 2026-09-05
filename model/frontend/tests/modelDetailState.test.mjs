@@ -60,6 +60,8 @@ test('logical table materialization binds a schema locator and target name', asy
   assert.match(source, /:selectable-filter="isSchemaSelection"/)
   assert.match(source, /@update:model-value="handleTargetParentSelect"/)
   assert.match(source, /target_parent_locator/)
+  assert.match(source, /clearMaterializationConfig/)
+  assert.match(source, /model\.materialization\.clear_config/)
   assert.doesNotMatch(source, /materializationForm\.schema_name/)
   assert.doesNotMatch(source, /materializationForm\.table_name/)
 })
@@ -81,7 +83,7 @@ test('PUT payloads preserve complete nullable and zero-valued model state', () =
     { target_parent_locator: '', target_name: '', partition_by: '', partition_type: 'range' }
   ), {
     name: 'Order', domain_id: null, entity_id: 7, version: 3, table_type: 'entity', layer: 'dwd',
-    materialization: { target_parent_locator: '', target_name: '' }
+    materialization: {}
   })
 
   assert.deepEqual(buildEntityAttributeUpdateRequest({
@@ -130,10 +132,7 @@ test('DDL preview payload contains only current materialization fields', () => {
 
 test('DDL preview payload normalizes absent materialization without leaking undefined fields', () => {
   assert.deepEqual(buildDDLPreviewRequest(), {
-    materialization: {
-      target_parent_locator: '',
-      target_name: ''
-    }
+    materialization: {}
   })
 })
 

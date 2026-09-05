@@ -98,33 +98,10 @@ func EngineCatalogModel(engineType string) (plugin.EngineCatalogModelSpec, error
 	return modelProvider.EngineCatalogModel(), nil
 }
 
-// GetAllPlugins 获取所有插件信息（用于前端API）
-func GetAllPlugins() map[string]PluginInfo {
-	plugins := plugin.GetAll()
-	result := make(map[string]PluginInfo)
-
-	for dbType, p := range plugins {
-		result[dbType] = PluginInfo{
-			Type:            p.Type(),
-			DisplayName:     p.DisplayName(),
-			Origin:          p.EngineOrigin(),
-			DefaultPort:     p.DefaultPort(),
-			RequiredFields:  p.RequiredFields(),
-			SensitiveFields: p.SensitiveFields(),
-		}
-	}
-
-	return result
-}
-
-// PluginInfo 插件信息（用于API响应）
-type PluginInfo struct {
-	Type            string   `json:"type"`
-	DisplayName     string   `json:"display_name"`
-	Origin          string   `json:"origin"`
-	DefaultPort     int      `json:"default_port"`
-	RequiredFields  []string `json:"required_fields"`
-	SensitiveFields []string `json:"sensitive_fields"`
+// ListRegisterableEngineTypes returns descriptors for user-registerable engines.
+// Engine metadata and connection forms are owned by plugins rather than API/UI hard-coded lists.
+func ListRegisterableEngineTypes() ([]plugin.EngineTypeDescriptor, error) {
+	return plugin.ListEngineTypeDescriptors("general")
 }
 
 // === 连接池管理方法（供Develop模块使用）===

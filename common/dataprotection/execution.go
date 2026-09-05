@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 	"unicode/utf8"
 )
 
@@ -22,7 +23,7 @@ func ProtectDocument(document map[string]any, action string, rules []Rule) error
 		if rule.Action != action {
 			continue
 		}
-		if err := protectObjectPath(document, rule.Component.Path, rule.Decision); err != nil {
+		if err := protectObjectPath(document, rule.Component.Path, rule.Decision.Effective(time.Now().UTC())); err != nil {
 			return err
 		}
 	}

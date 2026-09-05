@@ -168,7 +168,7 @@ func validatePostgresUpsertOptions(opts plugin.TableUpsertOptions) ([]string, er
 }
 
 func postgresOnConflictClause(columns, keys []string) string {
-	dialect := commonquery.ForEngine("postgresql")
+	dialect := commonquery.ForDialect("postgresql")
 	quotedKeys := make([]string, 0, len(keys))
 	keySet := map[string]bool{}
 	for _, key := range keys {

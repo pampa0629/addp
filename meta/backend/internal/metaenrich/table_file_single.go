@@ -169,6 +169,9 @@ func EnrichSingleTableFileItem(
 	}
 	if item.DataType != datatype.Table {
 		info, err := ExtractSingleTableFileItemStrict(ctx, contentReader, connInfo, engineID, filePath, fileSize, includeAccessIndex, firstCatalogPathResolver(catalogPathFor))
+		if format.IsProviderNotApplicableError(err) {
+			return item, false, nil
+		}
 		if err != nil || info == nil {
 			return item, false, err
 		}

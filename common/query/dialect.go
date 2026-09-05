@@ -6,35 +6,41 @@ import (
 )
 
 const (
+	DialectPostgreSQL = "postgresql"
+	DialectOracle     = "oracle"
+	DialectMySQL      = "mysql"
+	DialectClickHouse = "clickhouse"
+	DialectSparkSQL   = "spark_sql"
+
 	doubleQuote = `"`
 	backtick    = "`"
 )
 
 type Dialect struct {
-	engineType string
-	quote      string
+	name  string
+	quote string
 }
 
-func ForEngine(engineType string) Dialect {
-	normalized := strings.ToLower(strings.TrimSpace(engineType))
+func ForDialect(name string) Dialect {
+	normalized := strings.ToLower(strings.TrimSpace(name))
 	switch normalized {
-	case "mysql", "doris", "clickhouse", "spark", "spark_sql":
-		return Dialect{engineType: normalized, quote: backtick}
+	case DialectMySQL, DialectClickHouse, DialectSparkSQL:
+		return Dialect{name: normalized, quote: backtick}
 	default:
-		return Dialect{engineType: normalized, quote: doubleQuote}
+		return Dialect{name: normalized, quote: doubleQuote}
 	}
 }
 
-func (d Dialect) EngineType() string {
-	return d.engineType
+func (d Dialect) Name() string {
+	return d.name
 }
 
 func (d Dialect) IsPostgreSQL() bool {
-	return d.engineType == "postgresql"
+	return d.name == DialectPostgreSQL
 }
 
 func (d Dialect) IsOracle() bool {
-	return d.engineType == "oracle"
+	return d.name == DialectOracle
 }
 
 func (d Dialect) QuoteIdentifier(identifier string) string {
@@ -49,7 +55,7 @@ func (d Dialect) QuoteIdentifier(identifier string) string {
 // position. Callers that already have bound arguments must pass the next
 // position so numbered dialects continue the existing sequence.
 func (d Dialect) Placeholder(position int) string {
-	switch SQLPlaceholderStyleForEngine(d.engineType) {
+	switch SQLPlaceholderStyleForDialect(d.name) {
 	case SQLPlaceholderDollar:
 		return fmt.Sprintf("$%d", position)
 	case SQLPlaceholderColon:
@@ -104,7 +110,7 @@ func (d Dialect) AppendPaginationSQL(query string, limit, offset int) string {
 }
 
 func PaginateQuerySQL(query string, limit, offset int) string {
-	return ForEngine("").PaginateQuerySQL(query, limit, offset)
+	return ForDialect("").PaginateQuerySQL(query, limit, offset)
 }
 
 func (d Dialect) PaginateQuerySQL(query string, limit, offset int) string {
@@ -119,8 +125,8 @@ func CountSubquerySQL(query, alias string) string {
 	return fmt.Sprintf("SELECT COUNT(*) AS total FROM (%s) AS %s", strings.TrimSpace(query), alias)
 }
 
-func SelectAllSampleSQL(engineType, namespace, table string, limit int) string {
-	dialect := ForEngine(engineType)
+func SelectAllSampleSQL(dialectName, namespace, table string, limit int) string {
+	dialect := ForDialect(dialectName)
 	query := fmt.Sprintf("SELECT *\nFROM %s", dialect.QualifiedTable(namespace, table))
 	query += strings.Replace(dialect.limitOffsetClause(limit, 0), " ", "\n", 1)
 	return query

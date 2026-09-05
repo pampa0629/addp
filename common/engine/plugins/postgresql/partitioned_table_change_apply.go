@@ -258,7 +258,7 @@ func deletePostgresRowsTx(ctx context.Context, tx *sql.Tx, schema, table string,
 	if len(rows) == 0 {
 		return nil
 	}
-	dialect := commonquery.ForEngine("postgresql")
+	dialect := commonquery.ForDialect("postgresql")
 	quotedKeys := make([]string, 0, len(keys))
 	for _, key := range keys {
 		quotedKeys = append(quotedKeys, dialect.QuoteIdentifier(key))

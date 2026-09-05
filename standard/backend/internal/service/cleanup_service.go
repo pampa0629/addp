@@ -49,6 +49,7 @@ type StandardCleanupStats struct {
 	DeprecatedGlossaries     int      `json:"deprecated_glossaries,omitempty"`
 	DeprecatedElements       int      `json:"deprecated_elements,omitempty"`
 	DeprecatedMetrics        int      `json:"deprecated_metrics,omitempty"`
+	DeprecatedDocuments      int      `json:"deprecated_documents,omitempty"`
 	DeletedRecords           int      `json:"deleted_records,omitempty"`
 	DeletedPhysicalArtifacts int      `json:"deleted_physical_artifacts,omitempty"`
 	FreedBytes               int64    `json:"freed_bytes,omitempty"`
@@ -226,6 +227,7 @@ type standardCleanupCandidates struct {
 	metricRevisions          []models.MetricDefinitionRevision
 	metricDependencies       []models.MetricDefinitionRevisionDependency
 	documents                []models.Document
+	documentRevisions        []models.DocumentRevision
 	documentElementMappings  []models.DocumentElementMapping
 	documentGlossaryMappings []models.DocumentGlossaryMapping
 	documentMetricMappings   []models.DocumentMetricMapping
@@ -342,6 +344,9 @@ func (s *CleanupService) listTenantCandidates(ctx context.Context, tenantID int6
 	}
 	documentIDs := standardDocumentIDs(candidates.documents)
 	if len(documentIDs) > 0 {
+		if err := s.db.WithContext(ctx).Where("document_id IN ?", documentIDs).Find(&candidates.documentRevisions).Error; err != nil {
+			return candidates, err
+		}
 		if err := s.db.WithContext(ctx).Where("document_id IN ?", documentIDs).Find(&candidates.documentElementMappings).Error; err != nil {
 			return candidates, err
 		}
@@ -361,13 +366,23 @@ func (s *CleanupService) listTenantCandidates(ctx context.Context, tenantID int6
 
 func (s *CleanupService) logicalCleanup(ctx context.Context, candidates standardCleanupCandidates, stats *StandardCleanupStats) {
 	for _, glossary := range candidates.glossaries {
-		if glossary.Status == "deprecated" {
+		var publishedCount int64
+		if err := s.db.WithContext(ctx).Model(&models.GlossaryRevision{}).Where("glossary_id = ? AND status = ?", glossary.ID, models.RevisionStatusPublished).Count(&publishedCount).Error; err != nil {
+			stats.Errors = append(stats.Errors, fmt.Sprintf("inspect glossary %d revisions failed: %v", glossary.ID, err))
+			continue
+		}
+		if publishedCount == 0 {
 			stats.SkippedItems++
 			continue
 		}
+		if err := s.db.WithContext(ctx).Model(&models.GlossaryRevision{}).Where("glossary_id = ? AND status = ?", glossary.ID, models.RevisionStatusPublished).
+			Update("status", models.RevisionStatusWithdrawn).Error; err != nil {
+			stats.Errors = append(stats.Errors, fmt.Sprintf("withdraw glossary %d revisions failed: %v", glossary.ID, err))
+			continue
+		}
 		if err := s.db.WithContext(ctx).Model(&models.Glossary{}).Where("id = ?", glossary.ID).
-			Updates(map[string]interface{}{"status": "deprecated", "version": gorm.Expr("version + 1")}).Error; err != nil {
-			stats.Errors = append(stats.Errors, fmt.Sprintf("deprecate glossary %d failed: %v", glossary.ID, err))
+			Update("version", gorm.Expr("version + 1")).Error; err != nil {
+			stats.Errors = append(stats.Errors, fmt.Sprintf("bump glossary %d version failed: %v", glossary.ID, err))
 			continue
 		}
 		stats.DeprecatedGlossaries++
@@ -414,10 +429,31 @@ func (s *CleanupService) logicalCleanup(ctx context.Context, candidates standard
 		}
 		stats.DeprecatedMetrics++
 	}
+	for _, document := range candidates.documents {
+		var publishedCount int64
+		if err := s.db.WithContext(ctx).Model(&models.DocumentRevision{}).Where("document_id = ? AND status = ?", document.ID, models.RevisionStatusPublished).Count(&publishedCount).Error; err != nil {
+			stats.Errors = append(stats.Errors, fmt.Sprintf("inspect document %d revisions failed: %v", document.ID, err))
+			continue
+		}
+		if publishedCount == 0 {
+			stats.SkippedItems++
+			continue
+		}
+		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if err := tx.Model(&models.DocumentRevision{}).Where("document_id = ? AND status = ?", document.ID, models.RevisionStatusPublished).Update("status", models.RevisionStatusWithdrawn).Error; err != nil {
+				return err
+			}
+			return tx.Model(&models.Document{}).Where("id = ?", document.ID).Update("version", gorm.Expr("version + 1")).Error
+		}); err != nil {
+			stats.Errors = append(stats.Errors, fmt.Sprintf("withdraw document %d revisions failed: %v", document.ID, err))
+			continue
+		}
+		stats.DeprecatedDocuments++
+	}
 }
 
 func (s *CleanupService) physicalCleanup(ctx context.Context, candidates standardCleanupCandidates, stats *StandardCleanupStats) {
-	blockedDocumentIDs := s.deleteStandardDocumentFiles(ctx, candidates.documents, stats)
+	blockedDocumentIDs := s.deleteStandardDocumentFiles(ctx, candidates.documentRevisions, stats)
 	documentsToDelete := standardDocumentsExcept(candidates.documents, blockedDocumentIDs)
 	documentElementMappingsToDelete := standardDocumentElementMappingsForDocuments(candidates.documentElementMappings, documentsToDelete)
 	documentGlossaryMappingsToDelete := standardDocumentGlossaryMappingsForDocuments(candidates.documentGlossaryMappings, documentsToDelete)
@@ -464,26 +500,26 @@ func (s *CleanupService) physicalCleanup(ctx context.Context, candidates standar
 	}
 }
 
-func (s *CleanupService) deleteStandardDocumentFiles(ctx context.Context, documents []models.Document, stats *StandardCleanupStats) map[int64]struct{} {
+func (s *CleanupService) deleteStandardDocumentFiles(ctx context.Context, revisions []models.DocumentRevision, stats *StandardCleanupStats) map[int64]struct{} {
 	blockedDocumentIDs := make(map[int64]struct{})
-	for _, doc := range documents {
-		if doc.FileKey == "" {
+	for _, revision := range revisions {
+		if revision.FileKey == "" {
 			continue
 		}
 		if s.minioClient == nil {
-			stats.Errors = append(stats.Errors, fmt.Sprintf("delete document file %s failed: minio client is not configured", doc.FileKey))
+			stats.Errors = append(stats.Errors, fmt.Sprintf("delete document file %s failed: minio client is not configured", revision.FileKey))
 			stats.SkippedItems++
-			blockedDocumentIDs[doc.ID] = struct{}{}
+			blockedDocumentIDs[revision.DocumentID] = struct{}{}
 			continue
 		}
-		if err := s.minioClient.RemoveObject(ctx, minioBucket, doc.FileKey, minio.RemoveObjectOptions{}); err != nil {
-			stats.Errors = append(stats.Errors, fmt.Sprintf("delete document file %s failed: %v", doc.FileKey, err))
+		if err := s.minioClient.RemoveObject(ctx, minioBucket, revision.FileKey, minio.RemoveObjectOptions{}); err != nil {
+			stats.Errors = append(stats.Errors, fmt.Sprintf("delete document file %s failed: %v", revision.FileKey, err))
 			stats.SkippedItems++
-			blockedDocumentIDs[doc.ID] = struct{}{}
+			blockedDocumentIDs[revision.DocumentID] = struct{}{}
 			continue
 		}
 		stats.DeletedPhysicalArtifacts++
-		stats.FreedBytes += doc.FileSize
+		stats.FreedBytes += revision.FileSize
 	}
 	return blockedDocumentIDs
 }
@@ -645,12 +681,12 @@ func standardExecuteSummary(stats *StandardCleanupStats) events.CleanupResultSum
 	if stats == nil {
 		return events.CleanupResultSummary{RiskLevel: "low"}
 	}
-	affected := stats.DeprecatedGlossaries + stats.DeprecatedElements + stats.DeprecatedMetrics + stats.DeletedRecords
+	affected := stats.DeprecatedGlossaries + stats.DeprecatedElements + stats.DeprecatedMetrics + stats.DeprecatedDocuments + stats.DeletedRecords
 	return events.CleanupResultSummary{
 		AffectedRecords:          affected,
 		DeletedPhysicalArtifacts: stats.DeletedPhysicalArtifacts,
 		FreedBytes:               stats.FreedBytes,
-		MarkedOutdated:           stats.DeprecatedGlossaries + stats.DeprecatedElements + stats.DeprecatedMetrics,
+		MarkedOutdated:           stats.DeprecatedGlossaries + stats.DeprecatedElements + stats.DeprecatedMetrics + stats.DeprecatedDocuments,
 		SkippedItems:             stats.SkippedItems,
 		ErrorCount:               len(stats.Errors),
 		RiskLevel:                "low",

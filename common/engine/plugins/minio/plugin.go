@@ -31,20 +31,32 @@ func (p *MinIOPlugin) EngineOrigin() string {
 	return "general"
 }
 
+func (p *MinIOPlugin) ConnectionSpec() plugin.ConnectionSpec {
+	spec := plugin.NewConnectionSpec(
+		plugin.ConnectionFieldSpec{Key: "endpoint", LabelKey: "storageEngine.endpoint", Input: plugin.ConnectionFieldText, Required: true, Identity: true, Default: "localhost:9002", PlaceholderKey: "storageEngine.endpointPlaceholder"},
+		plugin.ConnectionFieldSpec{Key: "access_key", LabelKey: "storageEngine.accessKey", Input: plugin.ConnectionFieldPassword, Required: true, Sensitive: true},
+		plugin.ConnectionFieldSpec{Key: "secret_key", LabelKey: "storageEngine.secretKey", Input: plugin.ConnectionFieldPassword, Required: true, Sensitive: true},
+		plugin.ConnectionFieldSpec{Key: "bucket", LabelKey: "storageEngine.bucket", Input: plugin.ConnectionFieldText, PlaceholderKey: "storageEngine.bucketPlaceholder"},
+		plugin.ConnectionFieldSpec{Key: "use_ssl", LabelKey: "storageEngine.useSsl", Input: plugin.ConnectionFieldBoolean, Default: false},
+	)
+	spec.DefaultPort = 9000
+	return spec
+}
+
 func (p *MinIOPlugin) DefaultPort() int {
-	return 9000
+	return p.ConnectionSpec().DefaultPortValue()
 }
 
 func (p *MinIOPlugin) RequiredFields() []string {
-	return []string{"endpoint", "access_key", "secret_key"}
+	return p.ConnectionSpec().RequiredFields()
 }
 
 func (p *MinIOPlugin) SensitiveFields() []string {
-	return []string{"access_key", "secret_key"}
+	return p.ConnectionSpec().SensitiveFields()
 }
 
 func (p *MinIOPlugin) ConnectionIdentityFields() []string {
-	return []string{"endpoint"}
+	return p.ConnectionSpec().IdentityFields()
 }
 
 func (p *MinIOPlugin) Capabilities() plugin.EngineCapabilities {

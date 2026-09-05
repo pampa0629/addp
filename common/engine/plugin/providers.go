@@ -374,6 +374,14 @@ type SQLQueryRuntimeProvider interface {
 	ExecuteSQL(ctx context.Context, connInfo ConnectionInfo, sql string, opts QueryOptions) (*QueryResult, error)
 }
 
+// ControlledReadOnlySQLProvider declares that the SQL runtime can enforce a
+// database-level read-only execution boundary. Callers must consume this
+// contract instead of maintaining engine_type allowlists.
+type ControlledReadOnlySQLProvider interface {
+	SQLQueryRuntimeProvider
+	SupportsControlledReadOnlySQL() bool
+}
+
 // ParameterizedSQLQueryRuntimeProvider explicitly declares that QueryOptions.Args
 // are bound by the driver instead of interpolated into SQL text.
 type ParameterizedSQLQueryRuntimeProvider interface {

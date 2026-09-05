@@ -107,7 +107,7 @@ func queryPostgresCRSDefinition(ctx context.Context, db *sql.DB, srid int) (*dat
 }
 
 func queryPostgresGeometryType(ctx context.Context, db *sql.DB, schema, table, column string) (string, error) {
-	dialect := commonquery.ForEngine("postgresql")
+	dialect := commonquery.ForDialect("postgresql")
 	query := fmt.Sprintf(`
 		SELECT DISTINCT ST_GeometryType(%s) AS geometry_type
 		FROM %s
@@ -139,7 +139,7 @@ func queryPostgresSpatialExtent(ctx context.Context, db *sql.DB, schema, table, 
 }
 
 func postgresSpatialExtentQuery(schema, table, column string) string {
-	dialect := commonquery.ForEngine("postgresql")
+	dialect := commonquery.ForDialect("postgresql")
 	quotedColumn := dialect.QuoteIdentifier(column)
 	return fmt.Sprintf(`
 		SELECT

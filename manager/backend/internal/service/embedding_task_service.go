@@ -187,7 +187,11 @@ func (s *EmbeddingTaskService) Execute(ctx context.Context, taskID uint, tenantI
 			errDetails = commonModels.JSONMap{"message": execErr.Error()}
 		}
 
-		s.embeddingService.finishExecution(bgCtx, executionID, int(tenantID), status, now, errDetails, statsToJSONMap(result))
+		metadata := statsToJSONMap(result)
+		if status == commonExecution.ExecutionStatusSuccess {
+			metadata = managerEmbeddingExecutionLineage(metadata, executionConfig)
+		}
+		s.embeddingService.finishExecution(bgCtx, executionID, int(tenantID), status, now, errDetails, metadata)
 
 		// 回写任务定义
 		completedAt := time.Now()

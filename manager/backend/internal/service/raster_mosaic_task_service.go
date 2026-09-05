@@ -281,6 +281,7 @@ func (s *RasterMosaicTaskService) executeRasterMosaicGeneration(
 	progress := 100
 	metadata := commonModels.JSONMap{}
 	var errDetails commonModels.JSONMap
+	var metaScanExecutionID string
 
 	cfg, err := readRasterMosaicExecutionConfig(task.Config)
 	var result *RasterMosaicExecutionResult
@@ -304,6 +305,7 @@ func (s *RasterMosaicTaskService) executeRasterMosaicGeneration(
 		var scanRun *commonExecution.TaskExecution
 		scanRun, err = s.submitRasterMosaicMetaScan(task.TenantID, cfg)
 		if err == nil && scanRun != nil {
+			metaScanExecutionID = scanRun.ExecutionID
 			metadata["meta_scan"] = commonModels.JSONMap{
 				"execution_id": scanRun.ExecutionID,
 				"status":       scanRun.Status,
@@ -312,6 +314,13 @@ func (s *RasterMosaicTaskService) executeRasterMosaicGeneration(
 				"engine_id":    cfg.Target.TargetEngineID,
 				"catalog_path": rasterMosaicDatasetCatalogPath(cfg),
 			}
+		}
+		if err == nil {
+			metadata = managerExecutionLineage(metadata, commonExecution.TaskTypeRasterMosaicGeneration,
+				[]commonExecution.LineageResourceRef{managerResourceLineageRef(managerLineageInputPort, cfg.Source.NodeLocator)},
+				[]commonExecution.LineageResourceRef{managerResourceLineageRef(managerLineageOutputPort, result.ManifestLocator)},
+				metaScanExecutionID,
+			)
 		}
 	}
 	if err != nil {

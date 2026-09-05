@@ -14,7 +14,7 @@ Metric 的指标依赖与基准指标关系通过当前 User Token 读取 `GET /
 
 - 业务域（Domain）树形组织管理
 - 标准集（StandardCollection）：跨业务域成员快照、对象级职责、审核发布和不可变治理事件
-- 业务术语（Glossary）词典：别名、定义、状态流转、关联数据元
+- 业务术语（Glossary）：以稳定身份和不可变修订统一业务语言、别名、定义、生效区间与关联数据元
 - 数据元（Element）：数据标准的核心原子对象，定义数据规格和质量规则
 - 码值集（CodeSet）：系统/自定义码值集及码值项
 - 计量单位（Unit）：按度量类别组织的计量单位
@@ -38,8 +38,8 @@ Metric 的指标依赖与基准指标关系通过当前 User Token 读取 `GET /
 - 标准对象显式保存 `scope_type=platform|tenant_common|domain`；仅 `domain` 必须指定 `owner_domain_id`。码值集不得再以“租户自定义”为由强制归属业务域。
 - StandardCollection 采用“稳定身份 + 治理配置修订 + 成员快照 + 对象级职责分配”。集合修订只审核名称、说明和成员清单，不替代成员对象自身的修订发布；StandardCategory 只承担浏览导航，两者均不得替代业务域和适用范围。
 - StandardCollectionAssignment 只绑定当前租户的 User Principal，角色固定为 `owner|maintainer|reviewer`。模块 Permission 是粗粒度门禁，Assignment 是集合对象级门禁；Owner 可管理职责分配并维护草稿，Maintainer 可编辑和提交，Reviewer 可退回和发布，且发布者不得是提交者。
-- Copilot 只生成标准候选，必须保留文档修订、页码/章节/文本片段等来源证据；人工审核发布后才成为正式标准修订。
-- Element、CodeSet 的 Scope 与归属域已统一；StandardCollection 已按上述单一路径实现；DimensionHierarchy 已整体迁入 Model。下一批拆分 MetricDefinition / MetricImplementation，再补齐文档修订、提取证据和 Catalog → Quality 落标闭环。
+- Copilot 只生成标准候选，必须保留文档修订、页码/章节/行号/文本片段等来源证据。Standard 保存提炼批次、候选和人工处置事实；`retained` 只表示保留为后续建标输入，人工创建并审核发布后才成为正式标准修订。
+- Element、CodeSet、MetricDefinition、Glossary、Document 的 Scope、归属域和修订生命周期统一；StandardCollection 已按上述单一路径实现；DimensionHierarchy 已整体迁入 Model。下一批补齐 Catalog → Quality 落标闭环。
 
 文档文件采用“新对象上传、数据库切换引用、旧对象补偿清理”的顺序。失效对象记录在 `standard.document_file_cleanups`，该表仅用于物理清理重试，不作为文档当前文件引用。
 
@@ -123,17 +123,31 @@ standard/
 
 标准集不保存 `domain_id` 或 `scope_type`，允许跨业务域组织成员。发布新集合修订会在同一事务中撤回上一已发布修订。已发布标准集不能删除；职责人员后来停用或移除时，历史职责与事件仍可读取并明确显示为不可用，但不能再被新增到职责分配。
 
-### `standard.glossaries` — 业务术语
+### `standard.glossaries` — 业务术语稳定身份
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| domain_id | int64? | 所属业务域 |
-| alias | StringArray | 别名列表 |
-| definition / example / note | text | 定义、示例、备注 |
-| status | string | `draft` / `approved` / `deprecated` |
+| code | string | Tenant 内唯一且不可变的术语编码 |
+| scope_type | string | `platform` / `tenant_common` / `domain`；租户公开写接口只允许后两者 |
+| owner_domain_id | int64? | 归属业务域；仅 `scope_type=domain` 时必填 |
 | steward_id | int64? | 数据责任人 |
-| related_ids | StringArray | 关联术语 ID 列表 |
 | tags | StringArray | 标签 |
+| draft_revision_id | int64? | 当前唯一草稿或审核中修订指针 |
+| version | int64 | 稳定身份乐观锁版本，不是业务版次 |
+
+读取聚合额外返回派生事实 `has_publication_history`。只有该值为 `false` 的从未发布术语才允许删除；Service/Repository 仍在同一事务内复核并删除身份及其草稿修订，存在 `published` 或 `withdrawn` 历史时返回 409。
+
+### `standard.glossary_revisions` — 业务术语修订
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| glossary_id / revision_no | int64 | 术语身份 / 业务修订号，组合唯一 |
+| status | string | `draft` / `in_review` / `published` / `withdrawn` |
+| name / alias | string / StringArray | 规范名称与别名列表 |
+| definition / example / note | text | 定义、示例、备注 |
+| related_ids | Int64Array | 关联术语稳定身份 ID 列表 |
+| change_summary | text | 本次修订说明 |
+| effective_from / effective_to | timestamp? | 半开生效区间 `[from,to)` |
 
 ### `standard.glossary_element_mappings` — 术语与数据元映射
 
@@ -260,17 +274,38 @@ standard/
 | from_metric_id / to_metric_id | int64 | 依赖关系方向 |
 | coefficient | float? | 权重系数（可选） |
 
-### `standard.documents` — 当前标准文档实现（待拆稳定身份与修订）
+### `standard.documents` — 标准文档稳定身份
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| name | string | 文档名 |
+| code | string | Tenant 内唯一且不可变的文档编码 |
+| scope_type | string | `platform` / `tenant_common` / `domain`；租户公开写接口只允许后两者 |
+| owner_domain_id | int64? | 归属业务域；仅 `scope_type=domain` 时必填 |
 | doc_type | string | `national` / `industry` / `internal` / `reference` |
 | source_org | string | 来源机构 |
-| document_version / publish_date | string | 文档版次 / 发布日期 |
-| version | int64 | 资源并发版本，创建时为 1，成功更新后递增 |
-| file_key | string | MinIO 存储路径（bucket: standard） |
-| file_name / file_size | string/int64 | 原始文件名 / 大小 |
+| draft_revision_id | int64? | 当前唯一草稿或审核中修订指针 |
+| version | int64 | 稳定身份乐观锁版本，不是文档业务版次 |
+| lifecycle_state | string | `active` / `deleting` |
+
+### `standard.document_revisions` — 标准文档修订
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| document_id / revision_no | int64 | 文档稳定身份 / 业务修订号，组合唯一 |
+| status | string | `draft` / `in_review` / `published` / `withdrawn` |
+| name / version_label | string | 本修订文档名 / 来源文档标注版次 |
+| publish_date / description | date? / text | 来源发布日期与说明 |
+| file_key / file_name / file_size | mixed | 本修订不可变文件快照；对象存储 bucket 为 `standard` |
+| media_type / content_sha256 | string | 文件媒体类型与内容摘要 |
+| change_summary | text | 本次修订说明 |
+| effective_from / effective_to | timestamp? | 半开生效区间 `[from,to)` |
+
+### `standard.document_extractions`、`standard.document_extraction_candidates` 与 `standard.document_extraction_evidences`
+
+- 提炼批次固定引用一个带 Markdown 文件的 `document_revision_id`；重复提炼新建批次，不覆盖历史。
+- Copilot 仅返回 `glossary`、`element`、`code_set`、`metric` 候选及证据坐标；Standard 验证证据属于输入修订后持久化。
+- 候选状态固定为 `pending`、`retained`、`rejected`；处置使用候选自己的并发 `version`，`retained` 不会自动创建或发布正式标准。
+- 每条证据保存章节、起止行、原文摘录与 SHA-256，始终引用确定的文档修订。
 
 ### `standard.document_*_mappings` — 文档关联
 
@@ -300,11 +335,15 @@ GET /api/v1/standard/collection-user-candidates
 
 ### 业务术语
 ```
-GET/POST /api/v1/standard/glossaries
-GET/PUT/DELETE /api/v1/standard/glossaries/:id
-POST /api/v1/standard/glossaries/:id/approve     # 草稿→已发布
-POST /api/v1/standard/glossaries/:id/deprecate   # 已发布→已弃用
-GET/PUT /api/v1/standard/glossaries/:id/elements # 关联数据元
+GET/POST /api/v1/standard/glossaries                 # 创建稳定身份时同时创建首个草稿
+GET/PUT/DELETE /api/v1/standard/glossaries/:id       # PUT 只更新适用范围、归属域、责任人和标签
+GET/POST /api/v1/standard/glossaries/:id/revisions
+GET/PUT /api/v1/standard/glossaries/:id/revisions/:revision_id
+POST /api/v1/standard/glossaries/:id/revisions/:revision_id/submit
+POST /api/v1/standard/glossaries/:id/revisions/:revision_id/return
+POST /api/v1/standard/glossaries/:id/revisions/:revision_id/publish
+POST /api/v1/standard/glossaries/:id/revisions/:revision_id/withdraw
+GET/PUT /api/v1/standard/glossaries/:id/elements      # 关联数据元稳定身份
 ```
 
 ### 数据元
@@ -361,9 +400,18 @@ POST /api/v1/standard/runtime/catalog-references/resolve
 ### 标准文档
 ```
 GET/POST /api/v1/standard/documents
-GET/PUT/DELETE /api/v1/standard/documents/:id
-POST /api/v1/standard/documents/:id/upload    # 上传文件到 MinIO
-GET /api/v1/standard/documents/:id/download   # 从 MinIO 下载
+GET/PUT/DELETE /api/v1/standard/documents/:id # PUT 只更新适用范围、归属域、类型和来源机构
+GET/POST /api/v1/standard/documents/:id/revisions
+GET/PUT /api/v1/standard/documents/:id/revisions/:revision_id
+POST /api/v1/standard/documents/:id/revisions/:revision_id/submit
+POST /api/v1/standard/documents/:id/revisions/:revision_id/return
+POST /api/v1/standard/documents/:id/revisions/:revision_id/publish
+POST /api/v1/standard/documents/:id/revisions/:revision_id/withdraw
+POST /api/v1/standard/documents/:id/revisions/:revision_id/file # 上传或替换草稿修订文件
+GET /api/v1/standard/documents/:id/revisions/:revision_id/file # 下载确定修订文件
+POST /api/v1/standard/documents/:id/revisions/:revision_id/extractions # Copilot 提炼
+GET /api/v1/standard/documents/:id/extractions
+PUT /api/v1/standard/document-extraction-candidates/:candidate_id # retained/rejected 人工处置
 GET/PUT /api/v1/standard/documents/:id/mappings # 多维关联（数据元/术语/指标）
 ```
 
@@ -390,6 +438,7 @@ GET/PUT /api/v1/standard/documents/:id/mappings # 多维关联（数据元/术�
 **依赖**:
 - **System 模块**: JWT 认证；标准集职责候选与人员状态通过 `tenant.standard_runtime` 的 `iam.tenant_membership.read` 服务身份解析（`SYSTEM_URL`）
 - **Model 模块**: 删除业务域、数据元和指标定义前冻结 Model 标准引用删除屏障并执行权威影响扫描（`MODEL_URL`）；维度层级是 Model 本地聚合
+- **Copilot 模块**: Standard 使用当前 Tenant 的 `addp-standard` Service Access Token 调用候选提炼端点（`COPILOT_URL`）；Copilot 不回写 Standard 数据库
 - **MinIO**: 标准文档文件存储（bucket: `standard`）
 
 **被依赖**（其他模块调用 Standard 的 API）:
@@ -409,6 +458,7 @@ Standard 是以下第一批 Permission 的唯一 owner：
 - `standard.catalog.read`（仅 `addp-catalog` 的 `tenant.catalog_runtime`）
 - `standard.code_set.*`
 - `standard.document.*`
+- `standard.document_extraction.create`
 - `standard.glossary.*`
 - `standard.unit.*`
 
@@ -431,7 +481,7 @@ composite（复合指标）
   └─ 修订中包含一个或多个 component 依赖，发布时冻结各依赖修订
 ```
 
-### 数据元与码值集的修订状态流转
+### 业务术语、数据元、码值集、指标定义与标准文档的修订状态流转
 
 ```
 draft → in_review → published → withdrawn
@@ -444,7 +494,7 @@ draft → in_review → published → withdrawn
 - 当前生效修订不是持久化指针。Standard 按 `[effective_from, effective_to)` 和请求的 `as_of` 动态解析，未传 `as_of` 时使用服务端当前时间。
 - 同一稳定身份的已发布修订生效区间不得重叠。发布新修订时，服务端可以在同一事务中把前一条开放区间的 `effective_to` 收口到新修订的 `effective_from`；除此之外不得修改已发布定义。
 - `withdrawn` 用于撤回错误发布，不代表创建新版本；稳定身份仍保留历史。
-- 数据元与码值集稳定身份各自最多持有一个草稿，可以有多个区间不重叠的已发布修订。
+- 业务术语、数据元、码值集、指标定义与标准文档稳定身份各自最多持有一个草稿，可以有多个区间不重叠的已发布修订。
 
 ### 标准集审核与职责边界
 

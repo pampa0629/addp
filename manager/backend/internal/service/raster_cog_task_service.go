@@ -291,6 +291,12 @@ func (s *RasterCOGTaskService) runRasterCOGGeneration(ctx context.Context, task 
 			}
 		}
 	} else if rasterCOG != nil {
+		if outputRef, lineageErr := managerInfraObjectLineageRef(buildResult.StorageRef, s.bucket); lineageErr == nil {
+			metadata = managerExecutionLineage(metadata, commonExecution.TaskTypeRasterCOGGeneration,
+				[]commonExecution.LineageResourceRef{managerItemLineageRef(execCfg.Target.Locator, execCfg.Target.ItemFingerprint, execCfg.Target.ItemID)},
+				[]commonExecution.LineageResourceRef{outputRef},
+			)
+		}
 		resultFields = map[string]interface{}{
 			"status":            models.RasterCOGStatusReady,
 			"error_message":     "",

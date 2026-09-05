@@ -16,6 +16,7 @@ import (
 
 type protectionCandidate struct {
 	AssessmentID             string
+	AssessmentRevision       int64
 	SensitiveDataTypeID      int64
 	SecurityClassificationID int64
 	SecurityGradeID          int64
@@ -65,7 +66,7 @@ func compileProtectionProjections(tx *gorm.DB, enrollment models.ProtectionEnrol
 				continue
 			}
 			candidates[assessment.ComponentKey] = protectionCandidate{
-				AssessmentID: assessment.ID, SensitiveDataTypeID: revision.SensitiveDataTypeID,
+				AssessmentID: assessment.ID, AssessmentRevision: revision.Revision, SensitiveDataTypeID: revision.SensitiveDataTypeID,
 				SecurityClassificationID: revision.SecurityClassificationID, SecurityGradeID: revision.SecurityGradeID,
 				Component: revision.Component, Formal: true,
 			}
@@ -113,13 +114,29 @@ func compileProtectionProjections(tx *gorm.DB, enrollment models.ProtectionEnrol
 		if err != nil {
 			return err
 		}
+		managerPreviewDecision, err := applyProtectionExemption(tx, enrollment.TenantID, candidate.AssessmentID, candidate.AssessmentRevision, "manager", managerPreviewAction, managerDecision, now)
+		if err != nil {
+			return err
+		}
+		developDecision, err := applyProtectionExemption(tx, enrollment.TenantID, candidate.AssessmentID, candidate.AssessmentRevision, "develop", developQueryAction, baselineDecision, now)
+		if err != nil {
+			return err
+		}
+		serviceDecision, err := applyProtectionExemption(tx, enrollment.TenantID, candidate.AssessmentID, candidate.AssessmentRevision, "service", serviceExecuteAction, baselineDecision, now)
+		if err != nil {
+			return err
+		}
+		transferDecision, err := applyProtectionExemption(tx, enrollment.TenantID, candidate.AssessmentID, candidate.AssessmentRevision, "transfer", transferExportAction, baselineDecision, now)
+		if err != nil {
+			return err
+		}
 		managerRules = append(managerRules,
-			dataprotection.Rule{Action: managerPreviewAction, Component: candidate.Component, Decision: managerDecision},
+			dataprotection.Rule{Action: managerPreviewAction, Component: candidate.Component, Decision: managerPreviewDecision},
 			dataprotection.Rule{Action: managerProfileAction, Component: candidate.Component, Decision: profileDecision},
 		)
-		developRules = append(developRules, dataprotection.Rule{Action: developQueryAction, Component: candidate.Component, Decision: baselineDecision})
-		serviceRules = append(serviceRules, dataprotection.Rule{Action: serviceExecuteAction, Component: candidate.Component, Decision: baselineDecision})
-		transferRules = append(transferRules, dataprotection.Rule{Action: transferExportAction, Component: candidate.Component, Decision: baselineDecision})
+		developRules = append(developRules, dataprotection.Rule{Action: developQueryAction, Component: candidate.Component, Decision: developDecision})
+		serviceRules = append(serviceRules, dataprotection.Rule{Action: serviceExecuteAction, Component: candidate.Component, Decision: serviceDecision})
+		transferRules = append(transferRules, dataprotection.Rule{Action: transferExportAction, Component: candidate.Component, Decision: transferDecision})
 	}
 	for _, consumerOwner := range consumerOwners {
 		var rules []dataprotection.Rule
@@ -223,7 +240,7 @@ func resolveProtectionCandidateFromFacts(
 			return protectionCandidate{}, false, models.FindingDecisionRevoked, models.FindingGovernanceAssessment
 		}
 		return protectionCandidate{
-			AssessmentID: assessment.ID, SensitiveDataTypeID: revision.SensitiveDataTypeID,
+			AssessmentID: assessment.ID, AssessmentRevision: revision.Revision, SensitiveDataTypeID: revision.SensitiveDataTypeID,
 			SecurityClassificationID: revision.SecurityClassificationID, SecurityGradeID: revision.SecurityGradeID,
 			Component: finding.Component, Formal: true,
 		}, true, models.FindingDecisionFormal, models.FindingGovernanceAssessment
@@ -288,6 +305,30 @@ func applyManagerPolicy(tx *gorm.DB, tenantID int64, assessmentID string, baseli
 		return baseline, nil
 	}
 	return dataprotection.Decision{Effect: revision.Effect, InvalidValueEffect: revision.Effect}, nil
+}
+
+func applyProtectionExemption(tx *gorm.DB, tenantID int64, assessmentID string, assessmentRevision int64, consumerOwner, action string, fallback dataprotection.Decision, now time.Time) (dataprotection.Decision, error) {
+	if assessmentID == "" {
+		return fallback, nil
+	}
+	var exemption models.ProtectionExemption
+	err := tx.Where("tenant_id = ? AND assessment_id = ? AND consumer_owner = ? AND action = ?", tenantID, assessmentID, consumerOwner, action).First(&exemption).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) || (err == nil && exemption.State == models.ProtectionExemptionStateRevoked) {
+		return fallback, nil
+	}
+	if err != nil {
+		return dataprotection.Decision{}, err
+	}
+	var revision models.ProtectionExemptionRevision
+	if err := tx.Where("tenant_id = ? AND exemption_id = ? AND revision = ?", tenantID, exemption.ID, exemption.CurrentRevision).First(&revision).Error; err != nil {
+		return dataprotection.Decision{}, err
+	}
+	if revision.State != models.ProtectionExemptionStateActive || revision.AssessmentRevision != assessmentRevision || !now.Before(revision.ExpiresAt) {
+		return fallback, nil
+	}
+	validUntil := revision.ExpiresAt.UTC()
+	fallbackCopy := fallback
+	return dataprotection.Decision{Effect: dataprotection.EffectAllow, ValidUntil: &validUntil, Fallback: &fallbackCopy}, nil
 }
 
 func protectionEffectRank(effect string) int {

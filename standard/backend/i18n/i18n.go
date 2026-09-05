@@ -54,6 +54,11 @@ const (
 	MsgDocumentFileDownloadFailed             = "standard.document.file_download_failed"
 	MsgDocumentFileCleanupFailed              = "standard.document.file_cleanup_failed"
 	MsgDocumentFileNameInvalid                = "standard.document.file_name_invalid"
+	MsgDocumentFileRequired                   = "standard.document.file_required"
+	MsgDocumentExtractionUnsupported          = "standard.document.extraction_unsupported"
+	MsgDocumentExtractionInvalid              = "standard.document.extraction_invalid"
+	MsgDocumentCopilotUnavailable             = "standard.document.copilot_unavailable"
+	MsgDocumentPublicationHistory             = "standard.document.publication_history"
 )
 
 // Domain
@@ -64,7 +69,8 @@ const (
 
 // Glossary
 const (
-	MsgGlossaryNotFound = "standard.glossary.not_found"
+	MsgGlossaryNotFound           = "standard.glossary.not_found"
+	MsgGlossaryPublicationHistory = "standard.glossary.publication_history"
 )
 
 // Element

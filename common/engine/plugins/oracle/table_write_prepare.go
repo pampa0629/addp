@@ -73,7 +73,7 @@ func (p *OraclePlugin) DeleteResource(ctx context.Context, connInfo plugin.Conne
 		return err
 	}
 	if exists {
-		qualified := commonquery.ForEngine("oracle").QualifiedTable(schema, table)
+		qualified := commonquery.ForDialect("oracle").QualifiedTable(schema, table)
 		if _, err := db.ExecContext(ctx, "DROP TABLE "+qualified+" PURGE"); err != nil {
 			return fmt.Errorf("drop Oracle table %s.%s: %w", schema, table, err)
 		}
@@ -235,7 +235,7 @@ func ensureOracleSpatialIndex(ctx context.Context, db *sql.DB, schema, table, co
 	if count > 0 {
 		return nil
 	}
-	dialect := commonquery.ForEngine("oracle")
+	dialect := commonquery.ForDialect("oracle")
 	indexName := oracleSpatialIndexName(schema, table, column)
 	statement := "CREATE INDEX " + dialect.QuoteIdentifier(indexName) + " ON " +
 		dialect.QualifiedTable(schema, table) + " (" + dialect.QuoteIdentifier(column) + ") " +

@@ -32,20 +32,32 @@ func (p *S3Plugin) EngineOrigin() string {
 	return "general"
 }
 
+func (p *S3Plugin) ConnectionSpec() plugin.ConnectionSpec {
+	spec := plugin.NewConnectionSpec(
+		plugin.ConnectionFieldSpec{Key: "endpoint", LabelKey: "storageEngine.endpoint", Input: plugin.ConnectionFieldText, Required: true, Identity: true, Default: "s3.amazonaws.com", PlaceholderKey: "storageEngine.endpointPlaceholder"},
+		plugin.ConnectionFieldSpec{Key: "access_key", LabelKey: "storageEngine.accessKey", Input: plugin.ConnectionFieldPassword, Required: true, Sensitive: true},
+		plugin.ConnectionFieldSpec{Key: "secret_key", LabelKey: "storageEngine.secretKey", Input: plugin.ConnectionFieldPassword, Required: true, Sensitive: true},
+		plugin.ConnectionFieldSpec{Key: "bucket", LabelKey: "storageEngine.bucket", Input: plugin.ConnectionFieldText, PlaceholderKey: "storageEngine.bucketPlaceholder"},
+		plugin.ConnectionFieldSpec{Key: "use_ssl", LabelKey: "storageEngine.useSsl", Input: plugin.ConnectionFieldBoolean, Default: true},
+	)
+	spec.DefaultPort = 443
+	return spec
+}
+
 func (p *S3Plugin) DefaultPort() int {
-	return 443 // S3 默认使用 HTTPS
+	return p.ConnectionSpec().DefaultPortValue()
 }
 
 func (p *S3Plugin) RequiredFields() []string {
-	return []string{"endpoint", "access_key", "secret_key"}
+	return p.ConnectionSpec().RequiredFields()
 }
 
 func (p *S3Plugin) SensitiveFields() []string {
-	return []string{"access_key", "secret_key"}
+	return p.ConnectionSpec().SensitiveFields()
 }
 
 func (p *S3Plugin) ConnectionIdentityFields() []string {
-	return []string{"endpoint"}
+	return p.ConnectionSpec().IdentityFields()
 }
 
 func (p *S3Plugin) Capabilities() plugin.EngineCapabilities {

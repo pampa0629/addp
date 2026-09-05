@@ -181,7 +181,11 @@ func (s *EmbeddingService) CreateAdhocExecution(ctx context.Context, tenantID, u
 			status = commonExecution.ExecutionStatusFailed
 			errDetails = commonModels.JSONMap{"message": execErr.Error()}
 		}
-		s.finishExecution(bgCtx, executionID, int(tenantID), status, now, errDetails, statsToJSONMap(stats))
+		metadata := statsToJSONMap(stats)
+		if status == commonExecution.ExecutionStatusSuccess {
+			metadata = managerEmbeddingExecutionLineage(metadata, executionConfig)
+		}
+		s.finishExecution(bgCtx, executionID, int(tenantID), status, now, errDetails, metadata)
 	}()
 
 	return &EmbeddingExecutionResponse{ExecutionID: executionID, Status: commonExecution.ExecutionStatusRunning}, nil

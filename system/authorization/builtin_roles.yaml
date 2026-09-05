@@ -1,5 +1,5 @@
 schema_version: addp.builtin_roles/v1
-manifest_version: 84
+manifest_version: 86
 roles:
   - key: platform.agent_runtime
     role_type: platform_builtin
@@ -380,6 +380,10 @@ roles:
       - security.protection_baseline.delete
       - security.protection_baseline.read
       - security.protection_baseline.update
+      - security.protection_exemption.create
+      - security.protection_exemption.delete
+      - security.protection_exemption.read
+      - security.protection_exemption.update
       - security.sensitive_data_type.create
       - security.sensitive_data_type.delete
       - security.sensitive_data_type.read
@@ -705,6 +709,10 @@ roles:
       - security.protection_baseline.delete
       - security.protection_baseline.read
       - security.protection_baseline.update
+      - security.protection_exemption.create
+      - security.protection_exemption.delete
+      - security.protection_exemption.read
+      - security.protection_exemption.update
       - security.sensitive_data_type.create
       - security.sensitive_data_type.delete
       - security.sensitive_data_type.read
@@ -722,8 +730,10 @@ roles:
       - standard.collection_assignment.update
       - standard.document.create
       - standard.document.delete
+      - standard.document.publish
       - standard.document.read
       - standard.document.update
+      - standard.document_extraction.create
       - standard.domain.create
       - standard.domain.delete
       - standard.domain.read
@@ -733,10 +743,9 @@ roles:
       - standard.element.publish
       - standard.element.read
       - standard.element.update
-      - standard.glossary.approve
       - standard.glossary.create
       - standard.glossary.delete
-      - standard.glossary.offline
+      - standard.glossary.publish
       - standard.glossary.read
       - standard.glossary.update
       - standard.metric.create
@@ -987,6 +996,7 @@ roles:
     allowed_scope_types: [tenant]
     allowed_principal_types: [service_principal]
     permissions:
+      - copilot.standard_document.execute
       - iam.tenant_membership.read
       - model.standard_reference.update
   - key: tenant.transfer_runtime

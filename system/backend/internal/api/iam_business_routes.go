@@ -58,6 +58,9 @@ func RegisterIAMMigratedBusinessRoutes(
 		}
 		enginePermissions[key] = guard
 	}
+	engineTypes := api.Group("/engine-types")
+	engineTypes.Use(runtime.Authentication, runtime.UserAccessCredential)
+	engineTypes.GET("", enginePermissions["system.engine.read"], engineHandler.ListEngineTypes)
 
 	engines := api.Group("/engines")
 	engines.Use(runtime.Authentication)

@@ -43,6 +43,13 @@ func TestMigrateAgainstPostgres(t *testing.T) {
 			value VARCHAR(200) NOT NULL, description TEXT, sort_order INTEGER, is_active BOOLEAN,
 			parent_id BIGINT, created_at TIMESTAMPTZ, updated_at TIMESTAMPTZ
 		)`,
+		`CREATE TABLE standard.glossaries (
+			id BIGSERIAL PRIMARY KEY, tenant_id BIGINT NOT NULL, domain_id BIGINT,
+			name VARCHAR(200) NOT NULL, alias JSONB, definition TEXT NOT NULL, example TEXT,
+			note TEXT, status VARCHAR(20), steward_id BIGINT, related_ids JSONB, tags JSONB,
+			created_by BIGINT NOT NULL, updated_by BIGINT, created_at TIMESTAMPTZ,
+			updated_at TIMESTAMPTZ, version BIGINT NOT NULL DEFAULT 1
+		)`,
 		`CREATE TABLE standard.elements (
 			id BIGSERIAL PRIMARY KEY, tenant_id BIGINT NOT NULL, domain_id BIGINT,
 			name VARCHAR(200) NOT NULL, code VARCHAR(100) NOT NULL, data_type VARCHAR(50) NOT NULL,
@@ -60,6 +67,8 @@ func TestMigrateAgainstPostgres(t *testing.T) {
 		 VALUES (101, 7, 501, 'gender', 'Gender', 'custom', 'Gender codes', 3)`,
 		`INSERT INTO standard.code_items (id, code_set_id, code, value, description, sort_order, is_active)
 		 VALUES (1001, 101, 'M', 'Male', 'Male gender', 1, TRUE)`,
+		`INSERT INTO standard.glossaries (id, tenant_id, domain_id, name, alias, definition, status, created_by, version, created_at)
+		 VALUES (301, 7, 501, 'Customer', '["Buyer"]'::jsonb, 'A purchasing party', 'approved', 1, 2, NOW() - INTERVAL '1 day')`,
 		`INSERT INTO standard.elements (
 			id, tenant_id, name, code, data_type, nullable, code_set_id, definition,
 			example_values, quality_rules, status, created_by, version
@@ -99,6 +108,32 @@ func TestMigrateAgainstPostgres(t *testing.T) {
 	if migrated.ElementRevisionID == 0 || migrated.ElementStatus != models.RevisionStatusPublished || migrated.CodeSetRevisionID == 0 || migrated.CodeSetStatus != models.RevisionStatusPublished || migrated.ItemLabel != "Male" {
 		t.Fatalf("migrated revision graph = %#v", migrated)
 	}
+	var migratedGlossary struct {
+		Code          string
+		ScopeType     string
+		OwnerDomainID *int64
+		RevisionID    int64
+		RevisionNo    int64
+		Status        string
+		Name          string
+	}
+	if err := tx.Raw(`SELECT g.code, g.scope_type, g.owner_domain_id, gr.id AS revision_id, gr.revision_no, gr.status, gr.name
+		FROM standard.glossaries g JOIN standard.glossary_revisions gr ON gr.glossary_id=g.id WHERE g.id=301`).Scan(&migratedGlossary).Error; err != nil {
+		t.Fatalf("load migrated glossary: %v", err)
+	}
+	if migratedGlossary.Code != "glossary_301" || migratedGlossary.ScopeType != models.StandardScopeDomain || migratedGlossary.OwnerDomainID == nil || *migratedGlossary.OwnerDomainID != 501 || migratedGlossary.RevisionID == 0 || migratedGlossary.RevisionNo != 1 || migratedGlossary.Status != models.RevisionStatusPublished || migratedGlossary.Name != "Customer" {
+		t.Fatalf("migrated glossary = %#v", migratedGlossary)
+	}
+	var newItemID int64
+	if err := tx.Raw(`INSERT INTO standard.code_set_revision_items
+		(code_set_revision_id, code, label, definition, sort_order, status)
+		VALUES (?, 'F', 'Female', 'Female gender', 2, 'active')
+		RETURNING id`, migrated.CodeSetRevisionID).Scan(&newItemID).Error; err != nil {
+		t.Fatalf("insert code set item after preserving legacy ids: %v", err)
+	}
+	if newItemID <= 1001 {
+		t.Fatalf("new code set item id = %d, want greater than preserved legacy id 1001", newItemID)
+	}
 	var elementEffectiveFrom time.Time
 	if err := tx.Raw("SELECT effective_from FROM standard.element_revisions WHERE id = ?", migrated.ElementRevisionID).Scan(&elementEffectiveFrom).Error; err != nil {
 		t.Fatalf("load migrated element effective_from: %v", err)
@@ -136,9 +171,27 @@ func TestMigrateAgainstPostgres(t *testing.T) {
 	if err := tx.RollbackTo("before_code_set_overlap").Error; err != nil {
 		t.Fatal(err)
 	}
+	var glossaryEffectiveFrom time.Time
+	if err := tx.Raw("SELECT effective_from FROM standard.glossary_revisions WHERE glossary_id = 301").Scan(&glossaryEffectiveFrom).Error; err != nil {
+		t.Fatalf("load migrated glossary effective_from: %v", err)
+	}
+	if err := tx.SavePoint("before_glossary_overlap").Error; err != nil {
+		t.Fatal(err)
+	}
+	overlappingGlossary := models.GlossaryRevision{
+		GlossaryID: 301, RevisionNo: 2, Status: models.RevisionStatusPublished,
+		Name: "Customer overlap", Definition: "overlap", ChangeSummary: "overlap",
+		EffectiveFrom: &glossaryEffectiveFrom, CreatedBy: 1,
+	}
+	if err := tx.Create(&overlappingGlossary).Error; err == nil {
+		t.Fatal("overlapping published glossary revision should be rejected")
+	}
+	if err := tx.RollbackTo("before_glossary_overlap").Error; err != nil {
+		t.Fatal(err)
+	}
 	var legacyColumns int64
 	if err := tx.Raw(`SELECT COUNT(*) FROM information_schema.columns
-		WHERE table_schema = 'standard' AND ((table_name = 'elements' AND column_name IN ('name','data_type','status','quality_rules','code_set_id')) OR (table_name = 'code_sets' AND column_name IN ('name','type','description')))`).Scan(&legacyColumns).Error; err != nil {
+		WHERE table_schema = 'standard' AND ((table_name = 'elements' AND column_name IN ('name','data_type','status','quality_rules','code_set_id')) OR (table_name = 'code_sets' AND column_name IN ('name','type','description')) OR (table_name = 'glossaries' AND column_name IN ('name','alias','definition','example','note','status','related_ids','domain_id')))`).Scan(&legacyColumns).Error; err != nil {
 		t.Fatalf("query legacy columns: %v", err)
 	}
 	if legacyColumns != 0 {
@@ -154,7 +207,7 @@ func TestMigrateAgainstPostgres(t *testing.T) {
 	}
 	var legacyOwnershipColumns int64
 	if err := tx.Raw(`SELECT COUNT(*) FROM information_schema.columns
-		WHERE table_schema = 'standard' AND table_name IN ('elements', 'code_sets') AND column_name = 'domain_id'`).Scan(&legacyOwnershipColumns).Error; err != nil {
+		WHERE table_schema = 'standard' AND table_name IN ('elements', 'code_sets', 'glossaries') AND column_name = 'domain_id'`).Scan(&legacyOwnershipColumns).Error; err != nil {
 		t.Fatalf("query legacy ownership columns: %v", err)
 	}
 	if legacyOwnershipColumns != 0 {
@@ -244,7 +297,7 @@ func TestPostgresMetricRevisionEffectiveIntervals(t *testing.T) {
 	}
 }
 
-func TestMigrateRenamesLegacyDocumentVersion(t *testing.T) {
+func TestMigrateConvertsLegacyDocumentToStableIdentityAndRevision(t *testing.T) {
 	dsn := os.Getenv("STANDARD_POSTGRES_TEST_DSN")
 	if dsn == "" {
 		t.Skip("STANDARD_POSTGRES_TEST_DSN is not set")
@@ -269,6 +322,16 @@ func TestMigrateRenamesLegacyDocumentVersion(t *testing.T) {
 		id BIGSERIAL PRIMARY KEY,
 		tenant_id BIGINT NOT NULL,
 		name VARCHAR(200) NOT NULL,
+		doc_type VARCHAR(50) NOT NULL DEFAULT 'reference',
+		source_org VARCHAR(200),
+		publish_date DATE,
+		description TEXT,
+		file_key TEXT,
+		file_name VARCHAR(255),
+		file_size BIGINT,
+		updated_by BIGINT,
+		created_at TIMESTAMPTZ,
+		updated_at TIMESTAMPTZ,
 		created_by BIGINT NOT NULL,
 		version VARCHAR(50)
 	)`).Error; err != nil {
@@ -282,30 +345,119 @@ func TestMigrateRenamesLegacyDocumentVersion(t *testing.T) {
 		t.Fatalf("Migrate() legacy documents error = %v", err)
 	}
 
-	var columns []struct {
-		ColumnName string
-		DataType   string
-	}
-	if err := tx.Raw(`SELECT column_name, data_type
+	var legacyColumns int64
+	if err := tx.Raw(`SELECT count(*)
 		FROM information_schema.columns
 		WHERE table_schema = 'standard' AND table_name = 'documents'
-		AND column_name IN ('document_version', 'version')
-		ORDER BY column_name`).Scan(&columns).Error; err != nil {
+		AND column_name IN ('name', 'document_version', 'publish_date', 'description', 'file_key', 'file_name', 'file_size')`).Scan(&legacyColumns).Error; err != nil {
 		t.Fatalf("query migrated document columns: %v", err)
 	}
-	if len(columns) != 2 || columns[0].ColumnName != "document_version" || columns[0].DataType != "character varying" || columns[1].ColumnName != "version" || columns[1].DataType != "bigint" {
-		t.Fatalf("migrated document columns = %#v", columns)
+	if legacyColumns != 0 {
+		t.Fatalf("legacy document columns remaining = %d", legacyColumns)
 	}
 
 	var migrated struct {
-		DocumentVersion string
+		Code            string
 		Version         int64
+		DraftRevisionID int64
+		Name            string
+		VersionLabel    string
+		RevisionNo      int64
+		Status          string
 	}
-	if err := tx.Raw(`SELECT document_version, version FROM standard.documents WHERE tenant_id = 7`).Scan(&migrated).Error; err != nil {
+	if err := tx.Raw(`SELECT d.code, d.version, d.draft_revision_id,
+		r.name, r.version_label, r.revision_no, r.status
+		FROM standard.documents d
+		JOIN standard.document_revisions r ON r.document_id=d.id
+		WHERE d.tenant_id = 7`).Scan(&migrated).Error; err != nil {
 		t.Fatalf("load migrated document: %v", err)
 	}
-	if migrated.DocumentVersion != "2025-R2" || migrated.Version != 1 {
-		t.Fatalf("migrated document = %#v, want document_version 2025-R2 and version 1", migrated)
+	if migrated.Code == "" || migrated.Version != 1 || migrated.DraftRevisionID == 0 || migrated.Name != "Legacy document" || migrated.VersionLabel != "2025-R2" || migrated.RevisionNo != 1 || migrated.Status != models.RevisionStatusDraft {
+		t.Fatalf("migrated document aggregate = %#v", migrated)
+	}
+}
+
+func TestPostgresDocumentRevisionAndExtractionConstraints(t *testing.T) {
+	dsn := os.Getenv("STANDARD_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("STANDARD_POSTGRES_TEST_DSN is not set")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("open postgres: %v", err)
+	}
+	if err := Migrate(db); err != nil {
+		t.Fatalf("Migrate() error = %v", err)
+	}
+
+	tenantID := time.Now().UnixNano()
+	t.Cleanup(func() {
+		_ = db.Exec("DELETE FROM standard.documents WHERE tenant_id = ?", tenantID).Error
+	})
+	invalidScope := models.Document{
+		TenantID: tenantID, ScopeType: models.StandardScopeDomain, Code: "invalid_document_scope",
+		DocType: "internal", CreatedBy: 1, LifecycleState: "active",
+	}
+	if err := db.Create(&invalidScope).Error; err == nil {
+		t.Fatal("domain-scoped document without owner_domain_id should be rejected")
+	}
+
+	document := models.Document{
+		TenantID: tenantID, ScopeType: models.StandardScopeTenantCommon, Code: "outdoor_governance_spec",
+		DocType: "internal", CreatedBy: 1, LifecycleState: "active",
+	}
+	revision := models.DocumentRevision{
+		Name: "Outdoor 业务数据治理推进方案", ChangeSummary: "initial", CreatedBy: 1,
+	}
+	repo := NewDocumentRepository(db)
+	if err := repo.Create(&document, &revision); err != nil {
+		t.Fatalf("create document aggregate: %v", err)
+	}
+
+	invalidPublished := models.DocumentRevision{
+		DocumentID: document.ID, RevisionNo: 2, Status: models.RevisionStatusPublished,
+		Name: "Missing effective time", ChangeSummary: "invalid", CreatedBy: 1,
+	}
+	if err := db.Create(&invalidPublished).Error; err == nil {
+		t.Fatal("published document revision without effective_from should be rejected")
+	}
+
+	extraction := models.DocumentExtraction{
+		TenantID: tenantID, DocumentRevisionID: revision.ID, Status: "completed", RequestedBy: 1,
+	}
+	if err := db.Create(&extraction).Error; err != nil {
+		t.Fatalf("create document extraction: %v", err)
+	}
+	candidate := models.DocumentExtractionCandidate{
+		ExtractionID: extraction.ID, CandidateType: "metric", Code: "actual_participation_count",
+		Name: "实际参加活动数", Definition: "用户实际参加的户外活动数量。", Status: "pending", Version: 1,
+	}
+	if err := db.Create(&candidate).Error; err != nil {
+		t.Fatalf("create extraction candidate: %v", err)
+	}
+	invalidEvidence := models.DocumentExtractionEvidence{
+		CandidateID: candidate.ID, DocumentRevisionID: revision.ID, SectionPath: "指标",
+		StartLine: 10, EndLine: 9, Excerpt: "invalid", ExcerptHash: "invalid",
+	}
+	if err := db.Create(&invalidEvidence).Error; err == nil {
+		t.Fatal("evidence with inverted line interval should be rejected")
+	}
+	validEvidence := models.DocumentExtractionEvidence{
+		CandidateID: candidate.ID, DocumentRevisionID: revision.ID, SectionPath: "指标",
+		StartLine: 10, EndLine: 10, Excerpt: "实际参加活动数", ExcerptHash: "fixture",
+	}
+	if err := db.Create(&validEvidence).Error; err != nil {
+		t.Fatalf("create extraction evidence: %v", err)
+	}
+	if _, err := repo.DeleteUnpublished(document.ID, tenantID); err != nil {
+		t.Fatalf("delete never-published document with extraction evidence: %v", err)
+	}
+	var evidenceCount int64
+	if err := db.Model(&models.DocumentExtractionEvidence{}).Where("candidate_id = ?", candidate.ID).Count(&evidenceCount).Error; err != nil {
+		t.Fatalf("count cascaded evidence: %v", err)
+	}
+	if evidenceCount != 0 {
+		t.Fatalf("extraction evidence count after document delete = %d, want 0", evidenceCount)
 	}
 }
 
@@ -346,7 +498,7 @@ func TestPostgresDeletePolicies(t *testing.T) {
 		t.Fatalf("delete unreferenced parent domain: %v", err)
 	}
 
-	glossary := models.Glossary{TenantID: tenantID, Name: "glossary", Definition: "delete policy", CreatedBy: 1}
+	glossary := models.Glossary{TenantID: tenantID, ScopeType: models.StandardScopeTenantCommon, Code: "delete-policy-glossary", CreatedBy: 1, LifecycleState: "active"}
 	if err := db.Create(&glossary).Error; err != nil {
 		t.Fatalf("create glossary: %v", err)
 	}
@@ -502,6 +654,50 @@ func TestPostgresElementScopeConstraint(t *testing.T) {
 	}
 	if platform.ScopeType != models.StandardScopePlatform || platform.OwnerDomainID != nil {
 		t.Fatalf("platform element ownership changed after repeated migration: %#v", platform)
+	}
+}
+
+func TestPostgresGlossaryScopeConstraint(t *testing.T) {
+	dsn := os.Getenv("STANDARD_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("STANDARD_POSTGRES_TEST_DSN is not set")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("open postgres: %v", err)
+	}
+	if err := Migrate(db); err != nil {
+		t.Fatalf("Migrate() error = %v", err)
+	}
+
+	tenantID := int64(9_000_000_004)
+	defer func() {
+		_ = db.Where("tenant_id = ?", tenantID).Delete(&models.Glossary{}).Error
+		_ = db.Where("tenant_id = ?", tenantID).Delete(&models.Domain{}).Error
+	}()
+	domain := models.Domain{TenantID: tenantID, Name: "Glossary domain", Code: "glossary-domain", CreatedBy: 1}
+	if err := db.Create(&domain).Error; err != nil {
+		t.Fatalf("create domain: %v", err)
+	}
+
+	invalid := models.Glossary{TenantID: tenantID, ScopeType: models.StandardScopeDomain, Code: "missing-owner", CreatedBy: 1, LifecycleState: "active"}
+	if err := db.Create(&invalid).Error; err == nil {
+		t.Fatal("domain-scoped glossary without owner should be rejected")
+	}
+	valid := models.Glossary{TenantID: tenantID, ScopeType: models.StandardScopeDomain, OwnerDomainID: &domain.ID, Code: "owned", CreatedBy: 1, LifecycleState: "active"}
+	if err := db.Create(&valid).Error; err != nil {
+		t.Fatalf("create domain-scoped glossary: %v", err)
+	}
+	if err := db.Model(&models.Glossary{}).Where("id = ?", valid.ID).Update("owner_domain_id", nil).Error; err == nil {
+		t.Fatal("clearing a domain-scoped glossary owner should be rejected")
+	}
+	tenantCommon := models.Glossary{TenantID: tenantID, ScopeType: models.StandardScopeTenantCommon, Code: "tenant-common", CreatedBy: 1, LifecycleState: "active"}
+	if err := db.Create(&tenantCommon).Error; err != nil {
+		t.Fatalf("create tenant-common glossary: %v", err)
+	}
+	platform := models.Glossary{TenantID: tenantID, ScopeType: models.StandardScopePlatform, Code: "platform", CreatedBy: 1, LifecycleState: "active"}
+	if err := db.Create(&platform).Error; err != nil {
+		t.Fatalf("create platform glossary: %v", err)
 	}
 }
 

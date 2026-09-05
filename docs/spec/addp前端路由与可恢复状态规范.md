@@ -129,10 +129,12 @@ Console iframe 模式下，一次用户导航只能产生一条公开历史记�
 
 共享实现必须位于 `common-frontend`。业务模块只负责：
 
-1. 定义本模块 canonical route builder。
+1. 定义本模块 canonical route 契约；只在模块内部使用的 builder 留在 owner 模块。
 2. 在用户导航时明确选择 `push` 或 `replace`。
 3. 根据当前 canonical route 加载 owner 业务对象。
 4. 删除旧参数、旧路由和直接操作父窗口的实现。
+
+当某个 owner 页面成为稳定的跨模块目标时，owner 继续定义 canonical query 契约，但跨模块调用所需的公开 route builder 必须提升到 `common-frontend` 形成唯一实现；owner 和消费模块均不得另行拼接同一路由。当前 Manager 数据探查的跨模块入口统一使用 `buildManagerDataExplorerRoute(locator)`，只传 ResourceLocator 主身份。
 
 每个迁移页面至少验证：
 

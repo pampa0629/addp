@@ -8,6 +8,7 @@
 |---|---|---|---|
 | engine | 引擎 | ADDP 连接和访问外部数据系统的能力入口。 | 例如 PostgreSQL、MinIO、NFS、Neo4j。 |
 | Oracle Engine | Oracle 引擎 | 通过 `engine_type=oracle` 登记的 Oracle 数据库 Engine Instance；普通表 Engine Catalog / 查询 / 读取与基础 Oracle Spatial（`MDSYS.SDO_GEOMETRY`、SpatialInfo、EWKB）能力以 `service_name` 所指服务为连接边界，以 schema/table 为业务路径。 | Oracle CDC 和 ArcGIS SDE 逻辑变化源分别扩展，不因共用 Oracle 连接而合并为同一能力。 |
+| OceanBase Engine | OceanBase 引擎 | 通过 `engine_type=oceanbase` 登记的 OceanBase Community Edition 数据库 Engine Instance；首版使用 MySQL 模式协议与 SQL 方言，以 database/table 为 Engine Catalog 业务路径。 | OceanBase 是独立引擎类型，不登记为 MySQL；`user` 使用 `user@tenant` 完整账号表达租户边界。MySQL 协议兼容只是插件内部复用事实。 |
 | File Geodatabase | 文件地理数据库 | ArcGIS `.gdb` 目录承载的多图层矢量容器格式；ADDP 使用 `format=filegdb + layout=whole + data_type=container` 表达，feature class / table 是容器 child。 | 内置开源数据面使用 GDAL OpenFileGDB；普通图层读写不等同 Enterprise Geodatabase、SDE 注册、拓扑或版本化支持。 |
 | Microsoft Access Database | Microsoft Access 数据库 | Microsoft Jet / Access `.mdb` 承载的通用数据库容器格式；ADDP 使用 `format=access + layout=single + data_type=container` 表达。 | `.mdb` 后缀和 `application/x-msaccess` MIME 只证明 Access 容器候选，不能证明它是 ArcGIS Personal Geodatabase。 |
 | Personal Geodatabase | 个人地理数据库 | Microsoft Access `.mdb` 承载、且经 ArcGIS PGeo 驱动确定性识别的旧 ArcGIS 地理数据库容器格式；ADDP 使用 `format=pgeo + layout=single + data_type=container` 表达。 | Meta 深度扫描从 `access` 候选精化为 `pgeo`；内置开源数据面只允许作为只读 source，通过 GDAL PGeo + unixODBC / MDB Tools 抽取，不提供 `.mdb` 写回。 |
@@ -99,6 +100,8 @@
 | standard collection assignment | 标准集职责分配 | 将当前租户中的 User Principal 以 `owner`、`maintainer` 或 `reviewer` 角色绑定到标准集。 | `owner` 管理职责分配并具备维护能力，`maintainer` 编辑和提交集合修订，`reviewer` 退回或发布；发布者不得是该修订的提交者。模块 Permission 是进入能力的粗粒度门禁，职责分配是集合对象级门禁。 |
 | standard collection event | 标准集治理事件 | 对标准集创建、草稿创建或更新、提交、退回、发布和职责替换形成的不可变审计事实。 | 事件保存操作者、关联修订、时间和最小结构化详情；它不替代修订快照，也不得因当前职责人员失效而阻断历史读取。 |
 | standard category | 标准分类 | 为标准对象提供树形浏览、筛选和导航的分类节点。 | 分类仅用于信息架构，可以按对象类型设置不同分类树；不得用分类代替业务域、标准集、权限或审核状态。 |
+| business glossary | 业务术语 | 对企业业务概念建立规范名称、别名和定义的受治理语义标准。 | 业务术语是 Standard 的稳定身份；适用范围、归属域和责任人位于稳定身份，业务定义位于不可变的业务术语修订。它不是数据字典中的物理字段说明。 |
+| business glossary revision | 业务术语修订 | 业务术语一次可审核、可发布的完整定义快照。 | 状态固定为 `draft`、`in_review`、`published`、`withdrawn`；正式引用必须能够定位具体修订，当前生效版本按生效区间动态解析。 |
 | data element | 数据元 | 对一个可复用业务数据概念的标准化定义，统一其名称、定义、表示方式、值域和责任归属。 | 数据元是 Standard 的稳定身份；业务含义和表示约束保存在不可变的数据元修订中。它不是数据库中的具体字段，也不承载安全分类分级。 |
 | data element revision | 数据元修订 | 数据元一次可审核、可发布的完整业务定义快照。 | API 与数据库使用 `revision_no` 表达业务版次；`published` 修订的业务定义不可修改，后续变更必须创建新修订。不得复用资源并发字段 `version`。 |
 | value domain | 值域 | 数据元允许取值的语义和表示约束。 | ADDP 当前只实现 `unrestricted`、`range`、`enumeration` 三类；一个数据元修订只能选择一种。暂不建立通用 ValueDomain 主资源。 |
@@ -111,7 +114,10 @@
 | metric implementation | 指标实现 | 在确定模型上实现某个指标定义的计算设计，明确粒度、事实来源、维度、连接、过滤和可执行表达式。 | 属于 Model，并冻结所依据的指标定义修订；同一指标定义可以有多个面向不同模型或引擎的实现。 |
 | dimension hierarchy | 维度层级 | 在数据模型中定义维度成员从汇总到明细的有序层次及层级字段。 | 属于 Model，而不是 Standard；层级字段可以引用已发布的数据元修订以获得统一语义。跨模型复用通过 Model 的公共/一致性维度实现。 |
 | standard document revision | 标准文档修订 | 标准来源文档一次不可变的内容快照及其版本、来源和生效信息。 | 属于 Standard。Copilot 可从修订内容提取标准候选项，但提取结果必须保留页码、章节或文本片段等证据，并经人工审核后才能发布为正式标准修订。 |
-| standard revision status | 标准修订状态 | 可正式发布的标准定义修订所共用的审核发布状态。 | 数据元、码值集、指标定义和标准文档等发布型定义统一使用 `draft`、`in_review`、`published`、`withdrawn`；`published` 只表示审核通过且定义不可变，不等同于当前生效。同一稳定身份至多有一个可编辑草稿，可以有多个生效区间不重叠的已发布修订。 |
+| standard extraction | 标准提炼批次 | Standard 针对一个确定的标准文档修订发起、由 Copilot 执行的一次候选标准提炼。 | Standard 保存批次、结果与人工处置事实；Copilot 只返回候选内容，不保存 Standard 业务状态，也不能创建或发布正式标准。重复提炼形成新批次，不覆盖旧结果。 |
+| standard extraction candidate | 标准提炼候选 | 从一个标准文档修订中识别出的潜在业务术语、数据元、码值集或指标定义。 | 候选固定引用提炼批次和来源文档修订，状态为 `pending`、`retained` 或 `rejected`；`retained` 只表示人工认为值得后续建标，仍不是正式标准身份或修订。 |
+| standard extraction evidence | 标准提炼证据 | 支撑某个标准提炼候选的不可变来源片段。 | 必须记录确定的文档修订、Markdown 章节或页码定位、行号/页码范围、原文摘录及内容摘要；证据不能只保存模型解释、置信度或可变的文档稳定身份。 |
+| standard revision status | 标准修订状态 | 可正式发布的标准定义修订所共用的审核发布状态。 | 业务术语、数据元、码值集、指标定义和标准文档等发布型定义统一使用 `draft`、`in_review`、`published`、`withdrawn`；`published` 只表示审核通过且定义不可变，不等同于当前生效。同一稳定身份至多有一个可编辑草稿，可以有多个生效区间不重叠的已发布修订。 |
 | effective standard revision | 当前生效标准修订 | 在指定业务时点满足 `effective_from <= as_of < effective_to` 的已发布修订；`effective_to` 为空表示无上界。 | Standard 按时点动态解析，不保存 `current_revision_id` 缓存；未显式传入 `as_of` 时使用服务端当前时间。同一稳定身份在任一时点至多解析出一个修订。 |
 | owning domain | 归属业务域 | 对标准对象承担定义、维护和审批责任的主要业务域。 | 仅 `domain` 范围的标准对象必须指定归属域；归属域不限制其他业务域引用。平台级对象由平台治理，租户公共对象由租户治理。 |
 | standard mapping | 标准映射 | 将实际数据资源的字段或组件与确定的数据元修订建立的可治理语义关联。 | 映射事实由 Catalog 拥有，必须记录目标组件、数据元修订、来源、置信度和审核状态；AI 只产生候选映射，不能直接形成已审核事实。 |
@@ -137,6 +143,7 @@
 | ResourceSecurityAssessment | 资源安全评估 | 对确定专业资源或组件做出的正式安全分类分级结论。 | 可由 Finding 复核确认/调整形成，也可由治理人员从 Meta 当前组件清单中人工指定；撤销通过不可变修订表达，不删除历史。Catalog 可联邦展示，但不复制或改绑该事实。 |
 | ProtectionBaseline | 保护基线 | 对敏感类型与安全等级组合规定最低保护效果的规则。 | Owner 可以执行更严结果，不得降低基线；产品页面称“默认保护规则”，强调它是未另行收紧时自动采用的完整规则，而不是等待后续配置的半成品。 |
 | ProtectionPolicy | 保护策略 | 针对一个正式资源安全评估、消费 Owner 和动作，对保护基线作显式收紧的可版本化控制面决策。 | 无显式策略时仍执行 Assessment 对应的 ProtectionBaseline；首期策略只能收紧为 `mask|suppress|deny`，不能放宽基线，也不承载授权或受控例外。策略由 Security 拥有，不在 Manager、Transfer、Develop 或 Service 中复制编辑。 |
+| ProtectionExemption | 保护豁免 | 针对一个正式资源安全评估修订、消费 Owner 和具体出口动作形成的显式、限时、可审计明文例外。 | 豁免不授予资源访问权；首期作用于 Tenant 内所有已获 Owner 动作权限的调用者，最长 30 天。到期、撤销或 Assessment 产生新修订后由同一投影规则自动回落到 ProtectionPolicy 与 ProtectionBaseline，Owner 不得设置本地豁免。 |
 | ProtectionProjection | 保护投影 | Security 为某个 Owner 出口编译的、带版本、有效期、校验和发布游标的最小可执行契约。 | Owner 后台拉取并本地执行；用户数据请求不逐次调用 Security。 |
 | protection effect | 保护效果 | Owner 服务端数据出口对返回结果执行的确定性处理结果。 | 严格度固定为 `deny > suppress > mask > allow`；受保护资源投影异常时不得退回明文。 |
 | dynamic masking | 动态遮盖 | 不改写源数据，在 Owner 服务端出口按投影将敏感值转换为可用但不暴露原值的形式。 | 例如手机号 `13661384499` 显示为 `136****4499`；浏览器不应接收原值。 |

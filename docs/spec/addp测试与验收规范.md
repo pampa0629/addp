@@ -134,6 +134,10 @@ T4 只在隔离的 ADDP 测试部署执行：
 
 企业资源目录发布类 T4 使用同一永久 PostgreSQL Engine Instance 及其 owner 生命周期入口创建的稳定表 `public.addp_online_catalog_fixture`。专用环境必须预置可引用的 Standard Domain 和 Department；首次运行可将该永久数据源对应的 `discovered` CatalogEntry 初始化为稳定 `curated` fixture，后续运行必须在验收后恢复其编目聚合。同一 suite 必须重复执行真实 Meta 扫描并证明 fingerprint 与 CatalogEntry UUID 幂等，验证 `inventory` / `governance` 视图、治理覆盖率固定维度和精确来源身份解析；真实浏览器使用同一专用 User 登录 Console，验证覆盖率页、目录详情与 Domain / Department / Engine 名称选择器，并将浏览器 warning/error 计入失败。每轮创建的 Asset 和 AssetCategory 必须经正式 API 下架、删除并证明零残留；不得直接 SQL 清理。
 
+Manager 平台内部产物血缘类 T4 使用专用 Business MinIO Fixture 和永久 MinIO Engine Instance。Fixture owner 幂等写入仓库内确定性小型 LAS 样本；suite 经 Gateway 触发真实 Meta scan，使用扫描所得的 ResourceLocator、item ID 和 fingerprint 创建并执行 `point_cloud_copc_generation`，证明 PointCloud Runtime 能从业务对象存储读取源文件、向 Manager infra MinIO 发布 COPC，并由 Manager execution 写入 `addp.lineage-facts/v1`。Monitor API 与真实浏览器必须同时展示同一输入资源和 `addp-infra://` 输出，输入可跳转 Data Explorer，输出标记为平台内部产物且不可伪装为业务 DataItem。退出路径通过 Manager 正式 API 删除结果和任务、验证对象不可再读取及本轮资源零残留；不得直接操作数据库或 infra MinIO 清理。
+
+保护豁免类 T4 必须以同一个正式 Assessment 和四个固定绑定分别覆盖 `manager/preview`、`develop/query`、`service/service_execute` 与 `transfer/export`。suite 先证明正常保护值，再经 Security 正式 API 发布限时 `allow + valid_until + fallback`，等待四个 Owner 各自确认投影并证明有效期内返回原值；到期后不得刷新 Security 投影或调用 Security 判定，必须直接从四个 Owner 的本地投影恢复到遮盖值。每轮 Service 和 Transfer 定义必须按捕获 ID 清理；Enrollment、Assessment、Exemption 聚合及不可变修订属于专用 Tenant 的长期治理与审计事实，不作为临时业务资源删除。Assessment 修订使豁免立即失效的事务语义由 Security PostgreSQL T2 覆盖，禁止为了 T4 重复运行而篡改或删除不可变审计历史。
+
 ### 5.3 数据、超时与清理
 
 T4 临时夹具优先通过 owner 正式 API 创建；正式 API 无法建立必要前置状态时，才允许 owner 提供专用测试 helper。Engine Instance 等永久身份按上一节使用预置专用 Fixture，不适用“每轮创建后删除”。跨模块 Online 场景不得以直接 SQL 作为常规夹具路线。

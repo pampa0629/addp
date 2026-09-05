@@ -89,7 +89,9 @@ business/
 │   ├── stop.sh                     # 停止服务
 │   ├── restart.sh                  # 重启服务
 │   ├── online-engine-fixture.sh    # T4 专用 PostgreSQL Fixture 生命周期
-│   └── online-workbench-mysql-fixture.sh # Workbench T4 专用只读 MySQL Fixture
+│   ├── online-workbench-mysql-fixture.sh # Workbench T4 专用只读 MySQL Fixture
+│   ├── online-pointcloud-minio-fixture.sh # Manager 血缘 T4 专用 MinIO Fixture
+│   └── online-security-transfer-fixture.sh # Security/Transfer T4 复合 Fixture
 │
 ├── postgres/                       # PostgreSQL 配置
 │   ├── init.sql                    # 数据库初始化脚本
@@ -165,6 +167,26 @@ bash scripts/start.sh
 bash scripts/online-workbench-mysql-fixture.sh start
 bash scripts/online-workbench-mysql-fixture.sh status
 bash scripts/online-workbench-mysql-fixture.sh stop
+```
+
+### scripts/online-pointcloud-minio-fixture.sh - Manager 内部产物血缘 T4 Fixture
+
+该入口只允许 `ADDP_ONLINE_HOST=1` 的 macOS 专用 Runner 使用。它通过 `business/minio` Compose service 管理独立 Business MinIO，将仓库已有的小型 `pdal_las12_format0.las` 幂等写入配置的 bucket/object，供永久 MinIO Engine Instance 扫描。脚本只接受仓库外 `ADDP_ONLINE_POINTCLOUD_MINIO_*` 变量，不读取或生成 `business/.env`，也不接触 Manager infra MinIO。个人开发环境不得调用该脚本。
+
+```bash
+bash scripts/online-pointcloud-minio-fixture.sh start
+bash scripts/online-pointcloud-minio-fixture.sh status
+bash scripts/online-pointcloud-minio-fixture.sh stop
+```
+
+### scripts/online-security-transfer-fixture.sh - Security/Transfer T4 Fixture
+
+该入口只允许 `ADDP_ONLINE_HOST=1` 的 macOS 专用 Runner 使用。它复用 PostgreSQL Online Fixture，并管理独立的 `business-mongodb`：幂等建立 3 条合成文档和只读 MongoDB 账号，同时准备固定 PostgreSQL 目标表。平台长期预置的 MongoDB Engine Instance 只能使用只读账号；root 凭据仅由 Fixture 生命周期使用。脚本不读取或生成 `business/.env`，个人开发环境不得调用。
+
+```bash
+bash scripts/online-security-transfer-fixture.sh start
+bash scripts/online-security-transfer-fixture.sh status
+bash scripts/online-security-transfer-fixture.sh stop
 ```
 
 ### mysql/test-data.sh - MySQL Spatial 测试数据

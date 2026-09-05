@@ -78,7 +78,10 @@ class OnlineGateTest(unittest.TestCase):
             {
                 "consumer-engine-recovery",
                 "enterprise-catalog-publishing",
+                "manager-internal-artifact-lineage",
                 "module-registry-recovery",
+                "security-protection-exemption",
+                "security-transfer-protection",
                 "standard-model-reference-deletion",
                 "workbench-service-consumption",
             },
@@ -128,6 +131,32 @@ class OnlineGateTest(unittest.TestCase):
                 ("system", "SYSTEM_URL"),
                 ("service", "SERVICE_URL"),
                 ("workbench", "WORKBENCH_URL"),
+            ),
+        )
+        security_suite = ONLINE_GATE.SUITES["security-transfer-protection"]
+        self.assertEqual(
+            security_suite.services,
+            (
+                ("gateway", "GATEWAY_URL"),
+                ("system", "SYSTEM_URL"),
+                ("meta", "META_URL"),
+                ("security", "SECURITY_URL"),
+                ("transfer", "TRANSFER_URL"),
+                ("manager", "MANAGER_URL"),
+            ),
+        )
+        exemption_suite = ONLINE_GATE.SUITES["security-protection-exemption"]
+        self.assertEqual(
+            exemption_suite.services,
+            (
+                ("gateway", "GATEWAY_URL"),
+                ("system", "SYSTEM_URL"),
+                ("meta", "META_URL"),
+                ("security", "SECURITY_URL"),
+                ("manager", "MANAGER_URL"),
+                ("develop", "DEVELOP_URL"),
+                ("service", "SERVICE_URL"),
+                ("transfer", "TRANSFER_URL"),
             ),
         )
 

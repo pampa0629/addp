@@ -48,21 +48,30 @@ func (p *DorisPlugin) EngineOrigin() string {
 	return "general"
 }
 
+func (p *DorisPlugin) ConnectionSpec() plugin.ConnectionSpec {
+	return plugin.NewConnectionSpec(
+		plugin.ConnectionFieldSpec{Key: "host", LabelKey: "storageEngine.host", Input: plugin.ConnectionFieldText, Required: true, Identity: true, Default: "localhost", Placeholder: "localhost"},
+		plugin.ConnectionFieldSpec{Key: "port", LabelKey: "storageEngine.port", Input: plugin.ConnectionFieldNumber, Identity: true, Default: 9030, Min: plugin.Int(1), Max: plugin.Int(65535)},
+		plugin.ConnectionFieldSpec{Key: "database", LabelKey: "storageEngine.database", Input: plugin.ConnectionFieldText, Required: true, Identity: true, PlaceholderKey: "storageEngine.databasePlaceholder"},
+		plugin.ConnectionFieldSpec{Key: "user", LabelKey: "storageEngine.username", Input: plugin.ConnectionFieldText, Required: true, Default: "root", Placeholder: "root"},
+		plugin.ConnectionFieldSpec{Key: "password", LabelKey: "storageEngine.passwordOptional", Input: plugin.ConnectionFieldPassword, Sensitive: true, HintKey: "storageEngine.hints.dorisPassword"},
+	)
+}
+
 func (p *DorisPlugin) DefaultPort() int {
-	return 9030 // Doris 默认查询端口
+	return p.ConnectionSpec().DefaultPortValue()
 }
 
 func (p *DorisPlugin) RequiredFields() []string {
-	// Doris 默认 root 用户密码为空，所以 password 不是必填
-	return []string{"host", "user", "database"}
+	return p.ConnectionSpec().RequiredFields()
 }
 
 func (p *DorisPlugin) SensitiveFields() []string {
-	return []string{"password"}
+	return p.ConnectionSpec().SensitiveFields()
 }
 
 func (p *DorisPlugin) ConnectionIdentityFields() []string {
-	return []string{"host", "port", "database"}
+	return p.ConnectionSpec().IdentityFields()
 }
 
 func (p *DorisPlugin) Capabilities() plugin.EngineCapabilities {
@@ -117,7 +126,7 @@ func (p *DorisPlugin) QueryLanguages() []string {
 }
 
 func (p *DorisPlugin) GenerateSampleQuery(ctx context.Context, connInfo plugin.ConnectionInfo, opts plugin.SampleQueryOptions) (string, string) {
-	return plugin.SampleSQLForEngineCatalogPath(p.Type(), opts.Path, 10), "sql"
+	return plugin.SampleSQLForDialectCatalogPath(p.SQLDialect(), opts.Path, 10), "sql"
 }
 
 func (p *DorisPlugin) PrepareQuery(_ context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (plugin.PreparedQuery, error) {
@@ -125,12 +134,14 @@ func (p *DorisPlugin) PrepareQuery(_ context.Context, connInfo plugin.Connection
 }
 
 func (p *DorisPlugin) SQLDialect() string {
-	return p.GetDialect()
+	return commonquery.DialectMySQL
 }
 
 func (p *DorisPlugin) SupportsParameterizedQueries() bool {
 	return true
 }
+
+func (p *DorisPlugin) SupportsControlledReadOnlySQL() bool { return true }
 
 func (p *DorisPlugin) ExecuteSQL(ctx context.Context, connInfo plugin.ConnectionInfo, sql string, opts plugin.QueryOptions) (*plugin.QueryResult, error) {
 	if opts.ReadOnly {
@@ -178,7 +189,7 @@ func (p *DorisPlugin) CreateConnectionPool(connInfo plugin.ConnectionInfo, poolC
 }
 
 // GetDialect 获取数据库方言
-func (p *DorisPlugin) GetDialect() string {
+func (p *DorisPlugin) GORMDialect() string {
 	return "mysql" // Doris 兼容 MySQL 协议
 }
 

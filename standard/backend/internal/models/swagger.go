@@ -15,11 +15,11 @@ type SuccessResponse struct {
 
 // PaginatedGlossaryResponse 业务术语分页列表响应。
 type PaginatedGlossaryResponse struct {
-	Data       []Glossary `json:"data"`
-	Total      int64      `json:"total"`
-	Page       int        `json:"page"`
-	PageSize   int        `json:"page_size"`
-	TotalPages int        `json:"total_pages"`
+	Data       []GlossaryAggregate `json:"data"`
+	Total      int64               `json:"total"`
+	Page       int                 `json:"page"`
+	PageSize   int                 `json:"page_size"`
+	TotalPages int                 `json:"total_pages"`
 }
 
 // PaginatedElementResponse 数据元分页列表响应。
@@ -51,9 +51,9 @@ type PaginatedMetricResponse struct {
 
 // PaginatedDocumentResponse 标准文档分页列表响应。
 type PaginatedDocumentResponse struct {
-	Data       []Document `json:"data"`
-	Total      int64      `json:"total"`
-	Page       int        `json:"page"`
-	PageSize   int        `json:"page_size"`
-	TotalPages int        `json:"total_pages"`
+	Data       []DocumentAggregate `json:"data"`
+	Total      int64               `json:"total"`
+	Page       int                 `json:"page"`
+	PageSize   int                 `json:"page_size"`
+	TotalPages int                 `json:"total_pages"`
 }

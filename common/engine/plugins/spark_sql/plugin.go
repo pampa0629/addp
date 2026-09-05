@@ -34,20 +34,30 @@ func (p *SparkSQLPlugin) EngineOrigin() string {
 	return "general"
 }
 
+func (p *SparkSQLPlugin) ConnectionSpec() plugin.ConnectionSpec {
+	return plugin.NewConnectionSpec(
+		plugin.ConnectionFieldSpec{Key: "host", LabelKey: "storageEngine.host", Input: plugin.ConnectionFieldText, Required: true, Identity: true, Default: "host.docker.internal", Placeholder: "host.docker.internal"},
+		plugin.ConnectionFieldSpec{Key: "port", LabelKey: "storageEngine.port", Input: plugin.ConnectionFieldNumber, Identity: true, Default: 10000, Min: plugin.Int(1), Max: plugin.Int(65535)},
+		plugin.ConnectionFieldSpec{Key: "database", LabelKey: "storageEngine.database", Input: plugin.ConnectionFieldText, Identity: true, Default: "default", Placeholder: "default"},
+		plugin.ConnectionFieldSpec{Key: "username", LabelKey: "storageEngine.username", Input: plugin.ConnectionFieldText},
+		plugin.ConnectionFieldSpec{Key: "password", LabelKey: "storageEngine.passwordOptional", Input: plugin.ConnectionFieldPassword, Sensitive: true, HintKey: "storageEngine.hints.spark"},
+	)
+}
+
 func (p *SparkSQLPlugin) DefaultPort() int {
-	return 10000 // Apache Spark Thrift Server 默认端口
+	return p.ConnectionSpec().DefaultPortValue()
 }
 
 func (p *SparkSQLPlugin) RequiredFields() []string {
-	return []string{"host"}
+	return p.ConnectionSpec().RequiredFields()
 }
 
 func (p *SparkSQLPlugin) SensitiveFields() []string {
-	return []string{"password"}
+	return p.ConnectionSpec().SensitiveFields()
 }
 
 func (p *SparkSQLPlugin) ConnectionIdentityFields() []string {
-	return []string{"host", "port", "database"}
+	return p.ConnectionSpec().IdentityFields()
 }
 
 func (p *SparkSQLPlugin) Capabilities() plugin.EngineCapabilities {
@@ -71,7 +81,7 @@ func (p *SparkSQLPlugin) QueryLanguages() []string {
 }
 
 func (p *SparkSQLPlugin) GenerateSampleQuery(ctx context.Context, connInfo plugin.ConnectionInfo, opts plugin.SampleQueryOptions) (string, string) {
-	return plugin.SampleSQLForEngineCatalogPath(p.Type(), opts.Path, 10), "sql"
+	return plugin.SampleSQLForDialectCatalogPath(p.SQLDialect(), opts.Path, 10), "sql"
 }
 
 func (p *SparkSQLPlugin) PrepareQuery(_ context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (plugin.PreparedQuery, error) {
@@ -79,8 +89,10 @@ func (p *SparkSQLPlugin) PrepareQuery(_ context.Context, connInfo plugin.Connect
 }
 
 func (p *SparkSQLPlugin) SQLDialect() string {
-	return "spark_sql"
+	return commonquery.DialectSparkSQL
 }
+
+func (p *SparkSQLPlugin) SupportsControlledReadOnlySQL() bool { return true }
 
 func (p *SparkSQLPlugin) ExecuteSQL(ctx context.Context, connInfo plugin.ConnectionInfo, sql string, opts plugin.QueryOptions) (*plugin.QueryResult, error) {
 	if opts.ReadOnly {
@@ -228,8 +240,8 @@ func (p *SparkSQLPlugin) CreateConnectionPool(connInfo plugin.ConnectionInfo, po
 }
 
 // GetDialect 获取数据库方言
-func (p *SparkSQLPlugin) GetDialect() string {
-	return p.SQLDialect()
+func (p *SparkSQLPlugin) GORMDialect() string {
+	return "spark_sql"
 }
 
 type sparkQueryFunc func(context.Context, plugin.ConnectionInfo, string) (*plugin.QueryResult, error)

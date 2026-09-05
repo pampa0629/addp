@@ -43,3 +43,13 @@ if grep -q -- '--- SKIP:' "$WORK_DIR/common-execution-postgres.log"; then
     echo "Common execution PostgreSQL gate refuses skipped tests" >&2
     exit 1
 fi
+
+ADDP_TEST_PROJECTIONSTORE_POSTGRES_DSN="$execution_dsn" \
+    go test ./dataprotection/projectionstore \
+    -run '^TestProjectionStore.*AgainstPostgres$' \
+    -count=1 -v 2>&1 | tee "$WORK_DIR/common-projectionstore-postgres.log"
+
+if grep -q -- '--- SKIP:' "$WORK_DIR/common-projectionstore-postgres.log"; then
+    echo "Common protection projection store PostgreSQL gate refuses skipped tests" >&2
+    exit 1
+fi

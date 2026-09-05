@@ -6,6 +6,7 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/format"
+	"github.com/addp/manager/internal/models"
 )
 
 const (
@@ -138,12 +139,10 @@ func documentPreviewRenderer(formatType format.FormatType) string {
 	switch formatType {
 	case format.FormatPDF:
 		return "pdf"
-	case format.FormatDOCX:
-		return "docx"
+	case format.FormatDOC, format.FormatDOCX, format.FormatRTF, format.FormatWPS:
+		return models.ObjectPreviewRendererOffice
 	case format.FormatPPTX:
 		return "pptx"
-	case format.FormatWPS:
-		return "wps"
 	default:
 		return ""
 	}

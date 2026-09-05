@@ -22,6 +22,7 @@ func TestMigrateCreatesOnlySecurityOwnedTables(t *testing.T) {
 		"protection_enrollments", "protection_projections", "protection_projection_changes", "protection_projection_acknowledgements",
 		"sensitive_findings", "sensitive_finding_reviews", "resource_security_assessments", "resource_security_assessment_revisions",
 		"protection_policies", "protection_policy_revisions",
+		"protection_exemptions", "protection_exemption_revisions",
 	} {
 		var count int64
 		if err := db.Raw("SELECT COUNT(*) FROM security.sqlite_master WHERE type = 'table' AND name = ?", table).Scan(&count).Error; err != nil {
@@ -69,5 +70,19 @@ func TestMigrateCreatesOnlySecurityOwnedTables(t *testing.T) {
 	}
 	if revisionColumnByName["source_finding_id"] != 0 || revisionColumnByName["source_review_id"] != 0 {
 		t.Fatalf("manual assessment source columns must be nullable: %#v", revisionColumnByName)
+	}
+	var exemptionRevisionColumns []struct {
+		Name    string
+		NotNull int `gorm:"column:notnull"`
+	}
+	if err := db.Raw("PRAGMA security.table_info(protection_exemption_revisions)").Scan(&exemptionRevisionColumns).Error; err != nil {
+		t.Fatal(err)
+	}
+	exemptionColumnByName := make(map[string]int, len(exemptionRevisionColumns))
+	for _, column := range exemptionRevisionColumns {
+		exemptionColumnByName[column.Name] = column.NotNull
+	}
+	if exemptionColumnByName["assessment_revision"] != 1 {
+		t.Fatalf("protection exemption assessment revision column = %#v", exemptionColumnByName)
 	}
 }

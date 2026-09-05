@@ -768,8 +768,9 @@ func (s *DiscoveryService) buildFindingExplanations(ctx context.Context, tenantI
 				if rule.Component.Key != finding.ComponentKey {
 					continue
 				}
+				decision := rule.Decision.Effective(time.Now().UTC())
 				outlet.Rules = append(outlet.Rules, models.FindingOutletProtectionRule{
-					Action: rule.Action, Effect: rule.Decision.Effect, Algorithm: rule.Decision.Algorithm,
+					Action: rule.Action, Effect: decision.Effect, Algorithm: decision.Algorithm,
 				})
 			}
 			explanation.Outlets = append(explanation.Outlets, outlet)

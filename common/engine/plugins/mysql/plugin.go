@@ -8,6 +8,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/plugins/shared"
 	"github.com/addp/common/format"
+	commonquery "github.com/addp/common/query"
 	_ "github.com/go-sql-driver/mysql"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -56,20 +57,30 @@ func (p *MySQLPlugin) EngineOrigin() string {
 	return "general"
 }
 
+func (p *MySQLPlugin) ConnectionSpec() plugin.ConnectionSpec {
+	return plugin.NewConnectionSpec(
+		plugin.ConnectionFieldSpec{Key: "host", LabelKey: "storageEngine.host", Input: plugin.ConnectionFieldText, Required: true, Identity: true, Default: "localhost", Placeholder: "localhost"},
+		plugin.ConnectionFieldSpec{Key: "port", LabelKey: "storageEngine.port", Input: plugin.ConnectionFieldNumber, Identity: true, Default: 3306, Min: plugin.Int(1), Max: plugin.Int(65535)},
+		plugin.ConnectionFieldSpec{Key: "database", LabelKey: "storageEngine.database", Input: plugin.ConnectionFieldText, Required: true, Identity: true, PlaceholderKey: "storageEngine.databasePlaceholder"},
+		plugin.ConnectionFieldSpec{Key: "user", LabelKey: "storageEngine.username", Input: plugin.ConnectionFieldText, Required: true, Default: "root", Placeholder: "root"},
+		plugin.ConnectionFieldSpec{Key: "password", LabelKey: "storageEngine.passwordOptional", Input: plugin.ConnectionFieldPassword, Sensitive: true},
+	)
+}
+
 func (p *MySQLPlugin) DefaultPort() int {
-	return 3306
+	return p.ConnectionSpec().DefaultPortValue()
 }
 
 func (p *MySQLPlugin) RequiredFields() []string {
-	return []string{"host", "user", "database"}
+	return p.ConnectionSpec().RequiredFields()
 }
 
 func (p *MySQLPlugin) SensitiveFields() []string {
-	return []string{"password"}
+	return p.ConnectionSpec().SensitiveFields()
 }
 
 func (p *MySQLPlugin) ConnectionIdentityFields() []string {
-	return []string{"host", "port", "database"}
+	return p.ConnectionSpec().IdentityFields()
 }
 
 func (p *MySQLPlugin) Capabilities() plugin.EngineCapabilities {
@@ -141,7 +152,7 @@ func (p *MySQLPlugin) QueryLanguages() []string {
 }
 
 func (p *MySQLPlugin) GenerateSampleQuery(ctx context.Context, connInfo plugin.ConnectionInfo, opts plugin.SampleQueryOptions) (string, string) {
-	return plugin.SampleSQLForEngineCatalogPath(p.Type(), opts.Path, 10), "sql"
+	return plugin.SampleSQLForDialectCatalogPath(p.SQLDialect(), opts.Path, 10), "sql"
 }
 
 func (p *MySQLPlugin) PrepareQuery(_ context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (plugin.PreparedQuery, error) {
@@ -149,12 +160,14 @@ func (p *MySQLPlugin) PrepareQuery(_ context.Context, connInfo plugin.Connection
 }
 
 func (p *MySQLPlugin) SQLDialect() string {
-	return p.GetDialect()
+	return commonquery.DialectMySQL
 }
 
 func (p *MySQLPlugin) SupportsParameterizedQueries() bool {
 	return true
 }
+
+func (p *MySQLPlugin) SupportsControlledReadOnlySQL() bool { return true }
 
 func (p *MySQLPlugin) ExecuteSQL(ctx context.Context, connInfo plugin.ConnectionInfo, sql string, opts plugin.QueryOptions) (*plugin.QueryResult, error) {
 	return plugin.ExecuteSQLWithConnectionPool(ctx, p, connInfo, sql, opts)
@@ -198,7 +211,7 @@ func (p *MySQLPlugin) CreateConnectionPool(connInfo plugin.ConnectionInfo, poolC
 }
 
 // GetDialect 获取数据库方言
-func (p *MySQLPlugin) GetDialect() string {
+func (p *MySQLPlugin) GORMDialect() string {
 	return "mysql"
 }
 

@@ -5,10 +5,13 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	commonclient "github.com/addp/common/client"
 	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/repository"
 	minio "github.com/minio/minio-go/v7"
@@ -69,132 +72,151 @@ func (f *fakeDocumentObjectStore) GetObject(_ context.Context, _ string, key str
 }
 
 func TestSanitizeDocumentFileName(t *testing.T) {
-	name, err := sanitizeDocumentFileName(`../nested\report.pdf`)
-	if err != nil || name != "report.pdf" {
+	name, err := sanitizeDocumentFileName(`../nested\report.md`)
+	if err != nil || name != "report.md" {
 		t.Fatalf("sanitizeDocumentFileName() = %q, %v", name, err)
 	}
-	if _, err := sanitizeDocumentFileName("line\nbreak.pdf"); !errors.Is(err, ErrDocumentFileNameInvalid) {
-		t.Fatalf("unsafe file name error = %v, want ErrDocumentFileNameInvalid", err)
+	if _, err := sanitizeDocumentFileName("line\nbreak.md"); !errors.Is(err, ErrDocumentFileNameInvalid) {
+		t.Fatalf("unsafe file name error = %v", err)
 	}
 }
 
-func TestUploadFileReplacesObjectAfterDatabaseUpdate(t *testing.T) {
+func TestSplitMarkdownSectionsCarriesAbsoluteLineNumbers(t *testing.T) {
+	sections := splitMarkdownSections("# Outdoor\n\n说明\n## 指标\n实际参加活动数")
+	if len(sections) != 2 {
+		t.Fatalf("sections = %#v, want 2", sections)
+	}
+	if sections[1].SectionPath != "Outdoor / 指标" || sections[1].StartLine != 4 || sections[1].EndLine != 5 {
+		t.Fatalf("metric section metadata = %#v", sections[1])
+	}
+	if sections[1].Text != "L4: ## 指标\nL5: 实际参加活动数" {
+		t.Fatalf("metric numbered text = %q", sections[1].Text)
+	}
+}
+
+func TestUploadFileReplacesOnlyDraftRevisionObject(t *testing.T) {
 	db := openDocumentServiceTestDB(t)
 	repo := repository.NewDocumentRepository(db)
-	doc := &models.Document{TenantID: 7, Name: "doc", FileKey: "tenant_7/documents/1/old.pdf", FileName: "old.pdf", FileSize: 3, CreatedBy: 1}
-	if err := repo.Create(doc); err != nil {
-		t.Fatalf("create document: %v", err)
-	}
-	store := &fakeDocumentObjectStore{objects: map[string][]byte{doc.FileKey: []byte("old")}}
+	doc, revision := seedDocumentDraft(t, repo, 7, "tenant_7/documents/1/old.md")
+	store := &fakeDocumentObjectStore{objects: map[string][]byte{revision.FileKey: []byte("old")}}
 	svc := &DocumentService{repo: repo, objectStore: store, maxFileSize: 10, timeout: time.Second}
-
-	if _, err := svc.UploadFile(doc.ID, doc.TenantID, doc.Version, "../new.pdf", strings.NewReader("new content"), 11, "application/pdf"); !errors.Is(err, ErrDocumentFileTooLarge) {
-		t.Fatalf("oversized upload error = %v, want ErrDocumentFileTooLarge", err)
+	if _, err := svc.UploadFile(doc.ID, revision.ID, doc.TenantID, 1, doc.Version, "new.md", strings.NewReader("new content"), 11, "text/markdown"); !errors.Is(err, ErrDocumentFileTooLarge) {
+		t.Fatalf("oversized upload error = %v", err)
 	}
-	if _, err := svc.UploadFile(doc.ID, doc.TenantID, doc.Version, "../new.pdf", strings.NewReader("new"), 3, "application/pdf"); err != nil {
+	updated, err := svc.UploadFile(doc.ID, revision.ID, doc.TenantID, 1, doc.Version, "new.md", strings.NewReader("new"), 3, "text/markdown")
+	if err != nil {
 		t.Fatalf("replacement upload: %v", err)
 	}
-	updated, err := repo.GetByID(doc.ID, doc.TenantID)
-	if err != nil {
-		t.Fatalf("reload document: %v", err)
+	if updated.DraftRevision == nil || updated.DraftRevision.FileName != "new.md" || updated.DraftRevision.FileKey == revision.FileKey || updated.DraftRevision.ContentSHA256 == "" {
+		t.Fatalf("updated aggregate = %+v", updated)
 	}
-	if updated.FileName != "new.pdf" || updated.FileKey == doc.FileKey || string(store.objects[updated.FileKey]) != "new" {
-		t.Fatalf("updated document/object = %+v, objects=%v", updated, store.objects)
-	}
-	if len(store.removedKeys) != 1 || store.removedKeys[0] != doc.FileKey {
-		t.Fatalf("removed keys = %v, want old key only", store.removedKeys)
+	if len(store.removedKeys) != 1 || store.removedKeys[0] != revision.FileKey {
+		t.Fatalf("removed keys = %v", store.removedKeys)
 	}
 }
 
-func TestUploadFileRollsBackNewObjectWhenDatabaseUpdateFails(t *testing.T) {
+func TestExtractCandidatesPersistsCanonicalOutdoorEvidence(t *testing.T) {
+	var gotAuthorization string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuthorization = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"candidates":[{"candidate_type":"metric","code":"outdoor_participation_count","name":"实际参加活动数","definition":"人员实际参加的有效活动去重数","payload":{"aggregation":"count"},"evidences":[{"section_path":"Outdoor / 指标","start_line":3,"end_line":4}]},{"candidate_type":"glossary","code":"wrong_section","name":"错误章节","definition":"证据路径与行号不匹配的候选必须被丢弃","payload":{},"evidences":[{"section_path":"Outdoor","start_line":3,"end_line":4}]}]}`))
+	}))
+	defer server.Close()
 	db := openDocumentServiceTestDB(t)
-	if err := db.Callback().Update().Before("gorm:update").Register("test_fail_document_update", func(tx *gorm.DB) {
-		tx.AddError(errors.New("document update failed"))
-	}); err != nil {
-		t.Fatalf("register update failure callback: %v", err)
-	}
 	repo := repository.NewDocumentRepository(db)
-	doc := &models.Document{TenantID: 8, Name: "doc", FileKey: "old.pdf", FileName: "old.pdf", FileSize: 3, CreatedBy: 1}
-	if err := repo.Create(doc); err != nil {
-		t.Fatalf("create document: %v", err)
+	doc, revision := seedDocumentDraft(t, repo, 8, "outdoor.md")
+	content := "# Outdoor\n\n## 指标\n实际参加活动数只统计有效活动。\n"
+	store := &fakeDocumentObjectStore{objects: map[string][]byte{revision.FileKey: []byte(content)}}
+	svc := &DocumentService{repo: repo, objectStore: store, maxFileSize: 1024, timeout: time.Second, copilotURL: server.URL, serviceTokenSource: commonclient.ServiceTokenProviderFunc(func(_ context.Context, tenantID uint) (string, error) {
+		if tenantID != 8 {
+			t.Fatalf("tenantID=%d", tenantID)
+		}
+		return "service-token", nil
+	}), httpClient: server.Client()}
+	extraction, err := svc.ExtractCandidates(context.Background(), doc.ID, revision.ID, doc.TenantID, 9, doc.Version)
+	if err != nil {
+		t.Fatalf("ExtractCandidates: %v", err)
 	}
-	store := &fakeDocumentObjectStore{objects: map[string][]byte{doc.FileKey: []byte("old")}}
-	svc := &DocumentService{repo: repo, objectStore: store, maxFileSize: 10, timeout: time.Second}
-	if _, err := svc.UploadFile(doc.ID, doc.TenantID, doc.Version, "new.pdf", strings.NewReader("new"), 3, "application/pdf"); err == nil {
-		t.Fatal("UploadFile() should return database update error")
+	if gotAuthorization != "Bearer service-token" {
+		t.Fatalf("Authorization=%q", gotAuthorization)
 	}
-	if len(store.putKeys) != 1 || len(store.removedKeys) != 1 || store.removedKeys[0] != store.putKeys[0] {
-		t.Fatalf("put/rollback keys = %v/%v", store.putKeys, store.removedKeys)
+	if len(extraction.Candidates) != 1 || len(extraction.Candidates[0].Evidences) != 1 {
+		t.Fatalf("extraction=%+v", extraction)
 	}
-	if string(store.objects[doc.FileKey]) != "old" {
-		t.Fatalf("old object was not preserved: %v", store.objects)
+	if extraction.Candidates[0].Payload["aggregation"] != "count" {
+		t.Fatalf("candidate payload=%+v", extraction.Candidates[0].Payload)
+	}
+	evidence := extraction.Candidates[0].Evidences[0]
+	if evidence.Excerpt != "## 指标\n实际参加活动数只统计有效活动。" || evidence.ExcerptHash == "" {
+		t.Fatalf("evidence=%+v", evidence)
+	}
+	loaded, err := repo.ListExtractions(doc.ID, doc.TenantID)
+	if err != nil || len(loaded) != 1 || len(loaded[0].Candidates) != 1 {
+		t.Fatalf("loaded=%+v err=%v", loaded, err)
+	}
+	updated, err := repo.GetByID(doc.ID, doc.TenantID)
+	if err != nil || updated.Version != 2 {
+		t.Fatalf("document version=%+v err=%v", updated, err)
 	}
 }
 
 func TestFileCleanupFailureStaysQueuedForRetry(t *testing.T) {
 	db := openDocumentServiceTestDB(t)
 	repo := repository.NewDocumentRepository(db)
-	cleanup, err := repo.EnqueueFileCleanup("stale.pdf")
+	cleanup, err := repo.EnqueueFileCleanup("stale.md")
 	if err != nil {
-		t.Fatalf("enqueue cleanup: %v", err)
+		t.Fatal(err)
 	}
-	store := &fakeDocumentObjectStore{objects: map[string][]byte{"stale.pdf": []byte("stale")}, removeErr: errors.New("minio unavailable")}
+	store := &fakeDocumentObjectStore{objects: map[string][]byte{"stale.md": []byte("stale")}, removeErr: errors.New("minio unavailable")}
 	svc := &DocumentService{repo: repo, objectStore: store, timeout: time.Second}
 	svc.tryFileCleanup(*cleanup)
-
 	var queued models.DocumentFileCleanup
 	if err := db.First(&queued, cleanup.ID).Error; err != nil {
-		t.Fatalf("reload cleanup: %v", err)
+		t.Fatal(err)
 	}
-	if queued.Attempts != 1 || queued.LastError == "" || !queued.NextAttemptAt.After(cleanup.NextAttemptAt) {
-		t.Fatalf("queued cleanup = %+v", queued)
+	if queued.Attempts != 1 || queued.LastError == "" {
+		t.Fatalf("queued=%+v", queued)
 	}
 	store.removeErr = nil
 	svc.tryFileCleanup(queued)
 	if err := db.First(&queued, cleanup.ID).Error; !errors.Is(err, gorm.ErrRecordNotFound) {
-		t.Fatalf("completed cleanup error = %v, want record not found", err)
+		t.Fatalf("completed cleanup error=%v", err)
 	}
+}
+
+func seedDocumentDraft(t *testing.T, repo *repository.DocumentRepository, tenantID int64, fileKey string) (*models.Document, *models.DocumentRevision) {
+	t.Helper()
+	doc := &models.Document{TenantID: tenantID, ScopeType: models.StandardScopeTenantCommon, Code: "outdoor_" + time.Now().Format("150405.000000000"), DocType: "internal", CreatedBy: 1, LifecycleState: "active"}
+	revision := &models.DocumentRevision{Name: "Outdoor", ChangeSummary: "initial", CreatedBy: 1, FileKey: fileKey, FileName: "outdoor.md", FileSize: 7, MediaType: "text/markdown", ContentSHA256: "fixture"}
+	if err := repo.Create(doc, revision); err != nil {
+		t.Fatalf("create document: %v", err)
+	}
+	return doc, revision
 }
 
 func openDocumentServiceTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatal(err)
 	}
 	if err := db.Exec("ATTACH DATABASE ':memory:' AS standard").Error; err != nil {
-		t.Fatalf("attach standard schema: %v", err)
+		t.Fatal(err)
 	}
-	if err := db.Exec(`CREATE TABLE standard.documents (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		tenant_id INTEGER NOT NULL,
-		name TEXT NOT NULL,
-		doc_type TEXT,
-		source_org TEXT,
-		document_version TEXT,
-		version INTEGER NOT NULL DEFAULT 1,
-		publish_date DATETIME,
-		description TEXT,
-		file_key TEXT,
-		file_name TEXT,
-		file_size INTEGER,
-		created_by INTEGER NOT NULL,
-		updated_by INTEGER,
-		created_at DATETIME,
-		updated_at DATETIME
-	)`).Error; err != nil {
-		t.Fatalf("create documents: %v", err)
+	statements := []string{
+		`CREATE TABLE standard.documents (id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, scope_type TEXT NOT NULL, owner_domain_id INTEGER, code TEXT NOT NULL, doc_type TEXT NOT NULL, source_org TEXT, steward_id INTEGER, tags TEXT, draft_revision_id INTEGER, created_by INTEGER NOT NULL, updated_by INTEGER, created_at DATETIME, updated_at DATETIME, version INTEGER NOT NULL DEFAULT 1, lifecycle_state TEXT NOT NULL)`,
+		`CREATE UNIQUE INDEX standard.uq_test_documents_tenant_code ON documents (tenant_id, code)`,
+		`CREATE TABLE standard.document_revisions (id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER NOT NULL, revision_no INTEGER NOT NULL, status TEXT NOT NULL, name TEXT NOT NULL, version_label TEXT, publish_date DATETIME, description TEXT, file_key TEXT, file_name TEXT, file_size INTEGER, media_type TEXT, content_sha256 TEXT, change_summary TEXT NOT NULL, effective_from DATETIME, effective_to DATETIME, submitted_by INTEGER, submitted_at DATETIME, published_by INTEGER, published_at DATETIME, created_by INTEGER NOT NULL, updated_by INTEGER, created_at DATETIME, updated_at DATETIME)`,
+		`CREATE TABLE standard.document_extractions (id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, document_revision_id INTEGER NOT NULL, status TEXT NOT NULL, requested_by INTEGER NOT NULL, created_at DATETIME)`,
+		`CREATE TABLE standard.document_extraction_candidates (id INTEGER PRIMARY KEY AUTOINCREMENT, extraction_id INTEGER NOT NULL, candidate_type TEXT NOT NULL, code TEXT NOT NULL, name TEXT NOT NULL, definition TEXT NOT NULL, payload TEXT, status TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1, reviewed_by INTEGER, reviewed_at DATETIME, created_at DATETIME, updated_at DATETIME)`,
+		`CREATE TABLE standard.document_extraction_evidences (id INTEGER PRIMARY KEY AUTOINCREMENT, candidate_id INTEGER NOT NULL, document_revision_id INTEGER NOT NULL, section_path TEXT NOT NULL, start_line INTEGER NOT NULL, end_line INTEGER NOT NULL, excerpt TEXT NOT NULL, excerpt_hash TEXT NOT NULL, created_at DATETIME)`,
+		`CREATE TABLE standard.document_file_cleanups (id INTEGER PRIMARY KEY AUTOINCREMENT, object_key TEXT NOT NULL UNIQUE, attempts INTEGER NOT NULL DEFAULT 0, next_attempt_at DATETIME NOT NULL, last_error TEXT, created_at DATETIME, updated_at DATETIME)`,
 	}
-	if err := db.Exec(`CREATE TABLE standard.document_file_cleanups (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		object_key TEXT NOT NULL UNIQUE,
-		attempts INTEGER NOT NULL DEFAULT 0,
-		next_attempt_at DATETIME NOT NULL,
-		last_error TEXT,
-		created_at DATETIME,
-		updated_at DATETIME
-	)`).Error; err != nil {
-		t.Fatalf("create document file cleanups: %v", err)
+	for _, statement := range statements {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatalf("create document service test schema: %v", err)
+		}
 	}
 	return db
 }

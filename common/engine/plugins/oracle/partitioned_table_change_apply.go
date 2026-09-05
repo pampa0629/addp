@@ -304,7 +304,7 @@ func oracleBaseTableExists(ctx context.Context, db *sql.DB, schema, table string
 }
 
 func createOracleTable(ctx context.Context, db *sql.DB, schema, table string, fields []datatype.FieldInfo) error {
-	dialect := commonquery.ForEngine("oracle")
+	dialect := commonquery.ForDialect("oracle")
 	definitions := make([]string, 0, len(fields)+1)
 	primaryKeys := make([]string, 0)
 	for _, field := range fields {
@@ -336,7 +336,7 @@ func evolveOracleTable(ctx context.Context, db *sql.DB, schema, table string, fi
 	for _, field := range existing {
 		byName[field.Name] = field
 	}
-	dialect := commonquery.ForEngine("oracle")
+	dialect := commonquery.ForDialect("oracle")
 	for _, field := range fields {
 		current, ok := byName[field.Name]
 		if ok {
@@ -367,7 +367,7 @@ func oracleColumnDefinition(field datatype.FieldInfo) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	definition := commonquery.ForEngine("oracle").QuoteIdentifier(field.Name) + " " + sqlType
+	definition := commonquery.ForDialect("oracle").QuoteIdentifier(field.Name) + " " + sqlType
 	if !field.Nullable {
 		definition += " NOT NULL"
 	}
@@ -482,7 +482,7 @@ func ensureOracleTransferApplyLedger(ctx context.Context, db *sql.DB, schema str
 	if err != nil {
 		return err
 	}
-	dialect := commonquery.ForEngine("oracle")
+	dialect := commonquery.ForDialect("oracle")
 	qualified := dialect.QualifiedTable(schema, oracleTransferApplyLedgerTable)
 	if !exists {
 		statement := "CREATE TABLE " + qualified + " (" +
@@ -545,7 +545,7 @@ func validateOracleTransferApplyLedger(ctx context.Context, db *sql.DB, schema s
 }
 
 func insertOracleApplyLedgerStart(ctx context.Context, tx *sql.Tx, schema string, opts plugin.PartitionedTableChangeApplyOptions, targetIdentity, partition string, startOffset int64) error {
-	qualified := commonquery.ForEngine("oracle").QualifiedTable(schema, oracleTransferApplyLedgerTable)
+	qualified := commonquery.ForDialect("oracle").QualifiedTable(schema, oracleTransferApplyLedgerTable)
 	statement := "MERGE INTO " + qualified + " target " +
 		"USING (SELECT :1 apply_identity, :2 source_identity, :3 target_identity, :4 partition_key, " +
 		":5 position_type, :6 position_version, :7 next_offset FROM DUAL) source " +
@@ -561,7 +561,7 @@ func insertOracleApplyLedgerStart(ctx context.Context, tx *sql.Tx, schema string
 }
 
 func lockOracleApplyLedger(ctx context.Context, tx *sql.Tx, schema, applyIdentity, partition string) (*oracleApplyLedgerPosition, error) {
-	qualified := commonquery.ForEngine("oracle").QualifiedTable(schema, oracleTransferApplyLedgerTable)
+	qualified := commonquery.ForDialect("oracle").QualifiedTable(schema, oracleTransferApplyLedgerTable)
 	query := "SELECT source_identity, target_identity, position_type, position_version, next_offset " +
 		"FROM " + qualified + " WHERE apply_identity = :1 AND partition_key = :2 FOR UPDATE NOWAIT"
 	for {
@@ -596,7 +596,7 @@ func validateOracleApplyLedgerIdentity(ledger *oracleApplyLedgerPosition, source
 }
 
 func updateOracleApplyLedger(ctx context.Context, tx *sql.Tx, schema, applyIdentity, partition string, nextOffset int64) error {
-	qualified := commonquery.ForEngine("oracle").QualifiedTable(schema, oracleTransferApplyLedgerTable)
+	qualified := commonquery.ForDialect("oracle").QualifiedTable(schema, oracleTransferApplyLedgerTable)
 	statement := "UPDATE " + qualified + " SET next_offset = :1, updated_at = SYSTIMESTAMP " +
 		"WHERE apply_identity = :2 AND partition_key = :3 AND next_offset <= :4"
 	result, err := tx.ExecContext(ctx, statement, nextOffset, applyIdentity, partition, nextOffset)
@@ -614,7 +614,7 @@ func updateOracleApplyLedger(ctx context.Context, tx *sql.Tx, schema, applyIdent
 }
 
 func mergeOracleApplyRow(ctx context.Context, tx *sql.Tx, schema, table string, row map[string]interface{}, fields []datatype.FieldInfo, spatialInfo *datatype.SpatialInfo, keys []string) error {
-	dialect := commonquery.ForEngine("oracle")
+	dialect := commonquery.ForDialect("oracle")
 	selects := make([]string, 0, len(fields))
 	args := make([]interface{}, 0, len(fields))
 	columns := make([]string, 0, len(fields))
@@ -848,7 +848,7 @@ func oracleApplyGeometryTypeName(geometry geom.T) string {
 }
 
 func deleteOracleApplyRow(ctx context.Context, tx *sql.Tx, schema, table string, row map[string]interface{}, keys []string) error {
-	dialect := commonquery.ForEngine("oracle")
+	dialect := commonquery.ForDialect("oracle")
 	predicates := make([]string, 0, len(keys))
 	args := make([]interface{}, 0, len(keys))
 	for index, key := range keys {

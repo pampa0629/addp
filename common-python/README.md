@@ -81,7 +81,40 @@ results = await manager.search("城市", page_size=10)
 - `MetaClient` - Meta 模块 (元数据搜索)
 - `DevelopClient` - Develop 模块 (SQL、工作流、算子)
 - `ManagerClient` - Manager 模块 (数据管理、预览)
+- `ServiceConsumerClient` - Service Consumer Catalog、Descriptor 和发布查询服务执行
 - `CopilotClient` - Copilot 模块（结构化生成）
+
+## Service Consumer SDK
+
+Python 程序可以复用 `addp auth login` 建立的 OS Keychain 会话，不需要复制 Access Token：
+
+```python
+from addp_common.client import (
+    QueryPageRequest,
+    ServiceConsumerClient,
+    StructuredQueryRequest,
+)
+
+client = ServiceConsumerClient.from_cli_session("http://localhost:8000")
+
+catalog = await client.list_services(service_type="query")
+summary = catalog.data[0]
+descriptor = await client.get_descriptor(
+    summary.ref,
+    expected_contract_fingerprint=summary.contract_fingerprint,
+)
+
+request = StructuredQueryRequest(
+    select=descriptor.input_contract.default_selection,
+    page=QueryPageRequest(limit=descriptor.input_contract.page.default_limit),
+)
+async for result in client.iter_query_pages(descriptor, request):
+    consume(result.data)
+
+await client.close()
+```
+
+SDK 只返回 Consumer Contract 类型和原始 Python records。pandas、GeoPandas、图表或其他应用层转换由调用方决定，不进入共享客户端依赖。`get_descriptor()` 必须传入 Catalog 或持久配置中冻结的 `contract_fingerprint`；公开契约改变后显式失败，不按名称或新指纹自动改绑。
 
 ## Notebook 会话能力
 

@@ -8,8 +8,10 @@ const allStandardPermissions = [
   'standard.code_set.update',
   'standard.document.create',
   'standard.document.delete',
+  'standard.document.publish',
   'standard.document.read',
   'standard.document.update',
+  'standard.document_extraction.create',
   'standard.domain.create',
   'standard.domain.delete',
   'standard.domain.read',
@@ -19,10 +21,9 @@ const allStandardPermissions = [
   'standard.element.publish',
   'standard.element.read',
   'standard.element.update',
-  'standard.glossary.approve',
   'standard.glossary.create',
   'standard.glossary.delete',
-  'standard.glossary.offline',
+  'standard.glossary.publish',
   'standard.glossary.read',
   'standard.glossary.update',
   'standard.metric.create',
@@ -46,16 +47,71 @@ const domains = [
 const glossaries = [
   {
     id: 21,
-    name: '领队',
-    alias: ['leader'],
-    domain_id: 2,
-    definition: '发起并组织户外活动的人',
-    status: 'approved',
+    code: 'leader',
+    scope_type: 'domain',
+    owner_domain_id: 2,
+    lifecycle_state: 'active',
     version: 1,
+    has_publication_history: false,
     tags: [],
+    draft_revision_id: 211,
+    current_revision: null,
+    draft_revision: {
+      id: 211,
+      glossary_id: 21,
+      revision_no: 1,
+      name: '领队',
+      alias: ['leader'],
+      definition: '发起并组织户外活动的人',
+      example: '',
+      note: '',
+      related_ids: [],
+      change_summary: '初始修订',
+      effective_from: '2026-08-12T08:00:00Z',
+      status: 'draft'
+    },
     created_at: '2026-08-12T08:00:00Z'
   }
 ]
+
+const createDocumentFixture = (overrides = {}) => {
+  const { revision: revisionOverrides = {}, ...identityOverrides } = overrides
+  const id = identityOverrides.id || 71
+  const revision = {
+    id: id * 10 + 1,
+    document_id: id,
+    revision_no: 1,
+    status: 'draft',
+    name: '户外数据标准',
+    version_label: 'v1',
+    description: '户外业务数据标准',
+    file_name: 'outdoor-standard.md',
+    file_size: 2048,
+    media_type: 'text/markdown',
+    content_sha256: 'f'.repeat(64),
+    change_summary: '初始修订',
+    created_at: '2026-08-12T08:00:00Z',
+    ...revisionOverrides
+  }
+  return {
+    id,
+    code: 'outdoor_data_standard',
+    scope_type: 'domain',
+    owner_domain_id: 2,
+    doc_type: 'reference',
+    source_org: '标准组',
+    tags: [],
+    lifecycle_state: 'active',
+    version: 1,
+    draft_revision_id: revision.id,
+    draft_revision: revision,
+    current_revision: null,
+    has_publication_history: false,
+    created_at: '2026-08-12T08:00:00Z',
+    updated_at: '2026-08-12T08:00:00Z',
+    ...identityOverrides
+  }
+}
 
 const listPages = [
   ['/domains', '业务域管理'],
@@ -153,7 +209,7 @@ test.describe('Standard theme visual baselines', () => {
 
 test('inherits the selected domain when creating a glossary and preserves filters through detail', async ({ page }) => {
   await installMockBackend(page)
-  await page.goto('/glossaries?domain_id=2&status=approved')
+  await page.goto('/glossaries?owner_domain_id=2&status=draft')
   await expect(page.getByText('户外域', { exact: true }).first()).toBeVisible()
 
   const actions = page.locator('.table-actions').first()
@@ -171,15 +227,15 @@ test('inherits the selected domain when creating a glossary and preserves filter
   await createDialog.getByRole('button', { name: '取消' }).click()
 
   await page.getByRole('button', { name: '详情' }).click()
-  await expect(page).toHaveURL(/\/glossaries\/21\?domain_id=2&status=approved$/)
+  await expect(page).toHaveURL(/\/glossaries\/21\?owner_domain_id=2&status=draft$/)
   await expect(page.getByRole('textbox', { name: '术语名称' })).toHaveValue('领队')
   await page.getByRole('button', { name: /返回/ }).click()
-  await expect(page).toHaveURL(/\/glossaries\?domain_id=2&status=approved$/)
+  await expect(page).toHaveURL(/\/glossaries\?owner_domain_id=2&status=draft$/)
 })
 
 test('protects unsaved glossary changes when leaving the detail page', async ({ page }) => {
   await installMockBackend(page)
-  await page.goto('/glossaries/21?domain_id=2&status=approved')
+  await page.goto('/glossaries/21?owner_domain_id=2&status=draft')
 
   const nameInput = page.getByRole('textbox', { name: '术语名称' })
   await nameInput.fill('尚未保存的领队')
@@ -189,12 +245,12 @@ test('protects unsaved glossary changes when leaving the detail page', async ({ 
   const confirm = page.getByRole('dialog', { name: '未保存的修改' })
   await expect(confirm).toBeVisible()
   await confirm.getByRole('button', { name: '继续编辑' }).click()
-  await expect(page).toHaveURL(/\/glossaries\/21\?domain_id=2&status=approved$/)
+  await expect(page).toHaveURL(/\/glossaries\/21\?owner_domain_id=2&status=draft$/)
   await expect(nameInput).toHaveValue('尚未保存的领队')
 
   await page.getByRole('button', { name: /返回/ }).click()
   await page.getByRole('dialog', { name: '未保存的修改' }).getByRole('button', { name: '离开' }).click()
-  await expect(page).toHaveURL(/\/glossaries\?domain_id=2&status=approved$/)
+  await expect(page).toHaveURL(/\/glossaries\?owner_domain_id=2&status=draft$/)
 })
 
 test('keeps local glossary edits when a stale version is rejected', async ({ page }) => {
@@ -233,8 +289,10 @@ test('submits a new glossary only once when the confirm action fires twice', asy
   await page.getByRole('button', { name: '新建术语' }).click()
 
   const dialog = page.getByRole('dialog', { name: '新建业务术语' })
+  await dialog.getByRole('textbox', { name: '编码' }).fill('duplicate_submit')
   await dialog.getByRole('textbox', { name: '术语名称' }).fill('重复提交测试')
   await dialog.getByRole('textbox', { name: '定义' }).fill('验证写请求只能发送一次')
+  await dialog.getByRole('textbox', { name: '变更说明' }).fill('初始修订')
   const confirmButton = dialog.getByRole('button', { name: '确定' })
   await confirmButton.evaluate(button => {
     button.click()
@@ -243,6 +301,16 @@ test('submits a new glossary only once when the confirm action fires twice', asy
 
   await expect(dialog).not.toBeVisible()
   expect(backend.getGlossaryCreateRequests()).toBe(1)
+})
+
+test('hides glossary delete after any publication history exists', async ({ page }) => {
+  const backend = await installMockBackend(page, { glossaryPublicationHistory: true })
+  await page.goto('/glossaries')
+
+  const row = page.getByRole('row').filter({ hasText: 'leader' })
+  await expect(row.getByRole('button', { name: '详情' })).toBeVisible()
+  await expect(row.getByRole('button', { name: '删除' })).toHaveCount(0)
+  expect(backend.getDeleteRequests()).toEqual([])
 })
 
 test('keeps tree actions on one line and canceling delete sends no request', async ({ page }) => {
@@ -464,17 +532,7 @@ test('shows the backend domain conflict message after confirmed deletion', async
 
 test('cancels document deletion without sending a request', async ({ page }) => {
   const backend = await installMockBackend(page, {
-    documents: [{
-      id: 71,
-      name: '户外数据标准',
-      doc_type: 'reference',
-      source_org: '标准组',
-      document_version: 'v1',
-      version: 1,
-      file_name: 'outdoor-standard.pdf',
-      file_size: 2048,
-      created_at: '2026-08-12T08:00:00Z'
-    }]
+    documents: [createDocumentFixture()]
   })
   await page.goto('/documents')
 
@@ -488,33 +546,21 @@ test('cancels document deletion without sending a request', async ({ page }) => 
   expect(backend.getDeleteRequests()).toEqual([])
 })
 
-test('restores document detail from its canonical route and closes back to the filtered list', async ({ page }) => {
+test('restores document detail from its canonical route and returns to the filtered list', async ({ page }) => {
   await installMockBackend(page, {
-    documents: [{
-      id: 71,
-      name: '户外数据标准',
-      doc_type: 'reference',
-      source_org: '标准组',
-      document_version: 'v1',
-      version: 1,
-      file_name: 'outdoor-standard.pdf',
-      file_size: 2048,
-      created_at: '2026-08-12T08:00:00Z'
-    }]
+    documents: [createDocumentFixture()]
   })
 
   await page.goto('/documents?keyword=户外')
-  await page.getByText('户外数据标准', { exact: true }).click()
+  await page.getByRole('row').filter({ hasText: '户外数据标准' }).getByRole('button', { name: '详情' }).click()
   await expect(page).toHaveURL(/\/documents\/71\?keyword=/)
 
   await page.reload()
-  const drawer = page.getByRole('dialog', { name: '户外数据标准' })
-  await expect(drawer).toBeVisible()
-  await expect(drawer).toContainText('outdoor-standard.pdf（2.0 KB）')
+  await expect(page.getByRole('heading', { name: '户外数据标准' })).toBeVisible()
+  await expect(page.getByText(/outdoor-standard\.md · 2\.0 KB · SHA256/)).toBeVisible()
   await expect(page).toHaveURL(/\/documents\/71\?keyword=/)
 
-  await drawer.getByRole('button', { name: '关闭此对话框' }).click()
-  await expect(drawer).not.toBeVisible()
+  await page.getByRole('button', { name: /返回/ }).click()
   await expect(page).toHaveURL(/\/documents\?keyword=/)
 })
 
@@ -538,7 +584,9 @@ test('shows the backend upload error when attaching a file to a standard item', 
 
   await page.getByRole('button', { name: '上传新文档' }).click()
   const uploadDialog = page.getByRole('dialog', { name: '上传并关联文档' })
+  await uploadDialog.getByRole('textbox', { name: '编码' }).fill('participant_standard')
   await uploadDialog.getByRole('textbox', { name: '文档名称' }).fill('参与人数标准')
+  await uploadDialog.getByRole('textbox', { name: '变更说明' }).fill('初始修订')
   await uploadDialog.locator('input[type="file"]').setInputFiles({
     name: 'participant-standard.pdf',
     mimeType: 'application/pdf',
@@ -549,7 +597,7 @@ test('shows the backend upload error when attaching a file to a standard item', 
   await expect(page.locator('.el-message--error')).toContainText('文档文件超过 100 MiB 限制')
   expect(backend.getActionRequests()).toEqual(expect.arrayContaining([
     '/api/v1/standard/metrics/51/documents',
-    '/api/v1/standard/documents/72/upload'
+    '/api/v1/standard/documents/72/revisions/721/file'
   ]))
   await expect(uploadDialog).toBeVisible()
 })
@@ -567,17 +615,7 @@ test('links an existing document to a metric and refreshes the panel', async ({ 
       version: 1,
       created_at: '2026-08-12T08:00:00Z'
     }],
-    documents: [{
-      id: 71,
-      name: '户外数据标准',
-      doc_type: 'reference',
-      source_org: '标准组',
-      document_version: 'v1',
-      version: 1,
-      file_name: 'outdoor-standard.pdf',
-      file_size: 2048,
-      created_at: '2026-08-12T08:00:00Z'
-    }]
+    documents: [createDocumentFixture()]
   })
   await page.goto('/metrics/51')
 
@@ -710,6 +748,16 @@ async function installMockBackend(page, options = {}) {
   let metricDocumentLinked = false
   const documents = (options.documents || []).map(item => ({ ...item }))
   const elements = (options.elements || []).map(item => ({ ...item }))
+  const glossaryFixtures = structuredClone(glossaries)
+  if (options.glossaryPublicationHistory) {
+    const published = { ...glossaryFixtures[0].draft_revision, status: 'published' }
+    Object.assign(glossaryFixtures[0], {
+      draft_revision_id: null,
+      draft_revision: null,
+      current_revision: published,
+      has_publication_history: true
+    })
+  }
   const metrics = (options.metrics || []).map(item => {
     if (item.current_revision || item.draft_revision) return structuredClone(item)
     const revision = {
@@ -826,7 +874,7 @@ async function installMockBackend(page, options = {}) {
     if (request.method() === 'POST' && path === '/api/v1/standard/glossaries' && options.delayedGlossaryCreate) {
       glossaryCreateRequests += 1
       await new Promise(resolve => setTimeout(resolve, 150))
-      return fulfillJSON(route, { id: 24, ...request.postDataJSON(), status: 'draft' }, 201)
+      return fulfillJSON(route, { id: 24, code: request.postDataJSON().code, version: 1, draft_revision: { ...request.postDataJSON(), id: 241, status: 'draft', revision_no: 1 } }, 201)
     }
     if (request.method() === 'PUT' && path === '/api/v1/standard/glossaries/21' && options.glossaryVersionConflict) {
       return fulfillJSON(route, { error: '资源已被其他用户修改，请刷新后重试' }, 409)
@@ -889,22 +937,31 @@ async function installMockBackend(page, options = {}) {
     }
     if (request.method() === 'POST' && path === '/api/v1/standard/metrics/51/documents') {
       actionRequests.push(path)
-      const document = {
+      const body = request.postDataJSON()
+      const document = createDocumentFixture({
         id: 72,
-        name: request.postDataJSON().name,
-        doc_type: request.postDataJSON().doc_type,
-        source_org: request.postDataJSON().source_org,
-        document_version: request.postDataJSON().document_version,
-        version: 1,
-        file_name: null,
-        created_at: '2026-08-12T08:00:00Z'
-      }
+        code: body.code,
+        scope_type: body.scope_type,
+        owner_domain_id: body.owner_domain_id,
+        doc_type: body.doc_type,
+        source_org: body.source_org,
+        revision: {
+          name: body.name,
+          version_label: body.version_label,
+          description: body.description,
+          file_name: null,
+          file_size: 0,
+          media_type: '',
+          content_sha256: '',
+          change_summary: body.change_summary
+        }
+      })
       documents.push(document)
       const metric = metrics.find(item => item.id === 51)
       if (metric) metric.version = (metric.version || 1) + 1
       return fulfillJSON(route, { document, version: metric?.version || 2 })
     }
-    if (request.method() === 'POST' && path === '/api/v1/standard/documents/72/upload' && options.uploadError) {
+    if (request.method() === 'POST' && path === '/api/v1/standard/documents/72/revisions/721/file' && options.uploadError) {
       actionRequests.push(path)
       return fulfillJSON(route, { error: options.uploadError }, 413)
     }
@@ -937,17 +994,18 @@ async function installMockBackend(page, options = {}) {
         const keyword = url.searchParams.get('keyword') || ''
         if (keyword === 'old') await new Promise(resolve => setTimeout(resolve, 250))
         const data = keyword === 'new'
-          ? [{ ...glossaries[0], id: 22, name: '新筛选结果' }]
+          ? [{ ...glossaryFixtures[0], id: 22, draft_revision: { ...glossaryFixtures[0].draft_revision, name: '新筛选结果' } }]
           : keyword === 'old'
-            ? [{ ...glossaries[0], id: 23, name: '旧筛选结果' }]
-            : glossaries
+            ? [{ ...glossaryFixtures[0], id: 23, draft_revision: { ...glossaryFixtures[0].draft_revision, name: '旧筛选结果' } }]
+            : glossaryFixtures
         return fulfillJSON(route, { data, total: data.length })
       }
-      const domainID = Number(url.searchParams.get('domain_id'))
-      const data = domainID ? glossaries.filter(item => item.domain_id === domainID) : glossaries
+      const domainID = Number(url.searchParams.get('owner_domain_id'))
+      const data = domainID ? glossaryFixtures.filter(item => item.owner_domain_id === domainID) : glossaryFixtures
       return fulfillJSON(route, { data, total: data.length })
     }
-    if (path === '/api/v1/standard/glossaries/21') return fulfillJSON(route, glossaries[0])
+    if (path === '/api/v1/standard/glossaries/21') return fulfillJSON(route, glossaryFixtures[0])
+    if (path === '/api/v1/standard/glossaries/21/revisions') return fulfillJSON(route, [glossaryFixtures[0].draft_revision || glossaryFixtures[0].current_revision])
     if (path === '/api/v1/standard/glossaries/21/elements') return fulfillJSON(route, [])
     if (path === '/api/v1/standard/glossaries/21/documents') return fulfillJSON(route, [])
     if (path === '/api/v1/standard/elements') return fulfillJSON(route, { data: elementAggregates, total: elementAggregates.length })
@@ -980,6 +1038,12 @@ async function installMockBackend(page, options = {}) {
     }
     if (path === '/api/v1/standard/documents') return fulfillJSON(route, { data: documents, total: documents.length })
     if (path === '/api/v1/standard/documents/71') return fulfillJSON(route, documents.find(item => item.id === 71) || {})
+    if (path === '/api/v1/standard/documents/71/revisions') {
+      const document = documents.find(item => item.id === 71)
+      const revision = document?.draft_revision || document?.current_revision
+      return fulfillJSON(route, revision ? [revision] : [])
+    }
+    if (path === '/api/v1/standard/documents/71/extractions') return fulfillJSON(route, [])
     if (path === '/api/v1/standard/documents/71/mappings') {
       return fulfillJSON(route, { elements: [], glossaries: [], metrics: [] })
     }

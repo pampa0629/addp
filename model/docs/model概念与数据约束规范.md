@@ -71,7 +71,7 @@ Model prepare -> generic writer -> Model seal -> Quality materialization gate ->
 
 ### 逻辑表删除闭环
 
-- LogicalTable 删除是 Model 聚合删除，不负责物理 DDL。删除前必须在同一控制库事务中锁定 LogicalTable，并确认资源版本匹配、状态为 `draft`、不属于任何 MaterializationGroup、`materialization` 已通过 LogicalTable 完整更新显式清空，且不存在 `preparing|prepared|sealed|publishing` 非终态 MaterializationBatch。物理目标退役不会代替清空配置，也不会隐式推进 LogicalTable 版本。
+- LogicalTable 删除是 Model 聚合删除，不负责物理 DDL。删除前必须在同一控制库事务中锁定 LogicalTable，并确认资源版本匹配、状态为 `draft`、不属于任何 MaterializationGroup、`materialization` 已通过 LogicalTable 完整更新显式清空，且不存在 `preparing|prepared|sealed|publishing` 非终态 MaterializationBatch。物化目标父定位符和目标名称均为空时，前后端必须将配置规范化并持久化为唯一空对象 `{}`，不得保留只含空字符串的伪配置。物理目标退役不会代替清空配置，也不会隐式推进 LogicalTable 版本。
 - `published|failed|aborted` MaterializationBatch 是依附于 LogicalTable 的终态物化操作状态，不是跨逻辑定义独立保留的审计资源。满足全部删除前置条件后，Model 必须在删除 LogicalTable 的同一事务中先删除该 Tenant、该 LogicalTable 的全部终态批次，再删除逻辑表聚合；任一步失败必须整体回滚。
 - `common.task_executions` 是跨模块通用执行审计历史，不属于 LogicalTable 聚合。删除终态 MaterializationBatch 不得删除、级联删除或改写对应 TaskExecution；历史执行中的 `source_task_id`、执行血缘与结果继续保留，并允许其引用已经删除的业务任务定义。
 - `materialization_batches.logical_table_id` 继续使用 `ON DELETE RESTRICT`，作为绕过 Service 事务时的数据库保护；不得改为外键级联，也不得新增 LogicalTable “退役”状态或第二条强制删除路径。

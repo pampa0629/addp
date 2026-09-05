@@ -12,9 +12,12 @@ export const snapshotUnsavedState = state => JSON.stringify(state ?? null)
 
 const buildMaterializationRequest = materialization => {
   const partitionBy = String(materialization?.partition_by || '').trim()
+  const targetParentLocator = String(materialization?.target_parent_locator || '').trim()
+  const targetName = String(materialization?.target_name || '').trim()
+  if (!targetParentLocator && !targetName && !partitionBy) return {}
   const normalized = {
-    target_parent_locator: String(materialization?.target_parent_locator || '').trim(),
-    target_name: String(materialization?.target_name || '').trim()
+    target_parent_locator: targetParentLocator,
+    target_name: targetName
   }
   if (partitionBy) {
     normalized.partition_by = partitionBy

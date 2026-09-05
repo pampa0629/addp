@@ -7,6 +7,7 @@ show_usage() {
   echo ""
   echo "选项:"
   echo "  无参数        启动所有模块"
+  echo "  -all          启动所有模块（供自动化生命周期显式声明）"
   echo "  -system       启动 System 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
   echo "  -manager      启动 Manager 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console + Transfer)"
   echo "  -meta         启动 Meta 模块 (公共依赖: System Backend + Meta Backend/Worker + Gateway + Console)"
@@ -243,6 +244,7 @@ detect_spark_workflow_shared_host() {
 SELECTED_MODULE=""
 SELECTED_MODULE_COUNT=0
 START_ALL=true
+EXPLICIT_ALL=false
 EXACT_PROCESS=false
 WAIT_LIVE=false
 
@@ -250,6 +252,10 @@ for arg in "$@"; do
   case $arg in
     -h|--help)
       show_usage
+      ;;
+    -all)
+      START_ALL=true
+      EXPLICIT_ALL=true
       ;;
     -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-copilot|-agent|-inference|-standard|-model|-quality|-security|-asset|-catalog|-workbench|-portal|-graph|-geopython-workflow|-math-workflow|-model3d-workflow|-pointcloud-workflow|-supermap-workflow|-spark-workflow|-jupyter|-duckdb|-gateway|-console)
       SELECTED_MODULE="${arg#-}"
@@ -268,6 +274,11 @@ for arg in "$@"; do
       ;;
   esac
 done
+
+if [ "$EXPLICIT_ALL" = true ] && [ "$SELECTED_MODULE_COUNT" -ne 0 ]; then
+  echo -e "${RED}❌ -all 不能与单模块参数同时使用${NC}"
+  show_usage
+fi
 
 if [ "$EXACT_PROCESS" = true ]; then
   [ "${ADDP_ONLINE_HOST:-}" = "1" ] || {
@@ -2095,7 +2106,6 @@ start_pointcloud_workflow_engine_process() {
   local container_source_dir="${POINTCLOUD_DATA_CONTAINER_PATH:-${ROOT_DIR}/business/nfs/data}"
   local work_dir="${POINTCLOUD_WORK_HOST_PATH:-${ROOT_DIR}/data/pointcloud-work}"
   local system_port="${SYSTEM_BACKEND_PORT:-8180}"
-  local minio_port="${MINIO_API_PORT:-19000}"
 
   ensure_pointcloud_workflow_image "$image"
 
@@ -2119,7 +2129,7 @@ start_pointcloud_workflow_engine_process() {
       -e POINTCLOUD_WORK_DIR=/work/pointcloud \
       -e CPL_TMPDIR=/work/pointcloud \
       -e RUNTIME_HOST=localhost \
-      -e POINTCLOUD_OBJECT_STORE_LOCALHOST_ENDPOINT="host.docker.internal:${minio_port}" \
+      -e POINTCLOUD_OBJECT_STORE_LOOPBACK_HOST="${POINTCLOUD_OBJECT_STORE_LOOPBACK_HOST:-host.docker.internal}" \
       -v "${ROOT_DIR}/logs:/app/logs" \
       -v "${work_dir}:/work/pointcloud" \
       -v "${ROOT_DIR}/engines/pointcloud-workflow/api_server.py:/app/api_server.py:ro" \

@@ -34,6 +34,7 @@ func TestSecurityMigrateAgainstPostgres(t *testing.T) {
 		"security_classifications", "security_grades", "sensitive_data_types", "detectors", "protection_baselines",
 		"sensitive_findings", "sensitive_finding_reviews", "resource_security_assessments", "resource_security_assessment_revisions",
 		"protection_policies", "protection_policy_revisions",
+		"protection_exemptions", "protection_exemption_revisions",
 	} {
 		var exists bool
 		if err := tx.Raw("SELECT to_regclass(?) IS NOT NULL", "security."+table).Scan(&exists).Error; err != nil {
@@ -73,5 +74,16 @@ func TestSecurityMigrateAgainstPostgres(t *testing.T) {
 	}
 	if assessmentRevisionColumns != 4 {
 		t.Fatalf("assessment revision governance column contract count = %d, want 4", assessmentRevisionColumns)
+	}
+	var exemptionAssessmentRevisionExists bool
+	if err := tx.Raw(`SELECT EXISTS (
+		SELECT 1 FROM information_schema.columns
+		WHERE table_schema = 'security' AND table_name = 'protection_exemption_revisions'
+		  AND column_name = 'assessment_revision' AND is_nullable = 'NO'
+	)`).Scan(&exemptionAssessmentRevisionExists).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !exemptionAssessmentRevisionExists {
+		t.Fatal("security.protection_exemption_revisions.assessment_revision is missing or nullable")
 	}
 }

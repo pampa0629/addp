@@ -11,6 +11,13 @@ import (
 func ConnectionIdentityDefinition(engineType string) ([]string, EnginePlugin, error) {
 	enginePlugin, err := Get(strings.TrimSpace(engineType))
 	if err == nil {
+		if provider, ok := enginePlugin.(ConnectionSpecProvider); ok {
+			fields := provider.ConnectionSpec().IdentityFields()
+			if len(fields) == 0 {
+				return nil, nil, fmt.Errorf("engine plugin %s did not declare connection identity fields", engineType)
+			}
+			return fields, enginePlugin, nil
+		}
 		provider, ok := enginePlugin.(ConnectionIdentityProvider)
 		if !ok {
 			return nil, nil, fmt.Errorf("engine plugin %s did not implement ConnectionIdentityProvider", engineType)
@@ -52,7 +59,11 @@ func NormalizeConnectionIdentityValue(field string, connInfo ConnectionInfo, eng
 	case "port":
 		port := GetInt(connInfo, field)
 		if port == 0 && enginePlugin != nil {
-			port = enginePlugin.DefaultPort()
+			if provider, ok := enginePlugin.(ConnectionSpecProvider); ok {
+				port = provider.ConnectionSpec().DefaultPortValue()
+			} else {
+				port = enginePlugin.DefaultPort()
+			}
 		}
 		return fmt.Sprintf("%d", port)
 	case "protocol":
@@ -77,13 +88,15 @@ func NormalizeConnectionIdentityValue(field string, connInfo ConnectionInfo, eng
 			return value
 		}
 		return strings.TrimRight(value, "/")
-	case "auth_source":
+	default:
 		value := strings.TrimSpace(GetString(connInfo, field))
-		if value == "" && enginePlugin != nil && enginePlugin.Type() == "mongodb" {
-			value = "admin"
+		if value == "" && enginePlugin != nil {
+			if provider, ok := enginePlugin.(ConnectionSpecProvider); ok {
+				if spec, exists := provider.ConnectionSpec().Field(field); exists && spec.Default != nil {
+					value = strings.TrimSpace(fmt.Sprint(spec.Default))
+				}
+			}
 		}
 		return value
-	default:
-		return strings.TrimSpace(GetString(connInfo, field))
 	}
 }

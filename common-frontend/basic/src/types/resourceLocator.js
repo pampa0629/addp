@@ -197,7 +197,7 @@ export function buildLocator(locator) {
  * 构建引擎 catalog root ResourceLocator URI。
  *
  * @param {number|Object} engineOrID - 引擎 ID 或 engine 对象
- * @param {string} [type] - root 类型；未传入时按 engine_type 推断
+ * @param {string} [type] - root 类型；未传入时从 Engine Catalog Model 读取
  * @returns {string} catalog root locator
  */
 export function engineRootLocator(engineOrID, type = '') {
@@ -212,11 +212,19 @@ export function engineRootLocator(engineOrID, type = '') {
 }
 
 export function catalogRootTypeForEngine(engine) {
-  const type = String(engine?.engine_type || '').trim().toLowerCase()
-  if (type === 'minio' || type === 's3') return 'service'
-  if (type === 'nfs' || type === 'nas') return 'root'
-  if (['postgresql', 'oracle', 'mysql', 'doris', 'clickhouse', 'spark_sql', 'mongodb', 'neo4j'].includes(type)) return 'server'
-  return 'root'
+  let capabilities = engine?.capabilities
+  if (typeof capabilities === 'string') {
+    try {
+      capabilities = JSON.parse(capabilities)
+    } catch {
+      capabilities = null
+    }
+  }
+  return String(
+    engine?.catalog_model?.root_term ||
+    capabilities?.storage?.catalog_model?.root_term ||
+    'root'
+  ).trim().toLowerCase()
 }
 
 /**
@@ -279,8 +287,7 @@ export function getFullName(locator) {
 /**
  * 格式化 ResourceLocator 的 UI 展示路径。
  *
- * 按所属引擎的原生风格展示资源路径；关系型、动态 schema 与图数据库使用点号，
- * 对象存储和文件系统使用斜杠。
+ * 按资源语义展示路径；表、集合和图使用点号，其余层级使用斜杠。
  *
  * @param {string} uri - ResourceLocator URI 字符串
  * @param {Object} options - 引擎和目标资源展示事实
@@ -290,15 +297,8 @@ export function formatLocatorDisplayPath(uri, options = {}) {
   const locator = parseLocatorSafe(uri)
   const path = [...(locator.path || []), ...(options.appendedPath || [])].filter(segment => String(segment).trim() !== '')
   if (path.length === 0) return ''
-  const engineType = String(options.engineType || '').trim().toLowerCase()
   const resourceType = String(options.resourceType || locator.type || '').trim().toLowerCase()
-  const slashEngines = new Set(['minio', 's3', 'nfs', 'nas'])
-  const dotEngines = new Set(['postgresql', 'oracle', 'mysql', 'doris', 'clickhouse', 'spark_sql', 'mongodb', 'neo4j'])
-  const separator = slashEngines.has(engineType)
-    ? '/'
-    : dotEngines.has(engineType) || [ResourceType.TABLE, ResourceType.COLLECTION, ResourceType.GRAPH].includes(resourceType)
-      ? '.'
-      : '/'
+  const separator = [ResourceType.TABLE, ResourceType.COLLECTION, ResourceType.GRAPH].includes(resourceType) ? '.' : '/'
   return path.join(separator)
 }
 

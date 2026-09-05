@@ -15,6 +15,10 @@ func NewStorageEngineService() *StorageEngineService {
 	return &StorageEngineService{}
 }
 
+func (s *StorageEngineService) ListRegisterableEngineTypes() ([]plugin.EngineTypeDescriptor, error) {
+	return dbbridge.ListRegisterableEngineTypes()
+}
+
 // TestConnection 测试引擎连接。
 // 连接测试统一由插件 TestConnectionProvider 实现，且必须保持只读。
 func (s *StorageEngineService) TestConnection(resource *models.Engine) error {
@@ -36,11 +40,10 @@ func (s *StorageEngineService) GetConnectionInfo(resource *models.Engine) map[st
 	result := make(map[string]interface{})
 	result["type"] = resource.EngineType
 
-	// 从插件系统获取敏感字段列表
+	// 从插件 ConnectionSpec 获取敏感字段列表。
 	sensitiveFields, err := dbbridge.GetSensitiveFields(resource.EngineType)
 	if err != nil {
-		// 降级：使用默认敏感字段列表
-		sensitiveFields = []string{"password", "secret_key", "access_key", "token"}
+		return result
 	}
 
 	// 创建敏感字段的快速查找map

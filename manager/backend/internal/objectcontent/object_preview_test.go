@@ -38,6 +38,12 @@ func TestInferContentType(t *testing.T) {
 			expects:     []string{"application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
 		},
 		{
+			name:        "doc_with_generic_type",
+			objectPath:  "bucket/docs/关于底座.doc",
+			contentType: "application/octet-stream",
+			expects:     []string{"application/msword"},
+		},
+		{
 			name:        "docx_uppercase_extension_generic_type",
 			objectPath:  "bucket/docs/Manual.DOCX",
 			contentType: "APPLICATION/OCTET-STREAM",
@@ -218,6 +224,11 @@ func TestLoadObjectContentPluginsUsesDescriptorDefaults(t *testing.T) {
 			name: "wps",
 			req:  ObjectContentRequest{Extension: ".wps", ContentType: "application/kswps"},
 			want: "builtin:content-wps",
+		},
+		{
+			name: "doc",
+			req:  ObjectContentRequest{Extension: ".doc", ContentType: "application/msword"},
+			want: "builtin:content-doc",
 		},
 		{
 			name: "markdown",
@@ -822,6 +833,11 @@ func TestLoadObjectContentPluginsRegistersBuiltinDefaultsWithoutFiles(t *testing
 			name: "docx",
 			req:  ObjectContentRequest{Extension: ".docx", ContentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
 			want: "builtin:content-docx",
+		},
+		{
+			name: "doc",
+			req:  ObjectContentRequest{Extension: ".doc", ContentType: "application/msword"},
+			want: "builtin:content-doc",
 		},
 		{
 			name: "json",
@@ -1815,6 +1831,40 @@ func TestRawDocumentContentHandlerReturnsURLMaterialWhenAvailable(t *testing.T) 
 	}
 }
 
+func TestRawOfficeDocumentContentHandlerUsesCanonicalRendererForURLMaterial(t *testing.T) {
+	t.Parallel()
+	handler, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "wps", Builtin: "wps"})
+	if err != nil {
+		t.Fatalf("build wps handler: %v", err)
+	}
+
+	content, truncated, err := handler.Handle(
+		nil,
+		&ObjectContentRequest{
+			Name:       "关于时空底座.wps",
+			Format:     "wps",
+			Size:       15360,
+			PreviewURL: "/api/v1/manager/storage-stream?engine_id=12&storage_ref=addp%2Fdoc%2F%E5%85%B3%E4%BA%8E%E6%97%B6%E7%A9%BA%E5%BA%95%E5%BA%A7.wps",
+		},
+		func(limit int64) ([]byte, bool, error) {
+			t.Fatalf("office URL preview should not read bytes")
+			return nil, false, nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("handle wps content: %v", err)
+	}
+	if truncated {
+		t.Fatalf("unexpected truncation")
+	}
+	if content.Kind != models.ObjectPreviewKindWPS || content.PreviewMaterial != models.PreviewMaterialURL {
+		t.Fatalf("content = %#v, want WPS URL material", content)
+	}
+	if content.FrontendRenderer != models.ObjectPreviewRendererOffice {
+		t.Fatalf("FrontendRenderer = %q, want office", content.FrontendRenderer)
+	}
+}
+
 func TestPreviewMetadataIncludesDisplayFactsFromAttributes(t *testing.T) {
 	t.Parallel()
 	metadata := buildPreviewMetadata(&ObjectContentRequest{
@@ -1879,8 +1929,8 @@ func TestRawDocumentContentHandlerDeclaresRawBinaryMaterialAndRendererWithoutURL
 	if content.PreviewMaterial != "raw_binary" {
 		t.Fatalf("PreviewMaterial = %q, want raw_binary", content.PreviewMaterial)
 	}
-	if content.FrontendRenderer != "wps" {
-		t.Fatalf("FrontendRenderer = %q, want wps", content.FrontendRenderer)
+	if content.FrontendRenderer != models.ObjectPreviewRendererOffice {
+		t.Fatalf("FrontendRenderer = %q, want office", content.FrontendRenderer)
 	}
 	if content.Encoding != "base64" || content.Data == "" {
 		t.Fatalf("expected base64 data, encoding=%q data=%q", content.Encoding, content.Data)
@@ -2030,6 +2080,16 @@ func TestDecoratePreviewContentSemanticMatrix(t *testing.T) {
 			},
 			wantMaterial: models.PreviewMaterialURL,
 			wantRenderer: models.ObjectPreviewKindPDF,
+			wantMetadata: models.PreviewMaterialURL,
+		},
+		{
+			name: "office_url",
+			content: models.ObjectPreviewContent{
+				Kind: models.ObjectPreviewKindDOC,
+				URL:  "/api/v1/manager/storage-stream?engine_id=1&storage_ref=bucket/report.doc",
+			},
+			wantMaterial: models.PreviewMaterialURL,
+			wantRenderer: models.ObjectPreviewRendererOffice,
 			wantMetadata: models.PreviewMaterialURL,
 		},
 		{

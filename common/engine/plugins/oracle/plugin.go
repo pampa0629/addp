@@ -74,20 +74,33 @@ func (p *OraclePlugin) EngineOrigin() string {
 	return "general"
 }
 
+func (p *OraclePlugin) ConnectionSpec() plugin.ConnectionSpec {
+	return plugin.NewConnectionSpec(
+		plugin.ConnectionFieldSpec{Key: "host", LabelKey: "storageEngine.host", Input: plugin.ConnectionFieldText, Required: true, Identity: true, Default: "localhost", Placeholder: "localhost"},
+		plugin.ConnectionFieldSpec{Key: "port", LabelKey: "storageEngine.port", Input: plugin.ConnectionFieldNumber, Identity: true, Default: 1521, Min: plugin.Int(1), Max: plugin.Int(65535)},
+		plugin.ConnectionFieldSpec{Key: "service_name", LabelKey: "storageEngine.serviceName", Input: plugin.ConnectionFieldText, Required: true, Identity: true, Default: "FREEPDB1", Placeholder: "FREEPDB1"},
+		plugin.ConnectionFieldSpec{Key: "user", LabelKey: "storageEngine.username", Input: plugin.ConnectionFieldText, Required: true, Identity: true, PlaceholderKey: "storageEngine.usernamePlaceholder"},
+		plugin.ConnectionFieldSpec{Key: "password", LabelKey: "storageEngine.password", Input: plugin.ConnectionFieldPassword, Required: true, Sensitive: true, PlaceholderKey: "storageEngine.passwordPlaceholder"},
+		plugin.ConnectionFieldSpec{Key: "cdc_database_name", LabelKey: "storageEngine.oracleCDBName", Input: plugin.ConnectionFieldText, GroupKey: "storageEngine.oracleCDC", Placeholder: "FREE"},
+		plugin.ConnectionFieldSpec{Key: "cdc_user", LabelKey: "storageEngine.oracleCDCUser", Input: plugin.ConnectionFieldText, GroupKey: "storageEngine.oracleCDC", Placeholder: "C##ADDP_CDC"},
+		plugin.ConnectionFieldSpec{Key: "cdc_password", LabelKey: "storageEngine.oracleCDCPassword", Input: plugin.ConnectionFieldPassword, Sensitive: true, GroupKey: "storageEngine.oracleCDC", PlaceholderKey: "storageEngine.oracleCDCPasswordPlaceholder"},
+	)
+}
+
 func (p *OraclePlugin) DefaultPort() int {
-	return 1521
+	return p.ConnectionSpec().DefaultPortValue()
 }
 
 func (p *OraclePlugin) RequiredFields() []string {
-	return []string{"host", "service_name", "user", "password"}
+	return p.ConnectionSpec().RequiredFields()
 }
 
 func (p *OraclePlugin) SensitiveFields() []string {
-	return []string{"password", "cdc_password"}
+	return p.ConnectionSpec().SensitiveFields()
 }
 
 func (p *OraclePlugin) ConnectionIdentityFields() []string {
-	return []string{"host", "port", "service_name", "user"}
+	return p.ConnectionSpec().IdentityFields()
 }
 
 func (p *OraclePlugin) Capabilities() plugin.EngineCapabilities {
@@ -162,7 +175,7 @@ func (p *OraclePlugin) CreateConnectionPool(connInfo plugin.ConnectionInfo, pool
 	return plugin.OpenGORMPool(gormoracle.Open(dsn), poolConfig)
 }
 
-func (p *OraclePlugin) GetDialect() string {
+func (p *OraclePlugin) GORMDialect() string {
 	return p.Type()
 }
 
@@ -171,7 +184,7 @@ func (p *OraclePlugin) QueryLanguages() []string {
 }
 
 func (p *OraclePlugin) GenerateSampleQuery(_ context.Context, _ plugin.ConnectionInfo, opts plugin.SampleQueryOptions) (string, string) {
-	return plugin.SampleSQLForEngineCatalogPath(p.Type(), opts.Path, 10), "sql"
+	return plugin.SampleSQLForDialectCatalogPath(p.SQLDialect(), opts.Path, 10), "sql"
 }
 
 func (p *OraclePlugin) PrepareQuery(_ context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (plugin.PreparedQuery, error) {
@@ -179,12 +192,14 @@ func (p *OraclePlugin) PrepareQuery(_ context.Context, connInfo plugin.Connectio
 }
 
 func (p *OraclePlugin) SQLDialect() string {
-	return p.GetDialect()
+	return commonquery.DialectOracle
 }
 
 func (p *OraclePlugin) SupportsParameterizedQueries() bool {
 	return true
 }
+
+func (p *OraclePlugin) SupportsControlledReadOnlySQL() bool { return true }
 
 func (p *OraclePlugin) ExecuteSQL(ctx context.Context, connInfo plugin.ConnectionInfo, query string, opts plugin.QueryOptions) (*plugin.QueryResult, error) {
 	return plugin.ExecuteSQLWithConnectionPool(ctx, p, connInfo, query, opts)
@@ -697,7 +712,7 @@ func (p *OraclePlugin) getTableRowCount(ctx context.Context, db *gorm.DB, schema
 		return 0, plugin.WrapEngineCatalogError(plugin.EngineCatalogErrorUnsupported, fmt.Errorf("Oracle system schema %q is not exposed", schema))
 	}
 	var count int64
-	query := commonquery.ForEngine(p.Type()).CountTableSQL(schema, table, "")
+	query := commonquery.ForDialect(p.SQLDialect()).CountTableSQL(schema, table, "")
 	if err := db.WithContext(ctx).Raw(query).Scan(&count).Error; err != nil {
 		return 0, fmt.Errorf("failed to count Oracle table rows: %w", err)
 	}

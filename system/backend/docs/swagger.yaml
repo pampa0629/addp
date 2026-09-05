@@ -2943,6 +2943,114 @@ definitions:
         description: 任务状态端点
         type: string
     type: object
+  plugin.ChangeStreamReadCapability:
+    properties:
+      partitioned:
+        type: boolean
+      pause_resume:
+        type: boolean
+      position_types:
+        items:
+          type: string
+        type: array
+      seek:
+        type: boolean
+      supported:
+        type: boolean
+    type: object
+  plugin.ComputeCapabilities:
+    properties:
+      inference:
+        $ref: '#/definitions/plugin.InferenceCapability'
+      query:
+        $ref: '#/definitions/plugin.QueryCapability'
+      script:
+        $ref: '#/definitions/plugin.ScriptCapability'
+      workflow:
+        $ref: '#/definitions/plugin.WorkflowCapability'
+    type: object
+  plugin.ConnectionConstraintSpec:
+    properties:
+      fields:
+        items:
+          type: string
+        type: array
+      kind:
+        type: string
+      message_key:
+        type: string
+      when:
+        $ref: '#/definitions/plugin.ConnectionFieldCondition'
+    type: object
+  plugin.ConnectionFieldCondition:
+    properties:
+      field:
+        type: string
+      values:
+        items:
+          type: string
+        type: array
+    type: object
+  plugin.ConnectionFieldOption:
+    properties:
+      label:
+        type: string
+      label_key:
+        type: string
+      value:
+        type: string
+    type: object
+  plugin.ConnectionFieldSpec:
+    properties:
+      default: {}
+      group_key:
+        type: string
+      hint_key:
+        type: string
+      identity:
+        type: boolean
+      input:
+        type: string
+      key:
+        type: string
+      label_key:
+        type: string
+      max:
+        type: integer
+      min:
+        type: integer
+      options:
+        items:
+          $ref: '#/definitions/plugin.ConnectionFieldOption'
+        type: array
+      placeholder:
+        type: string
+      placeholder_key:
+        type: string
+      required:
+        type: boolean
+      rows:
+        type: integer
+      sensitive:
+        type: boolean
+      visible_when:
+        $ref: '#/definitions/plugin.ConnectionFieldCondition'
+    type: object
+  plugin.ConnectionSpec:
+    properties:
+      constraints:
+        items:
+          $ref: '#/definitions/plugin.ConnectionConstraintSpec'
+        type: array
+      default_port:
+        type: integer
+      fields:
+        items:
+          $ref: '#/definitions/plugin.ConnectionFieldSpec'
+        type: array
+      schema_version:
+        type: string
+    type: object
   plugin.ConstraintFacts:
     properties:
       constraint_type:
@@ -2961,6 +3069,49 @@ definitions:
         type: string
       referenced_table:
         type: string
+    type: object
+  plugin.EncodedRecordReadSessionCapability:
+    properties:
+      formats:
+        items:
+          type: string
+        type: array
+    type: object
+  plugin.EngineCapabilities:
+    properties:
+      compute:
+        $ref: '#/definitions/plugin.ComputeCapabilities'
+      engine_family:
+        type: string
+      engine_type:
+        type: string
+      extensions:
+        additionalProperties: true
+        type: object
+      limits:
+        additionalProperties: true
+        type: object
+      schema_version:
+        type: string
+      storage:
+        $ref: '#/definitions/plugin.StorageCapabilities'
+    type: object
+  plugin.EngineCatalogCapability:
+    properties:
+      node_kinds:
+        items:
+          type: string
+        type: array
+      real_time:
+        type: boolean
+      supported:
+        type: boolean
+      supports_filter:
+        type: boolean
+      supports_search:
+        type: boolean
+      system_filtering:
+        type: boolean
     type: object
   plugin.EngineCatalogFacts:
     properties:
@@ -2989,6 +3140,53 @@ definitions:
       topic:
         $ref: '#/definitions/plugin.TopicFacts'
       updated_at:
+        type: string
+    type: object
+  plugin.EngineCatalogFactsCapability:
+    properties:
+      constraints:
+        type: boolean
+      field_info:
+        type: boolean
+      indexes:
+        type: boolean
+      native_facts:
+        type: boolean
+      partitioning:
+        type: boolean
+      sampling:
+        type: boolean
+      spatial_facts:
+        type: boolean
+      statistics:
+        type: boolean
+      supported:
+        type: boolean
+    type: object
+  plugin.EngineCatalogLevelSpec:
+    properties:
+      i18n_key:
+        type: string
+      kinds:
+        items:
+          type: string
+        type: array
+      optional:
+        type: boolean
+      role:
+        type: string
+      term:
+        type: string
+    type: object
+  plugin.EngineCatalogModelSpec:
+    properties:
+      levels:
+        items:
+          $ref: '#/definitions/plugin.EngineCatalogLevelSpec'
+        type: array
+      path_version:
+        type: string
+      root_term:
         type: string
     type: object
   plugin.EngineCatalogPath:
@@ -3026,6 +3224,21 @@ definitions:
       size_bytes:
         type: integer
     type: object
+  plugin.EngineTypeDescriptor:
+    properties:
+      capabilities:
+        $ref: '#/definitions/plugin.EngineCapabilities'
+      catalog_model:
+        $ref: '#/definitions/plugin.EngineCatalogModelSpec'
+      connection_spec:
+        $ref: '#/definitions/plugin.ConnectionSpec'
+      display_name:
+        type: string
+      origin:
+        type: string
+      type:
+        type: string
+    type: object
   plugin.IndexFacts:
     properties:
       fields:
@@ -3038,6 +3251,185 @@ definitions:
         type: boolean
       name:
         type: string
+    type: object
+  plugin.InferenceCapability:
+    properties:
+      modalities:
+        items:
+          type: string
+        type: array
+      operations:
+        items:
+          type: string
+        type: array
+      runtime_api:
+        type: string
+      streaming:
+        type: boolean
+      supported:
+        type: boolean
+    type: object
+  plugin.NativeTableSpatialEncodingCapability:
+    properties:
+      geometry_read_encodings:
+        items:
+          type: string
+        type: array
+      geometry_write_encodings:
+        items:
+          type: string
+        type: array
+      native_spatial_functions:
+        type: boolean
+      read_transform:
+        type: boolean
+      write_transform:
+        type: boolean
+    type: object
+  plugin.PartitionedTableChangeApplyCapability:
+    properties:
+      atomic_position_commit:
+        type: boolean
+      monotonic:
+        type: boolean
+      operations:
+        items:
+          type: string
+        type: array
+      position_types:
+        items:
+          type: string
+        type: array
+      supported:
+        type: boolean
+    type: object
+  plugin.QueryCapability:
+    properties:
+      default_language:
+        type: string
+      federation:
+        $ref: '#/definitions/plugin.QueryFederationCapability'
+      languages:
+        items:
+          type: string
+        type: array
+      parameters:
+        $ref: '#/definitions/plugin.QueryParameterCapability'
+      read_only:
+        type: boolean
+      read_session:
+        type: boolean
+      result_kinds:
+        items:
+          type: string
+        type: array
+      supported:
+        type: boolean
+      supports_cancel:
+        type: boolean
+      supports_explain:
+        type: boolean
+    type: object
+  plugin.QueryFederationCapability:
+    properties:
+      object_formats:
+        items:
+          type: string
+        type: array
+      runtime_api:
+        type: string
+      source_engine_types:
+        items:
+          type: string
+        type: array
+      supported:
+        type: boolean
+    type: object
+  plugin.QueryParameterCapability:
+    properties:
+      languages:
+        items:
+          type: string
+        type: array
+      supported:
+        type: boolean
+      types:
+        items:
+          type: string
+        type: array
+    type: object
+  plugin.ScriptCapability:
+    properties:
+      interactive:
+        type: boolean
+      languages:
+        items:
+          type: string
+        type: array
+      modes:
+        items:
+          type: string
+        type: array
+      supported:
+        type: boolean
+    type: object
+  plugin.StorageCapabilities:
+    properties:
+      catalog:
+        $ref: '#/definitions/plugin.EngineCatalogCapability'
+      catalog_model:
+        $ref: '#/definitions/plugin.EngineCatalogModelSpec'
+      facts:
+        $ref: '#/definitions/plugin.EngineCatalogFactsCapability'
+      not_supported:
+        items:
+          type: string
+        type: array
+      semantics:
+        items:
+          type: string
+        type: array
+      store:
+        $ref: '#/definitions/plugin.StoreCapability'
+    type: object
+  plugin.StoreCapability:
+    properties:
+      batch_read:
+        type: boolean
+      batch_write:
+        type: boolean
+      bounded_watermark_read:
+        type: boolean
+      change_stream_read:
+        $ref: '#/definitions/plugin.ChangeStreamReadCapability'
+      delete:
+        type: boolean
+      encoded_record_read_session:
+        $ref: '#/definitions/plugin.EncodedRecordReadSessionCapability'
+      partitioned_table_change_apply:
+        $ref: '#/definitions/plugin.PartitionedTableChangeApplyCapability'
+      range_read:
+        type: boolean
+      range_write:
+        type: boolean
+      record_read_session:
+        type: boolean
+      stream_read:
+        type: boolean
+      stream_write:
+        type: boolean
+      table_read_session:
+        type: boolean
+      table_read_spatial_transform:
+        type: boolean
+      table_spatial_encoding:
+        $ref: '#/definitions/plugin.NativeTableSpatialEncodingCapability'
+      table_upsert:
+        $ref: '#/definitions/plugin.TableUpsertCapability'
+      table_write_prepare:
+        type: boolean
+      table_write_session:
+        type: boolean
     type: object
   plugin.TablePartitioningFacts:
     properties:
@@ -3055,6 +3447,13 @@ definitions:
         type: array
       subpartition_strategy:
         type: string
+    type: object
+  plugin.TableUpsertCapability:
+    properties:
+      idempotent:
+        type: boolean
+      supported:
+        type: boolean
     type: object
   plugin.TopicFacts:
     properties:
@@ -3084,6 +3483,19 @@ definitions:
       replicas:
         items:
           type: integer
+        type: array
+    type: object
+  plugin.WorkflowCapability:
+    properties:
+      dynamic_operators:
+        type: boolean
+      runtime_api:
+        type: string
+      supported:
+        type: boolean
+      supported_operator_mode:
+        items:
+          type: string
         type: array
     type: object
 host: localhost:8180
@@ -3883,6 +4295,40 @@ paths:
       tags:
       - 配置管理 | Configuration Management
       x-addp-auth-mode: self
+  /engine-types:
+    get:
+      description: 返回由内置插件声明的引擎类型、连接表单、能力和 Catalog Model；响应不包含任何连接值或凭据 | Return engine
+        types, connection forms, capabilities, and Catalog Models declared by compiled
+        plugins; no connection values or credentials are included
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 可注册引擎类型数组 | Registerable engine type array
+          schema:
+            items:
+              $ref: '#/definitions/plugin.EngineTypeDescriptor'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取可注册引擎类型 | List registerable engine types
+      tags:
+      - 引擎管理 | Engine Management
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - system.engine.read
   /engines:
     get:
       consumes:

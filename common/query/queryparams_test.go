@@ -33,8 +33,8 @@ func TestSQLPlaceholderStyleForEngine(t *testing.T) {
 		{engineType: "mysql", want: SQLPlaceholderQuestion},
 	}
 	for _, tt := range tests {
-		if got := SQLPlaceholderStyleForEngine(tt.engineType); got != tt.want {
-			t.Fatalf("SQLPlaceholderStyleForEngine(%q) = %q, want %q", tt.engineType, got, tt.want)
+		if got := SQLPlaceholderStyleForDialect(tt.engineType); got != tt.want {
+			t.Fatalf("SQLPlaceholderStyleForDialect(%q) = %q, want %q", tt.engineType, got, tt.want)
 		}
 	}
 }

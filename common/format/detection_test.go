@@ -208,6 +208,18 @@ func TestDetectFormat(t *testing.T) {
 			want:     FormatMP3,
 		},
 		{
+			name:     "DOC by extension",
+			filename: "document.doc",
+			peek:     nil,
+			want:     FormatDOC,
+		},
+		{
+			name:     "RTF by registered content signature",
+			filename: "document",
+			peek:     []byte(`{\rtf1\ansi\ansicpg936`),
+			want:     FormatRTF,
+		},
+		{
 			name:     "WAV by magic bytes",
 			filename: "unknown",
 			peek:     []byte("RIFF\x24\x00\x00\x00WAVEfmt "),
@@ -318,6 +330,9 @@ func TestMIMEToFormat(t *testing.T) {
 		{"application/vnd.geo+json", FormatGeoJSON},
 		{"text/csv", FormatCSV},
 		{"application/pdf", FormatPDF},
+		{"application/msword", FormatDOC},
+		{"application/rtf", FormatRTF},
+		{"text/rtf", FormatRTF},
 		{"application/vnd.ms-works", FormatWPS},
 		{"application/wps-office.doc", FormatWPS},
 		{"text/markdown", FormatMarkdown},
@@ -359,6 +374,8 @@ func TestFormatToMIME(t *testing.T) {
 	}{
 		{FormatCSV, "text/csv"},
 		{FormatPDF, "application/pdf"},
+		{FormatDOC, "application/msword"},
+		{FormatRTF, "application/rtf"},
 		{FormatWPS, "application/vnd.ms-works"},
 		{FormatMarkdown, "text/markdown"},
 		{FormatJPEG, "image/jpeg"},
@@ -413,6 +430,21 @@ func TestDetectionUsesFormatDescriptors(t *testing.T) {
 			name:     "wps mime from descriptor",
 			mimeType: "application/kswps",
 			want:     FormatWPS,
+		},
+		{
+			name:     "doc mime from descriptor",
+			mimeType: "application/vnd.ms-word",
+			want:     FormatDOC,
+		},
+		{
+			name:     "rtf extension",
+			filename: "books.rtf",
+			want:     FormatRTF,
+		},
+		{
+			name:     "rtf mime from descriptor",
+			mimeType: "text/rtf",
+			want:     FormatRTF,
 		},
 		{
 			name:     "excel macro extension from descriptor",
@@ -495,6 +527,7 @@ func TestIsDocumentFormat(t *testing.T) {
 		want   bool
 	}{
 		{FormatPDF, true},
+		{FormatDOC, true},
 		{FormatDOCX, true},
 		{FormatPPTX, true},
 		{FormatText, true},

@@ -98,6 +98,50 @@ func TestPreviewHintSemanticMatrix(t *testing.T) {
 			wantPreviewable: true,
 		},
 		{
+			name: "known_doc_document",
+			input: previewHintInput{
+				Name:     "report.doc",
+				Format:   format.FormatDOC,
+				DataType: string(datatype.Document),
+			},
+			wantMaterial:    "raw_binary",
+			wantRenderer:    models.ObjectPreviewRendererOffice,
+			wantPreviewable: true,
+		},
+		{
+			name: "known_docx_document",
+			input: previewHintInput{
+				Name:     "report.docx",
+				Format:   format.FormatDOCX,
+				DataType: string(datatype.Document),
+			},
+			wantMaterial:    "raw_binary",
+			wantRenderer:    models.ObjectPreviewRendererOffice,
+			wantPreviewable: true,
+		},
+		{
+			name: "known_wps_document",
+			input: previewHintInput{
+				Name:     "report.wps",
+				Format:   format.FormatWPS,
+				DataType: string(datatype.Document),
+			},
+			wantMaterial:    "raw_binary",
+			wantRenderer:    models.ObjectPreviewRendererOffice,
+			wantPreviewable: true,
+		},
+		{
+			name: "known_rtf_document",
+			input: previewHintInput{
+				Name:     "books.rtf",
+				Format:   format.FormatRTF,
+				DataType: string(datatype.Document),
+			},
+			wantMaterial:    "raw_binary",
+			wantRenderer:    models.ObjectPreviewRendererOffice,
+			wantPreviewable: true,
+		},
+		{
 			name: "unknown_document_is_unsupported",
 			input: previewHintInput{
 				Name:     "book.epub",

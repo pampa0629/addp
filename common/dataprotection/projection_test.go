@@ -68,6 +68,58 @@ func TestProtectDocumentTraversesArraysAndFailsClosed(t *testing.T) {
 	}
 }
 
+func TestTimeBoundedAllowFallsBackLocallyAfterDeadline(t *testing.T) {
+	now := time.Now().UTC()
+	fallback := testProjection(now).Rules[0].Decision
+	future := now.Add(time.Hour)
+	decision := Decision{Effect: EffectAllow, ValidUntil: &future, Fallback: &fallback}
+	rule := testProjection(now).Rules[0]
+	rule.Decision = decision
+
+	plaintext := map[string]any{"userInfo": map[string]any{"phone": "13661384499"}}
+	if err := ProtectDocument(plaintext, "preview", []Rule{rule}); err != nil {
+		t.Fatalf("ProtectDocument(active exemption) error = %v", err)
+	}
+	if got := plaintext["userInfo"].(map[string]any)["phone"]; got != "13661384499" {
+		t.Fatalf("active exemption phone = %#v", got)
+	}
+
+	past := now.Add(-time.Hour)
+	rule.Decision.ValidUntil = &past
+	protected := map[string]any{"userInfo": map[string]any{"phone": "13661384499"}}
+	if err := ProtectDocument(protected, "preview", []Rule{rule}); err != nil {
+		t.Fatalf("ProtectDocument(expired exemption) error = %v", err)
+	}
+	if got := protected["userInfo"].(map[string]any)["phone"]; got != "136****4499" {
+		t.Fatalf("expired exemption phone = %#v, want fallback mask", got)
+	}
+}
+
+func TestProjectionRejectsUnboundedOrNestedAllow(t *testing.T) {
+	now := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
+	projection := testProjection(now)
+	projection.Rules[0].Decision = Decision{Effect: EffectAllow}
+	if err := projection.Seal(); err != nil {
+		t.Fatal(err)
+	}
+	if err := projection.Validate(now); err == nil {
+		t.Fatal("Validate() accepted unbounded allow")
+	}
+
+	projection = testProjection(now)
+	fallback := projection.Rules[0].Decision
+	deadline := now.Add(time.Hour)
+	fallback.ValidUntil = &deadline
+	fallback.Fallback = &Decision{Effect: EffectSuppress}
+	projection.Rules[0].Decision = Decision{Effect: EffectAllow, ValidUntil: &deadline, Fallback: &fallback}
+	if err := projection.Seal(); err != nil {
+		t.Fatal(err)
+	}
+	if err := projection.Validate(now); err == nil {
+		t.Fatal("Validate() accepted nested time-bounded fallback")
+	}
+}
+
 func testProjection(now time.Time) Projection {
 	return Projection{
 		SchemaVersion: ProjectionSchemaV1,

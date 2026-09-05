@@ -136,7 +136,7 @@ func (s *SQLEngineService) AnalyzePreparedQuery(
 }
 
 func analyzeRelationParameterQuery(engineType, language, query string, queryParameters []models.QueryParameterDefinition) (*plugin.QueryAnalysis, error) {
-	if language != "sql" || !commonquery.ForEngine(engineType).IsPostgreSQL() {
+	if language != "sql" || !commonquery.ForDialect(engineType).IsPostgreSQL() {
 		return invalidPreparedQueryAnalysis(language, fmt.Errorf("relation 查询参数仅支持 PostgreSQL SQL"))
 	}
 	bindings, _, err := relationParameterBindings(queryParameters)

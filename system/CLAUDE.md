@@ -314,7 +314,7 @@ frontend/src/
    - 密钥管理:
      - 开发环境: 默认32字节密钥
      - 生产环境: 环境变量 `ENCRYPTION_KEY` (Base64编码)
-   - 加密字段: 由当前引擎插件的 `SensitiveFields()` 唯一声明
+   - 加密字段: 由当前引擎插件 `ConnectionSpec` 中的 `sensitive=true` 唯一声明，运行时 `SensitiveFields()` 必须从该描述派生
    - 自动加密: 创建/更新引擎时自动加密敏感字段
    - 自动解密: 查询引擎时自动解密返回
 
@@ -362,6 +362,7 @@ frontend/src/
 ### 引擎管理（需认证）
 - `POST /api/v1/system/engines` - 创建引擎（自动关联当前用户租户）
 - `GET /api/v1/system/engines` - 获取当前 Tenant 的完整过滤后引擎数组；System 管理页面在前端分页
+- `GET /api/v1/system/engine-types` - 获取插件声明的可注册引擎类型、连接表单、能力和 Catalog Model
 - `GET /api/v1/system/engines/:id` - 获取指定引擎
 - `PUT /api/v1/system/engines/:id` - 更新引擎（敏感字段自动重新加密）
 - `DELETE /api/v1/system/engines/:id` - 删除引擎

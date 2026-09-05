@@ -33,10 +33,11 @@ func TestRespondErrorMapsStructuredErrorsAndLanguage(t *testing.T) {
 		{name: "code set referenced", err: service.ErrCodeSetReferenced, fallback: http.StatusInternalServerError, wantStatus: http.StatusConflict, wantBody: "The code set is still referenced by an element"},
 		{name: "code item referenced", err: service.ErrCodeItemReferenced, fallback: http.StatusInternalServerError, wantStatus: http.StatusConflict, wantBody: "The code item is still referenced by a child code item"},
 		{name: "metric referenced", err: service.ErrMetricReferenced, fallback: http.StatusInternalServerError, wantStatus: http.StatusConflict, wantBody: "The metric is still referenced by a derived metric or dependency"},
+		{name: "glossary publication history", err: service.ErrGlossaryPublicationHistory, fallback: http.StatusInternalServerError, wantStatus: http.StatusConflict, wantBody: "A glossary with publication history cannot be deleted"},
 		{name: "dependency cycle", err: repository.ErrMetricDependencyCycle, fallback: http.StatusBadRequest, wantStatus: http.StatusBadRequest, wantBody: "Metric dependencies cannot form a cycle"},
 		{name: "domain parent cycle", err: service.ErrDomainParentCycle, fallback: http.StatusBadRequest, wantStatus: http.StatusBadRequest, wantBody: "A domain parent cannot be itself or its descendant"},
 		{name: "system unit", err: service.ErrSystemUnitImmutable, fallback: http.StatusBadRequest, wantStatus: http.StatusConflict, wantBody: "System units cannot be updated or deleted"},
-		{name: "invalid tenant reference", err: repository.ErrInvalidTenantReference, fallback: http.StatusBadRequest, wantStatus: http.StatusBadRequest, wantBody: "A referenced resource does not exist or belongs to another tenant"},
+		{name: "invalid tenant reference", err: repository.ErrInvalidTenantReference, fallback: http.StatusInternalServerError, wantStatus: http.StatusBadRequest, wantBody: "A referenced resource does not exist or belongs to another tenant"},
 		{name: "invalid standard scope", err: service.ErrInvalidStandardScope, fallback: http.StatusInternalServerError, wantStatus: http.StatusBadRequest, wantBody: "The scope and owning domain are inconsistent"},
 		{name: "unknown bad request", err: fmt.Errorf("binding internals"), fallback: http.StatusBadRequest, wantStatus: http.StatusBadRequest, wantBody: "Invalid request parameters"},
 		{name: "wrapped document not found", err: fmt.Errorf("link document: %w", commonapi.ErrNotFound), fallback: http.StatusBadRequest, wantStatus: http.StatusNotFound, wantBody: "Resource not found"},
@@ -75,6 +76,24 @@ func TestRespondErrorReturnsInvalidStandardScopeCode(t *testing.T) {
 	}
 	if response.ErrorCode != "invalid_standard_scope" {
 		t.Fatalf("error_code = %q", response.ErrorCode)
+	}
+}
+
+func TestRespondErrorReturnsGlossaryPublicationHistoryCode(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Set("addp_lang", "en")
+
+	respondError(context, http.StatusInternalServerError, service.ErrGlossaryPublicationHistory)
+
+	var response struct {
+		ErrorCode string `json:"error_code"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if recorder.Code != http.StatusConflict || response.ErrorCode != "glossary_publication_history" {
+		t.Fatalf("status=%d error_code=%q", recorder.Code, response.ErrorCode)
 	}
 }
 

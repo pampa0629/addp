@@ -14,7 +14,9 @@ const (
 	FormatTSV   FormatType = "tsv"
 
 	FormatPDF      FormatType = "pdf"
+	FormatDOC      FormatType = "doc"
 	FormatDOCX     FormatType = "docx"
+	FormatRTF      FormatType = "rtf"
 	FormatPPTX     FormatType = "pptx"
 	FormatWPS      FormatType = "wps"
 	FormatText     FormatType = "text"

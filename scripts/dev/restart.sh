@@ -510,7 +510,6 @@ restart_pointcloud_workflow_service() {
     local container_source_dir="${POINTCLOUD_DATA_CONTAINER_PATH:-${ROOT_DIR}/business/nfs/data}"
     local work_dir="${POINTCLOUD_WORK_HOST_PATH:-${ROOT_DIR}/data/pointcloud-work}"
     local system_port="${SYSTEM_BACKEND_PORT:-8180}"
-    local minio_port="${MINIO_API_PORT:-19000}"
 
     if ! command -v docker >/dev/null 2>&1; then
         echo "❌ PointCloud Workflow Engine 需要 Docker runtime 承载 PDAL"
@@ -539,7 +538,7 @@ restart_pointcloud_workflow_service() {
         -e POINTCLOUD_WORK_DIR=/work/pointcloud \
         -e CPL_TMPDIR=/work/pointcloud \
         -e RUNTIME_HOST=localhost \
-        -e POINTCLOUD_OBJECT_STORE_LOCALHOST_ENDPOINT="host.docker.internal:${minio_port}" \
+        -e POINTCLOUD_OBJECT_STORE_LOOPBACK_HOST="${POINTCLOUD_OBJECT_STORE_LOOPBACK_HOST:-host.docker.internal}" \
         -v "${ROOT_DIR}/logs:/app/logs" \
         -v "${work_dir}:/work/pointcloud" \
         -v "${ROOT_DIR}/engines/pointcloud-workflow/api_server.py:/app/api_server.py:ro" \

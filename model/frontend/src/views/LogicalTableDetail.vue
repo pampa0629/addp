@@ -249,14 +249,23 @@
           <template #header>
             <div class="card-header-with-action">
               <span class="card-title">{{ t('model.materialization.title') }}</span>
-              <el-button
-                v-if="canDecommissionTarget"
-                type="danger"
-                plain
-                @click="openDecommissionDialog"
-              >
-                {{ t('model.materialization.decommission') }}
-              </el-button>
+              <div v-if="canClearMaterialization || canDecommissionTarget" class="card-header-actions">
+                <el-button
+                  v-if="canClearMaterialization"
+                  plain
+                  @click="clearMaterializationConfig"
+                >
+                  {{ t('model.materialization.clear_config') }}
+                </el-button>
+                <el-button
+                  v-if="canDecommissionTarget"
+                  type="danger"
+                  plain
+                  @click="openDecommissionDialog"
+                >
+                  {{ t('model.materialization.decommission') }}
+                </el-button>
+              </div>
             </div>
           </template>
           <el-form :model="materializationForm" label-width="110px">
@@ -616,6 +625,11 @@ const canDecommissionTarget = computed(() =>
   authStore.hasPermission('model.materialized_target.delete') &&
   Boolean(decommissionTarget.value.locator && decommissionTarget.value.targetName)
 )
+const canClearMaterialization = computed(() => canEdit.value && Boolean(
+  String(materializationForm.target_parent_locator || '').trim() ||
+  String(materializationForm.target_name || '').trim() ||
+  String(materializationForm.partition_by || '').trim()
+))
 
 const blankMetricImplementation = () => ({
   metric_definition_id: null,
@@ -725,6 +739,16 @@ const isSchemaSelection = (node, { locator }) => Boolean(canEdit.value) && node?
 
 const handleTargetParentSelect = selection => {
   materializationForm.target_parent_locator = selection?.identity?.locator || ''
+}
+
+const clearMaterializationConfig = () => {
+  targetParentSelection.value = null
+  Object.assign(materializationForm, {
+    target_parent_locator: '',
+    target_name: '',
+    partition_by: '',
+    partition_type: 'range',
+  })
 }
 
 const loadTable = async () => applyTable(await logicalTableAPI.get(tableId.value))
@@ -1131,6 +1155,13 @@ watch(() => route.params.id, loadPage, { immediate: true })
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.card-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .text-muted {

@@ -50,22 +50,26 @@ type EnginePlugin interface {
 
 	// DefaultPort 返回默认端口号
 	// 如果不适用，返回 0
+	// 可注册 general 插件必须从 ConnectionSpec 派生
 	DefaultPort() int
 
 	// RequiredFields 返回必填字段列表
 	// 例如: ["host", "port", "user", "database"]
+	// 可注册 general 插件必须从 ConnectionSpec 派生
 	RequiredFields() []string
 
 	// SensitiveFields 返回敏感字段列表（需要加密/脱敏）
 	// 例如: ["password", "access_key", "secret_key", "token"]
+	// 可注册 general 插件必须从 ConnectionSpec 派生
 	SensitiveFields() []string
 
 	// Capabilities 返回结构化引擎能力声明
 	Capabilities() EngineCapabilities
 }
 
-// ConnectionIdentityProvider 声明 Engine Instance 物理端点身份字段。
-// System 管理的内置插件必须实现该接口；自研 HTTP extension 使用标准运行时身份字段。
+// ConnectionIdentityProvider 声明不经过 System 注册表单的 Runtime Engine Instance 身份字段。
+// 可由用户注册的 general 插件统一从 ConnectionSpecProvider 的 identity 字段派生；
+// 自研 HTTP extension 使用标准运行时身份字段。
 type ConnectionIdentityProvider interface {
 	ConnectionIdentityFields() []string
 }
@@ -95,9 +99,9 @@ type ConnectionPoolPlugin interface {
 	// 返回: GORM数据库实例，已配置连接池参数
 	CreateConnectionPool(connInfo ConnectionInfo, poolConfig *PoolConfig) (*gorm.DB, error)
 
-	// GetDialect 获取数据库方言（用于GORM）
+	// GORMDialect 获取 GORM 驱动方言名称，不作为通用 SQL 生成依据。
 	// 返回值: "postgres", "mysql", "sqlite" 等
-	GetDialect() string
+	GORMDialect() string
 }
 
 // ============ 数据结构定义 ============

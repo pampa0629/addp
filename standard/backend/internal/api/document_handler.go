@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"mime"
 	"net/http"
@@ -27,6 +28,10 @@ func NewDocumentHandler(svc *service.DocumentService) *DocumentHandler {
 // @Summary 获取标准文档列表 | List standard documents
 // @Tags Standard
 // @Produce json
+// @Param scope_type query string false "适用范围 | Scope" Enums(platform,tenant_common,domain)
+// @Param owner_domain_id query int false "归属业务域 ID | Owning domain ID"
+// @Param status query string false "修订状态 | Revision status" Enums(draft,in_review,published,withdrawn)
+// @Param as_of query string false "生效时点（RFC3339） | Effective point in time (RFC3339)"
 // @Success 200 {object} models.PaginatedDocumentResponse
 // @Failure 401 {object} map[string]string "需要登录 | Authentication required"
 // @Failure 403 {object} map[string]string "无权访问 | Access denied"
@@ -36,9 +41,29 @@ func NewDocumentHandler(svc *service.DocumentService) *DocumentHandler {
 // @Security BearerAuth
 func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 	tenantID := getTenantID(c)
+	status, err := parseOptionalRevisionStatus(c)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
 	opts := repository.ListDocumentOptions{
-		DocType: c.Query("doc_type"),
-		Keyword: c.Query("keyword"),
+		DocType: c.Query("doc_type"), Status: status, Keyword: c.Query("keyword"),
+	}
+	if opts.ScopeType, err = parseOptionalStandardScope(c); err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
+	if opts.AsOf, err = parseOptionalAsOf(c); err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
+	if value := c.Query("owner_domain_id"); value != "" {
+		id, parseErr := strconv.ParseInt(value, 10, 64)
+		if parseErr != nil || id <= 0 {
+			respondError(c, http.StatusBadRequest, fmt.Errorf("invalid owner_domain_id"))
+			return
+		}
+		opts.OwnerDomainID = &id
 	}
 	if pageStr := c.Query("page"); pageStr != "" {
 		if p, err := strconv.Atoi(pageStr); err == nil {
@@ -73,7 +98,8 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 // @Summary 获取标准文档详情 | Get standard document detail
 // @Tags Standard
 // @Produce json
-// @Success 200 {object} models.Document
+// @Param as_of query string false "生效时点（RFC3339） | Effective point in time (RFC3339)"
+// @Success 200 {object} models.DocumentAggregate
 // @Failure 401 {object} map[string]string "需要登录 | Authentication required"
 // @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
@@ -87,7 +113,12 @@ func (h *DocumentHandler) GetDocument(c *gin.Context) {
 		return
 	}
 	tenantID := getTenantID(c)
-	doc, err := h.svc.GetDocument(id, tenantID)
+	asOf, err := parseOptionalAsOf(c)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
+	doc, err := h.svc.GetDocumentAt(id, tenantID, asOf)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, sysi18n.MsgDocumentNotFound)})
 		return
@@ -98,7 +129,8 @@ func (h *DocumentHandler) GetDocument(c *gin.Context) {
 // @Summary 创建标准文档 | Create standard document
 // @Tags Standard
 // @Produce json
-// @Success 201 {object} models.Document
+// @Param request body models.CreateDocumentRequest true "文档身份和首个草稿修订 | Document identity and initial draft revision"
+// @Success 201 {object} models.DocumentAggregate
 // @Failure 401 {object} map[string]string "需要登录 | Authentication required"
 // @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
@@ -126,7 +158,7 @@ func (h *DocumentHandler) CreateDocument(c *gin.Context) {
 // @Param request body models.UpdateDocumentRequest true "更新标准文档 | Update standard document"
 // @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
 // @Produce json
-// @Success 200 {object} models.Document
+// @Success 200 {object} models.DocumentAggregate
 // @Failure 401 {object} map[string]string "需要登录 | Authentication required"
 // @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
@@ -179,7 +211,7 @@ func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
 }
 
 // UploadFile 上传文档文件（multipart/form-data, field: "file"）
-// @Summary 上传文档文件 | Upload document file
+// @Summary 上传文档修订文件 | Upload document revision file
 // @Tags Standard
 // @Accept multipart/form-data
 // @Param version formData int true "当前文档资源版本 | Current document resource version"
@@ -193,11 +225,16 @@ func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
 // @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.document.update"]
-// @Router /documents/{id}/upload [post]
+// @Router /documents/{id}/revisions/{revision_id}/file [post]
 // @Security BearerAuth
 func (h *DocumentHandler) UploadFile(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
+		return
+	}
+	revisionID, err := strconv.ParseInt(c.Param("revision_id"), 10, 64)
+	if err != nil || revisionID <= 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
@@ -229,15 +266,15 @@ func (h *DocumentHandler) UploadFile(c *gin.Context) {
 	defer f.Close()
 
 	contentType := file.Header.Get("Content-Type")
-	doc, err := h.svc.UploadFile(id, tenantID, version, file.Filename, f, file.Size, contentType)
+	doc, err := h.svc.UploadFile(id, revisionID, tenantID, getUserID(c), version, file.Filename, f, file.Size, contentType)
 	if err != nil {
 		respondDocumentFileError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"message":   commoni18n.T(c, sysi18n.MsgUploadSuccess),
-		"file_name": doc.FileName,
-		"file_size": doc.FileSize,
+		"file_name": doc.DraftRevision.FileName,
+		"file_size": doc.DraftRevision.FileSize,
 		"version":   doc.Version,
 	})
 }
@@ -253,7 +290,7 @@ func (h *DocumentHandler) UploadFile(c *gin.Context) {
 // @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "resource_ticket"
 // @x-addp-required-permissions ["standard.document.read"]
-// @Router /documents/{id}/download [get]
+// @Router /documents/{id}/revisions/{revision_id}/file [get]
 // @Security BearerAuth
 func (h *DocumentHandler) DownloadFile(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -261,9 +298,14 @@ func (h *DocumentHandler) DownloadFile(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
 		return
 	}
+	revisionID, err := strconv.ParseInt(c.Param("revision_id"), 10, 64)
+	if err != nil || revisionID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": commoni18n.T(c, sysi18n.MsgInvalidID)})
+		return
+	}
 	tenantID := getTenantID(c)
 
-	reader, fileName, fileSize, err := h.svc.DownloadFile(id, tenantID)
+	reader, fileName, mediaType, fileSize, err := h.svc.DownloadFile(id, revisionID, tenantID)
 	if err != nil {
 		respondDocumentFileError(c, err)
 		return
@@ -271,7 +313,10 @@ func (h *DocumentHandler) DownloadFile(c *gin.Context) {
 	defer reader.Close()
 
 	c.Header("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": fileName}))
-	c.Header("Content-Type", "application/octet-stream")
+	if mediaType == "" {
+		mediaType = "application/octet-stream"
+	}
+	c.Header("Content-Type", mediaType)
 	if fileSize > 0 {
 		c.Header("Content-Length", strconv.FormatInt(fileSize, 10))
 	}
@@ -279,6 +324,258 @@ func (h *DocumentHandler) DownloadFile(c *gin.Context) {
 	if _, err := io.Copy(c.Writer, reader); err != nil {
 		c.Error(err)
 	}
+}
+
+// @Summary 获取文档修订历史 | List document revisions
+// @Tags Standard
+// @Produce json
+// @Success 200 {array} models.DocumentRevision
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.document.read"]
+// @Router /documents/{id}/revisions [get]
+// @Security BearerAuth
+func (h *DocumentHandler) ListRevisions(c *gin.Context) {
+	id, ok := elementPathID(c, "id")
+	if !ok {
+		return
+	}
+	items, err := h.svc.ListRevisions(id, getTenantID(c))
+	if err != nil {
+		respondError(c, http.StatusNotFound, err)
+		return
+	}
+	c.JSON(http.StatusOK, items)
+}
+
+// @Summary 创建文档草稿修订 | Create document draft revision
+// @Tags Standard
+// @Accept json
+// @Produce json
+// @Param request body models.CreateDocumentRevisionRequest true "并发版本和变更说明 | Version and change summary"
+// @Success 201 {object} models.DocumentAggregate
+// @Failure 409 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.document.update"]
+// @Router /documents/{id}/revisions [post]
+// @Security BearerAuth
+func (h *DocumentHandler) CreateRevision(c *gin.Context) {
+	id, ok := elementPathID(c, "id")
+	if !ok {
+		return
+	}
+	var req models.CreateDocumentRevisionRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	result, err := h.svc.CreateRevision(id, getTenantID(c), getUserID(c), &req)
+	if err != nil {
+		respondError(c, http.StatusConflict, err)
+		return
+	}
+	c.JSON(http.StatusCreated, result)
+}
+
+// @Summary 获取文档修订 | Get document revision
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} models.DocumentRevision
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.document.read"]
+// @Router /documents/{id}/revisions/{revision_id} [get]
+// @Security BearerAuth
+func (h *DocumentHandler) GetRevision(c *gin.Context) {
+	id, revisionID, ok := documentRevisionPath(c)
+	if !ok {
+		return
+	}
+	result, err := h.svc.GetRevision(id, revisionID, getTenantID(c))
+	if err != nil {
+		respondError(c, http.StatusNotFound, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// @Summary 更新文档草稿修订 | Update document draft revision
+// @Tags Standard
+// @Accept json
+// @Produce json
+// @Param request body models.UpdateDocumentRevisionRequest true "完整草稿及并发版本 | Full draft and concurrency version"
+// @Success 200 {object} models.DocumentAggregate
+// @Failure 409 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.document.update"]
+// @Router /documents/{id}/revisions/{revision_id} [put]
+// @Security BearerAuth
+func (h *DocumentHandler) UpdateRevision(c *gin.Context) {
+	id, revisionID, ok := documentRevisionPath(c)
+	if !ok {
+		return
+	}
+	var req models.UpdateDocumentRevisionRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	result, err := h.svc.UpdateRevision(id, revisionID, getTenantID(c), getUserID(c), &req)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// @Summary 提交文档修订审核 | Submit document revision for review
+// @Tags Standard
+// @Accept json
+// @Produce json
+// @Param request body models.RevisionActionRequest true "当前资源版本 | Current resource version"
+// @Success 200 {object} models.DocumentAggregate
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.document.update"]
+// @Router /documents/{id}/revisions/{revision_id}/submit [post]
+// @Security BearerAuth
+func (h *DocumentHandler) SubmitRevision(c *gin.Context) { h.revisionAction(c, h.svc.SubmitRevision) }
+
+// @Summary 退回文档修订 | Return document revision to draft
+// @Tags Standard
+// @Accept json
+// @Produce json
+// @Param request body models.RevisionActionRequest true "当前资源版本 | Current resource version"
+// @Success 200 {object} models.DocumentAggregate
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.document.publish"]
+// @Router /documents/{id}/revisions/{revision_id}/return [post]
+// @Security BearerAuth
+func (h *DocumentHandler) ReturnRevision(c *gin.Context) { h.revisionAction(c, h.svc.ReturnRevision) }
+
+// @Summary 发布文档修订 | Publish document revision
+// @Tags Standard
+// @Accept json
+// @Produce json
+// @Param request body models.RevisionActionRequest true "当前资源版本 | Current resource version"
+// @Success 200 {object} models.DocumentAggregate
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.document.publish"]
+// @Router /documents/{id}/revisions/{revision_id}/publish [post]
+// @Security BearerAuth
+func (h *DocumentHandler) PublishRevision(c *gin.Context) { h.revisionAction(c, h.svc.PublishRevision) }
+
+// @Summary 撤回文档发布修订 | Withdraw published document revision
+// @Tags Standard
+// @Accept json
+// @Produce json
+// @Param request body models.RevisionActionRequest true "当前资源版本 | Current resource version"
+// @Success 200 {object} models.DocumentAggregate
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.document.publish"]
+// @Router /documents/{id}/revisions/{revision_id}/withdraw [post]
+// @Security BearerAuth
+func (h *DocumentHandler) WithdrawRevision(c *gin.Context) {
+	h.revisionAction(c, h.svc.WithdrawRevision)
+}
+
+// @Summary 从文档修订提炼标准候选 | Extract standard candidates from document revision
+// @Tags Standard
+// @Accept json
+// @Produce json
+// @Param request body models.CreateDocumentExtractionRequest true "当前资源版本 | Current resource version"
+// @Success 201 {object} models.DocumentExtraction
+// @Failure 422 {object} map[string]string
+// @Failure 503 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.document_extraction.create"]
+// @Router /documents/{id}/revisions/{revision_id}/extractions [post]
+// @Security BearerAuth
+func (h *DocumentHandler) ExtractCandidates(c *gin.Context) {
+	id, revisionID, ok := documentRevisionPath(c)
+	if !ok {
+		return
+	}
+	var req models.CreateDocumentExtractionRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	result, err := h.svc.ExtractCandidates(c.Request.Context(), id, revisionID, getTenantID(c), getUserID(c), req.Version)
+	if err != nil {
+		respondError(c, http.StatusUnprocessableEntity, err)
+		return
+	}
+	c.JSON(http.StatusCreated, result)
+}
+
+// @Summary 获取文档提炼批次 | List document extraction batches
+// @Tags Standard
+// @Produce json
+// @Success 200 {array} models.DocumentExtraction
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.document.read"]
+// @Router /documents/{id}/extractions [get]
+// @Security BearerAuth
+func (h *DocumentHandler) ListExtractions(c *gin.Context) {
+	id, ok := elementPathID(c, "id")
+	if !ok {
+		return
+	}
+	items, err := h.svc.ListExtractions(id, getTenantID(c))
+	if err != nil {
+		respondError(c, http.StatusNotFound, err)
+		return
+	}
+	c.JSON(http.StatusOK, items)
+}
+
+// @Summary 裁决文档提炼候选 | Review document extraction candidate
+// @Tags Standard
+// @Accept json
+// @Produce json
+// @Param request body models.UpdateDocumentExtractionCandidateRequest true "裁决状态及并发版本 | Decision and concurrency version"
+// @Success 200 {object} models.DocumentExtractionCandidate
+// @Failure 409 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.document.update"]
+// @Router /document-extraction-candidates/{candidate_id} [put]
+// @Security BearerAuth
+func (h *DocumentHandler) UpdateCandidate(c *gin.Context) {
+	id, ok := elementPathID(c, "candidate_id")
+	if !ok {
+		return
+	}
+	var req models.UpdateDocumentExtractionCandidateRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	result, err := h.svc.UpdateCandidateStatus(id, getTenantID(c), getUserID(c), &req)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+func (h *DocumentHandler) revisionAction(c *gin.Context, action func(int64, int64, int64, int64, int64) (*models.DocumentAggregate, error)) {
+	id, revisionID, ok := documentRevisionPath(c)
+	if !ok {
+		return
+	}
+	var req models.RevisionActionRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	result, err := action(id, revisionID, getTenantID(c), getUserID(c), req.Version)
+	if err != nil {
+		respondError(c, http.StatusConflict, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+func documentRevisionPath(c *gin.Context) (int64, int64, bool) {
+	id, ok := elementPathID(c, "id")
+	if !ok {
+		return 0, 0, false
+	}
+	revisionID, ok := elementPathID(c, "revision_id")
+	return id, revisionID, ok
 }
 
 // @Summary 获取文档关联映射 | Get document mappings
@@ -345,7 +642,7 @@ func (h *DocumentHandler) SetMappings(c *gin.Context) {
 // @Summary 查询数据元关联的文档 | List documents by element
 // @Tags Standard
 // @Produce json
-// @Success 200 {array} models.Document
+// @Success 200 {array} models.DocumentAggregate
 // @Failure 401 {object} map[string]string "需要登录 | Authentication required"
 // @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
@@ -369,7 +666,7 @@ func (h *DocumentHandler) ListDocsByElement(c *gin.Context) {
 // @Summary 查询术语关联的文档 | List documents by glossary
 // @Tags Standard
 // @Produce json
-// @Success 200 {array} models.Document
+// @Success 200 {array} models.DocumentAggregate
 // @Failure 401 {object} map[string]string "需要登录 | Authentication required"
 // @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
@@ -393,7 +690,7 @@ func (h *DocumentHandler) ListDocsByGlossary(c *gin.Context) {
 // @Summary 查询指标关联的文档 | List documents by metric
 // @Tags Standard
 // @Produce json
-// @Success 200 {array} models.Document
+// @Success 200 {array} models.DocumentAggregate
 // @Failure 401 {object} map[string]string "需要登录 | Authentication required"
 // @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"

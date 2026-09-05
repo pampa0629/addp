@@ -36,23 +36,33 @@ func (p *Neo4jPlugin) EngineOrigin() string {
 	return "general"
 }
 
+func (p *Neo4jPlugin) ConnectionSpec() plugin.ConnectionSpec {
+	return plugin.NewConnectionSpec(
+		plugin.ConnectionFieldSpec{Key: "host", LabelKey: "storageEngine.host", Input: plugin.ConnectionFieldText, Required: true, Identity: true, Default: "localhost", Placeholder: "localhost"},
+		plugin.ConnectionFieldSpec{Key: "port", LabelKey: "storageEngine.port", Input: plugin.ConnectionFieldNumber, Identity: true, Default: 7687, Min: plugin.Int(1), Max: plugin.Int(65535)},
+		plugin.ConnectionFieldSpec{Key: "user", LabelKey: "storageEngine.username", Input: plugin.ConnectionFieldText, Required: true, Default: "neo4j", Placeholder: "neo4j"},
+		plugin.ConnectionFieldSpec{Key: "password", LabelKey: "storageEngine.password", Input: plugin.ConnectionFieldPassword, Required: true, Sensitive: true, PlaceholderKey: "storageEngine.passwordPlaceholder"},
+		plugin.ConnectionFieldSpec{Key: "database", LabelKey: "storageEngine.database", Input: plugin.ConnectionFieldText, Default: "neo4j", Placeholder: "neo4j", HintKey: "storageEngine.hints.neo4j"},
+	)
+}
+
 // DefaultPort 返回默认端口（Bolt 协议）
 func (p *Neo4jPlugin) DefaultPort() int {
-	return 7687
+	return p.ConnectionSpec().DefaultPortValue()
 }
 
 // RequiredFields 返回必填字段列表
 func (p *Neo4jPlugin) RequiredFields() []string {
-	return []string{"host", "user", "password"}
+	return p.ConnectionSpec().RequiredFields()
 }
 
 // SensitiveFields 返回敏感字段列表
 func (p *Neo4jPlugin) SensitiveFields() []string {
-	return []string{"password"}
+	return p.ConnectionSpec().SensitiveFields()
 }
 
 func (p *Neo4jPlugin) ConnectionIdentityFields() []string {
-	return []string{"host", "port"}
+	return p.ConnectionSpec().IdentityFields()
 }
 
 func (p *Neo4jPlugin) Capabilities() plugin.EngineCapabilities {

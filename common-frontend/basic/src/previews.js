@@ -12,8 +12,8 @@
  *   - marked (MarkdownPreview)
  *   - dompurify (MarkdownPreview)
  *   - mermaid (MarkdownPreview)
- *   - jszip (DocxPreview, PptxPreview)
- *   - mammoth (DocxPreview)
+ *   - @open-file-viewer/core (OfficePreview，按需加载)
+ *   - jszip (PptxPreview)
  *
  * 并在 vite.config.js 的 resolve.dedupe 中添加这些包名。
  */
@@ -26,6 +26,6 @@ export { default as MarkdownPreview } from './components/previews/MarkdownPrevie
 export { default as ContainerPreview } from './components/previews/ContainerPreview.vue'
 export { default as VideoPreview } from './components/previews/VideoPreview.vue'
 export { default as PdfPreview } from './components/previews/PdfPreview.vue'
-export { default as DocxPreview } from './components/previews/DocxPreview.vue'
+export { default as OfficePreview } from './components/previews/OfficePreview.vue'
 export { default as PptxPreview } from './components/previews/PptxPreview.vue'
 export { default as ObjectCatalogPreview } from './components/previews/ObjectCatalogPreview.vue'

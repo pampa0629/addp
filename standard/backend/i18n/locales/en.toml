@@ -145,11 +145,29 @@ other = "File cleanup failed"
 [standard.document.file_name_invalid]
 other = "Invalid file name"
 
+[standard.document.file_required]
+other = "Upload and validate a file before submitting this document revision"
+
+[standard.document.extraction_unsupported]
+other = "Standard candidate extraction currently supports Markdown documents only"
+
+[standard.document.extraction_invalid]
+other = "The extraction result contains no valid candidates with traceable evidence"
+
+[standard.document.copilot_unavailable]
+other = "The Copilot standard extraction service is temporarily unavailable"
+
+[standard.document.publication_history]
+other = "A document identity with publication history cannot be deleted"
+
 [standard.domain.not_found]
 other = "Domain not found"
 
 [standard.glossary.not_found]
 other = "Glossary not found"
+
+[standard.glossary.publication_history]
+other = "A glossary with publication history cannot be deleted; withdraw obsolete published revisions instead"
 
 [standard.element.not_found]
 other = "Element not found"

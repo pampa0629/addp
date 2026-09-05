@@ -205,6 +205,44 @@ func TestStoreRequireUnmanagedRefreshesAnotherProcessCheckpointBeforeGate(t *tes
 	}
 }
 
+func TestNewRejectsInvalidConsumerOwnerIdentifier(t *testing.T) {
+	db := openProjectionStoreDB(t)
+	if _, err := New(db, "manager", "manager-owner", nil); err == nil {
+		t.Fatal("invalid consumer owner identifier was accepted")
+	}
+}
+
+func TestStoreRecordsAndRejectsUnknownMigration(t *testing.T) {
+	db := openProjectionStoreDB(t)
+	store, err := New(db, "manager", "manager", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var versions []string
+	if err := db.Table(store.migrationsTable).Order("version").Pluck("version", &versions).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(versions) != 1 || versions[0] != initialProjectionStoreMigration {
+		t.Fatalf("migration versions = %#v", versions)
+	}
+	if err := db.Exec("INSERT INTO "+store.migrationsTable+" (version) VALUES (?)", "999_unknown").Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := New(db, "manager", "manager", nil); err == nil {
+		t.Fatal("unknown migration version was accepted")
+	}
+}
+
+func TestStoreMigrationSequenceMustBeUniqueAndOrdered(t *testing.T) {
+	noop := func(*gorm.DB, *Store) error { return nil }
+	if err := validateStoreMigrations([]storeMigration{{version: "002", apply: noop}, {version: "001", apply: noop}}); err == nil {
+		t.Fatal("unordered migration sequence was accepted")
+	}
+	if err := validateStoreMigrations([]storeMigration{{version: "001", apply: noop}, {version: "001", apply: noop}}); err == nil {
+		t.Fatal("duplicate migration version was accepted")
+	}
+}
+
 func openProjectionStoreDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})

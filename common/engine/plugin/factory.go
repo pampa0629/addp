@@ -87,32 +87,43 @@ func GenerateResolvedCapabilities(ctx context.Context, engine *Engine) (string, 
 
 // GetRequiredFields 获取指定类型的必填字段列表
 func GetRequiredFields(engineType string) ([]string, error) {
-	plugin, err := Get(engineType)
+	enginePlugin, err := Get(engineType)
 	if err != nil {
 		return nil, err
 	}
-
-	return plugin.RequiredFields(), nil
+	provider, ok := enginePlugin.(ConnectionSpecProvider)
+	if !ok {
+		return nil, fmt.Errorf("engine plugin %s did not implement ConnectionSpecProvider", engineType)
+	}
+	return provider.ConnectionSpec().RequiredFields(), nil
 }
 
 // GetSensitiveFields 获取指定类型的敏感字段列表
 func GetSensitiveFields(engineType string) ([]string, error) {
-	plugin, err := Get(engineType)
+	enginePlugin, err := Get(engineType)
 	if err != nil {
 		return nil, err
 	}
 
-	return plugin.SensitiveFields(), nil
+	provider, ok := enginePlugin.(ConnectionSpecProvider)
+	if !ok {
+		return nil, fmt.Errorf("engine plugin %s did not implement ConnectionSpecProvider", engineType)
+	}
+	return provider.ConnectionSpec().SensitiveFields(), nil
 }
 
 // GetDefaultPort 获取指定类型的默认端口
 func GetDefaultPort(engineType string) (int, error) {
-	plugin, err := Get(engineType)
+	enginePlugin, err := Get(engineType)
 	if err != nil {
 		return 0, err
 	}
 
-	return plugin.DefaultPort(), nil
+	provider, ok := enginePlugin.(ConnectionSpecProvider)
+	if !ok {
+		return 0, fmt.Errorf("engine plugin %s did not implement ConnectionSpecProvider", engineType)
+	}
+	return provider.ConnectionSpec().DefaultPortValue(), nil
 }
 
 // === 连接池管理相关方法 ===
@@ -224,7 +235,7 @@ func CountEngineCatalogItemRows(ctx context.Context, resource *Engine, path Engi
 	}
 	namespace := segments[0].Name
 	item := segments[len(segments)-1].Name
-	result, err := sqlRuntime.ExecuteSQL(ctx, resource.ConnectionInfo, countSQLForEngine(resource.EngineType, namespace, item), QueryOptions{
+	result, err := sqlRuntime.ExecuteSQL(ctx, resource.ConnectionInfo, countSQLForDialect(sqlRuntime.SQLDialect(), namespace, item), QueryOptions{
 		EngineID:   resource.ID,
 		EngineType: resource.EngineType,
 		ReadOnly:   true,
@@ -245,8 +256,8 @@ func CountEngineCatalogItemRows(ctx context.Context, resource *Engine, path Engi
 	return 0, fmt.Errorf("row count query returned non-numeric result")
 }
 
-func countSQLForEngine(engineType, schema, table string) string {
-	return commonquery.ForEngine(engineType).CountTableSQL(schema, table, "")
+func countSQLForDialect(dialect, schema, table string) string {
+	return commonquery.ForDialect(dialect).CountTableSQL(schema, table, "")
 }
 
 func int64Value(value interface{}) (int64, bool) {

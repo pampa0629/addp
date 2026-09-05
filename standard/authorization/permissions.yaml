@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: standard
-manifest_version: 7
+manifest_version: 9
 permissions:
   - key: standard.catalog.read
     allowed_scope_types: [tenant]
@@ -114,6 +114,14 @@ permissions:
     status: active
     name_i18n_key: permissions.standard.document.delete.name
     description_i18n_key: permissions.standard.document.delete.description
+  - key: standard.document.publish
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.standard.document.publish.name
+    description_i18n_key: permissions.standard.document.publish.description
   - key: standard.document.read
     allowed_scope_types: [tenant, department, project_group]
     risk_level: low
@@ -130,6 +138,14 @@ permissions:
     status: active
     name_i18n_key: permissions.standard.document.update.name
     description_i18n_key: permissions.standard.document.update.description
+  - key: standard.document_extraction.create
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: medium
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.standard.document_extraction.create.name
+    description_i18n_key: permissions.standard.document_extraction.create.description
   - key: standard.domain.create
     allowed_scope_types: [tenant, department, project_group]
     risk_level: medium
@@ -202,14 +218,6 @@ permissions:
     status: active
     name_i18n_key: permissions.standard.element.update.name
     description_i18n_key: permissions.standard.element.update.description
-  - key: standard.glossary.approve
-    allowed_scope_types: [tenant, department, project_group]
-    risk_level: high
-    tenant_customizable: true
-    delegable: false
-    status: active
-    name_i18n_key: permissions.standard.glossary.approve.name
-    description_i18n_key: permissions.standard.glossary.approve.description
   - key: standard.glossary.create
     allowed_scope_types: [tenant, department, project_group]
     risk_level: medium
@@ -226,14 +234,14 @@ permissions:
     status: active
     name_i18n_key: permissions.standard.glossary.delete.name
     description_i18n_key: permissions.standard.glossary.delete.description
-  - key: standard.glossary.offline
+  - key: standard.glossary.publish
     allowed_scope_types: [tenant, department, project_group]
     risk_level: high
     tenant_customizable: true
     delegable: false
     status: active
-    name_i18n_key: permissions.standard.glossary.offline.name
-    description_i18n_key: permissions.standard.glossary.offline.description
+    name_i18n_key: permissions.standard.glossary.publish.name
+    description_i18n_key: permissions.standard.glossary.publish.description
   - key: standard.glossary.read
     allowed_scope_types: [tenant, department, project_group]
     risk_level: low

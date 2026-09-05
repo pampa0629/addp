@@ -26,12 +26,16 @@ func (r *ReferenceResolutionRepository) ResolveDomains(ctx context.Context, tena
 	return result, wrapDBError(err)
 }
 
-func (r *ReferenceResolutionRepository) ResolveGlossaries(ctx context.Context, tenantID int64, ids []int64) ([]models.Glossary, error) {
-	result := make([]models.Glossary, 0)
+func (r *ReferenceResolutionRepository) ResolveGlossaries(ctx context.Context, tenantID int64, ids []int64) ([]models.PublishedGlossaryReference, error) {
+	result := make([]models.PublishedGlossaryReference, 0)
 	if len(ids) == 0 {
 		return result, nil
 	}
-	err := r.db.WithContext(ctx).Where("tenant_id = ? AND id IN ?", tenantID, ids).Find(&result).Error
+	asOf := time.Now().UTC()
+	err := r.db.WithContext(ctx).Table("standard.glossaries AS g").
+		Select("g.id, g.tenant_id, g.scope_type, g.owner_domain_id, g.code, g.lifecycle_state, g.version, gr.id AS revision_id, gr.revision_no, gr.name, gr.status").
+		Joins("JOIN standard.glossary_revisions gr ON gr.glossary_id = g.id AND gr.status = ? AND gr.effective_from <= ? AND (gr.effective_to IS NULL OR gr.effective_to > ?)", models.RevisionStatusPublished, asOf, asOf).
+		Where("g.tenant_id = ? AND g.lifecycle_state = ? AND g.id IN ?", tenantID, "active", ids).Scan(&result).Error
 	return result, wrapDBError(err)
 }
 
@@ -64,19 +68,22 @@ func (r *ReferenceResolutionRepository) ListDomainCandidates(ctx context.Context
 	return items, total, wrapDBError(err)
 }
 
-func (r *ReferenceResolutionRepository) ListGlossaryCandidates(ctx context.Context, tenantID int64, search string, page, pageSize int) ([]models.Glossary, int64, error) {
-	query := r.db.WithContext(ctx).Model(&models.Glossary{}).
-		Where("tenant_id = ? AND status = ?", tenantID, "approved")
+func (r *ReferenceResolutionRepository) ListGlossaryCandidates(ctx context.Context, tenantID int64, search string, page, pageSize int) ([]models.PublishedGlossaryReference, int64, error) {
+	asOf := time.Now().UTC()
+	query := r.db.WithContext(ctx).Table("standard.glossaries AS g").
+		Joins("JOIN standard.glossary_revisions gr ON gr.glossary_id = g.id AND gr.status = ? AND gr.effective_from <= ? AND (gr.effective_to IS NULL OR gr.effective_to > ?)", models.RevisionStatusPublished, asOf, asOf).
+		Where("g.tenant_id = ? AND g.lifecycle_state = ?", tenantID, "active")
 	if search = strings.TrimSpace(search); search != "" {
 		pattern := "%" + search + "%"
-		query = query.Where("name ILIKE ? OR definition ILIKE ?", pattern, pattern)
+		query = query.Where("gr.name ILIKE ? OR g.code ILIKE ? OR gr.definition ILIKE ?", pattern, pattern, pattern)
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, wrapDBError(err)
 	}
-	items := make([]models.Glossary, 0)
-	err := query.Order("LOWER(name) ASC, id ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&items).Error
+	items := make([]models.PublishedGlossaryReference, 0)
+	err := query.Select("g.id, g.tenant_id, g.scope_type, g.owner_domain_id, g.code, g.lifecycle_state, g.version, gr.id AS revision_id, gr.revision_no, gr.name, gr.status").
+		Order("LOWER(gr.name) ASC, g.id ASC").Offset((page - 1) * pageSize).Limit(pageSize).Scan(&items).Error
 	return items, total, wrapDBError(err)
 }
 

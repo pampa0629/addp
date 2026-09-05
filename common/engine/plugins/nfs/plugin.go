@@ -113,18 +113,33 @@ func init() {
 func (p *NFSPlugin) Type() string         { return "nfs" }
 func (p *NFSPlugin) DisplayName() string  { return "NFS 文件系统" }
 func (p *NFSPlugin) EngineOrigin() string { return "general" }
-func (p *NFSPlugin) DefaultPort() int     { return 2049 }
+func (p *NFSPlugin) DefaultPort() int     { return p.ConnectionSpec().DefaultPortValue() }
+
+func (p *NFSPlugin) ConnectionSpec() plugin.ConnectionSpec {
+	spec := plugin.NewConnectionSpec(
+		plugin.ConnectionFieldSpec{Key: "server", LabelKey: "storageEngine.nfsServer", Input: plugin.ConnectionFieldText, Required: true, Identity: true, Placeholder: "192.168.1.100"},
+		plugin.ConnectionFieldSpec{Key: "export_path", LabelKey: "storageEngine.nfsExportPath", Input: plugin.ConnectionFieldText, Required: true, Identity: true, Default: "/exports/data", Placeholder: "/exports/data"},
+		plugin.ConnectionFieldSpec{Key: "access_mode", LabelKey: "storageEngine.nfsAccessMode", Input: plugin.ConnectionFieldSelect, Default: "rw", Options: []plugin.ConnectionFieldOption{
+			{Value: "rw", LabelKey: "storageEngine.nfsAccessModeRw"}, {Value: "ro", LabelKey: "storageEngine.nfsAccessModeRo"},
+		}},
+		plugin.ConnectionFieldSpec{Key: "nfs_version", LabelKey: "storageEngine.nfsVersion", Input: plugin.ConnectionFieldSelect, Default: "3", HintKey: "storageEngine.hints.nfs", Options: []plugin.ConnectionFieldOption{
+			{Value: "3", Label: "NFSv3"}, {Value: "4", Label: "NFSv4"},
+		}},
+	)
+	spec.DefaultPort = 2049
+	return spec
+}
 
 func (p *NFSPlugin) RequiredFields() []string {
-	return []string{"server", "export_path"}
+	return p.ConnectionSpec().RequiredFields()
 }
 
 func (p *NFSPlugin) SensitiveFields() []string {
-	return []string{} // NFS 基于 IP 访问控制，无密钥
+	return p.ConnectionSpec().SensitiveFields()
 }
 
 func (p *NFSPlugin) ConnectionIdentityFields() []string {
-	return []string{"server", "export_path"}
+	return p.ConnectionSpec().IdentityFields()
 }
 
 func (p *NFSPlugin) Capabilities() plugin.EngineCapabilities {

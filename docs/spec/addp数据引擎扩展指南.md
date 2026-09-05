@@ -7,11 +7,15 @@
 ## 一、扩展步骤
 
 1. 在 `common/engine/plugins/<engine_type>/` 新建插件包。
-2. 实现 `EnginePlugin` 基础接口。
+2. 实现 `EnginePlugin` 基础接口；可由用户注册的引擎同时实现 `ConnectionSpecProvider`，并让默认端口、必填、敏感和身份字段接口从同一 `ConnectionSpec` 派生。
 3. 按引擎能力实现需要的 provider。
 4. 返回结构化 `Capabilities()`。
 5. 按 `EngineOrigin()` 加入 `common/engine/plugins/builtin/general` 或 `common/engine/plugins/builtin/extension` 聚合包。
 6. 补充单元测试和必要的 integration 测试。
+
+System 的引擎类型列表、注册表单、默认值和校验规则均由 `GET /api/v1/system/engine-types` 返回的插件描述驱动。新增引擎时不得在 `system/frontend` 或 `common-frontend` 增加 `engine_type` 判断；若现有 `ConnectionFieldSpec` 无法表达所需交互，应先扩展通用描述协议和共享渲染器，再实现具体插件。
+
+SQL 引擎必须通过 `SQLQueryRuntimeProvider.SQLDialect()` 声明稳定方言，通用查询生成、标识符引用、分页和参数占位符只消费该方言。新增 MySQL 协议兼容数据库时仍使用独立 `engine_type`，不得为了复用驱动而登记为 `mysql`，也不得在 common 或上层模块增加新的 `engine_type` 方言分支。
 
 上层模块通过 `common/engine/plugins/builtin/general`、`common/engine/plugins/builtin/extension` 或 `common/engine/plugins/builtin/all` 统一加载内置插件，不应散落 blank import 具体引擎插件包。`common/dbbridge` 只消费聚合后的插件注册表。
 
@@ -21,11 +25,11 @@
 
 | 引擎类型 | 必选接口 | 常用可选接口 |
 | --- | --- | --- |
-| 关系型 / SQL 表格型 | `EnginePlugin`、`EngineCatalogModelProvider`、`EngineCatalogProvider`、`EngineCatalogFactsProvider`、`SQLQueryRuntimeProvider` | `ConnectionPoolPlugin` |
-| 动态 schema 记录集合型 | `EnginePlugin`、`EngineCatalogModelProvider`、`EngineCatalogProvider`、`EngineCatalogFactsProvider`、`QueryRuntimeProvider` | `DynamicSchemaSamplingProvider` |
-| 图数据库 | `EnginePlugin`、`EngineCatalogModelProvider`、`EngineCatalogProvider`、`EngineCatalogFactsProvider`、`QueryRuntimeProvider` | `GraphSampleProvider`、`GraphQueryProvider` |
-| 对象存储 | `EnginePlugin`、`EngineCatalogModelProvider`、`EngineCatalogProvider`、`EngineCatalogFactsProvider` | `ContentReadableProvider`、`ContentWritableProvider` |
-| 文件系统 | `EnginePlugin`、`EngineCatalogModelProvider`、`EngineCatalogProvider`、`EngineCatalogFactsProvider` | `ContentReadableProvider`、`ContentWritableProvider` |
+| 关系型 / SQL 表格型 | `EnginePlugin`、`ConnectionSpecProvider`、`EngineCatalogModelProvider`、`EngineCatalogProvider`、`EngineCatalogFactsProvider`、`SQLQueryRuntimeProvider` | `ConnectionPoolPlugin` |
+| 动态 schema 记录集合型 | `EnginePlugin`、`ConnectionSpecProvider`、`EngineCatalogModelProvider`、`EngineCatalogProvider`、`EngineCatalogFactsProvider`、`QueryRuntimeProvider` | `DynamicSchemaSamplingProvider` |
+| 图数据库 | `EnginePlugin`、`ConnectionSpecProvider`、`EngineCatalogModelProvider`、`EngineCatalogProvider`、`EngineCatalogFactsProvider`、`QueryRuntimeProvider` | `GraphSampleProvider`、`GraphQueryProvider` |
+| 对象存储 | `EnginePlugin`、`ConnectionSpecProvider`、`EngineCatalogModelProvider`、`EngineCatalogProvider`、`EngineCatalogFactsProvider` | `ContentReadableProvider`、`ContentWritableProvider` |
+| 文件系统 | `EnginePlugin`、`ConnectionSpecProvider`、`EngineCatalogModelProvider`、`EngineCatalogProvider`、`EngineCatalogFactsProvider` | `ContentReadableProvider`、`ContentWritableProvider` |
 | 工作流 | `EnginePlugin` | `WorkflowRuntimeProvider` |
 | Notebook / 脚本 | `EnginePlugin` | `ScriptRuntimeProvider` |
 

@@ -24,7 +24,7 @@ ENGINE_ROOT = Path(__file__).resolve().parent
 DEFAULT_PDAL_BIN = str(ENGINE_ROOT / "bin" / "pdal")
 PDAL_ENV = "POINTCLOUD_PDAL_BIN"
 COPC_CONTENT_TYPE = "application/vnd.laszip+copc"
-OBJECT_STORE_LOCALHOST_ENDPOINT_ENV = "POINTCLOUD_OBJECT_STORE_LOCALHOST_ENDPOINT"
+OBJECT_STORE_LOOPBACK_HOST_ENV = "POINTCLOUD_OBJECT_STORE_LOOPBACK_HOST"
 WORK_DIR_ENV = "POINTCLOUD_WORK_DIR"
 PROGRESS_INTERVAL_ENV = "POINTCLOUD_PROGRESS_INTERVAL_SECONDS"
 COPC_THREADS_ENV = "POINTCLOUD_COPC_THREADS"
@@ -157,6 +157,7 @@ def point_cloud_to_copc(
     timeout_seconds: int | None = None,
 ) -> dict[str, Any]:
     access_plan = require_access_plan(params)
+    runtime_access_plan = _runtime_access_plan(access_plan, env)
     source = _required_object(access_plan, "source")
     options = _optional_object(params, "options")
     source_plan_format = plan_source_format(access_plan)
@@ -177,14 +178,14 @@ def point_cloud_to_copc(
     try:
         reporter.emit("prepare", "started", "准备点云 COPC 转换", overall_progress=1, force=True)
         pdal = _pdal_bin(env)
-        source_file = stage_source_file(access_plan, temp_dir)
+        source_file = stage_source_file(runtime_access_plan, temp_dir)
         source_uri = str(source_file)
         pdal_source_uri = _prepare_pdal_source_uri(source_uri, source_format, temp_dir)
         command = [pdal, "translate", pdal_source_uri, str(target_file)]
         command.extend(_pdal_reader_args(source_format))
         command.append("--writers.copc.forward=all")
         command.extend(_pdal_copc_option_args(options, env))
-        runtime_env = _runtime_env(access_plan, temp_dir, env)
+        runtime_env = _runtime_env(runtime_access_plan, temp_dir, env)
         reporter.emit("convert", "started", "生成点云 COPC 文件", overall_progress=5, force=True)
         result = _run_executable(
             command,
@@ -216,7 +217,7 @@ def point_cloud_to_copc(
             metadata={"output_size_bytes": target_file.stat().st_size},
             force=True,
         )
-        publish_result = publish_target_file(target_file, _publish_access_plan(access_plan, env))
+        publish_result = publish_target_file(target_file, runtime_access_plan)
         reporter.emit(
             "publish",
             "completed",
@@ -533,23 +534,24 @@ def _rewrite_localhost_endpoint(values: dict[str, str], env: dict[str, str] | No
     endpoint = values.get("AWS_S3_ENDPOINT")
     if not endpoint:
         return
-    rewritten = _publish_endpoint(endpoint, env)
+    rewritten = _runtime_endpoint(endpoint, env)
     if rewritten:
         values["AWS_S3_ENDPOINT"] = rewritten
 
 
-def _publish_access_plan(access_plan: dict[str, Any], env: dict[str, str] | None = None) -> dict[str, Any]:
-    target = _required_object(access_plan, "target")
-    access = target.get("access")
-    if not isinstance(access, dict) or access.get("method") != "object_store":
-        return access_plan
-    endpoint = _text(access.get("endpoint"))
-    rewritten = _publish_endpoint(endpoint, env)
-    if not rewritten or rewritten == endpoint:
-        return access_plan
-    publish_plan = copy.deepcopy(access_plan)
-    publish_plan["target"]["access"]["endpoint"] = rewritten
-    return publish_plan
+def _runtime_access_plan(access_plan: dict[str, Any], env: dict[str, str] | None = None) -> dict[str, Any]:
+    runtime_plan = copy.deepcopy(access_plan)
+    changed = False
+    for role in ("source", "target"):
+        access = _required_object(runtime_plan, role).get("access")
+        if not isinstance(access, dict) or access.get("method") != "object_store":
+            continue
+        endpoint = _text(access.get("endpoint"))
+        rewritten = _runtime_endpoint(endpoint, env)
+        if rewritten and rewritten != endpoint:
+            access["endpoint"] = rewritten
+            changed = True
+    return runtime_plan if changed else access_plan
 
 
 def _command_failure_details(command: list[str], result: CommandResult, work_dir: Path | None) -> str:
@@ -628,13 +630,15 @@ def _normal_endpoint(endpoint: str) -> str:
     return endpoint
 
 
-def _publish_endpoint(endpoint: str, env: dict[str, str] | None = None) -> str:
+def _runtime_endpoint(endpoint: str, env: dict[str, str] | None = None) -> str:
     normalized = _normal_endpoint(endpoint)
     values = env if env is not None else os.environ
-    override = _text(values.get(OBJECT_STORE_LOCALHOST_ENDPOINT_ENV))
-    if not override or _endpoint_host(normalized) not in {"localhost", "127.0.0.1", "::1"}:
+    loopback_host = _endpoint_host(_text(values.get(OBJECT_STORE_LOOPBACK_HOST_ENV)))
+    if not loopback_host or _endpoint_host(normalized) not in {"localhost", "127.0.0.1", "::1"}:
         return normalized
-    return _normal_endpoint(override)
+    parsed = urlparse(normalized if "://" in normalized else f"//{normalized}")
+    port = f":{parsed.port}" if parsed.port is not None else ""
+    return f"{loopback_host}{port}"
 
 
 def _endpoint_host(endpoint: str) -> str:

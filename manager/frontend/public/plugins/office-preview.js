@@ -1,11 +1,11 @@
 (function () {
-  const COMPONENT_KEY = 'DocxPreview'
+  const COMPONENT_KEY = 'OfficePreview'
 
   const components = window.DataExplorerPluginComponents || {}
   const component = components[COMPONENT_KEY]
 
   if (!component) {
-    console.warn(`DataExplorer: 内置预览组件 ${COMPONENT_KEY} 未注入，跳过 docx 注册`)
+    console.warn(`DataExplorer: 内置预览组件 ${COMPONENT_KEY} 未注入，跳过 Office 注册`)
     return
   }
 
@@ -37,13 +37,11 @@
   }
 
   register({
-    name: 'docx',
+    name: 'office',
     component,
-    canHandle: (data = {}) => {
-      return previewTarget(data) === 'docx'
-    },
+    canHandle: (data = {}) => previewTarget(data) === 'office',
     priority: 64
   })
 
-  console.log('📦 DOCX 预览插件已注册')
+  console.log('📦 Office 预览插件已注册')
 })()

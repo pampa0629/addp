@@ -36,23 +36,33 @@ func (p *ClickHousePlugin) EngineOrigin() string {
 	return "general"
 }
 
+func (p *ClickHousePlugin) ConnectionSpec() plugin.ConnectionSpec {
+	return plugin.NewConnectionSpec(
+		plugin.ConnectionFieldSpec{Key: "host", LabelKey: "storageEngine.host", Input: plugin.ConnectionFieldText, Required: true, Identity: true, Default: "localhost", Placeholder: "localhost"},
+		plugin.ConnectionFieldSpec{Key: "port", LabelKey: "storageEngine.port", Input: plugin.ConnectionFieldNumber, Identity: true, Default: 9000, Min: plugin.Int(1), Max: plugin.Int(65535)},
+		plugin.ConnectionFieldSpec{Key: "database", LabelKey: "storageEngine.database", Input: plugin.ConnectionFieldText, Required: true, Identity: true, Default: "default", Placeholder: "default"},
+		plugin.ConnectionFieldSpec{Key: "user", LabelKey: "storageEngine.username", Input: plugin.ConnectionFieldText, Required: true, Default: "default", Placeholder: "default"},
+		plugin.ConnectionFieldSpec{Key: "password", LabelKey: "storageEngine.passwordOptional", Input: plugin.ConnectionFieldPassword, Sensitive: true, HintKey: "storageEngine.hints.clickhousePassword"},
+	)
+}
+
 // DefaultPort 返回默认端口
 func (p *ClickHousePlugin) DefaultPort() int {
-	return 9000 // ClickHouse Native 协议端口
+	return p.ConnectionSpec().DefaultPortValue()
 }
 
 // RequiredFields 返回必填字段列表
 func (p *ClickHousePlugin) RequiredFields() []string {
-	return []string{"host", "user", "database"}
+	return p.ConnectionSpec().RequiredFields()
 }
 
 // SensitiveFields 返回敏感字段列表
 func (p *ClickHousePlugin) SensitiveFields() []string {
-	return []string{"password"}
+	return p.ConnectionSpec().SensitiveFields()
 }
 
 func (p *ClickHousePlugin) ConnectionIdentityFields() []string {
-	return []string{"host", "port", "database"}
+	return p.ConnectionSpec().IdentityFields()
 }
 
 func (p *ClickHousePlugin) Capabilities() plugin.EngineCapabilities {
@@ -106,7 +116,7 @@ func (p *ClickHousePlugin) QueryLanguages() []string {
 }
 
 func (p *ClickHousePlugin) GenerateSampleQuery(ctx context.Context, connInfo plugin.ConnectionInfo, opts plugin.SampleQueryOptions) (string, string) {
-	return plugin.SampleSQLForEngineCatalogPath(p.Type(), opts.Path, 10), "sql"
+	return plugin.SampleSQLForDialectCatalogPath(p.SQLDialect(), opts.Path, 10), "sql"
 }
 
 func (p *ClickHousePlugin) PrepareQuery(_ context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (plugin.PreparedQuery, error) {
@@ -114,7 +124,7 @@ func (p *ClickHousePlugin) PrepareQuery(_ context.Context, connInfo plugin.Conne
 }
 
 func (p *ClickHousePlugin) SQLDialect() string {
-	return p.GetDialect()
+	return commonquery.DialectClickHouse
 }
 
 func (p *ClickHousePlugin) SupportsParameterizedQueries() bool {
@@ -164,7 +174,7 @@ func (p *ClickHousePlugin) CreateConnectionPool(connInfo plugin.ConnectionInfo, 
 }
 
 // GetDialect 获取数据库方言
-func (p *ClickHousePlugin) GetDialect() string {
+func (p *ClickHousePlugin) GORMDialect() string {
 	return "clickhouse"
 }
 
@@ -332,7 +342,7 @@ func clickhouseFieldInfo(row clickhouseColumnRow) datatype.FieldInfo {
 // GetTableRowCount 获取表的行数
 func (p *ClickHousePlugin) getTableRowCount(ctx context.Context, db *gorm.DB, schema, table string) (int64, error) {
 	var count int64
-	query := commonquery.ForEngine(p.Type()).CountTableSQL(schema, table, "")
+	query := commonquery.ForDialect(p.SQLDialect()).CountTableSQL(schema, table, "")
 	err := db.WithContext(ctx).Raw(query).Scan(&count).Error
 	if err != nil {
 		return 0, fmt.Errorf("failed to get row count: %w", err)

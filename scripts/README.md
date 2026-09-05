@@ -451,6 +451,8 @@ scripts/test/
 ├── consumer-process-stability-online_test.py # 消费方进程替换检测测试
 ├── online-engine-fixture_test.py # 专用业务 PostgreSQL Fixture 安全边界测试
 ├── online-workbench-mysql-fixture_test.py # Workbench 专用只读 MySQL Fixture 安全边界测试
+├── online-pointcloud-minio-fixture_test.py # Manager lineage 专用 Business MinIO Fixture 安全边界测试
+├── online-security-transfer-fixture_test.py # Security/Transfer MongoDB + PostgreSQL Fixture 安全边界测试
 ├── module-lifecycle-process-online.py # 正式 Manager/System/Gateway 乱序观测与证据
 ├── module-registry-recovery-online.py # System 模块租约与 Gateway 路由恢复验收
 ├── module-registry-recovery-online_test.py # 模块注册恢复场景确定性协议测试
@@ -460,6 +462,12 @@ scripts/test/
 ├── enterprise-catalog-publishing-online_test.py # 企业目录发布协议确定性测试
 ├── workbench-service-consumption-online.py # Service → Workbench 的 MySQL 真实消费验收
 ├── workbench-service-consumption-online_test.py # Workbench 跨模块消费协议测试
+├── manager-internal-artifact-lineage-online.py # Business 对象到 Manager 内部产物及 Monitor 血缘验收
+├── manager-internal-artifact-lineage-online_test.py # Manager 内部产物血缘协议测试
+├── security-transfer-protection-online.py # Security 投影在 MongoDB Transfer 中的真实执行验收
+├── security-transfer-protection-online_test.py # Security/Transfer 跨模块保护协议测试
+├── security-protection-exemption-online.py # 四个 Owner 的限时保护豁免与本地到期恢复验收
+├── security-protection-exemption-online_test.py # ProtectionExemption Online 协议测试
 ├── develop-postgres-gate.sh # Develop 可复用成果变化源 PostgreSQL 集成门禁
 ├── manager-mongodb-security-gate.sh # Manager MongoDB 动态文档保护集成门禁
 ├── quality-postgres-gate.sh # Quality PostgreSQL 集成门禁
@@ -535,13 +543,19 @@ bash scripts/test/online-host-gate.sh --check-only
 
 `workbench-service-consumption` 要求全量 System、Gateway、Service、Workbench 和 Console，并使用 `business/scripts/online-workbench-mysql-fixture.sh` 管理独立 Business MySQL。Fixture 只接受仓库外 `ADDP_ONLINE_WORKBENCH_MYSQL_*` 变量，不读取或创建 `business/.env`；它重建仓库已有确定性样例并把 Engine 使用的账号收敛为仅有 `SELECT` 的读取账号。suite 使用永久 MySQL Engine Instance，经 Gateway 调用 Service 输出契约检测，临时发布固定 PII-safe SQL 服务 `commerce-order-analysis`，再经 Consumer Descriptor 直接创建含 Table、Chart 两个 Component 的未发布 Data Application；API 层真实验证 cursor、动态筛选、标量类型、有限 CSV、无空间输出和契约指纹变化，浏览器层以同一 User 登录 Console，在正式 Component 编辑器中验证两种 renderer 及契约变化后的预览阻断。Host Gate 安装专用 Chromium；未发布 Data Application 与 Query Service 只按本轮创建 ID 在 `finally` 删除，不使用名称前缀或数据库清理，也不为自动化测试增加已发布应用强删旁路。
 
+`manager-internal-artifact-lineage` 要求全量 System、Gateway、Meta、Manager、Monitor、Console 和 PointCloud Runtime，并使用 `business/scripts/online-pointcloud-minio-fixture.sh` 管理独立 Business MinIO。专用环境长期预置指向该 MinIO 的 Engine Instance；Fixture 把仓库已有小型 LAS 幂等写入配置的 bucket/object。suite 以真实 User 经 Gateway 执行 Meta scan，使用扫描事实创建并运行 `point_cloud_copc_generation`，验证业务对象读取、infra COPC 发布、Manager 与 Monitor 所见 `addp.lineage-facts/v1` 完全一致、输出内容支持 Range 读取；浏览器打开正式 Monitor execution 详情，确认输入可进入 Data Explorer、输出显示“平台内部产物”且不提供业务资源跳转。结果与任务只通过 Manager API 按本轮 ID 删除，并验证内容 404 与零残留；不直接清理数据库或对象存储。
+
+`security-transfer-protection` 要求全量 System、Gateway、Meta、Security、Transfer 和 Manager，并使用 `business/scripts/online-security-transfer-fixture.sh` 管理固定 MongoDB 源与 PostgreSQL 目标。专用环境长期预置分别指向只读 MongoDB 账号和 PostgreSQL Fixture 的 Engine Instance，专用 Tenant 预置平台推荐的手机号敏感类型、识别方式和默认保护规则。suite 经 Gateway 扫描两端资源；首次运行允许为固定 MongoDB DataItem 建立一个永久 Security 纳管，后续必须复用同一纳管并确认 Transfer 已安装 `export → mask` 投影。每轮创建两条带 Run ID 的 bounded Transfer 任务：不输出手机号的可证明 MQL 必须正常写入，输出手机号的可证明 MQL 必须写入遮盖值且明文计数为零。目标表属于固定物理 Fixture；临时 Transfer 任务在 `finally` 按捕获 ID 删除并逐条确认 404，不能撤销投影、管理员绕过或为 MongoDB 增加白名单。
+
+`security-protection-exemption` 复用同一个复合 Fixture，在固定 PostgreSQL `addp_online_security.exemption_source` 上建立永久 Enrollment 和手机号正式 Assessment。suite 先从 Manager、Develop、Service、Transfer 四个真实 Owner 验证遮盖值，再为四个规范动作分别创建或续期短时 ProtectionExemption，等待 Owner 投影确认后验证原值；到期后不再访问 Security，直接验证四个 Owner 均依据本地 `valid_until + fallback` 恢复遮盖。每轮临时 Query Service 和 bounded Transfer 任务按捕获 ID 清理并确认 404；固定治理聚合和不可变豁免修订作为专用 Tenant 审计事实保留。该 suite 需要环境文件同时提供 `DEVELOP_URL`，测试 User 必须具备四个 Owner 的读取/执行权限及 ProtectionExemption 管理权限。
+
 通用预检由分发器向 `scripts/test/online-preflight.py` 传入参与服务的 `module=http://loopback:port`。预检要求显式非默认 Tenant、安全 Run ID、干净工作区和唯一专用数据库 `POSTGRES_DB=addp_online`，并校验所有 `/health/live` 构建身份与当前 Git commit 一致，再要求 `/health/ready` 已就绪；任何非回环服务地址都会被拒绝。宿主机 `--check-only` 在生命周期操作前调用同一预检器的 `--environment-only`，因此不存在第二套数据库或 Tenant 判定。分发器与预检器的无外部服务回归测试统一使用 `make test-online-runner`，并已纳入 `make test-platform`。两者不执行未登记的业务断言，不读取或保存 Token，也不接管服务生命周期。
 
 分发器对同一 `suite + Run ID` 使用操作系统临时目录进程锁，锁覆盖预检、场景和报告写入。成功或失败均生成 `addp.online-gate/v1` 的 `online-report.json`：专用 Runner 写入仓库外 `ADDP_ONLINE_ARTIFACT_DIR` 并由 workflow 归档，本地直接执行则写入操作系统临时目录。报告包含构建身份、脱敏服务地址、Tenant、`addp_online` 数据库类别、阶段耗时、稳定错误码及 owner suite 的身份/创建/清理/残留证据，不保存 Token、Secret 或完整错误响应正文。
 
 专用部署只允许由 `.github/workflows/online-t4-gates.yml` 的手工 `workflow_dispatch` 在带 `self-hosted`、`macOS`、`addp-online` 标签的 Runner 上触发。workflow 首先调用 `bash scripts/test/online-host-gate.sh --check-only`，在不启停任何服务的前提下验证专用主机标记、macOS、仓库外环境文件与证据目录、显式 Tenant、suite 部署 profile、必要命令和干净工作区，并产出不含密钥的 `readiness.txt`；预检通过后才调用同一脚本的默认生命周期模式。该脚本从 `ADDP_ONLINE_ENV_FILE` 指定的仓库外绝对路径加载 T4 密钥、专用 Tenant 和独占基础设施连接；`ONLINE_SUITE` 与 `ADDP_ONLINE_ARTIFACT_DIR` 只能由 workflow 或直接调用方提供，密钥文件中的同名残留值不会改写实际套件和证据落点。仓库根存在 `.env`、源码不干净或证据目录位于仓库内都会直接失败。生命周期模式只调用现有 Infra/开发启停脚本和 `make test-online`，退出时无条件停止应用，证据写入仓库外 `ADDP_ONLINE_ARTIFACT_DIR`。`scripts/ci/check-online-ci-registration.py` 要求 Online suite 登记、部署启动 profile、Runner 预检和 workflow choices 完全一致，并在首次真实运行通过前禁止增加 `schedule`。
 
-Runner 管理员应以根 `.env.example` 为字段清单，在仓库外创建独立环境文件并替换全部 Secret；不能把该文件复制为仓库根 `.env`。除专用 Infra 连接和所有内置 `*_SERVICE_CLIENT_SECRET` 外，至少显式配置 `ADDP_ONLINE_TEST=1`、`ADDP_ONLINE_TEST_TENANT_ID`、`POSTGRES_DB=addp_online`、`SYSTEM_URL`、`GATEWAY_URL`、`MANAGER_URL`、`META_URL`、`CATALOG_URL`、`ASSET_URL`、`PORTAL_URL`、`SERVICE_URL`、`WORKBENCH_URL`、`CONSOLE_URL`、`STANDARD_URL`、`MODEL_URL`。`module-registry-recovery` 使用其中的 `MANAGER_SERVICE_CLIENT_SECRET`；`standard-model-reference-deletion` 使用 `ADDP_ONLINE_TEST_USER_ACCESS_TOKEN`；`consumer-engine-recovery` 另外要求同一专用 User 的 `ADDP_ONLINE_TEST_USER_USERNAME`、`ADDP_ONLINE_TEST_USER_PASSWORD`，以及稳定 `ADDP_ONLINE_TEST_ENGINE_ID`、名称、端口、用户、密码和数据库；`enterprise-catalog-publishing` 同样使用该专用 User 的用户名和密码，并需预置永久 Domain 和 Department ID；`workbench-service-consumption` 另需永久 `ADDP_ONLINE_WORKBENCH_MYSQL_ENGINE_ID`，以及端口、数据库、只读用户、只读密码和 root fixture 密码，其浏览器阶段也使用同一专用 User 的用户名和密码。GitHub Environment `addp-online` 的 Repository Variable `ADDP_ONLINE_ENV_FILE` 只保存该仓库外文件的绝对路径，不保存文件内容。
+Runner 管理员应以根 `.env.example` 为字段清单，在仓库外创建独立环境文件并替换全部 Secret；不能把该文件复制为仓库根 `.env`。除专用 Infra 连接和所有内置 `*_SERVICE_CLIENT_SECRET` 外，至少显式配置 `ADDP_ONLINE_TEST=1`、`ADDP_ONLINE_TEST_TENANT_ID`、`POSTGRES_DB=addp_online`、`SYSTEM_URL`、`GATEWAY_URL`、`MANAGER_URL`、`META_URL`、`SECURITY_URL`、`TRANSFER_URL`、`CATALOG_URL`、`ASSET_URL`、`PORTAL_URL`、`DEVELOP_URL`、`SERVICE_URL`、`WORKBENCH_URL`、`CONSOLE_URL`、`STANDARD_URL`、`MODEL_URL`。`module-registry-recovery` 使用其中的 `MANAGER_SERVICE_CLIENT_SECRET`；`standard-model-reference-deletion` 使用 `ADDP_ONLINE_TEST_USER_ACCESS_TOKEN`；`consumer-engine-recovery` 另外要求同一专用 User 的 `ADDP_ONLINE_TEST_USER_USERNAME`、`ADDP_ONLINE_TEST_USER_PASSWORD`，以及稳定 `ADDP_ONLINE_TEST_ENGINE_ID`、名称、端口、用户、密码和数据库；`enterprise-catalog-publishing` 同样使用该专用 User 的用户名和密码，并需预置永久 Domain 和 Department ID；`workbench-service-consumption` 另需永久 `ADDP_ONLINE_WORKBENCH_MYSQL_ENGINE_ID`，以及端口、数据库、只读用户、只读密码和 root fixture 密码，其浏览器阶段也使用同一专用 User 的用户名和密码；`manager-internal-artifact-lineage` 另需永久 `ADDP_ONLINE_POINTCLOUD_MINIO_ENGINE_ID` 以及独立 MinIO 端口、凭据、bucket 和 object，并复用同一专用 User 完成 API 与浏览器验收；`security-transfer-protection` 另需永久 `ADDP_ONLINE_SECURITY_MONGODB_ENGINE_ID`、MongoDB 端口、数据库、只读账号，以及仅供 Fixture 使用的 root 账号；`security-protection-exemption` 复用永久 PostgreSQL Engine Fixture，并要求四个 Owner 的读取执行权限及 ProtectionExemption 管理权限。GitHub Environment `addp-online` 的 Repository Variable `ADDP_ONLINE_ENV_FILE` 只保存该仓库外文件的绝对路径，不保存文件内容。
 
 `scripts/ci/check-frontend-ci-registration.py` 是前端 CI 登记完整性检查。它从 Git 跟踪的 `*/frontend/package.json` 自动发现前端，要求每个前端同时具有 `scripts.build`、根 `Makefile` 的 `test-<module>-frontend` 标准入口，并在 workflow 中登记目标、标准前端环境 action 和共享模块变更选择器。检查及其反例回归已纳入 `make test-platform`；新增前端时遗漏任一环节会使当次 Platform CI 失败。
 

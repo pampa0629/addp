@@ -142,9 +142,16 @@ func SetupRouter(
 			glossaries.GET("/:id", permission(standardauthorization.PermissionStandardGlossaryRead), glossaryHandler.GetGlossary)
 			glossaries.PUT("/:id", permission(standardauthorization.PermissionStandardGlossaryUpdate), glossaryHandler.UpdateGlossary)
 			glossaries.DELETE("/:id", permission(standardauthorization.PermissionStandardGlossaryDelete), glossaryHandler.DeleteGlossary)
-			glossaries.POST("/:id/approve", permission(standardauthorization.PermissionStandardGlossaryApprove), glossaryHandler.ApproveGlossary)
-			glossaries.POST("/:id/deprecate", permission(standardauthorization.PermissionStandardGlossaryOffline), glossaryHandler.DeprecateGlossary)
+			glossaries.GET("/:id/revisions", permission(standardauthorization.PermissionStandardGlossaryRead), glossaryHandler.ListGlossaryRevisions)
+			glossaries.POST("/:id/revisions", permission(standardauthorization.PermissionStandardGlossaryUpdate), glossaryHandler.CreateGlossaryRevision)
+			glossaries.GET("/:id/revisions/:revision_id", permission(standardauthorization.PermissionStandardGlossaryRead), glossaryHandler.GetGlossaryRevision)
+			glossaries.PUT("/:id/revisions/:revision_id", permission(standardauthorization.PermissionStandardGlossaryUpdate), glossaryHandler.UpdateGlossaryRevision)
+			glossaries.POST("/:id/revisions/:revision_id/submit", permission(standardauthorization.PermissionStandardGlossaryUpdate), glossaryHandler.SubmitGlossaryRevision)
+			glossaries.POST("/:id/revisions/:revision_id/return", permission(standardauthorization.PermissionStandardGlossaryPublish), glossaryHandler.ReturnGlossaryRevision)
+			glossaries.POST("/:id/revisions/:revision_id/publish", permission(standardauthorization.PermissionStandardGlossaryPublish), glossaryHandler.PublishGlossaryRevision)
+			glossaries.POST("/:id/revisions/:revision_id/withdraw", permission(standardauthorization.PermissionStandardGlossaryPublish), glossaryHandler.WithdrawGlossaryRevision)
 			glossaries.GET("/:id/elements", permission(standardauthorization.PermissionStandardGlossaryRead, standardauthorization.PermissionStandardElementRead), glossaryHandler.GetElementMappings)
+			glossaries.PUT("/:id/elements", permission(standardauthorization.PermissionStandardGlossaryUpdate, standardauthorization.PermissionStandardElementRead), glossaryHandler.UpdateElementMappings)
 			glossaries.GET("/:id/documents", permission(standardauthorization.PermissionStandardGlossaryRead, standardauthorization.PermissionStandardDocumentRead), documentHandler.ListDocsByGlossary)
 			glossaries.POST("/:id/documents", permission(standardauthorization.PermissionStandardGlossaryUpdate, standardauthorization.PermissionStandardDocumentCreate), documentHandler.CreateAndLinkGlossary)
 			glossaries.POST("/:id/documents/link", permission(standardauthorization.PermissionStandardGlossaryUpdate, standardauthorization.PermissionStandardDocumentUpdate), documentHandler.LinkDocToGlossary)
@@ -248,11 +255,22 @@ func SetupRouter(
 			documents.GET("/:id", permission(standardauthorization.PermissionStandardDocumentRead), documentHandler.GetDocument)
 			documents.PUT("/:id", permission(standardauthorization.PermissionStandardDocumentUpdate), documentHandler.UpdateDocument)
 			documents.DELETE("/:id", permission(standardauthorization.PermissionStandardDocumentDelete), documentHandler.DeleteDocument)
+			documents.GET("/:id/revisions", permission(standardauthorization.PermissionStandardDocumentRead), documentHandler.ListRevisions)
+			documents.POST("/:id/revisions", permission(standardauthorization.PermissionStandardDocumentUpdate), documentHandler.CreateRevision)
+			documents.GET("/:id/revisions/:revision_id", permission(standardauthorization.PermissionStandardDocumentRead), documentHandler.GetRevision)
+			documents.PUT("/:id/revisions/:revision_id", permission(standardauthorization.PermissionStandardDocumentUpdate), documentHandler.UpdateRevision)
+			documents.POST("/:id/revisions/:revision_id/submit", permission(standardauthorization.PermissionStandardDocumentUpdate), documentHandler.SubmitRevision)
+			documents.POST("/:id/revisions/:revision_id/return", permission(standardauthorization.PermissionStandardDocumentPublish), documentHandler.ReturnRevision)
+			documents.POST("/:id/revisions/:revision_id/publish", permission(standardauthorization.PermissionStandardDocumentPublish), documentHandler.PublishRevision)
+			documents.POST("/:id/revisions/:revision_id/withdraw", permission(standardauthorization.PermissionStandardDocumentPublish), documentHandler.WithdrawRevision)
+			documents.POST("/:id/revisions/:revision_id/file", permission(standardauthorization.PermissionStandardDocumentUpdate), documentHandler.UploadFile)
+			documents.GET("/:id/revisions/:revision_id/file", permission(standardauthorization.PermissionStandardDocumentRead), documentHandler.DownloadFile)
+			documents.POST("/:id/revisions/:revision_id/extractions", permission(standardauthorization.PermissionStandardDocumentExtractionCreate), documentHandler.ExtractCandidates)
+			documents.GET("/:id/extractions", permission(standardauthorization.PermissionStandardDocumentRead), documentHandler.ListExtractions)
 			documents.GET("/:id/mappings", permission(standardauthorization.PermissionStandardDocumentRead), documentHandler.GetMappings)
 			documents.PUT("/:id/mappings", permission(standardauthorization.PermissionStandardDocumentUpdate), documentHandler.SetMappings)
-			documents.POST("/:id/upload", permission(standardauthorization.PermissionStandardDocumentUpdate), documentHandler.UploadFile)
-			documents.GET("/:id/download", permission(standardauthorization.PermissionStandardDocumentRead), documentHandler.DownloadFile)
 		}
+		api.PUT("/document-extraction-candidates/:candidate_id", permission(standardauthorization.PermissionStandardDocumentUpdate), documentHandler.UpdateCandidate)
 
 	}
 
@@ -262,5 +280,5 @@ func SetupRouter(
 func isStandardBrowserResourceRequest(c *gin.Context) bool {
 	path := strings.TrimPrefix(c.Request.URL.Path, "/api/v1/standard")
 	segments := strings.Split(strings.Trim(path, "/"), "/")
-	return len(segments) == 3 && segments[0] == "documents" && segments[2] == "download"
+	return len(segments) == 5 && segments[0] == "documents" && segments[2] == "revisions" && segments[4] == "file"
 }

@@ -41,35 +41,40 @@ func TestDocumentFileLifecycleAgainstPostgresAndMinIO(t *testing.T) {
 	repo := repository.NewDocumentRepository(db)
 	svc := NewDocumentService(repo, nil, client, DocumentStorageOptions{MaxFileSize: 1024, Timeout: 10 * time.Second})
 	defer svc.Stop()
-	doc := &models.Document{TenantID: tenantID, Name: "integration-" + uuid.NewString(), CreatedBy: 1}
-	if err := repo.Create(doc); err != nil {
+	doc := &models.Document{TenantID: tenantID, ScopeType: models.StandardScopeTenantCommon, Code: "integration-" + uuid.NewString(), DocType: "reference", CreatedBy: 1, LifecycleState: "active"}
+	revision := &models.DocumentRevision{Name: "integration", ChangeSummary: "initial", CreatedBy: 1}
+	if err := repo.Create(doc, revision); err != nil {
 		t.Fatalf("create document: %v", err)
 	}
 	defer db.Exec("DELETE FROM standard.documents WHERE id = ?", doc.ID)
 
-	if _, err := svc.UploadFile(doc.ID, tenantID, doc.Version, "first.pdf", bytes.NewReader([]byte("first")), 5, "application/pdf"); err != nil {
+	if _, err := svc.UploadFile(doc.ID, revision.ID, tenantID, 1, doc.Version, "first.md", bytes.NewReader([]byte("first")), 5, "text/markdown"); err != nil {
 		t.Fatalf("upload first file: %v", err)
 	}
-	first, err := repo.GetByID(doc.ID, tenantID)
+	first, err := repo.GetRevision(doc.ID, revision.ID, tenantID)
 	if err != nil {
 		t.Fatalf("load first file metadata: %v", err)
 	}
-	if _, err := svc.UploadFile(doc.ID, tenantID, first.Version, "second.pdf", bytes.NewReader([]byte("second")), 6, "application/pdf"); err != nil {
+	current, err := repo.GetByID(doc.ID, tenantID)
+	if err != nil {
+		t.Fatalf("load document identity: %v", err)
+	}
+	if _, err := svc.UploadFile(doc.ID, revision.ID, tenantID, 1, current.Version, "second.md", bytes.NewReader([]byte("second")), 6, "text/markdown"); err != nil {
 		t.Fatalf("replace file: %v", err)
 	}
 	if _, err := client.StatObject(context.Background(), minioBucket, first.FileKey, minio.StatObjectOptions{}); err == nil {
 		t.Fatalf("old object %q still exists", first.FileKey)
 	}
-	reader, name, size, err := svc.DownloadFile(doc.ID, tenantID)
+	reader, name, _, size, err := svc.DownloadFile(doc.ID, revision.ID, tenantID)
 	if err != nil {
 		t.Fatalf("download file: %v", err)
 	}
 	content, readErr := io.ReadAll(reader)
 	closeErr := reader.Close()
-	if readErr != nil || closeErr != nil || name != "second.pdf" || size != 6 || string(content) != "second" {
+	if readErr != nil || closeErr != nil || name != "second.md" || size != 6 || string(content) != "second" {
 		t.Fatalf("download = name=%q size=%d content=%q read=%v close=%v", name, size, content, readErr, closeErr)
 	}
-	second, err := repo.GetByID(doc.ID, tenantID)
+	second, err := repo.GetRevision(doc.ID, revision.ID, tenantID)
 	if err != nil {
 		t.Fatalf("load second file metadata: %v", err)
 	}

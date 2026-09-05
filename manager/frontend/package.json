@@ -25,6 +25,7 @@
     "@mlightcad/libredwg-web": "^0.7.10",
     "@mlightcad/mtext-renderer": "^0.12.4",
     "@mlightcad/three-renderer": "^1.6.3",
+    "@open-file-viewer/core": "0.1.44",
     "3d-tiles-renderer": "^0.4.28",
     "axios": "1.7.9",
     "cesium": "1.143.0",
@@ -35,7 +36,6 @@
     "geotiff": "^2.1.3",
     "jszip": "^3.10.1",
     "lodash-es": "^4.17.21",
-    "mammoth": "^1.11.0",
     "marked": "12.0.2",
     "mermaid": "11.11.0",
     "ol": "9.2.4",
@@ -48,7 +48,9 @@
   },
   "overrides": {
     "vue": "3.5.13",
-    "three": "0.172.0"
+    "@giro3d/giro3d": {
+      "three": "0.172.0"
+    }
   },
   "devDependencies": {
     "@playwright/test": "1.61.1",

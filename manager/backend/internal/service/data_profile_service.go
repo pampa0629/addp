@@ -370,13 +370,16 @@ func (s *DataProfileService) runExecution(
 		fail("result_store_failed", err)
 		return
 	}
-	if err := s.executions.Complete(context.Background(), execution.TenantID, execution.ExecutionID, startedAt, sample.RowsScanned, map[string]interface{}{
+	metadata := managerExecutionLineage(commonModels.JSONMap{
 		"result_id":      state.ID,
 		"sample_size":    profile.SampleSize,
 		"rows_scanned":   profile.RowsScanned,
 		"field_count":    profile.FieldCount,
 		"source_version": target.SourceVersion,
-	}); err != nil {
+	}, commonExecution.TaskTypeDataProfiling, []commonExecution.LineageResourceRef{
+		managerItemLineageRefWithID(target.Locator, target.ItemFingerprint, target.ItemID),
+	}, nil)
+	if err := s.executions.Complete(context.Background(), execution.TenantID, execution.ExecutionID, startedAt, sample.RowsScanned, metadata); err != nil {
 		logger.L().Error("更新数据剖析成功状态失败", "execution_id", execution.ExecutionID, "error", err)
 	}
 }

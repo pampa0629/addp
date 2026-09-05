@@ -132,6 +132,7 @@ Copilot 是以下首批 Permission 的唯一 owner：
 - `copilot.notebook.execute`（只生成候选 Python 单元，不执行代码）
 - `copilot.workflow.execute`
 - `copilot.transfer.execute`（仅生成 Transfer 待确认草稿，不创建或启动任务）
+- `copilot.standard_document.execute`（仅接受 Standard 服务身份并提炼带来源证据的标准候选）
 - `copilot.configuration.read`
 - `copilot.configuration.update`
 
@@ -146,6 +147,7 @@ Copilot Permission 只授予“生成候选结果”，不授予候选查询、W
 - `/workflow/generate` 使用 `workflow.draft.generate` Tool Scope，并唯一映射到可委托的 `copilot.workflow.execute`。
 - `/transfer/generate` 使用 `transfer.draft.generate` Tool Scope，只要求 `copilot.transfer.execute`；源资源和目标父节点由 owner 重新验证，运行边界和目标策略沿用 Transfer 向导草稿。
 - `/kg-build/extract` 只接受 Graph 的 Tenant Service Access Token，请求和令牌 Tenant 必须一致，不消费 User Permission。
+- `/standard-documents/extract` 只接受 Standard 的 Tenant Service Access Token；只返回候选内容与绝对行号，不保存、创建或发布正式标准。
 - `/navigate/guide` 只要求已认证 User，不读取客户端提交的身份，也不借用其他业务 Permission。
 
 ## 核心功能实现

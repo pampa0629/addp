@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { catalogRootTypeForEngine } from '@addp/common-frontend'
+import { catalogRootTypeForEngine, formatLocatorDisplayPath } from '@addp/common-frontend'
 import {
   createResourceRootNode,
   geometryColumnsFromNode,
@@ -21,12 +21,22 @@ const parseLocator = (locator) => {
 
 describe('tileCacheResourceTree', () => {
   it('uses engine-aware catalog root type', () => {
-    expect(catalogRootTypeForEngine({ engine_type: 'postgresql' })).toBe('server')
-    expect(catalogRootTypeForEngine({ engine_type: 'minio' })).toBe('service')
-    expect(createResourceRootNode({ id: 7, name: 'pg', engine_type: 'postgresql' })).toMatchObject({
+    expect(catalogRootTypeForEngine({ capabilities: { storage: { catalog_model: { root_term: 'server' } } } })).toBe('server')
+    expect(catalogRootTypeForEngine({ catalog_model: { root_term: 'service' } })).toBe('service')
+    expect(catalogRootTypeForEngine({ engine_type: 'unknown' })).toBe('root')
+    expect(createResourceRootNode({
+      id: 7,
+      name: 'pg',
+      capabilities: { storage: { catalog_model: { root_term: 'server' } } }
+    })).toMatchObject({
       locator: 'addp://engine/7/path/?type=server',
       type: 'server'
     })
+  })
+
+  it('formats paths from resource semantics without an engine-type list', () => {
+    expect(formatLocatorDisplayPath('addp://engine/7/path/public/roads?type=table')).toBe('public.roads')
+    expect(formatLocatorDisplayPath('addp://engine/7/path/bucket/roads.parquet?type=object')).toBe('bucket/roads.parquet')
   })
 
   it('merges ancestor chain into existing tree and preserves loaded siblings', () => {

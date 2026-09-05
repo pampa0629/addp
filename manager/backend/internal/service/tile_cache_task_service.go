@@ -663,6 +663,14 @@ func (s *TileCacheTaskService) runTileCacheGeneration(ctx context.Context, task 
 	finalProgress := progressSink.LastProgress()
 	if status == commonExecution.ExecutionStatusSuccess {
 		finalProgress = 100
+		if identity, identityErr := readTileCacheTaskTargetIdentity(execCfg); identityErr == nil {
+			if outputRef, lineageErr := managerInfraObjectLineageRef(cfg.StorageRef, "manager"); lineageErr == nil {
+				metadata = managerExecutionLineage(metadata, commonExecution.TaskTypeVectorTileCacheGeneration,
+					[]commonExecution.LineageResourceRef{managerItemLineageRef(identity.Locator, identity.ItemFingerprint, identity.ItemID)},
+					[]commonExecution.LineageResourceRef{outputRef},
+				)
+			}
+		}
 	}
 	mergeTileCacheProgressMetadata(metadata, progressSink.LastMetadata())
 	tileCacheID := uint(0)

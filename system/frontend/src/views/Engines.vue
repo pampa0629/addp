@@ -8,7 +8,7 @@
             <el-button :icon="Refresh" :loading="loading" @click="refreshEngines">
               {{ t('system.engine.actions.refresh') }}
             </el-button>
-            <el-button type="primary" :icon="Plus" @click="showAddStorageDialog">{{ t('system.engine.addStorage') }}</el-button>
+            <el-button type="primary" :icon="Plus" :disabled="engineTypeDescriptors.length === 0" @click="showAddStorageDialog">{{ t('system.engine.addStorage') }}</el-button>
             <el-button type="warning" :icon="Plus" @click="showAddExtensionDialog">{{ t('system.engine.addExtension') }}</el-button>
           </div>
         </div>
@@ -207,6 +207,7 @@
             ref="storageFormRef"
             v-model="form"
             :is-edit="isEdit"
+            :engine-type-descriptors="engineTypeDescriptors"
             :show-type-selector="false"
           />
 
@@ -899,74 +900,18 @@ const dialogTitle = computed(() => {
   return t('system.engine.dialog.addStorage')
 })
 
-const storageEngineTypeOptions = computed(() => ([
-  {
-    value: 'postgresql',
-    icon: '🐘',
-    label: 'PostgreSQL',
-    desc: t('system.engine.registerPanel.types.postgresql')
-  },
-  {
-    value: 'oracle',
-    icon: 'O',
-    label: 'Oracle Database',
-    desc: t('system.engine.registerPanel.types.oracle')
-  },
-  {
-    value: 'mysql',
-    icon: '🐬',
-    label: 'MySQL',
-    desc: t('system.engine.registerPanel.types.mysql')
-  },
-  {
-    value: 'kafka',
-    icon: '📨',
-    label: 'Apache Kafka',
-    desc: t('system.engine.registerPanel.types.kafka')
-  },
-  {
-    value: 'doris',
-    icon: '🟠',
-    label: 'Apache Doris',
-    desc: t('system.engine.registerPanel.types.doris')
-  },
-  {
-    value: 'clickhouse',
-    icon: '⚡',
-    label: 'ClickHouse',
-    desc: t('system.engine.registerPanel.types.clickhouse')
-  },
-  {
-    value: 'mongodb',
-    icon: '🍃',
-    label: 'MongoDB',
-    desc: t('system.engine.registerPanel.types.mongodb')
-  },
-  {
-    value: 'minio',
-    icon: '🪣',
-    label: 'MinIO',
-    desc: t('system.engine.registerPanel.types.minio')
-  },
-  {
-    value: 'neo4j',
-    icon: '🕸️',
-    label: 'Neo4j',
-    desc: t('system.engine.registerPanel.types.neo4j')
-  },
-  {
-    value: 'nfs',
-    icon: '📁',
-    label: t('system.engine.typeNfs'),
-    desc: t('system.engine.registerPanel.types.nfs')
-  },
-  {
-    value: 'spark',
-    icon: '✨',
-    label: 'Apache Spark',
-    desc: t('system.engine.registerPanel.types.spark')
+const engineTypeDescriptors = ref([])
+
+const storageEngineTypeOptions = computed(() => engineTypeDescriptors.value.map(descriptor => {
+  const descriptionKey = `system.engine.registerPanel.types.${descriptor.type}`
+  const translatedDescription = t(descriptionKey)
+  return {
+    value: descriptor.type,
+    icon: '◈',
+    label: descriptor.display_name,
+    desc: translatedDescription === descriptionKey ? descriptor.display_name : translatedDescription
   }
-]))
+}))
 
 const visibleStorageEngineTypeOptions = computed(() => {
   if (!isEdit.value) {
@@ -1003,7 +948,6 @@ const superMapWorkspaces = computed(() => findSuperMapSpatialWorkspaces(editingE
 const showSpatialWorkspacePanel = computed(() => {
   return Boolean(
     isEdit.value &&
-    form.value.engine_type === 'postgresql' &&
     superMapWorkspaces.value.length > 0
   )
 })
@@ -1116,10 +1060,7 @@ const handlePageSizeChange = () => {
 }
 
 const getEngineTypeLabel = (type, engine = null) => {
-  if (engine?.name && engine.engine_type === type) {
-    return type
-  }
-  return humanizeCapabilityValue(type)
+  return engineTypeDescriptors.value.find(descriptor => descriptor.type === type)?.display_name || humanizeCapabilityValue(type)
 }
 
 const getEngineTypeColor = (type) => {
@@ -1321,6 +1262,14 @@ const loadEngines = async ({ silent = false } = {}) => {
   }
 }
 
+const loadEngineTypeDescriptors = async () => {
+  const response = await enginesAPI.listTypes()
+  if (!Array.isArray(response)) {
+    throw new TypeError('System engine type descriptor response must be an array')
+  }
+  engineTypeDescriptors.value = response
+}
+
 const refreshEngines = async () => {
   if (await loadEngines()) ElMessage.success(t('system.engine.msg.refreshed'))
 }
@@ -1340,7 +1289,7 @@ const showAddStorageDialog = () => {
   resetForm()
   form.value = {
     ...form.value,
-    engine_type: 'postgresql'
+    engine_type: engineTypeDescriptors.value[0]?.type || ''
   }
   dialogVisible.value = true
 }
@@ -1987,7 +1936,12 @@ const scheduleEngineRefresh = () => {
 
 onMounted(() => {
 	engineRefreshStopped = false
-	loadEngines().finally(scheduleEngineRefresh)
+	Promise.all([loadEngines(), loadEngineTypeDescriptors()])
+		.catch(error => {
+			ElMessage.error(t('system.engine.msg.loadFailed'))
+			console.error(error)
+		})
+		.finally(scheduleEngineRefresh)
 	restoreEngineDetails()
 })
 

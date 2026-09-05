@@ -43,17 +43,6 @@ export function resolveDataExplorerRouteState(routeQuery = {}) {
   }
 }
 
-export function buildDataExplorerConsoleRoute(locator, tab = DATA_EXPLORER_DEFAULT_TAB) {
-  const query = buildDataExplorerQuery(locator, tab)
-  const search = new URLSearchParams()
-  if (query.locator) search.set('locator', query.locator)
-  if (query.tab) search.set('tab', query.tab)
-  const queryString = search.toString()
-  return queryString
-    ? `/manager/data-explorer?${queryString}`
-    : '/manager/data-explorer'
-}
-
 export function buildCatalogEntryConsoleRoute(entryId) {
   const normalizedEntryId = String(entryId || '').trim()
   return normalizedEntryId

@@ -70,9 +70,11 @@ type resourceKey struct {
 
 type Store struct {
 	db              *gorm.DB
+	schema          string
 	consumerOwner   string
 	entriesTable    string
 	checkpointTable string
+	migrationsTable string
 	changeBarrier   ProjectionChangeBarrier
 	mu              sync.RWMutex
 	byResource      map[resourceKey][]dataprotection.Projection
@@ -82,72 +84,25 @@ type Store struct {
 func New(db *gorm.DB, schema, consumerOwner string, changeBarrier ProjectionChangeBarrier) (*Store, error) {
 	schema = strings.TrimSpace(schema)
 	consumerOwner = strings.TrimSpace(consumerOwner)
-	if db == nil || !schemaNamePattern.MatchString(schema) || consumerOwner == "" {
+	if db == nil || !schemaNamePattern.MatchString(schema) || !schemaNamePattern.MatchString(consumerOwner) {
 		return nil, errors.New("protection projection store requires database, schema and consumer owner")
 	}
 	store := &Store{
-		db: db, consumerOwner: consumerOwner,
+		db: db, schema: schema, consumerOwner: consumerOwner,
 		entriesTable:    schema + ".protection_projection_entries",
 		checkpointTable: schema + ".protection_projection_checkpoints",
+		migrationsTable: schema + ".protection_projection_store_migrations",
 		changeBarrier:   changeBarrier,
 		byResource:      make(map[resourceKey][]dataprotection.Projection),
 		localCursors:    make(map[int64]string),
 	}
-	if err := store.migrate(); err != nil {
+	if err := store.ensureSchema(); err != nil {
 		return nil, err
 	}
 	if err := store.reload(context.Background()); err != nil {
 		return nil, err
 	}
 	return store, nil
-}
-
-func (s *Store) migrate() error {
-	if s.db.Dialector.Name() == "postgres" {
-		schema := strings.SplitN(s.entriesTable, ".", 2)[0]
-		if err := s.db.Exec("CREATE SCHEMA IF NOT EXISTS " + schema).Error; err != nil {
-			return fmt.Errorf("create protection projection owner schema: %w", err)
-		}
-	}
-	payloadType := "TEXT"
-	if s.db.Dialector.Name() == "postgres" {
-		payloadType = "JSONB"
-	}
-	indexStatement := fmt.Sprintf(`CREATE INDEX IF NOT EXISTS idx_%s_protection_projection_target ON %s
-			(tenant_id, target_owner_module, target_resource_type, target_resource_identity)`, s.consumerOwner, s.entriesTable)
-	if s.db.Dialector.Name() == "sqlite" {
-		schema, table, _ := strings.Cut(s.entriesTable, ".")
-		indexStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %s.idx_%s_protection_projection_target ON %s
-			(tenant_id, target_owner_module, target_resource_type, target_resource_identity)`, schema, s.consumerOwner, table)
-	}
-	statements := []string{
-		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-			tenant_id BIGINT NOT NULL,
-			projection_id VARCHAR(64) NOT NULL,
-			consumer_owner VARCHAR(32) NOT NULL,
-			target_owner_module VARCHAR(32) NOT NULL,
-			target_resource_type VARCHAR(64) NOT NULL,
-			target_resource_identity TEXT NOT NULL,
-			target_component_key TEXT NOT NULL DEFAULT '',
-			state VARCHAR(16) NOT NULL,
-			revision CHAR(20) NOT NULL,
-			projection_payload %s NOT NULL,
-			updated_at TIMESTAMP NOT NULL,
-			PRIMARY KEY (tenant_id, projection_id)
-		)`, s.entriesTable, payloadType),
-		indexStatement,
-		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-			tenant_id BIGINT PRIMARY KEY,
-			cursor TEXT NOT NULL,
-			updated_at TIMESTAMP NOT NULL
-		)`, s.checkpointTable),
-	}
-	for _, statement := range statements {
-		if err := s.db.Exec(statement).Error; err != nil {
-			return fmt.Errorf("migrate protection projection store: %w", err)
-		}
-	}
-	return nil
 }
 
 func (s *Store) CurrentCursor(ctx context.Context, tenantID int64) (string, error) {

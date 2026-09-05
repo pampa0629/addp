@@ -15,7 +15,7 @@
     </div>
 
     <el-table v-else :data="docs" v-loading="loading" size="small">
-      <el-table-column :label="$t('standard.documentPanel.docName')" prop="name" min-width="160" show-overflow-tooltip />
+      <el-table-column :label="$t('standard.documentPanel.docName')" min-width="160" show-overflow-tooltip><template #default="{ row }">{{ displayRevision(row)?.name || row.code }}</template></el-table-column>
       <el-table-column :label="$t('standard.documentPanel.docType')" width="90">
         <template #default="{ row }">
           <el-tag size="small" :type="docTypeTagType(row.doc_type)">{{ docTypeLabel(row.doc_type) }}</el-tag>
@@ -24,9 +24,9 @@
       <el-table-column :label="$t('standard.documentPanel.docSource')" prop="source_org" width="140" show-overflow-tooltip />
       <el-table-column :label="$t('standard.documentPanel.docAttachment')" width="100">
         <template #default="{ row }">
-          <span v-if="row.file_name" class="file-tag">
+          <span v-if="displayRevision(row)?.file_name" class="file-tag">
             <el-icon style="vertical-align:middle;margin-right:2px"><Paperclip /></el-icon>
-            <span class="file-name-text" :title="row.file_name">{{ row.file_name }}</span>
+            <span class="file-name-text" :title="displayRevision(row).file_name">{{ displayRevision(row).file_name }}</span>
           </span>
           <span v-else class="no-file">—</span>
         </template>
@@ -34,7 +34,7 @@
       <el-table-column :label="$t('standard.documentPanel.docActions')" width="150" align="center" fixed="right">
         <template #default="{ row }">
           <div class="table-actions">
-          <el-button v-if="row.file_name" link size="small" type="primary" @click="downloadDoc(row)">{{ $t('standard.documentPanel.download') }}</el-button>
+          <el-button v-if="displayRevision(row)?.file_name" link size="small" type="primary" @click="downloadDoc(row)">{{ $t('standard.documentPanel.download') }}</el-button>
           <el-button v-if="canLink" link size="small" type="danger" :loading="isActionLocked(`document-unlink:${row.id}`)" @click="unlinkDoc(row)">{{ $t('standard.documentPanel.unlink') }}</el-button>
           </div>
         </template>
@@ -44,6 +44,9 @@
     <!-- 上传新文档对话框 -->
     <el-dialog v-model="showUploadDialog" :title="$t('standard.documentPanel.uploadTitle')" width="500px" @closed="resetUploadForm">
       <el-form :model="uploadForm" label-width="90px" size="default">
+        <el-form-item :label="$t('standard.common.code')" required>
+          <el-input v-model="uploadForm.code" />
+        </el-form-item>
         <el-form-item :label="$t('standard.documentPanel.nameLabel')" required>
           <el-input v-model="uploadForm.name" :placeholder="$t('standard.document.namePlaceholder')" />
         </el-form-item>
@@ -59,10 +62,13 @@
           <el-input v-model="uploadForm.source_org" :placeholder="$t('standard.document.sourcePlaceholder')" />
         </el-form-item>
         <el-form-item :label="$t('standard.documentPanel.versionLabel')">
-          <el-input v-model="uploadForm.document_version" :placeholder="$t('standard.document.versionPlaceholder')" />
+          <el-input v-model="uploadForm.version_label" :placeholder="$t('standard.document.versionPlaceholder')" />
         </el-form-item>
         <el-form-item :label="$t('standard.documentPanel.descriptionLabel')">
           <el-input v-model="uploadForm.description" type="textarea" :rows="2" :placeholder="$t('standard.document.descriptionLabel')" />
+        </el-form-item>
+        <el-form-item :label="$t('standard.revision.changeSummary')" required>
+          <el-input v-model="uploadForm.change_summary" />
         </el-form-item>
         <el-form-item v-if="canUploadFile" :label="$t('standard.documentPanel.fileLabel')">
           <el-upload
@@ -71,7 +77,7 @@
             :limit="1"
             :on-change="onFileChange"
             :on-exceed="() => ElMessage.warning(t('standard.documentPanel.fileExceedWarning'))"
-            accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"
+            accept=".md,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"
           >
             <el-button size="small">{{ $t('standard.documentPanel.fileSelectBtn') }}</el-button>
             <template #tip>
@@ -82,7 +88,7 @@
       </el-form>
       <template #footer>
         <el-button @click="showUploadDialog = false">{{ $t('standard.common.cancel') }}</el-button>
-        <el-button type="primary" @click="submitUpload" :loading="uploading" :disabled="!uploadForm.name">
+        <el-button type="primary" @click="submitUpload" :loading="uploading" :disabled="!uploadForm.name || !uploadForm.code || !uploadForm.change_summary">
           {{ selectedFile ? $t('standard.documentPanel.uploadAndLink') : $t('standard.documentPanel.metadataOnly') }}
         </el-button>
       </template>
@@ -105,7 +111,7 @@
         <el-option
           v-for="doc in searchedDocs"
           :key="doc.id"
-          :label="`${doc.name}${doc.source_org ? '（' + doc.source_org + '）' : ''}`"
+          :label="`${displayRevision(doc)?.name || doc.code}${doc.source_org ? '（' + doc.source_org + '）' : ''}`"
           :value="doc.id"
           :disabled="isAlreadyLinked(doc.id)"
         />
@@ -172,11 +178,15 @@ const uploading = ref(false)
 const selectedFile = ref(null)
 const uploadRef = ref(null)
 const uploadForm = ref({
+  code: '',
+  scope_type: 'tenant_common',
+  owner_domain_id: null,
   name: '',
   doc_type: 'reference',
   source_org: '',
-  document_version: '',
-  description: ''
+  version_label: '',
+  description: '',
+  change_summary: ''
 })
 
 // 关联已有文档
@@ -193,6 +203,7 @@ const docTypeLabel = (type) => ({
   reference: t('standard.document.reference')
 }[type] || type)
 const docTypeTagType = getDocumentTypeTagType
+const displayRevision = doc => doc?.draft_revision || doc?.current_revision
 
 const loadDocs = async () => {
   if (!props.entityId) return
@@ -211,8 +222,9 @@ const isAlreadyLinked = (docId) => docs.value.some(d => d.id === docId)
 
 const downloadDoc = async (doc) => {
   try {
-    const blob = await api[props.entityType].download(doc.id)
-    saveBlob(blob, doc.file_name || doc.name)
+    const revision = displayRevision(doc)
+    const blob = await api[props.entityType].download(doc.id, revision.id)
+    saveBlob(blob, revision.file_name || revision.name)
   } catch (e) {
     ElMessage.error(getStandardErrorMessage(e, t, 'standard.document.downloadFailed'))
   }
@@ -221,7 +233,7 @@ const downloadDoc = async (doc) => {
 const unlinkDoc = async (doc) => {
   await runLocked(`document-unlink:${doc.id}`, async () => {
     try {
-      await ElMessageBox.confirm(t('standard.documentPanel.confirmUnlink', { name: doc.name }), t('standard.common.hint'), { type: 'warning' })
+      await ElMessageBox.confirm(t('standard.documentPanel.confirmUnlink', { name: displayRevision(doc)?.name || doc.code }), t('standard.common.hint'), { type: 'warning' })
       const res = await api[props.entityType].unlink(props.entityId, doc.id, props.entityVersion)
       emit('update:entityVersion', res.version)
       ElMessage.success(t('standard.documentPanel.unlinkSuccess'))
@@ -237,7 +249,7 @@ const openUploadDialog = () => {
 }
 
 const resetUploadForm = () => {
-  uploadForm.value = { name: '', doc_type: 'reference', source_org: '', document_version: '', description: '' }
+  uploadForm.value = { code: '', scope_type: 'tenant_common', owner_domain_id: null, name: '', doc_type: 'reference', source_org: '', version_label: '', description: '', change_summary: '' }
   selectedFile.value = null
   uploadRef.value?.clearFiles()
 }
@@ -247,11 +259,14 @@ const onFileChange = (file) => {
   if (!uploadForm.value.name) {
     uploadForm.value.name = file.name.replace(/\.[^.]+$/, '')
   }
+  if (!uploadForm.value.code) {
+    uploadForm.value.code = file.name.replace(/\.[^.]+$/, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+  }
 }
 
 const submitUpload = async () => {
   if (uploading.value) return
-  if (!uploadForm.value.name) {
+  if (!uploadForm.value.name || !uploadForm.value.code || !uploadForm.value.change_summary) {
     ElMessage.warning(t('standard.documentPanel.nameRequired'))
     return
   }
@@ -263,7 +278,7 @@ const submitUpload = async () => {
     if (selectedFile.value) {
       const formData = new FormData()
       formData.append('file', selectedFile.value)
-      await api[props.entityType].uploadFile(doc.id, formData, doc.version)
+      await api[props.entityType].uploadFile(doc.id, doc.draft_revision.id, formData, doc.version)
     }
     ElMessage.success(t('standard.documentPanel.linkSuccess'))
     showUploadDialog.value = false

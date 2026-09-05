@@ -2,7 +2,7 @@
 
 > 本文说明如何把 [Outdoor 业务理解](Outdoor领域理解.md) 转化为 ADDP 中可治理、可计算、可供 Copilot 使用的语义资产。它是推进方案，不把尚未审核的候选对象直接当作平台事实。
 
-> 当前状态（2026-09-01）：Outdoor 核心治理闭环已完成，生产只保留 `MongoDB -> Transfer ODS -> Develop DIM/DWD/DWS -> Model seal/publish -> Quality -> Service` 一条路线。任务 `47/48` 已软删除，且无现存编排引用；Catalog 中对应 source binding 为 `missing`，历史 execution 和软删除记录仅作审计事实，不是可执行入口。DWD 当前严格区分报名、实际参加和当前负责三类事实；唯一编排 `10` 已按修订口径完成新一轮 20 步全量重算。由于尚未给定业务调度周期，暂不配置 Cron，这不是遗留迁移任务。
+> 当前状态（2026-09-05）：Outdoor 核心治理闭环只保留 `MongoDB -> Transfer ODS -> Develop DIM/DWD/DWS -> Model seal/publish -> Quality -> Service` 一条生产路线。唯一编排 `10` 已收敛为 17 步全量重算；正式物理成果为三张 ODS、两张 DIM、一张 DWD 和一张 DWS，共七张表。人员指标只预计算“当前主领队活动次数”和“参加活动次数（含当前主领队）”，两人定向重叠率改为带命名参数的即时查询服务，不再物化人员对表。旧任务和旧物理成果已退出可执行路径；历史 execution、软删除记录和 Catalog 变更记录仅作审计事实。由于尚未给定业务调度周期，暂不配置 Cron，这不是遗留迁移任务。
 
 ## 1. 目标与边界
 
@@ -132,18 +132,27 @@ Meta 只记录结构化字段事实，不写入人脸向量、照片原图或完
 
 ### 5.2 数据元与码值
 
-数据元候选包括：人员标识、OpenID、昵称、活动标识、活动日期、活动地点、强度等级、累积公里数、累积爬升、强度调整比例、活动状态、成员报名状态和群组标识。
+数据元候选包括：人员标识、OpenID、昵称、活动标识、活动日期、活动地点、强度等级、累积公里数、累积爬升、强度调整比例、活动状态、成员状态和群组标识。
 
-成员状态应建立码值集，但“是否实际参加”不应只依赖码值名称。推荐同时登记经审核的业务映射：
+活动源状态使用 `outdoor_activity_status`，只登记 MongoDB 可观测的六个值；“活动进行中”由活动日期和源状态共同推导，不建立第七个码值。成员状态使用 `outdoor_member_status`，表达成员名单中的队员性质：
 
 ```text
-报名中 -> actual_participation = true
-领队 -> actual_participation = true
-领队组 -> actual_participation = true
-替补中 -> actual_participation = false
-占坑中 -> actual_participation = false
-浏览中 -> pending_confirmation
+拟定中 -> draft
+已发布 -> published
+报名截止 -> registration_closed
+已成行 -> confirmed
+已结束 -> completed
+已取消 -> cancelled
+
+报名中 -> signup
+领队 -> leader
+领队组 -> leader_group
+替补中 -> alternate
+占坑中 -> hold
+浏览中 -> browsing
 ```
+
+不建立“领队”码值集：当前主领队是 `Outdoors.leader.personid` 表达的权威人员关系，不能由成员状态枚举替代。有效活动统一定义为活动日期有效、已经开始，且源状态不是 `draft` 或 `cancelled`；因此已经开始但源状态仍为 `published` 或 `registration_closed` 的活动按已成行处理。
 
 OpenID 等身份字段应设置安全等级；Copilot 只消费字段语义和经过授权的人员候选，不消费原始敏感值。
 
@@ -151,12 +160,9 @@ OpenID 等身份字段应设置安全等级；Copilot 只消费字段语义和�
 
 | 指标 | 粒度 | 核心公式/过滤 | 主要事实源 |
 | --- | --- | --- | --- |
-| 当前负责活动数 | 人员 | 当前主领队为该人员的活动 ID 去重数 | `Outdoors.leader`/成员角色 |
-| 报名活动数 | 人员 | 报名、替补、占坑关系的活动 ID 去重数，排除退出 | 活动成员或 `entriedOutdoors` |
-| 实际参加活动数 | 人员 | 状态为报名中、领队、领队组的活动 ID 去重数 | `Outdoors.members[]` |
-| 当前负责或参加的不同活动数 | 人员 | 当前负责集合与实际参加集合按活动 ID 去重并集 | `Outdoors` |
-| A 视角的 B 重叠率 | 人员对 | `|A∩B| / |A|` | 实际参加活动集合 |
-| B 视角的 A 重叠率 | 人员对 | `|A∩B| / |B|` | 实际参加活动集合 |
+| 当前主领队活动次数 | 人员 | 当前主领队为该人员的有效活动 ID 去重数 | `Outdoors.leader.personid` |
+| 参加活动次数（含当前主领队） | 人员 | 当前主领队活动集合与成员状态为 `signup / leader / leader_group` 的有效活动集合按活动 ID 去重并集 | `Outdoors.leader`、`Outdoors.members[]` |
+| 定向参加活动重叠率 | 有序人员对、即时查询 | `|A∩B| / |A|` 与 `|A∩B| / |B|` 同时返回；零分母返回 0 | 已发布的 DWD 参加活动集合 |
 
 每个指标进入 Standard 前都要补齐：时间过滤、草稿和取消状态处理、失效引用、零分母、是否将领队角色计为参加，以及结果为空时的返回语义。
 
@@ -215,20 +221,19 @@ Model 拥有物化结构和发布边界，只根据已审批模型生成受控 D
 | 物理表 | 粒度 | 用途 |
 | --- | --- | --- |
 | `dim_outdoor_person` | 每个人员一行 | 稳定人员标识及授权展示属性 |
-| `dim_outdoor_activity` | 每个有效活动一行 | 活动日期、状态和最终强度 |
-| `dwd_outdoor_participation` | 每个活动与人员组合一行 | 合并报名、实际参加和当前负责三类关系 |
-| `dws_outdoor_person_metric` | 每个人员、指标、指标版本和统计范围一行 | 四项人员活动数指标 |
-| `dws_outdoor_person_pair_metric` | 每个无序人员对、指标、指标版本和统计范围一行 | 共同活动数、两个分母和两个方向的重叠率 |
+| `dim_outdoor_activity` | 每个活动一行 | 源状态、标准化状态、活动日期、有效活动标记、当前主领队 ID 和昵称 |
+| `dwd_outdoor_participation` | 每个有效活动与参加人员组合一行 | 成员或当前主领队参加事实、成员状态、当前主领队标记和人员昵称 |
+| `dws_outdoor_person_metric` | 每个人员、指标和统计范围一行 | 两项人员活动次数指标及人员昵称 |
 
-`dwd_outdoor_participation` 必须以 `person_id + activity_id` 为复合主键，至少包含 `is_signup`、`is_actual_participant` 和 `is_current_leader`。同一人员在同一活动中的多种关系合并为一行布尔事实；当前主领队即使不在 `members[]` 中，也要进入该事实表。人员侧摘要数组不参与事实生成。
+`dwd_outdoor_participation` 必须以 `person_id + activity_id` 为复合主键。只保留有效活动中成员状态为 `signup / leader / leader_group` 的人员和当前主领队；当前主领队即使不在 `members[]` 中也必须进入事实表，并用 `is_current_leader` 明确表达。旧口径专用的 `is_signup`、`is_actual_participant` 不再保留。人员侧摘要数组不参与事实生成。
 
-两张 DWS 都属于指标事实表，不是业务实体表。人员对统一按稳定人员标识排序为 `person_id_a < person_id_b`，一对人员只存一行，同时保存 A→B 和 B→A 两个方向结果。Top 10 固定取同一次重算中 `outdoor_responsible_or_actual_activity_count` 降序、人员标识升序的前十名。DWS 不重复保存 `run_id`：重算 lineage 由 `common.task_executions` 和 Model MaterializationBatch 统一表达；结果表保留 `calculated_at` 作为业务消费时间事实。
+`dws_outdoor_person_metric` 属于指标事实表，不是业务实体表。它只保存两项人员预计算指标；重算 lineage 由 `common.task_executions` 和 Model MaterializationBatch 统一表达，结果表保留 `calculated_at` 作为业务消费时间事实。定向人员重叠率不进入 DWS 物化，而由 Service 对已发布事实执行带 `person_id_a`、`person_id_b` 的固定参数化 SQL 即时计算。
 
 MongoDB `title.level` 的真实值包含 `1.9`、`2.2` 等小数。ODS 保留贴源值；`dim_outdoor_activity.activity_intensity` 和 `dwd_outdoor_participation.activity_intensity` 必须统一使用 `decimal`，由 Develop 任务 `52/53` 在业务加工阶段显式转换，转换失败写 `NULL` 并交给 Quality 观测；不得使用 `int` 截断业务值。
 
 ### 8.1 Transfer 与 Develop 持久任务
 
-第一批建立八个可独立审计和重试的持久任务：
+最终保留七个可独立审计和重试的持久任务：
 
 1. Transfer `outdoor_ods_persons_refresh`（`74`）；
 2. Transfer `outdoor_ods_activities_refresh`（`75`）；
@@ -236,16 +241,15 @@ MongoDB `title.level` 的真实值包含 `1.9`、`2.2` 等小数。ODS 保留贴
 4. Develop `outdoor_dim_person_from_ods_refresh`（`51`）；
 5. Develop `outdoor_dim_activity_from_ods_refresh`（`52`）；
 6. Develop `outdoor_dwd_participation_from_ods_refresh`（`53`）；
-7. Develop `outdoor_dws_person_metric_refresh`（`49`）；
-8. Develop `outdoor_dws_person_pair_metric_refresh`（`50`）。
+7. Develop `outdoor_dws_person_metric_refresh`（`49`）。
 
-前三个任务属于 Transfer bounded query-source：MongoDB MQL 只做 ODS 所需的确定性结构整理，普通对象子字段通过 `$project` 投影，成员数组通过 `$unwind` 展开，再写入三个固定 ODS 目标。Transfer 不解释 Standard 码值或 Model 业务粒度，不提供递归 JSON 自动摊平。后五个任务属于 Develop PostgreSQL SQL 查询：`51/52/53` 读取 ODS 生成 DIM/DWD，`49/50` 只读取同一父编排下已 sealed 的 DIM/DWD 生成 DWS。
+前三个任务属于 Transfer bounded query-source：MongoDB MQL 只做 ODS 所需的确定性结构整理，普通对象子字段通过 `$project` 投影，成员数组通过 `$unwind` 展开，再写入三个固定 ODS 目标。Transfer 不解释 Standard 码值或 Model 业务粒度，不提供递归 JSON 自动摊平。后四个任务属于 Develop PostgreSQL SQL 查询：`51/52/53` 读取 ODS 生成 DIM/DWD，`49` 只读取同一父编排下已 sealed 的 DIM/DWD 生成 DWS。
 
-Transfer 三个任务按各自配置持有固定 ODS 目标；Develop 五个 writer 任务不保存物化批次标识、逻辑表标识或 Model 物理目标名。Orchestrator 先执行对应 Model prepare，再把 `staging_locator` 作为 Develop writer 的 `target_locator`；Develop 的关系查询参数只绑定 Transfer 的固定 ODS 输出或同一父编排中已 sealed 上游批次 locator。Transfer 与 Develop 都不承担模型 DDL 或正式表替换；失败不能把半成品标记为成功。
+Transfer 三个任务按各自配置持有固定 ODS 目标；Develop 四个 writer 任务不保存物化批次标识、逻辑表标识或 Model 物理目标名。Orchestrator 先执行对应 Model prepare，再把 `staging_locator` 作为 Develop writer 的 `target_locator`；Develop 的关系查询参数只绑定 Transfer 的固定 ODS 输出或同一父编排中已 sealed 上游批次 locator。Transfer 与 Develop 都不承担模型 DDL 或正式表替换；失败不能把半成品标记为成功。
 
 ### 8.2 Quality 门禁
 
-第一批门禁至少包括：维表主键非空且唯一、DWD 复合主键唯一、DWD 人员和活动引用完整、实际参加集合是报名集合子集、各布尔关系口径可复现、DWS 粒度唯一，以及 Top 10 足够时人员对结果恰好为 45 行。门禁失败时本次总编排失败，不发布成功结论。
+最终门禁包括 16 项阻断级断言：维表主键非空且唯一、DWD 复合主键唯一、DWD 人员和活动引用完整、有效活动和成员状态口径可复现、人员昵称覆盖、DWS 两项指标粒度唯一及公式一致。门禁失败时本次总编排失败，不发布成功结论。
 
 ### 8.3 Orchestrator 总编排
 
@@ -256,8 +260,7 @@ flowchart LR
     P[人员维度] --> F[活动参与事实]
     A[活动维度] --> F
     F --> M[人员指标]
-    M --> O[Top 10 人员对指标]
-    O --> Q[Quality 完整性门禁]
+    M --> Q[Quality 完整性门禁]
 ```
 
 Orchestrator 的父执行 ID 作为同一次重算的稳定执行 lineage 贯穿所有子 execution 和 MaterializationBatch，不复制进 DWS 业务行。下游任务只能在依赖任务成功后启动，任一节点失败时终止后续节点。
@@ -278,14 +281,12 @@ Copilot 不直接喂入整篇讨论稿，而是由已批准 Standard 资产和 M
   },
   "relationships": [
     "person_current_leader_activity",
-    "person_signup_activity",
-    "person_actual_participation_activity"
+    "person_participation_activity"
   ],
   "approved_metrics": [
-    "current_responsible_activity_count",
-    "signup_activity_count",
-    "actual_participation_activity_count",
-    "directional_activity_overlap_rate"
+    "outdoor_current_responsible_activity_count",
+    "outdoor_responsible_or_actual_activity_count",
+    "outdoor_directional_participation_overlap_rate"
   ],
   "uncertainties": [
     "browser_status",
@@ -301,7 +302,7 @@ Copilot 不直接喂入整篇讨论稿，而是由已批准 Standard 资产和 M
 对于“某人参加了多少活动”这类请求，模型应输出语义计划：
 
 1. 解析人员候选，不以昵称直接当稳定身份；
-2. 选择 `actual_participation_activity` 关系；
+2. 选择 `person_participation_activity` 关系；
 3. 选择 `activity_id` 去重；
 4. 应用已批准的成员状态映射；
 5. 明确时间范围、活动状态和空值规则；
@@ -310,7 +311,7 @@ Copilot 不直接喂入整篇讨论稿，而是由已批准 Standard 资产和 M
 
 MongoDB MQL 编译器继续用于金样生成、源事实核验和开发期回归，不作为生产指标结果接口。Copilot 不得针对同一指标在运行时重新生成一条并行计算路线。
 
-对于定向重叠率，计划必须明确两个人、实际参加关系和两个方向的分母。不能把用户的“重叠度”自动改写为 Jaccard 或对称相似度。
+对于定向重叠率，计划必须明确两个稳定人员 ID、参加活动关系和两个方向的分母，并调用发布的参数化即时查询服务。不能把用户的“重叠度”自动改写为 Jaccard 或对称相似度。
 
 ### 8.3 澄清机制
 
@@ -386,14 +387,11 @@ MongoDB MQL 编译器继续用于金样生成、源事实核验和开发期回�
 
 ## 11. 第一轮建议范围
 
-第一轮只做 Person、Activity、Participation 三个核心对象和六项指标：
+当前范围只做 Person、Activity、Participation 三个核心对象和三项指标：
 
-1. 当前负责活动数；
-2. 报名活动数；
-3. 实际参加活动数；
-4. 当前负责或实际参加的不同活动数；
-5. A 视角的 B 重叠率；
-6. B 视角的 A 重叠率。
+1. 当前主领队活动次数；
+2. 参加活动次数（含当前主领队）；
+3. 定向参加活动重叠率，同时返回 A 视角和 B 视角结果。
 
 第一轮的最小闭环是：
 
@@ -432,6 +430,8 @@ MongoDB MQL 编译器继续用于金样生成、源事实核验和开发期回�
 旧的“参加活动次数”及其派生依赖因口径不完整已删除；客户域、性别码值集等无冲突资产未修改。
 
 ## 13. 首轮验证与收敛记录
+
+本章按日期保留方案演进和当时的验收事实，旧指标名、旧表和旧步骤数只用于说明迁移过程；当前有效成果以 13.19 为准，不得把较早小节恢复为可执行配置。
 
 1. 指标新建和详情界面现已补充业务域选择；`outdoor_actual_participation_activity_count` 已通过正式更新接口绑定 `户外域`，未改变其数据元或 Model 引用。
 2. Model 属性可以表达标量类型，但不能表达 `members[]` 展开、`title.date`/`title.level` 嵌套路径及数组元素过滤；这些必须由 Meta locator 和逻辑表绑定承载。
@@ -775,3 +775,35 @@ Develop 只保留四条正式计算任务：人员维、活动维、参与事实
 即时服务返回两人的 ID、昵称、共同活动数、各自参加活动数，以及 A 视角和 B 视角的条件比例；人员 ID 只用于精确关联，界面展示不再按 ID 二次查询昵称。查询服务 `outdoor_person_metric` 刷新发布快照后提供两项预计算指标；旧的 `outdoor_person_pair_metric` 删除，由 `outdoor_directional_participation_overlap` 参数化 SQL 服务唯一替代。
 
 新路线发布后必须删除 `dws_outdoor_person_pair_metric` 逻辑表和物理表、Develop 人员对预计算任务、对应质量断言、Query Service 和 Orchestrator 节点；旧路线不得与即时查询并存。Standard、Transfer、Model、Develop、Quality、Service、Workbench、Orchestrator 和 Meta/Catalog 必须在同一轮刷新与验收中闭环。
+
+### 13.19 最终迁移与验收（2026-09-05）
+
+13.18 所述收敛已全部落地，当前不存在新旧口径并行的可执行入口。Standard 最终只保留以下户外域标准资产：
+
+- `outdoor_member_status`（码值集 `2@R1`）和 `outdoor_activity_status`（码值集 `3@R1`）均为户外域已发布资产；活动状态码值集严格包含 `draft / published / registration_closed / confirmed / completed / cancelled` 六个源状态，不建立领队码值集；
+- `outdoor_current_responsible_activity_count`（指标 `6@R2`）、`outdoor_responsible_or_actual_activity_count`（指标 `7@R2`）和 `outdoor_directional_participation_overlap_rate`（指标 `9@R1`）均为户外域已发布指标；
+- 旧指标 `4`、`5`、`8` 已通过 Standard 正式界面删除，其定义主记录和修订历史均为 0，不保留兼容指标或影子定义。
+
+Standard 迁移还修复了旧码值项显式保留主键后 PostgreSQL sequence 未同步的问题：Schema 迁移在旧修订数据迁移完成后，以数据库当前最大项 ID 对 `standard.code_set_revision_items_id_seq` 做幂等对齐。PostgreSQL 集成门禁覆盖“保留旧 ID 后继续创建新码值项”的场景；运行库序列当前为 `15 / is_called=true`，新活动状态码值项已通过正式生命周期创建并发布。
+
+生产计算与发布链路最终为 17 步：Transfer 3 步、Develop 4 步、Model 9 步、Quality 1 步。最近一次完整父 execution 为 `8b62581c-fcc3-48bd-99ca-e186bfa24083`，执行时间 `2026-09-04 08:55:47 +08:00` 至 `08:57:13`，17 个子 execution 全部成功。Quality execution `2c79df3f-feb7-43c3-a25c-f01127e560ac` 对物化组 `1@15` 执行任务 `1@5`，16 项阻断级断言全部通过。编排没有配置 Cron 周期；当前保留经过验证的手动全量重算能力，待业务明确调度周期后再配置计划，不猜测运行频率。
+
+PostgreSQL `outdoor` Schema 最终只保留七张正式表：
+
+| 层级 | 表 | 行数 |
+| --- | --- | ---: |
+| ODS | `ods_outdoor_persons` | 2,188 |
+| ODS | `ods_outdoor_activities` | 2,383 |
+| ODS | `ods_outdoor_activity_members` | 6,954 |
+| DIM | `dim_outdoor_person` | 2,210 |
+| DIM | `dim_outdoor_activity` | 2,383 |
+| DWD | `dwd_outdoor_participation` | 4,888 |
+| DWS | `dws_outdoor_person_metric` | 4,420 |
+
+人员指标表中两个指标各 2,210 行：当前主领队活动次数总量 577、最大值 224；参加活动次数总量 4,888、最大值 286。DWD 的 `person_nickname` 缺失数为 0，活动维中有主领队但缺少主领队昵称的记录数为 0。人员维有 2 个源 `Persons` 记录本身缺少昵称且没有任何参与事实；DWS 因每人两项指标对应出现 4 个空昵称单元。这是保留的真实源数据事实，不在 DIM/DWS 中伪造展示值。
+
+Service 最终只保留三项 active/private 查询服务：`24`（`outdoor_person_metric`）、`28`（`outdoor_directional_participation_overlap`）和 `29`（`outdoor_person_directory`）。服务 `28` 只接受两个必填字符串命名参数 `person_id_a`、`person_id_b`，在已发布 DWD 上即时计算；以人员 `W7cw8J25dhqgDMHA` 和 `W7Y6ad2AWotkW4_c` 回归时，双方活动数为 286 和 193，共同活动数为 32，两个方向比例为 `0.111888` 和 `0.165803`。旧服务 `25` 已删除，不再读取人员对物化表。
+
+迁移清理结果如下：Model 逻辑表只剩 `3/4/5/6`，物化组只包含这四张表，逻辑表 `7` 及其 MaterializationBatch 均不存在；物理表 `dws_outdoor_person_pair_metric` 不存在；Develop 任务 `50` 已软删除并从可执行列表过滤；Quality 断言、Service 和 17 步编排均不再引用旧人员对路线。历史 `common.task_executions` 和 Catalog 变更记录继续作为审计事实保留，不构成兼容入口。`public` Schema 中 Outdoor 同名旧表数量为 0。
+
+最终 Meta 重扫 execution 为 `91b0776a-0aef-40b5-ae71-a4c7ee7d0491`，执行成功并扫描 `outdoor` 的 7 个数据项。当前生产链路仍严格遵循模块边界：Transfer 只做跨引擎 ODS 同步，Develop 只做通用关系计算，Model 独占逻辑表 DDL 和物化生命周期，Quality 执行发布门禁，Service 消费已发布关系表，Orchestrator 是唯一跨模块组合层；Transfer 和 Develop 均不知道 Model。

@@ -422,6 +422,8 @@ Security 治理与 Owner 执行共用 owner 稳定专业资源身份：Assessmen
 
 投影同步同时区分事务内 `ProjectionChangeBarrier` 与提交后 `AcknowledgementBarrier`：前者原子收敛 owner 数据库内派生结果，后者在回执前等待旧 cursor 下的进行中读取结束，并幂等清除 Service 外部瓦片缓存。后置屏障失败时保留已经安全安装的本地 cursor、暂停 acknowledgement 并重试；新请求读取共享持久 cursor 后立即执行新门禁。
 
+2026-09-05 将 Owner 本地投影存储从“共享首次建表代码”收敛为版本化公共契约：Manager、Develop、Service、Transfer 继续在各自 schema 保存 `protection_projection_entries`、`protection_projection_checkpoints` 和迁移版本，但 DDL、有序迁移、schema 级 PostgreSQL advisory lock 与启动结构校验只由 `common/dataprotection/projectionstore` 定义。首次升级可在不改写已有投影表的情况下登记初始版本；未知迁移、列/约束/索引漂移或并发迁移失败都阻止 Owner 启动。真实 PostgreSQL 门禁同时初始化四个现有 Owner 和一个模拟未来 Owner，平台一致性门禁禁止任何其他 Go/SQL 文件复制这些表定义。
+
 Develop 的回执屏障已进一步按真实活动边界收敛：进程内 Gate 和 Notebook 追踪当前读取，跨进程 Worker 追踪未过期 execution lease，无租约异步执行追踪未过期 Execution Authorization；`pending` 与租约、授权均已过期的历史 `running` 不阻塞回执，后续启动仍必须按新 cursor 过门禁。开发库遗留状态不得通过手工改表消除。
 
 ### 阶段 4：结构化敏感发现、评估与唯一编译器
@@ -507,6 +509,8 @@ Develop 已在同一 PreparedQuery 上完成 `ReadSet -> OutputLineage -> Execut
 
 Transfer 切片已冻结 `export` 动作边界，不恢复旧 `export` 任务类型。当前开放三类由读取方式和输出形态明确约束的执行路径：统一 Native TablePipeline 结构化 `bounded + snapshot` 导出；在同一 PreparedQuery 上完成 ReadSet 和 OutputLineage 的 PostgreSQL 可证明查询与 MongoDB 透明 aggregate 查询；MongoDB 集合到 `mongodb_extended_jsonl` 的原始记录导出。所有已支持路径都先按精确 Locator、实时结构和结果血缘执行遮盖或抑制，再进入字段映射、类型转换、空间处理、目标 writer 或 Canonical Extended JSON 编码。Security 继续生成引擎无关的 `export` 投影，Transfer 根据读取方式、输出形态以及 Provider 能否证明完整字段身份和输出血缘决定是否可执行；其他查询、raw copy、watermark incremental、Kafka replay、encoded source 与 continuous/CDC 仍资源级拒绝，不借用已有执行器放开。
 
+2026-09-05 完成首个受控 ProtectionExemption 切片：豁免唯一绑定 `{tenant, assessment, consumer_owner, action}`，每个不可变豁免修订同时冻结批准时的 Assessment revision；Assessment 后续产生新修订时旧豁免立即失效，必须显式重新批准，不能静默恢复。只允许当前正式 `sensitive` Assessment 与 `manager/preview`、`develop/query`、`service/service_execute`、`transfer/export` 四个已冻结出口动作；效果固定为限时返回原值，不允许自由选择或覆盖其他动作。有效期必填且最长 30 天，创建、续期、重新启用和提前撤销均追加不可变 revision，并在同一事务调用唯一投影编译器。投影规则携带 `allow + valid_until + fallback`，Owner 本地在到期后无需 Security 在线即可自动恢复 Policy/Baseline；无期限 allow、嵌套 fallback 和 Owner 私有管理员绕过均被共享契约拒绝。豁免只影响已由 Owner 授权的数据请求，不授予任何资源访问权；Manager `profile` 不随 `preview` 豁免。四项精确 Permission、IAM migration 127、Swagger、资源详情页操作与 Common/Security 回归测试同步落地。
+
 ### 阶段 7：全域数据与隐私合规深化
 
 - 文档文本中的个人信息和商业秘密；
@@ -529,7 +533,7 @@ Transfer 切片已冻结 `export` 动作边界，不恢复旧 `export` 任务类
 | Catalog 与 Security 并行消费 Meta 事实：Catalog 消费全量可恢复变化，Security 只精确读取显式纳管目标；对 Meta 的依赖不构成两者先后关系 | 已确认 |
 | Security Finding、Assessment、Policy 与 Owner 保护投影共用 owner 稳定专业资源身份；Catalog 以 SourceBinding 随后联邦展示，不要求安全事实改绑 Catalog UUID | 已确认 |
 | 纳管先安装 Owner `enrolling` 门禁，再执行发现；达自动采用置信度的 Finding 可立即触发保守基线，Catalog 未建档不影响 Manager 遮盖 | 已确认 |
-| 第一阶段所有普通用户均只看到受保护值，不提供原值揭示 | 已确认 |
+| 默认不提供原值揭示；只能由 Security ProtectionExemption 对正式敏感 Assessment 的指定 Owner 动作创建最长 30 天、可审计且自动回落的租户级临时原值豁免，豁免不授予资源访问权 | 已确认 |
 | 第一阶段不允许参与 Owner 存在明文旁路；Manager 覆盖预览、剖析和搜索，Develop 与 Service 已开放首个字段级查询动作，Transfer bounded snapshot 按已冻结 `export` 边界实施，各 Owner 尚无动作执行器的其他出口继续资源级拒绝 | 已确认 |
 | Security 产品入口收敛为“分类分级体系、敏感数据定义、默认保护规则、受保护资源”；界面组织不改变 SensitiveDataType、SecurityClassification、SecurityGrade、ProtectionBaseline、ProtectionEnrollment 的领域边界 | 已确认 |
 

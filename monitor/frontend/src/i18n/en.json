@@ -87,6 +87,35 @@
         "completed_at": "Completed At",
         "execution_tree": "Execution Tree",
         "metadata": "Execution Metadata",
+        "raw_metadata": "View Raw Metadata",
+        "lineage": {
+          "title": "Inputs and Outputs",
+          "description": "Resources actually read and results produced by this execution",
+          "resource_count": "{count} items",
+          "inputs": "Input Resources",
+          "outputs": "Output Artifacts",
+          "no_inputs": "No input resources recorded",
+          "no_outputs": "No output artifacts recorded",
+          "open_in_data_explorer": "View in Data Explorer",
+          "open_failed": "Unable to open Data Explorer",
+          "platform_internal_artifact": "Platform-internal artifact",
+          "item_id": "Data item ID {id}",
+          "write_mode": "Write mode: {mode}",
+          "resource_types": {
+            "table": "Table",
+            "collection": "Collection",
+            "graph": "Graph data",
+            "object": "Object",
+            "file": "File",
+            "prefix": "Directory"
+          },
+          "write_modes": {
+            "replace": "Replace",
+            "append": "Append",
+            "upsert": "Upsert",
+            "upsert_delete": "Upsert and delete"
+          }
+        },
         "metadata_fields": {
           "tile_generation_target": "Tile generation target",
           "vector_materialized_view_target": "Vector materialized view target",

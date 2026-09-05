@@ -105,14 +105,6 @@ func TestDirectResourceUpdatesRejectStaleVersion(t *testing.T) {
 				return NewMetricCategoryRepository(db).Update(&models.MetricCategory{ID: 1, TenantID: 7, Name: value}, version)
 			},
 		},
-		{
-			name: "document", table: "documents", firstValue: "First document",
-			createSQL: `CREATE TABLE standard.documents (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, name TEXT, doc_type TEXT, source_org TEXT, document_version TEXT, description TEXT, updated_by INTEGER, updated_at DATETIME, version INTEGER NOT NULL DEFAULT 1)`,
-			insertSQL: `INSERT INTO standard.documents (id, tenant_id, name, version) VALUES (1, 7, 'Original', 1)`,
-			update: func(db *gorm.DB, value string, version int64) error {
-				return NewDocumentRepository(db).Update(&models.Document{ID: 1, TenantID: 7, Name: value}, version)
-			},
-		},
 	}
 
 	for _, tt := range tests {
@@ -238,12 +230,14 @@ func TestDocumentMappingsRejectStaleVersionWithoutReplacingMappings(t *testing.T
 
 func TestDocumentFileReplacementRejectsStaleVersionWithoutCleanupSideEffect(t *testing.T) {
 	db := openVersionedTestDB(t,
-		`CREATE TABLE standard.documents (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, file_key TEXT, file_name TEXT, file_size INTEGER, updated_at DATETIME, version INTEGER NOT NULL DEFAULT 1)`,
+		`CREATE TABLE standard.documents (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, draft_revision_id INTEGER, updated_by INTEGER, updated_at DATETIME, version INTEGER NOT NULL DEFAULT 1)`,
+		`CREATE TABLE standard.document_revisions (id INTEGER PRIMARY KEY, document_id INTEGER NOT NULL, status TEXT NOT NULL, file_key TEXT, file_name TEXT, file_size INTEGER, media_type TEXT, content_sha256 TEXT, updated_by INTEGER, updated_at DATETIME)`,
 		`CREATE TABLE standard.document_file_cleanups (id INTEGER PRIMARY KEY AUTOINCREMENT, object_key TEXT NOT NULL UNIQUE, attempts INTEGER NOT NULL DEFAULT 0, next_attempt_at DATETIME NOT NULL, last_error TEXT, created_at DATETIME, updated_at DATETIME)`,
-		`INSERT INTO standard.documents (id, tenant_id, file_key, file_name, file_size, version) VALUES (1, 7, 'old-key', 'old.pdf', 10, 1)`,
+		`INSERT INTO standard.documents (id, tenant_id, draft_revision_id, version) VALUES (1, 7, 10, 1)`,
+		`INSERT INTO standard.document_revisions (id, document_id, status, file_key, file_name, file_size, media_type, content_sha256) VALUES (10, 1, 'draft', 'old-key', 'old.md', 10, 'text/markdown', 'old-hash')`,
 	)
 	repo := NewDocumentRepository(db)
-	cleanup, err := repo.ReplaceFile(1, 7, 99, "new-key", "new.pdf", 20)
+	cleanup, err := repo.ReplaceDraftFile(1, 10, 7, 3, 99, "new-key", "new.md", 20, "text/markdown", "new-hash")
 	if !errors.Is(err, ErrVersionConflict) {
 		t.Fatalf("stale replace file error = %v, want ErrVersionConflict", err)
 	}
@@ -256,10 +250,10 @@ func TestDocumentFileReplacementRejectsStaleVersionWithoutCleanupSideEffect(t *t
 		FileSize int64
 		Version  int64
 	}
-	if err := db.Raw(`SELECT file_key, file_name, file_size, version FROM standard.documents WHERE id = 1`).Scan(&actual).Error; err != nil {
+	if err := db.Raw(`SELECT revision.file_key, revision.file_name, revision.file_size, document.version FROM standard.document_revisions revision JOIN standard.documents document ON document.id=revision.document_id WHERE revision.id = 10`).Scan(&actual).Error; err != nil {
 		t.Fatalf("load document: %v", err)
 	}
-	if actual.FileKey != "old-key" || actual.FileName != "old.pdf" || actual.FileSize != 10 || actual.Version != 1 {
+	if actual.FileKey != "old-key" || actual.FileName != "old.md" || actual.FileSize != 10 || actual.Version != 1 {
 		t.Fatalf("document after stale replacement = %#v", actual)
 	}
 	var cleanupCount int64

@@ -3895,8 +3895,8 @@ func assertAuthorizationCatalogRetirement(t *testing.T, db *sql.DB) {
 	`).Scan(&activePermissionCount, &disabledPermissionCount); err != nil {
 		t.Fatalf("read retired Permission counts: %v", err)
 	}
-	if activePermissionCount < 345 || disabledPermissionCount != 72 {
-		t.Fatalf("Permission status counts = active:%d disabled:%d, want at least 345 and exactly 72", activePermissionCount, disabledPermissionCount)
+	if activePermissionCount < 345 || disabledPermissionCount != 74 {
+		t.Fatalf("Permission status counts = active:%d disabled:%d, want at least 345 and exactly 74", activePermissionCount, disabledPermissionCount)
 	}
 
 	var disabledRoles string
@@ -3938,20 +3938,21 @@ func assertStandardAuthorizationCatalog(t *testing.T, db *sql.DB) {
 	`).Scan(&permissionCount); err != nil {
 		t.Fatalf("read Standard authorization permissions: %v", err)
 	}
-	if permissionCount != 40 {
-		t.Fatalf("Standard authorization permission count = %d, want 40", permissionCount)
+	if permissionCount != 41 {
+		t.Fatalf("Standard authorization permission count = %d, want 41", permissionCount)
 	}
-	var publishPermissionCount, disabledApproveCount, disabledLegacyMetricPermissionCount int
+	var publishPermissionCount, disabledApproveCount, disabledLegacyMetricPermissionCount, disabledLegacyGlossaryPermissionCount int
 	if err := db.QueryRow(`
-		SELECT count(*) FILTER (WHERE permission_key IN ('standard.element.publish', 'standard.code_set.publish', 'standard.metric.publish') AND status = 'active'),
+		SELECT count(*) FILTER (WHERE permission_key IN ('standard.element.publish', 'standard.code_set.publish', 'standard.metric.publish', 'standard.glossary.publish', 'standard.document.publish') AND status = 'active'),
 		       count(*) FILTER (WHERE permission_key = 'standard.element.approve' AND status = 'disabled'),
-		       count(*) FILTER (WHERE permission_key IN ('standard.metric.approve', 'standard.metric.offline') AND status = 'disabled')
+		       count(*) FILTER (WHERE permission_key IN ('standard.metric.approve', 'standard.metric.offline') AND status = 'disabled'),
+		       count(*) FILTER (WHERE permission_key IN ('standard.glossary.approve', 'standard.glossary.offline') AND status = 'disabled')
 		FROM system.permissions
-	`).Scan(&publishPermissionCount, &disabledApproveCount, &disabledLegacyMetricPermissionCount); err != nil {
+	`).Scan(&publishPermissionCount, &disabledApproveCount, &disabledLegacyMetricPermissionCount, &disabledLegacyGlossaryPermissionCount); err != nil {
 		t.Fatalf("read Standard revision publish permissions: %v", err)
 	}
-	if publishPermissionCount != 3 || disabledApproveCount != 1 || disabledLegacyMetricPermissionCount != 2 {
-		t.Fatalf("Standard revision permission transition = publish:%d disabled_element_approve:%d disabled_metric_legacy:%d, want 3, 1 and 2", publishPermissionCount, disabledApproveCount, disabledLegacyMetricPermissionCount)
+	if publishPermissionCount != 5 || disabledApproveCount != 1 || disabledLegacyMetricPermissionCount != 2 || disabledLegacyGlossaryPermissionCount != 2 {
+		t.Fatalf("Standard revision permission transition = publish:%d disabled_element_approve:%d disabled_metric_legacy:%d disabled_glossary_legacy:%d, want 5, 1, 2 and 2", publishPermissionCount, disabledApproveCount, disabledLegacyMetricPermissionCount, disabledLegacyGlossaryPermissionCount)
 	}
 
 	var rolePermissionCount int
@@ -3967,8 +3968,8 @@ func assertStandardAuthorizationCatalog(t *testing.T, db *sql.DB) {
 	`).Scan(&rolePermissionCount); err != nil {
 		t.Fatalf("read Governance Manager Standard permissions: %v", err)
 	}
-	if rolePermissionCount != 39 {
-		t.Fatalf("Governance Manager Standard permission count = %d, want 39", rolePermissionCount)
+	if rolePermissionCount != 40 {
+		t.Fatalf("Governance Manager Standard permission count = %d, want 40", rolePermissionCount)
 	}
 
 	var retiredHierarchyPermissions, retiredHierarchyBindings int
@@ -4108,16 +4109,18 @@ func assertStandardDocumentCatalog(t *testing.T, db *sql.DB) {
 		WHERE permission_key IN (
 			'standard.document.create',
 			'standard.document.delete',
+			'standard.document.publish',
 			'standard.document.read',
-			'standard.document.update'
+			'standard.document.update',
+			'standard.document_extraction.create'
 		)
 		  AND owner_module = 'standard'
 		  AND status = 'active'
 	`).Scan(&permissionCount); err != nil {
 		t.Fatalf("read Standard document permissions: %v", err)
 	}
-	if permissionCount != 4 {
-		t.Fatalf("Standard document permission count = %d, want 4", permissionCount)
+	if permissionCount != 6 {
+		t.Fatalf("Standard document permission count = %d, want 6", permissionCount)
 	}
 
 	var rolePermissionCount int
@@ -4128,13 +4131,33 @@ func assertStandardDocumentCatalog(t *testing.T, db *sql.DB) {
 		JOIN system.permissions permission ON permission.id = role_permission.permission_id
 		WHERE role.tenant_id IS NULL
 		  AND role.role_key = 'tenant.governance_manager'
-		  AND permission.permission_key LIKE 'standard.document.%'
+		  AND permission.permission_key IN (
+		      'standard.document.create', 'standard.document.delete', 'standard.document.publish',
+		      'standard.document.read', 'standard.document.update', 'standard.document_extraction.create'
+		  )
 		  AND role_permission.source_type = 'product'
 	`).Scan(&rolePermissionCount); err != nil {
 		t.Fatalf("read Governance Manager document permissions: %v", err)
 	}
-	if rolePermissionCount != 4 {
-		t.Fatalf("Governance Manager document permission count = %d, want 4", rolePermissionCount)
+	if rolePermissionCount != 6 {
+		t.Fatalf("Governance Manager document permission count = %d, want 6", rolePermissionCount)
+	}
+
+	var runtimePermissionCount int
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM system.role_permissions role_permission
+		JOIN system.roles role ON role.id = role_permission.role_id
+		JOIN system.permissions permission ON permission.id = role_permission.permission_id
+		WHERE role.tenant_id IS NULL
+		  AND role.role_key = 'tenant.standard_runtime'
+		  AND permission.permission_key = 'copilot.standard_document.execute'
+		  AND role_permission.source_type = 'product'
+	`).Scan(&runtimePermissionCount); err != nil {
+		t.Fatalf("read Standard runtime Copilot permission: %v", err)
+	}
+	if runtimePermissionCount != 1 {
+		t.Fatalf("Standard runtime Copilot permission count = %d, want 1", runtimePermissionCount)
 	}
 }
 

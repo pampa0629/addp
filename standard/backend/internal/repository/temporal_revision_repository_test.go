@@ -47,6 +47,40 @@ func TestElementPublishKeepsPublishedHistoryAndResolvesByAsOf(t *testing.T) {
 	}
 }
 
+func TestGlossaryPublishKeepsPublishedHistoryAndResolvesByAsOf(t *testing.T) {
+	db := openTemporalRevisionTestDB(t)
+	january := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	february := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
+	if err := db.Exec(`INSERT INTO standard.glossaries (id, tenant_id, code, draft_revision_id, version, lifecycle_state) VALUES (3, 7, 'customer', 302, 1, 'active')`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO standard.glossary_revisions
+		(id, glossary_id, revision_no, status, name, definition, change_summary, effective_from)
+		VALUES (301, 3, 1, 'published', 'Customer v1', 'v1', 'v1', ?),
+		       (302, 3, 2, 'in_review', 'Customer v2', 'v2', 'v2', ?)`, january, february).Error; err != nil {
+		t.Fatal(err)
+	}
+	repo := NewGlossaryRepository(db)
+	if err := repo.PublishRevision(3, 302, 7, 9, 1); err != nil {
+		t.Fatalf("PublishRevision() error = %v", err)
+	}
+	var first models.GlossaryRevision
+	if err := db.First(&first, 301).Error; err != nil {
+		t.Fatal(err)
+	}
+	if first.Status != models.RevisionStatusPublished || first.EffectiveTo == nil || !first.EffectiveTo.Equal(february) {
+		t.Fatalf("first revision = %#v", first)
+	}
+	before, err := repo.GetAggregateAt(3, 7, january.Add(time.Hour))
+	if err != nil || before.CurrentRevision == nil || before.CurrentRevision.ID != 301 {
+		t.Fatalf("January glossary = %#v, err=%v", before, err)
+	}
+	after, err := repo.GetAggregateAt(3, 7, february)
+	if err != nil || after.CurrentRevision == nil || after.CurrentRevision.ID != 302 || after.DraftRevision != nil || after.Version != 2 {
+		t.Fatalf("February glossary = %#v, err=%v", after, err)
+	}
+}
+
 func TestCodeSetAggregateResolvesPublishedRevisionByAsOf(t *testing.T) {
 	db := openTemporalRevisionTestDB(t)
 	january := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -148,6 +182,8 @@ func openTemporalRevisionTestDB(t *testing.T) *gorm.DB {
 		t.Fatal(err)
 	}
 	for _, statement := range []string{
+		`CREATE TABLE standard.glossaries (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, code TEXT NOT NULL, draft_revision_id INTEGER, version INTEGER NOT NULL, lifecycle_state TEXT NOT NULL, updated_by INTEGER, updated_at DATETIME)`,
+		`CREATE TABLE standard.glossary_revisions (id INTEGER PRIMARY KEY, glossary_id INTEGER NOT NULL, revision_no INTEGER NOT NULL, status TEXT NOT NULL, name TEXT NOT NULL, alias TEXT, definition TEXT NOT NULL, example TEXT, note TEXT, related_ids TEXT, change_summary TEXT NOT NULL, effective_from DATETIME, effective_to DATETIME, submitted_by INTEGER, submitted_at DATETIME, published_by INTEGER, published_at DATETIME, created_by INTEGER, updated_by INTEGER, created_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE standard.elements (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, code TEXT NOT NULL, draft_revision_id INTEGER, version INTEGER NOT NULL, lifecycle_state TEXT NOT NULL, updated_by INTEGER, updated_at DATETIME)`,
 		`CREATE TABLE standard.element_revisions (id INTEGER PRIMARY KEY, element_id INTEGER NOT NULL, revision_no INTEGER NOT NULL, status TEXT NOT NULL, name TEXT NOT NULL, definition TEXT NOT NULL, data_type TEXT NOT NULL, value_domain_kind TEXT NOT NULL, change_summary TEXT NOT NULL, effective_from DATETIME, effective_to DATETIME, compiled_quality_rules TEXT, published_by INTEGER, published_at DATETIME, updated_by INTEGER, updated_at DATETIME)`,
 		`CREATE TABLE standard.code_sets (id INTEGER PRIMARY KEY, tenant_id INTEGER NOT NULL, code TEXT NOT NULL, origin TEXT NOT NULL, draft_revision_id INTEGER, version INTEGER NOT NULL, lifecycle_state TEXT NOT NULL, updated_by INTEGER, updated_at DATETIME)`,

@@ -11,9 +11,9 @@ import (
 func TestReferenceResolutionServicePreservesOrderAndReferenceability(t *testing.T) {
 	repository := &fakeReferenceResolutionRepository{
 		domains: []models.Domain{{ID: 1, TenantID: 7, Name: "Sales", Code: "sales", Version: 2, LifecycleState: "active"}},
-		glossaries: []models.Glossary{
-			{ID: 2, TenantID: 7, Name: "Customer", Version: 3, Status: "approved"},
-			{ID: 3, TenantID: 7, Name: "Draft", Version: 1, Status: "draft"},
+		glossaries: []models.PublishedGlossaryReference{
+			{ID: 2, TenantID: 7, Name: "Customer", Code: "customer", Version: 3, Status: models.RevisionStatusPublished, LifecycleState: "active", RevisionID: 20, RevisionNo: 2},
+			{ID: 3, TenantID: 7, Name: "Deleting", Code: "deleting", Version: 1, Status: models.RevisionStatusPublished, LifecycleState: "deleting", RevisionID: 30, RevisionNo: 1},
 		},
 		elements: []models.PublishedElementReference{{ID: 4, TenantID: 7, Name: "Customer ID", Code: "customer_id", Version: 5, Status: models.RevisionStatusPublished, LifecycleState: "deleting", RevisionID: 40, RevisionNo: 2}},
 	}
@@ -71,7 +71,7 @@ func TestReferenceResolutionServiceListsReferenceableCandidates(t *testing.T) {
 
 type fakeReferenceResolutionRepository struct {
 	domains     []models.Domain
-	glossaries  []models.Glossary
+	glossaries  []models.PublishedGlossaryReference
 	elements    []models.PublishedElementReference
 	domainIDs   []int64
 	glossaryIDs []int64
@@ -82,7 +82,7 @@ func (r *fakeReferenceResolutionRepository) ListDomainCandidates(context.Context
 	return r.domains, int64(len(r.domains)), nil
 }
 
-func (r *fakeReferenceResolutionRepository) ListGlossaryCandidates(context.Context, int64, string, int, int) ([]models.Glossary, int64, error) {
+func (r *fakeReferenceResolutionRepository) ListGlossaryCandidates(context.Context, int64, string, int, int) ([]models.PublishedGlossaryReference, int64, error) {
 	return r.glossaries, int64(len(r.glossaries)), nil
 }
 
@@ -95,7 +95,7 @@ func (r *fakeReferenceResolutionRepository) ResolveDomains(_ context.Context, _ 
 	return r.domains, nil
 }
 
-func (r *fakeReferenceResolutionRepository) ResolveGlossaries(_ context.Context, _ int64, ids []int64) ([]models.Glossary, error) {
+func (r *fakeReferenceResolutionRepository) ResolveGlossaries(_ context.Context, _ int64, ids []int64) ([]models.PublishedGlossaryReference, error) {
 	r.glossaryIDs = append([]int64(nil), ids...)
 	return r.glossaries, nil
 }

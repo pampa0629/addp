@@ -354,7 +354,7 @@ func (*tabularCatalogTestPlugin) ConnectionIdentityFields() []string            
 func (*tabularCatalogTestPlugin) ValidateConnectionInfo(ConnectionInfo) error          { return nil }
 func (*tabularCatalogTestPlugin) TestConnection(context.Context, ConnectionInfo) error { return nil }
 func (*tabularCatalogTestPlugin) Capabilities() EngineCapabilities                     { return EngineCapabilities{} }
-func (*tabularCatalogTestPlugin) GetDialect() string                                   { return "test" }
+func (*tabularCatalogTestPlugin) GORMDialect() string                                  { return "test" }
 func (*tabularCatalogTestPlugin) CreateConnectionPool(ConnectionInfo, *PoolConfig) (*gorm.DB, error) {
 	return &gorm.DB{}, nil
 }

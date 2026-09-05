@@ -1,4 +1,4 @@
-// 注意：预览组件（MarkdownPreview、DocxPreview 等）包含重型依赖（marked、mammoth、jszip 等），
+// 注意：预览组件（MarkdownPreview、OfficePreview 等）包含重型依赖（marked、@open-file-viewer/core、jszip 等），
 // 已移至 ./previews 单独入口，避免不需要预览的模块引入这些依赖。
 // 如需预览组件，请从 '@common-ui/previews' 导入。
 
@@ -42,10 +42,12 @@ export * from './utils/consoleBridge'
 export * from './utils/taskOwnerUrl'
 export * from './composables/useConsolePageDescriptor'
 export * from './utils/moduleRouteNavigation'
+export * from './utils/managerDataExplorerRoute'
 export * from './utils/recoverableRouteState'
 export * from './utils/resourceSelection'
 export * from './utils/resourceCandidateSelection.mjs'
 export * from './utils/continuousExecution'
+export * from './utils/executionLineagePresentation'
 export * from './utils/focus'
 export * from './utils/latestRequest'
 export { toAmisResponse, toAmisListResponse, createAmisInterceptor } from './utils/amis-adaptor'

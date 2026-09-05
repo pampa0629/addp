@@ -201,7 +201,8 @@ Chat Tool Calling 使用厂商无关的结构：`tools[]` 只包含稳定 `name/
 
 ## 七、调用方边界
 
-- Copilot 保存 `resource_resolution`、`query_generation`、`workflow_generation`、`notebook_generation`、`transfer_generation`、`navigation_guide` 和 `knowledge_graph_extraction` Scenario Binding，负责领域 prompt、领域上下文、结构化输出校验和有限业务重试。
+- Copilot 保存 `resource_resolution`、`query_generation`、`workflow_generation`、`notebook_generation`、`transfer_generation`、`navigation_guide`、`knowledge_graph_extraction` 和 `standard_document_extraction` Scenario Binding，负责领域 prompt、领域上下文、结构化输出校验和有限业务重试。
+- `standard_document_extraction` 只消费 Standard 已从确定 Markdown 文档修订生成的章节、绝对行号和文本；Copilot 返回带证据定位的候选，Standard 负责原文摘录与摘要的权威重算、持久化和人工裁决。候选不能直接创建或发布正式标准。
 - Copilot 的 `resource_resolution` 是跨 Query、Workflow、Notebook、Transfer 复用的输入资源解析与确认场景；它只生成意图和候选确认结果，不生成 SQL、DAG、Notebook 代码或 Transfer 草稿。各领域生成场景只消费已确认的 `ResourceFact`，通过策略声明引擎范围、资源类型、数量和 Session 候选约束。
 - Agent 保存 `general-chat`、`reasoning` 等 Scenario Binding，负责多轮上下文、规划、Skill 和 Tool 调用。Agent 可以把 Copilot 领域能力作为高级 Tool，但普通推理不依赖 Copilot。
 - Manager 保存 `semantic_search_embedding` Scenario Binding、最大文件大小、并发、检索距离和向量维度迁移约束；向量请求统一调用 Inference。

@@ -45,7 +45,7 @@ ADDP 只维护一套稳定的数据类型和类型信息语义。各模块不得
 | 数据类型 | 当前支持的原生 / 承载引擎 | 当前内置文件格式或容器子格式 | 说明 |
 |---|---|---|---|
 | `table` | 原生表格引擎：PostgreSQL、MySQL、Doris、ClickHouse、Spark SQL。动态 schema 引擎：MongoDB collection。文件 / 对象承载：NFS、S3、MinIO。 | `csv`、`tsv`、records `json` / JSON Lines、`geojson`、`shapefile`、`parquet`、`orc`、`avro`。容器 child 可归一为 table：Excel sheet、SQLite table / view、GeoPackage layer / table、File Geodatabase feature class / table、Personal Geodatabase feature class / table、ZIP 内部表格文件。 | 表格数据可以来自引擎原生 catalog leaf，也可以来自文件格式。空间语义通过 `capabilities.spatial` 表达，不新增空间表 data type。Iceberg 属于规范层 whole table 示例，当前未作为内置 format descriptor 注册。 |
-| `document` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生 document catalog 引擎。 | `pdf`、`docx`、`pptx`、`wps`、`text`、`markdown`、文档型 `json`。ZIP 内部文档文件可作为 container child 被识别。 | MongoDB query 可以返回 document 形态结果，但 MongoDB collection data item 在当前语义中仍按动态 schema 记录集合归为 `table`。 |
+| `document` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生 document catalog 引擎。 | `pdf`、`doc`、`docx`、`rtf`、`pptx`、`wps`、`text`、`markdown`、文档型 `json`。ZIP 内部文档文件可作为 container child 被识别。 | MongoDB query 可以返回 document 形态结果，但 MongoDB collection data item 在当前语义中仍按动态 schema 记录集合归为 `table`。 |
 | `media` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生 media catalog 引擎。 | 图片：`image`、`jpeg`、`png`、`gif`、`tiff`、`webp`、`bmp`、`svg`、`avif`、`heic`。地图数据集：`pmtiles`、`raster_mosaic`。视频：`video`、`mp4`、`mov`、`mkv`、`avi`、`webm`。音频：`audio`、`mp3`、`wav`、`flac`、`aac`、`ogg`。ZIP 内部媒体文件可作为 container child 被识别。 | `pmtiles` 表示 PMTiles v3 单文件矢量瓦片归档，当前内部编码固定为 gzip MVT；`raster_mosaic` 表示由 manifest、index、leaf COG 和 overview COG 组成的 whole-scope 栅格镶嵌数据集。 |
 | `container` | 文件 / 对象承载：NFS、S3、MinIO。当前没有专用原生 container catalog 引擎；目录、prefix、bucket 只是 catalog / storage 形态，不是 `container` data type。 | `excel`、`sqlite`、`geopackage`、`zip`。 | 容器 item 先记录轻量 children；进入某个 child 后，再按 child 自身格式归一为 `table`、`document`、`media`、`unknown` 等类型。JSON 作为 container 仍是概念可表达方向，当前内置 JSON plugin 未提供容器信息 provider。 |
 | `graph` | 原生图引擎：Neo4j。 | 当前没有内置 graph 文件格式 descriptor。 | RDF、GraphML、GEXF、图结构 JSON 仍是概念层典型来源；进入内置主线前需要先补 format descriptor、provider 和扫描规则。 |
@@ -89,7 +89,7 @@ JSON / GeoJSON 也不默认具备空间能力。只有实际记录里发现 GeoJ
 - 配置文件或嵌套 JSON 文档。
 - 文档型数据库中的单条阅读型记录。
 
-`document` 只说明用户如何理解和消费该 item，不等于后端已经能完整解析正文。WPS 可以表达为 `data_type=document + format=wps`，即使当前后端只提供 raw content 或 range content。
+`document` 只说明用户如何理解和消费该 item，不等于后端已经能完整解析正文。DOC、DOCX、RTF、WPS 都保留各自的稳定格式事实；Manager 可只提供 raw content 或 range content，由浏览器端统一 Office renderer 解释内容。旧式 DOC / WPS 与 RTF 的浏览器预览以正文可读为目标，不承诺替代 WPS Office 或 Microsoft Word 的高保真版式渲染。
 
 ### media
 

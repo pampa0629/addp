@@ -30,6 +30,7 @@ var (
 	ErrCodeSetReferenced                      = fmt.Errorf("%w: code set is referenced", commonapi.ErrConflict)
 	ErrCodeItemReferenced                     = fmt.Errorf("%w: code item is referenced", commonapi.ErrConflict)
 	ErrMetricReferenced                       = fmt.Errorf("%w: metric is referenced", commonapi.ErrConflict)
+	ErrGlossaryPublicationHistory             = fmt.Errorf("%w: glossary with publication history cannot be deleted", commonapi.ErrConflict)
 	ErrSystemCategoryImmutable                = fmt.Errorf("%w: system measurement category is immutable", commonapi.ErrConflict)
 	ErrSystemUnitImmutable                    = fmt.Errorf("%w: system unit is immutable", commonapi.ErrConflict)
 )

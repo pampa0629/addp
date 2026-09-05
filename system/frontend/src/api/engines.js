@@ -1,6 +1,8 @@
 import client from './client'
 
 export const enginesAPI = {
+  listTypes: () => client.get('/system/engine-types'),
+
   create: (data) => {
     return client.post('/system/engines', data)
   },

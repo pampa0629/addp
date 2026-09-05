@@ -10,6 +10,10 @@ Manager 通过本地保护投影统一约束预览、剖析和全文索引写入
 
 Manager 的一次性数据库 item 导出通过 Common 强类型 Client 直接创建 Transfer bounded `sync` ad-hoc execution，不创建临时 `transfer.transfer_tasks`。`manager.export_sessions` 只保存 Transfer 的统一 `execution_id` 和短生命周期下载会话事实，不保存 Transfer task ID；状态回查、artifact manifest、发起用户隔离与 infra 暂存清理由 `common/exportartifact` 提供唯一实现，Manager 只负责资源校验和格式能力适配。Manager 导入保留持久 `sync` 任务语义，不与一次性导出混用。
 
+Manager 拥有的成功 execution 必须在 `common.task_executions.metadata.lineage_facts` 写入 `addp.lineage-facts/v1` 事实：输入使用执行时已冻结的 ResourceLocator、item ID 和 fingerprint，业务输出使用目标 ResourceLocator，Manager 私有快显产物使用 `addp-infra://` Locator；触发的 Meta scan execution ID 写入 `meta_scan_refs`。任务服务只提供自身输入输出事实，统一结构由 Manager service 公共构造器生成，不得各自拼装 JSON。清理 execution 不表达数据派生血缘；Manager 调用 Transfer 的导入导出由 Transfer execution 作为唯一血缘 owner，Manager 不重复写入。
+
+跨模块验收使用唯一 T4 suite `manager-internal-artifact-lineage`：专用 Business MinIO LAS 经 Meta scan、Manager `point_cloud_copc_generation`、PointCloud Runtime、infra COPC 发布和 Monitor 展示形成完整证据；不得用数据库夹具、伪 Runtime 或前端 mock 代替该链路。
+
 空间快显与瓦片缓存的目标边界：
 
 - `manager.preview_state`：预览状态，表达某个 data item 的用户预览模式偏好与轻量交互设置（包括表格可见字段）；是否可快显、推荐渲染源和默认瓦片缓存结果由 Quick View Capability API 动态合成。

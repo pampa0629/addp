@@ -74,6 +74,7 @@ await openMonitorExecution(execution.execution_id)
 
 ```js
 import {
+  buildManagerDataExplorerRoute,
   navigateConsoleModuleRoute,
   openConsoleRoute,
   syncConsoleRoute
@@ -83,6 +84,7 @@ await navigateConsoleModuleRoute(router, 'develop', {
   path: '/workflow',
   query: { action: 'edit', id: '544' }
 })
+await openConsoleRoute(buildManagerDataExplorerRoute(resourceLocator))
 await openConsoleRoute('/manager/spatial-quick-view/vector-tile-cache?create=1')
 await syncConsoleRoute('/manager/data-explorer?locator=...', { history: 'replace' })
 ```
@@ -90,6 +92,10 @@ await syncConsoleRoute('/manager/data-explorer?locator=...', { history: 'replace
 `navigateConsoleModuleRoute()` 默认使用 `push`。在 iframe 中，它用模块 Router 的 `replace` 完成无刷新切换，再由 Console 写入唯一公开历史；standalone 模式直接使用模块 Router 的同名历史操作。创建成功写入 ID、Tab 切换或参数规范化时显式传 `{ history: 'replace' }`。
 
 `openConsoleRoute()` 默认新增浏览器历史并由 Console 加载目标页面；`syncConsoleRoute()` 只允许当前 iframe 同步自身模块路由，支持 `push` / `replace`，且不得重载已经完成导航的 iframe。完整约束见 [`docs/spec/addp前端路由与可恢复状态规范.md`](../docs/spec/addp前端路由与可恢复状态规范.md)。
+
+跨模块打开 Manager 数据探查时必须使用 `buildManagerDataExplorerRoute(locator)`；它只接受 ResourceLocator 主身份并生成唯一公开路由。业务模块不得自行拼接 `/manager/data-explorer`、并行传递 `engine_id/schema/table`，也不得先请求 Meta 补齐 locator。
+
+执行详情中的 `addp.lineage-facts/v1` 统一通过 `buildExecutionLineageSummary(metadata)` 归一化。业务 ResourceLocator 可以进入 Manager 数据探查；`addp-infra://` 只表示平台内部产物，不是业务数据项，也不能据其存储位置推断临时或长期生命周期。
 
 ### Console 页面描述与最近访问
 
@@ -257,7 +263,7 @@ import {
 - **GeoJsonPreview** - GeoJSON 文件预览（带地图）
 - **TablePreview** - 表格数据预览，支持空间字段渲染
 - **ImagePreview** - 图片预览（依赖 `geotiff` 支持 TIFF 渲染）
-- **MarkdownPreview / DocxPreview / PptxPreview / PdfPreview** - 文档预览组件
+- **MarkdownPreview / OfficePreview / PptxPreview / PdfPreview** - 文档预览组件；OfficePreview 统一处理 DOC、DOCX、RTF、WPS
 
 地图预览、CRS registry、底图 profile 和 GCJ-02 展示适配规则见 [Map 前端组件说明](./map/README.md)。
 

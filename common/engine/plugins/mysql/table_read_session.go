@@ -93,7 +93,7 @@ func mysqlReadSessionQuery(ctx context.Context, db *sql.DB, path plugin.EngineCa
 	if err != nil {
 		return "", nil, nil, "", err
 	}
-	query = commonquery.ForEngine("mysql").SelectTableSQL(selectExpr, database, table, "", "", limit, int(offset))
+	query = commonquery.ForDialect("mysql").SelectTableSQL(selectExpr, database, table, "", "", limit, int(offset))
 	spatialInfo := mysqlSpatialInfoFromColumns(columns, fields, opts.Hints, encoding)
 	return query, fields, spatialInfo, encoding, nil
 }
@@ -140,7 +140,7 @@ func mysqlFieldSelection(hints map[string]interface{}) *format.FieldSelectionOpt
 }
 
 func mysqlSelectExpr(columns []mysqlColumnInfo, fields []datatype.FieldInfo, hints map[string]interface{}, encoding format.GeometryEncoding) (string, error) {
-	dialect := commonquery.ForEngine("mysql")
+	dialect := commonquery.ForDialect("mysql")
 	selected := make(map[string]bool, len(fields))
 	for _, field := range fields {
 		selected[field.Name] = true

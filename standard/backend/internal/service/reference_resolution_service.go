@@ -61,10 +61,10 @@ type ReferenceCandidateList struct {
 
 type ReferenceResolutionRepository interface {
 	ResolveDomains(ctx context.Context, tenantID int64, ids []int64) ([]models.Domain, error)
-	ResolveGlossaries(ctx context.Context, tenantID int64, ids []int64) ([]models.Glossary, error)
+	ResolveGlossaries(ctx context.Context, tenantID int64, ids []int64) ([]models.PublishedGlossaryReference, error)
 	ResolveElements(ctx context.Context, tenantID int64, ids []int64) ([]models.PublishedElementReference, error)
 	ListDomainCandidates(ctx context.Context, tenantID int64, search string, page, pageSize int) ([]models.Domain, int64, error)
-	ListGlossaryCandidates(ctx context.Context, tenantID int64, search string, page, pageSize int) ([]models.Glossary, int64, error)
+	ListGlossaryCandidates(ctx context.Context, tenantID int64, search string, page, pageSize int) ([]models.PublishedGlossaryReference, int64, error)
 	ListElementCandidates(ctx context.Context, tenantID int64, search string, page, pageSize int) ([]models.PublishedElementReference, int64, error)
 }
 
@@ -122,8 +122,10 @@ func (s *ReferenceResolutionService) Resolve(
 	for _, glossary := range glossaries {
 		resolved[referenceResolutionKey(ReferenceTypeGlossary, glossary.ID)] = ReferenceResolution{
 			ObjectType: ReferenceTypeGlossary, ID: glossary.ID, Found: true,
-			Referenceable: glossary.Status == "approved", Name: glossary.Name,
-			Status: glossary.Status, Version: glossary.Version,
+			Referenceable: glossary.Status == models.RevisionStatusPublished && glossary.LifecycleState == "active",
+			Name:          glossary.Name, Code: glossary.Code, Status: glossary.Status,
+			LifecycleState: glossary.LifecycleState, Version: glossary.Version,
+			RevisionID: glossary.RevisionID, RevisionNo: glossary.RevisionNo,
 		}
 	}
 	for _, element := range elements {
@@ -175,7 +177,7 @@ func (s *ReferenceResolutionService) ListCandidates(
 		}
 		result.Total = total
 		for _, item := range items {
-			result.Data = append(result.Data, ReferenceCandidate{ObjectType: objectType, ID: item.ID, Name: item.Name, Status: item.Status})
+			result.Data = append(result.Data, ReferenceCandidate{ObjectType: objectType, ID: item.ID, Name: item.Name, Code: item.Code, Status: item.Status, RevisionID: item.RevisionID, RevisionNo: item.RevisionNo})
 		}
 	case ReferenceTypeElement:
 		items, total, err := s.repository.ListElementCandidates(ctx, tenantID, search, page, pageSize)

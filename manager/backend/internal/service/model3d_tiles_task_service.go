@@ -252,6 +252,12 @@ func (s *Model3DTilesTaskService) runModel3DTilesGeneration(ctx context.Context,
 		metadata["storage_ref"] = result.StorageRef
 		metadata["manifest_ref"] = result.ManifestRef
 		metadata["file_count"] = result.FileCount
+		if outputRef, lineageErr := managerInfraLineageRef(result.StorageRef, s.bucket, "prefix"); lineageErr == nil {
+			metadata = managerExecutionLineage(metadata, commonExecution.TaskTypeModel3DTilesGeneration,
+				[]commonExecution.LineageResourceRef{managerItemLineageRef(cfg.Source.ItemLocator, cfg.Source.ItemFingerprint, cfg.Source.ItemID)},
+				[]commonExecution.LineageResourceRef{outputRef},
+			)
+		}
 	}
 	if err != nil {
 		if model3DTilesExecutionTimedOut(err) {

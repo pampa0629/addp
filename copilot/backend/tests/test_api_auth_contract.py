@@ -144,6 +144,10 @@ def test_copilot_openapi_declares_authorization_contracts():
     assert paths["/kg-build/extract"]["post"]["x-addp-required-permissions"] == [
         "copilot.knowledge_graph.execute"
     ]
+    assert paths["/standard-documents/extract"]["post"]["x-addp-auth-mode"] == "permission"
+    assert paths["/standard-documents/extract"]["post"]["x-addp-required-permissions"] == [
+        "copilot.standard_document.execute"
+    ]
     assert paths["/navigate/guide"]["post"]["x-addp-auth-mode"] == "authenticated"
     assert paths["/settings/inference-bindings/{scenario_code}"]["get"]["x-addp-required-permissions"] == [
         "copilot.configuration.read"

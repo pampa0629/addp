@@ -16,8 +16,7 @@
     "/plugins/video-preview.js",
     "/plugins/json-preview.js",
     "/plugins/pdf-preview.js",
-    "/plugins/docx-preview.js",
-    "/plugins/wps-preview.js",
+    "/plugins/office-preview.js",
     "/plugins/pptx-preview.js",
     "/plugins/markdown-preview.js",
     "/plugins/text-preview.js"

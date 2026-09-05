@@ -7,7 +7,7 @@
     :validate-on-rule-change="false"
   >
     <el-form-item
-      v-if="showTypeSelector && typeOptions && typeOptions.length"
+      v-if="showTypeSelector && effectiveTypeOptions.length"
       :label="t('storageEngine.type')"
       prop="engine_type"
     >
@@ -31,416 +31,37 @@
       <el-input v-model="formState.name" :placeholder="t('storageEngine.namePlaceholder')" />
     </el-form-item>
 
-    <!-- PostgreSQL -->
-    <template v-if="formState.engine_type === 'postgresql'">
-      <el-form-item :label="t('storageEngine.host')" prop="connection_info.host">
-        <el-input v-model="formState.connection_info.host" placeholder="localhost" />
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.port')" prop="connection_info.port">
-        <el-input-number v-model="formState.connection_info.port" :min="1" :max="65535" />
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.database')" prop="connection_info.database">
-        <el-input v-model="formState.connection_info.database" :placeholder="t('storageEngine.databasePlaceholder')" />
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.username')" prop="connection_info.user">
-        <el-input v-model="formState.connection_info.user" :placeholder="t('storageEngine.usernamePlaceholder')" />
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.password')" prop="connection_info.password">
-        <el-input
-          v-model="formState.connection_info.password"
-          type="password"
-          :placeholder="t('storageEngine.passwordPlaceholder')"
-          show-password
+    <template v-for="field in visibleConnectionFieldSpecs" :key="field.key">
+      <el-divider v-if="field.showGroupDivider" content-position="left">{{ t(field.group_key) }}</el-divider>
+      <el-form-item :label="fieldLabel(field)" :prop="`connection_info.${field.key}`">
+        <el-input-number
+          v-if="field.input === 'number'"
+          v-model="formState.connection_info[field.key]"
+          :min="field.min"
+          :max="field.max"
         />
-      </el-form-item>
-      <div v-if="hasStoredPassword" class="field-hint">
-        {{ t('storageEngine.passwordHint') }}
-      </div>
-      <el-form-item :label="t('storageEngine.sslMode')">
-        <el-select v-model="formState.connection_info.sslmode">
-          <el-option :label="t('storageEngine.sslDisable')" value="disable" />
-          <el-option :label="t('storageEngine.sslRequire')" value="require" />
-          <el-option :label="t('storageEngine.sslVerifyCa')" value="verify-ca" />
-          <el-option :label="t('storageEngine.sslVerifyFull')" value="verify-full" />
-        </el-select>
-      </el-form-item>
-    </template>
-
-    <!-- Oracle Database -->
-    <template v-else-if="formState.engine_type === 'oracle'">
-      <el-form-item :label="t('storageEngine.host')" prop="connection_info.host">
-        <el-input v-model="formState.connection_info.host" placeholder="localhost" />
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.port')" prop="connection_info.port">
-        <el-input-number v-model="formState.connection_info.port" :min="1" :max="65535" />
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.serviceName')" prop="connection_info.service_name">
-        <el-input v-model="formState.connection_info.service_name" placeholder="FREEPDB1" />
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.username')" prop="connection_info.user">
-        <el-input v-model="formState.connection_info.user" :placeholder="t('storageEngine.usernamePlaceholder')" />
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.password')" prop="connection_info.password">
-        <el-input
-          v-model="formState.connection_info.password"
-          type="password"
-          :placeholder="t('storageEngine.passwordPlaceholder')"
-          show-password
-        />
-      </el-form-item>
-      <div v-if="hasStoredPassword" class="field-hint">
-        {{ t('storageEngine.passwordHint') }}
-      </div>
-      <el-divider content-position="left">{{ t('storageEngine.oracleCDC') }}</el-divider>
-      <el-form-item :label="t('storageEngine.oracleCDBName')">
-        <el-input v-model="formState.connection_info.cdc_database_name" placeholder="FREE" />
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.oracleCDCUser')">
-        <el-input v-model="formState.connection_info.cdc_user" placeholder="C##ADDP_CDC" />
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.oracleCDCPassword')">
-        <el-input
-          v-model="formState.connection_info.cdc_password"
-          type="password"
-          :placeholder="t('storageEngine.oracleCDCPasswordPlaceholder')"
-          show-password
-        />
-      </el-form-item>
-      <div v-if="hasStoredCDCPassword" class="field-hint">
-        {{ t('storageEngine.oracleCDCPasswordHint') }}
-      </div>
-    </template>
-
-    <!-- Apache Doris -->
-    <template v-else-if="formState.engine_type === 'doris'">
-      <el-form-item :label="t('storageEngine.host')" prop="connection_info.host">
-        <el-input v-model="formState.connection_info.host" placeholder="localhost" />
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.port')" prop="connection_info.port">
-        <el-input-number v-model="formState.connection_info.port" :min="1" :max="65535" />
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.database')" prop="connection_info.database">
-        <el-input v-model="formState.connection_info.database" :placeholder="t('storageEngine.databasePlaceholder')" />
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.username')" prop="connection_info.user">
-        <el-input v-model="formState.connection_info.user" :placeholder="t('storageEngine.usernamePlaceholder')" />
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.passwordOptional')" prop="connection_info.password">
-        <el-input
-          v-model="formState.connection_info.password"
-          type="password"
-          placeholder="root"
-          show-password
-        />
-      </el-form-item>
-      <div v-if="hasStoredPassword" class="field-hint">
-        {{ t('storageEngine.passwordHint') }}
-      </div>
-      <div v-else class="field-hint">
-        {{ t('storageEngine.hints.dorisPassword') }}
-      </div>
-    </template>
-
-    <!-- ClickHouse -->
-    <template v-else-if="formState.engine_type === 'clickhouse'">
-      <el-form-item :label="t('storageEngine.host')" prop="connection_info.host">
-        <el-input v-model="formState.connection_info.host" placeholder="localhost" />
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.port')" prop="connection_info.port">
-        <el-input-number v-model="formState.connection_info.port" :min="1" :max="65535" />
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.database')" prop="connection_info.database">
-        <el-input v-model="formState.connection_info.database" placeholder="default" />
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.username')" prop="connection_info.user">
-        <el-input v-model="formState.connection_info.user" placeholder="default" />
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.passwordOptional')" prop="connection_info.password">
-        <el-input
-          v-model="formState.connection_info.password"
-          type="password"
-          show-password
-        />
-      </el-form-item>
-      <div v-if="hasStoredPassword" class="field-hint">
-        {{ t('storageEngine.passwordHint') }}
-      </div>
-      <div v-else class="field-hint">
-        {{ t('storageEngine.hints.clickhousePassword') }}
-      </div>
-    </template>
-
-    <!-- MySQL -->
-    <template v-else-if="formState.engine_type === 'mysql'">
-      <el-form-item :label="t('storageEngine.host')" prop="connection_info.host">
-        <el-input v-model="formState.connection_info.host" placeholder="localhost" />
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.port')" prop="connection_info.port">
-        <el-input-number v-model="formState.connection_info.port" :min="1" :max="65535" />
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.database') + ' (' + t('common.optional') + ')'">
-        <el-input v-model="formState.connection_info.database" :placeholder="t('storageEngine.databasePlaceholder')" />
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.username')" prop="connection_info.user">
-        <el-input v-model="formState.connection_info.user" placeholder="root" />
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.password')" prop="connection_info.password">
-        <el-input
-          v-model="formState.connection_info.password"
-          type="password"
-          show-password
-        />
-      </el-form-item>
-      <div v-if="hasStoredPassword" class="field-hint">
-        {{ t('storageEngine.passwordHint') }}
-      </div>
-    </template>
-
-    <!-- Apache Kafka -->
-    <template v-else-if="formState.engine_type === 'kafka'">
-      <el-form-item :label="t('storageEngine.bootstrapServers')" prop="connection_info.bootstrap_servers">
-        <el-input
-          v-model="formState.connection_info.bootstrap_servers"
-          :placeholder="t('storageEngine.bootstrapServersPlaceholder')"
-        />
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.clientIdOptional')">
-        <el-input
-          v-model="formState.connection_info.client_id"
-          :placeholder="t('storageEngine.clientIdPlaceholder')"
-        />
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.securityProtocol')" prop="connection_info.security_protocol">
-        <el-select v-model="formState.connection_info.security_protocol">
-          <el-option label="PLAINTEXT" value="plaintext" />
-          <el-option label="SSL" value="ssl" />
-          <el-option label="SASL_PLAINTEXT" value="sasl_plaintext" />
-          <el-option label="SASL_SSL" value="sasl_ssl" />
-        </el-select>
-      </el-form-item>
-
-      <template v-if="kafkaUsesSasl">
-        <el-form-item :label="t('storageEngine.saslMechanism')" prop="connection_info.sasl_mechanism">
-          <el-select v-model="formState.connection_info.sasl_mechanism">
-            <el-option label="PLAIN" value="plain" />
-            <el-option label="SCRAM-SHA-256" value="scram-sha-256" />
-            <el-option label="SCRAM-SHA-512" value="scram-sha-512" />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="t('storageEngine.username')" prop="connection_info.username">
-          <el-input v-model="formState.connection_info.username" />
-        </el-form-item>
-        <el-form-item :label="t('storageEngine.password')" prop="connection_info.password">
-          <el-input
-            v-model="formState.connection_info.password"
-            type="password"
-            show-password
+        <el-select v-else-if="field.input === 'select'" v-model="formState.connection_info[field.key]">
+          <el-option
+            v-for="option in field.options || []"
+            :key="option.value"
+            :label="option.label_key ? t(option.label_key) : option.label"
+            :value="option.value"
           />
-        </el-form-item>
-        <div v-if="hasStoredPassword" class="field-hint">
-          {{ t('storageEngine.passwordHint') }}
-        </div>
-      </template>
-
-      <template v-if="kafkaUsesTls">
-        <el-form-item :label="t('storageEngine.tlsCaCertOptional')">
-          <el-input
-            v-model="formState.connection_info.tls_ca_cert"
-            type="textarea"
-            :rows="3"
-            :placeholder="t('storageEngine.pemPlaceholder')"
-          />
-        </el-form-item>
-        <el-form-item :label="t('storageEngine.tlsClientCertOptional')" prop="connection_info.tls_client_cert">
-          <el-input
-            v-model="formState.connection_info.tls_client_cert"
-            type="textarea"
-            :rows="3"
-            :placeholder="t('storageEngine.pemPlaceholder')"
-          />
-        </el-form-item>
-        <el-form-item :label="t('storageEngine.tlsClientKeyOptional')" prop="connection_info.tls_client_key">
-          <el-input
-            v-model="formState.connection_info.tls_client_key"
-            type="textarea"
-            :rows="3"
-            :placeholder="t('storageEngine.pemPrivateKeyPlaceholder')"
-          />
-        </el-form-item>
-        <div v-if="hasStoredTlsClientKey" class="field-hint">
-          {{ t('storageEngine.tlsClientKeyHint') }}
-        </div>
-        <el-form-item :label="t('storageEngine.tlsInsecureSkipVerify')">
-          <el-switch v-model="formState.connection_info.tls_insecure_skip_verify" />
-        </el-form-item>
-      </template>
-    </template>
-
-    <!-- MongoDB -->
-    <template v-else-if="formState.engine_type === 'mongodb'">
-      <el-form-item :label="t('storageEngine.host')" prop="connection_info.host">
-        <el-input v-model="formState.connection_info.host" placeholder="localhost" />
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.port')" prop="connection_info.port">
-        <el-input-number v-model="formState.connection_info.port" :min="1" :max="65535" />
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.defaultDatabase')">
-        <el-input v-model="formState.connection_info.database" :placeholder="t('storageEngine.defaultDatabasePlaceholder')" />
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.username') + ' (' + t('common.optional') + ')'">
-        <el-input v-model="formState.connection_info.user" />
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.passwordOptional')" prop="connection_info.password">
-        <el-input
-          v-model="formState.connection_info.password"
-          type="password"
-          show-password
-        />
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.authSource')">
-        <el-input v-model="formState.connection_info.auth_source" :placeholder="t('storageEngine.authSourcePlaceholder')" />
-      </el-form-item>
-      <div v-if="hasStoredPassword" class="field-hint">
-        {{ t('storageEngine.passwordHint') }}
-      </div>
-      <div v-else class="field-hint">
-        {{ t('storageEngine.hints.mongoAuth') }}
-      </div>
-    </template>
-
-    <!-- MinIO / S3 -->
-    <template v-else-if="formState.engine_type === 'minio' || formState.engine_type === 's3'">
-      <el-form-item :label="t('storageEngine.endpoint')" prop="connection_info.endpoint">
-        <el-input v-model="formState.connection_info.endpoint" :placeholder="t('storageEngine.endpointPlaceholder')" />
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.accessKey')" prop="connection_info.access_key">
-        <el-input v-model="formState.connection_info.access_key" :placeholder="t('storageEngine.accessKey')" />
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.secretKey')" prop="connection_info.secret_key">
-        <el-input
-          v-model="formState.connection_info.secret_key"
-          type="password"
-          :placeholder="t('storageEngine.secretKey')"
-          show-password
-        />
-      </el-form-item>
-      <div v-if="hasStoredSecretKey" class="field-hint">
-        {{ t('storageEngine.secretKeyHint') }}
-      </div>
-      <el-form-item :label="t('storageEngine.bucket')">
-        <el-input v-model="formState.connection_info.bucket" :placeholder="t('storageEngine.bucketPlaceholder')" />
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.useSsl')">
-        <el-switch v-model="formState.connection_info.use_ssl" />
-      </el-form-item>
-    </template>
-
-    <!-- NFS 文件系统 -->
-    <template v-else-if="formState.engine_type === 'nfs'">
-      <el-form-item :label="t('storageEngine.nfsServer')" prop="connection_info.server">
-        <el-input v-model="formState.connection_info.server" placeholder="192.168.1.100" />
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.nfsExportPath')" prop="connection_info.export_path">
-        <el-input v-model="formState.connection_info.export_path" placeholder="/exports/data" />
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.nfsAccessMode')">
-        <el-select v-model="formState.connection_info.access_mode">
-          <el-option :label="t('storageEngine.nfsAccessModeRw')" value="rw" />
-          <el-option :label="t('storageEngine.nfsAccessModeRo')" value="ro" />
         </el-select>
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.nfsVersion')">
-        <el-select v-model="formState.connection_info.nfs_version">
-          <el-option label="NFSv3" value="3" />
-          <el-option label="NFSv4" value="4" />
-        </el-select>
-      </el-form-item>
-      <div class="field-hint">{{ t('storageEngine.hints.nfs') }}</div>
-    </template>
-
-    <!-- Neo4j -->
-    <template v-else-if="formState.engine_type === 'neo4j'">
-      <el-form-item :label="t('storageEngine.host')" prop="connection_info.host">
-        <el-input v-model="formState.connection_info.host" placeholder="localhost" />
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.port')" prop="connection_info.port">
-        <el-input-number v-model="formState.connection_info.port" :min="1" :max="65535" />
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.username')" prop="connection_info.user">
-        <el-input v-model="formState.connection_info.user" placeholder="neo4j" />
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.password')" prop="connection_info.password">
+        <el-switch v-else-if="field.input === 'boolean'" v-model="formState.connection_info[field.key]" />
         <el-input
-          v-model="formState.connection_info.password"
-          type="password"
-          :placeholder="t('storageEngine.passwordPlaceholder')"
-          show-password
+          v-else
+          v-model="formState.connection_info[field.key]"
+          :type="field.input === 'textarea' ? 'textarea' : field.input === 'password' ? 'password' : 'text'"
+          :rows="field.rows || undefined"
+          :placeholder="field.placeholder_key ? t(field.placeholder_key) : field.placeholder"
+          :show-password="field.input === 'password'"
         />
       </el-form-item>
-      <div v-if="hasStoredPassword" class="field-hint">
-        {{ t('storageEngine.passwordHint') }}
+      <div v-if="storedSensitiveFields.has(field.key)" class="field-hint">
+        {{ t('storageEngine.sensitiveValueHint') }}
       </div>
-      <el-form-item :label="t('storageEngine.database') + ' (' + t('common.optional') + ')'">
-        <el-input v-model="formState.connection_info.database" placeholder="neo4j" />
-      </el-form-item>
-      <div class="field-hint">
-        {{ t('storageEngine.hints.neo4j') }}
-      </div>
-    </template>
-
-    <!-- SpatiaLite / SQLite (file-based) -->
-    <template v-else-if="formState.engine_type === 'spatialite' || formState.engine_type === 'sqlite'">
-      <el-form-item :label="t('storageEngine.filePath')" prop="connection_info.full_name">
-        <el-input v-model="formState.connection_info.full_name" :placeholder="t('storageEngine.filePathPlaceholder')" />
-      </el-form-item>
-      <div class="field-hint">
-        {{ t('storageEngine.hints.spatialite') }}
-      </div>
-    </template>
-
-    <!-- Apache Spark -->
-    <template v-else-if="formState.engine_type === 'spark'">
-      <el-form-item :label="t('storageEngine.host')" prop="connection_info.host">
-        <el-input v-model="formState.connection_info.host" placeholder="host.docker.internal" />
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.port')" prop="connection_info.port">
-        <el-input-number v-model="formState.connection_info.port" :min="1" :max="65535" placeholder="10000" />
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.database')" prop="connection_info.database">
-        <el-input v-model="formState.connection_info.database" placeholder="default" />
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.username') + ' (' + t('common.optional') + ')'">
-        <el-input v-model="formState.connection_info.username" />
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.passwordOptional')">
-        <el-input
-          v-model="formState.connection_info.password"
-          type="password"
-          show-password
-        />
-      </el-form-item>
-      <div class="field-hint">
-        {{ t('storageEngine.hints.spark') }}
-      </div>
-    </template>
-
-    <!-- GeoPython Workflow / Spark Workflow -->
-    <template v-else-if="formState.engine_type === 'geopython_workflow' || formState.engine_type === 'spark_workflow'">
-      <el-form-item :label="t('storageEngine.protocol')">
-        <el-select v-model="formState.connection_info.protocol">
-          <el-option label="HTTP" value="http" />
-          <el-option label="HTTPS" value="https" />
-        </el-select>
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.host')" prop="connection_info.host">
-        <el-input v-model="formState.connection_info.host" placeholder="localhost" />
-      </el-form-item>
-      <el-form-item :label="t('storageEngine.port')" prop="connection_info.port">
-        <el-input-number v-model="formState.connection_info.port" :min="1" :max="65535" />
-      </el-form-item>
-      <div class="field-hint">
-        {{ t('storageEngine.hints.workflow') }}
-      </div>
+      <div v-else-if="field.hint_key" class="field-hint">{{ t(field.hint_key) }}</div>
     </template>
 
     <!-- 描述 -->
@@ -530,10 +151,15 @@ import { useI18n } from 'vue-i18n'
 import { ArrowDown, ArrowRight } from '@element-plus/icons-vue'
 import ScheduleConfig from './ScheduleConfig.vue'
 import { buildScheduleFromForm, decodeScheduleToForm } from '../utils/schedule'
+import {
+  SENSITIVE_PLACEHOLDER,
+  applyConnectionSpecDefaults,
+  buildConnectionRules,
+  isMaskedSensitiveValue,
+  visibleConnectionFields
+} from '../utils/engineConnectionSpec'
 
 const { t } = useI18n()
-
-const SENSITIVE_PLACEHOLDER = '********'
 
 const props = defineProps({
   modelValue: {
@@ -548,20 +174,9 @@ const props = defineProps({
     type: Boolean,
     default: true
   },
-  typeOptions: {
+  engineTypeDescriptors: {
     type: Array,
-    default: () => ([
-      { label: 'PostgreSQL', value: 'postgresql' },
-      { label: 'MySQL', value: 'mysql' },
-      { label: 'Apache Kafka', value: 'kafka' },
-      { label: 'Apache Doris', value: 'doris' },
-      { label: 'ClickHouse', value: 'clickhouse' },
-      { label: 'MongoDB', value: 'mongodb' },
-      { label: 'MinIO', value: 'minio' },
-      { label: 'Neo4j', value: 'neo4j' },
-      { label: 'NFS 文件系统', value: 'nfs' },
-      { label: 'Apache Spark', value: 'spark' }
-    ])
+    default: () => []
   },
   showActiveSwitch: {
     type: Boolean,
@@ -579,25 +194,31 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue', 'type-change'])
 
-const effectiveTypeOptions = computed(() =>
-  props.typeOptions.map(opt =>
-    opt.value === 'nfs' ? { ...opt, label: t('storageEngine.typeNfs') } : opt
-  )
+const effectiveTypeOptions = computed(() => props.engineTypeDescriptors.map(descriptor => ({
+  label: descriptor.display_name,
+  value: descriptor.type
+})))
+
+const selectedEngineTypeDescriptor = computed(() =>
+  props.engineTypeDescriptors.find(descriptor => descriptor.type === formState.engine_type) || null
 )
+const selectedConnectionSpec = computed(() => selectedEngineTypeDescriptor.value?.connection_spec || null)
+const visibleConnectionFieldSpecs = computed(() =>
+  visibleConnectionFields(selectedConnectionSpec.value, formState.connection_info)
+)
+const fieldLabel = field => t(field.label_key)
 
 const formRef = ref(null)
-const hasStoredPassword = ref(false)
-const hasStoredCDCPassword = ref(false)
-const hasStoredSecretKey = ref(false)
-const hasStoredTlsClientKey = ref(false)
+const storedSensitiveFields = computed(() => new Set(
+  (selectedConnectionSpec.value?.fields || [])
+    .filter(field => field.sensitive && formState.connection_info?.[`_has_${field.key}`] === true)
+    .map(field => field.key)
+))
 const immediateScanEnabled = ref(true)  // 默认启用立即扫描
 const scheduledScanEnabled = ref(false) // 默认不启用定时扫描
 const scanConfigExpanded = ref(false)   // 扫描配置折叠状态（默认折叠）
 
 const defaultScheduledScanCron = '0 0 * * *'
-
-const kafkaUsesSasl = computed(() => ['sasl_plaintext', 'sasl_ssl'].includes(formState.connection_info?.security_protocol))
-const kafkaUsesTls = computed(() => ['ssl', 'sasl_ssl'].includes(formState.connection_info?.security_protocol))
 
 const scanPolicyToCron = (scanConfig = {}) => {
   if (!scanConfig.scheduled_scan) {
@@ -644,178 +265,15 @@ const applyCronToScanPolicy = (cron) => {
 }
 
 const ensureConnectionDefaults = (form) => {
-  if (!form.connection_info || typeof form.connection_info !== 'object') {
-    form.connection_info = {}
+  if (!selectedConnectionSpec.value) {
+    return
   }
-
-  const original = { ...(form.connection_info || {}) }
-  const hadPassword = original._has_password === true
-  const hadCDCPassword = original._has_cdc_password === true
-  const hadSecret = original._has_secret_key === true
-
-  if (form.engine_type === 'postgresql') {
-    form.connection_info = {
-      host: original.host ?? 'localhost',
-      port: original.port ?? 5432,
-      database: original.database ?? '',
-      user: original.user ?? '',
-      password: original.password ?? '',
-      sslmode: original.sslmode ?? 'disable'
-    }
-  } else if (form.engine_type === 'oracle') {
-    form.connection_info = {
-      host: original.host ?? 'localhost',
-      port: original.port ?? 1521,
-      service_name: original.service_name ?? 'FREEPDB1',
-      user: original.user ?? '',
-      password: original.password ?? '',
-      cdc_database_name: original.cdc_database_name ?? '',
-      cdc_user: original.cdc_user ?? '',
-      cdc_password: original.cdc_password ?? ''
-    }
-  } else if (form.engine_type === 'mysql') {
-    form.connection_info = {
-      host: original.host ?? 'localhost',
-      port: original.port ?? 3306,
-      database: original.database ?? '',
-      user: original.user ?? '',
-      password: original.password ?? ''
-    }
-  } else if (form.engine_type === 'kafka') {
-    form.connection_info = {
-      bootstrap_servers: original.bootstrap_servers ?? '',
-      client_id: original.client_id ?? 'addp-system',
-      security_protocol: original.security_protocol ?? 'plaintext',
-      sasl_mechanism: original.sasl_mechanism ?? 'scram-sha-256',
-      username: original.username ?? '',
-      password: original.password ?? '',
-      tls_ca_cert: original.tls_ca_cert ?? '',
-      tls_client_cert: original.tls_client_cert ?? '',
-      tls_client_key: original.tls_client_key ?? '',
-      tls_insecure_skip_verify: original.tls_insecure_skip_verify ?? false
-    }
-  } else if (form.engine_type === 'doris') {
-    form.connection_info = {
-      host: original.host ?? 'localhost',
-      port: original.port ?? 9030,
-      database: original.database ?? '',
-      user: original.user ?? 'root',
-      password: original.password ?? ''
-    }
-  } else if (form.engine_type === 'clickhouse') {
-    form.connection_info = {
-      host: original.host ?? 'localhost',
-      port: original.port ?? 9000,
-      database: original.database ?? 'default',
-      user: original.user ?? 'default',
-      password: original.password ?? ''
-    }
-  } else if (form.engine_type === 'mongodb') {
-    form.connection_info = {
-      host: original.host ?? 'localhost',
-      port: original.port ?? 27017,
-      database: original.database ?? '',
-      user: original.user ?? '',
-      password: original.password ?? '',
-      auth_source: original.auth_source ?? ''
-    }
-  } else if (form.engine_type === 'neo4j') {
-    form.connection_info = {
-      host: original.host ?? 'localhost',
-      port: original.port ?? 7687,
-      user: original.user ?? 'neo4j',
-      password: original.password ?? '',
-      database: original.database ?? 'neo4j'
-    }
-  } else if (form.engine_type === 'minio' || form.engine_type === 's3') {
-    form.connection_info = {
-      endpoint: original.endpoint ?? 'localhost:9002',
-      access_key: original.access_key ?? '',
-      secret_key: original.secret_key ?? '',
-      bucket: original.bucket ?? '',
-      use_ssl: original.use_ssl ?? false
-    }
-  } else if (form.engine_type === 'nfs') {
-    form.connection_info = {
-      server: original.server ?? '',
-      export_path: original.export_path ?? '/exports/data',
-      access_mode: original.access_mode ?? 'rw',
-      nfs_version: original.nfs_version ?? '3'
-    }
-  } else if (form.engine_type === 'spatialite' || form.engine_type === 'sqlite') {
-    form.connection_info = {
-      full_name: original.full_name ?? ''
-    }
-  } else if (form.engine_type === 'spark') {
-    form.connection_info = {
-      host: original.host ?? 'host.docker.internal',
-      port: original.port ?? 10000,
-      database: original.database ?? 'default',
-      username: original.username ?? '',
-      password: original.password ?? ''
-    }
-  } else if (form.engine_type === 'geopython_workflow' || form.engine_type === 'spark_workflow') {
-    form.connection_info = {
-      protocol: original.protocol ?? 'http',
-      host: original.host ?? 'localhost',
-      port: original.port ?? (form.engine_type === 'geopython_workflow' ? 8099 : 8100)
-    }
-  } else {
-    form.connection_info = { ...original }
-  }
-
-  if (hadPassword) {
-    form.connection_info._has_password = true
-  } else {
-    delete form.connection_info._has_password
-  }
-
-  if (hadCDCPassword) {
-    form.connection_info._has_cdc_password = true
-  } else {
-    delete form.connection_info._has_cdc_password
-  }
-
-  if (hadSecret) {
-    form.connection_info._has_secret_key = true
-  } else {
-    delete form.connection_info._has_secret_key
-  }
-
-  if (original._has_tls_client_key === true) {
-    form.connection_info._has_tls_client_key = true
-  } else {
-    delete form.connection_info._has_tls_client_key
-  }
+  form.connection_info = applyConnectionSpecDefaults(selectedConnectionSpec.value, form.connection_info)
 }
 
 const applySensitiveHints = () => {
-  hasStoredPassword.value = formState.connection_info?._has_password === true || isMaskedSensitiveValue(formState.connection_info?.password)
-  if (hasStoredPassword.value) {
-    formState.connection_info._has_password = true
-    formState.connection_info.password = SENSITIVE_PLACEHOLDER
-  }
-
-  hasStoredCDCPassword.value = formState.connection_info?._has_cdc_password === true || isMaskedSensitiveValue(formState.connection_info?.cdc_password)
-  if (hasStoredCDCPassword.value) {
-    formState.connection_info._has_cdc_password = true
-    formState.connection_info.cdc_password = SENSITIVE_PLACEHOLDER
-  }
-
-  hasStoredSecretKey.value = formState.connection_info?._has_secret_key === true || isMaskedSensitiveValue(formState.connection_info?.secret_key)
-  if (hasStoredSecretKey.value) {
-    formState.connection_info._has_secret_key = true
-    formState.connection_info.secret_key = SENSITIVE_PLACEHOLDER
-  }
-
-  hasStoredTlsClientKey.value = formState.connection_info?._has_tls_client_key === true || isMaskedSensitiveValue(formState.connection_info?.tls_client_key)
-  if (hasStoredTlsClientKey.value) {
-    formState.connection_info._has_tls_client_key = true
-    formState.connection_info.tls_client_key = SENSITIVE_PLACEHOLDER
-  }
+  formState.connection_info = applyConnectionSpecDefaults(selectedConnectionSpec.value, formState.connection_info)
 }
-
-const isMaskedSensitiveValue = (value) => typeof value === 'string' && /^\*{4,}$/.test(value)
 
 const formState = reactive({
 	engine_type: '',
@@ -833,6 +291,11 @@ const formState = reactive({
     schedule_time: '00:00',  // 凌晨执行
     schedule_value: []
   }
+})
+
+watch(selectedConnectionSpec, spec => {
+  if (!spec) return
+  formState.connection_info = applyConnectionSpecDefaults(spec, formState.connection_info)
 })
 
 const syncFromProps = (value) => {
@@ -945,170 +408,11 @@ watch(
 )
 
 // 表单验证规则（响应式，支持语言切换）
-const computedRules = computed(() => {
-  const rules = {
-    engine_type: [{ required: true, message: t('storageEngine.valid.selectType'), trigger: 'change' }],
-    name: [{ required: true, message: t('storageEngine.valid.inputName'), trigger: 'blur' }],
-    'connection_info.host': [{ required: true, message: t('storageEngine.valid.inputHost'), trigger: 'blur' }],
-    'connection_info.port': [{ required: true, message: t('storageEngine.valid.inputPort'), trigger: 'change' }],
-    'connection_info.service_name': [{ required: true, message: t('storageEngine.valid.inputServiceName'), trigger: 'blur' }],
-    'connection_info.database': [{ required: true, message: t('storageEngine.valid.inputDatabase'), trigger: 'blur' }],
-    'connection_info.user': [{ required: true, message: t('storageEngine.valid.inputUsername'), trigger: 'blur' }],
-    'connection_info.password': [{ required: true, message: t('storageEngine.valid.inputPassword'), trigger: 'blur' }],
-    'connection_info.endpoint': [{ required: true, message: t('storageEngine.valid.inputEndpoint'), trigger: 'blur' }],
-    'connection_info.access_key': [{ required: true, message: t('storageEngine.valid.inputAccessKey'), trigger: 'blur' }],
-    'connection_info.secret_key': [{ required: true, message: t('storageEngine.valid.inputSecretKey'), trigger: 'blur' }],
-    'connection_info.full_name': [{ required: true, message: t('storageEngine.valid.inputFilePath'), trigger: 'blur' }],
-    'connection_info.bootstrap_servers': [{ required: true, message: t('storageEngine.valid.inputBootstrapServers'), trigger: 'blur' }]
-  }
-
-  if (formState.engine_type === 'postgresql') {
-    return {
-      engine_type: rules.engine_type,
-      name: rules.name,
-      'connection_info.host': rules['connection_info.host'],
-      'connection_info.port': rules['connection_info.port'],
-      'connection_info.database': rules['connection_info.database'],
-      'connection_info.user': rules['connection_info.user'],
-      'connection_info.password': rules['connection_info.password']
-    }
-  }
-
-  if (formState.engine_type === 'mysql') {
-    return {
-      engine_type: rules.engine_type,
-      name: rules.name,
-      'connection_info.host': rules['connection_info.host'],
-      'connection_info.port': rules['connection_info.port'],
-      'connection_info.user': rules['connection_info.user'],
-      'connection_info.password': rules['connection_info.password']
-    }
-  }
-
-  if (formState.engine_type === 'oracle') {
-    return {
-      engine_type: rules.engine_type,
-      name: rules.name,
-      'connection_info.host': rules['connection_info.host'],
-      'connection_info.port': rules['connection_info.port'],
-      'connection_info.service_name': rules['connection_info.service_name'],
-      'connection_info.user': rules['connection_info.user'],
-      'connection_info.password': rules['connection_info.password']
-    }
-  }
-
-  if (formState.engine_type === 'kafka') {
-    const kafkaRules = {
-      engine_type: rules.engine_type,
-      name: rules.name,
-      'connection_info.bootstrap_servers': rules['connection_info.bootstrap_servers'],
-      'connection_info.security_protocol': [{ required: true, message: t('storageEngine.valid.selectSecurityProtocol'), trigger: 'change' }]
-    }
-    if (kafkaUsesSasl.value) {
-      kafkaRules['connection_info.sasl_mechanism'] = [{ required: true, message: t('storageEngine.valid.selectSaslMechanism'), trigger: 'change' }]
-      kafkaRules['connection_info.username'] = [{ required: true, message: t('storageEngine.valid.inputUsername'), trigger: 'blur' }]
-      kafkaRules['connection_info.password'] = rules['connection_info.password']
-    }
-    if (kafkaUsesTls.value) {
-      const requireTlsPair = (_rule, _value, callback) => {
-        const cert = String(formState.connection_info.tls_client_cert || '').trim()
-        const key = String(formState.connection_info.tls_client_key || '').trim()
-        if ((cert && !key) || (!cert && key)) {
-          callback(new Error(t('storageEngine.valid.inputTlsClientPair')))
-          return
-        }
-        callback()
-      }
-      kafkaRules['connection_info.tls_client_cert'] = [{ validator: requireTlsPair, trigger: 'blur' }]
-      kafkaRules['connection_info.tls_client_key'] = [{ validator: requireTlsPair, trigger: 'blur' }]
-    }
-    return kafkaRules
-  }
-
-  if (formState.engine_type === 'doris') {
-    return {
-      engine_type: rules.engine_type,
-      name: rules.name,
-      'connection_info.host': rules['connection_info.host'],
-      'connection_info.port': rules['connection_info.port'],
-      'connection_info.database': rules['connection_info.database'],
-      'connection_info.user': rules['connection_info.user']
-    }
-  }
-
-  if (formState.engine_type === 'clickhouse') {
-    return {
-      engine_type: rules.engine_type,
-      name: rules.name,
-      'connection_info.host': rules['connection_info.host'],
-      'connection_info.port': rules['connection_info.port'],
-      'connection_info.database': rules['connection_info.database'],
-      'connection_info.user': rules['connection_info.user']
-    }
-  }
-
-  if (formState.engine_type === 'mongodb') {
-    return {
-      engine_type: rules.engine_type,
-      name: rules.name,
-      'connection_info.host': rules['connection_info.host'],
-      'connection_info.port': rules['connection_info.port'],
-    }
-  }
-
-  if (formState.engine_type === 'minio' || formState.engine_type === 's3') {
-    return {
-      engine_type: rules.engine_type,
-      name: rules.name,
-      'connection_info.endpoint': rules['connection_info.endpoint'],
-      'connection_info.access_key': rules['connection_info.access_key'],
-      'connection_info.secret_key': rules['connection_info.secret_key']
-    }
-  }
-
-  if (formState.engine_type === 'nfs') {
-    return {
-      engine_type: rules.engine_type,
-      name: rules.name,
-      'connection_info.server': [{ required: true, message: t('storageEngine.valid.inputNfsServer'), trigger: 'blur' }],
-      'connection_info.export_path': [{ required: true, message: t('storageEngine.valid.inputNfsExportPath'), trigger: 'blur' }]
-    }
-  }
-
-  if (formState.engine_type === 'spatialite' || formState.engine_type === 'sqlite') {
-    return {
-      engine_type: rules.engine_type,
-      name: rules.name,
-      'connection_info.full_name': rules['connection_info.full_name']
-    }
-  }
-
-  if (formState.engine_type === 'neo4j') {
-    return {
-      engine_type: rules.engine_type,
-      name: rules.name,
-      'connection_info.host': rules['connection_info.host'],
-      'connection_info.port': rules['connection_info.port'],
-      'connection_info.user': rules['connection_info.user'],
-      'connection_info.password': rules['connection_info.password']
-    }
-  }
-
-  if (formState.engine_type === 'spark') {
-    return {
-      engine_type: rules.engine_type,
-      name: rules.name,
-      'connection_info.host': rules['connection_info.host'],
-      'connection_info.port': rules['connection_info.port'],
-      'connection_info.database': rules['connection_info.database']
-    }
-  }
-
-  return {
-    engine_type: rules.engine_type,
-    name: rules.name
-  }
-})
+const computedRules = computed(() => ({
+  engine_type: [{ required: true, message: t('storageEngine.valid.selectType'), trigger: 'change' }],
+  name: [{ required: true, message: t('storageEngine.valid.inputName'), trigger: 'blur' }],
+  ...buildConnectionRules(selectedConnectionSpec.value, formState.connection_info, t)
+}))
 
 const handleTypeChange = (type) => {
   ensureConnectionDefaults(formState)
@@ -1140,103 +444,28 @@ defineExpose({
 })
 
 watch(
-  () => formState.connection_info.password,
-  (value) => {
-    // 跳过从 props 同步时的处理,避免循环
-    if (syncingFromProps) {
-      return
-    }
-
-    const metaFlag = formState.connection_info?._has_password === true
-    if (!metaFlag && value === SENSITIVE_PLACEHOLDER) {
-      formState.connection_info.password = ''
-      return
-    }
-
-    if (value === SENSITIVE_PLACEHOLDER) {
-      hasStoredPassword.value = true
-      return
-    }
-
-    const hasValue = !!value
-    formState.connection_info._has_password = hasValue
-    hasStoredPassword.value = hasValue
-    if (!hasValue) {
-      delete formState.connection_info._has_password
-    }
-  }
-)
-
-watch(
-  () => formState.connection_info.cdc_password,
-  (value) => {
+  () => (selectedConnectionSpec.value?.fields || [])
+    .filter(field => field.sensitive)
+    .map(field => [field.key, formState.connection_info?.[field.key]]),
+  entries => {
     if (syncingFromProps) return
-
-    const metaFlag = formState.connection_info?._has_cdc_password === true
-    if (!metaFlag && value === SENSITIVE_PLACEHOLDER) {
-      formState.connection_info.cdc_password = ''
-      return
+    for (const [key, value] of entries) {
+      const storedFlag = `_has_${key}`
+      const hadStoredValue = formState.connection_info?.[storedFlag] === true
+      if (!hadStoredValue && isMaskedSensitiveValue(value)) {
+        formState.connection_info[key] = ''
+        continue
+      }
+      if (isMaskedSensitiveValue(value)) {
+        formState.connection_info[storedFlag] = true
+      } else if (value) {
+        formState.connection_info[storedFlag] = true
+      } else {
+        delete formState.connection_info[storedFlag]
+      }
     }
-    if (value === SENSITIVE_PLACEHOLDER) {
-      hasStoredCDCPassword.value = true
-      return
-    }
-
-    const hasValue = !!value
-    formState.connection_info._has_cdc_password = hasValue
-    hasStoredCDCPassword.value = hasValue
-    if (!hasValue) delete formState.connection_info._has_cdc_password
-  }
-)
-
-watch(
-  () => formState.connection_info.secret_key,
-  (value) => {
-    // 跳过从 props 同步时的处理,避免循环
-    if (syncingFromProps) {
-      return
-    }
-
-    const metaFlag = formState.connection_info?._has_secret_key === true
-    if (!metaFlag && value === SENSITIVE_PLACEHOLDER) {
-      formState.connection_info.secret_key = ''
-      return
-    }
-
-    if (value === SENSITIVE_PLACEHOLDER) {
-      hasStoredSecretKey.value = true
-      return
-    }
-
-    const hasValue = !!value
-    formState.connection_info._has_secret_key = hasValue
-    hasStoredSecretKey.value = hasValue
-    if (!hasValue) {
-      delete formState.connection_info._has_secret_key
-    }
-  }
-)
-
-watch(
-  () => formState.connection_info.tls_client_key,
-  (value) => {
-    if (syncingFromProps) return
-
-    const metaFlag = formState.connection_info?._has_tls_client_key === true
-    if (!metaFlag && value === SENSITIVE_PLACEHOLDER) {
-      formState.connection_info.tls_client_key = ''
-      return
-    }
-    if (value === SENSITIVE_PLACEHOLDER) {
-      hasStoredTlsClientKey.value = true
-      return
-    }
-
-    const hasValue = !!value
-    formState.connection_info._has_tls_client_key = hasValue
-    hasStoredTlsClientKey.value = hasValue
-    if (!hasValue) delete formState.connection_info._has_tls_client_key
-  }
+  },
+  { deep: true }
 )
 </script>
 

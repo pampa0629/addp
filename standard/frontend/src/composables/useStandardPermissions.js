@@ -10,8 +10,7 @@ export function useStandardPermissions(resource) {
     canCreate: has('create'),
     canUpdate: has('update'),
     canDelete: has('delete'),
-    canApprove: has('approve'),
     canPublish: has('publish'),
-    canOffline: has('offline')
+    canCreateExtraction: computed(() => authStore.hasPermission('standard.document_extraction.create'))
   }
 }

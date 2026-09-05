@@ -75,27 +75,22 @@ def test_workflow_endpoint_rejects_insufficient_execution_authorization(client):
     assert response.get_json()["error_code"] == "WORKFLOW_INVALID"
 
 
-def test_register_to_system_with_retry_keeps_retrying_until_success(monkeypatch):
-    attempts: list[int] = []
-    waits: list[int] = []
+def test_register_to_system_with_retry_delegates_to_shared_registration_policy(monkeypatch):
+    captured = {}
 
-    class FakeEvent:
-        def wait(self, seconds):
-            waits.append(seconds)
-
-    def fake_register():
-        attempts.append(len(attempts) + 1)
-        return len(attempts) == 3
+    def fake_retry(register, runtime_name, logger):
+        captured.update(register=register, runtime_name=runtime_name, logger=logger)
 
     monkeypatch.setattr(api_server, "converter_status", lambda: {"available": True})
-    monkeypatch.setattr(api_server, "register_to_system", fake_register)
-    monkeypatch.setattr(api_server.threading, "Event", lambda: FakeEvent())
-    monkeypatch.setenv("REGISTRATION_RETRY_INTERVAL_SECONDS", "1")
+    monkeypatch.setattr("addp_common.client.retry_runtime_registration", fake_retry)
 
     api_server.register_to_system_with_retry()
 
-    assert attempts == [1, 2, 3]
-    assert waits == [1, 1]
+    assert captured == {
+        "register": api_server.register_to_system,
+        "runtime_name": "pointcloud_workflow",
+        "logger": api_server.logger,
+    }
 
 
 def test_register_to_system_with_retry_skips_when_pdal_unavailable(monkeypatch):

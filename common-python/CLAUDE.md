@@ -11,6 +11,7 @@ common-python/
 ├── addp_common/
 │   └── client/
 │       ├── base.py
+│       ├── service.py
 │       ├── system.py
 │       ├── meta.py
 │       ├── develop.py
@@ -34,6 +35,7 @@ common-python/
 ## 开发规则
 
 - 新增 Python 服务间调用客户端时，优先扩展 `addp_common/client/`，不要在 `agent`、`copilot` 中重复实现。
+- `addp_common.client.ServiceConsumerClient` 是 Python 消费 `addp.service_consumer/v1` 的唯一客户端；只通过 Consumer Catalog、Descriptor 和 Descriptor 声明的 query operation 读取数据，不读取 Service 管理 DTO，不硬编码业务字段或数据类型。
 - 用户交互请求使用短期 User Access Token；服务间请求使用各模块独立 Confidential OAuth Client 通过 Client Credentials Grant 获取短期 Service Access Token，业务请求只发送 `Authorization: Bearer`。
 - 不得新增或恢复 `internal_api_key`、`X-Internal-API-Key`、`X-Tenant-ID`、用户 Token 代传或其他服务间认证双轨。
 - 用户 `user_token` 只能通过 `addp_common.auth.resolve_authorization_context()` 调用 System AuthContext API 解析；Python 模块不自行解析 JWT。

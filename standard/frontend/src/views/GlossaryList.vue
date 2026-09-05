@@ -5,136 +5,78 @@
       <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreateDialog">{{ $t('standard.glossary.create') }}</el-button>
     </div>
 
-    <!-- 筛选栏 -->
     <el-card class="filter-card">
       <el-row :gutter="12">
-        <el-col :span="8">
-          <el-input
-            v-model="filters.keyword"
-            :placeholder="$t('standard.glossary.searchPlaceholder')"
-            clearable
-            @change="handleFilterChange"
-            :prefix-icon="Search"
-          />
-        </el-col>
+        <el-col :span="8"><el-input v-model="filters.keyword" :placeholder="$t('standard.glossary.searchPlaceholder')" clearable :prefix-icon="Search" @change="handleFilterChange" /></el-col>
         <el-col :span="6">
-          <el-select v-model="filters.domain_id" :placeholder="$t('standard.common.selectDomain')" clearable @change="handleFilterChange">
-            <el-option
-              v-for="domain in domainList"
-              :key="domain.id"
-              :label="domain.name"
-              :value="domain.id"
-            />
+          <el-select v-model="filters.owner_domain_id" :placeholder="$t('standard.common.selectDomain')" clearable @change="handleFilterChange">
+            <el-option v-for="domain in domainList" :key="domain.id" :label="domain.name" :value="domain.id" />
           </el-select>
         </el-col>
         <el-col :span="6">
           <el-select v-model="filters.status" :placeholder="$t('standard.common.selectStatus')" clearable @change="handleFilterChange">
-            <el-option :label="$t('standard.common.draft')" value="draft" />
-            <el-option :label="$t('standard.common.approved')" value="approved" />
-            <el-option :label="$t('standard.common.deprecated')" value="deprecated" />
+            <el-option v-for="status in revisionStatuses" :key="status" :label="statusLabel(status)" :value="status" />
           </el-select>
         </el-col>
       </el-row>
     </el-card>
 
-    <!-- 列表 -->
     <el-card class="table-card">
       <el-table :data="glossaries" v-loading="loading" stripe>
-        <el-table-column :label="$t('standard.glossary.nameLabel')" min-width="150">
-          <template #default="{ row }">
-            <span class="term-name">{{ row.name }}</span>
-            <div v-if="row.alias && row.alias.length > 0" class="alias-list">
-              <el-tag v-for="a in row.alias" :key="a" size="small" type="info" class="alias-tag">{{ a }}</el-tag>
-            </div>
-          </template>
+        <el-table-column :label="$t('standard.common.code')" prop="code" min-width="130" />
+        <el-table-column :label="$t('standard.glossary.nameLabel')" min-width="170">
+          <template #default="{ row }"><span class="term-name">{{ displayRevision(row)?.name || '-' }}</span></template>
         </el-table-column>
-        <el-table-column :label="$t('standard.glossary.domainLabel')" width="120">
-          <template #default="{ row }">
-            <span>{{ getDomainName(row.domain_id) || '-' }}</span>
-          </template>
+        <el-table-column :label="$t('standard.common.scopeLabel')" width="130">
+          <template #default="{ row }">{{ scopeLabel(row.scope_type) }}</template>
         </el-table-column>
-        <el-table-column :label="$t('standard.glossary.definitionLabel')" prop="definition" show-overflow-tooltip />
-        <el-table-column :label="$t('standard.common.status')" width="90">
-          <template #default="{ row }">
-            <el-tag :type="statusType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
-          </template>
+        <el-table-column :label="$t('standard.glossary.domainLabel')" width="130">
+          <template #default="{ row }">{{ getDomainName(row.owner_domain_id) || '-' }}</template>
         </el-table-column>
-        <el-table-column :label="$t('standard.common.tags')" width="180">
-          <template #default="{ row }">
-            <el-tag v-for="tag in (row.tags || [])" :key="tag" size="small" class="tag-item">{{ tag }}</el-tag>
-          </template>
+        <el-table-column :label="$t('standard.glossary.definitionLabel')" show-overflow-tooltip>
+          <template #default="{ row }">{{ displayRevision(row)?.definition || '-' }}</template>
         </el-table-column>
-        <el-table-column :label="$t('standard.common.actions')" width="220" fixed="right">
+        <el-table-column :label="$t('standard.common.status')" width="110">
+          <template #default="{ row }"><el-tag :type="statusType(displayRevision(row)?.status)" size="small">{{ statusLabel(displayRevision(row)?.status) }}</el-tag></template>
+        </el-table-column>
+        <el-table-column :label="$t('standard.common.actions')" width="150" fixed="right">
           <template #default="{ row }">
-            <div class="table-actions">
-              <el-button link type="primary" @click="goToDetail(row)">{{ $t('standard.common.detail') }}</el-button>
-              <el-button v-if="canApprove && row.status === 'draft'" link type="success" :loading="isActionLocked(`glossary:${row.id}`)" @click="handleApprove(row)">{{ $t('standard.common.approve') }}</el-button>
-              <el-button v-if="canOffline && row.status === 'approved'" link type="warning" :loading="isActionLocked(`glossary:${row.id}`)" @click="handleDeprecate(row)">{{ $t('standard.common.deprecate') }}</el-button>
-              <el-button v-if="canDelete" link type="danger" :disabled="isActionLocked(`glossary:${row.id}`)" @click="handleDelete(row)">{{ $t('standard.common.delete') }}</el-button>
-            </div>
+            <div class="table-actions"><el-button link type="primary" @click="goToDetail(row)">{{ $t('standard.common.detail') }}</el-button><el-button v-if="canDelete && isGlossaryDeletable(row)" link type="danger" @click="handleDelete(row)">{{ $t('standard.common.delete') }}</el-button></div>
           </template>
         </el-table-column>
       </el-table>
-
-      <el-pagination
-        v-if="total > 0"
-        class="pagination"
-        :total="total"
-        :page-size="filters.page_size"
-        :current-page="filters.page"
-        layout="total, prev, pager, next"
-        @current-change="handlePageChange"
-      />
+      <el-pagination v-if="total > 0" class="pagination" :total="total" :page-size="filters.page_size" :current-page="filters.page" layout="total, prev, pager, next" @current-change="handlePageChange" />
     </el-card>
 
-    <!-- 创建/编辑对话框 -->
-    <el-dialog v-model="dialogVisible" :title="editMode ? $t('standard.glossary.editTitle') : $t('standard.glossary.createTitle')" width="600px">
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
-        <el-form-item :label="$t('standard.glossary.nameLabel')" prop="name">
-          <el-input v-model="form.name" :placeholder="$t('standard.glossary.namePlaceholder')" />
-        </el-form-item>
-        <el-form-item :label="$t('standard.glossary.aliasLabel')">
-          <el-select
-            v-model="form.alias"
-            multiple filterable allow-create default-first-option
-            :placeholder="$t('standard.glossary.aliasPlaceholder')"
-            style="width: 100%"
-          />
-        </el-form-item>
-        <el-form-item :label="$t('standard.glossary.domainLabel')">
-          <el-select v-model="form.domain_id" :placeholder="$t('standard.common.domainOptional')" clearable style="width: 100%">
-            <el-option v-for="d in domainList" :key="d.id" :label="d.name" :value="d.id" />
+    <el-dialog v-model="dialogVisible" :title="$t('standard.glossary.createTitle')" width="680px">
+      <el-form ref="formRef" :model="form" :rules="rules" label-width="110px">
+        <el-form-item :label="$t('standard.common.code')" prop="code"><el-input v-model="form.code" :placeholder="$t('standard.glossary.codePlaceholder')" /></el-form-item>
+        <el-form-item :label="$t('standard.common.scopeLabel')" prop="scope_type">
+          <el-select v-model="form.scope_type" style="width:100%" @change="onScopeChange">
+            <el-option :label="$t('standard.common.scopeValue.tenant_common')" value="tenant_common" />
+            <el-option :label="$t('standard.common.scopeValue.domain')" value="domain" />
           </el-select>
         </el-form-item>
-        <el-form-item :label="$t('standard.glossary.definitionLabel')" prop="definition">
-          <el-input v-model="form.definition" type="textarea" :rows="4" :placeholder="$t('standard.glossary.definitionPlaceholder')" />
+        <el-form-item v-if="form.scope_type === 'domain'" :label="$t('standard.glossary.domainLabel')" prop="owner_domain_id">
+          <el-select v-model="form.owner_domain_id" filterable style="width:100%"><el-option v-for="d in domainList" :key="d.id" :label="d.name" :value="d.id" /></el-select>
         </el-form-item>
-        <el-form-item :label="$t('standard.glossary.exampleLabel')">
-          <el-input v-model="form.example" type="textarea" :rows="2" />
-        </el-form-item>
-        <el-form-item :label="$t('standard.glossary.noteLabel')">
-          <el-input v-model="form.note" type="textarea" :rows="2" />
-        </el-form-item>
-        <el-form-item :label="$t('standard.common.tags')">
-          <el-select
-            v-model="form.tags"
-            multiple filterable allow-create default-first-option
-            :placeholder="$t('standard.common.tagsPlaceholder')"
-            style="width: 100%"
-          />
-        </el-form-item>
+        <el-form-item :label="$t('standard.glossary.nameLabel')" prop="name"><el-input v-model="form.name" /></el-form-item>
+        <el-form-item :label="$t('standard.glossary.aliasLabel')"><el-select v-model="form.alias" multiple filterable allow-create default-first-option style="width:100%" /></el-form-item>
+        <el-form-item :label="$t('standard.glossary.definitionLabel')" prop="definition"><el-input v-model="form.definition" type="textarea" :rows="4" /></el-form-item>
+        <el-form-item :label="$t('standard.glossary.exampleLabel')"><el-input v-model="form.example" type="textarea" :rows="2" /></el-form-item>
+        <el-form-item :label="$t('standard.glossary.noteLabel')"><el-input v-model="form.note" type="textarea" :rows="2" /></el-form-item>
+        <el-form-item :label="$t('standard.common.tags')"><el-select v-model="form.tags" multiple filterable allow-create default-first-option style="width:100%" /></el-form-item>
+        <el-form-item :label="$t('standard.revision.changeSummary')" prop="change_summary"><el-input v-model="form.change_summary" /></el-form-item>
+        <el-form-item :label="$t('standard.revision.effectiveFrom')"><el-date-picker v-model="form.effective_from" type="datetime" value-format="YYYY-MM-DDTHH:mm:ssZ" style="width:100%" /></el-form-item>
       </el-form>
-      <template #footer>
-        <el-button @click="dialogVisible = false">{{ $t('standard.common.cancel') }}</el-button>
-        <el-button type="primary" @click="handleSubmit" :loading="submitting">{{ $t('standard.common.confirm') }}</el-button>
-      </template>
+      <template #footer><el-button @click="dialogVisible=false">{{ $t('standard.common.cancel') }}</el-button><el-button type="primary" :loading="submitting" @click="handleSubmit">{{ $t('standard.common.confirm') }}</el-button></template>
     </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed, watch } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { Plus, Search } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
@@ -142,282 +84,70 @@ import { domainAPI, glossaryAPI } from '../api/standard'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
 import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
 import { useStandardPermissions } from '../composables/useStandardPermissions'
-import { useActionLock } from '../composables/useActionLock'
 import { createLatestRequestCoordinator } from '@common-ui'
-import {
-  buildGlossaryFilterQuery,
-  createGlossaryForm,
-  resolveGlossaryFilters
-} from '../utils/glossaryRouteState'
+import { buildGlossaryFilterQuery, createGlossaryForm, isGlossaryDeletable, resolveGlossaryFilters } from '../utils/glossaryRouteState'
 
 const { t } = useI18n()
-const { canCreate, canDelete, canApprove, canOffline } = useStandardPermissions('glossary')
-const { isLocked: isActionLocked, runLocked } = useActionLock()
-
-const router = useRouter()
-const route = useRoute()
-
-const loading = ref(false)
-const submitting = ref(false)
-const dialogVisible = ref(false)
-const editMode = ref(false)
-const glossaries = ref([])
-const domainList = ref([])
-const total = ref(0)
-const editingId = ref(null)
-const formRef = ref(null)
+const { canCreate, canDelete } = useStandardPermissions('glossary')
+const router = useRouter(), route = useRoute()
+const loading = ref(false), submitting = ref(false), dialogVisible = ref(false), formRef = ref(null)
+const glossaries = ref([]), domainList = ref([]), total = ref(0), form = ref(createGlossaryForm(null))
 const listRequests = createLatestRequestCoordinator()
-
-const filters = reactive({
-  keyword: '',
-  domain_id: null,
-  status: '',
-  page: 1,
-  page_size: 20
-})
-
-const applyRouteFilters = (query) => {
-  Object.assign(filters, resolveGlossaryFilters(query))
-}
-
-const buildFilterQuery = () => buildGlossaryFilterQuery(filters)
-
-const syncFilterRoute = () => navigateStandardRoute(router, { path: '/glossaries', query: buildFilterQuery() }, { history: 'replace' })
-
-const form = ref(createGlossaryForm(null))
-
+const revisionStatuses = ['draft', 'in_review', 'published', 'withdrawn']
+const filters = reactive({ keyword: '', owner_domain_id: null, status: '', page: 1, page_size: 20 })
 const rules = computed(() => ({
+  code: [{ required: true, message: t('standard.glossary.codeRequired'), trigger: 'blur' }],
   name: [{ required: true, message: t('standard.glossary.nameRequired'), trigger: 'blur' }],
-  definition: [{ required: true, message: t('standard.glossary.definitionRequired'), trigger: 'blur' }]
+  definition: [{ required: true, message: t('standard.glossary.definitionRequired'), trigger: 'blur' }],
+  change_summary: [{ required: true, message: t('standard.revision.changeSummaryRequired'), trigger: 'blur' }],
+  owner_domain_id: [{ required: form.value.scope_type === 'domain', message: t('standard.common.selectDomain'), trigger: 'change' }]
 }))
+const displayRevision = row => row.draft_revision || row.current_revision
+const statusType = status => ({ draft: 'info', in_review: 'warning', published: 'success', withdrawn: 'danger' }[status] || 'info')
+const statusLabel = status => status ? t(`standard.revision.status.${status}`) : '-'
+const scopeLabel = scope => scope ? t(`standard.common.scopeValue.${scope}`) : '-'
+const flattenDomains = nodes => nodes.flatMap(node => [node, ...flattenDomains(node.children || [])])
+const getDomainName = id => domainList.value.find(item => item.id === id)?.name
+const buildFilterQuery = () => buildGlossaryFilterQuery(filters)
+const syncFilterRoute = () => navigateStandardRoute(router, { path: '/glossaries', query: buildFilterQuery() }, { history: 'replace' })
+const onScopeChange = value => { if (value !== 'domain') form.value.owner_domain_id = null }
+const goToDetail = row => navigateStandardRoute(router, { path: `/glossaries/${row.id}`, query: buildFilterQuery() })
 
-const statusType = (s) => ({ draft: 'info', approved: 'success', deprecated: 'warning' }[s] || 'info')
-const statusLabel = (s) => ({ draft: t('standard.common.draft'), approved: t('standard.common.approved'), deprecated: t('standard.common.deprecated') }[s] || s)
-
-const flattenDomains = (nodes) => {
-  const result = []
-  const traverse = (list) => {
-    for (const n of list) {
-      result.push(n)
-      if (n.children) traverse(n.children)
-    }
-  }
-  traverse(nodes)
-  return result
+async function loadDomains() { try { domainList.value = flattenDomains(await domainAPI.list() || []) } catch { domainList.value = [] } }
+async function loadGlossaries() {
+  const params = { page: filters.page, page_size: filters.page_size, keyword: filters.keyword || undefined, owner_domain_id: filters.owner_domain_id || undefined, status: filters.status || undefined }
+  const key = JSON.stringify(params), request = listRequests.begin(key); loading.value = true
+  try { const res = await glossaryAPI.list(params); if (listRequests.isCurrent(request, key)) { glossaries.value = res.data || []; total.value = res.total || 0 } }
+  catch (error) { if (listRequests.isCurrent(request, key)) ElMessage.error(getStandardErrorMessage(error, t, 'standard.common.loadFailed')) }
+  finally { if (listRequests.isCurrent(request, key)) loading.value = false }
 }
-
-const getDomainName = (id) => {
-  if (!id) return null
-  return domainList.value.find(d => d.id === id)?.name || null
-}
-
-const loadDomains = async () => {
-  try {
-    const res = await domainAPI.list()
-    domainList.value = flattenDomains(res || [])
-  } catch (e) {
-    domainList.value = []
-  }
-}
-
-const loadGlossaries = async () => {
-  const params = { page: filters.page, page_size: filters.page_size }
-  if (filters.keyword) params.keyword = filters.keyword
-  if (filters.domain_id) params.domain_id = filters.domain_id
-  if (filters.status) params.status = filters.status
-  const request = listRequests.begin(JSON.stringify(params))
-  loading.value = true
-  try {
-    const res = await glossaryAPI.list(params)
-    if (!listRequests.isCurrent(request, JSON.stringify(params))) return
-    glossaries.value = res.data || []
-    total.value = res.total || 0
-  } catch (e) {
-    if (!listRequests.isCurrent(request, JSON.stringify(params))) return
-    ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.loadFailed'))
-  } finally {
-    if (listRequests.isCurrent(request, JSON.stringify(params))) loading.value = false
-  }
-}
-
-const handlePageChange = (page) => {
-  filters.page = page
-  syncFilterRoute()
-  loadGlossaries()
-}
-
-const handleFilterChange = () => {
-  filters.page = 1
-  syncFilterRoute()
-  loadGlossaries()
-}
-
-const openCreateDialog = () => {
-  editMode.value = false
-  editingId.value = null
-  form.value = createGlossaryForm(filters.domain_id)
-  dialogVisible.value = true
-}
-
-const goToDetail = (row) => {
-  navigateStandardRoute(router, { path: `/glossaries/${row.id}`, query: buildFilterQuery() })
-}
-
-const openEditDialog = (row) => {
-  editMode.value = true
-  editingId.value = row.id
-  form.value = {
-    version: row.version,
-    name: row.name,
-    alias: row.alias || [],
-    domain_id: row.domain_id || null,
-    definition: row.definition,
-    example: row.example || '',
-    note: row.note || '',
-    tags: row.tags || []
-  }
-  dialogVisible.value = true
-}
-
-const handleSubmit = async () => {
+function handleFilterChange() { filters.page = 1; syncFilterRoute(); loadGlossaries() }
+function handlePageChange(page) { filters.page = page; syncFilterRoute(); loadGlossaries() }
+function openCreateDialog() { form.value = createGlossaryForm(filters.owner_domain_id); dialogVisible.value = true }
+async function handleSubmit() {
   if (submitting.value || !formRef.value) return
   submitting.value = true
   try {
-    const valid = await formRef.value.validate().catch(() => false)
-    if (!valid) return
-    if (editMode.value) {
-      await glossaryAPI.update(editingId.value, form.value)
-      ElMessage.success(t('standard.common.updateSuccess'))
-    } else {
-      await glossaryAPI.create(form.value)
-      ElMessage.success(t('standard.common.createSuccess'))
-    }
-    dialogVisible.value = false
-    await loadGlossaries()
-  } catch (e) {
-    ElMessage.error(getStandardErrorMessage(e, t))
-  } finally {
-    submitting.value = false
+    if (!(await formRef.value.validate().catch(() => false))) return
+    await glossaryAPI.create(form.value); ElMessage.success(t('standard.common.createSuccess')); dialogVisible.value = false; await loadGlossaries()
   }
+  catch (error) { ElMessage.error(getStandardErrorMessage(error, t)) }
+  finally { submitting.value = false }
 }
-
-const handleApprove = async (row) => {
-  await runLocked(`glossary:${row.id}`, async () => {
-    try {
-      await glossaryAPI.approve(row.id, row.version)
-      ElMessage.success(t('standard.common.approveSuccess'))
-      await loadGlossaries()
-    } catch (e) {
-      ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.approveFailed'))
-    }
-  })
+async function handleDelete(row) {
+  try { await ElMessageBox.confirm(t('standard.glossary.confirmDelete', { name: displayRevision(row)?.name || row.code }), t('standard.common.hint'), { type: 'warning' }); await glossaryAPI.delete(row.id); ElMessage.success(t('standard.common.deleteSuccess')); await loadGlossaries() }
+  catch (error) { if (!isCanceledInteraction(error)) ElMessage.error(getStandardErrorMessage(error, t)) }
 }
-
-const handleDeprecate = async (row) => {
-  await runLocked(`glossary:${row.id}`, async () => {
-    try {
-      await ElMessageBox.confirm(t('standard.glossary.confirmDeprecate', { name: row.name }), t('standard.common.hint'), { type: 'warning' })
-      await glossaryAPI.deprecate(row.id, row.version)
-      ElMessage.success(t('standard.common.deprecated'))
-      await loadGlossaries()
-    } catch (e) {
-      if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t))
-    }
-  })
-}
-
-const handleDelete = async (row) => {
-  await runLocked(`glossary:${row.id}`, async () => {
-    try {
-      await ElMessageBox.confirm(t('standard.glossary.confirmDelete', { name: row.name }), t('standard.common.hint'), { type: 'warning' })
-      await glossaryAPI.delete(row.id)
-      ElMessage.success(t('standard.common.deleteSuccess'))
-      await loadGlossaries()
-    } catch (e) {
-      if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.deleteFailed'))
-    }
-  })
-}
-
-watch(
-  () => route.query,
-  (query) => {
-    const previous = JSON.stringify(buildFilterQuery())
-    applyRouteFilters(query)
-    if (JSON.stringify(buildFilterQuery()) !== previous) loadGlossaries()
-  },
-  { deep: true }
-)
-
-onMounted(async () => {
-  applyRouteFilters(route.query)
-  await loadDomains()
-  await loadGlossaries()
-})
+watch(() => route.query, query => { Object.assign(filters, resolveGlossaryFilters(query)); loadGlossaries() }, { immediate: true })
+onMounted(loadDomains)
 </script>
 
 <style scoped>
-.glossary-list {
-  padding: 20px;
-}
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-}
-
-.page-header h2 {
-  margin: 0;
-  font-size: 18px;
-  color: var(--addp-text-primary);
-}
-
-.filter-card {
-  margin-bottom: 16px;
-}
-
-.table-card :deep(.el-card__body) {
-  padding: 0;
-}
-
-.term-name {
-  font-weight: 500;
-  color: var(--addp-text-primary);
-}
-
-.table-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-width: max-content;
-  white-space: nowrap;
-}
-
-.table-actions :deep(.el-button) {
-  white-space: nowrap;
-}
-
-.alias-list {
-  margin-top: 4px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.alias-tag {
-  font-size: 11px;
-}
-
-.tag-item {
-  margin-right: 4px;
-  margin-bottom: 2px;
-}
-
-.pagination {
-  padding: 16px;
-  display: flex;
-  justify-content: flex-end;
-}
+.glossary-list { padding: 20px; }
+.page-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; }
+.filter-card, .table-card { margin-bottom:16px; }
+.pagination { margin-top:16px; justify-content:flex-end; }
+.term-name { font-weight:500; color:var(--addp-text-primary); }
+.table-actions { display:flex; flex-wrap:nowrap; white-space:nowrap; }
+@media (max-width:768px) { .glossary-list { padding:12px; } }
 </style>

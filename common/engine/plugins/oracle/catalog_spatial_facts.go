@@ -175,7 +175,7 @@ func queryOracleCRSDefinition(ctx context.Context, db *sql.DB, srid *int) (*data
 }
 
 func queryOracleGeometryType(ctx context.Context, db *sql.DB, schema, table, column string) (string, error) {
-	dialect := commonquery.ForEngine("oracle")
+	dialect := commonquery.ForDialect("oracle")
 	qualified := dialect.QualifiedTable(schema, table)
 	quoted := dialect.QuoteIdentifier(column)
 	var minType, maxType sql.NullInt64

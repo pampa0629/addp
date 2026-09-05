@@ -1,6 +1,6 @@
 # Security 模块说明
 
-Security 是 ADDP 数据安全控制面，唯一拥有敏感数据类型、安全分类、安全等级、检测器、发现、资源安全评估、保护基线、策略和保护投影。DetectorCapability 是平台代码提供的只读可信能力，Detector 是 Tenant 把能力绑定到 SensitiveDataType 的版本化启用配置；发现不得通过敏感类型代码或名称猜测绑定。当前已经实现基础定义、显式保护纳管、Owner 投影变化流、acknowledgement 激活/释放屏障，以及手机号元数据/文档和邮箱元数据检测、无原值 Finding、一次性 Finding review、不可变 Assessment/ProtectionPolicy revision、唯一投影编译和显式重新发现/续期。Manager、Develop、Service 已具备自身字段级动作投影，Transfer bounded snapshot 的独立 `export` 动作与 PostgreSQL、MongoDB 原始记录执行器已完成；显式例外与其他未实现执行器的出口属于后续阶段。
+Security 是 ADDP 数据安全控制面，唯一拥有敏感数据类型、安全分类、安全等级、检测器、发现、资源安全评估、保护基线、策略、保护豁免和保护投影。DetectorCapability 是平台代码提供的只读可信能力，Detector 是 Tenant 把能力绑定到 SensitiveDataType 的版本化启用配置；发现不得通过敏感类型代码或名称猜测绑定。当前已经实现基础定义、显式保护纳管、Owner 投影变化流、acknowledgement 激活/释放屏障，以及手机号元数据/文档和邮箱元数据检测、无原值 Finding、一次性 Finding review、不可变 Assessment/ProtectionPolicy revision、唯一投影编译和显式重新发现/续期。Manager、Develop、Service 已具备自身字段级动作投影，Transfer bounded snapshot 的独立 `export` 动作与 PostgreSQL、MongoDB 原始记录执行器已完成。ProtectionExemption 只绑定正式 Assessment 与一个已实现字段级出口，最长 30 天；投影保留默认决策并携带限时 `allow`，Owner 到期后本地自动回落，不能设置私有豁免。其他未实现执行器的出口、按主体或用途揭示和双人审批属于后续阶段。
 
 ## 边界
 
@@ -46,6 +46,8 @@ Security 是 ADDP 数据安全控制面，唯一拥有敏感数据类型、安�
 创建 Enrollment 的唯一用户输入是 Meta 资源树返回的 DataItem ResourceLocator；Security 自行计算 fingerprint，只纳管完整 DataItem。旧的 fingerprint 与字段路径自由输入路线不存在。字段组件通常由 Detector 发现；自动发现漏检时，治理人员只能从 Security Backend 实时读取并校验、且尚未形成任何正式 Assessment 的 Meta 当前字段清单中选择组件，直接形成来源为 `manual` 的正式 Assessment，不得自由填写字段路径。已存在 Assessment 的组件不再出现在人工指定候选中，其后续调整或撤销必须在既有聚合上追加修订。Finding 误报通过不可变 `reject` review 收口，既有正式 Assessment 错误则追加 `not_sensitive` 修订撤销，二者都由唯一投影编译器重新发布保护结果。
 
 ProtectionPolicy 首期只绑定正式 Assessment + `manager` + `preview`，只能把当前 ProtectionBaseline 收紧为 `mask|suppress|deny`，不复制算法参数、不承载授权或例外。创建、更新和撤销都追加不可变 revision，并在同一事务调用唯一投影编译器；撤销后回落到 Assessment + ProtectionBaseline，不解除纳管。
+
+ProtectionExemption 是原值揭示的唯一入口，固定绑定正式 Assessment + `manager/preview|develop/query|service/service_execute|transfer/export` 中一个动作。每次豁免修订冻结批准时的 Assessment revision；Assessment 后续产生新修订时旧豁免立即失效，不得静默恢复。效果固定为限时 `allow`，作用于 Tenant 内所有已通过 Owner 授权的该动作调用者；最长 30 天，依据必填。创建、续期、撤销都追加不可变 revision 并原子重编译对应 Owner。投影规则必须保留 Policy/Baseline 默认决策作为 `fallback`，Owner 不依赖 Security 在线即可在 `valid_until` 后自动恢复保护。
 
 `manager/profile` 不建立可编辑 Policy：唯一编译器把有效 `preview=mask|suppress` 派生为 `profile=suppress`，把 `preview=deny` 派生为 `profile=deny`。Manager 负责把 `profile=suppress` 执行为整个字段剖析对象的移除，Security 不复制 Manager 指标结构。
 

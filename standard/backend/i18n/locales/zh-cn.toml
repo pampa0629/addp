@@ -145,11 +145,29 @@ other = "文件清理失败"
 [standard.document.file_name_invalid]
 other = "文件名无效"
 
+[standard.document.file_required]
+other = "文档修订必须先上传文件并完成内容校验"
+
+[standard.document.extraction_unsupported]
+other = "当前仅支持从 Markdown 文档提炼标准候选"
+
+[standard.document.extraction_invalid]
+other = "提炼结果缺少有效候选或可追溯证据"
+
+[standard.document.copilot_unavailable]
+other = "Copilot 标准提炼服务暂时不可用"
+
+[standard.document.publication_history]
+other = "该文档存在发布历史，不能删除稳定身份"
+
 [standard.domain.not_found]
 other = "业务域不存在"
 
 [standard.glossary.not_found]
 other = "业务术语不存在"
+
+[standard.glossary.publication_history]
+other = "业务术语已有发布历史，不能删除稳定身份；请撤回不再使用的发布修订"
 
 [standard.element.not_found]
 other = "数据元不存在"

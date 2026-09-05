@@ -24,8 +24,7 @@
     "/plugins/video-preview.js",
     "/plugins/json-preview.js",
     "/plugins/pdf-preview.js",
-    "/plugins/docx-preview.js",
-    "/plugins/wps-preview.js",
+    "/plugins/office-preview.js",
     "/plugins/pptx-preview.js",
     "/plugins/markdown-preview.js",
     "/plugins/text-preview.js"
@@ -298,8 +297,7 @@ manager/frontend/
 │       ├── image-preview.js         # 图片预览（含 BMP）
 │       ├── json-preview.js          # JSON 预览
 │       ├── pdf-preview.js           # PDF 预览
-│       ├── docx-preview.js          # DOCX 预览
-│       ├── wps-preview.js           # WPS 预览
+│       ├── office-preview.js        # DOC / DOCX / WPS 统一预览
 │       ├── pptx-preview.js          # PPTX 预览
 │       └── text-preview.js          # 文本兜底
 └── index.html

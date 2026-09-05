@@ -10,7 +10,10 @@ on:
         options:
           - consumer-engine-recovery
           - enterprise-catalog-publishing
+          - manager-internal-artifact-lineage
           - module-registry-recovery
+          - security-protection-exemption
+          - security-transfer-protection
           - standard-model-reference-deletion
           - workbench-service-consumption
 

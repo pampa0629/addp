@@ -227,6 +227,13 @@ Info provider 只返回元数据，主要服务 Meta 写入 `type_info.*`、`for
 | `RelatedRefSpecProvider` | 任意 multi 格式 | `multi` | 无内容输入 | 声明 related ref 的角色、扩展名、必需性和 primary。 | Meta item detector、Transfer multi reader/writer 构造 | Shapefile 等多 content 格式 |
 | `RefDescriptorProvider` | 任意 multi 格式 | `multi` | `[]RelatedRef` | 把 refs 解释成用户可理解的描述。 | Manager、Meta 展示 | Shapefile 相关内容展示 |
 
+同一格式可以按内容结构参与多个 data type 的 Provider，例如 JSON 默认是
+`document`，只有记录数组或 JSON Lines 才由 `TableInfoProvider` 升级为
+`table`。当输入内容合法、但不属于当前 Provider 的结构时，Provider 必须返回
+`ProviderNotApplicableError`；调用方把它解释为“本次能力未命中”并保留当前
+data type。已经命中目标结构但内容损坏、无效或不受支持时仍返回普通解析错误或
+`DefinitiveParseError`，不得把真实错误降级为未命中。
+
 Container 通用事实直接使用 `datatype.ContainerInfo` / `datatype.ContainerChildInfo`，`common/format` 不再保留平行结构或别名。child 可以用字符串 `Format` 表达内容格式，用 `Native` 承载受控的 child 定位或原生摘要；不承载 `layout`。父容器级格式统计、采样上限和截断状态由 `FormatInfoProvider` 写入 `format_info.<format>`，不得写入 `type_info.container.native`。容器内多文件归并、refs 展示等 layout 事实由 dataitem / Manager / Meta 编排层动态计算。
 
 ### 实现要求
@@ -404,6 +411,7 @@ type DocumentTextReader interface {
 | `json` | `document` 默认，内容严格匹配记录集合时可升级为 `table` | 是 | 是 | `DocumentInfo` 当前只写 `encoding=utf-8`；同一格式也提供 table / spatial provider。 |
 | `pdf` | `document` | 是 | 否 | 只提供轻量 metadata，例如 title、page_count、size_bytes；author / creator / producer 等 PDF 原生事实进入 `format_info.pdf`。 |
 | `docx` | `document` | 是 | 是 | 轻量读取 `docProps` 中的 title、language、pages、words；正文从 `word/document.xml` 提取，并追加页眉、页脚、脚注、尾注和批注文本；暂不解析修订语义或复杂版面关系。 |
+| `rtf` | `document` | 否 | 否 | 后端只声明稳定格式身份；原始文件由 Manager 内容通道交给浏览器端 Office renderer，按 RTF 代码页和控制字解析。 |
 | `pptx` | `document` | 是 | 是 | 轻量读取 `docProps` 中的 title、language、slides、words；正文从 `ppt/slides/slide*.xml` 按页提取，并追加对应备注页与批注文本；暂不解析母版或隐藏页策略。 |
 | `wps` | `document` | 否 | 否 | 后端解析边界尚未定义；原始文件预览由 engine / contentio / URL 内容通道提供。 |
 
@@ -422,7 +430,7 @@ if err != nil {
 text, truncated, err := reader.ReadDocumentText(ctx, input, 16*1024, nil)
 ```
 
-WPS 这类复杂且变体较多的文档格式，不应因为当前只能通过 engine / contentio / URL 内容通道读取原始文件就降级为二进制格式；后续如需更完整的全文索引、摘要或服务端转换，再补对应 DocumentInfoProvider / DocumentTextReader 或外部 extraction 服务。
+RTF、WPS 这类需要专用解释器的文档格式，不应因为当前只能通过 engine / contentio / URL 内容通道读取原始文件就降级为 text 或 unknown；后续如需更完整的全文索引、摘要或服务端转换，再补对应 DocumentInfoProvider / DocumentTextReader 或外部 extraction 服务。
 
 ## Binary Content Reader
 

@@ -37,9 +37,16 @@ export const glossaryAPI = {
   get(id) { return client.get(`/standard/glossaries/${id}`) },
   update(id, data) { return client.put(`/standard/glossaries/${id}`, data) },
   delete(id) { return client.delete(`/standard/glossaries/${id}`) },
-  approve(id, version) { return client.post(`/standard/glossaries/${id}/approve`, { version }) },
-  deprecate(id, version) { return client.post(`/standard/glossaries/${id}/deprecate`, { version }) },
-  getElements(id) { return client.get(`/standard/glossaries/${id}/elements`) }
+  listRevisions(id) { return client.get(`/standard/glossaries/${id}/revisions`) },
+  createRevision(id, data) { return client.post(`/standard/glossaries/${id}/revisions`, data) },
+  getRevision(id, revisionId) { return client.get(`/standard/glossaries/${id}/revisions/${revisionId}`) },
+  updateRevision(id, revisionId, data) { return client.put(`/standard/glossaries/${id}/revisions/${revisionId}`, data) },
+  submitRevision(id, revisionId, version) { return client.post(`/standard/glossaries/${id}/revisions/${revisionId}/submit`, { version }) },
+  returnRevision(id, revisionId, version) { return client.post(`/standard/glossaries/${id}/revisions/${revisionId}/return`, { version }) },
+  publishRevision(id, revisionId, version) { return client.post(`/standard/glossaries/${id}/revisions/${revisionId}/publish`, { version }) },
+  withdrawRevision(id, revisionId, version) { return client.post(`/standard/glossaries/${id}/revisions/${revisionId}/withdraw`, { version }) },
+  getElements(id) { return client.get(`/standard/glossaries/${id}/elements`) },
+  updateElements(id, data) { return client.put(`/standard/glossaries/${id}/elements`, data) }
 }
 
 // ========== 数据元 API ==========
@@ -127,10 +134,21 @@ export const documentAPI = {
   create(data) { return client.post('/standard/documents', data) },
   update(id, data) { return client.put(`/standard/documents/${id}`, data) },
   delete(id) { return client.delete(`/standard/documents/${id}`) },
+  listRevisions(id) { return client.get(`/standard/documents/${id}/revisions`) },
+  createRevision(id, data) { return client.post(`/standard/documents/${id}/revisions`, data) },
+  getRevision(id, revisionId) { return client.get(`/standard/documents/${id}/revisions/${revisionId}`) },
+  updateRevision(id, revisionId, data) { return client.put(`/standard/documents/${id}/revisions/${revisionId}`, data) },
+  submitRevision(id, revisionId, version) { return client.post(`/standard/documents/${id}/revisions/${revisionId}/submit`, { version }) },
+  returnRevision(id, revisionId, version) { return client.post(`/standard/documents/${id}/revisions/${revisionId}/return`, { version }) },
+  publishRevision(id, revisionId, version) { return client.post(`/standard/documents/${id}/revisions/${revisionId}/publish`, { version }) },
+  withdrawRevision(id, revisionId, version) { return client.post(`/standard/documents/${id}/revisions/${revisionId}/withdraw`, { version }) },
   getMappings(id) { return client.get(`/standard/documents/${id}/mappings`) },
   setMappings(id, data) { return client.put(`/standard/documents/${id}/mappings`, data) },
-  uploadFile(id, formData, version) { formData.append('version', String(version)); return client.post(`/standard/documents/${id}/upload`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }) },
-  download(id) { return client.get(`/standard/documents/${id}/download`, { responseType: 'blob' }) }
+  uploadFile(id, revisionId, formData, version) { formData.append('version', String(version)); return client.post(`/standard/documents/${id}/revisions/${revisionId}/file`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }) },
+  download(id, revisionId) { return client.get(`/standard/documents/${id}/revisions/${revisionId}/file`, { responseType: 'blob' }) },
+  extractCandidates(id, revisionId, version) { return client.post(`/standard/documents/${id}/revisions/${revisionId}/extractions`, { version }) },
+  listExtractions(id) { return client.get(`/standard/documents/${id}/extractions`) },
+  updateCandidate(candidateId, data) { return client.put(`/standard/document-extraction-candidates/${candidateId}`, data) }
 }
 
 // ========== 标准项维度的文档关联 API ==========
@@ -139,8 +157,8 @@ export const elementDocumentAPI = {
   create(elementId, data) { return client.post(`/standard/elements/${elementId}/documents`, data) },
   link(elementId, docId, version) { return client.post(`/standard/elements/${elementId}/documents/link`, { doc_id: docId, version }) },
   unlink(elementId, docId, version) { return client.delete(`/standard/elements/${elementId}/documents/${docId}`, { data: { version } }) },
-  uploadFile(docId, formData, version) { return documentAPI.uploadFile(docId, formData, version) },
-  download(docId) { return documentAPI.download(docId) }
+  uploadFile(docId, revisionId, formData, version) { return documentAPI.uploadFile(docId, revisionId, formData, version) },
+  download(docId, revisionId) { return documentAPI.download(docId, revisionId) }
 }
 
 export const glossaryDocumentAPI = {
@@ -148,8 +166,8 @@ export const glossaryDocumentAPI = {
   create(glossaryId, data) { return client.post(`/standard/glossaries/${glossaryId}/documents`, data) },
   link(glossaryId, docId, version) { return client.post(`/standard/glossaries/${glossaryId}/documents/link`, { doc_id: docId, version }) },
   unlink(glossaryId, docId, version) { return client.delete(`/standard/glossaries/${glossaryId}/documents/${docId}`, { data: { version } }) },
-  uploadFile(docId, formData, version) { return documentAPI.uploadFile(docId, formData, version) },
-  download(docId) { return documentAPI.download(docId) }
+  uploadFile(docId, revisionId, formData, version) { return documentAPI.uploadFile(docId, revisionId, formData, version) },
+  download(docId, revisionId) { return documentAPI.download(docId, revisionId) }
 }
 
 export const metricDocumentAPI = {
@@ -157,6 +175,6 @@ export const metricDocumentAPI = {
   create(metricId, data) { return client.post(`/standard/metrics/${metricId}/documents`, data) },
   link(metricId, docId, version) { return client.post(`/standard/metrics/${metricId}/documents/link`, { doc_id: docId, version }) },
   unlink(metricId, docId, version) { return client.delete(`/standard/metrics/${metricId}/documents/${docId}`, { data: { version } }) },
-  uploadFile(docId, formData, version) { return documentAPI.uploadFile(docId, formData, version) },
-  download(docId) { return documentAPI.download(docId) }
+  uploadFile(docId, revisionId, formData, version) { return documentAPI.uploadFile(docId, revisionId, formData, version) },
+  download(docId, revisionId) { return documentAPI.download(docId, revisionId) }
 }

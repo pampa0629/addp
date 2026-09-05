@@ -248,6 +248,7 @@
     "passwordPlaceholder": "Database password",
     "passwordOptional": "Password (optional)",
     "passwordHint": "Password is stored. Leave unchanged to keep current password.",
+    "sensitiveValueHint": "This sensitive value is stored. Leave the placeholder unchanged to keep it.",
     "bootstrapServers": "Broker Addresses",
     "bootstrapServersPlaceholder": "broker-1:9092,broker-2:9092",
     "clientIdOptional": "Client ID (optional)",
@@ -325,6 +326,7 @@
     "valid": {
       "selectType": "Please select engine type",
       "inputName": "Please enter resource name",
+      "requiredField": "Please enter {field}",
       "inputHost": "Please enter host",
       "inputPort": "Please enter port",
       "inputServiceName": "Please enter Oracle service name",
@@ -351,6 +353,15 @@
     "totalSheets": "Total Sheets",
     "loadedSheets": "Loaded Sheets",
     "fileSize": "File Size"
+  },
+  "officePreview": {
+    "loading": "Loading {type} document...",
+    "tooLarge": "The document exceeds the online preview limit. Download it to view the full file.",
+    "loadFailed": "Document preview failed",
+    "requestFailed": "Document request failed ({status})",
+    "noSource": "No document content is available",
+    "empty": "The document is empty",
+    "downloadFailed": "Document download failed: {error}"
   },
   "containerPreview": {
     "childrenTruncatedTitle": "Showing partial children",

@@ -39,23 +39,34 @@ func (p *MongoDBPlugin) EngineOrigin() string {
 	return "general"
 }
 
+func (p *MongoDBPlugin) ConnectionSpec() plugin.ConnectionSpec {
+	return plugin.NewConnectionSpec(
+		plugin.ConnectionFieldSpec{Key: "host", LabelKey: "storageEngine.host", Input: plugin.ConnectionFieldText, Required: true, Identity: true, Default: "localhost", Placeholder: "localhost"},
+		plugin.ConnectionFieldSpec{Key: "port", LabelKey: "storageEngine.port", Input: plugin.ConnectionFieldNumber, Identity: true, Default: 27017, Min: plugin.Int(1), Max: plugin.Int(65535)},
+		plugin.ConnectionFieldSpec{Key: "database", LabelKey: "storageEngine.defaultDatabase", Input: plugin.ConnectionFieldText, PlaceholderKey: "storageEngine.defaultDatabasePlaceholder"},
+		plugin.ConnectionFieldSpec{Key: "user", LabelKey: "storageEngine.username", Input: plugin.ConnectionFieldText, Identity: true},
+		plugin.ConnectionFieldSpec{Key: "password", LabelKey: "storageEngine.passwordOptional", Input: plugin.ConnectionFieldPassword, Sensitive: true, HintKey: "storageEngine.hints.mongoAuth"},
+		plugin.ConnectionFieldSpec{Key: "auth_source", LabelKey: "storageEngine.authSource", Input: plugin.ConnectionFieldText, Identity: true, Default: "admin", PlaceholderKey: "storageEngine.authSourcePlaceholder"},
+	)
+}
+
 // DefaultPort 返回默认端口
 func (p *MongoDBPlugin) DefaultPort() int {
-	return 27017
+	return p.ConnectionSpec().DefaultPortValue()
 }
 
 // RequiredFields 返回必填字段列表
 func (p *MongoDBPlugin) RequiredFields() []string {
-	return []string{"host"}
+	return p.ConnectionSpec().RequiredFields()
 }
 
 // SensitiveFields 返回敏感字段列表
 func (p *MongoDBPlugin) SensitiveFields() []string {
-	return []string{"password"}
+	return p.ConnectionSpec().SensitiveFields()
 }
 
 func (p *MongoDBPlugin) ConnectionIdentityFields() []string {
-	return []string{"host", "port", "user", "auth_source"}
+	return p.ConnectionSpec().IdentityFields()
 }
 
 func (p *MongoDBPlugin) Capabilities() plugin.EngineCapabilities {

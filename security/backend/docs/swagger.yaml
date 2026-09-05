@@ -19,11 +19,15 @@ definitions:
         type: string
       effect:
         type: string
+      fallback:
+        $ref: '#/definitions/dataprotection.Decision'
       invalid_value_effect:
         type: string
       parameters:
         additionalProperties: {}
         type: object
+      valid_until:
+        type: string
     type: object
   dataprotection.PathSegment:
     properties:
@@ -469,6 +473,61 @@ definitions:
         type: string
       version:
         example: "0"
+        type: string
+    type: object
+  github_com_addp_security_internal_models.ProtectionExemptionResponse:
+    properties:
+      action:
+        type: string
+      assessment_id:
+        type: string
+      consumer_owner:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        example: "0"
+        type: string
+      current:
+        $ref: '#/definitions/github_com_addp_security_internal_models.ProtectionExemptionRevision'
+      current_revision:
+        type: integer
+      effective_state:
+        type: string
+      history:
+        items:
+          $ref: '#/definitions/github_com_addp_security_internal_models.ProtectionExemptionRevision'
+        type: array
+      id:
+        type: string
+      state:
+        type: string
+      updated_at:
+        type: string
+      version:
+        example: "0"
+        type: string
+    type: object
+  github_com_addp_security_internal_models.ProtectionExemptionRevision:
+    properties:
+      assessment_revision:
+        type: integer
+      created_at:
+        type: string
+      created_by:
+        example: "0"
+        type: string
+      exemption_id:
+        type: string
+      expires_at:
+        type: string
+      id:
+        type: string
+      rationale:
+        type: string
+      revision:
+        type: integer
+      state:
         type: string
     type: object
   github_com_addp_security_internal_models.ProtectionOwnerProgress:
@@ -928,6 +987,25 @@ definitions:
     - security_grade_id
     - sensitive_data_type_id
     type: object
+  internal_api.CreateProtectionExemptionRequest:
+    properties:
+      action:
+        type: string
+      assessment_id:
+        type: string
+      consumer_owner:
+        type: string
+      expires_at:
+        type: string
+      rationale:
+        type: string
+    required:
+    - action
+    - assessment_id
+    - consumer_owner
+    - expires_at
+    - rationale
+    type: object
   internal_api.CreateProtectionPolicyRequest:
     properties:
       action:
@@ -969,6 +1047,54 @@ definitions:
         $ref: '#/definitions/github_com_addp_security_internal_models.ResourceSecurityAssessmentResponse'
       review:
         $ref: '#/definitions/github_com_addp_security_internal_models.SensitiveFindingReview'
+    type: object
+  internal_api.ProtectionExemptionListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_addp_security_internal_models.ProtectionExemptionResponse'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  internal_api.ProtectionExemptionResponse:
+    properties:
+      action:
+        type: string
+      assessment_id:
+        type: string
+      consumer_owner:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        example: "0"
+        type: string
+      current:
+        $ref: '#/definitions/github_com_addp_security_internal_models.ProtectionExemptionRevision'
+      current_revision:
+        type: integer
+      effective_state:
+        type: string
+      history:
+        items:
+          $ref: '#/definitions/github_com_addp_security_internal_models.ProtectionExemptionRevision'
+        type: array
+      id:
+        type: string
+      state:
+        type: string
+      updated_at:
+        type: string
+      version:
+        example: "0"
+        type: string
     type: object
   internal_api.ProtectionPolicyListResponse:
     properties:
@@ -1016,6 +1142,20 @@ definitions:
         example: "0"
         type: string
     type: object
+  internal_api.RenewProtectionExemptionRequest:
+    properties:
+      expires_at:
+        type: string
+      rationale:
+        type: string
+      version:
+        example: "0"
+        type: string
+    required:
+    - expires_at
+    - rationale
+    - version
+    type: object
   internal_api.ResourceSecurityAssessmentListResponse:
     properties:
       data:
@@ -1059,6 +1199,17 @@ definitions:
         type: string
     type: object
   internal_api.RevokeAssessmentRequest:
+    properties:
+      rationale:
+        type: string
+      version:
+        example: "0"
+        type: string
+    required:
+    - rationale
+    - version
+    type: object
+  internal_api.RevokeProtectionExemptionRequest:
     properties:
       rationale:
         type: string
@@ -3435,6 +3586,321 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - security.enrollment.update
+  /protection-exemptions:
+    get:
+      description: 分页返回当前租户显式、限时的出口明文豁免；可按受保护资源聚合筛选 | Return explicit time-bounded
+        plaintext exemptions for the current tenant, optionally filtered by protection
+        enrollment
+      parameters:
+      - description: 受保护资源 ID | Protection enrollment ID
+        in: query
+        name: enrollment_id
+        type: string
+      - description: 页码 | Page number
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量，最大 100 | Page size, maximum 100
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.ProtectionExemptionListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 保护豁免列表 | List protection exemptions
+      tags:
+      - Protection Exemption
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - security.protection_exemption.read
+    post:
+      consumes:
+      - application/json
+      description: 为正式敏感 Assessment 的一个已支持出口创建最长 30 天的租户级明文豁免，并原子发布带默认回落决策的新投影；不授予
+        Owner 资源访问权 | Create a tenant-wide plaintext exemption of at most 30 days
+        for one supported outlet of a formal sensitive Assessment and atomically publish
+        a projection with its default fallback; this grants no owner resource access
+      parameters:
+      - description: 创建请求 | Create request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.CreateProtectionExemptionRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_api.ProtectionExemptionResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建保护豁免 | Create protection exemption
+      tags:
+      - Protection Exemption
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - security.protection_exemption.create
+  /protection-exemptions/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: 使用资源版本追加 revoked 修订并立即回落到 ProtectionPolicy 与 ProtectionBaseline
+        | Append a revoked revision with resource-version concurrency control and
+        immediately fall back to ProtectionPolicy and ProtectionBaseline
+      parameters:
+      - description: 豁免 ID | Exemption ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 撤销请求 | Revoke request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.RevokeProtectionExemptionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.ProtectionExemptionResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 撤销保护豁免 | Revoke protection exemption
+      tags:
+      - Protection Exemption
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - security.protection_exemption.delete
+    get:
+      description: 返回当前有效状态、当前修订和不可变历史 | Return effective state, current revision,
+        and immutable history
+      parameters:
+      - description: 豁免 ID | Exemption ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.ProtectionExemptionResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 保护豁免详情 | Get protection exemption
+      tags:
+      - Protection Exemption
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - security.protection_exemption.read
+    put:
+      consumes:
+      - application/json
+      description: 使用资源版本追加最长 30 天的 active 修订，并原子发布新的限时投影 | Append an active revision
+        of at most 30 days with resource-version concurrency control and atomically
+        publish a new time-bounded projection
+      parameters:
+      - description: 豁免 ID | Exemption ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 续期请求 | Renewal request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.RenewProtectionExemptionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.ProtectionExemptionResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 续期保护豁免 | Renew protection exemption
+      tags:
+      - Protection Exemption
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - security.protection_exemption.update
   /protection-policies:
     get:
       description: 分页返回当前租户针对正式 Assessment 的显式收紧策略及当前不可变修订 | Return explicit tightening

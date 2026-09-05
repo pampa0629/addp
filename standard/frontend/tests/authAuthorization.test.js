@@ -110,7 +110,7 @@ describe('Standard authorization refresh', () => {
         status: 403,
         data: { error: '无权审批该术语', error_code: 'permission_denied' }
       },
-      config: { method: 'post', url: '/standard/glossaries/1/approve', headers: {} }
+      config: { method: 'post', url: '/standard/glossaries/1/revisions/11/publish', headers: {} }
     }
 
     await expect(onRejected(error)).rejects.toBe(error)

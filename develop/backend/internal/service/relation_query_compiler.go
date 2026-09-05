@@ -96,7 +96,7 @@ func compileExistingTableResultQuery(
 	if err != nil {
 		return nil, err
 	}
-	dialect := commonQuery.ForEngine(engineType)
+	dialect := commonQuery.ForDialect(engineType)
 	if !dialect.IsPostgreSQL() {
 		return nil, fmt.Errorf("relation 查询参数写入仅支持 PostgreSQL")
 	}
@@ -139,7 +139,7 @@ func compileRelationPreviewQuery(
 	if err != nil || !hasRelationParameters {
 		return task, err
 	}
-	dialect := commonQuery.ForEngine(engineType)
+	dialect := commonQuery.ForDialect(engineType)
 	if !dialect.IsPostgreSQL() {
 		return nil, fmt.Errorf("relation 查询参数预览仅支持 PostgreSQL")
 	}

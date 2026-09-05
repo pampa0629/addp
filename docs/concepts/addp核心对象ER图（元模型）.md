@@ -1050,9 +1050,13 @@ erDiagram
         uint id PK
         uint tenant_id FK
         uint owner_domain_id FK "scope_type=domain 时必填"
-        uint category_id FK "仅导航"
         string code UK
         string scope_type "platform|tenant_common|domain"
+        uint steward_id
+        jsonb tags
+        uint draft_revision_id FK
+        string lifecycle_state "active"
+        bigint version "乐观锁"
         timestamp created_at
         timestamp updated_at
     }
@@ -1065,9 +1069,16 @@ erDiagram
         string name
         string[] alias
         string definition
+        string example
+        string note
         int64[] related_ids "关联术语ID数组"
+        string change_summary
         timestamp effective_from
         timestamp effective_to
+        uint submitted_by
+        timestamp submitted_at
+        uint published_by
+        timestamp published_at
         timestamp created_at
         timestamp updated_at
     }
@@ -1081,6 +1092,8 @@ erDiagram
         string scope_type "platform|tenant_common|domain"
         string doc_type
         string source_org
+        uint draft_revision_id FK
+        bigint version "并发版本"
         timestamp created_at
         timestamp updated_at
     }
@@ -1092,22 +1105,51 @@ erDiagram
         string status "draft|in_review|published|withdrawn"
         string name
         string version_label
+        date publish_date
+        string description
         string file_key "MinIO 文件路径"
         string file_name
+        bigint file_size
+        string media_type
+        string content_sha256
+        string change_summary
         timestamp effective_from
         timestamp effective_to
         timestamp created_at
         timestamp updated_at
     }
 
-    ExtractionEvidence {
+    DocumentExtraction {
         uint id PK
         uint document_revision_id FK
-        string locator "页码/章节/文本片段位置"
-        string excerpt_hash "证据内容摘要"
-        string candidate_type
-        uint candidate_revision_id "审核后指向正式修订"
-        string review_status
+        string status "completed"
+        uint requested_by
+        timestamp created_at
+    }
+
+    DocumentExtractionCandidate {
+        uint id PK
+        uint extraction_id FK
+        string candidate_type "glossary|element|code_set|metric"
+        string code
+        string name
+        string definition
+        jsonb payload "类型化候选补充字段"
+        string status "pending|retained|rejected"
+        bigint version "并发版本"
+        uint reviewed_by
+        timestamp reviewed_at
+    }
+
+    ExtractionEvidence {
+        uint id PK
+        uint candidate_id FK
+        uint document_revision_id FK
+        string section_path "Markdown 章节或页码"
+        int start_line
+        int end_line
+        string excerpt "来源原文"
+        string excerpt_hash "SHA-256"
     }
 
     Domain ||--o{ Domain : "父子域(self-ref)"
@@ -1145,18 +1187,21 @@ erDiagram
     MetricDefinitionRevisionDependency }o--o| MetricDefinitionRevision : "发布时冻结"
     Glossary ||--o{ GlossaryRevision : "含修订"
     Document ||--o{ DocumentRevision : "含修订"
-    DocumentRevision ||--o{ ExtractionEvidence : "含提取证据"
+    DocumentRevision ||--o{ DocumentExtraction : "作为确定输入"
+    DocumentExtraction ||--o{ DocumentExtractionCandidate : "产生候选"
+    DocumentExtractionCandidate ||--|{ ExtractionEvidence : "由证据支撑"
+    DocumentRevision ||--o{ ExtractionEvidence : "固定来源修订"
 ```
 
 **待改造项**：
 
 | # | 问题描述 | 当前状态 | 影响 |
 |---|----------|----------|------|
-| ST-1 | 数据元、码值集和指标已采用稳定身份 + 不可变修订；术语和文档仍是可变资源 | 待迁移 | 术语与文档正式发布后的口径和来源仍无法被精确冻结，历史追溯链不完整 |
+| ST-1 | 数据元、码值集、指标定义、业务术语和标准文档均采用稳定身份 + 不可变修订 | ✅ 已实现 | 标准定义及来源文档都可冻结到确定修订，并按生效区间解析 |
 | ST-2 | `DimensionHierarchy` 已整体迁入 Model，Standard 旧表、API、权限与前端入口已删除 | ✅ 已实现 | 维度层级成为 LogicalTable 聚合内单一事实，不再跨模块软引用 |
 | ST-4 | StandardCollection 已按“稳定身份 + 治理配置修订 + 成员快照 + 对象级职责分配 + 不可变治理事件”实现 | ✅ 已实现 | 可独立配置跨域标准集的成员、维护人、对象级权限和审核流程，且不改变成员自身发布状态 |
 | ST-5 | 指标定义与指标实现已经拆分 | ✅ 已实现 | Standard 只保留修订级语义口径与冻结的语义依赖；粒度、来源、连接、过滤和可执行表达式归 Model MetricImplementation 所有 |
-| ST-6 | 当前标准文档没有不可变修订与提取证据模型 | 待迁移 | Copilot 提取结果无法稳定回溯到来源版本、页码或章节，也无法建立可靠审核链 |
+| ST-6 | 标准文档提炼固定输入修订并保存候选、章节/行号/原文证据及人工处置 | ✅ 已实现 | Copilot 结果可稳定回溯且不会绕过 Standard 审核形成正式标准 |
 | ST-7 | 码值层级与跨码值集映射尚未形成规范 | 待讨论 | 需要先区分标准间语义映射与 Transfer 的资产级转换执行，再决定是否建立父子码项和 crosswalk 资源 |
 
 ---

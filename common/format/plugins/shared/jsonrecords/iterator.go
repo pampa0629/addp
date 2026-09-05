@@ -121,7 +121,7 @@ func NewRecordIterator(r io.Reader) (*RecordIterator, error) {
 	var nextObject map[string]interface{}
 	if err := dec.Decode(&nextObject); err != nil {
 		if errors.Is(err, io.EOF) {
-			return nil, fmt.Errorf("json table: features array not found")
+			return nil, ErrNotRecordCollection
 		}
 		return nil, fmt.Errorf("json table: failed to decode JSON line: %w", err)
 	}

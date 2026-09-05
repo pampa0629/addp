@@ -9,13 +9,14 @@ import (
 )
 
 func TestStandardBrowserResourceRequestMatcher(t *testing.T) {
-	if !isStandardBrowserResourceRequest(newStandardMatcherContext("/api/v1/standard/documents/12/download")) {
+	if !isStandardBrowserResourceRequest(newStandardMatcherContext("/api/v1/standard/documents/12/revisions/34/file")) {
 		t.Fatal("document download path was rejected")
 	}
 	for _, path := range []string{
 		"/api/v1/standard/documents",
 		"/api/v1/standard/documents/12",
 		"/api/v1/standard/documents/12/mappings",
+		"/api/v1/standard/documents/12/revisions/34",
 		"/api/v1/standard/metrics",
 	} {
 		if isStandardBrowserResourceRequest(newStandardMatcherContext(path)) {

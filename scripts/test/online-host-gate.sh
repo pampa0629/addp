@@ -106,6 +106,46 @@ case "$ONLINE_SUITE" in
     START_TARGET=-system
     REQUIRED_SUITE_ENV=(SYSTEM_URL GATEWAY_URL MANAGER_URL MANAGER_SERVICE_CLIENT_SECRET)
     ;;
+  manager-internal-artifact-lineage)
+    START_TARGET=-all
+    REQUIRED_SUITE_ENV=(
+      SYSTEM_URL GATEWAY_URL META_URL MANAGER_URL MONITOR_URL CONSOLE_URL
+      ADDP_ONLINE_TEST_USER_ACCESS_TOKEN ADDP_ONLINE_TEST_USER_USERNAME
+      ADDP_ONLINE_TEST_USER_PASSWORD ADDP_ONLINE_TEST_TENANT_ID
+      ADDP_ONLINE_POINTCLOUD_MINIO_ENGINE_ID ADDP_ONLINE_POINTCLOUD_MINIO_PORT
+      ADDP_ONLINE_POINTCLOUD_MINIO_ACCESS_KEY ADDP_ONLINE_POINTCLOUD_MINIO_SECRET_KEY
+      ADDP_ONLINE_POINTCLOUD_MINIO_BUCKET ADDP_ONLINE_POINTCLOUD_MINIO_OBJECT
+    )
+    ;;
+  security-transfer-protection)
+    START_TARGET=-all
+    REQUIRED_SUITE_ENV=(
+      SYSTEM_URL GATEWAY_URL META_URL SECURITY_URL TRANSFER_URL MANAGER_URL
+      ADDP_ONLINE_TEST_USER_ACCESS_TOKEN ADDP_ONLINE_TEST_TENANT_ID
+      ADDP_ONLINE_TEST_ENGINE_ID ADDP_ONLINE_TEST_ENGINE_PORT
+      ADDP_ONLINE_TEST_ENGINE_USER ADDP_ONLINE_TEST_ENGINE_PASSWORD
+      ADDP_ONLINE_TEST_ENGINE_DATABASE
+      ADDP_ONLINE_SECURITY_MONGODB_ENGINE_ID ADDP_ONLINE_SECURITY_MONGODB_PORT
+      ADDP_ONLINE_SECURITY_MONGODB_DATABASE ADDP_ONLINE_SECURITY_MONGODB_USER
+      ADDP_ONLINE_SECURITY_MONGODB_PASSWORD ADDP_ONLINE_SECURITY_MONGODB_ROOT_USER
+      ADDP_ONLINE_SECURITY_MONGODB_ROOT_PASSWORD
+    )
+    ;;
+  security-protection-exemption)
+    START_TARGET=-all
+    REQUIRED_SUITE_ENV=(
+      SYSTEM_URL GATEWAY_URL META_URL SECURITY_URL MANAGER_URL DEVELOP_URL
+      SERVICE_URL TRANSFER_URL
+      ADDP_ONLINE_TEST_USER_ACCESS_TOKEN ADDP_ONLINE_TEST_TENANT_ID
+      ADDP_ONLINE_TEST_ENGINE_ID ADDP_ONLINE_TEST_ENGINE_PORT
+      ADDP_ONLINE_TEST_ENGINE_USER ADDP_ONLINE_TEST_ENGINE_PASSWORD
+      ADDP_ONLINE_TEST_ENGINE_DATABASE
+      ADDP_ONLINE_SECURITY_MONGODB_PORT ADDP_ONLINE_SECURITY_MONGODB_DATABASE
+      ADDP_ONLINE_SECURITY_MONGODB_USER ADDP_ONLINE_SECURITY_MONGODB_PASSWORD
+      ADDP_ONLINE_SECURITY_MONGODB_ROOT_USER
+      ADDP_ONLINE_SECURITY_MONGODB_ROOT_PASSWORD
+    )
+    ;;
   standard-model-reference-deletion)
     START_TARGET=-model
     REQUIRED_SUITE_ENV=(SYSTEM_URL GATEWAY_URL STANDARD_URL MODEL_URL ADDP_ONLINE_TEST_USER_ACCESS_TOKEN)
@@ -192,6 +232,8 @@ process_lifecycle=not-applicable
 engine_fixture_cleanup_required=0
 engine_restore_required=0
 workbench_mysql_cleanup_required=0
+pointcloud_minio_cleanup_required=0
+security_transfer_fixture_cleanup_required=0
 
 run_logged() {
   "$@" 2>&1 | tee -a "$GATE_LOG"
@@ -241,6 +283,20 @@ finish() {
 
   if [ "$workbench_mysql_cleanup_required" -eq 1 ]; then
     if ! run_logged bash business/scripts/online-workbench-mysql-fixture.sh stop; then
+      cleanup=failed
+      gate_status=1
+    fi
+  fi
+
+  if [ "$pointcloud_minio_cleanup_required" -eq 1 ]; then
+    if ! run_logged bash business/scripts/online-pointcloud-minio-fixture.sh stop; then
+      cleanup=failed
+      gate_status=1
+    fi
+  fi
+
+  if [ "$security_transfer_fixture_cleanup_required" -eq 1 ]; then
+    if ! run_logged bash business/scripts/online-security-transfer-fixture.sh stop; then
       cleanup=failed
       gate_status=1
     fi
@@ -337,6 +393,18 @@ elif [ "$ONLINE_SUITE" = "workbench-service-consumption" ]; then
   run_logged bash business/scripts/online-workbench-mysql-fixture.sh start
   run_logged bash scripts/dev/start.sh "$START_TARGET"
   run_logged npm --prefix console/frontend exec -- playwright install chromium
+elif [ "$ONLINE_SUITE" = "manager-internal-artifact-lineage" ]; then
+  pointcloud_minio_cleanup_required=1
+  run_logged bash business/scripts/online-pointcloud-minio-fixture.sh stop
+  run_logged bash business/scripts/online-pointcloud-minio-fixture.sh start
+  run_logged bash scripts/dev/start.sh "$START_TARGET"
+  run_logged npm --prefix console/frontend exec -- playwright install chromium
+elif [ "$ONLINE_SUITE" = "security-transfer-protection" ] ||
+  [ "$ONLINE_SUITE" = "security-protection-exemption" ]; then
+  security_transfer_fixture_cleanup_required=1
+  run_logged bash business/scripts/online-security-transfer-fixture.sh stop
+  run_logged bash business/scripts/online-security-transfer-fixture.sh start
+  run_logged bash scripts/dev/start.sh "$START_TARGET"
 else
   run_logged bash scripts/dev/start.sh "$START_TARGET"
 fi

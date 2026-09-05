@@ -10,6 +10,8 @@ ADDP 平台的共享代码模块，提供各个微服务模块通用的工具和
 
 `client` 只表达跨服务 HTTP/API 调用边界，不作为 infra PostgreSQL `common` schema 的读写入口。
 
+`dataprotection/projectionstore` 是所有数据出口 Owner 的本地保护投影存储唯一实现。它在 Owner 自身 schema 内执行同一套版本化迁移和结构校验；新 Owner 只能复用该构造入口，不得复制投影表 DDL，也不在 `common` schema 建立中央保护表。
+
 ### jsonmap
 decoded JSON map 的通用读取工具，用于读取嵌套 section、字符串、数字、时间等基础值。
 

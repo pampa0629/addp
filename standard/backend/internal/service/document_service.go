@@ -1,41 +1,60 @@
 package service
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"path/filepath"
+	"regexp"
+	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	commonapi "github.com/addp/common/api"
+	commonclient "github.com/addp/common/client"
 	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/repository"
 	"github.com/google/uuid"
 	minio "github.com/minio/minio-go/v7"
 )
 
-const minioBucket = "standard"
-
 const (
+	minioBucket                   = "standard"
 	defaultDocumentMaxFileSize    = 100 * 1024 * 1024
 	defaultDocumentStorageTimeout = 30 * time.Second
+	maxDocumentExtractionBytes    = 2 * 1024 * 1024
+	copilotDocumentExtractPath    = "/api/v1/copilot/standard-documents/extract"
 )
 
 var (
-	ErrDocumentStorageUnavailable = errors.New("document storage unavailable")
-	ErrDocumentFileTooLarge       = errors.New("document file too large")
-	ErrDocumentFileUpload         = errors.New("document file upload failed")
-	ErrDocumentFileDownload       = errors.New("document file download failed")
-	ErrDocumentFileCleanup        = errors.New("document file cleanup failed")
-	ErrDocumentFileNameInvalid    = errors.New("document file name invalid")
+	ErrDocumentStorageUnavailable    = errors.New("document storage unavailable")
+	ErrDocumentFileTooLarge          = errors.New("document file too large")
+	ErrDocumentFileUpload            = errors.New("document file upload failed")
+	ErrDocumentFileDownload          = errors.New("document file download failed")
+	ErrDocumentFileCleanup           = errors.New("document file cleanup failed")
+	ErrDocumentFileNameInvalid       = errors.New("document file name invalid")
+	ErrDocumentFileRequired          = errors.New("document revision file required")
+	ErrDocumentExtractionUnsupported = errors.New("document extraction only supports markdown")
+	ErrDocumentExtractionInvalid     = errors.New("document extraction result invalid")
+	ErrDocumentCopilotUnavailable    = errors.New("document copilot unavailable")
+	ErrDocumentPublicationHistory    = errors.New("document publication history exists")
+	documentCandidateCodePattern     = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 )
 
 type DocumentStorageOptions struct {
-	MaxFileSize int64
-	Timeout     time.Duration
+	MaxFileSize        int64
+	Timeout            time.Duration
+	CopilotURL         string
+	ServiceTokenSource commonclient.ServiceTokenProvider
+	HTTPClient         *http.Client
 }
 
 type documentContextReadCloser struct {
@@ -43,19 +62,18 @@ type documentContextReadCloser struct {
 	cancel context.CancelFunc
 }
 
-func (r *documentContextReadCloser) Close() error {
-	r.cancel()
-	return r.ReadCloser.Close()
-}
+func (r *documentContextReadCloser) Close() error { r.cancel(); return r.ReadCloser.Close() }
 
-// DocumentService 标准文档服务
 type DocumentService struct {
-	repo        *repository.DocumentRepository
-	refs        *repository.TenantReferenceRepository
-	objectStore documentObjectStore
-	maxFileSize int64
-	timeout     time.Duration
-	stopCh      chan struct{}
+	repo               *repository.DocumentRepository
+	refs               *repository.TenantReferenceRepository
+	objectStore        documentObjectStore
+	maxFileSize        int64
+	timeout            time.Duration
+	copilotURL         string
+	serviceTokenSource commonclient.ServiceTokenProvider
+	httpClient         *http.Client
+	stopCh             chan struct{}
 }
 
 func NewDocumentService(repo *repository.DocumentRepository, refs *repository.TenantReferenceRepository, minioClient *minio.Client, options DocumentStorageOptions) *DocumentService {
@@ -65,14 +83,13 @@ func NewDocumentService(repo *repository.DocumentRepository, refs *repository.Te
 	if options.Timeout <= 0 {
 		options.Timeout = defaultDocumentStorageTimeout
 	}
-	svc := &DocumentService{
-		repo:        repo,
-		refs:        refs,
-		objectStore: newMinioDocumentObjectStore(minioClient),
-		maxFileSize: options.MaxFileSize,
-		timeout:     options.Timeout,
-		stopCh:      make(chan struct{}),
+	if options.CopilotURL == "" {
+		options.CopilotURL = "http://localhost:8087"
 	}
+	if options.HTTPClient == nil {
+		options.HTTPClient = &http.Client{Timeout: 120 * time.Second}
+	}
+	svc := &DocumentService{repo: repo, refs: refs, objectStore: newMinioDocumentObjectStore(minioClient), maxFileSize: options.MaxFileSize, timeout: options.Timeout, copilotURL: strings.TrimRight(options.CopilotURL, "/"), serviceTokenSource: options.ServiceTokenSource, httpClient: options.HTTPClient, stopCh: make(chan struct{})}
 	if svc.objectStore != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), svc.timeout)
 		defer cancel()
@@ -95,107 +112,211 @@ func (s *DocumentService) Stop() {
 	}
 	close(s.stopCh)
 }
+func (s *DocumentService) MaxFileSize() int64 { return s.maxFileSize }
 
-func (s *DocumentService) MaxFileSize() int64 {
-	return s.maxFileSize
-}
-
-func (s *DocumentService) ListDocuments(tenantID int64, opts repository.ListDocumentOptions) ([]models.Document, int64, error) {
+func (s *DocumentService) ListDocuments(tenantID int64, opts repository.ListDocumentOptions) ([]models.DocumentAggregate, int64, error) {
 	return s.repo.List(tenantID, opts)
 }
-
-func (s *DocumentService) GetDocument(id, tenantID int64) (*models.Document, error) {
-	return s.repo.GetByID(id, tenantID)
+func (s *DocumentService) GetDocument(id, tenantID int64) (*models.DocumentAggregate, error) {
+	return s.repo.GetAggregate(id, tenantID)
+}
+func (s *DocumentService) GetDocumentAt(id, tenantID int64, asOf time.Time) (*models.DocumentAggregate, error) {
+	return s.repo.GetAggregateAt(id, tenantID, asOf)
 }
 
-func (s *DocumentService) CreateDocument(req *models.CreateDocumentRequest, tenantID, userID int64) (*models.Document, error) {
-	doc := newDocument(req, tenantID, userID)
-	if err := s.repo.Create(doc); err != nil {
-		return nil, err
-	}
-	return doc, nil
-}
-
-func newDocument(req *models.CreateDocumentRequest, tenantID, userID int64) *models.Document {
-	docType := req.DocType
-	if docType == "" {
-		docType = "reference"
-	}
-	return &models.Document{
-		TenantID:        tenantID,
-		Name:            req.Name,
-		DocType:         docType,
-		SourceOrg:       req.SourceOrg,
-		DocumentVersion: req.DocumentVersion,
-		Description:     req.Description,
-		CreatedBy:       userID,
-	}
-}
-
-func (s *DocumentService) UpdateDocument(id, tenantID, userID int64, req *models.UpdateDocumentRequest) (*models.Document, error) {
-	doc, err := s.repo.GetByID(id, tenantID)
+func (s *DocumentService) CreateDocument(req *models.CreateDocumentRequest, tenantID, userID int64) (*models.DocumentAggregate, error) {
+	document, revision, err := s.newDocument(req, tenantID, userID)
 	if err != nil {
 		return nil, err
 	}
-	if req.Name != "" {
-		doc.Name = req.Name
-	}
-	if req.DocType != "" {
-		doc.DocType = req.DocType
-	}
-	doc.SourceOrg = req.SourceOrg
-	doc.DocumentVersion = req.DocumentVersion
-	doc.Description = req.Description
-	doc.UpdatedBy = &userID
-	if err := s.repo.Update(doc, req.Version); err != nil {
+	if err := s.repo.Create(document, revision); err != nil {
 		return nil, err
 	}
-	return s.repo.GetByID(id, tenantID)
+	return s.repo.GetAggregate(document.ID, tenantID)
+}
+
+func (s *DocumentService) newDocument(req *models.CreateDocumentRequest, tenantID, userID int64) (*models.Document, *models.DocumentRevision, error) {
+	scopeType, err := validateTenantStandardScope(s.refs, tenantID, req.ScopeType, req.OwnerDomainID)
+	if err != nil {
+		return nil, nil, err
+	}
+	code := strings.TrimSpace(req.Code)
+	if code == "" {
+		return nil, nil, ErrInvalidStandardRevision
+	}
+	exists, err := s.repo.ExistsByCode(code, tenantID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if exists {
+		return nil, nil, commonapi.ErrConflict
+	}
+	docType := strings.TrimSpace(req.DocType)
+	if !validDocumentType(docType) {
+		return nil, nil, ErrInvalidStandardRevision
+	}
+	revision := &models.DocumentRevision{Name: strings.TrimSpace(req.Name), VersionLabel: strings.TrimSpace(req.VersionLabel), PublishDate: req.PublishDate, Description: req.Description, ChangeSummary: strings.TrimSpace(req.ChangeSummary), EffectiveFrom: req.EffectiveFrom, EffectiveTo: req.EffectiveTo, CreatedBy: userID}
+	if err := validateDocumentRevision(revision, false); err != nil {
+		return nil, nil, err
+	}
+	document := &models.Document{TenantID: tenantID, ScopeType: scopeType, OwnerDomainID: req.OwnerDomainID, Code: code, DocType: docType, SourceOrg: strings.TrimSpace(req.SourceOrg), StewardID: req.StewardID, Tags: req.Tags, CreatedBy: userID, LifecycleState: "active"}
+	return document, revision, nil
+}
+
+func (s *DocumentService) UpdateDocument(id, tenantID, userID int64, req *models.UpdateDocumentRequest) (*models.DocumentAggregate, error) {
+	scopeType, err := validateTenantStandardScope(s.refs, tenantID, req.ScopeType, req.OwnerDomainID)
+	if err != nil {
+		return nil, err
+	}
+	if !validDocumentType(req.DocType) {
+		return nil, ErrInvalidStandardRevision
+	}
+	document, err := s.repo.GetByID(id, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	document.ScopeType, document.OwnerDomainID, document.DocType, document.SourceOrg = scopeType, req.OwnerDomainID, req.DocType, strings.TrimSpace(req.SourceOrg)
+	document.StewardID, document.Tags, document.UpdatedBy = req.StewardID, req.Tags, &userID
+	if err := s.repo.UpdateIdentity(document, req.Version); err != nil {
+		return nil, err
+	}
+	return s.repo.GetAggregate(id, tenantID)
 }
 
 func (s *DocumentService) DeleteDocument(id, tenantID int64) error {
-	// 先提交数据库删除，数据库失败时保留物理文件；物理清理失败由日志记录并可由回收任务重试。
-	cleanup, err := s.repo.Delete(id, tenantID)
+	cleanups, err := s.repo.DeleteUnpublished(id, tenantID)
 	if err != nil {
+		if errors.Is(err, repository.ErrDocumentPublicationHistory) {
+			return ErrDocumentPublicationHistory
+		}
 		return err
 	}
-	if cleanup != nil {
-		s.tryFileCleanup(*cleanup)
+	for _, cleanup := range cleanups {
+		s.tryFileCleanup(cleanup)
 	}
 	return nil
 }
 
-// UploadFile 上传文件到 MinIO 并更新文档记录
-func (s *DocumentService) UploadFile(docID, tenantID, version int64, fileName string, content io.Reader, size int64, contentType string) (*models.Document, error) {
+func (s *DocumentService) ListRevisions(id, tenantID int64) ([]models.DocumentRevision, error) {
+	return s.repo.ListRevisions(id, tenantID)
+}
+func (s *DocumentService) GetRevision(id, revisionID, tenantID int64) (*models.DocumentRevision, error) {
+	return s.repo.GetRevision(id, revisionID, tenantID)
+}
+func (s *DocumentService) CreateRevision(id, tenantID, userID int64, req *models.CreateDocumentRevisionRequest) (*models.DocumentAggregate, error) {
+	if strings.TrimSpace(req.ChangeSummary) == "" {
+		return nil, ErrInvalidStandardRevision
+	}
+	if _, err := s.repo.CreateDraft(id, tenantID, userID, req.Version, strings.TrimSpace(req.ChangeSummary)); err != nil {
+		return nil, mapRevisionError(err)
+	}
+	return s.repo.GetAggregate(id, tenantID)
+}
+func (s *DocumentService) UpdateRevision(id, revisionID, tenantID, userID int64, req *models.UpdateDocumentRevisionRequest) (*models.DocumentAggregate, error) {
+	revision := &models.DocumentRevision{ID: revisionID, DocumentID: id, Name: strings.TrimSpace(req.Name), VersionLabel: strings.TrimSpace(req.VersionLabel), PublishDate: req.PublishDate, Description: req.Description, ChangeSummary: strings.TrimSpace(req.ChangeSummary), EffectiveFrom: req.EffectiveFrom, EffectiveTo: req.EffectiveTo, UpdatedBy: &userID}
+	if err := validateDocumentRevision(revision, false); err != nil {
+		return nil, err
+	}
+	if err := s.repo.UpdateDraft(id, revisionID, tenantID, userID, req.Version, revision); err != nil {
+		return nil, mapRevisionError(err)
+	}
+	return s.repo.GetAggregate(id, tenantID)
+}
+func (s *DocumentService) SubmitRevision(id, revisionID, tenantID, userID, version int64) (*models.DocumentAggregate, error) {
+	revision, err := s.repo.GetRevision(id, revisionID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateDocumentRevision(revision, true); err != nil {
+		return nil, err
+	}
+	if err := s.repo.TransitionRevision(id, revisionID, tenantID, userID, version, models.RevisionStatusDraft, models.RevisionStatusInReview); err != nil {
+		return nil, mapRevisionError(err)
+	}
+	return s.repo.GetAggregate(id, tenantID)
+}
+func (s *DocumentService) ReturnRevision(id, revisionID, tenantID, userID, version int64) (*models.DocumentAggregate, error) {
+	if err := s.repo.TransitionRevision(id, revisionID, tenantID, userID, version, models.RevisionStatusInReview, models.RevisionStatusDraft); err != nil {
+		return nil, mapRevisionError(err)
+	}
+	return s.repo.GetAggregate(id, tenantID)
+}
+func (s *DocumentService) PublishRevision(id, revisionID, tenantID, userID, version int64) (*models.DocumentAggregate, error) {
+	revision, err := s.repo.GetRevision(id, revisionID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if revision.Status != models.RevisionStatusInReview {
+		return nil, ErrInvalidRevisionTransition
+	}
+	if err := validateDocumentRevision(revision, true); err != nil {
+		return nil, err
+	}
+	if err := s.repo.PublishRevision(id, revisionID, tenantID, userID, version); err != nil {
+		return nil, mapRevisionError(err)
+	}
+	return s.repo.GetAggregate(id, tenantID)
+}
+func (s *DocumentService) WithdrawRevision(id, revisionID, tenantID, userID, version int64) (*models.DocumentAggregate, error) {
+	if err := s.repo.WithdrawPublished(id, revisionID, tenantID, userID, version); err != nil {
+		return nil, mapRevisionError(err)
+	}
+	return s.repo.GetAggregate(id, tenantID)
+}
+
+func validDocumentType(value string) bool {
+	switch value {
+	case "national", "industry", "internal", "reference":
+		return true
+	default:
+		return false
+	}
+}
+func validateDocumentRevision(revision *models.DocumentRevision, requireFile bool) error {
+	if revision == nil || strings.TrimSpace(revision.Name) == "" || strings.TrimSpace(revision.ChangeSummary) == "" {
+		return ErrInvalidStandardRevision
+	}
+	if revision.EffectiveFrom != nil && revision.EffectiveTo != nil && !revision.EffectiveFrom.Before(*revision.EffectiveTo) {
+		return ErrInvalidStandardRevision
+	}
+	if requireFile && (revision.FileKey == "" || revision.FileName == "" || revision.ContentSHA256 == "") {
+		return ErrDocumentFileRequired
+	}
+	if requireFile && revision.EffectiveFrom == nil {
+		return ErrInvalidStandardRevision
+	}
+	return nil
+}
+
+func (s *DocumentService) UploadFile(documentID, revisionID, tenantID, userID, version int64, fileName string, content io.Reader, size int64, contentType string) (*models.DocumentAggregate, error) {
 	if s.objectStore == nil {
 		return nil, ErrDocumentStorageUnavailable
 	}
 	if size < 0 || size > s.maxFileSize {
 		return nil, ErrDocumentFileTooLarge
 	}
-	doc, err := s.repo.GetByID(docID, tenantID)
-	if err != nil {
+	if _, err := s.repo.GetRevision(documentID, revisionID, tenantID); err != nil {
 		return nil, commonapi.ErrNotFound
 	}
-	fileName, err = sanitizeDocumentFileName(fileName)
+	fileName, err := sanitizeDocumentFileName(fileName)
 	if err != nil {
 		return nil, err
 	}
 	extension := strings.ToLower(filepath.Ext(fileName))
-	fileKey := fmt.Sprintf("tenant_%d/documents/%d/%s%s", tenantID, docID, uuid.NewString(), extension)
+	fileKey := fmt.Sprintf("tenant_%d/documents/%d/revisions/%d/%s%s", tenantID, documentID, revisionID, uuid.NewString(), extension)
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
-
+	hasher := sha256.New()
+	reader := io.TeeReader(content, hasher)
 	ctx, cancel := context.WithTimeout(context.Background(), s.timeout)
-	_, err = s.objectStore.PutObject(ctx, minioBucket, fileKey, content, size,
-		minio.PutObjectOptions{ContentType: contentType})
+	_, err = s.objectStore.PutObject(ctx, minioBucket, fileKey, reader, size, minio.PutObjectOptions{ContentType: contentType})
 	cancel()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrDocumentFileUpload, err)
 	}
-
-	cleanup, err := s.repo.ReplaceFile(doc.ID, tenantID, version, fileKey, fileName, size)
+	contentHash := hex.EncodeToString(hasher.Sum(nil))
+	cleanup, err := s.repo.ReplaceDraftFile(documentID, revisionID, tenantID, userID, version, fileKey, fileName, size, contentType, contentHash)
 	if err != nil {
 		if cleanupErr := s.removeObject(fileKey); cleanupErr != nil {
 			if _, queueErr := s.repo.EnqueueFileCleanup(fileKey); queueErr != nil {
@@ -207,33 +328,312 @@ func (s *DocumentService) UploadFile(docID, tenantID, version int64, fileName st
 	if cleanup != nil {
 		s.tryFileCleanup(*cleanup)
 	}
-	return s.repo.GetByID(docID, tenantID)
+	return s.repo.GetAggregate(documentID, tenantID)
 }
 
-// DownloadFile 从 MinIO 获取文件内容，返回 ReadCloser 和内容类型
-func (s *DocumentService) DownloadFile(docID, tenantID int64) (io.ReadCloser, string, int64, error) {
+func (s *DocumentService) DownloadFile(documentID, revisionID, tenantID int64) (io.ReadCloser, string, string, int64, error) {
 	if s.objectStore == nil {
-		return nil, "", 0, ErrDocumentStorageUnavailable
+		return nil, "", "", 0, ErrDocumentStorageUnavailable
 	}
-	doc, err := s.repo.GetByID(docID, tenantID)
+	revision, err := s.repo.GetRevision(documentID, revisionID, tenantID)
 	if err != nil {
-		return nil, "", 0, commonapi.ErrNotFound
+		return nil, "", "", 0, commonapi.ErrNotFound
 	}
-	if doc.FileKey == "" {
-		return nil, "", 0, commonapi.ErrNotFound
+	if revision.FileKey == "" {
+		return nil, "", "", 0, commonapi.ErrNotFound
 	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), s.timeout)
-	if _, err := s.objectStore.StatObject(ctx, minioBucket, doc.FileKey, minio.StatObjectOptions{}); err != nil {
+	if _, err := s.objectStore.StatObject(ctx, minioBucket, revision.FileKey, minio.StatObjectOptions{}); err != nil {
 		cancel()
-		return nil, "", 0, fmt.Errorf("%w: %v", ErrDocumentFileDownload, err)
+		return nil, "", "", 0, fmt.Errorf("%w: %v", ErrDocumentFileDownload, err)
 	}
-	obj, err := s.objectStore.GetObject(ctx, minioBucket, doc.FileKey, minio.GetObjectOptions{})
+	obj, err := s.objectStore.GetObject(ctx, minioBucket, revision.FileKey, minio.GetObjectOptions{})
 	if err != nil {
 		cancel()
-		return nil, "", 0, fmt.Errorf("%w: %v", ErrDocumentFileDownload, err)
+		return nil, "", "", 0, fmt.Errorf("%w: %v", ErrDocumentFileDownload, err)
 	}
-	return &documentContextReadCloser{ReadCloser: obj, cancel: cancel}, doc.FileName, doc.FileSize, nil
+	return &documentContextReadCloser{ReadCloser: obj, cancel: cancel}, revision.FileName, revision.MediaType, revision.FileSize, nil
+}
+
+type documentExtractionSection struct {
+	SectionPath string `json:"section_path"`
+	StartLine   int    `json:"start_line"`
+	EndLine     int    `json:"end_line"`
+	Text        string `json:"text"`
+}
+type copilotDocumentExtractRequest struct {
+	DocumentName string                      `json:"document_name"`
+	VersionLabel string                      `json:"version_label"`
+	Sections     []documentExtractionSection `json:"sections"`
+}
+type copilotEvidence struct {
+	SectionPath string `json:"section_path"`
+	StartLine   int    `json:"start_line"`
+	EndLine     int    `json:"end_line"`
+}
+type copilotCodeItem struct {
+	Code       string `json:"code"`
+	Name       string `json:"name"`
+	Definition string `json:"definition"`
+}
+type copilotCandidatePayload struct {
+	DataType           *string           `json:"data_type"`
+	ValueDomainKind    *string           `json:"value_domain_kind"`
+	Unit               *string           `json:"unit"`
+	CalculationFormula *string           `json:"calculation_formula"`
+	StatisticalScope   *string           `json:"statistical_scope"`
+	Aggregation        *string           `json:"aggregation"`
+	Dimensions         []string          `json:"dimensions"`
+	Items              []copilotCodeItem `json:"items"`
+}
+type copilotCandidate struct {
+	CandidateType string                  `json:"candidate_type"`
+	Code          string                  `json:"code"`
+	Name          string                  `json:"name"`
+	Definition    string                  `json:"definition"`
+	Payload       copilotCandidatePayload `json:"payload"`
+	Evidences     []copilotEvidence       `json:"evidences"`
+}
+type copilotDocumentExtractResponse struct {
+	Candidates []copilotCandidate `json:"candidates"`
+}
+
+func (s *DocumentService) ExtractCandidates(ctx context.Context, documentID, revisionID, tenantID, userID, version int64) (*models.DocumentExtraction, error) {
+	revision, err := s.repo.GetRevision(documentID, revisionID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if !isMarkdownRevision(revision) {
+		return nil, ErrDocumentExtractionUnsupported
+	}
+	reader, _, _, size, err := s.DownloadFile(documentID, revisionID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+	if size > maxDocumentExtractionBytes {
+		return nil, ErrDocumentFileTooLarge
+	}
+	content, err := io.ReadAll(io.LimitReader(reader, maxDocumentExtractionBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(content) > maxDocumentExtractionBytes {
+		return nil, ErrDocumentFileTooLarge
+	}
+	sections := splitMarkdownSections(string(content))
+	if len(sections) == 0 {
+		return nil, ErrDocumentExtractionInvalid
+	}
+	response, err := s.callCopilotExtract(ctx, tenantID, copilotDocumentExtractRequest{DocumentName: revision.Name, VersionLabel: revision.VersionLabel, Sections: sections})
+	if err != nil {
+		return nil, err
+	}
+	extraction, err := buildDocumentExtraction(tenantID, revisionID, userID, string(content), sections, response)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repo.CreateExtraction(documentID, tenantID, version, extraction); err != nil {
+		return nil, err
+	}
+	return extraction, nil
+}
+
+func (s *DocumentService) callCopilotExtract(ctx context.Context, tenantID int64, request copilotDocumentExtractRequest) (*copilotDocumentExtractResponse, error) {
+	if s.serviceTokenSource == nil {
+		return nil, ErrDocumentCopilotUnavailable
+	}
+	body, err := json.Marshal(request)
+	if err != nil {
+		return nil, err
+	}
+	for attempt := 0; attempt < 2; attempt++ {
+		token, err := s.serviceTokenSource.Token(ctx, uint(tenantID))
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrDocumentCopilotUnavailable, err)
+		}
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, s.copilotURL+copilotDocumentExtractPath, bytes.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		httpReq.Header.Set("Content-Type", "application/json")
+		httpReq.Header.Set("Authorization", "Bearer "+token)
+		resp, err := s.httpClient.Do(httpReq)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrDocumentCopilotUnavailable, err)
+		}
+		if resp.StatusCode == http.StatusUnauthorized && attempt == 0 {
+			_ = resp.Body.Close()
+			if invalidator, ok := s.serviceTokenSource.(commonclient.ServiceTokenInvalidator); ok {
+				invalidator.InvalidateToken(uint(tenantID), token)
+				continue
+			}
+		}
+		if resp.StatusCode != http.StatusOK {
+			responseBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+			_ = resp.Body.Close()
+			return nil, fmt.Errorf("%w: status=%d body=%s", ErrDocumentCopilotUnavailable, resp.StatusCode, string(responseBody))
+		}
+		var result copilotDocumentExtractResponse
+		decoder := json.NewDecoder(resp.Body)
+		decoder.DisallowUnknownFields()
+		err = decoder.Decode(&result)
+		if err == nil {
+			var trailing interface{}
+			if trailingErr := decoder.Decode(&trailing); trailingErr != io.EOF {
+				err = errors.New("copilot response contains trailing JSON")
+			}
+		}
+		_ = resp.Body.Close()
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrDocumentExtractionInvalid, err)
+		}
+		return &result, nil
+	}
+	return nil, ErrDocumentCopilotUnavailable
+}
+
+func splitMarkdownSections(content string) []documentExtractionSection {
+	lines := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
+	type pending struct {
+		path  string
+		start int
+		body  []string
+	}
+	var sections []documentExtractionSection
+	current := pending{path: "文档正文", start: 1}
+	headings := make([]string, 0, 6)
+	flush := func(end int) {
+		if strings.TrimSpace(strings.Join(current.body, "\n")) != "" {
+			numbered := make([]string, len(current.body))
+			for index, line := range current.body {
+				numbered[index] = fmt.Sprintf("L%d: %s", current.start+index, line)
+			}
+			sections = append(sections, documentExtractionSection{SectionPath: current.path, StartLine: current.start, EndLine: end, Text: strings.Join(numbered, "\n")})
+		}
+	}
+	headingPattern := regexp.MustCompile(`^(#{1,6})\s+(.+?)\s*$`)
+	for index, line := range lines {
+		match := headingPattern.FindStringSubmatch(line)
+		if match == nil {
+			current.body = append(current.body, line)
+			continue
+		}
+		flush(index)
+		level := len(match[1])
+		if len(headings) >= level {
+			headings = headings[:level-1]
+		}
+		for len(headings) < level-1 {
+			headings = append(headings, "")
+		}
+		headings = append(headings, strings.TrimSpace(match[2]))
+		pathParts := make([]string, 0, len(headings))
+		for _, heading := range headings {
+			if heading != "" {
+				pathParts = append(pathParts, heading)
+			}
+		}
+		current = pending{path: strings.Join(pathParts, " / "), start: index + 1, body: []string{line}}
+	}
+	flush(len(lines))
+	return sections
+}
+
+func buildDocumentExtraction(tenantID, revisionID, userID int64, content string, sections []documentExtractionSection, response *copilotDocumentExtractResponse) (*models.DocumentExtraction, error) {
+	if response == nil || len(response.Candidates) > 200 {
+		return nil, ErrDocumentExtractionInvalid
+	}
+	lines := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
+	sectionIntervals := make(map[string][][2]int, len(sections))
+	for _, section := range sections {
+		sectionIntervals[section.SectionPath] = append(sectionIntervals[section.SectionPath], [2]int{section.StartLine, section.EndLine})
+	}
+	extraction := &models.DocumentExtraction{TenantID: tenantID, DocumentRevisionID: revisionID, Status: "completed", RequestedBy: userID}
+	seen := map[string]struct{}{}
+	for _, raw := range response.Candidates {
+		candidateType := strings.TrimSpace(raw.CandidateType)
+		if candidateType != "glossary" && candidateType != "element" && candidateType != "code_set" && candidateType != "metric" {
+			continue
+		}
+		code, name, definition := strings.TrimSpace(raw.Code), strings.TrimSpace(raw.Name), strings.TrimSpace(raw.Definition)
+		if !documentCandidateCodePattern.MatchString(code) || len(code) > 100 || name == "" || utf8.RuneCountInString(name) > 200 || definition == "" || utf8.RuneCountInString(definition) > 4000 {
+			continue
+		}
+		key := candidateType + "\x00" + code
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		candidate := models.DocumentExtractionCandidate{CandidateType: candidateType, Code: code, Name: name, Definition: definition, Payload: normalizeCopilotCandidatePayload(raw.Payload), Status: "pending", Version: 1}
+		for _, source := range raw.Evidences[:min(len(raw.Evidences), 20)] {
+			if source.StartLine < 1 || source.EndLine < source.StartLine || source.EndLine > len(lines) {
+				continue
+			}
+			sectionPath := strings.TrimSpace(source.SectionPath)
+			insideSection := false
+			for _, interval := range sectionIntervals[sectionPath] {
+				if interval[0] <= source.StartLine && source.EndLine <= interval[1] {
+					insideSection = true
+					break
+				}
+			}
+			if !insideSection {
+				continue
+			}
+			excerpt := strings.TrimSpace(strings.Join(lines[source.StartLine-1:source.EndLine], "\n"))
+			if excerpt == "" {
+				continue
+			}
+			sum := sha256.Sum256([]byte(excerpt))
+			candidate.Evidences = append(candidate.Evidences, models.DocumentExtractionEvidence{DocumentRevisionID: revisionID, SectionPath: sectionPath, StartLine: source.StartLine, EndLine: source.EndLine, Excerpt: excerpt, ExcerptHash: hex.EncodeToString(sum[:])})
+		}
+		if len(candidate.Evidences) > 0 {
+			seen[key] = struct{}{}
+			extraction.Candidates = append(extraction.Candidates, candidate)
+		}
+	}
+	sort.SliceStable(extraction.Candidates, func(i, j int) bool {
+		if extraction.Candidates[i].CandidateType == extraction.Candidates[j].CandidateType {
+			return extraction.Candidates[i].Code < extraction.Candidates[j].Code
+		}
+		return extraction.Candidates[i].CandidateType < extraction.Candidates[j].CandidateType
+	})
+	if len(extraction.Candidates) == 0 {
+		return nil, ErrDocumentExtractionInvalid
+	}
+	return extraction, nil
+}
+
+func normalizeCopilotCandidatePayload(raw copilotCandidatePayload) models.JSONB {
+	payload := models.JSONB{}
+	for key, value := range map[string]*string{
+		"data_type": raw.DataType, "value_domain_kind": raw.ValueDomainKind, "unit": raw.Unit,
+		"calculation_formula": raw.CalculationFormula, "statistical_scope": raw.StatisticalScope, "aggregation": raw.Aggregation,
+	} {
+		if value != nil && strings.TrimSpace(*value) != "" {
+			payload[key] = strings.TrimSpace(*value)
+		}
+	}
+	if len(raw.Dimensions) > 0 {
+		payload["dimensions"] = raw.Dimensions
+	}
+	if len(raw.Items) > 0 {
+		payload["items"] = raw.Items
+	}
+	return payload
+}
+
+func isMarkdownRevision(revision *models.DocumentRevision) bool {
+	return revision != nil && (strings.EqualFold(revision.MediaType, "text/markdown") || strings.EqualFold(filepath.Ext(revision.FileName), ".md"))
+}
+func (s *DocumentService) ListExtractions(documentID, tenantID int64) ([]models.DocumentExtraction, error) {
+	return s.repo.ListExtractions(documentID, tenantID)
+}
+func (s *DocumentService) UpdateCandidateStatus(candidateID, tenantID, userID int64, req *models.UpdateDocumentExtractionCandidateRequest) (*models.DocumentExtractionCandidate, error) {
+	if req.Status != "retained" && req.Status != "rejected" {
+		return nil, ErrDocumentExtractionInvalid
+	}
+	return s.repo.UpdateCandidateStatus(candidateID, tenantID, userID, req.Version, req.Status)
 }
 
 func (s *DocumentService) removeObject(key string) error {
@@ -241,7 +641,6 @@ func (s *DocumentService) removeObject(key string) error {
 	defer cancel()
 	return s.objectStore.RemoveObject(ctx, minioBucket, key, minio.RemoveObjectOptions{})
 }
-
 func (s *DocumentService) runFileCleanupWorker() {
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
@@ -254,21 +653,19 @@ func (s *DocumentService) runFileCleanupWorker() {
 		}
 	}
 }
-
 func (s *DocumentService) processDueFileCleanups() {
 	if s.objectStore == nil {
 		return
 	}
-	cleanups, err := s.repo.ListDueFileCleanups(time.Now(), 100)
+	rows, err := s.repo.ListDueFileCleanups(time.Now(), 100)
 	if err != nil {
 		log.Printf("standard document file cleanup list failed: %v", err)
 		return
 	}
-	for _, cleanup := range cleanups {
-		s.tryFileCleanup(cleanup)
+	for _, row := range rows {
+		s.tryFileCleanup(row)
 	}
 }
-
 func (s *DocumentService) tryFileCleanup(cleanup models.DocumentFileCleanup) {
 	if s.objectStore == nil || cleanup.ObjectKey == "" {
 		return
@@ -285,14 +682,12 @@ func (s *DocumentService) tryFileCleanup(cleanup models.DocumentFileCleanup) {
 		log.Printf("standard document file cleanup completion failed, key=%q: %v", cleanup.ObjectKey, err)
 	}
 }
-
 func min(left, right int) int {
 	if left < right {
 		return left
 	}
 	return right
 }
-
 func sanitizeDocumentFileName(fileName string) (string, error) {
 	fileName = strings.TrimSpace(strings.ReplaceAll(fileName, "\\", "/"))
 	fileName = filepath.Base(fileName)
@@ -318,22 +713,13 @@ func (s *DocumentService) GetMappings(docID, tenantID int64) (map[string]interfa
 	if err != nil {
 		return nil, err
 	}
-	return map[string]interface{}{
-		"elements":   elements,
-		"glossaries": glossaries,
-		"metrics":    metrics,
-	}, nil
+	return map[string]interface{}{"elements": elements, "glossaries": glossaries, "metrics": metrics}, nil
 }
-
 func (s *DocumentService) SetMappings(docID, tenantID int64, req *models.SetDocumentMappingsRequest) error {
 	if _, err := s.repo.GetByID(docID, tenantID); err != nil {
 		return err
 	}
-	for _, validate := range []func() error{
-		func() error { return s.refs.RequireElements(tenantID, req.ElementIDs) },
-		func() error { return s.refs.RequireGlossaries(tenantID, req.GlossaryIDs) },
-		func() error { return s.refs.RequireMetrics(tenantID, req.MetricIDs) },
-	} {
+	for _, validate := range []func() error{func() error { return s.refs.RequireElements(tenantID, req.ElementIDs) }, func() error { return s.refs.RequireGlossaries(tenantID, req.GlossaryIDs) }, func() error { return s.refs.RequireMetrics(tenantID, req.MetricIDs) }} {
 		if err := validate(); err != nil {
 			return err
 		}
@@ -345,81 +731,67 @@ func (s *DocumentService) SetMappings(docID, tenantID int64, req *models.SetDocu
 	return s.repo.SetMappings(docID, tenantID, req.Version, req.ElementIDs, req.GlossaryIDs, req.MetricIDs, locations)
 }
 
-// ===== 反向查询：按标准项列出关联文档 =====
-
-func (s *DocumentService) ListByElement(tenantID, elementID int64) ([]models.Document, error) {
+func (s *DocumentService) ListByElement(tenantID, elementID int64) ([]models.DocumentAggregate, error) {
 	if err := s.refs.RequireElement(tenantID, elementID); err != nil {
 		return nil, err
 	}
 	return s.repo.ListByElementID(tenantID, elementID)
 }
-
-func (s *DocumentService) ListByGlossary(tenantID, glossaryID int64) ([]models.Document, error) {
+func (s *DocumentService) ListByGlossary(tenantID, glossaryID int64) ([]models.DocumentAggregate, error) {
 	if err := s.refs.RequireGlossary(tenantID, glossaryID); err != nil {
 		return nil, err
 	}
 	return s.repo.ListByGlossaryID(tenantID, glossaryID)
 }
-
-func (s *DocumentService) ListByMetric(tenantID, metricID int64) ([]models.Document, error) {
+func (s *DocumentService) ListByMetric(tenantID, metricID int64) ([]models.DocumentAggregate, error) {
 	if err := s.refs.RequireMetric(tenantID, &metricID); err != nil {
 		return nil, err
 	}
 	return s.repo.ListByMetricID(tenantID, metricID)
 }
 
-// ===== 创建文档并关联到标准项（原子操作） =====
-
+func (s *DocumentService) createAndLink(req *models.CreateLinkedDocumentRequest, tenantID, userID int64, mapping interface{}, parent interface{}, parentID int64) (*models.LinkedDocumentMutationResponse, error) {
+	document, revision, err := s.newDocument(&req.CreateDocumentRequest, tenantID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repo.CreateWithMappingVersioned(document, revision, mapping, parent, parentID, tenantID, req.Version); err != nil {
+		return nil, err
+	}
+	aggregate, err := s.repo.GetAggregate(document.ID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	return &models.LinkedDocumentMutationResponse{Document: aggregate, Version: req.Version + 1}, nil
+}
 func (s *DocumentService) CreateAndLinkElement(req *models.CreateLinkedDocumentRequest, tenantID, userID, elementID int64) (*models.LinkedDocumentMutationResponse, error) {
 	if err := s.refs.RequireElement(tenantID, elementID); err != nil {
 		return nil, err
 	}
-	doc := newDocument(&req.CreateDocumentRequest, tenantID, userID)
-	mapping := &models.DocumentElementMapping{DocumentID: doc.ID, ElementID: elementID}
-	if err := s.repo.CreateWithMappingVersioned(doc, mapping, &models.Element{}, elementID, tenantID, req.Version); err != nil {
-		return nil, err
-	}
-	return &models.LinkedDocumentMutationResponse{Document: doc, Version: req.Version + 1}, nil
+	return s.createAndLink(req, tenantID, userID, &models.DocumentElementMapping{ElementID: elementID}, &models.Element{}, elementID)
 }
-
 func (s *DocumentService) CreateAndLinkGlossary(req *models.CreateLinkedDocumentRequest, tenantID, userID, glossaryID int64) (*models.LinkedDocumentMutationResponse, error) {
 	if err := s.refs.RequireGlossary(tenantID, glossaryID); err != nil {
 		return nil, err
 	}
-	doc := newDocument(&req.CreateDocumentRequest, tenantID, userID)
-	mapping := &models.DocumentGlossaryMapping{DocumentID: doc.ID, GlossaryID: glossaryID}
-	if err := s.repo.CreateWithMappingVersioned(doc, mapping, &models.Glossary{}, glossaryID, tenantID, req.Version); err != nil {
-		return nil, err
-	}
-	return &models.LinkedDocumentMutationResponse{Document: doc, Version: req.Version + 1}, nil
+	return s.createAndLink(req, tenantID, userID, &models.DocumentGlossaryMapping{GlossaryID: glossaryID}, &models.Glossary{}, glossaryID)
 }
-
 func (s *DocumentService) CreateAndLinkMetric(req *models.CreateLinkedDocumentRequest, tenantID, userID, metricID int64) (*models.LinkedDocumentMutationResponse, error) {
 	if err := s.refs.RequireMetric(tenantID, &metricID); err != nil {
 		return nil, err
 	}
-	doc := newDocument(&req.CreateDocumentRequest, tenantID, userID)
-	mapping := &models.DocumentMetricMapping{DocumentID: doc.ID, MetricID: metricID}
-	if err := s.repo.CreateWithMappingVersioned(doc, mapping, &models.MetricDefinition{}, metricID, tenantID, req.Version); err != nil {
-		return nil, err
-	}
-	return &models.LinkedDocumentMutationResponse{Document: doc, Version: req.Version + 1}, nil
+	return s.createAndLink(req, tenantID, userID, &models.DocumentMetricMapping{MetricID: metricID}, &models.MetricDefinition{}, metricID)
 }
 
-// ===== 关联已有文档到标准项 =====
-
 func (s *DocumentService) LinkDocToElement(docID, tenantID, elementID, version int64) error {
-	// 验证文档存在且属于该租户
 	if _, err := s.repo.GetByID(docID, tenantID); err != nil {
 		return commonapi.ErrNotFound
 	}
 	if err := s.refs.RequireElement(tenantID, elementID); err != nil {
 		return err
 	}
-	mapping := &models.DocumentElementMapping{DocumentID: docID, ElementID: elementID}
-	return s.repo.MutateMappingVersioned(&models.Element{}, elementID, tenantID, version, mapping, true, "document_id = ? AND element_id = ?", docID, elementID)
+	return s.repo.MutateMappingVersioned(&models.Element{}, elementID, tenantID, version, &models.DocumentElementMapping{DocumentID: docID, ElementID: elementID}, true, "document_id = ? AND element_id = ?", docID, elementID)
 }
-
 func (s *DocumentService) LinkDocToGlossary(docID, tenantID, glossaryID, version int64) error {
 	if _, err := s.repo.GetByID(docID, tenantID); err != nil {
 		return commonapi.ErrNotFound
@@ -427,10 +799,8 @@ func (s *DocumentService) LinkDocToGlossary(docID, tenantID, glossaryID, version
 	if err := s.refs.RequireGlossary(tenantID, glossaryID); err != nil {
 		return err
 	}
-	mapping := &models.DocumentGlossaryMapping{DocumentID: docID, GlossaryID: glossaryID}
-	return s.repo.MutateMappingVersioned(&models.Glossary{}, glossaryID, tenantID, version, mapping, true, "document_id = ? AND glossary_id = ?", docID, glossaryID)
+	return s.repo.MutateMappingVersioned(&models.Glossary{}, glossaryID, tenantID, version, &models.DocumentGlossaryMapping{DocumentID: docID, GlossaryID: glossaryID}, true, "document_id = ? AND glossary_id = ?", docID, glossaryID)
 }
-
 func (s *DocumentService) LinkDocToMetric(docID, tenantID, metricID, version int64) error {
 	if _, err := s.repo.GetByID(docID, tenantID); err != nil {
 		return commonapi.ErrNotFound
@@ -438,12 +808,8 @@ func (s *DocumentService) LinkDocToMetric(docID, tenantID, metricID, version int
 	if err := s.refs.RequireMetric(tenantID, &metricID); err != nil {
 		return err
 	}
-	mapping := &models.DocumentMetricMapping{DocumentID: docID, MetricID: metricID}
-	return s.repo.MutateMappingVersioned(&models.MetricDefinition{}, metricID, tenantID, version, mapping, true, "document_id = ? AND metric_id = ?", docID, metricID)
+	return s.repo.MutateMappingVersioned(&models.MetricDefinition{}, metricID, tenantID, version, &models.DocumentMetricMapping{DocumentID: docID, MetricID: metricID}, true, "document_id = ? AND metric_id = ?", docID, metricID)
 }
-
-// ===== 解除文档与标准项的关联 =====
-
 func (s *DocumentService) UnlinkDocFromElement(docID, tenantID, elementID, version int64) error {
 	if _, err := s.repo.GetByID(docID, tenantID); err != nil {
 		return commonapi.ErrNotFound
@@ -453,7 +819,6 @@ func (s *DocumentService) UnlinkDocFromElement(docID, tenantID, elementID, versi
 	}
 	return s.repo.MutateMappingVersioned(&models.Element{}, elementID, tenantID, version, &models.DocumentElementMapping{}, false, "document_id = ? AND element_id = ?", docID, elementID)
 }
-
 func (s *DocumentService) UnlinkDocFromGlossary(docID, tenantID, glossaryID, version int64) error {
 	if _, err := s.repo.GetByID(docID, tenantID); err != nil {
 		return commonapi.ErrNotFound
@@ -463,7 +828,6 @@ func (s *DocumentService) UnlinkDocFromGlossary(docID, tenantID, glossaryID, ver
 	}
 	return s.repo.MutateMappingVersioned(&models.Glossary{}, glossaryID, tenantID, version, &models.DocumentGlossaryMapping{}, false, "document_id = ? AND glossary_id = ?", docID, glossaryID)
 }
-
 func (s *DocumentService) UnlinkDocFromMetric(docID, tenantID, metricID, version int64) error {
 	if _, err := s.repo.GetByID(docID, tenantID); err != nil {
 		return commonapi.ErrNotFound

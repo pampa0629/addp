@@ -100,7 +100,11 @@ func GenerateExecutableSampleQuery(
 	}
 	validationQuery := query
 	if options.ValidationLimit > 0 && strings.EqualFold(language, "sql") {
-		validationQuery = commonquery.ForEngine(engine.EngineType).PaginateQuerySQL(query, options.ValidationLimit, 0)
+		dialect, dialectErr := sqlDialectForEngine(engine.EngineType)
+		if dialectErr != nil {
+			return "", "", fmt.Errorf("%w: %v", ErrSampleQueryUnavailable, dialectErr)
+		}
+		validationQuery = commonquery.ForDialect(dialect).PaginateQuerySQL(query, options.ValidationLimit, 0)
 	}
 	result, err := ExecuteReadOnlyRuntimeQueryWithPath(ctx, engine, language, validationQuery, nil, 0, options.Path)
 	if err != nil {
@@ -116,6 +120,10 @@ func GenerateExecutableSampleQuery(
 }
 
 func generateCatalogSampleQuery(ctx context.Context, enginePlugin plugin.EnginePlugin, cp plugin.EngineCatalogProvider, connInfo plugin.ConnectionInfo, engineID uint, engineType string, queryLimit int) (string, error) {
+	sqlProvider, ok := enginePlugin.(plugin.SQLQueryRuntimeProvider)
+	if !ok {
+		return "", fmt.Errorf("%w: 引擎未声明 SQL 方言", ErrSampleQueryUnavailable)
+	}
 	modelProvider, ok := enginePlugin.(plugin.EngineCatalogModelProvider)
 	if !ok {
 		return "", fmt.Errorf("%w: 引擎未声明 Catalog 模型", ErrSampleQueryUnavailable)
@@ -148,11 +156,11 @@ func generateCatalogSampleQuery(ctx context.Context, enginePlugin plugin.EngineP
 			}
 			foundTable = true
 			if catalogEntryRowCount(item) > 0 {
-				return tableSampleSQL(engineType, namespace.Name, item.Name, queryLimit), nil
+				return tableSampleSQL(sqlProvider.SQLDialect(), namespace.Name, item.Name, queryLimit), nil
 			}
 			count, countErr := plugin.CountEngineCatalogItemRows(ctx, resource, item.Path)
 			if countErr == nil && count > 0 {
-				return tableSampleSQL(engineType, namespace.Name, item.Name, queryLimit), nil
+				return tableSampleSQL(sqlProvider.SQLDialect(), namespace.Name, item.Name, queryLimit), nil
 			}
 		}
 	}
@@ -163,8 +171,8 @@ func generateCatalogSampleQuery(ctx context.Context, enginePlugin plugin.EngineP
 	return "", fmt.Errorf("%w: Catalog 中没有表", ErrSampleQueryUnavailable)
 }
 
-func tableSampleSQL(engineType, namespace, table string, limit int) string {
-	return commonquery.SelectAllSampleSQL(engineType, namespace, table, limit)
+func tableSampleSQL(dialect, namespace, table string, limit int) string {
+	return commonquery.SelectAllSampleSQL(dialect, namespace, table, limit)
 }
 
 func catalogEntryRowCount(entry plugin.EngineCatalogEntry) int64 {
@@ -231,32 +239,32 @@ func ExecuteGraphQuery(ctx context.Context, engine *models.Engine, query string)
 // database read-only transaction for the engine. Unsupported engines must be
 // rejected instead of falling back to an ordinary privileged connection.
 func SupportsReadOnlySQLExecution(engineType string) bool {
-	switch strings.ToLower(strings.TrimSpace(engineType)) {
-	case "postgresql", "oracle", "mysql", "doris", "spark":
-		return true
-	default:
+	registered, err := plugin.Get(strings.ToLower(strings.TrimSpace(engineType)))
+	if err != nil {
 		return false
 	}
+	provider, ok := registered.(plugin.ControlledReadOnlySQLProvider)
+	return ok && provider.SupportsControlledReadOnlySQL()
 }
 
-func readOnlyTxOptions(engineType string) *sql.TxOptions {
-	if strings.EqualFold(strings.TrimSpace(engineType), "oracle") {
+func readOnlyTxOptions(dialect string) *sql.TxOptions {
+	if strings.EqualFold(strings.TrimSpace(dialect), commonquery.DialectOracle) {
 		// The Oracle driver rejects ReadOnly=true in database/sql BeginTx.
 		return nil
 	}
 	return &sql.TxOptions{ReadOnly: true}
 }
 
-func requiresSQLReadOnlyStatement(engineType string) bool {
-	return strings.EqualFold(strings.TrimSpace(engineType), "oracle")
+func requiresSQLReadOnlyStatement(dialect string) bool {
+	return strings.EqualFold(strings.TrimSpace(dialect), commonquery.DialectOracle)
 }
 
-func beginReadOnlyTransaction(ctx context.Context, db *sql.DB, engineType string) (*sql.Tx, error) {
-	tx, err := db.BeginTx(ctx, readOnlyTxOptions(engineType))
+func beginReadOnlyTransaction(ctx context.Context, db *sql.DB, dialect string) (*sql.Tx, error) {
+	tx, err := db.BeginTx(ctx, readOnlyTxOptions(dialect))
 	if err != nil {
 		return nil, err
 	}
-	if requiresSQLReadOnlyStatement(engineType) {
+	if requiresSQLReadOnlyStatement(dialect) {
 		if _, err := tx.ExecContext(ctx, "SET TRANSACTION READ ONLY"); err != nil {
 			_ = tx.Rollback()
 			return nil, err
@@ -272,25 +280,18 @@ func ExecuteReadOnlyQuery(ctx context.Context, engine *models.Engine, query stri
 	if engine == nil || !SupportsReadOnlySQLExecution(engine.EngineType) {
 		return nil, fmt.Errorf("引擎不支持受控只读 SQL 执行")
 	}
-	if strings.EqualFold(engine.EngineType, "spark") {
-		if parameters != nil {
-			return nil, fmt.Errorf("Spark SQL 查询运行时不支持命名参数")
-		}
+	registered, err := plugin.Get(engine.EngineType)
+	if err != nil {
+		return nil, err
 	}
-	if strings.EqualFold(engine.EngineType, "spark") || strings.EqualFold(engine.EngineType, "doris") {
-		p, err := plugin.Get(engine.EngineType)
-		if err != nil {
-			return nil, err
-		}
-		sqlRuntime, ok := p.(plugin.SQLQueryRuntimeProvider)
-		if !ok {
-			return nil, fmt.Errorf("%s 引擎未提供 SQL 查询运行时", engine.EngineType)
-		}
+	sqlRuntime := registered.(plugin.ControlledReadOnlySQLProvider)
+	dialect := sqlRuntime.SQLDialect()
+	if !commonquery.ForDialect(dialect).IsOracle() {
 		return sqlRuntime.ExecuteSQL(ctx, plugin.ConnectionInfo(engine.ConnectionInfo), query, plugin.QueryOptions{
 			EngineID: engine.ID, EngineType: engine.EngineType, Limit: limit, ReadOnly: true, Parameters: parameters,
 		})
 	}
-	boundQuery, args, err := bindSQLExecutionParameters(engine.EngineType, query, parameters)
+	boundQuery, args, err := bindSQLExecutionParameters(dialect, query, parameters)
 	if err != nil {
 		return nil, err
 	}
@@ -303,7 +304,7 @@ func ExecuteReadOnlyQuery(ctx context.Context, engine *models.Engine, query stri
 	if err != nil {
 		return nil, fmt.Errorf("获取数据库连接失败：%w", err)
 	}
-	tx, err := beginReadOnlyTransaction(ctx, sqlDB, engine.EngineType)
+	tx, err := beginReadOnlyTransaction(ctx, sqlDB, dialect)
 	if err != nil {
 		return nil, fmt.Errorf("开启只读事务失败：%w", err)
 	}
@@ -313,14 +314,14 @@ func ExecuteReadOnlyQuery(ctx context.Context, engine *models.Engine, query stri
 			_ = tx.Rollback()
 		}
 	}()
-	if strings.EqualFold(strings.TrimSpace(engine.EngineType), "oracle") {
+	if commonquery.ForDialect(dialect).IsOracle() {
 		query, err = rewriteOracleSpatialSelect(ctx, tx, query)
 		if err != nil {
 			return nil, fmt.Errorf("准备 Oracle Spatial 查询失败：%w", err)
 		}
 	}
 	if limit > 0 {
-		query = commonquery.ForEngine(engine.EngineType).PaginateQuerySQL(query, limit, 0)
+		query = commonquery.ForDialect(dialect).PaginateQuerySQL(query, limit, 0)
 	}
 	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -481,7 +482,11 @@ func ExecuteReadOnlyGraphQueryWithPath(ctx context.Context, engine *models.Engin
 // ExecuteStatement executes one non-read SQL statement and returns affected
 // rows. The caller must classify and authorize the statement effect first.
 func ExecuteStatement(ctx context.Context, engine *models.Engine, query string, parameters map[string]interface{}) (int64, error) {
-	query, args, err := bindSQLExecutionParameters(engine.EngineType, query, parameters)
+	dialect, err := sqlDialectForEngine(engine.EngineType)
+	if err != nil {
+		return 0, err
+	}
+	query, args, err := bindSQLExecutionParameters(dialect, query, parameters)
 	if err != nil {
 		return 0, err
 	}
@@ -496,15 +501,27 @@ func ExecuteStatement(ctx context.Context, engine *models.Engine, query string, 
 	return result.RowsAffected, nil
 }
 
-func bindSQLExecutionParameters(engineType, query string, parameters map[string]interface{}) (string, []interface{}, error) {
+func bindSQLExecutionParameters(dialect, query string, parameters map[string]interface{}) (string, []interface{}, error) {
 	if parameters == nil {
 		return query, nil, nil
 	}
-	bound, args, err := commonquery.BindSQL(query, parameters, commonquery.SQLPlaceholderStyleForEngine(engineType))
+	bound, args, err := commonquery.BindSQL(query, parameters, commonquery.SQLPlaceholderStyleForDialect(dialect))
 	if err != nil {
 		return "", nil, fmt.Errorf("绑定 SQL 查询参数失败: %w", err)
 	}
 	return bound, args, nil
+}
+
+func sqlDialectForEngine(engineType string) (string, error) {
+	registered, err := plugin.Get(strings.ToLower(strings.TrimSpace(engineType)))
+	if err != nil {
+		return "", err
+	}
+	provider, ok := registered.(plugin.SQLQueryRuntimeProvider)
+	if !ok || strings.TrimSpace(provider.SQLDialect()) == "" {
+		return "", fmt.Errorf("引擎 %s 未声明 SQL 方言", engineType)
+	}
+	return provider.SQLDialect(), nil
 }
 
 func scanSQLRows(rows *sql.Rows) (*plugin.QueryResult, error) {

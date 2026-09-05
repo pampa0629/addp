@@ -348,6 +348,19 @@ MYSQL_CDC_PASSWORD=change-in-production
 
 `MYSQL_CDC_USER` 只允许字母、数字和下划线，`MYSQL_CDC_PASSWORD` 不得为空且不得与 root 密码复用。`business/scripts/start.sh -mysql` 在 MySQL ready 后每次执行专用账号初始化，因此已有 volume 也会更新密码并把权限收敛到 Debezium 所需集合；不要把 root 凭据登记为 System MySQL Engine。Business Compose 显式固定非零 server id、binlog、ROW format 和 FULL row image。
 
+Business OceanBase CE 使用独立配置，固定可重现的 `oceanbase/oceanbase-ce:4.4.2-lts` 镜像，不使用 `latest`：
+
+```bash
+OCEANBASE_IMAGE=oceanbase/oceanbase-ce:4.4.2-lts
+OCEANBASE_MODE=mini
+OCEANBASE_TENANT_NAME=test
+OCEANBASE_PASSWORD=change-in-production
+OCEANBASE_DATABASE=business
+OCEANBASE_PORT=2881
+```
+
+本地容器是单机测试形态，不表达生产集群拓扑。System 注册时使用 `engine_type=oceanbase`、容器网络地址 `business-oceanbase:2881`、账号 `root@test` 和配置的 database/password；不得改登记为 MySQL Engine。
+
 Business Kafka/Redpanda 是用户业务消息流，与 Infra Kafka 完全隔离。开发环境通过 `business/scripts/start.sh -redpanda` 启动独立 Redpanda 集群，再把只读账号作为 `engine_type=kafka` 的 System Engine 凭据；不得把 Infra Kafka 的 endpoint、principal 或内部 topic 注册为业务 Engine。
 
 ```bash
@@ -398,6 +411,9 @@ QUERY_RESULT_LIMIT=500
 DUCKDB_EXTENSION_DIRECTORY=.cache/duckdb/extensions
 # 容器 Runtime 访问登记为 loopback 的业务 Engine 时使用；根 Compose 固定为 host.docker.internal，本地二进制留空。
 DUCKDB_SOURCE_LOOPBACK_HOST=
+# PointCloud Workflow 容器访问登记为 loopback 的对象存储时，仅替换主机名并保留原端口。
+# 本地 Docker runtime 使用 host.docker.internal；空值表示不改写。
+POINTCLOUD_OBJECT_STORE_LOOPBACK_HOST=host.docker.internal
 
 # 内置模块各自独立的 Confidential OAuth Client Secret，长度 32-72 字节且不得复用。
 # System 启动时仅保存 BCrypt Hash；各模块只读取自己的 Secret。

@@ -13,8 +13,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 430 {
-		t.Fatalf("descriptor count = %d, want 430", len(descriptors))
+	if len(descriptors) != 436 {
+		t.Fatalf("descriptor count = %d, want 436", len(descriptors))
 	}
 	if descriptors[0].Key != "agent.configuration.read" || descriptors[len(descriptors)-1].Key != "workbench.resource_grant.revoke" {
 		t.Fatalf("descriptor boundary keys = %q, %q", descriptors[0].Key, descriptors[len(descriptors)-1].Key)
@@ -111,6 +111,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	})
 	assertRepositoryRolePrincipalTypes(t, roles, "tenant.standard_runtime", []string{"service_principal"})
 	assertRepositoryRolePermissions(t, roles, "tenant.standard_runtime", []string{
+		"copilot.standard_document.execute",
 		"iam.tenant_membership.read",
 		"model.standard_reference.update",
 	})
@@ -391,6 +392,10 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"security.protection_baseline.delete",
 		"security.protection_baseline.read",
 		"security.protection_baseline.update",
+		"security.protection_exemption.create",
+		"security.protection_exemption.delete",
+		"security.protection_exemption.read",
+		"security.protection_exemption.update",
 		"security.sensitive_data_type.create",
 		"security.sensitive_data_type.delete",
 		"security.sensitive_data_type.read",
@@ -408,8 +413,10 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"standard.collection_assignment.update",
 		"standard.document.create",
 		"standard.document.delete",
+		"standard.document.publish",
 		"standard.document.read",
 		"standard.document.update",
+		"standard.document_extraction.create",
 		"standard.domain.create",
 		"standard.domain.delete",
 		"standard.domain.read",
@@ -419,10 +426,9 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"standard.element.publish",
 		"standard.element.read",
 		"standard.element.update",
-		"standard.glossary.approve",
 		"standard.glossary.create",
 		"standard.glossary.delete",
-		"standard.glossary.offline",
+		"standard.glossary.publish",
 		"standard.glossary.read",
 		"standard.glossary.update",
 		"standard.metric.create",

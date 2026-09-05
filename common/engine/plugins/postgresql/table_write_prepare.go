@@ -37,7 +37,7 @@ func createPostgresTable(ctx context.Context, db *sql.DB, schema, table string, 
 	if len(fields) == 0 {
 		return fmt.Errorf("postgresql table write prepare requires table fields")
 	}
-	dialect := commonquery.ForEngine("postgresql")
+	dialect := commonquery.ForDialect("postgresql")
 	if ifNotExists {
 		if _, err := db.ExecContext(ctx, "CREATE SCHEMA IF NOT EXISTS "+dialect.QuoteIdentifier(schema)); err != nil {
 			return fmt.Errorf("create postgresql schema %s: %w", schema, err)
@@ -103,7 +103,7 @@ func evolvePostgresTableSchema(ctx context.Context, db *sql.DB, schema, table st
 }
 
 func postgresSchemaEvolutionStatements(schema, table string, fields []datatype.FieldInfo, spatialInfo *datatype.SpatialInfo, existingColumns []postgresColumnInfo) ([]string, error) {
-	dialect := commonquery.ForEngine("postgresql")
+	dialect := commonquery.ForDialect("postgresql")
 	existingByName := make(map[string]postgresColumnInfo, len(existingColumns))
 	for _, column := range existingColumns {
 		existingByName[column.Name] = column
@@ -148,7 +148,7 @@ func postgresWriteFields(fields []datatype.FieldInfo) []datatype.FieldInfo {
 }
 
 func postgresColumnDefinition(field datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) string {
-	definition := commonquery.ForEngine("postgresql").QuoteIdentifier(field.Name) + " " + postgresSQLTypeForField(field, spatialInfo)
+	definition := commonquery.ForDialect("postgresql").QuoteIdentifier(field.Name) + " " + postgresSQLTypeForField(field, spatialInfo)
 	if strings.TrimSpace(field.DefaultExpression) != "" {
 		definition += " DEFAULT " + strings.TrimSpace(field.DefaultExpression)
 	}
@@ -226,7 +226,7 @@ func (p *PostgreSQLPlugin) DeleteResource(ctx context.Context, connInfo plugin.C
 	}
 	defer db.Close()
 
-	dropSQL := "DROP TABLE IF EXISTS " + commonquery.ForEngine("postgresql").QualifiedTable(schema, table)
+	dropSQL := "DROP TABLE IF EXISTS " + commonquery.ForDialect("postgresql").QualifiedTable(schema, table)
 	if _, err := db.ExecContext(ctx, dropSQL); err != nil {
 		return fmt.Errorf("drop postgresql table %s.%s: %w", schema, table, err)
 	}

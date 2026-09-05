@@ -3,6 +3,7 @@ package plugins_test
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"sort"
 	"strings"
@@ -90,6 +91,47 @@ func TestGetAllPlugins(t *testing.T) {
 		if p.DisplayName() != tc.expected {
 			t.Errorf("Expected display name '%s' for '%s', got '%s'",
 				tc.expected, tc.dbType, p.DisplayName())
+		}
+	}
+}
+
+func TestRegisterableEngineDescriptorsArePluginOwned(t *testing.T) {
+	descriptors, err := plugin.ListEngineTypeDescriptors("general")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(descriptors) != 12 {
+		t.Fatalf("registerable descriptors = %d, want 12", len(descriptors))
+	}
+	for _, descriptor := range descriptors {
+		enginePlugin, err := plugin.Get(descriptor.Type)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if descriptor.ConnectionSpec.SchemaVersion != plugin.ConnectionSpecSchemaVersion {
+			t.Fatalf("%s connection spec schema = %q", descriptor.Type, descriptor.ConnectionSpec.SchemaVersion)
+		}
+		if len(descriptor.ConnectionSpec.Fields) == 0 {
+			t.Fatalf("%s has no connection fields", descriptor.Type)
+		}
+		if descriptor.Capabilities.EngineType != descriptor.Type {
+			t.Fatalf("%s capability engine_type = %q", descriptor.Type, descriptor.Capabilities.EngineType)
+		}
+		if descriptor.CatalogModel == nil {
+			t.Fatalf("%s has no catalog model", descriptor.Type)
+		}
+		if enginePlugin.DefaultPort() != descriptor.ConnectionSpec.DefaultPortValue() {
+			t.Fatalf("%s default port is not derived from connection spec", descriptor.Type)
+		}
+		if !reflect.DeepEqual(enginePlugin.RequiredFields(), descriptor.ConnectionSpec.UnconditionalRequiredFields()) {
+			t.Fatalf("%s required fields are not derived from connection spec", descriptor.Type)
+		}
+		if !reflect.DeepEqual(enginePlugin.SensitiveFields(), descriptor.ConnectionSpec.SensitiveFields()) {
+			t.Fatalf("%s sensitive fields are not derived from connection spec", descriptor.Type)
+		}
+		identityProvider := enginePlugin.(plugin.ConnectionIdentityProvider)
+		if !reflect.DeepEqual(identityProvider.ConnectionIdentityFields(), descriptor.ConnectionSpec.IdentityFields()) {
+			t.Fatalf("%s identity fields are not derived from connection spec", descriptor.Type)
 		}
 	}
 }

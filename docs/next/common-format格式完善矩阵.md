@@ -31,7 +31,7 @@
 | Text / Markdown | 还要核实编码识别、大文件截断、Markdown 渲染安全、链接、代码块和前端性能。 |
 | Image / JPEG / PNG / GIF / TIFF | 还要补 EXIF / orientation / 多帧或多页元信息，设计 MediaThumbnailReader 或 raw / range URL 预览策略，并核实大图、GeoTIFF、多页 TIFF、动图体验。 |
 | PDF | 还要核实真实 PDF metadata、加密提示、raw / range 预览和大文件传输；如需正文提取，再另行定义 `DocumentTextReader` / extraction 任务边界。 |
-| DOCX / PPTX / WPS | DOCX 已有轻量 `DocumentInfoProvider`，读取 `docProps` 中的 title、language、pages、words；`DocumentTextReader` 从 `word/document.xml` 提取正文，并追加页眉、页脚、脚注、尾注和批注文本。PPTX 已有轻量 `DocumentInfoProvider`，读取 `docProps` 中的 title、language、slides、words；`DocumentTextReader` 从 `ppt/slides/slide*.xml` 按页提取正文，并追加备注页和批注文本。二者可进入 Meta deep scan 的 `type_info.document` 和全文索引链路。后续还要补真实样例、DOCX 修订语义/复杂版面关系、PPTX 母版/隐藏页策略和大文件上限策略。WPS 格式变体较多，当前不声明后端文本解析能力；原始文件预览通过 engine / contentio / URL 内容通道，deep scan 记录 unsupported。 |
+| DOC / DOCX / PPTX / WPS | DOC 已有稳定 descriptor，但暂不声明后端文本解析能力。DOCX 已有轻量 `DocumentInfoProvider`，读取 `docProps` 中的 title、language、pages、words；`DocumentTextReader` 从 `word/document.xml` 提取正文，并追加页眉、页脚、脚注、尾注和批注文本。PPTX 已有轻量 `DocumentInfoProvider`，读取 `docProps` 中的 title、language、slides、words；`DocumentTextReader` 从 `ppt/slides/slide*.xml` 按页提取正文，并追加备注页和批注文本。二者可进入 Meta deep scan 的 `type_info.document` 和全文索引链路。后续还要补真实样例、DOCX 修订语义/复杂版面关系、PPTX 母版/隐藏页策略和大文件上限策略。DOC / WPS 格式变体较多，原始文件预览通过 engine / contentio / URL 内容通道交给浏览器统一 Office renderer，deep scan 记录 unsupported。 |
 
 当前 Meta object deep scan 已能对实现了 `DocumentTextReader` 的 document 格式抽取正文：attributes 只写 `capabilities.extraction` 状态和预览，完整正文仅作为本次扫描输入提交给 Manager 内容检索投影。没有 `DocumentTextReader` 的 document 格式仍计算二进制 `storage.content_hash`，并在 `capabilities.extraction` 中记录 `status=unsupported` / `reason=document_text_reader_unavailable`，不写入可搜索正文。
 

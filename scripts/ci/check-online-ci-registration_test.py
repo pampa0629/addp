@@ -292,6 +292,83 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         with self.assertRaisesRegex(CHECK.RegistrationError, "requires"):
             CHECK.check_registration(self.repository)
 
+    def test_requires_manager_internal_artifact_lineage_fixture_and_browser_suite(self) -> None:
+        gate = self.repository / "scripts/test/online-gate.py"
+        gate.write_text(
+            gate.read_text(encoding="utf-8").replace(
+                '"first-suite"', '"manager-internal-artifact-lineage"'
+            ),
+            encoding="utf-8",
+        )
+        host = self.repository / "scripts/test/online-host-gate.sh"
+        host.write_text(
+            host.read_text(encoding="utf-8").replace(
+                "first-suite)\n    START_TARGET=-system",
+                "manager-internal-artifact-lineage)\n    START_TARGET=-all",
+            )
+            + "\nSYSTEM_URL GATEWAY_URL META_URL MANAGER_URL MONITOR_URL CONSOLE_URL\n"
+            + "ADDP_ONLINE_POINTCLOUD_MINIO_ENGINE_ID ADDP_ONLINE_POINTCLOUD_MINIO_PORT "
+            + "ADDP_ONLINE_POINTCLOUD_MINIO_ACCESS_KEY ADDP_ONLINE_POINTCLOUD_MINIO_SECRET_KEY "
+            + "ADDP_ONLINE_POINTCLOUD_MINIO_BUCKET ADDP_ONLINE_POINTCLOUD_MINIO_OBJECT\n"
+            + "bash business/scripts/online-pointcloud-minio-fixture.sh start\n"
+            + "bash business/scripts/online-pointcloud-minio-fixture.sh stop\n"
+            + 'bash scripts/dev/start.sh "$START_TARGET"\n'
+            + "playwright install chromium\n",
+            encoding="utf-8",
+        )
+        self.workflow.write_text(
+            self.workflow.read_text(encoding="utf-8").replace(
+                "first-suite", "manager-internal-artifact-lineage"
+            ),
+            encoding="utf-8",
+        )
+        fixture = self.repository / "business/scripts/online-pointcloud-minio-fixture.sh"
+        fixture.parent.mkdir(parents=True, exist_ok=True)
+        fixture.write_text(
+            "ADDP_ONLINE_HOST --env-file /dev/null business-minio "
+            "pdal_las12_format0.las MC_HOST_fixture\n",
+            encoding="utf-8",
+        )
+        owner = self.repository / "scripts/test/manager-internal-artifact-lineage-online.py"
+        owner.write_text(
+            "addp.lineage-facts/v1 /api/v1/meta/scan/run/manual "
+            "/api/v1/monitor/executions/by-execution-id/ "
+            "addp-infra://minio/manager/tenant_ /api/v1/manager/point_cloud_copc/\n",
+            encoding="utf-8",
+        )
+        browser = self.repository / "console/frontend/e2e/online/manager-internal-artifact-lineage.spec.js"
+        browser.parent.mkdir(parents=True, exist_ok=True)
+        browser.write_text(
+            ".execution-lineage__group .execution-lineage__resource-action "
+            "平台内部产物|Platform-internal artifact platform_internal_outputs\n",
+            encoding="utf-8",
+        )
+        config = self.repository / "console/frontend/playwright.online.config.js"
+        config.write_text("fixture\n", encoding="utf-8")
+        start_script = self.repository / "scripts/dev/start.sh"
+        start_script.parent.mkdir(parents=True, exist_ok=True)
+        start_script.write_text(
+            "case $1 in -all) START_POINTCLOUD_WORKFLOW=true ;; esac\n",
+            encoding="utf-8",
+        )
+
+        CHECK.check_registration(self.repository)
+        browser.unlink()
+        with self.assertRaisesRegex(CHECK.RegistrationError, "requires"):
+            CHECK.check_registration(self.repository)
+
+        browser.write_text(
+            ".execution-lineage__group .execution-lineage__resource-action "
+            "平台内部产物|Platform-internal artifact platform_internal_outputs\n",
+            encoding="utf-8",
+        )
+        start_script.write_text(
+            "case $1 in -all) START_POINTCLOUD_WORKFLOW=false ;; esac\n",
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(CHECK.RegistrationError, "full start contract"):
+            CHECK.check_registration(self.repository)
+
 
 if __name__ == "__main__":
     unittest.main()

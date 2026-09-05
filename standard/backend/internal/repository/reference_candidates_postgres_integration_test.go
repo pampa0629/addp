@@ -29,12 +29,32 @@ func TestPostgresReferenceCandidatesFilterAndPaginateOwnerFacts(t *testing.T) {
 	rows := []any{
 		&models.Domain{TenantID: tenantID, Name: "Sales", Code: "sales" + codeSuffix, CreatedBy: 1, Version: 1, LifecycleState: "active"},
 		&models.Domain{TenantID: tenantID, Name: "Legacy Sales", Code: "legacy_sales" + codeSuffix, CreatedBy: 1, Version: 1, LifecycleState: "deleting"},
-		&models.Glossary{TenantID: tenantID, Name: "Customer", Definition: "Approved customer term", Status: "approved", CreatedBy: 1, Version: 1},
-		&models.Glossary{TenantID: tenantID, Name: "Customer draft", Definition: "Draft customer term", Status: "draft", CreatedBy: 1, Version: 1},
 	}
 	for _, row := range rows {
 		if err := db.Create(row).Error; err != nil {
 			t.Fatalf("create candidate fixture: %v", err)
+		}
+	}
+	for index, fixture := range []struct{ name, definition, status string }{
+		{"Customer", "Published customer term", models.RevisionStatusPublished},
+		{"Customer draft", "Draft customer term", models.RevisionStatusDraft},
+	} {
+		identity := models.Glossary{TenantID: tenantID, ScopeType: models.StandardScopeTenantCommon, Code: fmt.Sprintf("customer_%d%s", index, codeSuffix), CreatedBy: 1, Version: 1, LifecycleState: "active"}
+		if err := db.Create(&identity).Error; err != nil {
+			t.Fatalf("create glossary identity: %v", err)
+		}
+		revision := models.GlossaryRevision{GlossaryID: identity.ID, RevisionNo: 1, Status: fixture.status, Name: fixture.name, Definition: fixture.definition, ChangeSummary: "initial", CreatedBy: 1}
+		if fixture.status == models.RevisionStatusPublished {
+			effectiveFrom := time.Now().UTC().Add(-time.Hour)
+			revision.EffectiveFrom = &effectiveFrom
+		}
+		if err := db.Create(&revision).Error; err != nil {
+			t.Fatalf("create glossary revision: %v", err)
+		}
+		if fixture.status == models.RevisionStatusDraft {
+			if err := db.Model(&identity).Update("draft_revision_id", revision.ID).Error; err != nil {
+				t.Fatalf("link glossary revision: %v", err)
+			}
 		}
 	}
 	published := models.Element{TenantID: tenantID, Code: "customer_id" + codeSuffix, CreatedBy: 1, Version: 1, LifecycleState: "active"}
@@ -72,7 +92,7 @@ func TestPostgresReferenceCandidatesFilterAndPaginateOwnerFacts(t *testing.T) {
 		t.Fatalf("domains=%#v total=%d err=%v", domains, total, err)
 	}
 	glossaries, total, err := repository.ListGlossaryCandidates(context.Background(), tenantID, "customer", 1, 20)
-	if err != nil || total != 1 || len(glossaries) != 1 || glossaries[0].Status != "approved" {
+	if err != nil || total != 1 || len(glossaries) != 1 || glossaries[0].Status != models.RevisionStatusPublished || glossaries[0].RevisionID == 0 {
 		t.Fatalf("glossaries=%#v total=%d err=%v", glossaries, total, err)
 	}
 	elements, total, err := repository.ListElementCandidates(context.Background(), tenantID, "customer", 1, 20)

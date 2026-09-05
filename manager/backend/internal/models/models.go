@@ -264,6 +264,7 @@ type ObjectPreviewContent struct {
 
 const (
 	ObjectPreviewKindPDF           = "pdf"
+	ObjectPreviewKindDOC           = "doc"
 	ObjectPreviewKindDOCX          = "docx"
 	ObjectPreviewKindWPS           = "wps"
 	ObjectPreviewKindPPTX          = "pptx"
@@ -281,6 +282,7 @@ const (
 	ObjectPreviewKindCAD           = "cad"
 	ObjectPreviewKindVectorTile    = "vector_tile"
 	ObjectPreviewKindUnsupported   = "unsupported"
+	ObjectPreviewRendererOffice    = "office"
 )
 
 const (

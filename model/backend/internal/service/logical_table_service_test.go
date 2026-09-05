@@ -133,6 +133,18 @@ func TestNormalizeMaterializationOmitsEmptyPartitionDesign(t *testing.T) {
 	}
 }
 
+func TestNormalizeMaterializationCollapsesEmptyTargetToEmptyObject(t *testing.T) {
+	normalized := normalizeMaterialization(map[string]interface{}{
+		"target_parent_locator": "   ",
+		"target_name":           "",
+		"partition_by":          "",
+		"partition_type":        "range",
+	})
+	if len(normalized) != 0 {
+		t.Fatalf("empty materialization must be canonicalized to an empty object: %#v", normalized)
+	}
+}
+
 func TestNormalizeMaterializationKeepsExplicitPartitionDesign(t *testing.T) {
 	normalized := normalizeMaterialization(map[string]interface{}{
 		"partition_by": " occurred_at ", "partition_type": "RANGE",

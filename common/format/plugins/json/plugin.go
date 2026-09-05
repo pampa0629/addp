@@ -702,6 +702,9 @@ func (p *Plugin) recordSparseRowAnchor(index *datatype.AccessIndex, nextRow int6
 func newJSONRecordIterator(input io.Reader) (*jsonrecords.RecordIterator, error) {
 	iter, err := jsonrecords.NewRecordIterator(input)
 	if err != nil {
+		if errors.Is(err, jsonrecords.ErrNotRecordCollection) {
+			return nil, format.NewProviderNotApplicableError(err)
+		}
 		return nil, err
 	}
 	if iter.Structure == jsonrecords.StructureGeoJSONFeatureSet {

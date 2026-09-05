@@ -229,6 +229,7 @@ func (s *VectorTileSetTaskService) run(ctx context.Context, task *models.VectorT
 	status, progress := commonExecution.ExecutionStatusSuccess, 100
 	metadata := commonModels.JSONMap{}
 	var errDetails commonModels.JSONMap
+	var metaScanExecutionID string
 	cfg, err := readVectorTileSetConfig(task.Config)
 	if err == nil {
 		cfg.SourceVersion, err = s.resolveSourceVersion(ctx, task.TenantID, cfg.Source)
@@ -261,8 +262,16 @@ func (s *VectorTileSetTaskService) run(ctx context.Context, task *models.VectorT
 			var scan *commonExecution.TaskExecution
 			scan, err = s.metaScanSubmitter.CreateManualScanRunForTenant(task.TenantID, vectorTileSetMetaScanOptions(cfg, result.EngineCatalogPath))
 			if err == nil && scan != nil {
+				metaScanExecutionID = scan.ExecutionID
 				metadata["meta_scan_execution_id"] = scan.ExecutionID
 			}
+		}
+		if err == nil {
+			metadata = managerExecutionLineage(metadata, commonExecution.TaskTypeVectorTileSetGeneration,
+				[]commonExecution.LineageResourceRef{managerItemLineageRef(cfg.Source.Locator, cfg.Source.ItemFingerprint, cfg.Source.ItemID)},
+				[]commonExecution.LineageResourceRef{managerResourceLineageRef(managerLineageOutputPort, managerChildResourceLocator(cfg.TargetLocator, cfg.TargetName))},
+				metaScanExecutionID,
+			)
 		}
 	}
 	if err != nil {

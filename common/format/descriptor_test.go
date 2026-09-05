@@ -65,7 +65,9 @@ func TestDescriptorsKeepOnlyStaticFactsForBuiltinFormats(t *testing.T) {
 		layout     string
 	}{
 		{FormatPDF, datatype.Document, LayoutSingle},
+		{FormatDOC, datatype.Document, LayoutSingle},
 		{FormatDOCX, datatype.Document, LayoutSingle},
+		{FormatRTF, datatype.Document, LayoutSingle},
 		{FormatPPTX, datatype.Document, LayoutSingle},
 		{FormatWPS, datatype.Document, LayoutSingle},
 		{FormatJPEG, datatype.Media, LayoutSingle},

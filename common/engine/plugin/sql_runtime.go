@@ -16,11 +16,14 @@ import (
 // ExecuteSQLWithConnectionPool executes SQL through a plugin-provided GORM pool.
 // It is intended for SQLQueryRuntimeProvider implementations that do not need
 // engine-id based pool reuse.
-func ExecuteSQLWithConnectionPool(ctx context.Context, poolPlugin ConnectionPoolPlugin, connInfo ConnectionInfo, sql string, opts QueryOptions) (*QueryResult, error) {
+func ExecuteSQLWithConnectionPool(ctx context.Context, poolPlugin interface {
+	ConnectionPoolPlugin
+	SQLQueryRuntimeProvider
+}, connInfo ConnectionInfo, sql string, opts QueryOptions) (*QueryResult, error) {
 	if poolPlugin == nil {
 		return nil, fmt.Errorf("connection pool plugin cannot be nil")
 	}
-	boundSQL, boundArgs, err := BindSQLRuntimeParameters(poolPlugin.GetDialect(), sql, opts)
+	boundSQL, boundArgs, err := BindSQLRuntimeParameters(poolPlugin.SQLDialect(), sql, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -34,7 +37,7 @@ func ExecuteSQLWithConnectionPool(ctx context.Context, poolPlugin ConnectionPool
 		}
 	}
 	if opts.Limit > 0 {
-		sql = commonquery.ForEngine(poolPlugin.GetDialect()).PaginateQuerySQL(sql, opts.Limit, 0)
+		sql = commonquery.ForDialect(poolPlugin.SQLDialect()).PaginateQuerySQL(sql, opts.Limit, 0)
 	}
 
 	var db *gorm.DB
@@ -66,7 +69,7 @@ func ExecuteSQLWithConnectionPool(ctx context.Context, poolPlugin ConnectionPool
 	}
 
 	if opts.ReadOnly {
-		return executeReadOnlySQL(ctx, db, poolPlugin.GetDialect(), sql, opts.Args)
+		return executeReadOnlySQL(ctx, db, poolPlugin.SQLDialect(), sql, opts.Args)
 	}
 	rows, err := db.WithContext(ctx).Raw(sql, opts.Args...).Rows()
 	if err != nil {
@@ -80,12 +83,12 @@ func executeReadOnlySQL(ctx context.Context, db *gorm.DB, dialect, query string,
 	if err != nil {
 		return nil, fmt.Errorf("获取数据库连接失败：%w", err)
 	}
-	engineType := strings.ToLower(strings.TrimSpace(dialect))
+	dialectName := strings.ToLower(strings.TrimSpace(dialect))
 	var txOptions *sql.TxOptions
-	switch engineType {
-	case "postgres", "postgresql", "postgis", "mysql", "doris":
+	switch dialectName {
+	case commonquery.DialectPostgreSQL, commonquery.DialectMySQL:
 		txOptions = &sql.TxOptions{ReadOnly: true}
-	case "oracle":
+	case commonquery.DialectOracle:
 		// go-ora rejects database/sql's ReadOnly option; Oracle exposes the
 		// same database-enforced boundary through SET TRANSACTION READ ONLY.
 		txOptions = nil
@@ -102,7 +105,7 @@ func executeReadOnlySQL(ctx context.Context, db *gorm.DB, dialect, query string,
 			_ = tx.Rollback()
 		}
 	}()
-	if engineType == "oracle" {
+	if dialectName == commonquery.DialectOracle {
 		if _, err := tx.ExecContext(ctx, "SET TRANSACTION READ ONLY"); err != nil {
 			return nil, fmt.Errorf("设置只读事务失败：%w", err)
 		}
@@ -168,7 +171,7 @@ func BindSQLRuntimeParameters(dialect, sql string, opts QueryOptions) (string, [
 	if opts.Parameters == nil {
 		return sql, opts.Args, nil
 	}
-	boundSQL, boundArgs, err := commonquery.BindSQL(sql, opts.Parameters, commonquery.SQLPlaceholderStyleForEngine(dialect))
+	boundSQL, boundArgs, err := commonquery.BindSQL(sql, opts.Parameters, commonquery.SQLPlaceholderStyleForDialect(dialect))
 	if err != nil {
 		return "", nil, fmt.Errorf("bind SQL query parameters: %w", err)
 	}
@@ -358,9 +361,9 @@ func ReadSQLBatch(ctx context.Context, provider SQLQueryRuntimeProvider, connInf
 		}
 		namespace := segments[len(segments)-2].Name
 		item := segments[len(segments)-1].Name
-		query = sampleSQLForEngine(provider.Type(), namespace, item, opts.Limit, opts.Offset)
+		query = sampleSQLForDialect(provider.SQLDialect(), namespace, item, opts.Limit, opts.Offset)
 	} else if opts.Limit > 0 {
-		query = commonquery.ForEngine(provider.Type()).PaginateQuerySQL(query, opts.Limit, int(opts.Offset))
+		query = commonquery.ForDialect(provider.SQLDialect()).PaginateQuerySQL(query, opts.Limit, int(opts.Offset))
 	}
 	result, err := provider.ExecuteSQL(ctx, connInfo, query, QueryOptions{Limit: opts.Limit, Args: opts.Args})
 	if err != nil {
@@ -369,20 +372,20 @@ func ReadSQLBatch(ctx context.Context, provider SQLQueryRuntimeProvider, connInf
 	return QueryResultToBatchData(result, opts.Offset), nil
 }
 
-func sampleSQLForEngine(engineType, namespace, item string, limit int, offset int64) string {
+func sampleSQLForDialect(dialect, namespace, item string, limit int, offset int64) string {
 	if limit <= 0 {
 		limit = 1000
 	}
-	return commonquery.ForEngine(engineType).SelectTableSQL("*", namespace, item, "", "", limit, int(offset))
+	return commonquery.ForDialect(dialect).SelectTableSQL("*", namespace, item, "", "", limit, int(offset))
 }
 
-// SampleSQLForEngineCatalogPath builds a bounded query for one real tabular Catalog leaf.
-func SampleSQLForEngineCatalogPath(engineType string, path EngineCatalogPath, limit int) string {
+// SampleSQLForDialectCatalogPath builds a bounded query for one real tabular Catalog leaf.
+func SampleSQLForDialectCatalogPath(dialect string, path EngineCatalogPath, limit int) string {
 	segments := EngineCatalogPathWithoutRoot(path).Segments
 	if len(segments) < 2 {
 		return ""
 	}
-	return sampleSQLForEngine(engineType, segments[len(segments)-2].Name, segments[len(segments)-1].Name, limit, 0)
+	return sampleSQLForDialect(dialect, segments[len(segments)-2].Name, segments[len(segments)-1].Name, limit, 0)
 }
 
 func QueryResultToBatchData(result *QueryResult, offset int64) *BatchData {

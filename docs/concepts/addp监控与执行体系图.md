@@ -260,12 +260,13 @@ Monitor 通过 `GET /executions/runtime-metrics?duration=24h|7d|30d` 暴露上�
 - 排队时长、执行时长、attempt / max attempts
 - bounded attempt 的 lease owner、lease expiry 和当前 lease 状态；不展示 lease token
 - owner 写入的恢复原因或稳定恢复错误码
+- owner 写入的 `lineage_facts` 输入资源与输出产物摘要
 - 执行元数据摘要和原始 JSON
 - 执行结果或错误信息
 - 关联日志
 - 仅当对应 TaskProvider task type 明确声明 `supports_cancel=true` 时，才在监控侧展示取消入口；`supports_cancel=false` 的执行只展示状态和诊断，不提供标准取消动作。
 
-执行元数据由任务 owner 模块写入 `common.task_executions.metadata`，Monitor 只负责通用展示和轻量摘要，不反向拥有或改写模块产物。对于 Manager 瓦片缓存生成和矢量物化视图，执行详情应能展示实际生成目标、`target_kind`、是否使用外部 3857 优化目标、是否建议矢量物化视图、瓦片生成统计等诊断字段，并保留原始 JSON 作为兜底。
+执行元数据由任务 owner 模块写入 `common.task_executions.metadata`，Monitor 只负责通用展示和轻量摘要，不反向拥有或改写模块产物。Develop、Transfer 和 Manager 均使用 `addp.lineage-facts/v1`；Manager 覆盖数据剖析、向量化、受管快显派生产物及业务派生结果，清理 execution 不生成血缘，Transfer-backed 导入导出只由 Transfer execution 写入一次。对于版本受支持的 `lineage_facts`，执行详情先按 `inputs` 和 `outputs` 展示结构化资源摘要：业务 ResourceLocator 使用共享定位符能力转为可读路径；可解析的业务输入通过共享 Console 路由进入 Manager 数据探查；`addp-infra://` 输出只标识为“平台内部产物”并展示文件名，不提供 Meta 或 Manager 跳转，也不根据 infra 存储位置推断其临时或长期生命周期。Monitor 不解析 SQL、不直连业务引擎或 Meta 补齐事实；完整 locator 和其他证据继续保留在默认折叠的“查看原始元数据”中，切换 execution 时重置为折叠状态。对于 Manager 瓦片缓存生成和矢量物化视图，执行详情应能展示实际生成目标、`target_kind`、是否使用外部 3857 优化目标、是否建议矢量物化视图、瓦片生成统计等诊断字段，并保留原始 JSON 作为兜底。
 
 Transfer continuous 运行观测同样遵守 owner 边界：Transfer worker 从业务 Kafka 采集分区 earliest/latest，以目标已提交 `next_offset` 计算 lag、retention 恢复余量和 checkpoint age/health，并写入 `metadata.continuous.diagnostics`。Monitor 只从 `common.task_executions` 展示 health、恢复 circuit 和分区诊断，不直连业务 Kafka，不读取 `transfer.sync_states` 或 `transfer.runtime_leases`。这保证 Monitor 始终是统一观测者，而不是 continuous runtime 的第二个 owner。
 

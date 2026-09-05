@@ -39,6 +39,14 @@ describe('engines API', () => {
       }
     })
   })
+
+  it('loads registerable engine types from the plugin descriptor endpoint', async () => {
+    client.get.mockResolvedValue([])
+
+    await enginesAPI.listTypes()
+
+    expect(client.get).toHaveBeenCalledWith('/system/engine-types')
+  })
 })
 
 describe('engine management pagination', () => {

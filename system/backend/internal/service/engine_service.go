@@ -1368,9 +1368,13 @@ func (s *EngineService) sensitiveFieldsForEngine(engineType string) map[string]s
 	if err != nil {
 		return nil
 	}
-
-	fields := make(map[string]struct{}, len(provider.SensitiveFields()))
-	for _, field := range provider.SensitiveFields() {
+	connectionProvider, ok := provider.(engineplugin.ConnectionSpecProvider)
+	if !ok {
+		return nil
+	}
+	sensitiveFields := connectionProvider.ConnectionSpec().SensitiveFields()
+	fields := make(map[string]struct{}, len(sensitiveFields))
+	for _, field := range sensitiveFields {
 		field = strings.TrimSpace(field)
 		if field != "" {
 			fields[field] = struct{}{}

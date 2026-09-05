@@ -76,6 +76,13 @@ func TestJSONPluginDescribeFormatKeepsGeoJSONOutOfJSONInfo(t *testing.T) {
 	}
 }
 
+func TestJSONPluginDescribeTableReportsPlainObjectAsNotApplicable(t *testing.T) {
+	_, err := NewPlugin(nil).DescribeTable(context.Background(), strings.NewReader(`{"name":"plain"}`), nil)
+	if !format.IsProviderNotApplicableError(err) {
+		t.Fatalf("DescribeTable() error = %v, want ProviderNotApplicableError", err)
+	}
+}
+
 func TestJSONPluginDescribeAndSampleObjectArray(t *testing.T) {
 	data := `[
 		{"id":"1","name":"A","area":"356.16704388138885"},

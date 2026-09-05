@@ -21,7 +21,7 @@
 - [x] `make test-changed`、`make test-module` 与 PR T0-T3 使用同一 owner 影响计算。
 - [x] `make test-integration` 严格串行编排全部已登记的 disposable 基础设施门禁。
 - [x] `make test-online ONLINE_SUITE=<suite>` 统一 Run ID、预检、超时、进程锁和 `addp.online-gate/v1` 报告。
-- [x] `standard-model-reference-deletion`、`module-registry-recovery`、`consumer-engine-recovery`、`enterprise-catalog-publishing` 与 `workbench-service-consumption` 已登记为真实 T4 suite，不存在占位 suite。
+- [x] `standard-model-reference-deletion`、`module-registry-recovery`、`consumer-engine-recovery`、`enterprise-catalog-publishing`、`workbench-service-consumption`、`manager-internal-artifact-lineage`、`security-transfer-protection` 与 `security-protection-exemption` 已登记为真实 T4 suite，不存在占位 suite。
 - [x] 专用宿主机门禁会在生命周期操作前检查 macOS、`ADDP_ONLINE_HOST=1`、仓库外环境文件与证据目录、干净 checkout、`addp_online` 数据库和 suite profile。
 - [x] 手工 `.github/workflows/online-t4-gates.yml` 已绑定 `addp-online` Environment，并使用 `self-hosted`、`macOS`、`addp-online` Runner 标签。
 - [x] 手工 Online T4 workflow 已进入远端并被 GitHub 识别为 active；workflow 语法和 Runner 上下文约束由 `make test-platform` 自动检查。
@@ -38,7 +38,7 @@
 
 - [ ] 准备独立 macOS Runner 账号和独立 checkout，并注册 `self-hosted`、`macOS`、`addp-online` 标签。
 - [ ] 创建 `addp-online` GitHub Environment，将仓库外环境文件的绝对路径配置为 `ADDP_ONLINE_ENV_FILE` 变量。
-- [ ] 环境文件基于当前部署配置准备专用测试 Tenant、最小权限 User / Service Principal、`POSTGRES_DB=addp_online`，以及五个 suite 所需的服务地址、浏览器用户凭据、PostgreSQL/MySQL Engine Fixture、永久 Standard Domain 和 Department ID。
+- [ ] 环境文件基于当前部署配置准备专用测试 Tenant、最小权限 User / Service Principal、`POSTGRES_DB=addp_online`，以及八个 suite 所需的服务地址、浏览器用户凭据、PostgreSQL/MySQL/MongoDB/MinIO Engine Fixture、永久 Standard Domain 和 Department ID。
 - [ ] 确认 Runner 不存在仓库根 `.env`，不连接个人开发服务、`addp`、`addp_test` 或 `addp_iam_test`。
 - [ ] 确认证据目录、Docker、Go、Node、npm、Python、curl 和可用磁盘满足宿主机门禁。
 
@@ -51,6 +51,9 @@
 3. `consumer-engine-recovery`。
 4. `enterprise-catalog-publishing`。
 5. `workbench-service-consumption`。
+6. `manager-internal-artifact-lineage`。
+7. `security-transfer-protection`。
+8. `security-protection-exemption`。
 
 每次运行必须核验：
 
@@ -110,11 +113,43 @@ Engine Instance 是永久身份，因此 suite 禁止按 Run ID 创建后删除�
 
 2026-08-26 已完成 owner suite、浏览器 Table/Chart/Map/契约变化链路、只读 MySQL Fixture、Host Gate profile、workflow choice、CI 登记检查和确定性协议测试。当前仍是“实现就绪、专用 Runner 首跑待执行”，不得勾选 Workbench 专题中的真实 Online 验收项。
 
+### 3.7 `manager-internal-artifact-lineage` 实现契约
+
+1. Host Gate 全量启动 System、Gateway、Meta、Manager、Monitor、Console 和 PointCloud Runtime；`business/scripts/online-pointcloud-minio-fixture.sh` 只在 macOS 专用 Runner 上管理独立 `business-minio`，并把仓库已有小型 LAS 幂等写入指定 bucket/object。
+2. 专用环境长期预置指向该 MinIO 的 Engine Instance，身份由 `ADDP_ONLINE_POINTCLOUD_MINIO_ENGINE_ID` 提供；suite 不创建、修改或删除 Engine Instance。
+3. 真实 User Token 校验 Tenant、非管理员角色和最小权限后，所有平台操作只经 Gateway：触发 Meta deep scan，以扫描得到的 DataItem 身份创建并执行 `point_cloud_copc_generation`。
+4. Manager owner execution 必须产生唯一 `addp.lineage-facts/v1` 输入、输出和 derive operation；输入是 Business ResourceLocator，输出是 `addp-infra://minio/manager/tenant_{id}/point-cloud-copc/...copc.laz?type=object`，Monitor 按 execution ID 读取到的事实必须与 owner 完全相同。
+5. suite 经 Manager 内容 API 验证 COPC Range 读取；真实浏览器打开正式 Monitor 执行详情，确认业务输入可进入 Data Explorer，平台内部产物明确标识且不伪造业务资源跳转。
+6. `finally` 只通过 Manager API 按本轮 ID 删除结果与任务，再以内容 404、任务 404 和 fingerprint 结果总数为零共同证明无临时业务资源残留；Host Gate 最后停止 Business MinIO Fixture 与全套 ADDP。
+
+2026-09-04 已完成 owner suite、Business MinIO Fixture、Manager/Monitor API 一致性、真实浏览器断言、Host Gate profile、workflow choice、CI 登记检查和确定性协议测试。当前仍是“实现就绪、专用 Runner 首跑待执行”。
+
+### 3.8 `security-transfer-protection` 实现契约
+
+1. Host Gate 全量启动 System、Gateway、Meta、Security、Transfer 和 Manager；`business/scripts/online-security-transfer-fixture.sh` 复用 PostgreSQL Online Fixture，并只在 macOS 专用 Runner 管理独立 `business-mongodb`。
+2. MongoDB Fixture 幂等建立 3 条合成文档与只读账号；PostgreSQL Fixture 幂等建立 `addp_online_security.transfer_excluded` 和 `addp_online_security.transfer_masked` 两张固定目标表。专用环境长期预置对应的 MongoDB 与 PostgreSQL Engine Instance，suite 不创建、修改或删除 Engine 身份。
+3. 真实 User Token 校验 Tenant、非管理员角色和 Meta/Security/Transfer/Manager 最小权限；所有平台操作只经 Gateway。专用 Tenant 必须先具备平台推荐的手机号敏感类型、识别方式和默认保护规则；首次运行允许按固定 MongoDB DataItem 建立一个永久 Security 纳管，后续运行必须复用它，并确认 Transfer 已安装且确认 `export → mask` 投影。
+4. 每轮创建两条带 Run ID 的 bounded Transfer 任务，均使用 Common MongoDB Provider 可证明输出血缘的 `$project + 直接字段引用/$ifNull`：未输出手机号的任务必须成功；输出 `userInfo.phone` 的任务必须成功并写入遮盖值。
+5. suite 经 Meta 重新扫描后由 Manager 预览固定目标表，断言非敏感目标没有手机号列，敏感目标 2 个非空号码全部遮盖、明文计数为零。不得撤销 Security 投影、按资源放行、管理员绕过或增加 Outdoor/函数名白名单。
+6. `finally` 只按本轮捕获的 Transfer task ID 删除临时任务并逐条确认 404；固定 Engine、纳管和目标表属于专用 Runner 永久 Fixture，不计为本轮残留。成功与失败报告都不得包含源手机号或凭据。
+
+2026-09-05 已完成 owner suite、MongoDB/PostgreSQL 复合 Fixture、Host Gate profile、workflow choice、CI 登记检查和确定性协议测试。当前仍是“实现就绪、专用 Runner 首跑待执行”。
+
+### 3.9 `security-protection-exemption` 实现契约
+
+1. Host Gate 全量启动 System、Gateway、Meta、Security、Manager、Develop、Service 与 Transfer，并复用 `business/scripts/online-security-transfer-fixture.sh` 中的固定 PostgreSQL 源表和目标表。
+2. 首次运行允许为 `addp_online_security.exemption_source.phone` 建立永久 Enrollment、确认手机号 Finding 并形成正式 Assessment；后续必须复用同一治理身份。每轮创建或续期四个固定 Exemption 聚合，保留不可变审计修订。
+3. suite 依次验证四个 Owner 的三阶段真实数据结果：无豁免时遮盖、有效豁免期内原值、到期后遮盖。到期阶段在第一个 Owner 读取前停止调用 Security API，证明 Owner 使用本地投影中的 `valid_until + fallback`，而不是在线回查 Security。
+4. 每轮创建一个临时 Query Service 和三条带阶段标识的 bounded Transfer 任务，退出路径按捕获 ID 删除并确认不存在；固定表、治理聚合、执行历史与不可变审计修订不作为临时业务资源删除。
+5. Assessment 修订使豁免失效继续由 Security T1/T2 事务门禁验证，T4 不为重复证明该语义而持续追加无业务价值的 Assessment 修订。
+
+2026-09-05 已完成 owner suite、复合 Fixture 扩展、Host Gate profile、workflow choice、CI 登记检查和确定性协议测试。当前仍是“实现就绪、专用 Runner 首跑待执行”。
+
 ## 四、关闭条件
 
 满足以下条件后删除本文：
 
-1. 五个已登记 T4 suite 在专用 Runner 至少各真实通过一次。
+1. 八个已登记 T4 suite 在专用 Runner 至少各真实通过一次。
 2. 构建身份、专用 Tenant、数据库隔离、失败清理和零残留证据均已核验。
 3. 进程乱序恢复形成可重复的部署编排证据。
 4. 根据首跑耗时与稳定性决定是否增加夜间 schedule；不需要定时执行时也必须明确记录决定。

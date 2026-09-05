@@ -1,439 +1,137 @@
 <template>
   <div class="document-list">
     <div class="page-header">
-      <div>
-        <h2>{{ $t('standard.document.title') }}</h2>
-        <p class="page-subtitle">{{ $t('standard.document.subtitle') }}</p>
-      </div>
-      <el-button v-if="canCreate" type="primary" @click="openCreateDialog">{{ $t('standard.document.create') }}</el-button>
+      <div><h2>{{ $t('standard.document.title') }}</h2><p>{{ $t('standard.document.subtitle') }}</p></div>
+      <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreateDialog">{{ $t('standard.document.create') }}</el-button>
     </div>
 
-    <el-card>
-      <div class="toolbar">
-        <el-input v-model="keyword" :placeholder="$t('standard.document.searchPlaceholder')" clearable @change="handleFilterChange" style="width:280px" />
-        <el-select v-model="filterType" :placeholder="$t('standard.document.filterTypePlaceholder')" clearable @change="handleFilterChange" style="width:140px">
-          <el-option :label="$t('standard.document.national')" value="national" />
-          <el-option :label="$t('standard.document.industry')" value="industry" />
-          <el-option :label="$t('standard.document.internal')" value="internal" />
-          <el-option :label="$t('standard.document.reference')" value="reference" />
-        </el-select>
-      </div>
-
-      <el-table :data="documents" v-loading="loading" size="small" @row-click="openDetail">
-        <el-table-column :label="$t('standard.document.nameLabel')" prop="name" min-width="200" show-overflow-tooltip />
-        <el-table-column :label="$t('standard.common.type')" width="90">
-          <template #default="{ row }">
-            <el-tag size="small" :type="docTypeTagType(row.doc_type)">{{ docTypeLabel(row.doc_type) }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column :label="$t('standard.document.sourceLabel')" prop="source_org" width="160" show-overflow-tooltip />
-        <el-table-column :label="$t('standard.document.versionLabel')" prop="document_version" width="80" />
-        <el-table-column :label="$t('standard.document.attachment')" width="120">
-          <template #default="{ row }">
-            <span v-if="row.file_name" class="file-name" :title="row.file_name">
-              <el-icon style="vertical-align:middle;margin-right:2px"><Document /></el-icon>{{ row.file_name }}
-            </span>
-            <span v-else class="no-file">—</span>
-          </template>
-        </el-table-column>
-        <el-table-column :label="$t('standard.document.entryTime')" width="110">
-          <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
-        </el-table-column>
-        <el-table-column :label="$t('standard.common.actions')" width="150" fixed="right">
-          <template #default="{ row }">
-            <div class="table-actions">
-            <el-button link size="small" type="primary" v-if="row.file_name" @click.stop="downloadFile(row)">{{ $t('standard.document.download') }}</el-button>
-            <el-button v-if="canDelete" link size="small" type="danger" :loading="isActionLocked(`document:${row.id}`)" @click.stop="deleteDocument(row)">{{ $t('standard.common.delete') }}</el-button>
-            </div>
-          </template>
-        </el-table-column>
-      </el-table>
-
-      <div class="pagination">
-        <el-pagination
-          v-model:current-page="page"
-          v-model:page-size="pageSize"
-          :total="total"
-          :page-sizes="[20, 50]"
-          layout="total, sizes, prev, pager, next"
-          @change="handlePageChange"
-        />
-      </div>
+    <el-card class="filter-card">
+      <el-row :gutter="12">
+        <el-col :span="7"><el-input v-model="filters.keyword" :prefix-icon="Search" :placeholder="$t('standard.document.searchPlaceholder')" clearable @change="handleFilterChange" /></el-col>
+        <el-col :span="5"><el-select v-model="filters.doc_type" :placeholder="$t('standard.document.filterTypePlaceholder')" clearable @change="handleFilterChange"><el-option v-for="type in documentTypes" :key="type" :label="docTypeLabel(type)" :value="type" /></el-select></el-col>
+        <el-col :span="6"><el-select v-model="filters.owner_domain_id" :placeholder="$t('standard.common.selectDomain')" clearable @change="handleFilterChange"><el-option v-for="domain in domains" :key="domain.id" :label="domain.name" :value="domain.id" /></el-select></el-col>
+        <el-col :span="6"><el-select v-model="filters.status" :placeholder="$t('standard.common.selectStatus')" clearable @change="handleFilterChange"><el-option v-for="status in revisionStatuses" :key="status" :label="statusLabel(status)" :value="status" /></el-select></el-col>
+      </el-row>
     </el-card>
 
-    <!-- 录入文档对话框 -->
-    <el-dialog v-model="showCreateDialog" :title="$t('standard.document.createTitle')" width="520px" @closed="resetForm">
-      <el-form :model="form" label-width="100px">
-        <el-form-item :label="$t('standard.document.nameLabel')" required>
-          <el-input v-model="form.name" :placeholder="$t('standard.document.namePlaceholder')" />
-        </el-form-item>
-        <el-form-item :label="$t('standard.document.typeLabel')">
-          <el-select v-model="form.doc_type" style="width:100%">
-            <el-option :label="$t('standard.document.national')" value="national" />
-            <el-option :label="$t('standard.document.industry')" value="industry" />
-            <el-option :label="$t('standard.document.internal')" value="internal" />
-            <el-option :label="$t('standard.document.reference')" value="reference" />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="$t('standard.document.sourceLabel')">
-          <el-input v-model="form.source_org" :placeholder="$t('standard.document.sourcePlaceholder')" />
-        </el-form-item>
-        <el-form-item :label="$t('standard.document.versionLabel')">
-          <el-input v-model="form.document_version" :placeholder="$t('standard.document.versionPlaceholder')" />
-        </el-form-item>
-        <el-form-item :label="$t('standard.document.descriptionLabel')">
-          <el-input v-model="form.description" type="textarea" :rows="2" />
-        </el-form-item>
-        <el-form-item :label="$t('standard.document.fileLabel')">
-          <el-upload
-            v-if="canUpdate"
-            ref="uploadRef"
-            :auto-upload="false"
-            :limit="1"
-            :on-exceed="() => ElMessage.warning(t('standard.document.fileTip'))"
-            :on-change="onFileChange"
-            :on-remove="() => { selectedFile = null }"
-          >
-            <el-button size="small">{{ $t('standard.document.fileSelectBtn') }}</el-button>
-            <template #tip>
-              <div class="upload-tip">{{ $t('standard.document.fileTip') }}</div>
-            </template>
-          </el-upload>
-        </el-form-item>
+    <el-card>
+      <el-table :data="documents" v-loading="loading" stripe>
+        <el-table-column prop="code" :label="$t('standard.common.code')" min-width="110" />
+        <el-table-column :label="$t('standard.document.nameLabel')" min-width="140"><template #default="{ row }">{{ displayRevision(row)?.name || '-' }}</template></el-table-column>
+        <el-table-column v-if="!isNarrow" :label="$t('standard.common.scopeLabel')" width="96"><template #default="{ row }">{{ scopeLabel(row.scope_type) }}</template></el-table-column>
+        <el-table-column v-if="!isNarrow" :label="$t('standard.document.domainLabel')" width="110"><template #default="{ row }">{{ domainName(row.owner_domain_id) || '-' }}</template></el-table-column>
+        <el-table-column v-if="!isNarrow" :label="$t('standard.common.type')" width="84"><template #default="{ row }"><el-tag size="small" :type="docTypeTagType(row.doc_type)">{{ docTypeLabel(row.doc_type) }}</el-tag></template></el-table-column>
+        <el-table-column v-if="!isNarrow" :label="$t('standard.document.versionLabel')" width="90"><template #default="{ row }">{{ displayRevision(row)?.version_label || '-' }}</template></el-table-column>
+        <el-table-column :label="$t('standard.common.status')" width="80"><template #default="{ row }"><el-tag size="small" :type="statusType(displayRevision(row)?.status)">{{ statusLabel(displayRevision(row)?.status) }}</el-tag></template></el-table-column>
+        <el-table-column :label="$t('standard.common.actions')" width="100" fixed="right"><template #default="{ row }"><div class="table-actions"><el-button link type="primary" @click="goToDetail(row)">{{ $t('standard.common.detail') }}</el-button><el-button v-if="canDelete && !row.has_publication_history" link type="danger" @click="deleteDocument(row)">{{ $t('standard.common.delete') }}</el-button></div></template></el-table-column>
+      </el-table>
+      <el-pagination v-if="total" class="pagination" :total="total" :page-size="filters.page_size" :current-page="filters.page" layout="total, prev, pager, next" @current-change="handlePageChange" />
+    </el-card>
+
+    <el-dialog v-model="dialogVisible" :title="$t('standard.document.createTitle')" width="680px" @closed="resetForm">
+      <el-form ref="formRef" :model="form" :rules="rules" label-width="120px">
+        <el-form-item :label="$t('standard.common.code')" prop="code"><el-input v-model="form.code" /></el-form-item>
+        <el-form-item :label="$t('standard.common.scopeLabel')" prop="scope_type"><el-select v-model="form.scope_type" style="width:100%" @change="onScopeChange"><el-option :label="$t('standard.common.scopeValue.tenant_common')" value="tenant_common" /><el-option :label="$t('standard.common.scopeValue.domain')" value="domain" /></el-select></el-form-item>
+        <el-form-item v-if="form.scope_type === 'domain'" :label="$t('standard.document.domainLabel')" prop="owner_domain_id"><el-select v-model="form.owner_domain_id" filterable style="width:100%"><el-option v-for="domain in domains" :key="domain.id" :label="domain.name" :value="domain.id" /></el-select></el-form-item>
+        <el-form-item :label="$t('standard.document.nameLabel')" prop="name"><el-input v-model="form.name" /></el-form-item>
+        <el-form-item :label="$t('standard.document.typeLabel')" prop="doc_type"><el-select v-model="form.doc_type" style="width:100%"><el-option v-for="type in documentTypes" :key="type" :label="docTypeLabel(type)" :value="type" /></el-select></el-form-item>
+        <el-form-item :label="$t('standard.document.sourceLabel')"><el-input v-model="form.source_org" /></el-form-item>
+        <el-form-item :label="$t('standard.document.versionLabel')"><el-input v-model="form.version_label" /></el-form-item>
+        <el-form-item :label="$t('standard.document.descriptionLabel')"><el-input v-model="form.description" type="textarea" :rows="3" /></el-form-item>
+        <el-form-item :label="$t('standard.revision.changeSummary')" prop="change_summary"><el-input v-model="form.change_summary" /></el-form-item>
+        <el-form-item :label="$t('standard.revision.effectiveFrom')"><el-date-picker v-model="form.effective_from" type="datetime" value-format="YYYY-MM-DDTHH:mm:ssZ" style="width:100%" /></el-form-item>
+        <el-form-item :label="$t('standard.document.fileLabel')"><el-upload ref="uploadRef" :auto-upload="false" :limit="1" :on-change="file => selectedFile = file.raw" :on-remove="() => selectedFile = null" accept=".md,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"><el-button>{{ $t('standard.document.fileSelectBtn') }}</el-button><template #tip><div class="upload-tip">{{ $t('standard.document.extractionMarkdownTip') }}</div></template></el-upload></el-form-item>
       </el-form>
-      <template #footer>
-        <el-button @click="showCreateDialog = false">{{ $t('standard.common.cancel') }}</el-button>
-        <el-button type="primary" @click="createDocument" :loading="saving">{{ $t('standard.common.save') }}</el-button>
-      </template>
+      <template #footer><el-button @click="dialogVisible=false">{{ $t('standard.common.cancel') }}</el-button><el-button type="primary" :loading="saving" @click="createDocument">{{ $t('standard.common.confirm') }}</el-button></template>
     </el-dialog>
-
-    <!-- 文档详情抽屉（只读） -->
-    <el-drawer v-model="showDetail" :title="currentDoc?.name" size="480px" @closed="handleDetailClosed">
-      <div v-if="currentDoc" class="doc-detail">
-        <el-descriptions :column="2" border size="small">
-          <el-descriptions-item :label="$t('standard.common.type')">
-            <el-tag size="small" :type="docTypeTagType(currentDoc.doc_type)">{{ docTypeLabel(currentDoc.doc_type) }}</el-tag>
-          </el-descriptions-item>
-          <el-descriptions-item :label="$t('standard.document.source')">{{ currentDoc.source_org || '-' }}</el-descriptions-item>
-          <el-descriptions-item :label="$t('standard.document.version')">{{ currentDoc.document_version || '-' }}</el-descriptions-item>
-          <el-descriptions-item :label="$t('standard.document.entryTime')">{{ formatTime(currentDoc.created_at) }}</el-descriptions-item>
-          <el-descriptions-item :label="$t('standard.document.descriptionLabel')" :span="2">{{ currentDoc.description || '-' }}</el-descriptions-item>
-        </el-descriptions>
-
-        <!-- 附件区域 -->
-        <el-divider>{{ $t('standard.document.attachment') }}</el-divider>
-        <div v-if="currentDoc.file_name" class="file-section">
-          <el-icon><Document /></el-icon>
-          <span class="file-info">{{ currentDoc.file_name }}（{{ formatFileSize(currentDoc.file_size) }}）</span>
-          <el-button link type="primary" size="small" @click="downloadFile(currentDoc)">{{ $t('standard.document.download') }}</el-button>
-          <el-upload
-            v-if="canUpdate"
-            :auto-upload="false"
-            :show-file-list="false"
-            :on-change="(f) => uploadToExisting(currentDoc, f)"
-            style="display:inline-block;margin-left:8px"
-          >
-            <el-button link size="small" :loading="isActionLocked(`document-upload:${currentDoc.id}`)">{{ $t('standard.document.reupload') }}</el-button>
-          </el-upload>
-        </div>
-        <div v-else class="file-section no-file-section">
-          <span style="color:var(--el-text-color-secondary);font-size:13px">{{ $t('standard.document.noAttachment') }}</span>
-          <el-upload
-            :auto-upload="false"
-            :show-file-list="false"
-            :on-change="(f) => uploadToExisting(currentDoc, f)"
-            style="display:inline-block;margin-left:12px"
-          >
-            <el-button size="small" type="primary" plain :loading="isActionLocked(`document-upload:${currentDoc.id}`)">{{ $t('standard.document.uploadFile') }}</el-button>
-          </el-upload>
-        </div>
-
-        <!-- 关联标准项（只读展示） -->
-        <el-divider>{{ $t('standard.document.relatedItems') }}</el-divider>
-        <el-alert
-          :title="$t('standard.document.relatedItemsHint')"
-          type="info"
-          :closable="false"
-          show-icon
-          style="margin-bottom: 12px"
-        />
-        <el-tabs>
-          <el-tab-pane :label="$t('standard.document.relatedElements')" name="elements">
-            <el-tag v-for="m in mappings.elements" :key="m.element_id" size="small" class="mapping-tag" @click="openRelated('elements', m.element_id)">
-              {{ m.name || $t('standard.document.elementRef', { id: m.element_id }) }}{{ m.reference_location ? ` (${m.reference_location})` : '' }}
-            </el-tag>
-            <el-empty v-if="!mappings.elements?.length" :description="$t('standard.document.noRelated')" :image-size="60" />
-          </el-tab-pane>
-          <el-tab-pane :label="$t('standard.document.relatedGlossaries')" name="glossaries">
-            <el-tag v-for="m in mappings.glossaries" :key="m.glossary_id" size="small" class="mapping-tag" @click="openRelated('glossaries', m.glossary_id)">
-              {{ m.name || $t('standard.document.glossaryRef', { id: m.glossary_id }) }}
-            </el-tag>
-            <el-empty v-if="!mappings.glossaries?.length" :description="$t('standard.document.noRelated')" :image-size="60" />
-          </el-tab-pane>
-          <el-tab-pane :label="$t('standard.document.relatedMetrics')" name="metrics">
-            <el-tag v-for="m in mappings.metrics" :key="m.metric_id" size="small" class="mapping-tag" @click="openRelated('metrics', m.metric_id)">
-              {{ m.name || $t('standard.document.metricRef', { id: m.metric_id }) }}
-            </el-tag>
-            <el-empty v-if="!mappings.metrics?.length" :description="$t('standard.document.noRelated')" :image-size="60" />
-          </el-tab-pane>
-        </el-tabs>
-      </div>
-    </el-drawer>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, watch, computed } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
-import { useConsolePageDescriptor } from '@common-ui'
-import { useI18n } from 'vue-i18n'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { Plus, Search } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Document } from '@element-plus/icons-vue'
-import { documentAPI } from '../api/standard'
-import { saveBlob } from '../utils/download'
-import { navigateStandardRoute } from '@/utils/moduleNavigation'
-import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
-import { formatStandardDate } from '../utils/dateTime'
-import { getDocumentTypeTagType } from '../utils/documentType'
-import { useStandardPermissions } from '../composables/useStandardPermissions'
-import { useActionLock } from '../composables/useActionLock'
+import { useI18n } from 'vue-i18n'
+import { useRoute, useRouter } from 'vue-router'
 import { createLatestRequestCoordinator } from '@common-ui'
+import { documentAPI, domainAPI } from '../api/standard'
+import { useStandardPermissions } from '../composables/useStandardPermissions'
+import { getDocumentTypeTagType } from '../utils/documentType'
+import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
+import { navigateStandardRoute } from '@/utils/moduleNavigation'
 
-const { t, locale } = useI18n()
-const { canCreate, canUpdate, canDelete } = useStandardPermissions('document')
-const { isLocked: isActionLocked, runLocked } = useActionLock()
-const router = useRouter()
-const route = useRoute()
-
-const documents = ref([])
-const loading = ref(false)
-const saving = ref(false)
-const page = ref(Number(route.query.page) > 0 ? Number(route.query.page) : 1)
-const pageSize = ref(Number(route.query.page_size) > 0 ? Number(route.query.page_size) : 20)
-const total = ref(0)
-const keyword = ref(typeof route.query.keyword === 'string' ? route.query.keyword : '')
-const filterType = ref(typeof route.query.doc_type === 'string' ? route.query.doc_type : '')
-
-const showCreateDialog = ref(false)
-const showDetail = ref(false)
-const currentDoc = ref(null)
-useConsolePageDescriptor(router, 'standard', {
-  title: computed(() => t('standard.document.recentVisitTitle')),
-  subject: computed(() => currentDoc.value?.name || ''),
-  ready: computed(() => Boolean(route.params.id && currentDoc.value?.name))
-})
-const mappings = ref({ elements: [], glossaries: [], metrics: [] })
-let selectedFile = null
-const uploadRef = ref(null)
+const { t } = useI18n()
+const route = useRoute(), router = useRouter()
+const { canCreate, canDelete } = useStandardPermissions('document')
+const documents = ref([]), domains = ref([]), total = ref(0), loading = ref(false), saving = ref(false)
+const dialogVisible = ref(false), formRef = ref(null), uploadRef = ref(null), selectedFile = ref(null)
+const isNarrow = ref(false)
+let narrowMediaQuery
+const syncNarrowViewport = event => { isNarrow.value = event.matches }
 const listRequests = createLatestRequestCoordinator()
-const detailRequests = createLatestRequestCoordinator()
-
-const form = ref({ name: '', doc_type: 'reference', source_org: '', document_version: '', description: '' })
-
-const docTypeLabel = (type) => ({
-  national: t('standard.document.national'),
-  industry: t('standard.document.industry'),
-  internal: t('standard.document.internal'),
-  reference: t('standard.document.reference')
-}[type] || type)
+const documentTypes = ['national', 'industry', 'internal', 'reference']
+const revisionStatuses = ['draft', 'in_review', 'published', 'withdrawn']
+const filters = reactive({ keyword: '', doc_type: '', owner_domain_id: null, status: '', page: 1, page_size: 20 })
+const emptyForm = () => ({ code: '', scope_type: 'tenant_common', owner_domain_id: null, name: '', doc_type: 'reference', source_org: '', version_label: '', description: '', change_summary: '', effective_from: null, tags: [] })
+const form = ref(emptyForm())
+const rules = computed(() => ({
+  code: [{ required: true, message: t('standard.document.codeRequired'), trigger: 'blur' }],
+  name: [{ required: true, message: t('standard.document.nameRequired'), trigger: 'blur' }],
+  doc_type: [{ required: true, message: t('standard.document.typeRequired'), trigger: 'change' }],
+  change_summary: [{ required: true, message: t('standard.revision.changeSummaryRequired'), trigger: 'blur' }],
+  owner_domain_id: [{ required: form.value.scope_type === 'domain', message: t('standard.common.selectDomain'), trigger: 'change' }]
+}))
+const flattenDomains = nodes => nodes.flatMap(node => [node, ...flattenDomains(node.children || [])])
+const displayRevision = row => row.draft_revision || row.current_revision
+const docTypeLabel = type => t(`standard.document.${type}`)
 const docTypeTagType = getDocumentTypeTagType
-const formatTime = time => formatStandardDate(time, locale.value)
-const formatFileSize = (bytes) => {
-  if (!bytes) return '0 B'
-  if (bytes < 1024) return bytes + ' B'
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
-  return (bytes / 1024 / 1024).toFixed(1) + ' MB'
-}
+const statusLabel = status => status ? t(`standard.revision.status.${status}`) : '-'
+const statusType = status => ({ draft: 'info', in_review: 'warning', published: 'success', withdrawn: 'danger' }[status] || 'info')
+const scopeLabel = scope => scope ? t(`standard.common.scopeValue.${scope}`) : '-'
+const domainName = id => domains.value.find(item => item.id === id)?.name
+const filterQuery = () => Object.fromEntries(Object.entries(filters).filter(([, value]) => value !== '' && value !== null && value !== 1 && value !== 20).map(([key, value]) => [key, String(value)]))
 
-const openCreateDialog = () => {
-  selectedFile = null
-  showCreateDialog.value = true
+async function loadDocuments() {
+  const params = { ...filters, keyword: filters.keyword || undefined, doc_type: filters.doc_type || undefined, owner_domain_id: filters.owner_domain_id || undefined, status: filters.status || undefined }
+  const key = JSON.stringify(params), request = listRequests.begin(key); loading.value = true
+  try { const result = await documentAPI.list(params); if (listRequests.isCurrent(request, key)) { documents.value = result.data || []; total.value = result.total || 0 } }
+  catch (error) { if (listRequests.isCurrent(request, key)) ElMessage.error(getStandardErrorMessage(error, t, 'standard.common.loadFailed')) }
+  finally { if (listRequests.isCurrent(request, key)) loading.value = false }
 }
-
-const resetForm = () => {
-  form.value = { name: '', doc_type: 'reference', source_org: '', document_version: '', description: '' }
-  selectedFile = null
-  uploadRef.value?.clearFiles()
-}
-
-const onFileChange = (file) => {
-  selectedFile = file.raw
-}
-
-const loadDocuments = async () => {
-  const params = { page: page.value, page_size: pageSize.value, keyword: keyword.value, doc_type: filterType.value }
-  const request = listRequests.begin(JSON.stringify(params))
-  loading.value = true
-  try {
-    const res = await documentAPI.list(params)
-    if (!listRequests.isCurrent(request, JSON.stringify(params))) return
-    documents.value = res.data || []
-    total.value = res.total || 0
-  } catch (e) {
-    if (!listRequests.isCurrent(request, JSON.stringify(params))) return
-    documents.value = []
-    total.value = 0
-    ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.loadFailed'))
-  } finally {
-    if (listRequests.isCurrent(request, JSON.stringify(params))) loading.value = false
-  }
-}
-
-const syncQuery = () => {
-  const query = {}
-  if (keyword.value) query.keyword = keyword.value
-  if (filterType.value) query.doc_type = filterType.value
-  if (page.value !== 1) query.page = String(page.value)
-  if (pageSize.value !== 20) query.page_size = String(pageSize.value)
-  navigateStandardRoute(router, { path: '/documents', query }, { history: 'replace' })
-}
-
-const handleFilterChange = () => {
-  page.value = 1
-  syncQuery()
-  loadDocuments()
-}
-
-const handlePageChange = () => {
-  syncQuery()
-  loadDocuments()
-}
-
-const createDocument = async () => {
-  if (saving.value) return
-  if (!form.value.name) {
-    ElMessage.warning(t('standard.document.nameRequired'))
-    return
-  }
+function handleFilterChange() { filters.page = 1; navigateStandardRoute(router, { path: '/documents', query: filterQuery() }, { history: 'replace' }); loadDocuments() }
+function handlePageChange(page) { filters.page = page; navigateStandardRoute(router, { path: '/documents', query: filterQuery() }, { history: 'replace' }); loadDocuments() }
+function onScopeChange(scope) { if (scope !== 'domain') form.value.owner_domain_id = null }
+function openCreateDialog() { form.value = emptyForm(); selectedFile.value = null; dialogVisible.value = true }
+function resetForm() { form.value = emptyForm(); selectedFile.value = null; uploadRef.value?.clearFiles() }
+function goToDetail(row) { navigateStandardRoute(router, { path: `/documents/${row.id}`, query: route.query }) }
+async function createDocument() {
+  if (saving.value || !formRef.value) return
+  if (!(await formRef.value.validate().catch(() => false))) return
   saving.value = true
   try {
-    const res = await documentAPI.create(form.value)
-    const docId = res?.id
-    if (selectedFile && docId) {
-      const fd = new FormData()
-      fd.append('file', selectedFile)
-      await documentAPI.uploadFile(docId, fd, res.version)
-    }
-    ElMessage.success(t('standard.common.createSuccess'))
-    showCreateDialog.value = false
-    loadDocuments()
-  } catch (e) {
-    ElMessage.error(getStandardErrorMessage(e, t))
-  } finally {
-    saving.value = false
-  }
+    let aggregate = await documentAPI.create(form.value)
+    if (selectedFile.value) { const data = new FormData(); data.append('file', selectedFile.value); aggregate = await documentAPI.uploadFile(aggregate.id, aggregate.draft_revision.id, data, aggregate.version) }
+    ElMessage.success(t('standard.common.createSuccess')); dialogVisible.value = false; goToDetail(aggregate)
+  } catch (error) { ElMessage.error(getStandardErrorMessage(error, t)) }
+  finally { saving.value = false }
 }
-
-const loadDetail = async (id) => {
-  const request = detailRequests.begin(id)
-  try {
-    const [document, documentMappings] = await Promise.all([
-      documentAPI.get(id),
-      documentAPI.getMappings(id)
-    ])
-    if (!detailRequests.isCurrent(request, id)) return
-    currentDoc.value = document
-    mappings.value = documentMappings || { elements: [], glossaries: [], metrics: [] }
-    showDetail.value = true
-  } catch (e) {
-    if (!detailRequests.isCurrent(request, id)) return
-    currentDoc.value = null
-    mappings.value = { elements: [], glossaries: [], metrics: [] }
-    showDetail.value = false
-    ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.loadFailed'))
-    await navigateStandardRoute(router, { path: '/documents', query: route.query }, { history: 'replace' })
-  }
+async function deleteDocument(row) {
+  try { await ElMessageBox.confirm(t('standard.document.confirmDelete', { name: displayRevision(row)?.name || row.code }), t('standard.common.hint'), { type: 'warning' }); await documentAPI.delete(row.id); ElMessage.success(t('standard.common.deleteSuccess')); await loadDocuments() }
+  catch (error) { if (!isCanceledInteraction(error)) ElMessage.error(getStandardErrorMessage(error, t)) }
 }
-
-const openDetail = row => navigateStandardRoute(router, {
-  path: `/documents/${row.id}`,
-  query: route.query
+watch(() => route.query, query => { filters.keyword = typeof query.keyword === 'string' ? query.keyword : ''; filters.doc_type = typeof query.doc_type === 'string' ? query.doc_type : ''; filters.owner_domain_id = Number(query.owner_domain_id) || null; filters.status = typeof query.status === 'string' ? query.status : ''; filters.page = Number(query.page) || 1; filters.page_size = Number(query.page_size) || 20; loadDocuments() }, { immediate: true })
+onMounted(async () => {
+  narrowMediaQuery = window.matchMedia('(max-width: 768px)')
+  syncNarrowViewport(narrowMediaQuery)
+  narrowMediaQuery.addEventListener('change', syncNarrowViewport)
+  try { domains.value = flattenDomains(await domainAPI.list() || []) } catch { domains.value = [] }
 })
-
-const handleDetailClosed = () => {
-  if (!route.params.id) return
-  navigateStandardRoute(router, { path: '/documents', query: route.query }, { history: 'replace' })
-}
-
-const downloadFile = async (row) => {
-  try {
-    const blob = await documentAPI.download(row.id)
-    saveBlob(blob, row.file_name || row.name)
-  } catch (e) {
-    ElMessage.error(getStandardErrorMessage(e, t, 'standard.document.downloadFailed'))
-  }
-}
-
-const openRelated = (resource, id) => navigateStandardRoute(router, `/${resource}/${id}`)
-
-const uploadToExisting = async (doc, file) => {
-  await runLocked(`document-upload:${doc.id}`, async () => {
-    const fd = new FormData()
-    fd.append('file', file.raw)
-    try {
-      await documentAPI.uploadFile(doc.id, fd, doc.version)
-      ElMessage.success(t('standard.document.uploadSuccess'))
-      const res = await documentAPI.get(doc.id)
-      currentDoc.value = res
-      const idx = documents.value.findIndex(d => d.id === doc.id)
-      if (idx !== -1) documents.value[idx] = res
-    } catch (e) {
-      ElMessage.error(getStandardErrorMessage(e, t))
-    }
-  })
-}
-
-const deleteDocument = async (row) => {
-  await runLocked(`document:${row.id}`, async () => {
-    try {
-      await ElMessageBox.confirm(t('standard.document.confirmDelete', { name: row.name }), t('standard.common.hint'), { type: 'warning' })
-      await documentAPI.delete(row.id)
-      ElMessage.success(t('standard.common.deleteSuccess'))
-      await loadDocuments()
-    } catch (e) {
-      if (!isCanceledInteraction(e)) ElMessage.error(getStandardErrorMessage(e, t, 'standard.common.deleteFailed'))
-    }
-  })
-}
-
-watch(() => route.params.id, id => {
-  const documentID = Number(id)
-  if (Number.isInteger(documentID) && documentID > 0) {
-    loadDetail(documentID)
-    return
-  }
-  detailRequests.invalidate()
-  showDetail.value = false
-  currentDoc.value = null
-  mappings.value = { elements: [], glossaries: [], metrics: [] }
-}, { immediate: true })
-
-onMounted(loadDocuments)
+onBeforeUnmount(() => narrowMediaQuery?.removeEventListener('change', syncNarrowViewport))
 </script>
 
 <style scoped>
-.document-list { min-height: 100%; padding: 20px; color: var(--addp-text-primary); background: var(--addp-bg-secondary); }
-.page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
-.page-header h2 { margin: 0 0 4px; font-size: 18px; color: var(--addp-text-primary); }
-.page-subtitle { margin: 0; font-size: 13px; color: var(--addp-text-secondary); }
-.document-list :deep(.el-card) { background: var(--addp-bg-primary); border-color: var(--addp-border-color); box-shadow: var(--addp-shadow-card); }
-.toolbar { display: flex; gap: 10px; margin-bottom: 16px; }
-.pagination { margin-top: 16px; display: flex; justify-content: flex-end; }
-.doc-detail { padding: 0 4px; }
-.upload-tip { font-size: 12px; color: var(--addp-text-secondary); margin-top: 4px; }
-.file-name { font-size: 12px; color: var(--el-text-color-regular); max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: middle; }
-.no-file { color: var(--el-text-color-placeholder); }
-.file-section { display: flex; align-items: center; gap: 8px; padding: 8px 0; font-size: 13px; }
-.file-info { color: var(--el-text-color-regular); }
-.no-file-section { padding: 8px 0; }
-.mapping-tag { margin: 4px; cursor: pointer; }
-.table-actions { display: inline-flex; align-items: center; gap: 8px; min-width: max-content; white-space: nowrap; }
-.table-actions :deep(.el-button) { white-space: nowrap; }
-
-@media (max-width: 768px) {
-  .document-list { padding: 12px; }
-  .page-header { flex-wrap: wrap; gap: 10px; }
-  .toolbar { flex-wrap: wrap; }
-  .toolbar :deep(.el-input), .toolbar :deep(.el-select) { width: 100% !important; }
-}
+.document-list { min-height:100%; padding:20px; color:var(--addp-text-primary); background:var(--addp-bg-secondary); }
+.page-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:20px; }.page-header h2 { margin:0 0 4px; font-size:18px; }.page-header p { margin:0; color:var(--addp-text-secondary); }
+.filter-card { margin-bottom:16px; }.pagination { margin-top:16px; justify-content:flex-end; }.table-actions { display:flex; white-space:nowrap; }.upload-tip { color:var(--addp-text-secondary); font-size:12px; }
+@media (max-width:768px) { .document-list { padding:12px; }.page-header { flex-wrap:wrap; gap:10px; }.document-list :deep(.el-col) { max-width:100%; flex:0 0 100%; margin-bottom:8px; } }
 </style>

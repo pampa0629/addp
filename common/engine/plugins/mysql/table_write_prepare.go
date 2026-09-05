@@ -493,5 +493,5 @@ func mysqlTablePathParts(path plugin.EngineCatalogPath) (string, string, error) 
 }
 
 func mysqlDialect() commonquery.Dialect {
-	return commonquery.ForEngine("mysql")
+	return commonquery.ForDialect("mysql")
 }

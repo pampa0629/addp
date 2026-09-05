@@ -83,7 +83,7 @@ func buildOracleInsertSQL(schema, table string, fields []datatype.FieldInfo, spa
 	if len(fields) == 0 {
 		return "", fmt.Errorf("oracle table write session requires fields")
 	}
-	dialect := commonquery.ForEngine("oracle")
+	dialect := commonquery.ForDialect("oracle")
 	columns := make([]string, 0, len(fields))
 	values := make([]string, 0, len(fields))
 	for index, field := range fields {

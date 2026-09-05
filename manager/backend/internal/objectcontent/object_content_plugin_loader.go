@@ -134,6 +134,7 @@ func registerBuiltinContentHandlers(registry *ObjectContentRegistry, configs []O
 func fallbackBuiltinContentPlugins() []ObjectContentPluginConfig {
 	plugins := []ObjectContentPluginConfig{
 		{Name: "builtin:content-pdf", Type: "builtin", Builtin: models.ObjectPreviewKindPDF},
+		{Name: "builtin:content-doc", Type: "builtin", Builtin: models.ObjectPreviewKindDOC},
 		{Name: "builtin:content-docx", Type: "builtin", Builtin: models.ObjectPreviewKindDOCX},
 		{Name: "builtin:content-pptx", Type: "builtin", Builtin: models.ObjectPreviewKindPPTX},
 		{Name: "builtin:content-wps", Type: "builtin", Builtin: models.ObjectPreviewKindWPS},
@@ -415,10 +416,8 @@ func defaultRawDocumentMaxBytes(formatType commonformat.FormatType) int64 {
 	switch formatType {
 	case commonformat.FormatPDF:
 		return maxPDFPreviewBytes
-	case commonformat.FormatDOCX:
-		return maxDOCXPreviewBytes
-	case commonformat.FormatWPS:
-		return maxWPSPreviewBytes
+	case commonformat.FormatDOC, commonformat.FormatDOCX, commonformat.FormatWPS:
+		return maxOfficePreviewBytes
 	case commonformat.FormatPPTX:
 		return maxPPTXPreviewBytes
 	default:

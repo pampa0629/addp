@@ -248,6 +248,7 @@
     "passwordPlaceholder": "数据库密码",
     "passwordOptional": "密码（可选）",
     "passwordHint": "已存储密码，如无需修改请保持占位符不变。",
+    "sensitiveValueHint": "已存储该敏感值，如无需修改请保持占位符不变。",
     "bootstrapServers": "Broker 地址",
     "bootstrapServersPlaceholder": "broker-1:9092,broker-2:9092",
     "clientIdOptional": "客户端标识（可选）",
@@ -325,6 +326,7 @@
     "valid": {
       "selectType": "请选择标准引擎类型",
       "inputName": "请输入引擎名称",
+      "requiredField": "请输入{field}",
       "inputHost": "请输入主机地址",
       "inputPort": "请输入端口",
       "inputServiceName": "请输入 Oracle 服务名",
@@ -351,6 +353,15 @@
     "totalSheets": "工作表总数",
     "loadedSheets": "已加载工作表",
     "fileSize": "文件大小"
+  },
+  "officePreview": {
+    "loading": "正在加载 {type} 文档...",
+    "tooLarge": "文档超过在线预览限制，请下载后查看。",
+    "loadFailed": "文档预览失败",
+    "requestFailed": "文档请求失败（{status}）",
+    "noSource": "未提供可用的文档内容",
+    "empty": "文档内容为空",
+    "downloadFailed": "文档下载失败：{error}"
   },
   "containerPreview": {
     "childrenTruncatedTitle": "仅展示部分子项",

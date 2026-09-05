@@ -1525,6 +1525,57 @@ const docTemplate = `{
                 ]
             }
         },
+        "/document-extraction-candidates/{candidate_id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "裁决文档提炼候选 | Review document extraction candidate",
+                "parameters": [
+                    {
+                        "description": "裁决状态及并发版本 | Decision and concurrency version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.UpdateDocumentExtractionCandidateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentExtractionCandidate"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.document.update"
+                ]
+            }
+        },
         "/documents": {
             "get": {
                 "security": [
@@ -1539,6 +1590,43 @@ const docTemplate = `{
                     "Standard"
                 ],
                 "summary": "获取标准文档列表 | List standard documents",
+                "parameters": [
+                    {
+                        "enum": [
+                            "platform",
+                            "tenant_common",
+                            "domain"
+                        ],
+                        "type": "string",
+                        "description": "适用范围 | Scope",
+                        "name": "scope_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "归属业务域 ID | Owning domain ID",
+                        "name": "owner_domain_id",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "draft",
+                            "in_review",
+                            "published",
+                            "withdrawn"
+                        ],
+                        "type": "string",
+                        "description": "修订状态 | Revision status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "生效时点（RFC3339） | Effective point in time (RFC3339)",
+                        "name": "as_of",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1583,11 +1671,22 @@ const docTemplate = `{
                     "Standard"
                 ],
                 "summary": "创建标准文档 | Create standard document",
+                "parameters": [
+                    {
+                        "description": "文档身份和首个草稿修订 | Document identity and initial draft revision",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.CreateDocumentRequest"
+                        }
+                    }
+                ],
                 "responses": {
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_standard_internal_models.Document"
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentAggregate"
                         }
                     },
                     "401": {
@@ -1629,11 +1728,19 @@ const docTemplate = `{
                     "Standard"
                 ],
                 "summary": "获取标准文档详情 | Get standard document detail",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "生效时点（RFC3339） | Effective point in time (RFC3339)",
+                        "name": "as_of",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_standard_internal_models.Document"
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentAggregate"
                         }
                     },
                     "401": {
@@ -1688,7 +1795,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_standard_internal_models.Document"
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentAggregate"
                         }
                     },
                     "401": {
@@ -1770,7 +1877,7 @@ const docTemplate = `{
                 ]
             }
         },
-        "/documents/{id}/download": {
+        "/documents/{id}/extractions": {
             "get": {
                 "security": [
                     {
@@ -1783,53 +1890,19 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "下载文档文件 | Download document file",
+                "summary": "获取文档提炼批次 | List document extraction batches",
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "502": {
-                        "description": "Bad Gateway",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentExtraction"
                             }
                         }
                     }
                 },
-                "x-addp-auth-mode": "resource_ticket",
+                "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "standard.document.read"
                 ]
@@ -1947,7 +2020,287 @@ const docTemplate = `{
                 ]
             }
         },
-        "/documents/{id}/upload": {
+        "/documents/{id}/revisions": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "获取文档修订历史 | List document revisions",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentRevision"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.document.read"
+                ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "创建文档草稿修订 | Create document draft revision",
+                "parameters": [
+                    {
+                        "description": "并发版本和变更说明 | Version and change summary",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.CreateDocumentRevisionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentAggregate"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.document.update"
+                ]
+            }
+        },
+        "/documents/{id}/revisions/{revision_id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "获取文档修订 | Get document revision",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentRevision"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.document.read"
+                ]
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "更新文档草稿修订 | Update document draft revision",
+                "parameters": [
+                    {
+                        "description": "完整草稿及并发版本 | Full draft and concurrency version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.UpdateDocumentRevisionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentAggregate"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.document.update"
+                ]
+            }
+        },
+        "/documents/{id}/revisions/{revision_id}/extractions": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "从文档修订提炼标准候选 | Extract standard candidates from document revision",
+                "parameters": [
+                    {
+                        "description": "当前资源版本 | Current resource version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.CreateDocumentExtractionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentExtraction"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.document_extraction.create"
+                ]
+            }
+        },
+        "/documents/{id}/revisions/{revision_id}/file": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "下载文档文件 | Download document file",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "需要登录 | Authentication required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "无权访问 | Access denied",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "resource_ticket",
+                "x-addp-required-permissions": [
+                    "standard.document.read"
+                ]
+            },
             "post": {
                 "security": [
                     {
@@ -1963,7 +2316,7 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "上传文档文件 | Upload document file",
+                "summary": "上传文档修订文件 | Upload document revision file",
                 "parameters": [
                     {
                         "type": "integer",
@@ -2037,6 +2390,174 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "standard.document.update"
+                ]
+            }
+        },
+        "/documents/{id}/revisions/{revision_id}/publish": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "发布文档修订 | Publish document revision",
+                "parameters": [
+                    {
+                        "description": "当前资源版本 | Current resource version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentAggregate"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.document.publish"
+                ]
+            }
+        },
+        "/documents/{id}/revisions/{revision_id}/return": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "退回文档修订 | Return document revision to draft",
+                "parameters": [
+                    {
+                        "description": "当前资源版本 | Current resource version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentAggregate"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.document.publish"
+                ]
+            }
+        },
+        "/documents/{id}/revisions/{revision_id}/submit": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "提交文档修订审核 | Submit document revision for review",
+                "parameters": [
+                    {
+                        "description": "当前资源版本 | Current resource version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentAggregate"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.document.update"
+                ]
+            }
+        },
+        "/documents/{id}/revisions/{revision_id}/withdraw": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "撤回文档发布修订 | Withdraw published document revision",
+                "parameters": [
+                    {
+                        "description": "当前资源版本 | Current resource version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentAggregate"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.document.publish"
                 ]
             }
         },
@@ -2614,7 +3135,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/github_com_addp_standard_internal_models.Document"
+                                "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentAggregate"
                             }
                         }
                     },
@@ -3221,6 +3742,55 @@ const docTemplate = `{
                     "Standard"
                 ],
                 "summary": "获取业务术语列表 | List glossaries",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "关联数据元 ID | Related data element ID",
+                        "name": "element_id",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "platform",
+                            "tenant_common",
+                            "domain"
+                        ],
+                        "type": "string",
+                        "description": "适用范围 | Scope",
+                        "name": "scope_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "归属业务域 ID，仅 domain 范围适用 | Owning domain ID, only for domain scope",
+                        "name": "owner_domain_id",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "draft",
+                            "in_review",
+                            "published",
+                            "withdrawn"
+                        ],
+                        "type": "string",
+                        "description": "修订状态 | Revision status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "关键字 | Keyword",
+                        "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "生效时点（RFC3339，默认服务端当前时间） | Effective point in time (RFC3339, defaults to server time)",
+                        "name": "as_of",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -3228,17 +3798,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_standard_internal_models.PaginatedGlossaryResponse"
                         }
                     },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
+                    "400": {
+                        "description": "请求无效 | Invalid request",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -3258,32 +3819,36 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Standard"
                 ],
-                "summary": "创建业务术语 | Create glossary",
+                "summary": "创建业务术语及首个草稿修订 | Create glossary with initial draft revision",
+                "parameters": [
+                    {
+                        "description": "业务术语和首个草稿 | Glossary and initial draft",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.CreateGlossaryRequest"
+                        }
+                    }
+                ],
                 "responses": {
-                    "200": {
-                        "description": "OK",
+                    "201": {
+                        "description": "Created",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.GlossaryAggregate"
                         }
                     },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
+                    "400": {
+                        "description": "请求无效 | Invalid request",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -3311,31 +3876,20 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "获取业务术语详情 | Get glossary detail",
+                "summary": "获取业务术语聚合 | Get glossary aggregate",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "生效时点（RFC3339，默认服务端当前时间） | Effective point in time (RFC3339, defaults to server time)",
+                        "name": "as_of",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.GlossaryAggregate"
                         }
                     }
                 },
@@ -3350,16 +3904,19 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Standard"
                 ],
-                "summary": "更新业务术语 | Update glossary",
+                "summary": "更新业务术语归属信息 | Update glossary ownership",
                 "parameters": [
                     {
-                        "description": "更新业务术语及关联数据元 | Update glossary and related elements",
+                        "description": "归属信息及并发版本 | Ownership and concurrency version",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -3372,26 +3929,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.GlossaryAggregate"
                         }
                     },
                     "409": {
@@ -3421,17 +3959,10 @@ const docTemplate = `{
                 "tags": [
                     "Standard"
                 ],
-                "summary": "删除业务术语 | Delete glossary",
+                "summary": "删除从未发布的业务术语 | Delete a never-published glossary",
                 "responses": {
                     "200": {
                         "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -3439,8 +3970,8 @@ const docTemplate = `{
                             }
                         }
                     },
-                    "403": {
-                        "description": "无权访问 | Access denied",
+                    "409": {
+                        "description": "存在发布历史 | Publication history exists",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -3452,140 +3983,6 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "standard.glossary.delete"
-                ]
-            }
-        },
-        "/glossaries/{id}/approve": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "审批业务术语 | Approve glossary",
-                "parameters": [
-                    {
-                        "description": "当前资源版本 | Current resource version",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_standard_internal_models.VersionRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "409": {
-                        "description": "资源版本冲突 | Resource version conflict",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "standard.glossary.approve"
-                ]
-            }
-        },
-        "/glossaries/{id}/deprecate": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Standard"
-                ],
-                "summary": "废弃业务术语 | Deprecate glossary",
-                "parameters": [
-                    {
-                        "description": "当前资源版本 | Current resource version",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_standard_internal_models.VersionRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "无权访问 | Access denied",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "409": {
-                        "description": "资源版本冲突 | Resource version conflict",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "standard.glossary.offline"
                 ]
             }
         },
@@ -3609,7 +4006,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/github_com_addp_standard_internal_models.Document"
+                                "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentAggregate"
                             }
                         }
                     },
@@ -3859,21 +4256,55 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "需要登录 | Authentication required",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_standard_internal_models.PublishedElementReference"
                             }
                         }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.glossary.read",
+                    "standard.element.read"
+                ]
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "替换术语关联的数据元 | Replace element mappings of glossary",
+                "parameters": [
+                    {
+                        "description": "数据元身份及并发版本 | Element identities and concurrency version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.UpdateGlossaryElementsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.GlossaryAggregate"
+                        }
                     },
-                    "403": {
-                        "description": "无权访问 | Access denied",
+                    "409": {
+                        "description": "资源版本冲突 | Resource version conflict",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -3884,8 +4315,333 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "standard.glossary.read",
+                    "standard.glossary.update",
                     "standard.element.read"
+                ]
+            }
+        },
+        "/glossaries/{id}/revisions": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "获取业务术语修订历史 | List glossary revisions",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_standard_internal_models.GlossaryRevision"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.glossary.read"
+                ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "从最近修订创建新草稿 | Create a new glossary draft from latest revision",
+                "parameters": [
+                    {
+                        "description": "并发版本和变更说明 | Version and change summary",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.CreateGlossaryRevisionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.GlossaryAggregate"
+                        }
+                    },
+                    "409": {
+                        "description": "草稿已存在或版本冲突 | Draft exists or version conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.glossary.update"
+                ]
+            }
+        },
+        "/glossaries/{id}/revisions/{revision_id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "获取业务术语修订 | Get glossary revision",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.GlossaryRevision"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.glossary.read"
+                ]
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "更新业务术语草稿修订 | Update glossary draft revision",
+                "parameters": [
+                    {
+                        "description": "完整草稿及并发版本 | Full draft and concurrency version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.UpdateGlossaryRevisionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.GlossaryAggregate"
+                        }
+                    },
+                    "409": {
+                        "description": "状态或版本冲突 | State or version conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.glossary.update"
+                ]
+            }
+        },
+        "/glossaries/{id}/revisions/{revision_id}/publish": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "发布业务术语修订 | Publish glossary revision",
+                "parameters": [
+                    {
+                        "description": "当前资源版本 | Current resource version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.GlossaryAggregate"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.glossary.publish"
+                ]
+            }
+        },
+        "/glossaries/{id}/revisions/{revision_id}/return": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "退回业务术语修订 | Return glossary revision to draft",
+                "parameters": [
+                    {
+                        "description": "当前资源版本 | Current resource version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.GlossaryAggregate"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.glossary.publish"
+                ]
+            }
+        },
+        "/glossaries/{id}/revisions/{revision_id}/submit": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "提交业务术语修订审核 | Submit glossary revision for review",
+                "parameters": [
+                    {
+                        "description": "当前资源版本 | Current resource version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.GlossaryAggregate"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.glossary.update"
+                ]
+            }
+        },
+        "/glossaries/{id}/revisions/{revision_id}/withdraw": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "撤回业务术语发布修订 | Withdraw published glossary revision",
+                "parameters": [
+                    {
+                        "description": "当前资源版本 | Current resource version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.RevisionActionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.GlossaryAggregate"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.glossary.publish"
                 ]
             }
         },
@@ -4534,7 +5290,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/github_com_addp_standard_internal_models.Document"
+                                "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentAggregate"
                             }
                         }
                     },
@@ -6109,6 +6865,101 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_standard_internal_models.CreateDocumentExtractionRequest": {
+            "type": "object",
+            "required": [
+                "version"
+            ],
+            "properties": {
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.CreateDocumentRequest": {
+            "type": "object",
+            "required": [
+                "change_summary",
+                "code",
+                "doc_type",
+                "name",
+                "scope_type"
+            ],
+            "properties": {
+                "change_summary": {
+                    "type": "string"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "doc_type": {
+                    "type": "string",
+                    "enum": [
+                        "national",
+                        "industry",
+                        "internal",
+                        "reference"
+                    ]
+                },
+                "effective_from": {
+                    "type": "string"
+                },
+                "effective_to": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner_domain_id": {
+                    "type": "integer"
+                },
+                "publish_date": {
+                    "type": "string"
+                },
+                "scope_type": {
+                    "type": "string",
+                    "enum": [
+                        "tenant_common",
+                        "domain"
+                    ]
+                },
+                "source_org": {
+                    "type": "string"
+                },
+                "steward_id": {
+                    "type": "integer"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "version_label": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.CreateDocumentRevisionRequest": {
+            "type": "object",
+            "required": [
+                "change_summary",
+                "version"
+            ],
+            "properties": {
+                "change_summary": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
         "github_com_addp_standard_internal_models.CreateElementRequest": {
             "type": "object",
             "required": [
@@ -6219,30 +7070,157 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_standard_internal_models.CreateLinkedDocumentRequest": {
+        "github_com_addp_standard_internal_models.CreateGlossaryRequest": {
             "type": "object",
             "required": [
+                "change_summary",
+                "code",
+                "definition",
                 "name",
-                "version"
+                "scope_type"
             ],
             "properties": {
-                "description": {
+                "alias": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "change_summary": {
                     "type": "string"
                 },
-                "doc_type": {
+                "code": {
                     "type": "string"
                 },
-                "document_version": {
+                "definition": {
+                    "type": "string"
+                },
+                "effective_from": {
+                    "type": "string"
+                },
+                "effective_to": {
+                    "type": "string"
+                },
+                "example": {
                     "type": "string"
                 },
                 "name": {
                     "type": "string"
                 },
-                "source_org": {
+                "note": {
+                    "type": "string"
+                },
+                "owner_domain_id": {
+                    "type": "integer"
+                },
+                "related_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "scope_type": {
+                    "type": "string",
+                    "enum": [
+                        "tenant_common",
+                        "domain"
+                    ]
+                },
+                "steward_id": {
+                    "type": "integer"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.CreateGlossaryRevisionRequest": {
+            "type": "object",
+            "required": [
+                "change_summary",
+                "version"
+            ],
+            "properties": {
+                "change_summary": {
                     "type": "string"
                 },
                 "version": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.CreateLinkedDocumentRequest": {
+            "type": "object",
+            "required": [
+                "change_summary",
+                "code",
+                "doc_type",
+                "name",
+                "scope_type",
+                "version"
+            ],
+            "properties": {
+                "change_summary": {
+                    "type": "string"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "doc_type": {
+                    "type": "string",
+                    "enum": [
+                        "national",
+                        "industry",
+                        "internal",
+                        "reference"
+                    ]
+                },
+                "effective_from": {
+                    "type": "string"
+                },
+                "effective_to": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner_domain_id": {
                     "type": "integer"
+                },
+                "publish_date": {
+                    "type": "string"
+                },
+                "scope_type": {
+                    "type": "string",
+                    "enum": [
+                        "tenant_common",
+                        "domain"
+                    ]
+                },
+                "source_org": {
+                    "type": "string"
+                },
+                "steward_id": {
+                    "type": "integer"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "version": {
+                    "type": "integer"
+                },
+                "version_label": {
+                    "type": "string"
                 }
             }
         },
@@ -6408,46 +7386,67 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_standard_internal_models.Document": {
+        "github_com_addp_standard_internal_models.DocumentAggregate": {
             "type": "object",
             "properties": {
+                "code": {
+                    "type": "string"
+                },
                 "created_at": {
                     "type": "string"
                 },
                 "created_by": {
                     "type": "integer"
                 },
-                "description": {
-                    "type": "string"
+                "current_revision": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentRevision"
                 },
                 "doc_type": {
-                    "description": "national/industry/internal/reference",
-                    "type": "string"
+                    "type": "string",
+                    "enum": [
+                        "national",
+                        "industry",
+                        "internal",
+                        "reference"
+                    ]
                 },
-                "document_version": {
-                    "type": "string"
+                "draft_revision": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentRevision"
                 },
-                "file_key": {
-                    "description": "MinIO 存储路径",
-                    "type": "string"
-                },
-                "file_name": {
-                    "type": "string"
-                },
-                "file_size": {
+                "draft_revision_id": {
                     "type": "integer"
+                },
+                "has_publication_history": {
+                    "type": "boolean"
                 },
                 "id": {
                     "type": "integer"
                 },
-                "name": {
+                "lifecycle_state": {
                     "type": "string"
                 },
-                "publish_date": {
-                    "type": "string"
+                "owner_domain_id": {
+                    "type": "integer"
+                },
+                "scope_type": {
+                    "type": "string",
+                    "enum": [
+                        "platform",
+                        "tenant_common",
+                        "domain"
+                    ]
                 },
                 "source_org": {
                     "type": "string"
+                },
+                "steward_id": {
+                    "type": "integer"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "tenant_id": {
                     "type": "integer"
@@ -6460,6 +7459,214 @@ const docTemplate = `{
                 },
                 "version": {
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.DocumentExtraction": {
+            "type": "object",
+            "properties": {
+                "candidates": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentExtractionCandidate"
+                    }
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "document_revision_id": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "requested_by": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "completed"
+                    ]
+                },
+                "tenant_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.DocumentExtractionCandidate": {
+            "type": "object",
+            "properties": {
+                "candidate_type": {
+                    "type": "string",
+                    "enum": [
+                        "glossary",
+                        "element",
+                        "code_set",
+                        "metric"
+                    ]
+                },
+                "code": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "definition": {
+                    "type": "string"
+                },
+                "evidences": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentExtractionEvidence"
+                    }
+                },
+                "extraction_id": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "payload": {
+                    "type": "object"
+                },
+                "reviewed_at": {
+                    "type": "string"
+                },
+                "reviewed_by": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "pending",
+                        "retained",
+                        "rejected"
+                    ]
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.DocumentExtractionEvidence": {
+            "type": "object",
+            "properties": {
+                "candidate_id": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "document_revision_id": {
+                    "type": "integer"
+                },
+                "end_line": {
+                    "type": "integer"
+                },
+                "excerpt": {
+                    "type": "string"
+                },
+                "excerpt_hash": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "section_path": {
+                    "type": "string"
+                },
+                "start_line": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.DocumentRevision": {
+            "type": "object",
+            "properties": {
+                "change_summary": {
+                    "type": "string"
+                },
+                "content_sha256": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "document_id": {
+                    "type": "integer"
+                },
+                "effective_from": {
+                    "type": "string"
+                },
+                "effective_to": {
+                    "type": "string"
+                },
+                "file_key": {
+                    "type": "string"
+                },
+                "file_name": {
+                    "type": "string"
+                },
+                "file_size": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "media_type": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "publish_date": {
+                    "type": "string"
+                },
+                "published_at": {
+                    "type": "string"
+                },
+                "published_by": {
+                    "type": "integer"
+                },
+                "revision_no": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "draft",
+                        "in_review",
+                        "published",
+                        "withdrawn"
+                    ]
+                },
+                "submitted_at": {
+                    "type": "string"
+                },
+                "submitted_by": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "integer"
+                },
+                "version_label": {
+                    "type": "string"
                 }
             }
         },
@@ -6625,14 +7832,11 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_standard_internal_models.Glossary": {
+        "github_com_addp_standard_internal_models.GlossaryAggregate": {
             "type": "object",
             "properties": {
-                "alias": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
+                "code": {
+                    "type": "string"
                 },
                 "created_at": {
                     "type": "string"
@@ -6640,33 +7844,34 @@ const docTemplate = `{
                 "created_by": {
                     "type": "integer"
                 },
-                "definition": {
-                    "type": "string"
+                "current_revision": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_models.GlossaryRevision"
                 },
-                "domain_id": {
+                "draft_revision": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_models.GlossaryRevision"
+                },
+                "draft_revision_id": {
                     "type": "integer"
                 },
-                "example": {
-                    "type": "string"
+                "has_publication_history": {
+                    "type": "boolean"
                 },
                 "id": {
                     "type": "integer"
                 },
-                "name": {
+                "lifecycle_state": {
                     "type": "string"
                 },
-                "note": {
-                    "type": "string"
+                "owner_domain_id": {
+                    "type": "integer"
                 },
-                "related_ids": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "status": {
-                    "description": "draft/approved/deprecated",
-                    "type": "string"
+                "scope_type": {
+                    "type": "string",
+                    "enum": [
+                        "platform",
+                        "tenant_common",
+                        "domain"
+                    ]
                 },
                 "steward_id": {
                     "type": "integer"
@@ -6687,6 +7892,86 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.GlossaryRevision": {
+            "type": "object",
+            "properties": {
+                "alias": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "change_summary": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "definition": {
+                    "type": "string"
+                },
+                "effective_from": {
+                    "type": "string"
+                },
+                "effective_to": {
+                    "type": "string"
+                },
+                "example": {
+                    "type": "string"
+                },
+                "glossary_id": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "published_at": {
+                    "type": "string"
+                },
+                "published_by": {
+                    "type": "integer"
+                },
+                "related_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "revision_no": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "draft",
+                        "in_review",
+                        "published",
+                        "withdrawn"
+                    ]
+                },
+                "submitted_at": {
+                    "type": "string"
+                },
+                "submitted_by": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
                     "type": "integer"
                 }
             }
@@ -7016,7 +8301,7 @@ const docTemplate = `{
                 "data": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_addp_standard_internal_models.Document"
+                        "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentAggregate"
                     }
                 },
                 "page": {
@@ -7062,7 +8347,7 @@ const docTemplate = `{
                 "data": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_addp_standard_internal_models.Glossary"
+                        "$ref": "#/definitions/github_com_addp_standard_internal_models.GlossaryAggregate"
                     }
                 },
                 "page": {
@@ -7204,6 +8489,49 @@ const docTemplate = `{
                     "$ref": "#/definitions/github_com_addp_standard_internal_models.JSONB"
                 },
                 "revision_no": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.PublishedElementReference": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "lifecycle_state": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner_domain_id": {
+                    "type": "integer"
+                },
+                "revision_id": {
+                    "type": "integer"
+                },
+                "revision_no": {
+                    "type": "integer"
+                },
+                "scope_type": {
+                    "type": "string",
+                    "enum": [
+                        "platform",
+                        "tenant_common",
+                        "domain"
+                    ]
+                },
+                "status": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "version": {
                     "type": "integer"
                 }
             }
@@ -7352,7 +8680,6 @@ const docTemplate = `{
                     }
                 },
                 "locations": {
-                    "description": "key: \"element_1\" / \"glossary_2\" / \"metric_3\"",
                     "type": "object",
                     "additionalProperties": {
                         "type": "string"
@@ -7778,29 +9105,103 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_standard_internal_models.UpdateDocumentRequest": {
+        "github_com_addp_standard_internal_models.UpdateDocumentExtractionCandidateRequest": {
             "type": "object",
             "required": [
+                "status",
                 "version"
             ],
             "properties": {
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "retained",
+                        "rejected"
+                    ]
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.UpdateDocumentRequest": {
+            "type": "object",
+            "required": [
+                "doc_type",
+                "scope_type",
+                "version"
+            ],
+            "properties": {
+                "doc_type": {
+                    "type": "string",
+                    "enum": [
+                        "national",
+                        "industry",
+                        "internal",
+                        "reference"
+                    ]
+                },
+                "owner_domain_id": {
+                    "type": "integer"
+                },
+                "scope_type": {
+                    "type": "string",
+                    "enum": [
+                        "tenant_common",
+                        "domain"
+                    ]
+                },
+                "source_org": {
+                    "type": "string"
+                },
+                "steward_id": {
+                    "type": "integer"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.UpdateDocumentRevisionRequest": {
+            "type": "object",
+            "required": [
+                "change_summary",
+                "name",
+                "version"
+            ],
+            "properties": {
+                "change_summary": {
+                    "type": "string"
+                },
                 "description": {
                     "type": "string"
                 },
-                "doc_type": {
+                "effective_from": {
                     "type": "string"
                 },
-                "document_version": {
+                "effective_to": {
                     "type": "string"
                 },
                 "name": {
                     "type": "string"
                 },
-                "source_org": {
+                "publish_date": {
                     "type": "string"
                 },
                 "version": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "version_label": {
+                    "type": "string"
                 }
             }
         },
@@ -7937,38 +9338,40 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_standard_internal_models.UpdateGlossaryRequest": {
+        "github_com_addp_standard_internal_models.UpdateGlossaryElementsRequest": {
             "type": "object",
             "required": [
                 "version"
             ],
             "properties": {
-                "alias": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "definition": {
-                    "type": "string"
-                },
-                "domain_id": {
-                    "type": "integer"
-                },
                 "element_ids": {
                     "type": "array",
                     "items": {
                         "type": "integer"
                     }
                 },
-                "example": {
-                    "type": "string"
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.UpdateGlossaryRequest": {
+            "type": "object",
+            "required": [
+                "scope_type",
+                "version"
+            ],
+            "properties": {
+                "owner_domain_id": {
+                    "type": "integer"
                 },
-                "name": {
-                    "type": "string"
-                },
-                "note": {
-                    "type": "string"
+                "scope_type": {
+                    "type": "string",
+                    "enum": [
+                        "tenant_common",
+                        "domain"
+                    ]
                 },
                 "steward_id": {
                     "type": "integer"
@@ -7980,7 +9383,56 @@ const docTemplate = `{
                     }
                 },
                 "version": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.UpdateGlossaryRevisionRequest": {
+            "type": "object",
+            "required": [
+                "change_summary",
+                "definition",
+                "name",
+                "version"
+            ],
+            "properties": {
+                "alias": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "change_summary": {
+                    "type": "string"
+                },
+                "definition": {
+                    "type": "string"
+                },
+                "effective_from": {
+                    "type": "string"
+                },
+                "effective_to": {
+                    "type": "string"
+                },
+                "example": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "related_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
                 }
             }
         },

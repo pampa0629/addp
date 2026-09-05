@@ -17,6 +17,7 @@ require (
 	github.com/swaggo/swag v1.16.6
 	github.com/twpayne/go-geom v1.6.1
 	github.com/xuri/excelize/v2 v2.10.0
+	go.mongodb.org/mongo-driver v1.11.4
 	golang.org/x/sync v0.19.0
 	gorm.io/datatypes v1.2.7
 	gorm.io/driver/postgres v1.6.0
@@ -125,7 +126,6 @@ require (
 	github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9 // indirect
 	github.com/youmark/pkcs8 v0.0.0-20181117223130-1be2e3e5546d // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
-	go.mongodb.org/mongo-driver v1.11.4 // indirect
 	go.opentelemetry.io/otel v1.39.0 // indirect
 	go.opentelemetry.io/otel/trace v1.39.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect

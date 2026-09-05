@@ -270,6 +270,12 @@ func (s *Model3DGLBTaskService) runModel3DGLBGeneration(ctx context.Context, tas
 		metadata["result_id"] = result.ID
 		metadata["storage_ref"] = buildResult.StorageRef
 		metadata["content_url"] = buildResult.ContentURL
+		if outputRef, lineageErr := managerInfraObjectLineageRef(buildResult.StorageRef, s.bucket); lineageErr == nil {
+			metadata = managerExecutionLineage(metadata, commonExecution.TaskTypeModel3DGLBGeneration,
+				[]commonExecution.LineageResourceRef{managerItemLineageRef(execCfg.Source.ItemLocator, execCfg.Source.ItemFingerprint, execCfg.Source.ItemID)},
+				[]commonExecution.LineageResourceRef{outputRef},
+			)
+		}
 	}
 
 	completedAt := time.Now()

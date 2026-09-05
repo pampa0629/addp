@@ -1233,6 +1233,9 @@ Phase 4B 再接企业目录和资产授权主线：
 - [x] 实现 5.6 节 wallboard 应用刷新策略；
 - [x] 实现 5.7 节 wallboard 应用呈现区块；
 - [x] 完成 5.9 节外部 BI 消费契约、认证路线与现状缺口核查；
+- [x] 确定 Power Query / Power BI Desktop 为首个真实 Connector 验收载体及第一版范围；
+- [x] 实现不依赖 BI 宿主的 Python Service Consumer SDK，并纳入现有 Python 发布门禁；
+- [ ] 以真实普通表与空间 Query Service 完成 Python 外部消费者只读运行验收；
 - [ ] 外部 BI 消费服务的契约与接入指南；
 - [x] 实现外部 OAuth Client 注册治理；
 - [ ] 以真实 BI Connector 完成端到端验收；
@@ -1787,13 +1790,134 @@ Workbench 正式发布长期 Data Application `farmland-spatial-consumption`（I
 
 用户确认持久变更后，四个 Component 的当前契约已通过普通编辑器主路径保存，并发布为 Data Application `c4c0aa6e-70b1-49e8-8ade-8db92f5c6e33` 的不可变 Revision 2；没有自动保存、静默刷新指纹或修改其他应用。最终运行入口显示“发布修订 2”，默认“长沙市”查询返回 10 个地块、面积合计 0.1094、连续设色五档地图和 10 条明细；运行页把参数改为“株洲市”后，再次返回 10 个地块、面积合计 0.9892、更新后的五档地图和 10 条株洲市明细，四种 renderer 均无契约告警或查询错误。
 
+### 14.25 真实 BI Connector 最小实施设计（2026-09-05）
+
+本轮复核了 System OAuth、Service Consumer Catalog、Consumer Descriptor、Query Service cursor 执行和当前主流 BI 扩展机制。结论是：第一条真实外部 BI 路线选择 **Power Query 自定义 Connector，并以 Power BI Desktop Import 模式作为首个产品验收载体**。这是具体适配器和验收工具的选择，不进入 Service Descriptor、Workbench 领域模型或平台通用术语。
+
+选择依据如下：
+
+1. Power Query 自定义 Connector 可以为 REST API 提供业务友好的导航表，支持自定义 OAuth `StartLogin / FinishLogin / Refresh / Logout`、客户端 PKCE、POST Body、动态 Schema 和分页，能够直接映射现有 ADDP 契约；
+2. Tableau WDC 3.0 已被官方弃用，其官方替代 REST API Connector 当前只支持 HTTP GET，不能承载 ADDP 唯一的 POST 结构化 Query operation；Tableau Connector SDK 的长期主路径是 ODBC / JDBC，也会倒逼数据库或 SQL 旁路，因此不采用；
+3. Looker Studio Community Connector 在 Google 托管运行，首验就要求外部可达的 HTTPS ADDP 环境、Google Apps Script 部署和账号治理，无法先在当前本地环境隔离验证 Service 协议，不作为第一条路线；
+4. Power BI Desktop 只运行于 Windows，因此 macOS 本地开发机可以继续完成 ADDP 侧契约核查，但不能替代 Connector 的真实产品验收。构建和纯查询测试可使用 GitHub 托管的 Windows Runner，不要求把本地开发机配置为 self-hosted runner；交互式 OAuth 和 Power BI Desktop Navigator 仍需一个可操作的 Windows 环境。
+
+对应官方事实来源：
+
+- [Power Query Connector SDK](https://learn.microsoft.com/en-us/power-query/install-sdk)
+- [Power Query 自定义 OAuth](https://learn.microsoft.com/en-us/power-query/handling-authentication)
+- [Power Query REST 分页](https://learn.microsoft.com/en-us/power-query/handling-paging)
+- [Power BI Desktop 系统要求](https://learn.microsoft.com/en-us/power-bi/fundamentals/desktop-get-the-desktop)
+- [Tableau WDC 3.0 弃用说明](https://help.tableau.com/current/api/webdataconnector/en-us/docs/wdc_overview.html)
+
+#### 14.25.1 Owner 与代码位置
+
+Connector 是 Service Consumer Contract 的产品适配器，由 Service owner 维护，建议唯一位置为：
+
+```text
+service/connectors/power-query/
+```
+
+该目录只保存 Power Query Connector 源码、资源、测试查询、构建定义和安装说明，不进入 Service Backend 进程，不依赖 Workbench，也不形成新的 ADDP 运行模块。Workbench 继续作为内置 Service-native Data Application；Power Query Connector 是外部客户端，两者只共享 Service 公共消费契约。
+
+不得把 Power Query M 代码放进 `common-frontend`、Workbench Frontend 或 System；不得新增 Power BI 专属 Backend、Workbench 查询代理、OData 兼容层、JDBC / ODBC Bridge、SQL 翻译器或静态 Token。具体 BI 品牌只允许出现在该适配器目录、测试和接入指南中。
+
+#### 14.25.2 第一版用户入口与身份
+
+Connector 唯一入口拟定为：
+
+```text
+ADDPService.Contents(base_url, client_id)
+```
+
+- `base_url` 是当前 ADDP Gateway 的公开根地址；生产连接必须使用 HTTPS；
+- `client_id` 是当前 Tenant 管理员在 System 中为该 Power Query 部署独立注册的公共 OAuth Client ID，不是 Secret，可以作为 Data Source Path 的组成部分；
+- Connector 固定请求 `scope=addp.api`，不接受 Client Secret、API Key、用户名密码或内置 Client ID；
+- Connector 使用 Power Query 宿主文档规定的标准 HTTPS callback URI，并必须原样登记到该 Tenant OAuth Client；不得自行猜测或降级到 `localhost`；
+- 凭据作用域固定为 `base_url + client_id`，避免不同 ADDP 环境或不同 Tenant Client 误共享 Token。
+
+OAuth 实现使用 Advanced Signature，以便 `Refresh` 和 `Logout` 同时取得 Data Source Path：
+
+1. `StartLogin` 生成 PKCE S256 verifier/challenge，向 `/api/v1/system/oauth/authorization_requests` 发起表单 POST；
+2. Connector 只把 System 返回的 `request_id` 放入 Console `/oauth/authorize?request_id=...`，并在内存 Context 保存 verifier、`request_id`、一次性 `request_secret`、`client_id` 和 callback URI；
+3. `FinishLogin` 必须校验 callback 中的单一 `state` 等于 `request_id`，再用单一 `code`、原 callback URI 和 verifier 兑换 Token；
+4. `Refresh` 必须接受并保存每次响应返回的新 Refresh Token，不能继续复用旧 Token；
+5. `Logout` 调用 `/api/v1/system/oauth/revoke`；用户取消时若 Power Query 宿主提供可调用的取消边界，则使用 `request_secret` 取消 pending request，否则依赖 System 固定五分钟过期，不能增加第二套状态；
+6. 外部 Client 被停用、用户 Permission 被撤销或 Refresh Token Family 被撤销后，旧连接必须失败，恢复 Client 不能使旧凭据重新生效。
+
+Power Query 会向 `StartLogin` 传入宿主 `state`，而 ADDP 安全规范固定使用随机 `request_id` 作为回调 `state`。官方函数签名允许 Connector 在 `FinishLogin` 中取得 Context、callback URI 和 state，但是否有宿主级的额外等值限制仍必须以真实 Power BI Desktop 运行证明；在该证据出现前不修改 ADDP OAuth 规范，也不增加兼容 state 字段。
+
+#### 14.25.3 服务发现、Schema 与刷新
+
+身份建立后，Connector 固定执行以下链路：
+
+```text
+GET Service Consumer Catalog
+  -> 为每个服务读取 Consumer Descriptor
+  -> 生成 Power Query Navigation Table
+  -> 选择服务后调用 Descriptor query operation
+  -> 按 cursor 获取下一页
+  -> 按 output_contract 强制表结构和字段类型
+```
+
+具体规则：
+
+1. Catalog 使用 `page/page_size` 完整枚举，不读取 Service 管理 API；Navigation Key 必须包含 `service_type + service_id + contract_fingerprint`，显示名称只使用 Descriptor title；
+2. Power Query 保存的行选择会冻结上述 Navigation Key。刷新时若服务下线、权限消失或指纹变化，旧 Key 无法命中并显式失败，不能按标题、同名服务或新指纹自动改绑；
+3. 每次读取数据仍重新取得 Descriptor，严格校验 `schema_version`、ServiceReference、指纹、operation method/path 和输入输出类型；只调用 Descriptor 声明的相对 path；
+4. 第一版只使用 `format=json` 和 `X-ADDP-Query-Intent: query`。每页 `limit` 使用 Descriptor `page.max_limit`，下一页只使用响应 `page.next_cursor`，直到 `has_more=false`；不能解析 cursor、改用 offset 或从 URL 猜测下一页；
+5. Connector 使用 Descriptor `default_selection` 建立默认列，并按 `output_contract.fields` 强制固定列顺序、nullable 和类型。`string/uuid/bool/int/bigint/float/double/date/time/timestamp` 映射为相应 Power Query 标量；缺少 precision / scale 证明的 `decimal`，以及 `bytes/mixed/json/array/geometry` 第一版保守映射为文本，不做有损数值或空间推断；
+6. 当前 Descriptor 已能表达命名参数，但 Power BI Navigator 无法从运行时 Descriptor 动态生成稳定的 M 函数签名。第一版导航表只直接加载“不含无默认值必填 named parameter”的服务；同时保留显式 `parameters record` 的查询函数供后续稳定交互设计使用，不从字段名推断参数；
+7. 第一版是 Import，不实现 DirectQuery 或 Query Folding。Power BI 的筛选、图表和模型在导入结果上工作；刷新重新执行 Service 查询。若未来需要把 Power Query 筛选下推为 ADDP structured filter，必须先独立定义可证明的 folding 子集，不能翻译任意 M 或 SQL。
+
+#### 14.25.4 第一版验收门禁
+
+只有以下证据全部完成后，才能勾选“真实 BI Connector 端到端验收”并编写面向用户的正式接入指南：
+
+1. 使用 GitHub 托管 Windows Runner 构建唯一 `.mez` 制品，并运行 Power Query SDK query tests；根 `Makefile`、workflow 路径登记、依赖固定和制品校验必须与 Connector 同次实现；
+2. 在 Power BI Desktop 中通过 System 创建的独立 Tenant OAuth Client 完成登录、Tenant Context、授权同意和 Navigator 打开；
+3. 以至少一个普通表服务和一个空间表服务验证 Catalog、Descriptor、动态字段 Schema、多页 cursor、空结果和 nullable；空间 geometry 第一版作为文本列进入 BI，不宣称原生面渲染；
+4. 验证 Access Token 过期后的 Refresh Token 轮换、并发或旧 Refresh Token 重用拒绝、Logout 撤销和 Client 停用；
+5. 撤销 `service.data_read.execute` 后刷新返回权限错误；恢复 Permission 后由当前用户重新刷新，不缓存旧授权判断；
+6. 修改测试服务公开契约后，既有 Power Query 查询因冻结指纹失败；用户重新在 Navigator 选择当前服务后才建立新查询；
+7. 验证第二个不同来源的 Query Service，避免 Connector 偶然依赖 Outdoor、PostgreSQL、固定字段名或空间输出；
+8. `.mez`、日志、测试快照和文档中不得包含 Access Token、Refresh Token、Authorization Code、PKCE verifier、request secret、筛选值或返回数据。
+
+当前完成的是路线选择、现有协议可用性核查和最小实施设计，不是 Connector 已完成。现阶段没有确认需要修改 Service Consumer API；最先要用真实宿主证明的是 Power Query callback state、旋转 Refresh Token 和带指纹 Navigation Key 的刷新行为。由于当前开发机没有 Windows / Power BI Desktop，不能在本轮把这三项写成已验证。
+
+### 14.26 无 Windows 环境的 Python 外部消费验收路线（2026-09-05）
+
+当前没有可操作的 Windows / Power BI Desktop 环境，但这不应阻塞 Service Consumer Contract 本身的外部消费验收。本阶段改为先在已有 `addp-common` wheel 中实现产品无关的 Python `ServiceConsumerClient`，以 macOS 上已验证的 CLI Browser Login、OS Keychain 和 Refresh Token 轮换作为用户委托身份入口，完成 Catalog、Descriptor、Query、cursor、权限撤销和契约指纹的端到端协议证明。
+
+SDK 的唯一 owner 与位置固定为：
+
+```text
+common-python/addp_common/client/service.py
+```
+
+对应单元测试放在 `common-python/tests/test_service_client.py`，公开类型由 `common-python/addp_common/client/__init__.py` 唯一导出。不新建第二个 Python 包，不把通用 SDK 放入 `workbench/`、`develop/`、`service/backend/` 或 `service/connectors/`。`service/connectors/<product>/` 只保留 Power Query、Looker Studio 等具体产品适配器。
+
+`ServiceConsumerClient` 只承担以下协议职责：
+
+1. 分页读取 `GET /api/v1/service/consumer/services`，不读取 Service 管理 DTO；
+2. 按 `service_type + service_id` 读取 `addp.service_consumer/v1` Descriptor；
+3. 仅执行 Descriptor 声明的同源 `POST /api/query/<service_name>/query` operation，不接受任意 URL；
+4. 发送唯一结构化查询请求，并按不透明 `next_cursor` 迭代后续页；
+5. 在执行前校验调用方冻结的 `contract_fingerprint`，不自动改绑当前契约；
+6. 返回契约类型和原始 Python records，不引入 pandas、GeoPandas、可视化库、Outdoor 数据或固定字段假设。
+
+Notebook、Python 脚本或其他分析工具是 SDK 的消费者，自行决定是否转换为 DataFrame、GeoDataFrame 或图表。首轮验收至少覆盖一个普通表 Query Service 和一个空间 Query Service，但测试只依赖契约 fixture，不将业务名称、字段名或几何列写入 SDK。
+
+这一路线是真实的平台外用户委托消费验收，但不是 BI Connector 产品验收，因此不能据此勾选“以真实 BI Connector 完成端到端验收”。Power Query 设计保留；待出现可操作的 Windows 宿主后，具体 Connector 必须复用同一 Service Consumer Contract，不增加 Python 代理、数据库直连或手工 Token 旁路。
+
+本轮已经完成 SDK、公开类型导出、README 示例和协议单元测试；SDK 不顶层加载桌面 OAuth / Keychain 依赖，只有显式使用 `from_cli_session()` 时才加载 CLI 会话能力，避免影响 Copilot 等服务端 Python 运行时。验证结果：`make test-common-python` 通过（172 passed、1 skipped、8 subtests passed），`make test-release RELEASE_SUITE=common-python-cli` 通过 wheel 构建、隔离安装与 CLI 产品链路，`make test-platform` 通过平台一致性、CI 注册和 Swagger 覆盖门禁。当前 ADDP 服务未运行，因此真实普通表与空间 Query Service 的只读运行验收仍保持未完成；该项需要环境重启后继续，不以 fixture 测试替代。
+
 ## 十五、概念设计状态
 
-当前没有待确认的 Phase 0 概念问题。Phase 5 的 Selection Binding 同页联动、`desktop | wallboard` 展示模式、浏览器会话级全屏、Application Refresh Policy 和 Application Presentation Sections 已完成设计、实现、标准模块门禁与真实浏览器验收；Data Application 资产运营指标的事实源、模块归属以及 Asset 自有 `application` / 具体 Asset 运营分组也已完成运行态复核。外部 BI 的 owner 边界、消费契约、用户委托 OAuth 单一路线和 System 外部 OAuth Client 注册治理已经完成；无副作用运行态 UI 验收已通过，持久 Client 浏览器生命周期、真实 BI Connector 端到端验证与正式接入指南尚未完成。
+当前没有待确认的 Phase 0 概念问题。Phase 5 的 Selection Binding 同页联动、`desktop | wallboard` 展示模式、浏览器会话级全屏、Application Refresh Policy 和 Application Presentation Sections 已完成设计、实现、标准模块门禁与真实浏览器验收；Data Application 资产运营指标的事实源、模块归属以及 Asset 自有 `application` / 具体 Asset 运营分组也已完成运行态复核。外部 BI 的 owner 边界、消费契约、用户委托 OAuth 单一路线和 System 外部 OAuth Client 注册治理已经完成；首个真实 BI 验收载体仍为 Power Query 自定义 Connector 与 Power BI Desktop Import，但因当前缺少 Windows 宿主而暂缓。`common-python` 的产品无关 Service Consumer SDK 已完成实现和离线门禁，下一步是用真实普通表与空间 Query Service 完成只读运行验收；它不替代 callback state、持久外部 Client 生命周期和真实 BI 产品端到端证据，因此正式 BI 接入指南继续保持未完成。
 
 14.19 的 Data Application 直接创作收口、Outdoor 双服务真实验收、14.20 的 Business MySQL 本地异构验收，以及 14.21–14.23 的 Phase 6 场景化组合、空间探索创作向导和保存前整页预览均已完成。验收数据只作运行证据，没有进入 Workbench 领域模型、生产代码或默认配置。Phase 6 当前确认范围已经收口；真实数据量没有超过有界 GeoJSON 上限前不启动 Tile / OGC Features，也不继续堆叠 renderer。
 
-14.24 的历史契约清理已经通过用户确认完成，长期应用当前发布 Revision 2。下一项产品建设优先回到真实 BI Connector 验证与接入指南，因为 Workbench 自有最终应用创作与运行体验已经形成闭环，而外部消费仍只有已确认的契约和 OAuth Client 治理、没有经过真实 Connector 验证的可执行指南。具备专用 runner 后再补跑仍在等待的 `workbench-service-consumption` T4，本地验收不能替代该 Online Gate。不要修改 Service 查询路由、引入 API Key 私有授权、复用内置 Client 或增加 Workbench 代理。跨模块综合统计和 Workbench 运行埋点继续暂缓；只有确认成功打开次数、独立访问用户和 Revision 分布确有独立产品价值时，才进入 Workbench owner 运行准入事实设计。在独立价值确认前不进入多页面、`mobile`、页面轮播、通用动作、后台定时任务或第二套运行状态。若后续实现与现有公开契约冲突，必须先回到本专题及正式规范修订设计，不得增加兼容路由、兼容字段或 Workbench 私有旁路。
+14.24 的历史契约清理已经通过用户确认完成，长期应用当前发布 Revision 2。14.26 的通用 Service Consumer SDK、公开导出、单元测试、README 和现有 `common-python` 发布门禁已经完成；当前最优先项是环境重启后，用该 SDK 对真实普通表与空间 Query Service 做只读运行验收，验证 Catalog、Descriptor、冻结指纹、动态字段和 cursor，而不创建或修改业务数据。Power Query 路线保留但不再阻塞当前阶段；获得 Windows 宿主后再在 `service/connectors/power-query/` 完成具体 Connector 与真实 BI 门禁。没有真实宿主证据前不修改 OAuth 或 Service API，也不提前编写“可直接照做”的正式 BI 接入指南。具备专用 runner 后再补跑仍在等待的 `workbench-service-consumption` T4，本地验收不能替代该 Online Gate。不要修改 Service 查询路由、引入 API Key 私有授权、数据库直连或增加 Workbench / Python 代理。跨模块综合统计和 Workbench 运行埋点继续暂缓；只有确认成功打开次数、独立访问用户和 Revision 分布确有独立产品价值时，才进入 Workbench owner 运行准入事实设计。在独立价值确认前不进入多页面、`mobile`、页面轮播、通用动作、后台定时任务或第二套运行状态。若后续实现与现有公开契约冲突，必须先回到本专题及正式规范修订设计，不得增加兼容路由、兼容字段或 Workbench 私有旁路。
 
 ## 十六、相关文档
 

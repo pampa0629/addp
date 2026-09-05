@@ -9,7 +9,7 @@
 - [config/loader.go](../../common/config/loader.go) - 部署环境配置读取；目标实现不得保留 System shared config 或环境变量 fallback 双轨
 - `common/config` - 根环境部署配置、服务地址构造、端口可用性检查和时区读取；模块注册端口直接使用 owner 已加载的部署配置，不维护共享默认端口表
 - `common/secretcipher` - System、Inference、Monitor 等模块共享的 AES-256-GCM 敏感配置值加解密；由现有 `common/security` 在 Security 实施时直接重命名，不保留旧包或转发路径，不承载 IAM 或业务字段识别
-- `common/dataprotection` - Security 和参与执行 Owner 共享的 `addp.protection_projection/v1` 契约、类型化路径、投影校验和确定性遮盖 / 抑制算法；它不读写 Security 业务状态，不执行授权决策
+- `common/dataprotection` - Security 和参与执行 Owner 共享的 `addp.protection_projection/v1` 契约、类型化路径、投影校验和确定性遮盖 / 抑制算法，以及 Owner schema 内统一的版本化本地投影存储；它不读写 Security 业务状态，不执行授权决策，不在 `common` schema 建立中央保护事实
 - `common/engine/plugin.PreparedQuery` - Engine Provider 拥有的普通查询不可变计划；同一计划提供 `QueryAnalysis`、执行前 `QueryReadSet` 与一次性真实执行，属于引擎查询事实，不依赖 Security
 - `common/buildinfo` - Go 服务统一构建身份，由模块生命周期健康响应复用；构建脚本通过链接参数注入 build ID、Git commit、源码指纹和构建时间，进程启动时间由包初始化记录
 - `common/modulelifecycle` - Go Backend 统一的进程存活、System 注册生命周期状态、就绪门禁和 `/health/live`、`/health/ready` 响应；只保存当前进程瞬时状态，System 仍是模块定义、实例和租约的唯一持久事实源

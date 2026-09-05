@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: security
-manifest_version: 6
+manifest_version: 7
 permissions:
   - key: security.assessment.create
     allowed_scope_types: [tenant, department, project_group]
@@ -226,6 +226,38 @@ permissions:
     status: active
     name_i18n_key: permissions.security.protection_baseline.update.name
     description_i18n_key: permissions.security.protection_baseline.update.description
+  - key: security.protection_exemption.create
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: critical
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.security.protection_exemption.create.name
+    description_i18n_key: permissions.security.protection_exemption.create.description
+  - key: security.protection_exemption.delete
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: critical
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.security.protection_exemption.delete.name
+    description_i18n_key: permissions.security.protection_exemption.delete.description
+  - key: security.protection_exemption.read
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: high
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.security.protection_exemption.read.name
+    description_i18n_key: permissions.security.protection_exemption.read.description
+  - key: security.protection_exemption.update
+    allowed_scope_types: [tenant, department, project_group]
+    risk_level: critical
+    tenant_customizable: true
+    delegable: false
+    status: active
+    name_i18n_key: permissions.security.protection_exemption.update.name
+    description_i18n_key: permissions.security.protection_exemption.update.description
   - key: security.protection_projection.read
     allowed_scope_types: [tenant]
     risk_level: medium

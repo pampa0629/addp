@@ -22,7 +22,7 @@ func TestQuoteIdentifier(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			if got := ForEngine(tt.engineType).QuoteIdentifier(tt.identifier); got != tt.want {
+			if got := ForDialect(tt.engineType).QuoteIdentifier(tt.identifier); got != tt.want {
 				t.Fatalf("QuoteIdentifier() = %q, want %q", got, tt.want)
 			}
 		})
@@ -46,7 +46,7 @@ func TestDialectPlaceholderUsesDriverSyntax(t *testing.T) {
 		tt := tt
 		t.Run(tt.engineType, func(t *testing.T) {
 			t.Parallel()
-			if got := ForEngine(tt.engineType).Placeholder(tt.position); got != tt.want {
+			if got := ForDialect(tt.engineType).Placeholder(tt.position); got != tt.want {
 				t.Fatalf("Placeholder() = %q, want %q", got, tt.want)
 			}
 		})
@@ -56,7 +56,7 @@ func TestDialectPlaceholderUsesDriverSyntax(t *testing.T) {
 func TestSelectTableSQL(t *testing.T) {
 	t.Parallel()
 
-	got := ForEngine("postgresql").SelectTableSQL(`"id", "name"`, "public", "Cities", `name IS NOT NULL`, `id DESC`, 10, 20)
+	got := ForDialect("postgresql").SelectTableSQL(`"id", "name"`, "public", "Cities", `name IS NOT NULL`, `id DESC`, 10, 20)
 	want := `SELECT "id", "name" FROM "public"."Cities" WHERE name IS NOT NULL ORDER BY id DESC LIMIT 10 OFFSET 20`
 	if got != want {
 		t.Fatalf("SelectTableSQL() = %q, want %q", got, want)
@@ -66,7 +66,7 @@ func TestSelectTableSQL(t *testing.T) {
 func TestOracleSelectTableSQLUsesFetchPagination(t *testing.T) {
 	t.Parallel()
 
-	got := ForEngine("oracle").SelectTableSQL("*", "BUSINESS", "ORDERS", "", `"ID"`, 10, 20)
+	got := ForDialect("oracle").SelectTableSQL("*", "BUSINESS", "ORDERS", "", `"ID"`, 10, 20)
 	want := `SELECT * FROM "BUSINESS"."ORDERS" ORDER BY "ID" OFFSET 20 ROWS FETCH NEXT 10 ROWS ONLY`
 	if got != want {
 		t.Fatalf("SelectTableSQL() = %q, want %q", got, want)
@@ -76,7 +76,7 @@ func TestOracleSelectTableSQLUsesFetchPagination(t *testing.T) {
 func TestCountTableSQL(t *testing.T) {
 	t.Parallel()
 
-	got := ForEngine("mysql").CountTableSQL("analytics", "events", "kind = 'click'")
+	got := ForDialect("mysql").CountTableSQL("analytics", "events", "kind = 'click'")
 	want := "SELECT COUNT(*) AS total FROM `analytics`.`events` WHERE kind = 'click'"
 	if got != want {
 		t.Fatalf("CountTableSQL() = %q, want %q", got, want)
@@ -107,7 +107,7 @@ func TestPaginateQuerySQLWrapsExistingLimit(t *testing.T) {
 func TestOraclePaginateQuerySQLUsesOracleAliasAndFetch(t *testing.T) {
 	t.Parallel()
 
-	got := ForEngine("oracle").PaginateQuerySQL("SELECT * FROM ORDERS;", 50, 100)
+	got := ForDialect("oracle").PaginateQuerySQL("SELECT * FROM ORDERS;", 50, 100)
 	want := "SELECT * FROM (SELECT * FROM ORDERS) addp_page OFFSET 100 ROWS FETCH NEXT 50 ROWS ONLY"
 	if got != want {
 		t.Fatalf("PaginateQuerySQL() = %q, want %q", got, want)
@@ -117,13 +117,13 @@ func TestOraclePaginateQuerySQLUsesOracleAliasAndFetch(t *testing.T) {
 func TestDialectSubqueryAliasAndAppendPagination(t *testing.T) {
 	t.Parallel()
 
-	if got := ForEngine("postgresql").SubqueryAlias("source"); got != " AS source" {
+	if got := ForDialect("postgresql").SubqueryAlias("source"); got != " AS source" {
 		t.Fatalf("PostgreSQL alias = %q", got)
 	}
-	if got := ForEngine("oracle").SubqueryAlias("source"); got != " source" {
+	if got := ForDialect("oracle").SubqueryAlias("source"); got != " source" {
 		t.Fatalf("Oracle alias = %q", got)
 	}
-	if got := ForEngine("oracle").AppendPaginationSQL("SELECT 1 FROM DUAL;", 5, 0); got != "SELECT 1 FROM DUAL FETCH FIRST 5 ROWS ONLY" {
+	if got := ForDialect("oracle").AppendPaginationSQL("SELECT 1 FROM DUAL;", 5, 0); got != "SELECT 1 FROM DUAL FETCH FIRST 5 ROWS ONLY" {
 		t.Fatalf("Oracle pagination = %q", got)
 	}
 }

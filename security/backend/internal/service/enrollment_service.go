@@ -612,9 +612,10 @@ func projectionRuleSummaries(record models.ProtectionProjectionRecord) ([]models
 		return nil, fmt.Errorf("decode protection projection %s: %w", record.ID, err)
 	}
 	seen := make(map[string]models.ProtectionOwnerRuleSummary, len(projection.Rules))
+	now := time.Now().UTC()
 	for _, rule := range projection.Rules {
 		action := strings.TrimSpace(rule.Action)
-		effect := strings.TrimSpace(rule.Decision.Effect)
+		effect := strings.TrimSpace(rule.Decision.Effective(now).Effect)
 		if action != "" && effect != "" {
 			key := action + "\x00" + effect
 			seen[key] = models.ProtectionOwnerRuleSummary{Action: action, Effect: effect}

@@ -78,7 +78,7 @@ func (p *PostgreSQLPlugin) OpenBoundedWatermarkRead(ctx context.Context, connInf
 		_ = db.Close()
 		return nil, err
 	}
-	dialect := commonquery.ForEngine("postgresql")
+	dialect := commonquery.ForDialect("postgresql")
 	qualified := dialect.QualifiedTable(schema, table)
 	quotedCursor := quotePostgresFields(cursorFields)
 	nullPredicate := make([]string, 0, len(quotedCursor))
@@ -169,7 +169,7 @@ func validatePostgresUniqueTieBreakers(ctx context.Context, db *sql.DB, schema, 
 }
 
 func quotePostgresFields(fields []string) []string {
-	dialect := commonquery.ForEngine("postgresql")
+	dialect := commonquery.ForDialect("postgresql")
 	result := make([]string, 0, len(fields))
 	for _, field := range fields {
 		result = append(result, dialect.QuoteIdentifier(field))

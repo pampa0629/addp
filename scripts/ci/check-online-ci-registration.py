@@ -217,6 +217,196 @@ def validate_workbench_service_consumption_profile(repository: Path, registered:
             )
 
 
+def validate_manager_internal_artifact_lineage_profile(repository: Path, registered: set[str]) -> None:
+    if "manager-internal-artifact-lineage" not in registered:
+        return
+    host_gate = (repository / "scripts/test/online-host-gate.sh").read_text(encoding="utf-8")
+    required_fragments = (
+        "manager-internal-artifact-lineage)",
+        "START_TARGET=-all",
+        "SYSTEM_URL GATEWAY_URL META_URL MANAGER_URL MONITOR_URL CONSOLE_URL",
+        "ADDP_ONLINE_POINTCLOUD_MINIO_ENGINE_ID",
+        "ADDP_ONLINE_POINTCLOUD_MINIO_PORT",
+        "ADDP_ONLINE_POINTCLOUD_MINIO_ACCESS_KEY",
+        "ADDP_ONLINE_POINTCLOUD_MINIO_SECRET_KEY",
+        "ADDP_ONLINE_POINTCLOUD_MINIO_BUCKET",
+        "ADDP_ONLINE_POINTCLOUD_MINIO_OBJECT",
+        "bash business/scripts/online-pointcloud-minio-fixture.sh start",
+        "bash business/scripts/online-pointcloud-minio-fixture.sh stop",
+        'bash scripts/dev/start.sh "$START_TARGET"',
+        "playwright install chromium",
+    )
+    missing = [fragment for fragment in required_fragments if fragment not in host_gate]
+    if missing:
+        raise RegistrationError(
+            "manager-internal-artifact-lineage profile is missing: " + ", ".join(missing)
+        )
+    for relative in (
+        "business/scripts/online-pointcloud-minio-fixture.sh",
+        "scripts/test/manager-internal-artifact-lineage-online.py",
+        "console/frontend/playwright.online.config.js",
+        "console/frontend/e2e/online/manager-internal-artifact-lineage.spec.js",
+    ):
+        if not (repository / relative).is_file():
+            raise RegistrationError(f"manager-internal-artifact-lineage requires {relative}")
+    start_script_path = repository / "scripts/dev/start.sh"
+    if not start_script_path.is_file():
+        raise RegistrationError(
+            "manager-internal-artifact-lineage requires scripts/dev/start.sh"
+        )
+    start_script = start_script_path.read_text(encoding="utf-8")
+    for fragment in ("-all)", "START_POINTCLOUD_WORKFLOW=true"):
+        if fragment not in start_script:
+            raise RegistrationError(
+                f"manager-internal-artifact-lineage full start contract is missing {fragment}"
+            )
+    fixture = (repository / "business/scripts/online-pointcloud-minio-fixture.sh").read_text(encoding="utf-8")
+    for fragment in (
+        "ADDP_ONLINE_HOST",
+        "--env-file /dev/null",
+        "business-minio",
+        "pdal_las12_format0.las",
+        "MC_HOST_fixture",
+    ):
+        if fragment not in fixture:
+            raise RegistrationError(
+                f"manager-internal-artifact-lineage fixture contract is missing {fragment}"
+            )
+    owner = (
+        repository / "scripts/test/manager-internal-artifact-lineage-online.py"
+    ).read_text(encoding="utf-8")
+    for fragment in (
+        "addp.lineage-facts/v1",
+        "/api/v1/meta/scan/run/manual",
+        "/api/v1/monitor/executions/by-execution-id/",
+        "addp-infra://minio/manager/tenant_",
+        "/api/v1/manager/point_cloud_copc/",
+    ):
+        if fragment not in owner:
+            raise RegistrationError(
+                f"manager-internal-artifact-lineage owner contract is missing {fragment}"
+            )
+    browser = (
+        repository
+        / "console/frontend/e2e/online/manager-internal-artifact-lineage.spec.js"
+    ).read_text(encoding="utf-8")
+    for fragment in (
+        ".execution-lineage__group",
+        ".execution-lineage__resource-action",
+        "平台内部产物|Platform-internal artifact",
+        "platform_internal_outputs",
+    ):
+        if fragment not in browser:
+            raise RegistrationError(
+                f"manager-internal-artifact-lineage browser contract is missing {fragment}"
+            )
+
+
+def validate_security_transfer_protection_profile(repository: Path, registered: set[str]) -> None:
+    if "security-transfer-protection" not in registered:
+        return
+    host_gate = (repository / "scripts/test/online-host-gate.sh").read_text(encoding="utf-8")
+    required_fragments = (
+        "security-transfer-protection)",
+        "START_TARGET=-all",
+        "SYSTEM_URL GATEWAY_URL META_URL SECURITY_URL TRANSFER_URL MANAGER_URL",
+        "ADDP_ONLINE_SECURITY_MONGODB_ENGINE_ID",
+        "ADDP_ONLINE_SECURITY_MONGODB_ROOT_PASSWORD",
+        "bash business/scripts/online-security-transfer-fixture.sh start",
+        "bash business/scripts/online-security-transfer-fixture.sh stop",
+        'bash scripts/dev/start.sh "$START_TARGET"',
+    )
+    missing = [fragment for fragment in required_fragments if fragment not in host_gate]
+    if missing:
+        raise RegistrationError(
+            "security-transfer-protection profile is missing: " + ", ".join(missing)
+        )
+    for relative in (
+        "business/scripts/online-security-transfer-fixture.sh",
+        "scripts/test/security-transfer-protection-online.py",
+    ):
+        if not (repository / relative).is_file():
+            raise RegistrationError(f"security-transfer-protection requires {relative}")
+    fixture = (repository / "business/scripts/online-security-transfer-fixture.sh").read_text(encoding="utf-8")
+    for fragment in (
+        "ADDP_ONLINE_HOST",
+        "--env-file /dev/null",
+        "business-mongodb",
+        "online-engine-fixture.sh",
+        'role: "read"',
+        "addp_online_security.transfer_masked",
+    ):
+        if fragment not in fixture:
+            raise RegistrationError(
+                f"security-transfer-protection fixture contract is missing {fragment}"
+            )
+    owner = (repository / "scripts/test/security-transfer-protection-online.py").read_text(encoding="utf-8")
+    for fragment in (
+        "/api/v1/meta/scan/run/manual",
+        "/api/v1/security/protection-enrollments",
+        '("export", "mask")',
+        "/api/v1/transfer/task-definitions",
+        "/api/v1/manager/preview",
+        "cleanup_tasks(client, tasks)",
+        '"residual_resources": 0',
+    ):
+        if fragment not in owner:
+            raise RegistrationError(
+                f"security-transfer-protection owner contract is missing {fragment}"
+            )
+
+
+def validate_security_protection_exemption_profile(repository: Path, registered: set[str]) -> None:
+    if "security-protection-exemption" not in registered:
+        return
+    host_gate = (repository / "scripts/test/online-host-gate.sh").read_text(encoding="utf-8")
+    required_fragments = (
+        "security-protection-exemption)",
+        "SYSTEM_URL GATEWAY_URL META_URL SECURITY_URL MANAGER_URL DEVELOP_URL",
+        "SERVICE_URL TRANSFER_URL",
+        "bash business/scripts/online-security-transfer-fixture.sh start",
+        "bash business/scripts/online-security-transfer-fixture.sh stop",
+        'bash scripts/dev/start.sh "$START_TARGET"',
+    )
+    missing = [fragment for fragment in required_fragments if fragment not in host_gate]
+    if missing:
+        raise RegistrationError(
+            "security-protection-exemption profile is missing: " + ", ".join(missing)
+        )
+    for relative in (
+        "business/scripts/online-security-transfer-fixture.sh",
+        "scripts/test/security-protection-exemption-online.py",
+        "scripts/test/security-transfer-protection-online.py",
+    ):
+        if not (repository / relative).is_file():
+            raise RegistrationError(f"security-protection-exemption requires {relative}")
+    fixture = (repository / "business/scripts/online-security-transfer-fixture.sh").read_text(encoding="utf-8")
+    for fragment in (
+        "addp_online_security.exemption_source",
+        "addp_online_security.exemption_transfer",
+        "13812345678",
+    ):
+        if fragment not in fixture:
+            raise RegistrationError(
+                f"security-protection-exemption fixture contract is missing {fragment}"
+            )
+    owner = (repository / "scripts/test/security-protection-exemption-online.py").read_text(encoding="utf-8")
+    owner_contract = owner + (repository / "scripts/test/security-transfer-protection-online.py").read_text(encoding="utf-8")
+    for fragment in (
+        "/api/v1/security/protection-exemptions",
+        "/api/v1/manager/preview",
+        "/api/v1/develop/executions",
+        "/api/query/",
+        "/api/v1/transfer/task-definitions",
+        "expired_without_security_refresh",
+        '"residual_resources": 0',
+    ):
+        if fragment not in owner_contract:
+            raise RegistrationError(
+                f"security-protection-exemption owner contract is missing {fragment}"
+            )
+
+
 def load_workflow_suites(repository: Path) -> set[str]:
     path = repository / ".github/workflows/online-t4-gates.yml"
     if not path.is_file():
@@ -279,6 +469,9 @@ def check_registration(repository: Path) -> None:
     validate_consumer_engine_recovery_profile(repository, registered)
     validate_enterprise_catalog_publishing_profile(repository, registered)
     validate_workbench_service_consumption_profile(repository, registered)
+    validate_manager_internal_artifact_lineage_profile(repository, registered)
+    validate_security_transfer_protection_profile(repository, registered)
+    validate_security_protection_exemption_profile(repository, registered)
 
 
 def main() -> int:

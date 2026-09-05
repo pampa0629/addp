@@ -1234,6 +1234,56 @@
                 "x-addp-auth-mode": "self"
             }
         },
+        "/engine-types": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回由内置插件声明的引擎类型、连接表单、能力和 Catalog Model；响应不包含任何连接值或凭据 | Return engine types, connection forms, capabilities, and Catalog Models declared by compiled plugins; no connection values or credentials are included",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "引擎管理 | Engine Management"
+                ],
+                "summary": "获取可注册引擎类型 | List registerable engine types",
+                "responses": {
+                    "200": {
+                        "description": "可注册引擎类型数组 | Registerable engine type array",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/plugin.EngineTypeDescriptor"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "system.engine.read"
+                ]
+            }
+        },
         "/engines": {
             "get": {
                 "security": [
@@ -13145,6 +13195,171 @@
                 }
             }
         },
+        "plugin.ChangeStreamReadCapability": {
+            "type": "object",
+            "properties": {
+                "partitioned": {
+                    "type": "boolean"
+                },
+                "pause_resume": {
+                    "type": "boolean"
+                },
+                "position_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "seek": {
+                    "type": "boolean"
+                },
+                "supported": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "plugin.ComputeCapabilities": {
+            "type": "object",
+            "properties": {
+                "inference": {
+                    "$ref": "#/definitions/plugin.InferenceCapability"
+                },
+                "query": {
+                    "$ref": "#/definitions/plugin.QueryCapability"
+                },
+                "script": {
+                    "$ref": "#/definitions/plugin.ScriptCapability"
+                },
+                "workflow": {
+                    "$ref": "#/definitions/plugin.WorkflowCapability"
+                }
+            }
+        },
+        "plugin.ConnectionConstraintSpec": {
+            "type": "object",
+            "properties": {
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "message_key": {
+                    "type": "string"
+                },
+                "when": {
+                    "$ref": "#/definitions/plugin.ConnectionFieldCondition"
+                }
+            }
+        },
+        "plugin.ConnectionFieldCondition": {
+            "type": "object",
+            "properties": {
+                "field": {
+                    "type": "string"
+                },
+                "values": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "plugin.ConnectionFieldOption": {
+            "type": "object",
+            "properties": {
+                "label": {
+                    "type": "string"
+                },
+                "label_key": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "string"
+                }
+            }
+        },
+        "plugin.ConnectionFieldSpec": {
+            "type": "object",
+            "properties": {
+                "default": {},
+                "group_key": {
+                    "type": "string"
+                },
+                "hint_key": {
+                    "type": "string"
+                },
+                "identity": {
+                    "type": "boolean"
+                },
+                "input": {
+                    "type": "string"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "label_key": {
+                    "type": "string"
+                },
+                "max": {
+                    "type": "integer"
+                },
+                "min": {
+                    "type": "integer"
+                },
+                "options": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plugin.ConnectionFieldOption"
+                    }
+                },
+                "placeholder": {
+                    "type": "string"
+                },
+                "placeholder_key": {
+                    "type": "string"
+                },
+                "required": {
+                    "type": "boolean"
+                },
+                "rows": {
+                    "type": "integer"
+                },
+                "sensitive": {
+                    "type": "boolean"
+                },
+                "visible_when": {
+                    "$ref": "#/definitions/plugin.ConnectionFieldCondition"
+                }
+            }
+        },
+        "plugin.ConnectionSpec": {
+            "type": "object",
+            "properties": {
+                "constraints": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plugin.ConnectionConstraintSpec"
+                    }
+                },
+                "default_port": {
+                    "type": "integer"
+                },
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plugin.ConnectionFieldSpec"
+                    }
+                },
+                "schema_version": {
+                    "type": "string"
+                }
+            }
+        },
         "plugin.ConstraintFacts": {
             "type": "object",
             "properties": {
@@ -13171,6 +13386,71 @@
                 },
                 "referenced_table": {
                     "type": "string"
+                }
+            }
+        },
+        "plugin.EncodedRecordReadSessionCapability": {
+            "type": "object",
+            "properties": {
+                "formats": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "plugin.EngineCapabilities": {
+            "type": "object",
+            "properties": {
+                "compute": {
+                    "$ref": "#/definitions/plugin.ComputeCapabilities"
+                },
+                "engine_family": {
+                    "type": "string"
+                },
+                "engine_type": {
+                    "type": "string"
+                },
+                "extensions": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "limits": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "schema_version": {
+                    "type": "string"
+                },
+                "storage": {
+                    "$ref": "#/definitions/plugin.StorageCapabilities"
+                }
+            }
+        },
+        "plugin.EngineCatalogCapability": {
+            "type": "object",
+            "properties": {
+                "node_kinds": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "real_time": {
+                    "type": "boolean"
+                },
+                "supported": {
+                    "type": "boolean"
+                },
+                "supports_filter": {
+                    "type": "boolean"
+                },
+                "supports_search": {
+                    "type": "boolean"
+                },
+                "system_filtering": {
+                    "type": "boolean"
                 }
             }
         },
@@ -13214,6 +13494,78 @@
                     "$ref": "#/definitions/plugin.TopicFacts"
                 },
                 "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "plugin.EngineCatalogFactsCapability": {
+            "type": "object",
+            "properties": {
+                "constraints": {
+                    "type": "boolean"
+                },
+                "field_info": {
+                    "type": "boolean"
+                },
+                "indexes": {
+                    "type": "boolean"
+                },
+                "native_facts": {
+                    "type": "boolean"
+                },
+                "partitioning": {
+                    "type": "boolean"
+                },
+                "sampling": {
+                    "type": "boolean"
+                },
+                "spatial_facts": {
+                    "type": "boolean"
+                },
+                "statistics": {
+                    "type": "boolean"
+                },
+                "supported": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "plugin.EngineCatalogLevelSpec": {
+            "type": "object",
+            "properties": {
+                "i18n_key": {
+                    "type": "string"
+                },
+                "kinds": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "optional": {
+                    "type": "boolean"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "term": {
+                    "type": "string"
+                }
+            }
+        },
+        "plugin.EngineCatalogModelSpec": {
+            "type": "object",
+            "properties": {
+                "levels": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/plugin.EngineCatalogLevelSpec"
+                    }
+                },
+                "path_version": {
+                    "type": "string"
+                },
+                "root_term": {
                     "type": "string"
                 }
             }
@@ -13272,6 +13624,29 @@
                 }
             }
         },
+        "plugin.EngineTypeDescriptor": {
+            "type": "object",
+            "properties": {
+                "capabilities": {
+                    "$ref": "#/definitions/plugin.EngineCapabilities"
+                },
+                "catalog_model": {
+                    "$ref": "#/definitions/plugin.EngineCatalogModelSpec"
+                },
+                "connection_spec": {
+                    "$ref": "#/definitions/plugin.ConnectionSpec"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "origin": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
         "plugin.IndexFacts": {
             "type": "object",
             "properties": {
@@ -13289,6 +13664,279 @@
                 },
                 "name": {
                     "type": "string"
+                }
+            }
+        },
+        "plugin.InferenceCapability": {
+            "type": "object",
+            "properties": {
+                "modalities": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "operations": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "runtime_api": {
+                    "type": "string"
+                },
+                "streaming": {
+                    "type": "boolean"
+                },
+                "supported": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "plugin.NativeTableSpatialEncodingCapability": {
+            "type": "object",
+            "properties": {
+                "geometry_read_encodings": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "geometry_write_encodings": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "native_spatial_functions": {
+                    "type": "boolean"
+                },
+                "read_transform": {
+                    "type": "boolean"
+                },
+                "write_transform": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "plugin.PartitionedTableChangeApplyCapability": {
+            "type": "object",
+            "properties": {
+                "atomic_position_commit": {
+                    "type": "boolean"
+                },
+                "monotonic": {
+                    "type": "boolean"
+                },
+                "operations": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "position_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "supported": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "plugin.QueryCapability": {
+            "type": "object",
+            "properties": {
+                "default_language": {
+                    "type": "string"
+                },
+                "federation": {
+                    "$ref": "#/definitions/plugin.QueryFederationCapability"
+                },
+                "languages": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "parameters": {
+                    "$ref": "#/definitions/plugin.QueryParameterCapability"
+                },
+                "read_only": {
+                    "type": "boolean"
+                },
+                "read_session": {
+                    "type": "boolean"
+                },
+                "result_kinds": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "supported": {
+                    "type": "boolean"
+                },
+                "supports_cancel": {
+                    "type": "boolean"
+                },
+                "supports_explain": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "plugin.QueryFederationCapability": {
+            "type": "object",
+            "properties": {
+                "object_formats": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "runtime_api": {
+                    "type": "string"
+                },
+                "source_engine_types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "supported": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "plugin.QueryParameterCapability": {
+            "type": "object",
+            "properties": {
+                "languages": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "supported": {
+                    "type": "boolean"
+                },
+                "types": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "plugin.ScriptCapability": {
+            "type": "object",
+            "properties": {
+                "interactive": {
+                    "type": "boolean"
+                },
+                "languages": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "modes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "supported": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "plugin.StorageCapabilities": {
+            "type": "object",
+            "properties": {
+                "catalog": {
+                    "$ref": "#/definitions/plugin.EngineCatalogCapability"
+                },
+                "catalog_model": {
+                    "$ref": "#/definitions/plugin.EngineCatalogModelSpec"
+                },
+                "facts": {
+                    "$ref": "#/definitions/plugin.EngineCatalogFactsCapability"
+                },
+                "not_supported": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "semantics": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "store": {
+                    "$ref": "#/definitions/plugin.StoreCapability"
+                }
+            }
+        },
+        "plugin.StoreCapability": {
+            "type": "object",
+            "properties": {
+                "batch_read": {
+                    "type": "boolean"
+                },
+                "batch_write": {
+                    "type": "boolean"
+                },
+                "bounded_watermark_read": {
+                    "type": "boolean"
+                },
+                "change_stream_read": {
+                    "$ref": "#/definitions/plugin.ChangeStreamReadCapability"
+                },
+                "delete": {
+                    "type": "boolean"
+                },
+                "encoded_record_read_session": {
+                    "$ref": "#/definitions/plugin.EncodedRecordReadSessionCapability"
+                },
+                "partitioned_table_change_apply": {
+                    "$ref": "#/definitions/plugin.PartitionedTableChangeApplyCapability"
+                },
+                "range_read": {
+                    "type": "boolean"
+                },
+                "range_write": {
+                    "type": "boolean"
+                },
+                "record_read_session": {
+                    "type": "boolean"
+                },
+                "stream_read": {
+                    "type": "boolean"
+                },
+                "stream_write": {
+                    "type": "boolean"
+                },
+                "table_read_session": {
+                    "type": "boolean"
+                },
+                "table_read_spatial_transform": {
+                    "type": "boolean"
+                },
+                "table_spatial_encoding": {
+                    "$ref": "#/definitions/plugin.NativeTableSpatialEncodingCapability"
+                },
+                "table_upsert": {
+                    "$ref": "#/definitions/plugin.TableUpsertCapability"
+                },
+                "table_write_prepare": {
+                    "type": "boolean"
+                },
+                "table_write_session": {
+                    "type": "boolean"
                 }
             }
         },
@@ -13315,6 +13963,17 @@
                 },
                 "subpartition_strategy": {
                     "type": "string"
+                }
+            }
+        },
+        "plugin.TableUpsertCapability": {
+            "type": "object",
+            "properties": {
+                "idempotent": {
+                    "type": "boolean"
+                },
+                "supported": {
+                    "type": "boolean"
                 }
             }
         },
@@ -13360,6 +14019,26 @@
                     "type": "array",
                     "items": {
                         "type": "integer"
+                    }
+                }
+            }
+        },
+        "plugin.WorkflowCapability": {
+            "type": "object",
+            "properties": {
+                "dynamic_operators": {
+                    "type": "boolean"
+                },
+                "runtime_api": {
+                    "type": "string"
+                },
+                "supported": {
+                    "type": "boolean"
+                },
+                "supported_operator_mode": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
                     }
                 }
             }

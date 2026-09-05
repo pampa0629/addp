@@ -1,4 +1,4 @@
-.PHONY: help build build-images select-image-services local-ci test test-changed test-module test-platform test-local-ci-runner test-book test-engine-startup-isolation test-integration test-online test-online-runner test-release test-release-runner test-go test-agent-frontend test-asset-frontend test-catalog-frontend test-common-frontend test-console-frontend test-copilot test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-security-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-workbench-frontend test-execution-fixtures test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-common-postgres test-manager-mongodb-security test-system-iam-postgres test-asset-postgres test-meta-postgres test-catalog-postgres test-develop-postgres test-model-postgres test-quality-postgres test-security-postgres test-service-postgres test-standard-postgres test-transfer-postgres test-workbench-postgres test-arcgis-open-formats \
+.PHONY: help build build-images select-image-services local-ci test test-changed test-module test-platform test-local-ci-runner test-book test-engine-startup-isolation test-integration test-online test-online-runner test-release test-release-runner test-go test-agent-frontend test-asset-frontend test-catalog-frontend test-common-frontend test-console-frontend test-copilot test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-security-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-workbench-frontend test-execution-fixtures test-projection-store-ownership test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-common-postgres test-manager-mongodb-security test-system-iam-postgres test-asset-postgres test-meta-postgres test-catalog-postgres test-develop-postgres test-model-postgres test-quality-postgres test-security-postgres test-service-postgres test-standard-postgres test-transfer-postgres test-workbench-postgres test-arcgis-open-formats \
         build-iam-bootstrap build-iam-recovery build-iam-migration-repair \
         dev-start dev-restart dev-stop infra-up infra-down infra-restart infra-status prod-start prod-restart prod-stop prod-health ports-validate
 
@@ -148,7 +148,7 @@ test-integration: ## 严格串行运行所有已登记的 disposable 基础设�
 	@$(MAKE) test-transfer-postgres
 	@$(MAKE) test-workbench-postgres
 
-test-common-postgres: ## 使用一次性 PostgreSQL 数据库运行 Common Engine Provider 与 execution store 集成门禁
+test-common-postgres: ## 使用一次性 PostgreSQL 数据库运行 Common Engine Provider、execution store 与保护投影存储集成门禁
 	@bash scripts/test/common-postgres-gate.sh
 
 test-manager-mongodb-security: ## 使用 MongoDB Outdoor/Persons 运行 Manager 数据保护集成门禁
@@ -196,12 +196,15 @@ test-arcgis-open-formats: ## 使用真实 Access/PGeo 样本和 Oracle Spatial �
 test-execution-fixtures: ## 校验统一执行存储测试夹具
 	@bash scripts/test/check-execution-test-fixtures.sh
 
+test-projection-store-ownership: ## 校验保护投影存储 DDL 的 Common 唯一归属
+	@bash scripts/test/check-protection-projection-store-ownership.sh
+
 test-online: ## 运行指定 Online suite（必须设置 ONLINE_SUITE 和 ADDP_ONLINE_TEST=1）
 	@test -n "$(ONLINE_SUITE)" || (echo "ONLINE_SUITE is required" >&2; exit 2)
 	@python3 scripts/test/online-gate.py --repository "$(CURDIR)" --suite "$(ONLINE_SUITE)"
 
 test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
-	@python3 -m unittest scripts/test/online-gate_test.py scripts/test/online-preflight_test.py scripts/test/online-host-gate_test.py scripts/test/online-engine-fixture_test.py scripts/test/online-workbench-mysql-fixture_test.py scripts/test/consumer-engine-recovery-online_test.py scripts/test/consumer-process-stability-online_test.py scripts/test/module-registry-recovery-online_test.py scripts/test/standard-model-reference-deletion-online_test.py scripts/test/enterprise-catalog-publishing-online_test.py scripts/test/workbench-service-consumption-online_test.py scripts/ci/check-online-ci-registration_test.py
+	@python3 -m unittest scripts/test/online-gate_test.py scripts/test/online-preflight_test.py scripts/test/online-host-gate_test.py scripts/test/online-engine-fixture_test.py scripts/test/online-workbench-mysql-fixture_test.py scripts/test/online-pointcloud-minio-fixture_test.py scripts/test/online-security-transfer-fixture_test.py scripts/test/consumer-engine-recovery-online_test.py scripts/test/consumer-process-stability-online_test.py scripts/test/module-registry-recovery-online_test.py scripts/test/standard-model-reference-deletion-online_test.py scripts/test/enterprise-catalog-publishing-online_test.py scripts/test/workbench-service-consumption-online_test.py scripts/test/manager-internal-artifact-lineage-online_test.py scripts/test/security-transfer-protection-online_test.py scripts/test/security-protection-exemption-online_test.py scripts/ci/check-online-ci-registration_test.py
 	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
 
 test-release: ## 运行指定 T5 发布套件；用法：make test-release RELEASE_SUITE=common-python-cli
@@ -233,6 +236,7 @@ test-platform: ## 运行无外部服务依赖的平台一致性门禁
 	@python3 scripts/test/changed-gate_test.py
 	@$(MAKE) test-engine-startup-isolation
 	@$(MAKE) test-execution-fixtures
+	@$(MAKE) test-projection-store-ownership
 	@$(MAKE) test-online-runner
 	@$(MAKE) test-authorization
 

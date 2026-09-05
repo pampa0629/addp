@@ -401,10 +401,8 @@ func defaultFrontendRenderer(kind string) string {
 	switch kind {
 	case models.ObjectPreviewKindPDF:
 		return models.ObjectPreviewKindPDF
-	case models.ObjectPreviewKindDOCX:
-		return models.ObjectPreviewKindDOCX
-	case models.ObjectPreviewKindWPS:
-		return models.ObjectPreviewKindWPS
+	case models.ObjectPreviewKindDOC, models.ObjectPreviewKindDOCX, models.ObjectPreviewKindWPS:
+		return models.ObjectPreviewRendererOffice
 	case models.ObjectPreviewKindPPTX:
 		return models.ObjectPreviewKindPPTX
 	case models.ObjectPreviewKindImage:
@@ -446,6 +444,7 @@ func buildLimitExceededMessage(kind string, req *ObjectContentRequest, limit int
 func contentKindLabel(kind string) string {
 	labels := map[string]string{
 		models.ObjectPreviewKindPDF:           "PDF",
+		models.ObjectPreviewKindDOC:           "DOC",
 		models.ObjectPreviewKindDOCX:          "DOCX",
 		models.ObjectPreviewKindWPS:           "WPS",
 		models.ObjectPreviewKindPPTX:          "PPTX",
@@ -613,7 +612,7 @@ func (h *rawDocumentContentHandler) Handle(ctx context.Context, req *ObjectConte
 			PreviewMaterial: models.PreviewMaterialURL,
 			Metadata:        metadata,
 		}
-		setFrontendRenderer(content, h.contentKind)
+		setFrontendRenderer(content, defaultFrontendRenderer(h.contentKind))
 		return decoratePreviewContent(content), false, nil
 	}
 	data, truncated, err := fetcher(limit)

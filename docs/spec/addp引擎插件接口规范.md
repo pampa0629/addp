@@ -41,11 +41,13 @@ type EnginePlugin interface {
 - `Type()` 必须稳定、小写、唯一，如 `postgresql`、`minio`、`neo4j`。
 - `EngineOrigin()` 表达引擎来源，取值为 `general` 或 `extension`；它不是能力判断字段，上层功能判断必须基于 capabilities。
 - `connection_info` 是所有引擎连接信息的统一事实源，保持 key-value map；字段 key 使用稳定英文机器名，不承载 i18n。
-- `RequiredFields()`、`SensitiveFields()`、`ValidateConnectionInfo()` 和 `TestConnection()` 共同构成 System 引擎管理层的统一连接信息能力。
-- System 管理的内置插件必须额外实现 `ConnectionIdentityProvider.ConnectionIdentityFields()`，返回决定 Engine Instance 身份的非敏感字段。MongoDB 的身份是服务端点 `host`、`port` 与认证主体 `user`、`auth_source`；`database` 只是可选的工作台初始数据库，不是身份或权限边界。其他数据库插件按自身协议声明端点字段；对象存储声明 `endpoint`；NFS 声明 `server`、`export_path`。
+- 所有可由 System 注册的内置插件必须实现 `ConnectionSpecProvider.ConnectionSpec()`，返回 `engine.connection/v1`。字段顺序、控件类型、默认值、必填、敏感、身份、条件显示、选项和跨字段约束只能在该描述中声明一次；System API、共享前端表单、敏感字段处理和身份归一化必须消费该描述，不得维护 `engine_type` 列表或条件分支。
+- `DefaultPort()`、`RequiredFields()`、`SensitiveFields()` 与 `ConnectionIdentityFields()` 是现有运行时接口方法；内置可注册插件的这些方法必须从 `ConnectionSpec()` 派生，不能重复保存常量或字段列表。`ValidateConnectionInfo()` 负责协议级及条件级校验，`TestConnection()` 负责真实只读连接验证。
+- `ConnectionSpec` 中 `identity=true` 的非敏感字段决定 Engine Instance 身份。MongoDB 的身份是服务端点 `host`、`port` 与认证主体 `user`、`auth_source`；`database` 只是可选的工作台初始数据库，不是身份或权限边界。其他数据库插件按自身协议声明端点字段；对象存储声明 `endpoint`；NFS 声明 `server`、`export_path`。
+- `GET /api/v1/system/engine-types` 返回当前编译进 System 且 `origin=general` 的描述数组，并同时投影 capabilities 与 Engine Catalog Model。该接口不返回连接值或凭据；新增国产或其他数据库后，注册入口必须由插件描述自动出现，不允许同步修改前端类型列表或表单分支。
 - System 创建 Engine Instance 后会冻结身份字段。更新请求改变任一身份字段时返回 HTTP 409，用户必须创建新的 Engine Instance；密码等敏感凭据允许原地轮换。默认端口按插件语义归一化后比较，不能把省略默认值和显式默认值误判为不同端点。
 - System 使用插件声明的身份字段生成持久身份键，并在 Tenant 与 `engine_type` 范围内强制唯一。相同身份重复注册返回原 Engine Instance；`deleted` 墓碑只能通过显式恢复操作重新启用，恢复请求必须提交与原身份键一致的完整连接配置。名称、描述、密码、capabilities 和连接状态不参与身份键。
-- `engine_id` 只由数据库 identity sequence 分配且永久不复用。删除完成后 System 保留 `deleted` 墓碑和非敏感身份字段，清除插件 `SensitiveFields()` 声明的凭据；插件和上层调用方不得通过物理删除、重置 sequence 或按名称新建来改变这一语义。
+- `engine_id` 只由数据库 identity sequence 分配且永久不复用。删除完成后 System 保留 `deleted` 墓碑和非敏感身份字段，清除 `ConnectionSpec` 中 `sensitive=true` 的凭据；插件和上层调用方不得通过物理删除、重置 sequence 或按名称新建来改变这一语义。
 - 自研且未编译进当前进程的 extension engine 使用标准 HTTP 运行时身份字段 `protocol + host + port`，不得通过任意非敏感字段猜测身份。
 - `TestConnection()` 必须执行需要认证的最小只读真实操作，不能只做网络连通检查，也不得创建、更新、删除外部资源。
 - `Capabilities()` 必须返回结构化 `engine.capabilities/v1` 能力模板。该方法不得连接具体实例，不做运行时探测，只表达插件和 Provider 实现的能力上限。
@@ -215,6 +217,7 @@ SDE Provider 不直接成为 Transfer continuous consumer。Transfer capture ada
 
 具体 Engine Instance 的 workspace 选择统一通过 `common/engine/instanceprovider.SpatialWorkspace`；只有 `detected|enabled` 可进入领域 Provider 解析。`not_detected|permission_denied|unavailable` 必须保持不可选。`ArcGISSDEWorkspace` 只返回 readiness fact，不得把普通 Oracle Plugin 当作 SDE adapter，也不得因 adapter 尚未注册而回退到 Oracle redo CDC。
 | MySQL | database | `information_schema.schemata/tables/columns/statistics/st_spatial_reference_systems` | `BASE TABLE` -> `table`，`VIEW` -> `view`，其他 `table_type` 转小写下划线 | `information_schema.columns`，主键来自 `column_key`，注释来自 `column_comment`；geometry 类型、SRID、nullable、CRS 和空间索引由 MySQL 插件自身补充为 `SpatialInfo` | 列表将 `information_schema.tables.table_rows` 写入 `estimated_row_count`；显式统计执行 `COUNT(*)` 写入 `row_count`；空间 extent 不通过全表聚合推断 | `information_schema`、`mysql`、`performance_schema`、`sys` | 普通表事实与 Doris 共享 `MySQLCompatibleCatalogFactsDialect`；MySQL 空间事实和行值编码保留在 MySQL 插件内；可启用表级 `Native.engine` |
+| OceanBase（MySQL 模式） | database | `information_schema.schemata/tables/columns` | 同 MySQL 兼容逻辑 | `information_schema.columns`，主键来自 `column_key`，注释来自 `column_comment` | 列表将 `information_schema.tables.table_rows` 写入 `estimated_row_count`；显式统计执行 `COUNT(*)` 写入 `row_count` | `information_schema`、`mysql`、`oceanbase` | 与 MySQL/Doris 共享 `MySQLCompatibleCatalogFactsDialect` 和 MySQL 方言；`engine_type` 仍固定为 `oceanbase`，首版不开放 Oracle 模式、空间、CDC 或写入 Provider |
 | Doris | database | MySQL 兼容 `information_schema.schemata/tables/columns` | 同 MySQL 兼容逻辑 | 同 MySQL 兼容逻辑，注释能力按引擎实际返回 | 列表将 `information_schema.tables.table_rows` 写入 `estimated_row_count`；显式统计执行 `COUNT(*)` 写入 `row_count` | MySQL 系统库 + `__internal_schema` | 与 MySQL 共享 `MySQLCompatibleCatalogFactsDialect`；`Native.engine` 待确认 `information_schema.tables.engine` 稳定性后再启用 |
 | ClickHouse | database | `system.databases`、`system.tables`、`system.columns` | `MaterializedView` -> `materialized_view`，`View`/其他包含 `View` 的 engine -> `view`，其他 -> `table` | `system.columns`，nullable 从类型字符串推断，`DEFAULT` / `MATERIALIZED` / `ALIAS` 映射到通用默认值和生成列字段，当前不表达主键 | 列表将 `system.tables.total_rows` 写入 `estimated_row_count`；显式统计执行 `COUNT(*)` 写入 `row_count` | `system`、`information_schema`、`INFORMATION_SCHEMA` | 暂留插件内；ClickHouse `system.*` 语义独立 |
 | Spark SQL | database | `SHOW DATABASES`、`SHOW TABLES`、`DESCRIBE`，部分环境可查询 `information_schema` | 当前 `SHOW TABLES` 结果统一映射为 `table` | `DESCRIBE table` | 列表阶段不做真实 count，未知 `row_count` / `size_bytes` 保持为空；单表 catalog facts 显式请求统计时才执行 `COUNT(*)` | `information_schema`、`sys` | 暂留插件内；Spark catalog facts 更偏命令式接口 |

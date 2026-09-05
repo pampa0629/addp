@@ -97,7 +97,7 @@ func (p *OraclePlugin) oracleReadQuery(ctx context.Context, db *sql.DB, path plu
 			return "", nil, nil, "", fmt.Errorf("Oracle spatial row encoding requires a catalog table read, not custom SQL")
 		}
 		if limit > 0 {
-			query = commonquery.ForEngine(p.Type()).PaginateQuerySQL(query, limit, int(offset))
+			query = commonquery.ForDialect(p.SQLDialect()).PaginateQuerySQL(query, limit, int(offset))
 		}
 		return query, nil, nil, "", nil
 	}
@@ -127,7 +127,7 @@ func (p *OraclePlugin) oracleReadQuery(ctx context.Context, db *sql.DB, path plu
 		return "", nil, nil, "", fmt.Errorf("Oracle table read requires at least one selected field")
 	}
 	identifiers := make([]string, 0, len(fields))
-	dialect := commonquery.ForEngine(p.Type())
+	dialect := commonquery.ForDialect(p.SQLDialect())
 	spatialInfo := oracleSpatialInfoFromFields(fields)
 	if spatialInfo != nil && encoding != "" {
 		spatialInfo, err = enrichOracleSpatialInfo(ctx, db, schema, table, spatialInfo)

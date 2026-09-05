@@ -43,7 +43,7 @@ func (p *ClickHousePlugin) OpenTableReadSession(
 	if err != nil {
 		return nil, fmt.Errorf("open ClickHouse read connection: %w", err)
 	}
-	query := commonquery.ForEngine(p.Type()).SelectTableSQL("*", segments[0].Name, segments[1].Name, "", "", 0, 0)
+	query := commonquery.ForDialect(p.SQLDialect()).SelectTableSQL("*", segments[0].Name, segments[1].Name, "", "", 0, 0)
 	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
 		_ = db.Close()

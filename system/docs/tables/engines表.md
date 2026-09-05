@@ -21,7 +21,7 @@
 | `engine_origin` | VARCHAR(50) | NOT NULL, DEFAULT 'general' | 引擎来源：general（通用）/extension（扩展） |
 | `connection_info` | JSON | NOT NULL | 连接信息（敏感字段加密） |
 | `description` | TEXT | | 描述信息 |
-| `identity_key` | JSONB | NOT NULL | 由插件 `ConnectionIdentityFields()` 规范化生成的非敏感身份键；在 Tenant 与 `engine_type` 范围内永久唯一，不对调用方开放修改。 |
+| `identity_key` | JSONB | NOT NULL | 由插件 `ConnectionSpec` 中 `identity=true` 的字段规范化生成的非敏感身份键；在 Tenant 与 `engine_type` 范围内永久唯一，不对调用方开放修改。 |
 | `version` | BIGINT | NOT NULL, DEFAULT 1 | 并发更新版本，每次状态或配置写入后原子递增。 |
 | `lifecycle_state` | VARCHAR(20) | NOT NULL, DEFAULT 'active', INDEX | 生命周期：`active` / `disabled` / `deleting` / `deleted`。它表示平台管理意图，不表示外部端点当前可达。 |
 | `created_by` | INTEGER | | 创建者ID |

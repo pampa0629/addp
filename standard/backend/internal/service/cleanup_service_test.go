@@ -51,21 +51,25 @@ func setupStandardCleanupTestDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE standard.glossaries (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			tenant_id INTEGER NOT NULL,
-			domain_id INTEGER,
-			name TEXT NOT NULL,
-			alias TEXT,
-			definition TEXT NOT NULL,
-			example TEXT,
-			note TEXT,
-			status TEXT,
+			scope_type TEXT NOT NULL,
+			owner_domain_id INTEGER,
+			code TEXT NOT NULL,
 			steward_id INTEGER,
-			related_ids TEXT,
 			tags TEXT,
+			draft_revision_id INTEGER,
 			created_by INTEGER NOT NULL,
 			updated_by INTEGER,
 			created_at DATETIME,
 			updated_at DATETIME,
-			version INTEGER NOT NULL DEFAULT 1
+			version INTEGER NOT NULL DEFAULT 1,
+			lifecycle_state TEXT NOT NULL DEFAULT 'active'
+		)`,
+		`CREATE TABLE standard.glossary_revisions (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, glossary_id INTEGER NOT NULL, revision_no INTEGER NOT NULL,
+			status TEXT NOT NULL, name TEXT NOT NULL, alias TEXT, definition TEXT NOT NULL, example TEXT, note TEXT,
+			related_ids TEXT, change_summary TEXT NOT NULL, effective_from DATETIME, effective_to DATETIME,
+			submitted_by INTEGER, submitted_at DATETIME, published_by INTEGER, published_at DATETIME,
+			created_by INTEGER NOT NULL, updated_by INTEGER, created_at DATETIME, updated_at DATETIME
 		)`,
 		`CREATE TABLE standard.glossary_element_mappings (
 			glossary_id INTEGER NOT NULL,
@@ -212,20 +216,28 @@ func setupStandardCleanupTestDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE standard.documents (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			tenant_id INTEGER NOT NULL,
-			name TEXT NOT NULL,
-			doc_type TEXT,
+			scope_type TEXT NOT NULL,
+			owner_domain_id INTEGER,
+			code TEXT NOT NULL,
+			doc_type TEXT NOT NULL,
 			source_org TEXT,
-			document_version TEXT,
+			steward_id INTEGER,
+			tags TEXT,
+			draft_revision_id INTEGER,
 			version INTEGER NOT NULL DEFAULT 1,
-			publish_date DATETIME,
-			description TEXT,
-			file_key TEXT,
-			file_name TEXT,
-			file_size INTEGER,
+			lifecycle_state TEXT NOT NULL DEFAULT 'active',
 			created_by INTEGER NOT NULL,
 			updated_by INTEGER,
 			created_at DATETIME,
 			updated_at DATETIME
+		)`,
+		`CREATE TABLE standard.document_revisions (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER NOT NULL, revision_no INTEGER NOT NULL,
+			status TEXT NOT NULL, name TEXT NOT NULL, version_label TEXT, publish_date DATETIME, description TEXT,
+			file_key TEXT, file_name TEXT, file_size INTEGER, media_type TEXT, content_sha256 TEXT,
+			change_summary TEXT NOT NULL, effective_from DATETIME, effective_to DATETIME,
+			submitted_by INTEGER, submitted_at DATETIME, published_by INTEGER, published_at DATETIME,
+			created_by INTEGER NOT NULL, updated_by INTEGER, created_at DATETIME, updated_at DATETIME
 		)`,
 		`CREATE TABLE standard.document_element_mappings (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -293,16 +305,16 @@ func TestStandardCleanupTenantDeletedLogicalDeprecatesStatefulDefinitions(t *tes
 	if err != nil {
 		t.Fatalf("ExecuteCleanup: %v", err)
 	}
-	if stats.DeprecatedGlossaries != 1 || stats.DeprecatedElements != 1 || stats.DeprecatedMetrics != 1 || stats.SkippedItems != 2 {
+	if stats.DeprecatedGlossaries != 1 || stats.DeprecatedElements != 1 || stats.DeprecatedMetrics != 1 || stats.DeprecatedDocuments != 1 || stats.SkippedItems != 2 {
 		t.Fatalf("unexpected logical cleanup stats: %+v", stats)
 	}
 
-	var glossary models.Glossary
-	if err := db.First(&glossary, ids.glossaryID).Error; err != nil {
-		t.Fatalf("load glossary: %v", err)
+	var glossaryRevision models.GlossaryRevision
+	if err := db.Where("glossary_id = ?", ids.glossaryID).First(&glossaryRevision).Error; err != nil {
+		t.Fatalf("load glossary revision: %v", err)
 	}
-	if glossary.Status != "deprecated" {
-		t.Fatalf("expected glossary deprecated, got %s", glossary.Status)
+	if glossaryRevision.Status != models.RevisionStatusWithdrawn {
+		t.Fatalf("expected glossary revision withdrawn, got %s", glossaryRevision.Status)
 	}
 	var element models.Element
 	if err := db.First(&element, ids.elementID).Error; err != nil {
@@ -323,12 +335,15 @@ func TestStandardCleanupTenantDeletedLogicalDeprecatesStatefulDefinitions(t *tes
 		t.Fatalf("expected metric revision withdrawn, got %s", metricRevision.Status)
 	}
 
-	var document models.Document
-	if err := db.First(&document, ids.documentID).Error; err != nil {
-		t.Fatalf("load document: %v", err)
+	var documentRevision models.DocumentRevision
+	if err := db.Where("document_id = ?", ids.documentID).First(&documentRevision).Error; err != nil {
+		t.Fatalf("load document revision: %v", err)
 	}
-	if document.FileKey != "" {
-		t.Fatalf("logical cleanup must not modify document file_key, got %s", document.FileKey)
+	if documentRevision.Status != models.RevisionStatusWithdrawn {
+		t.Fatalf("expected document revision withdrawn, got %s", documentRevision.Status)
+	}
+	if documentRevision.FileKey != "" {
+		t.Fatalf("logical cleanup must not modify document revision file_key, got %s", documentRevision.FileKey)
 	}
 }
 
@@ -391,8 +406,9 @@ func TestStandardCleanupPhysicalPreservesDocumentWhenMinIOUnavailable(t *testing
 	if err := db.First(&doc, ids.documentID).Error; err != nil {
 		t.Fatalf("expected document to be preserved after file cleanup failure: %v", err)
 	}
-	if doc.FileKey == "" {
-		t.Fatalf("expected preserved document to keep file_key")
+	var revision models.DocumentRevision
+	if err := db.Where("document_id = ?", doc.ID).First(&revision).Error; err != nil || revision.FileKey == "" {
+		t.Fatalf("expected preserved document revision to keep file_key: revision=%+v err=%v", revision, err)
 	}
 }
 
@@ -416,13 +432,21 @@ func seedStandardCleanupTenantState(t *testing.T, db *gorm.DB, tenantID int64, w
 	}).Error; err != nil {
 		t.Fatalf("create reference deletion: %v", err)
 	}
-	glossary := models.Glossary{TenantID: tenantID, DomainID: &domain.ID, Name: "Glossary " + suffix, Definition: "definition", Status: "approved", CreatedBy: 1}
+	glossary := models.Glossary{TenantID: tenantID, ScopeType: models.StandardScopeDomain, OwnerDomainID: &domain.ID, Code: "glossary_" + suffix, CreatedBy: 1, LifecycleState: "active"}
 	if err := db.Create(&glossary).Error; err != nil {
 		t.Fatalf("create glossary: %v", err)
 	}
-	deprecatedGlossary := models.Glossary{TenantID: tenantID, DomainID: &domain.ID, Name: "Old Glossary " + suffix, Definition: "definition", Status: "deprecated", CreatedBy: 1}
+	glossaryRevision := models.GlossaryRevision{GlossaryID: glossary.ID, RevisionNo: 1, Status: models.RevisionStatusPublished, Name: "Glossary " + suffix, Definition: "definition", ChangeSummary: "initial", CreatedBy: 1}
+	if err := db.Create(&glossaryRevision).Error; err != nil {
+		t.Fatalf("create glossary revision: %v", err)
+	}
+	deprecatedGlossary := models.Glossary{TenantID: tenantID, ScopeType: models.StandardScopeDomain, OwnerDomainID: &domain.ID, Code: "old_glossary_" + suffix, CreatedBy: 1, LifecycleState: "active"}
 	if err := db.Create(&deprecatedGlossary).Error; err != nil {
 		t.Fatalf("create deprecated glossary: %v", err)
+	}
+	deprecatedGlossaryRevision := models.GlossaryRevision{GlossaryID: deprecatedGlossary.ID, RevisionNo: 1, Status: models.RevisionStatusWithdrawn, Name: "Old Glossary " + suffix, Definition: "definition", ChangeSummary: "initial", CreatedBy: 1}
+	if err := db.Create(&deprecatedGlossaryRevision).Error; err != nil {
+		t.Fatalf("create deprecated glossary revision: %v", err)
 	}
 	codeSet := models.CodeSet{TenantID: tenantID, ScopeType: models.StandardScopeDomain, OwnerDomainID: &domain.ID, Code: "codeset_" + suffix, Origin: models.CodeSetOriginTenant, CreatedBy: 1, LifecycleState: "active"}
 	if err := db.Create(&codeSet).Error; err != nil {
@@ -487,9 +511,13 @@ func seedStandardCleanupTenantState(t *testing.T, db *gorm.DB, tenantID int64, w
 		fileKey = "tenant_1/documents/1/spec.pdf"
 		fileSize = 2048
 	}
-	document := models.Document{TenantID: tenantID, Name: "Spec " + suffix, FileKey: fileKey, FileSize: fileSize, CreatedBy: 1}
+	document := models.Document{TenantID: tenantID, ScopeType: models.StandardScopeTenantCommon, Code: "spec_" + suffix, DocType: "reference", LifecycleState: "active", CreatedBy: 1}
 	if err := db.Create(&document).Error; err != nil {
 		t.Fatalf("create document: %v", err)
+	}
+	documentRevision := models.DocumentRevision{DocumentID: document.ID, RevisionNo: 1, Status: models.RevisionStatusPublished, Name: "Spec " + suffix, FileKey: fileKey, FileName: "spec.md", FileSize: fileSize, MediaType: "text/markdown", ContentSHA256: "fixture", ChangeSummary: "initial", CreatedBy: 1}
+	if err := db.Create(&documentRevision).Error; err != nil {
+		t.Fatalf("create document revision: %v", err)
 	}
 	if err := db.Create(&models.DocumentElementMapping{DocumentID: document.ID, ElementID: element.ID}).Error; err != nil {
 		t.Fatalf("create document element mapping: %v", err)

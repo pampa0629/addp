@@ -424,6 +424,8 @@
           <pre v-else class="workflow-result-json">{{ workflowResultText }}</pre>
         </div>
 
+        <ExecutionLineageSummary :metadata="currentExecutionMetadata" />
+
         <!-- 执行元数据 -->
         <div v-if="hasExecutionMetadata" class="detail-section">
           <h4>{{ t('monitor.execution.detail.metadata') }}</h4>
@@ -444,13 +446,20 @@
               <span v-else>{{ item.value }}</span>
             </el-descriptions-item>
           </el-descriptions>
-          <el-input
-            type="textarea"
-            :value="executionMetadataText"
-            :rows="10"
-            readonly
-            class="metadata-json"
-          />
+          <el-collapse v-model="metadataExpandedPanels" class="metadata-raw-collapse">
+            <el-collapse-item name="raw">
+              <template #title>
+                <span class="metadata-raw-title">{{ t('monitor.execution.detail.raw_metadata') }}</span>
+              </template>
+              <el-input
+                type="textarea"
+                :value="executionMetadataText"
+                :rows="10"
+                readonly
+                class="metadata-json"
+              />
+            </el-collapse-item>
+          </el-collapse>
         </div>
 
         <!-- 执行结果 -->
@@ -499,6 +508,7 @@ import {
   useConsolePageDescriptor
 } from '@common-ui'
 import { listExecutions, getExecutionTreeByExecutionID, listTaskProviders } from '@/api/monitor'
+import ExecutionLineageSummary from '@/components/ExecutionLineageSummary.vue'
 import ExecutionTable from '@/components/ExecutionTable.vue'
 import { executionDetailLocation } from '@/utils/executionNavigation'
 import { navigateMonitorRoute } from '@/utils/moduleNavigation'
@@ -531,6 +541,7 @@ const selectedPreset = ref('')
 const loading = ref(false)
 const detailDialogVisible = ref(false)
 const currentExecution = ref(null)
+const metadataExpandedPanels = ref([])
 useConsolePageDescriptor(router, 'monitor', {
   title: computed(() => t('monitor.execution.recentDetailTitle')),
   subject: computed(() => currentExecution.value?.source_task_name || currentExecution.value?.execution_id || ''),
@@ -1184,6 +1195,13 @@ watch(hasRunningExecution, running => {
   }
 })
 
+watch(
+  () => currentExecution.value?.execution_id,
+  () => {
+    metadataExpandedPanels.value = []
+  }
+)
+
 watch(detailDialogVisible, async visible => {
   if (visible) return
   openedExecutionID.value = ''
@@ -1282,6 +1300,20 @@ watch(detailDialogVisible, async visible => {
 
 .metadata-summary {
   margin-bottom: 12px;
+}
+
+.metadata-raw-collapse :deep(.el-collapse-item__header),
+.metadata-raw-collapse :deep(.el-collapse-item__wrap) {
+  color: var(--addp-text-primary);
+  background: transparent;
+}
+
+.metadata-raw-collapse :deep(.el-collapse-item__content) {
+  padding-bottom: 0;
+}
+
+.metadata-raw-title {
+  font-weight: 500;
 }
 
 .continuous-heading {

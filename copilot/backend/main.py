@@ -113,11 +113,13 @@ app.add_middleware(
 # 注册路由
 from api import inference_scenario_binding_router, navigate_router, notebook_router, query_router, transfer_router, workflow_router  # noqa: E402
 from api.kg_extract_api import router as kg_extract_router  # noqa: E402
+from api.standard_document_extract_api import router as standard_document_extract_router  # noqa: E402
 app.include_router(workflow_router, prefix=_API_PREFIX, tags=["工作流智能体 | Workflow Agent"])
 app.include_router(query_router, prefix=_API_PREFIX, tags=["查询智能体 | Query Agent"])
 app.include_router(notebook_router, prefix=_API_PREFIX, tags=["Notebook 智能体 | Notebook Agent"])
 app.include_router(transfer_router, prefix=_API_PREFIX, tags=["Transfer 智能体 | Transfer Agent"])
 app.include_router(kg_extract_router, prefix=_API_PREFIX, tags=["图谱构建 | KG Build"])
+app.include_router(standard_document_extract_router, prefix=_API_PREFIX, tags=["数据标准 | Data Standard"])
 app.include_router(navigate_router, prefix=_API_PREFIX, tags=["导航引导 | Navigation Guide"])
 app.include_router(
     inference_scenario_binding_router,

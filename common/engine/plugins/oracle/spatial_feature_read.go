@@ -45,7 +45,7 @@ func (p *OraclePlugin) ReadSpatialFeature(ctx context.Context, connInfo plugin.C
 	if err != nil {
 		return nil, err
 	}
-	dialect := commonquery.ForEngine(p.Type())
+	dialect := commonquery.ForDialect(p.SQLDialect())
 	quotedGeometry := dialect.QuoteIdentifier(geometryField.Name)
 	query := fmt.Sprintf(
 		"SELECT SDO_UTIL.TO_WKBGEOMETRY(%s) FROM %s WHERE %s = :1 FETCH FIRST 1 ROWS ONLY",

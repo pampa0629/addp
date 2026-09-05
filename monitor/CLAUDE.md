@@ -46,6 +46,7 @@ monitor/
 - 所有 evaluator 先收集 active signal，再由单一 reconciler 统一处理生命周期。任何 evaluator 查询失败不得恢复其拥有的现有 incident。
 - 通知前端唯一入口为 `/notifications`，通过 Webhook/邮件页签展示两个渠道；不保留旧 `/webhooks` 页面路由。
 - 执行记录字段以 `common/execution/task_execution.go` 为准；新增模块写执行记录时应复用 `common/execution/repository.go` 和 `common/execution.EnsureStore`。
+- 执行详情使用 `common-frontend/basic` 的唯一 `lineage_facts` 展示归一能力，按“输入资源 / 输出产物”展示 owner 已写入的真实读写事实。可解析的业务输入通过共享 Manager Data Explorer 路由打开；Monitor 不解析查询语句、不请求 Meta 补齐、不将 `addp-infra://` 平台内部产物当作业务数据项或跳转目标，也不据此推断产物生命周期；原始 JSON 保留为默认折叠的诊断证据，切换 execution 时必须重置折叠状态。
 
 ## 前端公开路由
 

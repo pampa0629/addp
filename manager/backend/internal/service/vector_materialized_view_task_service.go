@@ -301,6 +301,10 @@ func (s *VectorMaterializedViewTaskService) runVectorMaterializedView(ctx contex
 			}
 		}
 	} else if result != nil {
+		metadata = managerExecutionLineage(metadata, commonExecution.TaskTypeVectorMaterializedViewGeneration,
+			[]commonExecution.LineageResourceRef{managerItemLineageRef(execCfg.Identity.Locator, execCfg.Identity.ItemFingerprint, execCfg.Identity.ItemID)},
+			[]commonExecution.LineageResourceRef{managerResourceLineageRef(managerLineageOutputPort, tableLocator(execCfg.Identity.EngineID, execCfg.Options.TargetSchema, plan.TargetTable))},
+		)
 		renderExtentSRID := spatial.SRIDWGS84
 		resultFields = map[string]interface{}{
 			"status":             models.VectorMaterializedViewStatusReady,

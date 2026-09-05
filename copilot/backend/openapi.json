@@ -1471,6 +1471,282 @@
         "title": "ResourceFact",
         "type": "object"
       },
+      "StandardDocumentCandidate": {
+        "additionalProperties": false,
+        "properties": {
+          "candidate_type": {
+            "enum": [
+              "glossary",
+              "element",
+              "code_set",
+              "metric"
+            ],
+            "title": "Candidate Type",
+            "type": "string"
+          },
+          "code": {
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "title": "Code",
+            "type": "string"
+          },
+          "definition": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Definition",
+            "type": "string"
+          },
+          "evidences": {
+            "items": {
+              "$ref": "#/components/schemas/StandardDocumentEvidence"
+            },
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Evidences",
+            "type": "array"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/StandardDocumentCandidatePayload"
+          }
+        },
+        "required": [
+          "candidate_type",
+          "code",
+          "name",
+          "definition",
+          "evidences"
+        ],
+        "title": "StandardDocumentCandidate",
+        "type": "object"
+      },
+      "StandardDocumentCandidatePayload": {
+        "additionalProperties": false,
+        "properties": {
+          "aggregation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aggregation"
+          },
+          "calculation_formula": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calculation Formula"
+          },
+          "data_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Type"
+          },
+          "dimensions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Dimensions",
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/StandardDocumentCodeItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "statistical_scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Statistical Scope"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "value_domain_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Domain Kind"
+          }
+        },
+        "title": "StandardDocumentCandidatePayload",
+        "type": "object"
+      },
+      "StandardDocumentCodeItem": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "definition": {
+            "default": "",
+            "title": "Definition",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "name"
+        ],
+        "title": "StandardDocumentCodeItem",
+        "type": "object"
+      },
+      "StandardDocumentEvidence": {
+        "additionalProperties": false,
+        "properties": {
+          "end_line": {
+            "minimum": 1.0,
+            "title": "End Line",
+            "type": "integer"
+          },
+          "section_path": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Section Path",
+            "type": "string"
+          },
+          "start_line": {
+            "minimum": 1.0,
+            "title": "Start Line",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "section_path",
+          "start_line",
+          "end_line"
+        ],
+        "title": "StandardDocumentEvidence",
+        "type": "object"
+      },
+      "StandardDocumentExtractRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "document_name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Document Name",
+            "type": "string"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/StandardDocumentSection"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Sections",
+            "type": "array"
+          },
+          "version_label": {
+            "default": "",
+            "maxLength": 50,
+            "title": "Version Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "document_name",
+          "sections"
+        ],
+        "title": "StandardDocumentExtractRequest",
+        "type": "object"
+      },
+      "StandardDocumentExtractResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/StandardDocumentCandidate"
+            },
+            "maxItems": 200,
+            "title": "Candidates",
+            "type": "array"
+          }
+        },
+        "title": "StandardDocumentExtractResponse",
+        "type": "object"
+      },
+      "StandardDocumentSection": {
+        "additionalProperties": false,
+        "properties": {
+          "end_line": {
+            "minimum": 1.0,
+            "title": "End Line",
+            "type": "integer"
+          },
+          "section_path": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Section Path",
+            "type": "string"
+          },
+          "start_line": {
+            "minimum": 1.0,
+            "title": "Start Line",
+            "type": "integer"
+          },
+          "text": {
+            "maxLength": 200000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "section_path",
+          "start_line",
+          "end_line",
+          "text"
+        ],
+        "title": "StandardDocumentSection",
+        "type": "object"
+      },
       "TransferGenerationRequest": {
         "additionalProperties": false,
         "properties": {
@@ -2736,6 +3012,74 @@
         "x-addp-auth-mode": "permission",
         "x-addp-required-permissions": [
           "copilot.configuration.update"
+        ]
+      }
+    },
+    "/standard-documents/extract": {
+      "post": {
+        "operationId": "extract_standard_document_api_v1_copilot_standard_documents_extract_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Accept-Language",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Accept-Language"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StandardDocumentExtractRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StandardDocumentExtractResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "提炼数据标准候选 | Extract data standard candidates",
+        "tags": [
+          "数据标准 | Data Standard"
+        ],
+        "x-addp-auth-mode": "permission",
+        "x-addp-required-permissions": [
+          "copilot.standard_document.execute"
         ]
       }
     },

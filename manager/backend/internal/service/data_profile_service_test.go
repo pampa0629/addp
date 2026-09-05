@@ -276,6 +276,13 @@ func TestDataProfileServiceProtectsManagedProfileBeforePersistence(t *testing.T)
 	if executions.failedCode != "" || !executions.completed {
 		t.Fatalf("execution failed = %q, completed = %v", executions.failedCode, executions.completed)
 	}
+	facts, ok := executions.completedMetadata["lineage_facts"].(commonExecution.LineageFacts)
+	if !ok || facts.SchemaVersion != commonExecution.LineageFactsSchemaVersion || len(facts.Inputs) != 1 {
+		t.Fatalf("lineage_facts = %#v", executions.completedMetadata["lineage_facts"])
+	}
+	if facts.Inputs[0].Locator != target.Locator || facts.Inputs[0].ItemFingerprint != target.ItemFingerprint {
+		t.Fatalf("lineage input = %#v", facts.Inputs[0])
+	}
 }
 
 type dataProfileServiceTestProfileStore struct {
@@ -298,10 +305,11 @@ func (s *dataProfileServiceTestProfileStore) ReplaceCurrent(_ context.Context, _
 }
 
 type dataProfileServiceTestExecutionStore struct {
-	failedCode  string
-	byID        *commonExecution.TaskExecution
-	createCalls int
-	completed   bool
+	failedCode        string
+	byID              *commonExecution.TaskExecution
+	createCalls       int
+	completed         bool
+	completedMetadata map[string]interface{}
 }
 
 func (s *dataProfileServiceTestExecutionStore) CreateOrReuseActive(context.Context, string, *commonExecution.TaskExecution) (*commonExecution.TaskExecution, bool, error) {
@@ -320,8 +328,9 @@ func (s *dataProfileServiceTestExecutionStore) GetByExecutionID(context.Context,
 func (s *dataProfileServiceTestExecutionStore) Start(context.Context, int, string, time.Time) error {
 	return nil
 }
-func (s *dataProfileServiceTestExecutionStore) Complete(context.Context, int, string, time.Time, int64, map[string]interface{}) error {
+func (s *dataProfileServiceTestExecutionStore) Complete(_ context.Context, _ int, _ string, _ time.Time, _ int64, metadata map[string]interface{}) error {
 	s.completed = true
+	s.completedMetadata = metadata
 	return nil
 }
 func (s *dataProfileServiceTestExecutionStore) Fail(_ context.Context, _ int, _ string, _ time.Time, code string, _ string) error {

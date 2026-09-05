@@ -21,6 +21,7 @@ SCENARIOS: tuple[str, ...] = (
     "query_generation",
     "workflow_generation",
     "notebook_generation",
+    "standard_document_extraction",
     "transfer_generation",
     "navigation_guide",
     "knowledge_graph_extraction",

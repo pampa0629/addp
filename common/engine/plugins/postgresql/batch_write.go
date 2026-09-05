@@ -151,7 +151,7 @@ func effectivePostgresInsertChunkSize(columnCount, requested int) int {
 }
 
 func buildPostgresInsertSQL(schema, table string, columns []string, rows []map[string]interface{}, geometryColumns map[string]struct{}) (string, []interface{}) {
-	dialect := commonquery.ForEngine("postgresql")
+	dialect := commonquery.ForDialect("postgresql")
 	quotedColumns := make([]string, 0, len(columns))
 	for _, column := range columns {
 		quotedColumns = append(quotedColumns, dialect.QuoteIdentifier(column))

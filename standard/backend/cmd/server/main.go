@@ -118,8 +118,10 @@ func main() {
 	unitSvc := service.NewUnitService(mCatRepo, unitRepo)
 	metricSvc := service.NewMetricService(metricCatRepo, metricRepo, tenantReferenceRepo, standardReferenceDeletionSvc)
 	documentSvc := service.NewDocumentService(documentRepo, tenantReferenceRepo, minioClient, service.DocumentStorageOptions{
-		MaxFileSize: cfg.DocumentMaxFileSize,
-		Timeout:     cfg.DocumentStorageTimeout,
+		MaxFileSize:        cfg.DocumentMaxFileSize,
+		Timeout:            cfg.DocumentStorageTimeout,
+		CopilotURL:         cfg.CopilotURL,
+		ServiceTokenSource: serviceTokenSource,
 	})
 	collectionSvc := service.NewStandardCollectionService(collectionRepo, tenantReferenceRepo, systemClient)
 	defer documentSvc.Stop()

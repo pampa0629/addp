@@ -170,7 +170,7 @@ def test_progress_callback_is_separate_from_access_plan(tmp_path, monkeypatch):
     assert all("X-tenant-id" not in item["headers"] for item in posted)
 
 
-def test_container_runtime_rewrites_localhost_target_endpoint_before_publish(tmp_path, monkeypatch):
+def test_container_runtime_rewrites_localhost_object_store_endpoints_before_stage_and_publish(tmp_path, monkeypatch):
     source = tmp_path / "source.xyz"
     source.write_text("0 0 0\n", encoding="utf-8")
     target = tmp_path / "source.copc.laz"
@@ -178,6 +178,15 @@ def test_container_runtime_rewrites_localhost_target_endpoint_before_publish(tmp
     pdal.write_text("#!/bin/sh\n", encoding="utf-8")
     pdal.chmod(0o755)
     plan = mounted_plan(source, target, "xyz")
+    plan["source"]["access"] = {
+        "method": "object_store",
+        "endpoint": "127.0.0.1:9002",
+        "access_key": "source-ak",
+        "secret_key": "source-sk",
+        "bucket": "addp",
+        "object": "pointcloud/source.xyz",
+        "use_ssl": False,
+    }
     plan["target"]["access"] = {
         "method": "object_store",
         "endpoint": "127.0.0.1:19000",
@@ -187,7 +196,14 @@ def test_container_runtime_rewrites_localhost_target_endpoint_before_publish(tmp
         "object": "tenant_1/source.copc.laz",
         "use_ssl": False,
     }
+    staged = {}
     published = {}
+
+    def fake_stage(access_plan, work_dir):
+        staged["endpoint"] = access_plan["source"]["access"]["endpoint"]
+        staged_source = work_dir / "source.xyz"
+        staged_source.write_text("0 0 0\n", encoding="utf-8")
+        return staged_source
 
     def fake_runner(command, timeout_seconds):
         Path(command[3]).write_bytes(b"copc")
@@ -201,6 +217,7 @@ def test_container_runtime_rewrites_localhost_target_endpoint_before_publish(tmp
             "uploaded_bytes": path.stat().st_size,
         }
 
+    monkeypatch.setattr(operators, "stage_source_file", fake_stage)
     monkeypatch.setattr(operators, "publish_target_file", fake_publish)
     invoke_operator(
         "xyz_to_copc",
@@ -208,11 +225,13 @@ def test_container_runtime_rewrites_localhost_target_endpoint_before_publish(tmp
         runner=fake_runner,
         env={
             "POINTCLOUD_PDAL_BIN": str(pdal),
-            "POINTCLOUD_OBJECT_STORE_LOCALHOST_ENDPOINT": "host.docker.internal:19000",
+            "POINTCLOUD_OBJECT_STORE_LOOPBACK_HOST": "host.docker.internal",
         },
     )
 
+    assert staged["endpoint"] == "host.docker.internal:9002"
     assert published["endpoint"] == "host.docker.internal:19000"
+    assert plan["source"]["access"]["endpoint"] == "127.0.0.1:9002"
     assert plan["target"]["access"]["endpoint"] == "127.0.0.1:19000"
 
 

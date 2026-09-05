@@ -34,7 +34,7 @@ func (p *PostgreSQLPlugin) ReadSpatialFeature(ctx context.Context, connInfo plug
 	if err != nil {
 		return nil, err
 	}
-	dialect := commonquery.ForEngine("postgresql")
+	dialect := commonquery.ForDialect("postgresql")
 	quotedGeometry := dialect.QuoteIdentifier(geometryColumn.Name)
 	geometryExpression := quotedGeometry
 	if strings.EqualFold(strings.TrimSpace(geometryColumn.UDTName), "geography") {

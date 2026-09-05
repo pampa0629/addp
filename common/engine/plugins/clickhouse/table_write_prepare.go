@@ -311,5 +311,5 @@ func clickhouseTablePathParts(path plugin.EngineCatalogPath) (string, string, er
 }
 
 func clickhouseDialect() commonquery.Dialect {
-	return commonquery.ForEngine("clickhouse")
+	return commonquery.ForDialect("clickhouse")
 }

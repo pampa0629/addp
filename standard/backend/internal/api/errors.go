@@ -56,6 +56,11 @@ func respondError(c *gin.Context, status int, err error) {
 		message = commoni18n.T(c, sysi18n.MsgCodeItemReferenced)
 	case errors.Is(err, service.ErrMetricReferenced):
 		message = commoni18n.T(c, sysi18n.MsgMetricReferenced)
+	case errors.Is(err, service.ErrGlossaryPublicationHistory):
+		status = http.StatusConflict
+		message = commoni18n.T(c, sysi18n.MsgGlossaryPublicationHistory)
+		errorCode = "glossary_publication_history"
+		useGenericMessage = false
 	case errors.Is(err, service.ErrMetricCategoryParentCycle):
 		message = commoni18n.T(c, sysi18n.MsgMetricCategoryParentCycle)
 	case errors.Is(err, service.ErrSystemCategoryImmutable):
@@ -63,7 +68,10 @@ func respondError(c *gin.Context, status int, err error) {
 	case errors.Is(err, service.ErrSystemUnitImmutable):
 		message = commoni18n.T(c, sysi18n.MsgSystemUnitImmutable)
 	case errors.Is(err, repository.ErrInvalidTenantReference):
+		status = http.StatusBadRequest
 		message = commoni18n.T(c, sysi18n.MsgInvalidResourceReference)
+		errorCode = "invalid_resource_reference"
+		useGenericMessage = false
 	case errors.Is(err, service.ErrInvalidStandardScope):
 		message = commoni18n.T(c, sysi18n.MsgInvalidStandardScope)
 		errorCode = "invalid_standard_scope"
@@ -138,6 +146,31 @@ func respondError(c *gin.Context, status int, err error) {
 		useGenericMessage = false
 	case errors.Is(err, service.ErrDocumentFileNameInvalid):
 		message = commoni18n.T(c, sysi18n.MsgDocumentFileNameInvalid)
+		useGenericMessage = false
+	case errors.Is(err, service.ErrDocumentFileRequired):
+		status = http.StatusConflict
+		message = commoni18n.T(c, sysi18n.MsgDocumentFileRequired)
+		errorCode = "document_file_required"
+		useGenericMessage = false
+	case errors.Is(err, service.ErrDocumentExtractionUnsupported):
+		status = http.StatusUnprocessableEntity
+		message = commoni18n.T(c, sysi18n.MsgDocumentExtractionUnsupported)
+		errorCode = "document_extraction_unsupported"
+		useGenericMessage = false
+	case errors.Is(err, service.ErrDocumentExtractionInvalid):
+		status = http.StatusUnprocessableEntity
+		message = commoni18n.T(c, sysi18n.MsgDocumentExtractionInvalid)
+		errorCode = "document_extraction_invalid"
+		useGenericMessage = false
+	case errors.Is(err, service.ErrDocumentCopilotUnavailable):
+		status = http.StatusServiceUnavailable
+		message = commoni18n.T(c, sysi18n.MsgDocumentCopilotUnavailable)
+		errorCode = "document_copilot_unavailable"
+		useGenericMessage = false
+	case errors.Is(err, service.ErrDocumentPublicationHistory):
+		status = http.StatusConflict
+		message = commoni18n.T(c, sysi18n.MsgDocumentPublicationHistory)
+		errorCode = "document_publication_history"
 		useGenericMessage = false
 	case errors.Is(err, service.ErrDocumentFileDownload):
 		message = commoni18n.T(c, sysi18n.MsgDocumentFileDownloadFailed)

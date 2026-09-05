@@ -75,7 +75,7 @@ func TestIntegrationOraclePartitionedTableChangeApply(t *testing.T) {
 		t.Fatalf("delete apply: %v", err)
 	}
 	var count int
-	if err := db.QueryRow("SELECT COUNT(*) FROM "+commonquery.ForEngine("oracle").QualifiedTable(schema, table)+" WHERE \"ID\" = :1", 1).Scan(&count); err != nil {
+	if err := db.QueryRow("SELECT COUNT(*) FROM "+commonquery.ForDialect("oracle").QualifiedTable(schema, table)+" WHERE \"ID\" = :1", 1).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
 	if count != 0 {
@@ -121,7 +121,7 @@ func TestIntegrationOraclePartitionedApplyRollbackAndCancel(t *testing.T) {
 	if _, err := p.ApplyPartitionedTableChanges(ctx, connInfo, path, oracleApplyBatch("0", 0, 1, invalid), opts); err == nil {
 		t.Fatal("NULL business write unexpectedly succeeded")
 	}
-	qualifiedLedger := commonquery.ForEngine("oracle").QualifiedTable(schema, oracleTransferApplyLedgerTable)
+	qualifiedLedger := commonquery.ForDialect("oracle").QualifiedTable(schema, oracleTransferApplyLedgerTable)
 	var ledgerCount int
 	if err := db.QueryRow("SELECT COUNT(*) FROM "+qualifiedLedger+" WHERE apply_identity = :1", opts.ApplyIdentity).Scan(&ledgerCount); err != nil {
 		t.Fatal(err)
@@ -217,7 +217,7 @@ func TestIntegrationOraclePartitionedApplySpatialEWKB(t *testing.T) {
 	if _, err := p.ApplyPartitionedTableChanges(context.Background(), connInfo, path, oracleApplyBatch("0", 0, 3, changes...), opts); err != nil {
 		t.Fatal(err)
 	}
-	qualified := commonquery.ForEngine("oracle").QualifiedTable(schema, table)
+	qualified := commonquery.ForDialect("oracle").QualifiedTable(schema, table)
 	rows, err := db.Query("SELECT target_row.\"ID\", target_row.\"SHAPE\".SDO_GTYPE, target_row.\"SHAPE\".SDO_SRID FROM " + qualified + " target_row ORDER BY target_row.\"ID\"")
 	if err != nil {
 		t.Fatal(err)
@@ -294,7 +294,7 @@ func TestIntegrationOraclePartitionedApplyScalarTypeMatrix(t *testing.T) {
 	if _, err := p.ApplyPartitionedTableChanges(context.Background(), connInfo, path, oracleApplyBatch("0", 0, 1, change), opts); err != nil {
 		t.Fatal(err)
 	}
-	qualified := commonquery.ForEngine("oracle").QualifiedTable(schema, table)
+	qualified := commonquery.ForDialect("oracle").QualifiedTable(schema, table)
 	query := "SELECT \"TEXT_VALUE\", \"INT_VALUE\", \"FLOAT_VALUE\", \"DOUBLE_VALUE\", " +
 		"TO_CHAR(\"DECIMAL_VALUE\", 'FM99999999999999999999999999999999999999D999999999', 'NLS_NUMERIC_CHARACTERS=''.,'''), " +
 		"\"BOOL_VALUE\", TO_CHAR(\"DATE_VALUE\", 'YYYY-MM-DD'), " +
@@ -359,7 +359,7 @@ func oracleApplyUpsert(nextOffset, id int64, name string) plugin.PartitionedTabl
 func assertOracleApplyRow(t *testing.T, db *sql.DB, schema, table string, id int64, wantName string) {
 	t.Helper()
 	var name string
-	query := "SELECT \"NAME\" FROM " + commonquery.ForEngine("oracle").QualifiedTable(schema, table) + " WHERE \"ID\" = :1"
+	query := "SELECT \"NAME\" FROM " + commonquery.ForDialect("oracle").QualifiedTable(schema, table) + " WHERE \"ID\" = :1"
 	if err := db.QueryRow(query, id).Scan(&name); err != nil {
 		t.Fatal(err)
 	}
@@ -369,5 +369,5 @@ func assertOracleApplyRow(t *testing.T, db *sql.DB, schema, table string, id int
 }
 
 func dropOracleApplyIntegrationTable(db *sql.DB, schema, table string) {
-	_, _ = db.Exec("DROP TABLE " + commonquery.ForEngine("oracle").QualifiedTable(schema, table) + " PURGE")
+	_, _ = db.Exec("DROP TABLE " + commonquery.ForDialect("oracle").QualifiedTable(schema, table) + " PURGE")
 }

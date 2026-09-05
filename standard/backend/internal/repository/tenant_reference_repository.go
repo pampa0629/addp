@@ -169,12 +169,16 @@ func (r *TenantReferenceRepository) ResolveCollectionMembers(tenantID int64, inp
 		}
 	}
 	if ids := idsByType[models.CollectionMemberGlossary]; len(ids) > 0 {
-		if err := load(models.CollectionMemberGlossary, r.db.Model(&models.Glossary{}).Select("id, name, '' AS code").Where("tenant_id=? AND id IN ?", tenantID, ids)); err != nil {
+		if err := load(models.CollectionMemberGlossary, r.db.Raw(`SELECT g.id, g.code,
+			COALESCE((SELECT gr.name FROM standard.glossary_revisions gr WHERE gr.glossary_id=g.id ORDER BY CASE gr.status WHEN 'draft' THEN 0 WHEN 'in_review' THEN 1 WHEN 'published' THEN 2 ELSE 3 END, gr.revision_no DESC LIMIT 1), g.code) AS name
+			FROM standard.glossaries g WHERE g.tenant_id=? AND g.id IN ?`, tenantID, ids)); err != nil {
 			return nil, err
 		}
 	}
 	if ids := idsByType[models.CollectionMemberDocument]; len(ids) > 0 {
-		if err := load(models.CollectionMemberDocument, r.db.Model(&models.Document{}).Select("id, name, '' AS code").Where("tenant_id=? AND id IN ?", tenantID, ids)); err != nil {
+		if err := load(models.CollectionMemberDocument, r.db.Raw(`SELECT d.id, d.code,
+			COALESCE((SELECT dr.name FROM standard.document_revisions dr WHERE dr.document_id=d.id ORDER BY CASE dr.status WHEN 'draft' THEN 0 WHEN 'in_review' THEN 1 WHEN 'published' THEN 2 ELSE 3 END, dr.revision_no DESC LIMIT 1), d.code) AS name
+			FROM standard.documents d WHERE d.tenant_id=? AND d.id IN ?`, tenantID, ids)); err != nil {
 			return nil, err
 		}
 	}

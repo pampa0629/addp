@@ -89,7 +89,7 @@
   - 空间数据（GeoJSON、Shapefile、PostGIS、快显与瓦片缓存）
   - 文件预览（图片、视频、PDF、Office 文档）
 - 对象存储管理（MinIO/S3/OSS 的 Bucket 和对象管理）
-- 预览插件系统（TextPreview、ImagePreview、PDFPreview、DocxPreview、PptxPreview）
+- 预览插件系统（TextPreview、ImagePreview、PDFPreview、OfficePreview、PptxPreview）
 - 瓦片缓存（PostGIS + MVT 为当前格式实现，任务类型统一为 `vector_tile_cache_generation`）
 - 向量化（文本和图像向量化，支持语义相似度检索）
 - 全文检索与语义检索（基于 Meilisearch 和向量数据库）
@@ -462,7 +462,7 @@ import commonModels "github.com/addp/common/models"
   - 类型定义（FieldType、FormatType、ResourceType）
 - **previews 入口**（按需预览组件）：
   - ImagePreview（图片预览）
-  - MarkdownPreview / PdfPreview / DocxPreview 等文件预览组件
+  - MarkdownPreview / PdfPreview / OfficePreview 等文件预览组件
 - **map 子模块**（地图相关，依赖 OpenLayers 和高德地图）：
   - GeoJsonPreview（GeoJSON 预览）
   - TablePreview（表格数据预览，支持 Shapefile 等空间表）

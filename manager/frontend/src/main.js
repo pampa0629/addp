@@ -28,7 +28,7 @@ import VectorTilePreview from '@/components/map/VectorTilePreview.vue'
 import { loadRuntimePlugins } from '@/plugins/previews/manifestLoader'
 import {
   ObjectCatalogPreview, ImagePreview, JsonPreview, PdfPreview, ContainerPreview,
-  DocxPreview, PptxPreview, TextPreview, UnsupportedPreview, MarkdownPreview, VideoPreview
+  OfficePreview, PptxPreview, TextPreview, UnsupportedPreview, MarkdownPreview, VideoPreview
 } from '@common-ui/previews'
 import {
   TablePreview, GeoJsonPreview,
@@ -94,7 +94,7 @@ if (typeof window !== 'undefined') {
     GeoJsonPreview,
     JsonPreview,
     PdfPreview,
-    DocxPreview,
+    OfficePreview,
     PptxPreview,
     TextPreview,
     UnsupportedPreview,

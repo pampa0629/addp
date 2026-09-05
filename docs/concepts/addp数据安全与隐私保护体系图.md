@@ -27,6 +27,7 @@ flowchart TB
     Finding[SensitiveFinding<br/>敏感发现]
     Assessment[ResourceSecurityAssessment<br/>资源安全评估]
     Policy[ProtectionPolicy<br/>保护策略]
+    Exemption[ProtectionExemption<br/>保护豁免]
     Projection[ProtectionProjection<br/>保护投影]
 
     Type --> Detector
@@ -40,7 +41,9 @@ flowchart TB
     Finding --> Baseline
     Assessment --> Policy
     Baseline --> Policy
+    Assessment --> Exemption
     Policy --> Projection
+    Exemption --> Projection
 ```
 
 - `SensitiveDataType` 回答“是什么敏感数据”，例如手机号、身份证件号、银行卡号和精确位置。
@@ -52,6 +55,7 @@ flowchart TB
 - `ResourceSecurityAssessment` 是安全治理人员对确定专业资源或组件做出的正式分类分级结论。它既可由 Finding 复核形成，也可在自动发现漏检时从 Meta 当前字段清单中人工指定；不得接受自由文本字段路径。人工指定候选只包含尚未形成任何正式 Assessment 的当前组件，已经确认、调整或撤销过的组件都在既有 Assessment 上继续治理，不得重新混入“遗漏字段”选择器。
 - `ProtectionBaseline` 定义某类型和等级的最低保护意图。
 - `ProtectionPolicy` 针对正式评估、消费 Owner 和动作显式收紧保护结果；没有显式 Policy 时，Assessment 对应的 ProtectionBaseline 仍是有效最低保护意图。
+- `ProtectionExemption` 针对正式评估修订、消费 Owner 和动作形成显式、限时、可审计的明文例外；它不授予资源访问权，到期、撤销或 Assessment 产生新修订后自动回落到 ProtectionPolicy 与 ProtectionBaseline。
 - `ProtectionProjection` 是交付给数据出口 owner 的最小、版本化、可校验执行契约，不是策略业务对象副本。
 
 ProtectionBaseline 或 SensitiveDataType 的保护语义变化由 Security 根据自身 Finding 与 Assessment 依赖精确定位 Enrollment，并通过唯一编译器重新发布投影；不依赖 Catalog，也不重新扫描 Meta。正式 Assessment revision 冻结当次分类分级结论，不随定义修改静默漂移。
@@ -111,7 +115,7 @@ Catalog 建档后通过 SourceBinding 联邦展示 Security 事实；Security �
 | --- | --- | --- |
 | Standard | Domain、Glossary、Element、CodeSet、Unit、Metric 等业务数据标准 | 安全分类、安全等级和具体资源安全评估 |
 | Meta | DataItem、字段路径、类型、结构、源版本和受控读取能力 | “该字段是手机号/L3”等治理结论 |
-| Security | 敏感类型、安全分类分级、Detector、Finding、Assessment、保护基线、策略和保护投影 | IAM、业务资源本体、CatalogEntry、owner ACL 和中央内容代理；受控例外属于后续范围 |
+| Security | 敏感类型、安全分类分级、Detector、Finding、Assessment、保护基线、策略、保护豁免和保护投影 | IAM、业务资源本体、CatalogEntry、owner ACL 和中央内容代理 |
 | Catalog | 企业目录身份、SourceBinding、业务语义关联、责任、治理状态和目录可见性 | Security 专业事实的第二份可编辑结果 |
 | System / IAM | Principal、Tenant、Role、Permission、AuthContext 和审计基础设施 | 敏感数据识别和字段保护策略 |
 | 资源 Owner | Resource Grant / Policy、最终资源动作判断和本模块服务端出口保护执行 | 第二套安全分类分级和私有脱敏规则体系 |
@@ -134,6 +138,8 @@ flowchart LR
 ```
 
 资源 Owner 先根据 AuthContext、Permission 和 Resource Grant / Policy 判断能否执行预览、查询、导出或发布，再与 Security 投影合并并执行更严格结果。Owner 可以拒绝访问，但不得降低 Security 基线。
+
+保护豁免不是 IAM 授权：它只在调用者已经通过 Owner 资源授权后，临时取消一个已确认敏感组件在一个具体出口动作上的 Security 内容变换。首期投影不携带请求主体，因此豁免对当前 Tenant 内所有已经获准执行该 Owner 动作的调用者生效；界面必须明确提示这一影响范围，不得伪装成个人授权或角色授权。需要按用户、部门或用途揭示原值时，必须先扩展统一投影契约和 Owner 授权合并模型，不能在 Owner 中增加私有放行分支。
 
 用户数据请求只读取 Owner 本地有效投影，不逐行、逐字段或逐请求同步调用 Security、Catalog 或 Meta。浏览器不接收明文后再遮盖。
 
@@ -210,6 +216,8 @@ Catalog 尚未建档时，只要 Security 已完成纳管激活且 Manager 已�
 | 静态脱敏 | 生成新 DataItem | 测试、研究和对外交付 |
 | 匿名化 | 生成不可再识别结果 | 开放或广泛分析 |
 | 原值揭示 | 否 | 显式、限时、可审计的高风险例外 |
+
+原值揭示使用 `ProtectionExemption`，而不是把 ProtectionPolicy 改成 `allow`。编译后的规则保留默认保护决策，并携带限时 `allow` 覆盖；Owner 在服务端本地判断覆盖是否仍有效，失效后立即执行默认决策。由此即使 Security 暂时不可达，豁免也不会无限延长。
 
 普通哈希不是小取值空间数据的默认匿名化方法。动态遮盖不修改源数据；静态脱敏必须生成新 DataItem 并保留血缘。
 

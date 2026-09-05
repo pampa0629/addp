@@ -54,6 +54,8 @@ type Decision struct {
 	Algorithm          string         `json:"algorithm,omitempty"`
 	Parameters         map[string]any `json:"parameters,omitempty"`
 	InvalidValueEffect string         `json:"invalid_value_effect,omitempty"`
+	ValidUntil         *time.Time     `json:"valid_until,omitempty"`
+	Fallback           *Decision      `json:"fallback,omitempty"`
 }
 
 type Rule struct {
@@ -115,6 +117,9 @@ func (p Projection) Validate(now time.Time) error {
 		if err := rule.Validate(); err != nil {
 			return fmt.Errorf("invalid protection rule %d: %w", index, err)
 		}
+		if rule.Decision.ValidUntil != nil && (rule.Decision.ValidUntil.Before(p.ValidFrom) || rule.Decision.ValidUntil.After(p.ExpiresAt)) {
+			return fmt.Errorf("invalid protection rule %d: decision validity exceeds projection validity", index)
+		}
 		key := rule.Action + "\x00" + rule.Component.Key
 		if _, exists := seen[key]; exists {
 			return errors.New("duplicate protection rule")
@@ -153,26 +158,64 @@ func (r Rule) Validate() error {
 	if r.Component.Path[len(r.Component.Path)-1].Container != "scalar" {
 		return errors.New("component path must end at a scalar")
 	}
-	if !validEffect(r.Decision.Effect) {
+	if err := r.Decision.validate(false); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (d Decision) validate(fallback bool) error {
+	if !validEffect(d.Effect) {
 		return errors.New("invalid protection effect")
 	}
-	if r.Decision.Effect == EffectMask {
-		if r.Decision.Algorithm != AlgorithmKeepPrefixSuffixV1 && r.Decision.Algorithm != AlgorithmPhoneOccurrencesV1 {
+	if d.Effect == EffectMask {
+		if d.Algorithm != AlgorithmKeepPrefixSuffixV1 && d.Algorithm != AlgorithmPhoneOccurrencesV1 {
 			return errors.New("unsupported masking algorithm")
 		}
-		if err := validateKeepPrefixSuffixParameters(r.Decision.Parameters); err != nil {
+		if err := validateKeepPrefixSuffixParameters(d.Parameters); err != nil {
 			return err
 		}
 	}
-	if r.Decision.Effect != EffectMask && r.Decision.Algorithm != "" {
+	if d.Effect != EffectMask && d.Algorithm != "" {
 		return errors.New("algorithm is only valid for mask effect")
 	}
-	if r.Decision.InvalidValueEffect != "" {
-		if (r.Decision.InvalidValueEffect != EffectSuppress && r.Decision.InvalidValueEffect != EffectDeny) || effectRank(r.Decision.InvalidValueEffect) < effectRank(r.Decision.Effect) {
+	if d.InvalidValueEffect != "" {
+		if (d.InvalidValueEffect != EffectSuppress && d.InvalidValueEffect != EffectDeny) || effectRank(d.InvalidValueEffect) < effectRank(d.Effect) {
 			return errors.New("invalid value effect must be at least as strict as the primary effect")
 		}
 	}
+	if fallback {
+		if d.Effect == EffectAllow || d.ValidUntil != nil || d.Fallback != nil {
+			return errors.New("protection decision fallback must be a terminal mask, suppress or deny decision")
+		}
+		return nil
+	}
+	if d.ValidUntil == nil && d.Fallback == nil {
+		if d.Effect == EffectAllow {
+			return errors.New("allow protection decision requires a time-bounded fallback")
+		}
+		return nil
+	}
+	if d.ValidUntil == nil || d.Fallback == nil || d.ValidUntil.IsZero() || d.Effect != EffectAllow {
+		return errors.New("time-bounded protection decision requires allow, valid_until and fallback")
+	}
+	if d.Algorithm != "" || len(d.Parameters) != 0 || d.InvalidValueEffect != "" {
+		return errors.New("time-bounded allow decision cannot define masking or invalid-value behavior")
+	}
+	if err := d.Fallback.validate(true); err != nil {
+		return err
+	}
 	return nil
+}
+
+// Effective returns the locally enforceable decision for the supplied time.
+// A time-bounded allow never survives its deadline and then falls back without
+// a Security request.
+func (d Decision) Effective(now time.Time) Decision {
+	if d.ValidUntil == nil || d.Fallback == nil || now.Before(d.ValidUntil.UTC()) {
+		return d
+	}
+	return *d.Fallback
 }
 
 func (p Projection) CalculateChecksum() (string, error) {

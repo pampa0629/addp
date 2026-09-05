@@ -657,7 +657,12 @@ func normalizeMaterialization(config map[string]interface{}) models.JSONB {
 	}
 	for _, key := range []string{"target_parent_locator", "target_name"} {
 		if value, ok := normalized[key].(string); ok {
-			normalized[key] = strings.TrimSpace(value)
+			trimmed := strings.TrimSpace(value)
+			if trimmed == "" {
+				delete(normalized, key)
+				continue
+			}
+			normalized[key] = trimmed
 		}
 	}
 	rawPartitionBy, exists := normalized["partition_by"]

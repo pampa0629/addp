@@ -308,8 +308,78 @@ func TestExtractJSONSingleTableFileItemStrictRequiresRecordCollection(t *testing
 	reader := staticContentReader{content: `{"name":"plain"}`}
 
 	_, err := ExtractSingleTableFileItemStrict(context.Background(), reader, nil, 1, "plain.json", 10, false)
-	if err == nil {
-		t.Fatal("expected plain JSON document to be rejected as table")
+	if !format.IsProviderNotApplicableError(err) {
+		t.Fatalf("error = %v, want ProviderNotApplicableError", err)
+	}
+}
+
+func TestEnrichSingleTableFileItemKeepsPlainJSONObjectAsDocument(t *testing.T) {
+	content := `{"name":"plain"}`
+	size := int64(len(content))
+	item := &metaitem.DetectedItem{
+		ResolvedItem: dataitem.ResolvedItem{
+			Layout:             format.LayoutSingle,
+			DataType:           datatype.Document,
+			Format:             string(format.FormatJSON),
+			PrimaryContentPath: "plain.json",
+			SizeBytes:          &size,
+		},
+		PhysicalPath: "plain.json",
+	}
+
+	enriched, ok, err := EnrichSingleTableFileItem(
+		context.Background(),
+		staticContentReader{content: content},
+		nil,
+		1,
+		item,
+		"plain.json",
+		size,
+		false,
+		func(path string) plugin.EngineCatalogPath {
+			return plugin.FileItemPath(1, path)
+		},
+	)
+	if err != nil {
+		t.Fatalf("EnrichSingleTableFileItem() error = %v, want plain JSON to remain a document", err)
+	}
+	if ok {
+		t.Fatal("EnrichSingleTableFileItem() upgraded plain JSON to table")
+	}
+	if enriched != item || enriched.DataType != datatype.Document || enriched.Format != string(format.FormatJSON) {
+		t.Fatalf("enriched = %#v, want original JSON document", enriched)
+	}
+}
+
+func TestEnrichSingleTableFileItemRejectsMalformedJSONRecordCollection(t *testing.T) {
+	content := `[{"id":1 invalid}]`
+	size := int64(len(content))
+	item := &metaitem.DetectedItem{
+		ResolvedItem: dataitem.ResolvedItem{
+			Layout:             format.LayoutSingle,
+			DataType:           datatype.Document,
+			Format:             string(format.FormatJSON),
+			PrimaryContentPath: "broken.json",
+			SizeBytes:          &size,
+		},
+		PhysicalPath: "broken.json",
+	}
+
+	_, _, err := EnrichSingleTableFileItem(
+		context.Background(),
+		staticContentReader{content: content},
+		nil,
+		1,
+		item,
+		"broken.json",
+		size,
+		false,
+		func(path string) plugin.EngineCatalogPath {
+			return plugin.FileItemPath(1, path)
+		},
+	)
+	if err == nil || format.IsProviderNotApplicableError(err) {
+		t.Fatalf("error = %v, want malformed record collection parse error", err)
 	}
 }
 

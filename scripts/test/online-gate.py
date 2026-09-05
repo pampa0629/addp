@@ -57,6 +57,40 @@ SUITES: Mapping[str, Suite] = {
         command=(sys.executable, "scripts/test/module-registry-recovery-online.py"),
         services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL")),
     ),
+    "manager-internal-artifact-lineage": Suite(
+        command=(sys.executable, "scripts/test/manager-internal-artifact-lineage-online.py"),
+        services=(
+            ("gateway", "GATEWAY_URL"),
+            ("system", "SYSTEM_URL"),
+            ("meta", "META_URL"),
+            ("manager", "MANAGER_URL"),
+            ("monitor", "MONITOR_URL"),
+        ),
+    ),
+    "security-transfer-protection": Suite(
+        command=(sys.executable, "scripts/test/security-transfer-protection-online.py"),
+        services=(
+            ("gateway", "GATEWAY_URL"),
+            ("system", "SYSTEM_URL"),
+            ("meta", "META_URL"),
+            ("security", "SECURITY_URL"),
+            ("transfer", "TRANSFER_URL"),
+            ("manager", "MANAGER_URL"),
+        ),
+    ),
+    "security-protection-exemption": Suite(
+        command=(sys.executable, "scripts/test/security-protection-exemption-online.py"),
+        services=(
+            ("gateway", "GATEWAY_URL"),
+            ("system", "SYSTEM_URL"),
+            ("meta", "META_URL"),
+            ("security", "SECURITY_URL"),
+            ("manager", "MANAGER_URL"),
+            ("develop", "DEVELOP_URL"),
+            ("service", "SERVICE_URL"),
+            ("transfer", "TRANSFER_URL"),
+        ),
+    ),
     "standard-model-reference-deletion": Suite(
         command=(sys.executable, "scripts/test/standard-model-reference-deletion-online.py"),
         services=(

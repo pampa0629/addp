@@ -3,6 +3,7 @@ package dataprotection
 import (
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/addp/common/engine/plugin"
 )
@@ -40,6 +41,7 @@ func ProtectQueryResultSource(result *plugin.QueryResult, source plugin.QueryOut
 		}
 		seen := map[string]struct{}{}
 		for _, mappedRule := range mapped {
+			mappedRule.Decision = mappedRule.Decision.Effective(time.Now().UTC())
 			key := strings.Join(queryComponentNames(mappedRule.Component.Path), "\x00")
 			if _, exists := seen[key]; exists {
 				continue

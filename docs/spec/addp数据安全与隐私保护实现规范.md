@@ -193,7 +193,7 @@ Finding 查询响应必须同时提供只读的 `explanation`，把已经存在�
 deny > suppress > mask > allow
 ```
 
-`allow` 只表示当前 Security 保护决策不额外变换内容，不代表 owner 已授权资源动作。第一阶段的敏感组件不得编译 `allow`。
+`allow` 只表示当前 Security 保护决策不额外变换内容，不代表 owner 已授权资源动作。敏感组件只有在有效 ProtectionExemption 被编译为限时覆盖时才能执行 `allow`，不得从 ProtectionBaseline、ProtectionPolicy 或 Owner 私有配置产生 `allow`。
 
 ### 7.1 ProtectionPolicy 首期语义
 
@@ -213,9 +213,29 @@ tenant + assessment_id + consumer_owner + action
 6. 没有显式 Policy 不是异常，也不要求用户为每个敏感字段创建策略。Assessment + ProtectionBaseline 是默认且完整的最低保护路径。
 7. Policy 变更与 ProtectionProjection 新修订必须在同一数据库事务完成，并继续调用唯一编译器；禁止新增 Policy 专用投影生成旁路。
 
-用途约束、原值揭示、限时放宽和双人审批仍属于后续范围，不得借 ProtectionPolicy 的首期 API 提前实现。
+用途约束和双人审批仍属于后续范围，不得借 ProtectionPolicy 或 ProtectionExemption API 伪装实现。
 
-### 7.2 保护定义变化的影响传播
+### 7.2 ProtectionExemption 首期语义
+
+ProtectionExemption 是原值揭示的唯一控制面入口，不是 IAM 授权、ProtectionPolicy 的宽松效果或 Owner 本地开关。其绑定键固定为：
+
+```text
+tenant + assessment_id + consumer_owner + action
+```
+
+首期约束固定为：
+
+1. 只能绑定当前结论为 `sensitive` 的正式 Assessment；每个 Exemption revision 必须冻结批准时的 Assessment revision，组件路径、类型、分类和等级继续取该不可变修订，不接受自由文本字段路径。Assessment 后续产生任何新修订时，旧豁免立即失效且不得在结论再次变化后静默恢复；需要原值时必须基于新修订重新批准。
+2. 只开放已经具备字段级结果保护执行器的 `manager/preview`、`develop/query`、`service/service_execute` 和 `transfer/export`；不得豁免资源级 `enrolling` 门禁、结构冲突、血缘不明、无执行器或 Owner 授权拒绝。
+3. 豁免效果固定为 `allow`，API 不接受调用方选择效果或遮盖算法。它只取消该组件在该出口动作上的 Security 内容变换，不增加 Owner Permission、Resource Grant 或数据访问范围。
+4. 首期投影没有请求主体维度，因此一个豁免对当前 Tenant 内所有已通过 Owner 授权的该动作调用者生效。API 与界面必须明确展示此范围；不得按用户名、角色名称或客户端名称硬编码选择性放行。
+5. `expires_at` 必填，必须晚于创建或续期时间且不得超过 30 天；批准依据必填且最长 2000 字符。
+6. 同一绑定至多有一个 Exemption 聚合。创建、续期和撤销都追加不可变 revision，并使用聚合 `version` 做并发控制；已过期聚合可以续期，历史不得改写或物理删除。
+7. 有效性由当前 revision 的 `state=active`、`expires_at` 以及冻结的 Assessment revision 仍为当前修订共同决定。到期不依赖 Security 在线通知：投影规则保留默认决策，并携带限时 `allow` 覆盖，Owner 在每次服务端执行时按本地时间选择；到期或 Assessment 被修订时立即回落到默认决策。
+8. 编译优先级固定为 `ProtectionBaseline -> ProtectionPolicy 收紧 -> ProtectionExemption 限时覆盖`。豁免到期或撤销后回落到已经收紧后的结果，而不是越过 Policy 回落到更宽松基线。
+9. Exemption 变更与 ProtectionProjection 新修订必须在同一事务内完成，并调用唯一编译器。Owner 只消费投影，不读取 Exemption 表、不保存审批依据，也不增加本地放行接口。
+
+### 7.3 保护定义变化的影响传播
 
 保护定义变更不能等待下一次人工复核或重新发现才偶然生效，也不能把每次变更扩大为全租户重编译。Security 必须按事实依赖精确定位受影响 Enrollment，并继续调用同一个投影编译器：
 
@@ -304,7 +324,7 @@ tenant + assessment_id + consumer_owner + action
 3. `state` 只允许 `enrolling|active`；退出纳管使用变化流 `operation=release`，不用空策略伪装解除。
 4. `rules[].action` 是 consumer owner 已实现的稳定数据出口动作；第一阶段至少覆盖 `preview|profile|search_index|export|query|service_publish|service_execute|ai_context`。
 5. `component.path` 是类型化递归路径，`container` 只允许 `object|array|scalar`；Owner 必须正确遍历嵌套 object 和 array，不得只处理顶层扁平字段。
-6. `effect` 只允许 `allow|mask|suppress|deny`；未实现的 `filter`、假名化和原值揭示不得提前填入首期投影。
+6. `effect` 只允许 `allow|mask|suppress|deny`；普通决策不得为 `allow`。原值揭示必须表示为带 `valid_until` 与 `fallback` 的限时决策，`fallback` 必须为更严格且不再嵌套限时覆盖的 `mask|suppress|deny`。未实现的 `filter` 和假名化不得填入投影。
 7. `algorithm` 和参数必须属于 `common/dataprotection` 公开注册的稳定契约；Owner 不得按 SensitiveDataType 名称硬编码私有规则。
 8. `invalid_value_effect` 只能与当前决策同等或更严，首期手机号固定为 `suppress`。
 9. `state=enrolling` 是激活屏障专用的资源级 `deny` 投影：`source_snapshot_hash` 必须为空且 `rules` 必须为空；Owner 命中后直接拒绝目标资源的相关动作，不尝试字段遍历。Security 不得在读取 Owner 技术事实之前伪造结构快照或字段规则。其有效期不能被解释为解除纳管；即使安装时已过有效期，Owner 仍安装纳管标记并按资源级 `deny` 处理，直到收到明确 `release`。
@@ -366,6 +386,10 @@ Owner 必须在单个本地数据库事务中：
 投影、派生结果处理和 cursor 必须共用同一事务。任何清理或重写失败都必须整体回滚，Owner 不得保存 cursor 或向 Security 确认该批变化。Owner 重启时还必须在对外服务前，以已安装投影重放同一派生结果收敛逻辑，覆盖升级前已确认 cursor、但尚未具备新执行器的历史状态。
 
 同一 Owner 存在 Backend、bounded Worker、continuous Worker 等多个数据面进程时，投影表和 cursor 是 owner schema 内的共享持久事实，只允许一个同步进程推进 Security 变化流并发送 Owner 级 acknowledgement。每个实际读取进程必须在一次 execution 开始前比较共享持久 cursor 与本进程内存索引 cursor；不一致时先从 owner 本地数据库原子重载，再执行门禁。这样 acknowledgement 表示投影已经持久安装，而任一稍后执行的数据面进程都不会在缓存尚未刷新时返回明文。该检查只访问 Owner 本地数据库，不形成 Security 请求依赖。
+
+`protection_projection_entries`、`protection_projection_checkpoints` 及其存储迁移元数据是统一的 Owner 本地投影存储契约，必须由 `common/dataprotection/projectionstore` 唯一定义和迁移。各 Owner 只选择自身 schema、固定 `consumer_owner` 和可选的本地变化屏障，不得复制 DDL、增加 Owner 私有列或维护独立迁移路线。存储初始化必须在数据库事务和 schema 级迁移锁内顺序执行公共迁移，记录已应用版本，并在载入投影前校验真实 PostgreSQL 列、类型、可空性、默认值、主键和必要索引。已存在表与当前契约不一致、迁移版本未知或迁移失败时，Owner 必须启动失败而不得进入 Ready。
+
+新的数据出口 Owner 不得自行建表；必须复用同一 `projectionstore` 构造入口，并通过真实 PostgreSQL 同构门禁证明新 schema 与已有 Owner 一致。平台一致性门禁还必须拒绝 `common/dataprotection/projectionstore` 之外出现这些投影存储表的 Go/SQL 定义，防止新模块复制 DDL 形成第二条迁移路线。数据库存储迁移版本与 `addp.protection_projection/v1` 业务投影协议版本分开管理：前者保证本地持久结构收敛，后者保证 Security 与 Owner 对投影语义的一致理解。
 
 Owner 的同步收敛明确分为两个不同屏障，不得混为一次“保存 cursor”操作：
 
@@ -634,6 +658,7 @@ Manager 必须按已实现的动作执行器逐项开放已纳管 DataItem，不
 13. ProtectionPolicy 不能降低基线；创建、更新和撤销均保留不可变修订，撤销后投影回落到基线而不是明文。
 14. 显式重新发现拒绝同一纳管的并发 pending/running 执行；结构快照变化后发布携带最新 Hash 的新投影，组件结构未变化的正式 Assessment 可以续用，组件结构冲突时保守保护。
 15. ProtectionBaseline 变化按旧、新绑定精准重编译且与定义写入原子提交；SensitiveDataType 自动发现初始等级变化只影响未复核候选；Detector 自动采用置信度变化走有界重新发现；正式 Assessment 不漂移；无关 Enrollment 不产生投影新版本，编译失败时定义写入回滚。
+16. ProtectionExemption 只能绑定正式敏感 Assessment 和四个已实现字段级出口；创建、续期、撤销保留不可变修订并原子发布投影。有效期内只对指定动作返回原值，到期即使 Security 不可达也自动回落到 Policy 与 Baseline；结构冲突、血缘不明和 Owner 授权拒绝仍然 fail closed。
 
 代码实施后的标准本地入口至少为：
 
@@ -647,7 +672,7 @@ make test-changed
 
 以下内容不进入首个手机号纵向切片，需要时先修订本规范：
 
-- 原值揭示、用途约束、限时例外和双人审批；
+- 按主体或用途约束的原值揭示、双人审批；
 - 行过滤和单元格级任意策略 DSL；
 - 可逆令牌化、假名化、静态脱敏产物和匿名化评估；
 - 文档文本、图像、人脸、车牌、媒体和图数据敏感发现；

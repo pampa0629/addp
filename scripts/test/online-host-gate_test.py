@@ -85,6 +85,14 @@ class OnlineHostGateTest(unittest.TestCase):
             '#!/bin/bash\nprintf "mysql-fixture:%s\\n" "$1" >> "$ADDP_TEST_COMMAND_LOG"\n',
         )
         self._write_executable(
+            "business/scripts/online-pointcloud-minio-fixture.sh",
+            '#!/bin/bash\nprintf "pointcloud-fixture:%s\\n" "$1" >> "$ADDP_TEST_COMMAND_LOG"\n',
+        )
+        self._write_executable(
+            "business/scripts/online-security-transfer-fixture.sh",
+            '#!/bin/bash\nprintf "security-transfer-fixture:%s\\n" "$1" >> "$ADDP_TEST_COMMAND_LOG"\n',
+        )
+        self._write_executable(
             "scripts/test/consumer-engine-recovery-online.py",
             textwrap.dedent(
                 """\
@@ -149,10 +157,14 @@ class OnlineHostGateTest(unittest.TestCase):
                 MANAGER_URL=http://127.0.0.1:8081
                 SERVICE_URL=http://127.0.0.1:8085
                 WORKBENCH_URL=http://127.0.0.1:8095
+                MONITOR_URL=http://127.0.0.1:8100
                 CONSOLE_URL=http://127.0.0.1:5170
                 STANDARD_URL=http://127.0.0.1:8110
                 MODEL_URL=http://127.0.0.1:8181
                 META_URL=http://127.0.0.1:8082
+                SECURITY_URL=http://127.0.0.1:8194
+                DEVELOP_URL=http://127.0.0.1:8084
+                TRANSFER_URL=http://127.0.0.1:8083
                 CATALOG_URL=http://127.0.0.1:8192
                 ASSET_URL=http://127.0.0.1:8086
                 PORTAL_URL=http://127.0.0.1:8088
@@ -174,6 +186,19 @@ class OnlineHostGateTest(unittest.TestCase):
                 ADDP_ONLINE_WORKBENCH_MYSQL_USER=workbench_reader
                 ADDP_ONLINE_WORKBENCH_MYSQL_PASSWORD=reader-password-1234
                 ADDP_ONLINE_WORKBENCH_MYSQL_ROOT_PASSWORD=root-password-1234
+                ADDP_ONLINE_POINTCLOUD_MINIO_ENGINE_ID=27
+                ADDP_ONLINE_POINTCLOUD_MINIO_PORT=59002
+                ADDP_ONLINE_POINTCLOUD_MINIO_ACCESS_KEY=online-pointcloud
+                ADDP_ONLINE_POINTCLOUD_MINIO_SECRET_KEY=pointcloud-secret-1234
+                ADDP_ONLINE_POINTCLOUD_MINIO_BUCKET=addp-online
+                ADDP_ONLINE_POINTCLOUD_MINIO_OBJECT=pointcloud/pdal_las12_format0.las
+                ADDP_ONLINE_SECURITY_MONGODB_ENGINE_ID=37
+                ADDP_ONLINE_SECURITY_MONGODB_PORT=57017
+                ADDP_ONLINE_SECURITY_MONGODB_DATABASE=security_online
+                ADDP_ONLINE_SECURITY_MONGODB_USER=security_reader
+                ADDP_ONLINE_SECURITY_MONGODB_PASSWORD=security-reader-1234
+                ADDP_ONLINE_SECURITY_MONGODB_ROOT_USER=online_root
+                ADDP_ONLINE_SECURITY_MONGODB_ROOT_PASSWORD=security-root-1234
                 """
             ),
             encoding="utf-8",
@@ -314,6 +339,61 @@ class OnlineHostGateTest(unittest.TestCase):
                 "npm:--prefix console/frontend exec -- playwright install chromium",
                 "make:test-online:ONLINE_SUITE=workbench-service-consumption",
                 "mysql-fixture:stop",
+                "stop",
+            ],
+        )
+
+    def test_runs_manager_lineage_suite_with_pointcloud_minio_fixture(self) -> None:
+        result = self._run("manager-internal-artifact-lineage")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            self.command_log.read_text(encoding="utf-8").splitlines(),
+            [
+                "stop",
+                "infra-up",
+                "pointcloud-fixture:stop",
+                "pointcloud-fixture:start",
+                "start:-all",
+                "npm:--prefix console/frontend exec -- playwright install chromium",
+                "make:test-online:ONLINE_SUITE=manager-internal-artifact-lineage",
+                "pointcloud-fixture:stop",
+                "stop",
+            ],
+        )
+
+    def test_runs_security_transfer_suite_with_composite_fixture(self) -> None:
+        result = self._run("security-transfer-protection")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            self.command_log.read_text(encoding="utf-8").splitlines(),
+            [
+                "stop",
+                "infra-up",
+                "security-transfer-fixture:stop",
+                "security-transfer-fixture:start",
+                "start:-all",
+                "make:test-online:ONLINE_SUITE=security-transfer-protection",
+                "security-transfer-fixture:stop",
+                "stop",
+            ],
+        )
+
+    def test_runs_security_exemption_suite_with_composite_fixture(self) -> None:
+        result = self._run("security-protection-exemption")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            self.command_log.read_text(encoding="utf-8").splitlines(),
+            [
+                "stop",
+                "infra-up",
+                "security-transfer-fixture:stop",
+                "security-transfer-fixture:start",
+                "start:-all",
+                "make:test-online:ONLINE_SUITE=security-protection-exemption",
+                "security-transfer-fixture:stop",
                 "stop",
             ],
         )

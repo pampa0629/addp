@@ -97,7 +97,7 @@ func TestIntegrationOracleTableWriteSessionSpatialRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	qualified := commonquery.ForEngine("oracle").QualifiedTable(schema, table)
+	qualified := commonquery.ForDialect("oracle").QualifiedTable(schema, table)
 	var count, population int64
 	var minGType, maxGType, minSRID, maxSRID int
 	if err := db.QueryRowContext(ctx, "SELECT COUNT(*), SUM(\"POP2010\"), MIN(target_row.\"SHAPE\".SDO_GTYPE), MAX(target_row.\"SHAPE\".SDO_GTYPE), MIN(target_row.\"SHAPE\".SDO_SRID), MAX(target_row.\"SHAPE\".SDO_SRID) FROM "+qualified+" target_row").Scan(
@@ -194,7 +194,7 @@ func TestIntegrationOraclePrepareMixedCaseSpatialColumn(t *testing.T) {
 	if metadataCount != 1 {
 		t.Fatalf("quoted spatial metadata count = %d, want 1", metadataCount)
 	}
-	qualified := commonquery.ForEngine("oracle").QualifiedTable(schema, table)
+	qualified := commonquery.ForDialect("oracle").QualifiedTable(schema, table)
 	if _, err := db.ExecContext(ctx, `INSERT INTO `+qualified+` ("id", "Shape") VALUES (1, MDSYS.SDO_GEOMETRY(2001, 4326, MDSYS.SDO_POINT_TYPE(116.397, 39.908, NULL), NULL, NULL))`); err != nil {
 		t.Fatalf("insert mixed-case spatial row: %v", err)
 	}

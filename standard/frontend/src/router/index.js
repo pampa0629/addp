@@ -98,7 +98,7 @@ const routes = [
       {
         path: 'documents/:id',
         name: 'DocumentDetail',
-        component: () => import('../views/DocumentList.vue'),
+        component: () => import('../views/DocumentDetail.vue'),
         meta: { requiresAuth: true, title: '标准文档详情' }
       }
     ]

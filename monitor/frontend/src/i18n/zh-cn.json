@@ -87,6 +87,35 @@
         "completed_at": "完成时间",
         "execution_tree": "执行树",
         "metadata": "执行元数据",
+        "raw_metadata": "查看原始元数据",
+        "lineage": {
+          "title": "输入与输出",
+          "description": "本次执行实际读取的资源和产生的结果",
+          "resource_count": "共 {count} 项",
+          "inputs": "输入资源",
+          "outputs": "输出产物",
+          "no_inputs": "没有记录输入资源",
+          "no_outputs": "没有记录输出产物",
+          "open_in_data_explorer": "在数据探查中查看",
+          "open_failed": "无法打开数据探查",
+          "platform_internal_artifact": "平台内部产物",
+          "item_id": "数据项 ID {id}",
+          "write_mode": "写入方式：{mode}",
+          "resource_types": {
+            "table": "数据表",
+            "collection": "集合",
+            "graph": "图数据",
+            "object": "对象",
+            "file": "文件",
+            "prefix": "目录"
+          },
+          "write_modes": {
+            "replace": "替换",
+            "append": "追加",
+            "upsert": "更新或新增",
+            "upsert_delete": "更新、新增或删除"
+          }
+        },
         "metadata_fields": {
           "tile_generation_target": "瓦片生成目标",
           "vector_materialized_view_target": "矢量物化视图目标",

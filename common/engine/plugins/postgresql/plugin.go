@@ -81,23 +81,37 @@ func (p *PostgreSQLPlugin) EngineOrigin() string {
 	return "general"
 }
 
+func (p *PostgreSQLPlugin) ConnectionSpec() plugin.ConnectionSpec {
+	return plugin.NewConnectionSpec(
+		plugin.ConnectionFieldSpec{Key: "host", LabelKey: "storageEngine.host", Input: plugin.ConnectionFieldText, Required: true, Identity: true, Default: "localhost", Placeholder: "localhost"},
+		plugin.ConnectionFieldSpec{Key: "port", LabelKey: "storageEngine.port", Input: plugin.ConnectionFieldNumber, Identity: true, Default: 5432, Min: plugin.Int(1), Max: plugin.Int(65535)},
+		plugin.ConnectionFieldSpec{Key: "database", LabelKey: "storageEngine.database", Input: plugin.ConnectionFieldText, Required: true, Identity: true, PlaceholderKey: "storageEngine.databasePlaceholder"},
+		plugin.ConnectionFieldSpec{Key: "user", LabelKey: "storageEngine.username", Input: plugin.ConnectionFieldText, Required: true, PlaceholderKey: "storageEngine.usernamePlaceholder"},
+		plugin.ConnectionFieldSpec{Key: "password", LabelKey: "storageEngine.passwordOptional", Input: plugin.ConnectionFieldPassword, Sensitive: true, PlaceholderKey: "storageEngine.passwordPlaceholder"},
+		plugin.ConnectionFieldSpec{Key: "sslmode", LabelKey: "storageEngine.sslMode", Input: plugin.ConnectionFieldSelect, Default: "disable", Options: []plugin.ConnectionFieldOption{
+			{Value: "disable", LabelKey: "storageEngine.sslDisable"}, {Value: "require", LabelKey: "storageEngine.sslRequire"},
+			{Value: "verify-ca", LabelKey: "storageEngine.sslVerifyCa"}, {Value: "verify-full", LabelKey: "storageEngine.sslVerifyFull"},
+		}},
+	)
+}
+
 // DefaultPort 返回默认端口
 func (p *PostgreSQLPlugin) DefaultPort() int {
-	return 5432
+	return p.ConnectionSpec().DefaultPortValue()
 }
 
 // RequiredFields 返回必填字段列表
 func (p *PostgreSQLPlugin) RequiredFields() []string {
-	return []string{"host", "user", "database"}
+	return p.ConnectionSpec().RequiredFields()
 }
 
 // SensitiveFields 返回敏感字段列表
 func (p *PostgreSQLPlugin) SensitiveFields() []string {
-	return []string{"password"}
+	return p.ConnectionSpec().SensitiveFields()
 }
 
 func (p *PostgreSQLPlugin) ConnectionIdentityFields() []string {
-	return []string{"host", "port", "database"}
+	return p.ConnectionSpec().IdentityFields()
 }
 
 func (p *PostgreSQLPlugin) Capabilities() plugin.EngineCapabilities {
@@ -170,11 +184,11 @@ func (p *PostgreSQLPlugin) QueryLanguages() []string {
 }
 
 func (p *PostgreSQLPlugin) GenerateSampleQuery(ctx context.Context, connInfo plugin.ConnectionInfo, opts plugin.SampleQueryOptions) (string, string) {
-	return plugin.SampleSQLForEngineCatalogPath(p.Type(), opts.Path, 10), "sql"
+	return plugin.SampleSQLForDialectCatalogPath(p.SQLDialect(), opts.Path, 10), "sql"
 }
 
 func (p *PostgreSQLPlugin) PrepareQuery(_ context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (plugin.PreparedQuery, error) {
-	boundQuery, _, err := plugin.BindSQLRuntimeParameters(p.GetDialect(), req.Query, req.Options)
+	boundQuery, _, err := plugin.BindSQLRuntimeParameters(p.SQLDialect(), req.Query, req.Options)
 	if err != nil {
 		return nil, err
 	}
@@ -185,12 +199,14 @@ func (p *PostgreSQLPlugin) PrepareQuery(_ context.Context, connInfo plugin.Conne
 }
 
 func (p *PostgreSQLPlugin) SQLDialect() string {
-	return p.GetDialect()
+	return commonquery.DialectPostgreSQL
 }
 
 func (p *PostgreSQLPlugin) SupportsParameterizedQueries() bool {
 	return true
 }
+
+func (p *PostgreSQLPlugin) SupportsControlledReadOnlySQL() bool { return true }
 
 func (p *PostgreSQLPlugin) ExecuteSQL(ctx context.Context, connInfo plugin.ConnectionInfo, sql string, opts plugin.QueryOptions) (*plugin.QueryResult, error) {
 	return plugin.ExecuteSQLWithConnectionPool(ctx, p, connInfo, sql, opts)
@@ -232,7 +248,7 @@ func (p *PostgreSQLPlugin) CreateConnectionPool(connInfo plugin.ConnectionInfo, 
 }
 
 // GetDialect 获取数据库方言
-func (p *PostgreSQLPlugin) GetDialect() string {
+func (p *PostgreSQLPlugin) GORMDialect() string {
 	return "postgres"
 }
 
@@ -418,7 +434,7 @@ func (p *PostgreSQLPlugin) listColumns(ctx context.Context, db *gorm.DB, schema,
 // GetTableRowCount 获取表的行数
 func (p *PostgreSQLPlugin) getTableRowCount(ctx context.Context, db *gorm.DB, schema, table string) (int64, error) {
 	var count int64
-	query := commonquery.ForEngine(p.Type()).CountTableSQL(schema, table, "")
+	query := commonquery.ForDialect(p.SQLDialect()).CountTableSQL(schema, table, "")
 	err := db.WithContext(ctx).Raw(query).Scan(&count).Error
 	if err != nil {
 		return 0, fmt.Errorf("failed to get row count: %w", err)

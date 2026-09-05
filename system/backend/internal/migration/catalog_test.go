@@ -14,8 +14,41 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 125 {
-		t.Fatalf("LatestVersion = %d, want 125", catalog.LatestVersion)
+	if catalog.LatestVersion != 128 {
+		t.Fatalf("LatestVersion = %d, want 128", catalog.LatestVersion)
+	}
+}
+
+func TestStandardDocumentRevisionExtractionMigrationDefinesPermissionsAndRoles(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000128_iam_standard_document_revision_extract.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 128: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'standard.document.publish'", "'standard.document_extraction.create'",
+		"'copilot.standard_document.execute'", "'tenant.governance_manager'", "'tenant.standard_runtime'",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 128 missing %q", fragment)
+		}
+	}
+}
+
+func TestSecurityProtectionExemptionMigrationCreatesCriticalPermissions(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000127_iam_security_protection_exemption.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 127: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'security.protection_exemption.create'", "'security.protection_exemption.delete'",
+		"'security.protection_exemption.read'", "'security.protection_exemption.update'",
+		"'critical'", "'tenant.administrator'", "'tenant.governance_manager'",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 127 missing %q", fragment)
+		}
 	}
 }
 
