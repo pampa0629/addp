@@ -244,7 +244,7 @@ func compileMaterializationGate(config *materializationGateExecutionConfig, read
 }
 
 func compileGateAssertion(assertion MaterializationGateAssertion, aliases map[string]commonClient.MaterializationReadItem) (gateCompiledAssertion, error) {
-	dialect := query.ForEngine("postgresql")
+	dialect := query.ForDialect(query.DialectPostgreSQL)
 	tableSQL := func(alias string) (string, map[string]struct{}, error) {
 		item, exists := aliases[alias]
 		if !exists {

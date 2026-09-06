@@ -1235,7 +1235,7 @@ Phase 4B 再接企业目录和资产授权主线：
 - [x] 完成 5.9 节外部 BI 消费契约、认证路线与现状缺口核查；
 - [x] 确定 Power Query / Power BI Desktop 为首个真实 Connector 验收载体及第一版范围；
 - [x] 实现不依赖 BI 宿主的 Python Service Consumer SDK，并纳入现有 Python 发布门禁；
-- [ ] 以真实普通表与空间 Query Service 完成 Python 外部消费者只读运行验收；
+- [x] 以真实普通表与空间 Query Service 完成 Python 外部消费者只读运行验收；
 - [ ] 外部 BI 消费服务的契约与接入指南；
 - [x] 实现外部 OAuth Client 注册治理；
 - [ ] 以真实 BI Connector 完成端到端验收；
@@ -1369,7 +1369,7 @@ Service 按正式入口重启后，已在 Console iframe 主路径完成浏览�
 
 下一步按以下边界推进：
 
-1. `make test-online-runner` 已在当前工作树通过 84 项确定性测试，证明 Online 分发、预检、Host Gate、Fixture 安全边界、失败清理和 Workbench suite 协议可执行；这不等于真实 T4 通过。若目标是完成 Phase 3 验收，仍须在已登记的专用 Online Runner 执行 `workbench-service-consumption` T4 suite，取得 Business MySQL 的真实动态参数、Chart canvas、CSV、契约变化阻断和执行审计证据；成功前不勾选其余 Phase 3 验收项。
+1. `make test-online-runner` 已在当前工作树通过 121 项确定性测试，证明 Online 分发、预检、Host Gate、Fixture 安全边界、失败清理和 Workbench suite 协议可执行；这不等于真实 T4 通过。若目标是完成 Phase 3 验收，仍须在已登记的专用 Online Runner 执行 `workbench-service-consumption` T4 suite，取得 Business MySQL 的真实动态参数、Chart canvas、CSV、契约变化阻断和执行审计证据；成功前不勾选其余 Phase 3 验收项。
 2. 若只在当前本地环境继续人工体验，`f2` 和 `p3` 均没有发布筛选字段且结果超过单页上限，只能验证 Table 与 cursor；Chart、Map 和有限导出被完整性规则阻断是正确行为。需要动态参数或完整 Chart/Map 时，应通过 Service 正式发布一个有 `filterable_fields`、可收敛为完整有界结果的服务，不能直接改数据库制造契约。
 
 ### 14.5 Phase 4A 实现与接力状态（2026-08-27）
@@ -1909,15 +1909,181 @@ Notebook、Python 脚本或其他分析工具是 SDK 的消费者，自行决定
 
 这一路线是真实的平台外用户委托消费验收，但不是 BI Connector 产品验收，因此不能据此勾选“以真实 BI Connector 完成端到端验收”。Power Query 设计保留；待出现可操作的 Windows 宿主后，具体 Connector 必须复用同一 Service Consumer Contract，不增加 Python 代理、数据库直连或手工 Token 旁路。
 
-本轮已经完成 SDK、公开类型导出、README 示例和协议单元测试；SDK 不顶层加载桌面 OAuth / Keychain 依赖，只有显式使用 `from_cli_session()` 时才加载 CLI 会话能力，避免影响 Copilot 等服务端 Python 运行时。验证结果：`make test-common-python` 通过（172 passed、1 skipped、8 subtests passed），`make test-release RELEASE_SUITE=common-python-cli` 通过 wheel 构建、隔离安装与 CLI 产品链路，`make test-platform` 通过平台一致性、CI 注册和 Swagger 覆盖门禁。当前 ADDP 服务未运行，因此真实普通表与空间 Query Service 的只读运行验收仍保持未完成；该项需要环境重启后继续，不以 fixture 测试替代。
+本轮已经完成 SDK、公开类型导出、README 示例和协议单元测试；SDK 不顶层加载桌面 OAuth / Keychain 依赖，只有显式使用 `from_cli_session()` 时才加载 CLI 会话能力，避免影响 Copilot 等服务端 Python 运行时。验证结果：`make test-common-python` 通过（172 passed、1 skipped、8 subtests passed），`make test-release RELEASE_SUITE=common-python-cli` 通过 wheel 构建、隔离安装与 CLI 产品链路，`make test-platform` 通过平台一致性、CI 注册和 Swagger 覆盖门禁。服务恢复后的真实普通表与空间 Query Service 只读运行结果见 14.27，不以 fixture 测试替代运行证据。
+
+### 14.27 Python 外部消费者真实运行验收（2026-09-06）
+
+全套 ADDP 由用户重启后，使用仓库源码中的 `ServiceConsumerClient.from_cli_session("http://localhost:8000")` 和既有 `addp auth login` OS Keychain 会话完成只读运行验收。`addp auth status` 先通过 System 权威 AuthContext 确认当前会话为 Tenant Context、用户 Principal、AAL2 和受限 `addp.api` Scope；验收过程未复制、打印或另存 Access Token / Refresh Token，未创建、更新或删除 Service、Data Application 与业务数据。
+
+通用协议验收结果如下：
+
+1. Consumer Catalog 返回 8 个当前用户可见的 Query Service，逐个 Descriptor 均通过 `addp.service_consumer/v1`、ServiceReference、query operation 和当前 Catalog 指纹校验；
+2. 从 Catalog 按 `output_kind` 动态选择可运行服务，不按名称或字段硬编码。普通表选中 Query Service 21，空间表选中 Query Service 20；两者均以 `limit=1` 连续读取两个不透明 cursor 页，每页返回一行，`service_version` 跨页一致；
+3. 普通表实际返回的 9 个字段全部属于 Descriptor 声明字段；空间表实际返回的 10 个字段全部属于 Descriptor 声明字段，主几何字段名从 `output_contract.spatial.primary_geometry_field` 动态取得且两页均存在有效值；
+4. 对同一普通表和空间表故意提供格式正确但与当前 Catalog 不同的 SHA-256 指纹时，SDK 均在执行查询前返回 `ServiceConsumerContractError`，证明不会自动改绑变化后的服务契约；
+5. 真实请求使用 Descriptor 声明的 POST query operation、JSON 格式和 query intent；没有读取 Service 管理 DTO、猜测 query route、解析 cursor 或绕过 Gateway。
+
+随后以已发布 Data Application `18c7223c-b5c0-4c25-ba28-648e85f44537` Revision 2 的快照作为业务组合输入，动态读取其参数、Component Query Template、Parameter Binding 和 Selection Binding。当前快照已演进为 5 个 Component，分别消费 Query Service 29“户外人员目录查询”、Query Service 28“户外人员参与重叠度即时查询”和 Query Service 24“户外人员指标查询”。按当前 Catalog 契约显式选择后，5 个 Component 全部真实查询成功：两个目录组件各返回 50 行，重叠度组件返回 1 行，两个指标组件各返回 2 行；所有实际字段均属于各自 Descriptor 声明字段。业务值只用于内存中的请求联动，没有写入 SDK、测试 fixture、文档或默认配置。
+
+本次同时发现两个不应由 SDK 兼容的运行态缺口：
+
+- Revision 2 中两个指标 Component 冻结的 Query Service 24 指纹为 `sha256:6f822670a5edb2a804ec7eb2b77956ebadd8b420acd2ecbf48cc153aa51ff61d`，当前 Catalog 指纹为 `sha256:62f28a3611503d4ca2cfb4aeef28027b82b691510a2df3afe7f4137b0c82939e`。SDK 使用发布快照的冻结指纹时明确拒绝；只有显式选择当前 Catalog 契约后查询才成功。若要恢复该发布应用的完整运行，应在 Workbench 草稿中由用户明确重绑当前 Service 24 契约并发布新 Revision，不能静默刷新 Revision 2；
+- Query Service 26“Business MySQL 电商订单分析”的 Catalog 和 Descriptor 可读，但查询稳定返回 HTTP 500、`query_execution_failed: service data protection gate is required: query read set unresolved`。同一身份和请求结构下其余 5 个无必填参数服务均查询成功，因此失败边界位于该服务的数据保护 read set 解析，而不是 Python SDK、OAuth、Gateway 或通用 Query Contract。该缺口应由 Service / Security 所有者独立修复，不在 SDK 中跳过数据保护门禁。
+
+至此，Python 外部消费者的真实普通表、空间表、cursor、动态字段、空间契约、指纹冻结和 Outdoor 多服务业务组合均取得运行证据，可以勾选该项。它仍不等于 Power BI Desktop / Power Query 产品验收；真实 BI Connector、OAuth callback state 和具体宿主刷新行为继续保持未完成。
+
+用户确认继续后，已通过 Workbench 唯一更新与发布 API 把 Revision 2 中两个 Service 24 指标 Component 显式重绑到当前 Catalog 指纹。更新前严格校验恰好只有这两个目标 Component 发生指纹漂移；保存后的 Draft version 5 与 Revision 2 逐字段比较，除两个 `contract_fingerprint` 外，页面、布局、参数、Parameter Binding、Selection Binding、Query Template 和 renderer 配置完全相同。草稿按冻结指纹执行 5 个 Component 均成功后发布不可变 Revision 3；发布后聚合 version 为 6、`has_unpublished_changes=false`，Runtime Snapshot 与发布 Snapshot 完全一致。再次从 Revision 3 读取冻结指纹并查询，5 个 Component 全部成功且均与当前 Catalog 指纹一致。浏览器最终运行入口显示“发布修订 3”，执行“查询全部组件”后无空结果状态，目录分页可用，浏览器错误日志为空。Revision 2 保持不可变，没有静默改写历史发布事实。
+
+本次重绑还暴露并修复了 Component 编辑器把“配置可保存”和“当前可预览”错误合并的问题：必填 Component Parameter 可以没有组件局部默认值，因为它可以由 Application Parameter 在运行时提供；这种配置应允许保存，但在编辑器没有当前参数值时仍不能预览查询。`ApplicationComponentEditor.vue` 现在只用参数键、标签、唯一性和 Descriptor Named Parameter 类型判断配置有效性，`requiredParameterValuesPresent()` 单独控制查询与导出。回归测试覆盖“无局部默认值的必填参数可保存但不可预览”；浏览器复核中 Service 24 指标组件不再出现契约变化告警，“应用组件配置”可用而“查询”保持禁用，运行页继续由应用默认参数正常查询。`make test-workbench-frontend` 通过 40 个前端测试和 production build。
+
+### 14.28 Business MySQL 查询读取集与输出血缘根因修复（2026-09-06）
+
+Query Service 26 的失败根因已经定位到 MySQL Engine Provider：其 Prepared Query 一直把 `QueryReadSet` 留空。Service 的数据保护入口按统一契约调用 `PreparedQuery.ReadSet()`；当 Tenant 中存在任一受管理数据项时，无法证明读取对象的 MySQL 查询会统一失败关闭。因此，问题不是 Workbench、Python SDK、OAuth、Gateway 或 Query Service 请求格式，也不能通过 Service 中按引擎跳过保护门禁解决。
+
+本轮先修订 Engine Runtime 与数据保护规范，再在 MySQL Provider 增加一条受限但可证明的读取集解析主路径：
+
+1. 使用 MySQL 方言 AST 完整解析只读 `SELECT`，覆盖普通表、`JOIN` 和派生子查询中的真实表引用；
+2. 未显式数据库名的表按当前 Engine Database 解析，显式数据库名按原引用解析，并生成规范 Engine Catalog ResourcePath；
+3. 通过 `information_schema.tables` 逐一确认对象是非系统数据库中的 `BASE TABLE`，且存储引擎为 `InnoDB`，只有全部对象均可唯一证明时才返回精确 `QueryReadSet`；
+4. CTE 或解析失败、可执行注释、行锁、普通函数 / UDF / 存储函数、View、Temporary Table、系统表以及 FEDERATED 等非 InnoDB 对象继续返回 `ErrQueryReadSetUnresolved`，不得猜测、部分返回或兼容放行；
+5. 第一次重启验证证明 Query Service 26 的 ReadSet 已精确命中受管理的 MySQL DataItem，门禁按规范继续要求 `QueryOutputLineage`，错误从 read-set unresolved 前进为 output-lineage unresolved。为使受保护 MySQL 服务具备真实消费路径，Provider 继续补充更窄的直接列血缘：只允许由 AST 与实时表结构唯一证明的直接列和显式别名，并跨 JOIN 与带别名派生子查询逐层组合；wildcard、表达式、聚合、UNION、重复输出名、歧义或不存在的列继续失败关闭。
+
+Provider 单元测试覆盖 Query Service 26 同结构的 wrapper JOIN、默认 / 显式数据库解析、去重、跨派生子查询 direct binding，以及函数、行锁、CTE、View、FEDERATED、系统库、wildcard、表达式、UNION、歧义列和不存在列拒绝。使用 Business MySQL 当前真实 Catalog 做只读 PreparedQuery 验证时，服务 SQL 精确解析为 `business/customers` 与 `business/orders`，两张表均由权威 Catalog 确认为 InnoDB；实时字段结构成功生成 2 个来源、10 个 direct bindings，并由同一 PreparedQuery 执行出上海已交付订单 `ORD-20260420-001`。`common` 与 `service/backend` 全量 Go 测试和 diff whitespace 检查均通过；实现完成时 `make test-platform` 也曾通过。最终收口重跑时，该平台门禁被工作树中另一组 Office 预览重构阻断：受跟踪的 `common-frontend/basic/src/components/previews/OfficePreview.vue` 已删除，而唯一所有权测试仍读取该旧路径；本轮没有恢复或改写这组独立用户变更。根级 `make test-go` 在进入本轮相关模块前被仓库既有 `asset/backend` Go Module tidy 漂移阻塞；同类既有漂移还存在于 `portal/backend`、`security/backend` 和 `standard/backend`，本轮同样没有越界修改这些独立变更。
+
+第二次统一重启后，Query Service 26 已完成最终运行态验收。Python Service Consumer SDK 从 Consumer Catalog 与 Descriptor 动态取得当前契约指纹和 10 个输出字段，不依赖服务名之外的样例事实；默认查询以 `order_no` 为稳定键读取两个不透明 cursor 页，共返回 4 行且跨页 `service_version` 一致。`status=delivered` 与 `city=上海` 的组合筛选返回唯一订单 `ORD-20260420-001`、金额 `2897.00`；格式正确但过期的契约指纹在执行前被明确拒绝。Service 日志中的这些请求均返回 HTTP 200，未再出现 read-set、output-lineage 或数据保护门禁错误。
+
+已发布 Data Application `c847d823-3314-42a2-b2a7-d5139fc68283` 的 Revision 1 仍按冻结契约正确显示两个 Component 的契约变化告警，没有被静默修改。验收随后通过 Workbench 唯一更新与发布主路径，只把两个 Component 的 `contract_fingerprint` 显式重绑为 Query Service 26 当前指纹；除这两个字段外，Snapshot 没有变化。草稿聚合版本从 3 经更新和发布推进到 5，并产生不可变 Revision 2，发布后的 Runtime Snapshot 与 Revision 2 完全一致。浏览器运行页显示“发布修订 2”：默认 `status=delivered` 时 Table 返回上海和成都两行；再输入 `city=上海` 后 Table 收敛为一行，Chart 同步显示上海单柱、数值 `2897`，浏览器错误与警告日志为空。以上 ID、订单和值仅作为本地真实验收证据，没有写入 Workbench、SDK 或共享 renderer 的生产代码与默认配置。至此，本节状态为“ReadSet、直接列 OutputLineage、Python SDK 与最终 Data Application 运行态全部验收完成”。
+
+继续补齐本地异构边界后，当前 Consumer Descriptor 明确声明 `output_kind=tabular`、`spatial=null`，只支持 `json | csv`，10 个字段均按当前发布契约返回，其中 `decimal`、`timestamp` 和 `int` 保持各自类型语义。以最大有界页和 `export` intent 执行 `status=delivered AND city=上海` 的真实 CSV 请求返回 HTTP 200、`text/csv`、`X-ADDP-Has-More=false` 和当前 `service_version`，CSV 字段顺序与 Descriptor 默认选择一致，唯一数据行完整可读；运行页的“导出当前有界结果”也走同一正式请求并返回 200。组件编辑器对该非空间服务实际只提供“表格、图表、数值卡片”，没有 Map 选项；运行页与编辑器的浏览器错误、警告日志均为空。`workbench/backend` 全量 Go 测试及 `make test-workbench-frontend` 的 40 项测试和 production build 均通过。以上本地证据补全 Phase 3 的 CSV、标量格式和无空间 renderer 约束，但按既定门禁规则仍不替代专用 Runner 上的 `workbench-service-consumption` Online T4，因此对应 Online 清单继续保持未勾选。
+
+### 14.29 最终应用运行态错误恢复边界（2026-09-06）
+
+最终应用运行画布必须区分三类状态，不能继续共用一个会永久禁用操作的 `error`：
+
+1. 当前 Consumer Descriptor 指纹与发布 Revision 冻结指纹不一致属于契约阻断；Component 不能执行，必须由所有者显式重绑并发布新 Revision；
+2. Descriptor 首次读取失败属于可重试的依赖可用性错误；页面保留错误提示，“查询全部组件”和 wallboard 前台刷新可以重新读取 Descriptor，恢复后进入同一执行主路径；
+3. 已取得 Descriptor 后的某次查询失败属于可重试的运行错误；不得清除上一次成功结果，不得永久禁用 Component 查询、导出或应用级查询，后续手工查询和 wallboard 前台刷新成功后清除该错误。
+4. 当前发布 Revision 首次读取失败属于可重试的 Workbench 依赖错误；正式运行页必须提供原页重试，不能要求用户刷新浏览器。同一 Router 实例切换 `application_id` 时必须清空旧应用并重新读取目标 Revision，不能继续展示上一应用。
+
+该恢复能力只管理浏览器当前会话状态，不写入 Data Application Snapshot，不增加 Backend API、Service 代理、兼容路由或后台任务。发布 Revision 读取继续使用唯一 runtime API，重试和路由切换不产生第二套加载协议。契约变化仍严格失败关闭；只有依赖不可用和单次执行失败可以在同一发布 Revision 内重试。
+
+实现已经把 Component 会话状态拆分为 `contract_error`、`descriptor_error` 和 `query_error`：前者继续阻断执行，Descriptor 临时失败允许“查询全部组件”及 wallboard 刷新重新读取，查询临时失败保留上一次成功结果并允许再次查询或导出。正式运行页的 Revision 加载错误现在提供原页“重试”；`application_id` 变化时先销毁旧画布，再从唯一 runtime API 加载目标 Revision，并使用共享 latest-request 协调器拒绝迟到响应覆盖新应用。合同测试先因缺少重试入口和路由监听失败，补齐实现后 `make test-workbench-frontend` 的 43 项测试和 production build 均通过。
+
+全套服务恢复后，CLI OAuth 状态重新通过权威 AuthContext 校验；通过 Gateway 读取 Business MySQL Data Application Revision 2 及两个当前 Descriptor，并按发布 Snapshot 的 Parameter Binding 编译 `status=delivered AND city=上海` 请求，Table 与 Chart 两个 Component 均返回同一条订单和相同 `service_version`，证明后端、Service 和发布契约已经恢复。用户随后打开正式 `/data-apps/:application_id` 入口并确认“查询全部组件”运行正常。补齐 Revision 原页重试和路由切换恢复后，同一正式入口再次只读复核：Revision 2 正常加载，“查询全部组件”返回两条已交付订单，浏览器错误与警告日志为空。正常运行态已经实测；本轮不再通过主动停止服务制造故障，Revision / Descriptor / 查询临时失败后的同页重试语义由上述确定性合同测试覆盖，契约漂移继续由既有真实 Revision 阻断证据覆盖。至此，本节实现、门禁和运行页复核均已完成。
+
+### 14.30 Component 编辑器异步上下文隔离（2026-09-06）
+
+Component 编辑器的服务目录初始化、Descriptor 读取、预览查询和有界导出共享同一份可变草稿，因此每个异步结果都必须绑定发起时的编辑上下文。用户关闭或重新打开编辑器、切换目标 Component、快速切换 Service，或者在预览请求进行中修改查询配置时，旧请求必须立即失效；迟到的 Descriptor 不得覆盖当前服务和草稿，迟到的查询结果不得覆盖当前预览，迟到请求的错误不得在新上下文中提示。
+
+该隔离只复用 `common-frontend/basic` 的 latest-request 协调能力，不增加缓存、取消 API、兼容分支或第二套编辑状态。服务切换时先清空旧 Descriptor、草稿和预览，再读取当前 Service Consumer Descriptor；编辑器关闭时统一失效仍在途的 Descriptor、预览和导出请求。保存时仍只提交当前 Descriptor 验证过的 Component 配置快照。
+
+实现已为 Descriptor 加载与查询 / 导出分别建立 latest-request 上下文：编辑器初始化绑定目标 Component，服务切换绑定当前 Service；查询和导出绑定当前 Service，并在任何会影响请求的配置变化时统一失效。异步成功、失败提示和 loading 状态都只允许由当前请求写回；弹窗开始关闭时立即失效全部请求，重新打开后只从当前 Component 重新构建草稿。源码合同测试先稳定证明旧实现缺少上下文隔离；连同 14.31 的分页回归，最终 `make test-workbench-frontend` 通过 45 项测试和 production build。
+
+浏览器烟测使用既有耕地应用但没有保存任何变更：打开“城市耕地概览”组件后，连续选择 Business MySQL 服务和户外人员目录服务，最终界面只保留后选服务的 Descriptor 字段；取消并重新打开后恢复为原“耕地城市汇总”服务、原字段和原 renderer 配置，浏览器错误与警告日志为空。上述服务与字段只作为运行证据，未写入 Workbench 生产代码、默认配置或测试 fixture。
+
+### 14.31 Component 编辑器游标翻页原子提交（2026-09-06）
+
+Component 编辑器的游标、页码、结果行和 Page Metadata 必须作为一次查询结果原子提交。点击上一页或下一页时只计算候选游标状态；只有目标页查询成功且请求仍属于当前编辑上下文，才同时替换结果与分页状态。查询失败或请求因服务 / 配置切换而失效时，继续保留上一份成功结果及其页码，不得出现“旧数据配新页码”的假状态，也不得解析、回退或猜测 Service 返回的不透明 cursor。
+
+该规则与最终应用画布的事务式翻页语义保持一致，不新增分页缓存、重试 API 或第二套 cursor 协议。首次预览仍从空 cursor 和第 1 页开始；重新查询或修改请求配置继续清空旧分页状态。
+
+实现已把 `executeAtCursor` 的候选页码和游标栈纳入成功结果提交；上一页、下一页不再预先修改响应式分页状态。回归测试先稳定命中旧实现的提前增减页码，再验证新实现只在当前请求成功后同时写回结果、Page Metadata、页码和游标栈。浏览器使用新建但未保存的通用 Component 配置消费既有多页服务：第 1 页可进入第 2 页，第 2 页可返回第 1 页，浏览器错误与警告日志为空；烟测完成后取消弹窗，没有写入应用草稿。
+
+### 14.32 运行画布参数上下文失效（2026-09-06）
+
+最终应用的查询结果必须对应当前 Application Parameter 值。用户修改参数时，所有通过 Parameter Binding 消费该参数的 Component 必须立即失效仍在途的查询和导出，并清空已经不再对应当前参数的结果、分页与运行错误；未绑定该参数的 Component 不受影响。旧参数请求即使迟到，也不得回写结果、错误或 loading 状态，更不得触发文件下载。
+
+受影响 Component 必须只从 Snapshot 的 Parameter Binding 推导，不能在 UI、renderer 或请求状态中保存第二份目标列表。Selection Binding 写入参数时复用同一参数更新入口，再查询推导出的目标 Component；手工输入和选择联动因此具有同一失效语义。应用级“查询全部组件”也必须具备独立 generation，参数变化后允许按新值立即发起新一轮查询，而不是等待旧一轮网络请求结束。
+
+实现已增加唯一的 `componentIDsForApplicationParameters()` 推导函数，手工参数输入与 Selection Binding 共用它；运行画布按推导结果失效 Component 请求并清空结果、分页和查询错误，Query All 使用独立 latest-request generation，导出也进入 Component request generation，迟到响应不会下载旧参数文件。回归测试先证明旧实现既没有参数更新入口，也没有受影响 Component 推导与 Query All 失效，再覆盖去重、无关参数和未知参数边界。`make test-workbench-frontend` 已通过 47 项测试和 production build；构建只保留既有的大 chunk 非阻断警告。
+
+服务恢复后已从既有正式 Data Application `c847d823-3314-42a2-b2a7-d5139fc68283` 的发布 Revision 2 完成浏览器运行态复核。当前发布 Snapshot 中“城市”参数通过 Parameter Binding 同时绑定 Table 和 Chart；默认 `status=delivered` 查询返回上海、成都两条订单，随后把城市改为“成都”时，旧上海表格结果立即消失并进入无结果状态，再执行“查询全部组件”后只返回成都订单 `ORD-20260423-004`，上海订单不再出现。System 审计同步记录两个 Component 请求均从默认条件的 `returned_count=2` 收敛为城市条件的 `returned_count=1`，浏览器页面没有运行错误告警。以上应用 ID 与订单号只作为本地真实验收证据，没有进入 Workbench 生产代码或默认配置。
+
+### 14.33 运行画布参数竞态自动化证据（2026-09-06）
+
+14.32 的浏览器验收已经证明真实 Service 请求会按新参数执行，但不能稳定制造“旧请求恰好晚于参数修改返回”的时序。该竞态必须在 Workbench 前端 T1 中使用可控 Promise 固定复现；测试不能依赖网络速度、真实 Service、验收数据或浏览器等待时间，也不能只用源码正则断言代替行为证据。
+
+生产代码只提炼 Workbench 自有的参数结果失效事务：目标 Component 仍唯一由 Snapshot Parameter Binding 推导；每个目标状态必须先使请求 generation 失效，再原子清空查询、导出、结果、分页和运行错误。测试使用与生产画布相同的请求 coordinator 和失效函数，先启动旧请求、修改参数并检查旧结果立即清空，再释放旧响应并确认其无法提交结果或恢复 loading。该提炼不进入 `common-frontend`，因为 Application Parameter、Parameter Binding 和 Component 运行状态均属于 Workbench 领域。
+
+实现已将画布内联的清理逻辑收敛为唯一 `invalidateApplicationParameterResults()`，手工参数输入和 Selection Binding 仍通过同一个 `updateParameterValues()` 入口调用它。T1 使用可控 Promise 启动旧 generation，参数失效后先验证绑定 Component 的结果、分页、错误、查询和导出状态被原子清空，同时验证未绑定 Component 保持原结果；释放迟到响应后，旧 generation 无法提交数据或恢复 loading。测试已完成“缺少生产导出时失败、提炼后通过”的红—绿验证；`make test-workbench-frontend` 通过 48 项测试和 production build，仅保留既有的大 chunk 非阻断警告。
+
+### 14.34 运行画布迟到导出副作用阻断（2026-09-06）
+
+参数变化不仅要阻止旧查询结果回写，也必须阻止旧导出响应触发浏览器文件下载。该门禁不能只检查 `exporting=false`，因为网络响应仍可能在状态清理后到达；下载动作必须在执行 Blob URL、DOM link 和 click 副作用之前，再次以 Component request generation 和 Component ID 校验当前上下文。
+
+Workbench 有界导出完成函数应返回唯一明确结果 `stale | incomplete | downloaded`：`stale` 不触发任何下载或提示，`incomplete` 继续使用既有有界结果警告，只有 `downloaded` 才允许创建下载副作用。T1 使用可控 Promise 先启动导出，再通过 14.33 的参数失效事务使 generation 过期，最后释放旧响应；测试必须直接调用画布使用的同一导出完成函数，并证明返回 `stale`，而不是复制一段 `isCurrent` 判断。
+
+实现已新增唯一 `downloadCurrentBoundedExport()` 并替换画布内联的“先校验、再下载”分支；该函数在任何 Blob URL 或 DOM 副作用前检查调用方提供的当前 generation，随后统一区分 `stale | incomplete | downloaded`。T1 先因缺少该生产导出而失败，再验证参数失效后释放旧导出只返回 `stale`；既有导出测试同步改为覆盖当前完整响应的 `downloaded` 及有后续页响应的 `incomplete`。`make test-workbench-frontend` 已通过 49 项测试和 production build，仅保留既有的大 chunk 非阻断警告。
+
+### 14.35 运行画布 Descriptor 加载竞态（2026-09-06）
+
+运行画布挂载时批量加载 Component Descriptor；在 Descriptor 尚未返回或临时失败时，“查询全部组件”也可以为同一 Component 发起 Descriptor 重试。两个请求必须遵循 latest-request 语义：较早请求的成功、契约变化或临时失败响应都不能覆盖较新请求已经提交的状态。Descriptor 加载 generation 必须与查询、导出 generation 独立，Descriptor 重试不能取消正在执行的数据请求，数据请求也不能使 Descriptor 响应失效。
+
+每个 Component 状态只维护一个 `descriptorRequests` coordinator。Descriptor 请求开始时保存 Component ID 作为目标；成功、契约指纹变化和异常三条响应路径都必须在写入 `descriptor`、`descriptor_error` 或 `contract_error` 前校验当前 generation。画布销毁时同时失效 Descriptor 与查询/导出 coordinator。T1 使用两个可控 Promise，先让较新的 Descriptor 请求成功提交，再释放较早失败请求；最终状态必须保留新 Descriptor 且不出现旧错误。测试不得依赖真实 Service 延迟或重复保存 Descriptor 状态。
+
+实现已为每个 Component 增加独立 `descriptorRequests`，并用唯一 `commitLatestComponentDescriptorState()` 包住 Descriptor 成功、契约变化和异常三条状态提交路径；查询/导出继续使用原 `requests` coordinator，二者没有互相取消。画布销毁时同时失效两类 generation。T1 先因缺少生产提交函数失败，再以两个可控 Promise 验证新成功先提交、旧失败后返回时，旧响应得到 `false` 且不能清空新 Descriptor 或写入旧错误。`make test-workbench-frontend` 已通过 50 项测试和 production build，仅保留既有的大 chunk 非阻断警告。
+
+### 14.36 已发布应用路由切换竞态证据（2026-09-06）
+
+Console 同源运行路由 `/data-apps/:application_id` 在同一前端会话内可以从应用 A 切换到应用 B。A 的运行快照请求若晚于 B 返回，不得把页面切回 A，也不得写入 A 的错误或用 A 的 finally 提前关闭 B 的 loading。现有 `DataApplicationRuntime` 已使用 application ID 作为 latest-request 目标，但源码合同只能证明调用形状，不能固定证明交错响应下的状态结果。
+
+运行页应使用唯一 `commitLatestDataApplicationLoad()` 包住成功、失败和 finally 的所有状态提交；该函数按规范化后的当前路由 application ID 校验 request generation，只有当前请求才执行提交回调。T1 使用可控 Promise 先发 A、再发 B，先释放旧 A 并确认其成功与 finally 都不能写状态或关闭 B 的 loading，再释放 B 并只提交应用 B；最终 application、page error 和 loading 必须全部保持 B 上下文。该证据不新增路由、缓存、预取或双轨运行状态。
+
+实现已新增唯一 `commitLatestDataApplicationLoad()`，并将 `DataApplicationRuntime` 的成功、异常和 finally 三条提交全部接入该函数；当前路由 ID 在提交时统一规范化，旧请求不能写入 application、page error 或 loading。T1 先因缺少生产提交函数失败，再用可控 Promise 先发 A、切到 B、释放旧 A，证明 A 的成功与 finally 均返回非当前且 B 的 loading 保持；随后释放 B，只有 B 被提交并结束 loading。`make test-workbench-frontend` 已通过 51 项测试和 production build，仅保留既有的大 chunk 非阻断警告。
+
+### 14.37 已发布应用运行页卸载请求失效（2026-09-06）
+
+从 `/data-apps/:application_id` 离开时，运行页必须立即使当前 Revision 加载请求失效。组件卸载后到达的成功、异常和 finally 都不得继续提交 application、page error 或 loading；不能仅依赖 Vue 销毁 DOM，因为迟到回调仍会执行，也不能新增 AbortController 兼容分支或第二套页面存活状态。
+
+`DataApplicationRuntime` 应在唯一 `onBeforeUnmount` 生命周期中调用既有 latest-request coordinator 的 `invalidate()`，继续由 `commitLatestDataApplicationLoad()` 统一拦截全部迟到提交。T1 使用可控 Promise 启动加载后模拟卸载失效，再分别释放成功结果与 finally，证明二者都返回非当前且状态保持卸载时的快照；源码合同同时固定运行页注册卸载钩子。该收口只管理 Workbench Revision 请求，不改变运行画布自身已经存在的 Component 查询、Descriptor 和自动刷新销毁逻辑。
+
+实现已在 `DataApplicationRuntime` 的唯一 `onBeforeUnmount` 钩子中失效 Revision latest-request generation，成功、异常与 finally 继续只通过 `commitLatestDataApplicationLoad()` 提交，没有增加页面存活标志或第二条取消路径。T1 先以源码合同得到缺少卸载钩子的单一红灯，再补钩子转绿；可控 Promise 在模拟卸载后释放旧成功响应，证明 application 与 loading 均保持卸载时快照。`make test-workbench-frontend` 已通过 52 项测试和 production build，仅保留既有的大 chunk 非阻断警告。
+
+### 14.38 Component 编辑器卸载请求失效（2026-09-06）
+
+`ApplicationComponentEditor` 的 `destroy-on-close` 弹窗已经在 close 事件中调用 `invalidateEditorRequests()`，但用户从 Data Application 编辑页直接离开时，父级销毁子组件不应依赖弹窗 close 事件是否发生。编辑器卸载后到达的 Consumer Catalog、Descriptor、查询或导出响应不得写入草稿预览状态、弹出错误消息或触发文件下载。
+
+编辑器必须复用唯一 `invalidateEditorRequests()`，在 `onBeforeUnmount` 中同时失效 `descriptorRequests` 与 `operationRequests`；不得新增 mounted 标志、第二个失效函数或单独的卸载分支。既有各响应路径继续在状态写入、消息和下载副作用前检查对应 generation。T1 源码合同固定 close 与 unmount 共享同一函数，并确认该函数失效两个 coordinator；异步提交行为继续由 14.30 的 obsolete service context 门禁和共享 latest-request 语义覆盖。
+
+实现已将 Vue `onBeforeUnmount` 接到既有 `invalidateEditorRequests()`，与 Element Plus dialog close 事件共用同一失效入口；该函数继续一次性失效 Descriptor 与 operation 两个 coordinator，并收拢 loading、querying 和 exporting 状态。T1 先得到缺少卸载钩子的单一红灯，补齐后 14 项定向合同全部通过；`make test-workbench-frontend` 已通过 52 项测试和 production build，仅保留既有的大 chunk 非阻断警告。
+
+### 14.39 Data Application 编辑页路由上下文隔离（2026-09-06）
+
+Workbench 的 `applications/new` 与 `applications/:id` 共用 `DataApplicationEditor` 组件，Vue Router 在创建页、不同应用编辑页之间导航时可以复用同一组件实例。编辑页若只在 mounted 时加载一次，会继续展示旧应用；旧应用请求或其 Component Descriptor 批量加载若迟到，还可能在新路由已经生效后覆盖当前草稿、Descriptor 索引、错误消息或 loading。
+
+编辑页必须把规范化的 `create` 或 `edit:<application_id>` 作为唯一 load generation target，并监听 route name 与 application ID 的组合变化。每次上下文变化先关闭仅属于旧草稿的组件编辑、空间向导和整页预览会话，清空旧 Descriptor 索引，并建立全新的空草稿；创建路由到此结束，编辑路由再从唯一管理详情 API 加载目标聚合。应用成功、错误、finally 以及该次应用加载派生的 Descriptor 提交必须全部经过同一个 editor load coordinator；页面卸载只失效该 coordinator，不新增 mounted 标志、AbortController 兼容分支、缓存或第二条加载路线。
+
+T1 使用可控 Promise 分别固定三种时序：A 的应用响应晚于 B、A 已提交但其 Descriptor 晚于 B、当前加载在页面卸载后返回。三种情况下旧提交都必须返回非当前，只有 B 可以写入应用与 Descriptor 状态；源码合同固定 `watch(..., { immediate: true })` 取代 `onMounted(load)`，并确认 unload、应用响应和 Descriptor 响应共享同一 generation。
+
+实现已新增 `dataApplicationEditorRouteContext()`，并与 14.40–14.41 共用唯一 `commitLatestDataApplicationRequest()`：创建页规范为 `create`，编辑页按规范化 application ID 形成 `edit:<id>`；`DataApplicationEditor` 使用独立 load coordinator 监听 route name 与 ID，并在每次变化时销毁旧草稿的弹窗/预览会话、清空 Descriptor 索引和重建空草稿。应用响应、错误、finally 以及由该应用加载派生的 Descriptor 响应全部经同一提交守卫，卸载时失效该 generation；`onMounted(load)` 已删除。T1 先因缺少生产 helper 与路由生命周期合同出现两组红灯，补齐后以可控 Promise 证明 A 的应用迟到、A 的 Descriptor 迟到和卸载后三种提交均被拒绝。最终标准门禁结果继续合并记录于最新收口小节。
+
+### 14.40 Data Application 编辑 mutation 上下文隔离（2026-09-06）
+
+保存、发布、下线与组件删除都会改变 Data Application 聚合或当前草稿，异步提交必须继续属于发起操作时的编辑路由。若用户在请求期间从应用 A 切到 B、进入创建页或离开编辑器，A 的成功响应、错误、finally、成功消息、创建后导航和本地草稿删除都不得作用于 B；发布、下线与组件删除在确认框等待期间同样可能发生路由变化，确认返回后必须在 mutation 前再次校验上下文。
+
+编辑器应维护独立于 load generation 的唯一 mutation coordinator，避免正常 mutation 无故取消同页的 Descriptor 加载。mutation target 由当前 `create | edit:<application_id>` 与 `save | publish | offline | remove-component:<component_id>` 组合而成；路由切换和页面卸载必须同时失效 load 与 mutation coordinator，并收拢 saving、publishing、offlining 状态。所有 mutation 的成功、错误和 finally 只通过同一个通用 editor request 提交守卫；发布、下线与组件删除在打开确认框前建立 request，确认后先通过该守卫，再执行 API 或本地草稿 mutation。服务端 mutation 执行期间整页交互由现有 loading mask 阻断，防止响应用服务器快照覆盖请求期间的新草稿编辑，不增加草稿锁实体、自动合并或兼容分支。
+
+14.39 的 load 专用提交 helper 应同步收敛为通用 Data Application request 提交守卫，load 与 mutation 只传入各自规范化 context，不保留两个同语义实现。T1 使用可控 Promise 先发 A save、再切换并开始 B save，先释放 A 并确认其 success/finally 都不能覆盖 B 或结束 B 的 saving，再释放 B 并只提交 B；另以延迟确认验证发布/下线必须在确认返回后重新校验，源码合同固定三种 mutation 的成功、错误、finally 和创建后导航均位于当前 request 门禁内。
+
+实现已新增独立 `editorMutationRequests` 与 `dataApplicationEditorMutationContext()`，保存、发布和下线的 loading、成功状态、错误消息、服务器聚合回写及 finally 清理全部通过通用提交守卫；组件删除也在确认前登记包含组件 ID 的 mutation context，取消被规范化为无副作用返回，确认迟到时不会修改下一应用的草稿。路由变化和页面卸载由唯一 `invalidateEditorContextRequests()` 同时失效 load 与 mutation generation。发布/下线在确认前建立 request，确认返回后先校验当前编辑上下文才调用 API；服务端 mutation 期间复用页面 loading mask 锁住草稿，避免服务器响应覆盖并发编辑。旧 load 专用 helper 已删除，没有保留兼容实现。T1 先得到缺少新 helper、coordinator 和 mutation 门禁的红灯，再以可控 Promise 证明 A 的迟到保存不能覆盖 B 或结束 B 的 saving，并证明发布确认与组件删除确认期间切换路由后均不会执行 mutation。最终统一 helper 名称与标准门禁结果继续记录于 14.41。
+
+### 14.41 Data Application 列表加载与删除生命周期隔离（2026-09-06）
+
+`DataApplicationList` 的翻页请求可能乱序返回，旧页成功、错误和 finally 不得覆盖当前页数据、消息或 loading；页面卸载后，列表请求也不得继续写状态。删除同样跨越确认框、DELETE 请求与删除后刷新三个异步边界：确认取消应作为正常无副作用结果，确认期间离开列表不得继续发送 DELETE，请求已经发出后离开页面则不得再弹消息或刷新已销毁页面。
+
+列表应分别维护唯一 load coordinator 与 deletion coordinator。load target 使用规范化页码；每次加载的成功、错误和 finally 只在 request 仍匹配当前页时提交。deletion target 使用 `delete:<application_id>:<version>`，确认前建立 request，确认后同时校验 generation 与当前列表行仍为同一版本，再进入 deleting 状态和调用 API；成功、失败、finally 与删除后刷新均必须经过当前 deletion request 门禁。删除执行期间复用卡片 loading mask 阻断表格和分页交互；若删除当前非首页的最后一行，刷新前回退一页，避免停留在可预知的空页。页面卸载统一失效两个 coordinator，不增加 AbortController、mounted 标志、缓存或兼容分支。
+
+14.40 的 `commitLatestDataApplicationEditorRequest()` 应同步提升为 Workbench Data Application 唯一 `commitLatestDataApplicationRequest()`，编辑页与列表页只传各自 context，不保留 editor/list 两个同语义提交 helper。T1 使用可控 Promise 固定旧页晚于新页、卸载后列表返回、确认期间卸载、DELETE 响应晚于卸载四种时序；源码合同固定确认取消、当前行版本复核、删除错误国际化、末页回退和两个 coordinator 的统一卸载失效。
+
+实现已把编辑页 helper 收敛为唯一 `commitLatestDataApplicationRequest()`，列表页新增独立 `listLoadRequests` 与 `listDeletionRequests`，加载响应按当前页码提交，删除按 application ID 与 version 建立 target。删除确认使用既有取消归一化函数；确认后先复核当前列表行版本，再进入卡片级 loading 和调用 DELETE。成功、失败、finally、成功消息及删除后刷新均受 deletion generation 保护，卸载时由 `invalidateListRequests()` 同时失效两类请求；删除非首页最后一行会先回退一页。新增 `deleteFailed` 中英文业务词条，没有硬编码用户文本。T1 先因缺少通用 helper、列表 context、两个 coordinator 与国际化词条得到红灯，补齐后五项可控 Promise 行为测试和列表源码合同转绿。`make test-workbench-frontend` 已通过 67 项测试和 production build，仅保留既有的大 chunk 非阻断警告。
 
 ## 十五、概念设计状态
 
-当前没有待确认的 Phase 0 概念问题。Phase 5 的 Selection Binding 同页联动、`desktop | wallboard` 展示模式、浏览器会话级全屏、Application Refresh Policy 和 Application Presentation Sections 已完成设计、实现、标准模块门禁与真实浏览器验收；Data Application 资产运营指标的事实源、模块归属以及 Asset 自有 `application` / 具体 Asset 运营分组也已完成运行态复核。外部 BI 的 owner 边界、消费契约、用户委托 OAuth 单一路线和 System 外部 OAuth Client 注册治理已经完成；首个真实 BI 验收载体仍为 Power Query 自定义 Connector 与 Power BI Desktop Import，但因当前缺少 Windows 宿主而暂缓。`common-python` 的产品无关 Service Consumer SDK 已完成实现和离线门禁，下一步是用真实普通表与空间 Query Service 完成只读运行验收；它不替代 callback state、持久外部 Client 生命周期和真实 BI 产品端到端证据，因此正式 BI 接入指南继续保持未完成。
+当前没有待确认的 Phase 0 概念问题。Phase 5 的 Selection Binding 同页联动、`desktop | wallboard` 展示模式、浏览器会话级全屏、Application Refresh Policy 和 Application Presentation Sections 已完成设计、实现、标准模块门禁与真实浏览器验收；Data Application 资产运营指标的事实源、模块归属以及 Asset 自有 `application` / 具体 Asset 运营分组也已完成运行态复核。外部 BI 的 owner 边界、消费契约、用户委托 OAuth 单一路线和 System 外部 OAuth Client 注册治理已经完成；首个真实 BI 验收载体仍为 Power Query 自定义 Connector 与 Power BI Desktop Import，但因当前缺少 Windows 宿主而暂缓。`common-python` 的产品无关 Service Consumer SDK、离线门禁及真实普通表、空间表和 Outdoor 多服务只读运行验收均已完成；它不替代 callback state、持久外部 Client 生命周期和真实 BI 产品端到端证据，因此正式 BI 接入指南继续保持未完成。
 
 14.19 的 Data Application 直接创作收口、Outdoor 双服务真实验收、14.20 的 Business MySQL 本地异构验收，以及 14.21–14.23 的 Phase 6 场景化组合、空间探索创作向导和保存前整页预览均已完成。验收数据只作运行证据，没有进入 Workbench 领域模型、生产代码或默认配置。Phase 6 当前确认范围已经收口；真实数据量没有超过有界 GeoJSON 上限前不启动 Tile / OGC Features，也不继续堆叠 renderer。
 
-14.24 的历史契约清理已经通过用户确认完成，长期应用当前发布 Revision 2。14.26 的通用 Service Consumer SDK、公开导出、单元测试、README 和现有 `common-python` 发布门禁已经完成；当前最优先项是环境重启后，用该 SDK 对真实普通表与空间 Query Service 做只读运行验收，验证 Catalog、Descriptor、冻结指纹、动态字段和 cursor，而不创建或修改业务数据。Power Query 路线保留但不再阻塞当前阶段；获得 Windows 宿主后再在 `service/connectors/power-query/` 完成具体 Connector 与真实 BI 门禁。没有真实宿主证据前不修改 OAuth 或 Service API，也不提前编写“可直接照做”的正式 BI 接入指南。具备专用 runner 后再补跑仍在等待的 `workbench-service-consumption` T4，本地验收不能替代该 Online Gate。不要修改 Service 查询路由、引入 API Key 私有授权、数据库直连或增加 Workbench / Python 代理。跨模块综合统计和 Workbench 运行埋点继续暂缓；只有确认成功打开次数、独立访问用户和 Revision 分布确有独立产品价值时，才进入 Workbench owner 运行准入事实设计。在独立价值确认前不进入多页面、`mobile`、页面轮播、通用动作、后台定时任务或第二套运行状态。若后续实现与现有公开契约冲突，必须先回到本专题及正式规范修订设计，不得增加兼容路由、兼容字段或 Workbench 私有旁路。
+14.24 的历史契约清理已经通过用户确认完成；Outdoor 长期应用已显式重绑当前 Service 24 契约并发布 Revision 3，Revision 2 保持不可变。14.26–14.27 的通用 Service Consumer SDK、公开导出、单元测试、README、发布门禁和真实运行验收已经完成。14.28 已在 MySQL Engine Provider 内补齐受限、精确、失败关闭的 QueryReadSet 与直接列 QueryOutputLineage，并完成 Business MySQL Service、Python SDK、契约漂移阻断、显式重绑、不可变 Revision 2 及最终 Data Application Table / Chart 的运行态验收；14.29 进一步完成最终应用对 Descriptor 临时失败和查询临时失败的可恢复状态收敛，契约变化仍严格阻断；14.30 完成 Component 编辑器的 Descriptor、查询和导出异步上下文隔离，服务切换或关闭后的迟到结果不再污染当前草稿；14.31 完成编辑器游标翻页的原子提交，失败请求不再产生旧数据与新页码混合的假状态；14.32 已完成运行画布按 Parameter Binding 精确失效旧参数请求的实现、标准前端门禁与发布 Revision 2 的真实浏览器验收；14.33 进一步把参数竞态收敛为可控 Promise 行为测试，不再只依赖浏览器时序和源码合同；14.34 已用同一 generation 和可控 Promise 阻断迟到导出的文件下载副作用；14.35 已为 Descriptor 初始加载与查询重试建立独立 latest-request generation，旧响应不再覆盖新状态；14.36 已把同源运行路由 A/B 快速切换的迟到成功、错误和 loading 收尾纳入同一 latest-request 提交门禁；14.37 在运行页卸载时立即失效 Revision 请求；14.38 使 Component 编辑器的弹窗关闭与页面卸载共享同一 Descriptor、查询和导出失效入口；14.39 进一步把创建页、编辑页 ID 切换、应用加载、Descriptor 派生加载和页面卸载收敛到唯一 editor route generation；14.40 又把保存、发布、下线从确认到响应收尾的副作用纳入独立 mutation generation；14.41 把列表翻页、删除确认、DELETE 响应和删除后刷新也收敛到同一 Data Application request 提交语义。Power Query 路线继续保留；获得 Windows 宿主后再在 `service/connectors/power-query/` 完成具体 Connector 与真实 BI 门禁。没有真实宿主证据前不修改 OAuth 或 Service API，也不提前编写“可直接照做”的正式 BI 接入指南。当前唯一未闭合的同专题自动化证据是 `workbench-service-consumption` T4：具备专用 runner 后应优先补跑，本地验收不能替代该 Online Gate。不要修改 Service 查询路由、引入 API Key 私有授权、数据库直连或增加 Workbench / Python 代理。跨模块综合统计和 Workbench 运行埋点继续暂缓；只有确认成功打开次数、独立访问用户和 Revision 分布确有独立产品价值时，才进入 Workbench owner 运行准入事实设计。在独立价值确认前不进入多页面、`mobile`、页面轮播、通用动作、后台定时任务或第二套运行状态。若后续实现与现有公开契约冲突，必须先回到本专题及正式规范修订设计，不得增加兼容路由、兼容字段或 Workbench 私有旁路。
 
 ## 十六、相关文档
 

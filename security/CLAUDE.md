@@ -9,6 +9,7 @@ Security 是 ADDP 数据安全控制面，唯一拥有敏感数据类型、安�
 - 不代理数据预览、查询、导出或服务流量；Owner 使用 `common/dataprotection` 在自身服务端执行保护投影。
 - `common/secretcipher` 只负责静态敏感配置值加解密，不是 Security 业务模块的一部分。
 - 未纳管资源不进入检测、投影或保护路径，不产生额外远程调用和安全审计负担。
+- Manager、Develop、Service、Transfer 的必要 Owner 集合及各自可豁免主动作只能在 `internal/service` 的 Owner 契约中定义一次；Enrollment 创建、全量重编译、变化流校验和历史投影升级均从该契约派生，不得重复写 Owner 切片或 action 分支。
 
 ## 运行角色
 

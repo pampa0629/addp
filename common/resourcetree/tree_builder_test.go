@@ -270,6 +270,20 @@ func TestCatalogRootResourceTypePrefersCatalogModelRootTerm(t *testing.T) {
 	}
 }
 
+func TestCatalogRootResourceTypeUsesOceanBaseCapabilities(t *testing.T) {
+	caps := enginePlugin.NewTabularCapabilities("oceanbase", enginePlugin.EngineCatalogTermDatabase, enginePlugin.TabularCapabilityOptions{})
+	capsJSON, err := enginePlugin.MarshalEngineCapabilities(caps)
+	if err != nil {
+		t.Fatalf("MarshalEngineCapabilities() error = %v", err)
+	}
+	capabilities := models.JSONString(capsJSON)
+	engine := &models.Engine{ID: 9, Name: "OceanBase", EngineType: "oceanbase", Capabilities: &capabilities}
+
+	if got := EngineCatalogRootResourceType(engine); got != TypeServer {
+		t.Fatalf("EngineCatalogRootResourceType() = %s, want %s", got, TypeServer)
+	}
+}
+
 func TestBuildFromMetadataTreeAttachesItems(t *testing.T) {
 	builder := NewTreeBuilder()
 	engine := &models.Engine{
@@ -723,6 +737,8 @@ func TestFilterTreeByType(t *testing.T) {
 
 func TestEngineIcon(t *testing.T) {
 	workflowCapabilities := models.JSONString(`{"schema_version":"engine.capabilities/v1","engine_type":"acme_geo_workflow","engine_family":"workflow","compute":{"workflow":{"supported":true}}}`)
+	documentCapabilities := models.JSONString(`{"schema_version":"engine.capabilities/v1","engine_type":"mongodb","engine_family":"document"}`)
+	objectCapabilities := models.JSONString(`{"schema_version":"engine.capabilities/v1","engine_type":"minio","engine_family":"object"}`)
 	tests := []struct {
 		engineType string
 		caps       *models.JSONString
@@ -730,8 +746,8 @@ func TestEngineIcon(t *testing.T) {
 	}{
 		{engineType: "postgresql", want: "Database"},
 		{engineType: "mysql", want: "Database"},
-		{engineType: "MongoDB", want: "DocumentText"},
-		{engineType: "minio", want: "FolderOpen"},
+		{engineType: "MongoDB", caps: &documentCapabilities, want: "DocumentText"},
+		{engineType: "minio", caps: &objectCapabilities, want: "FolderOpen"},
 		{engineType: "acme_geo_workflow", caps: &workflowCapabilities, want: "Grid"},
 		{engineType: "geopython_workflow", want: "Database"},
 		{engineType: "unknown", want: "Database"},

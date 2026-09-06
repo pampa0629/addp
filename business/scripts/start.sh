@@ -19,6 +19,7 @@
 #   bash scripts/start.sh -spark             # 只启动 Spark
 #   bash scripts/start.sh -neo4j             # 只启动 Neo4j
 #   bash scripts/start.sh -mysql             # 只启动 MySQL
+#   bash scripts/start.sh -oceanbase         # 只启动 OceanBase CE
 #   bash scripts/start.sh -redpanda          # 只启动业务 Redpanda
 #   bash scripts/start.sh -nfs               # 只启动 NFS
 #   bash scripts/start.sh -postgres -minio   # 启动 PostgreSQL + MinIO
@@ -49,6 +50,7 @@ ENABLE_SPARK=false
 ENABLE_NEO4J=false
 ENABLE_NFS=false
 ENABLE_MYSQL=false
+ENABLE_OCEANBASE=false
 ENABLE_REDPANDA=false
 HAS_ARGS=false
 
@@ -67,6 +69,7 @@ for arg in "$@"; do
             ENABLE_NEO4J=true
             ENABLE_NFS=true
             ENABLE_MYSQL=true
+            ENABLE_OCEANBASE=true
             ENABLE_REDPANDA=true
             ;;
         -postgres)
@@ -99,6 +102,9 @@ for arg in "$@"; do
         -mysql)
             ENABLE_MYSQL=true
             ;;
+        -oceanbase)
+            ENABLE_OCEANBASE=true
+            ;;
         -redpanda)
             ENABLE_REDPANDA=true
             ;;
@@ -119,6 +125,7 @@ for arg in "$@"; do
             echo "  bash scripts/start.sh -spark                # 只启动 Spark"
             echo "  bash scripts/start.sh -neo4j                # 只启动 Neo4j"
             echo "  bash scripts/start.sh -mysql               # 只启动 MySQL"
+            echo "  bash scripts/start.sh -oceanbase           # 只启动 OceanBase CE"
             echo "  bash scripts/start.sh -redpanda            # 只启动业务 Redpanda"
             echo "  bash scripts/start.sh -nfs                  # 只启动 NFS"
             echo "  bash scripts/start.sh -postgres -minio      # 启动 PostgreSQL + MinIO"
@@ -194,6 +201,11 @@ if [ "$ENABLE_MYSQL" = true ]; then
 else
     echo -e "  MySQL: ✗ (使用 -mysql 启用)"
 fi
+if [ "$ENABLE_OCEANBASE" = true ]; then
+    echo -e "  OceanBase CE: ✓"
+else
+    echo -e "  OceanBase CE: ✗ (使用 -oceanbase 启用)"
+fi
 if [ "$ENABLE_REDPANDA" = true ]; then
     echo -e "  Redpanda: ✓"
 else
@@ -261,7 +273,17 @@ SPARK_THRIFT_PORT=${SPARK_THRIFT_PORT:-11000}
 NEO4J_HTTP_PORT_VAL=${NEO4J_HTTP_PORT:-7474}
 NEO4J_BOLT_PORT_VAL=${NEO4J_BOLT_PORT:-7687}
 MYSQL_PORT_VAL=${MYSQL_PORT:-3306}
+OCEANBASE_PORT_VAL=${OCEANBASE_PORT:-2881}
 BUSINESS_KAFKA_PORT_VAL=${BUSINESS_KAFKA_PORT:-29092}
+
+if [ "$ENABLE_OCEANBASE" = true ]; then
+    case "${OCEANBASE_DATABASE:-business}" in
+        ""|*[!A-Za-z0-9_]*)
+            echo -e "${RED}✗ OCEANBASE_DATABASE 只允许字母、数字和下划线${NC}"
+            exit 1
+            ;;
+    esac
+fi
 
 check_port_used_by_self() {
     local port=$1
@@ -284,6 +306,7 @@ PORTS_TO_CHECK=""
 [ "$ENABLE_SPARK" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $SPARK_MASTER_PORT $SPARK_MASTER_UI $SPARK_THRIFT_PORT"
 [ "$ENABLE_NEO4J" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $NEO4J_HTTP_PORT_VAL $NEO4J_BOLT_PORT_VAL"
 [ "$ENABLE_MYSQL" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $MYSQL_PORT_VAL"
+[ "$ENABLE_OCEANBASE" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $OCEANBASE_PORT_VAL"
 [ "$ENABLE_REDPANDA" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $BUSINESS_KAFKA_PORT_VAL"
 
 for port in $PORTS_TO_CHECK; do
@@ -298,6 +321,7 @@ for port in $PORTS_TO_CHECK; do
            check_port_used_by_self $port "business-spark-master" || \
            check_port_used_by_self $port "business-neo4j" || \
            check_port_used_by_self $port "business-mysql" || \
+           check_port_used_by_self $port "business-oceanbase" || \
            check_port_used_by_self $port "business-redpanda"; then
             echo -e "${GREEN}✓ 端口 ${port} 已被业务库容器使用${NC}"
         else
@@ -457,6 +481,12 @@ fi
 if [ "$ENABLE_MYSQL" = true ]; then
     docker compose up -d mysql
     echo -e "${GREEN}✓ MySQL 配置已同步${NC}"
+fi
+
+# OceanBase CE
+if [ "$ENABLE_OCEANBASE" = true ]; then
+    docker compose up -d oceanbase
+    echo -e "${GREEN}✓ OceanBase CE 配置已同步${NC}"
 fi
 
 # Redpanda
@@ -651,6 +681,47 @@ if [ "$ENABLE_MYSQL" = true ]; then
     bash mysql/init-cdc.sh
 fi
 
+if [ "$ENABLE_OCEANBASE" = true ]; then
+    OCEANBASE_READY=false
+    echo -e "${YELLOW}等待 OceanBase CE 启动 (首次可能需要数分钟)...${NC}"
+    for i in {1..180}; do
+        if docker exec business-oceanbase obclient \
+            -h127.0.0.1 -P2881 \
+            -u"root@${OCEANBASE_TENANT_NAME:-test}" \
+            --password="${OCEANBASE_PASSWORD:-business_oceanbase_password}" \
+            --default-character-set=utf8mb4 \
+            -e "SELECT 1" >/dev/null 2>&1; then
+            docker exec business-oceanbase obclient \
+                -h127.0.0.1 -P2881 \
+                -u"root@${OCEANBASE_TENANT_NAME:-test}" \
+                --password="${OCEANBASE_PASSWORD:-business_oceanbase_password}" \
+                --default-character-set=utf8mb4 \
+                -e "CREATE DATABASE IF NOT EXISTS \`${OCEANBASE_DATABASE:-business}\`"
+            docker exec -i business-oceanbase obclient \
+                -h127.0.0.1 -P2881 \
+                -u"root@${OCEANBASE_TENANT_NAME:-test}" \
+                --password="${OCEANBASE_PASSWORD:-business_oceanbase_password}" \
+                --default-character-set=utf8mb4 \
+                -D"${OCEANBASE_DATABASE:-business}" < oceanbase/init.sql
+            docker exec business-oceanbase obclient \
+                -h127.0.0.1 -P2881 \
+                -u"root@${OCEANBASE_TENANT_NAME:-test}" \
+                --password="${OCEANBASE_PASSWORD:-business_oceanbase_password}" \
+                --default-character-set=utf8mb4 \
+                -D"${OCEANBASE_DATABASE:-business}" \
+                -e "SELECT COUNT(*) FROM addp_engine_probe" >/dev/null
+            echo -e "${GREEN}✓ OceanBase CE 就绪且样例数据可查询${NC}"
+            OCEANBASE_READY=true
+            break
+        fi
+        sleep 2
+    done
+    if [ "$OCEANBASE_READY" != true ]; then
+        echo -e "${RED}✗ OceanBase CE 未在 360 秒内完成初始化${NC}"
+        exit 1
+    fi
+fi
+
 if [ "$ENABLE_ORACLE" = true ]; then
     ORACLE_READY=false
     for i in {1..120}; do
@@ -776,6 +847,9 @@ if [ "$ENABLE_NEO4J" = true ]; then
 fi
 if [ "$ENABLE_MYSQL" = true ]; then
     echo -e "MySQL: localhost:${MYSQL_PORT_VAL:-3306}  (CDC 用户: ${MYSQL_CDC_USER:-addp_cdc})"
+fi
+if [ "$ENABLE_OCEANBASE" = true ]; then
+    echo -e "OceanBase CE: localhost:${OCEANBASE_PORT_VAL} (database: ${OCEANBASE_DATABASE:-business}, user: root@${OCEANBASE_TENANT_NAME:-test})"
 fi
 if [ "$ENABLE_REDPANDA" = true ]; then
     echo -e "Kafka API: localhost:${BUSINESS_KAFKA_PORT_VAL}  (Engine 用户: ${BUSINESS_KAFKA_READER_USERNAME:-addp_transfer})"

@@ -108,6 +108,16 @@ class ChangedGateTest(unittest.TestCase):
             ),
         )
 
+        mysql_gate = self.repository / "scripts/test/common-mysql-data-protection-gate.sh"
+        mysql_gate.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+        self.assertEqual(
+            ["common"],
+            MODULE.affected_modules(
+                self.repository,
+                ["scripts/test/common-mysql-data-protection-gate.sh"],
+            ),
+        )
+
     def test_gate_control_changes_select_all_registered_modules(self) -> None:
         self.assertEqual(
             ["agent", "alias", "common", "common-python", "other", "sample"],

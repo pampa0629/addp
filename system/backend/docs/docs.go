@@ -13761,6 +13761,12 @@ const docTemplate = `{
                 "federation": {
                     "$ref": "#/definitions/plugin.QueryFederationCapability"
                 },
+                "identifier_quotes": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
                 "languages": {
                     "type": "array",
                     "items": {

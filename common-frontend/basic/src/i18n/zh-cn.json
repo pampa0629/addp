@@ -355,13 +355,25 @@
     "fileSize": "文件大小"
   },
   "officePreview": {
+    "toolbar": "文件预览工具栏",
+    "zoomOut": "缩小",
+    "resetZoom": "重置缩放",
+    "zoomIn": "放大",
+    "fullscreen": "全屏查看预览",
+    "print": "打印预览",
+    "search": "搜索预览文本",
+    "searchMatches": "{count} 处匹配",
+    "fullscreenFailed": "无法进入全屏模式",
+    "printFailed": "无法打开打印预览",
     "loading": "正在加载 {type} 文档...",
     "tooLarge": "文档超过在线预览限制，请下载后查看。",
     "loadFailed": "文档预览失败",
+    "renderFailed": "无法解析该文档，请确认文件未损坏且未加密。",
     "requestFailed": "文档请求失败（{status}）",
+    "requestNetworkFailed": "无法连接文档内容服务",
+    "invalidSource": "文档内容编码无效",
     "noSource": "未提供可用的文档内容",
-    "empty": "文档内容为空",
-    "downloadFailed": "文档下载失败：{error}"
+    "empty": "文档内容为空"
   },
   "containerPreview": {
     "childrenTruncatedTitle": "仅展示部分子项",

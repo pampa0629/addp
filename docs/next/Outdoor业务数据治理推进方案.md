@@ -807,3 +807,85 @@ Service 最终只保留三项 active/private 查询服务：`24`（`outdoor_pers
 迁移清理结果如下：Model 逻辑表只剩 `3/4/5/6`，物化组只包含这四张表，逻辑表 `7` 及其 MaterializationBatch 均不存在；物理表 `dws_outdoor_person_pair_metric` 不存在；Develop 任务 `50` 已软删除并从可执行列表过滤；Quality 断言、Service 和 17 步编排均不再引用旧人员对路线。历史 `common.task_executions` 和 Catalog 变更记录继续作为审计事实保留，不构成兼容入口。`public` Schema 中 Outdoor 同名旧表数量为 0。
 
 最终 Meta 重扫 execution 为 `91b0776a-0aef-40b5-ae71-a4c7ee7d0491`，执行成功并扫描 `outdoor` 的 7 个数据项。当前生产链路仍严格遵循模块边界：Transfer 只做跨引擎 ODS 同步，Develop 只做通用关系计算，Model 独占逻辑表 DDL 和物化生命周期，Quality 执行发布门禁，Service 消费已发布关系表，Orchestrator 是唯一跨模块组合层；Transfer 和 Develop 均不知道 Model。
+
+### 13.20 户外域语义闭环验证基线（2026-09-06）
+
+户外域作为 ADDP 第一条端到端语义闭环验证样板。验证对象不是 Catalog 单模块，也不把 Catalog 扩张为完整语义层；验证的是以下 owner 事实能否通过稳定引用形成可解释、可执行且可治理的一条链：
+
+```text
+Standard MetricDefinitionRevision
+    -> Model MetricImplementation
+    -> Model LogicalTable / LogicalField
+    -> Meta DataItem / Component
+    -> Catalog CatalogEntry / SourceBinding / governance facts
+    -> Service execution output
+```
+
+各模块继续保持唯一事实所有权：Standard 拥有指标业务定义与发布修订，Model 拥有粒度、事实来源、维度、过滤和可执行表达式，Meta 拥有实际扫描到的技术事实，Catalog 只拥有稳定目录身份、来源绑定、人工治理补充和字段落标，Service 拥有发布后的查询服务。Catalog 不复制 MetricImplementation，也不把 Service 的固定 SQL 反向解释为指标实现。
+
+#### 当前事实基线
+
+2026-09-06 对当前系统库只读核验得到：
+
+| 验证对象 | 当前状态 | 判定 |
+| --- | --- | --- |
+| Outdoor 三个 MetricDefinition | `6 / 7 / 9` 均为 `active` | 绿灯，指标业务定义存在 |
+| Outdoor MetricImplementation | 对应记录为 0 | 红灯，定义到执行实现的稳定链路中断 |
+| 四张 LogicalTable 的 Catalog 来源绑定 | `3 / 4 / 5 / 6` 均为 `active` | 绿灯，专业资源已进入资源盘点 |
+| 三个 MetricDefinition 的 Catalog 来源绑定 | `6 / 7 / 9` 均为 `active` | 绿灯，专业资源已进入资源盘点 |
+| 三个 QueryService 的 Catalog 来源绑定 | `24 / 28 / 29` 均为 `active` | 绿灯，执行出口已进入资源盘点 |
+| 上述 10 个 CatalogEntry | 均为 `discovered + inventory`，业务名称为空 | 红灯，尚未完成企业编目 |
+| 上述条目的 Catalog 人工语义关联、组件落标和责任关系 | 均为 0 | 红灯，Catalog 自有治理事实尚未建立 |
+
+`MetricImplementation=0` 是当前架构迁移后的真实缺口。此前已经运行成功的 Develop 任务、Model 物化和 Service 固定查询只能证明人工配置的生产路线能够执行，不能替代 Model 对指标实现的正式建模，也不能证明平台已经具备统一语义查询能力。
+
+进一步核对当前唯一 MetricImplementation 契约后确认，不能直接以三条配置把该红灯改成绿灯：
+
+- 前端曾把 `source_config.field_ids` 错误限制为 `measure_*` 字段，而规范只要求字段属于当前事实表。Outdoor 的计数指标合法依赖人员标识、活动标识和当前主领队布尔字段，这些均不是预存度量值；该前端限制已移除，来源字段选择恢复为当前事实表全部字段；
+- 当前 `grain` 只是说明文本，`dimension_config` 与 `filter_config` 没有机器可读结构，前端固定提交空对象；只填写 `COUNT(DISTINCT activity_id)` 仍无法让 planner 确定按人员分组、应用哪个过滤条件或使用哪个时间字段；
+- 方向性参与重合率需要同一参与事实的两个有序人员角色、自连接、共同活动集合、两个分母和零分母规则，当前契约没有角色、自连接和参数绑定语义；
+- Standard 指标 `9@R1` 当前同时叙述 A→B 与 B→A 两个输出，而单个 MetricDefinitionRevision 应表示确定粒度下的一个指标值。Service 可以一次返回两个方向及辅助计数，但不能反过来把服务响应结构当成一个指标定义的值域。
+
+因此当前只完成“来源字段选择器符合既有规范”的实现修正；在 MetricImplementation 的机器可读粒度、过滤、字段引用和同源角色契约形成文档共识前，不向生产库写入装饰性指标实现。
+
+#### 验证用例与通过标准
+
+第一组验证企业资源发现与治理：
+
+1. Catalog 能通过业务域、责任部门、资源类型和名称找到上述指标、模型、数据项与服务；
+2. 用户通过名称选择器完成业务名称、业务说明、责任和字段数据元落标，不输入内部 ID；
+3. 详情页动态读取 Standard、Model、Meta 和 Service 当前专业事实，Catalog 不保存可恢复 owner 全量事实副本；
+4. 完成编目的条目进入 `curated`，未编目资源继续留在 `discovered + inventory`，两种视图不混淆。
+
+第二组验证指标定义到实现：
+
+1. `outdoor_current_responsible_activity_count@R2`、`outdoor_responsible_or_actual_activity_count@R2` 和方向性参与重合率的最终生效修订均至少存在一个 active MetricImplementation；
+2. 每个实现同时保存指标定义稳定身份并冻结已发布修订；
+3. 实现明确声明事实表、粒度、来源字段、维度、过滤和表达式，不把这些内容写回 Standard 或 Catalog；
+4. 实现引用的 LogicalField 与已发布物理结构一致，失效字段、草稿修订和跨事实表字段必须被 Model 拒绝。
+
+第三组验证确定性执行：
+
+1. 查询某人员的“当前主领队活动次数”；
+2. 查询某人员的“参加活动次数（含当前主领队）”；
+3. 查询两个人员的“方向性参与重合率”，同时返回共同活动数、双方活动数和两个方向比例；
+4. 输出能够解释本次结果采用的指标定义修订、指标实现、事实模型、过滤口径、数据批次和服务版本。
+
+完整 Outdoor 快照可继续使用人员 `W7cw8J25dhqgDMHA` 和 `W7Y6ad2AWotkW4_c` 的 `286 / 193 / 32 / 0.111888 / 0.165803` 作为 2026-09-05 既有快照的集成回归证据，但这些值不是业务定义。长期 CI 必须使用固定且最小充分的 Outdoor 测试夹具，覆盖当前主领队、普通参加、领队组、无效活动、重复成员和零分母；不能依赖持续变化的业务 MongoDB 得到固定数字。
+
+第四组验证组合查询能力缺口：
+
+> 查询指定人员在指定年份内按月统计“参加活动次数（含当前主领队）”。
+
+该查询必须引用同一个指标定义与实现，通过时间维度和输出粒度表达，不能为每个问题临时新增 QueryService 或复制 SQL。若现有系统无法生成并执行该查询，应把结果判为“统一语义查询契约与 planner/compiler 尚缺失”，而不是由 Catalog、Service 或 Develop 增加户外域专用旁路。只有多个真实领域用例共同证明现有 owner 无法承载稳定查询身份、计划和执行生命周期时，才重新评估独立 Semantic Runtime。
+
+#### 推进顺序
+
+1. 先确认单个 MetricDefinitionRevision 只表示一个标量指标值；将方向性重合率收敛为“主体人员 → 对比人员”的一个方向，Service 通过交换角色计算并组合展示两个方向；
+2. 文档优先定义 MetricImplementation 最小机器契约，至少包括稳定字段引用、分组维度、时间维度、固定过滤和同源角色；表达式只能引用这些已声明符号，不能依赖未校验物理列名；
+3. 契约实现并通过 Model 门禁后，再通过正式生命周期为三个指标建立实现，恢复定义修订到模型实现的唯一链路；
+4. 以这批真实资源完成 Catalog 企业编目和字段数据元落标，验证 Catalog 自有治理事实；
+5. 使用现有 Service 结果和固定 Outdoor 测试夹具建立端到端解释性回归；
+6. 最后以“指定年份按月统计”为首个组合查询红灯用例，定义最小语义查询请求、逻辑计划和解释响应，不预先创建新模块。
+
+本节是后续语义能力研发的验收清单；在四组验证全部通过前，不得把 Outdoor 标记为“完整语义层闭环已完成”。

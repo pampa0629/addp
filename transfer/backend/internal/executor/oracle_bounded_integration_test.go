@@ -83,7 +83,7 @@ func TestIntegrationTransferBoundedOracleSpatialTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	qualified := commonquery.ForEngine("oracle").QualifiedTable(schema, targetTable)
+	qualified := commonquery.ForDialect(commonquery.DialectOracle).QualifiedTable(schema, targetTable)
 	var count int
 	var minSRID, maxSRID int
 	if err := db.QueryRowContext(ctx, "SELECT COUNT(*), MIN(target_row.\"SHAPE\".SDO_SRID), MAX(target_row.\"SHAPE\".SDO_SRID) FROM "+qualified+" target_row").Scan(&count, &minSRID, &maxSRID); err != nil {

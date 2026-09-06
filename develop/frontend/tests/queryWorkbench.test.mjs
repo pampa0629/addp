@@ -5,6 +5,8 @@ import {
   formatMQLQuery,
   formatterLanguageForQuery,
   monacoLanguageForQuery,
+  nativeCatalogPathText,
+  nativeCatalogSegmentText,
   queryCapabilityForEngine,
   queryParameterReference,
   queryErrorMessage,
@@ -23,6 +25,7 @@ const capability = queryCapabilityForEngine({
         supported: true,
         languages: ['Cypher', 'cypher'],
         default_language: 'cypher',
+        identifier_quotes: { cypher: '`', sql: '"' },
         result_kinds: ['graph', 'table'],
         parameters: {
           supported: true,
@@ -36,6 +39,7 @@ const capability = queryCapabilityForEngine({
 assert.deepEqual(capability, {
   languages: ['cypher'],
   defaultLanguage: 'cypher',
+  identifierQuotes: { cypher: '`' },
   resultKinds: ['graph', 'table'],
   parameters: {
     supported: true,
@@ -44,6 +48,10 @@ assert.deepEqual(capability, {
   },
   federation: { supported: false, sourceEngineTypes: [], objectFormats: [] }
 })
+assert.equal(nativeCatalogSegmentText('Order`Item', capability, 'cypher'), '`Order``Item`')
+assert.equal(nativeCatalogPathText(['business', 'orders'], { identifierQuotes: { sql: '`' } }, 'sql'), '`business`.`orders`')
+assert.equal(nativeCatalogPathText(['business', 'orders'], { identifierQuotes: {} }, 'sql'), 'business.orders')
+assert.equal(nativeCatalogPathText(['business', 'orders'], capability, 'mql'), '"orders"')
 const federatedCapability = queryCapabilityForEngine({
   capabilities: {
     compute: {

@@ -229,7 +229,8 @@
 		  "notebook_generation": "Notebook 代码生成",
 		  "transfer_generation": "传输任务草稿生成",
 		  "navigation_guide": "平台导航引导",
-		  "knowledge_graph_extraction": "知识图谱抽取"
+		  "knowledge_graph_extraction": "知识图谱抽取",
+		  "standard_document_extraction": "标准文档候选提炼"
 		}
 	  },
 	  "scopes": {

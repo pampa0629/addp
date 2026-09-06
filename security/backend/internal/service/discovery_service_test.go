@@ -119,7 +119,7 @@ func TestEmailMetadataFindingCompilesGenericSuppressionForEveryStructuredOutlet(
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, owner := range requiredProtectionOwners {
+	for _, owner := range allRequiredProtectionOwners() {
 		changes, err := enrollments.ListChanges(context.Background(), 7, owner, "", 20)
 		if err != nil {
 			t.Fatal(err)
@@ -198,7 +198,7 @@ func TestDiscoveryCreatesValueFreeFindingAndManagerActiveProjection(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, owner := range requiredProtectionOwners {
+	for _, owner := range allRequiredProtectionOwners() {
 		changes, err := enrollments.ListChanges(context.Background(), 7, owner, "", 20)
 		if err != nil {
 			t.Fatal(err)
@@ -427,7 +427,7 @@ func TestDiscoveryQualityUsesLatestWorkloadAndDeduplicatedHumanEvidence(t *testi
 	if summary.SensitiveConfirmationRate == nil || *summary.SensitiveConfirmationRate != float64(2)/3 || len(summary.Capabilities) != 1 {
 		t.Fatalf("quality rate/capabilities = %#v", summary)
 	}
-	for sequence, owner := range requiredProtectionOwners {
+	for sequence, owner := range allRequiredProtectionOwners() {
 		record := models.ProtectionProjectionRecord{
 			ID: uuid.NewString(), TenantID: 7, EnrollmentID: enrollmentID, ConsumerOwner: owner,
 			Revision: "1", State: dataprotection.ProjectionStateEnrolling, ProjectionPayload: `{"rules":[]}`,
@@ -502,7 +502,7 @@ func TestDocumentDiscoveryCreatesSearchIndexProjectionWithoutPersistingSampleTex
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, owner := range requiredProtectionOwners {
+	for _, owner := range allRequiredProtectionOwners() {
 		changes, err := enrollments.ListChanges(context.Background(), 7, owner, "", 20)
 		if err != nil {
 			t.Fatal(err)
@@ -615,7 +615,7 @@ func TestDetectorBindingControlsDiscoveryWithoutSensitiveTypeCodeFallback(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, owner := range requiredProtectionOwners {
+	for _, owner := range allRequiredProtectionOwners() {
 		changes, err := enrollments.ListChanges(context.Background(), 7, owner, "", 20)
 		if err != nil {
 			t.Fatal(err)

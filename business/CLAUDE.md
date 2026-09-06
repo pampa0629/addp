@@ -7,6 +7,7 @@
 ## 包含组件
 
 - PostgreSQL/PostGIS、MySQL：业务关系库与 CDC 测试源。
+- OceanBase Community Edition：国产分布式关系数据库的 MySQL 模式测试源，以独立 `engine_type=oceanbase` 注册；启动时幂等初始化探针及普通关系业务样例，支持非空间普通表的 prepare/session/delete/upsert 集成验证，不包含尚未声明的空间、CDC、bounded watermark source 或 Oracle 模式能力。
 - Oracle Free 23ai：普通表、Schema、Oracle Spatial、只读快照、普通表 CDC 与 Oracle Spatial CDC 测试源；ArcGIS SDE 作为后续独立能力路线预留。
 - Redpanda：独立业务 Kafka API 消息流，不承载 ADDP Infra Kafka topic。
 - MinIO：业务对象存储。
@@ -21,6 +22,7 @@ business/
 ├── .env.example
 ├── scripts/            # start、stop、restart
 ├── mysql/              # MySQL 测试数据与 CDC 用户初始化
+├── oceanbase/          # OceanBase CE 幂等样例数据初始化
 ├── oracle/             # Oracle 普通表与 Spatial 样例数据
 ├── postgres/
 ├── minio/

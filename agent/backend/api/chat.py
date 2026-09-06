@@ -773,10 +773,11 @@ async def chat(request: Request, body: RunAgentInput, db: AsyncSession = Depends
                 )
             )
         except Exception as exc:
-            logger.exception(
-                "智能体运行失败: session_id=%s run_id=%s",
+            logger.error(
+                "智能体运行失败: session_id=%s run_id=%s error_type=%s",
                 session_id,
                 body.run_id,
+                type(exc).__name__,
             )
             async with AsyncSessionLocal() as run_db:
                 async with run_db.begin():

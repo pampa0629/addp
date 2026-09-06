@@ -355,13 +355,25 @@
     "fileSize": "File Size"
   },
   "officePreview": {
+    "toolbar": "Document preview toolbar",
+    "zoomOut": "Zoom out",
+    "resetZoom": "Reset zoom",
+    "zoomIn": "Zoom in",
+    "fullscreen": "View preview in fullscreen",
+    "print": "Print preview",
+    "search": "Search preview text",
+    "searchMatches": "{count} matches",
+    "fullscreenFailed": "Unable to enter fullscreen mode",
+    "printFailed": "Unable to open the print preview",
     "loading": "Loading {type} document...",
     "tooLarge": "The document exceeds the online preview limit. Download it to view the full file.",
     "loadFailed": "Document preview failed",
+    "renderFailed": "Unable to parse this document. Make sure the file is not damaged or encrypted.",
     "requestFailed": "Document request failed ({status})",
+    "requestNetworkFailed": "Unable to connect to the document content service",
+    "invalidSource": "The document content encoding is invalid",
     "noSource": "No document content is available",
-    "empty": "The document is empty",
-    "downloadFailed": "Document download failed: {error}"
+    "empty": "The document is empty"
   },
   "containerPreview": {
     "childrenTruncatedTitle": "Showing partial children",

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { boundedExportHasMore, descriptorSupportsExport, downloadBoundedExport, exportFormatForRenderer } from '../src/utils/boundedExport.mjs'
+import { boundedExportHasMore, descriptorSupportsExport, downloadCurrentBoundedExport, exportFormatForRenderer } from '../src/utils/boundedExport.mjs'
 
 test('maps renderers to the bounded format declared by the Service descriptor', () => {
   const descriptor = { input_contract: { formats: ['json', 'csv'] } }
@@ -15,9 +15,14 @@ test('treats only an explicit true response header as an incomplete export', () 
   assert.equal(boundedExportHasMore({ 'x-addp-has-more': 'TRUE' }), true)
   assert.equal(boundedExportHasMore({ 'x-addp-has-more': 'false' }), false)
   assert.equal(boundedExportHasMore({}), false)
+  assert.equal(downloadCurrentBoundedExport(
+    { data: 'partial', headers: { 'x-addp-has-more': 'true' } },
+    'partial.csv',
+    () => true,
+  ), 'incomplete')
 })
 
-test('clicks an attached download link before releasing the Blob URL', async () => {
+test('downloads a current complete export before releasing the Blob URL', async () => {
   const originalDocument = globalThis.document
   const originalCreateObjectURL = URL.createObjectURL
   const originalRevokeObjectURL = URL.revokeObjectURL
@@ -34,7 +39,11 @@ test('clicks an attached download link before releasing the Blob URL', async () 
   URL.createObjectURL = () => { calls.push('create'); return 'blob:addp-export' }
   URL.revokeObjectURL = (url) => { assert.equal(url, 'blob:addp-export'); calls.push('revoke') }
   try {
-    downloadBoundedExport('id\n1\n', 'result.csv')
+    assert.equal(downloadCurrentBoundedExport(
+      { data: 'id\n1\n', headers: {} },
+      'result.csv',
+      () => true,
+    ), 'downloaded')
     assert.equal(link.href, 'blob:addp-export')
     assert.equal(link.download, 'result.csv')
     assert.deepEqual(calls, ['create', 'append', 'click', 'remove'])

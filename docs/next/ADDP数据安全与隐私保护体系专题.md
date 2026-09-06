@@ -414,11 +414,11 @@ Security 治理与 Owner 执行共用 owner 稳定专业资源身份：Assessmen
 
 经讨论已确认保留 Manager、Transfer、Develop、Service 四个固定必要 Owner，先建设与 Security 解耦的 `QueryReadSet` 统一查询读依赖边界。Engine Provider 必须从同一 `QueryRequest` 生成不可变 PreparedQuery，由该计划同时提供完整 Engine Catalog leaf paths 和真实执行；Owner 再转为 DataItem 指纹做本地门禁。不以独立 `ResolveQueryReadSet`、`TargetPath`、顶层 SQL 分词或调用方自报资源伪装完整读取集合，不以租户级全局禁用 SQL 兜底。在 Provider 契约和 Owner 真实门禁落地前，Develop 和 Service 仍不确认投影 cursor。
 
-当前已完成 `common/engine/plugin.QueryReadSet` 的规范化、校验、去重与类型化 unresolved 错误，建立 Engine Catalog leaf 到 Meta DataItem 指纹的纯转换和 Owner 本地多资源门禁快速路径。经评审已否定独立 `QueryReadSetProvider.ResolveQueryReadSet()` 旁路，全部既有普通查询 Provider 已改为由 `QueryRuntimeProvider.PrepareQuery()` 生成唯一 PreparedQuery，原 `ExecuteRuntimeQuery()` 入口和 dbbridge 普通查询兜底已删除。MongoDB 和 PostgreSQL 已完成首批最终契约验证：MongoDB 读取集合纳入 MQL 主集合、`$lookup`、`$graphLookup` 和任意嵌套 `$unionWith` 依赖；PostgreSQL 按真实 `search_path` 解析关系并递归展开普通视图，函数与外部关系无法证明完整闭包时保守拒绝。其他 SQL/Cypher Provider 虽已统一准备和执行路径，但 `ReadSet()` 仍明确返回 unresolved，不宣称具有精确 Security 查询门禁能力。
+当前已完成 `common/engine/plugin.QueryReadSet` 的规范化、校验、去重与类型化 unresolved 错误，建立 Engine Catalog leaf 到 Meta DataItem 指纹的纯转换和 Owner 本地多资源门禁快速路径。经评审已否定独立 `QueryReadSetProvider.ResolveQueryReadSet()` 旁路，全部既有普通查询 Provider 已改为由 `QueryRuntimeProvider.PrepareQuery()` 生成唯一 PreparedQuery，原 `ExecuteRuntimeQuery()` 入口和 dbbridge 普通查询兜底已删除。MongoDB、PostgreSQL 和 MySQL 已完成首批最终契约验证：MongoDB 读取集合纳入 MQL 主集合、`$lookup`、`$graphLookup` 和任意嵌套 `$unionWith` 依赖；PostgreSQL 按真实 `search_path` 解析关系并递归展开普通视图，函数与外部关系无法证明完整闭包时保守拒绝；MySQL 首期只解析业务 InnoDB 基础表以及可证明来源的直接字段投影、别名、连接和派生表，函数、视图、通配投影或派生字段继续 fail closed。其他 SQL/Cypher Provider 虽已统一准备和执行路径，但 `ReadSet()` 仍明确返回 unresolved，不宣称具有精确 Security 查询门禁能力。
 
 真实多进程 Owner 的安装语义进一步收敛为：owner schema 中的投影表和 cursor 是共享持久事实，只由一个同步进程推进变化流并回执；每个 Backend/Worker 在 execution 开始前比较持久 cursor 与进程内索引，变化时先从本地数据库重载再门禁，关闭“已回执但 Worker 缓存尚未刷新”的明文窗口。Projection v1 不增加 Engine 路由提示；查询 Owner 在 Tenant 完全无纳管目标时跳过 ReadSet，Tenant 存在纳管目标后才解析同一 PreparedQuery 的完整 ReadSet 并精确匹配。
 
-阶段 6 前置门禁现已覆盖四个必要 Owner 的真实数据面：Transfer 的 bounded、replay、continuous、CDC 与字段定义推荐真实值扫描在源读取前检查唯一 Source Locator，持续任务还在循环中重复检查；Develop 的同步/异步普通 SQL/MQL、Notebook 表/记录/内容/变化流、Workflow ResourceInput 及现有联邦/图入口均已纳入；Service 的发布查询、旧 Data API、图查询、查询样例、静态 PMTiles、动态瓦片及缓存命中均已纳入。MongoDB、PostgreSQL 普通查询使用同一 PreparedQuery 做精确 ReadSet 门禁，其他尚不能证明完整闭包的联邦、图和样例入口只在 Tenant 存在纳管目标时保守拒绝，不扩大为未纳管 Tenant 的额外远程调用或全局禁用。
+阶段 6 前置门禁现已覆盖四个必要 Owner 的真实数据面：Transfer 的 bounded、replay、continuous、CDC 与字段定义推荐真实值扫描在源读取前检查唯一 Source Locator，持续任务还在循环中重复检查；Develop 的同步/异步普通 SQL/MQL、Notebook 表/记录/内容/变化流、Workflow ResourceInput 及现有联邦/图入口均已纳入；Service 的发布查询、旧 Data API、图查询、查询样例、静态 PMTiles、动态瓦片及缓存命中均已纳入。MongoDB、PostgreSQL 和 MySQL 的已支持普通查询使用同一 PreparedQuery 做精确 ReadSet 门禁，其他尚不能证明完整闭包的联邦、图、样例或复杂查询入口只在 Tenant 存在纳管目标时保守拒绝，不扩大为未纳管 Tenant 的额外远程调用或全局禁用。
 
 投影同步同时区分事务内 `ProjectionChangeBarrier` 与提交后 `AcknowledgementBarrier`：前者原子收敛 owner 数据库内派生结果，后者在回执前等待旧 cursor 下的进行中读取结束，并幂等清除 Service 外部瓦片缓存。后置屏障失败时保留已经安全安装的本地 cursor、暂停 acknowledgement 并重试；新请求读取共享持久 cursor 后立即执行新门禁。
 
@@ -493,21 +493,25 @@ Owner Projection 按已实现执行器逐项升级：Manager 生成 `preview|pro
 
 ### 阶段 6：结构化数据出口收敛
 
-**状态：推进中；Develop、Service 首个字段级切片与 Transfer PostgreSQL bounded snapshot、MongoDB 原始记录导出已完成**
+**状态：推进中；Develop、Service 首个字段级切片与 Transfer PostgreSQL bounded snapshot、MongoDB 原始记录导出已完成，MySQL 邮箱四出口 T4 已登记待专用 Runner 首验**
 
 - Transfer 导出与静态脱敏；
 - Develop 查询、工作流与 Notebook；
 - Service、Workbench、Asset 交付；
-- Agent、Copilot 和 Inference 消费；
+- Agent、Copilot 和 Inference 消费暂缓，待 AI 数据访问与输出契约成熟后再单独确定控制边界；当前阶段不增加占位字段、兼容分支或未被执行的数据保护声明；
 - 删除各模块可能存在的私有旁路和重复规则。
 
 阶段 6 的首个前置子切片不是字段级改写，而是完成 `transfer|develop|service` 三个既定必要 Owner 的资源级门禁安装。每个 Owner 必须先盘点并覆盖自身全部 DataItem 读取入口及长生命周期执行，才能启动变化同步并发送 acknowledgement；只给普通查询加门禁、却遗漏 Workflow、Notebook、CDC、瓦片或后台 Worker 时不得回执。多进程 Owner 使用共享持久投影/cursor 和 execution 前本地一致性检查，长生命周期执行还必须在投影变化屏障内停止或隔离既有数据流，不能把一次启动时检查当作持续保护。
 
 截至 2026-09-01，该前置子切片的代码与模块级精确门禁测试已完成，Transfer、Develop、Service 可以与 Manager 一起作为四个真实 acknowledgement Owner 启动。这里完成的是“命中纳管资源先拒绝”的安全底座，不代表三个 Owner 已具备字段级遮盖、静态脱敏或授权揭示能力；这些动作仍按本阶段后续切片逐一升级 Projection 执行器。
 
-Develop 已在同一 PreparedQuery 上完成 `ReadSet -> OutputLineage -> Execute -> query 结果保护`，PostgreSQL 与 MongoDB 的直接字段、显式别名和受支持 wildcard 可以执行字段级遮盖或抑制，派生敏感输出与不完整血缘继续拒绝。2026-09-02，Service 复用同一 owner-neutral 保护计划并使用独立 `service_execute` 动作，首期完成已发布 QueryService 的 REST Query 与 OGC API Features 共享直接查询内核；PostgreSQL Provider 同步支持单来源直接投影子查询的递归血缘组合，派生敏感输出仍拒绝。Service cursor 与 feature ID 已无兼容地改为 AEAD 不透明令牌，避免排序键或稳定键通过仅签名载荷泄露。联邦、图、旧 Data API、查询样例和瓦片在各自动作执行器完成前继续资源级拒绝。
+Develop 已在同一 PreparedQuery 上完成 `ReadSet -> OutputLineage -> Execute -> query 结果保护`，PostgreSQL、MongoDB 与 MySQL 已支持范围内的直接字段和显式别名可以执行字段级遮盖或抑制；PostgreSQL、MongoDB 另支持各自已证明的 wildcard，MySQL wildcard 继续拒绝，派生敏感输出与不完整血缘在所有引擎中继续拒绝。2026-09-02，Service 复用同一 owner-neutral 保护计划并使用独立 `service_execute` 动作，首期完成已发布 QueryService 的 REST Query 与 OGC API Features 共享直接查询内核；PostgreSQL Provider 支持单来源直接投影子查询的递归血缘组合，MySQL 采用同一保守的直接字段血缘边界，派生敏感输出仍拒绝。Service cursor 与 feature ID 已无兼容地改为 AEAD 不透明令牌，避免排序键或稳定键通过仅签名载荷泄露。联邦、图、旧 Data API、查询样例和瓦片在各自动作执行器完成前继续资源级拒绝。
 
-Transfer 切片已冻结 `export` 动作边界，不恢复旧 `export` 任务类型。当前开放三类由读取方式和输出形态明确约束的执行路径：统一 Native TablePipeline 结构化 `bounded + snapshot` 导出；在同一 PreparedQuery 上完成 ReadSet 和 OutputLineage 的 PostgreSQL 可证明查询与 MongoDB 透明 aggregate 查询；MongoDB 集合到 `mongodb_extended_jsonl` 的原始记录导出。所有已支持路径都先按精确 Locator、实时结构和结果血缘执行遮盖或抑制，再进入字段映射、类型转换、空间处理、目标 writer 或 Canonical Extended JSON 编码。Security 继续生成引擎无关的 `export` 投影，Transfer 根据读取方式、输出形态以及 Provider 能否证明完整字段身份和输出血缘决定是否可执行；其他查询、raw copy、watermark incremental、Kafka replay、encoded source 与 continuous/CDC 仍资源级拒绝，不借用已有执行器放开。
+Transfer 切片已冻结 `export` 动作边界，不恢复旧 `export` 任务类型。当前开放三类由读取方式和输出形态明确约束的执行路径：统一 Native TablePipeline 结构化 `bounded + snapshot` 导出；在同一 PreparedQuery 上完成 ReadSet 和 OutputLineage 的 PostgreSQL、MySQL 可证明查询与 MongoDB 透明 aggregate 查询；MongoDB 集合到 `mongodb_extended_jsonl` 的原始记录导出。所有已支持路径都先按精确 Locator、实时结构和结果血缘执行遮盖或抑制，再进入字段映射、类型转换、空间处理、目标 writer 或 Canonical Extended JSON 编码。Security 继续生成引擎无关的 `export` 投影，Transfer 根据读取方式、输出形态以及 Provider 能否证明完整字段身份和输出血缘决定是否可执行；其他查询、raw copy、watermark incremental、Kafka replay、encoded source 与 continuous/CDC 仍资源级拒绝，不借用已有执行器放开。
+
+2026-09-06 建立 `security-mysql-owner-protection` 隔离 T4：复用已有 MySQL `customers.email` 和 PostgreSQL 目标 Fixture，强制校验邮箱类型、检测绑定与 `suppress` 默认规则，再要求 Manager、Develop、Service、Transfer 四个 Owner 全部返回 5 条非敏感记录且结构中不存在 `email`。它不把整请求拒绝或邮箱置空视为正确抑制，每轮临时 Service/Transfer 资源均经正式 API 清理；当前仅完成登记与确定性协议门禁，须在干净专用 macOS Online Runner 首次真实通过后才可声明 T4 验收完成。
+
+2026-09-06 继续收敛 Security 内部 Owner 契约：必要 Owner 集合与各 Owner 可豁免主动作改由同一事实源派生，Enrollment 初始门禁、Assessment/Definition 影响重编译、变化流校验及历史投影升级不再分别维护四份 Owner 列表。这一收敛不把 Workbench 或 Asset 新增为投影 Owner：Workbench 继续消费 Service 已保护结果，Asset 只交付资源引用与授权事实。
 
 2026-09-05 完成首个受控 ProtectionExemption 切片：豁免唯一绑定 `{tenant, assessment, consumer_owner, action}`，每个不可变豁免修订同时冻结批准时的 Assessment revision；Assessment 后续产生新修订时旧豁免立即失效，必须显式重新批准，不能静默恢复。只允许当前正式 `sensitive` Assessment 与 `manager/preview`、`develop/query`、`service/service_execute`、`transfer/export` 四个已冻结出口动作；效果固定为限时返回原值，不允许自由选择或覆盖其他动作。有效期必填且最长 30 天，创建、续期、重新启用和提前撤销均追加不可变 revision，并在同一事务调用唯一投影编译器。投影规则携带 `allow + valid_until + fallback`，Owner 本地在到期后无需 Security 在线即可自动恢复 Policy/Baseline；无期限 allow、嵌套 fallback 和 Owner 私有管理员绕过均被共享契约拒绝。豁免只影响已由 Owner 授权的数据请求，不授予任何资源访问权；Manager `profile` 不随 `preview` 豁免。四项精确 Permission、IAM migration 127、Swagger、资源详情页操作与 Common/Security 回归测试同步落地。
 

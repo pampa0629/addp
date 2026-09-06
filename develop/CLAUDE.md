@@ -72,6 +72,8 @@ Develop 任务编辑器遵守 `docs/spec/addp前端路由与可恢复状态规�
 
 Develop 普通查询保护只消费同一 `PreparedQuery` 的 `ReadSet()` 与 `OutputLineage()`，不自行解析 SQL/MQL。当前 Tenant 没有任何本地纳管目标时不读取二者；存在纳管目标但本次 ReadSet 未命中时执行原路径；精确命中后必须用 Provider 实时 source fields 校验 Projection，并在 QueryResult 写 execution metadata、返回 Workbench 或 Notebook Kernel 前执行独立 `query` 规则。identity/direct 输出可遮盖或抑制；受保护字段参与 derived/opaque 输出、结构漂移、规则缺失或 lineage unresolved 时拒绝当前查询。首期字段级执行覆盖 PostgreSQL 直接列/别名/单来源 wildcard 与 MongoDB find/count/distinct；其他查询保持单次请求级 fail-closed，不恢复资源级永久拒绝或 Owner 私有解析旁路。
 
+所选资源的查询模板必须经过一次有界的真实执行才能返回。该验证读取与普通查询共用同一个 `PreparedQuery -> BeginPreparedQuery -> Execute -> protectResult` 路径；受保护资源不得因模板生成而走 `BeginCatalogPath` 的“仅允许未纳管资源”门禁，验证执行也不得绕过字段级保护。
+
 保存的 `query` 任务可以声明通用“关系参数 -> 已存在表结果”模式，且参数绑定、查询 Runtime 与目标必须位于同一 PostgreSQL Engine。任务只在 `content.query_parameters[]` 保存唯一参数定义；关系参数使用 `type=relation`，可在 `default.locator` 保存同一查询 Engine 中已有表的标准 ResourceLocator，不保存其他模块专有 ID；`content.query` 只保存单条只读 `SELECT`，并以未加引号、未限定 schema 的裸参数名引用已声明关系，例如参数 `activities` 写作 `FROM activities`。关系参数名不得与同一作用域的 CTE 重名。TaskProvider 契约把每个关系参数声明为 ResourceLocator 资源输入，没有默认绑定时才要求调用方提供；编排写入另行声明必填 `target_locator`。`input_ui_schema.<参数名>` 使用 `control=resource_tree_picker`，按参数保存顺序暴露独立输入端口，供 Orchestrator 使用任务默认表或分别绑定不同直接上游的稳定 ResourceLocator 输出，不得要求用户手写输出模板。
 
 Worker 使用 PostgreSQL AST 验证关系作用域，只把与已声明 `type=relation` 参数同名的裸关系节点改写为执行期参数绑定的 locator，再安全编译为 `INSERT INTO <target> SELECT ...`。CTE、子查询和 JOIN 可以使用，但 CTE 与参数重名、未声明参数、未使用声明、真实物理关系、schema 限定关系、表函数数据源、非 PostgreSQL 查询或跨 Engine 输入必须拒绝。Develop 只使用当前父 execution 派生的精确 Engine `read + write` 授权，不获得 DDL effect；稳定输出为 `execution_id + target_locator + row_count`。Develop 不调用 Model API，不持有 Model Permission。

@@ -42,6 +42,18 @@ func (p *sampleCatalogProvider) Capabilities() plugin.EngineCapabilities {
 	return plugin.EngineCapabilities{}
 }
 
+func (p *sampleCatalogProvider) QueryLanguages() []string { return []string{"sql"} }
+func (p *sampleCatalogProvider) GenerateSampleQuery(context.Context, plugin.ConnectionInfo, plugin.SampleQueryOptions) (string, string) {
+	return "", "sql"
+}
+func (p *sampleCatalogProvider) PrepareQuery(context.Context, plugin.ConnectionInfo, plugin.QueryRequest) (plugin.PreparedQuery, error) {
+	return nil, errors.New("not implemented")
+}
+func (p *sampleCatalogProvider) SQLDialect() string { return "postgresql" }
+func (p *sampleCatalogProvider) ExecuteSQL(context.Context, plugin.ConnectionInfo, string, plugin.QueryOptions) (*plugin.QueryResult, error) {
+	return nil, errors.New("not implemented")
+}
+
 func (p *sampleCatalogProvider) EngineCatalogModel() plugin.EngineCatalogModelSpec {
 	if p.model.PathVersion != "" {
 		return p.model

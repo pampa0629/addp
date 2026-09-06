@@ -54,6 +54,9 @@ func NewTabularCapabilities(engineType, namespaceTerm string, opts TabularCapabi
 			},
 		},
 	}
+	if opts.IdentifierQuote != "" {
+		caps.Compute.Query.IdentifierQuotes = map[string]string{"sql": opts.IdentifierQuote}
+	}
 
 	if opts.BatchWrite {
 		caps.Storage.Store.BatchWrite = true
@@ -108,6 +111,7 @@ type TabularCapabilityOptions struct {
 	SupportsCancel                        bool
 	SupportsParameters                    bool
 	DefaultLanguage                       string
+	IdentifierQuote                       string
 	Description                           string
 	WriterConnector                       string
 }
@@ -235,11 +239,12 @@ func NewGraphCapabilities(engineType string) EngineCapabilities {
 		},
 		Compute: &ComputeCapabilities{
 			Query: &QueryCapability{
-				Supported:       true,
-				Languages:       []string{"cypher"},
-				DefaultLanguage: "cypher",
-				ResultKinds:     []string{"graph", "table"},
-				Parameters:      queryParameterCapability(true, "cypher"),
+				Supported:        true,
+				Languages:        []string{"cypher"},
+				DefaultLanguage:  "cypher",
+				IdentifierQuotes: map[string]string{"cypher": "`"},
+				ResultKinds:      []string{"graph", "table"},
+				Parameters:       queryParameterCapability(true, "cypher"),
 			},
 		},
 	}

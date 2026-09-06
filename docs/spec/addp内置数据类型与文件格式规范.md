@@ -1398,7 +1398,7 @@ DOC / DOCX / RTF / PPTX / WPS 是单资源文档文件。内置规范要求稳�
 
 Manager 文档预览应优先消费 `frontend_renderer`、`preview_material`、`content.kind` 等后端语义字段，并优先使用 raw / range / storage-stream URL 读取存储叶子内容；扩展名和 MIME 只作为兜底识别依据。没有 URL 时才允许在受限大小内使用 `raw_binary` + base64 兜底。
 
-DOC、DOCX、RTF、WPS 统一返回 `frontend_renderer=office`。前端按需加载 `@open-file-viewer/core` 的 Office plugin，并把 URL 或受限 base64 内容直接交给浏览器解释；后端不得再启动桌面 Office / WPS 进程，也不得为这四种格式生成图片预览 artifact。四种格式仍分别使用 `content.kind=doc|docx|rtf|wps`，不得为了复用 renderer 篡改格式事实。旧式 DOC / WPS 与 RTF 预览以正文可读为目标，不承诺高保真分页与版式还原。
+DOC、DOCX、RTF、WPS 统一返回 `frontend_renderer=office`。前端按需加载 `common-frontend/basic` 自有的 Office renderer，并把 URL 或受限 base64 内容直接交给浏览器解释；旧式 DOC/WPS 与 RTF 解析器由共享层单点维护，DOCX 使用宿主直接声明的浏览器解析依赖，不得依赖仓库外本地路径或运行时 CDN/GitHub 资源。后端不得再启动桌面 Office / WPS 进程，也不得为这四种格式生成图片预览 artifact。四种格式仍分别使用 `content.kind=doc|docx|rtf|wps`，不得为了复用 renderer 篡改格式事实。旧式 DOC/WPS 与 RTF 预览以正文可读为目标，不承诺高保真分页与版式还原。
 
 `preview_material` 是 Manager 面向前端的展示材料或展示状态协议，取值如 `url`、`raw_binary`、`text`、`json`、`markdown`、`geojson`、`table`、`container`、`unsupported`。它不等同于 `common/format` 的 `content_readers` 声明；不得把 `raw_content`、`range_content`、`binary_content` 等 descriptor 能力名称写入 `preview_material`。
 

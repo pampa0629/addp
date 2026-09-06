@@ -114,19 +114,19 @@ func compileProtectionProjections(tx *gorm.DB, enrollment models.ProtectionEnrol
 		if err != nil {
 			return err
 		}
-		managerPreviewDecision, err := applyProtectionExemption(tx, enrollment.TenantID, candidate.AssessmentID, candidate.AssessmentRevision, "manager", managerPreviewAction, managerDecision, now)
+		managerPreviewDecision, err := applyProtectionExemption(tx, enrollment.TenantID, candidate.AssessmentID, candidate.AssessmentRevision, managerProtectionOwner, managerPreviewAction, managerDecision, now)
 		if err != nil {
 			return err
 		}
-		developDecision, err := applyProtectionExemption(tx, enrollment.TenantID, candidate.AssessmentID, candidate.AssessmentRevision, "develop", developQueryAction, baselineDecision, now)
+		developDecision, err := applyProtectionExemption(tx, enrollment.TenantID, candidate.AssessmentID, candidate.AssessmentRevision, developProtectionOwner, developQueryAction, baselineDecision, now)
 		if err != nil {
 			return err
 		}
-		serviceDecision, err := applyProtectionExemption(tx, enrollment.TenantID, candidate.AssessmentID, candidate.AssessmentRevision, "service", serviceExecuteAction, baselineDecision, now)
+		serviceDecision, err := applyProtectionExemption(tx, enrollment.TenantID, candidate.AssessmentID, candidate.AssessmentRevision, serviceProtectionOwner, serviceExecuteAction, baselineDecision, now)
 		if err != nil {
 			return err
 		}
-		transferDecision, err := applyProtectionExemption(tx, enrollment.TenantID, candidate.AssessmentID, candidate.AssessmentRevision, "transfer", transferExportAction, baselineDecision, now)
+		transferDecision, err := applyProtectionExemption(tx, enrollment.TenantID, candidate.AssessmentID, candidate.AssessmentRevision, transferProtectionOwner, transferExportAction, baselineDecision, now)
 		if err != nil {
 			return err
 		}
@@ -141,13 +141,13 @@ func compileProtectionProjections(tx *gorm.DB, enrollment models.ProtectionEnrol
 	for _, consumerOwner := range consumerOwners {
 		var rules []dataprotection.Rule
 		switch consumerOwner {
-		case "manager":
+		case managerProtectionOwner:
 			rules = managerRules
-		case "develop":
+		case developProtectionOwner:
 			rules = developRules
-		case "service":
+		case serviceProtectionOwner:
 			rules = serviceRules
-		case "transfer":
+		case transferProtectionOwner:
 			rules = transferRules
 		default:
 			return errors.New("unsupported field-level protection consumer owner")
@@ -284,7 +284,7 @@ func protectionDecisionFromBaseline(baseline models.ProtectionBaseline) (datapro
 
 func applyManagerPolicy(tx *gorm.DB, tenantID int64, assessmentID string, baseline dataprotection.Decision) (dataprotection.Decision, error) {
 	var policy models.ProtectionPolicy
-	err := tx.Where("tenant_id = ? AND assessment_id = ? AND consumer_owner = ? AND action = ?", tenantID, assessmentID, "manager", managerPreviewAction).First(&policy).Error
+	err := tx.Where("tenant_id = ? AND assessment_id = ? AND consumer_owner = ? AND action = ?", tenantID, assessmentID, managerProtectionOwner, managerPreviewAction).First(&policy).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) || (err == nil && policy.State == models.ProtectionPolicyStateRevoked) {
 		return baseline, nil
 	}

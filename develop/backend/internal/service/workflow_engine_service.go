@@ -1053,12 +1053,8 @@ func normalizeDerivedWorkflowPath(
 }
 
 func isObjectStorageEngine(engineType string) bool {
-	switch strings.ToLower(strings.TrimSpace(engineType)) {
-	case "minio", "s3", "oss", "cos":
-		return true
-	default:
-		return false
-	}
+	registered, err := plugin.Get(strings.ToLower(strings.TrimSpace(engineType)))
+	return err == nil && registered.Capabilities().EngineFamily == "object"
 }
 
 func stringParam(params map[string]interface{}, key string) string {

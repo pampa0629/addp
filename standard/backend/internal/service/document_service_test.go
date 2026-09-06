@@ -126,6 +126,12 @@ func TestExtractCandidatesPersistsCanonicalOutdoorEvidence(t *testing.T) {
 	db := openDocumentServiceTestDB(t)
 	repo := repository.NewDocumentRepository(db)
 	doc, revision := seedDocumentDraft(t, repo, 8, "outdoor.md")
+	if err := db.Exec(`INSERT INTO standard.metric_definitions (id, tenant_id, scope_type, code, draft_revision_id, lifecycle_state) VALUES (41, 8, 'tenant_common', 'outdoor_participation_count', 51, 'active')`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO standard.metric_definition_revisions (id, metric_definition_id, revision_no, status, name, definition, statistical_caliber, semantic_formula) VALUES (51, 41, 1, 'draft', '实际参加活动数', '人员实际参加的有效活动去重数', '', '')`).Error; err != nil {
+		t.Fatal(err)
+	}
 	content := "# Outdoor\n\n## 指标\n实际参加活动数只统计有效活动。\n"
 	store := &fakeDocumentObjectStore{objects: map[string][]byte{revision.FileKey: []byte(content)}}
 	svc := &DocumentService{repo: repo, objectStore: store, maxFileSize: 1024, timeout: time.Second, copilotURL: server.URL, serviceTokenSource: commonclient.ServiceTokenProviderFunc(func(_ context.Context, tenantID uint) (string, error) {
@@ -147,6 +153,9 @@ func TestExtractCandidatesPersistsCanonicalOutdoorEvidence(t *testing.T) {
 	if extraction.Candidates[0].Payload["aggregation"] != "count" {
 		t.Fatalf("candidate payload=%+v", extraction.Candidates[0].Payload)
 	}
+	if comparison := extraction.Candidates[0].Comparison; comparison == nil || comparison.Result != models.CandidateComparisonExact || comparison.StandardID != 41 || comparison.RevisionID != 51 {
+		t.Fatalf("candidate comparison=%+v", comparison)
+	}
 	evidence := extraction.Candidates[0].Evidences[0]
 	if evidence.Excerpt != "## 指标\n实际参加活动数只统计有效活动。" || evidence.ExcerptHash == "" {
 		t.Fatalf("evidence=%+v", evidence)
@@ -155,10 +164,240 @@ func TestExtractCandidatesPersistsCanonicalOutdoorEvidence(t *testing.T) {
 	if err != nil || len(loaded) != 1 || len(loaded[0].Candidates) != 1 {
 		t.Fatalf("loaded=%+v err=%v", loaded, err)
 	}
+	listed, err := svc.ListExtractions(doc.ID, doc.TenantID)
+	if err != nil || len(listed) != 1 || listed[0].Candidates[0].Comparison == nil || listed[0].Candidates[0].Comparison.Result != models.CandidateComparisonExact {
+		t.Fatalf("listed comparison=%+v err=%v", listed, err)
+	}
 	updated, err := repo.GetByID(doc.ID, doc.TenantID)
 	if err != nil || updated.Version != 2 {
 		t.Fatalf("document version=%+v err=%v", updated, err)
 	}
+}
+
+func TestCompareDocumentCandidateClassifiesDeterministicMatches(t *testing.T) {
+	domainID, otherDomainID := int64(2), int64(3)
+	document := &models.Document{ScopeType: models.StandardScopeDomain, OwnerDomainID: &domainID}
+	target := repository.DocumentCandidateComparisonTarget{
+		CandidateType: "glossary", StandardID: 21, Code: "outdoor_activity", ScopeType: models.StandardScopeDomain,
+		OwnerDomainID: &domainID, RevisionID: 31, RevisionNo: 2, RevisionStatus: models.RevisionStatusInReview,
+		Name: "户外活动", Definition: "在户外 开展的活动",
+	}
+
+	tests := []struct {
+		name      string
+		candidate models.DocumentExtractionCandidate
+		target    repository.DocumentCandidateComparisonTarget
+		matched   bool
+		want      string
+		wantDiff  string
+	}{
+		{name: "new", candidate: models.DocumentExtractionCandidate{CandidateType: "glossary", Code: "new", Name: "新术语", Definition: "新定义"}, matched: false, want: models.CandidateComparisonNew},
+		{name: "exact normalizes whitespace", candidate: models.DocumentExtractionCandidate{CandidateType: "glossary", Code: target.Code, Name: " 户外活动 ", Definition: "在户外  \n 开展的活动"}, target: target, matched: true, want: models.CandidateComparisonExact},
+		{name: "content conflict", candidate: models.DocumentExtractionCandidate{CandidateType: "glossary", Code: target.Code, Name: target.Name, Definition: "另一业务定义"}, target: target, matched: true, want: models.CandidateComparisonContentConflict, wantDiff: "definition"},
+		{name: "scope conflict takes precedence", candidate: models.DocumentExtractionCandidate{CandidateType: "glossary", Code: target.Code, Name: target.Name, Definition: target.Definition}, target: func() repository.DocumentCandidateComparisonTarget {
+			changed := target
+			changed.OwnerDomainID = &otherDomainID
+			return changed
+		}(), matched: true, want: models.CandidateComparisonScopeConflict, wantDiff: "owner_domain_id"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			candidate := test.candidate
+			comparison := compareDocumentCandidate(document, &candidate, test.target, test.matched)
+			if comparison.Result != test.want {
+				t.Fatalf("result=%q comparison=%+v", comparison.Result, comparison)
+			}
+			if test.wantDiff != "" {
+				difference, ok := findCandidateDifference(comparison.Differences, test.wantDiff)
+				if !ok {
+					t.Fatalf("differences=%+v, want field %q", comparison.Differences, test.wantDiff)
+				}
+				if difference.CandidateValue.Kind == "" || difference.StandardValue.Kind == "" {
+					t.Fatalf("difference values must be explicit: %+v", difference)
+				}
+			}
+		})
+	}
+}
+
+func TestBuildDocumentExtractionRejectsNonstandardValueDomainKind(t *testing.T) {
+	invalidKind := "identifier"
+	content := "# 数据元\n人员标识是户外参与人员的稳定标识。"
+	sections := []documentExtractionSection{{SectionPath: "数据元", StartLine: 1, EndLine: 2, Text: content}}
+	response := &copilotDocumentExtractResponse{Candidates: []copilotCandidate{{
+		CandidateType: "element",
+		Code:          "outdoor_person_id",
+		Name:          "人员标识",
+		Definition:    "户外参与人员的稳定标识。",
+		Payload:       copilotCandidatePayload{ValueDomainKind: &invalidKind},
+		Evidences:     []copilotEvidence{{SectionPath: "数据元", StartLine: 1, EndLine: 2}},
+	}}}
+
+	if _, err := buildDocumentExtraction(1, 2, 3, content, sections, response); !errors.Is(err, ErrDocumentExtractionInvalid) {
+		t.Fatalf("err=%v, want ErrDocumentExtractionInvalid", err)
+	}
+}
+
+func TestBuildDocumentExtractionRejectsValueDomainKindOnNonElementCandidate(t *testing.T) {
+	kind := models.ValueDomainUnrestricted
+	content := "# 指标\n活动次数表示人员参加活动的次数。"
+	sections := []documentExtractionSection{{SectionPath: "指标", StartLine: 1, EndLine: 2, Text: content}}
+	response := &copilotDocumentExtractResponse{Candidates: []copilotCandidate{{
+		CandidateType: "metric",
+		Code:          "outdoor_activity_count",
+		Name:          "活动次数",
+		Definition:    "人员参加活动的次数。",
+		Payload:       copilotCandidatePayload{ValueDomainKind: &kind},
+		Evidences:     []copilotEvidence{{SectionPath: "指标", StartLine: 1, EndLine: 2}},
+	}}}
+
+	if _, err := buildDocumentExtraction(1, 2, 3, content, sections, response); !errors.Is(err, ErrDocumentExtractionInvalid) {
+		t.Fatalf("err=%v, want ErrDocumentExtractionInvalid", err)
+	}
+}
+
+func TestBuildDocumentExtractionRejectsInvalidCandidateDataType(t *testing.T) {
+	tests := []struct {
+		name          string
+		candidateType string
+		dataType      string
+	}{
+		{name: "noncanonical element type", candidateType: "element", dataType: "date_or_datetime"},
+		{name: "unsupported code set type", candidateType: "code_set", dataType: "decimal"},
+		{name: "metric cannot own type", candidateType: "metric", dataType: "integer"},
+		{name: "glossary cannot own type", candidateType: "glossary", dataType: "string"},
+	}
+	content := "# 候选\n户外业务候选定义。"
+	sections := []documentExtractionSection{{SectionPath: "候选", StartLine: 1, EndLine: 2, Text: content}}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			response := &copilotDocumentExtractResponse{Candidates: []copilotCandidate{{
+				CandidateType: test.candidateType,
+				Code:          "outdoor_candidate",
+				Name:          "户外候选",
+				Definition:    "户外业务候选定义。",
+				Payload:       copilotCandidatePayload{DataType: &test.dataType},
+				Evidences:     []copilotEvidence{{SectionPath: "候选", StartLine: 1, EndLine: 2}},
+			}}}
+
+			if _, err := buildDocumentExtraction(1, 2, 3, content, sections, response); !errors.Is(err, ErrDocumentExtractionInvalid) {
+				t.Fatalf("err=%v, want ErrDocumentExtractionInvalid", err)
+			}
+		})
+	}
+}
+
+func TestBuildDocumentExtractionAcceptsTypeSpecificCanonicalDataType(t *testing.T) {
+	tests := []struct {
+		candidateType string
+		dataType      string
+	}{
+		{candidateType: "element", dataType: "decimal"},
+		{candidateType: "code_set", dataType: "bigint"},
+	}
+	content := "# 候选\n户外业务候选定义。"
+	sections := []documentExtractionSection{{SectionPath: "候选", StartLine: 1, EndLine: 2, Text: content}}
+	for _, test := range tests {
+		t.Run(test.candidateType, func(t *testing.T) {
+			response := &copilotDocumentExtractResponse{Candidates: []copilotCandidate{{
+				CandidateType: test.candidateType,
+				Code:          "outdoor_candidate",
+				Name:          "户外候选",
+				Definition:    "户外业务候选定义。",
+				Payload:       copilotCandidatePayload{DataType: &test.dataType},
+				Evidences:     []copilotEvidence{{SectionPath: "候选", StartLine: 1, EndLine: 2}},
+			}}}
+
+			extraction, err := buildDocumentExtraction(1, 2, 3, content, sections, response)
+			if err != nil || len(extraction.Candidates) != 1 {
+				t.Fatalf("extraction=%+v err=%v", extraction, err)
+			}
+		})
+	}
+}
+
+func TestCompareDocumentCandidateUsesOnlyStandardOwnedAssertedFields(t *testing.T) {
+	document := &models.Document{ScopeType: models.StandardScopeTenantCommon}
+	target := repository.DocumentCandidateComparisonTarget{
+		CandidateType: "metric", StandardID: 41, Code: "outdoor_participation_count", ScopeType: models.StandardScopeTenantCommon,
+		RevisionID: 51, RevisionNo: 1, RevisionStatus: models.RevisionStatusDraft, Name: "实际参加活动数", Definition: "人员实际参加的有效活动去重数",
+		StatisticalCaliber: "只统计有效活动", SemanticFormula: "count(distinct activity_id)", UnitName: "次", UnitSymbol: "次",
+	}
+	candidate := models.DocumentExtractionCandidate{
+		CandidateType: "metric", Code: target.Code, Name: target.Name, Definition: target.Definition,
+		Payload: models.JSONB{"aggregation": "count_distinct", "dimensions": []string{"member_id"}},
+	}
+	comparison := compareDocumentCandidate(document, &candidate, target, true)
+	if comparison.Result != models.CandidateComparisonExact || len(comparison.Differences) != 0 {
+		t.Fatalf("unasserted and execution fields must not differ: %+v", comparison)
+	}
+	candidate.Payload["statistical_scope"] = "统计所有活动"
+	comparison = compareDocumentCandidate(document, &candidate, target, true)
+	if comparison.Result != models.CandidateComparisonContentConflict {
+		t.Fatalf("asserted standard field mismatch=%+v", comparison)
+	}
+	difference, ok := findCandidateDifference(comparison.Differences, "statistical_caliber")
+	if !ok || difference.CandidateValue.Text == nil || *difference.CandidateValue.Text != "统计所有活动" || difference.StandardValue.Text == nil || *difference.StandardValue.Text != target.StatisticalCaliber {
+		t.Fatalf("asserted field values=%+v", difference)
+	}
+}
+
+func TestCompareDocumentCandidateComparesCodeItemsByCode(t *testing.T) {
+	document := &models.Document{ScopeType: models.StandardScopeTenantCommon}
+	target := repository.DocumentCandidateComparisonTarget{
+		CandidateType: "code_set", StandardID: 61, Code: "outdoor_status", ScopeType: models.StandardScopeTenantCommon,
+		RevisionID: 71, RevisionNo: 1, RevisionStatus: models.RevisionStatusPublished, Name: "活动状态", Definition: "户外活动状态", DataType: "string",
+		Items: []models.DocumentExtractionCandidateComparisonItem{{Code: "closed", Name: "已结束"}, {Code: "open", Name: "进行中"}},
+	}
+	candidate := models.DocumentExtractionCandidate{
+		CandidateType: "code_set", Code: target.Code, Name: target.Name, Definition: target.Definition,
+		Payload: models.JSONB{"data_type": "string", "items": []copilotCodeItem{{Code: "open", Name: "进行中"}, {Code: "closed", Name: "已结束"}}},
+	}
+	comparison := compareDocumentCandidate(document, &candidate, target, true)
+	if comparison.Result != models.CandidateComparisonExact {
+		t.Fatalf("same items in different order=%+v", comparison)
+	}
+}
+
+func TestCompareDocumentCandidateReturnsStructuredDifferenceValues(t *testing.T) {
+	domainID, otherDomainID := int64(2), int64(3)
+	document := &models.Document{ScopeType: models.StandardScopeDomain, OwnerDomainID: &domainID}
+	target := repository.DocumentCandidateComparisonTarget{
+		CandidateType: "code_set", StandardID: 61, Code: "outdoor_status", ScopeType: models.StandardScopeDomain, OwnerDomainID: &otherDomainID,
+		RevisionID: 71, RevisionNo: 1, RevisionStatus: models.RevisionStatusPublished, Name: "活动状态", Definition: "现行户外活动状态", DataType: "string",
+		Items: []models.DocumentExtractionCandidateComparisonItem{{Code: "open", Name: "进行中", Definition: "活动正在进行"}},
+	}
+	candidate := models.DocumentExtractionCandidate{
+		CandidateType: "code_set", Code: target.Code, Name: target.Name, Definition: "候选活动状态",
+		Payload: models.JSONB{"data_type": "integer", "items": []copilotCodeItem{{Code: "draft", Name: "拟定中", Definition: "活动尚未发布"}}},
+	}
+
+	comparison := compareDocumentCandidate(document, &candidate, target, true)
+	if comparison.Result != models.CandidateComparisonScopeConflict {
+		t.Fatalf("comparison=%+v", comparison)
+	}
+	ownerDifference, ok := findCandidateDifference(comparison.Differences, "owner_domain_id")
+	if !ok || ownerDifference.CandidateValue.Integer == nil || *ownerDifference.CandidateValue.Integer != domainID || ownerDifference.StandardValue.Integer == nil || *ownerDifference.StandardValue.Integer != otherDomainID {
+		t.Fatalf("owner difference=%+v", ownerDifference)
+	}
+	definitionDifference, ok := findCandidateDifference(comparison.Differences, "definition")
+	if !ok || definitionDifference.CandidateValue.Text == nil || *definitionDifference.CandidateValue.Text != candidate.Definition || definitionDifference.StandardValue.Text == nil || *definitionDifference.StandardValue.Text != target.Definition {
+		t.Fatalf("definition difference=%+v", definitionDifference)
+	}
+	itemsDifference, ok := findCandidateDifference(comparison.Differences, "items")
+	if !ok || len(itemsDifference.CandidateValue.Items) != 1 || itemsDifference.CandidateValue.Items[0].Code != "draft" || len(itemsDifference.StandardValue.Items) != 1 || itemsDifference.StandardValue.Items[0].Code != "open" {
+		t.Fatalf("items difference=%+v", itemsDifference)
+	}
+}
+
+func findCandidateDifference(values []models.DocumentExtractionCandidateDifference, field string) (models.DocumentExtractionCandidateDifference, bool) {
+	for _, value := range values {
+		if value.Field == field {
+			return value, true
+		}
+	}
+	return models.DocumentExtractionCandidateDifference{}, false
 }
 
 func TestFileCleanupFailureStaysQueuedForRetry(t *testing.T) {
@@ -212,6 +451,8 @@ func openDocumentServiceTestDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE standard.document_extraction_candidates (id INTEGER PRIMARY KEY AUTOINCREMENT, extraction_id INTEGER NOT NULL, candidate_type TEXT NOT NULL, code TEXT NOT NULL, name TEXT NOT NULL, definition TEXT NOT NULL, payload TEXT, status TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1, reviewed_by INTEGER, reviewed_at DATETIME, created_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE standard.document_extraction_evidences (id INTEGER PRIMARY KEY AUTOINCREMENT, candidate_id INTEGER NOT NULL, document_revision_id INTEGER NOT NULL, section_path TEXT NOT NULL, start_line INTEGER NOT NULL, end_line INTEGER NOT NULL, excerpt TEXT NOT NULL, excerpt_hash TEXT NOT NULL, created_at DATETIME)`,
 		`CREATE TABLE standard.document_file_cleanups (id INTEGER PRIMARY KEY AUTOINCREMENT, object_key TEXT NOT NULL UNIQUE, attempts INTEGER NOT NULL DEFAULT 0, next_attempt_at DATETIME NOT NULL, last_error TEXT, created_at DATETIME, updated_at DATETIME)`,
+		`CREATE TABLE standard.metric_definitions (id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, scope_type TEXT NOT NULL, owner_domain_id INTEGER, code TEXT NOT NULL, draft_revision_id INTEGER, lifecycle_state TEXT NOT NULL)`,
+		`CREATE TABLE standard.metric_definition_revisions (id INTEGER PRIMARY KEY AUTOINCREMENT, metric_definition_id INTEGER NOT NULL, revision_no INTEGER NOT NULL, status TEXT NOT NULL, name TEXT NOT NULL, definition TEXT NOT NULL, statistical_caliber TEXT NOT NULL, semantic_formula TEXT, unit_id INTEGER, effective_from DATETIME, effective_to DATETIME)`,
 	}
 	for _, statement := range statements {
 		if err := db.Exec(statement).Error; err != nil {

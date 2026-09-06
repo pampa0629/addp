@@ -730,7 +730,7 @@
       "loadModeLabel": "同步范围",
       "snapshotLoad": "每次同步全部数据",
       "watermarkIncrementalLoad": "只同步新增和更新",
-      "watermarkIncrementalUnsupported": "当前支持从 PostgreSQL 或 MySQL 表向 PostgreSQL 或 MySQL 表同步变化数据。",
+      "watermarkIncrementalUnsupported": "源引擎必须支持有界水位读取，目标引擎必须支持幂等表更新。",
       "watermarkIncrementalNoticeTitle": "增量同步要求",
       "watermarkIncrementalNotice": "源表必须有一个在记录新增或更新时都会变化的字段，并有能够唯一标识记录的主键或唯一键。任务中断后会从上次成功位置继续；暂不处理源表中的物理删除。",
       "watermarkFieldLabel": "变化判断字段",

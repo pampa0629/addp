@@ -110,6 +110,7 @@ func (p *MySQLPlugin) Capabilities() plugin.EngineCapabilities {
 		SpatialFacts:       true,
 		SupportsExplain:    true,
 		SupportsCancel:     true,
+		IdentifierQuote:    "`",
 		SupportsParameters: true,
 		WriterConnector:    "mysql_insert",
 	})
@@ -152,11 +153,23 @@ func (p *MySQLPlugin) QueryLanguages() []string {
 }
 
 func (p *MySQLPlugin) GenerateSampleQuery(ctx context.Context, connInfo plugin.ConnectionInfo, opts plugin.SampleQueryOptions) (string, string) {
-	return plugin.SampleSQLForDialectCatalogPath(p.SQLDialect(), opts.Path, 10), "sql"
+	return p.queryProvenance().GenerateSampleQuery(ctx, connInfo, opts.Path, p.SQLDialect(), 10), "sql"
 }
 
 func (p *MySQLPlugin) PrepareQuery(_ context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (plugin.PreparedQuery, error) {
-	return plugin.PrepareSQLRuntimeQuery(p, connInfo, req, nil, nil)
+	provenance := p.queryProvenance()
+	return plugin.PrepareSQLRuntimeQuery(p, connInfo, req, provenance.ResolveReadSet, provenance.ResolveOutputLineage)
+}
+
+func (p *MySQLPlugin) queryProvenance() shared.MySQLCompatibleQueryProvenance {
+	return shared.MySQLCompatibleQueryProvenance{
+		EngineName:        p.DisplayName(),
+		DefaultPort:       p.DefaultPort(),
+		CatalogModel:      p.EngineCatalogModel(),
+		BuildDSN:          p.BuildDSN,
+		IsSystemNamespace: p.isSystemSchema,
+		DescribeFacts:     p.DescribeEngineCatalogFacts,
+	}
 }
 
 func (p *MySQLPlugin) SQLDialect() string {

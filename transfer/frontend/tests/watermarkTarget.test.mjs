@@ -4,7 +4,9 @@ import assert from 'node:assert/strict'
 import {
   hasAtomicPartitionedTableChangeApply,
   hasBoundedWatermarkRead,
+  hasContentWriteCapability,
   hasIdempotentTableUpsert,
+  hasNativeTableWriteCapability,
   hasStorageCapability
 } from '../src/utils/transferDisplay.js'
 
@@ -42,6 +44,7 @@ test('watermark source requires declared bounded watermark read', () => {
 
 test('watermark target requires declared idempotent table upsert', () => {
   assert.equal(hasIdempotentTableUpsert({
+    engine_type: 'oceanbase',
     capabilities: {
       storage: {
         store: {
@@ -62,6 +65,41 @@ test('watermark target requires declared idempotent table upsert', () => {
   }), false)
 
   assert.equal(hasIdempotentTableUpsert({ engine_type: 'mysql' }), false)
+})
+
+test('snapshot targets require declared write providers instead of engine-family inference', () => {
+  assert.equal(hasNativeTableWriteCapability({
+    engine_type: 'postgresql',
+    capabilities: {
+      storage: {
+        store: {
+          table_write_prepare: true,
+          table_write_session: true
+        }
+      }
+    }
+  }), true)
+
+  assert.equal(hasNativeTableWriteCapability({
+    engine_type: 'oceanbase',
+    capabilities: {
+      engine_family: 'tabular',
+      storage: {
+        store: { batch_read: true }
+      }
+    }
+  }), false)
+  assert.equal(hasNativeTableWriteCapability({ engine_type: 'mysql' }), false)
+
+  assert.equal(hasContentWriteCapability({
+    capabilities: {
+      engine_family: 'object',
+      storage: {
+        store: { stream_write: true }
+      }
+    }
+  }), true)
+  assert.equal(hasContentWriteCapability({ engine_type: 's3' }), false)
 })
 
 test('continuous target requires atomic monotonic apply operations', () => {

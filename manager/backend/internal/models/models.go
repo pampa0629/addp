@@ -266,6 +266,7 @@ const (
 	ObjectPreviewKindPDF           = "pdf"
 	ObjectPreviewKindDOC           = "doc"
 	ObjectPreviewKindDOCX          = "docx"
+	ObjectPreviewKindRTF           = "rtf"
 	ObjectPreviewKindWPS           = "wps"
 	ObjectPreviewKindPPTX          = "pptx"
 	ObjectPreviewKindImage         = "image"

@@ -217,3 +217,20 @@ func respondDocumentFileError(c *gin.Context, err error) {
 	}
 	respondError(c, status, err)
 }
+
+func respondDocumentExtractionError(c *gin.Context, err error) {
+	status := http.StatusInternalServerError
+	switch {
+	case errors.Is(err, repository.ErrVersionConflict):
+		status = http.StatusConflict
+	case errors.Is(err, commonapi.ErrNotFound):
+		status = http.StatusNotFound
+	case errors.Is(err, service.ErrDocumentFileTooLarge):
+		status = http.StatusRequestEntityTooLarge
+	case errors.Is(err, service.ErrDocumentExtractionUnsupported), errors.Is(err, service.ErrDocumentExtractionInvalid):
+		status = http.StatusUnprocessableEntity
+	case errors.Is(err, service.ErrDocumentCopilotUnavailable), errors.Is(err, service.ErrDocumentStorageUnavailable):
+		status = http.StatusServiceUnavailable
+	}
+	respondError(c, status, err)
+}

@@ -96,7 +96,7 @@ Kafka poll 会分批读取，但不因此成为 bounded；数据库 CDC 的 init
 | 执行边界 | 装载方式 | 变化识别 | 当前源 | 当前目标与应用方式 |
 |---|---|---|---|---|
 | bounded | snapshot | 无 | 当前 table/raw-copy 支持矩阵内的源；声明查询读取会话的只读原生查询 source | table `replace|append`；raw copy `replace` |
-| bounded | incremental | watermark | PostgreSQL/MySQL native table | PostgreSQL/MySQL native table `upsert` |
+| bounded | incremental | watermark | PostgreSQL/MySQL native table | PostgreSQL/MySQL/OceanBase 非空间 native table `upsert` |
 | continuous | incremental | kafka | 业务 Kafka keyed JSON object | PostgreSQL/MySQL native table `upsert` |
 | bounded | incremental | kafka offset range（replay execution） | 已有业务 Kafka continuous task 的原 topic | 不存在的新 PostgreSQL 隔离表 `upsert` |
 | continuous | incremental | cdc | PostgreSQL/MySQL/Oracle 有稳定主键的单表 | 不存在的新 PostgreSQL/MySQL 表 `upsert_delete` |

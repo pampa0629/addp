@@ -461,6 +461,32 @@
       "rejectCandidate": "驳回候选",
       "candidateType": { "glossary": "业务术语", "element": "数据元", "code_set": "码值集", "metric": "指标" },
       "candidateStatus": { "pending": "待裁决", "retained": "已保留", "rejected": "已驳回" },
+      "comparisonResult": { "new": "新候选", "exact": "内容一致", "content_conflict": "内容冲突", "scope_conflict": "范围冲突" },
+      "comparisonSummary": {
+        "new": "未发现同类型、同编码的现有标准。",
+        "exact": "候选与现有标准的当前比较修订一致。",
+        "content_conflict": "同类型、同编码标准已存在，但候选内容存在差异。",
+        "scope_conflict": "同类型、同编码标准已存在，但适用范围不同。"
+      },
+      "comparisonTarget": "现有标准",
+      "openExistingStandard": "查看现有标准",
+      "differenceField": "差异字段",
+      "candidateValue": "候选值",
+      "standardValue": "当前标准值",
+      "emptyValue": "未设置",
+      "comparisonField": {
+        "scope_type": "适用范围",
+        "owner_domain_id": "归属业务域",
+        "name": "名称",
+        "definition": "定义",
+        "data_type": "数据类型",
+        "value_domain_kind": "值域类型",
+        "unit": "计量单位",
+        "value_type": "码值类型",
+        "items": "码值项",
+        "statistical_caliber": "统计口径",
+        "semantic_formula": "语义公式"
+      },
       "uploadSuccess": "文件上传成功"
     },
     "documentPanel": {

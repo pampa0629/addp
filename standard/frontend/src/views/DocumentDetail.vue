@@ -54,6 +54,21 @@
             <el-card v-for="candidate in batch.candidates || []" :key="candidate.id" shadow="never" class="candidate-card">
               <div class="candidate-header"><div><el-tag size="small">{{ candidateTypeLabel(candidate.candidate_type) }}</el-tag><strong>{{ candidate.name }}</strong><code>{{ candidate.code }}</code></div><el-tag :type="candidate.status === 'pending' ? 'warning' : candidate.status === 'retained' ? 'success' : 'info'">{{ candidateStatusLabel(candidate.status) }}</el-tag></div>
               <p>{{ candidate.definition }}</p>
+              <div v-if="candidate.comparison" class="candidate-comparison">
+                <div class="comparison-summary">
+                  <el-tag size="small" :type="comparisonTagType(candidate.comparison.result)">{{ comparisonLabel(candidate.comparison.result) }}</el-tag>
+                  <span>{{ comparisonSummary(candidate.comparison.result) }}</span>
+                </div>
+                <div v-if="candidate.comparison.standard_id" class="comparison-target">
+                  <span>{{ $t('standard.document.comparisonTarget') }}: <strong>{{ candidate.comparison.name }}</strong> <code>{{ candidate.comparison.code }}</code> · {{ scopeLabel(candidate.comparison.scope_type) }}<template v-if="candidate.comparison.owner_domain_id"> / {{ domainName(candidate.comparison.owner_domain_id) }}</template> · R{{ candidate.comparison.revision_no }} · {{ statusLabel(candidate.comparison.revision_status) }}</span>
+                  <el-button link type="primary" size="small" @click="openComparedStandard(candidate)">{{ $t('standard.document.openExistingStandard') }}</el-button>
+                </div>
+                <el-table v-if="candidate.comparison.differences?.length" :data="candidate.comparison.differences" size="small" border class="comparison-differences">
+                  <el-table-column :label="$t('standard.document.differenceField')" width="140"><template #default="{ row }">{{ comparisonFieldLabel(row.field) }}</template></el-table-column>
+                  <el-table-column :label="$t('standard.document.candidateValue')" min-width="220"><template #default="{ row }"><div class="comparison-value"><template v-if="row.candidate_value.kind === 'code_items'"><div v-for="item in row.candidate_value.items || []" :key="item.code" class="comparison-item"><code>{{ item.code }}</code> · {{ item.name }}<span v-if="item.definition"> — {{ item.definition }}</span></div></template><template v-else>{{ comparisonValueText(row.candidate_value, row.field) }}</template></div></template></el-table-column>
+                  <el-table-column :label="$t('standard.document.standardValue')" min-width="220"><template #default="{ row }"><div class="comparison-value"><template v-if="row.standard_value.kind === 'code_items'"><div v-for="item in row.standard_value.items || []" :key="item.code" class="comparison-item"><code>{{ item.code }}</code> · {{ item.name }}<span v-if="item.definition"> — {{ item.definition }}</span></div></template><template v-else>{{ comparisonValueText(row.standard_value, row.field) }}</template></div></template></el-table-column>
+                </el-table>
+              </div>
               <pre v-if="Object.keys(candidate.payload || {}).length">{{ JSON.stringify(candidate.payload, null, 2) }}</pre>
               <blockquote v-for="evidence in candidate.evidences || []" :key="evidence.id"><small>{{ evidence.section_path }} · L{{ evidence.start_line }}-{{ evidence.end_line }} · {{ shortHash(evidence.excerpt_hash) }}</small><div>{{ evidence.excerpt }}</div></blockquote>
               <div v-if="candidate.status === 'pending' && canUpdate" class="candidate-actions"><el-button size="small" type="success" @click="decideCandidate(candidate, 'retained')">{{ $t('standard.document.retainCandidate') }}</el-button><el-button size="small" @click="decideCandidate(candidate, 'rejected')">{{ $t('standard.document.rejectCandidate') }}</el-button></div>
@@ -105,6 +120,18 @@ const statusType = status => ({ draft: 'info', in_review: 'warning', published: 
 const statusLabel = status => status ? t(`standard.revision.status.${status}`) : '-'
 const candidateTypeLabel = type => t(`standard.document.candidateType.${type}`)
 const candidateStatusLabel = status => t(`standard.document.candidateStatus.${status}`)
+const comparisonTagType = result => ({ new: 'info', exact: 'success', content_conflict: 'warning', scope_conflict: 'danger' }[result] || 'info')
+const comparisonLabel = result => t(`standard.document.comparisonResult.${result}`)
+const comparisonSummary = result => t(`standard.document.comparisonSummary.${result}`)
+const comparisonFieldLabel = field => t(`standard.document.comparisonField.${field}`)
+const scopeLabel = scope => scope ? t(`standard.common.scopeValue.${scope}`) : '-'
+const domainName = id => domains.value.find(item => item.id === id)?.name || `#${id}`
+const comparisonValueText = (value, field) => {
+  if (!value || value.kind === 'empty') return t('standard.document.emptyValue')
+  if (value.kind === 'integer') return field === 'owner_domain_id' ? domainName(value.integer) : String(value.integer)
+  if (field === 'scope_type') return scopeLabel(value.text)
+  return value.text || t('standard.document.emptyValue')
+}
 const formatTime = value => formatStandardDateTime(value, locale.value)
 const formatFileSize = bytes => !bytes ? '0 B' : bytes < 1024 ? `${bytes} B` : bytes < 1048576 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1048576).toFixed(1)} MB`
 const shortHash = value => value ? `${value.slice(0, 10)}…` : '-'
@@ -139,11 +166,15 @@ async function uploadRevision(file) { if (!editable.value || uploading.value) re
 async function downloadRevision() { try { const blob = await documentAPI.download(document.value.id, revision.id); saveBlob(blob, revision.file_name || revision.name) } catch (error) { ElMessage.error(getStandardErrorMessage(error, t, 'standard.document.downloadFailed')) } }
 async function extractCandidates() { if (extracting.value) return; extracting.value = true; try { await documentAPI.extractCandidates(document.value.id, revision.id, document.value.version); ElMessage.success(t('standard.document.extractionSuccess')); await load() } catch (error) { ElMessage.error(getStandardErrorMessage(error, t)) } finally { extracting.value = false } }
 async function decideCandidate(candidate, status) { try { await documentAPI.updateCandidate(candidate.id, { version: candidate.version, status }); await load(); ElMessage.success(t('standard.common.updateSuccess')) } catch (error) { ElMessage.error(getStandardErrorMessage(error, t)) } }
+function openComparedStandard(candidate) {
+  const basePath = { glossary: '/glossaries', element: '/elements', code_set: '/code-sets', metric: '/metrics' }[candidate.candidate_type]
+  if (basePath && candidate.comparison?.standard_id) navigateStandardRoute(router, { path: `${basePath}/${candidate.comparison.standard_id}` })
+}
 watch(() => route.params.id, load, { immediate: true })
 onMounted(async () => { try { domains.value = flattenDomains(await domainAPI.list() || []) } catch { domains.value = [] } })
 </script>
 
 <style scoped>
-.document-detail { padding:20px; }.page-header,.header-left,.header-right,.card-header,.file-row,.candidate-header { display:flex; align-items:center; gap:12px; }.page-header,.card-header,.candidate-header { justify-content:space-between; }.page-header { margin-bottom:20px; }.header-left h2,.card-header h3 { margin:0; }.section-card { margin-bottom:20px; }.file-row { flex-wrap:wrap; }.hint { margin-top:14px; }.extraction-batch { margin-bottom:18px; }.batch-title { margin-bottom:8px; color:var(--addp-text-secondary); }.candidate-card { margin-bottom:10px; }.candidate-header > div { display:flex; align-items:center; gap:8px; }.candidate-card pre { white-space:pre-wrap; background:var(--addp-bg-secondary); padding:10px; border-radius:4px; }.candidate-card blockquote { margin:8px 0; padding:8px 12px; border-left:3px solid var(--el-color-primary); background:var(--addp-bg-secondary); }.candidate-card blockquote small { color:var(--addp-text-secondary); }.candidate-actions { text-align:right; }.mapping-tag { margin:4px; }
+.document-detail { padding:20px; }.page-header,.header-left,.header-right,.card-header,.file-row,.candidate-header,.comparison-summary,.comparison-target { display:flex; align-items:center; gap:12px; }.page-header,.card-header,.candidate-header,.comparison-target { justify-content:space-between; }.page-header { margin-bottom:20px; }.header-left h2,.card-header h3 { margin:0; }.section-card { margin-bottom:20px; }.file-row { flex-wrap:wrap; }.hint { margin-top:14px; }.extraction-batch { margin-bottom:18px; }.batch-title { margin-bottom:8px; color:var(--addp-text-secondary); }.candidate-card { margin-bottom:10px; }.candidate-header > div { display:flex; align-items:center; gap:8px; }.candidate-comparison { margin:10px 0; padding:10px 12px; border:1px solid var(--el-border-color-light); border-radius:6px; background:var(--addp-bg-secondary); }.comparison-target { margin-top:8px; }.comparison-target span { min-width:0; overflow-wrap:anywhere; }.comparison-differences { margin-top:10px; }.comparison-value { white-space:pre-wrap; overflow-wrap:anywhere; color:var(--addp-text-primary); }.comparison-item + .comparison-item { margin-top:4px; }.candidate-card pre { white-space:pre-wrap; background:var(--addp-bg-secondary); padding:10px; border-radius:4px; }.candidate-card blockquote { margin:8px 0; padding:8px 12px; border-left:3px solid var(--el-color-primary); background:var(--addp-bg-secondary); }.candidate-card blockquote small { color:var(--addp-text-secondary); }.candidate-actions { text-align:right; }.mapping-tag { margin:4px; }
 @media (max-width:768px) { .document-detail { padding:12px; }.page-header { align-items:flex-start; flex-wrap:wrap; }.document-detail :deep(.el-col) { max-width:100%; flex:0 0 100%; } }
 </style>

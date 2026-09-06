@@ -12,6 +12,7 @@
 - **ClickHouse** 🆕：高性能列式存储 OLAP，端口 9000, 8123
 - **MongoDB** 🆕：文档型 NoSQL 数据库，端口 27017
 - **MySQL 8.0**：支持 Spatial 与 CDC 的业务关系库测试源，端口 3306
+- **OceanBase Community Edition 4.4.2 LTS**：Apache 2.0 授权、MySQL 模式的国产分布式关系数据库测试源，端口 2881；固定使用 `oceanbase/oceanbase-ce:4.4.2-lts`。
 - **Apache Doris**：实时分析数据库，端口 9030, 8030
 - **Apache Spark**：分布式计算引擎，主机端口 7077、18088、11000；默认 Worker 为 Thrift 查询和工作流执行分别保留执行资源
 - **Redpanda**：兼容 Kafka API 的业务消息流，端口 29092
@@ -63,6 +64,9 @@ bash scripts/start.sh -mongodb
 # 只启动 MySQL，并幂等初始化专用 CDC 用户
 bash scripts/start.sh -mysql
 
+# 只启动 OceanBase CE，并幂等初始化可查询样例
+bash scripts/start.sh -oceanbase
+
 # 只启动 Oracle，并幂等初始化普通表与 Spatial 样例
 bash scripts/start.sh -oracle
 
@@ -106,6 +110,8 @@ business/
 ├── mysql/                          # MySQL 配置与测试数据
 │   ├── init-cdc.sh                 # 专用 CDC 用户幂等初始化
 │   └── test-data.sh                # 普通表与全二维几何族显式测试数据
+├── oceanbase/                      # OceanBase CE 测试数据
+│   └── init.sql                    # 幂等创建探针与普通关系业务样例表
 ├── oracle/                         # Oracle 普通表与 Spatial 测试数据
 │   ├── init.sql                     # 幂等初始化 SQL
 │   ├── init-cdc.sh                  # ARCHIVELOG、LogMiner 账号与权限幂等初始化
@@ -158,6 +164,10 @@ bash scripts/start.sh
 `-supermap-postgresql` 启动的 `business-supermap-postgresql` 使用独立 volume 和原生 PostgreSQL 15 镜像。启动脚本会拒绝已安装 PostGIS 的实例；SuperMap `sm*` 系统表只能在 System 中通过 `SuperMap SDX+ for PostgreSQL` 高危启用入口，由 `supermap_workflow` 的 SDK 算子创建。
 
 启用 MySQL 时，脚本还会在数据库 ready 后执行 `mysql/init-cdc.sh`。该脚本每次都创建或更新 `${MYSQL_CDC_USER:-addp_cdc}@%`，并将权限收敛为 Debezium 所需的最小权限集，因此已有数据卷也会生效。连接 MySQL CDC Engine 时使用 `.env` 中的 `MYSQL_CDC_USER` 和 `MYSQL_CDC_PASSWORD`，不要使用 root。
+
+`bash scripts/start.sh -oceanbase` 启动官方 OceanBase CE 固定 LTS 镜像，并通过纯 SQL 脚本幂等初始化 `${OCEANBASE_DATABASE:-business}`。样例包含连接探针表，以及与 MySQL 普通业务样例对齐的 `customers`、`products`、`orders`、`order_items` 四张关联表，覆盖主外键、唯一约束、索引、Decimal、JSON、布尔和微秒时间字段；当前支持非空间普通表的安全建表、可空列增量演进、事务性分批 insert、覆盖策略所需的精确目标表删除，以及按显式非空稳定键执行的事务性幂等 upsert。该容器不初始化或声明空间、CDC、bounded watermark source 或 Oracle 模式能力，是 `MODE=mini` 的单机测试形态，建议预留至少 2 CPU / 8 GB 内存，不用于生产部署。System 中必须注册为 `engine_type=oceanbase`，容器内连接地址为 `business-oceanbase:2881`，默认账号为 `root@test`；不要登记为 MySQL。
+
+容器启动后，从仓库根目录运行 `make test-oceanbase-business`，可执行 OceanBase Provider 集成门禁；该门禁覆盖连接、实时目录、字段与统计 Facts、BatchRead、可执行查询样例、命名参数、受控只读事务，以及非空间普通表的 prepare/session/delete/upsert 写入契约。写入用例只创建并通过 OceanBase `ResourceDeleteProvider` 删除专用 gate 表，不创建或删除数据库，不修改固定业务样例数据。
 
 ### scripts/online-workbench-mysql-fixture.sh - Workbench T4 MySQL Fixture
 
@@ -258,6 +268,7 @@ docker-compose logs -f supermap-postgresql # SuperMap SDX+ for PostgreSQL 专用
 docker-compose logs -f minio       # MinIO 日志
 docker-compose logs -f clickhouse  # ClickHouse 日志
 docker-compose logs -f mongodb     # MongoDB 日志
+docker-compose logs -f oceanbase   # OceanBase CE 日志
 docker-compose logs -f business-redpanda # Business Redpanda 日志
 docker-compose logs -f doris-fe    # Doris 日志
 docker-compose logs -f spark-master  # Spark 日志
@@ -333,6 +344,7 @@ docker exec -i business-postgres psql -U business business < backup.sql
 - **MinIO**: latest
 - **ClickHouse**: 23.8
 - **MongoDB**: 7.0
+- **OceanBase CE**: 4.4.2 LTS (MySQL mode)
 - **Apache Doris**: 2.1.0 (all-in-one)
 - **Apache Spark**: 3.5.0
 - **网络**: business-network (bridge)

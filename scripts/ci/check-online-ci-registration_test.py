@@ -292,6 +292,70 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         with self.assertRaisesRegex(CHECK.RegistrationError, "requires"):
             CHECK.check_registration(self.repository)
 
+    def test_requires_mysql_four_owner_protection_fixtures_and_contract(self) -> None:
+        gate = self.repository / "scripts/test/online-gate.py"
+        gate.write_text(
+            gate.read_text(encoding="utf-8").replace(
+                '"first-suite"', '"security-mysql-owner-protection"'
+            ),
+            encoding="utf-8",
+        )
+        host = self.repository / "scripts/test/online-host-gate.sh"
+        host.write_text(
+            host.read_text(encoding="utf-8").replace(
+                "first-suite)\n    START_TARGET=-system",
+                "security-mysql-owner-protection)\n    START_TARGET=-all",
+            )
+            + "\nSYSTEM_URL GATEWAY_URL META_URL SECURITY_URL MANAGER_URL DEVELOP_URL\n"
+            + "SERVICE_URL TRANSFER_URL ADDP_ONLINE_WORKBENCH_MYSQL_ENGINE_ID\n"
+            + "bash business/scripts/online-engine-fixture.sh start\n"
+            + "bash business/scripts/online-engine-fixture.sh stop\n"
+            + "bash business/scripts/online-workbench-mysql-fixture.sh start\n"
+            + "bash business/scripts/online-workbench-mysql-fixture.sh stop\n"
+            + 'bash scripts/dev/start.sh "$START_TARGET"\n',
+            encoding="utf-8",
+        )
+        self.workflow.write_text(
+            self.workflow.read_text(encoding="utf-8").replace(
+                "first-suite", "security-mysql-owner-protection"
+            ),
+            encoding="utf-8",
+        )
+        postgres_fixture = self.repository / "business/scripts/online-engine-fixture.sh"
+        postgres_fixture.parent.mkdir(parents=True, exist_ok=True)
+        postgres_fixture.write_text(
+            "addp_online_security.mysql_email_transfer "
+            "DROP TABLE IF EXISTS addp_online_security.mysql_email_transfer\n",
+            encoding="utf-8",
+        )
+        mysql_fixture = (
+            self.repository / "business/scripts/online-workbench-mysql-fixture.sh"
+        )
+        mysql_fixture.write_text("fixture\n", encoding="utf-8")
+        owner = (
+            self.repository
+            / "scripts/test/security-mysql-owner-protection-online.py"
+        )
+        owner.write_text(
+            "/api/v1/meta/scan/run/manual "
+            "/api/v1/security/sensitive-data-types "
+            "addp.detector.email_metadata/v1 "
+            "/api/v1/security/protection-baselines "
+            "/api/v1/security/protection-enrollments "
+            "/api/v1/develop/executions /api/query/ "
+            '"effect": "suppress" "residual_resources": 0\n',
+            encoding="utf-8",
+        )
+        support = (
+            self.repository / "scripts/test/security-transfer-protection-online.py"
+        )
+        support.write_text("/api/v1/transfer/task-definitions\n", encoding="utf-8")
+
+        CHECK.check_registration(self.repository)
+        owner.unlink()
+        with self.assertRaisesRegex(CHECK.RegistrationError, "requires"):
+            CHECK.check_registration(self.repository)
+
     def test_requires_manager_internal_artifact_lineage_fixture_and_browser_suite(self) -> None:
         gate = self.repository / "scripts/test/online-gate.py"
         gate.write_text(

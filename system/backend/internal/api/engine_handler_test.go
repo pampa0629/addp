@@ -57,13 +57,25 @@ func TestListEngineTypesReturnsPluginDescriptors(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if len(response) != 12 {
-		t.Fatalf("descriptor count = %d, want 12", len(response))
+	if len(response) != 13 {
+		t.Fatalf("descriptor count = %d, want 13", len(response))
 	}
+	foundOceanBase := false
 	for index := 1; index < len(response); index++ {
 		if response[index-1].Type >= response[index].Type {
 			t.Fatalf("descriptors are not sorted: %q then %q", response[index-1].Type, response[index].Type)
 		}
+	}
+	for _, descriptor := range response {
+		if descriptor.Type == "oceanbase" {
+			foundOceanBase = true
+			if descriptor.ConnectionSpec.DefaultPortValue() != 2881 || descriptor.ConnectionSpec.SchemaVersion != engineplugin.ConnectionSpecSchemaVersion {
+				t.Fatalf("OceanBase descriptor = %#v", descriptor)
+			}
+		}
+	}
+	if !foundOceanBase {
+		t.Fatal("OceanBase descriptor is missing")
 	}
 	if response[0].ConnectionSpec.SchemaVersion != engineplugin.ConnectionSpecSchemaVersion {
 		t.Fatalf("connection spec schema = %q", response[0].ConnectionSpec.SchemaVersion)

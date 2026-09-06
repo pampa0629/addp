@@ -217,7 +217,7 @@ SDE Provider 不直接成为 Transfer continuous consumer。Transfer capture ada
 
 具体 Engine Instance 的 workspace 选择统一通过 `common/engine/instanceprovider.SpatialWorkspace`；只有 `detected|enabled` 可进入领域 Provider 解析。`not_detected|permission_denied|unavailable` 必须保持不可选。`ArcGISSDEWorkspace` 只返回 readiness fact，不得把普通 Oracle Plugin 当作 SDE adapter，也不得因 adapter 尚未注册而回退到 Oracle redo CDC。
 | MySQL | database | `information_schema.schemata/tables/columns/statistics/st_spatial_reference_systems` | `BASE TABLE` -> `table`，`VIEW` -> `view`，其他 `table_type` 转小写下划线 | `information_schema.columns`，主键来自 `column_key`，注释来自 `column_comment`；geometry 类型、SRID、nullable、CRS 和空间索引由 MySQL 插件自身补充为 `SpatialInfo` | 列表将 `information_schema.tables.table_rows` 写入 `estimated_row_count`；显式统计执行 `COUNT(*)` 写入 `row_count`；空间 extent 不通过全表聚合推断 | `information_schema`、`mysql`、`performance_schema`、`sys` | 普通表事实与 Doris 共享 `MySQLCompatibleCatalogFactsDialect`；MySQL 空间事实和行值编码保留在 MySQL 插件内；可启用表级 `Native.engine` |
-| OceanBase（MySQL 模式） | database | `information_schema.schemata/tables/columns` | 同 MySQL 兼容逻辑 | `information_schema.columns`，主键来自 `column_key`，注释来自 `column_comment` | 列表将 `information_schema.tables.table_rows` 写入 `estimated_row_count`；显式统计执行 `COUNT(*)` 写入 `row_count` | `information_schema`、`mysql`、`oceanbase` | 与 MySQL/Doris 共享 `MySQLCompatibleCatalogFactsDialect` 和 MySQL 方言；`engine_type` 仍固定为 `oceanbase`，首版不开放 Oracle 模式、空间、CDC 或写入 Provider |
+| OceanBase（MySQL 模式） | database | `information_schema.schemata/tables/columns/statistics` | 同 MySQL 兼容逻辑 | `information_schema.columns`，主键来自 `column_key`，注释来自 `column_comment` | 列表将 `information_schema.tables.table_rows` 写入 `estimated_row_count`；显式统计执行 `COUNT(*)` 写入 `row_count` | `information_schema`、`mysql`、`oceanbase` | 与 MySQL/Doris 共享 `MySQLCompatibleCatalogFactsDialect`，与 MySQL 共享 MySQL 方言的 `QueryReadSet` / `QueryOutputLineage` 证明逻辑；MySQL 与 OceanBase 的非空间普通表共享 MySQL-compatible `TableWritePreparer` / `TableWriteSessionProvider` / `ResourceDeleteProvider` / `TableUpsertProvider` 核心，OceanBase 开放安全建表、可空列增量演进、事务性分批 insert、精确目标表删除和按显式非空稳定键执行的事务性幂等 upsert；`engine_type` 仍固定为 `oceanbase`，不开放 Oracle 模式、空间、CDC 或 bounded watermark source Provider |
 | Doris | database | MySQL 兼容 `information_schema.schemata/tables/columns` | 同 MySQL 兼容逻辑 | 同 MySQL 兼容逻辑，注释能力按引擎实际返回 | 列表将 `information_schema.tables.table_rows` 写入 `estimated_row_count`；显式统计执行 `COUNT(*)` 写入 `row_count` | MySQL 系统库 + `__internal_schema` | 与 MySQL 共享 `MySQLCompatibleCatalogFactsDialect`；`Native.engine` 待确认 `information_schema.tables.engine` 稳定性后再启用 |
 | ClickHouse | database | `system.databases`、`system.tables`、`system.columns` | `MaterializedView` -> `materialized_view`，`View`/其他包含 `View` 的 engine -> `view`，其他 -> `table` | `system.columns`，nullable 从类型字符串推断，`DEFAULT` / `MATERIALIZED` / `ALIAS` 映射到通用默认值和生成列字段，当前不表达主键 | 列表将 `system.tables.total_rows` 写入 `estimated_row_count`；显式统计执行 `COUNT(*)` 写入 `row_count` | `system`、`information_schema`、`INFORMATION_SCHEMA` | 暂留插件内；ClickHouse `system.*` 语义独立 |
 | Spark SQL | database | `SHOW DATABASES`、`SHOW TABLES`、`DESCRIBE`，部分环境可查询 `information_schema` | 当前 `SHOW TABLES` 结果统一映射为 `table` | `DESCRIBE table` | 列表阶段不做真实 count，未知 `row_count` / `size_bytes` 保持为空；单表 catalog facts 显式请求统计时才执行 `COUNT(*)` | `information_schema`、`sys` | 暂留插件内；Spark catalog facts 更偏命令式接口 |
@@ -526,9 +526,16 @@ PostgreSQL Provider 的首个可信切片使用 PostgreSQL AST 和当前连接�
 - `VOLATILE` 函数、表函数、集合返回函数、非可信扩展成员的用户或扩展 schema 函数，以及任何候选无法完整证明的调用必须 unresolved；函数重载、默认参数、variadic 和当前 `search_path` 必须纳入候选闭包，不能按同名某一个安全函数缩小判断；
 - 普通视图继续按 `pg_rewrite/pg_depend` 展开绑定关系；视图依赖的非可信用户函数必须 unresolved。外部表、临时表、系统目录或其他无法证明为 Engine Catalog leaf 的来源同样 unresolved。
 
+MySQL 及 MySQL 模式 OceanBase Provider 的第一个可信 `QueryReadSet` 切片共享同一套 MySQL 兼容证明逻辑，只覆盖方言 AST 能完整解析、且当前连接目录确认所有引用都是真实基础表的只读 `SELECT`：
+
+- 未限定表名必须使用当前连接的 `database` 解析，显式限定表名使用其 database；JOIN 和派生子查询中的全部基础表都必须进入集合；
+- 每个引用必须通过 `information_schema.tables` 解析为唯一 InnoDB `BASE TABLE`。View、FEDERATED 等可引入额外数据源的存储引擎、临时表、系统 database、动态标识符或不存在的关系统一 unresolved，不在首个切片中展开视图依赖；
+- 首个切片不接受普通函数调用。MySQL 无法仅从语法名称证明调用是不读取额外数据的内建函数，所以内建函数、存储函数和 UDF 都统一 unresolved；无额外读取能力的 AST 专用表达式可继续解析；
+- `QueryOutputLineage` 只覆盖同一可信切片中可由 AST 和实时表结构唯一证明的直接列投影：普通表、JOIN 与带显式别名的派生子查询可以逐层组合直接列和显式列别名；每个来源的 `Fields` 必须来自当前 Engine Catalog。通配符、常量或表达式输出、聚合、UNION、缺少别名的派生表、重复输出名、歧义或不存在的列，以及任何无法唯一回溯到一个基础表字段的投影统一 output-lineage unresolved。过滤、连接、排序和分页中读取但不向结果输出字段值的来源保留空 bindings，不得把行选择依赖伪造成结果值血缘。
+
 查询 Provider 对外提供可读数据出口时，必须使用 `PrepareQuery()` 唯一主路。暂未能完整解析某种语言/方言的 PreparedQuery 必须在 `ReadSet()` 返回类型化 unresolved 错误，且 Provider 不得对受保护 Owner 声称已安装资源门禁；不保留独立 `ResolveQueryReadSet()`、再次提交查询或“仅用 `TargetPath`”的兼容路线。
 
-首个 `QueryOutputLineage` 验证范围固定为 PostgreSQL 和 MongoDB。PostgreSQL 对直接列、显式别名和可证明的单来源 `*` 产生 direct / identity 映射；表达式依赖标记为 derived，View 底层依赖、无法消歧的多来源 wildcard 等不能证明字段映射的 source 标记 opaque。MongoDB `find` 的原结构输出声明 identity，`distinct` 把指定源字段 direct 映射到 `value`，`count` 声明无字段值输出。MongoDB aggregate 只对按顺序完全由 `$match`、`$unwind`、`$project`、`$sort` 组成的透明管道产生输出血缘：`$project` 只接受字段保留、字段排除、直接字段别名和 `$ifNull: ["$field", null]`，`$unwind.includeArrayIndex` 作为数组结构派生值记录；任一其他阶段、表达式、复合对象、动态字段路径或无法从前序输出唯一回溯到源字段的引用必须返回 output-lineage unresolved。未纳管 Tenant 不调用 `OutputLineage()`，不会承担结构读取或结果来源分析成本。
+首个 `QueryOutputLineage` 验证范围包括 PostgreSQL、MongoDB，以及 MySQL / MySQL 模式 OceanBase 的直接列投影子集。PostgreSQL 对直接列、显式别名和可证明的单来源 `*` 产生 direct / identity 映射；表达式依赖标记为 derived，View 底层依赖、无法消歧的多来源 wildcard 等不能证明字段映射的 source 标记 opaque。MongoDB `find` 的原结构输出声明 identity，`distinct` 把指定源字段 direct 映射到 `value`，`count` 声明无字段值输出。MongoDB aggregate 只对按顺序完全由 `$match`、`$unwind`、`$project`、`$sort` 组成的透明管道产生输出血缘：`$project` 只接受字段保留、排除、直接别名和 `$ifNull: ["$field", null]`，`$unwind.includeArrayIndex` 作为数组结构派生值记录；任一其他阶段、表达式、复合对象、动态字段路径或无法从前序输出唯一回溯到源字段的引用必须返回 output-lineage unresolved。MySQL 及 MySQL 模式 OceanBase 只对前述基础表可信 ReadSet 内的直接列、显式别名、JOIN 与派生子查询逐层产生 direct bindings，不支持 wildcard 或 derived binding。未纳管 Tenant 不调用 `OutputLineage()`，不会承担结构读取或结果来源分析成本。
 
 生产搬运需要连续消费只读查询结果时使用 `QueryReadSessionProvider`，不能循环调用返回有界 `QueryResult` 的预览接口：
 
@@ -594,7 +601,7 @@ type FederatedQueryRequest struct {
 
 查询语言差异由 `QueryRequest.Language` 与 `capabilities.compute.query.languages` 表达，不按数据库类别新增查询入口。`QueryRuntimeProvider` 是普通查询主路径，适用于 SQL、MQL、Cypher 表格结果、OpenSearch DSL、Mango Query 等能返回 `QueryResult` 的查询。
 
-`GenerateSampleQuery()` 只负责把调用方通过 `SampleQueryOptions.Path` 传入的真实 Engine Catalog leaf 转换为该引擎语言的查询模板。调用方必须先通过实时 Engine Catalog 发现并确认该 leaf 当前有数据；联邦查询还必须使用当前用户派生的只读执行授权真实探测候选，不能把可能过期的 Meta 条目直接当作可执行样例。Provider 不得在缺少可查询 leaf、对象已失效、发现失败或连接失败时返回版本查询、`SELECT 1`、占位集合名或其他静态兜底。没有真实数据样例时必须让调用方得到明确的“样例不可用”错误。
+`GenerateSampleQuery()` 只负责把调用方通过 `SampleQueryOptions.Path` 传入的真实 Engine Catalog leaf 转换为该引擎语言的查询模板。调用方必须先通过实时 Engine Catalog 发现并确认该 leaf 当前有数据；联邦查询还必须使用当前用户派生的只读执行授权真实探测候选，不能把可能过期的 Meta 条目直接当作可执行样例。生成结果必须能够由该 Provider 自己的 `PrepareQuery()` 安全分析和执行；若 Provider 的字段血缘范围不支持 wildcard，模板必须按实时 Catalog fields 枚举直接列，不能返回随后会被同一 Provider 拒绝的 `SELECT *`。Provider 不得在缺少可查询 leaf、对象已失效、发现失败或连接失败时返回版本查询、`SELECT 1`、占位集合名或其他静态兜底。没有真实数据样例时必须让调用方得到明确的“样例不可用”错误。
 
 `QueryRequest.TargetPath` 是普通查询的目标 Engine Catalog 路径。调用方在选择具体数据库、集合、图等资源后必须沿模板生成、验证、即时执行和任务重载链路传递同一目标路径；Provider 不得用连接信息中的默认数据库替代显式目标。MongoDB 的目录只返回当前认证主体通过原生 roles 获得授权的数据库和集合，ADDP 不另存一份可访问数据库列表。
 
@@ -654,6 +661,7 @@ type InferenceRuntimeProvider interface {
 | --- | --- |
 | PostgreSQL | 通用 tabular 组合 + `QueryReadSessionProvider` + `BoundedWatermarkReadProvider` + `TableUpsertProvider` + `PartitionedTableChangeApplyProvider` |
 | MySQL | 通用 tabular 组合 + `TableUpsertProvider` + `PartitionedTableChangeApplyProvider` |
+| OceanBase（MySQL 模式） | 非空间通用 tabular 组合 + `TableUpsertProvider` |
 | Doris / ClickHouse / Spark SQL | `EnginePlugin` + `EngineCatalogModelProvider` + `EngineCatalogProvider` + `EngineCatalogFactsProvider` + `SQLQueryRuntimeProvider` + `ConnectionPoolPlugin` |
 | MongoDB | `EnginePlugin` + `EngineCatalogModelProvider` + `EngineCatalogProvider` + `EngineCatalogFactsProvider` + `DynamicSchemaSamplingProvider` + `RecordReadSessionProvider` + `EncodedRecordReadSessionProvider` + `QueryRuntimeProvider` + `QueryReadSessionProvider` |
 | Neo4j | `EnginePlugin` + `EngineCatalogModelProvider` + `EngineCatalogProvider` + `EngineCatalogFactsProvider` + `GraphSampleProvider` + `QueryRuntimeProvider` + `GraphQueryProvider` |

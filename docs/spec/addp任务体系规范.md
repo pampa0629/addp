@@ -39,6 +39,9 @@
 12. Quality `check|materialization_gate`、Meta `scan`、Transfer bounded `sync` 和 Orchestrator 来源的 Develop `query` 的 execution worker 必须是 owner 模块附属的独立进程，并统一使用 PostgreSQL execution claim + lease；owner Backend 不执行这些 bounded execution。
 13. owner scheduler 运行在 owner Backend，只负责按任务定义发现到期任务并创建 durable `pending` execution；Worker 不可用不得阻止 scheduler 创建 execution。dispatcher 只负责 outbox/delivery 投递，二者都不得替代 execution worker 成为业务执行事实源。
 14. bounded runtime queue 的唯一主路线是 `common.task_executions` PostgreSQL claim，不保留 Redis/Asynq、进程内 channel 或 Backend 内嵌执行 fallback。continuous runtime、dispatcher 和 maintenance loop 继续使用各自专用协议，不强行迁入 bounded claim。
+15. Manager `pptx_pdf_generation` 是 bounded 预览派生产物任务：任务定义归 `manager.pptx_pdf_tasks`，结果归 `manager.pptx_pdf`，Manager Backend 只创建已授权的 `pending` execution，独立 `manager-worker` 负责领取和转换。LibreOffice 不进入 Manager Backend。
+
+`pptx_pdf_generation` 声明 `supports_schedule=false`。普通预览按需触发：`GET /manager/preview` 只返回 artifact 状态，不得隐式创建任务或 execution；前端收到 `preview_artifact_missing` 后显式调用创建与执行 API。已有 `pending` / `running` execution 时复用其状态，失败后只允许用户显式重试。Orchestrator 只在用户显式配置预热或批量编排时调用同一 TaskProvider 任务，不建立第二条执行路线。
 
 ## 核心对象
 

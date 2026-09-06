@@ -147,7 +147,7 @@ Copilot Permission 只授予“生成候选结果”，不授予候选查询、W
 - `/workflow/generate` 使用 `workflow.draft.generate` Tool Scope，并唯一映射到可委托的 `copilot.workflow.execute`。
 - `/transfer/generate` 使用 `transfer.draft.generate` Tool Scope，只要求 `copilot.transfer.execute`；源资源和目标父节点由 owner 重新验证，运行边界和目标策略沿用 Transfer 向导草稿。
 - `/kg-build/extract` 只接受 Graph 的 Tenant Service Access Token，请求和令牌 Tenant 必须一致，不消费 User Permission。
-- `/standard-documents/extract` 只接受 Standard 的 Tenant Service Access Token；只返回候选内容与绝对行号，不保存、创建或发布正式标准。
+- `/standard-documents/extract` 只接受 Standard 的 Tenant Service Access Token；只返回候选内容与绝对行号，不保存、创建或发布正式标准。数据元候选的 `data_type` 只允许 `string|int|bigint|float|decimal|date|datetime|bool|json|text`，码值集候选只允许 `string|int|bigint`，术语和指标候选必须为 `null`；原文只能确定 `numeric`、`date_or_datetime` 等上位类型时必须保持 `null`，不得猜测。数据元候选的 `value_domain_kind` 只允许 `unrestricted|range|enumeration`；`identifier` 等业务语义写入名称或定义，不得发明数据类型或值域类型。
 - `/navigate/guide` 只要求已认证 User，不读取客户端提交的身份，也不借用其他业务 Permission。
 
 ## 核心功能实现

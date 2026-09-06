@@ -523,6 +523,52 @@ jobs:
           gate: Common Engine Provider integration (PostgreSQL 15)
           status: ${{ job.status }}
 
+  common-mysql-data-protection:
+    name: Common and Owner data protection contracts (MySQL 8)
+    needs: selection
+    if: needs.selection.outputs.common == 'true' || needs.selection.outputs.manager == 'true' || needs.selection.outputs.develop == 'true' || needs.selection.outputs.service == 'true' || needs.selection.outputs.transfer == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      mysql:
+        image: mysql:8.0@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b
+        env:
+          MYSQL_ROOT_PASSWORD: addp_ci_password
+          MYSQL_DATABASE: addp_ci
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h127.0.0.1 -paddp_ci_password --silent"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: common/go.mod
+          cache: false
+
+      - name: Run MySQL data protection gate
+        env:
+          ADDP_TEST_MYSQL_HOST: 127.0.0.1
+          ADDP_TEST_MYSQL_PORT: 3306
+          ADDP_TEST_MYSQL_USER: root
+          ADDP_TEST_MYSQL_PASSWORD: addp_ci_password
+        run: make test-common-mysql-data-protection
+
+      - name: Summarize MySQL data protection gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Common and Owner data protection contracts (MySQL 8)
+          status: ${{ job.status }}
+
   manager-mongodb-security:
     name: Manager and Transfer data protection integration (MongoDB 7)
     needs: selection

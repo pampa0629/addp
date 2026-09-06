@@ -26,7 +26,6 @@ import (
 var (
 	ErrProjectionCursorConflict              = errors.New("protection projection cursor conflict")
 	ErrNoSupportedFindingsReleaseUnavailable = errors.New("no-supported-findings release unavailable")
-	requiredProtectionOwners                 = []string{"develop", "manager", "service", "transfer"}
 )
 
 type EnrollmentService struct {
@@ -116,7 +115,7 @@ func createProtectionEnrollment(tx *gorm.DB, tenantID, userID int64, target data
 		}
 		return models.ProtectionEnrollment{}, err
 	}
-	for _, owner := range requiredProtectionOwners {
+	for _, owner := range allRequiredProtectionOwners() {
 		projection := dataprotection.Projection{
 			SchemaVersion: dataprotection.ProjectionSchemaV1,
 			ProjectionID:  uuid.NewString(), Revision: revisionString(1),
@@ -459,7 +458,7 @@ func (s *EnrollmentService) advanceEnrollmentStates(tx *gorm.DB, tenantID int64,
 		if err := tx.Where("tenant_id = ? AND enrollment_id = ?", tenantID, enrollment.ID).Find(&projections).Error; err != nil {
 			return err
 		}
-		covered := len(projections) == len(requiredProtectionOwners)
+		covered := len(projections) == len(requiredProtectionOwnerContracts)
 		for _, projection := range projections {
 			requiredSequence := projection.PublishedSequence
 			if enrollment.State == models.EnrollmentStateReleasing {
@@ -646,15 +645,6 @@ func newDiscoveryExecution(enrollment models.ProtectionEnrollment, actorID int, 
 		ExecutionConfig: commonmodels.JSONMap{}, Metadata: commonmodels.JSONMap{},
 		MaxAttempts: 3, CreatedAt: now, UpdatedAt: now,
 	}
-}
-
-func isRequiredOwner(owner string) bool {
-	for _, candidate := range requiredProtectionOwners {
-		if owner == candidate {
-			return true
-		}
-	}
-	return false
 }
 
 func revisionString(value int64) string { return fmt.Sprintf("%020d", value) }

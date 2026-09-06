@@ -298,7 +298,7 @@ raw copy 是 non-table encoded single content 的原始字节复制。它不调�
 |---|---|
 | `replace` | Transfer 写入前清理目标资源或让 prepare 重建目标。 |
 | `append` | 追加写入；失败 retry 当前拒绝 append，避免重复写入。 |
-| `upsert` | 按稳定键幂等新增或更新；当前支持声明幂等 upsert 能力的 PostgreSQL/MySQL native table 目标。 |
+| `upsert` | 按稳定键幂等新增或更新；当前支持声明幂等 upsert 能力的 PostgreSQL、MySQL 与非空间 OceanBase native table 目标。 |
 | `upsert_delete` | 数据库 CDC v1 按稳定键新增、更新和物理删除；与目标 partition ledger 原子提交。 |
 
 apply mode 是 Transfer policy；真实 upsert/delete 能力必须由目标 engine Provider 和 capability 声明。raw copy 第一版只支持 `replace`，并要求目标 engine 提供删除资源能力。
@@ -308,13 +308,13 @@ apply mode 是 Transfer policy；真实 upsert/delete 能力必须由目标 engi
 当前支持组合为：
 
 ```text
-PostgreSQL/MySQL native table -> PostgreSQL/MySQL native table
+PostgreSQL/MySQL native table -> PostgreSQL/MySQL/OceanBase native table
 bounded + incremental + watermark + upsert
 ```
 
 配置必须声明 `load.change_detection.field`、非空 `tie_breaker`、`start=committed`、`end=execution_upper_bound`，并在 `target.policy.keys` 声明稳定目标键。watermark 字段不得为 NULL；tie breaker 必须精确匹配非空主键或唯一约束，并且稳定、不可变。每次 execution 在源数据库的一致性快照内冻结复合上界，只读取 `(committed_position, execution_upper_bound]` 并稳定排序；MySQL 源必须是 InnoDB 基表，且当前不得包含空间字段。
 
-同步主状态存储在 `transfer.sync_states`。position 使用 `type=watermark`、`version=v1` 的 JSON；目标批次提交成功后才允许携带 `state_version` 和本次 fencing token 做 CAS 更新。重复应用必须由目标 `TableUpsertProvider` 幂等吸收：PostgreSQL 使用 `ON CONFLICT ... DO UPDATE`，MySQL 使用 InnoDB 事务内的 `ON DUPLICATE KEY UPDATE`。MySQL 目标的配置 keys 必须精确匹配非空主键或唯一约束，且目标表不得存在与配置 keys 不同的唯一约束。
+同步主状态存储在 `transfer.sync_states`。position 使用 `type=watermark`、`version=v1` 的 JSON；目标批次提交成功后才允许携带 `state_version` 和本次 fencing token 做 CAS 更新。重复应用必须由目标 `TableUpsertProvider` 幂等吸收：PostgreSQL 使用 `ON CONFLICT ... DO UPDATE`，MySQL 及 MySQL 模式 OceanBase 使用 InnoDB 事务内的 `ON DUPLICATE KEY UPDATE`。MySQL-compatible 目标的配置 keys 必须精确匹配非空主键或唯一约束，且目标表不得存在与配置 keys 不同的唯一约束；OceanBase 当前只支持非空间目标。
 
 第一版只支持 resume：新 execution 从 committed position 继续并在成功后推进主状态。不提供 replay，不发现物理删除，也不支持只读副本 lookback。源表所有 insert/update 必须可靠更新 watermark；时间回拨或未更新 watermark 的变化不在保证范围内。
 
@@ -399,7 +399,7 @@ capture supervisor 已通过 Kafka Connect REST 和 Infra Kafka admin API 管理
 |---|---|
 | observable | 已支持，用于进度展示和故障定位。 |
 | restartable | 已支持 retry 从头重跑；append 拒绝。 |
-| resumable | PostgreSQL/MySQL watermark incremental 通过 `transfer.sync_states` 支持 execution 间 resume；snapshot checkpoint 仍仅可观测。 |
+| resumable | PostgreSQL/MySQL source 的 watermark incremental 通过 `transfer.sync_states` 支持 execution 间 resume，目标按幂等 `table_upsert` capability 选择；snapshot checkpoint 仍仅可观测。 |
 
 ## 十一、写后 Meta 扫描
 

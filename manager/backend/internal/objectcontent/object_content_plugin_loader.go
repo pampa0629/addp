@@ -136,6 +136,7 @@ func fallbackBuiltinContentPlugins() []ObjectContentPluginConfig {
 		{Name: "builtin:content-pdf", Type: "builtin", Builtin: models.ObjectPreviewKindPDF},
 		{Name: "builtin:content-doc", Type: "builtin", Builtin: models.ObjectPreviewKindDOC},
 		{Name: "builtin:content-docx", Type: "builtin", Builtin: models.ObjectPreviewKindDOCX},
+		{Name: "builtin:content-rtf", Type: "builtin", Builtin: models.ObjectPreviewKindRTF},
 		{Name: "builtin:content-pptx", Type: "builtin", Builtin: models.ObjectPreviewKindPPTX},
 		{Name: "builtin:content-wps", Type: "builtin", Builtin: models.ObjectPreviewKindWPS},
 	}
@@ -309,7 +310,7 @@ func defaultBuiltinContentPriority(kind string) int {
 		return 80
 	case models.ObjectPreviewKindDOCX:
 		return 75
-	case models.ObjectPreviewKindWPS, models.ObjectPreviewKindPPTX:
+	case models.ObjectPreviewKindRTF, models.ObjectPreviewKindWPS, models.ObjectPreviewKindPPTX:
 		return 74
 	case models.ObjectPreviewKindImage:
 		return 70
@@ -416,7 +417,7 @@ func defaultRawDocumentMaxBytes(formatType commonformat.FormatType) int64 {
 	switch formatType {
 	case commonformat.FormatPDF:
 		return maxPDFPreviewBytes
-	case commonformat.FormatDOC, commonformat.FormatDOCX, commonformat.FormatWPS:
+	case commonformat.FormatDOC, commonformat.FormatDOCX, commonformat.FormatRTF, commonformat.FormatWPS:
 		return maxOfficePreviewBytes
 	case commonformat.FormatPPTX:
 		return maxPPTXPreviewBytes

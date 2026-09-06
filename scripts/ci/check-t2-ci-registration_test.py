@@ -55,8 +55,48 @@ class T2CIRegistrationTest(unittest.TestCase):
             "        run: make test-sample-postgres\n"
         )
 
+    def _add_mysql_gate(self, image: str) -> None:
+        script = self.repository / "scripts/test/common-mysql-data-protection-gate.sh"
+        script.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+        (self.repository / "Makefile").write_text(
+            "test-integration:\n"
+            "\t@$(MAKE) test-sample-postgres\n"
+            "\t@$(MAKE) test-common-mysql-data-protection\n\n"
+            "test-sample-postgres:\n"
+            "\t@bash scripts/test/sample-postgres-gate.sh\n\n"
+            "test-common-mysql-data-protection:\n"
+            "\t@bash scripts/test/common-mysql-data-protection-gate.sh\n",
+            encoding="utf-8",
+        )
+        self.workflow.write_text(
+            self._workflow_text()
+            + "  common-mysql-data-protection:\n"
+            + "    services:\n"
+            + "      mysql:\n"
+            + f"        image: {image}\n"
+            + "    steps:\n"
+            + "      - name: Select common gate\n"
+            + "        id: common\n"
+            + "        run: python3 scripts/ci/select-module-gate.py --module common\n"
+            + "      - name: Run MySQL gate\n"
+            + "        run: make test-common-mysql-data-protection\n",
+            encoding="utf-8",
+        )
+
     def test_accepts_complete_registration(self) -> None:
         self.assertEqual([], MODULE.validate_registration(self.repository))
+
+    def test_accepts_pinned_mysql_gate(self) -> None:
+        self._add_mysql_gate("mysql:8.0@sha256:" + "b" * 64)
+        self.assertEqual([], MODULE.validate_registration(self.repository))
+
+    def test_rejects_unpinned_mysql_gate(self) -> None:
+        self._add_mysql_gate("mysql:8.0")
+        self.assertIn(
+            "scripts/test/common-mysql-data-protection-gate.sh: MySQL 8 service image "
+            "is not pinned in test-common-mysql-data-protection job",
+            MODULE.validate_registration(self.repository),
+        )
 
     def test_rejects_missing_owner_and_target_registration(self) -> None:
         self.workflow.write_text(

@@ -229,7 +229,8 @@
 		  "notebook_generation": "Notebook code generation",
 		  "transfer_generation": "Transfer task draft generation",
 		  "navigation_guide": "Platform navigation guidance",
-		  "knowledge_graph_extraction": "Knowledge graph extraction"
+		  "knowledge_graph_extraction": "Knowledge graph extraction",
+		  "standard_document_extraction": "Standard document candidate extraction"
 		}
 	  },
 	  "scopes": {

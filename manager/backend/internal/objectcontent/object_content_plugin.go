@@ -401,7 +401,7 @@ func defaultFrontendRenderer(kind string) string {
 	switch kind {
 	case models.ObjectPreviewKindPDF:
 		return models.ObjectPreviewKindPDF
-	case models.ObjectPreviewKindDOC, models.ObjectPreviewKindDOCX, models.ObjectPreviewKindWPS:
+	case models.ObjectPreviewKindDOC, models.ObjectPreviewKindDOCX, models.ObjectPreviewKindRTF, models.ObjectPreviewKindWPS:
 		return models.ObjectPreviewRendererOffice
 	case models.ObjectPreviewKindPPTX:
 		return models.ObjectPreviewKindPPTX
@@ -446,6 +446,7 @@ func contentKindLabel(kind string) string {
 		models.ObjectPreviewKindPDF:           "PDF",
 		models.ObjectPreviewKindDOC:           "DOC",
 		models.ObjectPreviewKindDOCX:          "DOCX",
+		models.ObjectPreviewKindRTF:           "RTF",
 		models.ObjectPreviewKindWPS:           "WPS",
 		models.ObjectPreviewKindPPTX:          "PPTX",
 		models.ObjectPreviewKindImage:         "图片",

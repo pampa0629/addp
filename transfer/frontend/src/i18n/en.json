@@ -752,7 +752,7 @@
       "loadModeLabel": "Synchronization Scope",
       "snapshotLoad": "Synchronize All Data Each Time",
       "watermarkIncrementalLoad": "Synchronize Inserts and Updates Only",
-      "watermarkIncrementalUnsupported": "Changed-data synchronization currently supports PostgreSQL or MySQL tables as the source and PostgreSQL or MySQL tables as the target.",
+      "watermarkIncrementalUnsupported": "The source engine must support bounded watermark reads, and the target engine must support idempotent table upserts.",
       "watermarkIncrementalNoticeTitle": "Incremental Synchronization Requirements",
       "watermarkIncrementalNotice": "The source table must have a field that changes whenever a record is inserted or updated, plus a primary or unique key that identifies each record. Interrupted tasks resume from the last successful position. Physical deletes in the source table are not handled yet.",
       "watermarkFieldLabel": "Change Detection Field",

@@ -22,6 +22,47 @@ export function initialApplicationParameterValues(snapshot) {
   ]))
 }
 
+export function componentIDsForApplicationParameters(snapshot, parameterKeys) {
+  const changedKeys = new Set(parameterKeys || [])
+  return [...new Set(
+    (snapshot?.parameter_bindings || [])
+      .filter((binding) => changedKeys.has(binding.application_parameter_key))
+      .map((binding) => binding.component_id)
+      .filter(Boolean)
+  )]
+}
+
+export function invalidateApplicationParameterResults(snapshot, componentStates, parameterKeys) {
+  const componentIDs = componentIDsForApplicationParameters(snapshot, parameterKeys)
+  for (const componentID of componentIDs) {
+    const current = componentStates?.[componentID]
+    if (!current) continue
+    current.requests.invalidate()
+    current.querying = false
+    current.exporting = false
+    current.query_error = ''
+    current.query_completed = false
+    current.rows = []
+    current.page = { has_more: false, next_cursor: '' }
+    current.cursors = ['']
+    current.cursor_index = 0
+  }
+  return componentIDs
+}
+
+export function commitLatestComponentDescriptorState(current, request, componentID, nextState) {
+  if (!current.descriptorRequests.isCurrent(request, componentID)) return false
+  Object.assign(current, nextState)
+  return true
+}
+
+export function commitLatestDataApplicationLoad(requests, request, currentApplicationID, commit) {
+  const targetID = String(currentApplicationID || '').trim()
+  if (!requests.isCurrent(request, targetID)) return false
+  commit()
+  return true
+}
+
 export function buildComponentQuery(snapshot, component, values, cursor = '', format = component.query_template.format) {
   const bindingByTarget = new Map(
     (snapshot?.parameter_bindings || [])
@@ -90,11 +131,7 @@ export function buildSelectionUpdate(snapshot, sourceComponentID, descriptor, ro
     selectedParameterKeys.add(parameter.key)
   }
   if (selectedParameterKeys.size === 0) throw new Error('empty selection binding')
-  const componentIDs = [...new Set(
-    (snapshot?.parameter_bindings || [])
-      .filter((binding) => selectedParameterKeys.has(binding.application_parameter_key))
-      .map((binding) => binding.component_id)
-  )]
+  const componentIDs = componentIDsForApplicationParameters(snapshot, selectedParameterKeys)
   if (componentIDs.length === 0) throw new Error('selection binding has no targets')
   return { parameter_values: parameterValues, component_ids: componentIDs }
 }
@@ -116,6 +153,18 @@ export function applicationRefreshDelayMilliseconds(page) {
   const interval = page?.refresh_interval_seconds
   if (page?.display_mode !== 'wallboard' || ![30, 60, 300].includes(interval)) return 0
   return interval * 1000
+}
+
+export function componentBlockingError(state) {
+  return state?.contract_error || state?.descriptor_error || ''
+}
+
+export function canExecuteComponentQuery(state) {
+  return Boolean(state?.descriptor) && !state?.contract_error
+}
+
+export function canAttemptApplicationQuery(components, states) {
+  return (components || []).length > 0 && components.every((component) => !states?.[component.id]?.contract_error)
 }
 
 export function canRunApplicationRefresh(page, { hidden = false, querying = false } = {}) {

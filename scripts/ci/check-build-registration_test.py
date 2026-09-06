@@ -311,6 +311,13 @@ class BuildRegistrationTest(unittest.TestCase):
             MODULE.validate_registration(self.repository),
         )
 
+    def test_makefile_script_references_ignore_nested_script_directories(self) -> None:
+        references = MODULE.makefile_script_references(
+            "@bash scripts/root.sh\n@bash -n business/scripts/start.sh\n"
+        )
+
+        self.assertEqual({"scripts/root.sh"}, references)
+
     def test_rejects_module_makefile(self) -> None:
         self._write("sample/Makefile", "build:\n\t@echo duplicate\n")
         subprocess.run(

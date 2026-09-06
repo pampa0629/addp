@@ -110,7 +110,11 @@ func bindQueryServiceNamedParameters(service *models.QueryService, engineType, b
 		}
 		resolved[definition.Name] = normalized
 	}
-	boundSQL, args, err := commonquery.BindSQL(baseSQL, resolved, commonquery.SQLPlaceholderStyleForEngine(engineType))
+	dialect, dialectErr := queryPlanDialect(engineType)
+	if dialectErr != nil {
+		return "", nil, nil, dialectErr
+	}
+	boundSQL, args, err := commonquery.BindSQL(baseSQL, resolved, commonquery.SQLPlaceholderStyleForDialect(dialect.Name()))
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("%w: bind named parameters: %v", ErrInvalidStructuredQuery, err)
 	}

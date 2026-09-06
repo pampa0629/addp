@@ -14,7 +14,6 @@ import (
 	"github.com/addp/common/client"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
-	commonquery "github.com/addp/common/query"
 	"github.com/addp/service/internal/models"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -148,12 +147,32 @@ func directSourceSQL(queryService *models.QueryService, engineType string) (stri
 	if queryService.ConfigType != "table" || strings.TrimSpace(queryService.TargetTable) == "" {
 		return "", fmt.Errorf("query service table source is missing")
 	}
-	dialect := commonquery.ForEngine(engineType)
+	outputContract := queryService.GetTableInfo()
+	if outputContract == nil || len(outputContract.Fields) == 0 {
+		return "", fmt.Errorf("query service output contract is missing")
+	}
+	dialect, err := queryPlanDialect(engineType)
+	if err != nil {
+		return "", err
+	}
+	columns := make([]string, 0, len(outputContract.Fields))
+	seen := make(map[string]struct{}, len(outputContract.Fields))
+	for _, field := range outputContract.Fields {
+		name := strings.TrimSpace(field.Name)
+		if name == "" {
+			return "", fmt.Errorf("query service output contract contains an empty field")
+		}
+		if _, duplicate := seen[name]; duplicate {
+			return "", fmt.Errorf("query service output contract contains duplicate field %s", name)
+		}
+		seen[name] = struct{}{}
+		columns = append(columns, dialect.QuoteIdentifier(name))
+	}
 	table := dialect.QuoteIdentifier(queryService.TargetTable)
 	if strings.TrimSpace(queryService.SchemaName) != "" {
 		table = dialect.QuoteIdentifier(queryService.SchemaName) + "." + table
 	}
-	return "SELECT * FROM " + table, nil
+	return "SELECT " + strings.Join(columns, ", ") + " FROM " + table, nil
 }
 
 func (s *QueryExecutorService) executeFederatedQuery(

@@ -32,6 +32,7 @@ require (
 	github.com/twpayne/go-geom v1.6.1
 	github.com/vmware/go-nfs-client v0.0.0-20190605212624-d43b92724c1b
 	github.com/xuri/excelize/v2 v2.10.0
+	github.com/xwb1989/sqlparser v0.0.0-20180606152119-120387863bf2
 	go.mongodb.org/mongo-driver v1.11.4
 	golang.org/x/image v0.25.0
 	golang.org/x/text v0.33.0

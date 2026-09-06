@@ -115,7 +115,8 @@
 | dimension hierarchy | 维度层级 | 在数据模型中定义维度成员从汇总到明细的有序层次及层级字段。 | 属于 Model，而不是 Standard；层级字段可以引用已发布的数据元修订以获得统一语义。跨模型复用通过 Model 的公共/一致性维度实现。 |
 | standard document revision | 标准文档修订 | 标准来源文档一次不可变的内容快照及其版本、来源和生效信息。 | 属于 Standard。Copilot 可从修订内容提取标准候选项，但提取结果必须保留页码、章节或文本片段等证据，并经人工审核后才能发布为正式标准修订。 |
 | standard extraction | 标准提炼批次 | Standard 针对一个确定的标准文档修订发起、由 Copilot 执行的一次候选标准提炼。 | Standard 保存批次、结果与人工处置事实；Copilot 只返回候选内容，不保存 Standard 业务状态，也不能创建或发布正式标准。重复提炼形成新批次，不覆盖旧结果。 |
-| standard extraction candidate | 标准提炼候选 | 从一个标准文档修订中识别出的潜在业务术语、数据元、码值集或指标定义。 | 候选固定引用提炼批次和来源文档修订，状态为 `pending`、`retained` 或 `rejected`；`retained` 只表示人工认为值得后续建标，仍不是正式标准身份或修订。 |
+| standard extraction candidate | 标准提炼候选 | 从一个标准文档修订中识别出的潜在业务术语、数据元、码值集或指标定义。 | 候选固定引用提炼批次和来源文档修订，状态为 `pending`、`retained` 或 `rejected`；数据元候选的 `data_type` 只能使用 Standard 数据元类型，码值集候选只能使用 `string`、`int`、`bigint`，术语和指标候选不得携带 `data_type`；数据元候选的 `value_domain_kind` 只能使用 `unrestricted`、`range`、`enumeration`，`identifier` 等业务语义不得混入数据类型或值域类型，`numeric`、`date_or_datetime` 等模糊上位提示也不是合法标准数据类型；`retained` 只表示人工认为值得后续建标，仍不是正式标准身份或修订。 |
+| standard extraction candidate comparison | 标准提炼候选比对 | Standard 在读取提炼结果时，将候选与当前租户内同类型、同编码的活动标准稳定身份进行确定性比较所得的动态投影。 | 结果固定为 `new`、`exact`、`content_conflict` 或 `scope_conflict`，差异项明确给出字段及候选值、当前标准值；同名不同编码不自动判为重复。比对不写回候选、不创建标准，也不代替人工裁决。 |
 | standard extraction evidence | 标准提炼证据 | 支撑某个标准提炼候选的不可变来源片段。 | 必须记录确定的文档修订、Markdown 章节或页码定位、行号/页码范围、原文摘录及内容摘要；证据不能只保存模型解释、置信度或可变的文档稳定身份。 |
 | standard revision status | 标准修订状态 | 可正式发布的标准定义修订所共用的审核发布状态。 | 业务术语、数据元、码值集、指标定义和标准文档等发布型定义统一使用 `draft`、`in_review`、`published`、`withdrawn`；`published` 只表示审核通过且定义不可变，不等同于当前生效。同一稳定身份至多有一个可编辑草稿，可以有多个生效区间不重叠的已发布修订。 |
 | effective standard revision | 当前生效标准修订 | 在指定业务时点满足 `effective_from <= as_of < effective_to` 的已发布修订；`effective_to` 为空表示无上界。 | Standard 按时点动态解析，不保存 `current_revision_id` 缓存；未显式传入 `as_of` 时使用服务端当前时间。同一稳定身份在任一时点至多解析出一个修订。 |
@@ -284,8 +285,9 @@
 | ad-hoc execution | 一次性执行 | 不依赖持久任务定义、直接按本次配置创建的 execution。 | 可以没有 `source_task_id`，但必须在 `execution_config` 保存完整执行配置。 |
 | artifact state | 产物状态 | 描述派生产物当前是否可用、在哪里、由什么配置生成的状态对象。 | 例如瓦片缓存产物、embedding vectors；不是 execution。 |
 | existing result action | 已有结果动作 | 调用方在执行会刷新 owner 受管当前结果时显式声明的动作；当前只允许 `overwrite`。 | TaskProvider 请求参数为 `parameters.existing_result_action=overwrite`。前端人工执行时先二次确认再提交；Orchestrator 可将该动作保存为 Step 参数并在定时 Pipeline 中逐次提交。没有当前结果时可省略；业务派生数据不适用。 |
-| quick view task | 快显任务 | 为源 data item 生成 Manager 受管快显结果的任务定义。 | 任务归 Manager 私有表；重型转换由对应 Workflow Runtime direct 算子执行。 |
-| quick view result | 快显结果 | Manager 为提升交互预览效率而生成并维护生命周期的 infra artifact。 | 不是业务 data item，不进入 Meta；同一源 item 可以按目标格式关联多个独立结果。 |
+| preview artifact task | 预览派生产物任务 | 为源 data item 生成 Manager 受管预览材料的任务定义。 | 任务归 Manager 私有表；GIS/三维转换可由对应 Workflow Runtime direct 算子执行，文档转换由独立 Manager Worker 执行。 |
+| preview artifact | 预览派生产物 | Manager 为改善交互预览而生成并维护生命周期的 infra artifact。 | 不是业务 data item，不进入 Meta；同一源 item 可以按派生变体关联多个独立结果。 |
+| PPTX static PDF preview | PPTX 静态 PDF 预览 | 将 PPTX 转换为受管 PDF artifact 后交给 PDF renderer 按页、按需加载的预览方式。 | 任务类型为 `pptx_pdf_generation`，派生变体固定为 `pdf_static`；不承诺动画、切换效果、音视频播放或 PowerPoint 完整交互。 |
 | derived data | 派生数据 | 通过计算或转换从源 data item 生成、写入业务存储并形成独立 Meta item 的数据。 | Develop 工作流输出属于派生数据；Manager infra 快显结果不属于派生 data item。 |
 | execution boundary | 执行边界 | 一次 execution 是否具有确定结束条件。 | `bounded` 表示处理到本次冻结上界后结束；`continuous` 表示持续等待变化直到被真实停止、失败或失联。 |
 | load mode | 装载方式 | Transfer 从源端读取完整范围还是已提交位置之后的变化。 | 只允许 `snapshot` / `incremental`；它与触发方式和目标应用方式正交。 |

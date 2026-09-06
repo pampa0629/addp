@@ -76,6 +76,7 @@ func (p *ClickHousePlugin) Capabilities() plugin.EngineCapabilities {
 		Delete:             true,
 		SupportsExplain:    true,
 		SupportsParameters: true,
+		IdentifierQuote:    "`",
 		WriterConnector:    "clickhouse_insert",
 	})
 }

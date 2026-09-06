@@ -795,6 +795,8 @@ import {
   buildQueryExecutionContract,
   isTerminalExecutionStatus,
   monacoLanguageForQuery,
+  nativeCatalogPathText,
+  nativeCatalogSegmentText,
   queryParameterReference,
   queryCapabilityForEngine,
   queryResultFromExecution,
@@ -1758,9 +1760,7 @@ const fieldInsertionText = fieldName => {
   if (!text) return ''
   const language = String(currentQueryLanguage.value || '').toLowerCase()
   if (language === 'mql') return text
-  if (language === 'cypher') return quoteQueryIdentifier(text, '`')
-  const engineType = String(selectedTarget.value?.engine?.engine_type || '').toLowerCase()
-  return quoteQueryIdentifier(text, engineType === 'mysql' ? '`' : '"')
+  return nativeCatalogSegmentText(text, selectedCapability.value, language)
 }
 
 const loadFieldCompletions = async selection => {
@@ -1847,10 +1847,7 @@ const queryTextForCatalogSegment = (selection) => {
   if (federatedQuery.value) return queryTextForCatalogSelection(selection)
   const segment = parsed.path?.at(-1)
   if (!segment) return ''
-  const engineType = String(selection.display?.engine_type || selectedTarget.value?.engine?.engine_type || '').toLowerCase()
-  if (engineType === 'mongodb') return JSON.stringify(segment)
-  if (engineType === 'neo4j' || selection.resource?.type === 'graph') return quoteQueryIdentifier(segment, '`')
-  return quoteQueryIdentifier(segment, engineType === 'mysql' ? '`' : '"')
+  return nativeCatalogSegmentText(segment, selectedCapability.value, currentQueryLanguage.value)
 }
 
 const rememberCatalogNode = async node => {
@@ -1902,19 +1899,12 @@ const rememberCatalogNode = async node => {
   }
 }
 
-const isQueryCatalogSelectionAllowed = (node, { engine, locator } = {}) => {
+const isQueryCatalogSelectionAllowed = (node, { locator } = {}) => {
   if (!locator?.engineId) return false
-  const engineType = String(engine?.engine_type || selectedTarget.value?.engine?.engine_type || '').toLowerCase()
-  if (engineType === 'mongodb') {
+  if (String(currentQueryLanguage.value || '').toLowerCase() === 'mql') {
     return locator.type === 'database' || Boolean(locator.itemId)
   }
   return Boolean(locator.itemId)
-}
-
-const quoteQueryIdentifier = (value, quote) => {
-  const text = String(value || '').trim()
-  if (!text) return ''
-  return `${quote}${text.replaceAll(quote, `${quote}${quote}`)}${quote}`
 }
 
 const queryTextForCatalogSelection = (selection) => {
@@ -1934,15 +1924,7 @@ const queryTextForCatalogSelection = (selection) => {
     if (!sourceName) return ''
     return [federatedIdentifier(sourceName), ...segments.map(federatedIdentifier)].join('.')
   }
-  const engineType = String(selectedTarget.value?.engine?.engine_type || '').toLowerCase()
-  if (engineType === 'mongodb' || selection.resource?.type === 'collection') {
-    return JSON.stringify(segments.at(-1))
-  }
-  if (engineType === 'neo4j' || selection.resource?.type === 'graph') {
-    return quoteQueryIdentifier(segments.at(-1), '`')
-  }
-  const quote = engineType === 'mysql' ? '`' : '"'
-  return segments.map(segment => quoteQueryIdentifier(segment, quote)).join('.')
+  return nativeCatalogPathText(segments, selectedCapability.value, currentQueryLanguage.value)
 }
 
 const insertCatalogItemAtCursor = (selection) => {

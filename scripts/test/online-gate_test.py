@@ -80,6 +80,7 @@ class OnlineGateTest(unittest.TestCase):
                 "enterprise-catalog-publishing",
                 "manager-internal-artifact-lineage",
                 "module-registry-recovery",
+                "security-mysql-owner-protection",
                 "security-protection-exemption",
                 "security-transfer-protection",
                 "standard-model-reference-deletion",
@@ -148,6 +149,22 @@ class OnlineGateTest(unittest.TestCase):
         exemption_suite = ONLINE_GATE.SUITES["security-protection-exemption"]
         self.assertEqual(
             exemption_suite.services,
+            (
+                ("gateway", "GATEWAY_URL"),
+                ("system", "SYSTEM_URL"),
+                ("meta", "META_URL"),
+                ("security", "SECURITY_URL"),
+                ("manager", "MANAGER_URL"),
+                ("develop", "DEVELOP_URL"),
+                ("service", "SERVICE_URL"),
+                ("transfer", "TRANSFER_URL"),
+            ),
+        )
+        mysql_security_suite = ONLINE_GATE.SUITES[
+            "security-mysql-owner-protection"
+        ]
+        self.assertEqual(
+            mysql_security_suite.services,
             (
                 ("gateway", "GATEWAY_URL"),
                 ("system", "SYSTEM_URL"),

@@ -15,7 +15,7 @@
       <div class="parameter-grid">
         <label v-for="parameter in application.snapshot.parameters" :key="parameter.key" class="parameter-field">
           <span>{{ parameter.label }}<em v-if="parameter.required">*</em></span>
-          <RuntimeParameterInput v-model="parameterValues[parameter.key]" :control-type="parameter.control_type" />
+          <RuntimeParameterInput :model-value="parameterValues[parameter.key]" :control-type="parameter.control_type" @update:model-value="updateParameterValue(parameter.key, $event)" />
         </label>
       </div>
     </el-card>
@@ -26,22 +26,30 @@
           <div class="component-header">
             <strong>{{ component(placement.component_id)?.title }}</strong>
             <div v-if="showQueryActions" class="component-header-actions">
-              <el-button link :loading="state(placement.component_id).exporting" :disabled="state(placement.component_id).querying || !state(placement.component_id).descriptor || Boolean(state(placement.component_id).error)" @click="exportComponent(placement.component_id)">{{ t('workbench.export') }}</el-button>
-              <el-button link type="primary" :loading="state(placement.component_id).querying" :disabled="state(placement.component_id).exporting || !state(placement.component_id).descriptor || Boolean(state(placement.component_id).error)" @click="queryComponent(placement.component_id)">{{ t('workbench.query') }}</el-button>
+              <el-button link :loading="state(placement.component_id).exporting" :disabled="state(placement.component_id).querying || !canExecuteComponentQuery(state(placement.component_id))" @click="exportComponent(placement.component_id)">{{ t('workbench.export') }}</el-button>
+              <el-button link type="primary" :loading="state(placement.component_id).querying" :disabled="state(placement.component_id).exporting || !canExecuteComponentQuery(state(placement.component_id))" @click="queryComponent(placement.component_id)">{{ t('workbench.query') }}</el-button>
             </div>
           </div>
         </template>
-        <el-alert v-if="state(placement.component_id).error" data-testid="contract-changed-alert" type="warning" :closable="false" :title="state(placement.component_id).error" />
-        <WorkbenchRendererHost
-          v-else
-          :rows="state(placement.component_id).rows"
-          :renderer-type="component(placement.component_id).renderer_type"
-          :config="component(placement.component_id).renderer_config"
-          :descriptor="state(placement.component_id).descriptor"
-          :page="state(placement.component_id).page"
-          :result-ready="state(placement.component_id).query_completed"
-          @result-select="applySelection(placement.component_id, $event)"
+        <el-alert
+          v-if="componentBlockingError(state(placement.component_id))"
+          :data-testid="state(placement.component_id).contract_error ? 'contract-changed-alert' : 'descriptor-load-error-alert'"
+          :type="state(placement.component_id).contract_error ? 'warning' : 'error'"
+          :closable="false"
+          :title="componentBlockingError(state(placement.component_id))"
         />
+        <template v-else>
+          <el-alert v-if="state(placement.component_id).query_error" data-testid="query-error-alert" type="error" :closable="false" :title="state(placement.component_id).query_error" />
+          <WorkbenchRendererHost
+            :rows="state(placement.component_id).rows"
+            :renderer-type="component(placement.component_id).renderer_type"
+            :config="component(placement.component_id).renderer_config"
+            :descriptor="state(placement.component_id).descriptor"
+            :page="state(placement.component_id).page"
+            :result-ready="state(placement.component_id).query_completed"
+            @result-select="applySelection(placement.component_id, $event)"
+          />
+        </template>
         <div v-if="showQueryActions && component(placement.component_id)?.renderer_type === 'table'" class="component-pagination">
           <el-button size="small" :disabled="state(placement.component_id).querying || state(placement.component_id).cursor_index === 0" @click="previousPage(placement.component_id)">{{ t('workbench.previousPage') }}</el-button>
           <span>{{ t('workbench.pageNumber', { page: state(placement.component_id).cursor_index + 1 }) }}</span>
@@ -58,8 +66,8 @@ import { useI18n } from 'vue-i18n'
 import { ElDatePicker, ElInput, ElInputNumber, ElMessage, ElOption, ElSelect, ElSwitch } from 'element-plus'
 import { createLatestRequestCoordinator } from '@common-ui'
 import { executeDescriptorOperation, getConsumerDescriptor } from '../api/services'
-import { applicationRefreshDelayMilliseconds, buildComponentQuery, buildSelectionUpdate, canRunApplicationRefresh, initialApplicationParameterValues, runtimeGridStyle, runtimeLayoutStyle, runtimeSectionVisible } from '../utils/dataApplicationRuntime.mjs'
-import { boundedExportHasMore, descriptorSupportsExport, downloadBoundedExport, exportFormatForRenderer } from '../utils/boundedExport.mjs'
+import { applicationRefreshDelayMilliseconds, buildComponentQuery, buildSelectionUpdate, canAttemptApplicationQuery, canExecuteComponentQuery, canRunApplicationRefresh, commitLatestComponentDescriptorState, componentBlockingError, initialApplicationParameterValues, invalidateApplicationParameterResults, runtimeGridStyle, runtimeLayoutStyle, runtimeSectionVisible } from '../utils/dataApplicationRuntime.mjs'
+import { descriptorSupportsExport, downloadCurrentBoundedExport, exportFormatForRenderer } from '../utils/boundedExport.mjs'
 import WorkbenchRendererHost from './WorkbenchRendererHost.vue'
 
 const props = defineProps({
@@ -94,11 +102,12 @@ const isFullscreen = ref(false)
 const fullscreenSupported = ref(false)
 const parameterValues = reactive(initialApplicationParameterValues(props.application.snapshot))
 const componentStates = reactive({})
+const queryAllRequests = createLatestRequestCoordinator()
 const isWallboard = computed(() => application.value.snapshot.page?.display_mode === 'wallboard')
 const showTitle = computed(() => runtimeSectionVisible(application.value.snapshot.page, 'title'))
 const showParameters = computed(() => runtimeSectionVisible(application.value.snapshot.page, 'parameters'))
 const showQueryActions = computed(() => runtimeSectionVisible(application.value.snapshot.page, 'query_actions'))
-const canQueryAll = computed(() => application.value.snapshot.components.length > 0 && application.value.snapshot.components.every((item) => state(item.id).descriptor && !state(item.id).error))
+const canQueryAll = computed(() => canAttemptApplicationQuery(application.value.snapshot.components, componentStates))
 const refreshDelayMilliseconds = computed(() => applicationRefreshDelayMilliseconds(application.value.snapshot.page))
 const statusLabel = computed(() => props.mode === 'draft-preview' ? t('workbench.draftPreviewBadge') : t('workbench.revisionLabel', { revision: application.value.revision_number }))
 const refreshIntervalLabel = computed(() => {
@@ -117,7 +126,23 @@ function component(id) {
 }
 
 function state(id) {
-  return componentStates[id] || { rows: [], page: {}, descriptor: null, error: '', querying: false, exporting: false, query_completed: false, cursors: [''], cursor_index: 0 }
+  return componentStates[id] || { rows: [], page: {}, descriptor: null, descriptor_error: '', contract_error: '', query_error: '', querying: false, exporting: false, query_completed: false, cursors: [''], cursor_index: 0 }
+}
+
+function createComponentState() {
+  return { rows: [], page: { has_more: false, next_cursor: '' }, descriptor: null, descriptor_error: '', contract_error: '', query_error: '', querying: false, exporting: false, query_completed: false, cursors: [''], cursor_index: 0, descriptorRequests: createLatestRequestCoordinator(), requests: createLatestRequestCoordinator() }
+}
+
+function updateParameterValues(values) {
+  const parameterKeys = Object.keys(values)
+  queryAllRequests.invalidate()
+  queryingAll.value = false
+  invalidateApplicationParameterResults(application.value.snapshot, componentStates, parameterKeys)
+  Object.assign(parameterValues, values)
+}
+
+function updateParameterValue(parameterKey, value) {
+  updateParameterValues({ [parameterKey]: value })
 }
 
 async function loadDescriptors() {
@@ -130,26 +155,41 @@ async function loadDescriptors() {
 }
 
 async function loadDescriptor(item) {
-  componentStates[item.id] = { rows: [], page: { has_more: false, next_cursor: '' }, descriptor: null, error: '', querying: false, exporting: false, query_completed: false, cursors: [''], cursor_index: 0, requests: createLatestRequestCoordinator() }
+  const current = componentStates[item.id] || createComponentState()
+  componentStates[item.id] = current
+  const request = current.descriptorRequests.begin(item.id)
+  current.descriptor_error = ''
   try {
     const { data } = await getConsumerDescriptor(item.service_ref)
     if (data.contract_fingerprint !== item.contract_fingerprint) {
-      componentStates[item.id].error = t('workbench.runtimeContractChanged')
+      commitLatestComponentDescriptorState(current, request, item.id, {
+        descriptor: null,
+        descriptor_error: '',
+        contract_error: t('workbench.runtimeContractChanged'),
+      })
       return
     }
-    componentStates[item.id].descriptor = data
+    commitLatestComponentDescriptorState(current, request, item.id, {
+      descriptor: data,
+      descriptor_error: '',
+      contract_error: '',
+    })
   } catch (error) {
-    componentStates[item.id].error = error?.response?.data?.error || t('workbench.loadFailed')
+    commitLatestComponentDescriptorState(current, request, item.id, {
+      descriptor: null,
+      descriptor_error: error?.response?.data?.error || t('workbench.loadFailed'),
+      contract_error: '',
+    })
   }
 }
 
 async function queryComponent(componentID, cursor = '', cursorIndex = 0, cursors = ['']) {
   const item = component(componentID)
   const current = componentStates[componentID]
-  if (!item || !current?.descriptor) return
+  if (!item || !canExecuteComponentQuery(current)) return
   const request = current.requests.begin(componentID)
   current.querying = true
-  current.error = ''
+  current.query_error = ''
   try {
     const operation = current.descriptor.operations.find((candidate) => candidate.key === 'query')
     const { data } = await executeDescriptorOperation(operation, buildComponentQuery(application.value.snapshot, item, parameterValues, cursor))
@@ -161,7 +201,7 @@ async function queryComponent(componentID, cursor = '', cursorIndex = 0, cursors
     current.cursor_index = cursorIndex
   } catch (error) {
     if (!current.requests.isCurrent(request, componentID)) return
-    current.error = error?.response?.data?.error || (String(error?.message || '').startsWith('missing required') ? t('workbench.requiredParameterMissing') : t('workbench.queryFailed'))
+    current.query_error = error?.response?.data?.error || (String(error?.message || '').startsWith('missing required') ? t('workbench.requiredParameterMissing') : t('workbench.queryFailed'))
   } finally {
     if (current.requests.isCurrent(request, componentID)) current.querying = false
   }
@@ -173,7 +213,7 @@ async function applySelection(componentID, selection) {
   try {
     const update = buildSelectionUpdate(application.value.snapshot, componentID, current.descriptor, current.rows, selection)
     if (!update) return
-    Object.assign(parameterValues, update.parameter_values)
+    updateParameterValues(update.parameter_values)
     await Promise.all(update.component_ids.map((targetID) => queryComponent(targetID)))
   } catch {
     ElMessage.error(t('workbench.selectionApplyFailed'))
@@ -200,28 +240,41 @@ async function previousPage(componentID) {
 async function exportComponent(componentID) {
   const item = component(componentID)
   const current = componentStates[componentID]
-  if (!item || !current?.descriptor || current.error) return
+  if (!item || !canExecuteComponentQuery(current)) return
   const format = exportFormatForRenderer(item.renderer_type)
   if (!descriptorSupportsExport(current.descriptor, item.renderer_type)) return ElMessage.warning(t('workbench.exportUnsupported'))
+  const request = current.requests.begin(componentID)
+  const descriptor = current.descriptor
+  const operation = descriptor.operations.find((candidate) => candidate.key === 'query')
+  const requestBody = buildComponentQuery(application.value.snapshot, item, parameterValues, '', format)
   current.exporting = true
   try {
-    const operation = current.descriptor.operations.find((candidate) => candidate.key === 'query')
-    const response = await executeDescriptorOperation(operation, buildComponentQuery(application.value.snapshot, item, parameterValues, '', format), { intent: 'export', responseType: 'blob' })
-    if (boundedExportHasMore(response.headers)) return ElMessage.warning(t('workbench.exportIncomplete'))
-    downloadBoundedExport(response.data, `workbench-${item.service_ref.service_type}-${item.service_ref.service_id}.${format}`)
+    const response = await executeDescriptorOperation(operation, requestBody, { intent: 'export', responseType: 'blob' })
+    const outcome = downloadCurrentBoundedExport(
+      response,
+      `workbench-${item.service_ref.service_type}-${item.service_ref.service_id}.${format}`,
+      () => current.requests.isCurrent(request, componentID),
+    )
+    if (outcome === 'incomplete') ElMessage.warning(t('workbench.exportIncomplete'))
   } catch (error) {
+    if (!current.requests.isCurrent(request, componentID)) return
     ElMessage.error(error?.response?.data?.error || t('workbench.exportFailed'))
   } finally {
-    current.exporting = false
+    if (current.requests.isCurrent(request, componentID)) current.exporting = false
   }
 }
 
 async function queryAll() {
+  const request = queryAllRequests.begin('query-all')
   queryingAll.value = true
   try {
-    await Promise.all(application.value.snapshot.components.map((item) => queryComponent(item.id)))
+    await Promise.all(application.value.snapshot.components.map(async (item) => {
+      if (!componentStates[item.id]?.descriptor && !componentStates[item.id]?.contract_error) await loadDescriptor(item)
+      if (!queryAllRequests.isCurrent(request, 'query-all')) return
+      if (canExecuteComponentQuery(componentStates[item.id])) await queryComponent(item.id)
+    }))
   } finally {
-    queryingAll.value = false
+    if (queryAllRequests.isCurrent(request, 'query-all')) queryingAll.value = false
   }
 }
 
@@ -276,6 +329,11 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   runtimeMounted = false
   clearAutomaticRefreshTimer()
+  queryAllRequests.invalidate()
+  Object.values(componentStates).forEach((current) => {
+    current?.descriptorRequests?.invalidate()
+    current?.requests?.invalidate()
+  })
   document.removeEventListener('fullscreenchange', syncFullscreenState)
   document.removeEventListener('visibilitychange', handleVisibilityChange)
 })

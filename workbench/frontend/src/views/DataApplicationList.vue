@@ -4,8 +4,8 @@
       <div><h2>{{ t('workbench.dataApplications') }}</h2><p>{{ t('workbench.dataApplicationsSubtitle') }}</p></div>
       <el-button type="primary" @click="router.push('/applications/new')"><el-icon><Plus /></el-icon>{{ t('workbench.createDataApplication') }}</el-button>
     </div>
-    <el-card>
-      <el-table v-loading="loading" :data="items">
+    <el-card v-loading="loading || Boolean(deletingID)">
+      <el-table :data="items">
         <el-table-column prop="name" :label="t('workbench.name')" min-width="180" />
         <el-table-column :label="t('workbench.publicationStatus')" width="140">
           <template #default="scope"><el-tag :type="statusType(scope.row.publication_status)">{{ t(`workbench.statuses.${scope.row.publication_status}`) }}</el-tag></template>
@@ -26,12 +26,14 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
+import { createLatestRequestCoordinator } from '@common-ui'
 import { deleteDataApplication, listDataApplications } from '../api/dataApplications'
+import { commitLatestDataApplicationRequest, confirmDataApplicationAction, dataApplicationDeletionContext, dataApplicationListPageContext } from '../utils/dataApplicationDraft.mjs'
 import { navigateWorkbenchRoute, openDataApplicationRuntime } from '../utils/moduleNavigation'
 
 const { t } = useI18n()
@@ -41,6 +43,9 @@ const items = ref([])
 const total = ref(0)
 const page = ref(1)
 const loading = ref(false)
+const deletingID = ref('')
+const listLoadRequests = createLatestRequestCoordinator()
+const listDeletionRequests = createLatestRequestCoordinator()
 
 function statusType(status) {
   if (status === 'published') return 'success'
@@ -49,25 +54,73 @@ function statusType(status) {
 }
 
 async function load() {
-  loading.value = true
+  const targetPage = page.value
+  const targetContext = dataApplicationListPageContext(targetPage)
+  const request = listLoadRequests.begin(targetContext)
+  commitListLoad(request, () => { loading.value = true })
   try {
-    const { data } = await listDataApplications({ page: page.value, page_size: 20 })
-    items.value = data.data || []
-    total.value = data.total || 0
+    const { data } = await listDataApplications({ page: targetPage, page_size: 20 })
+    commitListLoad(request, () => {
+      items.value = data.data || []
+      total.value = data.total || 0
+    })
   } catch (error) {
-    ElMessage.error(error?.response?.data?.error || t('workbench.loadFailed'))
+    commitListLoad(request, () => {
+      ElMessage.error(error?.response?.data?.error || t('workbench.loadFailed'))
+    })
   } finally {
-    loading.value = false
+    commitListLoad(request, () => { loading.value = false })
   }
 }
 
 async function remove(row) {
-  await ElMessageBox.confirm(t('workbench.deleteDataApplicationConfirm'), t('workbench.confirmTitle'), {
-    confirmButtonText: t('workbench.delete'), cancelButtonText: t('workbench.cancel'), confirmButtonClass: 'el-button--danger', customClass: 'addp-message-box',
-  })
-  await deleteDataApplication(row.id, row.version)
-  ElMessage.success(t('workbench.dataApplicationDeleted'))
-  await load()
+  const targetContext = dataApplicationDeletionContext(row.id, row.version)
+  const request = listDeletionRequests.begin(targetContext)
+  try {
+    const confirmed = await confirmDataApplicationAction(
+      (message) => ElMessageBox.confirm(message, t('workbench.confirmTitle'), {
+        confirmButtonText: t('workbench.delete'), cancelButtonText: t('workbench.cancel'), confirmButtonClass: 'el-button--danger', customClass: 'addp-message-box',
+      }),
+      t('workbench.deleteDataApplicationConfirm'),
+    )
+    if (!confirmed || currentDeletionContext(row.id) !== targetContext) return
+    if (!commitListDeletion(request, targetContext, () => { deletingID.value = row.id })) return
+    await deleteDataApplication(row.id, row.version)
+    if (!commitListDeletion(request, targetContext, () => {
+      if (items.value.length === 1 && page.value > 1) page.value -= 1
+      ElMessage.success(t('workbench.dataApplicationDeleted'))
+    })) return
+    await load()
+  } catch (error) {
+    commitListDeletion(request, targetContext, () => {
+      ElMessage.error(error?.response?.data?.error || t('workbench.deleteFailed'))
+    })
+  } finally {
+    commitListDeletion(request, targetContext, () => { deletingID.value = '' })
+  }
+}
+
+function commitListLoad(request, commit) {
+  return commitLatestDataApplicationRequest(
+    listLoadRequests,
+    request,
+    dataApplicationListPageContext(page.value),
+    commit,
+  )
+}
+
+function currentDeletionContext(applicationID) {
+  const current = items.value.find((item) => item.id === applicationID)
+  return current ? dataApplicationDeletionContext(current.id, current.version) : ''
+}
+
+function commitListDeletion(request, targetContext, commit) {
+  return commitLatestDataApplicationRequest(listDeletionRequests, request, targetContext, commit)
+}
+
+function invalidateListRequests() {
+  listLoadRequests.invalidate()
+  listDeletionRequests.invalidate()
 }
 
 function openRuntime(row) {
@@ -75,6 +128,7 @@ function openRuntime(row) {
 }
 
 onMounted(load)
+onBeforeUnmount(invalidateListRequests)
 </script>
 
 <style scoped>

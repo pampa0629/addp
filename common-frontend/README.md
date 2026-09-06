@@ -263,7 +263,7 @@ import {
 - **GeoJsonPreview** - GeoJSON 文件预览（带地图）
 - **TablePreview** - 表格数据预览，支持空间字段渲染
 - **ImagePreview** - 图片预览（依赖 `geotiff` 支持 TIFF 渲染）
-- **MarkdownPreview / OfficePreview / PptxPreview / PdfPreview** - 文档预览组件；OfficePreview 统一处理 DOC、DOCX、RTF、WPS
+- **MarkdownPreview / OfficePreview / PptxPreview / PdfPreview** - 文档预览组件；OfficePreview 统一处理 DOC、DOCX、RTF、WPS。旧式 DOC/WPS 与 RTF 解析器由 `common-frontend/basic` 单点维护并按需加载，DOCX 使用宿主直接声明的 `mammoth` 依赖；不得依赖仓库外本地路径或运行时远程资源
 
 地图预览、CRS registry、底图 profile 和 GCJ-02 展示适配规则见 [Map 前端组件说明](./map/README.md)。
 

@@ -12,7 +12,7 @@
  *   - marked (MarkdownPreview)
  *   - dompurify (MarkdownPreview)
  *   - mermaid (MarkdownPreview)
- *   - @open-file-viewer/core (OfficePreview，按需加载)
+ *   - mammoth (OfficePreview 的 DOCX 解析；旧式 DOC/WPS 与 RTF 解析器由共享层自有)
  *   - jszip (PptxPreview)
  *
  * 并在 vite.config.js 的 resolve.dedupe 中添加这些包名。

@@ -386,6 +386,284 @@ func (r *DocumentRepository) ListExtractions(documentID, tenantID int64) ([]mode
 	return extractions, wrapDBError(err)
 }
 
+type DocumentCandidateComparisonTarget struct {
+	CandidateType      string
+	StandardID         int64
+	Code               string
+	ScopeType          string
+	OwnerDomainID      *int64
+	RevisionID         int64
+	RevisionNo         int64
+	RevisionStatus     string
+	Name               string
+	Definition         string
+	DataType           string
+	ValueDomainKind    string
+	StatisticalCaliber string
+	SemanticFormula    string
+	UnitID             *int64
+	UnitName           string
+	UnitSymbol         string
+	Items              []models.DocumentExtractionCandidateComparisonItem
+}
+
+type documentCandidateComparisonRevision struct {
+	ID                 int64
+	RevisionNo         int64
+	Status             string
+	Name               string
+	Definition         string
+	DataType           string
+	ValueDomainKind    string
+	StatisticalCaliber string
+	SemanticFormula    string
+	UnitID             *int64
+	EffectiveFrom      *time.Time
+	EffectiveTo        *time.Time
+}
+
+func (r *DocumentRepository) ListCandidateComparisonTargets(tenantID int64, codesByType map[string][]string) (map[string]DocumentCandidateComparisonTarget, error) {
+	targets := map[string]DocumentCandidateComparisonTarget{}
+	now := time.Now().UTC()
+	if err := r.loadGlossaryComparisonTargets(tenantID, uniqueStrings(codesByType["glossary"]), now, targets); err != nil {
+		return nil, err
+	}
+	if err := r.loadElementComparisonTargets(tenantID, uniqueStrings(codesByType["element"]), now, targets); err != nil {
+		return nil, err
+	}
+	if err := r.loadCodeSetComparisonTargets(tenantID, uniqueStrings(codesByType["code_set"]), now, targets); err != nil {
+		return nil, err
+	}
+	if err := r.loadMetricComparisonTargets(tenantID, uniqueStrings(codesByType["metric"]), now, targets); err != nil {
+		return nil, err
+	}
+	if err := r.loadComparisonUnits(targets); err != nil {
+		return nil, err
+	}
+	return targets, nil
+}
+
+func (r *DocumentRepository) loadGlossaryComparisonTargets(tenantID int64, codes []string, now time.Time, targets map[string]DocumentCandidateComparisonTarget) error {
+	if len(codes) == 0 {
+		return nil
+	}
+	var identities []models.Glossary
+	if err := r.db.Select("id, scope_type, owner_domain_id, code, draft_revision_id").Where("tenant_id = ? AND lifecycle_state = ? AND code IN ?", tenantID, "active", codes).Find(&identities).Error; err != nil {
+		return err
+	}
+	ids := make([]int64, 0, len(identities))
+	for _, identity := range identities {
+		ids = append(ids, identity.ID)
+	}
+	var revisions []models.GlossaryRevision
+	if len(ids) > 0 {
+		if err := r.db.Select("id, glossary_id, revision_no, status, name, definition, effective_from, effective_to").Where("glossary_id IN ?", ids).Order("glossary_id ASC, revision_no DESC").Find(&revisions).Error; err != nil {
+			return err
+		}
+	}
+	byIdentity := map[int64][]documentCandidateComparisonRevision{}
+	for _, revision := range revisions {
+		byIdentity[revision.GlossaryID] = append(byIdentity[revision.GlossaryID], documentCandidateComparisonRevision{ID: revision.ID, RevisionNo: revision.RevisionNo, Status: revision.Status, Name: revision.Name, Definition: revision.Definition, EffectiveFrom: revision.EffectiveFrom, EffectiveTo: revision.EffectiveTo})
+	}
+	for _, identity := range identities {
+		revision, ok := selectDocumentCandidateComparisonRevision(identity.DraftRevisionID, byIdentity[identity.ID], now)
+		if !ok {
+			continue
+		}
+		targets[documentCandidateComparisonKey("glossary", identity.Code)] = comparisonTarget("glossary", identity.ID, identity.Code, identity.ScopeType, identity.OwnerDomainID, revision)
+	}
+	return nil
+}
+
+func (r *DocumentRepository) loadElementComparisonTargets(tenantID int64, codes []string, now time.Time, targets map[string]DocumentCandidateComparisonTarget) error {
+	if len(codes) == 0 {
+		return nil
+	}
+	var identities []models.Element
+	if err := r.db.Select("id, scope_type, owner_domain_id, code, draft_revision_id").Where("tenant_id = ? AND lifecycle_state = ? AND code IN ?", tenantID, "active", codes).Find(&identities).Error; err != nil {
+		return err
+	}
+	ids := make([]int64, 0, len(identities))
+	for _, identity := range identities {
+		ids = append(ids, identity.ID)
+	}
+	var revisions []models.ElementRevision
+	if len(ids) > 0 {
+		if err := r.db.Select("id, element_id, revision_no, status, name, definition, data_type, value_domain_kind, unit_id, effective_from, effective_to").Where("element_id IN ?", ids).Order("element_id ASC, revision_no DESC").Find(&revisions).Error; err != nil {
+			return err
+		}
+	}
+	byIdentity := map[int64][]documentCandidateComparisonRevision{}
+	for _, revision := range revisions {
+		byIdentity[revision.ElementID] = append(byIdentity[revision.ElementID], documentCandidateComparisonRevision{ID: revision.ID, RevisionNo: revision.RevisionNo, Status: revision.Status, Name: revision.Name, Definition: revision.Definition, DataType: revision.DataType, ValueDomainKind: revision.ValueDomainKind, UnitID: revision.UnitID, EffectiveFrom: revision.EffectiveFrom, EffectiveTo: revision.EffectiveTo})
+	}
+	for _, identity := range identities {
+		revision, ok := selectDocumentCandidateComparisonRevision(identity.DraftRevisionID, byIdentity[identity.ID], now)
+		if !ok {
+			continue
+		}
+		targets[documentCandidateComparisonKey("element", identity.Code)] = comparisonTarget("element", identity.ID, identity.Code, identity.ScopeType, identity.OwnerDomainID, revision)
+	}
+	return nil
+}
+
+func (r *DocumentRepository) loadCodeSetComparisonTargets(tenantID int64, codes []string, now time.Time, targets map[string]DocumentCandidateComparisonTarget) error {
+	if len(codes) == 0 {
+		return nil
+	}
+	var identities []models.CodeSet
+	if err := r.db.Select("id, scope_type, owner_domain_id, code, draft_revision_id").Where("tenant_id = ? AND lifecycle_state = ? AND code IN ?", tenantID, "active", codes).Find(&identities).Error; err != nil {
+		return err
+	}
+	ids := make([]int64, 0, len(identities))
+	for _, identity := range identities {
+		ids = append(ids, identity.ID)
+	}
+	var revisions []models.CodeSetRevision
+	if len(ids) > 0 {
+		if err := r.db.Select("id, code_set_id, revision_no, status, name, description, value_type, effective_from, effective_to").Where("code_set_id IN ?", ids).Order("code_set_id ASC, revision_no DESC").Find(&revisions).Error; err != nil {
+			return err
+		}
+	}
+	byIdentity := map[int64][]documentCandidateComparisonRevision{}
+	for _, revision := range revisions {
+		byIdentity[revision.CodeSetID] = append(byIdentity[revision.CodeSetID], documentCandidateComparisonRevision{ID: revision.ID, RevisionNo: revision.RevisionNo, Status: revision.Status, Name: revision.Name, Definition: revision.Description, DataType: revision.ValueType, EffectiveFrom: revision.EffectiveFrom, EffectiveTo: revision.EffectiveTo})
+	}
+	revisionIDs := make([]int64, 0, len(identities))
+	for _, identity := range identities {
+		revision, ok := selectDocumentCandidateComparisonRevision(identity.DraftRevisionID, byIdentity[identity.ID], now)
+		if !ok {
+			continue
+		}
+		target := comparisonTarget("code_set", identity.ID, identity.Code, identity.ScopeType, identity.OwnerDomainID, revision)
+		targets[documentCandidateComparisonKey("code_set", identity.Code)] = target
+		revisionIDs = append(revisionIDs, revision.ID)
+	}
+	if len(revisionIDs) == 0 {
+		return nil
+	}
+	var items []models.CodeSetRevisionItem
+	if err := r.db.Select("id, code_set_revision_id, code, label, definition, sort_order").Where("code_set_revision_id IN ?", revisionIDs).Order("code_set_revision_id ASC, sort_order ASC, id ASC").Find(&items).Error; err != nil {
+		return err
+	}
+	itemsByRevision := map[int64][]models.DocumentExtractionCandidateComparisonItem{}
+	for _, item := range items {
+		itemsByRevision[item.CodeSetRevisionID] = append(itemsByRevision[item.CodeSetRevisionID], models.DocumentExtractionCandidateComparisonItem{Code: item.Code, Name: item.Label, Definition: item.Definition})
+	}
+	for key, target := range targets {
+		if target.CandidateType == "code_set" {
+			target.Items = itemsByRevision[target.RevisionID]
+			targets[key] = target
+		}
+	}
+	return nil
+}
+
+func (r *DocumentRepository) loadMetricComparisonTargets(tenantID int64, codes []string, now time.Time, targets map[string]DocumentCandidateComparisonTarget) error {
+	if len(codes) == 0 {
+		return nil
+	}
+	var identities []models.MetricDefinition
+	if err := r.db.Select("id, scope_type, owner_domain_id, code, draft_revision_id").Where("tenant_id = ? AND lifecycle_state = ? AND code IN ?", tenantID, "active", codes).Find(&identities).Error; err != nil {
+		return err
+	}
+	ids := make([]int64, 0, len(identities))
+	for _, identity := range identities {
+		ids = append(ids, identity.ID)
+	}
+	var revisions []models.MetricDefinitionRevision
+	if len(ids) > 0 {
+		if err := r.db.Select("id, metric_definition_id, revision_no, status, name, definition, statistical_caliber, semantic_formula, unit_id, effective_from, effective_to").Where("metric_definition_id IN ?", ids).Order("metric_definition_id ASC, revision_no DESC").Find(&revisions).Error; err != nil {
+			return err
+		}
+	}
+	byIdentity := map[int64][]documentCandidateComparisonRevision{}
+	for _, revision := range revisions {
+		byIdentity[revision.MetricDefinitionID] = append(byIdentity[revision.MetricDefinitionID], documentCandidateComparisonRevision{ID: revision.ID, RevisionNo: revision.RevisionNo, Status: revision.Status, Name: revision.Name, Definition: revision.Definition, StatisticalCaliber: revision.StatisticalCaliber, SemanticFormula: revision.SemanticFormula, UnitID: revision.UnitID, EffectiveFrom: revision.EffectiveFrom, EffectiveTo: revision.EffectiveTo})
+	}
+	for _, identity := range identities {
+		revision, ok := selectDocumentCandidateComparisonRevision(identity.DraftRevisionID, byIdentity[identity.ID], now)
+		if !ok {
+			continue
+		}
+		targets[documentCandidateComparisonKey("metric", identity.Code)] = comparisonTarget("metric", identity.ID, identity.Code, identity.ScopeType, identity.OwnerDomainID, revision)
+	}
+	return nil
+}
+
+func (r *DocumentRepository) loadComparisonUnits(targets map[string]DocumentCandidateComparisonTarget) error {
+	ids := make([]int64, 0)
+	for _, target := range targets {
+		if target.UnitID != nil {
+			ids = append(ids, *target.UnitID)
+		}
+	}
+	ids = uniqueInt64s(ids)
+	if len(ids) == 0 {
+		return nil
+	}
+	var units []models.Unit
+	if err := r.db.Select("id, name, symbol").Where("id IN ?", ids).Find(&units).Error; err != nil {
+		return err
+	}
+	byID := map[int64]models.Unit{}
+	for _, unit := range units {
+		byID[unit.ID] = unit
+	}
+	for key, target := range targets {
+		if target.UnitID != nil {
+			if unit, ok := byID[*target.UnitID]; ok {
+				target.UnitName, target.UnitSymbol = unit.Name, unit.Symbol
+				targets[key] = target
+			}
+		}
+	}
+	return nil
+}
+
+func comparisonTarget(candidateType string, standardID int64, code, scopeType string, ownerDomainID *int64, revision documentCandidateComparisonRevision) DocumentCandidateComparisonTarget {
+	return DocumentCandidateComparisonTarget{CandidateType: candidateType, StandardID: standardID, Code: code, ScopeType: scopeType, OwnerDomainID: ownerDomainID, RevisionID: revision.ID, RevisionNo: revision.RevisionNo, RevisionStatus: revision.Status, Name: revision.Name, Definition: revision.Definition, DataType: revision.DataType, ValueDomainKind: revision.ValueDomainKind, StatisticalCaliber: revision.StatisticalCaliber, SemanticFormula: revision.SemanticFormula, UnitID: revision.UnitID}
+}
+
+func selectDocumentCandidateComparisonRevision(draftRevisionID *int64, revisions []documentCandidateComparisonRevision, now time.Time) (documentCandidateComparisonRevision, bool) {
+	if draftRevisionID != nil {
+		for _, revision := range revisions {
+			if revision.ID == *draftRevisionID {
+				return revision, true
+			}
+		}
+	}
+	for _, revision := range revisions {
+		if revision.Status == models.RevisionStatusPublished && revision.EffectiveFrom != nil && !revision.EffectiveFrom.After(now) && (revision.EffectiveTo == nil || revision.EffectiveTo.After(now)) {
+			return revision, true
+		}
+	}
+	if len(revisions) > 0 {
+		return revisions[0], true
+	}
+	return documentCandidateComparisonRevision{}, false
+}
+
+func documentCandidateComparisonKey(candidateType, code string) string {
+	return candidateType + "\x00" + code
+}
+
+func uniqueStrings(values []string) []string {
+	seen := map[string]struct{}{}
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
+}
+
 func (r *DocumentRepository) UpdateCandidateStatus(candidateID, tenantID, userID, expectedVersion int64, status string) (*models.DocumentExtractionCandidate, error) {
 	var candidate models.DocumentExtractionCandidate
 	err := wrapDBError(r.db.Transaction(func(tx *gorm.DB) error {

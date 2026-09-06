@@ -2,6 +2,13 @@ package models
 
 import "time"
 
+const (
+	CandidateComparisonNew             = "new"
+	CandidateComparisonExact           = "exact"
+	CandidateComparisonContentConflict = "content_conflict"
+	CandidateComparisonScopeConflict   = "scope_conflict"
+)
+
 // Document 是标准来源文档的稳定身份。名称、业务版次和文件只存在于 DocumentRevision。
 type Document struct {
 	ID              int64       `gorm:"primaryKey;autoIncrement" json:"id"`
@@ -75,24 +82,60 @@ type DocumentExtraction struct {
 func (DocumentExtraction) TableName() string { return "standard.document_extractions" }
 
 type DocumentExtractionCandidate struct {
-	ID            int64                        `gorm:"primaryKey;autoIncrement" json:"id"`
-	ExtractionID  int64                        `gorm:"not null;index" json:"extraction_id"`
-	CandidateType string                       `gorm:"size:20;not null;index" json:"candidate_type" enums:"glossary,element,code_set,metric"`
-	Code          string                       `gorm:"size:100;not null" json:"code"`
-	Name          string                       `gorm:"size:200;not null" json:"name"`
-	Definition    string                       `gorm:"type:text;not null" json:"definition"`
-	Payload       JSONB                        `gorm:"type:jsonb;serializer:json" json:"payload" swaggertype:"object"`
-	Status        string                       `gorm:"size:20;not null;default:'pending';index" json:"status" enums:"pending,retained,rejected"`
-	Version       int64                        `gorm:"not null;default:1" json:"version"`
-	ReviewedBy    *int64                       `json:"reviewed_by,omitempty"`
-	ReviewedAt    *time.Time                   `json:"reviewed_at,omitempty"`
-	CreatedAt     time.Time                    `json:"created_at"`
-	UpdatedAt     time.Time                    `json:"updated_at"`
-	Evidences     []DocumentExtractionEvidence `gorm:"foreignKey:CandidateID;constraint:OnDelete:CASCADE" json:"evidences,omitempty"`
+	ID            int64                                  `gorm:"primaryKey;autoIncrement" json:"id"`
+	ExtractionID  int64                                  `gorm:"not null;index" json:"extraction_id"`
+	CandidateType string                                 `gorm:"size:20;not null;index" json:"candidate_type" enums:"glossary,element,code_set,metric"`
+	Code          string                                 `gorm:"size:100;not null" json:"code"`
+	Name          string                                 `gorm:"size:200;not null" json:"name"`
+	Definition    string                                 `gorm:"type:text;not null" json:"definition"`
+	Payload       JSONB                                  `gorm:"type:jsonb;serializer:json" json:"payload" swaggertype:"object"`
+	Status        string                                 `gorm:"size:20;not null;default:'pending';index" json:"status" enums:"pending,retained,rejected"`
+	Version       int64                                  `gorm:"not null;default:1" json:"version"`
+	ReviewedBy    *int64                                 `json:"reviewed_by,omitempty"`
+	ReviewedAt    *time.Time                             `json:"reviewed_at,omitempty"`
+	CreatedAt     time.Time                              `json:"created_at"`
+	UpdatedAt     time.Time                              `json:"updated_at"`
+	Evidences     []DocumentExtractionEvidence           `gorm:"foreignKey:CandidateID;constraint:OnDelete:CASCADE" json:"evidences,omitempty"`
+	Comparison    *DocumentExtractionCandidateComparison `gorm:"-" json:"comparison,omitempty"`
 }
 
 func (DocumentExtractionCandidate) TableName() string {
 	return "standard.document_extraction_candidates"
+}
+
+// DocumentExtractionCandidateComparison 是候选与当前同类型、同编码标准的读取时投影，不持久化。
+type DocumentExtractionCandidateComparison struct {
+	Result         string                                  `json:"result" enums:"new,exact,content_conflict,scope_conflict"`
+	StandardID     int64                                   `json:"standard_id,omitempty"`
+	Code           string                                  `json:"code,omitempty"`
+	Name           string                                  `json:"name,omitempty"`
+	ScopeType      string                                  `json:"scope_type,omitempty" enums:"platform,tenant_common,domain"`
+	OwnerDomainID  *int64                                  `json:"owner_domain_id,omitempty"`
+	RevisionID     int64                                   `json:"revision_id,omitempty"`
+	RevisionNo     int64                                   `json:"revision_no,omitempty"`
+	RevisionStatus string                                  `json:"revision_status,omitempty" enums:"draft,in_review,published,withdrawn"`
+	Differences    []DocumentExtractionCandidateDifference `json:"differences"`
+}
+
+// DocumentExtractionCandidateDifference 显式返回一个候选字段与当前标准字段的两侧值。
+type DocumentExtractionCandidateDifference struct {
+	Field          string                                     `json:"field" enums:"scope_type,owner_domain_id,name,definition,data_type,value_domain_kind,unit,value_type,items,statistical_caliber,semantic_formula"`
+	CandidateValue DocumentExtractionCandidateComparisonValue `json:"candidate_value"`
+	StandardValue  DocumentExtractionCandidateComparisonValue `json:"standard_value"`
+}
+
+// DocumentExtractionCandidateComparisonValue 使用显式判别类型表达字符串、整数、码值项或空值。
+type DocumentExtractionCandidateComparisonValue struct {
+	Kind    string                                      `json:"kind" enums:"empty,text,integer,code_items"`
+	Text    *string                                     `json:"text,omitempty"`
+	Integer *int64                                      `json:"integer,omitempty"`
+	Items   []DocumentExtractionCandidateComparisonItem `json:"items,omitempty"`
+}
+
+type DocumentExtractionCandidateComparisonItem struct {
+	Code       string `json:"code"`
+	Name       string `json:"name"`
+	Definition string `json:"definition"`
 }
 
 type DocumentExtractionEvidence struct {

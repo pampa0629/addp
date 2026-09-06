@@ -3,6 +3,8 @@ package dbbridge
 import (
 	"reflect"
 	"testing"
+
+	commonquery "github.com/addp/common/query"
 )
 
 func TestSupportsReadOnlySQLExecution(t *testing.T) {
@@ -13,6 +15,7 @@ func TestSupportsReadOnlySQLExecution(t *testing.T) {
 		{engineType: "postgresql", want: true},
 		{engineType: "PostgreSQL", want: true},
 		{engineType: "mysql", want: true},
+		{engineType: "oceanbase", want: true},
 		{engineType: "oracle", want: true},
 		{engineType: "doris", want: true},
 		{engineType: "clickhouse", want: false},
@@ -47,17 +50,16 @@ func TestReadOnlyTransactionStrategyUsesOracleStatement(t *testing.T) {
 
 func TestBindSQLExecutionParametersUsesNativeDriverPlaceholders(t *testing.T) {
 	tests := []struct {
-		engineType string
-		wantQuery  string
+		dialect   string
+		wantQuery string
 	}{
-		{engineType: "postgresql", wantQuery: "SELECT * FROM members WHERE status = $1 AND score > $2"},
-		{engineType: "oracle", wantQuery: "SELECT * FROM members WHERE status = :1 AND score > :2"},
-		{engineType: "mysql", wantQuery: "SELECT * FROM members WHERE status = ? AND score > ?"},
-		{engineType: "doris", wantQuery: "SELECT * FROM members WHERE status = ? AND score > ?"},
+		{dialect: commonquery.DialectPostgreSQL, wantQuery: "SELECT * FROM members WHERE status = $1 AND score > $2"},
+		{dialect: commonquery.DialectOracle, wantQuery: "SELECT * FROM members WHERE status = :1 AND score > :2"},
+		{dialect: commonquery.DialectMySQL, wantQuery: "SELECT * FROM members WHERE status = ? AND score > ?"},
 	}
 	for _, test := range tests {
-		t.Run(test.engineType, func(t *testing.T) {
-			query, args, err := bindSQLExecutionParameters(test.engineType,
+		t.Run(test.dialect, func(t *testing.T) {
+			query, args, err := bindSQLExecutionParameters(test.dialect,
 				"SELECT * FROM members WHERE status = :status AND score > :score",
 				map[string]interface{}{"status": "active", "score": 10},
 			)

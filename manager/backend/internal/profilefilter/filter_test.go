@@ -25,7 +25,7 @@ func TestNormalizeAndCompileConditionScope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Normalize() error = %v", err)
 	}
-	whereClause, args, err := SQL(scope, commonquery.ForEngine("postgresql"), "")
+	whereClause, args, err := SQL(scope, commonquery.ForDialect(commonquery.DialectPostgreSQL), "")
 	if err != nil {
 		t.Fatalf("SQL() error = %v", err)
 	}

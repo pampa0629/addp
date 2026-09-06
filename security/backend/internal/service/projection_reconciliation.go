@@ -26,7 +26,7 @@ func ReconcileStructuredOwnerProjections(ctx context.Context, db *gorm.DB, now t
 	reconciled := 0
 	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var managerRecords []models.ProtectionProjectionRecord
-		if err := tx.Where("consumer_owner = ? AND state = ?", "manager", dataprotection.ProjectionStateActive).Order("tenant_id ASC, enrollment_id ASC").Find(&managerRecords).Error; err != nil {
+		if err := tx.Where("consumer_owner = ? AND state = ?", managerProtectionOwner, dataprotection.ProjectionStateActive).Order("tenant_id ASC, enrollment_id ASC").Find(&managerRecords).Error; err != nil {
 			return err
 		}
 		for _, managerRecord := range managerRecords {
@@ -37,8 +37,11 @@ func ReconcileStructuredOwnerProjections(ctx context.Context, db *gorm.DB, now t
 			if !projectionHasAction(managerProjection, managerPreviewAction) {
 				continue
 			}
-			pendingOwners := make([]string, 0, 3)
-			for _, owner := range []string{"develop", "service", "transfer"} {
+			pendingOwners := make([]string, 0, len(requiredProtectionOwnerContracts)-1)
+			for _, owner := range allRequiredProtectionOwners() {
+				if owner == managerProtectionOwner {
+					continue
+				}
 				var ownerRecord models.ProtectionProjectionRecord
 				err := tx.Where("tenant_id = ? AND enrollment_id = ? AND consumer_owner = ?", managerRecord.TenantID, managerRecord.EnrollmentID, owner).First(&ownerRecord).Error
 				if errors.Is(err, gorm.ErrRecordNotFound) {

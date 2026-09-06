@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -76,6 +77,34 @@ func TestRespondErrorReturnsInvalidStandardScopeCode(t *testing.T) {
 	}
 	if response.ErrorCode != "invalid_standard_scope" {
 		t.Fatalf("error_code = %q", response.ErrorCode)
+	}
+}
+
+func TestRespondDocumentExtractionErrorStatusContract(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want int
+	}{
+		{name: "not found", err: commonapi.ErrNotFound, want: http.StatusNotFound},
+		{name: "version conflict", err: repository.ErrVersionConflict, want: http.StatusConflict},
+		{name: "file too large", err: service.ErrDocumentFileTooLarge, want: http.StatusRequestEntityTooLarge},
+		{name: "unsupported", err: service.ErrDocumentExtractionUnsupported, want: http.StatusUnprocessableEntity},
+		{name: "invalid", err: service.ErrDocumentExtractionInvalid, want: http.StatusUnprocessableEntity},
+		{name: "copilot unavailable", err: service.ErrDocumentCopilotUnavailable, want: http.StatusServiceUnavailable},
+		{name: "storage unavailable", err: service.ErrDocumentStorageUnavailable, want: http.StatusServiceUnavailable},
+		{name: "internal", err: errors.New("comparison query failed"), want: http.StatusInternalServerError},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			context, _ := gin.CreateTestContext(recorder)
+			context.Set("addp_lang", "en")
+			respondDocumentExtractionError(context, test.err)
+			if recorder.Code != test.want {
+				t.Fatalf("status=%d want=%d body=%s", recorder.Code, test.want, recorder.Body.String())
+			}
+		})
 	}
 }
 

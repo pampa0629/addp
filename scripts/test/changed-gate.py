@@ -99,12 +99,12 @@ def affected_modules(repository: Path, files: list[str]) -> list[str]:
         evaluation_match = re.fullmatch(r"evals/([a-z][a-z0-9-]*)-scenarios(?:/.*)?", path)
         if evaluation_match:
             affected.add(evaluation_match.group(1))
-        gate_match = re.fullmatch(
-            r"scripts/test/([a-z][a-z0-9-]*)-(?:postgres|evaluation|frontend)-gate\.sh",
-            path,
-        )
-        if gate_match:
-            affected.add(gate_match.group(1))
+        for module in registered:
+            if re.fullmatch(
+                rf"scripts/test/{re.escape(module)}-.+-gate\.sh",
+                path,
+            ):
+                affected.add(module)
 
     if "common" in roots:
         affected.add("common")

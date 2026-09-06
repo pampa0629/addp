@@ -27,7 +27,7 @@ engine.capabilities/v1
 - `extensions.spatial_workspaces` 只承载数据库实例中可识别的厂商空间工作区事实，如 SuperMap `sdx_postgis`、`sdx_postgresql` 或 ArcGIS `sde`；这一层用于 System 自动探测、高危启用和实例级 Provider 选择，不得把两个实现不同的 SuperMap 产品合并为 `sdx+`。
 - `extensions.spatial_workspaces[].can_enable` 只表示实例在当前条件下具备被显性启用的可能性；是否真的执行启用动作，由 System 的高危操作入口统一触发，不由前端或业务模块直接改写能力 JSON。
 - Oracle Engine 声明普通 tabular 的 Engine Catalog、Facts、SQL 参数查询、BatchRead、TableReadSession、TableWriteSession 和基础 Spatial Facts/空间行读写；TableWriteSession 只创建或写入普通 Oracle 表与 `MDSYS.SDO_GEOMETRY`，不创建或修改 ArcGIS geodatabase system tables，也不表达 SDE 注册或版本化能力。不得因为底层数据库可产生 redo、Transfer 已支持 Oracle CDC 或存在 ArcGIS SDE 表就声明 `change_stream_read` 或 SDE 逻辑变化源。Oracle CDC 是 Transfer-owned capture Provider，ArcGIS SDE 仍是后续独立逻辑变化源，两者不得并入 Oracle Engine 的普通 Store 能力。
-- OceanBase Engine 首版只声明 MySQL 模式下已有 Provider 覆盖的 database/table Engine Catalog、表字段与统计 Facts、参数化 SQL 查询和 BatchRead。不声明 TableWriteSession、CDC、分区、空间或 Oracle 模式能力；后续必须在真实 OceanBase 版本和对应 Provider 验证完成后再单路扩展。
+- OceanBase Engine 在 MySQL 模式下声明 database/table Engine Catalog、表字段与统计 Facts、参数化 SQL 查询、BatchRead，以及非空间普通表的 TableWritePrepare / TableWriteSession / Delete / TableUpsert。写入 Provider 通过 MySQL-compatible 共享实现提供安全的建库建表、可空列增量演进、事务性分批 insert、覆盖策略所需的精确目标表删除，以及按显式非空稳定键执行的单批事务幂等 upsert；目标表全部唯一约束必须与配置 keys 完全一致，避免 `ON DUPLICATE KEY UPDATE` 被其他唯一约束截获。不声明 BatchWrite、BoundedWatermarkRead、CDC、分区、空间或 Oracle 模式能力。后续能力必须在真实 OceanBase 版本和对应 Provider 验证完成后再单路扩展。
 
 ArcGIS workspace kind 固定为 `arcgis/sde`。Oracle 实例能力解析器只能通过只读 Oracle data dictionary 探测 `SDE` repository owner 的企业级地理数据库正式核心系统表组合：同一 `SDE` owner 至少同时可见 `TABLE_REGISTRY`、`GDB_ITEMS`、`GDB_ITEMTYPES`、`GEOMETRY_COLUMNS` 四张注册表；`STATES`、`STATE_LINEAGES`、`VERSIONS`、`LAYERS` 等表作为版本化和要素类证据单独记录。仅存在 `SDE` schema、单张同名表或普通 `SDO_GEOMETRY` 列不得判定为 SDE workspace。探测结果写入 `extensions.spatial_workspaces[]`，使用 `backend_engine_type=oracle`、`can_enable=false`、`risk_level=high`；没有正式组合写入 `state=not_detected`，字典可见但核心表读取被拒绝时写入 `state=permission_denied`。本阶段不改变 `storage.store`，不声明 `change_stream_read`，不提供启用入口；后续 SDE 数据面必须由独立 logical change source / table provider 消费该 workspace fact。
 
@@ -291,7 +291,7 @@ type NativeTableSpatialEncodingCapability struct {
 
 数据库插件声明 `native_spatial_functions=true` 时必须实现 `SpatialFeatureReadProvider`，实现该 Provider 时也必须声明该能力，capability validator 对二者做双向一致性校验。该 Provider 的跨模块返回值固定为 EWKB、centroid EWKB、SRID 与 `SpatialInfo`，数据库原生函数和 axis order 处理留在插件内部；当前 PostgreSQL/PostGIS 与 MySQL 都实现该接口。该接口不是第二套表读取路线，只服务按稳定 identity field 精确读取一个空间要素的交互操作。
 
-`bounded_watermark_read` 与普通 `batch_read` / `table_read_session` 不等价。前者必须冻结 execution 上界、使用稳定复合游标并能从读取行生成 committed position。PostgreSQL 与 MySQL 当前都声明该能力，并分别在一致性只读事务和 InnoDB consistent snapshot 中冻结上界；两者读取空间字段时都必须按协商后的标准 geometry row encoding 返回，不得泄漏数据库内部二进制。`table_upsert` 也不能从 `batch_write` 推导；只有目标 Provider 能校验唯一键并以幂等冲突处理提交批次时才能声明。PostgreSQL 与 MySQL 声明幂等 `table_upsert`。MySQL 目标必须使用 InnoDB，并要求配置键精确匹配非空主键或唯一约束；为避免 `ON DUPLICATE KEY UPDATE` 被其他唯一约束触发，目标表不得存在与配置键不同的唯一约束。
+`bounded_watermark_read` 与普通 `batch_read` / `table_read_session` 不等价。前者必须冻结 execution 上界、使用稳定复合游标并能从读取行生成 committed position。PostgreSQL 与 MySQL 当前都声明该能力，并分别在一致性只读事务和 InnoDB consistent snapshot 中冻结上界；两者读取空间字段时都必须按协商后的标准 geometry row encoding 返回，不得泄漏数据库内部二进制。`table_upsert` 也不能从 `batch_write` 推导；只有目标 Provider 能校验唯一键并以幂等冲突处理提交批次时才能声明。PostgreSQL、MySQL 与 MySQL 模式 OceanBase 声明幂等 `table_upsert`，其中 OceanBase 当前只支持非空间表。MySQL-compatible 目标必须使用 InnoDB，并要求配置键精确匹配非空主键或唯一约束；为避免 `ON DUPLICATE KEY UPDATE` 被其他唯一约束触发，目标表不得存在与配置键不同的唯一约束。
 
 `change_stream_read` 与 content `stream_read`、`batch_read` 都不等价。它必须声明 `partitioned=true`、`seek=true`、`pause_resume=true`，Kafka 第一版 `position_types` 只允许 `kafka_offset/v1`。实现该能力的 reader 必须同时返回每分区当前 earliest/latest position，供运行时计算 lag 和 retention 窗口；这不是独立能力开关。该能力只表达原始 record 和 position 读取，不声明 JSON/Avro/Protobuf、Debezium envelope、Transfer target apply 或 exactly-once。第一版仅业务 Kafka Engine 声明该能力；Infra Kafka 不产生 System capabilities 记录。
 
@@ -347,6 +347,7 @@ type QueryCapability struct {
     Supported       bool     `json:"supported"`
     Languages       []string `json:"languages"`
     DefaultLanguage string   `json:"default_language,omitempty"`
+    IdentifierQuotes map[string]string `json:"identifier_quotes,omitempty"`
     ResultKinds     []string `json:"result_kinds,omitempty"`
     ReadOnly        bool     `json:"read_only,omitempty"`
     SupportsExplain bool     `json:"supports_explain,omitempty"`
@@ -375,6 +376,7 @@ type QueryFederationCapability struct {
 | `supported` | 是否可作为查询运行时。 |
 | `languages` | 支持的查询语言，如 `sql`、`mql`、`cypher`、`opensearch_dsl`、`mango`。 |
 | `default_language` | 默认编辑器语言和样例查询语言。 |
+| `identifier_quotes` | 按查询语言声明标识符引号，例如 PostgreSQL SQL 使用双引号、OceanBase MySQL 模式 SQL 使用反引号；前端只消费该语法事实，不得按 `engine_type` 推断。未声明时插入原始标识符，不得使用其他引擎的默认值。 |
 | `result_kinds` | 查询结果形态，如 `table`、`document`、`graph`、`scalar`。 |
 | `read_only` | 运行时是否只允许只读查询。 |
 | `supports_explain` | 是否支持查询计划 / 性能诊断。 |
@@ -389,7 +391,7 @@ DuckDB Runtime 第一阶段声明 `runtime_api="addp.query-runtime/v1"`、`sourc
 
 联邦 Runtime 的资源引用名由 Source Owner preview 作为 `ResourceFact.query_names.federated_sql` 提供，并与 Runtime 解析规则使用同一共享标识符规范。DuckDB 当前形式为 `<sanitized_source_engine_name>.<schema>.<table>` 或对象表的 `<sanitized_source_engine_name>.<table>`。Copilot 和前端不得各自实现 engine name 清洗或从 locator/full_name 拼接联邦引用。
 
-查询语言差异只通过 `languages` / `default_language` 和 `QueryRequest.Language` 表达，不新增按数据库类别拆分的 query provider。`result_kinds=document` 只表示原生查询结果可能是 JSON document / record 形态，不表示 data item 的 `data_type=document`。图结构查询如果需要节点 / 关系结构结果，仍使用 `GraphQueryProvider`。
+查询语言差异通过 `languages` / `default_language` / `identifier_quotes` 和 `QueryRequest.Language` 表达，不新增按数据库类别拆分的 query provider。`identifier_quotes` 只是编辑器插入标识符所需的语法事实，查询生成、校验和执行仍归当前 Query Runtime Provider。`result_kinds=document` 只表示原生查询结果可能是 JSON document / record 形态，不表示 data item 的 `data_type=document`。图结构查询如果需要节点 / 关系结构结果，仍使用 `GraphQueryProvider`。
 
 查询工作台的默认样例不属于静态 capability。样例必须在用户切换具体 Engine Instance 时，通过执行授权消费该实例连接、实时发现有数据的 Engine Catalog leaf，再由 Query Runtime 按 `default_language` 生成。Engine Catalog 发现失败或当前实例没有有数据的 leaf 时返回明确错误，不允许用固定诊断查询伪装成实例样例。
 

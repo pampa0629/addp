@@ -338,6 +338,47 @@ func TestValidatePluginCapabilitiesAcceptsQueryParameters(t *testing.T) {
 	}
 }
 
+func TestValidatePluginCapabilitiesAcceptsQueryIdentifierQuote(t *testing.T) {
+	plugin := &queryParameterCapabilityPlugin{
+		MockPlugin: MockPlugin{TypeValue: "quoted_query"},
+		caps: EngineCapabilities{
+			SchemaVersion: CapabilitiesSchemaVersion,
+			EngineType:    "quoted_query",
+			EngineFamily:  "test",
+			Compute: &ComputeCapabilities{Query: &QueryCapability{
+				Supported:        true,
+				Languages:        []string{"sql"},
+				IdentifierQuotes: map[string]string{"sql": "`"},
+			}},
+		},
+	}
+
+	if err := ValidatePluginCapabilities(plugin); err != nil {
+		t.Fatalf("ValidatePluginCapabilities() error = %v", err)
+	}
+}
+
+func TestValidatePluginCapabilitiesRejectsInvalidQueryIdentifierQuote(t *testing.T) {
+	plugin := &queryParameterCapabilityPlugin{
+		MockPlugin: MockPlugin{TypeValue: "invalid_quoted_query"},
+		caps: EngineCapabilities{
+			SchemaVersion: CapabilitiesSchemaVersion,
+			EngineType:    "invalid_quoted_query",
+			EngineFamily:  "test",
+			Compute: &ComputeCapabilities{Query: &QueryCapability{
+				Supported:        true,
+				Languages:        []string{"sql"},
+				IdentifierQuotes: map[string]string{"cypher": "``"},
+			}},
+		},
+	}
+
+	err := ValidatePluginCapabilities(plugin)
+	if err == nil || !strings.Contains(err.Error(), "unsupported language") {
+		t.Fatalf("ValidatePluginCapabilities() error = %v, want unsupported language error", err)
+	}
+}
+
 func TestValidatePluginCapabilitiesRejectsInvalidQueryParameters(t *testing.T) {
 	plugin := &queryParameterCapabilityPlugin{
 		MockPlugin: MockPlugin{TypeValue: "invalid_parameterized_query"},

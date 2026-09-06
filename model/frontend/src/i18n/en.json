@@ -270,7 +270,7 @@
       "implementation_name": "Implementation Name",
       "grain": "Calculation Grain",
       "grain_placeholder": "For example: aggregate at order-line grain",
-      "source_fields": "Source Measure Fields",
+      "source_fields": "Source Fields",
       "engine": "Expression Engine",
       "expression": "Calculation Expression",
       "expression_placeholder": "Enter an expression composed from fields of this table",

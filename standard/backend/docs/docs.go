@@ -1884,6 +1884,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "返回每个候选与当前同类型、同编码标准的动态比对结果及字段级候选值/标准值；不会自动创建或关联标准 | Returns a dynamic comparison and field-level candidate/standard values for each candidate against the current same-type, same-code standard; no standard is created or linked automatically",
                 "produces": [
                     "application/json"
                 ],
@@ -1898,6 +1899,24 @@ const docTemplate = `{
                             "type": "array",
                             "items": {
                                 "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentExtraction"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
                             }
                         }
                     }
@@ -2212,8 +2231,44 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentExtraction"
                         }
                     },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
                     "422": {
                         "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -7509,6 +7564,9 @@ const docTemplate = `{
                 "code": {
                     "type": "string"
                 },
+                "comparison": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentExtractionCandidateComparison"
+                },
                 "created_at": {
                     "type": "string"
                 },
@@ -7552,6 +7610,128 @@ const docTemplate = `{
                 },
                 "version": {
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.DocumentExtractionCandidateComparison": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "differences": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentExtractionCandidateDifference"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner_domain_id": {
+                    "type": "integer"
+                },
+                "result": {
+                    "type": "string",
+                    "enum": [
+                        "new",
+                        "exact",
+                        "content_conflict",
+                        "scope_conflict"
+                    ]
+                },
+                "revision_id": {
+                    "type": "integer"
+                },
+                "revision_no": {
+                    "type": "integer"
+                },
+                "revision_status": {
+                    "type": "string",
+                    "enum": [
+                        "draft",
+                        "in_review",
+                        "published",
+                        "withdrawn"
+                    ]
+                },
+                "scope_type": {
+                    "type": "string",
+                    "enum": [
+                        "platform",
+                        "tenant_common",
+                        "domain"
+                    ]
+                },
+                "standard_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.DocumentExtractionCandidateComparisonItem": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "definition": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.DocumentExtractionCandidateComparisonValue": {
+            "type": "object",
+            "properties": {
+                "integer": {
+                    "type": "integer"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentExtractionCandidateComparisonItem"
+                    }
+                },
+                "kind": {
+                    "type": "string",
+                    "enum": [
+                        "empty",
+                        "text",
+                        "integer",
+                        "code_items"
+                    ]
+                },
+                "text": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.DocumentExtractionCandidateDifference": {
+            "type": "object",
+            "properties": {
+                "candidate_value": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentExtractionCandidateComparisonValue"
+                },
+                "field": {
+                    "type": "string",
+                    "enum": [
+                        "scope_type",
+                        "owner_domain_id",
+                        "name",
+                        "definition",
+                        "data_type",
+                        "value_domain_kind",
+                        "unit",
+                        "value_type",
+                        "items",
+                        "statistical_caliber",
+                        "semantic_formula"
+                    ]
+                },
+                "standard_value": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentExtractionCandidateComparisonValue"
                 }
             }
         },

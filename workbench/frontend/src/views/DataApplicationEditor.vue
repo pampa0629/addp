@@ -1,5 +1,5 @@
 <template>
-  <div class="page" v-loading="loading" data-testid="data-application-editor">
+  <div class="page" v-loading="loading || saving || publishing || offlining" data-testid="data-application-editor">
     <div class="page-header">
       <div><h2>{{ isCreate ? t('workbench.createDataApplication') : (application.name || t('workbench.dataApplication')) }}</h2><p>{{ t('workbench.dataApplicationEditorSubtitle') }}</p></div>
       <div class="actions">
@@ -158,13 +158,14 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, toRaw } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, toRaw, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { createLatestRequestCoordinator } from '@common-ui'
 import { createDataApplication, getDataApplication, offlineDataApplication, publishDataApplication, updateDataApplication } from '../api/dataApplications'
 import { getConsumerDescriptor } from '../api/services'
-import { buildDataApplicationPreview, confirmDataApplicationAction, normalizedApplicationSnapshot } from '../utils/dataApplicationDraft.mjs'
+import { buildDataApplicationPreview, commitLatestDataApplicationRequest, confirmDataApplicationAction, dataApplicationEditorMutationContext, dataApplicationEditorRouteContext, normalizedApplicationSnapshot } from '../utils/dataApplicationDraft.mjs'
 import { APPLICATION_PRESENTATION_SECTIONS, canHideApplicationParameters } from '../utils/dataApplicationRuntime.mjs'
 import { affectedSelectionComponentIDs, compatibleSelectionParameters as compatibleSelectionParameterList, selectionSourceFields } from '../utils/dataApplicationSelection.mjs'
 import { navigateWorkbenchRoute, openDataApplicationRuntime } from '../utils/moduleNavigation'
@@ -190,6 +191,8 @@ const draftPreviewApplication = ref(null)
 const editingComponent = ref(null)
 const application = reactive(emptyApplication())
 const descriptorByComponent = reactive({})
+const editorLoadRequests = createLatestRequestCoordinator()
+const editorMutationRequests = createLatestRequestCoordinator()
 const dirty = computed(() => baseline.value !== serializeDraft())
 const bindingRows = computed(() => application.snapshot.parameter_bindings.map((binding) => {
   const component = application.snapshot.components.find((item) => item.id === binding.component_id)
@@ -222,6 +225,52 @@ function assignApplication(data) {
   application.current_revision_number = data.current_revision_number
   application.snapshot = structuredClone(data.snapshot)
   baseline.value = serializeDraft()
+}
+
+function invalidateEditorContextRequests() {
+  editorLoadRequests.invalidate()
+  editorMutationRequests.invalidate()
+}
+
+function resetEditorRouteContext() {
+  invalidateEditorContextRequests()
+  loading.value = false
+  saving.value = false
+  publishing.value = false
+  offlining.value = false
+  for (const key of Object.keys(application)) delete application[key]
+  Object.assign(application, emptyApplication())
+  for (const key of Object.keys(descriptorByComponent)) delete descriptorByComponent[key]
+  componentEditorVisible.value = false
+  spatialWizardVisible.value = false
+  draftPreviewVisible.value = false
+  draftPreviewApplication.value = null
+  editingComponent.value = null
+  baseline.value = serializeDraft()
+}
+
+function commitEditorLoad(request, commit) {
+  return commitLatestDataApplicationRequest(
+    editorLoadRequests,
+    request,
+    dataApplicationEditorRouteContext(route.name, route.params.id),
+    commit,
+  )
+}
+
+function beginEditorMutation(action) {
+  return editorMutationRequests.begin(
+    dataApplicationEditorMutationContext(route.name, route.params.id, action),
+  )
+}
+
+function commitEditorMutation(request, action, commit) {
+  return commitLatestDataApplicationRequest(
+    editorMutationRequests,
+    request,
+    dataApplicationEditorMutationContext(route.name, route.params.id, action),
+    commit,
+  )
 }
 
 function compatibleParameters(controlType) {
@@ -340,12 +389,18 @@ function selectionAffectedComponentNames(binding) {
   return ids.map((id) => application.snapshot.components.find((component) => component.id === id)?.title || id).join(t('workbench.listSeparator'))
 }
 
-async function loadComponentDescriptor(component) {
+async function loadComponentDescriptor(component, loadRequest = null) {
   try {
     const { data } = await getConsumerDescriptor(component.service_ref)
-    if (data.contract_fingerprint === component.contract_fingerprint) descriptorByComponent[component.id] = data
+    const commit = () => {
+      if (data.contract_fingerprint === component.contract_fingerprint) descriptorByComponent[component.id] = data
+    }
+    if (loadRequest) commitEditorLoad(loadRequest, commit)
+    else commit()
   } catch {
-    delete descriptorByComponent[component.id]
+    const commit = () => { delete descriptorByComponent[component.id] }
+    if (loadRequest) commitEditorLoad(loadRequest, commit)
+    else commit()
   }
 }
 
@@ -362,68 +417,93 @@ function openDraftPreview() {
   draftPreviewVisible.value = true
 }
 
-async function load() {
-  if (isCreate.value) {
-    baseline.value = serializeDraft()
+async function load(routeName, applicationID) {
+  const targetContext = dataApplicationEditorRouteContext(routeName, applicationID)
+  resetEditorRouteContext()
+  const request = editorLoadRequests.begin(targetContext)
+  if (routeName === 'DataApplicationCreate') {
+    loading.value = false
     return
   }
+  const targetID = String(applicationID || '').trim()
   loading.value = true
   try {
-    const { data } = await getDataApplication(route.params.id)
-    assignApplication(data)
-    await Promise.all(application.snapshot.components.map(loadComponentDescriptor))
+    const { data } = await getDataApplication(targetID)
+    if (!commitEditorLoad(request, () => assignApplication(data))) return
+    await Promise.all(data.snapshot.components.map((component) => loadComponentDescriptor(component, request)))
   } catch (error) {
-    ElMessage.error(error?.response?.data?.error || t('workbench.loadFailed'))
+    commitEditorLoad(request, () => {
+      ElMessage.error(error?.response?.data?.error || t('workbench.loadFailed'))
+    })
   } finally {
-    loading.value = false
+    commitEditorLoad(request, () => { loading.value = false })
   }
 }
 
 async function save() {
   if (!validatePresentationSections()) return
   if (!application.name.trim() || application.snapshot.components.length === 0) return ElMessage.warning(t('workbench.incompleteDataApplication'))
-  saving.value = true
+  const action = 'save'
+  const creating = isCreate.value
+  const request = beginEditorMutation(action)
+  if (!commitEditorMutation(request, action, () => { saving.value = true })) return
   try {
     const payload = { name: application.name.trim(), description: application.description.trim(), snapshot: normalizedSnapshot() }
-    const { data } = isCreate.value
+    const { data } = creating
       ? await createDataApplication(payload)
       : await updateDataApplication(application.id, { ...payload, version: application.version })
-    assignApplication(data)
-    ElMessage.success(t('workbench.dataApplicationSaved'))
-    if (isCreate.value) await router.push(`/applications/${data.id}`)
+    if (!commitEditorMutation(request, action, () => {
+      assignApplication(data)
+      ElMessage.success(t('workbench.dataApplicationSaved'))
+    })) return
+    if (creating) await router.push(`/applications/${data.id}`)
   } catch (error) {
-    ElMessage.error(error?.response?.data?.error || t('workbench.saveFailed'))
+    commitEditorMutation(request, action, () => {
+      ElMessage.error(error?.response?.data?.error || t('workbench.saveFailed'))
+    })
   } finally {
-    saving.value = false
+    commitEditorMutation(request, action, () => { saving.value = false })
   }
 }
 
 async function publish() {
   if (dirty.value) return ElMessage.warning(t('workbench.saveBeforePublish'))
+  const action = 'publish'
+  const request = beginEditorMutation(action)
   if (!await confirmDataApplicationAction(ElMessageBox.confirm, t('workbench.publishConfirm'))) return
-  publishing.value = true
+  if (!commitEditorMutation(request, action, () => { publishing.value = true })) return
   try {
     const { data } = await publishDataApplication(application.id, application.version)
-    assignApplication(data)
-    ElMessage.success(t('workbench.published'))
+    commitEditorMutation(request, action, () => {
+      assignApplication(data)
+      ElMessage.success(t('workbench.published'))
+    })
   } catch (error) {
-    ElMessage.error(error?.response?.data?.error || t('workbench.saveFailed'))
+    commitEditorMutation(request, action, () => {
+      ElMessage.error(error?.response?.data?.error || t('workbench.saveFailed'))
+    })
   } finally {
-    publishing.value = false
+    commitEditorMutation(request, action, () => { publishing.value = false })
   }
 }
 
 async function offline() {
+  const action = 'offline'
+  const request = beginEditorMutation(action)
   if (!await confirmDataApplicationAction(ElMessageBox.confirm, t('workbench.offlineConfirm'))) return
-  offlining.value = true
+  if (!commitEditorMutation(request, action, () => { offlining.value = true })) return
   try {
     const { data } = await offlineDataApplication(application.id, application.version)
-    assignApplication(data)
-    ElMessage.success(t('workbench.offlined'))
+    commitEditorMutation(request, action, () => {
+      assignApplication(data)
+      ElMessage.success(t('workbench.offlined'))
+    })
   } catch (error) {
-    ElMessage.error(error?.response?.data?.error || t('workbench.saveFailed'))
+    commitEditorMutation(request, action, () => {
+      ElMessage.error(error?.response?.data?.error || t('workbench.saveFailed'))
+    })
   } finally {
-    offlining.value = false
+    commitEditorMutation(request, action, () => { offlining.value = false })
   }
 }
 
@@ -499,15 +579,23 @@ function saveComponent(nextComponent) {
 }
 
 async function removeComponent(component) {
-  await ElMessageBox.confirm(t('workbench.deleteComponentConfirm'), t('workbench.confirmTitle'), {
-    confirmButtonText: t('workbench.delete'), cancelButtonText: t('workbench.cancel'), confirmButtonClass: 'el-button--danger', customClass: 'addp-message-box',
+  const action = `remove-component:${component.id}`
+  const request = beginEditorMutation(action)
+  const confirmed = await confirmDataApplicationAction(
+    (message) => ElMessageBox.confirm(message, t('workbench.confirmTitle'), {
+      confirmButtonText: t('workbench.delete'), cancelButtonText: t('workbench.cancel'), confirmButtonClass: 'el-button--danger', customClass: 'addp-message-box',
+    }),
+    t('workbench.deleteComponentConfirm'),
+  )
+  if (!confirmed) return
+  commitEditorMutation(request, action, () => {
+    application.snapshot.components = application.snapshot.components.filter((item) => item.id !== component.id)
+    application.snapshot.page.placements = application.snapshot.page.placements.filter((item) => item.component_id !== component.id)
+    application.snapshot.parameter_bindings = application.snapshot.parameter_bindings.filter((item) => item.component_id !== component.id)
+    application.snapshot.selection_bindings = application.snapshot.selection_bindings.filter((item) => item.source_component_id !== component.id)
+    delete descriptorByComponent[component.id]
+    pruneUnusedApplicationParameters()
   })
-  application.snapshot.components = application.snapshot.components.filter((item) => item.id !== component.id)
-  application.snapshot.page.placements = application.snapshot.page.placements.filter((item) => item.component_id !== component.id)
-  application.snapshot.parameter_bindings = application.snapshot.parameter_bindings.filter((item) => item.component_id !== component.id)
-  application.snapshot.selection_bindings = application.snapshot.selection_bindings.filter((item) => item.source_component_id !== component.id)
-  delete descriptorByComponent[component.id]
-  pruneUnusedApplicationParameters()
 }
 
 function pruneUnusedApplicationParameters() {
@@ -518,7 +606,8 @@ function pruneUnusedApplicationParameters() {
     .filter((binding) => binding.assignments.length > 0)
 }
 
-onMounted(load)
+onBeforeUnmount(invalidateEditorContextRequests)
+watch(() => [route.name, route.params.id], ([routeName, applicationID]) => load(routeName, applicationID), { immediate: true })
 </script>
 
 <style scoped>

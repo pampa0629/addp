@@ -1554,6 +1554,18 @@
           "data_type": {
             "anyOf": [
               {
+                "enum": [
+                  "string",
+                  "int",
+                  "bigint",
+                  "float",
+                  "decimal",
+                  "date",
+                  "datetime",
+                  "bool",
+                  "json",
+                  "text"
+                ],
                 "type": "string"
               },
               {
@@ -1601,6 +1613,11 @@
           "value_domain_kind": {
             "anyOf": [
               {
+                "enum": [
+                  "unrestricted",
+                  "range",
+                  "enumeration"
+                ],
                 "type": "string"
               },
               {

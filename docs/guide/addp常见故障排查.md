@@ -939,10 +939,19 @@ query := fmt.Sprintf(`SELECT "%s" FROM "%s"."%s"`, col, schema, table)
 #### 2. 使用 query / spatial 工具
 
 ```go
-// ✅ 通用表查询：使用跨引擎方言工具
+// ✅ 通用表查询：先由插件解析 engine_type，再使用其声明的 SQL 方言
+import "github.com/addp/common/engine/plugin"
 import commonquery "github.com/addp/common/query"
 
-dialect := commonquery.ForEngine(engineType)
+registered, err := plugin.Get(engineType)
+if err != nil {
+    return err
+}
+provider, ok := registered.(plugin.SQLDialectProvider)
+if !ok {
+    return fmt.Errorf("engine %s does not provide a SQL dialect", engineType)
+}
+dialect := commonquery.ForDialect(provider.SQLDialect())
 query := dialect.SelectTableSQL(
     dialect.QuoteIdentifier(col),
     schema,
@@ -957,8 +966,7 @@ query := dialect.SelectTableSQL(
 // ❌ 错误
 whereClause := fmt.Sprintf("WHERE %s > 100", col)
 
-// ✅ 正确：按引擎方言引用标识符
-dialect := commonquery.ForEngine(engineType)
+// ✅ 正确：复用上一步从 SQLDialectProvider 得到的方言
 whereClause := fmt.Sprintf("%s > 100", dialect.QuoteIdentifier(col))
 ```
 

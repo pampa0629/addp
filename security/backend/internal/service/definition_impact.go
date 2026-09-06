@@ -85,7 +85,7 @@ func compileDefinitionImpact(tx *gorm.DB, tenantID int64, enrollmentIDs map[stri
 		if err := tx.Where("tenant_id = ? AND id = ? AND state IN ?", tenantID, id, liveEnrollmentStates()).First(&enrollment).Error; err != nil {
 			return err
 		}
-		if err := compileProtectionProjections(tx, enrollment, enrollment.LatestSourceSnapshotHash, now, []string{"manager", "develop", "service", "transfer"}); err != nil {
+		if err := compileProtectionProjections(tx, enrollment, enrollment.LatestSourceSnapshotHash, now, allRequiredProtectionOwners()); err != nil {
 			return err
 		}
 	}

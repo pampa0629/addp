@@ -173,7 +173,12 @@ class AgentFactory:
                 tool_name = tc["name"]
                 stable_name = runtime_to_stable.get(tool_name, tool_name)
                 tool_args = tc["args"]
-                logger.info("[FACTORY:%s] 执行工具: %s | args: %s", skill_name, stable_name, tool_args)
+                logger.info(
+                    "[FACTORY:%s] 执行工具: %s | arg_keys=%s",
+                    skill_name,
+                    stable_name,
+                    sorted(str(key) for key in tool_args),
+                )
 
                 yield AgentEvent(
                     kind="tool_start",
@@ -213,7 +218,11 @@ class AgentFactory:
                             },
                         )
                         lc_messages.append(ToolMessage(content=tool_result, tool_call_id=tc["id"]))
-                        logger.warning("[FACTORY:%s] 拒绝未经 Tool 观察的澄清选项: %s", skill_name, exc)
+                        logger.warning(
+                            "[FACTORY:%s] 拒绝未经 Tool 观察的澄清选项: error_type=%s",
+                            skill_name,
+                            type(exc).__name__,
+                        )
                         continue
                     yield AgentEvent(
                         kind="tool_result",
@@ -255,8 +264,11 @@ class AgentFactory:
                             "type": "tool_call",
                         })
                         tool_result = str(getattr(raw, "content", raw))
-                        preview = tool_result[:200] + ("..." if len(tool_result) > 200 else "")
-                        logger.info("[FACTORY:%s] 工具结果（前200字符）: %s", skill_name, preview)
+                        logger.info(
+                            "[FACTORY:%s] 工具结果: bytes=%d",
+                            skill_name,
+                            len(tool_result.encode("utf-8")),
+                        )
 
                         try:
                             parsed_result = json.loads(tool_result)
@@ -330,13 +342,22 @@ class AgentFactory:
                                         len(workflow_tasks),
                                     )
                             except Exception as e:
-                                logger.warning("[FACTORY:%s] 工作流校验结果解析失败: %s", skill_name, e)
+                                logger.warning(
+                                    "[FACTORY:%s] 工作流校验结果解析失败: error_type=%s",
+                                    skill_name,
+                                    type(e).__name__,
+                                )
                     except Exception as e:
                         tool_result = f"工具执行失败: {e}"
                         tool_failed = True
                         tool_error_source = "runtime"
                         tool_error_code = "tool_adapter_exception"
-                        logger.error("[FACTORY:%s] 工具 %s 执行失败: %s", skill_name, tool_name, e)
+                        logger.error(
+                            "[FACTORY:%s] 工具 %s 执行失败: error_type=%s",
+                            skill_name,
+                            tool_name,
+                            type(e).__name__,
+                        )
 
                 # 截断过长的工具结果
                 if len(tool_result) > _TOOL_RESULT_MAX_LEN:

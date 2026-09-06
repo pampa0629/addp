@@ -109,8 +109,8 @@ async function createDocument() {
   if (!(await formRef.value.validate().catch(() => false))) return
   saving.value = true
   try {
-    let aggregate = await documentAPI.create(form.value)
-    if (selectedFile.value) { const data = new FormData(); data.append('file', selectedFile.value); aggregate = await documentAPI.uploadFile(aggregate.id, aggregate.draft_revision.id, data, aggregate.version) }
+    const aggregate = await documentAPI.create(form.value)
+    if (selectedFile.value) { const data = new FormData(); data.append('file', selectedFile.value); await documentAPI.uploadFile(aggregate.id, aggregate.draft_revision.id, data, aggregate.version) }
     ElMessage.success(t('standard.common.createSuccess')); dialogVisible.value = false; goToDetail(aggregate)
   } catch (error) { ElMessage.error(getStandardErrorMessage(error, t)) }
   finally { saving.value = false }

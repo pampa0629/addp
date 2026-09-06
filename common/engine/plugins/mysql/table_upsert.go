@@ -8,6 +8,7 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/engine/plugins/shared"
 )
 
 func (p *MySQLPlugin) PrepareTableUpsert(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableUpsertOptions) error {
@@ -15,6 +16,9 @@ func (p *MySQLPlugin) PrepareTableUpsert(ctx context.Context, connInfo plugin.Co
 }
 
 func (p *MySQLPlugin) prepareTableUpsert(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableUpsertOptions, requireTargetAbsent bool) error {
+	if !shared.HasSpatialTableWrite(opts.Fields, opts.SpatialInfo) {
+		return p.nonSpatialTableWriter().PrepareTableUpsertWithTargetPolicy(ctx, connInfo, path, opts, requireTargetAbsent)
+	}
 	keys, err := validateMySQLUpsertOptions(opts)
 	if err != nil {
 		return err
@@ -65,6 +69,9 @@ func (p *MySQLPlugin) prepareTableUpsert(ctx context.Context, connInfo plugin.Co
 func (p *MySQLPlugin) UpsertBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, batch *plugin.BatchData, opts plugin.TableUpsertOptions) error {
 	if batch == nil || len(batch.Rows) == 0 {
 		return nil
+	}
+	if !shared.HasSpatialTableWrite(opts.Fields, opts.SpatialInfo) && !shared.HasSpatialTableWrite(batch.Fields, batch.Spatial) {
+		return p.nonSpatialTableWriter().UpsertBatch(ctx, connInfo, path, batch, opts)
 	}
 	keys, err := validateMySQLUpsertOptions(opts)
 	if err != nil {

@@ -77,14 +77,42 @@ test('data application components own service selection, rendering, parameters, 
   const rendererHost = readSource('../src/components/WorkbenchRendererHost.vue')
   const draft = readSource('../src/utils/componentDraft.mjs')
   assert.match(editor, /listConsumerServices\(\{ service_type: ['"]query['"]/) // catalog is capability-scoped
-  assert.match(editor, /getConsumerDescriptor\(props\.component\.service_ref\)/)
+  assert.match(editor, /getConsumerDescriptor\(sourceComponent\.service_ref\)/)
   assert.match(draft, /field\?\.type === ['"]bool['"]\) return ['"]select['"]/) // boolean values preserve an unset state
   assert.match(editor, /:disabled="parameterizableFields\.length === 0"/)
   assert.match(draft, /export function createParameterDraft/)
-  assert.match(editor, /executeDescriptorOperation\(operation, buildQueryRequest/)
+  assert.match(editor, /const requestBody = buildQueryRequest/)
+  assert.match(editor, /executeDescriptorOperation\(operation, requestBody\)/)
   assert.match(editor, /:result-ready="queryCompleted"/)
   assert.match(canvas, /:result-ready="state\(placement\.component_id\)\.query_completed"/)
   assert.match(rendererHost, /rendererType === 'value' && !resultReady/)
+})
+
+test('component editor ignores async results from an obsolete service context', () => {
+  const editor = readSource('../src/components/ApplicationComponentEditor.vue')
+
+  assert.match(editor, /import\s*\{[^}]*\bonBeforeUnmount\b[^}]*\}\s*from\s*['"]vue['"]/s)
+  assert.match(editor, /createLatestRequestCoordinator/)
+  assert.match(editor, /descriptorRequests\.begin/)
+  assert.match(editor, /descriptorRequests\.isCurrent/)
+  assert.match(editor, /descriptorRequests\.invalidate\(\)/)
+  assert.match(editor, /operationRequests\.begin/)
+  assert.match(editor, /operationRequests\.isCurrent/)
+  assert.match(editor, /operationRequests\.invalidate\(\)/)
+  assert.match(editor, /@close="invalidateEditorRequests"/)
+  assert.match(editor, /onBeforeUnmount\(invalidateEditorRequests\)/)
+})
+
+test('component editor commits cursor pagination only after the target page succeeds', () => {
+  const editor = readSource('../src/components/ApplicationComponentEditor.vue')
+
+  assert.match(editor, /async function executeAtCursor\(cursor, nextCursorIndex = cursorIndex\.value, nextCursors = cursors\.value\)/)
+  assert.match(editor, /cursorIndex\.value = nextCursorIndex/)
+  assert.match(editor, /cursors\.value = nextCursors/)
+  assert.match(editor, /await executeAtCursor\(nextCursor, nextIndex, nextCursors\)/)
+  assert.match(editor, /await executeAtCursor\(cursors\.value\[previousIndex\], previousIndex, cursors\.value\)/)
+  assert.doesNotMatch(editor, /cursorIndex\.value \+= 1/)
+  assert.doesNotMatch(editor, /cursorIndex\.value -= 1/)
 })
 
 test('draft preview and published runtime reuse one Workbench application canvas', () => {
@@ -104,11 +132,151 @@ test('draft preview and published runtime reuse one Workbench application canvas
   assert.doesNotMatch(router, /\/preview/)
 })
 
+test('application runtime retries transient failures without bypassing contract drift', () => {
+  const canvas = readSource('../src/components/DataApplicationCanvas.vue')
+  const runtime = readSource('../src/utils/dataApplicationRuntime.mjs')
+
+  assert.match(canvas, /current\.descriptor_error\s*=/)
+  assert.match(canvas, /contract_error: t\('workbench\.runtimeContractChanged'\)/)
+  assert.match(canvas, /contract_error: ''/)
+  assert.match(canvas, /current\.query_error\s*=/)
+  assert.match(canvas, /descriptorRequests: createLatestRequestCoordinator\(\)/)
+  assert.match(canvas, /current\.descriptorRequests\.begin\(item\.id\)/)
+  assert.match(canvas, /commitLatestComponentDescriptorState/)
+  assert.match(runtime, /current\.descriptorRequests\.isCurrent\(request, componentID\)/)
+  assert.match(canvas, /!componentStates\[item\.id\]\?\.descriptor && !componentStates\[item\.id\]\?\.contract_error/) // query-all reloads a temporarily unavailable descriptor
+  assert.match(canvas, /canExecuteComponentQuery\(componentStates\[item\.id\]\)/)
+  assert.doesNotMatch(canvas, /Boolean\(state\(placement\.component_id\)\.error\)/)
+})
+
+test('application parameter changes invalidate only their bound component requests', () => {
+  const canvas = readSource('../src/components/DataApplicationCanvas.vue')
+  const runtime = readSource('../src/utils/dataApplicationRuntime.mjs')
+  const boundedExport = readSource('../src/utils/boundedExport.mjs')
+
+  assert.match(canvas, /@update:model-value="updateParameterValue\(parameter\.key, \$event\)"/)
+  assert.match(runtime, /componentIDsForApplicationParameters/)
+  assert.match(runtime, /current\.requests\.invalidate\(\)/)
+  assert.match(canvas, /queryAllRequests\.invalidate\(\)/)
+  assert.match(canvas, /invalidateApplicationParameterResults/)
+  assert.match(canvas, /downloadCurrentBoundedExport/)
+  assert.match(boundedExport, /if \(!isCurrent\(\)\) return 'stale'/)
+})
+
+test('published runtime reloads the requested application and exposes an in-page retry', () => {
+  const runtime = readSource('../src/views/DataApplicationRuntime.vue')
+  const runtimeState = readSource('../src/utils/dataApplicationRuntime.mjs')
+  const zhCn = JSON.parse(readSource('../src/i18n/zh-cn.json'))
+  const en = JSON.parse(readSource('../src/i18n/en.json'))
+
+  assert.match(runtime, /data-testid="runtime-retry-action"/)
+  assert.match(runtime, /import\s*\{[^}]*\bwatch\b[^}]*\}\s*from\s*['"]vue['"]/s)
+  assert.match(runtime, /import\s*\{[^}]*\bonBeforeUnmount\b[^}]*\}\s*from\s*['"]vue['"]/s)
+  assert.match(runtime, /createLatestRequestCoordinator/)
+  assert.match(runtime, /commitLatestDataApplicationLoad/)
+  assert.match(runtimeState, /requests\.isCurrent\(request, targetID\)/)
+  assert.match(runtime, /watch\(\(\)\s*=>\s*route\.params\.id/)
+  assert.match(runtime, /onBeforeUnmount\(\(\)\s*=>\s*requests\.invalidate\(\)\)/)
+  assert.doesNotMatch(runtime, /onMounted\(load\)/)
+  assert.equal(zhCn.workbench.retry, '重试')
+  assert.equal(en.workbench.retry, 'Retry')
+})
+
 test('data application editor clones persisted reactive components through their raw value', () => {
   const editor = readSource('../src/views/DataApplicationEditor.vue')
 
   assert.match(editor, /import\s*\{[^}]*\btoRaw\b[^}]*\}\s*from\s*['"]vue['"]/s)
   assert.match(editor, /editingComponent\.value\s*=\s*structuredClone\(toRaw\(component\)\)/)
+})
+
+test('data application editor isolates reused route load and descriptor contexts', () => {
+  const editor = readSource('../src/views/DataApplicationEditor.vue')
+  const draft = readSource('../src/utils/dataApplicationDraft.mjs')
+
+  assert.match(editor, /import\s*\{[^}]*\bonBeforeUnmount\b[^}]*\bwatch\b[^}]*\}\s*from\s*['"]vue['"]/s)
+  assert.match(editor, /createLatestRequestCoordinator/)
+  assert.match(editor, /commitLatestDataApplicationRequest/)
+  assert.match(draft, /dataApplicationEditorRouteContext/)
+  assert.match(draft, /requests\.isCurrent\(request, currentContext\)/)
+  assert.match(editor, /watch\(\(\)\s*=>\s*\[route\.name, route\.params\.id\]/)
+  assert.match(editor, /onBeforeUnmount\(invalidateEditorContextRequests\)/)
+  assert.match(editor, /loadComponentDescriptor\(component, loadRequest/)
+  assert.doesNotMatch(editor, /onMounted\(load\)/)
+})
+
+test('data application mutations commit only inside their current editor route', () => {
+  const editor = readSource('../src/views/DataApplicationEditor.vue')
+  const draft = readSource('../src/utils/dataApplicationDraft.mjs')
+
+  assert.match(editor, /v-loading="loading \|\| saving \|\| publishing \|\| offlining"/)
+  assert.match(editor, /editorMutationRequests\s*=\s*createLatestRequestCoordinator\(\)/)
+  assert.match(editor, /editorMutationRequests\.invalidate\(\)/)
+  assert.match(draft, /dataApplicationEditorMutationContext/)
+  assert.match(draft, /commitLatestDataApplicationRequest/)
+  assert.doesNotMatch(draft, /commitLatestDataApplicationEditorRequest|commitLatestDataApplicationEditorLoad/)
+
+  for (const [action, apiCall] of [
+    ['save', 'createDataApplication'],
+    ['publish', 'publishDataApplication'],
+    ['offline', 'offlineDataApplication'],
+  ]) {
+    const start = editor.indexOf(`async function ${action}()`)
+    const end = editor.indexOf('\nasync function ', start + 1)
+    const source = editor.slice(start, end < 0 ? undefined : end)
+    assert.match(source, new RegExp(`const action = ['"]${action}['"][\\s\\S]*beginEditorMutation\\(action\\)`))
+    assert.ok(source.indexOf('commitEditorMutation(') >= 0)
+    assert.ok(source.indexOf('commitEditorMutation(') < source.indexOf(apiCall))
+    assert.match(source, /catch[\s\S]*commitEditorMutation\(/)
+    assert.match(source, /finally[\s\S]*commitEditorMutation\(/)
+  }
+
+  const publishSource = editor.slice(editor.indexOf('async function publish()'), editor.indexOf('async function offline()'))
+  const offlineSource = editor.slice(editor.indexOf('async function offline()'), editor.indexOf('function openRuntime()'))
+  assert.ok(publishSource.indexOf('beginEditorMutation(action)') < publishSource.indexOf('confirmDataApplicationAction'))
+  assert.ok(offlineSource.indexOf('beginEditorMutation(action)') < offlineSource.indexOf('confirmDataApplicationAction'))
+
+  const removeComponentSource = editor.slice(editor.indexOf('async function removeComponent('), editor.indexOf('function pruneUnusedApplicationParameters()'))
+  assert.match(removeComponentSource, /const action = `remove-component:\$\{component\.id\}`/)
+  assert.ok(removeComponentSource.indexOf('beginEditorMutation(action)') < removeComponentSource.indexOf('confirmDataApplicationAction'))
+  assert.ok(removeComponentSource.indexOf('confirmDataApplicationAction') < removeComponentSource.indexOf('commitEditorMutation('))
+  assert.match(removeComponentSource, /commitEditorMutation\(request, action, \(\) => \{[\s\S]*application\.snapshot\.components/)
+  assert.doesNotMatch(removeComponentSource, /await ElMessageBox\.confirm/)
+})
+
+test('data application list isolates pagination and deletion lifecycle contexts', () => {
+  const list = readSource('../src/views/DataApplicationList.vue')
+  const draft = readSource('../src/utils/dataApplicationDraft.mjs')
+  const zhCn = JSON.parse(readSource('../src/i18n/zh-cn.json'))
+  const en = JSON.parse(readSource('../src/i18n/en.json'))
+
+  assert.match(list, /import\s*\{[^}]*\bonBeforeUnmount\b[^}]*\bonMounted\b[^}]*\}\s*from\s*['"]vue['"]/s)
+  assert.match(list, /listLoadRequests\s*=\s*createLatestRequestCoordinator\(\)/)
+  assert.match(list, /listDeletionRequests\s*=\s*createLatestRequestCoordinator\(\)/)
+  assert.match(list, /v-loading="loading \|\| Boolean\(deletingID\)"/)
+  assert.match(draft, /dataApplicationListPageContext/)
+  assert.match(draft, /dataApplicationDeletionContext/)
+  assert.match(draft, /commitLatestDataApplicationRequest/)
+
+  const loadSource = list.slice(list.indexOf('async function load()'), list.indexOf('async function remove('))
+  assert.match(loadSource, /listLoadRequests\.begin\(targetContext\)/)
+  assert.match(loadSource, /commitListLoad\(request/)
+  assert.match(loadSource, /catch[\s\S]*commitListLoad\(request/)
+  assert.match(loadSource, /finally[\s\S]*commitListLoad\(request/)
+
+  const removeSource = list.slice(list.indexOf('async function remove('), list.indexOf('function openRuntime('))
+  assert.ok(removeSource.indexOf('listDeletionRequests.begin(targetContext)') < removeSource.indexOf('confirmDataApplicationAction'))
+  assert.ok(removeSource.indexOf('confirmDataApplicationAction') < removeSource.indexOf('deleteDataApplication'))
+  assert.match(removeSource, /currentDeletionContext\(row\.id\) !== targetContext/)
+  assert.match(removeSource, /commitListDeletion\(request, targetContext/)
+  assert.match(removeSource, /items\.value\.length === 1 && page\.value > 1/)
+  assert.match(removeSource, /catch[\s\S]*commitListDeletion\(request, targetContext/)
+  assert.match(removeSource, /finally[\s\S]*commitListDeletion\(request, targetContext/)
+  assert.doesNotMatch(removeSource, /await ElMessageBox\.confirm/)
+  assert.match(list, /onBeforeUnmount\(invalidateListRequests\)/)
+  assert.match(list, /listLoadRequests\.invalidate\(\)/)
+  assert.match(list, /listDeletionRequests\.invalidate\(\)/)
+  assert.equal(zhCn.workbench.deleteFailed, '删除失败')
+  assert.equal(en.workbench.deleteFailed, 'Delete failed')
 })
 
 test('published data applications open the canonical Console runtime directly', () => {

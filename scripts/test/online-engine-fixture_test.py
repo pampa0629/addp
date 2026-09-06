@@ -100,6 +100,9 @@ esac
         self.assertIn("--env-file /dev/null", commands)
         self.assertIn("CREATE TABLE IF NOT EXISTS public.addp_online_catalog_fixture", commands)
         self.assertIn("ON CONFLICT", commands)
+        self.assertIn("CREATE SCHEMA IF NOT EXISTS addp_online_security", commands)
+        self.assertIn("DROP TABLE IF EXISTS addp_online_security.mysql_email_transfer", commands)
+        self.assertIn("CREATE TABLE addp_online_security.mysql_email_transfer", commands)
         self.assertFalse((self.business / ".env").exists())
 
     def test_rejects_non_dedicated_host_before_docker(self) -> None:

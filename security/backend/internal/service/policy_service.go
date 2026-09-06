@@ -30,7 +30,7 @@ func (s *PolicyService) Create(ctx context.Context, tenantID, userID int64, requ
 	request.Action = strings.TrimSpace(request.Action)
 	request.Effect = strings.TrimSpace(request.Effect)
 	request.Rationale = strings.TrimSpace(request.Rationale)
-	if tenantID <= 0 || userID <= 0 || uuid.Validate(request.AssessmentID) != nil || request.ConsumerOwner != "manager" || request.Action != managerPreviewAction || !validPolicyEffect(request.Effect) || !validPolicyRationale(request.Rationale) {
+	if tenantID <= 0 || userID <= 0 || uuid.Validate(request.AssessmentID) != nil || request.ConsumerOwner != managerProtectionOwner || request.Action != managerPreviewAction || !validPolicyEffect(request.Effect) || !validPolicyRationale(request.Rationale) {
 		return nil, commonapi.ErrBadRequest
 	}
 

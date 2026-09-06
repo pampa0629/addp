@@ -510,6 +510,15 @@ func prepareStandardSchemaMigration(db *gorm.DB) error {
 				ALTER TABLE standard.code_sets ADD COLUMN IF NOT EXISTS created_by BIGINT NOT NULL DEFAULT 0;
 				ALTER TABLE standard.code_sets ADD COLUMN IF NOT EXISTS updated_by BIGINT;
 				ALTER TABLE standard.code_sets ADD COLUMN IF NOT EXISTS lifecycle_state VARCHAR(16) NOT NULL DEFAULT 'active';
+				IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'standard' AND table_name = 'code_sets' AND column_name = 'domain_id') THEN
+					UPDATE standard.code_sets
+					SET owner_domain_id = CASE WHEN origin = 'platform' THEN NULL ELSE COALESCE(owner_domain_id, domain_id) END,
+						scope_type = CASE
+							WHEN origin = 'platform' THEN 'platform'
+							WHEN COALESCE(owner_domain_id, domain_id) IS NOT NULL THEN 'domain'
+							ELSE 'tenant_common'
+						END;
+				END IF;
 				UPDATE standard.code_sets
 				SET scope_type = CASE
 					WHEN origin = 'platform' THEN 'platform'
@@ -532,6 +541,15 @@ func prepareStandardSchemaMigration(db *gorm.DB) error {
 				ALTER TABLE standard.elements ADD COLUMN IF NOT EXISTS scope_type VARCHAR(20);
 				ALTER TABLE standard.elements ADD COLUMN IF NOT EXISTS current_revision_id BIGINT;
 				ALTER TABLE standard.elements ADD COLUMN IF NOT EXISTS draft_revision_id BIGINT;
+				IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'standard' AND table_name = 'elements' AND column_name = 'domain_id') THEN
+					UPDATE standard.elements
+					SET owner_domain_id = COALESCE(owner_domain_id, domain_id),
+						scope_type = CASE
+							WHEN COALESCE(owner_domain_id, domain_id) IS NOT NULL THEN 'domain'
+							WHEN scope_type = 'platform' THEN 'platform'
+							ELSE 'tenant_common'
+						END;
+				END IF;
 				UPDATE standard.elements
 				SET scope_type = CASE WHEN owner_domain_id IS NULL THEN 'tenant_common' ELSE 'domain' END
 				WHERE scope_type IS NULL OR scope_type NOT IN ('platform', 'tenant_common', 'domain');
@@ -1020,6 +1038,10 @@ func postgresStandardSchemaStatements() []string {
 	} {
 		statements = append(statements, fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT IF EXISTS %s", legacyConstraint.table, legacyConstraint.name))
 	}
+	statements = append(statements,
+		"ALTER TABLE standard.elements DROP COLUMN IF EXISTS domain_id",
+		"ALTER TABLE standard.code_sets DROP COLUMN IF EXISTS domain_id",
+	)
 
 	for _, foreignKey := range []struct {
 		table      string

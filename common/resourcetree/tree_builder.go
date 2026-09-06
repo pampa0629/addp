@@ -671,16 +671,7 @@ func EngineCatalogRootResourceType(engine *models.Engine) ResourceType {
 	case "tabular", "dynamic_schema", "document", "graph":
 		return TypeServer
 	}
-	switch strings.ToLower(strings.TrimSpace(engine.EngineType)) {
-	case "minio", "s3":
-		return TypeService
-	case "nfs", "nas":
-		return TypeRoot
-	case "postgresql", "oracle", "mysql", "doris", "clickhouse", "spark_sql", "mongodb", "neo4j":
-		return TypeServer
-	default:
-		return TypeRoot
-	}
+	return TypeRoot
 }
 
 func catalogRootResourceTypeFromCapabilities(engine *models.Engine) ResourceType {
@@ -719,27 +710,17 @@ func EngineIcon(engine *models.Engine) string {
 		return "Database"
 	}
 
-	if engine == nil {
-		return "Database"
-	}
-	switch strings.ToLower(strings.TrimSpace(engine.EngineType)) {
-	case "minio", "s3", "nfs", "nas":
-		return "FolderOpen"
-	case "mongodb":
-		return "DocumentText"
-	case "neo4j":
-		return "Share"
-	case "spark":
-		return "Grid"
-	case "jupyter":
-		return "CodeBracket"
-	default:
-		return "Database"
-	}
+	return "Database"
 }
 
 func engineFamily(engine *models.Engine) string {
-	if engine == nil || engine.Capabilities == nil {
+	if engine == nil {
+		return ""
+	}
+	if engine.Capabilities == nil {
+		if registered, err := enginePlugin.Get(engine.EngineType); err == nil {
+			return registered.Capabilities().EngineFamily
+		}
 		return ""
 	}
 	var caps struct {
@@ -754,6 +735,9 @@ func engineFamily(engine *models.Engine) string {
 		} `json:"compute"`
 	}
 	if err := json.Unmarshal([]byte(*engine.Capabilities), &caps); err != nil {
+		if registered, pluginErr := enginePlugin.Get(engine.EngineType); pluginErr == nil {
+			return registered.Capabilities().EngineFamily
+		}
 		return ""
 	}
 	if caps.EngineFamily != "" {

@@ -407,6 +407,78 @@ def validate_security_protection_exemption_profile(repository: Path, registered:
             )
 
 
+def validate_security_mysql_owner_protection_profile(
+    repository: Path, registered: set[str]
+) -> None:
+    if "security-mysql-owner-protection" not in registered:
+        return
+    host_gate = (repository / "scripts/test/online-host-gate.sh").read_text(
+        encoding="utf-8"
+    )
+    required_fragments = (
+        "security-mysql-owner-protection)",
+        "SYSTEM_URL GATEWAY_URL META_URL SECURITY_URL MANAGER_URL DEVELOP_URL",
+        "SERVICE_URL TRANSFER_URL",
+        "ADDP_ONLINE_WORKBENCH_MYSQL_ENGINE_ID",
+        "bash business/scripts/online-engine-fixture.sh start",
+        "bash business/scripts/online-engine-fixture.sh stop",
+        "bash business/scripts/online-workbench-mysql-fixture.sh start",
+        "bash business/scripts/online-workbench-mysql-fixture.sh stop",
+        'bash scripts/dev/start.sh "$START_TARGET"',
+    )
+    missing = [fragment for fragment in required_fragments if fragment not in host_gate]
+    if missing:
+        raise RegistrationError(
+            "security-mysql-owner-protection profile is missing: "
+            + ", ".join(missing)
+        )
+    for relative in (
+        "business/scripts/online-engine-fixture.sh",
+        "business/scripts/online-workbench-mysql-fixture.sh",
+        "scripts/test/security-mysql-owner-protection-online.py",
+        "scripts/test/security-transfer-protection-online.py",
+    ):
+        if not (repository / relative).is_file():
+            raise RegistrationError(
+                f"security-mysql-owner-protection requires {relative}"
+            )
+    postgres_fixture = (
+        repository / "business/scripts/online-engine-fixture.sh"
+    ).read_text(encoding="utf-8")
+    for fragment in (
+        "addp_online_security.mysql_email_transfer",
+        "DROP TABLE IF EXISTS addp_online_security.mysql_email_transfer",
+    ):
+        if fragment not in postgres_fixture:
+            raise RegistrationError(
+                "security-mysql-owner-protection PostgreSQL fixture is missing "
+                + fragment
+            )
+    owner = (
+        repository / "scripts/test/security-mysql-owner-protection-online.py"
+    ).read_text(encoding="utf-8")
+    owner_contract = owner + (
+        repository / "scripts/test/security-transfer-protection-online.py"
+    ).read_text(encoding="utf-8")
+    for fragment in (
+        "/api/v1/meta/scan/run/manual",
+        "/api/v1/security/sensitive-data-types",
+        "addp.detector.email_metadata/v1",
+        "/api/v1/security/protection-baselines",
+        "/api/v1/security/protection-enrollments",
+        "/api/v1/develop/executions",
+        "/api/query/",
+        "/api/v1/transfer/task-definitions",
+        '"effect": "suppress"',
+        '"residual_resources": 0',
+    ):
+        if fragment not in owner_contract:
+            raise RegistrationError(
+                "security-mysql-owner-protection owner contract is missing "
+                + fragment
+            )
+
+
 def load_workflow_suites(repository: Path) -> set[str]:
     path = repository / ".github/workflows/online-t4-gates.yml"
     if not path.is_file():
@@ -472,6 +544,7 @@ def check_registration(repository: Path) -> None:
     validate_manager_internal_artifact_lineage_profile(repository, registered)
     validate_security_transfer_protection_profile(repository, registered)
     validate_security_protection_exemption_profile(repository, registered)
+    validate_security_mysql_owner_protection_profile(repository, registered)
 
 
 def main() -> int:

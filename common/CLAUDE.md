@@ -62,6 +62,7 @@ common/
 
 ```bash
 cd common && go test ./...
+ADDP_TEST_MYSQL_PASSWORD=<disposable-mysql-password> make test-common-mysql-data-protection
 ./scripts/dev/restart.sh -all
 ```
 

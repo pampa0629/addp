@@ -109,6 +109,16 @@ ADDP_TEST_POSTGRES_SSLMODE=disable \
   make test-common-postgres
 ```
 
+MySQL Provider 与 Manager、Develop、Service、Transfer 四个数据保护 Owner 的组合门禁使用一次性 `addp_common_mysql_it_*` database，测试结束时自动删除；`ADDP_TEST_MYSQL_*` 必须指向可丢弃的 MySQL 8 测试实例，不得指向生产实例：
+
+```bash
+ADDP_TEST_MYSQL_HOST=localhost \
+ADDP_TEST_MYSQL_PORT=3306 \
+ADDP_TEST_MYSQL_USER=root \
+ADDP_TEST_MYSQL_PASSWORD=password \
+  make test-common-mysql-data-protection
+```
+
 Model 物化与事务门禁使用：
 
 ```bash

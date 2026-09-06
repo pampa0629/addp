@@ -67,6 +67,45 @@ func TestCompileQueryPlanBindsFilterAndBuildsCompositeKeyset(t *testing.T) {
 	}
 }
 
+func TestTableQueryPlanUsesPublishedColumnsWithoutWildcard(t *testing.T) {
+	t.Parallel()
+
+	queryService := testPublishedQueryService()
+	queryService.ConfigType = "table"
+	queryService.SchemaName = "business"
+	queryService.TargetTable = "customers"
+	baseSQL, err := directSourceSQL(queryService, "mysql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(baseSQL, "*") {
+		t.Fatalf("table source SQL contains wildcard: %s", baseSQL)
+	}
+	if want := "SELECT `id`, `name`, `score` FROM `business`.`customers`"; baseSQL != want {
+		t.Fatalf("table source SQL = %s, want %s", baseSQL, want)
+	}
+
+	plan, err := compileQueryPlan(
+		queryService,
+		&models.QueryExecutionRequest{
+			Select: []string{"id", "name"},
+			Page:   models.QueryPageRequest{Limit: 2},
+		},
+		queryProtocolREST,
+		"mysql",
+		baseSQL,
+		nil,
+		nil,
+		newQueryTokenCodec([]byte("0123456789abcdef0123456789abcdef")),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(plan.SQL, "*") {
+		t.Fatalf("compiled table query contains wildcard: %s", plan.SQL)
+	}
+}
+
 func TestCompileQueryPlanContinuesExistingPostgreSQLArgs(t *testing.T) {
 	t.Parallel()
 

@@ -368,9 +368,14 @@ type FederatedQueryObjectTableReference struct {
 	TableName  string
 }
 
+type SQLDialectProvider interface {
+	EnginePlugin
+	SQLDialect() string
+}
+
 type SQLQueryRuntimeProvider interface {
 	QueryRuntimeProvider
-	SQLDialect() string
+	SQLDialectProvider
 	ExecuteSQL(ctx context.Context, connInfo ConnectionInfo, sql string, opts QueryOptions) (*QueryResult, error)
 }
 

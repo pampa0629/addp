@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { buildComponentConfiguration, buildQueryRequest, createNamedParameterDraft, createParameterDraft, hasParameterValue } from '../src/utils/componentDraft.mjs'
+import { buildComponentConfiguration, buildQueryRequest, createNamedParameterDraft, createParameterDraft, hasParameterValue, requiredParameterValuesPresent } from '../src/utils/componentDraft.mjs'
 
 const descriptor = {
   ref: { service_type: 'query', service_id: 9 },
@@ -115,4 +115,18 @@ test('compiles service named parameters into the same structured request and com
   assert.deepEqual(component.query_template.parameter_filters, [])
   assert.deepEqual(component.query_template.named_parameter_bindings, [{ parameter_key: 'person_id_a', name: 'person_id_a' }])
   assert.equal(component.default_parameter_values.person_id_a, 'person-1')
+})
+
+test('keeps required parameters without component defaults saveable but not previewable', () => {
+  const named = createNamedParameterDraft({ name: 'person_id', type: 'string', required: true, description: 'Person' })
+  const draft = {
+    name: 'runtime-bound', description: '', columns: ['metric'], pageLimit: 50, rendererType: 'table',
+    parameters: [named],
+  }
+
+  assert.equal(requiredParameterValuesPresent(draft.parameters), false)
+  assert.deepEqual(buildComponentConfiguration(descriptor, draft, 'runtime-bound').default_parameter_values, {})
+
+  named.value = 'person-1'
+  assert.equal(requiredParameterValuesPresent(draft.parameters), true)
 })

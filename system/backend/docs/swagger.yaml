@@ -3309,6 +3309,10 @@ definitions:
         type: string
       federation:
         $ref: '#/definitions/plugin.QueryFederationCapability'
+      identifier_quotes:
+        additionalProperties:
+          type: string
+        type: object
       languages:
         items:
           type: string

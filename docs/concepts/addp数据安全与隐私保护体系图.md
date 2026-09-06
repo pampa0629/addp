@@ -149,6 +149,8 @@ Owner acknowledgement 只证明当前保护投影已经持久安装，并且后�
 
 只有显式纳管的资源进入 Security 主链路。未纳管资源不调用 Security、不扫描内容、不执行保护算法、不写保护审计。Locator 型出口通过本地索引快速未命中返回原路径；自由查询在当前 Tenant 存在任一纳管目标时，允许为证明 JOIN、View、`$lookup` 等完整依赖而读取 PreparedQuery 的 `QueryReadSet`，只有本次查询精确命中纳管 DataItem 后才继续读取 `QueryOutputLineage` 和实时源字段结构。该成本不得扩大为逐请求 Security / Meta / Catalog 远程调用或内容扫描。
 
+MySQL 当前只对无普通函数、且当前连接目录可将 JOIN / 派生子查询的所有引用确认为真实 InnoDB 基础表的只读 SELECT 生成完整 `QueryReadSet`。这只用于证明本次请求未命中纳管 DataItem，避免被 Tenant 其他引擎的纳管事实误伤；View、FEDERATED 等可引入额外数据源的存储引擎、函数、无法解析的语法以及命中 MySQL 纳管 DataItem 的查询继续失效关闭，不把部分 ReadSet 或结果列名当成字段保护证据。
+
 Develop 不解析 SQL/MQL，也不按结果列名猜测敏感字段。Engine Provider 在同一 PreparedQuery 中声明 source 到结果的 identity、direct、derived 或 opaque 关系；Develop 只对 identity/direct 输出执行 `query` 规则，任何受保护组件的 derived/opaque 输出、结构漂移或 lineage unresolved 都拒绝当前查询。保护发生在 QueryResult 写入执行记录或返回 Workbench / Notebook 之前。
 
 纳管激活顺序固定为：

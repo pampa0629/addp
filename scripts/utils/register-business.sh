@@ -57,6 +57,14 @@ BUSINESS_ORACLE_SERVICE_NAME="${ORACLE_SERVICE_NAME:-FREEPDB1}"
 BUSINESS_ORACLE_USER="${ORACLE_APP_USER:-business}"
 BUSINESS_ORACLE_PASSWORD="${ORACLE_APP_PASSWORD:-business_oracle_password}"
 
+# Business OceanBase CE 配置
+BUSINESS_OCEANBASE_HOST="${BUSINESS_OCEANBASE_HOST:-business-oceanbase}"
+BUSINESS_OCEANBASE_PORT="${BUSINESS_OCEANBASE_PORT:-2881}"
+BUSINESS_OCEANBASE_DATABASE="${OCEANBASE_DATABASE:-business}"
+BUSINESS_OCEANBASE_USER="${BUSINESS_OCEANBASE_USER:-root@${OCEANBASE_TENANT_NAME:-test}}"
+BUSINESS_OCEANBASE_PASSWORD="${OCEANBASE_PASSWORD:-business_oceanbase_password}"
+BUSINESS_OCEANBASE_AVAILABLE=false
+
 # Business MinIO 配置
 BUSINESS_MINIO_CHECK_PORT="${BUSINESS_MINIO_CHECK_PORT:-${MINIO_API_PORT:-9002}}"
 BUSINESS_MINIO_ENDPOINT="${BUSINESS_MINIO_ENDPOINT:-business-minio:9000}"
@@ -123,6 +131,22 @@ else
   exit 1
 fi
 echo -e "${GREEN}✓ Business Oracle 可用${NC}"
+
+# OceanBase 是可选业务引擎；只在容器已健康运行时注册。
+if docker ps --format '{{.Names}}' | grep -qx 'business-oceanbase'; then
+  if docker exec business-oceanbase obclient \
+    -h127.0.0.1 -P2881 -u"${BUSINESS_OCEANBASE_USER}" \
+    --password="${BUSINESS_OCEANBASE_PASSWORD}" \
+    -D"${BUSINESS_OCEANBASE_DATABASE}" -e 'SELECT 1' >/dev/null 2>&1; then
+    BUSINESS_OCEANBASE_AVAILABLE=true
+    echo -e "${GREEN}✓ Business OceanBase CE 可用${NC}"
+  else
+    echo -e "${RED}✗ Business OceanBase CE 容器已运行但不可查询${NC}"
+    exit 1
+  fi
+else
+  echo -e "${YELLOW}⚠️  Business OceanBase CE 未启动，跳过注册${NC}"
+fi
 
 # 检查 Business MinIO
 if docker ps --format '{{.Names}}' | grep -qx 'business-minio'; then
@@ -260,6 +284,14 @@ register_engine \
   "{\"host\":\"${BUSINESS_ORACLE_HOST}\",\"port\":${BUSINESS_ORACLE_PORT},\"service_name\":\"${BUSINESS_ORACLE_SERVICE_NAME}\",\"user\":\"${BUSINESS_ORACLE_USER}\",\"password\":\"${BUSINESS_ORACLE_PASSWORD}\"}" \
   "业务数据库 - Oracle 普通表与只读快照"
 
+if [ "${BUSINESS_OCEANBASE_AVAILABLE}" = true ]; then
+  register_engine \
+    "Business OceanBase" \
+    "oceanbase" \
+    "{\"host\":\"${BUSINESS_OCEANBASE_HOST}\",\"port\":${BUSINESS_OCEANBASE_PORT},\"database\":\"${BUSINESS_OCEANBASE_DATABASE}\",\"user\":\"${BUSINESS_OCEANBASE_USER}\",\"password\":\"${BUSINESS_OCEANBASE_PASSWORD}\"}" \
+    "业务数据库 - OceanBase Community Edition (MySQL 模式)"
+fi
+
 # 注册 Business MinIO
 register_engine \
   "Business MinIO" \
@@ -276,6 +308,9 @@ echo "已注册的 Business 引擎："
 echo "  1. Business PostgreSQL (${BUSINESS_PG_HOST}:${BUSINESS_PG_PORT})"
 echo "  2. Business Oracle (${BUSINESS_ORACLE_HOST}:${BUSINESS_ORACLE_PORT}/${BUSINESS_ORACLE_SERVICE_NAME})"
 echo "  3. Business MinIO (${BUSINESS_MINIO_ENDPOINT})"
+if [ "${BUSINESS_OCEANBASE_AVAILABLE}" = true ]; then
+  echo "  4. Business OceanBase (${BUSINESS_OCEANBASE_HOST}:${BUSINESS_OCEANBASE_PORT}/${BUSINESS_OCEANBASE_DATABASE})"
+fi
 echo ""
 echo -e "${YELLOW}提示: 可以在「系统管理 -- 引擎管理」页面查看和管理引擎${NC}"
 echo ""

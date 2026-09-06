@@ -7,7 +7,7 @@
         :key="iframeKey || iframeUrl"
         data-testid="module-iframe"
         frameborder="0"
-        allow="clipboard-write; clipboard-read"
+        allow="clipboard-write; clipboard-read; fullscreen"
         @load="$emit('load')"
         class="module-iframe"
       ></iframe>

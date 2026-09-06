@@ -442,7 +442,7 @@
         <el-form-item :label="t('model.metric.source_fields')" required>
           <el-select v-model="metricForm.field_ids" multiple filterable :placeholder="t('model.metric.field_placeholder')" style="width:100%">
             <el-option
-              v-for="f in measureFields"
+              v-for="f in metricSourceFields"
               :key="f.id"
               :label="`${f.name} (${f.column_name})`"
               :value="f.id"
@@ -644,10 +644,8 @@ const blankMetricImplementation = () => ({
 })
 const metricForm = reactive(blankMetricImplementation())
 
-// 度量字段（field_role 为 measure_* 的字段）
-const measureFields = computed(() =>
-  fields.value.filter(f => f.field_role && f.field_role.startsWith('measure_'))
-)
+// 指标来源可以是度量、业务键、维度键或过滤字段，唯一边界是属于当前事实表。
+const metricSourceFields = computed(() => fields.value)
 
 // 指标名称映射（id -> name）
 const metricNameMap = computed(() => {

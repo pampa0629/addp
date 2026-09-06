@@ -81,4 +81,8 @@ async def maybe_update_summary(session_id: int) -> None:
             len(new_older_messages),
         )
     except Exception as exc:
-        logger.error("[SUMMARY] session_id=%d 摘要更新异常: %s", session_id, exc)
+        logger.error(
+            "[SUMMARY] session_id=%d 摘要更新异常: error_type=%s",
+            session_id,
+            type(exc).__name__,
+        )

@@ -88,7 +88,8 @@ const SCENARIOS = {
     'notebook_generation',
     'transfer_generation',
     'navigation_guide',
-    'knowledge_graph_extraction'
+    'knowledge_graph_extraction',
+    'standard_document_extraction'
   ]
 }
 

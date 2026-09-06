@@ -138,6 +138,8 @@ Manager 平台内部产物血缘类 T4 使用专用 Business MinIO Fixture 和�
 
 保护豁免类 T4 必须以同一个正式 Assessment 和四个固定绑定分别覆盖 `manager/preview`、`develop/query`、`service/service_execute` 与 `transfer/export`。suite 先证明正常保护值，再经 Security 正式 API 发布限时 `allow + valid_until + fallback`，等待四个 Owner 各自确认投影并证明有效期内返回原值；到期后不得刷新 Security 投影或调用 Security 判定，必须直接从四个 Owner 的本地投影恢复到遮盖值。每轮 Service 和 Transfer 定义必须按捕获 ID 清理；Enrollment、Assessment、Exemption 聚合及不可变修订属于专用 Tenant 的长期治理与审计事实，不作为临时业务资源删除。Assessment 修订使豁免立即失效的事务语义由 Security PostgreSQL T2 覆盖，禁止为了 T4 重复运行而篡改或删除不可变审计历史。
 
+MySQL 邮箱四出口保护类 T4 使用专用 MySQL Fixture 的 `customers.email` 和专用 PostgreSQL Fixture 的固定目标表，要求当前 Tenant 已存在启用的 `email` 敏感类型、`addp.detector.email_metadata/v1` 检测绑定和 `suppress` 默认保护规则。suite 必须经 Meta 真实扫描发现字段，经 Security 正式 API 形成或复用 Enrollment 与 Assessment，并等待 `manager/preview`、`develop/query`、`service/service_execute` 和 `transfer/export` 投影全部确认。四个 Owner 都必须继续返回 5 条非敏感数据，同时在返回结构与每条记录中完全移除 `email`；返回空邮箱、原文邮箱、整个请求被拒绝或整个结果为空都不算通过。每轮临时 Query Service 和 Transfer 任务必须按捕获 ID 删除并确认零残留；Enrollment 与 Assessment 是长期治理事实，不在验收后删除。
+
 ### 5.3 数据、超时与清理
 
 T4 临时夹具优先通过 owner 正式 API 创建；正式 API 无法建立必要前置状态时，才允许 owner 提供专用测试 helper。Engine Instance 等永久身份按上一节使用预置专用 Fixture，不适用“每轮创建后删除”。跨模块 Online 场景不得以直接 SQL 作为常规夹具路线。
@@ -183,7 +185,7 @@ Workflow 只负责：
 - 调用唯一 Make / script 入口。
 - 超时、并发、Artifact、Step Summary 和 required check 名称。
 
-不得在 workflow 中复制 SQL、业务夹具、测试选择表达式、模块启动逻辑或清理逻辑。能通过 Git 和依赖声明自动发现的事实不维护手写清单；必须手工登记的门禁由 `make test-platform` 的一致性检查验证完整性。
+不得在 workflow 中复制 SQL、业务夹具、测试选择表达式、模块启动逻辑或清理逻辑。能通过 Git 和依赖声明自动发现的事实不维护手写清单；必须手工登记的门禁由 `make test-platform` 的一致性检查验证完整性。使用 PostgreSQL、MongoDB、MySQL 等托管数据库 Service 的 T2 门禁必须同时登记根 Make 入口、`test-integration` 串行聚合、共享模块变更选择和带摘要的 CI Job，并固定主版本与镜像摘要。
 
 新增或修改模块、测试入口、基础设施依赖、构建方式或 suite 时，必须在同一次变更中同步：
 

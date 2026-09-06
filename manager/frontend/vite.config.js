@@ -36,13 +36,11 @@ export default defineConfig({
       'vue-i18n': resolve(__dirname, 'node_modules/vue-i18n'),
       '@element-plus/icons-vue': resolve(__dirname, 'node_modules/@element-plus/icons-vue'),
       'element-plus': resolve(__dirname, 'node_modules/element-plus'),
-      '@open-file-viewer/core/style.css': resolve(__dirname, 'node_modules/@open-file-viewer/core/dist/style.css'),
-      '@open-file-viewer/core': resolve(__dirname, 'node_modules/@open-file-viewer/core/dist/index.js'),
       'geotiff': resolve(__dirname, 'node_modules/geotiff'),
       'mermaid': resolve(__dirname, 'node_modules/mermaid'),
       'proj4': resolve(__dirname, 'node_modules/proj4')
     },
-    dedupe: ['ol', 'vue', 'vue-i18n', 'element-plus', '@element-plus/icons-vue', 'marked', 'dompurify', 'jszip', 'mermaid', 'geotiff', 'proj4', 'axios', '@amap/amap-jsapi-loader', '@antv/g6']
+    dedupe: ['ol', 'vue', 'vue-i18n', 'element-plus', '@element-plus/icons-vue', 'marked', 'mammoth', 'dompurify', 'jszip', 'mermaid', 'geotiff', 'proj4', 'axios', '@amap/amap-jsapi-loader', '@antv/g6']
   },
   optimizeDeps: {
     include: [

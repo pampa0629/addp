@@ -6,6 +6,7 @@
     width="min(1180px, calc(100vw - 24px))"
     destroy-on-close
     @open="initialize"
+    @close="invalidateEditorRequests"
     @update:model-value="emit('update:modelValue', $event)"
   >
     <div v-loading="loading" class="component-editor" data-testid="application-component-editor">
@@ -166,11 +167,12 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
+import { createLatestRequestCoordinator } from '@common-ui'
 import { executeDescriptorOperation, getConsumerDescriptor, listConsumerServices } from '../api/services'
-import { buildComponentConfiguration, buildQueryRequest, controlTypeFor, createNamedParameterDraft, createParameterDraft, draftFromComponent, emptyControlValue, hasParameterValue } from '../utils/componentDraft.mjs'
+import { buildComponentConfiguration, buildQueryRequest, controlTypeFor, createNamedParameterDraft, createParameterDraft, draftFromComponent, emptyControlValue, requiredParameterValuesPresent } from '../utils/componentDraft.mjs'
 import { boundedExportHasMore, descriptorSupportsExport, downloadBoundedExport, exportFormatForRenderer } from '../utils/boundedExport.mjs'
 import WorkbenchRendererHost from './WorkbenchRendererHost.vue'
 
@@ -192,6 +194,8 @@ const pageResult = ref({ has_more: false, next_cursor: '' })
 const cursors = ref([''])
 const cursorIndex = ref(0)
 const draft = reactive(emptyDraft())
+const descriptorRequests = createLatestRequestCoordinator()
+const operationRequests = createLatestRequestCoordinator()
 
 const selectableFields = computed(() => (descriptor.value?.input_contract?.fields || []).filter((field) => field.selectable))
 const filterableFields = computed(() => (descriptor.value?.input_contract?.fields || []).filter((field) => field.filterable))
@@ -228,7 +232,7 @@ const validDraft = computed(() => {
   const parameterKeys = new Set()
   const descriptorNamedParameters = new Map((descriptor.value.input_contract.named_parameters || []).map((parameter) => [parameter.name, parameter]))
   if (draft.parameters.some((parameter) => {
-	if (!parameter.key.trim() || !parameter.label.trim() || parameterKeys.has(parameter.key) || (parameter.required && !hasParameterValue(parameter))) return true
+	if (!parameter.key.trim() || !parameter.label.trim() || parameterKeys.has(parameter.key)) return true
 	parameterKeys.add(parameter.key)
 	if (parameter.bindingKind !== 'named') return false
 	const serviceParameter = descriptorNamedParameters.get(parameter.name)
@@ -242,9 +246,14 @@ const validDraft = computed(() => {
   if (draft.rendererType === 'map') return Boolean(draft.geometryField && (draft.mapStyleMode === 'uniform' || draft.mapColorField))
   return true
 })
-const canQuery = computed(() => validDraft.value && !contractChanged.value)
+const canQuery = computed(() => validDraft.value && requiredParameterValuesPresent(draft.parameters) && !contractChanged.value)
 const keyOf = (refValue) => `${refValue.service_type}:${refValue.service_id}`
 const outputField = (name) => outputFields.value.find((field) => field.name === name)
+
+function componentContextKey(component = props.component) {
+  if (!component) return 'create'
+  return `edit:${component.id || ''}:${keyOf(component.service_ref)}:${component.contract_fingerprint || ''}`
+}
 
 function emptyDraft() {
   return {
@@ -258,33 +267,48 @@ function assignDraft(value) {
 }
 
 async function initialize() {
+  const sourceComponent = props.component
+  const targetContext = componentContextKey(sourceComponent)
+  const request = descriptorRequests.begin(targetContext)
   loading.value = true
+  querying.value = false
+  exporting.value = false
+  serviceKey.value = sourceComponent ? keyOf(sourceComponent.service_ref) : ''
+  descriptor.value = null
+  assignDraft(emptyDraft())
+  resetResult()
   try {
     const { data } = await listConsumerServices({ service_type: 'query', page: 1, page_size: 100 })
+    if (!descriptorRequests.isCurrent(request, componentContextKey())) return
     services.value = data.data || []
-    if (props.component) {
-      serviceKey.value = keyOf(props.component.service_ref)
-      const { data: currentDescriptor } = await getConsumerDescriptor(props.component.service_ref)
+    if (sourceComponent) {
+      const { data: currentDescriptor } = await getConsumerDescriptor(sourceComponent.service_ref)
+      if (!descriptorRequests.isCurrent(request, componentContextKey())) return
       descriptor.value = currentDescriptor
-      assignDraft(draftFromComponent(props.component, currentDescriptor))
-    } else {
-      serviceKey.value = ''
-      descriptor.value = null
-      assignDraft(emptyDraft())
+      assignDraft(draftFromComponent(sourceComponent, currentDescriptor))
     }
-    resetResult()
   } catch (error) {
+    if (!descriptorRequests.isCurrent(request, componentContextKey())) return
     ElMessage.error(error?.response?.data?.error || t('workbench.loadFailed'))
   } finally {
-    loading.value = false
+    if (descriptorRequests.isCurrent(request, componentContextKey())) loading.value = false
   }
 }
 
-async function selectService() {
-  const summary = services.value.find((item) => keyOf(item.ref) === serviceKey.value)
+async function selectService(selectedServiceKey = serviceKey.value) {
+  const targetServiceKey = String(selectedServiceKey || '')
+  const summary = services.value.find((item) => keyOf(item.ref) === targetServiceKey)
   if (!summary) return
+  const request = descriptorRequests.begin(targetServiceKey)
+  loading.value = true
+  querying.value = false
+  exporting.value = false
+  descriptor.value = null
+  assignDraft(emptyDraft())
+  resetResult()
   try {
     const { data } = await getConsumerDescriptor(summary.ref)
+    if (!descriptorRequests.isCurrent(request, serviceKey.value)) return
     descriptor.value = data
     const namedParameters = (data.input_contract.named_parameters || [])
       .map((parameter, index) => createNamedParameterDraft(parameter, index))
@@ -299,8 +323,11 @@ async function selectService() {
     })
     initializeRenderer()
   } catch (error) {
+    if (!descriptorRequests.isCurrent(request, serviceKey.value)) return
     descriptor.value = null
     ElMessage.error(error?.response?.data?.error || t('workbench.loadFailed'))
+  } finally {
+    if (descriptorRequests.isCurrent(request, serviceKey.value)) loading.value = false
   }
 }
 
@@ -410,69 +437,97 @@ function removeParameter(index) {
   resetResult()
 }
 
-async function executeAtCursor(cursor) {
-  if (!validDraft.value) return
+async function executeAtCursor(cursor, nextCursorIndex = cursorIndex.value, nextCursors = cursors.value) {
+  if (!canQuery.value) return
+  const targetServiceKey = serviceKey.value
+  const request = operationRequests.begin(targetServiceKey)
+  const currentDescriptor = descriptor.value
+  const operation = currentDescriptor.operations.find((item) => item.key === 'query')
+  const requestBody = buildQueryRequest(currentDescriptor, draft, cursor)
   querying.value = true
   try {
-    const operation = descriptor.value.operations.find((item) => item.key === 'query')
-    const { data } = await executeDescriptorOperation(operation, buildQueryRequest(descriptor.value, draft, cursor))
+    const { data } = await executeDescriptorOperation(operation, requestBody)
+    if (!operationRequests.isCurrent(request, serviceKey.value)) return
     resultRows.value = data.data || []
     pageResult.value = data.page || { has_more: false, next_cursor: '' }
+    cursorIndex.value = nextCursorIndex
+    cursors.value = nextCursors
     queryCompleted.value = true
   } catch (error) {
+    if (!operationRequests.isCurrent(request, serviceKey.value)) return
     ElMessage.error(error?.response?.data?.error || t('workbench.queryFailed'))
   } finally {
-    querying.value = false
+    if (operationRequests.isCurrent(request, serviceKey.value)) querying.value = false
   }
 }
 
 async function preview() {
-  cursors.value = ['']
-  cursorIndex.value = 0
+  resetResult()
   await executeAtCursor('')
 }
 
 async function nextPage() {
-  if (!pageResult.value.next_cursor) return
-  cursors.value = [...cursors.value.slice(0, cursorIndex.value + 1), pageResult.value.next_cursor]
-  cursorIndex.value += 1
-  await executeAtCursor(cursors.value[cursorIndex.value])
+  const nextCursor = pageResult.value.next_cursor
+  if (!nextCursor) return
+  const nextIndex = cursorIndex.value + 1
+  const nextCursors = cursors.value.slice(0, nextIndex)
+  nextCursors[nextIndex] = nextCursor
+  await executeAtCursor(nextCursor, nextIndex, nextCursors)
 }
 
 async function previousPage() {
   if (cursorIndex.value === 0) return
-  cursorIndex.value -= 1
-  await executeAtCursor(cursors.value[cursorIndex.value])
+  const previousIndex = cursorIndex.value - 1
+  await executeAtCursor(cursors.value[previousIndex], previousIndex, cursors.value)
 }
 
 async function exportResult() {
   if (!canQuery.value) return
   const format = exportFormatForRenderer(draft.rendererType)
   if (!descriptorSupportsExport(descriptor.value, draft.rendererType)) return ElMessage.warning(t('workbench.exportUnsupported'))
+  const targetServiceKey = serviceKey.value
+  const request = operationRequests.begin(targetServiceKey)
+  const currentDescriptor = descriptor.value
+  const operation = currentDescriptor.operations.find((item) => item.key === 'query')
+  const requestBody = buildQueryRequest(currentDescriptor, draft, '', format)
   exporting.value = true
   try {
-    const operation = descriptor.value.operations.find((item) => item.key === 'query')
     const response = await executeDescriptorOperation(
       operation,
-      buildQueryRequest(descriptor.value, draft, '', format),
+      requestBody,
       { intent: 'export', responseType: 'blob' },
     )
+    if (!operationRequests.isCurrent(request, serviceKey.value)) return
     if (boundedExportHasMore(response.headers)) return ElMessage.warning(t('workbench.exportIncomplete'))
-    downloadBoundedExport(response.data, `workbench-${descriptor.value.ref.service_type}-${descriptor.value.ref.service_id}.${format}`)
+    downloadBoundedExport(response.data, `workbench-${currentDescriptor.ref.service_type}-${currentDescriptor.ref.service_id}.${format}`)
   } catch (error) {
+    if (!operationRequests.isCurrent(request, serviceKey.value)) return
     ElMessage.error(error?.response?.data?.error || t('workbench.exportFailed'))
   } finally {
-    exporting.value = false
+    if (operationRequests.isCurrent(request, serviceKey.value)) exporting.value = false
   }
 }
 
 function resetResult() {
+  operationRequests.invalidate()
+  querying.value = false
+  exporting.value = false
   queryCompleted.value = false
   resultRows.value = []
   pageResult.value = { has_more: false, next_cursor: '' }
   cursors.value = ['']
   cursorIndex.value = 0
 }
+
+function invalidateEditorRequests() {
+  descriptorRequests.invalidate()
+  operationRequests.invalidate()
+  loading.value = false
+  querying.value = false
+  exporting.value = false
+}
+
+onBeforeUnmount(invalidateEditorRequests)
 
 function submit() {
   if (!validDraft.value) return

@@ -228,11 +228,13 @@ import {
   withColumnarCompressionOption
 } from './columnarCompression.mjs'
 import {
-  dataTypeLabel,
-  engineOptionLabel,
-  formatLabel,
+	dataTypeLabel,
+	engineOptionLabel,
+	formatLabel,
 	hasAtomicPartitionedTableChangeApply,
+  hasContentWriteCapability,
   hasIdempotentTableUpsert,
+  hasNativeTableWriteCapability,
   hasStorageCapability,
   isContentEngine,
   isNativeTableEngine,
@@ -877,8 +879,9 @@ function isAllowedTargetEngine(engine) {
   if (props.wizardState.isWatermarkIncremental?.value) {
     return isNativeTableEngine(engine) && hasIdempotentTableUpsert(engine)
   }
-  if (isRawCopySource.value) return isContentEngine(engine)
-  return isNativeTableEngine(engine) || isContentEngine(engine)
+  if (isRawCopySource.value) return isContentEngine(engine) && hasContentWriteCapability(engine)
+  return (isNativeTableEngine(engine) && hasNativeTableWriteCapability(engine)) ||
+    (isContentEngine(engine) && hasContentWriteCapability(engine))
 }
 
 function supportedEncodedSourceFormat(format) {

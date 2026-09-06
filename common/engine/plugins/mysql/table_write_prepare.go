@@ -8,12 +8,24 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/engine/plugins/shared"
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/mappers/mysql"
 	commonquery "github.com/addp/common/query"
 )
 
+func (p *MySQLPlugin) nonSpatialTableWriter() shared.MySQLCompatibleTableWriter {
+	return shared.MySQLCompatibleTableWriter{
+		EngineType:  p.Type(),
+		EngineName:  p.DisplayName(),
+		DefaultPort: p.DefaultPort(),
+	}
+}
+
 func (p *MySQLPlugin) PrepareTableWrite(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableWriteOptions) error {
+	if !shared.HasSpatialTableWrite(opts.Fields, opts.SpatialInfo) {
+		return p.nonSpatialTableWriter().PrepareTableWrite(ctx, connInfo, path, opts)
+	}
 	database, table, err := mysqlTablePathParts(path)
 	if err != nil {
 		return err
@@ -32,25 +44,7 @@ func (p *MySQLPlugin) PrepareTableWrite(ctx context.Context, connInfo plugin.Con
 }
 
 func (p *MySQLPlugin) DeleteResource(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath) error {
-	database, table, err := mysqlTablePathParts(path)
-	if err != nil {
-		return err
-	}
-	dsn, err := p.serverDSN(connInfo)
-	if err != nil {
-		return fmt.Errorf("failed to build mysql dsn: %w", err)
-	}
-	db, err := sql.Open("mysql", dsn)
-	if err != nil {
-		return fmt.Errorf("failed to open mysql connection: %w", err)
-	}
-	defer db.Close()
-
-	dropSQL := "DROP TABLE IF EXISTS " + mysqlDialect().QualifiedTable(database, table)
-	if _, err := db.ExecContext(ctx, dropSQL); err != nil {
-		return fmt.Errorf("drop mysql table %s.%s: %w", database, table, err)
-	}
-	return nil
+	return p.nonSpatialTableWriter().DeleteResource(ctx, connInfo, path)
 }
 
 func (p *MySQLPlugin) serverDSN(connInfo plugin.ConnectionInfo) (string, error) {

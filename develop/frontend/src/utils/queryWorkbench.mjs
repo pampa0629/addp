@@ -17,6 +17,7 @@ export function queryCapabilityForEngine(engine) {
     return {
       languages: [],
       defaultLanguage: '',
+      identifierQuotes: {},
       resultKinds: [],
       parameters: null,
       federation: { supported: false, sourceEngineTypes: [], objectFormats: [] }
@@ -27,6 +28,7 @@ export function queryCapabilityForEngine(engine) {
   return {
     languages,
     defaultLanguage: languages.includes(declaredDefault) ? declaredDefault : (languages[0] || ''),
+    identifierQuotes: normalizeIdentifierQuotes(query.identifier_quotes, languages),
     resultKinds: Array.from(new Set((query.result_kinds || []).map(value => String(value).trim().toLowerCase()).filter(Boolean))),
     parameters: normalizeQueryParameterCapability(query.parameters, languages),
     federation: {
@@ -37,6 +39,38 @@ export function queryCapabilityForEngine(engine) {
         .map(value => String(value).trim().toLowerCase()).filter(Boolean)))
     }
   }
+}
+
+function normalizeIdentifierQuotes(value, queryLanguages) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return Object.fromEntries(Object.entries(value).flatMap(([rawLanguage, rawQuote]) => {
+    const language = String(rawLanguage || '').trim().toLowerCase()
+    const quote = String(rawQuote || '')
+    return queryLanguages.includes(language) && Array.from(quote).length === 1 ? [[language, quote]] : []
+  }))
+}
+
+export function quoteQueryIdentifier(value, capability, language) {
+  const text = String(value || '').trim()
+  if (!text) return ''
+  const normalizedLanguage = String(language || '').trim().toLowerCase()
+  const quote = String(capability?.identifierQuotes?.[normalizedLanguage] || '')
+  if (Array.from(quote).length !== 1) return text
+  return `${quote}${text.replaceAll(quote, `${quote}${quote}`)}${quote}`
+}
+
+export function nativeCatalogSegmentText(value, capability, language) {
+  const normalizedLanguage = String(language || '').trim().toLowerCase()
+  if (normalizedLanguage === 'mql') return JSON.stringify(String(value || '').trim())
+  return quoteQueryIdentifier(value, capability, normalizedLanguage)
+}
+
+export function nativeCatalogPathText(segments, capability, language) {
+  const path = Array.isArray(segments) ? segments.map(value => String(value || '').trim()).filter(Boolean) : []
+  if (path.length === 0) return ''
+  const normalizedLanguage = String(language || '').trim().toLowerCase()
+  if (normalizedLanguage === 'mql') return JSON.stringify(path.at(-1))
+  return path.map(segment => quoteQueryIdentifier(segment, capability, normalizedLanguage)).join('.')
 }
 
 function normalizeQueryParameterCapability(value, queryLanguages) {

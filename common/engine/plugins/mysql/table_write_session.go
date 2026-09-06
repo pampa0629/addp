@@ -10,6 +10,7 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/engine/plugins/shared"
 	"github.com/addp/common/resume"
 	"github.com/twpayne/go-geom/encoding/ewkb"
 	"github.com/twpayne/go-geom/encoding/wkb"
@@ -41,6 +42,9 @@ func (p *MySQLPlugin) WriteBatch(ctx context.Context, connInfo plugin.Connection
 }
 
 func (p *MySQLPlugin) OpenTableWriteSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableWriteSessionOptions) (plugin.TableWriteSession, error) {
+	if !shared.HasSpatialTableWrite(opts.Fields, opts.SpatialInfo) {
+		return p.nonSpatialTableWriter().OpenTableWriteSession(ctx, connInfo, path, opts)
+	}
 	if err := resume.RejectUnsupported(opts.ResumeMarker, "mysql.table_write_session"); err != nil {
 		return nil, err
 	}

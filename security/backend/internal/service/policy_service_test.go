@@ -101,7 +101,7 @@ func TestManagerPolicyDoesNotTightenDevelopOrServiceProjection(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := db.Transaction(func(tx *gorm.DB) error {
-		return compileProtectionProjections(tx, enrollment, enrollment.LatestSourceSnapshotHash, time.Now().UTC(), []string{"manager", "develop", "service", "transfer"})
+		return compileProtectionProjections(tx, enrollment, enrollment.LatestSourceSnapshotHash, time.Now().UTC(), allRequiredProtectionOwners())
 	}); err != nil {
 		t.Fatal(err)
 	}

@@ -22,3 +22,10 @@ export function downloadBoundedExport(data, filename) {
   link.remove()
   setTimeout(() => URL.revokeObjectURL(url), 0)
 }
+
+export function downloadCurrentBoundedExport(response, filename, isCurrent) {
+  if (!isCurrent()) return 'stale'
+  if (boundedExportHasMore(response.headers)) return 'incomplete'
+  downloadBoundedExport(response.data, filename)
+  return 'downloaded'
+}

@@ -5,6 +5,7 @@
   "type": "module",
   "main": "basic/src/index.js",
   "files": [
+    "THIRD_PARTY_NOTICES.md",
     "basic/src",
     "chart/src",
     "map/src",

@@ -47,7 +47,12 @@ func (p *fakeSQLRuntimeProvider) PrepareQuery(_ context.Context, conn Connection
 	return PrepareSQLRuntimeQuery(p, conn, req, nil, nil)
 }
 
-func (p *fakeSQLRuntimeProvider) SQLDialect() string { return "postgresql" }
+func (p *fakeSQLRuntimeProvider) SQLDialect() string {
+	if p.engineType == "oracle" {
+		return "oracle"
+	}
+	return "postgresql"
+}
 
 func (p *fakeSQLRuntimeProvider) SupportsParameterizedQueries() bool { return true }
 
@@ -81,7 +86,7 @@ func TestBindSQLRuntimeParametersUsesDialectPlaceholderStyle(t *testing.T) {
 		dialect string
 		wantSQL string
 	}{
-		{dialect: "postgres", wantSQL: "SELECT * FROM members WHERE status = $1 AND score > $2"},
+		{dialect: "postgresql", wantSQL: "SELECT * FROM members WHERE status = $1 AND score > $2"},
 		{dialect: "oracle", wantSQL: "SELECT * FROM members WHERE status = :1 AND score > :2"},
 		{dialect: "mysql", wantSQL: "SELECT * FROM members WHERE status = ? AND score > ?"},
 		{dialect: "clickhouse", wantSQL: "SELECT * FROM members WHERE status = ? AND score > ?"},
@@ -106,7 +111,7 @@ func TestBindSQLRuntimeParametersUsesDialectPlaceholderStyle(t *testing.T) {
 }
 
 func TestBindSQLRuntimeParametersRejectsMixedParameterModes(t *testing.T) {
-	_, _, err := BindSQLRuntimeParameters("postgres", "SELECT $1", QueryOptions{
+	_, _, err := BindSQLRuntimeParameters("postgresql", "SELECT $1", QueryOptions{
 		Args:       []interface{}{1},
 		Parameters: map[string]interface{}{"value": 1},
 	})

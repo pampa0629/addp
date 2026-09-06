@@ -58,7 +58,7 @@ container_running() {
   [ "$(docker_fixture inspect --format '{{.State.Running}}' business-postgres 2>/dev/null || true)" = "true" ]
 }
 
-seed_catalog_fixture() {
+seed_fixture() {
   docker_fixture exec business-postgres psql \
     -v ON_ERROR_STOP=1 \
     -U "$ADDP_ONLINE_TEST_ENGINE_USER" \
@@ -72,7 +72,12 @@ seed_catalog_fixture() {
     INSERT INTO public.addp_online_catalog_fixture (fixture_key, fixture_value)
     VALUES ('"'"'stable'"'"', '"'"'ADDP Online enterprise catalog fixture'"'"')
     ON CONFLICT (fixture_key) DO UPDATE
-      SET fixture_value = EXCLUDED.fixture_value, updated_at = now();' >/dev/null
+      SET fixture_value = EXCLUDED.fixture_value, updated_at = now();
+    CREATE SCHEMA IF NOT EXISTS addp_online_security;
+    DROP TABLE IF EXISTS addp_online_security.mysql_email_transfer;
+    CREATE TABLE addp_online_security.mysql_email_transfer (
+      id bigint PRIMARY KEY
+    );' >/dev/null
 }
 
 validate_container_ownership() {
@@ -94,7 +99,7 @@ case "$action" in
       if container_running && docker_fixture exec business-postgres pg_isready \
         -U "$ADDP_ONLINE_TEST_ENGINE_USER" \
         -d "$ADDP_ONLINE_TEST_ENGINE_DATABASE" >/dev/null 2>&1; then
-        seed_catalog_fixture
+        seed_fixture
         echo "Online PostgreSQL Engine Fixture is ready on port $ADDP_ONLINE_TEST_ENGINE_PORT"
         exit 0
       fi

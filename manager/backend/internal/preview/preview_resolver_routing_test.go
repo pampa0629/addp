@@ -905,6 +905,13 @@ func TestBuildMetadataDeclaresOwnerVerifiedQueryFacts(t *testing.T) {
 	if relational.QueryNames["sql"] != "analytics.users" || relational.QueryNames["federated_sql"] != "pg.analytics.users" || relational.SchemaCoverage != "complete" || relational.EngineType != "postgresql" {
 		t.Fatalf("unexpected relational query facts: %#v", relational)
 	}
+	oceanBase := resolver.buildMetadata(&PreviewResolverRequest{
+		Locator: &resourcetree.ResourceLocator{}, Engine: &commonModels.Engine{Name: "ob", EngineType: "oceanbase"},
+		Metadata: &commonModels.MetaNode{}, MetaItemID: &itemID, ItemFullName: "business.orders", ItemScannedDepth: "deep",
+	})
+	if oceanBase.QueryNames["sql"] != "business.orders" || oceanBase.QueryNames["federated_sql"] != "" || oceanBase.SchemaCoverage != "complete" {
+		t.Fatalf("unexpected OceanBase query facts: %#v", oceanBase)
+	}
 
 	dynamic := resolver.buildMetadata(&PreviewResolverRequest{
 		Locator: &resourcetree.ResourceLocator{}, Engine: &commonModels.Engine{Name: "mongo", EngineType: "mongodb"},

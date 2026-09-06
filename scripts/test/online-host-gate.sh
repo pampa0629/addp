@@ -146,6 +146,20 @@ case "$ONLINE_SUITE" in
       ADDP_ONLINE_SECURITY_MONGODB_ROOT_PASSWORD
     )
     ;;
+  security-mysql-owner-protection)
+    START_TARGET=-all
+    REQUIRED_SUITE_ENV=(
+      SYSTEM_URL GATEWAY_URL META_URL SECURITY_URL MANAGER_URL DEVELOP_URL
+      SERVICE_URL TRANSFER_URL
+      ADDP_ONLINE_TEST_USER_ACCESS_TOKEN ADDP_ONLINE_TEST_TENANT_ID
+      ADDP_ONLINE_TEST_ENGINE_ID ADDP_ONLINE_TEST_ENGINE_PORT
+      ADDP_ONLINE_TEST_ENGINE_USER ADDP_ONLINE_TEST_ENGINE_PASSWORD
+      ADDP_ONLINE_TEST_ENGINE_DATABASE
+      ADDP_ONLINE_WORKBENCH_MYSQL_ENGINE_ID ADDP_ONLINE_WORKBENCH_MYSQL_PORT
+      ADDP_ONLINE_WORKBENCH_MYSQL_DATABASE ADDP_ONLINE_WORKBENCH_MYSQL_USER
+      ADDP_ONLINE_WORKBENCH_MYSQL_PASSWORD ADDP_ONLINE_WORKBENCH_MYSQL_ROOT_PASSWORD
+    )
+    ;;
   standard-model-reference-deletion)
     START_TARGET=-model
     REQUIRED_SUITE_ENV=(SYSTEM_URL GATEWAY_URL STANDARD_URL MODEL_URL ADDP_ONLINE_TEST_USER_ACCESS_TOKEN)
@@ -393,6 +407,14 @@ elif [ "$ONLINE_SUITE" = "workbench-service-consumption" ]; then
   run_logged bash business/scripts/online-workbench-mysql-fixture.sh start
   run_logged bash scripts/dev/start.sh "$START_TARGET"
   run_logged npm --prefix console/frontend exec -- playwright install chromium
+elif [ "$ONLINE_SUITE" = "security-mysql-owner-protection" ]; then
+  engine_fixture_cleanup_required=1
+  workbench_mysql_cleanup_required=1
+  run_logged bash business/scripts/online-engine-fixture.sh stop
+  run_logged bash business/scripts/online-workbench-mysql-fixture.sh stop
+  run_logged bash business/scripts/online-engine-fixture.sh start
+  run_logged bash business/scripts/online-workbench-mysql-fixture.sh start
+  run_logged bash scripts/dev/start.sh "$START_TARGET"
 elif [ "$ONLINE_SUITE" = "manager-internal-artifact-lineage" ]; then
   pointcloud_minio_cleanup_required=1
   run_logged bash business/scripts/online-pointcloud-minio-fixture.sh stop

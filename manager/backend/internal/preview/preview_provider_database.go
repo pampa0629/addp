@@ -191,7 +191,16 @@ func (p *DatabaseTablePreviewProvider) queryData(
 	columns []datatype.FieldInfo,
 	dataScope dataprofile.DataScope,
 ) ([]map[string]interface{}, error) {
-	if sessionReader != nil && (batchReader == nil || strings.EqualFold(engineType, "oracle")) {
+	registered, err := plugin.Get(engineType)
+	if err != nil {
+		return nil, err
+	}
+	sqlProvider, ok := registered.(plugin.SQLDialectProvider)
+	if !ok {
+		return nil, fmt.Errorf("engine %s does not provide a SQL dialect", engineType)
+	}
+	dialect := commonquery.ForDialect(sqlProvider.SQLDialect())
+	if sessionReader != nil && (batchReader == nil || dialect.IsOracle()) {
 		if req := strings.TrimSpace(string(dataScope.Kind)); req != "" && req != "all" {
 			return nil, fmt.Errorf("table preview conditions are not supported by the resolved table provider")
 		}
@@ -209,12 +218,13 @@ func (p *DatabaseTablePreviewProvider) queryData(
 	if batchReader == nil {
 		return nil, fmt.Errorf("table batch reader is required when table read session is unavailable")
 	}
-	dialect := commonquery.ForEngine(engineType)
 	whereClause, args, err := profilefilter.SQL(dataScope, dialect, "")
 	if err != nil {
 		return nil, err
 	}
-	if strings.EqualFold(strings.TrimSpace(engineType), "mysql") && strings.TrimSpace(whereClause) == "" {
+	caps := registered.Capabilities()
+	spatialTransform := caps.Storage != nil && caps.Storage.Store != nil && caps.Storage.Store.TableReadSpatialTransform
+	if spatialTransform && strings.TrimSpace(whereClause) == "" {
 		result, err := batchReader.ReadBatch(ctx, connInfo, providerPath, plugin.BatchReadOptions{
 			Limit:  limit,
 			Offset: int64(offset),

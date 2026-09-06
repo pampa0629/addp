@@ -236,16 +236,17 @@ type ComputeCapabilities struct {
 }
 
 type QueryCapability struct {
-	Supported       bool                       `json:"supported"`
-	Languages       []string                   `json:"languages"`
-	DefaultLanguage string                     `json:"default_language,omitempty"`
-	ResultKinds     []string                   `json:"result_kinds,omitempty"`
-	ReadOnly        bool                       `json:"read_only,omitempty"`
-	SupportsExplain bool                       `json:"supports_explain,omitempty"`
-	SupportsCancel  bool                       `json:"supports_cancel,omitempty"`
-	ReadSession     bool                       `json:"read_session,omitempty"`
-	Parameters      *QueryParameterCapability  `json:"parameters,omitempty"`
-	Federation      *QueryFederationCapability `json:"federation,omitempty"`
+	Supported        bool                       `json:"supported"`
+	Languages        []string                   `json:"languages"`
+	DefaultLanguage  string                     `json:"default_language,omitempty"`
+	IdentifierQuotes map[string]string          `json:"identifier_quotes,omitempty"`
+	ResultKinds      []string                   `json:"result_kinds,omitempty"`
+	ReadOnly         bool                       `json:"read_only,omitempty"`
+	SupportsExplain  bool                       `json:"supports_explain,omitempty"`
+	SupportsCancel   bool                       `json:"supports_cancel,omitempty"`
+	ReadSession      bool                       `json:"read_session,omitempty"`
+	Parameters       *QueryParameterCapability  `json:"parameters,omitempty"`
+	Federation       *QueryFederationCapability `json:"federation,omitempty"`
 }
 
 type QueryParameterCapability struct {

@@ -22,19 +22,18 @@ func TestBindSQLUsesDriverPlaceholdersAndIgnoresQuotedText(t *testing.T) {
 	}
 }
 
-func TestSQLPlaceholderStyleForEngine(t *testing.T) {
+func TestSQLPlaceholderStyleForDialect(t *testing.T) {
 	tests := []struct {
-		engineType string
-		want       SQLPlaceholderStyle
+		dialect string
+		want    SQLPlaceholderStyle
 	}{
-		{engineType: "postgresql", want: SQLPlaceholderDollar},
-		{engineType: "PostGIS", want: SQLPlaceholderDollar},
-		{engineType: "oracle", want: SQLPlaceholderColon},
-		{engineType: "mysql", want: SQLPlaceholderQuestion},
+		{dialect: DialectPostgreSQL, want: SQLPlaceholderDollar},
+		{dialect: DialectOracle, want: SQLPlaceholderColon},
+		{dialect: DialectMySQL, want: SQLPlaceholderQuestion},
 	}
 	for _, tt := range tests {
-		if got := SQLPlaceholderStyleForDialect(tt.engineType); got != tt.want {
-			t.Fatalf("SQLPlaceholderStyleForDialect(%q) = %q, want %q", tt.engineType, got, tt.want)
+		if got := SQLPlaceholderStyleForDialect(tt.dialect); got != tt.want {
+			t.Fatalf("SQLPlaceholderStyleForDialect(%q) = %q, want %q", tt.dialect, got, tt.want)
 		}
 	}
 }

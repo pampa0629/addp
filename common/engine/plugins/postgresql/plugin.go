@@ -143,6 +143,7 @@ func (p *PostgreSQLPlugin) Capabilities() plugin.EngineCapabilities {
 		SupportsExplain:    true,
 		SupportsCancel:     true,
 		SupportsParameters: true,
+		IdentifierQuote:    `"`,
 		WriterConnector:    "postgres_copy",
 	})
 }

@@ -7,14 +7,14 @@ func TestQuoteIdentifier(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		engineType string
+		dialect    string
 		identifier string
 		want       string
 	}{
-		{name: "postgresql double quote", engineType: "postgresql", identifier: `city"name`, want: `"city""name"`},
-		{name: "mysql backtick", engineType: "mysql", identifier: "city`name", want: "`city``name`"},
-		{name: "clickhouse backtick", engineType: "clickhouse", identifier: "events", want: "`events`"},
-		{name: "default double quote", engineType: "unknown", identifier: "Events", want: `"Events"`},
+		{name: "postgresql double quote", dialect: DialectPostgreSQL, identifier: `city"name`, want: `"city""name"`},
+		{name: "mysql backtick", dialect: DialectMySQL, identifier: "city`name", want: "`city``name`"},
+		{name: "clickhouse backtick", dialect: DialectClickHouse, identifier: "events", want: "`events`"},
+		{name: "default double quote", dialect: "unknown", identifier: "Events", want: `"Events"`},
 	}
 
 	for _, tt := range tests {
@@ -22,7 +22,7 @@ func TestQuoteIdentifier(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			if got := ForDialect(tt.engineType).QuoteIdentifier(tt.identifier); got != tt.want {
+			if got := ForDialect(tt.dialect).QuoteIdentifier(tt.identifier); got != tt.want {
 				t.Fatalf("QuoteIdentifier() = %q, want %q", got, tt.want)
 			}
 		})
@@ -33,20 +33,19 @@ func TestDialectPlaceholderUsesDriverSyntax(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		engineType string
-		position   int
-		want       string
+		dialect  string
+		position int
+		want     string
 	}{
-		{engineType: "postgresql", position: 3, want: "$3"},
-		{engineType: "postgis", position: 2, want: "$2"},
-		{engineType: "oracle", position: 4, want: ":4"},
-		{engineType: "mysql", position: 9, want: "?"},
+		{dialect: DialectPostgreSQL, position: 3, want: "$3"},
+		{dialect: DialectOracle, position: 4, want: ":4"},
+		{dialect: DialectMySQL, position: 9, want: "?"},
 	}
 	for _, tt := range tests {
 		tt := tt
-		t.Run(tt.engineType, func(t *testing.T) {
+		t.Run(tt.dialect, func(t *testing.T) {
 			t.Parallel()
-			if got := ForDialect(tt.engineType).Placeholder(tt.position); got != tt.want {
+			if got := ForDialect(tt.dialect).Placeholder(tt.position); got != tt.want {
 				t.Fatalf("Placeholder() = %q, want %q", got, tt.want)
 			}
 		})

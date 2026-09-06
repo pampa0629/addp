@@ -13,10 +13,11 @@ import (
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
-	mysqlmapper "github.com/addp/common/format/mappers/mysql"
-	oraclemapper "github.com/addp/common/format/mappers/oracle"
-	pgmapper "github.com/addp/common/format/mappers/postgresql"
-	spatialitemapper "github.com/addp/common/format/mappers/spatialite"
+	commonformat "github.com/addp/common/format"
+	_ "github.com/addp/common/format/mappers/mysql"
+	_ "github.com/addp/common/format/mappers/oracle"
+	_ "github.com/addp/common/format/mappers/postgresql"
+	_ "github.com/addp/common/format/mappers/spatialite"
 	commonJSON "github.com/addp/common/jsonmap"
 	commonAuth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
@@ -337,7 +338,7 @@ func (h *ResourceCapabilityHandler) detectSQLOutputContract(
 		}, nil
 	}
 
-	quotedGeometryColumn := commonquery.ForEngine(engineType).QuoteIdentifier(geometryColumn)
+	quotedGeometryColumn := commonquery.ForDialect(commonquery.DialectPostgreSQL).QuoteIdentifier(geometryColumn)
 	metaSQL := fmt.Sprintf(`
 		SELECT
 			ST_SRID(%s) AS srid,
@@ -422,18 +423,18 @@ func queryOutputFieldSize(length int64, available bool) int {
 }
 
 func queryOutputFieldType(engineType, nativeType string) datatype.FieldType {
-	switch strings.ToLower(strings.TrimSpace(engineType)) {
-	case "postgresql":
-		return (&pgmapper.TypeMapper{}).ToCommon(nativeType)
-	case "oracle":
-		return (&oraclemapper.TypeMapper{}).ToCommon(nativeType)
-	case "mysql":
-		return (&mysqlmapper.TypeMapper{}).ToCommon(nativeType)
-	case "sqlite", "spatialite":
-		return (&spatialitemapper.TypeMapper{}).ToCommon(nativeType)
-	default:
-		return serviceInternalFieldType(nativeType)
+	mapperName := strings.ToLower(strings.TrimSpace(engineType))
+	if registered, err := plugin.Get(mapperName); err == nil {
+		if provider, ok := registered.(plugin.SQLDialectProvider); ok {
+			mapperName = provider.SQLDialect()
+		}
 	}
+	if mapper := commonformat.GetTypeMapper(mapperName); mapper != nil {
+		if fieldType := mapper.ToCommon(nativeType); fieldType != datatype.FieldTypeUnknown {
+			return fieldType
+		}
+	}
+	return serviceInternalFieldType(nativeType)
 }
 
 func serviceInternalFieldType(nativeType string) datatype.FieldType {

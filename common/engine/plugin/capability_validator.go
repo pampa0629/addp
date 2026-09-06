@@ -240,6 +240,9 @@ func validateComputeCapabilities(p EnginePlugin, compute *ComputeCapabilities) e
 				return fmt.Errorf("%s declares graph query result kinds but does not implement GraphQueryProvider", p.Type())
 			}
 		}
+		if err := validateQueryIdentifierQuotes(p.Type(), compute.Query); err != nil {
+			return err
+		}
 		if err := validateQueryParameterCapability(p.Type(), compute.Query); err != nil {
 			return err
 		}
@@ -268,6 +271,18 @@ func validateComputeCapabilities(p EnginePlugin, compute *ComputeCapabilities) e
 			if operation != "chat" && operation != "embedding" && operation != "rerank" {
 				return fmt.Errorf("%s declares unsupported inference operation %q", p.Type(), operation)
 			}
+		}
+	}
+	return nil
+}
+
+func validateQueryIdentifierQuotes(engineType string, query *QueryCapability) error {
+	for language, quote := range query.IdentifierQuotes {
+		if language == "" || !Contains(query.Languages, language) {
+			return fmt.Errorf("%s declares identifier quote for unsupported language %q", engineType, language)
+		}
+		if len([]rune(quote)) != 1 {
+			return fmt.Errorf("%s declares invalid identifier quote for language %q", engineType, language)
 		}
 	}
 	return nil

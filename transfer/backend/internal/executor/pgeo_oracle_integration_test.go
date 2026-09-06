@@ -214,7 +214,7 @@ func runPGeoOracleCase(t *testing.T, fixture, child, geometryColumn string, expe
 		t.Fatal(err)
 	}
 	defer db.Close()
-	dialect := commonquery.ForEngine("oracle")
+	dialect := commonquery.ForDialect(commonquery.DialectOracle)
 	qualified := dialect.QualifiedTable(target.schema, target.table)
 	geometryExpression := "target_row." + dialect.QuoteIdentifier(geometryColumn)
 	var rowCount, nonNullGeometry, minShapeType, maxShapeType int

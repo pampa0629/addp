@@ -433,6 +433,15 @@ func (s *DocumentService) ExtractCandidates(ctx context.Context, documentID, rev
 	if err != nil {
 		return nil, err
 	}
+	document, err := s.repo.GetByID(documentID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	result := []models.DocumentExtraction{*extraction}
+	if err := s.attachCandidateComparisons(document, result); err != nil {
+		return nil, err
+	}
+	*extraction = result[0]
 	if err := s.repo.CreateExtraction(documentID, tenantID, version, extraction); err != nil {
 		return nil, err
 	}
@@ -556,6 +565,12 @@ func buildDocumentExtraction(tenantID, revisionID, userID int64, content string,
 		if candidateType != "glossary" && candidateType != "element" && candidateType != "code_set" && candidateType != "metric" {
 			continue
 		}
+		if !validCopilotCandidateDataType(candidateType, raw.Payload.DataType) {
+			return nil, ErrDocumentExtractionInvalid
+		}
+		if !validCopilotCandidateValueDomainKind(candidateType, raw.Payload.ValueDomainKind) {
+			return nil, ErrDocumentExtractionInvalid
+		}
 		code, name, definition := strings.TrimSpace(raw.Code), strings.TrimSpace(raw.Name), strings.TrimSpace(raw.Definition)
 		if !documentCandidateCodePattern.MatchString(code) || len(code) > 100 || name == "" || utf8.RuneCountInString(name) > 200 || definition == "" || utf8.RuneCountInString(definition) > 4000 {
 			continue
@@ -604,6 +619,41 @@ func buildDocumentExtraction(tenantID, revisionID, userID int64, content string,
 	return extraction, nil
 }
 
+func validCopilotCandidateDataType(candidateType string, value *string) bool {
+	if value == nil {
+		return true
+	}
+	dataType := strings.TrimSpace(*value)
+	switch candidateType {
+	case "element":
+		switch dataType {
+		case "string", "int", "bigint", "float", "decimal", "date", "datetime", "bool", "json", "text":
+			return true
+		}
+	case "code_set":
+		switch dataType {
+		case "string", "int", "bigint":
+			return true
+		}
+	}
+	return false
+}
+
+func validCopilotCandidateValueDomainKind(candidateType string, value *string) bool {
+	if value == nil {
+		return true
+	}
+	if candidateType != "element" {
+		return false
+	}
+	switch strings.TrimSpace(*value) {
+	case models.ValueDomainUnrestricted, models.ValueDomainRange, models.ValueDomainEnumeration:
+		return true
+	default:
+		return false
+	}
+}
+
 func normalizeCopilotCandidatePayload(raw copilotCandidatePayload) models.JSONB {
 	payload := models.JSONB{}
 	for key, value := range map[string]*string{
@@ -627,7 +677,210 @@ func isMarkdownRevision(revision *models.DocumentRevision) bool {
 	return revision != nil && (strings.EqualFold(revision.MediaType, "text/markdown") || strings.EqualFold(filepath.Ext(revision.FileName), ".md"))
 }
 func (s *DocumentService) ListExtractions(documentID, tenantID int64) ([]models.DocumentExtraction, error) {
-	return s.repo.ListExtractions(documentID, tenantID)
+	document, err := s.repo.GetByID(documentID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	extractions, err := s.repo.ListExtractions(documentID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.attachCandidateComparisons(document, extractions); err != nil {
+		return nil, err
+	}
+	return extractions, nil
+}
+
+func (s *DocumentService) attachCandidateComparisons(document *models.Document, extractions []models.DocumentExtraction) error {
+	codesByType := map[string][]string{}
+	for extractionIndex := range extractions {
+		for candidateIndex := range extractions[extractionIndex].Candidates {
+			candidate := &extractions[extractionIndex].Candidates[candidateIndex]
+			codesByType[candidate.CandidateType] = append(codesByType[candidate.CandidateType], candidate.Code)
+		}
+	}
+	targets, err := s.repo.ListCandidateComparisonTargets(document.TenantID, codesByType)
+	if err != nil {
+		return err
+	}
+	for extractionIndex := range extractions {
+		for candidateIndex := range extractions[extractionIndex].Candidates {
+			candidate := &extractions[extractionIndex].Candidates[candidateIndex]
+			target, ok := targets[candidateComparisonKey(candidate.CandidateType, candidate.Code)]
+			candidate.Comparison = compareDocumentCandidate(document, candidate, target, ok)
+		}
+	}
+	return nil
+}
+
+func compareDocumentCandidate(document *models.Document, candidate *models.DocumentExtractionCandidate, target repository.DocumentCandidateComparisonTarget, matched bool) *models.DocumentExtractionCandidateComparison {
+	comparison := &models.DocumentExtractionCandidateComparison{Result: models.CandidateComparisonNew, Differences: []models.DocumentExtractionCandidateDifference{}}
+	if !matched {
+		return comparison
+	}
+	comparison.StandardID = target.StandardID
+	comparison.Code = target.Code
+	comparison.Name = target.Name
+	comparison.ScopeType = target.ScopeType
+	comparison.OwnerDomainID = target.OwnerDomainID
+	comparison.RevisionID = target.RevisionID
+	comparison.RevisionNo = target.RevisionNo
+	comparison.RevisionStatus = target.RevisionStatus
+
+	scopeMatches := document.ScopeType == target.ScopeType && equalOptionalInt64(document.OwnerDomainID, target.OwnerDomainID)
+	if document.ScopeType != target.ScopeType {
+		appendCandidateDifference(comparison, "scope_type", candidateTextComparisonValue(document.ScopeType), candidateTextComparisonValue(target.ScopeType))
+	}
+	if !equalOptionalInt64(document.OwnerDomainID, target.OwnerDomainID) {
+		appendCandidateDifference(comparison, "owner_domain_id", candidateIntegerComparisonValue(document.OwnerDomainID), candidateIntegerComparisonValue(target.OwnerDomainID))
+	}
+	if !equalCandidateText(candidate.Name, target.Name) {
+		appendCandidateDifference(comparison, "name", candidateTextComparisonValue(candidate.Name), candidateTextComparisonValue(target.Name))
+	}
+	if !equalCandidateText(candidate.Definition, target.Definition) {
+		appendCandidateDifference(comparison, "definition", candidateTextComparisonValue(candidate.Definition), candidateTextComparisonValue(target.Definition))
+	}
+	appendPayloadDifference := func(candidateKey, field, targetValue string) {
+		if candidateValue, ok := candidatePayloadString(candidate.Payload, candidateKey); ok && !equalCandidateText(candidateValue, targetValue) {
+			appendCandidateDifference(comparison, field, candidateTextComparisonValue(candidateValue), candidateTextComparisonValue(targetValue))
+		}
+	}
+	switch candidate.CandidateType {
+	case "element":
+		appendPayloadDifference("data_type", "data_type", target.DataType)
+		appendPayloadDifference("value_domain_kind", "value_domain_kind", target.ValueDomainKind)
+		if candidateUnit, ok := candidatePayloadString(candidate.Payload, "unit"); ok && !matchesCandidateUnit(candidateUnit, target.UnitName, target.UnitSymbol) {
+			appendCandidateDifference(comparison, "unit", candidateTextComparisonValue(candidateUnit), candidateTextComparisonValue(comparisonTargetUnit(target.UnitName, target.UnitSymbol)))
+		}
+	case "code_set":
+		appendPayloadDifference("data_type", "value_type", target.DataType)
+		if items, ok := candidatePayloadItems(candidate.Payload); ok && !equalCandidateItems(items, target.Items) {
+			appendCandidateDifference(comparison, "items", candidateItemsComparisonValue(items), models.DocumentExtractionCandidateComparisonValue{Kind: "code_items", Items: target.Items})
+		}
+	case "metric":
+		appendPayloadDifference("statistical_scope", "statistical_caliber", target.StatisticalCaliber)
+		appendPayloadDifference("calculation_formula", "semantic_formula", target.SemanticFormula)
+		if candidateUnit, ok := candidatePayloadString(candidate.Payload, "unit"); ok && !matchesCandidateUnit(candidateUnit, target.UnitName, target.UnitSymbol) {
+			appendCandidateDifference(comparison, "unit", candidateTextComparisonValue(candidateUnit), candidateTextComparisonValue(comparisonTargetUnit(target.UnitName, target.UnitSymbol)))
+		}
+	}
+	if !scopeMatches {
+		comparison.Result = models.CandidateComparisonScopeConflict
+	} else if len(comparison.Differences) > 0 {
+		comparison.Result = models.CandidateComparisonContentConflict
+	} else {
+		comparison.Result = models.CandidateComparisonExact
+	}
+	return comparison
+}
+
+func appendCandidateDifference(comparison *models.DocumentExtractionCandidateComparison, field string, candidateValue, standardValue models.DocumentExtractionCandidateComparisonValue) {
+	comparison.Differences = append(comparison.Differences, models.DocumentExtractionCandidateDifference{Field: field, CandidateValue: candidateValue, StandardValue: standardValue})
+}
+
+func candidateTextComparisonValue(value string) models.DocumentExtractionCandidateComparisonValue {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return models.DocumentExtractionCandidateComparisonValue{Kind: "empty"}
+	}
+	return models.DocumentExtractionCandidateComparisonValue{Kind: "text", Text: &value}
+}
+
+func candidateIntegerComparisonValue(value *int64) models.DocumentExtractionCandidateComparisonValue {
+	if value == nil {
+		return models.DocumentExtractionCandidateComparisonValue{Kind: "empty"}
+	}
+	return models.DocumentExtractionCandidateComparisonValue{Kind: "integer", Integer: value}
+}
+
+func candidateItemsComparisonValue(items []documentCandidatePayloadItem) models.DocumentExtractionCandidateComparisonValue {
+	values := make([]models.DocumentExtractionCandidateComparisonItem, 0, len(items))
+	for _, item := range items {
+		values = append(values, models.DocumentExtractionCandidateComparisonItem{Code: item.Code, Name: item.Name, Definition: item.Definition})
+	}
+	return models.DocumentExtractionCandidateComparisonValue{Kind: "code_items", Items: values}
+}
+
+func comparisonTargetUnit(name, symbol string) string {
+	name, symbol = strings.TrimSpace(name), strings.TrimSpace(symbol)
+	if name == "" {
+		return symbol
+	}
+	if symbol == "" || equalCandidateText(name, symbol) {
+		return name
+	}
+	return fmt.Sprintf("%s (%s)", name, symbol)
+}
+
+type documentCandidatePayloadItem struct {
+	Code       string `json:"code"`
+	Name       string `json:"name"`
+	Definition string `json:"definition"`
+}
+
+func candidatePayloadItems(payload models.JSONB) ([]documentCandidatePayloadItem, bool) {
+	value, ok := payload["items"]
+	if !ok {
+		return nil, false
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil, false
+	}
+	var items []documentCandidatePayloadItem
+	if err := json.Unmarshal(encoded, &items); err != nil || len(items) == 0 {
+		return nil, false
+	}
+	return items, true
+}
+
+func equalCandidateItems(candidateItems []documentCandidatePayloadItem, targetItems []models.DocumentExtractionCandidateComparisonItem) bool {
+	if len(candidateItems) != len(targetItems) {
+		return false
+	}
+	targetByCode := make(map[string]models.DocumentExtractionCandidateComparisonItem, len(targetItems))
+	for _, item := range targetItems {
+		targetByCode[item.Code] = item
+	}
+	for _, item := range candidateItems {
+		target, ok := targetByCode[item.Code]
+		if !ok || !equalCandidateText(item.Name, target.Name) {
+			return false
+		}
+		if strings.TrimSpace(item.Definition) != "" && !equalCandidateText(item.Definition, target.Definition) {
+			return false
+		}
+	}
+	return true
+}
+
+func candidatePayloadString(payload models.JSONB, key string) (string, bool) {
+	value, ok := payload[key]
+	if !ok {
+		return "", false
+	}
+	text, ok := value.(string)
+	text = strings.TrimSpace(text)
+	return text, ok && text != ""
+}
+
+func matchesCandidateUnit(candidate, name, symbol string) bool {
+	return equalCandidateText(candidate, name) || (strings.TrimSpace(symbol) != "" && equalCandidateText(candidate, symbol))
+}
+
+func equalCandidateText(left, right string) bool {
+	return strings.Join(strings.Fields(left), " ") == strings.Join(strings.Fields(right), " ")
+}
+
+func equalOptionalInt64(left, right *int64) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return *left == *right
+}
+
+func candidateComparisonKey(candidateType, code string) string {
+	return candidateType + "\x00" + code
 }
 func (s *DocumentService) UpdateCandidateStatus(candidateID, tenantID, userID int64, req *models.UpdateDocumentExtractionCandidateRequest) (*models.DocumentExtractionCandidate, error) {
 	if req.Status != "retained" && req.Status != "rejected" {

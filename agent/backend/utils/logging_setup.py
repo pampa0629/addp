@@ -1,12 +1,10 @@
-"""
-Agent 模块日志配置
-- 配置写入 logs/agent-backend.log（项目根目录下）
-- 提供 LangChain 回调类，记录 LLM 的完整输入输出
-"""
+"""Agent 日志配置，只记录推理与工具调用的非正文元信息。"""
+
+import json
 import logging
-import os
 from pathlib import Path
 from typing import Any, Dict, List, Union
+
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.messages import BaseMessage
 from langchain_core.outputs import LLMResult
@@ -47,45 +45,68 @@ def setup_logging(level: int = logging.INFO) -> None:
     root_logger.addHandler(console_handler)
 
 
+def _payload_size(value: Any) -> int:
+    if isinstance(value, bytes):
+        return len(value)
+    if isinstance(value, str):
+        return len(value.encode("utf-8"))
+    try:
+        return len(json.dumps(value, ensure_ascii=False, default=lambda _: None).encode("utf-8"))
+    except (TypeError, ValueError, RecursionError):
+        return 0
+
+
 def _fmt_messages(messages: List[List[BaseMessage]]) -> str:
-    """格式化 LangChain messages 列表，用于日志输出"""
-    lines = []
+    """只汇总消息形态，不把提示词、工具结果或用户正文写入日志。"""
+    roles: dict[str, int] = {}
+    message_count = 0
+    content_bytes = 0
+    tool_call_count = 0
     for turn in messages:
-        for msg in turn:
-            role = type(msg).__name__.replace("Message", "").upper()
-            content = str(msg.content)
-            # 超长内容截断（避免日志过大）
-            if len(content) > 3000:
-                content = content[:3000] + f"...[截断，共 {len(content)} 字符]"
-            lines.append(f"  [{role}]\n{content}")
-    return "\n".join(lines)
+        for message in turn:
+            message_count += 1
+            role = type(message).__name__.replace("Message", "").lower() or "unknown"
+            roles[role] = roles.get(role, 0) + 1
+            content_bytes += _payload_size(message.content)
+            tool_call_count += len(getattr(message, "tool_calls", None) or [])
+    role_summary = ",".join(f"{role}:{count}" for role, count in sorted(roles.items()))
+    return (
+        f"turns={len(messages)} messages={message_count} roles={role_summary or 'none'} "
+        f"content_bytes={content_bytes} tool_calls={tool_call_count}"
+    )
 
 
 def _fmt_llm_result(response: LLMResult) -> str:
-    """格式化 LLM 输出结果，用于日志"""
-    parts = []
+    """只汇总模型响应形态与 token 用量，不记录响应正文。"""
+    generation_count = 0
+    content_bytes = 0
+    tool_call_count = 0
     for gens in response.generations:
         for gen in gens:
-            text = getattr(gen, "text", None) or str(getattr(gen, "message", gen))
-            if len(text) > 2000:
-                text = text[:2000] + f"...[截断，共 {len(text)} 字符]"
-            parts.append(text)
+            generation_count += 1
+            message = getattr(gen, "message", None)
+            content = getattr(message, "content", None)
+            if content is None:
+                content = getattr(gen, "text", "")
+            content_bytes += _payload_size(content)
+            tool_call_count += len(getattr(message, "tool_calls", None) or [])
 
-    # token 用量（如有）
-    usage = ""
+    usage_summary: dict[str, int | float] = {}
     if response.llm_output:
         token_usage = response.llm_output.get("token_usage") or response.llm_output.get("usage")
-        if token_usage:
-            usage = f"\n  [tokens] {token_usage}"
+        if isinstance(token_usage, dict):
+            for key, value in token_usage.items():
+                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                    usage_summary[str(key)] = value
+    usage = json.dumps(usage_summary, sort_keys=True, separators=(",", ":"))
+    return (
+        f"generations={generation_count} content_bytes={content_bytes} "
+        f"tool_calls={tool_call_count} token_usage={usage}"
+    )
 
-    return "\n".join(parts) + usage
 
-
-class LLMIOLogger(BaseCallbackHandler):
-    """
-    LangChain 回调：记录 LLM 的完整输入和输出到日志文件。
-    用于排查 agent 的推理过程和工具调用行为。
-    """
+class LLMMetadataLogger(BaseCallbackHandler):
+    """LangChain 回调：只记录可观测元信息，不复制任何调用正文。"""
 
     def __init__(self):
         super().__init__()
@@ -98,19 +119,15 @@ class LLMIOLogger(BaseCallbackHandler):
         **kwargs: Any,
     ) -> None:
         model = serialized.get("kwargs", {}).get("model_name", "unknown")
-        self._logger.info(
-            "[LLM-IN] model=%s\n%s",
-            model,
-            _fmt_messages(messages),
-        )
+        self._logger.info("[LLM-IN] model=%s %s", model, _fmt_messages(messages))
 
     def on_llm_end(self, response: LLMResult, **kwargs: Any) -> None:
-        self._logger.info("[LLM-OUT]\n%s", _fmt_llm_result(response))
+        self._logger.info("[LLM-OUT] %s", _fmt_llm_result(response))
 
     def on_llm_error(
         self, error: Union[Exception, KeyboardInterrupt], **kwargs: Any
     ) -> None:
-        self._logger.error("[LLM-ERROR] %s", error)
+        self._logger.error("[LLM-ERROR] error_type=%s", type(error).__name__)
 
     def on_tool_start(
         self,
@@ -119,15 +136,12 @@ class LLMIOLogger(BaseCallbackHandler):
         **kwargs: Any,
     ) -> None:
         name = serialized.get("name", "unknown")
-        self._logger.info("[TOOL-CALL] %s | input: %s", name, input_str)
+        self._logger.info("[TOOL-CALL] name=%s input_bytes=%d", name, _payload_size(input_str))
 
     def on_tool_end(self, output: str, **kwargs: Any) -> None:
-        text = str(output)
-        if len(text) > 2000:
-            text = text[:2000] + f"...[截断，共 {len(text)} 字符]"
-        self._logger.info("[TOOL-RESULT] %s", text)
+        self._logger.info("[TOOL-RESULT] output_bytes=%d", _payload_size(output))
 
     def on_tool_error(
         self, error: Union[Exception, KeyboardInterrupt], **kwargs: Any
     ) -> None:
-        self._logger.error("[TOOL-ERROR] %s", error)
+        self._logger.error("[TOOL-ERROR] error_type=%s", type(error).__name__)

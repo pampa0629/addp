@@ -1,6 +1,8 @@
-.PHONY: help build build-images select-image-services local-ci test test-changed test-module test-platform test-local-ci-runner test-book test-engine-startup-isolation test-integration test-online test-online-runner test-release test-release-runner test-go test-agent-frontend test-asset-frontend test-catalog-frontend test-common-frontend test-console-frontend test-copilot test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-security-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-workbench-frontend test-execution-fixtures test-projection-store-ownership test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-common-postgres test-manager-mongodb-security test-system-iam-postgres test-asset-postgres test-meta-postgres test-catalog-postgres test-develop-postgres test-model-postgres test-quality-postgres test-security-postgres test-service-postgres test-standard-postgres test-transfer-postgres test-workbench-postgres test-arcgis-open-formats \
+.PHONY: help build build-images select-image-services local-ci test test-changed test-module test-platform test-local-ci-runner test-book test-engine-startup-isolation test-integration test-online test-online-runner test-release test-release-runner test-go test-agent-frontend test-asset-frontend test-catalog-frontend test-common-frontend test-console-frontend test-copilot test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-security-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-workbench-frontend test-execution-fixtures test-projection-store-ownership test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-common-postgres test-common-mysql-data-protection test-manager-mongodb-security test-system-iam-postgres test-asset-postgres test-meta-postgres test-catalog-postgres test-develop-postgres test-model-postgres test-quality-postgres test-security-postgres test-service-postgres test-standard-postgres test-transfer-postgres test-workbench-postgres test-arcgis-open-formats \
         build-iam-bootstrap build-iam-recovery build-iam-migration-repair \
         dev-start dev-restart dev-stop infra-up infra-down infra-restart infra-status prod-start prod-restart prod-stop prod-health ports-validate
+
+.PHONY: test-business-config test-oceanbase-business
 
 # 默认目标
 .DEFAULT_GOAL := help
@@ -132,8 +134,24 @@ local-ci: ## 在专用 macOS checkout 运行辅助 T0-T3 巡检；参数用 LOCA
 test-local-ci-runner: ## 运行辅助 macOS 巡检器的确定性测试
 	@python3 scripts/test/local-macos-ci_test.py
 
+test-business-config: ## 校验 Business Compose 和服务管理脚本（不启动容器）
+	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --quiet
+	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --services | grep -Fxq oceanbase
+	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --images | grep -Fxq oceanbase/oceanbase-ce:4.4.2-lts
+	@docker compose --env-file business/.env.example -f business/docker-compose.yml config | grep -Fq '/root/boot/init.d/01-addp-business.sql'
+	@test -f business/oceanbase/init.sql
+	@grep -Fq 'SET NAMES utf8mb4;' business/oceanbase/init.sql
+	@test "$$(grep -c -- '--default-character-set=utf8mb4' business/scripts/start.sh)" -ge 4
+	@bash -n business/scripts/start.sh business/scripts/stop.sh business/scripts/restart.sh scripts/utils/register-business.sh
+	@bash business/scripts/start.sh --help | grep -Fq -- '-oceanbase'
+	@bash business/scripts/stop.sh --help | grep -Fq -- '-oceanbase'
+
+test-oceanbase-business: ## 对已启动的 Business OceanBase 执行 Provider 集成门禁
+	@bash -c 'set -a; if [ -f business/.env ]; then . business/.env; fi; set +a; ADDP_OCEANBASE_INTEGRATION=1 go test ./common/engine/plugins/oceanbase -run "^TestIntegrationOceanBase" -count=1 -v'
+
 test-integration: ## 严格串行运行所有已登记的 disposable 基础设施集成门禁
 	@$(MAKE) test-common-postgres
+	@$(MAKE) test-common-mysql-data-protection
 	@$(MAKE) test-manager-mongodb-security
 	@$(MAKE) test-system-iam-postgres
 	@$(MAKE) test-asset-postgres
@@ -150,6 +168,9 @@ test-integration: ## 严格串行运行所有已登记的 disposable 基础设�
 
 test-common-postgres: ## 使用一次性 PostgreSQL 数据库运行 Common Engine Provider、execution store 与保护投影存储集成门禁
 	@bash scripts/test/common-postgres-gate.sh
+
+test-common-mysql-data-protection: ## 使用一次性 MySQL database 验证 Provider 与四个 Owner 的数据保护契约
+	@bash scripts/test/common-mysql-data-protection-gate.sh
 
 test-manager-mongodb-security: ## 使用 MongoDB Outdoor/Persons 运行 Manager 数据保护集成门禁
 	@bash scripts/test/manager-mongodb-security-gate.sh
@@ -204,7 +225,7 @@ test-online: ## 运行指定 Online suite（必须设置 ONLINE_SUITE 和 ADDP_O
 	@python3 scripts/test/online-gate.py --repository "$(CURDIR)" --suite "$(ONLINE_SUITE)"
 
 test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
-	@python3 -m unittest scripts/test/online-gate_test.py scripts/test/online-preflight_test.py scripts/test/online-host-gate_test.py scripts/test/online-engine-fixture_test.py scripts/test/online-workbench-mysql-fixture_test.py scripts/test/online-pointcloud-minio-fixture_test.py scripts/test/online-security-transfer-fixture_test.py scripts/test/consumer-engine-recovery-online_test.py scripts/test/consumer-process-stability-online_test.py scripts/test/module-registry-recovery-online_test.py scripts/test/standard-model-reference-deletion-online_test.py scripts/test/enterprise-catalog-publishing-online_test.py scripts/test/workbench-service-consumption-online_test.py scripts/test/manager-internal-artifact-lineage-online_test.py scripts/test/security-transfer-protection-online_test.py scripts/test/security-protection-exemption-online_test.py scripts/ci/check-online-ci-registration_test.py
+	@python3 -m unittest scripts/test/online-gate_test.py scripts/test/online-preflight_test.py scripts/test/online-host-gate_test.py scripts/test/online-engine-fixture_test.py scripts/test/online-workbench-mysql-fixture_test.py scripts/test/online-pointcloud-minio-fixture_test.py scripts/test/online-security-transfer-fixture_test.py scripts/test/consumer-engine-recovery-online_test.py scripts/test/consumer-process-stability-online_test.py scripts/test/module-registry-recovery-online_test.py scripts/test/standard-model-reference-deletion-online_test.py scripts/test/enterprise-catalog-publishing-online_test.py scripts/test/workbench-service-consumption-online_test.py scripts/test/manager-internal-artifact-lineage-online_test.py scripts/test/security-transfer-protection-online_test.py scripts/test/security-protection-exemption-online_test.py scripts/test/security-mysql-owner-protection-online_test.py scripts/ci/check-online-ci-registration_test.py
 	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
 
 test-release: ## 运行指定 T5 发布套件；用法：make test-release RELEASE_SUITE=common-python-cli
@@ -215,6 +236,7 @@ test-release-runner: ## 运行 T5 分发器和 CI 登记检查的确定性测试
 	@python3 scripts/ci/check-release-ci-registration.py --repository "$(CURDIR)"
 
 test-platform: ## 运行无外部服务依赖的平台一致性门禁
+	@$(MAKE) test-business-config
 	@$(MAKE) test-common-frontend
 	@$(MAKE) test-book
 	@$(MAKE) test-local-ci-runner

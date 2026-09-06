@@ -14,6 +14,7 @@ import (
 
 	commonauth "github.com/addp/common/authorization"
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/datatype"
 	commonAuth "github.com/addp/common/middleware/auth"
 	"github.com/gin-gonic/gin"
 )
@@ -39,6 +40,14 @@ func TestQueryOutputFieldSizeOmitsUnboundedAndUnsafeLengths(t *testing.T) {
 				t.Fatalf("queryOutputFieldSize(%d, %t) = %d, want %d", tt.length, tt.available, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestQueryOutputFieldTypeUsesPluginSQLDialect(t *testing.T) {
+	t.Parallel()
+
+	if got := queryOutputFieldType("oceanbase", "bigint"); got != datatype.FieldTypeBigInt {
+		t.Fatalf("OceanBase bigint = %s, want bigint", got)
 	}
 }
 

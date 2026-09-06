@@ -101,17 +101,12 @@ func ParseFullNamePath(engineType, resourceType, fullName string) []string {
 }
 
 // UsesSlashFullName 判断 catalog full_name 是否使用 slash 路径语义。
-func UsesSlashFullName(engineType, resourceType string) bool {
+func UsesSlashFullName(_ string, resourceType string) bool {
 	switch strings.ToLower(strings.TrimSpace(resourceType)) {
 	case string(TypeBucket), "prefix", string(TypeDirectory), string(TypeObject), string(TypeRoot), string(TypeServer), string(TypeService), string(TypeDir), string(TypeFile):
 		return true
 	}
-	switch strings.ToLower(strings.TrimSpace(engineType)) {
-	case "minio", "s3", "nfs", "nas":
-		return true
-	default:
-		return false
-	}
+	return false
 }
 
 func splitLocatorSlashPath(value string) []string {

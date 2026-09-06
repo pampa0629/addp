@@ -580,28 +580,72 @@ func (s *SQLEngineService) GenerateAuthorizedSampleQuery(
 	if err != nil {
 		return "", "", err
 	}
-	var endProtection func()
 	if selectedPath != nil {
-		endProtection, err = s.protectionGate.BeginCatalogPath(ctx, tenantID, enginePlugin, *selectedPath)
-		if err != nil {
-			return "", "", err
-		}
-	} else {
-		endProtection, err = s.protectionGate.BeginUnresolvedRead(ctx, tenantID)
-		if err != nil {
-			return "", "", err
-		}
+		return s.generateProtectedExecutableSampleQuery(ctx, tenantID, engine, enginePlugin, selectedPath)
+	}
+	endProtection, err := s.protectionGate.BeginUnresolvedRead(ctx, tenantID)
+	if err != nil {
+		return "", "", err
 	}
 	defer endProtection()
-	return generateExecutableSampleQuery(ctx, engine, selectedPath)
-}
-
-func generateExecutableSampleQuery(ctx context.Context, engine *commonModels.Engine, selectedPath *plugin.EngineCatalogPath) (string, string, error) {
 	return dbbridge.GenerateExecutableSampleQuery(ctx, engine, "", dbbridge.ExecutableSampleQueryOptions{
 		QueryLimit:      10,
 		ValidationLimit: 10,
-		Path:            selectedPath,
 	})
+}
+
+func (s *SQLEngineService) generateProtectedExecutableSampleQuery(
+	ctx context.Context,
+	tenantID uint,
+	engine *commonModels.Engine,
+	enginePlugin plugin.EnginePlugin,
+	selectedPath *plugin.EngineCatalogPath,
+) (string, string, error) {
+	if s == nil || s.protectionGate == nil || tenantID == 0 || engine == nil || selectedPath == nil {
+		return "", "", fmt.Errorf("%w: 查询模板保护执行器未正确初始化", ErrSampleQueryUnavailable)
+	}
+	provider, ok := enginePlugin.(plugin.QueryRuntimeProvider)
+	if !ok {
+		return "", "", fmt.Errorf("%w: 引擎未提供查询运行时", ErrSampleQueryUnavailable)
+	}
+
+	validationCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	query, language := provider.GenerateSampleQuery(validationCtx, plugin.ConnectionInfo(engine.ConnectionInfo), plugin.SampleQueryOptions{Path: *selectedPath})
+	query = strings.TrimSpace(query)
+	language = strings.ToLower(strings.TrimSpace(language))
+	if query == "" || language == "" {
+		return "", "", ErrSampleQueryUnavailable
+	}
+
+	prepared, err := provider.PrepareQuery(validationCtx, plugin.ConnectionInfo(engine.ConnectionInfo), plugin.QueryRequest{
+		EngineID: engine.ID, Language: language, Query: query, TargetPath: selectedPath,
+		Options: plugin.QueryOptions{
+			EngineID: engine.ID, EngineType: engine.EngineType, Limit: 10, ReadOnly: true,
+		},
+	})
+	if err != nil {
+		return "", "", fmt.Errorf("%w: 样例查询准备失败: %v", ErrSampleQueryUnavailable, err)
+	}
+	protectResult, endProtection, err := s.protectionGate.BeginPreparedQuery(validationCtx, tenantID, enginePlugin, prepared)
+	if err != nil {
+		return "", "", err
+	}
+	defer endProtection()
+	result, err := prepared.Execute(validationCtx)
+	if err != nil {
+		return "", "", fmt.Errorf("%w: 样例查询执行失败: %v", ErrSampleQueryUnavailable, err)
+	}
+	if result == nil {
+		return "", "", fmt.Errorf("%w: 样例查询没有返回数据", ErrSampleQueryResourceEmpty)
+	}
+	if err := protectResult(result); err != nil {
+		return "", "", err
+	}
+	if len(result.Rows) == 0 {
+		return "", "", fmt.Errorf("%w: 样例查询没有返回数据", ErrSampleQueryResourceEmpty)
+	}
+	return query, language, nil
 }
 
 func formatEngineIDs(engineIDs []uint) []string {

@@ -14,4 +14,8 @@ describe('inference bindings configuration', () => {
     expect(source).not.toContain('@click="save(row)"')
     expect(source).not.toContain('row.saving')
   })
+
+  it('exposes the Standard document extraction scenario through the Copilot owner', () => {
+    expect(source).toContain("'standard_document_extraction'")
+  })
 })

@@ -371,7 +371,7 @@ graph LR
 
 ## Worker 运行时
 
-ADDP 的 execution worker 是执行 owner 的运行时角色。Quality、Meta 和 Transfer bounded 使用各模块附属的独立 Worker 进程，Transfer continuous 使用专用长期运行时 Worker；对应 Backend 只承担控制面。Manager 当前没有独立 Worker；PostgreSQL/PostGIS 原生 MVT、MySQL/Oracle 临时 FlatGeobuf 到 GeoPython PMTiles、文件或对象到 GeoPython PMTiles，以及矢量物化视图均由 Manager Backend 在手动或 Orchestrator 编排触发时执行。Manager 受管当前结果任务不启动 owner scheduler；Embedding 的逐 item 调度器独立保留。若后续格式实现需要多执行器并发或独立资源隔离，应先把文档和任务运行时统一切换到 Manager Worker 或 GIS 执行引擎，再实现代码，不保留 Backend 与 Worker 双轨。
+ADDP 的 execution worker 是执行 owner 的运行时角色。Quality、Meta、Transfer bounded 和 Manager 文档转换使用各模块附属的独立 Worker 进程，Transfer continuous 使用专用长期运行时 Worker；对应 Backend 只承担控制面。Manager 的 `pptx_pdf_generation` 由唯一的 `manager-worker` 通过 PostgreSQL claim / lease 执行，LibreOffice 只存在于该 Worker 的运行镜像；Manager Backend 不加载 LibreOffice，也不得保留进程内转换旁路。PostgreSQL/PostGIS 原生 MVT、MySQL/Oracle 临时 FlatGeobuf 到 GeoPython PMTiles、文件或对象到 GeoPython PMTiles，以及矢量物化视图仍按各自既有唯一执行路线运行。Manager 受管当前结果任务不启动 owner scheduler；Embedding 的逐 item 调度器独立保留。后续格式若需要独立资源隔离，应先确定唯一的 Manager Worker 或专业执行引擎，再实现代码，不保留 Backend 与 Worker 双轨。
 
 ### 模块启动与引擎可用性边界
 

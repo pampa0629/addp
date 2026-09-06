@@ -347,5 +347,5 @@ func dorisTablePathParts(path plugin.EngineCatalogPath) (string, string, error) 
 }
 
 func dorisDialect() commonquery.Dialect {
-	return commonquery.ForDialect("doris")
+	return commonquery.ForDialect(commonquery.DialectMySQL)
 }

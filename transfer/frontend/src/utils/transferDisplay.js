@@ -40,6 +40,16 @@ export function hasIdempotentTableUpsert(engine) {
   return upsert?.supported === true && upsert?.idempotent === true
 }
 
+export function hasNativeTableWriteCapability(engine) {
+  const store = parseCapabilities(engine)?.storage?.store
+  return store?.table_write_prepare === true &&
+    (store?.batch_write === true || store?.table_write_session === true)
+}
+
+export function hasContentWriteCapability(engine) {
+  return parseCapabilities(engine)?.storage?.store?.stream_write === true
+}
+
 export function hasBoundedWatermarkRead(engine) {
   return parseCapabilities(engine)?.storage?.store?.bounded_watermark_read === true
 }

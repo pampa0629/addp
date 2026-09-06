@@ -480,7 +480,11 @@ func (h *DocumentHandler) WithdrawRevision(c *gin.Context) {
 // @Produce json
 // @Param request body models.CreateDocumentExtractionRequest true "当前资源版本 | Current resource version"
 // @Success 201 {object} models.DocumentExtraction
+// @Failure 404 {object} map[string]string
+// @Failure 409 {object} map[string]string
+// @Failure 413 {object} map[string]string
 // @Failure 422 {object} map[string]string
+// @Failure 500 {object} map[string]string
 // @Failure 503 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.document_extraction.create"]
@@ -497,16 +501,19 @@ func (h *DocumentHandler) ExtractCandidates(c *gin.Context) {
 	}
 	result, err := h.svc.ExtractCandidates(c.Request.Context(), id, revisionID, getTenantID(c), getUserID(c), req.Version)
 	if err != nil {
-		respondError(c, http.StatusUnprocessableEntity, err)
+		respondDocumentExtractionError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, result)
 }
 
 // @Summary 获取文档提炼批次 | List document extraction batches
+// @Description 返回每个候选与当前同类型、同编码标准的动态比对结果及字段级候选值/标准值；不会自动创建或关联标准 | Returns a dynamic comparison and field-level candidate/standard values for each candidate against the current same-type, same-code standard; no standard is created or linked automatically
 // @Tags Standard
 // @Produce json
 // @Success 200 {array} models.DocumentExtraction
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.document.read"]
 // @Router /documents/{id}/extractions [get]
@@ -518,7 +525,7 @@ func (h *DocumentHandler) ListExtractions(c *gin.Context) {
 	}
 	items, err := h.svc.ListExtractions(id, getTenantID(c))
 	if err != nil {
-		respondError(c, http.StatusNotFound, err)
+		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 	c.JSON(http.StatusOK, items)

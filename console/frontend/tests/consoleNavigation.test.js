@@ -66,6 +66,11 @@ describe('Console navigation bridge', () => {
     expect(iframeSource).toContain(':key="iframeKey || iframeUrl"')
   })
 
+  it('delegates fullscreen permission to the active module iframe', () => {
+    const iframeSource = readFileSync(new URL('../src/components/portal/PortalIframe.vue', import.meta.url), 'utf8')
+    expect(iframeSource).toContain('allow="clipboard-write; clipboard-read; fullscreen"')
+  })
+
   it('places configuration management under the System navigation group', () => {
     const configSource = readFileSync(new URL('../src/config/portalConfig.js', import.meta.url), 'utf8')
     expect(configSource).not.toContain("key: 'configuration'")

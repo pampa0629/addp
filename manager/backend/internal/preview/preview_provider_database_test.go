@@ -16,7 +16,7 @@ import (
 func TestDatabasePreviewPostgreSQLPrimaryKeyPageQueryUsesKeyCTEForDeepOffset(t *testing.T) {
 	t.Parallel()
 
-	dialect := commonquery.ForEngine("postgresql")
+	dialect := commonquery.ForDialect(commonquery.DialectPostgreSQL)
 	columns := []datatype.FieldInfo{
 		{Name: "SmID", NativeType: "bigint", PrimaryKey: true},
 		{Name: "SmGeometry", NativeType: "geometry(MultiPolygon,2360)"},
@@ -41,7 +41,7 @@ func TestDatabasePreviewPostgreSQLPrimaryKeyPageQueryUsesKeyCTEForDeepOffset(t *
 func TestDatabasePreviewPostgreSQLPrimaryKeyPageQueryOrdersFirstPage(t *testing.T) {
 	t.Parallel()
 
-	dialect := commonquery.ForEngine("postgresql")
+	dialect := commonquery.ForDialect(commonquery.DialectPostgreSQL)
 	columns := []datatype.FieldInfo{
 		{Name: "id", NativeType: "bigint", PrimaryKey: true},
 		{Name: "name", NativeType: "text"},
@@ -56,7 +56,7 @@ func TestDatabasePreviewPostgreSQLPrimaryKeyPageQueryOrdersFirstPage(t *testing.
 }
 
 func TestDatabasePreviewOracleSpatialSelectUsesWKT(t *testing.T) {
-	query := databasePreviewSelectExpr(commonquery.ForEngine("oracle"), []datatype.FieldInfo{
+	query := databasePreviewSelectExpr(commonquery.ForDialect(commonquery.DialectOracle), []datatype.FieldInfo{
 		{Name: "ID", NativeType: "NUMBER(10,0)"},
 		{Name: "SHAPE", Type: datatype.FieldTypeGeometry, NativeType: "MDSYS.SDO_GEOMETRY"},
 	}, "")
@@ -435,6 +435,7 @@ func (p *recordingDatabasePreviewPlugin) SensitiveFields() []string { return nil
 func (p *recordingDatabasePreviewPlugin) StoreSemantics() plugin.StoreSemantics {
 	return plugin.StoreSemantics{}
 }
+func (p *recordingDatabasePreviewPlugin) SQLDialect() string { return "postgresql" }
 func (p *recordingDatabasePreviewPlugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.EngineCapabilities{
 		SchemaVersion: plugin.CapabilitiesSchemaVersion,

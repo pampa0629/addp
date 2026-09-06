@@ -231,6 +231,11 @@ func TestLoadObjectContentPluginsUsesDescriptorDefaults(t *testing.T) {
 			want: "builtin:content-doc",
 		},
 		{
+			name: "rtf",
+			req:  ObjectContentRequest{Extension: ".rtf", ContentType: "application/rtf"},
+			want: "builtin:content-rtf",
+		},
+		{
 			name: "markdown",
 			req:  ObjectContentRequest{Extension: ".md", ContentType: "text/markdown"},
 			want: "builtin:content-markdown",
@@ -1859,6 +1864,40 @@ func TestRawOfficeDocumentContentHandlerUsesCanonicalRendererForURLMaterial(t *t
 	}
 	if content.Kind != models.ObjectPreviewKindWPS || content.PreviewMaterial != models.PreviewMaterialURL {
 		t.Fatalf("content = %#v, want WPS URL material", content)
+	}
+	if content.FrontendRenderer != models.ObjectPreviewRendererOffice {
+		t.Fatalf("FrontendRenderer = %q, want office", content.FrontendRenderer)
+	}
+}
+
+func TestRTFContentHandlerUsesCanonicalOfficeRendererForURLMaterial(t *testing.T) {
+	t.Parallel()
+	handler, err := buildBuiltinContentHandler(ObjectContentPluginConfig{Name: "rtf", Builtin: "rtf"})
+	if err != nil {
+		t.Fatalf("build rtf handler: %v", err)
+	}
+
+	content, truncated, err := handler.Handle(
+		nil,
+		&ObjectContentRequest{
+			Name:       "ZX书单.rtf",
+			Format:     "rtf",
+			Size:       4096,
+			PreviewURL: "/api/v1/manager/storage-stream?engine_id=14&storage_ref=doc%2FZX%E4%B9%A6%E5%8D%95.rtf",
+		},
+		func(limit int64) ([]byte, bool, error) {
+			t.Fatalf("RTF URL preview should not read bytes")
+			return nil, false, nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("handle rtf content: %v", err)
+	}
+	if truncated {
+		t.Fatal("unexpected truncation")
+	}
+	if content.Kind != models.ObjectPreviewKindRTF || content.PreviewMaterial != models.PreviewMaterialURL {
+		t.Fatalf("content = %#v, want RTF URL material", content)
 	}
 	if content.FrontendRenderer != models.ObjectPreviewRendererOffice {
 		t.Fatalf("FrontendRenderer = %q, want office", content.FrontendRenderer)

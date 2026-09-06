@@ -14,6 +14,30 @@ export function buildDataApplicationPreview(application) {
   }
 }
 
+export function dataApplicationEditorRouteContext(routeName, applicationID = '') {
+  if (routeName === 'DataApplicationCreate') return 'create'
+  return `edit:${String(applicationID || '').trim()}`
+}
+
+export function dataApplicationEditorMutationContext(routeName, applicationID, action) {
+  return `${dataApplicationEditorRouteContext(routeName, applicationID)}:${String(action || '').trim()}`
+}
+
+export function dataApplicationListPageContext(page) {
+  const normalized = Number(page)
+  return `page:${Number.isInteger(normalized) && normalized > 0 ? normalized : 1}`
+}
+
+export function dataApplicationDeletionContext(applicationID, version) {
+  return `delete:${String(applicationID || '').trim()}:${String(version ?? '').trim()}`
+}
+
+export function commitLatestDataApplicationRequest(requests, request, currentContext, commit) {
+  if (!requests.isCurrent(request, currentContext)) return false
+  commit()
+  return true
+}
+
 export async function confirmDataApplicationAction(confirm, message) {
   try {
     await confirm(message)

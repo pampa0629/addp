@@ -35,7 +35,8 @@ func TestMigrateAgainstPostgres(t *testing.T) {
 		)`,
 		`CREATE TABLE standard.code_sets (
 			id BIGSERIAL PRIMARY KEY, tenant_id BIGINT NOT NULL, code VARCHAR(100) NOT NULL,
-			domain_id BIGINT, name VARCHAR(200) NOT NULL, type VARCHAR(20), description TEXT,
+			domain_id BIGINT, owner_domain_id BIGINT, scope_type VARCHAR(20) DEFAULT 'tenant_common',
+			name VARCHAR(200) NOT NULL, type VARCHAR(20), description TEXT,
 			created_at TIMESTAMPTZ, updated_at TIMESTAMPTZ, version BIGINT NOT NULL DEFAULT 1
 		)`,
 		`CREATE TABLE standard.code_items (
@@ -52,6 +53,7 @@ func TestMigrateAgainstPostgres(t *testing.T) {
 		)`,
 		`CREATE TABLE standard.elements (
 			id BIGSERIAL PRIMARY KEY, tenant_id BIGINT NOT NULL, domain_id BIGINT,
+			owner_domain_id BIGINT, scope_type VARCHAR(20) DEFAULT 'tenant_common',
 			name VARCHAR(200) NOT NULL, code VARCHAR(100) NOT NULL, data_type VARCHAR(50) NOT NULL,
 			length INTEGER, precision_num INTEGER, scale INTEGER, nullable BOOLEAN,
 			default_value TEXT, format VARCHAR(200), value_range JSONB, unit_id BIGINT,
@@ -70,10 +72,10 @@ func TestMigrateAgainstPostgres(t *testing.T) {
 		`INSERT INTO standard.glossaries (id, tenant_id, domain_id, name, alias, definition, status, created_by, version, created_at)
 		 VALUES (301, 7, 501, 'Customer', '["Buyer"]'::jsonb, 'A purchasing party', 'approved', 1, 2, NOW() - INTERVAL '1 day')`,
 		`INSERT INTO standard.elements (
-			id, tenant_id, name, code, data_type, nullable, code_set_id, definition,
+			id, tenant_id, domain_id, name, code, data_type, nullable, code_set_id, definition,
 			example_values, quality_rules, status, created_by, version
 		) VALUES (
-			201, 7, 'Gender', 'gender', 'string', FALSE, 101, 'Customer gender',
+			201, 7, 501, 'Gender', 'gender', 'string', FALSE, 101, 'Customer gender',
 			'["M"]'::jsonb,
 			'{"schema_version":"addp.quality.rules/v1","rules":[]}'::jsonb,
 			'approved', 1, 4
@@ -225,7 +227,7 @@ func TestMigrateAgainstPostgres(t *testing.T) {
 		WHERE e.id = 201 AND cs.id = 101`).Scan(&migratedOwnership).Error; err != nil {
 		t.Fatalf("load migrated ownership: %v", err)
 	}
-	if migratedOwnership.ElementScopeType != models.StandardScopeTenantCommon || migratedOwnership.ElementOwnerID != nil ||
+	if migratedOwnership.ElementScopeType != models.StandardScopeDomain || migratedOwnership.ElementOwnerID == nil || *migratedOwnership.ElementOwnerID != 501 ||
 		migratedOwnership.CodeSetScopeType != models.StandardScopeDomain || migratedOwnership.CodeSetOwnerID == nil || *migratedOwnership.CodeSetOwnerID != 501 {
 		t.Fatalf("migrated ownership = %#v", migratedOwnership)
 	}

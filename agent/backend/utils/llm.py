@@ -11,7 +11,7 @@ from addp_common.inference_langchain import InferenceChatModel
 from config import settings
 from database import AsyncSessionLocal
 from repositories.inference_scenario_binding_repository import InferenceScenarioBindingRepository
-from utils.logging_setup import LLMIOLogger
+from utils.logging_setup import LLMMetadataLogger
 
 
 SCENARIOS: tuple[str, ...] = ("reasoning", "general-chat")
@@ -101,7 +101,7 @@ class AgentInferenceService:
             profile_resolver=snapshot.resolve,
             temperature=temperature,
             max_output_tokens=max_output_tokens,
-            callbacks=[LLMIOLogger()],
+            callbacks=[LLMMetadataLogger()],
         )
 
 

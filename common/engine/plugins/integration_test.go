@@ -27,6 +27,7 @@ func TestAllPluginsRegistered(t *testing.T) {
 		"mysql",
 		"neo4j",
 		"nfs",
+		"oceanbase",
 		"oracle",
 		"postgresql",
 		"inference_runtime",
@@ -55,8 +56,8 @@ func TestAllPluginsRegistered(t *testing.T) {
 func TestGetAllPlugins(t *testing.T) {
 	plugins := plugin.GetAll()
 
-	if len(plugins) != 15 {
-		t.Errorf("Expected 15 plugins, got %d", len(plugins))
+	if len(plugins) != 16 {
+		t.Errorf("Expected 16 plugins, got %d", len(plugins))
 	}
 
 	// 验证每个插件的基本信息
@@ -67,6 +68,7 @@ func TestGetAllPlugins(t *testing.T) {
 		{"postgresql", "PostgreSQL"},
 		{"oracle", "Oracle Database"},
 		{"mysql", "MySQL"},
+		{"oceanbase", "OceanBase"},
 		{"doris", "Apache Doris"},
 		{"spark", "Apache Spark"},
 		{"clickhouse", "ClickHouse"},
@@ -100,8 +102,8 @@ func TestRegisterableEngineDescriptorsArePluginOwned(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(descriptors) != 12 {
-		t.Fatalf("registerable descriptors = %d, want 12", len(descriptors))
+	if len(descriptors) != 13 {
+		t.Fatalf("registerable descriptors = %d, want 13", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
 		enginePlugin, err := plugin.Get(descriptor.Type)
@@ -144,6 +146,7 @@ func TestPluginCapabilities(t *testing.T) {
 		{"postgresql", "general"},
 		{"oracle", "general"},
 		{"mysql", "general"},
+		{"oceanbase", "general"},
 		{"doris", "general"},
 		{"clickhouse", "general"},
 		{"mongodb", "general"},
@@ -189,6 +192,7 @@ func TestPluginDefaultPorts(t *testing.T) {
 		{"postgresql", 5432},
 		{"oracle", 1521},
 		{"mysql", 3306},
+		{"oceanbase", 2881},
 		{"doris", 9030},
 		{"clickhouse", 9000},
 		{"mongodb", 27017},
@@ -224,6 +228,7 @@ func TestPluginRequiredFields(t *testing.T) {
 		{"postgresql", "host"},
 		{"oracle", "service_name"},
 		{"mysql", "user"},
+		{"oceanbase", "user"},
 		{"doris", "database"},
 		{"clickhouse", "host"},
 		{"mongodb", "host"},
@@ -303,6 +308,7 @@ func TestBuiltinPluginCapabilityMatrix(t *testing.T) {
 		"kafka":             {origin: "general", family: "event_stream", storage: true},
 		"mongodb":           {origin: "general", family: "dynamic_schema", storage: true, query: true},
 		"mysql":             {origin: "general", family: "tabular", storage: true, query: true},
+		"oceanbase":         {origin: "general", family: "tabular", storage: true, query: true},
 		"neo4j":             {origin: "general", family: "graph", storage: true, query: true, graphQuery: true},
 		"postgresql":        {origin: "general", family: "tabular", storage: true, query: true},
 		"oracle":            {origin: "general", family: "tabular", storage: true, query: true},

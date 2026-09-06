@@ -564,6 +564,71 @@ test('restores document detail from its canonical route and returns to the filte
   await expect(page).toHaveURL(/\/documents\?keyword=/)
 })
 
+test('shows deterministic candidate comparisons and opens the existing standard', async ({ page }) => {
+  await installMockBackend(page, {
+    documents: [createDocumentFixture()],
+    documentExtractions: [{
+      id: 81,
+      document_revision_id: 711,
+      status: 'completed',
+      created_at: '2026-09-06T08:00:00Z',
+      candidates: [
+        { id: 811, candidate_type: 'glossary', code: 'leader', name: '领队', definition: '发起并组织户外活动的人', payload: {}, status: 'pending', version: 1, evidences: [], comparison: { result: 'exact', standard_id: 21, code: 'leader', name: '领队', scope_type: 'domain', owner_domain_id: 2, revision_id: 211, revision_no: 1, revision_status: 'draft', differences: [] } },
+        { id: 812, candidate_type: 'element', code: 'activity_id', name: '活动编号', definition: '活动的唯一编号', payload: { data_type: 'string' }, status: 'pending', version: 1, evidences: [], comparison: { result: 'content_conflict', standard_id: 41, code: 'activity_id', name: '活动编号', scope_type: 'domain', owner_domain_id: 2, revision_id: 411, revision_no: 1, revision_status: 'draft', differences: [{ field: 'definition', candidate_value: { kind: 'text', text: '活动的唯一编号' }, standard_value: { kind: 'text', text: '户外活动主体的稳定标识' } }, { field: 'data_type', candidate_value: { kind: 'text', text: 'string' }, standard_value: { kind: 'text', text: 'bigint' } }] } },
+        { id: 813, candidate_type: 'metric', code: 'participant_count', name: '活动参与人数', definition: '参加活动的总人数', payload: {}, status: 'pending', version: 1, evidences: [], comparison: { result: 'scope_conflict', standard_id: 51, code: 'participant_count', name: '活动参与人数', scope_type: 'domain', owner_domain_id: 1, revision_id: 511, revision_no: 1, revision_status: 'draft', differences: [{ field: 'owner_domain_id', candidate_value: { kind: 'integer', integer: 2 }, standard_value: { kind: 'integer', integer: 1 } }] } },
+        { id: 814, candidate_type: 'code_set', code: 'outdoor_level', name: '户外等级', definition: '户外活动难度等级', payload: {}, status: 'pending', version: 1, evidences: [], comparison: { result: 'new', differences: [] } },
+        { id: 815, candidate_type: 'code_set', code: 'member_status', name: '成员状态', definition: '成员参与状态', payload: {}, status: 'pending', version: 1, evidences: [], comparison: { result: 'content_conflict', standard_id: 61, code: 'member_status', name: '成员状态', scope_type: 'domain', owner_domain_id: 2, revision_id: 611, revision_no: 1, revision_status: 'draft', differences: [{ field: 'items', candidate_value: { kind: 'code_items', items: [{ code: 'signup', name: '报名中', definition: '已正式报名' }] }, standard_value: { kind: 'code_items', items: [{ code: 'registered', name: '已报名', definition: '报名已经确认' }] } }] } }
+      ]
+    }]
+  })
+
+  await page.goto('/documents/71')
+  await expect(page.getByText('内容一致', { exact: true })).toBeVisible()
+  await expect(page.getByText('内容冲突', { exact: true }).first()).toBeVisible()
+  await expect(page.getByText('范围冲突', { exact: true })).toBeVisible()
+  await expect(page.getByText('新候选', { exact: true })).toBeVisible()
+  const activityCandidate = page.locator('.candidate-card').filter({ hasText: 'activity_id' })
+  await expect(activityCandidate.getByRole('columnheader', { name: '差异字段' })).toBeVisible()
+  await expect(activityCandidate.getByRole('columnheader', { name: '候选值' })).toBeVisible()
+  await expect(activityCandidate.getByRole('columnheader', { name: '当前标准值' })).toBeVisible()
+  await expect(activityCandidate.locator('.comparison-differences').getByText('活动的唯一编号', { exact: true })).toBeVisible()
+  await expect(activityCandidate.getByText('户外活动主体的稳定标识', { exact: true })).toBeVisible()
+  await expect(activityCandidate.getByText('bigint', { exact: true })).toBeVisible()
+  const codeSetCandidate = page.locator('.candidate-card').filter({ hasText: 'member_status' })
+  const codeItems = codeSetCandidate.locator('.comparison-item')
+  await expect(codeItems.nth(0)).toContainText('signup · 报名中 — 已正式报名')
+  await expect(codeItems.nth(1)).toContainText('registered · 已报名 — 报名已经确认')
+
+  await page.getByRole('button', { name: '查看现有标准' }).first().click()
+  await expect(page).toHaveURL(/\/glossaries\/21$/)
+  await expect(page.getByRole('heading', { name: '领队' })).toBeVisible()
+})
+
+test('keeps the created document identity when an initial file upload returns file metadata', async ({ page }) => {
+  const backend = await installMockBackend(page, { documents: [] })
+  await page.goto('/documents')
+
+  await page.getByRole('button', { name: '录入文档' }).click()
+  const dialog = page.getByRole('dialog', { name: '录入标准文档' })
+  await dialog.getByRole('textbox', { name: '编码' }).fill('outdoor_governance_plan')
+  await dialog.getByRole('textbox', { name: '文档名称' }).fill('Outdoor 治理方案')
+  await dialog.getByRole('textbox', { name: '变更说明' }).fill('初始修订')
+  await dialog.locator('input[type="file"]').setInputFiles({
+    name: 'outdoor-governance.md',
+    mimeType: 'text/markdown',
+    buffer: Buffer.from('# Outdoor 治理方案')
+  })
+  await dialog.getByRole('button', { name: '确定' }).click()
+
+  await expect(page).toHaveURL(/\/documents\/72$/)
+  await expect(page.getByRole('heading', { name: 'Outdoor 治理方案' })).toBeVisible()
+  await expect(page.getByText(/outdoor-governance\.md/)).toBeVisible()
+  expect(backend.getActionRequests()).toEqual(expect.arrayContaining([
+    '/api/v1/standard/documents',
+    '/api/v1/standard/documents/72/revisions/721/file'
+  ]))
+})
+
 test('shows the backend upload error when attaching a file to a standard item', async ({ page }) => {
   const backend = await installMockBackend(page, {
     metrics: [{
@@ -961,9 +1026,52 @@ async function installMockBackend(page, options = {}) {
       if (metric) metric.version = (metric.version || 1) + 1
       return fulfillJSON(route, { document, version: metric?.version || 2 })
     }
+    if (request.method() === 'POST' && path === '/api/v1/standard/documents') {
+      actionRequests.push(path)
+      const body = request.postDataJSON()
+      const document = createDocumentFixture({
+        id: 72,
+        code: body.code,
+        scope_type: body.scope_type,
+        owner_domain_id: body.owner_domain_id,
+        doc_type: body.doc_type,
+        source_org: body.source_org,
+        revision: {
+          name: body.name,
+          version_label: body.version_label,
+          description: body.description,
+          file_name: null,
+          file_size: 0,
+          media_type: '',
+          content_sha256: '',
+          change_summary: body.change_summary
+        }
+      })
+      documents.push(document)
+      return fulfillJSON(route, document, 201)
+    }
     if (request.method() === 'POST' && path === '/api/v1/standard/documents/72/revisions/721/file' && options.uploadError) {
       actionRequests.push(path)
       return fulfillJSON(route, { error: options.uploadError }, 413)
+    }
+    if (request.method() === 'POST' && path === '/api/v1/standard/documents/72/revisions/721/file') {
+      actionRequests.push(path)
+      const document = documents.find(item => item.id === 72)
+      if (document?.draft_revision) {
+        document.version += 1
+        Object.assign(document.draft_revision, {
+          file_name: 'outdoor-governance.md',
+          file_size: 21,
+          media_type: 'text/markdown',
+          content_sha256: 'a'.repeat(64)
+        })
+      }
+      return fulfillJSON(route, {
+        message: '上传成功',
+        file_name: document?.draft_revision?.file_name,
+        file_size: document?.draft_revision?.file_size,
+        version: document?.version
+      })
     }
     if (request.method() === 'POST' && path === '/api/v1/standard/metrics/51/documents/link') {
       actionRequests.push(path)
@@ -1043,10 +1151,18 @@ async function installMockBackend(page, options = {}) {
       const revision = document?.draft_revision || document?.current_revision
       return fulfillJSON(route, revision ? [revision] : [])
     }
-    if (path === '/api/v1/standard/documents/71/extractions') return fulfillJSON(route, [])
+    if (path === '/api/v1/standard/documents/71/extractions') return fulfillJSON(route, options.documentExtractions || [])
     if (path === '/api/v1/standard/documents/71/mappings') {
       return fulfillJSON(route, { elements: [], glossaries: [], metrics: [] })
     }
+    if (path === '/api/v1/standard/documents/72') return fulfillJSON(route, documents.find(item => item.id === 72) || {})
+    if (path === '/api/v1/standard/documents/72/revisions') {
+      const document = documents.find(item => item.id === 72)
+      const revision = document?.draft_revision || document?.current_revision
+      return fulfillJSON(route, revision ? [revision] : [])
+    }
+    if (path === '/api/v1/standard/documents/72/extractions') return fulfillJSON(route, options.documentExtractions || [])
+    if (path === '/api/v1/standard/documents/72/mappings') return fulfillJSON(route, { elements: [], glossaries: [], metrics: [] })
     return fulfillJSON(route, {})
   })
 

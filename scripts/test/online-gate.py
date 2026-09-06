@@ -91,6 +91,19 @@ SUITES: Mapping[str, Suite] = {
             ("transfer", "TRANSFER_URL"),
         ),
     ),
+    "security-mysql-owner-protection": Suite(
+        command=(sys.executable, "scripts/test/security-mysql-owner-protection-online.py"),
+        services=(
+            ("gateway", "GATEWAY_URL"),
+            ("system", "SYSTEM_URL"),
+            ("meta", "META_URL"),
+            ("security", "SECURITY_URL"),
+            ("manager", "MANAGER_URL"),
+            ("develop", "DEVELOP_URL"),
+            ("service", "SERVICE_URL"),
+            ("transfer", "TRANSFER_URL"),
+        ),
+    ),
     "standard-model-reference-deletion": Suite(
         command=(sys.executable, "scripts/test/standard-model-reference-deletion-online.py"),
         services=(

@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/addp/common/datatype"
+	"github.com/addp/common/engine/plugin"
 	commonquery "github.com/addp/common/query"
 	"github.com/addp/service/internal/models"
 )
@@ -117,7 +118,10 @@ func compileQueryPlan(
 		cursorValues = payload.Values
 	}
 
-	dialect := commonquery.ForEngine(engineType)
+	dialect, err := queryPlanDialect(engineType)
+	if err != nil {
+		return nil, err
+	}
 	hidden := hiddenOrderFields(selected, orderBy)
 	selectFields := append(append([]string(nil), selected...), hidden...)
 	selectSQL := make([]string, 0, len(selectFields))
@@ -325,7 +329,10 @@ func compileFilterNode(filter *models.QueryFilter, service *models.QueryService,
 	if !exists || !filterFieldAllowed(service, protocol, field.Name, strings.ToLower(strings.TrimSpace(filter.Op))) {
 		return "", fmt.Errorf("%w: field %s is not filterable", ErrInvalidStructuredQuery, filter.Field)
 	}
-	dialect := commonquery.ForEngine(engineType)
+	dialect, err := queryPlanDialect(engineType)
+	if err != nil {
+		return "", err
+	}
 	column := "addp_source." + dialect.QuoteIdentifier(field.Name)
 	op := strings.ToLower(strings.TrimSpace(filter.Op))
 	switch op {
@@ -465,7 +472,10 @@ func compileBBoxFilter(value interface{}, service *models.QueryService, protocol
 		return "", fmt.Errorf("%w: bbox_intersects bounds are invalid", ErrInvalidStructuredQuery)
 	}
 	srid := service.GetSRID()
-	dialect := commonquery.ForEngine(engineType)
+	dialect, err := queryPlanDialect(engineType)
+	if err != nil {
+		return "", err
+	}
 	switch strings.ToLower(strings.TrimSpace(engineType)) {
 	case "postgresql":
 		coordinatePlaceholders := appendQueryPlaceholders(dialect, args, coordinates[0], coordinates[1], coordinates[2], coordinates[3])
@@ -512,6 +522,18 @@ func appendQueryPlaceholders(dialect commonquery.Dialect, args *[]interface{}, v
 		placeholders[index] = dialect.Placeholder(len(*args))
 	}
 	return placeholders
+}
+
+func queryPlanDialect(engineType string) (commonquery.Dialect, error) {
+	registered, err := plugin.Get(strings.ToLower(strings.TrimSpace(engineType)))
+	if err != nil {
+		return commonquery.Dialect{}, fmt.Errorf("%w: %v", ErrInvalidStructuredQuery, err)
+	}
+	provider, ok := registered.(plugin.SQLQueryRuntimeProvider)
+	if !ok || strings.TrimSpace(provider.SQLDialect()) == "" {
+		return commonquery.Dialect{}, fmt.Errorf("%w: engine %s has no SQL dialect", ErrInvalidStructuredQuery, engineType)
+	}
+	return commonquery.ForDialect(provider.SQLDialect()), nil
 }
 
 func supportsGeoJSONProjection(engineType string) bool {

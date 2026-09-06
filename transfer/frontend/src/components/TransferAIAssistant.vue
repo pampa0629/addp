@@ -244,7 +244,7 @@ import { getItemFieldsByID } from '@/api/meta'
 import { getManagerPreview } from '@/api/managerPreview'
 import { parseTransferLocator } from '@/utils/resourceLocator'
 import { useTaskWizardState } from '../views/TaskWizard/useTaskWizardState.js'
-import { hasStorageCapability, isNativeTableEngine } from '@/utils/transferDisplay'
+import { hasNativeTableWriteCapability, hasStorageCapability, isNativeTableEngine } from '@/utils/transferDisplay'
 import { groupResourceCandidates, inferSourceEngineFromPrompt, inferSourceEnginesFromPrompt, inferTargetEngineFromPrompt, inferTransferSyncMode, resolveAuthoritativeSourceFields, resourceCandidateKey as candidateKey, resourceFact } from '../utils/transferCopilot.mjs'
 import { mysqlDecimalMappingIssues } from '../views/TaskWizard/decimalMapping.mjs'
 import { CONTINUOUS_FIELD_TYPES, databaseCDCFieldTypes, isKafkaTopicSource } from '../views/TaskWizard/continuousTask.mjs'
@@ -273,7 +273,12 @@ const decimalScanRows = ref(null)
 const candidateGroups = computed(() => groupResourceCandidates(candidates.value))
 const selectedSource = computed(() => candidates.value.find(item => selectedByRole.value[item.role] === candidateKey(item)) || null)
 const stageIndex = computed(() => ({ request: 0, source: 1, target: 2, fields: 3, review: 4 })[stage.value])
-const targetEngines = computed(() => engines.value.filter(engine => engine?.id && hasStorageCapability(engine) && isNativeTableEngine(engine)))
+const targetEngines = computed(() => engines.value.filter(engine =>
+  engine?.id &&
+  hasStorageCapability(engine) &&
+  isNativeTableEngine(engine) &&
+  hasNativeTableWriteCapability(engine)
+))
 const selectedTargetEngine = computed(() => engines.value.find(engine => Number(engine.id) === Number(targetEngineId.value)) || null)
 const isMysqlTarget = computed(() => String(selectedTargetEngine.value?.engine_type || '').toLowerCase().includes('mysql'))
 const isKafkaSource = computed(() => isKafkaTopicSource(wizardState.sourceEngineType.value, wizardState.sourceLocator.value))

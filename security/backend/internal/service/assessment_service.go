@@ -69,7 +69,7 @@ func (s *AssessmentService) ReviewFinding(ctx context.Context, tenantID, reviewe
 			if err := tx.Create(&review).Error; err != nil {
 				return assessmentDBError(err)
 			}
-			if err := compileProtectionProjections(tx, enrollment, enrollmentSnapshotHash(enrollment, finding.SourceSnapshotHash), now, []string{"manager", "develop", "service", "transfer"}); err != nil {
+			if err := compileProtectionProjections(tx, enrollment, enrollmentSnapshotHash(enrollment, finding.SourceSnapshotHash), now, allRequiredProtectionOwners()); err != nil {
 				return err
 			}
 			response = &models.FindingReviewResponse{Review: review}
@@ -113,7 +113,7 @@ func (s *AssessmentService) ReviewFinding(ctx context.Context, tenantID, reviewe
 		if err := tx.Create(&revision).Error; err != nil {
 			return assessmentDBError(err)
 		}
-		if err := compileProtectionProjections(tx, enrollment, enrollmentSnapshotHash(enrollment, finding.SourceSnapshotHash), now, []string{"manager", "develop", "service", "transfer"}); err != nil {
+		if err := compileProtectionProjections(tx, enrollment, enrollmentSnapshotHash(enrollment, finding.SourceSnapshotHash), now, allRequiredProtectionOwners()); err != nil {
 			return err
 		}
 		built, err := buildAssessmentResponse(tx, *assessment, true)
@@ -259,7 +259,7 @@ func (s *AssessmentService) CreateManual(ctx context.Context, tenantID, reviewer
 		if err := tx.Create(&revision).Error; err != nil {
 			return assessmentDBError(err)
 		}
-		if err := compileProtectionProjections(tx, enrollment, enrollment.LatestSourceSnapshotHash, now, []string{"manager", "develop", "service", "transfer"}); err != nil {
+		if err := compileProtectionProjections(tx, enrollment, enrollment.LatestSourceSnapshotHash, now, allRequiredProtectionOwners()); err != nil {
 			return err
 		}
 		response, err = buildAssessmentResponse(tx, assessment, true)
@@ -327,7 +327,7 @@ func (s *AssessmentService) Revise(ctx context.Context, tenantID, reviewerID int
 		if err := tx.Where("tenant_id = ? AND id = ? AND state IN ?", tenantID, assessment.EnrollmentID, []string{models.EnrollmentStateEnrolling, models.EnrollmentStateActive}).First(&enrollment).Error; err != nil {
 			return assessmentDBError(err)
 		}
-		if err := compileProtectionProjections(tx, enrollment, enrollmentSnapshotHash(enrollment, current.SourceSnapshotHash), now, []string{"manager", "develop", "service", "transfer"}); err != nil {
+		if err := compileProtectionProjections(tx, enrollment, enrollmentSnapshotHash(enrollment, current.SourceSnapshotHash), now, allRequiredProtectionOwners()); err != nil {
 			return err
 		}
 		var err error
@@ -391,7 +391,7 @@ func (s *AssessmentService) Revoke(ctx context.Context, tenantID, reviewerID int
 		if err := tx.Where("tenant_id = ? AND id = ? AND state IN ?", tenantID, assessment.EnrollmentID, []string{models.EnrollmentStateEnrolling, models.EnrollmentStateActive}).First(&enrollment).Error; err != nil {
 			return assessmentDBError(err)
 		}
-		if err := compileProtectionProjections(tx, enrollment, enrollment.LatestSourceSnapshotHash, now, []string{"manager", "develop", "service", "transfer"}); err != nil {
+		if err := compileProtectionProjections(tx, enrollment, enrollment.LatestSourceSnapshotHash, now, allRequiredProtectionOwners()); err != nil {
 			return err
 		}
 		var err error

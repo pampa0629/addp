@@ -270,7 +270,7 @@
       "implementation_name": "实现名称",
       "grain": "计算粒度",
       "grain_placeholder": "例如：按订单明细粒度汇总",
-      "source_fields": "源度量字段",
+      "source_fields": "来源字段",
       "engine": "表达式引擎",
       "expression": "计算表达式",
       "expression_placeholder": "输入由当前表字段构成的计算表达式",

@@ -966,7 +966,7 @@ func schemaCoverage(req *PreviewResolverRequest) string {
 	if req == nil || req.MetaItemID == nil {
 		return "unknown"
 	}
-	if strings.EqualFold(strings.TrimSpace(req.Engine.EngineType), "mongodb") {
+	if registered, err := plugin.Get(req.Engine.EngineType); err == nil && registered.Capabilities().EngineFamily == "dynamic_schema" {
 		return "sampled"
 	}
 	if strings.TrimSpace(req.scannedDepth()) == "" || strings.EqualFold(req.scannedDepth(), "none") {
@@ -980,29 +980,56 @@ func queryNames(req *PreviewResolverRequest) map[string]string {
 		return nil
 	}
 	fullName := strings.TrimSpace(req.ItemFullName)
-	switch strings.ToLower(strings.TrimSpace(req.Engine.EngineType)) {
-	case "mongodb":
-		if name := strings.TrimSpace(req.ItemName); name != "" {
-			return map[string]string{"mql": name}
-		}
-		return nil
-	case "neo4j":
-		return map[string]string{"cypher": fullName}
-	case "postgresql", "postgres", "postgis", "mysql", "oracle", "doris", "clickhouse", "duckdb":
-		return map[string]string{
-			"sql":           fullName,
-			"federated_sql": federatedquery.SanitizeIdentifier(req.Engine.Name) + "." + fullName,
-		}
-	case "minio", "s3":
-		if name := strings.TrimSpace(req.ItemName); name != "" {
-			return map[string]string{
-				"federated_sql": federatedquery.SanitizeIdentifier(req.Engine.Name) + "." + federatedquery.SanitizeIdentifier(name),
-			}
-		}
-		return nil
-	default:
+	registered, err := plugin.Get(req.Engine.EngineType)
+	if err != nil {
 		return nil
 	}
+	names := make(map[string]string)
+	if queryProvider, ok := registered.(plugin.QueryRuntimeProvider); ok {
+		for _, language := range queryProvider.QueryLanguages() {
+			switch strings.ToLower(strings.TrimSpace(language)) {
+			case "sql":
+				names["sql"] = fullName
+			case "mql":
+				if name := strings.TrimSpace(req.ItemName); name != "" {
+					names["mql"] = name
+				}
+			case "cypher":
+				names["cypher"] = fullName
+			}
+		}
+	}
+	if supportsFederatedSource(req.Engine.EngineType) {
+		federatedName := fullName
+		if registered.Capabilities().EngineFamily == "object" {
+			federatedName = federatedquery.SanitizeIdentifier(req.ItemName)
+		}
+		if strings.TrimSpace(federatedName) != "" {
+			names["federated_sql"] = federatedquery.SanitizeIdentifier(req.Engine.Name) + "." + federatedName
+		}
+	}
+	if len(names) == 0 {
+		return nil
+	}
+	return names
+}
+
+func supportsFederatedSource(engineType string) bool {
+	for _, registered := range plugin.GetAll() {
+		if _, ok := registered.(plugin.FederatedQueryRuntimeProvider); !ok {
+			continue
+		}
+		caps := registered.Capabilities()
+		if caps.Compute == nil || caps.Compute.Query == nil || caps.Compute.Query.Federation == nil {
+			continue
+		}
+		for _, supported := range caps.Compute.Query.Federation.SourceEngineTypes {
+			if supported == engineType {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // attachItemMeta 将 Meta 元数据附加到预览响应

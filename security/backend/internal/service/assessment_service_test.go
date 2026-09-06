@@ -143,7 +143,7 @@ func TestManualAssessmentUsesCurrentMetaComponentAndCanBeRevoked(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, owner := range requiredProtectionOwners {
+	for _, owner := range allRequiredProtectionOwners() {
 		changes, err := enrollments.ListChanges(context.Background(), 7, owner, "", 20)
 		if err != nil {
 			t.Fatal(err)
@@ -281,7 +281,7 @@ func prepareReviewablePhoneFinding(t *testing.T) (*gorm.DB, *EnrollmentService, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, owner := range requiredProtectionOwners {
+	for _, owner := range allRequiredProtectionOwners() {
 		changes, err := enrollments.ListChanges(context.Background(), 7, owner, "", 20)
 		if err != nil {
 			t.Fatal(err)

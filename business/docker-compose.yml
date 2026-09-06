@@ -9,6 +9,7 @@
 # - doris-fe: Apache Doris Frontend（OLAP 分析引擎）
 # - clickhouse: ClickHouse（高性能列式存储 OLAP）
 # - mongodb: MongoDB（文档型 NoSQL 数据库）
+# - oceanbase: OceanBase CE（MySQL 模式分布式关系数据库）
 # - neo4j: Neo4j Community Edition（图数据库，知识图谱）
 # - spark-master/workers: Apache Spark 分布式计算引擎
 # - business-redpanda: 业务 Kafka API 消息流
@@ -254,6 +255,38 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  # OceanBase Community Edition（单机测试形态，MySQL 模式）
+  oceanbase:
+    image: ${OCEANBASE_IMAGE:-oceanbase/oceanbase-ce:4.4.2-lts}
+    container_name: business-oceanbase
+    environment:
+      MODE: ${OCEANBASE_MODE:-mini}
+      OB_TENANT_NAME: ${OCEANBASE_TENANT_NAME:-test}
+      OB_TENANT_PASSWORD: ${OCEANBASE_PASSWORD:-business_oceanbase_password}
+      OB_DATABASE: ${OCEANBASE_DATABASE:-business}
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      - "${OCEANBASE_PORT:-2881}:2881"
+    volumes:
+      - oceanbase_data:/root/ob
+      - oceanbase_obd_data:/root/.obd/cluster
+      - ./oceanbase/init.sql:/root/boot/init.d/01-addp-business.sql:ro
+    networks:
+      - business-network
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          obclient -h127.0.0.1 -P2881
+          -u"root@$${OB_TENANT_NAME}"
+          --password="$${OB_TENANT_PASSWORD}"
+          -D"$${OB_DATABASE}" -e 'SELECT 1' >/dev/null 2>&1
+      interval: 15s
+      timeout: 10s
+      retries: 30
+      start_period: 300s
+    restart: unless-stopped
+
   # Redpanda（独立业务 Kafka API 消息流，不承载 ADDP Infra Kafka）
   business-redpanda:
     image: ${BUSINESS_REDPANDA_IMAGE:-docker.redpanda.com/redpandadata/redpanda:v24.3.18}
@@ -449,6 +482,10 @@ volumes:
   supermap_postgresql_data:
   minio_data:
   mysql_data:
+    driver: local
+  oceanbase_data:
+    driver: local
+  oceanbase_obd_data:
     driver: local
   doris_fe_data:
     driver: local

@@ -110,6 +110,7 @@ func (p *OraclePlugin) Capabilities() plugin.EngineCapabilities {
 		TableWritePrepare:  true,
 		Delete:             true,
 		SupportsParameters: true,
+		IdentifierQuote:    `"`,
 		Indexes:            true,
 		Constraints:        true,
 		Partitioning:       true,

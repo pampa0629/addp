@@ -25,7 +25,7 @@ type CheckCounts struct {
 }
 
 func NewSQLGenerator() *SQLGenerator {
-	return &SQLGenerator{dialect: query.ForEngine("postgresql")}
+	return &SQLGenerator{dialect: query.ForDialect(query.DialectPostgreSQL)}
 }
 
 // GenerateCheckSQL produces one aggregate query for a rule. Identifiers are

@@ -36,6 +36,7 @@ Metric 的指标依赖与基准指标关系通过当前 User Token 读取 `GET /
 - 业务域只表达业务语义与治理责任，不表达可见范围、审核容器或目录分类。
 - 发布型标准采用“稳定身份 + 不可变修订”；统一状态为 `draft → in_review → published → withdrawn`，按半开生效区间动态解析当前修订。
 - 标准对象显式保存 `scope_type=platform|tenant_common|domain`；仅 `domain` 必须指定 `owner_domain_id`。码值集不得再以“租户自定义”为由强制归属业务域。
+- 范围模型只保留 `scope_type + owner_domain_id`；启动迁移遇到历史 `domain_id` 时必须一次性回填归属和范围并删除旧列，即使新旧列曾同时存在，也不得保留双轨字段。
 - StandardCollection 采用“稳定身份 + 治理配置修订 + 成员快照 + 对象级职责分配”。集合修订只审核名称、说明和成员清单，不替代成员对象自身的修订发布；StandardCategory 只承担浏览导航，两者均不得替代业务域和适用范围。
 - StandardCollectionAssignment 只绑定当前租户的 User Principal，角色固定为 `owner|maintainer|reviewer`。模块 Permission 是粗粒度门禁，Assignment 是集合对象级门禁；Owner 可管理职责分配并维护草稿，Maintainer 可编辑和提交，Reviewer 可退回和发布，且发布者不得是提交者。
 - Copilot 只生成标准候选，必须保留文档修订、页码/章节/行号/文本片段等来源证据。Standard 保存提炼批次、候选和人工处置事实；`retained` 只表示保留为后续建标输入，人工创建并审核发布后才成为正式标准修订。
@@ -304,8 +305,13 @@ standard/
 
 - 提炼批次固定引用一个带 Markdown 文件的 `document_revision_id`；重复提炼新建批次，不覆盖历史。
 - Copilot 仅返回 `glossary`、`element`、`code_set`、`metric` 候选及证据坐标；Standard 验证证据属于输入修订后持久化。
+- Copilot 与 Standard 共用唯一候选数据类型词汇。数据元候选的 `data_type` 只允许 `string|int|bigint|float|decimal|date|datetime|bool|json|text`，码值集候选只允许 `string|int|bigint`，术语和指标候选必须为 `null`；`identifier` 属于业务语义，`numeric`、`date_or_datetime` 等模糊上位提示不是合法标准数据类型。数据元候选的 `value_domain_kind` 只允许 `unrestricted|range|enumeration`，其他候选必须为 `null`。Copilot 输出 Schema 先约束，Standard 在持久化前再次按候选类型拒绝非法字段；历史提炼批次保持不可变，契约修正后通过新提炼批次表达新结果。
 - 候选状态固定为 `pending`、`retained`、`rejected`；处置使用候选自己的并发 `version`，`retained` 不会自动创建或发布正式标准。
 - 每条证据保存章节、起止行、原文摘录与 SHA-256，始终引用确定的文档修订。
+- `GET /documents/:id/extractions` 读取时动态返回候选比对投影，不将易失的匹配结果写入提炼历史。同类型、同编码是唯一确定匹配键；同名不同编码不自动判重。比对结果固定为 `new`、`exact`、`content_conflict`、`scope_conflict`；每项差异同时返回字段、候选值和当前标准值，供治理人员直接核对。
+- 比对修订按“稳定身份当前草稿/审核中修订 → 当前生效已发布修订 → 最新历史修订”选择；只比较候选明确给出的字段，缺失字段不构造差异。范围先比较 `scope_type + owner_domain_id`，范围不一致统一为 `scope_conflict`。
+- 指标候选中的聚合方式、维度等执行建模提示由 Model/Develop 消费，不属于 Standard 指标定义字段，因此不参与内容冲突判定。
+- 候选比对只用于评审提示和打开现有标准，不自动建立文档关联、不创建标准稳定身份或修订，也不改变 `pending / retained / rejected` 人工处置主线。
 
 ### `standard.document_*_mappings` — 文档关联
 
@@ -410,7 +416,7 @@ POST /api/v1/standard/documents/:id/revisions/:revision_id/withdraw
 POST /api/v1/standard/documents/:id/revisions/:revision_id/file # 上传或替换草稿修订文件
 GET /api/v1/standard/documents/:id/revisions/:revision_id/file # 下载确定修订文件
 POST /api/v1/standard/documents/:id/revisions/:revision_id/extractions # Copilot 提炼
-GET /api/v1/standard/documents/:id/extractions
+GET /api/v1/standard/documents/:id/extractions # 候选附带当前 Standard 确定性比对投影
 PUT /api/v1/standard/document-extraction-candidates/:candidate_id # retained/rejected 人工处置
 GET/PUT /api/v1/standard/documents/:id/mappings # 多维关联（数据元/术语/指标）
 ```

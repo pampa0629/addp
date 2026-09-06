@@ -222,21 +222,6 @@ func buildExemptionResponse(exemption models.ProtectionExemption, current models
 	return &models.ProtectionExemptionResponse{ProtectionExemption: exemption, EffectiveState: effectiveState, Current: current, History: history}
 }
 
-func validExemptionBinding(owner, action string) bool {
-	switch owner {
-	case "manager":
-		return action == managerPreviewAction
-	case "develop":
-		return action == developQueryAction
-	case "service":
-		return action == serviceExecuteAction
-	case "transfer":
-		return action == transferExportAction
-	default:
-		return false
-	}
-}
-
 func validExemptionDeadline(now, expiresAt time.Time) bool {
 	return !expiresAt.IsZero() && expiresAt.After(now) && !expiresAt.After(now.Add(maxProtectionExemptionDuration))
 }

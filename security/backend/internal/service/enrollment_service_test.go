@@ -37,7 +37,7 @@ func TestEnrollmentRequiresEveryOwnerAcknowledgementBeforeEnrolling(t *testing.T
 		}
 	}
 
-	for index, owner := range requiredProtectionOwners {
+	for index, owner := range allRequiredProtectionOwners() {
 		changes, err := svc.ListChanges(context.Background(), 7, owner, "", 20)
 		if err != nil {
 			t.Fatal(err)
@@ -53,7 +53,7 @@ func TestEnrollmentRequiresEveryOwnerAcknowledgementBeforeEnrolling(t *testing.T
 			t.Fatal(err)
 		}
 		want := models.EnrollmentStateActivating
-		if index == len(requiredProtectionOwners)-1 {
+		if index == len(requiredProtectionOwnerContracts)-1 {
 			want = models.EnrollmentStateEnrolling
 		}
 		if current.State != want {
@@ -163,7 +163,7 @@ func TestEnrollmentReleaseWaitsForEveryOwnerAndRemovesFeedProjection(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, owner := range requiredProtectionOwners {
+	for _, owner := range allRequiredProtectionOwners() {
 		changes, _ := svc.ListChanges(context.Background(), 7, owner, "", 20)
 		if err := svc.Acknowledge(context.Background(), 7, owner, changes.NextCursor); err != nil {
 			t.Fatal(err)
@@ -177,7 +177,7 @@ func TestEnrollmentReleaseWaitsForEveryOwnerAndRemovesFeedProjection(t *testing.
 	if releasing.State != models.EnrollmentStateReleasing {
 		t.Fatalf("release state = %s", releasing.State)
 	}
-	for index, owner := range requiredProtectionOwners {
+	for index, owner := range allRequiredProtectionOwners() {
 		first, _ := svc.ListChanges(context.Background(), 7, owner, "", 1)
 		second, err := svc.ListChanges(context.Background(), 7, owner, first.NextCursor, 20)
 		if err != nil {
@@ -191,7 +191,7 @@ func TestEnrollmentReleaseWaitsForEveryOwnerAndRemovesFeedProjection(t *testing.
 		}
 		current, _ = svc.Get(context.Background(), 7, created.ID)
 		want := models.EnrollmentStateReleasing
-		if index == len(requiredProtectionOwners)-1 {
+		if index == len(requiredProtectionOwnerContracts)-1 {
 			want = models.EnrollmentStateReleased
 		}
 		if current.State != want {
@@ -226,7 +226,7 @@ func TestReleasedEnrollmentCanCreateANewProtectionLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reenrolled.ID == source.ID || reenrolled.State != models.EnrollmentStateActivating || reenrolled.CreatedBy != 21 || len(reenrolled.OwnerProgress) != len(requiredProtectionOwners) {
+	if reenrolled.ID == source.ID || reenrolled.State != models.EnrollmentStateActivating || reenrolled.CreatedBy != 21 || len(reenrolled.OwnerProgress) != len(requiredProtectionOwnerContracts) {
 		t.Fatalf("new enrollment = %#v", reenrolled)
 	}
 	if reenrolled.Target != source.Target || reenrolled.TargetSnapshot != source.TargetSnapshot {
@@ -390,7 +390,7 @@ func prepareZeroFindingEnrollment(t *testing.T) (*gorm.DB, *EnrollmentService, *
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, owner := range requiredProtectionOwners {
+	for _, owner := range allRequiredProtectionOwners() {
 		changes, err := enrollments.ListChanges(context.Background(), 7, owner, "", 20)
 		if err != nil {
 			t.Fatal(err)

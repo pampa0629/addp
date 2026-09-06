@@ -86,6 +86,7 @@ func (p *DorisPlugin) Capabilities() plugin.EngineCapabilities {
 		Delete:             true,
 		SupportsExplain:    true,
 		SupportsParameters: true,
+		IdentifierQuote:    "`",
 		WriterConnector:    "doris_insert",
 	})
 }

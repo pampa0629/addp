@@ -196,6 +196,7 @@ AGENT_FE_PORT=5186
 - 后端日志: `logs/agent-backend.log`
 - 后端错误: `logs/agent-backend-stderr.log`
 - 前端日志: `logs/agent-frontend.log`
+- LLM 和 Tool 调用日志只记录消息类型、数量、字节数、工具名、参数键、错误类型和 token 用量等元信息；不得记录用户提示词、模型正文、Tool 参数值或 Tool 结果正文，也不提供恢复全文日志的兼容开关。
 
 ## 相关文档
 

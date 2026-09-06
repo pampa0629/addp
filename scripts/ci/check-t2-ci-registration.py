@@ -36,6 +36,41 @@ def discover_postgres_gates(repository: Path) -> list[tuple[str, str, str]]:
     return sorted(gates)
 
 
+def discover_hosted_service_gates(
+    repository: Path,
+) -> list[tuple[str, str, str, str, str]]:
+    gates = [
+        (
+            script,
+            target,
+            owner,
+            "PostgreSQL 15",
+            r"postgres:15@sha256:[0-9a-f]{64}",
+        )
+        for script, target, owner in discover_postgres_gates(repository)
+    ]
+    service_patterns = (
+        (
+            "scripts/test/*-mongodb-*-gate.sh",
+            "MongoDB 7",
+            r"mongo:7(?:\.0)?@sha256:[0-9a-f]{64}",
+        ),
+        (
+            "scripts/test/*-mysql-*-gate.sh",
+            "MySQL 8",
+            r"mysql:8(?:\.0)?@sha256:[0-9a-f]{64}",
+        ),
+    )
+    for pattern, service_label, image_pattern in service_patterns:
+        for script in repository_files(repository, pattern):
+            name = Path(script).name.removesuffix("-gate.sh")
+            owner = name.split("-", 1)[0]
+            gates.append(
+                (script, f"test-{name}", owner, service_label, image_pattern)
+            )
+    return sorted(gates)
+
+
 def make_recipe(makefile: str, target: str) -> str | None:
     match = re.search(
         rf"(?ms)^{re.escape(target)}\s*:[^\n]*\n(?P<recipe>(?:\t[^\n]*\n?)*)",
@@ -70,7 +105,13 @@ def validate_registration(repository: Path) -> list[str]:
     if integration_recipe is None:
         errors.append("Makefile target test-integration is missing")
 
-    for script, target, owner in discover_postgres_gates(repository):
+    for (
+        script,
+        target,
+        owner,
+        service_label,
+        image_pattern,
+    ) in discover_hosted_service_gates(repository):
         recipe = make_recipe(makefile, target)
         if recipe is None:
             errors.append(f"{script}: Makefile target {target} is missing")
@@ -96,11 +137,10 @@ def validate_registration(repository: Path) -> list[str]:
         )
         if target_job is None:
             errors.append(f"{script}: GitHub Actions target {target} is missing")
-        elif not re.search(
-            r"(?m)^\s*image:\s*postgres:15@sha256:[0-9a-f]{64}\s*$",
-            target_job,
-        ):
-            errors.append(f"{script}: PostgreSQL 15 service image is not pinned in {target} job")
+        elif not re.search(rf"(?m)^\s*image:\s*{image_pattern}\s*$", target_job):
+            errors.append(
+                f"{script}: {service_label} service image is not pinned in {target} job"
+            )
 
         selection_step = next(
             (
@@ -132,7 +172,7 @@ def main() -> int:
     repository = parse_args().repository.resolve()
     try:
         errors = validate_registration(repository)
-        count = len(discover_postgres_gates(repository))
+        count = len(discover_hosted_service_gates(repository))
     except (RegistrationError, subprocess.CalledProcessError) as error:
         print(f"T2 CI registration check failed: {error}", file=sys.stderr)
         return 1
@@ -140,7 +180,7 @@ def main() -> int:
         for error in errors:
             print(f"T2 CI registration check failed: {error}", file=sys.stderr)
         return 1
-    print(f"T2 CI registration check passed: {count} PostgreSQL gates are registered.")
+    print(f"T2 CI registration check passed: {count} hosted-service gates are registered.")
     return 0
 
 

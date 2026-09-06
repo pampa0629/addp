@@ -1134,12 +1134,15 @@ erDiagram
         string code
         string name
         string definition
-        jsonb payload "类型化候选补充字段"
+        jsonb payload "按候选类型约束的数据类型、值域和口径等补充字段"
         string status "pending|retained|rejected"
         bigint version "并发版本"
         uint reviewed_by
         timestamp reviewed_at
     }
+
+    %% Candidate comparison is a read-time projection, not a persisted entity:
+    %% same candidate_type + exact code -> compare scope and asserted standard fields.
 
     ExtractionEvidence {
         uint id PK
@@ -1201,7 +1204,7 @@ erDiagram
 | ST-2 | `DimensionHierarchy` 已整体迁入 Model，Standard 旧表、API、权限与前端入口已删除 | ✅ 已实现 | 维度层级成为 LogicalTable 聚合内单一事实，不再跨模块软引用 |
 | ST-4 | StandardCollection 已按“稳定身份 + 治理配置修订 + 成员快照 + 对象级职责分配 + 不可变治理事件”实现 | ✅ 已实现 | 可独立配置跨域标准集的成员、维护人、对象级权限和审核流程，且不改变成员自身发布状态 |
 | ST-5 | 指标定义与指标实现已经拆分 | ✅ 已实现 | Standard 只保留修订级语义口径与冻结的语义依赖；粒度、来源、连接、过滤和可执行表达式归 Model MetricImplementation 所有 |
-| ST-6 | 标准文档提炼固定输入修订并保存候选、章节/行号/原文证据及人工处置 | ✅ 已实现 | Copilot 结果可稳定回溯且不会绕过 Standard 审核形成正式标准 |
+| ST-6 | 标准文档提炼固定输入修订并保存候选、章节/行号/原文证据及人工处置；读取时确定性比对当前同编码标准 | ✅ 已实现 | Copilot 与 Standard 双端约束数据元候选只能使用三种规范值域类型；结果可稳定回溯，治理人员可区分新增、完全一致、内容冲突和范围冲突，并直接核对字段级候选值与当前标准值，且不会绕过 Standard 审核形成正式标准 |
 | ST-7 | 码值层级与跨码值集映射尚未形成规范 | 待讨论 | 需要先区分标准间语义映射与 Transfer 的资产级转换执行，再决定是否建立父子码项和 crosswalk 资源 |
 
 ---

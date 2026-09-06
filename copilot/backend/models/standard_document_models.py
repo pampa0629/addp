@@ -47,8 +47,19 @@ class StandardDocumentCodeItem(BaseModel):
 class StandardDocumentCandidatePayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    data_type: str | None = None
-    value_domain_kind: str | None = None
+    data_type: Literal[
+        "string",
+        "int",
+        "bigint",
+        "float",
+        "decimal",
+        "date",
+        "datetime",
+        "bool",
+        "json",
+        "text",
+    ] | None = None
+    value_domain_kind: Literal["unrestricted", "range", "enumeration"] | None = None
     unit: str | None = None
     calculation_formula: str | None = None
     statistical_scope: str | None = None
@@ -68,6 +79,31 @@ class StandardDocumentCandidate(BaseModel):
         default_factory=StandardDocumentCandidatePayload
     )
     evidences: list[StandardDocumentEvidence] = Field(min_length=1, max_length=20)
+
+    @model_validator(mode="after")
+    def validate_type_specific_payload(self):
+        if self.candidate_type == "code_set" and self.payload.data_type not in {
+            None,
+            "string",
+            "int",
+            "bigint",
+        }:
+            raise ValueError(
+                "code_set data_type must be string, int, bigint, or null"
+            )
+        if (
+            self.candidate_type not in {"element", "code_set"}
+            and self.payload.data_type is not None
+        ):
+            raise ValueError(
+                "data_type is only valid for element or code_set candidates"
+            )
+        if (
+            self.candidate_type != "element"
+            and self.payload.value_domain_kind is not None
+        ):
+            raise ValueError("value_domain_kind is only valid for element candidates")
+        return self
 
 
 class StandardDocumentExtractResponse(BaseModel):

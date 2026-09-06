@@ -65,6 +65,7 @@ func (p *SparkSQLPlugin) Capabilities() plugin.EngineCapabilities {
 		Write:            false,
 		TableReadSession: true,
 		SupportsExplain:  true,
+		IdentifierQuote:  "`",
 	})
 }
 

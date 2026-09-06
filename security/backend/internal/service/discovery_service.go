@@ -20,15 +20,6 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-const (
-	managerPreviewAction     = "preview"
-	managerProfileAction     = "profile"
-	managerSearchIndexAction = "search_index"
-	developQueryAction       = "query"
-	serviceExecuteAction     = "service_execute"
-	transferExportAction     = "export"
-)
-
 type SecurityFactsReader interface {
 	GetDataItemSecurityFacts(context.Context, string) (*dataprotection.DataItemSecurityFacts, error)
 	GetDataItemSecuritySample(context.Context, string) (*dataprotection.DataItemSecuritySample, error)
@@ -193,7 +184,7 @@ func (s *DiscoveryService) Execute(ctx context.Context, item *commonexecution.Ta
 		}
 		enrollment.LatestSourceSnapshotHash = sourceSnapshotHash
 		enrollment.LatestDiscoveryExecutionID = item.ExecutionID
-		if err := compileProtectionProjections(tx, enrollment, sourceSnapshotHash, now, []string{"manager", "develop", "service", "transfer"}); err != nil {
+		if err := compileProtectionProjections(tx, enrollment, sourceSnapshotHash, now, allRequiredProtectionOwners()); err != nil {
 			return err
 		}
 		if err := tx.Model(&models.ProtectionEnrollment{}).Where("tenant_id = ? AND id = ?", enrollment.TenantID, enrollment.ID).Updates(map[string]interface{}{
@@ -749,7 +740,7 @@ func (s *DiscoveryService) buildFindingExplanations(ctx context.Context, tenantI
 		if !enrollmentExists {
 			return nil, fmt.Errorf("finding enrollment %s is missing", finding.EnrollmentID)
 		}
-		for _, owner := range requiredProtectionOwners {
+		for _, owner := range allRequiredProtectionOwners() {
 			record, exists := projectionByEnrollmentOwner[findingComponentMapKey(finding.EnrollmentID, owner)]
 			if !exists {
 				return nil, fmt.Errorf("finding projection for %s/%s is missing", finding.EnrollmentID, owner)

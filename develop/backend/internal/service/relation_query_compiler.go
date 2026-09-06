@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/addp/common/engine/plugin"
 	commonQuery "github.com/addp/common/query"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/develop/backend/internal/models"
@@ -96,7 +97,10 @@ func compileExistingTableResultQuery(
 	if err != nil {
 		return nil, err
 	}
-	dialect := commonQuery.ForDialect(engineType)
+	dialect, err := queryDialectForEngine(engineType)
+	if err != nil {
+		return nil, err
+	}
 	if !dialect.IsPostgreSQL() {
 		return nil, fmt.Errorf("relation 查询参数写入仅支持 PostgreSQL")
 	}
@@ -139,7 +143,10 @@ func compileRelationPreviewQuery(
 	if err != nil || !hasRelationParameters {
 		return task, err
 	}
-	dialect := commonQuery.ForDialect(engineType)
+	dialect, err := queryDialectForEngine(engineType)
+	if err != nil {
+		return nil, err
+	}
 	if !dialect.IsPostgreSQL() {
 		return nil, fmt.Errorf("relation 查询参数预览仅支持 PostgreSQL")
 	}
@@ -167,6 +174,18 @@ func compileRelationPreviewQuery(
 	compiled := *task
 	compiled.Content = content
 	return &compiled, nil
+}
+
+func queryDialectForEngine(engineType string) (commonQuery.Dialect, error) {
+	registered, err := plugin.Get(engineType)
+	if err != nil {
+		return commonQuery.Dialect{}, err
+	}
+	provider, ok := registered.(plugin.SQLQueryRuntimeProvider)
+	if !ok || strings.TrimSpace(provider.SQLDialect()) == "" {
+		return commonQuery.Dialect{}, fmt.Errorf("引擎 %s 未声明 SQL 方言", engineType)
+	}
+	return commonQuery.ForDialect(provider.SQLDialect()), nil
 }
 
 func relationLocatorsFromInputs(

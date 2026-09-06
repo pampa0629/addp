@@ -10,6 +10,10 @@ export function hasParameterValue(parameter) {
   return hasScalarValue(parameter.value)
 }
 
+export function requiredParameterValuesPresent(parameters) {
+  return parameters.every((parameter) => !parameter.required || hasParameterValue(parameter))
+}
+
 export function createParameterDraft(field, index = 0) {
   const operator = Array.isArray(field?.operators) ? field.operators.find(Boolean) : ''
   if (!field?.name || !operator) return null
