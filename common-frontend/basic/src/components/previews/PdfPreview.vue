@@ -599,19 +599,19 @@ const initLoad = async () => {
 
 // 监听数据变化，自动重新加载
 watch(
-  () => [
-    props.data?.object?.path,
-    props.data?.object?.url,
-    props.data?.object?.preview_url,
-    props.data?.object?.download_url,
-    props.data?.object?.content?.url,
-    props.data?.object?.content?.preview_url,
-    props.data?.object?.content?.download_url,
-    props.data?.object?.content?.data,
-    props.data?.object?.content?.pdf_data,
-    props.data?.object?.content?.kind,
-    props.data?.object?.content?.truncated,
-    props.data?.object?.truncated
+  [
+    () => props.data?.object?.path,
+    () => props.data?.object?.url,
+    () => props.data?.object?.preview_url,
+    () => props.data?.object?.download_url,
+    () => props.data?.object?.content?.url,
+    () => props.data?.object?.content?.preview_url,
+    () => props.data?.object?.content?.download_url,
+    () => props.data?.object?.content?.data,
+    () => props.data?.object?.content?.pdf_data,
+    () => props.data?.object?.content?.kind,
+    () => props.data?.object?.content?.truncated,
+    () => props.data?.object?.truncated
   ],
   () => {
     console.log('🔄 PDF 预览数据变更，重新加载')

@@ -60,6 +60,12 @@ class StandardDocumentCandidatePayload(BaseModel):
         "text",
     ] | None = None
     value_domain_kind: Literal["unrestricted", "range", "enumeration"] | None = None
+    code_set_code: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=100,
+        pattern=r"^[a-z][a-z0-9_]*$",
+    )
     unit: str | None = None
     calculation_formula: str | None = None
     statistical_scope: str | None = None
@@ -103,6 +109,23 @@ class StandardDocumentCandidate(BaseModel):
             and self.payload.value_domain_kind is not None
         ):
             raise ValueError("value_domain_kind is only valid for element candidates")
+        if self.candidate_type != "element" and self.payload.code_set_code is not None:
+            raise ValueError("code_set_code is only valid for element candidates")
+        if self.candidate_type == "element":
+            if (
+                self.payload.value_domain_kind == "enumeration"
+                and self.payload.code_set_code is None
+            ):
+                raise ValueError(
+                    "enumeration element candidate requires code_set_code"
+                )
+            if (
+                self.payload.value_domain_kind != "enumeration"
+                and self.payload.code_set_code is not None
+            ):
+                raise ValueError(
+                    "code_set_code is only valid for enumeration element candidates"
+                )
         return self
 
 
@@ -110,3 +133,17 @@ class StandardDocumentExtractResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     candidates: list[StandardDocumentCandidate] = Field(default_factory=list, max_length=200)
+
+    @model_validator(mode="after")
+    def validate_candidate_references(self):
+        code_set_counts: dict[str, int] = {}
+        for candidate in self.candidates:
+            if candidate.candidate_type == "code_set":
+                code_set_counts[candidate.code] = code_set_counts.get(candidate.code, 0) + 1
+        for candidate in self.candidates:
+            code_set_code = candidate.payload.code_set_code
+            if code_set_code is not None and code_set_counts.get(code_set_code) != 1:
+                raise ValueError(
+                    "code_set_code must reference exactly one code_set candidate in the same response"
+                )
+        return self

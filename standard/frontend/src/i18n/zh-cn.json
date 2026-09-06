@@ -473,6 +473,7 @@
       "differenceField": "差异字段",
       "candidateValue": "候选值",
       "standardValue": "当前标准值",
+      "codeSetReference": "引用码值集候选",
       "emptyValue": "未设置",
       "comparisonField": {
         "scope_type": "适用范围",
@@ -481,6 +482,7 @@
         "definition": "定义",
         "data_type": "数据类型",
         "value_domain_kind": "值域类型",
+        "code_set_code": "码值集编码",
         "unit": "计量单位",
         "value_type": "码值类型",
         "items": "码值项",

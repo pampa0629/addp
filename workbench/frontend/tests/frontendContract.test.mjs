@@ -346,6 +346,25 @@ test('resolves shared map runtime peers from the Workbench dependency tree', () 
   )
 })
 
+test('keeps optional renderer dependencies out of the Workbench entry chunk', () => {
+  const main = readSource('../src/main.js')
+  const rendererHost = readSource('../src/components/WorkbenchRendererHost.vue')
+  const viteConfig = readSource('../vite.config.js')
+  const packageManifest = JSON.parse(readSource('../package.json'))
+
+  assert.doesNotMatch(main, /import\s+ElementPlus\s+from\s+['"]element-plus['"]/)
+  assert.doesNotMatch(main, /\.use\(ElementPlus\)/)
+  assert.doesNotMatch(main, /import\s+['"]ol\/ol\.css['"]/)
+  assert.match(main, /@common-ui-map\/i18n\/zh-cn\.json/)
+  assert.match(main, /@common-ui-map\/i18n\/en\.json/)
+  assert.match(rendererHost, /await\s+import\(['"]ol\/ol\.css['"]\)/)
+  assert.equal(packageManifest.devDependencies['unplugin-vue-components'], '0.28.0')
+  assert.match(viteConfig, /unplugin-vue-components\/vite/)
+  assert.match(viteConfig, /ElementPlusResolver/)
+  assert.match(viteConfig, /ENTRY_CHUNK_LIMIT_BYTES\s*=\s*500\s*\*\s*1024/)
+  assert.match(viteConfig, /enforceEntryChunkBudget\(\)/)
+})
+
 test('production Workbench code and configuration do not embed acceptance-domain facts', () => {
   const workbenchRoot = resolve(fileURLToPath(new URL('..', import.meta.url)), '..')
   const forbidden = [

@@ -138,7 +138,7 @@ const retryPreview = () => {
   resolvePreview(token, true)
 }
 
-watch(() => props.source, () => resolvePreview(), { deep: true, immediate: true })
+watch(() => props.source?.locator, () => resolvePreview(), { immediate: true })
 onUnmounted(() => {
   loadToken += 1
   window.clearTimeout(pollTimer)

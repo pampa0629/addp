@@ -399,6 +399,8 @@ type DocumentCandidateComparisonTarget struct {
 	Definition         string
 	DataType           string
 	ValueDomainKind    string
+	CodeSetRevisionID  *int64
+	CodeSetCode        string
 	StatisticalCaliber string
 	SemanticFormula    string
 	UnitID             *int64
@@ -415,6 +417,7 @@ type documentCandidateComparisonRevision struct {
 	Definition         string
 	DataType           string
 	ValueDomainKind    string
+	CodeSetRevisionID  *int64
 	StatisticalCaliber string
 	SemanticFormula    string
 	UnitID             *int64
@@ -435,6 +438,9 @@ func (r *DocumentRepository) ListCandidateComparisonTargets(tenantID int64, code
 		return nil, err
 	}
 	if err := r.loadMetricComparisonTargets(tenantID, uniqueStrings(codesByType["metric"]), now, targets); err != nil {
+		return nil, err
+	}
+	if err := r.loadComparisonCodeSets(tenantID, targets); err != nil {
 		return nil, err
 	}
 	if err := r.loadComparisonUnits(targets); err != nil {
@@ -489,13 +495,13 @@ func (r *DocumentRepository) loadElementComparisonTargets(tenantID int64, codes 
 	}
 	var revisions []models.ElementRevision
 	if len(ids) > 0 {
-		if err := r.db.Select("id, element_id, revision_no, status, name, definition, data_type, value_domain_kind, unit_id, effective_from, effective_to").Where("element_id IN ?", ids).Order("element_id ASC, revision_no DESC").Find(&revisions).Error; err != nil {
+		if err := r.db.Select("id, element_id, revision_no, status, name, definition, data_type, value_domain_kind, code_set_revision_id, unit_id, effective_from, effective_to").Where("element_id IN ?", ids).Order("element_id ASC, revision_no DESC").Find(&revisions).Error; err != nil {
 			return err
 		}
 	}
 	byIdentity := map[int64][]documentCandidateComparisonRevision{}
 	for _, revision := range revisions {
-		byIdentity[revision.ElementID] = append(byIdentity[revision.ElementID], documentCandidateComparisonRevision{ID: revision.ID, RevisionNo: revision.RevisionNo, Status: revision.Status, Name: revision.Name, Definition: revision.Definition, DataType: revision.DataType, ValueDomainKind: revision.ValueDomainKind, UnitID: revision.UnitID, EffectiveFrom: revision.EffectiveFrom, EffectiveTo: revision.EffectiveTo})
+		byIdentity[revision.ElementID] = append(byIdentity[revision.ElementID], documentCandidateComparisonRevision{ID: revision.ID, RevisionNo: revision.RevisionNo, Status: revision.Status, Name: revision.Name, Definition: revision.Definition, DataType: revision.DataType, ValueDomainKind: revision.ValueDomainKind, CodeSetRevisionID: revision.CodeSetRevisionID, UnitID: revision.UnitID, EffectiveFrom: revision.EffectiveFrom, EffectiveTo: revision.EffectiveTo})
 	}
 	for _, identity := range identities {
 		revision, ok := selectDocumentCandidateComparisonRevision(identity.DraftRevisionID, byIdentity[identity.ID], now)
@@ -621,8 +627,44 @@ func (r *DocumentRepository) loadComparisonUnits(targets map[string]DocumentCand
 	return nil
 }
 
+func (r *DocumentRepository) loadComparisonCodeSets(tenantID int64, targets map[string]DocumentCandidateComparisonTarget) error {
+	ids := make([]int64, 0)
+	for _, target := range targets {
+		if target.CodeSetRevisionID != nil {
+			ids = append(ids, *target.CodeSetRevisionID)
+		}
+	}
+	ids = uniqueInt64s(ids)
+	if len(ids) == 0 {
+		return nil
+	}
+	type codeSetReference struct {
+		RevisionID int64
+		Code       string
+	}
+	var references []codeSetReference
+	if err := r.db.Table("standard.code_set_revisions AS revision").
+		Select("revision.id AS revision_id, identity.code").
+		Joins("JOIN standard.code_sets AS identity ON identity.id = revision.code_set_id").
+		Where("revision.id IN ? AND identity.tenant_id = ?", ids, tenantID).
+		Find(&references).Error; err != nil {
+		return err
+	}
+	codeByRevisionID := make(map[int64]string, len(references))
+	for _, reference := range references {
+		codeByRevisionID[reference.RevisionID] = reference.Code
+	}
+	for key, target := range targets {
+		if target.CodeSetRevisionID != nil {
+			target.CodeSetCode = codeByRevisionID[*target.CodeSetRevisionID]
+			targets[key] = target
+		}
+	}
+	return nil
+}
+
 func comparisonTarget(candidateType string, standardID int64, code, scopeType string, ownerDomainID *int64, revision documentCandidateComparisonRevision) DocumentCandidateComparisonTarget {
-	return DocumentCandidateComparisonTarget{CandidateType: candidateType, StandardID: standardID, Code: code, ScopeType: scopeType, OwnerDomainID: ownerDomainID, RevisionID: revision.ID, RevisionNo: revision.RevisionNo, RevisionStatus: revision.Status, Name: revision.Name, Definition: revision.Definition, DataType: revision.DataType, ValueDomainKind: revision.ValueDomainKind, StatisticalCaliber: revision.StatisticalCaliber, SemanticFormula: revision.SemanticFormula, UnitID: revision.UnitID}
+	return DocumentCandidateComparisonTarget{CandidateType: candidateType, StandardID: standardID, Code: code, ScopeType: scopeType, OwnerDomainID: ownerDomainID, RevisionID: revision.ID, RevisionNo: revision.RevisionNo, RevisionStatus: revision.Status, Name: revision.Name, Definition: revision.Definition, DataType: revision.DataType, ValueDomainKind: revision.ValueDomainKind, CodeSetRevisionID: revision.CodeSetRevisionID, StatisticalCaliber: revision.StatisticalCaliber, SemanticFormula: revision.SemanticFormula, UnitID: revision.UnitID}
 }
 
 func selectDocumentCandidateComparisonRevision(draftRevisionID *int64, revisions []documentCandidateComparisonRevision, now time.Time) (documentCandidateComparisonRevision, bool) {

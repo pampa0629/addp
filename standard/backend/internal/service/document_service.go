@@ -379,6 +379,7 @@ type copilotCodeItem struct {
 type copilotCandidatePayload struct {
 	DataType           *string           `json:"data_type"`
 	ValueDomainKind    *string           `json:"value_domain_kind"`
+	CodeSetCode        *string           `json:"code_set_code"`
 	Unit               *string           `json:"unit"`
 	CalculationFormula *string           `json:"calculation_formula"`
 	StatisticalScope   *string           `json:"statistical_scope"`
@@ -571,6 +572,9 @@ func buildDocumentExtraction(tenantID, revisionID, userID int64, content string,
 		if !validCopilotCandidateValueDomainKind(candidateType, raw.Payload.ValueDomainKind) {
 			return nil, ErrDocumentExtractionInvalid
 		}
+		if !validCopilotCandidateCodeSetCode(candidateType, raw.Payload.ValueDomainKind, raw.Payload.CodeSetCode) {
+			return nil, ErrDocumentExtractionInvalid
+		}
 		code, name, definition := strings.TrimSpace(raw.Code), strings.TrimSpace(raw.Name), strings.TrimSpace(raw.Definition)
 		if !documentCandidateCodePattern.MatchString(code) || len(code) > 100 || name == "" || utf8.RuneCountInString(name) > 200 || definition == "" || utf8.RuneCountInString(definition) > 4000 {
 			continue
@@ -616,6 +620,9 @@ func buildDocumentExtraction(tenantID, revisionID, userID int64, content string,
 	if len(extraction.Candidates) == 0 {
 		return nil, ErrDocumentExtractionInvalid
 	}
+	if !hasClosedCandidateCodeSetReferences(extraction.Candidates) {
+		return nil, ErrDocumentExtractionInvalid
+	}
 	return extraction, nil
 }
 
@@ -654,23 +661,64 @@ func validCopilotCandidateValueDomainKind(candidateType string, value *string) b
 	}
 }
 
-func normalizeCopilotCandidatePayload(raw copilotCandidatePayload) models.JSONB {
-	payload := models.JSONB{}
-	for key, value := range map[string]*string{
-		"data_type": raw.DataType, "value_domain_kind": raw.ValueDomainKind, "unit": raw.Unit,
-		"calculation_formula": raw.CalculationFormula, "statistical_scope": raw.StatisticalScope, "aggregation": raw.Aggregation,
-	} {
-		if value != nil && strings.TrimSpace(*value) != "" {
-			payload[key] = strings.TrimSpace(*value)
+func validCopilotCandidateCodeSetCode(candidateType string, valueDomainKind, codeSetCode *string) bool {
+	isEnumeration := candidateType == "element" && valueDomainKind != nil && strings.TrimSpace(*valueDomainKind) == models.ValueDomainEnumeration
+	if !isEnumeration {
+		return codeSetCode == nil
+	}
+	if codeSetCode == nil {
+		return false
+	}
+	code := strings.TrimSpace(*codeSetCode)
+	return len(code) <= 100 && documentCandidateCodePattern.MatchString(code)
+}
+
+func hasClosedCandidateCodeSetReferences(candidates []models.DocumentExtractionCandidate) bool {
+	codeSetCounts := map[string]int{}
+	for _, candidate := range candidates {
+		if candidate.CandidateType == "code_set" {
+			codeSetCounts[candidate.Code]++
 		}
 	}
+	for _, candidate := range candidates {
+		if candidate.Payload.CodeSetCode != nil && codeSetCounts[*candidate.Payload.CodeSetCode] != 1 {
+			return false
+		}
+	}
+	return true
+}
+
+func normalizeCopilotCandidatePayload(raw copilotCandidatePayload) models.DocumentExtractionCandidatePayload {
+	payload := models.DocumentExtractionCandidatePayload{
+		DataType:           normalizedCandidateString(raw.DataType),
+		ValueDomainKind:    normalizedCandidateString(raw.ValueDomainKind),
+		CodeSetCode:        normalizedCandidateString(raw.CodeSetCode),
+		Unit:               normalizedCandidateString(raw.Unit),
+		CalculationFormula: normalizedCandidateString(raw.CalculationFormula),
+		StatisticalScope:   normalizedCandidateString(raw.StatisticalScope),
+		Aggregation:        normalizedCandidateString(raw.Aggregation),
+	}
 	if len(raw.Dimensions) > 0 {
-		payload["dimensions"] = raw.Dimensions
+		payload.Dimensions = append([]string(nil), raw.Dimensions...)
 	}
 	if len(raw.Items) > 0 {
-		payload["items"] = raw.Items
+		payload.Items = make([]models.DocumentExtractionCandidatePayloadItem, 0, len(raw.Items))
+		for _, item := range raw.Items {
+			payload.Items = append(payload.Items, models.DocumentExtractionCandidatePayloadItem{Code: item.Code, Name: item.Name, Definition: item.Definition})
+		}
 	}
 	return payload
+}
+
+func normalizedCandidateString(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	normalized := strings.TrimSpace(*value)
+	if normalized == "" {
+		return nil
+	}
+	return &normalized
 }
 
 func isMarkdownRevision(revision *models.DocumentRevision) bool {
@@ -740,28 +788,29 @@ func compareDocumentCandidate(document *models.Document, candidate *models.Docum
 	if !equalCandidateText(candidate.Definition, target.Definition) {
 		appendCandidateDifference(comparison, "definition", candidateTextComparisonValue(candidate.Definition), candidateTextComparisonValue(target.Definition))
 	}
-	appendPayloadDifference := func(candidateKey, field, targetValue string) {
-		if candidateValue, ok := candidatePayloadString(candidate.Payload, candidateKey); ok && !equalCandidateText(candidateValue, targetValue) {
-			appendCandidateDifference(comparison, field, candidateTextComparisonValue(candidateValue), candidateTextComparisonValue(targetValue))
+	appendPayloadDifference := func(candidateValue *string, field, targetValue string) {
+		if candidateValue != nil && !equalCandidateText(*candidateValue, targetValue) {
+			appendCandidateDifference(comparison, field, candidateTextComparisonValue(*candidateValue), candidateTextComparisonValue(targetValue))
 		}
 	}
 	switch candidate.CandidateType {
 	case "element":
-		appendPayloadDifference("data_type", "data_type", target.DataType)
-		appendPayloadDifference("value_domain_kind", "value_domain_kind", target.ValueDomainKind)
-		if candidateUnit, ok := candidatePayloadString(candidate.Payload, "unit"); ok && !matchesCandidateUnit(candidateUnit, target.UnitName, target.UnitSymbol) {
-			appendCandidateDifference(comparison, "unit", candidateTextComparisonValue(candidateUnit), candidateTextComparisonValue(comparisonTargetUnit(target.UnitName, target.UnitSymbol)))
+		appendPayloadDifference(candidate.Payload.DataType, "data_type", target.DataType)
+		appendPayloadDifference(candidate.Payload.ValueDomainKind, "value_domain_kind", target.ValueDomainKind)
+		appendPayloadDifference(candidate.Payload.CodeSetCode, "code_set_code", target.CodeSetCode)
+		if candidate.Payload.Unit != nil && !matchesCandidateUnit(*candidate.Payload.Unit, target.UnitName, target.UnitSymbol) {
+			appendCandidateDifference(comparison, "unit", candidateTextComparisonValue(*candidate.Payload.Unit), candidateTextComparisonValue(comparisonTargetUnit(target.UnitName, target.UnitSymbol)))
 		}
 	case "code_set":
-		appendPayloadDifference("data_type", "value_type", target.DataType)
-		if items, ok := candidatePayloadItems(candidate.Payload); ok && !equalCandidateItems(items, target.Items) {
-			appendCandidateDifference(comparison, "items", candidateItemsComparisonValue(items), models.DocumentExtractionCandidateComparisonValue{Kind: "code_items", Items: target.Items})
+		appendPayloadDifference(candidate.Payload.DataType, "value_type", target.DataType)
+		if len(candidate.Payload.Items) > 0 && !equalCandidateItems(candidate.Payload.Items, target.Items) {
+			appendCandidateDifference(comparison, "items", candidateItemsComparisonValue(candidate.Payload.Items), models.DocumentExtractionCandidateComparisonValue{Kind: "code_items", Items: target.Items})
 		}
 	case "metric":
-		appendPayloadDifference("statistical_scope", "statistical_caliber", target.StatisticalCaliber)
-		appendPayloadDifference("calculation_formula", "semantic_formula", target.SemanticFormula)
-		if candidateUnit, ok := candidatePayloadString(candidate.Payload, "unit"); ok && !matchesCandidateUnit(candidateUnit, target.UnitName, target.UnitSymbol) {
-			appendCandidateDifference(comparison, "unit", candidateTextComparisonValue(candidateUnit), candidateTextComparisonValue(comparisonTargetUnit(target.UnitName, target.UnitSymbol)))
+		appendPayloadDifference(candidate.Payload.StatisticalScope, "statistical_caliber", target.StatisticalCaliber)
+		appendPayloadDifference(candidate.Payload.CalculationFormula, "semantic_formula", target.SemanticFormula)
+		if candidate.Payload.Unit != nil && !matchesCandidateUnit(*candidate.Payload.Unit, target.UnitName, target.UnitSymbol) {
+			appendCandidateDifference(comparison, "unit", candidateTextComparisonValue(*candidate.Payload.Unit), candidateTextComparisonValue(comparisonTargetUnit(target.UnitName, target.UnitSymbol)))
 		}
 	}
 	if !scopeMatches {
@@ -793,7 +842,7 @@ func candidateIntegerComparisonValue(value *int64) models.DocumentExtractionCand
 	return models.DocumentExtractionCandidateComparisonValue{Kind: "integer", Integer: value}
 }
 
-func candidateItemsComparisonValue(items []documentCandidatePayloadItem) models.DocumentExtractionCandidateComparisonValue {
+func candidateItemsComparisonValue(items []models.DocumentExtractionCandidatePayloadItem) models.DocumentExtractionCandidateComparisonValue {
 	values := make([]models.DocumentExtractionCandidateComparisonItem, 0, len(items))
 	for _, item := range items {
 		values = append(values, models.DocumentExtractionCandidateComparisonItem{Code: item.Code, Name: item.Name, Definition: item.Definition})
@@ -812,29 +861,7 @@ func comparisonTargetUnit(name, symbol string) string {
 	return fmt.Sprintf("%s (%s)", name, symbol)
 }
 
-type documentCandidatePayloadItem struct {
-	Code       string `json:"code"`
-	Name       string `json:"name"`
-	Definition string `json:"definition"`
-}
-
-func candidatePayloadItems(payload models.JSONB) ([]documentCandidatePayloadItem, bool) {
-	value, ok := payload["items"]
-	if !ok {
-		return nil, false
-	}
-	encoded, err := json.Marshal(value)
-	if err != nil {
-		return nil, false
-	}
-	var items []documentCandidatePayloadItem
-	if err := json.Unmarshal(encoded, &items); err != nil || len(items) == 0 {
-		return nil, false
-	}
-	return items, true
-}
-
-func equalCandidateItems(candidateItems []documentCandidatePayloadItem, targetItems []models.DocumentExtractionCandidateComparisonItem) bool {
+func equalCandidateItems(candidateItems []models.DocumentExtractionCandidatePayloadItem, targetItems []models.DocumentExtractionCandidateComparisonItem) bool {
 	if len(candidateItems) != len(targetItems) {
 		return false
 	}
@@ -852,16 +879,6 @@ func equalCandidateItems(candidateItems []documentCandidatePayloadItem, targetIt
 		}
 	}
 	return true
-}
-
-func candidatePayloadString(payload models.JSONB, key string) (string, bool) {
-	value, ok := payload[key]
-	if !ok {
-		return "", false
-	}
-	text, ok := value.(string)
-	text = strings.TrimSpace(text)
-	return text, ok && text != ""
 }
 
 func matchesCandidateUnit(candidate, name, symbol string) bool {

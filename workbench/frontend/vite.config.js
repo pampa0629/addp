@@ -1,8 +1,30 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import Components from 'unplugin-vue-components/vite'
+import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 import { resolve } from 'path'
+
+const ENTRY_CHUNK_LIMIT_BYTES = 500 * 1024
+
+const enforceEntryChunkBudget = () => ({
+  name: 'enforce-entry-chunk-budget',
+  generateBundle(_, bundle) {
+    for (const chunk of Object.values(bundle)) {
+      if (chunk.type !== 'chunk' || !chunk.isEntry) continue
+      const bytes = Buffer.byteLength(chunk.code, 'utf8')
+      if (bytes > ENTRY_CHUNK_LIMIT_BYTES) {
+        this.error(`${chunk.fileName} is ${Math.ceil(bytes / 1024)} KiB; entry chunks must stay within 500 KiB`)
+      }
+    }
+  }
+})
+
 export default defineConfig({
-  plugins: [vue()],
+  plugins: [
+    vue(),
+    Components({ resolvers: [ElementPlusResolver({ importStyle: false })] }),
+    enforceEntryChunkBudget()
+  ],
   resolve: { alias: {
     '@': resolve(__dirname, 'src'), '@common-ui': resolve(__dirname, '../../common-frontend/basic/src'),
     '@common-ui-chart': resolve(__dirname, '../../common-frontend/chart/src'),

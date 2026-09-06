@@ -706,7 +706,7 @@ definitions:
       name:
         type: string
       payload:
-        type: object
+        $ref: '#/definitions/github_com_addp_standard_internal_models.DocumentExtractionCandidatePayload'
       reviewed_at:
         type: string
       reviewed_by:
@@ -800,6 +800,7 @@ definitions:
         - definition
         - data_type
         - value_domain_kind
+        - code_set_code
         - unit
         - value_type
         - items
@@ -808,6 +809,55 @@ definitions:
         type: string
       standard_value:
         $ref: '#/definitions/github_com_addp_standard_internal_models.DocumentExtractionCandidateComparisonValue'
+    type: object
+  github_com_addp_standard_internal_models.DocumentExtractionCandidatePayload:
+    properties:
+      aggregation:
+        type: string
+      calculation_formula:
+        type: string
+      code_set_code:
+        type: string
+      data_type:
+        enum:
+        - string
+        - int
+        - bigint
+        - float
+        - decimal
+        - date
+        - datetime
+        - bool
+        - json
+        - text
+        type: string
+      dimensions:
+        items:
+          type: string
+        type: array
+      items:
+        items:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.DocumentExtractionCandidatePayloadItem'
+        type: array
+      statistical_scope:
+        type: string
+      unit:
+        type: string
+      value_domain_kind:
+        enum:
+        - unrestricted
+        - range
+        - enumeration
+        type: string
+    type: object
+  github_com_addp_standard_internal_models.DocumentExtractionCandidatePayloadItem:
+    properties:
+      code:
+        type: string
+      definition:
+        type: string
+      name:
+        type: string
     type: object
   github_com_addp_standard_internal_models.DocumentExtractionEvidence:
     properties:

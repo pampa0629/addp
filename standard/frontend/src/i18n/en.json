@@ -470,6 +470,7 @@
       "differenceField": "Different Field",
       "candidateValue": "Candidate Value",
       "standardValue": "Current Standard Value",
+      "codeSetReference": "Referenced Code Set Candidate",
       "emptyValue": "Not set",
       "comparisonField": {
         "scope_type": "Scope",
@@ -478,6 +479,7 @@
         "definition": "Definition",
         "data_type": "Data Type",
         "value_domain_kind": "Value Domain Type",
+        "code_set_code": "Code Set Code",
         "unit": "Unit",
         "value_type": "Code Value Type",
         "items": "Code Items",

@@ -1551,6 +1551,20 @@
             ],
             "title": "Calculation Formula"
           },
+          "code_set_code": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code Set Code"
+          },
           "data_type": {
             "anyOf": [
               {

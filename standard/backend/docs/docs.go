@@ -7589,7 +7589,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "payload": {
-                    "type": "object"
+                    "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentExtractionCandidatePayload"
                 },
                 "reviewed_at": {
                     "type": "string"
@@ -7723,6 +7723,7 @@ const docTemplate = `{
                         "definition",
                         "data_type",
                         "value_domain_kind",
+                        "code_set_code",
                         "unit",
                         "value_type",
                         "items",
@@ -7732,6 +7733,75 @@ const docTemplate = `{
                 },
                 "standard_value": {
                     "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentExtractionCandidateComparisonValue"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.DocumentExtractionCandidatePayload": {
+            "type": "object",
+            "properties": {
+                "aggregation": {
+                    "type": "string"
+                },
+                "calculation_formula": {
+                    "type": "string"
+                },
+                "code_set_code": {
+                    "type": "string"
+                },
+                "data_type": {
+                    "type": "string",
+                    "enum": [
+                        "string",
+                        "int",
+                        "bigint",
+                        "float",
+                        "decimal",
+                        "date",
+                        "datetime",
+                        "bool",
+                        "json",
+                        "text"
+                    ]
+                },
+                "dimensions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentExtractionCandidatePayloadItem"
+                    }
+                },
+                "statistical_scope": {
+                    "type": "string"
+                },
+                "unit": {
+                    "type": "string"
+                },
+                "value_domain_kind": {
+                    "type": "string",
+                    "enum": [
+                        "unrestricted",
+                        "range",
+                        "enumeration"
+                    ]
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.DocumentExtractionCandidatePayloadItem": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "definition": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
                 }
             }
         },

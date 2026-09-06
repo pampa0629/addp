@@ -194,6 +194,9 @@ business/neo4j/plugins/*.jar
 
 # NFS 本地测试数据
 business/nfs/data/
+
+# Document Workflow 运行时工作目录与字体缓存
+data/document-work/
 .push-cache
 *.parquet
 *.csv

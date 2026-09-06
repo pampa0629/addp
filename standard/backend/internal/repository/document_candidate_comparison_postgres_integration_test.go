@@ -72,6 +72,12 @@ func TestPostgresDocumentCandidateComparisonTargets(t *testing.T) {
 	if err := db.Create(&models.CodeSetRevisionItem{CodeSetRevisionID: codeSetRevision.ID, Code: "open", Label: "进行中", Status: models.CodeItemStatusActive}).Error; err != nil {
 		t.Fatal(err)
 	}
+	if err := db.Model(&elementRevision).Updates(map[string]interface{}{
+		"value_domain_kind":    models.ValueDomainEnumeration,
+		"code_set_revision_id": codeSetRevision.ID,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
 
 	metric := models.MetricDefinition{TenantID: tenantID, ScopeType: models.StandardScopeTenantCommon, Code: code, CreatedBy: 1, Version: 1, LifecycleState: "active"}
 	metricRevision := models.MetricDefinitionRevision{RevisionNo: 1, Status: models.RevisionStatusDraft, MetricType: models.MetricTypeAtomic, Name: "活动参与次数", Definition: "参加活动总次数", StatisticalCaliber: "有效活动", SemanticFormula: "count(*)", UnitID: &unit.ID, ChangeSummary: "initial", CreatedBy: 1}
@@ -88,8 +94,8 @@ func TestPostgresDocumentCandidateComparisonTargets(t *testing.T) {
 
 	t.Cleanup(func() {
 		_ = db.Exec("DELETE FROM standard.metric_definitions WHERE tenant_id = ?", tenantID).Error
-		_ = db.Exec("DELETE FROM standard.code_sets WHERE tenant_id = ?", tenantID).Error
 		_ = db.Exec("DELETE FROM standard.elements WHERE tenant_id = ?", tenantID).Error
+		_ = db.Exec("DELETE FROM standard.code_sets WHERE tenant_id = ?", tenantID).Error
 		_ = db.Exec("DELETE FROM standard.glossaries WHERE tenant_id = ?", tenantID).Error
 		_ = db.Exec("DELETE FROM standard.units WHERE tenant_id = ?", tenantID).Error
 		_ = db.Exec("DELETE FROM standard.measurement_categories WHERE tenant_id = ?", tenantID).Error
@@ -107,7 +113,7 @@ func TestPostgresDocumentCandidateComparisonTargets(t *testing.T) {
 	if target := targets[documentCandidateComparisonKey("glossary", code)]; target.RevisionID != glossaryRevision.ID || target.RevisionStatus != models.RevisionStatusPublished {
 		t.Fatalf("glossary target=%+v", target)
 	}
-	if target := targets[documentCandidateComparisonKey("element", code)]; target.RevisionID != elementRevision.ID || target.UnitName != "次" || target.ValueDomainKind != models.ValueDomainUnrestricted {
+	if target := targets[documentCandidateComparisonKey("element", code)]; target.RevisionID != elementRevision.ID || target.UnitName != "次" || target.ValueDomainKind != models.ValueDomainEnumeration || target.CodeSetCode != code {
 		t.Fatalf("element target=%+v", target)
 	}
 	if target := targets[documentCandidateComparisonKey("code_set", code)]; target.RevisionID != codeSetRevision.ID || len(target.Items) != 1 || target.Items[0].Code != "open" {

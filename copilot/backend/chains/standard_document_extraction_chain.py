@@ -40,7 +40,7 @@ class StandardDocumentExtractionChain:
 4. payload 只保存该类型的结构化补充信息；无法从原文确认的字符串字段置 null，列表字段置空数组，不得猜测。
 5. 每个候选至少给出一条证据。section_path 必须逐字使用输入值，start_line/end_line 必须是输入章节范围内的绝对行号。
 6. 数据元的 data_type 只允许 string、int、bigint、float、decimal、date、datetime、bool、json、text；码值集的 data_type 只允许 string、int、bigint；业务术语和指标的 data_type 必须为 null。identifier 是业务语义，应写入名称或定义；原文只能确定 numeric、date_or_datetime 等上位类型时必须置 null，不得猜测具体类型；numeric、date_or_datetime 不是值域类型。
-7. 数据元的 value_domain_kind 只允许 unrestricted、range、enumeration，原文没有明确范围或枚举约束时使用 unrestricted；非数据元候选必须为 null。
+7. 数据元的 value_domain_kind 只允许 unrestricted、range、enumeration，原文没有明确范围或枚举约束时使用 unrestricted；非数据元候选必须为 null。枚举数据元的 code_set_code 必须引用同一响应中的码值集候选；非枚举数据元及其他候选的 code_set_code 必须为 null，不得生成数据库 ID。
 8. 指标必须在 payload 中尽量表达 calculation_formula、statistical_scope、aggregation、dimensions、unit；不明确时不要猜测。
 9. 码值集必须在 payload.items 中给出原文明确列出的 code、name；不得自行补齐枚举。
 
@@ -95,15 +95,29 @@ class StandardDocumentExtractionChain:
                 {"type": "null"},
             ]
         }
+        nullable_code_set_code = {
+            "anyOf": [
+                {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100,
+                    "pattern": "^[a-z][a-z0-9_]*$",
+                },
+                {"type": "null"},
+            ]
+        }
         null_only = {"type": "null"}
 
-        def payload_schema(data_type_schema, value_domain_kind_schema):
+        def payload_schema(
+            data_type_schema, value_domain_kind_schema, code_set_code_schema
+        ):
             return {
                 "type": "object",
                 "additionalProperties": False,
                 "properties": {
                     "data_type": data_type_schema,
                     "value_domain_kind": value_domain_kind_schema,
+                    "code_set_code": code_set_code_schema,
                     "unit": nullable_string,
                     "calculation_formula": nullable_string,
                     "statistical_scope": nullable_string,
@@ -126,6 +140,7 @@ class StandardDocumentExtractionChain:
                 "required": [
                     "data_type",
                     "value_domain_kind",
+                    "code_set_code",
                     "unit",
                     "calculation_formula",
                     "statistical_scope",
@@ -146,7 +161,12 @@ class StandardDocumentExtractionChain:
             "required": ["section_path", "start_line", "end_line"],
         }
 
-        def candidate_schema(candidate_type, data_type_schema, value_domain_kind_schema):
+        def candidate_schema(
+            candidate_type,
+            data_type_schema,
+            value_domain_kind_schema,
+            code_set_code_schema,
+        ):
             return {
                 "type": "object",
                 "additionalProperties": False,
@@ -156,7 +176,9 @@ class StandardDocumentExtractionChain:
                     "name": {"type": "string", "minLength": 1},
                     "definition": {"type": "string", "minLength": 1},
                     "payload": payload_schema(
-                        data_type_schema, value_domain_kind_schema
+                        data_type_schema,
+                        value_domain_kind_schema,
+                        code_set_code_schema,
                     ),
                     "evidences": {
                         "type": "array",
@@ -177,14 +199,17 @@ class StandardDocumentExtractionChain:
 
         candidate = {
             "anyOf": [
-                candidate_schema("glossary", null_only, null_only),
+                candidate_schema("glossary", null_only, null_only, null_only),
                 candidate_schema(
                     "element",
                     nullable_element_data_type,
                     nullable_value_domain_kind,
+                    nullable_code_set_code,
                 ),
-                candidate_schema("code_set", nullable_code_set_data_type, null_only),
-                candidate_schema("metric", null_only, null_only),
+                candidate_schema(
+                    "code_set", nullable_code_set_data_type, null_only, null_only
+                ),
+                candidate_schema("metric", null_only, null_only, null_only),
             ]
         }
         return ResponseSchema(

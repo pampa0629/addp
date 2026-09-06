@@ -150,7 +150,7 @@ func TestExtractCandidatesPersistsCanonicalOutdoorEvidence(t *testing.T) {
 	if len(extraction.Candidates) != 1 || len(extraction.Candidates[0].Evidences) != 1 {
 		t.Fatalf("extraction=%+v", extraction)
 	}
-	if extraction.Candidates[0].Payload["aggregation"] != "count" {
+	if extraction.Candidates[0].Payload.Aggregation == nil || *extraction.Candidates[0].Payload.Aggregation != "count" {
 		t.Fatalf("candidate payload=%+v", extraction.Candidates[0].Payload)
 	}
 	if comparison := extraction.Candidates[0].Comparison; comparison == nil || comparison.Result != models.CandidateComparisonExact || comparison.StandardID != 41 || comparison.RevisionID != 51 {
@@ -161,7 +161,7 @@ func TestExtractCandidatesPersistsCanonicalOutdoorEvidence(t *testing.T) {
 		t.Fatalf("evidence=%+v", evidence)
 	}
 	loaded, err := repo.ListExtractions(doc.ID, doc.TenantID)
-	if err != nil || len(loaded) != 1 || len(loaded[0].Candidates) != 1 {
+	if err != nil || len(loaded) != 1 || len(loaded[0].Candidates) != 1 || loaded[0].Candidates[0].Payload.Aggregation == nil || *loaded[0].Candidates[0].Payload.Aggregation != "count" {
 		t.Fatalf("loaded=%+v err=%v", loaded, err)
 	}
 	listed, err := svc.ListExtractions(doc.ID, doc.TenantID)
@@ -317,6 +317,90 @@ func TestBuildDocumentExtractionAcceptsTypeSpecificCanonicalDataType(t *testing.
 	}
 }
 
+func TestBuildDocumentExtractionRequiresClosedEnumerationCodeSetReference(t *testing.T) {
+	enumeration, unrestricted := models.ValueDomainEnumeration, models.ValueDomainUnrestricted
+	codeSetCode, missingCodeSetCode := "outdoor_activity_status_codes", "missing_status_codes"
+	invalidCodeSetCode := "Outdoor Status"
+	content := "# 候选\n户外活动状态及其码值。"
+	sections := []documentExtractionSection{{SectionPath: "候选", StartLine: 1, EndLine: 2, Text: content}}
+	evidence := []copilotEvidence{{SectionPath: "候选", StartLine: 1, EndLine: 2}}
+
+	tests := []struct {
+		name       string
+		candidates []copilotCandidate
+		wantErr    bool
+	}{
+		{
+			name: "enumeration without code set code",
+			candidates: []copilotCandidate{{
+				CandidateType: "element", Code: "outdoor_activity_status", Name: "活动状态", Definition: "户外活动状态。",
+				Payload: copilotCandidatePayload{ValueDomainKind: &enumeration}, Evidences: evidence,
+			}},
+			wantErr: true,
+		},
+		{
+			name: "non enumeration with code set code",
+			candidates: []copilotCandidate{{
+				CandidateType: "element", Code: "outdoor_activity_status", Name: "活动状态", Definition: "户外活动状态。",
+				Payload: copilotCandidatePayload{ValueDomainKind: &unrestricted, CodeSetCode: &codeSetCode}, Evidences: evidence,
+			}},
+			wantErr: true,
+		},
+		{
+			name: "non element with code set code",
+			candidates: []copilotCandidate{{
+				CandidateType: "metric", Code: "outdoor_activity_count", Name: "活动次数", Definition: "户外活动次数。",
+				Payload: copilotCandidatePayload{CodeSetCode: &codeSetCode}, Evidences: evidence,
+			}},
+			wantErr: true,
+		},
+		{
+			name: "enumeration with invalid code set code",
+			candidates: []copilotCandidate{{
+				CandidateType: "element", Code: "outdoor_activity_status", Name: "活动状态", Definition: "户外活动状态。",
+				Payload: copilotCandidatePayload{ValueDomainKind: &enumeration, CodeSetCode: &invalidCodeSetCode}, Evidences: evidence,
+			}},
+			wantErr: true,
+		},
+		{
+			name: "enumeration references absent code set candidate",
+			candidates: []copilotCandidate{{
+				CandidateType: "element", Code: "outdoor_activity_status", Name: "活动状态", Definition: "户外活动状态。",
+				Payload: copilotCandidatePayload{ValueDomainKind: &enumeration, CodeSetCode: &missingCodeSetCode}, Evidences: evidence,
+			}},
+			wantErr: true,
+		},
+		{
+			name: "enumeration references same batch code set candidate",
+			candidates: []copilotCandidate{
+				{
+					CandidateType: "element", Code: "outdoor_activity_status", Name: "活动状态", Definition: "户外活动状态。",
+					Payload: copilotCandidatePayload{ValueDomainKind: &enumeration, CodeSetCode: &codeSetCode}, Evidences: evidence,
+				},
+				{
+					CandidateType: "code_set", Code: codeSetCode, Name: "活动状态码值集", Definition: "户外活动允许使用的状态。",
+					Evidences: evidence,
+				},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			extraction, err := buildDocumentExtraction(1, 2, 3, content, sections, &copilotDocumentExtractResponse{Candidates: test.candidates})
+			if test.wantErr {
+				if !errors.Is(err, ErrDocumentExtractionInvalid) {
+					t.Fatalf("err=%v, want ErrDocumentExtractionInvalid", err)
+				}
+				return
+			}
+			if err != nil || len(extraction.Candidates) != 2 || extraction.Candidates[1].Payload.CodeSetCode == nil || *extraction.Candidates[1].Payload.CodeSetCode != codeSetCode {
+				t.Fatalf("extraction=%+v err=%v", extraction, err)
+			}
+		})
+	}
+}
+
 func TestCompareDocumentCandidateUsesOnlyStandardOwnedAssertedFields(t *testing.T) {
 	document := &models.Document{ScopeType: models.StandardScopeTenantCommon}
 	target := repository.DocumentCandidateComparisonTarget{
@@ -326,13 +410,13 @@ func TestCompareDocumentCandidateUsesOnlyStandardOwnedAssertedFields(t *testing.
 	}
 	candidate := models.DocumentExtractionCandidate{
 		CandidateType: "metric", Code: target.Code, Name: target.Name, Definition: target.Definition,
-		Payload: models.JSONB{"aggregation": "count_distinct", "dimensions": []string{"member_id"}},
+		Payload: models.DocumentExtractionCandidatePayload{Aggregation: stringPointer("count_distinct"), Dimensions: []string{"member_id"}},
 	}
 	comparison := compareDocumentCandidate(document, &candidate, target, true)
 	if comparison.Result != models.CandidateComparisonExact || len(comparison.Differences) != 0 {
 		t.Fatalf("unasserted and execution fields must not differ: %+v", comparison)
 	}
-	candidate.Payload["statistical_scope"] = "统计所有活动"
+	candidate.Payload.StatisticalScope = stringPointer("统计所有活动")
 	comparison = compareDocumentCandidate(document, &candidate, target, true)
 	if comparison.Result != models.CandidateComparisonContentConflict {
 		t.Fatalf("asserted standard field mismatch=%+v", comparison)
@@ -343,6 +427,28 @@ func TestCompareDocumentCandidateUsesOnlyStandardOwnedAssertedFields(t *testing.
 	}
 }
 
+func TestCompareDocumentCandidateComparesEnumerationCodeSetCode(t *testing.T) {
+	document := &models.Document{ScopeType: models.StandardScopeTenantCommon}
+	target := repository.DocumentCandidateComparisonTarget{
+		CandidateType: "element", StandardID: 41, Code: "outdoor_activity_status", ScopeType: models.StandardScopeTenantCommon,
+		RevisionID: 51, RevisionNo: 2, RevisionStatus: models.RevisionStatusPublished, Name: "活动状态", Definition: "户外活动状态。",
+		DataType: "string", ValueDomainKind: models.ValueDomainEnumeration, CodeSetCode: "outdoor_activity_status_codes",
+	}
+	candidateCode := "other_activity_status_codes"
+	candidate := models.DocumentExtractionCandidate{
+		CandidateType: "element", Code: target.Code, Name: target.Name, Definition: target.Definition,
+		Payload: models.DocumentExtractionCandidatePayload{DataType: stringPointer("string"), ValueDomainKind: stringPointer(models.ValueDomainEnumeration), CodeSetCode: &candidateCode},
+	}
+
+	comparison := compareDocumentCandidate(document, &candidate, target, true)
+	difference, ok := findCandidateDifference(comparison.Differences, "code_set_code")
+	if comparison.Result != models.CandidateComparisonContentConflict || !ok || difference.CandidateValue.Text == nil || *difference.CandidateValue.Text != candidateCode || difference.StandardValue.Text == nil || *difference.StandardValue.Text != target.CodeSetCode {
+		t.Fatalf("comparison=%+v difference=%+v", comparison, difference)
+	}
+}
+
+func stringPointer(value string) *string { return &value }
+
 func TestCompareDocumentCandidateComparesCodeItemsByCode(t *testing.T) {
 	document := &models.Document{ScopeType: models.StandardScopeTenantCommon}
 	target := repository.DocumentCandidateComparisonTarget{
@@ -352,7 +458,7 @@ func TestCompareDocumentCandidateComparesCodeItemsByCode(t *testing.T) {
 	}
 	candidate := models.DocumentExtractionCandidate{
 		CandidateType: "code_set", Code: target.Code, Name: target.Name, Definition: target.Definition,
-		Payload: models.JSONB{"data_type": "string", "items": []copilotCodeItem{{Code: "open", Name: "进行中"}, {Code: "closed", Name: "已结束"}}},
+		Payload: models.DocumentExtractionCandidatePayload{DataType: stringPointer("string"), Items: []models.DocumentExtractionCandidatePayloadItem{{Code: "open", Name: "进行中"}, {Code: "closed", Name: "已结束"}}},
 	}
 	comparison := compareDocumentCandidate(document, &candidate, target, true)
 	if comparison.Result != models.CandidateComparisonExact {
@@ -370,7 +476,7 @@ func TestCompareDocumentCandidateReturnsStructuredDifferenceValues(t *testing.T)
 	}
 	candidate := models.DocumentExtractionCandidate{
 		CandidateType: "code_set", Code: target.Code, Name: target.Name, Definition: "候选活动状态",
-		Payload: models.JSONB{"data_type": "integer", "items": []copilotCodeItem{{Code: "draft", Name: "拟定中", Definition: "活动尚未发布"}}},
+		Payload: models.DocumentExtractionCandidatePayload{DataType: stringPointer("integer"), Items: []models.DocumentExtractionCandidatePayloadItem{{Code: "draft", Name: "拟定中", Definition: "活动尚未发布"}}},
 	}
 
 	comparison := compareDocumentCandidate(document, &candidate, target, true)

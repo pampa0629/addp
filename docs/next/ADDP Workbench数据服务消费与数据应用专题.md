@@ -2089,6 +2089,16 @@ T1 使用可控 Promise 分别固定三种时序：A 的应用响应晚于 B、A
 
 真实浏览器无持久副作用验收已在正式创建页完成：汇总角色强制快速从一个已发布 Query Service 切换到另一个后，最终只显示后者 Descriptor 派生的筛选字段、图表维度和度量；空间角色同样快速切换后只保留最终服务的名称字段、设色字段、提示字段和表格字段。空间 Descriptor 请求发起后立即关闭并重开向导，两个服务角色均恢复“请选择”，旧字段、错误消息与 loading 遮罩没有进入新会话；随后再次选择汇总与空间服务，两类表单均正常生成。全过程未填写、生成、保存或发布 Data Application，浏览器控制台无 warning/error。由于本地 Descriptor 请求返回很快，真实浏览器无法稳定观测请求重叠期间的中间遮罩时序；该确定性证据由本节的可控 Promise 双角色并发测试提供，浏览器验收不替代它。
 
+### 14.43 Workbench 前端首屏依赖边界（2026-09-06）
+
+生产构建当前把约 1.6 MB 的 JavaScript 放入入口 chunk。Source map 证据显示这不是 Chart 或 Map 异步组件失效：两种 renderer 已由 `defineAsyncComponent()` 独立加载；入口膨胀的根因是 `main.js` 全量安装 Element Plus，以及仅为合并 Map 国际化消息却从 `@common-ui-map` 聚合入口导入，后者把具有样式副作用的地图组件及 OpenLayers 依赖提升到首屏。`ol/ol.css` 也由应用入口无条件加载，使没有 Map 的列表、编辑和普通运行页承担空间渲染样式。
+
+唯一优化路线为：沿用仓库现有 Vue 模块模式，通过 `unplugin-vue-components` 与 `ElementPlusResolver` 按模板引入 Element Plus 组件，删除全量 `app.use(ElementPlus)`；Map 国际化消息从明确的 JSON 子路径导入，不经过地图组件聚合入口；OpenLayers CSS 与现有异步 `GeoJSONResultRenderer` 在同一 loader 中按需加载。Chart 与 Map 仍由 `common-frontend` 单点维护，Workbench 只保留协议分派，不复制 renderer、不增加第二套入口或手写组件注册表。
+
+生产构建增加 500 KiB 的入口 chunk 硬门禁，并由现有 `make test-workbench-frontend` 和 CI target 自动执行。该门禁检查真正的 Rollup entry，而不是通过 `manualChunks` 改名或单纯抬高 Vite warning 阈值；功能专属的异步 Chart/Map chunk 不计入首屏入口预算。T1 源码合同先固定按需注册、Map 消息深路径、OpenLayers CSS 延迟加载、依赖声明和入口预算插件；T2 由 production build 同时验证 Vue 模板解析、动态样式加载、chunk 图和实际入口字节数。
+
+实现已删除 Workbench 的全量 `app.use(ElementPlus)`，采用仓库既有 `unplugin-vue-components@0.28.0` 与 `ElementPlusResolver` 路线；Map 中英文消息改为明确 JSON 子路径，`ol/ol.css` 与异步 Map renderer 同时加载。新增 Rollup `enforce-entry-chunk-budget` 插件，任何真实入口 chunk 超过 500 KiB 都会使现有 production build 失败。T1 源码合同按预期先因旧全量入口得到红灯，改造后转绿；带 source map 的 T2 构建把入口 JavaScript 从 1,595.63 KB / gzip 516.61 KB 降至 457.60 KB / gzip 165.36 KB，分别下降 71.3% 与 68.0%，并确认入口 source map 不再包含 OpenLayers 或 ECharts。Chart 518.42 KB 与 Map 510.76 KB 保持为仅在对应 renderer 出现时加载的功能 chunk，不使用无收益的 vendor 改名掩盖体积。配置变更后的真实页面验收需在 Workbench 前端进程重启后执行。
+
 ## 十五、概念设计状态
 
 当前没有待确认的 Phase 0 概念问题。Phase 5 的 Selection Binding 同页联动、`desktop | wallboard` 展示模式、浏览器会话级全屏、Application Refresh Policy 和 Application Presentation Sections 已完成设计、实现、标准模块门禁与真实浏览器验收；Data Application 资产运营指标的事实源、模块归属以及 Asset 自有 `application` / 具体 Asset 运营分组也已完成运行态复核。外部 BI 的 owner 边界、消费契约、用户委托 OAuth 单一路线和 System 外部 OAuth Client 注册治理已经完成；首个真实 BI 验收载体仍为 Power Query 自定义 Connector 与 Power BI Desktop Import，但因当前缺少 Windows 宿主而暂缓。`common-python` 的产品无关 Service Consumer SDK、离线门禁及真实普通表、空间表和 Outdoor 多服务只读运行验收均已完成；它不替代 callback state、持久外部 Client 生命周期和真实 BI 产品端到端证据，因此正式 BI 接入指南继续保持未完成。

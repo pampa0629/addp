@@ -53,7 +53,10 @@ import { validateChartResult } from '@common-ui-chart/chartResult.mjs'
 import { validateGeoJSONResult } from '@common-ui-map/utils/geoJSONResult.mjs'
 
 const ChartRenderer = defineAsyncComponent(() => import('@common-ui-chart/ChartRenderer.vue'))
-const GeoJSONResultRenderer = defineAsyncComponent(() => import('@common-ui-map/components/GeoJSONResultRenderer.vue'))
+const GeoJSONResultRenderer = defineAsyncComponent(async () => {
+  await import('ol/ol.css')
+  return import('@common-ui-map/components/GeoJSONResultRenderer.vue')
+})
 
 const props = defineProps({
   rows: { type: Array, default: () => [] },

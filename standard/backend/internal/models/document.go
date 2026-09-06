@@ -88,7 +88,7 @@ type DocumentExtractionCandidate struct {
 	Code          string                                 `gorm:"size:100;not null" json:"code"`
 	Name          string                                 `gorm:"size:200;not null" json:"name"`
 	Definition    string                                 `gorm:"type:text;not null" json:"definition"`
-	Payload       JSONB                                  `gorm:"type:jsonb;serializer:json" json:"payload" swaggertype:"object"`
+	Payload       DocumentExtractionCandidatePayload     `gorm:"type:jsonb;serializer:json" json:"payload"`
 	Status        string                                 `gorm:"size:20;not null;default:'pending';index" json:"status" enums:"pending,retained,rejected"`
 	Version       int64                                  `gorm:"not null;default:1" json:"version"`
 	ReviewedBy    *int64                                 `json:"reviewed_by,omitempty"`
@@ -101,6 +101,25 @@ type DocumentExtractionCandidate struct {
 
 func (DocumentExtractionCandidate) TableName() string {
 	return "standard.document_extraction_candidates"
+}
+
+// DocumentExtractionCandidatePayload 是 Standard 与 Copilot 共用的强类型候选补充契约。
+type DocumentExtractionCandidatePayload struct {
+	DataType           *string                                  `json:"data_type,omitempty" enums:"string,int,bigint,float,decimal,date,datetime,bool,json,text"`
+	ValueDomainKind    *string                                  `json:"value_domain_kind,omitempty" enums:"unrestricted,range,enumeration"`
+	CodeSetCode        *string                                  `json:"code_set_code,omitempty"`
+	Unit               *string                                  `json:"unit,omitempty"`
+	CalculationFormula *string                                  `json:"calculation_formula,omitempty"`
+	StatisticalScope   *string                                  `json:"statistical_scope,omitempty"`
+	Aggregation        *string                                  `json:"aggregation,omitempty"`
+	Dimensions         []string                                 `json:"dimensions,omitempty"`
+	Items              []DocumentExtractionCandidatePayloadItem `json:"items,omitempty"`
+}
+
+type DocumentExtractionCandidatePayloadItem struct {
+	Code       string `json:"code"`
+	Name       string `json:"name"`
+	Definition string `json:"definition"`
 }
 
 // DocumentExtractionCandidateComparison 是候选与当前同类型、同编码标准的读取时投影，不持久化。
@@ -119,7 +138,7 @@ type DocumentExtractionCandidateComparison struct {
 
 // DocumentExtractionCandidateDifference 显式返回一个候选字段与当前标准字段的两侧值。
 type DocumentExtractionCandidateDifference struct {
-	Field          string                                     `json:"field" enums:"scope_type,owner_domain_id,name,definition,data_type,value_domain_kind,unit,value_type,items,statistical_caliber,semantic_formula"`
+	Field          string                                     `json:"field" enums:"scope_type,owner_domain_id,name,definition,data_type,value_domain_kind,code_set_code,unit,value_type,items,statistical_caliber,semantic_formula"`
 	CandidateValue DocumentExtractionCandidateComparisonValue `json:"candidate_value"`
 	StandardValue  DocumentExtractionCandidateComparisonValue `json:"standard_value"`
 }

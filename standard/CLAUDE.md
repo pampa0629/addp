@@ -305,11 +305,12 @@ standard/
 
 - 提炼批次固定引用一个带 Markdown 文件的 `document_revision_id`；重复提炼新建批次，不覆盖历史。
 - Copilot 仅返回 `glossary`、`element`、`code_set`、`metric` 候选及证据坐标；Standard 验证证据属于输入修订后持久化。
-- Copilot 与 Standard 共用唯一候选数据类型词汇。数据元候选的 `data_type` 只允许 `string|int|bigint|float|decimal|date|datetime|bool|json|text`，码值集候选只允许 `string|int|bigint`，术语和指标候选必须为 `null`；`identifier` 属于业务语义，`numeric`、`date_or_datetime` 等模糊上位提示不是合法标准数据类型。数据元候选的 `value_domain_kind` 只允许 `unrestricted|range|enumeration`，其他候选必须为 `null`。Copilot 输出 Schema 先约束，Standard 在持久化前再次按候选类型拒绝非法字段；历史提炼批次保持不可变，契约修正后通过新提炼批次表达新结果。
+- Copilot 与 Standard 共用唯一候选数据类型词汇。数据元候选的 `data_type` 只允许 `string|int|bigint|float|decimal|date|datetime|bool|json|text`，码值集候选只允许 `string|int|bigint`，术语和指标候选必须为 `null`；`identifier` 属于业务语义，`numeric`、`date_or_datetime` 等模糊上位提示不是合法标准数据类型。数据元候选的 `value_domain_kind` 只允许 `unrestricted|range|enumeration`，其他候选必须为 `null`。枚举数据元候选必须通过 `code_set_code` 引用同一提炼批次中唯一的码值集候选；非枚举数据元以及其他候选不得携带该字段。候选引用只使用稳定编码，正式数据元修订仍由 Standard 按生效时点选择并冻结具体 `code_set_revision_id`。Copilot 输出 Schema 先约束，Standard 在持久化前再次校验字段适用性和批次内引用闭包；历史提炼批次保持不可变，契约修正后通过新提炼批次表达新结果。
 - 候选状态固定为 `pending`、`retained`、`rejected`；处置使用候选自己的并发 `version`，`retained` 不会自动创建或发布正式标准。
 - 每条证据保存章节、起止行、原文摘录与 SHA-256，始终引用确定的文档修订。
 - `GET /documents/:id/extractions` 读取时动态返回候选比对投影，不将易失的匹配结果写入提炼历史。同类型、同编码是唯一确定匹配键；同名不同编码不自动判重。比对结果固定为 `new`、`exact`、`content_conflict`、`scope_conflict`；每项差异同时返回字段、候选值和当前标准值，供治理人员直接核对。
 - 比对修订按“稳定身份当前草稿/审核中修订 → 当前生效已发布修订 → 最新历史修订”选择；只比较候选明确给出的字段，缺失字段不构造差异。范围先比较 `scope_type + owner_domain_id`，范围不一致统一为 `scope_conflict`。
+- 枚举数据元候选以 `code_set_code` 与现有数据元修订冻结的码值集修订所属稳定身份编码比较；候选比对不暴露或猜测数据库修订 ID。
 - 指标候选中的聚合方式、维度等执行建模提示由 Model/Develop 消费，不属于 Standard 指标定义字段，因此不参与内容冲突判定。
 - 候选比对只用于评审提示和打开现有标准，不自动建立文档关联、不创建标准稳定身份或修订，也不改变 `pending / retained / rejected` 人工处置主线。
 

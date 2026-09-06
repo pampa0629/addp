@@ -135,6 +135,17 @@ def test_extraction_response_schema_is_strict_and_requires_complete_payload_shap
             {"type": "null"},
         ]
     }
+    assert variants["element"]["properties"]["payload"]["properties"]["code_set_code"] == {
+        "anyOf": [
+            {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100,
+                "pattern": "^[a-z][a-z0-9_]*$",
+            },
+            {"type": "null"},
+        ]
+    }
     assert variants["code_set"]["properties"]["payload"]["properties"]["data_type"] == {
         "anyOf": [
             {"type": "string", "enum": ["string", "int", "bigint"]},
@@ -145,7 +156,11 @@ def test_extraction_response_schema_is_strict_and_requires_complete_payload_shap
         payload = variants[candidate_type]["properties"]["payload"]["properties"]
         assert payload["data_type"] == {"type": "null"}
         assert payload["value_domain_kind"] == {"type": "null"}
+        assert payload["code_set_code"] == {"type": "null"}
     assert variants["code_set"]["properties"]["payload"]["properties"]["value_domain_kind"] == {
+        "type": "null"
+    }
+    assert variants["code_set"]["properties"]["payload"]["properties"]["code_set_code"] == {
         "type": "null"
     }
 
@@ -179,6 +194,88 @@ def test_candidate_model_rejects_value_domain_kind_on_non_element_candidate():
                     section_path="指标", start_line=20, end_line=20
                 )
             ],
+        )
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"value_domain_kind": "enumeration"},
+        {"value_domain_kind": "unrestricted", "code_set_code": "outdoor_status"},
+        {"value_domain_kind": "range", "code_set_code": "outdoor_status"},
+    ],
+)
+def test_element_candidate_requires_code_set_code_only_for_enumeration(payload):
+    with pytest.raises(ValidationError):
+        StandardDocumentCandidate(
+            candidate_type="element",
+            code="outdoor_activity_status",
+            name="活动状态",
+            definition="户外活动的状态。",
+            payload=payload,
+            evidences=[
+                StandardDocumentEvidence(
+                    section_path="数据元", start_line=10, end_line=10
+                )
+            ],
+        )
+
+
+def test_non_element_candidate_rejects_code_set_code():
+    with pytest.raises(ValidationError):
+        StandardDocumentCandidate(
+            candidate_type="metric",
+            code="activity_count",
+            name="活动次数",
+            definition="人员参加活动的次数。",
+            payload={"code_set_code": "outdoor_status"},
+            evidences=[
+                StandardDocumentEvidence(
+                    section_path="指标", start_line=20, end_line=20
+                )
+            ],
+        )
+
+
+def test_extraction_response_requires_enumeration_reference_to_same_batch_code_set():
+    element = StandardDocumentCandidate(
+        candidate_type="element",
+        code="outdoor_activity_status",
+        name="活动状态",
+        definition="户外活动的状态。",
+        payload={
+            "data_type": "string",
+            "value_domain_kind": "enumeration",
+            "code_set_code": "outdoor_activity_status_codes",
+        },
+        evidences=[
+            StandardDocumentEvidence(
+                section_path="数据元", start_line=10, end_line=10
+            )
+        ],
+    )
+
+    with pytest.raises(ValidationError):
+        StandardDocumentExtractResponse(candidates=[element])
+
+    code_set = StandardDocumentCandidate(
+        candidate_type="code_set",
+        code="outdoor_activity_status_codes",
+        name="活动状态码值集",
+        definition="户外活动允许使用的状态。",
+        payload={"data_type": "string"},
+        evidences=[
+            StandardDocumentEvidence(
+                section_path="码值集", start_line=20, end_line=25
+            )
+        ],
+    )
+    response = StandardDocumentExtractResponse(candidates=[element, code_set])
+    assert response.candidates[0].payload.code_set_code == code_set.code
+
+    with pytest.raises(ValidationError):
+        StandardDocumentExtractResponse(
+            candidates=[element, code_set, code_set.model_copy()]
         )
 
 
@@ -254,5 +351,6 @@ def test_extraction_prompt_separates_data_type_value_domain_and_business_semanti
     assert "业务术语和指标的 data_type 必须为 null" in prompt
     assert "date_or_datetime 等上位类型" in prompt
     assert "value_domain_kind 只允许 unrestricted、range、enumeration" in prompt
+    assert "枚举数据元的 code_set_code 必须引用同一响应中的码值集候选" in prompt
     assert "identifier 是业务语义" in prompt
     assert "numeric、date_or_datetime 不是值域类型" in prompt
