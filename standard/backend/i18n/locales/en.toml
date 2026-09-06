@@ -154,11 +154,41 @@ other = "Standard candidate extraction currently supports Markdown documents onl
 [standard.document.extraction_invalid]
 other = "The extraction result contains no valid candidates with traceable evidence"
 
+[standard.document.candidate_group_query_invalid]
+other = "Candidate group filters or pagination parameters are invalid"
+
 [standard.document.copilot_unavailable]
 other = "The Copilot standard extraction service is temporarily unavailable"
 
 [standard.document.publication_history]
 other = "A document identity with publication history cannot be deleted"
+
+[standard.document.candidate_formalization_history]
+other = "This document has formalized candidates and must retain their provenance and governance history"
+
+[standard.document.candidate_not_retained]
+other = "Only a retained standard candidate can be formalized"
+
+[standard.document.candidate_already_formalized]
+other = "This standard candidate has already been formalized"
+
+[standard.document.candidate_formalization_stale]
+other = "The candidate, source document, or target standard changed; refresh and retry"
+
+[standard.document.candidate_scope_conflict]
+other = "The same-code standard has a different scope from the source document"
+
+[standard.document.candidate_target_draft_exists]
+other = "The target standard already has a different draft or in-review revision"
+
+[standard.document.candidate_reference_unavailable]
+other = "The candidate unit or currently effective code-set revision cannot be resolved uniquely"
+
+[standard.document.candidate_formalization_denied]
+other = "Permission to create or update the target standard is required"
+
+[standard.document.candidate_formalization_invalid]
+other = "The standard candidate formalization request is invalid"
 
 [standard.domain.not_found]
 other = "Domain not found"

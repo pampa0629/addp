@@ -1569,6 +1569,102 @@
                 ]
             }
         },
+        "/document-extraction-candidates/{candidate_id}/formalization": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "服务器根据实时比对唯一决定创建 R1 草稿、创建既有标准的新修订草稿或关联内容一致修订；不会提交审核或发布 | The server uniquely decides whether to create an R1 draft, create a new draft revision, or link an identical revision; it never submits or publishes",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "正式化文档提炼候选 | Formalize document extraction candidate",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "候选 ID | Candidate ID",
+                        "name": "candidate_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "正式化请求 | Formalization request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.FormalizeDocumentExtractionCandidateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentCandidateFormalizationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-conditional-permissions": [
+                    "standard.glossary.create",
+                    "standard.glossary.update",
+                    "standard.element.create",
+                    "standard.element.update",
+                    "standard.code_set.create",
+                    "standard.code_set.update",
+                    "standard.metric.create",
+                    "standard.metric.update"
+                ],
+                "x-addp-required-permissions": [
+                    "standard.document.update"
+                ]
+            }
+        },
         "/documents": {
             "get": {
                 "security": [
@@ -1870,28 +1966,90 @@
                 ]
             }
         },
-        "/documents/{id}/extractions": {
+        "/documents/{id}/extraction-candidate-groups": {
             "get": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "返回每个候选与当前同类型、同编码标准的动态比对结果及字段级候选值/标准值；不会自动创建或关联标准 | Returns a dynamic comparison and field-level candidate/standard values for each candidate against the current same-type, same-code standard; no standard is created or linked automatically",
+                "description": "按确定性语义指纹聚合文档历次提炼候选；total 为筛选后总数，status_counts 为不受筛选影响的文档全量状态计数；返回代表候选、全部出现记录及动态标准比对，原始候选和证据不会被改写 | Groups candidates from all document extractions by deterministic semantic fingerprint; total is the filtered count while status_counts covers all groups regardless of filters; returns the representative candidate, all occurrences, and dynamic standard comparison without rewriting raw candidates or evidence",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Standard"
                 ],
-                "summary": "获取文档提炼批次 | List document extraction batches",
+                "summary": "获取标准提炼候选聚合视图 | List standard extraction candidate groups",
+                "parameters": [
+                    {
+                        "enum": [
+                            "pending",
+                            "retained",
+                            "rejected",
+                            "formalized"
+                        ],
+                        "type": "string",
+                        "description": "聚合状态 | Group state",
+                        "name": "state",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "glossary",
+                            "element",
+                            "code_set",
+                            "metric"
+                        ],
+                        "type": "string",
+                        "description": "候选类型 | Candidate type",
+                        "name": "candidate_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码，默认 1 | Page number, default 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认 20，最大 100 | Page size, default 20, maximum 100",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentExtraction"
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.PaginatedDocumentExtractionCandidateGroupResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "需要登录 | Authentication required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "无权访问 | Access denied",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
                             }
                         }
                     },
@@ -7510,6 +7668,110 @@
                 }
             }
         },
+        "github_com_addp_standard_internal_models.DocumentCandidateFormalization": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": [
+                        "created_identity",
+                        "created_revision",
+                        "linked_existing"
+                    ]
+                },
+                "candidate_id": {
+                    "type": "integer"
+                },
+                "change_summary": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "revision_id": {
+                    "type": "integer"
+                },
+                "revision_no": {
+                    "type": "integer"
+                },
+                "standard_code": {
+                    "type": "string"
+                },
+                "standard_id": {
+                    "type": "integer"
+                },
+                "target_revision_status": {
+                    "type": "string",
+                    "enum": [
+                        "draft",
+                        "in_review",
+                        "published",
+                        "withdrawn"
+                    ]
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.DocumentCandidateFormalizationResponse": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": [
+                        "created_identity",
+                        "created_revision",
+                        "linked_existing"
+                    ]
+                },
+                "candidate_id": {
+                    "type": "integer"
+                },
+                "candidate_type": {
+                    "type": "string",
+                    "enum": [
+                        "glossary",
+                        "element",
+                        "code_set",
+                        "metric"
+                    ]
+                },
+                "candidate_version": {
+                    "type": "integer"
+                },
+                "change_summary": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "revision_id": {
+                    "type": "integer"
+                },
+                "revision_no": {
+                    "type": "integer"
+                },
+                "standard_code": {
+                    "type": "string"
+                },
+                "standard_id": {
+                    "type": "integer"
+                },
+                "target_revision_status": {
+                    "type": "string",
+                    "enum": [
+                        "draft",
+                        "in_review",
+                        "published",
+                        "withdrawn"
+                    ]
+                }
+            }
+        },
         "github_com_addp_standard_internal_models.DocumentExtraction": {
             "type": "object",
             "properties": {
@@ -7574,6 +7836,9 @@
                 },
                 "extraction_id": {
                     "type": "integer"
+                },
+                "formalization": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentCandidateFormalization"
                 },
                 "id": {
                     "type": "integer"
@@ -7726,6 +7991,104 @@
                 },
                 "standard_value": {
                     "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentExtractionCandidateComparisonValue"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.DocumentExtractionCandidateGroup": {
+            "type": "object",
+            "properties": {
+                "candidate": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentExtractionCandidate"
+                },
+                "first_seen_at": {
+                    "type": "string"
+                },
+                "last_seen_at": {
+                    "type": "string"
+                },
+                "occurrence_count": {
+                    "type": "integer"
+                },
+                "occurrences": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentExtractionCandidateOccurrence"
+                    }
+                },
+                "semantic_fingerprint": {
+                    "type": "string"
+                },
+                "state": {
+                    "type": "string",
+                    "enum": [
+                        "pending",
+                        "retained",
+                        "rejected",
+                        "formalized"
+                    ]
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.DocumentExtractionCandidateGroupStatusCounts": {
+            "type": "object",
+            "properties": {
+                "formalized": {
+                    "type": "integer"
+                },
+                "pending": {
+                    "type": "integer"
+                },
+                "rejected": {
+                    "type": "integer"
+                },
+                "retained": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.DocumentExtractionCandidateOccurrence": {
+            "type": "object",
+            "properties": {
+                "candidate_id": {
+                    "type": "integer"
+                },
+                "document_revision_id": {
+                    "type": "integer"
+                },
+                "evidences": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentExtractionEvidence"
+                    }
+                },
+                "extracted_at": {
+                    "type": "string"
+                },
+                "extraction_id": {
+                    "type": "integer"
+                },
+                "formalization": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentCandidateFormalization"
+                },
+                "requested_by": {
+                    "type": "integer"
+                },
+                "reviewed_at": {
+                    "type": "string"
+                },
+                "reviewed_by": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "pending",
+                        "retained",
+                        "rejected"
+                    ]
+                },
+                "version": {
+                    "type": "integer"
                 }
             }
         },
@@ -8072,6 +8435,30 @@
                 },
                 "value_domain_kind": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.FormalizeDocumentExtractionCandidateRequest": {
+            "type": "object",
+            "required": [
+                "change_summary",
+                "version"
+            ],
+            "properties": {
+                "change_summary": {
+                    "type": "string"
+                },
+                "metric_type": {
+                    "type": "string",
+                    "enum": [
+                        "atomic",
+                        "derived",
+                        "composite"
+                    ]
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
                 }
             }
         },
@@ -8529,6 +8916,32 @@
                 },
                 "page_size": {
                     "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.PaginatedDocumentExtractionCandidateGroupResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentExtractionCandidateGroup"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "status_counts": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentExtractionCandidateGroupStatusCounts"
                 },
                 "total": {
                     "type": "integer"

@@ -13,8 +13,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 436 {
-		t.Fatalf("descriptor count = %d, want 436", len(descriptors))
+	if len(descriptors) != 437 {
+		t.Fatalf("descriptor count = %d, want 437", len(descriptors))
 	}
 	if descriptors[0].Key != "agent.configuration.read" || descriptors[len(descriptors)-1].Key != "workbench.resource_grant.revoke" {
 		t.Fatalf("descriptor boundary keys = %q, %q", descriptors[0].Key, descriptors[len(descriptors)-1].Key)
@@ -205,6 +205,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"manager.search.execute",
 		"meta.catalog.read",
 		"meta.lineage.read",
+		"security.protection_access_request.create",
+		"security.protection_access_request.read",
 		"service.data_read.execute",
 		"workbench.data_application.create",
 		"workbench.data_application.delete",
@@ -246,6 +248,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"meta.scan_task.execute",
 		"meta.scan_task.read",
 		"meta.scan_task.update",
+		"security.protection_access_request.create",
+		"security.protection_access_request.read",
 	})
 	assertRepositoryRolePermissions(t, roles, "tenant.data_engineer", []string{
 		"develop.data_read.execute",
@@ -270,6 +274,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"orchestrator.workflow.execute",
 		"orchestrator.workflow.read",
 		"orchestrator.workflow.update",
+		"security.protection_access_request.create",
+		"security.protection_access_request.read",
 		"system.execution_authorization.create",
 		"transfer.task.create",
 		"transfer.task.delete",
@@ -389,14 +395,15 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"security.policy.delete",
 		"security.policy.read",
 		"security.policy.update",
+		"security.protection_access_request.create",
+		"security.protection_access_request.read",
+		"security.protection_access_request.update",
 		"security.protection_baseline.create",
 		"security.protection_baseline.delete",
 		"security.protection_baseline.read",
 		"security.protection_baseline.update",
-		"security.protection_exemption.create",
 		"security.protection_exemption.delete",
 		"security.protection_exemption.read",
-		"security.protection_exemption.update",
 		"security.sensitive_data_type.create",
 		"security.sensitive_data_type.delete",
 		"security.sensitive_data_type.read",

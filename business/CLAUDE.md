@@ -7,7 +7,8 @@
 ## 包含组件
 
 - PostgreSQL/PostGIS、MySQL：业务关系库与 CDC 测试源。
-- OceanBase Community Edition：国产分布式关系数据库的 MySQL 模式测试源，以独立 `engine_type=oceanbase` 注册；启动时幂等初始化探针及普通关系业务样例，支持非空间普通表的 prepare/session/delete/upsert 集成验证，不包含尚未声明的空间、CDC、bounded watermark source 或 Oracle 模式能力。
+- OceanBase Community Edition：国产分布式关系数据库的 MySQL 模式测试源，以独立 `engine_type=oceanbase` 注册；启动时幂等初始化探针及普通关系业务样例，支持非空间普通表的 bounded watermark source 与 prepare/session/delete/upsert 集成验证，不包含空间、CDC 或 Oracle 模式能力。
+- OceanBase 跨模块 T4 只由 `scripts/online-oceanbase-consumer-fixture.sh` 管理固定源/目标表；Fixture 不创建 Engine Instance，并必须在退出路径恢复 5 行源基线和空目标表。
 - Oracle Free 23ai：普通表、Schema、Oracle Spatial、只读快照、普通表 CDC 与 Oracle Spatial CDC 测试源；ArcGIS SDE 作为后续独立能力路线预留。
 - Redpanda：独立业务 Kafka API 消息流，不承载 ADDP Infra Kafka topic。
 - MinIO：业务对象存储。

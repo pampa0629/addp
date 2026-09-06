@@ -9,6 +9,7 @@
       :rows="rows"
       :columns="config.columns || []"
       :fields="descriptor?.output_contract?.fields || []"
+      :presentations="config.field_presentations || []"
       height="100%"
       @result-select="emit('result-select', $event)"
     />

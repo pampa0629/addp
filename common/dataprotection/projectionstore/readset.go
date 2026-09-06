@@ -93,7 +93,7 @@ func (s *Store) PrepareQueryProtection(
 	}
 	return func(result *plugin.QueryResult) error {
 		for _, plan := range plans {
-			if err := dataprotection.ProtectQueryResultSource(result, plan.source, action, plan.rules); err != nil {
+			if err := dataprotection.ProtectQueryResultSource(result, plan.source, action, plan.rules, dataprotection.SubjectReference{}); err != nil {
 				return fmt.Errorf("protect query result: %w", err)
 			}
 		}
@@ -147,7 +147,7 @@ func (s *Store) PrepareTableProtection(
 		Path: path, Fields: append([]datatype.FieldInfo(nil), fields...), IdentityOutput: true,
 	}
 	return func(result *plugin.QueryResult) error {
-		if err := dataprotection.ProtectQueryResultSource(result, source, action, rules); err != nil {
+		if err := dataprotection.ProtectQueryResultSource(result, source, action, rules, dataprotection.SubjectReference{}); err != nil {
 			return fmt.Errorf("protect table result: %w", err)
 		}
 		return nil

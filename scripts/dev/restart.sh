@@ -1011,6 +1011,8 @@ elif [ ${#FORCE_BUILD_MODULES[@]} -gt 0 ]; then
       rm -f .dev-bins/addp-quality 2>/dev/null || true
     elif [ "$module" = "develop" ]; then
       rm -f .dev-bins/addp-develop .dev-bins/addp-develop-query-worker 2>/dev/null || true
+    elif [ "$module" = "manager" ]; then
+      rm -f .dev-bins/addp-manager .dev-bins/addp-manager-bounded-worker 2>/dev/null || true
     else
       rm -f .dev-bins/addp-${module} 2>/dev/null || true
       if [ "$module" = "transfer" ]; then

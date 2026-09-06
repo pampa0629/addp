@@ -37,13 +37,32 @@
           <el-tag size="small" type="warning" effect="plain">{{ t('manager.explorer.catalogUnavailableShort') }}</el-tag>
         </el-tooltip>
       </div>
-      <div v-if="canOpenSecurity" class="resource-governance-summary__group resource-governance-summary__security">
+      <div v-if="canOpenSecurity || canRequestPlaintext" class="resource-governance-summary__group resource-governance-summary__security">
         <el-tooltip :content="t('manager.explorer.protectionEntryDescription')" placement="bottom">
           <span class="resource-governance-summary__label">{{ t('manager.explorer.protectionEntryTitle') }}</span>
         </el-tooltip>
-        <el-button link type="primary" size="small" @click="openSecurityProtection">
+        <el-button v-if="canOpenSecurity" link type="primary" size="small" @click="openSecurityProtection">
           {{ t('manager.explorer.openDataProtection') }}
         </el-button>
+        <el-tag v-if="accessTargetsLoading" size="small" type="info" effect="plain">
+          {{ t('manager.explorer.plaintextAccess.loading') }}
+        </el-tag>
+        <template v-else-if="accessTargets.length > 0">
+          <el-tag v-if="activeAccessCount > 0" size="small" type="success" effect="plain">
+            {{ t('manager.explorer.plaintextAccess.active', { count: activeAccessCount }) }}
+          </el-tag>
+          <el-tag v-if="pendingAccessCount > 0" size="small" type="warning" effect="plain">
+            {{ t('manager.explorer.plaintextAccess.pending', { count: pendingAccessCount }) }}
+          </el-tag>
+          <el-tooltip v-if="reviewRequiredAccessCount > 0" :content="t('manager.explorer.plaintextAccess.reviewRequiredHint')" placement="bottom">
+            <el-tag size="small" type="info" effect="plain">
+              {{ t('manager.explorer.plaintextAccess.reviewRequired', { count: reviewRequiredAccessCount }) }}
+            </el-tag>
+          </el-tooltip>
+          <el-button v-if="requestableAccessTargets.length > 0" link type="warning" size="small" @click="openAccessRequest">
+            {{ t('manager.explorer.plaintextAccess.request') }}
+          </el-button>
+        </template>
       </div>
     </section>
     <div class="item-tab-bar" role="tablist">
@@ -308,6 +327,39 @@
     </div>
 
     <el-dialog
+      v-model="accessRequestVisible"
+      :title="t('manager.explorer.plaintextAccess.title')"
+      width="560px"
+      append-to-body
+      destroy-on-close
+    >
+      <el-alert type="warning" :closable="false" show-icon :title="t('manager.explorer.plaintextAccess.warning')" />
+      <el-form label-position="top" class="plaintext-access-form">
+        <el-form-item :label="t('manager.explorer.plaintextAccess.field')" required>
+          <el-select v-model="accessRequestForm.assessmentId" style="width: 100%">
+            <el-option v-for="target in requestableAccessTargets" :key="target.assessment_id" :label="target.component?.key" :value="target.assessment_id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="t('manager.explorer.plaintextAccess.deadline')" required>
+          <el-date-picker
+            v-model="accessRequestForm.expiresAt"
+            type="datetime"
+            style="width: 100%"
+            :disabled-date="disableAccessRequestDate"
+          />
+          <small class="plaintext-access-form__help">{{ t('manager.explorer.plaintextAccess.deadlineHint') }}</small>
+        </el-form-item>
+        <el-form-item :label="t('manager.explorer.plaintextAccess.rationale')" required>
+          <el-input v-model="accessRequestForm.rationale" type="textarea" :rows="4" maxlength="2000" show-word-limit :placeholder="t('manager.explorer.plaintextAccess.rationalePlaceholder')" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="accessRequestVisible = false">{{ t('manager.explorer.plaintextAccess.cancel') }}</el-button>
+        <el-button type="primary" :loading="accessRequestSaving" @click="submitAccessRequest">{{ t('manager.explorer.plaintextAccess.submit') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
       v-model="jsonDialogVisible"
       :title="t('manager.explorer.attributeJsonTitle')"
       width="760px"
@@ -320,8 +372,9 @@
 </template>
 
 <script setup>
-import { computed, defineAsyncComponent, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { ElMessage } from 'element-plus'
 import PreviewPanel from '@/components/explorer/PreviewPanel.vue'
 import { optionalCount, pickNestedCount } from '@/utils/metadataRowCount'
 import { openConsoleRoute, parseLocator } from '@addp/common-frontend'
@@ -372,7 +425,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['page-change', 'navigate', 'child-change', 'tab-change', 'open-catalog'])
+const emit = defineEmits(['page-change', 'navigate', 'child-change', 'tab-change', 'open-catalog', 'refresh-preview'])
 
 const profileVisited = ref(false)
 const jsonDialogVisible = ref(false)
@@ -438,6 +491,97 @@ let itemMetaRequestSeq = 0
 const itemMeta = computed(() => props.previewData?.item_meta || fallbackItemMeta.value)
 const itemFingerprint = computed(() => String(itemMeta.value?.fingerprint || '').trim())
 const canOpenSecurity = computed(() => authStore.hasPermission('security.enrollment.create'))
+const canRequestPlaintext = computed(() => authStore.hasPermission('security.protection_access_request.create') && authStore.hasPermission('security.protection_access_request.read'))
+const accessTargets = ref([])
+const accessTargetsLoading = ref(false)
+const accessRequestVisible = ref(false)
+const accessRequestSaving = ref(false)
+const accessRequestForm = reactive({ assessmentId: '', expiresAt: null, rationale: '' })
+let accessTargetsRequestSeq = 0
+let accessStatusTimer = null
+const ACCESS_REQUEST_MAX_DURATION_MS = 30 * 24 * 60 * 60 * 1000
+const activeAccessCount = computed(() => accessTargets.value.filter(target => target.active_exemption_id).length)
+const pendingAccessCount = computed(() => accessTargets.value.filter(target => target.pending_request_id).length)
+const reviewRequiredAccessCount = computed(() => accessTargets.value.filter(target => !target.requestable).length)
+const requestableAccessTargets = computed(() => accessTargets.value.filter(target => target.requestable && !target.active_exemption_id && !target.pending_request_id))
+
+const clearAccessStatusPoll = () => {
+  if (accessStatusTimer) clearTimeout(accessStatusTimer)
+  accessStatusTimer = null
+}
+
+const scheduleAccessStatusPoll = () => {
+  clearAccessStatusPoll()
+  if (pendingAccessCount.value > 0) accessStatusTimer = setTimeout(loadAccessTargets, 5000)
+}
+
+const loadAccessTargets = async () => {
+  const fingerprint = itemFingerprint.value
+  const requestSeq = ++accessTargetsRequestSeq
+  const previousActiveCount = activeAccessCount.value
+  clearAccessStatusPoll()
+  if (!fingerprint || !canRequestPlaintext.value) {
+    accessTargets.value = []
+    return
+  }
+  accessTargetsLoading.value = true
+  try {
+    const response = await client.get('/security/protection-access-request-targets', { params: { target_identity: fingerprint, consumer_owner: 'manager', action: 'preview' } })
+    if (requestSeq === accessTargetsRequestSeq) {
+      accessTargets.value = Array.isArray(response?.data) ? response.data : []
+      if (previousActiveCount === 0 && activeAccessCount.value > 0) {
+        ElMessage.success(t('manager.explorer.plaintextAccess.activated'))
+        emit('refresh-preview')
+      }
+      scheduleAccessStatusPoll()
+    }
+  } catch {
+    if (requestSeq === accessTargetsRequestSeq) accessTargets.value = []
+  } finally {
+    if (requestSeq === accessTargetsRequestSeq) accessTargetsLoading.value = false
+  }
+}
+
+const disableAccessRequestDate = value => value.getTime() < Date.now() - 24 * 60 * 60 * 1000 || value.getTime() > Date.now() + ACCESS_REQUEST_MAX_DURATION_MS
+
+const validAccessRequestDeadline = value => {
+  const deadline = value instanceof Date ? value : new Date(value)
+  const remaining = deadline.getTime() - Date.now()
+  return !Number.isNaN(deadline.getTime()) && remaining > 0 && remaining <= ACCESS_REQUEST_MAX_DURATION_MS
+}
+
+const openAccessRequest = () => {
+  const target = requestableAccessTargets.value[0]
+  if (!target) return
+  accessRequestForm.assessmentId = target.assessment_id
+  accessRequestForm.expiresAt = new Date(Date.now() + 8 * 60 * 60 * 1000)
+  accessRequestForm.rationale = ''
+  accessRequestVisible.value = true
+}
+
+const submitAccessRequest = async () => {
+  if (!accessRequestForm.assessmentId || !validAccessRequestDeadline(accessRequestForm.expiresAt) || !String(accessRequestForm.rationale || '').trim()) {
+    ElMessage.warning(t('manager.explorer.plaintextAccess.required'))
+    return
+  }
+  accessRequestSaving.value = true
+  try {
+    await client.post('/security/protection-access-requests', {
+      assessment_id: accessRequestForm.assessmentId,
+      consumer_owner: 'manager',
+      action: 'preview',
+      requested_expires_at: new Date(accessRequestForm.expiresAt).toISOString(),
+      rationale: String(accessRequestForm.rationale).trim()
+    })
+    accessRequestVisible.value = false
+    ElMessage.success(t('manager.explorer.plaintextAccess.created'))
+    await loadAccessTargets()
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.error || t('manager.explorer.plaintextAccess.failed'))
+  } finally {
+    accessRequestSaving.value = false
+  }
+}
 
 const loadFallbackItemMeta = async (itemId) => {
   const requestSeq = ++itemMetaRequestSeq
@@ -513,6 +657,8 @@ const loadCatalogSummary = async () => {
 }
 
 watch(itemFingerprint, loadCatalogSummary, { immediate: true })
+watch([itemFingerprint, canRequestPlaintext], loadAccessTargets, { immediate: true })
+onBeforeUnmount(clearAccessStatusPoll)
 const selectedContentActive = computed(() => Boolean(
   props.selectedChildName || props.selectedRefPath || props.selectedNestedChildPath
 ))
@@ -1566,6 +1712,9 @@ const compareKeys = (a, b, order) => {
   margin-left: 0;
   padding-inline: 2px;
 }
+
+.plaintext-access-form { margin-top: 16px; }
+.plaintext-access-form__help { display: block; margin-top: 6px; color: var(--addp-text-tertiary); font-size: 12px; line-height: 1.5; }
 
 @media (max-width: 640px) {
   .resource-governance-summary {

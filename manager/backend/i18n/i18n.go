@@ -86,11 +86,17 @@ const (
 	MsgEmbeddingConfigurationUpdateFailed    = "manager.error.embedding_configuration_update_failed"
 	MsgEmbeddingConfigurationVersionConflict = "manager.error.embedding_configuration_version_conflict"
 	MsgPPTXPDFServiceUnavailable             = "manager.error.pptx_pdf_service_unavailable"
+	MsgInvalidPPTXPDFTaskID                  = "manager.error.invalid_pptx_pdf_task_id"
 	MsgInvalidPPTXPDFResultID                = "manager.error.invalid_pptx_pdf_result_id"
+	MsgPPTXPDFTaskNotFound                   = "manager.error.pptx_pdf_task_not_found"
+	MsgPPTXPDFResultNotFound                 = "manager.error.pptx_pdf_result_not_found"
 	MsgPPTXPDFResultNotReady                 = "manager.error.pptx_pdf_result_not_ready"
 	MsgPPTXPDFObjectNotFound                 = "manager.error.pptx_pdf_object_not_found"
 	MsgPPTXPDFResolveFailed                  = "manager.error.pptx_pdf_resolve_failed"
 	MsgPPTXPDFExecutionFailed                = "manager.error.pptx_pdf_execution_failed"
+	MsgPPTXPDFDeleteFailed                   = "manager.error.pptx_pdf_delete_failed"
+	MsgPPTXPDFTaskDeleted                    = "manager.pptx_pdf.task_deleted"
+	MsgPPTXPDFResultDeleted                  = "manager.pptx_pdf.result_deleted"
 )
 
 func init() {

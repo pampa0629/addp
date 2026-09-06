@@ -136,6 +136,9 @@ func TestPostgresSchemaStatementsDefineDeletePolicies(t *testing.T) {
 		"CONSTRAINT fk_standard_document_metric_mappings_metric FOREIGN KEY (metric_id) REFERENCES standard.metric_definitions(id) ON DELETE CASCADE",
 		"ALTER TABLE standard.document_extraction_candidates DROP CONSTRAINT IF EXISTS fk_standard_document_extractions_candidates",
 		"ALTER TABLE standard.document_extraction_evidences DROP CONSTRAINT IF EXISTS fk_standard_document_extraction_candidates_evidences",
+		"CONSTRAINT fk_standard_document_candidate_formalizations_candidate FOREIGN KEY (candidate_id) REFERENCES standard.document_extraction_candidates(id) ON DELETE RESTRICT",
+		"CONSTRAINT ck_standard_document_candidate_formalizations_action CHECK",
+		"CONSTRAINT ck_standard_document_candidate_formalizations_status CHECK",
 		"CONSTRAINT ck_standard_collection_events_type CHECK",
 		"CONSTRAINT fk_standard_collection_events_revision FOREIGN KEY (revision_id) REFERENCES standard.standard_collection_revisions(id) ON DELETE CASCADE",
 	} {
@@ -178,6 +181,7 @@ func openStandardSchemaTestDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE standard.document_revisions (id INTEGER PRIMARY KEY, document_id INTEGER NOT NULL, revision_no INTEGER NOT NULL)`,
 		`CREATE TABLE standard.document_extractions (id INTEGER PRIMARY KEY, document_revision_id INTEGER NOT NULL)`,
 		`CREATE TABLE standard.document_extraction_candidates (id INTEGER PRIMARY KEY, extraction_id INTEGER NOT NULL)`,
+		`CREATE TABLE standard.document_candidate_formalizations (candidate_id INTEGER PRIMARY KEY, standard_id INTEGER NOT NULL, revision_id INTEGER NOT NULL)`,
 		`CREATE TABLE standard.document_extraction_evidences (id INTEGER PRIMARY KEY, document_revision_id INTEGER NOT NULL)`,
 		`CREATE TABLE standard.document_element_mappings (id INTEGER PRIMARY KEY, document_id INTEGER NOT NULL, element_id INTEGER NOT NULL)`,
 		`CREATE TABLE standard.document_glossary_mappings (id INTEGER PRIMARY KEY, document_id INTEGER NOT NULL, glossary_id INTEGER NOT NULL)`,

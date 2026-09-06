@@ -28,7 +28,10 @@ class Step:
 
 GO_T1_EXCLUDED_ENVIRONMENT = (
     "*_POSTGRES_TEST_DSN",
-    "ADDP_POSTGRES_INTEGRATION",
+    "ADDP_*_INTEGRATION",
+)
+T2_SERVICES_PATTERN = re.compile(
+    r"(?m)^# ADDP_T2_SERVICES=(?P<services>[a-z0-9_-]+(?:,[a-z0-9_-]+)*)\s*$"
 )
 
 
@@ -69,6 +72,16 @@ def repository_files(repository: Path, *patterns: str) -> list[str]:
     )
 
 
+def hosted_t2_scripts(repository: Path) -> list[str]:
+    return [
+        path
+        for path in repository_files(repository, "scripts/test/*-gate.sh")
+        if T2_SERVICES_PATTERN.search(
+            (repository / path).read_text(encoding="utf-8")
+        )
+    ]
+
+
 def make_target(makefile: str, target: str) -> re.Match[str] | None:
     logical_makefile = re.sub(r"\\\n\s*", " ", makefile)
     return re.search(
@@ -88,11 +101,10 @@ def discover_modules(repository: Path) -> set[str]:
             "*/frontend/package.json",
             "*/pyproject.toml",
             "*/backend/requirements.txt",
-            "scripts/test/*-postgres-gate.sh",
         )
         if not path.startswith("scripts/test/")
     }
-    for path in repository_files(repository, "scripts/test/*-postgres-gate.sh"):
+    for path in hosted_t2_scripts(repository):
         modules.add(Path(path).name.split("-", 1)[0])
     return modules
 
@@ -151,7 +163,7 @@ def plan_module(repository: Path, module: str, include_platform: bool = True) ->
             raise ModuleGateError(f"Makefile target {python_target} is missing")
         steps.append(Step(f"{module} Python T1", ("make", python_target), repository))
 
-    integration_scripts = repository_files(repository, "scripts/test/*-gate.sh")
+    integration_scripts = hosted_t2_scripts(repository)
     registered_targets: set[str] = set()
     for path in integration_scripts:
         name = Path(path).name.removesuffix("-gate.sh")

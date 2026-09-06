@@ -117,7 +117,7 @@ func createProtectionEnrollment(tx *gorm.DB, tenantID, userID int64, target data
 	}
 	for _, owner := range allRequiredProtectionOwners() {
 		projection := dataprotection.Projection{
-			SchemaVersion: dataprotection.ProjectionSchemaV1,
+			SchemaVersion: dataprotection.ProjectionSchemaV2,
 			ProjectionID:  uuid.NewString(), Revision: revisionString(1),
 			ConsumerOwner: owner, State: dataprotection.ProjectionStateEnrolling,
 			Target: target, Rules: []dataprotection.Rule{},
@@ -614,7 +614,7 @@ func projectionRuleSummaries(record models.ProtectionProjectionRecord) ([]models
 	now := time.Now().UTC()
 	for _, rule := range projection.Rules {
 		action := strings.TrimSpace(rule.Action)
-		effect := strings.TrimSpace(rule.Decision.Effective(now).Effect)
+		effect := strings.TrimSpace(rule.EffectiveDecision(dataprotection.SubjectReference{}, now).Effect)
 		if action != "" && effect != "" {
 			key := action + "\x00" + effect
 			seen[key] = models.ProtectionOwnerRuleSummary{Action: action, Effect: effect}

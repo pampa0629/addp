@@ -57,6 +57,17 @@ SUITES: Mapping[str, Suite] = {
         command=(sys.executable, "scripts/test/module-registry-recovery-online.py"),
         services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL")),
     ),
+    "oceanbase-consumer-flow": Suite(
+        command=(sys.executable, "scripts/test/oceanbase-consumer-flow-online.py"),
+        services=(
+            ("gateway", "GATEWAY_URL"),
+            ("system", "SYSTEM_URL"),
+            ("meta", "META_URL"),
+            ("transfer", "TRANSFER_URL"),
+            ("develop", "DEVELOP_URL"),
+            ("service", "SERVICE_URL"),
+        ),
+    ),
     "manager-internal-artifact-lineage": Suite(
         command=(sys.executable, "scripts/test/manager-internal-artifact-lineage-online.py"),
         services=(
@@ -78,17 +89,14 @@ SUITES: Mapping[str, Suite] = {
             ("manager", "MANAGER_URL"),
         ),
     ),
-    "security-protection-exemption": Suite(
-        command=(sys.executable, "scripts/test/security-protection-exemption-online.py"),
+    "security-plaintext-access": Suite(
+        command=(sys.executable, "scripts/test/security-plaintext-access-online.py"),
         services=(
             ("gateway", "GATEWAY_URL"),
             ("system", "SYSTEM_URL"),
             ("meta", "META_URL"),
             ("security", "SECURITY_URL"),
             ("manager", "MANAGER_URL"),
-            ("develop", "DEVELOP_URL"),
-            ("service", "SERVICE_URL"),
-            ("transfer", "TRANSFER_URL"),
         ),
     ),
     "security-mysql-owner-protection": Suite(

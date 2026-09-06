@@ -202,7 +202,7 @@ func installDevelopProjection(t *testing.T, store *projectionstore.Store, identi
 	t.Helper()
 	now := time.Now().UTC()
 	projection := dataprotection.Projection{
-		SchemaVersion: dataprotection.ProjectionSchemaV1,
+		SchemaVersion: dataprotection.ProjectionSchemaV2,
 		ProjectionID:  "projection-develop-persons",
 		Revision:      "00000000000000000001",
 		ConsumerOwner: "develop",
@@ -243,7 +243,7 @@ func installActiveDevelopProjection(t *testing.T, store *projectionstore.Store, 
 		t.Fatal(err)
 	}
 	projection := dataprotection.Projection{
-		SchemaVersion: dataprotection.ProjectionSchemaV1, ProjectionID: "projection-develop-active", Revision: "00000000000000000001",
+		SchemaVersion: dataprotection.ProjectionSchemaV2, ProjectionID: "projection-develop-active", Revision: "00000000000000000001",
 		ConsumerOwner: "develop", State: dataprotection.ProjectionStateActive,
 		Target:             dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: identity},
 		SourceSnapshotHash: snapshot,

@@ -164,8 +164,8 @@ func TestExtractCandidatesPersistsCanonicalOutdoorEvidence(t *testing.T) {
 	if err != nil || len(loaded) != 1 || len(loaded[0].Candidates) != 1 || loaded[0].Candidates[0].Payload.Aggregation == nil || *loaded[0].Candidates[0].Payload.Aggregation != "count" {
 		t.Fatalf("loaded=%+v err=%v", loaded, err)
 	}
-	listed, err := svc.ListExtractions(doc.ID, doc.TenantID)
-	if err != nil || len(listed) != 1 || listed[0].Candidates[0].Comparison == nil || listed[0].Candidates[0].Comparison.Result != models.CandidateComparisonExact {
+	listed, err := svc.ListCandidateGroups(doc.ID, doc.TenantID, DocumentCandidateGroupListOptions{})
+	if err != nil || len(listed.Data) != 1 || listed.Data[0].Candidate.Comparison == nil || listed.Data[0].Candidate.Comparison.Result != models.CandidateComparisonExact {
 		t.Fatalf("listed comparison=%+v err=%v", listed, err)
 	}
 	updated, err := repo.GetByID(doc.ID, doc.TenantID)
@@ -555,9 +555,10 @@ func openDocumentServiceTestDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE standard.document_revisions (id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER NOT NULL, revision_no INTEGER NOT NULL, status TEXT NOT NULL, name TEXT NOT NULL, version_label TEXT, publish_date DATETIME, description TEXT, file_key TEXT, file_name TEXT, file_size INTEGER, media_type TEXT, content_sha256 TEXT, change_summary TEXT NOT NULL, effective_from DATETIME, effective_to DATETIME, submitted_by INTEGER, submitted_at DATETIME, published_by INTEGER, published_at DATETIME, created_by INTEGER NOT NULL, updated_by INTEGER, created_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE standard.document_extractions (id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, document_revision_id INTEGER NOT NULL, status TEXT NOT NULL, requested_by INTEGER NOT NULL, created_at DATETIME)`,
 		`CREATE TABLE standard.document_extraction_candidates (id INTEGER PRIMARY KEY AUTOINCREMENT, extraction_id INTEGER NOT NULL, candidate_type TEXT NOT NULL, code TEXT NOT NULL, name TEXT NOT NULL, definition TEXT NOT NULL, payload TEXT, status TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1, reviewed_by INTEGER, reviewed_at DATETIME, created_at DATETIME, updated_at DATETIME)`,
+		`CREATE TABLE standard.document_candidate_formalizations (candidate_id INTEGER PRIMARY KEY, action TEXT NOT NULL, standard_id INTEGER NOT NULL, standard_code TEXT NOT NULL, revision_id INTEGER NOT NULL, revision_no INTEGER NOT NULL, target_revision_status TEXT NOT NULL, change_summary TEXT NOT NULL, created_by INTEGER NOT NULL, created_at DATETIME)`,
 		`CREATE TABLE standard.document_extraction_evidences (id INTEGER PRIMARY KEY AUTOINCREMENT, candidate_id INTEGER NOT NULL, document_revision_id INTEGER NOT NULL, section_path TEXT NOT NULL, start_line INTEGER NOT NULL, end_line INTEGER NOT NULL, excerpt TEXT NOT NULL, excerpt_hash TEXT NOT NULL, created_at DATETIME)`,
 		`CREATE TABLE standard.document_file_cleanups (id INTEGER PRIMARY KEY AUTOINCREMENT, object_key TEXT NOT NULL UNIQUE, attempts INTEGER NOT NULL DEFAULT 0, next_attempt_at DATETIME NOT NULL, last_error TEXT, created_at DATETIME, updated_at DATETIME)`,
-		`CREATE TABLE standard.metric_definitions (id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, scope_type TEXT NOT NULL, owner_domain_id INTEGER, code TEXT NOT NULL, draft_revision_id INTEGER, lifecycle_state TEXT NOT NULL)`,
+		`CREATE TABLE standard.metric_definitions (id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, scope_type TEXT NOT NULL, owner_domain_id INTEGER, code TEXT NOT NULL, draft_revision_id INTEGER, version INTEGER NOT NULL DEFAULT 1, lifecycle_state TEXT NOT NULL)`,
 		`CREATE TABLE standard.metric_definition_revisions (id INTEGER PRIMARY KEY AUTOINCREMENT, metric_definition_id INTEGER NOT NULL, revision_no INTEGER NOT NULL, status TEXT NOT NULL, name TEXT NOT NULL, definition TEXT NOT NULL, statistical_caliber TEXT NOT NULL, semantic_formula TEXT, unit_id INTEGER, effective_from DATETIME, effective_to DATETIME)`,
 	}
 	for _, statement := range statements {

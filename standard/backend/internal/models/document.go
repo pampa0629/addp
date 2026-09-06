@@ -3,10 +3,17 @@ package models
 import "time"
 
 const (
-	CandidateComparisonNew             = "new"
-	CandidateComparisonExact           = "exact"
-	CandidateComparisonContentConflict = "content_conflict"
-	CandidateComparisonScopeConflict   = "scope_conflict"
+	CandidateComparisonNew                = "new"
+	CandidateComparisonExact              = "exact"
+	CandidateComparisonContentConflict    = "content_conflict"
+	CandidateComparisonScopeConflict      = "scope_conflict"
+	CandidateGroupStatePending            = "pending"
+	CandidateGroupStateRetained           = "retained"
+	CandidateGroupStateRejected           = "rejected"
+	CandidateGroupStateFormalized         = "formalized"
+	CandidateFormalizationCreatedIdentity = "created_identity"
+	CandidateFormalizationCreatedRevision = "created_revision"
+	CandidateFormalizationLinkedExisting  = "linked_existing"
 )
 
 // Document 是标准来源文档的稳定身份。名称、业务版次和文件只存在于 DocumentRevision。
@@ -96,11 +103,72 @@ type DocumentExtractionCandidate struct {
 	CreatedAt     time.Time                              `json:"created_at"`
 	UpdatedAt     time.Time                              `json:"updated_at"`
 	Evidences     []DocumentExtractionEvidence           `gorm:"foreignKey:CandidateID;constraint:OnDelete:CASCADE" json:"evidences,omitempty"`
+	Formalization *DocumentCandidateFormalization        `gorm:"foreignKey:CandidateID;constraint:OnDelete:RESTRICT" json:"formalization,omitempty"`
 	Comparison    *DocumentExtractionCandidateComparison `gorm:"-" json:"comparison,omitempty"`
 }
 
 func (DocumentExtractionCandidate) TableName() string {
 	return "standard.document_extraction_candidates"
+}
+
+// DocumentExtractionCandidateOccurrence 保留一个聚合候选在确定提炼批次中的原始出现事实。
+type DocumentExtractionCandidateOccurrence struct {
+	CandidateID        int64                           `json:"candidate_id"`
+	ExtractionID       int64                           `json:"extraction_id"`
+	DocumentRevisionID int64                           `json:"document_revision_id"`
+	RequestedBy        int64                           `json:"requested_by"`
+	ExtractedAt        time.Time                       `json:"extracted_at"`
+	Status             string                          `json:"status" enums:"pending,retained,rejected"`
+	Version            int64                           `json:"version"`
+	ReviewedBy         *int64                          `json:"reviewed_by,omitempty"`
+	ReviewedAt         *time.Time                      `json:"reviewed_at,omitempty"`
+	Evidences          []DocumentExtractionEvidence    `json:"evidences"`
+	Formalization      *DocumentCandidateFormalization `json:"formalization,omitempty"`
+}
+
+// DocumentExtractionCandidateGroup 是跨提炼批次按确定性语义指纹生成的只读候选聚合投影。
+type DocumentExtractionCandidateGroup struct {
+	SemanticFingerprint string                                  `json:"semantic_fingerprint"`
+	State               string                                  `json:"state" enums:"pending,retained,rejected,formalized"`
+	OccurrenceCount     int                                     `json:"occurrence_count"`
+	FirstSeenAt         time.Time                               `json:"first_seen_at"`
+	LastSeenAt          time.Time                               `json:"last_seen_at"`
+	Candidate           DocumentExtractionCandidate             `json:"candidate"`
+	Occurrences         []DocumentExtractionCandidateOccurrence `json:"occurrences"`
+}
+
+type DocumentExtractionCandidateGroupStatusCounts struct {
+	Pending    int64 `json:"pending"`
+	Retained   int64 `json:"retained"`
+	Rejected   int64 `json:"rejected"`
+	Formalized int64 `json:"formalized"`
+}
+
+type PaginatedDocumentExtractionCandidateGroupResponse struct {
+	Data         []DocumentExtractionCandidateGroup           `json:"data"`
+	Total        int64                                        `json:"total"`
+	Page         int                                          `json:"page"`
+	PageSize     int                                          `json:"page_size"`
+	TotalPages   int                                          `json:"total_pages"`
+	StatusCounts DocumentExtractionCandidateGroupStatusCounts `json:"status_counts"`
+}
+
+// DocumentCandidateFormalization 是 retained 候选到受治理标准修订的一对一不可变事实。
+type DocumentCandidateFormalization struct {
+	CandidateID          int64     `gorm:"primaryKey" json:"candidate_id"`
+	Action               string    `gorm:"size:24;not null" json:"action" enums:"created_identity,created_revision,linked_existing"`
+	StandardID           int64     `gorm:"not null;index" json:"standard_id"`
+	StandardCode         string    `gorm:"size:100;not null" json:"standard_code"`
+	RevisionID           int64     `gorm:"not null;index" json:"revision_id"`
+	RevisionNo           int64     `gorm:"not null" json:"revision_no"`
+	TargetRevisionStatus string    `gorm:"size:20;not null" json:"target_revision_status" enums:"draft,in_review,published,withdrawn"`
+	ChangeSummary        string    `gorm:"type:text;not null" json:"change_summary"`
+	CreatedBy            int64     `gorm:"not null" json:"created_by"`
+	CreatedAt            time.Time `json:"created_at"`
+}
+
+func (DocumentCandidateFormalization) TableName() string {
+	return "standard.document_candidate_formalizations"
 }
 
 // DocumentExtractionCandidatePayload 是 Standard 与 Copilot 共用的强类型候选补充契约。
@@ -265,6 +333,18 @@ type CreateDocumentExtractionRequest struct {
 type UpdateDocumentExtractionCandidateRequest struct {
 	Version int64  `json:"version" binding:"required,gt=0" minimum:"1"`
 	Status  string `json:"status" binding:"required" enums:"retained,rejected"`
+}
+
+type FormalizeDocumentExtractionCandidateRequest struct {
+	Version       int64  `json:"version" binding:"required,gt=0" minimum:"1"`
+	ChangeSummary string `json:"change_summary" binding:"required"`
+	MetricType    string `json:"metric_type,omitempty" enums:"atomic,derived,composite"`
+}
+
+type DocumentCandidateFormalizationResponse struct {
+	DocumentCandidateFormalization
+	CandidateType    string `json:"candidate_type" enums:"glossary,element,code_set,metric"`
+	CandidateVersion int64  `json:"candidate_version"`
 }
 
 type SetDocumentMappingsRequest struct {

@@ -1081,6 +1081,102 @@ func TestSecurityModuleDirtyMigrationRepairAgainstPostgres(t *testing.T) {
 	}
 }
 
+func TestSecurityProtectionAccessRequestDirtyMigrationRepairAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("set ADDP_SYSTEM_POSTGRES_TEST_DSN to a disposable PostgreSQL 15+ database")
+	}
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
+
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`DROP SCHEMA IF EXISTS system CASCADE; DROP SCHEMA IF EXISTS common CASCADE`); err != nil {
+		t.Fatalf("reset Security access request repair migration schemas: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	through129, through130 := migrationFilesBeforeAndThrough(t, "000130_iam_security_protection_access_request.up.sql")
+	if err := (&Runner{DSN: dsn, FS: through129, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply migrations through 129: %v", err)
+	}
+	if _, err := db.Exec(`UPDATE system.schema_migrations SET version = 130, dirty = true`); err != nil {
+		t.Fatalf("simulate fully rolled-back migration 130: %v", err)
+	}
+
+	if err := RepairDirtySecurityProtectionAccessRequestMigration130(ctx, db); err != nil {
+		t.Fatalf("repair dirty Security protection access request migration 130: %v", err)
+	}
+	var version int
+	var dirty bool
+	if err := db.QueryRow(`SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
+		t.Fatalf("read repaired migration state: %v", err)
+	}
+	if version != 129 || dirty {
+		t.Fatalf("repaired migration state=(%d,%t), want (129,false)", version, dirty)
+	}
+	if err := (&Runner{DSN: dsn, FS: through130, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply corrected migration 130 after repair: %v", err)
+	}
+	var disabledLegacy, activeRequests, legacyRoleBindings, requestRoleBindings int
+	if err := db.QueryRow(`
+		SELECT
+		    count(*) FILTER (WHERE permission_key IN ('security.protection_exemption.create', 'security.protection_exemption.update') AND status = 'disabled'),
+		    count(*) FILTER (WHERE permission_key IN ('security.protection_access_request.create', 'security.protection_access_request.read', 'security.protection_access_request.update') AND status = 'active')
+		FROM system.permissions
+	`).Scan(&disabledLegacy, &activeRequests); err != nil {
+		t.Fatalf("inspect migration 130 permission state: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT
+		    count(*) FILTER (WHERE permission.permission_key IN ('security.protection_exemption.create', 'security.protection_exemption.update')),
+		    count(*) FILTER (WHERE permission.permission_key IN ('security.protection_access_request.create', 'security.protection_access_request.read', 'security.protection_access_request.update'))
+		FROM system.role_permissions role_permission
+		JOIN system.permissions permission ON permission.id = role_permission.permission_id
+	`).Scan(&legacyRoleBindings, &requestRoleBindings); err != nil {
+		t.Fatalf("inspect migration 130 role permission state: %v", err)
+	}
+	if err := db.QueryRow(`SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
+		t.Fatalf("read post-repair migration state: %v", err)
+	}
+	if version != 130 || dirty || disabledLegacy != 2 || activeRequests != 3 || legacyRoleBindings != 0 || requestRoleBindings != 12 {
+		t.Fatalf(
+			"migration 130 state=(%d,%t) disabled_legacy=%d active_requests=%d legacy_bindings=%d request_bindings=%d",
+			version, dirty, disabledLegacy, activeRequests, legacyRoleBindings, requestRoleBindings,
+		)
+	}
+
+	if _, err := db.Exec(`DROP SCHEMA system CASCADE; DROP SCHEMA IF EXISTS common CASCADE`); err != nil {
+		t.Fatalf("reset Security access request repair rejection schemas: %v", err)
+	}
+	if err := (&Runner{DSN: dsn, FS: through129, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("reapply migrations through 129 for rejection: %v", err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO system.permissions (
+			permission_key, owner_module, action, risk_level, delegable,
+			allowed_scope_types, tenant_customizable, name_i18n_key,
+			description_i18n_key, status
+		) VALUES (
+			'security.protection_access_request.read', 'security', 'read', 'high', false,
+			ARRAY['tenant']::text[], true,
+			'permissions.security.protection_access_request.read.name',
+			'permissions.security.protection_access_request.read.description', 'active'
+		)
+	`); err != nil {
+		t.Fatalf("seed partially applied migration 130 fact: %v", err)
+	}
+	if _, err := db.Exec(`UPDATE system.schema_migrations SET version = 130, dirty = true`); err != nil {
+		t.Fatalf("prepare partial migration 130 repair rejection state: %v", err)
+	}
+	if err := RepairDirtySecurityProtectionAccessRequestMigration130(ctx, db); err == nil || !strings.Contains(err.Error(), "zero access request permissions") {
+		t.Fatalf("repair with applied migration 130 facts error = %v, want zero-target-facts rejection", err)
+	}
+}
+
 func TestPortalTenantRuntimeRemovalForwardMigrationAgainstPostgres(t *testing.T) {
 	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
 	if dsn == "" {

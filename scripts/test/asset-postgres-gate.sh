@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# ADDP_T2_SERVICES=postgres
 # asset-postgres-gate.sh - Run Asset authorization and schema tests against addp_test.
 
 set -euo pipefail

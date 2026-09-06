@@ -36,12 +36,14 @@
 9. Monitor 只聚合观察，不成为任务 owner。
 10. ad-hoc-only execution type 可以写入统一执行记录，但在没有持久任务定义前不得声明为 TaskProvider 能力或进入 Orchestrator 任务选择。
 11. 真实读写 owner 必须在 execution 结果中写入版本化 `lineage_facts`；Meta 负责消费并维护血缘关系，Orchestrator 不重复生成资源血缘。
-12. Quality `check|materialization_gate`、Meta `scan`、Transfer bounded `sync` 和 Orchestrator 来源的 Develop `query` 的 execution worker 必须是 owner 模块附属的独立进程，并统一使用 PostgreSQL execution claim + lease；owner Backend 不执行这些 bounded execution。
+12. Quality `check|materialization_gate`、Meta `scan`、Transfer bounded `sync`、Orchestrator 来源的 Develop `query` 和 Manager `pptx_pdf_generation` 的 execution worker 必须是 owner 模块附属的独立进程，并统一使用 PostgreSQL execution claim + lease；owner Backend 不执行这些 bounded execution。
 13. owner scheduler 运行在 owner Backend，只负责按任务定义发现到期任务并创建 durable `pending` execution；Worker 不可用不得阻止 scheduler 创建 execution。dispatcher 只负责 outbox/delivery 投递，二者都不得替代 execution worker 成为业务执行事实源。
 14. bounded runtime queue 的唯一主路线是 `common.task_executions` PostgreSQL claim，不保留 Redis/Asynq、进程内 channel 或 Backend 内嵌执行 fallback。continuous runtime、dispatcher 和 maintenance loop 继续使用各自专用协议，不强行迁入 bounded claim。
 15. Manager `pptx_pdf_generation` 是 bounded 预览派生产物任务：任务定义归 `manager.pptx_pdf_tasks`，结果归 `manager.pptx_pdf`。Manager 领域执行器通过 Common `WorkflowRuntimeProvider` direct 调用 `document_workflow/document_to_pdf`；Document Workflow 是纯执行层，LibreOffice 只作为其内部依赖，不拥有 Manager 任务、execution 或 artifact 状态。
 
 `pptx_pdf_generation` 声明 `supports_schedule=false`。普通预览按需触发：`GET /manager/preview` 只返回 artifact 状态，不得隐式创建任务或 execution；前端收到 `preview_artifact_missing` 后显式调用创建与执行 API。已有 `pending` / `running` execution 时复用其状态，失败后只允许用户显式重试。Orchestrator 只在用户显式配置预热或批量编排时调用同一 Manager TaskProvider 任务，不直接调用 Runtime，也不建立第二条执行路线。
+
+`pptx_pdf_generation` 由独立 `manager-bounded-worker` 领取。Backend 的执行 API 只在任务定义行锁内创建 durable `pending` execution，不启动 goroutine 或直接调用 Document Workflow。Worker claim 时原子写入 `attempt + lease_token + lease_owner + lease_expires_at` 并把任务摘要推进为 `running`；heartbeat、结果、execution 终态和任务摘要都必须受当前 lease fencing。Document Workflow 的 direct 调用已经可能发布 infra MinIO 对象，当前没有跨 Runtime 与 PostgreSQL 的稳定 operation identity 或提交 fencing，因此 lease 过期必须 fail-closed，不得自动重放同一 execution；用户显式重试创建新的 execution，并由稳定目标路径替换未引用对象。
 
 ## 核心对象
 
@@ -304,7 +306,7 @@ Transfer `sync` 的稳定语义由以下正交维度表达：
 3. watermark 增量必须使用稳定复合游标 `(watermark_field, tie_breaker...)`，读取区间为 `(committed_position, execution_upper_bound]`；普通 watermark 只保证 insert/update，不支持物理删除，不得称为完整 CDC。
 4. 增量 committed position 归 Transfer 私有同步状态，不能写入任务定义或用 execution checkpoint 代替。只有目标批次成功提交后才能通过 CAS/fencing 推进同步状态。
 5. 同一增量任务默认只允许一个 active execution 推进主状态；任务 claim 与 pending execution 创建必须在同一数据库事务中完成。
-6. resume 创建新 execution 并从 committed position 继续；replay 是独立执行参数且永不推进主状态。PostgreSQL/MySQL watermark 只支持 resume，不支持 replay。
+6. resume 创建新 execution 并从 committed position 继续；replay 是独立执行参数且永不推进主状态。PostgreSQL/MySQL/OceanBase 非空间 watermark 只支持 resume，不支持 replay。
 7. TaskProvider capability 只能声明已真实实现并验证的边界；不具备真实 worker 中断、资源释放和一致落库能力时必须 `supports_cancel=false`，也不得保留只改数据库状态的伪取消入口。
 
 #### Transfer continuous sync v1 契约

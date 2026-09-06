@@ -2097,7 +2097,48 @@ T1 使用可控 Promise 分别固定三种时序：A 的应用响应晚于 B、A
 
 生产构建增加 500 KiB 的入口 chunk 硬门禁，并由现有 `make test-workbench-frontend` 和 CI target 自动执行。该门禁检查真正的 Rollup entry，而不是通过 `manualChunks` 改名或单纯抬高 Vite warning 阈值；功能专属的异步 Chart/Map chunk 不计入首屏入口预算。T1 源码合同先固定按需注册、Map 消息深路径、OpenLayers CSS 延迟加载、依赖声明和入口预算插件；T2 由 production build 同时验证 Vue 模板解析、动态样式加载、chunk 图和实际入口字节数。
 
-实现已删除 Workbench 的全量 `app.use(ElementPlus)`，采用仓库既有 `unplugin-vue-components@0.28.0` 与 `ElementPlusResolver` 路线；Map 中英文消息改为明确 JSON 子路径，`ol/ol.css` 与异步 Map renderer 同时加载。新增 Rollup `enforce-entry-chunk-budget` 插件，任何真实入口 chunk 超过 500 KiB 都会使现有 production build 失败。T1 源码合同按预期先因旧全量入口得到红灯，改造后转绿；带 source map 的 T2 构建把入口 JavaScript 从 1,595.63 KB / gzip 516.61 KB 降至 457.60 KB / gzip 165.36 KB，分别下降 71.3% 与 68.0%，并确认入口 source map 不再包含 OpenLayers 或 ECharts。Chart 518.42 KB 与 Map 510.76 KB 保持为仅在对应 renderer 出现时加载的功能 chunk，不使用无收益的 vendor 改名掩盖体积。配置变更后的真实页面验收需在 Workbench 前端进程重启后执行。
+实现已删除 Workbench 的全量 `app.use(ElementPlus)`，采用仓库既有 `unplugin-vue-components@0.28.0` 与 `ElementPlusResolver` 路线；Map 中英文消息改为明确 JSON 子路径，`ol/ol.css` 与异步 Map renderer 同时加载。新增 Rollup `enforce-entry-chunk-budget` 插件，任何真实入口 chunk 超过 500 KiB 都会使现有 production build 失败。T1 源码合同按预期先因旧全量入口得到红灯，改造后转绿；带 source map 的 T2 构建把入口 JavaScript 从 1,595.63 KB / gzip 516.61 KB 降至 457.60 KB / gzip 165.36 KB，分别下降 71.3% 与 68.0%，并确认入口 source map 不再包含 OpenLayers 或 ECharts。Chart 518.42 KB 与 Map 510.76 KB 保持为仅在对应 renderer 出现时加载的功能 chunk，不使用无收益的 vendor 改名掩盖体积。
+
+Workbench 前端重启后的真实浏览器验收覆盖 Console 应用列表、Data Application 创建页、空间探索向导和已发布空间应用。列表、表单、对话框与服务目录均正常渲染；已发布应用执行“查询全部组件”后显示 10 个地块、面积合计 0.1094、城市面积 Chart、五档专题 Map 和 10 条明细，DOM 中分别存在一个 Chart canvas 与一个 Map canvas。全过程未保存、发布、下线或删除应用，浏览器控制台无 warning/error，证明按需组件注册与两类 renderer 动态资源在正式 Console 路径下可运行。`npm ci --ignore-scripts` 与 `make test-workbench-frontend` 已通过，后者包含 73 项测试、production build 和入口预算门禁。
+
+### 14.44 已发布应用首次查询语义（2026-09-06）
+
+Workbench 的 Data Application 运行页是面向最终用户的消费入口，不应要求用户在每次打开一个已具备完整默认输入的正式应用后，再理解并点击一次“查询全部组件”。此前运行画布只复用了 Wallboard 的 Application Refresh Policy：非零刷新间隔会在 Descriptor 加载后立即查询，但 `desktop` 的刷新间隔固定为 `0`，因此已发布桌面应用首次打开仍为空白。这使正式运行页在首屏体验上退化为 Service 预览，而不是可直接使用的应用。
+
+唯一运行语义调整为：`published` 运行页完成全部 Consumer Descriptor 加载后，如果至少存在一个 Component、全部 Component 均有可执行 Descriptor 且没有契约漂移，并且每个必填 Application Parameter 都有可按其绑定算子执行的默认值，则复用现有“查询全部组件”主路径执行且只执行一次首次查询。数字 `0`、布尔 `false` 等合法业务值不能被误判为空值；`is_null | is_not_null` 仍只有布尔 `true` 表示启用算子。任一必填默认值缺失或无效、Descriptor 临时加载失败、Component 不可执行或契约指纹变化时，首次查询失败关闭，不猜测参数、不静默刷新契约，也不建立第二条查询路径。
+
+`draft-preview` 继续保持现有创作语义：普通桌面草稿由创作者显式查询，Wallboard 草稿仍按已确认的刷新策略执行首次查询。已发布 Wallboard 只执行上述同一次首次查询，查询结束后再启动下一轮刷新计时，不能先经发布首查再经刷新策略重复查询。用户手工修改 Application Parameter 后仍只清空受影响结果并等待显式查询；本节不把输入控件改成逐键自动查询。
+
+该能力只改变浏览器会话内的运行生命周期，不新增后端字段、API、Revision 内容、Task、Schedule、缓存或查询结果持久化。T1 必须覆盖无参数应用、必填默认值、数字 `0`、布尔 `false`、空值、空数组、空值算子、Named Parameter、Descriptor 失败和契约漂移；源码合同必须固定发布首查与刷新计时的先后关系，避免未来重新产生重复首查。
+
+实现已把必填默认值可执行性抽成运行时纯函数，并与隐藏参数区块复用同一判定，不再让展示校验和首次查询各自解释空值。发布画布在 Descriptor 全部加载完成后通过该准入门禁调用既有 `queryAll()`，完成后只调用 `scheduleAutomaticRefresh()`；草稿预览继续走原有 `refreshAndSchedule()`，因此已发布 Wallboard 不会重复首查。`make test-workbench-frontend` 已通过 76 项测试、production build 和 500 KiB 入口门禁。
+
+真实浏览器直接打开已发布应用 `c847d823-3314-42a2-b2a7-d5139fc68283`，未点击任何查询按钮即按默认“已交付”条件显示 2 行 Business MySQL 订单表格并生成 1 个 Chart canvas；Gateway 在同一首次加载时只记录 2 个 Descriptor GET 与 2 个 Query POST，分别对应两个 Component，没有第二轮重复查询，浏览器控制台无 warning/error。验收只读取既有发布 Revision，没有保存、发布、下线或删除任何应用。
+
+### 14.45 Data Application 字段呈现规则（2026-09-06）
+
+Workbench 的正式运行入口必须比 Manager 数据预览和 Service 服务预览更贴近业务用户。Service Consumer Descriptor 只提供可信的字段名、类型和原始注释；它不应为每个数据应用决定“显示为什么业务标签、使用什么单位和精度”。这些是 Data Application Component 在具体应用中的发布事实，统一称为 **Field Presentation / 字段呈现规则**。
+
+字段呈现规则位于 Table、Chart 和 Map 的 `renderer_config.field_presentations`，每项固定引用一个 renderer 已使用的输出字段，并只允许以下受控语义：
+
+- `label`：所有标量字段均可声明，作为表头、图例、地图弹窗键名和主显示字段标签；
+- `unit` 与 `precision`：只允许数值字段使用，精度为 `0..8`；
+- `temporal_format`：只允许 `date | time | datetime`，且必须与 `date | time | timestamp` 输出类型匹配；
+- `width`：只允许 Table 使用，范围为 `80..600` CSS px。
+
+Table 的 `columns`、Chart 的 `dimension / measures`、Map 的 `label_field / tooltip_fields / style.field` 仍是字段身份与查询事实源。字段呈现规则只格式化 renderer 展示，不修改 rows，不改变选择联动、参数绑定或导出数据，不把标签当作字段名回传 Service。Value renderer 的 `items` 已以字段、标签、单位和精度表达同一职责，继续作为它的唯一配置，不再叠加第二份 `field_presentations`。
+
+Backend 对重复字段、renderer 未使用字段、不匹配类型的格式、越界精度或列宽严格失败关闭。Frontend 不接受任意 formatter 名、函数或格式化代码；Table、Chart 和 Map 必须共享 `common-frontend` 内唯一的标签解析和标量格式化实现，Workbench 只负责根据 Descriptor 创作、保存并传入配置。未显式配置的字段使用 Descriptor `comment || name` 和原始值作为唯一默认行为，不引入域、服务 ID、业务字段名或 Outdoor 特例。
+
+实现已把字段查找、Descriptor 标签回退、数值格式化和时间格式化收敛到 `common-frontend/basic` 的唯一纯函数。共享 Table 消费标签、列宽和单元格值；Chart 保留原始数值 series，在 tooltip 显示格式化后的值与单位，在度量轴标题集中显示单位而不向每个刻度重复追加，维度轴标题固定居中避免窄组件右侧截断；Map 只格式化弹窗主字段、属性键值和主题图图例。三者均不改写 Service rows，选择事件仍使用原始 `row_index`。
+
+Component 编辑器已从当前 renderer 实际使用字段生成一组字段呈现配置，并将预览与保存收敛到同一个 `buildRendererConfig()` 编译器，删除了编辑器内的重复 renderer 组装逻辑。空间探索向导也通过同一同步函数生成普通 Component 配置，没有新增模板运行时、Outdoor 分支或样例字段。Backend 使用强类型结构和严格 JSON 解码校验上述约束，有效配置随草稿及不可变 Revision 直接保存。
+
+本地确定性门禁已通过：`make test-common-frontend` 共 66 项；`make test-workbench-frontend` 共 77 项并通过 production build 与入口体积门禁；Workbench Backend `go test ./...` 全部通过；`make test-workbench-postgres` 使用允许的 `addp_test` 标准集成入口通过。
+
+真实浏览器已经完成不持久化的前端验收：在既有空间应用编辑器中，Chart 成功配置业务显示名、单位与四位精度；Table 成功配置四个业务显示名、列宽及面积四位精度；整页预览查询真实服务后，Table 表头与数值格式、Chart 轴标题与数值刻度均按当前内存 Snapshot 生效，Map 和 Value 继续使用各自现有显式配置。目视验收发现并修正了 Chart 把单位重复拼到每个纵轴刻度、维度轴标题挤在右侧的问题；预览关闭、重开和热更新还暴露 ECharts 在零尺寸容器初始化及保留已销毁实例的生命周期警告，现统一等待容器可测量后初始化，销毁后立即清空实例引用。修复后重复关闭、立即重开和查询没有新增浏览器 warning/error。
+
+当前尚未把上述临时内存配置保存或发布。标准 `restart.sh -workbench` 被另一个 `keepalive restart -all` 生命周期锁拒绝；该全量保活进程仍承载其他模块，不能为了单模块验收擅自中断。待 Workbench Backend 通过标准生命周期重新加载新契约后，再完成“保存草稿—发布新 Revision—正式 `/data-apps/:application_id` 自动首查”的最后持久化闭环。
 
 ## 十五、概念设计状态
 
@@ -2105,7 +2146,7 @@ T1 使用可控 Promise 分别固定三种时序：A 的应用响应晚于 B、A
 
 14.19 的 Data Application 直接创作收口、Outdoor 双服务真实验收、14.20 的 Business MySQL 本地异构验收，以及 14.21–14.23 的 Phase 6 场景化组合、空间探索创作向导和保存前整页预览均已完成。验收数据只作运行证据，没有进入 Workbench 领域模型、生产代码或默认配置。Phase 6 当前确认范围已经收口；真实数据量没有超过有界 GeoJSON 上限前不启动 Tile / OGC Features，也不继续堆叠 renderer。
 
-14.24 的历史契约清理已经通过用户确认完成；Outdoor 长期应用已显式重绑当前 Service 24 契约并发布 Revision 3，Revision 2 保持不可变。14.26–14.27 的通用 Service Consumer SDK、公开导出、单元测试、README、发布门禁和真实运行验收已经完成。14.28 已在 MySQL Engine Provider 内补齐受限、精确、失败关闭的 QueryReadSet 与直接列 QueryOutputLineage，并完成 Business MySQL Service、Python SDK、契约漂移阻断、显式重绑、不可变 Revision 2 及最终 Data Application Table / Chart 的运行态验收；14.29 进一步完成最终应用对 Descriptor 临时失败和查询临时失败的可恢复状态收敛，契约变化仍严格阻断；14.30 完成 Component 编辑器的 Descriptor、查询和导出异步上下文隔离，服务切换或关闭后的迟到结果不再污染当前草稿；14.31 完成编辑器游标翻页的原子提交，失败请求不再产生旧数据与新页码混合的假状态；14.32 已完成运行画布按 Parameter Binding 精确失效旧参数请求的实现、标准前端门禁与发布 Revision 2 的真实浏览器验收；14.33 进一步把参数竞态收敛为可控 Promise 行为测试，不再只依赖浏览器时序和源码合同；14.34 已用同一 generation 和可控 Promise 阻断迟到导出的文件下载副作用；14.35 已为 Descriptor 初始加载与查询重试建立独立 latest-request generation，旧响应不再覆盖新状态；14.36 已把同源运行路由 A/B 快速切换的迟到成功、错误和 loading 收尾纳入同一 latest-request 提交门禁；14.37 在运行页卸载时立即失效 Revision 请求；14.38 使 Component 编辑器的弹窗关闭与页面卸载共享同一 Descriptor、查询和导出失效入口；14.39 进一步把创建页、编辑页 ID 切换、应用加载、Descriptor 派生加载和页面卸载收敛到唯一 editor route generation；14.40 又把保存、发布、下线从确认到响应收尾的副作用纳入独立 mutation generation；14.41 把列表翻页、删除确认、DELETE 响应和删除后刷新也收敛到同一 Data Application request 提交语义；14.42 进一步把空间探索向导的 Catalog、汇总 Descriptor、空间 Descriptor、关闭重开和卸载收敛到三个相互独立但共享同一提交语义的会话 generation。Power Query 路线继续保留；获得 Windows 宿主后再在 `service/connectors/power-query/` 完成具体 Connector 与真实 BI 门禁。没有真实宿主证据前不修改 OAuth 或 Service API，也不提前编写“可直接照做”的正式 BI 接入指南。当前唯一未闭合的同专题自动化证据是 `workbench-service-consumption` T4：具备专用 runner 后应优先补跑，本地验收不能替代该 Online Gate。不要修改 Service 查询路由、引入 API Key 私有授权、数据库直连或增加 Workbench / Python 代理。跨模块综合统计和 Workbench 运行埋点继续暂缓；只有确认成功打开次数、独立访问用户和 Revision 分布确有独立产品价值时，才进入 Workbench owner 运行准入事实设计。在独立价值确认前不进入多页面、`mobile`、页面轮播、通用动作、后台定时任务或第二套运行状态。若后续实现与现有公开契约冲突，必须先回到本专题及正式规范修订设计，不得增加兼容路由、兼容字段或 Workbench 私有旁路。
+14.24 的历史契约清理已经通过用户确认完成；Outdoor 长期应用已显式重绑当前 Service 24 契约并发布 Revision 3，Revision 2 保持不可变。14.26–14.27 的通用 Service Consumer SDK、公开导出、单元测试、README、发布门禁和真实运行验收已经完成。14.28 已在 MySQL Engine Provider 内补齐受限、精确、失败关闭的 QueryReadSet 与直接列 QueryOutputLineage，并完成 Business MySQL Service、Python SDK、契约漂移阻断、显式重绑、不可变 Revision 2 及最终 Data Application Table / Chart 的运行态验收；14.29 进一步完成最终应用对 Descriptor 临时失败和查询临时失败的可恢复状态收敛，契约变化仍严格阻断；14.30 完成 Component 编辑器的 Descriptor、查询和导出异步上下文隔离，服务切换或关闭后的迟到结果不再污染当前草稿；14.31 完成编辑器游标翻页的原子提交，失败请求不再产生旧数据与新页码混合的假状态；14.32 已完成运行画布按 Parameter Binding 精确失效旧参数请求的实现、标准前端门禁与发布 Revision 2 的真实浏览器验收；14.33 进一步把参数竞态收敛为可控 Promise 行为测试，不再只依赖浏览器时序和源码合同；14.34 已用同一 generation 和可控 Promise 阻断迟到导出的文件下载副作用；14.35 已为 Descriptor 初始加载与查询重试建立独立 latest-request generation，旧响应不再覆盖新状态；14.36 已把同源运行路由 A/B 快速切换的迟到成功、错误和 loading 收尾纳入同一 latest-request 提交门禁；14.37 在运行页卸载时立即失效 Revision 请求；14.38 使 Component 编辑器的弹窗关闭与页面卸载共享同一 Descriptor、查询和导出失效入口；14.39 进一步把创建页、编辑页 ID 切换、应用加载、Descriptor 派生加载和页面卸载收敛到唯一 editor route generation；14.40 又把保存、发布、下线从确认到响应收尾的副作用纳入独立 mutation generation；14.41 把列表翻页、删除确认、DELETE 响应和删除后刷新也收敛到同一 Data Application request 提交语义；14.42 进一步把空间探索向导的 Catalog、汇总 Descriptor、空间 Descriptor、关闭重开和卸载收敛到三个相互独立但共享同一提交语义的会话 generation；14.43 已把 Element Plus 全量注册与 Map 运行依赖移出 Workbench 首屏，并建立入口 chunk 硬预算和正式 Console 运行验收；14.44 已完成已发布应用在 Descriptor 与必填默认值均可执行时只复用一次“查询全部组件”主路径，草稿手工查询、参数提交和 Wallboard 后续刷新语义不变；14.45 已完成通用字段呈现契约、共享 renderer 实现、本地门禁和不持久化浏览器预览，保存、发布与正式运行闭环待 Workbench Backend 通过标准生命周期重启后补齐。Power Query 路线继续保留；获得 Windows 宿主后再在 `service/connectors/power-query/` 完成具体 Connector 与真实 BI 门禁。没有真实宿主证据前不修改 OAuth 或 Service API，也不提前编写“可直接照做”的正式 BI 接入指南。当前唯一未闭合的同专题自动化证据是 `workbench-service-consumption` T4：具备专用 runner 后应优先补跑，本地验收不能替代该 Online Gate。不要修改 Service 查询路由、引入 API Key 私有授权、数据库直连或增加 Workbench / Python 代理。跨模块综合统计和 Workbench 运行埋点继续暂缓；只有确认成功打开次数、独立访问用户和 Revision 分布确有独立产品价值时，才进入 Workbench owner 运行准入事实设计。在独立价值确认前不进入多页面、`mobile`、页面轮播、通用动作、后台定时任务或第二套运行状态。若后续实现与现有公开契约冲突，必须先回到本专题及正式规范修订设计，不得增加兼容路由、兼容字段或 Workbench 私有旁路。
 
 ## 十六、相关文档
 

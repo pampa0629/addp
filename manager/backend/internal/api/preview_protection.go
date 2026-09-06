@@ -10,7 +10,7 @@ import (
 // applyPreviewProtection is the Manager response-boundary executor. Providers
 // continue returning native decoded rows; protected rows are transformed only
 // immediately before serialization.
-func applyPreviewProtection(result *preview.PreviewResult, rules []dataprotection.Rule) error {
+func applyPreviewProtection(result *preview.PreviewResult, rules []dataprotection.Rule, subject dataprotection.SubjectReference) error {
 	if len(rules) == 0 {
 		return nil
 	}
@@ -21,5 +21,5 @@ func applyPreviewProtection(result *preview.PreviewResult, rules []dataprotectio
 	if !ok || table == nil {
 		return managerprotection.ErrRequired
 	}
-	return managerprotection.ProtectRows(table.Rows, managerprotection.ActionPreview, rules)
+	return managerprotection.ProtectRows(table.Rows, managerprotection.ActionPreview, rules, subject)
 }

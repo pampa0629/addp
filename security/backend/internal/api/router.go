@@ -15,7 +15,7 @@ import (
 func getTenantID(c *gin.Context) int64 { return int64(commonauth.GetTenantID(c)) }
 func getUserID(c *gin.Context) int64   { return int64(commonauth.GetUserID(c)) }
 
-func SetupRouter(svc *service.DefinitionService, enrollments *service.EnrollmentService, discoveries *service.DiscoveryService, assessments *service.AssessmentService, policies *service.PolicyService, exemptions *service.ExemptionService, systemURL string, lifecycle *modulelifecycle.Controller) *gin.Engine {
+func SetupRouter(svc *service.DefinitionService, enrollments *service.EnrollmentService, discoveries *service.DiscoveryService, assessments *service.AssessmentService, policies *service.PolicyService, exemptions *service.ExemptionService, accessRequests *service.AccessRequestService, systemURL string, lifecycle *modulelifecycle.Controller) *gin.Engine {
 	router := gin.Default()
 	router.GET("/swagger/*any", ginswagger.WrapHandler(swaggerfiles.Handler))
 	lifecycle.RegisterHealthRoutes(router)
@@ -28,6 +28,7 @@ func SetupRouter(svc *service.DefinitionService, enrollments *service.Enrollment
 	assessmentHandler := NewAssessmentHandler(assessments)
 	policyHandler := NewPolicyHandler(policies)
 	exemptionHandler := NewExemptionHandler(exemptions)
+	accessRequestHandler := NewAccessRequestHandler(accessRequests)
 	api := router.Group("/api/v1/security")
 	api.Use(commonauth.MustNewMiddleware(commonauth.MiddlewareConfig{SystemURL: systemURL}), commonauth.MustNewContextGuard("tenant"))
 	permission := func(key string) gin.HandlerFunc { return commonauth.MustNewPermissionGuard(key) }
@@ -110,10 +111,15 @@ func SetupRouter(svc *service.DefinitionService, enrollments *service.Enrollment
 
 	exemptionsAPI := api.Group("/protection-exemptions")
 	exemptionsAPI.GET("", permission(securityauthorization.PermissionSecurityProtectionExemptionRead), exemptionHandler.List)
-	exemptionsAPI.POST("", permission(securityauthorization.PermissionSecurityProtectionExemptionCreate), exemptionHandler.Create)
 	exemptionsAPI.GET("/:id", permission(securityauthorization.PermissionSecurityProtectionExemptionRead), exemptionHandler.Get)
-	exemptionsAPI.PUT("/:id", permission(securityauthorization.PermissionSecurityProtectionExemptionUpdate), exemptionHandler.Renew)
 	exemptionsAPI.DELETE("/:id", permission(securityauthorization.PermissionSecurityProtectionExemptionDelete), exemptionHandler.Revoke)
+
+	api.GET("/protection-access-request-targets", permission(securityauthorization.PermissionSecurityProtectionAccessRequestRead), accessRequestHandler.Targets)
+	accessRequestsAPI := api.Group("/protection-access-requests")
+	accessRequestsAPI.GET("", permission(securityauthorization.PermissionSecurityProtectionAccessRequestRead), accessRequestHandler.ListMine)
+	accessRequestsAPI.POST("", permission(securityauthorization.PermissionSecurityProtectionAccessRequestCreate), accessRequestHandler.Create)
+	accessRequestsAPI.GET("/review-queue", permission(securityauthorization.PermissionSecurityProtectionAccessRequestUpdate), accessRequestHandler.ReviewQueue)
+	accessRequestsAPI.POST("/:id/decisions", permission(securityauthorization.PermissionSecurityProtectionAccessRequestUpdate), accessRequestHandler.Decide)
 
 	runtime := api.Group("/runtime")
 	runtime.Use(commonauth.MustNewServiceClientGuard("addp-manager", "addp-transfer", "addp-develop", "addp-service"))

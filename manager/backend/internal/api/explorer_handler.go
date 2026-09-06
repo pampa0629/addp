@@ -14,6 +14,7 @@ import (
 	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/logger"
+	commonauth "github.com/addp/common/middleware/auth"
 	manageri18n "github.com/addp/manager/i18n"
 	"github.com/addp/manager/internal/engineaccess"
 	"github.com/addp/manager/internal/preview"
@@ -126,6 +127,10 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 	req, err := h.previewResolver.ResolveRequestFromURIWithSelection(c.Request.Context(), locatorURI, page, pageSize, childName, refPath, nestedChildPath, graphSample, tenantID)
 	var result *preview.PreviewResult
 	var protectionRules []dataprotection.Rule
+	var protectionSubject dataprotection.SubjectReference
+	if principal, ok := commonauth.PrincipalFromGin(c); ok {
+		protectionSubject = dataprotection.SubjectReference{Type: principal.Type, ID: principal.ID}
+	}
 	if err == nil && h.protectionStore != nil && tenantID != nil {
 		now := time.Now().UTC()
 		gate := managerprotection.DataItemGate(h.protectionStore, *tenantID, req.ItemFingerprint, now)
@@ -138,7 +143,7 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 	if err == nil {
 		result, err = h.previewResolver.Preview(c.Request.Context(), req)
 		if err == nil {
-			err = applyPreviewProtection(result, protectionRules)
+			err = applyPreviewProtection(result, protectionRules, protectionSubject)
 			if err != nil {
 				protectionRequired(c)
 				return

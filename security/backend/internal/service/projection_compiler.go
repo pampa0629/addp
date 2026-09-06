@@ -114,29 +114,17 @@ func compileProtectionProjections(tx *gorm.DB, enrollment models.ProtectionEnrol
 		if err != nil {
 			return err
 		}
-		managerPreviewDecision, err := applyProtectionExemption(tx, enrollment.TenantID, candidate.AssessmentID, candidate.AssessmentRevision, managerProtectionOwner, managerPreviewAction, managerDecision, now)
-		if err != nil {
-			return err
-		}
-		developDecision, err := applyProtectionExemption(tx, enrollment.TenantID, candidate.AssessmentID, candidate.AssessmentRevision, developProtectionOwner, developQueryAction, baselineDecision, now)
-		if err != nil {
-			return err
-		}
-		serviceDecision, err := applyProtectionExemption(tx, enrollment.TenantID, candidate.AssessmentID, candidate.AssessmentRevision, serviceProtectionOwner, serviceExecuteAction, baselineDecision, now)
-		if err != nil {
-			return err
-		}
-		transferDecision, err := applyProtectionExemption(tx, enrollment.TenantID, candidate.AssessmentID, candidate.AssessmentRevision, transferProtectionOwner, transferExportAction, baselineDecision, now)
+		managerAuthorizations, err := protectionAuthorizations(tx, enrollment.TenantID, candidate.AssessmentID, candidate.AssessmentRevision, managerProtectionOwner, managerPreviewAction, now)
 		if err != nil {
 			return err
 		}
 		managerRules = append(managerRules,
-			dataprotection.Rule{Action: managerPreviewAction, Component: candidate.Component, Decision: managerPreviewDecision},
+			dataprotection.Rule{Action: managerPreviewAction, Component: candidate.Component, Decision: managerDecision, Authorizations: managerAuthorizations},
 			dataprotection.Rule{Action: managerProfileAction, Component: candidate.Component, Decision: profileDecision},
 		)
-		developRules = append(developRules, dataprotection.Rule{Action: developQueryAction, Component: candidate.Component, Decision: developDecision})
-		serviceRules = append(serviceRules, dataprotection.Rule{Action: serviceExecuteAction, Component: candidate.Component, Decision: serviceDecision})
-		transferRules = append(transferRules, dataprotection.Rule{Action: transferExportAction, Component: candidate.Component, Decision: transferDecision})
+		developRules = append(developRules, dataprotection.Rule{Action: developQueryAction, Component: candidate.Component, Decision: baselineDecision})
+		serviceRules = append(serviceRules, dataprotection.Rule{Action: serviceExecuteAction, Component: candidate.Component, Decision: baselineDecision})
+		transferRules = append(transferRules, dataprotection.Rule{Action: transferExportAction, Component: candidate.Component, Decision: baselineDecision})
 	}
 	for _, consumerOwner := range consumerOwners {
 		var rules []dataprotection.Rule
@@ -307,28 +295,29 @@ func applyManagerPolicy(tx *gorm.DB, tenantID int64, assessmentID string, baseli
 	return dataprotection.Decision{Effect: revision.Effect, InvalidValueEffect: revision.Effect}, nil
 }
 
-func applyProtectionExemption(tx *gorm.DB, tenantID int64, assessmentID string, assessmentRevision int64, consumerOwner, action string, fallback dataprotection.Decision, now time.Time) (dataprotection.Decision, error) {
+func protectionAuthorizations(tx *gorm.DB, tenantID int64, assessmentID string, assessmentRevision int64, consumerOwner, action string, now time.Time) ([]dataprotection.TemporaryAuthorization, error) {
 	if assessmentID == "" {
-		return fallback, nil
+		return nil, nil
 	}
-	var exemption models.ProtectionExemption
-	err := tx.Where("tenant_id = ? AND assessment_id = ? AND consumer_owner = ? AND action = ?", tenantID, assessmentID, consumerOwner, action).First(&exemption).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) || (err == nil && exemption.State == models.ProtectionExemptionStateRevoked) {
-		return fallback, nil
+	var exemptions []models.ProtectionExemption
+	if err := tx.Where("tenant_id = ? AND assessment_id = ? AND consumer_owner = ? AND action = ? AND state = ?", tenantID, assessmentID, consumerOwner, action, models.ProtectionExemptionStateActive).Order("subject_type ASC, subject_id ASC").Find(&exemptions).Error; err != nil {
+		return nil, err
 	}
-	if err != nil {
-		return dataprotection.Decision{}, err
+	authorizations := make([]dataprotection.TemporaryAuthorization, 0, len(exemptions))
+	for _, exemption := range exemptions {
+		var revision models.ProtectionExemptionRevision
+		if err := tx.Where("tenant_id = ? AND exemption_id = ? AND revision = ?", tenantID, exemption.ID, exemption.CurrentRevision).First(&revision).Error; err != nil {
+			return nil, err
+		}
+		if revision.State != models.ProtectionExemptionStateActive || revision.AssessmentRevision != assessmentRevision || !now.Before(revision.ExpiresAt) {
+			continue
+		}
+		authorizations = append(authorizations, dataprotection.TemporaryAuthorization{
+			Subject: dataprotection.SubjectReference{Type: exemption.SubjectType, ID: exemption.SubjectID},
+			Effect:  dataprotection.EffectAllow, ValidFrom: now, ValidUntil: revision.ExpiresAt.UTC(),
+		})
 	}
-	var revision models.ProtectionExemptionRevision
-	if err := tx.Where("tenant_id = ? AND exemption_id = ? AND revision = ?", tenantID, exemption.ID, exemption.CurrentRevision).First(&revision).Error; err != nil {
-		return dataprotection.Decision{}, err
-	}
-	if revision.State != models.ProtectionExemptionStateActive || revision.AssessmentRevision != assessmentRevision || !now.Before(revision.ExpiresAt) {
-		return fallback, nil
-	}
-	validUntil := revision.ExpiresAt.UTC()
-	fallbackCopy := fallback
-	return dataprotection.Decision{Effect: dataprotection.EffectAllow, ValidUntil: &validUntil, Fallback: &fallbackCopy}, nil
+	return authorizations, nil
 }
 
 func protectionEffectRank(effect string) int {
@@ -363,7 +352,7 @@ func publishProtectionProjection(tx *gorm.DB, enrollment models.ProtectionEnroll
 		sourceSnapshotHash = ""
 	}
 	projection := dataprotection.Projection{
-		SchemaVersion: dataprotection.ProjectionSchemaV1, ProjectionID: record.ID, Revision: revision,
+		SchemaVersion: dataprotection.ProjectionSchemaV2, ProjectionID: record.ID, Revision: revision,
 		ConsumerOwner: consumerOwner, State: state, Target: enrollment.Target(),
 		SourceSnapshotHash: sourceSnapshotHash, Rules: rules, ValidFrom: now, ExpiresAt: now.Add(365 * 24 * time.Hour),
 	}

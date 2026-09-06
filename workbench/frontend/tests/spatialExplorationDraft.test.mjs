@@ -95,11 +95,25 @@ test('compiles a generic four-role spatial exploration snapshot fragment from tw
     assignments: [{ source_field: 'region_code', application_parameter_key: 'scope' }],
   }])
   assert.deepEqual(generated.components[0].renderer_config.items, configuration().valueItems)
-  assert.deepEqual(generated.components[1].renderer_config, { chart_type: 'bar', dimension: 'region_code', measures: ['measure_total'] })
+  assert.deepEqual(generated.components[1].renderer_config, {
+    chart_type: 'bar', dimension: 'region_code', measures: ['measure_total'],
+    field_presentations: [
+      { field: 'region_code', label: 'Region' },
+      { field: 'measure_total', label: 'Total', precision: 0 },
+    ],
+  })
   assert.deepEqual(generated.components[2].renderer_config, {
     geometry_field: 'shape', label_field: 'record_name', tooltip_fields: ['record_name', 'measure_value'],
     style: { mode: 'continuous', field: 'measure_value', palette: 'success', legend_title: 'Measure' },
+    field_presentations: [
+      { field: 'record_name', label: 'Name' },
+      { field: 'measure_value', label: 'Measure', precision: 0 },
+    ],
   })
+  assert.deepEqual(generated.components[3].renderer_config.field_presentations, [
+    { field: 'record_name', label: 'Name' },
+    { field: 'measure_value', label: 'Measure', precision: 0 },
+  ])
   assert.equal(generated.components[1].query_template.page_limit, 500)
   assert.equal(generated.components[2].query_template.page_limit, 1000)
   assert.equal(generated.components[3].query_template.page_limit, 25)

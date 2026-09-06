@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# ADDP_T2_SERVICES=mysql
 # common-mysql-data-protection-gate.sh - Verify the MySQL read contract and all four data-protection owners.
 
 set -euo pipefail

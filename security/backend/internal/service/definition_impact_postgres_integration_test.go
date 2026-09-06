@@ -232,16 +232,20 @@ func TestProtectionExemptionAssessmentRevisionAgainstPostgres(t *testing.T) {
 	}
 
 	now := time.Now().UTC().Truncate(time.Second)
-	exemptions := NewExemptionService(tx)
-	exemptions.now = func() time.Time { return now }
-	created, err := exemptions.Create(context.Background(), 7, 41, models.CreateProtectionExemptionRequest{
+	accessRequests := NewAccessRequestService(tx)
+	accessRequests.now = func() time.Time { return now }
+	created, err := accessRequests.Create(context.Background(), 7, 41, models.CreateProtectionAccessRequest{
 		AssessmentID: reviewed.Assessment.ID, ConsumerOwner: "manager", Action: managerPreviewAction,
-		ExpiresAt: now.Add(time.Hour), Rationale: "按当前评估修订临时核验",
+		RequestedExpiresAt: now.Add(time.Hour), Rationale: "按当前评估修订临时核验",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertLatestPostgresManagerProjectionEffect(t, tx, enrollment.ID, managerPreviewAction, dataprotection.EffectAllow)
+	approved, err := accessRequests.Decide(context.Background(), 7, 42, created.ID, models.DecideProtectionAccessRequest{Version: created.Version, Decision: "approve", ExpiresAt: now.Add(time.Hour), Rationale: "复核通过"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertLatestPostgresManagerProjectionAuthorization(t, tx, enrollment.ID, managerPreviewAction, "41", true)
 
 	revised, err := assessments.Revise(context.Background(), 7, 22, reviewed.Assessment.ID, models.AssessmentRevisionRequest{
 		Version: reviewed.Assessment.Version, SensitiveDataTypeID: reviewed.Assessment.Current.SensitiveDataTypeID,
@@ -250,25 +254,31 @@ func TestProtectionExemptionAssessmentRevisionAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	loaded, err := exemptions.Get(context.Background(), 7, created.ID)
+	exemptions := NewExemptionService(tx)
+	loaded, err := exemptions.Get(context.Background(), 7, approved.ExemptionID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if loaded.EffectiveState != models.ProtectionExemptionStateSuperseded || loaded.Current.AssessmentRevision == revised.CurrentRevision {
 		t.Fatalf("postgres superseded exemption = %#v, assessment = %#v", loaded, revised)
 	}
-	assertLatestPostgresManagerProjectionEffect(t, tx, enrollment.ID, managerPreviewAction, dataprotection.EffectMask)
+	assertLatestPostgresManagerProjectionAuthorization(t, tx, enrollment.ID, managerPreviewAction, "41", false)
 
-	reactivated, err := exemptions.Renew(context.Background(), 7, 42, created.ID, models.RenewProtectionExemptionRequest{
-		Version: created.Version, ExpiresAt: now.Add(2 * time.Hour), Rationale: "新评估修订重新批准",
+	requestedAgain, err := accessRequests.Create(context.Background(), 7, 41, models.CreateProtectionAccessRequest{
+		AssessmentID: reviewed.Assessment.ID, ConsumerOwner: "manager", Action: managerPreviewAction,
+		RequestedExpiresAt: now.Add(2 * time.Hour), Rationale: "新评估修订重新申请",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reactivated.EffectiveState != models.ProtectionExemptionStateActive || reactivated.Current.AssessmentRevision != revised.CurrentRevision {
-		t.Fatalf("postgres reactivated exemption = %#v, assessment = %#v", reactivated, revised)
+	reactivated, err := accessRequests.Decide(context.Background(), 7, 42, requestedAgain.ID, models.DecideProtectionAccessRequest{Version: requestedAgain.Version, Decision: "approve", ExpiresAt: now.Add(2 * time.Hour), Rationale: "新评估修订复核通过"})
+	if err != nil {
+		t.Fatal(err)
 	}
-	assertLatestPostgresManagerProjectionEffect(t, tx, enrollment.ID, managerPreviewAction, dataprotection.EffectAllow)
+	if reactivated.State != models.ProtectionAccessRequestStateApproved || reactivated.ExemptionID != approved.ExemptionID {
+		t.Fatalf("postgres reactivated request = %#v, assessment = %#v", reactivated, revised)
+	}
+	assertLatestPostgresManagerProjectionAuthorization(t, tx, enrollment.ID, managerPreviewAction, "41", true)
 }
 
 func createPostgresImpactEnrollment(t *testing.T, db *gorm.DB, dataTypeID int64, identity, snapshotHash string) models.ProtectionEnrollment {
@@ -343,5 +353,27 @@ func assertLatestPostgresManagerProjectionEffect(t *testing.T, db *gorm.DB, enro
 	}
 	if err := projection.Validate(time.Now().UTC()); err != nil {
 		t.Fatalf("manager projection validation: %v", err)
+	}
+}
+
+func assertLatestPostgresManagerProjectionAuthorization(t *testing.T, db *gorm.DB, enrollmentID, action, subjectID string, expected bool) {
+	t.Helper()
+	var record models.ProtectionProjectionRecord
+	if err := db.Where("tenant_id = ? AND enrollment_id = ? AND consumer_owner = ?", 7, enrollmentID, "manager").First(&record).Error; err != nil {
+		t.Fatal(err)
+	}
+	var projection dataprotection.Projection
+	if err := json.Unmarshal([]byte(record.ProjectionPayload), &projection); err != nil {
+		t.Fatal(err)
+	}
+	rule := projectionRule(t, &projection, action)
+	found := false
+	for _, authorization := range rule.Authorizations {
+		if authorization.Subject.Type == "user" && authorization.Subject.ID == subjectID {
+			found = true
+		}
+	}
+	if found != expected {
+		t.Fatalf("manager projection action %s authorization for %s = %t, want %t", action, subjectID, found, expected)
 	}
 }

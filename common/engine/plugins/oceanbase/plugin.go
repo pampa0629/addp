@@ -44,6 +44,7 @@ type Plugin struct{}
 
 var (
 	_ plugin.BatchReadableProvider                = (*Plugin)(nil)
+	_ plugin.BoundedWatermarkReadProvider         = (*Plugin)(nil)
 	_ plugin.ConnectionPoolPlugin                 = (*Plugin)(nil)
 	_ plugin.ControlledReadOnlySQLProvider        = (*Plugin)(nil)
 	_ plugin.EngineCatalogFactsProvider           = (*Plugin)(nil)
@@ -81,14 +82,15 @@ func (p *Plugin) ConnectionIdentityFields() []string { return p.ConnectionSpec()
 
 func (p *Plugin) Capabilities() plugin.EngineCapabilities {
 	return plugin.NewTabularCapabilities(p.Type(), plugin.EngineCatalogTermDatabase, plugin.TabularCapabilityOptions{
-		Constraints:        true,
-		Delete:             true,
-		TableUpsert:        true,
-		TableWritePrepare:  true,
-		TableWriteSession:  true,
-		SupportsExplain:    true,
-		SupportsParameters: true,
-		IdentifierQuote:    "`",
+		Constraints:          true,
+		BoundedWatermarkRead: true,
+		Delete:               true,
+		TableUpsert:          true,
+		TableWritePrepare:    true,
+		TableWriteSession:    true,
+		SupportsExplain:      true,
+		SupportsParameters:   true,
+		IdentifierQuote:      "`",
 	})
 }
 

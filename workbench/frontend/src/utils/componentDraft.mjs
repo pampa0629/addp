@@ -1,3 +1,5 @@
+import { defaultFieldPresentation } from '../../../../common-frontend/basic/src/utils/fieldPresentation.mjs'
+
 const NUMERIC_TYPES = new Set(['int', 'bigint', 'float', 'double', 'decimal'])
 const UNARY_OPERATORS = new Set(['is_null', 'is_not_null'])
 
@@ -98,13 +100,13 @@ export function buildComponentConfiguration(descriptor, draft, id) {
     },
     default_parameter_values: defaults,
     renderer_type: draft.rendererType,
-    renderer_config: rendererConfig(draft),
+    renderer_config: buildRendererConfig(draft),
   }
 }
 
 export function draftFromComponent(component, descriptor) {
   const config = component.renderer_config || {}
-  return {
+  const draft = {
     name: component.title,
     description: component.description || '',
     columns: [...(component.query_template?.select || [])],
@@ -134,6 +136,7 @@ export function draftFromComponent(component, descriptor) {
     dimension: config.dimension || '',
     measures: [...(config.measures || [])],
     valueItems: (config.items || []).map((item) => ({ ...item })),
+    fieldPresentations: (config.field_presentations || []).map((item) => presentationDraft(item, descriptor.output_contract?.fields || [])),
     geometryField: config.geometry_field || descriptor.output_contract.spatial?.primary_geometry_field || '',
     mapLabelField: config.label_field || '',
     tooltipFields: [...(config.tooltip_fields || [])],
@@ -142,6 +145,48 @@ export function draftFromComponent(component, descriptor) {
     mapPalette: config.style?.palette || 'primary',
     mapLegendTitle: config.style?.legend_title || '',
   }
+  draft.fieldPresentations = synchronizeFieldPresentations(draft, descriptor.output_contract?.fields || [])
+  return draft
+}
+
+export function synchronizeFieldPresentations(draft, fields = []) {
+  if (draft?.rendererType === 'value') return []
+  const existing = new Map((draft?.fieldPresentations || []).map((item) => [item.field, item]))
+  const fieldFacts = new Map((fields || []).map((field) => [field.name, field]))
+  return rendererFieldNames(draft).map((name) => {
+    const field = fieldFacts.get(name)
+    if (!field) return null
+    const defaults = defaultFieldPresentation(field)
+    const current = existing.get(name)
+    return {
+      ...defaults,
+      ...(current || {}),
+      field: name,
+      fieldType: field.type,
+      ...(draft.rendererType === 'table' ? {} : { width: null }),
+    }
+  }).filter(Boolean)
+}
+
+export function buildRendererConfig(draft) {
+  const presentations = serializeFieldPresentations(draft)
+  const withPresentations = (config) => presentations.length > 0
+    ? { ...config, field_presentations: presentations }
+    : config
+  if (draft.rendererType === 'chart') return withPresentations({ chart_type: draft.chartType, dimension: draft.dimension, measures: [...draft.measures] })
+  if (draft.rendererType === 'map') return withPresentations({
+    geometry_field: draft.geometryField,
+    label_field: draft.mapLabelField,
+    tooltip_fields: [...draft.tooltipFields],
+    style: {
+      mode: draft.mapStyleMode,
+      ...(draft.mapStyleMode === 'uniform' ? {} : { field: draft.mapColorField }),
+      palette: draft.mapPalette,
+      legend_title: draft.mapLegendTitle,
+    },
+  })
+  if (draft.rendererType === 'value') return { items: draft.valueItems.map((item) => ({ ...item })) }
+  return withPresentations({ columns: [...draft.columns] })
 }
 
 export function controlTypeFor(field, operator) {
@@ -186,21 +231,43 @@ function stableOrder(descriptor) {
   return (descriptor.input_contract?.order?.stable_key || []).map((field) => ({ field, direction: 'asc' }))
 }
 
-function rendererConfig(draft) {
-  if (draft.rendererType === 'chart') return { chart_type: draft.chartType, dimension: draft.dimension, measures: [...draft.measures] }
-  if (draft.rendererType === 'map') return {
-    geometry_field: draft.geometryField,
-    label_field: draft.mapLabelField,
-    tooltip_fields: [...draft.tooltipFields],
-    style: {
-      mode: draft.mapStyleMode,
-      ...(draft.mapStyleMode === 'uniform' ? {} : { field: draft.mapColorField }),
-      palette: draft.mapPalette,
-      legend_title: draft.mapLegendTitle,
-    },
+function rendererFieldNames(draft) {
+  const source = draft.rendererType === 'chart'
+    ? [draft.dimension, ...(draft.measures || [])]
+    : draft.rendererType === 'map'
+      ? [draft.mapLabelField, ...(draft.tooltipFields || []), draft.mapStyleMode === 'uniform' ? '' : draft.mapColorField]
+      : draft.rendererType === 'table'
+        ? draft.columns || []
+        : []
+  return [...new Set(source.filter(Boolean))]
+}
+
+function serializeFieldPresentations(draft) {
+  const used = new Set(rendererFieldNames(draft))
+  return (draft.fieldPresentations || []).filter((item) => used.has(item.field)).map((item) => {
+    const result = { field: item.field, label: String(item.label || '').trim() }
+    if (NUMERIC_TYPES.has(item.fieldType)) {
+      if (String(item.unit || '').trim()) result.unit = String(item.unit).trim()
+      if (Number.isInteger(item.precision)) result.precision = item.precision
+    }
+    if (['date', 'time', 'timestamp'].includes(item.fieldType) && item.temporalFormat) result.temporal_format = item.temporalFormat
+    if (draft.rendererType === 'table' && Number.isInteger(item.width)) result.width = item.width
+    return result
+  })
+}
+
+function presentationDraft(item, fields) {
+  const field = (fields || []).find((candidate) => candidate.name === item.field) || { name: item.field, type: '' }
+  const defaults = defaultFieldPresentation(field)
+  return {
+    ...defaults,
+    field: item.field,
+    label: item.label,
+    unit: item.unit || '',
+    precision: Object.prototype.hasOwnProperty.call(item, 'precision') ? item.precision : defaults.precision,
+    temporalFormat: item.temporal_format || '',
+    width: Object.prototype.hasOwnProperty.call(item, 'width') ? item.width : null,
   }
-  if (draft.rendererType === 'value') return { items: draft.valueItems.map((item) => ({ ...item })) }
-  return { columns: [...draft.columns] }
 }
 
 function hasScalarValue(value) {

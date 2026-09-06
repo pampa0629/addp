@@ -116,6 +116,8 @@ def image_build_definition(service: str, directory: str) -> tuple[str, str | Non
         return f"{directory}/Dockerfile.prebuilt.worker", service, "."
     if service == "develop-query-worker":
         return f"{directory}/Dockerfile.prebuilt.query-worker", service, "."
+    if service == "manager-bounded-worker":
+        return f"{directory}/Dockerfile.prebuilt.bounded-worker", service, "."
     if service == "transfer-continuous-worker":
         return f"{directory}/Dockerfile.prebuilt.continuous-worker", service, "."
     if service in {"agent-backend", "copilot-backend"}:

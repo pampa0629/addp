@@ -3317,6 +3317,66 @@ const docTemplate = `{
                 ]
             }
         },
+        "/pptx_pdf/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "删除 Manager infra MinIO 中的 PDF 对象并软删除对应结果记录，不删除源 DataItem、任务或 execution 历史。| Delete the PDF object from Manager infra MinIO and soft-delete the result record without deleting the source DataItem, task, or execution history.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "删除 PPTX PDF 快显结果 | Delete PPTX PDF preview result",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "结果 ID | Result ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "删除成功 | Deleted successfully",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "结果 ID 无效 | Invalid result ID",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "结果不存在 | Result not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "删除失败 | Delete failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.delete"
+                ]
+            }
+        },
         "/pptx_pdf/{id}/content": {
             "get": {
                 "security": [
@@ -3372,6 +3432,66 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "manager.derived_artifact.read"
+                ]
+            }
+        },
+        "/pptx_pdf_tasks/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "删除 PPTX PDF 快显任务定义，不删除源 DataItem 或 execution 历史；调用方应先删除当前受管结果。| Delete the PPTX PDF preview task definition without deleting the source DataItem or execution history; callers should delete the current managed result first.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "删除 PPTX PDF 快显任务 | Delete PPTX PDF preview task",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "任务 ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "删除成功 | Deleted successfully",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "任务 ID 无效 | Invalid task ID",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "任务不存在 | Task not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "删除失败 | Delete failed",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.delete"
                 ]
             }
         },

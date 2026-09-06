@@ -64,6 +64,7 @@ func Migrate(db *gorm.DB) error {
 			&models.DocumentRevision{},
 			&models.DocumentExtraction{},
 			&models.DocumentExtractionCandidate{},
+			&models.DocumentCandidateFormalization{},
 			&models.DocumentExtractionEvidence{},
 			&models.DocumentFileCleanup{},
 			&models.DocumentElementMapping{},
@@ -891,6 +892,8 @@ func postgresStandardSchemaStatements() []string {
 		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.document_extractions'::regclass AND conname = 'ck_standard_document_extractions_status') THEN ALTER TABLE standard.document_extractions ADD CONSTRAINT ck_standard_document_extractions_status CHECK (status = 'completed'); END IF; END $do$",
 		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.document_extraction_candidates'::regclass AND conname = 'ck_standard_document_extraction_candidates_type') THEN ALTER TABLE standard.document_extraction_candidates ADD CONSTRAINT ck_standard_document_extraction_candidates_type CHECK (candidate_type IN ('glossary','element','code_set','metric')); END IF; END $do$",
 		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.document_extraction_candidates'::regclass AND conname = 'ck_standard_document_extraction_candidates_status') THEN ALTER TABLE standard.document_extraction_candidates ADD CONSTRAINT ck_standard_document_extraction_candidates_status CHECK (status IN ('pending','retained','rejected')); END IF; END $do$",
+		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.document_candidate_formalizations'::regclass AND conname = 'ck_standard_document_candidate_formalizations_action') THEN ALTER TABLE standard.document_candidate_formalizations ADD CONSTRAINT ck_standard_document_candidate_formalizations_action CHECK (action IN ('created_identity','created_revision','linked_existing')); END IF; END $do$",
+		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.document_candidate_formalizations'::regclass AND conname = 'ck_standard_document_candidate_formalizations_status') THEN ALTER TABLE standard.document_candidate_formalizations ADD CONSTRAINT ck_standard_document_candidate_formalizations_status CHECK (target_revision_status IN ('draft','in_review','published','withdrawn')); END IF; END $do$",
 		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.document_extraction_evidences'::regclass AND conname = 'ck_standard_document_extraction_evidences_lines') THEN ALTER TABLE standard.document_extraction_evidences ADD CONSTRAINT ck_standard_document_extraction_evidences_lines CHECK (start_line > 0 AND end_line >= start_line); END IF; END $do$",
 		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.metric_definition_revision_dependencies'::regclass AND conname = 'ck_standard_metric_revision_dependencies_distinct') THEN ALTER TABLE standard.metric_definition_revision_dependencies ADD CONSTRAINT ck_standard_metric_revision_dependencies_distinct CHECK (metric_definition_revision_id > 0 AND dependency_definition_id > 0); END IF; END $do$",
 		"DO $do$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'standard.metric_definition_revision_dependencies'::regclass AND conname = 'ck_standard_metric_revision_dependencies_kind') THEN ALTER TABLE standard.metric_definition_revision_dependencies ADD CONSTRAINT ck_standard_metric_revision_dependencies_kind CHECK (relation_kind IN ('base','component')); END IF; END $do$",
@@ -1011,6 +1014,7 @@ func postgresStandardSchemaStatements() []string {
 		"CREATE INDEX IF NOT EXISTS idx_standard_document_metric_mappings_metric ON standard.document_metric_mappings (metric_id)",
 		"CREATE INDEX IF NOT EXISTS idx_standard_document_extractions_revision ON standard.document_extractions (document_revision_id, id DESC)",
 		"CREATE INDEX IF NOT EXISTS idx_standard_document_extraction_candidates_extraction ON standard.document_extraction_candidates (extraction_id, id)",
+		"CREATE INDEX IF NOT EXISTS idx_standard_document_candidate_formalizations_standard ON standard.document_candidate_formalizations (standard_id, revision_id)",
 		"CREATE INDEX IF NOT EXISTS idx_standard_document_extraction_evidences_revision ON standard.document_extraction_evidences (document_revision_id, id)",
 	}
 
@@ -1035,6 +1039,7 @@ func postgresStandardSchemaStatements() []string {
 		{"standard.units", "units_category_id_fkey"},
 		{"standard.document_extraction_candidates", "fk_standard_document_extractions_candidates"},
 		{"standard.document_extraction_evidences", "fk_standard_document_extraction_candidates_evidences"},
+		{"standard.document_candidate_formalizations", "fk_standard_document_extraction_candidates_formalization"},
 	} {
 		statements = append(statements, fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT IF EXISTS %s", legacyConstraint.table, legacyConstraint.name))
 	}
@@ -1085,6 +1090,7 @@ func postgresStandardSchemaStatements() []string {
 		{"standard.document_revisions", "fk_standard_document_revisions_document", "document_id", "standard.documents(id)", "CASCADE"},
 		{"standard.document_extractions", "fk_standard_document_extractions_revision", "document_revision_id", "standard.document_revisions(id)", "CASCADE"},
 		{"standard.document_extraction_candidates", "fk_standard_document_extraction_candidates_extraction", "extraction_id", "standard.document_extractions(id)", "CASCADE"},
+		{"standard.document_candidate_formalizations", "fk_standard_document_candidate_formalizations_candidate", "candidate_id", "standard.document_extraction_candidates(id)", "RESTRICT"},
 		{"standard.document_extraction_evidences", "fk_standard_document_extraction_evidences_candidate", "candidate_id", "standard.document_extraction_candidates(id)", "CASCADE"},
 		{"standard.document_extraction_evidences", "fk_standard_document_extraction_evidences_revision", "document_revision_id", "standard.document_revisions(id)", "CASCADE"},
 		{"standard.glossary_element_mappings", "fk_standard_glossary_element_mappings_glossary", "glossary_id", "standard.glossaries(id)", "CASCADE"},
@@ -1147,6 +1153,7 @@ func sqliteStandardSchemaStatements() []string {
 		"CREATE INDEX IF NOT EXISTS standard.idx_standard_document_metric_mappings_metric ON document_metric_mappings (metric_id)",
 		"CREATE INDEX IF NOT EXISTS standard.idx_standard_document_extractions_revision ON document_extractions (document_revision_id, id DESC)",
 		"CREATE INDEX IF NOT EXISTS standard.idx_standard_document_extraction_candidates_extraction ON document_extraction_candidates (extraction_id, id)",
+		"CREATE INDEX IF NOT EXISTS standard.idx_standard_document_candidate_formalizations_standard ON document_candidate_formalizations (standard_id, revision_id)",
 		"CREATE INDEX IF NOT EXISTS standard.idx_standard_document_extraction_evidences_revision ON document_extraction_evidences (document_revision_id, id)",
 	}
 }

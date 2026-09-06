@@ -260,6 +260,9 @@ func validateRenderer(rendererType string, raw json.RawMessage, descriptor *mode
 				return fmt.Errorf("%w: table column is not selected", ErrInvalidComponentConfiguration)
 			}
 		}
+		if err := validateFieldPresentations(config.FieldPresentations, config.Columns, fields, true); err != nil {
+			return err
+		}
 	case models.RendererTypeChart:
 		var config models.ChartRendererConfig
 		if err := decodeStrict(raw, &config); err != nil || !contains([]string{"bar", "line", "pie"}, config.ChartType) || len(config.Measures) == 0 || len(config.Measures) > 5 || (config.ChartType == "pie" && len(config.Measures) != 1) {
@@ -287,6 +290,9 @@ func validateRenderer(rendererType string, raw json.RawMessage, descriptor *mode
 		}
 		if config.ChartType == "line" && !orderContainsField(orderBy, config.Dimension) {
 			return fmt.Errorf("%w: line chart dimension must be ordered", ErrInvalidComponentConfiguration)
+		}
+		if err := validateFieldPresentations(config.FieldPresentations, append([]string{config.Dimension}, config.Measures...), fields, false); err != nil {
+			return err
 		}
 	case models.RendererTypeMap:
 		var config models.MapRendererConfig
@@ -331,6 +337,16 @@ func validateRenderer(rendererType string, raw json.RawMessage, descriptor *mode
 				}
 			}
 		}
+		presentationFields := append([]string{}, config.TooltipFields...)
+		if config.LabelField != "" {
+			presentationFields = append(presentationFields, config.LabelField)
+		}
+		if config.Style != nil && config.Style.Field != "" {
+			presentationFields = append(presentationFields, config.Style.Field)
+		}
+		if err := validateFieldPresentations(config.FieldPresentations, presentationFields, fields, false); err != nil {
+			return err
+		}
 	case models.RendererTypeValue:
 		var config models.ValueRendererConfig
 		if err := decodeStrict(raw, &config); err != nil || len(config.Items) == 0 || len(config.Items) > 4 {
@@ -354,6 +370,54 @@ func validateRenderer(rendererType string, raw json.RawMessage, descriptor *mode
 		return fmt.Errorf("%w: unknown renderer", ErrInvalidComponentConfiguration)
 	}
 	return nil
+}
+
+func validateFieldPresentations(presentations []models.FieldPresentation, allowed []string, fields map[string]models.ConsumerOutputField, allowWidth bool) error {
+	allowedFields := make(map[string]struct{}, len(allowed))
+	for _, field := range allowed {
+		if field != "" {
+			allowedFields[field] = struct{}{}
+		}
+	}
+	seen := make(map[string]struct{}, len(presentations))
+	for _, presentation := range presentations {
+		field, exists := fields[presentation.Field]
+		_, isAllowed := allowedFields[presentation.Field]
+		_, duplicate := seen[presentation.Field]
+		if !exists || !isAllowed || duplicate || strings.TrimSpace(presentation.Label) == "" || len([]rune(presentation.Label)) > 100 || len([]rune(presentation.Unit)) > 30 {
+			return fmt.Errorf("%w: invalid field presentation", ErrInvalidComponentConfiguration)
+		}
+		seen[presentation.Field] = struct{}{}
+		if presentation.Precision != nil && (*presentation.Precision < 0 || *presentation.Precision > 8 || !datatype.IsNumericFieldType(field.Type)) {
+			return fmt.Errorf("%w: invalid field presentation precision", ErrInvalidComponentConfiguration)
+		}
+		if presentation.Unit != "" && !datatype.IsNumericFieldType(field.Type) {
+			return fmt.Errorf("%w: invalid field presentation unit", ErrInvalidComponentConfiguration)
+		}
+		if !validTemporalPresentation(field.Type, presentation.TemporalFormat) {
+			return fmt.Errorf("%w: invalid field presentation temporal format", ErrInvalidComponentConfiguration)
+		}
+		if presentation.Width != nil && (!allowWidth || *presentation.Width < 80 || *presentation.Width > 600) {
+			return fmt.Errorf("%w: invalid field presentation width", ErrInvalidComponentConfiguration)
+		}
+	}
+	return nil
+}
+
+func validTemporalPresentation(fieldType datatype.FieldType, format string) bool {
+	if format == "" {
+		return true
+	}
+	switch fieldType {
+	case datatype.FieldTypeDate:
+		return format == "date"
+	case datatype.FieldTypeTime:
+		return format == "time"
+	case datatype.FieldTypeTimestamp:
+		return format == "date" || format == "datetime"
+	default:
+		return false
+	}
 }
 
 func orderContainsField(orderBy []models.QueryOrder, field string) bool {

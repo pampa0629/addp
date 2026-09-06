@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	ProjectionSchemaV1 = "addp.protection_projection/v1"
+	ProjectionSchemaV2 = "addp.protection_projection/v2"
 
 	ProjectionStateEnrolling = "enrolling"
 	ProjectionStateActive    = "active"
@@ -28,7 +28,10 @@ const (
 	AlgorithmKeepPrefixSuffixV1 = "addp.mask.keep_prefix_suffix/v1"
 )
 
-var revisionPattern = regexp.MustCompile(`^[0-9]{20}$`)
+var (
+	revisionPattern  = regexp.MustCompile(`^[0-9]{20}$`)
+	subjectIDPattern = regexp.MustCompile(`^[1-9][0-9]*$`)
+)
 
 type ResourceReference struct {
 	OwnerModule      string `json:"owner_module"`
@@ -54,14 +57,25 @@ type Decision struct {
 	Algorithm          string         `json:"algorithm,omitempty"`
 	Parameters         map[string]any `json:"parameters,omitempty"`
 	InvalidValueEffect string         `json:"invalid_value_effect,omitempty"`
-	ValidUntil         *time.Time     `json:"valid_until,omitempty"`
-	Fallback           *Decision      `json:"fallback,omitempty"`
+}
+
+type SubjectReference struct {
+	Type string `json:"type"`
+	ID   string `json:"id"`
+}
+
+type TemporaryAuthorization struct {
+	Subject    SubjectReference `json:"subject"`
+	Effect     string           `json:"effect"`
+	ValidFrom  time.Time        `json:"valid_from"`
+	ValidUntil time.Time        `json:"valid_until"`
 }
 
 type Rule struct {
-	Action    string    `json:"action"`
-	Component Component `json:"component"`
-	Decision  Decision  `json:"decision"`
+	Action         string                   `json:"action"`
+	Component      Component                `json:"component"`
+	Decision       Decision                 `json:"decision"`
+	Authorizations []TemporaryAuthorization `json:"authorizations,omitempty"`
 }
 
 type Projection struct {
@@ -79,7 +93,7 @@ type Projection struct {
 }
 
 func (p Projection) Validate(now time.Time) error {
-	if p.SchemaVersion != ProjectionSchemaV1 {
+	if p.SchemaVersion != ProjectionSchemaV2 {
 		return errors.New("unsupported protection projection schema")
 	}
 	if strings.TrimSpace(p.ProjectionID) == "" || !revisionPattern.MatchString(p.Revision) {
@@ -117,8 +131,10 @@ func (p Projection) Validate(now time.Time) error {
 		if err := rule.Validate(); err != nil {
 			return fmt.Errorf("invalid protection rule %d: %w", index, err)
 		}
-		if rule.Decision.ValidUntil != nil && (rule.Decision.ValidUntil.Before(p.ValidFrom) || rule.Decision.ValidUntil.After(p.ExpiresAt)) {
-			return fmt.Errorf("invalid protection rule %d: decision validity exceeds projection validity", index)
+		for authorizationIndex, authorization := range rule.Authorizations {
+			if authorization.ValidFrom.Before(p.ValidFrom) || authorization.ValidUntil.After(p.ExpiresAt) {
+				return fmt.Errorf("invalid protection rule %d authorization %d: validity exceeds projection validity", index, authorizationIndex)
+			}
 		}
 		key := rule.Action + "\x00" + rule.Component.Key
 		if _, exists := seen[key]; exists {
@@ -158,14 +174,25 @@ func (r Rule) Validate() error {
 	if r.Component.Path[len(r.Component.Path)-1].Container != "scalar" {
 		return errors.New("component path must end at a scalar")
 	}
-	if err := r.Decision.validate(false); err != nil {
+	if err := r.Decision.validate(); err != nil {
 		return err
+	}
+	seenSubjects := make(map[string]struct{}, len(r.Authorizations))
+	for _, authorization := range r.Authorizations {
+		if err := authorization.Validate(); err != nil {
+			return err
+		}
+		key := authorization.Subject.Type + "\x00" + authorization.Subject.ID
+		if _, exists := seenSubjects[key]; exists {
+			return errors.New("duplicate protection authorization subject")
+		}
+		seenSubjects[key] = struct{}{}
 	}
 	return nil
 }
 
-func (d Decision) validate(fallback bool) error {
-	if !validEffect(d.Effect) {
+func (d Decision) validate() error {
+	if d.Effect != EffectMask && d.Effect != EffectSuppress && d.Effect != EffectDeny {
 		return errors.New("invalid protection effect")
 	}
 	if d.Effect == EffectMask {
@@ -184,38 +211,31 @@ func (d Decision) validate(fallback bool) error {
 			return errors.New("invalid value effect must be at least as strict as the primary effect")
 		}
 	}
-	if fallback {
-		if d.Effect == EffectAllow || d.ValidUntil != nil || d.Fallback != nil {
-			return errors.New("protection decision fallback must be a terminal mask, suppress or deny decision")
-		}
-		return nil
+	return nil
+}
+
+func (a TemporaryAuthorization) Validate() error {
+	if a.Subject.Type != "user" || !subjectIDPattern.MatchString(a.Subject.ID) {
+		return errors.New("invalid protection authorization subject")
 	}
-	if d.ValidUntil == nil && d.Fallback == nil {
-		if d.Effect == EffectAllow {
-			return errors.New("allow protection decision requires a time-bounded fallback")
-		}
-		return nil
-	}
-	if d.ValidUntil == nil || d.Fallback == nil || d.ValidUntil.IsZero() || d.Effect != EffectAllow {
-		return errors.New("time-bounded protection decision requires allow, valid_until and fallback")
-	}
-	if d.Algorithm != "" || len(d.Parameters) != 0 || d.InvalidValueEffect != "" {
-		return errors.New("time-bounded allow decision cannot define masking or invalid-value behavior")
-	}
-	if err := d.Fallback.validate(true); err != nil {
-		return err
+	if a.Effect != EffectAllow || a.ValidFrom.IsZero() || a.ValidUntil.IsZero() || !a.ValidUntil.After(a.ValidFrom) {
+		return errors.New("invalid protection authorization")
 	}
 	return nil
 }
 
-// Effective returns the locally enforceable decision for the supplied time.
-// A time-bounded allow never survives its deadline and then falls back without
-// a Security request.
-func (d Decision) Effective(now time.Time) Decision {
-	if d.ValidUntil == nil || d.Fallback == nil || now.Before(d.ValidUntil.UTC()) {
-		return d
+// EffectiveDecision returns allow only for an exact, currently valid subject
+// grant. Missing or mismatched identity always keeps the default decision.
+func (r Rule) EffectiveDecision(subject SubjectReference, now time.Time) Decision {
+	if subject.Type != "user" || !subjectIDPattern.MatchString(subject.ID) {
+		return r.Decision
 	}
-	return *d.Fallback
+	for _, authorization := range r.Authorizations {
+		if authorization.Subject == subject && !now.Before(authorization.ValidFrom) && now.Before(authorization.ValidUntil) {
+			return Decision{Effect: EffectAllow}
+		}
+	}
+	return r.Decision
 }
 
 func (p Projection) CalculateChecksum() (string, error) {

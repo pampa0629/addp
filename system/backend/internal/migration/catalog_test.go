@@ -14,8 +14,25 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 129 {
-		t.Fatalf("LatestVersion = %d, want 129", catalog.LatestVersion)
+	if catalog.LatestVersion != 130 {
+		t.Fatalf("LatestVersion = %d, want 130", catalog.LatestVersion)
+	}
+}
+
+func TestSecurityProtectionAccessRequestMigrationReplacesDirectExemptionMutation(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000130_iam_security_protection_access_request.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 130: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'security.protection_access_request.create'", "'security.protection_access_request.read'",
+		"'security.protection_access_request.update'", "'security.protection_exemption.create'",
+		"'security.protection_exemption.update'", "SET status = 'disabled'",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 130 missing %q", fragment)
+		}
 	}
 }
 

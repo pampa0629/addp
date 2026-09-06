@@ -66,7 +66,7 @@ import { useI18n } from 'vue-i18n'
 import { ElDatePicker, ElInput, ElInputNumber, ElMessage, ElOption, ElSelect, ElSwitch } from 'element-plus'
 import { createLatestRequestCoordinator } from '@common-ui'
 import { executeDescriptorOperation, getConsumerDescriptor } from '../api/services'
-import { applicationRefreshDelayMilliseconds, buildComponentQuery, buildSelectionUpdate, canAttemptApplicationQuery, canExecuteComponentQuery, canRunApplicationRefresh, commitLatestComponentDescriptorState, componentBlockingError, initialApplicationParameterValues, invalidateApplicationParameterResults, runtimeGridStyle, runtimeLayoutStyle, runtimeSectionVisible } from '../utils/dataApplicationRuntime.mjs'
+import { applicationRefreshDelayMilliseconds, buildComponentQuery, buildSelectionUpdate, canAttemptApplicationQuery, canExecuteComponentQuery, canRunApplicationRefresh, canRunPublishedApplicationInitialQuery, commitLatestComponentDescriptorState, componentBlockingError, initialApplicationParameterValues, invalidateApplicationParameterResults, runtimeGridStyle, runtimeLayoutStyle, runtimeSectionVisible } from '../utils/dataApplicationRuntime.mjs'
 import { descriptorSupportsExport, downloadCurrentBoundedExport, exportFormatForRenderer } from '../utils/boundedExport.mjs'
 import WorkbenchRendererHost from './WorkbenchRendererHost.vue'
 
@@ -324,7 +324,12 @@ onMounted(async () => {
   document.addEventListener('fullscreenchange', syncFullscreenState)
   document.addEventListener('visibilitychange', handleVisibilityChange)
   await loadDescriptors()
-  await refreshAndSchedule()
+  if (props.mode === 'published') {
+    if (canRunPublishedApplicationInitialQuery(application.value.snapshot, componentStates)) await queryAll()
+    scheduleAutomaticRefresh()
+  } else {
+    await refreshAndSchedule()
+  }
 })
 onBeforeUnmount(() => {
   runtimeMounted = false

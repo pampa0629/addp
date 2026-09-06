@@ -13,6 +13,9 @@ const requiredNames = [
   'ADDP_ONLINE_MANAGER_LINEAGE_ITEM_ID',
   'ADDP_ONLINE_MANAGER_LINEAGE_SOURCE_NAME',
   'ADDP_ONLINE_MANAGER_LINEAGE_OUTPUT_NAME',
+  'ADDP_ONLINE_MANAGER_PPTX_ITEM_LOCATOR',
+  'ADDP_ONLINE_MANAGER_PPTX_ITEM_ID',
+  'ADDP_ONLINE_MANAGER_PPTX_PAGE_COUNT',
   'GATEWAY_URL'
 ]
 
@@ -49,18 +52,19 @@ async function login(page, username, password, redirect) {
   if (await page.locator('input[autocomplete="one-time-code"]').isVisible().catch(() => false)) {
     throw new Error('the dedicated Online browser user must not require MFA')
   }
-  await page.waitForURL(url => (
-    url.pathname === expectedRedirect.pathname &&
-    url.searchParams.get('execution_id') === expectedRedirect.searchParams.get('execution_id')
-  ))
+  await page.waitForURL(url => url.pathname === expectedRedirect.pathname && url.search === expectedRedirect.search)
   await expect.poll(() => browserAccessToken, { timeout: 20_000 }).not.toBe('')
   return browserAccessToken
 }
 
-test('Monitor renders one business input and one platform-internal output from Manager lineage facts', async ({ page }) => {
+test('Manager lineage and cached PPTX preview remain stable across engine refresh', async ({ page }) => {
   const env = environment()
   const itemID = Number(env.ADDP_ONLINE_MANAGER_LINEAGE_ITEM_ID)
   if (!Number.isInteger(itemID) || itemID <= 0) throw new Error('Manager lineage item ID must be positive')
+  const pptxItemID = Number(env.ADDP_ONLINE_MANAGER_PPTX_ITEM_ID)
+  const pptxPageCount = Number(env.ADDP_ONLINE_MANAGER_PPTX_PAGE_COUNT)
+  if (!Number.isInteger(pptxItemID) || pptxItemID <= 0) throw new Error('Manager PPTX item ID must be positive')
+  if (pptxPageCount !== 3) throw new Error('Manager PPTX fixture must have exactly 3 pages')
   const executionPath = `/monitor/executions?execution_id=${encodeURIComponent(env.ADDP_ONLINE_MANAGER_LINEAGE_EXECUTION_ID)}`
   const api = await request.newContext({
     baseURL: env.GATEWAY_URL,
@@ -68,6 +72,17 @@ test('Monitor renders one business input and one platform-internal output from M
   })
   const browserMessages = []
   const failedBusinessResponses = []
+  let pptxPreviewRequests = 0
+  let managerEngineRequests = 0
+  page.on('request', requestEvent => {
+    const pathname = new URL(requestEvent.url()).pathname
+    if (requestEvent.method() === 'POST' && pathname === '/api/v1/manager/pptx_pdf/preview') {
+      pptxPreviewRequests += 1
+    }
+    if (requestEvent.method() === 'GET' && pathname === '/api/v1/manager/engines') {
+      managerEngineRequests += 1
+    }
+  })
   page.on('console', message => {
     if (['warning', 'error'].includes(message.type())) {
       browserMessages.push({ type: message.type(), text: message.text() })
@@ -116,6 +131,20 @@ test('Monitor renders one business input and one platform-internal output from M
     await expect(outputCards.first()).toContainText(env.ADDP_ONLINE_MANAGER_LINEAGE_OUTPUT_NAME)
     await expect(outputCards.first()).toContainText(/平台内部产物|Platform-internal artifact/)
     await expect(outputCards.first().locator('.execution-lineage__resource-action')).toHaveCount(0)
+
+    const dataExplorerPath = `/manager/data-explorer?locator=${encodeURIComponent(env.ADDP_ONLINE_MANAGER_PPTX_ITEM_LOCATOR)}`
+    await page.goto(dataExplorerPath)
+    const explorerFrame = page.frameLocator('iframe[data-testid="module-iframe"]')
+    const pdfPreview = explorerFrame.locator('.pptx-preview .pdf-preview')
+    await expect(pdfPreview).toBeVisible({ timeout: 60_000 })
+    await expect(pdfPreview.locator('.page-info')).toContainText(`/ ${pptxPageCount}`)
+    await pdfPreview.locator('.toolbar-left .el-button-group .el-button').nth(1).click()
+    const currentPageInput = pdfPreview.locator('.page-info input')
+    await expect(currentPageInput).toHaveValue('2')
+    const engineRequestsAfterPreviewReady = managerEngineRequests
+    await expect.poll(() => managerEngineRequests, { timeout: 25_000 }).toBeGreaterThan(engineRequestsAfterPreviewReady)
+    await expect(currentPageInput).toHaveValue('2')
+    expect(pptxPreviewRequests).toBe(1)
     expect(failedBusinessResponses).toEqual([])
     expect(browserMessages).toEqual([])
 
@@ -130,6 +159,10 @@ test('Monitor renders one business input and one platform-internal output from M
       input_resources: 1,
       output_resources: 1,
       platform_internal_outputs: 1,
+      pptx_item_id: pptxItemID,
+      pptx_page_count: pptxPageCount,
+      pptx_page_after_engine_refresh: 2,
+      pptx_preview_requests: pptxPreviewRequests,
       browser_warning_errors: 0
     }
     writeFileSync(

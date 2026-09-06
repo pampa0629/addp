@@ -22,3 +22,11 @@ test('builds bounded categories and rejects invalid or excessive values', () => 
   assert.equal(buildThematicContext([{ properties: { metric: null } }], { mode: 'continuous', field: 'metric', palette: 'primary' }).reason, 'invalid_measure')
 })
 
+test('formats thematic legend values with the shared field presentation', () => {
+  const context = buildThematicContext(features, {
+    mode: 'continuous', field: 'metric', palette: 'primary',
+  }, { field: 'metric', label: '指标', unit: '分', precision: 1 }, 'zh-CN')
+
+  assert.match(context.entries[0].label, /分/)
+  assert.match(context.entries[0].label, /1\.0/)
+})

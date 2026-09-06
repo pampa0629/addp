@@ -96,7 +96,7 @@ Kafka poll 会分批读取，但不因此成为 bounded；数据库 CDC 的 init
 | 执行边界 | 装载方式 | 变化识别 | 当前源 | 当前目标与应用方式 |
 |---|---|---|---|---|
 | bounded | snapshot | 无 | 当前 table/raw-copy 支持矩阵内的源；声明查询读取会话的只读原生查询 source | table `replace|append`；raw copy `replace` |
-| bounded | incremental | watermark | PostgreSQL/MySQL native table | PostgreSQL/MySQL/OceanBase 非空间 native table `upsert` |
+| bounded | incremental | watermark | PostgreSQL/MySQL/OceanBase 非空间 native table | PostgreSQL/MySQL/OceanBase 非空间 native table `upsert` |
 | continuous | incremental | kafka | 业务 Kafka keyed JSON object | PostgreSQL/MySQL native table `upsert` |
 | bounded | incremental | kafka offset range（replay execution） | 已有业务 Kafka continuous task 的原 topic | 不存在的新 PostgreSQL 隔离表 `upsert` |
 | continuous | incremental | cdc | PostgreSQL/MySQL/Oracle 有稳定主键的单表 | 不存在的新 PostgreSQL/MySQL 表 `upsert_delete` |
@@ -124,7 +124,7 @@ watermark 使用复合位置 `(watermark, tie_breaker...)`。每次 execution �
 (committed_position, execution_upper_bound]
 ```
 
-读取必须按完整复合位置稳定排序。PostgreSQL 和 MySQL 源都由声明 `bounded_watermark_read` 的 Provider 冻结上界；MySQL 源限定为 InnoDB 基表。
+读取必须按完整复合位置稳定排序。PostgreSQL、MySQL 和 MySQL 模式 OceanBase 源都由声明 `bounded_watermark_read` 的 Provider 冻结上界；MySQL-compatible 源限定为 InnoDB 基表，OceanBase 当前只支持非空间表。
 
 目标必须按稳定键幂等 upsert。只有目标批次成功提交后，Transfer 才能通过 state version 和 fencing token 对 `transfer.sync_states` 执行 CAS，推进 `watermark/v1` committed position。
 

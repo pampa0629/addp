@@ -33,6 +33,14 @@ var (
 	ErrGlossaryPublicationHistory             = fmt.Errorf("%w: glossary with publication history cannot be deleted", commonapi.ErrConflict)
 	ErrSystemCategoryImmutable                = fmt.Errorf("%w: system measurement category is immutable", commonapi.ErrConflict)
 	ErrSystemUnitImmutable                    = fmt.Errorf("%w: system unit is immutable", commonapi.ErrConflict)
+	ErrCandidateNotRetained                   = fmt.Errorf("%w: standard candidate is not retained", commonapi.ErrConflict)
+	ErrCandidateAlreadyFormalized             = fmt.Errorf("%w: standard candidate is already formalized", commonapi.ErrConflict)
+	ErrCandidateFormalizationStale            = fmt.Errorf("%w: standard candidate formalization state changed", commonapi.ErrConflict)
+	ErrCandidateScopeConflict                 = fmt.Errorf("%w: standard candidate scope conflicts with target", commonapi.ErrConflict)
+	ErrCandidateTargetDraftExists             = fmt.Errorf("%w: standard candidate target has a work revision", commonapi.ErrConflict)
+	ErrCandidateReferenceUnavailable          = fmt.Errorf("%w: standard candidate reference cannot be resolved uniquely", commonapi.ErrConflict)
+	ErrCandidateFormalizationDenied           = fmt.Errorf("%w: standard candidate formalization permission denied", commonapi.ErrForbidden)
+	ErrCandidateFormalizationInvalid          = fmt.Errorf("%w: invalid standard candidate formalization", commonapi.ErrBadRequest)
 )
 
 func mapDeleteConflict(err, referencedError error) error {

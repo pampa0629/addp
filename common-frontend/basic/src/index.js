@@ -23,6 +23,12 @@ export {
   tabularCellValue
 } from './utils/tabularResult'
 export { formatScalarValue, validateScalarValueResult } from './utils/scalarValueResult.mjs'
+export {
+  defaultFieldPresentation,
+  fieldPresentationFor,
+  fieldPresentationLabel,
+  formatFieldPresentationValue
+} from './utils/fieldPresentation.mjs'
 
 // Schedule Components
 export { default as ScheduleConfig } from './components/ScheduleConfig.vue'

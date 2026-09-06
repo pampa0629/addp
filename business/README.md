@@ -94,7 +94,7 @@ business/
 │   ├── restart.sh                  # 重启服务
 │   ├── online-engine-fixture.sh    # T4 专用 PostgreSQL Fixture 生命周期
 │   ├── online-workbench-mysql-fixture.sh # Workbench T4 专用只读 MySQL Fixture
-│   ├── online-pointcloud-minio-fixture.sh # Manager 血缘 T4 专用 MinIO Fixture
+│   ├── online-manager-minio-fixture.sh # Manager 血缘与文档快显 T4 专用 MinIO Fixture
 │   └── online-security-transfer-fixture.sh # Security/Transfer T4 复合 Fixture
 │
 ├── postgres/                       # PostgreSQL 配置
@@ -165,9 +165,9 @@ bash scripts/start.sh
 
 启用 MySQL 时，脚本还会在数据库 ready 后执行 `mysql/init-cdc.sh`。该脚本每次都创建或更新 `${MYSQL_CDC_USER:-addp_cdc}@%`，并将权限收敛为 Debezium 所需的最小权限集，因此已有数据卷也会生效。连接 MySQL CDC Engine 时使用 `.env` 中的 `MYSQL_CDC_USER` 和 `MYSQL_CDC_PASSWORD`，不要使用 root。
 
-`bash scripts/start.sh -oceanbase` 启动官方 OceanBase CE 固定 LTS 镜像，并通过纯 SQL 脚本幂等初始化 `${OCEANBASE_DATABASE:-business}`。样例包含连接探针表，以及与 MySQL 普通业务样例对齐的 `customers`、`products`、`orders`、`order_items` 四张关联表，覆盖主外键、唯一约束、索引、Decimal、JSON、布尔和微秒时间字段；当前支持非空间普通表的安全建表、可空列增量演进、事务性分批 insert、覆盖策略所需的精确目标表删除，以及按显式非空稳定键执行的事务性幂等 upsert。该容器不初始化或声明空间、CDC、bounded watermark source 或 Oracle 模式能力，是 `MODE=mini` 的单机测试形态，建议预留至少 2 CPU / 8 GB 内存，不用于生产部署。System 中必须注册为 `engine_type=oceanbase`，容器内连接地址为 `business-oceanbase:2881`，默认账号为 `root@test`；不要登记为 MySQL。
+`bash scripts/start.sh -oceanbase` 启动官方 OceanBase CE 固定 LTS 镜像，并通过纯 SQL 脚本幂等初始化 `${OCEANBASE_DATABASE:-business}`。样例包含连接探针表，以及与 MySQL 普通业务样例对齐的 `customers`、`products`、`orders`、`order_items` 四张关联表，覆盖主外键、唯一约束、索引、Decimal、JSON、布尔和微秒时间字段；当前支持非空间 InnoDB 基表的 bounded watermark 一致性读取、安全建表、可空列增量演进、事务性分批 insert、覆盖策略所需的精确目标表删除，以及按显式非空稳定键执行的事务性幂等 upsert。该容器不初始化或声明空间、CDC 或 Oracle 模式能力，是 `MODE=mini` 的单机测试形态，建议预留至少 2 CPU / 8 GB 内存，不用于生产部署。System 中必须注册为 `engine_type=oceanbase`，容器内连接地址为 `business-oceanbase:2881`，默认账号为 `root@test`；不要登记为 MySQL。
 
-容器启动后，从仓库根目录运行 `make test-oceanbase-business`，可执行 OceanBase Provider 集成门禁；该门禁覆盖连接、实时目录、字段与统计 Facts、BatchRead、可执行查询样例、命名参数、受控只读事务，以及非空间普通表的 prepare/session/delete/upsert 写入契约。写入用例只创建并通过 OceanBase `ResourceDeleteProvider` 删除专用 gate 表，不创建或删除数据库，不修改固定业务样例数据。
+OceanBase Provider 的唯一 T2 入口是仓库根 `make test-common-oceanbase`。对当前 Business 容器验证时，显式传入 `ADDP_TEST_OCEANBASE_HOST`、`ADDP_TEST_OCEANBASE_PORT`、`ADDP_TEST_OCEANBASE_USER` 和 `ADDP_TEST_OCEANBASE_PASSWORD`；门禁固定使用名称含 `disposable` 的专用 database，覆盖连接、实时目录、字段与统计 Facts、BatchRead、可执行查询样例、命名参数、受控只读事务，以及非空间普通表的 bounded watermark resume 和 prepare/session/delete/upsert 写入契约。测试生命周期创建并删除该 database，各用例只清理自己拥有的 gate 表，不读取或修改上述固定业务样例。
 
 ### scripts/online-workbench-mysql-fixture.sh - Workbench T4 MySQL Fixture
 
@@ -179,14 +179,25 @@ bash scripts/online-workbench-mysql-fixture.sh status
 bash scripts/online-workbench-mysql-fixture.sh stop
 ```
 
-### scripts/online-pointcloud-minio-fixture.sh - Manager 内部产物血缘 T4 Fixture
+### scripts/online-oceanbase-consumer-fixture.sh - OceanBase 消费链路 T4 Fixture
 
-该入口只允许 `ADDP_ONLINE_HOST=1` 的 macOS 专用 Runner 使用。它通过 `business/minio` Compose service 管理独立 Business MinIO，将仓库已有的小型 `pdal_las12_format0.las` 幂等写入配置的 bucket/object，供永久 MinIO Engine Instance 扫描。脚本只接受仓库外 `ADDP_ONLINE_POINTCLOUD_MINIO_*` 变量，不读取或生成 `business/.env`，也不接触 Manager infra MinIO。个人开发环境不得调用该脚本。
+该入口只允许 `ADDP_ONLINE_HOST=1` 的 macOS 专用 Runner 使用，且只接受仓库外 `ADDP_ONLINE_OCEANBASE_*` 环境变量。它固定使用 `oceanbase/oceanbase-ce:4.4.2-lts` 和 `business/oceanbase` Compose service，不读取或生成 `business/.env`。`start` 将 `addp_online_consumer_source` 恢复为 5 行 watermark 基线并将同构目标表清空；`advance` 只更新 1 行并新增 1 行；`stop` 在移除容器前再次恢复基线，因此成功、失败和中断后的物理数据边界一致。永久 Engine Instance 必须以 `engine_type=oceanbase` 指向同一端点，Fixture 不创建、修改或删除 Engine Instance。个人开发环境不得调用该脚本。
 
 ```bash
-bash scripts/online-pointcloud-minio-fixture.sh start
-bash scripts/online-pointcloud-minio-fixture.sh status
-bash scripts/online-pointcloud-minio-fixture.sh stop
+bash scripts/online-oceanbase-consumer-fixture.sh start
+bash scripts/online-oceanbase-consumer-fixture.sh advance
+bash scripts/online-oceanbase-consumer-fixture.sh status
+bash scripts/online-oceanbase-consumer-fixture.sh stop
+```
+
+### scripts/online-manager-minio-fixture.sh - Manager 内部产物血缘 T4 Fixture
+
+该入口只允许 `ADDP_ONLINE_HOST=1` 的 macOS 专用 Runner 使用。它通过 `business/minio` Compose service 管理独立 Business MinIO，将仓库已有的小型 `pdal_las12_format0.las` 与确定性的 3 页 `addp_online_preview_fixture.pptx` 幂等写入配置的两个 object，供同一个永久 MinIO Engine Instance 扫描。脚本只接受仓库外 `ADDP_ONLINE_MANAGER_MINIO_*` 变量，不读取或生成 `business/.env`，也不接触 Manager infra MinIO。个人开发环境不得调用该脚本。
+
+```bash
+bash scripts/online-manager-minio-fixture.sh start
+bash scripts/online-manager-minio-fixture.sh status
+bash scripts/online-manager-minio-fixture.sh stop
 ```
 
 ### scripts/online-security-transfer-fixture.sh - Security/Transfer T4 Fixture

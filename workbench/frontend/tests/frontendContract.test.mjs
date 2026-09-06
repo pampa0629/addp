@@ -126,6 +126,10 @@ test('data application components own service selection, rendering, parameters, 
   assert.match(editor, /:result-ready="queryCompleted"/)
   assert.match(canvas, /:result-ready="state\(placement\.component_id\)\.query_completed"/)
   assert.match(rendererHost, /rendererType === 'value' && !resultReady/)
+  assert.match(editor, /fieldPresentations/)
+  assert.match(draft, /export function buildRendererConfig/)
+  assert.match(draft, /export function synchronizeFieldPresentations/)
+  assert.match(rendererHost, /:presentations="config\.field_presentations \|\| \[\]"/)
 })
 
 test('component editor ignores async results from an obsolete service context', () => {
@@ -170,6 +174,19 @@ test('draft preview and published runtime reuse one Workbench application canvas
   assert.match(canvas, /getConsumerDescriptor/)
   assert.equal((canvas.match(/WorkbenchRendererHost/g) || []).length >= 2, true)
   assert.doesNotMatch(router, /\/preview/)
+})
+
+test('published runtime queries once after descriptors and schedules later wallboard refreshes', () => {
+  const canvas = readSource('../src/components/DataApplicationCanvas.vue')
+  const mounted = canvas.slice(canvas.indexOf('onMounted(async () => {'), canvas.indexOf('\nonBeforeUnmount(', canvas.indexOf('onMounted(async () => {')))
+  const publishedBranch = mounted.slice(mounted.indexOf("if (props.mode === 'published')"), mounted.indexOf('} else {'))
+  const draftBranch = mounted.slice(mounted.indexOf('} else {'))
+
+  assert.match(canvas, /canRunPublishedApplicationInitialQuery/)
+  assert.match(mounted, /await loadDescriptors\(\)/)
+  assert.match(publishedBranch, /canRunPublishedApplicationInitialQuery\([\s\S]*await queryAll\(\)[\s\S]*scheduleAutomaticRefresh\(\)/)
+  assert.doesNotMatch(publishedBranch, /refreshAndSchedule/)
+  assert.match(draftBranch, /await refreshAndSchedule\(\)/)
 })
 
 test('application runtime retries transient failures without bypassing contract drift', () => {

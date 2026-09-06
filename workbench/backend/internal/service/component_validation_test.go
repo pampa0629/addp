@@ -141,3 +141,64 @@ func TestValidateMapRendererUsesExplicitSpatialAndThematicFields(t *testing.T) {
 		t.Fatal("continuous map style must reject a non-numeric field")
 	}
 }
+
+func TestValidateRendererFieldPresentations(t *testing.T) {
+	descriptor := testDescriptor(false)
+	descriptor.InputContract.Fields = append(descriptor.InputContract.Fields, models.ConsumerQueryField{Name: "created_at", Type: datatype.FieldTypeTimestamp, Selectable: true})
+	descriptor.OutputContract.Fields = append(descriptor.OutputContract.Fields, models.ConsumerOutputField{Name: "created_at", Type: datatype.FieldTypeTimestamp})
+	component := models.ComponentConfiguration{
+		Name: "Orders", ServiceRef: &models.ServiceReference{ServiceType: "query", ServiceID: 23},
+		QueryTemplate:  models.ComponentQueryTemplate{Select: []string{"id", "amount", "created_at"}, PageLimit: 50, Format: "json"},
+		RendererType:   models.RendererTypeTable,
+		RendererConfig: json.RawMessage(`{"columns":["id","amount","created_at"],"field_presentations":[{"field":"id","label":"Order","width":160},{"field":"amount","label":"Amount","unit":"USD","precision":2},{"field":"created_at","label":"Created","temporal_format":"datetime"}]}`),
+	}
+	if err := validateComponentConfiguration(component, descriptor); err != nil {
+		t.Fatalf("validateComponentConfiguration() error = %v", err)
+	}
+
+	invalidConfigs := []string{
+		`{"columns":["id"],"field_presentations":[{"field":"id","label":"A"},{"field":"id","label":"B"}]}`,
+		`{"columns":["id"],"field_presentations":[{"field":"amount","label":"Amount"}]}`,
+		`{"columns":["amount"],"field_presentations":[{"field":"amount","label":"Amount","precision":9}]}`,
+		`{"columns":["id"],"field_presentations":[{"field":"id","label":"Order","unit":"items"}]}`,
+		`{"columns":["created_at"],"field_presentations":[{"field":"created_at","label":"Created","temporal_format":"time"}]}`,
+		`{"columns":["id"],"field_presentations":[{"field":"id","label":"Order","width":79}]}`,
+	}
+	for _, raw := range invalidConfigs {
+		component.RendererConfig = json.RawMessage(raw)
+		if err := validateComponentConfiguration(component, descriptor); err == nil {
+			t.Fatalf("invalid field presentation must be rejected: %s", raw)
+		}
+	}
+}
+
+func TestRejectsTableOnlyWidthInChartAndMapFieldPresentations(t *testing.T) {
+	descriptor := testDescriptor(true)
+	chart := models.ComponentConfiguration{
+		Name: "Chart", ServiceRef: &models.ServiceReference{ServiceType: "query", ServiceID: 23},
+		QueryTemplate:  models.ComponentQueryTemplate{Select: []string{"id", "amount"}, PageLimit: 50, Format: "json"},
+		RendererType:   models.RendererTypeChart,
+		RendererConfig: json.RawMessage(`{"chart_type":"bar","dimension":"id","measures":["amount"],"field_presentations":[{"field":"amount","label":"Amount","width":120}]}`),
+	}
+	if err := validateComponentConfiguration(chart, descriptor); err == nil {
+		t.Fatal("chart field presentation width must be rejected")
+	}
+	chart.RendererConfig = json.RawMessage(`{"chart_type":"bar","dimension":"id","measures":["amount"],"field_presentations":[{"field":"id","label":"Order"},{"field":"amount","label":"Amount","unit":"USD","precision":2}]}`)
+	if err := validateComponentConfiguration(chart, descriptor); err != nil {
+		t.Fatalf("valid chart field presentations rejected: %v", err)
+	}
+
+	mapComponent := models.ComponentConfiguration{
+		Name: "Map", ServiceRef: &models.ServiceReference{ServiceType: "query", ServiceID: 23},
+		QueryTemplate:  models.ComponentQueryTemplate{Select: []string{"id", "amount", "shape"}, PageLimit: 50, Format: "json"},
+		RendererType:   models.RendererTypeMap,
+		RendererConfig: json.RawMessage(`{"geometry_field":"shape","label_field":"id","tooltip_fields":["amount"],"style":{"mode":"uniform","palette":"primary"},"field_presentations":[{"field":"amount","label":"Amount","width":120}]}`),
+	}
+	if err := validateComponentConfiguration(mapComponent, descriptor); err == nil {
+		t.Fatal("map field presentation width must be rejected")
+	}
+	mapComponent.RendererConfig = json.RawMessage(`{"geometry_field":"shape","label_field":"id","tooltip_fields":["amount"],"style":{"mode":"uniform","palette":"primary"},"field_presentations":[{"field":"id","label":"Order"},{"field":"amount","label":"Amount","unit":"USD","precision":2}]}`)
+	if err := validateComponentConfiguration(mapComponent, descriptor); err != nil {
+		t.Fatalf("valid map field presentations rejected: %v", err)
+	}
+}

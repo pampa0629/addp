@@ -17,7 +17,8 @@ from typing import Any, Callable, Iterable, Mapping
 
 
 TERMINAL_STATUSES = {"success", "failed", "timeout", "cancelled"}
-TASK_TYPE = "point_cloud_copc_generation"
+POINTCLOUD_TASK_TYPE = "point_cloud_copc_generation"
+PPTX_TASK_TYPE = "pptx_pdf_generation"
 LINEAGE_SCHEMA = "addp.lineage-facts/v1"
 REQUIRED_PERMISSIONS = {
     "manager.derived_artifact.create",
@@ -209,32 +210,32 @@ def wait_for_meta_scan(client: GatewayClient, engine_id: int, deadline: float) -
     raise SuiteError("Meta scan did not finish before the convergence timeout")
 
 
-def find_fixture_item(client: GatewayClient, engine_id: int, full_name: str) -> dict[str, object]:
+def find_fixture_item(client: GatewayClient, engine_id: int, full_name: str, label: str) -> dict[str, object]:
     items = _array(
         client.request("GET", f"/api/v1/meta/engines/{engine_id}/items", (200,)).payload,
         "Meta engine items",
     )
     matches = [item for item in items if isinstance(item, dict) and item.get("full_name") == full_name]
     if len(matches) != 1:
-        raise SuiteError(f"Meta must return exactly one point-cloud fixture {full_name}")
+        raise SuiteError(f"Meta must return exactly one {label} fixture {full_name}")
     item = matches[0]
     if item.get("item_type") not in {"object", "file"}:
-        raise SuiteError("point-cloud fixture must be an object or file DataItem")
+        raise SuiteError(f"{label} fixture must be an object or file DataItem")
     fingerprint = item.get("fingerprint")
     if not isinstance(fingerprint, str) or not fingerprint:
-        raise SuiteError("point-cloud fixture fingerprint is missing")
-    positive_int(item.get("id"), "point-cloud fixture id")
+        raise SuiteError(f"{label} fixture fingerprint is missing")
+    positive_int(item.get("id"), f"{label} fixture id")
     size = item.get("size_bytes")
-    if size is not None and positive_int(size, "point-cloud fixture size_bytes") <= 0:
-        raise SuiteError("point-cloud fixture size_bytes must be positive")
+    if size is not None and positive_int(size, f"{label} fixture size_bytes") <= 0:
+        raise SuiteError(f"{label} fixture size_bytes must be positive")
     return item
 
 
 def build_item_locator(engine_id: int, item: Mapping[str, object]) -> str:
-    item_id = positive_int(item.get("id"), "point-cloud fixture id")
+    item_id = positive_int(item.get("id"), "fixture item id")
     full_name = item.get("full_name")
     if not isinstance(full_name, str) or not full_name.strip():
-        raise SuiteError("point-cloud fixture full_name is missing")
+        raise SuiteError("fixture full_name is missing")
     path = urllib.parse.quote(full_name.strip("/"), safe="/")
     return f"addp://engine/{engine_id}/path/{path}?type=object&item_id={item_id}"
 
@@ -260,7 +261,7 @@ def assert_no_existing_resources(client: GatewayClient, fingerprint: str) -> Non
         raise SuiteError("a stale PointCloud result exists for the dedicated fixture")
 
 
-def wait_for_manager_execution(client: GatewayClient, execution_id: str, deadline: float) -> dict[str, object]:
+def wait_for_manager_execution(client: GatewayClient, execution_id: str, deadline: float, label: str) -> dict[str, object]:
     while time.monotonic() < deadline:
         execution = _object(
             client.request("GET", f"/api/v1/manager/executions/{urllib.parse.quote(execution_id)}", (200,)).payload,
@@ -271,9 +272,9 @@ def wait_for_manager_execution(client: GatewayClient, execution_id: str, deadlin
             return execution
         if status in TERMINAL_STATUSES:
             details = execution.get("error_details") or execution.get("metadata")
-            raise SuiteError(f"Manager PointCloud execution ended with status {status}: {details!r}")
+            raise SuiteError(f"Manager {label} execution ended with status {status}: {details!r}")
         time.sleep(1)
-    raise SuiteError("Manager PointCloud execution did not finish before the convergence timeout")
+    raise SuiteError(f"Manager {label} execution did not finish before the convergence timeout")
 
 
 def validate_lineage(
@@ -283,6 +284,10 @@ def validate_lineage(
     item_id: int,
     fingerprint: str,
     tenant_id: int,
+    task_type: str,
+    output_prefix: str,
+    output_suffix: str,
+    output_label: str,
 ) -> dict[str, object]:
     metadata = _object(execution.get("metadata"), "execution metadata")
     facts = _object(metadata.get("lineage_facts"), "execution lineage_facts")
@@ -305,16 +310,16 @@ def validate_lineage(
             raise SuiteError(f"execution lineage input {key} is invalid")
     output_ref = _object(outputs[0], "execution lineage output")
     output_locator = output_ref.get("locator")
-    expected_prefix = f"addp-infra://minio/manager/tenant_{tenant_id}/point-cloud-copc/"
+    expected_prefix = f"addp-infra://minio/manager/tenant_{tenant_id}/{output_prefix}/"
     if output_ref.get("port") != "result" or not isinstance(output_locator, str) or not output_locator.startswith(expected_prefix):
-        raise SuiteError("execution lineage output is not the Manager infra COPC artifact")
+        raise SuiteError(f"execution lineage output is not the Manager infra {output_label} artifact")
     parsed_output = urllib.parse.urlsplit(output_locator)
-    if urllib.parse.parse_qs(parsed_output.query) != {"type": ["object"]} or not parsed_output.path.endswith(".copc.laz"):
-        raise SuiteError("execution lineage output must be a COPC object locator")
+    if urllib.parse.parse_qs(parsed_output.query) != {"type": ["object"]} or not parsed_output.path.endswith(output_suffix):
+        raise SuiteError(f"execution lineage output must be a {output_label} object locator")
     operation = _object(operations[0], "execution lineage operation")
     expected_operation = {
         "kind": "derive",
-        "operator": TASK_TYPE,
+        "operator": task_type,
         "input_ports": ["source"],
         "output_ports": ["result"],
     }
@@ -331,6 +336,8 @@ def validate_browser_report(
     execution_id: str,
     item_id: int,
     output_name: str,
+    pptx_item_id: int,
+    pptx_page_count: int,
 ) -> dict[str, object]:
     payload = _object(report, "Manager lineage browser report")
     expected = {
@@ -344,6 +351,10 @@ def validate_browser_report(
         "input_resources": 1,
         "output_resources": 1,
         "platform_internal_outputs": 1,
+        "pptx_item_id": pptx_item_id,
+        "pptx_page_count": pptx_page_count,
+        "pptx_page_after_engine_refresh": 2,
+        "pptx_preview_requests": 1,
         "browser_warning_errors": 0,
     }
     mismatches = [key for key, value in expected.items() if payload.get(key) != value]
@@ -360,6 +371,9 @@ def run_browser(
     item_id: int,
     source_name: str,
     output_name: str,
+    pptx_item_locator: str,
+    pptx_item_id: int,
+    pptx_page_count: int,
 ) -> dict[str, object]:
     artifact_dir = Path(environment["ADDP_ONLINE_ARTIFACT_DIR"])
     report_path = artifact_dir / "manager-internal-artifact-lineage-browser.json"
@@ -371,6 +385,9 @@ def run_browser(
             "ADDP_ONLINE_MANAGER_LINEAGE_ITEM_ID": str(item_id),
             "ADDP_ONLINE_MANAGER_LINEAGE_SOURCE_NAME": source_name,
             "ADDP_ONLINE_MANAGER_LINEAGE_OUTPUT_NAME": output_name,
+            "ADDP_ONLINE_MANAGER_PPTX_ITEM_LOCATOR": pptx_item_locator,
+            "ADDP_ONLINE_MANAGER_PPTX_ITEM_ID": str(pptx_item_id),
+            "ADDP_ONLINE_MANAGER_PPTX_PAGE_COUNT": str(pptx_page_count),
         }
     )
     result = subprocess.run(
@@ -399,6 +416,8 @@ def run_browser(
         execution_id=execution_id,
         item_id=item_id,
         output_name=output_name,
+        pptx_item_id=pptx_item_id,
+        pptx_page_count=pptx_page_count,
     )
 
 
@@ -408,26 +427,36 @@ def run_scenario(
     browser_runner: Callable[..., dict[str, object]] | None = None,
 ) -> dict[str, object]:
     tenant_id = positive_int(environment["ADDP_ONLINE_TEST_TENANT_ID"], "ADDP_ONLINE_TEST_TENANT_ID")
-    engine_id = positive_int(environment["ADDP_ONLINE_POINTCLOUD_MINIO_ENGINE_ID"], "ADDP_ONLINE_POINTCLOUD_MINIO_ENGINE_ID")
+    engine_id = positive_int(environment["ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID"], "ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID")
     timeout = float(environment.get("ADDP_ONLINE_MANAGER_LINEAGE_CONVERGENCE_TIMEOUT_SECONDS", "180"))
     if timeout <= 0:
         raise SuiteError("ADDP_ONLINE_MANAGER_LINEAGE_CONVERGENCE_TIMEOUT_SECONDS must be positive")
     client = GatewayClient(environment["GATEWAY_URL"], environment["ADDP_ONLINE_TEST_USER_ACCESS_TOKEN"], min(timeout, 30))
     identity = validate_user_identity(client, tenant_id)
-    fixture_full_name = f"{environment['ADDP_ONLINE_POINTCLOUD_MINIO_BUCKET'].strip('/')}/{environment['ADDP_ONLINE_POINTCLOUD_MINIO_OBJECT'].strip('/')}"
+    bucket = environment["ADDP_ONLINE_MANAGER_MINIO_BUCKET"].strip("/")
+    pointcloud_full_name = f"{bucket}/{environment['ADDP_ONLINE_MANAGER_MINIO_POINTCLOUD_OBJECT'].strip('/')}"
+    pptx_full_name = f"{bucket}/{environment['ADDP_ONLINE_MANAGER_MINIO_PPTX_OBJECT'].strip('/')}"
     deadline = time.monotonic() + timeout
     scan_execution_id = wait_for_meta_scan(client, engine_id, deadline)
-    item = find_fixture_item(client, engine_id, fixture_full_name)
-    item_id = positive_int(item.get("id"), "point-cloud fixture id")
-    fingerprint = str(item["fingerprint"])
-    size_bytes = positive_int(item.get("size_bytes"), "point-cloud fixture size_bytes")
-    item_locator = build_item_locator(engine_id, item)
-    assert_no_existing_resources(client, fingerprint)
+    pointcloud_item = find_fixture_item(client, engine_id, pointcloud_full_name, "point-cloud")
+    pptx_item = find_fixture_item(client, engine_id, pptx_full_name, "PPTX")
+    pointcloud_item_id = positive_int(pointcloud_item.get("id"), "point-cloud fixture id")
+    pointcloud_fingerprint = str(pointcloud_item["fingerprint"])
+    pointcloud_size_bytes = positive_int(pointcloud_item.get("size_bytes"), "point-cloud fixture size_bytes")
+    pointcloud_locator = build_item_locator(engine_id, pointcloud_item)
+    pptx_item_id = positive_int(pptx_item.get("id"), "PPTX fixture id")
+    pptx_fingerprint = str(pptx_item["fingerprint"])
+    pptx_locator = build_item_locator(engine_id, pptx_item)
+    assert_no_existing_resources(client, pointcloud_fingerprint)
 
-    task_id: int | None = None
-    result_id: int | None = None
-    execution_id = ""
-    cleanup = {"result_deleted": False, "task_deleted": False, "content_unavailable": False, "residual_resources": -1}
+    pointcloud_task_id: int | None = None
+    pointcloud_result_id: int | None = None
+    pointcloud_execution_id = ""
+    pptx_task_id: int | None = None
+    pptx_result_id: int | None = None
+    pptx_execution_id = ""
+    pointcloud_cleanup = {"result_deleted": False, "task_deleted": False, "content_unavailable": False, "residual_resources": -1}
+    pptx_cleanup = {"result_deleted": False, "task_deleted": False, "content_unavailable": False, "residual_resources": -1}
     try:
         task = _object(
             client.request(
@@ -439,23 +468,23 @@ def run_scenario(
                     "description": "Dedicated T4 Business MinIO to Manager infra lineage acceptance",
                     "config": {
                         "source": {
-                            "item_locator": item_locator,
+                            "item_locator": pointcloud_locator,
                             "source_engine_id": engine_id,
-                            "item_fingerprint": fingerprint,
-                            "item_id": item_id,
+                            "item_fingerprint": pointcloud_fingerprint,
+                            "item_id": pointcloud_item_id,
                             "format": "las",
-                            "source_size_bytes": size_bytes,
+                            "source_size_bytes": pointcloud_size_bytes,
                         }
                     },
                 },
             ).payload,
             "created PointCloud task",
         )
-        task_id = positive_int(task.get("id"), "created PointCloud task id")
+        pointcloud_task_id = positive_int(task.get("id"), "created PointCloud task id")
         started = _object(
             client.request(
                 "POST",
-                f"/api/v1/manager/tasks/{TASK_TYPE}/{task_id}/execute",
+                f"/api/v1/manager/tasks/{POINTCLOUD_TASK_TYPE}/{pointcloud_task_id}/execute",
                 (202,),
                 {"trigger_type": "manual", "source": "manager"},
             ).payload,
@@ -464,35 +493,43 @@ def run_scenario(
         execution_id_value = started.get("execution_id")
         if not isinstance(execution_id_value, str) or not execution_id_value:
             raise SuiteError("PointCloud execution_id is missing")
-        execution_id = execution_id_value
-        manager_execution = wait_for_manager_execution(client, execution_id, deadline)
-        manager_facts = validate_lineage(
+        pointcloud_execution_id = execution_id_value
+        manager_execution = wait_for_manager_execution(client, pointcloud_execution_id, deadline, "PointCloud")
+        pointcloud_manager_facts = validate_lineage(
             manager_execution,
-            item_locator=item_locator,
-            item_id=item_id,
-            fingerprint=fingerprint,
+            item_locator=pointcloud_locator,
+            item_id=pointcloud_item_id,
+            fingerprint=pointcloud_fingerprint,
             tenant_id=tenant_id,
+            task_type=POINTCLOUD_TASK_TYPE,
+            output_prefix="point-cloud-copc",
+            output_suffix=".copc.laz",
+            output_label="COPC",
         )
 
         monitor_execution = _object(
             client.request(
                 "GET",
-                f"/api/v1/monitor/executions/by-execution-id/{urllib.parse.quote(execution_id)}",
+                f"/api/v1/monitor/executions/by-execution-id/{urllib.parse.quote(pointcloud_execution_id)}",
                 (200,),
             ).payload,
             "Monitor execution",
         )
-        monitor_facts = validate_lineage(
+        pointcloud_monitor_facts = validate_lineage(
             monitor_execution,
-            item_locator=item_locator,
-            item_id=item_id,
-            fingerprint=fingerprint,
+            item_locator=pointcloud_locator,
+            item_id=pointcloud_item_id,
+            fingerprint=pointcloud_fingerprint,
             tenant_id=tenant_id,
+            task_type=POINTCLOUD_TASK_TYPE,
+            output_prefix="point-cloud-copc",
+            output_suffix=".copc.laz",
+            output_label="COPC",
         )
-        if monitor_facts != manager_facts:
+        if pointcloud_monitor_facts != pointcloud_manager_facts:
             raise SuiteError("Monitor lineage facts differ from the Manager owner facts")
 
-        query = urllib.parse.urlencode({"task_id": task_id, "page": 1, "page_size": 20})
+        query = urllib.parse.urlencode({"task_id": pointcloud_task_id, "page": 1, "page_size": 20})
         results = _object(
             client.request("GET", f"/api/v1/manager/point_cloud_copc?{query}", (200,)).payload,
             "PointCloud result list",
@@ -501,28 +538,111 @@ def run_scenario(
         if len(result_rows) != 1:
             raise SuiteError("PointCloud execution must create exactly one result")
         result = _object(result_rows[0], "PointCloud result")
-        result_id = positive_int(result.get("id"), "PointCloud result id")
-        output_name = result.get("file_name")
-        if not isinstance(output_name, str) or not output_name.endswith(".copc.laz"):
+        pointcloud_result_id = positive_int(result.get("id"), "PointCloud result id")
+        pointcloud_output_name = result.get("file_name")
+        if not isinstance(pointcloud_output_name, str) or not pointcloud_output_name.endswith(".copc.laz"):
             raise SuiteError("PointCloud result file_name must end with .copc.laz")
-        content = client.request(
+        pointcloud_content = client.request(
             "GET",
-            f"/api/v1/manager/point_cloud_copc/{result_id}/content",
+            f"/api/v1/manager/point_cloud_copc/{pointcloud_result_id}/content",
             (206,),
             headers={"Accept": "application/octet-stream", "Range": "bytes=0-63"},
         )
-        if not content.raw or len(content.raw) > 64:
+        if not pointcloud_content.raw or len(pointcloud_content.raw) > 64:
             raise SuiteError("PointCloud COPC Range response is empty or unbounded")
+
+        first_preview = client.request(
+            "POST",
+            "/api/v1/manager/pptx_pdf/preview",
+            (202,),
+            {"locator": pptx_locator},
+        )
+        first_preview_payload = _object(first_preview.payload, "initial PPTX preview")
+        if first_preview_payload.get("status") not in {"pending", "running"}:
+            raise SuiteError("initial PPTX preview must start a managed conversion")
+        pptx_task_id = positive_int(first_preview_payload.get("task_id"), "PPTX task id")
+        pptx_execution_id_value = first_preview_payload.get("execution_id")
+        if not isinstance(pptx_execution_id_value, str) or not pptx_execution_id_value:
+            raise SuiteError("initial PPTX preview execution_id is missing")
+        pptx_execution_id = pptx_execution_id_value
+        pptx_manager_execution = wait_for_manager_execution(client, pptx_execution_id, deadline, "PPTX PDF")
+        pptx_manager_facts = validate_lineage(
+            pptx_manager_execution,
+            item_locator=pptx_locator,
+            item_id=pptx_item_id,
+            fingerprint=pptx_fingerprint,
+            tenant_id=tenant_id,
+            task_type=PPTX_TASK_TYPE,
+            output_prefix="document-preview",
+            output_suffix=".pdf",
+            output_label="PDF",
+        )
+        pptx_monitor_execution = _object(
+            client.request(
+                "GET",
+                f"/api/v1/monitor/executions/by-execution-id/{urllib.parse.quote(pptx_execution_id)}",
+                (200,),
+            ).payload,
+            "Monitor PPTX execution",
+        )
+        pptx_monitor_facts = validate_lineage(
+            pptx_monitor_execution,
+            item_locator=pptx_locator,
+            item_id=pptx_item_id,
+            fingerprint=pptx_fingerprint,
+            tenant_id=tenant_id,
+            task_type=PPTX_TASK_TYPE,
+            output_prefix="document-preview",
+            output_suffix=".pdf",
+            output_label="PDF",
+        )
+        if pptx_monitor_facts != pptx_manager_facts:
+            raise SuiteError("Monitor PPTX lineage facts differ from the Manager owner facts")
+
+        cached_preview = _object(
+            client.request(
+                "POST",
+                "/api/v1/manager/pptx_pdf/preview",
+                (200,),
+                {"locator": pptx_locator},
+            ).payload,
+            "cached PPTX preview",
+        )
+        if cached_preview.get("status") != "ready":
+            raise SuiteError("second PPTX preview request must reuse the ready artifact")
+        if cached_preview.get("execution_id"):
+            raise SuiteError("cached PPTX preview must not return a new execution_id")
+        if positive_int(cached_preview.get("task_id"), "cached PPTX task id") != pptx_task_id:
+            raise SuiteError("cached PPTX preview must reuse the initial task")
+        pptx_result_id = positive_int(cached_preview.get("result_id"), "cached PPTX result id")
+        pptx_page_count = positive_int(cached_preview.get("page_count"), "cached PPTX page_count")
+        if pptx_page_count != 3:
+            raise SuiteError(f"PPTX fixture must convert to exactly 3 pages, got {pptx_page_count}")
+        pptx_size_bytes = positive_int(cached_preview.get("size_bytes"), "cached PPTX size_bytes")
+        expected_preview_url = f"/api/v1/manager/pptx_pdf/{pptx_result_id}/content"
+        if cached_preview.get("preview_url") != expected_preview_url:
+            raise SuiteError("cached PPTX preview_url must use the managed content API")
+        pptx_content = client.request(
+            "GET",
+            expected_preview_url,
+            (206,),
+            headers={"Accept": "application/pdf", "Range": "bytes=0-63"},
+        )
+        if not pptx_content.raw.startswith(b"%PDF") or len(pptx_content.raw) > 64:
+            raise SuiteError("PPTX PDF Range response is not a bounded PDF prefix")
 
         browser_evidence: dict[str, object] = {}
         if browser_runner is not None:
             browser_evidence = browser_runner(
                 repository,
                 environment,
-                execution_id=execution_id,
-                item_id=item_id,
-                source_name=Path(environment["ADDP_ONLINE_POINTCLOUD_MINIO_OBJECT"]).name,
-                output_name=output_name,
+                execution_id=pointcloud_execution_id,
+                item_id=pointcloud_item_id,
+                source_name=Path(environment["ADDP_ONLINE_MANAGER_MINIO_POINTCLOUD_OBJECT"]).name,
+                output_name=pointcloud_output_name,
+                pptx_item_locator=pptx_locator,
+                pptx_item_id=pptx_item_id,
+                pptx_page_count=pptx_page_count,
             )
         return {
             "schema_version": "addp.manager-internal-artifact-lineage/v1",
@@ -534,33 +654,62 @@ def run_scenario(
             "identity": identity,
             "engine_id": engine_id,
             "meta_scan_execution_id": scan_execution_id,
-            "source": {"item_id": item_id, "fingerprint": fingerprint, "locator": item_locator},
-            "created": {"task_id": task_id, "execution_id": execution_id, "result_id": result_id},
-            "lineage": {"schema_version": LINEAGE_SCHEMA, "inputs": 1, "outputs": 1, "manager_monitor_equal": True},
-            "artifact": {"name": output_name, "range_bytes": len(content.raw), "storage_domain": "addp-infra"},
+            "sources": {
+                "point_cloud": {"item_id": pointcloud_item_id, "fingerprint": pointcloud_fingerprint, "locator": pointcloud_locator},
+                "pptx": {"item_id": pptx_item_id, "fingerprint": pptx_fingerprint, "locator": pptx_locator},
+            },
+            "created": {
+                "point_cloud": {"task_id": pointcloud_task_id, "execution_id": pointcloud_execution_id, "result_id": pointcloud_result_id},
+                "pptx_pdf": {"task_id": pptx_task_id, "execution_id": pptx_execution_id, "result_id": pptx_result_id},
+            },
+            "lineage": {"schema_version": LINEAGE_SCHEMA, "inputs": 2, "outputs": 2, "manager_monitor_equal": True},
+            "artifacts": {
+                "point_cloud": {"name": pointcloud_output_name, "range_bytes": len(pointcloud_content.raw), "storage_domain": "addp-infra"},
+                "pptx_pdf": {"page_count": pptx_page_count, "size_bytes": pptx_size_bytes, "range_bytes": len(pptx_content.raw), "storage_domain": "addp-infra", "cache_reused": True},
+            },
             "browser": browser_evidence,
-            "cleanup": cleanup,
+            "cleanup": {"point_cloud": pointcloud_cleanup, "pptx_pdf": pptx_cleanup},
         }
     finally:
         cleanup_errors: list[str] = []
-        if result_id is not None:
+        if pptx_result_id is not None:
             try:
-                client.request("DELETE", f"/api/v1/manager/point_cloud_copc/{result_id}", (200,))
-                cleanup["result_deleted"] = True
-                client.request("GET", f"/api/v1/manager/point_cloud_copc/{result_id}/content", (404,))
-                cleanup["content_unavailable"] = True
+                client.request("DELETE", f"/api/v1/manager/pptx_pdf/{pptx_result_id}", (200,))
+                pptx_cleanup["result_deleted"] = True
+                client.request("GET", f"/api/v1/manager/pptx_pdf/{pptx_result_id}/content", (404,))
+                pptx_cleanup["content_unavailable"] = True
             except SuiteError as error:
                 cleanup_errors.append(str(error))
-        if task_id is not None:
+        if pptx_task_id is not None:
             try:
-                client.request("DELETE", f"/api/v1/manager/point_cloud_copc_tasks/{task_id}", (200,))
-                client.request("GET", f"/api/v1/manager/point_cloud_copc_tasks/{task_id}", (404,))
-                cleanup["task_deleted"] = True
+                client.request("DELETE", f"/api/v1/manager/pptx_pdf_tasks/{pptx_task_id}", (200,))
+                client.request("GET", f"/api/v1/manager/tasks/{PPTX_TASK_TYPE}/{pptx_task_id}", (404,))
+                pptx_cleanup["task_deleted"] = True
             except SuiteError as error:
                 cleanup_errors.append(str(error))
-        if task_id is not None or result_id is not None:
+        if pptx_task_id is not None or pptx_result_id is not None:
+            pptx_cleanup["residual_resources"] = int(not pptx_cleanup["result_deleted"]) + int(not pptx_cleanup["task_deleted"])
+            if pptx_cleanup["residual_resources"] != 0:
+                cleanup_errors.append(f"PPTX residual resource count is {pptx_cleanup['residual_resources']}")
+
+        if pointcloud_result_id is not None:
             try:
-                query = urllib.parse.urlencode({"item_fingerprint": fingerprint, "page": 1, "page_size": 100})
+                client.request("DELETE", f"/api/v1/manager/point_cloud_copc/{pointcloud_result_id}", (200,))
+                pointcloud_cleanup["result_deleted"] = True
+                client.request("GET", f"/api/v1/manager/point_cloud_copc/{pointcloud_result_id}/content", (404,))
+                pointcloud_cleanup["content_unavailable"] = True
+            except SuiteError as error:
+                cleanup_errors.append(str(error))
+        if pointcloud_task_id is not None:
+            try:
+                client.request("DELETE", f"/api/v1/manager/point_cloud_copc_tasks/{pointcloud_task_id}", (200,))
+                client.request("GET", f"/api/v1/manager/point_cloud_copc_tasks/{pointcloud_task_id}", (404,))
+                pointcloud_cleanup["task_deleted"] = True
+            except SuiteError as error:
+                cleanup_errors.append(str(error))
+        if pointcloud_task_id is not None or pointcloud_result_id is not None:
+            try:
+                query = urllib.parse.urlencode({"item_fingerprint": pointcloud_fingerprint, "page": 1, "page_size": 100})
                 results = _object(
                     client.request("GET", f"/api/v1/manager/point_cloud_copc?{query}", (200,)).payload,
                     "PointCloud residual result list",
@@ -568,8 +717,8 @@ def run_scenario(
                 residual_results = non_negative_int(
                     results.get("total"), "PointCloud residual result total"
                 )
-                residual_tasks = 0 if cleanup["task_deleted"] else 1
-                cleanup["residual_resources"] = residual_results + residual_tasks
+                residual_tasks = 0 if pointcloud_cleanup["task_deleted"] else 1
+                pointcloud_cleanup["residual_resources"] = residual_results + residual_tasks
                 if residual_results != 0:
                     cleanup_errors.append(
                         f"PointCloud residual result count is {residual_results}"
@@ -590,9 +739,10 @@ def required_environment() -> dict[str, str]:
         "ADDP_ONLINE_TEST_USER_ACCESS_TOKEN",
         "ADDP_ONLINE_TEST_USER_USERNAME",
         "ADDP_ONLINE_TEST_USER_PASSWORD",
-        "ADDP_ONLINE_POINTCLOUD_MINIO_ENGINE_ID",
-        "ADDP_ONLINE_POINTCLOUD_MINIO_BUCKET",
-        "ADDP_ONLINE_POINTCLOUD_MINIO_OBJECT",
+        "ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID",
+        "ADDP_ONLINE_MANAGER_MINIO_BUCKET",
+        "ADDP_ONLINE_MANAGER_MINIO_POINTCLOUD_OBJECT",
+        "ADDP_ONLINE_MANAGER_MINIO_PPTX_OBJECT",
         "CONSOLE_URL",
         "GATEWAY_URL",
     )

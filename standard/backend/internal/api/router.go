@@ -266,11 +266,12 @@ func SetupRouter(
 			documents.POST("/:id/revisions/:revision_id/file", permission(standardauthorization.PermissionStandardDocumentUpdate), documentHandler.UploadFile)
 			documents.GET("/:id/revisions/:revision_id/file", permission(standardauthorization.PermissionStandardDocumentRead), documentHandler.DownloadFile)
 			documents.POST("/:id/revisions/:revision_id/extractions", permission(standardauthorization.PermissionStandardDocumentExtractionCreate), documentHandler.ExtractCandidates)
-			documents.GET("/:id/extractions", permission(standardauthorization.PermissionStandardDocumentRead), documentHandler.ListExtractions)
+			documents.GET("/:id/extraction-candidate-groups", permission(standardauthorization.PermissionStandardDocumentRead), documentHandler.ListCandidateGroups)
 			documents.GET("/:id/mappings", permission(standardauthorization.PermissionStandardDocumentRead), documentHandler.GetMappings)
 			documents.PUT("/:id/mappings", permission(standardauthorization.PermissionStandardDocumentUpdate), documentHandler.SetMappings)
 		}
 		api.PUT("/document-extraction-candidates/:candidate_id", permission(standardauthorization.PermissionStandardDocumentUpdate), documentHandler.UpdateCandidate)
+		api.POST("/document-extraction-candidates/:candidate_id/formalization", permission(standardauthorization.PermissionStandardDocumentUpdate), documentHandler.FormalizeCandidate)
 
 	}
 

@@ -16,6 +16,29 @@ test('maps an ECharts item click to the original result index', () => {
   assert.equal(resultSelectionFromChartEvent({}, 2), null)
 })
 
+test('uses field presentations for chart labels and tooltip values without changing numeric series data', () => {
+  const option = buildChartOption(
+    [{ occurred_on: '2026-09-06', amount: 12.5 }],
+    {
+      chart_type: 'bar', dimension: 'occurred_on', measures: ['amount'],
+      field_presentations: [
+        { field: 'occurred_on', label: '日期', temporal_format: 'date' },
+        { field: 'amount', label: '金额', unit: '元', precision: 2 },
+      ],
+    },
+    'zh-CN',
+  )
+
+  assert.equal(option.series[0].name, '金额')
+  assert.deepEqual(option.series[0].data, [12.5])
+  assert.equal(option.series[0].tooltip.valueFormatter(12.5), '12.50 元')
+  assert.equal(option.yAxis.name, '金额（元）')
+  assert.equal(option.yAxis.axisLabel.formatter(12.5), '12.50')
+  assert.equal(option.xAxis.nameLocation, 'middle')
+  assert.equal(option.xAxis.nameGap, 32)
+  assert.match(option.xAxis.data[0], /2026/)
+})
+
 test('rejects incomplete or invalid pie data', () => {
   const config = { chart_type: 'pie', dimension: 'city', measures: ['amount'] }
   assert.equal(validateChartResult([{ city: 'A', amount: -1 }], config).reason, 'invalid_measure')

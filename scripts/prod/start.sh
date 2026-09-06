@@ -72,6 +72,7 @@ echo -e "${GREEN}✓ System Backend 已就绪${NC}"
 echo -e "${YELLOW}[3/4] 启动所有业务后端服务...${NC}"
 docker compose -f docker-compose.yml up -d \
   manager-backend \
+  manager-bounded-worker \
   meta-backend \
   meta-worker \
   transfer-backend \

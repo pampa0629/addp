@@ -2,7 +2,7 @@
         build-iam-bootstrap build-iam-recovery build-iam-migration-repair \
         dev-start dev-restart dev-stop infra-up infra-down infra-restart infra-status prod-start prod-restart prod-stop prod-health ports-validate
 
-.PHONY: test-business-config test-oceanbase-business
+.PHONY: test-business-config test-common-oceanbase
 
 # 默认目标
 .DEFAULT_GOAL := help
@@ -150,12 +150,10 @@ test-business-config: ## 校验 Business Compose 和服务管理脚本（不启�
 	@bash business/scripts/start.sh --help | grep -Fq -- '-oceanbase'
 	@bash business/scripts/stop.sh --help | grep -Fq -- '-oceanbase'
 
-test-oceanbase-business: ## 对已启动的 Business OceanBase 执行 Provider 集成门禁
-	@bash -c 'set -a; if [ -f business/.env ]; then . business/.env; fi; set +a; ADDP_OCEANBASE_INTEGRATION=1 go test ./common/engine/plugins/oceanbase -run "^TestIntegrationOceanBase" -count=1 -v'
-
 test-integration: ## 严格串行运行所有已登记的 disposable 基础设施集成门禁
 	@$(MAKE) test-common-postgres
 	@$(MAKE) test-common-mysql-data-protection
+	@$(MAKE) test-common-oceanbase
 	@$(MAKE) test-manager-mongodb-security
 	@$(MAKE) test-system-iam-postgres
 	@$(MAKE) test-asset-postgres
@@ -175,6 +173,9 @@ test-common-postgres: ## 使用一次性 PostgreSQL 数据库运行 Common Engin
 
 test-common-mysql-data-protection: ## 使用一次性 MySQL database 验证 Provider 与四个 Owner 的数据保护契约
 	@bash scripts/test/common-mysql-data-protection-gate.sh
+
+test-common-oceanbase: ## 使用一次性 OceanBase database 验证 Engine Provider 契约
+	@bash scripts/test/common-oceanbase-gate.sh
 
 test-manager-mongodb-security: ## 使用 MongoDB Outdoor/Persons 运行 Manager 数据保护集成门禁
 	@bash scripts/test/manager-mongodb-security-gate.sh
@@ -229,7 +230,7 @@ test-online: ## 运行指定 Online suite（必须设置 ONLINE_SUITE 和 ADDP_O
 	@python3 scripts/test/online-gate.py --repository "$(CURDIR)" --suite "$(ONLINE_SUITE)"
 
 test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
-	@python3 -m unittest scripts/test/online-gate_test.py scripts/test/online-preflight_test.py scripts/test/online-host-gate_test.py scripts/test/online-engine-fixture_test.py scripts/test/online-workbench-mysql-fixture_test.py scripts/test/online-pointcloud-minio-fixture_test.py scripts/test/online-security-transfer-fixture_test.py scripts/test/consumer-engine-recovery-online_test.py scripts/test/consumer-process-stability-online_test.py scripts/test/module-registry-recovery-online_test.py scripts/test/standard-model-reference-deletion-online_test.py scripts/test/enterprise-catalog-publishing-online_test.py scripts/test/workbench-service-consumption-online_test.py scripts/test/manager-internal-artifact-lineage-online_test.py scripts/test/security-transfer-protection-online_test.py scripts/test/security-protection-exemption-online_test.py scripts/test/security-mysql-owner-protection-online_test.py scripts/ci/check-online-ci-registration_test.py
+	@python3 -m unittest scripts/test/online-gate_test.py scripts/test/online-preflight_test.py scripts/test/online-host-gate_test.py scripts/test/online-engine-fixture_test.py scripts/test/online-workbench-mysql-fixture_test.py scripts/test/online-oceanbase-consumer-fixture_test.py scripts/test/online-manager-minio-fixture_test.py scripts/test/online-security-transfer-fixture_test.py scripts/test/consumer-engine-recovery-online_test.py scripts/test/consumer-process-stability-online_test.py scripts/test/module-registry-recovery-online_test.py scripts/test/oceanbase-consumer-flow-online_test.py scripts/test/standard-model-reference-deletion-online_test.py scripts/test/enterprise-catalog-publishing-online_test.py scripts/test/workbench-service-consumption-online_test.py scripts/test/manager-internal-artifact-lineage-online_test.py scripts/test/security-transfer-protection-online_test.py scripts/test/security-plaintext-access-online_test.py scripts/test/security-mysql-owner-protection-online_test.py scripts/ci/check-online-ci-registration_test.py
 	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
 
 test-release: ## 运行指定 T5 发布套件；用法：make test-release RELEASE_SUITE=common-python-cli

@@ -1,4 +1,5 @@
 import sys
+import time
 import zipfile
 from pathlib import Path
 
@@ -219,3 +220,71 @@ def test_container_runtime_rewrites_loopback_object_store_endpoints(tmp_path, mo
         "target_endpoint": "host.docker.internal:19000",
     }
     assert plan["source"]["access"]["endpoint"] == "127.0.0.1:9002"
+
+
+def test_failed_conversion_removes_per_execution_work_directory(tmp_path):
+    source = tmp_path / "slides.pptx"
+    target = tmp_path / "slides.pdf"
+    executable = tmp_path / "soffice"
+    work_root = tmp_path / "work"
+    make_pptx(source)
+    make_converter(executable)
+
+    with pytest.raises(ConverterError) as exc_info:
+        invoke_operator(
+            "document_to_pdf",
+            {"access_plan": mounted_plan(source, target)},
+            runner=lambda _command, _timeout: CommandResult(returncode=1, stderr="conversion failed"),
+            env={
+                "DOCUMENT_LIBREOFFICE_BIN": str(executable),
+                "DOCUMENT_WORK_DIR": str(work_root),
+            },
+        )
+
+    assert exc_info.value.error_code == "CONVERSION_FAILED"
+    assert work_root.is_dir()
+    assert list(work_root.iterdir()) == []
+
+
+def test_busy_conversion_capacity_does_not_create_work_directory(tmp_path, monkeypatch):
+    source = tmp_path / "slides.pptx"
+    target = tmp_path / "slides.pdf"
+    work_root = tmp_path / "work"
+    make_pptx(source)
+
+    class BusySemaphore:
+        def acquire(self, timeout):
+            assert timeout == 3
+            return False
+
+        def release(self):
+            raise AssertionError("an unacquired conversion slot must not be released")
+
+    monkeypatch.setattr(operators, "_conversion_semaphore", lambda _env: BusySemaphore())
+
+    with pytest.raises(ConverterError) as exc_info:
+        invoke_operator(
+            "document_to_pdf",
+            {"access_plan": mounted_plan(source, target)},
+            env={"DOCUMENT_WORK_DIR": str(work_root)},
+            timeout_seconds=3,
+        )
+
+    assert exc_info.value.error_code == "RUNTIME_BUSY"
+    assert not work_root.exists()
+
+
+def test_converter_timeout_kills_the_process_group(tmp_path):
+    started_at = time.monotonic()
+
+    with pytest.raises(ConverterError) as exc_info:
+        operators._run_executable(
+            [sys.executable, "-c", "import time; time.sleep(30)"],
+            runner=None,
+            timeout_seconds=1,
+            env={},
+            work_dir=tmp_path,
+        )
+
+    assert exc_info.value.error_code == "CONVERSION_TIMEOUT"
+    assert time.monotonic() - started_at < 5

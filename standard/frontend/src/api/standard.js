@@ -147,8 +147,9 @@ export const documentAPI = {
   uploadFile(id, revisionId, formData, version) { formData.append('version', String(version)); return client.post(`/standard/documents/${id}/revisions/${revisionId}/file`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }) },
   download(id, revisionId) { return client.get(`/standard/documents/${id}/revisions/${revisionId}/file`, { responseType: 'blob' }) },
   extractCandidates(id, revisionId, version) { return client.post(`/standard/documents/${id}/revisions/${revisionId}/extractions`, { version }) },
-  listExtractions(id) { return client.get(`/standard/documents/${id}/extractions`) },
-  updateCandidate(candidateId, data) { return client.put(`/standard/document-extraction-candidates/${candidateId}`, data) }
+  listCandidateGroups(id, params) { return client.get(`/standard/documents/${id}/extraction-candidate-groups`, { params }) },
+  updateCandidate(candidateId, data) { return client.put(`/standard/document-extraction-candidates/${candidateId}`, data) },
+  formalizeCandidate(candidateId, data) { return client.post(`/standard/document-extraction-candidates/${candidateId}/formalization`, data) }
 }
 
 // ========== 标准项维度的文档关联 API ==========

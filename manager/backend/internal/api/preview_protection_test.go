@@ -31,7 +31,7 @@ func TestPreviewProtectionMasksOutdoorPhoneAtResponseBoundary(t *testing.T) {
 			{"_id": "person-1", "userInfo": map[string]interface{}{"phone": "13661384499", "nickName": "daydayup"}},
 		}},
 	}
-	if err := applyPreviewProtection(result, rules); err != nil {
+	if err := applyPreviewProtection(result, rules, dataprotection.SubjectReference{}); err != nil {
 		t.Fatalf("applyPreviewProtection() error = %v", err)
 	}
 	row := result.Data.(*models.TablePreview).Rows[0]
@@ -61,7 +61,7 @@ func TestPreviewProtectionSuppressesInvalidPhoneWithoutLeakingValue(t *testing.T
 			{"userInfo": map[string]interface{}{"phone": "136ABCD4499"}},
 		}},
 	}
-	if err := applyPreviewProtection(result, rules); err != nil {
+	if err := applyPreviewProtection(result, rules, dataprotection.SubjectReference{}); err != nil {
 		t.Fatalf("applyPreviewProtection() error = %v", err)
 	}
 	userInfo := result.Data.(*models.TablePreview).Rows[0]["userInfo"].(map[string]interface{})
@@ -101,7 +101,7 @@ func TestPreviewProtectionLeavesUnmanagedResourceOnOriginalPath(t *testing.T) {
 	result := &preview.PreviewResult{Data: &models.TablePreview{Rows: []map[string]interface{}{
 		{"userInfo": map[string]interface{}{"phone": "13661384499"}},
 	}}}
-	if err := applyPreviewProtection(result, rules); err != nil {
+	if err := applyPreviewProtection(result, rules, dataprotection.SubjectReference{}); err != nil {
 		t.Fatalf("unmanaged response changed path: %v", err)
 	}
 	if got := result.Data.(*models.TablePreview).Rows[0]["userInfo"].(map[string]interface{})["phone"]; got != "13661384499" {
@@ -146,7 +146,7 @@ func activeOutdoorPhoneProjection(t *testing.T, req *preview.PreviewResolverRequ
 		t.Fatal(err)
 	}
 	projection := dataprotection.Projection{
-		SchemaVersion: dataprotection.ProjectionSchemaV1,
+		SchemaVersion: dataprotection.ProjectionSchemaV2,
 		ProjectionID:  "outdoor-phone-manager",
 		Revision:      "00000000000000000001",
 		ConsumerOwner: "manager",

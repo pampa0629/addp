@@ -10,6 +10,7 @@ import (
 	commonAPI "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
+	commoni18n "github.com/addp/common/middleware/i18n"
 	manageri18n "github.com/addp/manager/i18n"
 	rastercogref "github.com/addp/manager/internal/cog"
 	"github.com/addp/manager/internal/models"
@@ -202,4 +203,74 @@ func (h *PPTXPDFHandler) GetContent(c *gin.Context) {
 	if _, err := io.Copy(c.Writer, object); err != nil {
 		logger.L().Error("PPTX PDF stream failed", "result_id", result.ID, "error", err)
 	}
+}
+
+// DeleteResult 删除 PPTX PDF 快显结果及其受管对象。
+// @Summary 删除 PPTX PDF 快显结果 | Delete PPTX PDF preview result
+// @Description 删除 Manager infra MinIO 中的 PDF 对象并软删除对应结果记录，不删除源 DataItem、任务或 execution 历史。| Delete the PDF object from Manager infra MinIO and soft-delete the result record without deleting the source DataItem, task, or execution history.
+// @Tags Manager
+// @Produce json
+// @Param id path int true "结果 ID | Result ID"
+// @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
+// @Failure 400 {object} map[string]interface{} "结果 ID 无效 | Invalid result ID"
+// @Failure 404 {object} map[string]interface{} "结果不存在 | Result not found"
+// @Failure 500 {object} map[string]interface{} "删除失败 | Delete failed"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.delete"]
+// @Router /pptx_pdf/{id} [delete]
+// @Security BearerAuth
+func (h *PPTXPDFHandler) DeleteResult(c *gin.Context) {
+	if h == nil || h.service == nil {
+		managerError(c, http.StatusServiceUnavailable, manageri18n.MsgPPTXPDFServiceUnavailable)
+		return
+	}
+	id64, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil || id64 == 0 {
+		managerError(c, http.StatusBadRequest, manageri18n.MsgInvalidPPTXPDFResultID)
+		return
+	}
+	if err := h.service.DeleteResult(c.Request.Context(), uint(id64), tenantIDValue(c)); err != nil {
+		if errors.Is(err, service.ErrPPTXPDFResultNotFound) {
+			managerError(c, http.StatusNotFound, manageri18n.MsgPPTXPDFResultNotFound)
+			return
+		}
+		managerErrorWithDetail(c, http.StatusInternalServerError, manageri18n.MsgPPTXPDFDeleteFailed, err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, manageri18n.MsgPPTXPDFResultDeleted)})
+}
+
+// DeleteTask 删除 PPTX PDF 快显任务定义。
+// @Summary 删除 PPTX PDF 快显任务 | Delete PPTX PDF preview task
+// @Description 删除 PPTX PDF 快显任务定义，不删除源 DataItem 或 execution 历史；调用方应先删除当前受管结果。| Delete the PPTX PDF preview task definition without deleting the source DataItem or execution history; callers should delete the current managed result first.
+// @Tags Manager
+// @Produce json
+// @Param id path int true "任务 ID | Task ID"
+// @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
+// @Failure 400 {object} map[string]interface{} "任务 ID 无效 | Invalid task ID"
+// @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
+// @Failure 500 {object} map[string]interface{} "删除失败 | Delete failed"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.delete"]
+// @Router /pptx_pdf_tasks/{id} [delete]
+// @Security BearerAuth
+func (h *PPTXPDFHandler) DeleteTask(c *gin.Context) {
+	if h == nil || h.service == nil {
+		managerError(c, http.StatusServiceUnavailable, manageri18n.MsgPPTXPDFServiceUnavailable)
+		return
+	}
+	id64, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil || id64 == 0 {
+		managerError(c, http.StatusBadRequest, manageri18n.MsgInvalidPPTXPDFTaskID)
+		return
+	}
+	if err := h.service.DeleteTask(c.Request.Context(), uint(id64), tenantIDValue(c)); err != nil {
+		if errors.Is(err, service.ErrPPTXPDFTaskNotFound) {
+			managerError(c, http.StatusNotFound, manageri18n.MsgPPTXPDFTaskNotFound)
+			return
+		}
+		managerErrorWithDetail(c, http.StatusInternalServerError, manageri18n.MsgPPTXPDFDeleteFailed, err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, manageri18n.MsgPPTXPDFTaskDeleted)})
 }

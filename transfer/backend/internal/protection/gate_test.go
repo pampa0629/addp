@@ -161,7 +161,7 @@ func installTransferProjection(t *testing.T, store *projectionstore.Store, ident
 	t.Helper()
 	now := time.Now().UTC()
 	projection := dataprotection.Projection{
-		SchemaVersion: dataprotection.ProjectionSchemaV1,
+		SchemaVersion: dataprotection.ProjectionSchemaV2,
 		ProjectionID:  "projection-transfer-persons",
 		Revision:      "00000000000000000001",
 		ConsumerOwner: "transfer",
@@ -207,7 +207,7 @@ func installActiveTransferProjectionForComponent(t *testing.T, store *projection
 	}
 	now := time.Now().UTC()
 	projection := dataprotection.Projection{
-		SchemaVersion: dataprotection.ProjectionSchemaV1, ProjectionID: "projection-transfer-active", Revision: "00000000000000000001",
+		SchemaVersion: dataprotection.ProjectionSchemaV2, ProjectionID: "projection-transfer-active", Revision: "00000000000000000001",
 		ConsumerOwner: "transfer", State: dataprotection.ProjectionStateActive, Target: target, SourceSnapshotHash: snapshot,
 		Rules: []dataprotection.Rule{{Action: exportAction, Component: component, Decision: dataprotection.Decision{
 			Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV1,

@@ -40,6 +40,10 @@ func TestRespondErrorMapsStructuredErrorsAndLanguage(t *testing.T) {
 		{name: "system unit", err: service.ErrSystemUnitImmutable, fallback: http.StatusBadRequest, wantStatus: http.StatusConflict, wantBody: "System units cannot be updated or deleted"},
 		{name: "invalid tenant reference", err: repository.ErrInvalidTenantReference, fallback: http.StatusInternalServerError, wantStatus: http.StatusBadRequest, wantBody: "A referenced resource does not exist or belongs to another tenant"},
 		{name: "invalid standard scope", err: service.ErrInvalidStandardScope, fallback: http.StatusInternalServerError, wantStatus: http.StatusBadRequest, wantBody: "The scope and owning domain are inconsistent"},
+		{name: "candidate not retained", err: service.ErrCandidateNotRetained, fallback: http.StatusInternalServerError, wantStatus: http.StatusConflict, wantBody: "Only a retained standard candidate can be formalized"},
+		{name: "candidate already formalized", err: service.ErrCandidateAlreadyFormalized, fallback: http.StatusInternalServerError, wantStatus: http.StatusConflict, wantBody: "already been formalized"},
+		{name: "candidate formalization denied", err: service.ErrCandidateFormalizationDenied, fallback: http.StatusInternalServerError, wantStatus: http.StatusForbidden, wantBody: "Permission to create or update"},
+		{name: "candidate formalization invalid", err: service.ErrCandidateFormalizationInvalid, fallback: http.StatusInternalServerError, wantStatus: http.StatusBadRequest, wantBody: "formalization request is invalid"},
 		{name: "unknown bad request", err: fmt.Errorf("binding internals"), fallback: http.StatusBadRequest, wantStatus: http.StatusBadRequest, wantBody: "Invalid request parameters"},
 		{name: "wrapped document not found", err: fmt.Errorf("link document: %w", commonapi.ErrNotFound), fallback: http.StatusBadRequest, wantStatus: http.StatusNotFound, wantBody: "Resource not found"},
 	}
@@ -105,6 +109,24 @@ func TestRespondDocumentExtractionErrorStatusContract(t *testing.T) {
 				t.Fatalf("status=%d want=%d body=%s", recorder.Code, test.want, recorder.Body.String())
 			}
 		})
+	}
+}
+
+func TestRespondErrorReturnsCandidateGroupQueryCode(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Set("addp_lang", "en")
+
+	respondError(context, http.StatusInternalServerError, service.ErrDocumentCandidateGroupQueryInvalid)
+
+	var response struct {
+		ErrorCode string `json:"error_code"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if recorder.Code != http.StatusBadRequest || response.ErrorCode != "document_candidate_group_query_invalid" {
+		t.Fatalf("status=%d error_code=%q body=%s", recorder.Code, response.ErrorCode, recorder.Body.String())
 	}
 }
 

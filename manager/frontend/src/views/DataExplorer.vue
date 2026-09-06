@@ -82,6 +82,7 @@
           @child-change="handleChildChange"
           @tab-change="handleTabChange"
           @open-catalog="handleOpenCatalog"
+          @refresh-preview="handlePreviewRefresh"
         />
       </div>
     </div>
@@ -295,6 +296,8 @@ const handlePageChange = async (payload) => {
     ElMessage.error(t('manager.explorer.loadPreviewFailed', { error: error.message }))
   }
 }
+
+const handlePreviewRefresh = () => handlePageChange({ page: store.pagination.page, pageSize: store.pagination.pageSize })
 
 const handleChildChange = async (payload) => {
   const childName = typeof payload === 'string' ? payload : payload?.childName

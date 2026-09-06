@@ -970,7 +970,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "返回平台随版本提供的只读分类与等级模板；读取不会修改租户数据 | Return read-only classification and grade templates installed with the platform; listing does not mutate tenant data",
+                "description": "返回平台随版本提供的只读分类与等级模板；读取不会修改租户数据 | Return read-only classification and grade templates provided with the platform; listing does not mutate tenant data",
                 "produces": [
                     "application/json"
                 ],
@@ -1021,14 +1021,14 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "返回当前平台版本内置的只读可信检测能力及其目标、证据来源、适用范围、实现方法、隐私边界和已知局限，不返回可执行代码 | Return trusted read-only detector capabilities installed with this platform version, including target, evidence source, scope, implementation method, privacy boundary, and known limitations, without executable code",
+                "description": "返回当前平台版本内置的只读可信识别能力及其目标、证据来源、适用范围、实现方法、隐私边界和已知局限，不返回可执行代码 | Return trusted read-only detector capabilities built into this platform version, including target, evidence source, scope, implementation method, privacy boundary, and known limitations, without executable code",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Detector"
                 ],
-                "summary": "已安装检测能力 | List installed detector capabilities",
+                "summary": "平台内置识别能力 | List built-in detector capabilities",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1136,7 +1136,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "将一个平台已安装检测能力绑定到当前租户的敏感数据类型，并为已有受保护资源安排重新发现 | Bind an installed capability to a tenant sensitive data type and queue rediscovery for existing protected resources",
+                "description": "将一个平台内置识别能力绑定到当前租户的敏感数据类型，并为已有受保护资源安排重新发现 | Bind a built-in capability to a tenant sensitive data type and queue rediscovery for existing protected resources",
                 "consumes": [
                     "application/json"
                 ],
@@ -2291,6 +2291,388 @@
                 ]
             }
         },
+        "/protection-access-request-targets": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按当前用户和数据出口返回正式敏感字段及其申请或授权状态，不返回业务值 | Return formal sensitive fields and the current user's request or grant state for one outlet without business values",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Protection Access Request"
+                ],
+                "summary": "可申请原值访问的字段 | List plaintext access request targets",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "DataItem 指纹 | DataItem fingerprint",
+                        "name": "target_identity",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "消费 Owner | Consumer owner",
+                        "name": "consumer_owner",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "出口动作 | Outlet action",
+                        "name": "action",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ProtectionAccessTargetListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "security.protection_access_request.read"
+                ]
+            }
+        },
+        "/protection-access-requests": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "只返回当前可信用户自己的申请 | Return only requests owned by the trusted current user",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Protection Access Request"
+                ],
+                "summary": "我的原值访问申请 | List my plaintext access requests",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "页码 | Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ProtectionAccessRequestListResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "security.protection_access_request.read"
+                ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "使用当前可信用户主体为一个正式敏感字段申请 Manager 预览原值；申请本身不改变保护 | Request Manager preview plaintext access for one formal sensitive field using the trusted current user; creating a request does not change protection",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Protection Access Request"
+                ],
+                "summary": "发起原值访问申请 | Create plaintext access request",
+                "parameters": [
+                    {
+                        "description": "申请 | Request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.CreateProtectionAccessRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ProtectionAccessRequestResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "security.protection_access_request.create"
+                ]
+            }
+        },
+        "/protection-access-requests/review-queue": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回当前租户等待审批且申请人不是当前用户的申请，申请人不能审批自己的申请 | Return pending requests in the current tenant except requests made by the current user because self-approval is forbidden",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Protection Access Request"
+                ],
+                "summary": "原值访问待审批申请 | List plaintext access review queue",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "页码 | Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ProtectionAccessRequestListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "security.protection_access_request.update"
+                ]
+            }
+        },
+        "/protection-access-requests/{id}/decisions": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "申请人不能审批自己的申请；批准后原子生成按用户临时授权和新投影 | The requester cannot decide their own request; approval atomically creates a subject-scoped temporary grant and projection",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Protection Access Request"
+                ],
+                "summary": "审批原值访问申请 | Decide plaintext access request",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "申请 ID | Request ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "审批 | Decision",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.DecideProtectionAccessRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ProtectionAccessRequestResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "security.protection_access_request.update"
+                ]
+            }
+        },
         "/protection-baselines": {
             "get": {
                 "security": [
@@ -2713,7 +3095,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "分页返回当前租户的显式保护纳管、最近成功发现摘要，以及必要 Owner 的投影安装确认状态和已安装 action/effect 规则；安装确认不表示某次数据请求已执行成功 | Return explicit protection enrollments, latest successful discovery summaries, required-owner projection installation acknowledgements, and installed action/effect rules for the current tenant; installation acknowledgement does not mean a data request has executed successfully",
+                "description": "分页返回当前租户的显式保护纳管、最近成功发现摘要，以及必要 Owner 的保护规则同步状态和当前 action/effect 规则；同步确认不表示某次数据请求已执行成功 | Return explicit protection enrollments, latest successful discovery summaries, required-owner protection-rule synchronization status, and current action/effect rules for the current tenant; synchronization acknowledgement does not mean a data request has executed successfully",
                 "produces": [
                     "application/json"
                 ],
@@ -2802,7 +3184,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "使用 Meta 资源树返回的标准 DataItem locator 创建完整资源纳管；Security 自行计算 fingerprint，创建后固定返回 activating，只有 Manager、Transfer、Develop 和 Service 全部安装 enrolling 门禁并确认后才进入 enrolling | Create whole-resource enrollment from a standard DataItem locator returned by the Meta resource tree; Security computes the fingerprint and always returns activating until Manager, Transfer, Develop, and Service install and acknowledge the enrolling gate",
+                "description": "使用 Meta 资源树返回的标准 DataItem locator 创建完整资源纳管；Security 自行计算 fingerprint，创建后固定返回 activating，只有 Manager、Transfer、Develop 和 Service 全部同步 enrolling 门禁并确认后才进入 enrolling | Create whole-resource enrollment from a standard DataItem locator returned by the Meta resource tree; Security computes the fingerprint and always returns activating until Manager, Transfer, Develop, and Service synchronize and acknowledge the enrolling gate",
                 "consumes": [
                     "application/json"
                 ],
@@ -2890,7 +3272,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "返回纳管状态、最近成功发现摘要、资源版本，以及每个必要 Owner 的投影安装确认状态和已安装 action/effect 规则；具体请求仍由 Owner 按运行时能力执行或保守拒绝 | Return enrollment state, latest successful discovery summary, resource version, and each required owner's projection installation acknowledgement and installed action/effect rules; each request is still executed or conservatively denied by the owner according to runtime capability",
+                "description": "返回纳管状态、最近成功发现摘要、资源版本，以及每个必要 Owner 的保护规则同步状态和当前 action/effect 规则；具体请求仍由 Owner 按运行时能力执行或保守拒绝 | Return enrollment state, latest successful discovery summary, resource version, and each required owner's protection-rule synchronization status and current action/effect rules; each request is still executed or conservatively denied by the owner according to runtime capability",
                 "produces": [
                     "application/json"
                 ],
@@ -3369,14 +3751,14 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "分页返回当前租户显式、限时的出口明文豁免；可按受保护资源聚合筛选 | Return explicit time-bounded plaintext exemptions for the current tenant, optionally filtered by protection enrollment",
+                "description": "分页返回经申请和审批形成的按用户、字段、出口、时限约束的原值授权；可按受保护资源聚合筛选 | Return approved plaintext grants scoped by user, field, outlet, and deadline, optionally filtered by protection enrollment",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "Protection Exemption"
+                    "Protection Access Grant"
                 ],
-                "summary": "保护豁免列表 | List protection exemptions",
+                "summary": "临时原值授权列表 | List temporary plaintext grants",
                 "parameters": [
                     {
                         "type": "string",
@@ -3445,101 +3827,6 @@
                 "x-addp-required-permissions": [
                     "security.protection_exemption.read"
                 ]
-            },
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "为正式敏感 Assessment 的一个已支持出口创建最长 30 天的租户级明文豁免，并原子发布带默认回落决策的新投影；不授予 Owner 资源访问权 | Create a tenant-wide plaintext exemption of at most 30 days for one supported outlet of a formal sensitive Assessment and atomically publish a projection with its default fallback; this grants no owner resource access",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Protection Exemption"
-                ],
-                "summary": "创建保护豁免 | Create protection exemption",
-                "parameters": [
-                    {
-                        "description": "创建请求 | Create request",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.CreateProtectionExemptionRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "Created",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.ProtectionExemptionResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "409": {
-                        "description": "Conflict",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "security.protection_exemption.create"
-                ]
             }
         },
         "/protection-exemptions/{id}": {
@@ -3554,13 +3841,13 @@
                     "application/json"
                 ],
                 "tags": [
-                    "Protection Exemption"
+                    "Protection Access Grant"
                 ],
-                "summary": "保护豁免详情 | Get protection exemption",
+                "summary": "临时原值授权详情 | Get temporary plaintext grant",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "豁免 ID | Exemption ID",
+                        "description": "授权 ID | Grant ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -3624,115 +3911,13 @@
                     "security.protection_exemption.read"
                 ]
             },
-            "put": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "使用资源版本追加最长 30 天的 active 修订，并原子发布新的限时投影 | Append an active revision of at most 30 days with resource-version concurrency control and atomically publish a new time-bounded projection",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Protection Exemption"
-                ],
-                "summary": "续期保护豁免 | Renew protection exemption",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "豁免 ID | Exemption ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "续期请求 | Renewal request",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.RenewProtectionExemptionRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.ProtectionExemptionResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "409": {
-                        "description": "Conflict",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "security.protection_exemption.update"
-                ]
-            },
             "delete": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "使用资源版本追加 revoked 修订并立即回落到 ProtectionPolicy 与 ProtectionBaseline | Append a revoked revision with resource-version concurrency control and immediately fall back to ProtectionPolicy and ProtectionBaseline",
+                "description": "使用资源版本追加 revoked 修订并立即回落到默认或字段保护规则 | Append a revoked revision with resource-version concurrency control and immediately fall back to the default or field protection rule",
                 "consumes": [
                     "application/json"
                 ],
@@ -3740,13 +3925,13 @@
                     "application/json"
                 ],
                 "tags": [
-                    "Protection Exemption"
+                    "Protection Access Grant"
                 ],
-                "summary": "撤销保护豁免 | Revoke protection exemption",
+                "summary": "撤销临时原值授权 | Revoke temporary plaintext grant",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "豁免 ID | Exemption ID",
+                        "description": "授权 ID | Grant ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -4297,7 +4482,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "确认当前固定 Owner 已在本地事务中原子安装该游标；重复确认幂等，倒退或伪造游标冲突 | Confirm that the current fixed owner atomically installed the cursor in its local transaction; duplicate acknowledgement is idempotent and regressing or forged cursors conflict",
+                "description": "确认当前固定 Owner 已在本地事务中原子同步该游标；重复确认幂等，倒退或伪造游标冲突 | Confirm that the current fixed owner atomically synchronized the cursor in its local transaction; duplicate acknowledgement is idempotent and regressing or forged cursors conflict",
                 "consumes": [
                     "application/json"
                 ],
@@ -4918,18 +5103,12 @@
                 "effect": {
                     "type": "string"
                 },
-                "fallback": {
-                    "$ref": "#/definitions/dataprotection.Decision"
-                },
                 "invalid_value_effect": {
                     "type": "string"
                 },
                 "parameters": {
                     "type": "object",
                     "additionalProperties": {}
-                },
-                "valid_until": {
-                    "type": "string"
                 }
             }
         },
@@ -5070,11 +5249,45 @@
                 "action": {
                     "type": "string"
                 },
+                "authorizations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dataprotection.TemporaryAuthorization"
+                    }
+                },
                 "component": {
                     "$ref": "#/definitions/dataprotection.Component"
                 },
                 "decision": {
                     "$ref": "#/definitions/dataprotection.Decision"
+                }
+            }
+        },
+        "dataprotection.SubjectReference": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "dataprotection.TemporaryAuthorization": {
+            "type": "object",
+            "properties": {
+                "effect": {
+                    "type": "string"
+                },
+                "subject": {
+                    "$ref": "#/definitions/dataprotection.SubjectReference"
+                },
+                "valid_from": {
+                    "type": "string"
+                },
+                "valid_until": {
+                    "type": "string"
                 }
             }
         },
@@ -5386,6 +5599,100 @@
                 }
             }
         },
+        "github_com_addp_security_internal_models.ProtectionAccessRequestResponse": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "assessment_id": {
+                    "type": "string"
+                },
+                "assessment_revision": {
+                    "type": "integer"
+                },
+                "component": {
+                    "$ref": "#/definitions/dataprotection.Component"
+                },
+                "consumer_owner": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "decided_at": {
+                    "type": "string"
+                },
+                "decided_by": {
+                    "type": "string",
+                    "example": "0"
+                },
+                "decision_rationale": {
+                    "type": "string"
+                },
+                "exemption_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "rationale": {
+                    "type": "string"
+                },
+                "requested_expires_at": {
+                    "type": "string"
+                },
+                "state": {
+                    "type": "string"
+                },
+                "subject_id": {
+                    "type": "string"
+                },
+                "subject_type": {
+                    "type": "string"
+                },
+                "target_full_name": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string",
+                    "example": "0"
+                }
+            }
+        },
+        "github_com_addp_security_internal_models.ProtectionAccessTarget": {
+            "type": "object",
+            "properties": {
+                "active_exemption_id": {
+                    "type": "string"
+                },
+                "assessment_id": {
+                    "type": "string"
+                },
+                "assessment_revision": {
+                    "type": "string",
+                    "example": "0"
+                },
+                "authorized_until": {
+                    "type": "string"
+                },
+                "component": {
+                    "$ref": "#/definitions/dataprotection.Component"
+                },
+                "pending_request_id": {
+                    "type": "string"
+                },
+                "requestable": {
+                    "type": "boolean"
+                },
+                "unavailable_reason": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_security_internal_models.ProtectionBaseline": {
             "type": "object",
             "properties": {
@@ -5645,6 +5952,12 @@
                 "state": {
                     "type": "string"
                 },
+                "subject_id": {
+                    "type": "string"
+                },
+                "subject_type": {
+                    "type": "string"
+                },
                 "updated_at": {
                     "type": "string"
                 },
@@ -5681,6 +5994,9 @@
                 },
                 "revision": {
                     "type": "integer"
+                },
+                "source_request_id": {
+                    "type": "string"
                 },
                 "state": {
                     "type": "string"
@@ -6355,14 +6671,14 @@
                 }
             }
         },
-        "internal_api.CreateProtectionExemptionRequest": {
+        "internal_api.CreateProtectionAccessRequest": {
             "type": "object",
             "required": [
                 "action",
                 "assessment_id",
                 "consumer_owner",
-                "expires_at",
-                "rationale"
+                "rationale",
+                "requested_expires_at"
             ],
             "properties": {
                 "action": {
@@ -6374,10 +6690,10 @@
                 "consumer_owner": {
                     "type": "string"
                 },
-                "expires_at": {
+                "rationale": {
                     "type": "string"
                 },
-                "rationale": {
+                "requested_expires_at": {
                     "type": "string"
                 }
             }
@@ -6406,6 +6722,28 @@
                 },
                 "rationale": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_api.DecideProtectionAccessRequest": {
+            "type": "object",
+            "required": [
+                "decision",
+                "rationale",
+                "version"
+            ],
+            "properties": {
+                "decision": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "rationale": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
                 }
             }
         },
@@ -6440,6 +6778,104 @@
                 },
                 "review": {
                     "$ref": "#/definitions/github_com_addp_security_internal_models.SensitiveFindingReview"
+                }
+            }
+        },
+        "internal_api.ProtectionAccessRequestListResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_security_internal_models.ProtectionAccessRequestResponse"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.ProtectionAccessRequestResponse": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "assessment_id": {
+                    "type": "string"
+                },
+                "assessment_revision": {
+                    "type": "integer"
+                },
+                "component": {
+                    "$ref": "#/definitions/dataprotection.Component"
+                },
+                "consumer_owner": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "decided_at": {
+                    "type": "string"
+                },
+                "decided_by": {
+                    "type": "string",
+                    "example": "0"
+                },
+                "decision_rationale": {
+                    "type": "string"
+                },
+                "exemption_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "rationale": {
+                    "type": "string"
+                },
+                "requested_expires_at": {
+                    "type": "string"
+                },
+                "state": {
+                    "type": "string"
+                },
+                "subject_id": {
+                    "type": "string"
+                },
+                "subject_type": {
+                    "type": "string"
+                },
+                "target_full_name": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string",
+                    "example": "0"
+                }
+            }
+        },
+        "internal_api.ProtectionAccessTargetListResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_security_internal_models.ProtectionAccessTarget"
+                    }
                 }
             }
         },
@@ -6504,6 +6940,12 @@
                     "type": "string"
                 },
                 "state": {
+                    "type": "string"
+                },
+                "subject_id": {
+                    "type": "string"
+                },
+                "subject_type": {
                     "type": "string"
                 },
                 "updated_at": {
@@ -6576,26 +7018,6 @@
                     "type": "string"
                 },
                 "updated_at": {
-                    "type": "string"
-                },
-                "version": {
-                    "type": "string",
-                    "example": "0"
-                }
-            }
-        },
-        "internal_api.RenewProtectionExemptionRequest": {
-            "type": "object",
-            "required": [
-                "expires_at",
-                "rationale",
-                "version"
-            ],
-            "properties": {
-                "expires_at": {
-                    "type": "string"
-                },
-                "rationale": {
                     "type": "string"
                 },
                 "version": {
@@ -6694,8 +7116,7 @@
                     "type": "string"
                 },
                 "version": {
-                    "type": "string",
-                    "example": "0"
+                    "type": "integer"
                 }
             }
         },

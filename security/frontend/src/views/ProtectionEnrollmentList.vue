@@ -29,6 +29,34 @@
     </el-tabs>
 
     <template v-if="activeWorkspace === 'resources'">
+    <el-card v-if="canReviewAccessRequests" class="access-review-card" shadow="never">
+      <template #header>
+        <div class="access-review-card__header">
+          <div>
+            <strong>{{ t('security.accessRequest.reviewTitle') }}</strong>
+            <p>{{ t('security.accessRequest.reviewDescription') }}</p>
+          </div>
+          <el-tag v-if="accessRequestTotal > 0" type="warning" effect="plain">{{ accessRequestTotal }}</el-tag>
+        </div>
+      </template>
+      <el-table v-loading="accessRequestLoading" :data="accessRequestRows" size="small">
+        <el-table-column :label="t('security.accessRequest.resourceField')" min-width="260">
+          <template #default="{ row }"><strong>{{ row.target_full_name }}</strong><br><span>{{ row.component?.key }}</span></template>
+        </el-table-column>
+        <el-table-column prop="subject_id" :label="t('security.accessRequest.requester')" width="130" />
+        <el-table-column :label="t('security.accessRequest.requestedUntil')" width="190">
+          <template #default="{ row }">{{ formatDateTime(row.requested_expires_at) }}</template>
+        </el-table-column>
+        <el-table-column prop="rationale" :label="t('security.accessRequest.rationale')" min-width="240" show-overflow-tooltip />
+        <el-table-column :label="t('security.common.actions')" width="150" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="decideAccessRequest(row, 'approve')">{{ t('security.accessRequest.approve') }}</el-button>
+            <el-button link type="danger" @click="decideAccessRequest(row, 'reject')">{{ t('security.accessRequest.reject') }}</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-empty v-if="!accessRequestLoading && accessRequestRows.length === 0" :description="t('security.accessRequest.empty')" :image-size="48" />
+    </el-card>
     <div class="list-scope-bar">
       <el-radio-group v-model="listScope" size="small" @change="handleScopeChange">
         <el-radio-button value="current">{{ t('security.enrollment.listScopes.current') }}</el-radio-button>
@@ -525,21 +553,7 @@
               <h4>{{ t('security.exemption.title') }}</h4>
               <p>{{ t('security.exemption.hint') }}</p>
             </div>
-            <el-button
-              v-if="canCreateExemptions && availableExemptionAssessments.length > 0 && !['releasing', 'released'].includes(detailRow.state)"
-              type="warning"
-              plain
-              @click="openCreateExemption"
-            >
-              {{ t('security.exemption.create') }}
-            </el-button>
           </div>
-          <el-alert
-            type="warning"
-            :closable="false"
-            show-icon
-            :title="t('security.exemption.scopeWarning')"
-          />
           <el-skeleton v-if="exemptionsLoading" class="exemption-loading" :rows="2" animated />
           <div v-else-if="exemptions.length > 0" class="exemption-list">
             <article v-for="exemption in exemptions" :key="exemption.id" class="exemption-card">
@@ -550,19 +564,12 @@
                     {{ exemptionStatePresentation(exemption).label }}
                   </el-tag>
                 </div>
+                <span>{{ t('security.exemption.subject') }}：{{ exemption.subject_id }}</span>
                 <span>{{ ownerLabel(exemption.consumer_owner) }} · {{ actionLabel(exemption.action) }}</span>
                 <span>{{ t('security.exemption.expiresAt') }}：{{ formatDateTime(exemption.current?.expires_at) }}</span>
                 <p>{{ exemption.current?.rationale }}</p>
               </div>
-              <div v-if="canUpdateExemptions || canRevokeExemptions" class="exemption-card__actions">
-                <el-button
-                  v-if="canUpdateExemptions && isExemptionAssessmentSensitive(exemption)"
-                  link
-                  type="primary"
-                  @click="openRenewExemption(exemption)"
-                >
-                  {{ exemption.effective_state === 'active' ? t('security.exemption.renew') : t('security.exemption.reactivate') }}
-                </el-button>
+              <div v-if="canRevokeExemptions" class="exemption-card__actions">
                 <el-button
                   v-if="canRevokeExemptions && exemption.effective_state === 'active'"
                   link
@@ -785,71 +792,6 @@
       </template>
     </el-dialog>
 
-    <el-dialog
-      v-model="exemptionDialog"
-      class="addp-dialog"
-      :title="exemptionDialogMode === 'create' ? t('security.exemption.createTitle') : t('security.exemption.renewTitle')"
-      width="min(600px, calc(100vw - 24px))"
-    >
-      <el-alert type="warning" :closable="false" show-icon :title="t('security.exemption.dialogWarning')" />
-      <el-form class="exemption-form" label-position="top">
-        <template v-if="exemptionDialogMode === 'create'">
-          <el-form-item :label="t('security.exemption.field')" required>
-            <el-select v-model="exemptionForm.assessmentID" class="wide" :placeholder="t('security.exemption.selectField')" @change="resetExemptionOwner">
-              <el-option
-                v-for="assessment in availableExemptionAssessments"
-                :key="assessment.id"
-                :label="assessment.component_key"
-                :value="assessment.id"
-              />
-            </el-select>
-          </el-form-item>
-          <el-form-item :label="t('security.exemption.outlet')" required>
-            <el-select v-model="exemptionForm.consumerOwner" class="wide" :placeholder="t('security.exemption.selectOutlet')">
-              <el-option
-                v-for="owner in availableExemptionOwners"
-                :key="owner"
-                :label="`${ownerLabel(owner)} · ${actionLabel(exemptionAction(owner))}`"
-                :value="owner"
-              />
-            </el-select>
-          </el-form-item>
-        </template>
-        <template v-else-if="editingExemption">
-          <el-descriptions class="exemption-target" :column="1" border>
-            <el-descriptions-item :label="t('security.exemption.field')">{{ assessmentComponent(editingExemption.assessment_id) }}</el-descriptions-item>
-            <el-descriptions-item :label="t('security.exemption.outlet')">{{ ownerLabel(editingExemption.consumer_owner) }} · {{ actionLabel(editingExemption.action) }}</el-descriptions-item>
-          </el-descriptions>
-        </template>
-        <el-form-item :label="t('security.exemption.deadline')" required>
-          <el-date-picker
-            v-model="exemptionForm.expiresAt"
-            class="wide"
-            type="datetime"
-            :placeholder="t('security.exemption.selectDeadline')"
-            :disabled-date="disableExemptionDate"
-          />
-          <small class="form-help">{{ t('security.exemption.deadlineHint') }}</small>
-        </el-form-item>
-        <el-form-item :label="t('security.exemption.rationale')" required>
-          <el-input
-            v-model="exemptionForm.rationale"
-            type="textarea"
-            :rows="4"
-            maxlength="2000"
-            show-word-limit
-            :placeholder="t('security.exemption.rationalePlaceholder')"
-          />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="exemptionDialog = false">{{ t('security.common.cancel') }}</el-button>
-        <el-button type="primary" :loading="exemptionSaving" @click="submitExemption">
-          {{ exemptionDialogMode === 'create' ? t('security.exemption.confirmCreate') : t('security.exemption.confirmRenew') }}
-        </el-button>
-      </template>
-    </el-dialog>
-
     <el-dialog v-model="releaseDialog" class="addp-dialog" :title="releaseDialogTitle" width="min(560px, calc(100vw - 24px))">
       <el-alert type="warning" :closable="false" :title="releaseDialogWarning" />
       <el-input
@@ -880,7 +822,7 @@ import {
   openMonitorExecution,
   resolveCanonicalTabRouteState
 } from '@common-ui'
-import { assessmentAPI, classificationAPI, detectorCapabilityAPI, findingAPI, gradeAPI, metaAPI, protectionEnrollmentAPI, protectionExemptionAPI, sensitiveDataTypeAPI } from '../api/security'
+import { assessmentAPI, classificationAPI, detectorCapabilityAPI, findingAPI, gradeAPI, metaAPI, protectionAccessRequestAPI, protectionEnrollmentAPI, protectionExemptionAPI, sensitiveDataTypeAPI } from '../api/security'
 import { useAuthStore } from '../store/auth'
 import {
   buildFindingReviewPayload,
@@ -899,9 +841,6 @@ const AUTO_REFRESH_FAST_INTERVAL_MS = 2000
 const AUTO_REFRESH_SLOW_INTERVAL_MS = 5000
 const AUTO_REFRESH_FAST_WINDOW_MS = 30000
 const AUTO_REFRESH_TIMEOUT_MS = 120000
-const EXEMPTION_OWNERS = ['manager', 'develop', 'service', 'transfer']
-const EXEMPTION_ACTIONS = { manager: 'preview', develop: 'query', service: 'service_execute', transfer: 'export' }
-const EXEMPTION_MAX_DURATION_MS = 30 * 24 * 60 * 60 * 1000
 
 const { t, locale } = useI18n()
 const route = useRoute()
@@ -942,7 +881,6 @@ const detailDrawer = ref(false)
 const releaseDialog = ref(false)
 const reviewDialog = ref(false)
 const manualAssessmentDialog = ref(false)
-const exemptionDialog = ref(false)
 const selectedResource = ref(null)
 const selectedItem = ref(null)
 const selectedItemLoading = ref(false)
@@ -961,10 +899,6 @@ const assessments = ref([])
 const assessmentsLoading = ref(false)
 const exemptions = ref([])
 const exemptionsLoading = ref(false)
-const exemptionSaving = ref(false)
-const exemptionDialogMode = ref('create')
-const editingExemption = ref(null)
-const exemptionForm = reactive({ assessmentID: '', consumerOwner: '', expiresAt: null, rationale: '' })
 const componentOptions = ref([])
 const componentsLoading = ref(false)
 const sensitiveTypes = ref([])
@@ -978,6 +912,9 @@ const reviewQueuePageSize = ref(initialWorkspaceRoute.reviewQueue.pageSize)
 const reviewQueueTypeID = ref(initialWorkspaceRoute.reviewQueue.sensitiveDataTypeID)
 const reviewQueueDetectorVersion = ref(initialWorkspaceRoute.reviewQueue.detectorVersion)
 const reviewQueueLoading = ref(false)
+const accessRequestRows = ref([])
+const accessRequestTotal = ref(0)
+const accessRequestLoading = ref(false)
 const reviewingFinding = ref(null)
 const reviewSaving = ref(false)
 const reviewBasisExpanded = ref([])
@@ -1003,16 +940,10 @@ const canReadAssessments = computed(() => auth.hasPermission('security.assessmen
 const canCreateAssessments = computed(() => auth.hasPermission('security.assessment.create'))
 const canUpdateAssessments = computed(() => auth.hasPermission('security.assessment.update'))
 const canReadExemptions = computed(() => auth.hasPermission('security.protection_exemption.read'))
-const canCreateExemptions = computed(() => auth.hasPermission('security.protection_exemption.create'))
-const canUpdateExemptions = computed(() => auth.hasPermission('security.protection_exemption.update'))
 const canRevokeExemptions = computed(() => auth.hasPermission('security.protection_exemption.delete'))
+const canReviewAccessRequests = computed(() => auth.hasPermission('security.protection_access_request.update'))
 const governanceLoading = computed(() => findingsLoading.value || assessmentsLoading.value)
 const manualAssessments = computed(() => assessments.value.filter(item => item.current?.source_kind === 'manual'))
-const activeSensitiveAssessments = computed(() => assessments.value.filter(item => item.current?.conclusion === 'sensitive'))
-const availableExemptionAssessments = computed(() => activeSensitiveAssessments.value.filter(assessment =>
-  EXEMPTION_OWNERS.some(owner => !hasExemptionBinding(assessment.id, owner))))
-const availableExemptionOwners = computed(() => EXEMPTION_OWNERS.filter(owner =>
-  exemptionForm.assessmentID && !hasExemptionBinding(exemptionForm.assessmentID, owner)))
 const reviewQueueCapabilities = computed(() => {
   const capabilities = new Map(detectorCapabilities.value.map(item => [String(item.key || ''), item]))
   for (const finding of reviewQueueRows.value) {
@@ -1292,41 +1223,14 @@ function actionLabel(action) {
   return translated === `security.finding.actions.${normalized}` ? normalized : translated
 }
 
-function exemptionAction(owner) {
-  return EXEMPTION_ACTIONS[owner] || ''
-}
-
-function hasExemptionBinding(assessmentID, owner) {
-  return exemptions.value.some(item => item.assessment_id === assessmentID && item.consumer_owner === owner)
-}
-
 function assessmentComponent(assessmentID) {
   return assessments.value.find(item => item.id === assessmentID)?.component_key || t('security.exemption.unknownField')
-}
-
-function isExemptionAssessmentSensitive(exemption) {
-  return activeSensitiveAssessments.value.some(item => item.id === exemption?.assessment_id)
 }
 
 function exemptionStatePresentation(exemption) {
   const state = String(exemption?.effective_state || 'expired')
   const types = { active: 'warning', expired: 'info', revoked: 'info' }
   return { type: types[state] || 'info', label: t(`security.exemption.states.${state}`) }
-}
-
-function defaultExemptionDeadline() {
-  return new Date(Date.now() + 24 * 60 * 60 * 1000)
-}
-
-function disableExemptionDate(value) {
-  const timestamp = value?.getTime?.() || 0
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  return timestamp < today.getTime() || timestamp > Date.now() + EXEMPTION_MAX_DURATION_MS
-}
-
-function resetExemptionOwner() {
-  exemptionForm.consumerOwner = availableExemptionOwners.value[0] || ''
 }
 
 function outletRuleDescription(finding, owner) {
@@ -1417,6 +1321,45 @@ async function loadReviewQueue(page = reviewQueuePage.value) {
   }
 }
 
+async function loadAccessRequestQueue() {
+  if (!canReviewAccessRequests.value) {
+    accessRequestRows.value = []
+    accessRequestTotal.value = 0
+    return
+  }
+  accessRequestLoading.value = true
+  try {
+    const response = await protectionAccessRequestAPI.reviewQueue({ page: 1, page_size: 100 })
+    accessRequestRows.value = Array.isArray(response?.data) ? response.data : []
+    accessRequestTotal.value = Number(response?.total || 0)
+  } catch (error) {
+    ElMessage.error(error.message || t('security.accessRequest.loadFailed'))
+  } finally {
+    accessRequestLoading.value = false
+  }
+}
+
+async function decideAccessRequest(row, decision) {
+  try {
+    const result = await ElMessageBox.prompt(
+      t(`security.accessRequest.${decision}Prompt`, { field: row.component?.key || '' }),
+      t(`security.accessRequest.${decision}`),
+      { confirmButtonText: t('security.common.confirm'), cancelButtonText: t('security.common.cancel'), inputType: 'textarea', inputPlaceholder: t('security.accessRequest.decisionRationale'), inputValidator: value => Boolean(String(value || '').trim()) || t('security.accessRequest.decisionRationaleRequired') }
+    )
+    await protectionAccessRequestAPI.decide(row.id, {
+      version: Number(row.version),
+      decision,
+      expires_at: decision === 'approve' ? row.requested_expires_at : undefined,
+      rationale: String(result.value).trim()
+    })
+    ElMessage.success(t(`security.accessRequest.${decision}d`))
+    await Promise.all([loadAccessRequestQueue(), load({ background: true })])
+  } catch (error) {
+    if (error === 'cancel' || error === 'close') return
+    ElMessage.error(error.message || t('security.accessRequest.decisionFailed'))
+  }
+}
+
 async function loadFindings(page = findingsPage.value) {
   const row = detailRow.value
   if (!canReadFindings.value || !row?.id || !row.latest_source_snapshot_hash || normalizeDiscoverySummary(row).findingCount === 0) {
@@ -1480,68 +1423,6 @@ async function loadGovernance(page = findingsPage.value) {
     loadExemptions(),
     loadFindingDefinitions().catch(error => ElMessage.error(error.message || t('security.finding.loadDefinitionsFailed')))
   ])
-}
-
-function resetExemptionForm() {
-  exemptionForm.assessmentID = ''
-  exemptionForm.consumerOwner = ''
-  exemptionForm.expiresAt = defaultExemptionDeadline()
-  exemptionForm.rationale = ''
-}
-
-function openCreateExemption() {
-  exemptionDialogMode.value = 'create'
-  editingExemption.value = null
-  resetExemptionForm()
-  exemptionDialog.value = true
-}
-
-function openRenewExemption(exemption) {
-  exemptionDialogMode.value = 'renew'
-  editingExemption.value = exemption
-  resetExemptionForm()
-  exemptionForm.rationale = exemption.effective_state === 'active' ? '' : exemption.current?.rationale || ''
-  exemptionDialog.value = true
-}
-
-function validExemptionForm() {
-  const deadline = exemptionForm.expiresAt instanceof Date ? exemptionForm.expiresAt : new Date(exemptionForm.expiresAt)
-  const remaining = deadline.getTime() - Date.now()
-  if (Number.isNaN(deadline.getTime()) || remaining <= 0 || remaining > EXEMPTION_MAX_DURATION_MS) return false
-  if (!exemptionForm.rationale.trim()) return false
-  return exemptionDialogMode.value !== 'create' || (exemptionForm.assessmentID && exemptionForm.consumerOwner)
-}
-
-async function submitExemption() {
-  if (!validExemptionForm()) return ElMessage.warning(t('security.exemption.required'))
-  exemptionSaving.value = true
-  try {
-    const expiresAt = new Date(exemptionForm.expiresAt).toISOString()
-    if (exemptionDialogMode.value === 'create') {
-      await protectionExemptionAPI.create({
-        assessment_id: exemptionForm.assessmentID,
-        consumer_owner: exemptionForm.consumerOwner,
-        action: exemptionAction(exemptionForm.consumerOwner),
-        expires_at: expiresAt,
-        rationale: exemptionForm.rationale.trim()
-      })
-      ElMessage.success(t('security.exemption.created'))
-    } else {
-      await protectionExemptionAPI.renew(editingExemption.value.id, {
-        version: Number(editingExemption.value.version),
-        expires_at: expiresAt,
-        rationale: exemptionForm.rationale.trim()
-      })
-      ElMessage.success(t('security.exemption.renewed'))
-    }
-    exemptionDialog.value = false
-    await Promise.all([loadExemptions(), load({ background: true })])
-    scheduleAutoRefresh({ reset: true })
-  } catch (error) {
-    ElMessage.error(error.message || t('security.common.failed'))
-  } finally {
-    exemptionSaving.value = false
-  }
 }
 
 async function revokeExemption(exemption) {
@@ -1877,7 +1758,7 @@ async function manualRefresh() {
     if (activeWorkspace.value === 'review-queue') {
       await loadReviewQueue(reviewQueuePage.value)
     } else {
-      await load({ background: true })
+      await Promise.all([load({ background: true }), loadAccessRequestQueue()])
       await loadGovernance(findingsPage.value)
       scheduleAutoRefresh({ reset: true })
     }
@@ -2006,8 +1887,6 @@ function handleDetailClosed() {
   findingsTotal.value = 0
   assessments.value = []
   exemptions.value = []
-  exemptionDialog.value = false
-  editingExemption.value = null
   findingsLoading.value = false
   exemptionsLoading.value = false
   detailRow.value = null
@@ -2125,7 +2004,7 @@ watch(() => route.query, async routeQuery => {
     stopAutoRefresh()
     await Promise.all([loadReviewQueue(routeState.reviewQueue.page), loadFindingDefinitions(), loadDetectorCapabilities()])
   } else {
-    await load()
+    await Promise.all([load(), loadAccessRequestQueue()])
     scheduleAutoRefresh({ reset: true })
   }
 }, { immediate: true })
@@ -2144,7 +2023,7 @@ onMounted(async () => {
   if (activeWorkspace.value === 'review-queue') {
     await Promise.all([loadReviewQueue(reviewQueuePage.value), loadFindingDefinitions(), loadDetectorCapabilities()])
   } else {
-    await load()
+    await Promise.all([load(), loadAccessRequestQueue()])
     scheduleAutoRefresh({ reset: true })
   }
   await loadEngines()
@@ -2166,6 +2045,9 @@ onBeforeUnmount(() => {
 .workspace-tabs { margin: -4px 0 10px; }
 .workspace-tab-label { display: inline-flex; align-items: center; gap: 7px; }
 :deep(.workspace-tabs .el-tabs__header) { margin-bottom: 0; }
+.access-review-card { margin-bottom: 12px; border-color: var(--addp-border-color); background: var(--addp-bg-primary); }
+.access-review-card__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.access-review-card__header p { margin: 5px 0 0; color: var(--addp-text-secondary); font-size: 13px; }
 .list-scope-bar { display: flex; align-items: center; margin-bottom: 12px; }
 .enrollment-card { border-color: var(--addp-border-color); background: var(--addp-bg-primary); }
 .review-queue-intro { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 12px; padding: 13px 15px; border: 1px solid var(--addp-border-color); border-radius: 8px; background: var(--addp-bg-primary); }
@@ -2270,8 +2152,6 @@ h4 { margin: 24px 0 12px; }
 .exemption-card__title strong { min-width: 0; overflow-wrap: anywhere; }
 .exemption-card__main > span, .exemption-card__main > p { margin: 0; color: var(--addp-text-secondary); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 .exemption-card__actions { display: flex; flex: 0 0 auto; gap: 4px; }
-.exemption-form { margin-top: 16px; }
-.exemption-target { margin-bottom: 16px; }
 .form-help { display: block; margin-top: 6px; color: var(--addp-text-tertiary); font-size: 12px; line-height: 1.5; }
 .review-target { display: flex; flex-direction: column; gap: 5px; margin-bottom: 18px; padding: 12px 14px; border: 1px solid var(--addp-border-color); border-radius: 8px; background: var(--addp-bg-secondary); }
 .review-target__header { display: flex; min-width: 0; align-items: flex-start; justify-content: space-between; gap: 12px; }

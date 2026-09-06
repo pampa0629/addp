@@ -26,7 +26,7 @@
 6. 已进入纳管生命周期的资源必须 fail closed；策略缺失、损坏、冲突、过期或结构不匹配不得回退明文。
 7. 保护只在 Owner 服务端出口执行，浏览器不接收明文后再遮盖。
 8. 用户数据请求不同步调用 Security、Catalog 或 Meta，只读取 Owner 本地有效投影。
-9. 第一阶段不开放原值揭示，不保留基于角色名称、记录创建人或管理员身份的本地绕过路径。
+9. 原值访问只允许由当前用户从真实数据出口申请、由另一名有审批权限的用户在 Security 审批，并以按用户、按字段、按出口、限时的投影授权执行；不保留基于角色名称、记录创建人、管理员身份或租户范围的本地绕过路径。
 
 ## 二、模块、运行角色与基础设施
 
@@ -81,7 +81,7 @@ owner 资源消失、源版本或结构指纹变化时：
 
 1. 原 Assessment 和历史保留；
 2. 有效 Policy 进入待复核状态；
-3. Owner 继续执行已安装的更严格保护，或在无法安全匹配时拒绝；
+3. Owner 继续执行已同步的更严格保护，或在无法安全匹配时拒绝；
 4. 不得按名称、路径相似度或 Catalog 来源重绑静默改绑安全事实。
 
 ## 四、Security 业务对象
@@ -92,12 +92,14 @@ owner 资源消失、源版本或结构指纹变化时：
 | SecurityClassification | 定义安全类别 | 可变聚合根，使用 `version` |
 | SecurityGrade | 定义等级、顺序和最低控制强度 | 可变聚合根，使用 `version` |
 | DetectorCapability | 由平台可信代码定义结构/内容识别算法、证据来源、适用资源类型、实现方法、隐私边界、已知局限和能力版本 | 平台级只读注册表；能力键在一个平台版本内不可变 |
-| Detector | 将一个已安装 DetectorCapability 绑定到一个 SensitiveDataType，并控制是否参与发现及自动采用置信度 | Tenant 可变聚合根，使用 `version`；不保存或执行租户提交的代码、SQL、脚本或任意正则 |
+| Detector | 将一个平台内置 DetectorCapability 绑定到一个 SensitiveDataType，并控制是否参与发现及自动采用置信度 | Tenant 可变聚合根，使用 `version`；不保存或执行租户提交的代码、SQL、脚本或任意正则 |
 | ProtectionBaseline | 定义 SensitiveDataType + SecurityGrade + action 的最低保护意图 | 可变聚合根，发布修订不可变 |
 | ProtectionEnrollment | 把一个专业资源显式纳入 Security 生命周期 | 可变聚合根，使用 `version` |
 | SensitiveFinding | 保存自动发现候选、置信度和非原值证据 | 不可变观测记录；复核结果单独保存；查询必须提供完整规则解释 |
 | ResourceSecurityAssessment | 保存正式分类、等级、敏感类型、依据和 dependency snapshot | 可变聚合根；Finding 复核、人工指定、调整或撤销均产生不可变修订 |
 | ProtectionPolicy | 针对 Assessment、消费 Owner 和动作显式收紧 ProtectionBaseline | 可变聚合根，每次创建、更新或撤销产生不可变修订 |
+| ProtectionAccessRequest | 保存用户从实际数据出口提交的限时原值访问申请及审批结论 | 申请主体只取可信 AuthContext；申请人与审批人必须不同；审批结论不可反转 |
+| ProtectionExemption | 保存审批后形成的按用户、字段、出口临时原值授权 | 可变聚合根，每次批准新申请或提前撤销产生不可变修订；Assessment 修订变化时失效 |
 | ProtectionProjection | 面向单一消费 Owner 的可执行投影 | 编译产物，不可编辑，可从 Security 事实重建 |
 
 `version` 只表示资源并发版本；发布修订号必须使用具有领域含义的字段。所有更新、删除、发布、审核、启停和退出纳管操作必须携带正整数 `version`，冲突返回 `409 resource_version_conflict`。
@@ -112,7 +114,7 @@ activating -> enrolling -> active -> releasing -> released
 
 | 状态 | Security 行为 | Owner 行为 |
 | --- | --- | --- |
-| `activating` | 产生面向必要 Owner 的最小 `enrolling` 门禁变化，等待安装确认 | 未安装前仍是旧路径；Security UI/API 必须明确标记“保护未生效” |
+| `activating` | 产生面向必要 Owner 的最小 `enrolling` 门禁变化，等待 Owner 同步确认 | Owner 同步确认前仍是旧路径；Security UI/API 必须明确标记“保护未生效” |
 | `enrolling` | 必要 Owner 已确认门禁，可启动发现和策略编译 | 相关动作使用 `deny` 的第一阶段默认门禁，不返回明文 |
 | `active` | 有效 Policy 已编译，且当前投影被必要 Owner 持久安装并确认 | 具体请求使用本地有效投影执行；当前引擎或数据形态无法证明安全执行时保守拒绝 |
 | `releasing` | 发布明确 release 变化并等待确认 | 继续使用最后有效保护，不因找不到新策略自动解除 |
@@ -124,7 +126,7 @@ Security 后端必须以一份固定 Owner 契约同时作为必要 Owner 集合
 
 已退出记录上的“重新纳入保护”只是创建新 ProtectionEnrollment 的便捷入口，不是状态回退。请求必须携带已退出 Enrollment 的正整数 `version`；Security 在同一事务锁定并验证来源记录仍为 `released`，使用其冻结的目标引用和最小目标快照创建新的 `activating` Enrollment 与四个 Owner 的初始门禁。旧 Enrollment、退出原因、退出依据和时间保持只读。若同一目标已有未退出 Enrollment，返回 `409`，不得产生第二条活动生命周期。
 
-Enrollment 查询响应必须分别返回每个 Owner 当前投影的 `projection_state`、该版本的 `acknowledged` 状态，以及从当前投影去重、稳定排序得到的 `rules[{action,effect}]`；旧的纯 `effects` 汇总字段删除，不保留双轨。确认只表示 Owner 已持久安装当前 revision，不能在 UI 中被解释为某个具体请求已经执行成功，也不能扩大为该 Owner 的所有引擎和数据形态均支持字段级处理。产品界面必须区分“字段规则已安装”“保守拒绝已安装”“等待安装”和“已解除”；遮盖、抑制等 effect 只能连同 action 表述为当前投影要求。具体请求无法满足动作、结构、血缘或执行器约束时仍须失效关闭。
+Enrollment 查询响应必须分别返回每个 Owner 当前投影的 `projection_state`、该版本的 `acknowledged` 状态，以及从当前投影去重、稳定排序得到的 `rules[{action,effect}]`；旧的纯 `effects` 汇总字段删除，不保留双轨。协议层 acknowledgement 只表示 Owner 已在本地事务中原子持久当前 revision；产品界面统一表述为保护规则“待同步”“已同步”或“已解除”，不使用易被理解为软件安装的“待安装/已安装”，也不表述为“已生效”。同步确认不能在 UI 中被解释为某个具体请求已经执行成功，也不能扩大为该 Owner 的所有引擎和数据形态均支持字段级处理。产品界面必须区分“字段规则已同步”“基础保护已同步”“待同步”和“已解除”；遮盖、移除等 effect 只能连同 action 表述为当前投影要求。具体请求无法满足动作、结构、血缘或执行器约束时仍须失效关闭。
 
 退出纳管只使用同一个 Release 子资源路径。Release 请求除 Enrollment `version` 和必填原因外，必须携带稳定依据 `basis=manual|no_supported_findings`；Enrollment 必须冻结 `release_basis`、`release_requested_by`、`release_requested_at` 和当次退出依据的 `release_source_snapshot_hash`。`no_supported_findings` 只允许在最近一次发现已成功、当前快照 Finding 数为 0，且同一 Enrollment 不存在 pending/running 发现 execution 时提交；服务端在同一退出事务内校验，不信任前端判断。
 
@@ -133,7 +135,7 @@ Enrollment 查询响应必须分别返回每个 Owner 当前投影的 `projectio
 Detector 执行采用唯一的“能力注册 + 租户绑定”路径：
 
 1. `DetectorCapability` 由 Security 代码注册，稳定键同时包含能力名和版本，例如 `addp.detector.phone_metadata/v2`；注册信息公开描述目标形态、证据来源、适用 DataItem/字段类型、实际识别方法、隐私边界和已知局限，但不可由租户修改。前端必须把这些信息作为只读能力说明展示，不能只显示一个无法判断含义的能力名称。
-2. `Detector` 必须精确引用一个已安装能力和当前 Tenant 下的一个 SensitiveDataType；同一 Tenant 对同一能力最多一个绑定。每个绑定必须配置 `confidence_threshold`，表示该能力的 Finding 可在人工复核前自动采用并触发保守保护的最低置信度；该阈值属于“能力如何识别”，不得放在 SensitiveDataType 或 ProtectionBaseline。删除或停用绑定后，该能力不再参与后续发现。
+2. `Detector` 必须精确引用一个平台内置能力和当前 Tenant 下的一个 SensitiveDataType；同一 Tenant 对同一能力最多一个绑定。每个绑定必须配置 `confidence_threshold`，表示该能力的 Finding 可在人工复核前自动采用并触发保守保护的最低置信度；该阈值属于“能力如何识别”，不得放在 SensitiveDataType 或 ProtectionBaseline。删除或停用绑定后，该能力不再参与后续发现。
 3. Worker 只加载当前 Tenant 已启用的 Detector，再按 Capability 的适用范围执行。检测结果的 `sensitive_data_type_id` 来自 Detector 绑定，不得通过 `SensitiveDataType.code`、名称或其他约定猜测。
 4. Detector 创建、改绑、启停或删除后，Security 为当前 Tenant 所有 `enrolling|active` ProtectionEnrollment 创建有界重新发现 execution；已有 pending execution 时由该执行读取提交后的最新绑定，不重复入队。若任一受影响发现已经 running，配置写入返回 `409`，避免运行中的旧配置在新配置提交后覆盖当前结果；用户应等待该次发现结束后重试。变更不触发 Meta 全量扫描，也不给未纳管资源增加发现负担。
 5. 平台新增检测算法必须新增版本化 Capability 并补充证据无原值、适用范围和确定性测试；不得在数据库中保存可执行的租户表达式。
@@ -187,7 +189,7 @@ Finding 查询响应必须同时提供只读的 `explanation`，把已经存在�
 4. `outlets` 必须读取当前已发布 Projection，并按组件精确列出每个 Owner 的 `projection_state`、安装确认状态以及投影中的 action/effect/algorithm。它描述当前控制面真实产物，而不是根据 ProtectionBaseline 预测的结果，也不是具体数据请求的执行记录；资源级 `enrolling` 拒绝没有字段规则时返回空 `rules`。
 5. `explanation` 是查询期只读组合结果，不持久化、不进入 Projection checksum，也不包含原始敏感值、样本、连接信息或完整投影载荷。列表查询必须批量装配，禁止逐 Finding 发起数据库查询。
 
-同一个 Enrollment 的不同 Owner Projection 允许按各自已实现的执行能力分阶段从 `enrolling` 升级为 `active`。当前 Manager 的 `preview|profile`、Develop 的受支持结构化 `query`、Service 已发布 QueryService 的 `service_execute`，以及 Transfer bounded snapshot 中统一 Native TablePipeline 结构化导出、PostgreSQL 可证明血缘的查询导出和 MongoDB collection 到 `mongodb_extended_jsonl` 的 `export`，均可安装并确认字段级 `active` Projection；未实现执行器的查询、服务或传输形态仍保持资源级 `enrolling` deny。只有全部必要 Owner 都已安装并确认当前 `active` Projection，Enrollment 才进入 `active`。不得用“部分 Owner 已 active”伪装整体保护闭环已完成，也不得把某个 Owner 的已支持路径扩大解释为该模块所有输出路径都已完成适配。
+同一个 Enrollment 的不同 Owner Projection 允许按各自已实现的执行能力分阶段从 `enrolling` 升级为 `active`。当前 Manager 的 `preview|profile`、Develop 的受支持结构化 `query`、Service 已发布 QueryService 的 `service_execute`，以及 Transfer bounded snapshot 中统一 Native TablePipeline 结构化导出、PostgreSQL 可证明血缘的查询导出和 MongoDB collection 到 `mongodb_extended_jsonl` 的 `export`，均可同步并确认字段级 `active` Projection；未实现执行器的查询、服务或传输形态仍保持资源级 `enrolling` deny。只有全部必要 Owner 都已同步并确认当前 `active` Projection，Enrollment 才进入 `active`。不得用“部分 Owner 已 active”伪装整体保护闭环已完成，也不得把某个 Owner 的已支持路径扩大解释为该模块所有输出路径都已完成适配。
 
 第一阶段保护效果严格度固定为：
 
@@ -195,7 +197,7 @@ Finding 查询响应必须同时提供只读的 `explanation`，把已经存在�
 deny > suppress > mask > allow
 ```
 
-`allow` 只表示当前 Security 保护决策不额外变换内容，不代表 owner 已授权资源动作。敏感组件只有在有效 ProtectionExemption 被编译为限时覆盖时才能执行 `allow`，不得从 ProtectionBaseline、ProtectionPolicy 或 Owner 私有配置产生 `allow`。
+`allow` 只允许出现在投影规则的主体级临时授权中，表示当前 Security 内容保护不额外变换内容，不代表 Owner 已授权资源动作。默认决策不得为 `allow`，ProtectionBaseline、ProtectionPolicy 和 Owner 私有配置都不得产生放行。
 
 ### 7.1 ProtectionPolicy 首期语义
 
@@ -215,27 +217,27 @@ tenant + assessment_id + consumer_owner + action
 6. 没有显式 Policy 不是异常，也不要求用户为每个敏感字段创建策略。Assessment + ProtectionBaseline 是默认且完整的最低保护路径。
 7. Policy 变更与 ProtectionProjection 新修订必须在同一数据库事务完成，并继续调用唯一编译器；禁止新增 Policy 专用投影生成旁路。
 
-用途约束和双人审批仍属于后续范围，不得借 ProtectionPolicy 或 ProtectionExemption API 伪装实现。
+用途约束和双人复核仍属于后续范围，不得借 ProtectionPolicy 或 ProtectionExemption API 伪装实现。
 
-### 7.2 ProtectionExemption 首期语义
+### 7.2 ProtectionAccessRequest 与 ProtectionExemption
 
-ProtectionExemption 是原值揭示的唯一控制面入口，不是 IAM 授权、ProtectionPolicy 的宽松效果或 Owner 本地开关。其绑定键固定为：
+用户必须从实际数据出口发起 ProtectionAccessRequest；Security 集中保存并审批申请，批准后形成 ProtectionExemption。申请不是 IAM 授权、ProtectionPolicy 的宽松效果或 Owner 本地开关。ProtectionExemption 的绑定键固定为：
 
 ```text
-tenant + assessment_id + consumer_owner + action
+tenant + assessment_id + consumer_owner + action + subject_type + subject_id
 ```
 
 首期约束固定为：
 
-1. 只能绑定当前结论为 `sensitive` 的正式 Assessment；每个 Exemption revision 必须冻结批准时的 Assessment revision，组件路径、类型、分类和等级继续取该不可变修订，不接受自由文本字段路径。Assessment 后续产生任何新修订时，旧豁免立即失效且不得在结论再次变化后静默恢复；需要原值时必须基于新修订重新批准。
-2. 只开放已经具备字段级结果保护执行器的 `manager/preview`、`develop/query`、`service/service_execute` 和 `transfer/export`；不得豁免资源级 `enrolling` 门禁、结构冲突、血缘不明、无执行器或 Owner 授权拒绝。
-3. 豁免效果固定为 `allow`，API 不接受调用方选择效果或遮盖算法。它只取消该组件在该出口动作上的 Security 内容变换，不增加 Owner Permission、Resource Grant 或数据访问范围。
-4. 首期投影没有请求主体维度，因此一个豁免对当前 Tenant 内所有已通过 Owner 授权的该动作调用者生效。API 与界面必须明确展示此范围；不得按用户名、角色名称或客户端名称硬编码选择性放行。
-5. `expires_at` 必填，必须晚于创建或续期时间且不得超过 30 天；批准依据必填且最长 2000 字符。
-6. 同一绑定至多有一个 Exemption 聚合。创建、续期和撤销都追加不可变 revision，并使用聚合 `version` 做并发控制；已过期聚合可以续期，历史不得改写或物理删除。
-7. 有效性由当前 revision 的 `state=active`、`expires_at` 以及冻结的 Assessment revision 仍为当前修订共同决定。到期不依赖 Security 在线通知：投影规则保留默认决策，并携带限时 `allow` 覆盖，Owner 在每次服务端执行时按本地时间选择；到期或 Assessment 被修订时立即回落到默认决策。
-8. 编译优先级固定为 `ProtectionBaseline -> ProtectionPolicy 收紧 -> ProtectionExemption 限时覆盖`。豁免到期或撤销后回落到已经收紧后的结果，而不是越过 Policy 回落到更宽松基线。
-9. Exemption 变更与 ProtectionProjection 新修订必须在同一事务内完成，并调用唯一编译器。Owner 只消费投影，不读取 Exemption 表、不保存审批依据，也不增加本地放行接口。
+1. 申请主体只能取 Security API 收到的可信 AuthContext，首期只允许 `subject_type=user`；请求正文不得提交主体，也不得申请其他用户、角色或租户级放行。
+2. 申请只能绑定当前结论为 `sensitive` 的正式 Assessment；组件路径、类型、分类和等级取不可变 Assessment revision，不接受自由文本字段路径。
+3. `consumer_owner + action` 首期只允许 `manager/preview`。其他出口在完成自己的可信用户发起入口前不得借用 Manager 授权，也不得继续使用旧的租户级豁免。
+4. 申请期限最长 30 天、业务依据必填。审批人与申请人必须不同；拒绝不生成授权，批准期限不得晚于申请期限。
+5. 审批通过后创建或重新激活唯一 ProtectionExemption，并追加不可变 revision；revision 冻结 `source_request_id`、`assessment_revision`、主体、`expires_at`、依据、审批人和状态。
+6. Assessment 后续产生任何新修订时旧授权立即失效且不得静默恢复；授权到期、撤销或失配时 Owner 自动执行默认保护决策。
+7. ProtectionProjection 的每条规则保留默认 `decision`，并携带零个或多个按用户授权。Owner 必须使用服务端可信 AuthContext 精确匹配 `subject_type + subject_id`；主体为空或不匹配时不得放行。
+8. 编译优先级固定为 `ProtectionBaseline -> ProtectionPolicy 收紧 -> ProtectionExemption 主体级限时授权`。授权只改变内容保护，不改变 Owner 资源授权；结构无法证明、查询血缘不明或 Owner 授权拒绝时仍然 fail closed。
+9. 申请审批、Exemption revision 和 ProtectionProjection 新修订必须在同一事务内完成，并调用唯一编译器。Owner 只消费投影，不读取申请或授权表、不保存审批依据，也不增加本地放行接口。
 
 ### 7.3 保护定义变化的影响传播
 
@@ -254,13 +256,13 @@ tenant + assessment_id + consumer_owner + action
 
 被 SensitiveFinding、SensitiveFindingReview 或 ResourceSecurityAssessmentRevision 引用的 SensitiveDataType、SecurityGrade、SecurityClassification 不允许删除。定义删除不得级联删除 Finding、review、Assessment、Policy、Projection 或历史修订。
 
-## 八、Protection Projection v1
+## 八、Protection Projection v2
 
-稳定 Schema 名称为 `addp.protection_projection/v1`。示例：
+稳定 Schema 名称为 `addp.protection_projection/v2`。示例：
 
 ```json
 {
-  "schema_version": "addp.protection_projection/v1",
+  "schema_version": "addp.protection_projection/v2",
   "projection_id": "34bd62a9-b8a1-476e-80aa-80350d13cf87",
   "revision": "00000000000000000017",
   "consumer_owner": "manager",
@@ -294,7 +296,15 @@ tenant + assessment_id + consumer_owner + action
           "character_class": "ascii_digit"
         },
         "invalid_value_effect": "suppress"
-      }
+      },
+      "authorizations": [
+        {
+          "subject": {"type": "user", "id": "41"},
+          "effect": "allow",
+          "valid_from": "2026-08-31T12:00:00Z",
+          "valid_until": "2026-08-31T14:00:00Z"
+        }
+      ]
     },
     {
       "action": "profile",
@@ -326,12 +336,13 @@ tenant + assessment_id + consumer_owner + action
 3. `state` 只允许 `enrolling|active`；退出纳管使用变化流 `operation=release`，不用空策略伪装解除。
 4. `rules[].action` 是 consumer owner 已实现的稳定数据出口动作；第一阶段至少覆盖 `preview|profile|search_index|export|query|service_publish|service_execute|ai_context`。
 5. `component.path` 是类型化递归路径，`container` 只允许 `object|array|scalar`；Owner 必须正确遍历嵌套 object 和 array，不得只处理顶层扁平字段。
-6. `effect` 只允许 `allow|mask|suppress|deny`；普通决策不得为 `allow`。原值揭示必须表示为带 `valid_until` 与 `fallback` 的限时决策，`fallback` 必须为更严格且不再嵌套限时覆盖的 `mask|suppress|deny`。未实现的 `filter` 和假名化不得填入投影。
-7. `algorithm` 和参数必须属于 `common/dataprotection` 公开注册的稳定契约；Owner 不得按 SensitiveDataType 名称硬编码私有规则。
-8. `invalid_value_effect` 只能与当前决策同等或更严，首期手机号固定为 `suppress`。
-9. `state=enrolling` 是激活屏障专用的资源级 `deny` 投影：`source_snapshot_hash` 必须为空且 `rules` 必须为空；Owner 命中后直接拒绝目标资源的相关动作，不尝试字段遍历。Security 不得在读取 Owner 技术事实之前伪造结构快照或字段规则。其有效期不能被解释为解除纳管；即使安装时已过有效期，Owner 仍安装纳管标记并按资源级 `deny` 处理，直到收到明确 `release`。
-10. `state=active` 必须携带 `sha256:` 格式的 `source_snapshot_hash` 和至少一条可执行规则；Owner 必须校验 Schema、revision、checksum、有效期、target 和结构指纹后才原子切换。
-11. 投影缺失、无法解析、checksum 错误、结构冲突或过期时，已纳管资源使用资源级 `deny`；不取消纳管标记。
+6. `decision.effect` 只允许 `mask|suppress|deny`，始终表示未命中临时授权时的默认保护；未实现的 `filter` 和假名化不得填入投影。
+7. `authorizations` 只允许 `effect=allow`、`subject.type=user`，主体 ID 必须是正整数十进制字符串；授权区间必须完全位于投影有效期内，同一规则内主体不得重复。Owner 用可信 AuthContext 在本地计算有效决策，不接受调用参数覆盖主体。
+8. `algorithm` 和参数必须属于 `common/dataprotection` 公开注册的稳定契约；Owner 不得按 SensitiveDataType 名称硬编码私有规则。
+9. `invalid_value_effect` 只能与当前决策同等或更严，首期手机号固定为 `suppress`。
+10. `state=enrolling` 是激活屏障专用的资源级 `deny` 投影：`source_snapshot_hash` 必须为空且 `rules` 必须为空；Owner 命中后直接拒绝目标资源的相关动作，不尝试字段遍历。Security 不得在读取 Owner 技术事实之前伪造结构快照或字段规则。其有效期不能被解释为解除纳管；即使安装时已过有效期，Owner 仍安装纳管标记并按资源级 `deny` 处理，直到收到明确 `release`。
+11. `state=active` 必须携带 `sha256:` 格式的 `source_snapshot_hash` 和至少一条可执行规则；Owner 必须校验 Schema、revision、checksum、有效期、target 和结构指纹后才原子切换。
+12. 投影缺失、无法解析、checksum 错误、结构冲突或过期时，已纳管资源使用资源级 `deny`；不取消纳管标记。
 
 结构化表数据的 `source_snapshot_hash` 与 `component.schema_fingerprint` 只能由
 `common/dataprotection` 的规范算法生成，Security 和 Owner 不得各自拼装 JSON：
@@ -383,15 +394,15 @@ Owner 必须在单个本地数据库事务中：
 2. 更新本地纳管索引及有效投影；
 3. 执行该 Owner 对变化目标声明的派生结果清理或重写屏障；
 4. 保存 `next_cursor`；
-5. 提交后向 Security 确认已安装 cursor。
+5. 提交后向 Security 确认已同步 cursor。
 
-投影、派生结果处理和 cursor 必须共用同一事务。任何清理或重写失败都必须整体回滚，Owner 不得保存 cursor 或向 Security 确认该批变化。Owner 重启时还必须在对外服务前，以已安装投影重放同一派生结果收敛逻辑，覆盖升级前已确认 cursor、但尚未具备新执行器的历史状态。
+投影、派生结果处理和 cursor 必须共用同一事务。任何清理或重写失败都必须整体回滚，Owner 不得保存 cursor 或向 Security 确认该批变化。Owner 重启时还必须在对外服务前，以已同步投影重放同一派生结果收敛逻辑，覆盖升级前已确认 cursor、但尚未具备新执行器的历史状态。
 
 同一 Owner 存在 Backend、bounded Worker、continuous Worker 等多个数据面进程时，投影表和 cursor 是 owner schema 内的共享持久事实，只允许一个同步进程推进 Security 变化流并发送 Owner 级 acknowledgement。每个实际读取进程必须在一次 execution 开始前比较共享持久 cursor 与本进程内存索引 cursor；不一致时先从 owner 本地数据库原子重载，再执行门禁。这样 acknowledgement 表示投影已经持久安装，而任一稍后执行的数据面进程都不会在缓存尚未刷新时返回明文。该检查只访问 Owner 本地数据库，不形成 Security 请求依赖。
 
 `protection_projection_entries`、`protection_projection_checkpoints` 及其存储迁移元数据是统一的 Owner 本地投影存储契约，必须由 `common/dataprotection/projectionstore` 唯一定义和迁移。各 Owner 只选择自身 schema、固定 `consumer_owner` 和可选的本地变化屏障，不得复制 DDL、增加 Owner 私有列或维护独立迁移路线。存储初始化必须在数据库事务和 schema 级迁移锁内顺序执行公共迁移，记录已应用版本，并在载入投影前校验真实 PostgreSQL 列、类型、可空性、默认值、主键和必要索引。已存在表与当前契约不一致、迁移版本未知或迁移失败时，Owner 必须启动失败而不得进入 Ready。
 
-新的数据出口 Owner 不得自行建表；必须复用同一 `projectionstore` 构造入口，并通过真实 PostgreSQL 同构门禁证明新 schema 与已有 Owner 一致。平台一致性门禁还必须拒绝 `common/dataprotection/projectionstore` 之外出现这些投影存储表的 Go/SQL 定义，防止新模块复制 DDL 形成第二条迁移路线。数据库存储迁移版本与 `addp.protection_projection/v1` 业务投影协议版本分开管理：前者保证本地持久结构收敛，后者保证 Security 与 Owner 对投影语义的一致理解。
+新的数据出口 Owner 不得自行建表；必须复用同一 `projectionstore` 构造入口，并通过真实 PostgreSQL 同构门禁证明新 schema 与已有 Owner 一致。平台一致性门禁还必须拒绝 `common/dataprotection/projectionstore` 之外出现这些投影存储表的 Go/SQL 定义，防止新模块复制 DDL 形成第二条迁移路线。数据库存储迁移版本与 `addp.protection_projection/v2` 业务投影协议版本分开管理：前者保证本地持久结构收敛，后者保证 Security 与 Owner 对默认保护和按主体临时授权语义的一致理解。Security 启动迁移必须把存量 v1 记录及历史变化原地单向改写为 v2 并重算 checksum；旧租户级 `allow` 只保留其保护性 fallback，sequence 与 cursor 不变，不保留运行时兼容解析或双协议变化流。
 
 Owner 的同步收敛明确分为两个不同屏障，不得混为一次“保存 cursor”操作：
 
@@ -434,7 +445,7 @@ Owner 从当前请求解析出专业资源身份后，只允许一条本地门�
 - Locator / 任务绑定出口：Owner 使用服务端已校验的 ResourceLocator、Meta DataItem fingerprint 或不可变发布快照；
 - 查询出口：Owner 只消费 Engine `QueryRuntimeProvider.PrepareQuery()` 生成的 PreparedQuery，根据本地纳管范围决定是否调用其 `ReadSet()`，再按 Engine Catalog Model 转为 DataItem `engine_id + full_name` 指纹；命中纳管资源后继续从同一计划读取 `OutputLineage()`，不解析查询文本。Security、Meta 和 Catalog 不参与用户请求期间的身份或结果来源解析。
 
-`QueryReadSet` 必须是普通查询的统一 PreparedQuery 计划事实；门禁后只能执行同一 PreparedQuery，不得重新提交查询，也不得为 Security 另做一次方言解析。未纳管资源不调用 Security、Meta 或 Catalog。Owner 在当前 Tenant 的本地索引完全没有纳管目标时不展开完整读依赖；只要该 Tenant 存在任一纳管目标，查询 Owner 就必须执行有界的 `ReadSet()` 分析并以本地指纹 map 精确判断本次查询是否命中。Projection v1 只有稳定 DataItem 指纹，没有可作为安全依据的 Engine 路由提示，因此不得在解析 ReadSet 前猜测“当前 Engine 与纳管无关”。未命中纳管目标的查询可能因 JOIN、View 或类似间接引用而承担该最小必要分析成本；不承诺绝对零负担。
+`QueryReadSet` 必须是普通查询的统一 PreparedQuery 计划事实；门禁后只能执行同一 PreparedQuery，不得重新提交查询，也不得为 Security 另做一次方言解析。未纳管资源不调用 Security、Meta 或 Catalog。Owner 在当前 Tenant 的本地索引完全没有纳管目标时不展开完整读依赖；只要该 Tenant 存在任一纳管目标，查询 Owner 就必须执行有界的 `ReadSet()` 分析并以本地指纹 map 精确判断本次查询是否命中。Projection v2 只有稳定 DataItem 指纹，没有可作为安全依据的 Engine 路由提示，因此不得在解析 ReadSet 前猜测“当前 Engine 与纳管无关”。未命中纳管目标的查询可能因 JOIN、View 或类似间接引用而承担该最小必要分析成本；不承诺绝对零负担。
 
 当查询可能涉及已纳管 DataItem 而 Provider 无法得到完整 `QueryReadSet` 时，Owner 必须拒绝当前查询，不得只检查 `TargetPath`、默认 schema 或 SQL 顶层对象。这是当前请求的不可解析失败，不能扩大为租户级全局禁用 SQL。
 
@@ -509,7 +520,7 @@ Service 必须在同一个 PreparedQuery 上依次完成 `ReadSet()`、命中判
 | `GET/PUT/DELETE` | `/grades/{id}` | 等级详情/完整更新/删除 |
 | `GET/POST` | `/detectors` | 检测器管理 |
 | `GET/PUT/DELETE` | `/detectors/{id}` | 检测器详情/完整更新/删除 |
-| `GET` | `/detector-capabilities` | 查询当前平台版本已安装的只读检测能力注册表 |
+| `GET` | `/detector-capabilities` | 查询当前平台版本内置的只读识别能力注册表 |
 | `GET/POST` | `/protection-baselines` | 保护基线管理 |
 | `GET/PUT/DELETE` | `/protection-baselines/{id}` | 基线详情/完整更新/删除；删除 body 必须携带 `version`，写入与受影响投影重编译保持原子 |
 | `GET/POST` | `/protection-enrollments` | 纳管列表/创建；GET 使用 `scope=current|released|all` 服务端分页筛选，默认 `current`；`released` 按退出完成时间倒序 |
@@ -528,9 +539,16 @@ Service 必须在同一个 PreparedQuery 上依次完成 `ReadSet()`、命中判
 | `DELETE` | `/assessments/{id}` | 携带 `version` 和原因，追加 `not_sensitive` 修订以撤销当前正式结论，不删除历史 |
 | `GET/POST` | `/protection-policies` | 保护策略列表/创建；创建产生首个不可变修订 |
 | `GET/PUT/DELETE` | `/protection-policies/{id}` | 策略详情/完整更新/撤销；更新和撤销均携带 `version` 并追加不可变修订 |
+| `GET` | `/protection-access-request-targets` | Manager 预览按 DataItem fingerprint 查询当前用户可申请的字段、待审批申请和有效临时授权；自动发现但尚未形成正式 Assessment 的字段只返回不可申请原因 |
+| `GET/POST` | `/protection-access-requests` | 当前用户分页查询自己的申请/从 Manager 预览提交按用户原值访问申请 |
+| `GET` | `/protection-access-requests/review-queue` | 审批人员分页查询待审批申请 |
+| `POST` | `/protection-access-requests/{id}/decisions` | 另一名审批人员批准或驳回申请；批准期限不得超过用户申请期限和 30 天上限 |
+| `GET` | `/protection-exemptions` | 治理人员分页查询审批后形成的临时原值授权 |
+| `GET` | `/protection-exemptions/{id}` | 查询临时原值授权及不可变修订历史 |
+| `DELETE` | `/protection-exemptions/{id}` | 携带 `version` 与原因提前撤销临时原值授权并原子重编译投影 |
 | `GET` | `/protection-projections` | 面向治理人员的投影状态和 Owner 确认进度，不返回原值 |
 
-所有分页管理列表使用 `{data,total,page,page_size,total_pages}`，`page_size` 最大 100。创建返回 `201`，完整更新返回新资源。写入请求使用具体 DTO、snake_case 字段和必填 `version`，不接受旧 ID、旧字段、兼容 query 或 `map[string]interface{}` 隐藏契约。
+所有分页管理列表使用 `{data,total,page,page_size,total_pages}`，`page_size` 最大 100。创建返回 `201`，完整更新返回新资源。写入请求使用具体 DTO、snake_case 字段和必填 `version`，不接受旧 ID、旧字段、兼容 query 或 `map[string]interface{}` 隐藏契约。ProtectionExemption 不提供直接创建、续期或重新启用 API；任何新授权都必须来自一条新的 ProtectionAccessRequest 审批结果。
 
 Runtime API 只接受 Tenant Service Access Token，并同时校验固定 OAuth Client 和 Security-owned Runtime Permission。Catalog 页面展示 Security 摘要时，使用当前 User Access Token 直接调用 Security 权限感知摘要 API；Catalog Backend 不代理、不复制安全事实。具体联邦摘要端点与 Catalog 首个展示切片一次实现，不预建无消费者 API。
 
@@ -554,6 +572,11 @@ security.policy.read
 security.policy.create
 security.policy.update
 security.policy.delete
+security.protection_access_request.create
+security.protection_access_request.read
+security.protection_access_request.update
+security.protection_exemption.read
+security.protection_exemption.delete
 security.protection_projection.read
 security.protection_projection.update
 security.audit.read
@@ -662,7 +685,8 @@ Manager 必须按已实现的动作执行器逐项开放已纳管 DataItem，不
 13. ProtectionPolicy 不能降低基线；创建、更新和撤销均保留不可变修订，撤销后投影回落到基线而不是明文。
 14. 显式重新发现拒绝同一纳管的并发 pending/running 执行；结构快照变化后发布携带最新 Hash 的新投影，组件结构未变化的正式 Assessment 可以续用，组件结构冲突时保守保护。
 15. ProtectionBaseline 变化按旧、新绑定精准重编译且与定义写入原子提交；SensitiveDataType 自动发现初始等级变化只影响未复核候选；Detector 自动采用置信度变化走有界重新发现；正式 Assessment 不漂移；无关 Enrollment 不产生投影新版本，编译失败时定义写入回滚。
-16. ProtectionExemption 只能绑定正式敏感 Assessment 和四个已实现字段级出口；创建、续期、撤销保留不可变修订并原子发布投影。有效期内只对指定动作返回原值，到期即使 Security 不可达也自动回落到 Policy 与 Baseline；结构冲突、血缘不明和 Owner 授权拒绝仍然 fail closed。
+16. Manager 预览只列出当前投影中的字段：已有正式敏感 Assessment 的字段可申请；自动发现但尚未正式复核的字段继续保护并明确标注“需先完成复核”，不得因不具备申请条件而从保护状态中消失。
+17. ProtectionAccessRequest 只能由当前可信用户从 Manager 预览发起，申请人与审批人必须不同；批准后形成的 ProtectionExemption 只对该用户的 `manager/preview` 生效。到期、撤销或 Assessment 修订变化后即使 Security 不可达也自动回落到 Policy 与 Baseline；主体不匹配、结构冲突、血缘不明和 Owner 授权拒绝仍然 fail closed。不存在直接创建、续期、管理员绕过或租户级原值授权路径。
 
 代码实施后的标准本地入口至少为：
 
@@ -676,7 +700,7 @@ make test-changed
 
 以下内容不进入首个手机号纵向切片，需要时先修订本规范：
 
-- 按主体或用途约束的原值揭示、双人审批；
+- 用途约束、角色/部门/项目组/服务主体授权和双人复核；
 - 行过滤和单元格级任意策略 DSL；
 - 可逆令牌化、假名化、静态脱敏产物和匿名化评估；
 - 文档文本、图像、人脸、车牌、媒体和图数据敏感发现；

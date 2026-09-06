@@ -10,7 +10,6 @@ import (
 
 	commonAPI "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
-	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
 	rastercogref "github.com/addp/manager/internal/cog"
@@ -22,20 +21,30 @@ import (
 type PPTXPDFTaskService struct {
 	repo     *repository.PPTXPDFRepository
 	executor PPTXPDFExecutor
+	cleaner  PPTXPDFCleaner
 	meta     pptxPDFMetaClient
 	bucket   string
+}
+
+type PPTXPDFCleaner interface {
+	DeleteByStorageRef(ctx context.Context, storageRef string) error
 }
 
 type pptxPDFMetaClient interface {
 	GetItemByIDForTenant(tenantID, itemID uint) (*commonModels.MetaItem, error)
 }
 
-var ErrInvalidPPTXPDFSource = errors.New("invalid PPTX PDF source")
+var (
+	ErrInvalidPPTXPDFSource  = errors.New("invalid PPTX PDF source")
+	ErrPPTXPDFTaskNotFound   = errors.New("PPTX PDF task not found")
+	ErrPPTXPDFResultNotFound = errors.New("PPTX PDF result not found")
+)
 
 func NewPPTXPDFTaskService(repo *repository.PPTXPDFRepository) *PPTXPDFTaskService {
 	return &PPTXPDFTaskService{repo: repo}
 }
 func (s *PPTXPDFTaskService) SetExecutor(executor PPTXPDFExecutor) { s.executor = executor }
+func (s *PPTXPDFTaskService) SetCleaner(cleaner PPTXPDFCleaner)    { s.cleaner = cleaner }
 func (s *PPTXPDFTaskService) SetMetaClient(meta pptxPDFMetaClient) { s.meta = meta }
 func (s *PPTXPDFTaskService) SetBucket(bucket string)              { s.bucket = strings.TrimSpace(bucket) }
 func (s *PPTXPDFTaskService) GetByID(ctx context.Context, id, tenantID uint) (*models.PPTXPDFTask, error) {
@@ -46,6 +55,36 @@ func (s *PPTXPDFTaskService) List(ctx context.Context, tenantID uint, page, page
 }
 func (s *PPTXPDFTaskService) GetResult(ctx context.Context, id, tenantID uint) (*models.PPTXPDF, error) {
 	return s.repo.GetResult(ctx, id, tenantID)
+}
+
+func (s *PPTXPDFTaskService) DeleteTask(ctx context.Context, id, tenantID uint) error {
+	task, err := s.repo.GetTask(ctx, id, tenantID)
+	if err != nil {
+		return err
+	}
+	if task == nil {
+		return ErrPPTXPDFTaskNotFound
+	}
+	return s.repo.DeleteTask(ctx, id, tenantID)
+}
+
+func (s *PPTXPDFTaskService) DeleteResult(ctx context.Context, id, tenantID uint) error {
+	result, err := s.repo.GetResult(ctx, id, tenantID)
+	if err != nil {
+		return err
+	}
+	if result == nil {
+		return ErrPPTXPDFResultNotFound
+	}
+	if strings.TrimSpace(result.StorageRef) != "" {
+		if s.cleaner == nil {
+			return errors.New("PPTX PDF cleaner is not configured")
+		}
+		if err := s.cleaner.DeleteByStorageRef(ctx, result.StorageRef); err != nil {
+			return err
+		}
+	}
+	return s.repo.DeleteResult(ctx, id, tenantID)
 }
 
 func (s *PPTXPDFTaskService) EnsureTask(ctx context.Context, task *models.PPTXPDFTask) error {
@@ -102,7 +141,7 @@ func (s *PPTXPDFTaskService) Execute(ctx context.Context, taskID, tenantID uint,
 	now := time.Now()
 	step := "生成 PPTX 静态 PDF 快显"
 	execution := &commonExecution.TaskExecution{ExecutionID: executionID, TenantID: int(tenantID), Module: commonExecution.ModuleManager, TaskType: commonExecution.TaskTypePPTXPDFGeneration, Source: source, ParentExecutionID: parentExecutionID, Status: commonExecution.ExecutionStatusPending, Progress: 0, CurrentStep: &step, TriggerType: normalizedTrigger, CreatedAt: now, UpdatedAt: now}
-	task, err := s.repo.ClaimExecution(ctx, taskID, tenantID, execution, overwrite)
+	_, err = s.repo.ClaimExecution(ctx, taskID, tenantID, execution, overwrite)
 	if err != nil {
 		if errors.Is(err, repository.ErrExistingResultActionRequired) {
 			return "", ErrExistingResultActionRequired
@@ -115,15 +154,33 @@ func (s *PPTXPDFTaskService) Execute(ctx context.Context, taskID, tenantID uint,
 		}
 		return "", err
 	}
-	go s.run(context.Background(), task, executionID)
 	return executionID, nil
 }
 
-func (s *PPTXPDFTaskService) run(ctx context.Context, task *models.PPTXPDFTask, executionID string) {
+func (s *PPTXPDFTaskService) ClaimPendingExecution(ctx context.Context, workerID string, now time.Time, leaseDuration time.Duration) (*commonExecution.TaskExecution, *commonExecution.Lease, *models.PPTXPDFTask, error) {
+	return s.repo.ClaimPendingExecution(ctx, workerID, now, leaseDuration)
+}
+
+func (s *PPTXPDFTaskService) RenewExecutionLease(ctx context.Context, lease commonExecution.Lease, expiresAt time.Time) error {
+	return s.repo.RenewExecutionLease(ctx, lease, expiresAt)
+}
+
+func (s *PPTXPDFTaskService) ExecutionAttemptIsTerminal(ctx context.Context, lease commonExecution.Lease) (bool, error) {
+	return s.repo.ExecutionAttemptIsTerminal(ctx, lease)
+}
+
+func (s *PPTXPDFTaskService) RecoverExpiredExecutions(ctx context.Context, now time.Time, limit int) (int, error) {
+	return s.repo.RecoverExpiredExecutions(ctx, now, limit)
+}
+
+func (s *PPTXPDFTaskService) RunClaimedExecution(ctx context.Context, execution *commonExecution.TaskExecution, lease commonExecution.Lease, task *models.PPTXPDFTask) error {
+	if execution == nil || task == nil || execution.ExecutionID != lease.ExecutionID {
+		return errors.New("claimed PPTX PDF execution, lease and task are required")
+	}
+	executionID := execution.ExecutionID
 	startedAt := time.Now()
-	if err := s.repo.StartExecution(ctx, task.ID, task.TenantID, executionID, startedAt); err != nil {
-		logger.L().Warn("领取 PPTX PDF execution 失败", "execution_id", executionID, "error", err)
-		return
+	if execution.StartedAt != nil {
+		startedAt = *execution.StartedAt
 	}
 	result, err := s.prepareResult(ctx, task, executionID)
 	var built *PPTXPDFExecutionResult
@@ -134,9 +191,12 @@ func (s *PPTXPDFTaskService) run(ctx context.Context, task *models.PPTXPDFTask, 
 			built, err = s.executor.BuildPPTXPDF(ctx, PPTXPDFExecutionRequest{TenantID: task.TenantID, SourceEngineID: task.SourceEngineID, ItemID: task.ItemID, ItemFingerprint: task.ItemFingerprint, Locator: task.Locator, SourceVersion: task.SourceVersion, SourceSizeBytes: task.SourceSizeBytes, StorageRef: result.StorageRef, FileName: result.FileName})
 		}
 	}
+	metadata := commonModels.JSONMap{}
+	if err == nil {
+		metadata, err = pptxPDFExecutionMetadata(task, built, s.bucket)
+	}
 	status := commonExecution.ExecutionStatusSuccess
 	progress := 100
-	metadata := commonModels.JSONMap{}
 	var errorDetails commonModels.JSONMap
 	fields := map[string]interface{}{}
 	if err != nil {
@@ -144,7 +204,6 @@ func (s *PPTXPDFTaskService) run(ctx context.Context, task *models.PPTXPDFTask, 
 		errorDetails = commonModels.JSONMap{"message": err.Error()}
 		fields = map[string]interface{}{"status": models.PPTXPDFStatusFailed, "error_message": err.Error(), "last_execution_id": executionID}
 	} else {
-		metadata = built.Metadata.Clone()
 		metadata["result_id"] = result.ID
 		fields = map[string]interface{}{"status": models.PPTXPDFStatusReady, "error_message": "", "storage_ref": built.StorageRef, "file_name": built.FileName, "size_bytes": built.SizeBytes, "page_count": built.PageCount, "content_url": pptxPDFContentURL(result.ID), "metadata": metadata, "last_execution_id": executionID}
 	}
@@ -156,9 +215,28 @@ func (s *PPTXPDFTaskService) run(ctx context.Context, task *models.PPTXPDFTask, 
 	} else {
 		fields = nil
 	}
-	if completeErr := s.repo.CompleteExecution(ctx, task.ID, task.TenantID, executionID, resultID, fields, map[string]interface{}{"status": status, "progress": progress, "metadata": metadata, "error_details": errorDetails, "completed_at": completedAt, "execution_time_ms": duration, "updated_at": completedAt}, completedAt); completeErr != nil {
-		logger.L().Warn("提交 PPTX PDF execution 终态失败", "execution_id", executionID, "error", completeErr)
+	if completeErr := s.repo.CompleteExecutionWithLease(ctx, task.ID, task.TenantID, lease, resultID, fields, map[string]interface{}{"status": status, "progress": progress, "metadata": metadata, "error_details": errorDetails, "execution_time_ms": duration}, completedAt); completeErr != nil {
+		return completeErr
 	}
+	return nil
+}
+
+func pptxPDFExecutionMetadata(task *models.PPTXPDFTask, built *PPTXPDFExecutionResult, bucket string) (commonModels.JSONMap, error) {
+	if task == nil || built == nil {
+		return nil, errors.New("PPTX PDF lineage requires task and result")
+	}
+	output, err := managerInfraObjectLineageRef(built.StorageRef, bucket)
+	if err != nil {
+		return nil, fmt.Errorf("build PPTX PDF output lineage: %w", err)
+	}
+	return managerExecutionLineage(
+		built.Metadata.Clone(),
+		commonExecution.TaskTypePPTXPDFGeneration,
+		[]commonExecution.LineageResourceRef{managerItemLineageRef(task.Locator, task.ItemFingerprint, task.ItemID)},
+		[]commonExecution.LineageResourceRef{output},
+		"",
+		"",
+	), nil
 }
 
 func (s *PPTXPDFTaskService) prepareResult(ctx context.Context, task *models.PPTXPDFTask, executionID string) (*models.PPTXPDF, error) {

@@ -113,6 +113,36 @@ const createDocumentFixture = (overrides = {}) => {
   }
 }
 
+const createCandidateGroupResponse = (candidates, { extractionID = 81, revisionID = 711, extractedAt = '2026-09-06T08:00:00Z' } = {}) => ({
+  data: candidates.map(candidate => ({
+    semantic_fingerprint: `fixture-${candidate.id}`,
+    state: candidate.formalization ? 'formalized' : candidate.status,
+    occurrence_count: 1,
+    first_seen_at: extractedAt,
+    last_seen_at: extractedAt,
+    candidate,
+    occurrences: [{
+      candidate_id: candidate.id,
+      extraction_id: extractionID,
+      document_revision_id: revisionID,
+      requested_by: 1,
+      extracted_at: extractedAt,
+      status: candidate.status,
+      version: candidate.version,
+      evidences: candidate.evidences || [],
+      ...(candidate.formalization ? { formalization: candidate.formalization } : {})
+    }]
+  })),
+  total: candidates.length,
+  page: 1,
+  page_size: 20,
+  total_pages: 1,
+  status_counts: candidates.reduce((counts, candidate) => {
+    counts[candidate.formalization ? 'formalized' : candidate.status] += 1
+    return counts
+  }, { pending: 0, retained: 0, rejected: 0, formalized: 0 })
+})
+
 const listPages = [
   ['/domains', '业务域管理'],
   ['/glossaries', '业务术语词典'],
@@ -567,19 +597,13 @@ test('restores document detail from its canonical route and returns to the filte
 test('shows deterministic candidate comparisons and opens the existing standard', async ({ page }) => {
   await installMockBackend(page, {
     documents: [createDocumentFixture()],
-    documentExtractions: [{
-      id: 81,
-      document_revision_id: 711,
-      status: 'completed',
-      created_at: '2026-09-06T08:00:00Z',
-      candidates: [
+    documentCandidateGroups: createCandidateGroupResponse([
         { id: 811, candidate_type: 'glossary', code: 'leader', name: '领队', definition: '发起并组织户外活动的人', payload: {}, status: 'pending', version: 1, evidences: [], comparison: { result: 'exact', standard_id: 21, code: 'leader', name: '领队', scope_type: 'domain', owner_domain_id: 2, revision_id: 211, revision_no: 1, revision_status: 'draft', differences: [] } },
         { id: 812, candidate_type: 'element', code: 'activity_id', name: '活动编号', definition: '活动的唯一编号', payload: { data_type: 'string' }, status: 'pending', version: 1, evidences: [], comparison: { result: 'content_conflict', standard_id: 41, code: 'activity_id', name: '活动编号', scope_type: 'domain', owner_domain_id: 2, revision_id: 411, revision_no: 1, revision_status: 'draft', differences: [{ field: 'definition', candidate_value: { kind: 'text', text: '活动的唯一编号' }, standard_value: { kind: 'text', text: '户外活动主体的稳定标识' } }, { field: 'data_type', candidate_value: { kind: 'text', text: 'string' }, standard_value: { kind: 'text', text: 'bigint' } }] } },
         { id: 813, candidate_type: 'metric', code: 'participant_count', name: '活动参与人数', definition: '参加活动的总人数', payload: {}, status: 'pending', version: 1, evidences: [], comparison: { result: 'scope_conflict', standard_id: 51, code: 'participant_count', name: '活动参与人数', scope_type: 'domain', owner_domain_id: 1, revision_id: 511, revision_no: 1, revision_status: 'draft', differences: [{ field: 'owner_domain_id', candidate_value: { kind: 'integer', integer: 2 }, standard_value: { kind: 'integer', integer: 1 } }] } },
         { id: 814, candidate_type: 'code_set', code: 'outdoor_level', name: '户外等级', definition: '户外活动难度等级', payload: {}, status: 'pending', version: 1, evidences: [], comparison: { result: 'new', differences: [] } },
         { id: 815, candidate_type: 'code_set', code: 'member_status', name: '成员状态', definition: '成员参与状态', payload: {}, status: 'pending', version: 1, evidences: [], comparison: { result: 'content_conflict', standard_id: 61, code: 'member_status', name: '成员状态', scope_type: 'domain', owner_domain_id: 2, revision_id: 611, revision_no: 1, revision_status: 'draft', differences: [{ field: 'items', candidate_value: { kind: 'code_items', items: [{ code: 'signup', name: '报名中', definition: '已正式报名' }] }, standard_value: { kind: 'code_items', items: [{ code: 'registered', name: '已报名', definition: '报名已经确认' }] } }] } }
-      ]
-    }]
+    ])
   })
 
   await page.goto('/documents/71')
@@ -1151,7 +1175,7 @@ async function installMockBackend(page, options = {}) {
       const revision = document?.draft_revision || document?.current_revision
       return fulfillJSON(route, revision ? [revision] : [])
     }
-    if (path === '/api/v1/standard/documents/71/extractions') return fulfillJSON(route, options.documentExtractions || [])
+    if (path === '/api/v1/standard/documents/71/extraction-candidate-groups') return fulfillJSON(route, options.documentCandidateGroups || createCandidateGroupResponse([]))
     if (path === '/api/v1/standard/documents/71/mappings') {
       return fulfillJSON(route, { elements: [], glossaries: [], metrics: [] })
     }
@@ -1161,7 +1185,7 @@ async function installMockBackend(page, options = {}) {
       const revision = document?.draft_revision || document?.current_revision
       return fulfillJSON(route, revision ? [revision] : [])
     }
-    if (path === '/api/v1/standard/documents/72/extractions') return fulfillJSON(route, options.documentExtractions || [])
+    if (path === '/api/v1/standard/documents/72/extraction-candidate-groups') return fulfillJSON(route, options.documentCandidateGroups || createCandidateGroupResponse([]))
     if (path === '/api/v1/standard/documents/72/mappings') return fulfillJSON(route, { elements: [], glossaries: [], metrics: [] })
     return fulfillJSON(route, {})
   })

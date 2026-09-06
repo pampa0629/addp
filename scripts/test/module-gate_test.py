@@ -31,7 +31,14 @@ class ModuleGateTest(unittest.TestCase):
         ):
             path = self.repository / relative_path
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text("{}\n", encoding="utf-8")
+            content = (
+                "#!/usr/bin/env bash\n# ADDP_T2_SERVICES=mongodb\n"
+                if "mongodb" in relative_path
+                else "#!/usr/bin/env bash\n# ADDP_T2_SERVICES=postgres\n"
+                if relative_path.endswith("-gate.sh")
+                else "{}\n"
+            )
+            path.write_text(content, encoding="utf-8")
         (self.repository / "Makefile").write_text(
             "test-platform:\n\t@true\n"
             "test-sample-eval:\n\t@true\n"
@@ -60,7 +67,7 @@ class ModuleGateTest(unittest.TestCase):
         )
         self.assertEqual((("GOWORK", "off"),), steps[1].environment)
         self.assertEqual(
-            ("*_POSTGRES_TEST_DSN", "ADDP_POSTGRES_INTEGRATION"),
+            ("*_POSTGRES_TEST_DSN", "ADDP_*_INTEGRATION"),
             steps[1].excluded_environment,
         )
 
@@ -72,7 +79,12 @@ class ModuleGateTest(unittest.TestCase):
         ):
             path = self.repository / relative_path
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text("{}\n", encoding="utf-8")
+            path.write_text(
+                "#!/usr/bin/env bash\n# ADDP_T2_SERVICES=postgres\n"
+                if relative_path.endswith("-gate.sh")
+                else "{}\n",
+                encoding="utf-8",
+            )
         makefile = self.repository / "Makefile"
         makefile.write_text(
             makefile.read_text(encoding="utf-8")
@@ -108,6 +120,7 @@ class ModuleGateTest(unittest.TestCase):
                 "ADDP_SYSTEM_POSTGRES_TEST_DSN": "postgres://system-test",
                 "STANDARD_POSTGRES_TEST_DSN": "postgres://standard-test",
                 "ADDP_POSTGRES_INTEGRATION": "1",
+                "ADDP_OCEANBASE_INTEGRATION": "1",
                 "UNRELATED_TEST_FLAG": "kept",
             },
         )
@@ -115,6 +128,7 @@ class ModuleGateTest(unittest.TestCase):
         self.assertNotIn("ADDP_SYSTEM_POSTGRES_TEST_DSN", environment)
         self.assertNotIn("STANDARD_POSTGRES_TEST_DSN", environment)
         self.assertNotIn("ADDP_POSTGRES_INTEGRATION", environment)
+        self.assertNotIn("ADDP_OCEANBASE_INTEGRATION", environment)
         self.assertEqual("kept", environment["UNRELATED_TEST_FLAG"])
         self.assertEqual("off", environment["GOWORK"])
 
@@ -125,6 +139,23 @@ class ModuleGateTest(unittest.TestCase):
     def test_rejects_invalid_module_name(self) -> None:
         with self.assertRaisesRegex(MODULE.ModuleGateError, "lowercase ADDP module name"):
             MODULE.plan_module(self.repository, "sample;echo")
+
+    def test_ignores_non_t2_gate_scripts(self) -> None:
+        release_script = self.repository / "scripts/test/sample-cli-release-gate.sh"
+        release_script.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+        makefile = self.repository / "Makefile"
+        makefile.write_text(
+            makefile.read_text(encoding="utf-8")
+            + "test-sample-cli-release:\n\t@true\n",
+            encoding="utf-8",
+        )
+
+        steps = MODULE.plan_module(self.repository, "sample")
+
+        self.assertNotIn(
+            ("make", "test-sample-cli-release"),
+            [step.command for step in steps],
+        )
 
     def test_git_files_preserves_unicode_and_spaces(self) -> None:
         path = self.repository / "sample/frontend/中文 说明.md"

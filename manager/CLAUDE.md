@@ -12,7 +12,7 @@ Manager 的一次性数据库 item 导出通过 Common 强类型 Client 直接�
 
 Manager 拥有的成功 execution 必须在 `common.task_executions.metadata.lineage_facts` 写入 `addp.lineage-facts/v1` 事实：输入使用执行时已冻结的 ResourceLocator、item ID 和 fingerprint，业务输出使用目标 ResourceLocator，Manager 私有快显产物使用 `addp-infra://` Locator；触发的 Meta scan execution ID 写入 `meta_scan_refs`。任务服务只提供自身输入输出事实，统一结构由 Manager service 公共构造器生成，不得各自拼装 JSON。清理 execution 不表达数据派生血缘；Manager 调用 Transfer 的导入导出由 Transfer execution 作为唯一血缘 owner，Manager 不重复写入。
 
-跨模块验收使用唯一 T4 suite `manager-internal-artifact-lineage`：专用 Business MinIO LAS 经 Meta scan、Manager `point_cloud_copc_generation`、PointCloud Runtime、infra COPC 发布和 Monitor 展示形成完整证据；不得用数据库夹具、伪 Runtime 或前端 mock 代替该链路。
+跨模块验收使用唯一 T4 suite `manager-internal-artifact-lineage`：专用 Business MinIO 的 LAS 与多页 PPTX 经同一次 Meta scan，分别通过 Manager `point_cloud_copc_generation` + PointCloud Runtime 与按需 `pptx_pdf_generation` + Document Workflow/LibreOffice 发布 infra 产物，并由 Monitor、Data Explorer 和正式清理 API 形成完整证据；不得用数据库夹具、伪 Runtime 或前端 mock 代替该链路。
 
 空间快显与瓦片缓存的目标边界：
 

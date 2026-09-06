@@ -233,7 +233,7 @@ func (w MySQLCompatibleTableWriter) validateTableUpsertTarget(ctx context.Contex
 		}
 	}
 
-	indexes, err := w.uniqueIndexes(ctx, db, database, table)
+	indexes, err := mysqlCompatibleUniqueIndexes(ctx, db, w.engineType(), "upsert", database, table)
 	if err != nil {
 		return err
 	}
@@ -241,47 +241,6 @@ func (w MySQLCompatibleTableWriter) validateTableUpsertTarget(ctx context.Contex
 		return fmt.Errorf("%s upsert target unique constraints must all exactly match configured keys %v, got %v", w.engineType(), keys, indexes)
 	}
 	return nil
-}
-
-func (w MySQLCompatibleTableWriter) uniqueIndexes(ctx context.Context, db *sql.DB, database, table string) ([][]string, error) {
-	rows, err := db.QueryContext(ctx, `
-		SELECT index_name, seq_in_index, column_name, sub_part
-		FROM information_schema.statistics
-		WHERE table_schema = ? AND table_name = ? AND non_unique = 0
-		ORDER BY index_name, seq_in_index
-	`, database, table)
-	if err != nil {
-		return nil, fmt.Errorf("query %s upsert unique constraints: %w", w.engineType(), err)
-	}
-	defer rows.Close()
-
-	indexOrder := make([]string, 0)
-	indexColumns := map[string][]string{}
-	for rows.Next() {
-		var indexName string
-		var sequence int
-		var column sql.NullString
-		var prefixLength sql.NullInt64
-		if err := rows.Scan(&indexName, &sequence, &column, &prefixLength); err != nil {
-			return nil, fmt.Errorf("scan %s upsert unique constraint: %w", w.engineType(), err)
-		}
-		if _, exists := indexColumns[indexName]; !exists {
-			indexOrder = append(indexOrder, indexName)
-		}
-		name := ""
-		if column.Valid && !prefixLength.Valid {
-			name = column.String
-		}
-		indexColumns[indexName] = append(indexColumns[indexName], name)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate %s upsert unique constraints: %w", w.engineType(), err)
-	}
-	result := make([][]string, 0, len(indexOrder))
-	for _, indexName := range indexOrder {
-		result = append(result, indexColumns[indexName])
-	}
-	return result, nil
 }
 
 func mysqlCompatibleBatchColumns(batch *plugin.BatchData) []string {

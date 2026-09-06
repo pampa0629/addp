@@ -92,7 +92,7 @@
 | `format` | encoded endpoint 必填。 |
 | `options` | 格式读写选项。 |
 | `runtime.boundary` | 执行边界：`bounded` 或 `continuous`；continuous 业务 Kafka keyed JSON 契约支持 PostgreSQL/MySQL upsert。 |
-| `load.mode` | `snapshot` 或 PostgreSQL/MySQL native table 的 `incremental`。 |
+| `load.mode` | `snapshot` 或 PostgreSQL/MySQL/OceanBase 非空间 native table 的 `incremental`。 |
 | `load.change_detection` | incremental 第一版只支持复合 watermark。 |
 | `target.policy.apply_mode` | `replace` / `append` / `upsert`；按任务组合和目标 Provider 校验。 |
 | `target.policy.keys` | upsert 的稳定目标键。 |
@@ -129,6 +129,6 @@
 | `POST` | `/task-definitions/:id/schema-change/approve` | 审批当前 additive request；成功后任务进入 paused，不隐式 Resume。 |
 | `GET` | `/task-definitions/:id/executions` | 查询任务执行记录。 |
 
-bounded 的 `/task-definitions/:id/resume` 是调度控制 API；PostgreSQL/MySQL watermark execution 的 resume 由新 execution 自动读取 `transfer.sync_states` 完成。普通 continuous resume 总是创建新 execution，不复用已取消 execution；数据库 CDC blocked generation 必须先完成专用 additive 审批，其他 schema drift 不支持 resume 或 retry。
+bounded 的 `/task-definitions/:id/resume` 是调度控制 API；PostgreSQL/MySQL/OceanBase 非空间 watermark execution 的 resume 由新 execution 自动读取 `transfer.sync_states` 完成。普通 continuous resume 总是创建新 execution，不复用已取消 execution；数据库 CDC blocked generation 必须先完成专用 additive 审批，其他 schema drift 不支持 resume 或 retry。
 
 TaskProvider 声明的任务发现地址是唯一标准 `/tasks`。服务端在请求带 `task_type=sync` 时强制过滤为 bounded，避免 Orchestrator v1 选择 continuous task；Console 不带 `task_type` 时仍通过同一路由查询全部任务。不保留 `/provider-tasks` 私有路由。

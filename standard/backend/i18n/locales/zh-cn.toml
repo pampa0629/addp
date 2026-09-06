@@ -154,11 +154,41 @@ other = "当前仅支持从 Markdown 文档提炼标准候选"
 [standard.document.extraction_invalid]
 other = "提炼结果缺少有效候选或可追溯证据"
 
+[standard.document.candidate_group_query_invalid]
+other = "候选聚合筛选或分页参数无效"
+
 [standard.document.copilot_unavailable]
 other = "Copilot 标准提炼服务暂时不可用"
 
 [standard.document.publication_history]
 other = "该文档存在发布历史，不能删除稳定身份"
+
+[standard.document.candidate_formalization_history]
+other = "该文档已有候选被正式化，必须保留其来源与治理追溯记录"
+
+[standard.document.candidate_not_retained]
+other = "仅已保留的标准候选可以正式化"
+
+[standard.document.candidate_already_formalized]
+other = "该标准候选已经完成正式化，不能重复处理"
+
+[standard.document.candidate_formalization_stale]
+other = "候选、来源文档或目标标准已发生变化，请刷新后重试"
+
+[standard.document.candidate_scope_conflict]
+other = "同编码标准的适用范围与来源文档不一致"
+
+[standard.document.candidate_target_draft_exists]
+other = "目标标准已有内容不同的草稿或审核中修订，请先处理该工作修订"
+
+[standard.document.candidate_reference_unavailable]
+other = "候选引用的计量单位或当前生效码值集修订无法唯一解析"
+
+[standard.document.candidate_formalization_denied]
+other = "缺少创建或更新目标标准所需的权限"
+
+[standard.document.candidate_formalization_invalid]
+other = "标准候选正式化参数无效"
 
 [standard.domain.not_found]
 other = "业务域不存在"

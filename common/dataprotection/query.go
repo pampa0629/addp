@@ -11,7 +11,7 @@ import (
 // ProtectQueryResultSource applies already schema-validated rules to every
 // value output from one QueryOutputSource. It mutates the result in place and
 // never includes protected values in errors.
-func ProtectQueryResultSource(result *plugin.QueryResult, source plugin.QueryOutputSource, action string, rules []Rule) error {
+func ProtectQueryResultSource(result *plugin.QueryResult, source plugin.QueryOutputSource, action string, rules []Rule, subject SubjectReference) error {
 	if result == nil {
 		return errors.New("query protection result is required")
 	}
@@ -41,14 +41,15 @@ func ProtectQueryResultSource(result *plugin.QueryResult, source plugin.QueryOut
 		}
 		seen := map[string]struct{}{}
 		for _, mappedRule := range mapped {
-			mappedRule.Decision = mappedRule.Decision.Effective(time.Now().UTC())
+			mappedRule.Decision = mappedRule.EffectiveDecision(subject, time.Now().UTC())
+			mappedRule.Authorizations = nil
 			key := strings.Join(queryComponentNames(mappedRule.Component.Path), "\x00")
 			if _, exists := seen[key]; exists {
 				continue
 			}
 			seen[key] = struct{}{}
 			for _, row := range result.Rows {
-				if err := ProtectDocument(row, action, []Rule{mappedRule}); err != nil {
+				if err := ProtectDocument(row, action, []Rule{mappedRule}, subject); err != nil {
 					return err
 				}
 			}

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# ADDP_T2_SERVICES=postgres
 set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)

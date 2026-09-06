@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { buildComponentConfiguration, buildQueryRequest, createNamedParameterDraft, createParameterDraft, hasParameterValue, requiredParameterValuesPresent } from '../src/utils/componentDraft.mjs'
+import { buildComponentConfiguration, buildQueryRequest, buildRendererConfig, createNamedParameterDraft, createParameterDraft, hasParameterValue, requiredParameterValuesPresent, synchronizeFieldPresentations } from '../src/utils/componentDraft.mjs'
 
 const descriptor = {
   ref: { service_type: 'query', service_id: 9 },
@@ -12,6 +12,10 @@ test('compiles a reusable application component without service or domain field 
   const draft = {
     name: 'component', description: '', columns: ['id', 'amount'], pageLimit: 50,
     rendererType: 'table',
+    fieldPresentations: [
+      { field: 'id', label: '订单编号', fieldType: 'string', unit: '', precision: null, temporalFormat: '', width: 160 },
+      { field: 'amount', label: '金额', fieldType: 'decimal', unit: '元', precision: 2, temporalFormat: '', width: null },
+    ],
     parameters: [{ key: 'minimum', label: 'Minimum', controlType: 'number', required: false, field: 'amount', operator: 'gte', fieldType: 'decimal', value: '12.5' }],
   }
   assert.deepEqual(buildQueryRequest(descriptor, draft, 'cursor-2', 'csv'), {
@@ -23,17 +27,49 @@ test('compiles a reusable application component without service or domain field 
   assert.equal(component.id, 'component-a')
   assert.notEqual(component.service_ref, descriptor.ref)
   assert.equal(component.default_parameter_values.minimum, 12.5)
-  assert.deepEqual(component.renderer_config, { columns: ['id', 'amount'] })
+  assert.deepEqual(component.renderer_config, {
+    columns: ['id', 'amount'],
+    field_presentations: [
+      { field: 'id', label: '订单编号', width: 160 },
+      { field: 'amount', label: '金额', unit: '元', precision: 2 },
+    ],
+  })
 })
 
 test('persists a typed chart renderer without changing the service request contract', () => {
   const draft = {
     name: 'chart', description: '', columns: ['city', 'amount'], pageLimit: 20,
     rendererType: 'chart', chartType: 'bar', dimension: 'city', measures: ['amount'], parameters: [],
+    fieldPresentations: [
+      { field: 'city', label: '城市', fieldType: 'string', unit: '', precision: null, temporalFormat: '', width: null },
+      { field: 'amount', label: '金额', fieldType: 'decimal', unit: '元', precision: 2, temporalFormat: '', width: null },
+    ],
   }
   assert.deepEqual(buildComponentConfiguration(descriptor, draft, 'component-chart').renderer_config, {
     chart_type: 'bar', dimension: 'city', measures: ['amount'],
+    field_presentations: [{ field: 'city', label: '城市' }, { field: 'amount', label: '金额', unit: '元', precision: 2 }],
   })
+})
+
+test('keeps one renderer-config compiler and synchronizes only fields used by the renderer', () => {
+  const fields = [
+    { name: 'city', type: 'string', comment: '城市' },
+    { name: 'amount', type: 'decimal', comment: '金额' },
+    { name: 'created_at', type: 'timestamp', comment: '创建时间' },
+  ]
+  const draft = {
+    rendererType: 'chart', chartType: 'bar', dimension: 'city', measures: ['amount'],
+    fieldPresentations: [{ field: 'amount', label: '实付金额', fieldType: 'decimal', unit: '元', precision: 2, temporalFormat: '', width: null }],
+  }
+  draft.fieldPresentations = synchronizeFieldPresentations(draft, fields)
+
+  assert.deepEqual(draft.fieldPresentations.map((item) => item.field), ['city', 'amount'])
+  assert.equal(draft.fieldPresentations[0].label, '城市')
+  assert.equal(draft.fieldPresentations[1].label, '实付金额')
+  assert.deepEqual(buildRendererConfig(draft).field_presentations, [
+    { field: 'city', label: '城市' },
+    { field: 'amount', label: '实付金额', unit: '元', precision: 2 },
+  ])
 })
 
 test('persists explicitly configured scalar values without domain field assumptions', () => {

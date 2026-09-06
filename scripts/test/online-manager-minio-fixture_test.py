@@ -6,12 +6,12 @@ import unittest
 from pathlib import Path
 
 
-SCRIPT = Path(__file__).parents[2] / "business/scripts/online-pointcloud-minio-fixture.sh"
+SCRIPT = Path(__file__).parents[2] / "business/scripts/online-manager-minio-fixture.sh"
 
 
-class OnlinePointCloudMinIOFixtureTest(unittest.TestCase):
+class OnlineManagerMinIOFixtureTest(unittest.TestCase):
     def setUp(self) -> None:
-        self.temporary = tempfile.TemporaryDirectory(prefix="addp-online-pointcloud-minio-")
+        self.temporary = tempfile.TemporaryDirectory(prefix="addp-online-manager-minio-")
         self.root = Path(self.temporary.name)
         self.business = self.root / "business"
         self.bin = self.root / "bin"
@@ -19,10 +19,12 @@ class OnlinePointCloudMinIOFixtureTest(unittest.TestCase):
         self.log = self.root / "docker.log"
         (self.business / "scripts").mkdir(parents=True)
         (self.business / "nfs/data/点云").mkdir(parents=True)
+        (self.business / "fixtures/manager").mkdir(parents=True)
         self.bin.mkdir()
-        shutil.copy2(SCRIPT, self.business / "scripts/online-pointcloud-minio-fixture.sh")
+        shutil.copy2(SCRIPT, self.business / "scripts/online-manager-minio-fixture.sh")
         (self.business / "docker-compose.yml").write_text("services: {}\n", encoding="utf-8")
         (self.business / "nfs/data/点云/pdal_las12_format0.las").write_bytes(b"LAS fixture")
+        (self.business / "fixtures/manager/addp_online_preview_fixture.pptx").write_bytes(b"PPTX fixture")
         self._executable("uname", "#!/bin/bash\necho Darwin\n")
         self._executable(
             "curl",
@@ -58,11 +60,12 @@ esac
             {
                 "PATH": str(self.bin) + os.pathsep + self.environment["PATH"],
                 "ADDP_ONLINE_HOST": "1",
-                "ADDP_ONLINE_POINTCLOUD_MINIO_PORT": "59002",
-                "ADDP_ONLINE_POINTCLOUD_MINIO_ACCESS_KEY": "online-pointcloud",
-                "ADDP_ONLINE_POINTCLOUD_MINIO_SECRET_KEY": "pointcloud-secret-1234",
-                "ADDP_ONLINE_POINTCLOUD_MINIO_BUCKET": "addp-online",
-                "ADDP_ONLINE_POINTCLOUD_MINIO_OBJECT": "pointcloud/pdal_las12_format0.las",
+                "ADDP_ONLINE_MANAGER_MINIO_PORT": "59002",
+                "ADDP_ONLINE_MANAGER_MINIO_ACCESS_KEY": "online-manager",
+                "ADDP_ONLINE_MANAGER_MINIO_SECRET_KEY": "manager-secret-1234",
+                "ADDP_ONLINE_MANAGER_MINIO_BUCKET": "addp-online",
+                "ADDP_ONLINE_MANAGER_MINIO_POINTCLOUD_OBJECT": "pointcloud/pdal_las12_format0.las",
+                "ADDP_ONLINE_MANAGER_MINIO_PPTX_OBJECT": "document/addp_online_preview_fixture.pptx",
                 "ADDP_TEST_CONTAINER_STATE": str(self.state),
                 "ADDP_TEST_DOCKER_LOG": str(self.log),
                 "MINIO_API_PORT": "9002",
@@ -83,7 +86,7 @@ esac
         environment = dict(self.environment)
         environment.update(overrides)
         return subprocess.run(
-            ["bash", "business/scripts/online-pointcloud-minio-fixture.sh", action],
+            ["bash", "business/scripts/online-manager-minio-fixture.sh", action],
             cwd=self.root,
             env=environment,
             capture_output=True,
@@ -103,20 +106,21 @@ esac
         self.assertIn("up -d minio", commands)
         self.assertIn("minio/mc:latest mb --ignore-existing fixture/addp-online", commands)
         self.assertIn("minio/mc:latest cp --quiet /fixture/source.las fixture/addp-online/pointcloud/pdal_las12_format0.las", commands)
-        self.assertIn("|59002|online-pointcloud|pointcloud-secret-1234", commands)
+        self.assertIn("minio/mc:latest cp --quiet /fixture/source.pptx fixture/addp-online/document/addp_online_preview_fixture.pptx", commands)
+        self.assertIn("|59002|online-manager|manager-secret-1234", commands)
         self.assertNotIn("|9002|personal|personal-secret", commands)
         self.assertFalse((self.business / ".env").exists())
         self.assertFalse(self.state.exists())
 
     def test_rejects_unsafe_secret_before_docker(self) -> None:
-        result = self.run_fixture("start", ADDP_ONLINE_POINTCLOUD_MINIO_SECRET_KEY="bad secret")
+        result = self.run_fixture("start", ADDP_ONLINE_MANAGER_MINIO_SECRET_KEY="bad secret")
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("URL-safe", result.stderr)
         self.assertFalse(self.log.exists())
 
     def test_rejects_object_key_with_dot_segments_before_docker(self) -> None:
-        result = self.run_fixture("start", ADDP_ONLINE_POINTCLOUD_MINIO_OBJECT="pointcloud/../source.las")
+        result = self.run_fixture("start", ADDP_ONLINE_MANAGER_MINIO_PPTX_OBJECT="document/../source.pptx")
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("dot segments", result.stderr)
@@ -124,11 +128,20 @@ esac
 
     def test_rejects_non_las_object_key_before_docker(self) -> None:
         result = self.run_fixture(
-            "start", ADDP_ONLINE_POINTCLOUD_MINIO_OBJECT="pointcloud/source.csv"
+            "start", ADDP_ONLINE_MANAGER_MINIO_POINTCLOUD_OBJECT="pointcloud/source.csv"
         )
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("must end with .las", result.stderr)
+        self.assertFalse(self.log.exists())
+
+    def test_rejects_non_pptx_object_key_before_docker(self) -> None:
+        result = self.run_fixture(
+            "start", ADDP_ONLINE_MANAGER_MINIO_PPTX_OBJECT="document/source.pdf"
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("must end with .pptx", result.stderr)
         self.assertFalse(self.log.exists())
 
     def test_refuses_container_owned_by_another_compose_service(self) -> None:

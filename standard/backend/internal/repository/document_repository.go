@@ -14,7 +14,10 @@ import (
 
 type DocumentRepository struct{ db *gorm.DB }
 
-var ErrDocumentPublicationHistory = errors.New("document publication history exists")
+var (
+	ErrDocumentPublicationHistory            = errors.New("document publication history exists")
+	ErrDocumentCandidateFormalizationHistory = errors.New("document candidate formalization history exists")
+)
 
 func NewDocumentRepository(db *gorm.DB) *DocumentRepository { return &DocumentRepository{db: db} }
 
@@ -326,6 +329,16 @@ func (r *DocumentRepository) DeleteUnpublished(id, tenantID int64) ([]models.Doc
 		if count > 0 {
 			return ErrDocumentPublicationHistory
 		}
+		if err := tx.Table("standard.document_candidate_formalizations AS formalization").
+			Joins("JOIN standard.document_extraction_candidates candidate ON candidate.id = formalization.candidate_id").
+			Joins("JOIN standard.document_extractions extraction ON extraction.id = candidate.extraction_id").
+			Joins("JOIN standard.document_revisions revision ON revision.id = extraction.document_revision_id").
+			Where("revision.document_id = ?", id).Count(&count).Error; err != nil {
+			return err
+		}
+		if count > 0 {
+			return ErrDocumentCandidateFormalizationHistory
+		}
 		var revisions []models.DocumentRevision
 		if err := tx.Where("document_id = ?", id).Find(&revisions).Error; err != nil {
 			return err
@@ -382,13 +395,15 @@ func (r *DocumentRepository) ListExtractions(documentID, tenantID int64) ([]mode
 	err := r.db.Table("standard.document_extractions AS extraction").Select("extraction.*").
 		Joins("JOIN standard.document_revisions revision ON revision.id = extraction.document_revision_id").
 		Where("revision.document_id = ? AND extraction.tenant_id = ?", documentID, tenantID).
-		Order("extraction.id DESC").Preload("Candidates", func(db *gorm.DB) *gorm.DB { return db.Order("id ASC") }).Preload("Candidates.Evidences", func(db *gorm.DB) *gorm.DB { return db.Order("id ASC") }).Find(&extractions).Error
+		Order("extraction.id DESC").Preload("Candidates", func(db *gorm.DB) *gorm.DB { return db.Order("id ASC") }).Preload("Candidates.Evidences", func(db *gorm.DB) *gorm.DB { return db.Order("id ASC") }).Preload("Candidates.Formalization").Find(&extractions).Error
 	return extractions, wrapDBError(err)
 }
 
 type DocumentCandidateComparisonTarget struct {
 	CandidateType      string
 	StandardID         int64
+	StandardVersion    int64
+	DraftRevisionID    *int64
 	Code               string
 	ScopeType          string
 	OwnerDomainID      *int64
@@ -454,7 +469,7 @@ func (r *DocumentRepository) loadGlossaryComparisonTargets(tenantID int64, codes
 		return nil
 	}
 	var identities []models.Glossary
-	if err := r.db.Select("id, scope_type, owner_domain_id, code, draft_revision_id").Where("tenant_id = ? AND lifecycle_state = ? AND code IN ?", tenantID, "active", codes).Find(&identities).Error; err != nil {
+	if err := r.db.Select("id, scope_type, owner_domain_id, code, draft_revision_id, version").Where("tenant_id = ? AND lifecycle_state = ? AND code IN ?", tenantID, "active", codes).Find(&identities).Error; err != nil {
 		return err
 	}
 	ids := make([]int64, 0, len(identities))
@@ -476,7 +491,9 @@ func (r *DocumentRepository) loadGlossaryComparisonTargets(tenantID int64, codes
 		if !ok {
 			continue
 		}
-		targets[documentCandidateComparisonKey("glossary", identity.Code)] = comparisonTarget("glossary", identity.ID, identity.Code, identity.ScopeType, identity.OwnerDomainID, revision)
+		target := comparisonTarget("glossary", identity.ID, identity.Code, identity.ScopeType, identity.OwnerDomainID, revision)
+		target.StandardVersion, target.DraftRevisionID = identity.Version, identity.DraftRevisionID
+		targets[documentCandidateComparisonKey("glossary", identity.Code)] = target
 	}
 	return nil
 }
@@ -486,7 +503,7 @@ func (r *DocumentRepository) loadElementComparisonTargets(tenantID int64, codes 
 		return nil
 	}
 	var identities []models.Element
-	if err := r.db.Select("id, scope_type, owner_domain_id, code, draft_revision_id").Where("tenant_id = ? AND lifecycle_state = ? AND code IN ?", tenantID, "active", codes).Find(&identities).Error; err != nil {
+	if err := r.db.Select("id, scope_type, owner_domain_id, code, draft_revision_id, version").Where("tenant_id = ? AND lifecycle_state = ? AND code IN ?", tenantID, "active", codes).Find(&identities).Error; err != nil {
 		return err
 	}
 	ids := make([]int64, 0, len(identities))
@@ -508,7 +525,9 @@ func (r *DocumentRepository) loadElementComparisonTargets(tenantID int64, codes 
 		if !ok {
 			continue
 		}
-		targets[documentCandidateComparisonKey("element", identity.Code)] = comparisonTarget("element", identity.ID, identity.Code, identity.ScopeType, identity.OwnerDomainID, revision)
+		target := comparisonTarget("element", identity.ID, identity.Code, identity.ScopeType, identity.OwnerDomainID, revision)
+		target.StandardVersion, target.DraftRevisionID = identity.Version, identity.DraftRevisionID
+		targets[documentCandidateComparisonKey("element", identity.Code)] = target
 	}
 	return nil
 }
@@ -518,7 +537,7 @@ func (r *DocumentRepository) loadCodeSetComparisonTargets(tenantID int64, codes 
 		return nil
 	}
 	var identities []models.CodeSet
-	if err := r.db.Select("id, scope_type, owner_domain_id, code, draft_revision_id").Where("tenant_id = ? AND lifecycle_state = ? AND code IN ?", tenantID, "active", codes).Find(&identities).Error; err != nil {
+	if err := r.db.Select("id, scope_type, owner_domain_id, code, draft_revision_id, version").Where("tenant_id = ? AND lifecycle_state = ? AND code IN ?", tenantID, "active", codes).Find(&identities).Error; err != nil {
 		return err
 	}
 	ids := make([]int64, 0, len(identities))
@@ -542,6 +561,7 @@ func (r *DocumentRepository) loadCodeSetComparisonTargets(tenantID int64, codes 
 			continue
 		}
 		target := comparisonTarget("code_set", identity.ID, identity.Code, identity.ScopeType, identity.OwnerDomainID, revision)
+		target.StandardVersion, target.DraftRevisionID = identity.Version, identity.DraftRevisionID
 		targets[documentCandidateComparisonKey("code_set", identity.Code)] = target
 		revisionIDs = append(revisionIDs, revision.ID)
 	}
@@ -570,7 +590,7 @@ func (r *DocumentRepository) loadMetricComparisonTargets(tenantID int64, codes [
 		return nil
 	}
 	var identities []models.MetricDefinition
-	if err := r.db.Select("id, scope_type, owner_domain_id, code, draft_revision_id").Where("tenant_id = ? AND lifecycle_state = ? AND code IN ?", tenantID, "active", codes).Find(&identities).Error; err != nil {
+	if err := r.db.Select("id, scope_type, owner_domain_id, code, draft_revision_id, version").Where("tenant_id = ? AND lifecycle_state = ? AND code IN ?", tenantID, "active", codes).Find(&identities).Error; err != nil {
 		return err
 	}
 	ids := make([]int64, 0, len(identities))
@@ -592,7 +612,9 @@ func (r *DocumentRepository) loadMetricComparisonTargets(tenantID int64, codes [
 		if !ok {
 			continue
 		}
-		targets[documentCandidateComparisonKey("metric", identity.Code)] = comparisonTarget("metric", identity.ID, identity.Code, identity.ScopeType, identity.OwnerDomainID, revision)
+		target := comparisonTarget("metric", identity.ID, identity.Code, identity.ScopeType, identity.OwnerDomainID, revision)
+		target.StandardVersion, target.DraftRevisionID = identity.Version, identity.DraftRevisionID
+		targets[documentCandidateComparisonKey("metric", identity.Code)] = target
 	}
 	return nil
 }
@@ -716,6 +738,13 @@ func (r *DocumentRepository) UpdateCandidateStatus(candidateID, tenantID, userID
 		}
 		if candidate.Version != expectedVersion {
 			return ErrVersionConflict
+		}
+		var formalizationCount int64
+		if err := tx.Model(&models.DocumentCandidateFormalization{}).Where("candidate_id = ?", candidateID).Count(&formalizationCount).Error; err != nil {
+			return err
+		}
+		if formalizationCount != 0 {
+			return ErrCandidateAlreadyFormalized
 		}
 		now := time.Now().UTC()
 		result := tx.Model(&models.DocumentExtractionCandidate{}).Where("id = ? AND version = ?", candidateID, expectedVersion).Updates(map[string]interface{}{

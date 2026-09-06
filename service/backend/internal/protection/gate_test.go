@@ -190,7 +190,7 @@ func installServiceProjection(t *testing.T, store *projectionstore.Store, identi
 	t.Helper()
 	now := time.Now().UTC()
 	projection := dataprotection.Projection{
-		SchemaVersion: dataprotection.ProjectionSchemaV1,
+		SchemaVersion: dataprotection.ProjectionSchemaV2,
 		ProjectionID:  "projection-service-persons",
 		Revision:      "00000000000000000001",
 		ConsumerOwner: "service",
@@ -232,7 +232,7 @@ func installActiveServiceProjection(t *testing.T, store *projectionstore.Store, 
 		t.Fatal(err)
 	}
 	projection := dataprotection.Projection{
-		SchemaVersion: dataprotection.ProjectionSchemaV1, ProjectionID: "projection-service-active", Revision: "00000000000000000001",
+		SchemaVersion: dataprotection.ProjectionSchemaV2, ProjectionID: "projection-service-active", Revision: "00000000000000000001",
 		ConsumerOwner: "service", State: dataprotection.ProjectionStateActive,
 		Target:             dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: identity},
 		SourceSnapshotHash: snapshot,

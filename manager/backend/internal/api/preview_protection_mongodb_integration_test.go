@@ -96,7 +96,7 @@ func TestIntegrationManagerMongoOutdoorPersonsPreviewMasksPhone(t *testing.T) {
 		t.Fatalf("active projection validation failed: %v", err)
 	}
 	result := &preview.PreviewResult{PreviewType: "table", Data: table}
-	if err := applyPreviewProtection(result, rules); err != nil {
+	if err := applyPreviewProtection(result, rules, dataprotection.SubjectReference{}); err != nil {
 		t.Fatalf("MongoDB preview protection failed: %v", err)
 	}
 

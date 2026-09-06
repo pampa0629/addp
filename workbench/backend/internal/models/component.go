@@ -70,20 +70,32 @@ type QueryFilter struct {
 }
 
 type TableRendererConfig struct {
-	Columns []string `json:"columns"`
+	Columns            []string            `json:"columns"`
+	FieldPresentations []FieldPresentation `json:"field_presentations,omitempty"`
 }
 
 type ChartRendererConfig struct {
-	ChartType string   `json:"chart_type"`
-	Dimension string   `json:"dimension"`
-	Measures  []string `json:"measures"`
+	ChartType          string              `json:"chart_type"`
+	Dimension          string              `json:"dimension"`
+	Measures           []string            `json:"measures"`
+	FieldPresentations []FieldPresentation `json:"field_presentations,omitempty"`
 }
 
 type MapRendererConfig struct {
-	GeometryField string                  `json:"geometry_field"`
-	LabelField    string                  `json:"label_field,omitempty"`
-	TooltipFields []string                `json:"tooltip_fields"`
-	Style         *MapRendererStyleConfig `json:"style,omitempty"`
+	GeometryField      string                  `json:"geometry_field"`
+	LabelField         string                  `json:"label_field,omitempty"`
+	TooltipFields      []string                `json:"tooltip_fields"`
+	Style              *MapRendererStyleConfig `json:"style,omitempty"`
+	FieldPresentations []FieldPresentation     `json:"field_presentations,omitempty"`
+}
+
+type FieldPresentation struct {
+	Field          string `json:"field"`
+	Label          string `json:"label"`
+	Unit           string `json:"unit,omitempty"`
+	Precision      *int   `json:"precision,omitempty"`
+	TemporalFormat string `json:"temporal_format,omitempty"`
+	Width          *int   `json:"width,omitempty"`
 }
 
 type MapRendererStyleConfig struct {

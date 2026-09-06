@@ -1,4 +1,7 @@
-export function formatResultCell(value, nullText = '—') {
+import { fieldPresentationFor, fieldPresentationLabel, formatFieldPresentationValue } from './fieldPresentation.mjs'
+
+export function formatResultCell(value, nullText = '—', presentation = null, locale = 'zh-CN') {
+  if (presentation) return formatFieldPresentationValue(value, presentation, locale, nullText)
   if (value === null || value === undefined) return nullText
   if (typeof value === 'boolean') return value ? 'true' : 'false'
   if (typeof value === 'object') {
@@ -11,7 +14,7 @@ export function formatResultCell(value, nullText = '—') {
   return String(value)
 }
 
-export function normalizeTabularColumns({ columns = [], fields = [], rows = [] } = {}) {
+export function normalizeTabularColumns({ columns = [], fields = [], rows = [], presentations = [] } = {}) {
   const fieldLabels = new Map(
     (Array.isArray(fields) ? fields : [])
       .filter(field => field?.name)
@@ -26,10 +29,12 @@ export function normalizeTabularColumns({ columns = [], fields = [], rows = [] }
   return source
     .map((column) => {
       if (typeof column === 'string') {
+        const presentation = fieldPresentationFor(column, presentations)
         return {
           key: column,
-          label: fieldLabels.get(column) || column,
-          path: [column]
+          label: fieldPresentationLabel(column, presentations, fields),
+          path: [column],
+          ...(presentation ? { presentation, ...(presentation.width ? { width: presentation.width } : {}) } : {})
         }
       }
       if (!column || typeof column !== 'object') return null
@@ -38,8 +43,9 @@ export function normalizeTabularColumns({ columns = [], fields = [], rows = [] }
       return {
         ...column,
         key,
-        label: column.label || fieldLabels.get(key) || key,
-        path: Array.isArray(column.path) && column.path.length > 0 ? column.path : [key]
+        label: column.label || fieldPresentationLabel(key, presentations, fields) || fieldLabels.get(key) || key,
+        path: Array.isArray(column.path) && column.path.length > 0 ? column.path : [key],
+        ...(fieldPresentationFor(key, presentations) ? { presentation: fieldPresentationFor(key, presentations) } : {})
       }
     })
     .filter(Boolean)

@@ -22,7 +22,7 @@ func TestIntegrationOceanBaseTableWrite(t *testing.T) {
 	const tableName = "addp_table_write_gate"
 	p := &Plugin{}
 	connInfo := oceanBaseIntegrationConnInfo()
-	databaseName := oceanBaseIntegrationEnv("OCEANBASE_DATABASE", "business")
+	databaseName := oceanBaseIntegrationEnv("ADDP_TEST_OCEANBASE_DATABASE", "addp_oceanbase_disposable")
 	path := plugin.TabularItemPath(engineID, plugin.EngineCatalogTermDatabase, databaseName, tableName)
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
@@ -172,7 +172,7 @@ func TestIntegrationOceanBaseTableUpsert(t *testing.T) {
 	const ambiguousTableName = "addp_table_upsert_ambiguous_gate"
 	p := &Plugin{}
 	connInfo := oceanBaseIntegrationConnInfo()
-	databaseName := oceanBaseIntegrationEnv("OCEANBASE_DATABASE", "business")
+	databaseName := oceanBaseIntegrationEnv("ADDP_TEST_OCEANBASE_DATABASE", "addp_oceanbase_disposable")
 	path := plugin.TabularItemPath(engineID, plugin.EngineCatalogTermDatabase, databaseName, tableName)
 	ambiguousPath := plugin.TabularItemPath(engineID, plugin.EngineCatalogTermDatabase, databaseName, ambiguousTableName)
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
@@ -291,6 +291,51 @@ func TestIntegrationOceanBaseCatalogAndRead(t *testing.T) {
 	if err := p.TestConnection(ctx, connInfo); err != nil {
 		t.Fatalf("TestConnection() error = %v", err)
 	}
+	databaseName := oceanBaseIntegrationEnv("ADDP_TEST_OCEANBASE_DATABASE", "addp_oceanbase_disposable")
+	const probeTable = "addp_catalog_probe_gate"
+	const customersTable = "addp_catalog_customers_gate"
+	const ordersTable = "addp_catalog_orders_gate"
+	fixturePaths := []plugin.EngineCatalogPath{
+		plugin.TabularItemPath(engineID, plugin.EngineCatalogTermDatabase, databaseName, probeTable),
+		plugin.TabularItemPath(engineID, plugin.EngineCatalogTermDatabase, databaseName, customersTable),
+		plugin.TabularItemPath(engineID, plugin.EngineCatalogTermDatabase, databaseName, ordersTable),
+	}
+	dsn, err := p.BuildDSN(connInfo)
+	if err != nil {
+		t.Fatalf("BuildDSN() error = %v", err)
+	}
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		t.Fatalf("sql.Open() error = %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	for _, path := range fixturePaths {
+		if err := p.DeleteResource(ctx, connInfo, path); err != nil {
+			t.Fatalf("drop stale catalog gate table error = %v", err)
+		}
+	}
+	t.Cleanup(func() {
+		cleanupContext, cleanupCancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cleanupCancel()
+		for _, path := range fixturePaths {
+			if err := p.DeleteResource(cleanupContext, connInfo, path); err != nil {
+				t.Errorf("cleanup catalog gate table error = %v", err)
+			}
+		}
+	})
+	fixtureStatements := []string{
+		"CREATE TABLE `" + probeTable + "` (`id` BIGINT NOT NULL PRIMARY KEY, `name` VARCHAR(255) NOT NULL, `created_at` DATETIME(6) NOT NULL) ENGINE=InnoDB",
+		"INSERT INTO `" + probeTable + "` VALUES (1, 'OceanBase Community Edition', '2026-09-06 08:00:00.000001')",
+		"CREATE TABLE `" + customersTable + "` (`id` BIGINT NOT NULL PRIMARY KEY, `name` VARCHAR(255) NOT NULL, `active` TINYINT(1) NOT NULL, `created_at` DATETIME(6) NOT NULL) ENGINE=InnoDB",
+		"INSERT INTO `" + customersTable + "` VALUES (1, '王小丽', 1, '2026-09-06 08:00:00.000001'), (2, '李明', 1, '2026-09-06 08:00:00.000002')",
+		"CREATE TABLE `" + ordersTable + "` (`id` BIGINT NOT NULL PRIMARY KEY, `order_no` VARCHAR(64) NOT NULL, `customer_id` BIGINT NOT NULL, `total_amount` DECIMAL(18,2) NOT NULL, `status` VARCHAR(32) NOT NULL, INDEX `idx_customer_id` (`customer_id`)) ENGINE=InnoDB",
+		"INSERT INTO `" + ordersTable + "` VALUES (1, 'ORD-OCEANBASE-GATE-001', 1, 88.50, 'delivered')",
+	}
+	for _, statement := range fixtureStatements {
+		if _, err := db.ExecContext(ctx, statement); err != nil {
+			t.Fatalf("prepare catalog gate fixture: %v", err)
+		}
+	}
 
 	root := plugin.EngineCatalogRootPath(p.EngineCatalogModel(), engineID)
 	databases, err := p.ListChildren(ctx, connInfo, root, plugin.ListOptions{})
@@ -302,7 +347,6 @@ func TestIntegrationOceanBaseCatalogAndRead(t *testing.T) {
 			t.Fatalf("system database %q must be filtered from %#v", systemDatabase, oceanBaseCatalogEntryNames(databases))
 		}
 	}
-	databaseName := oceanBaseIntegrationEnv("OCEANBASE_DATABASE", "business")
 	businessDatabase := findOceanBaseCatalogEntry(databases, databaseName)
 	if businessDatabase == nil {
 		t.Fatalf("database %q not found in %#v", databaseName, oceanBaseCatalogEntryNames(databases))
@@ -312,15 +356,15 @@ func TestIntegrationOceanBaseCatalogAndRead(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListChildren(database) error = %v", err)
 	}
-	for _, tableName := range []string{"customers", "products", "orders", "order_items"} {
+	for _, tableName := range []string{probeTable, customersTable, ordersTable} {
 		entry := findOceanBaseCatalogEntry(items, tableName)
 		if entry == nil || entry.Kind != plugin.EngineCatalogKindTable {
 			t.Fatalf("%s table not found in %#v", tableName, oceanBaseCatalogEntryNames(items))
 		}
 	}
-	probe := findOceanBaseCatalogEntry(items, "addp_engine_probe")
+	probe := findOceanBaseCatalogEntry(items, probeTable)
 	if probe == nil || probe.Kind != plugin.EngineCatalogKindTable {
-		t.Fatalf("addp_engine_probe table not found in %#v", oceanBaseCatalogEntryNames(items))
+		t.Fatalf("%s table not found in %#v", probeTable, oceanBaseCatalogEntryNames(items))
 	}
 
 	facts, err := p.DescribeEngineCatalogFacts(ctx, connInfo, probe.Path, plugin.EngineCatalogFactsOptions{IncludeStatistics: true})
@@ -328,7 +372,7 @@ func TestIntegrationOceanBaseCatalogAndRead(t *testing.T) {
 		t.Fatalf("DescribeEngineCatalogFacts() error = %v", err)
 	}
 	if facts.Table == nil || facts.Table.RowCount == nil || *facts.Table.RowCount != 1 {
-		t.Fatalf("addp_engine_probe facts = %#v, want row_count=1", facts.Table)
+		t.Fatalf("%s facts = %#v, want row_count=1", probeTable, facts.Table)
 	}
 	assertOceanBaseIntegrationField(t, facts.Table.Fields, "id", datatype.FieldTypeBigInt, true)
 	assertOceanBaseIntegrationField(t, facts.Table.Fields, "name", datatype.FieldTypeString, false)
@@ -342,13 +386,13 @@ func TestIntegrationOceanBaseCatalogAndRead(t *testing.T) {
 		t.Fatalf("ReadBatch() rows = %#v", batch.Rows)
 	}
 
-	customers := findOceanBaseCatalogEntry(items, "customers")
+	customers := findOceanBaseCatalogEntry(items, customersTable)
 	customerFacts, err := p.DescribeEngineCatalogFacts(ctx, connInfo, customers.Path, plugin.EngineCatalogFactsOptions{IncludeStatistics: true, IncludeIndexes: true, IncludeConstraints: true})
 	if err != nil {
 		t.Fatalf("DescribeEngineCatalogFacts(customers) error = %v", err)
 	}
-	if customerFacts.Table == nil || customerFacts.Table.RowCount == nil || *customerFacts.Table.RowCount < 5 {
-		t.Fatalf("customers facts = %#v, want row_count >= 5", customerFacts.Table)
+	if customerFacts.Table == nil || customerFacts.Table.RowCount == nil || *customerFacts.Table.RowCount != 2 {
+		t.Fatalf("customers facts = %#v, want row_count=2", customerFacts.Table)
 	}
 	assertOceanBaseIntegrationField(t, customerFacts.Table.Fields, "id", datatype.FieldTypeBigInt, true)
 	assertOceanBaseIntegrationField(t, customerFacts.Table.Fields, "active", datatype.FieldTypeBool, false)
@@ -357,7 +401,7 @@ func TestIntegrationOceanBaseCatalogAndRead(t *testing.T) {
 	prepared, err := p.PrepareQuery(ctx, connInfo, plugin.QueryRequest{
 		EngineID:   engineID,
 		Language:   "sql",
-		Query:      "SELECT name FROM `" + databaseName + "`.`addp_engine_probe` WHERE id = :id",
+		Query:      "SELECT name FROM `" + databaseName + "`.`" + probeTable + "` WHERE id = :id",
 		TargetPath: &probe.Path,
 		Options: plugin.QueryOptions{
 			ReadOnly:   true,
@@ -372,7 +416,7 @@ func TestIntegrationOceanBaseCatalogAndRead(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PreparedQuery.ReadSet() error = %v", err)
 	}
-	if len(readSet.Paths) != 1 || readSet.Paths[0].StringPath() != databaseName+"/addp_engine_probe" {
+	if len(readSet.Paths) != 1 || readSet.Paths[0].StringPath() != databaseName+"/"+probeTable {
 		t.Fatalf("PreparedQuery.ReadSet() = %#v", readSet.Paths)
 	}
 	lineage, err := prepared.OutputLineage(ctx)
@@ -390,13 +434,13 @@ func TestIntegrationOceanBaseCatalogAndRead(t *testing.T) {
 		t.Fatalf("PreparedQuery.Execute() rows = %#v", result.Rows)
 	}
 
-	orders := findOceanBaseCatalogEntry(items, "orders")
+	orders := findOceanBaseCatalogEntry(items, ordersTable)
 	prepared, err = p.PrepareQuery(ctx, connInfo, plugin.QueryRequest{
 		EngineID: engineID,
 		Language: "sql",
 		Query: "SELECT o.order_no, c.name AS customer_name, o.total_amount " +
-			"FROM `" + databaseName + "`.`orders` o " +
-			"JOIN `" + databaseName + "`.`customers` c ON c.id = o.customer_id " +
+			"FROM `" + databaseName + "`.`" + ordersTable + "` o " +
+			"JOIN `" + databaseName + "`.`" + customersTable + "` c ON c.id = o.customer_id " +
 			"WHERE o.status = :status ORDER BY o.id LIMIT 1",
 		TargetPath: &orders.Path,
 		Options: plugin.QueryOptions{
@@ -412,14 +456,14 @@ func TestIntegrationOceanBaseCatalogAndRead(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PreparedQuery.Execute(join) error = %v", err)
 	}
-	if len(result.Rows) != 1 || result.Rows[0]["order_no"] != "ORD-20260420-001" || result.Rows[0]["customer_name"] != "王小丽" {
+	if len(result.Rows) != 1 || result.Rows[0]["order_no"] != "ORD-OCEANBASE-GATE-001" || result.Rows[0]["customer_name"] != "王小丽" {
 		t.Fatalf("PreparedQuery.Execute(join) rows = %#v", result.Rows)
 	}
 
 	if _, err := p.PrepareQuery(ctx, connInfo, plugin.QueryRequest{
 		EngineID: engineID,
 		Language: "sql",
-		Query:    "UPDATE `" + databaseName + "`.`addp_engine_probe` SET name = 'unexpected' WHERE id = 1",
+		Query:    "UPDATE `" + databaseName + "`.`" + probeTable + "` SET name = 'unexpected' WHERE id = 1",
 		Options:  plugin.QueryOptions{ReadOnly: true},
 	}); err == nil {
 		t.Fatal("PrepareQuery() must reject a write statement in read-only mode")
@@ -427,13 +471,13 @@ func TestIntegrationOceanBaseCatalogAndRead(t *testing.T) {
 }
 
 func oceanBaseIntegrationConnInfo() plugin.ConnectionInfo {
-	tenant := oceanBaseIntegrationEnv("OCEANBASE_TENANT_NAME", "test")
+	tenant := oceanBaseIntegrationEnv("ADDP_TEST_OCEANBASE_TENANT", "test")
 	return plugin.ConnectionInfo{
 		"host":     oceanBaseIntegrationEnv("ADDP_TEST_OCEANBASE_HOST", "127.0.0.1"),
-		"port":     oceanBaseIntegrationEnv("OCEANBASE_PORT", "2881"),
-		"database": oceanBaseIntegrationEnv("OCEANBASE_DATABASE", "business"),
+		"port":     oceanBaseIntegrationEnv("ADDP_TEST_OCEANBASE_PORT", "2881"),
+		"database": oceanBaseIntegrationEnv("ADDP_TEST_OCEANBASE_DATABASE", "addp_oceanbase_disposable"),
 		"user":     oceanBaseIntegrationEnv("ADDP_TEST_OCEANBASE_USER", "root@"+tenant),
-		"password": oceanBaseIntegrationEnv("OCEANBASE_PASSWORD", "business_oceanbase_password"),
+		"password": oceanBaseIntegrationEnv("ADDP_TEST_OCEANBASE_PASSWORD", ""),
 	}
 }
 

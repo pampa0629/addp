@@ -1,6 +1,6 @@
 # Security 模块说明
 
-Security 是 ADDP 数据安全控制面，唯一拥有敏感数据类型、安全分类、安全等级、检测器、发现、资源安全评估、保护基线、策略、保护豁免和保护投影。DetectorCapability 是平台代码提供的只读可信能力，Detector 是 Tenant 把能力绑定到 SensitiveDataType 的版本化启用配置；发现不得通过敏感类型代码或名称猜测绑定。当前已经实现基础定义、显式保护纳管、Owner 投影变化流、acknowledgement 激活/释放屏障，以及手机号元数据/文档和邮箱元数据检测、无原值 Finding、一次性 Finding review、不可变 Assessment/ProtectionPolicy revision、唯一投影编译和显式重新发现/续期。Manager、Develop、Service 已具备自身字段级动作投影，Transfer bounded snapshot 的独立 `export` 动作与 PostgreSQL、MongoDB 原始记录执行器已完成。ProtectionExemption 只绑定正式 Assessment 与一个已实现字段级出口，最长 30 天；投影保留默认决策并携带限时 `allow`，Owner 到期后本地自动回落，不能设置私有豁免。其他未实现执行器的出口、按主体或用途揭示和双人审批属于后续阶段。
+Security 是 ADDP 数据安全控制面，唯一拥有敏感数据类型、安全分类、安全等级、检测器、发现、资源安全评估、保护基线、策略、原值访问申请、临时原值授权和保护投影。DetectorCapability 是平台代码提供的只读可信能力，Detector 是 Tenant 把能力绑定到 SensitiveDataType 的版本化启用配置；发现不得通过敏感类型代码或名称猜测绑定。当前已经实现基础定义、显式保护纳管、Owner 投影变化流、acknowledgement 激活/释放屏障，以及手机号元数据/文档和邮箱元数据检测、无原值 Finding、一次性 Finding review、不可变 Assessment/ProtectionPolicy revision、唯一投影编译和显式重新发现/续期。Manager、Develop、Service 已具备自身字段级动作投影，Transfer bounded snapshot 的独立 `export` 动作与 PostgreSQL、MongoDB 原始记录执行器已完成。原值访问只能由当前用户从 Manager 预览出口发起 ProtectionAccessRequest，再由另一名有审批权限的用户在 Security 审批；ProtectionExemption 只保存审批后形成的按用户、按字段、按 `manager/preview` 出口、最长 30 天的临时授权。Projection v2 始终保留默认保护决策并携带主体级限时 `allow`，Owner 到期、撤销、Assessment 修订变化或主体不匹配时本地自动回落。用途约束和其他主体类型属于后续阶段。
 
 ## 边界
 
@@ -9,13 +9,13 @@ Security 是 ADDP 数据安全控制面，唯一拥有敏感数据类型、安�
 - 不代理数据预览、查询、导出或服务流量；Owner 使用 `common/dataprotection` 在自身服务端执行保护投影。
 - `common/secretcipher` 只负责静态敏感配置值加解密，不是 Security 业务模块的一部分。
 - 未纳管资源不进入检测、投影或保护路径，不产生额外远程调用和安全审计负担。
-- Manager、Develop、Service、Transfer 的必要 Owner 集合及各自可豁免主动作只能在 `internal/service` 的 Owner 契约中定义一次；Enrollment 创建、全量重编译、变化流校验和历史投影升级均从该契约派生，不得重复写 Owner 切片或 action 分支。
+- Manager、Develop、Service、Transfer 的必要 Owner 集合及各自字段级主动作只能在 `internal/service` 的 Owner 契约中定义一次；Enrollment 创建、全量重编译、变化流校验和历史投影升级均从该契约派生，不得重复写 Owner 切片或 action 分支。当前可申请原值访问的出口另行严格限定为 `manager/preview`，不能从 Owner 主动作集合自动扩张。
 
 ## 运行角色
 
 - Backend：端口 `8194`，API 前缀 `/api/v1/security`，维护控制面事实。
 - Worker：独立运行角色；通过 `common.task_executions` 领取 `security/sensitive_data_discovery` 有界执行，使用 `addp-security` Tenant Service Access Token 精确读取 Meta 技术事实，并且只对已显式纳管的文档按 fingerprint 读取临时受控正文样本；通用租约过期后按 `max_attempts` 重试或失败收口，不运行定时调度或 TaskProvider。
-- Frontend：端口 `5191`，通过 Console iframe 集成；产品入口固定收敛为“分类分级体系”“敏感数据定义”“默认保护规则”“受保护资源”。`/classification-grading` 以可恢复 `tab` 组织低频维护的 SecurityClassification 和 SecurityGrade；`/sensitive-data-definitions` 只组织 SensitiveDataType，并把 Detector 作为对应敏感类型的“识别方式”配置；“受保护资源”只把 acknowledgement 表述为保护规则已安装，不能表述成某个具体请求或该 Owner 所有数据形态均已执行成功。旧的实体级分类、等级和敏感类型路径不恢复，也不保留兼容入口。
+- Frontend：端口 `5191`，通过 Console iframe 集成；产品入口固定收敛为“分类分级体系”“敏感数据定义”“默认保护规则”“受保护资源”。`/classification-grading` 以可恢复 `tab` 组织低频维护的 SecurityClassification 和 SecurityGrade；`/sensitive-data-definitions` 只组织 SensitiveDataType，并把 Detector 作为对应敏感类型的“识别方式”配置；“受保护资源”把 acknowledgement 统一表述为保护规则“待同步/已同步”，不使用“待安装/已安装”或“已生效”，也不能表述成某个具体请求或该 Owner 所有数据形态均已执行成功。旧的实体级分类、等级和敏感类型路径不恢复，也不保留兼容入口。
 
 ## 数据库
 
@@ -35,6 +35,9 @@ Security 是 ADDP 数据安全控制面，唯一拥有敏感数据类型、安�
 - `security.resource_security_assessment_revisions`
 - `security.protection_policies`
 - `security.protection_policy_revisions`
+- `security.protection_access_requests`
+- `security.protection_exemptions`
+- `security.protection_exemption_revisions`
 
 四个必要 Owner 确认 enrolling 门禁后，Security 在同一事务创建一次 discovery execution。治理人员也可携带 Enrollment `version` 显式创建重新发现执行；同一纳管同时至多一个 pending/running execution。完成后保存最新结构或文本快照并重新编译、续期投影。结构化 DataItem 目前使用 `addp.detector.phone_metadata/v2` 和 `addp.detector.email_metadata/v1` 按字段路径、确定性扁平路径语义和通用类型独立识别；文档使用 `addp.detector.phone_document/v1` 在当次内存样本中识别精确 11 位 ASCII 数字串。检测能力都不持久化原始业务值。Finding 必须通过当前 Tenant 的 Detector 绑定取得 SensitiveDataType 和自动采用置信度；达到绑定阈值且存在有效 ProtectionBaseline 后，唯一编译器对结构化组件为 Manager 生成 `preview` 和系统派生的 `profile` 规则，为 Develop 生成独立 `query` 规则，为 Service 生成独立 `service_execute` 规则，并为 Transfer bounded snapshot 生成独立 `export` 规则；对文档虚拟组件 `$document.text` 只生成 Manager `search_index` 规则。没有当前动作执行器的 Owner 出口继续保持资源级 deny。
 
@@ -48,7 +51,7 @@ Security 是 ADDP 数据安全控制面，唯一拥有敏感数据类型、安�
 
 ProtectionPolicy 首期只绑定正式 Assessment + `manager` + `preview`，只能把当前 ProtectionBaseline 收紧为 `mask|suppress|deny`，不复制算法参数、不承载授权或例外。创建、更新和撤销都追加不可变 revision，并在同一事务调用唯一投影编译器；撤销后回落到 Assessment + ProtectionBaseline，不解除纳管。
 
-ProtectionExemption 是原值揭示的唯一入口，固定绑定正式 Assessment + `manager/preview|develop/query|service/service_execute|transfer/export` 中一个动作。每次豁免修订冻结批准时的 Assessment revision；Assessment 后续产生新修订时旧豁免立即失效，不得静默恢复。效果固定为限时 `allow`，作用于 Tenant 内所有已通过 Owner 授权的该动作调用者；最长 30 天，依据必填。创建、续期、撤销都追加不可变 revision 并原子重编译对应 Owner。投影规则必须保留 Policy/Baseline 默认决策作为 `fallback`，Owner 不依赖 Security 在线即可在 `valid_until` 后自动恢复保护。
+ProtectionAccessRequest 是原值访问的唯一入口，只能由当前可信 User AuthContext 从 Manager 预览出口针对正式敏感 Assessment 发起，正文不得指定主体；申请本身不改变保护效果。另一名具有审批权限的用户批准后，Security 才创建或重新激活绑定 `{assessment, manager, preview, user}` 的 ProtectionExemption 并追加不可变 revision；拒绝不产生授权，申请人与审批人相同则冲突。Assessment 后续产生新修订时旧授权立即失效，不得静默恢复。授权效果固定为限时 `allow`，最长 30 天且不得超过申请期限，业务依据和审批理由必填。Projection v2 的规则始终保留 Policy/Baseline 默认 `decision`，主体授权放在 `authorizations`；Owner 必须从服务端可信 AuthContext 匹配 User，不能接受浏览器提交主体。临时授权只能提前撤销，不能直接创建、续期或重新启用；需要继续访问时必须重新申请和审批。
 
 `manager/profile` 不建立可编辑 Policy：唯一编译器把有效 `preview=mask|suppress` 派生为 `profile=suppress`，把 `preview=deny` 派生为 `profile=deny`。Manager 负责把 `profile=suppress` 执行为整个字段剖析对象的移除，Security 不复制 Manager 指标结构。
 

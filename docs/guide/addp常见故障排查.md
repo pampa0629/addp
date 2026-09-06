@@ -1165,6 +1165,17 @@ dist/release-$(go env GOOS)-$(go env GOARCH)/addp-iam-migration-repair --migrati
 
 该命令只把精确的 `(113, dirty)` 恢复为 `(112, clean)`，不删除 System 事实、不修改 checksum，也不会标记 113 已成功。任一前置事实不匹配都会拒绝。成功后正常重启 System，由 Migration Runner 重新执行修正后的 113 及后续迁移。
 
+### 130 号迁移的定向恢复
+
+Security 原值访问申请权限迁移如果因非法权限状态等原因在事务内失败，PostgreSQL 会完整回滚权限事实，但 Migration Runner 保留 `130/dirty` 阻止自动重试。只有在已确认三个 `security.protection_access_request.*` Permission 均未落地、旧 `security.protection_exemption.create|update` 仍为 active，且两个内置治理角色的四条旧绑定仍完整时，才可执行：
+
+```bash
+make build-iam-migration-repair
+dist/release-$(go env GOOS)-$(go env GOARCH)/addp-iam-migration-repair --migration 130 --apply
+```
+
+该命令只把精确的 `(130, dirty)` 恢复为 `(129, clean)`，不修改任何 Permission 或 RolePermission，不修改 checksum，也不会标记 130 已成功。任一前置事实不匹配都会拒绝。成功后正常重启 System，由 Migration Runner 重新执行修正后的 130。
+
 ### 验证
 
 ```bash

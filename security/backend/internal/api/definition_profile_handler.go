@@ -16,7 +16,7 @@ func NewDefinitionProfileHandler(svc *service.DefinitionService) *DefinitionProf
 }
 
 // @Summary 推荐定义方案列表 | List recommended definition profiles
-// @Description 返回平台随版本提供的只读分类与等级模板；读取不会修改租户数据 | Return read-only classification and grade templates installed with the platform; listing does not mutate tenant data
+// @Description 返回平台随版本提供的只读分类与等级模板；读取不会修改租户数据 | Return read-only classification and grade templates provided with the platform; listing does not mutate tenant data
 // @Tags Security Definition Profile
 // @Produce json
 // @Success 200 {array} models.DefinitionProfile

@@ -4,12 +4,42 @@ import (
 	"fmt"
 	"time"
 
+	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/exportartifact"
 	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/manager/internal/config"
 	"github.com/addp/manager/internal/models"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
+
+// ConnectDatabase opens the existing Manager database without creating schemas
+// or running migrations. Runtime worker processes use this after the backend has
+// established the schema.
+func ConnectDatabase(cfg *config.Config) (*gorm.DB, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("Manager database config is required")
+	}
+	dsn := fmt.Sprintf(
+		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable TimeZone=%s search_path=%s",
+		cfg.DBHost,
+		cfg.DBPort,
+		cfg.DBUser,
+		cfg.DBPassword,
+		cfg.DBName,
+		commonConfig.GetTimezone(),
+		cfg.DBSchema,
+	)
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
+		Logger:         logger.Default.LogMode(logger.Info),
+		TranslateError: true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to Manager database: %w", err)
+	}
+	return db, nil
+}
 
 func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	// Use common repository InitDatabase

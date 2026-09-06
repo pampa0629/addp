@@ -265,7 +265,7 @@ func enrollingProjection(t *testing.T, owner string, target dataprotection.Resou
 	t.Helper()
 	now := time.Now().UTC().Add(-time.Minute)
 	projection := dataprotection.Projection{
-		SchemaVersion: dataprotection.ProjectionSchemaV1,
+		SchemaVersion: dataprotection.ProjectionSchemaV2,
 		ProjectionID:  "projection-1",
 		Revision:      "00000000000000000001",
 		ConsumerOwner: owner,

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# ADDP_T2_SERVICES=mongodb
 # manager-mongodb-security-gate.sh - Verify Manager and Transfer protection against MongoDB dynamic documents.
 
 set -euo pipefail

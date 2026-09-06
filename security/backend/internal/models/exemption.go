@@ -17,6 +17,8 @@ type ProtectionExemption struct {
 	AssessmentID    string    `gorm:"type:uuid;not null;index;uniqueIndex:uq_security_exemption_binding" json:"assessment_id"`
 	ConsumerOwner   string    `gorm:"size:32;not null;uniqueIndex:uq_security_exemption_binding" json:"consumer_owner"`
 	Action          string    `gorm:"size:32;not null;uniqueIndex:uq_security_exemption_binding" json:"action"`
+	SubjectType     string    `gorm:"size:16;not null;uniqueIndex:uq_security_exemption_binding" json:"subject_type"`
+	SubjectID       string    `gorm:"size:64;not null;uniqueIndex:uq_security_exemption_binding" json:"subject_id"`
 	State           string    `gorm:"size:16;not null" json:"state"`
 	Version         int64     `gorm:"not null;default:1" json:"version,string"`
 	CurrentRevision int64     `gorm:"not null" json:"current_revision"`
@@ -34,6 +36,7 @@ type ProtectionExemptionRevision struct {
 	ExemptionID        string    `gorm:"type:uuid;not null;index;uniqueIndex:uq_security_exemption_revision" json:"exemption_id"`
 	Revision           int64     `gorm:"not null;uniqueIndex:uq_security_exemption_revision" json:"revision"`
 	AssessmentRevision int64     `gorm:"not null" json:"assessment_revision"`
+	SourceRequestID    string    `gorm:"type:uuid;not null;index" json:"source_request_id"`
 	State              string    `gorm:"size:16;not null" json:"state"`
 	ExpiresAt          time.Time `gorm:"not null" json:"expires_at"`
 	Rationale          string    `gorm:"type:text;not null" json:"rationale"`
@@ -45,22 +48,8 @@ func (ProtectionExemptionRevision) TableName() string {
 	return "security.protection_exemption_revisions"
 }
 
-type CreateProtectionExemptionRequest struct {
-	AssessmentID  string    `json:"assessment_id" binding:"required"`
-	ConsumerOwner string    `json:"consumer_owner" binding:"required"`
-	Action        string    `json:"action" binding:"required"`
-	ExpiresAt     time.Time `json:"expires_at" binding:"required"`
-	Rationale     string    `json:"rationale" binding:"required"`
-}
-
-type RenewProtectionExemptionRequest struct {
-	Version   int64     `json:"version,string" binding:"required"`
-	ExpiresAt time.Time `json:"expires_at" binding:"required"`
-	Rationale string    `json:"rationale" binding:"required"`
-}
-
 type RevokeProtectionExemptionRequest struct {
-	Version   int64  `json:"version,string" binding:"required"`
+	Version   int64  `json:"version" binding:"required"`
 	Rationale string `json:"rationale" binding:"required"`
 }
 

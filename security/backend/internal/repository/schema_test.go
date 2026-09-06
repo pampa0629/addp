@@ -23,6 +23,7 @@ func TestMigrateCreatesOnlySecurityOwnedTables(t *testing.T) {
 		"sensitive_findings", "sensitive_finding_reviews", "resource_security_assessments", "resource_security_assessment_revisions",
 		"protection_policies", "protection_policy_revisions",
 		"protection_exemptions", "protection_exemption_revisions",
+		"protection_access_requests",
 	} {
 		var count int64
 		if err := db.Raw("SELECT COUNT(*) FROM security.sqlite_master WHERE type = 'table' AND name = ?", table).Scan(&count).Error; err != nil {

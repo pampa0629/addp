@@ -315,7 +315,7 @@ Owner 在解析出资源身份后，先做本地纳管索引判断。Locator 型
 - `13661384499` 返回 `136****4499`；
 - 领队、管理员或记录创建者不因身份名称自动获得原值；
 - 已识别为手机号但值不符合确认格式时，不得原样返回，第一阶段使用保守抑制结果；
-- 第一阶段不开放原值揭示；未来开放时必须使用独立高风险 Permission、Owner Resource Grant/Policy、用途或原因、短期有效期和审计；
+- 默认不开放原值；确有业务需要时，只能由当前用户从 Manager 预览提交申请、由另一名用户在 Security 审批，并形成按用户、按字段、按出口、短期有效且可审计的临时授权；
 - 前端、搜索索引、日志、错误、剖析样例和 AI 上下文都不得出现原始手机号。
 
 ### 8.2 最小闭环
@@ -349,7 +349,7 @@ flowchart TD
 
 1. Catalog 独立消费 Meta DataItem 可恢复变化流，为全部 DataItem 建立企业目录身份和字段组件；Security 不订阅该全量变化流，不建立第二份全量资源目录；
 2. Security 以 `{meta, data_item, fingerprint, component_key}` 直接标识已显式纳管的物理数据组件；Catalog 是并行的企业目录集成，不是 Security 发现、评估、策略或保护生效的前置条件；
-3. Security 先向 Manager 发布最小 `enrolling` 门禁并等待安装确认，再执行发现；因此有效策略尚未就绪时，Manager 已经会拒绝或保守抑制相关出口，不存在等待识别、人工确认或 Catalog 同步而继续返回明文的窗口；
+3. Security 先向 Manager 发布最小 `enrolling` 门禁并等待同步确认，再执行发现；因此有效策略尚未就绪时，Manager 已经会拒绝或保守抑制相关出口，不存在等待识别、人工确认或 Catalog 同步而继续返回明文的窗口；
 4. Security 只分析显式纳管范围。Detector 先使用字段路径、名称、注释和类型；证据不足或规则要求内容验证时，Security Worker 才通过统一 Engine Provider 读取受限字段和受限行数的样本；
 5. 原始样本只用于本次检测，不作为 Finding、Assessment 或审计内容持久保存；
 6. Detector 只生成 SensitiveFinding 候选、置信度和非原值证据，不自动成为正式治理真相；达到自动采用置信度的 Finding 可在人工确认前触发保守基线，不达阈值时继续保持拒绝或保守抑制；治理人员确认后才形成具体资源的正式安全评估；
@@ -369,7 +369,7 @@ Security 治理与 Owner 执行共用 owner 稳定专业资源身份：Assessmen
 - 确认模块稳定名称、中文产品名和 `security` 技术命名；
 - 确认分类分级、发现证据、保护策略、资源授权和审计事实源；
 - 确认控制面与 Owner 本地执行模型；
-- 确认第一阶段不开放原值揭示；
+- 确认默认不开放原值，后续原值访问必须另建严格申请和审批路径；
 - 确认首批出口和 Develop/Notebook 防绕过边界。
 
 ### 阶段 1：正式文档与模块骨架设计
@@ -380,7 +380,7 @@ Security 治理与 Owner 执行共用 owner 稳定专业资源身份：Assessmen
 - 新增数据安全与隐私保护概念文档和实现规范；
 - 定义 owner 类型化专业资源引用、component key、必要源版本/结构快照及来源变更失效规则；
 - 定义纳管激活屏障、Owner 版本确认、Finding 自动采用置信度和正式 Assessment 的单一决策编译语义；
-- 定义 Protection Projection v1，包括纳管状态、资源/组件匹配、动作、保护效果、算法参数、版本、有效期、校验和可恢复变化流；
+- 定义 Protection Projection v2，包括纳管状态、资源/组件匹配、动作、默认保护效果、按主体临时授权、算法参数、版本、有效期、校验和可恢复变化流；
 - 按新模块指南确定端口、Schema、模块注册、Permission Manifest、API 和测试/CI 门禁；
 - 定义唯一的保护决策契约，不保留旧文档 API 或表结构兼容路线。
 
@@ -392,7 +392,7 @@ Security 治理与 Owner 执行共用 owner 稳定专业资源身份：Assessmen
 - 将现有 `common/security` 直接重命名为 `common/secretcipher`，修改全部真实消费者，不保留转发包；
 - 从 Standard 删除 Classification、GradingLevel、Element Revision 安全字段及其 API、Permission、前端、Swagger、i18n 和测试；
 - 在 Security 建立 SensitiveDataType、SecurityClassification、SecurityGrade 和 ProtectionBaseline 的唯一新事实路径；不迁移旧 ID 或数据；
-- 建立 `common/dataprotection` 的 Projection v1 值对象、校验、checksum 和确定性手机号遮盖算法；
+- 建立 `common/dataprotection` 的 Projection v2 值对象、校验、checksum、主体级有效决策和确定性手机号遮盖算法；
 - 同步纳入根 Makefile、模块测试入口、PostgreSQL 门禁、`test-changed`、`test-platform` 和 GitHub Actions 路径发现。
 
 ### 阶段 3：纳管激活屏障与 Owner 失效关闭
@@ -410,13 +410,13 @@ Security 治理与 Owner 执行共用 owner 稳定专业资源身份：Assessmen
 
 截至 2026-09-01 已完成 ProtectionEnrollment 持久化、四个固定 Owner 的 append-only 变化流、单调 cursor acknowledgement、激活/释放确认屏障、Owner 通用本地投影存储，以及 Manager 预览的 `enrolling` 失效关闭和 `active` 字段保护执行。Manager 对未纳管 DataItem 只有一次本地索引 miss，不调用 Security。
 
-阶段 3 接入核查同时发现：Manager 预览和 Transfer 定位符路径在读取前已有可信 DataItem fingerprint；Service 自由 SQL、Develop SQL 与 Notebook 当前只有引擎和查询文本，没有可靠、跨方言、不可由调用方伪造的 DataItem 身份集合。在形成可信身份解析与执行边界前，这两个 Owner 不得仅因保存了 cursor 就确认“门禁已安装”，否则自由 SQL 可以绕过资源级纳管。
+阶段 3 接入核查同时发现：Manager 预览和 Transfer 定位符路径在读取前已有可信 DataItem fingerprint；Service 自由 SQL、Develop SQL 与 Notebook 当前只有引擎和查询文本，没有可靠、跨方言、不可由调用方伪造的 DataItem 身份集合。在形成可信身份解析与执行边界前，这两个 Owner 不得仅因保存了 cursor 就确认“门禁已同步”，否则自由 SQL 可以绕过资源级纳管。
 
 经讨论已确认保留 Manager、Transfer、Develop、Service 四个固定必要 Owner，先建设与 Security 解耦的 `QueryReadSet` 统一查询读依赖边界。Engine Provider 必须从同一 `QueryRequest` 生成不可变 PreparedQuery，由该计划同时提供完整 Engine Catalog leaf paths 和真实执行；Owner 再转为 DataItem 指纹做本地门禁。不以独立 `ResolveQueryReadSet`、`TargetPath`、顶层 SQL 分词或调用方自报资源伪装完整读取集合，不以租户级全局禁用 SQL 兜底。在 Provider 契约和 Owner 真实门禁落地前，Develop 和 Service 仍不确认投影 cursor。
 
 当前已完成 `common/engine/plugin.QueryReadSet` 的规范化、校验、去重与类型化 unresolved 错误，建立 Engine Catalog leaf 到 Meta DataItem 指纹的纯转换和 Owner 本地多资源门禁快速路径。经评审已否定独立 `QueryReadSetProvider.ResolveQueryReadSet()` 旁路，全部既有普通查询 Provider 已改为由 `QueryRuntimeProvider.PrepareQuery()` 生成唯一 PreparedQuery，原 `ExecuteRuntimeQuery()` 入口和 dbbridge 普通查询兜底已删除。MongoDB、PostgreSQL 和 MySQL 已完成首批最终契约验证：MongoDB 读取集合纳入 MQL 主集合、`$lookup`、`$graphLookup` 和任意嵌套 `$unionWith` 依赖；PostgreSQL 按真实 `search_path` 解析关系并递归展开普通视图，函数与外部关系无法证明完整闭包时保守拒绝；MySQL 首期只解析业务 InnoDB 基础表以及可证明来源的直接字段投影、别名、连接和派生表，函数、视图、通配投影或派生字段继续 fail closed。其他 SQL/Cypher Provider 虽已统一准备和执行路径，但 `ReadSet()` 仍明确返回 unresolved，不宣称具有精确 Security 查询门禁能力。
 
-真实多进程 Owner 的安装语义进一步收敛为：owner schema 中的投影表和 cursor 是共享持久事实，只由一个同步进程推进变化流并回执；每个 Backend/Worker 在 execution 开始前比较持久 cursor 与进程内索引，变化时先从本地数据库重载再门禁，关闭“已回执但 Worker 缓存尚未刷新”的明文窗口。Projection v1 不增加 Engine 路由提示；查询 Owner 在 Tenant 完全无纳管目标时跳过 ReadSet，Tenant 存在纳管目标后才解析同一 PreparedQuery 的完整 ReadSet 并精确匹配。
+真实多进程 Owner 的同步语义进一步收敛为：owner schema 中的投影表和 cursor 是共享持久事实，只由一个同步进程推进变化流并回执；每个 Backend/Worker 在 execution 开始前比较持久 cursor 与进程内索引，变化时先从本地数据库重载再门禁，关闭“已回执但 Worker 缓存尚未刷新”的明文窗口。Projection v2 不增加 Engine 路由提示；查询 Owner 在 Tenant 完全无纳管目标时跳过 ReadSet，Tenant 存在纳管目标后才解析同一 PreparedQuery 的完整 ReadSet 并精确匹配。
 
 阶段 6 前置门禁现已覆盖四个必要 Owner 的真实数据面：Transfer 的 bounded、replay、continuous、CDC 与字段定义推荐真实值扫描在源读取前检查唯一 Source Locator，持续任务还在循环中重复检查；Develop 的同步/异步普通 SQL/MQL、Notebook 表/记录/内容/变化流、Workflow ResourceInput 及现有联邦/图入口均已纳入；Service 的发布查询、旧 Data API、图查询、查询样例、静态 PMTiles、动态瓦片及缓存命中均已纳入。MongoDB、PostgreSQL 和 MySQL 的已支持普通查询使用同一 PreparedQuery 做精确 ReadSet 门禁，其他尚不能证明完整闭包的联邦、图、样例或复杂查询入口只在 Tenant 存在纳管目标时保守拒绝，不扩大为未纳管 Tenant 的额外远程调用或全局禁用。
 
@@ -465,7 +465,7 @@ Owner Projection 按已实现执行器逐项升级：Manager 生成 `preview|pro
 
 截至 2026-09-01，Manager active 投影执行边界以及阶段 4 的自动发现、Assessment、ProtectionPolicy、结构续期和保护定义影响传播均已完成：严格手机号算法固定校验 11 位 ASCII 数字，合法值遮盖为前三位加四个星号加后四位，异常类型、长度或字符按投影 `invalid_value_effect` 处理；嵌套 MongoDB object 在服务端响应边界递归执行，结构快照漂移、规则冲突或非表结果均拒绝。真实 `Outdoor/Persons` 已通过 Manager MongoDB 集成门禁，门禁同时登记到根 Makefile 与 GitHub MongoDB 7 T2 Job。当前不伪造测试管理 API，也不在开发库硬编码手机号投影；阶段 5 剩余工作是补齐剖析、内容搜索、日志、错误及 Outdoor 页面一致性验收。
 
-同日完成 Manager 剖析的保护执行闭环：预览与剖析共用 `manager/internal/protection` 的本地 DataItem 纳管身份和严格表投影校验，但不共用动作执行语义。唯一编译器为同一敏感组件同时发布 `manager/preview` 和系统派生的 `manager/profile`；剖析把 `mask|suppress` 收敛为删除敏感字段、全部祖先容器的字段剖析对象及对应全局观察，把 `deny` 保持为拒绝，防止父级 object/array Top N 再次携带敏感叶子值，不让相关 Top N、min/max、分布或类型专属指标进入数据库和响应。已纳管目标首期拒绝条件剖析；投影 upsert、revision 变化和 release 通过 Owner 本地事务屏障清除历史剖析结果与 execution 条件原值，Manager 重启时对已安装投影重放清理。未纳管资源仍只承担一次本地索引 miss。Meta 结构化表搜索投影已确认只包含表/字段技术事实，不采样行值；Manager 同时删除搜索关键词日志，并将预览/搜索底层异常收敛为国际化稳定错误。阶段 5 剩余工作是文件/文档正文的敏感发现和 `search_index` 执行器；不用结构化手机号切片伪装这项尚未完成的能力。
+同日完成 Manager 剖析的保护执行闭环：预览与剖析共用 `manager/internal/protection` 的本地 DataItem 纳管身份和严格表投影校验，但不共用动作执行语义。唯一编译器为同一敏感组件同时发布 `manager/preview` 和系统派生的 `manager/profile`；剖析把 `mask|suppress` 收敛为删除敏感字段、全部祖先容器的字段剖析对象及对应全局观察，把 `deny` 保持为拒绝，防止父级 object/array Top N 再次携带敏感叶子值，不让相关 Top N、min/max、分布或类型专属指标进入数据库和响应。已纳管目标首期拒绝条件剖析；投影 upsert、revision 变化和 release 通过 Owner 本地事务屏障清除历史剖析结果与 execution 条件原值，Manager 重启时对已同步投影重放清理。未纳管资源仍只承担一次本地索引 miss。Meta 结构化表搜索投影已确认只包含表/字段技术事实，不采样行值；Manager 同时删除搜索关键词日志，并将预览/搜索底层异常收敛为国际化稳定错误。阶段 5 剩余工作是文件/文档正文的敏感发现和 `search_index` 执行器；不用结构化手机号切片伪装这项尚未完成的能力。
 
 `search_index` 的下一切片先冻结载荷边界：Manager owner 索引写入必须显式声明 `technical_metadata|extracted_content`。前者只承载 Meta 技术事实，不属于敏感数据出口；后者承载正文、预览和正文派生属性，属于 `search_index`。已纳管 DataItem 的内容投影在独立规则与执行器完成前失效关闭；投影 upsert、修订和 release 均先清除既有索引记录再确认 cursor，避免纳管前原文残留。阶段 5 随后只剩文件/文档正文的受控发现、`search_index` 规则编译与内容执行器，不用结构化手机号切片伪装这项能力。
 
@@ -513,7 +513,7 @@ Transfer 切片已冻结 `export` 动作边界，不恢复旧 `export` 任务类
 
 2026-09-06 继续收敛 Security 内部 Owner 契约：必要 Owner 集合与各 Owner 可豁免主动作改由同一事实源派生，Enrollment 初始门禁、Assessment/Definition 影响重编译、变化流校验及历史投影升级不再分别维护四份 Owner 列表。这一收敛不把 Workbench 或 Asset 新增为投影 Owner：Workbench 继续消费 Service 已保护结果，Asset 只交付资源引用与授权事实。
 
-2026-09-05 完成首个受控 ProtectionExemption 切片：豁免唯一绑定 `{tenant, assessment, consumer_owner, action}`，每个不可变豁免修订同时冻结批准时的 Assessment revision；Assessment 后续产生新修订时旧豁免立即失效，必须显式重新批准，不能静默恢复。只允许当前正式 `sensitive` Assessment 与 `manager/preview`、`develop/query`、`service/service_execute`、`transfer/export` 四个已冻结出口动作；效果固定为限时返回原值，不允许自由选择或覆盖其他动作。有效期必填且最长 30 天，创建、续期、重新启用和提前撤销均追加不可变 revision，并在同一事务调用唯一投影编译器。投影规则携带 `allow + valid_until + fallback`，Owner 本地在到期后无需 Security 在线即可自动恢复 Policy/Baseline；无期限 allow、嵌套 fallback 和 Owner 私有管理员绕过均被共享契约拒绝。豁免只影响已由 Owner 授权的数据请求，不授予任何资源访问权；Manager `profile` 不随 `preview` 豁免。四项精确 Permission、IAM migration 127、Swagger、资源详情页操作与 Common/Security 回归测试同步落地。
+2026-09-06 将早期租户级 ProtectionExemption 无兼容收敛为“出口申请、Security 审批、按用户临时授权”的单一路径：当前用户只能从 Manager 预览针对一个正式敏感 Assessment 提交 ProtectionAccessRequest，主体完全来自可信 AuthContext；另一名有审批权限的用户批准后，Security 才形成绑定 `{tenant, assessment_revision, manager, preview, user}` 的 ProtectionExemption。申请人与审批人必须不同，有效期最长 30 天且不得超过申请期限；Assessment 修订、到期或提前撤销都会使授权失效。Projection 协议升级为 v2，规则始终保留 Policy/Baseline 默认保护决策，按用户 `allow` 只存在于 `authorizations`，Owner 用服务端可信主体本地匹配，未命中立即回落。旧 v1 存量投影在 Security 启动时原地单向改写并重算 checksum，旧租户级 allow 只保留保护性 fallback，sequence 与 Owner cursor 不变；不保留 v1 解析、直接创建、续期、重新启用、管理员绕过或其他出口借用 Manager 授权的路径。
 
 ### 阶段 7：全域数据与隐私合规深化
 
@@ -537,7 +537,7 @@ Transfer 切片已冻结 `export` 动作边界，不恢复旧 `export` 任务类
 | Catalog 与 Security 并行消费 Meta 事实：Catalog 消费全量可恢复变化，Security 只精确读取显式纳管目标；对 Meta 的依赖不构成两者先后关系 | 已确认 |
 | Security Finding、Assessment、Policy 与 Owner 保护投影共用 owner 稳定专业资源身份；Catalog 以 SourceBinding 随后联邦展示，不要求安全事实改绑 Catalog UUID | 已确认 |
 | 纳管先安装 Owner `enrolling` 门禁，再执行发现；达自动采用置信度的 Finding 可立即触发保守基线，Catalog 未建档不影响 Manager 遮盖 | 已确认 |
-| 默认不提供原值揭示；只能由 Security ProtectionExemption 对正式敏感 Assessment 的指定 Owner 动作创建最长 30 天、可审计且自动回落的租户级临时原值豁免，豁免不授予资源访问权 | 已确认 |
+| 原值访问只能由用户从实际出口申请、由另一名用户在 Security 审批；首期仅支持按当前 User、正式 Assessment 字段和 `manager/preview` 创建最长 30 天、可审计且自动回落的临时授权，不授予资源访问权 | 已确认 |
 | 第一阶段不允许参与 Owner 存在明文旁路；Manager 覆盖预览、剖析和搜索，Develop 与 Service 已开放首个字段级查询动作，Transfer bounded snapshot 按已冻结 `export` 边界实施，各 Owner 尚无动作执行器的其他出口继续资源级拒绝 | 已确认 |
 | Security 产品入口收敛为“分类分级体系、敏感数据定义、默认保护规则、受保护资源”；界面组织不改变 SensitiveDataType、SecurityClassification、SecurityGrade、ProtectionBaseline、ProtectionEnrollment 的领域边界 | 已确认 |
 
@@ -595,7 +595,7 @@ Transfer 切片已冻结 `export` 动作边界，不恢复旧 `export` 任务类
 ### 2026-08-31：阶段 0 / 1 正式定型
 
 - 新增 [ADDP 数据安全与隐私保护体系图](../concepts/addp数据安全与隐私保护体系图.md)，将专题中已确认的概念、事实所有权、Catalog 并行关系和控制面 / 数据面边界升格为稳定概念。
-- 新增 [ADDP 数据安全与隐私保护实现规范](../spec/addp数据安全与隐私保护实现规范.md)，定义 `security` Schema、模块端口、纳管激活屏障、类型化专业资源引用、Protection Projection v1、变化流、Owner 回执和首期 API 契约。
+- 新增 [ADDP 数据安全与隐私保护实现规范](../spec/addp数据安全与隐私保护实现规范.md)，定义 `security` Schema、模块端口、纳管激活屏障、类型化专业资源引用、Protection Projection v2、变化流、Owner 回执和首期 API 契约。
 - 同步更新术语表、核心概念图、模块架构图、企业资源目录体系、共享模块说明、端口分配和 cleanup 边界，正式清除 Standard 拥有安全分类分级与 `common/security` 作为长期包名的歧义。
 - 确认第一阶段不提供原值揭示；任何纳管资源在 Owner 尚不具备字段级保护执行能力时，必须使用资源级拒绝门禁，不得留明文旁路。
 
@@ -603,6 +603,6 @@ Transfer 切片已冻结 `export` 动作边界，不恢复旧 `export` 任务类
 
 - 建立 Security Backend、Frontend 与 Worker 骨架，固定 `security` Schema、8194 / 5191 端口、`/api/v1/security` 单一路径、Permission Manifest、Swagger、模块注册、Docker 和 Console 入口；
 - 建立 SecurityClassification、SecurityGrade、SensitiveDataType 和 ProtectionBaseline 的租户隔离、乐观版本与引用约束，手机号保护基线只接受稳定算法 `addp.mask.keep_prefix_suffix/v1`；
-- 建立 `common/dataprotection` 的 Protection Projection v1、checksum、失效关闭校验及确定性 Unicode 遮盖能力，将 `common/security` 无兼容地改名为 `common/secretcipher`；
+- 建立 `common/dataprotection` 的 Protection Projection v2、checksum、失效关闭校验、主体级临时授权及确定性 Unicode 遮盖能力，将 `common/security` 无兼容地改名为 `common/secretcipher`；
 - 从 Standard 完整删除 Classification、GradingLevel、Element Revision 安全字段及 API、Permission、前端、Swagger、国际化、测试和旧迁移脚本，不保留旧 ID、旧表双轨或兼容读取；
 - 完成 IAM 目录、内置角色、Service Principal、根 Makefile、PostgreSQL 门禁、构建镜像登记、前端 CI、T2 CI 和运行时生命周期登记；阶段 3 之前 Security 尚不扫描 Meta，也不改变 Manager 未纳管预览路径。

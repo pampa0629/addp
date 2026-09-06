@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createLatestRequestCoordinator } from '../../../common-frontend/basic/src/utils/latestRequest.js'
-import { applicationRefreshDelayMilliseconds, buildComponentQuery, buildSelectionUpdate, canAttemptApplicationQuery, canExecuteComponentQuery, canHideApplicationParameters, canRunApplicationRefresh, commitLatestComponentDescriptorState, commitLatestDataApplicationLoad, componentBlockingError, componentIDsForApplicationParameters, initialApplicationParameterValues, invalidateApplicationParameterResults, runtimeGridStyle, runtimeLayoutStyle, runtimeSectionVisible } from '../src/utils/dataApplicationRuntime.mjs'
+import { applicationRefreshDelayMilliseconds, buildComponentQuery, buildSelectionUpdate, canAttemptApplicationQuery, canExecuteComponentQuery, canHideApplicationParameters, canRunApplicationRefresh, canRunPublishedApplicationInitialQuery, commitLatestComponentDescriptorState, commitLatestDataApplicationLoad, componentBlockingError, componentIDsForApplicationParameters, initialApplicationParameterValues, invalidateApplicationParameterResults, runtimeGridStyle, runtimeLayoutStyle, runtimeSectionVisible } from '../src/utils/dataApplicationRuntime.mjs'
 import { downloadCurrentBoundedExport } from '../src/utils/boundedExport.mjs'
 
 const component = {
@@ -320,6 +320,80 @@ test('runs only supported wallboard refresh intervals while visible and idle', (
   assert.equal(applicationRefreshDelayMilliseconds({ display_mode: 'desktop', refresh_interval_seconds: 60 }), 0)
   assert.equal(applicationRefreshDelayMilliseconds({ display_mode: 'wallboard', refresh_interval_seconds: 10 }), 0)
   assert.equal(applicationRefreshDelayMilliseconds({ display_mode: 'wallboard', refresh_interval_seconds: 0 }), 0)
+})
+
+test('runs one published initial query only when descriptors and required defaults are executable', () => {
+  const publishedSnapshot = structuredClone(snapshot)
+  publishedSnapshot.components = [component]
+  const readyStates = {
+    'component-a': { descriptor: { operations: [{ key: 'query' }] }, descriptor_error: '', contract_error: '' },
+  }
+
+  assert.equal(canRunPublishedApplicationInitialQuery(publishedSnapshot, readyStates), true)
+
+  const noParameterComponent = structuredClone(component)
+  noParameterComponent.query_template.parameter_filters = []
+  const noParameterSnapshot = { components: [noParameterComponent], parameters: [], parameter_bindings: [] }
+  assert.equal(canRunPublishedApplicationInitialQuery(noParameterSnapshot, readyStates), true)
+
+  const zeroDefault = structuredClone(publishedSnapshot)
+  zeroDefault.parameters[0].default_value = 0
+  assert.equal(canRunPublishedApplicationInitialQuery(zeroDefault, readyStates), true)
+
+  const falseDefault = structuredClone(publishedSnapshot)
+  falseDefault.parameters[1].required = true
+  falseDefault.components[0].query_template.parameter_filters[1].operator = 'eq'
+  assert.equal(canRunPublishedApplicationInitialQuery(falseDefault, readyStates), true)
+
+  const missingDefault = structuredClone(publishedSnapshot)
+  delete missingDefault.parameters[0].default_value
+  assert.equal(canRunPublishedApplicationInitialQuery(missingDefault, readyStates), false)
+
+  const emptyStringDefault = structuredClone(publishedSnapshot)
+  emptyStringDefault.parameters[0].default_value = ''
+  assert.equal(canRunPublishedApplicationInitialQuery(emptyStringDefault, readyStates), false)
+
+  const emptyArrayDefault = structuredClone(publishedSnapshot)
+  emptyArrayDefault.parameters[0].default_value = []
+  assert.equal(canRunPublishedApplicationInitialQuery(emptyArrayDefault, readyStates), false)
+
+  const disabledNullOperator = structuredClone(publishedSnapshot)
+  disabledNullOperator.parameters[1].required = true
+  assert.equal(canRunPublishedApplicationInitialQuery(disabledNullOperator, readyStates), false)
+  disabledNullOperator.parameters[1].default_value = true
+  assert.equal(canRunPublishedApplicationInitialQuery(disabledNullOperator, readyStates), true)
+
+  assert.equal(canRunPublishedApplicationInitialQuery(publishedSnapshot, {
+    'component-a': { descriptor: null, descriptor_error: 'temporarily unavailable', contract_error: '' },
+  }), false)
+  assert.equal(canRunPublishedApplicationInitialQuery(publishedSnapshot, {
+    'component-a': { descriptor: null, descriptor_error: '', contract_error: 'contract changed' },
+  }), false)
+  assert.equal(canRunPublishedApplicationInitialQuery({ components: [], parameters: [], parameter_bindings: [] }, {}), false)
+})
+
+test('accepts executable required named-parameter defaults for a published initial query', () => {
+  const namedComponent = {
+    id: 'component-named',
+    query_template: {
+      select: ['person_id'],
+      parameter_filters: [],
+      named_parameter_bindings: [{ parameter_key: 'person', name: 'person_id' }],
+      order_by: [],
+      page_limit: 10,
+      format: 'json',
+    },
+  }
+  const namedSnapshot = {
+    components: [namedComponent],
+    parameters: [{ key: 'person_id', required: true, default_value: 'person-a' }],
+    parameter_bindings: [{ application_parameter_key: 'person_id', component_id: 'component-named', component_parameter_key: 'person' }],
+  }
+  const states = {
+    'component-named': { descriptor: { operations: [{ key: 'query' }] }, descriptor_error: '', contract_error: '' },
+  }
+
+  assert.equal(canRunPublishedApplicationInitialQuery(namedSnapshot, states), true)
 })
 
 test('keeps transient descriptor and query failures retryable while contract drift stays blocked', () => {

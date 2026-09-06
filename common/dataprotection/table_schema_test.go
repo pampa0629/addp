@@ -48,7 +48,7 @@ func TestValidateTableProjectionAcceptsOutdoorPhoneAndRejectsDrift(t *testing.T)
 	}
 	now := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
 	projection := Projection{
-		SchemaVersion: ProjectionSchemaV1, ProjectionID: "projection-1", Revision: "00000000000000000001",
+		SchemaVersion: ProjectionSchemaV2, ProjectionID: "projection-1", Revision: "00000000000000000001",
 		ConsumerOwner: "manager", State: ProjectionStateActive,
 		Target:             ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: "sha256:item", ComponentKey: "userInfo.phone"},
 		SourceSnapshotHash: snapshotHash,

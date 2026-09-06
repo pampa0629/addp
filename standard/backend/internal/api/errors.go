@@ -131,10 +131,6 @@ func respondError(c *gin.Context, status int, err error) {
 		status = http.StatusConflict
 		message = commoni18n.T(c, sysi18n.MsgVersionConflict)
 		useGenericMessage = false
-	case errors.Is(err, commonapi.ErrNotFound):
-		message = commoni18n.T(c, sysi18n.MsgResourceNotFound)
-	case errors.Is(err, commonapi.ErrConflict):
-		message = commoni18n.T(c, sysi18n.MsgResourceConflict)
 	case errors.Is(err, service.ErrDocumentStorageUnavailable):
 		message = commoni18n.T(c, sysi18n.MsgDocumentStorageUnavailable)
 		useGenericMessage = false
@@ -162,6 +158,51 @@ func respondError(c *gin.Context, status int, err error) {
 		message = commoni18n.T(c, sysi18n.MsgDocumentExtractionInvalid)
 		errorCode = "document_extraction_invalid"
 		useGenericMessage = false
+	case errors.Is(err, service.ErrDocumentCandidateGroupQueryInvalid):
+		status = http.StatusBadRequest
+		message = commoni18n.T(c, sysi18n.MsgDocumentCandidateGroupQueryInvalid)
+		errorCode = "document_candidate_group_query_invalid"
+		useGenericMessage = false
+	case errors.Is(err, service.ErrCandidateNotRetained):
+		status = http.StatusConflict
+		message = commoni18n.T(c, sysi18n.MsgCandidateNotRetained)
+		errorCode = "candidate_not_retained"
+		useGenericMessage = false
+	case errors.Is(err, service.ErrCandidateAlreadyFormalized):
+		status = http.StatusConflict
+		message = commoni18n.T(c, sysi18n.MsgCandidateAlreadyFormalized)
+		errorCode = "candidate_already_formalized"
+		useGenericMessage = false
+	case errors.Is(err, service.ErrCandidateFormalizationStale):
+		status = http.StatusConflict
+		message = commoni18n.T(c, sysi18n.MsgCandidateFormalizationStale)
+		errorCode = "candidate_formalization_stale"
+		useGenericMessage = false
+	case errors.Is(err, service.ErrCandidateScopeConflict):
+		status = http.StatusConflict
+		message = commoni18n.T(c, sysi18n.MsgCandidateScopeConflict)
+		errorCode = "candidate_scope_conflict"
+		useGenericMessage = false
+	case errors.Is(err, service.ErrCandidateTargetDraftExists):
+		status = http.StatusConflict
+		message = commoni18n.T(c, sysi18n.MsgCandidateTargetDraftExists)
+		errorCode = "candidate_target_draft_exists"
+		useGenericMessage = false
+	case errors.Is(err, service.ErrCandidateReferenceUnavailable):
+		status = http.StatusConflict
+		message = commoni18n.T(c, sysi18n.MsgCandidateReferenceUnavailable)
+		errorCode = "candidate_reference_unavailable"
+		useGenericMessage = false
+	case errors.Is(err, service.ErrCandidateFormalizationDenied):
+		status = http.StatusForbidden
+		message = commoni18n.T(c, sysi18n.MsgCandidateFormalizationDenied)
+		errorCode = "candidate_formalization_permission_denied"
+		useGenericMessage = false
+	case errors.Is(err, service.ErrCandidateFormalizationInvalid):
+		status = http.StatusBadRequest
+		message = commoni18n.T(c, sysi18n.MsgCandidateFormalizationInvalid)
+		errorCode = "candidate_formalization_invalid"
+		useGenericMessage = false
 	case errors.Is(err, service.ErrDocumentCopilotUnavailable):
 		status = http.StatusServiceUnavailable
 		message = commoni18n.T(c, sysi18n.MsgDocumentCopilotUnavailable)
@@ -172,12 +213,21 @@ func respondError(c *gin.Context, status int, err error) {
 		message = commoni18n.T(c, sysi18n.MsgDocumentPublicationHistory)
 		errorCode = "document_publication_history"
 		useGenericMessage = false
+	case errors.Is(err, service.ErrDocumentCandidateFormalizationHistory):
+		status = http.StatusConflict
+		message = commoni18n.T(c, sysi18n.MsgDocumentCandidateFormalizationHistory)
+		errorCode = "document_candidate_formalization_history"
+		useGenericMessage = false
 	case errors.Is(err, service.ErrDocumentFileDownload):
 		message = commoni18n.T(c, sysi18n.MsgDocumentFileDownloadFailed)
 		useGenericMessage = false
 	case errors.Is(err, service.ErrDocumentFileCleanup):
 		message = commoni18n.T(c, sysi18n.MsgDocumentFileCleanupFailed)
 		useGenericMessage = false
+	case errors.Is(err, commonapi.ErrNotFound):
+		message = commoni18n.T(c, sysi18n.MsgResourceNotFound)
+	case errors.Is(err, commonapi.ErrConflict):
+		message = commoni18n.T(c, sysi18n.MsgResourceConflict)
 	case status == http.StatusBadRequest:
 		message = commoni18n.T(c, sysi18n.MsgInvalidParams)
 	case status == http.StatusNotFound:
@@ -231,6 +281,21 @@ func respondDocumentExtractionError(c *gin.Context, err error) {
 		status = http.StatusUnprocessableEntity
 	case errors.Is(err, service.ErrDocumentCopilotUnavailable), errors.Is(err, service.ErrDocumentStorageUnavailable):
 		status = http.StatusServiceUnavailable
+	}
+	respondError(c, status, err)
+}
+
+func respondCandidateFormalizationError(c *gin.Context, err error) {
+	status := http.StatusInternalServerError
+	switch {
+	case errors.Is(err, commonapi.ErrBadRequest):
+		status = http.StatusBadRequest
+	case errors.Is(err, commonapi.ErrForbidden):
+		status = http.StatusForbidden
+	case errors.Is(err, commonapi.ErrNotFound):
+		status = http.StatusNotFound
+	case errors.Is(err, commonapi.ErrConflict):
+		status = http.StatusConflict
 	}
 	respondError(c, status, err)
 }

@@ -82,7 +82,7 @@ Transfer API / Frontend
 - `data_type` 稳定支持 `table`；`document`、`media`、`cad`、`unknown` 已支持 encoded single raw copy。
 - `representation` 支持 `native` 和 `encoded`。
 - `format` 只用于 encoded endpoint。
-- `target.policy.apply_mode` 在 snapshot table Transfer 支持 `replace` 和 `append`；raw copy 只支持 `replace`；watermark incremental 按 source `bounded_watermark_read` 与 target 幂等 `table_upsert` 能力组合，当前 PostgreSQL/MySQL 源可写入 PostgreSQL/MySQL/OceanBase 非空间目标；业务 Kafka continuous 使用幂等 `upsert`，PostgreSQL/MySQL/Oracle CDC 使用 `upsert_delete`。
+- `target.policy.apply_mode` 在 snapshot table Transfer 支持 `replace` 和 `append`；raw copy 只支持 `replace`；watermark incremental 按 source `bounded_watermark_read` 与 target 幂等 `table_upsert` 能力组合，当前 PostgreSQL/MySQL/OceanBase 非空间源可写入 PostgreSQL/MySQL/OceanBase 非空间目标；业务 Kafka continuous 使用幂等 `upsert`，PostgreSQL/MySQL/Oracle CDC 使用 `upsert_delete`。
 - 旧 `connector_type`、`source_config`、`target_config`、`output_format`、`file_type`、旧 endpoint `engine_id` 等字段出现即拒绝。
 
 ## 四、table Transfer 主路径

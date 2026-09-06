@@ -270,6 +270,7 @@ func main() {
 	pptxPDFTaskSvc := service.NewPPTXPDFTaskService(pptxPDFRepo)
 	pptxPDFTaskSvc.SetMetaClient(metaClient)
 	pptxPDFTaskSvc.SetBucket(minioBucket)
+	pptxPDFTaskSvc.SetCleaner(spatialPreviewService)
 	model3DTilesTaskSvc := service.NewModel3DTilesTaskService(model3DTilesRepo)
 	model3DTilesTaskSvc.SetBucket(minioBucket)
 	model3DTilesTaskSvc.SetCleaner(service.NewMinIOModel3DTilesCleaner(minioClient, minioBucket))
@@ -411,17 +412,6 @@ func main() {
 			cfg.DocumentWorkflowGeneration.Timeout,
 		))
 		model3DGLBTaskSvc.SetExecutor(service.NewManagerModel3DGLBExecutor(
-			systemClient,
-			workflowRuntimeLister,
-			minioClient,
-			cfg.MinioEndpoint,
-			cfg.MinioAccessKey,
-			cfg.MinioSecretKey,
-			cfg.MinioUseSSL,
-			minioBucket,
-			cfg.RasterMosaicGeneration.Timeout,
-		))
-		pptxPDFTaskSvc.SetExecutor(service.NewManagerPPTXPDFExecutor(
 			systemClient,
 			workflowRuntimeLister,
 			minioClient,

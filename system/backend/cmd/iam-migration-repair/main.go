@@ -15,14 +15,14 @@ import (
 
 func main() {
 	apply := flag.Bool("apply", false, "apply one registered narrowly scoped migration repair")
-	migrationVersion := flag.Uint("migration", 0, "registered dirty migration to repair: 75 or 113")
+	migrationVersion := flag.Uint("migration", 0, "registered dirty migration to repair: 75, 113, or 130")
 	flag.Parse()
 	if !*apply {
 		fmt.Fprintln(os.Stderr, "refusing mutation without --apply")
 		os.Exit(2)
 	}
-	if *migrationVersion != 75 && *migrationVersion != 113 {
-		fmt.Fprintln(os.Stderr, "--migration must be exactly 75 or 113")
+	if *migrationVersion != 75 && *migrationVersion != 113 && *migrationVersion != 130 {
+		fmt.Fprintln(os.Stderr, "--migration must be exactly 75, 113, or 130")
 		os.Exit(2)
 	}
 	dsn := postgresDSN()
@@ -52,6 +52,12 @@ func main() {
 			os.Exit(1)
 		}
 		fmt.Println("migration 113 repair completed; verified_target_facts=zero; migration_state=112/clean")
+	case 130:
+		if err := migration.RepairDirtySecurityProtectionAccessRequestMigration130(ctx, db); err != nil {
+			fmt.Fprintf(os.Stderr, "migration 130 repair failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("migration 130 repair completed; verified_target_facts=pre-migration; migration_state=129/clean")
 	}
 }
 

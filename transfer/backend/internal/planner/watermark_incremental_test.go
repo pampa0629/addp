@@ -5,6 +5,7 @@ import (
 
 	engineplugin "github.com/addp/common/engine/plugin"
 	mysqlplugin "github.com/addp/common/engine/plugins/mysql"
+	oceanbaseplugin "github.com/addp/common/engine/plugins/oceanbase"
 	postgresqlplugin "github.com/addp/common/engine/plugins/postgresql"
 )
 
@@ -31,6 +32,36 @@ func TestBuildWatermarkIncrementalPlanRequiresDeclaredCapabilities(t *testing.T)
 	}
 	if result.Plan.WatermarkField != "updated_at" || len(result.Plan.TieBreakers) != 1 || result.Plan.TargetKeys[0] != "id" {
 		t.Fatalf("plan = %#v", result.Plan)
+	}
+}
+
+func TestBuildWatermarkIncrementalPlanAcceptsOceanBaseSourceByCapability(t *testing.T) {
+	oceanBaseCapabilities := (&oceanbaseplugin.Plugin{}).Capabilities()
+	mysqlCapabilities := (&mysqlplugin.MySQLPlugin{}).Capabilities()
+	spec := TableExportTaskSpec{
+		Runtime: RuntimeSpec{Boundary: runtimeBoundaryBounded},
+		Load: LoadSpec{Mode: loadModeIncremental, ChangeDetection: &ChangeDetectionSpec{
+			Type: changeTypeWatermark, Field: "updated_at", TieBreaker: []string{"id"}, Start: "committed", End: "execution_upper_bound",
+		}},
+		Source: EndpointSpec{
+			Locator: "addp://engine/1/path/business/orders?type=table", DataType: dataTypeTable, Representation: representationNative,
+		},
+		Target: EndpointSpec{
+			ParentLocator: "addp://engine/2/path/business?type=database", Name: "orders", DataType: dataTypeTable,
+			Representation: representationNative, Policy: map[string]interface{}{"apply_mode": "upsert", "keys": []string{"id"}},
+		},
+		BatchSize: 100,
+	}
+
+	result, err := BuildWatermarkIncrementalPlan(spec, StaticEngineResolver{
+		1: {Type: "oceanbase", EngineID: 1, Capabilities: &oceanBaseCapabilities},
+		2: {Type: "mysql", EngineID: 2, Capabilities: &mysqlCapabilities},
+	})
+	if err != nil {
+		t.Fatalf("BuildWatermarkIncrementalPlan failed: %v", err)
+	}
+	if result.SourceEngineType != "oceanbase" || result.TargetEngineType != "mysql" {
+		t.Fatalf("engine types = %s -> %s, want oceanbase -> mysql", result.SourceEngineType, result.TargetEngineType)
 	}
 }
 

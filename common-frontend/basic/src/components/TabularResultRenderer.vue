@@ -39,11 +39,11 @@
             v-else
             class="scalar-cell"
             :class="cellClass(cellValue(scope.row, column))"
-            :title="formatCell(cellValue(scope.row, column))"
+            :title="formatCell(cellValue(scope.row, column), column)"
             :tabindex="copyOnDblclick ? 0 : undefined"
-            @dblclick="copyCellValue(cellValue(scope.row, column))"
-            @keydown.enter="copyCellValue(cellValue(scope.row, column))"
-          >{{ formatCell(cellValue(scope.row, column)) }}</span>
+            @dblclick="copyCellValue(cellValue(scope.row, column), column)"
+            @keydown.enter="copyCellValue(cellValue(scope.row, column), column)"
+          >{{ formatCell(cellValue(scope.row, column), column) }}</span>
         </template>
       </el-table-column>
     </el-table>
@@ -91,10 +91,11 @@ const props = defineProps({
   highlightCurrentRow: { type: Boolean, default: false },
   columnMinWidth: { type: Number, default: 140 },
   nullText: { type: String, default: '—' },
-  copyOnDblclick: { type: Boolean, default: false }
+  copyOnDblclick: { type: Boolean, default: false },
+  presentations: { type: Array, default: () => [] }
 })
 const emit = defineEmits(['result-select', 'row-click'])
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const tableRef = ref(null)
 const structuredDialogVisible = ref(false)
 const structuredDialogTitle = ref('')
@@ -109,11 +110,12 @@ function selectRow(row, column, event) {
 const visibleColumns = computed(() => normalizeTabularColumns({
   columns: props.columns,
   fields: props.fields,
-  rows: props.rows
+  rows: props.rows,
+  presentations: props.presentations
 }))
 
 const cellValue = (row, column) => tabularCellValue(row, column)
-const formatCell = value => formatResultCell(value, props.nullText)
+const formatCell = (value, column) => formatResultCell(value, props.nullText, column?.presentation, locale.value)
 const hasStructuredColumnValues = column => props.rows.some(row => isStructuredResultValue(cellValue(row, column)))
 const cellClass = value => ({
   'is-null': value === null || value === undefined,
@@ -152,9 +154,9 @@ const copyText = async (value) => {
   }
 }
 
-const copyCellValue = (value) => {
+const copyCellValue = (value, column) => {
   if (!props.copyOnDblclick) return
-  copyText(isStructuredResultValue(value) ? safeStructuredResultJSON(value) : formatCell(value))
+  copyText(isStructuredResultValue(value) ? safeStructuredResultJSON(value) : formatCell(value, column))
 }
 
 defineExpose({

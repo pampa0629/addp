@@ -80,8 +80,9 @@ class OnlineGateTest(unittest.TestCase):
                 "enterprise-catalog-publishing",
                 "manager-internal-artifact-lineage",
                 "module-registry-recovery",
+                "oceanbase-consumer-flow",
                 "security-mysql-owner-protection",
-                "security-protection-exemption",
+                "security-plaintext-access",
                 "security-transfer-protection",
                 "standard-model-reference-deletion",
                 "workbench-service-consumption",
@@ -101,6 +102,18 @@ class OnlineGateTest(unittest.TestCase):
         self.assertEqual(
             registry_suite.services,
             (("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL")),
+        )
+        oceanbase_suite = ONLINE_GATE.SUITES["oceanbase-consumer-flow"]
+        self.assertEqual(
+            oceanbase_suite.services,
+            (
+                ("gateway", "GATEWAY_URL"),
+                ("system", "SYSTEM_URL"),
+                ("meta", "META_URL"),
+                ("transfer", "TRANSFER_URL"),
+                ("develop", "DEVELOP_URL"),
+                ("service", "SERVICE_URL"),
+            ),
         )
         consumer_suite = ONLINE_GATE.SUITES["consumer-engine-recovery"]
         self.assertEqual(
@@ -146,7 +159,7 @@ class OnlineGateTest(unittest.TestCase):
                 ("manager", "MANAGER_URL"),
             ),
         )
-        exemption_suite = ONLINE_GATE.SUITES["security-protection-exemption"]
+        exemption_suite = ONLINE_GATE.SUITES["security-plaintext-access"]
         self.assertEqual(
             exemption_suite.services,
             (
@@ -155,9 +168,6 @@ class OnlineGateTest(unittest.TestCase):
                 ("meta", "META_URL"),
                 ("security", "SECURITY_URL"),
                 ("manager", "MANAGER_URL"),
-                ("develop", "DEVELOP_URL"),
-                ("service", "SERVICE_URL"),
-                ("transfer", "TRANSFER_URL"),
             ),
         )
         mysql_security_suite = ONLINE_GATE.SUITES[

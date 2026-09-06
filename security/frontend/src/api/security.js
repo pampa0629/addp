@@ -55,9 +55,15 @@ export const assessmentAPI = {
 export const protectionExemptionAPI = {
   list: params => client.get('/security/protection-exemptions', { params }),
   get: id => client.get(`/security/protection-exemptions/${id}`),
-  create: data => client.post('/security/protection-exemptions', data),
-  renew: (id, data) => client.put(`/security/protection-exemptions/${id}`, data),
   revoke: (id, data) => client.delete(`/security/protection-exemptions/${id}`, { data })
+}
+
+export const protectionAccessRequestAPI = {
+  targets: params => client.get('/security/protection-access-request-targets', { params }),
+  mine: params => client.get('/security/protection-access-requests', { params }),
+  reviewQueue: params => client.get('/security/protection-access-requests/review-queue', { params }),
+  create: data => client.post('/security/protection-access-requests', data),
+  decide: (id, data) => client.post(`/security/protection-access-requests/${id}/decisions`, data)
 }
 
 export const metaAPI = {

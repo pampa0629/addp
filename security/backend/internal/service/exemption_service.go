@@ -24,70 +24,16 @@ func NewExemptionService(db *gorm.DB) *ExemptionService {
 	return &ExemptionService{db: db, now: time.Now}
 }
 
-func (s *ExemptionService) Create(ctx context.Context, tenantID, userID int64, request models.CreateProtectionExemptionRequest) (*models.ProtectionExemptionResponse, error) {
-	request.AssessmentID = strings.TrimSpace(request.AssessmentID)
-	request.ConsumerOwner = strings.TrimSpace(request.ConsumerOwner)
-	request.Action = strings.TrimSpace(request.Action)
-	request.Rationale = strings.TrimSpace(request.Rationale)
-	now := s.now().UTC()
-	request.ExpiresAt = request.ExpiresAt.UTC()
-	if tenantID <= 0 || userID <= 0 || uuid.Validate(request.AssessmentID) != nil || !validExemptionBinding(request.ConsumerOwner, request.Action) || !validExemptionDeadline(now, request.ExpiresAt) || !validPolicyRationale(request.Rationale) {
-		return nil, commonapi.ErrBadRequest
-	}
-
-	var result *models.ProtectionExemptionResponse
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		assessment, current, enrollment, _, err := policyDependencies(tx, tenantID, request.AssessmentID)
-		if err != nil {
-			return err
-		}
-		exemption := models.ProtectionExemption{
-			ID: uuid.NewString(), TenantID: tenantID, AssessmentID: assessment.ID,
-			ConsumerOwner: request.ConsumerOwner, Action: request.Action,
-			State: models.ProtectionExemptionStateActive, Version: 1, CurrentRevision: 1,
-			CreatedBy: userID, CreatedAt: now, UpdatedAt: now,
-		}
-		if err := tx.Create(&exemption).Error; err != nil {
-			return policyDBError(err)
-		}
-		revision := models.ProtectionExemptionRevision{
-			ID: uuid.NewString(), TenantID: tenantID, ExemptionID: exemption.ID, Revision: 1,
-			AssessmentRevision: current.Revision,
-			State:              models.ProtectionExemptionStateActive, ExpiresAt: request.ExpiresAt,
-			Rationale: request.Rationale, CreatedBy: userID, CreatedAt: now,
-		}
-		if err := tx.Create(&revision).Error; err != nil {
-			return policyDBError(err)
-		}
-		if err := compileProtectionProjections(tx, enrollment, enrollmentSnapshotHash(enrollment, current.SourceSnapshotHash), now, []string{request.ConsumerOwner}); err != nil {
-			return err
-		}
-		result = buildExemptionResponse(exemption, revision, []models.ProtectionExemptionRevision{revision}, current.Revision, now)
-		return nil
-	})
-	return result, err
-}
-
-func (s *ExemptionService) Renew(ctx context.Context, tenantID, userID int64, exemptionID string, request models.RenewProtectionExemptionRequest) (*models.ProtectionExemptionResponse, error) {
-	request.Rationale = strings.TrimSpace(request.Rationale)
-	now := s.now().UTC()
-	request.ExpiresAt = request.ExpiresAt.UTC()
-	if tenantID <= 0 || userID <= 0 || uuid.Validate(exemptionID) != nil || request.Version <= 0 || !validExemptionDeadline(now, request.ExpiresAt) || !validPolicyRationale(request.Rationale) {
-		return nil, commonapi.ErrBadRequest
-	}
-	return s.appendRevision(ctx, tenantID, userID, exemptionID, request.Version, models.ProtectionExemptionStateActive, request.ExpiresAt, request.Rationale, now)
-}
-
 func (s *ExemptionService) Revoke(ctx context.Context, tenantID, userID int64, exemptionID string, request models.RevokeProtectionExemptionRequest) (*models.ProtectionExemptionResponse, error) {
 	request.Rationale = strings.TrimSpace(request.Rationale)
 	now := s.now().UTC()
 	if tenantID <= 0 || userID <= 0 || uuid.Validate(exemptionID) != nil || request.Version <= 0 || !validPolicyRationale(request.Rationale) {
 		return nil, commonapi.ErrBadRequest
 	}
-	return s.appendRevision(ctx, tenantID, userID, exemptionID, request.Version, models.ProtectionExemptionStateRevoked, now, request.Rationale, now)
+	return s.appendRevocation(ctx, tenantID, userID, exemptionID, request.Version, request.Rationale, now)
 }
 
-func (s *ExemptionService) appendRevision(ctx context.Context, tenantID, userID int64, exemptionID string, version int64, state string, expiresAt time.Time, rationale string, now time.Time) (*models.ProtectionExemptionResponse, error) {
+func (s *ExemptionService) appendRevocation(ctx context.Context, tenantID, userID int64, exemptionID string, version int64, rationale string, now time.Time) (*models.ProtectionExemptionResponse, error) {
 	var result *models.ProtectionExemptionResponse
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var exemption models.ProtectionExemption
@@ -105,11 +51,8 @@ func (s *ExemptionService) appendRevision(ctx context.Context, tenantID, userID 
 		if err := tx.Where("tenant_id = ? AND exemption_id = ? AND revision = ?", tenantID, exemption.ID, exemption.CurrentRevision).First(&previous).Error; err != nil {
 			return err
 		}
-		if state == models.ProtectionExemptionStateRevoked {
-			if exemption.State == models.ProtectionExemptionStateRevoked || !now.Before(previous.ExpiresAt) {
-				return commonapi.ErrConflict
-			}
-			expiresAt = previous.ExpiresAt
+		if exemption.State == models.ProtectionExemptionStateRevoked || !now.Before(previous.ExpiresAt) {
+			return commonapi.ErrConflict
 		}
 		assessment, current, enrollment, _, err := policyDependencies(tx, tenantID, exemption.AssessmentID)
 		if err != nil {
@@ -118,14 +61,14 @@ func (s *ExemptionService) appendRevision(ctx context.Context, tenantID, userID 
 		revisionNumber := exemption.CurrentRevision + 1
 		revision := models.ProtectionExemptionRevision{
 			ID: uuid.NewString(), TenantID: tenantID, ExemptionID: exemption.ID, Revision: revisionNumber,
-			AssessmentRevision: current.Revision,
-			State:              state, ExpiresAt: expiresAt, Rationale: rationale, CreatedBy: userID, CreatedAt: now,
+			AssessmentRevision: current.Revision, SourceRequestID: previous.SourceRequestID,
+			State: models.ProtectionExemptionStateRevoked, ExpiresAt: previous.ExpiresAt, Rationale: rationale, CreatedBy: userID, CreatedAt: now,
 		}
 		if err := tx.Create(&revision).Error; err != nil {
 			return policyDBError(err)
 		}
 		update := tx.Model(&exemption).Where("version = ?", version).Updates(map[string]interface{}{
-			"state": state, "version": gorm.Expr("version + 1"), "current_revision": revisionNumber, "updated_at": now,
+			"state": models.ProtectionExemptionStateRevoked, "version": gorm.Expr("version + 1"), "current_revision": revisionNumber, "updated_at": now,
 		})
 		if update.Error != nil {
 			return update.Error
@@ -133,7 +76,7 @@ func (s *ExemptionService) appendRevision(ctx context.Context, tenantID, userID 
 		if update.RowsAffected != 1 {
 			return repository.ErrVersionConflict
 		}
-		exemption.State = state
+		exemption.State = models.ProtectionExemptionStateRevoked
 		exemption.Version++
 		exemption.CurrentRevision = revisionNumber
 		exemption.UpdatedAt = now

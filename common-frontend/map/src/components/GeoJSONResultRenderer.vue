@@ -4,13 +4,13 @@
       :features="features"
       :base-map-type="baseMapType"
       :height="height"
-      :popup-options="{ fields: config.tooltip_fields || [], primaryField: config.label_field || '' }"
+      :popup-options="{ fields: config.tooltip_fields || [], primaryField: config.label_field || '', fieldPresentations: config.field_presentations || [], locale }"
       :feature-style="featureStyle"
       @feature-click="selectFeature"
       @view-state-change="$emit('view-state-change', $event)"
     />
-    <aside v-if="legendEntries.length > 0" class="map-legend" :aria-label="config.style?.legend_title || config.style?.field">
-      <strong>{{ config.style?.legend_title || config.style?.field }}</strong>
+    <aside v-if="legendEntries.length > 0" class="map-legend" :aria-label="legendTitle">
+      <strong>{{ legendTitle }}</strong>
       <div v-for="entry in legendEntries" :key="entry.label" class="legend-entry">
         <span class="legend-color" :style="{ backgroundColor: `var(${thematicColorVariable(entry.index, entry.count, config.style?.palette)})` }" />
         <span>{{ entry.label }}</span>
@@ -21,6 +21,8 @@
 
 <script setup>
 import { computed, watchEffect } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { fieldPresentationFor, fieldPresentationLabel } from '../../../basic/src/utils/fieldPresentation.mjs'
 import MapContainer from './map/MapContainer.vue'
 import { crsSuppressionStatus, getPreviewCRSTransform, transformGeoJSONGeometryToWGS84 } from '../utils/crsRegistry'
 import { buildGeoJSONFeatures, resultSelectionFromFeature, spatialPreviewDescriptor, validateGeoJSONResult } from '../utils/geoJSONResult.mjs'
@@ -35,6 +37,7 @@ const props = defineProps({
   height: { type: String, default: '420px' }
 })
 const emit = defineEmits(['invalid', 'result-select', 'view-state-change'])
+const { locale } = useI18n()
 const transform = computed(() => getPreviewCRSTransform(spatialPreviewDescriptor(props.spatial, props.config.geometry_field)))
 const resultValidation = computed(() => validateGeoJSONResult(props.rows, props.hasMore))
 const features = computed(() => {
@@ -45,8 +48,10 @@ const features = computed(() => {
     (geometry) => transformGeoJSONGeometryToWGS84(geometry, transform.value)
   )
 })
-const featureStyle = computed(() => buildThematicContext(features.value, props.config.style || { mode: 'uniform', palette: 'primary' }))
+const stylePresentation = computed(() => fieldPresentationFor(props.config.style?.field, props.config.field_presentations || []))
+const featureStyle = computed(() => buildThematicContext(features.value, props.config.style || { mode: 'uniform', palette: 'primary' }, stylePresentation.value, locale.value))
 const legendEntries = computed(() => featureStyle.value.valid ? featureStyle.value.entries || [] : [])
+const legendTitle = computed(() => props.config.style?.legend_title || fieldPresentationLabel(props.config.style?.field, props.config.field_presentations || []))
 const validation = computed(() => resultValidation.value.valid ? featureStyle.value : resultValidation.value)
 
 function selectFeature(event) {

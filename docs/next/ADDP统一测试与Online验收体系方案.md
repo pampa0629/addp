@@ -21,7 +21,7 @@
 - [x] `make test-changed`、`make test-module` 与 PR T0-T3 使用同一 owner 影响计算。
 - [x] `make test-integration` 严格串行编排全部已登记的 disposable 基础设施门禁。
 - [x] `make test-online ONLINE_SUITE=<suite>` 统一 Run ID、预检、超时、进程锁和 `addp.online-gate/v1` 报告。
-- [x] `standard-model-reference-deletion`、`module-registry-recovery`、`consumer-engine-recovery`、`enterprise-catalog-publishing`、`workbench-service-consumption`、`manager-internal-artifact-lineage`、`security-transfer-protection` 与 `security-protection-exemption` 已登记为真实 T4 suite，不存在占位 suite。
+- [x] `standard-model-reference-deletion`、`module-registry-recovery`、`consumer-engine-recovery`、`enterprise-catalog-publishing`、`workbench-service-consumption`、`manager-internal-artifact-lineage`、`security-transfer-protection` 与 `security-plaintext-access` 已登记为真实 T4 suite，不存在占位 suite。
 - [x] 专用宿主机门禁会在生命周期操作前检查 macOS、`ADDP_ONLINE_HOST=1`、仓库外环境文件与证据目录、干净 checkout、`addp_online` 数据库和 suite profile。
 - [x] 手工 `.github/workflows/online-t4-gates.yml` 已绑定 `addp-online` Environment，并使用 `self-hosted`、`macOS`、`addp-online` Runner 标签。
 - [x] 手工 Online T4 workflow 已进入远端并被 GitHub 识别为 active；workflow 语法和 Runner 上下文约束由 `make test-platform` 自动检查。
@@ -53,7 +53,7 @@
 5. `workbench-service-consumption`。
 6. `manager-internal-artifact-lineage`。
 7. `security-transfer-protection`。
-8. `security-protection-exemption`。
+8. `security-plaintext-access`。
 
 每次运行必须核验：
 
@@ -115,14 +115,15 @@ Engine Instance 是永久身份，因此 suite 禁止按 Run ID 创建后删除�
 
 ### 3.7 `manager-internal-artifact-lineage` 实现契约
 
-1. Host Gate 全量启动 System、Gateway、Meta、Manager、Monitor、Console 和 PointCloud Runtime；`business/scripts/online-pointcloud-minio-fixture.sh` 只在 macOS 专用 Runner 上管理独立 `business-minio`，并把仓库已有小型 LAS 幂等写入指定 bucket/object。
-2. 专用环境长期预置指向该 MinIO 的 Engine Instance，身份由 `ADDP_ONLINE_POINTCLOUD_MINIO_ENGINE_ID` 提供；suite 不创建、修改或删除 Engine Instance。
-3. 真实 User Token 校验 Tenant、非管理员角色和最小权限后，所有平台操作只经 Gateway：触发 Meta deep scan，以扫描得到的 DataItem 身份创建并执行 `point_cloud_copc_generation`。
+1. Host Gate 全量启动 System、Gateway、Meta、Manager、Monitor、Console、PointCloud Runtime 和 Document Workflow Runtime；`business/scripts/online-manager-minio-fixture.sh` 只在 macOS 专用 Runner 上管理独立 `business-minio`，并把仓库已有小型 LAS 与三页 PPTX 幂等写入指定 bucket/object。
+2. 专用环境长期预置指向该 MinIO 的 Engine Instance，身份由 `ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID` 提供；suite 不创建、修改或删除 Engine Instance。
+3. 真实 User Token 校验 Tenant、非管理员角色和最小权限后，所有平台操作只经 Gateway：触发一次 Meta deep scan，以扫描得到的两条 DataItem 身份分别执行 `point_cloud_copc_generation` 和 PPTX 按需预览。
 4. Manager owner execution 必须产生唯一 `addp.lineage-facts/v1` 输入、输出和 derive operation；输入是 Business ResourceLocator，输出是 `addp-infra://minio/manager/tenant_{id}/point-cloud-copc/...copc.laz?type=object`，Monitor 按 execution ID 读取到的事实必须与 owner 完全相同。
 5. suite 经 Manager 内容 API 验证 COPC Range 读取；真实浏览器打开正式 Monitor 执行详情，确认业务输入可进入 Data Explorer，平台内部产物明确标识且不伪造业务资源跳转。
-6. `finally` 只通过 Manager API 按本轮 ID 删除结果与任务，再以内容 404、任务 404 和 fingerprint 结果总数为零共同证明无临时业务资源残留；Host Gate 最后停止 Business MinIO Fixture 与全套 ADDP。
+6. PPTX 场景先通过正式预览入口触发一次 `pptx_pdf_generation`，等待真实 LibreOffice 转换完成并断言 PDF 为三页；同源第二次调用必须返回同一 task/result 且不返回新的 execution ID。真实浏览器打开 Data Explorer 后翻到第 2 页，跨过 15 秒 Engine 状态刷新仍保持第 2 页，并且整个页面生命周期只请求一次 ready 预览。
+7. `finally` 只通过 Manager API 按本轮 ID 删除 COPC、PPTX PDF 及两类任务，再以内容 404、任务 404 和 fingerprint 结果总数为零共同证明无临时业务资源残留；Host Gate 最后停止 Business MinIO Fixture 与全套 ADDP。
 
-2026-09-04 已完成 owner suite、Business MinIO Fixture、Manager/Monitor API 一致性、真实浏览器断言、Host Gate profile、workflow choice、CI 登记检查和确定性协议测试。当前仍是“实现就绪、专用 Runner 首跑待执行”。
+2026-09-06 在同一 owner suite 中补充小型多页 PPTX 的首次 LibreOffice 转换、同源缓存复用、Manager/Monitor 血缘一致性和浏览器翻页稳定性契约；不新增第二条 T4 suite。当前仍是“实现就绪、专用 Runner 首跑待执行”。
 
 ### 3.8 `security-transfer-protection` 实现契约
 
@@ -135,13 +136,13 @@ Engine Instance 是永久身份，因此 suite 禁止按 Run ID 创建后删除�
 
 2026-09-05 已完成 owner suite、MongoDB/PostgreSQL 复合 Fixture、Host Gate profile、workflow choice、CI 登记检查和确定性协议测试。当前仍是“实现就绪、专用 Runner 首跑待执行”。
 
-### 3.9 `security-protection-exemption` 实现契约
+### 3.9 `security-plaintext-access` 实现契约
 
-1. Host Gate 全量启动 System、Gateway、Meta、Security、Manager、Develop、Service 与 Transfer，并复用 `business/scripts/online-security-transfer-fixture.sh` 中的固定 PostgreSQL 源表和目标表。
-2. 首次运行允许为 `addp_online_security.exemption_source.phone` 建立永久 Enrollment、确认手机号 Finding 并形成正式 Assessment；后续必须复用同一治理身份。每轮创建或续期四个固定 Exemption 聚合，保留不可变审计修订。
-3. suite 依次验证四个 Owner 的三阶段真实数据结果：无豁免时遮盖、有效豁免期内原值、到期后遮盖。到期阶段在第一个 Owner 读取前停止调用 Security API，证明 Owner 使用本地投影中的 `valid_until + fallback`，而不是在线回查 Security。
-4. 每轮创建一个临时 Query Service 和三条带阶段标识的 bounded Transfer 任务，退出路径按捕获 ID 删除并确认不存在；固定表、治理聚合、执行历史与不可变审计修订不作为临时业务资源删除。
-5. Assessment 修订使豁免失效继续由 Security T1/T2 事务门禁验证，T4 不为重复证明该语义而持续追加无业务价值的 Assessment 修订。
+1. Host Gate 全量启动 System、Gateway、Meta、Security 与 Manager，并复用 `business/scripts/online-security-transfer-fixture.sh` 中的固定 PostgreSQL 源表。
+2. 首次运行允许为 `addp_online_security.exemption_source.phone` 建立永久 Enrollment、确认手机号 Finding 并形成正式 Assessment；后续必须复用同一治理身份。每轮保留申请、审批和授权修订作为不可变审计事实。
+3. suite 使用两名不同的专用 User：申请人在 Manager 预览出口发起按字段、按用户、限时原值访问申请；另一名审批人在 Security 待审批队列批准。申请人不得审批自己的申请。
+4. suite 依次验证三类真实数据结果：默认状态下申请人看到遮盖值；授权有效期内只有申请人看到原值而审批人继续看到遮盖值；到期后不调用 Security，由 Manager 根据本地 Projection v2 自动恢复遮盖。
+5. Assessment 修订使授权失效继续由 Security T1/T2 事务门禁验证，T4 不为重复证明该语义而持续追加无业务价值的 Assessment 修订。
 
 2026-09-05 已完成 owner suite、复合 Fixture 扩展、Host Gate profile、workflow choice、CI 登记检查和确定性协议测试。当前仍是“实现就绪、专用 Runner 首跑待执行”。
 

@@ -8,8 +8,10 @@ import (
 	"net/http"
 	"strconv"
 
+	commonAuth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	sysi18n "github.com/addp/standard/i18n"
+	standardauthorization "github.com/addp/standard/internal/authorization"
 	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/repository"
 	"github.com/addp/standard/internal/service"
@@ -507,25 +509,52 @@ func (h *DocumentHandler) ExtractCandidates(c *gin.Context) {
 	c.JSON(http.StatusCreated, result)
 }
 
-// @Summary 获取文档提炼批次 | List document extraction batches
-// @Description 返回每个候选与当前同类型、同编码标准的动态比对结果及字段级候选值/标准值；不会自动创建或关联标准 | Returns a dynamic comparison and field-level candidate/standard values for each candidate against the current same-type, same-code standard; no standard is created or linked automatically
+// @Summary 获取标准提炼候选聚合视图 | List standard extraction candidate groups
+// @Description 按确定性语义指纹聚合文档历次提炼候选；total 为筛选后总数，status_counts 为不受筛选影响的文档全量状态计数；返回代表候选、全部出现记录及动态标准比对，原始候选和证据不会被改写 | Groups candidates from all document extractions by deterministic semantic fingerprint; total is the filtered count while status_counts covers all groups regardless of filters; returns the representative candidate, all occurrences, and dynamic standard comparison without rewriting raw candidates or evidence
 // @Tags Standard
 // @Produce json
-// @Success 200 {array} models.DocumentExtraction
+// @Param state query string false "聚合状态 | Group state" Enums(pending,retained,rejected,formalized)
+// @Param candidate_type query string false "候选类型 | Candidate type" Enums(glossary,element,code_set,metric)
+// @Param page query int false "页码，默认 1 | Page number, default 1"
+// @Param page_size query int false "每页数量，默认 20，最大 100 | Page size, default 20, maximum 100"
+// @Success 200 {object} models.PaginatedDocumentExtractionCandidateGroupResponse
+// @Failure 400 {object} map[string]string
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.document.read"]
-// @Router /documents/{id}/extractions [get]
+// @Router /documents/{id}/extraction-candidate-groups [get]
 // @Security BearerAuth
-func (h *DocumentHandler) ListExtractions(c *gin.Context) {
+func (h *DocumentHandler) ListCandidateGroups(c *gin.Context) {
 	id, ok := elementPathID(c, "id")
 	if !ok {
 		return
 	}
-	items, err := h.svc.ListExtractions(id, getTenantID(c))
+	opts := service.DocumentCandidateGroupListOptions{State: c.Query("state"), CandidateType: c.Query("candidate_type")}
+	var err error
+	if value := c.Query("page"); value != "" {
+		opts.Page, err = strconv.Atoi(value)
+		if err != nil {
+			respondError(c, http.StatusBadRequest, service.ErrDocumentCandidateGroupQueryInvalid)
+			return
+		}
+	}
+	if value := c.Query("page_size"); value != "" {
+		opts.PageSize, err = strconv.Atoi(value)
+		if err != nil {
+			respondError(c, http.StatusBadRequest, service.ErrDocumentCandidateGroupQueryInvalid)
+			return
+		}
+	}
+	items, err := h.svc.ListCandidateGroups(id, getTenantID(c), opts)
 	if err != nil {
-		respondError(c, http.StatusInternalServerError, err)
+		status := http.StatusInternalServerError
+		if errors.Is(err, service.ErrDocumentCandidateGroupQueryInvalid) {
+			status = http.StatusBadRequest
+		}
+		respondError(c, status, err)
 		return
 	}
 	c.JSON(http.StatusOK, items)
@@ -557,6 +586,54 @@ func (h *DocumentHandler) UpdateCandidate(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, result)
+}
+
+// @Summary 正式化文档提炼候选 | Formalize document extraction candidate
+// @Description 服务器根据实时比对唯一决定创建 R1 草稿、创建既有标准的新修订草稿或关联内容一致修订；不会提交审核或发布 | The server uniquely decides whether to create an R1 draft, create a new draft revision, or link an identical revision; it never submits or publishes
+// @Tags Standard
+// @Accept json
+// @Produce json
+// @Param candidate_id path int true "候选 ID | Candidate ID"
+// @Param request body models.FormalizeDocumentExtractionCandidateRequest true "正式化请求 | Formalization request"
+// @Success 201 {object} models.DocumentCandidateFormalizationResponse
+// @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 409 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.document.update"]
+// @x-addp-conditional-permissions ["standard.glossary.create","standard.glossary.update","standard.element.create","standard.element.update","standard.code_set.create","standard.code_set.update","standard.metric.create","standard.metric.update"]
+// @Router /document-extraction-candidates/{candidate_id}/formalization [post]
+// @Security BearerAuth
+func (h *DocumentHandler) FormalizeCandidate(c *gin.Context) {
+	id, ok := elementPathID(c, "candidate_id")
+	if !ok {
+		return
+	}
+	var req models.FormalizeDocumentExtractionCandidateRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	authorization := service.CandidateFormalizationAuthorization{
+		Create: map[string]bool{
+			"glossary": commonAuth.HasRolePermission(c, standardauthorization.PermissionStandardGlossaryCreate),
+			"element":  commonAuth.HasRolePermission(c, standardauthorization.PermissionStandardElementCreate),
+			"code_set": commonAuth.HasRolePermission(c, standardauthorization.PermissionStandardCodeSetCreate),
+			"metric":   commonAuth.HasRolePermission(c, standardauthorization.PermissionStandardMetricCreate),
+		},
+		Update: map[string]bool{
+			"glossary": commonAuth.HasRolePermission(c, standardauthorization.PermissionStandardGlossaryUpdate),
+			"element":  commonAuth.HasRolePermission(c, standardauthorization.PermissionStandardElementUpdate),
+			"code_set": commonAuth.HasRolePermission(c, standardauthorization.PermissionStandardCodeSetUpdate),
+			"metric":   commonAuth.HasRolePermission(c, standardauthorization.PermissionStandardMetricUpdate),
+		},
+	}
+	result, err := h.svc.FormalizeCandidate(id, getTenantID(c), getUserID(c), &req, authorization)
+	if err != nil {
+		respondCandidateFormalizationError(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, result)
 }
 
 func (h *DocumentHandler) revisionAction(c *gin.Context, action func(int64, int64, int64, int64, int64) (*models.DocumentAggregate, error)) {

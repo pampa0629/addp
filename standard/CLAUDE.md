@@ -39,7 +39,7 @@ Metric 的指标依赖与基准指标关系通过当前 User Token 读取 `GET /
 - 范围模型只保留 `scope_type + owner_domain_id`；启动迁移遇到历史 `domain_id` 时必须一次性回填归属和范围并删除旧列，即使新旧列曾同时存在，也不得保留双轨字段。
 - StandardCollection 采用“稳定身份 + 治理配置修订 + 成员快照 + 对象级职责分配”。集合修订只审核名称、说明和成员清单，不替代成员对象自身的修订发布；StandardCategory 只承担浏览导航，两者均不得替代业务域和适用范围。
 - StandardCollectionAssignment 只绑定当前租户的 User Principal，角色固定为 `owner|maintainer|reviewer`。模块 Permission 是粗粒度门禁，Assignment 是集合对象级门禁；Owner 可管理职责分配并维护草稿，Maintainer 可编辑和提交，Reviewer 可退回和发布，且发布者不得是提交者。
-- Copilot 只生成标准候选，必须保留文档修订、页码/章节/行号/文本片段等来源证据。Standard 保存提炼批次、候选和人工处置事实；`retained` 只表示保留为后续建标输入，人工创建并审核发布后才成为正式标准修订。
+- Copilot 只生成标准候选，必须保留文档修订、页码/章节/行号/文本片段等来源证据。Standard 保存提炼批次、候选、人工处置和候选正式化事实；`retained` 只表示保留为后续建标输入。正式化由人工另行发起，只能创建 R1 草稿、为既有身份创建新草稿，或关联内容一致的既有修订，绝不能提交审核或发布。
 - Element、CodeSet、MetricDefinition、Glossary、Document 的 Scope、归属域和修订生命周期统一；StandardCollection 已按上述单一路径实现；DimensionHierarchy 已整体迁入 Model。下一批补齐 Catalog → Quality 落标闭环。
 
 文档文件采用“新对象上传、数据库切换引用、旧对象补偿清理”的顺序。失效对象记录在 `standard.document_file_cleanups`，该表仅用于物理清理重试，不作为文档当前文件引用。
@@ -301,14 +301,20 @@ standard/
 | change_summary | text | 本次修订说明 |
 | effective_from / effective_to | timestamp? | 半开生效区间 `[from,to)` |
 
-### `standard.document_extractions`、`standard.document_extraction_candidates` 与 `standard.document_extraction_evidences`
+### `standard.document_extractions`、`standard.document_extraction_candidates`、`standard.document_extraction_evidences` 与 `standard.document_candidate_formalizations`
 
 - 提炼批次固定引用一个带 Markdown 文件的 `document_revision_id`；重复提炼新建批次，不覆盖历史。
 - Copilot 仅返回 `glossary`、`element`、`code_set`、`metric` 候选及证据坐标；Standard 验证证据属于输入修订后持久化。
 - Copilot 与 Standard 共用唯一候选数据类型词汇。数据元候选的 `data_type` 只允许 `string|int|bigint|float|decimal|date|datetime|bool|json|text`，码值集候选只允许 `string|int|bigint`，术语和指标候选必须为 `null`；`identifier` 属于业务语义，`numeric`、`date_or_datetime` 等模糊上位提示不是合法标准数据类型。数据元候选的 `value_domain_kind` 只允许 `unrestricted|range|enumeration`，其他候选必须为 `null`。枚举数据元候选必须通过 `code_set_code` 引用同一提炼批次中唯一的码值集候选；非枚举数据元以及其他候选不得携带该字段。候选引用只使用稳定编码，正式数据元修订仍由 Standard 按生效时点选择并冻结具体 `code_set_revision_id`。Copilot 输出 Schema 先约束，Standard 在持久化前再次校验字段适用性和批次内引用闭包；历史提炼批次保持不可变，契约修正后通过新提炼批次表达新结果。
 - 候选状态固定为 `pending`、`retained`、`rejected`；处置使用候选自己的并发 `version`，`retained` 不会自动创建或发布正式标准。
+- 文档候选治理页面只消费跨提炼批次的候选聚合视图，不再逐批平铺原始候选。聚合项以 `candidate_type + code + normalized(name, definition, payload)` 的 SHA-256 指纹确定；字符串折叠空白，维度去重排序，码值项按编码、名称、定义排序。同类型、同编码但规范化内容不同的候选必须分组展示，禁止用模型相似度自动合并。
+- 聚合视图不持久化，也不是新的聚合根。每个聚合项返回一个代表候选和按时间倒序排列的全部出现记录；出现记录保留候选 ID、提炼批次、文档修订、状态、版本、证据和正式化事实。存在正式化事实时聚合状态为 `formalized`；否则由最近一次已人工裁决的同义候选决定 `retained|rejected`；从未裁决时为 `pending`。人工动作只作用于代表候选，不批量回写其他原始候选。
+- `standard.document_candidate_formalizations` 为候选的一对一不可变正式化事实，保存服务器判定的 `created_identity|created_revision|linked_existing`、目标稳定身份/修订及操作者。正式化要求候选为 `retained`，使用候选 `version` 并在同一事务中创建目标草稿或确认既有修订、写入正式化事实、递增候选版本；重复正式化返回 409。正式化后候选继续保持 `retained` 且不再允许重新裁决，避免来源事实与目标修订失配。
+- 只要文档已有候选正式化事实，即使文档和目标标准都尚未发布，也不得删除来源文档；目标标准后续删除不会删除该事实，正式化记录保留目标编码、稳定身份 ID、修订 ID 和当时状态作为历史快照。
+- 正式化不接受客户端指定目标或动作。无同编码身份时创建 R1 草稿；同编码同范围且无工作修订时以最新修订为基线叠加候选明确字段创建新草稿；与现有 `draft|in_review|published` 修订内容一致时只关联该修订。`scope_conflict`、已有不同内容工作修订、无法唯一解析的计量单位或枚举码值集当前生效已发布修订均返回明确冲突。新指标候选必须由人工在请求中选择 `metric_type`；其他候选不得携带该字段。
+- 正式化入口固定需要 `standard.document.update`，并由服务器根据最终动作条件校验对应类型的 `*.create` 或 `*.update` Permission；无法分类时默认拒绝。创建的草稿仍需人工补齐生效时间、范围约束、指标依赖等治理字段，并沿正式修订审核发布路径处理。
 - 每条证据保存章节、起止行、原文摘录与 SHA-256，始终引用确定的文档修订。
-- `GET /documents/:id/extractions` 读取时动态返回候选比对投影，不将易失的匹配结果写入提炼历史。同类型、同编码是唯一确定匹配键；同名不同编码不自动判重。比对结果固定为 `new`、`exact`、`content_conflict`、`scope_conflict`；每项差异同时返回字段、候选值和当前标准值，供治理人员直接核对。
+- `GET /documents/:id/extraction-candidate-groups` 是唯一候选治理读取入口，支持按聚合状态、候选类型分页筛选；`total` 表示应用筛选后的聚合项总数，`status_counts` 始终统计文档全部聚合项、不受当前筛选影响；同时返回代表候选、全部出现记录和动态标准比对。旧的逐批平铺 `GET /documents/:id/extractions` 不再公开。同类型、同编码是标准比对的唯一匹配键；同名不同编码不自动判重。比对结果固定为 `new`、`exact`、`content_conflict`、`scope_conflict`；每项差异同时返回字段、候选值和当前标准值，供治理人员直接核对。
 - 比对修订按“稳定身份当前草稿/审核中修订 → 当前生效已发布修订 → 最新历史修订”选择；只比较候选明确给出的字段，缺失字段不构造差异。范围先比较 `scope_type + owner_domain_id`，范围不一致统一为 `scope_conflict`。
 - 枚举数据元候选以 `code_set_code` 与现有数据元修订冻结的码值集修订所属稳定身份编码比较；候选比对不暴露或猜测数据库修订 ID。
 - 指标候选中的聚合方式、维度等执行建模提示由 Model/Develop 消费，不属于 Standard 指标定义字段，因此不参与内容冲突判定。
@@ -417,8 +423,9 @@ POST /api/v1/standard/documents/:id/revisions/:revision_id/withdraw
 POST /api/v1/standard/documents/:id/revisions/:revision_id/file # 上传或替换草稿修订文件
 GET /api/v1/standard/documents/:id/revisions/:revision_id/file # 下载确定修订文件
 POST /api/v1/standard/documents/:id/revisions/:revision_id/extractions # Copilot 提炼
-GET /api/v1/standard/documents/:id/extractions # 候选附带当前 Standard 确定性比对投影
+GET /api/v1/standard/documents/:id/extraction-candidate-groups # 跨批次候选聚合、出现记录与动态 Standard 比对
 PUT /api/v1/standard/document-extraction-candidates/:candidate_id # retained/rejected 人工处置
+POST /api/v1/standard/document-extraction-candidates/:candidate_id/formalization # retained 候选创建受控草稿或关联一致修订
 GET/PUT /api/v1/standard/documents/:id/mappings # 多维关联（数据元/术语/指标）
 ```
 

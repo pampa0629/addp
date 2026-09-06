@@ -310,6 +310,7 @@ START_SYSTEM_BACKEND=false
 START_SYSTEM_FRONTEND=false
 START_MANAGER_BACKEND=false
 START_MANAGER_FRONTEND=false
+START_MANAGER_BOUNDED_WORKER=false
 START_META_BACKEND=false
 START_META_FRONTEND=false
 START_META_WORKER=false
@@ -378,6 +379,7 @@ if [ "$START_ALL" = true ]; then
   START_SYSTEM_FRONTEND=true
   START_MANAGER_BACKEND=true
   START_MANAGER_FRONTEND=true
+  START_MANAGER_BOUNDED_WORKER=true
   START_META_BACKEND=true
   START_META_FRONTEND=true
   START_META_WORKER=true
@@ -452,6 +454,7 @@ else
     manager)
       START_MANAGER_BACKEND=true
       START_MANAGER_FRONTEND=true
+      START_MANAGER_BOUNDED_WORKER=true
       START_TRANSFER_BACKEND=true
       START_TRANSFER_BOUNDED_WORKER=true
       START_TRANSFER_CONTINUOUS_WORKER=true
@@ -566,6 +569,7 @@ else
       ;;
     gateway)
       START_MANAGER_BACKEND=true
+      START_MANAGER_BOUNDED_WORKER=true
       START_TRANSFER_BACKEND=true
       START_TRANSFER_BOUNDED_WORKER=true
       START_TRANSFER_CONTINUOUS_WORKER=true
@@ -588,6 +592,7 @@ else
       START_SYSTEM_FRONTEND=true
       START_MANAGER_BACKEND=true
       START_MANAGER_FRONTEND=true
+      START_MANAGER_BOUNDED_WORKER=true
       START_META_FRONTEND=true
       START_TRANSFER_BACKEND=true
       START_TRANSFER_FRONTEND=true
@@ -798,6 +803,20 @@ build_develop_query_worker() {
         return 1
     }
     echo "  ✓ addp-develop-query-worker 编译完成"
+}
+
+build_manager_bounded_worker() {
+    local binary_path=".dev-bins/addp-manager-bounded-worker"
+    if addp_go_build_is_current "manager/backend" "$binary_path" ./cmd/bounded-worker; then
+        echo "  ✓ addp-manager-bounded-worker 已是最新"
+        return 0
+    fi
+    echo "  🔨 编译 addp-manager-bounded-worker..."
+    addp_atomic_go_build "manager-bounded-worker" "manager/backend" "$binary_path" ./cmd/bounded-worker || {
+        echo "  ✗ 编译失败: manager bounded worker"
+        return 1
+    }
+    echo "  ✓ addp-manager-bounded-worker 编译完成"
 }
 
 # 编译 Gateway 二进制
@@ -1090,6 +1109,11 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   fi
 
   # 并行编译 Workers(仅编译需要启动的)
+  if [ "$START_MANAGER_BOUNDED_WORKER" = true ]; then
+    build_manager_bounded_worker &
+    BUILD_PIDS+=($!)
+  fi
+
   if [ "$START_META_WORKER" = true ]; then
     build_worker "meta" "meta/backend" &
     BUILD_PIDS+=($!)
@@ -1323,6 +1347,16 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   fi
 
   # 并行启动 Workers
+  if [ "$START_MANAGER_BOUNDED_WORKER" = true ]; then
+    if check_service_running "manager-bounded-worker" ""; then
+      .dev-bins/addp-manager-bounded-worker > logs/manager-bounded-worker.log 2>&1 &
+      MANAGER_BOUNDED_WORKER_PID=$!
+      echo $MANAGER_BOUNDED_WORKER_PID > .dev-pids/manager-bounded-worker.pid
+    else
+      MANAGER_BOUNDED_WORKER_PID=$(cat .dev-pids/manager-bounded-worker.pid 2>/dev/null)
+    fi
+  fi
+
   if [ "$START_META_WORKER" = true ]; then
     if check_service_running "meta-worker" ""; then
       .dev-bins/addp-meta-worker > logs/meta-worker.log 2>&1 &
@@ -3078,6 +3112,7 @@ echo "  Inference Backend:    $INFERENCE_PID"
 echo "  Gateway:              $GATEWAY_PID"
 echo ""
 echo "Workers PID:"
+echo "  Manager Bounded Worker: $MANAGER_BOUNDED_WORKER_PID"
 echo "  Meta Worker:          $META_WORKER_PID"
 echo "  Quality Worker:       $QUALITY_WORKER_PID"
 echo "  Transfer Bounded Worker: $TRANSFER_BOUNDED_WORKER_PID"
@@ -3111,6 +3146,7 @@ echo "  SuperMap Workflow Engine: docker logs supermap-workflow-engine"
 echo "  Spark 工作流引擎: logs/spark-workflow-engine.log"
 echo "  Jupyter Engine: logs/jupyter-engine.log"
 echo "  Gateway:  logs/gateway.log"
+echo "  Manager Bounded Worker: logs/manager-bounded-worker.log"
 echo "  Transfer Bounded Worker: logs/transfer-bounded-worker.log"
 echo "  Transfer Continuous Worker: logs/transfer-continuous-worker.log"
 echo "  Meta Worker: logs/meta-worker.log"

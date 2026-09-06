@@ -22,7 +22,7 @@
             <el-form-item :label="t('workbench.componentTitle')"><el-input v-model="draft.name" maxlength="200" /></el-form-item>
             <el-form-item :label="t('workbench.description')"><el-input v-model="draft.description" type="textarea" maxlength="2000" /></el-form-item>
             <el-form-item :label="t('workbench.columns')">
-              <el-checkbox-group v-model="draft.columns" @change="resetResult">
+              <el-checkbox-group v-model="draft.columns" @change="syncRendererFields">
                 <el-checkbox v-for="field in selectableFields" :key="field.name" :value="field.name">
                   {{ outputField(field.name)?.comment || field.name }}
                 </el-checkbox>
@@ -106,6 +106,22 @@
                 <el-form-item :label="t('workbench.mapLegendTitle')"><el-input v-model="draft.mapLegendTitle" maxlength="100" /></el-form-item>
               </template>
             </template>
+            <template v-if="draft.rendererType !== 'value' && draft.fieldPresentations.length > 0">
+              <div class="section-header field-presentation-header">
+                <strong>{{ t('workbench.fieldPresentations') }}</strong>
+                <span>{{ t('workbench.fieldPresentationsHint') }}</span>
+              </div>
+              <div v-for="item in draft.fieldPresentations" :key="item.field" class="field-presentation">
+                <el-input :model-value="item.field" disabled :placeholder="t('workbench.presentationField')" />
+                <el-input v-model="item.label" maxlength="100" :placeholder="t('workbench.presentationLabel')" />
+                <el-input v-if="presentationIsNumeric(item)" v-model="item.unit" maxlength="30" :placeholder="t('workbench.presentationUnit')" />
+                <el-input-number v-if="presentationIsNumeric(item)" v-model="item.precision" :min="0" :max="8" :controls="false" :placeholder="t('workbench.presentationPrecision')" />
+                <el-select v-if="presentationIsTemporal(item)" v-model="item.temporalFormat" :placeholder="t('workbench.presentationTemporalFormat')">
+                  <el-option v-for="format in temporalFormats(item)" :key="format" :value="format" :label="t(`workbench.temporalFormats.${format}`)" />
+                </el-select>
+                <el-input-number v-if="draft.rendererType === 'table'" v-model="item.width" :min="80" :max="600" :controls="false" :placeholder="t('workbench.presentationWidth')" />
+              </div>
+            </template>
             <div class="section-header">
               <strong>{{ t('workbench.parameters') }}</strong>
               <div class="parameter-actions">
@@ -172,7 +188,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { createLatestRequestCoordinator } from '@common-ui'
 import { executeDescriptorOperation, getConsumerDescriptor, listConsumerServices } from '../api/services'
-import { buildComponentConfiguration, buildQueryRequest, controlTypeFor, createNamedParameterDraft, createParameterDraft, draftFromComponent, emptyControlValue, requiredParameterValuesPresent } from '../utils/componentDraft.mjs'
+import { buildComponentConfiguration, buildQueryRequest, buildRendererConfig, controlTypeFor, createNamedParameterDraft, createParameterDraft, draftFromComponent, emptyControlValue, requiredParameterValuesPresent, synchronizeFieldPresentations } from '../utils/componentDraft.mjs'
 import { boundedExportHasMore, descriptorSupportsExport, downloadBoundedExport, exportFormatForRenderer } from '../utils/boundedExport.mjs'
 import WorkbenchRendererHost from './WorkbenchRendererHost.vue'
 
@@ -209,23 +225,7 @@ const dimensionFields = computed(() => {
   const stableKeys = new Set(descriptor.value?.input_contract?.order?.stable_key || [])
   return outputFields.value.filter((field) => stableKeys.has(field.name))
 })
-const rendererConfig = computed(() => draft.rendererType === 'chart'
-  ? { chart_type: draft.chartType, dimension: draft.dimension, measures: [...draft.measures] }
-  : draft.rendererType === 'map'
-    ? {
-        geometry_field: draft.geometryField,
-        label_field: draft.mapLabelField,
-        tooltip_fields: [...draft.tooltipFields],
-        style: {
-          mode: draft.mapStyleMode,
-          ...(draft.mapStyleMode === 'uniform' ? {} : { field: draft.mapColorField }),
-          palette: draft.mapPalette,
-          legend_title: draft.mapLegendTitle,
-        },
-      }
-    : draft.rendererType === 'value'
-      ? { items: draft.valueItems.map((item) => ({ ...item })) }
-    : { columns: [...draft.columns] })
+const rendererConfig = computed(() => buildRendererConfig(draft))
 const contractChanged = computed(() => Boolean(props.component?.contract_fingerprint && descriptor.value && props.component.contract_fingerprint !== descriptor.value.contract_fingerprint))
 const validDraft = computed(() => {
   if (!descriptor.value || !draft.name.trim() || draft.columns.length === 0) return false
@@ -242,6 +242,7 @@ const validDraft = computed(() => {
     const fields = draft.valueItems.map((item) => item.field)
     return draft.pageLimit === 1 && fields.length > 0 && fields.length <= 4 && new Set(fields).size === fields.length && draft.valueItems.every((item) => item.field && String(item.label || '').trim() && Number.isInteger(item.precision) && item.precision >= 0 && item.precision <= 8)
   }
+  if (!fieldPresentationsValid()) return false
   if (draft.rendererType === 'chart') return Boolean(draft.dimension && draft.measures.length > 0 && (draft.chartType !== 'pie' || draft.measures.length === 1))
   if (draft.rendererType === 'map') return Boolean(draft.geometryField && (draft.mapStyleMode === 'uniform' || draft.mapColorField))
   return true
@@ -257,7 +258,7 @@ function componentContextKey(component = props.component) {
 
 function emptyDraft() {
   return {
-    name: '', description: '', columns: [], pageLimit: 50, parameters: [], rendererType: 'table', chartType: 'bar', dimension: '', measures: [], valueItems: [],
+    name: '', description: '', columns: [], pageLimit: 50, parameters: [], rendererType: 'table', chartType: 'bar', dimension: '', measures: [], valueItems: [], fieldPresentations: [],
     geometryField: '', mapLabelField: '', tooltipFields: [], mapStyleMode: 'uniform', mapColorField: '', mapPalette: 'primary', mapLegendTitle: '',
   }
 }
@@ -362,7 +363,35 @@ function syncRendererFields() {
         ? draft.valueItems.map((item) => item.field)
         : []
   draft.columns = [...new Set([...draft.columns, ...required.filter(Boolean)])]
+  draft.fieldPresentations = synchronizeFieldPresentations(draft, outputFields.value)
   resetResult()
+}
+
+function presentationIsNumeric(item) {
+  return numericTypes.has(item.fieldType)
+}
+
+function presentationIsTemporal(item) {
+  return ['date', 'time', 'timestamp'].includes(item.fieldType)
+}
+
+function temporalFormats(item) {
+  if (item.fieldType === 'date') return ['date']
+  if (item.fieldType === 'time') return ['time']
+  return ['date', 'datetime']
+}
+
+function fieldPresentationsValid() {
+  if (draft.rendererType === 'value') return true
+  const expected = synchronizeFieldPresentations(draft, outputFields.value).map((item) => item.field)
+  if (expected.length !== draft.fieldPresentations.length || expected.some((field, index) => field !== draft.fieldPresentations[index]?.field)) return false
+  return draft.fieldPresentations.every((item) => {
+    if (!String(item.label || '').trim() || String(item.label).length > 100 || String(item.unit || '').length > 30) return false
+    if (presentationIsNumeric(item) && (!Number.isInteger(item.precision) || item.precision < 0 || item.precision > 8)) return false
+    if (presentationIsTemporal(item) && !temporalFormats(item).includes(item.temporalFormat)) return false
+    if (draft.rendererType === 'table' && item.width !== null && item.width !== undefined && (!Number.isInteger(item.width) || item.width < 80 || item.width > 600)) return false
+    return true
+  })
 }
 
 function syncMapStyle() {
@@ -537,5 +566,5 @@ function submit() {
 </script>
 
 <style scoped>
-.component-editor,.configuration-form,.preview-panel{display:flex;flex-direction:column;gap:16px}.editor-grid{display:grid;grid-template-columns:minmax(360px,5fr) minmax(480px,7fr);gap:16px}.full{width:100%}.preview-panel{min-height:520px;padding:16px;background:var(--addp-bg-primary);border:1px solid var(--addp-border-color);border-radius:8px}.preview-header,.section-header,.parameter-actions,.cursor-actions{display:flex;align-items:center;justify-content:space-between;gap:8px}.parameter-actions span{font-size:12px;color:var(--addp-text-secondary)}.parameter{display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr auto;gap:8px;align-items:center;padding:12px;border:1px solid var(--addp-border-color);border-radius:8px}.value-item{display:grid;grid-template-columns:minmax(140px,1fr) minmax(120px,1fr) minmax(80px,.7fr) 110px auto;gap:8px;align-items:center}.bbox-inputs{display:grid;grid-template-columns:1fr 1fr;gap:4px}.cursor-actions{justify-content:center}@media(max-width:1000px){.editor-grid{grid-template-columns:1fr}.parameter,.value-item{grid-template-columns:1fr 1fr}.preview-panel{min-height:360px}}
+.component-editor,.configuration-form,.preview-panel{display:flex;flex-direction:column;gap:16px}.editor-grid{display:grid;grid-template-columns:minmax(360px,5fr) minmax(480px,7fr);gap:16px}.full{width:100%}.preview-panel{min-height:520px;padding:16px;background:var(--addp-bg-primary);border:1px solid var(--addp-border-color);border-radius:8px}.preview-header,.section-header,.parameter-actions,.cursor-actions{display:flex;align-items:center;justify-content:space-between;gap:8px}.parameter-actions span,.field-presentation-header span{font-size:12px;color:var(--addp-text-secondary)}.parameter{display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr auto;gap:8px;align-items:center;padding:12px;border:1px solid var(--addp-border-color);border-radius:8px}.value-item{display:grid;grid-template-columns:minmax(140px,1fr) minmax(120px,1fr) minmax(80px,.7fr) 110px auto;gap:8px;align-items:center}.field-presentation{display:grid;grid-template-columns:minmax(120px,1fr) minmax(120px,1fr) repeat(3,minmax(90px,.7fr));gap:8px;align-items:center;padding:10px;border:1px solid var(--addp-border-color);border-radius:8px}.bbox-inputs{display:grid;grid-template-columns:1fr 1fr;gap:4px}.cursor-actions{justify-content:center}@media(max-width:1000px){.editor-grid{grid-template-columns:1fr}.parameter,.value-item,.field-presentation{grid-template-columns:1fr 1fr}.preview-panel{min-height:360px}}
 </style>

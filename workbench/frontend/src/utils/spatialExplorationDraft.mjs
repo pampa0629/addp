@@ -1,4 +1,4 @@
-import { buildComponentConfiguration, controlTypeFor, hasParameterValue } from './componentDraft.mjs'
+import { buildComponentConfiguration, controlTypeFor, hasParameterValue, synchronizeFieldPresentations } from './componentDraft.mjs'
 
 const NUMERIC_TYPES = new Set(['int', 'bigint', 'float', 'double', 'decimal'])
 const THEMATIC_TYPES = new Set(['string', 'bool', 'int', 'bigint', 'float', 'double', 'decimal', 'date', 'time', 'timestamp', 'uuid'])
@@ -87,22 +87,22 @@ export function buildSpatialExplorationDraft(configuration, idFactory = () => cr
     name: titles.value, description: '', columns: uniqueFields(valueItems.map((item) => item.field)), pageLimit: 1,
     rendererType: 'value', valueItems, parameters: [parameter],
   }, ids.value)
-  const chart = buildComponentConfiguration(aggregate, {
+  const chart = buildComponentConfiguration(aggregate, withPresentations({
     name: titles.chart, description: '', columns: uniqueFields([dimension.name, chartMeasure.name]), pageLimit: boundedLimit(aggregate, 1000),
     rendererType: 'chart', chartType, dimension: dimension.name, measures: [chartMeasure.name], parameters: [],
-  }, ids.chart)
+  }, aggregate), ids.chart)
   const detailParameter = { ...parameter, field: detailFilter.name, fieldType: detailFilter.type }
-  const map = buildComponentConfiguration(detail, {
+  const map = buildComponentConfiguration(detail, withPresentations({
     name: titles.map, description: '',
     columns: uniqueFields([geometry.name, mapLabel?.name, mapStyleField?.name, ...tooltipFields]),
     pageLimit: boundedLimit(detail, 1000), parameters: [detailParameter], rendererType: 'map', geometryField: geometry.name,
     mapLabelField: mapLabel?.name || '', tooltipFields, mapStyleMode, mapColorField: mapStyleField?.name || '',
     mapPalette: configuration.mapPalette, mapLegendTitle: String(configuration.mapLegendTitle || '').trim(),
-  }, ids.map)
-  const table = buildComponentConfiguration(detail, {
+  }, detail), ids.map)
+  const table = buildComponentConfiguration(detail, withPresentations({
     name: titles.table, description: '', columns: tableColumns, pageLimit: boundedLimit(detail, detail.input_contract.page.default_limit),
     rendererType: 'table', parameters: [detailParameter],
-  }, ids.table)
+  }, detail), ids.table)
 
   const defaultValue = value.default_parameter_values.scope_filter
   return {
@@ -157,4 +157,11 @@ function boundedLimit(descriptor, preferred) {
   const requested = Number(preferred)
   if (!Number.isInteger(maximum) || maximum < 1 || !Number.isInteger(requested) || requested < 1) throw new Error('invalid_page_contract')
   return Math.min(maximum, requested)
+}
+
+function withPresentations(draft, descriptor) {
+  return {
+    ...draft,
+    fieldPresentations: synchronizeFieldPresentations(draft, descriptor.output_contract?.fields || []),
+  }
 }

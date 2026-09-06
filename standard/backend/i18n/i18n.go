@@ -57,8 +57,18 @@ const (
 	MsgDocumentFileRequired                   = "standard.document.file_required"
 	MsgDocumentExtractionUnsupported          = "standard.document.extraction_unsupported"
 	MsgDocumentExtractionInvalid              = "standard.document.extraction_invalid"
+	MsgDocumentCandidateGroupQueryInvalid     = "standard.document.candidate_group_query_invalid"
 	MsgDocumentCopilotUnavailable             = "standard.document.copilot_unavailable"
 	MsgDocumentPublicationHistory             = "standard.document.publication_history"
+	MsgDocumentCandidateFormalizationHistory  = "standard.document.candidate_formalization_history"
+	MsgCandidateNotRetained                   = "standard.document.candidate_not_retained"
+	MsgCandidateAlreadyFormalized             = "standard.document.candidate_already_formalized"
+	MsgCandidateFormalizationStale            = "standard.document.candidate_formalization_stale"
+	MsgCandidateScopeConflict                 = "standard.document.candidate_scope_conflict"
+	MsgCandidateTargetDraftExists             = "standard.document.candidate_target_draft_exists"
+	MsgCandidateReferenceUnavailable          = "standard.document.candidate_reference_unavailable"
+	MsgCandidateFormalizationDenied           = "standard.document.candidate_formalization_denied"
+	MsgCandidateFormalizationInvalid          = "standard.document.candidate_formalization_invalid"
 )
 
 // Domain

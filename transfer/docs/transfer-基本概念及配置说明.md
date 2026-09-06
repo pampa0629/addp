@@ -75,7 +75,7 @@ snapshot checkpoint 用于 progress / diagnostics，不表示可从 checkpoint �
 | 字段 | 必填 | 说明 |
 |---|---:|---|
 | `runtime` | 是 | 执行边界；当前 worker 只支持 `boundary=bounded`。 |
-| `load` | 是 | 装载方式；支持 `mode=snapshot` 和 PostgreSQL/MySQL native table 的 `mode=incremental + change_detection.type=watermark`。 |
+| `load` | 是 | 装载方式；支持 `mode=snapshot` 和 PostgreSQL/MySQL/OceanBase 非空间 native table 的 `mode=incremental + change_detection.type=watermark`。 |
 | `source` | 是 | 源 endpoint。 |
 | `target` | 是 | 目标 endpoint。 |
 | `transforms` | 否 | table batch transform 列表。 |
@@ -308,11 +308,11 @@ apply mode 是 Transfer policy；真实 upsert/delete 能力必须由目标 engi
 当前支持组合为：
 
 ```text
-PostgreSQL/MySQL native table -> PostgreSQL/MySQL/OceanBase native table
+PostgreSQL/MySQL/OceanBase non-spatial native table -> PostgreSQL/MySQL/OceanBase native table
 bounded + incremental + watermark + upsert
 ```
 
-配置必须声明 `load.change_detection.field`、非空 `tie_breaker`、`start=committed`、`end=execution_upper_bound`，并在 `target.policy.keys` 声明稳定目标键。watermark 字段不得为 NULL；tie breaker 必须精确匹配非空主键或唯一约束，并且稳定、不可变。每次 execution 在源数据库的一致性快照内冻结复合上界，只读取 `(committed_position, execution_upper_bound]` 并稳定排序；MySQL 源必须是 InnoDB 基表，且当前不得包含空间字段。
+配置必须声明 `load.change_detection.field`、非空 `tie_breaker`、`start=committed`、`end=execution_upper_bound`，并在 `target.policy.keys` 声明稳定目标键。watermark 字段不得为 NULL；tie breaker 必须精确匹配非空主键或唯一约束，并且稳定、不可变。每次 execution 在源数据库的一致性快照内冻结复合上界，只读取 `(committed_position, execution_upper_bound]` 并稳定排序；MySQL-compatible 源必须是 InnoDB 基表，OceanBase 当前不得包含空间字段。
 
 同步主状态存储在 `transfer.sync_states`。position 使用 `type=watermark`、`version=v1` 的 JSON；目标批次提交成功后才允许携带 `state_version` 和本次 fencing token 做 CAS 更新。重复应用必须由目标 `TableUpsertProvider` 幂等吸收：PostgreSQL 使用 `ON CONFLICT ... DO UPDATE`，MySQL 及 MySQL 模式 OceanBase 使用 InnoDB 事务内的 `ON DUPLICATE KEY UPDATE`。MySQL-compatible 目标的配置 keys 必须精确匹配非空主键或唯一约束，且目标表不得存在与配置 keys 不同的唯一约束；OceanBase 当前只支持非空间目标。
 
@@ -399,7 +399,7 @@ capture supervisor 已通过 Kafka Connect REST 和 Infra Kafka admin API 管理
 |---|---|
 | observable | 已支持，用于进度展示和故障定位。 |
 | restartable | 已支持 retry 从头重跑；append 拒绝。 |
-| resumable | PostgreSQL/MySQL source 的 watermark incremental 通过 `transfer.sync_states` 支持 execution 间 resume，目标按幂等 `table_upsert` capability 选择；snapshot checkpoint 仍仅可观测。 |
+| resumable | PostgreSQL/MySQL/OceanBase 非空间 source 的 watermark incremental 通过 `transfer.sync_states` 支持 execution 间 resume，目标按幂等 `table_upsert` capability 选择；snapshot checkpoint 仍仅可观测。 |
 
 ## 十一、写后 Meta 扫描
 

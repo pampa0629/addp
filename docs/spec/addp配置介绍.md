@@ -206,6 +206,19 @@ GEOPYTHON_WORKFLOW_GUNICORN_TIMEOUT=7200
 
 leaf COG 生成并发不通过全局环境变量固定，而是在任务 `config.cog` 中归一化为明确值。默认策略按运行机器 CPU 预算计算：逻辑 CPU 小于 8 时 `leaf_concurrency=1`，8 到 15 时为 `2`，16 到 31 时为 `4`，32 及以上时为 `6`，上限 `8`；单个 leaf COG 的 GDAL `num_threads` 默认按 `逻辑 CPU / (leaf_concurrency * 2)` 计算并限制在 `1` 到 `4`。当前 18 逻辑 CPU 开发机默认得到 `leaf_concurrency=4`、`num_threads=2`。`cog.leaf_retry_attempts` 默认 `2`，上限 `5`，用于单个 leaf COG 生成或校验的瞬时失败重试。`detached` 模式重跑时会复用目标数据集中已经存在且内容级 COG 校验通过的 leaf，因此超时或中断后的恢复通过再次执行同一任务继续完成未生成部分，而不是从头覆盖全部 leaf。
 
+### Manager PPTX PDF Worker 配置
+
+PPTX 转静态 PDF 的 execution 由独立 `manager-bounded-worker` 领取，Manager Backend 只创建 `pending` execution。以下配置属于部署级进程容量与租约治理，不进入任务定义，也不在配置页面中维护：
+
+```bash
+MANAGER_PPTX_PDF_WORKER_CONCURRENCY=1
+MANAGER_PPTX_PDF_LEASE_DURATION=2m
+MANAGER_PPTX_PDF_HEARTBEAT_INTERVAL=30s
+MANAGER_PPTX_PDF_CLAIM_INTERVAL=1s
+```
+
+并发数和三个时间项必须为正，心跳周期必须短于租约。Worker 进程失联且租约过期时，该 execution、任务摘要和构建中的结果会原子收敛为失败；LibreOffice 转换不会自动重放，用户显式重试时创建新的 execution。
+
 ### Manager 向量化配置
 
 Manager 向量化的模型提供能力统一来自 Inference Runtime。Manager 只保存 `manager.embedding` Scenario Binding、向量检索策略、成本限制和 execution 快照，不保存模型服务 Base URL、上游模型标识或 API Key。
@@ -424,6 +437,11 @@ GATEWAY_SERVICE_CLIENT_SECRET=
 GRAPH_SERVICE_CLIENT_SECRET=
 INFERENCE_SERVICE_CLIENT_SECRET=
 MANAGER_SERVICE_CLIENT_SECRET=
+# Manager PPTX 转 PDF 有界 Worker 的容量、租约、心跳和领取轮询。
+MANAGER_PPTX_PDF_WORKER_CONCURRENCY=1
+MANAGER_PPTX_PDF_LEASE_DURATION=2m
+MANAGER_PPTX_PDF_HEARTBEAT_INTERVAL=30s
+MANAGER_PPTX_PDF_CLAIM_INTERVAL=1s
 META_SERVICE_CLIENT_SECRET=
 MODEL_SERVICE_CLIENT_SECRET=
 MONITOR_SERVICE_CLIENT_SECRET=

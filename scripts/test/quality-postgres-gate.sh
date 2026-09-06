@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# ADDP_T2_SERVICES=postgres
 # quality-postgres-gate.sh - Run Quality PostgreSQL integration tests against a disposable database.
 
 set -euo pipefail

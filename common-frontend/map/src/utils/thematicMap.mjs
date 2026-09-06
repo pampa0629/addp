@@ -1,10 +1,12 @@
+import { formatFieldPresentationValue } from '../../../basic/src/utils/fieldPresentation.mjs'
+
 const MAX_CATEGORIES = 8
 const CONTINUOUS_STEPS = 5
 
 export const THEMATIC_MODES = new Set(['uniform', 'categorical', 'continuous'])
 export const THEMATIC_PALETTES = new Set(['primary', 'success', 'warning', 'danger'])
 
-export function buildThematicContext(features, style = {}) {
+export function buildThematicContext(features, style = {}, presentation = null, locale = 'zh-CN') {
   const mode = style.mode || 'uniform'
   if (!THEMATIC_MODES.has(mode) || !THEMATIC_PALETTES.has(style.palette || 'primary')) {
     return { valid: false, reason: 'invalid_config' }
@@ -28,7 +30,7 @@ export function buildThematicContext(features, style = {}) {
       field: style.field,
       palette,
       categories,
-      entries: categories.map((label, index) => ({ label, index, count: categories.length })),
+      entries: categories.map((value, index) => ({ label: formatFieldPresentationValue(value, presentation, locale), index, count: categories.length })),
     }
   }
 
@@ -41,7 +43,7 @@ export function buildThematicContext(features, style = {}) {
   const entries = Array.from({ length: step === 0 ? 1 : CONTINUOUS_STEPS }, (_, index) => {
     const lower = minimum + step * index
     const upper = index === CONTINUOUS_STEPS - 1 ? maximum : minimum + step * (index + 1)
-    return { label: formatRange(lower, upper), index, count: step === 0 ? 1 : CONTINUOUS_STEPS }
+    return { label: formatRange(lower, upper, presentation, locale), index, count: step === 0 ? 1 : CONTINUOUS_STEPS }
   })
   return { valid: true, reason: '', mode, field: style.field, palette, minimum, maximum, step, entries }
 }
@@ -59,7 +61,9 @@ export function thematicColorVariable(index, count, palette = 'primary') {
   return `--el-color-${THEMATIC_PALETTES.has(palette) ? palette : 'primary'}-light-${lightness}`
 }
 
-function formatRange(lower, upper) {
-  const format = (value) => Number(value.toPrecision(4)).toString()
+function formatRange(lower, upper, presentation, locale) {
+  const format = (value) => presentation
+    ? formatFieldPresentationValue(value, presentation, locale)
+    : Number(value.toPrecision(4)).toString()
   return lower === upper ? format(lower) : `${format(lower)} – ${format(upper)}`
 }

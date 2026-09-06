@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# ADDP_T2_SERVICES=postgres
 # develop-postgres-gate.sh - Run Develop owner-local PostgreSQL schema and catalog tests.
 
 set -euo pipefail

@@ -53,8 +53,9 @@ func main() {
 	assessments := service.NewAssessmentService(db, func(tenantID uint) service.SecurityFactsReader { return metaClient.WithTenantID(tenantID) })
 	policies := service.NewPolicyService(db)
 	exemptions := service.NewExemptionService(db)
+	accessRequests := service.NewAccessRequestService(db)
 	lifecycle := modulelifecycle.NewBusiness("security", commonclient.ModuleRuntimeRoleBackend)
-	router := api.SetupRouter(definitions, enrollments, discoveries, assessments, policies, exemptions, cfg.SystemURL, lifecycle)
+	router := api.SetupRouter(definitions, enrollments, discoveries, assessments, policies, exemptions, accessRequests, cfg.SystemURL, lifecycle)
 	listener, err := net.Listen("tcp", ":"+cfg.Port)
 	if err != nil {
 		log.Fatalf("Security listener failed: %v", err)

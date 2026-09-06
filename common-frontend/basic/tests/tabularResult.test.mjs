@@ -29,6 +29,20 @@ test('normalizes string and path-based columns through one table descriptor cont
   assert.equal(tabularCellValue(rows[0], columns[1]), 'Ada')
 })
 
+test('applies published field labels and widths while preserving source column keys', () => {
+  const columns = normalizeTabularColumns({
+    columns: ['amount'],
+    fields: [{ name: 'amount', comment: 'Raw amount' }],
+    presentations: [{ field: 'amount', label: '订单金额', unit: '元', precision: 2, width: 180 }],
+  })
+
+  assert.deepEqual(columns[0], {
+    key: 'amount', label: '订单金额', path: ['amount'], width: 180,
+    presentation: { field: 'amount', label: '订单金额', unit: '元', precision: 2, width: 180 },
+  })
+  assert.equal(formatResultCell(12.5, '—', columns[0].presentation, 'zh-CN'), '12.50 元')
+})
+
 test('paginates an already loaded bounded result without changing the source rows', () => {
   const rows = Array.from({ length: 25 }, (_, index) => ({ id: index + 1 }))
 

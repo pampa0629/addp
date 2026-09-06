@@ -442,11 +442,11 @@ jobs:
         env:
           POSTGRES_USER: addp_ci
           POSTGRES_PASSWORD: addp_ci_password
-          POSTGRES_DB: addp_workbench_test
+          POSTGRES_DB: addp_workbench_disposable
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U addp_ci -d addp_workbench_test"
+          --health-cmd "pg_isready -U addp_ci -d addp_workbench_disposable"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
@@ -464,7 +464,7 @@ jobs:
 
       - name: Run Workbench PostgreSQL gate
         env:
-          WORKBENCH_POSTGRES_TEST_DSN: postgres://addp_ci:addp_ci_password@127.0.0.1:5432/addp_workbench_test?sslmode=disable
+          WORKBENCH_POSTGRES_TEST_DSN: postgres://addp_ci:addp_ci_password@127.0.0.1:5432/addp_workbench_disposable?sslmode=disable
         run: make test-workbench-postgres
 
       - name: Summarize Workbench PostgreSQL gate
@@ -482,7 +482,7 @@ jobs:
     timeout-minutes: 20
     services:
       postgres:
-        image: postgres:15@sha256:74e110c41804365e3915fcc09d5e7a1eff50161aaa94d5da0e58e0cd75ae509c
+        image: postgis/postgis:15-3.4@sha256:3f4a5d48e0be9580ed70ed618cd039ce57bbb2dd113053d3836e28513f1f87cd
         env:
           POSTGRES_USER: addp_ci
           POSTGRES_PASSWORD: addp_ci_password
@@ -521,6 +521,57 @@ jobs:
         uses: ./.github/actions/ci-gate-summary
         with:
           gate: Common Engine Provider integration (PostgreSQL 15)
+          status: ${{ job.status }}
+
+  common-oceanbase:
+    name: Common Engine Provider integration (OceanBase CE 4.4.2 LTS)
+    needs: selection
+    if: needs.selection.outputs.common == 'true' || needs.selection.outputs.develop == 'true' || needs.selection.outputs.service == 'true' || needs.selection.outputs.transfer == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      oceanbase:
+        image: oceanbase/oceanbase-ce:4.4.2-lts@sha256:46eefcf1275beae76947aac8f96c47efb745f6902d584de3c26465e4a9f113ae
+        env:
+          MODE: mini
+          OB_TENANT_NAME: test
+          OB_TENANT_PASSWORD: addp_ci_password
+          OB_DATABASE: oceanbase
+        ports:
+          - 2881:2881
+        options: >-
+          --health-cmd "obclient -h127.0.0.1 -P2881 -uroot@test --password=addp_ci_password -Doceanbase -e 'SELECT 1'"
+          --health-interval 10s
+          --health-timeout 10s
+          --health-retries 36
+          --health-start-period 300s
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: common/go.mod
+          cache: false
+
+      - name: Run Common OceanBase gate
+        env:
+          ADDP_TEST_OCEANBASE_HOST: 127.0.0.1
+          ADDP_TEST_OCEANBASE_PORT: 2881
+          ADDP_TEST_OCEANBASE_TENANT: test
+          ADDP_TEST_OCEANBASE_USER: root@test
+          ADDP_TEST_OCEANBASE_PASSWORD: addp_ci_password
+          ADDP_TEST_OCEANBASE_DATABASE: addp_oceanbase_disposable
+        run: make test-common-oceanbase
+
+      - name: Summarize Common OceanBase gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Common Engine Provider integration (OceanBase CE 4.4.2 LTS)
           status: ${{ job.status }}
 
   common-mysql-data-protection:
@@ -677,11 +728,11 @@ jobs:
         env:
           POSTGRES_USER: addp_ci
           POSTGRES_PASSWORD: addp_ci_password
-          POSTGRES_DB: addp_security_test
+          POSTGRES_DB: addp_security_disposable
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U addp_ci -d addp_security_test"
+          --health-cmd "pg_isready -U addp_ci -d addp_security_disposable"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
@@ -697,7 +748,7 @@ jobs:
           cache: false
       - name: Run Security PostgreSQL gate
         env:
-          SECURITY_POSTGRES_TEST_DSN: postgres://addp_ci:addp_ci_password@127.0.0.1:5432/addp_security_test?sslmode=disable
+          SECURITY_POSTGRES_TEST_DSN: postgres://addp_ci:addp_ci_password@127.0.0.1:5432/addp_security_disposable?sslmode=disable
         run: make test-security-postgres
       - name: Summarize Security PostgreSQL gate
         if: always()

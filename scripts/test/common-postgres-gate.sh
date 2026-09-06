@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# ADDP_T2_SERVICES=postgres
 # common-postgres-gate.sh - Run Common PostgreSQL Engine Provider integration tests.
 
 set -euo pipefail

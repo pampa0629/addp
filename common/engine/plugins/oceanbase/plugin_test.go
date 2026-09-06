@@ -84,6 +84,9 @@ func TestCapabilitiesMatchImplementedProviders(t *testing.T) {
 	if caps.Storage.Store.TableUpsert == nil || !caps.Storage.Store.TableUpsert.Supported || !caps.Storage.Store.TableUpsert.Idempotent {
 		t.Fatalf("OceanBase must declare idempotent table upsert capability: %#v", caps.Storage.Store)
 	}
+	if !caps.Storage.Store.BoundedWatermarkRead {
+		t.Fatalf("OceanBase must declare bounded watermark read capability: %#v", caps.Storage.Store)
+	}
 	if caps.Storage.Store.BatchWrite || caps.Storage.Facts.SpatialFacts {
 		t.Fatalf("OceanBase capabilities overclaim unsupported providers: %#v", caps.Storage)
 	}

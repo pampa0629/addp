@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# ADDP_T2_SERVICES=postgres
 # workbench-postgres-gate.sh - Run Workbench Data Application owner, revision, and concurrency tests against addp_test.
 
 set -euo pipefail

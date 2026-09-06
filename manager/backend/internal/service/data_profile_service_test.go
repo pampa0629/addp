@@ -383,7 +383,7 @@ func managedDataProfileServiceTestGate(t *testing.T, itemFingerprint string, fie
 	}
 	now := time.Now().UTC()
 	projection := dataprotection.Projection{
-		SchemaVersion: dataprotection.ProjectionSchemaV1, ProjectionID: "manager-profile-test", Revision: "00000000000000000001",
+		SchemaVersion: dataprotection.ProjectionSchemaV2, ProjectionID: "manager-profile-test", Revision: "00000000000000000001",
 		ConsumerOwner: "manager", State: dataprotection.ProjectionStateActive,
 		Target:             dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: itemFingerprint},
 		SourceSnapshotHash: snapshotHash,

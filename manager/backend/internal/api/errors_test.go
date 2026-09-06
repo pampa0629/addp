@@ -144,6 +144,12 @@ func TestManagerErrorMessagesRegistered(t *testing.T) {
 		manageri18n.MsgPPTXPDFObjectNotFound,
 		manageri18n.MsgPPTXPDFResolveFailed,
 		manageri18n.MsgPPTXPDFExecutionFailed,
+		manageri18n.MsgInvalidPPTXPDFTaskID,
+		manageri18n.MsgPPTXPDFTaskNotFound,
+		manageri18n.MsgPPTXPDFResultNotFound,
+		manageri18n.MsgPPTXPDFDeleteFailed,
+		manageri18n.MsgPPTXPDFTaskDeleted,
+		manageri18n.MsgPPTXPDFResultDeleted,
 	}
 
 	for _, messageID := range messageIDs {

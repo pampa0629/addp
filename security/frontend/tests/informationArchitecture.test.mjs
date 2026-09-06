@@ -124,8 +124,8 @@ describe('Security product information architecture', () => {
     expect(zhCn.security.finding.ruleAudit.viewMethod).toBeUndefined()
     expect(enrollment).not.toContain('finding.detector_version }}</el-descriptions-item>')
     expect(zhCn.security.finding.explanationStages.execution).toBe('出口规则')
-    expect(zhCn.security.finding.outletAcknowledged).toBe('已安装')
-    expect(zhCn.security.finding.outletWaiting).toBe('待安装')
+    expect(zhCn.security.finding.outletAcknowledged).toBe('已同步')
+    expect(zhCn.security.finding.outletWaiting).toBe('待同步')
   })
 
   it('keeps the pending review queue as a recoverable subview of protected resources', () => {
@@ -155,23 +155,37 @@ describe('Security product information architecture', () => {
     expect(zhCn.security.finding.reviewBasis.currentEnforcement).toBe('当前出口规则')
   })
 
-  it('presents owner acknowledgement as installed rules rather than request execution', () => {
+  it('presents owner acknowledgement as synchronized rules rather than request execution', () => {
     const enrollment = readSource('../src/views/ProtectionEnrollmentList.vue')
     const zhCn = JSON.parse(readSource('../src/i18n/zh-cn.json'))
     const en = JSON.parse(readSource('../src/i18n/en.json'))
 
     expect(zhCn.security.enrollment.progress).toBe('保护规则同步')
-    expect(zhCn.security.enrollment.ownerStates.active).toBe('字段规则已安装')
+    expect(zhCn.security.enrollment.ownerStates.active).toBe('字段规则已同步')
     expect(zhCn.security.enrollment.states.active).toBe('保护规则同步完成')
     expect(zhCn.security.enrollment.stateDescriptions.active).toContain('具体请求仍按运行时能力执行或保守拒绝')
-    expect(zhCn.security.enrollment.ownerProtectionHint).toContain('已安装表示 Owner 已持久保存当前保护投影')
-    expect(zhCn.security.enrollment.ownerEffectRequirements).toBe('已安装规则：{rules}')
-    expect(en.security.enrollment.ownerStates.active).toBe('Field rules installed')
+    expect(zhCn.security.enrollment.ownerProtectionHint).toContain('已同步表示 Owner 已持久保存当前保护投影')
+    expect(zhCn.security.enrollment.ownerEffectRequirements).toBe('已同步规则：{rules}')
+    expect(en.security.enrollment.ownerStates.active).toBe('Field rules synchronized')
     expect(en.security.enrollment.ownerProtectionHint).toContain('Each request still validates')
     expect(enrollment).toContain("security.enrollment.ownerProtectionHint")
     expect(enrollment).toContain("security.enrollment.ownerEffectRequirements")
     expect(enrollment).toContain('Array.isArray(owner.rules)')
     expect(enrollment).not.toContain('Array.isArray(owner.effects)')
     expect(zhCn.security.enrollment.stateDescriptions.active).not.toContain('均已执行字段级保护')
+  })
+
+  it('keeps plaintext access on the request and approval route only', () => {
+    const enrollment = readSource('../src/views/ProtectionEnrollmentList.vue')
+    const api = readSource('../src/api/security.js')
+    const zhCn = JSON.parse(readSource('../src/i18n/zh-cn.json'))
+
+    expect(enrollment).toContain('protectionAccessRequestAPI.reviewQueue')
+    expect(enrollment).toContain('protectionAccessRequestAPI.decide')
+    expect(enrollment).not.toContain('openCreateExemption')
+    expect(enrollment).not.toContain('openRenewExemption')
+    expect(api).not.toContain('protectionExemptionAPI.create')
+    expect(api).not.toContain('protectionExemptionAPI.renew')
+    expect(zhCn.security.exemption.title).toBe('临时原值授权')
   })
 })

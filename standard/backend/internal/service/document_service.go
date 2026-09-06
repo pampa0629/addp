@@ -35,18 +35,19 @@ const (
 )
 
 var (
-	ErrDocumentStorageUnavailable    = errors.New("document storage unavailable")
-	ErrDocumentFileTooLarge          = errors.New("document file too large")
-	ErrDocumentFileUpload            = errors.New("document file upload failed")
-	ErrDocumentFileDownload          = errors.New("document file download failed")
-	ErrDocumentFileCleanup           = errors.New("document file cleanup failed")
-	ErrDocumentFileNameInvalid       = errors.New("document file name invalid")
-	ErrDocumentFileRequired          = errors.New("document revision file required")
-	ErrDocumentExtractionUnsupported = errors.New("document extraction only supports markdown")
-	ErrDocumentExtractionInvalid     = errors.New("document extraction result invalid")
-	ErrDocumentCopilotUnavailable    = errors.New("document copilot unavailable")
-	ErrDocumentPublicationHistory    = errors.New("document publication history exists")
-	documentCandidateCodePattern     = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+	ErrDocumentStorageUnavailable            = errors.New("document storage unavailable")
+	ErrDocumentFileTooLarge                  = errors.New("document file too large")
+	ErrDocumentFileUpload                    = errors.New("document file upload failed")
+	ErrDocumentFileDownload                  = errors.New("document file download failed")
+	ErrDocumentFileCleanup                   = errors.New("document file cleanup failed")
+	ErrDocumentFileNameInvalid               = errors.New("document file name invalid")
+	ErrDocumentFileRequired                  = errors.New("document revision file required")
+	ErrDocumentExtractionUnsupported         = errors.New("document extraction only supports markdown")
+	ErrDocumentExtractionInvalid             = errors.New("document extraction result invalid")
+	ErrDocumentCopilotUnavailable            = errors.New("document copilot unavailable")
+	ErrDocumentPublicationHistory            = errors.New("document publication history exists")
+	ErrDocumentCandidateFormalizationHistory = errors.New("document candidate formalization history exists")
+	documentCandidateCodePattern             = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 )
 
 type DocumentStorageOptions struct {
@@ -188,6 +189,9 @@ func (s *DocumentService) DeleteDocument(id, tenantID int64) error {
 	if err != nil {
 		if errors.Is(err, repository.ErrDocumentPublicationHistory) {
 			return ErrDocumentPublicationHistory
+		}
+		if errors.Is(err, repository.ErrDocumentCandidateFormalizationHistory) {
+			return ErrDocumentCandidateFormalizationHistory
 		}
 		return err
 	}
@@ -724,21 +728,6 @@ func normalizedCandidateString(value *string) *string {
 func isMarkdownRevision(revision *models.DocumentRevision) bool {
 	return revision != nil && (strings.EqualFold(revision.MediaType, "text/markdown") || strings.EqualFold(filepath.Ext(revision.FileName), ".md"))
 }
-func (s *DocumentService) ListExtractions(documentID, tenantID int64) ([]models.DocumentExtraction, error) {
-	document, err := s.repo.GetByID(documentID, tenantID)
-	if err != nil {
-		return nil, err
-	}
-	extractions, err := s.repo.ListExtractions(documentID, tenantID)
-	if err != nil {
-		return nil, err
-	}
-	if err := s.attachCandidateComparisons(document, extractions); err != nil {
-		return nil, err
-	}
-	return extractions, nil
-}
-
 func (s *DocumentService) attachCandidateComparisons(document *models.Document, extractions []models.DocumentExtraction) error {
 	codesByType := map[string][]string{}
 	for extractionIndex := range extractions {
@@ -903,7 +892,101 @@ func (s *DocumentService) UpdateCandidateStatus(candidateID, tenantID, userID in
 	if req.Status != "retained" && req.Status != "rejected" {
 		return nil, ErrDocumentExtractionInvalid
 	}
-	return s.repo.UpdateCandidateStatus(candidateID, tenantID, userID, req.Version, req.Status)
+	result, err := s.repo.UpdateCandidateStatus(candidateID, tenantID, userID, req.Version, req.Status)
+	if err != nil {
+		return nil, mapCandidateFormalizationError(err)
+	}
+	return result, nil
+}
+
+type CandidateFormalizationAuthorization struct {
+	Create map[string]bool
+	Update map[string]bool
+}
+
+func (s *DocumentService) FormalizeCandidate(candidateID, tenantID, userID int64, req *models.FormalizeDocumentExtractionCandidateRequest, authorization CandidateFormalizationAuthorization) (*models.DocumentCandidateFormalizationResponse, error) {
+	changeSummary := strings.TrimSpace(req.ChangeSummary)
+	metricType := strings.TrimSpace(req.MetricType)
+	if changeSummary == "" {
+		return nil, ErrCandidateFormalizationInvalid
+	}
+	context, err := s.repo.GetCandidateContext(candidateID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	candidate, document := &context.Candidate, &context.Document
+	if candidate.Version != req.Version {
+		return nil, ErrCandidateFormalizationStale
+	}
+	if candidate.Status != "retained" {
+		return nil, ErrCandidateNotRetained
+	}
+	if candidate.Formalization != nil {
+		return nil, ErrCandidateAlreadyFormalized
+	}
+	targets, err := s.repo.ListCandidateComparisonTargets(tenantID, map[string][]string{candidate.CandidateType: {candidate.Code}})
+	if err != nil {
+		return nil, err
+	}
+	target, matched := targets[candidateComparisonKey(candidate.CandidateType, candidate.Code)]
+	comparison := compareDocumentCandidate(document, candidate, target, matched)
+	plan := repository.DocumentCandidateFormalizationPlan{
+		CandidateType: candidate.CandidateType, CandidateVersion: candidate.Version,
+		SourceDocumentVersion: document.Version, ChangeSummary: changeSummary,
+		TargetStandardID: target.StandardID, TargetStandardVersion: target.StandardVersion,
+		TargetRevisionID: target.RevisionID,
+	}
+	switch {
+	case !matched:
+		plan.Action = models.CandidateFormalizationCreatedIdentity
+	case comparison.Result == models.CandidateComparisonScopeConflict:
+		return nil, ErrCandidateScopeConflict
+	case comparison.Result == models.CandidateComparisonExact && (target.RevisionStatus == models.RevisionStatusDraft || target.RevisionStatus == models.RevisionStatusInReview || target.RevisionStatus == models.RevisionStatusPublished):
+		plan.Action = models.CandidateFormalizationLinkedExisting
+	case target.DraftRevisionID != nil:
+		return nil, ErrCandidateTargetDraftExists
+	default:
+		plan.Action = models.CandidateFormalizationCreatedRevision
+	}
+	if plan.Action == models.CandidateFormalizationCreatedIdentity && candidate.CandidateType == "metric" {
+		if metricType != "atomic" && metricType != "derived" && metricType != "composite" {
+			return nil, ErrCandidateFormalizationInvalid
+		}
+		plan.MetricType = metricType
+	} else if metricType != "" {
+		return nil, ErrCandidateFormalizationInvalid
+	}
+	permissionSet := authorization.Update
+	if plan.Action == models.CandidateFormalizationCreatedIdentity {
+		permissionSet = authorization.Create
+	}
+	if !permissionSet[candidate.CandidateType] {
+		return nil, ErrCandidateFormalizationDenied
+	}
+	result, err := s.repo.FormalizeCandidate(candidateID, tenantID, userID, plan)
+	if err != nil {
+		return nil, mapCandidateFormalizationError(err)
+	}
+	return result, nil
+}
+
+func mapCandidateFormalizationError(err error) error {
+	switch {
+	case errors.Is(err, repository.ErrCandidateNotRetained):
+		return ErrCandidateNotRetained
+	case errors.Is(err, repository.ErrCandidateAlreadyFormalized):
+		return ErrCandidateAlreadyFormalized
+	case errors.Is(err, repository.ErrCandidateFormalizationStale):
+		return ErrCandidateFormalizationStale
+	case errors.Is(err, repository.ErrCandidateScopeConflict):
+		return ErrCandidateScopeConflict
+	case errors.Is(err, repository.ErrCandidateTargetDraftExists):
+		return ErrCandidateTargetDraftExists
+	case errors.Is(err, repository.ErrCandidateReferenceUnavailable):
+		return ErrCandidateReferenceUnavailable
+	default:
+		return err
+	}
 }
 
 func (s *DocumentService) removeObject(key string) error {

@@ -15,6 +15,28 @@ function combineFilters(filters) {
   return { and: filters }
 }
 
+function componentParameterOperator(snapshot, binding) {
+  const component = (snapshot?.components || []).find((item) => item.id === binding.component_id)
+  const filter = component?.query_template?.parameter_filters?.find((item) => item.parameter_key === binding.component_parameter_key)
+  if (filter) return filter.operator
+  const named = component?.query_template?.named_parameter_bindings?.find((item) => item.parameter_key === binding.component_parameter_key)
+  return named ? 'eq' : ''
+}
+
+function requiredApplicationParametersExecutable(snapshot, values, requireDeclaredValues = false) {
+  for (const parameter of snapshot?.parameters || []) {
+    if (!parameter.required) continue
+    if (requireDeclaredValues && !Object.prototype.hasOwnProperty.call(parameter, 'default_value')) return false
+    const bindings = (snapshot?.parameter_bindings || []).filter((binding) => binding.application_parameter_key === parameter.key)
+    if (bindings.length === 0) return false
+    for (const binding of bindings) {
+      const operator = componentParameterOperator(snapshot, binding)
+      if (!operator || !hasValue(values?.[parameter.key], operator)) return false
+    }
+  }
+  return true
+}
+
 export function initialApplicationParameterValues(snapshot) {
   return Object.fromEntries((snapshot?.parameters || []).map((parameter) => [
     parameter.key,
@@ -167,6 +189,19 @@ export function canAttemptApplicationQuery(components, states) {
   return (components || []).length > 0 && components.every((component) => !states?.[component.id]?.contract_error)
 }
 
+export function canRunPublishedApplicationInitialQuery(snapshot, states) {
+  const components = snapshot?.components || []
+  if (components.length === 0 || !components.every((component) => canExecuteComponentQuery(states?.[component.id]))) return false
+  const values = initialApplicationParameterValues(snapshot)
+  if (!requiredApplicationParametersExecutable(snapshot, values, true)) return false
+  try {
+    components.forEach((component) => buildComponentQuery(snapshot, component, values))
+    return true
+  } catch {
+    return false
+  }
+}
+
 export function canRunApplicationRefresh(page, { hidden = false, querying = false } = {}) {
   return applicationRefreshDelayMilliseconds(page) > 0 && !hidden && !querying
 }
@@ -176,17 +211,5 @@ export function runtimeSectionVisible(page, section) {
 }
 
 export function canHideApplicationParameters(snapshot) {
-  for (const parameter of snapshot?.parameters || []) {
-    if (!parameter.required) continue
-    if (!Object.prototype.hasOwnProperty.call(parameter, 'default_value')) return false
-    const bindings = (snapshot?.parameter_bindings || []).filter((binding) => binding.application_parameter_key === parameter.key)
-    if (bindings.length === 0) return false
-    for (const binding of bindings) {
-      const component = (snapshot?.components || []).find((item) => item.id === binding.component_id)
-	  const filter = component?.query_template?.parameter_filters?.find((item) => item.parameter_key === binding.component_parameter_key)
-	  const named = component?.query_template?.named_parameter_bindings?.find((item) => item.parameter_key === binding.component_parameter_key)
-	  if ((!filter && !named) || !hasValue(parameter.default_value, filter?.operator || 'eq')) return false
-    }
-  }
-  return true
+  return requiredApplicationParametersExecutable(snapshot, initialApplicationParameterValues(snapshot), true)
 }

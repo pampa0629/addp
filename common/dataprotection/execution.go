@@ -18,12 +18,13 @@ type valueResult struct {
 // ProtectDocument applies every rule for one action to a decoded JSON object.
 // It mutates the supplied object in place and never includes protected values
 // in returned errors.
-func ProtectDocument(document map[string]any, action string, rules []Rule) error {
+func ProtectDocument(document map[string]any, action string, rules []Rule, subject SubjectReference) error {
+	now := time.Now().UTC()
 	for _, rule := range rules {
 		if rule.Action != action {
 			continue
 		}
-		if err := protectObjectPath(document, rule.Component.Path, rule.Decision.Effective(time.Now().UTC())); err != nil {
+		if err := protectObjectPath(document, rule.Component.Path, rule.EffectiveDecision(subject, now)); err != nil {
 			return err
 		}
 	}

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# ADDP_T2_SERVICES=postgres
 # catalog-postgres-gate.sh - Run Catalog PostgreSQL integration tests against a disposable database.
 
 set -euo pipefail

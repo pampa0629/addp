@@ -12,7 +12,8 @@ on:
           - enterprise-catalog-publishing
           - manager-internal-artifact-lineage
           - module-registry-recovery
-          - security-protection-exemption
+          - oceanbase-consumer-flow
+          - security-plaintext-access
           - security-mysql-owner-protection
           - security-transfer-protection
           - standard-model-reference-deletion

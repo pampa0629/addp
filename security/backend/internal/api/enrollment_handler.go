@@ -20,7 +20,7 @@ func NewEnrollmentHandler(svc *service.EnrollmentService) *EnrollmentHandler {
 }
 
 // @Summary 保护纳管列表 | List protection enrollments
-// @Description 分页返回当前租户的显式保护纳管、最近成功发现摘要，以及必要 Owner 的投影安装确认状态和已安装 action/effect 规则；安装确认不表示某次数据请求已执行成功 | Return explicit protection enrollments, latest successful discovery summaries, required-owner projection installation acknowledgements, and installed action/effect rules for the current tenant; installation acknowledgement does not mean a data request has executed successfully
+// @Description 分页返回当前租户的显式保护纳管、最近成功发现摘要，以及必要 Owner 的保护规则同步状态和当前 action/effect 规则；同步确认不表示某次数据请求已执行成功 | Return explicit protection enrollments, latest successful discovery summaries, required-owner protection-rule synchronization status, and current action/effect rules for the current tenant; synchronization acknowledgement does not mean a data request has executed successfully
 // @Tags Protection Enrollment
 // @Produce json
 // @Param page query int false "页码 | Page number"
@@ -47,7 +47,7 @@ func (h *EnrollmentHandler) List(c *gin.Context) {
 }
 
 // @Summary 创建保护纳管 | Create protection enrollment
-// @Description 使用 Meta 资源树返回的标准 DataItem locator 创建完整资源纳管；Security 自行计算 fingerprint，创建后固定返回 activating，只有 Manager、Transfer、Develop 和 Service 全部安装 enrolling 门禁并确认后才进入 enrolling | Create whole-resource enrollment from a standard DataItem locator returned by the Meta resource tree; Security computes the fingerprint and always returns activating until Manager, Transfer, Develop, and Service install and acknowledge the enrolling gate
+// @Description 使用 Meta 资源树返回的标准 DataItem locator 创建完整资源纳管；Security 自行计算 fingerprint，创建后固定返回 activating，只有 Manager、Transfer、Develop 和 Service 全部同步 enrolling 门禁并确认后才进入 enrolling | Create whole-resource enrollment from a standard DataItem locator returned by the Meta resource tree; Security computes the fingerprint and always returns activating until Manager, Transfer, Develop, and Service synchronize and acknowledge the enrolling gate
 // @Tags Protection Enrollment
 // @Accept json
 // @Produce json
@@ -77,7 +77,7 @@ func (h *EnrollmentHandler) Create(c *gin.Context) {
 }
 
 // @Summary 保护纳管详情 | Get protection enrollment
-// @Description 返回纳管状态、最近成功发现摘要、资源版本，以及每个必要 Owner 的投影安装确认状态和已安装 action/effect 规则；具体请求仍由 Owner 按运行时能力执行或保守拒绝 | Return enrollment state, latest successful discovery summary, resource version, and each required owner's projection installation acknowledgement and installed action/effect rules; each request is still executed or conservatively denied by the owner according to runtime capability
+// @Description 返回纳管状态、最近成功发现摘要、资源版本，以及每个必要 Owner 的保护规则同步状态和当前 action/effect 规则；具体请求仍由 Owner 按运行时能力执行或保守拒绝 | Return enrollment state, latest successful discovery summary, resource version, and each required owner's protection-rule synchronization status and current action/effect rules; each request is still executed or conservatively denied by the owner according to runtime capability
 // @Tags Protection Enrollment
 // @Produce json
 // @Param id path string true "纳管 ID | Enrollment ID"
@@ -232,7 +232,7 @@ func (h *EnrollmentHandler) ListChanges(c *gin.Context) {
 }
 
 // @Summary 确认保护投影游标 | Acknowledge protection projection cursor
-// @Description 确认当前固定 Owner 已在本地事务中原子安装该游标；重复确认幂等，倒退或伪造游标冲突 | Confirm that the current fixed owner atomically installed the cursor in its local transaction; duplicate acknowledgement is idempotent and regressing or forged cursors conflict
+// @Description 确认当前固定 Owner 已在本地事务中原子同步该游标；重复确认幂等，倒退或伪造游标冲突 | Confirm that the current fixed owner atomically synchronized the cursor in its local transaction; duplicate acknowledgement is idempotent and regressing or forged cursors conflict
 // @Tags Protection Projection Runtime
 // @Accept json
 // @Produce json

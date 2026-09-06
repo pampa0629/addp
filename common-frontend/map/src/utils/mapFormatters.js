@@ -2,6 +2,8 @@
  * 地图要素属性格式化工具。
  */
 
+import { fieldPresentationFor, fieldPresentationLabel, formatFieldPresentationValue } from '../../../basic/src/utils/fieldPresentation.mjs'
+
 const DEFAULT_LABELS = {
   id: 'ID',
   unknown: 'Unknown',
@@ -53,14 +55,11 @@ const isSkippedProperty = (key, { geometryColumns, primaryField }) => {
     key === 'rowData'
 }
 
-const formatDisplayValue = (value, labels) => {
+const formatDisplayValue = (value, labels, presentation, locale) => {
   if (value === null || value === undefined) {
     return `<span class="null-value">${escapeHTML(labels.nullValue)}</span>`
   }
-  if (typeof value === 'object') {
-    return escapeHTML(JSON.stringify(value))
-  }
-  const raw = String(value)
+  const raw = formatFieldPresentationValue(value, presentation, locale, labels.nullValue)
   const displayValue = raw.length > 120 ? `${raw.slice(0, 120)}...` : raw
   return escapeHTML(displayValue)
 }
@@ -84,6 +83,8 @@ export function formatFeatureProperties(properties = {}, options = {}) {
     ...(normalizedOptions.geometryTypeLabels || {})
   }
   const geometryColumns = normalizeGeometryColumns(normalizedOptions.geomColumn)
+  const presentations = normalizedOptions.fieldPresentations || []
+  const locale = normalizedOptions.locale || 'zh-CN'
 
   const resolvedFeatureId = ID_FIELDS.map((field) => properties[field]).find((value) => value !== undefined && value !== null)
   const featureId = resolvedFeatureId ?? labels.unknown
@@ -117,21 +118,25 @@ export function formatFeatureProperties(properties = {}, options = {}) {
     }
   }
 
-  const attributeRows = Object.entries(properties)
-    .filter(([key]) => !isSkippedProperty(key, { geometryColumns, primaryField }))
+  const configuredFields = Array.isArray(normalizedOptions.fields) ? normalizedOptions.fields.filter(Boolean) : []
+  const attributeSource = configuredFields.length > 0
+    ? configuredFields.map((key) => [key, properties[key]]).filter(([, value]) => value !== undefined)
+    : Object.entries(properties)
+  const attributeRows = attributeSource
+    .filter(([key]) => !isSkippedProperty(key, { geometryColumns, primaryField }) || (configuredFields.length > 0 && ID_FIELDS.includes(key) && key !== primaryField))
     .slice(0, 12)
     .map(([key, value]) => (
       '<div class="attribute-item">' +
-        `<span class="attr-key">${escapeHTML(key)}:</span> ` +
-        `<span class="attr-value">${formatDisplayValue(value, labels)}</span>` +
+        `<span class="attr-key">${escapeHTML(fieldPresentationLabel(key, presentations))}:</span> ` +
+        `<span class="attr-value">${formatDisplayValue(value, labels, fieldPresentationFor(key, presentations), locale)}</span>` +
       '</div>'
     ))
     .join('')
 
   const primaryHTML = primaryValue !== undefined && primaryValue !== null
     ? '<div class="feature-primary-field">' +
-        `<div class="primary-value">${formatDisplayValue(primaryValue, labels)}</div>` +
-        `<div class="primary-label">${escapeHTML(primaryField)}</div>` +
+        `<div class="primary-value">${formatDisplayValue(primaryValue, labels, fieldPresentationFor(primaryField, presentations), locale)}</div>` +
+        `<div class="primary-label">${escapeHTML(fieldPresentationLabel(primaryField, presentations))}</div>` +
       '</div>'
     : ''
 

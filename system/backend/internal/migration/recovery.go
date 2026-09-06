@@ -10,6 +10,8 @@ const executionAudienceRepairMigrationVersion = 75
 
 const securityModuleRepairMigrationVersion = 113
 
+const securityProtectionAccessRequestRepairMigrationVersion = 130
+
 // RepairDirtyExecutionAudienceMigration75 repairs the one published migration
 // failure that attempted to normalize an immutable execution authorization
 // audience. It is deliberately not a generic migration force mechanism.
@@ -231,6 +233,109 @@ func RepairDirtySecurityModuleMigration113(ctx context.Context, db *sql.DB) erro
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit migration 113 repair: %w", err)
+	}
+	return nil
+}
+
+// RepairDirtySecurityProtectionAccessRequestMigration130 repairs only the
+// fully rolled-back development failure of migration 130. It does not mark
+// migration 130 as applied; it restores the runner to 129/clean so the
+// corrected migration can execute normally.
+func RepairDirtySecurityProtectionAccessRequestMigration130(ctx context.Context, db *sql.DB) error {
+	if db == nil {
+		return fmt.Errorf("migration repair database is required")
+	}
+	catalog, err := ReadCatalog(EmbeddedSQL, DefaultMigrationsRoot)
+	if err != nil {
+		return fmt.Errorf("read migration catalog for migration 130 repair: %w", err)
+	}
+	if len(catalog.Files) < securityProtectionAccessRequestRepairMigrationVersion ||
+		catalog.Files[securityProtectionAccessRequestRepairMigrationVersion-1].Name != "000130_iam_security_protection_access_request.up.sql" {
+		return fmt.Errorf("migration 130 repair requires the registered Security protection access request migration")
+	}
+
+	tx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return fmt.Errorf("begin migration 130 repair: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx, `LOCK TABLE system.schema_migrations IN ACCESS EXCLUSIVE MODE`); err != nil {
+		return fmt.Errorf("lock migration state: %w", err)
+	}
+	var version uint
+	var dirty bool
+	if err := tx.QueryRowContext(ctx, `SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
+		return fmt.Errorf("read migration state: %w", err)
+	}
+	if version != securityProtectionAccessRequestRepairMigrationVersion || !dirty {
+		return fmt.Errorf("migration 130 repair requires state (130, dirty), got (%d, dirty=%t)", version, dirty)
+	}
+
+	var maxChecksum uint
+	var migration130ChecksumCount int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COALESCE(MAX(version), 0), count(*) FILTER (WHERE version = 130)
+		FROM system.schema_migration_checksums
+	`).Scan(&maxChecksum, &migration130ChecksumCount); err != nil {
+		return fmt.Errorf("read migration checksums: %w", err)
+	}
+	if maxChecksum != securityProtectionAccessRequestRepairMigrationVersion-1 || migration130ChecksumCount != 0 {
+		return fmt.Errorf("migration 130 repair requires checksums through 129 with no 130 record, got max=%d migration_130=%d", maxChecksum, migration130ChecksumCount)
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		LOCK TABLE system.permissions, system.roles, system.role_permissions IN SHARE MODE
+	`); err != nil {
+		return fmt.Errorf("lock migration 130 facts: %w", err)
+	}
+	var legacyPermissionCount, activeLegacyPermissionCount, accessRequestPermissionCount int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT
+		    count(*) FILTER (WHERE permission_key IN ('security.protection_exemption.create', 'security.protection_exemption.update')),
+		    count(*) FILTER (WHERE permission_key IN ('security.protection_exemption.create', 'security.protection_exemption.update') AND status = 'active'),
+		    count(*) FILTER (WHERE permission_key IN ('security.protection_access_request.create', 'security.protection_access_request.read', 'security.protection_access_request.update'))
+		FROM system.permissions
+	`).Scan(&legacyPermissionCount, &activeLegacyPermissionCount, &accessRequestPermissionCount); err != nil {
+		return fmt.Errorf("inspect migration 130 permission facts: %w", err)
+	}
+	if accessRequestPermissionCount != 0 {
+		return fmt.Errorf("migration 130 repair requires zero access request permissions, got %d", accessRequestPermissionCount)
+	}
+	if legacyPermissionCount != 2 || activeLegacyPermissionCount != 2 {
+		return fmt.Errorf("migration 130 repair requires two active legacy exemption mutation permissions, got total=%d active=%d", legacyPermissionCount, activeLegacyPermissionCount)
+	}
+
+	var builtinLegacyRolePermissionCount int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT count(*)
+		FROM system.role_permissions role_permission
+		JOIN system.permissions permission ON permission.id = role_permission.permission_id
+		JOIN system.roles role ON role.id = role_permission.role_id
+		WHERE role.tenant_id IS NULL
+		  AND role.role_key IN ('tenant.administrator', 'tenant.governance_manager')
+		  AND permission.permission_key IN ('security.protection_exemption.create', 'security.protection_exemption.update')
+	`).Scan(&builtinLegacyRolePermissionCount); err != nil {
+		return fmt.Errorf("inspect migration 130 legacy role permission facts: %w", err)
+	}
+	if builtinLegacyRolePermissionCount != 4 {
+		return fmt.Errorf("migration 130 repair requires four built-in legacy exemption mutation role permissions, got %d", builtinLegacyRolePermissionCount)
+	}
+
+	result, err := tx.ExecContext(ctx, `
+		UPDATE system.schema_migrations
+		SET version = 129, dirty = false
+		WHERE version = 130 AND dirty = true
+	`)
+	if err != nil {
+		return fmt.Errorf("restore migration state to clean 129: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil || rows != 1 {
+		return fmt.Errorf("migration state changed during migration 130 repair")
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit migration 130 repair: %w", err)
 	}
 	return nil
 }

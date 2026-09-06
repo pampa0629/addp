@@ -60,6 +60,7 @@
 | query service named parameter | 查询服务命名参数 | Query Service 发布时声明、执行时由消费者按名称提交并由 Service 强类型校验的标量输入。 | 只用于参数影响固定 SQL 内部计算、且不能表达为输出字段筛选的场景；不是字段名、表名、SQL 片段或 Workbench 私有参数。SQL 使用 `:name`，执行时走引擎原生绑定，禁止字符串替换。 |
 | ServiceReference | 服务引用 | 消费者对一个已发布 Service 的强类型稳定引用，由 `service_type + service_id` 组成。 | Data Application Component 保存该引用并通过 Service Consumer Catalog 解析，不能保存或猜测执行 URL。 |
 | Data Application Component | 数据应用组件 | Data Application 内直接绑定一个 ServiceReference，并保存经 Consumer Descriptor 校验的查询模板、参数定义、契约指纹和 renderer 配置的内聚实体。 | 不是独立聚合根，不单独发布或共享；不保存查询结果、cursor、Token、SQL 或 Service 管理 DTO。 |
+| Field Presentation | 字段呈现规则 | Data Application Component 对已选服务输出字段声明的最终展示语义，包含标签以及与字段类型匹配的单位、精度、时间格式或表格列宽。 | 位于 renderer 配置并进入 Application Revision；只改变 Table、Chart、Map 的显示，不改变字段名、查询、联动、导出、Service 契约或原始结果。 |
 | Data Application | 数据应用 | Workbench 中直接配置一个或多个 Data Application Component，并拥有草稿、页面布局、参数绑定、组件联动、发布、下线和稳定运行入口的聚合根。 | 不等同于 System Application；不依赖中间视图资源，不保存查询结果、凭据或 Service URL。 |
 | Application Revision | 应用发布修订 | Data Application 每次发布产生的不可变运行快照，包含当次名称、说明、Component、页面布局、应用展示模式、参数绑定和选择绑定。 | 使用独立 `revision_number` 表达业务发布版次，不复用聚合根并发字段 `version`；CatalogEntry 标识 Data Application，不标识单个 Revision。 |
 | Selection Binding | 选择绑定 | Data Application Revision 中把一个源 Component 当前结果的显式标量字段原子写入 Application Parameter 的声明式配置。 | 目标 Component 只由既有 Parameter Binding 推导；不保存选择值、任意表达式、URL、ServiceReference 或查询片段，首期只用于同页组件联动和受控下钻。 |
@@ -116,6 +117,8 @@
 | standard document revision | 标准文档修订 | 标准来源文档一次不可变的内容快照及其版本、来源和生效信息。 | 属于 Standard。Copilot 可从修订内容提取标准候选项，但提取结果必须保留页码、章节或文本片段等证据，并经人工审核后才能发布为正式标准修订。 |
 | standard extraction | 标准提炼批次 | Standard 针对一个确定的标准文档修订发起、由 Copilot 执行的一次候选标准提炼。 | Standard 保存批次、结果与人工处置事实；Copilot 只返回候选内容，不保存 Standard 业务状态，也不能创建或发布正式标准。重复提炼形成新批次，不覆盖旧结果。 |
 | standard extraction candidate | 标准提炼候选 | 从一个标准文档修订中识别出的潜在业务术语、数据元、码值集或指标定义。 | 候选固定引用提炼批次和来源文档修订，状态为 `pending`、`retained` 或 `rejected`；数据元候选的 `data_type` 只能使用 Standard 数据元类型，码值集候选只能使用 `string`、`int`、`bigint`，术语和指标候选不得携带 `data_type`；数据元候选的 `value_domain_kind` 只能使用 `unrestricted`、`range`、`enumeration`。枚举数据元候选必须通过 `code_set_code` 引用同一批次中唯一的码值集候选，非枚举候选不得携带该字段；该编码只闭合候选间语义关系，正式发布数据元时仍必须由 Standard 冻结具体 `code_set_revision_id`。`identifier` 等业务语义不得混入数据类型或值域类型，`numeric`、`date_or_datetime` 等模糊上位提示也不是合法标准数据类型；`retained` 只表示人工认为值得后续建标，仍不是正式标准身份或修订。 |
+| standard extraction candidate group view | 标准提炼候选聚合视图 | Standard 将同一标准文档稳定身份历次提炼中的确定性同义候选聚合成一个可裁决读取单元。 | 聚合键为候选类型、编码以及规范化名称、定义和完整候选载荷的 SHA-256 语义指纹；码值项和维度先按稳定顺序规范化。同类型、同编码但内容不同的候选仍是不同聚合项，不使用模型相似度自动合并。该视图不持久化、不改写原始候选；每次出现、提炼批次、文档修订、证据、人工处置和正式化事实均完整保留。 |
+| standard candidate formalization | 标准候选正式化 | 将一个已保留标准提炼候选转化为受治理标准草稿，或确认其对应既有相同内容修订的不可变治理事实。 | Standard 根据同类型、同编码的实时比对唯一决定结果：无稳定身份时创建 R1 草稿；已有稳定身份且没有工作修订时，以最新修订为基线创建候选内容的新草稿；候选与现有草稿、审核中或已发布修订内容一致时只建立来源关联。范围冲突、已有不同内容的工作修订、无法解析的码值集或计量单位引用必须拒绝。正式化不得提交审核或发布，候选状态仍保持 `retained`。 |
 | standard extraction candidate comparison | 标准提炼候选比对 | Standard 在读取提炼结果时，将候选与当前租户内同类型、同编码的活动标准稳定身份进行确定性比较所得的动态投影。 | 结果固定为 `new`、`exact`、`content_conflict` 或 `scope_conflict`，差异项明确给出字段及候选值、当前标准值；枚举数据元候选的 `code_set_code` 与现有数据元修订所冻结码值集修订的稳定编码比较，不比较数据库 ID；同名不同编码不自动判为重复。比对不写回候选、不创建标准，也不代替人工裁决。 |
 | standard extraction evidence | 标准提炼证据 | 支撑某个标准提炼候选的不可变来源片段。 | 必须记录确定的文档修订、Markdown 章节或页码定位、行号/页码范围、原文摘录及内容摘要；证据不能只保存模型解释、置信度或可变的文档稳定身份。 |
 | standard revision status | 标准修订状态 | 可正式发布的标准定义修订所共用的审核发布状态。 | 业务术语、数据元、码值集、指标定义和标准文档等发布型定义统一使用 `draft`、`in_review`、`published`、`withdrawn`；`published` 只表示审核通过且定义不可变，不等同于当前生效。同一稳定身份至多有一个可编辑草稿，可以有多个生效区间不重叠的已发布修订。 |
@@ -144,7 +147,8 @@
 | ResourceSecurityAssessment | 资源安全评估 | 对确定专业资源或组件做出的正式安全分类分级结论。 | 可由 Finding 复核确认/调整形成，也可由治理人员从 Meta 当前组件清单中人工指定；撤销通过不可变修订表达，不删除历史。Catalog 可联邦展示，但不复制或改绑该事实。 |
 | ProtectionBaseline | 保护基线 | 对敏感类型与安全等级组合规定最低保护效果的规则。 | Owner 可以执行更严结果，不得降低基线；产品页面称“默认保护规则”，强调它是未另行收紧时自动采用的完整规则，而不是等待后续配置的半成品。 |
 | ProtectionPolicy | 保护策略 | 针对一个正式资源安全评估、消费 Owner 和动作，对保护基线作显式收紧的可版本化控制面决策。 | 无显式策略时仍执行 Assessment 对应的 ProtectionBaseline；首期策略只能收紧为 `mask|suppress|deny`，不能放宽基线，也不承载授权或受控例外。策略由 Security 拥有，不在 Manager、Transfer、Develop 或 Service 中复制编辑。 |
-| ProtectionExemption | 保护豁免 | 针对一个正式资源安全评估修订、消费 Owner 和具体出口动作形成的显式、限时、可审计明文例外。 | 豁免不授予资源访问权；首期作用于 Tenant 内所有已获 Owner 动作权限的调用者，最长 30 天。到期、撤销或 Assessment 产生新修订后由同一投影规则自动回落到 ProtectionPolicy 与 ProtectionBaseline，Owner 不得设置本地豁免。 |
+| ProtectionAccessRequest | 原值访问申请 | 用户从实际数据出口针对一个正式资源安全评估、具体 Owner 动作和期限发起的原值访问申请。 | 申请主体只能取当前可信 AuthContext，不能由请求正文指定；申请本身不产生明文访问权。 |
+| ProtectionExemption | 临时原值授权 | Security 审批原值访问申请后，针对申请用户、正式评估修订、消费 Owner 和具体出口动作形成的显式、限时、可审计授权。 | 不替代 Owner 的资源授权；仅在调用主体完全匹配时取消对应字段的内容变换，最长 30 天。到期、撤销或 Assessment 产生新修订后自动回落到 ProtectionPolicy 与 ProtectionBaseline，Owner 不得设置本地授权。 |
 | ProtectionProjection | 保护投影 | Security 为某个 Owner 出口编译的、带版本、有效期、校验和发布游标的最小可执行契约。 | Owner 后台拉取并本地执行；用户数据请求不逐次调用 Security。 |
 | protection effect | 保护效果 | Owner 服务端数据出口对返回结果执行的确定性处理结果。 | 严格度固定为 `deny > suppress > mask > allow`；受保护资源投影异常时不得退回明文。 |
 | dynamic masking | 动态遮盖 | 不改写源数据，在 Owner 服务端出口按投影将敏感值转换为可用但不暴露原值的形式。 | 例如手机号 `13661384499` 显示为 `136****4499`；浏览器不应接收原值。 |

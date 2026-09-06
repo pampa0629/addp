@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# ADDP_T2_SERVICES=postgres
 # transfer-postgres-gate.sh - Run Transfer PostgreSQL schema and protected export integration tests.
 
 set -euo pipefail
