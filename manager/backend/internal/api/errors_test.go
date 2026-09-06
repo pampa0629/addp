@@ -138,6 +138,12 @@ func TestManagerErrorMessagesRegistered(t *testing.T) {
 		manageri18n.MsgEmbeddingConfigurationLoadFailed,
 		manageri18n.MsgEmbeddingConfigurationUpdateFailed,
 		manageri18n.MsgEmbeddingConfigurationVersionConflict,
+		manageri18n.MsgPPTXPDFServiceUnavailable,
+		manageri18n.MsgInvalidPPTXPDFResultID,
+		manageri18n.MsgPPTXPDFResultNotReady,
+		manageri18n.MsgPPTXPDFObjectNotFound,
+		manageri18n.MsgPPTXPDFResolveFailed,
+		manageri18n.MsgPPTXPDFExecutionFailed,
 	}
 
 	for _, messageID := range messageIDs {

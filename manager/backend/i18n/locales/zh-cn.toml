@@ -219,3 +219,21 @@ other = "更新向量化配置失败"
 
 [manager.error.embedding_configuration_version_conflict]
 other = "向量化配置已被其他操作者更新"
+
+[manager.error.pptx_pdf_service_unavailable]
+other = "PPTX 静态预览服务暂不可用"
+
+[manager.error.invalid_pptx_pdf_result_id]
+other = "无效的 PPTX 静态预览结果 ID"
+
+[manager.error.pptx_pdf_result_not_ready]
+other = "PPTX 静态预览结果不存在或尚未就绪"
+
+[manager.error.pptx_pdf_object_not_found]
+other = "PPTX 静态预览文件不存在"
+
+[manager.error.pptx_pdf_resolve_failed]
+other = "获取 PPTX 静态预览失败"
+
+[manager.error.pptx_pdf_execution_failed]
+other = "启动 PPTX 静态预览转换失败"

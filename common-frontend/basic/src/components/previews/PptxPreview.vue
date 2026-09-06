@@ -1,352 +1,147 @@
 <template>
   <div class="pptx-preview">
-    <!-- 加载中 -->
-    <div v-if="loading" class="loading-container">
-      <el-icon class="is-loading"><Loading /></el-icon>
-      <div class="loading-info">
-        <span>正在解析演示文稿信息...</span>
-      </div>
-    </div>
-
-    <!-- 错误提示 -->
-    <div v-else-if="error" class="error-container">
-      <el-icon><WarningFilled /></el-icon>
-      <div class="error-info">
-        <p class="error-message">{{ error }}</p>
-        <div v-if="showLimitInfo" class="limit-info">
-          <p>内容类型：{{ displayContentType }}</p>
-          <p v-if="fileSize">存储大小：{{ formatFileSize(fileSize) }}</p>
-          <p v-if="formattedLimit">预览限制：{{ formattedLimit }}</p>
-        </div>
-        <div class="error-actions">
-          <span class="download-hint">右上角下载按钮可获取原始文件</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- PPTX 演示文稿信息展示 -->
-    <div v-else class="pptx-info-container">
-      <!-- 演示文稿基本信息 -->
-      <div class="file-card">
-        <div class="file-info">
-          <div class="file-header">
-            <el-icon :size="24" color="#d04726" class="file-type-icon">
-              <Document />
-            </el-icon>
-            <h2 class="filename">{{ fileName }}</h2>
-          </div>
-          <div class="file-meta">
-            <el-tag type="info" size="large">{{ formatFileSize(fileSize) }}</el-tag>
-            <el-tag type="success" size="large" v-if="slideCount > 0">{{ slideCount }} 张幻灯片</el-tag>
-            <el-tag type="warning" size="large">PowerPoint 演示文稿</el-tag>
-          </div>
-        </div>
-      </div>
-
-      <!-- 说明信息 -->
-      <el-alert
-        title="无法在线预览 PowerPoint 文件"
-        type="warning"
-        :closable="false"
-        show-icon
-      >
-        <template #default>
-          <div class="notice-content">
-            <p><strong>为什么无法预览？</strong></p>
-            <ul>
-              <li>PowerPoint 文件包含复杂的布局、动画、样式和嵌入对象</li>
-              <li>浏览器无法完整还原 PowerPoint 的显示效果</li>
-              <li>在线预览可能导致内容丢失或显示错误</li>
-            </ul>
-            <p><strong>如何查看？</strong></p>
-            <p>请使用右上角的下载按钮获取文件，并使用以下软件打开：</p>
-            <ul>
-              <li>Microsoft PowerPoint（推荐）</li>
-              <li>WPS 演示</li>
-              <li>LibreOffice Impress</li>
-              <li>macOS Keynote</li>
-            </ul>
-          </div>
-        </template>
-      </el-alert>
-
-      <!-- 演示文稿详细信息 -->
-      <div class="detail-card" v-if="pptxMetadata">
-        <h3>演示文稿详细信息</h3>
-        <div class="detail-grid">
-          <div class="detail-item">
-            <span class="label">对象名称</span>
-            <span class="value">{{ fileName }}</span>
-          </div>
-          <div class="detail-item">
-            <span class="label">存储大小</span>
-            <span class="value">{{ formatFileSize(fileSize) }}</span>
-          </div>
-          <div class="detail-item" v-if="slideCount > 0">
-            <span class="label">幻灯片数量</span>
-            <span class="value">{{ slideCount }} 张</span>
-          </div>
-          <div class="detail-item" v-if="pptxMetadata.creator">
-            <span class="label">创建者</span>
-            <span class="value">{{ pptxMetadata.creator }}</span>
-          </div>
-          <div class="detail-item" v-if="pptxMetadata.lastModifiedBy">
-            <span class="label">最后修改者</span>
-            <span class="value">{{ pptxMetadata.lastModifiedBy }}</span>
-          </div>
-          <div class="detail-item" v-if="pptxMetadata.created">
-            <span class="label">创建时间</span>
-            <span class="value">{{ formatDate(pptxMetadata.created) }}</span>
-          </div>
-          <div class="detail-item" v-if="pptxMetadata.modified">
-            <span class="label">修改时间</span>
-            <span class="value">{{ formatDate(pptxMetadata.modified) }}</span>
-          </div>
-          <div class="detail-item" v-if="pptxTitle">
-            <span class="label">演示标题</span>
-            <span class="value">{{ pptxTitle }}</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- 下载引导 -->
-      <div class="download-section">
-        <span class="download-hint">如需下载 PowerPoint，请点击右上角的下载按钮</span>
-        <p v-if="formattedLimit" class="limit-hint">预览限制：{{ formattedLimit }}</p>
-      </div>
+    <PdfPreview v-if="pdfData" :data="pdfData" />
+    <div v-else class="pptx-state">
+      <el-icon v-if="loading" class="is-loading"><Loading /></el-icon>
+      <el-icon v-else-if="error" class="pptx-error"><WarningFilled /></el-icon>
+      <el-icon v-else><Document /></el-icon>
+      <strong>{{ stateTitle }}</strong>
+      <span v-if="loading">{{ t('pptxPreview.convertingHint') }}</span>
+      <el-alert v-if="error" type="error" :closable="false" :title="error" />
+      <el-button v-if="error" type="primary" @click="retryPreview">
+        <el-icon><RefreshRight /></el-icon>
+        {{ t('common.refresh') }}
+      </el-button>
     </div>
   </div>
 </template>
 
 <script setup>
+import { computed, onUnmounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { Document, Loading, RefreshRight, WarningFilled } from '@element-plus/icons-vue'
 import { getAccessToken } from '../../auth/authSession'
-import { ref, computed, onMounted, watch } from 'vue'
-import { Loading, WarningFilled, Document } from '@element-plus/icons-vue'
-import JSZip from 'jszip'
+import PdfPreview from './PdfPreview.vue'
 
 const props = defineProps({
-  data: {
-    type: Object,
-    required: true
-  }
+  data: { type: Object, required: true },
+  source: { type: Object, default: null }
 })
 
+const { t } = useI18n()
 const loading = ref(false)
 const error = ref('')
-const slideCount = ref(0)
-const pptxTitle = ref('')
-const pptxMetadata = ref(null)
+const preview = ref(null)
+let loadToken = 0
+let pollTimer = 0
 
-const fileName = computed(() => {
-  const path = props.data.object?.path || ''
-  return path.split('/').pop() || 'presentation.pptx'
-})
-
-const fileSize = computed(() => {
-  return props.data.object?.size_bytes || 0
-})
-
-const pptxData = computed(() => {
-  const content = props.data.object?.content
-  if (!content) return null
-  return content.data || content.Data || null
-})
-
-const contentMetadata = computed(() => props.data.object?.content?.metadata || {})
-
-const pptxUrl = computed(() => {
-  const root = props.data || {}
-  const object = root.object || {}
-  const content = object.content || {}
-  return (
-    content.url ||
-    content.URL ||
-    content.preview_url ||
-    content.previewUrl ||
-    content.download_url ||
-    content.downloadUrl ||
-    object.url ||
-    object.URL ||
-    object.preview_url ||
-    object.previewUrl ||
-    object.download_url ||
-    object.downloadUrl ||
-    root.preview_url ||
-    root.previewUrl ||
-    root.download_url ||
-    root.downloadUrl ||
-    ''
-  )
-})
-
-const limitBytes = computed(() => contentMetadata.value?.limit_bytes ?? null)
-
-const formattedLimit = computed(() => {
-  if (!limitBytes.value) return ''
-  return formatFileSize(limitBytes.value)
-})
-
-const displayContentType = computed(() => {
-  return (
-    contentMetadata.value?.content_type ||
-    props.data.object?.content_type ||
-    props.data.object?.contentType ||
-    'application/vnd.openxmlformats-officedocument.presentationml.presentation'
-  )
-})
-
-const showLimitInfo = computed(() => {
-  return Boolean(limitBytes.value || displayContentType.value || fileSize.value)
-})
-
-const isTruncated = computed(() => {
-  return props.data.object?.content?.truncated || props.data.object?.truncated || false
-})
-
-const truncatedMessage = computed(() => {
-  return props.data.object?.content?.text || '文件太大，无法加载'
-})
-
-const fetchPptxBytesFromUrl = async (url) => {
-  const headers = {}
-  const token = getAccessToken()
-  if (token) {
-    headers.Authorization = `Bearer ${token}`
-  }
-  const response = await fetch(url, { credentials: 'include', headers })
-  if (!response.ok) {
-    throw new Error(`请求失败（${response.status}）`)
-  }
-  const buffer = await response.arrayBuffer()
-  return new Uint8Array(buffer)
-}
-
-const decodePptxBase64 = (base64Data) => {
-  const binaryString = atob(base64Data)
-  const bytes = new Uint8Array(binaryString.length)
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i)
-  }
-  return bytes
-}
-
-const getPptxBytes = async () => {
-  if (pptxData.value) {
-    return decodePptxBase64(pptxData.value)
-  }
-  if (pptxUrl.value) {
-    return fetchPptxBytesFromUrl(pptxUrl.value)
-  }
-  return null
-}
-
-// 格式化文件大小
-const formatFileSize = (bytes) => {
-  if (!bytes) return '未知'
-  if (bytes < 1024) return bytes + ' B'
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB'
-  if (bytes < 1024 * 1024 * 1024) return (bytes / 1024 / 1024).toFixed(2) + ' MB'
-  return (bytes / 1024 / 1024 / 1024).toFixed(2) + ' GB'
-}
-
-// 格式化日期
-const formatDate = (dateStr) => {
-  if (!dateStr) return '未知'
-  try {
-    const date = new Date(dateStr)
-    return date.toLocaleString('zh-CN')
-  } catch {
-    return dateStr
-  }
-}
-
-// 解析 PPTX 元数据（仅提取基本信息）
-const parsePptxMetadata = async () => {
-  try {
-    loading.value = true
-    error.value = ''
-
-    if (isTruncated.value) {
-      error.value = truncatedMessage.value
-      return
-    }
-
-    const bytes = await getPptxBytes()
-    if (!bytes) {
-      error.value = '未找到文件数据'
-      return
-    }
-
-    console.log(`📊 开始解析 PPTX 元数据: ${fileName.value}`)
-
-    // 使用 JSZip 解压 PPTX 文件
-    const zip = await JSZip.loadAsync(bytes.buffer)
-
-    // 读取幻灯片数量
-    const slideFiles = Object.keys(zip.files).filter(name =>
-      name.startsWith('ppt/slides/slide') && name.endsWith('.xml')
-    )
-    slideCount.value = slideFiles.length
-
-    // 读取核心属性
-    const corePropsFile = zip.file('docProps/core.xml')
-    if (corePropsFile) {
-      const corePropsXml = await corePropsFile.async('text')
-      const metadata = {}
-
-      // 提取各项元数据
-      const creatorMatch = corePropsXml.match(/<dc:creator[^>]*>([^<]+)<\/dc:creator>/)
-      if (creatorMatch) metadata.creator = creatorMatch[1]
-
-      const lastModifiedMatch = corePropsXml.match(/<cp:lastModifiedBy[^>]*>([^<]+)<\/cp:lastModifiedBy>/)
-      if (lastModifiedMatch) metadata.lastModifiedBy = lastModifiedMatch[1]
-
-      const createdMatch = corePropsXml.match(/<dcterms:created[^>]*>([^<]+)<\/dcterms:created>/)
-      if (createdMatch) metadata.created = createdMatch[1]
-
-      const modifiedMatch = corePropsXml.match(/<dcterms:modified[^>]*>([^<]+)<\/dcterms:modified>/)
-      if (modifiedMatch) metadata.modified = modifiedMatch[1]
-
-      const titleMatch = corePropsXml.match(/<dc:title[^>]*>([^<]+)<\/dc:title>/)
-      if (titleMatch) {
-        metadata.title = titleMatch[1]
-        pptxTitle.value = titleMatch[1]
+const stateTitle = computed(() => error.value ? t('pptxPreview.failed') : t('pptxPreview.converting'))
+const pdfData = computed(() => {
+  if (!preview.value?.preview_url) return null
+  return {
+    object: {
+      path: String(props.source?.name || 'presentation.pptx').replace(/\.pptx$/i, '.pdf'),
+      size_bytes: preview.value.size_bytes || 0,
+      content_type: 'application/pdf',
+      content: {
+        kind: 'pdf',
+        url: preview.value.preview_url,
+        preview_url: preview.value.preview_url,
+        metadata: { content_type: 'application/pdf', page_count: preview.value.page_count || 0 }
       }
-
-      pptxMetadata.value = metadata
     }
+  }
+})
 
-    console.log(`✅ PPTX 元数据解析完成: ${slideCount.value} 张幻灯片`)
+const authHeaders = () => {
+  const token = getAccessToken()
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+const requestJSON = async (url, options = {}) => {
+  const response = await fetch(url, {
+    credentials: 'include',
+    ...options,
+    headers: { Accept: 'application/json', ...authHeaders(), ...(options.headers || {}) }
+  })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(payload.error || `${response.status} ${response.statusText}`)
+  return payload.data || payload
+}
+
+const pollExecution = async (executionID, token) => {
+  if (!executionID || token !== loadToken) return
+  try {
+    const execution = await requestJSON(`/api/v1/manager/executions/${encodeURIComponent(executionID)}`)
+    if (token !== loadToken) return
+    if (execution.status === 'success') {
+      await resolvePreview(token)
+      return
+    }
+    if (['failed', 'timeout', 'cancelled'].includes(execution.status)) {
+      loading.value = false
+      error.value = execution.error_details?.message || t('pptxPreview.failed')
+      return
+    }
+    pollTimer = window.setTimeout(() => pollExecution(executionID, token), 1500)
   } catch (err) {
-    console.error('❌ PPTX 元数据解析失败:', err)
-    error.value = `解析失败: ${err.message}`
-  } finally {
-    loading.value = false
+    if (token === loadToken) {
+      loading.value = false
+      error.value = err.message || t('pptxPreview.failed')
+    }
   }
 }
 
-// 初始化加载
-const initLoad = () => {
+const resolvePreview = async (existingToken, retry = false) => {
+  const token = typeof existingToken === 'number' ? existingToken : ++loadToken
+  window.clearTimeout(pollTimer)
+  preview.value = null
   error.value = ''
-  slideCount.value = 0
-  pptxTitle.value = ''
-  pptxMetadata.value = null
-  parsePptxMetadata()
+  loading.value = true
+  const source = props.source || {}
+  if (!source.locator) {
+    loading.value = false
+    error.value = t('pptxPreview.identityMissing')
+    return
+  }
+  try {
+    const result = await requestJSON('/api/v1/manager/pptx_pdf/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ locator: source.locator, ...(retry ? { retry: true } : {}) })
+    })
+    if (token !== loadToken) return
+    if (result.status === 'ready' && result.preview_url) {
+      preview.value = result
+      loading.value = false
+      return
+    }
+    if (result.status === 'failed') {
+      loading.value = false
+      error.value = result.error || t('pptxPreview.failed')
+      return
+    }
+    if (!result.execution_id) {
+      throw new Error(t('pptxPreview.failed'))
+    }
+    pollTimer = window.setTimeout(() => pollExecution(result.execution_id, token), 800)
+  } catch (err) {
+    if (token === loadToken) {
+      loading.value = false
+      error.value = err.message || t('pptxPreview.failed')
+    }
+  }
 }
 
-// 监听 props.data 变化
-watch(() => props.data, (newData, oldData) => {
-  const newPath = newData?.object?.path
-  const oldPath = oldData?.object?.path
+const retryPreview = () => {
+  const token = ++loadToken
+  resolvePreview(token, true)
+}
 
-  if (newPath && newPath !== oldPath) {
-    console.log(`🔄 PPTX 文件切换: ${oldPath} → ${newPath}`)
-    initLoad()
-  }
-}, { deep: true })
-
-onMounted(() => {
-  initLoad()
+watch(() => props.source, () => resolvePreview(), { deep: true, immediate: true })
+onUnmounted(() => {
+  loadToken += 1
+  window.clearTimeout(pollTimer)
 })
 </script>
 
@@ -354,204 +149,31 @@ onMounted(() => {
 .pptx-preview {
   width: 100%;
   height: 100%;
-  display: flex;
-  flex-direction: column;
+  min-height: 420px;
   background: var(--addp-bg-secondary);
-  overflow: auto;
 }
 
-/* 加载状态 */
-.loading-container {
-  flex: 1;
+.pptx-state {
+  height: 100%;
+  min-height: 420px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 20px;
+  gap: 14px;
+  color: var(--addp-text-secondary);
+}
+
+.pptx-state > .el-icon {
+  font-size: 42px;
   color: var(--el-color-primary);
 }
 
-.loading-container .el-icon {
-  font-size: 48px;
-}
-
-.loading-info {
-  font-size: 16px;
-}
-
-/* 错误状态 */
-.error-container {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 20px;
+.pptx-state > .pptx-error {
   color: var(--el-color-danger);
-  padding: 40px;
 }
 
-.error-container .el-icon {
-  font-size: 64px;
-}
-
-.error-info {
-  text-align: center;
-}
-
-.error-message {
-  font-size: 16px;
-  margin-bottom: 20px;
-  color: var(--addp-text-secondary);
-}
-
-.limit-info {
-  font-size: 13px;
-  color: var(--addp-text-tertiary);
-  line-height: 1.6;
-  margin-bottom: 16px;
-}
-
-.limit-info p {
-  margin: 4px 0;
-}
-
-.error-actions {
-  display: flex;
-  gap: 10px;
-  justify-content: center;
-}
-
-/* PPTX 信息容器 */
-.pptx-info-container {
-  max-width: 900px;
-  margin: 0 auto;
-  padding: 40px 20px;
-  width: 100%;
-}
-
-/* 文件卡片 */
-.file-card {
-  padding: 30px;
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
-  margin-bottom: 30px;
-}
-
-.file-info {
-  width: 100%;
-}
-
-.file-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.file-type-icon {
-  flex-shrink: 0;
-}
-
-.filename {
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--addp-text-primary);
-  margin: 0;
-  word-break: break-all;
-  flex: 1;
-}
-
-.file-meta {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-/* 说明信息 */
-.notice-content {
-  line-height: 1.8;
-}
-
-.notice-content p {
-  margin: 12px 0;
-}
-
-.notice-content strong {
-  font-size: 16px;
-  color: var(--addp-text-primary);
-}
-
-.notice-content ul {
-  margin: 10px 0;
-  padding-left: 25px;
-}
-
-.notice-content li {
-  margin: 6px 0;
-  color: var(--addp-text-secondary);
-}
-
-/* 详细信息卡片 */
-.detail-card {
-  background: white;
-  padding: 30px;
-  border-radius: 12px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
-  margin: 30px 0;
-}
-
-.detail-card h3 {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--addp-text-primary);
-  margin: 0 0 20px 0;
-  padding-bottom: 15px;
-  border-bottom: 2px solid #f0f0f0;
-}
-
-.detail-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 20px;
-}
-
-.detail-item {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.detail-item .label {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--addp-text-tertiary);
-  text-transform: uppercase;
-}
-
-.detail-item .value {
-  font-size: 15px;
-  color: var(--addp-text-primary);
-  word-break: break-all;
-}
-
-/* 下载区域 */
-.download-section {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  padding: 20px 0;
-}
-
-.download-hint {
-  font-size: 13px;
-  color: var(--addp-text-tertiary);
-}
-
-.limit-hint {
-  font-size: 13px;
-  color: var(--addp-text-tertiary);
+.pptx-state .el-alert {
+  width: min(560px, calc(100% - 48px));
 }
 </style>

@@ -14,6 +14,7 @@ RUNTIME_FLAGS = {
     "START_MATH_WORKFLOW",
     "START_MODEL3D_WORKFLOW",
     "START_POINTCLOUD_WORKFLOW",
+    "START_DOCUMENT_WORKFLOW",
     "START_SUPERMAP_WORKFLOW",
     "START_SPARK_WORKFLOW",
     "START_JUPYTER",
@@ -27,6 +28,7 @@ EXPLICIT_RUNTIME_CASES = {
     "math-workflow",
     "model3d-workflow",
     "pointcloud-workflow",
+    "document-workflow",
     "supermap-workflow",
     "spark-workflow",
     "jupyter",
@@ -41,6 +43,7 @@ RUNTIME_COMPOSE_SERVICES = {
     "math-workflow-engine",
     "model3d-workflow-engine",
     "pointcloud-workflow-engine",
+    "document-workflow-engine",
     "supermap-workflow-engine",
     "spark-workflow-engine",
 }
@@ -130,27 +133,48 @@ def validate_module_registration_lifecycle(repository: Path) -> list[str]:
     return errors
 
 
-def validate_pointcloud_image_contract(repository: Path) -> list[str]:
+def validate_workflow_runtime_image_contract(repository: Path) -> list[str]:
     errors: list[str] = []
     common_runtime_module = "common-python/addp_common/module_lifecycle.py"
     if not (repository / common_runtime_module).is_file():
         errors.append(f"{common_runtime_module} is missing")
 
-    dockerfile_path = repository / "engines/pointcloud-workflow/Dockerfile"
-    dockerfile = dockerfile_path.read_text(encoding="utf-8")
     expected_copy = f"COPY {common_runtime_module} /common-python/addp_common/module_lifecycle.py"
-    if expected_copy not in dockerfile:
-        errors.append(
-            "engines/pointcloud-workflow/Dockerfile does not package "
-            "common-python/addp_common/module_lifecycle.py"
-        )
+    for runtime in ("pointcloud-workflow", "document-workflow"):
+        dockerfile_path = repository / f"engines/{runtime}/Dockerfile"
+        if not dockerfile_path.is_file():
+            errors.append(f"engines/{runtime}/Dockerfile is missing")
+            continue
+        dockerfile = dockerfile_path.read_text(encoding="utf-8")
+        if expected_copy not in dockerfile:
+            errors.append(
+                f"engines/{runtime}/Dockerfile does not package "
+                "common-python/addp_common/module_lifecycle.py"
+            )
 
     for relative in ("scripts/dev/start.sh", "scripts/dev/restart.sh"):
         source = (repository / relative).read_text(encoding="utf-8")
-        if common_runtime_module not in source:
-            errors.append(
-                f"{relative} PointCloud image fingerprint does not include {common_runtime_module}"
-            )
+        for runtime in ("PointCloud", "Document"):
+            if common_runtime_module not in source:
+                errors.append(
+                    f"{relative} {runtime} image fingerprint does not include {common_runtime_module}"
+                )
+    return errors
+
+
+def validate_document_workflow_test_registration(repository: Path) -> list[str]:
+    errors: list[str] = []
+    makefile = (repository / "Makefile").read_text(encoding="utf-8")
+    workflow = (repository / ".github/workflows/platform-ci.yml").read_text(encoding="utf-8")
+    if not re.search(r"(?m)^test-document-workflow:\s", makefile):
+        errors.append("Makefile target test-document-workflow is missing")
+    for fragment in (
+        "uses: ./.github/actions/prepare-python-gate",
+        "engines/document-workflow/requirements-dev.txt",
+        "run: make test-document-workflow",
+    ):
+        if fragment not in workflow:
+            errors.append(f"platform-ci Document Workflow gate is missing {fragment}")
     return errors
 
 
@@ -205,7 +229,8 @@ def validate(repository: Path) -> list[str]:
         if forbidden_call in system_main:
             errors.append(f"system startup still calls {forbidden_call}")
     errors.extend(validate_module_registration_lifecycle(repository))
-    errors.extend(validate_pointcloud_image_contract(repository))
+    errors.extend(validate_workflow_runtime_image_contract(repository))
+    errors.extend(validate_document_workflow_test_registration(repository))
     return errors
 
 

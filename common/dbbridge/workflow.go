@@ -86,6 +86,7 @@ func OpenScriptSession(ctx context.Context, engine *models.Engine, req plugin.Sc
 type DirectWorkflowOperatorSelector struct {
 	OperatorName string
 	EngineName   string
+	EngineType   string
 }
 
 func ResolveDirectWorkflowOperator(ctx context.Context, engines []models.Engine, selector DirectWorkflowOperatorSelector) (models.Engine, models.OperatorDescriptor, error) {
@@ -94,6 +95,7 @@ func ResolveDirectWorkflowOperator(ctx context.Context, engines []models.Engine,
 		return models.Engine{}, models.OperatorDescriptor{}, fmt.Errorf("direct workflow operator name is required")
 	}
 	engineName := strings.TrimSpace(selector.EngineName)
+	engineType := strings.TrimSpace(selector.EngineType)
 
 	candidates := append([]models.Engine(nil), engines...)
 	sort.SliceStable(candidates, func(i, j int) bool {
@@ -110,6 +112,9 @@ func ResolveDirectWorkflowOperator(ctx context.Context, engines []models.Engine,
 			continue
 		}
 		if engineName != "" && candidate.Name != engineName {
+			continue
+		}
+		if engineType != "" && candidate.EngineType != engineType {
 			continue
 		}
 		operators, err := ListWorkflowOperators(ctx, &candidate)

@@ -15,6 +15,7 @@ engine.capabilities/v1
 ## 一、基本原则
 
 - capabilities 是引擎实例自身能力与 Provider 实现承诺共同收敛后的事实来源。
+- 面向跨模块资源选择的引擎 DTO 必须原样投影 System 保存的标准 `capabilities`；消费方不得因经过 Meta、Manager 等展示接口而退化为 `engine_type`、`engine_family` 或固定引擎名单判断。
 - 插件 `Capabilities()` 只返回不连接实例的静态能力模板；实现了实例能力解析接口的插件，必须由 System 在保存或刷新具体引擎记录时执行只读探测，并将解析后的实例能力写入 `system.engines.capabilities`。
 - 实例能力探测不得进入任何模块的启动或 readiness 关键路径。System 就绪后的后台刷新必须逐 Engine Instance 隔离；探测失败时保留该实例最后一次成功落库的能力事实并记录失败，不得清空能力、终止进程或阻塞其他实例。
 - 创建 Engine Instance、变更连接或凭据以及显式连接测试可以同步探测并把失败返回给当前操作；仅修改名称、描述或生命周期不得要求实例在线，也不得触发能力探测。

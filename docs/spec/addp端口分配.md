@@ -138,6 +138,7 @@ make ports-validate
 | PointCloud Workflow Engine | 8102     | 8102        | 点云处理工作流引擎         |
 | SuperMap Workflow Engine   | 8103     | 8103        | 超图 iObjects C++ 空间计算工作流引擎 |
 | DuckDB Query Runtime       | 8104     | 8104        | 联邦只读查询计算引擎       |
+| Document Workflow Engine   | 8105     | 8105        | 文档转换工作流引擎         |
 | PostgreSQL (System)   | 15432    | 15432       | ADDP 系统元数据            |
 | Redis                 | 16379    | 16379       | 缓存、事件和分布式锁       |
 | MinIO System API      | 19000    | 19000       | 系统文件存储               |
@@ -180,6 +181,7 @@ make ports-validate
   - 8101: Model3D Workflow Engine
   - 8102: PointCloud Workflow Engine
   - 8103: SuperMap Workflow Engine
+  - 8105: Document Workflow Engine
 
 ### 前端开发端口规则
 - **Console**：5170（控制台入口）

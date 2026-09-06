@@ -353,8 +353,8 @@ common_python_latest_time() {
     } | xargs stat -f "%m" 2>/dev/null | sort -rn | head -1
 }
 
-# PointCloud packages only the runtime subset listed here in its Dockerfile.
-pointcloud_common_python_latest_time() {
+# Lightweight workflow runtimes package only the runtime subset listed here.
+workflow_runtime_common_python_latest_time() {
     {
         printf '%s\n' \
             common-python/README.md \
@@ -427,13 +427,13 @@ check_service_changed() {
             fi
             ;;
 
-        pointcloud-workflow-engine)
-            local pointcloud_time
-            pointcloud_time=$(find "$service_dir" -type f '(' -name "*.py" -o -name "requirements.txt" -o -name "Dockerfile" ')' \
+        pointcloud-workflow-engine|document-workflow-engine)
+            local workflow_runtime_time
+            workflow_runtime_time=$(find "$service_dir" -type f '(' -name "*.py" -o -name "requirements.txt" -o -name "Dockerfile" ')' \
                 -not -path "*/venv/*" -not -path "*/__pycache__/*" 2>/dev/null | xargs stat -f "%m" 2>/dev/null | sort -rn | head -1)
             local common_time
-            common_time=$(pointcloud_common_python_latest_time)
-            comparison_time=$(( pointcloud_time > common_time ? pointcloud_time : common_time ))
+            common_time=$(workflow_runtime_common_python_latest_time)
+            comparison_time=$(( workflow_runtime_time > common_time ? workflow_runtime_time : common_time ))
             ;;
 
         geopython-workflow-engine|jupyter-engine)
@@ -706,8 +706,8 @@ build_service() {
             fi
             ;;
 
-        pointcloud-workflow-engine)
-            # PointCloud Workflow 依赖 common-python，使用仓库根作为构建上下文。
+        pointcloud-workflow-engine|document-workflow-engine)
+            # 轻量工作流 runtime 依赖 common-python，使用仓库根作为构建上下文。
             build_context="."
             dockerfile_path="${service_dir}/Dockerfile"
             ;;
@@ -995,6 +995,7 @@ main() {
         "raster-mosaic-runtime:manager/raster-mosaic-runtime"
         "model3d-workflow-engine:engines/model3d-workflow"
         "pointcloud-workflow-engine:engines/pointcloud-workflow"
+        "document-workflow-engine:engines/document-workflow"
         "supermap-workflow-engine:engines/supermap-workflow"
         "spark-workflow-engine:engines/spark-workflow"
         "jupyter-engine:engines/jupyter"

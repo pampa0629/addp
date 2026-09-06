@@ -285,9 +285,10 @@
 | ad-hoc execution | 一次性执行 | 不依赖持久任务定义、直接按本次配置创建的 execution。 | 可以没有 `source_task_id`，但必须在 `execution_config` 保存完整执行配置。 |
 | artifact state | 产物状态 | 描述派生产物当前是否可用、在哪里、由什么配置生成的状态对象。 | 例如瓦片缓存产物、embedding vectors；不是 execution。 |
 | existing result action | 已有结果动作 | 调用方在执行会刷新 owner 受管当前结果时显式声明的动作；当前只允许 `overwrite`。 | TaskProvider 请求参数为 `parameters.existing_result_action=overwrite`。前端人工执行时先二次确认再提交；Orchestrator 可将该动作保存为 Step 参数并在定时 Pipeline 中逐次提交。没有当前结果时可省略；业务派生数据不适用。 |
-| preview artifact task | 预览派生产物任务 | 为源 data item 生成 Manager 受管预览材料的任务定义。 | 任务归 Manager 私有表；GIS/三维转换可由对应 Workflow Runtime direct 算子执行，文档转换由独立 Manager Worker 执行。 |
+| preview artifact task | 预览派生产物任务 | 为源 data item 生成 Manager 受管预览材料的任务定义。 | 任务归 Manager 私有表；专业转换统一由对应 Workflow Runtime direct 算子执行，运行时不拥有任务定义或预览产物。 |
 | preview artifact | 预览派生产物 | Manager 为改善交互预览而生成并维护生命周期的 infra artifact。 | 不是业务 data item，不进入 Meta；同一源 item 可以按派生变体关联多个独立结果。 |
 | PPTX static PDF preview | PPTX 静态 PDF 预览 | 将 PPTX 转换为受管 PDF artifact 后交给 PDF renderer 按页、按需加载的预览方式。 | 任务类型为 `pptx_pdf_generation`，派生变体固定为 `pdf_static`；不承诺动画、切换效果、音视频播放或 PowerPoint 完整交互。 |
+| Document Workflow | Document Workflow 运行时 | 通过 `addp.workflow/v1` 提供受控文档格式转换的专业 Workflow Runtime。 | `engine_type=document_workflow`；LibreOffice 是运行时内部依赖，不是 Engine Instance、任务 owner 或公共 API。 |
 | derived data | 派生数据 | 通过计算或转换从源 data item 生成、写入业务存储并形成独立 Meta item 的数据。 | Develop 工作流输出属于派生数据；Manager infra 快显结果不属于派生 data item。 |
 | execution boundary | 执行边界 | 一次 execution 是否具有确定结束条件。 | `bounded` 表示处理到本次冻结上界后结束；`continuous` 表示持续等待变化直到被真实停止、失败或失联。 |
 | load mode | 装载方式 | Transfer 从源端读取完整范围还是已提交位置之后的变化。 | 只允许 `snapshot` / `incremental`；它与触发方式和目标应用方式正交。 |

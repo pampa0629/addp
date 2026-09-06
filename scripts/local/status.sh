@@ -88,6 +88,7 @@ fi
 GEOPYTHON_WORKFLOW_RUNNING=$(docker compose -f docker-compose.yml ps geopython-workflow-engine --format json 2>/dev/null | grep -c '"State":"running"' || echo "0")
 MODEL3D_WORKFLOW_RUNNING=$(docker compose -f docker-compose.yml ps model3d-workflow-engine --format json 2>/dev/null | grep -c '"State":"running"' || echo "0")
 POINTCLOUD_WORKFLOW_RUNNING=$(docker compose -f docker-compose.yml ps pointcloud-workflow-engine --format json 2>/dev/null | grep -c '"State":"running"' || echo "0")
+DOCUMENT_WORKFLOW_RUNNING=$(docker compose -f docker-compose.yml ps document-workflow-engine --format json 2>/dev/null | grep -c '"State":"running"' || echo "0")
 SUPERMAP_WORKFLOW_RUNNING=$(docker compose -f docker-compose.yml ps supermap-workflow-engine --format json 2>/dev/null | grep -c '"State":"running"' || echo "0")
 
 echo ""
@@ -109,6 +110,12 @@ if [ "$POINTCLOUD_WORKFLOW_RUNNING" -gt 0 ]; then
     echo -e "  ${GREEN}✓${NC} PointCloud Workflow Engine:  http://localhost:8102"
 else
     echo -e "  ${RED}✗${NC} PointCloud Workflow Engine:  http://localhost:8102 ${YELLOW}(not running)${NC}"
+fi
+
+if [ "$DOCUMENT_WORKFLOW_RUNNING" -gt 0 ]; then
+    echo -e "  ${GREEN}✓${NC} Document Workflow Engine:    http://localhost:8105"
+else
+    echo -e "  ${RED}✗${NC} Document Workflow Engine:    http://localhost:8105 ${YELLOW}(not running)${NC}"
 fi
 
 if [ "$SUPERMAP_WORKFLOW_RUNNING" -gt 0 ]; then

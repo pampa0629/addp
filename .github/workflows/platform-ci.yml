@@ -197,6 +197,38 @@ jobs:
           selected: ${{ steps.selection.outputs.run }}
           status: ${{ job.status }}
 
+  document-workflow-tests:
+    name: Document Workflow tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Prepare Document Workflow test environment
+        uses: ./.github/actions/prepare-python-gate
+        with:
+          venv-path: engines/document-workflow/.venv
+          cache-dependency-path: |
+            engines/document-workflow/requirements-dev.txt
+            engines/document-workflow/requirements.txt
+            common-python/pyproject.toml
+          requirements-file: engines/document-workflow/requirements-dev.txt
+          editable-install: ./common-python
+
+      - name: Run Document Workflow tests
+        run: make test-document-workflow
+
+      - name: Summarize Document Workflow gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Document Workflow tests
+          status: ${{ job.status }}
+
   agent-offline-evaluation:
     name: Agent offline evaluation
     runs-on: ubuntu-24.04

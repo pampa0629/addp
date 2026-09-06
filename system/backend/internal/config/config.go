@@ -119,6 +119,7 @@ func Load() *Config {
 			"addp-workbench":    getEnv("WORKBENCH_SERVICE_CLIENT_SECRET", ""),
 			"addp-copilot":      getEnv("COPILOT_SERVICE_CLIENT_SECRET", ""),
 			"addp-develop":      getEnv("DEVELOP_SERVICE_CLIENT_SECRET", ""),
+			"addp-document":     getEnv("DOCUMENT_WORKFLOW_SERVICE_CLIENT_SECRET", ""),
 			"addp-duckdb":       getEnv("DUCKDB_SERVICE_CLIENT_SECRET", ""),
 			"addp-gateway":      getEnv("GATEWAY_SERVICE_CLIENT_SECRET", ""),
 			"addp-graph":        getEnv("GRAPH_SERVICE_CLIENT_SECRET", ""),

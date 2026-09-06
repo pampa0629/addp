@@ -16,6 +16,7 @@ func TestBuildResourceWithStatsProjectsScanStats(t *testing.T) {
 	lastScan := time.Date(2026, 6, 6, 8, 30, 0, 0, time.UTC)
 	lastCheck := time.Date(2026, 6, 6, 9, 0, 0, 0, time.UTC)
 	tenantID := uint(1)
+	capabilities := commonModels.JSONString(`{"schema_version":"engine.capabilities/v1","engine_type":"postgresql","engine_family":"tabular","storage":{"store":{"bounded_watermark_read":true}}}`)
 	resource := &commonModels.Engine{
 		ID:               9,
 		TenantID:         &tenantID,
@@ -25,6 +26,7 @@ func TestBuildResourceWithStatsProjectsScanStats(t *testing.T) {
 		ConnectionStatus: "healthy",
 		LastCheckAt:      &lastCheck,
 		CheckMessage:     "ok",
+		Capabilities:     &capabilities,
 	}
 	stats := &engineScanStats{
 		totalCount:   map[uint]int64{9: 12},
@@ -50,6 +52,9 @@ func TestBuildResourceWithStatsProjectsScanStats(t *testing.T) {
 	}
 	if view.EngineFamily == "" || view.CatalogRootTerm == "" || view.EngineCatalogLeafTerm == "" {
 		t.Fatalf("catalog terms not projected: %#v", view)
+	}
+	if view.Capabilities == nil || string(*view.Capabilities) != string(capabilities) {
+		t.Fatalf("Capabilities = %#v, want canonical System capabilities", view.Capabilities)
 	}
 }
 

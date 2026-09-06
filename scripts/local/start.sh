@@ -73,6 +73,7 @@ check_images() {
         "${REGISTRY}/addp-geopython-workflow-engine:${IMAGE_TAG}"
         "${REGISTRY}/addp-model3d-workflow-engine:${IMAGE_TAG}"
         "${REGISTRY}/addp-pointcloud-workflow-engine:${IMAGE_TAG}"
+        "${REGISTRY}/addp-document-workflow-engine:${IMAGE_TAG}"
         "${REGISTRY}/addp-supermap-workflow-engine:${IMAGE_TAG}"
         "${REGISTRY}/addp-spark-workflow-engine:${IMAGE_TAG}"
         "${REGISTRY}/addp-jupyter-engine:${IMAGE_TAG}"
@@ -211,6 +212,11 @@ fi
 # Wait for PointCloud Workflow Engine
 if docker compose -f docker-compose.yml ps pointcloud-workflow-engine | grep -q "Up"; then
     wait_for_health "http://localhost:8102/health" "PointCloud Workflow Engine" 60
+fi
+
+# Wait for Document Workflow Engine
+if docker compose -f docker-compose.yml ps document-workflow-engine | grep -q "Up"; then
+    wait_for_health "http://localhost:8105/health" "Document Workflow Engine" 90
 fi
 
 # Wait for SuperMap Workflow Engine

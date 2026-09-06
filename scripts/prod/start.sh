@@ -96,6 +96,7 @@ docker compose -f docker-compose.yml up -d \
   geopython-workflow-engine \
   model3d-workflow-engine \
   pointcloud-workflow-engine \
+  document-workflow-engine \
   supermap-workflow-engine \
   spark-workflow-engine \
   jupyter-engine \
@@ -131,6 +132,7 @@ services=(
   "geopython-workflow-engine:8099"
   "model3d-workflow-engine:8101"
   "pointcloud-workflow-engine:8102"
+  "document-workflow-engine:8105"
   "supermap-workflow-engine:8103"
   "gateway:8000"
 )

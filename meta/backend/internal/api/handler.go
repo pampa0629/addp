@@ -91,7 +91,7 @@ func (h *Handler) GetStats(c *gin.Context) {
 // GetResources 获取存储引擎列表及 catalog 扫描统计
 // GET /api/v1/meta/engines
 // @Summary 获取引擎列表 | Get engine list
-// @Description 获取当前租户 active 存储引擎选择项、连接状态及统计信息；非 online 项由前端展示并禁选 | Get active storage engine options with connection status and statistics for the current tenant; clients must show but disable non-online options
+// @Description 获取当前租户 active 存储引擎选择项、标准能力声明、连接状态及统计信息；非 online 项由前端展示并禁选 | Get active storage engine options with canonical capabilities, connection status, and statistics for the current tenant; clients must show but disable non-online options
 // @Tags Meta
 // @Produce json
 // @Success 200 {array} models.ResourceWithStats "引擎列表 | Engine list"

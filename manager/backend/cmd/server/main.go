@@ -94,6 +94,7 @@ func main() {
 	model3DGLBRepo := repository.NewModel3DGLBRepository(db)
 	gaussianSplatKSplatRepo := repository.NewGaussianSplatKSplatRepository(db)
 	pointCloudCOPCRepo := repository.NewPointCloudCOPCRepository(db)
+	pptxPDFRepo := repository.NewPPTXPDFRepository(db)
 	model3DTilesRepo := repository.NewModel3DTilesRepository(db)
 	exportSessionRepo := repository.NewExportSessionRepository(db)
 	dataProfileRepo := repository.NewDataProfileRepository(db)
@@ -266,6 +267,9 @@ func main() {
 	model3DGLBTaskSvc := service.NewModel3DGLBTaskService(model3DGLBRepo)
 	gaussianSplatKSplatTaskSvc := service.NewGaussianSplatKSplatTaskService(gaussianSplatKSplatRepo)
 	pointCloudCOPCTaskSvc := service.NewPointCloudCOPCTaskService(pointCloudCOPCRepo)
+	pptxPDFTaskSvc := service.NewPPTXPDFTaskService(pptxPDFRepo)
+	pptxPDFTaskSvc.SetMetaClient(metaClient)
+	pptxPDFTaskSvc.SetBucket(minioBucket)
 	model3DTilesTaskSvc := service.NewModel3DTilesTaskService(model3DTilesRepo)
 	model3DTilesTaskSvc.SetBucket(minioBucket)
 	model3DTilesTaskSvc.SetCleaner(service.NewMinIOModel3DTilesCleaner(minioClient, minioBucket))
@@ -335,6 +339,7 @@ func main() {
 	taskProviderHandler.SetModel3DGLBTaskService(model3DGLBTaskSvc)
 	taskProviderHandler.SetGaussianSplatKSplatTaskService(gaussianSplatKSplatTaskSvc)
 	taskProviderHandler.SetPointCloudCOPCTaskService(pointCloudCOPCTaskSvc)
+	taskProviderHandler.SetPPTXPDFTaskService(pptxPDFTaskSvc)
 	taskProviderHandler.SetModel3DTilesTaskService(model3DTilesTaskSvc)
 	taskProviderHandler.SetVectorTileSetTaskService(vectorTileSetTaskSvc)
 
@@ -379,10 +384,11 @@ func main() {
 	gaussianSplatKSplatHandler := api.NewGaussianSplatKSplatHandler(gaussianSplatKSplatRepo, minioClient, minioBucket)
 	pointCloudCOPCHandler := api.NewPointCloudCOPCHandler(pointCloudCOPCRepo, minioClient, minioBucket)
 	model3DTilesHandler := api.NewModel3DTilesHandler(model3DTilesRepo, minioClient, minioBucket)
+	pptxPDFHandler := api.NewPPTXPDFHandler(pptxPDFTaskSvc, minioClient, minioBucket)
 	logger.L().Info("数据导入服务已初始化", "transfer_url", cfg.TransferServiceURL)
 
 	lifecycleController := modulelifecycle.NewBusiness("manager", commonClient.ModuleRuntimeRoleBackend)
-	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, systemServiceClient, metaClient, cacheManager, redisClient, embeddingService, embeddingConfigurationService, inferenceScenarioBindingService, quickViewPolicyService, baseMapProviderService, spatialPreviewService, rasterCOGRepo, taskProviderHandler, importHandler, uploadHandler, resourceActionHandler, exportHandler, rasterMosaicTileHandler, model3DGLBHandler, gaussianSplatKSplatHandler, pointCloudCOPCHandler, model3DTilesHandler, dataProfileHandler, protectionStore, lifecycleController)
+	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, systemServiceClient, metaClient, cacheManager, redisClient, embeddingService, embeddingConfigurationService, inferenceScenarioBindingService, quickViewPolicyService, baseMapProviderService, spatialPreviewService, rasterCOGRepo, taskProviderHandler, importHandler, uploadHandler, resourceActionHandler, exportHandler, rasterMosaicTileHandler, model3DGLBHandler, gaussianSplatKSplatHandler, pointCloudCOPCHandler, model3DTilesHandler, dataProfileHandler, protectionStore, lifecycleController, pptxPDFHandler)
 
 	serviceHost := commonConfig.GetServiceHost()
 	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.Port)
@@ -402,9 +408,20 @@ func main() {
 			cfg.MinioSecretKey,
 			cfg.MinioUseSSL,
 			minioBucket,
-			cfg.RasterMosaicGeneration.Timeout,
+			cfg.DocumentWorkflowGeneration.Timeout,
 		))
 		model3DGLBTaskSvc.SetExecutor(service.NewManagerModel3DGLBExecutor(
+			systemClient,
+			workflowRuntimeLister,
+			minioClient,
+			cfg.MinioEndpoint,
+			cfg.MinioAccessKey,
+			cfg.MinioSecretKey,
+			cfg.MinioUseSSL,
+			minioBucket,
+			cfg.RasterMosaicGeneration.Timeout,
+		))
+		pptxPDFTaskSvc.SetExecutor(service.NewManagerPPTXPDFExecutor(
 			systemClient,
 			workflowRuntimeLister,
 			minioClient,

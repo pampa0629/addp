@@ -3247,6 +3247,134 @@ const docTemplate = `{
                 ]
             }
         },
+        "/pptx_pdf/preview": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "获取或生成 PPTX PDF 快显 | Resolve or generate PPTX PDF preview",
+                "parameters": [
+                    {
+                        "description": "PPTX source identity",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.PPTXPDFPreviewRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "快显已就绪 | Preview ready",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.PPTXPDFPreviewResponse"
+                        }
+                    },
+                    "202": {
+                        "description": "转换已受理或执行中 | Conversion accepted or running",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.PPTXPDFPreviewResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "请求参数错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务执行错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "服务不可用 | Service unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.data_item.read",
+                    "manager.derived_artifact.create"
+                ]
+            }
+        },
+        "/pptx_pdf/{id}/content": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/pdf"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "读取 PPTX PDF 快显 | Read PPTX PDF preview",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "PPTX PDF result ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "PDF 内容流 | PDF content stream"
+                    },
+                    "206": {
+                        "description": "部分 PDF 内容流 | Partial PDF content stream"
+                    },
+                    "404": {
+                        "description": "快显不存在或未就绪 | Preview not found or not ready",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务执行错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "服务不可用 | Service unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.read"
+                ]
+            }
+        },
         "/preview": {
             "get": {
                 "security": [
@@ -10077,6 +10205,49 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "source_size_bytes": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.PPTXPDFPreviewRequest": {
+            "type": "object",
+            "required": [
+                "locator"
+            ],
+            "properties": {
+                "locator": {
+                    "type": "string"
+                },
+                "retry": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_api.PPTXPDFPreviewResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "execution_id": {
+                    "type": "string"
+                },
+                "page_count": {
+                    "type": "integer"
+                },
+                "preview_url": {
+                    "type": "string"
+                },
+                "result_id": {
+                    "type": "integer"
+                },
+                "size_bytes": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "task_id": {
                     "type": "integer"
                 }
             }

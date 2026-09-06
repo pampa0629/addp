@@ -1,6 +1,6 @@
 # ADDP 计算引擎开发指南
 
-本目录集中管理不拥有 ADDP 业务配置事实的独立计算和 Notebook 运行时。GeoPython Workflow、Spark Workflow、DuckDB、Jupyter 是默认部署的内置运行时；Math Workflow 是 `addp.workflow/v1` 参考实现，用于示范扩展引擎规范；Model3D Workflow 是三维模型转换专用运行时；PointCloud Workflow 是点云处理运行时；SuperMap Workflow 是面向超图 iObjects C++ 的空间计算运行时。
+本目录集中管理不拥有 ADDP 业务配置事实的独立计算和 Notebook 运行时。GeoPython Workflow、Spark Workflow、DuckDB、Jupyter 是默认部署的内置运行时；Math Workflow 是 `addp.workflow/v1` 参考实现，用于示范扩展引擎规范；Model3D Workflow 是三维模型转换专用运行时；PointCloud Workflow 是点云处理运行时；Document Workflow 是文档转换运行时；SuperMap Workflow 是面向超图 iObjects C++ 的空间计算运行时。
 
 `engines/` 不是 `system.engines` 的源码镜像，也不是所有 Engine Type 的目录。数据库、对象存储等插件位于 `common/engine/plugins/`；Inference 因拥有 Provider Connection、Model Deployment、Model Profile、凭据、控制面 API 和前端，保留为根目录 `inference/` 业务模块，其数据面端点另以 `engine_type=inference_runtime` 登记到 System。只有未来将不拥有这些业务事实的独立推理执行面拆为单独服务时，才在本目录新增 `inference-runtime/`，且不得复制 Inference 控制面。
 
@@ -13,6 +13,7 @@ engines/
 ├── math-workflow/      # Math Workflow 数学工作流参考实现，默认端口 8089
 ├── model3d-workflow/   # Model3D Workflow 三维模型转换运行时，默认端口 8101
 ├── pointcloud-workflow/ # PointCloud Workflow 点云处理运行时，默认端口 8102
+├── document-workflow/ # Document Workflow 文档转换运行时，默认端口 8105
 ├── supermap-workflow/  # SuperMap Workflow 超图 iObjects C++ 工作流运行时，默认端口 8103
 ├── jupyter/            # 无头 Notebook 执行运行时，API 默认端口 8097
 ├── duckdb/             # DuckDB 联邦查询运行时，API 默认端口 8104
@@ -31,6 +32,7 @@ engines/
 - `math_workflow` - Math Workflow 参考实现，开发环境可自动启动服务但不会自动注册；需要使用时在 System 引擎管理中按扩展引擎手动注册。
 - `model3d_workflow` - Model3D Workflow 三维模型转换运行时，提供 `osgb_to_glb` 和 `osgb_scene_to_3dtiles` direct 算子；开发环境启动时会自注册到 System，实际转换需通过 `MODEL3D_CONVERTER_BIN` 配置引擎部署内的 `_3dtile` 或等价转换器可执行文件路径。
 - `pointcloud_workflow` - PointCloud Workflow 点云处理运行时，提供 `las_to_copc`、`laz_to_copc`、`e57_to_copc`、`pcd_to_copc` 和 `xyz_to_copc` direct 算子；绑定 engine runtime 内部 PDAL 后会自注册到 System，实际转换通过 `POINTCLOUD_PDAL_BIN` 指向引擎部署内的 PDAL 可执行文件路径，不依赖宿主机全局 PDAL。Manager 负责派生源 URI 和 Manager infra MinIO 发布计划，运行时通过 PDAL 读取源 URI，先写入受控工作目录，再发布为 Manager 私有 COPC artifact。
+- `document_workflow` - Document Workflow 文档转换运行时，提供 `document_to_pdf` workflow/direct 算子；LibreOffice 和字体固定在运行镜像中，Manager 通过访问计划生成私有 PDF 快显 artifact，Runtime 不解析 ResourceLocator 或拥有任务定义。
 - `supermap_workflow` - SuperMap Workflow 超图工作流运行时，对外实现 `addp.workflow/v1`，对内绑定 SuperMap iObjects C++ SDK；运行时独立校验并按稳定拓扑顺序执行 DAG，同一 C++ 执行上下文内通过类型化共享句柄传递 Datasource、Dataset 等对象。完整 SDK 作为仓库外只读母版保存，最终运行镜像只包含已验证的运行期文件，许可作为受控制品单独注入。
 
 ### 脚本 / Notebook 运行时
@@ -185,6 +187,7 @@ Math Workflow 是参考实现，随无参数全量启动运行服务，但不会
 - **Spark Workflow Engine**: [spark-workflow](./spark-workflow/) - Spark / Sedona 工作流实现。
 - **Model3D Workflow Engine**: [model3d-workflow](./model3d-workflow/) - OSGB 快显和 OSGB Scene 转 3D Tiles 三维模型转换运行时。
 - **PointCloud Workflow Engine**: [pointcloud-workflow](./pointcloud-workflow/) - LAS / LAZ / E57 / PCD / XYZ 转 COPC 点云快显转换运行时。
+- **Document Workflow Engine**: [document-workflow](./document-workflow/) - Office 文档转 PDF 的专业转换运行时。
 - **SuperMap Workflow Engine**: [supermap-workflow](./supermap-workflow/) - 超图 iObjects C++ 空间计算工作流运行时。
 
 - **DuckDB Federated Query Runtime**: [duckdb](./duckdb/) - Develop 与 Service 共用的联邦查询运行时。

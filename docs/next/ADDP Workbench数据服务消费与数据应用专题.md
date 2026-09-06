@@ -2087,6 +2087,8 @@ T1 使用可控 Promise 分别固定三种时序：A 的应用响应晚于 B、A
 
 实现已新增 `catalogRequests`、`aggregateDescriptorRequests`、`spatialDescriptorRequests` 三个独立 coordinator，以及三个独立 loading ref；页面遮罩只由三者的 computed 合并状态控制。`initialize()` 在建立新 Catalog request 前统一失效旧会话并清空旧服务目录，角色选择在请求 Descriptor 前先清除旧 Descriptor、依赖草稿与该角色 loading；即使新的 service key 无法在当前 Catalog 中解析，也会先推进该角色 generation，避免旧请求复活。Catalog 与两类 Descriptor 的成功、错误和 finally 全部通过既有 `commitLatestDataApplicationRequest()` 提交；dialog close 与 component unmount 复用 `invalidateWizardRequests()`。T1 先以源码合同和可控 Promise 得到红灯，再证明 A/B 乱序、双角色并发、关闭后迟到提交和关闭再打开四类场景均只保留当前会话。`make test-workbench-frontend` 已通过 72 项测试和 production build，仅保留既有的大 chunk 非阻断警告。
 
+真实浏览器无持久副作用验收已在正式创建页完成：汇总角色强制快速从一个已发布 Query Service 切换到另一个后，最终只显示后者 Descriptor 派生的筛选字段、图表维度和度量；空间角色同样快速切换后只保留最终服务的名称字段、设色字段、提示字段和表格字段。空间 Descriptor 请求发起后立即关闭并重开向导，两个服务角色均恢复“请选择”，旧字段、错误消息与 loading 遮罩没有进入新会话；随后再次选择汇总与空间服务，两类表单均正常生成。全过程未填写、生成、保存或发布 Data Application，浏览器控制台无 warning/error。由于本地 Descriptor 请求返回很快，真实浏览器无法稳定观测请求重叠期间的中间遮罩时序；该确定性证据由本节的可控 Promise 双角色并发测试提供，浏览器验收不替代它。
+
 ## 十五、概念设计状态
 
 当前没有待确认的 Phase 0 概念问题。Phase 5 的 Selection Binding 同页联动、`desktop | wallboard` 展示模式、浏览器会话级全屏、Application Refresh Policy 和 Application Presentation Sections 已完成设计、实现、标准模块门禁与真实浏览器验收；Data Application 资产运营指标的事实源、模块归属以及 Asset 自有 `application` / 具体 Asset 运营分组也已完成运行态复核。外部 BI 的 owner 边界、消费契约、用户委托 OAuth 单一路线和 System 外部 OAuth Client 注册治理已经完成；首个真实 BI 验收载体仍为 Power Query 自定义 Connector 与 Power BI Desktop Import，但因当前缺少 Windows 宿主而暂缓。`common-python` 的产品无关 Service Consumer SDK、离线门禁及真实普通表、空间表和 Outdoor 多服务只读运行验收均已完成；它不替代 callback state、持久外部 Client 生命周期和真实 BI 产品端到端证据，因此正式 BI 接入指南继续保持未完成。

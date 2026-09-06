@@ -2,7 +2,7 @@
 
 ## 模块定位
 
-`engines/` 集中管理不拥有 ADDP 业务配置事实的独立计算与 Notebook 运行时。GeoPython Workflow、Spark Workflow、DuckDB 和 Jupyter 是默认部署的内置运行时；Math Workflow 是 `addp.workflow/v1` 参考实现，用于示范扩展引擎规范；Model3D Workflow 是三维模型转换专用运行时；PointCloud Workflow 是点云处理专用运行时；SuperMap Workflow 是面向超图 iObjects C++ 的工作流运行时。Develop 和业务模块通过引擎能力声明和 HTTP API 发现算子、执行工作流、联邦查询或 Notebook。
+`engines/` 集中管理不拥有 ADDP 业务配置事实的独立计算与 Notebook 运行时。GeoPython Workflow、Spark Workflow、DuckDB 和 Jupyter 是默认部署的内置运行时；Math Workflow 是 `addp.workflow/v1` 参考实现，用于示范扩展引擎规范；Model3D Workflow 是三维模型转换专用运行时；PointCloud Workflow 是点云处理专用运行时；Document Workflow 是文档转换专用运行时；SuperMap Workflow 是面向超图 iObjects C++ 的工作流运行时。Develop 和业务模块通过引擎能力声明和 HTTP API 发现算子、执行工作流、联邦查询或 Notebook。
 
 本目录不是 `system.engines` 的源码镜像。拥有独立业务资源、数据库事实、权限、控制面和前端的 owner 模块继续位于仓库根目录；例如 `inference/` 拥有 Provider、Deployment、Profile 和凭据，其数据面以 `inference_runtime` Engine Instance 登记到 System，但不得因此把整个模块移动到本目录或复制第二套控制面。
 
@@ -15,13 +15,14 @@ engines/
 ├── math-workflow/    # 数学工作流参考实现，默认端口 8089，开发环境自动启动服务但需手动注册
 ├── model3d-workflow/ # 三维模型转换运行时，默认端口 8101，开发环境自动启动并自注册，需配置 MODEL3D_CONVERTER_BIN 指向可执行文件路径
 ├── pointcloud-workflow/ # 点云处理运行时，默认端口 8102；绑定 engine runtime 内部 PDAL 后自注册，POINTCLOUD_PDAL_BIN 不指向宿主机全局命令
+├── document-workflow/ # 文档转换运行时，默认端口 8105；镜像内固定 LibreOffice 与字体
 ├── supermap-workflow/ # 超图 iObjects C++ 工作流运行时，默认端口 8103；通过 Docker 绑定 SuperMap C++ SDK 和许可，不提交 SDK 到仓库
 ├── jupyter/          # 无头 Notebook Runtime API，默认端口 8097
 ├── duckdb/           # DuckDB 联邦查询 Runtime，默认端口 8104
 └── docs/             # 引擎 API 与设计文档
 ```
 
-端口以仓库根目录 `.env` 和 `scripts/dev/start.sh` 为准：`GEOPYTHON_WORKFLOW_PORT`、`SPARK_WORKFLOW_PORT`、`MATH_WORKFLOW_PORT`、`MODEL3D_WORKFLOW_PORT`、`POINTCLOUD_WORKFLOW_PORT`、`SUPERMAP_WORKFLOW_PORT`、`JUPYTER_API_PORT`、`DUCKDB_RUNTIME_PORT`。
+端口以仓库根目录 `.env` 和 `scripts/dev/start.sh` 为准：`GEOPYTHON_WORKFLOW_PORT`、`SPARK_WORKFLOW_PORT`、`MATH_WORKFLOW_PORT`、`MODEL3D_WORKFLOW_PORT`、`POINTCLOUD_WORKFLOW_PORT`、`DOCUMENT_WORKFLOW_PORT`、`SUPERMAP_WORKFLOW_PORT`、`JUPYTER_API_PORT`、`DUCKDB_RUNTIME_PORT`。
 
 ## 开发规则
 
@@ -42,6 +43,7 @@ bash scripts/dev/start.sh -spark-workflow
 bash scripts/dev/start.sh -math-workflow
 bash scripts/dev/start.sh -model3d-workflow
 bash scripts/dev/start.sh -pointcloud-workflow
+bash scripts/dev/start.sh -document-workflow
 bash scripts/dev/start.sh -supermap-workflow
 bash scripts/dev/start.sh -jupyter
 bash scripts/dev/start.sh -duckdb

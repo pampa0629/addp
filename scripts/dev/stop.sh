@@ -168,6 +168,7 @@ stop_services_concurrent() {
   pkill -9 -f "engines/geopython-workflow.*api_server.py" 2>/dev/null || true
   pkill -9 -f "engines/model3d-workflow.*api_server.py" 2>/dev/null || true
   pkill -9 -f "engines/pointcloud-workflow.*api_server.py" 2>/dev/null || true
+  pkill -9 -f "engines/document-workflow.*api_server.py" 2>/dev/null || true
   pkill -9 -f "engines/spark-workflow.*api_server.py" 2>/dev/null || true
   pkill -9 -f "engines/jupyter.*api_server.py" 2>/dev/null || true
   pkill -9 -f "manager/raster-mosaic-runtime.*app.py" 2>/dev/null || true
@@ -175,12 +176,13 @@ stop_services_concurrent() {
   pkill -9 -f "agent/backend/main.py" 2>/dev/null || true
   pkill -9 -f "uvicorn main:app.*8087" 2>/dev/null || true
   docker rm -f pointcloud-workflow-engine >/dev/null 2>&1 || true
+  docker rm -f document-workflow-engine >/dev/null 2>&1 || true
   docker rm -f geopython-workflow-engine >/dev/null 2>&1 || true
   docker rm -f supermap-workflow-engine >/dev/null 2>&1 || true
 
   # Phase 6: 按端口清理残留进程（处理手动启动的进程）
   echo -e "${YELLOW}检查端口占用...${NC}"
-  for port in 8180 8081 8082 8083 8084 8185 8086 8087 8089 8097 8098 8099 8100 8101 8102 8103 8104 8110 8181 8182 8183 8184 8186 8190 8191 8192 8193 8291 5170 5173 5174 5175 5176 5177 5178 5179 5180 5181 5182 5183 5184 5185 5186 5187 5188 5189 5190; do
+  for port in 8180 8081 8082 8083 8084 8185 8086 8087 8089 8097 8098 8099 8100 8101 8102 8103 8104 8105 8110 8181 8182 8183 8184 8186 8190 8191 8192 8193 8291 5170 5173 5174 5175 5176 5177 5178 5179 5180 5181 5182 5183 5184 5185 5186 5187 5188 5189 5190; do
     pid=$(lsof -ti :$port 2>/dev/null || true)
     if [ -n "$pid" ]; then
       # 获取进程的命令行信息

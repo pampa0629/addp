@@ -1,4 +1,4 @@
-.PHONY: help build build-images select-image-services local-ci test test-changed test-module test-platform test-local-ci-runner test-book test-engine-startup-isolation test-integration test-online test-online-runner test-release test-release-runner test-go test-agent-frontend test-asset-frontend test-catalog-frontend test-common-frontend test-console-frontend test-copilot test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-security-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-workbench-frontend test-execution-fixtures test-projection-store-ownership test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-common-postgres test-common-mysql-data-protection test-manager-mongodb-security test-system-iam-postgres test-asset-postgres test-meta-postgres test-catalog-postgres test-develop-postgres test-model-postgres test-quality-postgres test-security-postgres test-service-postgres test-standard-postgres test-transfer-postgres test-workbench-postgres test-arcgis-open-formats \
+.PHONY: help build build-images select-image-services local-ci test test-changed test-module test-platform test-local-ci-runner test-book test-engine-startup-isolation test-integration test-online test-online-runner test-release test-release-runner test-go test-agent-frontend test-asset-frontend test-catalog-frontend test-common-frontend test-console-frontend test-copilot test-document-workflow test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-security-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-workbench-frontend test-execution-fixtures test-projection-store-ownership test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-common-postgres test-common-mysql-data-protection test-manager-mongodb-security test-system-iam-postgres test-asset-postgres test-meta-postgres test-catalog-postgres test-develop-postgres test-model-postgres test-quality-postgres test-security-postgres test-service-postgres test-standard-postgres test-transfer-postgres test-workbench-postgres test-arcgis-open-formats \
         build-iam-bootstrap build-iam-recovery build-iam-migration-repair \
         dev-start dev-restart dev-stop infra-up infra-down infra-restart infra-status prod-start prod-restart prod-stop prod-health ports-validate
 
@@ -115,6 +115,10 @@ test-agent-eval-release:
 
 test-common-python: ## 运行 common-python 全量测试
 	@cd common-python && .venv/bin/pytest -q
+
+DOCUMENT_WORKFLOW_PYTHON ?= engines/document-workflow/.venv/bin/python
+test-document-workflow: ## 运行 Document Workflow Engine 确定性测试
+	@cd engines/document-workflow && $(abspath $(DOCUMENT_WORKFLOW_PYTHON)) -m pytest -q tests
 
 test-copilot: ## 运行 Copilot 后端全量确定性测试
 	@cd copilot/backend && venv/bin/python -m pytest -q tests
@@ -270,7 +274,7 @@ test-book: ## 校验《数据治理100问》源稿目录、编号和延伸阅读
 test-engine-startup-isolation: ## 校验模块启动不依赖 Engine Instance 或可选 Engine Runtime
 	@python3 scripts/ci/check-engine-startup-isolation_test.py
 	@python3 scripts/ci/check-engine-startup-isolation.py --repository "$(CURDIR)"
-	@python3 -m py_compile common-python/addp_common/client/runtime_registration.py engines/geopython-workflow/api_server.py engines/spark-workflow/api_server.py engines/model3d-workflow/api_server.py engines/pointcloud-workflow/api_server.py
+	@python3 -m py_compile common-python/addp_common/client/runtime_registration.py engines/geopython-workflow/api_server.py engines/spark-workflow/api_server.py engines/model3d-workflow/api_server.py engines/pointcloud-workflow/api_server.py engines/document-workflow/api_server.py
 	@cd common && go test ./client -run 'TestRegisterRuntimeEngine' -count=1
 	@cd system/backend && go test ./internal/service ./internal/api -run 'Test(UpdateMetadataAndLifecycleDoesNotProbeOfflineEngine|HealthCheckerRetriesOfflineRuntimeUntilItIsReady|HealthCheckerIsolatesOfflineEngineFromOtherInstances|RegisterRuntimeEnginePreservesStableAdvertisedHost)' -count=1
 	@cd engines/duckdb && go test ./cmd/server ./internal/config -count=1

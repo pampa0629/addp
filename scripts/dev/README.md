@@ -152,6 +152,7 @@ bash scripts/dev/restart.sh -geopython-workflow
 bash scripts/dev/restart.sh -math-workflow
 bash scripts/dev/restart.sh -model3d-workflow
 bash scripts/dev/restart.sh -pointcloud-workflow
+bash scripts/dev/restart.sh -document-workflow
 bash scripts/dev/restart.sh -supermap-workflow
 bash scripts/dev/restart.sh -spark-workflow
 bash scripts/dev/restart.sh -jupyter
@@ -166,6 +167,7 @@ SuperMap Workflow 首次使用或升级 iObjects C++ SDK、许可时，通过 `S
 - 服务异常需要重置
 - 只调整 Python/扩展服务时，避免影响正在运行的 Go 后端服务
 - PointCloud Workflow 使用 Docker runtime 承载 PDAL，局部重启会重建并替换该 runtime 容器
+- Document Workflow 使用 Docker runtime 绑定 LibreOffice，局部重启会按构建指纹重建并替换该 runtime 容器
 
 **重要**: `restart.sh` 不会重启基础设施容器(PostgreSQL, Redis, MinIO, Meilisearch)
 - 原因: 避免 pgvector 等扩展需要重新编译安装

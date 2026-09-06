@@ -617,6 +617,16 @@ const activePlugin = computed(() => {
 
 const previewComponent = computed(() => activePlugin.value?.component ?? null)
 const previewPluginName = computed(() => activePlugin.value?.name ?? '')
+
+const pptxPreviewSource = computed(() => {
+  const object = props.previewData?.object || {}
+  const locator = String(props.selectedNode?.locator || '').trim()
+  return {
+    name: String(props.selectedNode?.label || props.selectedNode?.name || object.path?.split('/').pop() || 'presentation.pptx'),
+    locator
+  }
+})
+
 const previewComponentProps = computed(() => {
   if (isMarkdownContent.value) {
     return { rawMode: markdownRawMode.value }
@@ -632,6 +642,9 @@ const previewComponentProps = computed(() => {
   }
   if (previewPluginName.value === 'vector-tile') {
 	return vectorTileObjectPreviewProps(props.previewData, props.selectedNode?.locator)
+  }
+  if (previewPluginName.value === 'pptx') {
+    return { source: pptxPreviewSource.value }
   }
   return {}
 })

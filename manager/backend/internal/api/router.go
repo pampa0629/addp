@@ -55,6 +55,7 @@ func SetupRouter(
 	dataProfileHandler *DataProfileHandler,
 	protectionStore *projectionstore.Store,
 	lifecycle *modulelifecycle.Controller,
+	pptxPDFHandler *PPTXPDFHandler,
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -282,6 +283,13 @@ func SetupRouter(
 			pointCloudCOPCsGroup.DELETE("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactDelete), taskProviderHandler.DeletePointCloudCOPC)
 			if pointCloudCOPCHandler != nil {
 				pointCloudCOPCsGroup.GET("/:id/content", permission(managerauthorization.PermissionManagerDerivedArtifactRead), pointCloudCOPCHandler.GetPointCloudCOPCContent)
+			}
+		}
+		if pptxPDFHandler != nil {
+			pptxPDFGroup := api.Group("/pptx_pdf")
+			{
+				pptxPDFGroup.POST("/preview", permission(managerauthorization.PermissionManagerDataItemRead, managerauthorization.PermissionManagerDerivedArtifactCreate), pptxPDFHandler.EnsurePreview)
+				pptxPDFGroup.GET("/:id/content", permission(managerauthorization.PermissionManagerDerivedArtifactRead), pptxPDFHandler.GetContent)
 			}
 		}
 		vectorMaterializedViewTasksGroup := api.Group("/vector_materialized_view_tasks")

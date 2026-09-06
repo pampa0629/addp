@@ -53,6 +53,14 @@ roles:
     permissions:
       - platform.tenant.read
       - system.runtime_registry.update
+  - key: platform.document_runtime
+    role_type: platform_builtin
+    name_i18n_key: roles.platform.document_runtime.name
+    description_i18n_key: roles.platform.document_runtime.description
+    allowed_scope_types: [platform]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - system.runtime_registry.update
   - key: platform.duckdb_runtime
     role_type: platform_builtin
     name_i18n_key: roles.platform.duckdb_runtime.name
@@ -648,6 +656,14 @@ roles:
       - system.notebook_session_authorization.execute
       - transfer.execution.create
       - transfer.execution.read
+  - key: tenant.document_runtime
+    role_type: tenant_builtin
+    name_i18n_key: roles.tenant.document_runtime.name
+    description_i18n_key: roles.tenant.document_runtime.description
+    allowed_scope_types: [tenant]
+    allowed_principal_types: [service_principal]
+    permissions:
+      - manager.derived_artifact.create
   - key: tenant.geopython_runtime
     role_type: tenant_builtin
     name_i18n_key: roles.tenant.geopython_runtime.name

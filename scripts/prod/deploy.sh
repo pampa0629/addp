@@ -148,6 +148,7 @@ if [ "$SKIP_PUSH" = false ]; then
         "geopython-workflow-engine"
         "model3d-workflow-engine"
         "pointcloud-workflow-engine"
+        "document-workflow-engine"
         "supermap-workflow-engine"
         "spark-workflow-engine"
         "jupyter-engine"

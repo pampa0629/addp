@@ -61,23 +61,24 @@ type ExtractionScanStats struct {
 
 // ResourceWithStats 存储引擎及其 catalog 扫描统计
 type ResourceWithStats struct {
-	EngineID              uint   `json:"id"`   // 前端期待 id
-	ResourceName          string `json:"name"` // 前端期待 name
-	ResourceType          string `json:"resource_type"`
-	EngineFamily          string `json:"engine_family,omitempty"`
-	CatalogTopTerm        string `json:"catalog_top_term,omitempty"`
-	CatalogTopI18nKey     string `json:"catalog_top_i18n_key,omitempty"`
-	EngineCatalogLeafTerm string `json:"catalog_leaf_term,omitempty"`
-	CatalogLeafI18nKey    string `json:"catalog_leaf_i18n_key,omitempty"`
-	CatalogRootTerm       string `json:"catalog_root_term,omitempty"`
-	TotalCatalogNodes     int    `json:"total_catalog_nodes"`
-	ScannedCatalogNodes   int    `json:"scanned_catalog_nodes"`
-	UnscannedCatalogNodes int    `json:"unscanned_catalog_nodes"`
-	ScannedAt             string `json:"scanned_at,omitempty"`
-	LifecycleState        string `json:"lifecycle_state"`             // 引擎生命周期：active/deleting/deleted/delete_failed
-	ConnectionStatus      string `json:"connection_status,omitempty"` // online/offline/unknown/checking
-	LastCheckAt           string `json:"last_check_at,omitempty"`     // 最后检测时间
-	CheckMessage          string `json:"check_message,omitempty"`     // 状态详情
+	EngineID              uint                     `json:"id"`   // 前端期待 id
+	ResourceName          string                   `json:"name"` // 前端期待 name
+	ResourceType          string                   `json:"resource_type"`
+	Capabilities          *commonModels.JSONString `json:"capabilities,omitempty" swaggertype:"object"`
+	EngineFamily          string                   `json:"engine_family,omitempty"`
+	CatalogTopTerm        string                   `json:"catalog_top_term,omitempty"`
+	CatalogTopI18nKey     string                   `json:"catalog_top_i18n_key,omitempty"`
+	EngineCatalogLeafTerm string                   `json:"catalog_leaf_term,omitempty"`
+	CatalogLeafI18nKey    string                   `json:"catalog_leaf_i18n_key,omitempty"`
+	CatalogRootTerm       string                   `json:"catalog_root_term,omitempty"`
+	TotalCatalogNodes     int                      `json:"total_catalog_nodes"`
+	ScannedCatalogNodes   int                      `json:"scanned_catalog_nodes"`
+	UnscannedCatalogNodes int                      `json:"unscanned_catalog_nodes"`
+	ScannedAt             string                   `json:"scanned_at,omitempty"`
+	LifecycleState        string                   `json:"lifecycle_state"`             // 引擎生命周期：active/deleting/deleted/delete_failed
+	ConnectionStatus      string                   `json:"connection_status,omitempty"` // online/offline/unknown/checking
+	LastCheckAt           string                   `json:"last_check_at,omitempty"`     // 最后检测时间
+	CheckMessage          string                   `json:"check_message,omitempty"`     // 状态详情
 }
 
 // ScanTaskUpsertRequest 创建或更新扫描任务的请求

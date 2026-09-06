@@ -92,6 +92,13 @@ else
   echo -e "${RED}✗ pointcloud-workflow-engine${NC}"
 fi
 
+# Document Workflow Engine
+if curl -f http://localhost:8105/health > /dev/null 2>&1; then
+  echo -e "${GREEN}✓ document-workflow-engine${NC}"
+else
+  echo -e "${RED}✗ document-workflow-engine${NC}"
+fi
+
 # SuperMap Workflow Engine
 if curl -f http://localhost:8103/health > /dev/null 2>&1; then
   echo -e "${GREEN}✓ supermap-workflow-engine${NC}"

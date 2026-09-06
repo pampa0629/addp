@@ -403,6 +403,16 @@ func TestResolveDirectWorkflowOperatorFindsCustomRuntimeByOperatorCapability(t *
 
 	engines := []models.Engine{
 		{
+			ID:               8,
+			Name:             "Other Workflow",
+			EngineType:       "other_workflow",
+			EngineOrigin:     "extension",
+			LifecycleState:   models.EngineLifecycleActive,
+			ConnectionStatus: models.EngineConnectionOnline,
+			ConnectionInfo:   testWorkflowConnectionInfo(t, server.URL),
+			Capabilities:     testWorkflowCapabilities(t, "other_workflow"),
+		},
+		{
 			ID:             10,
 			Name:           "Inactive Workflow",
 			EngineType:     "inactive_workflow",
@@ -424,6 +434,7 @@ func TestResolveDirectWorkflowOperatorFindsCustomRuntimeByOperatorCapability(t *
 
 	engine, operator, err := ResolveDirectWorkflowOperator(context.Background(), engines, DirectWorkflowOperatorSelector{
 		OperatorName: "tiff_to_cog",
+		EngineType:   engineType,
 	})
 	if err != nil {
 		t.Fatalf("ResolveDirectWorkflowOperator returned error: %v", err)

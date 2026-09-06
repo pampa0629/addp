@@ -3,7 +3,7 @@ set -e
 
 # 使用说明
 show_usage() {
-  echo "用法: $0 [-all] [-system] [-manager] [-meta] [-transfer] [-orchestrator] [-develop] [-service] [-monitor] [-gateway] [-model] [-quality] [-security] [-asset] [-catalog] [-workbench] [-portal] [-inference] [-geopython-workflow] [-math-workflow] [-model3d-workflow] [-pointcloud-workflow] [-supermap-workflow] [-copilot] [-agent] [-spark-workflow] [-jupyter] [-duckdb]"
+  echo "用法: $0 [-all] [-system] [-manager] [-meta] [-transfer] [-orchestrator] [-develop] [-service] [-monitor] [-gateway] [-model] [-quality] [-security] [-asset] [-catalog] [-workbench] [-portal] [-inference] [-geopython-workflow] [-math-workflow] [-model3d-workflow] [-pointcloud-workflow] [-document-workflow] [-supermap-workflow] [-copilot] [-agent] [-spark-workflow] [-jupyter] [-duckdb]"
   echo ""
   echo "选项:"
   echo "  无参数        只重启服务,自动检测 common 模块变化并增量编译受影响的模块"
@@ -31,6 +31,7 @@ show_usage() {
   echo "  -math-workflow     重启 Math Workflow Engine (Python 服务)"
   echo "  -model3d-workflow  重启 Model3D Workflow Engine (Python 服务)"
   echo "  -pointcloud-workflow 重启 PointCloud Workflow Engine (Docker runtime)"
+  echo "  -document-workflow 重启 Document Workflow Engine (Docker runtime)"
   echo "  -supermap-workflow 重启 SuperMap Workflow Engine (C++ Docker runtime，需先构建基础镜像)"
   echo "  -copilot     重启 Copilot Backend (Python 服务)"
   echo "  -agent       重启 Agent Backend (Python 服务)"
@@ -76,6 +77,7 @@ if [ -f ".env" ]; then
 fi
 export MODEL3D_WORKFLOW_PORT="${MODEL3D_WORKFLOW_PORT:-8101}"
 export POINTCLOUD_WORKFLOW_PORT="${POINTCLOUD_WORKFLOW_PORT:-8102}"
+export DOCUMENT_WORKFLOW_PORT="${DOCUMENT_WORKFLOW_PORT:-8105}"
 export SUPERMAP_WORKFLOW_PORT="${SUPERMAP_WORKFLOW_PORT:-8103}"
 
 # 自动生成服务 URL（与 start.sh 保持一致）
@@ -134,7 +136,7 @@ for arg in "$@"; do
     -all)
       FORCE_BUILD_ALL=true
       ;;
-    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-gateway|-standard|-model|-quality|-security|-asset|-catalog|-workbench|-portal|-graph|-inference|-geopython-workflow|-math-workflow|-model3d-workflow|-pointcloud-workflow|-supermap-workflow|-copilot|-agent|-spark-workflow|-jupyter|-duckdb)
+    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-gateway|-standard|-model|-quality|-security|-asset|-catalog|-workbench|-portal|-graph|-inference|-geopython-workflow|-math-workflow|-model3d-workflow|-pointcloud-workflow|-document-workflow|-supermap-workflow|-copilot|-agent|-spark-workflow|-jupyter|-duckdb)
       module="${arg#-}"  # 移除前导的 -
       FORCE_BUILD_MODULES+=("$module")
       ;;
@@ -157,6 +159,7 @@ has_go_module_params() {
               "$module" != "math-workflow" &&
               "$module" != "model3d-workflow" &&
               "$module" != "pointcloud-workflow" &&
+              "$module" != "document-workflow" &&
               "$module" != "supermap-workflow" &&
               "$module" != "copilot" &&
               "$module" != "agent" &&
@@ -170,7 +173,7 @@ has_go_module_params() {
 
 is_python_service_module() {
     case "$1" in
-        geopython-workflow|math-workflow|model3d-workflow|pointcloud-workflow|supermap-workflow|spark-workflow|jupyter|copilot|agent)
+        geopython-workflow|math-workflow|model3d-workflow|pointcloud-workflow|document-workflow|supermap-workflow|spark-workflow|jupyter|copilot|agent)
             return 0
             ;;
         *)
@@ -573,6 +576,94 @@ restart_pointcloud_workflow_service() {
     echo "  ✓ PointCloud Workflow Engine Docker runtime 已启动"
 }
 
+document_workflow_source_fingerprint() {
+    {
+        printf '%s\n' "document-workflow-image-v1"
+        while IFS= read -r file; do
+            printf '%s %s\n' "$file" "$(git hash-object "$file")"
+        done < <(
+            {
+                printf '%s\n' \
+                    engines/document-workflow/Dockerfile \
+                    engines/document-workflow/requirements.txt \
+                    engines/document-workflow/api_server.py \
+                    engines/document-workflow/operators.py \
+                    common-python/pyproject.toml \
+                    common-python/README.md \
+                    common-python/addp_common/__init__.py \
+                    common-python/addp_common/module_lifecycle.py \
+                    common-python/addp_common/workflow_access.py
+                find common-python/addp_common/client common-python/addp_common/workflow_runtime \
+                    -type f ! -path '*/__pycache__/*' ! -name '*.pyc'
+            } | LC_ALL=C sort
+        )
+    } | git hash-object --stdin
+}
+
+ensure_document_workflow_image() {
+    local image="$1"
+    local fingerprint
+    local current_fingerprint
+    fingerprint="$(document_workflow_source_fingerprint)"
+    current_fingerprint="$(docker image inspect -f '{{ index .Config.Labels "addp.document.source-fingerprint" }}' "$image" 2>/dev/null || true)"
+    if [ "$current_fingerprint" = "$fingerprint" ]; then
+        echo "  Document Workflow Engine 镜像构建输入未变化，复用现有镜像: $image"
+        return 0
+    fi
+    docker build --label "addp.document.source-fingerprint=${fingerprint}" -f engines/document-workflow/Dockerfile -t "$image" .
+}
+
+restart_document_workflow_service() {
+    local port="${DOCUMENT_WORKFLOW_PORT:-8105}"
+    local image="${DOCUMENT_WORKFLOW_IMAGE:-addp-document-workflow-engine:dev}"
+    local source_dir="${DOCUMENT_DATA_HOST_PATH:-${ROOT_DIR}/business/nfs/data}"
+    local container_source_dir="${DOCUMENT_DATA_CONTAINER_PATH:-${ROOT_DIR}/business/nfs/data}"
+    local work_dir="${DOCUMENT_WORK_HOST_PATH:-${ROOT_DIR}/data/document-work}"
+    local system_port="${SYSTEM_BACKEND_PORT:-8180}"
+    command -v docker >/dev/null 2>&1 || { echo "❌ Document Workflow Engine 需要 Docker runtime 承载 LibreOffice"; return 1; }
+    docker rm -f document-workflow-engine >/dev/null 2>&1 || true
+    stop_matching_port_process "$port" "Document Workflow Engine" "python.*api_server\\.py|engines/document-workflow"
+    ensure_document_workflow_image "$image"
+    mkdir -p "$work_dir" .dev-pids
+    docker run -d \
+        --name document-workflow-engine \
+        --label com.docker.compose.project=addp-app \
+        --label com.docker.compose.service=document-workflow-engine \
+        --label com.docker.compose.project.working_dir="${ROOT_DIR}" \
+        --read-only \
+        --tmpfs /tmp:rw,nosuid,nodev,size=67108864 \
+        --cap-drop=ALL \
+        --security-opt=no-new-privileges \
+        --add-host=host.docker.internal:host-gateway \
+        -p "${port}:8105" \
+        -e PORT=8105 \
+        -e SYSTEM_URL="http://host.docker.internal:${system_port}" \
+        -e DOCUMENT_WORKFLOW_SERVICE_CLIENT_SECRET="${DOCUMENT_WORKFLOW_SERVICE_CLIENT_SECRET:-}" \
+        -e DOCUMENT_LIBREOFFICE_BIN=/usr/bin/soffice \
+        -e DOCUMENT_WORK_DIR=/work/document \
+        -e DOCUMENT_CONVERSION_CONCURRENCY="${DOCUMENT_CONVERSION_CONCURRENCY:-1}" \
+        -e DOCUMENT_CONVERSION_TIMEOUT_SECONDS="${DOCUMENT_CONVERSION_TIMEOUT_SECONDS:-600}" \
+        -e DOCUMENT_OBJECT_STORE_LOOPBACK_HOST="${DOCUMENT_OBJECT_STORE_LOOPBACK_HOST:-host.docker.internal}" \
+        -e RUNTIME_HOST=localhost \
+        -v "${ROOT_DIR}/logs:/app/logs" \
+        -v "${work_dir}:/work/document" \
+        -v "${ROOT_DIR}/engines/document-workflow/api_server.py:/app/api_server.py:ro" \
+        -v "${ROOT_DIR}/engines/document-workflow/operators.py:/app/operators.py:ro" \
+        -v "${source_dir}:${container_source_dir}:ro" \
+        "$image" > .dev-pids/document-workflow-engine.pid
+    local wait_count=0
+    while ! curl -s "http://localhost:${port}/health" | grep -q '"status":"healthy"'; do
+        if ! docker ps --filter "name=^/document-workflow-engine$" --format '{{.Names}}' | grep -qx document-workflow-engine; then
+            docker logs --tail 100 document-workflow-engine 2>&1 || true
+            return 1
+        fi
+        sleep 1
+        wait_count=$((wait_count + 1))
+        [ "$wait_count" -lt 90 ] || { docker logs --tail 100 document-workflow-engine 2>&1 || true; return 1; }
+    done
+    echo "  ✓ Document Workflow Engine Docker runtime 已启动"
+}
+
 restart_supermap_workflow_service() {
     bash "${SCRIPT_DIR}/supermap-workflow.sh"
 }
@@ -700,6 +791,9 @@ restart_scoped_python_services() {
             pointcloud-workflow)
                 restart_pointcloud_workflow_service
                 ;;
+            document-workflow)
+                restart_document_workflow_service
+                ;;
             supermap-workflow)
                 restart_supermap_workflow_service
                 ;;
@@ -780,6 +874,7 @@ pkill -9 -f "engines/geopython-workflow/api_server.py" 2>/dev/null || true
 pkill -9 -f "engines/math-workflow/api_server.py" 2>/dev/null || true
 pkill -9 -f "engines/model3d-workflow/api_server.py" 2>/dev/null || true
 pkill -9 -f "engines/pointcloud-workflow/api_server.py" 2>/dev/null || true
+pkill -9 -f "engines/document-workflow/api_server.py" 2>/dev/null || true
 pkill -9 -f "engines/spark-workflow/api_server.py" 2>/dev/null || true
 pkill -9 -f "engines/jupyter/api_server.py" 2>/dev/null || true
 pkill -9 -f "jupyter.*lab" 2>/dev/null || true

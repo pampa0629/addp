@@ -31,7 +31,8 @@ class EngineStartupIsolationCheckTest(unittest.TestCase):
       START_DUCKDB=true
       ;;
 esac
-common-python/addp_common/module_lifecycle.py
+pointcloud-workflow common-python/addp_common/module_lifecycle.py
+document-workflow common-python/addp_common/module_lifecycle.py
 """,
             "docker-compose.yml": f"""services:
   manager-backend:
@@ -51,9 +52,12 @@ func main() {
 }
 """,
             "common/client/system_service.go": "func (c *SystemServiceClient) RegisterAndHeartbeat(ctx context.Context, request *ModuleRegistrationRequest) *ModuleRegistrationLifecycle { return nil }\n",
-            "scripts/dev/restart.sh": "common-python/addp_common/module_lifecycle.py\n",
+            "scripts/dev/restart.sh": "pointcloud-workflow document-workflow common-python/addp_common/module_lifecycle.py\n",
             "engines/pointcloud-workflow/Dockerfile": "COPY common-python/addp_common/module_lifecycle.py /common-python/addp_common/module_lifecycle.py\n",
+            "engines/document-workflow/Dockerfile": "COPY common-python/addp_common/module_lifecycle.py /common-python/addp_common/module_lifecycle.py\n",
             "common-python/addp_common/module_lifecycle.py": "\n",
+            "Makefile": "test-document-workflow: ## test\n\t@true\n",
+            ".github/workflows/platform-ci.yml": "uses: ./.github/actions/prepare-python-gate\nengines/document-workflow/requirements-dev.txt\nrun: make test-document-workflow\n",
             ".env.example": "POSTGRES_HOST=localhost\n",
         }
         for relative, content in files.items():
@@ -144,6 +148,24 @@ registrationDone := client.RegisterAndHeartbeat(ctx, request)
             any("module_lifecycle.py" in error and "restart.sh" in error for error in errors),
             errors,
         )
+
+    def test_rejects_document_image_missing_common_runtime_module(self) -> None:
+        root = self.repository()
+        (root / "engines/document-workflow/Dockerfile").write_text(
+            "FROM python:3.12-slim\n",
+            encoding="utf-8",
+        )
+        errors = CHECKER.validate(root)
+        self.assertTrue(
+            any("document-workflow/Dockerfile" in error and "module_lifecycle.py" in error for error in errors),
+            errors,
+        )
+
+    def test_rejects_missing_document_workflow_test_registration(self) -> None:
+        root = self.repository()
+        (root / ".github/workflows/platform-ci.yml").write_text("name: platform\n", encoding="utf-8")
+        errors = CHECKER.validate(root)
+        self.assertTrue(any("Document Workflow gate" in error for error in errors), errors)
 
 
 if __name__ == "__main__":

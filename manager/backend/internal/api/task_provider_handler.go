@@ -36,6 +36,7 @@ type TaskProviderHandler struct {
 	model3DTilesTaskSvc           *service.Model3DTilesTaskService
 	gaussianSplatKSplatTaskSvc    *service.GaussianSplatKSplatTaskService
 	pointCloudCOPCTaskSvc         *service.PointCloudCOPCTaskService
+	pptxPDFTaskSvc                *service.PPTXPDFTaskService
 	taskExecRepo                  *commonExecution.TaskExecutionRepository
 }
 
@@ -79,6 +80,10 @@ func (h *TaskProviderHandler) SetGaussianSplatKSplatTaskService(gaussianSplatKSp
 
 func (h *TaskProviderHandler) SetPointCloudCOPCTaskService(pointCloudCOPCTaskSvc *service.PointCloudCOPCTaskService) {
 	h.pointCloudCOPCTaskSvc = pointCloudCOPCTaskSvc
+}
+
+func (h *TaskProviderHandler) SetPPTXPDFTaskService(pptxPDFTaskSvc *service.PPTXPDFTaskService) {
+	h.pptxPDFTaskSvc = pptxPDFTaskSvc
 }
 
 // TaskListResponse 任务列表响应（统一包装 Manager provider 声明的任务类型）
@@ -692,6 +697,20 @@ func (h *TaskProviderHandler) listTasks(c *gin.Context, taskType string) {
 				LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus,
 			})
 		}
+	case commonExecution.TaskTypePPTXPDFGeneration:
+		if h.pptxPDFTaskSvc == nil {
+			managerError(c, http.StatusServiceUnavailable, manageri18n.MsgPPTXPDFServiceUnavailable)
+			return
+		}
+		tasks, t, err := h.pptxPDFTaskSvc.List(ctx, tenantID, page, pageSize)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		total = t
+		for _, task := range tasks {
+			items = append(items, TaskListItem{ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypePPTXPDFGeneration, Name: task.Name, Description: task.Description, Enabled: task.Enabled, LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus})
+		}
 	case commonExecution.TaskTypeEmbedding:
 		if h.embeddingTaskSvc == nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "embedding task service is unavailable"})
@@ -809,6 +828,17 @@ func (h *TaskProviderHandler) listTasks(c *gin.Context, taskType string) {
 			total += t
 			for _, task := range tasks {
 				items = append(items, TaskListItem{ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypePointCloudCOPCGeneration, Name: task.Name, Description: task.Description, Enabled: task.Enabled, LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus})
+			}
+		}
+		if h.pptxPDFTaskSvc != nil {
+			tasks, t, err := h.pptxPDFTaskSvc.List(ctx, tenantID, page, pageSize)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			total += t
+			for _, task := range tasks {
+				items = append(items, TaskListItem{ID: task.ID, TenantID: task.TenantID, TaskType: commonExecution.TaskTypePPTXPDFGeneration, Name: task.Name, Description: task.Description, Enabled: task.Enabled, LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus})
 			}
 		}
 		if h.embeddingTaskSvc != nil {
@@ -1047,6 +1077,17 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 			return
 		}
 		respondManagerTaskDetail(c, taskType, pointCloudCOPCTaskResponse(task))
+	case commonExecution.TaskTypePPTXPDFGeneration:
+		task, err := h.pptxPDFTaskSvc.GetByID(ctx, uint(id), tenantID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if task == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
+			return
+		}
+		respondManagerTaskDetail(c, taskType, task)
 	case commonExecution.TaskTypeEmbedding:
 		task, err := h.embeddingTaskSvc.GetByID(ctx, uint(id), tenantID)
 		if err != nil {
@@ -1265,6 +1306,9 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 	case commonExecution.TaskTypePointCloudCOPCGeneration:
 		executionID, err = h.pointCloudCOPCTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, overwriteExistingResult)
 		executionStatus = commonExecution.ExecutionStatusPending
+	case commonExecution.TaskTypePPTXPDFGeneration:
+		executionID, err = h.pptxPDFTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, overwriteExistingResult)
+		executionStatus = commonExecution.ExecutionStatusPending
 	case commonExecution.TaskTypeEmbedding:
 		executionID, err = h.embeddingTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
 	default:
@@ -1310,7 +1354,8 @@ func managerTaskRequiresExistingResultAction(taskType string) bool {
 		commonExecution.TaskTypeModel3DGLBGeneration,
 		commonExecution.TaskTypeModel3DTilesGeneration,
 		commonExecution.TaskTypeGaussianSplatKSplatGeneration,
-		commonExecution.TaskTypePointCloudCOPCGeneration:
+		commonExecution.TaskTypePointCloudCOPCGeneration,
+		commonExecution.TaskTypePPTXPDFGeneration:
 		return true
 	default:
 		return false

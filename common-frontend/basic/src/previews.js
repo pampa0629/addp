@@ -13,7 +13,7 @@
  *   - dompurify (MarkdownPreview)
  *   - mermaid (MarkdownPreview)
  *   - mammoth (OfficePreview 的 DOCX 解析；旧式 DOC/WPS 与 RTF 解析器由共享层自有)
- *   - jszip (PptxPreview)
+ *   - PPTX 由 Manager 的 Document Workflow 转换为 PDF，不在浏览器解压源文件
  *
  * 并在 vite.config.js 的 resolve.dedupe 中添加这些包名。
  */

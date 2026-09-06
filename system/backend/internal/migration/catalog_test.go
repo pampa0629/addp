@@ -14,8 +14,8 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 128 {
-		t.Fatalf("LatestVersion = %d, want 128", catalog.LatestVersion)
+	if catalog.LatestVersion != 129 {
+		t.Fatalf("LatestVersion = %d, want 129", catalog.LatestVersion)
 	}
 }
 
@@ -1049,6 +1049,23 @@ func TestWorkflowRuntimeServicePrincipalsMigration(t *testing.T) {
 	} {
 		if !strings.Contains(sql, fragment) {
 			t.Fatalf("migration 56 missing %q", fragment)
+		}
+	}
+}
+
+func TestDocumentWorkflowServicePrincipalMigration(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000129_iam_document_workflow_service_principal.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 129: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'addp-document'", "'platform.document_runtime'", "'tenant.document_runtime'",
+		"'system.runtime_registry.update'", "'manager.derived_artifact.create'",
+		"INSERT INTO system.tenant_memberships",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 129 missing %q", fragment)
 		}
 	}
 }

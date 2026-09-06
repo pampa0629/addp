@@ -166,6 +166,7 @@ func buildResourceWithStats(resource *commonModels.Engine, stats *engineScanStat
 		EngineID:              resource.ID,
 		ResourceName:          resource.Name,
 		ResourceType:          resource.EngineType,
+		Capabilities:          resource.Capabilities,
 		EngineFamily:          engineFamily,
 		CatalogRootTerm:       catalogRootTerm,
 		CatalogTopTerm:        catalogTopTerm,

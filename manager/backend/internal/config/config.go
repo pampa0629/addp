@@ -50,8 +50,9 @@ type Config struct {
 	TileCache TileCacheConfig
 
 	// Raster mosaic 在线瓦片运行时
-	RasterMosaicRuntime    RasterMosaicRuntimeConfig
-	RasterMosaicGeneration RasterMosaicGenerationConfig
+	RasterMosaicRuntime        RasterMosaicRuntimeConfig
+	RasterMosaicGeneration     RasterMosaicGenerationConfig
+	DocumentWorkflowGeneration DocumentWorkflowGenerationConfig
 }
 
 type ExportCleanupConfig struct {
@@ -75,6 +76,10 @@ type RasterMosaicRuntimeConfig struct {
 }
 
 type RasterMosaicGenerationConfig struct {
+	Timeout time.Duration
+}
+
+type DocumentWorkflowGenerationConfig struct {
 	Timeout time.Duration
 }
 
@@ -157,6 +162,9 @@ func Load() *Config {
 	}
 	cfg.RasterMosaicGeneration = RasterMosaicGenerationConfig{
 		Timeout: 2 * time.Hour,
+	}
+	cfg.DocumentWorkflowGeneration = DocumentWorkflowGenerationConfig{
+		Timeout: 30 * time.Minute,
 	}
 	if cfg.RasterMosaicRuntime.TileSize != 512 {
 		cfg.RasterMosaicRuntime.TileSize = 256

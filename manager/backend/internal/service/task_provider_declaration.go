@@ -132,6 +132,18 @@ func ManagerTaskProviderDeclaration() (*commonModels.TaskProviderDeclaration, er
 				"edit_url":                  "/manager/point-cloud-copc?task_id=:id",
 				"deprecated":                false,
 			},
+			{
+				"type":                      "pptx_pdf_generation",
+				"display_name":              "PPTX 静态 PDF 快显生成",
+				"description":               "将 PPTX 转换为 Manager 受管的 PDF 快显 artifact",
+				"definition_schema":         map[string]interface{}{"type": "object"},
+				"supports_schedule":         false,
+				"supports_cancel":           false,
+				"supports_inline_execution": false,
+				"create_url":                "/manager/data-explorer",
+				"edit_url":                  "/manager/data-explorer",
+				"deprecated":                false,
+			},
 		},
 	}
 

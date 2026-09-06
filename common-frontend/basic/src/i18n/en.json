@@ -354,6 +354,12 @@
     "loadedSheets": "Loaded Sheets",
     "fileSize": "File Size"
   },
+  "pptxPreview": {
+    "converting": "Generating presentation preview",
+    "convertingHint": "Large files are converted to PDF in the background and shown automatically when ready.",
+    "failed": "Presentation preview generation failed",
+    "identityMissing": "The data item identity required to create a preview task is missing."
+  },
   "officePreview": {
     "toolbar": "Document preview toolbar",
     "zoomOut": "Zoom out",

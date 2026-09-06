@@ -354,6 +354,12 @@
     "loadedSheets": "已加载工作表",
     "fileSize": "文件大小"
   },
+  "pptxPreview": {
+    "converting": "正在生成演示文稿预览",
+    "convertingHint": "大文件会在后台转换为 PDF，完成后自动显示。",
+    "failed": "演示文稿预览生成失败",
+    "identityMissing": "缺少数据项身份信息，无法创建预览任务。"
+  },
   "officePreview": {
     "toolbar": "文件预览工具栏",
     "zoomOut": "缩小",

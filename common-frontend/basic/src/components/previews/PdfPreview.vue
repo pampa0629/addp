@@ -108,6 +108,7 @@
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { ArrowLeft, ArrowRight, ZoomIn, ZoomOut } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import { getAccessToken } from '../../auth/authSession'
 import { formatBytes } from '../../utils/formatters'
 
 const props = defineProps({
@@ -354,6 +355,9 @@ const loadPDF = async (token) => {
     // ✅ 优化: 使用流式加载配置
     loadingTask = lib.getDocument({
       url: pdfUrl.value,
+
+      // 同源受保护 PDF 使用当前 Bearer token；Cookie 会继续由 withCredentials 携带。
+      httpHeaders: getAccessToken() ? { Authorization: `Bearer ${getAccessToken()}` } : undefined,
 
       // 关键优化: 启用范围请求 (HTTP Range Requests)
       rangeChunkSize: 65536,       // 每次请求 64KB 分块

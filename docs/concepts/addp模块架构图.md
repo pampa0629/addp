@@ -239,7 +239,7 @@ graph TB
   - **Meta Worker**: 从 `common.task_executions` PostgreSQL claim 扫描 execution，执行元数据扫描和索引。
   - **Quality Worker**: 独立进程，从 `common.task_executions` PostgreSQL claim `check|materialization_gate` execution；字段检查执行评分和 Issue reconcile，物化门禁通过 Model Client 读取同批 staging 并执行强类型断言。
   - **Security Worker**: 独立进程，只领取 Security 对显式纳管目标创建的 `sensitive_data_discovery` execution，读取必要专业事实和受控样本并生成 Finding；不全量遍历 Meta，不提供通用数据代理。
-- **Manager 快显与瓦片任务**: `vector_tile_cache_generation` 与 `vector_tile_set_generation` 由 Manager Backend 按源能力选择唯一执行路径：PostgreSQL/PostGIS 表使用原生 `ST_AsMVT`，MySQL、Oracle 等标准 EWKB 可读的空间表流式物化临时 FlatGeobuf 后调用 GeoPython `vector_to_pmtiles`，文件或对象通过受控访问计划调用同一 operator；三类路径统一输出 PMTiles v3。任务定义、执行记录和缓存结果分别进入 Manager owner 表、`common.task_executions` 与 `manager.vector_tile_cache`。`vector_materialized_view_generation` 仍由 Manager Backend 在手动或编排触发时执行，结果进入 `manager.vector_materialized_view`。这些任务当前不启动模块自身定时调度；若需要多执行器横向扩展或独立 GIS 资源隔离，应将对应任务类型整体切换为唯一的 Manager Worker 或 GIS 执行引擎，不允许 Backend 与 Worker 双轨并存。
+- **Manager 快显与瓦片任务**: `vector_tile_cache_generation` 与 `vector_tile_set_generation` 由 Manager Backend 按源能力选择唯一执行路径：PostgreSQL/PostGIS 表使用原生 `ST_AsMVT`，MySQL、Oracle 等标准 EWKB 可读的空间表流式物化临时 FlatGeobuf 后调用 GeoPython `vector_to_pmtiles`，文件或对象通过受控访问计划调用同一 operator；三类路径统一输出 PMTiles v3。`pptx_pdf_generation` 由 Manager 拥有任务和当前结果，通过 Common `WorkflowRuntimeProvider` direct 调用 Document Workflow `document_to_pdf`，LibreOffice 只存在于该 Runtime 镜像。任务定义、执行记录和缓存结果分别进入 Manager owner 表、`common.task_executions` 与对应 Manager 结果表。`vector_materialized_view_generation` 仍由 Manager Backend 在手动或编排触发时执行，结果进入 `manager.vector_materialized_view`。这些任务当前不启动模块自身定时调度；若需要把 Manager bounded execution 迁入附属 Worker，必须按任务类型整体切换唯一执行者，不允许 Backend 与 Worker 双轨并存。
 - **共享模块**: common 和 common-frontend 提供可复用的代码和组件
 - **扩展运行时**: `engines/` 目录集中放置不拥有业务配置事实的独立计算 / Notebook Runtime 实现，由业务模块通过统一 Provider 调用。Inference 同时拥有 Provider、Deployment、Profile、凭据和配置管理入口，因此保留为根目录业务模块；其数据面端点另以 `inference_runtime` Engine Instance 纳入统一引擎体系，不在 `engines/` 下复制 owner 实现。
 - **基础设施层**: 共享的数据库、缓存、对象存储、搜索引擎，以及 PostgreSQL/MySQL/Oracle CDC 使用的 Infra Kafka/Kafka Connect。Infra Kafka、Connect 和 Transfer capture supervisor 已开放；Infra Kafka 不注册为 System Engine，也不进入用户任务配置。
@@ -371,7 +371,7 @@ graph LR
 
 ## Worker 运行时
 
-ADDP 的 execution worker 是执行 owner 的运行时角色。Quality、Meta、Transfer bounded 和 Manager 文档转换使用各模块附属的独立 Worker 进程，Transfer continuous 使用专用长期运行时 Worker；对应 Backend 只承担控制面。Manager 的 `pptx_pdf_generation` 由唯一的 `manager-worker` 通过 PostgreSQL claim / lease 执行，LibreOffice 只存在于该 Worker 的运行镜像；Manager Backend 不加载 LibreOffice，也不得保留进程内转换旁路。PostgreSQL/PostGIS 原生 MVT、MySQL/Oracle 临时 FlatGeobuf 到 GeoPython PMTiles、文件或对象到 GeoPython PMTiles，以及矢量物化视图仍按各自既有唯一执行路线运行。Manager 受管当前结果任务不启动 owner scheduler；Embedding 的逐 item 调度器独立保留。后续格式若需要独立资源隔离，应先确定唯一的 Manager Worker 或专业执行引擎，再实现代码，不保留 Backend 与 Worker 双轨。
+ADDP 的 execution worker 是执行 owner 的运行时角色。Quality、Meta 和 Transfer bounded 使用各模块附属的独立 Worker 进程，Transfer continuous 使用专用长期运行时 Worker；对应 Backend 只承担控制面。Manager 当前的受管快显任务由 Manager Backend 持有领域 execution 并把重型计算委托给独立专业 Workflow Runtime；`pptx_pdf_generation` 唯一调用 Document Workflow `document_to_pdf`，LibreOffice 不进入 Manager 进程。PostgreSQL/PostGIS 原生 MVT、MySQL/Oracle 临时 FlatGeobuf 到 GeoPython PMTiles、文件或对象到 GeoPython PMTiles，以及矢量物化视图仍按各自既有唯一执行路线运行。Manager 受管当前结果任务不启动 owner scheduler；Embedding 的逐 item 调度器独立保留。后续若统一引入 Manager Worker，必须整体迁移对应任务类型的 execution owner，不保留 Backend 与 Worker 双轨。
 
 ### 模块启动与引擎可用性边界
 
@@ -953,7 +953,7 @@ graph LR
     subgraph Engines["扩展运行时（执行层）"]
         PyWF["geopython_workflow<br/>内置示例"]
         SparkWF["spark_workflow<br/>内置示例，执行时绑定 spark 通用引擎"]
-        DomainWF["领域 workflow<br/>Model3D / PointCloud / SuperMap"]
+        DomainWF["领域 workflow<br/>Model3D / PointCloud / Document / SuperMap"]
         CustomWF["用户自研 workflow<br/>addp.workflow/v1"]
         Jupyter["jupyter<br/>交互式 Notebook"]
     end

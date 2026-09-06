@@ -39,9 +39,9 @@
 12. Quality `check|materialization_gate`、Meta `scan`、Transfer bounded `sync` 和 Orchestrator 来源的 Develop `query` 的 execution worker 必须是 owner 模块附属的独立进程，并统一使用 PostgreSQL execution claim + lease；owner Backend 不执行这些 bounded execution。
 13. owner scheduler 运行在 owner Backend，只负责按任务定义发现到期任务并创建 durable `pending` execution；Worker 不可用不得阻止 scheduler 创建 execution。dispatcher 只负责 outbox/delivery 投递，二者都不得替代 execution worker 成为业务执行事实源。
 14. bounded runtime queue 的唯一主路线是 `common.task_executions` PostgreSQL claim，不保留 Redis/Asynq、进程内 channel 或 Backend 内嵌执行 fallback。continuous runtime、dispatcher 和 maintenance loop 继续使用各自专用协议，不强行迁入 bounded claim。
-15. Manager `pptx_pdf_generation` 是 bounded 预览派生产物任务：任务定义归 `manager.pptx_pdf_tasks`，结果归 `manager.pptx_pdf`，Manager Backend 只创建已授权的 `pending` execution，独立 `manager-worker` 负责领取和转换。LibreOffice 不进入 Manager Backend。
+15. Manager `pptx_pdf_generation` 是 bounded 预览派生产物任务：任务定义归 `manager.pptx_pdf_tasks`，结果归 `manager.pptx_pdf`。Manager 领域执行器通过 Common `WorkflowRuntimeProvider` direct 调用 `document_workflow/document_to_pdf`；Document Workflow 是纯执行层，LibreOffice 只作为其内部依赖，不拥有 Manager 任务、execution 或 artifact 状态。
 
-`pptx_pdf_generation` 声明 `supports_schedule=false`。普通预览按需触发：`GET /manager/preview` 只返回 artifact 状态，不得隐式创建任务或 execution；前端收到 `preview_artifact_missing` 后显式调用创建与执行 API。已有 `pending` / `running` execution 时复用其状态，失败后只允许用户显式重试。Orchestrator 只在用户显式配置预热或批量编排时调用同一 TaskProvider 任务，不建立第二条执行路线。
+`pptx_pdf_generation` 声明 `supports_schedule=false`。普通预览按需触发：`GET /manager/preview` 只返回 artifact 状态，不得隐式创建任务或 execution；前端收到 `preview_artifact_missing` 后显式调用创建与执行 API。已有 `pending` / `running` execution 时复用其状态，失败后只允许用户显式重试。Orchestrator 只在用户显式配置预热或批量编排时调用同一 Manager TaskProvider 任务，不直接调用 Runtime，也不建立第二条执行路线。
 
 ## 核心对象
 
@@ -586,7 +586,7 @@ Infra Kafka/Kafka Connect 部署基线（工作包 3A 已冻结，3B 实现）�
 
 Manager 的快显和业务派生任务细节由 Manager 专题确认。本文只要求 Manager 用同一个 provider 声明多个任务类型，并按 `module + task_type + source_task_id` 关联执行记录。快显缓存生成任务类型为 `vector_tile_cache_generation`，任务定义表为 `manager.vector_tile_cache_tasks`，结果表为 `manager.vector_tile_cache`，结果是 Manager infra PMTiles artifact；业务矢量瓦片集生成任务类型为 `vector_tile_set_generation`，任务定义表为 `manager.vector_tile_set_tasks`，结果是 Business 存储中 `data_type=media + format=pmtiles + layout=single` 的 Meta item，不设 Manager 结果表。两者按源能力选择唯一生成路径：PostgreSQL/PostGIS 表由 Manager 原生 `ST_AsMVT` 生成，MySQL、Oracle 等标准 EWKB 可读数据库表由 Manager 物化临时 FlatGeobuf 后调用 GeoPython Workflow `vector_to_pmtiles`，NFS、MinIO/S3 文件或对象由受控访问计划调用同一 operator；MVT 是 PMTiles 内部 tile encoding，不是任务类型。矢量物化视图、栅格、三维、点云与 embedding 的既有任务边界保持不变。
 
-Manager 已有结果动作统一适用于 `vector_tile_cache_generation`、`vector_materialized_view_generation`、`raster_cog_generation`、`model_3d_glb_generation`、`model3d_tiles_generation`、`gaussian_splat_ksplat_generation` 和 `point_cloud_copc_generation`。这些任务的标准执行参数只允许 `existing_result_action:string`，当前枚举只有 `overwrite`；结果表中存在与任务语义身份对应的未删除结果时，服务端必须要求 `parameters.existing_result_action=overwrite` 才能刷新。该动作只作用于本次 execution，不改写 owner 任务定义。
+Manager 已有结果动作统一适用于 `vector_tile_cache_generation`、`vector_materialized_view_generation`、`raster_cog_generation`、`model_3d_glb_generation`、`model3d_tiles_generation`、`gaussian_splat_ksplat_generation`、`point_cloud_copc_generation` 和 `pptx_pdf_generation`。这些任务的标准执行参数只允许 `existing_result_action:string`，当前枚举只有 `overwrite`；结果表中存在与任务语义身份对应的未删除结果时，服务端必须要求 `parameters.existing_result_action=overwrite` 才能刷新。该动作只作用于本次 execution，不改写 owner 任务定义。
 
 上述七类 Manager 受管当前结果任务当前统一声明 `supports_schedule=false`，Manager 不为它们启动 owner scheduler；这不限制 Orchestrator 定时 Pipeline 调用。需要周期性刷新时，由用户在 Orchestrator Step 参数中显式配置 `existing_result_action=overwrite`，Orchestrator 每次调用原样提交。`embedding` 的独立逐 item 调度语义不在此限制内。
 

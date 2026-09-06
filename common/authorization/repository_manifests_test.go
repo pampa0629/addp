@@ -21,8 +21,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	}
 
 	roles := report.Roles
-	if len(roles) != 62 {
-		t.Fatalf("role count = %d, want 62", len(roles))
+	if len(roles) != 64 {
+		t.Fatalf("role count = %d, want 64", len(roles))
 	}
 	if roles[0].Key != "platform.agent_runtime" || roles[len(roles)-1].Key != "tenant.transfer_runtime" {
 		t.Fatalf("role boundary keys = %q, %q", roles[0].Key, roles[len(roles)-1].Key)
@@ -132,6 +132,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"system.engine.read",
 	})
 	assertRepositoryRolePermissions(t, roles, "tenant.geopython_runtime", []string{"manager.derived_artifact.create"})
+	assertRepositoryRolePermissions(t, roles, "tenant.document_runtime", []string{"manager.derived_artifact.create"})
 	assertRepositoryRolePermissions(t, roles, "tenant.model3d_runtime", []string{"manager.derived_artifact.create"})
 	assertRepositoryRolePermissions(t, roles, "tenant.pointcloud_runtime", []string{"manager.derived_artifact.create"})
 	assertRepositoryRolePermissions(t, roles, "tenant.spark_runtime", []string{"system.engine.read"})

@@ -48,6 +48,7 @@ services:
       - WORKBENCH_SERVICE_CLIENT_SECRET=${WORKBENCH_SERVICE_CLIENT_SECRET}
       - COPILOT_SERVICE_CLIENT_SECRET=${COPILOT_SERVICE_CLIENT_SECRET}
       - DEVELOP_SERVICE_CLIENT_SECRET=${DEVELOP_SERVICE_CLIENT_SECRET}
+      - DOCUMENT_WORKFLOW_SERVICE_CLIENT_SECRET=${DOCUMENT_WORKFLOW_SERVICE_CLIENT_SECRET}
       - DUCKDB_SERVICE_CLIENT_SECRET=${DUCKDB_SERVICE_CLIENT_SECRET}
       - GATEWAY_SERVICE_CLIENT_SECRET=${GATEWAY_SERVICE_CLIENT_SECRET}
       - GRAPH_SERVICE_CLIENT_SECRET=${GRAPH_SERVICE_CLIENT_SECRET}
@@ -1436,6 +1437,50 @@ services:
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8102/health', timeout=3)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  # ==================== Document Workflow Engine（文档静态预览转换引擎） ====================
+
+  document-workflow-engine:
+    build:
+      context: .
+      dockerfile: engines/document-workflow/Dockerfile
+    image: ${REGISTRY:-localhost:5001}/addp-document-workflow-engine:${IMAGE_TAG:-latest}
+    container_name: document-workflow-engine
+    environment:
+      - PORT=8105
+      - SYSTEM_URL=http://system-backend:8180
+      - DOCUMENT_WORKFLOW_SERVICE_CLIENT_SECRET=${DOCUMENT_WORKFLOW_SERVICE_CLIENT_SECRET}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - DOCUMENT_LIBREOFFICE_BIN=/usr/bin/soffice
+      - DOCUMENT_WORK_DIR=/work/document
+      - DOCUMENT_CONVERSION_CONCURRENCY=${DOCUMENT_CONVERSION_CONCURRENCY:-1}
+      - DOCUMENT_CONVERSION_TIMEOUT_SECONDS=${DOCUMENT_CONVERSION_TIMEOUT_SECONDS:-600}
+      - DOCUMENT_OBJECT_STORE_LOOPBACK_HOST=${DOCUMENT_OBJECT_STORE_LOOPBACK_HOST:-host.docker.internal}
+      - RUNTIME_HOST=document-workflow-engine
+    ports:
+      - "8105:8105"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=67108864
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./logs:/app/logs
+      - ${DOCUMENT_WORK_HOST_PATH:-./data/document-work}:/work/document
+      - ${DOCUMENT_DATA_HOST_PATH:-./business/nfs/data}:${DOCUMENT_DATA_CONTAINER_PATH:-/Users/pampa/code/addp/business/nfs/data}:ro
+    networks:
+      - addp-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8105/health', timeout=3)\""]
       interval: 10s
       timeout: 5s
       retries: 30

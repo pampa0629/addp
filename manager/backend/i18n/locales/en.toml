@@ -219,3 +219,21 @@ other = "Failed to update the embedding configuration"
 
 [manager.error.embedding_configuration_version_conflict]
 other = "The embedding configuration was updated by another actor"
+
+[manager.error.pptx_pdf_service_unavailable]
+other = "The PPTX static preview service is unavailable"
+
+[manager.error.invalid_pptx_pdf_result_id]
+other = "Invalid PPTX static preview result ID"
+
+[manager.error.pptx_pdf_result_not_ready]
+other = "The PPTX static preview result does not exist or is not ready"
+
+[manager.error.pptx_pdf_object_not_found]
+other = "The PPTX static preview file does not exist"
+
+[manager.error.pptx_pdf_resolve_failed]
+other = "Failed to resolve the PPTX static preview"
+
+[manager.error.pptx_pdf_execution_failed]
+other = "Failed to start PPTX static preview conversion"

@@ -2201,6 +2201,34 @@ definitions:
       source_size_bytes:
         type: integer
     type: object
+  internal_api.PPTXPDFPreviewRequest:
+    properties:
+      locator:
+        type: string
+      retry:
+        type: boolean
+    required:
+    - locator
+    type: object
+  internal_api.PPTXPDFPreviewResponse:
+    properties:
+      error:
+        type: string
+      execution_id:
+        type: string
+      page_count:
+        type: integer
+      preview_url:
+        type: string
+      result_id:
+        type: integer
+      size_bytes:
+        type: integer
+      status:
+        type: string
+      task_id:
+        type: integer
+    type: object
   internal_api.PointCloudCOPCTaskRequest:
     properties:
       config:
@@ -4953,6 +4981,90 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - manager.derived_artifact.update
+  /pptx_pdf/{id}/content:
+    get:
+      parameters:
+      - description: PPTX PDF result ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/pdf
+      responses:
+        "200":
+          description: PDF 内容流 | PDF content stream
+        "206":
+          description: 部分 PDF 内容流 | Partial PDF content stream
+        "404":
+          description: 快显不存在或未就绪 | Preview not found or not ready
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务执行错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: 服务不可用 | Service unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 读取 PPTX PDF 快显 | Read PPTX PDF preview
+      tags:
+      - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.read
+  /pptx_pdf/preview:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: PPTX source identity
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.PPTXPDFPreviewRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 快显已就绪 | Preview ready
+          schema:
+            $ref: '#/definitions/internal_api.PPTXPDFPreviewResponse'
+        "202":
+          description: 转换已受理或执行中 | Conversion accepted or running
+          schema:
+            $ref: '#/definitions/internal_api.PPTXPDFPreviewResponse'
+        "400":
+          description: 请求参数错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务执行错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: 服务不可用 | Service unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取或生成 PPTX PDF 快显 | Resolve or generate PPTX PDF preview
+      tags:
+      - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.data_item.read
+      - manager.derived_artifact.create
   /preview:
     get:
       description: 根据资源定位符预览数据内容，支持表格、消息主题、文件等多种资源 | Preview data content by resource
