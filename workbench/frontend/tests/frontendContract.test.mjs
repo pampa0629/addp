@@ -71,6 +71,46 @@ test('spatial exploration wizard compiles existing application concepts without 
   assert.doesNotMatch(compiler, /template_type|template_id|spatial_exploration/)
 })
 
+test('spatial exploration wizard isolates catalog and role descriptor request sessions', () => {
+  const wizard = readSource('../src/components/SpatialExplorationWizard.vue')
+
+  assert.match(wizard, /import\s*\{[^}]*\bcomputed\b[^}]*\bonBeforeUnmount\b[^}]*\}\s*from\s*['"]vue['"]/s)
+  assert.match(wizard, /createLatestRequestCoordinator/)
+  assert.match(wizard, /catalogRequests\s*=\s*createLatestRequestCoordinator\(\)/)
+  assert.match(wizard, /aggregateDescriptorRequests\s*=\s*createLatestRequestCoordinator\(\)/)
+  assert.match(wizard, /spatialDescriptorRequests\s*=\s*createLatestRequestCoordinator\(\)/)
+  assert.match(wizard, /catalogLoading\s*=\s*ref\(false\)/)
+  assert.match(wizard, /aggregateLoading\s*=\s*ref\(false\)/)
+  assert.match(wizard, /spatialLoading\s*=\s*ref\(false\)/)
+  assert.match(wizard, /loading\s*=\s*computed\(\(\)\s*=>\s*catalogLoading\.value\s*\|\|\s*aggregateLoading\.value\s*\|\|\s*spatialLoading\.value\)/)
+  assert.match(wizard, /@close="invalidateWizardRequests"/)
+  assert.match(wizard, /onBeforeUnmount\(invalidateWizardRequests\)/)
+
+  const initializeSource = wizard.slice(wizard.indexOf('async function initialize()'), wizard.indexOf('async function selectAggregateService'))
+  assert.ok(initializeSource.indexOf('invalidateWizardRequests()') < initializeSource.indexOf('catalogRequests.begin('))
+  assert.match(initializeSource, /commitWizardRequest\(catalogRequests, request/)
+  assert.match(initializeSource, /catch[\s\S]*commitWizardRequest\(catalogRequests, request/)
+  assert.match(initializeSource, /finally[\s\S]*commitWizardRequest\(catalogRequests, request/)
+
+  const aggregateSource = wizard.slice(wizard.indexOf('async function selectAggregateService'), wizard.indexOf('function aggregateFilterChanged'))
+  assert.ok(aggregateSource.indexOf('resetAggregateSelection()') < aggregateSource.indexOf('await loadDescriptor('))
+  assert.match(aggregateSource, /aggregateDescriptorRequests/)
+  const aggregateResetSource = wizard.slice(wizard.indexOf('function resetAggregateSelection'), wizard.indexOf('async function selectAggregateService'))
+  assert.match(aggregateResetSource, /aggregateLoading\.value = false/)
+  const spatialSource = wizard.slice(wizard.indexOf('async function selectSpatialService'), wizard.indexOf('async function loadDescriptor'))
+  assert.ok(spatialSource.indexOf('resetSpatialSelection()') < spatialSource.indexOf('await loadDescriptor('))
+  assert.match(spatialSource, /spatialDescriptorRequests/)
+  const spatialResetSource = wizard.slice(wizard.indexOf('function resetSpatialSelection'), wizard.indexOf('async function selectSpatialService'))
+  assert.match(spatialResetSource, /spatialLoading\.value = false/)
+
+  const descriptorSource = wizard.slice(wizard.indexOf('async function loadDescriptor'), wizard.indexOf('function syncValueItems'))
+  assert.match(descriptorSource, /requests\.begin\(key\)/)
+  assert.match(descriptorSource, /commitWizardRequest\(requests, request, currentKey\(\)/)
+  assert.match(descriptorSource, /catch[\s\S]*commitWizardRequest\(requests, request, currentKey\(\)/)
+  assert.match(descriptorSource, /finally[\s\S]*commitWizardRequest\(requests, request, currentKey\(\)/)
+  assert.equal((spatialSource.match(/draft\.mapLabelField\s*=/g) || []).length, 1)
+})
+
 test('data application components own service selection, rendering, parameters, and preview', () => {
   const editor = readSource('../src/components/ApplicationComponentEditor.vue')
   const canvas = readSource('../src/components/DataApplicationCanvas.vue')

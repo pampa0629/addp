@@ -6,6 +6,7 @@
     width="min(980px, calc(100vw - 24px))"
     destroy-on-close
     @open="initialize"
+    @close="invalidateWizardRequests"
     @update:model-value="emit('update:modelValue', $event)"
   >
     <div v-loading="loading" class="wizard" data-testid="spatial-exploration-wizard">
@@ -167,11 +168,13 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
+import { createLatestRequestCoordinator } from '@common-ui'
 import { getConsumerDescriptor, listConsumerServices } from '../api/services'
 import { controlTypeFor, emptyControlValue } from '../utils/componentDraft.mjs'
+import { commitLatestDataApplicationRequest } from '../utils/dataApplicationDraft.mjs'
 import { buildSpatialExplorationDraft } from '../utils/spatialExplorationDraft.mjs'
 import ApplicationParameterValueInput from './ApplicationParameterValueInput.vue'
 
@@ -186,10 +189,16 @@ const aggregateDescriptor = ref(null)
 const spatialDescriptor = ref(null)
 const aggregateKey = ref('')
 const spatialKey = ref('')
-const loading = ref(false)
+const catalogLoading = ref(false)
+const aggregateLoading = ref(false)
+const spatialLoading = ref(false)
 const selectedValueFields = ref([])
 const draft = reactive(emptyDraft())
+const catalogRequests = createLatestRequestCoordinator()
+const aggregateDescriptorRequests = createLatestRequestCoordinator()
+const spatialDescriptorRequests = createLatestRequestCoordinator()
 
+const loading = computed(() => catalogLoading.value || aggregateLoading.value || spatialLoading.value)
 const spatialServices = computed(() => services.value.filter((service) => service.output_kind === 'spatial_tabular'))
 const aggregateOutputFields = computed(() => selectableOutputFields(aggregateDescriptor.value))
 const aggregateNumericFields = computed(() => aggregateOutputFields.value.filter((field) => numericTypes.has(field.type)))
@@ -219,27 +228,67 @@ function emptyDraft() {
   }
 }
 
+function commitWizardRequest(requests, request, currentContext, commit) {
+  return commitLatestDataApplicationRequest(requests, request, currentContext, commit)
+}
+
+function invalidateWizardRequests() {
+  catalogRequests.invalidate()
+  aggregateDescriptorRequests.invalidate()
+  spatialDescriptorRequests.invalidate()
+  catalogLoading.value = false
+  aggregateLoading.value = false
+  spatialLoading.value = false
+}
+
 async function initialize() {
+  invalidateWizardRequests()
   Object.assign(draft, emptyDraft())
+  services.value = []
   aggregateKey.value = ''
   spatialKey.value = ''
   aggregateDescriptor.value = null
   spatialDescriptor.value = null
   selectedValueFields.value = []
-  loading.value = true
+  const targetContext = 'catalog'
+  const request = catalogRequests.begin(targetContext)
+  commitWizardRequest(catalogRequests, request, targetContext, () => { catalogLoading.value = true })
   try {
     const { data } = await listConsumerServices({ service_type: 'query', page: 1, page_size: 100 })
-    services.value = data.data || []
+    commitWizardRequest(catalogRequests, request, targetContext, () => {
+      services.value = data.data || []
+    })
   } catch (error) {
-    ElMessage.error(error?.response?.data?.error || t('workbench.loadFailed'))
+    commitWizardRequest(catalogRequests, request, targetContext, () => {
+      ElMessage.error(error?.response?.data?.error || t('workbench.loadFailed'))
+    })
   } finally {
-    loading.value = false
+    commitWizardRequest(catalogRequests, request, targetContext, () => { catalogLoading.value = false })
   }
 }
 
-async function selectAggregateService() {
-  aggregateDescriptor.value = await loadDescriptor(aggregateKey.value)
-  if (!aggregateDescriptor.value) return
+function resetAggregateSelection() {
+  aggregateLoading.value = false
+  aggregateDescriptor.value = null
+  draft.aggregateFilterField = ''
+  draft.dimensionField = ''
+  draft.chartMeasureField = ''
+  draft.defaultValue = ''
+  draft.detailFilterField = ''
+  selectedValueFields.value = []
+  draft.valueItems = []
+}
+
+async function selectAggregateService(selectedKey = aggregateKey.value) {
+  resetAggregateSelection()
+  const descriptor = await loadDescriptor(
+    selectedKey,
+    aggregateDescriptorRequests,
+    () => aggregateKey.value,
+    aggregateLoading,
+  )
+  if (!descriptor) return
+  aggregateDescriptor.value = descriptor
   draft.aggregateFilterField = aggregateFilterFields.value.find((field) => aggregateOutputField(field.name) && !aggregateOutputField(field.name).nullable)?.name || aggregateFilterFields.value[0]?.name || ''
   aggregateFilterChanged()
   selectedValueFields.value = aggregateNumericFields.value.slice(0, 2).map((field) => field.name)
@@ -253,9 +302,28 @@ function aggregateFilterChanged() {
   if (!detailFilterFields.value.some((field) => field.name === draft.detailFilterField)) draft.detailFilterField = detailFilterFields.value[0]?.name || ''
 }
 
-async function selectSpatialService() {
-  spatialDescriptor.value = await loadDescriptor(spatialKey.value)
-  if (!spatialDescriptor.value) return
+function resetSpatialSelection() {
+  spatialLoading.value = false
+  spatialDescriptor.value = null
+  draft.detailFilterField = ''
+  draft.mapLabelField = ''
+  draft.mapTooltipFields = []
+  draft.mapStyleMode = 'continuous'
+  draft.mapStyleField = ''
+  draft.mapLegendTitle = ''
+  draft.tableColumns = []
+}
+
+async function selectSpatialService(selectedKey = spatialKey.value) {
+  resetSpatialSelection()
+  const descriptor = await loadDescriptor(
+    selectedKey,
+    spatialDescriptorRequests,
+    () => spatialKey.value,
+    spatialLoading,
+  )
+  if (!descriptor) return
+  spatialDescriptor.value = descriptor
   draft.detailFilterField = detailFilterFields.value.find((field) => field.name === draft.aggregateFilterField)?.name || detailFilterFields.value[0]?.name || ''
   draft.mapLabelField = detailThematicFields.value.find((field) => field.type === 'string')?.name || detailThematicFields.value[0]?.name || ''
   draft.mapStyleMode = detailNumericFields.value.length > 0 ? 'continuous' : detailThematicFields.value.length > 0 ? 'categorical' : 'uniform'
@@ -266,18 +334,23 @@ async function selectSpatialService() {
   draft.mapTooltipFields = [...new Set([draft.mapLabelField, draft.mapStyleField].filter(Boolean))]
 }
 
-async function loadDescriptor(key) {
+async function loadDescriptor(key, requests, currentKey, loadingState) {
+  const request = requests.begin(key)
   const service = services.value.find((candidate) => keyOf(candidate.ref) === key)
   if (!service) return null
-  loading.value = true
+  commitWizardRequest(requests, request, currentKey(), () => { loadingState.value = true })
   try {
     const { data } = await getConsumerDescriptor(service.ref)
-    return data
+    let descriptor = null
+    commitWizardRequest(requests, request, currentKey(), () => { descriptor = data })
+    return descriptor
   } catch (error) {
-    ElMessage.error(error?.response?.data?.error || t('workbench.loadFailed'))
+    commitWizardRequest(requests, request, currentKey(), () => {
+      ElMessage.error(error?.response?.data?.error || t('workbench.loadFailed'))
+    })
     return null
   } finally {
-    loading.value = false
+    commitWizardRequest(requests, request, currentKey(), () => { loadingState.value = false })
   }
 }
 
@@ -346,6 +419,8 @@ function apply() {
   })
   emit('update:modelValue', false)
 }
+
+onBeforeUnmount(invalidateWizardRequests)
 </script>
 
 <style scoped>
