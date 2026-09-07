@@ -187,7 +187,7 @@ func (s *RasterMosaicTaskService) Execute(ctx context.Context, taskID uint, tena
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
-	claimedTask, err := s.repo.ClaimExecution(ctx, taskID, tenantID, exec)
+	_, err = s.repo.ClaimExecution(ctx, taskID, tenantID, exec)
 	if err != nil {
 		if errors.Is(err, commonAPI.ErrNotFound) {
 			return "", ErrTaskNotFound
@@ -198,7 +198,6 @@ func (s *RasterMosaicTaskService) Execute(ctx context.Context, taskID uint, tena
 		return "", err
 	}
 
-	go s.runRasterMosaicGeneration(context.Background(), claimedTask, executionID)
 	return executionID, nil
 }
 
@@ -242,6 +241,9 @@ func (s *RasterMosaicTaskService) RecordProgressEvent(ctx context.Context, tenan
 	}
 	if exec.Status != commonExecution.ExecutionStatusRunning {
 		return ErrRasterMosaicExecutionNotRunning
+	}
+	if _, err := requireManagerExecutionLease(ctx, tenantID, executionID); err != nil {
+		return err
 	}
 
 	now := time.Now()

@@ -159,21 +159,11 @@ func (r *DataProfileExecutionRepository) Start(
 	executionID string,
 	startedAt time.Time,
 ) error {
-	result := r.db.WithContext(ctx).
-		Model(&commonExecution.TaskExecution{}).
-		Where("tenant_id = ? AND execution_id = ? AND status = ?", tenantID, executionID, commonExecution.ExecutionStatusPending).
-		Updates(map[string]interface{}{
-			"status":     commonExecution.ExecutionStatusRunning,
-			"started_at": startedAt,
-			"updated_at": startedAt,
-		})
-	if result.Error != nil {
-		return result.Error
+	lease, ok := commonExecution.LeaseFromContext(ctx)
+	if !ok || lease.ExecutionID != executionID || lease.TenantID != tenantID {
+		return errors.New("data profile execution requires its claimed lease")
 	}
-	if result.RowsAffected == 0 {
-		return errors.New("data profile execution is not pending")
-	}
-	return nil
+	return commonExecution.UpdateWithLease(ctx, r.db, lease, map[string]interface{}{"updated_at": startedAt.UTC()})
 }
 
 func (r *DataProfileExecutionRepository) Complete(
@@ -245,23 +235,18 @@ func (r *DataProfileExecutionRepository) updateTerminal(
 	status string,
 	fields map[string]interface{},
 ) error {
-	fields["status"] = status
-	result := r.db.WithContext(ctx).
-		Model(&commonExecution.TaskExecution{}).
-		Where(
-			"tenant_id = ? AND execution_id = ? AND status IN ?",
-			tenantID,
-			executionID,
-			[]string{commonExecution.ExecutionStatusPending, commonExecution.ExecutionStatusRunning},
-		).
-		Updates(fields)
-	if result.Error != nil {
-		return result.Error
+	lease, ok := commonExecution.LeaseFromContext(ctx)
+	if !ok || lease.ExecutionID != executionID || lease.TenantID != tenantID {
+		return errors.New("data profile execution requires its claimed lease")
 	}
-	if result.RowsAffected == 0 {
-		return errors.New("data profile execution is not active")
+	completedAt, _ := fields["completed_at"].(time.Time)
+	ownedFields := make(map[string]interface{}, len(fields))
+	for key, value := range fields {
+		if key != "status" && key != "completed_at" && key != "updated_at" {
+			ownedFields[key] = value
+		}
 	}
-	return nil
+	return commonExecution.CompleteWithLease(ctx, r.db, lease, status, completedAt, ownedFields)
 }
 
 func findActiveDataProfileExecution(db *gorm.DB, tenantID int, targetKey string) (*commonExecution.TaskExecution, error) {

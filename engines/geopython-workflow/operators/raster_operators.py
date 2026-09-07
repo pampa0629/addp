@@ -494,7 +494,18 @@ def _progress_reporter(progress_plan: Dict[str, Any] | None) -> Callable[[Dict[s
         return lambda payload: None
     endpoint = str(progress_plan.get("endpoint") or "").strip()
     tenant_id = progress_plan.get("tenant_id")
-    if not endpoint or not isinstance(tenant_id, int) or isinstance(tenant_id, bool) or tenant_id <= 0:
+    attempt = progress_plan.get("attempt")
+    lease_token = str(progress_plan.get("lease_token") or "").strip()
+    if (
+        not endpoint
+        or not isinstance(tenant_id, int)
+        or isinstance(tenant_id, bool)
+        or tenant_id <= 0
+        or not isinstance(attempt, int)
+        or isinstance(attempt, bool)
+        or attempt <= 0
+        or not lease_token
+    ):
         return lambda payload: None
     token_source = SyncOAuthServiceTokenSource(
         os.environ.get("SYSTEM_URL", "http://localhost:8180"),
@@ -504,10 +515,13 @@ def _progress_reporter(progress_plan: Dict[str, Any] | None) -> Callable[[Dict[s
 
     def emit(payload: Dict[str, Any]) -> None:
         try:
+            body = dict(payload)
+            body["attempt"] = attempt
+            body["lease_token"] = lease_token
             token = token_source.token(tenant_id)
             response = requests.post(
                 endpoint,
-                json=payload,
+                json=body,
                 headers={"Authorization": f"Bearer {token}"},
                 timeout=5,
             )
@@ -516,7 +530,7 @@ def _progress_reporter(progress_plan: Dict[str, Any] | None) -> Callable[[Dict[s
                 token = token_source.token(tenant_id)
                 requests.post(
                     endpoint,
-                    json=payload,
+                    json=body,
                     headers={"Authorization": f"Bearer {token}"},
                     timeout=5,
                 )
@@ -1328,6 +1342,8 @@ BUILD_RASTER_MOSAIC_METADATA = OperatorMetadata(
 					"endpoint": "http://manager:8081/api/v1/manager/executions/{execution_id}/events",
 					"tenant_id": 7,
 					"execution_id": "execution-uuid",
+					"attempt": 1,
+					"lease_token": "attempt-scoped-lease-token",
 				},
 			},
 			"placement": {

@@ -111,6 +111,36 @@ func TestUpdateFieldsReturnsNotFoundWhenExecutionDoesNotMatchTenant(t *testing.T
 	}
 }
 
+func TestUpdateFieldsUsesLeaseFromContextForBoundedExecution(t *testing.T) {
+	db := newTaskExecutionRepositoryTestDB(t)
+	repo := NewTaskExecutionRepository(db)
+	now := time.Now().UTC()
+	exec := &TaskExecution{
+		TenantID: 7, ExecutionID: "leased-update-1", Module: ModuleManager, TaskType: TaskTypeVectorTileSetGeneration,
+		Source: ModuleManager, Status: ExecutionStatusPending, TriggerType: TriggerTypeManual,
+		CreatedAt: now, UpdatedAt: now,
+	}
+	if err := repo.Create(context.Background(), exec); err != nil {
+		t.Fatalf("create pending execution: %v", err)
+	}
+	_, lease, err := ClaimNext(context.Background(), db, ClaimOptions{
+		Module: ModuleManager, TaskType: TaskTypeVectorTileSetGeneration,
+		WorkerID: "manager-backend-1", Now: now, LeaseDuration: time.Minute,
+	})
+	if err != nil || lease == nil {
+		t.Fatalf("claim execution lease = %#v error = %v", lease, err)
+	}
+	leaseCtx := ContextWithLease(context.Background(), *lease)
+	if err := repo.UpdateFields(leaseCtx, exec.ExecutionID, exec.TenantID, map[string]interface{}{"progress": 40}); err != nil {
+		t.Fatalf("leased UpdateFields: %v", err)
+	}
+	wrongLease := *lease
+	wrongLease.Token = "wrong-token"
+	if err := repo.UpdateFields(ContextWithLease(context.Background(), wrongLease), exec.ExecutionID, exec.TenantID, map[string]interface{}{"progress": 80}); !errors.Is(err, commonapi.ErrConflict) {
+		t.Fatalf("wrong-token UpdateFields error = %v, want ErrConflict", err)
+	}
+}
+
 func TestStartExecutionAtomicallySetsRunningAndStartedAt(t *testing.T) {
 	db := newTaskExecutionRepositoryTestDB(t)
 	repo := NewTaskExecutionRepository(db)

@@ -234,7 +234,7 @@ func (s *RasterCOGTaskService) Execute(ctx context.Context, taskID uint, tenantI
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
-	claimedTask, err := s.repo.ClaimExecution(ctx, taskID, tenantID, exec, overwriteExistingResult)
+	_, err = s.repo.ClaimExecution(ctx, taskID, tenantID, exec, overwriteExistingResult)
 	if err != nil {
 		if errors.Is(err, repository.ErrExistingResultActionRequired) {
 			return "", ErrExistingResultActionRequired
@@ -248,7 +248,6 @@ func (s *RasterCOGTaskService) Execute(ctx context.Context, taskID uint, tenantI
 		return "", err
 	}
 
-	go s.runRasterCOGGeneration(context.Background(), claimedTask, executionID)
 	return executionID, nil
 }
 

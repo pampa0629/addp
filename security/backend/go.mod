@@ -7,6 +7,7 @@ replace github.com/addp/common => ../../common
 require (
 	github.com/addp/common v0.0.0-00010101000000-000000000000
 	github.com/gin-gonic/gin v1.11.0
+	github.com/google/uuid v1.6.0
 	github.com/swaggo/files v1.0.1
 	github.com/swaggo/gin-swagger v1.6.1
 	github.com/swaggo/swag v1.16.6
@@ -38,7 +39,6 @@ require (
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/goccy/go-yaml v1.19.2 // indirect
 	github.com/google/flatbuffers v25.12.19+incompatible // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/pgx/v5 v5.7.2 // indirect
@@ -58,7 +58,6 @@ require (
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/nicksnyder/go-i18n/v2 v2.6.1 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
-	github.com/pganalyze/pg_query_go/v6 v6.2.2 // indirect
 	github.com/pierrec/lz4/v4 v4.1.25 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/quic-go/quic-go v0.59.0 // indirect

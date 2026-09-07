@@ -110,7 +110,7 @@ def _copc_operator(operator_id: str, display_name: str, description: str, source
                 "name": "progress_callback",
                 "type": "object",
                 "required": False,
-                "description": "调用方受控的执行进度回调；不属于公开算子参数。",
+                "description": "调用方受控的执行进度回调，必须包含当前 attempt 和 lease_token；不属于公开算子参数。",
             },
         ],
         "output_ports": [
@@ -439,14 +439,28 @@ class _ProgressReporter:
 def _post_progress(callback: dict[str, Any], payload: dict[str, Any]) -> None:
     endpoint = _text(callback.get("endpoint"))
     tenant_id = callback.get("tenant_id")
-    if not endpoint or not isinstance(tenant_id, int) or isinstance(tenant_id, bool) or tenant_id <= 0:
+    attempt = callback.get("attempt")
+    lease_token = _text(callback.get("lease_token"))
+    if (
+        not endpoint
+        or not isinstance(tenant_id, int)
+        or isinstance(tenant_id, bool)
+        or tenant_id <= 0
+        or not isinstance(attempt, int)
+        or isinstance(attempt, bool)
+        or attempt <= 0
+        or not lease_token
+    ):
         return
     token_source = SyncOAuthServiceTokenSource(
         os.environ.get("SYSTEM_URL", "http://localhost:8180"),
         "addp-pointcloud",
         os.environ.get("POINTCLOUD_WORKFLOW_SERVICE_CLIENT_SECRET", ""),
     )
-    body = json.dumps(payload).encode("utf-8")
+    body_payload = dict(payload)
+    body_payload["attempt"] = attempt
+    body_payload["lease_token"] = lease_token
+    body = json.dumps(body_payload).encode("utf-8")
     req = urlrequest.Request(endpoint, data=body, method="POST")
     req.add_header("Content-Type", "application/json")
     req.add_header("Authorization", f"Bearer {token_source.token(tenant_id)}")

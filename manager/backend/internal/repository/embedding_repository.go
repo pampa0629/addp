@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	commonExecution "github.com/addp/common/execution"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -20,6 +22,20 @@ type EmbeddingRepository struct {
 
 func NewEmbeddingRepository(db *gorm.DB) *EmbeddingRepository {
 	return &EmbeddingRepository{db: db}
+}
+
+func (r *EmbeddingRepository) ClaimTaskExecution(ctx context.Context, taskID, tenantID uint, execution *commonExecution.TaskExecution) error {
+	task := &models.EmbeddingTask{}
+	return newTaskExecutionLifecycle(r.db).Claim(ctx, taskID, tenantID, execution, taskExecutionClaimSpec{
+		TaskModel: task, TaskType: commonExecution.TaskTypeEmbedding, TaskLabel: "embedding",
+		TaskName: func() string { return task.Name }, TaskConfig: func() commonModels.JSONMap { return task.Config },
+	})
+}
+
+func (r *EmbeddingRepository) CompleteTaskExecution(ctx context.Context, taskID, tenantID uint, executionID string, fields map[string]interface{}, completedAt time.Time) error {
+	return newTaskExecutionLifecycle(r.db).Complete(ctx, taskID, tenantID, executionID, completedAt, taskExecutionCompletionSpec{
+		TaskModel: &models.EmbeddingTask{}, ExecutionFields: fields,
+	}, "embedding")
 }
 
 type EmbeddingSimilarityResult struct {
@@ -109,25 +125,36 @@ func (r *EmbeddingRepository) UpsertEmbeddingState(ctx context.Context, embeddin
 		    updated_at = EXCLUDED.updated_at
 	`, vectorSQL)
 
-	return r.db.WithContext(ctx).Exec(sql,
-		embedding.TenantID,
-		embedding.ItemFingerprint,
-		embedding.ItemID,
-		embedding.EngineID,
-		embedding.Locator,
-		embedding.SourceVersion,
-		embedding.ModelProfileID,
-		embedding.ProfileVersion,
-		embedding.DeploymentID,
-		embedding.Dimension,
-		embedding.Status,
-		emptyToNil(embedding.StatusReason),
-		emptyToNil(embedding.ErrorMessage),
-		embedding.LastExecutionID,
-		embedding.VectorizedAt,
-		now,
-		now,
-	).Error
+	write := func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Exec(sql,
+			embedding.TenantID,
+			embedding.ItemFingerprint,
+			embedding.ItemID,
+			embedding.EngineID,
+			embedding.Locator,
+			embedding.SourceVersion,
+			embedding.ModelProfileID,
+			embedding.ProfileVersion,
+			embedding.DeploymentID,
+			embedding.Dimension,
+			embedding.Status,
+			emptyToNil(embedding.StatusReason),
+			emptyToNil(embedding.ErrorMessage),
+			embedding.LastExecutionID,
+			embedding.VectorizedAt,
+			now,
+			now,
+		).Error
+	}
+	if lease, ok := commonExecution.LeaseFromContext(ctx); ok {
+		return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if err := commonExecution.UpdateWithLease(ctx, tx, lease, map[string]interface{}{"updated_at": now.UTC()}); err != nil {
+				return err
+			}
+			return write(tx)
+		})
+	}
+	return write(r.db)
 }
 
 func (r *EmbeddingRepository) QueryReadySimilar(ctx context.Context, tenantID uint, engineID *uint, queryVector []float32, modelProfileID string, profileVersion int64, dimension int, topK int, maxDistance float64) ([]EmbeddingSimilarityResult, error) {

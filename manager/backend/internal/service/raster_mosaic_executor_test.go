@@ -84,7 +84,7 @@ func TestManagerRasterMosaicExecutorSendsAccessPlanToPython(t *testing.T) {
 		0,
 	)
 
-	result, err := executor.BuildRasterMosaic(context.Background(), RasterMosaicExecutionRequest{
+	result, err := executor.BuildRasterMosaic(managerExecutionLeaseContextForServiceTest("mosaic-exec-1", 7), RasterMosaicExecutionRequest{
 		Task:        &models.RasterMosaicTask{TenantID: 7, Name: "生成 mosaic"},
 		ExecutionID: "mosaic-exec-1",
 		Config: RasterMosaicExecutionConfig{
@@ -143,6 +143,9 @@ func TestManagerRasterMosaicExecutorSendsAccessPlanToPython(t *testing.T) {
 	}
 	if !strings.Contains(progress["endpoint"].(string), "/api/v1/manager/executions/mosaic-exec-1/events") {
 		t.Fatalf("progress endpoint = %#v", progress["endpoint"])
+	}
+	if progress["attempt"] != float64(1) || progress["lease_token"] != "lease-mosaic-exec-1" {
+		t.Fatalf("progress callback lease = %#v", progress)
 	}
 	if capturedParams["source"] != nil || capturedParams["target"] != nil {
 		t.Fatalf("legacy source/target params should not be sent: %#v", capturedParams)

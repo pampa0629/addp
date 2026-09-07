@@ -48,6 +48,7 @@ REQUIRED_PERMISSIONS = {
     "develop.data_read.execute",
     "develop.task.execute",
     "develop.task.read",
+    "manager.data_item.read",
     "meta.catalog.read",
     "meta.scan_task.execute",
     "meta.scan_task.read",
@@ -325,6 +326,17 @@ def develop_rows(
     raise SuiteError("Develop execution did not finish before the deadline")
 
 
+def manager_rows(client: GatewayClient, locator: str) -> list[dict[str, object]]:
+    columns, rows = SUPPORT.preview_rows(client, locator)
+    expected_columns = ["id", "item_code", "quantity", "amount", "updated_at"]
+    if columns != expected_columns:
+        raise SuiteError(
+            "Manager OceanBase preview returned unexpected columns; "
+            f"got={columns}, want={expected_columns}"
+        )
+    return rows
+
+
 def service_payload(name: str, engine_id: int, locator: str) -> dict[str, object]:
     fields = ["id", "item_code", "quantity", "amount"]
     return {
@@ -478,6 +490,11 @@ def run_scenario(
         initial_transfer = assert_transfer_counts(
             run_task(client, task_id, deadline), 5, "initial watermark execution"
         )
+        manager_initial = assert_rows(
+            manager_rows(client, target_locator),
+            BASELINE_ROWS,
+            "Manager initial preview",
+        )
         develop_initial = assert_rows(
             develop_rows(client, engine_id, target_locator, deadline),
             BASELINE_ROWS,
@@ -505,6 +522,11 @@ def run_scenario(
         empty_transfer = assert_transfer_counts(
             run_task(client, task_id, deadline), 0, "empty watermark execution"
         )
+        manager_final = assert_rows(
+            manager_rows(client, target_locator),
+            FINAL_ROWS,
+            "Manager final preview",
+        )
         develop_final = assert_rows(
             develop_rows(client, engine_id, target_locator, deadline),
             FINAL_ROWS,
@@ -513,8 +535,15 @@ def run_scenario(
         service_final = assert_rows(
             service_rows(client, service_name), FINAL_ROWS, "Service final query"
         )
-        if develop_final["checksum"] != service_final["checksum"]:
-            raise SuiteError("Develop and Service returned different OceanBase results")
+        consumer_checksums = {
+            manager_final["checksum"],
+            develop_final["checksum"],
+            service_final["checksum"],
+        }
+        if len(consumer_checksums) != 1:
+            raise SuiteError(
+                "Manager, Develop, and Service returned different OceanBase results"
+            )
 
         result = {
             "schema_version": "addp.oceanbase-consumer-flow-online/v1",
@@ -533,6 +562,7 @@ def run_scenario(
                 "incremental": incremental_transfer,
                 "empty_resume": empty_transfer,
             },
+            "manager": {"initial": manager_initial, "final": manager_final},
             "develop": {"initial": develop_initial, "final": develop_final},
             "service": {
                 "service_id": str(service_id),

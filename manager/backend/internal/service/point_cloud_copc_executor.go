@@ -113,19 +113,24 @@ func (e *ManagerPointCloudCOPCExecutor) BuildPointCloudCOPC(ctx context.Context,
 	if err != nil {
 		return nil, fmt.Errorf("build point cloud COPC access plan: %w", err)
 	}
+	progressCallback, err := managerExecutionProgressCallback(
+		ctx,
+		e.managerBaseURL+"/api/v1/manager/executions/"+strings.TrimSpace(req.ExecutionID)+"/events",
+		req.Task.TenantID,
+		req.ExecutionID,
+	)
+	if err != nil {
+		return nil, err
+	}
 	workflowEngine, workflowOperator, err := e.selectDirectWorkflowRuntime(ctx, req.Task.TenantID, operatorName)
 	if err != nil {
 		return nil, err
 	}
 	invokeResult, err := dbbridge.InvokeOperator(ctx, &workflowEngine, workflowOperator.Name, plugin.OperatorInvokeRequest{
 		Params: map[string]interface{}{
-			"access_plan": accessPlan.JSONMap(),
-			"progress_callback": commonModels.JSONMap{
-				"endpoint":     e.managerBaseURL + "/api/v1/manager/executions/" + strings.TrimSpace(req.ExecutionID) + "/events",
-				"tenant_id":    req.Task.TenantID,
-				"execution_id": strings.TrimSpace(req.ExecutionID),
-			},
-			"options": req.Config.Options.Clone(),
+			"access_plan":       accessPlan.JSONMap(),
+			"progress_callback": progressCallback,
+			"options":           req.Config.Options.Clone(),
 		},
 		Timeout: e.invokeTimeout,
 	})

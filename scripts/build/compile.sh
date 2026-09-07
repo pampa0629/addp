@@ -149,8 +149,6 @@ compile_service() {
             entry_point="./cmd/continuous-worker"
         elif [ "$name" = "develop-query-worker" ]; then
             entry_point="./cmd/query-worker"
-        elif [ "$name" = "manager-bounded-worker" ]; then
-            entry_point="./cmd/bounded-worker"
         fi
     elif [ ! -d "$dir/cmd/server" ] && [ -d "$dir/cmd/gateway" ]; then
         entry_point="./cmd/gateway"
@@ -216,7 +214,6 @@ compile_service() {
 SERVICES=(
     "system-backend:system/backend"
     "manager-backend:manager/backend"
-    "manager-bounded-worker:manager/backend"
     "meta-backend:meta/backend"
     "meta-worker:meta/backend"
     "transfer-backend:transfer/backend"

@@ -2385,6 +2385,8 @@ definitions:
     type: object
   internal_api.RasterMosaicProgressEventRequest:
     properties:
+      attempt:
+        type: integer
       current_file:
         type: string
       current_zoom:
@@ -2399,6 +2401,8 @@ definitions:
         type: integer
       file_progress:
         type: integer
+      lease_token:
+        type: string
       max_zoom:
         type: integer
       message:
@@ -3508,8 +3512,9 @@ paths:
       consumes:
       - application/json
       description: Runtime 使用 Tenant Service Access Token 上报受管派生产物执行的进度事件；租户只从 AuthContext
-        获取 | A runtime reports managed derived-artifact progress with a tenant service
-        access token; tenant is read only from AuthContext
+        获取，且必须回传 Manager 下发的 attempt 与 lease_token | A runtime reports managed derived-artifact
+        progress with a tenant service access token; tenant is read only from AuthContext,
+        and the attempt and lease_token issued by Manager are required
       parameters:
       - description: 执行 ID | Execution ID
         in: path

@@ -53,7 +53,7 @@ type Config struct {
 	RasterMosaicRuntime        RasterMosaicRuntimeConfig
 	RasterMosaicGeneration     RasterMosaicGenerationConfig
 	DocumentWorkflowGeneration DocumentWorkflowGenerationConfig
-	PPTXPDFWorker              PPTXPDFWorkerConfig
+	ExecutionSupervisor        ExecutionSupervisorConfig
 }
 
 type ExportCleanupConfig struct {
@@ -84,7 +84,7 @@ type DocumentWorkflowGenerationConfig struct {
 	Timeout time.Duration
 }
 
-type PPTXPDFWorkerConfig struct {
+type ExecutionSupervisorConfig struct {
 	Concurrency       int
 	LeaseDuration     time.Duration
 	HeartbeatInterval time.Duration
@@ -174,11 +174,11 @@ func Load() *Config {
 	cfg.DocumentWorkflowGeneration = DocumentWorkflowGenerationConfig{
 		Timeout: 30 * time.Minute,
 	}
-	cfg.PPTXPDFWorker = PPTXPDFWorkerConfig{
-		Concurrency:       commonConfig.GetEnvInt("MANAGER_PPTX_PDF_WORKER_CONCURRENCY", 1),
-		LeaseDuration:     commonConfig.GetEnvDuration("MANAGER_PPTX_PDF_LEASE_DURATION", "2m"),
-		HeartbeatInterval: commonConfig.GetEnvDuration("MANAGER_PPTX_PDF_HEARTBEAT_INTERVAL", "30s"),
-		ClaimInterval:     commonConfig.GetEnvDuration("MANAGER_PPTX_PDF_CLAIM_INTERVAL", "1s"),
+	cfg.ExecutionSupervisor = ExecutionSupervisorConfig{
+		Concurrency:       commonConfig.GetEnvInt("MANAGER_EXECUTION_CONCURRENCY", 4),
+		LeaseDuration:     commonConfig.GetEnvDuration("MANAGER_EXECUTION_LEASE_DURATION", "2m"),
+		HeartbeatInterval: commonConfig.GetEnvDuration("MANAGER_EXECUTION_HEARTBEAT_INTERVAL", "30s"),
+		ClaimInterval:     commonConfig.GetEnvDuration("MANAGER_EXECUTION_CLAIM_INTERVAL", "1s"),
 	}
 	if cfg.RasterMosaicRuntime.TileSize != 512 {
 		cfg.RasterMosaicRuntime.TileSize = 256

@@ -71,12 +71,19 @@ def test_progress_reporter_uses_tenant_service_access_token(monkeypatch):
     emit = raster_operators._progress_reporter({
         "endpoint": "http://manager:8081/api/v1/manager/executions/exec-1/events",
         "tenant_id": 7,
+        "attempt": 2,
+        "lease_token": "lease-token",
     })
     emit({"phase": "convert", "event": "started"})
 
     assert calls == [(
         "http://manager:8081/api/v1/manager/executions/exec-1/events",
-        {"phase": "convert", "event": "started"},
+        {
+            "phase": "convert",
+            "event": "started",
+            "attempt": 2,
+            "lease_token": "lease-token",
+        },
         {"Authorization": "Bearer addp_at_geopython"},
         5,
     )]

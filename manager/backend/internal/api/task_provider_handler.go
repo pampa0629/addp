@@ -1276,39 +1276,29 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	var executionID string
-	executionStatus := commonExecution.ExecutionStatusRunning
+	executionStatus := commonExecution.ExecutionStatusPending
 
 	switch taskType {
 	case commonExecution.TaskTypeVectorTileCacheGeneration:
 		executionID, err = h.tileCacheTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, overwriteExistingResult)
-		executionStatus = commonExecution.ExecutionStatusPending
 	case commonExecution.TaskTypeVectorTileSetGeneration:
 		executionID, err = h.vectorTileSetTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
-		executionStatus = commonExecution.ExecutionStatusPending
 	case commonExecution.TaskTypeVectorMaterializedViewGeneration:
 		executionID, err = h.vectorMaterializedViewTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, overwriteExistingResult)
-		executionStatus = commonExecution.ExecutionStatusPending
 	case commonExecution.TaskTypeRasterCOGGeneration:
 		executionID, err = h.rasterCOGTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, overwriteExistingResult)
-		executionStatus = commonExecution.ExecutionStatusPending
 	case commonExecution.TaskTypeRasterMosaicGeneration:
 		executionID, err = h.rasterMosaicTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
-		executionStatus = commonExecution.ExecutionStatusPending
 	case commonExecution.TaskTypeModel3DTilesGeneration:
 		executionID, err = h.model3DTilesTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, overwriteExistingResult)
-		executionStatus = commonExecution.ExecutionStatusPending
 	case commonExecution.TaskTypeModel3DGLBGeneration:
 		executionID, err = h.model3DGLBTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, overwriteExistingResult)
-		executionStatus = commonExecution.ExecutionStatusPending
 	case commonExecution.TaskTypeGaussianSplatKSplatGeneration:
 		executionID, err = h.gaussianSplatKSplatTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, overwriteExistingResult)
-		executionStatus = commonExecution.ExecutionStatusPending
 	case commonExecution.TaskTypePointCloudCOPCGeneration:
 		executionID, err = h.pointCloudCOPCTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, overwriteExistingResult)
-		executionStatus = commonExecution.ExecutionStatusPending
 	case commonExecution.TaskTypePPTXPDFGeneration:
 		executionID, err = h.pptxPDFTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID, overwriteExistingResult)
-		executionStatus = commonExecution.ExecutionStatusPending
 	case commonExecution.TaskTypeEmbedding:
 		executionID, err = h.embeddingTaskSvc.Execute(ctx, uint(id), tenantID, triggerType, source, parentExecID)
 	default:

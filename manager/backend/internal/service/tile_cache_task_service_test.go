@@ -121,6 +121,7 @@ func TestPostGISTileCacheGenerationUsesNativePMTilesAndPersistsIdentity(t *testi
 	if err != nil {
 		t.Fatalf("execute task: %v", err)
 	}
+	runManagerBoundedExecutionForTest(t, db, commonExecution.TaskTypeVectorTileCacheGeneration, &BoundedExecutionDispatcher{tileCache: svc})
 	exec := waitForTileCacheTaskExecution(t, execRepo, executionID, int(task.TenantID))
 	if exec.Status != commonExecution.ExecutionStatusSuccess {
 		t.Fatalf("execution status = %s, error=%#v", exec.Status, exec.ErrorDetails)
@@ -177,6 +178,7 @@ func TestObjectTileCacheGenerationUsesWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute object task: %v", err)
 	}
+	runManagerBoundedExecutionForTest(t, db, commonExecution.TaskTypeVectorTileCacheGeneration, &BoundedExecutionDispatcher{tileCache: svc})
 	exec := waitForTileCacheTaskExecution(t, execRepo, executionID, int(task.TenantID))
 	if exec.Status != commonExecution.ExecutionStatusSuccess {
 		t.Fatalf("execution status = %s, error=%#v", exec.Status, exec.ErrorDetails)
@@ -218,6 +220,7 @@ func TestDatabaseTableTileCacheGenerationUsesFlatGeobufWorkflow(t *testing.T) {
 			if err != nil {
 				t.Fatalf("execute %s table task: %v", engineType, err)
 			}
+			runManagerBoundedExecutionForTest(t, db, commonExecution.TaskTypeVectorTileCacheGeneration, &BoundedExecutionDispatcher{tileCache: svc})
 			exec := waitForTileCacheTaskExecution(t, execRepo, executionID, int(task.TenantID))
 			if exec.Status != commonExecution.ExecutionStatusSuccess {
 				t.Fatalf("execution status = %s, error=%#v", exec.Status, exec.ErrorDetails)
@@ -267,7 +270,8 @@ func TestTileCacheRecordProgressEventUpdatesExecution(t *testing.T) {
 		t.Fatalf("create execution: %v", err)
 	}
 	overall := 55.0
-	if err := svc.RecordProgressEvent(context.Background(), 7, "progress-1", TileCacheProgressEvent{
+	leaseCtx := leaseStoredManagerExecutionForServiceTest(t, db, "progress-1", 7)
+	if err := svc.RecordProgressEvent(leaseCtx, 7, "progress-1", TileCacheProgressEvent{
 		Phase: "publish", Event: "progress", Message: "写入 PMTiles", CurrentZoom: 1, MaxZoom: 2,
 		TilesProcessed: 55, TilesTotalEstimate: 100, OverallProgress: &overall,
 	}); err != nil {

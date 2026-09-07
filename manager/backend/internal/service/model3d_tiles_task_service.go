@@ -204,7 +204,7 @@ func (s *Model3DTilesTaskService) Execute(
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
-	claimedTask, err := s.repo.ClaimExecution(ctx, taskID, tenantID, exec, overwriteExistingResult)
+	_, err = s.repo.ClaimExecution(ctx, taskID, tenantID, exec, overwriteExistingResult)
 	if err != nil {
 		if errors.Is(err, repository.ErrExistingResultActionRequired) {
 			return "", ErrExistingResultActionRequired
@@ -217,7 +217,6 @@ func (s *Model3DTilesTaskService) Execute(
 		}
 		return "", err
 	}
-	go s.runModel3DTilesGeneration(context.Background(), claimedTask, executionID)
 	return executionID, nil
 }
 

@@ -10,6 +10,7 @@
 | `postgresql` | PostgreSQL | EngineCatalogProvider + EngineCatalogFactsProvider + SQLQueryRuntimeProvider |
 | `oracle` | Oracle Database | EngineCatalogProvider + EngineCatalogFactsProvider + SQLQueryRuntimeProvider + TableReadSessionProvider |
 | `mysql` | MySQL | EngineCatalogProvider + EngineCatalogFactsProvider + SQLQueryRuntimeProvider |
+| `oceanbase` | OceanBase（MySQL 模式） | EngineCatalogProvider + EngineCatalogFactsProvider + SQLQueryRuntimeProvider + BoundedWatermarkReadProvider + TableUpsertProvider |
 | `doris` | Apache Doris | EngineCatalogProvider + EngineCatalogFactsProvider + SQLQueryRuntimeProvider |
 | `clickhouse` | ClickHouse | EngineCatalogProvider + EngineCatalogFactsProvider + SQLQueryRuntimeProvider |
 | `mongodb` | MongoDB | EngineCatalogProvider + EngineCatalogFactsProvider + QueryRuntimeProvider |
@@ -35,7 +36,7 @@ Kafka common Engine 插件已实现 `service -> topic` 路径、Engine Catalog�
 | NFS | server、export_path | `root`，标题使用引擎实例名称，`full_name=""` | directory；根目录下 file 可直接挂到 root |
 | PostgreSQL | host、port、user | `server`，标题使用引擎实例名称，`full_name=""` | schema |
 | Oracle | host、port、service_name、user | `server`，标题使用引擎实例名称，`full_name=""` | schema |
-| MySQL/Doris/ClickHouse | host、port、user | `server`，标题使用引擎实例名称，`full_name=""` | database |
+| MySQL/OceanBase/Doris/ClickHouse | host、port、user | `server`，标题使用引擎实例名称，`full_name=""` | database |
 | MongoDB/Neo4j | host、port | `server`，标题使用引擎实例名称，`full_name=""` | database |
 | Kafka | bootstrap servers、TLS/SASL | `service`，标题使用引擎实例名称，`full_name=""` | 无 branch；topic 直接作为 leaf |
 
@@ -61,7 +62,7 @@ bucket、schema、database、directory 是 root 下第一层业务 branch。它�
 |---|---|---|---|
 | MinIO / S3 | object | `object` | `data_type=table/document/media/container`，`format=csv/wps/png/excel` |
 | NFS / 本地文件系统 | file | `file` | `data_type=table/document/media/container`，`format=csv/wps/png/excel` |
-| PostgreSQL / MySQL / Doris / ClickHouse | table / view | `table` / `view` | 通常 `data_type=table` |
+| PostgreSQL / MySQL / OceanBase / Doris / ClickHouse | table / view | `table` / `view` | 通常 `data_type=table` |
 | MongoDB | collection | `collection` | 原生 JSON/BSON document 组成的动态 schema 记录集合，固定为 `data_type=table` |
 | Neo4j | graph | `graph` | `data_type=graph` |
 | Kafka | topic | `topic` | 第一版固定 `data_type=unknown`；消息结构由 Transfer 任务的 JSON mapping 定义，不通过 Meta 采样猜测。 |
@@ -163,19 +164,19 @@ Meta scan 内部必须把“跨模块输入路径”和“扫描期规范化资�
 4. 文件系统 / NFS 没有 bucket 层，扫描期资源相对路径、完整 content path 与 `full_name` 在字符串上通常相同；实现不得为了对齐对象存储而给 NFS 额外引入 root 前缀或 bucket-like 段。
 5. `physical_path` 只表达已裁决 item 的 primary content 或 whole scope 根范围；扫描实现不得把它当作可自由拼接的 catalog selector，也不得把对象存储的 `bucket/object_key` 再交给只接受 `object_key` 的 mapper。
 
-### 关系型数据库（PostgreSQL / Oracle / MySQL / Doris / ClickHouse）
+### 关系型数据库（PostgreSQL / Oracle / MySQL / OceanBase / Doris / ClickHouse）
 
 full_name 使用引擎原生术语：
 
 - PostgreSQL：`<schema>.<table>`
-- MySQL / Doris / ClickHouse：`<database>.<table>`
+- MySQL / OceanBase / Doris / ClickHouse：`<database>.<table>`
 
 前端资源摘要和选择结果必须沿用所属引擎的原生路径风格：关系型数据库、MongoDB 和 Neo4j 的层级名称使用 `.`，对象存储和文件系统使用 `/`；Kafka topic 保留原名。`ResourceLocator` 的 `/path/` 仅是平台内部 URI 编码，不是用户可见路径格式。资源摘要同时展示引擎实例名称，不能以 Engine ID 或 locator 代替。
 
 | 节点/数据项类型 | full_name 示例 | 说明 |
 |--------------|--------------|------|
 | PostgreSQL schema 节点 | `public` | PostgreSQL schema 名 |
-| MySQL/Doris/ClickHouse database 节点 | `analytics` | database 名 |
+| MySQL/OceanBase/Doris/ClickHouse database 节点 | `analytics` | database 名 |
 | table 数据项 | `public.users` / `analytics.users` | `<schema|database> + 表名` |
 | view 数据项 | `public.v_active_users` | `<schema|database> + 视图名（若引擎支持）` |
 
@@ -307,7 +308,7 @@ root 节点字段规范：
 - `full_name` 是引擎内资源语义路径；NFS 根路径为空字符串。
 - `path` 是 Meta 内部节点层级路径，由 node id 组成，不表达存储路径。
 
-### 关系型数据库（PostgreSQL / MySQL / Doris / ClickHouse）
+### 关系型数据库（PostgreSQL / MySQL / OceanBase / Doris / ClickHouse）
 
 ```
 Engine (PostgreSQL)
@@ -326,6 +327,8 @@ Engine (MySQL)
               ├── item: users      ← full_name="analytics.users"
               └── item: orders     ← full_name="analytics.orders"
 ```
+
+OceanBase MySQL 模式使用与 MySQL 相同的 `server(root) -> database -> table/view` 路径模型，但 Engine Instance 必须保持独立 `engine_type=oceanbase`，账号使用 `user@tenant` 完整身份；协议兼容、SQL 方言和路径同构都不得把它降格登记为 MySQL。
 
 Oracle 使用与 PostgreSQL 相同的结构层级 `server(root) -> schema -> table/view/materialized_view`。`service_name` 是 Engine 连接身份字段，不进入 catalog path；schema 名和对象名保留 Oracle catalog 返回的原始大小写，`full_name` 固定为 `schema.object`。`MDSYS.SDO_GEOMETRY` 是表字段类型事实，随表的 SpatialInfo 与标准 EWKB 行值读取能力暴露，不改变 catalog leaf 层级；synonym、ArcGIS SDE 内部对象和 CDC capture resource 仍不投影为普通 catalog leaf。
 
@@ -427,7 +430,7 @@ addp-infra://minio/manager/tenant_7/export/20260622/execution-id?type=prefix
 |---------|---------|------|
 | 对象存储（MinIO/S3） | bucket / path | 可按 bucket 或指定路径触发扫描 |
 | NFS | 挂载根 `/` 或任意目录路径 | 可扫描整个挂载点，也可按目录路径扫描；扫描非根路径时必须先确保 root -> directory 节点链存在 |
-| 关系型数据库（PostgreSQL/MySQL/Doris/ClickHouse） | schema 或 database | 用户按引擎术语选择（PostgreSQL 选 schema；MySQL/Doris/ClickHouse 选 database） |
+| 关系型数据库（PostgreSQL/MySQL/OceanBase/Doris/ClickHouse） | schema 或 database | 用户按引擎术语选择（PostgreSQL 选 schema；MySQL/OceanBase/Doris/ClickHouse 选 database） |
 | Branch/Leaf 型引擎（MongoDB/Neo4j） | database branch | 用户选择一个或多个 database 触发扫描 |
 | Kafka | service root | basic scan 只发现 topic leaf；第一版不读取消息、不采样 schema、不创建 partition 子节点。 |
 
@@ -451,7 +454,7 @@ addp-infra://minio/manager/tenant_7/export/20260622/execution-id?type=prefix
 
 ### 关系型数据库扫描流程
 
-1. 通过 `EngineCatalogProvider.ListChildren(root)` 获取 namespace 列表（PostgreSQL 为 schema；MySQL/Doris/ClickHouse 为 database）
+1. 通过 `EngineCatalogProvider.ListChildren(root)` 获取 namespace 列表（PostgreSQL 为 schema；MySQL/OceanBase/Doris/ClickHouse 为 database）
 2. 插件负责过滤系统 schema/database，或通过 `EngineCatalogCapability.system_filtering` 声明过滤能力
 3. upsert server root `meta_node`，为每个 schema 或 database 创建子 `meta_node`
 4. 通过 `EngineCatalogProvider.ListChildren(namespace)` 获取表/视图，创建 `meta_item`（`item_type = table/view`）
@@ -483,7 +486,7 @@ addp-infra://minio/manager/tenant_7/export/20260622/execution-id?type=prefix
 
 关系型数据库表和 branch/leaf 型 collection/graph 的 `full_name` 由扫描服务显式拼接：
 
-- 关系型数据库：`schema + "." + table`（PostgreSQL）或 `database + "." + table`（MySQL/Doris/ClickHouse）
+- 关系型数据库：`schema + "." + table`（PostgreSQL）或 `database + "." + table`（MySQL/OceanBase/Doris/ClickHouse）
 - MongoDB：`database + "." + collection`
 - Neo4j：`database + ".graph"`
 

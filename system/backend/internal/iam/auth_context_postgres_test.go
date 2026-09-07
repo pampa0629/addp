@@ -731,6 +731,8 @@ func assertTenantAuthContext(
 				"manager.search.execute",
 				"meta.catalog.read",
 				"meta.lineage.read",
+				"security.protection_access_request.create",
+				"security.protection_access_request.read",
 				"service.data_read.execute",
 				"workbench.data_application.create",
 				"workbench.data_application.delete",

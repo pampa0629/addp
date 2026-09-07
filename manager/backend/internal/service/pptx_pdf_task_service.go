@@ -157,22 +157,6 @@ func (s *PPTXPDFTaskService) Execute(ctx context.Context, taskID, tenantID uint,
 	return executionID, nil
 }
 
-func (s *PPTXPDFTaskService) ClaimPendingExecution(ctx context.Context, workerID string, now time.Time, leaseDuration time.Duration) (*commonExecution.TaskExecution, *commonExecution.Lease, *models.PPTXPDFTask, error) {
-	return s.repo.ClaimPendingExecution(ctx, workerID, now, leaseDuration)
-}
-
-func (s *PPTXPDFTaskService) RenewExecutionLease(ctx context.Context, lease commonExecution.Lease, expiresAt time.Time) error {
-	return s.repo.RenewExecutionLease(ctx, lease, expiresAt)
-}
-
-func (s *PPTXPDFTaskService) ExecutionAttemptIsTerminal(ctx context.Context, lease commonExecution.Lease) (bool, error) {
-	return s.repo.ExecutionAttemptIsTerminal(ctx, lease)
-}
-
-func (s *PPTXPDFTaskService) RecoverExpiredExecutions(ctx context.Context, now time.Time, limit int) (int, error) {
-	return s.repo.RecoverExpiredExecutions(ctx, now, limit)
-}
-
 func (s *PPTXPDFTaskService) RunClaimedExecution(ctx context.Context, execution *commonExecution.TaskExecution, lease commonExecution.Lease, task *models.PPTXPDFTask) error {
 	if execution == nil || task == nil || execution.ExecutionID != lease.ExecutionID {
 		return errors.New("claimed PPTX PDF execution, lease and task are required")

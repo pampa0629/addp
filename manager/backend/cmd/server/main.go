@@ -28,6 +28,8 @@ import (
 	"github.com/addp/manager/internal/preview"
 	"github.com/addp/manager/internal/repository"
 	"github.com/addp/manager/internal/service"
+	"github.com/addp/manager/internal/worker"
+	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/redis/go-redis/v9"
@@ -99,6 +101,7 @@ func main() {
 	exportSessionRepo := repository.NewExportSessionRepository(db)
 	dataProfileRepo := repository.NewDataProfileRepository(db)
 	dataProfileExecutionRepo := repository.NewDataProfileExecutionRepository(db)
+	boundedExecutionQueue := repository.NewBoundedExecutionQueueRepository(db)
 	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
 	embeddingConfigurationService := service.NewEmbeddingConfigurationService(embeddingConfigurationRepo)
 	if err := embeddingConfigurationService.Initialize(context.Background()); err != nil {
@@ -465,6 +468,17 @@ func main() {
 		)
 		vectorTileSetExecutor.SetPostGISGenerator(postGISTileGenerator, cfg.TileCache.Concurrency)
 		vectorTileSetTaskSvc.SetExecutor(vectorTileSetExecutor)
+		pptxPDFTaskSvc.SetExecutor(service.NewManagerPPTXPDFExecutor(
+			systemClient,
+			workflowRuntimeLister,
+			minioClient,
+			cfg.MinioEndpoint,
+			cfg.MinioAccessKey,
+			cfg.MinioSecretKey,
+			cfg.MinioUseSSL,
+			minioBucket,
+			cfg.DocumentWorkflowGeneration.Timeout,
+		))
 	}
 	if metaClient != nil {
 		rasterMosaicTaskSvc.SetMetaScanSubmitter(metaClient)
@@ -474,6 +488,27 @@ func main() {
 	// ========== 模块定义、运行实例与 TaskProvider 声明发布 ==========
 	runtimeContext, stopRuntime := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopRuntime()
+	hostname, _ := os.Hostname()
+	supervisor, err := worker.NewBoundedExecutionSupervisor(
+		boundedExecutionQueue,
+		service.NewBoundedExecutionDispatcher(
+			tileCacheTaskSvc, vectorTileSetTaskSvc, vectorMaterializedViewTaskSvc,
+			rasterCOGTaskSvc, rasterMosaicTaskSvc, model3DGLBTaskSvc, model3DTilesTaskSvc,
+			gaussianSplatKSplatTaskSvc, pointCloudCOPCTaskSvc, pptxPDFTaskSvc,
+			embeddingService, embeddingTaskSvc, dataProfileService,
+		),
+		worker.BoundedExecutionSupervisorConfig{
+			InstanceID:  fmt.Sprintf("%s-%d-%s", hostname, os.Getpid(), uuid.NewString()),
+			Concurrency: cfg.ExecutionSupervisor.Concurrency, LeaseDuration: cfg.ExecutionSupervisor.LeaseDuration,
+			HeartbeatInterval: cfg.ExecutionSupervisor.HeartbeatInterval, ClaimInterval: cfg.ExecutionSupervisor.ClaimInterval,
+			TaskTypes: repository.ManagerBoundedTaskTypes(),
+		},
+		logger.With("component", "manager_bounded_execution_supervisor"),
+	)
+	if err != nil {
+		logger.L().Error("Manager 有界执行监督器配置无效", "error", err)
+		os.Exit(1)
+	}
 	projectionstore.NewRunner(protectionStore, securityClient, systemServiceClient, 30*time.Second, nil).Start(runtimeContext)
 	addr := ":" + cfg.Port
 	listener, err := net.Listen("tcp", addr)
@@ -515,6 +550,7 @@ func main() {
 	if err := embeddingTaskScheduler.Start(runtimeContext); err != nil {
 		logger.L().Warn("向量化任务调度器启动失败", "error", err)
 	}
+	go supervisor.Run(runtimeContext, func() bool { return registration != nil && registration.IsRegistered() })
 
 	// 启动服务并等待进程信号，统一关闭注册租约和本地资源。
 	logger.L().Info("Manager 服务启动", "addr", addr)

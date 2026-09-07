@@ -90,7 +90,7 @@ func TestManagerVectorTileCacheWorkflowExecutorUsesVSIS3ForObjectStoreSource(t *
 		0,
 	)
 
-	result, metadata, err := executor.GenerateVectorTileCache(context.Background(), WorkflowTileCacheRequest{
+	result, metadata, err := executor.GenerateVectorTileCache(managerExecutionLeaseContextForServiceTest("mvt-exec-1", 7), WorkflowTileCacheRequest{
 		Task:        &models.TileCacheTask{TenantID: 7, Name: "规划用地瓦片缓存"},
 		ExecutionID: "mvt-exec-1",
 		Identity: tileCacheTaskTargetIdentity{
@@ -159,7 +159,9 @@ func TestManagerVectorTileCacheWorkflowExecutorUsesVSIS3ForObjectStoreSource(t *
 	}
 	if progress["endpoint"] != "http://manager:8081/api/v1/manager/executions/mvt-exec-1/events" ||
 		progress["tenant_id"] != float64(7) ||
-		progress["execution_id"] != "mvt-exec-1" {
+		progress["execution_id"] != "mvt-exec-1" ||
+		progress["attempt"] != float64(1) ||
+		progress["lease_token"] != "lease-mvt-exec-1" {
 		t.Fatalf("progress callback = %#v, want Manager execution event callback", progress)
 	}
 	if _, exists := progress["internal_api_key"]; exists {

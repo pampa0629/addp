@@ -2,10 +2,15 @@ package protection
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/datatype"
@@ -13,6 +18,9 @@ import (
 	"github.com/addp/common/engine/plugins/mongodb"
 	"github.com/addp/common/format"
 	commonmodels "github.com/addp/common/models"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 func TestIntegrationMongoEncodedRecordExportMasksOutdoorPersonsBeforeCanonicalExtendedJSON(t *testing.T) {
@@ -38,15 +46,9 @@ func TestIntegrationMongoEncodedRecordExportMasksOutdoorPersonsBeforeCanonicalEx
 		t.Fatalf("prepare encoded record protection: %v", err)
 	}
 
-	port := mustTransferMongoPort(t)
+	connection := ensureTransferMongoOutdoorPersonsFixture(t)
 	provider := &mongodb.MongoDBPlugin{}
-	session, err := provider.OpenEncodedRecordReadSession(t.Context(), plugin.ConnectionInfo{
-		"host":        transferMongoEnvOrDefault("ADDP_TEST_MONGODB_HOST", "127.0.0.1"),
-		"port":        port,
-		"user":        transferMongoEnvOrDefault("ADDP_TEST_MONGODB_USER", "admin"),
-		"password":    transferMongoEnvOrDefault("ADDP_TEST_MONGODB_PASSWORD", "admin_password"),
-		"auth_source": transferMongoEnvOrDefault("ADDP_TEST_MONGODB_AUTH_SOURCE", "admin"),
-	}, path, plugin.EncodedRecordReadSessionOptions{
+	session, err := provider.OpenEncodedRecordReadSession(t.Context(), connection, path, plugin.EncodedRecordReadSessionOptions{
 		Format: string(format.FormatMongoDBExtendedJSONL), BeforeEncode: protect,
 	})
 	if err != nil {
@@ -101,14 +103,7 @@ func TestIntegrationMongoAggregateTransferProtectsOnlyProjectedOutdoorPersonFiel
 
 	model := plugin.DynamicSchemaCatalogModel()
 	path := plugin.EngineCatalogBranchLeafPath(model, 11, plugin.EngineCatalogTermDatabase, "Outdoor", plugin.EngineCatalogTermCollection, plugin.EngineCatalogKindCollection, "Persons")
-	connection := plugin.ConnectionInfo{
-		"host":        transferMongoEnvOrDefault("ADDP_TEST_MONGODB_HOST", "127.0.0.1"),
-		"port":        mustTransferMongoPort(t),
-		"user":        transferMongoEnvOrDefault("ADDP_TEST_MONGODB_USER", "admin"),
-		"password":    transferMongoEnvOrDefault("ADDP_TEST_MONGODB_PASSWORD", "admin_password"),
-		"auth_source": transferMongoEnvOrDefault("ADDP_TEST_MONGODB_AUTH_SOURCE", "admin"),
-		"database":    "Outdoor",
-	}
+	connection := ensureTransferMongoOutdoorPersonsFixture(t)
 	provider := &mongodb.MongoDBPlugin{}
 	facts, err := provider.DescribeEngineCatalogFacts(t.Context(), connection, path, plugin.EngineCatalogFactsOptions{})
 	if err != nil || facts == nil || facts.Table == nil {
@@ -222,6 +217,79 @@ func mustTransferMongoPort(t *testing.T) int {
 		t.Fatal("ADDP_TEST_MONGODB_PORT must be a positive integer")
 	}
 	return port
+}
+
+func ensureTransferMongoOutdoorPersonsFixture(t *testing.T) plugin.ConnectionInfo {
+	t.Helper()
+	host := transferMongoEnvOrDefault("ADDP_TEST_MONGODB_HOST", "127.0.0.1")
+	port := mustTransferMongoPort(t)
+	user := transferMongoEnvOrDefault("ADDP_TEST_MONGODB_USER", "admin")
+	password := transferMongoEnvOrDefault("ADDP_TEST_MONGODB_PASSWORD", "admin_password")
+	authSource := transferMongoEnvOrDefault("ADDP_TEST_MONGODB_AUTH_SOURCE", "admin")
+	credentials := url.UserPassword(user, password).String()
+	uri := fmt.Sprintf("mongodb://%s@%s:%d/?authSource=%s", credentials, host, port, url.QueryEscape(authSource))
+	client, err := mongo.Connect(t.Context(), options.Client().ApplyURI(uri))
+	if err != nil {
+		t.Fatalf("connect Transfer MongoDB fixture: %v", err)
+	}
+	if err := client.Ping(t.Context(), nil); err != nil {
+		_ = client.Disconnect(context.Background())
+		t.Fatalf("ping Transfer MongoDB fixture: %v", err)
+	}
+
+	databaseNames, err := client.ListDatabaseNames(t.Context(), bson.M{"name": "Outdoor"})
+	if err != nil {
+		t.Fatalf("inspect Transfer MongoDB fixture database: %v", err)
+	}
+	databaseExisted := len(databaseNames) > 0
+	database := client.Database("Outdoor")
+	collectionNames, err := database.ListCollectionNames(t.Context(), bson.M{"name": "Persons"})
+	if err != nil {
+		t.Fatalf("inspect Transfer MongoDB fixture collection: %v", err)
+	}
+	collectionExisted := len(collectionNames) > 0
+	collection := database.Collection("Persons")
+	fixtureID := "addp-security-transfer-mongodb-integration"
+	filter := bson.M{"_id": fixtureID}
+	var previous bson.M
+	findErr := collection.FindOne(t.Context(), filter).Decode(&previous)
+	fixture := bson.M{
+		"_id":      fixtureID,
+		"_openid":  "addp-security-transfer-mongodb-integration",
+		"userInfo": bson.M{"phone": "13661384499", "nickName": "security-e2e"},
+	}
+	switch {
+	case errors.Is(findErr, mongo.ErrNoDocuments):
+		if _, err := collection.InsertOne(t.Context(), fixture); err != nil {
+			t.Fatalf("insert Transfer MongoDB fixture: %v", err)
+		}
+	case findErr != nil:
+		t.Fatalf("inspect Transfer MongoDB fixture: %v", findErr)
+	default:
+		if _, err := collection.ReplaceOne(t.Context(), filter, fixture); err != nil {
+			t.Fatalf("replace Transfer MongoDB fixture: %v", err)
+		}
+	}
+	t.Cleanup(func() {
+		cleanupContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if errors.Is(findErr, mongo.ErrNoDocuments) {
+			_, _ = collection.DeleteOne(cleanupContext, filter)
+			if !databaseExisted {
+				_ = database.Drop(cleanupContext)
+			} else if !collectionExisted {
+				_ = collection.Drop(cleanupContext)
+			}
+		} else {
+			_, _ = collection.ReplaceOne(cleanupContext, filter, previous)
+		}
+		_ = client.Disconnect(cleanupContext)
+	})
+
+	return plugin.ConnectionInfo{
+		"host": host, "port": port, "user": user, "password": password,
+		"auth_source": authSource, "database": "Outdoor",
+	}
 }
 
 func transferMongoEnvOrDefault(name, fallback string) string {

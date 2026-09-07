@@ -21,10 +21,7 @@ import (
 	"github.com/google/uuid"
 )
 
-const (
-	dataProfileConfigVersion      = "data-profile-config/v4"
-	defaultDataProfileConcurrency = 4
-)
+const dataProfileConfigVersion = "data-profile-config/v4"
 
 type dataProfileStore interface {
 	GetCurrent(context.Context, uint, string, string, string) (*models.DataProfile, *dataprofile.Profile, error)
@@ -48,7 +45,6 @@ type DataProfileService struct {
 	sampler        DataProfileSampleProvider
 	protectionGate managerprotection.LocalProjectionGate
 	budget         DataProfileBudget
-	executionSlots chan struct{}
 }
 
 type DataProfileCurrentRequest struct {
@@ -110,7 +106,6 @@ func NewDataProfileService(
 		sampler:        sampler,
 		protectionGate: protectionGate,
 		budget:         DefaultDataProfileBudget,
-		executionSlots: make(chan struct{}, defaultDataProfileConcurrency),
 	}
 }
 
@@ -263,9 +258,6 @@ func (s *DataProfileService) CreateExecution(
 	if err != nil {
 		return nil, err
 	}
-	if created {
-		go s.runExecution(target, dataScope, configHash, stored)
-	}
 	return &DataProfileExecutionResponse{
 		Execution:         dataProfileExecutionView(stored),
 		Reused:            !created,
@@ -275,17 +267,14 @@ func (s *DataProfileService) CreateExecution(
 }
 
 func (s *DataProfileService) runExecution(
+	parent context.Context,
 	target *DataProfileTarget,
 	dataScope dataprofile.DataScope,
 	configHash string,
 	execution *commonExecution.TaskExecution,
 ) {
-	if s.executionSlots != nil {
-		s.executionSlots <- struct{}{}
-		defer func() { <-s.executionSlots }()
-	}
 	startedAt := time.Now().UTC()
-	ctx, cancel := context.WithTimeout(context.Background(), s.budget.Timeout)
+	ctx, cancel := context.WithTimeout(parent, s.budget.Timeout)
 	defer cancel()
 	if err := s.executions.Start(ctx, execution.TenantID, execution.ExecutionID, startedAt); err != nil {
 		logger.L().Error("启动数据剖析 execution 失败", "execution_id", execution.ExecutionID, "error", err)
@@ -293,11 +282,13 @@ func (s *DataProfileService) runExecution(
 	}
 	fail := func(code string, err error) {
 		logger.L().Error("数据剖析 execution 失败", "execution_id", execution.ExecutionID, "code", code)
+		finishCtx, finishCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer finishCancel()
 		var updateErr error
 		if code == "timeout" {
-			updateErr = s.executions.Timeout(context.Background(), execution.TenantID, execution.ExecutionID, startedAt, code, "data profiling execution timed out")
+			updateErr = s.executions.Timeout(finishCtx, execution.TenantID, execution.ExecutionID, startedAt, code, "data profiling execution timed out")
 		} else {
-			updateErr = s.executions.Fail(context.Background(), execution.TenantID, execution.ExecutionID, startedAt, code, "data profiling execution failed")
+			updateErr = s.executions.Fail(finishCtx, execution.TenantID, execution.ExecutionID, startedAt, code, "data profiling execution failed")
 		}
 		if updateErr != nil {
 			logger.L().Error("更新数据剖析失败状态失败", "execution_id", execution.ExecutionID, "error", updateErr)
@@ -379,9 +370,41 @@ func (s *DataProfileService) runExecution(
 	}, commonExecution.TaskTypeDataProfiling, []commonExecution.LineageResourceRef{
 		managerItemLineageRefWithID(target.Locator, target.ItemFingerprint, target.ItemID),
 	}, nil)
-	if err := s.executions.Complete(context.Background(), execution.TenantID, execution.ExecutionID, startedAt, sample.RowsScanned, metadata); err != nil {
+	finishCtx, finishCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer finishCancel()
+	if err := s.executions.Complete(finishCtx, execution.TenantID, execution.ExecutionID, startedAt, sample.RowsScanned, metadata); err != nil {
 		logger.L().Error("更新数据剖析成功状态失败", "execution_id", execution.ExecutionID, "error", err)
 	}
+}
+
+func (s *DataProfileService) runClaimedExecution(ctx context.Context, execution *commonExecution.TaskExecution) error {
+	if s == nil || execution == nil {
+		return ErrDataProfileUnavailable
+	}
+	payload, err := json.Marshal(execution.ExecutionConfig)
+	if err != nil {
+		return fmt.Errorf("encode frozen data profile config: %w", err)
+	}
+	var frozen struct {
+		Locator           string                `json:"locator"`
+		Selection         DataProfileSelection  `json:"selection"`
+		DataScope         dataprofile.DataScope `json:"data_scope"`
+		ProfileConfigHash string                `json:"profile_config_hash"`
+		ItemFingerprint   string                `json:"item_fingerprint"`
+		SourceVersion     string                `json:"source_version"`
+	}
+	if err := json.Unmarshal(payload, &frozen); err != nil {
+		return fmt.Errorf("decode frozen data profile config: %w", err)
+	}
+	target, err := s.sampler.ResolveTarget(ctx, uint(execution.TenantID), frozen.Locator, frozen.Selection)
+	if err != nil {
+		return err
+	}
+	if target.ItemFingerprint != frozen.ItemFingerprint || target.SourceVersion != frozen.SourceVersion {
+		return ErrDataProfileSourceChanged
+	}
+	s.runExecution(ctx, target, frozen.DataScope, frozen.ProfileConfigHash, execution)
+	return nil
 }
 
 // profileRules resolves the single local protection path for profiling. An

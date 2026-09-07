@@ -63,6 +63,7 @@ SUITES: Mapping[str, Suite] = {
             ("gateway", "GATEWAY_URL"),
             ("system", "SYSTEM_URL"),
             ("meta", "META_URL"),
+            ("manager", "MANAGER_URL"),
             ("transfer", "TRANSFER_URL"),
             ("develop", "DEVELOP_URL"),
             ("service", "SERVICE_URL"),

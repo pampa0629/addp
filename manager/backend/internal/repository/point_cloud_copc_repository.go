@@ -149,21 +149,7 @@ func (r *PointCloudCOPCRepository) GetExecution(
 func (r *PointCloudCOPCRepository) UpdateRunningExecutionProgress(
 	ctx context.Context, tenantID uint, executionID string, fields map[string]interface{},
 ) error {
-	result := r.db.WithContext(ctx).
-		Model(&commonExecution.TaskExecution{}).
-		Where(
-			"execution_id = ? AND tenant_id = ? AND module = ? AND task_type = ? AND status = ?",
-			executionID, int(tenantID), commonExecution.ModuleManager,
-			commonExecution.TaskTypePointCloudCOPCGeneration, commonExecution.ExecutionStatusRunning,
-		).
-		Updates(fields)
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected != 1 {
-		return commonAPI.ErrConflict
-	}
-	return nil
+	return UpdateExecutionWithOwnership(ctx, r.db, executionID, int(tenantID), fields)
 }
 
 func (r *PointCloudCOPCRepository) Create(ctx context.Context, result *models.PointCloudCOPC) error {

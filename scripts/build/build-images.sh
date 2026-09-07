@@ -669,11 +669,6 @@ build_service() {
             fi
             ;;
 
-        manager-bounded-worker)
-            dockerfile_path="${service_dir}/Dockerfile.prebuilt.bounded-worker"
-            build_context="."
-            ;;
-
         develop-query-worker)
             dockerfile_path="${service_dir}/Dockerfile.prebuilt.query-worker"
             build_context="."
@@ -976,7 +971,6 @@ main() {
     local services=(
         "system-backend:system/backend"
         "manager-backend:manager/backend"
-        "manager-bounded-worker:manager/backend"
         "meta-backend:meta/backend"
         "transfer-backend:transfer/backend"
         "orchestrator-backend:orchestrator/backend"

@@ -135,7 +135,7 @@ func (s *EmbeddingService) CreateAdhocExecution(ctx context.Context, tenantID, u
 	if err != nil {
 		return nil, err
 	}
-	runtime, binding, profile, err := s.runtimeSnapshot(ctx, tenantID)
+	_, binding, profile, err := s.runtimeSnapshot(ctx, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -153,42 +153,18 @@ func (s *EmbeddingService) CreateAdhocExecution(ctx context.Context, tenantID, u
 		Module:          commonExecution.ModuleManager,
 		TaskType:        commonExecution.TaskTypeEmbedding,
 		Source:          commonExecution.ModuleManager,
-		Status:          commonExecution.ExecutionStatusRunning,
+		Status:          commonExecution.ExecutionStatusPending,
 		TriggerType:     commonExecution.TriggerTypeManual,
 		TriggeredBy:     intPtr(int(userID)),
 		ExecutionConfig: executionConfig,
-		StartedAt:       &now,
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}
 	if err := s.taskExecRepo.Create(ctx, exec); err != nil {
 		return nil, err
 	}
 
-	go func() {
-		bgCtx := context.Background()
-		stats, execErr := s.RunEmbeddingExecution(bgCtx, tenantID, req, &EmbeddingExecutionContext{
-			ExecutionID: executionID,
-			TenantID:    int(tenantID),
-			StartedAt:   now,
-			Config:      executionConfig,
-			Runtime:     runtime,
-			Binding:     binding,
-			Profile:     *profile,
-			client:      s.inferenceClient,
-		})
-		status := commonExecution.ExecutionStatusSuccess
-		var errDetails commonModels.JSONMap
-		if execErr != nil {
-			status = commonExecution.ExecutionStatusFailed
-			errDetails = commonModels.JSONMap{"message": execErr.Error()}
-		}
-		metadata := statsToJSONMap(stats)
-		if status == commonExecution.ExecutionStatusSuccess {
-			metadata = managerEmbeddingExecutionLineage(metadata, executionConfig)
-		}
-		s.finishExecution(bgCtx, executionID, int(tenantID), status, now, errDetails, metadata)
-	}()
-
-	return &EmbeddingExecutionResponse{ExecutionID: executionID, Status: commonExecution.ExecutionStatusRunning}, nil
+	return &EmbeddingExecutionResponse{ExecutionID: executionID, Status: commonExecution.ExecutionStatusPending}, nil
 }
 
 func (s *EmbeddingService) RunEmbeddingExecution(ctx context.Context, tenantID uint, req EmbeddingExecutionRequest, execCtx *EmbeddingExecutionContext) (*EmbeddingExecutionStats, error) {
@@ -786,27 +762,6 @@ func (s *EmbeddingService) embeddingStateForCurrentItem(item commonModels.MetaIt
 	outdated.StatusReason = statusReason
 	outdated.Embedding = nil
 	return &outdated
-}
-
-func (s *EmbeddingService) finishExecution(ctx context.Context, executionID string, tenantID int, status string, startTime time.Time, errDetails, metadata commonModels.JSONMap) {
-	if s.taskExecRepo == nil {
-		return
-	}
-	completedAt := time.Now()
-	fields := map[string]interface{}{
-		"status":            status,
-		"completed_at":      completedAt,
-		"execution_time_ms": completedAt.Sub(startTime).Milliseconds(),
-	}
-	if errDetails != nil {
-		fields["error_details"] = errDetails
-	}
-	if metadata != nil {
-		fields["metadata"] = metadata
-	}
-	if err := s.taskExecRepo.UpdateFields(ctx, executionID, tenantID, fields); err != nil {
-		s.log.Warn("更新向量化 execution 失败", "execution_id", executionID, "error", err)
-	}
 }
 
 func (s *EmbeddingService) detectSupportedModality(contentType, objectKey string) (embeddingModality, bool) {

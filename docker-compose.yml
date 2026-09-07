@@ -142,6 +142,10 @@ services:
       - MEILISEARCH_URL=http://meilisearch:7700
       - MEILISEARCH_MASTER_KEY=${MEILISEARCH_MASTER_KEY:-}
       - MEILISEARCH_MANAGER_CONTENT_INDEX=${MEILISEARCH_MANAGER_CONTENT_INDEX:-manager_content_documents}
+      - MANAGER_EXECUTION_CONCURRENCY=${MANAGER_EXECUTION_CONCURRENCY:-4}
+      - MANAGER_EXECUTION_LEASE_DURATION=${MANAGER_EXECUTION_LEASE_DURATION:-2m}
+      - MANAGER_EXECUTION_HEARTBEAT_INTERVAL=${MANAGER_EXECUTION_HEARTBEAT_INTERVAL:-30s}
+      - MANAGER_EXECUTION_CLAIM_INTERVAL=${MANAGER_EXECUTION_CLAIM_INTERVAL:-1s}
       - GIN_MODE=release
     ports:
       - "8081:8081"
@@ -157,34 +161,6 @@ services:
       timeout: 5s
       retries: 30
       start_period: 60s
-
-  manager-bounded-worker:
-    image: ${REGISTRY:-localhost:5001}/addp-manager-bounded-worker:${IMAGE_TAG:-latest}
-    environment:
-      - DB_SCHEMA=manager
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
-      - POSTGRES_USER=${POSTGRES_USER:-addp}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-addp_password}
-      - POSTGRES_DB=${POSTGRES_DB:-addp}
-      - SYSTEM_URL=http://system-backend:8180
-      - MANAGER_SERVICE_CLIENT_SECRET=${MANAGER_SERVICE_CLIENT_SECRET}
-      - MINIO_ENDPOINT=minio:9000
-      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
-      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
-      - MINIO_USE_SSL=false
-      - MANAGER_PPTX_PDF_WORKER_CONCURRENCY=${MANAGER_PPTX_PDF_WORKER_CONCURRENCY:-1}
-      - MANAGER_PPTX_PDF_LEASE_DURATION=${MANAGER_PPTX_PDF_LEASE_DURATION:-2m}
-      - MANAGER_PPTX_PDF_HEARTBEAT_INTERVAL=${MANAGER_PPTX_PDF_HEARTBEAT_INTERVAL:-30s}
-      - MANAGER_PPTX_PDF_CLAIM_INTERVAL=${MANAGER_PPTX_PDF_CLAIM_INTERVAL:-1s}
-    networks:
-      - addp-network
-    depends_on:
-      manager-backend:
-        condition: service_healthy
-      system-backend:
-        condition: service_healthy
-    restart: unless-stopped
 
   manager-frontend:
     image: ${REGISTRY:-localhost:5001}/addp-manager-frontend:${IMAGE_TAG:-latest}

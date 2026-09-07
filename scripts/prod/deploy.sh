@@ -132,7 +132,6 @@ if [ "$SKIP_PUSH" = false ]; then
     SERVICES=(
         "system-backend"
         "manager-backend"
-        "manager-bounded-worker"
         "meta-backend"
         "meta-worker"
         "transfer-backend"

@@ -103,7 +103,7 @@ func TestDataProfileServiceFailedRefreshDoesNotReplaceSuccessfulResult(t *testin
 	target := &DataProfileTarget{ItemFingerprint: "fingerprint", SourceVersion: "version"}
 	execution := &commonExecution.TaskExecution{TenantID: 7, ExecutionID: "execution-1"}
 
-	profileService.runExecution(target, dataprofile.DataScope{Kind: dataprofile.DataScopeKindAll}, "config", execution)
+	profileService.runExecution(context.Background(), target, dataprofile.DataScope{Kind: dataprofile.DataScopeKindAll}, "config", execution)
 
 	if profiles.replaceCalls != 0 {
 		t.Fatalf("ReplaceCurrent calls = %d, want 0", profiles.replaceCalls)
@@ -262,6 +262,7 @@ func TestDataProfileServiceProtectsManagedProfileBeforePersistence(t *testing.T)
 		managedDataProfileServiceTestGate(t, target.ItemFingerprint, fields, dataprotection.EffectSuppress),
 	)
 	profileService.runExecution(
+		context.Background(),
 		target,
 		dataprofile.DataScope{Kind: dataprofile.DataScopeKindAll},
 		"config",

@@ -221,7 +221,8 @@ func TestRasterMosaicRecordProgressEventUpdatesExecution(t *testing.T) {
 
 	overallProgress := 22
 	fileProgress := 60
-	if err := taskSvc.RecordProgressEvent(context.Background(), 7, "mosaic-exec-1", RasterMosaicProgressEvent{
+	leaseCtx := leaseStoredManagerExecutionForServiceTest(t, db, "mosaic-exec-1", 7)
+	if err := taskSvc.RecordProgressEvent(leaseCtx, 7, "mosaic-exec-1", RasterMosaicProgressEvent{
 		Phase:           "leaf_cog",
 		Event:           "file_progress",
 		TotalFiles:      100,
@@ -281,7 +282,8 @@ func TestRasterMosaicRecordProgressEventDoesNotMoveProgressBackwards(t *testing.
 	}
 
 	overallProgress := 5
-	if err := taskSvc.RecordProgressEvent(context.Background(), 7, "mosaic-exec-2", RasterMosaicProgressEvent{
+	leaseCtx := leaseStoredManagerExecutionForServiceTest(t, db, "mosaic-exec-2", 7)
+	if err := taskSvc.RecordProgressEvent(leaseCtx, 7, "mosaic-exec-2", RasterMosaicProgressEvent{
 		Phase:           "overview",
 		Event:           "phase_progress",
 		OverallProgress: &overallProgress,
@@ -418,8 +420,8 @@ func TestRasterMosaicGenerationSubmitsMetaScanForDatasetRoot(t *testing.T) {
 		t.Fatalf("create task: %v", err)
 	}
 	startedAt := time.Now().Add(-time.Minute)
-	startRasterMosaicTestExecution(t, mosaicRepo, task, "mosaic-exec-scan", startedAt)
-	taskSvc.executeRasterMosaicGeneration(context.Background(), task, "mosaic-exec-scan", startedAt)
+	executionCtx := startRasterMosaicTestExecution(t, db, mosaicRepo, task, "mosaic-exec-scan", startedAt)
+	taskSvc.executeRasterMosaicGeneration(executionCtx, task, "mosaic-exec-scan", startedAt)
 
 	if scanSubmitter.tenantID == nil || *scanSubmitter.tenantID != 7 {
 		t.Fatalf("scan tenant id = %#v, want 7", scanSubmitter.tenantID)
@@ -482,8 +484,8 @@ func TestRasterMosaicGenerationFailsWhenMetaScanSubmitFails(t *testing.T) {
 		t.Fatalf("create task: %v", err)
 	}
 	startedAt := time.Now().Add(-time.Minute)
-	startRasterMosaicTestExecution(t, mosaicRepo, task, "mosaic-exec-scan-failed", startedAt)
-	taskSvc.executeRasterMosaicGeneration(context.Background(), task, "mosaic-exec-scan-failed", startedAt)
+	executionCtx := startRasterMosaicTestExecution(t, db, mosaicRepo, task, "mosaic-exec-scan-failed", startedAt)
+	taskSvc.executeRasterMosaicGeneration(executionCtx, task, "mosaic-exec-scan-failed", startedAt)
 
 	got, err := taskExecRepo.GetByExecutionID(context.Background(), "mosaic-exec-scan-failed", 7)
 	if err != nil {
@@ -522,8 +524,8 @@ func TestRasterMosaicGenerationTimeoutKeepsLastProgress(t *testing.T) {
 		t.Fatalf("create task: %v", err)
 	}
 	startedAt := time.Now().Add(-10 * time.Minute)
-	startRasterMosaicTestExecution(t, mosaicRepo, task, "mosaic-exec-timeout", startedAt)
-	if err := taskExecRepo.UpdateFields(context.Background(), "mosaic-exec-timeout", 7, map[string]interface{}{
+	executionCtx := startRasterMosaicTestExecution(t, db, mosaicRepo, task, "mosaic-exec-timeout", startedAt)
+	if err := taskExecRepo.UpdateFields(executionCtx, "mosaic-exec-timeout", 7, map[string]interface{}{
 		"progress": 38,
 		"metadata": commonModels.JSONMap{
 			"progress_event": commonModels.JSONMap{
@@ -535,7 +537,7 @@ func TestRasterMosaicGenerationTimeoutKeepsLastProgress(t *testing.T) {
 		t.Fatalf("seed execution progress: %v", err)
 	}
 
-	taskSvc.executeRasterMosaicGeneration(context.Background(), task, "mosaic-exec-timeout", startedAt)
+	taskSvc.executeRasterMosaicGeneration(executionCtx, task, "mosaic-exec-timeout", startedAt)
 
 	got, err := taskExecRepo.GetByExecutionID(context.Background(), "mosaic-exec-timeout", 7)
 	if err != nil {
@@ -559,11 +561,12 @@ type fakeRasterMosaicExecutor struct {
 
 func startRasterMosaicTestExecution(
 	t *testing.T,
+	db *gorm.DB,
 	repo *repository.RasterMosaicRepository,
 	task *models.RasterMosaicTask,
 	executionID string,
 	startedAt time.Time,
-) {
+) context.Context {
 	t.Helper()
 	createdAt := startedAt.Add(-time.Second)
 	execution := &commonExecution.TaskExecution{
@@ -575,9 +578,17 @@ func startRasterMosaicTestExecution(
 	if _, err := repo.ClaimExecution(context.Background(), task.ID, task.TenantID, execution); err != nil {
 		t.Fatalf("claim execution: %v", err)
 	}
-	if err := repo.StartExecution(context.Background(), task.ID, task.TenantID, executionID, startedAt); err != nil {
-		t.Fatalf("start execution: %v", err)
+	claimed, lease, err := repository.NewBoundedExecutionQueueRepository(db).ClaimNext(
+		context.Background(), commonExecution.TaskTypeRasterMosaicGeneration,
+		"manager-service-test", startedAt, 24*time.Hour,
+	)
+	if err != nil {
+		t.Fatalf("claim queued execution: %v", err)
 	}
+	if claimed == nil || lease == nil || claimed.ExecutionID != executionID {
+		t.Fatalf("claimed execution = %#v/%#v, want %s", claimed, lease, executionID)
+	}
+	return commonExecution.ContextWithLease(context.Background(), *lease)
 }
 
 func (f fakeRasterMosaicExecutor) BuildRasterMosaic(ctx context.Context, req RasterMosaicExecutionRequest) (*RasterMosaicExecutionResult, error) {

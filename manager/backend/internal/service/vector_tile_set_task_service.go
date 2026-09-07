@@ -171,6 +171,9 @@ func (s *VectorTileSetTaskService) RecordProgressEvent(ctx context.Context, tena
 	if exec.IsCompleted() {
 		return ErrVectorTileSetExecutionCompleted
 	}
+	if _, err := requireManagerExecutionLease(ctx, tenantID, executionID); err != nil {
+		return err
+	}
 	nextProgress := tileCacheEventProgressPercent(event, exec.Progress)
 	currentStep := event.Message
 	if currentStep == "" || currentStep == "生成矢量瓦片缓存" {
@@ -207,7 +210,7 @@ func (s *VectorTileSetTaskService) Execute(ctx context.Context, taskID, tenantID
 	exec := &commonExecution.TaskExecution{ExecutionID: executionID, TenantID: int(tenantID), Module: commonExecution.ModuleManager,
 		TaskType: commonExecution.TaskTypeVectorTileSetGeneration, Source: source, ParentExecutionID: parentExecutionID,
 		Status: commonExecution.ExecutionStatusPending, Progress: 0, CurrentStep: &step, TriggerType: triggerType, CreatedAt: now, UpdatedAt: now}
-	task, err := s.repo.ClaimExecution(ctx, taskID, tenantID, exec)
+	_, err = s.repo.ClaimExecution(ctx, taskID, tenantID, exec)
 	if err != nil {
 		if errors.Is(err, commonAPI.ErrNotFound) {
 			return "", ErrTaskNotFound
@@ -217,7 +220,6 @@ func (s *VectorTileSetTaskService) Execute(ctx context.Context, taskID, tenantID
 		}
 		return "", err
 	}
-	go s.run(context.Background(), task, executionID)
 	return executionID, nil
 }
 

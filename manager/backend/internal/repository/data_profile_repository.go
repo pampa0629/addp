@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 
+	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/manager/internal/dataprofile"
 	"github.com/addp/manager/internal/models"
 	"gorm.io/gorm"
@@ -85,6 +86,11 @@ func (r *DataProfileRepository) ReplaceCurrent(
 	state.ProfiledAt = profile.ProfiledAt
 
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if lease, ok := commonExecution.LeaseFromContext(ctx); ok {
+			if err := commonExecution.UpdateWithLease(ctx, tx, lease, map[string]interface{}{}); err != nil {
+				return err
+			}
+		}
 		var current models.DataProfile
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where(

@@ -201,7 +201,7 @@ func (s *Model3DGLBTaskService) Execute(ctx context.Context, taskID uint, tenant
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
-	claimedTask, err := s.repo.ClaimExecution(ctx, taskID, tenantID, exec, overwriteExistingResult)
+	_, err = s.repo.ClaimExecution(ctx, taskID, tenantID, exec, overwriteExistingResult)
 	if err != nil {
 		if errors.Is(err, repository.ErrExistingResultActionRequired) {
 			return "", ErrExistingResultActionRequired
@@ -215,7 +215,6 @@ func (s *Model3DGLBTaskService) Execute(ctx context.Context, taskID uint, tenant
 		return "", err
 	}
 
-	go s.runModel3DGLBGeneration(context.Background(), claimedTask, executionID)
 	return executionID, nil
 }
 

@@ -141,7 +141,7 @@ Manager 平台内部产物类 T4 使用专用 Business MinIO Fixture 和永久 M
 
 MySQL 邮箱四出口保护类 T4 使用专用 MySQL Fixture 的 `customers.email` 和专用 PostgreSQL Fixture 的固定目标表，要求当前 Tenant 已存在启用的 `email` 敏感类型、`addp.detector.email_metadata/v1` 检测绑定和 `suppress` 默认保护规则。suite 必须经 Meta 真实扫描发现字段，经 Security 正式 API 形成或复用 Enrollment 与 Assessment，并等待 `manager/preview`、`develop/query`、`service/service_execute` 和 `transfer/export` 投影全部确认。四个 Owner 都必须继续返回 5 条非敏感数据，同时在返回结构与每条记录中完全移除 `email`；返回空邮箱、原文邮箱、整个请求被拒绝或整个结果为空都不算通过。每轮临时 Query Service 和 Transfer 任务必须按捕获 ID 删除并确认零残留；Enrollment 与 Assessment 是长期治理事实，不在验收后删除。
 
-OceanBase 消费链路 T4 使用专用 OceanBase CE MySQL 模式 Fixture 和永久 `engine_type=oceanbase` Engine Instance。Fixture 固定维护一个 5 行非空间 InnoDB watermark 源表和一个同构空目标表；suite 必须经 Meta 扫描取得两个 ResourceLocator，以同一条 bounded watermark Transfer 任务依次验证首批 5 行、源表确定性更新/新增后的 2 行增量，以及再次执行的 0 行空增量。目标采用 `upsert` 和唯一稳定键 `id`，不得把 OceanBase 降格注册为 MySQL 或为模块增加类型分支。首批与增量完成后，Develop SQL 和临时 Query Service 必须读取同一目标表并得到一致 checksum，最终固定为 6 行且无重复键。临时 Transfer 任务和 Query Service 必须按捕获 ID 删除并确认 404；物理 Fixture 在成功、失败和中断退出路径恢复源表基线与空目标表后停止。该 suite 只登记手工 `workflow_dispatch`，首次真实通过前不得增加定时触发。
+OceanBase 消费链路 T4 使用专用 OceanBase CE MySQL 模式 Fixture 和永久 `engine_type=oceanbase` Engine Instance。Fixture 固定维护一个 5 行非空间 InnoDB watermark 源表和一个同构空目标表；suite 必须经 Meta 扫描取得两个 ResourceLocator，以同一条 bounded watermark Transfer 任务依次验证首批 5 行、源表确定性更新/新增后的 2 行增量，以及再次执行的 0 行空增量。目标采用 `upsert` 和唯一稳定键 `id`，不得把 OceanBase 降格注册为 MySQL 或为模块增加类型分支。首批与增量完成后，Manager 表预览、Develop SQL 和临时 Query Service 必须通过各自正式数据出口读取同一目标 ResourceLocator，并得到一致 checksum，最终固定为 6 行且无重复键；Manager 预览还必须确认扫描结构中的完整列顺序。临时 Transfer 任务和 Query Service 必须按捕获 ID 删除并确认 404；物理 Fixture 在成功、失败和中断退出路径恢复源表基线与空目标表后停止。该 suite 只登记手工 `workflow_dispatch`，首次真实通过前不得增加定时触发。
 
 ### 5.3 数据、超时与清理
 

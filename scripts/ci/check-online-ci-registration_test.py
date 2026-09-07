@@ -443,7 +443,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         host.write_text(
             host.read_text(encoding="utf-8")
             + "\noceanbase-consumer-flow)\n"
-            + "SYSTEM_URL GATEWAY_URL META_URL TRANSFER_URL DEVELOP_URL SERVICE_URL\n"
+            + "SYSTEM_URL GATEWAY_URL META_URL MANAGER_URL TRANSFER_URL DEVELOP_URL SERVICE_URL\n"
             + "ADDP_ONLINE_OCEANBASE_ENGINE_ID ADDP_ONLINE_OCEANBASE_PORT\n"
             + "ADDP_ONLINE_OCEANBASE_DATABASE ADDP_ONLINE_OCEANBASE_USER ADDP_ONLINE_OCEANBASE_PASSWORD\n"
             + "bash business/scripts/online-oceanbase-consumer-fixture.sh start\n"
@@ -460,12 +460,16 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             encoding="utf-8",
         )
         support = self.repository / "scripts/test/security-transfer-protection-online.py"
-        support.write_text("/api/v1/meta/scan/run/manual\n", encoding="utf-8")
+        support.write_text(
+            "/api/v1/meta/scan/run/manual\n/api/v1/manager/preview\n",
+            encoding="utf-8",
+        )
         owner = self.repository / "scripts/test/oceanbase-consumer-flow-online.py"
         owner.write_text(
             'engine.get("engine_type") != "oceanbase"\n'
             '"type": "watermark"\n"start": "committed"\n'
             '"end": "execution_upper_bound"\n"apply_mode": "upsert"\n'
+            '"manager.data_item.read"\n'
             "/api/v1/develop/executions\n/api/query/\nadvance_fixture()\n"
             '"empty_resume"\ncleanup_tasks(client, task_ids)\n'
             'cleanup_service(client, service_id)\n"residual_resources": 0\n',
@@ -480,6 +484,16 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         CHECK.validate_oceanbase_consumer_flow_profile(
             self.repository, {"oceanbase-consumer-flow"}
         )
+        support_text = support.read_text(encoding="utf-8")
+        support.write_text(
+            support_text.replace("/api/v1/manager/preview", ""),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(CHECK.RegistrationError, "manager/preview"):
+            CHECK.validate_oceanbase_consumer_flow_profile(
+                self.repository, {"oceanbase-consumer-flow"}
+            )
+        support.write_text(support_text, encoding="utf-8")
         owner.write_text(
             owner.read_text(encoding="utf-8").replace("advance_fixture()", ""),
             encoding="utf-8",

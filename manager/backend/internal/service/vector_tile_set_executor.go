@@ -191,11 +191,20 @@ func (e *ManagerVectorTileSetExecutor) invokeWorkflowVectorTileSet(ctx context.C
 	if err != nil {
 		return nil, err
 	}
+	progressCallback, err := managerExecutionProgressCallback(
+		ctx,
+		e.managerBaseURL+"/api/v1/manager/executions/"+req.ExecutionID+"/events",
+		req.Task.TenantID,
+		req.ExecutionID,
+	)
+	if err != nil {
+		return nil, err
+	}
 	result, err := dbbridge.InvokeOperator(ctx, &workflowEngine, operator.Name, plugin.OperatorInvokeRequest{Params: map[string]interface{}{
 		"access_plan": commonModels.JSONMap{
 			"source":            commonModels.JSONMap{"root_uri": sourceURI, "layer_name": sourceFacts["layer_name"], "gdal_env": sourceEnv, "metadata": sourceFacts},
 			"target":            commonModels.JSONMap{"archive_uri": targetURI, "gdal_env": targetEnv, "metadata": targetFacts},
-			"progress_callback": commonModels.JSONMap{"endpoint": e.managerBaseURL + "/api/v1/manager/executions/" + req.ExecutionID + "/events", "tenant_id": req.Task.TenantID, "execution_id": req.ExecutionID},
+			"progress_callback": progressCallback,
 		}, "tile": req.Config.Tile, "options": req.Config.Options,
 	}, Timeout: e.invokeTimeout})
 	if err != nil {

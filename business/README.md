@@ -181,7 +181,7 @@ bash scripts/online-workbench-mysql-fixture.sh stop
 
 ### scripts/online-oceanbase-consumer-fixture.sh - OceanBase 消费链路 T4 Fixture
 
-该入口只允许 `ADDP_ONLINE_HOST=1` 的 macOS 专用 Runner 使用，且只接受仓库外 `ADDP_ONLINE_OCEANBASE_*` 环境变量。它固定使用 `oceanbase/oceanbase-ce:4.4.2-lts` 和 `business/oceanbase` Compose service，不读取或生成 `business/.env`。`start` 将 `addp_online_consumer_source` 恢复为 5 行 watermark 基线并将同构目标表清空；`advance` 只更新 1 行并新增 1 行；`stop` 在移除容器前再次恢复基线，因此成功、失败和中断后的物理数据边界一致。永久 Engine Instance 必须以 `engine_type=oceanbase` 指向同一端点，Fixture 不创建、修改或删除 Engine Instance。个人开发环境不得调用该脚本。
+该入口只允许 `ADDP_ONLINE_HOST=1` 的 macOS 专用 Runner 使用，且只接受仓库外 `ADDP_ONLINE_OCEANBASE_*` 环境变量。它固定使用 `oceanbase/oceanbase-ce:4.4.2-lts` 和 `business/oceanbase` Compose service，不读取或生成 `business/.env`。`start` 将 `addp_online_consumer_source` 恢复为 5 行 watermark 基线并将同构目标表清空；`advance` 只更新 1 行并新增 1 行；`stop` 在移除容器前再次恢复基线，因此成功、失败和中断后的物理数据边界一致。永久 Engine Instance 必须以 `engine_type=oceanbase` 指向同一端点，Fixture 不创建、修改或删除 Engine Instance；正式 T4 通过 Meta 定位目标后，分别由 Manager、Develop 和 Service 读取 Transfer 结果并比较一致性。个人开发环境不得调用该脚本。
 
 ```bash
 bash scripts/online-oceanbase-consumer-fixture.sh start

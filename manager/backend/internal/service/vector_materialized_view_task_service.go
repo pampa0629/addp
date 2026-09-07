@@ -246,7 +246,7 @@ func (s *VectorMaterializedViewTaskService) Execute(ctx context.Context, taskID 
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
-	claimedTask, err := s.repo.ClaimExecution(ctx, taskID, tenantID, exec, overwriteExistingResult)
+	_, err = s.repo.ClaimExecution(ctx, taskID, tenantID, exec, overwriteExistingResult)
 	if err != nil {
 		if errors.Is(err, repository.ErrExistingResultActionRequired) {
 			return "", ErrExistingResultActionRequired
@@ -260,7 +260,6 @@ func (s *VectorMaterializedViewTaskService) Execute(ctx context.Context, taskID 
 		return "", err
 	}
 
-	go s.runVectorMaterializedView(context.Background(), claimedTask, executionID)
 	return executionID, nil
 }
 

@@ -230,7 +230,7 @@ func (s *GaussianSplatKSplatTaskService) Execute(ctx context.Context, taskID uin
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
-	claimedTask, err := s.repo.ClaimExecution(ctx, taskID, tenantID, exec, overwriteExistingResult)
+	_, err = s.repo.ClaimExecution(ctx, taskID, tenantID, exec, overwriteExistingResult)
 	if err != nil {
 		if errors.Is(err, repository.ErrExistingResultActionRequired) {
 			return "", ErrExistingResultActionRequired
@@ -244,7 +244,6 @@ func (s *GaussianSplatKSplatTaskService) Execute(ctx context.Context, taskID uin
 		return "", err
 	}
 
-	go s.runGaussianSplatKSplatGeneration(context.Background(), claimedTask, executionID)
 	return executionID, nil
 }
 

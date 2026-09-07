@@ -119,6 +119,7 @@ func TestRasterCOGTaskExecuteRecordsFailedExecutionWhenExecutorUnavailable(t *te
 	if err != nil {
 		t.Fatalf("execute raster COG generation task: %v", err)
 	}
+	runManagerBoundedExecutionForTest(t, db, commonExecution.TaskTypeRasterCOGGeneration, &BoundedExecutionDispatcher{rasterCOG: taskSvc})
 
 	exec := waitForRasterCOGTaskExecution(t, taskExecRepo, executionID, int(task.TenantID))
 	if exec.Status != commonExecution.ExecutionStatusFailed {
@@ -626,7 +627,17 @@ func TestRasterCOGTaskKeepsRunningStateWhenAtomicCompletionFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("claim raster COG generation task: %v", err)
 	}
-	taskSvc.runRasterCOGGeneration(context.Background(), claimedTask, executionID)
+	claimedExecution, lease, err := repository.NewBoundedExecutionQueueRepository(db).ClaimNext(
+		context.Background(), commonExecution.TaskTypeRasterCOGGeneration,
+		"manager-service-test", createdAt.Add(time.Second), time.Minute,
+	)
+	if err != nil {
+		t.Fatalf("claim queued raster COG execution: %v", err)
+	}
+	if claimedExecution == nil || lease == nil || claimedExecution.ExecutionID != executionID {
+		t.Fatalf("claimed execution = %#v/%#v, want %s", claimedExecution, lease, executionID)
+	}
+	taskSvc.runRasterCOGGeneration(commonExecution.ContextWithLease(context.Background(), *lease), claimedTask, executionID)
 
 	exec, err := taskExecRepo.GetByExecutionID(context.Background(), executionID, int(task.TenantID))
 	if err != nil {

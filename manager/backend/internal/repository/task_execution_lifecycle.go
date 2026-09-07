@@ -93,9 +93,11 @@ func (l taskExecutionLifecycle) Claim(
 		execution.SourceTaskID = sourceTaskID
 		taskName := spec.TaskName()
 		execution.SourceTaskName = &taskName
-		execution.ExecutionConfig = spec.TaskConfig().Clone()
-		if execution.ExecutionConfig == nil {
-			execution.ExecutionConfig = commonModels.JSONMap{}
+		if len(execution.ExecutionConfig) == 0 {
+			execution.ExecutionConfig = spec.TaskConfig().Clone()
+			if execution.ExecutionConfig == nil {
+				execution.ExecutionConfig = commonModels.JSONMap{}
+			}
 		}
 		if err := tx.Create(execution).Error; err != nil {
 			return err
@@ -128,35 +130,14 @@ func (l taskExecutionLifecycle) Start(
 	taskModel interface{},
 	taskLabel string,
 ) error {
-	return l.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		result := tx.Model(&commonExecution.TaskExecution{}).
-			Where("execution_id = ? AND tenant_id = ? AND status = ?", executionID, int(tenantID), commonExecution.ExecutionStatusPending).
-			Updates(map[string]interface{}{
-				"status": commonExecution.ExecutionStatusRunning, "started_at": startedAt, "updated_at": startedAt,
-			})
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected != 1 {
-			return fmt.Errorf("%w: %s execution %s is not pending", commonAPI.ErrConflict, taskLabel, executionID)
-		}
-
-		result = tx.Model(taskModel).
-			Where(
-				"id = ? AND tenant_id = ? AND last_execution_id = ? AND last_execution_status = ?",
-				taskID, tenantID, executionID, commonExecution.ExecutionStatusPending,
-			).
-			Updates(map[string]interface{}{
-				"last_run_at": startedAt, "last_execution_status": commonExecution.ExecutionStatusRunning,
-			})
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected != 1 {
-			return fmt.Errorf("%w: %s task %d is not pending for execution %s", commonAPI.ErrConflict, taskLabel, taskID, executionID)
-		}
-		return nil
-	})
+	lease, ok := commonExecution.LeaseFromContext(ctx)
+	if !ok || lease.ExecutionID != executionID || lease.TenantID != int(tenantID) {
+		return fmt.Errorf("%w: %s execution requires the claimed lease for %s", commonAPI.ErrConflict, taskLabel, executionID)
+	}
+	// ClaimNext already advances both the execution and its owning task to
+	// running atomically. Start remains only as a fenced ownership check at the
+	// existing executor boundary.
+	return commonExecution.UpdateWithLease(ctx, l.db, lease, map[string]interface{}{"updated_at": startedAt.UTC()})
 }
 
 func (l taskExecutionLifecycle) Complete(
@@ -170,6 +151,10 @@ func (l taskExecutionLifecycle) Complete(
 	status, ok := spec.ExecutionFields["status"].(string)
 	if !ok || status == "" {
 		return fmt.Errorf("%s execution completion status is required", taskLabel)
+	}
+	lease, ok := commonExecution.LeaseFromContext(ctx)
+	if !ok || lease.ExecutionID != executionID || lease.TenantID != int(tenantID) {
+		return fmt.Errorf("%w: %s execution requires the claimed lease for %s", commonAPI.ErrConflict, taskLabel, executionID)
 	}
 
 	return l.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -185,17 +170,17 @@ func (l taskExecutionLifecycle) Complete(
 			}
 		}
 
-		result := tx.Model(&commonExecution.TaskExecution{}).
-			Where("execution_id = ? AND tenant_id = ? AND status = ?", executionID, int(tenantID), commonExecution.ExecutionStatusRunning).
-			Updates(spec.ExecutionFields)
-		if result.Error != nil {
-			return result.Error
+		fields := make(map[string]interface{}, len(spec.ExecutionFields))
+		for key, value := range spec.ExecutionFields {
+			if key != "status" && key != "completed_at" && key != "updated_at" {
+				fields[key] = value
+			}
 		}
-		if result.RowsAffected != 1 {
-			return fmt.Errorf("%w: %s execution %s is not running", commonAPI.ErrConflict, taskLabel, executionID)
+		if err := commonExecution.CompleteWithLease(ctx, tx, lease, status, completedAt, fields); err != nil {
+			return err
 		}
 
-		result = tx.Model(spec.TaskModel).
+		result := tx.Model(spec.TaskModel).
 			Where(
 				"id = ? AND tenant_id = ? AND last_execution_id = ? AND last_execution_status = ?",
 				taskID, tenantID, executionID, commonExecution.ExecutionStatusRunning,

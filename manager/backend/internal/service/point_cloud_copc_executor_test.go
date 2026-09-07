@@ -97,7 +97,7 @@ func TestManagerPointCloudCOPCExecutorInvokesDirectWorkflowAndPublishesArtifact(
 		0,
 	)
 
-	result, err := executor.BuildPointCloudCOPC(context.Background(), PointCloudCOPCExecutionRequest{
+	result, err := executor.BuildPointCloudCOPC(managerExecutionLeaseContextForServiceTest("point-cloud-exec-1", 7), PointCloudCOPCExecutionRequest{
 		Task:        &models.PointCloudCOPCTask{TenantID: 7, Name: "生成 COPC"},
 		ExecutionID: "point-cloud-exec-1",
 		Config: PointCloudCOPCExecutionConfig{
@@ -159,7 +159,8 @@ func TestManagerPointCloudCOPCExecutorInvokesDirectWorkflowAndPublishesArtifact(
 		t.Fatalf("target access = %#v, want Manager infra MinIO target", targetPlanAccess)
 	}
 	if progress["endpoint"] != "http://manager:8081/api/v1/manager/executions/point-cloud-exec-1/events" ||
-		progress["tenant_id"] != float64(7) || progress["execution_id"] != "point-cloud-exec-1" {
+		progress["tenant_id"] != float64(7) || progress["execution_id"] != "point-cloud-exec-1" ||
+		progress["attempt"] != float64(1) || progress["lease_token"] != "lease-point-cloud-exec-1" {
 		t.Fatalf("progress callback = %#v, want Manager execution event callback", progress)
 	}
 	if _, exists := progress["internal_api_key"]; exists {
@@ -238,7 +239,7 @@ func TestManagerPointCloudCOPCExecutorRejectsOperatorWithoutDirectMode(t *testin
 		0,
 	)
 
-	_, err = executor.BuildPointCloudCOPC(context.Background(), PointCloudCOPCExecutionRequest{
+	_, err = executor.BuildPointCloudCOPC(managerExecutionLeaseContextForServiceTest("point-cloud-exec-2", 7), PointCloudCOPCExecutionRequest{
 		Task:        &models.PointCloudCOPCTask{TenantID: 7, Name: "生成 COPC"},
 		ExecutionID: "point-cloud-exec-2",
 		Config: PointCloudCOPCExecutionConfig{
@@ -333,6 +334,7 @@ func TestPointCloudCOPCTaskExecutionMarksResultReady(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute point cloud COPC generation task: %v", err)
 	}
+	runManagerBoundedExecutionForTest(t, db, commonExecution.TaskTypePointCloudCOPCGeneration, &BoundedExecutionDispatcher{pointCloudCOPC: taskSvc})
 	exec := waitForPointCloudCOPCTaskExecution(t, taskExecRepo, executionID, int(task.TenantID))
 	if exec.Status != commonExecution.ExecutionStatusSuccess {
 		t.Fatalf("execution status = %s, want success", exec.Status)
@@ -386,7 +388,8 @@ func TestPointCloudCOPCRecordProgressEventUpdatesExecution(t *testing.T) {
 		t.Fatalf("create execution: %v", err)
 	}
 	overall := 42
-	if err := taskSvc.RecordProgressEvent(context.Background(), 7, "point-cloud-progress-1", PointCloudCOPCProgressEvent{
+	leaseCtx := leaseStoredManagerExecutionForServiceTest(t, db, "point-cloud-progress-1", 7)
+	if err := taskSvc.RecordProgressEvent(leaseCtx, 7, "point-cloud-progress-1", PointCloudCOPCProgressEvent{
 		Phase:           "convert",
 		Event:           "progress",
 		Message:         "生成点云 COPC 文件",

@@ -36,14 +36,16 @@
 9. Monitor 只聚合观察，不成为任务 owner。
 10. ad-hoc-only execution type 可以写入统一执行记录，但在没有持久任务定义前不得声明为 TaskProvider 能力或进入 Orchestrator 任务选择。
 11. 真实读写 owner 必须在 execution 结果中写入版本化 `lineage_facts`；Meta 负责消费并维护血缘关系，Orchestrator 不重复生成资源血缘。
-12. Quality `check|materialization_gate`、Meta `scan`、Transfer bounded `sync`、Orchestrator 来源的 Develop `query` 和 Manager `pptx_pdf_generation` 的 execution worker 必须是 owner 模块附属的独立进程，并统一使用 PostgreSQL execution claim + lease；owner Backend 不执行这些 bounded execution。
+12. Quality `check|materialization_gate`、Meta `scan`、Transfer bounded `sync` 和 Orchestrator 来源的 Develop `query` 的 execution worker 必须是 owner 模块附属的独立进程；Manager 的 bounded execution 统一由 Manager Backend 内嵌的有界执行监督器运行。两种部署形态都必须使用 PostgreSQL execution claim + lease，部署形态不能改变 execution 所有权协议。
 13. owner scheduler 运行在 owner Backend，只负责按任务定义发现到期任务并创建 durable `pending` execution；Worker 不可用不得阻止 scheduler 创建 execution。dispatcher 只负责 outbox/delivery 投递，二者都不得替代 execution worker 成为业务执行事实源。
-14. bounded runtime queue 的唯一主路线是 `common.task_executions` PostgreSQL claim，不保留 Redis/Asynq、进程内 channel 或 Backend 内嵌执行 fallback。continuous runtime、dispatcher 和 maintenance loop 继续使用各自专用协议，不强行迁入 bounded claim。
+14. bounded runtime queue 的唯一主路线是 `common.task_executions` PostgreSQL claim，不保留 Redis/Asynq、请求内 goroutine 或进程内 channel。独立 Worker 与 owner Backend 内嵌监督器是明确的模块级部署选择，不得在同一模块内双轨消费；continuous runtime、dispatcher 和 maintenance loop 继续使用各自专用协议，不强行迁入 bounded claim。
 15. Manager `pptx_pdf_generation` 是 bounded 预览派生产物任务：任务定义归 `manager.pptx_pdf_tasks`，结果归 `manager.pptx_pdf`。Manager 领域执行器通过 Common `WorkflowRuntimeProvider` direct 调用 `document_workflow/document_to_pdf`；Document Workflow 是纯执行层，LibreOffice 只作为其内部依赖，不拥有 Manager 任务、execution 或 artifact 状态。
 
 `pptx_pdf_generation` 声明 `supports_schedule=false`。普通预览按需触发：`GET /manager/preview` 只返回 artifact 状态，不得隐式创建任务或 execution；前端收到 `preview_artifact_missing` 后显式调用创建与执行 API。已有 `pending` / `running` execution 时复用其状态，失败后只允许用户显式重试。Orchestrator 只在用户显式配置预热或批量编排时调用同一 Manager TaskProvider 任务，不直接调用 Runtime，也不建立第二条执行路线。
 
-`pptx_pdf_generation` 由独立 `manager-bounded-worker` 领取。Backend 的执行 API 只在任务定义行锁内创建 durable `pending` execution，不启动 goroutine 或直接调用 Document Workflow。Worker claim 时原子写入 `attempt + lease_token + lease_owner + lease_expires_at` 并把任务摘要推进为 `running`；heartbeat、结果、execution 终态和任务摘要都必须受当前 lease fencing。Document Workflow 的 direct 调用已经可能发布 infra MinIO 对象，当前没有跨 Runtime 与 PostgreSQL 的稳定 operation identity 或提交 fencing，因此 lease 过期必须 fail-closed，不得自动重放同一 execution；用户显式重试创建新的 execution，并由稳定目标路径替换未引用对象。
+Manager 的 `vector_tile_cache_generation`、`vector_tile_set_generation`、`vector_materialized_view_generation`、`raster_cog_generation`、`raster_mosaic_generation`、`model_3d_glb_generation`、`model3d_tiles_generation`、`gaussian_splat_ksplat_generation`、`point_cloud_copc_generation`、`pptx_pdf_generation`、`embedding` 和 `data_profiling` 统一由 Manager Backend 内嵌有界执行监督器领取。执行 API 只创建 durable `pending` execution，不启动请求外 goroutine 或直接调用外部 Runtime。监督器 claim 时原子写入 `attempt + lease_token + lease_owner + lease_expires_at`，并在存在持久任务定义时把任务摘要推进为 `running`；heartbeat、进度、结果、execution 终态和任务摘要都必须受当前 lease fencing。
+
+上述 Manager 执行当前均按不可安全自动重放处理：监督器进程退出或失联后，新的 Manager Backend 实例继续领取 `pending`；旧 `running` attempt 在 lease 过期后把 execution、任务摘要和属于该 execution 的构建中结果原子收敛为 `failed`，错误码固定为 `manager.execution.lease_expired`。升级前遗留或违反领取协议的无租约 `running` 记录按同一事务边界收敛为 `failed`，错误码固定为 `manager.execution.lease_missing`；合法 claim 原子写入运行态和完整租约，因此不会被该规则误判。带任务定义的 `pending` execution 若在领取时发现 owner 已删除、身份非法或不再指向该 execution，必须在领取事务内收敛为 `failed`，错误码固定为 `manager.execution.owner_unavailable`，不得反复领取并永久停留。用户显式重试必须创建新的 execution。某一 task type 只有在补齐稳定 operation identity、staging 和提交 fencing 并修订本规范后，才允许把过期 attempt 自动退回 `pending`。
 
 ## 核心对象
 
@@ -188,9 +190,9 @@ POST /api/v1/meta/lineage/executions/{execution_id}/collect
 
 ### Bounded execution 领取、租约和恢复契约
 
-Quality `check|materialization_gate`、Meta `scan`、Transfer `runtime.boundary=bounded` 和 Orchestrator 来源的 Develop `query` 必须遵守同一个公共所有权协议：
+Quality `check|materialization_gate`、Meta `scan`、Transfer `runtime.boundary=bounded`、Orchestrator 来源的 Develop `query` 和 Manager bounded execution 必须遵守同一个公共所有权协议：
 
-1. Worker 使用 PostgreSQL `FOR UPDATE SKIP LOCKED` 从 `common.task_executions` 领取本模块、task type、可选触发 `source` 和满足本模块授权前置条件的最早 `pending` execution。Develop Query Worker 固定领取 `module=develop + task_type=query + source=orchestrator`；`source=develop` 的查询工作台与 Develop 手动执行仍由 Backend 即时运行，二者不得竞争同一 execution。
+1. 合法执行方使用 PostgreSQL `FOR UPDATE SKIP LOCKED` 从 `common.task_executions` 领取本模块、task type、可选触发 `source` 和满足本模块授权前置条件的最早 `pending` execution。合法执行方可以是规范明确的独立 Worker，也可以是 owner Backend 内嵌监督器。Develop Query Worker 固定领取 `module=develop + task_type=query + source=orchestrator`；`source=develop` 的查询工作台与 Develop 手动执行仍由 Backend 即时运行，二者不得竞争同一 execution。
 2. claim 必须原子完成 `pending → running`、首次写入 `started_at`、递增 `attempt`、生成新的随机 `lease_token` 并写入 `lease_owner + lease_expires_at`。`lease_owner` 只用于观测，不能替代 token。
 3. 未取得 claim 的运行体必须 fail-closed；不得执行外部读取、写入、扫描、结果 reconcile 或进度更新。
 4. heartbeat、进度和终态写入必须同时匹配 `execution_id + status=running + attempt + lease_token`。租约过期、被新 attempt 接管或 token 不匹配的旧运行体必须停止，且任何迟到写回都必须被拒绝。

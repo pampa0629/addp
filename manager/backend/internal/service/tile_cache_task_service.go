@@ -311,6 +311,9 @@ func (s *TileCacheTaskService) RecordProgressEvent(ctx context.Context, tenantID
 	if exec.IsCompleted() {
 		return ErrTileCacheExecutionCompleted
 	}
+	if _, err := requireManagerExecutionLease(ctx, tenantID, executionID); err != nil {
+		return err
+	}
 
 	now := time.Now()
 	nextProgress := tileCacheEventProgressPercent(event, exec.Progress)
@@ -541,7 +544,7 @@ func (s *TileCacheTaskService) Execute(ctx context.Context, taskID uint, tenantI
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
-	claimedTask, err := s.tileCacheRepo.ClaimExecution(ctx, taskID, tenantID, exec, overwriteExistingResult)
+	_, err = s.tileCacheRepo.ClaimExecution(ctx, taskID, tenantID, exec, overwriteExistingResult)
 	if err != nil {
 		if errors.Is(err, repository.ErrExistingResultActionRequired) {
 			return "", ErrExistingResultActionRequired
@@ -555,7 +558,6 @@ func (s *TileCacheTaskService) Execute(ctx context.Context, taskID uint, tenantI
 		return "", err
 	}
 
-	go s.runTileCacheGeneration(context.Background(), claimedTask, executionID)
 	return executionID, nil
 }
 

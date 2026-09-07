@@ -6,6 +6,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"strings"
 
 	commonapi "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
@@ -16,6 +17,8 @@ import (
 )
 
 type RasterMosaicProgressEventRequest struct {
+	Attempt         int                  `json:"attempt"`
+	LeaseToken      string               `json:"lease_token"`
 	Phase           string               `json:"phase"`
 	Event           string               `json:"event"`
 	Message         string               `json:"message,omitempty"`
@@ -46,7 +49,7 @@ func (h *TaskProviderHandler) RecordRasterMosaicExecutionProgressEvent(c *gin.Co
 
 // RecordManagerExecutionProgressEvent godoc
 // @Summary      记录 Manager 执行进度事件 | Record Manager execution progress event
-// @Description  Runtime 使用 Tenant Service Access Token 上报受管派生产物执行的进度事件；租户只从 AuthContext 获取 | A runtime reports managed derived-artifact progress with a tenant service access token; tenant is read only from AuthContext
+// @Description  Runtime 使用 Tenant Service Access Token 上报受管派生产物执行的进度事件；租户只从 AuthContext 获取，且必须回传 Manager 下发的 attempt 与 lease_token | A runtime reports managed derived-artifact progress with a tenant service access token; tenant is read only from AuthContext, and the attempt and lease_token issued by Manager are required
 // @Tags         任务执行 | Task Execution
 // @Accept       json
 // @Produce      json
@@ -75,6 +78,19 @@ func (h *TaskProviderHandler) RecordManagerExecutionProgressEvent(c *gin.Context
 	}
 	executionID := c.Param("execution_id")
 	tenantID := auth.GetTenantID(c)
+	if req.Attempt <= 0 || strings.TrimSpace(req.LeaseToken) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":      "attempt 和 lease_token 必填",
+			"error_code": "invalid_execution_lease",
+		})
+		return
+	}
+	c.Request = c.Request.WithContext(commonExecution.ContextWithLease(c.Request.Context(), commonExecution.Lease{
+		ExecutionID: executionID,
+		TenantID:    int(tenantID),
+		Attempt:     req.Attempt,
+		Token:       strings.TrimSpace(req.LeaseToken),
+	}))
 	exec, err := h.taskExecRepo.GetByExecutionID(c.Request.Context(), executionID, int(tenantID))
 	if err != nil {
 		if errors.Is(err, commonapi.ErrNotFound) {
@@ -118,6 +134,8 @@ func (h *TaskProviderHandler) recordTileSetProgressEvent(c *gin.Context, tenantI
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		case errors.Is(err, service.ErrVectorTileSetExecutionCompleted):
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		case errors.Is(err, commonapi.ErrConflict):
+			writeExecutionLeaseConflict(c)
 		default:
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		}
@@ -152,6 +170,8 @@ func (h *TaskProviderHandler) recordRasterMosaicProgressEvent(c *gin.Context, te
 		case errors.Is(err, service.ErrRasterMosaicExecutionCompleted),
 			errors.Is(err, service.ErrRasterMosaicExecutionNotRunning):
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		case errors.Is(err, commonapi.ErrConflict):
+			writeExecutionLeaseConflict(c)
 		default:
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		}
@@ -190,6 +210,8 @@ func (h *TaskProviderHandler) recordTileCacheProgressEvent(c *gin.Context, tenan
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		case errors.Is(err, service.ErrTileCacheExecutionCompleted):
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		case errors.Is(err, commonapi.ErrConflict):
+			writeExecutionLeaseConflict(c)
 		default:
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		}
@@ -223,6 +245,8 @@ func (h *TaskProviderHandler) recordPointCloudCOPCProgressEvent(c *gin.Context, 
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		case errors.Is(err, service.ErrPointCloudCOPCExecutionNotRunning):
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		case errors.Is(err, commonapi.ErrConflict):
+			writeExecutionLeaseConflict(c)
 		default:
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		}
@@ -231,6 +255,13 @@ func (h *TaskProviderHandler) recordPointCloudCOPCProgressEvent(c *gin.Context, 
 	c.JSON(http.StatusAccepted, RasterMosaicProgressEventResponse{
 		ExecutionID: executionID,
 		Status:      "accepted",
+	})
+}
+
+func writeExecutionLeaseConflict(c *gin.Context) {
+	c.JSON(http.StatusConflict, gin.H{
+		"error":      "执行租约已失效",
+		"error_code": "execution_lease_conflict",
 	})
 }
 

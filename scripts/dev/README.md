@@ -111,7 +111,7 @@ SKIP_MODTIDY=1 bash scripts/dev/start.sh
 
 **日志位置**:
 - 所有日志: `logs/*.log`
-- 示例: `logs/system-backend.log`, `logs/manager-backend.log`, `logs/manager-bounded-worker.log`, `logs/transfer-bounded-worker.log`, `logs/transfer-continuous-worker.log`, `logs/develop-query-worker.log`
+- 示例: `logs/system-backend.log`, `logs/manager-backend.log`, `logs/transfer-bounded-worker.log`, `logs/transfer-continuous-worker.log`, `logs/develop-query-worker.log`
 
 **PID 文件**:
 - 所有 PID: `.dev-pids/*.pid`

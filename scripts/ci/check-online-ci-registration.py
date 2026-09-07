@@ -505,7 +505,7 @@ def validate_oceanbase_consumer_flow_profile(
     )
     required_fragments = (
         "oceanbase-consumer-flow)",
-        "SYSTEM_URL GATEWAY_URL META_URL TRANSFER_URL DEVELOP_URL SERVICE_URL",
+        "SYSTEM_URL GATEWAY_URL META_URL MANAGER_URL TRANSFER_URL DEVELOP_URL SERVICE_URL",
         "ADDP_ONLINE_OCEANBASE_ENGINE_ID",
         "ADDP_ONLINE_OCEANBASE_PORT",
         "ADDP_ONLINE_OCEANBASE_DATABASE",
@@ -558,6 +558,8 @@ def validate_oceanbase_consumer_flow_profile(
         '"start": "committed"',
         '"end": "execution_upper_bound"',
         '"apply_mode": "upsert"',
+        '"manager.data_item.read"',
+        "/api/v1/manager/preview",
         "/api/v1/develop/executions",
         "/api/query/",
         "advance_fixture()",

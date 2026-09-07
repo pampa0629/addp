@@ -154,6 +154,8 @@ def test_progress_callback_is_separate_from_access_plan(tmp_path, monkeypatch):
                 "endpoint": "http://manager/api/v1/manager/executions/exec-1/events",
                 "tenant_id": 7,
                 "execution_id": "exec-1",
+                "attempt": 2,
+                "lease_token": "lease-token",
             },
         },
         runner=fake_runner,
@@ -168,6 +170,8 @@ def test_progress_callback_is_separate_from_access_plan(tmp_path, monkeypatch):
     assert all(item["headers"].get("Authorization") == "Bearer addp_at_pointcloud" for item in posted)
     assert all("X-internal-api-key" not in item["headers"] for item in posted)
     assert all("X-tenant-id" not in item["headers"] for item in posted)
+    assert all(item["payload"]["attempt"] == 2 for item in posted)
+    assert all(item["payload"]["lease_token"] == "lease-token" for item in posted)
 
 
 def test_container_runtime_rewrites_localhost_object_store_endpoints_before_stage_and_publish(tmp_path, monkeypatch):

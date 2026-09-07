@@ -763,6 +763,8 @@ VECTOR_TO_PMTILES_METADATA = OperatorMetadata(
                     "endpoint": "http://manager:8081/api/v1/manager/executions/{execution_id}/events",
                     "tenant_id": 7,
                     "execution_id": "execution-uuid",
+                    "attempt": 1,
+                    "lease_token": "attempt-scoped-lease-token",
                 },
             },
             "tile": {

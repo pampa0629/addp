@@ -100,6 +100,50 @@ class OceanBaseConsumerFlowOnlineTest(unittest.TestCase):
         with self.assertRaisesRegex(ONLINE.SuiteError, "engine_type=oceanbase"):
             ONLINE.validate_engine(client, 17, ONLINE.time.monotonic() + 1)
 
+    def test_manager_preview_uses_locator_and_requires_expected_schema(self) -> None:
+        client = Mock()
+        client.request.return_value = ONLINE.SUPPORT.Response(
+            200,
+            {
+                "preview_type": "table",
+                "data": {
+                    "columns": [
+                        "id",
+                        "item_code",
+                        "quantity",
+                        "amount",
+                        "updated_at",
+                    ],
+                    "rows": [
+                        {
+                            "id": 1,
+                            "item_code": "OB-1001",
+                            "quantity": 2,
+                            "amount": "19.90",
+                            "updated_at": "2026-09-06T10:00:00Z",
+                        }
+                    ],
+                },
+            },
+        )
+
+        rows = ONLINE.manager_rows(client, "addp://engine/47/path/db/table")
+
+        self.assertEqual(rows[0]["item_code"], "OB-1001")
+        request_path = client.request.call_args.args[1]
+        self.assertIn("/api/v1/manager/preview?", request_path)
+        self.assertIn("locator=addp%3A%2F%2Fengine%2F47%2Fpath%2Fdb%2Ftable", request_path)
+
+        client.request.return_value = ONLINE.SUPPORT.Response(
+            200,
+            {
+                "preview_type": "table",
+                "data": {"columns": ["id"], "rows": []},
+            },
+        )
+        with self.assertRaisesRegex(ONLINE.SuiteError, "unexpected columns"):
+            ONLINE.manager_rows(client, "addp://engine/47/path/db/table")
+
     def test_cleanup_service_confirms_the_resource_is_absent(self) -> None:
         client = Mock()
         client.request.side_effect = [

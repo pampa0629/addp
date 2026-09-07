@@ -222,7 +222,7 @@ func (s *PointCloudCOPCTaskService) Execute(ctx context.Context, taskID uint, te
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
-	claimedTask, err := s.repo.ClaimExecution(ctx, taskID, tenantID, exec, overwriteExistingResult)
+	_, err = s.repo.ClaimExecution(ctx, taskID, tenantID, exec, overwriteExistingResult)
 	if err != nil {
 		if errors.Is(err, repository.ErrExistingResultActionRequired) {
 			return "", ErrExistingResultActionRequired
@@ -236,7 +236,6 @@ func (s *PointCloudCOPCTaskService) Execute(ctx context.Context, taskID uint, te
 		return "", err
 	}
 
-	go s.runPointCloudCOPCGeneration(context.Background(), claimedTask, executionID)
 	return executionID, nil
 }
 
@@ -271,6 +270,9 @@ func (s *PointCloudCOPCTaskService) RecordProgressEvent(ctx context.Context, ten
 	if exec.Status != commonExecution.ExecutionStatusRunning {
 		return ErrPointCloudCOPCExecutionNotRunning
 	}
+	if _, err := requireManagerExecutionLease(ctx, tenantID, executionID); err != nil {
+		return err
+	}
 
 	now := time.Now()
 	nextProgress := pointCloudCOPCProgressPercent(event, exec.Progress)
@@ -290,11 +292,7 @@ func (s *PointCloudCOPCTaskService) RecordProgressEvent(ctx context.Context, ten
 	if elapsedMs >= 0 {
 		fields["execution_time_ms"] = elapsedMs
 	}
-	if err := s.repo.UpdateRunningExecutionProgress(ctx, tenantID, executionID, fields); errors.Is(err, commonAPI.ErrConflict) {
-		return ErrPointCloudCOPCExecutionNotRunning
-	} else {
-		return err
-	}
+	return s.repo.UpdateRunningExecutionProgress(ctx, tenantID, executionID, fields)
 }
 
 func (s *PointCloudCOPCTaskService) runPointCloudCOPCGeneration(ctx context.Context, task *models.PointCloudCOPCTask, executionID string) {

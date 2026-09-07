@@ -123,6 +123,15 @@ func (e *ManagerVectorTileCacheWorkflowExecutor) GenerateVectorTileCache(ctx con
 	if sourceSRID > 0 {
 		tile["source_srs"] = fmt.Sprintf("EPSG:%d", sourceSRID)
 	}
+	progressCallback, err := managerExecutionProgressCallback(
+		ctx,
+		e.managerBaseURL+"/api/v1/manager/executions/"+strings.TrimSpace(req.ExecutionID)+"/events",
+		req.Task.TenantID,
+		req.ExecutionID,
+	)
+	if err != nil {
+		return nil, nil, err
+	}
 	invokeResult, err := dbbridge.InvokeOperator(ctx, &workflowEngine, workflowOperator.Name, plugin.OperatorInvokeRequest{
 		Params: map[string]interface{}{
 			"access_plan": commonModels.JSONMap{
@@ -143,11 +152,7 @@ func (e *ManagerVectorTileCacheWorkflowExecutor) GenerateVectorTileCache(ctx con
 					"storage_ref": req.StorageRef,
 					"gdal_env":    targetEnv,
 				},
-				"progress_callback": commonModels.JSONMap{
-					"endpoint":     e.managerBaseURL + "/api/v1/manager/executions/" + strings.TrimSpace(req.ExecutionID) + "/events",
-					"tenant_id":    req.Task.TenantID,
-					"execution_id": strings.TrimSpace(req.ExecutionID),
-				},
+				"progress_callback": progressCallback,
 			},
 			"tile":    tile,
 			"options": req.Options.Clone(),

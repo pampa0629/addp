@@ -166,7 +166,7 @@ export_images() {
         "agent-backend" "model-backend" "quality-backend" "security-backend" "asset-backend" "catalog-backend" "workbench-backend" "portal-backend" "graph-backend" "inference-backend"
         "gateway"
         # Worker services
-        "manager-bounded-worker" "meta-worker" "quality-worker" "security-worker" "transfer-bounded-worker" "transfer-continuous-worker" "develop-query-worker"
+        "meta-worker" "quality-worker" "security-worker" "transfer-bounded-worker" "transfer-continuous-worker" "develop-query-worker"
         # Engine/runtime services
         "geopython-workflow-engine" "raster-mosaic-runtime" "model3d-workflow-engine"
         "pointcloud-workflow-engine" "spark-workflow-engine" "jupyter-engine" "duckdb-engine"

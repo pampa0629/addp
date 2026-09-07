@@ -16,6 +16,7 @@ import (
 func TestPPTXPDFExecutionUsesLeaseAndRejectsLateCompletion(t *testing.T) {
 	db := newPPTXPDFExecutionLeaseTestDB(t)
 	repo := NewPPTXPDFRepository(db)
+	queue := NewBoundedExecutionQueueRepository(db)
 	task := createPPTXPDFExecutionLeaseTestTask(t, db, 7)
 	createdAt := time.Now().UTC()
 	execution := newManagerRepositoryTestExecution(
@@ -25,18 +26,18 @@ func TestPPTXPDFExecutionUsesLeaseAndRejectsLateCompletion(t *testing.T) {
 		t.Fatalf("enqueue PPTX execution: %v", err)
 	}
 
-	claimedExecution, lease, claimedTask, err := repo.ClaimPendingExecution(
-		context.Background(), "pptx-worker-1", createdAt.Add(time.Second), 30*time.Second,
+	claimedExecution, lease, err := queue.ClaimNext(
+		context.Background(), commonExecution.TaskTypePPTXPDFGeneration, "manager-backend-1", createdAt.Add(time.Second), 30*time.Second,
 	)
 	if err != nil {
 		t.Fatalf("claim pending PPTX execution: %v", err)
 	}
-	if claimedExecution == nil || lease == nil || claimedTask == nil {
-		t.Fatalf("claim = execution %#v lease %#v task %#v", claimedExecution, lease, claimedTask)
+	if claimedExecution == nil || lease == nil {
+		t.Fatalf("claim = execution %#v lease %#v", claimedExecution, lease)
 	}
 	if claimedExecution.ExecutionID != execution.ExecutionID || claimedExecution.Status != commonExecution.ExecutionStatusRunning ||
-		claimedExecution.Attempt != 1 || lease.Token == "" || claimedTask.ID != task.ID {
-		t.Fatalf("claimed execution = %#v lease = %#v task = %#v", claimedExecution, lease, claimedTask)
+		claimedExecution.Attempt != 1 || lease.Token == "" {
+		t.Fatalf("claimed execution = %#v lease = %#v", claimedExecution, lease)
 	}
 
 	completedAt := createdAt.Add(2 * time.Second)
@@ -57,6 +58,7 @@ func TestPPTXPDFExecutionUsesLeaseAndRejectsLateCompletion(t *testing.T) {
 func TestPPTXPDFExpiredLeaseFailsExecutionTaskAndBuildingResult(t *testing.T) {
 	db := newPPTXPDFExecutionLeaseTestDB(t)
 	repo := NewPPTXPDFRepository(db)
+	queue := NewBoundedExecutionQueueRepository(db)
 	task := createPPTXPDFExecutionLeaseTestTask(t, db, 8)
 	createdAt := time.Date(2026, 9, 6, 9, 0, 0, 0, time.UTC)
 	execution := newManagerRepositoryTestExecution(
@@ -65,8 +67,8 @@ func TestPPTXPDFExpiredLeaseFailsExecutionTaskAndBuildingResult(t *testing.T) {
 	if _, err := repo.ClaimExecution(context.Background(), task.ID, task.TenantID, execution, false); err != nil {
 		t.Fatalf("enqueue PPTX execution: %v", err)
 	}
-	_, lease, _, err := repo.ClaimPendingExecution(
-		context.Background(), "pptx-worker-1", createdAt.Add(time.Second), 30*time.Second,
+	_, lease, err := queue.ClaimNext(
+		context.Background(), commonExecution.TaskTypePPTXPDFGeneration, "manager-backend-1", createdAt.Add(time.Second), 30*time.Second,
 	)
 	if err != nil || lease == nil {
 		t.Fatalf("claim pending PPTX execution lease = %#v error = %v", lease, err)
@@ -82,7 +84,7 @@ func TestPPTXPDFExpiredLeaseFailsExecutionTaskAndBuildingResult(t *testing.T) {
 		t.Fatalf("create building PPTX result: %v", err)
 	}
 
-	recovered, err := repo.RecoverExpiredExecutions(context.Background(), createdAt.Add(32*time.Second), 100)
+	recovered, err := queue.RecoverExpired(context.Background(), createdAt.Add(32*time.Second), 100)
 	if err != nil {
 		t.Fatalf("recover expired PPTX execution: %v", err)
 	}
@@ -94,7 +96,70 @@ func TestPPTXPDFExpiredLeaseFailsExecutionTaskAndBuildingResult(t *testing.T) {
 		t.Fatalf("load recovered execution: %v", err)
 	}
 	if storedExecution.Status != commonExecution.ExecutionStatusFailed || storedExecution.LeaseToken != nil ||
-		storedExecution.ErrorDetails["code"] != "manager.pptx_pdf.lease_expired" {
+		storedExecution.ErrorDetails["code"] != "manager.execution.lease_expired" {
+		t.Fatalf("recovered execution = %#v", storedExecution)
+	}
+	var storedTask models.PPTXPDFTask
+	if err := db.First(&storedTask, task.ID).Error; err != nil {
+		t.Fatalf("load recovered task: %v", err)
+	}
+	if storedTask.LastExecutionStatus == nil || *storedTask.LastExecutionStatus != commonExecution.ExecutionStatusFailed {
+		t.Fatalf("recovered task status = %v", storedTask.LastExecutionStatus)
+	}
+	var storedResult models.PPTXPDF
+	if err := db.First(&storedResult, result.ID).Error; err != nil {
+		t.Fatalf("load recovered result: %v", err)
+	}
+	if storedResult.Status != models.PPTXPDFStatusFailed || storedResult.ErrorMessage == "" {
+		t.Fatalf("recovered result = %#v", storedResult)
+	}
+}
+
+func TestPPTXPDFUnleasedRunningExecutionFailsExecutionTaskAndBuildingResult(t *testing.T) {
+	db := newPPTXPDFExecutionLeaseTestDB(t)
+	repo := NewPPTXPDFRepository(db)
+	queue := NewBoundedExecutionQueueRepository(db)
+	task := createPPTXPDFExecutionLeaseTestTask(t, db, 9)
+	startedAt := time.Date(2026, 9, 6, 10, 0, 0, 0, time.UTC)
+	execution := newManagerRepositoryTestExecution(
+		"manager-pptx-unleased-1", int(task.TenantID), commonExecution.TaskTypePPTXPDFGeneration, startedAt.Add(-time.Second),
+	)
+	if _, err := repo.ClaimExecution(context.Background(), task.ID, task.TenantID, execution, false); err != nil {
+		t.Fatalf("enqueue PPTX execution: %v", err)
+	}
+	if err := db.Model(&commonExecution.TaskExecution{}).
+		Where("execution_id = ?", execution.ExecutionID).
+		Updates(map[string]interface{}{"status": commonExecution.ExecutionStatusRunning, "started_at": startedAt}).Error; err != nil {
+		t.Fatalf("make legacy unleased execution running: %v", err)
+	}
+	if err := db.Model(&models.PPTXPDFTask{}).
+		Where("id = ?", task.ID).
+		Update("last_execution_status", commonExecution.ExecutionStatusRunning).Error; err != nil {
+		t.Fatalf("make legacy task summary running: %v", err)
+	}
+	result := &models.PPTXPDF{
+		TenantID: task.TenantID, ItemFingerprint: task.ItemFingerprint, ArtifactVariant: models.PPTXPDFArtifactVariant,
+		SourceVersion: task.SourceVersion, SourceEngineID: task.SourceEngineID, ItemID: task.ItemID,
+		Locator: task.Locator, TaskID: &task.ID, LastExecutionID: &execution.ExecutionID,
+		StorageRef: "object-store-ref", FileName: "slides.pdf", Status: models.PPTXPDFStatusBuilding,
+		Metadata: commonModels.JSONMap{},
+	}
+	if err := repo.CreateResult(context.Background(), result); err != nil {
+		t.Fatalf("create building PPTX result: %v", err)
+	}
+
+	recovered, err := queue.RecoverUnleased(context.Background(), startedAt.Add(time.Minute), 100)
+	if err != nil {
+		t.Fatalf("recover unleased PPTX execution: %v", err)
+	}
+	if recovered != 1 {
+		t.Fatalf("recovered executions = %d, want 1", recovered)
+	}
+	var storedExecution commonExecution.TaskExecution
+	if err := db.Where("execution_id = ?", execution.ExecutionID).First(&storedExecution).Error; err != nil {
+		t.Fatalf("load recovered execution: %v", err)
+	}
+	if storedExecution.Status != commonExecution.ExecutionStatusFailed || storedExecution.ErrorDetails["code"] != managerLeaseMissingCode {
 		t.Fatalf("recovered execution = %#v", storedExecution)
 	}
 	var storedTask models.PPTXPDFTask

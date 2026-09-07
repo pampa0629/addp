@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import JSZip from 'jszip'
 
 const ENGINE = {
   id: 12,
@@ -16,14 +17,34 @@ const WORD_BINARY = readFileSync(resolve(
   import.meta.dirname,
   '../../../business/nfs/data/doc/wps.wps'
 ))
-const DOCX_BINARY = readFileSync(resolve(
-  import.meta.dirname,
-  '../../../docs/books/数据治理100问/发布稿/分篇DOCX/000-为什么要写这本书.docx'
-))
+const DOCX_BINARY = await createDocxFixture()
 const RTF_BINARY = Buffer.from(
   String.raw`{\rtf1\ansi\ansicpg936 \'d6\'d0\'d0\'c5\'b3\'f6\'b0\'e6\'c9\'e7\'ba\'cf\'bc\'af.txt\par \u21019?\u19994?\u22312?\u36335?\u19978?.epub}`,
   'ascii'
 )
+
+async function createDocxFixture() {
+  const archive = new JSZip()
+  archive.file('[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>`)
+  archive.folder('_rels').file('.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`)
+  archive.folder('word').file('document.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p><w:r><w:t>数据治理100问</w:t></w:r></w:p>
+    <w:p><w:r><w:t>为什么要写《数据治理100问》</w:t></w:r></w:p>
+    <w:sectPr/>
+  </w:body>
+</w:document>`)
+  return archive.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
+}
 
 const CASES = [
   {

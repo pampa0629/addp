@@ -26,7 +26,8 @@ func TestVectorTileSetRecordProgressEventUpdatesExecution(t *testing.T) {
 	}
 	svc := NewVectorTileSetTaskService(repository.NewVectorTileSetRepository(db), taskExecRepo)
 	overallProgress := 42.4
-	if err := svc.RecordProgressEvent(context.Background(), 7, "vector-tile-set-progress-1", TileCacheProgressEvent{
+	leaseCtx := leaseStoredManagerExecutionForServiceTest(t, db, "vector-tile-set-progress-1", 7)
+	if err := svc.RecordProgressEvent(leaseCtx, 7, "vector-tile-set-progress-1", TileCacheProgressEvent{
 		Phase: "publish", Event: "progress", Message: "生成矢量瓦片缓存", CurrentZoom: 10, MaxZoom: 12,
 		TilesProcessed: 18, TilesTotalEstimate: 40, OverallProgress: &overallProgress,
 	}); err != nil {

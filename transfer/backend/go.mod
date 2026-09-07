@@ -17,6 +17,7 @@ require (
 	github.com/twmb/franz-go v1.20.1
 	github.com/twmb/franz-go/pkg/kadm v1.17.1
 	github.com/twpayne/go-geom v1.6.1
+	go.mongodb.org/mongo-driver v1.11.4
 	gorm.io/driver/sqlite v1.6.0
 	gorm.io/gorm v1.31.2
 )
@@ -80,7 +81,6 @@ require (
 	github.com/xwb1989/sqlparser v0.0.0-20180606152119-120387863bf2 // indirect
 	github.com/youmark/pkcs8 v0.0.0-20181117223130-1be2e3e5546d // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
-	go.mongodb.org/mongo-driver v1.11.4 // indirect
 	go.opentelemetry.io/otel v1.39.0 // indirect
 	go.opentelemetry.io/otel/trace v1.39.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect

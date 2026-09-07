@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	commonAPI "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
 	commonInference "github.com/addp/common/inference"
 	commonModels "github.com/addp/common/models"
@@ -104,20 +105,19 @@ func (s *EmbeddingTaskService) Execute(ctx context.Context, taskID uint, tenantI
 	executionID := uuid.New().String()
 	now := time.Now()
 
-	executionConfig, req, err := s.embeddingTaskExecutionConfig(ctx, task)
+	executionConfig, _, err := s.embeddingTaskExecutionConfig(ctx, task)
 	if err != nil {
-		if createErr := s.createFailedEmbeddingTaskExecution(ctx, task, executionID, normalizedTriggerType, normalizedSource, parentExecutionID, now, err); createErr != nil {
+		if createErr := s.createFailedEmbeddingTaskExecution(ctx, task, executionID, normalizedTriggerType, normalizedSource, parentExecutionID, now, nil, err); createErr != nil {
 			return "", createErr
 		}
 		return executionID, nil
 	}
-	var runtime EffectiveEmbeddingConfiguration
 	var binding ResolvedInferenceScenarioBinding
 	var profile *commonInference.ResolveProfileResponse
 	if s.embeddingService != nil {
-		runtime, binding, profile, err = s.embeddingService.runtimeSnapshot(ctx, tenantID)
+		_, binding, profile, err = s.embeddingService.runtimeSnapshot(ctx, tenantID)
 		if err != nil {
-			if createErr := s.createFailedEmbeddingTaskExecution(ctx, task, executionID, normalizedTriggerType, normalizedSource, parentExecutionID, now, err); createErr != nil {
+			if createErr := s.createFailedEmbeddingTaskExecution(ctx, task, executionID, normalizedTriggerType, normalizedSource, parentExecutionID, now, executionConfig, err); createErr != nil {
 				return "", createErr
 			}
 			return executionID, nil
@@ -130,6 +130,12 @@ func (s *EmbeddingTaskService) Execute(ctx context.Context, taskID uint, tenantI
 			"binding_version": binding.BindingVersion,
 		}
 	}
+	if s.embeddingService == nil {
+		if createErr := s.createFailedEmbeddingTaskExecution(ctx, task, executionID, normalizedTriggerType, normalizedSource, parentExecutionID, now, executionConfig, errors.New(models.EmbeddingReasonEmbeddingServiceNil)); createErr != nil {
+			return "", createErr
+		}
+		return executionID, nil
+	}
 
 	exec := &commonExecution.TaskExecution{
 		ExecutionID:       executionID,
@@ -140,63 +146,21 @@ func (s *EmbeddingTaskService) Execute(ctx context.Context, taskID uint, tenantI
 		SourceTaskID:      commonExecution.NewSourceTaskIDFromUint(taskID),
 		SourceTaskName:    &task.Name,
 		ParentExecutionID: parentExecutionID,
-		Status:            commonExecution.ExecutionStatusRunning,
+		Status:            commonExecution.ExecutionStatusPending,
 		TriggerType:       normalizedTriggerType,
 		ExecutionConfig:   executionConfig,
-		StartedAt:         &now,
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
-	if err := s.taskExecRepo.Create(ctx, exec); err != nil {
+	if err := s.embeddingRepo.ClaimTaskExecution(ctx, taskID, tenantID, exec); err != nil {
+		if errors.Is(err, commonAPI.ErrNotFound) {
+			return "", ErrTaskNotFound
+		}
+		if errors.Is(err, commonAPI.ErrConflict) {
+			return "", ErrTaskExecutionBusy
+		}
 		return "", err
 	}
-	if s.embeddingService == nil {
-		failedAt := time.Now()
-		errDetails := commonModels.JSONMap{"message": models.EmbeddingReasonEmbeddingServiceNil}
-		if err := s.taskExecRepo.UpdateFields(ctx, executionID, int(tenantID), map[string]interface{}{
-			"status":        commonExecution.ExecutionStatusFailed,
-			"error_details": errDetails,
-			"completed_at":  failedAt,
-			"updated_at":    failedAt,
-		}); err != nil {
-			return "", err
-		}
-		if err := s.embeddingRepo.UpdateEmbeddingTaskLastExecution(ctx, taskID, executionID, commonExecution.ExecutionStatusFailed, failedAt); err != nil {
-			return "", err
-		}
-		return executionID, nil
-	}
-
-	// 异步执行，不阻塞返回
-	go func() {
-		bgCtx := context.Background()
-		result, execErr := s.embeddingService.RunEmbeddingExecution(bgCtx, tenantID, req, &EmbeddingExecutionContext{
-			ExecutionID: executionID,
-			TenantID:    int(tenantID),
-			StartedAt:   now,
-			Config:      executionConfig,
-			Runtime:     runtime,
-			Binding:     binding,
-			Profile:     *profile,
-			client:      s.embeddingService.inferenceClient,
-		})
-
-		status := commonExecution.ExecutionStatusSuccess
-		var errDetails commonModels.JSONMap
-
-		if execErr != nil {
-			status = commonExecution.ExecutionStatusFailed
-			errDetails = commonModels.JSONMap{"message": execErr.Error()}
-		}
-
-		metadata := statsToJSONMap(result)
-		if status == commonExecution.ExecutionStatusSuccess {
-			metadata = managerEmbeddingExecutionLineage(metadata, executionConfig)
-		}
-		s.embeddingService.finishExecution(bgCtx, executionID, int(tenantID), status, now, errDetails, metadata)
-
-		// 回写任务定义
-		completedAt := time.Now()
-		s.embeddingRepo.UpdateEmbeddingTaskLastExecution(bgCtx, taskID, executionID, status, completedAt)
-	}()
 
 	return executionID, nil
 }
@@ -209,6 +173,7 @@ func (s *EmbeddingTaskService) createFailedEmbeddingTaskExecution(
 	source string,
 	parentExecutionID *string,
 	startedAt time.Time,
+	executionConfig commonModels.JSONMap,
 	execErr error,
 ) error {
 	if task == nil {
@@ -219,9 +184,11 @@ func (s *EmbeddingTaskService) createFailedEmbeddingTaskExecution(
 	}
 	completedAt := time.Now()
 	durationMs := completedAt.Sub(startedAt).Milliseconds()
-	executionConfig := task.Config.Clone()
 	if executionConfig == nil {
-		executionConfig = commonModels.JSONMap{}
+		executionConfig = task.Config.Clone()
+		if executionConfig == nil {
+			executionConfig = commonModels.JSONMap{}
+		}
 	}
 
 	exec := &commonExecution.TaskExecution{
@@ -256,6 +223,17 @@ func (s *EmbeddingTaskService) embeddingTaskExecutionConfig(ctx context.Context,
 	}
 	target, _ := embeddingTaskTargetConfig(task.Config)
 	scope := stringFromConfig(target["scope"])
+	targetSnapshot := target.Clone()
+	delete(targetSnapshot, "scope")
+	executionConfig := commonModels.JSONMap{
+		"entry": "task", "scope": scope, "target": targetSnapshot,
+	}
+	if filters, ok := asJSONMap(task.Config["filters"]); ok {
+		executionConfig["filters"] = filters.Clone()
+	}
+	if embedding, ok := asJSONMap(task.Config["embedding"]); ok {
+		executionConfig["embedding"] = embedding.Clone()
+	}
 	req := EmbeddingExecutionRequest{
 		Scope: EmbeddingExecutionScope(scope),
 		Target: EmbeddingExecutionTarget{
@@ -265,9 +243,9 @@ func (s *EmbeddingTaskService) embeddingTaskExecutionConfig(ctx context.Context,
 			Locator:   stringFromConfig(target["locator"]),
 			Recursive: boolFromConfig(target["recursive"], true),
 		},
-		Config: task.Config.Clone(),
+		Config: executionConfig.Clone(),
 	}
-	return task.Config.Clone(), req, nil
+	return executionConfig, req, nil
 }
 
 func (s *EmbeddingTaskService) prepareEmbeddingTaskDefinition(ctx context.Context, task *models.EmbeddingTask) error {

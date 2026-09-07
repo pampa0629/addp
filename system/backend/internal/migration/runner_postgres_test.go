@@ -3372,7 +3372,7 @@ func assertSecurityModuleRuntimeConstraints(t *testing.T, db *sql.DB, hasMetaFac
 	expectedSecurityPermissions, expectedGovernancePermissions := 21, 19
 	expectedTenantRuntime := 0
 	if hasMetaFactsRuntime {
-		expectedSecurityPermissions, expectedGovernancePermissions, expectedTenantRuntime = 34, 32, 1
+		expectedSecurityPermissions, expectedGovernancePermissions, expectedTenantRuntime = 39, 37, 1
 	}
 	if permissionCount != expectedSecurityPermissions || retiredStandardPermissionCount != 4 || retiredStandardRolePermissionCount != 0 || runtimeRoleCount != 1 ||
 		principalCount != 1 || clientCount != 1 || assignmentCount != 1 ||
@@ -3991,8 +3991,8 @@ func assertAuthorizationCatalogRetirement(t *testing.T, db *sql.DB) {
 	`).Scan(&activePermissionCount, &disabledPermissionCount); err != nil {
 		t.Fatalf("read retired Permission counts: %v", err)
 	}
-	if activePermissionCount < 345 || disabledPermissionCount != 74 {
-		t.Fatalf("Permission status counts = active:%d disabled:%d, want at least 345 and exactly 74", activePermissionCount, disabledPermissionCount)
+	if activePermissionCount < 345 || disabledPermissionCount != 76 {
+		t.Fatalf("Permission status counts = active:%d disabled:%d, want at least 345 and exactly 76", activePermissionCount, disabledPermissionCount)
 	}
 
 	var disabledRoles string

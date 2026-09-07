@@ -115,6 +115,7 @@ class LocalMacOSCiTest(unittest.TestCase):
             esac
             """,
         )
+        self._executable("uname", "#!/bin/bash\nprintf 'Darwin\\n'\n")
         self._executable(
             "node",
             """

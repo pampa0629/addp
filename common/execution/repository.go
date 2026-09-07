@@ -33,6 +33,12 @@ func (r *TaskExecutionRepository) Update(ctx context.Context, exec *TaskExecutio
 
 // UpdateFields 部分更新字段
 func (r *TaskExecutionRepository) UpdateFields(ctx context.Context, executionID string, tenantID int, fields map[string]interface{}) error {
+	if lease, ok := LeaseFromContext(ctx); ok {
+		if lease.ExecutionID != executionID || lease.TenantID != tenantID {
+			return fmt.Errorf("%w: execution lease does not match execution_id=%s tenant_id=%d", commonapi.ErrConflict, executionID, tenantID)
+		}
+		return UpdateWithLease(ctx, r.db, lease, fields)
+	}
 	result := r.db.WithContext(ctx).
 		Model(&TaskExecution{}).
 		Where("execution_id = ? AND tenant_id = ?", executionID, tenantID).

@@ -556,7 +556,21 @@ func TestTaskExecuteModel3DTilesRequiresConfirmationForExistingResult(t *testing
 	if err := json.Unmarshal(first.Body.Bytes(), &accepted); err != nil {
 		t.Fatalf("decode first response: %v", err)
 	}
-	waitForTaskProviderExecutionCompletion(t, taskExecRepo, accepted.ExecutionID, 1)
+	queue := repository.NewBoundedExecutionQueueRepository(db)
+	claimed, lease, err := queue.ClaimNext(
+		context.Background(), commonExecution.TaskTypeModel3DTilesGeneration,
+		"manager-api-test", time.Now().UTC(), time.Minute,
+	)
+	if err != nil || claimed == nil || lease == nil {
+		t.Fatalf("claim first model3d tiles execution = %#v lease = %#v error = %v", claimed, lease, err)
+	}
+	dispatcher := service.NewBoundedExecutionDispatcher(
+		nil, nil, nil, nil, nil, nil, handler.model3DTilesTaskSvc,
+		nil, nil, nil, nil, nil, nil,
+	)
+	if err := dispatcher.RunClaimedExecution(context.Background(), claimed, *lease); err != nil {
+		t.Fatalf("dispatch first model3d tiles execution: %v", err)
+	}
 
 	var countBefore int64
 	if err := db.Model(&commonExecution.TaskExecution{}).Count(&countBefore).Error; err != nil {
@@ -607,7 +621,6 @@ func TestTaskExecuteModel3DTilesRequiresConfirmationForExistingResult(t *testing
 	if overwriteResponse.ExecutionID == "" || overwriteResponse.Status != commonExecution.ExecutionStatusPending || overwriteResponse.ExecutionID == accepted.ExecutionID {
 		t.Fatalf("overwrite response = %#v", overwriteResponse)
 	}
-	waitForTaskProviderExecutionCompletion(t, taskExecRepo, overwriteResponse.ExecutionID, 1)
 	overwriteExecution, err := taskExecRepo.GetByExecutionID(context.Background(), overwriteResponse.ExecutionID, 1)
 	if err != nil {
 		t.Fatalf("load scheduled overwrite execution: %v", err)
@@ -635,19 +648,6 @@ func executeTaskProviderRequest(t *testing.T, router *gin.Engine, path, body str
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 	return w
-}
-
-func waitForTaskProviderExecutionCompletion(t *testing.T, repo *commonExecution.TaskExecutionRepository, executionID string, tenantID int) {
-	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		exec, err := repo.GetByExecutionID(context.Background(), executionID, tenantID)
-		if err == nil && exec.IsCompleted() {
-			return
-		}
-		time.Sleep(time.Millisecond)
-	}
-	t.Fatalf("execution %s did not complete", executionID)
 }
 
 func TestTaskExecuteTileCacheReturnsPendingAndRejectsActiveExecution(t *testing.T) {
@@ -689,27 +689,6 @@ func TestTaskExecuteTileCacheReturnsPendingAndRejectsActiveExecution(t *testing.
 	}
 	if accepted.ExecutionID == "" || accepted.Status != commonExecution.ExecutionStatusPending {
 		t.Fatalf("first execute response = %#v, want pending execution", accepted)
-	}
-
-	// The in-process worker may finish immediately because no generator is configured.
-	// Create a deterministic pending execution to verify the public conflict mapping.
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		exec, err := taskExecRepo.GetByExecutionID(context.Background(), accepted.ExecutionID, 1)
-		if err == nil && exec.IsCompleted() {
-			break
-		}
-		time.Sleep(time.Millisecond)
-	}
-	pendingID := "manager-api-active-execution"
-	pending := &commonExecution.TaskExecution{
-		ExecutionID: pendingID, TenantID: 1, Module: commonExecution.ModuleManager,
-		TaskType: commonExecution.TaskTypeVectorTileCacheGeneration, Source: commonExecution.ModuleManager,
-		Status: commonExecution.ExecutionStatusPending, TriggerType: commonExecution.TriggerTypeManual,
-		CreatedAt: time.Now(), UpdatedAt: time.Now(),
-	}
-	if _, err := tileCacheRepo.ClaimExecution(context.Background(), task.ID, task.TenantID, pending, false); err != nil {
-		t.Fatalf("claim deterministic pending execution: %v", err)
 	}
 
 	second := httptest.NewRecorder()
@@ -758,24 +737,6 @@ func TestTaskExecuteRasterCOGReturnsPendingAndRejectsActiveExecution(t *testing.
 		t.Fatalf("first execute response = %#v, want pending execution", accepted)
 	}
 
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		exec, err := taskExecRepo.GetByExecutionID(context.Background(), accepted.ExecutionID, 1)
-		if err == nil && exec.IsCompleted() {
-			break
-		}
-		time.Sleep(time.Millisecond)
-	}
-	pending := &commonExecution.TaskExecution{
-		ExecutionID: "manager-api-raster-cog-active", TenantID: 1, Module: commonExecution.ModuleManager,
-		TaskType: commonExecution.TaskTypeRasterCOGGeneration, Source: commonExecution.ModuleManager,
-		Status: commonExecution.ExecutionStatusPending, TriggerType: commonExecution.TriggerTypeManual,
-		CreatedAt: time.Now(), UpdatedAt: time.Now(),
-	}
-	if _, err := cogRepo.ClaimExecution(context.Background(), task.ID, task.TenantID, pending, false); err != nil {
-		t.Fatalf("claim deterministic pending execution: %v", err)
-	}
-
 	second := httptest.NewRecorder()
 	router.ServeHTTP(second, httptest.NewRequest(http.MethodPost, path, nil))
 	if second.Code != http.StatusConflict {
@@ -820,24 +781,6 @@ func TestTaskExecuteRasterMosaicReturnsPendingAndRejectsActiveExecution(t *testi
 	}
 	if accepted.ExecutionID == "" || accepted.Status != commonExecution.ExecutionStatusPending {
 		t.Fatalf("first execute response = %#v, want pending execution", accepted)
-	}
-
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		exec, err := taskExecRepo.GetByExecutionID(context.Background(), accepted.ExecutionID, 1)
-		if err == nil && exec.IsCompleted() {
-			break
-		}
-		time.Sleep(time.Millisecond)
-	}
-	pending := &commonExecution.TaskExecution{
-		ExecutionID: "manager-api-raster-mosaic-active", TenantID: 1, Module: commonExecution.ModuleManager,
-		TaskType: commonExecution.TaskTypeRasterMosaicGeneration, Source: commonExecution.ModuleManager,
-		Status: commonExecution.ExecutionStatusPending, TriggerType: commonExecution.TriggerTypeManual,
-		CreatedAt: time.Now(), UpdatedAt: time.Now(),
-	}
-	if _, err := mosaicRepo.ClaimExecution(context.Background(), task.ID, task.TenantID, pending); err != nil {
-		t.Fatalf("claim deterministic pending execution: %v", err)
 	}
 
 	second := httptest.NewRecorder()
@@ -887,24 +830,6 @@ func TestTaskExecuteModel3DGLBReturnsPendingAndRejectsActiveExecution(t *testing
 		t.Fatalf("first execute response = %#v, want pending execution", accepted)
 	}
 
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		exec, err := taskExecRepo.GetByExecutionID(context.Background(), accepted.ExecutionID, 1)
-		if err == nil && exec.IsCompleted() {
-			break
-		}
-		time.Sleep(time.Millisecond)
-	}
-	pending := &commonExecution.TaskExecution{
-		ExecutionID: "manager-api-model-3d-glb-active", TenantID: 1, Module: commonExecution.ModuleManager,
-		TaskType: commonExecution.TaskTypeModel3DGLBGeneration, Source: commonExecution.ModuleManager,
-		Status: commonExecution.ExecutionStatusPending, TriggerType: commonExecution.TriggerTypeManual,
-		CreatedAt: time.Now(), UpdatedAt: time.Now(),
-	}
-	if _, err := glbRepo.ClaimExecution(context.Background(), task.ID, task.TenantID, pending, false); err != nil {
-		t.Fatalf("claim deterministic pending execution: %v", err)
-	}
-
 	second := httptest.NewRecorder()
 	router.ServeHTTP(second, httptest.NewRequest(http.MethodPost, path, nil))
 	if second.Code != http.StatusConflict {
@@ -952,24 +877,6 @@ func TestTaskExecuteGaussianSplatKSplatReturnsPendingAndRejectsActiveExecution(t
 		t.Fatalf("first execute response = %#v, want pending execution", accepted)
 	}
 
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		exec, err := taskExecRepo.GetByExecutionID(context.Background(), accepted.ExecutionID, 1)
-		if err == nil && exec.IsCompleted() {
-			break
-		}
-		time.Sleep(time.Millisecond)
-	}
-	pending := &commonExecution.TaskExecution{
-		ExecutionID: "manager-api-gaussian-splat-ksplat-active", TenantID: 1, Module: commonExecution.ModuleManager,
-		TaskType: commonExecution.TaskTypeGaussianSplatKSplatGeneration, Source: commonExecution.ModuleManager,
-		Status: commonExecution.ExecutionStatusPending, TriggerType: commonExecution.TriggerTypeManual,
-		CreatedAt: time.Now(), UpdatedAt: time.Now(),
-	}
-	if _, err := ksplatRepo.ClaimExecution(context.Background(), task.ID, task.TenantID, pending, false); err != nil {
-		t.Fatalf("claim deterministic pending execution: %v", err)
-	}
-
 	second := httptest.NewRecorder()
 	router.ServeHTTP(second, httptest.NewRequest(http.MethodPost, path, nil))
 	if second.Code != http.StatusConflict {
@@ -1009,23 +916,6 @@ func TestTaskExecutePointCloudCOPCReturnsPendingAndRejectsActiveExecution(t *tes
 	}
 	if accepted.ExecutionID == "" || accepted.Status != commonExecution.ExecutionStatusPending {
 		t.Fatalf("first execute response = %#v, want pending execution", accepted)
-	}
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		exec, err := taskExecRepo.GetByExecutionID(context.Background(), accepted.ExecutionID, 1)
-		if err == nil && exec.IsCompleted() {
-			break
-		}
-		time.Sleep(time.Millisecond)
-	}
-	pending := &commonExecution.TaskExecution{
-		ExecutionID: "manager-api-point-cloud-copc-active", TenantID: 1, Module: commonExecution.ModuleManager,
-		TaskType: commonExecution.TaskTypePointCloudCOPCGeneration, Source: commonExecution.ModuleManager,
-		Status: commonExecution.ExecutionStatusPending, TriggerType: commonExecution.TriggerTypeManual,
-		CreatedAt: time.Now(), UpdatedAt: time.Now(),
-	}
-	if _, err := copcRepo.ClaimExecution(context.Background(), task.ID, task.TenantID, pending, false); err != nil {
-		t.Fatalf("claim deterministic pending execution: %v", err)
 	}
 	second := httptest.NewRecorder()
 	router.ServeHTTP(second, httptest.NewRequest(http.MethodPost, path, nil))

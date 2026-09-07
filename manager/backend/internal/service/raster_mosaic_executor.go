@@ -154,6 +154,15 @@ func (e *ManagerRasterMosaicExecutor) buildAccessPlan(ctx context.Context, tenan
 	if err != nil {
 		return nil, fmt.Errorf("prepare target GDAL root: %w", err)
 	}
+	progressCallback, err := managerExecutionProgressCallback(
+		ctx,
+		e.managerBaseURL+"/api/v1/manager/executions/"+strings.TrimSpace(executionID)+"/events",
+		tenantID,
+		executionID,
+	)
+	if err != nil {
+		return nil, err
+	}
 
 	return commonModels.JSONMap{
 		"source": commonModels.JSONMap{
@@ -180,11 +189,7 @@ func (e *ManagerRasterMosaicExecutor) buildAccessPlan(ctx context.Context, tenan
 				"access_method": targetAccess["access_method"],
 			},
 		},
-		"progress_callback": commonModels.JSONMap{
-			"endpoint":     e.managerBaseURL + "/api/v1/manager/executions/" + strings.TrimSpace(executionID) + "/events",
-			"tenant_id":    tenantID,
-			"execution_id": strings.TrimSpace(executionID),
-		},
+		"progress_callback": progressCallback,
 	}, nil
 }
 
