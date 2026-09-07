@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   formatResultCell,
+  presentResultCell,
   lastPage,
   normalizeTabularColumns,
   paginateRows,
@@ -41,6 +42,17 @@ test('applies published field labels and widths while preserving source column k
     presentation: { field: 'amount', label: '订单金额', unit: '元', precision: 2, width: 180 },
   })
   assert.equal(formatResultCell(12.5, '—', columns[0].presentation, 'zh-CN'), '12.50 元')
+})
+
+test('presents a table cell state without changing its source value', () => {
+  const presentation = {
+    field: 'amount', label: '金额', precision: 2,
+    state_rules: [{ operator: 'gt', operand: 100, label: '高额', tone: 'warning' }],
+  }
+  assert.deepEqual(presentResultCell(120.5, '—', presentation, 'zh-CN'), {
+    text: '120.50', state: { label: '高额', tone: 'warning' },
+  })
+  assert.equal(120.5, 120.5)
 })
 
 test('paginates an already loaded bounded result without changing the source rows', () => {

@@ -2,7 +2,7 @@
  * 地图要素属性格式化工具。
  */
 
-import { fieldPresentationFor, fieldPresentationLabel, formatFieldPresentationValue } from '../../../basic/src/utils/fieldPresentation.mjs'
+import { fieldPresentationFor, fieldPresentationLabel, presentFieldValue } from '../../../basic/src/utils/fieldPresentation.mjs'
 
 const DEFAULT_LABELS = {
   id: 'ID',
@@ -59,9 +59,12 @@ const formatDisplayValue = (value, labels, presentation, locale) => {
   if (value === null || value === undefined) {
     return `<span class="null-value">${escapeHTML(labels.nullValue)}</span>`
   }
-  const raw = formatFieldPresentationValue(value, presentation, locale, labels.nullValue)
-  const displayValue = raw.length > 120 ? `${raw.slice(0, 120)}...` : raw
-  return escapeHTML(displayValue)
+  const presented = presentFieldValue(value, presentation, locale, labels.nullValue)
+  const displayValue = presented.text.length > 120 ? `${presented.text.slice(0, 120)}...` : presented.text
+  const state = presented.state
+    ? ` <span class="state-indicator state--${presented.state.tone}">${escapeHTML(presented.state.label)}</span>`
+    : ''
+  return `${escapeHTML(displayValue)}${state}`
 }
 
 /**

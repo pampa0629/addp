@@ -279,6 +279,8 @@ import {
 
 Value、Chart 和 Map 只接受单次查询得到的完整有界结果；`has_more=true` 时必须拒绝渲染，Value 还必须恰好一行，Chart 和 Map 还必须遵守各自结果上限。Workbench 等消费模块应在自己的 Renderer Host 中按需加载这些组件，不得复制 renderer，也不得把 Service、Outdoor 或其他 owner 的 DTO 写入共享层。
 
+字段显示名、单位、精度、时间格式和受控状态呈现统一由 `basic/src/utils/fieldPresentation.mjs` 解析。状态规则只允许精确匹配或数值比较，按声明顺序首条命中，并输出 `info | success | warning | danger` 语义状态；不接受表达式、函数或原始颜色。Table 与 Value 直接显示状态标签，Chart 只在 tooltip 中追加标签，Map 只在 popup 中显示标签，不能借此覆盖 Chart series 或 Map thematic style 的既有视觉编码。所有 renderer 都必须保留原始 rows 与 `row_index`。
+
 三组结果 renderer 在用户选择当前结果时统一发出 `result-select`，payload 只包含 `{ row_index }`。`row_index` 始终指向宿主传入的原始 `rows`，renderer 不携带字段值、参数名、目标组件或查询片段；宿主负责根据自己的声明式配置解释选择。数据更新、resize 和重绘不得发出该事件。
 
 Manager 表格预览、容器内表格预览、Develop 查询结果、Workbench 表格结果和 Agent UI 的 `TablePreview` 协议适配器必须组合上述基础表格，不得分别维护 `el-table`、结构化值详情或单元格格式化实现。Manager 的服务端分页与 Develop 的客户端分页仍由各自宿主负责；二者只共享受控分页界面和事件契约。

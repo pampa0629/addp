@@ -1,7 +1,15 @@
-import { fieldPresentationFor, fieldPresentationLabel, formatFieldPresentationValue } from './fieldPresentation.mjs'
+import { fieldPresentationFor, fieldPresentationLabel, presentFieldValue } from './fieldPresentation.mjs'
+
+export function presentResultCell(value, nullText = '—', presentation = null, locale = 'zh-CN') {
+  if (presentation) return presentFieldValue(value, presentation, locale, nullText)
+  return { text: basicResultCell(value, nullText), state: null }
+}
 
 export function formatResultCell(value, nullText = '—', presentation = null, locale = 'zh-CN') {
-  if (presentation) return formatFieldPresentationValue(value, presentation, locale, nullText)
+  return presentResultCell(value, nullText, presentation, locale).text
+}
+
+function basicResultCell(value, nullText) {
   if (value === null || value === undefined) return nullText
   if (typeof value === 'boolean') return value ? 'true' : 'false'
   if (typeof value === 'object') {

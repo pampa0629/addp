@@ -365,6 +365,9 @@ func validateRenderer(rendererType string, raw json.RawMessage, descriptor *mode
 			if _, selected := selectedFields[item.Field]; !selected {
 				return fmt.Errorf("%w: value field is not selected", ErrInvalidComponentConfiguration)
 			}
+			if err := validateStatePresentationRules(item.StateRules, field.Type); err != nil {
+				return err
+			}
 		}
 	default:
 		return fmt.Errorf("%w: unknown renderer", ErrInvalidComponentConfiguration)
@@ -400,6 +403,35 @@ func validateFieldPresentations(presentations []models.FieldPresentation, allowe
 		if presentation.Width != nil && (!allowWidth || *presentation.Width < 80 || *presentation.Width > 600) {
 			return fmt.Errorf("%w: invalid field presentation width", ErrInvalidComponentConfiguration)
 		}
+		if err := validateStatePresentationRules(presentation.StateRules, field.Type); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateStatePresentationRules(rules []models.StatePresentationRule, fieldType datatype.FieldType) error {
+	if len(rules) > 8 {
+		return fmt.Errorf("%w: too many state presentation rules", ErrInvalidComponentConfiguration)
+	}
+	seen := make(map[string]struct{}, len(rules))
+	for _, rule := range rules {
+		if !contains([]string{"eq", "lt", "lte", "gt", "gte"}, rule.Operator) ||
+			strings.TrimSpace(rule.Label) == "" || len([]rune(rule.Label)) > 50 ||
+			!contains([]string{"info", "success", "warning", "danger"}, rule.Tone) {
+			return fmt.Errorf("%w: invalid state presentation rule", ErrInvalidComponentConfiguration)
+		}
+		if rule.Operator != "eq" && !datatype.IsNumericFieldType(fieldType) {
+			return fmt.Errorf("%w: state comparison requires a numeric field", ErrInvalidComponentConfiguration)
+		}
+		if len(bytes.TrimSpace(rule.Operand)) == 0 || validateRawFilterValue(rule.Operand, models.ConsumerQueryField{Type: fieldType}, rule.Operator, 1) != nil {
+			return fmt.Errorf("%w: invalid state presentation operand", ErrInvalidComponentConfiguration)
+		}
+		key := rule.Operator + ":" + string(bytes.TrimSpace(rule.Operand))
+		if _, duplicate := seen[key]; duplicate {
+			return fmt.Errorf("%w: duplicate state presentation rule", ErrInvalidComponentConfiguration)
+		}
+		seen[key] = struct{}{}
 	}
 	return nil
 }

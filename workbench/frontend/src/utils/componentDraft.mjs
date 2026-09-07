@@ -135,7 +135,7 @@ export function draftFromComponent(component, descriptor) {
     chartType: config.chart_type || 'bar',
     dimension: config.dimension || '',
     measures: [...(config.measures || [])],
-    valueItems: (config.items || []).map((item) => ({ ...item })),
+    valueItems: (config.items || []).map(valueItemDraft),
     fieldPresentations: (config.field_presentations || []).map((item) => presentationDraft(item, descriptor.output_contract?.fields || [])),
     geometryField: config.geometry_field || descriptor.output_contract.spatial?.primary_geometry_field || '',
     mapLabelField: config.label_field || '',
@@ -185,7 +185,7 @@ export function buildRendererConfig(draft) {
       legend_title: draft.mapLegendTitle,
     },
   })
-  if (draft.rendererType === 'value') return { items: draft.valueItems.map((item) => ({ ...item })) }
+  if (draft.rendererType === 'value') return { items: draft.valueItems.map(serializeValueItem) }
   return withPresentations({ columns: [...draft.columns] })
 }
 
@@ -252,8 +252,30 @@ function serializeFieldPresentations(draft) {
     }
     if (['date', 'time', 'timestamp'].includes(item.fieldType) && item.temporalFormat) result.temporal_format = item.temporalFormat
     if (draft.rendererType === 'table' && Number.isInteger(item.width)) result.width = item.width
+    const stateRules = serializeStateRules(item.stateRules)
+    if (stateRules.length > 0) result.state_rules = stateRules
     return result
   })
+}
+
+function serializeStateRules(rules = []) {
+  return rules.map((rule) => ({
+    operator: rule.operator,
+    operand: rule.operand,
+    label: String(rule.label || '').trim(),
+    tone: rule.tone,
+  }))
+}
+
+function serializeValueItem(item) {
+  const stateRules = serializeStateRules(item.stateRules)
+  return {
+    field: item.field,
+    label: String(item.label || '').trim(),
+    unit: String(item.unit || '').trim(),
+    precision: item.precision,
+    ...(stateRules.length > 0 ? { state_rules: stateRules } : {}),
+  }
 }
 
 function presentationDraft(item, fields) {
@@ -267,6 +289,17 @@ function presentationDraft(item, fields) {
     precision: Object.prototype.hasOwnProperty.call(item, 'precision') ? item.precision : defaults.precision,
     temporalFormat: item.temporal_format || '',
     width: Object.prototype.hasOwnProperty.call(item, 'width') ? item.width : null,
+    stateRules: (item.state_rules || []).map((rule) => ({ ...rule })),
+  }
+}
+
+function valueItemDraft(item) {
+  return {
+    field: item.field,
+    label: item.label,
+    unit: item.unit || '',
+    precision: item.precision,
+    stateRules: (item.state_rules || []).map((rule) => ({ ...rule })),
   }
 }
 

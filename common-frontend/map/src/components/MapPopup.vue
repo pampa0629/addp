@@ -177,6 +177,21 @@ defineExpose({ popupEl })
   cursor: text;
 }
 
+.ol-popup-content :deep(.state-indicator) {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 1px 6px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.ol-popup-content :deep(.state--info) { color: var(--el-color-info); background: var(--el-color-info-light-9); }
+.ol-popup-content :deep(.state--success) { color: var(--el-color-success); background: var(--el-color-success-light-9); }
+.ol-popup-content :deep(.state--warning) { color: var(--el-color-warning); background: var(--el-color-warning-light-9); }
+.ol-popup-content :deep(.state--danger) { color: var(--el-color-danger); background: var(--el-color-danger-light-9); }
+
 .ol-popup-content :deep(.null-value) {
   color: #999;
   font-style: italic;

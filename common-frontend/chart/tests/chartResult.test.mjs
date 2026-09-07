@@ -39,6 +39,20 @@ test('uses field presentations for chart labels and tooltip values without chang
   assert.match(option.xAxis.data[0], /2026/)
 })
 
+test('adds a controlled state label to chart tooltips without recoloring series data', () => {
+  const option = buildChartOption([{ city: 'A', amount: 125 }], {
+    chart_type: 'bar', dimension: 'city', measures: ['amount'],
+    field_presentations: [{
+      field: 'amount', label: '金额', unit: '元', precision: 0,
+      state_rules: [{ operator: 'gt', operand: 100, label: '高额', tone: 'warning' }],
+    }],
+  }, 'zh-CN')
+
+  assert.deepEqual(option.series[0].data, [125])
+  assert.equal(option.series[0].tooltip.valueFormatter(125), '125 元 · 高额')
+  assert.equal(option.series[0].itemStyle, undefined)
+})
+
 test('rejects incomplete or invalid pie data', () => {
   const config = { chart_type: 'pie', dimension: 'city', measures: ['amount'] }
   assert.equal(validateChartResult([{ city: 'A', amount: -1 }], config).reason, 'invalid_measure')

@@ -1,4 +1,5 @@
 const NUMERIC_TYPES = new Set(['int', 'bigint', 'float', 'double', 'decimal'])
+const STATE_TONES = new Set(['info', 'success', 'warning', 'danger'])
 
 export function fieldPresentationFor(field, presentations = []) {
   return (Array.isArray(presentations) ? presentations : []).find((item) => item?.field === field) || null
@@ -33,6 +34,18 @@ export function formatFieldPresentationValue(value, presentation = null, locale 
   return unit ? `${formatted} ${unit}` : formatted
 }
 
+export function presentFieldValue(value, presentation = null, locale = 'zh-CN', nullText = '—') {
+  return {
+    text: formatFieldPresentationValue(value, presentation, locale, nullText),
+    state: value === null || value === undefined ? null : matchingStateRule(value, presentation?.state_rules),
+  }
+}
+
+export function formatFieldPresentationValueWithState(value, presentation = null, locale = 'zh-CN', nullText = '—') {
+  const presented = presentFieldValue(value, presentation, locale, nullText)
+  return presented.state ? `${presented.text} · ${presented.state.label}` : presented.text
+}
+
 export function defaultFieldPresentation(field) {
   const type = String(field?.type || '')
   return {
@@ -43,7 +56,33 @@ export function defaultFieldPresentation(field) {
     precision: NUMERIC_TYPES.has(type) ? 0 : null,
     temporalFormat: type === 'date' ? 'date' : type === 'time' ? 'time' : type === 'timestamp' ? 'datetime' : '',
     width: null,
+    stateRules: [],
   }
+}
+
+function matchingStateRule(value, rules) {
+  for (const rule of Array.isArray(rules) ? rules : []) {
+    if (!rule || !STATE_TONES.has(rule.tone) || !String(rule.label || '').trim()) continue
+    if (stateRuleMatches(value, rule)) return { label: String(rule.label).trim(), tone: rule.tone }
+  }
+  return null
+}
+
+function stateRuleMatches(value, rule) {
+  if (rule.operator === 'eq') {
+    if (typeof rule.operand === 'number') {
+      const numeric = Number(value)
+      return Number.isFinite(numeric) && numeric === rule.operand
+    }
+    return value === rule.operand
+  }
+  if (!['lt', 'lte', 'gt', 'gte'].includes(rule.operator) || typeof rule.operand !== 'number') return false
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return false
+  if (rule.operator === 'lt') return numeric < rule.operand
+  if (rule.operator === 'lte') return numeric <= rule.operand
+  if (rule.operator === 'gt') return numeric > rule.operand
+  return numeric >= rule.operand
 }
 
 function basicDisplayValue(value) {

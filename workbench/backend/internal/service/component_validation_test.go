@@ -150,7 +150,7 @@ func TestValidateRendererFieldPresentations(t *testing.T) {
 		Name: "Orders", ServiceRef: &models.ServiceReference{ServiceType: "query", ServiceID: 23},
 		QueryTemplate:  models.ComponentQueryTemplate{Select: []string{"id", "amount", "created_at"}, PageLimit: 50, Format: "json"},
 		RendererType:   models.RendererTypeTable,
-		RendererConfig: json.RawMessage(`{"columns":["id","amount","created_at"],"field_presentations":[{"field":"id","label":"Order","width":160},{"field":"amount","label":"Amount","unit":"USD","precision":2},{"field":"created_at","label":"Created","temporal_format":"datetime"}]}`),
+		RendererConfig: json.RawMessage(`{"columns":["id","amount","created_at"],"field_presentations":[{"field":"id","label":"Order","width":160},{"field":"amount","label":"Amount","unit":"USD","precision":2,"state_rules":[{"operator":"gt","operand":100,"label":"High","tone":"warning"}]},{"field":"created_at","label":"Created","temporal_format":"datetime","state_rules":[{"operator":"eq","operand":"2026-09-07T00:00:00Z","label":"Today","tone":"info"}]}]}`),
 	}
 	if err := validateComponentConfiguration(component, descriptor); err != nil {
 		t.Fatalf("validateComponentConfiguration() error = %v", err)
@@ -163,6 +163,11 @@ func TestValidateRendererFieldPresentations(t *testing.T) {
 		`{"columns":["id"],"field_presentations":[{"field":"id","label":"Order","unit":"items"}]}`,
 		`{"columns":["created_at"],"field_presentations":[{"field":"created_at","label":"Created","temporal_format":"time"}]}`,
 		`{"columns":["id"],"field_presentations":[{"field":"id","label":"Order","width":79}]}`,
+		`{"columns":["amount"],"field_presentations":[{"field":"amount","label":"Amount","state_rules":[{"operator":"contains","operand":10,"label":"Bad","tone":"warning"}]}]}`,
+		`{"columns":["id"],"field_presentations":[{"field":"id","label":"Order","state_rules":[{"operator":"gt","operand":"A","label":"Bad","tone":"warning"}]}]}`,
+		`{"columns":["amount"],"field_presentations":[{"field":"amount","label":"Amount","state_rules":[{"operator":"gt","operand":"100","label":"Bad","tone":"warning"}]}]}`,
+		`{"columns":["amount"],"field_presentations":[{"field":"amount","label":"Amount","state_rules":[{"operator":"gt","operand":100,"label":"","tone":"warning"}]}]}`,
+		`{"columns":["amount"],"field_presentations":[{"field":"amount","label":"Amount","state_rules":[{"operator":"gt","operand":100,"label":"High","tone":"purple"}]}]}`,
 	}
 	for _, raw := range invalidConfigs {
 		component.RendererConfig = json.RawMessage(raw)
@@ -200,5 +205,46 @@ func TestRejectsTableOnlyWidthInChartAndMapFieldPresentations(t *testing.T) {
 	mapComponent.RendererConfig = json.RawMessage(`{"geometry_field":"shape","label_field":"id","tooltip_fields":["amount"],"style":{"mode":"uniform","palette":"primary"},"field_presentations":[{"field":"id","label":"Order"},{"field":"amount","label":"Amount","unit":"USD","precision":2}]}`)
 	if err := validateComponentConfiguration(mapComponent, descriptor); err != nil {
 		t.Fatalf("valid map field presentations rejected: %v", err)
+	}
+}
+
+func TestValidateStatePresentationRuleBoundaries(t *testing.T) {
+	validNumeric := []models.StatePresentationRule{
+		{Operator: "lt", Operand: json.RawMessage(`60`), Label: "Low", Tone: "danger"},
+		{Operator: "gte", Operand: json.RawMessage(`60`), Label: "Ready", Tone: "success"},
+	}
+	if err := validateStatePresentationRules(validNumeric, datatype.FieldTypeDecimal); err != nil {
+		t.Fatalf("valid numeric state rules rejected: %v", err)
+	}
+	if err := validateStatePresentationRules([]models.StatePresentationRule{{Operator: "eq", Operand: json.RawMessage(`true`), Label: "Enabled", Tone: "info"}}, datatype.FieldTypeBool); err != nil {
+		t.Fatalf("valid boolean state rule rejected: %v", err)
+	}
+
+	invalid := []struct {
+		name      string
+		fieldType datatype.FieldType
+		rules     []models.StatePresentationRule
+	}{
+		{name: "comparison on string", fieldType: datatype.FieldTypeString, rules: []models.StatePresentationRule{{Operator: "gt", Operand: json.RawMessage(`"a"`), Label: "Bad", Tone: "warning"}}},
+		{name: "wrong operand type", fieldType: datatype.FieldTypeDecimal, rules: []models.StatePresentationRule{{Operator: "eq", Operand: json.RawMessage(`"1"`), Label: "Bad", Tone: "warning"}}},
+		{name: "fractional integer", fieldType: datatype.FieldTypeInt, rules: []models.StatePresentationRule{{Operator: "eq", Operand: json.RawMessage(`1.5`), Label: "Bad", Tone: "warning"}}},
+		{name: "duplicate", fieldType: datatype.FieldTypeInt, rules: []models.StatePresentationRule{{Operator: "eq", Operand: json.RawMessage(`1`), Label: "One", Tone: "info"}, {Operator: "eq", Operand: json.RawMessage(`1`), Label: "Again", Tone: "danger"}}},
+	}
+	tooMany := make([]models.StatePresentationRule, 9)
+	for index := range tooMany {
+		tooMany[index] = models.StatePresentationRule{Operator: "eq", Operand: json.RawMessage([]byte{byte('1' + index)}), Label: "State", Tone: "info"}
+	}
+	invalid = append(invalid, struct {
+		name      string
+		fieldType datatype.FieldType
+		rules     []models.StatePresentationRule
+	}{name: "too many", fieldType: datatype.FieldTypeInt, rules: tooMany})
+
+	for _, testCase := range invalid {
+		t.Run(testCase.name, func(t *testing.T) {
+			if err := validateStatePresentationRules(testCase.rules, testCase.fieldType); err == nil {
+				t.Fatal("invalid state presentation rules must be rejected")
+			}
+		})
 	}
 }

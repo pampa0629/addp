@@ -2142,11 +2142,33 @@ Component 编辑器已从当前 renderer 实际使用字段生成一组字段呈
 
 草稿通过唯一更新 API 保存后，编辑器的未保存告警消失，并成功发布不可变 Revision 3。随后直接打开正式 `/data-apps/c4c0aa6e-70b1-49e8-8ade-8db92f5c6e33`，没有点击“查询全部组件”或任一组件“查询”：运行页已自动返回 10 个地块、面积合计 `0.1094`、各城市面积图表、五档连续设色地图和 10 条明细。地图图例及表格值均按四位精度展示，表头全部使用发布后的业务标签；页面存在两个非零尺寸 Canvas，浏览器 error/warn 日志为空。至此字段呈现规则已经完成“编辑—预览—保存—不可变发布—最终应用自动首查”的单一路线验收。
 
+### 14.46 Data Application 状态呈现规则（2026-09-07）
+
+字段显示名、单位和精度解决“读得懂”，但最终应用还需要在不改变数据事实的前提下突出需要关注的状态。该能力统一称为 **State Presentation / 状态呈现规则**，是 Field Presentation 和 Value item 的受控子配置，不是 Service 过滤器、计算字段、告警任务、任意表达式或第二套 renderer。
+
+每个可展示标量字段最多声明 8 条有序 `state_rules`。每条规则只包含 `operator`、`operand`、`label` 和 `tone`：
+
+- `operator` 只允许 `eq | lt | lte | gt | gte`；所有受支持标量类型可使用 `eq`，大小比较只允许数值类型；
+- `operand` 必须与 Consumer Descriptor 的字段类型一致，整数类型不能接受小数；
+- `label` 是必填的业务状态标签，最长 50 个字符；
+- `tone` 只允许 `info | success | warning | danger`，由 ADDP / Element Plus 主题语义色解析，不接受十六进制、RGB、CSS 变量名或任意颜色；
+- 规则按快照顺序执行，第一条命中即停止；未命中时不显示状态。编辑器必须允许调整顺序，不能通过隐式阈值排序改变用户声明。
+
+状态呈现必须保留格式化后的原值，并在支持文本展示的位置追加状态标签：Table 单元格和 Value 卡片直接显示语义状态，Chart 只在 tooltip 中显示，Map 只在 popup 中显示。Chart series 和 Map feature 的视觉编码继续分别由 Chart 配置和 Map `uniform | categorical | continuous` 主题样式负责，不能让状态规则形成第二套图形配色来源。原始 rows、导出内容、`result-select.row_index`、Parameter Binding、Selection Binding 和 Service 请求均不改变。
+
+Backend 必须按当前冻结 Descriptor 对规则数量、操作符、operand 类型、标签和 tone 严格校验；Frontend 只提供与字段类型匹配的受控表单。共享匹配、格式化和语义状态解析归 `common-frontend/basic` 唯一所有，Table、Value、Chart 和 Map 只能组合该能力。任何示例阈值、状态标签、字段名或 Outdoor 事实只能保存进具体 Data Application Snapshot，不能进入生产代码或默认配置。
+
+实现已把 `state_rules` 纳入 Field Presentation 与 Value item 的唯一 renderer 配置，并由 Workbench Backend 按 Descriptor 字段类型严格校验数量、操作符、operand、标签、tone 和重复条件。Component 编辑器只提供受控操作符、语义 tone、顺序调整和删除，不暴露任意表达式或颜色；草稿反序列化、预览与保存继续共用同一个 renderer config 编译器。共享 `common-frontend/basic` 负责顺序匹配并同时返回格式化原值与首个命中状态，Table 与 Value 直接显示语义徽标，Chart 仅把状态追加到 tooltip，Map 仅把状态追加到转义后的 popup，不改变 series、feature、rows、导出或联动事实。
+
+本地确定性门禁已通过：`make test-common-frontend` 共 71 项；`make test-workbench-frontend` 共 78 项并通过 production build 与入口体积门禁；Workbench Backend `go test ./...` 全部通过；`make test-workbench-postgres` 使用允许的 `addp_test` 标准集成入口通过；Workbench Swagger 路由覆盖校验继续保持 12 个公开路由方法一致，本次没有新增或改变 HTTP 路由。
+
+真实浏览器已完成不持久化的前端验收：在既有通用空间应用的 Value Component 中，为 `total_area` 临时配置 `gt 0.05`、标签“面积较大”、tone `warning`，查询真实 Service 后保留原值 `0.1094` 并显示警示徽标和卡片边框。随后通过“取消”关闭 Component 编辑器，没有保存、发布或修改现有应用。字段、阈值和标签只作为本地运行证据，没有进入 Workbench 生产代码、默认配置或测试 fixture。当前 Workbench Backend 进程早于本节后端代码启动，且全量 `keepalive restart -all` 正持有生命周期锁；因此“保存—发布—正式运行页”持久化闭环须在下次标准全量重启后继续验证，不能把本次热更新预览误记为最终完成。
+
 ## 十五、概念设计状态
 
 当前没有待确认的 Phase 0 概念问题。Phase 5 的 Selection Binding 同页联动、`desktop | wallboard` 展示模式、浏览器会话级全屏、Application Refresh Policy 和 Application Presentation Sections 已完成设计、实现、标准模块门禁与真实浏览器验收；Data Application 资产运营指标的事实源、模块归属以及 Asset 自有 `application` / 具体 Asset 运营分组也已完成运行态复核。外部 BI 的 owner 边界、消费契约、用户委托 OAuth 单一路线和 System 外部 OAuth Client 注册治理已经完成；首个真实 BI 验收载体仍为 Power Query 自定义 Connector 与 Power BI Desktop Import，但因当前缺少 Windows 宿主而暂缓。`common-python` 的产品无关 Service Consumer SDK、离线门禁及真实普通表、空间表和 Outdoor 多服务只读运行验收均已完成；它不替代 callback state、持久外部 Client 生命周期和真实 BI 产品端到端证据，因此正式 BI 接入指南继续保持未完成。
 
-14.19 的 Data Application 直接创作收口、Outdoor 双服务真实验收、14.20 的 Business MySQL 本地异构验收，以及 14.21–14.23 的 Phase 6 场景化组合、空间探索创作向导和保存前整页预览均已完成。验收数据只作运行证据，没有进入 Workbench 领域模型、生产代码或默认配置。Phase 6 当前确认范围已经收口；真实数据量没有超过有界 GeoJSON 上限前不启动 Tile / OGC Features，也不继续堆叠 renderer。
+14.19 的 Data Application 直接创作收口、Outdoor 双服务真实验收、14.20 的 Business MySQL 本地异构验收，以及 14.21–14.23 的 Phase 6 场景化组合、空间探索创作向导和保存前整页预览均已完成。验收数据只作运行证据，没有进入 Workbench 领域模型、生产代码或默认配置。14.46 的通用状态呈现契约、编辑器、共享 renderer 和本地门禁已完成，不持久化真实浏览器预览已通过；待 Workbench Backend 标准重启后补齐保存、发布与正式运行页闭环。Phase 6 当前确认范围已经收口；真实数据量没有超过有界 GeoJSON 上限前不启动 Tile / OGC Features，也不继续堆叠 renderer。
 
 14.24 的历史契约清理已经通过用户确认完成；Outdoor 长期应用已显式重绑当前 Service 24 契约并发布 Revision 3，Revision 2 保持不可变。14.26–14.27 的通用 Service Consumer SDK、公开导出、单元测试、README、发布门禁和真实运行验收已经完成。14.28 已在 MySQL Engine Provider 内补齐受限、精确、失败关闭的 QueryReadSet 与直接列 QueryOutputLineage，并完成 Business MySQL Service、Python SDK、契约漂移阻断、显式重绑、不可变 Revision 2 及最终 Data Application Table / Chart 的运行态验收；14.29 进一步完成最终应用对 Descriptor 临时失败和查询临时失败的可恢复状态收敛，契约变化仍严格阻断；14.30 完成 Component 编辑器的 Descriptor、查询和导出异步上下文隔离，服务切换或关闭后的迟到结果不再污染当前草稿；14.31 完成编辑器游标翻页的原子提交，失败请求不再产生旧数据与新页码混合的假状态；14.32 已完成运行画布按 Parameter Binding 精确失效旧参数请求的实现、标准前端门禁与发布 Revision 2 的真实浏览器验收；14.33 进一步把参数竞态收敛为可控 Promise 行为测试，不再只依赖浏览器时序和源码合同；14.34 已用同一 generation 和可控 Promise 阻断迟到导出的文件下载副作用；14.35 已为 Descriptor 初始加载与查询重试建立独立 latest-request generation，旧响应不再覆盖新状态；14.36 已把同源运行路由 A/B 快速切换的迟到成功、错误和 loading 收尾纳入同一 latest-request 提交门禁；14.37 在运行页卸载时立即失效 Revision 请求；14.38 使 Component 编辑器的弹窗关闭与页面卸载共享同一 Descriptor、查询和导出失效入口；14.39 进一步把创建页、编辑页 ID 切换、应用加载、Descriptor 派生加载和页面卸载收敛到唯一 editor route generation；14.40 又把保存、发布、下线从确认到响应收尾的副作用纳入独立 mutation generation；14.41 把列表翻页、删除确认、DELETE 响应和删除后刷新也收敛到同一 Data Application request 提交语义；14.42 进一步把空间探索向导的 Catalog、汇总 Descriptor、空间 Descriptor、关闭重开和卸载收敛到三个相互独立但共享同一提交语义的会话 generation；14.43 已把 Element Plus 全量注册与 Map 运行依赖移出 Workbench 首屏，并建立入口 chunk 硬预算和正式 Console 运行验收；14.44 已完成已发布应用在 Descriptor 与必填默认值均可执行时只复用一次“查询全部组件”主路径，草稿手工查询、参数提交和 Wallboard 后续刷新语义不变；14.45 已完成通用字段呈现契约、共享 renderer 实现、本地门禁，以及真实应用从编辑、预览、保存、不可变 Revision 3 发布到正式运行页自动首查的完整闭环。Power Query 路线继续保留；获得 Windows 宿主后再在 `service/connectors/power-query/` 完成具体 Connector 与真实 BI 门禁。没有真实宿主证据前不修改 OAuth 或 Service API，也不提前编写“可直接照做”的正式 BI 接入指南。当前唯一未闭合的同专题自动化证据是 `workbench-service-consumption` T4：具备专用 runner 后应优先补跑，本地验收不能替代该 Online Gate。不要修改 Service 查询路由、引入 API Key 私有授权、数据库直连或增加 Workbench / Python 代理。跨模块综合统计和 Workbench 运行埋点继续暂缓；只有确认成功打开次数、独立访问用户和 Revision 分布确有独立产品价值时，才进入 Workbench owner 运行准入事实设计。在独立价值确认前不进入多页面、`mobile`、页面轮播、通用动作、后台定时任务或第二套运行状态。若后续实现与现有公开契约冲突，必须先回到本专题及正式规范修订设计，不得增加兼容路由、兼容字段或 Workbench 私有旁路。
 

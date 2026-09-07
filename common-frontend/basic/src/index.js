@@ -19,6 +19,7 @@ export {
   lastPage,
   normalizeTabularColumns,
   paginateRows,
+  presentResultCell,
   safeStructuredResultJSON,
   tabularCellValue
 } from './utils/tabularResult'
@@ -27,7 +28,9 @@ export {
   defaultFieldPresentation,
   fieldPresentationFor,
   fieldPresentationLabel,
-  formatFieldPresentationValue
+  formatFieldPresentationValue,
+  formatFieldPresentationValueWithState,
+  presentFieldValue
 } from './utils/fieldPresentation.mjs'
 
 // Schedule Components

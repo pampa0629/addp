@@ -1,4 +1,4 @@
-import { fieldPresentationFor, fieldPresentationLabel, formatFieldPresentationValue } from '../../basic/src/utils/fieldPresentation.mjs'
+import { fieldPresentationFor, fieldPresentationLabel, formatFieldPresentationValue, formatFieldPresentationValueWithState } from '../../basic/src/utils/fieldPresentation.mjs'
 
 const CHART_TYPES = new Set(['bar', 'line', 'pie'])
 
@@ -41,7 +41,7 @@ export function buildChartOption(rows, config, locale = 'zh-CN') {
         type: 'pie',
         radius: ['35%', '70%'],
         data: rows.map((row, index) => ({ name: labels[index], value: Number(row[measure]) })),
-        tooltip: { valueFormatter: (value) => formatFieldPresentationValue(value, measurePresentation, locale) },
+        tooltip: { valueFormatter: (value) => formatFieldPresentationValueWithState(value, measurePresentation, locale) },
       }]
     }
   }
@@ -73,7 +73,7 @@ export function buildChartOption(rows, config, locale = 'zh-CN') {
         name: fieldPresentationLabel(measure, presentations),
         type: config.chart_type,
         data: rows.map((row) => Number(row?.[measure])),
-        tooltip: { valueFormatter: (value) => formatFieldPresentationValue(value, presentation, locale) },
+        tooltip: { valueFormatter: (value) => formatFieldPresentationValueWithState(value, presentation, locale) },
       }
     })
   }

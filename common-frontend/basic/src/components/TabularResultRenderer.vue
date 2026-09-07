@@ -39,11 +39,18 @@
             v-else
             class="scalar-cell"
             :class="cellClass(cellValue(scope.row, column))"
-            :title="formatCell(cellValue(scope.row, column), column)"
+            :title="cellTitle(cellValue(scope.row, column), column)"
             :tabindex="copyOnDblclick ? 0 : undefined"
             @dblclick="copyCellValue(cellValue(scope.row, column), column)"
             @keydown.enter="copyCellValue(cellValue(scope.row, column), column)"
-          >{{ formatCell(cellValue(scope.row, column), column) }}</span>
+          >
+            <span>{{ presentCell(cellValue(scope.row, column), column).text }}</span>
+            <span
+              v-if="presentCell(cellValue(scope.row, column), column).state"
+              class="state-indicator"
+              :class="`state--${presentCell(cellValue(scope.row, column), column).state.tone}`"
+            >{{ presentCell(cellValue(scope.row, column), column).state.label }}</span>
+          </span>
         </template>
       </el-table-column>
     </el-table>
@@ -71,6 +78,7 @@ import {
   formatResultCell,
   isStructuredResultValue,
   normalizeTabularColumns,
+  presentResultCell,
   resultSelectionFromRow,
   safeStructuredResultJSON,
   tabularCellValue
@@ -116,6 +124,11 @@ const visibleColumns = computed(() => normalizeTabularColumns({
 
 const cellValue = (row, column) => tabularCellValue(row, column)
 const formatCell = (value, column) => formatResultCell(value, props.nullText, column?.presentation, locale.value)
+const presentCell = (value, column) => presentResultCell(value, props.nullText, column?.presentation, locale.value)
+const cellTitle = (value, column) => {
+  const presented = presentCell(value, column)
+  return presented.state ? `${presented.text} · ${presented.state.label}` : presented.text
+}
 const hasStructuredColumnValues = column => props.rows.some(row => isStructuredResultValue(cellValue(row, column)))
 const cellClass = value => ({
   'is-null': value === null || value === undefined,
@@ -179,7 +192,9 @@ defineExpose({
 }
 
 .scalar-cell {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -187,6 +202,21 @@ defineExpose({
   white-space: nowrap;
   color: var(--addp-text-primary);
 }
+
+.state-indicator {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+.state--info { color: var(--el-color-info); background: var(--el-color-info-light-9); }
+.state--success { color: var(--el-color-success); background: var(--el-color-success-light-9); }
+.state--warning { color: var(--el-color-warning); background: var(--el-color-warning-light-9); }
+.state--danger { color: var(--el-color-danger); background: var(--el-color-danger-light-9); }
 
 .scalar-cell.is-null {
   color: var(--addp-text-tertiary);

@@ -275,6 +275,21 @@ defineExpose({ focusFeature, showPopup, hidePopup, resize })
   user-select: text;
 }
 
+:deep(.state-indicator) {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 1px 6px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+:deep(.state--info) { color: var(--el-color-info); background: var(--el-color-info-light-9); }
+:deep(.state--success) { color: var(--el-color-success); background: var(--el-color-success-light-9); }
+:deep(.state--warning) { color: var(--el-color-warning); background: var(--el-color-warning-light-9); }
+:deep(.state--danger) { color: var(--el-color-danger); background: var(--el-color-danger-light-9); }
+
 :deep(.attribute-empty),
 :deep(.null-value) {
   color: var(--addp-text-tertiary);

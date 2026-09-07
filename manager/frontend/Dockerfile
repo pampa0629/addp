@@ -18,6 +18,7 @@ RUN ln -sfn /repo/addp/manager/frontend/node_modules /repo/addp/common-frontend/
 
 # 复制构建所需源代码，避免把本地 node_modules/dist/log 带入镜像
 COPY manager/frontend/index.html manager/frontend/vite.config.js ./
+COPY manager/frontend/LICENSE manager/frontend/THIRD_PARTY_NOTICES.md manager/frontend/SOURCE_OFFER.md ./
 COPY manager/frontend/src ./src
 COPY manager/frontend/public ./public
 

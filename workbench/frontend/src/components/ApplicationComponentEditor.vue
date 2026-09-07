@@ -52,6 +52,7 @@
                 <el-input v-model="item.unit" :placeholder="t('workbench.valueUnit')" maxlength="30" />
                 <el-input-number v-model="item.precision" :min="0" :max="8" :placeholder="t('workbench.valuePrecision')" />
                 <el-button link type="danger" :disabled="draft.valueItems.length === 1" @click="removeValueItem(index)">{{ t('workbench.delete') }}</el-button>
+                <StateRuleEditor class="value-state-rules" :model-value="item.stateRules || []" :field-type="outputField(item.field)?.type || 'decimal'" @update:model-value="updateStateRules(item, $event)" />
               </div>
             </template>
             <template v-else-if="draft.rendererType === 'chart'">
@@ -112,14 +113,17 @@
                 <span>{{ t('workbench.fieldPresentationsHint') }}</span>
               </div>
               <div v-for="item in draft.fieldPresentations" :key="item.field" class="field-presentation">
-                <el-input :model-value="item.field" disabled :placeholder="t('workbench.presentationField')" />
-                <el-input v-model="item.label" maxlength="100" :placeholder="t('workbench.presentationLabel')" />
-                <el-input v-if="presentationIsNumeric(item)" v-model="item.unit" maxlength="30" :placeholder="t('workbench.presentationUnit')" />
-                <el-input-number v-if="presentationIsNumeric(item)" v-model="item.precision" :min="0" :max="8" :controls="false" :placeholder="t('workbench.presentationPrecision')" />
-                <el-select v-if="presentationIsTemporal(item)" v-model="item.temporalFormat" :placeholder="t('workbench.presentationTemporalFormat')">
-                  <el-option v-for="format in temporalFormats(item)" :key="format" :value="format" :label="t(`workbench.temporalFormats.${format}`)" />
-                </el-select>
-                <el-input-number v-if="draft.rendererType === 'table'" v-model="item.width" :min="80" :max="600" :controls="false" :placeholder="t('workbench.presentationWidth')" />
+                <div class="field-presentation-fields">
+                  <el-input :model-value="item.field" disabled :placeholder="t('workbench.presentationField')" />
+                  <el-input v-model="item.label" maxlength="100" :placeholder="t('workbench.presentationLabel')" />
+                  <el-input v-if="presentationIsNumeric(item)" v-model="item.unit" maxlength="30" :placeholder="t('workbench.presentationUnit')" />
+                  <el-input-number v-if="presentationIsNumeric(item)" v-model="item.precision" :min="0" :max="8" :controls="false" :placeholder="t('workbench.presentationPrecision')" />
+                  <el-select v-if="presentationIsTemporal(item)" v-model="item.temporalFormat" :placeholder="t('workbench.presentationTemporalFormat')">
+                    <el-option v-for="format in temporalFormats(item)" :key="format" :value="format" :label="t(`workbench.temporalFormats.${format}`)" />
+                  </el-select>
+                  <el-input-number v-if="draft.rendererType === 'table'" v-model="item.width" :min="80" :max="600" :controls="false" :placeholder="t('workbench.presentationWidth')" />
+                </div>
+                <StateRuleEditor :model-value="item.stateRules || []" :field-type="item.fieldType" @update:model-value="updateStateRules(item, $event)" />
               </div>
             </template>
             <div class="section-header">
@@ -191,6 +195,7 @@ import { executeDescriptorOperation, getConsumerDescriptor, listConsumerServices
 import { buildComponentConfiguration, buildQueryRequest, buildRendererConfig, controlTypeFor, createNamedParameterDraft, createParameterDraft, draftFromComponent, emptyControlValue, requiredParameterValuesPresent, synchronizeFieldPresentations } from '../utils/componentDraft.mjs'
 import { boundedExportHasMore, descriptorSupportsExport, downloadBoundedExport, exportFormatForRenderer } from '../utils/boundedExport.mjs'
 import WorkbenchRendererHost from './WorkbenchRendererHost.vue'
+import StateRuleEditor from './StateRuleEditor.vue'
 
 const props = defineProps({ modelValue: Boolean, component: { type: Object, default: null } })
 const emit = defineEmits(['update:modelValue', 'save'])
@@ -240,7 +245,7 @@ const validDraft = computed(() => {
   })) return false
   if (draft.rendererType === 'value') {
     const fields = draft.valueItems.map((item) => item.field)
-    return draft.pageLimit === 1 && fields.length > 0 && fields.length <= 4 && new Set(fields).size === fields.length && draft.valueItems.every((item) => item.field && String(item.label || '').trim() && Number.isInteger(item.precision) && item.precision >= 0 && item.precision <= 8)
+    return draft.pageLimit === 1 && fields.length > 0 && fields.length <= 4 && new Set(fields).size === fields.length && draft.valueItems.every((item) => item.field && String(item.label || '').trim() && Number.isInteger(item.precision) && item.precision >= 0 && item.precision <= 8 && stateRulesValid(item.stateRules, outputField(item.field)?.type))
   }
   if (!fieldPresentationsValid()) return false
   if (draft.rendererType === 'chart') return Boolean(draft.dimension && draft.measures.length > 0 && (draft.chartType !== 'pie' || draft.measures.length === 1))
@@ -390,6 +395,24 @@ function fieldPresentationsValid() {
     if (presentationIsNumeric(item) && (!Number.isInteger(item.precision) || item.precision < 0 || item.precision > 8)) return false
     if (presentationIsTemporal(item) && !temporalFormats(item).includes(item.temporalFormat)) return false
     if (draft.rendererType === 'table' && item.width !== null && item.width !== undefined && (!Number.isInteger(item.width) || item.width < 80 || item.width > 600)) return false
+    if (!stateRulesValid(item.stateRules, item.fieldType)) return false
+    return true
+  })
+}
+
+function stateRulesValid(rules = [], fieldType = '') {
+  if (!Array.isArray(rules) || rules.length > 8) return false
+  const numeric = numericTypes.has(fieldType)
+  const seen = new Set()
+  return rules.every((rule) => {
+    if (!['eq', 'lt', 'lte', 'gt', 'gte'].includes(rule.operator) || (rule.operator !== 'eq' && !numeric)) return false
+    if (!String(rule.label || '').trim() || String(rule.label).length > 50 || !['info', 'success', 'warning', 'danger'].includes(rule.tone)) return false
+    if (numeric && (!Number.isFinite(rule.operand) || (['int', 'bigint'].includes(fieldType) && !Number.isInteger(rule.operand)))) return false
+    if (!numeric && fieldType === 'bool' && typeof rule.operand !== 'boolean') return false
+    if (!numeric && fieldType !== 'bool' && typeof rule.operand !== 'string') return false
+    const key = `${rule.operator}:${JSON.stringify(rule.operand)}`
+    if (seen.has(key)) return false
+    seen.add(key)
     return true
   })
 }
@@ -417,7 +440,7 @@ function addValueItem() {
   const used = new Set(draft.valueItems.map((item) => item.field))
   const field = numericOutputFields.value.find((candidate) => !used.has(candidate.name))
   if (!field) return
-  draft.valueItems.push({ field: field.name, label: field.comment || field.name, unit: '', precision: 0 })
+  draft.valueItems.push({ field: field.name, label: field.comment || field.name, unit: '', precision: 0, stateRules: [] })
   syncRendererFields()
 }
 
@@ -435,6 +458,10 @@ function syncValueItem(item) {
   const field = numericOutputFields.value.find((candidate) => candidate.name === item.field)
   item.label = field?.comment || item.field
   syncRendererFields()
+}
+
+function updateStateRules(item, rules) {
+  item.stateRules = rules
 }
 
 function addParameter() {
@@ -566,5 +593,5 @@ function submit() {
 </script>
 
 <style scoped>
-.component-editor,.configuration-form,.preview-panel{display:flex;flex-direction:column;gap:16px}.editor-grid{display:grid;grid-template-columns:minmax(360px,5fr) minmax(480px,7fr);gap:16px}.full{width:100%}.preview-panel{min-height:520px;padding:16px;background:var(--addp-bg-primary);border:1px solid var(--addp-border-color);border-radius:8px}.preview-header,.section-header,.parameter-actions,.cursor-actions{display:flex;align-items:center;justify-content:space-between;gap:8px}.parameter-actions span,.field-presentation-header span{font-size:12px;color:var(--addp-text-secondary)}.parameter{display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr auto;gap:8px;align-items:center;padding:12px;border:1px solid var(--addp-border-color);border-radius:8px}.value-item{display:grid;grid-template-columns:minmax(140px,1fr) minmax(120px,1fr) minmax(80px,.7fr) 110px auto;gap:8px;align-items:center}.field-presentation{display:grid;grid-template-columns:minmax(120px,1fr) minmax(120px,1fr) repeat(3,minmax(90px,.7fr));gap:8px;align-items:center;padding:10px;border:1px solid var(--addp-border-color);border-radius:8px}.bbox-inputs{display:grid;grid-template-columns:1fr 1fr;gap:4px}.cursor-actions{justify-content:center}@media(max-width:1000px){.editor-grid{grid-template-columns:1fr}.parameter,.value-item,.field-presentation{grid-template-columns:1fr 1fr}.preview-panel{min-height:360px}}
+.component-editor,.configuration-form,.preview-panel{display:flex;flex-direction:column;gap:16px}.editor-grid{display:grid;grid-template-columns:minmax(360px,5fr) minmax(480px,7fr);gap:16px}.full{width:100%}.preview-panel{min-height:520px;padding:16px;background:var(--addp-bg-primary);border:1px solid var(--addp-border-color);border-radius:8px}.preview-header,.section-header,.parameter-actions,.cursor-actions{display:flex;align-items:center;justify-content:space-between;gap:8px}.parameter-actions span,.field-presentation-header span{font-size:12px;color:var(--addp-text-secondary)}.parameter{display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr auto;gap:8px;align-items:center;padding:12px;border:1px solid var(--addp-border-color);border-radius:8px}.value-item{display:grid;grid-template-columns:minmax(140px,1fr) minmax(120px,1fr) minmax(80px,.7fr) 110px auto;gap:8px;align-items:center;padding:10px;border:1px solid var(--addp-border-color);border-radius:8px}.value-state-rules{grid-column:1/-1}.field-presentation{display:flex;flex-direction:column;gap:8px;padding:10px;border:1px solid var(--addp-border-color);border-radius:8px}.field-presentation-fields{display:grid;grid-template-columns:minmax(120px,1fr) minmax(120px,1fr) repeat(3,minmax(90px,.7fr));gap:8px;align-items:center;width:100%}.bbox-inputs{display:grid;grid-template-columns:1fr 1fr;gap:4px}.cursor-actions{justify-content:center}@media(max-width:1000px){.editor-grid{grid-template-columns:1fr}.parameter,.value-item,.field-presentation-fields{grid-template-columns:1fr 1fr}.preview-panel{min-height:360px}}
 </style>

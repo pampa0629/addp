@@ -14,7 +14,7 @@ test('compiles a reusable application component without service or domain field 
     rendererType: 'table',
     fieldPresentations: [
       { field: 'id', label: '订单编号', fieldType: 'string', unit: '', precision: null, temporalFormat: '', width: 160 },
-      { field: 'amount', label: '金额', fieldType: 'decimal', unit: '元', precision: 2, temporalFormat: '', width: null },
+      { field: 'amount', label: '金额', fieldType: 'decimal', unit: '元', precision: 2, temporalFormat: '', width: null, stateRules: [{ operator: 'gt', operand: 100, label: '高额', tone: 'warning' }] },
     ],
     parameters: [{ key: 'minimum', label: 'Minimum', controlType: 'number', required: false, field: 'amount', operator: 'gte', fieldType: 'decimal', value: '12.5' }],
   }
@@ -31,7 +31,7 @@ test('compiles a reusable application component without service or domain field 
     columns: ['id', 'amount'],
     field_presentations: [
       { field: 'id', label: '订单编号', width: 160 },
-      { field: 'amount', label: '金额', unit: '元', precision: 2 },
+      { field: 'amount', label: '金额', unit: '元', precision: 2, state_rules: [{ operator: 'gt', operand: 100, label: '高额', tone: 'warning' }] },
     ],
   })
 })
@@ -72,13 +72,13 @@ test('keeps one renderer-config compiler and synchronizes only fields used by th
   ])
 })
 
-test('persists explicitly configured scalar values without domain field assumptions', () => {
+test('persists explicitly configured scalar values and state rules without domain field assumptions', () => {
   const draft = {
     name: 'summary', description: '', columns: ['amount'], pageLimit: 1,
-    rendererType: 'value', valueItems: [{ field: 'amount', label: 'Total', unit: 'items', precision: 2 }], parameters: [],
+    rendererType: 'value', valueItems: [{ field: 'amount', label: 'Total', unit: 'items', precision: 2, stateRules: [{ operator: 'gte', operand: 100, label: 'Target', tone: 'success' }] }], parameters: [],
   }
   assert.deepEqual(buildComponentConfiguration(descriptor, draft, 'component-value').renderer_config, {
-    items: [{ field: 'amount', label: 'Total', unit: 'items', precision: 2 }],
+    items: [{ field: 'amount', label: 'Total', unit: 'items', precision: 2, state_rules: [{ operator: 'gte', operand: 100, label: 'Target', tone: 'success' }] }],
   })
 })
 

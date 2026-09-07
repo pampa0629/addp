@@ -90,12 +90,20 @@ type MapRendererConfig struct {
 }
 
 type FieldPresentation struct {
-	Field          string `json:"field"`
-	Label          string `json:"label"`
-	Unit           string `json:"unit,omitempty"`
-	Precision      *int   `json:"precision,omitempty"`
-	TemporalFormat string `json:"temporal_format,omitempty"`
-	Width          *int   `json:"width,omitempty"`
+	Field          string                  `json:"field"`
+	Label          string                  `json:"label"`
+	Unit           string                  `json:"unit,omitempty"`
+	Precision      *int                    `json:"precision,omitempty"`
+	TemporalFormat string                  `json:"temporal_format,omitempty"`
+	Width          *int                    `json:"width,omitempty"`
+	StateRules     []StatePresentationRule `json:"state_rules,omitempty"`
+}
+
+type StatePresentationRule struct {
+	Operator string          `json:"operator" enums:"eq,lt,lte,gt,gte"`
+	Operand  json.RawMessage `json:"operand" swaggertype:"object"`
+	Label    string          `json:"label"`
+	Tone     string          `json:"tone" enums:"info,success,warning,danger"`
 }
 
 type MapRendererStyleConfig struct {
@@ -110,8 +118,9 @@ type ValueRendererConfig struct {
 }
 
 type ValueRendererItem struct {
-	Field     string `json:"field"`
-	Label     string `json:"label"`
-	Unit      string `json:"unit"`
-	Precision int    `json:"precision"`
+	Field      string                  `json:"field"`
+	Label      string                  `json:"label"`
+	Unit       string                  `json:"unit"`
+	Precision  int                     `json:"precision"`
+	StateRules []StatePresentationRule `json:"state_rules,omitempty"`
 }

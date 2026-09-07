@@ -132,6 +132,19 @@ test('data application components own service selection, rendering, parameters, 
   assert.match(rendererHost, /:presentations="config\.field_presentations \|\| \[\]"/)
 })
 
+test('state presentation stays a controlled renderer configuration without raw colors or expressions', () => {
+  const editor = readSource('../src/components/ApplicationComponentEditor.vue')
+  const stateEditor = readSource('../src/components/StateRuleEditor.vue')
+  const draft = readSource('../src/utils/componentDraft.mjs')
+
+  assert.match(editor, /StateRuleEditor/)
+  assert.match(stateEditor, /\['eq', 'lt', 'lte', 'gt', 'gte'\]/)
+  assert.match(stateEditor, /\['info', 'success', 'warning', 'danger'\]/)
+  assert.match(stateEditor, /rules\.length >= 8/)
+  assert.match(draft, /state_rules/)
+  assert.doesNotMatch(stateEditor, /#[0-9a-fA-F]{3,8}|rgb\(|expression|formatter/)
+})
+
 test('component editor ignores async results from an obsolete service context', () => {
   const editor = readSource('../src/components/ApplicationComponentEditor.vue')
 
