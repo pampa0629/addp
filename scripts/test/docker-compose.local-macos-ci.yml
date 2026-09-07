@@ -17,3 +17,21 @@ services:
       timeout: 5s
       retries: 24
     restart: "no"
+
+  oceanbase:
+    image: oceanbase/oceanbase-ce:4.4.2-lts@sha256:eaa2c3b3513fa21e4a658f197c1deb93c9d6b6eb742cfa5ef0f085f82b9cec54
+    container_name: addp-local-ci-oceanbase
+    environment:
+      MODE: mini
+      OB_TENANT_NAME: test
+      OB_TENANT_PASSWORD: addp_local_ci_oceanbase_password
+      OB_DATABASE: oceanbase
+    ports:
+      - "127.0.0.1:12881:2881"
+    healthcheck:
+      test: ["CMD-SHELL", "obclient -h127.0.0.1 -P2881 -uroot@test --password=$${OB_TENANT_PASSWORD} -Doceanbase -e 'SELECT 1'"]
+      interval: 10s
+      timeout: 10s
+      retries: 36
+      start_period: 300s
+    restart: "no"

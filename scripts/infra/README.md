@@ -121,7 +121,9 @@ ADDP_TEST_MYSQL_PASSWORD=password \
   make test-common-mysql-data-protection
 ```
 
-直接运行上述 owner 门禁时，调用方必须提供 disposable MySQL。辅助 macOS 巡检的 `make local-ci` 不读取这些外部变量，也不依赖 Business MySQL；它通过 `scripts/test/docker-compose.local-macos-ci.yml` 启动固定版本、无数据卷的专属 MySQL 8，在健康检查通过后才执行确定性门禁，并仅在 MySQL owner 门禁进程内使用固定测试连接参数。巡检结束时该容器随 CI 基础设施统一删除。
+直接运行上述 owner 门禁时，调用方必须提供 disposable MySQL。辅助 macOS 巡检的 `make local-ci` 不读取这些外部变量，也不依赖 Business MySQL；它通过 `scripts/test/docker-compose.local-macos-ci.yml` 启动固定 digest、无数据卷的专属 MySQL 8，在健康检查通过后才执行确定性门禁，并仅在 MySQL owner 门禁进程内使用固定测试连接参数。
+
+OceanBase owner 门禁使用同一个本地 CI Compose 项目中固定 digest、无数据卷的 OceanBase CE 4.4.2 LTS，宿主机端口为 `12881`。`make local-ci` 会清除继承的 `ADDP_TEST_OCEANBASE_*`，只向聚合门禁传递本地作用域标记；`common-oceanbase-gate.sh` 再为自身生成固定本地连接参数和 `addp_oceanbase_disposable` database。MySQL 与 OceanBase 服务都在巡检的所有退出路径中统一删除。
 
 Model 物化与事务门禁使用：
 

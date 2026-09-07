@@ -8,6 +8,17 @@ ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/addp-common-oceanbase.XXXXXX")
 trap 'rm -rf "$WORK_DIR"' EXIT
 
+# 本地巡检只向聚合门禁传递作用域标记；真实连接参数在本 owner 门禁内生成，
+# 并覆盖任何继承的外部值，避免误连 Business 或生产 OceanBase。
+if [ "${ADDP_LOCAL_CI_OCEANBASE:-0}" = "1" ]; then
+    export ADDP_TEST_OCEANBASE_HOST=127.0.0.1
+    export ADDP_TEST_OCEANBASE_PORT=12881
+    export ADDP_TEST_OCEANBASE_TENANT=test
+    export ADDP_TEST_OCEANBASE_USER=root@test
+    export ADDP_TEST_OCEANBASE_PASSWORD=addp_local_ci_oceanbase_password
+    export ADDP_TEST_OCEANBASE_DATABASE=addp_oceanbase_disposable
+fi
+
 if [ -z "${ADDP_TEST_OCEANBASE_PASSWORD:-}" ]; then
     echo "ADDP_TEST_OCEANBASE_PASSWORD is required for the disposable OceanBase gate" >&2
     exit 1

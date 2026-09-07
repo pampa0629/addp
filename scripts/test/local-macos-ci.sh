@@ -5,8 +5,9 @@ set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 ROOT_DIR=$(cd "${SCRIPT_DIR}/../.." && pwd -P)
-MYSQL_COMPOSE_FILE="$SCRIPT_DIR/docker-compose.local-macos-ci.yml"
+LOCAL_CI_COMPOSE_FILE="$SCRIPT_DIR/docker-compose.local-macos-ci.yml"
 MYSQL_CONTAINER_NAME=addp-local-ci-mysql
+OCEANBASE_CONTAINER_NAME=addp-local-ci-oceanbase
 
 fail() {
   echo "Local macOS CI failed: $*" >&2
@@ -15,33 +16,58 @@ fail() {
 
 usage() {
   cat <<'EOF'
-Usage: bash scripts/test/local-macos-ci.sh [--check-only|--full|--no-fetch]
+Usage: bash scripts/test/local-macos-ci.sh [--full] [--no-fetch]
+       bash scripts/test/local-macos-ci.sh --check-only
 
   no option     Fast-forward to origin/main and test changes since the last successful SHA.
                 The first successful run is automatically a full run.
   --check-only  Validate the checkout, toolchain and Docker boundary without fetching or testing.
-  --full        Fast-forward to origin/main and run all deterministic and infrastructure gates.
-  --no-fetch     Run against the current clean main checkout without fetching or merging.
+  --full        Run all deterministic and infrastructure gates instead of the incremental scope.
+  --no-fetch    Run against the current clean main checkout without fetching or merging.
+                Combine with --full for a complete run without remote synchronization.
 EOF
 }
 
 MODE=incremental
 FETCH_REMOTE=true
-case "${1:-}" in
-  "") ;;
-  --check-only) MODE=check-only ;;
-  --full) MODE=full ;;
-  --no-fetch) MODE=current; FETCH_REMOTE=false ;;
-  -h|--help)
-    usage
-    exit 0
-    ;;
-  *)
-    usage >&2
-    fail "unsupported argument: $1"
-    ;;
-esac
-[ "$#" -le 1 ] || fail "only one option is supported"
+check_only_requested=false
+full_requested=false
+no_fetch_requested=false
+for argument in "$@"; do
+  case "$argument" in
+    --check-only)
+      [ "$check_only_requested" = false ] || fail "duplicate option: --check-only"
+      check_only_requested=true
+      ;;
+    --full)
+      [ "$full_requested" = false ] || fail "duplicate option: --full"
+      full_requested=true
+      ;;
+    --no-fetch)
+      [ "$no_fetch_requested" = false ] || fail "duplicate option: --no-fetch"
+      no_fetch_requested=true
+      FETCH_REMOTE=false
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      usage >&2
+      fail "unsupported argument: $argument"
+      ;;
+  esac
+done
+
+if [ "$check_only_requested" = true ]; then
+  [ "$full_requested" = false ] && [ "$no_fetch_requested" = false ] ||
+    fail "--check-only cannot be combined with other options"
+  MODE=check-only
+elif [ "$full_requested" = true ]; then
+  MODE=full
+elif [ "$no_fetch_requested" = true ]; then
+  MODE=current
+fi
 
 cd "$ROOT_DIR"
 
@@ -133,15 +159,15 @@ tracked_or_untracked_changes() {
 running_addp_infra() {
   docker ps --format '{{.Names}}' | while IFS= read -r name; do
     case "$name" in
-      addp-postgres|addp-redis|addp-minio|addp-meilisearch|addp-redpanda|addp-redpanda-init|addp-kafka-connect|addp-local-ci-mysql)
+      addp-postgres|addp-redis|addp-minio|addp-meilisearch|addp-redpanda|addp-redpanda-init|addp-kafka-connect|addp-local-ci-mysql|addp-local-ci-oceanbase)
         printf '%s\n' "$name"
         ;;
     esac
   done
 }
 
-local_ci_mysql_compose() {
-  docker compose --env-file /dev/null -f "$MYSQL_COMPOSE_FILE" "$@"
+local_ci_compose() {
+  docker compose --env-file /dev/null -f "$LOCAL_CI_COMPOSE_FILE" "$@"
 }
 
 validate_host() {
@@ -154,8 +180,8 @@ validate_host() {
   validate_node
   validate_go
   docker info >/dev/null 2>&1 || fail "Docker is not running or is not accessible"
-  local_ci_mysql_compose config --quiet >/dev/null 2>&1 ||
-    fail "disposable MySQL Compose definition is invalid: $MYSQL_COMPOSE_FILE"
+  local_ci_compose config --quiet >/dev/null 2>&1 ||
+    fail "disposable database Compose definition is invalid: $LOCAL_CI_COMPOSE_FILE"
   active_infra=$(running_addp_infra)
   [ -z "$active_infra" ] || fail "running ADDP Infra belongs to another session: $active_infra"
   [ "$(git branch --show-current)" = "main" ] || fail "dedicated checkout must be on main"
@@ -188,6 +214,13 @@ clear_integration_gate_environment() {
   unset ADDP_TEST_MYSQL_PASSWORD
   unset ADDP_TEST_MYSQL_DATABASE
   unset ADDP_LOCAL_CI_MYSQL
+  unset ADDP_TEST_OCEANBASE_HOST
+  unset ADDP_TEST_OCEANBASE_PORT
+  unset ADDP_TEST_OCEANBASE_TENANT
+  unset ADDP_TEST_OCEANBASE_USER
+  unset ADDP_TEST_OCEANBASE_PASSWORD
+  unset ADDP_TEST_OCEANBASE_DATABASE
+  unset ADDP_LOCAL_CI_OCEANBASE
 }
 
 file_fingerprint() {
@@ -287,37 +320,53 @@ run_integration_gates() {
     ADDP_TEST_POSTGRES_DATABASE=addp_test \
     ADDP_TEST_POSTGRES_SSLMODE=disable \
     ADDP_LOCAL_CI_MYSQL=1 \
+    ADDP_LOCAL_CI_OCEANBASE=1 \
     "$@"
 }
 
-start_disposable_mysql() {
+wait_for_disposable_database() {
+  local service=$1
+  local display_name=$2
+  local container=$3
+  local endpoint=$4
+  local attempts=$5
   local health
 
-  echo "==> Start disposable MySQL 8 for local CI"
-  mysql_started=1
-  if ! local_ci_mysql_compose up -d --force-recreate mysql; then
-    local_ci_mysql_compose logs --no-color mysql || true
-    fail "disposable MySQL failed to start"
-  fi
-
-  for _ in $(seq 1 120); do
+  for _ in $(seq 1 "$attempts"); do
     health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' \
-      "$MYSQL_CONTAINER_NAME" 2>/dev/null || true)
+      "$container" 2>/dev/null || true)
     case "$health" in
       healthy)
-        echo "Disposable MySQL is healthy: 127.0.0.1:13306"
+        echo "Disposable $display_name is healthy: $endpoint"
         return
         ;;
       unhealthy|exited|dead)
-        local_ci_mysql_compose logs --no-color mysql || true
-        fail "disposable MySQL failed to start: container state is $health"
+        local_ci_compose logs --no-color "$service" || true
+        fail "disposable $display_name failed to start: container state is $health"
         ;;
     esac
     sleep 1
   done
 
-  local_ci_mysql_compose logs --no-color mysql || true
-  fail "disposable MySQL failed to start: health check timed out"
+  local_ci_compose logs --no-color "$service" || true
+  fail "disposable $display_name failed to start: health check timed out"
+}
+
+start_disposable_databases() {
+  echo "==> Start disposable MySQL 8 for local CI"
+  disposable_databases_started=1
+  if ! local_ci_compose up -d --force-recreate mysql; then
+    local_ci_compose logs --no-color mysql || true
+    fail "disposable MySQL failed to start"
+  fi
+  wait_for_disposable_database mysql MySQL "$MYSQL_CONTAINER_NAME" 127.0.0.1:13306 120
+
+  echo "==> Start disposable OceanBase CE 4.4.2 LTS for local CI"
+  if ! local_ci_compose up -d --force-recreate oceanbase; then
+    local_ci_compose logs --no-color oceanbase || true
+    fail "disposable OceanBase failed to start"
+  fi
+  wait_for_disposable_database oceanbase OceanBase "$OCEANBASE_CONTAINER_NAME" 127.0.0.1:12881 720
 }
 
 run_infra() {
@@ -334,13 +383,15 @@ write_summary() {
   local result=$1
   local sha=$2
   local scope=$3
-  local log_file=$4
+  local remote_sync=$4
+  local log_file=$5
   local temporary="$LATEST_SUMMARY.tmp.$$"
   {
-    printf 'schema_version=addp.local-ci-summary/v1\n'
+    printf 'schema_version=addp.local-ci-summary/v2\n'
     printf 'result=%s\n' "$result"
     printf 'sha=%s\n' "$sha"
     printf 'scope=%s\n' "$scope"
+    printf 'remote_sync=%s\n' "$remote_sync"
     printf 'finished_at=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
     printf 'log=%s\n' "$log_file"
   } > "$temporary"
@@ -357,6 +408,7 @@ fi
 acquire_lock
 
 if [ "$FETCH_REMOTE" = true ]; then
+  remote_sync=performed
   echo "==> Fetch origin/main"
   git fetch origin main
   git merge --ff-only refs/remotes/origin/main
@@ -364,6 +416,7 @@ if [ "$FETCH_REMOTE" = true ]; then
     fail "local main does not exactly match origin/main"
   [ -z "$(tracked_or_untracked_changes)" ] || fail "checkout became dirty after fast-forward"
 else
+  remote_sync=skipped
   echo "==> Use current main checkout (no fetch)"
 fi
 
@@ -388,7 +441,7 @@ log_file="$LOG_DIR/${timestamp}-${short_sha}-${scope}.log"
 exec > >(tee -a "$log_file") 2>&1
 
 infra_started=0
-mysql_started=0
+disposable_databases_started=0
 finish_run() {
   local status=$?
   trap - EXIT INT TERM
@@ -398,9 +451,9 @@ finish_run() {
       status=1
     fi
   fi
-  if [ "$mysql_started" -eq 1 ]; then
-    echo "==> Stop disposable MySQL CI infrastructure"
-    if ! local_ci_mysql_compose down --volumes --remove-orphans; then
+  if [ "$disposable_databases_started" -eq 1 ]; then
+    echo "==> Stop disposable database CI infrastructure"
+    if ! local_ci_compose down --volumes --remove-orphans; then
       status=1
     fi
   fi
@@ -413,11 +466,11 @@ finish_run() {
     fi
   fi
   if [ "$status" -eq 0 ]; then
-    write_summary passed "$target_sha" "$scope" "$log_file"
-    echo "Local macOS CI passed: $target_sha ($scope)"
+    write_summary passed "$target_sha" "$scope" "$remote_sync" "$log_file"
+    echo "Local macOS CI passed: $target_sha (scope=$scope remote_sync=$remote_sync)"
   else
-    write_summary failed "$target_sha" "$scope" "$log_file"
-    echo "Local macOS CI failed: $target_sha ($scope)" >&2
+    write_summary failed "$target_sha" "$scope" "$remote_sync" "$log_file"
+    echo "Local macOS CI failed: $target_sha (scope=$scope remote_sync=$remote_sync)" >&2
   fi
   find "$LOG_DIR" -type f -name '*.log' -mtime +13 -delete 2>/dev/null || true
   release_lock
@@ -427,8 +480,8 @@ trap finish_run EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-echo "Local macOS CI start: sha=$target_sha scope=$scope"
-start_disposable_mysql
+echo "Local macOS CI start: sha=$target_sha scope=$scope remote_sync=$remote_sync"
+start_disposable_databases
 prepare_dependencies
 
 if [ "$scope" = "full" ]; then

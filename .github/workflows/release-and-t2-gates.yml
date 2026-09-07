@@ -531,7 +531,7 @@ jobs:
     timeout-minutes: 30
     services:
       oceanbase:
-        image: oceanbase/oceanbase-ce:4.4.2-lts@sha256:46eefcf1275beae76947aac8f96c47efb745f6902d584de3c26465e4a9f113ae
+        image: oceanbase/oceanbase-ce:4.4.2-lts@sha256:eaa2c3b3513fa21e4a658f197c1deb93c9d6b6eb742cfa5ef0f085f82b9cec54
         env:
           MODE: mini
           OB_TENANT_NAME: test

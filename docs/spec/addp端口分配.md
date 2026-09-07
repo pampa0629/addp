@@ -12,10 +12,11 @@
 - Infra Kafka bootstrap: `19092`
 - Kafka Connect REST: `18083`
 - 辅助 macOS CI disposable MySQL: `13306`（仅 `make local-ci` 运行期间占用）
+- 辅助 macOS CI disposable OceanBase: `12881`（仅 `make local-ci` 运行期间占用）
 
 PostgreSQL、Redis、MinIO 和 Meilisearch 当前来源于 `docker-compose.infra.yml`；Infra Kafka/Kafka Connect 端口已由工作包 3A 保留，工作包 3B 才写入 compose 和启动脚本。脚本固定使用这些端口，不会自动改动；若被其他进程占用，`scripts/infra/up.sh` 会给出提示，可能导致启动失败。请使用 `lsof -nP -i :<port>` 查占用并释放，或手动调整 compose 端口映射。
 
-`13306` 由 `scripts/test/docker-compose.local-macos-ci.yml` 中的固定版本 MySQL 8 使用，不属于 System 或 Business 长期基础设施。该服务无数据卷，只绑定 `127.0.0.1`，在本地巡检的确定性门禁和编译开始前完成健康检查，并在巡检的统一退出清理中删除。
+`13306` 和 `12881` 由 `scripts/test/docker-compose.local-macos-ci.yml` 中的固定 digest MySQL 8 与 OceanBase CE 4.4.2 LTS 使用，不属于 System 或 Business 长期基础设施。两个服务都无数据卷，只绑定 `127.0.0.1`，在本地巡检的确定性门禁和编译开始前完成健康检查，并在巡检的统一退出清理中删除。
 
 ## Business (业务库)
 
