@@ -2,14 +2,21 @@ package service
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
+	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/events"
+	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/exportartifact"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 func TestCleanupExpectedForModuleProtocolHelper(t *testing.T) {
@@ -48,14 +55,17 @@ func TestManagerCleanupSummaries(t *testing.T) {
 		Embeddings:               5,
 		VectorMaterializedViews:  7,
 		DeletedPhysicalArtifacts: 4,
+		FreedBytes:               1024,
 		MarkedMissingSource:      6,
 		SkippedExternalTargets:   1,
+		TaskDefinitions:          8,
 		DisabledTaskDefinitions:  8,
+		DeletedTaskDefinitions:   3,
 		Errors:                   []string{"one", "two"},
 	}
 
 	scanSummary := managerScanSummary(stats)
-	if scanSummary.ScannedItems != 25 || scanSummary.DisabledTaskDefinitions != 8 || scanSummary.SkippedItems != 1 || scanSummary.ErrorCount != 2 {
+	if scanSummary.ScannedItems != 25 || scanSummary.FreedBytes != 1024 || scanSummary.DisabledTaskDefinitions != 0 || scanSummary.SkippedItems != 1 || scanSummary.ErrorCount != 2 {
 		t.Fatalf("scan summary = %#v", scanSummary)
 	}
 	if scanSummary.RiskLevel != "low" {
@@ -63,10 +73,10 @@ func TestManagerCleanupSummaries(t *testing.T) {
 	}
 
 	executeSummary := managerExecuteSummary(stats)
-	if executeSummary.AffectedRecords != 25 {
-		t.Fatalf("affected_records = %d, want 25", executeSummary.AffectedRecords)
+	if executeSummary.AffectedRecords != 28 {
+		t.Fatalf("affected_records = %d, want 28", executeSummary.AffectedRecords)
 	}
-	if executeSummary.DeletedPhysicalArtifacts != 4 || executeSummary.MarkedMissingSource != 6 || executeSummary.DisabledTaskDefinitions != 8 {
+	if executeSummary.DeletedPhysicalArtifacts != 4 || executeSummary.FreedBytes != 1024 || executeSummary.MarkedMissingSource != 6 || executeSummary.DisabledTaskDefinitions != 8 {
 		t.Fatalf("execute summary = %#v", executeSummary)
 	}
 	if executeSummary.SkippedItems != 1 || executeSummary.ErrorCount != 2 {
@@ -180,37 +190,54 @@ func TestManagerCleanupRiskLevelForCount(t *testing.T) {
 func TestCleanupTaskTargetFromConfig(t *testing.T) {
 	t.Parallel()
 
-	embeddingTarget := cleanupTaskTargetFromConfig(commonModels.JSONMap{
+	targets := cleanupTaskTargetsFromDefinition(repository.CleanupTaskDefinition{Config: commonModels.JSONMap{
+		"source": commonModels.JSONMap{
+			"source_engine_id": float64(26),
+			"item_locator":     "addp://engine/26/path/3d/model.glb?type=file&item_id=88",
+		},
 		"target": commonModels.JSONMap{
 			"engine_id":        float64(12),
 			"item_id":          float64(99),
 			"item_fingerprint": "fp-1",
 			"locator":          "addp://engine/12/path/public/roads?type=table&item_id=99",
 		},
-	})
-	if embeddingTarget.EngineID != 12 || embeddingTarget.ItemID != 99 || embeddingTarget.ItemFingerprint != "fp-1" {
-		t.Fatalf("embedding target = %#v", embeddingTarget)
+	}})
+	if len(targets) != 2 || targets[0].EngineID != 26 || !targets[0].VerifySource {
+		t.Fatalf("source targets = %#v", targets)
 	}
-
-	artifactTarget := cleanupTaskTargetFromConfig(commonModels.JSONMap{
-		"target": commonModels.JSONMap{
-			"source_engine_id": uint(13),
-			"item_fingerprint": "fp-2",
-		},
-	})
-	if artifactTarget.EngineID != 13 || artifactTarget.ItemFingerprint != "fp-2" {
-		t.Fatalf("artifact target = %#v", artifactTarget)
+	if targets[1].EngineID != 12 || targets[1].ItemID != 99 || targets[1].ItemFingerprint != "fp-1" || !targets[1].VerifySource {
+		t.Fatalf("target refs = %#v", targets[1])
 	}
 }
 
-func TestCleanupTaskDefinitionReason(t *testing.T) {
-	t.Parallel()
-
-	if got := cleanupTaskDefinitionReason(map[string]interface{}{"engine_id": 12}); got != "missing_engine" {
-		t.Fatalf("reason = %q, want missing_engine", got)
+func TestManagerCleanupTaskRegistryCoversTaskProviderDeclaration(t *testing.T) {
+	declaration, err := ManagerTaskProviderDeclaration()
+	if err != nil {
+		t.Fatalf("ManagerTaskProviderDeclaration() error = %v", err)
 	}
-	if got := cleanupTaskDefinitionReason(map[string]interface{}{"item_id": 99}); got != "missing_source" {
-		t.Fatalf("reason = %q, want missing_source", got)
+	var payload struct {
+		TaskCapabilities []struct {
+			Type string `json:"type"`
+		} `json:"task_capabilities"`
+	}
+	if declaration.Capabilities == nil {
+		t.Fatal("Manager task provider capabilities are required")
+	}
+	if err := json.Unmarshal([]byte(*declaration.Capabilities), &payload); err != nil {
+		t.Fatalf("decode Manager task provider capabilities: %v", err)
+	}
+	registered := map[string]bool{}
+	for _, spec := range repository.ManagerTaskDefinitionSpecs() {
+		registered[spec.TaskType] = true
+	}
+	for _, capability := range payload.TaskCapabilities {
+		if !registered[capability.Type] {
+			t.Fatalf("TaskProvider task type %q is not registered for cleanup", capability.Type)
+		}
+		delete(registered, capability.Type)
+	}
+	if len(registered) != 0 {
+		t.Fatalf("cleanup-only task types = %#v", registered)
 	}
 }
 
@@ -218,13 +245,129 @@ func TestCleanupTaskTargetSourceExistsTreatsDeletedEngineAsMissing(t *testing.T)
 	t.Parallel()
 
 	service := &CleanupService{}
-	target := cleanupTaskTarget{EngineID: 12, ItemID: 99, Locator: "addp://engine/12/path/public/roads?type=table&item_id=99"}
-	if got := service.taskTargetSourceExists(nil, 1, target, map[string]interface{}{"engine_id": 12}); got {
+	target := cleanupTaskTarget{EngineID: 12, ItemID: 99, Locator: "addp://engine/12/path/public/roads?type=table&item_id=99", VerifySource: true}
+	if got := service.taskTargetSourceExists(nil, 1, target, map[string]interface{}{"engine_id": 12}, nil); got {
 		t.Fatal("taskTargetSourceExists() = true, want false for engine deleted context")
 	}
-	if got := service.taskTargetSourceExists(nil, 1, cleanupTaskTarget{}, nil); !got {
+	if got := service.taskTargetSourceExists(nil, 1, cleanupTaskTarget{}, nil, nil); !got {
 		t.Fatal("empty task target should be treated as existing to avoid broad cleanup")
 	}
+	if got := service.taskTargetSourceExists(nil, 1, cleanupTaskTarget{EngineID: 26}, nil, map[uint]struct{}{12: {}}); got {
+		t.Fatal("missing tenant engine should be treated as missing")
+	}
+}
+
+func TestManagerCleanupFindsAndPhysicallyDeletesPreviouslyDisabledUnknownEngineTask(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.Exec(`ATTACH DATABASE ':memory:' AS manager`).Error; err != nil {
+		t.Fatalf("attach manager schema: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE manager.model_3d_glb_tasks (
+		id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, enabled BOOLEAN NOT NULL,
+		next_run_at DATETIME, last_execution_status TEXT, config JSON NOT NULL,
+		updated_at DATETIME, deleted_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create task table: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO manager.model_3d_glb_tasks (tenant_id, enabled, config)
+		VALUES (1, TRUE, '{"source":{"source_engine_id":26,"item_locator":"addp://engine/26/path/model.glb?type=file"}}')`).Error; err != nil {
+		t.Fatalf("insert task: %v", err)
+	}
+	repo := repository.NewCleanupTaskDefinitionRepository(db, []repository.CleanupTaskDefinitionSpec{{
+		TaskType: "model_3d_glb_generation", Table: "manager.model_3d_glb_tasks",
+	}})
+	svc := &CleanupService{taskDefinitionRepo: repo, systemClient: newManagerCleanupEmptySystemClient(t)}
+
+	scan, err := svc.ScanReclaimCandidates(context.Background(), 1, nil)
+	if err != nil {
+		t.Fatalf("ScanReclaimCandidates() error = %v", err)
+	}
+	if scan.TaskDefinitions != 1 {
+		t.Fatalf("task definitions = %d, want 1", scan.TaskDefinitions)
+	}
+	logical, err := svc.ExecuteCleanup(context.Background(), 1, events.CleanupModeLogical, nil)
+	if err != nil || logical.DisabledTaskDefinitions != 1 {
+		t.Fatalf("logical cleanup = %#v, error = %v", logical, err)
+	}
+	physical, err := svc.ExecuteCleanup(context.Background(), 1, events.CleanupModePhysical, nil)
+	if err != nil || physical.DeletedTaskDefinitions != 1 {
+		t.Fatalf("physical cleanup = %#v, error = %v", physical, err)
+	}
+	remaining, err := repo.List(context.Background(), 1)
+	if err != nil || len(remaining) != 0 {
+		t.Fatalf("remaining tasks = %#v, error = %v", remaining, err)
+	}
+}
+
+func TestManagerCleanupFindsUnknownEngineManagedQuickViewArtifacts(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.Exec(`ATTACH DATABASE ':memory:' AS manager`).Error; err != nil {
+		t.Fatalf("attach manager schema: %v", err)
+	}
+	specs := []repository.CleanupManagedArtifactSpec{
+		{TaskType: commonExecution.TaskTypeModel3DGLBGeneration, Table: "manager.model_3d_glb"},
+		{TaskType: commonExecution.TaskTypeModel3DTilesGeneration, Table: "manager.model3d_tiles"},
+		{TaskType: commonExecution.TaskTypeGaussianSplatKSplatGeneration, Table: "manager.gaussian_splat_ksplat"},
+		{TaskType: commonExecution.TaskTypePointCloudCOPCGeneration, Table: "manager.point_cloud_copc"},
+	}
+	for _, spec := range specs {
+		if err := db.Exec(`CREATE TABLE ` + spec.Table + ` (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, source_engine_id INTEGER NOT NULL,
+			item_id INTEGER, item_fingerprint TEXT, locator TEXT, status TEXT, error_message TEXT,
+			size_bytes INTEGER, source_size_bytes INTEGER,
+			updated_at DATETIME, deleted_at DATETIME
+		)`).Error; err != nil {
+			t.Fatalf("create %s: %v", spec.Table, err)
+		}
+		if err := db.Exec(`INSERT INTO ` + spec.Table + ` (tenant_id, source_engine_id, item_id, item_fingerprint, locator, status, size_bytes)
+			VALUES (1, 26, 88, 'fp-88', 'addp://engine/26/path/source.bin?type=file&item_id=88', 'ready', 2048)`).Error; err != nil {
+			t.Fatalf("insert %s: %v", spec.Table, err)
+		}
+	}
+	repo := repository.NewCleanupManagedArtifactRepository(db, specs)
+	svc := &CleanupService{managedArtifactRepo: repo, systemClient: newManagerCleanupEmptySystemClient(t)}
+
+	scan, err := svc.ScanReclaimCandidates(context.Background(), 1, nil)
+	if err != nil {
+		t.Fatalf("ScanReclaimCandidates() error = %v", err)
+	}
+	if scan.ManagedArtifacts != 4 || scan.FreedBytes != 8192 {
+		t.Fatalf("managed artifact scan = %#v, want 4 artifacts and 8192 bytes", scan)
+	}
+	logical, err := svc.ExecuteCleanup(context.Background(), 1, events.CleanupModeLogical, nil)
+	if err != nil || logical.ManagedArtifacts != 4 || logical.MarkedMissingSource != 4 {
+		t.Fatalf("logical cleanup = %#v, error = %v", logical, err)
+	}
+}
+
+func newManagerCleanupEmptySystemClient(t *testing.T) *commonClient.SystemServiceClient {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/api/v1/system/oauth/token":
+			_ = json.NewEncoder(response).Encode(map[string]interface{}{
+				"access_token": "addp_at_manager", "token_type": "bearer", "expires_in": 300, "scope": "addp.api",
+			})
+		case "/api/v1/system/engines":
+			_ = json.NewEncoder(response).Encode([]interface{}{})
+		default:
+			http.NotFound(response, request)
+		}
+	}))
+	t.Cleanup(server.Close)
+	tokenSource, err := commonClient.NewOAuthServiceTokenSource(
+		server.URL, "addp-manager", "manager-cleanup-test-client-secret-32-bytes", server.Client(),
+	)
+	if err != nil {
+		t.Fatalf("create service token source: %v", err)
+	}
+	return commonClient.NewSystemServiceClient(server.URL, tokenSource, server.Client())
 }
 
 func TestFilterMissingVectorMaterializedViewsTreatsDeletingEngineAsMissing(t *testing.T) {

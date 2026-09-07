@@ -120,6 +120,18 @@ describe('Console navigation bridge', () => {
     expect(en.console.menus.standard.collections).toBe('Standard Collections')
   })
 
+  it('does not expose the removed standalone CAD raster quick-view page', () => {
+    const configSource = readFileSync(new URL('../src/config/portalConfig.js', import.meta.url), 'utf8')
+    const searchSource = readFileSync(new URL('../src/config/searchIndex.js', import.meta.url), 'utf8')
+    const zhCn = JSON.parse(readFileSync(new URL('../src/i18n/zh-cn.json', import.meta.url), 'utf8'))
+    const en = JSON.parse(readFileSync(new URL('../src/i18n/en.json', import.meta.url), 'utf8'))
+
+    expect(configSource).not.toContain('spatial-quick-view/cad-preview')
+    expect(searchSource).not.toContain('spatial-quick-view/cad-preview')
+    expect(zhCn.console.menus.manager).not.toHaveProperty('cadPreview')
+    expect(en.console.menus.manager).not.toHaveProperty('cadPreview')
+  })
+
   it('keeps Workbench reachable as the general data-service consumer', () => {
     const configSource = readFileSync(new URL('../src/config/portalConfig.js', import.meta.url), 'utf8')
     expect(configSource).toContain("modules: ['develop', 'service', 'workbench', 'orchestrator', 'monitor']")

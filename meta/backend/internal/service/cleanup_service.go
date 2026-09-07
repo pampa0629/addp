@@ -15,7 +15,6 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/metacleanup"
 	"github.com/addp/meta/internal/models"
-	"github.com/addp/meta/internal/scantask"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
@@ -373,7 +372,7 @@ func (s *CleanupService) metaEngineDeletionImpact(ctx context.Context, tenantID 
 		items = append(items, events.CleanupImpactItem{StableRef: fmt.Sprintf("meta_item:%d", item.ID), Disposition: events.CleanupImpactWillDelete})
 	}
 	for _, task := range scanTasks {
-		items = append(items, events.CleanupImpactItem{StableRef: fmt.Sprintf("meta_scan_task:%d", task.ID), Disposition: events.CleanupImpactWillDelete})
+		items = append(items, events.CleanupImpactItem{StableRef: fmt.Sprintf("meta_scan_task:%d", task.ID), Disposition: events.CleanupImpactWillDisable})
 	}
 	return events.BuildCleanupImpactData(items, "/meta/catalog")
 }
@@ -484,11 +483,19 @@ func (s *CleanupService) ExecuteCleanup(ctx context.Context, tenantID uint, clea
 		}
 		result.DisabledScanTaskDefinitions = disabled
 	case events.CleanupModePhysical:
-		deleted, err := s.deleteInvalidEngineScanTaskDefinitions(ctx, tenantID, scope, invalidEngineIDs)
-		if err != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("删除扫描任务定义失败: %v", err))
+		if scope.EngineID > 0 {
+			disabled, err := s.disableInvalidEngineScanTaskDefinitions(ctx, tenantID, scope, invalidEngineIDs)
+			if err != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("禁用扫描任务定义失败: %v", err))
+			}
+			result.DisabledScanTaskDefinitions = disabled
+		} else {
+			deleted, err := s.deleteInvalidEngineScanTaskDefinitions(ctx, tenantID, scope, invalidEngineIDs)
+			if err != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("删除扫描任务定义失败: %v", err))
+			}
+			result.DeletedScanTaskDefinitions = deleted
 		}
-		result.DeletedScanTaskDefinitions = deleted
 	}
 
 	return result, nil
@@ -526,24 +533,19 @@ func (s *CleanupService) deleteInvalidEngineScanTaskDefinitions(ctx context.Cont
 }
 
 func (s *CleanupService) invalidEngineScanTaskDefinitionsQuery(ctx context.Context, tenantID uint, scope metacleanup.CleanupScope, invalidEngineIDs []uint) *gorm.DB {
-	query := s.db.WithContext(ctx).Model(&models.ScanTask{}).
-		Where("owner_module = ?", "system")
+	query := s.db.WithContext(ctx).Model(&models.ScanTask{})
 	if tenantID > 0 {
 		query = query.Where("tenant_id = ?", tenantID)
 	}
 	if scope.EngineID > 0 {
-		return query.Where("engine_id = ? AND owner_ref = ?", scope.EngineID, scantask.AutomaticTaskOwnerRef(scope.EngineID))
+		return query.Where("engine_id = ?", scope.EngineID)
 	}
 
 	if len(invalidEngineIDs) == 0 {
 		return query.Where("1 = 0")
 	}
 
-	ownerRefs := make([]string, 0, len(invalidEngineIDs))
-	for _, engineID := range invalidEngineIDs {
-		ownerRefs = append(ownerRefs, scantask.AutomaticTaskOwnerRef(engineID))
-	}
-	return query.Where("engine_id IN ? AND owner_ref IN ?", invalidEngineIDs, ownerRefs)
+	return query.Where("engine_id IN ?", invalidEngineIDs)
 }
 
 // writeResult 写入资源回收结果到 Redis

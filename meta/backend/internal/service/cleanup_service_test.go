@@ -37,6 +37,32 @@ func TestCleanupScanReportsInvalidEngineScanTaskDefinitions(t *testing.T) {
 	}
 }
 
+func TestCleanupScanReportsTaskOnlyInvalidEngineForAnyOwner(t *testing.T) {
+	db := openObjectCatalogScanTestDB(t)
+	createScanTaskTable(t, db)
+	systemClient := newEmptyEngineSystemClient(t)
+
+	task := &models.ScanTask{
+		TenantID: 1, EngineID: 25, Name: "Business Neo4j 定时扫描",
+		Schedule: "15 3 * * *", Enabled: true, OwnerModule: "meta", CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	if err := db.Create(task).Error; err != nil {
+		t.Fatalf("create scan task: %v", err)
+	}
+
+	svc := NewCleanupService(db, nil, systemClient, nil, CleanupConfig{Enabled: true})
+	stats, err := svc.ScanReclaimCandidates(context.Background(), 1, nil)
+	if err != nil {
+		t.Fatalf("ScanReclaimCandidates() error = %v", err)
+	}
+	if stats.ScanTaskDefinitions.Count != 1 {
+		t.Fatalf("scan task definition count = %d, want 1", stats.ScanTaskDefinitions.Count)
+	}
+	if stats.InvalidEngines.Count != 0 {
+		t.Fatalf("task-only invalid engine must not be reported as a Meta snapshot: %#v", stats.InvalidEngines)
+	}
+}
+
 func TestCleanupLogicalDisablesInvalidEngineScanTaskDefinitions(t *testing.T) {
 	db := openObjectCatalogScanTestDB(t)
 	createScanTaskTable(t, db)
@@ -71,7 +97,7 @@ func TestCleanupLogicalDisablesInvalidEngineScanTaskDefinitions(t *testing.T) {
 	}
 }
 
-func TestCleanupPhysicalDeletesInvalidEngineScanTaskDefinitions(t *testing.T) {
+func TestCleanupEngineScopedPhysicalDisablesInvalidEngineScanTaskDefinitions(t *testing.T) {
 	db := openObjectCatalogScanTestDB(t)
 	createScanTaskTable(t, db)
 
@@ -88,18 +114,16 @@ func TestCleanupPhysicalDeletesInvalidEngineScanTaskDefinitions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteCleanup() error = %v", err)
 	}
-	if result.DeletedScanTaskDefinitions != 1 {
-		t.Fatalf("deleted scan task definitions = %d, want 1", result.DeletedScanTaskDefinitions)
+	if result.DisabledScanTaskDefinitions != 1 || result.DeletedScanTaskDefinitions != 0 {
+		t.Fatalf("cleanup result = %#v, want one disabled task", result)
 	}
 
-	var count int64
-	if err := db.Model(&models.ScanTask{}).
-		Where("id = ?", task.ID).
-		Count(&count).Error; err != nil {
-		t.Fatalf("count scan task: %v", err)
+	var stored models.ScanTask
+	if err := db.First(&stored, task.ID).Error; err != nil {
+		t.Fatalf("load scan task: %v", err)
 	}
-	if count != 0 {
-		t.Fatalf("scan task count = %d, want 0", count)
+	if stored.Enabled {
+		t.Fatal("engine lifecycle cleanup must preserve and disable the task definition")
 	}
 }
 

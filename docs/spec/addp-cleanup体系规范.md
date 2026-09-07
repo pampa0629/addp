@@ -90,6 +90,8 @@ Meta 资源回收执行方只治理 Meta-owned 资源：
 - Meta search index。
 - Meta 自己的扫描任务定义、扫描锁或执行残留。
 - System 中不存在、已禁用，或 active 但不再声明 `storage` 能力的 Engine Instance，均不再是合法的 Meta 数据源；其历史 Meta 快照属于无效源事实，由 Meta cleanup 回收。
+- 无效 Engine 候选集必须取 Meta 事实中的 Engine 引用与 Meta 扫描任务定义中的 Engine 绑定之并集；不得因为该 Engine 的事实已经被软删除或物理删除，而漏掉“只剩任务定义”的孤儿引用。
+- 普通手工 scan 必须评估所有强绑定无效 Engine 的 Meta 扫描任务定义，不以 `owner_module` 或自动任务 `owner_ref` 作为漏掉用户创建任务的过滤条件。
 
 Meta 不得：
 
@@ -107,7 +109,15 @@ Manager 资源回收执行方只治理 Manager-owned 派生产物和缓存：
 - `manager.vector_tile_cache`、`manager.vector_tile_cache_tasks`、`storage_ref` 指向的瓦片对象和 manifest。
 - Manager runtime tile cache。
 - `manager.embeddings`、`manager.embedding_tasks` 以及向量化结果。
+- Manager TaskProvider 声明的全部任务定义；TaskProvider 任务类型与 cleanup 任务注册表必须保持一一对应，新增任务类型时必须由一致性门禁阻止漏注册。
+- Manager 受管快显产物，包括 COG、3D Tiles、GLB、KSplat、COPC 和 PPTX/PDF 等已登记 artifact state 及其物理产物。
 - Manager preview cache、缩略图、抽取缓存等后续 Manager-owned 产物。
+
+Manager 任务定义残留治理规则：
+
+- 任务配置中 `source` 与 `target` 的强绑定 Engine、ResourceLocator、item ID 或 fingerprint 任一已失效，该任务都是 cleanup 候选；不得只解析单一 `target` 字段。
+- 普通手工 scan 必须同时发现已启用与曾被逻辑回收禁用的孤儿任务定义。`logical_cleanup` 只禁用仍启用的候选；无 lifecycle context 的手工 `physical_cleanup` 允许硬删除孤儿任务定义，包括先前已被逻辑回收禁用的定义。
+- Engine 生命周期 cleanup 不得物理删除用户任务定义；即使请求的 cleanup mode 为 `physical_cleanup`，任务定义仍映射为禁用并记录 `missing_engine`，供用户后续显式重绑或删除。
 
 Manager 不得：
 
@@ -371,7 +381,7 @@ System 只能依赖 `summary` 中的标准摘要字段计算全局视图，不�
 | `scanned_items` | scan 阶段发现的候选项数量。 |
 | `affected_records` | execute 阶段影响的状态记录数量。 |
 | `deleted_physical_artifacts` | 删除的物理产物数量。 |
-| `freed_bytes` | 释放空间字节数。 |
+| `freed_bytes` | scan 时表示已登记候选产物的预计可释放空间；execute 时表示本次实际释放空间。无法可靠取得大小的候选项不计入。 |
 | `marked_missing_source` | 标记源缺失的产物数量。 |
 | `marked_outdated` | 标记过期的产物数量。 |
 | `disabled_task_definitions` | 禁用的任务定义数量。 |
@@ -380,6 +390,8 @@ System 只能依赖 `summary` 中的标准摘要字段计算全局视图，不�
 | `risk_level` | `low`、`medium`、`high`。 |
 
 模块可以在 `statistics` 中报告私有字段，例如 Manager 的 `deleted_tile_cache`、`deleted_embeddings`、`skipped_external_targets`，但 System 不应把这些字段写入 coordinator 的核心逻辑。
+
+`scanned_items` 是 scan 阶段的候选规模，`affected_records` 只表示 execute 阶段实际改变的记录。System UI 在 scan 结果中必须优先展示“发现项”，不得用值为 0 的 `affected_records` 暗示 scan 未发现候选。scan 结果不得把“候选任务定义数”写入 `disabled_task_definitions`，该字段只记录 execute 实际禁用数。
 
 ## 九、监控与审计
 
@@ -583,8 +595,8 @@ curl -sS "$BASE/monitor/executions/by-execution-id/$EXECUTION_ID/tree" \
 | System cleanup UI 提供 Monitor 跳转。 | 已完成 |
 | 从 Meta 移除对 Manager 表、Manager bucket 和 System bucket 的直接 cleanup 逻辑。 | 已完成 |
 | 清理旧协议字段、旧 bucket prefix 假设、`soft_delete` / `hard_delete` 跨模块语义和双轨实现。 | 已完成主路径；保留文档中的禁止规则说明 |
-| Manager 任务定义残留治理，例如 embedding / tile cache / vector materialized view 任务定义的禁用或归档。 | 已完成主路径 |
-| Meta 扫描任务定义残留治理，例如 engine 删除后强绑定该 engine 的自动扫描任务定义禁用或删除。 | 已完成主路径 |
+| Manager 任务定义残留治理，覆盖 Manager TaskProvider 声明的全部任务类型，并支持禁用或物理删除孤儿定义。 | 已完成主路径 |
+| Meta 扫描任务定义残留治理，覆盖仅存在于任务定义的无效 Engine 引用，不限于 System 自动任务。 | 已完成主路径 |
 | Transfer 任务定义残留治理，例如 engine 删除后引用该 engine 的传输任务定义禁用或删除。 | 已完成主路径 |
 | Service 服务发布定义残留治理，例如 engine 删除后引用该 engine 的查询服务、图查询服务和动态图层禁用或删除。 | 已完成主路径 |
 | Quality 质量配置和问题状态残留治理，例如 engine 删除后引用该 engine 的规则应用、检查任务和问题工单禁用、忽略或删除。 | 已完成主路径 |

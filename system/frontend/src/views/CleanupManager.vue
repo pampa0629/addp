@@ -164,8 +164,8 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="summary.scanned_items" :label="t('system.cleanup.modules.columns.scannedItems')" width="120" />
-            <el-table-column prop="summary.affected_records" :label="t('system.cleanup.modules.columns.affectedRecords')" width="130" />
+			<el-table-column v-if="latestResult.action === 'scan'" prop="summary.scanned_items" :label="t('system.cleanup.modules.columns.scannedItems')" width="120" />
+			<el-table-column v-else prop="summary.affected_records" :label="t('system.cleanup.modules.columns.affectedRecords')" width="130" />
             <el-table-column :label="t('system.cleanup.modules.columns.stateChanges')" min-width="180">
               <template #default="{ row }">
                 {{ formatStateChanges(row.summary) }}
@@ -434,8 +434,8 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="summary.scanned_items" :label="t('system.cleanup.modules.columns.scannedItems')" width="120" />
-            <el-table-column prop="summary.affected_records" :label="t('system.cleanup.modules.columns.affectedRecords')" width="130" />
+			<el-table-column v-if="taskDetail.action === 'scan'" prop="summary.scanned_items" :label="t('system.cleanup.modules.columns.scannedItems')" width="120" />
+			<el-table-column v-else prop="summary.affected_records" :label="t('system.cleanup.modules.columns.affectedRecords')" width="130" />
             <el-table-column :label="t('system.cleanup.modules.columns.stateChanges')" min-width="180">
               <template #default="{ row }">
                 {{ formatStateChanges(row.summary) }}

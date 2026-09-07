@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sort"
 	"time"
 
 	commonClient "github.com/addp/common/client"
@@ -324,7 +325,7 @@ func (c *DatabaseCleaner) InvalidEngineIDsWithScope(ctx context.Context, tenantI
 
 	eligibilityByID := metaEngineEligibilityByID(allEngines)
 
-	var allEngineIDsInDB []uint
+	var nodeEngineIDs []uint
 	query := c.db.Table("meta.meta_node").
 		Select("DISTINCT engine_id").
 		Order("engine_id")
@@ -334,12 +335,37 @@ func (c *DatabaseCleaner) InvalidEngineIDsWithScope(ctx context.Context, tenantI
 	if scope.EngineID > 0 {
 		query = query.Where("engine_id = ?", scope.EngineID)
 	}
-	if err := query.Scan(&allEngineIDsInDB).Error; err != nil {
+	if err := query.Scan(&nodeEngineIDs).Error; err != nil {
 		if c.log != nil {
 			c.log.Error("查询数据库引擎ID失败", "error", err)
 		}
 		return ids
 	}
+	referencedEngineIDs := make(map[uint]struct{}, len(nodeEngineIDs))
+	for _, engineID := range nodeEngineIDs {
+		referencedEngineIDs[engineID] = struct{}{}
+	}
+	if metaScanTaskTableExists(c.db) {
+		var taskEngineIDs []uint
+		taskQuery := c.db.Model(&models.ScanTask{}).Distinct("engine_id")
+		if tenantID > 0 {
+			taskQuery = taskQuery.Where("tenant_id = ?", tenantID)
+		}
+		if err := taskQuery.Pluck("engine_id", &taskEngineIDs).Error; err != nil {
+			if c.log != nil {
+				c.log.Error("查询扫描任务引擎ID失败", "error", err)
+			}
+			return ids
+		}
+		for _, engineID := range taskEngineIDs {
+			referencedEngineIDs[engineID] = struct{}{}
+		}
+	}
+	allEngineIDsInDB := make([]uint, 0, len(referencedEngineIDs))
+	for engineID := range referencedEngineIDs {
+		allEngineIDsInDB = append(allEngineIDsInDB, engineID)
+	}
+	sort.Slice(allEngineIDsInDB, func(i, j int) bool { return allEngineIDsInDB[i] < allEngineIDsInDB[j] })
 
 	for _, engineID := range allEngineIDsInDB {
 		eligibility, exists := eligibilityByID[engineID]
@@ -348,4 +374,18 @@ func (c *DatabaseCleaner) InvalidEngineIDsWithScope(ctx context.Context, tenantI
 		}
 	}
 	return ids
+}
+
+func metaScanTaskTableExists(db *gorm.DB) bool {
+	if db == nil {
+		return false
+	}
+	if db.Dialector.Name() == "sqlite" {
+		var count int64
+		if err := db.Raw("SELECT COUNT(*) FROM meta.sqlite_master WHERE type = 'table' AND name = 'scan_tasks'").Scan(&count).Error; err != nil {
+			return false
+		}
+		return count > 0
+	}
+	return db.Migrator().HasTable(&models.ScanTask{})
 }

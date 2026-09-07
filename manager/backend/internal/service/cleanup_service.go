@@ -10,6 +10,7 @@ import (
 	"time"
 
 	commonClient "github.com/addp/common/client"
+	engineselection "github.com/addp/common/engine/selection"
 	"github.com/addp/common/events"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/exportartifact"
@@ -24,19 +25,28 @@ import (
 )
 
 type CleanupService struct {
-	redis            *redis.Client
-	metaClient       *commonClient.MetaClient
-	taskExecRepo     *commonExecution.TaskExecutionRepository
-	previewStateRepo *repository.PreviewStateRepository
-	tileCacheSvc     *TileCacheTaskService
-	embeddingRepo    *repository.EmbeddingRepository
-	optimizationSvc  *VectorMaterializedViewTaskService
-	exportRepo       *repository.ExportSessionRepository
-	minioClient      *minio.Client
-	minioBucket      string
-	exportCleanup    ExportCleanupOptions
-	log              *slog.Logger
-	stopCh           chan struct{}
+	redis               *redis.Client
+	metaClient          *commonClient.MetaClient
+	systemClient        *commonClient.SystemServiceClient
+	taskExecRepo        *commonExecution.TaskExecutionRepository
+	previewStateRepo    *repository.PreviewStateRepository
+	tileCacheSvc        *TileCacheTaskService
+	embeddingRepo       *repository.EmbeddingRepository
+	optimizationSvc     *VectorMaterializedViewTaskService
+	taskDefinitionRepo  *repository.CleanupTaskDefinitionRepository
+	managedArtifactRepo *repository.CleanupManagedArtifactRepository
+	rasterCOGSvc        *RasterCOGTaskService
+	model3DTilesSvc     *Model3DTilesTaskService
+	model3DGLBSvc       *Model3DGLBTaskService
+	gaussianSplatSvc    *GaussianSplatKSplatTaskService
+	pointCloudCOPCSvc   *PointCloudCOPCTaskService
+	pptxPDFSvc          *PPTXPDFTaskService
+	exportRepo          *repository.ExportSessionRepository
+	minioClient         *minio.Client
+	minioBucket         string
+	exportCleanup       ExportCleanupOptions
+	log                 *slog.Logger
+	stopCh              chan struct{}
 }
 
 type ExportCleanupOptions = exportartifact.CleanupOptions
@@ -46,23 +56,36 @@ type ManagerCleanupStats struct {
 	TileCaches               int      `json:"vector_tile_caches"`
 	Embeddings               int      `json:"embeddings"`
 	VectorMaterializedViews  int      `json:"vector_materialized_view_generations"`
+	ManagedArtifacts         int      `json:"managed_quick_view_artifacts"`
 	ExportSessions           int      `json:"export_sessions,omitempty"`
 	DeletedPhysicalArtifacts int      `json:"deleted_physical_artifacts,omitempty"`
+	FreedBytes               int64    `json:"freed_bytes,omitempty"`
 	MarkedMissingSource      int      `json:"marked_missing_source,omitempty"`
 	SkippedExternalTargets   int      `json:"skipped_external_targets,omitempty"`
 	AbandonedExternal        int      `json:"abandoned_external,omitempty"`
+	TaskDefinitions          int      `json:"task_definitions,omitempty"`
 	DisabledTaskDefinitions  int      `json:"disabled_task_definitions,omitempty"`
+	DeletedTaskDefinitions   int      `json:"deleted_task_definitions,omitempty"`
 	Errors                   []string `json:"errors,omitempty"`
 }
 
 func NewCleanupService(
 	redisClient *redis.Client,
 	metaClient *commonClient.MetaClient,
+	systemClient *commonClient.SystemServiceClient,
 	taskExecRepo *commonExecution.TaskExecutionRepository,
 	previewStateRepo *repository.PreviewStateRepository,
 	tileCacheSvc *TileCacheTaskService,
 	embeddingRepo *repository.EmbeddingRepository,
 	optimizationSvc *VectorMaterializedViewTaskService,
+	taskDefinitionRepo *repository.CleanupTaskDefinitionRepository,
+	managedArtifactRepo *repository.CleanupManagedArtifactRepository,
+	rasterCOGSvc *RasterCOGTaskService,
+	model3DTilesSvc *Model3DTilesTaskService,
+	model3DGLBSvc *Model3DGLBTaskService,
+	gaussianSplatSvc *GaussianSplatKSplatTaskService,
+	pointCloudCOPCSvc *PointCloudCOPCTaskService,
+	pptxPDFSvc *PPTXPDFTaskService,
 	exportRepo *repository.ExportSessionRepository,
 	minioClient *minio.Client,
 	minioBucket string,
@@ -70,19 +93,28 @@ func NewCleanupService(
 ) *CleanupService {
 	exportCleanup = exportartifact.NormalizeCleanupOptions(exportCleanup)
 	return &CleanupService{
-		redis:            redisClient,
-		metaClient:       metaClient,
-		taskExecRepo:     taskExecRepo,
-		previewStateRepo: previewStateRepo,
-		tileCacheSvc:     tileCacheSvc,
-		embeddingRepo:    embeddingRepo,
-		optimizationSvc:  optimizationSvc,
-		exportRepo:       exportRepo,
-		minioClient:      minioClient,
-		minioBucket:      strings.Trim(minioBucket, "/"),
-		exportCleanup:    exportCleanup,
-		log:              logger.With("component", "manager_cleanup_service"),
-		stopCh:           make(chan struct{}),
+		redis:               redisClient,
+		metaClient:          metaClient,
+		systemClient:        systemClient,
+		taskExecRepo:        taskExecRepo,
+		previewStateRepo:    previewStateRepo,
+		tileCacheSvc:        tileCacheSvc,
+		embeddingRepo:       embeddingRepo,
+		optimizationSvc:     optimizationSvc,
+		taskDefinitionRepo:  taskDefinitionRepo,
+		managedArtifactRepo: managedArtifactRepo,
+		rasterCOGSvc:        rasterCOGSvc,
+		model3DTilesSvc:     model3DTilesSvc,
+		model3DGLBSvc:       model3DGLBSvc,
+		gaussianSplatSvc:    gaussianSplatSvc,
+		pointCloudCOPCSvc:   pointCloudCOPCSvc,
+		pptxPDFSvc:          pptxPDFSvc,
+		exportRepo:          exportRepo,
+		minioClient:         minioClient,
+		minioBucket:         strings.Trim(minioBucket, "/"),
+		exportCleanup:       exportCleanup,
+		log:                 logger.With("component", "manager_cleanup_service"),
+		stopCh:              make(chan struct{}),
 	}
 }
 
@@ -285,11 +317,21 @@ func (s *CleanupService) ScanReclaimCandidates(ctx context.Context, tenantID uin
 		}
 		stats.VectorMaterializedViews = len(s.filterMissingVectorMaterializedViews(ctx, tenantID, items, cleanupContext))
 	}
-	taskCandidates, err := s.countTaskDefinitionCleanupCandidates(ctx, tenantID, cleanupContext)
+	managedArtifacts, err := s.managedArtifactCleanupCandidates(ctx, tenantID, cleanupContext)
 	if err != nil {
 		return nil, err
 	}
-	stats.DisabledTaskDefinitions = taskCandidates
+	stats.ManagedArtifacts = len(managedArtifacts)
+	for _, artifact := range managedArtifacts {
+		if artifact.SizeBytes > 0 {
+			stats.FreedBytes += artifact.SizeBytes
+		}
+	}
+	taskCandidates, err := s.taskDefinitionCleanupCandidates(ctx, tenantID, cleanupContext)
+	if err != nil {
+		return nil, err
+	}
+	stats.TaskDefinitions = len(taskCandidates)
 	return stats, nil
 }
 
@@ -408,99 +450,62 @@ func (s *CleanupService) ExecuteCleanup(ctx context.Context, tenantID uint, clea
 			stats.MarkedMissingSource++
 		}
 	}
+	managedArtifacts, err := s.managedArtifactCleanupCandidates(ctx, tenantID, cleanupContext)
+	if err != nil {
+		return nil, err
+	}
+	for _, artifact := range managedArtifacts {
+		if cleanupMode == events.CleanupModePhysical {
+			if err := s.deleteManagedArtifact(ctx, artifact); err != nil {
+				stats.Errors = append(stats.Errors, fmt.Sprintf("delete %s artifact %d: %v", artifact.TaskType, artifact.ID, err))
+				continue
+			}
+			stats.DeletedPhysicalArtifacts++
+			if artifact.SizeBytes > 0 {
+				stats.FreedBytes += artifact.SizeBytes
+			}
+		} else if err := s.managedArtifactRepo.MarkMissingSource(ctx, artifact); err != nil {
+			stats.Errors = append(stats.Errors, fmt.Sprintf("mark %s artifact %d: %v", artifact.TaskType, artifact.ID, err))
+			continue
+		}
+		stats.ManagedArtifacts++
+		stats.MarkedMissingSource++
+	}
 	if err := s.cleanupTaskDefinitions(ctx, tenantID, cleanupMode, cleanupContext, stats); err != nil {
 		return nil, err
 	}
 	return stats, nil
 }
 
-func (s *CleanupService) countTaskDefinitionCleanupCandidates(ctx context.Context, tenantID uint, cleanupContext map[string]interface{}) (int, error) {
-	total := 0
-	if s.embeddingRepo != nil {
-		tasks, err := s.embeddingRepo.ListAllEmbeddingTasks(ctx, tenantID)
-		if err != nil {
-			return 0, err
-		}
-		total += len(s.filterEmbeddingTasksForCleanup(ctx, tenantID, tasks, cleanupContext))
-	}
-	if s.tileCacheSvc != nil && s.tileCacheSvc.tileCacheRepo != nil {
-		tasks, err := s.tileCacheSvc.tileCacheRepo.ListAllTasks(ctx, tenantID)
-		if err != nil {
-			return 0, err
-		}
-		total += len(s.filterTileCacheTasksForCleanup(ctx, tenantID, tasks, cleanupContext))
-	}
-	if s.optimizationSvc != nil && s.optimizationSvc.repo != nil {
-		tasks, err := s.optimizationSvc.repo.ListAllTasks(ctx, tenantID)
-		if err != nil {
-			return 0, err
-		}
-		total += len(s.filterVectorMaterializedViewTasksForCleanup(ctx, tenantID, tasks, cleanupContext))
-	}
-	return total, nil
-}
-
 func (s *CleanupService) cleanupTaskDefinitions(ctx context.Context, tenantID uint, cleanupMode string, cleanupContext map[string]interface{}, stats *ManagerCleanupStats) error {
-	if stats == nil {
+	if stats == nil || s.taskDefinitionRepo == nil {
 		return nil
+	}
+	candidates, err := s.taskDefinitionCleanupCandidates(ctx, tenantID, cleanupContext)
+	if err != nil {
+		return err
 	}
 	taskCleanupMode := cleanupMode
 	if uintFromCleanupContext(cleanupContext, "engine_id") > 0 {
 		taskCleanupMode = events.CleanupModeLogical
 	}
-	if s.embeddingRepo != nil {
-		tasks, err := s.embeddingRepo.ListAllEmbeddingTasks(ctx, tenantID)
-		if err != nil {
-			return err
-		}
-		for _, task := range s.filterEmbeddingTasksForCleanup(ctx, tenantID, tasks, cleanupContext) {
-			if taskCleanupMode == events.CleanupModePhysical {
-				if err := s.embeddingRepo.DeleteEmbeddingTask(ctx, task.ID, tenantID); err != nil {
-					stats.Errors = append(stats.Errors, fmt.Sprintf("delete embedding_task %d: %v", task.ID, err))
-					continue
-				}
-			} else if err := s.embeddingRepo.DisableEmbeddingTaskForCleanup(ctx, tenantID, task.ID, cleanupTaskDefinitionReason(cleanupContext)); err != nil {
-				stats.Errors = append(stats.Errors, fmt.Sprintf("disable embedding_task %d: %v", task.ID, err))
+	for _, task := range candidates {
+		if taskCleanupMode == events.CleanupModePhysical {
+			if err := s.taskDefinitionRepo.HardDelete(ctx, task); err != nil {
+				stats.Errors = append(stats.Errors, fmt.Sprintf("delete %s task %d: %v", task.TaskType, task.ID, err))
 				continue
 			}
-			stats.DisabledTaskDefinitions++
+			stats.DeletedTaskDefinitions++
+			continue
 		}
-	}
-	if s.tileCacheSvc != nil && s.tileCacheSvc.tileCacheRepo != nil {
-		tasks, err := s.tileCacheSvc.tileCacheRepo.ListAllTasks(ctx, tenantID)
-		if err != nil {
-			return err
+		if !task.Enabled {
+			continue
 		}
-		for _, task := range s.filterTileCacheTasksForCleanup(ctx, tenantID, tasks, cleanupContext) {
-			if taskCleanupMode == events.CleanupModePhysical {
-				if err := s.tileCacheSvc.tileCacheRepo.DeleteTask(ctx, task.ID, tenantID); err != nil {
-					stats.Errors = append(stats.Errors, fmt.Sprintf("delete vector_tile_cache_task %d: %v", task.ID, err))
-					continue
-				}
-			} else if err := s.tileCacheSvc.tileCacheRepo.DisableTaskForCleanup(ctx, tenantID, task.ID, cleanupTaskDefinitionReason(cleanupContext)); err != nil {
-				stats.Errors = append(stats.Errors, fmt.Sprintf("disable vector_tile_cache_task %d: %v", task.ID, err))
-				continue
-			}
-			stats.DisabledTaskDefinitions++
+		if err := s.taskDefinitionRepo.Disable(ctx, task, task.CleanupReason); err != nil {
+			stats.Errors = append(stats.Errors, fmt.Sprintf("disable %s task %d: %v", task.TaskType, task.ID, err))
+			continue
 		}
-	}
-	if s.optimizationSvc != nil && s.optimizationSvc.repo != nil {
-		tasks, err := s.optimizationSvc.repo.ListAllTasks(ctx, tenantID)
-		if err != nil {
-			return err
-		}
-		for _, task := range s.filterVectorMaterializedViewTasksForCleanup(ctx, tenantID, tasks, cleanupContext) {
-			if taskCleanupMode == events.CleanupModePhysical {
-				if err := s.optimizationSvc.repo.DeleteTask(ctx, task.ID, tenantID); err != nil {
-					stats.Errors = append(stats.Errors, fmt.Sprintf("delete vector_materialized_view_generation_task %d: %v", task.ID, err))
-					continue
-				}
-			} else if err := s.optimizationSvc.repo.DisableTaskForCleanup(ctx, tenantID, task.ID, cleanupTaskDefinitionReason(cleanupContext)); err != nil {
-				stats.Errors = append(stats.Errors, fmt.Sprintf("disable vector_materialized_view_generation_task %d: %v", task.ID, err))
-				continue
-			}
-			stats.DisabledTaskDefinitions++
-		}
+		stats.DisabledTaskDefinitions++
 	}
 	return nil
 }
@@ -534,17 +539,6 @@ func (s *CleanupService) managerEngineDeletionImpact(ctx context.Context, tenant
 				appendImpact(stableRef, events.CleanupImpactRunning)
 			}
 		}
-		tasks, err := s.tileCacheSvc.tileCacheRepo.ListAllTasks(ctx, tenantID)
-		if err != nil {
-			return events.CleanupImpactData{}, err
-		}
-		for _, task := range s.filterTileCacheTasksForCleanup(ctx, tenantID, tasks, cleanupContext) {
-			stableRef := fmt.Sprintf("manager_vector_tile_cache_task:%d", task.ID)
-			appendImpact(stableRef, events.CleanupImpactWillDisable)
-			if cleanupExecutionRunning(task.LastExecutionStatus) {
-				appendImpact(stableRef, events.CleanupImpactRunning)
-			}
-		}
 	}
 	if s.embeddingRepo != nil {
 		values, err := s.embeddingRepo.ListAllEmbeddings(ctx, tenantID)
@@ -553,17 +547,6 @@ func (s *CleanupService) managerEngineDeletionImpact(ctx context.Context, tenant
 		}
 		for _, item := range s.filterMissingEmbeddings(ctx, tenantID, values, cleanupContext) {
 			appendImpact(fmt.Sprintf("manager_embedding:%d", item.ID), events.CleanupImpactWillDelete)
-		}
-		tasks, err := s.embeddingRepo.ListAllEmbeddingTasks(ctx, tenantID)
-		if err != nil {
-			return events.CleanupImpactData{}, err
-		}
-		for _, task := range s.filterEmbeddingTasksForCleanup(ctx, tenantID, tasks, cleanupContext) {
-			stableRef := fmt.Sprintf("manager_embedding_task:%d", task.ID)
-			appendImpact(stableRef, events.CleanupImpactWillDisable)
-			if cleanupExecutionRunning(task.LastExecutionStatus) {
-				appendImpact(stableRef, events.CleanupImpactRunning)
-			}
 		}
 	}
 	if s.optimizationSvc != nil && s.optimizationSvc.repo != nil {
@@ -578,16 +561,27 @@ func (s *CleanupService) managerEngineDeletionImpact(ctx context.Context, tenant
 				appendImpact(stableRef, events.CleanupImpactRunning)
 			}
 		}
-		tasks, err := s.optimizationSvc.repo.ListAllTasks(ctx, tenantID)
-		if err != nil {
-			return events.CleanupImpactData{}, err
+	}
+	artifacts, err := s.managedArtifactCleanupCandidates(ctx, tenantID, cleanupContext)
+	if err != nil {
+		return events.CleanupImpactData{}, err
+	}
+	for _, artifact := range artifacts {
+		stableRef := fmt.Sprintf("manager_%s_artifact:%d", artifact.TaskType, artifact.ID)
+		appendImpact(stableRef, events.CleanupImpactWillDelete)
+		if cleanupArtifactRunning(artifact.Status) {
+			appendImpact(stableRef, events.CleanupImpactRunning)
 		}
-		for _, task := range s.filterVectorMaterializedViewTasksForCleanup(ctx, tenantID, tasks, cleanupContext) {
-			stableRef := fmt.Sprintf("manager_vector_materialized_view_task:%d", task.ID)
-			appendImpact(stableRef, events.CleanupImpactWillDisable)
-			if cleanupExecutionRunning(task.LastExecutionStatus) {
-				appendImpact(stableRef, events.CleanupImpactRunning)
-			}
+	}
+	tasks, err := s.taskDefinitionCleanupCandidates(ctx, tenantID, cleanupContext)
+	if err != nil {
+		return events.CleanupImpactData{}, err
+	}
+	for _, task := range tasks {
+		stableRef := fmt.Sprintf("manager_%s_task:%d", task.TaskType, task.ID)
+		appendImpact(stableRef, events.CleanupImpactWillDisable)
+		if cleanupExecutionRunning(task.LastExecutionStatus) {
+			appendImpact(stableRef, events.CleanupImpactRunning)
 		}
 	}
 	return events.BuildCleanupImpactData(items, "/manager")
@@ -599,6 +593,15 @@ func cleanupExecutionRunning(status *string) bool {
 	}
 	switch strings.ToLower(strings.TrimSpace(*status)) {
 	case commonExecution.ExecutionStatusPending, commonExecution.ExecutionStatusRunning:
+		return true
+	default:
+		return false
+	}
+}
+
+func cleanupArtifactRunning(status string) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "building", "generating", commonExecution.ExecutionStatusPending, commonExecution.ExecutionStatusRunning:
 		return true
 	default:
 		return false
@@ -678,58 +681,130 @@ func (s *CleanupService) filterMissingVectorMaterializedViews(ctx context.Contex
 	return out
 }
 
-func (s *CleanupService) filterEmbeddingTasksForCleanup(ctx context.Context, tenantID uint, tasks []*models.EmbeddingTask, cleanupContext map[string]interface{}) []*models.EmbeddingTask {
-	out := make([]*models.EmbeddingTask, 0)
-	for _, task := range tasks {
-		if task == nil || !task.Enabled {
-			continue
-		}
-		target := cleanupTaskTargetFromConfig(task.Config)
-		if !s.matchesCleanupTaskTarget(target, cleanupContext) {
-			continue
-		}
-		if s.taskTargetSourceExists(ctx, tenantID, target, cleanupContext) {
-			continue
-		}
-		out = append(out, task)
+func (s *CleanupService) taskDefinitionCleanupCandidates(
+	ctx context.Context,
+	tenantID uint,
+	cleanupContext map[string]interface{},
+) ([]repository.CleanupTaskDefinition, error) {
+	if s.taskDefinitionRepo == nil {
+		return nil, nil
 	}
-	return out
+	definitions, err := s.taskDefinitionRepo.List(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	validEngineIDs, err := s.validCleanupEngineIDs(ctx, tenantID, cleanupContext)
+	if err != nil {
+		return nil, err
+	}
+	candidates := make([]repository.CleanupTaskDefinition, 0)
+	for _, definition := range definitions {
+		for _, target := range cleanupTaskTargetsFromDefinition(definition) {
+			if !s.matchesCleanupTaskTarget(target, cleanupContext) {
+				continue
+			}
+			reason := s.taskTargetMissingReason(ctx, tenantID, target, cleanupContext, validEngineIDs)
+			if reason == "" {
+				continue
+			}
+			definition.CleanupReason = reason
+			candidates = append(candidates, definition)
+			break
+		}
+	}
+	return candidates, nil
 }
 
-func (s *CleanupService) filterTileCacheTasksForCleanup(ctx context.Context, tenantID uint, tasks []*models.TileCacheTask, cleanupContext map[string]interface{}) []*models.TileCacheTask {
-	out := make([]*models.TileCacheTask, 0)
-	for _, task := range tasks {
-		if task == nil || !task.Enabled {
-			continue
+func (s *CleanupService) managedArtifactCleanupCandidates(
+	ctx context.Context,
+	tenantID uint,
+	cleanupContext map[string]interface{},
+) ([]repository.CleanupManagedArtifact, error) {
+	if s.managedArtifactRepo == nil {
+		return nil, nil
+	}
+	artifacts, err := s.managedArtifactRepo.List(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	validEngineIDs, err := s.validCleanupEngineIDs(ctx, tenantID, cleanupContext)
+	if err != nil {
+		return nil, err
+	}
+	candidates := make([]repository.CleanupManagedArtifact, 0)
+	for _, artifact := range artifacts {
+		target := cleanupTaskTarget{
+			EngineID: artifact.SourceEngineID, ItemID: artifact.ItemID,
+			ItemFingerprint: artifact.ItemFingerprint, Locator: artifact.Locator, VerifySource: true,
 		}
-		target := cleanupTaskTargetFromConfig(task.Config)
 		if !s.matchesCleanupTaskTarget(target, cleanupContext) {
 			continue
 		}
-		if s.taskTargetSourceExists(ctx, tenantID, target, cleanupContext) {
+		if s.taskTargetSourceExists(ctx, tenantID, target, cleanupContext, validEngineIDs) {
 			continue
 		}
-		out = append(out, task)
+		candidates = append(candidates, artifact)
 	}
-	return out
+	return candidates, nil
 }
 
-func (s *CleanupService) filterVectorMaterializedViewTasksForCleanup(ctx context.Context, tenantID uint, tasks []*models.VectorMaterializedViewTask, cleanupContext map[string]interface{}) []*models.VectorMaterializedViewTask {
-	out := make([]*models.VectorMaterializedViewTask, 0)
-	for _, task := range tasks {
-		if task == nil || !task.Enabled {
-			continue
+func (s *CleanupService) deleteManagedArtifact(ctx context.Context, artifact repository.CleanupManagedArtifact) error {
+	switch artifact.TaskType {
+	case commonExecution.TaskTypeRasterCOGGeneration:
+		if s.rasterCOGSvc == nil {
+			return errors.New("raster COG cleanup service is not configured")
 		}
-		target := cleanupTaskTargetFromConfig(task.Config)
-		if !s.matchesCleanupTaskTarget(target, cleanupContext) {
-			continue
+		return s.rasterCOGSvc.DeleteResult(ctx, artifact.ID, artifact.TenantID)
+	case commonExecution.TaskTypeModel3DTilesGeneration:
+		if s.model3DTilesSvc == nil {
+			return errors.New("model 3D Tiles cleanup service is not configured")
 		}
-		if s.taskTargetSourceExists(ctx, tenantID, target, cleanupContext) {
-			continue
+		return s.model3DTilesSvc.DeleteResult(ctx, artifact.ID, artifact.TenantID)
+	case commonExecution.TaskTypeModel3DGLBGeneration:
+		if s.model3DGLBSvc == nil {
+			return errors.New("model GLB cleanup service is not configured")
 		}
-		out = append(out, task)
+		return s.model3DGLBSvc.DeleteResult(ctx, artifact.ID, artifact.TenantID)
+	case commonExecution.TaskTypeGaussianSplatKSplatGeneration:
+		if s.gaussianSplatSvc == nil {
+			return errors.New("KSplat cleanup service is not configured")
+		}
+		return s.gaussianSplatSvc.DeleteResult(ctx, artifact.ID, artifact.TenantID)
+	case commonExecution.TaskTypePointCloudCOPCGeneration:
+		if s.pointCloudCOPCSvc == nil {
+			return errors.New("COPC cleanup service is not configured")
+		}
+		return s.pointCloudCOPCSvc.DeleteResult(ctx, artifact.ID, artifact.TenantID)
+	case commonExecution.TaskTypePPTXPDFGeneration:
+		if s.pptxPDFSvc == nil {
+			return errors.New("PPTX PDF cleanup service is not configured")
+		}
+		return s.pptxPDFSvc.DeleteResult(ctx, artifact.ID, artifact.TenantID)
+	default:
+		return fmt.Errorf("unsupported Manager cleanup artifact type %q", artifact.TaskType)
 	}
-	return out
+}
+
+func (s *CleanupService) validCleanupEngineIDs(
+	ctx context.Context,
+	tenantID uint,
+	cleanupContext map[string]interface{},
+) (map[uint]struct{}, error) {
+	if uintFromCleanupContext(cleanupContext, "engine_id") > 0 || s.systemClient == nil {
+		return nil, nil
+	}
+	engines, err := s.systemClient.WithTenantID(tenantID).ListEngines(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list tenant engines for Manager cleanup: %w", err)
+	}
+	valid := make(map[uint]struct{}, len(engines))
+	for index := range engines {
+		engine := &engines[index]
+		if engineselection.IsSelectionOption(engine) && engineselection.HasStorageCapability(engine) {
+			valid[engine.ID] = struct{}{}
+		}
+	}
+	return valid, nil
 }
 
 func (s *CleanupService) matchesCleanupContext(locator string, itemFingerprint string, itemID uint, cleanupContext map[string]interface{}) bool {
@@ -767,14 +842,41 @@ func (s *CleanupService) matchesCleanupTaskTarget(target cleanupTaskTarget, clea
 	return true
 }
 
-func (s *CleanupService) taskTargetSourceExists(ctx context.Context, tenantID uint, target cleanupTaskTarget, cleanupContext map[string]interface{}) bool {
+func (s *CleanupService) taskTargetSourceExists(
+	ctx context.Context,
+	tenantID uint,
+	target cleanupTaskTarget,
+	cleanupContext map[string]interface{},
+	validEngineIDs map[uint]struct{},
+) bool {
+	return s.taskTargetMissingReason(ctx, tenantID, target, cleanupContext, validEngineIDs) == ""
+}
+
+func (s *CleanupService) taskTargetMissingReason(
+	ctx context.Context,
+	tenantID uint,
+	target cleanupTaskTarget,
+	cleanupContext map[string]interface{},
+	validEngineIDs map[uint]struct{},
+) string {
 	if target.IsEmpty() {
-		return true
+		return ""
 	}
 	if engineID := uintFromCleanupContext(cleanupContext, "engine_id"); engineID > 0 && target.EngineID == engineID {
-		return false
+		return "missing_engine"
 	}
-	return s.sourceExists(ctx, tenantID, target.Locator, target.ItemID)
+	if validEngineIDs != nil && target.EngineID > 0 {
+		if _, exists := validEngineIDs[target.EngineID]; !exists {
+			return "missing_engine"
+		}
+	}
+	if !target.VerifySource {
+		return ""
+	}
+	if !s.sourceExists(ctx, tenantID, target.Locator, target.ItemID) {
+		return "missing_source"
+	}
+	return ""
 }
 
 func (s *CleanupService) sourceExists(ctx context.Context, tenantID uint, locator string, itemID uint) bool {
@@ -938,13 +1040,13 @@ func managerScanSummary(stats *ManagerCleanupStats) events.CleanupResultSummary 
 	if stats == nil {
 		return events.CleanupResultSummary{RiskLevel: "low"}
 	}
-	scanned := stats.PreviewStates + stats.TileCaches + stats.Embeddings + stats.VectorMaterializedViews + stats.DisabledTaskDefinitions
+	scanned := stats.PreviewStates + stats.TileCaches + stats.Embeddings + stats.VectorMaterializedViews + stats.ManagedArtifacts + stats.TaskDefinitions
 	return events.CleanupResultSummary{
-		ScannedItems:            scanned,
-		DisabledTaskDefinitions: stats.DisabledTaskDefinitions,
-		SkippedItems:            stats.SkippedExternalTargets,
-		ErrorCount:              len(stats.Errors),
-		RiskLevel:               riskLevelForCount(scanned),
+		ScannedItems: scanned,
+		FreedBytes:   stats.FreedBytes,
+		SkippedItems: stats.SkippedExternalTargets,
+		ErrorCount:   len(stats.Errors),
+		RiskLevel:    riskLevelForCount(scanned),
 	}
 }
 
@@ -952,10 +1054,11 @@ func managerExecuteSummary(stats *ManagerCleanupStats) events.CleanupResultSumma
 	if stats == nil {
 		return events.CleanupResultSummary{RiskLevel: "low"}
 	}
-	affected := stats.PreviewStates + stats.TileCaches + stats.Embeddings + stats.VectorMaterializedViews + stats.DisabledTaskDefinitions
+	affected := stats.PreviewStates + stats.TileCaches + stats.Embeddings + stats.VectorMaterializedViews + stats.ManagedArtifacts + stats.DisabledTaskDefinitions + stats.DeletedTaskDefinitions
 	return events.CleanupResultSummary{
 		AffectedRecords:          affected,
 		DeletedPhysicalArtifacts: stats.DeletedPhysicalArtifacts,
+		FreedBytes:               stats.FreedBytes,
 		MarkedMissingSource:      stats.MarkedMissingSource,
 		DisabledTaskDefinitions:  stats.DisabledTaskDefinitions,
 		SkippedItems:             stats.SkippedExternalTargets,
@@ -986,34 +1089,68 @@ type cleanupTaskTarget struct {
 	ItemID          uint
 	ItemFingerprint string
 	Locator         string
+	VerifySource    bool
 }
 
 func (t cleanupTaskTarget) IsEmpty() bool {
 	return t.EngineID == 0 && t.ItemID == 0 && strings.TrimSpace(t.ItemFingerprint) == "" && strings.TrimSpace(t.Locator) == ""
 }
 
-func cleanupTaskTargetFromConfig(config commonModels.JSONMap) cleanupTaskTarget {
-	targetMap, ok := asJSONMap(config["target"])
-	if !ok {
-		return cleanupTaskTarget{}
+func cleanupTaskTargetsFromDefinition(definition repository.CleanupTaskDefinition) []cleanupTaskTarget {
+	targets := make([]cleanupTaskTarget, 0, 3)
+	if definition.SourceEngineID > 0 || definition.ItemID > 0 || strings.TrimSpace(definition.ItemFingerprint) != "" || strings.TrimSpace(definition.Locator) != "" {
+		targets = append(targets, cleanupTaskTarget{
+			EngineID: definition.SourceEngineID, ItemID: definition.ItemID,
+			ItemFingerprint: strings.TrimSpace(definition.ItemFingerprint),
+			Locator:         strings.TrimSpace(definition.Locator), VerifySource: true,
+		})
 	}
-	engineID := uintFromConfig(targetMap["engine_id"])
-	if engineID == 0 {
-		engineID = uintFromConfig(targetMap["source_engine_id"])
+	for _, section := range []string{"source", "target"} {
+		values, ok := asJSONMap(definition.Config[section])
+		if !ok {
+			continue
+		}
+		engineID := firstPositiveUintFromConfig(values, "source_engine_id", "target_engine_id", "engine_id")
+		locator := firstNonEmptyStringFromConfig(values, "locator", "item_locator", "node_locator", "storage_locator")
+		if engineID == 0 && locator != "" {
+			if parsed, err := resourcetree.ParseURI(locator); err == nil {
+				engineID = parsed.EngineID
+			}
+		}
+		verifySource := stringFromConfig(values["locator"]) != "" ||
+			stringFromConfig(values["item_locator"]) != "" ||
+			stringFromConfig(values["node_locator"]) != "" ||
+			uintFromConfig(values["item_id"]) > 0 ||
+			strings.TrimSpace(stringFromConfig(values["item_fingerprint"])) != ""
+		target := cleanupTaskTarget{
+			EngineID: engineID, ItemID: uintFromConfig(values["item_id"]),
+			ItemFingerprint: strings.TrimSpace(stringFromConfig(values["item_fingerprint"])),
+			Locator:         locator, VerifySource: verifySource,
+		}
+		if !target.IsEmpty() {
+			targets = append(targets, target)
+		}
 	}
-	return cleanupTaskTarget{
-		EngineID:        engineID,
-		ItemID:          uintFromConfig(targetMap["item_id"]),
-		ItemFingerprint: strings.TrimSpace(stringFromConfig(targetMap["item_fingerprint"])),
-		Locator:         strings.TrimSpace(stringFromConfig(targetMap["locator"])),
-	}
+	return targets
 }
 
-func cleanupTaskDefinitionReason(cleanupContext map[string]interface{}) string {
-	if uintFromCleanupContext(cleanupContext, "engine_id") > 0 {
-		return "missing_engine"
+func firstPositiveUintFromConfig(values commonModels.JSONMap, keys ...string) uint {
+	for _, key := range keys {
+		if value := uintFromConfig(values[key]); value > 0 {
+			return value
+		}
 	}
-	return "missing_source"
+	return 0
+
+}
+
+func firstNonEmptyStringFromConfig(values commonModels.JSONMap, keys ...string) string {
+	for _, key := range keys {
+		if value := strings.TrimSpace(stringFromConfig(values[key])); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func uintFromCleanupContext(values map[string]interface{}, key string) uint {

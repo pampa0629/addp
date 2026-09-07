@@ -19,24 +19,40 @@ const (
 )
 
 type managerExecutionOwnership struct {
-	taskTable      string
-	resultTable    string
-	buildingStatus string
+	taskTable              string
+	resultTable            string
+	buildingStatus         string
+	cleanupManagedArtifact bool
 }
 
 var managerExecutionOwnerships = map[string]managerExecutionOwnership{
-	commonExecution.TaskTypeVectorTileCacheGeneration:        {"manager.vector_tile_cache_tasks", "manager.vector_tile_cache", "generating"},
+	commonExecution.TaskTypeVectorTileCacheGeneration:        {taskTable: "manager.vector_tile_cache_tasks", resultTable: "manager.vector_tile_cache", buildingStatus: "generating"},
 	commonExecution.TaskTypeVectorTileSetGeneration:          {taskTable: "manager.vector_tile_set_tasks"},
-	commonExecution.TaskTypeVectorMaterializedViewGeneration: {"manager.vector_materialized_view_tasks", "manager.vector_materialized_view", "building"},
-	commonExecution.TaskTypeRasterCOGGeneration:              {"manager.raster_cog_tasks", "manager.raster_cog", "building"},
+	commonExecution.TaskTypeVectorMaterializedViewGeneration: {taskTable: "manager.vector_materialized_view_tasks", resultTable: "manager.vector_materialized_view", buildingStatus: "building"},
+	commonExecution.TaskTypeRasterCOGGeneration:              {taskTable: "manager.raster_cog_tasks", resultTable: "manager.raster_cog", buildingStatus: "building", cleanupManagedArtifact: true},
 	commonExecution.TaskTypeRasterMosaicGeneration:           {taskTable: "manager.raster_mosaic_tasks"},
-	commonExecution.TaskTypeModel3DGLBGeneration:             {"manager.model_3d_glb_tasks", "manager.model_3d_glb", "building"},
-	commonExecution.TaskTypeModel3DTilesGeneration:           {"manager.model3d_tiles_tasks", "manager.model3d_tiles", "building"},
-	commonExecution.TaskTypeGaussianSplatKSplatGeneration:    {"manager.gaussian_splat_ksplat_tasks", "manager.gaussian_splat_ksplat", "building"},
-	commonExecution.TaskTypePointCloudCOPCGeneration:         {"manager.point_cloud_copc_tasks", "manager.point_cloud_copc", "building"},
-	commonExecution.TaskTypePPTXPDFGeneration:                {"manager.pptx_pdf_tasks", "manager.pptx_pdf", "building"},
+	commonExecution.TaskTypeModel3DGLBGeneration:             {taskTable: "manager.model_3d_glb_tasks", resultTable: "manager.model_3d_glb", buildingStatus: "building", cleanupManagedArtifact: true},
+	commonExecution.TaskTypeModel3DTilesGeneration:           {taskTable: "manager.model3d_tiles_tasks", resultTable: "manager.model3d_tiles", buildingStatus: "building", cleanupManagedArtifact: true},
+	commonExecution.TaskTypeGaussianSplatKSplatGeneration:    {taskTable: "manager.gaussian_splat_ksplat_tasks", resultTable: "manager.gaussian_splat_ksplat", buildingStatus: "building", cleanupManagedArtifact: true},
+	commonExecution.TaskTypePointCloudCOPCGeneration:         {taskTable: "manager.point_cloud_copc_tasks", resultTable: "manager.point_cloud_copc", buildingStatus: "building", cleanupManagedArtifact: true},
+	commonExecution.TaskTypePPTXPDFGeneration:                {taskTable: "manager.pptx_pdf_tasks", resultTable: "manager.pptx_pdf", buildingStatus: "building", cleanupManagedArtifact: true},
 	commonExecution.TaskTypeEmbedding:                        {taskTable: "manager.embedding_tasks"},
 	commonExecution.TaskTypeDataProfiling:                    {},
+}
+
+func ManagerManagedArtifactSpecs() []CleanupManagedArtifactSpec {
+	taskTypes := ManagerBoundedTaskTypes()
+	specs := make([]CleanupManagedArtifactSpec, 0, len(taskTypes))
+	for _, taskType := range taskTypes {
+		ownership := managerExecutionOwnerships[taskType]
+		if !ownership.cleanupManagedArtifact {
+			continue
+		}
+		specs = append(specs, CleanupManagedArtifactSpec{
+			TaskType: taskType, Table: ownership.resultTable, BuildingStatus: ownership.buildingStatus,
+		})
+	}
+	return specs
 }
 
 func ManagerBoundedTaskTypes() []string {
@@ -54,6 +70,21 @@ func ManagerBoundedTaskTypes() []string {
 		commonExecution.TaskTypeEmbedding,
 		commonExecution.TaskTypeDataProfiling,
 	}
+}
+
+// ManagerTaskDefinitionSpecs exposes the single Manager task ownership registry
+// to lifecycle consumers such as cleanup.
+func ManagerTaskDefinitionSpecs() []CleanupTaskDefinitionSpec {
+	taskTypes := ManagerBoundedTaskTypes()
+	specs := make([]CleanupTaskDefinitionSpec, 0, len(taskTypes))
+	for _, taskType := range taskTypes {
+		ownership := managerExecutionOwnerships[taskType]
+		if ownership.taskTable == "" {
+			continue
+		}
+		specs = append(specs, CleanupTaskDefinitionSpec{TaskType: taskType, Table: ownership.taskTable})
+	}
+	return specs
 }
 
 type BoundedExecutionQueueRepository struct{ db *gorm.DB }

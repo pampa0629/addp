@@ -102,6 +102,8 @@ func main() {
 	dataProfileRepo := repository.NewDataProfileRepository(db)
 	dataProfileExecutionRepo := repository.NewDataProfileExecutionRepository(db)
 	boundedExecutionQueue := repository.NewBoundedExecutionQueueRepository(db)
+	cleanupTaskDefinitionRepo := repository.NewCleanupTaskDefinitionRepository(db, repository.ManagerTaskDefinitionSpecs())
+	cleanupManagedArtifactRepo := repository.NewCleanupManagedArtifactRepository(db, repository.ManagerManagedArtifactSpecs())
 	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
 	embeddingConfigurationService := service.NewEmbeddingConfigurationService(embeddingConfigurationRepo)
 	if err := embeddingConfigurationService.Initialize(context.Background()); err != nil {
@@ -319,11 +321,20 @@ func main() {
 	cleanupSvc := service.NewCleanupService(
 		redisClient,
 		metaClient,
+		systemServiceClient,
 		taskExecRepo,
 		quickViewService.Repository(),
 		tileCacheTaskSvc,
 		embeddingRepo,
 		vectorMaterializedViewTaskSvc,
+		cleanupTaskDefinitionRepo,
+		cleanupManagedArtifactRepo,
+		rasterCOGTaskSvc,
+		model3DTilesTaskSvc,
+		model3DGLBTaskSvc,
+		gaussianSplatKSplatTaskSvc,
+		pointCloudCOPCTaskSvc,
+		pptxPDFTaskSvc,
 		exportSessionRepo,
 		minioClient,
 		minioBucket,
