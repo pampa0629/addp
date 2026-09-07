@@ -81,7 +81,7 @@ func (p *Plugin) SensitiveFields() []string          { return p.ConnectionSpec()
 func (p *Plugin) ConnectionIdentityFields() []string { return p.ConnectionSpec().IdentityFields() }
 
 func (p *Plugin) Capabilities() plugin.EngineCapabilities {
-	return plugin.NewTabularCapabilities(p.Type(), plugin.EngineCatalogTermDatabase, plugin.TabularCapabilityOptions{
+	caps := plugin.NewTabularCapabilities(p.Type(), plugin.EngineCatalogTermDatabase, plugin.TabularCapabilityOptions{
 		Constraints:          true,
 		BoundedWatermarkRead: true,
 		Delete:               true,
@@ -92,6 +92,8 @@ func (p *Plugin) Capabilities() plugin.EngineCapabilities {
 		SupportsParameters:   true,
 		IdentifierQuote:      "`",
 	})
+	shared.ApplyMySQLCompatibleTableWriteLimits(&caps)
+	return caps
 }
 
 func (p *Plugin) EngineCatalogModel() plugin.EngineCatalogModelSpec {

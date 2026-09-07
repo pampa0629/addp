@@ -13,11 +13,16 @@ import (
 )
 
 type DataProfileHandler struct {
-	service *service.DataProfileService
+	service                 *service.DataProfileService
+	notifyExecutionEnqueued func()
 }
 
 func NewDataProfileHandler(profileService *service.DataProfileService) *DataProfileHandler {
 	return &DataProfileHandler{service: profileService}
+}
+
+func (h *DataProfileHandler) SetExecutionEnqueueNotifier(notify func()) {
+	h.notifyExecutionEnqueued = notify
 }
 
 // GetCurrent godoc
@@ -109,6 +114,9 @@ func (h *DataProfileHandler) CreateExecution(c *gin.Context) {
 	if err != nil {
 		handleDataProfileError(c, err, manageri18n.MsgDataProfileCreateFailed)
 		return
+	}
+	if h.notifyExecutionEnqueued != nil {
+		h.notifyExecutionEnqueued()
 	}
 	c.JSON(http.StatusAccepted, response)
 }

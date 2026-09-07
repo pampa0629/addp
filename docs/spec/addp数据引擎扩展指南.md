@@ -13,6 +13,8 @@
 5. 按 `EngineOrigin()` 加入 `common/engine/plugins/builtin/general` 或 `common/engine/plugins/builtin/extension` 聚合包。
 6. 补充单元测试和必要的 integration 测试。
 
+聚合包是内置插件编译期登记的唯一手写清单。`make test-engine-plugin-registration` 会自动扫描调用 `plugin.Register` 的生产包，校验每个包恰好进入与 `EngineOrigin()` 一致的一个聚合入口，并禁止上层生产代码通过 blank import 直接加载具体插件。测试和 System API 不得另行维护全量插件类型清单或固定数量；它们应从已登记插件和 descriptor 动态验证通用契约，具体引擎的端口、能力和字段语义由各插件包自己的测试拥有。
+
 System 的引擎类型列表、注册表单、默认值和校验规则均由 `GET /api/v1/system/engine-types` 返回的插件描述驱动。新增引擎时不得在 `system/frontend` 或 `common-frontend` 增加 `engine_type` 判断；若现有 `ConnectionFieldSpec` 无法表达所需交互，应先扩展通用描述协议和共享渲染器，再实现具体插件。
 
 SQL 引擎必须通过 `SQLDialectProvider.SQLDialect()` 声明稳定方言，`SQLQueryRuntimeProvider` 组合该接口和 SQL 执行能力；通用查询生成、标识符引用、分页和参数占位符只消费该方言。新增 MySQL 协议兼容数据库时仍使用独立 `engine_type`，不得为了复用驱动而登记为 `mysql`，也不得在 common 或上层模块增加新的 `engine_type` 方言分支。
@@ -71,6 +73,7 @@ func (p *MyPlugin) Capabilities() plugin.EngineCapabilities {
 - `storage.store.batch_write=true` 时必须实现 `BatchWritableProvider`。
 - `storage.store.table_write_session=true` 时必须实现 `TableWriteSessionProvider`，用于跨批次 bulk load / COPY 写入。
 - `storage.store.table_write_prepare=true` 时必须实现 `TableWritePreparer`。
+- `TableWritePreparer` 对字段定义存在稳定边界时，必须声明对应的类型化 `limits`；decimal 约束使用 `limits.table_write.decimal`，上层不得按 `engine_type` 重复判断或硬编码相同上限。
 - `compute.query.supported=true` 时必须实现对应 query runtime provider。
 
 `storage.families`、`store.read`、`store.write`、`store.random_write`、`store.atomic_rename`、`store.transactions`、`store.formats` 不再作为新增插件能力声明字段。
@@ -116,6 +119,7 @@ func (p *MyPlugin) Capabilities() plugin.EngineCapabilities {
 建议至少执行：
 
 ```bash
+make test-engine-plugin-registration
 go test ./common/engine/plugin ./common/engine/plugins/...
 go test -tags integration ./common/engine/plugin/integration -run '^TestPluginInterfaceImplementation'
 go test ./system/backend/internal/service ./meta/backend/internal/service ./manager/backend/internal/service

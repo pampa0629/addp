@@ -89,6 +89,7 @@ type ExecutionSupervisorConfig struct {
 	LeaseDuration     time.Duration
 	HeartbeatInterval time.Duration
 	ClaimInterval     time.Duration
+	IdleMaxInterval   time.Duration
 }
 
 func resolveMeilisearchURL() string {
@@ -179,6 +180,7 @@ func Load() *Config {
 		LeaseDuration:     commonConfig.GetEnvDuration("MANAGER_EXECUTION_LEASE_DURATION", "2m"),
 		HeartbeatInterval: commonConfig.GetEnvDuration("MANAGER_EXECUTION_HEARTBEAT_INTERVAL", "30s"),
 		ClaimInterval:     commonConfig.GetEnvDuration("MANAGER_EXECUTION_CLAIM_INTERVAL", "1s"),
+		IdleMaxInterval:   commonConfig.GetEnvDuration("MANAGER_EXECUTION_IDLE_MAX_INTERVAL", "5s"),
 	}
 	if cfg.RasterMosaicRuntime.TileSize != 512 {
 		cfg.RasterMosaicRuntime.TileSize = 256

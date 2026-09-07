@@ -29,11 +29,11 @@
       class="continuous-mapping-alert"
     />
     <el-alert
-      v-if="mysqlDecimalIssues.length > 0"
+      v-if="decimalIssues.length > 0"
       type="error"
       :closable="false"
-      :title="t('transfer.taskWizard.mysqlDecimalValidationTitle')"
-      :description="t('transfer.taskWizard.mysqlDecimalValidationDesc', { fields: invalidDecimalFieldNames })"
+      :title="t('transfer.taskWizard.decimalValidationTitle')"
+      :description="t('transfer.taskWizard.decimalValidationDesc', { fields: invalidDecimalFieldNames })"
       class="decimal-validation-alert"
     />
     <div v-if="!isStructuredMongoQuery" class="mapping-controls">
@@ -138,7 +138,7 @@
         </template>
       </el-table-column>
 
-      <el-table-column :width="isMySQLTarget ? 190 : 150">
+      <el-table-column :width="decimalLimits ? 190 : 150">
         <template #header>
           <div class="decimal-column-header">
             <span>{{ t('transfer.taskWizard.precisionCol') }}</span>
@@ -167,7 +167,7 @@
         </template>
       </el-table-column>
 
-      <el-table-column :width="isMySQLTarget ? 170 : 150">
+      <el-table-column :width="decimalLimits ? 170 : 150">
         <template #header>
           <div class="decimal-column-header">
             <span>{{ t('transfer.taskWizard.scaleCol') }}</span>
@@ -304,7 +304,7 @@ import { MagicStick, QuestionFilled } from '@element-plus/icons-vue'
 import { getManagerPreview } from '@/api/managerPreview'
 import { fieldDefinitionRecommendationAPI } from '@/api/tasks'
 import { CONTINUOUS_FIELD_TYPES, databaseCDCFieldTypes } from './continuousTask.mjs'
-import { mysqlDecimalMappingIssues } from './decimalMapping.mjs'
+import { decimalMappingIssues, decimalTableWriteLimits } from './decimalMapping.mjs'
 import { inferTopicFieldRecommendations } from './topicFieldRecommendations.mjs'
 import { parseMongoStructureQuery } from './mongoStructureQuery.mjs'
 import { normalizeFieldType } from '@addp/common-frontend'
@@ -369,17 +369,17 @@ const topicRecommendationsValid = computed(() => {
   return topicRecommendations.value.length > 0
 })
 
-const isMySQLTarget = computed(() => String(props.wizardState.targetEngineType.value || '').toLowerCase().includes('mysql'))
-const decimalPrecisionMax = computed(() => isMySQLTarget.value ? 65 : 1000)
-const mysqlDecimalIssues = computed(() => mysqlDecimalMappingIssues(
+const decimalLimits = computed(() => decimalTableWriteLimits(props.wizardState.targetEngineCapabilities.value))
+const decimalPrecisionMax = computed(() => decimalLimits.value?.maxPrecision ?? Number.MAX_SAFE_INTEGER)
+const decimalIssues = computed(() => decimalMappingIssues(
   props.wizardState.fieldMappings.value,
   props.wizardState.sourceFields.value,
   props.wizardState.targetFields.value,
-  props.wizardState.targetEngineType.value,
+  props.wizardState.targetEngineCapabilities.value,
   props.wizardState.targetRepresentation.value
 ))
-const decimalIssueByIndex = computed(() => new Map(mysqlDecimalIssues.value.map(issue => [issue.index, issue])))
-const invalidDecimalFieldNames = computed(() => mysqlDecimalIssues.value
+const decimalIssueByIndex = computed(() => new Map(decimalIssues.value.map(issue => [issue.index, issue])))
+const invalidDecimalFieldNames = computed(() => decimalIssues.value
   .map(issue => issue.targetField || issue.sourceField || t('transfer.taskWizard.unnamedField'))
   .join(', '))
 const recommendableDecimalSourceFields = computed(() => {
@@ -387,14 +387,14 @@ const recommendableDecimalSourceFields = computed(() => {
     String(field?.name || '').trim().toLowerCase(),
     normalizeFieldType(field)
   ]))
-  const names = mysqlDecimalIssues.value
+  const names = decimalIssues.value
     .map(issue => props.wizardState.fieldMappings.value[issue.index]?.source_field)
     .map(name => String(name || '').trim())
     .filter(name => name && sourceTypes.get(name.toLowerCase()) === 'decimal')
   return [...new Set(names)]
 })
 const canRecommendDecimalDefinitions = computed(() => {
-  return isMySQLTarget.value &&
+  return !!decimalLimits.value &&
     String(props.wizardState.targetRepresentation.value || '').toLowerCase() === 'native' &&
     props.wizardState.targetFields.value.length === 0 &&
     recommendableDecimalSourceFields.value.length > 0
@@ -402,7 +402,7 @@ const canRecommendDecimalDefinitions = computed(() => {
 
 function decimalScaleMax(row) {
   const precision = Number(row?.precision)
-  const engineMaximum = isMySQLTarget.value ? 30 : 1000
+  const engineMaximum = decimalLimits.value?.maxScale ?? Number.MAX_SAFE_INTEGER
   return Number.isInteger(precision) && precision > 0 ? Math.min(engineMaximum, precision) : engineMaximum
 }
 
@@ -417,7 +417,7 @@ async function recommendDecimalDefinitions() {
     const response = await fieldDefinitionRecommendationAPI.create({
       source_locator: props.wizardState.sourceLocator.value,
       source_fields: recommendableDecimalSourceFields.value,
-      target_engine_type: 'mysql'
+      target_engine_id: props.wizardState.targetEngineID.value
     })
     const result = response?.data || response
     const fields = Array.isArray(result?.fields) ? result.fields : []
@@ -520,20 +520,23 @@ function decimalMappingIssue(index) {
 
 function precisionIssue(index) {
   const issue = decimalMappingIssue(index)
-  return issue && ['precision_required', 'precision_out_of_range', 'target_definition_missing'].includes(issue.code)
+  return issue && ['precision_required', 'precision_invalid', 'precision_exceeds_max', 'target_definition_missing'].includes(issue.code)
     ? issue
     : null
 }
 
 function scaleIssue(index) {
   const issue = decimalMappingIssue(index)
-  return issue && ['scale_required', 'scale_out_of_range', 'scale_exceeds_precision'].includes(issue.code)
+  return issue && ['scale_required', 'scale_invalid', 'scale_exceeds_max', 'scale_exceeds_precision'].includes(issue.code)
     ? issue
     : null
 }
 
 function decimalIssueMessage(issue) {
-  return issue ? t(`transfer.taskWizard.mysqlDecimalIssue.${issue.code}`) : ''
+  return issue ? t(`transfer.taskWizard.decimalIssue.${issue.code}`, {
+    maxPrecision: decimalLimits.value?.maxPrecision,
+    maxScale: decimalLimits.value?.maxScale
+  }) : ''
 }
 
 function mappingRowClassName({ rowIndex }) {

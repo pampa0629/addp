@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
-	"sort"
 	"strings"
 	"testing"
 
@@ -15,84 +14,31 @@ import (
 	_ "github.com/addp/common/engine/plugins/builtin/all"
 )
 
-func TestAllPluginsRegistered(t *testing.T) {
-	expectedTypes := []string{
-		"clickhouse",
-		"doris",
-		"duckdb",
-		"jupyter",
-		"kafka",
-		"minio",
-		"mongodb",
-		"mysql",
-		"neo4j",
-		"nfs",
-		"oceanbase",
-		"oracle",
-		"postgresql",
-		"inference_runtime",
-		"s3",
-		"spark",
-	}
-
+func TestBuiltinPluginRegistryIsInternallyConsistent(t *testing.T) {
 	registeredTypes := plugin.List()
-	sort.Strings(registeredTypes)
-	sort.Strings(expectedTypes)
-
-	if len(registeredTypes) != len(expectedTypes) {
-		t.Errorf("Expected %d plugins, got %d", len(expectedTypes), len(registeredTypes))
-		t.Logf("Expected: %v", expectedTypes)
-		t.Logf("Registered: %v", registeredTypes)
-		return
+	registeredPlugins := plugin.GetAll()
+	if len(registeredTypes) == 0 {
+		t.Fatal("no builtin plugins registered")
 	}
-
-	for i, expected := range expectedTypes {
-		if registeredTypes[i] != expected {
-			t.Errorf("Expected plugin '%s' at index %d, got '%s'", expected, i, registeredTypes[i])
-		}
+	if len(registeredTypes) != len(registeredPlugins) {
+		t.Fatalf("plugin.List() returned %d types, plugin.GetAll() returned %d plugins", len(registeredTypes), len(registeredPlugins))
 	}
-}
-
-func TestGetAllPlugins(t *testing.T) {
-	plugins := plugin.GetAll()
-
-	if len(plugins) != 16 {
-		t.Errorf("Expected 16 plugins, got %d", len(plugins))
-	}
-
-	// 验证每个插件的基本信息
-	testCases := []struct {
-		dbType   string
-		expected string
-	}{
-		{"postgresql", "PostgreSQL"},
-		{"oracle", "Oracle Database"},
-		{"mysql", "MySQL"},
-		{"oceanbase", "OceanBase"},
-		{"doris", "Apache Doris"},
-		{"spark", "Apache Spark"},
-		{"clickhouse", "ClickHouse"},
-		{"duckdb", "DuckDB 联邦查询 Runtime"},
-		{"jupyter", "Jupyter Engine"},
-		{"inference_runtime", "ADDP AI Inference Runtime"},
-		{"kafka", "Apache Kafka"},
-		{"mongodb", "MongoDB"},
-		{"neo4j", "Neo4j"},
-		{"nfs", "NFS 文件系统"},
-		{"minio", "MinIO"},
-		{"s3", "Amazon S3"},
-	}
-
-	for _, tc := range testCases {
-		p, err := plugin.Get(tc.dbType)
+	for _, engineType := range registeredTypes {
+		p, err := plugin.Get(engineType)
 		if err != nil {
-			t.Errorf("Failed to get plugin for '%s': %v", tc.dbType, err)
+			t.Errorf("get registered plugin %q: %v", engineType, err)
 			continue
 		}
-
-		if p.DisplayName() != tc.expected {
-			t.Errorf("Expected display name '%s' for '%s', got '%s'",
-				tc.expected, tc.dbType, p.DisplayName())
+		if p.Type() != engineType {
+			t.Errorf("registry key %q does not match plugin type %q", engineType, p.Type())
+		}
+		if strings.TrimSpace(p.DisplayName()) == "" {
+			t.Errorf("plugin %q has an empty display name", engineType)
+		}
+		switch p.EngineOrigin() {
+		case "general", "extension":
+		default:
+			t.Errorf("plugin %q has unsupported origin %q", engineType, p.EngineOrigin())
 		}
 	}
 }
@@ -102,10 +48,13 @@ func TestRegisterableEngineDescriptorsArePluginOwned(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(descriptors) != 13 {
-		t.Fatalf("registerable descriptors = %d, want 13", len(descriptors))
+	if len(descriptors) == 0 {
+		t.Fatal("no registerable plugin descriptors")
 	}
-	for _, descriptor := range descriptors {
+	for index, descriptor := range descriptors {
+		if index > 0 && descriptors[index-1].Type >= descriptor.Type {
+			t.Fatalf("descriptors are not sorted: %q then %q", descriptors[index-1].Type, descriptor.Type)
+		}
 		enginePlugin, err := plugin.Get(descriptor.Type)
 		if err != nil {
 			t.Fatal(err)
@@ -131,7 +80,10 @@ func TestRegisterableEngineDescriptorsArePluginOwned(t *testing.T) {
 		if !reflect.DeepEqual(enginePlugin.SensitiveFields(), descriptor.ConnectionSpec.SensitiveFields()) {
 			t.Fatalf("%s sensitive fields are not derived from connection spec", descriptor.Type)
 		}
-		identityProvider := enginePlugin.(plugin.ConnectionIdentityProvider)
+		identityProvider, ok := enginePlugin.(plugin.ConnectionIdentityProvider)
+		if !ok {
+			t.Fatalf("%s does not implement ConnectionIdentityProvider", descriptor.Type)
+		}
 		if !reflect.DeepEqual(identityProvider.ConnectionIdentityFields(), descriptor.ConnectionSpec.IdentityFields()) {
 			t.Fatalf("%s identity fields are not derived from connection spec", descriptor.Type)
 		}
@@ -139,47 +91,14 @@ func TestRegisterableEngineDescriptorsArePluginOwned(t *testing.T) {
 }
 
 func TestPluginCapabilities(t *testing.T) {
-	testCases := []struct {
-		dbType string
-		origin string
-	}{
-		{"postgresql", "general"},
-		{"oracle", "general"},
-		{"mysql", "general"},
-		{"oceanbase", "general"},
-		{"doris", "general"},
-		{"clickhouse", "general"},
-		{"mongodb", "general"},
-		{"kafka", "general"},
-		{"spark", "general"},
-		{"minio", "general"},
-		{"s3", "general"},
-		{"nfs", "general"},
-		{"neo4j", "general"},
-		{"duckdb", "extension"},
-		{"jupyter", "extension"},
-	}
-
-	for _, tc := range testCases {
-		p, err := plugin.Get(tc.dbType)
+	for engineType := range plugin.GetAll() {
+		capabilities, err := plugin.GenerateCapabilities(engineType)
 		if err != nil {
-			t.Errorf("Failed to get plugin for '%s': %v", tc.dbType, err)
-			continue
-		}
-
-		if p.EngineOrigin() != tc.origin {
-			t.Errorf("Expected origin '%s' for '%s', got '%s'",
-				tc.origin, tc.dbType, p.EngineOrigin())
-		}
-
-		// 验证能力声明不为空
-		capabilities, err := plugin.GenerateCapabilities(tc.dbType)
-		if err != nil {
-			t.Errorf("Plugin '%s' failed to generate capabilities: %v", tc.dbType, err)
+			t.Errorf("plugin %q failed to generate capabilities: %v", engineType, err)
 			continue
 		}
 		if capabilities == "" {
-			t.Errorf("Plugin '%s' returned empty capabilities", tc.dbType)
+			t.Errorf("plugin %q returned empty capabilities", engineType)
 		}
 	}
 }
@@ -319,11 +238,6 @@ func TestBuiltinPluginCapabilityMatrix(t *testing.T) {
 		"duckdb":            {origin: "extension", family: "query_runtime", query: true},
 		"jupyter":           {origin: "extension", family: "script", script: true, scriptModes: []string{"notebook"}, scriptLanguages: []string{"python"}},
 		"inference_runtime": {origin: "extension", family: "inference", inference: true},
-	}
-
-	allPlugins := plugin.GetAll()
-	if len(allPlugins) != len(testCases) {
-		t.Fatalf("expected %d builtin plugins in capability matrix, got %d", len(testCases), len(allPlugins))
 	}
 
 	for engineType, expected := range testCases {

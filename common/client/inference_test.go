@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	_ "github.com/addp/common/engine/plugins/inference_runtime"
 	commoninference "github.com/addp/common/inference"
 	commonmodels "github.com/addp/common/models"
 )

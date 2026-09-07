@@ -20,9 +20,7 @@ func TestIntegrationEncodedRecordReadSessionExportsOutdoorPersonsCanonicalExtend
 		t.Skip("set ADDP_MONGODB_SCHEMA_E2E=1 to run against Business MongoDB")
 	}
 	provider := &MongoDBPlugin{}
-	session, err := provider.OpenEncodedRecordReadSession(t.Context(), plugin.ConnectionInfo{
-		"host": "localhost", "port": 27017, "user": "admin", "password": "admin_password", "auth_source": "admin",
-	}, plugin.EngineCatalogPath{
+	session, err := provider.OpenEncodedRecordReadSession(t.Context(), mongoIntegrationConnectionInfo(t, ""), plugin.EngineCatalogPath{
 		Version: "v1", EngineID: 11,
 		Segments: []plugin.EngineCatalogSegment{
 			{Term: plugin.EngineCatalogTermDatabase, Kind: plugin.EngineCatalogKindNamespace, Name: "Outdoor"},

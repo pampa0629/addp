@@ -11,22 +11,104 @@ import (
 )
 
 type supervisorTestQueue struct {
-	mu        sync.Mutex
-	execution *commonExecution.TaskExecution
-	lease     *commonExecution.Lease
-	terminal  bool
-	failed    chan struct{}
+	mu               sync.Mutex
+	execution        *commonExecution.TaskExecution
+	lease            *commonExecution.Lease
+	terminal         bool
+	failed           chan struct{}
+	claimCalls       int
+	claimCalled      chan struct{}
+	claimedTaskTypes []string
 }
 
-func (q *supervisorTestQueue) ClaimNext(context.Context, string, string, time.Time, time.Duration) (*commonExecution.TaskExecution, *commonExecution.Lease, error) {
+func (q *supervisorTestQueue) ClaimNext(_ context.Context, taskTypes []string, _ string, _ time.Time, _ time.Duration) (*commonExecution.TaskExecution, *commonExecution.Lease, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
+	q.claimCalls++
+	q.claimedTaskTypes = append([]string(nil), taskTypes...)
+	select {
+	case q.claimCalled <- struct{}{}:
+	default:
+	}
 	if q.execution == nil {
 		return nil, nil, nil
 	}
 	execution, lease := q.execution, q.lease
 	q.execution, q.lease = nil, nil
 	return execution, lease, nil
+}
+
+func TestBoundedExecutionSupervisorUsesSingleIdleClaimCoordinator(t *testing.T) {
+	queue := &supervisorTestQueue{failed: make(chan struct{}), claimCalled: make(chan struct{}, 8)}
+	dispatcher := &supervisorTestDispatcher{called: make(chan struct{}), queue: queue}
+	supervisor, err := NewBoundedExecutionSupervisor(queue, dispatcher, BoundedExecutionSupervisorConfig{
+		InstanceID: "manager-test", Concurrency: 4, LeaseDuration: time.Second,
+		HeartbeatInterval: 100 * time.Millisecond, ClaimInterval: 200 * time.Millisecond,
+		IdleMaxInterval: 800 * time.Millisecond,
+		TaskTypes:       []string{commonExecution.TaskTypePPTXPDFGeneration, commonExecution.TaskTypePointCloudCOPCGeneration},
+	}, nil)
+	if err != nil {
+		t.Fatalf("new supervisor: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { supervisor.Run(ctx, nil); close(done) }()
+	select {
+	case <-queue.claimCalled:
+	case <-time.After(time.Second):
+		t.Fatal("coordinator did not perform initial claim")
+	}
+	time.Sleep(50 * time.Millisecond)
+	queue.mu.Lock()
+	claimCalls := queue.claimCalls
+	claimedTaskTypes := append([]string(nil), queue.claimedTaskTypes...)
+	queue.mu.Unlock()
+	if claimCalls != 1 {
+		t.Fatalf("idle claim calls = %d, want one coordinator call before base interval", claimCalls)
+	}
+	if len(claimedTaskTypes) != 2 {
+		t.Fatalf("claimed task types = %#v, want unified task type set", claimedTaskTypes)
+	}
+	cancel()
+	<-done
+}
+
+func TestBoundedExecutionSupervisorWakeInterruptsIdleBackoff(t *testing.T) {
+	queue := &supervisorTestQueue{failed: make(chan struct{}), claimCalled: make(chan struct{}, 8)}
+	dispatcher := &supervisorTestDispatcher{complete: true, called: make(chan struct{}), queue: queue}
+	supervisor, err := NewBoundedExecutionSupervisor(queue, dispatcher, BoundedExecutionSupervisorConfig{
+		InstanceID: "manager-test", Concurrency: 1, LeaseDuration: time.Second,
+		HeartbeatInterval: 100 * time.Millisecond, ClaimInterval: 500 * time.Millisecond,
+		IdleMaxInterval: 2 * time.Second,
+		TaskTypes:       []string{commonExecution.TaskTypePPTXPDFGeneration},
+	}, nil)
+	if err != nil {
+		t.Fatalf("new supervisor: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { supervisor.Run(ctx, nil); close(done) }()
+	select {
+	case <-queue.claimCalled:
+	case <-time.After(time.Second):
+		t.Fatal("coordinator did not enter idle backoff")
+	}
+	queue.mu.Lock()
+	queue.execution = &commonExecution.TaskExecution{ExecutionID: "execution-woken", TenantID: 7, TaskType: commonExecution.TaskTypePPTXPDFGeneration}
+	queue.lease = &commonExecution.Lease{ExecutionID: "execution-woken", TenantID: 7, Attempt: 1, Token: "token", Owner: "owner"}
+	queue.mu.Unlock()
+	started := time.Now()
+	supervisor.Notify()
+	select {
+	case <-dispatcher.called:
+		if elapsed := time.Since(started); elapsed >= 400*time.Millisecond {
+			t.Fatalf("wake dispatch latency = %s, want below base polling interval", elapsed)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("wake did not trigger execution claim")
+	}
+	cancel()
+	<-done
 }
 func (q *supervisorTestQueue) RenewLease(context.Context, commonExecution.Lease, time.Time) error {
 	return nil
@@ -118,12 +200,13 @@ func newSupervisorTest(t *testing.T, dispatchErr error) (*supervisorTestQueue, *
 	t.Helper()
 	execution := &commonExecution.TaskExecution{ExecutionID: "execution-1", TenantID: 7, TaskType: commonExecution.TaskTypePPTXPDFGeneration}
 	lease := &commonExecution.Lease{ExecutionID: execution.ExecutionID, TenantID: execution.TenantID, Attempt: 1, Token: "token", Owner: "owner"}
-	queue := &supervisorTestQueue{execution: execution, lease: lease, failed: make(chan struct{})}
+	queue := &supervisorTestQueue{execution: execution, lease: lease, failed: make(chan struct{}), claimCalled: make(chan struct{}, 8)}
 	dispatcher := &supervisorTestDispatcher{err: dispatchErr, complete: dispatchErr == nil, called: make(chan struct{}), queue: queue}
 	supervisor, err := NewBoundedExecutionSupervisor(queue, dispatcher, BoundedExecutionSupervisorConfig{
 		InstanceID: "manager-test", Concurrency: 1, LeaseDuration: time.Second,
 		HeartbeatInterval: 100 * time.Millisecond, ClaimInterval: time.Millisecond,
-		TaskTypes: []string{commonExecution.TaskTypePPTXPDFGeneration},
+		IdleMaxInterval: 5 * time.Millisecond,
+		TaskTypes:       []string{commonExecution.TaskTypePPTXPDFGeneration},
 	}, nil)
 	if err != nil {
 		t.Fatalf("new supervisor: %v", err)

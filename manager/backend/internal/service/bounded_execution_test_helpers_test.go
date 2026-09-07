@@ -42,7 +42,7 @@ func leaseStoredManagerExecutionForServiceTest(t *testing.T, db *gorm.DB, execut
 func runManagerBoundedExecutionForTest(t *testing.T, db *gorm.DB, taskType string, dispatcher *BoundedExecutionDispatcher) {
 	t.Helper()
 	queue := repository.NewBoundedExecutionQueueRepository(db)
-	execution, lease, err := queue.ClaimNext(context.Background(), taskType, "manager-test-1", time.Now().UTC(), time.Minute)
+	execution, lease, err := queue.ClaimNext(context.Background(), []string{taskType}, "manager-test-1", time.Now().UTC(), time.Minute)
 	if err != nil {
 		t.Fatalf("claim %s execution: %v", taskType, err)
 	}

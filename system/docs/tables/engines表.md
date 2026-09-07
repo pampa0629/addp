@@ -217,8 +217,22 @@ type EngineCapabilities struct {
     EngineFamily  string                 `json:"engine_family"`
     Storage       *StorageCapabilities   `json:"storage,omitempty"`
     Compute       *ComputeCapabilities   `json:"compute,omitempty"`
-    Limits        map[string]interface{} `json:"limits,omitempty"`
+    Limits        *EngineLimits          `json:"limits,omitempty"`
     Extensions    map[string]interface{} `json:"extensions,omitempty"`
+}
+
+type EngineLimits struct {
+    TableWrite *TableWriteLimits `json:"table_write,omitempty"`
+}
+
+type TableWriteLimits struct {
+    Decimal *DecimalFieldLimits `json:"decimal,omitempty"`
+}
+
+type DecimalFieldLimits struct {
+    RequiresExplicitPrecisionScale bool `json:"requires_explicit_precision_scale,omitempty"`
+    MaxPrecision                   *int `json:"max_precision,omitempty"`
+    MaxScale                       *int `json:"max_scale,omitempty"`
 }
 
 type StorageCapabilities struct {
@@ -247,7 +261,7 @@ type ComputeCapabilities struct {
 | `engine_family` | 粗粒度引擎族，如 `tabular`、`object`、`file`、`dynamic_schema`、`graph`、`event_stream`、`workflow`、`script`、`inference` |
 | `storage` | 存储、目录、catalog facts、内容访问能力 |
 | `compute` | 查询、工作流、脚本、Notebook 或 AI 推理运行能力 |
-| `limits` | 跨能力限制，有真实调用方时使用 |
+| `limits` | Provider 执行边界；当前 `table_write.decimal` 由 Transfer 字段校验与推荐消费 |
 | `extensions` | 引擎特有补充信息，不得替代核心字段 |
 
 详细规范见 [ADDP 引擎能力声明规范](../../../docs/spec/addp引擎能力声明规范.md)。

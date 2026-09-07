@@ -72,24 +72,32 @@ func UpdateExecutionWithOwnership(ctx context.Context, db *gorm.DB, executionID 
 	return commonExecution.UpdateWithLease(ctx, db, lease, fields)
 }
 
-func (r *BoundedExecutionQueueRepository) ClaimNext(ctx context.Context, taskType, owner string, now time.Time, leaseDuration time.Duration) (*commonExecution.TaskExecution, *commonExecution.Lease, error) {
-	ownership, ok := managerExecutionOwnerships[taskType]
-	if !ok {
-		return nil, nil, fmt.Errorf("unsupported Manager bounded task type %q", taskType)
+func (r *BoundedExecutionQueueRepository) ClaimNext(ctx context.Context, taskTypes []string, owner string, now time.Time, leaseDuration time.Duration) (*commonExecution.TaskExecution, *commonExecution.Lease, error) {
+	if len(taskTypes) == 0 {
+		return nil, nil, fmt.Errorf("Manager bounded task types are required")
+	}
+	for _, taskType := range taskTypes {
+		if _, ok := managerExecutionOwnerships[taskType]; !ok {
+			return nil, nil, fmt.Errorf("unsupported Manager bounded task type %q", taskType)
+		}
 	}
 	var execution *commonExecution.TaskExecution
 	var lease *commonExecution.Lease
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var err error
 		execution, lease, err = commonExecution.ClaimNext(ctx, tx, commonExecution.ClaimOptions{
-			Module: commonExecution.ModuleManager, TaskType: taskType, WorkerID: owner,
+			Module: commonExecution.ModuleManager, TaskTypes: taskTypes, WorkerID: owner,
 			Now: now, LeaseDuration: leaseDuration,
 		})
-		if err != nil || execution == nil || ownership.taskTable == "" {
+		if err != nil || execution == nil {
 			return err
 		}
+		ownership := managerExecutionOwnerships[execution.TaskType]
+		if ownership.taskTable == "" {
+			return nil
+		}
 		// Ad-hoc embedding executions intentionally have no persisted task owner.
-		if execution.SourceTaskID == nil && taskType == commonExecution.TaskTypeEmbedding {
+		if execution.SourceTaskID == nil && execution.TaskType == commonExecution.TaskTypeEmbedding {
 			return nil
 		}
 		if execution.SourceTaskID == nil {
@@ -175,30 +183,14 @@ func (r *BoundedExecutionQueueRepository) FailClaimed(ctx context.Context, execu
 // atomically, so a visible running row without a complete lease can never be a
 // legal current attempt.
 func (r *BoundedExecutionQueueRepository) RecoverUnleased(ctx context.Context, now time.Time, limit int) (int, error) {
-	total := 0
-	for _, taskType := range ManagerBoundedTaskTypes() {
-		count, err := r.recoverUnleasedTaskType(ctx, taskType, now, limit-total)
-		if err != nil {
-			return total, err
-		}
-		total += count
-		if limit > 0 && total >= limit {
-			break
-		}
-	}
-	return total, nil
-}
-
-func (r *BoundedExecutionQueueRepository) recoverUnleasedTaskType(ctx context.Context, taskType string, now time.Time, limit int) (int, error) {
 	if limit <= 0 {
 		limit = 100
 	}
-	ownership := managerExecutionOwnerships[taskType]
 	recovered := 0
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		query := tx.Where(
-			"module = ? AND task_type = ? AND execution_boundary = ? AND status = ? AND (attempt <= 0 OR lease_token IS NULL OR lease_owner IS NULL OR lease_expires_at IS NULL)",
-			commonExecution.ModuleManager, taskType, commonExecution.ExecutionBoundaryBounded, commonExecution.ExecutionStatusRunning,
+			"module = ? AND task_type IN ? AND execution_boundary = ? AND status = ? AND (attempt <= 0 OR lease_token IS NULL OR lease_owner IS NULL OR lease_expires_at IS NULL)",
+			commonExecution.ModuleManager, ManagerBoundedTaskTypes(), commonExecution.ExecutionBoundaryBounded, commonExecution.ExecutionStatusRunning,
 		).Order("created_at ASC, id ASC").Limit(limit)
 		if tx.Dialector.Name() == "postgres" {
 			query = query.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"})
@@ -209,6 +201,10 @@ func (r *BoundedExecutionQueueRepository) recoverUnleasedTaskType(ctx context.Co
 		}
 		for index := range items {
 			item := &items[index]
+			ownership, ok := managerExecutionOwnerships[item.TaskType]
+			if !ok {
+				return fmt.Errorf("unsupported Manager bounded task type %q", item.TaskType)
+			}
 			message := "Manager bounded execution has no valid lease"
 			fields := map[string]interface{}{
 				"status": commonExecution.ExecutionStatusFailed, "completed_at": now.UTC(), "updated_at": now.UTC(),
@@ -238,35 +234,23 @@ func (r *BoundedExecutionQueueRepository) recoverUnleasedTaskType(ctx context.Co
 }
 
 func (r *BoundedExecutionQueueRepository) RecoverExpired(ctx context.Context, now time.Time, limit int) (int, error) {
-	total := 0
-	for _, taskType := range ManagerBoundedTaskTypes() {
-		count, err := r.recoverExpiredTaskType(ctx, taskType, now, limit-total)
-		if err != nil {
-			return total, err
-		}
-		total += count
-		if limit > 0 && total >= limit {
-			break
-		}
-	}
-	return total, nil
-}
-
-func (r *BoundedExecutionQueueRepository) recoverExpiredTaskType(ctx context.Context, taskType string, now time.Time, limit int) (int, error) {
 	if limit <= 0 {
 		limit = 100
 	}
-	ownership := managerExecutionOwnerships[taskType]
 	recovered := 0
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		items, err := commonExecution.FindExpiredForUpdate(ctx, tx, commonExecution.ExpiredOptions{
-			Module: commonExecution.ModuleManager, TaskType: taskType, Now: now, Limit: limit,
+			Module: commonExecution.ModuleManager, TaskTypes: ManagerBoundedTaskTypes(), Now: now, Limit: limit,
 		})
 		if err != nil {
 			return err
 		}
 		for i := range items {
 			item := items[i]
+			ownership, ok := managerExecutionOwnerships[item.TaskType]
+			if !ok {
+				return fmt.Errorf("unsupported Manager bounded task type %q", item.TaskType)
+			}
 			lease, err := commonExecution.LeaseFromExecution(item)
 			if err != nil {
 				return err

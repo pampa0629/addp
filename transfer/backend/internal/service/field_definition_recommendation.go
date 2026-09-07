@@ -24,9 +24,9 @@ var (
 )
 
 type FieldDefinitionRecommendationRequest struct {
-	SourceLocator    string   `json:"source_locator" binding:"required"`
-	SourceFields     []string `json:"source_fields" binding:"required"`
-	TargetEngineType string   `json:"target_engine_type" binding:"required"`
+	SourceLocator  string   `json:"source_locator" binding:"required"`
+	SourceFields   []string `json:"source_fields" binding:"required"`
+	TargetEngineID uint     `json:"target_engine_id" binding:"required"`
 }
 
 type DecimalFieldRecommendation struct {
@@ -69,9 +69,24 @@ func (s *FieldDefinitionRecommendationService) Recommend(
 	if s == nil || s.engines == nil || s.protectionGate == nil {
 		return nil, ErrFieldRecommendationUnavailable
 	}
-	if !strings.EqualFold(strings.TrimSpace(request.TargetEngineType), "mysql") {
-		return nil, fmt.Errorf("%w: target engine must be mysql", ErrFieldRecommendationUnsupported)
+	targetEngine, err := s.engines.GetEngineForTenant(ctx, tenantID, request.TargetEngineID)
+	if err != nil || !engineselection.IsAvailable(targetEngine) {
+		return nil, fmt.Errorf("%w: target engine is unavailable", ErrFieldRecommendationUnavailable)
 	}
+	if targetEngine.TenantID != nil && *targetEngine.TenantID != tenantID {
+		return nil, fmt.Errorf("%w: target engine is outside the current tenant", ErrFieldRecommendationInvalid)
+	}
+	targetCaps, err := engineselection.ParseCapabilities(targetEngine.Capabilities)
+	if err != nil {
+		return nil, fmt.Errorf("%w: target engine capabilities are invalid", ErrFieldRecommendationUnavailable)
+	}
+	if targetCaps == nil {
+		return nil, fmt.Errorf("%w: target engine does not declare capabilities", ErrFieldRecommendationUnsupported)
+	}
+	if targetCaps.Limits == nil || targetCaps.Limits.TableWrite == nil || targetCaps.Limits.TableWrite.Decimal == nil {
+		return nil, fmt.Errorf("%w: target engine does not declare decimal table write limits", ErrFieldRecommendationUnsupported)
+	}
+	decimalLimits := targetCaps.Limits.TableWrite.Decimal
 	fields, err := normalizedRecommendationFields(request.SourceFields)
 	if err != nil {
 		return nil, err
@@ -147,7 +162,7 @@ func (s *FieldDefinitionRecommendationService) Recommend(
 	}
 
 	result := &FieldDefinitionRecommendationResult{
-		TargetEngineType: "mysql",
+		TargetEngineType: targetEngine.EngineType,
 		Basis:            "exact_source_values",
 		RowsScanned:      rowsScanned,
 		Fields:           make([]DecimalFieldRecommendation, 0, len(fields)),
@@ -157,10 +172,20 @@ func (s *FieldDefinitionRecommendationService) Recommend(
 		result.Fields = append(result.Fields, DecimalFieldRecommendation{
 			SourceField: field, Precision: precision, Scale: scale,
 			NonNullCount: accumulators[field].NonNullCount,
-			FitsTarget:   precision <= 65 && scale <= 30,
+			FitsTarget:   fitsDecimalFieldLimits(precision, scale, decimalLimits),
 		})
 	}
 	return result, nil
+}
+
+func fitsDecimalFieldLimits(precision, scale int, limits *plugin.DecimalFieldLimits) bool {
+	if limits == nil || precision <= 0 || scale < 0 || scale > precision {
+		return false
+	}
+	if limits.MaxPrecision != nil && precision > *limits.MaxPrecision {
+		return false
+	}
+	return limits.MaxScale == nil || scale <= *limits.MaxScale
 }
 
 func normalizedRecommendationFields(values []string) ([]string, error) {

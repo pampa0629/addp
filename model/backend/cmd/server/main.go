@@ -11,6 +11,7 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
+	_ "github.com/addp/common/engine/plugins/builtin/general"
 	"github.com/addp/common/events"
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/modulelifecycle"

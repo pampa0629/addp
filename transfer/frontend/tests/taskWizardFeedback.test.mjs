@@ -64,9 +64,10 @@ test('decimal 精度和小数位在各自输入框提供说明和错误', () => 
   assert.match(en.transfer.taskWizard.precisionHelp, /DECIMAL\(20,10\)/)
 })
 
-test('新建 MySQL 目标表可以分析源数据并应用 decimal 推荐', () => {
+test('声明 decimal 写入限制的目标表可以分析源数据并应用推荐', () => {
   assert.match(step3Source, /canRecommendDecimalDefinitions[\s\S]*?recommendDecimalDefinitions/)
   assert.match(step3Source, /fieldDefinitionRecommendationAPI\.create/)
+  assert.match(step3Source, /target_engine_id: props\.wizardState\.targetEngineID\.value/)
   assert.match(zhCN.transfer.taskWizard.decimalRecommendationApplied, /扫描/)
   assert.match(en.transfer.taskWizard.decimalRecommendationApplied, /Scanned/)
 })

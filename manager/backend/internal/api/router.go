@@ -56,6 +56,7 @@ func SetupRouter(
 	protectionStore *projectionstore.Store,
 	lifecycle *modulelifecycle.Controller,
 	pptxPDFHandler *PPTXPDFHandler,
+	notifyExecutionEnqueued func(),
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -146,15 +147,18 @@ func SetupRouter(
 	}
 	{
 		if taskProviderHandler != nil {
+			taskProviderHandler.SetExecutionEnqueueNotifier(notifyExecutionEnqueued)
 			api.POST("/executions/:execution_id/events", permission(managerauthorization.PermissionManagerDerivedArtifactCreate), taskProviderHandler.RecordManagerExecutionProgressEvent)
 		}
 		if dataProfileHandler != nil {
+			dataProfileHandler.SetExecutionEnqueueNotifier(notifyExecutionEnqueued)
 			api.GET("/data-profiles/current", permission(managerauthorization.PermissionManagerDataItemRead), dataProfileHandler.GetCurrent)
 			api.POST("/data-profile-executions", permission(managerauthorization.PermissionManagerDataProfileExecute), dataProfileHandler.CreateExecution)
 		}
 
 		// 向量化 API：结果 artifact state 与一次性 execution
 		embeddingHandler := NewEmbeddingHandler(embeddingService)
+		embeddingHandler.SetExecutionEnqueueNotifier(notifyExecutionEnqueued)
 		api.POST("/embedding_executions", permission(managerauthorization.PermissionManagerDerivedArtifactCreate), embeddingHandler.CreateEmbeddingExecution)
 		api.GET("/embeddings", permission(managerauthorization.PermissionManagerDerivedArtifactRead), embeddingHandler.ListEmbeddings)
 		api.DELETE("/embeddings/:id", permission(managerauthorization.PermissionManagerDerivedArtifactDelete), embeddingHandler.DeleteEmbedding)
@@ -286,6 +290,7 @@ func SetupRouter(
 			}
 		}
 		if pptxPDFHandler != nil {
+			pptxPDFHandler.SetExecutionEnqueueNotifier(notifyExecutionEnqueued)
 			pptxPDFGroup := api.Group("/pptx_pdf")
 			{
 				pptxPDFGroup.POST("/preview", permission(managerauthorization.PermissionManagerDataItemRead, managerauthorization.PermissionManagerDerivedArtifactCreate), pptxPDFHandler.EnsurePreview)
@@ -379,6 +384,7 @@ func SetupRouter(
 
 		// Quick View API：统一 ResourceLocator 入口
 		quickViewHandler := NewQuickViewHandler(quickViewService, previewResolver, unifiedMVTService, redisClient)
+		quickViewHandler.SetExecutionEnqueueNotifier(notifyExecutionEnqueued)
 		if taskProviderHandler != nil {
 			quickViewHandler.SetTileCacheTaskService(taskProviderHandler.tileCacheTaskSvc)
 			quickViewHandler.SetArtifactTaskServices(taskProviderHandler.rasterCOGTaskSvc, taskProviderHandler.model3DGLBTaskSvc, taskProviderHandler.gaussianSplatKSplatTaskSvc, taskProviderHandler.pointCloudCOPCTaskSvc, taskProviderHandler.model3DTilesTaskSvc)

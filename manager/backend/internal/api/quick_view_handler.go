@@ -66,6 +66,7 @@ type QuickViewHandler struct {
 	gaussianSplatKSplatTaskSvc *service.GaussianSplatKSplatTaskService
 	pointCloudCOPCTaskSvc      *service.PointCloudCOPCTaskService
 	model3DTilesTaskSvc        *service.Model3DTilesTaskService
+	notifyExecutionEnqueued    func()
 }
 
 func NewQuickViewHandler(service *service.QuickViewService, previewResolver *preview.PreviewResolver, mvtService *service.UnifiedMVTService, _ *redis.Client) *QuickViewHandler {
@@ -82,6 +83,10 @@ func (h *QuickViewHandler) SetArtifactTaskServices(rasterCOGTaskSvc *service.Ras
 	h.gaussianSplatKSplatTaskSvc = gaussianSplatKSplatTaskSvc
 	h.pointCloudCOPCTaskSvc = pointCloudCOPCTaskSvc
 	h.model3DTilesTaskSvc = model3DTilesTaskSvc
+}
+
+func (h *QuickViewHandler) SetExecutionEnqueueNotifier(notify func()) {
+	h.notifyExecutionEnqueued = notify
 }
 
 type UpdatePreferredModeRequest struct {
@@ -269,6 +274,9 @@ func (h *QuickViewHandler) ExecuteQuickViewAction(c *gin.Context) {
 		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+	if h.notifyExecutionEnqueued != nil {
+		h.notifyExecutionEnqueued()
 	}
 	c.JSON(http.StatusAccepted, ExecuteQuickViewActionResponse{
 		Action:      action,

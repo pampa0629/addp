@@ -13,11 +13,16 @@ import (
 )
 
 type EmbeddingHandler struct {
-	embeddingService *service.EmbeddingService
+	embeddingService        *service.EmbeddingService
+	notifyExecutionEnqueued func()
 }
 
 func NewEmbeddingHandler(embeddingService *service.EmbeddingService) *EmbeddingHandler {
 	return &EmbeddingHandler{embeddingService: embeddingService}
+}
+
+func (h *EmbeddingHandler) SetExecutionEnqueueNotifier(notify func()) {
+	h.notifyExecutionEnqueued = notify
 }
 
 // CreateEmbeddingExecution godoc
@@ -49,6 +54,9 @@ func (h *EmbeddingHandler) CreateEmbeddingExecution(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+	if h.notifyExecutionEnqueued != nil {
+		h.notifyExecutionEnqueued()
 	}
 	c.JSON(http.StatusOK, resp)
 }

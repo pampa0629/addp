@@ -143,6 +143,8 @@ func TestEmbeddingTaskSchedulerClaimsDueTaskAndCreatesScheduledExecution(t *test
 	taskExecRepo := commonExecution.NewTaskExecutionRepository(db)
 	taskSvc := NewEmbeddingTaskService(embeddingRepo, nil, taskExecRepo, nil)
 	scheduler := NewEmbeddingTaskScheduler(taskSvc)
+	notifyCount := 0
+	scheduler.SetExecutionEnqueueNotifier(func() { notifyCount++ })
 
 	task := newEmbeddingTaskDefinition()
 	task.Schedule = "* * * * *"
@@ -153,6 +155,9 @@ func TestEmbeddingTaskSchedulerClaimsDueTaskAndCreatesScheduledExecution(t *test
 	}
 
 	scheduler.runDueScheduledTasks(context.Background())
+	if notifyCount != 1 {
+		t.Fatalf("enqueue notifications = %d, want 1", notifyCount)
+	}
 
 	var executions []*commonExecution.TaskExecution
 	if err := db.Where("module = ? AND task_type = ?", commonExecution.ModuleManager, commonExecution.TaskTypeEmbedding).Find(&executions).Error; err != nil {

@@ -540,6 +540,8 @@ func TestTaskExecuteModel3DTilesRequiresConfirmationForExistingResult(t *testing
 
 	handler := NewTaskProviderHandler(nil, nil, nil, nil, taskExecRepo)
 	handler.SetModel3DTilesTaskService(service.NewModel3DTilesTaskService(repo))
+	notifyCount := 0
+	handler.SetExecutionEnqueueNotifier(func() { notifyCount++ })
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
 		setTenantAuthContextForTest(c, 1, 1)
@@ -552,13 +554,16 @@ func TestTaskExecuteModel3DTilesRequiresConfirmationForExistingResult(t *testing
 	if first.Code != http.StatusAccepted {
 		t.Fatalf("first execute status = %d, want 202; body=%s", first.Code, first.Body.String())
 	}
+	if notifyCount != 1 {
+		t.Fatalf("enqueue notifications = %d, want 1", notifyCount)
+	}
 	var accepted TaskExecuteResponse
 	if err := json.Unmarshal(first.Body.Bytes(), &accepted); err != nil {
 		t.Fatalf("decode first response: %v", err)
 	}
 	queue := repository.NewBoundedExecutionQueueRepository(db)
 	claimed, lease, err := queue.ClaimNext(
-		context.Background(), commonExecution.TaskTypeModel3DTilesGeneration,
+		context.Background(), []string{commonExecution.TaskTypeModel3DTilesGeneration},
 		"manager-api-test", time.Now().UTC(), time.Minute,
 	)
 	if err != nil || claimed == nil || lease == nil {
@@ -613,6 +618,9 @@ func TestTaskExecuteModel3DTilesRequiresConfirmationForExistingResult(t *testing
 	overwrite := executeTaskProviderRequest(t, router, path, `{"trigger_type":"scheduled","source":"orchestrator","parent_execution_id":"pipeline-exec","parameters":{"existing_result_action":"overwrite"}}`)
 	if overwrite.Code != http.StatusAccepted {
 		t.Fatalf("overwrite execute status = %d, want 202; body=%s", overwrite.Code, overwrite.Body.String())
+	}
+	if notifyCount != 2 {
+		t.Fatalf("enqueue notifications = %d, want 2 after overwrite", notifyCount)
 	}
 	var overwriteResponse TaskExecuteResponse
 	if err := json.Unmarshal(overwrite.Body.Bytes(), &overwriteResponse); err != nil {

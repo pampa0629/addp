@@ -165,7 +165,7 @@ func TestTileCacheQueueClaimRollsBackWhenOwnerSummaryCannotAdvance(t *testing.T)
 	}
 
 	claimed, lease, err := NewBoundedExecutionQueueRepository(db).ClaimNext(
-		context.Background(), commonExecution.TaskTypeVectorTileCacheGeneration,
+		context.Background(), []string{commonExecution.TaskTypeVectorTileCacheGeneration},
 		"manager-repository-test", createdAt.Add(time.Minute), time.Minute,
 	)
 	if !errors.Is(err, commonAPI.ErrConflict) {

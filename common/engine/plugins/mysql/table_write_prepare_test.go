@@ -26,6 +26,10 @@ func TestMySQLCapabilitiesDeclareTableWriteProviders(t *testing.T) {
 	if !caps.Storage.Store.Delete {
 		t.Fatalf("mysql capabilities do not declare delete: %#v", caps.Storage.Store)
 	}
+	decimal := caps.Limits.TableWrite.Decimal
+	if !decimal.RequiresExplicitPrecisionScale || decimal.MaxPrecision == nil || *decimal.MaxPrecision != 65 || decimal.MaxScale == nil || *decimal.MaxScale != 30 {
+		t.Fatalf("mysql capabilities have unexpected decimal write limits: %#v", decimal)
+	}
 	if err := plugin.ValidatePluginCapabilities(&MySQLPlugin{}); err != nil {
 		t.Fatalf("ValidatePluginCapabilities failed: %v", err)
 	}

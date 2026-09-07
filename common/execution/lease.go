@@ -30,6 +30,7 @@ func LeaseFromContext(ctx context.Context) (Lease, bool) {
 type ClaimOptions struct {
 	Module               string
 	TaskType             string
+	TaskTypes            []string
 	Source               string
 	WorkerID             string
 	Now                  time.Time
@@ -47,19 +48,23 @@ type Lease struct {
 }
 
 type ExpiredOptions struct {
-	Module   string
-	TaskType string
-	Source   string
-	Now      time.Time
-	Limit    int
+	Module    string
+	TaskType  string
+	TaskTypes []string
+	Source    string
+	Now       time.Time
+	Limit     int
 }
 
 func ClaimNext(ctx context.Context, tx *gorm.DB, options ClaimOptions) (*TaskExecution, *Lease, error) {
 	if tx == nil {
 		return nil, nil, fmt.Errorf("execution claim database is required")
 	}
-	if options.Module == "" || options.TaskType == "" || options.WorkerID == "" {
-		return nil, nil, fmt.Errorf("execution claim module, task type and worker ID are required")
+	if options.Module == "" || options.WorkerID == "" {
+		return nil, nil, fmt.Errorf("execution claim module and worker ID are required")
+	}
+	if err := validateTaskTypeSelector(options.TaskType, options.TaskTypes); err != nil {
+		return nil, nil, fmt.Errorf("execution claim: %w", err)
 	}
 	if options.LeaseDuration <= 0 {
 		return nil, nil, fmt.Errorf("execution claim lease duration must be positive")
@@ -71,8 +76,9 @@ func ClaimNext(ctx context.Context, tx *gorm.DB, options ClaimOptions) (*TaskExe
 
 	var item TaskExecution
 	query := tx.WithContext(ctx).
-		Where("module = ? AND task_type = ? AND execution_boundary = ? AND status = ?", options.Module, options.TaskType, ExecutionBoundaryBounded, ExecutionStatusPending).
+		Where("module = ? AND execution_boundary = ? AND status = ?", options.Module, ExecutionBoundaryBounded, ExecutionStatusPending).
 		Order("created_at ASC, id ASC").Limit(1)
+	query = applyTaskTypeSelector(query, options.TaskType, options.TaskTypes)
 	if options.Source != "" {
 		query = query.Where("source = ?", options.Source)
 	}
@@ -152,8 +158,11 @@ func LeaseFromExecution(item TaskExecution) (Lease, error) {
 // FindExpiredForUpdate locks expired bounded attempts inside the caller's
 // transaction. The owner decides whether each execution is safe to retry.
 func FindExpiredForUpdate(ctx context.Context, tx *gorm.DB, options ExpiredOptions) ([]TaskExecution, error) {
-	if tx == nil || options.Module == "" || options.TaskType == "" {
-		return nil, fmt.Errorf("expired execution database, module and task type are required")
+	if tx == nil || options.Module == "" {
+		return nil, fmt.Errorf("expired execution database and module are required")
+	}
+	if err := validateTaskTypeSelector(options.TaskType, options.TaskTypes); err != nil {
+		return nil, fmt.Errorf("expired execution: %w", err)
 	}
 	now := options.Now.UTC()
 	if now.IsZero() {
@@ -164,8 +173,9 @@ func FindExpiredForUpdate(ctx context.Context, tx *gorm.DB, options ExpiredOptio
 		limit = 100
 	}
 	query := tx.WithContext(ctx).
-		Where("module = ? AND task_type = ? AND execution_boundary = ? AND status = ? AND lease_expires_at IS NOT NULL AND lease_expires_at < ?", options.Module, options.TaskType, ExecutionBoundaryBounded, ExecutionStatusRunning, now).
+		Where("module = ? AND execution_boundary = ? AND status = ? AND lease_expires_at IS NOT NULL AND lease_expires_at < ?", options.Module, ExecutionBoundaryBounded, ExecutionStatusRunning, now).
 		Order("lease_expires_at ASC, id ASC").Limit(limit)
+	query = applyTaskTypeSelector(query, options.TaskType, options.TaskTypes)
 	if options.Source != "" {
 		query = query.Where("source = ?", options.Source)
 	}
@@ -177,6 +187,28 @@ func FindExpiredForUpdate(ctx context.Context, tx *gorm.DB, options ExpiredOptio
 		return nil, err
 	}
 	return items, nil
+}
+
+func validateTaskTypeSelector(taskType string, taskTypes []string) error {
+	if taskType != "" && len(taskTypes) > 0 {
+		return fmt.Errorf("task type and task types cannot both be set")
+	}
+	if taskType == "" && len(taskTypes) == 0 {
+		return fmt.Errorf("task type selector is required")
+	}
+	for _, candidate := range taskTypes {
+		if candidate == "" {
+			return fmt.Errorf("task types cannot contain an empty value")
+		}
+	}
+	return nil
+}
+
+func applyTaskTypeSelector(query *gorm.DB, taskType string, taskTypes []string) *gorm.DB {
+	if taskType != "" {
+		return query.Where("task_type = ?", taskType)
+	}
+	return query.Where("task_type IN ?", taskTypes)
 }
 
 func RetryExpired(ctx context.Context, tx *gorm.DB, lease Lease, now time.Time, currentStep string) error {

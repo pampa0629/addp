@@ -859,12 +859,12 @@ definitions:
         type: array
       source_locator:
         type: string
-      target_engine_type:
-        type: string
+      target_engine_id:
+        type: integer
     required:
     - source_fields
     - source_locator
-    - target_engine_type
+    - target_engine_id
     type: object
   github_com_addp_transfer_internal_service.FieldDefinitionRecommendationResult:
     properties:
@@ -1520,10 +1520,10 @@ paths:
     post:
       consumes:
       - application/json
-      description: 全量扫描指定源 DECIMAL 字段的实际值，为新建 MySQL 目标表返回不会截断当前源数据的最小 precision 和
-        scale。| Fully scans the selected source DECIMAL fields and returns the minimum
-        precision and scale that preserve all current source values in a new MySQL
-        target table.
+      description: 全量扫描指定源 DECIMAL 字段的实际值，并按目标引擎声明的 decimal 表写入限制返回不会截断当前源数据的最小 precision
+        和 scale。| Fully scans the selected source DECIMAL fields and uses the target
+        engine's declared decimal table-write limits to return the minimum precision
+        and scale that preserve all current source values.
       parameters:
       - description: 推荐请求 | Recommendation request
         in: body

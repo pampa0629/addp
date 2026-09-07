@@ -51,6 +51,7 @@ type EnginePlugin interface {
 - 自研且未编译进当前进程的 extension engine 使用标准 HTTP 运行时身份字段 `protocol + host + port`，不得通过任意非敏感字段猜测身份。
 - `TestConnection()` 必须执行需要认证的最小只读真实操作，不能只做网络连通检查，也不得创建、更新、删除外部资源。
 - `Capabilities()` 必须返回结构化 `engine.capabilities/v1` 能力模板。该方法不得连接具体实例，不做运行时探测，只表达插件和 Provider 实现的能力上限。
+- Provider 存在稳定执行边界时必须通过类型化 `limits` 声明，由上层统一消费；例如 MySQL-compatible `TableWritePreparer` 的 decimal 定义限制统一写入 `limits.table_write.decimal`，不得由 Transfer 等模块按 `engine_type` 维护数据库名单或重复常量。
 - 需要按实例探测扩展、版本或函数可用性的插件，应额外实现 `InstanceCapabilitiesResolver`，由 System 在保存或刷新具体引擎记录时调用并生成落库能力声明。
 - `InstanceCapabilitiesResolver` 只用于创建或变更连接、显式连接测试以及 System 就绪后的逐实例后台协调。模块启动和 readiness 不得调用实例能力解析；解析失败只影响当前 Engine Instance 或当前请求，不得终止 System、业务 Backend 或 Worker。
 

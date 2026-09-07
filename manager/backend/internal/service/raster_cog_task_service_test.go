@@ -628,7 +628,7 @@ func TestRasterCOGTaskKeepsRunningStateWhenAtomicCompletionFails(t *testing.T) {
 		t.Fatalf("claim raster COG generation task: %v", err)
 	}
 	claimedExecution, lease, err := repository.NewBoundedExecutionQueueRepository(db).ClaimNext(
-		context.Background(), commonExecution.TaskTypeRasterCOGGeneration,
+		context.Background(), []string{commonExecution.TaskTypeRasterCOGGeneration},
 		"manager-service-test", createdAt.Add(time.Second), time.Minute,
 	)
 	if err != nil {

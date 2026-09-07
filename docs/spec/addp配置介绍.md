@@ -215,9 +215,10 @@ MANAGER_EXECUTION_CONCURRENCY=4
 MANAGER_EXECUTION_LEASE_DURATION=2m
 MANAGER_EXECUTION_HEARTBEAT_INTERVAL=30s
 MANAGER_EXECUTION_CLAIM_INTERVAL=1s
+MANAGER_EXECUTION_IDLE_MAX_INTERVAL=5s
 ```
 
-并发数和三个时间项必须为正，心跳周期必须短于租约。Manager Backend 进程失联且租约过期时，该 execution、任务摘要和构建中的结果会原子收敛为失败；当前所有 task type 都不会自动重放，用户显式重试时创建新的 execution。
+并发数和四个时间项必须为正，心跳周期必须短于租约，空闲最大间隔不得小于基础领取间隔。协调器在全部 Manager bounded task type 中统一领取，空队列时指数退避；本进程新建 pending execution 会立即唤醒领取，唤醒丢失或其他 Manager 实例入队时最迟在空闲最大间隔后发现。Manager Backend 进程失联且租约过期时，该 execution、任务摘要和构建中的结果会原子收敛为失败；当前所有 task type 都不会自动重放，用户显式重试时创建新的 execution。
 
 ### Manager 向量化配置
 
@@ -442,6 +443,7 @@ MANAGER_EXECUTION_CONCURRENCY=4
 MANAGER_EXECUTION_LEASE_DURATION=2m
 MANAGER_EXECUTION_HEARTBEAT_INTERVAL=30s
 MANAGER_EXECUTION_CLAIM_INTERVAL=1s
+MANAGER_EXECUTION_IDLE_MAX_INTERVAL=5s
 META_SERVICE_CLIENT_SECRET=
 MODEL_SERVICE_CLIENT_SECRET=
 MONITOR_SERVICE_CLIENT_SECRET=

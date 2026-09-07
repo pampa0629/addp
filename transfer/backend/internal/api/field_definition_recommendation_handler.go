@@ -21,7 +21,7 @@ func NewFieldDefinitionRecommendationHandler(recommendationService *service.Fiel
 
 // Create analyzes exact source values and recommends target field definitions.
 // @Summary 推荐目标字段定义 | Recommend target field definitions
-// @Description 全量扫描指定源 DECIMAL 字段的实际值，为新建 MySQL 目标表返回不会截断当前源数据的最小 precision 和 scale。| Fully scans the selected source DECIMAL fields and returns the minimum precision and scale that preserve all current source values in a new MySQL target table.
+// @Description 全量扫描指定源 DECIMAL 字段的实际值，并按目标引擎声明的 decimal 表写入限制返回不会截断当前源数据的最小 precision 和 scale。| Fully scans the selected source DECIMAL fields and uses the target engine's declared decimal table-write limits to return the minimum precision and scale that preserve all current source values.
 // @Tags 字段定义 | Field Definitions
 // @Accept json
 // @Produce json

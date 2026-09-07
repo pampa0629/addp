@@ -7,13 +7,69 @@ import (
 	"testing"
 
 	"github.com/addp/common/datatype"
+	"github.com/addp/common/engine/plugin"
+	_ "github.com/addp/common/engine/plugins/builtin/general"
 	commonmodels "github.com/addp/common/models"
 )
 
 type fieldRecommendationEngineGetterStub struct {
-	tenantID uint
-	engineID uint
-	err      error
+	tenantIDs []uint
+	engineIDs []uint
+	engines   map[uint]*commonmodels.Engine
+	errors    map[uint]error
+}
+
+func availableFieldRecommendationEngine(t *testing.T, id uint, engineType string) *commonmodels.Engine {
+	t.Helper()
+	plug, err := plugin.Get(engineType)
+	if err != nil {
+		t.Fatal(err)
+	}
+	capabilitiesJSON, err := plugin.MarshalEngineCapabilities(plug.Capabilities())
+	if err != nil {
+		t.Fatal(err)
+	}
+	capabilities := commonmodels.JSONString(capabilitiesJSON)
+	return &commonmodels.Engine{
+		ID:               id,
+		EngineType:       engineType,
+		LifecycleState:   commonmodels.EngineLifecycleActive,
+		ConnectionStatus: commonmodels.EngineConnectionOnline,
+		Capabilities:     &capabilities,
+	}
+}
+
+func TestFieldRecommendationTargetUsesDeclaredDecimalLimits(t *testing.T) {
+	for _, engineType := range []string{"mysql", "oceanbase"} {
+		t.Run(engineType, func(t *testing.T) {
+			plug, err := plugin.Get(engineType)
+			if err != nil {
+				t.Fatal(err)
+			}
+			limits := plug.Capabilities().Limits.TableWrite.Decimal
+			if !fitsDecimalFieldLimits(65, 30, limits) {
+				t.Fatalf("%s limits should accept decimal(65,30)", engineType)
+			}
+			if fitsDecimalFieldLimits(66, 30, limits) || fitsDecimalFieldLimits(65, 31, limits) {
+				t.Fatalf("%s limits should reject values beyond decimal(65,30)", engineType)
+			}
+		})
+	}
+}
+
+func TestFieldRecommendationRejectsTargetWithoutDecimalLimits(t *testing.T) {
+	getter := &fieldRecommendationEngineGetterStub{engines: map[uint]*commonmodels.Engine{
+		9: availableFieldRecommendationEngine(t, 9, "postgresql"),
+	}}
+	service := NewFieldDefinitionRecommendationService(getter, allowFieldRecommendationProtectionGate{})
+	_, err := service.Recommend(context.Background(), 7, FieldDefinitionRecommendationRequest{
+		SourceLocator:  "addp://engine/8/path/public/amounts?type=table&item_id=60",
+		SourceFields:   []string{"amount"},
+		TargetEngineID: 9,
+	})
+	if !errors.Is(err, ErrFieldRecommendationUnsupported) || !reflect.DeepEqual(getter.engineIDs, []uint{9}) {
+		t.Fatalf("Recommend() error = %v, engine lookups = %v", err, getter.engineIDs)
+	}
 }
 
 type allowFieldRecommendationProtectionGate struct{}
@@ -23,9 +79,12 @@ func (allowFieldRecommendationProtectionGate) RequireLocator(context.Context, ui
 }
 
 func (s *fieldRecommendationEngineGetterStub) GetEngineForTenant(_ context.Context, tenantID, engineID uint) (*commonmodels.Engine, error) {
-	s.tenantID = tenantID
-	s.engineID = engineID
-	return nil, s.err
+	s.tenantIDs = append(s.tenantIDs, tenantID)
+	s.engineIDs = append(s.engineIDs, engineID)
+	if err := s.errors[engineID]; err != nil {
+		return nil, err
+	}
+	return s.engines[engineID], nil
 }
 
 func TestDecimalValueShapePreservesExactRequiredDigits(t *testing.T) {
@@ -87,14 +146,19 @@ func TestRecommendationFieldsPreserveQuotedIdentifierCase(t *testing.T) {
 }
 
 func TestFieldRecommendationReadsSourceEngineInCurrentTenant(t *testing.T) {
-	getter := &fieldRecommendationEngineGetterStub{err: errors.New("stop after tenant binding")}
+	getter := &fieldRecommendationEngineGetterStub{
+		engines: map[uint]*commonmodels.Engine{
+			9: availableFieldRecommendationEngine(t, 9, "oceanbase"),
+		},
+		errors: map[uint]error{8: errors.New("stop after tenant binding")},
+	}
 	service := NewFieldDefinitionRecommendationService(getter, allowFieldRecommendationProtectionGate{})
 	_, err := service.Recommend(context.Background(), 7, FieldDefinitionRecommendationRequest{
-		SourceLocator:    "addp://engine/8/path/public/amounts?type=table&item_id=60",
-		SourceFields:     []string{"amount"},
-		TargetEngineType: "mysql",
+		SourceLocator:  "addp://engine/8/path/public/amounts?type=table&item_id=60",
+		SourceFields:   []string{"amount"},
+		TargetEngineID: 9,
 	})
-	if err == nil || getter.tenantID != 7 || getter.engineID != 8 {
-		t.Fatalf("tenant/engine binding = (%d,%d), err=%v", getter.tenantID, getter.engineID, err)
+	if err == nil || !reflect.DeepEqual(getter.tenantIDs, []uint{7, 7}) || !reflect.DeepEqual(getter.engineIDs, []uint{9, 8}) {
+		t.Fatalf("tenant/engine bindings = (%v,%v), err=%v", getter.tenantIDs, getter.engineIDs, err)
 	}
 }

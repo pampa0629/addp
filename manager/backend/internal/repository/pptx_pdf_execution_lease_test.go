@@ -27,7 +27,7 @@ func TestPPTXPDFExecutionUsesLeaseAndRejectsLateCompletion(t *testing.T) {
 	}
 
 	claimedExecution, lease, err := queue.ClaimNext(
-		context.Background(), commonExecution.TaskTypePPTXPDFGeneration, "manager-backend-1", createdAt.Add(time.Second), 30*time.Second,
+		context.Background(), []string{commonExecution.TaskTypePPTXPDFGeneration}, "manager-backend-1", createdAt.Add(time.Second), 30*time.Second,
 	)
 	if err != nil {
 		t.Fatalf("claim pending PPTX execution: %v", err)
@@ -68,7 +68,7 @@ func TestPPTXPDFExpiredLeaseFailsExecutionTaskAndBuildingResult(t *testing.T) {
 		t.Fatalf("enqueue PPTX execution: %v", err)
 	}
 	_, lease, err := queue.ClaimNext(
-		context.Background(), commonExecution.TaskTypePPTXPDFGeneration, "manager-backend-1", createdAt.Add(time.Second), 30*time.Second,
+		context.Background(), []string{commonExecution.TaskTypePPTXPDFGeneration}, "manager-backend-1", createdAt.Add(time.Second), 30*time.Second,
 	)
 	if err != nil || lease == nil {
 		t.Fatalf("claim pending PPTX execution lease = %#v error = %v", lease, err)

@@ -279,7 +279,7 @@ raw copy 是 non-table encoded single content 的原始字节复制。它不调�
 | `default` | 否 | 源字段缺失或值为 nil 时使用的默认值。 |
 | `format` | 否 | 日期、时间、数字等简单解析 / 格式化提示。 |
 
-`precision` / `scale` 只属于 decimal 目标字段，两者必须同时出现或同时省略。源字段已声明有限精度时，向导默认继承该事实；PostgreSQL 无精度限制的 `numeric` 写入 MySQL 这类只支持有界 decimal 的目标时，必须在映射中显式填写。MySQL 要求 `1 <= precision <= 65`、`0 <= scale <= 30` 且 `scale <= precision`。系统不扫描数据猜测表结构，也不把无界 decimal 静默收缩为默认精度。
+`precision` / `scale` 只属于 decimal 目标字段，两者必须同时出现或同时省略。源字段已声明有限精度时，向导默认继承该事实；无界 decimal 写入声明 `limits.table_write.decimal.requires_explicit_precision_scale=true` 的目标时，必须在映射中显式填写。MySQL 与 MySQL 模式 OceanBase 都声明 `max_precision=65`、`max_scale=30`，并要求 `scale <= precision`；向导校验与字段定义推荐统一消费目标 Engine Instance 的 capability，不按数据库名称建立分支，推荐 API 只接收所选 `target_engine_id`，不接受调用方另报引擎类型。系统不会把无界 decimal 静默收缩为默认精度；只有用户触发字段定义推荐时，Transfer 才会全量扫描所选源字段的实际值并展示结果供确认。
 
 `mode`：
 

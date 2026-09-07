@@ -58,8 +58,22 @@ type EngineCapabilities struct {
     EngineFamily  string                 `json:"engine_family"`
     Storage       *StorageCapabilities   `json:"storage,omitempty"`
     Compute       *ComputeCapabilities   `json:"compute,omitempty"`
-    Limits        map[string]interface{} `json:"limits,omitempty"`
+    Limits        *EngineLimits          `json:"limits,omitempty"`
     Extensions    map[string]interface{} `json:"extensions,omitempty"`
+}
+
+type EngineLimits struct {
+    TableWrite *TableWriteLimits `json:"table_write,omitempty"`
+}
+
+type TableWriteLimits struct {
+    Decimal *DecimalFieldLimits `json:"decimal,omitempty"`
+}
+
+type DecimalFieldLimits struct {
+    RequiresExplicitPrecisionScale bool `json:"requires_explicit_precision_scale,omitempty"`
+    MaxPrecision                   *int `json:"max_precision,omitempty"`
+    MaxScale                       *int `json:"max_scale,omitempty"`
 }
 ```
 
@@ -70,10 +84,35 @@ type EngineCapabilities struct {
 | `engine_family` | 主引擎族，如 `tabular`、`dynamic_schema`、`graph`、`object`、`file`、`event_stream`、`workflow`、`script`、`inference`。 | 必须保留，但只作为粗分类。 |
 | `storage` | 存储、目录、元数据、内容访问能力。 | 具备存储能力的引擎必须声明。 |
 | `compute` | 查询、工作流、脚本运行能力。 | 具备计算能力的引擎必须声明。 |
-| `limits` | 跨能力通用限制，如预览大小、超时建议。 | 可选，有真实调用方时声明。 |
+| `limits` | Provider 执行面的结构化边界；当前只定义 `table_write.decimal`。 | 可选，有真实调用方时声明。 |
 | `extensions` | 引擎特有扩展。 | 可选，不得替代核心字段。 |
 
 `engine_family` 只表达粗粒度引擎族，不能替代 `storage.catalog_model`、provider 组合或模块自身策略。尤其对 Meta 而言，是否走 namespace/leaf catalog、是否需要内容读取、是否可做动态 schema 采样，必须由 `EngineCatalogModelSpec` 与已实现 provider 一起决定；不得把 `engine_family` 当作扫描策略事实源。
+
+### 2.1 Limits
+
+`limits` 只声明对应 Provider 会真实执行的边界，不能承载上层模块策略、经验默认值或引擎类型别名。消费方必须以字段是否存在为准，不得再根据 `engine_type` 推断同一限制。
+
+当前稳定结构为：
+
+```json
+{
+  "limits": {
+    "table_write": {
+      "decimal": {
+        "requires_explicit_precision_scale": true,
+        "max_precision": 65,
+        "max_scale": 30
+      }
+    }
+  }
+}
+```
+
+- `table_write.decimal` 描述 `TableWritePreparer` 对 decimal 目标字段定义的约束；声明该结构的插件必须实现 `TableWritePreparer`。
+- `requires_explicit_precision_scale=true` 表示 precision 与 scale 必须成对显式提供，不能把无界 decimal 静默收缩为默认定义。
+- `max_precision` 必须为正整数；`max_scale` 必须为非负整数，且不得大于 `max_precision`。字段省略表示该维度无统一上限。
+- MySQL 与 MySQL 模式 OceanBase 共用 MySQL-compatible 表写入实现，因此都声明显式 precision/scale、`max_precision=65`、`max_scale=30`。Transfer 的前置校验和字段定义推荐只消费该能力，不维护 MySQL/OceanBase 名单。
 
 ---
 

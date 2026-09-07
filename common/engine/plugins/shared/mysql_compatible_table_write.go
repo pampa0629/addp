@@ -17,6 +17,28 @@ import (
 const mysqlCompatibleDefaultInsertChunkSize = 1000
 const mysqlCompatibleMaxBindParams = 65535
 
+const (
+	MySQLCompatibleDecimalMaxPrecision = 65
+	MySQLCompatibleDecimalMaxScale     = 30
+)
+
+func ApplyMySQLCompatibleTableWriteLimits(capabilities *plugin.EngineCapabilities) {
+	if capabilities == nil {
+		return
+	}
+	if capabilities.Limits == nil {
+		capabilities.Limits = &plugin.EngineLimits{}
+	}
+	if capabilities.Limits.TableWrite == nil {
+		capabilities.Limits.TableWrite = &plugin.TableWriteLimits{}
+	}
+	capabilities.Limits.TableWrite.Decimal = &plugin.DecimalFieldLimits{
+		RequiresExplicitPrecisionScale: true,
+		MaxPrecision:                   plugin.Int(MySQLCompatibleDecimalMaxPrecision),
+		MaxScale:                       plugin.Int(MySQLCompatibleDecimalMaxScale),
+	}
+}
+
 // MySQLCompatibleTableWriter implements the non-spatial table write contract
 // shared by engines that expose a verified MySQL-compatible SQL surface.
 // Engine-specific plugins remain responsible for declaring capabilities and
@@ -406,17 +428,21 @@ func (w MySQLCompatibleTableWriter) sqlTypeForField(field datatype.FieldInfo) (s
 }
 
 func (w MySQLCompatibleTableWriter) validateDecimalField(field datatype.FieldInfo) error {
+	return ValidateMySQLCompatibleDecimalField(w.engineType(), field)
+}
+
+func ValidateMySQLCompatibleDecimalField(engineType string, field datatype.FieldInfo) error {
 	if field.Precision <= 0 {
-		return fmt.Errorf("%s decimal field %q requires explicit precision and scale", w.engineType(), field.Name)
+		return fmt.Errorf("%s decimal field %q requires explicit precision and scale", engineType, field.Name)
 	}
-	if field.Precision > 65 {
-		return fmt.Errorf("%s decimal field %q precision %d exceeds maximum 65", w.engineType(), field.Name, field.Precision)
+	if field.Precision > MySQLCompatibleDecimalMaxPrecision {
+		return fmt.Errorf("%s decimal field %q precision %d exceeds maximum %d", engineType, field.Name, field.Precision, MySQLCompatibleDecimalMaxPrecision)
 	}
-	if field.Scale < 0 || field.Scale > 30 {
-		return fmt.Errorf("%s decimal field %q scale %d must be between 0 and 30", w.engineType(), field.Name, field.Scale)
+	if field.Scale < 0 || field.Scale > MySQLCompatibleDecimalMaxScale {
+		return fmt.Errorf("%s decimal field %q scale %d must be between 0 and %d", engineType, field.Name, field.Scale, MySQLCompatibleDecimalMaxScale)
 	}
 	if field.Scale > field.Precision {
-		return fmt.Errorf("%s decimal field %q scale %d exceeds precision %d", w.engineType(), field.Name, field.Scale, field.Precision)
+		return fmt.Errorf("%s decimal field %q scale %d exceeds precision %d", engineType, field.Name, field.Scale, field.Precision)
 	}
 	return nil
 }

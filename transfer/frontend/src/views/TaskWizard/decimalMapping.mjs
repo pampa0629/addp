@@ -51,34 +51,51 @@ function effectiveDecimalFacts(mapping, sourceFields, targetFields) {
   }
 }
 
-function isMySQLNativeTarget(targetEngineType, targetRepresentation) {
-  return String(targetEngineType || '').toLowerCase().includes('mysql') &&
-    String(targetRepresentation || '').toLowerCase() === 'native'
+export function decimalTableWriteLimits(capabilities) {
+  const decimal = capabilities?.limits?.table_write?.decimal
+  if (!decimal || typeof decimal !== 'object') return null
+  const rawMaxPrecision = decimal.max_precision
+  const rawMaxScale = decimal.max_scale
+  const maxPrecision = rawMaxPrecision === undefined || rawMaxPrecision === null ? null : Number(rawMaxPrecision)
+  const maxScale = rawMaxScale === undefined || rawMaxScale === null ? null : Number(rawMaxScale)
+  const limits = {
+    requiresExplicitPrecisionScale: decimal.requires_explicit_precision_scale === true,
+    maxPrecision: isInteger(maxPrecision) && maxPrecision > 0 ? maxPrecision : null,
+    maxScale: isInteger(maxScale) && maxScale >= 0 ? maxScale : null
+  }
+  return limits.requiresExplicitPrecisionScale || limits.maxPrecision !== null || limits.maxScale !== null
+    ? limits
+    : null
 }
 
-function decimalIssueCode(facts) {
-  if (!isInteger(facts.precision)) return 'precision_required'
-  if (facts.precision <= 0 || facts.precision > 65) return 'precision_out_of_range'
+function decimalIssueCode(facts, limits) {
+  if (!isInteger(facts.precision)) {
+    return limits.requiresExplicitPrecisionScale || isInteger(facts.scale) ? 'precision_required' : ''
+  }
+  if (facts.precision <= 0) return 'precision_invalid'
+  if (limits.maxPrecision !== null && facts.precision > limits.maxPrecision) return 'precision_exceeds_max'
   if (!isInteger(facts.scale)) return 'scale_required'
-  if (facts.scale < 0 || facts.scale > 30) return 'scale_out_of_range'
+  if (facts.scale < 0) return 'scale_invalid'
+  if (limits.maxScale !== null && facts.scale > limits.maxScale) return 'scale_exceeds_max'
   if (facts.scale > facts.precision) return 'scale_exceeds_precision'
   return ''
 }
 
-export function mysqlDecimalMappingIssues(
+export function decimalMappingIssues(
   mappings,
   sourceFields,
   targetFields,
-  targetEngineType,
+  targetCapabilities,
   targetRepresentation
 ) {
-  if (!isMySQLNativeTarget(targetEngineType, targetRepresentation)) return []
+  const limits = decimalTableWriteLimits(targetCapabilities)
+  if (!limits || String(targetRepresentation || '').toLowerCase() !== 'native') return []
 
   return (Array.isArray(mappings) ? mappings : []).flatMap((mapping, index) => {
     if (!isDecimalType(mapping?.target_type)) return []
     const targetField = matchingField(targetFields, mapping?.target_field)
     const noManualFacts = !isInteger(mapping?.precision) && !isInteger(mapping?.scale)
-    let code = decimalIssueCode(effectiveDecimalFacts(mapping, sourceFields, targetFields))
+    let code = decimalIssueCode(effectiveDecimalFacts(mapping, sourceFields, targetFields), limits)
     if (
       code === 'precision_required' &&
       noManualFacts &&
@@ -97,18 +114,18 @@ export function mysqlDecimalMappingIssues(
   })
 }
 
-export function mysqlDecimalMappingsValid(
+export function decimalMappingsValid(
   mappings,
   sourceFields,
-  targetEngineType,
+  targetCapabilities,
   targetRepresentation,
   targetFields = []
 ) {
-  return mysqlDecimalMappingIssues(
+  return decimalMappingIssues(
     mappings,
     sourceFields,
     targetFields,
-    targetEngineType,
+    targetCapabilities,
     targetRepresentation
   ).length === 0
 }

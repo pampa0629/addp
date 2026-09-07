@@ -93,6 +93,34 @@ func TestClaimNextFiltersTriggerSource(t *testing.T) {
 	}
 }
 
+func TestClaimNextSelectsOldestExecutionAcrossTaskTypes(t *testing.T) {
+	db := newLeaseTestDB(t)
+	now := time.Now().UTC()
+	items := []execution.TaskExecution{
+		{TenantID: 7, ExecutionID: "not-managed", Module: execution.ModuleManager, TaskType: execution.TaskTypeDataProfiling, Source: execution.ModuleManager, Status: execution.ExecutionStatusPending, ExecutionBoundary: execution.ExecutionBoundaryBounded, TriggerType: execution.TriggerTypeManual, CreatedAt: now.Add(-time.Minute), UpdatedAt: now},
+		{TenantID: 7, ExecutionID: "older-managed", Module: execution.ModuleManager, TaskType: execution.TaskTypePPTXPDFGeneration, Source: execution.ModuleManager, Status: execution.ExecutionStatusPending, ExecutionBoundary: execution.ExecutionBoundaryBounded, TriggerType: execution.TriggerTypeManual, CreatedAt: now.Add(-time.Second), UpdatedAt: now},
+		{TenantID: 7, ExecutionID: "newer-managed", Module: execution.ModuleManager, TaskType: execution.TaskTypePointCloudCOPCGeneration, Source: execution.ModuleManager, Status: execution.ExecutionStatusPending, ExecutionBoundary: execution.ExecutionBoundaryBounded, TriggerType: execution.TriggerTypeManual, CreatedAt: now, UpdatedAt: now},
+	}
+	if err := db.Create(&items).Error; err != nil {
+		t.Fatalf("create executions: %v", err)
+	}
+
+	claimed, _, err := execution.ClaimNext(context.Background(), db, execution.ClaimOptions{
+		Module: execution.ModuleManager,
+		TaskTypes: []string{
+			execution.TaskTypePointCloudCOPCGeneration,
+			execution.TaskTypePPTXPDFGeneration,
+		},
+		WorkerID: "manager-coordinator", Now: now, LeaseDuration: time.Minute,
+	})
+	if err != nil {
+		t.Fatalf("ClaimNext: %v", err)
+	}
+	if claimed == nil || claimed.ExecutionID != "older-managed" {
+		t.Fatalf("claimed = %#v, want oldest execution in allowed task types", claimed)
+	}
+}
+
 func TestExpiredAttemptRejectsLateCompletionAfterRetry(t *testing.T) {
 	db := newLeaseTestDB(t)
 	now := time.Now().UTC().Truncate(time.Second)

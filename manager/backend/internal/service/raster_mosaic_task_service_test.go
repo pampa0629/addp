@@ -579,7 +579,7 @@ func startRasterMosaicTestExecution(
 		t.Fatalf("claim execution: %v", err)
 	}
 	claimed, lease, err := repository.NewBoundedExecutionQueueRepository(db).ClaimNext(
-		context.Background(), commonExecution.TaskTypeRasterMosaicGeneration,
+		context.Background(), []string{commonExecution.TaskTypeRasterMosaicGeneration},
 		"manager-service-test", startedAt, 24*time.Hour,
 	)
 	if err != nil {

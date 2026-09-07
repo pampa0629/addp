@@ -10,6 +10,61 @@ type dynamicSchemaOnlyPlugin struct {
 	MockPlugin
 }
 
+type decimalLimitedTableWriterPlugin struct {
+	MockPlugin
+	caps EngineCapabilities
+}
+
+func (p *decimalLimitedTableWriterPlugin) Capabilities() EngineCapabilities { return p.caps }
+func (p *decimalLimitedTableWriterPlugin) StoreSemantics() StoreSemantics {
+	return StoreSemanticsFromCapabilities(p.caps)
+}
+func (p *decimalLimitedTableWriterPlugin) PrepareTableWrite(context.Context, ConnectionInfo, EngineCatalogPath, TableWriteOptions) error {
+	return nil
+}
+
+func TestValidatePluginCapabilitiesValidatesDecimalTableWriteLimits(t *testing.T) {
+	valid := &decimalLimitedTableWriterPlugin{
+		MockPlugin: MockPlugin{TypeValue: "decimal_writer"},
+		caps: EngineCapabilities{
+			SchemaVersion: CapabilitiesSchemaVersion,
+			EngineType:    "decimal_writer",
+			EngineFamily:  "tabular",
+			Storage: &StorageCapabilities{Store: &StoreCapability{
+				TableWritePrepare: true,
+			}},
+			Limits: &EngineLimits{TableWrite: &TableWriteLimits{Decimal: &DecimalFieldLimits{
+				RequiresExplicitPrecisionScale: true,
+				MaxPrecision:                   Int(65),
+				MaxScale:                       Int(30),
+			}}},
+		},
+	}
+	if err := ValidatePluginCapabilities(valid); err != nil {
+		t.Fatalf("ValidatePluginCapabilities() error = %v", err)
+	}
+
+	invalid := *valid
+	invalid.caps = valid.caps
+	invalid.caps.Limits = &EngineLimits{TableWrite: &TableWriteLimits{Decimal: &DecimalFieldLimits{
+		MaxPrecision: Int(10),
+		MaxScale:     Int(11),
+	}}}
+	if err := ValidatePluginCapabilities(&invalid); err == nil || !strings.Contains(err.Error(), "max_scale exceeds max_precision") {
+		t.Fatalf("ValidatePluginCapabilities() error = %v, want decimal limit ordering error", err)
+	}
+}
+
+func TestValidatePluginCapabilitiesRejectsDecimalLimitsWithoutTableWritePreparer(t *testing.T) {
+	p := &dynamicSchemaOnlyPlugin{MockPlugin: MockPlugin{TypeValue: "dynamic_schema"}}
+	caps := p.Capabilities()
+	caps.Limits = &EngineLimits{TableWrite: &TableWriteLimits{Decimal: &DecimalFieldLimits{MaxPrecision: Int(65)}}}
+	limited := &spatialEncodingPlugin{MockPlugin: p.MockPlugin, caps: caps}
+	if err := ValidatePluginCapabilities(limited); err == nil || !strings.Contains(err.Error(), "does not implement TableWritePreparer") {
+		t.Fatalf("ValidatePluginCapabilities() error = %v, want missing provider error", err)
+	}
+}
+
 func (p *dynamicSchemaOnlyPlugin) Capabilities() EngineCapabilities {
 	return EngineCapabilities{
 		SchemaVersion: CapabilitiesSchemaVersion,

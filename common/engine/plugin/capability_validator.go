@@ -22,6 +22,9 @@ func ValidatePluginCapabilities(p EnginePlugin) error {
 	if caps.EngineFamily == "" {
 		return fmt.Errorf("%s capabilities engine_family is empty", p.Type())
 	}
+	if err := validateEngineLimits(p, caps.Limits); err != nil {
+		return err
+	}
 
 	if err := validateStorageCapabilities(p, caps.Storage); err != nil {
 		return err
@@ -31,6 +34,29 @@ func ValidatePluginCapabilities(p EnginePlugin) error {
 	}
 	if err := validateProviderCapabilities(p, caps); err != nil {
 		return err
+	}
+	return nil
+}
+
+func validateEngineLimits(p EnginePlugin, limits *EngineLimits) error {
+	if limits == nil || limits.TableWrite == nil || limits.TableWrite.Decimal == nil {
+		return nil
+	}
+	if _, ok := p.(TableWritePreparer); !ok {
+		return fmt.Errorf("%s declares limits.table_write.decimal but does not implement TableWritePreparer", p.Type())
+	}
+	decimal := limits.TableWrite.Decimal
+	if !decimal.RequiresExplicitPrecisionScale && decimal.MaxPrecision == nil && decimal.MaxScale == nil {
+		return fmt.Errorf("%s limits.table_write.decimal must declare at least one constraint", p.Type())
+	}
+	if decimal.MaxPrecision != nil && *decimal.MaxPrecision <= 0 {
+		return fmt.Errorf("%s limits.table_write.decimal.max_precision must be positive", p.Type())
+	}
+	if decimal.MaxScale != nil && *decimal.MaxScale < 0 {
+		return fmt.Errorf("%s limits.table_write.decimal.max_scale must be non-negative", p.Type())
+	}
+	if decimal.MaxPrecision != nil && decimal.MaxScale != nil && *decimal.MaxScale > *decimal.MaxPrecision {
+		return fmt.Errorf("%s limits.table_write.decimal.max_scale exceeds max_precision", p.Type())
 	}
 	return nil
 }

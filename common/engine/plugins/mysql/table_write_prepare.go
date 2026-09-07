@@ -299,19 +299,7 @@ func mysqlSQLTypeForField(field datatype.FieldInfo, spatialInfo *datatype.Spatia
 }
 
 func validateMySQLDecimalField(field datatype.FieldInfo) error {
-	if field.Precision <= 0 {
-		return fmt.Errorf("mysql decimal field %q requires explicit precision and scale", field.Name)
-	}
-	if field.Precision > 65 {
-		return fmt.Errorf("mysql decimal field %q precision %d exceeds maximum 65", field.Name, field.Precision)
-	}
-	if field.Scale < 0 || field.Scale > 30 {
-		return fmt.Errorf("mysql decimal field %q scale %d must be between 0 and 30", field.Name, field.Scale)
-	}
-	if field.Scale > field.Precision {
-		return fmt.Errorf("mysql decimal field %q scale %d exceeds precision %d", field.Name, field.Scale, field.Precision)
-	}
-	return nil
+	return shared.ValidateMySQLCompatibleDecimalField("mysql", field)
 }
 
 func mysqlSpatialTypeForField(field datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) (string, error) {

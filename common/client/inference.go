@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	engineplugin "github.com/addp/common/engine/plugin"
-	_ "github.com/addp/common/engine/plugins/inference_runtime"
 	engineselection "github.com/addp/common/engine/selection"
 	commoninference "github.com/addp/common/inference"
 	commonmodels "github.com/addp/common/models"

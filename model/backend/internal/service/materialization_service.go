@@ -18,7 +18,6 @@ import (
 	commonAPI "github.com/addp/common/api"
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
-	_ "github.com/addp/common/engine/plugins/postgresql"
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"

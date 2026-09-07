@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	_ "github.com/addp/common/engine/plugins/postgresql"
 	commonExecution "github.com/addp/common/execution"
 	"log"
 	"net"

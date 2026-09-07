@@ -20,13 +20,18 @@ import (
 )
 
 type PPTXPDFHandler struct {
-	service       *service.PPTXPDFTaskService
-	minioClient   *minio.Client
-	defaultBucket string
+	service                 *service.PPTXPDFTaskService
+	minioClient             *minio.Client
+	defaultBucket           string
+	notifyExecutionEnqueued func()
 }
 
 func NewPPTXPDFHandler(taskService *service.PPTXPDFTaskService, minioClient *minio.Client, defaultBucket string) *PPTXPDFHandler {
 	return &PPTXPDFHandler{service: taskService, minioClient: minioClient, defaultBucket: strings.TrimSpace(defaultBucket)}
+}
+
+func (h *PPTXPDFHandler) SetExecutionEnqueueNotifier(notify func()) {
+	h.notifyExecutionEnqueued = notify
 }
 
 type PPTXPDFPreviewRequest struct {
@@ -90,6 +95,9 @@ func (h *PPTXPDFHandler) EnsurePreview(c *gin.Context) {
 		return
 	}
 	if task.LastExecutionStatus != nil && (*task.LastExecutionStatus == commonExecution.ExecutionStatusPending || *task.LastExecutionStatus == commonExecution.ExecutionStatusRunning) && task.LastExecutionID != nil {
+		if h.notifyExecutionEnqueued != nil {
+			h.notifyExecutionEnqueued()
+		}
 		c.JSON(http.StatusAccepted, PPTXPDFPreviewResponse{Status: *task.LastExecutionStatus, TaskID: task.ID, ExecutionID: *task.LastExecutionID})
 		return
 	}
@@ -108,12 +116,18 @@ func (h *PPTXPDFHandler) EnsurePreview(c *gin.Context) {
 		if errors.Is(err, service.ErrTaskExecutionBusy) {
 			latest, getErr := h.service.GetByID(c.Request.Context(), task.ID, tenantID)
 			if getErr == nil && latest != nil && latest.LastExecutionID != nil {
+				if h.notifyExecutionEnqueued != nil {
+					h.notifyExecutionEnqueued()
+				}
 				c.JSON(http.StatusAccepted, PPTXPDFPreviewResponse{Status: "running", TaskID: latest.ID, ExecutionID: *latest.LastExecutionID})
 				return
 			}
 		}
 		managerErrorWithDetail(c, http.StatusInternalServerError, manageri18n.MsgPPTXPDFExecutionFailed, err.Error())
 		return
+	}
+	if h.notifyExecutionEnqueued != nil {
+		h.notifyExecutionEnqueued()
 	}
 	c.JSON(http.StatusAccepted, PPTXPDFPreviewResponse{Status: "pending", TaskID: task.ID, ExecutionID: executionID})
 }

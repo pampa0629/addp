@@ -84,7 +84,7 @@ func (p *MySQLPlugin) ConnectionIdentityFields() []string {
 }
 
 func (p *MySQLPlugin) Capabilities() plugin.EngineCapabilities {
-	return plugin.NewTabularCapabilities(p.Type(), "database", plugin.TabularCapabilityOptions{
+	caps := plugin.NewTabularCapabilities(p.Type(), "database", plugin.TabularCapabilityOptions{
 		Constraints:               true,
 		Write:                     true,
 		BulkWrite:                 true,
@@ -114,6 +114,8 @@ func (p *MySQLPlugin) Capabilities() plugin.EngineCapabilities {
 		SupportsParameters: true,
 		WriterConnector:    "mysql_insert",
 	})
+	shared.ApplyMySQLCompatibleTableWriteLimits(&caps)
+	return caps
 }
 
 func (p *MySQLPlugin) EngineCatalogModel() plugin.EngineCatalogModelSpec {

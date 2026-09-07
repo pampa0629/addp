@@ -17,7 +17,7 @@ func managerExecutionLeaseContextForTest(t *testing.T, db *gorm.DB, executionID 
 	}
 	if execution.Status == commonExecution.ExecutionStatusPending {
 		claimed, lease, err := NewBoundedExecutionQueueRepository(db).ClaimNext(
-			context.Background(), execution.TaskType, "manager-repository-test", claimAt.UTC(), 100*365*24*time.Hour,
+			context.Background(), []string{execution.TaskType}, "manager-repository-test", claimAt.UTC(), 100*365*24*time.Hour,
 		)
 		if err != nil {
 			t.Fatalf("claim Manager execution %s: %v", executionID, err)

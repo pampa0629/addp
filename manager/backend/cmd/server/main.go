@@ -392,7 +392,12 @@ func main() {
 	logger.L().Info("数据导入服务已初始化", "transfer_url", cfg.TransferServiceURL)
 
 	lifecycleController := modulelifecycle.NewBusiness("manager", commonClient.ModuleRuntimeRoleBackend)
-	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, systemServiceClient, metaClient, cacheManager, redisClient, embeddingService, embeddingConfigurationService, inferenceScenarioBindingService, quickViewPolicyService, baseMapProviderService, spatialPreviewService, rasterCOGRepo, taskProviderHandler, importHandler, uploadHandler, resourceActionHandler, exportHandler, rasterMosaicTileHandler, model3DGLBHandler, gaussianSplatKSplatHandler, pointCloudCOPCHandler, model3DTilesHandler, dataProfileHandler, protectionStore, lifecycleController, pptxPDFHandler)
+	var notifyExecutionEnqueued func()
+	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, systemServiceClient, metaClient, cacheManager, redisClient, embeddingService, embeddingConfigurationService, inferenceScenarioBindingService, quickViewPolicyService, baseMapProviderService, spatialPreviewService, rasterCOGRepo, taskProviderHandler, importHandler, uploadHandler, resourceActionHandler, exportHandler, rasterMosaicTileHandler, model3DGLBHandler, gaussianSplatKSplatHandler, pointCloudCOPCHandler, model3DTilesHandler, dataProfileHandler, protectionStore, lifecycleController, pptxPDFHandler, func() {
+		if notifyExecutionEnqueued != nil {
+			notifyExecutionEnqueued()
+		}
+	})
 
 	serviceHost := commonConfig.GetServiceHost()
 	serviceURL := commonConfig.BuildServiceURL(serviceHost, cfg.Port)
@@ -501,7 +506,8 @@ func main() {
 			InstanceID:  fmt.Sprintf("%s-%d-%s", hostname, os.Getpid(), uuid.NewString()),
 			Concurrency: cfg.ExecutionSupervisor.Concurrency, LeaseDuration: cfg.ExecutionSupervisor.LeaseDuration,
 			HeartbeatInterval: cfg.ExecutionSupervisor.HeartbeatInterval, ClaimInterval: cfg.ExecutionSupervisor.ClaimInterval,
-			TaskTypes: repository.ManagerBoundedTaskTypes(),
+			IdleMaxInterval: cfg.ExecutionSupervisor.IdleMaxInterval,
+			TaskTypes:       repository.ManagerBoundedTaskTypes(),
 		},
 		logger.With("component", "manager_bounded_execution_supervisor"),
 	)
@@ -509,6 +515,7 @@ func main() {
 		logger.L().Error("Manager 有界执行监督器配置无效", "error", err)
 		os.Exit(1)
 	}
+	notifyExecutionEnqueued = supervisor.Notify
 	projectionstore.NewRunner(protectionStore, securityClient, systemServiceClient, 30*time.Second, nil).Start(runtimeContext)
 	addr := ":" + cfg.Port
 	listener, err := net.Listen("tcp", addr)
@@ -547,6 +554,7 @@ func main() {
 		modulelifecycle.CancelRuntimeOnFatal(registration, stopRuntime)
 	}
 	embeddingTaskScheduler.SetClaimGate(func() bool { return registration != nil && registration.IsRegistered() })
+	embeddingTaskScheduler.SetExecutionEnqueueNotifier(supervisor.Notify)
 	if err := embeddingTaskScheduler.Start(runtimeContext); err != nil {
 		logger.L().Warn("向量化任务调度器启动失败", "error", err)
 	}

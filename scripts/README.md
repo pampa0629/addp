@@ -574,6 +574,8 @@ Runner 管理员应以根 `.env.example` 为字段清单，在仓库外创建独
 
 `scripts/ci/check-engine-startup-isolation.py` 是 Engine 启动隔离一致性检查。它校验模块选择启动不会隐式拉起 DuckDB、Inference、Workflow 或 Jupyter Runtime，模块 Backend/Worker 的 Compose `depends_on` 不指向可选 Runtime，并禁止 System 恢复启动期内置 Runtime 代注册、全量能力刷新和对应 URL 配置。检查、反例回归及相关 Go 回归统一由 `make test-engine-startup-isolation` 执行，并纳入 `make test-platform`。
 
+`scripts/ci/check-engine-plugin-registration.py` 是内置 Engine Plugin 登记一致性检查。它从生产 Go 包中自动发现 `plugin.Register` 调用，要求每个插件恰好被与 `EngineOrigin()` 一致的 `builtin/general` 或 `builtin/extension` 聚合包加载，校验 `builtin/all` 只组合这两个入口，并拒绝上层生产代码 blank import 具体插件。聚合包是唯一允许手写的编译期清单；其他测试不再复制全量引擎类型和固定数量。检查和反例回归由 `make test-engine-plugin-registration` 执行，并纳入 `make test-platform`。
+
 Agent 默认离线门禁使用 `make test-agent-eval`，并已包含在根 `make test`。该门禁只使用 `agent/backend/venv` 这一套 owner 运行时执行 Agent 评测与 Common Python 契约测试；Agent requirements 显式声明所需的 Common Python 测试扩展，禁止重新引入第二套虚拟环境耦合。人工发布验收使用 `make test-release RELEASE_SUITE=agent-evaluation`，需要显式提供三份仓库外在线证据路径；分发器调用 owner 唯一目标 `test-agent-eval-release`，脚本不自动执行 OAuth 登录或生成在线证据。owner 输出统一为仓库外 `addp.agent-evaluation-gate/v2`，外部发布流程可同时归档其中的源码版本、契约/证据摘要、检查耗时和上层 T5 报告，脚本自身不维护历史记录。
 
 T5 发布认证的统一入口是 `make test-release RELEASE_SUITE=<suite>`。当前只登记 `common-python-cli` 和 `agent-evaluation` 两个已有真实 owner 门禁的套件，不以占位项冒充发布认证。分发器把 suite 映射到 owner 的唯一 Make 目标，强制使用仓库外空证据目录，并在成功或失败时生成 `addp.release-gate/v1` 的 `release-report.json` 与 GitHub Step Summary 可直接消费的 `release-summary.md`；报告只记录 suite、owner 目标、结果、耗时与产物相对路径，不保存 Token 或在线证据正文。CLI workflow 使用该入口，Agent 仍由具备三份在线证据的外部发布流程调用；`scripts/ci/check-release-ci-registration.py` 会阻止 workflow 绕过统一入口或遗漏报告摘要。

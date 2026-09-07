@@ -15,10 +15,11 @@ const embeddingTaskSchedulePollInterval = time.Minute
 
 // EmbeddingTaskScheduler 负责按 manager.embedding_tasks.next_run_at 触发定时向量化任务。
 type EmbeddingTaskScheduler struct {
-	taskService *EmbeddingTaskService
-	exprBuilder *commonScheduler.ExpressionBuilder
-	log         *slog.Logger
-	claimGate   func() bool
+	taskService             *EmbeddingTaskService
+	exprBuilder             *commonScheduler.ExpressionBuilder
+	log                     *slog.Logger
+	claimGate               func() bool
+	notifyExecutionEnqueued func()
 
 	stopCh   chan struct{}
 	stopOnce sync.Once
@@ -27,6 +28,10 @@ type EmbeddingTaskScheduler struct {
 
 func (s *EmbeddingTaskScheduler) SetClaimGate(claimGate func() bool) {
 	s.claimGate = claimGate
+}
+
+func (s *EmbeddingTaskScheduler) SetExecutionEnqueueNotifier(notify func()) {
+	s.notifyExecutionEnqueued = notify
 }
 
 func NewEmbeddingTaskScheduler(taskService *EmbeddingTaskService) *EmbeddingTaskScheduler {
@@ -131,6 +136,9 @@ func (s *EmbeddingTaskScheduler) claimAndExecuteDueTask(ctx context.Context, tas
 	executionID, err := s.taskService.Execute(ctx, claimed.ID, claimed.TenantID, commonExecution.TriggerTypeScheduled, commonExecution.ModuleManager, nil)
 	if err != nil {
 		return err
+	}
+	if s.notifyExecutionEnqueued != nil {
+		s.notifyExecutionEnqueued()
 	}
 	s.log.Info("已触发定时向量化任务", "task_id", claimed.ID, "execution_id", executionID)
 	return nil

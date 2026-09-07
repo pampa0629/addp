@@ -42,7 +42,7 @@ func TestManagerBoundedQueueClaimsAdHocEmbeddingWithoutTaskOwner(t *testing.T) {
 	if err := db.Create(execution).Error; err != nil {
 		t.Fatalf("create ad-hoc embedding execution: %v", err)
 	}
-	claimed, lease, err := queue.ClaimNext(context.Background(), commonExecution.TaskTypeEmbedding, "manager-repository-test", now, time.Minute)
+	claimed, lease, err := queue.ClaimNext(context.Background(), []string{commonExecution.TaskTypeEmbedding}, "manager-repository-test", now, time.Minute)
 	if err != nil || claimed == nil || lease == nil {
 		t.Fatalf("claim ad-hoc embedding = %#v/%#v, error = %v", claimed, lease, err)
 	}
@@ -62,7 +62,7 @@ func TestManagerBoundedFailureConvergesAfterOwnerTaskWasDeleted(t *testing.T) {
 		t.Fatalf("enqueue execution: %v", err)
 	}
 	claimed, lease, err := queue.ClaimNext(
-		context.Background(), commonExecution.TaskTypeVectorTileCacheGeneration,
+		context.Background(), []string{commonExecution.TaskTypeVectorTileCacheGeneration},
 		"manager-repository-test", now, time.Minute,
 	)
 	if err != nil || claimed == nil || lease == nil {
@@ -97,7 +97,7 @@ func TestManagerBoundedPendingExecutionFailsWhenOwnerTaskWasDeleted(t *testing.T
 		t.Fatalf("delete owner task: %v", err)
 	}
 	claimed, lease, err := queue.ClaimNext(
-		context.Background(), commonExecution.TaskTypeVectorTileCacheGeneration,
+		context.Background(), []string{commonExecution.TaskTypeVectorTileCacheGeneration},
 		"manager-repository-test", now, time.Minute,
 	)
 	if err != nil || claimed != nil || lease != nil {

@@ -38,6 +38,7 @@ type TaskProviderHandler struct {
 	pointCloudCOPCTaskSvc         *service.PointCloudCOPCTaskService
 	pptxPDFTaskSvc                *service.PPTXPDFTaskService
 	taskExecRepo                  *commonExecution.TaskExecutionRepository
+	notifyExecutionEnqueued       func()
 }
 
 // NewTaskProviderHandler 创建处理器
@@ -84,6 +85,10 @@ func (h *TaskProviderHandler) SetPointCloudCOPCTaskService(pointCloudCOPCTaskSvc
 
 func (h *TaskProviderHandler) SetPPTXPDFTaskService(pptxPDFTaskSvc *service.PPTXPDFTaskService) {
 	h.pptxPDFTaskSvc = pptxPDFTaskSvc
+}
+
+func (h *TaskProviderHandler) SetExecutionEnqueueNotifier(notify func()) {
+	h.notifyExecutionEnqueued = notify
 }
 
 // TaskListResponse 任务列表响应（统一包装 Manager provider 声明的任务类型）
@@ -1328,6 +1333,9 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+	if h.notifyExecutionEnqueued != nil {
+		h.notifyExecutionEnqueued()
 	}
 
 	c.JSON(http.StatusAccepted, TaskExecuteResponse{

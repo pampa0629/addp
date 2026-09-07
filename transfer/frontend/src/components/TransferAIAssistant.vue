@@ -179,10 +179,10 @@
             <el-table-column :label="t('transfer.taskAssistant.targetType')" width="130">
               <template #default="{ row }"><el-select v-model="row.target_type" size="small" :disabled="busy"><el-option v-for="type in fieldTypes" :key="type" :label="type" :value="type" /></el-select></template>
             </el-table-column>
-            <el-table-column v-if="isMysqlTarget" :label="t('transfer.taskAssistant.precision')" width="112">
-              <template #default="{ row }"><el-input-number v-if="row.target_type === 'decimal'" v-model="row.precision" size="small" :min="1" :max="65" controls-position="right" :disabled="busy" /><span v-else>-</span></template>
+            <el-table-column v-if="decimalLimits" :label="t('transfer.taskAssistant.precision')" width="112">
+              <template #default="{ row }"><el-input-number v-if="row.target_type === 'decimal'" v-model="row.precision" size="small" :min="1" :max="decimalPrecisionMax" controls-position="right" :disabled="busy" /><span v-else>-</span></template>
             </el-table-column>
-            <el-table-column v-if="isMysqlTarget" :label="t('transfer.taskAssistant.scale')" width="100">
+            <el-table-column v-if="decimalLimits" :label="t('transfer.taskAssistant.scale')" width="100">
               <template #default="{ row }"><el-input-number v-if="row.target_type === 'decimal'" v-model="row.scale" size="small" :min="0" :max="decimalScaleMax(row)" controls-position="right" :disabled="busy" /><span v-else>-</span></template>
             </el-table-column>
           </el-table>
@@ -246,7 +246,7 @@ import { parseTransferLocator } from '@/utils/resourceLocator'
 import { useTaskWizardState } from '../views/TaskWizard/useTaskWizardState.js'
 import { hasNativeTableWriteCapability, hasStorageCapability, isNativeTableEngine } from '@/utils/transferDisplay'
 import { groupResourceCandidates, inferSourceEngineFromPrompt, inferSourceEnginesFromPrompt, inferTargetEngineFromPrompt, inferTransferSyncMode, resolveAuthoritativeSourceFields, resourceCandidateKey as candidateKey, resourceFact } from '../utils/transferCopilot.mjs'
-import { mysqlDecimalMappingIssues } from '../views/TaskWizard/decimalMapping.mjs'
+import { decimalMappingIssues, decimalTableWriteLimits } from '../views/TaskWizard/decimalMapping.mjs'
 import { CONTINUOUS_FIELD_TYPES, databaseCDCFieldTypes, isKafkaTopicSource } from '../views/TaskWizard/continuousTask.mjs'
 import { inferTopicFieldRecommendations } from '../views/TaskWizard/topicFieldRecommendations.mjs'
 
@@ -280,9 +280,10 @@ const targetEngines = computed(() => engines.value.filter(engine =>
   hasNativeTableWriteCapability(engine)
 ))
 const selectedTargetEngine = computed(() => engines.value.find(engine => Number(engine.id) === Number(targetEngineId.value)) || null)
-const isMysqlTarget = computed(() => String(selectedTargetEngine.value?.engine_type || '').toLowerCase().includes('mysql'))
+const decimalLimits = computed(() => decimalTableWriteLimits(selectedTargetEngine.value?.capabilities))
+const decimalPrecisionMax = computed(() => decimalLimits.value?.maxPrecision ?? Number.MAX_SAFE_INTEGER)
 const isKafkaSource = computed(() => isKafkaTopicSource(wizardState.sourceEngineType.value, wizardState.sourceLocator.value))
-const decimalIssues = computed(() => mysqlDecimalMappingIssues(wizardState.fieldMappings.value, wizardState.sourceFields.value, [], selectedTargetEngine.value?.engine_type, wizardState.targetRepresentation.value))
+const decimalIssues = computed(() => decimalMappingIssues(wizardState.fieldMappings.value, wizardState.sourceFields.value, [], selectedTargetEngine.value?.capabilities, wizardState.targetRepresentation.value))
 const decimalIssueNames = computed(() => decimalIssues.value.map(item => item.targetField || item.sourceField).filter(Boolean).join(', '))
 const fieldTypes = computed(() => syncMode.value === 'cdc'
   ? databaseCDCFieldTypes(wizardState.sourceEngineType.value)
@@ -434,7 +435,11 @@ function handleTargetEngineDropdownVisible(visible) { if (visible) loadEngines()
 function engineLabel(engine) { return `${engine.name || engine.display_name || engine.engine_type} (${engine.engine_type || '-'}) · ${t(`common.engineStatus.${engineSelectionState(engine)}`)}` }
 function candidateDisplayPath(candidate) { return candidate?.full_name || (Array.isArray(candidate?.ancestors) ? [...candidate.ancestors.map(item => item?.label), candidate?.name].filter(Boolean).join(' / ') : candidate?.name || '') }
 function candidateFacts(candidate) { return [candidate?.data_type, candidate?.geometry_type, candidate?.crs].filter(Boolean).join(' · ') }
-function decimalScaleMax(row) { const p = Number(row?.precision); return Number.isInteger(p) && p > 0 ? Math.min(30, p) : 30 }
+function decimalScaleMax(row) {
+  const precision = Number(row?.precision)
+  const engineMaximum = decimalLimits.value?.maxScale ?? Number.MAX_SAFE_INTEGER
+  return Number.isInteger(precision) && precision > 0 ? Math.min(engineMaximum, precision) : engineMaximum
+}
 
 function fieldOptions(fields) {
   const seen = new Set()
@@ -519,7 +524,7 @@ async function confirmTarget() {
     })
   }
   wizardState.autoGenerateFieldMappings()
-  if (isMysqlTarget.value) await recommendDecimals()
+  if (decimalLimits.value) await recommendDecimals()
   applySyncMode()
   if (syncMode.value === 'incremental' && !wizardState.watermarkIncrementalValid.value) return
   stage.value = 'fields'
@@ -527,7 +532,7 @@ async function confirmTarget() {
 async function recommendDecimals() {
   const decimalFields = wizardState.sourceFields.value.filter(field => normalizeFieldType(field) === 'decimal').map(field => field.name).filter(Boolean)
   if (!decimalFields.length) return
-  const response = await fieldDefinitionRecommendationAPI.create({ source_locator: wizardState.sourceLocator.value, source_fields: decimalFields, target_engine_type: 'mysql' })
+  const response = await fieldDefinitionRecommendationAPI.create({ source_locator: wizardState.sourceLocator.value, source_fields: decimalFields, target_engine_id: Number(selectedTargetEngine.value.id) })
   const result = response?.data || response
   const fields = Array.isArray(result?.fields) ? result.fields.filter(item => item?.fits_target === true) : []
   wizardState.applyRecommendedDecimalDefinitions(fields)

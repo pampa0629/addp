@@ -90,6 +90,10 @@ func TestCapabilitiesMatchImplementedProviders(t *testing.T) {
 	if caps.Storage.Store.BatchWrite || caps.Storage.Facts.SpatialFacts {
 		t.Fatalf("OceanBase capabilities overclaim unsupported providers: %#v", caps.Storage)
 	}
+	decimal := caps.Limits.TableWrite.Decimal
+	if !decimal.RequiresExplicitPrecisionScale || decimal.MaxPrecision == nil || *decimal.MaxPrecision != 65 || decimal.MaxScale == nil || *decimal.MaxScale != 30 {
+		t.Fatalf("OceanBase capabilities have unexpected decimal write limits: %#v", decimal)
+	}
 	if err := plugin.ValidatePluginCapabilities(p); err != nil {
 		t.Fatal(err)
 	}

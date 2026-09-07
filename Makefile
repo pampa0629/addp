@@ -1,4 +1,4 @@
-.PHONY: help build build-images select-image-services local-ci test test-changed test-module test-platform test-local-ci-runner test-book test-engine-startup-isolation test-integration test-online test-online-runner test-release test-release-runner test-go test-agent-frontend test-asset-frontend test-catalog-frontend test-common-frontend test-console-frontend test-copilot test-document-workflow test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-security-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-workbench-frontend test-execution-fixtures test-projection-store-ownership test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-common-postgres test-common-mysql-data-protection test-manager-mongodb-security test-system-iam-postgres test-asset-postgres test-meta-postgres test-catalog-postgres test-develop-postgres test-model-postgres test-quality-postgres test-security-postgres test-service-postgres test-standard-postgres test-transfer-postgres test-workbench-postgres test-arcgis-open-formats \
+.PHONY: help build build-images select-image-services local-ci test test-changed test-module test-platform test-local-ci-runner test-book test-engine-plugin-registration test-engine-startup-isolation test-integration test-online test-online-runner test-release test-release-runner test-go test-agent-frontend test-asset-frontend test-catalog-frontend test-common-frontend test-console-frontend test-copilot test-document-workflow test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-security-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-workbench-frontend test-execution-fixtures test-projection-store-ownership test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-common-postgres test-common-mysql-data-protection test-manager-mongodb-security test-system-iam-postgres test-asset-postgres test-meta-postgres test-catalog-postgres test-develop-postgres test-model-postgres test-quality-postgres test-security-postgres test-service-postgres test-standard-postgres test-transfer-postgres test-workbench-postgres test-arcgis-open-formats \
         build-iam-bootstrap build-iam-recovery build-iam-migration-repair \
         dev-start dev-restart dev-stop infra-up infra-down infra-restart infra-status prod-start prod-restart prod-stop prod-health ports-validate
 
@@ -261,6 +261,7 @@ test-platform: ## 运行无外部服务依赖的平台一致性门禁
 	@python3 scripts/ci/update-cli-version_test.py
 	@python3 scripts/test/module-gate_test.py
 	@python3 scripts/test/changed-gate_test.py
+	@$(MAKE) test-engine-plugin-registration
 	@$(MAKE) test-engine-startup-isolation
 	@$(MAKE) test-execution-fixtures
 	@$(MAKE) test-projection-store-ownership
@@ -271,6 +272,10 @@ test-book: ## 校验《数据治理100问》源稿目录、编号和延伸阅读
 	@python3 docs/books/数据治理100问/tools/validate.py
 	@python3 docs/books/数据治理100问/tools/book_sources_test.py
 	@python3 docs/books/数据治理100问/tools/release_tools_test.py
+
+test-engine-plugin-registration: ## 校验内置 Engine Plugin 聚合登记的唯一性和完整性
+	@python3 scripts/ci/check-engine-plugin-registration_test.py
+	@python3 scripts/ci/check-engine-plugin-registration.py --repository "$(CURDIR)"
 
 test-engine-startup-isolation: ## 校验模块启动不依赖 Engine Instance 或可选 Engine Runtime
 	@python3 scripts/ci/check-engine-startup-isolation_test.py

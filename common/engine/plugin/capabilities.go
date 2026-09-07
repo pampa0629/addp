@@ -28,8 +28,22 @@ type EngineCapabilities struct {
 	EngineFamily  string                 `json:"engine_family"`
 	Storage       *StorageCapabilities   `json:"storage,omitempty"`
 	Compute       *ComputeCapabilities   `json:"compute,omitempty"`
-	Limits        map[string]interface{} `json:"limits,omitempty"`
+	Limits        *EngineLimits          `json:"limits,omitempty"`
 	Extensions    map[string]interface{} `json:"extensions,omitempty"`
+}
+
+type EngineLimits struct {
+	TableWrite *TableWriteLimits `json:"table_write,omitempty"`
+}
+
+type TableWriteLimits struct {
+	Decimal *DecimalFieldLimits `json:"decimal,omitempty"`
+}
+
+type DecimalFieldLimits struct {
+	RequiresExplicitPrecisionScale bool `json:"requires_explicit_precision_scale,omitempty"`
+	MaxPrecision                   *int `json:"max_precision,omitempty"`
+	MaxScale                       *int `json:"max_scale,omitempty"`
 }
 
 // SpatialWorkspaceFact describes a vendor/ecosystem-specific spatial workspace

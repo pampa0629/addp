@@ -28,7 +28,7 @@ import {
 } from './continuousTask.mjs'
 import {
   applyDecimalRecommendations,
-  mysqlDecimalMappingsValid,
+  decimalMappingsValid,
   withSourceDecimalFacts
 } from './decimalMapping.mjs'
 import {
@@ -230,10 +230,10 @@ export function useTaskWizardState() {
       case 2: // 字段映射
         if (isRawCopyTask.value) return true
         return (fieldMappings.value.length > 0 || sourceFields.value.length === 0) &&
-          mysqlDecimalMappingsValid(
+          decimalMappingsValid(
             fieldMappings.value,
             sourceFields.value,
-            targetEngineType.value,
+            targetEngineCapabilities.value,
             targetRepresentation.value,
             targetFields.value
           )
