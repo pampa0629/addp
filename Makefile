@@ -1,4 +1,4 @@
-.PHONY: help build build-images select-image-services local-ci test test-changed test-module test-platform test-local-ci-runner test-book test-engine-plugin-registration test-engine-startup-isolation test-integration test-online test-online-runner test-release test-release-runner test-go test-agent-frontend test-asset-frontend test-catalog-frontend test-common-frontend test-console-frontend test-copilot test-document-workflow test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-security-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-workbench-frontend test-execution-fixtures test-projection-store-ownership test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-common-postgres test-common-mysql-data-protection test-manager-mongodb-security test-system-iam-postgres test-asset-postgres test-meta-postgres test-catalog-postgres test-develop-postgres test-model-postgres test-quality-postgres test-security-postgres test-service-postgres test-standard-postgres test-transfer-postgres test-workbench-postgres test-arcgis-open-formats \
+.PHONY: help build build-images select-image-services local-ci test test-changed test-module test-platform test-local-ci-runner test-infra-postgresql-init test-book test-engine-plugin-registration test-engine-startup-isolation test-integration test-online test-online-runner test-release test-release-runner test-go test-agent-frontend test-asset-frontend test-catalog-frontend test-common-frontend test-console-frontend test-copilot test-document-workflow test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-security-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-workbench-frontend test-execution-fixtures test-projection-store-ownership test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-common-postgres test-common-mysql-data-protection test-manager-mongodb-security test-system-iam-postgres test-asset-postgres test-meta-postgres test-catalog-postgres test-develop-postgres test-model-postgres test-quality-postgres test-security-postgres test-service-postgres test-standard-postgres test-transfer-postgres test-workbench-postgres test-arcgis-open-formats \
         build-iam-bootstrap build-iam-recovery build-iam-migration-repair \
         dev-start dev-restart dev-stop infra-up infra-down infra-restart infra-status prod-start prod-restart prod-stop prod-health ports-validate
 
@@ -138,6 +138,9 @@ local-ci: ## 在专用 macOS checkout 运行辅助 T0-T3 巡检；参数用 LOCA
 test-local-ci-runner: ## 运行辅助 macOS 巡检器的确定性测试
 	@python3 scripts/test/local-macos-ci_test.py
 
+test-infra-postgresql-init: ## 校验本地 PostgreSQL 保留测试库及扩展的幂等初始化
+	@python3 scripts/infra/init-postgresql_test.py
+
 test-business-config: ## 校验 Business Compose 和服务管理脚本（不启动容器）
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --quiet
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --services | grep -Fxq oceanbase
@@ -245,6 +248,7 @@ test-platform: ## 运行无外部服务依赖的平台一致性门禁
 	@$(MAKE) test-common-frontend
 	@$(MAKE) test-book
 	@$(MAKE) test-local-ci-runner
+	@$(MAKE) test-infra-postgresql-init
 	@bash scripts/utils/check-deps-version.sh
 	@python3 scripts/ci/check-build-registration_test.py
 	@python3 scripts/ci/select-image-services_test.py

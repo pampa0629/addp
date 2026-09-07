@@ -1,11 +1,17 @@
 package mongodb
 
 import (
+	"context"
+	"errors"
 	"os"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/addp/common/engine/plugin"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 func mongoIntegrationConnectionInfo(t *testing.T, database string) plugin.ConnectionInfo {
@@ -33,6 +39,81 @@ func mongoIntegrationEnvOrDefault(name, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func ensureMongoIntegrationOutdoorPersonsFixture(t *testing.T) plugin.ConnectionInfo {
+	t.Helper()
+	connectionInfo := mongoIntegrationConnectionInfo(t, "Outdoor")
+	dsn, err := (&MongoDBPlugin{}).BuildDSN(connectionInfo)
+	if err != nil {
+		t.Fatalf("build MongoDB integration fixture DSN: %v", err)
+	}
+	client, err := mongo.Connect(t.Context(), options.Client().ApplyURI(dsn))
+	if err != nil {
+		t.Fatalf("connect MongoDB integration fixture: %v", err)
+	}
+	if err := client.Ping(t.Context(), nil); err != nil {
+		_ = client.Disconnect(context.Background())
+		t.Fatalf("ping MongoDB integration fixture: %v", err)
+	}
+	t.Cleanup(func() {
+		cleanupContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = client.Disconnect(cleanupContext)
+	})
+
+	databaseNames, err := client.ListDatabaseNames(t.Context(), bson.M{"name": "Outdoor"})
+	if err != nil {
+		t.Fatalf("inspect MongoDB integration fixture database: %v", err)
+	}
+	databaseExisted := len(databaseNames) > 0
+	database := client.Database("Outdoor")
+	collectionNames, err := database.ListCollectionNames(t.Context(), bson.M{"name": "Persons"})
+	if err != nil {
+		t.Fatalf("inspect MongoDB integration fixture collection: %v", err)
+	}
+	collectionExisted := len(collectionNames) > 0
+	collection := database.Collection("Persons")
+	fixtureID := "addp-common-mongodb-integration"
+	filter := bson.M{"_id": fixtureID}
+	var previous bson.M
+	findErr := collection.FindOne(t.Context(), filter).Decode(&previous)
+	fixture := bson.M{
+		"_id":      fixtureID,
+		"_openid":  fixtureID,
+		"userInfo": bson.M{"phone": "13661384499", "nickName": "common-e2e"},
+		"entriedOutdoors": bson.A{
+			bson.M{"title": "MongoDB integration fixture"},
+		},
+	}
+	switch {
+	case errors.Is(findErr, mongo.ErrNoDocuments):
+		if _, err := collection.InsertOne(t.Context(), fixture); err != nil {
+			t.Fatalf("insert MongoDB integration fixture: %v", err)
+		}
+	case findErr != nil:
+		t.Fatalf("inspect MongoDB integration fixture: %v", findErr)
+	default:
+		if _, err := collection.ReplaceOne(t.Context(), filter, fixture); err != nil {
+			t.Fatalf("replace MongoDB integration fixture: %v", err)
+		}
+	}
+	t.Cleanup(func() {
+		cleanupContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if errors.Is(findErr, mongo.ErrNoDocuments) {
+			_, _ = collection.DeleteOne(cleanupContext, filter)
+			if !databaseExisted {
+				_ = database.Drop(cleanupContext)
+			} else if !collectionExisted {
+				_ = collection.Drop(cleanupContext)
+			}
+			return
+		}
+		_, _ = collection.ReplaceOne(cleanupContext, filter, previous)
+	})
+
+	return connectionInfo
 }
 
 func TestMongoIntegrationConnectionInfoUsesTestEnvironment(t *testing.T) {

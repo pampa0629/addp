@@ -17,7 +17,7 @@ func TestIntegrationSampleDynamicSchemaPersistsPersonsNestedFacts(t *testing.T) 
 	}
 
 	provider := &MongoDBPlugin{}
-	facts, err := provider.SampleDynamicSchema(t.Context(), mongoIntegrationConnectionInfo(t, ""), plugin.EngineCatalogPath{
+	facts, err := provider.SampleDynamicSchema(t.Context(), ensureMongoIntegrationOutdoorPersonsFixture(t), plugin.EngineCatalogPath{
 		Version:  "v1",
 		EngineID: 11,
 		Segments: []plugin.EngineCatalogSegment{
@@ -55,7 +55,7 @@ func TestIntegrationPreparedQueryReadSetAndExecutionUseOutdoorPersonsPlan(t *tes
 		t.Skip("set ADDP_MONGODB_SCHEMA_E2E=1 to run against Business MongoDB")
 	}
 	provider := &MongoDBPlugin{}
-	prepared, err := provider.PrepareQuery(t.Context(), mongoIntegrationConnectionInfo(t, "Outdoor"), plugin.QueryRequest{
+	prepared, err := provider.PrepareQuery(t.Context(), ensureMongoIntegrationOutdoorPersonsFixture(t), plugin.QueryRequest{
 		EngineID: 11,
 		Language: "mql",
 		Query:    `{"find":"Persons","filter":{},"limit":1}`,
@@ -96,7 +96,7 @@ func TestIntegrationPreparedAggregateOutputLineageUsesOutdoorTransferProjection(
 		t.Skip("set ADDP_MONGODB_SCHEMA_E2E=1 to run against Business MongoDB")
 	}
 	provider := &MongoDBPlugin{}
-	prepared, err := provider.PrepareQuery(t.Context(), mongoIntegrationConnectionInfo(t, "Outdoor"), plugin.QueryRequest{
+	prepared, err := provider.PrepareQuery(t.Context(), ensureMongoIntegrationOutdoorPersonsFixture(t), plugin.QueryRequest{
 		EngineID: 11,
 		Language: "mql",
 		Query: `{"aggregate":"Persons","pipeline":[

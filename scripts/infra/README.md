@@ -47,7 +47,7 @@ business 容器由 `business/` 目录独立管理，可脱离 ADDP 部署。
 
 ### 初始化（由 up.sh 自动调用）
 
-- **init-postgresql.sh** - 初始化 PostgreSQL（扩展、Schema）
+- **init-postgresql.sh** - 初始化 PostgreSQL（保留测试库、扩展、开发库 Schema）
 - **init-redis.sh** - 初始化 Redis 配置
 - **init-minio.sh** - 初始化 MinIO buckets
 - **init-meilisearch.sh** - 初始化 Meilisearch 索引
@@ -83,6 +83,8 @@ bash scripts/test/certify-infra-kafka-ha.sh
 | `postgres` | PostgreSQL 默认维护连接库 | 必须保留；只用于管理操作，不存放 ADDP 业务表。 |
 
 `template0` 和 `template1` 是 PostgreSQL 内置模板库；`template_postgis` 是当前 PostGIS 镜像提供的空间数据库模板。三者都不属于 ADDP 业务清单，也不得删除。
+
+`make infra-up` 调用 `init-postgresql.sh`，幂等确保 `addp_test` 与 `addp_iam_test` 存在，并在 `addp_test` 中安装 PostGIS。Common PostgreSQL 门禁依赖该扩展验证空间类型和可信空间函数。`addp_iam_test` 不安装 PostGIS；测试库也不执行开发库的模块 Schema 初始化 SQL。
 
 本地共享 `addp-postgres` 禁止创建清单之外的测试 database；所有非 IAM 测试复用 `addp_test`，System IAM、Fosite、API 与 Migration 测试复用 `addp_iam_test`。本地测试必须调用根 `Makefile` 或 `scripts/test/` 的标准门禁，由门禁重建并清理自己拥有的 Schema 或测试事实；禁止为了单次验证直接执行 `createdb`、`CREATE DATABASE`、`dropdb` 或 `DROP DATABASE`。如果现有门禁不能提供所需隔离，应先修正门禁的重置和清理能力，不能用新增 database 绕过问题。
 
@@ -479,17 +481,23 @@ POSTGRES_IMAGE=imresamu/postgis-arm64:15-3.4 ./scripts/infra/up.sh
 
 ### init-postgresql.sh
 
-**功能**: 安装 PostgreSQL 扩展（PostGIS + pgvector）
+**功能**: 准备保留测试库，安装 PostgreSQL 扩展，并初始化开发库 Schema
+
+**准备的测试库**:
+- `addp_test` - 幂等创建并安装 PostGIS，供非 IAM PostgreSQL 集成门禁串行复用
+- `addp_iam_test` - 幂等创建，供 System IAM 发布门禁独占串行复用
 
 **安装的扩展**:
 - **PostGIS 3.4** - 空间数据操作支持
-  - postgis - 核心空间功能
+  - 在开发库和 `addp_test` 中创建 postgis 扩展
 - **pgvector 0.7.0** - 向量检索支持
   - 从源码编译安装
-  - 支持向量嵌入和相似度搜索
+  - 仅在开发库的 `manager` Schema 中支持向量嵌入和相似度搜索
 
 **特性**:
 - ✅ 幂等性（已安装扩展不会重复安装）
+- ✅ 只创建规范允许长期保留的两个本地测试 database
+- ✅ 不向测试 database 写入开发环境模块 Schema
 - ✅ 版本检测和显示
 - ✅ 自动处理依赖包安装
 - ✅ 编译后自动清理构建依赖

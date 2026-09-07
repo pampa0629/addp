@@ -5,8 +5,9 @@
 #
 # 功能:
 # 1. 配置 pg_hba.conf (允许外部连接，解决 DBeaver 等客户端连接问题)
-# 2. 安装扩展 (PostGIS 空间数据支持, pgvector 向量检索支持)
-# 3. 创建 schema 和表结构 (system, manager, meta, transfer, orchestrator, develop, service)
+# 2. 准备规范保留的测试数据库 (addp_test, addp_iam_test)
+# 3. 安装扩展 (PostGIS 空间数据支持, pgvector 向量检索支持)
+# 4. 创建 schema 和表结构 (system, manager, meta, transfer, orchestrator, develop, service)
 #
 # 调用: 由 scripts/infra/up.sh 自动调用
 
@@ -57,6 +58,8 @@ DB_USER="${POSTGRES_USER:-addp}"
 DB_PASSWORD="${POSTGRES_PASSWORD:-addp_password}"
 DB_NAME="${POSTGRES_DB:-addp}"
 CONTAINER_NAME="addp-postgres"
+SHARED_TEST_DB="addp_test"
+IAM_TEST_DB="addp_iam_test"
 
 SKIP_EXTENSIONS=false
 SKIP_HBA=false
@@ -139,7 +142,7 @@ echo ""
 
 if [ "$SKIP_HBA" = false ]; then
     echo -e "${BLUE}========================================${NC}"
-    echo -e "${BLUE}步骤 1/3: 配置客户端认证 (pg_hba.conf)${NC}"
+    echo -e "${BLUE}步骤 1/4: 配置客户端认证 (pg_hba.conf)${NC}"
     echo -e "${BLUE}========================================${NC}"
     echo ""
 
@@ -169,11 +172,44 @@ else
     echo ""
 fi
 
-# ==================== 步骤 2: 安装扩展 ====================
+# ==================== 步骤 2: 准备测试数据库 ====================
+
+echo -e "${BLUE}========================================${NC}"
+echo -e "${BLUE}步骤 2/4: 准备 PostgreSQL 测试数据库${NC}"
+echo -e "${BLUE}========================================${NC}"
+echo ""
+
+ensure_database() {
+    local database="$1"
+    local database_exists
+
+    database_exists=$(docker exec "${CONTAINER_NAME}" env PGPASSWORD="${DB_PASSWORD}" \
+      psql -U "${DB_USER}" -d postgres -tAc \
+      "SELECT 1 FROM pg_database WHERE datname = '${database}';" 2>/dev/null | tr -d '[:space:]')
+
+    if [ "${database_exists}" = "1" ]; then
+        echo -e "  ${GREEN}✓ 测试数据库 ${database} 已存在${NC}"
+        return
+    fi
+
+    echo -e "  ${YELLOW}测试数据库 ${database} 不存在，开始创建...${NC}"
+    docker exec "${CONTAINER_NAME}" env PGPASSWORD="${DB_PASSWORD}" \
+      createdb -U "${DB_USER}" --owner="${DB_USER}" --encoding=UTF8 "${database}"
+    echo -e "  ${GREEN}✓ 测试数据库 ${database} 创建完成${NC}"
+}
+
+ensure_database "${SHARED_TEST_DB}"
+ensure_database "${IAM_TEST_DB}"
+
+echo ""
+echo -e "${GREEN}✓ PostgreSQL 测试数据库准备完成${NC}"
+echo ""
+
+# ==================== 步骤 3: 安装扩展 ====================
 
 if [ "$SKIP_EXTENSIONS" = false ]; then
     echo -e "${BLUE}========================================${NC}"
-    echo -e "${BLUE}步骤 2/3: 安装 PostgreSQL 扩展${NC}"
+    echo -e "${BLUE}步骤 3/4: 安装 PostgreSQL 扩展${NC}"
     echo -e "${BLUE}========================================${NC}"
     echo ""
 
@@ -181,13 +217,24 @@ if [ "$SKIP_EXTENSIONS" = false ]; then
 
     echo -e "${YELLOW}▶ 安装 PostGIS 扩展（空间数据支持）${NC}"
 
-    POSTGIS_CHECK=$(docker exec "${CONTAINER_NAME}" psql -U "${DB_USER}" -d "${DB_NAME}" -t -c "SELECT COUNT(*) FROM pg_extension WHERE extname='postgis';" 2>/dev/null | tr -d '[:space:]' || echo "0")
+    ensure_postgis_extension() {
+        local database="$1"
+        local postgis_check
+        local postgis_version
 
-    if [ "${POSTGIS_CHECK}" = "1" ]; then
-        POSTGIS_VERSION=$(docker exec "${CONTAINER_NAME}" psql -U "${DB_USER}" -d "${DB_NAME}" -t -c "SELECT PostGIS_Version();" 2>/dev/null | head -n1 | xargs || echo "Unknown")
-        echo -e "  ${GREEN}✓ PostGIS 已安装 (${POSTGIS_VERSION})${NC}"
-    else
-        echo -e "  ${YELLOW}PostGIS 未安装，开始安装...${NC}"
+        postgis_check=$(docker exec "${CONTAINER_NAME}" env PGPASSWORD="${DB_PASSWORD}" \
+          psql -U "${DB_USER}" -d "${database}" -tAc \
+          "SELECT COUNT(*) FROM pg_extension WHERE extname='postgis';" 2>/dev/null | tr -d '[:space:]' || echo "0")
+
+        if [ "${postgis_check}" = "1" ]; then
+            postgis_version=$(docker exec "${CONTAINER_NAME}" env PGPASSWORD="${DB_PASSWORD}" \
+              psql -U "${DB_USER}" -d "${database}" -tAc "SELECT PostGIS_Version();" \
+              2>/dev/null | head -n1 | xargs || echo "Unknown")
+            echo -e "  ${GREEN}✓ ${database}: PostGIS 已安装 (${postgis_version})${NC}"
+            return
+        fi
+
+        echo -e "  ${YELLOW}${database}: PostGIS 未安装，开始安装...${NC}"
 
         # Check if PostGIS packages are installed
         POSTGIS_PACKAGE_CHECK=$(docker exec "${CONTAINER_NAME}" sh -c 'dpkg -l | grep postgis || echo "not-installed"')
@@ -204,8 +251,15 @@ if [ "$SKIP_EXTENSIONS" = false ]; then
         fi
 
         # Create extension
-        docker exec "${CONTAINER_NAME}" psql -U "${DB_USER}" -d "${DB_NAME}" -c "CREATE EXTENSION IF NOT EXISTS postgis;" >/dev/null 2>&1
-        echo -e "  ${GREEN}✓ PostGIS 扩展创建完成${NC}"
+        docker exec "${CONTAINER_NAME}" env PGPASSWORD="${DB_PASSWORD}" \
+          psql -U "${DB_USER}" -d "${database}" -v "ON_ERROR_STOP=1" \
+          -c "CREATE EXTENSION IF NOT EXISTS postgis;" >/dev/null 2>&1
+        echo -e "  ${GREEN}✓ ${database}: PostGIS 扩展创建完成${NC}"
+    }
+
+    ensure_postgis_extension "${DB_NAME}"
+    if [ "${SHARED_TEST_DB}" != "${DB_NAME}" ]; then
+        ensure_postgis_extension "${SHARED_TEST_DB}"
     fi
 
     echo ""
@@ -278,10 +332,10 @@ else
     echo ""
 fi
 
-# ==================== 步骤 3: 创建 Schema 和表结构 ====================
+# ==================== 步骤 4: 创建 Schema 和表结构 ====================
 
 echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}步骤 3/3: 创建 Schema 和表结构${NC}"
+echo -e "${BLUE}步骤 4/4: 创建 Schema 和表结构${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 
