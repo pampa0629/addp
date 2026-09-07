@@ -3070,6 +3070,15 @@ definitions:
       referenced_table:
         type: string
     type: object
+  plugin.DecimalFieldLimits:
+    properties:
+      max_precision:
+        type: integer
+      max_scale:
+        type: integer
+      requires_explicit_precision_scale:
+        type: boolean
+    type: object
   plugin.EncodedRecordReadSessionCapability:
     properties:
       formats:
@@ -3089,8 +3098,7 @@ definitions:
         additionalProperties: true
         type: object
       limits:
-        additionalProperties: true
-        type: object
+        $ref: '#/definitions/plugin.EngineLimits'
       schema_version:
         type: string
       storage:
@@ -3223,6 +3231,11 @@ definitions:
         type: string
       size_bytes:
         type: integer
+    type: object
+  plugin.EngineLimits:
+    properties:
+      table_write:
+        $ref: '#/definitions/plugin.TableWriteLimits'
     type: object
   plugin.EngineTypeDescriptor:
     properties:
@@ -3458,6 +3471,11 @@ definitions:
         type: boolean
       supported:
         type: boolean
+    type: object
+  plugin.TableWriteLimits:
+    properties:
+      decimal:
+        $ref: '#/definitions/plugin.DecimalFieldLimits'
     type: object
   plugin.TopicFacts:
     properties:

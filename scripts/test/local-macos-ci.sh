@@ -5,6 +5,8 @@ set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 ROOT_DIR=$(cd "${SCRIPT_DIR}/../.." && pwd -P)
+MYSQL_COMPOSE_FILE="$SCRIPT_DIR/docker-compose.local-macos-ci.yml"
+MYSQL_CONTAINER_NAME=addp-local-ci-mysql
 
 fail() {
   echo "Local macOS CI failed: $*" >&2
@@ -18,7 +20,7 @@ Usage: bash scripts/test/local-macos-ci.sh [--check-only|--full|--no-fetch]
   no option     Fast-forward to origin/main and test changes since the last successful SHA.
                 The first successful run is automatically a full run.
   --check-only  Validate the checkout, toolchain and Docker boundary without fetching or testing.
-  --full        Fast-forward to origin/main and run all deterministic and PostgreSQL gates.
+  --full        Fast-forward to origin/main and run all deterministic and infrastructure gates.
   --no-fetch     Run against the current clean main checkout without fetching or merging.
 EOF
 }
@@ -131,11 +133,15 @@ tracked_or_untracked_changes() {
 running_addp_infra() {
   docker ps --format '{{.Names}}' | while IFS= read -r name; do
     case "$name" in
-      addp-postgres|addp-redis|addp-minio|addp-meilisearch|addp-redpanda|addp-redpanda-init|addp-kafka-connect)
+      addp-postgres|addp-redis|addp-minio|addp-meilisearch|addp-redpanda|addp-redpanda-init|addp-kafka-connect|addp-local-ci-mysql)
         printf '%s\n' "$name"
         ;;
     esac
   done
+}
+
+local_ci_mysql_compose() {
+  docker compose --env-file /dev/null -f "$MYSQL_COMPOSE_FILE" "$@"
 }
 
 validate_host() {
@@ -148,6 +154,8 @@ validate_host() {
   validate_node
   validate_go
   docker info >/dev/null 2>&1 || fail "Docker is not running or is not accessible"
+  local_ci_mysql_compose config --quiet >/dev/null 2>&1 ||
+    fail "disposable MySQL Compose definition is invalid: $MYSQL_COMPOSE_FILE"
   active_infra=$(running_addp_infra)
   [ -z "$active_infra" ] || fail "running ADDP Infra belongs to another session: $active_infra"
   [ "$(git branch --show-current)" = "main" ] || fail "dedicated checkout must be on main"
@@ -157,7 +165,7 @@ validate_host() {
   git remote get-url origin >/dev/null 2>&1 || fail "origin remote is missing"
 }
 
-clear_postgres_gate_environment() {
+clear_integration_gate_environment() {
   unset ADDP_SYSTEM_POSTGRES_TEST_DSN
   unset ASSET_POSTGRES_TEST_DSN
   unset META_POSTGRES_TEST_DSN
@@ -174,6 +182,12 @@ clear_postgres_gate_environment() {
   unset ADDP_TEST_POSTGRES_PASSWORD
   unset ADDP_TEST_POSTGRES_DATABASE
   unset ADDP_TEST_POSTGRES_SSLMODE
+  unset ADDP_TEST_MYSQL_HOST
+  unset ADDP_TEST_MYSQL_PORT
+  unset ADDP_TEST_MYSQL_USER
+  unset ADDP_TEST_MYSQL_PASSWORD
+  unset ADDP_TEST_MYSQL_DATABASE
+  unset ADDP_LOCAL_CI_MYSQL
 }
 
 file_fingerprint() {
@@ -252,7 +266,7 @@ prepare_dependencies() {
     copilot/backend/requirements.txt common-python/pyproject.toml
 }
 
-run_postgres_gates() {
+run_integration_gates() {
   local shared_dsn iam_dsn
   shared_dsn='postgres://addp:addp_password@127.0.0.1:15432/addp_test?sslmode=disable'
   iam_dsn='postgres://addp:addp_password@127.0.0.1:15432/addp_iam_test?sslmode=disable'
@@ -272,7 +286,38 @@ run_postgres_gates() {
     ADDP_TEST_POSTGRES_PASSWORD=addp_password \
     ADDP_TEST_POSTGRES_DATABASE=addp_test \
     ADDP_TEST_POSTGRES_SSLMODE=disable \
+    ADDP_LOCAL_CI_MYSQL=1 \
     "$@"
+}
+
+start_disposable_mysql() {
+  local health
+
+  echo "==> Start disposable MySQL 8 for local CI"
+  mysql_started=1
+  if ! local_ci_mysql_compose up -d --force-recreate mysql; then
+    local_ci_mysql_compose logs --no-color mysql || true
+    fail "disposable MySQL failed to start"
+  fi
+
+  for _ in $(seq 1 120); do
+    health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' \
+      "$MYSQL_CONTAINER_NAME" 2>/dev/null || true)
+    case "$health" in
+      healthy)
+        echo "Disposable MySQL is healthy: 127.0.0.1:13306"
+        return
+        ;;
+      unhealthy|exited|dead)
+        local_ci_mysql_compose logs --no-color mysql || true
+        fail "disposable MySQL failed to start: container state is $health"
+        ;;
+    esac
+    sleep 1
+  done
+
+  local_ci_mysql_compose logs --no-color mysql || true
+  fail "disposable MySQL failed to start: health check timed out"
 }
 
 run_infra() {
@@ -303,7 +348,7 @@ write_summary() {
 }
 
 validate_host
-clear_postgres_gate_environment
+clear_integration_gate_environment
 if [ "$MODE" = "check-only" ]; then
   echo "Local macOS CI readiness check passed: $ROOT_DIR"
   exit 0
@@ -343,12 +388,19 @@ log_file="$LOG_DIR/${timestamp}-${short_sha}-${scope}.log"
 exec > >(tee -a "$log_file") 2>&1
 
 infra_started=0
+mysql_started=0
 finish_run() {
   local status=$?
   trap - EXIT INT TERM
   if [ "$infra_started" -eq 1 ]; then
     echo "==> Stop ADDP CI infrastructure"
     if ! run_infra make infra-down; then
+      status=1
+    fi
+  fi
+  if [ "$mysql_started" -eq 1 ]; then
+    echo "==> Stop disposable MySQL CI infrastructure"
+    if ! local_ci_mysql_compose down --volumes --remove-orphans; then
       status=1
     fi
   fi
@@ -376,6 +428,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 echo "Local macOS CI start: sha=$target_sha scope=$scope"
+start_disposable_mysql
 prepare_dependencies
 
 if [ "$scope" = "full" ]; then
@@ -393,8 +446,8 @@ infra_started=1
 run_infra make infra-up
 
 if [ "$scope" = "full" ]; then
-  echo "==> Run all registered PostgreSQL integration gates"
-  run_postgres_gates make test-integration
+  echo "==> Run all registered infrastructure integration gates"
+  run_integration_gates make test-integration
 else
-  run_postgres_gates make test-changed "BASE_REF=$last_success"
+  run_integration_gates make test-changed "BASE_REF=$last_success"
 fi

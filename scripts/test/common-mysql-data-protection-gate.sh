@@ -8,6 +8,15 @@ ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/addp-mysql-data-protection.XXXXXX")
 trap 'rm -rf "$WORK_DIR"' EXIT
 
+# 本地巡检只向聚合门禁传递作用域标记；真实连接参数在本 owner 门禁内生成，
+# 避免其他集成门禁继承 MySQL 凭据或意外连接外部 MySQL。
+if [ "${ADDP_LOCAL_CI_MYSQL:-0}" = "1" ]; then
+    export ADDP_TEST_MYSQL_HOST=127.0.0.1
+    export ADDP_TEST_MYSQL_PORT=13306
+    export ADDP_TEST_MYSQL_USER=root
+    export ADDP_TEST_MYSQL_PASSWORD=addp_local_ci_mysql_password
+fi
+
 if [ -z "${ADDP_TEST_MYSQL_PASSWORD:-}" ]; then
     echo "ADDP_TEST_MYSQL_PASSWORD is required for the disposable MySQL protection gate" >&2
     exit 1

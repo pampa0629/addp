@@ -121,6 +121,8 @@ ADDP_TEST_MYSQL_PASSWORD=password \
   make test-common-mysql-data-protection
 ```
 
+直接运行上述 owner 门禁时，调用方必须提供 disposable MySQL。辅助 macOS 巡检的 `make local-ci` 不读取这些外部变量，也不依赖 Business MySQL；它通过 `scripts/test/docker-compose.local-macos-ci.yml` 启动固定版本、无数据卷的专属 MySQL 8，在健康检查通过后才执行确定性门禁，并仅在 MySQL owner 门禁进程内使用固定测试连接参数。巡检结束时该容器随 CI 基础设施统一删除。
+
 Model 物化与事务门禁使用：
 
 ```bash

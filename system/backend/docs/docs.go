@@ -13396,6 +13396,20 @@ const docTemplate = `{
                 }
             }
         },
+        "plugin.DecimalFieldLimits": {
+            "type": "object",
+            "properties": {
+                "max_precision": {
+                    "type": "integer"
+                },
+                "max_scale": {
+                    "type": "integer"
+                },
+                "requires_explicit_precision_scale": {
+                    "type": "boolean"
+                }
+            }
+        },
         "plugin.EncodedRecordReadSessionCapability": {
             "type": "object",
             "properties": {
@@ -13424,8 +13438,7 @@ const docTemplate = `{
                     "additionalProperties": true
                 },
                 "limits": {
-                    "type": "object",
-                    "additionalProperties": true
+                    "$ref": "#/definitions/plugin.EngineLimits"
                 },
                 "schema_version": {
                     "type": "string"
@@ -13628,6 +13641,14 @@ const docTemplate = `{
                 },
                 "size_bytes": {
                     "type": "integer"
+                }
+            }
+        },
+        "plugin.EngineLimits": {
+            "type": "object",
+            "properties": {
+                "table_write": {
+                    "$ref": "#/definitions/plugin.TableWriteLimits"
                 }
             }
         },
@@ -13987,6 +14008,14 @@ const docTemplate = `{
                 },
                 "supported": {
                     "type": "boolean"
+                }
+            }
+        },
+        "plugin.TableWriteLimits": {
+            "type": "object",
+            "properties": {
+                "decimal": {
+                    "$ref": "#/definitions/plugin.DecimalFieldLimits"
                 }
             }
         },
