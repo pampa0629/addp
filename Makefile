@@ -164,6 +164,7 @@ test-business-config: ## 校验 Business Compose 和服务管理脚本（不启�
 	@bash business/scripts/start.sh --help | grep -Fq -- '-opengauss'
 	@bash business/scripts/stop.sh --help | grep -Fq -- '-oceanbase'
 	@bash business/scripts/stop.sh --help | grep -Fq -- '-opengauss'
+	@python3 -m unittest scripts/test/common-doris-decimal-gate_test.py
 
 test-integration: ## 严格串行运行所有本地可执行的 disposable 基础设施集成门禁
 	@$(MAKE) test-common-postgres

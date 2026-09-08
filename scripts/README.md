@@ -439,6 +439,7 @@ scripts/test/
 ├── release-gate.py           # T5 发布套件统一分发与结构化报告
 ├── check-execution-test-fixtures.sh # 统一执行存储测试夹具门禁
 ├── common-python-cli-release-gate.sh # ADDP CLI wheel 与 macOS Keychain 产品发布门禁
+├── common-doris-decimal-gate_test.py # Doris 门禁必须等待可调度 Backend 的回归
 ├── opengauss-official-media-release-gate.sh # openGauss 官方介质 Linux x86_64 发布认证
 ├── opengauss-official-media-release-gate_test.py # openGauss 介质固定、隔离和清理回归
 ├── online-gate.py # T4 唯一 suite 登记与分发入口

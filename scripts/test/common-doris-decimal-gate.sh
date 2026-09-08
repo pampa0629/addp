@@ -51,9 +51,29 @@ docker run --detach \
     "$DORIS_IMAGE" \
     -c "grep -q '^enable_fqdn_mode = true$' /opt/apache-doris/fe/conf/fe.conf || echo 'enable_fqdn_mode = true' >> /opt/apache-doris/fe/conf/fe.conf; grep -q '^force_olap_table_replication_num = 1$' /opt/apache-doris/fe/conf/fe.conf || echo 'force_olap_table_replication_num = 1' >> /opt/apache-doris/fe/conf/fe.conf; exec bash /usr/local/bin/entry_point.sh" >/dev/null
 
+doris_has_ready_backend() {
+    docker exec "$CONTAINER_NAME" \
+        mysql -h127.0.0.1 -P9030 -uroot --connect-timeout=5 --batch -e 'SHOW BACKENDS;' 2>/dev/null |
+        awk -F '\t' '
+            NR == 1 {
+                for (column = 1; column <= NF; column++) {
+                    if ($column == "Alive") alive_column = column
+                    if ($column == "SystemDecommissioned") decommissioned_column = column
+                }
+                next
+            }
+            alive_column > 0 && decommissioned_column > 0 &&
+            tolower($alive_column) == "true" &&
+            tolower($decommissioned_column) == "false" {
+                ready_backend = 1
+            }
+            END { exit !(alive_column > 0 && decommissioned_column > 0 && ready_backend == 1) }
+        '
+}
+
 ready=false
 for _ in $(seq 1 120); do
-    if docker exec "$CONTAINER_NAME" mysql -h127.0.0.1 -P9030 -uroot --connect-timeout=5 -e 'SHOW FRONTENDS;' >/dev/null 2>&1; then
+    if doris_has_ready_backend; then
         ready=true
         break
     fi
@@ -64,7 +84,7 @@ for _ in $(seq 1 120); do
     sleep 5
 done
 if [ "$ready" != true ]; then
-    echo "Doris disposable container did not become ready within 600 seconds" >&2
+    echo "Doris disposable container did not expose an Alive backend within 600 seconds" >&2
     exit 1
 fi
 
