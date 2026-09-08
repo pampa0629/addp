@@ -502,6 +502,27 @@
         </el-descriptions-item>
       </el-descriptions>
       <el-form label-position="top">
+        <el-form-item
+          v-if="executeConfirmMode === 'physical_cleanup'"
+          :label="t('system.cleanup.confirm.externalArtifactPolicy')"
+        >
+          <el-radio-group v-model="executeExternalArtifactPolicy">
+            <el-radio-button value="delete">
+              {{ t('system.cleanup.confirm.deleteExternalArtifacts') }}
+            </el-radio-button>
+            <el-radio-button value="abandon">
+              {{ t('system.cleanup.confirm.abandonExternalArtifacts') }}
+            </el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-alert
+          v-if="executeConfirmMode === 'physical_cleanup' && executeExternalArtifactPolicy === 'abandon'"
+          :title="t('system.cleanup.confirm.abandonExternalWarning')"
+          type="error"
+          :closable="false"
+          show-icon
+          class="confirm-policy-alert"
+        />
         <el-form-item>
           <el-checkbox v-model="executeConfirmChecked">
             {{ t('system.cleanup.confirm.confirmChecked') }}
@@ -563,6 +584,7 @@ const executeConfirmVisible = ref(false)
 const executeConfirmMode = ref('')
 const executeConfirmChecked = ref(false)
 const executeConfirmToken = ref('')
+const executeExternalArtifactPolicy = ref('delete')
 const latestScanTaskId = ref('')
 const latestExecuteTaskId = ref('')
 
@@ -644,7 +666,8 @@ const requiresConfirmationToken = computed(() => {
 })
 
 const canSubmitExecuteConfirm = computed(() => {
-  return executeConfirmChecked.value && (!requiresConfirmationToken.value || executeConfirmToken.value === confirmationTokenText)
+  const hasPhysicalPolicy = executeConfirmMode.value !== 'physical_cleanup' || ['delete', 'abandon'].includes(executeExternalArtifactPolicy.value)
+  return hasPhysicalPolicy && executeConfirmChecked.value && (!requiresConfirmationToken.value || executeConfirmToken.value === confirmationTokenText)
 })
 
 const executeConfirmTitle = computed(() => {
@@ -660,6 +683,9 @@ const executeConfirmAlertTitle = computed(() => {
 })
 
 const executeConfirmButtonText = computed(() => {
+  if (executeConfirmMode.value === 'physical_cleanup' && executeExternalArtifactPolicy.value === 'abandon') {
+    return t('system.cleanup.actions.abandonExternalArtifacts')
+  }
   return executeConfirmMode.value === 'physical_cleanup'
     ? t('system.cleanup.actions.physicalCleanup')
     : t('system.cleanup.actions.logicalCleanup')
@@ -725,6 +751,7 @@ const openExecuteConfirm = (cleanupMode) => {
   executeConfirmMode.value = cleanupMode
   executeConfirmChecked.value = false
   executeConfirmToken.value = ''
+  executeExternalArtifactPolicy.value = 'delete'
   executeConfirmVisible.value = true
 }
 
@@ -739,7 +766,10 @@ const submitExecuteConfirm = async () => {
   }
   await executeCleanup(executeConfirmMode.value, {
     confirmed: executeConfirmChecked.value,
-    confirmation_token: executeConfirmToken.value
+    confirmation_token: executeConfirmToken.value,
+    external_artifact_policy: executeConfirmMode.value === 'physical_cleanup'
+      ? executeExternalArtifactPolicy.value
+      : undefined
   })
 }
 
@@ -761,7 +791,8 @@ const executeCleanup = async (cleanupMode, confirmation) => {
       based_on_scan: scanResult.value.task_id,
       cleanup_mode: cleanupMode,
       confirmed: confirmation?.confirmed === true,
-      confirmation_token: confirmation?.confirmation_token || ''
+      confirmation_token: confirmation?.confirmation_token || '',
+      external_artifact_policy: confirmation?.external_artifact_policy
     })
 
     ElMessage.success(t('system.cleanup.msg.cleanupCreated'))
@@ -1141,6 +1172,10 @@ onMounted(async () => {
 }
 
 .confirm-summary {
+  margin-bottom: 16px;
+}
+
+.confirm-policy-alert {
   margin-bottom: 16px;
 }
 

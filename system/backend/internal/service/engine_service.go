@@ -833,7 +833,11 @@ func (s *EngineService) continueDeletion(engineID uint, scanTaskID string) {
 			scanTaskID,
 			events.CleanupModePhysical,
 			valueOrZero(engine.DeletionRequestedBy),
-			CleanupExecuteConfirmation{Confirmed: true, ConfirmationToken: "CONFIRM"},
+			CleanupExecuteConfirmation{
+				Confirmed:              true,
+				ConfirmationToken:      "CONFIRM",
+				ExternalArtifactPolicy: engine.ExternalArtifactPolicy,
+			},
 		)
 		if err != nil {
 			s.setDeletionError(engineID, scanTaskID, fmt.Sprintf("create cleanup execute task: %v", err))

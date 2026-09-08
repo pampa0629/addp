@@ -175,6 +175,12 @@ other = "Confirm the assessment result and impact scope before executing resourc
 [system.cleanup.confirm_token_required]
 other = "High-risk or storage release operations require confirmation text"
 
+[system.cleanup.artifact_policy_required]
+other = "Physical reclaim requires an explicit choice to delete or abandon external artifacts"
+
+[system.cleanup.artifact_policy_invalid]
+other = "The external artifact policy is invalid; delete or abandon is only allowed for physical reclaim"
+
 [system.cleanup.tenant_required]
 other = "Manual resource reclaim must start within an explicit tenant scope; global resource reclaim needs a dedicated global semantic"
 

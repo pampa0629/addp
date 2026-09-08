@@ -158,10 +158,11 @@ func (h *CleanupHandler) GetTaskStatus(c *gin.Context) {
 
 // CreateExecuteTaskRequest 创建执行任务请求
 type CreateExecuteTaskRequest struct {
-	BasedOnScan       string `json:"based_on_scan" binding:"required"` // 基于哪次扫描
-	CleanupMode       string `json:"cleanup_mode" binding:"required"`  // logical_cleanup/physical_cleanup
-	Confirmed         bool   `json:"confirmed"`                        // 管理员已确认评估结果和影响范围
-	ConfirmationToken string `json:"confirmation_token,omitempty"`     // 高风险或释放存储时要求输入 CONFIRM
+	BasedOnScan            string `json:"based_on_scan" binding:"required"`                          // 基于哪次扫描
+	CleanupMode            string `json:"cleanup_mode" binding:"required"`                           // logical_cleanup/physical_cleanup
+	Confirmed              bool   `json:"confirmed"`                                                 // 管理员已确认评估结果和影响范围
+	ConfirmationToken      string `json:"confirmation_token,omitempty"`                              // 高风险或释放存储时要求输入 CONFIRM
+	ExternalArtifactPolicy string `json:"external_artifact_policy,omitempty" enums:"delete,abandon"` // 物理回收必须显式选择：delete/abandon
 }
 
 // CreateExecuteTaskResponse 创建执行任务响应
@@ -171,7 +172,7 @@ type CreateExecuteTaskResponse struct {
 
 // CreateExecuteTask 创建资源回收执行任务
 // @Summary 创建资源回收执行任务 | Create resource reclaim execution task
-// @Description 基于评估结果执行系统级资源回收；所有执行请求都必须确认，高风险或释放存储操作必须提供确认文本 CONFIRM | Execute system resource reclaim based on an assessment; every execution must be confirmed, and high-risk or storage release operations require confirmation token CONFIRM
+// @Description 基于评估结果执行系统级资源回收；所有执行请求都必须确认，高风险或释放存储操作必须提供确认文本 CONFIRM，物理回收必须显式选择外部产物策略 delete 或 abandon | Execute system resource reclaim based on an assessment; every execution must be confirmed, high-risk or storage release operations require confirmation token CONFIRM, and physical reclaim requires an explicit external artifact policy of delete or abandon
 // @Tags Resource Reclaim
 // @Accept json
 // @Produce json
@@ -233,8 +234,9 @@ func (h *CleanupHandler) CreateExecuteTask(c *gin.Context) {
 		req.CleanupMode,
 		actorID,
 		service.CleanupExecuteConfirmation{
-			Confirmed:         req.Confirmed,
-			ConfirmationToken: req.ConfirmationToken,
+			Confirmed:              req.Confirmed,
+			ConfirmationToken:      req.ConfirmationToken,
+			ExternalArtifactPolicy: req.ExternalArtifactPolicy,
 		},
 	)
 	if err != nil {
@@ -244,6 +246,14 @@ func (h *CleanupHandler) CreateExecuteTask(c *gin.Context) {
 		}
 		if errors.Is(err, service.ErrCleanupExecuteConfirmTokenRequired) {
 			commonapi.RespondError(c, 400, commoni18n.T(c, sysi18n.MsgCleanupConfirmTokenRequired))
+			return
+		}
+		if errors.Is(err, service.ErrCleanupExternalArtifactPolicyRequired) {
+			commonapi.RespondError(c, 400, commoni18n.T(c, sysi18n.MsgCleanupArtifactPolicyRequired))
+			return
+		}
+		if errors.Is(err, service.ErrCleanupExternalArtifactPolicyInvalid) || errors.Is(err, service.ErrCleanupExternalArtifactPolicyNotAllowed) {
+			commonapi.RespondError(c, 400, commoni18n.T(c, sysi18n.MsgCleanupArtifactPolicyInvalid))
 			return
 		}
 		commonapi.RespondError(c, http.StatusInternalServerError, commoni18n.TWithDetail(c, sysi18n.MsgCleanupCreateExecuteFailed, err.Error()))

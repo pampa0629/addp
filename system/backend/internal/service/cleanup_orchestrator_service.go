@@ -21,8 +21,11 @@ import (
 )
 
 var (
-	ErrCleanupExecuteConfirmRequired      = errors.New("resource reclaim execute confirmation is required")
-	ErrCleanupExecuteConfirmTokenRequired = errors.New("resource reclaim execute confirmation token is required")
+	ErrCleanupExecuteConfirmRequired           = errors.New("resource reclaim execute confirmation is required")
+	ErrCleanupExecuteConfirmTokenRequired      = errors.New("resource reclaim execute confirmation token is required")
+	ErrCleanupExternalArtifactPolicyRequired   = errors.New("physical resource reclaim requires an external artifact policy")
+	ErrCleanupExternalArtifactPolicyInvalid    = errors.New("external artifact policy is invalid")
+	ErrCleanupExternalArtifactPolicyNotAllowed = errors.New("external artifact policy is only allowed for physical resource reclaim")
 )
 
 // CleanupOrchestratorService 是资源回收协调方。
@@ -181,8 +184,9 @@ func (s *CleanupOrchestratorService) createScanTask(
 
 // CreateExecuteTask 创建资源回收执行任务
 type CleanupExecuteConfirmation struct {
-	Confirmed         bool
-	ConfirmationToken string
+	Confirmed              bool
+	ConfirmationToken      string
+	ExternalArtifactPolicy string
 }
 
 func (s *CleanupOrchestratorService) CreateExecuteTask(
@@ -207,13 +211,18 @@ func (s *CleanupOrchestratorService) CreateExecuteTask(
 	if err := validateCleanupExecuteConfirmation(cleanupMode, scanSummary, confirmation); err != nil {
 		return "", err
 	}
+	externalArtifactPolicy := strings.TrimSpace(confirmation.ExternalArtifactPolicy)
+	executeContext := cloneCleanupExecuteContext(scanTask.Task.Context)
+	if cleanupMode == events.CleanupModePhysical {
+		executeContext["external_artifact_policy"] = externalArtifactPolicy
+	}
 
 	// 生成任务ID
 	taskID := fmt.Sprintf("cleanup-exec-%d-%s", time.Now().Unix(), uuid.New().String()[:8])
 	now := time.Now()
 	triggerType := commonExecution.TriggerTypeManual
 
-	executionID, err := s.createParentExecution(ctx, scanTask.Task.TenantID, taskID, events.CleanupActionExecute, cleanupMode, triggerType, scanTask.Task.CauseEvent, basedOnScan, scanTask.Task.ExpectedModules, scanTask.Task.Context, userID, 5*time.Minute)
+	executionID, err := s.createParentExecution(ctx, scanTask.Task.TenantID, taskID, events.CleanupActionExecute, cleanupMode, triggerType, scanTask.Task.CauseEvent, basedOnScan, scanTask.Task.ExpectedModules, executeContext, userID, 5*time.Minute)
 	if err != nil {
 		return "", err
 	}
@@ -228,7 +237,7 @@ func (s *CleanupOrchestratorService) CreateExecuteTask(
 		CauseEvent:      scanTask.Task.CauseEvent,
 		Status:          "pending",
 		ExpectedModules: scanTask.Task.ExpectedModules,
-		Context:         scanTask.Task.Context,
+		Context:         executeContext,
 		ExecutionID:     executionID,
 		RequestedBy:     userID,
 		StartedAt:       now.Format(time.RFC3339),
@@ -261,7 +270,7 @@ func (s *CleanupOrchestratorService) CreateExecuteTask(
 		ExpectedModules:   task.ExpectedModules,
 		BasedOnScan:       basedOnScan,
 		ParentExecutionID: executionID,
-		Context:           scanTask.Task.Context,
+		Context:           executeContext,
 		RequestedBy:       userID,
 		RequestedAt:       now,
 	}
@@ -276,15 +285,16 @@ func (s *CleanupOrchestratorService) CreateExecuteTask(
 	s.redis.LPush(ctx, historyKey, taskID)
 	s.redis.LTrim(ctx, historyKey, 0, 99)
 	s.writeAuditLog(ctx, userID, &task.TenantID, "cleanup.execute.confirmed", taskID, map[string]interface{}{
-		"based_on_scan":      basedOnScan,
-		"cleanup_mode":       cleanupMode,
-		"risk_level":         scanSummary.RiskLevel,
-		"scanned_items":      scanSummary.ScannedItems,
-		"affected_records":   scanSummary.AffectedRecords,
-		"freed_bytes":        scanSummary.FreedBytes,
-		"expected_modules":   task.ExpectedModules,
-		"confirmation_token": confirmation.ConfirmationToken != "",
-		"confirmed_at":       now.Format(time.RFC3339),
+		"based_on_scan":            basedOnScan,
+		"cleanup_mode":             cleanupMode,
+		"risk_level":               scanSummary.RiskLevel,
+		"scanned_items":            scanSummary.ScannedItems,
+		"affected_records":         scanSummary.AffectedRecords,
+		"freed_bytes":              scanSummary.FreedBytes,
+		"expected_modules":         task.ExpectedModules,
+		"external_artifact_policy": externalArtifactPolicy,
+		"confirmation_token":       confirmation.ConfirmationToken != "",
+		"confirmed_at":             now.Format(time.RFC3339),
 	})
 	s.writeAuditLog(ctx, userID, &task.TenantID, "cleanup.execute.created", taskID, map[string]interface{}{
 		"based_on_scan":    basedOnScan,
@@ -638,6 +648,17 @@ func validateCleanupExecuteConfirmation(cleanupMode string, summary events.Clean
 	if !confirmation.Confirmed {
 		return ErrCleanupExecuteConfirmRequired
 	}
+	policy := strings.TrimSpace(confirmation.ExternalArtifactPolicy)
+	if cleanupMode == events.CleanupModePhysical {
+		if policy == "" {
+			return ErrCleanupExternalArtifactPolicyRequired
+		}
+		if policy != commonModels.ExternalArtifactPolicyDelete && policy != commonModels.ExternalArtifactPolicyAbandon {
+			return ErrCleanupExternalArtifactPolicyInvalid
+		}
+	} else if policy != "" {
+		return ErrCleanupExternalArtifactPolicyNotAllowed
+	}
 	if cleanupMode != events.CleanupModePhysical && summary.RiskLevel != "high" {
 		return nil
 	}
@@ -645,6 +666,14 @@ func validateCleanupExecuteConfirmation(cleanupMode string, summary events.Clean
 		return ErrCleanupExecuteConfirmTokenRequired
 	}
 	return nil
+}
+
+func cloneCleanupExecuteContext(source map[string]interface{}) map[string]interface{} {
+	cloned := make(map[string]interface{}, len(source)+1)
+	for key, value := range source {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 func scanSummaryForConfirmation(summary interface{}) events.CleanupResultSummary {

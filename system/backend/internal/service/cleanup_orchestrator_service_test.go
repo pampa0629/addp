@@ -9,6 +9,7 @@ import (
 
 	"github.com/addp/common/events"
 	commonExecution "github.com/addp/common/execution"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/models"
 )
@@ -242,12 +243,40 @@ func TestValidateCleanupExecuteConfirmation(t *testing.T) {
 			wantErr: ErrCleanupExecuteConfirmRequired,
 		},
 		{
-			name:        "physical cleanup requires token",
+			name:        "physical cleanup requires external artifact policy",
 			cleanupMode: events.CleanupModePhysical,
 			confirmation: CleanupExecuteConfirmation{
 				Confirmed: true,
 			},
+			wantErr: ErrCleanupExternalArtifactPolicyRequired,
+		},
+		{
+			name:        "physical cleanup requires token",
+			cleanupMode: events.CleanupModePhysical,
+			confirmation: CleanupExecuteConfirmation{
+				Confirmed:              true,
+				ExternalArtifactPolicy: commonModels.ExternalArtifactPolicyDelete,
+			},
 			wantErr: ErrCleanupExecuteConfirmTokenRequired,
+		},
+		{
+			name:        "physical cleanup rejects invalid external artifact policy",
+			cleanupMode: events.CleanupModePhysical,
+			confirmation: CleanupExecuteConfirmation{
+				Confirmed:              true,
+				ConfirmationToken:      "CONFIRM",
+				ExternalArtifactPolicy: "unknown",
+			},
+			wantErr: ErrCleanupExternalArtifactPolicyInvalid,
+		},
+		{
+			name:        "logical cleanup rejects external artifact policy",
+			cleanupMode: events.CleanupModeLogical,
+			confirmation: CleanupExecuteConfirmation{
+				Confirmed:              true,
+				ExternalArtifactPolicy: commonModels.ExternalArtifactPolicyAbandon,
+			},
+			wantErr: ErrCleanupExternalArtifactPolicyNotAllowed,
 		},
 		{
 			name:        "high risk logical cleanup requires token",
@@ -274,8 +303,9 @@ func TestValidateCleanupExecuteConfirmation(t *testing.T) {
 			name:        "physical cleanup accepts token",
 			cleanupMode: events.CleanupModePhysical,
 			confirmation: CleanupExecuteConfirmation{
-				Confirmed:         true,
-				ConfirmationToken: "CONFIRM",
+				Confirmed:              true,
+				ConfirmationToken:      "CONFIRM",
+				ExternalArtifactPolicy: commonModels.ExternalArtifactPolicyAbandon,
 			},
 		},
 	}
@@ -295,6 +325,21 @@ func TestValidateCleanupExecuteConfirmation(t *testing.T) {
 				t.Fatalf("validateCleanupExecuteConfirmation() error = %v, want %v", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestCloneCleanupExecuteContextDoesNotMutateScanContext(t *testing.T) {
+	t.Parallel()
+
+	scanContext := map[string]interface{}{"engine_id": float64(8)}
+	executeContext := cloneCleanupExecuteContext(scanContext)
+	executeContext["external_artifact_policy"] = commonModels.ExternalArtifactPolicyAbandon
+
+	if _, exists := scanContext["external_artifact_policy"]; exists {
+		t.Fatalf("scan context mutated: %#v", scanContext)
+	}
+	if executeContext["engine_id"] != float64(8) || executeContext["external_artifact_policy"] != commonModels.ExternalArtifactPolicyAbandon {
+		t.Fatalf("execute context = %#v", executeContext)
 	}
 }
 

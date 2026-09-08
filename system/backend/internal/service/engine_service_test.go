@@ -1259,7 +1259,7 @@ func TestBeginDeletionWaitsForCleanupBeforeDeletingEngine(t *testing.T) {
 
 	close(cleanup.validationGate)
 	waitForEngineDeleted(t, repo, engine.ID)
-	if cleanup.executeMode != events.CleanupModePhysical || cleanup.executeActorID != actorID || !cleanup.confirmation.Confirmed || cleanup.confirmation.ConfirmationToken != "CONFIRM" {
+	if cleanup.executeMode != events.CleanupModePhysical || cleanup.executeActorID != actorID || !cleanup.confirmation.Confirmed || cleanup.confirmation.ConfirmationToken != "CONFIRM" || cleanup.confirmation.ExternalArtifactPolicy != models.ExternalArtifactPolicyAbandon {
 		t.Fatalf("execute request mode=%q actor=%d confirmation=%#v", cleanup.executeMode, cleanup.executeActorID, cleanup.confirmation)
 	}
 }

@@ -327,6 +327,8 @@ cleanup 分为两个动作，支持手动、事件驱动和定时触发：
 - execute 不应绕过 scan 重新解释另一套范围。
 - `platform` 会话模式不得发起 Tenant 级手动资源回收；全局资源回收必须另行定义显式 Platform Scope、Permission 和审计语义。
 - execute 请求必须携带管理员确认语义。当前 HTTP API 使用 `confirmed=true` 表示管理员已核对 scan 结果、影响范围和 cleanup mode；`physical_cleanup` 或 `risk_level=high` 的 execute 还必须提供确认文本 `CONFIRM`。
+- 手动 `physical_cleanup` 还必须显式选择 `external_artifact_policy=delete|abandon`，不允许由 System 或 owner 模块隐式推断。`delete` 表示删除已登记外部产物；`abandon` 仅在外部产物无法访问时放弃平台后续物理删除责任，由 owner 把登记记录终止为 `abandoned_external`，不表示外部对象已删除。
+- System 创建 execute 时必须复制 scan context 并把本次显式选择的 `external_artifact_policy` 写入 execute task、execution、event 和审计记录，不得回写原 scan context。`logical_cleanup` 不接受该策略。
 - 确认文本只用于证明显式确认，不应作为业务密钥保存；审计日志只记录是否提供了确认文本、确认时间、风险等级和影响摘要。
 - executor 可以在 execute 前做幂等复查，但复查结果必须在 result 中报告。
 - scan result 与 execute result 的关联必须可审计。
@@ -434,7 +436,7 @@ cleanup 必须写入 System 审计日志。审计回答“谁、何时、为什�
 | --- | --- | --- |
 | `cleanup.scan.created` | scan 请求创建。 | actor、tenant、expected_modules、trigger_type、cause_event、context。 |
 | `cleanup.execute.created` | execute 请求创建。 | actor、tenant、based_on_scan、cleanup_mode、expected_modules、context。 |
-| `cleanup.execute.confirmed` | 管理员确认 execute。 | actor、based_on_scan、risk_level、cleanup_mode、确认时间、是否提供确认文本、影响摘要。 |
+| `cleanup.execute.confirmed` | 管理员确认 execute。 | actor、based_on_scan、risk_level、cleanup_mode、external_artifact_policy、确认时间、是否提供确认文本、影响摘要。 |
 | `cleanup.completed` | cleanup 父 execution 完成。 | task_id、execution_id、status、summary。 |
 | `cleanup.failed` | cleanup 父 execution 失败或部分失败。 | task_id、execution_id、failed_modules、errors。 |
 

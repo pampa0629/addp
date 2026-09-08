@@ -1151,6 +1151,10 @@
         "scope": "Impact Scope",
         "impact": "Assessment Impact",
         "impactValue": "{items} items / {records} state records / {space} reclaimable space",
+        "externalArtifactPolicy": "External Artifact Handling",
+        "deleteExternalArtifacts": "Delete External Artifacts",
+        "abandonExternalArtifacts": "Abandon External Artifacts",
+        "abandonExternalWarning": "Abandoning only ends the platform's deletion responsibility; it does not mean external objects were deleted. Have a DBA or external system administrator verify them.",
         "confirmChecked": "I have reviewed the assessment result, impact scope, and handling mode",
         "tokenLabel": "Enter {token} to confirm high-risk or storage release operations"
       },
@@ -1158,6 +1162,7 @@
         "logicalCleanup": "Mark Resources Inactive",
         "physicalCleanup": "Release Storage",
         "physicalCleanupConfirm": "Releasing storage deletes registered storage objects, caches, or derived artifacts. Continue?",
+        "abandonExternalArtifacts": "Abandon External Artifacts and Reclaim",
         "newAssessment": "Run New Assessment",
         "viewMonitor": "View Monitor",
         "viewAllMonitor": "Reclaim Monitor",

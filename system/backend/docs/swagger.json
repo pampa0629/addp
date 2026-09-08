@@ -15,7 +15,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "基于评估结果执行系统级资源回收；所有执行请求都必须确认，高风险或释放存储操作必须提供确认文本 CONFIRM | Execute system resource reclaim based on an assessment; every execution must be confirmed, and high-risk or storage release operations require confirmation token CONFIRM",
+                "description": "基于评估结果执行系统级资源回收；所有执行请求都必须确认，高风险或释放存储操作必须提供确认文本 CONFIRM，物理回收必须显式选择外部产物策略 delete 或 abandon | Execute system resource reclaim based on an assessment; every execution must be confirmed, high-risk or storage release operations require confirmation token CONFIRM, and physical reclaim requires an explicit external artifact policy of delete or abandon",
                 "consumes": [
                     "application/json"
                 ],
@@ -10913,6 +10913,14 @@
                 "confirmed": {
                     "description": "管理员已确认评估结果和影响范围",
                     "type": "boolean"
+                },
+                "external_artifact_policy": {
+                    "description": "物理回收必须显式选择：delete/abandon",
+                    "type": "string",
+                    "enum": [
+                        "delete",
+                        "abandon"
+                    ]
                 }
             }
         },

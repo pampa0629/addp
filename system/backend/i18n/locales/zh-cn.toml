@@ -175,6 +175,12 @@ other = "执行资源回收前必须确认评估结果和影响范围"
 [system.cleanup.confirm_token_required]
 other = "高风险或释放存储操作必须输入确认文本"
 
+[system.cleanup.artifact_policy_required]
+other = "物理回收必须显式选拠删除或放弃外部产物"
+
+[system.cleanup.artifact_policy_invalid]
+other = "外部产物策略无效，仅物理回收可选择删除或放弃"
+
 [system.cleanup.tenant_required]
 other = "手动资源回收必须在明确租户范围内发起；全局资源回收需要使用专门的全局语义"
 

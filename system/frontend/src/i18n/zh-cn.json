@@ -1151,6 +1151,10 @@
         "scope": "影响范围",
         "impact": "评估影响",
         "impactValue": "{items} 个待处理项 / {records} 条状态记录 / {space} 可释放空间",
+        "externalArtifactPolicy": "外部产物处理方式",
+        "deleteExternalArtifacts": "删除外部产物",
+        "abandonExternalArtifacts": "放弃外部产物",
+        "abandonExternalWarning": "放弃只会终止平台后续删除责任，不表示外部对象已删除；请由 DBA 或外部系统管理员确认。",
         "confirmChecked": "我已核对评估结果、影响范围和处理方式",
         "tokenLabel": "请输入 {token} 确认高风险或释放存储操作"
       },
@@ -1158,6 +1162,7 @@
         "logicalCleanup": "标记失效资源",
         "physicalCleanup": "释放存储空间",
         "physicalCleanupConfirm": "释放存储会删除已登记的存储对象、缓存或派生产物，确定继续吗？",
+        "abandonExternalArtifacts": "放弃外部产物并回收",
         "newAssessment": "重新评估",
         "viewMonitor": "查看监控",
         "viewAllMonitor": "回收监控",
