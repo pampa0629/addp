@@ -43,7 +43,7 @@
 	  "columns": { "name": "任务名称", "type": "任务类型", "engine": "来源引擎", "enabled": "启用", "status": "最近状态", "updatedAt": "更新时间", "actions": "操作" },
 	  "status": { "never": "未执行", "pending": "等待中", "running": "运行中", "success": "成功", "failed": "失败", "cancelled": "已取消" },
 	  "allTypes": "全部任务类型", "total": "共 {total} 条", "enabled": "启用", "disabled": "停用",
-	  "refresh": "刷新", "create": "从数据探查创建", "detail": "详情", "execute": "执行", "monitor": "监控", "delete": "删除",
+	  "refresh": "刷新", "create": "从数据探查创建", "createSpatial": "新建空间任务", "detail": "详情", "edit": "编辑", "execute": "执行", "monitor": "监控", "delete": "删除",
 	  "version": "版本", "semanticKey": "语义身份", "config": "类型配置", "empty": "暂无派生任务",
 	  "loadFailed": "加载派生任务失败", "executeQueued": "任务已进入执行队列", "executeFailed": "任务执行失败",
 	  "deleteConfirm": "确认删除该任务定义？已发布的业务数据不会随任务删除。", "deleteSuccess": "任务已删除", "deleteFailed": "删除任务失败"

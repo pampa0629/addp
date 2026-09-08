@@ -75,12 +75,11 @@ CSV、JSON、Parquet、Excel、Shapefile、GeoJSON、图片、PDF、文本
 快显GeoJSON调试: GET  /api/v1/manager/quick-view/geojson?locator={ResourceLocator}
 快显MVT瓦片: GET  /api/v1/manager/quick-view/tiles/{z}/{x}/{y}.mvt?locator={ResourceLocator}
 栅格快显 COG内容:  GET  /api/v1/manager/raster_cog/{id}/content
-栅格快显 COG生成任务: GET  /api/v1/manager/raster_cog_tasks
+派生任务列表:         GET  /api/v1/manager/tasks?category=managed_quick_view|spatial_business
+派生任务维护:         POST|GET|PUT|DELETE /api/v1/manager/tasks/{task_type}[/{id}]
 栅格快显 COG结果:  GET  /api/v1/manager/raster_cog
 点云 COPC 内容:     GET  /api/v1/manager/point_cloud_copc/{id}/content
-点云 COPC 任务:     GET  /api/v1/manager/point_cloud_copc_tasks
 点云 COPC 结果:     GET  /api/v1/manager/point_cloud_copc
-瓦片缓存任务: GET  /api/v1/manager/vector_tile_cache_tasks
 瓦片缓存结果: GET  /api/v1/manager/vector_tile_cache
 数据检索:     GET  /api/v1/manager/search
 ```
@@ -107,17 +106,16 @@ CSV、JSON、Parquet、Excel、Shapefile、GeoJSON、图片、PDF、文本
 ### 快显、矢量物化视图与瓦片缓存
 1. `preview_state` - 预览状态，只记录 item 的预览模式偏好和基础预览 / 快显各自的视角状态。
 2. `vector_materialized_view` - 矢量物化视图结果，只登记 Manager 创建并拥有生命周期的 3857 优化目标。
-3. `vector_materialized_view_tasks` - 矢量物化视图任务定义，TaskProvider `task_type=vector_materialized_view_generation`。
-4. `raster_cog` - 栅格快显 COG生成结果，只登记 Manager 创建并上传到 infra MinIO 的 COG 副本。
-5. `raster_cog_tasks` - 栅格快显 COG生成任务定义，TaskProvider `task_type=raster_cog_generation`，当前不声明自身定时调度能力。
+3. `task_definitions` - 快显管理与空间任务的统一定义表；`task_type` 选择强类型校验、执行器和结果策略。
+4. `task_resource_bindings` - 派生任务源/目标资源的规范化绑定，供引擎生命周期和资源回收使用。
+5. `raster_cog` - 栅格快显 COG生成结果，只登记 Manager 创建并上传到 infra MinIO 的 COG 副本。
 6. `vector_tile_cache` - 瓦片缓存结果状态，记录存储引用、格式、范围和层级。
-7. `vector_tile_cache_tasks` - 瓦片缓存生成任务定义，TaskProvider `task_type=vector_tile_cache_generation`。
-8. `model_3d_glb` / `model_3d_glb_tasks` - 单体三维模型 GLB 快显结果和任务定义，TaskProvider `task_type=model_3d_glb_generation`。
-9. `model3d_tiles` / `model3d_tiles_tasks` - 分块三维模型瓦片结果和任务定义，TaskProvider `task_type=model3d_tiles_generation`，`target_format=3d_tiles|s3m`。
-10. `gaussian_splat_ksplat` / `gaussian_splat_ksplat_tasks` - 3DGS - KSplat 快显结果和任务定义，TaskProvider `task_type=gaussian_splat_ksplat_generation`。
-11. `point_cloud_copc` / `point_cloud_copc_tasks` - 点云 COPC 快显结果和任务定义，TaskProvider `task_type=point_cloud_copc_generation`；源 `format=copc` 直接基础预览。
-12. MVT 是瓦片格式，进入 `config.tile.format=mvt`，不是任务类型；COG 是 TIFF profile 或 Manager COG 生成结果，不是新的基础 format。
-13. 当前 `vector_tile_cache_generation`、`vector_materialized_view_generation` 和 `raster_cog_generation` 由 Manager Backend 内部执行；COG 生成使用 Manager 预处理 GDAL `source_uri` / `target_uri` / `gdal_env`，再通过 `WorkflowRuntimeProvider.InvokeOperator("tiff_to_cog")` direct 调用 GeoPython Workflow，并直接写入 infra MinIO 的单一路线。点云 COPC 生成使用 Manager 预处理 PDAL `source.root_uri` 和 Manager infra MinIO 发布计划，再通过 `pointcloud_workflow` direct operator 读取源 URI、写入受控工作目录并发布为 Manager 私有 COPC artifact。
+7. `model_3d_glb` - 单体三维模型 GLB 快显结果，TaskProvider `task_type=model_3d_glb_generation`。
+8. `model3d_tiles` - 分块三维模型瓦片结果，TaskProvider `task_type=model3d_tiles_generation`，`target_format=3d_tiles|s3m`。
+9. `gaussian_splat_ksplat` - 3DGS - KSplat 快显结果，TaskProvider `task_type=gaussian_splat_ksplat_generation`。
+10. `point_cloud_copc` - 点云 COPC 快显结果，TaskProvider `task_type=point_cloud_copc_generation`；源 `format=copc` 直接基础预览。
+11. MVT 是瓦片格式，进入 `config.tile.format=mvt`，不是任务类型；COG 是 TIFF profile 或 Manager COG 生成结果，不是新的基础 format。
+12. 当前 `vector_tile_cache_generation`、`vector_materialized_view_generation` 和 `raster_cog_generation` 由 Manager Backend 内部执行；COG 生成使用 Manager 预处理 GDAL `source_uri` / `target_uri` / `gdal_env`，再通过 `WorkflowRuntimeProvider.InvokeOperator("tiff_to_cog")` direct 调用 GeoPython Workflow，并直接写入 infra MinIO 的单一路线。点云 COPC 生成使用 Manager 预处理 PDAL `source.root_uri` 和 Manager infra MinIO 发布计划，再通过 `pointcloud_workflow` direct operator 读取源 URI、写入受控工作目录并发布为 Manager 私有 COPC artifact。
 
 COG 生成运行要求：
 

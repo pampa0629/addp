@@ -79,6 +79,17 @@ func updateTaskDefinition(ctx context.Context, db *gorm.DB, taskType string, tas
 	})
 }
 
+func deleteTaskDefinition(ctx context.Context, db *gorm.DB, taskType string, id, tenantID uint) error {
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("task_definition_id = ? AND tenant_id = ?", id, tenantID).
+			Delete(&models.TaskResourceBinding{}).Error; err != nil {
+			return err
+		}
+		return tx.Where("id = ? AND tenant_id = ? AND task_type = ?", id, tenantID, taskType).
+			Delete(&models.TaskDefinition{}).Error
+	})
+}
+
 func replaceTaskResourceBindings(tx *gorm.DB, task *models.TaskDefinition) error {
 	if err := tx.Where("task_definition_id = ?", task.ID).Delete(&models.TaskResourceBinding{}).Error; err != nil {
 		return err
@@ -247,10 +258,5 @@ func (r *TaskDefinitionRepository) List(ctx context.Context, filter TaskDefiniti
 }
 
 func (r *TaskDefinitionRepository) Delete(ctx context.Context, tenantID uint, taskType string, id uint) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("task_definition_id = ? AND tenant_id = ?", id, tenantID).Delete(&models.TaskResourceBinding{}).Error; err != nil {
-			return err
-		}
-		return tx.Where("id = ? AND tenant_id = ? AND task_type = ?", id, tenantID, taskType).Delete(&models.TaskDefinition{}).Error
-	})
+	return deleteTaskDefinition(ctx, r.db, taskType, id, tenantID)
 }

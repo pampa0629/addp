@@ -278,10 +278,22 @@ func TestIAMManagementServicesAgainstPostgres(t *testing.T) {
 		t.Fatalf("establish managed membership: %v", err)
 	}
 	memberships, membershipTotal, err := membershipService.ListManagedMemberships(
-		ctx, tenant.ID, 1, 20, "Membership", nil,
+		ctx, tenant.ID, TenantMembershipFilter{Search: "Membership", PrincipalType: &requesterType}, 1, 20,
 	)
 	if err != nil || membershipTotal != 1 || len(memberships) != 1 || memberships[0].ID != membership.Membership.ID {
 		t.Fatalf("managed membership list = %#v total=%d err=%v", memberships, membershipTotal, err)
+	}
+	servicePrincipalType := PrincipalTypeServicePrincipal
+	serviceMemberships, serviceMembershipTotal, err := membershipService.ListManagedMemberships(
+		ctx, tenant.ID, TenantMembershipFilter{PrincipalType: &servicePrincipalType}, 1, 100,
+	)
+	if err != nil || serviceMembershipTotal == 0 || len(serviceMemberships) == 0 {
+		t.Fatalf("managed service memberships = %#v total=%d err=%v", serviceMemberships, serviceMembershipTotal, err)
+	}
+	for _, managedMembership := range serviceMemberships {
+		if managedMembership.PrincipalType != PrincipalTypeServicePrincipal {
+			t.Fatalf("managed service membership principal type = %q", managedMembership.PrincipalType)
+		}
 	}
 	expiresAt := currentTime.Add(24 * time.Hour)
 	if _, err := membershipService.UpdateManagedMembership(ctx, UpdateTenantMembershipInput{

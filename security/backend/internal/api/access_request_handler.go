@@ -97,7 +97,7 @@ func (h *AccessRequestHandler) ListMine(c *gin.Context) {
 }
 
 // @Summary 原值访问待审批申请 | List plaintext access review queue
-// @Description 返回当前租户全部待审批申请，并明确当前用户能否审批；本人申请可见但不能审批 | Return every pending request in the current tenant and whether the current user may decide it; self-submitted requests remain visible but cannot be decided by the requester
+// @Description 返回当前租户全部待处理申请，并明确当前用户能否审批；本人申请和已过期申请可见但不能审批 | Return every pending record in the current tenant and whether the current user may decide it; self-submitted and expired requests remain visible but cannot be decided
 // @Tags Protection Access Request
 // @Produce json
 // @Param page query int false "页码 | Page number"
@@ -122,7 +122,7 @@ func (h *AccessRequestHandler) ReviewQueue(c *gin.Context) {
 }
 
 // @Summary 审批原值访问申请 | Decide plaintext access request
-// @Description 申请人不能审批自己的申请；批准后原子生成按用户临时授权和新投影 | The requester cannot decide their own request; approval atomically creates a subject-scoped temporary grant and projection
+// @Description 申请人不能审批自己的申请，超过申请截止时间后也不能审批；批准后原子生成按用户临时授权和新投影 | The requester cannot decide their own request, and an expired request cannot be decided; approval atomically creates a subject-scoped temporary grant and projection
 // @Tags Protection Access Request
 // @Accept json
 // @Produce json

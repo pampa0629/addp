@@ -22,8 +22,8 @@ test('ResourceTreePicker is the single form-level resource tree implementation',
 
 test('manager resource-selection forms compose ResourceTreePicker instead of rebuilding resource trees', () => {
   const consumers = [
-    'manager/frontend/src/views/TileCache.vue',
-    'manager/frontend/src/views/VectorMaterializedView.vue',
+    'manager/frontend/src/components/tasks/VectorTileSetTaskEditor.vue',
+    'manager/frontend/src/components/tasks/RasterMosaicTaskEditor.vue',
     'manager/frontend/src/views/VectorizationTasks.vue'
   ]
 

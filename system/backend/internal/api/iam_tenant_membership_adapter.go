@@ -36,7 +36,7 @@ type IAMUpdateTenantMembershipRequest struct {
 }
 
 type iamTenantMembershipService interface {
-	ListManagedMemberships(context.Context, int64, int, int, string, *iam.TenantMembershipStatus) ([]iam.ManagedTenantMembership, int64, error)
+	ListManagedMemberships(context.Context, int64, iam.TenantMembershipFilter, int, int) ([]iam.ManagedTenantMembership, int64, error)
 	GetManagedMembership(context.Context, int64, int64) (*iam.ManagedTenantMembership, error)
 	UpdateManagedMembership(context.Context, iam.UpdateTenantMembershipInput) (*iam.TenantMembershipChangeResult, error)
 	SuspendMembership(context.Context, iam.ChangeTenantMembershipInput) (*iam.TenantMembershipChangeResult, error)
@@ -64,6 +64,7 @@ func NewIAMTenantMembershipHandler(service iamTenantMembershipService) (*IAMTena
 // @Param        page_size query int false "每页数量 | Page size"
 // @Param        search query string false "姓名或用户名 | Name or username"
 // @Param        status query string false "状态 | Status"
+// @Param        principal_type query string false "成员类型：user 或 service_principal | Member type: user or service_principal"
 // @Success      200 {object} object{data=[]IAMTenantMembershipResponse,total=int64,page=int,page_size=int,total_pages=int}
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["iam.tenant_membership.read"]
@@ -82,9 +83,16 @@ func (h *IAMTenantMembershipHandler) List(c *gin.Context) {
 		respondIAMError(c, err)
 		return
 	}
+	principalType, err := parseTenantMembershipPrincipalTypeFilter(c.Query("principal_type"))
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
 	page, pageSize := commonapi.ParsePagination(c)
 	memberships, total, err := h.service.ListManagedMemberships(
-		c.Request.Context(), int64(tenantID), page, pageSize, c.Query("search"), status,
+		c.Request.Context(), int64(tenantID), iam.TenantMembershipFilter{
+			Search: c.Query("search"), Status: status, PrincipalType: principalType,
+		}, page, pageSize,
 	)
 	if err != nil {
 		respondIAMError(c, err)
@@ -284,6 +292,19 @@ func parseTenantMembershipStatusFilter(value string) (*iam.TenantMembershipStatu
 		return &status, nil
 	default:
 		return nil, fmt.Errorf("%w: invalid membership status", commonapi.ErrBadRequest)
+	}
+}
+
+func parseTenantMembershipPrincipalTypeFilter(value string) (*iam.PrincipalType, error) {
+	if strings.TrimSpace(value) == "" {
+		return nil, nil
+	}
+	principalType := iam.PrincipalType(value)
+	switch principalType {
+	case iam.PrincipalTypeUser, iam.PrincipalTypeServicePrincipal:
+		return &principalType, nil
+	default:
+		return nil, fmt.Errorf("%w: invalid membership principal type", commonapi.ErrBadRequest)
 	}
 }
 

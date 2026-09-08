@@ -96,6 +96,7 @@
 |---|---|---|---|
 | business domain | 业务域 | 对业务能力、业务语义和治理责任进行稳定划分的组织边界。 | 业务域是跨 Standard、Model、Catalog、Quality 等模块复用的治理维度；它不是权限/审批容器、目录分类或可见范围。对象可由一个业务域负责，同时被其他业务域复用。 |
 | standard scope | 标准适用范围 | 描述标准对象在哪个治理范围内成立，固定为 `platform`、`tenant_common` 或 `domain`。 | `domain` 范围必须指定 `owner_domain_id`；`platform` 和 `tenant_common` 不强制归属业务域。适用范围回答“在哪里成立”，归属域回答“谁负责”，二者不可混用。 |
+| standard stable code | 标准稳定编码 | 在一个 Tenant 和确定标准类型内唯一、创建后不可变的机器标识。 | 业务域、业务术语、数据元、码值集、指标定义、标准文档、标准集及标准分类的公开创建入口统一接受小写 `snake_case`；不自动转换用户输入。业务域和适用范围可独立调整，因此归属域编码前缀不是正式标准稳定编码的强制组成部分；业务域前缀只是 Copilot 新候选的生成约束。 |
 | standard collection | 标准集 | 为标准对象提供成员维护、对象级管理权限、审核流程和维护责任配置的稳定治理容器。 | 标准集可以跨业务域组织对象，不承担业务分类和复用范围语义；对象是否归属标准集不改变其稳定身份、适用范围、归属域或自身发布状态。 |
 | standard collection revision | 标准集修订 | 标准集名称、说明和成员清单的一次完整治理配置快照。 | 状态固定为 `draft`、`in_review`、`published`、`withdrawn`；发布后不可修改，后续调整必须创建新修订。成员引用标准稳定身份，不复制或替代成员自身的业务修订。 |
 | standard collection assignment | 标准集职责分配 | 将当前租户中的 User Principal 以 `owner`、`maintainer` 或 `reviewer` 角色绑定到标准集。 | `owner` 管理职责分配并具备维护能力，`maintainer` 编辑和提交集合修订，`reviewer` 退回或发布；发布者不得是该修订的提交者。模块 Permission 是进入能力的粗粒度门禁，职责分配是集合对象级门禁。 |
@@ -117,7 +118,7 @@
 | standard document revision | 标准文档修订 | 标准来源文档一次不可变的内容快照及其版本、来源和生效信息。 | 属于 Standard。Copilot 可从修订内容提取标准候选项，但提取结果必须保留页码、章节或文本片段等证据，并经人工审核后才能发布为正式标准修订。 |
 | standard extraction | 标准提炼批次 | Standard 针对一个确定的标准文档修订发起、由 Copilot 执行的一次候选标准提炼。 | Standard 保存批次、结果与人工处置事实；Copilot 只返回候选内容，不保存 Standard 业务状态，也不能创建或发布正式标准。重复提炼形成新批次，不覆盖旧结果。 |
 | standard extraction candidate | 标准提炼候选 | 从一个标准文档修订中识别出的潜在业务术语、数据元、码值集或指标定义。 | 候选固定引用提炼批次和来源文档修订，状态为 `pending`、`retained` 或 `rejected`；数据元候选的 `data_type` 只能使用 Standard 数据元类型，码值集候选只能使用 `string`、`int`、`bigint`，术语和指标候选不得携带 `data_type`；数据元候选的 `value_domain_kind` 只能使用 `unrestricted`、`range`、`enumeration`。枚举数据元候选必须通过 `code_set_code` 引用同一批次中唯一的码值集候选，非枚举候选不得携带该字段；该编码只闭合候选间语义关系，正式发布数据元时仍必须由 Standard 冻结具体 `code_set_revision_id`。`identifier` 等业务语义不得混入数据类型或值域类型，`numeric`、`date_or_datetime` 等模糊上位提示也不是合法标准数据类型；`retained` 只表示人工认为值得后续建标，仍不是正式标准身份或修订。 |
-| standard candidate code namespace | 标准候选编码命名空间 | Standard 为一次文档提炼确定的候选编码前缀约束。 | `domain` 范围文档使用权威归属业务域编码作为命名空间，新候选编码必须以 `<domain_code>_` 开头；业务域编码必须是小写 `snake_case`，Standard 不自动转换或猜测。租户公共或平台文档不附加领域前缀。Standard 同时向 Copilot 提供同一文档中符合当前命名空间的既有候选类型、编码、名称和定义作为编码复用提示；提示不是模糊合并依据，Copilot 与 Standard 仍分别校验输出编码。 |
+| standard candidate code namespace | 标准候选编码命名空间 | Standard 为一次文档提炼确定的候选编码前缀约束。 | `domain` 范围文档使用权威归属业务域编码作为命名空间，新候选编码必须以 `<domain_code>_` 开头；业务域编码必须是小写 `snake_case`，Standard 不自动转换或猜测。租户公共或平台文档不附加领域前缀。该前缀只约束 Copilot 新候选，不把归属域固化到正式标准稳定编码语义中。Standard 同时向 Copilot 提供同一文档中符合当前命名空间的既有候选类型、编码、名称和定义作为编码复用提示；提示不是模糊合并依据，Copilot 与 Standard 仍分别校验输出编码。 |
 | standard extraction candidate group view | 标准提炼候选聚合视图 | Standard 将同一标准文档稳定身份历次提炼中的确定性同义候选聚合成一个可裁决读取单元。 | 聚合键为候选类型、编码以及规范化名称、定义和完整候选载荷的 SHA-256 语义指纹；码值项和维度先按稳定顺序规范化。同类型、同编码但内容不同的候选仍是不同聚合项，不使用模型相似度自动合并。该视图不持久化、不改写原始候选；每次出现、提炼批次、文档修订、证据、人工处置和正式化事实均完整保留。 |
 | standard candidate formalization | 标准候选正式化 | 将一个已保留标准提炼候选转化为受治理标准草稿，或确认其对应既有相同内容修订的不可变治理事实。 | Standard 根据同类型、同编码的实时比对唯一决定结果：无稳定身份时创建 R1 草稿；已有稳定身份且没有工作修订时，以最新修订为基线创建候选内容的新草稿；候选与现有草稿、审核中或已发布修订内容一致时只建立来源关联。范围冲突、已有不同内容的工作修订、无法解析的码值集或计量单位引用必须拒绝。正式化不得提交审核或发布，候选状态仍保持 `retained`。 |
 | standard extraction candidate comparison | 标准提炼候选比对 | Standard 在读取提炼结果时，将候选与当前租户内同类型、同编码的活动标准稳定身份进行确定性比较所得的动态投影。 | 结果固定为 `new`、`exact`、`content_conflict` 或 `scope_conflict`，差异项明确给出字段及候选值、当前标准值；枚举数据元候选的 `code_set_code` 与现有数据元修订所冻结码值集修订的稳定编码比较，不比较数据库 ID；同名不同编码不自动判为重复。比对不写回候选、不创建标准，也不代替人工裁决。 |
@@ -261,12 +262,9 @@
 | 英文术语 | 中文术语 | 定义 | 备注 |
 |---|---|---|---|
 | Manager derived task definition | Manager 派生任务定义 | Manager 对可重复执行的数据派生动作保存的稳定配置；全部类型统一存储，使用 `task_type` 区分强类型配置与执行器。 | 产品分类固定为 `managed_quick_view` 或 `spatial_business`；统一存储不表示统一任务类型或统一结果生命周期。 |
-
-| 英文术语 | 中文术语 | 定义 | 备注 |
-|---|---|---|---|
-| Task | 任务 | 可被执行的业务能力抽象。 | Task 是抽象概念，不是统一任务总表；任务定义归 owner 模块私有表。 |
-| spatial task | 空间任务 | Manager 中按空间数据处理目的组织业务任务的导航与能力分类。 | 不是统一任务表或单一 `task_type`；当前包含“矢量瓦片”，后续空间业务能力按各自任务类型扩展。 |
-| task definition | 任务定义 | “未来应该按什么策略处理什么对象”的定义态。 | 例如 `meta.scan_tasks`、`transfer.transfer_tasks`、`manager.vector_tile_cache_tasks`。 |
+| Task | 任务 | 可被执行的业务能力抽象。 | Task 是抽象概念，不要求平台级统一任务总表；任务定义归 owner 模块存储，owner 可在模块内统一同构定义。 |
+| spatial task | 空间任务 | Manager 中按空间业务派生目的组织的产品分类。 | 与“快显管理”共用 `manager.task_definitions` 控制面，但保持独立 `task_type`、配置校验、执行器与业务结果生命周期。 |
+| task definition | 任务定义 | “未来应该按什么策略处理什么对象”的定义态。 | 例如 `meta.scan_tasks`、`transfer.transfer_tasks`、`manager.task_definitions`。 |
 | task semantic identity | 任务语义身份 | owner 模块用于判定两次创建是否表达同一个持久任务定义的规范化键。 | 不等于任务 ID，也不由 execution ID 构成。受管派生任务通常由租户、稳定源身份和派生变体构成。 |
 | artifact variant | 派生变体 | 在同一稳定源上区分不同当前派生目标的规范化配置投影。 | 例如 `target_format=3d_tiles|s3m`、`tile_format=mvt`、几何列加目标 SRID。不能用输出目录名推断。 |
 | owner task schedule | 任务自身调度 | owner 模块任务定义上保存并由 owner scheduler 触发的独立定时计划。 | 只决定该任务作为独立任务何时自动执行。 |
@@ -456,6 +454,8 @@
 | Delegated Access Token | 受委托访问令牌 | System 为 Agent 代表当前用户调用特定 owner 能力签发的短期、限 audience 和 Scope 令牌。 | 不改变原用户和租户；可绑定 AgentRun / ToolCall 用于审计。 |
 | Runtime Service Principal | 运行时服务主体 | Develop、DuckDB Runtime、Workflow Runtime、Jupyter 等工作负载用于 Client Credentials 和控制面识别的 Service Principal。 | 只证明机器身份并消费与自身 audience 匹配的 Execution Authorization 或 Notebook Session Authorization；不继承发起用户、服务创建人、引擎创建人或 Tenant 全量数据权限。 |
 
+面向 Tenant 管理员的成员列表不直接使用“主体类型”作为界面标签。该页面统一显示“成员类型”，并将 `user`、`service_principal` 分别呈现为“用户”和“服务账号”；这只是 Tenant Membership 视角下的用户友好表达，领域模型、API 字段和审计协议仍使用 Principal、Service Principal 与 `principal_type`。
+
 ## 配置管理
 
 | 英文术语 | 中文术语 | 定义 | 备注 |
@@ -512,8 +512,8 @@
 | preview state | 预览状态 | Manager 中记录某个 data item 的用户预览模式偏好和交互视角状态。 | 目标落点为 `manager.preview_state`；不依赖快显产物是否存在。快显能力、推荐结果和不可用原因由能力 API 动态合成。 |
 | vector tile cache | 矢量瓦片缓存 | 为快显生成、由 Manager 管理生命周期的 infra PMTiles artifact。 | 不是 data item，不进入业务资源树，不允许被 Service 直接依赖。 |
 | vector tile cache result | 矢量瓦片缓存结果 | 某个源 data item 当前可复用的 infra PMTiles artifact 状态。 | 目标落点为 `manager.vector_tile_cache`；属于 artifact state，不是 execution。 |
-| vector tile cache generation task | 矢量瓦片缓存生成任务 | 为快显生成 infra PMTiles 的任务定义；当前不支持任务自身定时调度。 | 目标落点为 `manager.vector_tile_cache_tasks`，TaskProvider `task_type=vector_tile_cache_generation`。 |
-| vector tile set generation task | 矢量瓦片集生成任务 | 把源空间 data item 生成或把合格缓存 artifact 固化为 Business PMTiles data item 的业务派生任务。 | 目标落点为 `manager.vector_tile_set_tasks`，TaskProvider `task_type=vector_tile_set_generation`；结果只存在于业务存储与 Meta，不设 Manager 结果表。 |
+| vector tile cache generation task | 矢量瓦片缓存生成任务 | 为快显生成 infra PMTiles 的任务定义；当前不支持任务自身定时调度。 | 目标落点为 `manager.task_definitions`，TaskProvider `task_type=vector_tile_cache_generation`。 |
+| vector tile set generation task | 矢量瓦片集生成任务 | 把源空间 data item 生成或把合格缓存 artifact 固化为 Business PMTiles data item 的业务派生任务。 | 目标落点为 `manager.task_definitions`，TaskProvider `task_type=vector_tile_set_generation`；结果只存在于业务存储与 Meta，不设 Manager 结果表。 |
 | storage ref | 存储引用 | 指向外部或内部存储位置的稳定引用。 | 上层逻辑消费存储引用，不应硬编码 bucket、prefix 或对象路径规则。 |
 | contentio.Ref | 内容引用 | 一个已确定 content 的定位器，不携带凭据。 | 需要多个 content 时使用 refs 数组。 |
 | contentio.Reader | 内容读取器 | 按内容引用打开单个 content 并读取轻量状态的统一抽象。 | 由编排层基于 engine capability 构造。 |

@@ -610,7 +610,7 @@ erDiagram
         string item_fingerprint "标准 data item 指纹"
         uint item_id "当前 meta item 行引用"
         string locator "资源树回跳定位"
-        uint task_id "manager.vector_tile_cache_tasks.id"
+        uint task_id "manager.task_definitions.id"
         string last_execution_id
         string tile_format "mvt|raster|image|..."
         string storage_ref "瓦片缓存或 manifest 存储引用"

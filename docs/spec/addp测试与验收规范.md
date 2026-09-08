@@ -175,6 +175,8 @@ T4 临时夹具优先通过 owner 正式 API 创建；正式 API 无法建立必
 
 T5 按产品或 Runtime 独立准备真实前置条件，例如 macOS Keychain、安装包生命周期、HA、故障切换或在线厂商证据。统一 `test-release` 分发器只选择 owner 门禁并生成 `addp.release-gate/v1` 报告，不合并不同产品的运行条件。
 
+厂商只提供离线 Docker tar、且 Runtime 受 OS/CPU 架构约束时，官方介质认证归 T5：owner 脚本必须在一处固定官方 HTTPS 地址和 SHA-256，负责下载、校验、`docker load`、原生启动、真实驱动/SQL 断言及所有退出路径清理；workflow 只选择匹配架构的 Runner 并调用统一 `test-release` 入口。此类 suite 不声明 `ADDP_T2_SERVICES`、不进入 `test-integration` 或辅助 macOS 巡检，也不能替代插件实现后的 T2 Provider 集成与 T4 跨模块验收。
+
 发布 workflow 只准备环境、调用标准 Make 入口、归档证据和执行发布动作，不在 YAML 内重写业务测试。System IAM PostgreSQL 属于 T2，不因与发布流程共用 workflow 而变成 T5。
 
 未具备真实凭据或 Runtime 的 T5 suite 不得登记占位实现；需要人工认证时必须明确记录未验证项和后续责任门禁。
@@ -188,7 +190,7 @@ Workflow 只负责：
 - 调用唯一 Make / script 入口。
 - 超时、并发、Artifact、Step Summary 和 required check 名称。
 
-不得在 workflow 中复制 SQL、业务夹具、测试选择表达式、模块启动逻辑或清理逻辑。能通过 Git 和依赖声明自动发现的事实不维护手写清单；必须手工登记的门禁由 `make test-platform` 的一致性检查验证完整性。凡通过 `ADDP_T2_SERVICES` 声明 PostgreSQL、MongoDB、MySQL、OceanBase 或后续数据库 Service 的 T2 门禁，都必须同时登记根 Make 入口、`test-integration` 串行聚合、共享模块变更选择和带摘要的 CI Job；每个声明的 Service 必须存在，并使用显式版本 tag 与镜像 sha256 digest。
+不得在 workflow 中复制 SQL、业务夹具、测试选择表达式、模块启动逻辑或清理逻辑。能通过 Git 和依赖声明自动发现的事实不维护手写清单；必须手工登记的门禁由 `make test-platform` 的一致性检查验证完整性。凡通过 `ADDP_T2_SERVICES` 声明 PostgreSQL、MongoDB、MySQL、OceanBase 或后续数据库 Service 的 T2 门禁，都必须同时登记根 Make 入口、`test-integration` 串行聚合、共享模块变更选择和带摘要的 CI Job；每个声明的 Service 必须存在，并使用显式版本 tag 与镜像 sha256 digest。T5 suite 如声明 `workflow_job`，登记检查必须通用验证该 Job 只经 `test-release` 分发、配置仓库外证据目录并挂接统一摘要，不按产品或数据库类型增加检查分支。
 
 新增或修改模块、测试入口、基础设施依赖、构建方式或 suite 时，必须在同一次变更中同步：
 

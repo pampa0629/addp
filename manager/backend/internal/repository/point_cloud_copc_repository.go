@@ -78,9 +78,7 @@ func (r *PointCloudCOPCRepository) UpdateTask(ctx context.Context, task *models.
 }
 
 func (r *PointCloudCOPCRepository) DeleteTask(ctx context.Context, id uint, tenantID uint) error {
-	return r.db.WithContext(ctx).
-		Where("id = ? AND tenant_id = ? AND task_type = ?", id, tenantID, commonExecution.TaskTypePointCloudCOPCGeneration).
-		Delete(&models.PointCloudCOPCTask{}).Error
+	return deleteTaskDefinition(ctx, r.db, commonExecution.TaskTypePointCloudCOPCGeneration, id, tenantID)
 }
 
 func (r *PointCloudCOPCRepository) ClaimExecution(
@@ -88,11 +86,11 @@ func (r *PointCloudCOPCRepository) ClaimExecution(
 ) (*models.PointCloudCOPCTask, error) {
 	var task models.PointCloudCOPCTask
 	err := newTaskExecutionLifecycle(r.db).Claim(ctx, taskID, tenantID, execution, taskExecutionClaimSpec{
-		TaskModel: &task,
-		TaskType:  commonExecution.TaskTypePointCloudCOPCGeneration,
+		TaskModel:      &task,
+		TaskType:       commonExecution.TaskTypePointCloudCOPCGeneration,
 		TaskTypeColumn: true,
-		TaskLabel: "point cloud COPC",
-		TaskName:  func() string { return task.Name },
+		TaskLabel:      "point cloud COPC",
+		TaskName:       func() string { return task.Name },
 		TaskConfig: func() commonModels.JSONMap {
 			return task.Config
 		},

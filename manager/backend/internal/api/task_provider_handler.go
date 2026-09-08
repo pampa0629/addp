@@ -605,6 +605,7 @@ type PointCloudCOPCTaskResponse struct {
 // @Tags Manager
 // @Produce json
 // @Param task_type query string false "任务类型过滤：vector_tile_cache_generation|vector_tile_set_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|embedding | Task type filter"
+// @Param category query string false "Manager 派生任务产品分类：managed_quick_view|spatial_business | Manager derived-task product category"
 // @Param page query int false "页码，默认1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认20 | Page size, default 20"
 // @Success 200 {object} TaskListResponse "任务列表 | Task list"
@@ -1125,7 +1126,6 @@ func (h *TaskProviderHandler) DeleteDerivedTask(c *gin.Context) {
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.read"]
-// @Router /vector_tile_cache_tasks [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ListTileCacheTasks(c *gin.Context) {
 	tenantID := tenantIDValue(c)
@@ -1396,7 +1396,6 @@ func managerTaskExecutionContract(taskType string) taskprovider.ExecutionContrac
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.read"]
-// @Router /vector_tile_cache_tasks/{id} [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) GetTileCacheTask(c *gin.Context) {
 	tenantID := tenantIDValue(c)
@@ -1868,7 +1867,6 @@ func boolFromConfig(value interface{}, defaultValue bool) bool {
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.create"]
-// @Router /vector_tile_cache_tasks [post]
 // @Security BearerAuth
 func (h *TaskProviderHandler) CreateTileCacheTask(c *gin.Context) {
 	tenantID := tenantIDValue(c)
@@ -1912,7 +1910,6 @@ func (h *TaskProviderHandler) CreateTileCacheTask(c *gin.Context) {
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.update"]
-// @Router /vector_tile_cache_tasks/{id} [put]
 // @Security BearerAuth
 func (h *TaskProviderHandler) UpdateTileCacheTask(c *gin.Context) {
 	tenantID := tenantIDValue(c)
@@ -1965,7 +1962,6 @@ func (h *TaskProviderHandler) UpdateTileCacheTask(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.delete"]
-// @Router /vector_tile_cache_tasks/{id} [delete]
 // @Security BearerAuth
 func (h *TaskProviderHandler) DeleteTileCacheTask(c *gin.Context) {
 	tenantID := tenantIDValue(c)
@@ -1989,7 +1985,6 @@ func (h *TaskProviderHandler) DeleteTileCacheTask(c *gin.Context) {
 // @Success 200 {object} TaskListResponse "任务列表 | Task list"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.read"]
-// @Router /vector_tile_set_tasks [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ListVectorTileSetTasks(c *gin.Context) {
 	tenantID := tenantIDValue(c)
@@ -2012,7 +2007,6 @@ func (h *TaskProviderHandler) ListVectorTileSetTasks(c *gin.Context) {
 // @Success 201 {object} models.VectorTileSetTask "任务 | Task"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.create"]
-// @Router /vector_tile_set_tasks [post]
 // @Security BearerAuth
 func (h *TaskProviderHandler) CreateVectorTileSetTask(c *gin.Context) {
 	var req TileCacheTaskRequest
@@ -2043,7 +2037,6 @@ func (h *TaskProviderHandler) CreateVectorTileSetTask(c *gin.Context) {
 // @Success 200 {object} models.VectorTileSetTask "任务 | Task"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.read"]
-// @Router /vector_tile_set_tasks/{id} [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) GetVectorTileSetTask(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
@@ -2073,7 +2066,6 @@ func (h *TaskProviderHandler) GetVectorTileSetTask(c *gin.Context) {
 // @Success 200 {object} models.VectorTileSetTask "任务 | Task"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.update"]
-// @Router /vector_tile_set_tasks/{id} [put]
 // @Security BearerAuth
 func (h *TaskProviderHandler) UpdateVectorTileSetTask(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
@@ -2113,7 +2105,6 @@ func (h *TaskProviderHandler) UpdateVectorTileSetTask(c *gin.Context) {
 // @Success 204 "删除成功 | Deleted"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.delete"]
-// @Router /vector_tile_set_tasks/{id} [delete]
 // @Security BearerAuth
 func (h *TaskProviderHandler) DeleteVectorTileSetTask(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
@@ -2138,7 +2129,6 @@ func (h *TaskProviderHandler) DeleteVectorTileSetTask(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "任务列表 | Task list"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.read"]
-// @Router /vector_materialized_view_tasks [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ListVectorMaterializedViewTasks(c *gin.Context) {
 	tenantID := tenantIDValue(c)
@@ -2165,7 +2155,6 @@ func (h *TaskProviderHandler) ListVectorMaterializedViewTasks(c *gin.Context) {
 // @Success 201 {object} VectorMaterializedViewTaskResponse "创建的任务配置 | Created task configuration"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.create"]
-// @Router /vector_materialized_view_tasks [post]
 // @Security BearerAuth
 func (h *TaskProviderHandler) CreateVectorMaterializedViewTask(c *gin.Context) {
 	tenantID := tenantIDValue(c)
@@ -2204,7 +2193,6 @@ func (h *TaskProviderHandler) CreateVectorMaterializedViewTask(c *gin.Context) {
 // @Success 200 {object} VectorMaterializedViewTaskResponse "任务配置 | Task configuration"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.read"]
-// @Router /vector_materialized_view_tasks/{id} [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) GetVectorMaterializedViewTask(c *gin.Context) {
 	c.Params = append(c.Params, gin.Param{Key: "task_type", Value: commonExecution.TaskTypeVectorMaterializedViewGeneration})
@@ -2221,7 +2209,6 @@ func (h *TaskProviderHandler) GetVectorMaterializedViewTask(c *gin.Context) {
 // @Success 200 {object} VectorMaterializedViewTaskResponse "更新后的任务配置 | Updated task configuration"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.update"]
-// @Router /vector_materialized_view_tasks/{id} [put]
 // @Security BearerAuth
 func (h *TaskProviderHandler) UpdateVectorMaterializedViewTask(c *gin.Context) {
 	tenantID := tenantIDValue(c)
@@ -2267,7 +2254,6 @@ func (h *TaskProviderHandler) UpdateVectorMaterializedViewTask(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.delete"]
-// @Router /vector_materialized_view_tasks/{id} [delete]
 // @Security BearerAuth
 func (h *TaskProviderHandler) DeleteVectorMaterializedViewTask(c *gin.Context) {
 	tenantID := tenantIDValue(c)
@@ -2293,7 +2279,6 @@ func (h *TaskProviderHandler) DeleteVectorMaterializedViewTask(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "任务列表 | Task list"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.read"]
-// @Router /raster_cog_tasks [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ListRasterCOGTasks(c *gin.Context) {
 	tenantID := tenantIDValue(c)
@@ -2319,7 +2304,6 @@ func (h *TaskProviderHandler) ListRasterCOGTasks(c *gin.Context) {
 // @Success 200 {object} RasterCOGTaskResponse "任务配置 | Task configuration"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.read"]
-// @Router /raster_cog_tasks/{id} [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) GetRasterCOGTask(c *gin.Context) {
 	c.Params = append(c.Params, gin.Param{Key: "task_type", Value: commonExecution.TaskTypeRasterCOGGeneration})
@@ -2334,7 +2318,6 @@ func (h *TaskProviderHandler) GetRasterCOGTask(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.delete"]
-// @Router /raster_cog_tasks/{id} [delete]
 // @Security BearerAuth
 func (h *TaskProviderHandler) DeleteRasterCOGTask(c *gin.Context) {
 	tenantID := tenantIDValue(c)
@@ -2360,7 +2343,6 @@ func (h *TaskProviderHandler) DeleteRasterCOGTask(c *gin.Context) {
 // @Success 200 {object} map[string]interface{} "任务列表 | Task list"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.read"]
-// @Router /raster_mosaic_tasks [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ListRasterMosaicTasks(c *gin.Context) {
 	tenantID := tenantIDValue(c)
@@ -2389,7 +2371,6 @@ func (h *TaskProviderHandler) ListRasterMosaicTasks(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.create"]
-// @Router /raster_mosaic_tasks [post]
 // @Security BearerAuth
 func (h *TaskProviderHandler) CreateRasterMosaicTask(c *gin.Context) {
 	tenantID := tenantIDValue(c)
@@ -2430,7 +2411,6 @@ func (h *TaskProviderHandler) CreateRasterMosaicTask(c *gin.Context) {
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.read"]
-// @Router /raster_mosaic_tasks/{id} [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) GetRasterMosaicTask(c *gin.Context) {
 	c.Params = append(c.Params, gin.Param{Key: "task_type", Value: commonExecution.TaskTypeRasterMosaicGeneration})
@@ -2449,7 +2429,6 @@ func (h *TaskProviderHandler) GetRasterMosaicTask(c *gin.Context) {
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.update"]
-// @Router /raster_mosaic_tasks/{id} [put]
 // @Security BearerAuth
 func (h *TaskProviderHandler) UpdateRasterMosaicTask(c *gin.Context) {
 	tenantID := tenantIDValue(c)
@@ -2496,7 +2475,6 @@ func (h *TaskProviderHandler) UpdateRasterMosaicTask(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.delete"]
-// @Router /raster_mosaic_tasks/{id} [delete]
 // @Security BearerAuth
 func (h *TaskProviderHandler) DeleteRasterMosaicTask(c *gin.Context) {
 	tenantID := tenantIDValue(c)
@@ -2523,7 +2501,6 @@ func (h *TaskProviderHandler) DeleteRasterMosaicTask(c *gin.Context) {
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.read"]
-// @Router /model3d_tiles_tasks [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ListModel3DTilesTasks(c *gin.Context) {
 	tenantID := tenantIDValue(c)
@@ -2551,7 +2528,6 @@ func (h *TaskProviderHandler) ListModel3DTilesTasks(c *gin.Context) {
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.read"]
-// @Router /model3d_tiles_tasks/{id} [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) GetModel3DTilesTask(c *gin.Context) {
 	c.Params = append(c.Params, gin.Param{Key: "task_type", Value: commonExecution.TaskTypeModel3DTilesGeneration})
@@ -2567,7 +2543,6 @@ func (h *TaskProviderHandler) GetModel3DTilesTask(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.delete"]
-// @Router /model3d_tiles_tasks/{id} [delete]
 // @Security BearerAuth
 func (h *TaskProviderHandler) DeleteModel3DTilesTask(c *gin.Context) {
 	tenantID := tenantIDValue(c)
@@ -2663,7 +2638,6 @@ func (h *TaskProviderHandler) DeleteModel3DTilesResult(c *gin.Context) {
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.read"]
-// @Router /model_3d_glb_tasks [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ListModel3DGLBTasks(c *gin.Context) {
 	tenantID := tenantIDValue(c)
@@ -2692,7 +2666,6 @@ func (h *TaskProviderHandler) ListModel3DGLBTasks(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.create"]
-// @Router /model_3d_glb_tasks [post]
 // @Security BearerAuth
 func (h *TaskProviderHandler) CreateModel3DGLBTask(c *gin.Context) {
 	tenantID := tenantIDValue(c)
@@ -2733,7 +2706,6 @@ func (h *TaskProviderHandler) CreateModel3DGLBTask(c *gin.Context) {
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.read"]
-// @Router /model_3d_glb_tasks/{id} [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) GetModel3DGLBTask(c *gin.Context) {
 	c.Params = append(c.Params, gin.Param{Key: "task_type", Value: commonExecution.TaskTypeModel3DGLBGeneration})
@@ -2752,7 +2724,6 @@ func (h *TaskProviderHandler) GetModel3DGLBTask(c *gin.Context) {
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.update"]
-// @Router /model_3d_glb_tasks/{id} [put]
 // @Security BearerAuth
 func (h *TaskProviderHandler) UpdateModel3DGLBTask(c *gin.Context) {
 	tenantID := tenantIDValue(c)
@@ -2799,7 +2770,6 @@ func (h *TaskProviderHandler) UpdateModel3DGLBTask(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.delete"]
-// @Router /model_3d_glb_tasks/{id} [delete]
 // @Security BearerAuth
 func (h *TaskProviderHandler) DeleteModel3DGLBTask(c *gin.Context) {
 	tenantID := tenantIDValue(c)
@@ -2826,7 +2796,6 @@ func (h *TaskProviderHandler) DeleteModel3DGLBTask(c *gin.Context) {
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.read"]
-// @Router /gaussian_splat_ksplat_tasks [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ListGaussianSplatKSplatTasks(c *gin.Context) {
 	tenantID := tenantIDValue(c)
@@ -2855,7 +2824,6 @@ func (h *TaskProviderHandler) ListGaussianSplatKSplatTasks(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.create"]
-// @Router /gaussian_splat_ksplat_tasks [post]
 // @Security BearerAuth
 func (h *TaskProviderHandler) CreateGaussianSplatKSplatTask(c *gin.Context) {
 	tenantID := tenantIDValue(c)
@@ -2896,7 +2864,6 @@ func (h *TaskProviderHandler) CreateGaussianSplatKSplatTask(c *gin.Context) {
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.read"]
-// @Router /gaussian_splat_ksplat_tasks/{id} [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) GetGaussianSplatKSplatTask(c *gin.Context) {
 	c.Params = append(c.Params, gin.Param{Key: "task_type", Value: commonExecution.TaskTypeGaussianSplatKSplatGeneration})
@@ -2915,7 +2882,6 @@ func (h *TaskProviderHandler) GetGaussianSplatKSplatTask(c *gin.Context) {
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.update"]
-// @Router /gaussian_splat_ksplat_tasks/{id} [put]
 // @Security BearerAuth
 func (h *TaskProviderHandler) UpdateGaussianSplatKSplatTask(c *gin.Context) {
 	tenantID := tenantIDValue(c)
@@ -2962,7 +2928,6 @@ func (h *TaskProviderHandler) UpdateGaussianSplatKSplatTask(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.delete"]
-// @Router /gaussian_splat_ksplat_tasks/{id} [delete]
 // @Security BearerAuth
 func (h *TaskProviderHandler) DeleteGaussianSplatKSplatTask(c *gin.Context) {
 	tenantID := tenantIDValue(c)
@@ -2989,7 +2954,6 @@ func (h *TaskProviderHandler) DeleteGaussianSplatKSplatTask(c *gin.Context) {
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.read"]
-// @Router /point_cloud_copc_tasks [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ListPointCloudCOPCTasks(c *gin.Context) {
 	tenantID := tenantIDValue(c)
@@ -3018,7 +2982,6 @@ func (h *TaskProviderHandler) ListPointCloudCOPCTasks(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.create"]
-// @Router /point_cloud_copc_tasks [post]
 // @Security BearerAuth
 func (h *TaskProviderHandler) CreatePointCloudCOPCTask(c *gin.Context) {
 	tenantID := tenantIDValue(c)
@@ -3059,7 +3022,6 @@ func (h *TaskProviderHandler) CreatePointCloudCOPCTask(c *gin.Context) {
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.read"]
-// @Router /point_cloud_copc_tasks/{id} [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) GetPointCloudCOPCTask(c *gin.Context) {
 	c.Params = append(c.Params, gin.Param{Key: "task_type", Value: commonExecution.TaskTypePointCloudCOPCGeneration})
@@ -3078,7 +3040,6 @@ func (h *TaskProviderHandler) GetPointCloudCOPCTask(c *gin.Context) {
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.update"]
-// @Router /point_cloud_copc_tasks/{id} [put]
 // @Security BearerAuth
 func (h *TaskProviderHandler) UpdatePointCloudCOPCTask(c *gin.Context) {
 	tenantID := tenantIDValue(c)
@@ -3125,7 +3086,6 @@ func (h *TaskProviderHandler) UpdatePointCloudCOPCTask(c *gin.Context) {
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["manager.derived_artifact.delete"]
-// @Router /point_cloud_copc_tasks/{id} [delete]
 // @Security BearerAuth
 func (h *TaskProviderHandler) DeletePointCloudCOPCTask(c *gin.Context) {
 	tenantID := tenantIDValue(c)

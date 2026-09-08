@@ -151,7 +151,7 @@ AI 模型接入、在线厂商账号、内网模型服务、模型档案、场�
 3. [元数据 attributes 规范](spec/addp元数据attributes规范.md)：确认 `format_info.tiff`、`type_info.media`、`capabilities.spatial` 的字段归属。
 4. [Manager 快显概念说明](../manager/docs/快显概念说明.md)：确认 `direct_tiff_client`、`client_cog_render`、`raster_cog` 与矢量快显的概念边界。
 5. [Manager 快显实现规范](../manager/docs/快显实现规范.md)：确认 Quick View capability、COG 内容接口、前端 geotiff.js 消费、底图和 related ref 行为。
-6. [Manager raster_cog 表](../manager/docs/tables/raster_cog表.md) 与 [raster_cog_tasks 表](../manager/docs/tables/raster_cog_tasks表.md)：确认 COG 结果和任务定义的字段、状态和生命周期。
+6. [Manager raster_cog 表](../manager/docs/tables/raster_cog表.md) 与 [task_definitions 表](../manager/docs/tables/task_definitions表.md)：确认 COG 结果和统一派生任务定义的字段、状态和生命周期。
 7. [栅格算子体系后续专题](next/栅格算子体系后续专题.md)：查看 `raster_reproject`、`raster_clip`、`raster_statistics`、`raster_to_tiles` 等第一阶段之外的后续算子规划。
 
 ## SuperMap 工作流运行时主题

@@ -61,9 +61,7 @@ func (r *VectorMaterializedViewRepository) UpdateTask(ctx context.Context, task 
 }
 
 func (r *VectorMaterializedViewRepository) DeleteTask(ctx context.Context, id uint, tenantID uint) error {
-	return r.db.WithContext(ctx).
-		Where("id = ? AND tenant_id = ? AND task_type = ?", id, tenantID, commonExecution.TaskTypeVectorMaterializedViewGeneration).
-		Delete(&models.VectorMaterializedViewTask{}).Error
+	return deleteTaskDefinition(ctx, r.db, commonExecution.TaskTypeVectorMaterializedViewGeneration, id, tenantID)
 }
 
 func (r *VectorMaterializedViewRepository) ListAllTasks(ctx context.Context, tenantID uint) ([]*models.VectorMaterializedViewTask, error) {

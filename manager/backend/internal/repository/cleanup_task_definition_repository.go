@@ -195,11 +195,20 @@ func (r *CleanupTaskDefinitionRepository) HardDelete(ctx context.Context, defini
 	if err != nil {
 		return err
 	}
-	query := r.db.WithContext(ctx).Table(spec.Table).Where("id = ? AND tenant_id = ?", definition.ID, definition.TenantID)
-	if spec.Table == "manager.task_definitions" {
-		query = query.Where("task_type = ?", definition.TaskType)
-	}
-	return query.Delete(map[string]interface{}{}).Error
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if spec.Table == "manager.task_definitions" {
+			if err := tx.Table("manager.task_resource_bindings").
+				Where("task_definition_id = ? AND tenant_id = ?", definition.ID, definition.TenantID).
+				Delete(map[string]interface{}{}).Error; err != nil {
+				return err
+			}
+		}
+		query := tx.Table(spec.Table).Where("id = ? AND tenant_id = ?", definition.ID, definition.TenantID)
+		if spec.Table == "manager.task_definitions" {
+			query = query.Where("task_type = ?", definition.TaskType)
+		}
+		return query.Delete(map[string]interface{}{}).Error
+	})
 }
 
 func (r *CleanupTaskDefinitionRepository) specForTaskType(taskType string) (CleanupTaskDefinitionSpec, error) {

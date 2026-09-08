@@ -265,19 +265,19 @@ func TestManagerCleanupFindsAndPhysicallyDeletesPreviouslyDisabledUnknownEngineT
 	if err := db.Exec(`ATTACH DATABASE ':memory:' AS manager`).Error; err != nil {
 		t.Fatalf("attach manager schema: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE manager.model_3d_glb_tasks (
-		id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, enabled BOOLEAN NOT NULL,
-		next_run_at DATETIME, last_execution_status TEXT, config JSON NOT NULL,
-		updated_at DATETIME, deleted_at DATETIME
-	)`).Error; err != nil {
-		t.Fatalf("create task table: %v", err)
-	}
-	if err := db.Exec(`INSERT INTO manager.model_3d_glb_tasks (tenant_id, enabled, config)
-		VALUES (1, TRUE, '{"source":{"source_engine_id":26,"item_locator":"addp://engine/26/path/model.glb?type=file"}}')`).Error; err != nil {
+	ensureDerivedTaskDefinitionTestTables(t, db)
+	if err := db.Exec(`INSERT INTO manager.task_definitions
+		(tenant_id, task_type, version, name, enabled, semantic_key, config)
+		VALUES (1, 'model_3d_glb_generation', 1, 'unknown engine task', TRUE, 'fp-model', '{}')`).Error; err != nil {
 		t.Fatalf("insert task: %v", err)
 	}
+	if err := db.Exec(`INSERT INTO manager.task_resource_bindings
+		(task_definition_id, tenant_id, role, engine_id, locator, item_fingerprint, ordinal)
+		VALUES (1, 1, 'source', 26, 'addp://engine/26/path/model.glb?type=file', 'fp-model', 0)`).Error; err != nil {
+		t.Fatalf("insert task resource binding: %v", err)
+	}
 	repo := repository.NewCleanupTaskDefinitionRepository(db, []repository.CleanupTaskDefinitionSpec{{
-		TaskType: "model_3d_glb_generation", Table: "manager.model_3d_glb_tasks",
+		TaskType: "model_3d_glb_generation", Table: "manager.task_definitions",
 	}})
 	svc := &CleanupService{taskDefinitionRepo: repo, systemClient: newManagerCleanupEmptySystemClient(t)}
 
@@ -299,6 +299,10 @@ func TestManagerCleanupFindsAndPhysicallyDeletesPreviouslyDisabledUnknownEngineT
 	remaining, err := repo.List(context.Background(), 1)
 	if err != nil || len(remaining) != 0 {
 		t.Fatalf("remaining tasks = %#v, error = %v", remaining, err)
+	}
+	var bindingCount int64
+	if err := db.Table("manager.task_resource_bindings").Count(&bindingCount).Error; err != nil || bindingCount != 0 {
+		t.Fatalf("remaining task bindings = %d, error = %v", bindingCount, err)
 	}
 }
 

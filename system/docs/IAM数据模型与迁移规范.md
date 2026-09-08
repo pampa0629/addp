@@ -88,11 +88,17 @@ Department Membership 的 `membership_type` 使用 `primary` / `additional`，`r
 
 列表和详情只返回当前 Tenant 内对象，跨 Tenant ID 与不存在统一返回 `404`。成员创建只接受当前 Tenant 的 `tenant_membership_id`，不能由前端提交 User ID 猜测 Membership。所有写接口使用具体请求 DTO，并返回更新后的完整资源；生命周期动作必须携带 `version` 和非空 `reason`。
 
+`GET /api/v1/system/tenant/memberships` 支持 `search`、`status` 和 `principal_type=user|service_principal` 组合过滤。管理界面将 `principal_type` 呈现为“成员类型”，不得改名或新增平行协议字段。
+
 ## 五、Permission、Role 与高权限治理
 
 `permissions`、`roles`、`role_permissions`、`role_assignments` 和 `role_conflicts` 保存运行时 RBAC 事实。Permission 和内置 Role 的发布规则见 `docs/spec/addp权限与角色发布规范.md`。
 
 当管理员在同一 Membership、Scope、有效期和授权原因下分配多个 Role 时，`POST /api/v1/system/tenant/role_assignments` 只接受 `role_ids` 显式列表，并在单一事务内创建全部 Assignment 与审计事实。任一 Role 不存在、不兼容、不允许指定 Scope、重复分配或需要增强认证时，整批不得产生部分授权事实。
+
+租户 Role 管理列表必须保持单行可浏览：Permission 集合只在主列表展示数量，完整 Permission 按命名空间分组后在详情视图查看，不得用逗号拼接长文本撑高整张表。列表至少支持名称或标识搜索、Role 类型、适用成员类型和允许 Scope 过滤。Role Assignment 列表按 Membership 过滤；“当前账号”只通过 AuthContext 的 `tenant_membership_id` 识别，不按用户名、邮箱或展示名称猜测。
+
+Tenant 审计的成员筛选以所选 Tenant Membership 的 `principal_id` 查询既有审计协议；模块筛选使用 `module_name` 的稳定协议值。界面必须以本地化模块名称作为主标签、稳定 `module_name` 作为辅助标识，不得把中文名称写入审计事实或新增兼容字段。
 
 平台系统管理员、安全管理员和审计管理员是三个互斥 User Role，不存在全权合并角色。平台高权限身份变化使用 `privileged_change_requests` 和 `privileged_change_approvals`，申请人与审批人必须满足职责分离要求。
 

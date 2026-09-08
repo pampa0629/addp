@@ -235,6 +235,7 @@
               v-else-if="showTileCacheGenerationAction"
               size="small"
               type="primary"
+              :loading="quickViewActionLoading"
               @click="handleGenerateTileCache"
             >
               {{ t('manager.spatialPreview.generateTileCache') }}
@@ -243,6 +244,7 @@
               v-if="showVectorMaterializedViewAction"
               size="small"
               type="warning"
+              :loading="quickViewActionLoading"
               @click="handleVectorMaterializedView"
             >
               <el-icon><MagicStick /></el-icon>
@@ -510,10 +512,6 @@ import {
   shouldShowQuickViewTileAdvisoryNotice
 } from '@/utils/quickViewTileAdvisory'
 import { quickViewReasonText } from '@/utils/quickViewReasonText'
-import {
-  buildVectorMaterializedViewCreateQuery,
-  buildTileCacheCreateQuery
-} from '@/utils/quickViewNavigationQuery'
 import {
   waitForRasterCOGExecution
 } from '@/utils/rasterCOGTask'
@@ -2030,29 +2028,46 @@ const handleBackToBasicPreview = async () => {
 
 const handleGenerateTileCache = async () => {
   const target = spatialPreviewTarget.value
-  if (!target) return
-  await navigateManagerRoute(router, {
-    name: 'TileCache',
-    query: buildTileCacheCreateQuery(target, quickViewStatus.value)
-  })
+  if (!target?.locator) return
+  quickViewActionLoading.value = true
+  try {
+    await executeConfirmedQuickViewAction(target.locator, 'generate_vector_tile_cache')
+    ElMessage.success(t('manager.derivedTasks.executeQueued'))
+    await loadQuickViewStatus()
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.error || t('manager.derivedTasks.executeFailed'))
+  } finally {
+    quickViewActionLoading.value = false
+  }
 }
 
 const handleGenerateVectorTileSet = async () => {
   const target = spatialPreviewTarget.value
   if (!target?.locator) return
   await navigateManagerRoute(router, {
-    name: 'VectorTileSet',
-    query: { create: '1', locator: target.locator }
+    name: 'DerivedTasks',
+    query: {
+      category: 'spatial_business',
+      task_type: 'vector_tile_set_generation',
+      create: '1',
+      locator: target.locator
+    }
   })
 }
 
 const handleVectorMaterializedView = async () => {
   const target = spatialPreviewTarget.value
-  if (!target) return
-  await navigateManagerRoute(router, {
-    name: 'VectorMaterializedView',
-    query: buildVectorMaterializedViewCreateQuery(target, quickViewStatus.value)
-  })
+  if (!target?.locator) return
+  quickViewActionLoading.value = true
+  try {
+    await executeConfirmedQuickViewAction(target.locator, 'generate_vector_materialized_view')
+    ElMessage.success(t('manager.derivedTasks.executeQueued'))
+    await loadQuickViewStatus()
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.error || t('manager.derivedTasks.executeFailed'))
+  } finally {
+    quickViewActionLoading.value = false
+  }
 }
 
 const handleGenerateRasterCOG = async () => {

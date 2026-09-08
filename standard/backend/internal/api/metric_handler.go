@@ -40,6 +40,7 @@ func (h *MetricHandler) ListCategories(c *gin.Context) {
 // @Produce json
 // @Param request body models.CreateMetricCategoryRequest true "指标分类 | Metric category"
 // @Success 201 {object} models.MetricCategory
+// @Failure 400 {object} map[string]string "编码或请求参数无效，编码错误返回 error_code=invalid_standard_code | Invalid code or request; code errors return error_code=invalid_standard_code"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.metric.create"]
 // @Router /metric-categories [post]
@@ -181,6 +182,7 @@ func (h *MetricHandler) ListMetrics(c *gin.Context) {
 // @Produce json
 // @Param request body models.CreateMetricRequest true "指标定义与首个草稿 | Metric definition and initial draft"
 // @Success 201 {object} models.MetricDefinitionAggregate
+// @Failure 400 {object} map[string]string "编码或请求参数无效，编码错误返回 error_code=invalid_standard_code | Invalid code or request; code errors return error_code=invalid_standard_code"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.metric.create"]
 // @Router /metrics [post]

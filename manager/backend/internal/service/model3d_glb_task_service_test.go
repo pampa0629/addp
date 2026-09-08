@@ -253,24 +253,6 @@ func newModel3DGLBTaskServiceTestDB(t *testing.T) *gorm.DB {
 	if err := db.Exec("ATTACH DATABASE ':memory:' AS manager").Error; err != nil {
 		t.Fatalf("attach manager schema: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE manager.model_3d_glb_tasks (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		tenant_id INTEGER NOT NULL,
-		name TEXT NOT NULL,
-		description TEXT,
-		enabled BOOLEAN NOT NULL,
-		schedule TEXT,
-		next_run_at DATETIME,
-		last_run_at DATETIME,
-		last_execution_id TEXT,
-		last_execution_status TEXT,
-		config JSON NOT NULL,
-		created_by INTEGER,
-		created_at DATETIME,
-		updated_at DATETIME,
-		deleted_at DATETIME
-	)`).Error; err != nil {
-		t.Fatalf("create model_3d_glb_tasks table: %v", err)
-	}
+	ensureDerivedTaskDefinitionTestTables(t, db)
 	return db
 }

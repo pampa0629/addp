@@ -24,7 +24,7 @@
 
     <el-dialog v-model="dialogVisible" :title="t('standard.collection.create')" width="620px">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="110px">
-        <el-form-item :label="t('standard.common.code')" prop="code"><el-input v-model="form.code" /></el-form-item>
+        <el-form-item :label="t('standard.common.code')" prop="code"><el-input v-model="form.code" :placeholder="t('standard.common.codePlaceholder')" /></el-form-item>
         <el-form-item :label="t('standard.common.name')" prop="name"><el-input v-model="form.name" /></el-form-item>
         <el-form-item :label="t('standard.common.description')" prop="description"><el-input v-model="form.description" type="textarea" :rows="3" /></el-form-item>
         <el-form-item :label="t('standard.revision.changeSummary')" prop="change_summary"><el-input v-model="form.change_summary" type="textarea" :rows="2" /></el-form-item>
@@ -44,6 +44,7 @@ import { standardCollectionAPI } from '../api/standard'
 import { useStandardPermissions } from '../composables/useStandardPermissions'
 import { getStandardErrorMessage } from '../utils/apiError'
 import { navigateStandardRoute } from '../utils/moduleNavigation'
+import { buildStandardCodeRules } from '../utils/standardCode'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -54,7 +55,7 @@ const filters = reactive({ keyword: '', status: '', page: 1, page_size: 20 })
 const statuses = ['draft', 'in_review', 'published']
 const emptyForm = () => ({ code: '', name: '', description: '', change_summary: '', members: [] })
 const form = reactive(emptyForm())
-const rules = computed(() => ({ code:[{required:true,message:t('standard.collection.codeRequired')}], name:[{required:true,message:t('standard.collection.nameRequired')}], description:[{required:true,message:t('standard.collection.descriptionRequired')}], change_summary:[{required:true,message:t('standard.revision.changeSummaryRequired')}] }))
+const rules = computed(() => ({ code:buildStandardCodeRules(t,'standard.collection.codeRequired'), name:[{required:true,message:t('standard.collection.nameRequired')}], description:[{required:true,message:t('standard.collection.descriptionRequired')}], change_summary:[{required:true,message:t('standard.revision.changeSummaryRequired')}] }))
 const workingRevision = row => row.draft_revision || row.current_revision
 const statusLabel = status => status ? t(`standard.revision.status.${status}`) : '-'
 const statusType = status => ({draft:'info',in_review:'warning',published:'success',withdrawn:'danger'}[status] || 'info')

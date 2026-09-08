@@ -59,7 +59,7 @@ func (h *StandardCollectionHandler) List(c *gin.Context) {
 // @Produce json
 // @Param request body models.CreateStandardCollectionRequest true "标准集首个草稿 | Initial collection draft"
 // @Success 201 {object} models.StandardCollectionAggregate
-// @Failure 400 {object} map[string]string
+// @Failure 400 {object} map[string]string "编码或请求参数无效，编码错误返回 error_code=invalid_standard_code | Invalid code or request; code errors return error_code=invalid_standard_code"
 // @Failure 409 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.collection.create"]

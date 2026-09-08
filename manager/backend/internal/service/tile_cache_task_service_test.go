@@ -338,29 +338,18 @@ func newTileCacheTaskServiceTestDB(t *testing.T) *gorm.DB {
 	if err := executiontest.EnsureSQLiteStore(db); err != nil {
 		t.Fatalf("ensure SQLite execution store: %v", err)
 	}
+	ensureDerivedTaskDefinitionTestTables(t, db)
 	statements := []string{
-		`CREATE TABLE manager.vector_tile_cache_tasks (
-			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, name TEXT NOT NULL, description TEXT,
-			enabled BOOLEAN, last_execution_id TEXT, last_execution_status TEXT, last_run_at DATETIME, next_run_at DATETIME,
-			schedule TEXT, created_by INTEGER, config JSON, created_at DATETIME, updated_at DATETIME, deleted_at DATETIME)`,
 		`CREATE TABLE manager.vector_tile_cache (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, item_fingerprint TEXT NOT NULL, item_id INTEGER,
 			locator TEXT, task_id INTEGER, last_execution_id TEXT, tile_format TEXT NOT NULL, storage_ref TEXT,
 			source_version TEXT NOT NULL, profile_hash TEXT NOT NULL, extent JSON, extent_srid INTEGER, min_zoom INTEGER,
 			max_zoom INTEGER, status TEXT NOT NULL, error_message TEXT, created_by INTEGER, created_at DATETIME,
 			updated_at DATETIME, deleted_at DATETIME)`,
-		`CREATE TABLE manager.vector_tile_set_tasks (
-			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, name TEXT NOT NULL, description TEXT,
-			enabled BOOLEAN, last_execution_id TEXT, last_execution_status TEXT, last_run_at DATETIME, next_run_at DATETIME,
-			schedule TEXT, created_by INTEGER, config JSON, created_at DATETIME, updated_at DATETIME, deleted_at DATETIME)`,
 		`CREATE TABLE manager.preview_state (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, item_fingerprint TEXT NOT NULL,
 			locator TEXT, preferred_mode TEXT NOT NULL DEFAULT 'basic_preview', view_state JSON NOT NULL DEFAULT '{}',
 			created_at DATETIME, updated_at DATETIME)`,
-		`CREATE TABLE manager.vector_materialized_view_tasks (
-			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, name TEXT NOT NULL, description TEXT,
-			enabled BOOLEAN, last_execution_id TEXT, last_execution_status TEXT, last_run_at DATETIME, next_run_at DATETIME,
-			schedule TEXT, created_by INTEGER, config JSON, created_at DATETIME, updated_at DATETIME, deleted_at DATETIME)`,
 		`CREATE TABLE manager.vector_materialized_view (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, item_fingerprint TEXT NOT NULL, item_id INTEGER,
 			locator TEXT, task_id INTEGER, last_execution_id TEXT, source_engine_id INTEGER NOT NULL, source_schema TEXT NOT NULL,

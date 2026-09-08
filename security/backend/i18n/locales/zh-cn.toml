@@ -16,3 +16,5 @@ other = "删除成功"
 other = "保护投影游标无效、倒退或不属于当前消费方"
 [security.enrollment.no_supported_findings_release_unavailable]
 other = "最近一次成功发现不再满足零命中确认条件，请刷新或重新发现后重试"
+[security.access_request.expired]
+other = "原值访问申请已超过截止时间，请申请人重新提交"

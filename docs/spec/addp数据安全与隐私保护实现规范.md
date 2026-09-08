@@ -541,7 +541,7 @@ Service 必须在同一个 PreparedQuery 上依次完成 `ReadSet()`、命中判
 | `GET/PUT/DELETE` | `/protection-policies/{id}` | 策略详情/完整更新/撤销；更新和撤销均携带 `version` 并追加不可变修订 |
 | `GET` | `/protection-access-request-targets` | Manager 预览按 DataItem fingerprint 查询当前用户可申请的字段、待审批申请和有效临时授权；自动发现但尚未形成正式 Assessment 的字段只返回不可申请原因 |
 | `GET/POST` | `/protection-access-requests` | 当前用户分页查询自己的申请/从 Manager 预览提交按用户原值访问申请 |
-| `GET` | `/protection-access-requests/review-queue` | 审批人员分页查询当前租户全部待审批申请；响应明确当前用户是否可审批及不可审批原因，本人申请可见但不可自审 |
+| `GET` | `/protection-access-requests/review-queue` | 审批人员分页查询当前租户全部待处理申请；响应明确当前用户是否可审批及不可审批原因，本人申请和已超过申请截止时间的记录可见但不可审批 |
 | `POST` | `/protection-access-requests/{id}/decisions` | 另一名审批人员批准或驳回申请；批准期限不得超过用户申请期限和 30 天上限 |
 | `GET` | `/protection-exemptions` | 治理人员分页查询审批后形成的临时原值授权 |
 | `GET` | `/protection-exemptions/{id}` | 查询临时原值授权及不可变修订历史 |

@@ -26,6 +26,8 @@ func respondError(c *gin.Context, err error) {
 		status, key = http.StatusNotFound, securityi18n.MsgNotFound
 	case errors.Is(err, commonapi.ErrConflict):
 		status, key = http.StatusConflict, securityi18n.MsgConflict
+	case errors.Is(err, service.ErrProtectionAccessRequestExpired):
+		status, key = http.StatusConflict, securityi18n.MsgProtectionAccessRequestExpired
 	case errors.Is(err, service.ErrProjectionCursorConflict):
 		status, key = http.StatusConflict, securityi18n.MsgProjectionCursorConflict
 	case errors.Is(err, service.ErrNoSupportedFindingsReleaseUnavailable):
@@ -37,6 +39,9 @@ func respondError(c *gin.Context, err error) {
 	}
 	if errors.Is(err, service.ErrNoSupportedFindingsReleaseUnavailable) {
 		response["error_code"] = "no_supported_findings_release_unavailable"
+	}
+	if errors.Is(err, service.ErrProtectionAccessRequestExpired) {
+		response["error_code"] = "protection_access_request_expired"
 	}
 	c.JSON(status, response)
 }

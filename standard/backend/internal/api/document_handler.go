@@ -133,6 +133,7 @@ func (h *DocumentHandler) GetDocument(c *gin.Context) {
 // @Produce json
 // @Param request body models.CreateDocumentRequest true "文档身份和首个草稿修订 | Document identity and initial draft revision"
 // @Success 201 {object} models.DocumentAggregate
+// @Failure 400 {object} map[string]string "编码或请求参数无效，编码错误返回 error_code=invalid_standard_code | Invalid code or request; code errors return error_code=invalid_standard_code"
 // @Failure 401 {object} map[string]string "需要登录 | Authentication required"
 // @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
@@ -596,7 +597,7 @@ func (h *DocumentHandler) UpdateCandidate(c *gin.Context) {
 // @Param candidate_id path int true "候选 ID | Candidate ID"
 // @Param request body models.FormalizeDocumentExtractionCandidateRequest true "正式化请求 | Formalization request"
 // @Success 201 {object} models.DocumentCandidateFormalizationResponse
-// @Failure 400 {object} map[string]string
+// @Failure 400 {object} map[string]string "正式化请求或候选编码无效，编码错误返回 error_code=invalid_standard_code | Invalid formalization request or candidate code; code errors return error_code=invalid_standard_code"
 // @Failure 403 {object} map[string]string
 // @Failure 404 {object} map[string]string
 // @Failure 409 {object} map[string]string
@@ -800,9 +801,10 @@ func (h *DocumentHandler) ListDocsByMetric(c *gin.Context) {
 // @Summary 创建文档并关联到数据元 | Create and link document to element
 // @Tags Standard
 // @Param request body models.CreateLinkedDocumentRequest true "文档信息及当前数据元版本 | Document with current element version"
+// @Failure 400 {object} map[string]string "编码、标识或请求参数无效，编码错误返回 error_code=invalid_standard_code | Invalid code, identifier, or request; code errors return error_code=invalid_standard_code"
 // @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 201 {object} models.DocumentAggregate
 // @Failure 401 {object} map[string]string "需要登录 | Authentication required"
 // @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
@@ -831,9 +833,10 @@ func (h *DocumentHandler) CreateAndLinkElement(c *gin.Context) {
 // @Summary 创建文档并关联到术语 | Create and link document to glossary
 // @Tags Standard
 // @Param request body models.CreateLinkedDocumentRequest true "文档信息及当前术语版本 | Document with current glossary version"
+// @Failure 400 {object} map[string]string "编码、标识或请求参数无效，编码错误返回 error_code=invalid_standard_code | Invalid code, identifier, or request; code errors return error_code=invalid_standard_code"
 // @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 201 {object} models.DocumentAggregate
 // @Failure 401 {object} map[string]string "需要登录 | Authentication required"
 // @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"
@@ -862,9 +865,10 @@ func (h *DocumentHandler) CreateAndLinkGlossary(c *gin.Context) {
 // @Summary 创建文档并关联到指标 | Create and link document to metric
 // @Tags Standard
 // @Param request body models.CreateLinkedDocumentRequest true "文档信息及当前指标版本 | Document with current metric version"
+// @Failure 400 {object} map[string]string "编码、标识或请求参数无效，编码错误返回 error_code=invalid_standard_code | Invalid code, identifier, or request; code errors return error_code=invalid_standard_code"
 // @Failure 409 {object} map[string]string "资源版本冲突 | Resource version conflict"
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 201 {object} models.DocumentAggregate
 // @Failure 401 {object} map[string]string "需要登录 | Authentication required"
 // @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"

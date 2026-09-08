@@ -321,6 +321,7 @@ func SetupRouter(
 		quickViewHandler.SetExecutionEnqueueNotifier(notifyExecutionEnqueued)
 		if taskProviderHandler != nil {
 			quickViewHandler.SetTileCacheTaskService(taskProviderHandler.tileCacheTaskSvc)
+			quickViewHandler.SetVectorMaterializedViewTaskService(taskProviderHandler.vectorMaterializedViewTaskSvc)
 			quickViewHandler.SetArtifactTaskServices(taskProviderHandler.rasterCOGTaskSvc, taskProviderHandler.model3DGLBTaskSvc, taskProviderHandler.gaussianSplatKSplatTaskSvc, taskProviderHandler.pointCloudCOPCTaskSvc, taskProviderHandler.model3DTilesTaskSvc)
 		}
 		api.GET("/quick-view/capability", permission(managerauthorization.PermissionManagerDataItemRead), quickViewHandler.GetQuickViewCapabilityByLocator)

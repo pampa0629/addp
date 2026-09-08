@@ -48,6 +48,7 @@
           v-else-if="showTileCacheGenerationAction"
           type="primary"
           size="small"
+          :loading="quickViewActionLoading"
           @click="openTileCacheCreate"
         >
           {{ t('manager.spatialPreview.generateTileCache') }}
@@ -56,6 +57,7 @@
           v-if="showVectorMaterializedViewAction"
           size="small"
           type="warning"
+          :loading="quickViewActionLoading"
           @click="openVectorMaterializedViewCreate"
         >
           {{ t('manager.spatialPreview.optimizeQuickView') }}
@@ -108,8 +110,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRoute, useRouter } from 'vue-router'
-import { navigateManagerRoute } from '@/utils/moduleNavigation'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { InfoFilled, Select } from '@element-plus/icons-vue'
 import { formatLocatorDisplayPath } from '@addp/common-frontend'
@@ -117,6 +118,8 @@ import VectorTilePreview from '@/components/map/VectorTilePreview.vue'
 import FlatGeobufQuickView from '@/components/map/FlatGeobufQuickView.vue'
 import RasterTIFFQuickView from '@/components/map/RasterTIFFQuickView.vue'
 import { quickViewAPI } from '@/api/quickView'
+import { useCurrentResultConfirmation } from '@/composables/useCurrentResultConfirmation'
+import { toQuickViewExistingResultPayload } from '@/utils/currentResultConfirmation'
 import client from '@/api/client'
 import {
   quickViewTileAdvisoryAction as tileAdvisoryAction,
@@ -124,10 +127,6 @@ import {
   shouldShowQuickViewTileAdvisoryNotice
 } from '@/utils/quickViewTileAdvisory'
 import { quickViewReasonText } from '@/utils/quickViewReasonText'
-import {
-  buildVectorMaterializedViewCreateQuery,
-  buildTileCacheCreateQuery
-} from '@/utils/quickViewNavigationQuery'
 import {
   waitForRasterCOGExecution
 } from '@/utils/rasterCOGTask'
@@ -143,11 +142,13 @@ import {
 import { TablePreview } from '@common-ui-map'
 
 const route = useRoute()
-const router = useRouter()
 const { t } = useI18n()
+const executeWithCurrentResultConfirmation = useCurrentResultConfirmation()
+const executeConfirmedQuickViewAction = (targetLocator, action) => executeWithCurrentResultConfirmation(payload => (
+  quickViewAPI.executeQuickViewAction(targetLocator, action, toQuickViewExistingResultPayload(payload))
+))
 
 const locator = computed(() => String(route.query.locator || '').trim())
-const itemId = computed(() => Number(route.query.item_id || route.query.itemId || 0))
 const cols = computed(() => String(route.query.cols || '').split(',').filter(Boolean))
 const ready = computed(() => !!locator.value)
 const quickViewStatus = ref(null)
@@ -161,6 +162,7 @@ const activePreviewMode = ref('basic_preview')
 const quickViewTileAdvisory = ref(null)
 const quickViewTileLastNotice = ref({ key: '', at: 0 })
 const rasterCOGGenerationLoading = ref(false)
+const quickViewActionLoading = ref(false)
 const quickViewRenderSource = computed(() => resolveQuickViewRenderSource(quickViewStatus.value))
 const isRasterQuickView = computed(() => isRasterQuickViewRenderSource(quickViewRenderSource.value))
 const isTileQuickView = computed(() => isTileQuickViewRenderSource(quickViewRenderSource.value))
@@ -322,19 +324,23 @@ const backToBasicPreview = async () => {
   }
 }
 
-const openTileCacheCreate = () => {
-  navigateManagerRoute(router, {
-    name: 'TileCache',
-    query: buildTileCacheCreateQuery(spatialPreviewNavigationTarget(), quickViewStatus.value)
-  })
+const submitQuickViewGeneration = async (action) => {
+  if (!locator.value) return
+  quickViewActionLoading.value = true
+  try {
+    await executeConfirmedQuickViewAction(locator.value, action)
+    ElMessage.success(t('manager.derivedTasks.executeQueued'))
+    await loadQuickViewStatus()
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.error || t('manager.derivedTasks.executeFailed'))
+  } finally {
+    quickViewActionLoading.value = false
+  }
 }
 
-const openVectorMaterializedViewCreate = () => {
-  navigateManagerRoute(router, {
-    name: 'VectorMaterializedView',
-    query: buildVectorMaterializedViewCreateQuery(spatialPreviewNavigationTarget(), quickViewStatus.value)
-  })
-}
+const openTileCacheCreate = () => submitQuickViewGeneration('generate_vector_tile_cache')
+
+const openVectorMaterializedViewCreate = () => submitQuickViewGeneration('generate_vector_materialized_view')
 
 const generateRasterCOG = async () => {
   if (!quickViewStatus.value || !locator.value) return
@@ -364,15 +370,6 @@ const generateRasterCOG = async () => {
     rasterCOGGenerationLoading.value = false
   }
 }
-
-const spatialPreviewNavigationTarget = () => ({
-  engineId: sourceContext.value.engineId,
-  schema: sourceContext.value.schema,
-  table: sourceContext.value.table,
-  locator: locator.value,
-  itemID: itemId.value,
-  geometryColumn: sourceGeometryColumn.value
-})
 
 const handleTileAdvisory = (advisory) => {
   quickViewTileAdvisory.value = advisory

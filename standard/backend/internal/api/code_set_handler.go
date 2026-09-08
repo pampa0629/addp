@@ -89,6 +89,7 @@ func (h *CodeSetHandler) ListCodeSets(c *gin.Context) {
 // @Produce json
 // @Param request body models.CreateCodeSetRequest true "码值集和首个草稿 | Code set and initial draft"
 // @Success 201 {object} models.CodeSetAggregate
+// @Failure 400 {object} map[string]string "编码或请求参数无效，编码错误返回 error_code=invalid_standard_code | Invalid code or request; code errors return error_code=invalid_standard_code"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.code_set.create"]
 // @Router /code-sets [post]

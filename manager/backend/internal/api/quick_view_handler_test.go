@@ -107,6 +107,36 @@ func TestQuickViewModel3DGLBActionPropagatesExistingResultConfirmation(t *testin
 	}
 }
 
+func TestVectorMaterializedViewTaskConfigFromQuickViewUsesCanonicalSourceFacts(t *testing.T) {
+	locator := "addp://engine/11/path/public/roads?type=table&item_id=99"
+	config, err := vectorMaterializedViewTaskConfigFromQuickView(
+		&service.QuickViewCapability{Locator: locator},
+		service.QuickViewSource{
+			EngineID: 11,
+			Schema:   "public",
+			Table:    "roads",
+			SpatialMeta: &service.SpatialMetadataResult{
+				GeomColumn: "shape",
+				SRID:       4326,
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("vectorMaterializedViewTaskConfigFromQuickView() error = %v", err)
+	}
+	target, ok := config["target"].(commonModels.JSONMap)
+	if !ok {
+		t.Fatalf("target = %#v", config["target"])
+	}
+	if target["source_engine_id"] != uint(11) || target["locator"] != locator || target["item_id"] != uint(99) {
+		t.Fatalf("target = %#v", target)
+	}
+	geometry, ok := config["geometry"].(commonModels.JSONMap)
+	if !ok || geometry["geometry_column"] != "shape" || geometry["source_srid"] != 4326 || geometry["target_srid"] != commonSpatial.SRIDWebMercator {
+		t.Fatalf("geometry = %#v", config["geometry"])
+	}
+}
+
 func TestQuickViewFeatureCollectionConvertsWKTToGeoJSON(t *testing.T) {
 	itemID := uint(99)
 	result := &preview.PreviewResult{

@@ -11,7 +11,7 @@
 它不替代：
 
 1. 源业务 data item。
-2. `manager.point_cloud_copc_tasks` 的任务定义。
+2. `manager.task_definitions` 中 `task_type=point_cloud_copc_generation` 的任务定义。
 3. `manager.preview_state` 的基础预览 / 快显预览模式偏好和三维相机状态。
 4. `common.task_executions` 的执行历史。
 
@@ -26,7 +26,7 @@
 | `item_fingerprint` | varchar(64) | 源 item 指纹 |
 | `item_id` | integer | 当前 Meta item 行引用，仅用于回查 |
 | `locator` | text | 源 item ResourceLocator |
-| `task_id` | bigint | 产生或最近刷新该结果的 `manager.point_cloud_copc_tasks.id` |
+| `task_id` | bigint | 产生或最近刷新该结果的 `manager.task_definitions.id` |
 | `last_execution_id` | varchar | 最近一次 COPC 生成 execution |
 | `source_engine_id` | integer | 源存储引擎 ID |
 | `source_format` | varchar | 源格式，当前为 `las`、`laz`、`e57`、`pcd` 或 `xyz` |
@@ -55,7 +55,7 @@
 
 开始生成或刷新结果时，`last_execution_id` 必须写入当前 execution。生成终态只能更新 `last_execution_id` 仍等于当前 execution 的结果行；旧 execution 或失去所有权的执行不得覆盖新结果。
 
-结果终态、`common.task_executions` 终态和 `manager.point_cloud_copc_tasks.last_execution_status` 必须在同一 Infra PostgreSQL 事务中提交。进度事件使用 `status=running` 条件更新，终态提交后的迟到事件必须返回冲突。
+结果终态、`common.task_executions` 终态和对应 `manager.task_definitions.last_execution_status` 必须在同一 Infra PostgreSQL 事务中提交。进度事件使用 `status=running` 条件更新，终态提交后的迟到事件必须返回冲突。
 
 ## 五、索引建议
 
@@ -75,7 +75,7 @@
 不得删除：
 
 1. 源业务文件或源 data item。
-2. 对应的 `manager.point_cloud_copc_tasks` 任务定义。
+2. 对应的 `manager.task_definitions` 任务定义。
 3. `common.task_executions` 执行历史。
 4. `manager.preview_state` 中的用户预览偏好和三维相机状态。
 
@@ -83,5 +83,5 @@
 
 - [三维模型、点云与高斯泼溅预览说明](../三维模型、点云与高斯泼溅预览说明.md)
 - [数据预览语义协议](../数据预览语义协议.md)
-- [point_cloud_copc_tasks 表结构说明](./point_cloud_copc_tasks表.md)
+- [task_definitions 表结构说明](./task_definitions表.md)
 - [数据库架构](../数据库架构.md)

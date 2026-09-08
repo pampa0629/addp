@@ -11,12 +11,10 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
-	"gorm.io/gorm"
 )
 
 func TestModel3DTilesTaskServiceReusesSemanticTaskIdentity(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
-	createModel3DTilesTaskTableForTest(t, db)
 	repo := repository.NewModel3DTilesRepository(db)
 	svc := NewModel3DTilesTaskService(repo)
 	svc.SetBucket("manager")
@@ -55,7 +53,6 @@ func TestModel3DTilesTaskServiceReusesSemanticTaskIdentity(t *testing.T) {
 
 func TestModel3DTilesTaskServiceRepeatedExecutionRefreshesCurrentResult(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
-	createModel3DTilesTaskTableForTest(t, db)
 	createModel3DTilesResultTableForTest(t, db)
 	repo := repository.NewModel3DTilesRepository(db)
 	execRepo := commonExecution.NewTaskExecutionRepository(db)
@@ -116,7 +113,6 @@ func TestModel3DTilesTaskServiceRepeatedExecutionRefreshesCurrentResult(t *testi
 
 func TestModel3DTilesTaskServiceRejectsConcurrentExecution(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
-	createModel3DTilesTaskTableForTest(t, db)
 	createModel3DTilesResultTableForTest(t, db)
 	repo := repository.NewModel3DTilesRepository(db)
 	execRepo := commonExecution.NewTaskExecutionRepository(db)
@@ -185,29 +181,6 @@ func newModel3DTilesTaskForTest(name, fingerprint, targetFormat string) *models.
 			},
 			"target_format": targetFormat,
 		},
-	}
-}
-
-func createModel3DTilesTaskTableForTest(t *testing.T, db *gorm.DB) {
-	t.Helper()
-	if err := db.Exec(`CREATE TABLE manager.model3d_tiles_tasks (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		tenant_id INTEGER NOT NULL,
-		name TEXT NOT NULL,
-		description TEXT,
-		enabled BOOLEAN NOT NULL,
-		schedule TEXT,
-		next_run_at DATETIME,
-		last_run_at DATETIME,
-		last_execution_id TEXT,
-		last_execution_status TEXT,
-		config JSON NOT NULL,
-		created_by INTEGER,
-		created_at DATETIME,
-		updated_at DATETIME,
-		deleted_at DATETIME
-	)`).Error; err != nil {
-		t.Fatalf("create model3d_tiles_tasks table: %v", err)
 	}
 }
 

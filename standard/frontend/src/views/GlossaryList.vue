@@ -86,6 +86,7 @@ import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiErro
 import { useStandardPermissions } from '../composables/useStandardPermissions'
 import { createLatestRequestCoordinator } from '@common-ui'
 import { buildGlossaryFilterQuery, createGlossaryForm, isGlossaryDeletable, resolveGlossaryFilters } from '../utils/glossaryRouteState'
+import { buildStandardCodeRules } from '../utils/standardCode'
 
 const { t } = useI18n()
 const { canCreate, canDelete } = useStandardPermissions('glossary')
@@ -96,7 +97,7 @@ const listRequests = createLatestRequestCoordinator()
 const revisionStatuses = ['draft', 'in_review', 'published', 'withdrawn']
 const filters = reactive({ keyword: '', owner_domain_id: null, status: '', page: 1, page_size: 20 })
 const rules = computed(() => ({
-  code: [{ required: true, message: t('standard.glossary.codeRequired'), trigger: 'blur' }],
+  code: buildStandardCodeRules(t, 'standard.glossary.codeRequired'),
   name: [{ required: true, message: t('standard.glossary.nameRequired'), trigger: 'blur' }],
   definition: [{ required: true, message: t('standard.glossary.definitionRequired'), trigger: 'blur' }],
   change_summary: [{ required: true, message: t('standard.revision.changeSummaryRequired'), trigger: 'blur' }],

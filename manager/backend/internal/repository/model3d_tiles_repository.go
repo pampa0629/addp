@@ -214,7 +214,5 @@ func (r *Model3DTilesRepository) UpdateTask(ctx context.Context, task *models.Mo
 }
 
 func (r *Model3DTilesRepository) DeleteTask(ctx context.Context, id uint, tenantID uint) error {
-	return r.db.WithContext(ctx).
-		Where("id = ? AND tenant_id = ? AND task_type = ?", id, tenantID, commonExecution.TaskTypeModel3DTilesGeneration).
-		Delete(&models.Model3DTilesTask{}).Error
+	return deleteTaskDefinition(ctx, r.db, commonExecution.TaskTypeModel3DTilesGeneration, id, tenantID)
 }

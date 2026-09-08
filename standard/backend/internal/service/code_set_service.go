@@ -26,17 +26,21 @@ func (s *CodeSetService) CreateCodeSet(tenantID, userID int64, req *models.Creat
 	if err != nil {
 		return nil, err
 	}
+	code, err := normalizeStandardStableCode(req.Code, maxStandardStableCodeLength)
+	if err != nil {
+		return nil, err
+	}
 	if err := validateCodeSetRevision(req.Name, req.Description, req.ValueType, req.ChangeSummary, req.EffectiveFrom, req.EffectiveTo); err != nil {
 		return nil, err
 	}
-	exists, err := s.repo.ExistsByCode(tenantID, strings.TrimSpace(req.Code), 0)
+	exists, err := s.repo.ExistsByCode(tenantID, code, 0)
 	if err != nil {
 		return nil, err
 	}
 	if exists {
 		return nil, commonapi.ErrConflict
 	}
-	identity := &models.CodeSet{TenantID: tenantID, ScopeType: scopeType, OwnerDomainID: req.OwnerDomainID, Code: strings.TrimSpace(req.Code), Origin: models.CodeSetOriginTenant, StewardID: req.StewardID, Tags: req.Tags, CreatedBy: userID, LifecycleState: "active"}
+	identity := &models.CodeSet{TenantID: tenantID, ScopeType: scopeType, OwnerDomainID: req.OwnerDomainID, Code: code, Origin: models.CodeSetOriginTenant, StewardID: req.StewardID, Tags: req.Tags, CreatedBy: userID, LifecycleState: "active"}
 	revision := &models.CodeSetRevision{Name: strings.TrimSpace(req.Name), Description: strings.TrimSpace(req.Description), ValueType: req.ValueType, ChangeSummary: strings.TrimSpace(req.ChangeSummary), EffectiveFrom: req.EffectiveFrom, EffectiveTo: req.EffectiveTo, CreatedBy: userID}
 	if err := s.repo.Create(identity, revision); err != nil {
 		return nil, err

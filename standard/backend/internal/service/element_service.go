@@ -33,18 +33,22 @@ func (s *ElementService) CreateElement(req *models.CreateElementRequest, tenantI
 	if err != nil {
 		return nil, err
 	}
+	code, err := normalizeStandardStableCode(req.Code, maxStandardStableCodeLength)
+	if err != nil {
+		return nil, err
+	}
 	revision, err := s.revisionFromCreate(req, tenantID, userID)
 	if err != nil {
 		return nil, err
 	}
-	exists, err := s.repo.ExistsByCode(strings.TrimSpace(req.Code), tenantID, 0)
+	exists, err := s.repo.ExistsByCode(code, tenantID, 0)
 	if err != nil {
 		return nil, err
 	}
 	if exists {
 		return nil, commonapi.ErrConflict
 	}
-	element := &models.Element{TenantID: tenantID, ScopeType: scopeType, OwnerDomainID: req.OwnerDomainID, Code: strings.TrimSpace(req.Code), StewardID: req.StewardID, Tags: req.Tags, CreatedBy: userID, LifecycleState: "active"}
+	element := &models.Element{TenantID: tenantID, ScopeType: scopeType, OwnerDomainID: req.OwnerDomainID, Code: code, StewardID: req.StewardID, Tags: req.Tags, CreatedBy: userID, LifecycleState: "active"}
 	if err := s.repo.Create(element, revision); err != nil {
 		return nil, err
 	}

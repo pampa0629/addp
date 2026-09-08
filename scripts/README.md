@@ -439,6 +439,8 @@ scripts/test/
 ├── release-gate.py           # T5 发布套件统一分发与结构化报告
 ├── check-execution-test-fixtures.sh # 统一执行存储测试夹具门禁
 ├── common-python-cli-release-gate.sh # ADDP CLI wheel 与 macOS Keychain 产品发布门禁
+├── opengauss-official-media-release-gate.sh # openGauss 官方介质 Linux x86_64 发布认证
+├── opengauss-official-media-release-gate_test.py # openGauss 介质固定、隔离和清理回归
 ├── online-gate.py # T4 唯一 suite 登记与分发入口
 ├── online-gate_test.py # Online 分发协议确定性回归测试
 ├── online-preflight.py # T4 专用部署安全边界与构建身份预检
@@ -578,7 +580,9 @@ Runner 管理员应以根 `.env.example` 为字段清单，在仓库外创建独
 
 Agent 默认离线门禁使用 `make test-agent-eval`，并已包含在根 `make test`。该门禁只使用 `agent/backend/venv` 这一套 owner 运行时执行 Agent 评测与 Common Python 契约测试；Agent requirements 显式声明所需的 Common Python 测试扩展，禁止重新引入第二套虚拟环境耦合。人工发布验收使用 `make test-release RELEASE_SUITE=agent-evaluation`，需要显式提供三份仓库外在线证据路径；分发器调用 owner 唯一目标 `test-agent-eval-release`，脚本不自动执行 OAuth 登录或生成在线证据。owner 输出统一为仓库外 `addp.agent-evaluation-gate/v2`，外部发布流程可同时归档其中的源码版本、契约/证据摘要、检查耗时和上层 T5 报告，脚本自身不维护历史记录。
 
-T5 发布认证的统一入口是 `make test-release RELEASE_SUITE=<suite>`。当前只登记 `common-python-cli` 和 `agent-evaluation` 两个已有真实 owner 门禁的套件，不以占位项冒充发布认证。分发器把 suite 映射到 owner 的唯一 Make 目标，强制使用仓库外空证据目录，并在成功或失败时生成 `addp.release-gate/v1` 的 `release-report.json` 与 GitHub Step Summary 可直接消费的 `release-summary.md`；报告只记录 suite、owner 目标、结果、耗时与产物相对路径，不保存 Token 或在线证据正文。CLI workflow 使用该入口，Agent 仍由具备三份在线证据的外部发布流程调用；`scripts/ci/check-release-ci-registration.py` 会阻止 workflow 绕过统一入口或遗漏报告摘要。
+T5 发布认证的统一入口是 `make test-release RELEASE_SUITE=<suite>`。当前登记 `common-python-cli`、`agent-evaluation` 和 `opengauss-official-media` 三个已有真实 owner 门禁的套件，不以占位项冒充发布认证。分发器把 suite 映射到 owner 的唯一 Make 目标，强制使用仓库外空证据目录，并在成功或失败时生成 `addp.release-gate/v1` 的 `release-report.json` 与 GitHub Step Summary 可直接消费的 `release-summary.md`；报告只记录 suite、owner 目标、结果、耗时与产物相对路径，不保存 Token 或在线证据正文。声明了 `workflow_job` 的 suite 由通用登记检查验证统一入口、证据目录和摘要，不能由 workflow 绕过 owner 分发器；Agent 仍由具备三份在线证据的外部发布流程调用。
+
+`opengauss-official-media` 只在 Linux x86_64 上运行。owner 脚本固定下载 openGauss 6.0.6 LTS 官方 Docker tar 及其 SHA-256，拒绝覆盖同名本地容器或镜像，使用独占随机宿主机端口创建 `addp_opengauss_disposable` PG 兼容 database，并执行 Common 中真实 `lib/pq`、COPY、MERGE、watermark、目录和取消断言；成功、失败和中断都会删除本次容器、镜像和临时介质。GitHub Actions 在版本 Tag 或手工 `workflow_dispatch` 时执行并归档报告；辅助 macOS 巡检不会运行该 T5。该证据只证明官方介质和协议/SQL 准入，不表示 ADDP 已登记 `engine_type=opengauss`。
 
 两份归档报告使用 `make compare-agent-eval` 比较，需要显式提供 `ADDP_AGENT_EVAL_BASELINE` 和 `ADDP_AGENT_EVAL_CURRENT`，结果通过 `ADDP_AGENT_EVAL_REPORT` 写到仓库外。比较只读取严格 v2 报告，输出 `addp.agent-evaluation-comparison/v1`，不重跑测试、不读取在线证据、不设置耗时阈值。
 

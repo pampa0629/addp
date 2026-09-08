@@ -24,8 +24,12 @@ func NewStandardCollectionService(repo *repository.StandardCollectionRepository,
 }
 
 func (s *StandardCollectionService) Create(ctx context.Context, tenantID, userID int64, req *models.CreateStandardCollectionRequest) (*models.StandardCollectionAggregate, error) {
-	code, name, description, summary := strings.TrimSpace(req.Code), strings.TrimSpace(req.Name), strings.TrimSpace(req.Description), strings.TrimSpace(req.ChangeSummary)
-	if code == "" || name == "" || description == "" || summary == "" {
+	code, err := normalizeStandardStableCode(req.Code, maxStandardStableCodeLength)
+	if err != nil {
+		return nil, err
+	}
+	name, description, summary := strings.TrimSpace(req.Name), strings.TrimSpace(req.Description), strings.TrimSpace(req.ChangeSummary)
+	if name == "" || description == "" || summary == "" {
 		return nil, ErrInvalidStandardCollection
 	}
 	exists, err := s.repo.ExistsByCode(code, tenantID)

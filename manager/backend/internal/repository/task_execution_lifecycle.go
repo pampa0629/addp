@@ -112,8 +112,8 @@ func (l taskExecutionLifecycle) Claim(
 			taskUpdate = taskUpdate.Where("task_type = ?", spec.TaskType)
 		}
 		result := taskUpdate.Updates(map[string]interface{}{
-				"last_execution_id": execution.ExecutionID, "last_execution_status": commonExecution.ExecutionStatusPending,
-			})
+			"last_execution_id": execution.ExecutionID, "last_execution_status": commonExecution.ExecutionStatusPending,
+		})
 		if result.Error != nil {
 			return result.Error
 		}

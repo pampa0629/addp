@@ -217,7 +217,7 @@ func TestTaskProviderExecutionStatusUsesDirectObjectShape(t *testing.T) {
 	}
 }
 
-func TestManagerPrivateTaskListsUseFixedTaskType(t *testing.T) {
+func TestManagerDerivedTaskListUsesUnifiedCategoryAndTypeFilters(t *testing.T) {
 	db := newTaskProviderHandlerTestDB(t)
 	tileCacheRepo := repository.NewTileCacheRepository(db)
 	embeddingRepo := repository.NewEmbeddingRepository(db)
@@ -355,27 +355,26 @@ func TestManagerPrivateTaskListsUseFixedTaskType(t *testing.T) {
 	handler.SetModel3DTilesTaskService(service.NewModel3DTilesTaskService(model3DTilesRepo))
 	handler.SetModel3DGLBTaskService(service.NewModel3DGLBTaskService(model3DGLBRepo))
 	handler.SetGaussianSplatKSplatTaskService(service.NewGaussianSplatKSplatTaskService(gaussianSplatKSplatRepo))
+	handler.SetTaskDefinitionRepository(repository.NewTaskDefinitionRepository(db))
 
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
 		setTenantAuthContextForTest(c, 1, 1)
 		c.Next()
 	})
-	router.GET("/vector_tile_cache_tasks", handler.ListTileCacheTasks)
-	router.GET("/embedding_tasks", handler.ListEmbeddingTasks)
-	router.GET("/vector_materialized_view_tasks", handler.ListVectorMaterializedViewTasks)
-	router.GET("/raster_cog_tasks", handler.ListRasterCOGTasks)
-	router.GET("/model3d_tiles_tasks", handler.ListModel3DTilesTasks)
-	router.GET("/model_3d_glb_tasks", handler.ListModel3DGLBTasks)
-	router.GET("/gaussian_splat_ksplat_tasks", handler.ListGaussianSplatKSplatTasks)
+	router.GET("/tasks", handler.ListTasks)
 
-	assertListedTaskTypeValues(t, router, "/vector_tile_cache_tasks", []string{commonExecution.TaskTypeVectorTileCacheGeneration})
-	assertListedTaskTypeValues(t, router, "/embedding_tasks", []string{commonExecution.TaskTypeEmbedding})
-	assertListedTaskTypeValues(t, router, "/vector_materialized_view_tasks", []string{commonExecution.TaskTypeVectorMaterializedViewGeneration})
-	assertListedTaskTypeValues(t, router, "/raster_cog_tasks", []string{commonExecution.TaskTypeRasterCOGGeneration})
-	assertListedTaskTypeValues(t, router, "/model3d_tiles_tasks", []string{commonExecution.TaskTypeModel3DTilesGeneration})
-	assertListedTaskTypeValues(t, router, "/model_3d_glb_tasks", []string{commonExecution.TaskTypeModel3DGLBGeneration})
-	assertListedTaskTypeValues(t, router, "/gaussian_splat_ksplat_tasks", []string{commonExecution.TaskTypeGaussianSplatKSplatGeneration})
+	assertUnifiedTaskTypeSet(t, router, "/tasks?category=managed_quick_view&page_size=100", map[string]bool{
+		commonExecution.TaskTypeVectorTileCacheGeneration:        true,
+		commonExecution.TaskTypeVectorMaterializedViewGeneration: true,
+		commonExecution.TaskTypeRasterCOGGeneration:              true,
+		commonExecution.TaskTypeModel3DTilesGeneration:           true,
+		commonExecution.TaskTypeModel3DGLBGeneration:             true,
+		commonExecution.TaskTypeGaussianSplatKSplatGeneration:    true,
+	})
+	assertUnifiedTaskTypeSet(t, router, "/tasks?task_type=vector_tile_cache_generation", map[string]bool{
+		commonExecution.TaskTypeVectorTileCacheGeneration: true,
+	})
 }
 
 func TestCreateEmbeddingTaskRejectsLegacyTopLevelFields(t *testing.T) {
@@ -998,6 +997,29 @@ func assertListedTaskTypeValues(t *testing.T, router *gin.Engine, path string, w
 	}
 }
 
+func assertUnifiedTaskTypeSet(t *testing.T, router *gin.Engine, path string, want map[string]bool) {
+	t.Helper()
+
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("%s status = %d, want %d, body=%s", path, w.Code, http.StatusOK, w.Body.String())
+	}
+	var resp TaskListResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("%s decode response: %v; body=%s", path, err, w.Body.String())
+	}
+	if len(resp.Items) != len(want) {
+		t.Fatalf("%s items len = %d, want %d; body=%s", path, len(resp.Items), len(want), w.Body.String())
+	}
+	for _, item := range resp.Items {
+		if !want[item.TaskType] {
+			t.Fatalf("%s unexpected task_type %q; body=%s", path, item.TaskType, w.Body.String())
+		}
+	}
+}
+
 func assertStandardErrorResponse(t *testing.T, body []byte) {
 	t.Helper()
 
@@ -1032,25 +1054,7 @@ func newTaskProviderHandlerTestDB(t *testing.T) *gorm.DB {
 	if err := db.Exec("ATTACH DATABASE ':memory:' AS manager").Error; err != nil {
 		t.Fatalf("attach manager schema: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE manager.vector_tile_cache_tasks (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			tenant_id INTEGER NOT NULL,
-			name TEXT NOT NULL,
-			description TEXT,
-		enabled BOOLEAN,
-		last_execution_id TEXT,
-			last_execution_status TEXT,
-			last_run_at DATETIME,
-			next_run_at DATETIME,
-			schedule TEXT,
-			created_by INTEGER,
-			config JSON,
-			created_at DATETIME,
-			updated_at DATETIME,
-			deleted_at DATETIME
-		)`).Error; err != nil {
-		t.Fatalf("create vector_tile_cache_tasks table: %v", err)
-	}
+	ensureDerivedTaskDefinitionTestTables(t, db)
 	if err := db.Exec(`CREATE TABLE manager.vector_tile_cache (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		tenant_id INTEGER NOT NULL,
@@ -1078,44 +1082,6 @@ func newTaskProviderHandlerTestDB(t *testing.T) *gorm.DB {
 	)`).Error; err != nil {
 		t.Fatalf("create embedding_tasks table: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE manager.vector_materialized_view_tasks (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		tenant_id INTEGER NOT NULL,
-		name TEXT NOT NULL,
-		description TEXT,
-		enabled BOOLEAN,
-		last_execution_id TEXT,
-		last_execution_status TEXT,
-		last_run_at DATETIME,
-		next_run_at DATETIME,
-		schedule TEXT,
-		created_by INTEGER,
-		config JSON,
-		created_at DATETIME,
-		updated_at DATETIME,
-		deleted_at DATETIME
-	)`).Error; err != nil {
-		t.Fatalf("create vector_materialized_view_tasks table: %v", err)
-	}
-	if err := db.Exec(`CREATE TABLE manager.raster_cog_tasks (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		tenant_id INTEGER NOT NULL,
-		name TEXT NOT NULL,
-		description TEXT,
-		enabled BOOLEAN,
-		last_execution_id TEXT,
-		last_execution_status TEXT,
-		last_run_at DATETIME,
-		next_run_at DATETIME,
-		schedule TEXT,
-		created_by INTEGER,
-		config JSON,
-		created_at DATETIME,
-		updated_at DATETIME,
-		deleted_at DATETIME
-	)`).Error; err != nil {
-		t.Fatalf("create raster_cog_tasks table: %v", err)
-	}
 	if err := db.Exec(`CREATE TABLE manager.raster_cog (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		tenant_id INTEGER NOT NULL,
@@ -1123,101 +1089,6 @@ func newTaskProviderHandlerTestDB(t *testing.T) *gorm.DB {
 		deleted_at DATETIME
 	)`).Error; err != nil {
 		t.Fatalf("create raster_cog table: %v", err)
-	}
-	if err := db.Exec(`CREATE TABLE manager.raster_mosaic_tasks (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		tenant_id INTEGER NOT NULL,
-		name TEXT NOT NULL,
-		description TEXT,
-		enabled BOOLEAN,
-		last_execution_id TEXT,
-		last_execution_status TEXT,
-		last_run_at DATETIME,
-		next_run_at DATETIME,
-		schedule TEXT,
-		created_by INTEGER,
-		config JSON,
-		created_at DATETIME,
-		updated_at DATETIME,
-		deleted_at DATETIME
-	)`).Error; err != nil {
-		t.Fatalf("create raster_mosaic_tasks table: %v", err)
-	}
-	if err := db.Exec(`CREATE TABLE manager.model3d_tiles_tasks (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		tenant_id INTEGER NOT NULL,
-		name TEXT NOT NULL,
-		description TEXT,
-		enabled BOOLEAN,
-		last_execution_id TEXT,
-		last_execution_status TEXT,
-		last_run_at DATETIME,
-		next_run_at DATETIME,
-		schedule TEXT,
-		created_by INTEGER,
-		config JSON,
-		created_at DATETIME,
-		updated_at DATETIME,
-		deleted_at DATETIME
-	)`).Error; err != nil {
-		t.Fatalf("create model3d_tiles_tasks table: %v", err)
-	}
-	if err := db.Exec(`CREATE TABLE manager.model_3d_glb_tasks (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		tenant_id INTEGER NOT NULL,
-		name TEXT NOT NULL,
-		description TEXT,
-		enabled BOOLEAN,
-		last_execution_id TEXT,
-		last_execution_status TEXT,
-		last_run_at DATETIME,
-		next_run_at DATETIME,
-		schedule TEXT,
-		created_by INTEGER,
-		config JSON,
-		created_at DATETIME,
-		updated_at DATETIME,
-		deleted_at DATETIME
-	)`).Error; err != nil {
-		t.Fatalf("create model_3d_glb_tasks table: %v", err)
-	}
-	if err := db.Exec(`CREATE TABLE manager.gaussian_splat_ksplat_tasks (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		tenant_id INTEGER NOT NULL,
-		name TEXT NOT NULL,
-		description TEXT,
-		enabled BOOLEAN,
-		last_execution_id TEXT,
-		last_execution_status TEXT,
-		last_run_at DATETIME,
-		next_run_at DATETIME,
-		schedule TEXT,
-		created_by INTEGER,
-		config JSON,
-		created_at DATETIME,
-		updated_at DATETIME,
-		deleted_at DATETIME
-	)`).Error; err != nil {
-		t.Fatalf("create gaussian_splat_ksplat_tasks table: %v", err)
-	}
-	if err := db.Exec(`CREATE TABLE manager.point_cloud_copc_tasks (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		tenant_id INTEGER NOT NULL,
-		name TEXT NOT NULL,
-		description TEXT,
-		enabled BOOLEAN,
-		last_execution_id TEXT,
-		last_execution_status TEXT,
-		last_run_at DATETIME,
-		next_run_at DATETIME,
-		schedule TEXT,
-		created_by INTEGER,
-		config JSON,
-		created_at DATETIME,
-		updated_at DATETIME,
-		deleted_at DATETIME
-	)`).Error; err != nil {
-		t.Fatalf("create point_cloud_copc_tasks table: %v", err)
 	}
 	if err := db.Exec(`CREATE TABLE manager.model_3d_glb (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,

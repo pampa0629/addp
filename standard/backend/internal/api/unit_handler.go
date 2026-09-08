@@ -45,7 +45,9 @@ func (h *UnitHandler) ListCategories(c *gin.Context) {
 // @Summary 创建度量类别 | Create measurement category
 // @Tags Standard
 // @Produce json
+// @Param request body models.CreateMeasurementCategoryRequest true "度量类别 | Measurement category"
 // @Success 201 {object} models.MeasurementCategory
+// @Failure 400 {object} map[string]string "编码或请求参数无效，编码错误返回 error_code=invalid_standard_code | Invalid code or request; code errors return error_code=invalid_standard_code"
 // @Failure 401 {object} map[string]string "需要登录 | Authentication required"
 // @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"

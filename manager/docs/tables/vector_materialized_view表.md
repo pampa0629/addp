@@ -11,7 +11,7 @@
 它不替代：
 
 1. `manager.preview_state` 的用户预览模式偏好。
-2. `manager.vector_materialized_view_tasks` 的任务定义。
+2. `manager.task_definitions` 中 `task_type=vector_materialized_view_generation` 的任务定义。
 3. `manager.vector_tile_cache` 的瓦片缓存结果。
 4. `common.task_executions` 的执行历史。
 
@@ -26,7 +26,7 @@
 | `item_fingerprint` | varchar(64) | 源 item 指纹 |
 | `item_id` | integer | 当前 Meta item 行引用，仅用于回查 |
 | `locator` | text | ResourceLocator，用于回跳和定位 |
-| `task_id` | bigint | 产生或最近刷新该结果的 `manager.vector_materialized_view_tasks.id` |
+| `task_id` | bigint | 产生或最近刷新该结果的 `manager.task_definitions.id` |
 | `last_execution_id` | varchar | 最近一次优化 execution |
 | `source_engine_id` | integer | 源 PG 引擎 ID |
 | `source_schema` / `source_table` / `source_geometry_column` | varchar | 源空间表和几何列 |
@@ -90,5 +90,5 @@
 
 - [快显概念说明](../快显概念说明.md)
 - [快显实现规范](../快显实现规范.md)
-- [vector_materialized_view_tasks 表结构说明](./vector_materialized_view_tasks表.md)
+- [task_definitions 表结构说明](./task_definitions表.md)
 - [数据库架构](../数据库架构.md)

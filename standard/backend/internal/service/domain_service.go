@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/standard/internal/models"
@@ -23,8 +24,12 @@ func (s *DomainService) CreateDomain(req *models.CreateDomainRequest, tenantID, 
 	if err := s.refs.RequireDomain(tenantID, req.ParentID); err != nil {
 		return nil, err
 	}
+	code, err := normalizeStandardStableCode(req.Code, maxStandardCategoryCodeLength)
+	if err != nil {
+		return nil, err
+	}
 	// 检查 code 唯一性
-	exists, err := s.repo.ExistsByCode(req.Code, tenantID, 0)
+	exists, err := s.repo.ExistsByCode(code, tenantID, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -34,8 +39,8 @@ func (s *DomainService) CreateDomain(req *models.CreateDomainRequest, tenantID, 
 
 	domain := &models.Domain{
 		TenantID:    tenantID,
-		Name:        req.Name,
-		Code:        req.Code,
+		Name:        strings.TrimSpace(req.Name),
+		Code:        code,
 		Description: req.Description,
 		ParentID:    req.ParentID,
 		Icon:        req.Icon,

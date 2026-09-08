@@ -2,7 +2,7 @@
         build-iam-bootstrap build-iam-recovery build-iam-migration-repair \
         dev-start dev-restart dev-stop infra-up infra-down infra-restart infra-status prod-start prod-restart prod-stop prod-health ports-validate
 
-.PHONY: test-business-config test-common-oceanbase
+.PHONY: test-business-config test-common-oceanbase test-opengauss-official-media-release
 
 # 默认目标
 .DEFAULT_GOAL := help
@@ -126,6 +126,9 @@ test-copilot: ## 运行 Copilot 后端全量确定性测试
 test-common-python-cli-release:
 	@bash scripts/test/common-python-cli-release-gate.sh
 
+test-opengauss-official-media-release:
+	@bash scripts/test/opengauss-official-media-release-gate.sh
+
 test-module: ## 运行指定模块的 T0-T3 门禁；用法：make test-module MODULE=standard
 	@python3 scripts/test/module-gate.py --repository "$(CURDIR)" --module "$(MODULE)"
 
@@ -240,7 +243,7 @@ test-release: ## 运行指定 T5 发布套件；用法：make test-release RELEA
 	@python3 scripts/test/release-gate.py --repository "$(CURDIR)" --suite "$(RELEASE_SUITE)"
 
 test-release-runner: ## 运行 T5 分发器和 CI 登记检查的确定性测试
-	@python3 -m unittest scripts/test/release-gate_test.py scripts/ci/check-release-ci-registration_test.py
+	@python3 -m unittest scripts/test/release-gate_test.py scripts/test/opengauss-official-media-release-gate_test.py scripts/ci/check-release-ci-registration_test.py
 	@python3 scripts/ci/check-release-ci-registration.py --repository "$(CURDIR)"
 
 test-platform: ## 运行无外部服务依赖的平台一致性门禁

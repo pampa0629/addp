@@ -3,14 +3,17 @@
     <div class="iam-toolbar">
       <div class="iam-filters">
         <el-input v-model="filters.search" :placeholder="t('system.iam.common.search')" clearable :prefix-icon="Search" @keyup.enter="reload" @clear="reload" />
+        <el-select v-model="filters.principal_type" :placeholder="t('system.iam.memberships.memberType')" clearable @change="reload">
+          <el-option v-for="principalType in principalTypes" :key="principalType" :label="memberTypeLabel(principalType)" :value="principalType" />
+        </el-select>
         <el-select v-model="filters.status" :placeholder="t('system.iam.common.status')" clearable @change="reload"><el-option v-for="status in statuses" :key="status" :label="statusLabel(status)" :value="status" /></el-select>
         <el-button :icon="Refresh" @click="reload">{{ t('system.iam.common.refresh') }}</el-button>
       </div>
     </div>
 
     <el-table v-loading="loading" :data="rows" stripe>
-      <el-table-column :label="t('system.iam.memberships.member')" min-width="190"><template #default="{ row }"><div class="iam-primary-cell"><strong>{{ row.display_name }}</strong><span>{{ row.username || row.principal_id }}</span></div></template></el-table-column>
-      <el-table-column :label="t('system.iam.memberships.principalType')" width="140"><template #default="{ row }">{{ t(`system.iam.principalType.${row.principal_type}`) }}</template></el-table-column>
+      <el-table-column :label="t('system.iam.memberships.member')" min-width="190"><template #default="{ row }"><div class="iam-primary-cell"><strong>{{ row.display_name }} <el-tag v-if="isCurrentMembership(row)" size="small" effect="plain">{{ t('system.iam.memberships.currentAccount') }}</el-tag></strong><span>{{ row.username || row.principal_id }}</span></div></template></el-table-column>
+      <el-table-column :label="t('system.iam.memberships.memberType')" width="140"><template #default="{ row }">{{ memberTypeLabel(row.principal_type) }}</template></el-table-column>
       <el-table-column :label="t('system.iam.memberships.source')" width="150"><template #default="{ row }">{{ t(`system.iam.source.${row.source_type}`) }}</template></el-table-column>
       <el-table-column :label="t('system.iam.common.status')" width="120"><template #default="{ row }"><el-tag :type="statusType(row.status)">{{ statusLabel(row.status) }}</el-tag></template></el-table-column>
       <el-table-column :label="t('system.iam.memberships.joinedAt')" width="180"><template #default="{ row }">{{ formatDate(row.joined_at) }}</template></el-table-column>
@@ -46,18 +49,21 @@ const { t } = useI18n()
 const authStore = useAuthStore()
 const can = (permission) => authStore.hasPermission(permission)
 const statuses = ['active', 'suspended', 'ended']
+const principalTypes = ['user', 'service_principal']
 const rows = ref([])
 const loading = ref(false)
 const submitting = ref(false)
 const page = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
-const filters = reactive({ search: '', status: '' })
+const filters = reactive({ search: '', principal_type: '', status: '' })
 const expiryVisible = ref(false)
 const expiryRow = ref(null)
 const expiryDate = ref(null)
 
 function statusLabel(status) { return t(`system.iam.status.${status}`) }
+function memberTypeLabel(principalType) { return t(`system.iam.principalType.${principalType}`) }
+function isCurrentMembership(row) { return row.id === authStore.authContext?.context?.tenant_membership_id }
 function statusType(status) { return ({ active: 'success', suspended: 'warning', ended: 'info' })[status] || 'info' }
 function formatDate(value) { return value ? new Date(value).toLocaleString() : '-' }
 async function load() {

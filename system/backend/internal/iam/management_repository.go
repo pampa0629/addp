@@ -321,10 +321,9 @@ func (r *Repository) UpdatePrincipalStatus(
 func (r *Repository) ListManagedTenantMemberships(
 	ctx context.Context,
 	tenantID int64,
+	filter TenantMembershipFilter,
 	page int,
 	pageSize int,
-	search string,
-	status *TenantMembershipStatus,
 ) ([]ManagedTenantMembership, int64, error) {
 	base := r.db.WithContext(ctx).
 		Table("system.tenant_memberships membership").
@@ -333,15 +332,18 @@ func (r *Repository) ListManagedTenantMemberships(
 		Joins("LEFT JOIN system.local_accounts account ON account.user_id = principal.id").
 		Joins("LEFT JOIN system.service_principals service_principal ON service_principal.id = principal.id").
 		Where("membership.tenant_id = ?", tenantID)
-	if normalized := strings.TrimSpace(search); normalized != "" {
+	if normalized := strings.TrimSpace(filter.Search); normalized != "" {
 		pattern := "%" + normalized + "%"
 		base = base.Where(
 			"user_profile.display_name ILIKE ? OR account.username ILIKE ? OR service_principal.name ILIKE ?",
 			pattern, pattern, pattern,
 		)
 	}
-	if status != nil {
-		base = base.Where("membership.status = ?", *status)
+	if filter.Status != nil {
+		base = base.Where("membership.status = ?", *filter.Status)
+	}
+	if filter.PrincipalType != nil {
+		base = base.Where("principal.principal_type = ?", *filter.PrincipalType)
 	}
 	var total int64
 	if err := base.Count(&total).Error; err != nil {

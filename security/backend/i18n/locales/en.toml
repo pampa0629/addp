@@ -16,3 +16,5 @@ other = "Deleted successfully"
 other = "The protection projection cursor is invalid, regressing, or not issued for this consumer"
 [security.enrollment.no_supported_findings_release_unavailable]
 other = "The latest successful discovery no longer meets the zero-finding confirmation conditions. Refresh or rediscover and try again"
+[security.access_request.expired]
+other = "The plaintext access request has expired. Ask the requester to submit a new request"

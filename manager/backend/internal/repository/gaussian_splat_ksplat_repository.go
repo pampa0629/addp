@@ -77,9 +77,7 @@ func (r *GaussianSplatKSplatRepository) UpdateTask(ctx context.Context, task *mo
 }
 
 func (r *GaussianSplatKSplatRepository) DeleteTask(ctx context.Context, id uint, tenantID uint) error {
-	return r.db.WithContext(ctx).
-		Where("id = ? AND tenant_id = ? AND task_type = ?", id, tenantID, commonExecution.TaskTypeGaussianSplatKSplatGeneration).
-		Delete(&models.GaussianSplatKSplatTask{}).Error
+	return deleteTaskDefinition(ctx, r.db, commonExecution.TaskTypeGaussianSplatKSplatGeneration, id, tenantID)
 }
 
 func (r *GaussianSplatKSplatRepository) ClaimExecution(
@@ -87,11 +85,11 @@ func (r *GaussianSplatKSplatRepository) ClaimExecution(
 ) (*models.GaussianSplatKSplatTask, error) {
 	var task models.GaussianSplatKSplatTask
 	err := newTaskExecutionLifecycle(r.db).Claim(ctx, taskID, tenantID, execution, taskExecutionClaimSpec{
-		TaskModel: &task,
-		TaskType:  commonExecution.TaskTypeGaussianSplatKSplatGeneration,
+		TaskModel:      &task,
+		TaskType:       commonExecution.TaskTypeGaussianSplatKSplatGeneration,
 		TaskTypeColumn: true,
-		TaskLabel: "gaussian splat KSplat",
-		TaskName:  func() string { return task.Name },
+		TaskLabel:      "gaussian splat KSplat",
+		TaskName:       func() string { return task.Name },
 		TaskConfig: func() commonModels.JSONMap {
 			return task.Config
 		},

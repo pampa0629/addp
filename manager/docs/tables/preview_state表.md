@@ -25,9 +25,9 @@
 | --- | --- |
 | `manager.preview_state` | 用户预览模式偏好和预览交互状态 |
 | `manager.vector_materialized_view` | Manager 创建并拥有生命周期的 3857 矢量物化视图结果状态 |
-| `manager.vector_materialized_view_tasks` | 矢量物化视图任务定义 |
+| `manager.task_definitions` | 统一派生任务定义（按 `task_type` 区分） |
 | `manager.vector_tile_cache` | 瓦片缓存结果状态 |
-| `manager.vector_tile_cache_tasks` | 瓦片缓存生成任务定义 |
+| `manager.task_resource_bindings` | 派生任务的规范化源/目标资源绑定 |
 | `common.task_executions` | 某一次实际执行记录 |
 | Quick View Capability API | 动态快显能力、推荐渲染源、默认瓦片缓存结果和不可用原因 |
 
@@ -73,7 +73,7 @@
 | `can_use_quick_view=false` 且 `can_generate_vector_tile_cache=true` | 展示“生成瓦片缓存”；如果 capability 或瓦片响应提示矢量物化视图，优先展示“执行矢量物化视图”入口 |
 | `can_use_quick_view=false` 且 `can_generate_vector_tile_cache=false` | 不展示生成按钮，只展示不可用原因 |
 
-从预览页跳转时，矢量物化视图页面或瓦片缓存页面应自动带入当前 item 上下文。矢量物化视图页面创建 `manager.vector_materialized_view_tasks`；瓦片缓存页面在“任务”tab 创建 `manager.vector_tile_cache_tasks`。
+从预览页跳转时，统一派生任务页应自动带入当前 item 上下文、产品分类和 `task_type`；任务定义统一写入 `manager.task_definitions`。
 
 预览页和 Explorer 内嵌预览都必须按同一规则展示矢量物化视图诊断：
 
@@ -93,7 +93,7 @@
 
 ## 七、与任务和 execution 的关系
 
-瓦片缓存生成必须先创建 `manager.vector_tile_cache_tasks`，再执行。
+瓦片缓存生成必须先创建 `manager.task_definitions` 中 `task_type=vector_tile_cache_generation` 的定义，再执行。
 
 执行过程：
 
@@ -149,7 +149,7 @@
 | 旧信息 | 目标落点 |
 | --- | --- |
 | 产物范围、层级、格式、存储引用 | `manager.vector_tile_cache` |
-| 生成配置 | `manager.vector_tile_cache_tasks.config` |
+| 生成配置 | `manager.task_definitions.config` |
 | 执行进度、耗时、错误详情、统计摘要 | `common.task_executions.metadata` / `error_details` |
 | 矢量物化视图目标状态 | `manager.vector_materialized_view` |
 

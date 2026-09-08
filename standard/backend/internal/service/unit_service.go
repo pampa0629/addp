@@ -1,6 +1,8 @@
 package service
 
 import (
+	"strings"
+
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/repository"
@@ -23,7 +25,11 @@ func (s *UnitService) ListCategories(tenantID int64) ([]models.MeasurementCatego
 }
 
 func (s *UnitService) CreateCategory(req *models.CreateMeasurementCategoryRequest, tenantID int64) (*models.MeasurementCategory, error) {
-	exists, err := s.catRepo.ExistsByCode(req.Code, tenantID, 0)
+	code, err := normalizeStandardStableCode(req.Code, maxStandardCategoryCodeLength)
+	if err != nil {
+		return nil, err
+	}
+	exists, err := s.catRepo.ExistsByCode(code, tenantID, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -32,8 +38,8 @@ func (s *UnitService) CreateCategory(req *models.CreateMeasurementCategoryReques
 	}
 	cat := &models.MeasurementCategory{
 		TenantID:    tenantID,
-		Name:        req.Name,
-		Code:        req.Code,
+		Name:        strings.TrimSpace(req.Name),
+		Code:        code,
 		Description: req.Description,
 		SortOrder:   req.SortOrder,
 	}

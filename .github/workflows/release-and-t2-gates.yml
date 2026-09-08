@@ -242,6 +242,46 @@ jobs:
           status: ${{ job.status }}
           details-file: ${{ runner.temp }}/addp-cli-release-gate/release-summary.md
 
+  opengauss-official-media-certification:
+    name: openGauss 6.0.6 official media certification (Linux x86_64)
+    needs: selection
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && needs.selection.outputs.common == 'true')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: common/go.mod
+          cache: false
+
+      - name: Run openGauss official-media certification
+        env:
+          ADDP_RELEASE_ARTIFACT_DIR: ${{ runner.temp }}/addp-opengauss-official-media
+        run: make test-release RELEASE_SUITE=opengauss-official-media
+
+      - name: Upload openGauss certification evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: opengauss-official-media-certification
+          path: ${{ runner.temp }}/addp-opengauss-official-media/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Summarize openGauss official-media certification
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: openGauss 6.0.6 official media certification (Linux x86_64)
+          status: ${{ job.status }}
+          details-file: ${{ runner.temp }}/addp-opengauss-official-media/release-summary.md
+
   system-iam-postgres-verification:
     name: System IAM verification (PostgreSQL 15)
     needs: selection

@@ -197,6 +197,15 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_standard_internal_models.CodeSetAggregate"
                         }
+                    },
+                    "400": {
+                        "description": "编码或请求参数无效，编码错误返回 error_code=invalid_standard_code | Invalid code or request; code errors return error_code=invalid_standard_code",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -958,7 +967,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Bad Request",
+                        "description": "编码或请求参数无效，编码错误返回 error_code=invalid_standard_code | Invalid code or request; code errors return error_code=invalid_standard_code",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -1620,7 +1629,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Bad Request",
+                        "description": "正式化请求或候选编码无效，编码错误返回 error_code=invalid_standard_code | Invalid formalization request or candidate code; code errors return error_code=invalid_standard_code",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -1783,6 +1792,15 @@ const docTemplate = `{
                         "description": "Created",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentAggregate"
+                        }
+                    },
+                    "400": {
+                        "description": "编码或请求参数无效，编码错误返回 error_code=invalid_standard_code | Invalid code or request; code errors return error_code=invalid_standard_code",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     },
                     "401": {
@@ -2836,11 +2854,19 @@ const docTemplate = `{
                 ],
                 "summary": "创建业务域 | Create business domain",
                 "responses": {
-                    "200": {
-                        "description": "OK",
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.Domain"
+                        }
+                    },
+                    "400": {
+                        "description": "编码或请求参数无效，编码错误返回 error_code=invalid_standard_code | Invalid code or request; code errors return error_code=invalid_standard_code",
                         "schema": {
                             "type": "object",
-                            "additionalProperties": true
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     },
                     "401": {
@@ -3190,7 +3216,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "请求无效 | Invalid request",
+                        "description": "编码或请求参数无效，编码错误返回 error_code=invalid_standard_code | Invalid code or request; code errors return error_code=invalid_standard_code",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -3402,11 +3428,19 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
-                    "200": {
-                        "description": "OK",
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentAggregate"
+                        }
+                    },
+                    "400": {
+                        "description": "编码、标识或请求参数无效，编码错误返回 error_code=invalid_standard_code | Invalid code, identifier, or request; code errors return error_code=invalid_standard_code",
                         "schema": {
                             "type": "object",
-                            "additionalProperties": true
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     },
                     "401": {
@@ -4061,7 +4095,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "请求无效 | Invalid request",
+                        "description": "编码或请求参数无效，编码错误返回 error_code=invalid_standard_code | Invalid code or request; code errors return error_code=invalid_standard_code",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -4273,11 +4307,19 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
-                    "200": {
-                        "description": "OK",
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentAggregate"
+                        }
+                    },
+                    "400": {
+                        "description": "编码、标识或请求参数无效，编码错误返回 error_code=invalid_standard_code | Invalid code, identifier, or request; code errors return error_code=invalid_standard_code",
                         "schema": {
                             "type": "object",
-                            "additionalProperties": true
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     },
                     "401": {
@@ -4919,11 +4961,31 @@ const docTemplate = `{
                     "Standard"
                 ],
                 "summary": "创建度量类别 | Create measurement category",
+                "parameters": [
+                    {
+                        "description": "度量类别 | Measurement category",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.CreateMeasurementCategoryRequest"
+                        }
+                    }
+                ],
                 "responses": {
                     "201": {
                         "description": "Created",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_standard_internal_models.MeasurementCategory"
+                        }
+                    },
+                    "400": {
+                        "description": "编码或请求参数无效，编码错误返回 error_code=invalid_standard_code | Invalid code or request; code errors return error_code=invalid_standard_code",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     },
                     "401": {
@@ -5134,6 +5196,15 @@ const docTemplate = `{
                         "description": "Created",
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_standard_internal_models.MetricCategory"
+                        }
+                    },
+                    "400": {
+                        "description": "编码或请求参数无效，编码错误返回 error_code=invalid_standard_code | Invalid code or request; code errors return error_code=invalid_standard_code",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     }
                 },
@@ -5352,6 +5423,15 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/github_com_addp_standard_internal_models.MetricDefinitionAggregate"
                         }
+                    },
+                    "400": {
+                        "description": "编码或请求参数无效，编码错误返回 error_code=invalid_standard_code | Invalid code or request; code errors return error_code=invalid_standard_code",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -5557,11 +5637,19 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
-                    "200": {
-                        "description": "OK",
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentAggregate"
+                        }
+                    },
+                    "400": {
+                        "description": "编码、标识或请求参数无效，编码错误返回 error_code=invalid_standard_code | Invalid code, identifier, or request; code errors return error_code=invalid_standard_code",
                         "schema": {
                             "type": "object",
-                            "additionalProperties": true
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     },
                     "401": {
@@ -7437,6 +7525,27 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_standard_internal_models.CreateMeasurementCategoryRequest": {
+            "type": "object",
+            "required": [
+                "code",
+                "name"
+            ],
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "sort_order": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_standard_internal_models.CreateMetricCategoryRequest": {
             "type": "object",
             "required": [
@@ -8280,6 +8389,53 @@ const docTemplate = `{
                 },
                 "version_label": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.Domain": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "icon": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "lifecycle_state": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "parent_id": {
+                    "type": "integer"
+                },
+                "sort_order": {
+                    "type": "integer"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "updated_by": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "integer"
                 }
             }
         },

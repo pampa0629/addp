@@ -86,10 +86,30 @@ class ReleaseGateTest(unittest.TestCase):
         self.assertEqual(report["result"], "failed")
         self.assertEqual(report["error_code"], "release_owner_gate_failed")
 
+    @patch.object(RELEASE_GATE.time, "monotonic", side_effect=(1.0, 2.0))
+    @patch.object(
+        RELEASE_GATE.subprocess,
+        "run",
+        return_value=subprocess.CompletedProcess(("make",), 0),
+    )
+    def test_missing_owner_report_fails_release_suite(self, _run, _monotonic) -> None:
+        with self.assertRaisesRegex(
+            RELEASE_GATE.ReleaseOwnerEvidenceError,
+            "did not produce owner report",
+        ):
+            RELEASE_GATE.run_release(
+                "sample-product", self.repository, self.environment, self.suites
+            )
+        report = json.loads(
+            (self.artifacts / "release-report.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(report["result"], "failed")
+        self.assertEqual(report["error_code"], "release_owner_evidence_missing")
+
     def test_registers_only_current_t5_suites(self) -> None:
         self.assertEqual(
             set(RELEASE_GATE.SUITES),
-            {"agent-evaluation", "common-python-cli"},
+            {"agent-evaluation", "common-python-cli", "opengauss-official-media"},
         )
         self.assertEqual(
             RELEASE_GATE.SUITES["agent-evaluation"].target,
@@ -98,6 +118,14 @@ class ReleaseGateTest(unittest.TestCase):
         self.assertEqual(
             RELEASE_GATE.SUITES["common-python-cli"].target,
             "test-common-python-cli-release",
+        )
+        self.assertEqual(
+            RELEASE_GATE.SUITES["opengauss-official-media"].target,
+            "test-opengauss-official-media-release",
+        )
+        self.assertEqual(
+            RELEASE_GATE.SUITES["opengauss-official-media"].workflow_job,
+            "opengauss-official-media-certification",
         )
 
     def test_rejects_unknown_suite(self) -> None:

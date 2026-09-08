@@ -11,7 +11,7 @@
 它不替代：
 
 1. `manager.preview_state` 的用户预览模式偏好。
-2. `manager.vector_tile_cache_tasks` 的任务定义。
+2. `manager.task_definitions` 中 `task_type=vector_tile_cache_generation` 的任务定义。
 3. `common.task_executions` 的执行历史。
 
 ## 二、目标核心字段
@@ -23,7 +23,7 @@
 | `item_fingerprint` | varchar(64) | 标准 data item 指纹，用于源数据去重和幂等 |
 | `item_id` | integer / nullable | 当前 Meta item 行引用，仅用于回查，不作为去重主键 |
 | `locator` | text | 资源树或数据项回跳定位 |
-| `task_id` | bigint | 产生或最近刷新该产物的 `manager.vector_tile_cache_tasks.id` |
+| `task_id` | bigint | 产生或最近刷新该产物的 `manager.task_definitions.id` |
 | `tile_format` | varchar | PMTiles 内部瓦片编码，当前固定为 `mvt` |
 | `status` | varchar | 产物状态 |
 | `storage_ref` | text | 指向单个 infra `.pmtiles` 对象的存储引用，不允许目录前缀或 manifest |

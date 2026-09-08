@@ -60,9 +60,7 @@ func (r *RasterMosaicRepository) UpdateTask(ctx context.Context, task *models.Ra
 }
 
 func (r *RasterMosaicRepository) DeleteTask(ctx context.Context, id uint, tenantID uint) error {
-	return r.db.WithContext(ctx).
-		Where("id = ? AND tenant_id = ? AND task_type = ?", id, tenantID, commonExecution.TaskTypeRasterMosaicGeneration).
-		Delete(&models.RasterMosaicTask{}).Error
+	return deleteTaskDefinition(ctx, r.db, commonExecution.TaskTypeRasterMosaicGeneration, id, tenantID)
 }
 
 func (r *RasterMosaicRepository) ClaimExecution(
@@ -70,11 +68,11 @@ func (r *RasterMosaicRepository) ClaimExecution(
 ) (*models.RasterMosaicTask, error) {
 	var task models.RasterMosaicTask
 	err := newTaskExecutionLifecycle(r.db).Claim(ctx, taskID, tenantID, execution, taskExecutionClaimSpec{
-		TaskModel: &task,
-		TaskType:  commonExecution.TaskTypeRasterMosaicGeneration,
+		TaskModel:      &task,
+		TaskType:       commonExecution.TaskTypeRasterMosaicGeneration,
 		TaskTypeColumn: true,
-		TaskLabel: "raster mosaic",
-		TaskName:  func() string { return task.Name },
+		TaskLabel:      "raster mosaic",
+		TaskName:       func() string { return task.Name },
 		TaskConfig: func() commonModels.JSONMap {
 			return task.Config
 		},

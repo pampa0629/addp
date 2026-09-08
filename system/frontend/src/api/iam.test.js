@@ -14,6 +14,20 @@ import { iamAPI } from './iam'
 describe('IAM management API contract', () => {
   beforeEach(() => vi.clearAllMocks())
 
+  it('collects every tenant membership page for member selectors', async () => {
+    client.get
+      .mockResolvedValueOnce({ data: [{ id: '1' }], total_pages: 2 })
+      .mockResolvedValueOnce({ data: [{ id: '2' }], total_pages: 2 })
+
+    await expect(iamAPI.memberships.listAll({ status: 'active' })).resolves.toEqual([{ id: '1' }, { id: '2' }])
+    expect(client.get).toHaveBeenNthCalledWith(1, '/system/tenant/memberships', {
+      params: { status: 'active', page: 1, page_size: 100 }
+    })
+    expect(client.get).toHaveBeenNthCalledWith(2, '/system/tenant/memberships', {
+      params: { status: 'active', page: 2, page_size: 100 }
+    })
+  })
+
   it('creates and initializes tenants through the platform tenant path', () => {
     iamAPI.platformTenants.listAdministratorCandidates({ search: 'alice' })
     iamAPI.platformTenants.create({

@@ -131,7 +131,7 @@ func parseElementIDs(value string) ([]int64, error) {
 // @Produce json
 // @Param request body models.CreateElementRequest true "数据元和首个草稿 | Data element and initial draft"
 // @Success 201 {object} models.ElementAggregate
-// @Failure 400 {object} map[string]string "请求无效 | Invalid request"
+// @Failure 400 {object} map[string]string "编码或请求参数无效，编码错误返回 error_code=invalid_standard_code | Invalid code or request; code errors return error_code=invalid_standard_code"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.element.create"]
 // @Router /elements [post]

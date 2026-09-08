@@ -40,6 +40,7 @@ func TestRespondErrorMapsStructuredErrorsAndLanguage(t *testing.T) {
 		{name: "system unit", err: service.ErrSystemUnitImmutable, fallback: http.StatusBadRequest, wantStatus: http.StatusConflict, wantBody: "System units cannot be updated or deleted"},
 		{name: "invalid tenant reference", err: repository.ErrInvalidTenantReference, fallback: http.StatusInternalServerError, wantStatus: http.StatusBadRequest, wantBody: "A referenced resource does not exist or belongs to another tenant"},
 		{name: "invalid standard scope", err: service.ErrInvalidStandardScope, fallback: http.StatusInternalServerError, wantStatus: http.StatusBadRequest, wantBody: "The scope and owning domain are inconsistent"},
+		{name: "invalid standard code", err: service.ErrInvalidStandardCode, fallback: http.StatusInternalServerError, wantStatus: http.StatusBadRequest, wantBody: "lowercase snake_case"},
 		{name: "candidate not retained", err: service.ErrCandidateNotRetained, fallback: http.StatusInternalServerError, wantStatus: http.StatusConflict, wantBody: "Only a retained standard candidate can be formalized"},
 		{name: "candidate already formalized", err: service.ErrCandidateAlreadyFormalized, fallback: http.StatusInternalServerError, wantStatus: http.StatusConflict, wantBody: "already been formalized"},
 		{name: "candidate formalization denied", err: service.ErrCandidateFormalizationDenied, fallback: http.StatusInternalServerError, wantStatus: http.StatusForbidden, wantBody: "Permission to create or update"},
@@ -63,6 +64,25 @@ func TestRespondErrorMapsStructuredErrorsAndLanguage(t *testing.T) {
 				t.Fatalf("body = %s, want %q", response.Body.String(), tt.wantBody)
 			}
 		})
+	}
+}
+
+func TestRespondErrorReturnsInvalidStandardCodeContract(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Set("addp_lang", "en")
+
+	respondError(context, http.StatusInternalServerError, service.ErrInvalidStandardCode)
+
+	var response struct {
+		Error     string `json:"error"`
+		ErrorCode string `json:"error_code"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if recorder.Code != http.StatusBadRequest || response.ErrorCode != "invalid_standard_code" || !strings.Contains(response.Error, "lowercase snake_case") {
+		t.Fatalf("status=%d response=%+v", recorder.Code, response)
 	}
 }
 

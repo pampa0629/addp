@@ -18,6 +18,7 @@ const (
 	MsgDeleteSuccess                         = "security.common.delete_success"
 	MsgProjectionCursorConflict              = "security.projection.cursor_conflict"
 	MsgNoSupportedFindingsReleaseUnavailable = "security.enrollment.no_supported_findings_release_unavailable"
+	MsgProtectionAccessRequestExpired        = "security.access_request.expired"
 )
 
 func init() { commoni18n.RegisterBundle(localeFS, "locales") }

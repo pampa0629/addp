@@ -133,6 +133,13 @@ func ensureBaseMapProviderSchema(db *gorm.DB) error {
 }
 
 func dropLegacyCADPreviewTables(db *gorm.DB) error {
+	if err := db.Exec(`
+		DELETE FROM common.task_executions
+		WHERE module = 'manager'
+		  AND task_type = 'cad_preview_generation'
+	`).Error; err != nil {
+		return err
+	}
 	if err := db.Exec(`DROP TABLE IF EXISTS manager.cad_previews`).Error; err != nil {
 		return err
 	}
@@ -225,6 +232,7 @@ func dropLegacyQuickViewTables(db *gorm.DB) error {
 		"cog_artifact_generation",
 		"mvt_generation",
 		"model_3d_quick_view_generation",
+		"model_3d_tiles_generation",
 		"gaussian_splat_quick_view_generation",
 	}
 	if err := db.Exec(`

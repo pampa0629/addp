@@ -30,7 +30,7 @@
 
     <el-dialog v-model="dialogVisible" :title="$t('standard.document.createTitle')" width="680px" @closed="resetForm">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="120px">
-        <el-form-item :label="$t('standard.common.code')" prop="code"><el-input v-model="form.code" /></el-form-item>
+        <el-form-item :label="$t('standard.common.code')" prop="code"><el-input v-model="form.code" :placeholder="$t('standard.common.codePlaceholder')" /></el-form-item>
         <el-form-item :label="$t('standard.common.scopeLabel')" prop="scope_type"><el-select v-model="form.scope_type" style="width:100%" @change="onScopeChange"><el-option :label="$t('standard.common.scopeValue.tenant_common')" value="tenant_common" /><el-option :label="$t('standard.common.scopeValue.domain')" value="domain" /></el-select></el-form-item>
         <el-form-item v-if="form.scope_type === 'domain'" :label="$t('standard.document.domainLabel')" prop="owner_domain_id"><el-select v-model="form.owner_domain_id" filterable style="width:100%"><el-option v-for="domain in domains" :key="domain.id" :label="domain.name" :value="domain.id" /></el-select></el-form-item>
         <el-form-item :label="$t('standard.document.nameLabel')" prop="name"><el-input v-model="form.name" /></el-form-item>
@@ -59,6 +59,7 @@ import { useStandardPermissions } from '../composables/useStandardPermissions'
 import { getDocumentTypeTagType } from '../utils/documentType'
 import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
+import { buildStandardCodeRules } from '../utils/standardCode'
 
 const { t } = useI18n()
 const route = useRoute(), router = useRouter()
@@ -75,7 +76,7 @@ const filters = reactive({ keyword: '', doc_type: '', owner_domain_id: null, sta
 const emptyForm = () => ({ code: '', scope_type: 'tenant_common', owner_domain_id: null, name: '', doc_type: 'reference', source_org: '', version_label: '', description: '', change_summary: '', effective_from: null, tags: [] })
 const form = ref(emptyForm())
 const rules = computed(() => ({
-  code: [{ required: true, message: t('standard.document.codeRequired'), trigger: 'blur' }],
+  code: buildStandardCodeRules(t, 'standard.document.codeRequired'),
   name: [{ required: true, message: t('standard.document.nameRequired'), trigger: 'blur' }],
   doc_type: [{ required: true, message: t('standard.document.typeRequired'), trigger: 'change' }],
   change_summary: [{ required: true, message: t('standard.revision.changeSummaryRequired'), trigger: 'blur' }],

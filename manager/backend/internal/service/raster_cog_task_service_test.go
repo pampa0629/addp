@@ -685,25 +685,7 @@ func newRasterCOGTaskServiceTestDB(t *testing.T) *gorm.DB {
 	if err := executiontest.EnsureSQLiteStore(db); err != nil {
 		t.Fatalf("ensure SQLite execution store: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE manager.raster_cog_tasks (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		tenant_id INTEGER NOT NULL,
-		name TEXT NOT NULL,
-		description TEXT,
-		enabled BOOLEAN,
-		last_execution_id TEXT,
-		last_execution_status TEXT,
-		last_run_at DATETIME,
-		next_run_at DATETIME,
-		schedule TEXT,
-		created_by INTEGER,
-		config JSON,
-		created_at DATETIME,
-		updated_at DATETIME,
-		deleted_at DATETIME
-	)`).Error; err != nil {
-		t.Fatalf("create raster_cog_tasks table: %v", err)
-	}
+	ensureDerivedTaskDefinitionTestTables(t, db)
 	if err := db.Exec(`CREATE TABLE manager.raster_cog (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		tenant_id INTEGER NOT NULL,

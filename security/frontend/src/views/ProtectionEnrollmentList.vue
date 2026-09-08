@@ -55,7 +55,7 @@
               <el-button link type="danger" @click="decideAccessRequest(row, 'reject')">{{ t('security.accessRequest.reject') }}</el-button>
             </div>
             <div v-else class="access-decision-unavailable">
-              <el-tag size="small" type="info">{{ t('security.accessRequest.selfSubmitted') }}</el-tag>
+              <el-tag size="small" type="info">{{ t(`security.accessRequest.unavailableLabels.${row.decision_unavailable_reason}`) }}</el-tag>
               <span>{{ t(`security.accessRequest.unavailableReasons.${row.decision_unavailable_reason}`) }}</span>
             </div>
           </template>
@@ -1350,7 +1350,7 @@ async function decideAccessRequest(row, decision) {
     const result = await ElMessageBox.prompt(
       t(`security.accessRequest.${decision}Prompt`, { field: row.component?.key || '' }),
       t(`security.accessRequest.${decision}`),
-      { confirmButtonText: t('security.common.confirm'), cancelButtonText: t('security.common.cancel'), inputType: 'textarea', inputPlaceholder: t('security.accessRequest.decisionRationale'), inputValidator: value => Boolean(String(value || '').trim()) || t('security.accessRequest.decisionRationaleRequired') }
+      { confirmButtonText: t(`security.accessRequest.confirmActions.${decision}`), cancelButtonText: t('security.common.cancel'), inputType: 'textarea', inputPlaceholder: t('security.accessRequest.decisionRationale'), inputValidator: value => Boolean(String(value || '').trim()) || t('security.accessRequest.decisionRationaleRequired') }
     )
     await protectionAccessRequestAPI.decide(row.id, {
       version: Number(row.version),

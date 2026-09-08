@@ -18,7 +18,7 @@ class ReleaseCIRegistrationTest(unittest.TestCase):
         self._write(
             "scripts/test/release-gate.py",
             "SUITES = {\n"
-            "    'common-python-cli': Suite(target='test-common-python-cli-release'),\n"
+            "    'common-python-cli': Suite(target='test-common-python-cli-release', workflow_job='cli-product-macos-verification'),\n"
             "    'agent-evaluation': Suite(target='test-agent-eval-release'),\n"
             "}\n",
         )
@@ -46,6 +46,9 @@ class ReleaseCIRegistrationTest(unittest.TestCase):
             "      - run: make test-release RELEASE_SUITE=common-python-cli\n"
             "        env:\n"
             "          ADDP_RELEASE_ARTIFACT_DIR: /tmp/release\n"
+            "      - uses: actions/upload-artifact@0123456789abcdef\n"
+            "        with:\n"
+            "          path: /tmp/release\n"
             "      - uses: ./.github/actions/ci-gate-summary\n"
             "        with:\n"
             "          details-file: /tmp/release/release-summary.md\n",
@@ -100,8 +103,14 @@ class ReleaseCIRegistrationTest(unittest.TestCase):
             encoding="utf-8",
         )
         errors = MODULE.validate_registration(self.repository)
-        self.assertIn("CLI T5 workflow must call the shared test-release entry", errors)
-        self.assertIn("CLI T5 workflow must not bypass the shared test-release entry", errors)
+        self.assertIn(
+            "release suite common-python-cli: workflow must call the shared test-release entry",
+            errors,
+        )
+        self.assertIn(
+            "release suite common-python-cli: workflow must not bypass the shared test-release entry",
+            errors,
+        )
 
     def test_rejects_missing_shared_summary(self) -> None:
         workflow = self.repository / ".github/workflows/release-and-t2-gates.yml"
@@ -112,7 +121,37 @@ class ReleaseCIRegistrationTest(unittest.TestCase):
             encoding="utf-8",
         )
         self.assertIn(
-            "CLI T5 workflow must attach the shared release summary",
+            "release suite common-python-cli: workflow must attach the shared release summary",
+            MODULE.validate_registration(self.repository),
+        )
+
+    def test_rejects_missing_evidence_upload(self) -> None:
+        workflow = self.repository / ".github/workflows/release-and-t2-gates.yml"
+        workflow.write_text(
+            workflow.read_text(encoding="utf-8").replace(
+                "      - uses: actions/upload-artifact@0123456789abcdef\n"
+                "        with:\n"
+                "          path: /tmp/release\n",
+                "",
+            ),
+            encoding="utf-8",
+        )
+        self.assertIn(
+            "release suite common-python-cli: workflow must archive release evidence",
+            MODULE.validate_registration(self.repository),
+        )
+
+    def test_rejects_missing_declared_workflow_job(self) -> None:
+        dispatcher = self.repository / "scripts/test/release-gate.py"
+        dispatcher.write_text(
+            dispatcher.read_text(encoding="utf-8").replace(
+                "workflow_job='cli-product-macos-verification'",
+                "workflow_job='missing-verification'",
+            ),
+            encoding="utf-8",
+        )
+        self.assertIn(
+            "release suite common-python-cli: workflow job missing-verification is missing",
             MODULE.validate_registration(self.repository),
         )
 

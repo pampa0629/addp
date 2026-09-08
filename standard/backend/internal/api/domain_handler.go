@@ -44,7 +44,8 @@ func (h *DomainHandler) ListDomains(c *gin.Context) {
 // @Summary 创建业务域 | Create business domain
 // @Tags Standard
 // @Produce json
-// @Success 200 {object} map[string]interface{}
+// @Success 201 {object} models.Domain
+// @Failure 400 {object} map[string]string "编码或请求参数无效，编码错误返回 error_code=invalid_standard_code | Invalid code or request; code errors return error_code=invalid_standard_code"
 // @Failure 401 {object} map[string]string "需要登录 | Authentication required"
 // @Failure 403 {object} map[string]string "无权访问 | Access denied"
 // @x-addp-auth-mode "permission"

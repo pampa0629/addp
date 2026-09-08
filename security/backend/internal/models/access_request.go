@@ -11,6 +11,7 @@ const (
 	ProtectionAccessRequestStateApproved                   = "approved"
 	ProtectionAccessRequestStateRejected                   = "rejected"
 	ProtectionAccessRequestDecisionUnavailableSelfApproval = "self_approval_forbidden"
+	ProtectionAccessRequestDecisionUnavailableExpired      = "request_expired"
 )
 
 type ProtectionAccessRequest struct {

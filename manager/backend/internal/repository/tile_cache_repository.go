@@ -95,9 +95,7 @@ func (r *TileCacheRepository) UpdateTask(ctx context.Context, task *models.TileC
 }
 
 func (r *TileCacheRepository) DeleteTask(ctx context.Context, id uint, tenantID uint) error {
-	return r.db.WithContext(ctx).
-		Where("id = ? AND tenant_id = ? AND task_type = ?", id, tenantID, commonExecution.TaskTypeVectorTileCacheGeneration).
-		Delete(&models.TileCacheTask{}).Error
+	return deleteTaskDefinition(ctx, r.db, commonExecution.TaskTypeVectorTileCacheGeneration, id, tenantID)
 }
 
 func (r *TileCacheRepository) ListAllTasks(ctx context.Context, tenantID uint) ([]*models.TileCacheTask, error) {
@@ -124,11 +122,11 @@ func (r *TileCacheRepository) DisableTaskForCleanup(ctx context.Context, tenantI
 func (r *TileCacheRepository) ClaimExecution(ctx context.Context, taskID, tenantID uint, execution *commonExecution.TaskExecution, overwriteExistingResult bool) (*models.TileCacheTask, error) {
 	var task models.TileCacheTask
 	err := newTaskExecutionLifecycle(r.db).Claim(ctx, taskID, tenantID, execution, taskExecutionClaimSpec{
-		TaskModel: &task,
-		TaskType:  commonExecution.TaskTypeVectorTileCacheGeneration,
+		TaskModel:      &task,
+		TaskType:       commonExecution.TaskTypeVectorTileCacheGeneration,
 		TaskTypeColumn: true,
-		TaskLabel: "vector tile cache",
-		TaskName:  func() string { return task.Name },
+		TaskLabel:      "vector tile cache",
+		TaskName:       func() string { return task.Name },
 		TaskConfig: func() commonModels.JSONMap {
 			return task.Config
 		},

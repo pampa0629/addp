@@ -68,6 +68,8 @@ func NewIAMAuditHandler(service iamAuditQueryService) (*IAMAuditHandler, error) 
 // @Tags         平台审计 | Platform Audit
 // @Produce      json
 // @Security     BearerAuth
+// @Param        principal_id query integer false "授权主体 ID | Principal ID"
+// @Param        module_name query string false "模块标识 | Module name"
 // @Param        entity_type query string false "实体类型 | Entity type"
 // @Param        entity_id query string false "实体 ID | Entity ID"
 // @Success      200 {object} object{data=[]IAMAuditEventResponse,total=int64,page=int,page_size=int,total_pages=int}
@@ -81,6 +83,8 @@ func (h *IAMAuditHandler) PlatformList(c *gin.Context) { h.list(c, false) }
 // @Tags         租户审计 | Tenant Audit
 // @Produce      json
 // @Security     BearerAuth
+// @Param        principal_id query integer false "成员对应授权主体 ID | Principal ID of the member"
+// @Param        module_name query string false "模块标识 | Module name"
 // @Param        entity_type query string false "实体类型 | Entity type"
 // @Param        entity_id query string false "实体 ID | Entity ID"
 // @Success      200 {object} object{data=[]IAMAuditEventResponse,total=int64,page=int,page_size=int,total_pages=int}
@@ -166,6 +170,8 @@ func (h *IAMAuditHandler) get(c *gin.Context, tenantScoped bool) {
 // @Tags         平台审计 | Platform Audit
 // @Produce      json
 // @Security     BearerAuth
+// @Param        principal_id query integer false "授权主体 ID | Principal ID"
+// @Param        module_name query string false "模块标识 | Module name"
 // @Param        entity_type query string false "实体类型 | Entity type"
 // @Param        entity_id query string false "实体 ID | Entity ID"
 // @Success      200 {object} iam.AuditSummary
@@ -179,6 +185,8 @@ func (h *IAMAuditHandler) PlatformSummary(c *gin.Context) { h.summary(c, false) 
 // @Tags         租户审计 | Tenant Audit
 // @Produce      json
 // @Security     BearerAuth
+// @Param        principal_id query integer false "成员对应授权主体 ID | Principal ID of the member"
+// @Param        module_name query string false "模块标识 | Module name"
 // @Param        entity_type query string false "实体类型 | Entity type"
 // @Param        entity_id query string false "实体 ID | Entity ID"
 // @Success      200 {object} iam.AuditSummary
@@ -206,6 +214,8 @@ func (h *IAMAuditHandler) summary(c *gin.Context, tenantScoped bool) {
 // @Tags         平台审计 | Platform Audit
 // @Produce      json
 // @Security     BearerAuth
+// @Param        principal_id query integer false "授权主体 ID | Principal ID"
+// @Param        module_name query string false "模块标识 | Module name"
 // @Param        entity_type query string false "实体类型 | Entity type"
 // @Param        entity_id query string false "实体 ID | Entity ID"
 // @Success      200 {array} IAMAuditTrendResponse
@@ -219,6 +229,8 @@ func (h *IAMAuditHandler) PlatformTrends(c *gin.Context) { h.trends(c, false) }
 // @Tags         租户审计 | Tenant Audit
 // @Produce      json
 // @Security     BearerAuth
+// @Param        principal_id query integer false "成员对应授权主体 ID | Principal ID of the member"
+// @Param        module_name query string false "模块标识 | Module name"
 // @Param        entity_type query string false "实体类型 | Entity type"
 // @Param        entity_id query string false "实体 ID | Entity ID"
 // @Success      200 {array} IAMAuditTrendResponse
@@ -254,6 +266,8 @@ func (h *IAMAuditHandler) trends(c *gin.Context, tenantScoped bool) {
 // @Produce      json,text/csv
 // @Security     BearerAuth
 // @Param        format query string false "csv 或 json | csv or json"
+// @Param        principal_id query integer false "授权主体 ID | Principal ID"
+// @Param        module_name query string false "模块标识 | Module name"
 // @Param        entity_type query string false "实体类型 | Entity type"
 // @Param        entity_id query string false "实体 ID | Entity ID"
 // @Success      200 {array} IAMAuditEventResponse
@@ -268,6 +282,8 @@ func (h *IAMAuditHandler) PlatformExport(c *gin.Context) { h.export(c, false) }
 // @Produce      json,text/csv
 // @Security     BearerAuth
 // @Param        format query string false "csv 或 json | csv or json"
+// @Param        principal_id query integer false "成员对应授权主体 ID | Principal ID of the member"
+// @Param        module_name query string false "模块标识 | Module name"
 // @Param        entity_type query string false "实体类型 | Entity type"
 // @Param        entity_id query string false "实体 ID | Entity ID"
 // @Success      200 {array} IAMAuditEventResponse

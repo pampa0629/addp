@@ -17,20 +17,15 @@ Manager 拥有的成功 execution 必须在 `common.task_executions.metadata.lin
 空间快显与瓦片缓存的目标边界：
 
 - `manager.preview_state`：预览状态，表达某个 data item 的用户预览模式偏好与轻量交互设置（包括表格可见字段）；是否可快显、推荐渲染源和默认瓦片缓存结果由 Quick View Capability API 动态合成。
+- `manager.task_definitions`：Manager 派生任务定义的唯一表；`task_type` 选择强类型配置、校验器和执行器，产品分类只投影为“快显管理”与“空间任务”。
+- `manager.task_resource_bindings`：任务定义对源/目标资源的规范化绑定，供引擎生命周期检查和资源回收使用；不得再从异构 `config` JSON 猜测资源归属。
 - `manager.vector_materialized_view`：矢量物化视图结果状态，只登记 Manager 创建并拥有生命周期的 3857 矢量物化视图目标；同源 schema 下自动识别的外部 3857 目标只读消费，不进入该表。
-- `manager.vector_materialized_view_tasks`：矢量物化视图任务定义，TaskProvider `task_type=vector_materialized_view_generation`，当前不声明标准取消和自身定时调度能力。
 - `manager.raster_cog`：栅格快显 COG生成结果，只登记 Manager 创建或登记到 infra MinIO 的 COG 副本；源 NFS 或业务 MinIO COG 不直接暴露给前端。
-- `manager.raster_cog_tasks`：栅格快显 COG生成任务定义，TaskProvider `task_type=raster_cog_generation`，当前不声明标准取消和自身定时调度能力。
-- `manager.raster_mosaic_tasks`：栅格 mosaic 生成任务定义，TaskProvider `task_type=raster_mosaic_generation`，从资源树 node 创建，结果写入用户选择的业务存储并形成 `raster_mosaic` 业务 item；Manager 不登记或拥有 mosaic 长期产物。
 - `manager.vector_tile_cache`：快显缓存结果状态，表达 Manager infra PMTiles artifact 是否可用、存储引用、范围、层级、源版本、生成 profile 和最近执行。
-- `manager.vector_tile_cache_tasks`：快显缓存生成任务定义，TaskProvider `task_type=vector_tile_cache_generation`，结果固定为 Manager infra PMTiles，当前不声明标准取消和自身定时调度能力。
-- `manager.vector_tile_set_tasks`：业务矢量瓦片集生成任务定义，TaskProvider `task_type=vector_tile_set_generation`，结果固定为 Business PMTiles + Meta item；Manager 不建立业务结果表。
 - `manager.point_cloud_copc`：点云 COPC 快显结果，只登记 Manager 生成并拥有生命周期的 infra MinIO COPC artifact；源 `format=copc` item 直接基础预览，不进入该表。
-- `manager.point_cloud_copc_tasks`：点云 COPC 快显任务定义，TaskProvider `task_type=point_cloud_copc_generation`，源必须是 `format=las|laz|e57|pcd|xyz` 的 point_cloud item。
 - `manager.embedding_configuration`：Manager 平台向量化业务策略单例，只保存距离阈值、文件大小、并发等 Manager-owned 策略。
 - `manager.inference_scenario_bindings`：Manager-owned 的 `semantic_search_embedding` 场景绑定；保存平台默认和租户覆盖的 Inference Model Profile ID，不保存 Provider、端点、模型名或凭据。
 - `manager.model3d_tiles`：分块三维模型瓦片快显结果，`target_format=3d_tiles|s3m`；同一源 item 的两种格式分别登记为独立结果并写入 Manager infra MinIO。
-- `manager.model3d_tiles_tasks`：分块三维模型瓦片任务定义，TaskProvider `task_type=model3d_tiles_generation`；当前源为 `format=osgb_scene + layout=whole`。
 - `vector_tile_cache_generation` 与 `vector_tile_set_generation` 统一由 Manager Backend 编排，并按源能力选择执行路径：PostgreSQL/PostGIS 空间表复用 `common/spatial` 和 `ST_AsMVT` 原生 SQL 生成 PMTiles；MySQL、Oracle 等不具备原生 MVT 输出、但具备标准 EWKB 表读取能力的数据库空间表，由 Manager 通过 `TableReadSessionProvider` 流式物化受控临时 FlatGeobuf，再调用 GeoPython Workflow `vector_to_pmtiles` direct operator；NFS、MinIO/S3 文件或对象转换成受控 GDAL 访问计划后调用同一 operator。每类源只有一条执行路径，最终只生成 PMTiles v3，不保留松散 MVT 目录；临时 FlatGeobuf 由本次 execution 管理并清理。
 
 ## 技术栈与端口
@@ -101,16 +96,16 @@ manager/
 - 数据剖析不得使用当前预览页、分页记录或前端数组计算；采样和指标计算必须走统一 Provider 与服务端预算。刷新失败必须保留上一份成功结果。
 - 条件剖析只接受结构化 `data_scope`，条件必须由声明支持的 Provider 在采样前执行并安全绑定参数；全范围和条件范围按 `profile_config_hash` 分别保存。Manager 不接受任意 SQL，也不得退回到采样后过滤。已纳入 Security 保护的 DataItem 在条件值保护契约完成前只允许全范围剖析，条件剖析必须拒绝。
 - 空间相关逻辑不得默认几何字段名为 `geom`，应从 Meta、预览检测或请求参数获取。
-- 不得把 Quick View 称为任务；瓦片缓存生成任务统一使用 `vector_tile_cache_generation` / `manager.vector_tile_cache_tasks`。
+- 不得把 Quick View 称为任务；瓦片缓存生成任务统一使用 `manager.task_definitions` 中的 `task_type=vector_tile_cache_generation`。
 - “快显管理”和“空间任务”是统一派生任务页面中的产品分类，不是单一 `task_type`。全部 Manager 派生任务定义统一写入 `manager.task_definitions`，由 `task_type` 选择强类型配置、执行器和结果策略；不得恢复按类型分表或独立管理页面。
-- 业务矢量瓦片集生成任务统一使用 `vector_tile_set_generation` / `manager.vector_tile_set_tasks`；结果只写用户选择的 Business 存储并触发 Meta scan，不进入 `manager.vector_tile_cache`。
+- 业务矢量瓦片集生成任务统一使用 `manager.task_definitions` 中的 `task_type=vector_tile_set_generation`；结果只写用户选择的 Business 存储并触发 Meta scan，不进入 `manager.vector_tile_cache`。
 - “保存为业务瓦片集”必须创建或执行 `vector_tile_set_generation`。ready 缓存仅在源版本和生成 profile 完全一致时作为执行复用候选；复制必须使用临时对象、PMTiles 校验和原子提交，成功后再触发 Meta scan。
-- 矢量物化视图任务统一使用 `vector_materialized_view_generation` / `manager.vector_materialized_view_tasks`；结果只登记 Manager 创建并拥有生命周期的 3857 目标。
-- 栅格快显 COG生成结果统一使用 `manager.raster_cog`，任务定义统一使用 `manager.raster_cog_tasks` / `raster_cog_generation`；不得写入 `vector_tile_cache` 或 `vector_materialized_view_generation`，不得让前端感知 NFS path、业务 MinIO bucket/object 或底层 `storage_ref`。
-- 栅格 mosaic 生成任务统一使用 `manager.raster_mosaic_tasks` / `raster_mosaic_generation`；创建入口是资源树 node，目标是用户选择的业务存储，结果是 `data_type=media`、`format=raster_mosaic`、`layout=whole` 的业务 item。mosaic 的 leaf COG、overview COG、index、manifest 和可选 tiles 都不写入 Manager infra MinIO，不进入 `manager.raster_cog`。
-- 点云 COPC 快显任务统一使用 `manager.point_cloud_copc_tasks` / `point_cloud_copc_generation`；源必须是 `data_type=point_cloud + layout=single + format=las|laz|e57|pcd|xyz`，结果写入 `manager.point_cloud_copc` 和 Manager infra MinIO，不自动升格为业务 data item。源 `format=copc` 只走基础预览，不创建二次快显任务；XYZ 第一阶段只支持简单确定性文本 XYZ。
+- 矢量物化视图任务统一使用 `manager.task_definitions` 中的 `task_type=vector_materialized_view_generation`；结果只登记 Manager 创建并拥有生命周期的 3857 目标。
+- 栅格快显 COG生成结果统一使用 `manager.raster_cog`，任务定义使用 `task_type=raster_cog_generation`；不得写入 `vector_tile_cache` 或 `vector_materialized_view_generation`，不得让前端感知 NFS path、业务 MinIO bucket/object 或底层 `storage_ref`。
+- 栅格 mosaic 生成任务使用 `task_type=raster_mosaic_generation`；创建入口是资源树 node，目标是用户选择的业务存储，结果是 `data_type=media`、`format=raster_mosaic`、`layout=whole` 的业务 item。mosaic 的 leaf COG、overview COG、index、manifest 和可选 tiles 都不写入 Manager infra MinIO，不进入 `manager.raster_cog`。
+- 点云 COPC 快显任务使用 `task_type=point_cloud_copc_generation`；源必须是 `data_type=point_cloud + layout=single + format=las|laz|e57|pcd|xyz`，结果写入 `manager.point_cloud_copc` 和 Manager infra MinIO，不自动升格为业务 data item。源 `format=copc` 只走基础预览，不创建二次快显任务；XYZ 第一阶段只支持简单确定性文本 XYZ。
 - CAD 基础预览只允许 `data_type=cad + layout=single + format=dwg|dxf`，统一通过受控 `storage-stream` 把源文件交给 `frontend_renderer=cad`。浏览器收到源文件即具备保存其内容的能力，因此该入口必须使用 `manager.data_item.read`，且产品权限语义不得声称“可预览但不可取得源文件”。
-- 分块三维模型瓦片任务统一使用 `manager.model3d_tiles_tasks` / `model3d_tiles_generation`，结果统一进入 `manager.model3d_tiles`；`target_format=3d_tiles` 调用 `osgb_scene_to_3dtiles`，`target_format=s3m` 调用 `osgb_scene_to_s3m`。不得恢复写业务存储并触发 Meta scan 的旧 Manager 路径。
+- 分块三维模型瓦片任务使用 `task_type=model3d_tiles_generation`，结果统一进入 `manager.model3d_tiles`；`target_format=3d_tiles` 调用 `osgb_scene_to_3dtiles`，`target_format=s3m` 调用 `osgb_scene_to_s3m`。不得恢复写业务存储并触发 Meta scan 的旧 Manager 路径。
 - Manager 受管快显任务的语义身份统一为 `tenant_id + item_fingerprint + artifact_variant`。重复创建必须复用原任务 ID，重复执行必须新建 execution 并刷新同一当前结果；`item_id`、`locator`、`source_engine_id` 只作执行与回查事实。派生变体、并发唯一约束和业务派生任务的例外见 `manager/docs/快显实现规范.md`。
 - Raster COG 与 Model3D Tiles 是来源驱动的只读任务定义：只允许 Data Explorer 的 Quick View action 按源事实派生，不提供直接创建或更新任务配置的 API。管理页任务 Tab 的 `task_id` 打开只读任务定义，结果 Tab 的 `task_id` 只筛选该任务结果。
 - Manager 受管当前结果任务统一不启动自身定时调度，但允许 Orchestrator 定时 Pipeline 调用。周期性刷新由用户在 Step 参数中显式配置 `existing_result_action=overwrite`；Manager 不得按 scheduled 来源自动补充已有结果动作。Embedding 的逐 item 调度语义独立保留。
@@ -126,8 +121,8 @@ manager/
 
 - Manager 前端遵守 `docs/spec/addp前端路由与可恢复状态规范.md`，模块内公开导航统一通过 `src/utils/moduleNavigation.js`，不得直接形成 iframe 私有历史。
 - Data Explorer 使用 ResourceLocator 表达当前资源身份，默认 `preview` Tab 从 URL 省略，非默认稳定 Tab 使用 `tab` query。
-- 快显与空间任务管理页的稳定 Tab、当前任务筛选和创建来源参数必须保留在 canonical query 中；Tab、筛选和参数规范化使用 `replace`，跨页面进入资源或任务使用 `push`。
-- Raster COG 与 Model3D Tiles 的创建入口固定为 Data Explorer；TaskProvider `edit_url` 分别指向对应管理页的 `?task_id=:id` 只读任务定义，不得指向结果筛选或无任务身份的通用页面。
+- 派生任务是唯一管理页，固定提供“快显管理”和“空间任务”两个分类；分类、任务类型筛选和当前 `task_id` 必须保留在 canonical query 中，规范化使用 `replace`，跨页面进入资源或任务使用 `push`。
+- Raster COG 与 Model3D Tiles 的创建入口固定为 Data Explorer；TaskProvider `edit_url` 指向统一派生任务页并携带 `category`、`task_type` 和 `task_id`。
 
 ## 开发与验证
 
@@ -155,21 +150,15 @@ curl http://localhost:8081/health/ready
 - `manager/docs/三维模型、点云与高斯泼溅预览说明.md`
 - `manager/docs/存储流与原始下载语义.md`
 - `manager/docs/tables/preview_state表.md`
+- `manager/docs/tables/task_definitions表.md`
+- `manager/docs/tables/task_resource_bindings表.md`
 - `manager/docs/tables/vector_materialized_view表.md`
-- `manager/docs/tables/vector_materialized_view_tasks表.md`
 - `manager/docs/tables/model_3d_glb表.md`
-- `manager/docs/tables/model_3d_glb_tasks表.md`
 - `manager/docs/tables/model3d_tiles表.md`
-- `manager/docs/tables/model3d_tiles_tasks表.md`
 - `manager/docs/tables/gaussian_splat_ksplat表.md`
-- `manager/docs/tables/gaussian_splat_ksplat_tasks表.md`
 - `manager/docs/tables/point_cloud_copc表.md`
-- `manager/docs/tables/point_cloud_copc_tasks表.md`
 - `manager/docs/tables/raster_cog表.md`
-- `manager/docs/tables/raster_cog_tasks表.md`
-- `manager/docs/tables/raster_mosaic_tasks表.md`
 - `manager/docs/tables/vector_tile_cache表.md`
-- `manager/docs/tables/vector_tile_cache_tasks表.md`
 - `manager/docs/tables/embeddings表.md`
 - `manager/docs/tables/embedding_tasks表.md`
 - `manager/docs/tables/embedding_configuration表.md`

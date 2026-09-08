@@ -6,7 +6,7 @@
 
 源数据仍是原始 TIFF/GeoTIFF/COG item，可能位于 NFS、业务 MinIO 或其他存储引擎。`raster_cog` 只登记前端可通过 Manager 受控接口消费的 infra MinIO COG 副本，不把 COG 变成新的基础 `format`，也不进入 `vector_tile_cache` 或 `vector_materialized_view_generation`。
 
-raster COG 的生成任务定义写入 `manager.raster_cog_tasks`，TaskProvider `task_type=raster_cog_generation`。本表只表达结果状态。
+raster COG 的生成任务定义写入 `manager.task_definitions`，TaskProvider `task_type=raster_cog_generation`。本表只表达结果状态。
 
 ## 核心字段
 
@@ -16,7 +16,7 @@ raster COG 的生成任务定义写入 `manager.raster_cog_tasks`，TaskProvider
 | `item_fingerprint` | 源 item 当前身份指纹。当前唯一结果按 `tenant_id + item_fingerprint` 收敛。 |
 | `locator` | 源 item ResourceLocator，用于回跳和判断 stale。 |
 | `source_engine_id` | 生成 COG 结果时的源引擎事实，用于判断 stale。 |
-| `task_id` | 产生或最近刷新该 COG 结果的 `manager.raster_cog_tasks.id`。 |
+| `task_id` | 产生或最近刷新该 COG 结果的 `manager.task_definitions.id`。 |
 | `source_profile` | 源 TIFF profile，如 `geotiff` 或 `cog`。 |
 | `target_kind` | 当前固定为 `infra_minio_object`。 |
 | `storage_ref` | Manager infra MinIO 对象引用，结构化 JSON，不暴露给前端拼接 URL。 |

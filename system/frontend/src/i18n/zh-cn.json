@@ -224,7 +224,8 @@
         "expiresAt": "到期时间",
         "joinedAt": "加入时间",
         "member": "成员",
-        "principalType": "主体类型",
+        "memberType": "成员类型",
+        "currentAccount": "当前账号",
         "source": "来源"
       },
       "organization": {
@@ -299,11 +300,16 @@
       "roles": {
         "create": "创建自定义角色",
         "edit": "编辑自定义角色",
+        "search": "搜索角色名称、标识或描述",
         "key": "角色标识",
         "role": "角色",
         "type": "角色类型",
         "scopes": "允许范围",
         "permissions": "权限",
+        "applicableMembers": "适用成员",
+        "permissionCount": "{count} 项",
+        "permissionDetails": "角色权限明细",
+        "selectedPermissionCount": "已选择 {count} 项权限",
         "types": {
           "tenant_builtin": "租户内置角色",
           "tenant_custom": "租户自定义角色"
@@ -316,6 +322,7 @@
       },
       "roleAssignments": {
         "create": "分配角色",
+        "allMembers": "全部成员",
         "scope": "授权范围",
         "departmentId": "部门 ID",
         "projectGroupId": "项目组 ID",
@@ -341,7 +348,8 @@
         "endTime": "结束时间",
         "eventName": "事件名称",
         "module": "模块",
-        "principal": "主体",
+        "member": "操作成员",
+        "principal": "操作主体",
         "request": "HTTP 请求",
         "requestId": "请求 ID",
         "result": "结果",
@@ -360,7 +368,35 @@
       },
       "principalType": {
         "user": "用户",
-        "service_principal": "服务主体"
+        "service_principal": "服务账号"
+      },
+      "modules": {
+        "system": "系统管理",
+        "gateway": "API 网关",
+        "manager": "数据管理",
+        "meta": "元数据管理",
+        "transfer": "数据传输",
+        "orchestrator": "任务编排",
+        "develop": "数据开发",
+        "service": "数据服务",
+        "monitor": "执行监控",
+        "standard": "数据标准",
+        "model": "数据建模",
+        "quality": "数据质量",
+        "security": "数据安全与隐私保护",
+        "catalog": "企业资源目录",
+        "asset": "资产管理",
+        "portal": "资产门户",
+        "workbench": "数据服务工作台",
+        "agent": "智能体",
+        "copilot": "AI 助手",
+        "inference": "AI 推理",
+        "graph": "知识图谱",
+        "duckdb": "DuckDB 运行时",
+        "iam": "身份与访问管理",
+        "audit": "审计",
+        "oauth": "OAuth 授权",
+        "engine": "引擎管理"
       },
       "source": {
         "manual": "手工创建",

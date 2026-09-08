@@ -31,14 +31,18 @@ func (s *MetricService) CreateCategory(req *models.CreateMetricCategoryRequest, 
 	if err := s.refs.RequireMetricCategory(tenantID, req.ParentID); err != nil {
 		return nil, err
 	}
-	exists, err := s.catRepo.ExistsByCode(strings.TrimSpace(req.Code), tenantID)
+	code, err := normalizeStandardStableCode(req.Code, maxStandardCategoryCodeLength)
+	if err != nil {
+		return nil, err
+	}
+	exists, err := s.catRepo.ExistsByCode(code, tenantID)
 	if err != nil {
 		return nil, err
 	}
 	if exists {
 		return nil, commonapi.ErrConflict
 	}
-	item := &models.MetricCategory{TenantID: tenantID, Name: strings.TrimSpace(req.Name), Code: strings.TrimSpace(req.Code), Description: req.Description, ParentID: req.ParentID, SortOrder: req.SortOrder, CreatedBy: userID}
+	item := &models.MetricCategory{TenantID: tenantID, Name: strings.TrimSpace(req.Name), Code: code, Description: req.Description, ParentID: req.ParentID, SortOrder: req.SortOrder, CreatedBy: userID}
 	if err := s.catRepo.Create(item); err != nil {
 		return nil, err
 	}
@@ -96,7 +100,11 @@ func (s *MetricService) CreateMetric(req *models.CreateMetricRequest, tenantID, 
 	if err := s.refs.RequireMetricCategory(tenantID, req.CategoryID); err != nil {
 		return nil, err
 	}
-	exists, err := s.metricRepo.ExistsByCode(strings.TrimSpace(req.Code), tenantID, 0)
+	code, err := normalizeStandardStableCode(req.Code, maxStandardStableCodeLength)
+	if err != nil {
+		return nil, err
+	}
+	exists, err := s.metricRepo.ExistsByCode(code, tenantID, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +115,7 @@ func (s *MetricService) CreateMetric(req *models.CreateMetricRequest, tenantID, 
 	if err != nil {
 		return nil, err
 	}
-	identity := &models.MetricDefinition{TenantID: tenantID, CategoryID: req.CategoryID, ScopeType: scopeType, OwnerDomainID: req.OwnerDomainID, Code: strings.TrimSpace(req.Code), StewardID: req.StewardID, Tags: req.Tags, CreatedBy: userID, LifecycleState: "active"}
+	identity := &models.MetricDefinition{TenantID: tenantID, CategoryID: req.CategoryID, ScopeType: scopeType, OwnerDomainID: req.OwnerDomainID, Code: code, StewardID: req.StewardID, Tags: req.Tags, CreatedBy: userID, LifecycleState: "active"}
 	if err := s.metricRepo.Create(identity, revision, dependencies); err != nil {
 		return nil, mapMetricRevisionError(err)
 	}

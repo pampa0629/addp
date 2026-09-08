@@ -43,7 +43,7 @@
 	  "columns": { "name": "Name", "type": "Task Type", "engine": "Source Engine", "enabled": "Enabled", "status": "Latest Status", "updatedAt": "Updated", "actions": "Actions" },
 	  "status": { "never": "Never run", "pending": "Pending", "running": "Running", "success": "Succeeded", "failed": "Failed", "cancelled": "Cancelled" },
 	  "allTypes": "All task types", "total": "{total} total", "enabled": "Enabled", "disabled": "Disabled",
-	  "refresh": "Refresh", "create": "Create from Data Explorer", "detail": "Details", "execute": "Execute", "monitor": "Monitor", "delete": "Delete",
+	  "refresh": "Refresh", "create": "Create from Data Explorer", "createSpatial": "New spatial task", "detail": "Details", "edit": "Edit", "execute": "Execute", "monitor": "Monitor", "delete": "Delete",
 	  "version": "Version", "semanticKey": "Semantic identity", "config": "Typed configuration", "empty": "No derived tasks",
 	  "loadFailed": "Failed to load derived tasks", "executeQueued": "Task queued", "executeFailed": "Task execution failed",
 	  "deleteConfirm": "Delete this task definition? Published business data will be retained.", "deleteSuccess": "Task deleted", "deleteFailed": "Failed to delete task"

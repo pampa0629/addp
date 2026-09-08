@@ -34,6 +34,8 @@ Metric 的指标依赖与基准指标关系通过当前 User Token 读取 `GET /
 ## 已确认的目标边界与迁移顺序
 
 - 业务域只表达业务语义与治理责任，不表达可见范围、审核容器或目录分类。
+- 业务域、业务术语、数据元、码值集、指标定义、标准文档、标准集和标准分类的稳定编码统一使用小写 `snake_case`，在对应 Tenant 和类型内唯一且创建后不可变；创建入口不自动转换非法编码。归属域和适用范围可以独立调整，所以业务域编码不是正式标准编码的强制前缀；该前缀只约束 Copilot 新候选。
+- 上述稳定身份和分类的创建 API 必须在 Repository 写入前校验编码；不合规时统一返回 HTTP 400、`error_code=invalid_standard_code`。候选正式化同样先校验历史候选编码，禁止绕过公开创建约束。
 - 发布型标准采用“稳定身份 + 不可变修订”；统一状态为 `draft → in_review → published → withdrawn`，按半开生效区间动态解析当前修订。
 - 标准对象显式保存 `scope_type=platform|tenant_common|domain`；仅 `domain` 必须指定 `owner_domain_id`。码值集不得再以“租户自定义”为由强制归属业务域。
 - 范围模型只保留 `scope_type + owner_domain_id`；启动迁移遇到历史 `domain_id` 时必须一次性回填归属和范围并删除旧列，即使新旧列曾同时存在，也不得保留双轨字段。
@@ -305,7 +307,7 @@ standard/
 
 - 提炼批次固定引用一个带 Markdown 文件的 `document_revision_id`；重复提炼新建批次，不覆盖历史。
 - Copilot 仅返回 `glossary`、`element`、`code_set`、`metric` 候选及证据坐标；Standard 验证证据属于输入修订后持久化。
-- `domain` 范围文档提炼时，Standard 必须按 `owner_domain_id` 读取当前租户权威业务域编码并作为 `code_namespace` 传给 Copilot；业务域编码必须符合小写 `snake_case`，新候选的 `code` 以及枚举引用的 `code_set_code` 必须属于 `<code_namespace>_` 前缀。`tenant_common` 与 `platform` 文档不附加领域前缀。Standard 不自动转换不合规业务域编码，也不从文档名称猜测命名空间。
+- `domain` 范围文档提炼时，Standard 必须按 `owner_domain_id` 读取当前租户权威业务域编码并作为 `code_namespace` 传给 Copilot；业务域编码必须符合小写 `snake_case`，新候选的 `code` 以及枚举引用的 `code_set_code` 必须属于 `<code_namespace>_` 前缀。`tenant_common` 与 `platform` 文档不附加领域前缀。这是候选生成约束，不是正式标准稳定编码的业务域前缀约束。Standard 不自动转换不合规业务域编码，也不从文档名称猜测命名空间。
 - Standard 同时从该文档稳定身份的全部历史提炼中构造最多 200 条 `known_candidates`，每条只包含 `candidate_type + code + name + definition`。仅编码符合当前命名空间的历史候选可以进入提示，按类型与编码去重，并依次优先选择已正式化、已保留、待裁决、已驳回候选中的最近出现内容；该读取使用轻量身份投影，不加载证据原文或完整候选载荷。Copilot 对同一概念必须优先复用已知编码。该列表只是生成约束上下文，不是新的持久化事实，也不得用于模型相似度合并。Copilot 在返回前校验命名空间，Standard 在持久化边界再次校验；任一候选越界时整批拒绝，禁止静默丢弃越界项。
 - Copilot 与 Standard 共用唯一候选数据类型词汇。数据元候选的 `data_type` 只允许 `string|int|bigint|float|decimal|date|datetime|bool|json|text`，码值集候选只允许 `string|int|bigint`，术语和指标候选必须为 `null`；`identifier` 属于业务语义，`numeric`、`date_or_datetime` 等模糊上位提示不是合法标准数据类型。数据元候选的 `value_domain_kind` 只允许 `unrestricted|range|enumeration`，其他候选必须为 `null`。枚举数据元候选必须通过 `code_set_code` 引用同一提炼批次中唯一的码值集候选；非枚举数据元以及其他候选不得携带该字段。候选引用只使用稳定编码，正式数据元修订仍由 Standard 按生效时点选择并冻结具体 `code_set_revision_id`。Copilot 输出 Schema 先约束，Standard 在持久化前再次校验字段适用性和批次内引用闭包；历史提炼批次保持不可变，契约修正后通过新提炼批次表达新结果。
 - 候选状态固定为 `pending`、`retained`、`rejected`；处置使用候选自己的并发 `version`，`retained` 不会自动创建或发布正式标准。

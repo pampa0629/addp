@@ -5473,6 +5473,14 @@ paths:
   /platform/audit/events:
     get:
       parameters:
+      - description: 授权主体 ID | Principal ID
+        in: query
+        name: principal_id
+        type: integer
+      - description: 模块标识 | Module name
+        in: query
+        name: module_name
+        type: string
       - description: 实体类型 | Entity type
         in: query
         name: entity_type
@@ -5539,6 +5547,14 @@ paths:
         in: query
         name: format
         type: string
+      - description: 授权主体 ID | Principal ID
+        in: query
+        name: principal_id
+        type: integer
+      - description: 模块标识 | Module name
+        in: query
+        name: module_name
+        type: string
       - description: 实体类型 | Entity type
         in: query
         name: entity_type
@@ -5568,6 +5584,14 @@ paths:
   /platform/audit/events/summary:
     get:
       parameters:
+      - description: 授权主体 ID | Principal ID
+        in: query
+        name: principal_id
+        type: integer
+      - description: 模块标识 | Module name
+        in: query
+        name: module_name
+        type: string
       - description: 实体类型 | Entity type
         in: query
         name: entity_type
@@ -5594,6 +5618,14 @@ paths:
   /platform/audit/events/trends:
     get:
       parameters:
+      - description: 授权主体 ID | Principal ID
+        in: query
+        name: principal_id
+        type: integer
+      - description: 模块标识 | Module name
+        in: query
+        name: module_name
+        type: string
       - description: 实体类型 | Entity type
         in: query
         name: entity_type
@@ -7589,6 +7621,14 @@ paths:
   /tenant/audit/events:
     get:
       parameters:
+      - description: 成员对应授权主体 ID | Principal ID of the member
+        in: query
+        name: principal_id
+        type: integer
+      - description: 模块标识 | Module name
+        in: query
+        name: module_name
+        type: string
       - description: 实体类型 | Entity type
         in: query
         name: entity_type
@@ -7694,6 +7734,14 @@ paths:
         in: query
         name: format
         type: string
+      - description: 成员对应授权主体 ID | Principal ID of the member
+        in: query
+        name: principal_id
+        type: integer
+      - description: 模块标识 | Module name
+        in: query
+        name: module_name
+        type: string
       - description: 实体类型 | Entity type
         in: query
         name: entity_type
@@ -7723,6 +7771,14 @@ paths:
   /tenant/audit/events/summary:
     get:
       parameters:
+      - description: 成员对应授权主体 ID | Principal ID of the member
+        in: query
+        name: principal_id
+        type: integer
+      - description: 模块标识 | Module name
+        in: query
+        name: module_name
+        type: string
       - description: 实体类型 | Entity type
         in: query
         name: entity_type
@@ -7749,6 +7805,14 @@ paths:
   /tenant/audit/events/trends:
     get:
       parameters:
+      - description: 成员对应授权主体 ID | Principal ID of the member
+        in: query
+        name: principal_id
+        type: integer
+      - description: 模块标识 | Module name
+        in: query
+        name: module_name
+        type: string
       - description: 实体类型 | Entity type
         in: query
         name: entity_type
@@ -8313,6 +8377,10 @@ paths:
       - description: 状态 | Status
         in: query
         name: status
+        type: string
+      - description: '成员类型：user 或 service_principal | Member type: user or service_principal'
+        in: query
+        name: principal_type
         type: string
       produces:
       - application/json

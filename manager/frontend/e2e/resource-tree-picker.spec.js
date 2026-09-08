@@ -23,34 +23,28 @@ const README_LOCATOR = 'addp://engine/12/path/doc/README.md?type=file&item_id=12
 
 test('selects a spatial table through the shared picker and applies capability facts', async ({ page }) => {
   const backend = await installMockBackend(page)
-  await page.goto('/spatial-quick-view/vector-tile-cache?create=1')
+  await page.goto('/derived-tasks?category=spatial_business&task_type=vector_tile_set_generation&create=1')
 
-  const dialog = page.getByRole('dialog', { name: '新建瓦片缓存任务' })
+  const dialog = page.getByRole('dialog', { name: '新建任务' })
   await expect(dialog).toBeVisible()
   await chooseEngine(page, dialog, POSTGRES_ENGINE.name)
   await expandTreeNode(dialog, 'public')
   await treeNodeContent(dialog, 'farmland').click()
 
-  await expect(dialog.locator('.selected-resource')).toContainText('public.farmland')
-  await expect(dialog.locator('.selected-resource')).toContainText('Business PostgreSQL')
+  await expect(dialog.locator('.selection-summary')).toContainText('public.farmland')
+  await expect(dialog.locator('.selection-summary')).toContainText('farmland')
   await expect(dialog.getByText('geometry', { exact: true }).first()).toBeVisible()
   await expect.poll(() => backend.capabilityLocators).toEqual([FARMLAND_LOCATOR])
 })
 
-test('restores and locks the source table while editing an existing task', async ({ page }) => {
+test('restores the source table from the unified spatial task create URL', async ({ page }) => {
   const backend = await installMockBackend(page)
-  await page.goto('/spatial-quick-view/vector-tile-cache?task_id=41')
+  await page.goto(`/derived-tasks?category=spatial_business&task_type=vector_tile_set_generation&create=1&locator=${encodeURIComponent(FARMLAND_LOCATOR)}`)
 
-  const dialog = page.getByRole('dialog', { name: '编辑瓦片缓存任务' })
+  const dialog = page.getByRole('dialog', { name: '新建任务' })
   await expect(dialog).toBeVisible()
-  await expect(dialog.getByText('源数据已锁定', { exact: true })).toBeVisible()
-  await expect(dialog.locator('.selected-resource')).toContainText('public.farmland')
-  expect(await pickerNodeClasses(dialog, 'farmland')).not.toContain('is-disabled')
-  expect(await pickerNodeClasses(dialog, 'rivers')).toContain('is-disabled')
-
-  await treeNodeContent(dialog, 'rivers').click()
-  await expect(dialog.locator('.selected-resource')).toContainText('public.farmland')
-  expect(backend.capabilityLocators).not.toContain(RIVERS_LOCATOR)
+  await expect(dialog.locator('.selection-summary')).toContainText('public.farmland')
+  await expect.poll(() => backend.capabilityLocators).toContain(FARMLAND_LOCATOR)
 })
 
 test('keeps directory and file vectorization semantics in the shared picker', async ({ page }) => {
@@ -162,11 +156,11 @@ async function installMockBackend(page) {
     if (path === '/api/v1/manager/engines') {
       return fulfillJSON(route, { data: [POSTGRES_ENGINE, NFS_ENGINE] })
     }
-    if (path === '/api/v1/manager/vector_tile_cache_tasks/41') {
+    if (path === '/api/v1/manager/tasks/vector_tile_set_generation/41') {
       return fulfillJSON(route, tileCacheTask())
     }
-    if (path === '/api/v1/manager/vector_tile_cache_tasks') {
-      return fulfillJSON(route, { data: [tileCacheTask()], total: 1 })
+    if (path === '/api/v1/manager/tasks') {
+      return fulfillJSON(route, { items: [], total: 0, page: 1, page_size: 20 })
     }
     if (path === '/api/v1/manager/vector_tile_cache') {
       return fulfillJSON(route, { data: [], total: 0 })

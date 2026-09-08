@@ -77,9 +77,7 @@ func (r *RasterCOGRepository) UpdateTask(ctx context.Context, task *models.Raste
 }
 
 func (r *RasterCOGRepository) DeleteTask(ctx context.Context, id uint, tenantID uint) error {
-	return r.db.WithContext(ctx).
-		Where("id = ? AND tenant_id = ? AND task_type = ?", id, tenantID, commonExecution.TaskTypeRasterCOGGeneration).
-		Delete(&models.RasterCOGTask{}).Error
+	return deleteTaskDefinition(ctx, r.db, commonExecution.TaskTypeRasterCOGGeneration, id, tenantID)
 }
 
 func (r *RasterCOGRepository) ClaimExecution(
@@ -87,11 +85,11 @@ func (r *RasterCOGRepository) ClaimExecution(
 ) (*models.RasterCOGTask, error) {
 	var task models.RasterCOGTask
 	err := newTaskExecutionLifecycle(r.db).Claim(ctx, taskID, tenantID, execution, taskExecutionClaimSpec{
-		TaskModel: &task,
-		TaskType:  commonExecution.TaskTypeRasterCOGGeneration,
+		TaskModel:      &task,
+		TaskType:       commonExecution.TaskTypeRasterCOGGeneration,
 		TaskTypeColumn: true,
-		TaskLabel: "raster COG",
-		TaskName:  func() string { return task.Name },
+		TaskLabel:      "raster COG",
+		TaskName:       func() string { return task.Name },
 		TaskConfig: func() commonModels.JSONMap {
 			return task.Config
 		},

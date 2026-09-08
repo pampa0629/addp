@@ -23,6 +23,7 @@ describe('System recoverable route state', () => {
       result: 'succeeded',
       risk_level: 'invalid',
       module_name: ' system ',
+      principal_id: ' 42 ',
       entity_type: 'cleanup',
       entity_id: '42',
       page: '1',
@@ -34,6 +35,7 @@ describe('System recoverable route state', () => {
         event_name: 'login',
         result: 'succeeded',
         module_name: 'system',
+        principal_id: '42',
         entity_type: 'cleanup',
         entity_id: '42'
       },

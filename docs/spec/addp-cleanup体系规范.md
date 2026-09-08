@@ -106,7 +106,7 @@ Manager 资源回收执行方只治理 Manager-owned 派生产物和缓存：
 
 - `manager.preview_state`。
 - `manager.vector_materialized_view` 以及 Manager 创建并登记的 3857 优化目标。
-- `manager.vector_tile_cache`、`manager.vector_tile_cache_tasks`、`storage_ref` 指向的瓦片对象和 manifest。
+- `manager.vector_tile_cache`、`manager.task_definitions` 中的对应定义、`manager.task_resource_bindings`，以及 `storage_ref` 指向的瓦片对象和 manifest。
 - Manager runtime tile cache。
 - `manager.embeddings`、`manager.embedding_tasks` 以及向量化结果。
 - Manager TaskProvider 声明的全部任务定义；TaskProvider 任务类型与 cleanup 任务注册表必须保持一一对应，新增任务类型时必须由一致性门禁阻止漏注册。

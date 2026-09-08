@@ -16,32 +16,34 @@ func TestCleanupTaskDefinitionRepositoryListsDisabledAndHardDeletes(t *testing.T
 	if err := db.Exec(`ATTACH DATABASE ':memory:' AS manager`).Error; err != nil {
 		t.Fatalf("attach manager schema: %v", err)
 	}
-	for _, table := range []string{"model_3d_glb_tasks", "point_cloud_copc_tasks"} {
-		if err := db.Exec(`CREATE TABLE manager."` + table + `" (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			tenant_id INTEGER NOT NULL,
-			enabled BOOLEAN NOT NULL,
-			next_run_at DATETIME,
-			last_execution_status TEXT,
-			config JSON NOT NULL,
-			updated_at DATETIME,
-			deleted_at DATETIME
-		)`).Error; err != nil {
-			t.Fatalf("create %s: %v", table, err)
-		}
+	if err := db.Exec(`CREATE TABLE manager.task_definitions (
+		id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, task_type TEXT NOT NULL,
+		enabled BOOLEAN NOT NULL, next_run_at DATETIME, last_execution_status TEXT, config JSON NOT NULL,
+		updated_at DATETIME, deleted_at DATETIME)`).Error; err != nil {
+		t.Fatalf("create task_definitions: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE manager.task_resource_bindings (
+		id INTEGER PRIMARY KEY AUTOINCREMENT, task_definition_id INTEGER NOT NULL, tenant_id INTEGER NOT NULL,
+		role TEXT NOT NULL, engine_id INTEGER NOT NULL, locator TEXT NOT NULL, item_id INTEGER,
+		item_fingerprint TEXT, ordinal INTEGER NOT NULL, created_at DATETIME, updated_at DATETIME)`).Error; err != nil {
+		t.Fatalf("create task_resource_bindings: %v", err)
 	}
 	if err := db.Exec(`
-		INSERT INTO manager.model_3d_glb_tasks (tenant_id, enabled, config)
-		VALUES (7, FALSE, '{"source":{"source_engine_id":26,"item_locator":"addp://engine/26/path/model.glb?type=file"}}');
-		INSERT INTO manager.point_cloud_copc_tasks (tenant_id, enabled, config)
-		VALUES (7, TRUE, '{"source":{"source_engine_id":26,"item_locator":"addp://engine/26/path/cloud.laz?type=file"}}')
+		INSERT INTO manager.task_definitions (tenant_id, task_type, enabled, config)
+		VALUES (7, 'model_3d_glb_generation', FALSE, '{}');
+		INSERT INTO manager.task_definitions (tenant_id, task_type, enabled, config)
+		VALUES (7, 'point_cloud_copc_generation', TRUE, '{}');
+		INSERT INTO manager.task_resource_bindings (task_definition_id, tenant_id, role, engine_id, locator, ordinal)
+		VALUES (1, 7, 'source', 26, 'addp://engine/26/path/model.glb?type=file', 0);
+		INSERT INTO manager.task_resource_bindings (task_definition_id, tenant_id, role, engine_id, locator, ordinal)
+		VALUES (2, 7, 'source', 26, 'addp://engine/26/path/cloud.laz?type=file', 0)
 	`).Error; err != nil {
 		t.Fatalf("insert tasks: %v", err)
 	}
 
 	repo := NewCleanupTaskDefinitionRepository(db, []CleanupTaskDefinitionSpec{
-		{TaskType: "model_3d_glb_generation", Table: "manager.model_3d_glb_tasks"},
-		{TaskType: "point_cloud_copc_generation", Table: "manager.point_cloud_copc_tasks"},
+		{TaskType: "model_3d_glb_generation", Table: "manager.task_definitions"},
+		{TaskType: "point_cloud_copc_generation", Table: "manager.task_definitions"},
 	})
 	definitions, err := repo.List(context.Background(), 7)
 	if err != nil {
@@ -59,5 +61,9 @@ func TestCleanupTaskDefinitionRepositoryListsDisabledAndHardDeletes(t *testing.T
 	}
 	if len(definitions) != 1 || definitions[0].TaskType != "point_cloud_copc_generation" {
 		t.Fatalf("definitions after delete = %#v", definitions)
+	}
+	var bindingCount int64
+	if err := db.Table("manager.task_resource_bindings").Where("task_definition_id = ?", 1).Count(&bindingCount).Error; err != nil || bindingCount != 0 {
+		t.Fatalf("deleted task bindings = %d, error = %v", bindingCount, err)
 	}
 }

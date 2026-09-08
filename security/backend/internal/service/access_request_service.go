@@ -22,6 +22,8 @@ type AccessRequestService struct {
 	now func() time.Time
 }
 
+var ErrProtectionAccessRequestExpired = errors.New("protection access request expired")
+
 func NewAccessRequestService(db *gorm.DB) *AccessRequestService {
 	return &AccessRequestService{db: db, now: time.Now}
 }
@@ -156,11 +158,18 @@ func (s *AccessRequestService) ListReviewQueue(ctx context.Context, tenantID, re
 	if err != nil {
 		return nil, err
 	}
+	now := s.now().UTC()
 	for index := range result.Data {
 		row := &result.Data[index]
-		row.CanDecide = !(row.SubjectType == "user" && row.SubjectID == userIDString(reviewerID))
-		if !row.CanDecide {
+		switch {
+		case !now.Before(row.RequestedExpiresAt):
+			row.CanDecide = false
+			row.DecisionUnavailableReason = models.ProtectionAccessRequestDecisionUnavailableExpired
+		case row.SubjectType == "user" && row.SubjectID == userIDString(reviewerID):
+			row.CanDecide = false
 			row.DecisionUnavailableReason = models.ProtectionAccessRequestDecisionUnavailableSelfApproval
+		default:
+			row.CanDecide = true
 		}
 	}
 	return result, nil
@@ -212,6 +221,9 @@ func (s *AccessRequestService) Decide(ctx context.Context, tenantID, reviewerID 
 		}
 		if row.State != models.ProtectionAccessRequestStatePending || row.SubjectID == userIDString(reviewerID) {
 			return commonapi.ErrConflict
+		}
+		if !now.Before(row.RequestedExpiresAt) {
+			return ErrProtectionAccessRequestExpired
 		}
 		assessment, current, enrollment, _, err := policyDependencies(tx, tenantID, row.AssessmentID)
 		if err != nil {

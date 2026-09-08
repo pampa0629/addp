@@ -41,6 +41,12 @@ type TenantMembershipChangeResult struct {
 	RevokedFamilyCount   int64
 }
 
+type TenantMembershipFilter struct {
+	Search        string
+	Status        *TenantMembershipStatus
+	PrincipalType *PrincipalType
+}
+
 type TenantMembershipService struct {
 	repository *Repository
 	now        func() time.Time
@@ -56,10 +62,9 @@ func NewTenantMembershipService(repository *Repository, now func() time.Time) *T
 func (s *TenantMembershipService) ListManagedMemberships(
 	ctx context.Context,
 	tenantID int64,
+	filter TenantMembershipFilter,
 	page int,
 	pageSize int,
-	search string,
-	status *TenantMembershipStatus,
 ) ([]ManagedTenantMembership, int64, error) {
 	if s == nil || s.repository == nil || tenantID <= 0 {
 		return nil, 0, fmt.Errorf("%w: IAM repository and tenant are required", commonapi.ErrBadRequest)
@@ -67,12 +72,15 @@ func (s *TenantMembershipService) ListManagedMemberships(
 	if err := validateManagementPagination(page, pageSize); err != nil {
 		return nil, 0, err
 	}
+	if filter.PrincipalType != nil && *filter.PrincipalType != PrincipalTypeUser && *filter.PrincipalType != PrincipalTypeServicePrincipal {
+		return nil, 0, fmt.Errorf("%w: invalid membership principal type", commonapi.ErrBadRequest)
+	}
 	var memberships []ManagedTenantMembership
 	var total int64
 	err := s.repository.ReadOnlyRepeatableReadTransaction(ctx, func(tx *Repository) error {
 		var err error
 		memberships, total, err = tx.ListManagedTenantMemberships(
-			ctx, tenantID, page, pageSize, search, status,
+			ctx, tenantID, filter, page, pageSize,
 		)
 		return err
 	})

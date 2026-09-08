@@ -4,6 +4,19 @@ function list(path, params) {
   return client.get(path, { params })
 }
 
+async function listAll(path, params = {}) {
+  const rows = []
+  let page = 1
+  let totalPages = 1
+  do {
+    const result = await list(path, { ...params, page, page_size: 100 })
+    rows.push(...(result.data || []))
+    totalPages = result.total_pages || 1
+    page += 1
+  } while (page <= totalPages)
+  return rows
+}
+
 function exportAudit(path, params) {
   return client.get(path, { params, responseType: 'blob' })
 }
@@ -53,6 +66,7 @@ export const iamAPI = {
   },
   memberships: {
     list: (params) => list('/system/tenant/memberships', params),
+    listAll: (params) => listAll('/system/tenant/memberships', params),
     update: (id, expiresAt) => client.put(`/system/tenant/memberships/${id}`, { expires_at: expiresAt }),
     suspend: (id, reason) => client.post(`/system/tenant/memberships/${id}/suspend`, { reason }),
     restore: (id, reason) => client.post(`/system/tenant/memberships/${id}/restore`, { reason }),

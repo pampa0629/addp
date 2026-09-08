@@ -7,10 +7,16 @@ import argparse
 import ast
 import re
 from pathlib import Path
+from typing import NamedTuple
 
 
 class RegistrationError(RuntimeError):
     pass
+
+
+class RegisteredSuite(NamedTuple):
+    target: str
+    workflow_job: str | None
 
 
 def make_recipe(makefile: str, target: str) -> str | None:
@@ -26,7 +32,7 @@ def make_declaration(makefile: str, target: str) -> str | None:
     return match.group(0) if match else None
 
 
-def registered_suites(dispatcher: Path) -> dict[str, str]:
+def registered_suites(dispatcher: Path) -> dict[str, RegisteredSuite]:
     tree = ast.parse(dispatcher.read_text(encoding="utf-8"), filename=str(dispatcher))
     suite_node: ast.Dict | None = None
     for node in tree.body:
@@ -44,7 +50,7 @@ def registered_suites(dispatcher: Path) -> dict[str, str]:
     if suite_node is None:
         raise RegistrationError("scripts/test/release-gate.py SUITES registry is missing")
 
-    suites: dict[str, str] = {}
+    suites: dict[str, RegisteredSuite] = {}
     for key, value in zip(suite_node.keys, suite_node.values, strict=True):
         if not isinstance(key, ast.Constant) or not isinstance(key.value, str):
             raise RegistrationError("release suite names must be string literals")
@@ -62,7 +68,20 @@ def registered_suites(dispatcher: Path) -> dict[str, str]:
         )
         if target is None:
             raise RegistrationError(f"release suite {key.value}: owner target is missing")
-        suites[key.value] = target
+        workflow_job = next(
+            (
+                keyword.value.value
+                for keyword in value.keywords
+                if keyword.arg == "workflow_job"
+                and isinstance(keyword.value, ast.Constant)
+                and isinstance(keyword.value.value, str)
+            ),
+            None,
+        )
+        suites[key.value] = RegisteredSuite(
+            target=target,
+            workflow_job=workflow_job,
+        )
     return suites
 
 
@@ -97,7 +116,8 @@ def validate_registration(repository: Path) -> list[str]:
     ):
         errors.append("Makefile test-release must dispatch RELEASE_SUITE through release-gate.py")
 
-    for suite, target in sorted(suites.items()):
+    for suite, registration in sorted(suites.items()):
+        target = registration.target
         if make_recipe(makefile, target) is None:
             errors.append(f"release suite {suite}: Makefile owner target {target} is missing")
         elif "##" in (make_declaration(makefile, target) or ""):
@@ -123,18 +143,36 @@ def validate_registration(repository: Path) -> list[str]:
 
     workflow_path = repository / ".github/workflows/release-and-t2-gates.yml"
     workflow = workflow_path.read_text(encoding="utf-8") if workflow_path.is_file() else ""
-    cli_job = workflow_job(workflow, "cli-product-macos-verification")
-    if not cli_job:
-        errors.append("CLI T5 verification job is missing")
-    else:
-        if "make test-release RELEASE_SUITE=common-python-cli" not in cli_job:
-            errors.append("CLI T5 workflow must call the shared test-release entry")
-        if re.search(r"\bmake\s+test-common-python-cli-release\b", cli_job):
-            errors.append("CLI T5 workflow must not bypass the shared test-release entry")
-        if "ADDP_RELEASE_ARTIFACT_DIR:" not in cli_job:
-            errors.append("CLI T5 workflow must configure the shared release artifact directory")
-        if "release-summary.md" not in cli_job or "details-file:" not in cli_job:
-            errors.append("CLI T5 workflow must attach the shared release summary")
+    for suite, registration in sorted(suites.items()):
+        if registration.workflow_job is None:
+            continue
+        job = workflow_job(workflow, registration.workflow_job)
+        if not job:
+            errors.append(
+                f"release suite {suite}: workflow job {registration.workflow_job} is missing"
+            )
+            continue
+        shared_command = f"make test-release RELEASE_SUITE={suite}"
+        if shared_command not in job:
+            errors.append(
+                f"release suite {suite}: workflow must call the shared test-release entry"
+            )
+        if re.search(rf"\bmake\s+{re.escape(registration.target)}\b", job):
+            errors.append(
+                f"release suite {suite}: workflow must not bypass the shared test-release entry"
+            )
+        if "ADDP_RELEASE_ARTIFACT_DIR:" not in job:
+            errors.append(
+                f"release suite {suite}: workflow must configure the shared release artifact directory"
+            )
+        if "release-summary.md" not in job or "details-file:" not in job:
+            errors.append(
+                f"release suite {suite}: workflow must attach the shared release summary"
+            )
+        if "actions/upload-artifact@" not in job:
+            errors.append(
+                f"release suite {suite}: workflow must archive release evidence"
+            )
 
     selection_job = workflow_job(workflow, "selection")
     if "scripts/test/release-gate.py" not in selection_job:

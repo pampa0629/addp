@@ -77,9 +77,7 @@ func (r *Model3DGLBRepository) UpdateTask(ctx context.Context, task *models.Mode
 }
 
 func (r *Model3DGLBRepository) DeleteTask(ctx context.Context, id uint, tenantID uint) error {
-	return r.db.WithContext(ctx).
-		Where("id = ? AND tenant_id = ? AND task_type = ?", id, tenantID, commonExecution.TaskTypeModel3DGLBGeneration).
-		Delete(&models.Model3DGLBTask{}).Error
+	return deleteTaskDefinition(ctx, r.db, commonExecution.TaskTypeModel3DGLBGeneration, id, tenantID)
 }
 
 func (r *Model3DGLBRepository) ClaimExecution(
@@ -87,11 +85,11 @@ func (r *Model3DGLBRepository) ClaimExecution(
 ) (*models.Model3DGLBTask, error) {
 	var task models.Model3DGLBTask
 	err := newTaskExecutionLifecycle(r.db).Claim(ctx, taskID, tenantID, execution, taskExecutionClaimSpec{
-		TaskModel: &task,
-		TaskType:  commonExecution.TaskTypeModel3DGLBGeneration,
+		TaskModel:      &task,
+		TaskType:       commonExecution.TaskTypeModel3DGLBGeneration,
 		TaskTypeColumn: true,
-		TaskLabel: "model 3d GLB",
-		TaskName:  func() string { return task.Name },
+		TaskLabel:      "model 3d GLB",
+		TaskName:       func() string { return task.Name },
 		TaskConfig: func() commonModels.JSONMap {
 			return task.Config
 		},

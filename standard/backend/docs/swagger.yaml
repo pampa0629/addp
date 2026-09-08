@@ -493,6 +493,20 @@ definitions:
     - scope_type
     - version
     type: object
+  github_com_addp_standard_internal_models.CreateMeasurementCategoryRequest:
+    properties:
+      code:
+        type: string
+      description:
+        type: string
+      name:
+        type: string
+      sort_order:
+        type: integer
+    required:
+    - code
+    - name
+    type: object
   github_com_addp_standard_internal_models.CreateMetricCategoryRequest:
     properties:
       code:
@@ -1076,6 +1090,37 @@ definitions:
         type: integer
       version_label:
         type: string
+    type: object
+  github_com_addp_standard_internal_models.Domain:
+    properties:
+      code:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      description:
+        type: string
+      icon:
+        type: string
+      id:
+        type: integer
+      lifecycle_state:
+        type: string
+      name:
+        type: string
+      parent_id:
+        type: integer
+      sort_order:
+        type: integer
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+      updated_by:
+        type: integer
+      version:
+        type: integer
     type: object
   github_com_addp_standard_internal_models.ElementAggregate:
     properties:
@@ -2860,6 +2905,13 @@ paths:
           description: Created
           schema:
             $ref: '#/definitions/github_com_addp_standard_internal_models.CodeSetAggregate'
+        "400":
+          description: 编码或请求参数无效，编码错误返回 error_code=invalid_standard_code | Invalid
+            code or request; code errors return error_code=invalid_standard_code
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 创建码值集及首个草稿修订 | Create code set with initial draft revision
@@ -3337,7 +3389,8 @@ paths:
           schema:
             $ref: '#/definitions/github_com_addp_standard_internal_models.StandardCollectionAggregate'
         "400":
-          description: Bad Request
+          description: 编码或请求参数无效，编码错误返回 error_code=invalid_standard_code | Invalid
+            code or request; code errors return error_code=invalid_standard_code
           schema:
             additionalProperties:
               type: string
@@ -3762,7 +3815,8 @@ paths:
           schema:
             $ref: '#/definitions/github_com_addp_standard_internal_models.DocumentCandidateFormalizationResponse'
         "400":
-          description: Bad Request
+          description: 正式化请求或候选编码无效，编码错误返回 error_code=invalid_standard_code | Invalid
+            formalization request or candidate code; code errors return error_code=invalid_standard_code
           schema:
             additionalProperties:
               type: string
@@ -3872,6 +3926,13 @@ paths:
           description: Created
           schema:
             $ref: '#/definitions/github_com_addp_standard_internal_models.DocumentAggregate'
+        "400":
+          description: 编码或请求参数无效，编码错误返回 error_code=invalid_standard_code | Invalid
+            code or request; code errors return error_code=invalid_standard_code
+          schema:
+            additionalProperties:
+              type: string
+            type: object
         "401":
           description: 需要登录 | Authentication required
           schema:
@@ -4549,10 +4610,16 @@ paths:
       produces:
       - application/json
       responses:
-        "200":
-          description: OK
+        "201":
+          description: Created
           schema:
-            additionalProperties: true
+            $ref: '#/definitions/github_com_addp_standard_internal_models.Domain'
+        "400":
+          description: 编码或请求参数无效，编码错误返回 error_code=invalid_standard_code | Invalid
+            code or request; code errors return error_code=invalid_standard_code
+          schema:
+            additionalProperties:
+              type: string
             type: object
         "401":
           description: 需要登录 | Authentication required
@@ -4783,7 +4850,8 @@ paths:
           schema:
             $ref: '#/definitions/github_com_addp_standard_internal_models.ElementAggregate'
         "400":
-          description: 请求无效 | Invalid request
+          description: 编码或请求参数无效，编码错误返回 error_code=invalid_standard_code | Invalid
+            code or request; code errors return error_code=invalid_standard_code
           schema:
             additionalProperties:
               type: string
@@ -4917,10 +4985,16 @@ paths:
       produces:
       - application/json
       responses:
-        "200":
-          description: OK
+        "201":
+          description: Created
           schema:
-            additionalProperties: true
+            $ref: '#/definitions/github_com_addp_standard_internal_models.DocumentAggregate'
+        "400":
+          description: 编码、标识或请求参数无效，编码错误返回 error_code=invalid_standard_code | Invalid
+            code, identifier, or request; code errors return error_code=invalid_standard_code
+          schema:
+            additionalProperties:
+              type: string
             type: object
         "401":
           description: 需要登录 | Authentication required
@@ -5339,7 +5413,8 @@ paths:
           schema:
             $ref: '#/definitions/github_com_addp_standard_internal_models.GlossaryAggregate'
         "400":
-          description: 请求无效 | Invalid request
+          description: 编码或请求参数无效，编码错误返回 error_code=invalid_standard_code | Invalid
+            code or request; code errors return error_code=invalid_standard_code
           schema:
             additionalProperties:
               type: string
@@ -5473,10 +5548,16 @@ paths:
       produces:
       - application/json
       responses:
-        "200":
-          description: OK
+        "201":
+          description: Created
           schema:
-            additionalProperties: true
+            $ref: '#/definitions/github_com_addp_standard_internal_models.DocumentAggregate'
+        "400":
+          description: 编码、标识或请求参数无效，编码错误返回 error_code=invalid_standard_code | Invalid
+            code, identifier, or request; code errors return error_code=invalid_standard_code
+          schema:
+            additionalProperties:
+              type: string
             type: object
         "401":
           description: 需要登录 | Authentication required
@@ -5879,6 +5960,13 @@ paths:
       x-addp-required-permissions:
       - standard.unit.read
     post:
+      parameters:
+      - description: 度量类别 | Measurement category
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.CreateMeasurementCategoryRequest'
       produces:
       - application/json
       responses:
@@ -5886,6 +5974,13 @@ paths:
           description: Created
           schema:
             $ref: '#/definitions/github_com_addp_standard_internal_models.MeasurementCategory'
+        "400":
+          description: 编码或请求参数无效，编码错误返回 error_code=invalid_standard_code | Invalid
+            code or request; code errors return error_code=invalid_standard_code
+          schema:
+            additionalProperties:
+              type: string
+            type: object
         "401":
           description: 需要登录 | Authentication required
           schema:
@@ -6020,6 +6115,13 @@ paths:
           description: Created
           schema:
             $ref: '#/definitions/github_com_addp_standard_internal_models.MetricCategory'
+        "400":
+          description: 编码或请求参数无效，编码错误返回 error_code=invalid_standard_code | Invalid
+            code or request; code errors return error_code=invalid_standard_code
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 创建指标分类 | Create metric category
@@ -6160,6 +6262,13 @@ paths:
           description: Created
           schema:
             $ref: '#/definitions/github_com_addp_standard_internal_models.MetricDefinitionAggregate'
+        "400":
+          description: 编码或请求参数无效，编码错误返回 error_code=invalid_standard_code | Invalid
+            code or request; code errors return error_code=invalid_standard_code
+          schema:
+            additionalProperties:
+              type: string
+            type: object
       security:
       - BearerAuth: []
       summary: 创建指标定义及首个草稿修订 | Create metric definition with initial draft revision
@@ -6288,10 +6397,16 @@ paths:
       produces:
       - application/json
       responses:
-        "200":
-          description: OK
+        "201":
+          description: Created
           schema:
-            additionalProperties: true
+            $ref: '#/definitions/github_com_addp_standard_internal_models.DocumentAggregate'
+        "400":
+          description: 编码、标识或请求参数无效，编码错误返回 error_code=invalid_standard_code | Invalid
+            code, identifier, or request; code errors return error_code=invalid_standard_code
+          schema:
+            additionalProperties:
+              type: string
             type: object
         "401":
           description: 需要登录 | Authentication required

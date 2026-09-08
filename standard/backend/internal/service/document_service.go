@@ -48,7 +48,6 @@ var (
 	ErrDocumentCopilotUnavailable            = errors.New("document copilot unavailable")
 	ErrDocumentPublicationHistory            = errors.New("document publication history exists")
 	ErrDocumentCandidateFormalizationHistory = errors.New("document candidate formalization history exists")
-	documentCandidateCodePattern             = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 )
 
 const maxCopilotKnownCandidates = 200
@@ -144,9 +143,9 @@ func (s *DocumentService) newDocument(req *models.CreateDocumentRequest, tenantI
 	if err != nil {
 		return nil, nil, err
 	}
-	code := strings.TrimSpace(req.Code)
-	if code == "" {
-		return nil, nil, ErrInvalidStandardRevision
+	code, err := normalizeStandardStableCode(req.Code, maxStandardStableCodeLength)
+	if err != nil {
+		return nil, nil, err
 	}
 	exists, err := s.repo.ExistsByCode(code, tenantID)
 	if err != nil {
@@ -488,7 +487,7 @@ func (s *DocumentService) documentExtractionCodeNamespace(document *models.Docum
 		return nil, err
 	}
 	code = strings.TrimSpace(code)
-	if len(code) > 50 || !documentCandidateCodePattern.MatchString(code) {
+	if !validStandardStableCode(code, maxStandardCategoryCodeLength) {
 		return nil, ErrDocumentExtractionNamespaceInvalid
 	}
 	return &code, nil
@@ -560,7 +559,7 @@ func copilotKnownCandidateStateRank(identity repository.DocumentCandidateIdentit
 
 func candidateCodeBelongsToNamespace(code string, codeNamespace *string) bool {
 	code = strings.TrimSpace(code)
-	if len(code) > 100 || !documentCandidateCodePattern.MatchString(code) {
+	if !validStandardStableCode(code, maxStandardStableCodeLength) {
 		return false
 	}
 	return codeNamespace == nil || strings.HasPrefix(code, *codeNamespace+"_")
@@ -790,7 +789,7 @@ func validCopilotCandidateCodeSetCode(candidateType string, valueDomainKind, cod
 		return false
 	}
 	code := strings.TrimSpace(*codeSetCode)
-	return len(code) <= 100 && documentCandidateCodePattern.MatchString(code)
+	return validStandardStableCode(code, maxStandardStableCodeLength)
 }
 
 func hasClosedCandidateCodeSetReferences(candidates []models.DocumentExtractionCandidate) bool {
@@ -1039,6 +1038,9 @@ func (s *DocumentService) FormalizeCandidate(candidateID, tenantID, userID int64
 	}
 	if candidate.Formalization != nil {
 		return nil, ErrCandidateAlreadyFormalized
+	}
+	if _, err := normalizeStandardStableCode(candidate.Code, maxStandardStableCodeLength); err != nil {
+		return nil, err
 	}
 	targets, err := s.repo.ListCandidateComparisonTargets(tenantID, map[string][]string{candidate.CandidateType: {candidate.Code}})
 	if err != nil {

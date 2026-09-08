@@ -22,7 +22,7 @@
     </el-card>
     <el-dialog v-model="dialog" :title="$t('standard.element.createTitle')" width="640px">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="120px">
-        <el-form-item :label="$t('standard.element.codeLabel')" prop="code"><el-input v-model="form.code" /></el-form-item>
+        <el-form-item :label="$t('standard.element.codeLabel')" prop="code"><el-input v-model="form.code" :placeholder="$t('standard.common.codePlaceholder')" /></el-form-item>
         <el-form-item :label="$t('standard.element.nameLabel')" prop="name"><el-input v-model="form.name" /></el-form-item>
         <el-form-item :label="$t('standard.element.definitionLabel')" prop="definition"><el-input v-model="form.definition" type="textarea" :rows="3" /></el-form-item>
         <el-form-item :label="$t('standard.element.dataTypeLabel')" prop="data_type"><el-select v-model="form.data_type" style="width:100%"><el-option v-for="type in dataTypes" :key="type" :label="type" :value="type" /></el-select></el-form-item>
@@ -47,6 +47,7 @@ import { useStandardPermissions } from '../composables/useStandardPermissions'
 import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
 import { navigateStandardRoute } from '@/utils/moduleNavigation'
 import { EDITABLE_STANDARD_SCOPES, buildStandardOwnership, requiresOwnerDomain, standardScopeLabelKey } from '../utils/standardScope'
+import { buildStandardCodeRules } from '../utils/standardCode'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -60,7 +61,7 @@ const dataTypes = ['string', 'text', 'int', 'bigint', 'float', 'decimal', 'date'
 const filters = reactive({ keyword: '', scope_type: '', owner_domain_id: null, status: '', page: 1, page_size: 20 })
 const emptyForm = () => ({ code: '', name: '', definition: '', data_type: 'string', nullable: true, scope_type: 'tenant_common', owner_domain_id: null, value_domain_kind: 'unrestricted', change_summary: '' })
 const form = reactive(emptyForm())
-const rules = computed(() => ({ code: [{ required: true, message: t('standard.element.codeRequired') }], name: [{ required: true, message: t('standard.element.nameRequired') }], definition: [{ required: true, message: t('standard.element.definitionRequired') }], data_type: [{ required: true, message: t('standard.element.dataTypeRequired') }], scope_type: [{ required: true, message: t('standard.common.selectScope') }], owner_domain_id: requiresOwnerDomain(form.scope_type) ? [{ required: true, message: t('standard.common.ownerDomainRequired') }] : [], change_summary: [{ required: true, message: t('standard.revision.changeSummaryRequired') }] }))
+const rules = computed(() => ({ code: buildStandardCodeRules(t, 'standard.element.codeRequired'), name: [{ required: true, message: t('standard.element.nameRequired') }], definition: [{ required: true, message: t('standard.element.definitionRequired') }], data_type: [{ required: true, message: t('standard.element.dataTypeRequired') }], scope_type: [{ required: true, message: t('standard.common.selectScope') }], owner_domain_id: requiresOwnerDomain(form.scope_type) ? [{ required: true, message: t('standard.common.ownerDomainRequired') }] : [], change_summary: [{ required: true, message: t('standard.revision.changeSummaryRequired') }] }))
 const workingRevision = row => row.draft_revision || row.current_revision
 const statusLabel = s => s ? t(`standard.revision.status.${s}`) : '-'
 const statusType = s => ({ draft: 'info', in_review: 'warning', published: 'success', withdrawn: 'danger' }[s] || 'info')

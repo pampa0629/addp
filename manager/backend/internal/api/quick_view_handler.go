@@ -61,6 +61,7 @@ type QuickViewHandler struct {
 	previewResolver            *preview.PreviewResolver
 	mvtService                 *service.UnifiedMVTService
 	tileCacheTaskSvc           *service.TileCacheTaskService
+	vectorMaterializedTaskSvc  *service.VectorMaterializedViewTaskService
 	rasterCOGTaskSvc           *service.RasterCOGTaskService
 	model3DGLBTaskSvc          *service.Model3DGLBTaskService
 	gaussianSplatKSplatTaskSvc *service.GaussianSplatKSplatTaskService
@@ -75,6 +76,10 @@ func NewQuickViewHandler(service *service.QuickViewService, previewResolver *pre
 
 func (h *QuickViewHandler) SetTileCacheTaskService(tileCacheTaskSvc *service.TileCacheTaskService) {
 	h.tileCacheTaskSvc = tileCacheTaskSvc
+}
+
+func (h *QuickViewHandler) SetVectorMaterializedViewTaskService(taskSvc *service.VectorMaterializedViewTaskService) {
+	h.vectorMaterializedTaskSvc = taskSvc
 }
 
 func (h *QuickViewHandler) SetArtifactTaskServices(rasterCOGTaskSvc *service.RasterCOGTaskService, model3DGLBTaskSvc *service.Model3DGLBTaskService, gaussianSplatKSplatTaskSvc *service.GaussianSplatKSplatTaskService, pointCloudCOPCTaskSvc *service.PointCloudCOPCTaskService, model3DTilesTaskSvc *service.Model3DTilesTaskService) {
@@ -237,6 +242,9 @@ func (h *QuickViewHandler) ExecuteQuickViewAction(c *gin.Context) {
 	case service.QuickViewActionGenerateTileCache:
 		taskType = commonExecution.TaskTypeVectorTileCacheGeneration
 		taskID, executionID, err = h.createAndExecuteTileCacheTask(c.Request.Context(), userID, capability, source, overwriteExistingResult)
+	case service.QuickViewActionGenerateVectorMaterialized:
+		taskType = commonExecution.TaskTypeVectorMaterializedViewGeneration
+		taskID, executionID, err = h.createAndExecuteVectorMaterializedViewTask(c.Request.Context(), userID, capability, source, overwriteExistingResult)
 	case service.QuickViewActionGenerateRasterCOG:
 		taskType = commonExecution.TaskTypeRasterCOGGeneration
 		taskID, executionID, err = h.createAndExecuteRasterCOGTask(c.Request.Context(), userID, capability, source, overwriteExistingResult)
@@ -888,6 +896,75 @@ func (h *QuickViewHandler) createAndExecuteTileCacheTask(ctx context.Context, us
 		return task.ID, "", err
 	}
 	return task.ID, executionID, nil
+}
+
+func (h *QuickViewHandler) createAndExecuteVectorMaterializedViewTask(ctx context.Context, userID uint, capability *service.QuickViewCapability, source service.QuickViewSource, overwriteExistingResult bool) (uint, string, error) {
+	if h.vectorMaterializedTaskSvc == nil {
+		return 0, "", errors.New("vector materialized view task service is not initialized")
+	}
+	config, err := vectorMaterializedViewTaskConfigFromQuickView(capability, source)
+	if err != nil {
+		return 0, "", err
+	}
+	task := models.VectorMaterializedViewTask{
+		TenantID:  capability.TenantID,
+		Name:      quickViewActionTaskName("矢量物化视图", capability),
+		Enabled:   true,
+		Config:    config,
+		CreatedBy: &userID,
+	}
+	if err := h.vectorMaterializedTaskSvc.Create(ctx, &task); err != nil {
+		return 0, "", err
+	}
+	executionID, err := h.vectorMaterializedTaskSvc.Execute(ctx, task.ID, capability.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, overwriteExistingResult)
+	if err != nil {
+		return task.ID, "", err
+	}
+	return task.ID, executionID, nil
+}
+
+func vectorMaterializedViewTaskConfigFromQuickView(capability *service.QuickViewCapability, source service.QuickViewSource) (commonModels.JSONMap, error) {
+	if capability == nil || source.SpatialMeta == nil {
+		return nil, errors.New("quick view source is not a vector materialized view generation source")
+	}
+	if source.EngineID == 0 || strings.TrimSpace(source.Schema) == "" || strings.TrimSpace(source.Table) == "" ||
+		strings.TrimSpace(source.SpatialMeta.GeomColumn) == "" || source.SpatialMeta.SRID <= 0 || source.SpatialMeta.SRID == commonSpatial.SRIDWebMercator {
+		return nil, errors.New("quick view capability missing vector materialized view source facts")
+	}
+	parsed, err := resourcetree.ParseURI(capability.Locator)
+	if err != nil {
+		return nil, fmt.Errorf("quick view locator is invalid: %w", err)
+	}
+	itemID := uint(0)
+	if parsed.ItemID != nil {
+		itemID = *parsed.ItemID
+	}
+	itemFingerprint := commonModels.GenerateItemFingerprint(source.EngineID, strings.TrimSpace(source.Schema)+"."+strings.TrimSpace(source.Table))
+	target := commonModels.JSONMap{
+		"source_engine_id": source.EngineID,
+		"schema":           strings.TrimSpace(source.Schema),
+		"table":            strings.TrimSpace(source.Table),
+		"item_fingerprint": itemFingerprint,
+		"locator":          strings.TrimSpace(capability.Locator),
+	}
+	if itemID > 0 {
+		target["item_id"] = itemID
+	}
+	return commonModels.JSONMap{
+		"target": target,
+		"geometry": commonModels.JSONMap{
+			"geometry_column": strings.TrimSpace(source.SpatialMeta.GeomColumn),
+			"source_srid":     source.SpatialMeta.SRID,
+			"target_srid":     commonSpatial.SRIDWebMercator,
+		},
+		"optimization": commonModels.JSONMap{
+			"target_kind":         models.VectorMaterializedViewTargetKindSourceSchemaMaterializedView,
+			"include_source_key":  true,
+			"attributes":          []string{},
+			"analyze_after_build": true,
+		},
+		"storage": commonModels.JSONMap{"target_schema": strings.TrimSpace(source.Schema)},
+	}, nil
 }
 
 func vectorTileCacheTaskConfigFromQuickView(capability *service.QuickViewCapability, source service.QuickViewSource) (commonModels.JSONMap, error) {

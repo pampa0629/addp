@@ -224,7 +224,8 @@
         "expiresAt": "Expires At",
         "joinedAt": "Joined At",
         "member": "Member",
-        "principalType": "Principal Type",
+        "memberType": "Member Type",
+        "currentAccount": "Current Account",
         "source": "Source"
       },
       "organization": {
@@ -299,11 +300,16 @@
       "roles": {
         "create": "Create Custom Role",
         "edit": "Edit Custom Role",
+        "search": "Search role name, key, or description",
         "key": "Role Key",
         "role": "Role",
         "type": "Role Type",
         "scopes": "Allowed Scopes",
         "permissions": "Permissions",
+        "applicableMembers": "Applicable Members",
+        "permissionCount": "{count} items",
+        "permissionDetails": "Role Permission Details",
+        "selectedPermissionCount": "{count} permissions selected",
         "types": {
           "tenant_builtin": "Tenant Built-in Role",
           "tenant_custom": "Tenant Custom Role"
@@ -316,6 +322,7 @@
       },
       "roleAssignments": {
         "create": "Assign Role",
+        "allMembers": "All Members",
         "scope": "Scope",
         "departmentId": "Department ID",
         "projectGroupId": "Project Group ID",
@@ -341,7 +348,8 @@
         "endTime": "End Time",
         "eventName": "Event Name",
         "module": "Module",
-        "principal": "Principal",
+        "member": "Actor Member",
+        "principal": "Actor Principal",
         "request": "HTTP Request",
         "requestId": "Request ID",
         "result": "Result",
@@ -360,7 +368,35 @@
       },
       "principalType": {
         "user": "User",
-        "service_principal": "Service Principal"
+        "service_principal": "Service Account"
+      },
+      "modules": {
+        "system": "System Management",
+        "gateway": "API Gateway",
+        "manager": "Data Management",
+        "meta": "Metadata Management",
+        "transfer": "Data Transfer",
+        "orchestrator": "Task Orchestration",
+        "develop": "Data Development",
+        "service": "Data Services",
+        "monitor": "Execution Monitoring",
+        "standard": "Data Standards",
+        "model": "Data Modeling",
+        "quality": "Data Quality",
+        "security": "Data Security & Privacy",
+        "catalog": "Enterprise Catalog",
+        "asset": "Asset Management",
+        "portal": "Asset Portal",
+        "workbench": "Data Service Workbench",
+        "agent": "Agent",
+        "copilot": "AI Assistant",
+        "inference": "AI Inference",
+        "graph": "Knowledge Graph",
+        "duckdb": "DuckDB Runtime",
+        "iam": "Identity & Access Management",
+        "audit": "Audit",
+        "oauth": "OAuth Authorization",
+        "engine": "Engine Management"
       },
       "source": {
         "manual": "Manual",

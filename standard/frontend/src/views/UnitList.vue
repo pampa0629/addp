@@ -80,7 +80,7 @@
           <el-input v-model="categoryForm.name" />
         </el-form-item>
         <el-form-item :label="$t('standard.common.code')" required>
-          <el-input v-model="categoryForm.code" :disabled="!!editingCategory" />
+          <el-input v-model="categoryForm.code" :placeholder="$t('standard.common.codePlaceholder')" :disabled="!!editingCategory" />
         </el-form-item>
         <el-form-item :label="$t('standard.common.description')">
           <el-input v-model="categoryForm.description" type="textarea" :rows="2" />
@@ -135,6 +135,7 @@ import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiErro
 import { useStandardPermissions } from '../composables/useStandardPermissions'
 import { createLatestRequestCoordinator } from '@common-ui'
 import { useActionLock } from '../composables/useActionLock'
+import { isValidStandardStableCode } from '../utils/standardCode'
 
 const { t } = useI18n()
 const { canCreate, canUpdate, canDelete } = useStandardPermissions('unit')
@@ -202,6 +203,10 @@ const editCategory = (data) => {
 
 const saveCategory = async () => {
   if (saving.value) return
+  if (!editingCategory.value && !isValidStandardStableCode(categoryForm.value.code, 50)) {
+    ElMessage.warning(t('standard.common.codeFormatInvalid'))
+    return
+  }
   saving.value = true
   try {
     if (editingCategory.value) {

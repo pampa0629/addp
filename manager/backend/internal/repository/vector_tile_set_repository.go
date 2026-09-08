@@ -41,7 +41,7 @@ func (r *VectorTileSetRepository) UpdateTask(ctx context.Context, task *models.V
 	return updateTaskDefinition(ctx, r.db, commonExecution.TaskTypeVectorTileSetGeneration, task)
 }
 func (r *VectorTileSetRepository) DeleteTask(ctx context.Context, id, tenantID uint) error {
-	return r.db.WithContext(ctx).Where("id = ? AND tenant_id = ? AND task_type = ?", id, tenantID, commonExecution.TaskTypeVectorTileSetGeneration).Delete(&models.VectorTileSetTask{}).Error
+	return deleteTaskDefinition(ctx, r.db, commonExecution.TaskTypeVectorTileSetGeneration, id, tenantID)
 }
 func (r *VectorTileSetRepository) GetTask(ctx context.Context, id, tenantID uint) (*models.VectorTileSetTask, error) {
 	var task models.VectorTileSetTask

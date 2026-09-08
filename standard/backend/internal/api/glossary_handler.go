@@ -107,7 +107,7 @@ func (h *GlossaryHandler) ListGlossaries(c *gin.Context) {
 // @Produce json
 // @Param request body models.CreateGlossaryRequest true "业务术语和首个草稿 | Glossary and initial draft"
 // @Success 201 {object} models.GlossaryAggregate
-// @Failure 400 {object} map[string]string "请求无效 | Invalid request"
+// @Failure 400 {object} map[string]string "编码或请求参数无效，编码错误返回 error_code=invalid_standard_code | Invalid code or request; code errors return error_code=invalid_standard_code"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.glossary.create"]
 // @Router /glossaries [post]

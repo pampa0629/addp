@@ -25,9 +25,9 @@ func (s *GlossaryService) CreateGlossary(req *models.CreateGlossaryRequest, tena
 	if err != nil {
 		return nil, err
 	}
-	code := strings.TrimSpace(req.Code)
-	if code == "" {
-		return nil, ErrInvalidStandardRevision
+	code, err := normalizeStandardStableCode(req.Code, maxStandardStableCodeLength)
+	if err != nil {
+		return nil, err
 	}
 	exists, err := s.repo.ExistsByCode(code, tenantID)
 	if err != nil {

@@ -50,6 +50,18 @@ func TestFormalizeCandidateCreatesGlossaryIdentityAtomically(t *testing.T) {
 	}
 }
 
+func TestFormalizeCandidateRejectsHistoricalCandidateWithInvalidStableCode(t *testing.T) {
+	db := openCandidateFormalizationTestDB(t)
+	candidate := seedCandidateFormalizationContext(t, db, "Invalid-Code", "候选术语", "候选定义")
+	svc := NewDocumentService(repository.NewDocumentRepository(db), nil, nil, DocumentStorageOptions{})
+	defer svc.Stop()
+
+	_, err := svc.FormalizeCandidate(candidate.ID, 7, 11, &models.FormalizeDocumentExtractionCandidateRequest{Version: 1, ChangeSummary: "由文档提炼"}, CandidateFormalizationAuthorization{Create: map[string]bool{"glossary": true}})
+	if !errors.Is(err, ErrInvalidStandardCode) {
+		t.Fatalf("error = %v, want ErrInvalidStandardCode", err)
+	}
+}
+
 func TestFormalizeCandidateLinksExactRevisionAndRequiresUpdatePermission(t *testing.T) {
 	db := openCandidateFormalizationTestDB(t)
 	candidate := seedCandidateFormalizationContext(t, db, "existing_term", "户外活动", "户外活动定义")

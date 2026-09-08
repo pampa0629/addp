@@ -6,12 +6,17 @@
 
 ## 一、扩展步骤
 
-1. 在 `common/engine/plugins/<engine_type>/` 新建插件包。
-2. 实现 `EnginePlugin` 基础接口；可由用户注册的引擎同时实现 `ConnectionSpecProvider`，并让默认端口、必填、敏感和身份字段接口从同一 `ConnectionSpec` 派生。
-3. 按引擎能力实现需要的 provider。
-4. 返回结构化 `Capabilities()`。
-5. 按 `EngineOrigin()` 加入 `common/engine/plugins/builtin/general` 或 `common/engine/plugins/builtin/extension` 聚合包。
-6. 补充单元测试和必要的 integration 测试。
+1. 对只有厂商离线介质、或运行环境受 OS/CPU 架构限制的引擎，先通过 T5 官方介质认证确认许可证、介质完整性、原生启动、驱动协议和关键 SQL 能力；认证不得伪装成平台已经支持该引擎。
+2. 在 `common/engine/plugins/<engine_type>/` 新建插件包。
+3. 实现 `EnginePlugin` 基础接口；可由用户注册的引擎同时实现 `ConnectionSpecProvider`，并让默认端口、必填、敏感和身份字段接口从同一 `ConnectionSpec` 派生。
+4. 按引擎能力实现需要的 provider。
+5. 返回结构化 `Capabilities()`。
+6. 按 `EngineOrigin()` 加入 `common/engine/plugins/builtin/general` 或 `common/engine/plugins/builtin/extension` 聚合包。
+7. 补充单元测试和必要的 integration 测试。
+
+官方介质认证由 owner 脚本唯一持有下载地址、完整性校验值、启动参数、测试夹具和清理逻辑，协议断言放在 `common/engine/certification/<engine>/`，不能用只有测试文件的插件目录冒充生产实现；workflow 只能调用 `make test-release RELEASE_SUITE=<suite>`。认证通过后仍必须建立独立 `engine_type` 和插件实现，不得因 wire protocol 兼容而复用其他数据库身份。
+
+当前 openGauss 的准入基线固定为 6.0.6 LTS 官方 x86_64 Docker 介质，使用 `make test-release RELEASE_SUITE=opengauss-official-media` 在 Linux x86_64 执行。该 suite 验证官方 tar SHA-256、原生容器启动、PG 兼容 database、`lib/pq` 参数绑定、COPY、MERGE、复合 watermark、唯一键目录查询和查询取消；不进入辅助 macOS 巡检，也不代表 `engine_type=opengauss` 已经完成实现。
 
 聚合包是内置插件编译期登记的唯一手写清单。`make test-engine-plugin-registration` 会自动扫描调用 `plugin.Register` 的生产包，校验每个包恰好进入与 `EngineOrigin()` 一致的一个聚合入口，并禁止上层生产代码通过 blank import 直接加载具体插件。测试和 System API 不得另行维护全量插件类型清单或固定数量；它们应从已登记插件和 descriptor 动态验证通用契约，具体引擎的端口、能力和字段语义由各插件包自己的测试拥有。
 
@@ -127,3 +132,5 @@ git diff --check
 ```
 
 涉及前端入口时补跑对应模块构建。
+
+对 openGauss 正式插件开发，先保留上述官方介质认证证据；插件实现完成后再补充可由常规 T2 disposable 基础设施执行的 Provider 集成门禁和跨模块 T4 验收，不能用协议认证替代模块能力验收。

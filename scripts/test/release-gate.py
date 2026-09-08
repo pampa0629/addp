@@ -30,11 +30,16 @@ class ReleaseOwnerGateError(ReleaseGateError):
         self.returncode = returncode
 
 
+class ReleaseOwnerEvidenceError(ReleaseGateError):
+    pass
+
+
 @dataclass(frozen=True)
 class Suite:
     target: str
     artifact_environment: tuple[tuple[str, str], ...]
     owner_report: str | None = None
+    workflow_job: str | None = None
 
 
 # T5 suites keep their product-specific prerequisites and owner targets. This
@@ -48,6 +53,18 @@ SUITES: Mapping[str, Suite] = {
     "common-python-cli": Suite(
         target="test-common-python-cli-release",
         artifact_environment=(("ADDP_CLI_RELEASE_DIST", "."),),
+        workflow_job="cli-product-macos-verification",
+    ),
+    "opengauss-official-media": Suite(
+        target="test-opengauss-official-media-release",
+        artifact_environment=(
+            (
+                "ADDP_OPENGAUSS_CERTIFICATION_REPORT",
+                "opengauss-official-media.json",
+            ),
+        ),
+        owner_report="opengauss-official-media.json",
+        workflow_job="opengauss-official-media-certification",
     ),
 }
 
@@ -149,6 +166,14 @@ def run_release(
         result = subprocess.run(command, cwd=repository, env=environment, check=False)
         if result.returncode != 0:
             raise ReleaseOwnerGateError(suite_name, result.returncode)
+        if suite.owner_report is not None and not (
+            artifact_directory / suite.owner_report
+        ).is_file():
+            report["error_code"] = "release_owner_evidence_missing"
+            raise ReleaseOwnerEvidenceError(
+                f"release suite {suite_name!r} did not produce owner report "
+                f"{suite.owner_report!r}"
+            )
         report["result"] = "passed"
         report["error_code"] = None
     finally:

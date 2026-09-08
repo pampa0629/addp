@@ -76,6 +76,7 @@ import { domainAPI } from '../api/standard'
 import { getStandardErrorMessage, isCanceledInteraction } from '../utils/apiError'
 import { useStandardPermissions } from '../composables/useStandardPermissions'
 import { useActionLock } from '../composables/useActionLock'
+import { buildStandardCodeRules } from '../utils/standardCode'
 
 const { t } = useI18n()
 const { canCreate, canUpdate, canDelete } = useStandardPermissions('domain')
@@ -102,7 +103,7 @@ const form = ref({
 
 const rules = computed(() => ({
   name: [{ required: true, message: t('standard.domain.nameRequired'), trigger: 'blur' }],
-  code: [{ required: true, message: t('standard.domain.codeRequired'), trigger: 'blur' }]
+  code: buildStandardCodeRules(t, 'standard.domain.codeRequired', 50)
 }))
 
 const loadDomains = async () => {

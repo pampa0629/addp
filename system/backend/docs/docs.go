@@ -2930,6 +2930,18 @@ const docTemplate = `{
                 "summary": "查询平台审计事件 | List platform audit events",
                 "parameters": [
                     {
+                        "type": "integer",
+                        "description": "授权主体 ID | Principal ID",
+                        "name": "principal_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "模块标识 | Module name",
+                        "name": "module_name",
+                        "in": "query"
+                    },
+                    {
                         "type": "string",
                         "description": "实体类型 | Entity type",
                         "name": "entity_type",
@@ -2999,6 +3011,18 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "type": "integer",
+                        "description": "授权主体 ID | Principal ID",
+                        "name": "principal_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "模块标识 | Module name",
+                        "name": "module_name",
+                        "in": "query"
+                    },
+                    {
                         "type": "string",
                         "description": "实体类型 | Entity type",
                         "name": "entity_type",
@@ -3044,6 +3068,18 @@ const docTemplate = `{
                 "summary": "汇总平台审计事件 | Summarize platform audit events",
                 "parameters": [
                     {
+                        "type": "integer",
+                        "description": "授权主体 ID | Principal ID",
+                        "name": "principal_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "模块标识 | Module name",
+                        "name": "module_name",
+                        "in": "query"
+                    },
+                    {
                         "type": "string",
                         "description": "实体类型 | Entity type",
                         "name": "entity_type",
@@ -3085,6 +3121,18 @@ const docTemplate = `{
                 ],
                 "summary": "查询平台审计趋势 | Get platform audit trends",
                 "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "授权主体 ID | Principal ID",
+                        "name": "principal_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "模块标识 | Module name",
+                        "name": "module_name",
+                        "in": "query"
+                    },
                     {
                         "type": "string",
                         "description": "实体类型 | Entity type",
@@ -6130,6 +6178,18 @@ const docTemplate = `{
                 "summary": "查询当前租户审计事件 | List current tenant audit events",
                 "parameters": [
                     {
+                        "type": "integer",
+                        "description": "成员对应授权主体 ID | Principal ID of the member",
+                        "name": "principal_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "模块标识 | Module name",
+                        "name": "module_name",
+                        "in": "query"
+                    },
+                    {
                         "type": "string",
                         "description": "实体类型 | Entity type",
                         "name": "entity_type",
@@ -6257,6 +6317,18 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "type": "integer",
+                        "description": "成员对应授权主体 ID | Principal ID of the member",
+                        "name": "principal_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "模块标识 | Module name",
+                        "name": "module_name",
+                        "in": "query"
+                    },
+                    {
                         "type": "string",
                         "description": "实体类型 | Entity type",
                         "name": "entity_type",
@@ -6302,6 +6374,18 @@ const docTemplate = `{
                 "summary": "汇总当前租户审计事件 | Summarize current tenant audit events",
                 "parameters": [
                     {
+                        "type": "integer",
+                        "description": "成员对应授权主体 ID | Principal ID of the member",
+                        "name": "principal_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "模块标识 | Module name",
+                        "name": "module_name",
+                        "in": "query"
+                    },
+                    {
                         "type": "string",
                         "description": "实体类型 | Entity type",
                         "name": "entity_type",
@@ -6343,6 +6427,18 @@ const docTemplate = `{
                 ],
                 "summary": "查询当前租户审计趋势 | Get current tenant audit trends",
                 "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "成员对应授权主体 ID | Principal ID of the member",
+                        "name": "principal_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "模块标识 | Module name",
+                        "name": "module_name",
+                        "in": "query"
+                    },
                     {
                         "type": "string",
                         "description": "实体类型 | Entity type",
@@ -7264,6 +7360,12 @@ const docTemplate = `{
                         "type": "string",
                         "description": "状态 | Status",
                         "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "成员类型：user 或 service_principal | Member type: user or service_principal",
+                        "name": "principal_type",
                         "in": "query"
                     }
                 ],
