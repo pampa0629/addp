@@ -19,6 +19,11 @@ import (
 
 type OraclePlugin struct{}
 
+const (
+	oracleDecimalMaxPrecision = 38
+	oracleDecimalMaxScale     = 38
+)
+
 // InternalCaptureTableCommentPrefix marks ADDP-owned source-side capture tables.
 // Catalog listing filters this exact ownership marker instead of relying on object names.
 const InternalCaptureTableCommentPrefix = "ADDP CDC spatial capture "
@@ -126,6 +131,7 @@ func (p *OraclePlugin) Capabilities() plugin.EngineCapabilities {
 			NativeSpatialFunctions: true,
 		},
 	})
+	plugin.ApplyExplicitDecimalTableWriteLimits(&caps, oracleDecimalMaxPrecision, oracleDecimalMaxScale)
 	return caps
 }
 

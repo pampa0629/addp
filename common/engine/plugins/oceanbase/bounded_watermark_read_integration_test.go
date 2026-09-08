@@ -135,4 +135,44 @@ func TestIntegrationOceanBaseBoundedWatermarkResumeAndIdempotentUpsert(t *testin
 	if updatedName != "changed-after-snapshot" {
 		t.Fatalf("target row 2 name = %q, want changed-after-snapshot", updatedName)
 	}
+
+	insertOnly, err := p.OpenBoundedWatermarkRead(ctx, connInfo, sourcePath, plugin.BoundedWatermarkReadOptions{WatermarkField: "id"})
+	if err != nil {
+		t.Fatalf("open insert-only OceanBase watermark read: %v", err)
+	}
+	insertOnlyBatch, err := insertOnly.ReadBatch(ctx, 10)
+	if err != nil {
+		t.Fatalf("read insert-only OceanBase watermark batch: %v", err)
+	}
+	if len(insertOnlyBatch.Rows) != 3 || fmt.Sprint(insertOnlyBatch.Rows[2]["id"]) != "3" {
+		t.Fatalf("insert-only OceanBase rows = %#v, want ids 1..3", insertOnlyBatch.Rows)
+	}
+	insertOnlyCommitted, err := insertOnly.PositionForRow(insertOnlyBatch.Rows[2])
+	if err != nil {
+		t.Fatalf("insert-only OceanBase PositionForRow() error = %v", err)
+	}
+	if upper := insertOnly.UpperBound(); upper == nil || len(upper.Values) != 1 || upper.Values[0] != "3" {
+		t.Fatalf("insert-only OceanBase upper bound = %#v, want id 3", upper)
+	}
+	if err := insertOnly.Close(ctx); err != nil {
+		t.Fatalf("close insert-only OceanBase watermark read: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, "UPDATE "+qualifiedSource+" SET name = ? WHERE id = ?", "changed-without-id", 1); err != nil {
+		t.Fatalf("update old OceanBase insert-only row: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, "INSERT INTO "+qualifiedSource+" (id, updated_at, name) VALUES (?, ?, ?)", 4, stamp.Add(-time.Second), "four"); err != nil {
+		t.Fatalf("insert next OceanBase insert-only row: %v", err)
+	}
+	insertOnlyResume, err := p.OpenBoundedWatermarkRead(ctx, connInfo, sourcePath, plugin.BoundedWatermarkReadOptions{WatermarkField: "id", Start: insertOnlyCommitted})
+	if err != nil {
+		t.Fatalf("resume insert-only OceanBase watermark read: %v", err)
+	}
+	defer insertOnlyResume.Close(ctx)
+	insertOnlyDelta, err := insertOnlyResume.ReadBatch(ctx, 10)
+	if err != nil {
+		t.Fatalf("read resumed insert-only OceanBase watermark batch: %v", err)
+	}
+	if len(insertOnlyDelta.Rows) != 1 || fmt.Sprint(insertOnlyDelta.Rows[0]["id"]) != "4" {
+		t.Fatalf("resumed insert-only OceanBase rows = %#v, want only id 4", insertOnlyDelta.Rows)
+	}
 }

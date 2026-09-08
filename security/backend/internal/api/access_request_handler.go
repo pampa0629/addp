@@ -96,10 +96,11 @@ func (h *AccessRequestHandler) ListMine(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// @Summary 原值访问待审批申请 | List plaintext access review queue
-// @Description 返回当前租户全部待处理申请，并明确当前用户能否审批；本人申请和已过期申请可见但不能审批 | Return every pending record in the current tenant and whether the current user may decide it; self-submitted and expired requests remain visible but cannot be decided
+// @Summary 原值访问审批工作区 | List plaintext access review workspace
+// @Description 按 scope 返回未过期待审批申请或已批准、已驳回、已过期审批记录；本人申请可见但不能自审 | Return unexpired pending requests or approved, rejected, and expired review history by scope; self-submitted requests remain visible but cannot be self-approved
 // @Tags Protection Access Request
 // @Produce json
+// @Param scope query string true "视图 pending|history | View pending|history"
 // @Param page query int false "页码 | Page number"
 // @Param page_size query int false "每页数量 | Page size"
 // @Success 200 {object} ProtectionAccessRequestListResponse
@@ -113,7 +114,7 @@ func (h *AccessRequestHandler) ListMine(c *gin.Context) {
 // @Security BearerAuth
 func (h *AccessRequestHandler) ReviewQueue(c *gin.Context) {
 	page, pageSize := commonapi.ParsePagination(c)
-	result, err := h.requests.ListReviewQueue(c.Request.Context(), getTenantID(c), getUserID(c), int64(page), int64(pageSize))
+	result, err := h.requests.ListReviewQueue(c.Request.Context(), getTenantID(c), getUserID(c), c.Query("scope"), int64(page), int64(pageSize))
 	if err != nil {
 		respondError(c, err)
 		return

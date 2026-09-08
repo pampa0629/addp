@@ -1,5 +1,8 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '../store/auth'
+import { availableIAMTabs } from '../config/iamNavigation'
+
+const iamCategoryPage = () => import('../views/IAMCategoryPage.vue')
 
 const routes = [
   {
@@ -20,23 +23,28 @@ const routes = [
         meta: { requiresAuth: true, title: '系统管理-addp' }
       },
       {
-        path: 'iam',
-        name: 'IAMWorkbench',
-        component: () => import('../views/IAMWorkbench.vue'),
-        meta: {
-          requiresAuth: true,
-          title: '身份与访问管理-addp'
-        }
+        path: 'iam/identity',
+        name: 'IAMIdentity',
+        component: iamCategoryPage,
+        meta: { requiresAuth: true, iamPage: 'identity', title: '身份与成员-addp' }
       },
       {
-        path: 'settings/security-policy',
-        name: 'SecurityPolicy',
-        component: () => import('../views/SecurityPolicy.vue'),
-        meta: {
-          requiresAuth: true,
-          title: 'IAM 安全策略-addp',
-          requiredPermissions: ['iam.security_policy.read']
-        }
+        path: 'iam/organization',
+        name: 'IAMOrganization',
+        component: iamCategoryPage,
+        meta: { requiresAuth: true, iamPage: 'organization', title: '租户与组织-addp' }
+      },
+      {
+        path: 'iam/access',
+        name: 'IAMAccess',
+        component: iamCategoryPage,
+        meta: { requiresAuth: true, iamPage: 'access', title: '角色与访问-addp' }
+      },
+      {
+        path: 'iam/security',
+        name: 'IAMSecurity',
+        component: iamCategoryPage,
+        meta: { requiresAuth: true, iamPage: 'security', title: '安全与审计-addp' }
       },
       {
         path: 'modules',
@@ -91,6 +99,11 @@ router.beforeEach((to) => {
   const any = to.meta?.anyPermissions || []
   if (required.some((permission) => !authStore.hasPermission(permission))) return { name: 'Home' }
   if (any.length && !authStore.hasAnyPermission(any)) return { name: 'Home' }
+  if (to.meta?.iamPage && !availableIAMTabs(
+    to.meta.iamPage,
+    authStore.contextType,
+    permission => authStore.hasPermission(permission)
+  ).length) return { name: 'Home' }
   return true
 })
 

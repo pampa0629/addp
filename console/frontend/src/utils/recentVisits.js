@@ -1,10 +1,19 @@
 import { splitConsoleRoute } from './consoleNavigation'
 
+function findMenuItem(items, path) {
+  for (const item of items || []) {
+    if (item.index === path) return item
+    const child = findMenuItem(item.children, path)
+    if (child) return child
+  }
+  return null
+}
+
 export function buildRecentVisitEntry({ module, fullPath, menuConfig, descriptor = null }) {
   if (!module || !menuConfig || typeof fullPath !== 'string' || descriptor?.recent === false) return null
 
   const [pathPart] = splitConsoleRoute(fullPath)
-  const item = menuConfig.items?.find(candidate => candidate.index === pathPart)
+  const item = findMenuItem(menuConfig.items, pathPart)
   const isFlatEntry = menuConfig.flat && menuConfig.index === pathPart
   if (!descriptor && !item && !isFlatEntry) return null
 

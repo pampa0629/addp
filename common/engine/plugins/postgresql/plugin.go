@@ -325,16 +325,7 @@ type postgresNamespaceRow struct {
 	LeafCount int
 }
 
-// ListTables 列出指定Schema下的所有表
-func (p *PostgreSQLPlugin) listTables(ctx context.Context, db *gorm.DB, schema string) ([]datatype.TableInfo, error) {
-	var rows []postgresTableRow
-
-	superMapSDXDetected, err := p.hasSuperMapSDXSystemTables(ctx, db)
-	if err != nil {
-		return nil, err
-	}
-
-	query := `
+const postgresListTablesQuery = `
 		SELECT
 			t.table_name as name,
 			t.table_type,
@@ -353,16 +344,27 @@ func (p *PostgreSQLPlugin) listTables(ctx context.Context, db *gorm.DB, schema s
 				s.last_vacuum
 			) as updated_at
 		FROM information_schema.tables t
-		LEFT JOIN pg_stat_user_tables s
+		LEFT JOIN pg_catalog.pg_stat_user_tables s
 			ON t.table_schema = s.schemaname AND t.table_name = s.relname
-		LEFT JOIN pg_class c
-			ON c.oid = to_regclass(quote_ident(t.table_schema)||'.'||quote_ident(t.table_name))
+		LEFT JOIN pg_catalog.pg_namespace n
+			ON n.nspname = t.table_schema
+		LEFT JOIN pg_catalog.pg_class c
+			ON c.relnamespace = n.oid AND c.relname = t.table_name
 		WHERE t.table_schema = $1
 		  AND t.table_type IN ('BASE TABLE', 'VIEW')
 		ORDER BY t.table_name
 	`
 
-	err = db.WithContext(ctx).Raw(query, schema).Scan(&rows).Error
+// ListTables 列出指定Schema下的所有表
+func (p *PostgreSQLPlugin) listTables(ctx context.Context, db *gorm.DB, schema string) ([]datatype.TableInfo, error) {
+	var rows []postgresTableRow
+
+	superMapSDXDetected, err := p.hasSuperMapSDXSystemTables(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+
+	err = db.WithContext(ctx).Raw(postgresListTablesQuery, schema).Scan(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to list tables: %w", err)
 	}

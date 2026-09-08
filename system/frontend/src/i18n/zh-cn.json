@@ -8,7 +8,6 @@
       "overview": "系统概览",
       "systemMgmt": "系统管理",
       "iam": "身份与访问管理",
-      "securityPolicy": "IAM 安全策略",
       "moduleMgmt": "模块管理",
       "engineMgmt": "引擎管理",
       "appMgmt": "应用管理",
@@ -101,19 +100,26 @@
         "platform": "平台管理上下文",
         "tenant": "租户上下文 #{id}"
       },
+      "pages": {
+        "identity": "身份与成员",
+        "organization": "租户与组织",
+        "access": "角色与访问",
+        "security": "安全与审计"
+      },
       "tabs": {
-        "security": "安全设置",
+        "accountSecurity": "账号安全",
+        "securityPolicy": "IAM 安全策略",
+        "audit": "审计日志",
         "tenants": "租户生命周期",
         "users": "用户生命周期",
         "identityChanges": "身份变更审批",
-        "platformAudit": "平台审计",
         "memberships": "成员关系",
-        "organization": "组织与项目组",
+        "departments": "部门管理",
+        "projectGroups": "项目组管理",
         "oauthClients": "外部 OAuth 客户端",
         "invitations": "租户邀请",
         "roles": "租户角色",
-        "roleAssignments": "角色分配",
-        "tenantAudit": "租户审计"
+        "roleAssignments": "角色分配"
       },
       "common": {
         "actions": "操作",

@@ -78,9 +78,15 @@ func (s *AccessRequestService) Targets(ctx context.Context, tenantID, userID int
 			return nil, err
 		}
 		target.AssessmentID, target.AssessmentRevision, target.Requestable, target.UnavailableReason = assessment.ID, revision.Revision, true, ""
-		var pending models.ProtectionAccessRequest
-		if err := s.db.WithContext(ctx).Where("tenant_id = ? AND assessment_id = ? AND consumer_owner = ? AND action = ? AND subject_type = ? AND subject_id = ? AND state = ?", tenantID, assessment.ID, owner, action, "user", userIDString(userID), models.ProtectionAccessRequestStatePending).First(&pending).Error; err == nil {
-			target.PendingRequestID = pending.ID
+		var latestRequest models.ProtectionAccessRequest
+		if err := s.db.WithContext(ctx).
+			Where("tenant_id = ? AND assessment_id = ? AND consumer_owner = ? AND action = ? AND subject_type = ? AND subject_id = ?", tenantID, assessment.ID, owner, action, "user", userIDString(userID)).
+			Order("created_at DESC, id DESC").
+			First(&latestRequest).Error; err == nil {
+			latestRequest = effectiveAccessRequest(latestRequest, now)
+			target.AccessRequest = &models.ProtectionAccessRequestSummary{
+				ID: latestRequest.ID, State: latestRequest.State, RequestedExpiresAt: latestRequest.RequestedExpiresAt,
+			}
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
 		}
@@ -117,8 +123,17 @@ func (s *AccessRequestService) Create(ctx context.Context, tenantID, userID int6
 		if err != nil {
 			return err
 		}
+		binding := "tenant_id = ? AND assessment_id = ? AND consumer_owner = ? AND action = ? AND subject_type = ? AND subject_id = ?"
+		bindingValues := []any{tenantID, assessment.ID, request.ConsumerOwner, request.Action, "user", userIDString(userID)}
+		if err := tx.Model(&models.ProtectionAccessRequest{}).
+			Where(binding+" AND state = ? AND requested_expires_at <= ?", append(bindingValues, models.ProtectionAccessRequestStatePending, now)...).
+			Updates(map[string]any{
+				"state": models.ProtectionAccessRequestStateExpired, "version": gorm.Expr("version + 1"), "updated_at": now,
+			}).Error; err != nil {
+			return err
+		}
 		var count int64
-		if err := tx.Model(&models.ProtectionAccessRequest{}).Where("tenant_id = ? AND assessment_id = ? AND consumer_owner = ? AND action = ? AND subject_type = ? AND subject_id = ? AND state = ?", tenantID, assessment.ID, request.ConsumerOwner, request.Action, "user", userIDString(userID), models.ProtectionAccessRequestStatePending).Count(&count).Error; err != nil {
+		if err := tx.Model(&models.ProtectionAccessRequest{}).Where(binding+" AND state = ?", append(bindingValues, models.ProtectionAccessRequestStatePending)...).Count(&count).Error; err != nil {
 			return err
 		}
 		if count > 0 {
@@ -143,39 +158,36 @@ func (s *AccessRequestService) ListMine(ctx context.Context, tenantID, userID, p
 	if userID <= 0 {
 		return nil, commonapi.ErrBadRequest
 	}
-	return s.list(ctx, tenantID, page, pageSize, "subject_type = ? AND subject_id = ?", "user", userIDString(userID))
+	return s.list(ctx, tenantID, page, pageSize, s.now().UTC(), "subject_type = ? AND subject_id = ?", "user", userIDString(userID))
 }
 
-func (s *AccessRequestService) ListReviewQueue(ctx context.Context, tenantID, reviewerID, page, pageSize int64) (*models.ProtectionAccessRequestListResponse, error) {
-	if reviewerID <= 0 {
+func (s *AccessRequestService) ListReviewQueue(ctx context.Context, tenantID, reviewerID int64, scope string, page, pageSize int64) (*models.ProtectionAccessRequestListResponse, error) {
+	scope = strings.TrimSpace(scope)
+	if reviewerID <= 0 || (scope != models.ProtectionAccessRequestReviewScopePending && scope != models.ProtectionAccessRequestReviewScopeHistory) {
 		return nil, commonapi.ErrBadRequest
 	}
-	result, err := s.list(
-		ctx, tenantID, page, pageSize,
-		"state = ?",
-		models.ProtectionAccessRequestStatePending,
-	)
+	now := s.now().UTC()
+	condition, values := "state = ? AND requested_expires_at > ?", []any{models.ProtectionAccessRequestStatePending, now}
+	if scope == models.ProtectionAccessRequestReviewScopeHistory {
+		condition, values = "(state <> ? OR requested_expires_at <= ?)", []any{models.ProtectionAccessRequestStatePending, now}
+	}
+	result, err := s.list(ctx, tenantID, page, pageSize, now, condition, values...)
 	if err != nil {
 		return nil, err
 	}
-	now := s.now().UTC()
 	for index := range result.Data {
 		row := &result.Data[index]
-		switch {
-		case !now.Before(row.RequestedExpiresAt):
-			row.CanDecide = false
-			row.DecisionUnavailableReason = models.ProtectionAccessRequestDecisionUnavailableExpired
-		case row.SubjectType == "user" && row.SubjectID == userIDString(reviewerID):
+		if scope == models.ProtectionAccessRequestReviewScopePending && row.SubjectType == "user" && row.SubjectID == userIDString(reviewerID) {
 			row.CanDecide = false
 			row.DecisionUnavailableReason = models.ProtectionAccessRequestDecisionUnavailableSelfApproval
-		default:
+		} else if scope == models.ProtectionAccessRequestReviewScopePending {
 			row.CanDecide = true
 		}
 	}
 	return result, nil
 }
 
-func (s *AccessRequestService) list(ctx context.Context, tenantID, page, pageSize int64, condition string, values ...any) (*models.ProtectionAccessRequestListResponse, error) {
+func (s *AccessRequestService) list(ctx context.Context, tenantID, page, pageSize int64, now time.Time, condition string, values ...any) (*models.ProtectionAccessRequestListResponse, error) {
 	if tenantID <= 0 || page <= 0 || pageSize <= 0 || pageSize > 100 {
 		return nil, commonapi.ErrBadRequest
 	}
@@ -190,6 +202,7 @@ func (s *AccessRequestService) list(ctx context.Context, tenantID, page, pageSiz
 	}
 	data := make([]models.ProtectionAccessRequestResponse, 0, len(rows))
 	for _, row := range rows {
+		row = effectiveAccessRequest(row, now)
 		built, err := s.loadResponse(s.db.WithContext(ctx), row)
 		if err != nil {
 			return nil, err
@@ -197,6 +210,13 @@ func (s *AccessRequestService) list(ctx context.Context, tenantID, page, pageSiz
 		data = append(data, *built)
 	}
 	return &models.ProtectionAccessRequestListResponse{Data: data, Total: total, Page: int(page), PageSize: int(pageSize), TotalPages: int((total + pageSize - 1) / pageSize)}, nil
+}
+
+func effectiveAccessRequest(row models.ProtectionAccessRequest, now time.Time) models.ProtectionAccessRequest {
+	if row.State == models.ProtectionAccessRequestStatePending && !now.Before(row.RequestedExpiresAt) {
+		row.State = models.ProtectionAccessRequestStateExpired
+	}
+	return row
 }
 
 func (s *AccessRequestService) Decide(ctx context.Context, tenantID, reviewerID int64, requestID string, request models.DecideProtectionAccessRequest) (*models.ProtectionAccessRequestResponse, error) {

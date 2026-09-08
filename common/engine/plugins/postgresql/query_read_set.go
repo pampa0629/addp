@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/addp/common/engine/plugin"
-	"github.com/lib/pq"
 	pgquery "github.com/pganalyze/pg_query_go/v6"
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
@@ -381,18 +380,31 @@ type postgresDatabaseReadCatalog struct {
 	db *sql.DB
 }
 
-func (c *postgresDatabaseReadCatalog) ResolveRelation(ctx context.Context, reference postgresRelationReference) (postgresResolvedRelation, error) {
-	identifier := pq.QuoteIdentifier(reference.Name)
-	if reference.Schema != "" {
-		identifier = pq.QuoteIdentifier(reference.Schema) + "." + identifier
-	}
-	var relation postgresResolvedRelation
-	err := c.db.QueryRowContext(ctx, `
+const postgresQualifiedRelationQuery = `
 		SELECT cls.oid::bigint, ns.nspname, cls.relname, cls.relkind::text
 		FROM pg_catalog.pg_class cls
 		JOIN pg_catalog.pg_namespace ns ON ns.oid = cls.relnamespace
-		WHERE cls.oid = pg_catalog.to_regclass($1)
-	`, identifier).Scan(&relation.OID, &relation.Schema, &relation.Name, &relation.Relkind)
+		WHERE ns.nspname = $1 AND cls.relname = $2
+		LIMIT 1
+	`
+
+const postgresVisibleRelationQuery = `
+		SELECT cls.oid::bigint, ns.nspname, cls.relname, cls.relkind::text
+		FROM pg_catalog.pg_class cls
+		JOIN pg_catalog.pg_namespace ns ON ns.oid = cls.relnamespace
+		WHERE cls.relname = $1 AND pg_catalog.pg_table_is_visible(cls.oid)
+		LIMIT 1
+	`
+
+func (c *postgresDatabaseReadCatalog) ResolveRelation(ctx context.Context, reference postgresRelationReference) (postgresResolvedRelation, error) {
+	query := postgresVisibleRelationQuery
+	args := []interface{}{reference.Name}
+	if reference.Schema != "" {
+		query = postgresQualifiedRelationQuery
+		args = []interface{}{reference.Schema, reference.Name}
+	}
+	var relation postgresResolvedRelation
+	err := c.db.QueryRowContext(ctx, query, args...).Scan(&relation.OID, &relation.Schema, &relation.Name, &relation.Relkind)
 	if err != nil {
 		return postgresResolvedRelation{}, err
 	}

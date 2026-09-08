@@ -1,16 +1,13 @@
 <template>
-  <main class="security-policy">
-    <header class="page-header">
-      <div>
-        <h1>{{ t('system.securityPolicy.title') }}</h1>
-        <div class="status-line">
-          <el-tag :type="form.pendingRestart ? 'warning' : 'success'" effect="plain">
-            {{ form.pendingRestart
-              ? t('system.securityPolicy.pendingRestart')
-              : t('system.securityPolicy.applied') }}
-          </el-tag>
-          <span>{{ t('system.securityPolicy.versions', { version: form.version, applied: form.appliedVersion }) }}</span>
-        </div>
+  <section class="iam-panel security-policy">
+    <header class="policy-toolbar">
+      <div class="status-line">
+        <el-tag :type="form.pendingRestart ? 'warning' : 'success'" effect="plain">
+          {{ form.pendingRestart
+            ? t('system.securityPolicy.pendingRestart')
+            : t('system.securityPolicy.applied') }}
+        </el-tag>
+        <span>{{ t('system.securityPolicy.versions', { version: form.version, applied: form.appliedVersion }) }}</span>
       </div>
       <el-button :icon="Refresh" circle :loading="loading" :title="t('system.securityPolicy.reload')" @click="load" />
     </header>
@@ -85,7 +82,7 @@
         </el-button>
       </footer>
     </el-form>
-  </main>
+  </section>
 </template>
 
 <script setup>
@@ -192,24 +189,14 @@ load()
 <style scoped>
 .security-policy {
   width: min(1040px, 100%);
-  margin: 0 auto;
-  padding: 28px 32px 40px;
 }
 
-.page-header {
+.policy-toolbar {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 20px;
   margin-bottom: 24px;
-}
-
-.page-header h1 {
-  margin: 0 0 10px;
-  color: var(--addp-text-primary);
-  font-size: 24px;
-  font-weight: 600;
-  letter-spacing: 0;
 }
 
 .status-line {
@@ -247,7 +234,6 @@ load()
 .form-actions { display: flex; justify-content: flex-end; }
 
 @media (max-width: 760px) {
-  .security-policy { padding: 20px 16px 32px; }
   .form-grid, .form-grid--three { grid-template-columns: 1fr; }
   .status-line { align-items: flex-start; flex-direction: column; }
 }

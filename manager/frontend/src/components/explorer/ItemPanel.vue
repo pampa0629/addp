@@ -54,6 +54,12 @@
           <el-tag v-if="pendingAccessCount > 0" size="small" type="warning" effect="plain">
             {{ t('manager.explorer.plaintextAccess.pending', { count: pendingAccessCount }) }}
           </el-tag>
+          <el-tag v-if="expiredAccessCount > 0" size="small" type="info" effect="plain">
+            {{ t('manager.explorer.plaintextAccess.expired', { count: expiredAccessCount }) }}
+          </el-tag>
+          <el-tag v-if="rejectedAccessCount > 0" size="small" type="danger" effect="plain">
+            {{ t('manager.explorer.plaintextAccess.rejected', { count: rejectedAccessCount }) }}
+          </el-tag>
           <el-tooltip v-if="reviewRequiredAccessCount > 0" :content="t('manager.explorer.plaintextAccess.reviewRequiredHint')" placement="bottom">
             <el-tag size="small" type="info" effect="plain">
               {{ t('manager.explorer.plaintextAccess.reviewRequired', { count: reviewRequiredAccessCount }) }}
@@ -501,9 +507,11 @@ let accessTargetsRequestSeq = 0
 let accessStatusTimer = null
 const ACCESS_REQUEST_MAX_DURATION_MS = 30 * 24 * 60 * 60 * 1000
 const activeAccessCount = computed(() => accessTargets.value.filter(target => target.active_exemption_id).length)
-const pendingAccessCount = computed(() => accessTargets.value.filter(target => target.pending_request_id).length)
+const pendingAccessCount = computed(() => accessTargets.value.filter(target => target.access_request?.state === 'pending').length)
+const expiredAccessCount = computed(() => accessTargets.value.filter(target => target.access_request?.state === 'expired').length)
+const rejectedAccessCount = computed(() => accessTargets.value.filter(target => target.access_request?.state === 'rejected').length)
 const reviewRequiredAccessCount = computed(() => accessTargets.value.filter(target => !target.requestable).length)
-const requestableAccessTargets = computed(() => accessTargets.value.filter(target => target.requestable && !target.active_exemption_id && !target.pending_request_id))
+const requestableAccessTargets = computed(() => accessTargets.value.filter(target => target.requestable && !target.active_exemption_id && target.access_request?.state !== 'pending'))
 
 const clearAccessStatusPoll = () => {
   if (accessStatusTimer) clearTimeout(accessStatusTimer)

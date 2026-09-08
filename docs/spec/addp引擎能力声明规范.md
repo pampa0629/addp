@@ -28,7 +28,8 @@ engine.capabilities/v1
 - `extensions.spatial_workspaces` 只承载数据库实例中可识别的厂商空间工作区事实，如 SuperMap `sdx_postgis`、`sdx_postgresql` 或 ArcGIS `sde`；这一层用于 System 自动探测、高危启用和实例级 Provider 选择，不得把两个实现不同的 SuperMap 产品合并为 `sdx+`。
 - `extensions.spatial_workspaces[].can_enable` 只表示实例在当前条件下具备被显性启用的可能性；是否真的执行启用动作，由 System 的高危操作入口统一触发，不由前端或业务模块直接改写能力 JSON。
 - Oracle Engine 声明普通 tabular 的 Engine Catalog、Facts、SQL 参数查询、BatchRead、TableReadSession、TableWriteSession 和基础 Spatial Facts/空间行读写；TableWriteSession 只创建或写入普通 Oracle 表与 `MDSYS.SDO_GEOMETRY`，不创建或修改 ArcGIS geodatabase system tables，也不表达 SDE 注册或版本化能力。不得因为底层数据库可产生 redo、Transfer 已支持 Oracle CDC 或存在 ArcGIS SDE 表就声明 `change_stream_read` 或 SDE 逻辑变化源。Oracle CDC 是 Transfer-owned capture Provider，ArcGIS SDE 仍是后续独立逻辑变化源，两者不得并入 Oracle Engine 的普通 Store 能力。
-- OceanBase Engine 在 MySQL 模式下声明 database/table Engine Catalog、表字段与统计 Facts、参数化 SQL 查询、BatchRead、非空间普通表的 BoundedWatermarkRead，以及 TableWritePrepare / TableWriteSession / Delete / TableUpsert。BoundedWatermarkRead 与 MySQL 共用 MySQL-compatible 一致性读取主路径，仅接受 InnoDB 基表，在只读 repeatable-read 事务中冻结复合上界；写入 Provider 通过 MySQL-compatible 共享实现提供安全的建库建表、可空列增量演进、事务性分批 insert、覆盖策略所需的精确目标表删除，以及按显式非空稳定键执行的单批事务幂等 upsert；目标表全部唯一约束必须与配置 keys 完全一致，避免 `ON DUPLICATE KEY UPDATE` 被其他唯一约束截获。不声明 BatchWrite、CDC、分区、空间或 Oracle 模式能力。后续能力必须在真实 OceanBase 版本和对应 Provider 验证完成后再单路扩展。
+- OceanBase Engine 在 MySQL 模式下声明 database/table Engine Catalog、表字段与统计 Facts、参数化 SQL 查询、BatchRead、非空间普通表的 BoundedWatermarkRead，以及 TableWritePrepare / TableWriteSession / Delete / TableUpsert。BoundedWatermarkRead 与 MySQL 共用 MySQL-compatible 一致性读取主路径，仅接受 InnoDB 基表，在只读 repeatable-read 事务中冻结单字段或复合上界；写入 Provider 通过 MySQL-compatible 共享实现提供安全的建库建表、可空列增量演进、事务性分批 insert、覆盖策略所需的精确目标表删除，以及按显式非空稳定键执行的单批事务幂等 upsert；目标表全部唯一约束必须与配置 keys 完全一致，避免 `ON DUPLICATE KEY UPDATE` 被其他唯一约束截获。不声明 BatchWrite、CDC、分区、空间或 Oracle 模式能力。后续能力必须在真实 OceanBase 版本和对应 Provider 验证完成后再单路扩展。
+- Doris 与 ClickHouse Engine 声明 database/table Engine Catalog、Facts、SQL 查询、BatchRead、TableReadSession，以及非空间普通表的 TableWritePrepare / TableWriteSession / Delete。两者可以作为 snapshot 目标，但当前不声明 BoundedWatermarkRead、TableUpsert、空间或 CDC；不得因具备批量写入会话就推导为可恢复增量目标。
 
 ArcGIS workspace kind 固定为 `arcgis/sde`。Oracle 实例能力解析器只能通过只读 Oracle data dictionary 探测 `SDE` repository owner 的企业级地理数据库正式核心系统表组合：同一 `SDE` owner 至少同时可见 `TABLE_REGISTRY`、`GDB_ITEMS`、`GDB_ITEMTYPES`、`GEOMETRY_COLUMNS` 四张注册表；`STATES`、`STATE_LINEAGES`、`VERSIONS`、`LAYERS` 等表作为版本化和要素类证据单独记录。仅存在 `SDE` schema、单张同名表或普通 `SDO_GEOMETRY` 列不得判定为 SDE workspace。探测结果写入 `extensions.spatial_workspaces[]`，使用 `backend_engine_type=oracle`、`can_enable=false`、`risk_level=high`；没有正式组合写入 `state=not_detected`，字典可见但核心表读取被拒绝时写入 `state=permission_denied`。本阶段不改变 `storage.store`，不声明 `change_stream_read`，不提供启用入口；后续 SDE 数据面必须由独立 logical change source / table provider 消费该 workspace fact。
 
@@ -112,7 +113,7 @@ type DecimalFieldLimits struct {
 - `table_write.decimal` 描述 `TableWritePreparer` 对 decimal 目标字段定义的约束；声明该结构的插件必须实现 `TableWritePreparer`。
 - `requires_explicit_precision_scale=true` 表示 precision 与 scale 必须成对显式提供，不能把无界 decimal 静默收缩为默认定义。
 - `max_precision` 必须为正整数；`max_scale` 必须为非负整数，且不得大于 `max_precision`。字段省略表示该维度无统一上限。
-- MySQL 与 MySQL 模式 OceanBase 共用 MySQL-compatible 表写入实现，因此都声明显式 precision/scale、`max_precision=65`、`max_scale=30`。Transfer 的前置校验和字段定义推荐只消费该能力，不维护 MySQL/OceanBase 名单。
+- MySQL 与 MySQL 模式 OceanBase 共用 MySQL-compatible 表写入实现，因此都声明显式 precision/scale、`max_precision=65`、`max_scale=30`。Oracle、Doris 与 ClickHouse 当前 Provider 统一承诺显式 precision/scale、`max_precision=38`、`max_scale=38`；这是 ADDP 写入 Provider 的稳定边界，不表示对应数据库产品的全部理论类型范围。Transfer 的前置校验和字段定义推荐只消费该能力，不维护数据库名单。每个新增或调整 Decimal 限制的 Provider 必须同时具有单元测试，以及在真实数据库中校验建表后 precision/scale 的 T2 门禁。
 
 ---
 
@@ -319,7 +320,7 @@ type NativeTableSpatialEncodingCapability struct {
 | `batch_write` | 按批次写入结构化 item。 | `BatchWritableProvider` |
 | `table_write_session` | 打开一次表写入会话并连续写入批次，避免每批重复建立 COPY / bulk load 会话。 | `TableWriteSessionProvider` |
 | `table_write_prepare` | 执行表级写入前准备动作，如 ensure database / schema、create table、目标表结构校验和安全 schema evolution。该能力不写入数据行，也不承载 replace / append 策略。 | `TableWritePreparer` |
-| `bounded_watermark_read` | 在一致性读边界内冻结复合 watermark 上界，并稳定读取 `(committed, upper_bound]`。 | `BoundedWatermarkReadProvider` |
+| `bounded_watermark_read` | 在一致性读边界内冻结单字段或复合 watermark 上界，并稳定读取 `(committed, upper_bound]`。 | `BoundedWatermarkReadProvider` |
 | `change_stream_read` | 按 partition position seek 并持续 poll 原始变化记录，支持受控 pause/resume/close。 | `ChangeStreamReaderProvider` |
 | `table_upsert` | 按稳定键批量新增或更新；`idempotent=true` 表示同一批重复应用得到相同目标状态。 | `TableUpsertProvider` |
 | `partitioned_table_change_apply` | 将单 partition 的 mapped table changes 与目标 apply ledger position 在同一数据库事务提交；必须声明支持的 position types 和 operations。 | `PartitionedTableChangeApplyProvider` |
@@ -331,7 +332,7 @@ type NativeTableSpatialEncodingCapability struct {
 
 数据库插件声明 `native_spatial_functions=true` 时必须实现 `SpatialFeatureReadProvider`，实现该 Provider 时也必须声明该能力，capability validator 对二者做双向一致性校验。该 Provider 的跨模块返回值固定为 EWKB、centroid EWKB、SRID 与 `SpatialInfo`，数据库原生函数和 axis order 处理留在插件内部；当前 PostgreSQL/PostGIS 与 MySQL 都实现该接口。该接口不是第二套表读取路线，只服务按稳定 identity field 精确读取一个空间要素的交互操作。
 
-`bounded_watermark_read` 与普通 `batch_read` / `table_read_session` 不等价。前者必须冻结 execution 上界、使用稳定复合游标并能从读取行生成 committed position。PostgreSQL、MySQL 与 MySQL 模式 OceanBase 当前声明该能力：PostgreSQL 在一致性只读事务中冻结上界，MySQL-compatible Provider 在 InnoDB repeatable-read 事务中冻结上界；PostgreSQL 与 MySQL 读取空间字段时都必须按协商后的标准 geometry row encoding 返回，不得泄漏数据库内部二进制，OceanBase 当前只开放非空间表。`table_upsert` 也不能从 `batch_write` 推导；只有目标 Provider 能校验唯一键并以幂等冲突处理提交批次时才能声明。PostgreSQL、MySQL 与 MySQL 模式 OceanBase 声明幂等 `table_upsert`，其中 OceanBase 当前只支持非空间表。MySQL-compatible 目标必须使用 InnoDB，并要求配置键精确匹配非空主键或唯一约束；为避免 `ON DUPLICATE KEY UPDATE` 被其他唯一约束触发，目标表不得存在与配置键不同的唯一约束。
+`bounded_watermark_read` 与普通 `batch_read` / `table_read_session` 不等价。前者必须冻结 execution 上界、使用稳定单字段或复合游标并能从读取行生成 committed position。空 tie breaker 的单字段游标只识别新增，watermark field 必须自身精确匹配非空主键或唯一约束；非空 tie breaker 的复合游标识别新增和更新，tie breaker 必须精确匹配非空主键或唯一约束。PostgreSQL、MySQL、MySQL 模式 OceanBase 与 openGauss 当前声明该能力：PostgreSQL/openGauss 在一致性只读事务中冻结上界，MySQL-compatible Provider 在 InnoDB repeatable-read 事务中冻结上界；PostgreSQL 与 MySQL 读取空间字段时都必须按协商后的标准 geometry row encoding 返回，不得泄漏数据库内部二进制，OceanBase 与 openGauss 当前只开放非空间表。`table_upsert` 也不能从 `batch_write` 推导；只有目标 Provider 能校验唯一键并以幂等冲突处理提交批次时才能声明。PostgreSQL、MySQL、MySQL 模式 OceanBase 与 openGauss 声明幂等 `table_upsert`，其中 OceanBase 与 openGauss 当前只支持非空间表。MySQL-compatible 目标必须使用 InnoDB，并要求配置键精确匹配非空主键或唯一约束；为避免 `ON DUPLICATE KEY UPDATE` 被其他唯一约束触发，目标表不得存在与配置键不同的唯一约束。
 
 `change_stream_read` 与 content `stream_read`、`batch_read` 都不等价。它必须声明 `partitioned=true`、`seek=true`、`pause_resume=true`，Kafka 第一版 `position_types` 只允许 `kafka_offset/v1`。实现该能力的 reader 必须同时返回每分区当前 earliest/latest position，供运行时计算 lag 和 retention 窗口；这不是独立能力开关。该能力只表达原始 record 和 position 读取，不声明 JSON/Avro/Protobuf、Debezium envelope、Transfer target apply 或 exactly-once。第一版仅业务 Kafka Engine 声明该能力；Infra Kafka 不产生 System capabilities 记录。
 

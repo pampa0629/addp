@@ -84,6 +84,34 @@ describe('Console navigation bridge', () => {
     expect(portalSource).toContain("sidebarModules.value = ['system']")
   })
 
+  it('groups IAM navigation into four business-category pages', () => {
+    const configSource = readFileSync(new URL('../src/config/portalConfig.js', import.meta.url), 'utf8')
+    const routerSource = readFileSync(new URL('../../../system/frontend/src/router/index.js', import.meta.url), 'utf8')
+    const zhCn = JSON.parse(readFileSync(new URL('../src/i18n/zh-cn.json', import.meta.url), 'utf8'))
+    const en = JSON.parse(readFileSync(new URL('../src/i18n/en.json', import.meta.url), 'utf8'))
+
+    for (const page of ['identity', 'organization', 'access', 'security']) {
+      expect(configSource).toContain(`index: '/system/iam/${page}'`)
+      expect(routerSource).toContain(`path: 'iam/${page}'`)
+    }
+    expect(configSource).not.toContain("system:       '/system/iam',")
+    expect(zhCn.console.menus.system.iamIdentity).toBe('身份与成员')
+    expect(zhCn.console.menus.system.iamOrganization).toBe('租户与组织')
+    expect(zhCn.console.menus.system.iamAccess).toBe('角色与访问')
+    expect(zhCn.console.menus.system.iamSecurity).toBe('安全与审计')
+    expect(en.console.menus.system.iamIdentity).toBe('Identity & Membership')
+    expect(en.console.menus.system.iamOrganization).toBe('Tenants & Organization')
+    expect(en.console.menus.system.iamAccess).toBe('Roles & Access')
+    expect(en.console.menus.system.iamSecurity).toBe('Security & Audit')
+
+    expect(searchIndex('角色分配', key => zhCn.console.menus.system.iamAccess, [
+      'iam.tenant_role_assignment.read'
+    ], 'tenant').map(item => item.route)).toContain('/system/iam/access')
+    expect(searchIndex('角色分配', key => key, [
+      'iam.tenant_role_assignment.read'
+    ], 'platform')).toEqual([])
+  })
+
   it('keeps the enterprise Catalog reachable from every Console discovery surface', () => {
     const configSource = readFileSync(new URL('../src/config/portalConfig.js', import.meta.url), 'utf8')
     expect(configSource).toContain("modules: ['catalog', 'asset']")

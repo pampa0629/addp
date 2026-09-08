@@ -193,7 +193,24 @@ System 启动顺序固定为：
 
 已执行 migration 的摘要记录在 `system.schema_migration_checksums`；该表只由 Migration Runner 维护，不是手工修改版本或跳过迁移的通道。当前版本由 `system/backend/internal/migration/sql` 和 `internal/migration/catalog_test.go` 共同约束；本文不固定抄写版本号。
 
-## 十一、迁移演进
+## 十一、管理端信息架构
+
+System IAM 管理端只按稳定业务大类提供四个左侧页面，不能把每个管理对象平铺为一个左侧入口，也不能继续把全部对象放入单个工作台：
+
+| 页面 | Platform Context | Tenant Context |
+| --- | --- | --- |
+| 身份与成员 `/iam/identity` | 用户、身份变更审批 | 成员关系、租户邀请 |
+| 租户与组织 `/iam/organization` | 租户 | 部门、项目组 |
+| 角色与访问 `/iam/access` | 无可用对象时隐藏 | 租户角色、角色分配、OAuth Client |
+| 安全与审计 `/iam/security` | 当前账号安全、IAM 安全策略、平台审计 | 当前账号安全、租户审计 |
+
+页面表达业务大类，页内 `tab` 表达该类中的具体管理对象或流程。Tab 必须继续按当前 AuthContext 类型和 Permission 过滤；某个页面在当前上下文中没有任何可用 Tab 时，Console 左侧入口和 System standalone 导航都必须隐藏，直接访问也不得绕过 Context 与 Permission Guard。
+
+“用户账号”和“服务账号”同属成员管理，但必须在成员关系、角色分配和租户审计的选择器或过滤器内分组并显式标明“成员类型”；OAuth Client 是用户委托访问的客户端软件，不是 User 或 Service Principal，只能归入“角色与访问”。
+
+Console 公开路由与 System standalone 路由使用同一模块内 path 和 query 契约。旧 `/iam?tab=...` 工作台和 `/settings/security-policy` 路径不保留重定向或兼容读取；审计唯一使用 `/iam/security?tab=audit`，具体 Platform 或 Tenant 范围只从当前 AuthContext 推导。
+
+## 十二、迁移演进
 
 - 只增加新的 `NNNNNN_name.up.sql`，不修改已发布 migration；
 - 已执行 migration 的版本号、文件名和内容摘要必须保持不变；概念收敛或方案重做也必须使用新版本向前迁移；
@@ -203,7 +220,7 @@ System 启动顺序固定为：
 - migration 内不得访问 Redis、HTTP、外部 IdP、密钥服务或其他模块数据库。
 - 已登记的定向恢复只有 75 号历史不可变 audience 冲突、113 号 Security 首次失败迁移的完整回滚状态，以及 130 号 Security 原值访问申请权限迁移的完整回滚状态；只能使用 `cmd/iam-migration-repair --migration <75|113|130> --apply`。75 号必须通过精确状态、checksum、约束和触发器校验；113 号必须通过 `(113, dirty)`、checksum 恰好到 112、Security 目标事实零落地与 Standard 原分类权限未变更校验；130 号必须通过 `(130, dirty)`、checksum 恰好到 129、新申请权限零落地、旧豁免变更权限与内置角色绑定仍完整的校验。三者都不得扩展为通用 dirty force、跳过版本或 checksum 改写能力。
 
-## 十二、验证
+## 十三、验证
 
 非数据库单元测试：
 

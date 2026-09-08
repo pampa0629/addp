@@ -42,6 +42,10 @@ func TestOraclePluginCapabilitiesAndInterfaces(t *testing.T) {
 		p.Capabilities().Storage.Store.BatchWrite || p.Capabilities().Storage.Store.TableUpsert != nil {
 		t.Fatalf("Oracle first phase must not declare CDC or watermark capabilities")
 	}
+	decimal := p.Capabilities().Limits.TableWrite.Decimal
+	if !decimal.RequiresExplicitPrecisionScale || decimal.MaxPrecision == nil || *decimal.MaxPrecision != 38 || decimal.MaxScale == nil || *decimal.MaxScale != 38 {
+		t.Fatalf("Oracle capabilities have unexpected decimal write limits: %#v", decimal)
+	}
 	if !p.Capabilities().Storage.Facts.Indexes || !p.Capabilities().Storage.Facts.Constraints || !p.Capabilities().Storage.Facts.Partitioning {
 		t.Fatalf("Oracle catalog detail capabilities = %#v", p.Capabilities().Storage.Facts)
 	}

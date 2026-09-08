@@ -144,7 +144,7 @@ func main() {
 				Entries: []commonconfiguration.ManagementEntry{{
 					ID: "system.iam_security_policy", OwnerModule: "system",
 					ScopeTypes:       []string{commonconfiguration.ScopePlatformOnly},
-					FrontendRoute:    "/system/settings/security-policy",
+					FrontendRoute:    "/system/iam/security?tab=security-policy",
 					ReadPermission:   systemauthorization.PermissionIamSecurityPolicyRead,
 					UpdatePermission: systemauthorization.PermissionIamSecurityPolicyUpdate,
 				}},

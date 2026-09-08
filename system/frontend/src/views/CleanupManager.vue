@@ -896,11 +896,10 @@ const openCleanupMonitor = async () => {
 
 const openAuditLogs = async (taskId) => {
   if (!taskId) return
-  const tab = authStore.contextType === 'platform' ? 'platform-audit' : 'tenant-audit'
   await navigateSystemRoute(router, {
-    name: 'IAMWorkbench',
+    name: 'IAMSecurity',
     query: {
-      tab,
+      tab: 'audit',
       module_name: 'system',
       entity_type: 'cleanup',
       entity_id: taskId

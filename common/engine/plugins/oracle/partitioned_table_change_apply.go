@@ -387,11 +387,8 @@ func oracleSQLTypeForField(field datatype.FieldInfo) (string, error) {
 	case datatype.FieldTypeDouble:
 		return "BINARY_DOUBLE", nil
 	case datatype.FieldTypeDecimal:
-		if field.Precision == 0 && field.Scale == 0 {
-			return "NUMBER", nil
-		}
-		if field.Precision < 1 || field.Precision > 38 || field.Scale < 0 || field.Scale > field.Precision {
-			return "", fmt.Errorf("oracle decimal field %q requires precision 1..38 and scale 0..precision", field.Name)
+		if err := plugin.ValidateExplicitDecimalFieldDefinition("oracle", field, oracleDecimalMaxPrecision, oracleDecimalMaxScale); err != nil {
+			return "", err
 		}
 		return fmt.Sprintf("NUMBER(%d,%d)", field.Precision, field.Scale), nil
 	case datatype.FieldTypeBool:

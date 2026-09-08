@@ -5,6 +5,7 @@
       :active-group="activeGroup"
       :user="user"
       :permissions="authStore.permissions"
+      :context-type="authStore.contextType"
       @group-click="handleGroupClick"
       @logo-click="handleLogoClick"
       @logout="handleLogout"
@@ -136,6 +137,7 @@ import {
   MODULE_GROUPS, ALL_HOME_CARDS, SIDEBAR_MENUS, DEFAULT_ROUTES,
   MODULE_URLS, PORTAL_URL, buildModuleUrl,
 } from '../config/portalConfig'
+import { filterSidebarMenus } from '../utils/navigationAccess'
 import PortalHeader from '../components/portal/PortalHeader.vue'
 import PortalSidebar from '../components/portal/PortalSidebar.vue'
 import PortalHome from '../components/portal/PortalHome.vue'
@@ -194,10 +196,10 @@ const homeCards = computed(() => {
   return ALL_HOME_CARDS.filter(c => activeGroupModules.value.includes(c.module))
 })
 
-const visibleSidebarMenus = computed(() => Object.fromEntries(
-  Object.entries(SIDEBAR_MENUS).map(([module, menu]) => [module, menu.items
-    ? { ...menu, items: menu.items.filter(item => !item.permissions?.length || authStore.hasAnyPermission(item.permissions)) }
-    : menu])
+const visibleSidebarMenus = computed(() => filterSidebarMenus(
+  SIDEBAR_MENUS,
+  authStore.contextType,
+  authStore.permissions
 ))
 
 onMounted(async () => {

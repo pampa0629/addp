@@ -479,6 +479,10 @@ scripts/test/
 ├── manager-postgres-gate.sh # Manager 统一派生任务与资源回收 PostgreSQL 集成门禁
 ├── manager-mongodb-security-gate.sh # Manager MongoDB 动态文档保护集成门禁
 ├── common-oceanbase-gate.sh # Common OceanBase Provider disposable 集成门禁
+├── common-opengauss-gate.sh # Common openGauss Provider hosted-only disposable 集成门禁
+├── common-oracle-decimal-gate.sh # Common Oracle Decimal Provider hosted-only disposable 集成门禁
+├── common-doris-decimal-gate.sh # Common Doris Decimal Provider hosted-only disposable 集成门禁
+├── common-clickhouse-decimal-gate.sh # Common ClickHouse Decimal Provider hosted-only disposable 集成门禁
 ├── quality-postgres-gate.sh # Quality PostgreSQL 集成门禁
 ├── standard-postgres-gate.sh # Standard PostgreSQL 集成门禁
 ├── transfer-postgres-gate.sh # Transfer PostgreSQL 受保护导出集成门禁
@@ -499,7 +503,7 @@ Agent 的 `test-agent-eval` 与 `test-agent-frontend` 保持独立：前者只�
 
 AI 完成一组改动后使用 `make test-changed`；默认读取相对 `HEAD` 的已跟踪改动及未跟踪文件，或通过 `BASE_REF=<ref>` 指定比较基线。`scripts/test/changed-gate.py` 始终保留平台 T0，把普通路径映射到已登记 owner，并从 `go.mod`、前端 Git 跟踪源码/配置对 `common-frontend` 的实际引用、Python requirements 推导共享模块消费者，再复用模块门禁计划且去重。若受影响模块含声明了外部 Service 的 T2，仍须提供对应安全连接条件，不会自动跳过。
 
-托管外部服务 T2 不再由 CI 注册器维护 PostgreSQL、MongoDB、MySQL、OceanBase 等类型分支。Gate 脚本用 `ADDP_T2_SERVICES` 声明一个或多个 GitHub Actions Service 名称；平台检查据此自动验证同名 Make 入口、`test-integration` 串行聚合、owner 变更选择、CI Job、显式镜像 tag 和 sha256 digest。无法由 GitHub `services` 编排、且本地平台不具备运行条件的门禁使用 `ADDP_T2_HOSTED_ONLY=<runtime>`，登记到 `test-integration-hosted` 并由 owner 脚本独占创建和清理 disposable Docker 生命周期；注册器同时禁止它进入 macOS `test-integration`。新增数据库类型只需遵守对应声明契约，不修改发现器代码。OceanBase 的唯一入口是 `make test-common-oceanbase`；它要求 `ADDP_TEST_OCEANBASE_PASSWORD`，仅允许名称含 `disposable` 的 database，并由测试生命周期创建、清空和删除该 database，拒绝依赖 Business 固定样例。
+托管外部服务 T2 不再由 CI 注册器维护 PostgreSQL、MongoDB、MySQL、OceanBase 等类型分支。Gate 脚本用 `ADDP_T2_SERVICES` 声明一个或多个 GitHub Actions Service 名称；平台检查据此自动验证同名 Make 入口、`test-integration` 串行聚合、owner 变更选择、CI Job、显式镜像 tag 和 sha256 digest。无法由 GitHub `services` 编排、且本地平台不具备运行条件的门禁使用 `ADDP_T2_HOSTED_ONLY=<runtime>`，登记到 `test-integration-hosted` 并由 owner 脚本独占创建和清理 disposable Docker 生命周期；注册器同时禁止它进入 macOS `test-integration`。新增数据库类型只需遵守对应声明契约，不修改发现器代码。OceanBase 的唯一入口是 `make test-common-oceanbase`；它要求 `ADDP_TEST_OCEANBASE_PASSWORD`，仅允许名称含 `disposable` 的 database，并由测试生命周期创建、清空和删除该 database，拒绝依赖 Business 固定样例。openGauss、Oracle、Doris 与 ClickHouse 的 hosted-only Provider 门禁分别由 `make test-common-opengauss`、`make test-common-oracle-decimal`、`make test-common-doris-decimal`、`make test-common-clickhouse-decimal` 运行；后三者验证能力声明中的 Decimal 上限与真实建表定义一致。
 
 GitHub Actions 中的模块 T0-T3 选择统一调用 `scripts/ci/select-module-gate.py --module <owner>`。该选择器复用 `changed-gate.py` 的 owner 影响计算：workflow、共享 action、CI 脚本、根 `Makefile` 或矩阵实现变更时选中全部模块；普通模块、共享依赖、离线评测场景和已登记 gate 脚本变更则按 owner 选择。Workflow 只负责准备对应的隔离环境并调用根 `Makefile` 标准入口，不再复制 owner 路径表。`scripts/ci/select-gate-by-paths.sh` 仅保留给 CLI wheel / Keychain 等非模块 T5 产品门禁。
 
@@ -578,7 +582,7 @@ Runner 管理员应以根 `.env.example` 为字段清单，在仓库外创建独
 
 `scripts/ci/check-build-registration.py` 是构建登记完整性检查。它自动发现正式 Go Server/Worker、Git 跟踪的前端和 `docker-compose.yml` 中的 ADDP 镜像，校验它们已登记到 `compile.sh`、`build-images.sh`，要求每个 Git 跟踪的 Dockerfile 归属于正式镜像或明确的辅助构建，并禁止模块 Makefile 复制根构建入口。检查逐项验证镜像具有被 Git 跟踪的 Dockerfile 或专用构建脚本，核对 Docker build context 内的 `COPY` 源路径存在、被 Git 跟踪且未被对应 `.dockerignore` 排除，本地 Registry 基础镜像已登记到 `seed_base_images` 且源与目标均未使用浮动 `latest` 标签，并检查预编译 Dockerfile 引用的二进制名称与 `compile.sh` 输出一致；同时禁止恢复已经删除的重复 Make 构建目标。Platform CI 必须在干净 Ubuntu Runner 中运行 `make build BUILD_ARGS=--force`，实际编译全部正式二进制。检查及其反例回归已纳入 `make test-platform`；新增模块、Worker、前端、Compose 镜像、Dockerfile 或 Makefile 却遗漏统一登记和分类时，当次 Platform CI 会直接失败。
 
-`scripts/ci/check-t2-ci-registration.py` 是 GitHub Hosted Runner 上 disposable PostgreSQL T2 门禁的登记完整性检查。它从 Git 跟踪的 `scripts/test/*-postgres-gate.sh` 自动发现门禁，要求每条门禁同时具有根 `Makefile` 标准入口、`make test-integration` 串行聚合登记、`release-and-t2-gates.yml` 调用和共享模块变更选择器，并要求 PostgreSQL 15 Service 镜像按 digest 固定；Common PostgreSQL 门禁因覆盖 PostGIS 查询解析，必须使用固定 digest 的 PostGIS 15/3.4 镜像。仅接受 `addp_test` 或名称含 `disposable` 的安全门禁，在 Hosted Runner 上还必须声明名称含 `disposable` 的独占数据库，并让 Service、健康检查和测试 DSN 使用同一名称。ArcGIS 开放格式等需要专用样本或 Oracle 的 T2/T5 不属于该 Hosted Runner 契约，不会被伪装成普通 PostgreSQL 门禁。
+`scripts/ci/check-t2-ci-registration.py` 是 GitHub Hosted Runner 上 disposable T2 门禁的登记完整性检查。它从 `ADDP_T2_SERVICES` 与 `ADDP_T2_HOSTED_ONLY` 元数据自动发现门禁，要求每条门禁同时具有根 `Makefile` 标准入口、对应的串行聚合入口、`release-and-t2-gates.yml` 调用和共享模块变更选择器。Service-backed 门禁还必须按显式 tag 与 sha256 digest 固定镜像；名称含 `disposable` 的 PostgreSQL database 必须在 Service、健康检查和测试 DSN 中保持一致。Hosted-only 门禁必须由 owner 脚本独占创建和删除 disposable Docker 容器，且不得进入 macOS `test-integration`。ArcGIS 开放格式等需要专用样本的 T5 不属于该 Hosted Runner 契约。
 
 `scripts/ci/check-engine-startup-isolation.py` 是 Engine 启动隔离一致性检查。它校验模块选择启动不会隐式拉起 DuckDB、Inference、Workflow 或 Jupyter Runtime，模块 Backend/Worker 的 Compose `depends_on` 不指向可选 Runtime，并禁止 System 恢复启动期内置 Runtime 代注册、全量能力刷新和对应 URL 配置。检查、反例回归及相关 Go 回归统一由 `make test-engine-startup-isolation` 执行，并纳入 `make test-platform`。
 

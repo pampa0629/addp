@@ -64,7 +64,7 @@ export function createTiandituBaseLayers(options = {}) {
 export function createOSMBaseLayer(options = {}) {
   return new TileLayer({
     source: new XYZ({
-      url: 'https://{a-c}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
       attributions: '© OpenStreetMap contributors',
       crossOrigin: 'anonymous',
       maxZoom: options.maxZoom || 19,

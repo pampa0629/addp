@@ -53,6 +53,9 @@ func TestProtectionAccessRequestApprovalPublishesSubjectScopedAuthorization(t *t
 	now := time.Now().UTC().Truncate(time.Second)
 	requests := NewAccessRequestService(db)
 	requests.now = func() time.Time { return now }
+	if _, err := requests.ListReviewQueue(context.Background(), 7, 42, "", 1, 20); !errors.Is(err, commonapi.ErrBadRequest) {
+		t.Fatalf("missing review scope error = %v", err)
+	}
 	created, err := requests.Create(context.Background(), 7, 41, models.CreateProtectionAccessRequest{
 		AssessmentID: reviewed.Assessment.ID, ConsumerOwner: managerProtectionOwner, Action: managerPreviewAction,
 		RequestedExpiresAt: now.Add(24 * time.Hour), Rationale: "工单 SEC-2026-001 需要核验客户联系方式",
@@ -63,7 +66,7 @@ func TestProtectionAccessRequestApprovalPublishesSubjectScopedAuthorization(t *t
 	if created.State != models.ProtectionAccessRequestStatePending || created.SubjectID != "41" {
 		t.Fatalf("created request = %#v", created)
 	}
-	selfQueue, err := requests.ListReviewQueue(context.Background(), 7, 41, 1, 20)
+	selfQueue, err := requests.ListReviewQueue(context.Background(), 7, 41, models.ProtectionAccessRequestReviewScopePending, 1, 20)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,12 +74,19 @@ func TestProtectionAccessRequestApprovalPublishesSubjectScopedAuthorization(t *t
 		t.Fatalf("requester review queue = %#v", selfQueue)
 	}
 	requests.now = func() time.Time { return now.Add(25 * time.Hour) }
-	expiredQueue, err := requests.ListReviewQueue(context.Background(), 7, 42, 1, 20)
+	expiredQueue, err := requests.ListReviewQueue(context.Background(), 7, 42, models.ProtectionAccessRequestReviewScopePending, 1, 20)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if expiredQueue.Total != 1 || len(expiredQueue.Data) != 1 || expiredQueue.Data[0].CanDecide || expiredQueue.Data[0].DecisionUnavailableReason != "request_expired" {
+	if expiredQueue.Total != 0 || len(expiredQueue.Data) != 0 {
 		t.Fatalf("expired review queue = %#v", expiredQueue)
+	}
+	expiredHistory, err := requests.ListReviewQueue(context.Background(), 7, 42, models.ProtectionAccessRequestReviewScopeHistory, 1, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if expiredHistory.Total != 1 || len(expiredHistory.Data) != 1 || expiredHistory.Data[0].State != models.ProtectionAccessRequestStateExpired || expiredHistory.Data[0].CanDecide {
+		t.Fatalf("expired review history = %#v", expiredHistory)
 	}
 	if _, err := requests.Decide(context.Background(), 7, 42, created.ID, models.DecideProtectionAccessRequest{
 		Version: created.Version, Decision: "approve", ExpiresAt: created.RequestedExpiresAt, Rationale: "过期后审批",
@@ -84,7 +94,7 @@ func TestProtectionAccessRequestApprovalPublishesSubjectScopedAuthorization(t *t
 		t.Fatalf("expired approval error = %v", err)
 	}
 	requests.now = func() time.Time { return now }
-	reviewerQueue, err := requests.ListReviewQueue(context.Background(), 7, 42, 1, 20)
+	reviewerQueue, err := requests.ListReviewQueue(context.Background(), 7, 42, models.ProtectionAccessRequestReviewScopePending, 1, 20)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,6 +114,20 @@ func TestProtectionAccessRequestApprovalPublishesSubjectScopedAuthorization(t *t
 	}
 	if approved.State != models.ProtectionAccessRequestStateApproved || approved.ExemptionID == "" {
 		t.Fatalf("approved request = %#v", approved)
+	}
+	pendingAfterApproval, err := requests.ListReviewQueue(context.Background(), 7, 42, models.ProtectionAccessRequestReviewScopePending, 1, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pendingAfterApproval.Total != 0 || len(pendingAfterApproval.Data) != 0 {
+		t.Fatalf("pending queue after approval = %#v", pendingAfterApproval)
+	}
+	approvalHistory, err := requests.ListReviewQueue(context.Background(), 7, 42, models.ProtectionAccessRequestReviewScopeHistory, 1, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if approvalHistory.Total != 1 || len(approvalHistory.Data) != 1 || approvalHistory.Data[0].State != models.ProtectionAccessRequestStateApproved || approvalHistory.Data[0].DecidedBy == nil || *approvalHistory.Data[0].DecidedBy != 42 || approvalHistory.Data[0].DecisionRationale != "复核通过" {
+		t.Fatalf("approval review history = %#v", approvalHistory)
 	}
 	changes, err := enrollments.ListChanges(context.Background(), 7, managerProtectionOwner, "", 20)
 	if err != nil {
@@ -126,6 +150,54 @@ func TestProtectionAccessRequestApprovalPublishesSubjectScopedAuthorization(t *t
 	}
 	if _, exists := other["userInfo"].(map[string]any)["phone"]; exists {
 		t.Fatal("authorization leaked to another user")
+	}
+}
+
+func TestExpiredProtectionAccessRequestStopsPollingAndCanBeResubmitted(t *testing.T) {
+	db, enrollments, finding, _, _ := prepareReviewablePhoneFinding(t)
+	reviewed, err := NewAssessmentService(db, nil).ReviewFinding(context.Background(), 7, 21, finding.ID, models.FindingReviewRequest{Decision: models.FindingReviewDecisionConfirm, Rationale: "确认手机号字段"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	enrollment, err := enrollments.Get(context.Background(), 7, finding.EnrollmentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	requests := NewAccessRequestService(db)
+	requests.now = func() time.Time { return now }
+	first, err := requests.Create(context.Background(), 7, 41, models.CreateProtectionAccessRequest{
+		AssessmentID: reviewed.Assessment.ID, ConsumerOwner: managerProtectionOwner, Action: managerPreviewAction,
+		RequestedExpiresAt: now.Add(time.Hour), Rationale: "首次申请",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	requests.now = func() time.Time { return now.Add(2 * time.Hour) }
+	targets, err := requests.Targets(context.Background(), 7, 41, enrollment.Target.ResourceIdentity, managerProtectionOwner, managerPreviewAction)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(targets.Data) != 1 || targets.Data[0].AccessRequest == nil || targets.Data[0].AccessRequest.ID != first.ID || targets.Data[0].AccessRequest.State != models.ProtectionAccessRequestStateExpired {
+		t.Fatalf("expired access target = %#v", targets.Data)
+	}
+	second, err := requests.Create(context.Background(), 7, 41, models.CreateProtectionAccessRequest{
+		AssessmentID: reviewed.Assessment.ID, ConsumerOwner: managerProtectionOwner, Action: managerPreviewAction,
+		RequestedExpiresAt: now.Add(3 * time.Hour), Rationale: "过期后重新申请",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.ID == first.ID || second.State != models.ProtectionAccessRequestStatePending {
+		t.Fatalf("resubmitted request = %#v", second)
+	}
+	var expired models.ProtectionAccessRequest
+	if err := db.Where("id = ?", first.ID).First(&expired).Error; err != nil {
+		t.Fatal(err)
+	}
+	if expired.State != models.ProtectionAccessRequestStateExpired {
+		t.Fatalf("persisted expired state = %q", expired.State)
 	}
 }
 

@@ -2,7 +2,7 @@
         build-iam-bootstrap build-iam-recovery build-iam-migration-repair \
         dev-start dev-restart dev-stop infra-up infra-down infra-restart infra-status prod-start prod-restart prod-stop prod-health ports-validate
 
-.PHONY: test-business-config test-common-oceanbase test-common-opengauss test-opengauss-official-media-release
+.PHONY: test-business-config test-common-oceanbase test-common-opengauss test-common-oracle-decimal test-common-doris-decimal test-common-clickhouse-decimal test-opengauss-official-media-release
 
 # 默认目标
 .DEFAULT_GOAL := help
@@ -186,6 +186,9 @@ test-integration: ## 严格串行运行所有本地可执行的 disposable 基�
 
 test-integration-hosted: test-integration ## 严格串行追加 hosted-only disposable 基础设施门禁
 	@$(MAKE) test-common-opengauss
+	@$(MAKE) test-common-oracle-decimal
+	@$(MAKE) test-common-doris-decimal
+	@$(MAKE) test-common-clickhouse-decimal
 
 test-common-postgres: ## 使用一次性 PostgreSQL 数据库运行 Common Engine Provider、execution store 与保护投影存储集成门禁
 	@bash scripts/test/common-postgres-gate.sh
@@ -198,6 +201,15 @@ test-common-oceanbase: ## 使用一次性 OceanBase database 验证 Engine Provi
 
 test-common-opengauss: ## 在 Linux x86_64 hosted runner 使用一次性 openGauss database 验证 Provider 契约
 	@bash scripts/test/common-opengauss-gate.sh
+
+test-common-oracle-decimal: ## 使用一次性 Oracle database 验证 Decimal Provider 契约
+	@bash scripts/test/common-oracle-decimal-gate.sh
+
+test-common-doris-decimal: ## 使用一次性 Doris database 验证 Decimal Provider 契约
+	@bash scripts/test/common-doris-decimal-gate.sh
+
+test-common-clickhouse-decimal: ## 使用一次性 ClickHouse database 验证 Decimal Provider 契约
+	@bash scripts/test/common-clickhouse-decimal-gate.sh
 
 test-manager-postgres: ## 使用测试 PostgreSQL 数据库运行 Manager 统一任务与清理集成门禁
 	@bash scripts/test/manager-postgres-gate.sh

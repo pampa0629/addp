@@ -105,6 +105,7 @@ const props = defineProps({
   activeGroup: { type: String, default: null },
   user: { type: Object, default: null },
   permissions: { type: Array, default: () => [] },
+  contextType: { type: String, default: null },
 })
 
 const emit = defineEmits(['group-click', 'logo-click', 'logout', 'navigate'])
@@ -134,7 +135,7 @@ function moduleIcon(module) {
 
 const searchResults = computed(() => {
   if (!searchQuery.value.trim()) return []
-  return searchIndex(searchQuery.value, t, props.permissions)
+  return searchIndex(searchQuery.value, t, props.permissions, props.contextType)
 })
 
 function handleSearchBlur() {

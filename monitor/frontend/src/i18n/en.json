@@ -57,6 +57,9 @@
       },
       "detail": {
         "title": "Execution Detail",
+        "loading": "Loading the requested execution…",
+        "load_failed": "Failed to load the requested execution",
+        "reload": "Reload",
         "id": "Execution ID",
         "uuid": "Execution UUID",
         "module": "Module",

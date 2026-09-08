@@ -32,6 +32,11 @@ func dorisCatalogFieldType(nativeType string) datatype.FieldType {
 // Doris 兼容 MySQL 协议，使用 MySQL 驱动
 type DorisPlugin struct{}
 
+const (
+	dorisDecimalMaxPrecision = 38
+	dorisDecimalMaxScale     = 38
+)
+
 func init() {
 	plugin.Register(&DorisPlugin{})
 }
@@ -75,7 +80,7 @@ func (p *DorisPlugin) ConnectionIdentityFields() []string {
 }
 
 func (p *DorisPlugin) Capabilities() plugin.EngineCapabilities {
-	return plugin.NewTabularCapabilities(p.Type(), "database", plugin.TabularCapabilityOptions{
+	caps := plugin.NewTabularCapabilities(p.Type(), "database", plugin.TabularCapabilityOptions{
 		Constraints:        true,
 		Write:              true,
 		BulkWrite:          true,
@@ -89,6 +94,8 @@ func (p *DorisPlugin) Capabilities() plugin.EngineCapabilities {
 		IdentifierQuote:    "`",
 		WriterConnector:    "doris_insert",
 	})
+	plugin.ApplyExplicitDecimalTableWriteLimits(&caps, dorisDecimalMaxPrecision, dorisDecimalMaxScale)
+	return caps
 }
 
 func (p *DorisPlugin) EngineCatalogModel() plugin.EngineCatalogModelSpec {

@@ -2513,15 +2513,22 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "返回当前租户全部待处理申请，并明确当前用户能否审批；本人申请和已过期申请可见但不能审批 | Return every pending record in the current tenant and whether the current user may decide it; self-submitted and expired requests remain visible but cannot be decided",
+                "description": "按 scope 返回未过期待审批申请或已批准、已驳回、已过期审批记录；本人申请可见但不能自审 | Return unexpired pending requests or approved, rejected, and expired review history by scope; self-submitted requests remain visible but cannot be self-approved",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Protection Access Request"
                 ],
-                "summary": "原值访问待审批申请 | List plaintext access review queue",
+                "summary": "原值访问审批工作区 | List plaintext access review workspace",
                 "parameters": [
+                    {
+                        "type": "string",
+                        "description": "视图 pending|history | View pending|history",
+                        "name": "scope",
+                        "in": "query",
+                        "required": true
+                    },
                     {
                         "type": "integer",
                         "description": "页码 | Page number",
@@ -5676,9 +5683,26 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_security_internal_models.ProtectionAccessRequestSummary": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "requested_expires_at": {
+                    "type": "string"
+                },
+                "state": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_security_internal_models.ProtectionAccessTarget": {
             "type": "object",
             "properties": {
+                "access_request": {
+                    "$ref": "#/definitions/github_com_addp_security_internal_models.ProtectionAccessRequestSummary"
+                },
                 "active_exemption_id": {
                     "type": "string"
                 },
@@ -5694,9 +5718,6 @@ const docTemplate = `{
                 },
                 "component": {
                     "$ref": "#/definitions/dataprotection.Component"
-                },
-                "pending_request_id": {
-                    "type": "string"
                 },
                 "requestable": {
                     "type": "boolean"

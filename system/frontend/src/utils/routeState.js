@@ -1,4 +1,3 @@
-const AUDIT_TABS = new Set(['platform-audit', 'tenant-audit'])
 const AUDIT_QUERY_KEYS = ['event_name', 'result', 'risk_level', 'module_name', 'principal_id', 'principal_type', 'entity_type', 'entity_id', 'page']
 const AUDIT_RESULTS = new Set(['succeeded', 'failed', 'denied', 'ignored'])
 const AUDIT_RISK_LEVELS = new Set(['low', 'medium', 'high', 'critical'])
@@ -10,14 +9,14 @@ function queriesEqual(left, right) {
     rightKeys.every(key => String(left[key] || '') === String(right[key] || ''))
 }
 
-export function resolveIAMRouteState(availableTabKeys, routeQuery = {}) {
+export function resolveIAMCategoryRouteState(availableTabKeys, routeQuery = {}) {
   const tabs = availableTabKeys.map(key => String(key))
   const defaultTab = tabs[0] || ''
   const requestedTab = String(routeQuery.tab || '').trim()
   const activeTab = tabs.includes(requestedTab) ? requestedTab : defaultTab
   const query = activeTab && activeTab !== defaultTab ? { tab: activeTab } : {}
 
-  if (AUDIT_TABS.has(activeTab)) {
+  if (activeTab === 'audit') {
     for (const key of AUDIT_QUERY_KEYS) {
       const value = String(routeQuery[key] || '').trim()
       if (!value) continue

@@ -167,7 +167,7 @@ export const PAGE_MAPS = {
 // ─── 模块默认路由（navigateToModule 使用）───────────────────────────────────
 
 export const DEFAULT_ROUTES = {
-  system:       '/system/iam',
+  system:       '/system/iam/security',
   manager:      '/manager/data-explorer',
   meta:         '/meta/scan',
   transfer:     '/transfer/tasks',
@@ -336,6 +336,32 @@ export const SIDEBAR_MENUS = {
     items: [
       {
         index: '/system/iam', icon: Lock, label: 'console.menus.system.iam',
+        children: [
+          {
+            index: '/system/iam/identity', icon: Tickets, label: 'console.menus.system.iamIdentity',
+            access: [
+              { context: 'platform', permissions: ['iam.user.read', 'iam.platform_identity_change.read'] },
+              { context: 'tenant', permissions: ['iam.tenant_membership.read', 'iam.tenant_invitation.read'] },
+            ],
+          },
+          {
+            index: '/system/iam/organization', icon: Connection, label: 'console.menus.system.iamOrganization',
+            access: [
+              { context: 'platform', permissions: ['platform.tenant.read'] },
+              { context: 'tenant', permissions: ['iam.department.read', 'iam.project_group.read'] },
+            ],
+          },
+          {
+            index: '/system/iam/access', icon: Key, label: 'console.menus.system.iamAccess',
+            access: [
+              { context: 'tenant', permissions: ['iam.tenant_role.read', 'iam.tenant_role_assignment.read', 'iam.oauth_client.read'] },
+            ],
+          },
+          {
+            index: '/system/iam/security', icon: Lock, label: 'console.menus.system.iamSecurity',
+            access: [{ context: 'any' }],
+          },
+        ],
       },
       { index: '/system/modules',      icon: Operation,  label: 'console.menus.system.modules', recentLabel: 'console.menus.system.recentModules', permissions: ['platform.module.read'] },
       { index: '/system/engines',      icon: Connection, label: 'console.menus.system.engines', recentLabel: 'console.menus.system.recentEngines', permissions: ['system.engine.read'] },

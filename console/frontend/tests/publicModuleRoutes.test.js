@@ -149,15 +149,21 @@ describe('P2 module public route contracts', () => {
     expect(routeState).toContain('{ engine_id: engineId, task_id: taskId }')
   })
 
-  it('restores System IAM tabs and engine details without the removed Logs route', () => {
+  it('restores categorized System IAM tabs and engine details without removed routes', () => {
     const router = readRepoFile('system/frontend/src/router/index.js')
     expect(router).toContain("path: 'engines/:id'")
+    expect(router).toContain("path: 'iam/identity'")
+    expect(router).toContain("path: 'iam/organization'")
+    expect(router).toContain("path: 'iam/access'")
+    expect(router).toContain("path: 'iam/security'")
+    expect(router).not.toContain("path: 'iam'")
+    expect(router).not.toContain("path: 'settings/security-policy'")
 
-    const iam = readRepoFile('system/frontend/src/views/IAMWorkbench.vue')
+    const iam = readRepoFile('system/frontend/src/views/IAMCategoryPage.vue')
     const routeState = readRepoFile('system/frontend/src/utils/routeState.js')
-    expect(iam).toContain('resolveIAMRouteState')
+    expect(iam).toContain('resolveIAMCategoryRouteState')
     expect(routeState).toContain('routeQuery.tab')
-    expect(routeState).toContain("new Set(['platform-audit', 'tenant-audit'])")
+    expect(routeState).toContain("activeTab === 'audit'")
 
     const engines = readRepoFile('system/frontend/src/views/Engines.vue')
     expect(engines).toContain('route.params.id')
@@ -165,6 +171,7 @@ describe('P2 module public route contracts', () => {
 
     const cleanup = readRepoFile('system/frontend/src/views/CleanupManager.vue')
     expect(cleanup).not.toContain("name: 'Logs'")
+    expect(cleanup).toContain("name: 'IAMSecurity'")
     expect(cleanup).toContain("entity_type: 'cleanup'")
   })
 

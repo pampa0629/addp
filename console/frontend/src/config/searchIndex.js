@@ -1,3 +1,5 @@
+import { matchesNavigationAccess } from '../utils/navigationAccess'
+
 // 功能入口搜索索引（仅搜索模块/页面/功能，不含数据资产）
 // label: 显示名 i18n key，keywords: 中英文关键词用于模糊匹配，route: 导航目标
 export const SEARCH_INDEX = [
@@ -72,7 +74,32 @@ export const SEARCH_INDEX = [
   { labelKey: 'console.menus.agent.label', module: 'agent', route: '/agent', keywords: ['智能体', 'AI', '对话', '助手', 'agent', 'chat', 'assistant'] },
   { labelKey: 'console.menus.inference.models', module: 'inference', route: '/inference/settings/models', keywords: ['AI', '推理', '模型', 'Provider', 'Deployment', 'Profile', 'inference', 'model'] },
   // 系统管理
-  { labelKey: 'console.menus.system.iam',          module: 'system', route: '/system/iam',          keywords: ['安全设置', '身份验证器', '用户', '租户', '权限', '审计', 'IAM', 'identity', 'access', 'account', 'security', 'authenticator'] },
+  {
+    labelKey: 'console.menus.system.iamIdentity', module: 'system', route: '/system/iam/identity',
+    access: [
+      { context: 'platform', permissions: ['iam.user.read', 'iam.platform_identity_change.read'] },
+      { context: 'tenant', permissions: ['iam.tenant_membership.read', 'iam.tenant_invitation.read'] },
+    ],
+    keywords: ['身份', '用户', '成员', '服务账号', '租户邀请', '身份变更', 'identity', 'user', 'membership', 'invitation']
+  },
+  {
+    labelKey: 'console.menus.system.iamOrganization', module: 'system', route: '/system/iam/organization',
+    access: [
+      { context: 'platform', permissions: ['platform.tenant.read'] },
+      { context: 'tenant', permissions: ['iam.department.read', 'iam.project_group.read'] },
+    ],
+    keywords: ['租户', '组织', '部门', '项目组', 'tenant', 'organization', 'department', 'project group']
+  },
+  {
+    labelKey: 'console.menus.system.iamAccess', module: 'system', route: '/system/iam/access',
+    access: [{ context: 'tenant', permissions: ['iam.tenant_role.read', 'iam.tenant_role_assignment.read', 'iam.oauth_client.read'] }],
+    keywords: ['角色', '权限', '角色分配', 'OAuth 客户端', 'role', 'permission', 'assignment', 'oauth client', 'access']
+  },
+  {
+    labelKey: 'console.menus.system.iamSecurity', module: 'system', route: '/system/iam/security',
+    access: [{ context: 'any' }],
+    keywords: ['账号安全', '身份验证器', '安全策略', '审计', 'MFA', 'security', 'authenticator', 'audit']
+  },
   { labelKey: 'console.menus.system.modules',      module: 'system', route: '/system/modules',      permissions: ['platform.module.read'], keywords: ['模块管理', '服务注册', '运行实例', 'worker', 'module', 'runtime', 'registry'] },
   { labelKey: 'console.menus.system.engines',      module: 'system', route: '/system/engines',      keywords: ['引擎管理', '数据引擎', '引擎配置', 'engine', 'database'] },
   { labelKey: 'console.menus.system.applications', module: 'system', route: '/system/applications', keywords: ['应用管理', 'API密钥', 'application', 'api key'] },
@@ -84,13 +111,13 @@ export const SEARCH_INDEX = [
  * @param {(key: string) => string} translate
  * @returns {Array}
  */
-export function searchIndex(query, translate, grantedPermissions = []) {
+export function searchIndex(query, translate, grantedPermissions = [], contextType = null) {
   if (!query || query.trim() === '') return []
   const q = query.trim().toLowerCase()
   const granted = new Set(grantedPermissions)
   const results = []
   for (const item of SEARCH_INDEX) {
-    if (item.permissions?.length && !item.permissions.some(permission => granted.has(permission))) continue
+    if (!matchesNavigationAccess(item, contextType, granted)) continue
     const label = translate(item.labelKey).toLowerCase()
     const kwMatch = item.keywords.some(k => k.toLowerCase().includes(q))
     const labelMatch = label.includes(q)

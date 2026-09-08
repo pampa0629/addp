@@ -137,7 +137,24 @@
       :close-on-click-modal="false"
       class="execution-detail-dialog"
     >
-      <div v-if="currentExecution" class="execution-detail-content">
+      <StatusAnnouncer :message="detailStatusMessage" />
+      <div
+        v-if="detailLoading" class="detail-loading"
+        v-loading="detailLoading"
+        :element-loading-text="t('monitor.execution.detail.loading')"
+      />
+      <el-result
+        v-else-if="detailLoadFailed"
+        icon="error"
+        :title="t('monitor.execution.detail.load_failed')"
+      >
+        <template #extra>
+          <el-button type="primary" @click="reloadExecutionDetail">
+            {{ t('monitor.execution.detail.reload') }}
+          </el-button>
+        </template>
+      </el-result>
+      <div v-else-if="currentExecution" class="execution-detail-content">
         <el-descriptions :column="2" border>
           <el-descriptions-item :label="t('monitor.execution.detail.id')">
             {{ currentExecution.id }}
@@ -505,6 +522,7 @@ import {
   getContinuousDiagnostics,
   hasContinuousExecutionMetadata,
   resolveTaskTypeDisplayName,
+  StatusAnnouncer,
   useConsolePageDescriptor
 } from '@common-ui'
 import { listExecutions, getExecutionTreeByExecutionID, listTaskProviders } from '@/api/monitor'
@@ -540,6 +558,8 @@ const taskProviders = ref([])
 const selectedPreset = ref('')
 const loading = ref(false)
 const detailDialogVisible = ref(false)
+const detailLoading = ref(false)
+const detailLoadFailed = ref(false)
 const currentExecution = ref(null)
 const metadataExpandedPanels = ref([])
 useConsolePageDescriptor(router, 'monitor', {
@@ -549,7 +569,13 @@ useConsolePageDescriptor(router, 'monitor', {
 })
 const executionTreeData = ref([])
 const openedExecutionID = ref('')
-let autoRefreshTimer = null
+const EXECUTION_LIST_REFRESH_INTERVAL_MS = 5000
+const EXECUTION_DETAIL_REFRESH_INTERVAL_MS = 1000
+let executionListRefreshTimer = null
+let executionDetailRefreshTimer = null
+let executionListRefreshInFlight = false
+let executionDetailRefreshInFlight = false
+let detailRequestToken = 0
 const executionTreeProps = {
   children: 'children'
 }
@@ -606,9 +632,18 @@ const taskTypeOptions = computed(() => {
   return Array.from(options, ([value, label]) => ({ value, label }))
 })
 
-const hasRunningExecution = computed(() => {
-  return executions.value.some(execution => isRunningStatus(execution?.status)) ||
-    (detailDialogVisible.value && isRunningStatus(currentExecution.value?.status))
+const hasRunningListExecution = computed(() => (
+  executions.value.some(execution => isRunningStatus(execution?.status))
+))
+
+const hasRunningOpenedExecution = computed(() => (
+  detailDialogVisible.value && isRunningStatus(executionTreeData.value[0]?.execution?.status)
+))
+
+const detailStatusMessage = computed(() => {
+  if (detailLoading.value) return t('monitor.execution.detail.loading')
+  if (detailLoadFailed.value) return t('monitor.execution.detail.load_failed')
+  return ''
 })
 
 const currentExecutionMetadata = computed(() => normalizeObject(currentExecution.value?.metadata))
@@ -972,20 +1007,42 @@ async function openExecutionByExecutionID(executionID) {
   if (!hasValue(executionID) || openedExecutionID.value === executionID) {
     return
   }
+  const requestToken = ++detailRequestToken
+  detailDialogVisible.value = true
+  detailLoading.value = true
+  detailLoadFailed.value = false
+  currentExecution.value = null
+  executionTreeData.value = []
+  openedExecutionID.value = ''
   try {
     const data = await getExecutionTreeByExecutionID(executionID)
+    if (requestToken !== detailRequestToken) return
     openExecutionTree(data)
   } catch (error) {
+    if (requestToken !== detailRequestToken) return
+    detailLoadFailed.value = true
     ElMessage.error(t('monitor.execution.detail_failed'))
     console.error(error)
+  } finally {
+    if (requestToken === detailRequestToken) {
+      detailLoading.value = false
+    }
   }
+}
+
+function reloadExecutionDetail() {
+  return openExecutionByExecutionID(route.query.execution_id)
 }
 
 function openExecutionTree(data) {
   const tree = normalizeExecutionTree(data)
-  executionTreeData.value = tree ? [tree] : []
-  currentExecution.value = tree?.execution || null
-  openedExecutionID.value = tree?.execution?.execution_id || ''
+  if (!tree) {
+    throw new Error('invalid execution tree response')
+  }
+  executionTreeData.value = [tree]
+  currentExecution.value = tree.execution
+  openedExecutionID.value = tree.execution.execution_id
+  detailLoadFailed.value = false
   detailDialogVisible.value = true
 }
 
@@ -1064,34 +1121,55 @@ function leaseStateTagType(state) {
 }
 
 async function refreshOpenedExecution() {
-  if (!detailDialogVisible.value || !hasValue(openedExecutionID.value)) {
+  if (!hasRunningOpenedExecution.value || !hasValue(openedExecutionID.value) || executionDetailRefreshInFlight) {
     return
   }
+  const executionID = openedExecutionID.value
+  executionDetailRefreshInFlight = true
   try {
-    const data = await getExecutionTreeByExecutionID(openedExecutionID.value)
+    const data = await getExecutionTreeByExecutionID(executionID)
+    if (!detailDialogVisible.value || openedExecutionID.value !== executionID) return
     openExecutionTree(data)
   } catch (error) {
     console.error(error)
+  } finally {
+    executionDetailRefreshInFlight = false
   }
 }
 
-async function refreshRunningExecutions() {
-  if (!hasRunningExecution.value) {
+async function refreshRunningExecutionList() {
+  if (!hasRunningListExecution.value || executionListRefreshInFlight) {
     return
   }
-  await loadExecutions({ silent: true })
-  await refreshOpenedExecution()
+  executionListRefreshInFlight = true
+  try {
+    await loadExecutions({ silent: true })
+  } finally {
+    executionListRefreshInFlight = false
+  }
 }
 
-function startAutoRefresh() {
-  stopAutoRefresh()
-  autoRefreshTimer = window.setInterval(refreshRunningExecutions, 1000)
+function startExecutionListAutoRefresh() {
+  stopExecutionListAutoRefresh()
+  executionListRefreshTimer = window.setInterval(refreshRunningExecutionList, EXECUTION_LIST_REFRESH_INTERVAL_MS)
 }
 
-function stopAutoRefresh() {
-  if (autoRefreshTimer) {
-    window.clearInterval(autoRefreshTimer)
-    autoRefreshTimer = null
+function stopExecutionListAutoRefresh() {
+  if (executionListRefreshTimer) {
+    window.clearInterval(executionListRefreshTimer)
+    executionListRefreshTimer = null
+  }
+}
+
+function startExecutionDetailAutoRefresh() {
+  stopExecutionDetailAutoRefresh()
+  executionDetailRefreshTimer = window.setInterval(refreshOpenedExecution, EXECUTION_DETAIL_REFRESH_INTERVAL_MS)
+}
+
+function stopExecutionDetailAutoRefresh() {
+  if (executionDetailRefreshTimer) {
+    window.clearInterval(executionDetailRefreshTimer)
+    executionDetailRefreshTimer = null
   }
 }
 
@@ -1153,16 +1231,17 @@ function continuousHealthText(health) {
 
 // 初始化
 onMounted(async () => {
-  await loadTaskProviders()
   applyQueryFilters(route.query)
-  await loadExecutions()
-  await openExecutionByExecutionID(route.query.execution_id)
-  if (hasRunningExecution.value) {
-    startAutoRefresh()
-  }
+  const taskProvidersPromise = loadTaskProviders()
+  const executionsPromise = loadExecutions()
+  const detailPromise = openExecutionByExecutionID(route.query.execution_id)
+  await Promise.all([taskProvidersPromise, executionsPromise, detailPromise])
 })
 
-onBeforeUnmount(stopAutoRefresh)
+onBeforeUnmount(() => {
+  stopExecutionListAutoRefresh()
+  stopExecutionDetailAutoRefresh()
+})
 
 watch(
   () => route.query.execution_id,
@@ -1174,6 +1253,9 @@ watch(
     executionTreeData.value = []
     currentExecution.value = null
     openedExecutionID.value = ''
+    detailLoading.value = false
+    detailLoadFailed.value = false
+    detailRequestToken += 1
     detailDialogVisible.value = false
   }
 )
@@ -1187,11 +1269,19 @@ watch(
   }
 )
 
-watch(hasRunningExecution, running => {
+watch(hasRunningListExecution, running => {
   if (running) {
-    startAutoRefresh()
+    startExecutionListAutoRefresh()
   } else {
-    stopAutoRefresh()
+    stopExecutionListAutoRefresh()
+  }
+})
+
+watch(hasRunningOpenedExecution, running => {
+  if (running) {
+    startExecutionDetailAutoRefresh()
+  } else {
+    stopExecutionDetailAutoRefresh()
   }
 })
 
@@ -1204,6 +1294,9 @@ watch(
 
 watch(detailDialogVisible, async visible => {
   if (visible) return
+  detailRequestToken += 1
+  detailLoading.value = false
+  detailLoadFailed.value = false
   openedExecutionID.value = ''
   if (!hasValue(firstQueryValue(route.query.execution_id))) return
   await navigateMonitorRoute(router, {
@@ -1245,6 +1338,11 @@ watch(detailDialogVisible, async visible => {
   margin-top: 16px;
   display: flex;
   justify-content: flex-end;
+}
+
+.detail-loading {
+  min-height: 320px;
+  background: var(--addp-bg-primary) !important;
 }
 
 .execution-detail-content {

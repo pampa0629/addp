@@ -528,7 +528,7 @@
       "overwrite": "Replace target data",
       "append": "Append data",
       "fieldsConfirmTitle": "Confirm field mappings",
-      "fieldsConfirmDescription": "Mappings come from source facts. MySQL decimal precision and scale are derived from source data and shown for confirmation.",
+      "fieldsConfirmDescription": "Mappings come from source facts. When the target requires an explicit decimal definition, precision and scale are derived from source data and shown for confirmation.",
       "sourceField": "Source field",
       "targetField": "Target field",
       "targetType": "Target type",

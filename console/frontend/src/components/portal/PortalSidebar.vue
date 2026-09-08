@@ -66,7 +66,7 @@
 </template>
 
 <script setup>
-import { ref, computed, nextTick } from 'vue'
+import { ref, computed, nextTick, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Fold, Expand } from '@element-plus/icons-vue'
 
@@ -85,6 +85,20 @@ defineEmits(['menu-select', 'toggle-collapse'])
 const menuRef = ref(null)
 
 const sidebarWidth = computed(() => (props.isCollapsed ? '72px' : '240px'))
+
+watch(
+  [() => props.activeMenu, () => props.sidebarMenus],
+  async ([activeMenu]) => {
+    await nextTick()
+    for (const module of props.activeGroupModules) {
+      const parent = props.sidebarMenus[module]?.items?.find(item =>
+        item.children?.some(child => child.index === activeMenu)
+      )
+      if (parent) menuRef.value?.open(parent.index)
+    }
+  },
+  { immediate: true }
+)
 
 defineExpose({
   async openModule(module, groupModules) {

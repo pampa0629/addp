@@ -36,7 +36,7 @@
       <el-aside :width="sidebarWidth" :class="['sidebar', { collapsed: isCompactViewport }]">
         <el-menu
           :default-active="activeMenu"
-          :default-openeds="['system']"
+          :default-openeds="['system', '/iam']"
           router
           class="el-menu-vertical"
           :collapse="isCompactViewport"
@@ -52,14 +52,16 @@
               <el-icon><Setting /></el-icon>
               <span>{{ t('system.layout.systemMgmt') }}</span>
             </template>
-            <el-menu-item index="/iam">
-              <el-icon><Lock /></el-icon>
-              <span>{{ t('system.layout.iam') }}</span>
-            </el-menu-item>
-            <el-menu-item v-if="authStore.hasPermission('iam.security_policy.read')" index="/settings/security-policy">
-              <el-icon><Lock /></el-icon>
-              <span>{{ t('system.layout.securityPolicy') }}</span>
-            </el-menu-item>
+            <el-sub-menu index="/iam">
+              <template #title>
+                <el-icon><Lock /></el-icon>
+                <span>{{ t('system.layout.iam') }}</span>
+              </template>
+              <el-menu-item v-for="page in visibleIAMPages" :key="page.key" :index="page.path">
+                <el-icon><component :is="iamPageIcon(page.key)" /></el-icon>
+                <span>{{ t(page.label) }}</span>
+              </el-menu-item>
+            </el-sub-menu>
             <el-menu-item v-if="authStore.hasPermission('platform.module.read')" index="/modules">
               <el-icon><Operation /></el-icon>
               <span>{{ t('system.layout.moduleMgmt') }}</span>
@@ -102,10 +104,12 @@ import {
   HomeFilled,
   Key,
   Refresh,
-  Operation
+  Operation,
+  OfficeBuilding
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
+import { availableIAMPages } from '../config/iamNavigation'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -138,6 +142,17 @@ const userDisplayName = computed(() =>
   user.value?.display_name || user.value?.local_account?.username || ''
 )
 const activeMenu = computed(() => route.path)
+const visibleIAMPages = computed(() => availableIAMPages(
+  authStore.contextType,
+  permission => authStore.hasPermission(permission)
+))
+const iamPageIcons = {
+  identity: User,
+  organization: OfficeBuilding,
+  access: Key,
+  security: Lock
+}
+const iamPageIcon = page => iamPageIcons[page] || Lock
 const sidebarWidth = computed(() => isCompactViewport.value ? '64px' : '200px')
 const handleLogout = () => {
   authStore.logout()

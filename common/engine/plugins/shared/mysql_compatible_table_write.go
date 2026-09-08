@@ -23,20 +23,7 @@ const (
 )
 
 func ApplyMySQLCompatibleTableWriteLimits(capabilities *plugin.EngineCapabilities) {
-	if capabilities == nil {
-		return
-	}
-	if capabilities.Limits == nil {
-		capabilities.Limits = &plugin.EngineLimits{}
-	}
-	if capabilities.Limits.TableWrite == nil {
-		capabilities.Limits.TableWrite = &plugin.TableWriteLimits{}
-	}
-	capabilities.Limits.TableWrite.Decimal = &plugin.DecimalFieldLimits{
-		RequiresExplicitPrecisionScale: true,
-		MaxPrecision:                   plugin.Int(MySQLCompatibleDecimalMaxPrecision),
-		MaxScale:                       plugin.Int(MySQLCompatibleDecimalMaxScale),
-	}
+	plugin.ApplyExplicitDecimalTableWriteLimits(capabilities, MySQLCompatibleDecimalMaxPrecision, MySQLCompatibleDecimalMaxScale)
 }
 
 // MySQLCompatibleTableWriter implements the non-spatial table write contract
@@ -432,19 +419,7 @@ func (w MySQLCompatibleTableWriter) validateDecimalField(field datatype.FieldInf
 }
 
 func ValidateMySQLCompatibleDecimalField(engineType string, field datatype.FieldInfo) error {
-	if field.Precision <= 0 {
-		return fmt.Errorf("%s decimal field %q requires explicit precision and scale", engineType, field.Name)
-	}
-	if field.Precision > MySQLCompatibleDecimalMaxPrecision {
-		return fmt.Errorf("%s decimal field %q precision %d exceeds maximum %d", engineType, field.Name, field.Precision, MySQLCompatibleDecimalMaxPrecision)
-	}
-	if field.Scale < 0 || field.Scale > MySQLCompatibleDecimalMaxScale {
-		return fmt.Errorf("%s decimal field %q scale %d must be between 0 and %d", engineType, field.Name, field.Scale, MySQLCompatibleDecimalMaxScale)
-	}
-	if field.Scale > field.Precision {
-		return fmt.Errorf("%s decimal field %q scale %d exceeds precision %d", engineType, field.Name, field.Scale, field.Precision)
-	}
-	return nil
+	return plugin.ValidateExplicitDecimalFieldDefinition(engineType, field, MySQLCompatibleDecimalMaxPrecision, MySQLCompatibleDecimalMaxScale)
 }
 
 func mysqlCompatibleColumnMatchesField(column mysqlCompatibleColumnInfo, field datatype.FieldInfo) bool {

@@ -8,7 +8,6 @@
       "overview": "Overview",
       "systemMgmt": "System",
       "iam": "Identity & Access",
-      "securityPolicy": "IAM Security Policy",
       "moduleMgmt": "Modules",
       "engineMgmt": "Engines",
       "appMgmt": "Applications",
@@ -101,19 +100,26 @@
         "platform": "Platform management context",
         "tenant": "Tenant context #{id}"
       },
+      "pages": {
+        "identity": "Identity & Membership",
+        "organization": "Tenants & Organization",
+        "access": "Roles & Access",
+        "security": "Security & Audit"
+      },
       "tabs": {
-        "security": "Security",
+        "accountSecurity": "Account Security",
+        "securityPolicy": "IAM Security Policy",
+        "audit": "Audit Log",
         "tenants": "Tenant Lifecycle",
         "users": "User Lifecycle",
         "identityChanges": "Identity Change Review",
-        "platformAudit": "Platform Audit",
         "memberships": "Memberships",
-        "organization": "Organization & Projects",
+        "departments": "Departments",
+        "projectGroups": "Project Groups",
         "oauthClients": "External OAuth Clients",
         "invitations": "Invitations",
         "roles": "Tenant Roles",
-        "roleAssignments": "Role Assignments",
-        "tenantAudit": "Tenant Audit"
+        "roleAssignments": "Role Assignments"
       },
       "common": {
         "actions": "Actions",

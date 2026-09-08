@@ -36,6 +36,28 @@ describe('Console recent visits', () => {
     })
   })
 
+  it('records fixed routes nested under a business category', () => {
+    expect(buildRecentVisitEntry({
+      module: 'system',
+      fullPath: '/system/iam/access?tab=role-assignments',
+      menuConfig: {
+        label: 'console.menus.system.label',
+        items: [{
+          index: '/system/iam',
+          label: 'console.menus.system.iam',
+          children: [{
+            index: '/system/iam/access',
+            label: 'console.menus.system.iamAccess'
+          }]
+        }]
+      }
+    })).toMatchObject({
+      key: '/system/iam/access',
+      route: '/system/iam/access?tab=role-assignments',
+      label: 'console.menus.system.iamAccess'
+    })
+  })
+
   it('ignores unknown dynamic routes until the module provides a descriptor', () => {
     expect(buildRecentVisitEntry({
       module: 'graph',

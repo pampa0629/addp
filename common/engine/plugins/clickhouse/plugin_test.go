@@ -27,6 +27,10 @@ func TestClickHouseCapabilitiesDeclareTableWriteProviders(t *testing.T) {
 	if !caps.Storage.Store.Delete {
 		t.Fatalf("clickhouse capabilities do not declare delete: %#v", caps.Storage.Store)
 	}
+	decimal := caps.Limits.TableWrite.Decimal
+	if !decimal.RequiresExplicitPrecisionScale || decimal.MaxPrecision == nil || *decimal.MaxPrecision != 38 || decimal.MaxScale == nil || *decimal.MaxScale != 38 {
+		t.Fatalf("ClickHouse capabilities have unexpected decimal write limits: %#v", decimal)
+	}
 	if err := plugin.ValidatePluginCapabilities(&ClickHousePlugin{}); err != nil {
 		t.Fatalf("ValidatePluginCapabilities failed: %v", err)
 	}
@@ -85,6 +89,19 @@ func TestClickHouseFieldInfoMapsNativeTypesToCanonicalTypes(t *testing.T) {
 	}
 }
 
+func TestClickHouseFieldInfoKeepsDecimalPrecisionAndScale(t *testing.T) {
+	for nativeType, want := range map[string][2]int{
+		"Decimal(18, 2)":           {18, 2},
+		"Nullable(Decimal(20, 6))": {20, 6},
+		"Decimal128(9)":            {38, 9},
+	} {
+		field := clickhouseFieldInfo(clickhouseColumnRow{Name: "amount", NativeType: nativeType})
+		if field.Precision != want[0] || field.Scale != want[1] {
+			t.Fatalf("clickhouseFieldInfo(%q) precision/scale = %d/%d, want %d/%d", nativeType, field.Precision, field.Scale, want[0], want[1])
+		}
+	}
+}
+
 func TestClickHouseFieldInfoMapsGeneratedExpression(t *testing.T) {
 	tests := []string{"MATERIALIZED", "ALIAS"}
 	for _, defaultKind := range tests {
@@ -114,7 +131,7 @@ func TestClickHouseSQLTypeForField(t *testing.T) {
 	}{
 		{name: "string nullable", field: datatype.FieldInfo{Name: "name", Type: datatype.FieldTypeString, Nullable: true}, want: "Nullable(String)"},
 		{name: "bigint", field: datatype.FieldInfo{Name: "id", Type: datatype.FieldTypeBigInt}, want: "Int64"},
-		{name: "decimal", field: datatype.FieldInfo{Name: "amount", Type: datatype.FieldTypeDecimal}, want: "Decimal(38,10)"},
+		{name: "decimal", field: datatype.FieldInfo{Name: "amount", Type: datatype.FieldTypeDecimal, Precision: 18, Scale: 2}, want: "Decimal(18,2)"},
 		{name: "timestamp", field: datatype.FieldInfo{Name: "created_at", Type: datatype.FieldTypeTimestamp}, want: "DateTime"},
 		{name: "json fallback", field: datatype.FieldInfo{Name: "payload", Type: datatype.FieldTypeJSON}, want: "String"},
 	}
@@ -147,11 +164,23 @@ func TestClickHouseWriteFieldsSkipsGeneratedAndRejectsSpatial(t *testing.T) {
 	}
 }
 
+func TestClickHouseWriteFieldsRejectsInvalidDecimalDefinition(t *testing.T) {
+	for _, field := range []datatype.FieldInfo{
+		{Name: "amount", Type: datatype.FieldTypeDecimal},
+		{Name: "amount", Type: datatype.FieldTypeDecimal, Precision: 39, Scale: 2},
+		{Name: "amount", Type: datatype.FieldTypeDecimal, Precision: 18, Scale: 19},
+	} {
+		if _, err := clickhouseWriteFields([]datatype.FieldInfo{field}); err == nil {
+			t.Fatalf("clickhouseWriteFields(%#v) unexpectedly succeeded", field)
+		}
+	}
+}
+
 func TestClickHouseSchemaEvolutionStatementsAddsMissingColumns(t *testing.T) {
 	statements, err := clickhouseSchemaEvolutionStatements("analytics", "events", []datatype.FieldInfo{
 		{Name: "id", Type: datatype.FieldTypeBigInt},
 		{Name: "name", Type: datatype.FieldTypeString, Nullable: true},
-		{Name: "amount", Type: datatype.FieldTypeDecimal, Nullable: true},
+		{Name: "amount", Type: datatype.FieldTypeDecimal, Precision: 20, Scale: 6, Nullable: true},
 	}, []clickhouseWriteColumnInfo{
 		{Name: "id", NativeType: "Int64"},
 	})
@@ -160,7 +189,7 @@ func TestClickHouseSchemaEvolutionStatementsAddsMissingColumns(t *testing.T) {
 	}
 	want := []string{
 		"ALTER TABLE `analytics`.`events` ADD COLUMN `name` Nullable(String)",
-		"ALTER TABLE `analytics`.`events` ADD COLUMN `amount` Nullable(Decimal(38,10))",
+		"ALTER TABLE `analytics`.`events` ADD COLUMN `amount` Nullable(Decimal(20,6))",
 	}
 	if !reflect.DeepEqual(statements, want) {
 		t.Fatalf("statements = %#v, want %#v", statements, want)
@@ -175,6 +204,17 @@ func TestClickHouseSchemaEvolutionStatementsRejectsTypeConflict(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("clickhouseSchemaEvolutionStatements succeeded with conflicting type, want error")
+	}
+}
+
+func TestClickHouseSchemaEvolutionStatementsRejectsDecimalDefinitionConflict(t *testing.T) {
+	_, err := clickhouseSchemaEvolutionStatements("analytics", "target", []datatype.FieldInfo{
+		{Name: "amount", Type: datatype.FieldTypeDecimal, Precision: 18, Scale: 2},
+	}, []clickhouseWriteColumnInfo{
+		{Name: "amount", NativeType: "Decimal(20,6)"},
+	})
+	if err == nil {
+		t.Fatal("clickhouseSchemaEvolutionStatements accepted mismatched decimal precision/scale")
 	}
 }
 

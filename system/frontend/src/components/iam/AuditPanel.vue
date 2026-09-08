@@ -160,7 +160,7 @@ async function load() {
   finally { loading.value = false }
 }
 function buildRouteQuery() {
-  const query = { tab: String(route.query.tab || '') }
+  const query = { tab: 'audit' }
   for (const key of ['event_name', 'result', 'risk_level', 'module_name', 'principal_id', 'principal_type', 'entity_type', 'entity_id']) {
     const value = String(filters[key] || '').trim()
     if (value) query[key] = value
@@ -177,12 +177,12 @@ async function applyFilters() {
     await load()
     return
   }
-  await navigateSystemRoute(router, { name: 'IAMWorkbench', query }, { history: 'replace' })
+  await navigateSystemRoute(router, { name: 'IAMSecurity', query }, { history: 'replace' })
 }
 async function changePage(nextPage) {
   page.value = nextPage
   await navigateSystemRoute(router, {
-    name: 'IAMWorkbench',
+    name: 'IAMSecurity',
     query: buildRouteQuery()
   }, { history: 'replace' })
 }

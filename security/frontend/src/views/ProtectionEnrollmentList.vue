@@ -36,7 +36,13 @@
             <strong>{{ t('security.accessRequest.reviewTitle') }}</strong>
             <p>{{ t('security.accessRequest.reviewDescription') }}</p>
           </div>
-          <el-tag v-if="accessRequestTotal > 0" type="warning" effect="plain">{{ accessRequestTotal }}</el-tag>
+          <div class="access-review-card__scope">
+            <el-radio-group v-model="accessRequestScope" size="small" @change="handleAccessRequestScopeChange">
+              <el-radio-button value="pending">{{ t('security.accessRequest.scopes.pending') }}</el-radio-button>
+              <el-radio-button value="history">{{ t('security.accessRequest.scopes.history') }}</el-radio-button>
+            </el-radio-group>
+            <el-tag v-if="accessRequestTotal > 0" :type="accessRequestScope === 'pending' ? 'warning' : 'info'" effect="plain">{{ accessRequestTotal }}</el-tag>
+          </div>
         </div>
       </template>
       <el-table v-loading="accessRequestLoading" :data="accessRequestRows" size="small">
@@ -48,7 +54,19 @@
           <template #default="{ row }">{{ formatDateTime(row.requested_expires_at) }}</template>
         </el-table-column>
         <el-table-column prop="rationale" :label="t('security.accessRequest.rationale')" min-width="240" show-overflow-tooltip />
-        <el-table-column :label="t('security.common.actions')" width="190" fixed="right">
+        <el-table-column v-if="accessRequestScope === 'history'" :label="t('security.accessRequest.state')" width="110">
+          <template #default="{ row }"><el-tag size="small" :type="accessRequestStateType(row.state)">{{ t(`security.accessRequest.states.${row.state}`) }}</el-tag></template>
+        </el-table-column>
+        <el-table-column v-if="accessRequestScope === 'history'" :label="t('security.accessRequest.reviewer')" width="130">
+          <template #default="{ row }">{{ row.decided_by || t('security.common.notAvailable') }}</template>
+        </el-table-column>
+        <el-table-column v-if="accessRequestScope === 'history'" :label="t('security.accessRequest.processedAt')" width="190">
+          <template #default="{ row }">{{ formatDateTime(row.decided_at || row.requested_expires_at) }}</template>
+        </el-table-column>
+        <el-table-column v-if="accessRequestScope === 'history'" prop="decision_rationale" :label="t('security.accessRequest.decisionRationaleLabel')" min-width="220" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.decision_rationale || t('security.common.notAvailable') }}</template>
+        </el-table-column>
+        <el-table-column v-if="accessRequestScope === 'pending'" :label="t('security.common.actions')" width="190" fixed="right">
           <template #default="{ row }">
             <div v-if="row.can_decide" class="access-decision-actions">
               <el-button link type="primary" @click="decideAccessRequest(row, 'approve')">{{ t('security.accessRequest.approve') }}</el-button>
@@ -61,7 +79,7 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-empty v-if="!accessRequestLoading && accessRequestRows.length === 0" :description="t('security.accessRequest.empty')" :image-size="48" />
+      <el-empty v-if="!accessRequestLoading && accessRequestRows.length === 0" :description="t(`security.accessRequest.emptyStates.${accessRequestScope}`)" :image-size="48" />
     </el-card>
     <div class="list-scope-bar">
       <el-radio-group v-model="listScope" size="small" @change="handleScopeChange">
@@ -921,6 +939,7 @@ const reviewQueueLoading = ref(false)
 const accessRequestRows = ref([])
 const accessRequestTotal = ref(0)
 const accessRequestLoading = ref(false)
+const accessRequestScope = ref('pending')
 const reviewingFinding = ref(null)
 const reviewSaving = ref(false)
 const reviewBasisExpanded = ref([])
@@ -1335,7 +1354,7 @@ async function loadAccessRequestQueue() {
   }
   accessRequestLoading.value = true
   try {
-    const response = await protectionAccessRequestAPI.reviewQueue({ page: 1, page_size: 100 })
+    const response = await protectionAccessRequestAPI.reviewQueue({ scope: accessRequestScope.value, page: 1, page_size: 100 })
     accessRequestRows.value = Array.isArray(response?.data) ? response.data : []
     accessRequestTotal.value = Number(response?.total || 0)
   } catch (error) {
@@ -1343,6 +1362,16 @@ async function loadAccessRequestQueue() {
   } finally {
     accessRequestLoading.value = false
   }
+}
+
+async function handleAccessRequestScopeChange() {
+  await loadAccessRequestQueue()
+}
+
+function accessRequestStateType(state) {
+  if (state === 'approved') return 'success'
+  if (state === 'rejected') return 'danger'
+  return 'info'
 }
 
 async function decideAccessRequest(row, decision) {
@@ -2054,6 +2083,7 @@ onBeforeUnmount(() => {
 .access-review-card { margin-bottom: 12px; border-color: var(--addp-border-color); background: var(--addp-bg-primary); }
 .access-review-card__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .access-review-card__header p { margin: 5px 0 0; color: var(--addp-text-secondary); font-size: 13px; }
+.access-review-card__scope { display: flex; align-items: center; gap: 10px; }
 .list-scope-bar { display: flex; align-items: center; margin-bottom: 12px; }
 .enrollment-card { border-color: var(--addp-border-color); background: var(--addp-bg-primary); }
 .review-queue-intro { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 12px; padding: 13px 15px; border: 1px solid var(--addp-border-color); border-radius: 8px; background: var(--addp-bg-primary); }

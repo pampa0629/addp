@@ -45,7 +45,7 @@
 	  "allTypes": "All task types", "total": "{total} total", "enabled": "Enabled", "disabled": "Disabled",
 	  "refresh": "Refresh", "create": "Create from Data Explorer", "createSpatial": "New spatial task", "detail": "Details", "source": "Source", "viewSource": "View in resource tree", "edit": "Edit", "execute": "Execute", "monitor": "Monitor", "delete": "Delete",
 	  "sourceItem": "Source item", "sourceFormat": "Source format", "sourceSize": "Source size", "targetEngine": "Target engine", "resultName": "Generated result", "lastRunAt": "Last run", "taskDescription": "Description", "empty": "No generation tasks",
-	  "loadFailed": "Failed to load derived tasks", "executeQueued": "Task queued", "executeFailed": "Task execution failed",
+	  "loadFailed": "Failed to load generation tasks", "executeQueued": "Task queued", "executeFailed": "Task execution failed",
 	  "deleteConfirm": "Delete this task definition? Published business data will be retained.", "deleteSuccess": "Task deleted", "deleteFailed": "Failed to delete task"
 	},
 	"embeddingConfiguration": {
@@ -966,6 +966,8 @@
         "loading": "Loading request status",
         "active": "Plaintext granted for {count} fields",
         "pending": "{count} requests pending",
+        "expired": "{count} requests expired",
+        "rejected": "{count} requests rejected",
         "reviewRequired": "{count} fields need review",
         "reviewRequiredHint": "These fields are protected from automatic findings but do not yet have formal sensitive decisions. Review them in Security before requesting plaintext access.",
         "request": "Request plaintext access",

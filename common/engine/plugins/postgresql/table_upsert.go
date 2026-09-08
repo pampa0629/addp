@@ -11,6 +11,17 @@ import (
 	commonquery "github.com/addp/common/query"
 )
 
+const postgresRelationExistsQuery = `
+	SELECT EXISTS (
+		SELECT 1
+		FROM pg_catalog.pg_class cls
+		JOIN pg_catalog.pg_namespace ns ON ns.oid = cls.relnamespace
+		WHERE ns.nspname = $1
+		  AND cls.relname = $2
+		  AND cls.relkind IN ('r', 'p', 'v', 'm', 'f')
+	)
+`
+
 func (p *PostgreSQLPlugin) PrepareTableUpsert(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableUpsertOptions) error {
 	return p.prepareTableUpsert(ctx, connInfo, path, opts, false)
 }
@@ -34,7 +45,7 @@ func (p *PostgreSQLPlugin) prepareTableUpsert(ctx context.Context, connInfo plug
 	}
 	defer db.Close()
 	var exists bool
-	if err := db.QueryRowContext(ctx, `SELECT to_regclass($1) IS NOT NULL`, schema+"."+table).Scan(&exists); err != nil {
+	if err := db.QueryRowContext(ctx, postgresRelationExistsQuery, schema, table).Scan(&exists); err != nil {
 		return fmt.Errorf("check postgresql upsert target: %w", err)
 	}
 	if requireTargetAbsent && exists {

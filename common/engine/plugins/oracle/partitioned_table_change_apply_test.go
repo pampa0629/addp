@@ -30,6 +30,7 @@ func TestOraclePartitionedApplyOptionsAndTypes(t *testing.T) {
 	}
 	for _, field := range []datatype.FieldInfo{
 		{Name: "CLOCK", Type: datatype.FieldTypeTime},
+		{Name: "MISSING_PRECISION", Type: datatype.FieldTypeDecimal},
 		{Name: "TOO_WIDE", Type: datatype.FieldTypeDecimal, Precision: 39, Scale: 2},
 	} {
 		if _, err := oracleSQLTypeForField(field); err == nil {

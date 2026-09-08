@@ -10,8 +10,10 @@ const (
 	ProtectionAccessRequestStatePending                    = "pending"
 	ProtectionAccessRequestStateApproved                   = "approved"
 	ProtectionAccessRequestStateRejected                   = "rejected"
+	ProtectionAccessRequestStateExpired                    = "expired"
+	ProtectionAccessRequestReviewScopePending              = "pending"
+	ProtectionAccessRequestReviewScopeHistory              = "history"
 	ProtectionAccessRequestDecisionUnavailableSelfApproval = "self_approval_forbidden"
-	ProtectionAccessRequestDecisionUnavailableExpired      = "request_expired"
 )
 
 type ProtectionAccessRequest struct {
@@ -71,14 +73,20 @@ type ProtectionAccessRequestListResponse struct {
 }
 
 type ProtectionAccessTarget struct {
-	AssessmentID       string                   `json:"assessment_id"`
-	AssessmentRevision int64                    `json:"assessment_revision,string"`
-	Component          dataprotection.Component `json:"component"`
-	Requestable        bool                     `json:"requestable"`
-	UnavailableReason  string                   `json:"unavailable_reason,omitempty"`
-	PendingRequestID   string                   `json:"pending_request_id,omitempty"`
-	ActiveExemptionID  string                   `json:"active_exemption_id,omitempty"`
-	AuthorizedUntil    *time.Time               `json:"authorized_until,omitempty"`
+	AssessmentID       string                          `json:"assessment_id"`
+	AssessmentRevision int64                           `json:"assessment_revision,string"`
+	Component          dataprotection.Component        `json:"component"`
+	Requestable        bool                            `json:"requestable"`
+	UnavailableReason  string                          `json:"unavailable_reason,omitempty"`
+	AccessRequest      *ProtectionAccessRequestSummary `json:"access_request,omitempty"`
+	ActiveExemptionID  string                          `json:"active_exemption_id,omitempty"`
+	AuthorizedUntil    *time.Time                      `json:"authorized_until,omitempty"`
+}
+
+type ProtectionAccessRequestSummary struct {
+	ID                 string    `json:"id"`
+	State              string    `json:"state"`
+	RequestedExpiresAt time.Time `json:"requested_expires_at"`
 }
 
 type ProtectionAccessTargetListResponse struct {

@@ -16,6 +16,11 @@ import (
 // ClickHousePlugin ClickHouse 数据库插件
 type ClickHousePlugin struct{}
 
+const (
+	clickhouseDecimalMaxPrecision = 38
+	clickhouseDecimalMaxScale     = 38
+)
+
 // init 函数在包被导入时自动注册插件
 func init() {
 	plugin.Register(&ClickHousePlugin{})
@@ -66,7 +71,7 @@ func (p *ClickHousePlugin) ConnectionIdentityFields() []string {
 }
 
 func (p *ClickHousePlugin) Capabilities() plugin.EngineCapabilities {
-	return plugin.NewTabularCapabilities(p.Type(), "database", plugin.TabularCapabilityOptions{
+	caps := plugin.NewTabularCapabilities(p.Type(), "database", plugin.TabularCapabilityOptions{
 		Write:              true,
 		BulkWrite:          true,
 		BatchWrite:         true,
@@ -79,6 +84,8 @@ func (p *ClickHousePlugin) Capabilities() plugin.EngineCapabilities {
 		IdentifierQuote:    "`",
 		WriterConnector:    "clickhouse_insert",
 	})
+	plugin.ApplyExplicitDecimalTableWriteLimits(&caps, clickhouseDecimalMaxPrecision, clickhouseDecimalMaxScale)
+	return caps
 }
 
 func (p *ClickHousePlugin) EngineCatalogModel() plugin.EngineCatalogModelSpec {
@@ -325,6 +332,12 @@ func clickhouseFieldInfo(row clickhouseColumnRow) datatype.FieldInfo {
 		NativeType: row.NativeType,
 		Nullable:   row.Nullable,
 		Comment:    row.Comment,
+	}
+	if field.Type == datatype.FieldTypeDecimal {
+		if precision, scale, ok := clickhouseDecimalPrecisionScale(row.NativeType); ok {
+			field.Precision = precision
+			field.Scale = scale
+		}
 	}
 	expression := strings.TrimSpace(row.DefaultExpression)
 	if expression == "" {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/addp/common/datatype"
@@ -140,6 +141,11 @@ func clickhouseTableColumns(ctx context.Context, db *sql.DB, database, table str
 }
 
 func clickhouseSchemaEvolutionStatements(database, table string, fields []datatype.FieldInfo, existingColumns []clickhouseWriteColumnInfo) ([]string, error) {
+	validatedFields, err := clickhouseWriteFields(fields)
+	if err != nil {
+		return nil, err
+	}
+	fields = validatedFields
 	dialect := clickhouseDialect()
 	existingByName := make(map[string]clickhouseWriteColumnInfo, len(existingColumns))
 	for _, column := range existingColumns {
@@ -177,6 +183,11 @@ func clickhouseWriteFields(fields []datatype.FieldInfo) ([]datatype.FieldInfo, e
 		if datatype.IsSpatialFieldType(field.Type) {
 			return nil, fmt.Errorf("clickhouse table write does not support spatial field %q yet", name)
 		}
+		if datatype.ParseFieldType(string(field.Type)) == datatype.FieldTypeDecimal {
+			if err := plugin.ValidateExplicitDecimalFieldDefinition("clickhouse", field, clickhouseDecimalMaxPrecision, clickhouseDecimalMaxScale); err != nil {
+				return nil, err
+			}
+		}
 		if _, ok := seen[name]; ok {
 			continue
 		}
@@ -205,6 +216,10 @@ func clickhouseColumnCompatibleWithField(column clickhouseWriteColumnInfo, field
 	if expected == datatype.FieldTypeUnknown {
 		return existing == datatype.FieldTypeString || existing == datatype.FieldTypeUnknown
 	}
+	if expected == datatype.FieldTypeDecimal && existing == datatype.FieldTypeDecimal {
+		precision, scale, ok := clickhouseDecimalPrecisionScale(column.NativeType)
+		return ok && precision == field.Precision && scale == field.Scale
+	}
 	return expected == existing
 }
 
@@ -229,7 +244,7 @@ func clickhouseBaseSQLTypeForField(field datatype.FieldInfo) string {
 	case datatype.FieldTypeDouble:
 		return "Float64"
 	case datatype.FieldTypeDecimal:
-		return "Decimal(38,10)"
+		return fmt.Sprintf("Decimal(%d,%d)", field.Precision, field.Scale)
 	case datatype.FieldTypeBool:
 		return "Bool"
 	case datatype.FieldTypeDate:
@@ -282,17 +297,58 @@ func clickhouseCommonFieldType(nativeType string) datatype.FieldType {
 }
 
 func clickhouseNormalizeTypeName(nativeType string) string {
+	value := clickhouseUnwrapType(nativeType)
+	if idx := strings.Index(value, "("); idx > 0 {
+		return value[:idx]
+	}
+	return value
+}
+
+func clickhouseDecimalPrecisionScale(nativeType string) (int, int, bool) {
+	value := clickhouseUnwrapType(nativeType)
+	open := strings.Index(value, "(")
+	if open <= 0 || !strings.HasSuffix(value, ")") {
+		return 0, 0, false
+	}
+	name := strings.TrimSpace(value[:open])
+	parts := strings.Split(strings.TrimSpace(value[open+1:len(value)-1]), ",")
+	if name == "Decimal" {
+		if len(parts) != 2 {
+			return 0, 0, false
+		}
+		precision, errPrecision := strconv.Atoi(strings.TrimSpace(parts[0]))
+		scale, errScale := strconv.Atoi(strings.TrimSpace(parts[1]))
+		return precision, scale, errPrecision == nil && errScale == nil && precision > 0 && scale >= 0 && scale <= precision
+	}
+	var precision int
+	switch name {
+	case "Decimal32":
+		precision = 9
+	case "Decimal64":
+		precision = 18
+	case "Decimal128":
+		precision = 38
+	case "Decimal256":
+		precision = 76
+	default:
+		return 0, 0, false
+	}
+	if len(parts) != 1 {
+		return 0, 0, false
+	}
+	scale, err := strconv.Atoi(strings.TrimSpace(parts[0]))
+	return precision, scale, err == nil && scale >= 0 && scale <= precision
+}
+
+func clickhouseUnwrapType(nativeType string) string {
 	value := strings.TrimSpace(nativeType)
 	for {
 		switch {
 		case strings.HasPrefix(value, "Nullable(") && strings.HasSuffix(value, ")"):
-			value = strings.TrimSuffix(strings.TrimPrefix(value, "Nullable("), ")")
+			value = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(value, "Nullable("), ")"))
 		case strings.HasPrefix(value, "LowCardinality(") && strings.HasSuffix(value, ")"):
-			value = strings.TrimSuffix(strings.TrimPrefix(value, "LowCardinality("), ")")
+			value = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(value, "LowCardinality("), ")"))
 		default:
-			if idx := strings.Index(value, "("); idx > 0 {
-				return value[:idx]
-			}
 			return value
 		}
 	}

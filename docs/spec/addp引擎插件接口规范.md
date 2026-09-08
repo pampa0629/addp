@@ -51,7 +51,7 @@ type EnginePlugin interface {
 - 自研且未编译进当前进程的 extension engine 使用标准 HTTP 运行时身份字段 `protocol + host + port`，不得通过任意非敏感字段猜测身份。
 - `TestConnection()` 必须执行需要认证的最小只读真实操作，不能只做网络连通检查，也不得创建、更新、删除外部资源。
 - `Capabilities()` 必须返回结构化 `engine.capabilities/v1` 能力模板。该方法不得连接具体实例，不做运行时探测，只表达插件和 Provider 实现的能力上限。
-- Provider 存在稳定执行边界时必须通过类型化 `limits` 声明，由上层统一消费；例如 MySQL-compatible `TableWritePreparer` 的 decimal 定义限制统一写入 `limits.table_write.decimal`，不得由 Transfer 等模块按 `engine_type` 维护数据库名单或重复常量。
+- Provider 存在稳定执行边界时必须通过类型化 `limits` 声明，由上层统一消费；MySQL-compatible、Oracle、Doris 与 ClickHouse `TableWritePreparer` 的 decimal 定义限制统一写入 `limits.table_write.decimal`，不得由 Transfer 等模块按 `engine_type` 维护数据库名单或重复常量。
 - 需要按实例探测扩展、版本或函数可用性的插件，应额外实现 `InstanceCapabilitiesResolver`，由 System 在保存或刷新具体引擎记录时调用并生成落库能力声明。
 - `InstanceCapabilitiesResolver` 只用于创建或变更连接、显式连接测试以及 System 就绪后的逐实例后台协调。模块启动和 readiness 不得调用实例能力解析；解析失败只影响当前 Engine Instance 或当前请求，不得终止 System、业务 Backend 或 Worker。
 
@@ -178,7 +178,7 @@ type EngineCatalogFactsProvider interface {
 
 `EngineCatalogFacts.Table.Fields` 必须满足统一字段类型契约：`FieldInfo.Type` 是已经映射完成的 ADDP 标准字段类型，`FieldInfo.NativeType` 是来源引擎的原生类型。Provider 必须显式选择自身的类型映射规则，不得把 `integer`、`numeric`、`String` 等原生类型交给公共 canonical parser 猜测，也不得依赖遍历全局 mapper 的无来源推断。无法映射时返回显式 `type=unknown`；`type` 为空是 Provider 契约错误。公共 normalizer 只负责规范化和校验，不得从 `native_type` 补推 `type`。
 
-Decimal 字段使用 `FieldInfo.Precision` 表达总有效位数，使用 `FieldInfo.Scale` 表达小数位数；已声明的原生精度必须由 Provider 无损写入这两个字段。`Precision=0` 表示来源未声明有限精度，不得解释为某个默认精度。当目标引擎只支持有界 decimal 时，调用方必须提供显式 `Precision/Scale`；目标 Provider 必须按自身上限严格校验，不得选择更大的默认 decimal、截断小数或改写为浮点数。
+Decimal 字段使用 `FieldInfo.Precision` 表达总有效位数，使用 `FieldInfo.Scale` 表达小数位数；已声明的原生精度必须由 Provider 无损写入这两个字段。`Precision=0` 表示来源未声明有限精度，不得解释为某个默认精度。当目标引擎只支持有界 decimal 时，调用方必须提供显式 `Precision/Scale`；目标 Provider 必须按自身上限严格校验并按该字段事实生成目标原生类型，不得选择固定默认 decimal、截断小数或改写为浮点数。已有目标 decimal 列只有在原生 precision/scale 与请求字段完全一致时才兼容。
 
 `FieldInfo` 当前未单独表达时间类型的小数秒精度。目标 Provider 不得因此退化为原生零位小数秒并静默截断；在目标类型允许时必须选择该引擎可稳定支持的无损精度。MySQL table write、upsert 和 partitioned change apply 统一使用 `TIME(6)`、`DATETIME(6)`，已有低精度目标列不得被误判为兼容。
 
@@ -220,8 +220,8 @@ SDE Provider 不直接成为 Transfer continuous consumer。Transfer capture ada
 具体 Engine Instance 的 workspace 选择统一通过 `common/engine/instanceprovider.SpatialWorkspace`；只有 `detected|enabled` 可进入领域 Provider 解析。`not_detected|permission_denied|unavailable` 必须保持不可选。`ArcGISSDEWorkspace` 只返回 readiness fact，不得把普通 Oracle Plugin 当作 SDE adapter，也不得因 adapter 尚未注册而回退到 Oracle redo CDC。
 | MySQL | database | `information_schema.schemata/tables/columns/statistics/st_spatial_reference_systems` | `BASE TABLE` -> `table`，`VIEW` -> `view`，其他 `table_type` 转小写下划线 | `information_schema.columns`，主键来自 `column_key`，注释来自 `column_comment`；geometry 类型、SRID、nullable、CRS 和空间索引由 MySQL 插件自身补充为 `SpatialInfo` | 列表将 `information_schema.tables.table_rows` 写入 `estimated_row_count`；显式统计执行 `COUNT(*)` 写入 `row_count`；空间 extent 不通过全表聚合推断 | `information_schema`、`mysql`、`performance_schema`、`sys` | 普通表事实与 Doris 共享 `MySQLCompatibleCatalogFactsDialect`；MySQL 空间事实和行值编码保留在 MySQL 插件内；可启用表级 `Native.engine` |
 | OceanBase（MySQL 模式） | database | `information_schema.schemata/tables/columns/statistics` | 同 MySQL 兼容逻辑 | `information_schema.columns`，主键来自 `column_key`，注释来自 `column_comment` | 列表将 `information_schema.tables.table_rows` 写入 `estimated_row_count`；显式统计执行 `COUNT(*)` 写入 `row_count` | `information_schema`、`mysql`、`oceanbase` | 与 MySQL/Doris 共享 `MySQLCompatibleCatalogFactsDialect`，与 MySQL 共享 MySQL 方言的 `QueryReadSet` / `QueryOutputLineage` 证明逻辑；MySQL 与 OceanBase 共享 MySQL-compatible `BoundedWatermarkReadProvider` 核心，OceanBase 仅开放非空间 InnoDB 基表；两者的非空间普通表还共享 `TableWritePreparer` / `TableWriteSessionProvider` / `ResourceDeleteProvider` / `TableUpsertProvider` 核心，OceanBase 开放安全建表、可空列增量演进、事务性分批 insert、精确目标表删除和按显式非空稳定键执行的事务性幂等 upsert；`engine_type` 仍固定为 `oceanbase`，不开放 Oracle 模式、空间或 CDC |
-| Doris | database | MySQL 兼容 `information_schema.schemata/tables/columns` | 同 MySQL 兼容逻辑 | 同 MySQL 兼容逻辑，注释能力按引擎实际返回 | 列表将 `information_schema.tables.table_rows` 写入 `estimated_row_count`；显式统计执行 `COUNT(*)` 写入 `row_count` | MySQL 系统库 + `__internal_schema` | 与 MySQL 共享 `MySQLCompatibleCatalogFactsDialect`；`Native.engine` 待确认 `information_schema.tables.engine` 稳定性后再启用 |
-| ClickHouse | database | `system.databases`、`system.tables`、`system.columns` | `MaterializedView` -> `materialized_view`，`View`/其他包含 `View` 的 engine -> `view`，其他 -> `table` | `system.columns`，nullable 从类型字符串推断，`DEFAULT` / `MATERIALIZED` / `ALIAS` 映射到通用默认值和生成列字段，当前不表达主键 | 列表将 `system.tables.total_rows` 写入 `estimated_row_count`；显式统计执行 `COUNT(*)` 写入 `row_count` | `system`、`information_schema`、`INFORMATION_SCHEMA` | 暂留插件内；ClickHouse `system.*` 语义独立 |
+| Doris | database | MySQL 兼容 `information_schema.schemata/tables/columns` | 同 MySQL 兼容逻辑 | 同 MySQL 兼容逻辑，注释能力按引擎实际返回 | 列表将 `information_schema.tables.table_rows` 写入 `estimated_row_count`；显式统计执行 `COUNT(*)` 写入 `row_count` | MySQL 系统库 + `__internal_schema` | 与 MySQL 共享 `MySQLCompatibleCatalogFactsDialect`；非空间表写入由 Doris Provider 独立实现建库建表、可空列演进、批次会话和删除，Decimal 必须显式声明并精确匹配 precision/scale；`Native.engine` 待确认 `information_schema.tables.engine` 稳定性后再启用 |
+| ClickHouse | database | `system.databases`、`system.tables`、`system.columns` | `MaterializedView` -> `materialized_view`，`View`/其他包含 `View` 的 engine -> `view`，其他 -> `table` | `system.columns`，nullable 从类型字符串推断，`DEFAULT` / `MATERIALIZED` / `ALIAS` 映射到通用默认值和生成列字段，当前不表达主键 | 列表将 `system.tables.total_rows` 写入 `estimated_row_count`；显式统计执行 `COUNT(*)` 写入 `row_count` | `system`、`information_schema`、`INFORMATION_SCHEMA` | ClickHouse `system.*` 与非空间表写入语义独立；Provider 实现建库建表、可空列演进、批次会话和删除，Decimal 必须显式声明并精确匹配 precision/scale |
 | Spark SQL | database | `SHOW DATABASES`、`SHOW TABLES`、`DESCRIBE`，部分环境可查询 `information_schema` | 当前 `SHOW TABLES` 结果统一映射为 `table` | `DESCRIBE table` | 列表阶段不做真实 count，未知 `row_count` / `size_bytes` 保持为空；单表 catalog facts 显式请求统计时才执行 `COUNT(*)` | `information_schema`、`sys` | 暂留插件内；Spark catalog facts 更偏命令式接口 |
 
 对 graph 引擎，`EngineCatalogProvider` 暴露 graph catalog leaf，label、relationship type 和 endpoint pattern 作为 `datatype.GraphInfo` 中的 schema / shape facts，而不是作为 graph data type 的主 catalog leaf 本体。Neo4j label / relationship 只作为 Manager 展示投影或查询筛选条件，不作为公共 catalog leaf。graph 公共事实应围绕 `GraphInfo.NodeShapes`、`GraphInfo.RelationshipShapes` 和 `GraphRelationshipPatternInfo` 表达，不得继续把 `from_labels[]` / `to_labels[]` 两个集合作为 relationship endpoint 主事实。
@@ -281,7 +281,7 @@ type StoreProvider interface {
 - `BatchWritableProvider.WriteBatch()`：批量写入表或集合数据；图写入应由图模块或专用 graph provider 明确建模。
 - `TableWriteSessionProvider.OpenTableWriteSession()`：打开表写入会话，连续写入批次；适合 PostgreSQL COPY、JDBC bulk load 等避免每批重复建立写入会话的实现。
 - `TableWritePreparer.PrepareTableWrite()`：执行表级写入前准备动作，例如 ensure database / schema、create table、校验目标表结构和安全 schema evolution。该能力不写入数据行，也不承载 Transfer 的 replace / append policy。
-- `BoundedWatermarkReadProvider.OpenBoundedWatermarkRead()`：在引擎一致性读边界内冻结复合 watermark 上界，按稳定顺序读取 `(start, upper_bound]`。session 必须返回上界，并能从已读取行生成 provider 可解释的复合位置；普通 batch reader 不得被推断为具备该语义。
+- `BoundedWatermarkReadProvider.OpenBoundedWatermarkRead()`：在引擎一致性读边界内冻结单字段或复合 watermark 上界，按稳定顺序读取 `(start, upper_bound]`。session 必须返回上界，并能从已读取行生成 provider 可解释的完整位置；普通 batch reader 不得被推断为具备该语义。
 - `TableUpsertProvider.PrepareTableUpsert()` / `UpsertBatch()`：按显式稳定键准备目标并幂等应用 insert/update。Provider 必须校验键字段和唯一约束；普通 `BatchWritableProvider` 或 COPY session 不得被推断为 upsert。
 - `ChangeStreamReaderProvider.OpenChangeStream()`：打开 partitioned change stream，按 provider position seek、poll 原始记录并支持受控 pause/resume/close。Kafka topic 不能伪装成 `BatchReadableProvider` 或 content `stream_read`。
 - `PartitionedTableChangeApplyProvider.PreparePartitionedTableChangeApply()` / `ApplyPartitionedTableChanges()`：把单个 source partition 的已映射表变化与目标 apply position 在同一目标事务中提交。PostgreSQL 与 MySQL 当前真实实现 `upsert|delete|skip`；`skip` 只推进 ledger，不修改业务行。同一 key 在批内只保留最高 position 的最终数据操作，目标行变化和对应 Provider 的 apply ledger 必须原子提交。普通 `TableUpsertProvider`、Infra state CAS 或 runtime lease 均不得被推断为具备目标侧 monotonic apply 语义。
@@ -347,10 +347,10 @@ type EncodedRecordBatchData struct {
 
 当前 bounded watermark 契约：
 
-- `BoundedWatermarkReadOptions` 必须包含一个 watermark field、至少一个 tie breaker 和可选 committed start cursor。
-- 当前 source Provider 由 PostgreSQL、MySQL 与 MySQL 模式 OceanBase 实现：PostgreSQL 在 repeatable-read 只读事务中冻结上界，MySQL-compatible 引擎在 InnoDB repeatable-read 事务中冻结上界；游标字段不得为 NULL，tie breaker 必须匹配非 partial unique/primary key，OceanBase 当前只开放非空间表。
+- `BoundedWatermarkReadOptions` 必须包含一个 watermark field、可为空的 tie breaker 列表和可选 committed start cursor。`tie_breaker=[]` 表示仅同步新增，watermark field 必须自身精确匹配非空 primary key 或 unique constraint；非空 `tie_breaker` 表示同步新增和更新，完整位置为 `(watermark, tie_breaker...)`，tie breaker 必须精确匹配非空 primary key 或非 partial unique constraint。两种模式都不得用可空、非唯一或不稳定字段构造游标。
+- 当前 source Provider 由 PostgreSQL、MySQL、MySQL 模式 OceanBase 与 openGauss 实现：PostgreSQL/openGauss 在 repeatable-read 只读事务中冻结上界，MySQL-compatible 引擎在 InnoDB repeatable-read 事务中冻结上界；所有游标字段不得为 NULL，OceanBase 与 openGauss 当前只开放非空间表。
 - `WatermarkCursor.Values` 使用 canonical string 保存，具体列类型转换由 source Provider 解释。
-- `TableUpsertProvider` 使用稳定 keys 和单批事务提交；重复应用同一批必须得到相同目标状态。PostgreSQL 使用显式 `ON CONFLICT(keys)`；MySQL 使用 InnoDB 和 `ON DUPLICATE KEY UPDATE`，并必须拒绝会绕过配置 keys 的其他唯一约束。
+- `TableUpsertProvider` 使用稳定 keys 和单批事务提交；重复应用同一批必须得到相同目标状态。PostgreSQL/openGauss 使用显式 `ON CONFLICT(keys)`；MySQL-compatible 目标使用 InnoDB 和 `ON DUPLICATE KEY UPDATE`，并必须拒绝会绕过配置 keys 的其他唯一约束。
 - Transfer 只在目标批次提交成功后推进 `transfer.sync_states`，Provider 不直接维护任务状态。
 
 ### ChangeStreamReaderProvider
@@ -664,9 +664,12 @@ type InferenceRuntimeProvider interface {
 | 引擎 | 推荐接口组合 |
 | --- | --- |
 | PostgreSQL | 通用 tabular 组合 + `QueryReadSessionProvider` + `BoundedWatermarkReadProvider` + `TableUpsertProvider` + `PartitionedTableChangeApplyProvider` |
-| MySQL | 通用 tabular 组合 + `TableUpsertProvider` + `PartitionedTableChangeApplyProvider` |
+| MySQL | 通用 tabular 组合 + `BoundedWatermarkReadProvider` + `TableUpsertProvider` + `PartitionedTableChangeApplyProvider` |
 | OceanBase（MySQL 模式） | 非空间通用 tabular 组合 + `BoundedWatermarkReadProvider` + `TableUpsertProvider` |
-| Doris / ClickHouse / Spark SQL | `EnginePlugin` + `EngineCatalogModelProvider` + `EngineCatalogProvider` + `EngineCatalogFactsProvider` + `SQLQueryRuntimeProvider` + `ConnectionPoolPlugin` |
+| openGauss | 非空间通用 tabular 组合 + `QueryReadSessionProvider` + `BoundedWatermarkReadProvider` + `TableUpsertProvider` |
+| Oracle | 通用 tabular 组合 + `SpatialFeatureReadProvider` + `PartitionedTableChangeApplyProvider`；普通 Store 不声明 CDC |
+| Doris / ClickHouse | 非空间通用 tabular 组合；不声明 `BoundedWatermarkReadProvider`、`TableUpsertProvider` 或 CDC |
+| Spark SQL | `EnginePlugin` + `EngineCatalogModelProvider` + `EngineCatalogProvider` + `EngineCatalogFactsProvider` + `SQLQueryRuntimeProvider` + `ConnectionPoolPlugin` |
 | MongoDB | `EnginePlugin` + `EngineCatalogModelProvider` + `EngineCatalogProvider` + `EngineCatalogFactsProvider` + `DynamicSchemaSamplingProvider` + `RecordReadSessionProvider` + `EncodedRecordReadSessionProvider` + `QueryRuntimeProvider` + `QueryReadSessionProvider` |
 | Neo4j | `EnginePlugin` + `EngineCatalogModelProvider` + `EngineCatalogProvider` + `EngineCatalogFactsProvider` + `GraphSampleProvider` + `QueryRuntimeProvider` + `GraphQueryProvider` |
 | MinIO / S3 | `EnginePlugin` + `EngineCatalogModelProvider` + `EngineCatalogProvider` + `EngineCatalogFactsProvider` + `ContentReadableProvider` + `RangeReadableProvider` + `ContentWritableProvider` + `ResourceDeleteProvider` |

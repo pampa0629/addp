@@ -57,6 +57,9 @@
       },
       "detail": {
         "title": "执行详情",
+        "loading": "正在加载目标执行详情…",
+        "load_failed": "未能加载目标执行详情",
+        "reload": "重新加载",
         "id": "执行ID",
         "uuid": "执行UUID",
         "module": "模块",

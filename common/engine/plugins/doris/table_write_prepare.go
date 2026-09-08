@@ -121,14 +121,16 @@ func evolveDorisTableSchema(ctx context.Context, db *sql.DB, database, table str
 }
 
 type dorisColumnInfo struct {
-	Name       string
-	DataType   string
-	NativeType string
+	Name             string
+	DataType         string
+	NativeType       string
+	NumericPrecision sql.NullInt64
+	NumericScale     sql.NullInt64
 }
 
 func dorisTableColumns(ctx context.Context, db *sql.DB, database, table string) ([]dorisColumnInfo, error) {
 	rows, err := db.QueryContext(ctx, `
-		SELECT column_name, data_type, column_type
+		SELECT column_name, data_type, column_type, numeric_precision, numeric_scale
 		FROM information_schema.columns
 		WHERE table_schema = ? AND table_name = ?
 		ORDER BY ordinal_position
@@ -141,7 +143,7 @@ func dorisTableColumns(ctx context.Context, db *sql.DB, database, table string) 
 	columns := make([]dorisColumnInfo, 0)
 	for rows.Next() {
 		var column dorisColumnInfo
-		if err := rows.Scan(&column.Name, &column.DataType, &column.NativeType); err != nil {
+		if err := rows.Scan(&column.Name, &column.DataType, &column.NativeType, &column.NumericPrecision, &column.NumericScale); err != nil {
 			return nil, fmt.Errorf("scan doris table column: %w", err)
 		}
 		columns = append(columns, column)
@@ -153,6 +155,11 @@ func dorisTableColumns(ctx context.Context, db *sql.DB, database, table string) 
 }
 
 func dorisSchemaEvolutionStatements(database, table string, fields []datatype.FieldInfo, existingColumns []dorisColumnInfo) ([]string, error) {
+	validatedFields, err := dorisWriteFields(fields)
+	if err != nil {
+		return nil, err
+	}
+	fields = validatedFields
 	dialect := dorisDialect()
 	existingByName := make(map[string]dorisColumnInfo, len(existingColumns))
 	for _, column := range existingColumns {
@@ -189,6 +196,11 @@ func dorisWriteFields(fields []datatype.FieldInfo) ([]datatype.FieldInfo, error)
 		}
 		if datatype.IsSpatialFieldType(field.Type) {
 			return nil, fmt.Errorf("doris table write does not support spatial field %q yet", name)
+		}
+		if datatype.ParseFieldType(string(field.Type)) == datatype.FieldTypeDecimal {
+			if err := plugin.ValidateExplicitDecimalFieldDefinition("doris", field, dorisDecimalMaxPrecision, dorisDecimalMaxScale); err != nil {
+				return nil, err
+			}
 		}
 		if _, ok := seen[name]; ok {
 			continue
@@ -260,6 +272,10 @@ func dorisColumnCompatibleWithField(column dorisColumnInfo, field datatype.Field
 	if expected == datatype.FieldTypeUnknown {
 		return existing == datatype.FieldTypeString || existing == datatype.FieldTypeUnknown
 	}
+	if expected == datatype.FieldTypeDecimal && existing == datatype.FieldTypeDecimal {
+		return column.NumericPrecision.Valid && column.NumericScale.Valid &&
+			int(column.NumericPrecision.Int64) == field.Precision && int(column.NumericScale.Int64) == field.Scale
+	}
 	return expected == existing
 }
 
@@ -276,7 +292,7 @@ func dorisSQLTypeForField(field datatype.FieldInfo) string {
 	case datatype.FieldTypeDouble:
 		return "DOUBLE"
 	case datatype.FieldTypeDecimal:
-		return "DECIMAL(38,10)"
+		return fmt.Sprintf("DECIMAL(%d,%d)", field.Precision, field.Scale)
 	case datatype.FieldTypeBool:
 		return "BOOLEAN"
 	case datatype.FieldTypeDate:

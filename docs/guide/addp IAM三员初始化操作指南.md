@@ -185,13 +185,13 @@ where assignment.status = 'active'
 3. 输入该账号认证器当前显示的 6 位验证码；
 4. 选择 Platform Context；
 5. 登录后确认 AuthContext 为 `context.type=platform` 且 `authentication.assurance_level=aal2`；
-6. 从 Console 进入“系统管理 -> 身份与访问管理”，对应地址为 `/system/iam`。
+6. 从 Console 进入“系统管理 -> 身份与访问管理”；该入口按职责展示“身份与成员”“租户与组织”“安全与审计”等分类页面，所有账号都可先进入 `/system/iam/security` 检查当前账号安全状态。
 
 三员权限互斥，登录成功不代表三个账号可以执行相同管理操作。
 
-### 7.1 三类管理员的工作台验收
+### 7.1 三类管理员的分类页面验收
 
-工作台只根据 AuthContext 中的 Permission 显示标签和操作，不根据账号名或 Role Key 硬编码页面。依次退出并使用三个账号登录，预期如下：
+分类页面及页内 Tab 只根据 AuthContext 中的 Permission 显示，不根据账号名或 Role Key 硬编码。依次退出并使用三个账号登录，预期如下：
 
 | 登录身份 | 应显示 | 不应显示 |
 | --- | --- | --- |

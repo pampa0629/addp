@@ -1,8 +1,8 @@
 <template>
-  <div class="iam-workbench">
+  <div class="iam-category-page">
     <header class="iam-page-header">
       <div>
-        <h2>{{ t('system.iam.title') }}</h2>
+        <h2>{{ pageTitle }}</h2>
         <div class="iam-context-line">
           <el-tag effect="plain">{{ contextLabel }}</el-tag>
           <span>{{ t('system.iam.assurance', { level: authContext?.authentication?.assurance_level?.toUpperCase() || '-' }) }}</span>
@@ -17,16 +17,23 @@
         <strong>{{ t('system.iam.setup.title') }}</strong>
         <span>{{ t('system.iam.setup.description') }}</span>
       </div>
-      <el-button type="primary" plain :icon="UserFilled" @click="selectTab('role-assignments')">
+      <el-button type="primary" plain :icon="UserFilled" @click="openRoleAssignments">
         {{ t('system.iam.setup.action') }}
       </el-button>
     </section>
 
     <el-alert v-if="!availableTabs.length" type="warning" :closable="false" show-icon :title="t('system.iam.noPermission')" />
     <el-tabs v-else v-model="activeTab" class="iam-tabs" @tab-change="selectTab">
-      <el-tab-pane v-for="tab in availableTabs" :key="tab.key" :name="tab.key">
-        <template #label><el-icon><component :is="tab.icon" /></el-icon><span>{{ t(tab.label) }}</span></template>
-        <component :is="tab.component" v-if="activeTab === tab.key" v-bind="tab.props || {}" />
+      <el-tab-pane v-for="tab in availableTabs" :key="`${tab.key}:${tab.context}`" :name="tab.key">
+        <template #label>
+          <el-icon><component :is="tabIcon(tab.panel)" /></el-icon>
+          <span>{{ t(tab.label) }}</span>
+        </template>
+        <component
+          :is="panelComponents[tab.panel]"
+          v-if="activeTab === tab.key"
+          v-bind="tab.props || {}"
+        />
       </el-tab-pane>
     </el-tabs>
   </div>
@@ -35,24 +42,41 @@
 <script setup>
 import { computed, markRaw, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Bell, Connection, DocumentChecked, InfoFilled, Key, Lock, OfficeBuilding, Refresh, Tickets, User, UserFilled } from '@element-plus/icons-vue'
+import {
+  Bell,
+  Connection,
+  DocumentChecked,
+  InfoFilled,
+  Key,
+  Lock,
+  OfficeBuilding,
+  Refresh,
+  Setting,
+  Share,
+  Tickets,
+  User,
+  UserFilled
+} from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../store/auth'
+import { availableIAMTabs, findIAMPage } from '../config/iamNavigation'
 import AuditPanel from '../components/iam/AuditPanel.vue'
+import DepartmentsPanel from '../components/iam/DepartmentsPanel.vue'
 import IdentityChangesPanel from '../components/iam/IdentityChangesPanel.vue'
+import MFASecurityPanel from '../components/iam/MFASecurityPanel.vue'
+import OAuthClientsPanel from '../components/iam/OAuthClientsPanel.vue'
 import PlatformTenantsPanel from '../components/iam/PlatformTenantsPanel.vue'
 import PlatformUsersPanel from '../components/iam/PlatformUsersPanel.vue'
+import ProjectGroupsPanel from '../components/iam/ProjectGroupsPanel.vue'
 import TenantInvitationsPanel from '../components/iam/TenantInvitationsPanel.vue'
 import TenantMembershipsPanel from '../components/iam/TenantMembershipsPanel.vue'
-import TenantOrganizationPanel from '../components/iam/TenantOrganizationPanel.vue'
-import TenantRolesPanel from '../components/iam/TenantRolesPanel.vue'
 import TenantRoleAssignmentsPanel from '../components/iam/TenantRoleAssignmentsPanel.vue'
-import OAuthClientsPanel from '../components/iam/OAuthClientsPanel.vue'
-import MFASecurityPanel from '../components/iam/MFASecurityPanel.vue'
+import TenantRolesPanel from '../components/iam/TenantRolesPanel.vue'
+import SecurityPolicy from './SecurityPolicy.vue'
 import { needsTenantRoleSetup } from '../utils/iamRoles'
 import { navigateSystemRoute } from '../utils/moduleNavigation'
-import { resolveIAMRouteState } from '../utils/routeState'
+import { resolveIAMCategoryRouteState } from '../utils/routeState'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
@@ -62,52 +86,75 @@ const activeTab = ref('')
 const refreshing = ref(false)
 const authContext = computed(() => authStore.authContext)
 const contextType = computed(() => authStore.contextType)
+const pageKey = computed(() => String(route.meta?.iamPage || ''))
+const pageDefinition = computed(() => findIAMPage(pageKey.value))
+const pageTitle = computed(() => pageDefinition.value ? t(pageDefinition.value.label) : t('system.iam.title'))
 const contextLabel = computed(() => contextType.value === 'platform'
   ? t('system.iam.context.platform')
   : t('system.iam.context.tenant', { id: authContext.value?.context?.tenant_id || '-' }))
 const showTenantRoleSetup = computed(() => needsTenantRoleSetup(authContext.value))
+const availableTabs = computed(() => availableIAMTabs(pageKey.value, contextType.value, permission => authStore.hasPermission(permission)))
 
-const allTabs = [
-  { key: 'security', context: 'any', permission: null, label: 'system.iam.tabs.security', icon: markRaw(Lock), component: markRaw(MFASecurityPanel) },
-  { key: 'tenants', context: 'platform', permission: 'platform.tenant.read', label: 'system.iam.tabs.tenants', icon: markRaw(OfficeBuilding), component: markRaw(PlatformTenantsPanel) },
-  { key: 'users', context: 'platform', permission: 'iam.user.read', label: 'system.iam.tabs.users', icon: markRaw(User), component: markRaw(PlatformUsersPanel) },
-  { key: 'identity-changes', context: 'platform', permission: 'iam.platform_identity_change.read', label: 'system.iam.tabs.identityChanges', icon: markRaw(DocumentChecked), component: markRaw(IdentityChangesPanel) },
-  { key: 'platform-audit', context: 'platform', permission: 'audit.event.read', label: 'system.iam.tabs.platformAudit', icon: markRaw(Bell), component: markRaw(AuditPanel), props: { scope: 'platform' } },
-  { key: 'memberships', context: 'tenant', permission: 'iam.tenant_membership.read', label: 'system.iam.tabs.memberships', icon: markRaw(User), component: markRaw(TenantMembershipsPanel) },
-  { key: 'organization', context: 'tenant', permissionsAny: ['iam.department.read', 'iam.project_group.read'], label: 'system.iam.tabs.organization', icon: markRaw(Connection), component: markRaw(TenantOrganizationPanel) },
-  { key: 'oauth-clients', context: 'tenant', permission: 'iam.oauth_client.read', label: 'system.iam.tabs.oauthClients', icon: markRaw(Key), component: markRaw(OAuthClientsPanel) },
-  { key: 'invitations', context: 'tenant', permission: 'iam.tenant_invitation.read', label: 'system.iam.tabs.invitations', icon: markRaw(Tickets), component: markRaw(TenantInvitationsPanel) },
-  { key: 'roles', context: 'tenant', permission: 'iam.tenant_role.read', label: 'system.iam.tabs.roles', icon: markRaw(DocumentChecked), component: markRaw(TenantRolesPanel) },
-  { key: 'role-assignments', context: 'tenant', permission: 'iam.tenant_role_assignment.read', label: 'system.iam.tabs.roleAssignments', icon: markRaw(UserFilled), component: markRaw(TenantRoleAssignmentsPanel) },
-  { key: 'tenant-audit', context: 'tenant', permission: 'audit.tenant_event.read', label: 'system.iam.tabs.tenantAudit', icon: markRaw(Bell), component: markRaw(AuditPanel), props: { scope: 'tenant' } }
-]
-const availableTabs = computed(() => allTabs.filter((tab) =>
-  (tab.context === 'any' || tab.context === contextType.value) &&
-  (!tab.permission || authStore.hasPermission(tab.permission)) &&
-  (!tab.permissionsAny || tab.permissionsAny.some(permission => authStore.hasPermission(permission)))))
+const panelComponents = {
+  users: markRaw(PlatformUsersPanel),
+  'identity-changes': markRaw(IdentityChangesPanel),
+  memberships: markRaw(TenantMembershipsPanel),
+  invitations: markRaw(TenantInvitationsPanel),
+  tenants: markRaw(PlatformTenantsPanel),
+  departments: markRaw(DepartmentsPanel),
+  'project-groups': markRaw(ProjectGroupsPanel),
+  roles: markRaw(TenantRolesPanel),
+  'role-assignments': markRaw(TenantRoleAssignmentsPanel),
+  'oauth-clients': markRaw(OAuthClientsPanel),
+  'account-security': markRaw(MFASecurityPanel),
+  'security-policy': markRaw(SecurityPolicy),
+  audit: markRaw(AuditPanel)
+}
+
+const panelIcons = {
+  users: User,
+  'identity-changes': DocumentChecked,
+  memberships: User,
+  invitations: Tickets,
+  tenants: OfficeBuilding,
+  departments: Connection,
+  'project-groups': Share,
+  roles: DocumentChecked,
+  'role-assignments': UserFilled,
+  'oauth-clients': Key,
+  'account-security': Lock,
+  'security-policy': Setting,
+  audit: Bell
+}
+
+function tabIcon(panel) {
+  return panelIcons[panel] || DocumentChecked
+}
 
 async function restoreTabFromRoute() {
-  const tabs = availableTabs.value
-  const routeState = resolveIAMRouteState(tabs.map(tab => tab.key), route.query)
+  const routeState = resolveIAMCategoryRouteState(availableTabs.value.map(tab => tab.key), route.query)
   activeTab.value = routeState.activeTab
-
-  if (routeState.changed) {
-    await navigateSystemRoute(router, { name: 'IAMWorkbench', query: routeState.query }, { history: 'replace' })
+  if (routeState.changed && pageDefinition.value) {
+    await navigateSystemRoute(router, { name: pageDefinition.value.routeName, query: routeState.query }, { history: 'replace' })
   }
 }
 
 async function selectTab(tab) {
   const tabKey = String(tab || '')
   const defaultTab = availableTabs.value[0]?.key || ''
-  if (!availableTabs.value.some(item => item.key === tabKey)) return
+  if (!availableTabs.value.some(item => item.key === tabKey) || !pageDefinition.value) return
   activeTab.value = tabKey
   await navigateSystemRoute(router, {
-    name: 'IAMWorkbench',
+    name: pageDefinition.value.routeName,
     query: tabKey === defaultTab ? {} : { tab: tabKey }
   }, { history: 'replace' })
 }
 
-watch([availableTabs, () => route.query], restoreTabFromRoute, { immediate: true })
+async function openRoleAssignments() {
+  await navigateSystemRoute(router, { name: 'IAMAccess', query: { tab: 'role-assignments' } })
+}
+
+watch([availableTabs, () => route.query, pageKey], restoreTabFromRoute, { immediate: true })
 
 async function refreshContext() {
   refreshing.value = true
@@ -123,7 +170,7 @@ async function refreshContext() {
 </script>
 
 <style>
-.iam-workbench { min-width: 0; color: var(--addp-text-primary); }
+.iam-category-page { min-width: 0; color: var(--addp-text-primary); }
 .iam-page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 12px; }
 .iam-page-header h2 { margin: 0 0 8px; font-size: 22px; font-weight: 600; letter-spacing: 0; }
 .iam-context-line { display: flex; align-items: center; gap: 10px; color: var(--addp-text-secondary); font-size: 13px; }

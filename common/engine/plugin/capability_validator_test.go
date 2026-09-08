@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/addp/common/datatype"
 )
 
 type dynamicSchemaOnlyPlugin struct {
@@ -62,6 +64,28 @@ func TestValidatePluginCapabilitiesRejectsDecimalLimitsWithoutTableWritePreparer
 	limited := &spatialEncodingPlugin{MockPlugin: p.MockPlugin, caps: caps}
 	if err := ValidatePluginCapabilities(limited); err == nil || !strings.Contains(err.Error(), "does not implement TableWritePreparer") {
 		t.Fatalf("ValidatePluginCapabilities() error = %v, want missing provider error", err)
+	}
+}
+
+func TestValidateExplicitDecimalFieldDefinition(t *testing.T) {
+	tests := []struct {
+		name    string
+		field   datatype.FieldInfo
+		wantErr bool
+	}{
+		{name: "valid", field: datatype.FieldInfo{Name: "amount", Type: datatype.FieldTypeDecimal, Precision: 18, Scale: 2}},
+		{name: "missing precision", field: datatype.FieldInfo{Name: "amount", Type: datatype.FieldTypeDecimal}, wantErr: true},
+		{name: "precision too large", field: datatype.FieldInfo{Name: "amount", Type: datatype.FieldTypeDecimal, Precision: 39, Scale: 2}, wantErr: true},
+		{name: "scale too large", field: datatype.FieldInfo{Name: "amount", Type: datatype.FieldTypeDecimal, Precision: 38, Scale: 39}, wantErr: true},
+		{name: "scale exceeds precision", field: datatype.FieldInfo{Name: "amount", Type: datatype.FieldTypeDecimal, Precision: 4, Scale: 5}, wantErr: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := ValidateExplicitDecimalFieldDefinition("test", test.field, 38, 38)
+			if (err != nil) != test.wantErr {
+				t.Fatalf("ValidateExplicitDecimalFieldDefinition() error = %v, wantErr=%v", err, test.wantErr)
+			}
+		})
 	}
 }
 

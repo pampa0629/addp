@@ -217,11 +217,60 @@ func TestIntegrationOpenGaussProviderContract(t *testing.T) {
 		t.Fatalf("upsert result row_count=%d updated_name=%q", rowCount, updatedName)
 	}
 
+	insertOnly, err := p.OpenBoundedWatermarkRead(ctx, connInfo, table.Path, plugin.BoundedWatermarkReadOptions{WatermarkField: "id"})
+	if err != nil {
+		t.Fatalf("open insert-only openGauss watermark read: %v", err)
+	}
+	insertOnlyBatch, err := insertOnly.ReadBatch(ctx, 10)
+	if err != nil {
+		t.Fatalf("read insert-only openGauss watermark batch: %v", err)
+	}
+	if len(insertOnlyBatch.Rows) != 3 || insertOnlyBatch.Rows[2]["id"] != int64(3) {
+		t.Fatalf("insert-only openGauss rows = %#v, want ids 1..3", insertOnlyBatch.Rows)
+	}
+	insertOnlyCommitted, err := insertOnly.PositionForRow(insertOnlyBatch.Rows[2])
+	if err != nil {
+		t.Fatalf("insert-only openGauss PositionForRow() error = %v", err)
+	}
+	if upper := insertOnly.UpperBound(); upper == nil || len(upper.Values) != 1 || upper.Values[0] != "3" {
+		t.Fatalf("insert-only openGauss upper bound = %#v, want id 3", upper)
+	}
+	if err := insertOnly.Close(ctx); err != nil {
+		t.Fatalf("close insert-only openGauss watermark read: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE `+schemaName+`.`+tableName+` SET name = $1 WHERE id = $2`, "changed-without-id", 1); err != nil {
+		t.Fatalf("update old openGauss insert-only row: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO `+schemaName+`.`+tableName+` (id, name, amount, active, updated_at) VALUES ($1,$2,$3,$4,$5)`, 4, "南京", "40.00", true, baseTime.Add(-time.Second)); err != nil {
+		t.Fatalf("insert next openGauss insert-only row: %v", err)
+	}
+	insertOnlyResume, err := p.OpenBoundedWatermarkRead(ctx, connInfo, table.Path, plugin.BoundedWatermarkReadOptions{WatermarkField: "id", Start: insertOnlyCommitted})
+	if err != nil {
+		t.Fatalf("resume insert-only openGauss watermark read: %v", err)
+	}
+	insertOnlyDelta, err := insertOnlyResume.ReadBatch(ctx, 10)
+	if err != nil {
+		t.Fatalf("read resumed insert-only openGauss watermark batch: %v", err)
+	}
+	if len(insertOnlyDelta.Rows) != 1 || insertOnlyDelta.Rows[0]["id"] != int64(4) {
+		t.Fatalf("resumed insert-only openGauss rows = %#v, want only id 4", insertOnlyDelta.Rows)
+	}
+	if err := insertOnlyResume.Close(ctx); err != nil {
+		t.Fatalf("close resumed insert-only openGauss watermark read: %v", err)
+	}
+
 	if err := p.DeleteResource(ctx, connInfo, table.Path); err != nil {
 		t.Fatalf("DeleteResource() error = %v", err)
 	}
 	var exists bool
-	if err := db.QueryRowContext(ctx, `SELECT to_regclass($1) IS NOT NULL`, schemaName+"."+tableName).Scan(&exists); err != nil {
+	if err := db.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM pg_catalog.pg_class cls
+			JOIN pg_catalog.pg_namespace ns ON ns.oid = cls.relnamespace
+			WHERE ns.nspname = $1 AND cls.relname = $2
+		)
+	`, schemaName, tableName).Scan(&exists); err != nil {
 		t.Fatalf("query deleted table: %v", err)
 	}
 	if exists {

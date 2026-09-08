@@ -445,7 +445,7 @@
       "overwrite": "覆盖目标数据",
       "append": "追加数据",
       "fieldsConfirmTitle": "请确认字段映射",
-      "fieldsConfirmDescription": "字段映射基于源表事实生成；MySQL decimal 的精度和小数位会分析源数据后给出，并由你确认。",
+      "fieldsConfirmDescription": "字段映射基于源表事实生成；目标引擎要求显式定义 decimal 时，会分析源数据给出精度和小数位并由你确认。",
       "sourceField": "源字段",
       "targetField": "目标字段",
       "targetType": "目标类型",

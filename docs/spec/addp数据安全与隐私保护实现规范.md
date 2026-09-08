@@ -238,6 +238,9 @@ tenant + assessment_id + consumer_owner + action + subject_type + subject_id
 7. ProtectionProjection 的每条规则保留默认 `decision`，并携带零个或多个按用户授权。Owner 必须使用服务端可信 AuthContext 精确匹配 `subject_type + subject_id`；主体为空或不匹配时不得放行。
 8. 编译优先级固定为 `ProtectionBaseline -> ProtectionPolicy 收紧 -> ProtectionExemption 主体级限时授权`。授权只改变内容保护，不改变 Owner 资源授权；结构无法证明、查询血缘不明或 Owner 授权拒绝时仍然 fail closed。
 9. 申请审批、Exemption revision 和 ProtectionProjection 新修订必须在同一事务内完成，并调用唯一编译器。Owner 只消费投影，不读取申请或授权表、不保存审批依据，也不增加本地放行接口。
+10. ProtectionAccessRequest 的生命周期状态固定为 `pending|approved|rejected|expired`。`pending` 只表示仍在申请截止时间内等待决策；服务端时间达到 `requested_expires_at` 后，所有查询必须立即将其视为 `expired`，不再算作待审批，不得依赖浏览器时钟推导。
+11. 审批工作区只有一个分页 API，通过必填 `scope=pending|history` 选择视图：`pending` 只返回未过期待审批申请，`history` 返回已批准、已驳回和已过期申请。历史保留申请人、审批人、申请截止时间、决策时间、业务依据和审批意见；已过期而未决策的记录没有审批人和审批意见。
+12. Manager 只消费 Security 返回的有效申请状态。只有 `pending` 触发状态轮询并阻止重复申请；`expired` 和 `rejected` 必须明确展示结果、停止轮询并允许重新申请。新申请创建时，Security 在同一事务中先将同一绑定键上已超时的 `pending` 记录固化为 `expired`，再校验和创建唯一新申请。
 
 ### 7.3 保护定义变化的影响传播
 
@@ -539,9 +542,9 @@ Service 必须在同一个 PreparedQuery 上依次完成 `ReadSet()`、命中判
 | `DELETE` | `/assessments/{id}` | 携带 `version` 和原因，追加 `not_sensitive` 修订以撤销当前正式结论，不删除历史 |
 | `GET/POST` | `/protection-policies` | 保护策略列表/创建；创建产生首个不可变修订 |
 | `GET/PUT/DELETE` | `/protection-policies/{id}` | 策略详情/完整更新/撤销；更新和撤销均携带 `version` 并追加不可变修订 |
-| `GET` | `/protection-access-request-targets` | Manager 预览按 DataItem fingerprint 查询当前用户可申请的字段、待审批申请和有效临时授权；自动发现但尚未形成正式 Assessment 的字段只返回不可申请原因 |
+| `GET` | `/protection-access-request-targets` | Manager 预览按 DataItem fingerprint 查询当前用户可申请的字段、最近申请的有效状态和有效临时授权；自动发现但尚未形成正式 Assessment 的字段只返回不可申请原因 |
 | `GET/POST` | `/protection-access-requests` | 当前用户分页查询自己的申请/从 Manager 预览提交按用户原值访问申请 |
-| `GET` | `/protection-access-requests/review-queue` | 审批人员分页查询当前租户全部待处理申请；响应明确当前用户是否可审批及不可审批原因，本人申请和已超过申请截止时间的记录可见但不可审批 |
+| `GET` | `/protection-access-requests/review-queue` | 审批人员分页查询当前租户审批工作区；必填 `scope=pending|history`，待审批视图排除已过期记录并明确本人申请不可自审，审批记录视图返回已批准、已驳回和已过期记录及完整决策审计信息 |
 | `POST` | `/protection-access-requests/{id}/decisions` | 另一名审批人员批准或驳回申请；批准期限不得超过用户申请期限和 30 天上限 |
 | `GET` | `/protection-exemptions` | 治理人员分页查询审批后形成的临时原值授权 |
 | `GET` | `/protection-exemptions/{id}` | 查询临时原值授权及不可变修订历史 |

@@ -593,6 +593,90 @@ jobs:
           gate: Common Engine Provider integration (openGauss 6.0.6 official media)
           status: ${{ job.status }}
 
+  common-oracle-decimal:
+    name: Common Decimal Provider integration (Oracle Free 23)
+    needs: selection
+    if: needs.selection.outputs.common == 'true' || needs.selection.outputs.transfer == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: common/go.mod
+          cache: false
+
+      - name: Run Common Oracle decimal gate
+        run: make test-common-oracle-decimal
+
+      - name: Summarize Common Oracle decimal gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Common Decimal Provider integration (Oracle Free 23)
+          status: ${{ job.status }}
+
+  common-doris-decimal:
+    name: Common Decimal Provider integration (Doris 2.1.0)
+    needs: selection
+    if: needs.selection.outputs.common == 'true' || needs.selection.outputs.transfer == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: common/go.mod
+          cache: false
+
+      - name: Run Common Doris decimal gate
+        run: make test-common-doris-decimal
+
+      - name: Summarize Common Doris decimal gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Common Decimal Provider integration (Doris 2.1.0)
+          status: ${{ job.status }}
+
+  common-clickhouse-decimal:
+    name: Common Decimal Provider integration (ClickHouse 25.12.1.649)
+    needs: selection
+    if: needs.selection.outputs.common == 'true' || needs.selection.outputs.transfer == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: common/go.mod
+          cache: false
+
+      - name: Run Common ClickHouse decimal gate
+        run: make test-common-clickhouse-decimal
+
+      - name: Summarize Common ClickHouse decimal gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Common Decimal Provider integration (ClickHouse 25.12.1.649)
+          status: ${{ job.status }}
+
   common-oceanbase:
     name: Common Engine Provider integration (OceanBase CE 4.4.2 LTS)
     needs: selection

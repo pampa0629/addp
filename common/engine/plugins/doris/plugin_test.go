@@ -2,6 +2,7 @@ package doris
 
 import (
 	"context"
+	"database/sql"
 	"reflect"
 	"strings"
 	"testing"
@@ -37,6 +38,10 @@ func TestDorisCapabilitiesDeclareTableWriteProviders(t *testing.T) {
 	}
 	if !caps.Storage.Store.Delete {
 		t.Fatalf("doris capabilities do not declare delete: %#v", caps.Storage.Store)
+	}
+	decimal := caps.Limits.TableWrite.Decimal
+	if !decimal.RequiresExplicitPrecisionScale || decimal.MaxPrecision == nil || *decimal.MaxPrecision != 38 || decimal.MaxScale == nil || *decimal.MaxScale != 38 {
+		t.Fatalf("Doris capabilities have unexpected decimal write limits: %#v", decimal)
 	}
 	if err := plugin.ValidatePluginCapabilities(&DorisPlugin{}); err != nil {
 		t.Fatalf("ValidatePluginCapabilities failed: %v", err)
@@ -111,7 +116,7 @@ func TestDorisSQLTypeForField(t *testing.T) {
 	}{
 		{name: "string", field: datatype.FieldInfo{Name: "name", Type: datatype.FieldTypeString}, want: "VARCHAR(65533)"},
 		{name: "bigint", field: datatype.FieldInfo{Name: "id", Type: datatype.FieldTypeBigInt}, want: "BIGINT"},
-		{name: "decimal", field: datatype.FieldInfo{Name: "amount", Type: datatype.FieldTypeDecimal}, want: "DECIMAL(38,10)"},
+		{name: "decimal", field: datatype.FieldInfo{Name: "amount", Type: datatype.FieldTypeDecimal, Precision: 18, Scale: 2}, want: "DECIMAL(18,2)"},
 		{name: "time fallback", field: datatype.FieldInfo{Name: "clock", Type: datatype.FieldTypeTime}, want: "STRING"},
 		{name: "json fallback", field: datatype.FieldInfo{Name: "payload", Type: datatype.FieldTypeJSON}, want: "STRING"},
 	}
@@ -134,6 +139,18 @@ func TestDorisWriteFieldsRejectsSpatial(t *testing.T) {
 	}
 }
 
+func TestDorisWriteFieldsRejectsInvalidDecimalDefinition(t *testing.T) {
+	for _, field := range []datatype.FieldInfo{
+		{Name: "amount", Type: datatype.FieldTypeDecimal},
+		{Name: "amount", Type: datatype.FieldTypeDecimal, Precision: 39, Scale: 2},
+		{Name: "amount", Type: datatype.FieldTypeDecimal, Precision: 18, Scale: 19},
+	} {
+		if _, err := dorisWriteFields([]datatype.FieldInfo{field}); err == nil {
+			t.Fatalf("dorisWriteFields(%#v) unexpectedly succeeded", field)
+		}
+	}
+}
+
 func TestDorisFieldsWithKeyFirst(t *testing.T) {
 	fields := []datatype.FieldInfo{
 		{Name: "name", Type: datatype.FieldTypeString},
@@ -151,7 +168,7 @@ func TestDorisSchemaEvolutionStatementsAddsMissingColumns(t *testing.T) {
 	statements, err := dorisSchemaEvolutionStatements("analytics", "events", []datatype.FieldInfo{
 		{Name: "id", Type: datatype.FieldTypeBigInt},
 		{Name: "name", Type: datatype.FieldTypeString, Nullable: true},
-		{Name: "amount", Type: datatype.FieldTypeDecimal, Nullable: true},
+		{Name: "amount", Type: datatype.FieldTypeDecimal, Precision: 20, Scale: 6, Nullable: true},
 	}, []dorisColumnInfo{
 		{Name: "id", DataType: "bigint", NativeType: "bigint"},
 	})
@@ -160,7 +177,7 @@ func TestDorisSchemaEvolutionStatementsAddsMissingColumns(t *testing.T) {
 	}
 	want := []string{
 		"ALTER TABLE `analytics`.`events` ADD COLUMN `name` VARCHAR(65533)",
-		"ALTER TABLE `analytics`.`events` ADD COLUMN `amount` DECIMAL(38,10)",
+		"ALTER TABLE `analytics`.`events` ADD COLUMN `amount` DECIMAL(20,6)",
 	}
 	if !reflect.DeepEqual(statements, want) {
 		t.Fatalf("statements = %#v, want %#v", statements, want)
@@ -175,6 +192,17 @@ func TestDorisSchemaEvolutionStatementsRejectsTypeConflict(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("dorisSchemaEvolutionStatements succeeded with conflicting type, want error")
+	}
+}
+
+func TestDorisSchemaEvolutionStatementsRejectsDecimalDefinitionConflict(t *testing.T) {
+	_, err := dorisSchemaEvolutionStatements("analytics", "target", []datatype.FieldInfo{
+		{Name: "amount", Type: datatype.FieldTypeDecimal, Precision: 18, Scale: 2},
+	}, []dorisColumnInfo{
+		{Name: "amount", DataType: "decimalv3", NativeType: "decimalv3(20,6)", NumericPrecision: sql.NullInt64{Int64: 20, Valid: true}, NumericScale: sql.NullInt64{Int64: 6, Valid: true}},
+	})
+	if err == nil {
+		t.Fatal("dorisSchemaEvolutionStatements accepted mismatched decimal precision/scale")
 	}
 }
 

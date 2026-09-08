@@ -49,4 +49,16 @@ describe('resource governance summary', () => {
       expect(explorer.openDataProtection).toBeTruthy()
     }
   })
+
+  it('uses Security effective request states and polls only live pending requests', () => {
+    expect(itemPanelSource).toContain("target.access_request?.state === 'pending'")
+    expect(itemPanelSource).toContain("target.access_request?.state === 'expired'")
+    expect(itemPanelSource).toContain("target.access_request?.state === 'rejected'")
+    expect(itemPanelSource).not.toContain('pending_request_id')
+    expect(itemPanelSource).toContain('if (pendingAccessCount.value > 0)')
+    for (const messages of [zhCnMessages, enMessages]) {
+      expect(messages.manager.explorer.plaintextAccess.expired).toBeTruthy()
+      expect(messages.manager.explorer.plaintextAccess.rejected).toBeTruthy()
+    }
+  })
 })

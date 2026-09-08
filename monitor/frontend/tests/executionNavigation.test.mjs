@@ -49,3 +49,36 @@ test('execution list and stable tabs delegate to Monitor module navigation', () 
   assert.match(alertSource, /watch\(\(\) => route\.query, restoreTabFromRoute\)/)
   assert.match(notificationSource, /watch\(\(\) => route\.query, restoreTabFromRoute\)/)
 })
+
+test('direct execution links reveal an explicit detail loading state without waiting for the list', () => {
+  const executionListSource = readFileSync(
+    new URL('../src/views/ExecutionList.vue', import.meta.url),
+    'utf8'
+  )
+
+  assert.match(executionListSource, /const detailLoading = ref\(false\)/)
+  assert.match(executionListSource, /v-if="detailLoading" class="detail-loading"/)
+  assert.match(executionListSource, /<StatusAnnouncer/)
+  assert.match(executionListSource, /detailDialogVisible\.value = true[\s\S]*?detailLoading\.value = true/)
+  assert.match(executionListSource, /Promise\.all\(\[taskProvidersPromise, executionsPromise, detailPromise\]\)/)
+})
+
+test('running list rows and the opened detail refresh independently', () => {
+  const executionListSource = readFileSync(
+    new URL('../src/views/ExecutionList.vue', import.meta.url),
+    'utf8'
+  )
+
+  assert.match(executionListSource, /const EXECUTION_LIST_REFRESH_INTERVAL_MS = 5000/)
+  assert.match(executionListSource, /const EXECUTION_DETAIL_REFRESH_INTERVAL_MS = 1000/)
+  assert.match(executionListSource, /const hasRunningListExecution = computed/)
+  assert.match(executionListSource, /const hasRunningOpenedExecution = computed/)
+  assert.match(executionListSource, /window\.setInterval\(refreshRunningExecutionList, EXECUTION_LIST_REFRESH_INTERVAL_MS\)/)
+  assert.match(executionListSource, /window\.setInterval\(refreshOpenedExecution, EXECUTION_DETAIL_REFRESH_INTERVAL_MS\)/)
+  assert.match(executionListSource, /executionListRefreshInFlight/)
+  assert.match(executionListSource, /executionDetailRefreshInFlight/)
+  assert.match(executionListSource, /openedExecutionID\.value !== executionID/)
+  assert.match(executionListSource, /watch\(hasRunningListExecution/)
+  assert.match(executionListSource, /watch\(hasRunningOpenedExecution/)
+  assert.doesNotMatch(executionListSource, /async function refreshRunningExecutions/)
+})

@@ -158,3 +158,87 @@ func TestIntegrationPostgresManagerUnifiedTaskDefinitionLifecycle(t *testing.T) 
 		t.Fatalf("cleanup residual task count = %d, binding count = %d", taskCount, bindingCount)
 	}
 }
+
+func TestIntegrationPostgresManagerPPTXUsesUnifiedTaskDefinition(t *testing.T) {
+	if os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {
+		t.Skip("set ADDP_POSTGRES_INTEGRATION=1 to run PostgreSQL integration test")
+	}
+	db, err := gorm.Open(postgres.Open(managerTileCacheRepositoryIntegrationDSN()), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open PostgreSQL: %v", err)
+	}
+	if err := db.Exec("CREATE SCHEMA IF NOT EXISTS manager").Error; err != nil {
+		t.Fatalf("create manager schema: %v", err)
+	}
+	if err := commonExecution.EnsureStore(db); err != nil {
+		t.Fatalf("ensure common execution store: %v", err)
+	}
+	if err := ensureTaskDefinitionSchema(db); err != nil {
+		t.Fatalf("ensure unified task definition schema: %v", err)
+	}
+	if err := db.AutoMigrate(&models.PPTXPDF{}); err != nil {
+		t.Fatalf("migrate PPTX result: %v", err)
+	}
+	if err := db.Exec(`DROP TABLE IF EXISTS manager.pptx_pdf_tasks CASCADE`).Error; err != nil {
+		t.Fatalf("drop stale legacy PPTX task table: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE manager.pptx_pdf_tasks (id BIGSERIAL PRIMARY KEY)`).Error; err != nil {
+		t.Fatalf("create legacy PPTX task table: %v", err)
+	}
+
+	tenantID := uint(time.Now().UnixNano()%100000000 + 970000000)
+	executionID := fmt.Sprintf("manager-legacy-pptx-%d", tenantID)
+	t.Cleanup(func() {
+		_ = db.Exec(`DROP TABLE IF EXISTS manager.pptx_pdf_tasks CASCADE`).Error
+		_ = db.Unscoped().Where("tenant_id = ?", tenantID).Delete(&models.PPTXPDF{}).Error
+		_ = db.Where("tenant_id = ?", tenantID).Delete(&models.TaskResourceBinding{}).Error
+		_ = db.Unscoped().Where("tenant_id = ?", tenantID).Delete(&models.TaskDefinition{}).Error
+		_ = db.Where("tenant_id = ?", int(tenantID)).Delete(&commonExecution.TaskExecution{}).Error
+	})
+	if err := db.Create(&commonExecution.TaskExecution{
+		TenantID: int(tenantID), ExecutionID: executionID, Module: commonExecution.ModuleManager,
+		TaskType: commonExecution.TaskTypePPTXPDFGeneration, Source: commonExecution.ModuleManager,
+		Status: commonExecution.ExecutionStatusSuccess, ExecutionBoundary: commonExecution.ExecutionBoundaryBounded,
+		TriggerType: commonExecution.TriggerTypeManual, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+	}).Error; err != nil {
+		t.Fatalf("create legacy PPTX execution: %v", err)
+	}
+	if err := ensurePPTXPDFSchema(db); err != nil {
+		t.Fatalf("ensure unified PPTX schema: %v", err)
+	}
+	var legacyTableExists bool
+	if err := db.Raw(`SELECT to_regclass('manager.pptx_pdf_tasks') IS NOT NULL`).Scan(&legacyTableExists).Error; err != nil {
+		t.Fatalf("check legacy PPTX task table: %v", err)
+	}
+	if legacyTableExists {
+		t.Fatal("legacy pptx_pdf_tasks table still exists")
+	}
+	var executionCount int64
+	if err := db.Model(&commonExecution.TaskExecution{}).Where("execution_id = ?", executionID).Count(&executionCount).Error; err != nil {
+		t.Fatalf("count legacy PPTX execution: %v", err)
+	}
+	if executionCount != 0 {
+		t.Fatalf("legacy PPTX execution count = %d, want 0", executionCount)
+	}
+
+	task := &models.PPTXPDFTask{
+		TenantID: tenantID, Name: "slides.pptx", Enabled: true,
+		Config: commonModels.JSONMap{"source": commonModels.JSONMap{
+			"source_engine_id": uint(12), "item_id": uint(77), "item_fingerprint": fmt.Sprintf("pptx-%d", tenantID),
+			"item_locator": "addp://engine/12/path/docs/slides.pptx?type=file&item_id=77", "format": "pptx",
+		}},
+	}
+	if err := NewPPTXPDFRepository(db).CreateTask(context.Background(), task); err != nil {
+		t.Fatalf("create unified PPTX task: %v", err)
+	}
+	if task.TaskType != commonExecution.TaskTypePPTXPDFGeneration || task.SemanticKey == "" {
+		t.Fatalf("unified PPTX task identity = type %q semantic %q", task.TaskType, task.SemanticKey)
+	}
+	var bindingCount int64
+	if err := db.Model(&models.TaskResourceBinding{}).Where("tenant_id = ? AND task_definition_id = ?", tenantID, task.ID).Count(&bindingCount).Error; err != nil {
+		t.Fatalf("count PPTX source binding: %v", err)
+	}
+	if bindingCount != 1 {
+		t.Fatalf("PPTX source binding count = %d, want 1", bindingCount)
+	}
+}

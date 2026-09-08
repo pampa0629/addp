@@ -1,24 +1,24 @@
 import { describe, expect, it } from 'vitest'
 import {
   resolveEngineDetailRouteState,
-  resolveIAMRouteState
+  resolveIAMCategoryRouteState
 } from '../src/utils/routeState'
 
 describe('System recoverable route state', () => {
   it('falls back to the first permitted IAM tab and removes unrelated query state', () => {
-    expect(resolveIAMRouteState(['security', 'tenant-audit'], {
+    expect(resolveIAMCategoryRouteState(['memberships', 'invitations'], {
       tab: 'users',
       module_name: 'system'
     })).toEqual({
-      activeTab: 'security',
+      activeTab: 'memberships',
       query: {},
       changed: true
     })
   })
 
   it('keeps only canonical audit filters and omits page one', () => {
-    expect(resolveIAMRouteState(['security', 'tenant-audit'], {
-      tab: 'tenant-audit',
+    expect(resolveIAMCategoryRouteState(['account-security', 'audit'], {
+      tab: 'audit',
       event_name: ' login ',
       result: 'succeeded',
       risk_level: 'invalid',
@@ -30,9 +30,9 @@ describe('System recoverable route state', () => {
       page: '1',
       legacy: 'value'
     })).toEqual({
-      activeTab: 'tenant-audit',
+      activeTab: 'audit',
       query: {
-        tab: 'tenant-audit',
+        tab: 'audit',
         event_name: 'login',
         result: 'succeeded',
         module_name: 'system',
@@ -46,17 +46,17 @@ describe('System recoverable route state', () => {
   })
 
   it('drops unsupported audit principal types', () => {
-    expect(resolveIAMRouteState(['tenant-audit'], { principal_type: 'application' })).toEqual({
-      activeTab: 'tenant-audit',
+    expect(resolveIAMCategoryRouteState(['audit'], { principal_type: 'application' })).toEqual({
+      activeTab: 'audit',
       query: {},
       changed: true
     })
   })
 
   it('preserves a valid audit page and reports an already canonical route', () => {
-    const query = { tab: 'platform-audit', risk_level: 'high', page: '3' }
-    expect(resolveIAMRouteState(['security', 'platform-audit'], query)).toEqual({
-      activeTab: 'platform-audit',
+    const query = { tab: 'audit', risk_level: 'high', page: '3' }
+    expect(resolveIAMCategoryRouteState(['account-security', 'audit'], query)).toEqual({
+      activeTab: 'audit',
       query,
       changed: false
     })
