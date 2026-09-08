@@ -45,6 +45,38 @@
           </div>
         </div>
       </template>
+      <div class="access-review-filters">
+        <el-input
+          v-model.trim="accessRequestFilters.resourceSearch"
+          clearable
+          :placeholder="t('security.accessRequest.filters.resourcePlaceholder')"
+          @keyup.enter="applyAccessRequestFilters"
+        />
+        <el-input
+          v-model.trim="accessRequestFilters.requesterSearch"
+          clearable
+          :placeholder="t('security.accessRequest.filters.requesterPlaceholder')"
+          @keyup.enter="applyAccessRequestFilters"
+        />
+        <el-select
+          v-if="accessRequestScope === 'history'"
+          v-model="accessRequestFilters.state"
+          clearable
+          :placeholder="t('security.accessRequest.filters.allStates')"
+        >
+          <el-option v-for="state in ['approved', 'rejected', 'expired']" :key="state" :label="t(`security.accessRequest.states.${state}`)" :value="state" />
+        </el-select>
+        <el-date-picker
+          v-model="accessRequestCreatedRange"
+          type="datetimerange"
+          unlink-panels
+          :range-separator="t('security.accessRequest.filters.to')"
+          :start-placeholder="t('security.accessRequest.filters.createdFrom')"
+          :end-placeholder="t('security.accessRequest.filters.createdTo')"
+        />
+        <el-button type="primary" @click="applyAccessRequestFilters">{{ t('security.accessRequest.filters.search') }}</el-button>
+        <el-button v-if="hasAccessRequestFilters" @click="resetAccessRequestFilters">{{ t('security.accessRequest.filters.reset') }}</el-button>
+      </div>
       <el-table v-loading="accessRequestLoading" :data="accessRequestRows" size="small">
         <el-table-column :label="t('security.accessRequest.resourceField')" min-width="260">
           <template #default="{ row }"><strong>{{ row.target_full_name }}</strong><br><span>{{ row.component?.key }}</span></template>
@@ -59,6 +91,9 @@
         </el-table-column>
         <el-table-column :label="t('security.accessRequest.requestedUntil')" width="190">
           <template #default="{ row }">{{ formatDateTime(row.requested_expires_at) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('security.accessRequest.createdAt')" width="190">
+          <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
         </el-table-column>
         <el-table-column prop="rationale" :label="t('security.accessRequest.rationale')" min-width="240" show-overflow-tooltip />
         <el-table-column v-if="accessRequestScope === 'history'" :label="t('security.accessRequest.state')" width="110">
@@ -93,6 +128,17 @@
         </el-table-column>
       </el-table>
       <el-empty v-if="!accessRequestLoading && accessRequestRows.length === 0" :description="t(`security.accessRequest.emptyStates.${accessRequestScope}`)" :image-size="48" />
+      <div v-if="accessRequestTotal > accessRequestPageSize" class="pagination">
+        <el-pagination
+          v-model:current-page="accessRequestPage"
+          v-model:page-size="accessRequestPageSize"
+          background
+          layout="total, sizes, prev, pager, next"
+          :page-sizes="[10, 20, 50, 100]"
+          :total="accessRequestTotal"
+          @change="handleAccessRequestPageChange"
+        />
+      </div>
     </el-card>
     <div class="list-scope-bar">
       <el-radio-group v-model="listScope" size="small" @change="handleScopeChange">
@@ -951,8 +997,12 @@ const reviewQueueDetectorVersion = ref(initialWorkspaceRoute.reviewQueue.detecto
 const reviewQueueLoading = ref(false)
 const accessRequestRows = ref([])
 const accessRequestTotal = ref(0)
+const accessRequestPage = ref(1)
+const accessRequestPageSize = ref(10)
 const accessRequestLoading = ref(false)
 const accessRequestScope = ref('pending')
+const accessRequestFilters = reactive({ resourceSearch: '', requesterSearch: '', state: '' })
+const accessRequestCreatedRange = ref([])
 const reviewingFinding = ref(null)
 const reviewSaving = ref(false)
 const reviewBasisExpanded = ref([])
@@ -980,6 +1030,12 @@ const canUpdateAssessments = computed(() => auth.hasPermission('security.assessm
 const canReadExemptions = computed(() => auth.hasPermission('security.protection_exemption.read'))
 const canRevokeExemptions = computed(() => auth.hasPermission('security.protection_exemption.delete'))
 const canReviewAccessRequests = computed(() => auth.hasPermission('security.protection_access_request.update'))
+const hasAccessRequestFilters = computed(() => Boolean(
+  accessRequestFilters.resourceSearch ||
+  accessRequestFilters.requesterSearch ||
+  accessRequestFilters.state ||
+  accessRequestCreatedRange.value?.length
+))
 const governanceLoading = computed(() => findingsLoading.value || assessmentsLoading.value)
 const manualAssessments = computed(() => assessments.value.filter(item => item.current?.source_kind === 'manual'))
 const reviewQueueCapabilities = computed(() => {
@@ -1359,15 +1415,35 @@ async function loadReviewQueue(page = reviewQueuePage.value) {
   }
 }
 
-async function loadAccessRequestQueue() {
+function accessRequestQueueParams(page) {
+  const range = Array.isArray(accessRequestCreatedRange.value) ? accessRequestCreatedRange.value : []
+  return {
+    scope: accessRequestScope.value,
+    state: accessRequestScope.value === 'history' ? accessRequestFilters.state || undefined : undefined,
+    requester_search: accessRequestFilters.requesterSearch || undefined,
+    resource_search: accessRequestFilters.resourceSearch || undefined,
+    created_from: range[0] instanceof Date ? range[0].toISOString() : undefined,
+    created_to: range[1] instanceof Date ? range[1].toISOString() : undefined,
+    page,
+    page_size: accessRequestPageSize.value
+  }
+}
+
+async function loadAccessRequestQueue(page = accessRequestPage.value) {
   if (!canReviewAccessRequests.value) {
     accessRequestRows.value = []
     accessRequestTotal.value = 0
     return
   }
+  accessRequestPage.value = Number(page) || 1
   accessRequestLoading.value = true
   try {
-    const response = await protectionAccessRequestAPI.reviewQueue({ scope: accessRequestScope.value, page: 1, page_size: 100 })
+    let response = await protectionAccessRequestAPI.reviewQueue(accessRequestQueueParams(accessRequestPage.value))
+    const totalPages = Number(response?.total_pages || 0)
+    if (totalPages > 0 && accessRequestPage.value > totalPages) {
+      accessRequestPage.value = totalPages
+      response = await protectionAccessRequestAPI.reviewQueue(accessRequestQueueParams(accessRequestPage.value))
+    }
     accessRequestRows.value = Array.isArray(response?.data) ? response.data : []
     accessRequestTotal.value = Number(response?.total || 0)
   } catch (error) {
@@ -1378,7 +1454,27 @@ async function loadAccessRequestQueue() {
 }
 
 async function handleAccessRequestScopeChange() {
-  await loadAccessRequestQueue()
+  accessRequestPage.value = 1
+  accessRequestFilters.state = ''
+  await loadAccessRequestQueue(1)
+}
+
+async function applyAccessRequestFilters() {
+  accessRequestPage.value = 1
+  await loadAccessRequestQueue(1)
+}
+
+async function resetAccessRequestFilters() {
+  accessRequestFilters.resourceSearch = ''
+  accessRequestFilters.requesterSearch = ''
+  accessRequestFilters.state = ''
+  accessRequestCreatedRange.value = []
+  accessRequestPage.value = 1
+  await loadAccessRequestQueue(1)
+}
+
+async function handleAccessRequestPageChange() {
+  await loadAccessRequestQueue(accessRequestPage.value)
 }
 
 function accessRequestStateType(state) {
@@ -1401,6 +1497,7 @@ async function decideAccessRequest(row, decision) {
       rationale: String(result.value).trim()
     })
     ElMessage.success(t(`security.accessRequest.${decision}d`))
+    accessRequestPage.value = 1
     await Promise.all([loadAccessRequestQueue(), load({ background: true })])
   } catch (error) {
     if (error === 'cancel' || error === 'close') return
@@ -2097,6 +2194,10 @@ onBeforeUnmount(() => {
 .access-review-card__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .access-review-card__header p { margin: 5px 0 0; color: var(--addp-text-secondary); font-size: 13px; }
 .access-review-card__scope { display: flex; align-items: center; gap: 10px; }
+.access-review-filters { display: flex; flex-wrap: wrap; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--addp-border-color); }
+.access-review-filters > .el-input { width: min(240px, 100%); }
+.access-review-filters > .el-select { width: min(180px, 100%); }
+.access-review-filters > :deep(.el-date-editor) { width: min(360px, 100%); }
 .access-actor { display: flex; flex-direction: column; gap: 2px; }
 .access-actor span { color: var(--addp-text-secondary); font-size: 12px; }
 .list-scope-bar { display: flex; align-items: center; margin-bottom: 12px; }
@@ -2255,6 +2356,8 @@ h4 { margin: 24px 0 12px; }
   .owner-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 720px) {
+  .access-review-card__header { flex-direction: column; }
+  .access-review-filters > .el-input, .access-review-filters > .el-select, .access-review-filters > :deep(.el-date-editor) { width: 100%; }
   .review-queue-intro { align-items: flex-start; flex-direction: column; }
   .review-queue-filters .el-select { width: 100%; }
   .finding-section__header, .manual-assessment-card, .exemption-section__header, .exemption-card { flex-direction: column; }

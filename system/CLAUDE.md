@@ -60,6 +60,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ./scripts/dev/restart.sh -all
 
 # 前端仅修改时无需重启后端，热更新自动生效
+
+# System 前端单元测试、浏览器 E2E 与生产构建
+make test-system-frontend
 ```
 
 ## 项目结构

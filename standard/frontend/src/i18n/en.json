@@ -455,6 +455,7 @@
       "extractionSuccess": "Standard candidates extracted",
       "noCandidateGroups": "No candidate groups match the current filters",
       "pendingCandidates": "candidate groups pending",
+      "candidateSearchPlaceholder": "Search candidate code or name",
       "allCandidateStates": "All Candidate States",
       "allCandidateTypes": "All Candidate Types",
       "allComparisonResults": "All Comparison Results",

@@ -350,7 +350,7 @@ type EncodedRecordBatchData struct {
 - `BoundedWatermarkReadOptions` 必须包含一个 watermark field、可为空的 tie breaker 列表和可选 committed start cursor。`tie_breaker=[]` 表示仅同步新增，watermark field 必须自身精确匹配非空 primary key 或 unique constraint；非空 `tie_breaker` 表示同步新增和更新，完整位置为 `(watermark, tie_breaker...)`，tie breaker 必须精确匹配非空 primary key 或非 partial unique constraint。两种模式都不得用可空、非唯一或不稳定字段构造游标。
 - 当前 source Provider 由 PostgreSQL、MySQL、MySQL 模式 OceanBase 与 openGauss 实现：PostgreSQL/openGauss 在 repeatable-read 只读事务中冻结上界，MySQL-compatible 引擎在 InnoDB repeatable-read 事务中冻结上界；所有游标字段不得为 NULL，OceanBase 与 openGauss 当前只开放非空间表。
 - `WatermarkCursor.Values` 使用 canonical string 保存，具体列类型转换由 source Provider 解释。
-- `TableUpsertProvider` 使用稳定 keys 和单批事务提交；重复应用同一批必须得到相同目标状态。PostgreSQL/openGauss 使用显式 `ON CONFLICT(keys)`；MySQL-compatible 目标使用 InnoDB 和 `ON DUPLICATE KEY UPDATE`，并必须拒绝会绕过配置 keys 的其他唯一约束。
+- `TableUpsertProvider` 使用稳定 keys 和单批事务提交；重复应用同一批必须得到相同目标状态。PostgreSQL 使用显式 `ON CONFLICT(keys)`；openGauss 使用原生 `MERGE INTO`，配置 keys 只用于 `ON` 匹配且不得在 matched 分支中更新；MySQL-compatible 目标使用 InnoDB 和 `ON DUPLICATE KEY UPDATE`，并必须拒绝会绕过配置 keys 的其他唯一约束。
 - Transfer 只在目标批次提交成功后推进 `transfer.sync_states`，Provider 不直接维护任务状态。
 
 ### ChangeStreamReaderProvider

@@ -55,4 +55,12 @@ describe('document candidate contract', () => {
     expect(zhCn.standard.document.comparisonFacetLabel).toBe('比对结果')
     expect(en.standard.document.comparisonFacetLabel).toBe('Comparison Result')
   })
+
+  it('searches candidate groups by representative code or name', () => {
+    expect(documentDetailSource).toContain('candidateQuery.keyword')
+    expect(documentDetailSource).toContain('standard.document.candidateSearchPlaceholder')
+    expect(documentDetailSource).toContain('@change="applyCandidateFilters"')
+    expect(zhCn.standard.document.candidateSearchPlaceholder).toBe('搜索候选编码或名称')
+    expect(en.standard.document.candidateSearchPlaceholder).toBe('Search candidate code or name')
+  })
 })

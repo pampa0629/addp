@@ -105,7 +105,7 @@
         "accounts": "账号管理",
         "roles": "角色管理",
         "applicationAccess": "应用接入",
-        "security": "安全与审计"
+        "security": "审计管理"
       },
       "tabs": {
         "accountSecurity": "账号安全",

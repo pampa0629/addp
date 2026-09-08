@@ -105,7 +105,7 @@
         "accounts": "Accounts",
         "roles": "Roles",
         "applicationAccess": "Application Access",
-        "security": "Security & Audit"
+        "security": "Audit Management"
       },
       "tabs": {
         "accountSecurity": "Account Security",

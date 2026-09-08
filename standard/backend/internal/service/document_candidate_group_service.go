@@ -22,6 +22,7 @@ var ErrDocumentCandidateGroupQueryInvalid = errors.New("document candidate group
 type DocumentCandidateGroupListOptions struct {
 	State            string
 	CandidateType    string
+	Keyword          string
 	ComparisonResult string
 	Page             int
 	PageSize         int
@@ -86,6 +87,9 @@ func (s *DocumentService) ListCandidateGroups(documentID, tenantID int64, opts D
 		if opts.CandidateType != "" && group.Candidate.CandidateType != opts.CandidateType {
 			continue
 		}
+		if opts.Keyword != "" && !documentCandidateMatchesKeyword(group.Candidate, opts.Keyword) {
+			continue
+		}
 		filtered = append(filtered, group)
 	}
 	if err := attachCandidateGroupComparisons(s, document, filtered); err != nil {
@@ -132,6 +136,7 @@ func attachCandidateGroupComparisons(s *DocumentService, document *models.Docume
 }
 
 func normalizeDocumentCandidateGroupOptions(opts *DocumentCandidateGroupListOptions) (int, int, error) {
+	opts.Keyword = strings.ToLower(normalizeCandidateSemanticText(opts.Keyword))
 	validState := opts.State == "" || opts.State == models.CandidateGroupStatePending || opts.State == models.CandidateGroupStateRetained || opts.State == models.CandidateGroupStateRejected || opts.State == models.CandidateGroupStateFormalized
 	validType := opts.CandidateType == "" || opts.CandidateType == "glossary" || opts.CandidateType == "element" || opts.CandidateType == "code_set" || opts.CandidateType == "metric"
 	validComparison := opts.ComparisonResult == "" || opts.ComparisonResult == models.CandidateComparisonNew || opts.ComparisonResult == models.CandidateComparisonExact || opts.ComparisonResult == models.CandidateComparisonContentConflict || opts.ComparisonResult == models.CandidateComparisonScopeConflict
@@ -147,6 +152,12 @@ func normalizeDocumentCandidateGroupOptions(opts *DocumentCandidateGroupListOpti
 		pageSize = defaultDocumentCandidateGroupPageSize
 	}
 	return page, pageSize, nil
+}
+
+func documentCandidateMatchesKeyword(candidate models.DocumentExtractionCandidate, keyword string) bool {
+	code := strings.ToLower(normalizeCandidateSemanticText(candidate.Code))
+	name := strings.ToLower(normalizeCandidateSemanticText(candidate.Name))
+	return strings.Contains(code, keyword) || strings.Contains(name, keyword)
 }
 
 func buildDocumentCandidateGroups(extractions []models.DocumentExtraction) []models.DocumentExtractionCandidateGroup {

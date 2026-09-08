@@ -237,7 +237,7 @@ func postgresSQLTypeForField(field datatype.FieldInfo, spatialInfo *datatype.Spa
 	if sqlType := postgresSpatialTypeForField(field, spatialInfo); sqlType != "" {
 		return sqlType
 	}
-	if sqlType, ok := postgresSQLTypeForCommonType(field.Type); ok {
+	if sqlType, ok := ProtocolSQLTypeForCommonFieldType(field.Type); ok {
 		return sqlType
 	}
 	return "TEXT"
@@ -300,7 +300,10 @@ func postgresGeometryTypeWithDimension(geometryType string, dimension int64) str
 	return normalized + "Z"
 }
 
-func postgresSQLTypeForCommonType(fieldType datatype.FieldType) (string, bool) {
+// ProtocolSQLTypeForCommonFieldType maps an ADDP field type to the common SQL
+// type used by the certified PostgreSQL wire-protocol writers. Compatible
+// engines can reuse this mapping without duplicating datatype switches.
+func ProtocolSQLTypeForCommonFieldType(fieldType datatype.FieldType) (string, bool) {
 	switch datatype.ParseFieldType(string(fieldType)) {
 	case datatype.FieldTypeString, datatype.FieldTypeMixed, datatype.FieldTypeUnknown:
 		return "TEXT", true

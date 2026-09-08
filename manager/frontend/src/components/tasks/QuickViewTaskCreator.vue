@@ -38,7 +38,7 @@
           type="warning"
           :closable="false"
           show-icon
-          :title="capabilityError || t('manager.quickViewCreator.unsupported')"
+          :title="capabilityError || t(`manager.quickViewCreator.${emptyReason}`)"
         />
       </el-form-item>
     </el-form>
@@ -65,6 +65,7 @@ import {
   isPPTXGenerationSource,
   PPTX_PDF_GENERATION_ACTION,
   pptxGenerationOptions,
+  quickViewCreationEmptyReason,
   quickViewTaskTypeForAction
 } from '@/utils/quickViewTaskCreation'
 
@@ -82,6 +83,7 @@ const selectedAction = ref('')
 const detecting = ref(false)
 const submitting = ref(false)
 const capabilityError = ref('')
+const emptyReason = ref('unsupported')
 let detectionSequence = 0
 
 const sourceLocator = computed(() => String(sourceSelection.value?.identity?.locator || '').trim())
@@ -95,6 +97,7 @@ function reset() {
   detecting.value = false
   submitting.value = false
   capabilityError.value = ''
+  emptyReason.value = 'unsupported'
 }
 
 function applyOptions(nextOptions) {
@@ -108,6 +111,7 @@ watch(sourceSelection, async selection => {
   const sequence = ++detectionSequence
   applyOptions([])
   capabilityError.value = ''
+  emptyReason.value = 'unsupported'
   if (!selection) return
 
   if (isPPTXGenerationSource(selection)) {
@@ -121,6 +125,7 @@ watch(sourceSelection, async selection => {
     const capability = await quickViewAPI.getQuickViewCapabilityByLocator(sourceLocator.value)
     if (sequence !== detectionSequence) return
     applyOptions(generationOptionsForCapability(capability, props.taskType))
+    emptyReason.value = quickViewCreationEmptyReason(capability, props.taskType)
   } catch (error) {
     if (sequence !== detectionSequence) return
     capabilityError.value = error?.response?.data?.error || t('manager.quickViewCreator.detectFailed')

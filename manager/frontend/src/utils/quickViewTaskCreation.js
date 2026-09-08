@@ -23,6 +23,31 @@ export function generationOptionsForCapability(capability = {}, taskType = '') {
   ))
 }
 
+function hasResultID(value) {
+  return Number(value) > 0
+}
+
+const CURRENT_RESULT_CHECKS = {
+  vector_materialized_view_generation: capability => (
+    capability?.optimization?.available === true && hasResultID(capability?.optimization?.result_id)
+  ),
+  vector_tile_cache_generation: capability => hasResultID(capability?.default_vector_tile_cache_id),
+  raster_cog_generation: capability => capability?.render_source === 'client_cog_render',
+  model_3d_glb_generation: capability => hasResultID(capability?.model_3d?.result_id),
+  model3d_tiles_generation: capability => (
+    Array.isArray(capability?.model3d_tiles?.formats)
+    && capability.model3d_tiles.formats.some(format => (
+      format?.status === 'ready' && hasResultID(format?.result_id)
+    ))
+  ),
+  gaussian_splat_ksplat_generation: capability => hasResultID(capability?.gaussian_splat?.result_id),
+  point_cloud_copc_generation: capability => hasResultID(capability?.point_cloud?.result_id)
+}
+
+export function quickViewCreationEmptyReason(capability = {}, taskType = '') {
+  return CURRENT_RESULT_CHECKS[taskType]?.(capability) ? 'currentResult' : 'unsupported'
+}
+
 export function pptxGenerationOptions(taskType = '') {
   if (taskType && taskType !== 'pptx_pdf_generation') return []
   return [{

@@ -178,25 +178,6 @@ func (s *tableWriteSession) CommitMarker() *resume.Marker {
 	return marker
 }
 
-func (p *Plugin) PrepareTableUpsert(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableUpsertOptions) error {
-	if err := validateNonSpatialWrite(opts.Fields, opts.SpatialInfo); err != nil {
-		return err
-	}
-	return p.protocol().PrepareTableUpsert(ctx, connInfo, path, opts)
-}
-
-func (p *Plugin) UpsertBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, batch *plugin.BatchData, opts plugin.TableUpsertOptions) error {
-	if err := validateNonSpatialWrite(opts.Fields, opts.SpatialInfo); err != nil {
-		return err
-	}
-	if batch != nil {
-		if err := validateNonSpatialWrite(batch.Fields, batch.Spatial); err != nil {
-			return err
-		}
-	}
-	return p.protocol().UpsertBatch(ctx, connInfo, path, batch, opts)
-}
-
 func validateNonSpatialWrite(fields []datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) error {
 	if spatialInfo != nil && spatialInfo.IsSpatial() {
 		return fmt.Errorf("openGauss provider does not support spatial fields")

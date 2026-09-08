@@ -87,9 +87,13 @@ func TestDocumentCandidateSemanticFingerprintNormalizesItemAndDimensionOrder(t *
 }
 
 func TestNormalizeDocumentCandidateGroupOptions(t *testing.T) {
-	page, pageSize, err := normalizeDocumentCandidateGroupOptions(&DocumentCandidateGroupListOptions{})
+	opts := DocumentCandidateGroupListOptions{Keyword: "  OUTDOOR   Person  "}
+	page, pageSize, err := normalizeDocumentCandidateGroupOptions(&opts)
 	if err != nil || page != 1 || pageSize != 20 {
 		t.Fatalf("page=%d pageSize=%d err=%v", page, pageSize, err)
+	}
+	if opts.Keyword != "outdoor person" {
+		t.Fatalf("keyword=%q", opts.Keyword)
 	}
 	for _, opts := range []DocumentCandidateGroupListOptions{
 		{State: "unknown"}, {CandidateType: "unknown"}, {ComparisonResult: "unknown"}, {Page: -1}, {PageSize: 101},
@@ -97,6 +101,18 @@ func TestNormalizeDocumentCandidateGroupOptions(t *testing.T) {
 		if _, _, err := normalizeDocumentCandidateGroupOptions(&opts); !errors.Is(err, ErrDocumentCandidateGroupQueryInvalid) {
 			t.Fatalf("opts=%+v err=%v", opts, err)
 		}
+	}
+}
+
+func TestDocumentCandidateMatchesKeywordUsesNormalizedCodeOrName(t *testing.T) {
+	candidate := models.DocumentExtractionCandidate{Code: "Outdoor_Person_ID", Name: "户外  人员标识"}
+	for _, keyword := range []string{"outdoor_person", "人员标识", "户外 人员"} {
+		if !documentCandidateMatchesKeyword(candidate, keyword) {
+			t.Fatalf("keyword %q should match", keyword)
+		}
+	}
+	if documentCandidateMatchesKeyword(candidate, "活动日期") {
+		t.Fatal("unrelated keyword should not match")
 	}
 }
 

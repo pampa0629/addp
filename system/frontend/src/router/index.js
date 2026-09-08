@@ -50,7 +50,7 @@ const routes = [
         path: 'iam/security',
         name: 'IAMSecurity',
         component: iamCategoryPage,
-        meta: { requiresAuth: true, iamPage: 'security', title: '安全与审计-addp' }
+        meta: { requiresAuth: true, iamPage: 'security', title: '审计管理-addp' }
       },
       {
         path: 'modules',

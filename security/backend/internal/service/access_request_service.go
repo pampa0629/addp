@@ -234,26 +234,64 @@ func (s *AccessRequestService) ListMine(ctx context.Context, tenantID, userID, p
 	return s.list(ctx, tenantID, page, pageSize, s.now().UTC(), "subject_type = ? AND subject_id = ?", "user", userIDString(userID))
 }
 
-func (s *AccessRequestService) ListReviewQueue(ctx context.Context, tenantID, reviewerID int64, scope string, page, pageSize int64) (*models.ProtectionAccessRequestListResponse, error) {
-	scope = strings.TrimSpace(scope)
-	if reviewerID <= 0 || (scope != models.ProtectionAccessRequestReviewScopePending && scope != models.ProtectionAccessRequestReviewScopeHistory) {
+func (s *AccessRequestService) ListReviewQueue(ctx context.Context, tenantID, reviewerID int64, filter models.ProtectionAccessRequestReviewFilter, page, pageSize int64) (*models.ProtectionAccessRequestListResponse, error) {
+	filter.Scope = strings.TrimSpace(filter.Scope)
+	filter.State = strings.TrimSpace(filter.State)
+	filter.RequesterSearch = strings.TrimSpace(filter.RequesterSearch)
+	filter.ResourceSearch = strings.TrimSpace(filter.ResourceSearch)
+	if reviewerID <= 0 || (filter.Scope != models.ProtectionAccessRequestReviewScopePending && filter.Scope != models.ProtectionAccessRequestReviewScopeHistory) ||
+		len(filter.RequesterSearch) > 255 || len(filter.ResourceSearch) > 255 ||
+		(filter.CreatedFrom != nil && filter.CreatedTo != nil && filter.CreatedFrom.After(*filter.CreatedTo)) {
+		return nil, commonapi.ErrBadRequest
+	}
+	if filter.State != "" && (filter.Scope != models.ProtectionAccessRequestReviewScopeHistory ||
+		(filter.State != models.ProtectionAccessRequestStateApproved && filter.State != models.ProtectionAccessRequestStateRejected && filter.State != models.ProtectionAccessRequestStateExpired)) {
 		return nil, commonapi.ErrBadRequest
 	}
 	now := s.now().UTC()
-	condition, values := "state = ? AND requested_expires_at > ?", []any{models.ProtectionAccessRequestStatePending, now}
-	if scope == models.ProtectionAccessRequestReviewScopeHistory {
-		condition, values = "(state <> ? OR requested_expires_at <= ?)", []any{models.ProtectionAccessRequestStatePending, now}
+	base := s.db.WithContext(ctx).Model(&models.ProtectionAccessRequest{}).Where("tenant_id = ?", tenantID)
+	if filter.Scope == models.ProtectionAccessRequestReviewScopePending {
+		base = base.Where("state = ? AND requested_expires_at > ?", models.ProtectionAccessRequestStatePending, now)
+	} else {
+		switch filter.State {
+		case models.ProtectionAccessRequestStateApproved, models.ProtectionAccessRequestStateRejected:
+			base = base.Where("state = ?", filter.State)
+		case models.ProtectionAccessRequestStateExpired:
+			base = base.Where("(state = ? OR (state = ? AND requested_expires_at <= ?))", models.ProtectionAccessRequestStateExpired, models.ProtectionAccessRequestStatePending, now)
+		default:
+			base = base.Where("(state <> ? OR requested_expires_at <= ?)", models.ProtectionAccessRequestStatePending, now)
+		}
 	}
-	result, err := s.list(ctx, tenantID, page, pageSize, now, condition, values...)
+	if filter.RequesterSearch != "" {
+		pattern := accessRequestContainsPattern(filter.RequesterSearch)
+		base = base.Where("(LOWER(subject_display_name) LIKE ? ESCAPE '!' OR subject_id LIKE ? ESCAPE '!')", pattern, pattern)
+	}
+	if filter.ResourceSearch != "" {
+		pattern := accessRequestContainsPattern(filter.ResourceSearch)
+		assessmentIDs := s.db.WithContext(ctx).
+			Table("security.resource_security_assessments AS assessment").
+			Select("assessment.id").
+			Joins("JOIN security.protection_enrollments AS enrollment ON enrollment.id = assessment.enrollment_id AND enrollment.tenant_id = assessment.tenant_id").
+			Where("assessment.tenant_id = ?", tenantID).
+			Where("(LOWER(enrollment.target_full_name) LIKE ? ESCAPE '!' OR LOWER(assessment.component_key) LIKE ? ESCAPE '!')", pattern, pattern)
+		base = base.Where("assessment_id IN (?)", assessmentIDs)
+	}
+	if filter.CreatedFrom != nil {
+		base = base.Where("created_at >= ?", filter.CreatedFrom.UTC())
+	}
+	if filter.CreatedTo != nil {
+		base = base.Where("created_at <= ?", filter.CreatedTo.UTC())
+	}
+	result, err := s.listQuery(ctx, tenantID, page, pageSize, now, base)
 	if err != nil {
 		return nil, err
 	}
 	for index := range result.Data {
 		row := &result.Data[index]
-		if scope == models.ProtectionAccessRequestReviewScopePending && row.SubjectType == "user" && row.SubjectID == userIDString(reviewerID) {
+		if filter.Scope == models.ProtectionAccessRequestReviewScopePending && row.SubjectType == "user" && row.SubjectID == userIDString(reviewerID) {
 			row.CanDecide = false
 			row.DecisionUnavailableReason = models.ProtectionAccessRequestDecisionUnavailableSelfApproval
-		} else if scope == models.ProtectionAccessRequestReviewScopePending {
+		} else if filter.Scope == models.ProtectionAccessRequestReviewScopePending {
 			row.CanDecide = true
 		}
 	}
@@ -261,10 +299,14 @@ func (s *AccessRequestService) ListReviewQueue(ctx context.Context, tenantID, re
 }
 
 func (s *AccessRequestService) list(ctx context.Context, tenantID, page, pageSize int64, now time.Time, condition string, values ...any) (*models.ProtectionAccessRequestListResponse, error) {
+	base := s.db.WithContext(ctx).Model(&models.ProtectionAccessRequest{}).Where("tenant_id = ?", tenantID).Where(condition, values...)
+	return s.listQuery(ctx, tenantID, page, pageSize, now, base)
+}
+
+func (s *AccessRequestService) listQuery(ctx context.Context, tenantID, page, pageSize int64, now time.Time, base *gorm.DB) (*models.ProtectionAccessRequestListResponse, error) {
 	if tenantID <= 0 || page <= 0 || pageSize <= 0 || pageSize > 100 {
 		return nil, commonapi.ErrBadRequest
 	}
-	base := s.db.WithContext(ctx).Model(&models.ProtectionAccessRequest{}).Where("tenant_id = ?", tenantID).Where(condition, values...)
 	var total int64
 	if err := base.Count(&total).Error; err != nil {
 		return nil, err
@@ -283,6 +325,14 @@ func (s *AccessRequestService) list(ctx context.Context, tenantID, page, pageSiz
 		data = append(data, *built)
 	}
 	return &models.ProtectionAccessRequestListResponse{Data: data, Total: total, Page: int(page), PageSize: int(pageSize), TotalPages: int((total + pageSize - 1) / pageSize)}, nil
+}
+
+func accessRequestContainsPattern(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	value = strings.ReplaceAll(value, "!", "!!")
+	value = strings.ReplaceAll(value, "%", "!%")
+	value = strings.ReplaceAll(value, "_", "!_")
+	return "%" + value + "%"
 }
 
 func effectiveAccessRequest(row models.ProtectionAccessRequest, now time.Time) models.ProtectionAccessRequest {

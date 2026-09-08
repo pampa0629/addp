@@ -54,7 +54,7 @@ func TestProtectionAccessRequestApprovalPublishesSubjectScopedAuthorization(t *t
 	now := time.Now().UTC().Truncate(time.Second)
 	requests := NewAccessRequestService(db, testAccessActorResolver)
 	requests.now = func() time.Time { return now }
-	if _, err := requests.ListReviewQueue(context.Background(), 7, 42, "", 1, 20); !errors.Is(err, commonapi.ErrBadRequest) {
+	if _, err := requests.ListReviewQueue(context.Background(), 7, 42, models.ProtectionAccessRequestReviewFilter{}, 1, 20); !errors.Is(err, commonapi.ErrBadRequest) {
 		t.Fatalf("missing review scope error = %v", err)
 	}
 	created, err := requests.Create(context.Background(), 7, 41, models.CreateProtectionAccessRequest{
@@ -67,7 +67,7 @@ func TestProtectionAccessRequestApprovalPublishesSubjectScopedAuthorization(t *t
 	if created.State != models.ProtectionAccessRequestStatePending || created.Requester.ID != "41" || created.Requester.DisplayName != "用户 41" {
 		t.Fatalf("created request = %#v", created)
 	}
-	selfQueue, err := requests.ListReviewQueue(context.Background(), 7, 41, models.ProtectionAccessRequestReviewScopePending, 1, 20)
+	selfQueue, err := requests.ListReviewQueue(context.Background(), 7, 41, reviewAccessRequestFilter(models.ProtectionAccessRequestReviewScopePending), 1, 20)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,14 +75,14 @@ func TestProtectionAccessRequestApprovalPublishesSubjectScopedAuthorization(t *t
 		t.Fatalf("requester review queue = %#v", selfQueue)
 	}
 	requests.now = func() time.Time { return now.Add(25 * time.Hour) }
-	expiredQueue, err := requests.ListReviewQueue(context.Background(), 7, 42, models.ProtectionAccessRequestReviewScopePending, 1, 20)
+	expiredQueue, err := requests.ListReviewQueue(context.Background(), 7, 42, reviewAccessRequestFilter(models.ProtectionAccessRequestReviewScopePending), 1, 20)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if expiredQueue.Total != 0 || len(expiredQueue.Data) != 0 {
 		t.Fatalf("expired review queue = %#v", expiredQueue)
 	}
-	expiredHistory, err := requests.ListReviewQueue(context.Background(), 7, 42, models.ProtectionAccessRequestReviewScopeHistory, 1, 20)
+	expiredHistory, err := requests.ListReviewQueue(context.Background(), 7, 42, reviewAccessRequestFilter(models.ProtectionAccessRequestReviewScopeHistory), 1, 20)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ func TestProtectionAccessRequestApprovalPublishesSubjectScopedAuthorization(t *t
 		t.Fatalf("expired approval error = %v", err)
 	}
 	requests.now = func() time.Time { return now }
-	reviewerQueue, err := requests.ListReviewQueue(context.Background(), 7, 42, models.ProtectionAccessRequestReviewScopePending, 1, 20)
+	reviewerQueue, err := requests.ListReviewQueue(context.Background(), 7, 42, reviewAccessRequestFilter(models.ProtectionAccessRequestReviewScopePending), 1, 20)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,14 +116,14 @@ func TestProtectionAccessRequestApprovalPublishesSubjectScopedAuthorization(t *t
 	if approved.State != models.ProtectionAccessRequestStateApproved || approved.ExemptionID == "" {
 		t.Fatalf("approved request = %#v", approved)
 	}
-	pendingAfterApproval, err := requests.ListReviewQueue(context.Background(), 7, 42, models.ProtectionAccessRequestReviewScopePending, 1, 20)
+	pendingAfterApproval, err := requests.ListReviewQueue(context.Background(), 7, 42, reviewAccessRequestFilter(models.ProtectionAccessRequestReviewScopePending), 1, 20)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if pendingAfterApproval.Total != 0 || len(pendingAfterApproval.Data) != 0 {
 		t.Fatalf("pending queue after approval = %#v", pendingAfterApproval)
 	}
-	approvalHistory, err := requests.ListReviewQueue(context.Background(), 7, 42, models.ProtectionAccessRequestReviewScopeHistory, 1, 20)
+	approvalHistory, err := requests.ListReviewQueue(context.Background(), 7, 42, reviewAccessRequestFilter(models.ProtectionAccessRequestReviewScopeHistory), 1, 20)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,6 +151,117 @@ func TestProtectionAccessRequestApprovalPublishesSubjectScopedAuthorization(t *t
 	}
 	if _, exists := other["userInfo"].(map[string]any)["phone"]; exists {
 		t.Fatal("authorization leaked to another user")
+	}
+}
+
+func reviewAccessRequestFilter(scope string) models.ProtectionAccessRequestReviewFilter {
+	return models.ProtectionAccessRequestReviewFilter{Scope: scope}
+}
+
+func TestProtectionAccessReviewQueueFiltersAndPaginatesOnServer(t *testing.T) {
+	db, _, finding, _, _ := prepareReviewablePhoneFinding(t)
+	reviewed, err := NewAssessmentService(db, nil).ReviewFinding(context.Background(), 7, 21, finding.ID, models.FindingReviewRequest{Decision: models.FindingReviewDecisionConfirm, Rationale: "确认手机号字段"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, time.September, 8, 10, 0, 0, 0, time.UTC)
+	requests := NewAccessRequestService(db, testAccessActorResolver)
+	requests.now = func() time.Time { return now }
+
+	create := func(userID int64, expiresAt time.Time, rationale string) *models.ProtectionAccessRequestResponse {
+		t.Helper()
+		created, createErr := requests.Create(context.Background(), 7, userID, models.CreateProtectionAccessRequest{
+			AssessmentID: reviewed.Assessment.ID, ConsumerOwner: managerProtectionOwner, Action: managerPreviewAction,
+			RequestedExpiresAt: expiresAt, Rationale: rationale,
+		})
+		if createErr != nil {
+			t.Fatal(createErr)
+		}
+		return created
+	}
+	approvedRequest := create(41, now.Add(24*time.Hour), "批准申请")
+	if _, err = requests.Decide(context.Background(), 7, 99, approvedRequest.ID, models.DecideProtectionAccessRequest{
+		Version: approvedRequest.Version, Decision: "approve", ExpiresAt: now.Add(time.Hour), Rationale: "批准",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rejectedRequest := create(43, now.Add(24*time.Hour), "驳回申请")
+	if _, err = requests.Decide(context.Background(), 7, 99, rejectedRequest.ID, models.DecideProtectionAccessRequest{
+		Version: rejectedRequest.Version, Decision: "reject", Rationale: "驳回",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	expiredRequest := create(44, now.Add(time.Hour), "过期申请")
+	if err := db.Model(&models.ProtectionAccessRequest{}).Where("id = ?", approvedRequest.ID).Update("created_at", now.Add(-48*time.Hour)).Error; err != nil {
+		t.Fatal(err)
+	}
+	requests.now = func() time.Time { return now.Add(2 * time.Hour) }
+
+	history := reviewAccessRequestFilter(models.ProtectionAccessRequestReviewScopeHistory)
+	firstPage, err := requests.ListReviewQueue(context.Background(), 7, 99, history, 1, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstPage.Total != 3 || firstPage.TotalPages != 3 || len(firstPage.Data) != 1 {
+		t.Fatalf("paginated review history = %#v", firstPage)
+	}
+
+	history.State = models.ProtectionAccessRequestStateApproved
+	approvedOnly, err := requests.ListReviewQueue(context.Background(), 7, 99, history, 1, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if approvedOnly.Total != 1 || approvedOnly.Data[0].ID != approvedRequest.ID {
+		t.Fatalf("approved filter = %#v", approvedOnly)
+	}
+	history.State = models.ProtectionAccessRequestStateExpired
+	expiredOnly, err := requests.ListReviewQueue(context.Background(), 7, 99, history, 1, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if expiredOnly.Total != 1 || expiredOnly.Data[0].ID != expiredRequest.ID || expiredOnly.Data[0].State != models.ProtectionAccessRequestStateExpired {
+		t.Fatalf("expired filter = %#v", expiredOnly)
+	}
+
+	history = reviewAccessRequestFilter(models.ProtectionAccessRequestReviewScopeHistory)
+	history.RequesterSearch = "用户 43"
+	requesterOnly, err := requests.ListReviewQueue(context.Background(), 7, 99, history, 1, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requesterOnly.Total != 1 || requesterOnly.Data[0].ID != rejectedRequest.ID {
+		t.Fatalf("requester filter = %#v", requesterOnly)
+	}
+	history.RequesterSearch = ""
+	history.ResourceSearch = "userinfo.phone"
+	resourceOnly, err := requests.ListReviewQueue(context.Background(), 7, 99, history, 1, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resourceOnly.Total != 3 {
+		t.Fatalf("resource filter = %#v", resourceOnly)
+	}
+
+	from, to := now.Add(-time.Hour), now.Add(3*time.Hour)
+	history.ResourceSearch = ""
+	history.CreatedFrom, history.CreatedTo = &from, &to
+	recentOnly, err := requests.ListReviewQueue(context.Background(), 7, 99, history, 1, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recentOnly.Total != 2 {
+		t.Fatalf("created-at filter = %#v", recentOnly)
+	}
+
+	invalidState := reviewAccessRequestFilter(models.ProtectionAccessRequestReviewScopePending)
+	invalidState.State = models.ProtectionAccessRequestStateApproved
+	if _, err := requests.ListReviewQueue(context.Background(), 7, 99, invalidState, 1, 20); !errors.Is(err, commonapi.ErrBadRequest) {
+		t.Fatalf("pending state filter error = %v", err)
+	}
+	invalidRange := reviewAccessRequestFilter(models.ProtectionAccessRequestReviewScopeHistory)
+	invalidRange.CreatedFrom, invalidRange.CreatedTo = &to, &from
+	if _, err := requests.ListReviewQueue(context.Background(), 7, 99, invalidRange, 1, 20); !errors.Is(err, commonapi.ErrBadRequest) {
+		t.Fatalf("invalid time range error = %v", err)
 	}
 }
 

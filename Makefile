@@ -401,6 +401,7 @@ test-standard-frontend: ## 运行 Standard 前端确定性测试与构建
 
 test-system-frontend: ## 运行 System 前端确定性测试与构建
 	@cd system/frontend && npm test
+	@cd system/frontend && npm run test:e2e
 	@cd system/frontend && npm run build
 
 test-transfer-frontend: ## 运行 Transfer 前端确定性测试与构建

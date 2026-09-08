@@ -203,7 +203,7 @@ System IAM 管理端只按稳定业务大类提供五个左侧页面，不能把
 | 账号管理 `/iam/accounts` | 用户账号、身份变更审批、我的账号安全 | 用户账号、用户邀请、我的账号安全 |
 | 角色管理 `/iam/roles` | 无可用对象时隐藏 | 角色定义、角色分配 |
 | 应用接入 `/iam/application-access` | 无可用对象时隐藏 | 服务账号、外部应用（OAuth） |
-| 安全与审计 `/iam/security` | IAM 安全策略、平台审计 | 租户审计 |
+| 审计管理 `/iam/security` | IAM 安全策略、平台审计 | 租户审计 |
 
 页面表达业务大类，页内 `tab` 表达该类中的具体管理对象或流程。Tab 必须继续按当前 AuthContext 类型和 Permission 过滤；某个页面在当前上下文中没有任何可用 Tab 时，Console 左侧入口和 System standalone 导航都必须隐藏，直接访问也不得绕过 Context 与 Permission Guard。
 

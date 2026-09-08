@@ -45,7 +45,7 @@
       <template #footer><el-button @click="formVisible = false">{{ t('system.iam.common.cancel') }}</el-button><el-button type="primary" :loading="submitting" @click="submitForm">{{ t('system.iam.common.confirm') }}</el-button></template>
     </el-dialog>
 
-    <el-dialog v-model="credentialVisible" :title="t('system.iam.serviceAccounts.credentialTitle')" width="620px" :close-on-click-modal="false" :close-on-press-escape="false" :show-close="false">
+    <el-dialog v-model="credentialVisible" :title="t('system.iam.serviceAccounts.credentialTitle')" width="620px" destroy-on-close :close-on-click-modal="false" :close-on-press-escape="false" :show-close="false" @closed="clearCredential">
       <el-alert type="warning" :closable="false" show-icon :title="t('system.iam.serviceAccounts.secretOnce')" />
       <dl class="iam-credential-list">
         <div><dt>{{ t('system.iam.serviceAccounts.clientId') }}</dt><dd><code>{{ credential.clientId }}</code><el-button link type="primary" :icon="CopyDocument" @click="copyText(credential.clientId, 'clientIdCopied')">{{ t('system.iam.common.copy') }}</el-button></dd></div>
@@ -156,6 +156,11 @@ function showCredential(result) {
   credential.clientId = result.client_id
   credential.clientSecret = result.client_secret
   credentialVisible.value = true
+}
+
+function clearCredential() {
+  credential.clientId = ''
+  credential.clientSecret = ''
 }
 
 async function copyText(value, messageKey) {

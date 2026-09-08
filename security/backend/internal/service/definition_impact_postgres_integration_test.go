@@ -245,6 +245,18 @@ func TestProtectionExemptionAssessmentRevisionAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	createdFrom, createdTo := now.Add(-time.Minute), now.Add(time.Minute)
+	history, err := accessRequests.ListReviewQueue(context.Background(), 7, 42, models.ProtectionAccessRequestReviewFilter{
+		Scope: models.ProtectionAccessRequestReviewScopeHistory, State: models.ProtectionAccessRequestStateApproved,
+		RequesterSearch: "用户 41", ResourceSearch: "PUBLIC.EXEMPTION_PHONE",
+		CreatedFrom: &createdFrom, CreatedTo: &createdTo,
+	}, 1, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if history.Total != 1 || len(history.Data) != 1 || history.Data[0].ID != approved.ID {
+		t.Fatalf("postgres filtered access request history = %#v", history)
+	}
 	assertLatestPostgresManagerProjectionAuthorization(t, tx, enrollment.ID, managerPreviewAction, "41", true)
 
 	revised, err := assessments.Revise(context.Background(), 7, 22, reviewed.Assessment.ID, models.AssessmentRevisionRequest{

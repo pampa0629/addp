@@ -544,7 +544,7 @@ Service 必须在同一个 PreparedQuery 上依次完成 `ReadSet()`、命中判
 | `GET/PUT/DELETE` | `/protection-policies/{id}` | 策略详情/完整更新/撤销；更新和撤销均携带 `version` 并追加不可变修订 |
 | `GET` | `/protection-access-request-targets` | Manager 预览按 DataItem fingerprint 查询当前用户可申请的字段、最近申请的有效状态和有效临时授权；自动发现但尚未形成正式 Assessment 的字段只返回不可申请原因 |
 | `GET/POST` | `/protection-access-requests` | 当前用户分页查询自己的申请/从 Manager 预览提交按用户原值访问申请 |
-| `GET` | `/protection-access-requests/review-queue` | 审批人员分页查询当前租户审批工作区；必填 `scope=pending|history`，待审批视图排除已过期记录并明确本人申请不可自审，审批记录视图返回已批准、已驳回和已过期记录及完整决策审计信息 |
+| `GET` | `/protection-access-requests/review-queue` | 审批人员分页查询当前租户审批工作区；必填 `scope=pending|history`，并可按申请人、资源或字段、申请时间筛选；`history` 还可按 `approved|rejected|expired` 处理结果筛选。待审批视图排除已过期记录并明确本人申请不可自审，审批记录视图返回已批准、已驳回和已过期记录及完整决策审计信息 |
 | `POST` | `/protection-access-requests/{id}/decisions` | 另一名审批人员批准或驳回申请；批准期限不得超过用户申请期限和 30 天上限 |
 | `GET` | `/protection-exemptions` | 治理人员分页查询审批后形成的临时原值授权 |
 | `GET` | `/protection-exemptions/{id}` | 查询临时原值授权及不可变修订历史 |

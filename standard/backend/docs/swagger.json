@@ -1991,7 +1991,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "按确定性语义指纹聚合文档历次提炼候选；total 为全部筛选后的总数，status_counts 为不受筛选影响的文档全量状态计数，comparison_counts 为应用状态和类型筛选但不应用比对结果筛选的实时分面计数；返回代表候选、全部出现记录及动态标准比对，原始候选和证据不会被改写 | Groups candidates from all document extractions by deterministic semantic fingerprint; total is the count after all filters, status_counts covers all document groups regardless of filters, and comparison_counts is a live facet count after state and type filters but before the comparison-result filter; returns the representative candidate, all occurrences, and dynamic standard comparison without rewriting raw candidates or evidence",
+                "description": "按确定性语义指纹聚合文档历次提炼候选；total 为全部筛选后的总数，status_counts 为不受筛选影响的文档全量状态计数，comparison_counts 为应用状态、类型和关键词筛选但不应用比对结果筛选的实时分面计数；返回代表候选、全部出现记录及动态标准比对，原始候选和证据不会被改写 | Groups candidates from all document extractions by deterministic semantic fingerprint; total is the count after all filters, status_counts covers all document groups regardless of filters, and comparison_counts is a live facet count after state, type, and keyword filters but before the comparison-result filter; returns the representative candidate, all occurrences, and dynamic standard comparison without rewriting raw candidates or evidence",
                 "produces": [
                     "application/json"
                 ],
@@ -2022,6 +2022,12 @@
                         "type": "string",
                         "description": "候选类型 | Candidate type",
                         "name": "candidate_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "代表候选编码或名称关键词，忽略大小写并规范化空白 | Representative candidate code or name keyword, case-insensitive with normalized whitespace",
+                        "name": "keyword",
                         "in": "query"
                     },
                     {

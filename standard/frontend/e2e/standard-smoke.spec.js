@@ -150,10 +150,16 @@ const createCandidateGroupResponse = (candidates, { extractionID = 81, revisionI
 const filterCandidateGroupResponse = (response, url) => {
   const state = url.searchParams.get('state') || ''
   const candidateType = url.searchParams.get('candidate_type') || ''
+  const keyword = (url.searchParams.get('keyword') || '').trim().replace(/\s+/g, ' ').toLocaleLowerCase()
   const comparisonResult = url.searchParams.get('comparison_result') || ''
   const page = Number(url.searchParams.get('page')) || 1
   const pageSize = Number(url.searchParams.get('page_size')) || response.page_size || 20
-  const comparisonSource = response.data.filter(group => (!state || group.state === state) && (!candidateType || group.candidate.candidate_type === candidateType))
+  const comparisonSource = response.data.filter(group => {
+    if (state && group.state !== state) return false
+    if (candidateType && group.candidate.candidate_type !== candidateType) return false
+    if (!keyword) return true
+    return [group.candidate.code, group.candidate.name].some(value => String(value || '').trim().replace(/\s+/g, ' ').toLocaleLowerCase().includes(keyword))
+  })
   const comparisonCounts = comparisonSource.reduce((counts, group) => {
     if (group.candidate.comparison?.result) counts[group.candidate.comparison.result] += 1
     return counts
@@ -649,6 +655,17 @@ test('shows deterministic candidate comparisons and opens the existing standard'
   const codeItems = codeSetCandidate.locator('.comparison-item')
   await expect(codeItems.nth(0)).toContainText('signup · 报名中 — 已正式报名')
   await expect(codeItems.nth(1)).toContainText('registered · 已报名 — 报名已经确认')
+
+  const candidateSearch = page.getByRole('textbox', { name: '搜索候选编码或名称' })
+  await candidateSearch.fill('MEMBER_STATUS')
+  await candidateSearch.press('Enter')
+  await expect(page.getByText('共 1 个候选组')).toBeVisible()
+  await expect(comparisonFacets.getByRole('radio', { name: '全部比对结果 · 1' })).toBeChecked()
+  await expect(comparisonFacets.getByRole('radio', { name: '内容冲突 · 1' })).toBeVisible()
+  await expect(page.locator('.candidate-card')).toContainText('member_status')
+  await candidateSearch.fill('')
+  await candidateSearch.press('Enter')
+  await expect(page.getByText('共 5 个候选组')).toBeVisible()
 
   await comparisonFacets.getByText('内容一致 · 1', { exact: true }).click()
   await expect(page.getByText('共 1 个候选组')).toBeVisible()

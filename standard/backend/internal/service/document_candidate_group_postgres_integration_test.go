@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -33,7 +34,7 @@ func TestPostgresDocumentCandidateGroupsPreserveOccurrences(t *testing.T) {
 	candidates := []models.DocumentExtractionCandidate{
 		{ExtractionID: first.ID, CandidateType: "glossary", Code: code, Name: "户外 活动", Definition: "在户外开展的活动", Status: "retained", Version: 2, ReviewedBy: &reviewer, ReviewedAt: &reviewedAt},
 		{ExtractionID: second.ID, CandidateType: "glossary", Code: code, Name: "户外\n活动", Definition: "在户外开展的活动", Status: "pending", Version: 1},
-		{ExtractionID: second.ID, CandidateType: "glossary", Code: code, Name: "户外活动", Definition: "不同定义", Status: "rejected", Version: 2, ReviewedBy: &reviewer, ReviewedAt: &reviewedAt},
+		{ExtractionID: second.ID, CandidateType: "glossary", Code: code, Name: "户外活动冲突", Definition: "不同定义", Status: "rejected", Version: 2, ReviewedBy: &reviewer, ReviewedAt: &reviewedAt},
 	}
 	for index := range candidates {
 		if err := db.Create(&candidates[index]).Error; err != nil {
@@ -101,6 +102,14 @@ func TestPostgresDocumentCandidateGroupsPreserveOccurrences(t *testing.T) {
 	newCandidates, err := svc.ListCandidateGroups(document.ID, tenantID, DocumentCandidateGroupListOptions{ComparisonResult: models.CandidateComparisonNew})
 	if err != nil || newCandidates.Total != 0 || len(newCandidates.Data) != 0 {
 		t.Fatalf("new comparison filter=%+v err=%v", newCandidates, err)
+	}
+	keyword, err := svc.ListCandidateGroups(document.ID, tenantID, DocumentCandidateGroupListOptions{Keyword: "  冲突  "})
+	if err != nil || keyword.Total != 1 || keyword.StatusCounts.Retained != 1 || keyword.StatusCounts.Rejected != 1 || keyword.ComparisonCounts.Exact != 0 || keyword.ComparisonCounts.ContentConflict != 1 || len(keyword.Data) != 1 || keyword.Data[0].Candidate.ID != candidates[2].ID {
+		t.Fatalf("keyword filter=%+v err=%v", keyword, err)
+	}
+	codeKeyword, err := svc.ListCandidateGroups(document.ID, tenantID, DocumentCandidateGroupListOptions{Keyword: strings.ToUpper(code), ComparisonResult: models.CandidateComparisonExact})
+	if err != nil || codeKeyword.Total != 1 || codeKeyword.ComparisonCounts.Exact != 1 || codeKeyword.ComparisonCounts.ContentConflict != 1 || len(codeKeyword.Data) != 1 {
+		t.Fatalf("code keyword with comparison filter=%+v err=%v", codeKeyword, err)
 	}
 
 	farPage, err := svc.ListCandidateGroups(document.ID, tenantID, DocumentCandidateGroupListOptions{Page: int(^uint(0) >> 1), PageSize: 1})

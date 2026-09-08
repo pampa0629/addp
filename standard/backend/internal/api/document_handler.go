@@ -511,11 +511,12 @@ func (h *DocumentHandler) ExtractCandidates(c *gin.Context) {
 }
 
 // @Summary 获取标准提炼候选聚合视图 | List standard extraction candidate groups
-// @Description 按确定性语义指纹聚合文档历次提炼候选；total 为全部筛选后的总数，status_counts 为不受筛选影响的文档全量状态计数，comparison_counts 为应用状态和类型筛选但不应用比对结果筛选的实时分面计数；返回代表候选、全部出现记录及动态标准比对，原始候选和证据不会被改写 | Groups candidates from all document extractions by deterministic semantic fingerprint; total is the count after all filters, status_counts covers all document groups regardless of filters, and comparison_counts is a live facet count after state and type filters but before the comparison-result filter; returns the representative candidate, all occurrences, and dynamic standard comparison without rewriting raw candidates or evidence
+// @Description 按确定性语义指纹聚合文档历次提炼候选；total 为全部筛选后的总数，status_counts 为不受筛选影响的文档全量状态计数，comparison_counts 为应用状态、类型和关键词筛选但不应用比对结果筛选的实时分面计数；返回代表候选、全部出现记录及动态标准比对，原始候选和证据不会被改写 | Groups candidates from all document extractions by deterministic semantic fingerprint; total is the count after all filters, status_counts covers all document groups regardless of filters, and comparison_counts is a live facet count after state, type, and keyword filters but before the comparison-result filter; returns the representative candidate, all occurrences, and dynamic standard comparison without rewriting raw candidates or evidence
 // @Tags Standard
 // @Produce json
 // @Param state query string false "聚合状态 | Group state" Enums(pending,retained,rejected,formalized)
 // @Param candidate_type query string false "候选类型 | Candidate type" Enums(glossary,element,code_set,metric)
+// @Param keyword query string false "代表候选编码或名称关键词，忽略大小写并规范化空白 | Representative candidate code or name keyword, case-insensitive with normalized whitespace"
 // @Param comparison_result query string false "与当前标准的实时比对结果 | Live comparison result against current standards" Enums(new,exact,content_conflict,scope_conflict)
 // @Param page query int false "页码，默认 1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认 20，最大 100 | Page size, default 20, maximum 100"
@@ -534,7 +535,7 @@ func (h *DocumentHandler) ListCandidateGroups(c *gin.Context) {
 	if !ok {
 		return
 	}
-	opts := service.DocumentCandidateGroupListOptions{State: c.Query("state"), CandidateType: c.Query("candidate_type"), ComparisonResult: c.Query("comparison_result")}
+	opts := service.DocumentCandidateGroupListOptions{State: c.Query("state"), CandidateType: c.Query("candidate_type"), Keyword: c.Query("keyword"), ComparisonResult: c.Query("comparison_result")}
 	var err error
 	if value := c.Query("page"); value != "" {
 		opts.Page, err = strconv.Atoi(value)

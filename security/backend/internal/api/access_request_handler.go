@@ -2,6 +2,8 @@ package api
 
 import (
 	"net/http"
+	"strings"
+	"time"
 
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/security/internal/models"
@@ -97,10 +99,15 @@ func (h *AccessRequestHandler) ListMine(c *gin.Context) {
 }
 
 // @Summary 原值访问审批工作区 | List plaintext access review workspace
-// @Description 按 scope 返回未过期待审批申请或已批准、已驳回、已过期审批记录；本人申请可见但不能自审 | Return unexpired pending requests or approved, rejected, and expired review history by scope; self-submitted requests remain visible but cannot be self-approved
+// @Description 按 scope 分页返回未过期待审批申请或审批记录，并支持按处理结果、申请人、资源或字段及申请时间筛选；本人申请可见但不能自审 | Return paginated unexpired pending requests or review history by scope, with optional outcome, requester, resource or field, and request-time filters; self-submitted requests remain visible but cannot be self-approved
 // @Tags Protection Access Request
 // @Produce json
-// @Param scope query string true "视图 pending|history | View pending|history"
+// @Param scope query string true "视图 pending|history | View pending|history" Enums(pending,history)
+// @Param state query string false "审批记录处理结果 approved|rejected|expired，仅 history 可用 | Review history outcome approved|rejected|expired, history only" Enums(approved,rejected,expired)
+// @Param requester_search query string false "申请人显示名或用户 ID | Requester display name or user ID"
+// @Param resource_search query string false "资源全名或字段路径 | Resource full name or field path"
+// @Param created_from query string false "申请时间起点（RFC3339，含边界） | Request creation start time (RFC3339, inclusive)"
+// @Param created_to query string false "申请时间终点（RFC3339，含边界） | Request creation end time (RFC3339, inclusive)"
 // @Param page query int false "页码 | Page number"
 // @Param page_size query int false "每页数量 | Page size"
 // @Success 200 {object} ProtectionAccessRequestListResponse
@@ -114,12 +121,46 @@ func (h *AccessRequestHandler) ListMine(c *gin.Context) {
 // @Security BearerAuth
 func (h *AccessRequestHandler) ReviewQueue(c *gin.Context) {
 	page, pageSize := commonapi.ParsePagination(c)
-	result, err := h.requests.ListReviewQueue(c.Request.Context(), getTenantID(c), getUserID(c), c.Query("scope"), int64(page), int64(pageSize))
+	createdFrom, err := parseOptionalRFC3339Query(c, "created_from")
+	if err != nil {
+		respondError(c, commonapi.ErrBadRequest)
+		return
+	}
+	createdTo, err := parseOptionalRFC3339Query(c, "created_to")
+	if err != nil {
+		respondError(c, commonapi.ErrBadRequest)
+		return
+	}
+	filter := models.ProtectionAccessRequestReviewFilter{
+		Scope:           c.Query("scope"),
+		State:           c.Query("state"),
+		RequesterSearch: c.Query("requester_search"),
+		ResourceSearch:  c.Query("resource_search"),
+		CreatedFrom:     createdFrom,
+		CreatedTo:       createdTo,
+	}
+	result, err := h.requests.ListReviewQueue(c.Request.Context(), getTenantID(c), getUserID(c), filter, int64(page), int64(pageSize))
 	if err != nil {
 		respondError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
+}
+
+func parseOptionalRFC3339Query(c *gin.Context, key string) (*time.Time, error) {
+	values := c.Request.URL.Query()[key]
+	if len(values) > 1 {
+		return nil, commonapi.ErrBadRequest
+	}
+	if len(values) == 0 || strings.TrimSpace(values[0]) == "" {
+		return nil, nil
+	}
+	parsed, err := time.Parse(time.RFC3339, strings.TrimSpace(values[0]))
+	if err != nil {
+		return nil, commonapi.ErrBadRequest
+	}
+	parsed = parsed.UTC()
+	return &parsed, nil
 }
 
 // @Summary 审批原值访问申请 | Decide plaintext access request

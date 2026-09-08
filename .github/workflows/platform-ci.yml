@@ -427,6 +427,7 @@ jobs:
           - module: system
             name: System
             target: test-system-frontend
+            playwright: true
           - module: transfer
             name: Transfer
             target: test-transfer-frontend

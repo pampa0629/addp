@@ -99,12 +99,12 @@ describe('Console navigation bridge', () => {
     expect(zhCn.console.menus.system.iamAccounts).toBe('账号管理')
     expect(zhCn.console.menus.system.iamRoles).toBe('角色管理')
     expect(zhCn.console.menus.system.iamApplicationAccess).toBe('应用接入')
-    expect(zhCn.console.menus.system.iamSecurity).toBe('安全与审计')
+    expect(zhCn.console.menus.system.iamSecurity).toBe('审计管理')
     expect(en.console.menus.system.iamOrganization).toBe('Organization')
     expect(en.console.menus.system.iamAccounts).toBe('Accounts')
     expect(en.console.menus.system.iamRoles).toBe('Roles')
     expect(en.console.menus.system.iamApplicationAccess).toBe('Application Access')
-    expect(en.console.menus.system.iamSecurity).toBe('Security & Audit')
+    expect(en.console.menus.system.iamSecurity).toBe('Audit Management')
 
     expect(searchIndex('角色分配', key => zhCn.console.menus.system.iamRoles, [
       'iam.tenant_role_assignment.read'
