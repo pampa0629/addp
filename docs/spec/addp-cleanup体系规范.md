@@ -346,6 +346,7 @@ cleanup 使用平台级 `cleanup_mode`，不使用数据库语境的 `soft_delet
 模块映射规则：
 
 - Meta 可以把 `logical_cleanup` 映射为 GORM soft delete 或等价状态标记。
+- Meta 的 `physical_cleanup` 只能把无血缘引用的逻辑删除 item 计为可执行候选并物理删除。仍被 `lineage_item_relations`、`lineage_service_dependencies` 或不可变 `lineage_observations` 引用的 item 必须保留，execute 以 `skipped_items` 报告；关联 node 只有在其 item 全部可删除后才可物理删除。定时保留期清理、Meta 手工保留期清理和 System 资源回收必须复用同一候选判定，不能依赖外键错误充当运行时过滤器。
 - Manager 对有审计价值的 artifact state 优先逻辑标记，再按策略删除 physical artifact。
 - 纯缓存类资源可以没有逻辑状态，但必须通过 execution / audit 保留删除摘要。
 - System audit logs 不进入 physical cleanup；审计日志只能保留或归档，不由业务 cleanup 删除。

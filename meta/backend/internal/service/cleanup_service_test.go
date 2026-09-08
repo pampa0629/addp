@@ -11,12 +11,13 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/events"
+	"github.com/addp/meta/internal/metatest"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scantask"
 )
 
 func TestCleanupScanReportsInvalidEngineScanTaskDefinitions(t *testing.T) {
-	db := openObjectCatalogScanTestDB(t)
+	db := openObjectCatalogScanTestDB(t, metatest.WithLineageTables())
 	createScanTaskTable(t, db)
 
 	const tenantID = uint(1)
@@ -38,7 +39,7 @@ func TestCleanupScanReportsInvalidEngineScanTaskDefinitions(t *testing.T) {
 }
 
 func TestCleanupScanReportsTaskOnlyInvalidEngineForAnyOwner(t *testing.T) {
-	db := openObjectCatalogScanTestDB(t)
+	db := openObjectCatalogScanTestDB(t, metatest.WithLineageTables())
 	createScanTaskTable(t, db)
 	systemClient := newEmptyEngineSystemClient(t)
 
@@ -98,7 +99,7 @@ func TestCleanupLogicalDisablesInvalidEngineScanTaskDefinitions(t *testing.T) {
 }
 
 func TestCleanupEngineScopedPhysicalDisablesInvalidEngineScanTaskDefinitions(t *testing.T) {
-	db := openObjectCatalogScanTestDB(t)
+	db := openObjectCatalogScanTestDB(t, metatest.WithLineageTables())
 	createScanTaskTable(t, db)
 
 	const tenantID = uint(1)
@@ -162,7 +163,7 @@ func TestCleanupLogicalDeletesManagerContentProjection(t *testing.T) {
 }
 
 func TestCleanupPhysicalKeepsInvalidEngineSnapshotForTaskDefinitionCleanup(t *testing.T) {
-	db := openObjectCatalogScanTestDB(t)
+	db := openObjectCatalogScanTestDB(t, metatest.WithLineageTables())
 	createScanTaskTable(t, db)
 	systemClient := newEmptyEngineSystemClient(t)
 
@@ -201,6 +202,17 @@ func TestMetaScanSummaryCountsResourcesUnderInvalidEngines(t *testing.T) {
 	summary := metaScanSummary(stats)
 	if summary.ScannedItems != 25 {
 		t.Fatalf("scanned items = %d, want 25", summary.ScannedItems)
+	}
+}
+
+func TestMetaExecuteSummaryReportsLineageRetentionAsSkipped(t *testing.T) {
+	summary := metaExecuteSummary(&models.MetaCleanupExecuteResult{
+		DeletedItems:            3,
+		RetainedLineageItems:    2,
+		RetainedReferencedNodes: 1,
+	})
+	if summary.AffectedRecords != 3 || summary.SkippedItems != 3 || summary.ErrorCount != 0 {
+		t.Fatalf("execute summary = %#v, want affected=3 skipped=3 errors=0", summary)
 	}
 }
 

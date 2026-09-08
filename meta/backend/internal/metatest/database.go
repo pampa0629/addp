@@ -26,6 +26,9 @@ func OpenMetadataDB(t testing.TB, opts ...MetadataDBOption) *gorm.DB {
 	if cfg.metaItem {
 		createMetaItemTable(t, db)
 	}
+	if cfg.lineage {
+		createLineageTables(t, db)
+	}
 	return db
 }
 
@@ -33,11 +36,18 @@ type MetadataDBOption func(*metadataDBConfig)
 
 type metadataDBConfig struct {
 	metaItem bool
+	lineage  bool
 }
 
 func WithoutMetaItemTable() MetadataDBOption {
 	return func(cfg *metadataDBConfig) {
 		cfg.metaItem = false
+	}
+}
+
+func WithLineageTables() MetadataDBOption {
+	return func(cfg *metadataDBConfig) {
+		cfg.lineage = true
 	}
 }
 
@@ -92,5 +102,25 @@ func createMetaItemTable(t testing.TB, db *gorm.DB) {
 		)
 	`).Error; err != nil {
 		t.Fatalf("create meta_item table: %v", err)
+	}
+}
+
+func createLineageTables(t testing.TB, db *gorm.DB) {
+	t.Helper()
+	statements := []string{
+		`CREATE TABLE meta.lineage_item_relations (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL,
+			source_item_id INTEGER NOT NULL, target_item_id INTEGER NOT NULL)`,
+		`CREATE TABLE meta.lineage_service_dependencies (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL,
+			source_item_id INTEGER NOT NULL)`,
+		`CREATE TABLE meta.lineage_observations (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL,
+			source_item_id INTEGER, target_item_id INTEGER)`,
+	}
+	for _, statement := range statements {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatalf("create lineage table: %v", err)
+		}
 	}
 }

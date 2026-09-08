@@ -130,6 +130,7 @@ Service 仍由 Service 模块拥有，Meta 只保存用于血缘查询的关系�
 - 未知写入语义：只能保存 observation，不得伪造 current projection。
 - Meta 发现目标在没有对应 ADDP 执行时发生外部变化：标记关系为 `unverified` 或 `stale`，不得猜测新的来源。
 - `meta_item` 从有效状态转为软删除时，所有以该 item 为端点的非关闭 item relation 以及以该 item 为来源的 service dependency 必须标记为 `stale`；不可变 observation 继续保留。该 item 后续恢复只恢复资源身份，不自动重新激活关系，只有新的执行或发布事实可以把对应投影重新置为 `active`。
+- Meta 物理清理不得删除仍被当前投影或不可变 observation 引用的 `meta_item`。这类软删除 item 是血缘身份锚点，不属于可释放候选；清理执行必须保留并报告跳过，不能级联删除关系或证据，也不能把外键冲突降级成删除成功。只有不再被 `lineage_item_relations`、`lineage_service_dependencies`、`lineage_observations` 引用的 item 才能物理删除，其所属 node 仅在不再包含任何 item 后才能物理删除。
 
 关系查询必须支持当前投影和基于 observed_at / execution 的历史视图，不能只保留一条无时态边。
 

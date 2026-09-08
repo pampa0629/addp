@@ -166,6 +166,97 @@ func TestDatabaseCleanerLogicalCleanupSoftDeletesOrphanItems(t *testing.T) {
 	}
 }
 
+func TestDatabaseCleanerHardDeletePreservesLineageReferencedItems(t *testing.T) {
+	t.Parallel()
+
+	db := metatest.OpenMetadataDB(t, metatest.WithLineageTables())
+
+	type fixture struct {
+		name string
+		node models.MetaNode
+		item models.MetaItem
+	}
+	fixtures := []fixture{
+		{name: "deletable"},
+		{name: "relation_source"},
+		{name: "relation_target"},
+		{name: "service_source"},
+		{name: "observation_source"},
+	}
+	for index := range fixtures {
+		entry := &fixtures[index]
+		entry.node = models.MetaNode{TenantID: 7, EngineID: 41, NodeType: "table", Name: entry.name, Depth: 1}
+		if err := db.Create(&entry.node).Error; err != nil {
+			t.Fatalf("create %s node: %v", entry.name, err)
+		}
+		entry.item = models.MetaItem{
+			TenantID: 7, EngineID: 41, NodeID: entry.node.ID, ItemType: "table",
+			Name: entry.name, Fingerprint: "cleanup-" + entry.name,
+		}
+		if err := db.Create(&entry.item).Error; err != nil {
+			t.Fatalf("create %s item: %v", entry.name, err)
+		}
+		if err := db.Delete(&entry.item).Error; err != nil {
+			t.Fatalf("soft delete %s item: %v", entry.name, err)
+		}
+		if err := db.Delete(&entry.node).Error; err != nil {
+			t.Fatalf("soft delete %s node: %v", entry.name, err)
+		}
+	}
+
+	if err := db.Exec(`INSERT INTO meta.lineage_item_relations
+		(tenant_id, source_item_id, target_item_id) VALUES (?, ?, ?)`,
+		7, fixtures[1].item.ID, fixtures[2].item.ID).Error; err != nil {
+		t.Fatalf("create lineage item relation: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO meta.lineage_service_dependencies
+		(tenant_id, source_item_id) VALUES (?, ?)`, 7, fixtures[3].item.ID).Error; err != nil {
+		t.Fatalf("create lineage service dependency: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO meta.lineage_observations
+		(tenant_id, source_item_id, target_item_id) VALUES (?, ?, NULL)`,
+		7, fixtures[4].item.ID).Error; err != nil {
+		t.Fatalf("create lineage observation: %v", err)
+	}
+
+	cleaner := NewDatabaseCleaner(db, nil, nil)
+	nodes, items, err := cleaner.ScanLogicalCleanupCandidatesWithScope(t.Context(), 7, CleanupScope{})
+	if err != nil {
+		t.Fatalf("ScanLogicalCleanupCandidatesWithScope() error = %v", err)
+	}
+	if nodes != 1 || items != 1 {
+		t.Fatalf("cleanup candidates = nodes:%d items:%d, want 1/1 unreferenced records", nodes, items)
+	}
+
+	result, err := cleaner.ExecuteHardDeleteWithScope(t.Context(), 7, CleanupScope{})
+	if err != nil {
+		t.Fatalf("ExecuteHardDeleteWithScope() error = %v", err)
+	}
+	if len(result.Errors) != 0 || result.DeletedItems != 1 || result.DeletedNodes != 1 {
+		t.Fatalf("hard delete result = %#v, want one unreferenced item and node deleted", result)
+	}
+	if result.RetainedLineageItems != 4 || result.RetainedReferencedNodes != 4 {
+		t.Fatalf("hard delete retained result = %#v, want 4 lineage items and nodes", result)
+	}
+
+	for index, entry := range fixtures {
+		var itemCount, nodeCount int64
+		if err := db.Unscoped().Model(&models.MetaItem{}).Where("id = ?", entry.item.ID).Count(&itemCount).Error; err != nil {
+			t.Fatalf("count %s item: %v", entry.name, err)
+		}
+		if err := db.Unscoped().Model(&models.MetaNode{}).Where("id = ?", entry.node.ID).Count(&nodeCount).Error; err != nil {
+			t.Fatalf("count %s node: %v", entry.name, err)
+		}
+		want := int64(1)
+		if index == 0 {
+			want = 0
+		}
+		if itemCount != want || nodeCount != want {
+			t.Fatalf("post-cleanup %s counts = item:%d node:%d, want %d/%d", entry.name, itemCount, nodeCount, want, want)
+		}
+	}
+}
+
 func metaCleanupTestEngine(id uint, name string, active bool, storage bool) commonModels.Engine {
 	lifecycleState := commonModels.EngineLifecycleDisabled
 	if active {

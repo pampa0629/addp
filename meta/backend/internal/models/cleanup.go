@@ -44,6 +44,12 @@ type MetaCleanupStatistics struct {
 		CanRecover bool `json:"can_recover"`
 	} `json:"logical_cleanup_candidates"`
 
+	// 因血缘引用而保留的软删除身份锚点，不属于物理清理候选。
+	RetainedLineageReferences struct {
+		Items int `json:"items"`
+		Nodes int `json:"nodes"`
+	} `json:"retained_lineage_references"`
+
 	// 重复fingerprint
 	DuplicateFingerprints struct {
 		Count int `json:"count"`
@@ -62,5 +68,7 @@ type MetaCleanupExecuteResult struct {
 	DeletedFingerprints         int      `json:"deleted_fingerprints"`
 	DisabledScanTaskDefinitions int      `json:"disabled_scan_task_definitions"`
 	DeletedScanTaskDefinitions  int      `json:"deleted_scan_task_definitions"`
+	RetainedLineageItems        int      `json:"retained_lineage_items"`
+	RetainedReferencedNodes     int      `json:"retained_referenced_nodes"`
 	Errors                      []string `json:"errors"`
 }

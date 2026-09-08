@@ -129,37 +129,22 @@ func (s *CleanupService) runCleanup(ctx context.Context) {
 
 	expiryTime := time.Now().AddDate(0, 0, -s.retentionDays)
 
-	// 先清理 meta_item（子表）
-	var itemsDeleted int64
-	result := s.db.Unscoped().
-		Where("deleted_at IS NOT NULL AND deleted_at < ?", expiryTime).
-		Delete(&models.MetaItem{})
-
-	if result.Error != nil {
-		s.log.Error("清理 meta_item 失败", "error", result.Error)
-	} else {
-		itemsDeleted = result.RowsAffected
-		s.log.Info("清理 meta_item 完成", "deleted_count", itemsDeleted)
+	result, err := s.dbCleaner.ExecuteExpiredHardDelete(ctx, 0, expiryTime)
+	if err != nil {
+		s.log.Error("清理逻辑删除记录失败", "error", err)
+		return
 	}
-
-	// 再清理 meta_node（父表）
-	var nodesDeleted int64
-	result = s.db.Unscoped().
-		Where("deleted_at IS NOT NULL AND deleted_at < ?", expiryTime).
-		Delete(&models.MetaNode{})
-
-	if result.Error != nil {
-		s.log.Error("清理 meta_node 失败", "error", result.Error)
-	} else {
-		nodesDeleted = result.RowsAffected
-		s.log.Info("清理 meta_node 完成", "deleted_count", nodesDeleted)
+	for _, cleanupError := range result.Errors {
+		s.log.Error("清理逻辑删除记录失败", "error", cleanupError)
 	}
 
 	s.log.Info("逻辑删除记录清除完成",
 		"duration", time.Since(startTime),
-		"items_deleted", itemsDeleted,
-		"nodes_deleted", nodesDeleted,
-		"total_deleted", itemsDeleted+nodesDeleted)
+		"items_deleted", result.DeletedItems,
+		"nodes_deleted", result.DeletedNodes,
+		"retained_lineage_items", result.RetainedLineageItems,
+		"retained_referenced_nodes", result.RetainedReferencedNodes,
+		"total_deleted", result.DeletedItems+result.DeletedNodes)
 }
 
 // ManualCleanup 手动触发清理
@@ -170,28 +155,20 @@ func (s *CleanupService) ManualCleanup(ctx context.Context, retentionDays int) (
 
 	expiryTime := time.Now().AddDate(0, 0, -retentionDays)
 
-	var itemsDeleted, nodesDeleted int64
-
-	result := s.db.Unscoped().
-		Where("deleted_at IS NOT NULL AND deleted_at < ?", expiryTime).
-		Delete(&models.MetaItem{})
-	if result.Error != nil {
-		return nil, fmt.Errorf("清理 meta_item 失败: %w", result.Error)
+	result, err := s.dbCleaner.ExecuteExpiredHardDelete(ctx, 0, expiryTime)
+	if err != nil {
+		return nil, err
 	}
-	itemsDeleted = result.RowsAffected
-
-	result = s.db.Unscoped().
-		Where("deleted_at IS NOT NULL AND deleted_at < ?", expiryTime).
-		Delete(&models.MetaNode{})
-	if result.Error != nil {
-		return nil, fmt.Errorf("清理 meta_node 失败: %w", result.Error)
+	if len(result.Errors) > 0 {
+		return nil, fmt.Errorf("清理逻辑删除记录失败: %v", result.Errors)
 	}
-	nodesDeleted = result.RowsAffected
 
 	return map[string]int64{
-		"meta_item": itemsDeleted,
-		"meta_node": nodesDeleted,
-		"total":     itemsDeleted + nodesDeleted,
+		"meta_item":      int64(result.DeletedItems),
+		"meta_node":      int64(result.DeletedNodes),
+		"retained_items": int64(result.RetainedLineageItems),
+		"retained_nodes": int64(result.RetainedReferencedNodes),
+		"total":          int64(result.DeletedItems + result.DeletedNodes),
 	}, nil
 }
 
@@ -419,6 +396,12 @@ func (s *CleanupService) ScanReclaimCandidates(ctx context.Context, tenantID uin
 	stats.LogicalCleanupCandidates.Nodes = logicalCleanupNodes
 	stats.LogicalCleanupCandidates.Items = logicalCleanupItems
 	stats.LogicalCleanupCandidates.CanRecover = true
+	retainedNodes, retainedItems, err := s.dbCleaner.ScanRetainedLineageReferencesWithScope(ctx, tenantID, scope)
+	if err != nil {
+		return nil, fmt.Errorf("扫描血缘保留项失败: %w", err)
+	}
+	stats.RetainedLineageReferences.Nodes = retainedNodes
+	stats.RetainedLineageReferences.Items = retainedItems
 
 	// 5. 扫描重复fingerprint
 	duplicateCount, err := s.dbCleaner.ScanDuplicateFingerprints(ctx, tenantID)
@@ -464,6 +447,8 @@ func (s *CleanupService) ExecuteCleanup(ctx context.Context, tenantID uint, clea
 	result.DeletedNodes = dbResult.DeletedNodes
 	result.DeletedItems = dbResult.DeletedItems
 	result.DeletedFingerprints = dbResult.DeletedFingerprints
+	result.RetainedLineageItems = dbResult.RetainedLineageItems
+	result.RetainedReferencedNodes = dbResult.RetainedReferencedNodes
 	result.Errors = append(result.Errors, dbResult.Errors...)
 
 	if s.contentIndex != nil {
@@ -671,8 +656,10 @@ func metaExecuteSummary(result *models.MetaCleanupExecuteResult) events.CleanupR
 			result.DisabledScanTaskDefinitions +
 			result.DeletedScanTaskDefinitions,
 		DisabledTaskDefinitions: result.DisabledScanTaskDefinitions,
-		ErrorCount:              errorCount,
-		RiskLevel:               "low",
+		SkippedItems: result.RetainedLineageItems +
+			result.RetainedReferencedNodes,
+		ErrorCount: errorCount,
+		RiskLevel:  "low",
 	}
 }
 

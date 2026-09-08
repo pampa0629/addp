@@ -7,7 +7,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func openObjectCatalogScanTestDB(t *testing.T) *gorm.DB {
+func openObjectCatalogScanTestDB(t *testing.T, opts ...metatest.MetadataDBOption) *gorm.DB {
 	t.Helper()
-	return metatest.OpenMetadataDB(t)
+	return metatest.OpenMetadataDB(t, opts...)
 }
