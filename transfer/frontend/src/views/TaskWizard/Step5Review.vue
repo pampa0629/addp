@@ -71,10 +71,10 @@
           </el-descriptions-item>
         </template>
         <template v-if="wizardState.isWatermarkIncremental.value">
-          <el-descriptions-item :label="t('transfer.taskWizard.watermarkFieldLabel')">
+          <el-descriptions-item :label="t(wizardState.isInsertOnlyIncremental.value ? 'transfer.taskWizard.insertOnlyWatermarkFieldLabel' : 'transfer.taskWizard.watermarkFieldLabel')">
             {{ wizardState.watermarkField.value }}
           </el-descriptions-item>
-          <el-descriptions-item :label="t('transfer.taskWizard.tieBreakerLabel')">
+          <el-descriptions-item v-if="!wizardState.isInsertOnlyIncremental.value" :label="t('transfer.taskWizard.tieBreakerLabel')">
             {{ wizardState.watermarkTieBreakers.value.join(', ') }}
           </el-descriptions-item>
           <el-descriptions-item :label="t('transfer.taskWizard.targetKeysLabel')">
@@ -82,6 +82,9 @@
           </el-descriptions-item>
           <el-descriptions-item :label="t('transfer.taskWizard.incrementalRecoveryLabel')">
             {{ t('transfer.taskWizard.incrementalRecoveryResume') }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('transfer.taskWizard.incrementalUpdateLabel')">
+            {{ t(wizardState.isInsertOnlyIncremental.value ? 'transfer.taskWizard.insertOnlyUpdateUnsupported' : 'transfer.taskWizard.watermarkUpdateSupported') }}
           </el-descriptions-item>
           <el-descriptions-item :label="t('transfer.taskWizard.incrementalDeleteLabel')">
             {{ t('transfer.taskWizard.incrementalDeleteUnsupported') }}
@@ -305,8 +308,10 @@ const loadModeLabel = computed(() => {
   if (props.wizardState.isContinuousTask.value) {
     return t('transfer.taskWizard.continuousIncrementalLoad')
   }
-  return props.wizardState.isWatermarkIncremental.value
-    ? t('transfer.taskWizard.watermarkIncrementalLoad')
+  return props.wizardState.isInsertOnlyIncremental.value
+    ? t('transfer.taskWizard.insertOnlyIncrementalLoad')
+    : props.wizardState.isWatermarkIncremental.value
+      ? t('transfer.taskWizard.watermarkIncrementalLoad')
     : t('transfer.taskWizard.snapshotLoad')
 })
 

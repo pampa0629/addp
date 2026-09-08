@@ -62,6 +62,9 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	if err := dropLegacyCADPreviewTables(db); err != nil {
 		return nil, fmt.Errorf("failed to drop legacy CAD preview tables: %w", err)
 	}
+	if err := ensureTaskDefinitionSchema(db); err != nil {
+		return nil, fmt.Errorf("failed to ensure unified Manager task definition schema: %w", err)
+	}
 	if err := ensureTileCacheStateSchema(db); err != nil {
 		return nil, fmt.Errorf("failed to ensure tile cache state schema: %w", err)
 	}
@@ -140,11 +143,67 @@ func ensureDataProfileSchema(db *gorm.DB) error {
 	return db.AutoMigrate(&models.DataProfile{}, &models.DataProfileField{})
 }
 
+func ensureTaskDefinitionSchema(db *gorm.DB) error {
+	legacyTables := []string{
+		"vector_materialized_view_tasks",
+		"vector_tile_cache_tasks",
+		"vector_tile_set_tasks",
+		"raster_cog_tasks",
+		"raster_mosaic_tasks",
+		"model_3d_glb_tasks",
+		"model3d_tiles_tasks",
+		"model_3d_tiles_tasks",
+		"gaussian_splat_ksplat_tasks",
+		"point_cloud_copc_tasks",
+	}
+	var hasLegacy bool
+	for _, table := range legacyTables {
+		var exists bool
+		if err := db.Raw(`SELECT to_regclass(?) IS NOT NULL`, "manager."+table).Scan(&exists).Error; err != nil {
+			return err
+		}
+		hasLegacy = hasLegacy || exists
+	}
+	if hasLegacy {
+		resultTables := []string{"vector_tile_cache", "vector_materialized_view", "raster_cog", "model_3d_glb", "model3d_tiles", "gaussian_splat_ksplat", "point_cloud_copc"}
+		for _, table := range resultTables {
+			if !db.Migrator().HasTable("manager." + table) {
+				continue
+			}
+			if err := db.Exec(fmt.Sprintf(`UPDATE manager.%q SET task_id = NULL, last_execution_id = NULL`, table)).Error; err != nil {
+				return err
+			}
+		}
+		if err := db.Exec(`DELETE FROM common.task_executions WHERE module = 'manager' AND task_type IN ?`, ManagerDerivedTaskTypes()).Error; err != nil {
+			return err
+		}
+	}
+	for _, table := range legacyTables {
+		if err := db.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS manager.%q CASCADE`, table)).Error; err != nil {
+			return err
+		}
+	}
+	if err := db.AutoMigrate(&models.TaskDefinition{}, &models.TaskResourceBinding{}); err != nil {
+		return err
+	}
+	if err := db.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS uq_manager_task_definition_semantic
+		ON manager.task_definitions (tenant_id, task_type, semantic_key)
+		WHERE deleted_at IS NULL AND semantic_key <> ''
+	`).Error; err != nil {
+		return err
+	}
+	return db.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS uq_manager_task_resource_binding
+		ON manager.task_resource_bindings (task_definition_id, role, ordinal)
+	`).Error
+}
+
 func ensureVectorTileSetSchema(db *gorm.DB) error {
 	if err := db.AutoMigrate(&models.VectorTileSetTask{}); err != nil {
 		return err
 	}
-	if err := db.Exec(`UPDATE manager.vector_tile_set_tasks SET schedule = '', next_run_at = NULL WHERE COALESCE(schedule, '') <> '' OR next_run_at IS NOT NULL`).Error; err != nil {
+	if err := db.Exec(`UPDATE manager.task_definitions SET schedule = '', next_run_at = NULL WHERE task_type = 'vector_tile_set_generation' AND (COALESCE(schedule, '') <> '' OR next_run_at IS NOT NULL)`).Error; err != nil {
 		return err
 	}
 	if err := db.Exec(`DROP INDEX IF EXISTS manager.idx_vector_tile_set_tasks_schedule`).Error; err != nil {
@@ -152,8 +211,8 @@ func ensureVectorTileSetSchema(db *gorm.DB) error {
 	}
 	return db.Exec(`
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_vector_tile_set_tasks_semantic_unique
-		ON manager.vector_tile_set_tasks (tenant_id, (config->>'semantic_hash'))
-		WHERE deleted_at IS NULL
+		ON manager.task_definitions (tenant_id, task_type, (config->>'semantic_hash'))
+		WHERE deleted_at IS NULL AND task_type = 'vector_tile_set_generation'
 	`).Error
 }
 
@@ -424,9 +483,10 @@ func ensureTileCacheStateSchema(db *gorm.DB) error {
 		return err
 	}
 	if err := db.Exec(`
-		UPDATE manager.vector_tile_cache_tasks
+		UPDATE manager.task_definitions
 		SET schedule = '', next_run_at = NULL
-		WHERE COALESCE(schedule, '') <> '' OR next_run_at IS NOT NULL
+		WHERE task_type = 'vector_tile_cache_generation'
+		  AND (COALESCE(schedule, '') <> '' OR next_run_at IS NOT NULL)
 	`).Error; err != nil {
 		return err
 	}
@@ -437,12 +497,13 @@ func ensureTileCacheStateSchema(db *gorm.DB) error {
 		return err
 	}
 	if err := db.Exec(`
-		DELETE FROM manager.vector_tile_cache_tasks
-		WHERE config->'tile' ? 'format'
+		DELETE FROM manager.task_definitions
+		WHERE task_type = 'vector_tile_cache_generation'
+		  AND (config->'tile' ? 'format'
 		   OR COALESCE(config->'tile'->>'archive_format', '') <> 'pmtiles'
 		   OR COALESCE(config->'tile'->>'tile_type', '') <> 'mvt'
 		   OR COALESCE(config->>'profile_hash', '') = ''
-		   OR COALESCE(config->'storage'->>'storage_ref', '') = ''
+		   OR COALESCE(config->'storage'->>'storage_ref', '') = '')
 	`).Error; err != nil {
 		return err
 	}
@@ -452,9 +513,10 @@ func ensureTileCacheStateSchema(db *gorm.DB) error {
 		  AND execution.task_type = 'vector_tile_cache_generation'
 		  AND NOT EXISTS (
 			SELECT 1
-			FROM manager.vector_tile_cache_tasks AS task
+			FROM manager.task_definitions AS task
 			WHERE task.id::text = execution.source_task_id
 			  AND task.tenant_id = execution.tenant_id
+			  AND task.task_type = 'vector_tile_cache_generation'
 		  )
 	`).Error; err != nil {
 		return err
@@ -463,9 +525,9 @@ func ensureTileCacheStateSchema(db *gorm.DB) error {
 		return err
 	}
 	if err := db.Exec(`
-		UPDATE manager.vector_tile_cache_tasks
+		UPDATE manager.task_definitions
 		SET config = config - 'preparation'
-		WHERE config ? 'preparation'
+		WHERE task_type = 'vector_tile_cache_generation' AND config ? 'preparation'
 	`).Error; err != nil {
 		return err
 	}
@@ -487,7 +549,7 @@ func ensureTileCacheStateSchema(db *gorm.DB) error {
 	`).Error; err != nil {
 		return err
 	}
-	if err := db.Exec(`ALTER TABLE manager.vector_tile_cache_tasks ALTER COLUMN enabled DROP DEFAULT`).Error; err != nil {
+	if err := db.Exec(`ALTER TABLE manager.task_definitions ALTER COLUMN enabled DROP DEFAULT`).Error; err != nil {
 		return err
 	}
 	if err := db.Exec(`DROP INDEX IF EXISTS manager.idx_vector_tile_cache_tenant_fingerprint_config_unique`).Error; err != nil {
@@ -495,12 +557,13 @@ func ensureTileCacheStateSchema(db *gorm.DB) error {
 	}
 	if err := db.Exec(`
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_vector_tile_cache_tasks_source_profile_unique
-		ON manager.vector_tile_cache_tasks (
+		ON manager.task_definitions (
 			tenant_id,
+			task_type,
 			(config->'target'->>'item_fingerprint'),
 			(config->>'profile_hash')
 		)
-		WHERE deleted_at IS NULL
+		WHERE deleted_at IS NULL AND task_type = 'vector_tile_cache_generation'
 	`).Error; err != nil {
 		return err
 	}
@@ -632,23 +695,23 @@ func ensureVectorMaterializedViewSchema(db *gorm.DB) error {
 		return err
 	}
 	if err := db.Exec(`
-		UPDATE manager.vector_materialized_view_tasks
+		UPDATE manager.task_definitions
 		SET enabled = false
-		WHERE enabled IS NULL
+		WHERE task_type = 'vector_materialized_view_generation' AND enabled IS NULL
 	`).Error; err != nil {
 		return err
 	}
 	if err := db.Exec(`
-		UPDATE manager.vector_materialized_view_tasks
+		UPDATE manager.task_definitions
 		SET created_at = NOW()
-		WHERE created_at IS NULL
+		WHERE task_type = 'vector_materialized_view_generation' AND created_at IS NULL
 	`).Error; err != nil {
 		return err
 	}
 	if err := db.Exec(`
-		UPDATE manager.vector_materialized_view_tasks
+		UPDATE manager.task_definitions
 		SET updated_at = NOW()
-		WHERE updated_at IS NULL
+		WHERE task_type = 'vector_materialized_view_generation' AND updated_at IS NULL
 	`).Error; err != nil {
 		return err
 	}
@@ -667,7 +730,7 @@ func ensureVectorMaterializedViewSchema(db *gorm.DB) error {
 		return err
 	}
 	if err := db.Exec(`
-		ALTER TABLE manager.vector_materialized_view_tasks
+		ALTER TABLE manager.task_definitions
 			ALTER COLUMN id TYPE BIGINT,
 			ALTER COLUMN tenant_id TYPE BIGINT,
 			ALTER COLUMN created_by TYPE BIGINT,
@@ -714,29 +777,29 @@ func ensureRasterCOGSchema(db *gorm.DB) error {
 		return err
 	}
 	if err := db.Exec(`
-		UPDATE manager.raster_cog_tasks
+		UPDATE manager.task_definitions
 		SET config = jsonb_set(config - 'artifact', '{result}', config->'artifact', true)
-		WHERE config ? 'artifact'
+		WHERE task_type = 'raster_cog_generation' AND config ? 'artifact'
 		  AND NOT (config ? 'result')
 	`).Error; err != nil {
 		return err
 	}
 	if err := db.Exec(`
-		UPDATE manager.raster_cog_tasks
+		UPDATE manager.task_definitions
 		SET config = config - 'artifact'
-		WHERE config ? 'artifact'
+		WHERE task_type = 'raster_cog_generation' AND config ? 'artifact'
 	`).Error; err != nil {
 		return err
 	}
 	if err := db.Exec(`
-		UPDATE manager.raster_cog_tasks
+		UPDATE manager.task_definitions
 		SET enabled = false
-		WHERE enabled IS NULL
+		WHERE task_type = 'raster_cog_generation' AND enabled IS NULL
 	`).Error; err != nil {
 		return err
 	}
 	if err := db.Exec(`
-		ALTER TABLE manager.raster_cog_tasks
+		ALTER TABLE manager.task_definitions
 			ALTER COLUMN id TYPE BIGINT,
 			ALTER COLUMN tenant_id TYPE BIGINT,
 			ALTER COLUMN created_by TYPE BIGINT,
@@ -755,8 +818,8 @@ func ensureRasterCOGSchema(db *gorm.DB) error {
 	}
 	if err := db.Exec(`
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_raster_cog_tasks_source_unique
-		ON manager.raster_cog_tasks (tenant_id, (config->'target'->>'item_fingerprint'))
-		WHERE deleted_at IS NULL
+		ON manager.task_definitions (tenant_id, task_type, (config->'target'->>'item_fingerprint'))
+		WHERE deleted_at IS NULL AND task_type = 'raster_cog_generation'
 	`).Error; err != nil {
 		return err
 	}
@@ -780,14 +843,14 @@ func ensureRasterMosaicSchema(db *gorm.DB) error {
 		return err
 	}
 	if err := db.Exec(`
-		UPDATE manager.raster_mosaic_tasks
+		UPDATE manager.task_definitions
 		SET enabled = false
-		WHERE enabled IS NULL
+		WHERE task_type = 'raster_mosaic_generation' AND enabled IS NULL
 	`).Error; err != nil {
 		return err
 	}
 	if err := db.Exec(`
-		ALTER TABLE manager.raster_mosaic_tasks
+		ALTER TABLE manager.task_definitions
 			ALTER COLUMN id TYPE BIGINT,
 			ALTER COLUMN tenant_id TYPE BIGINT,
 			ALTER COLUMN created_by TYPE BIGINT,
@@ -805,14 +868,14 @@ func ensureModel3DTilesSchema(db *gorm.DB) error {
 		return err
 	}
 	if err := db.Exec(`
-		UPDATE manager.model3d_tiles_tasks
+		UPDATE manager.task_definitions
 		SET enabled = false
-		WHERE enabled IS NULL
+		WHERE task_type = 'model3d_tiles_generation' AND enabled IS NULL
 	`).Error; err != nil {
 		return err
 	}
 	if err := db.Exec(`
-		ALTER TABLE manager.model3d_tiles_tasks
+		ALTER TABLE manager.task_definitions
 			ALTER COLUMN id TYPE BIGINT,
 			ALTER COLUMN tenant_id TYPE BIGINT,
 			ALTER COLUMN created_by TYPE BIGINT,
@@ -830,12 +893,13 @@ func ensureModel3DTilesSchema(db *gorm.DB) error {
 					PARTITION BY tenant_id, config->'source'->>'item_fingerprint', config->>'target_format'
 					ORDER BY updated_at DESC, id DESC
 				) AS rn
-			FROM manager.model3d_tiles_tasks
+			FROM manager.task_definitions
 			WHERE deleted_at IS NULL
+				AND task_type = 'model3d_tiles_generation'
 				AND COALESCE(config->'source'->>'item_fingerprint', '') <> ''
 				AND COALESCE(config->>'target_format', '') <> ''
 		)
-		UPDATE manager.model3d_tiles_tasks AS tasks
+		UPDATE manager.task_definitions AS tasks
 		SET deleted_at = NOW(), updated_at = NOW(), enabled = false
 		FROM ranked
 		WHERE tasks.id = ranked.id AND ranked.rn > 1
@@ -844,12 +908,14 @@ func ensureModel3DTilesSchema(db *gorm.DB) error {
 	}
 	if err := db.Exec(`
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_model3d_tiles_tasks_source_format_unique
-		ON manager.model3d_tiles_tasks (
+		ON manager.task_definitions (
 			tenant_id,
+			task_type,
 			((config->'source'->>'item_fingerprint')),
 			((config->>'target_format'))
 		)
 		WHERE deleted_at IS NULL
+			AND task_type = 'model3d_tiles_generation'
 			AND COALESCE(config->'source'->>'item_fingerprint', '') <> ''
 			AND COALESCE(config->>'target_format', '') <> ''
 	`).Error; err != nil {
@@ -870,14 +936,14 @@ func ensureModel3DGLBSchema(db *gorm.DB) error {
 		return err
 	}
 	if err := db.Exec(`
-		UPDATE manager.model_3d_glb_tasks
+		UPDATE manager.task_definitions
 		SET enabled = false
-		WHERE enabled IS NULL
+		WHERE task_type = 'model_3d_glb_generation' AND enabled IS NULL
 	`).Error; err != nil {
 		return err
 	}
 	if err := db.Exec(`
-		ALTER TABLE manager.model_3d_glb_tasks
+		ALTER TABLE manager.task_definitions
 			ALTER COLUMN id TYPE BIGINT,
 			ALTER COLUMN tenant_id TYPE BIGINT,
 			ALTER COLUMN created_by TYPE BIGINT,
@@ -908,11 +974,12 @@ func ensureModel3DGLBSchema(db *gorm.DB) error {
 					PARTITION BY tenant_id, config->'source'->>'item_fingerprint'
 					ORDER BY updated_at DESC, id DESC
 				) AS rn
-			FROM manager.model_3d_glb_tasks
+			FROM manager.task_definitions
 			WHERE deleted_at IS NULL
+				AND task_type = 'model_3d_glb_generation'
 				AND COALESCE(config->'source'->>'item_fingerprint', '') <> ''
 		)
-		UPDATE manager.model_3d_glb_tasks AS tasks
+		UPDATE manager.task_definitions AS tasks
 		SET deleted_at = NOW(), updated_at = NOW(), enabled = false
 		FROM ranked
 		WHERE tasks.id = ranked.id AND ranked.rn > 1
@@ -921,8 +988,8 @@ func ensureModel3DGLBSchema(db *gorm.DB) error {
 	}
 	if err := db.Exec(`
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_model_3d_glb_tasks_source_unique
-		ON manager.model_3d_glb_tasks (tenant_id, ((config->'source'->>'item_fingerprint')))
-		WHERE deleted_at IS NULL AND COALESCE(config->'source'->>'item_fingerprint', '') <> ''
+		ON manager.task_definitions (tenant_id, task_type, ((config->'source'->>'item_fingerprint')))
+		WHERE deleted_at IS NULL AND task_type = 'model_3d_glb_generation' AND COALESCE(config->'source'->>'item_fingerprint', '') <> ''
 	`).Error; err != nil {
 		return err
 	}
@@ -941,14 +1008,14 @@ func ensureGaussianSplatKSplatSchema(db *gorm.DB) error {
 		return err
 	}
 	if err := db.Exec(`
-		UPDATE manager.gaussian_splat_ksplat_tasks
+		UPDATE manager.task_definitions
 		SET enabled = false
-		WHERE enabled IS NULL
+		WHERE task_type = 'gaussian_splat_ksplat_generation' AND enabled IS NULL
 	`).Error; err != nil {
 		return err
 	}
 	if err := db.Exec(`
-		ALTER TABLE manager.gaussian_splat_ksplat_tasks
+		ALTER TABLE manager.task_definitions
 			ALTER COLUMN id TYPE BIGINT,
 			ALTER COLUMN tenant_id TYPE BIGINT,
 			ALTER COLUMN created_by TYPE BIGINT,
@@ -979,11 +1046,12 @@ func ensureGaussianSplatKSplatSchema(db *gorm.DB) error {
 					PARTITION BY tenant_id, config->'source'->>'item_fingerprint'
 					ORDER BY updated_at DESC, id DESC
 				) AS rn
-			FROM manager.gaussian_splat_ksplat_tasks
+			FROM manager.task_definitions
 			WHERE deleted_at IS NULL
+				AND task_type = 'gaussian_splat_ksplat_generation'
 				AND COALESCE(config->'source'->>'item_fingerprint', '') <> ''
 		)
-		UPDATE manager.gaussian_splat_ksplat_tasks AS tasks
+		UPDATE manager.task_definitions AS tasks
 		SET deleted_at = NOW(), updated_at = NOW(), enabled = false
 		FROM ranked
 		WHERE tasks.id = ranked.id AND ranked.rn > 1
@@ -992,8 +1060,8 @@ func ensureGaussianSplatKSplatSchema(db *gorm.DB) error {
 	}
 	if err := db.Exec(`
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_gaussian_splat_ksplat_tasks_source_unique
-		ON manager.gaussian_splat_ksplat_tasks (tenant_id, ((config->'source'->>'item_fingerprint')))
-		WHERE deleted_at IS NULL AND COALESCE(config->'source'->>'item_fingerprint', '') <> ''
+		ON manager.task_definitions (tenant_id, task_type, ((config->'source'->>'item_fingerprint')))
+		WHERE deleted_at IS NULL AND task_type = 'gaussian_splat_ksplat_generation' AND COALESCE(config->'source'->>'item_fingerprint', '') <> ''
 	`).Error; err != nil {
 		return err
 	}
@@ -1012,14 +1080,14 @@ func ensurePointCloudCOPCSchema(db *gorm.DB) error {
 		return err
 	}
 	if err := db.Exec(`
-		UPDATE manager.point_cloud_copc_tasks
+		UPDATE manager.task_definitions
 		SET enabled = false
-		WHERE enabled IS NULL
+		WHERE task_type = 'point_cloud_copc_generation' AND enabled IS NULL
 	`).Error; err != nil {
 		return err
 	}
 	if err := db.Exec(`
-		ALTER TABLE manager.point_cloud_copc_tasks
+		ALTER TABLE manager.task_definitions
 			ALTER COLUMN id TYPE BIGINT,
 			ALTER COLUMN tenant_id TYPE BIGINT,
 			ALTER COLUMN created_by TYPE BIGINT,
@@ -1050,11 +1118,12 @@ func ensurePointCloudCOPCSchema(db *gorm.DB) error {
 					PARTITION BY tenant_id, config->'source'->>'item_fingerprint'
 					ORDER BY updated_at DESC, id DESC
 				) AS rn
-			FROM manager.point_cloud_copc_tasks
+			FROM manager.task_definitions
 			WHERE deleted_at IS NULL
+				AND task_type = 'point_cloud_copc_generation'
 				AND COALESCE(config->'source'->>'item_fingerprint', '') <> ''
 		)
-		UPDATE manager.point_cloud_copc_tasks AS tasks
+		UPDATE manager.task_definitions AS tasks
 		SET deleted_at = NOW(), updated_at = NOW(), enabled = false
 		FROM ranked
 		WHERE tasks.id = ranked.id AND ranked.rn > 1
@@ -1063,8 +1132,8 @@ func ensurePointCloudCOPCSchema(db *gorm.DB) error {
 	}
 	if err := db.Exec(`
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_point_cloud_copc_tasks_source_unique
-		ON manager.point_cloud_copc_tasks (tenant_id, ((config->'source'->>'item_fingerprint')))
-		WHERE deleted_at IS NULL AND COALESCE(config->'source'->>'item_fingerprint', '') <> ''
+		ON manager.task_definitions (tenant_id, task_type, ((config->'source'->>'item_fingerprint')))
+		WHERE deleted_at IS NULL AND task_type = 'point_cloud_copc_generation' AND COALESCE(config->'source'->>'item_fingerprint', '') <> ''
 	`).Error; err != nil {
 		return err
 	}

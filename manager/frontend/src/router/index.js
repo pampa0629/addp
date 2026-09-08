@@ -42,59 +42,11 @@ const routes = [
         meta: { requiresAuth: true, title: '向量化任务-addp' }
       },
       {
-        path: 'spatial-quick-view/vector-tile-cache',
-        name: 'TileCache',
-        component: () => import('../views/TileCache.vue'),
-        meta: { requiresAuth: true, title: '矢量快显 - 瓦片缓存-addp' }
-      },
-      {
-        path: 'spatial-tasks/vector-tiles',
-        name: 'VectorTileSet',
-        component: () => import('../views/VectorTileSet.vue'),
-        meta: { requiresAuth: true, title: '矢量瓦片任务-addp' }
-      },
-      {
-        path: 'spatial-quick-view/vector-materialized-view',
-        name: 'VectorMaterializedView',
-        component: () => import('../views/VectorMaterializedView.vue'),
-        meta: { requiresAuth: true, title: '矢量快显 - 物化视图-addp' }
-      },
-      {
-        path: 'spatial-quick-view/raster-cog',
-        name: 'RasterCOG',
-        component: () => import('../views/RasterCOG.vue'),
-        meta: { requiresAuth: true, title: '栅格快显 - COG-addp' }
-      },
-      {
-        path: 'spatial-quick-view/raster-mosaic',
-        name: 'RasterMosaic',
-        component: () => import('../views/RasterMosaic.vue'),
-        meta: { requiresAuth: true, title: '栅格快显 - Mosaic-addp' }
-      },
-      {
-        path: 'model-3d-glb',
-        name: 'Model3DGLB',
-        component: () => import('../views/Model3DGLB.vue'),
-        meta: { requiresAuth: true, title: '三维模型 GLB-addp' }
-      },
-      {
-        path: 'model-3d-tiles',
-        name: 'Model3DTiles',
-        component: () => import('../views/Model3DTiles.vue'),
-        meta: { requiresAuth: true, title: '三维快显 - 瓦片-addp' }
-      },
-      {
-        path: 'gaussian-splat-ksplat',
-        name: 'GaussianSplatKSplat',
-        component: () => import('../views/GaussianSplatKSplat.vue'),
-        meta: { requiresAuth: true, title: '3DGS KSplats-addp' }
-      },
-      {
-        path: 'point-cloud-copc',
-        name: 'PointCloudCOPC',
-        component: () => import('../views/PointCloudCOPC.vue'),
-        meta: { requiresAuth: true, title: '点云快显 - COPC-addp' }
-      },
+		path: 'derived-tasks',
+		name: 'DerivedTasks',
+		component: () => import('../views/DerivedTasks.vue'),
+		meta: { requiresAuth: true, title: '派生任务-addp' }
+	  },
       {
         path: 'spatial-preview',
         name: 'SpatialPreview',

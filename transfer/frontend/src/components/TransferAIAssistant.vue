@@ -90,15 +90,16 @@
                 </template>
                 <template v-else>
                   <el-radio value="snapshot">{{ t('transfer.taskWizard.snapshotLoad') }}</el-radio>
+                  <el-radio value="insert_only" :disabled="!wizardState.supportsWatermarkIncremental.value">{{ t('transfer.taskWizard.insertOnlyIncrementalLoad') }}</el-radio>
                   <el-radio value="incremental" :disabled="!wizardState.supportsWatermarkIncremental.value">{{ t('transfer.taskWizard.watermarkIncrementalLoad') }}</el-radio>
                   <el-radio value="cdc" :disabled="!wizardState.supportsDatabaseCDC.value">{{ t('transfer.taskWizard.databaseCDCLoad') }}</el-radio>
                 </template>
               </el-radio-group>
             </el-form-item>
             <el-alert
-              v-if="syncMode === 'incremental'"
-              :title="t('transfer.taskWizard.watermarkIncrementalNoticeTitle')"
-              :description="wizardState.supportsWatermarkIncremental.value ? t('transfer.taskWizard.watermarkIncrementalNotice') : t('transfer.taskWizard.watermarkIncrementalUnsupported')"
+              v-if="['insert_only', 'incremental'].includes(syncMode)"
+              :title="t(syncMode === 'insert_only' ? 'transfer.taskWizard.insertOnlyIncrementalNoticeTitle' : 'transfer.taskWizard.watermarkIncrementalNoticeTitle')"
+              :description="wizardState.supportsWatermarkIncremental.value ? t(syncMode === 'insert_only' ? 'transfer.taskWizard.insertOnlyIncrementalNotice' : 'transfer.taskWizard.watermarkIncrementalNotice') : t('transfer.taskWizard.watermarkIncrementalUnsupported')"
               :type="wizardState.supportsWatermarkIncremental.value ? 'warning' : 'error'"
               :closable="false"
               show-icon
@@ -122,22 +123,21 @@
               show-icon
               class="transfer-ai-mode-alert"
             />
-            <template v-if="syncMode === 'incremental' && wizardState.supportsWatermarkIncremental.value">
-              <el-form-item :label="t('transfer.taskWizard.watermarkFieldLabel')" required>
-                <el-select v-model="wizardState.watermarkField.value" filterable class="full-width" :placeholder="t('transfer.taskWizard.watermarkFieldPlaceholder')" :disabled="busy" @change="handleWatermarkFieldChange">
+            <template v-if="['insert_only', 'incremental'].includes(syncMode) && wizardState.supportsWatermarkIncremental.value">
+              <el-form-item :label="t(syncMode === 'insert_only' ? 'transfer.taskWizard.insertOnlyWatermarkFieldLabel' : 'transfer.taskWizard.watermarkFieldLabel')" required>
+                <el-select v-model="wizardState.watermarkField.value" filterable class="full-width" :placeholder="t(syncMode === 'insert_only' ? 'transfer.taskWizard.insertOnlyWatermarkFieldPlaceholder' : 'transfer.taskWizard.watermarkFieldPlaceholder')" :disabled="busy" @change="handleWatermarkFieldChange">
                   <el-option v-for="field in sourceFieldOptions" :key="field.value" :label="field.label" :value="field.value" />
                 </el-select>
-                <div class="transfer-ai-form-hint">{{ t('transfer.taskWizard.watermarkFieldHint') }}</div>
+                <div class="transfer-ai-form-hint">{{ t(syncMode === 'insert_only' ? 'transfer.taskWizard.insertOnlyWatermarkFieldHint' : 'transfer.taskWizard.watermarkFieldHint') }}</div>
               </el-form-item>
-              <el-form-item :label="t('transfer.taskWizard.tieBreakerLabel')" required>
-                <el-select v-model="wizardState.watermarkTieBreakers.value" multiple filterable class="full-width" :placeholder="t('transfer.taskWizard.tieBreakerPlaceholder')" :disabled="busy">
+              <el-form-item v-if="syncMode !== 'insert_only'" :label="t('transfer.taskWizard.tieBreakerLabel')" required>
+                <el-select v-model="wizardState.watermarkTieBreakers.value" multiple filterable class="full-width" :placeholder="t('transfer.taskWizard.tieBreakerPlaceholder')" :disabled="busy" @change="wizardState.synchronizeWatermarkIdentity">
                   <el-option v-for="field in sourceFieldOptions" :key="field.value" :label="field.label" :value="field.value" :disabled="field.value === wizardState.watermarkField.value" />
                 </el-select>
               </el-form-item>
               <el-form-item :label="t('transfer.taskWizard.targetKeysLabel')" required>
-                <el-select v-model="wizardState.targetKeys.value" multiple filterable class="full-width" :placeholder="t('transfer.taskWizard.targetKeysPlaceholder')" :disabled="busy">
-                  <el-option v-for="field in targetFieldOptions" :key="field.value" :label="field.label" :value="field.value" />
-                </el-select>
+                <div class="transfer-ai-derived-value">{{ wizardState.watermarkTargetKeys.value.join(', ') || t('transfer.taskWizard.notConfigured') }}</div>
+                <div class="transfer-ai-form-hint">{{ t('transfer.taskWizard.watermarkTargetKeysDerivedHint') }}</div>
               </el-form-item>
             </template>
             <template v-if="syncMode === 'kafka'">
@@ -295,14 +295,11 @@ const sourceFieldOptions = computed(() => fieldOptions(wizardState.sourceFields.
   type: normalizeFieldType(field),
   primaryKey: isPrimaryKeyField(field)
 }))))
-const targetFieldOptions = computed(() => fieldOptions(wizardState.fieldMappings.value.map(mapping => ({
-  name: mapping?.target_field,
-  type: mapping?.target_type
-}))))
 const sourceSummary = computed(() => selectedSource.value ? `${selectedSource.value.engine_name || ''} / ${candidateDisplayPath(selectedSource.value)}` : '')
 const targetSummary = computed(() => `${selectedTargetEngine.value?.name || selectedTargetEngine.value?.engine_type || ''} / ${targetParentSelection.value?.display?.path || ''} / ${targetTable.value}`)
 const syncModeLabel = computed(() => ({
   snapshot: t('transfer.taskWizard.snapshotLoad'),
+  insert_only: t('transfer.taskWizard.insertOnlyIncrementalLoad'),
   incremental: t('transfer.taskWizard.watermarkIncrementalLoad'),
   cdc: t('transfer.taskWizard.databaseCDCLoad'),
   kafka: t('transfer.taskWizard.continuousIncrementalLoad')
@@ -318,20 +315,20 @@ const continuousConfigIssueText = computed(() => wizardState.continuousConfigIss
   }))
   .join('；'))
 const syncModeAvailable = computed(() => {
-  if (syncMode.value === 'incremental') return wizardState.supportsWatermarkIncremental.value
+  if (['insert_only', 'incremental'].includes(syncMode.value)) return wizardState.supportsWatermarkIncremental.value
   if (syncMode.value === 'cdc') return wizardState.supportsDatabaseCDC.value
   if (syncMode.value === 'kafka') return isKafkaSource.value && wizardState.supportsContinuousTarget.value
   return true
 })
 const selectedModeConfigValid = computed(() => {
-  if (syncMode.value === 'incremental') return wizardState.watermarkIncrementalValid.value
+  if (['insert_only', 'incremental'].includes(syncMode.value)) return wizardState.watermarkIncrementalValid.value
   if (syncMode.value === 'cdc' || syncMode.value === 'kafka') return wizardState.continuousConfigValid.value
   return true
 })
 const canAdvance = computed(() => {
   if (stage.value === 'request') return !!prompt.value.trim()
   if (stage.value === 'source') return !!selectedSource.value
-  if (stage.value === 'target') return isEngineSelectable(selectedTargetEngine.value) && !!targetParentLocator.value && !!targetTable.value.trim() && syncModeAvailable.value && (syncMode.value !== 'incremental' || wizardState.watermarkIncrementalValid.value)
+  if (stage.value === 'target') return isEngineSelectable(selectedTargetEngine.value) && !!targetParentLocator.value && !!targetTable.value.trim() && syncModeAvailable.value && (!['insert_only', 'incremental'].includes(syncMode.value) || wizardState.watermarkIncrementalValid.value)
   if (stage.value === 'fields') return (wizardState.fieldMappings.value.length > 0 || wizardState.sourceFields.value.length === 0) && decimalIssues.value.length === 0 && selectedModeConfigValid.value
   return !!wizardState.taskName.value.trim() && decimalIssues.value.length === 0 && selectedModeConfigValid.value
 })
@@ -490,8 +487,8 @@ function applySyncMode() {
     return
   }
   wizardState.setLoadMode('snapshot')
-  if (syncMode.value === 'incremental') {
-    wizardState.setLoadMode('incremental')
+  if (['insert_only', 'incremental'].includes(syncMode.value)) {
+    wizardState.setLoadMode(syncMode.value)
     wizardState.initializeIncrementalDefaults()
   } else if (syncMode.value === 'cdc') {
     wizardState.setLoadMode('cdc')
@@ -500,7 +497,7 @@ function applySyncMode() {
 
 function handleWatermarkFieldChange() {
   wizardState.watermarkTieBreakers.value = wizardState.watermarkTieBreakers.value.filter(field => field !== wizardState.watermarkField.value)
-  wizardState.initializeIncrementalDefaults()
+  wizardState.synchronizeWatermarkIdentity()
 }
 
 async function recommendTopicFields() {
@@ -526,7 +523,7 @@ async function confirmTarget() {
   wizardState.autoGenerateFieldMappings()
   if (decimalLimits.value) await recommendDecimals()
   applySyncMode()
-  if (syncMode.value === 'incremental' && !wizardState.watermarkIncrementalValid.value) return
+  if (['insert_only', 'incremental'].includes(syncMode.value) && !wizardState.watermarkIncrementalValid.value) return
   stage.value = 'fields'
 }
 async function recommendDecimals() {
@@ -599,6 +596,7 @@ function showError(error) {
 .transfer-ai-sync-modes :deep(.el-radio) { margin-right: 0; white-space: normal; }
 .transfer-ai-mode-alert { margin: 0 0 12px; }
 .transfer-ai-form-hint { margin-top: 5px; color: var(--addp-text-tertiary); font-size: 12px; line-height: 1.5; }
+.transfer-ai-derived-value { min-height: 32px; line-height: 32px; color: var(--addp-text-primary); }
 .transfer-ai-field-table { margin-top: 12px; }
 .transfer-ai-decimal-alert { margin-top: 10px; }
 .transfer-ai-fact-note { margin-top: 8px; color: var(--addp-text-secondary); font-size: 12px; }

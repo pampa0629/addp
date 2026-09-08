@@ -47,12 +47,17 @@
         </el-form-item>
         <el-form-item v-if="form.scopeType === 'department'" :label="t('system.iam.roleAssignments.departmentId')" prop="departmentId"><el-input v-model="form.departmentId" /></el-form-item>
         <el-form-item v-if="form.scopeType === 'project_group'" :label="t('system.iam.roleAssignments.projectGroupId')" prop="projectGroupId"><el-input v-model="form.projectGroupId" /></el-form-item>
-        <el-form-item :label="t('system.iam.roles.role')" prop="roleId">
+        <el-form-item :label="t('system.iam.roles.role')" prop="roleIds">
           <el-select
-            v-model="form.roleId"
+            v-model="form.roleIds"
             :disabled="!roleSelectionReady || assignmentsLoading"
             :loading="assignmentsLoading"
             :no-data-text="t('system.iam.roleAssignments.noAssignableRoles')"
+            multiple
+            collapse-tags
+            collapse-tags-tooltip
+            :max-collapse-tags="3"
+            :multiple-limit="MAX_ROLE_ASSIGNMENT_BATCH_SIZE"
             filterable
             style="width: 100%"
           >
@@ -68,12 +73,12 @@
             </el-option>
           </el-select>
           <div v-if="roleSelectionReady && !assignmentsLoading && availableRoleCount === 0" class="iam-role-selection-detail">{{ t('system.iam.roleAssignments.allAssigned') }}</div>
-          <div v-else-if="selectedRoleDescription" class="iam-role-selection-detail">{{ selectedRoleDescription }}</div>
+          <div v-else-if="form.roleIds.length" class="iam-role-selection-detail">{{ t('system.iam.roleAssignments.selectedCount', { count: form.roleIds.length }) }}</div>
         </el-form-item>
-        <el-form-item v-if="selectedRole?.role_key !== 'tenant.administrator'" :label="t('system.iam.roleAssignments.validUntil')"><el-date-picker v-model="form.validUntil" type="datetime" clearable style="width: 100%" /></el-form-item>
+        <el-form-item v-if="!hasTenantAdministratorSelected" :label="t('system.iam.roleAssignments.validUntil')"><el-date-picker v-model="form.validUntil" type="datetime" clearable style="width: 100%" /></el-form-item>
         <el-form-item :label="t('system.iam.common.reason')"><el-input v-model="form.reason" type="textarea" :rows="2" /></el-form-item>
       </el-form>
-      <template #footer><el-button @click="dialogVisible = false">{{ t('system.iam.common.cancel') }}</el-button><el-button type="primary" :disabled="!selectedRoleOption || selectedRoleOption.assigned" :loading="submitting" @click="submit">{{ t('system.iam.common.create') }}</el-button></template>
+      <template #footer><el-button @click="dialogVisible = false">{{ t('system.iam.common.cancel') }}</el-button><el-button type="primary" :disabled="!canSubmitAssignments" :loading="submitting" @click="submit">{{ t('system.iam.roleAssignments.confirmAssignment') }}</el-button></template>
     </el-dialog>
     <MFAStepUpDialog ref="stepUpRef" />
   </section>
@@ -93,13 +98,13 @@ import {
   buildTenantRoleOptions,
   formatTenantAssignmentScope,
   hasTenantRole,
-  resolveRoleDescription,
   resolveRoleName,
   resolveTenantScopeLabel,
   tenantRoleKeys
 } from '../../utils/iamRoles'
 
 const { t, te } = useI18n()
+const MAX_ROLE_ASSIGNMENT_BATCH_SIZE = 50
 const authStore = useAuthStore()
 const can = (permission) => authStore.hasPermission(permission)
 const rows = ref([])
@@ -115,9 +120,9 @@ const pageSize = ref(20)
 const total = ref(0)
 const dialogVisible = ref(false)
 const formRef = ref()
-const form = reactive({ membershipId: '', roleId: '', scopeType: 'tenant', departmentId: '', projectGroupId: '', validUntil: null, reason: '' })
+const form = reactive({ membershipId: '', roleIds: [], scopeType: 'tenant', departmentId: '', projectGroupId: '', validUntil: null, reason: '' })
 const selectedMember = computed(() => members.value.find((member) => member.id === form.membershipId))
-const selectedRole = computed(() => roles.value.find((role) => role.id === form.roleId))
+const selectedRoles = computed(() => roles.value.filter((role) => form.roleIds.includes(role.id)))
 const compatibleRoles = computed(() => roles.value.filter((role) =>
   (role.allowed_principal_types || []).includes(selectedMember.value?.principal_type)
 ))
@@ -131,9 +136,10 @@ const roleOptions = computed(() => roleSelectionReady.value ? buildTenantRoleOpt
   departmentId: form.departmentId,
   projectGroupId: form.projectGroupId
 }) : [])
-const selectedRoleOption = computed(() => roleOptions.value.find((role) => role.id === form.roleId))
+const selectedRoleOptions = computed(() => roleOptions.value.filter((role) => form.roleIds.includes(role.id)))
 const availableRoleCount = computed(() => roleOptions.value.filter((role) => !role.assigned).length)
-const selectedRoleDescription = computed(() => selectedRole.value ? resolveRoleDescription(selectedRole.value, t, te) : '')
+const hasTenantAdministratorSelected = computed(() => selectedRoles.value.some((role) => role.role_key === TENANT_ADMINISTRATOR_ROLE_KEY))
+const canSubmitAssignments = computed(() => form.roleIds.length > 0 && selectedRoleOptions.value.length === form.roleIds.length && selectedRoleOptions.value.every((role) => !role.assigned))
 const showRecommendations = computed(() => can('iam.tenant_role_assignment.create') && tenantRoleKeys(authStore.authContext).includes(TENANT_ADMINISTRATOR_ROLE_KEY))
 const recommendationIcons = {
   'tenant.infrastructure_administrator': Connection,
@@ -142,7 +148,7 @@ const recommendationIcons = {
 }
 const rules = computed(() => ({
   membershipId: [{ required: true, message: t('system.iam.validation.required'), trigger: 'change' }],
-  roleId: [{ required: true, message: t('system.iam.validation.required'), trigger: 'change' }],
+  roleIds: [{ required: true, type: 'array', min: 1, message: t('system.iam.validation.required'), trigger: 'change' }],
   scopeType: [{ required: true, message: t('system.iam.validation.required'), trigger: 'change' }],
   departmentId: [{ required: form.scopeType === 'department', message: t('system.iam.validation.required'), trigger: 'blur' }],
   projectGroupId: [{ required: form.scopeType === 'project_group', message: t('system.iam.validation.required'), trigger: 'blur' }]
@@ -209,7 +215,7 @@ async function loadMemberAssignments() {
 }
 function reload() { page.value = 1; return load() }
 async function openCreate(roleKey = '') {
-  Object.assign(form, { membershipId: '', roleId: '', scopeType: 'tenant', departmentId: '', projectGroupId: '', validUntil: null, reason: '' })
+  Object.assign(form, { membershipId: '', roleIds: [], scopeType: 'tenant', departmentId: '', projectGroupId: '', validUntil: null, reason: '' })
   try {
     await loadOptions()
     const currentMembershipID = authStore.authContext?.context?.tenant_membership_id
@@ -218,7 +224,7 @@ async function openCreate(roleKey = '') {
     const recommendedRole = roles.value.find((role) => role.role_key === roleKey)
     const recommendedOption = roleOptions.value.find((role) => role.id === recommendedRole?.id)
     if (recommendedOption && !recommendedOption.assigned) {
-      form.roleId = recommendedRole.id
+      form.roleIds = [recommendedRole.id]
     }
     dialogVisible.value = true
   } catch (error) {
@@ -230,7 +236,7 @@ async function submit() {
   submitting.value = true
   const payload = {
     membership_id: form.membershipId,
-    role_id: form.roleId,
+    role_ids: form.roleIds,
     scope_type: form.scopeType,
     department_id: form.scopeType === 'department' ? form.departmentId : null,
     project_group_id: form.scopeType === 'project_group' ? form.projectGroupId : null,
@@ -238,9 +244,9 @@ async function submit() {
     reason: form.reason.trim()
   }
   try {
-    await createAssignmentWithStepUp(payload)
+    const assignments = await createAssignmentsWithStepUp(payload)
     await refreshCurrentMemberAuthorization(form.membershipId)
-    ElMessage.success(t('system.iam.common.saved'))
+    ElMessage.success(t('system.iam.roleAssignments.assignedCount', { count: assignments.length }))
     dialogVisible.value = false
     await load()
   } catch (error) {
@@ -249,7 +255,7 @@ async function submit() {
     submitting.value = false
   }
 }
-async function createAssignmentWithStepUp(payload) {
+async function createAssignmentsWithStepUp(payload) {
   try {
     return await iamAPI.tenantRoleAssignments.create(payload)
   } catch (error) {
@@ -278,14 +284,17 @@ async function refreshCurrentMemberAuthorization(membershipId) {
   await authStore.refreshAuthorization()
 }
 watch(() => form.membershipId, () => {
-  form.roleId = ''
+  form.roleIds = []
   form.validUntil = null
   if (dialogVisible.value) loadMemberAssignments()
 })
 watch(() => [form.scopeType, form.departmentId, form.projectGroupId], () => {
-  form.roleId = ''
+  form.roleIds = []
   form.validUntil = null
 })
+watch(() => form.roleIds, () => {
+  if (hasTenantAdministratorSelected.value) form.validUntil = null
+}, { deep: true })
 onMounted(load)
 </script>
 

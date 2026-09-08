@@ -513,7 +513,7 @@ Transfer 切片已冻结 `export` 动作边界，不恢复旧 `export` 任务类
 
 2026-09-06 继续收敛 Security 内部 Owner 契约：必要 Owner 集合与各 Owner 可豁免主动作改由同一事实源派生，Enrollment 初始门禁、Assessment/Definition 影响重编译、变化流校验及历史投影升级不再分别维护四份 Owner 列表。这一收敛不把 Workbench 或 Asset 新增为投影 Owner：Workbench 继续消费 Service 已保护结果，Asset 只交付资源引用与授权事实。
 
-2026-09-06 将早期租户级 ProtectionExemption 无兼容收敛为“出口申请、Security 审批、按用户临时授权”的单一路径：当前用户只能从 Manager 预览针对一个正式敏感 Assessment 提交 ProtectionAccessRequest，主体完全来自可信 AuthContext；另一名有审批权限的用户批准后，Security 才形成绑定 `{tenant, assessment_revision, manager, preview, user}` 的 ProtectionExemption。申请人与审批人必须不同，有效期最长 30 天且不得超过申请期限；Assessment 修订、到期或提前撤销都会使授权失效。Projection 协议升级为 v2，规则始终保留 Policy/Baseline 默认保护决策，按用户 `allow` 只存在于 `authorizations`，Owner 用服务端可信主体本地匹配，未命中立即回落。旧 v1 存量投影在 Security 启动时原地单向改写并重算 checksum，旧租户级 allow 只保留保护性 fallback，sequence 与 Owner cursor 不变；不保留 v1 解析、直接创建、续期、重新启用、管理员绕过或其他出口借用 Manager 授权的路径。
+2026-09-06 将早期租户级 ProtectionExemption 无兼容收敛为“出口申请、Security 审批、按用户临时授权”的单一路径：当前用户只能从 Manager 预览针对一个正式敏感 Assessment 提交 ProtectionAccessRequest，主体完全来自可信 AuthContext；另一名有审批权限的用户批准后，Security 才形成绑定 `{tenant, assessment_revision, manager, preview, user}` 的 ProtectionExemption。申请人与审批人必须不同，有效期最长 30 天且不得超过申请期限；Assessment 修订、到期或提前撤销都会使授权失效。审批队列向有审批权限的用户展示当前租户全部待审批申请，本人申请必须明确标记为不可审批，不能通过隐藏记录制造申请丢失的错觉。Projection 协议升级为 v2，规则始终保留 Policy/Baseline 默认保护决策，按用户 `allow` 只存在于 `authorizations`，Owner 用服务端可信主体本地匹配，未命中立即回落。旧 v1 存量投影在 Security 启动时原地单向改写并重算 checksum，旧租户级 allow 只保留保护性 fallback，sequence 与 Owner cursor 不变；不保留 v1 解析、直接创建、续期、重新启用、管理员绕过或其他出口借用 Manager 授权的路径。
 
 ### 阶段 7：全域数据与隐私合规深化
 

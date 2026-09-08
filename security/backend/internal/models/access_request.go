@@ -7,9 +7,10 @@ import (
 )
 
 const (
-	ProtectionAccessRequestStatePending  = "pending"
-	ProtectionAccessRequestStateApproved = "approved"
-	ProtectionAccessRequestStateRejected = "rejected"
+	ProtectionAccessRequestStatePending                    = "pending"
+	ProtectionAccessRequestStateApproved                   = "approved"
+	ProtectionAccessRequestStateRejected                   = "rejected"
+	ProtectionAccessRequestDecisionUnavailableSelfApproval = "self_approval_forbidden"
 )
 
 type ProtectionAccessRequest struct {
@@ -53,9 +54,11 @@ type DecideProtectionAccessRequest struct {
 
 type ProtectionAccessRequestResponse struct {
 	ProtectionAccessRequest
-	Component      dataprotection.Component `json:"component"`
-	TargetFullName string                   `json:"target_full_name"`
-	ExemptionID    string                   `json:"exemption_id,omitempty"`
+	Component                 dataprotection.Component `json:"component"`
+	TargetFullName            string                   `json:"target_full_name"`
+	ExemptionID               string                   `json:"exemption_id,omitempty"`
+	CanDecide                 bool                     `json:"can_decide"`
+	DecisionUnavailableReason string                   `json:"decision_unavailable_reason,omitempty"`
 }
 
 type ProtectionAccessRequestListResponse struct {

@@ -56,7 +56,7 @@ func (p *PostgreSQLPlugin) prepareTableUpsert(ctx context.Context, connInfo plug
 	if err := createPostgresTable(ctx, db, schema, table, writeFields, opts.SpatialInfo, !requireTargetAbsent); err != nil {
 		return err
 	}
-	if err := validatePostgresUniqueTieBreakers(ctx, db, schema, table, keys); err != nil {
+	if err := validatePostgresUniqueFields(ctx, db, schema, table, "upsert keys", keys); err != nil {
 		return fmt.Errorf("postgresql upsert keys are not backed by a unique constraint: %w", err)
 	}
 	return nil

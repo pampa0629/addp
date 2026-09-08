@@ -20,21 +20,22 @@ const (
 
 type managerExecutionOwnership struct {
 	taskTable              string
+	taskTypeColumn         bool
 	resultTable            string
 	buildingStatus         string
 	cleanupManagedArtifact bool
 }
 
 var managerExecutionOwnerships = map[string]managerExecutionOwnership{
-	commonExecution.TaskTypeVectorTileCacheGeneration:        {taskTable: "manager.vector_tile_cache_tasks", resultTable: "manager.vector_tile_cache", buildingStatus: "generating"},
-	commonExecution.TaskTypeVectorTileSetGeneration:          {taskTable: "manager.vector_tile_set_tasks"},
-	commonExecution.TaskTypeVectorMaterializedViewGeneration: {taskTable: "manager.vector_materialized_view_tasks", resultTable: "manager.vector_materialized_view", buildingStatus: "building"},
-	commonExecution.TaskTypeRasterCOGGeneration:              {taskTable: "manager.raster_cog_tasks", resultTable: "manager.raster_cog", buildingStatus: "building", cleanupManagedArtifact: true},
-	commonExecution.TaskTypeRasterMosaicGeneration:           {taskTable: "manager.raster_mosaic_tasks"},
-	commonExecution.TaskTypeModel3DGLBGeneration:             {taskTable: "manager.model_3d_glb_tasks", resultTable: "manager.model_3d_glb", buildingStatus: "building", cleanupManagedArtifact: true},
-	commonExecution.TaskTypeModel3DTilesGeneration:           {taskTable: "manager.model3d_tiles_tasks", resultTable: "manager.model3d_tiles", buildingStatus: "building", cleanupManagedArtifact: true},
-	commonExecution.TaskTypeGaussianSplatKSplatGeneration:    {taskTable: "manager.gaussian_splat_ksplat_tasks", resultTable: "manager.gaussian_splat_ksplat", buildingStatus: "building", cleanupManagedArtifact: true},
-	commonExecution.TaskTypePointCloudCOPCGeneration:         {taskTable: "manager.point_cloud_copc_tasks", resultTable: "manager.point_cloud_copc", buildingStatus: "building", cleanupManagedArtifact: true},
+	commonExecution.TaskTypeVectorTileCacheGeneration:        {taskTable: "manager.task_definitions", taskTypeColumn: true, resultTable: "manager.vector_tile_cache", buildingStatus: "generating"},
+	commonExecution.TaskTypeVectorTileSetGeneration:          {taskTable: "manager.task_definitions", taskTypeColumn: true},
+	commonExecution.TaskTypeVectorMaterializedViewGeneration: {taskTable: "manager.task_definitions", taskTypeColumn: true, resultTable: "manager.vector_materialized_view", buildingStatus: "building"},
+	commonExecution.TaskTypeRasterCOGGeneration:              {taskTable: "manager.task_definitions", taskTypeColumn: true, resultTable: "manager.raster_cog", buildingStatus: "building", cleanupManagedArtifact: true},
+	commonExecution.TaskTypeRasterMosaicGeneration:           {taskTable: "manager.task_definitions", taskTypeColumn: true},
+	commonExecution.TaskTypeModel3DGLBGeneration:             {taskTable: "manager.task_definitions", taskTypeColumn: true, resultTable: "manager.model_3d_glb", buildingStatus: "building", cleanupManagedArtifact: true},
+	commonExecution.TaskTypeModel3DTilesGeneration:           {taskTable: "manager.task_definitions", taskTypeColumn: true, resultTable: "manager.model3d_tiles", buildingStatus: "building", cleanupManagedArtifact: true},
+	commonExecution.TaskTypeGaussianSplatKSplatGeneration:    {taskTable: "manager.task_definitions", taskTypeColumn: true, resultTable: "manager.gaussian_splat_ksplat", buildingStatus: "building", cleanupManagedArtifact: true},
+	commonExecution.TaskTypePointCloudCOPCGeneration:         {taskTable: "manager.task_definitions", taskTypeColumn: true, resultTable: "manager.point_cloud_copc", buildingStatus: "building", cleanupManagedArtifact: true},
 	commonExecution.TaskTypePPTXPDFGeneration:                {taskTable: "manager.pptx_pdf_tasks", resultTable: "manager.pptx_pdf", buildingStatus: "building", cleanupManagedArtifact: true},
 	commonExecution.TaskTypeEmbedding:                        {taskTable: "manager.embedding_tasks"},
 	commonExecution.TaskTypeDataProfiling:                    {},
@@ -146,8 +147,12 @@ func (r *BoundedExecutionQueueRepository) ClaimNext(ctx context.Context, taskTyp
 			execution, lease = nil, nil
 			return nil
 		}
-		result := tx.Table(ownership.taskTable).
-			Where("id = ? AND tenant_id = ? AND last_execution_id = ? AND last_execution_status = ?", taskID, execution.TenantID, execution.ExecutionID, commonExecution.ExecutionStatusPending).
+		query := tx.Table(ownership.taskTable).
+			Where("id = ? AND tenant_id = ? AND last_execution_id = ? AND last_execution_status = ?", taskID, execution.TenantID, execution.ExecutionID, commonExecution.ExecutionStatusPending)
+		if ownership.taskTypeColumn {
+			query = query.Where("task_type = ?", execution.TaskType)
+		}
+		result := query.
 			Updates(map[string]interface{}{"last_run_at": now.UTC(), "last_execution_status": commonExecution.ExecutionStatusRunning, "updated_at": now.UTC()})
 		if result.Error != nil {
 			return result.Error
@@ -310,8 +315,12 @@ func updateManagerOwnershipFailure(tx *gorm.DB, ownership managerExecutionOwners
 		if err != nil {
 			return err
 		}
-		result := tx.Table(ownership.taskTable).
-			Where("id = ? AND tenant_id = ? AND last_execution_id = ? AND last_execution_status = ?", taskID, execution.TenantID, execution.ExecutionID, commonExecution.ExecutionStatusRunning).
+		query := tx.Table(ownership.taskTable).
+			Where("id = ? AND tenant_id = ? AND last_execution_id = ? AND last_execution_status = ?", taskID, execution.TenantID, execution.ExecutionID, commonExecution.ExecutionStatusRunning)
+		if ownership.taskTypeColumn {
+			query = query.Where("task_type = ?", execution.TaskType)
+		}
+		result := query.
 			Updates(map[string]interface{}{"last_execution_status": commonExecution.ExecutionStatusFailed, "updated_at": now.UTC()})
 		if result.Error != nil {
 			return result.Error

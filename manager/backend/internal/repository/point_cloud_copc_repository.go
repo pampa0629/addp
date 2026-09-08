@@ -23,13 +23,13 @@ func NewPointCloudCOPCRepository(db *gorm.DB) *PointCloudCOPCRepository {
 }
 
 func (r *PointCloudCOPCRepository) CreateTask(ctx context.Context, task *models.PointCloudCOPCTask) error {
-	return r.db.WithContext(ctx).Create(task).Error
+	return createTaskDefinition(ctx, r.db, commonExecution.TaskTypePointCloudCOPCGeneration, task)
 }
 
 func (r *PointCloudCOPCRepository) GetTask(ctx context.Context, id uint, tenantID uint) (*models.PointCloudCOPCTask, error) {
 	var task models.PointCloudCOPCTask
 	err := r.db.WithContext(ctx).
-		Where("id = ? AND tenant_id = ?", id, tenantID).
+		Where("id = ? AND tenant_id = ? AND task_type = ?", id, tenantID, commonExecution.TaskTypePointCloudCOPCGeneration).
 		First(&task).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
@@ -44,7 +44,7 @@ func (r *PointCloudCOPCRepository) GetTaskByItemFingerprint(ctx context.Context,
 	}
 	var task models.PointCloudCOPCTask
 	err := r.db.WithContext(ctx).
-		Where("tenant_id = ? AND config->'source'->>'item_fingerprint' = ?", tenantID, itemFingerprint).
+		Where("tenant_id = ? AND task_type = ? AND config->'source'->>'item_fingerprint' = ?", tenantID, commonExecution.TaskTypePointCloudCOPCGeneration, itemFingerprint).
 		Order("updated_at DESC, id DESC").
 		First(&task).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -56,7 +56,7 @@ func (r *PointCloudCOPCRepository) GetTaskByItemFingerprint(ctx context.Context,
 func (r *PointCloudCOPCRepository) ListTasks(ctx context.Context, tenantID uint, page, pageSize int) ([]*models.PointCloudCOPCTask, int64, error) {
 	query := r.db.WithContext(ctx).
 		Model(&models.PointCloudCOPCTask{}).
-		Where("tenant_id = ?", tenantID)
+		Where("tenant_id = ? AND task_type = ?", tenantID, commonExecution.TaskTypePointCloudCOPCGeneration)
 
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -74,12 +74,12 @@ func (r *PointCloudCOPCRepository) ListTasks(ctx context.Context, tenantID uint,
 }
 
 func (r *PointCloudCOPCRepository) UpdateTask(ctx context.Context, task *models.PointCloudCOPCTask) error {
-	return r.db.WithContext(ctx).Save(task).Error
+	return updateTaskDefinition(ctx, r.db, commonExecution.TaskTypePointCloudCOPCGeneration, task)
 }
 
 func (r *PointCloudCOPCRepository) DeleteTask(ctx context.Context, id uint, tenantID uint) error {
 	return r.db.WithContext(ctx).
-		Where("id = ? AND tenant_id = ?", id, tenantID).
+		Where("id = ? AND tenant_id = ? AND task_type = ?", id, tenantID, commonExecution.TaskTypePointCloudCOPCGeneration).
 		Delete(&models.PointCloudCOPCTask{}).Error
 }
 
@@ -90,6 +90,7 @@ func (r *PointCloudCOPCRepository) ClaimExecution(
 	err := newTaskExecutionLifecycle(r.db).Claim(ctx, taskID, tenantID, execution, taskExecutionClaimSpec{
 		TaskModel: &task,
 		TaskType:  commonExecution.TaskTypePointCloudCOPCGeneration,
+		TaskTypeColumn: true,
 		TaskLabel: "point cloud COPC",
 		TaskName:  func() string { return task.Name },
 		TaskConfig: func() commonModels.JSONMap {

@@ -9,6 +9,7 @@ from models.standard_document_models import (
     StandardDocumentEvidence,
     StandardDocumentExtractRequest,
     StandardDocumentExtractResponse,
+    StandardDocumentKnownCandidate,
     StandardDocumentSection,
 )
 from chains.standard_document_extraction_chain import StandardDocumentExtractionChain
@@ -61,6 +62,8 @@ class CapturingLLM:
 def test_service_keeps_only_evidence_inside_authoritative_sections():
     request = StandardDocumentExtractRequest(
         document_name="Outdoor 业务数据治理推进方案",
+        code_namespace=None,
+        known_candidates=[],
         sections=[
             StandardDocumentSection(
                 section_path="指标口径",
@@ -86,6 +89,66 @@ def test_service_keeps_only_evidence_inside_authoritative_sections():
         (31, 32),
         (99, 99),
     ]
+
+
+def test_request_rejects_known_candidate_outside_domain_namespace():
+    with pytest.raises(ValidationError):
+        StandardDocumentExtractRequest(
+            document_name="Outdoor 业务数据治理推进方案",
+            code_namespace="outdoor",
+            known_candidates=[
+                StandardDocumentKnownCandidate(
+                    candidate_type="metric",
+                    code="actual_participation_count",
+                    name="实际参加活动数",
+                    definition="用户实际参加的户外活动数量。",
+                )
+            ],
+            sections=[
+                StandardDocumentSection(
+                    section_path="指标口径",
+                    start_line=30,
+                    end_line=40,
+                    text="## 指标口径\n实际参加活动数",
+                )
+            ],
+        )
+
+
+def test_request_requires_explicit_namespace_and_known_candidate_context():
+    with pytest.raises(ValidationError):
+        StandardDocumentExtractRequest(
+            document_name="Outdoor 业务数据治理推进方案",
+            sections=[
+                StandardDocumentSection(
+                    section_path="指标口径",
+                    start_line=30,
+                    end_line=40,
+                    text="## 指标口径\n实际参加活动数",
+                )
+            ],
+        )
+
+
+def test_service_rejects_generated_candidate_outside_domain_namespace():
+    request = StandardDocumentExtractRequest(
+        document_name="Outdoor 业务数据治理推进方案",
+        code_namespace="outdoor",
+        known_candidates=[],
+        sections=[
+            StandardDocumentSection(
+                section_path="指标口径",
+                start_line=30,
+                end_line=40,
+                text="## 指标口径\n实际参加活动数",
+            )
+        ],
+    )
+
+    with pytest.raises(RuntimeError, match="candidate code must belong"):
+        asyncio.run(
+            StandardDocumentExtractionService(None, chain=FakeChain()).run(request)
+        )
 
 
 def test_extraction_response_schema_is_strict_and_requires_complete_payload_shape():
@@ -163,6 +226,18 @@ def test_extraction_response_schema_is_strict_and_requires_complete_payload_shap
     assert variants["code_set"]["properties"]["payload"]["properties"]["code_set_code"] == {
         "type": "null"
     }
+
+
+def test_extraction_response_schema_applies_domain_namespace_to_every_candidate_variant():
+    response_schema = StandardDocumentExtractionChain._response_schema("outdoor")
+    variants = response_schema.schema_value["properties"]["candidates"]["items"]["anyOf"]
+
+    for variant in variants:
+        assert variant["properties"]["code"] == {
+            "type": "string",
+            "maxLength": 100,
+            "pattern": "^outdoor_[a-z0-9_]+$",
+        }
 
 
 def test_candidate_model_rejects_nonstandard_value_domain_kind():
@@ -333,6 +408,8 @@ def test_extraction_prompt_separates_data_type_value_domain_and_business_semanti
     llm = CapturingLLM()
     request = StandardDocumentExtractRequest(
         document_name="Outdoor 业务数据治理推进方案",
+        code_namespace=None,
+        known_candidates=[],
         sections=[
             StandardDocumentSection(
                 section_path="数据元",
@@ -354,3 +431,35 @@ def test_extraction_prompt_separates_data_type_value_domain_and_business_semanti
     assert "枚举数据元的 code_set_code 必须引用同一响应中的码值集候选" in prompt
     assert "identifier 是业务语义" in prompt
     assert "numeric、date_or_datetime 不是值域类型" in prompt
+
+
+def test_extraction_prompt_requires_domain_prefix_and_known_code_reuse():
+    llm = CapturingLLM()
+    request = StandardDocumentExtractRequest(
+        document_name="Outdoor 业务数据治理推进方案",
+        code_namespace="outdoor",
+        known_candidates=[
+            StandardDocumentKnownCandidate(
+                candidate_type="metric",
+                code="outdoor_participation_count",
+                name="实际参加活动数",
+                definition="用户实际参加的户外活动数量。",
+            )
+        ],
+        sections=[
+            StandardDocumentSection(
+                section_path="指标口径",
+                start_line=30,
+                end_line=31,
+                text="L30: ## 指标口径\nL31: 实际参加活动数",
+            )
+        ],
+    )
+
+    asyncio.run(StandardDocumentExtractionChain(llm).extract(request))
+
+    prompt = llm.messages[1].content
+    assert "候选编码命名空间：outdoor" in prompt
+    assert "outdoor_participation_count" in prompt
+    assert "所有候选 code 必须以 `outdoor_` 开头" in prompt
+    assert "相同时必须逐字复用既有 code" in prompt

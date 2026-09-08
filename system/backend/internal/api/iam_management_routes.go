@@ -227,7 +227,7 @@ func RegisterIAMManagementRoutes(api *gin.RouterGroup, runtime *IAMRuntime, modu
 		roleAssignments := tenant.Group("/role_assignments")
 		{
 			roleAssignments.GET("", tenantRolePermissions["iam.tenant_role_assignment.read"], runtime.TenantRoleHandler.ListAssignments)
-			roleAssignments.POST("", tenantRolePermissions["iam.tenant_role_assignment.create"], runtime.TenantRoleHandler.CreateAssignment)
+			roleAssignments.POST("", tenantRolePermissions["iam.tenant_role_assignment.create"], runtime.TenantRoleHandler.CreateAssignments)
 			roleAssignments.POST("/:id/revoke", tenantRolePermissions["iam.tenant_role_assignment.revoke"], runtime.TenantRoleHandler.RevokeAssignment)
 		}
 		invitations := tenant.Group("/invitations")

@@ -154,6 +154,9 @@ other = "Standard candidate extraction currently supports Markdown documents onl
 [standard.document.extraction_invalid]
 other = "The extraction result contains no valid candidates with traceable evidence"
 
+[standard.document.extraction_namespace_invalid]
+other = "The owning domain code is not a valid candidate namespace; use lowercase snake_case"
+
 [standard.document.candidate_group_query_invalid]
 other = "Candidate group filters or pagination parameters are invalid"
 

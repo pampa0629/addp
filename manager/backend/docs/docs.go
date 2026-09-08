@@ -5871,6 +5871,62 @@ const docTemplate = `{
                 ]
             }
         },
+        "/tasks/{task_type}": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "创建 Manager 派生任务 | Create a Manager derived task",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "任务类型 | Task type",
+                        "name": "task_type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "任务定义 | Task definition",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.DerivedTaskRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "任务定义 | Task definition",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_models.TaskDefinition"
+                        }
+                    },
+                    "400": {
+                        "description": "请求错误 | Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.create"
+                ]
+            }
+        },
         "/tasks/{task_type}/{id}": {
             "get": {
                 "security": [
@@ -5927,6 +5983,103 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "manager.derived_artifact.read"
+                ]
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "更新 Manager 派生任务 | Update a Manager derived task",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "任务类型 | Task type",
+                        "name": "task_type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "任务 ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "任务定义，version 必填 | Task definition; version is required",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.DerivedTaskRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "任务定义 | Task definition",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_manager_internal_models.TaskDefinition"
+                        }
+                    },
+                    "409": {
+                        "description": "版本冲突 | Version conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.update"
+                ]
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "删除 Manager 派生任务 | Delete a Manager derived task",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "任务类型 | Task type",
+                        "name": "task_type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "任务 ID | Task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "删除成功 | Deleted"
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.derived_artifact.delete"
                 ]
             }
         },
@@ -8149,6 +8302,56 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_manager_internal_models.TaskDefinition": {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "last_execution_id": {
+                    "type": "string"
+                },
+                "last_execution_status": {
+                    "type": "string"
+                },
+                "last_run_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "semantic_key": {
+                    "type": "string"
+                },
+                "task_type": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_manager_internal_models.TileCache": {
             "type": "object",
             "properties": {
@@ -8339,11 +8542,20 @@ const docTemplate = `{
                 "name": {
                     "type": "string"
                 },
+                "semantic_key": {
+                    "type": "string"
+                },
+                "task_type": {
+                    "type": "string"
+                },
                 "tenant_id": {
                     "type": "integer"
                 },
                 "updated_at": {
                     "type": "string"
+                },
+                "version": {
+                    "type": "integer"
                 }
             }
         },
@@ -9748,6 +9960,26 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api.DerivedTaskRequest": {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_api.EmbeddingTaskRequest": {
             "type": "object",
             "properties": {
@@ -10851,6 +11083,12 @@ const docTemplate = `{
         "internal_api.TaskListItem": {
             "type": "object",
             "properties": {
+                "category": {
+                    "type": "string"
+                },
+                "config": {
+                    "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
+                },
                 "description": {
                     "type": "string"
                 },
@@ -10869,10 +11107,19 @@ const docTemplate = `{
                 "name": {
                     "type": "string"
                 },
+                "semantic_key": {
+                    "type": "string"
+                },
                 "task_type": {
                     "type": "string"
                 },
                 "tenant_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "version": {
                     "type": "integer"
                 }
             }

@@ -63,7 +63,7 @@ Kafka poll 会分批读取，但不因此成为 bounded；数据库 CDC 的 init
 | 取值 | 当前用途 | 边界 |
 |---|---|---|
 | 无 | bounded snapshot | 读取完整快照。 |
-| `watermark` | bounded incremental | 通过复合游标识别新增和更新，不能可靠发现物理删除。 |
+| `watermark` | bounded incremental | 单字段游标只识别新增；复合游标识别新增和更新。两者都不能可靠发现物理删除。 |
 | `kafka` | continuous incremental | 消费业务 Kafka record。 |
 | `cdc` | continuous incremental | 通过数据库日志捕获 insert、update 和 delete。 |
 
@@ -118,17 +118,22 @@ bounded snapshot 使用独立 `transfer-bounded-worker` 从 `common.task_executi
 
 ### 4.2 Watermark incremental
 
-watermark 使用复合位置 `(watermark, tie_breaker...)`。每次 execution 在源数据库一致性快照内冻结执行上界，只读取：
+watermark 有两种明确配置，不建立平行的变化识别类型：
+
+- `tie_breaker=[]`：仅同步新增。`field` 必须自身精确匹配非空主键或唯一约束，并由用户确认可靠单调递增且不可变；目标 `policy.keys` 必须是该字段映射后的目标字段。
+- `tie_breaker` 非空：同步新增和更新。位置为 `(watermark, tie_breaker...)`，其中 tie breaker 必须精确匹配非空主键或唯一约束；目标 `policy.keys` 必须与 tie breaker 的字段映射一一对应。
+
+每次 execution 在源数据库一致性快照内冻结执行上界，只读取：
 
 ```text
 (committed_position, execution_upper_bound]
 ```
 
-读取必须按完整复合位置稳定排序。PostgreSQL、MySQL 和 MySQL 模式 OceanBase 源都由声明 `bounded_watermark_read` 的 Provider 冻结上界；MySQL-compatible 源限定为 InnoDB 基表，OceanBase 当前只支持非空间表。
+读取必须按完整游标位置稳定排序。PostgreSQL、MySQL 和 MySQL 模式 OceanBase 源都由声明 `bounded_watermark_read` 的 Provider 冻结上界；MySQL-compatible 源限定为 InnoDB 基表，OceanBase 当前只支持非空间表。
 
 目标必须按稳定键幂等 upsert。只有目标批次成功提交后，Transfer 才能通过 state version 和 fencing token 对 `transfer.sync_states` 执行 CAS，推进 `watermark/v1` committed position。
 
-watermark 支持 execution 间 resume，但不能发现物理删除。源表的新增和更新必须可靠推进 watermark；时间回拨、未更新 watermark 和当前未开放的只读副本延迟不在保证范围内。
+watermark 支持 execution 间 resume，但不能发现物理删除。单字段模式不会重新读取游标值未变化的已有记录，因此已有记录更新不在保证范围内；复合模式要求源表的新增和更新都可靠推进 watermark。时间回拨、未更新 watermark 和当前未开放的只读副本延迟不在保证范围内。
 
 ## 五、状态、Checkpoint 与 Replay
 

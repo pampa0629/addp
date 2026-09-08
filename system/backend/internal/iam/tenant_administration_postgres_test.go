@@ -160,32 +160,37 @@ func TestTenantAdministrationClosureAgainstPostgres(t *testing.T) {
 		t.Fatalf("create custom role with built-in role key error = %v, want conflict", err)
 	}
 	assetRuntimeRole := findTenantRoleByKey(t, roles, "tenant.asset_runtime")
-	if _, err := roleService.CreateAssignment(ctx, CreateTenantRoleAssignmentInput{
-		TenantID: tenant.ID, MembershipID: membership.Membership.ID, RoleID: assetRuntimeRole.ID,
+	infrastructureRole := findTenantRoleByKey(t, roles, "tenant.infrastructure_administrator")
+	if _, err := roleService.CreateAssignments(ctx, CreateTenantRoleAssignmentsInput{
+		TenantID: tenant.ID, MembershipID: membership.Membership.ID, RoleIDs: []int64{infrastructureRole.ID, assetRuntimeRole.ID},
 		ScopeType: "tenant", Reason: "invalid runtime role assignment", ActorPrincipalID: initialAdministrator.ID, Audit: tenantAudit,
 	}); !errors.Is(err, ErrTenantRoleAssignmentPrincipalTypeNotAllowed) || !errors.Is(err, commonapi.ErrConflict) {
 		t.Fatalf("assign runtime role to user error = %v, want principal type conflict", err)
 	}
 	var invalidRuntimeAssignmentCount int64
 	if err := db.Model(&RoleAssignment{}).
-		Where("principal_id = ? AND role_id = ?", infrastructureAdministrator.ID, assetRuntimeRole.ID).
+		Where("principal_id = ? AND role_id IN ?", infrastructureAdministrator.ID, []int64{infrastructureRole.ID, assetRuntimeRole.ID}).
 		Count(&invalidRuntimeAssignmentCount).Error; err != nil || invalidRuntimeAssignmentCount != 0 {
-		t.Fatalf("invalid runtime role assignments = %d, err=%v", invalidRuntimeAssignmentCount, err)
+		t.Fatalf("atomic invalid role assignment batch count = %d, err=%v", invalidRuntimeAssignmentCount, err)
 	}
-	infrastructureRole := findTenantRoleByKey(t, roles, "tenant.infrastructure_administrator")
-	assigned, err := roleService.CreateAssignment(ctx, CreateTenantRoleAssignmentInput{
-		TenantID: tenant.ID, MembershipID: membership.Membership.ID, RoleID: infrastructureRole.ID,
+	dataViewerRole := findTenantRoleByKey(t, roles, "tenant.data_viewer")
+	assignedBatch, err := roleService.CreateAssignments(ctx, CreateTenantRoleAssignmentsInput{
+		TenantID: tenant.ID, MembershipID: membership.Membership.ID, RoleIDs: []int64{infrastructureRole.ID, dataViewerRole.ID},
 		ScopeType: "tenant", Reason: "engine administration", ActorPrincipalID: initialAdministrator.ID, Audit: tenantAudit,
 	})
 	if err != nil {
 		t.Fatalf("assign infrastructure administrator: %v", err)
 	}
+	if len(assignedBatch) != 2 {
+		t.Fatalf("created assignment batch = %#v", assignedBatch)
+	}
+	assigned := findBatchAssignmentByRoleKey(t, assignedBatch, "tenant.infrastructure_administrator")
 	if assigned.MembershipID != membership.Membership.ID || assigned.RoleKey != "tenant.infrastructure_administrator" ||
 		assigned.DisplayName != infrastructureAdministrator.DisplayName {
 		t.Fatalf("created assignment projection = %#v", assigned)
 	}
-	if _, err := roleService.CreateAssignment(ctx, CreateTenantRoleAssignmentInput{
-		TenantID: tenant.ID, MembershipID: membership.Membership.ID, RoleID: infrastructureRole.ID,
+	if _, err := roleService.CreateAssignments(ctx, CreateTenantRoleAssignmentsInput{
+		TenantID: tenant.ID, MembershipID: membership.Membership.ID, RoleIDs: []int64{infrastructureRole.ID},
 		ScopeType: "tenant", Reason: "duplicate assignment", ActorPrincipalID: initialAdministrator.ID, Audit: tenantAudit,
 	}); !errors.Is(err, ErrTenantRoleAssignmentAlreadyExists) || !errors.Is(err, commonapi.ErrConflict) {
 		t.Fatalf("duplicate assignment error = %v, want role assignment already exists", err)
@@ -198,7 +203,7 @@ func TestTenantAdministrationClosureAgainstPostgres(t *testing.T) {
 		Status:       &activeStatus,
 		ScopeType:    &tenantScope,
 	}, 1, 100)
-	if err != nil || filteredTotal != 1 || len(filteredAssignments) != 1 || filteredAssignments[0].ID != assigned.ID {
+	if err != nil || filteredTotal != 2 || len(filteredAssignments) != 2 || findBatchAssignmentByRoleKey(t, filteredAssignments, "tenant.infrastructure_administrator").ID != assigned.ID {
 		t.Fatalf("filtered active assignments = %#v total=%d err=%v", filteredAssignments, filteredTotal, err)
 	}
 	revoked, err := roleService.RevokeAssignment(ctx, RevokeTenantRoleAssignmentInput{
@@ -243,13 +248,14 @@ func TestTenantAdministrationClosureAgainstPostgres(t *testing.T) {
 	}
 
 	administratorRole := findTenantRoleByKey(t, roles, tenantAdministratorRoleKey)
-	secondAdministrator, err := roleService.CreateAssignment(ctx, CreateTenantRoleAssignmentInput{
-		TenantID: tenant.ID, MembershipID: membership.Membership.ID, RoleID: administratorRole.ID,
+	secondAdministratorBatch, err := roleService.CreateAssignments(ctx, CreateTenantRoleAssignmentsInput{
+		TenantID: tenant.ID, MembershipID: membership.Membership.ID, RoleIDs: []int64{administratorRole.ID},
 		ScopeType: "tenant", Reason: "administrator rotation", ActorPrincipalID: initialAdministrator.ID, Audit: tenantAudit,
 	})
 	if err != nil {
 		t.Fatalf("assign replacement tenant administrator: %v", err)
 	}
+	secondAdministrator := secondAdministratorBatch[0]
 	if _, err := roleService.RevokeAssignment(ctx, RevokeTenantRoleAssignmentInput{
 		TenantID: tenant.ID, AssignmentID: initialAssignment.ID, Reason: "administrator rotation completed",
 		ActorPrincipalID: initialAdministrator.ID, Audit: tenantAudit,
@@ -281,8 +287,8 @@ func TestTenantAdministrationClosureAgainstPostgres(t *testing.T) {
 	if err := db.Where("tenant_id = ? AND principal_id = ?", legacyTenant.ID, legacyAdministrator.ID).Take(&legacyMembership).Error; err != nil {
 		t.Fatalf("load legacy tenant membership: %v", err)
 	}
-	if _, err := roleService.CreateAssignment(ctx, CreateTenantRoleAssignmentInput{
-		TenantID: tenant.ID, MembershipID: legacyMembership.ID, RoleID: infrastructureRole.ID,
+	if _, err := roleService.CreateAssignments(ctx, CreateTenantRoleAssignmentsInput{
+		TenantID: tenant.ID, MembershipID: legacyMembership.ID, RoleIDs: []int64{infrastructureRole.ID},
 		ScopeType: "tenant", ActorPrincipalID: infrastructureAdministrator.ID, Audit: tenantAudit,
 	}); err == nil {
 		t.Fatal("cross-tenant membership received role assignment")
@@ -352,6 +358,17 @@ func findActiveTenantAssignment(
 		}
 	}
 	t.Fatalf("active assignment principal=%d role=%s not found", principalID, roleKey)
+	return ManagedTenantRoleAssignment{}
+}
+
+func findBatchAssignmentByRoleKey(t *testing.T, assignments []ManagedTenantRoleAssignment, roleKey string) ManagedTenantRoleAssignment {
+	t.Helper()
+	for _, assignment := range assignments {
+		if assignment.RoleKey == roleKey {
+			return assignment
+		}
+	}
+	t.Fatalf("assignment role=%s not found in batch", roleKey)
 	return ManagedTenantRoleAssignment{}
 }
 

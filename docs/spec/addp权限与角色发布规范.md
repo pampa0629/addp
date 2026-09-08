@@ -137,6 +137,8 @@ Department 与 Project Group Scope 使 Permission 成为候选能力，不自动
 
 Role Assignment 的写入服务必须在持久化前校验目标 Principal 的类型是否包含在 Role 的 `allowed_principal_types` 中，不得把数据库约束错误作为正常业务校验路径。主体类型与 Role 不兼容时返回 `409 Conflict` 和稳定 `error_code=role_assignment_principal_type_not_allowed`。
 
+租户管理端通过唯一的 `POST /api/v1/system/tenant/role_assignments` 创建 Role Assignment。请求使用显式 `role_ids` 列表，只表示把同一个 Membership 在同一 Scope、有效期和授权原因下分配给多个 Role。`role_ids` 必须包含 `1-50` 个无重复的十进制 Role ID；单角色分配也使用只含一个元素的列表，不接受旧 `role_id` 字段。服务必须在同一事务内按 Role ID 稳定顺序完成 Membership、Principal 类型、Scope、有效期、增强认证和重复分配校验，再写入全部 Assignment 及各自审计事实；任一角色失败时整批回滚，成功时返回全部新建 Assignment。
+
 管理界面的 Role 选择器必须使用 Membership 的 `principal_type` 和 Role 的 `allowed_principal_types` 进行结构化过滤，只展示对目标 Principal 可分配的 Role。不得根据 Role Key 后缀、展示名称或其他字符串约定识别 Runtime Role。
 
 ## 七、HTTP 与 Tool 授权声明

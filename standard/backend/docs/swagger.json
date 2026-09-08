@@ -2410,7 +2410,7 @@
                         }
                     },
                     "422": {
-                        "description": "Unprocessable Entity",
+                        "description": "文档格式、提炼结果或业务域编码命名空间无效 | Invalid document format, extraction result, or domain code namespace",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {

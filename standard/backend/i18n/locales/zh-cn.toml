@@ -154,6 +154,9 @@ other = "当前仅支持从 Markdown 文档提炼标准候选"
 [standard.document.extraction_invalid]
 other = "提炼结果缺少有效候选或可追溯证据"
 
+[standard.document.extraction_namespace_invalid]
+other = "归属业务域编码不符合候选命名空间规范，请先将业务域编码调整为小写 snake_case"
+
 [standard.document.candidate_group_query_invalid]
 other = "候选聚合筛选或分页参数无效"
 

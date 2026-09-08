@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -38,6 +39,7 @@ type TaskProviderHandler struct {
 	pointCloudCOPCTaskSvc         *service.PointCloudCOPCTaskService
 	pptxPDFTaskSvc                *service.PPTXPDFTaskService
 	taskExecRepo                  *commonExecution.TaskExecutionRepository
+	taskDefinitionRepo            *repository.TaskDefinitionRepository
 	notifyExecutionEnqueued       func()
 }
 
@@ -91,16 +93,25 @@ func (h *TaskProviderHandler) SetExecutionEnqueueNotifier(notify func()) {
 	h.notifyExecutionEnqueued = notify
 }
 
+func (h *TaskProviderHandler) SetTaskDefinitionRepository(repo *repository.TaskDefinitionRepository) {
+	h.taskDefinitionRepo = repo
+}
+
 // TaskListResponse 任务列表响应（统一包装 Manager provider 声明的任务类型）
 type TaskListItem struct {
-	ID                  uint    `json:"id"`
-	TenantID            uint    `json:"tenant_id"`
-	TaskType            string  `json:"task_type"`
-	Name                string  `json:"name"`
-	Description         string  `json:"description,omitempty"`
-	Enabled             bool    `json:"enabled"`
-	LastExecutionID     *string `json:"last_execution_id,omitempty"`
-	LastExecutionStatus *string `json:"last_execution_status,omitempty"`
+	ID                  uint                 `json:"id"`
+	TenantID            uint                 `json:"tenant_id"`
+	TaskType            string               `json:"task_type"`
+	Category            string               `json:"category,omitempty"`
+	Version             uint                 `json:"version"`
+	SemanticKey         string               `json:"semantic_key,omitempty"`
+	Name                string               `json:"name"`
+	Description         string               `json:"description,omitempty"`
+	Enabled             bool                 `json:"enabled"`
+	LastExecutionID     *string              `json:"last_execution_id,omitempty"`
+	LastExecutionStatus *string              `json:"last_execution_status,omitempty"`
+	UpdatedAt           time.Time            `json:"updated_at"`
+	Config              commonModels.JSONMap `json:"config"`
 }
 
 type TaskListResponse struct {
@@ -108,6 +119,86 @@ type TaskListResponse struct {
 	Total    int64          `json:"total"`
 	Page     int            `json:"page"`
 	PageSize int            `json:"page_size"`
+}
+
+func taskListItem(task *models.TaskDefinition) TaskListItem {
+	return TaskListItem{
+		ID: task.ID, TenantID: task.TenantID, TaskType: task.TaskType,
+		Category: repository.ManagerDerivedTaskCategory(task.TaskType), Version: task.Version,
+		SemanticKey: task.SemanticKey,
+		Name:        task.Name, Description: task.Description, Enabled: task.Enabled,
+		LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus,
+		UpdatedAt: task.UpdatedAt,
+		Config:    task.Config,
+	}
+}
+
+type derivedTaskService interface {
+	Create(context.Context, *models.TaskDefinition) error
+	GetByID(context.Context, uint, uint) (*models.TaskDefinition, error)
+	List(context.Context, uint, int, int) ([]*models.TaskDefinition, int64, error)
+	Update(context.Context, *models.TaskDefinition) error
+	Delete(context.Context, uint, uint) error
+}
+
+func (h *TaskProviderHandler) derivedTaskService(taskType string) derivedTaskService {
+	switch taskType {
+	case commonExecution.TaskTypeVectorTileCacheGeneration:
+		if h.tileCacheTaskSvc == nil {
+			return nil
+		}
+		return h.tileCacheTaskSvc
+	case commonExecution.TaskTypeVectorTileSetGeneration:
+		if h.vectorTileSetTaskSvc == nil {
+			return nil
+		}
+		return h.vectorTileSetTaskSvc
+	case commonExecution.TaskTypeVectorMaterializedViewGeneration:
+		if h.vectorMaterializedViewTaskSvc == nil {
+			return nil
+		}
+		return h.vectorMaterializedViewTaskSvc
+	case commonExecution.TaskTypeRasterCOGGeneration:
+		if h.rasterCOGTaskSvc == nil {
+			return nil
+		}
+		return h.rasterCOGTaskSvc
+	case commonExecution.TaskTypeRasterMosaicGeneration:
+		if h.rasterMosaicTaskSvc == nil {
+			return nil
+		}
+		return h.rasterMosaicTaskSvc
+	case commonExecution.TaskTypeModel3DGLBGeneration:
+		if h.model3DGLBTaskSvc == nil {
+			return nil
+		}
+		return h.model3DGLBTaskSvc
+	case commonExecution.TaskTypeModel3DTilesGeneration:
+		if h.model3DTilesTaskSvc == nil {
+			return nil
+		}
+		return h.model3DTilesTaskSvc
+	case commonExecution.TaskTypeGaussianSplatKSplatGeneration:
+		if h.gaussianSplatKSplatTaskSvc == nil {
+			return nil
+		}
+		return h.gaussianSplatKSplatTaskSvc
+	case commonExecution.TaskTypePointCloudCOPCGeneration:
+		if h.pointCloudCOPCTaskSvc == nil {
+			return nil
+		}
+		return h.pointCloudCOPCTaskSvc
+	default:
+		return nil
+	}
+}
+
+type DerivedTaskRequest struct {
+	Version     uint                 `json:"version,omitempty"`
+	Name        string               `json:"name"`
+	Description string               `json:"description,omitempty"`
+	Enabled     *bool                `json:"enabled,omitempty"`
+	Config      commonModels.JSONMap `json:"config"`
 }
 
 // TaskProviderTaskDetailResponse documents the fields shared by every Manager
@@ -542,6 +633,22 @@ func (h *TaskProviderHandler) listTasks(c *gin.Context, taskType string) {
 	ctx := c.Request.Context()
 	var items []TaskListItem
 	var total int64
+	category := strings.TrimSpace(c.Query("category"))
+	if h.taskDefinitionRepo != nil && (category != "" || taskType == "" || repository.ManagerDerivedTaskCategory(taskType) != "") {
+		tasks, count, err := h.taskDefinitionRepo.List(ctx, repository.TaskDefinitionFilter{
+			TenantID: tenantID, TaskType: taskType, Category: category, Page: page, PageSize: pageSize,
+		})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		items = make([]TaskListItem, 0, len(tasks))
+		for _, task := range tasks {
+			items = append(items, taskListItem(task))
+		}
+		c.JSON(http.StatusOK, TaskListResponse{Items: items, Total: count, Page: page, PageSize: pageSize})
+		return
+	}
 
 	switch taskType {
 	case commonExecution.TaskTypeVectorTileCacheGeneration:
@@ -871,6 +978,140 @@ func (h *TaskProviderHandler) listTasks(c *gin.Context, taskType string) {
 		Page:     page,
 		PageSize: pageSize,
 	})
+}
+
+// CreateDerivedTask creates one typed Manager derived-task definition.
+// @Summary 创建 Manager 派生任务 | Create a Manager derived task
+// @Tags Manager
+// @Accept json
+// @Produce json
+// @Param task_type path string true "任务类型 | Task type"
+// @Param body body DerivedTaskRequest true "任务定义 | Task definition"
+// @Success 201 {object} models.TaskDefinition "任务定义 | Task definition"
+// @Failure 400 {object} map[string]interface{} "请求错误 | Bad request"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.create"]
+// @Router /tasks/{task_type} [post]
+// @Security BearerAuth
+func (h *TaskProviderHandler) CreateDerivedTask(c *gin.Context) {
+	taskType := strings.TrimSpace(c.Param("task_type"))
+	taskService := h.derivedTaskService(taskType)
+	if taskService == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "不支持的派生任务类型: " + taskType})
+		return
+	}
+	var req DerivedTaskRequest
+	if err := commonapi.BindOptionalJSONStrict(c, &req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	enabled := true
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+	userID := userIDValue(c)
+	task := &models.TaskDefinition{
+		TenantID: tenantIDValue(c), TaskType: taskType, Version: 1,
+		Name: strings.TrimSpace(req.Name), Description: strings.TrimSpace(req.Description),
+		Enabled: enabled, Config: req.Config, CreatedBy: &userID,
+	}
+	if err := taskService.Create(c.Request.Context(), task); err != nil {
+		c.JSON(commonapi.MapErrorToHTTPStatus(err), gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, task)
+}
+
+// UpdateDerivedTask updates one typed task with optimistic version checking.
+// @Summary 更新 Manager 派生任务 | Update a Manager derived task
+// @Tags Manager
+// @Accept json
+// @Produce json
+// @Param task_type path string true "任务类型 | Task type"
+// @Param id path int true "任务 ID | Task ID"
+// @Param body body DerivedTaskRequest true "任务定义，version 必填 | Task definition; version is required"
+// @Success 200 {object} models.TaskDefinition "任务定义 | Task definition"
+// @Failure 409 {object} map[string]interface{} "版本冲突 | Version conflict"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.update"]
+// @Router /tasks/{task_type}/{id} [put]
+// @Security BearerAuth
+func (h *TaskProviderHandler) UpdateDerivedTask(c *gin.Context) {
+	taskType := strings.TrimSpace(c.Param("task_type"))
+	taskService := h.derivedTaskService(taskType)
+	if taskService == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "不支持的派生任务类型: " + taskType})
+		return
+	}
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
+		return
+	}
+	var req DerivedTaskRequest
+	if err := commonapi.BindOptionalJSONStrict(c, &req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.Version == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "version 必填"})
+		return
+	}
+	task, err := taskService.GetByID(c.Request.Context(), uint(id), tenantIDValue(c))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if task == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
+		return
+	}
+	if task.Version != req.Version {
+		c.JSON(http.StatusConflict, gin.H{"error": "任务定义已被更新，请刷新后重试", "code": "version_conflict", "current_version": task.Version})
+		return
+	}
+	task.Name = strings.TrimSpace(req.Name)
+	task.Description = strings.TrimSpace(req.Description)
+	if req.Enabled != nil {
+		task.Enabled = *req.Enabled
+	}
+	task.Schedule = ""
+	task.NextRunAt = nil
+	task.Config = req.Config
+	if err := taskService.Update(c.Request.Context(), task); err != nil {
+		c.JSON(commonapi.MapErrorToHTTPStatus(err), gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, task)
+}
+
+// DeleteDerivedTask deletes one task definition without deleting business outputs.
+// @Summary 删除 Manager 派生任务 | Delete a Manager derived task
+// @Tags Manager
+// @Param task_type path string true "任务类型 | Task type"
+// @Param id path int true "任务 ID | Task ID"
+// @Success 204 "删除成功 | Deleted"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.derived_artifact.delete"]
+// @Router /tasks/{task_type}/{id} [delete]
+// @Security BearerAuth
+func (h *TaskProviderHandler) DeleteDerivedTask(c *gin.Context) {
+	taskType := strings.TrimSpace(c.Param("task_type"))
+	taskService := h.derivedTaskService(taskType)
+	if taskService == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "不支持的派生任务类型: " + taskType})
+		return
+	}
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
+		return
+	}
+	if err := taskService.Delete(c.Request.Context(), uint(id), tenantIDValue(c)); err != nil {
+		c.JSON(commonapi.MapErrorToHTTPStatus(err), gin.H{"error": err.Error()})
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 // ListTileCacheTasks GET /api/v1/manager/vector_tile_cache_tasks

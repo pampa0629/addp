@@ -13,13 +13,19 @@ func TestNormalizeWatermarkFields(t *testing.T) {
 			t.Fatalf("fields = %#v, want %#v", fields, want)
 		}
 	}
+	single, err := NormalizeWatermarkFields(" id ", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(single) != 1 || single[0] != "id" {
+		t.Fatalf("single fields = %#v, want []string{\"id\"}", single)
+	}
 	for _, testCase := range []struct {
 		name        string
 		watermark   string
 		tieBreakers []string
 	}{
 		{name: "missing watermark", tieBreakers: []string{"id"}},
-		{name: "missing tie breaker", watermark: "updated_at"},
 		{name: "duplicate", watermark: "updated_at", tieBreakers: []string{"id", "id"}},
 		{name: "watermark repeated", watermark: "updated_at", tieBreakers: []string{"updated_at"}},
 	} {

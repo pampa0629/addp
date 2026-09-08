@@ -57,6 +57,7 @@ const (
 	MsgDocumentFileRequired                   = "standard.document.file_required"
 	MsgDocumentExtractionUnsupported          = "standard.document.extraction_unsupported"
 	MsgDocumentExtractionInvalid              = "standard.document.extraction_invalid"
+	MsgDocumentExtractionNamespaceInvalid     = "standard.document.extraction_namespace_invalid"
 	MsgDocumentCandidateGroupQueryInvalid     = "standard.document.candidate_group_query_invalid"
 	MsgDocumentCopilotUnavailable             = "standard.document.copilot_unavailable"
 	MsgDocumentPublicationHistory             = "standard.document.publication_history"

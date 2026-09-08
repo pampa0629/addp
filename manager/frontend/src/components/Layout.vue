@@ -55,54 +55,10 @@
 			<el-icon><Setting /></el-icon>
 			<span>{{ t('manager.layout.embeddingConfiguration') }}</span>
 		  </el-menu-item>
-          <el-sub-menu index="/spatial-quick-view">
-            <template #title>
-              <el-icon><MapLocation /></el-icon>
-              <span>{{ t('manager.layout.spatialQuickView') }}</span>
-            </template>
-            <el-menu-item index="/spatial-quick-view/vector-materialized-view">
-              <el-icon><MagicStick /></el-icon>
-              <span>{{ t('manager.layout.vectorMaterializedView') }}</span>
-            </el-menu-item>
-            <el-menu-item index="/spatial-quick-view/vector-tile-cache">
-              <el-icon><Grid /></el-icon>
-              <span>{{ t('manager.layout.vectorTileCache') }}</span>
-            </el-menu-item>
-            <el-menu-item index="/spatial-quick-view/raster-cog">
-              <el-icon><Picture /></el-icon>
-              <span>{{ t('manager.layout.rasterCOG') }}</span>
-            </el-menu-item>
-            <el-menu-item index="/spatial-quick-view/raster-mosaic">
-              <el-icon><Grid /></el-icon>
-              <span>{{ t('manager.layout.rasterMosaic') }}</span>
-            </el-menu-item>
-            <el-menu-item index="/model-3d-glb">
-              <el-icon><Box /></el-icon>
-              <span>{{ t('manager.layout.model3DGLB') }}</span>
-            </el-menu-item>
-            <el-menu-item index="/model-3d-tiles">
-              <el-icon><Grid /></el-icon>
-              <span>{{ t('manager.layout.model3DTiles') }}</span>
-            </el-menu-item>
-            <el-menu-item index="/gaussian-splat-ksplat">
-              <el-icon><Aim /></el-icon>
-              <span>{{ t('manager.layout.gaussianSplatKSplat') }}</span>
-            </el-menu-item>
-            <el-menu-item index="/point-cloud-copc">
-              <el-icon><Grid /></el-icon>
-              <span>{{ t('manager.layout.pointCloudCOPC') }}</span>
-            </el-menu-item>
-          </el-sub-menu>
-          <el-sub-menu index="/spatial-tasks">
-            <template #title>
-              <el-icon><Aim /></el-icon>
-              <span>{{ t('manager.layout.spatialTasks') }}</span>
-            </template>
-            <el-menu-item index="/spatial-tasks/vector-tiles">
-              <el-icon><Grid /></el-icon>
-              <span>{{ t('manager.layout.vectorTiles') }}</span>
-            </el-menu-item>
-          </el-sub-menu>
+          <el-menu-item index="/derived-tasks">
+            <el-icon><Operation /></el-icon>
+            <span>{{ t('manager.layout.derivedTasks') }}</span>
+          </el-menu-item>
         </el-menu>
       </el-aside>
 
@@ -127,12 +83,7 @@ import {
   Search,
   Document,
   List,
-  Grid,
-  MagicStick,
-  Picture,
-  MapLocation,
-  Box,
-  Aim,
+	Operation,
   Setting
 } from '@element-plus/icons-vue'
 

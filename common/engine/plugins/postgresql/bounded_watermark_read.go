@@ -58,11 +58,19 @@ func (p *PostgreSQLPlugin) OpenBoundedWatermarkRead(ctx context.Context, connInf
 		fields = append(fields, postgresFieldInfoFromColumn(column))
 	}
 	for _, name := range cursorFields {
-		if _, ok := columnByName[name]; !ok {
+		column, ok := columnByName[name]
+		if !ok {
 			return fail(fmt.Errorf("postgresql watermark cursor field %q does not exist", name))
 		}
+		if column.Nullable {
+			return fail(fmt.Errorf("postgresql watermark cursor field %q must be NOT NULL", name))
+		}
 	}
-	if err := validatePostgresUniqueTieBreakers(ctx, db, schema, table, opts.TieBreakers); err != nil {
+	identityFields := opts.TieBreakers
+	if len(identityFields) == 0 {
+		identityFields = cursorFields
+	}
+	if err := validatePostgresUniqueFields(ctx, db, schema, table, "watermark identity", identityFields); err != nil {
 		return fail(err)
 	}
 	if opts.Start != nil && len(opts.Start.Values) != len(cursorFields) {
@@ -137,9 +145,9 @@ func (p *PostgreSQLPlugin) OpenBoundedWatermarkRead(ctx context.Context, connInf
 	}, nil
 }
 
-func validatePostgresUniqueTieBreakers(ctx context.Context, db *sql.DB, schema, table string, ties []string) error {
-	if len(ties) == 0 {
-		return fmt.Errorf("postgresql watermark requires tie_breaker fields")
+func validatePostgresUniqueFields(ctx context.Context, db *sql.DB, schema, table, operation string, fields []string) error {
+	if len(fields) == 0 {
+		return fmt.Errorf("postgresql %s requires fields", operation)
 	}
 	rows, err := db.QueryContext(ctx, `
 		SELECT array_agg(a.attname ORDER BY key_column.ordinality)
@@ -152,20 +160,20 @@ func validatePostgresUniqueTieBreakers(ctx context.Context, db *sql.DB, schema, 
 		GROUP BY i.indexrelid
 	`, schema, table)
 	if err != nil {
-		return fmt.Errorf("query postgresql watermark unique keys: %w", err)
+		return fmt.Errorf("query postgresql %s unique keys: %w", operation, err)
 	}
 	defer rows.Close()
-	want := strings.Join(ties, "\x00")
+	want := strings.Join(fields, "\x00")
 	for rows.Next() {
 		var values []string
 		if err := rows.Scan(pq.Array(&values)); err != nil {
-			return fmt.Errorf("scan postgresql unique keys: %w", err)
+			return fmt.Errorf("scan postgresql %s unique keys: %w", operation, err)
 		}
 		if strings.Join(values, "\x00") == want {
 			return nil
 		}
 	}
-	return fmt.Errorf("postgresql watermark tie_breaker %v must match a non-partial unique or primary key", ties)
+	return fmt.Errorf("postgresql %s %v must match a non-partial unique or primary key", operation, fields)
 }
 
 func quotePostgresFields(fields []string) []string {

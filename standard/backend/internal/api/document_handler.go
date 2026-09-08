@@ -485,7 +485,7 @@ func (h *DocumentHandler) WithdrawRevision(c *gin.Context) {
 // @Failure 404 {object} map[string]string
 // @Failure 409 {object} map[string]string
 // @Failure 413 {object} map[string]string
-// @Failure 422 {object} map[string]string
+// @Failure 422 {object} map[string]string "文档格式、提炼结果或业务域编码命名空间无效 | Invalid document format, extraction result, or domain code namespace"
 // @Failure 500 {object} map[string]string
 // @Failure 503 {object} map[string]string
 // @x-addp-auth-mode "permission"

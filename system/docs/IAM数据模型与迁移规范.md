@@ -92,6 +92,8 @@ Department Membership 的 `membership_type` 使用 `primary` / `additional`，`r
 
 `permissions`、`roles`、`role_permissions`、`role_assignments` 和 `role_conflicts` 保存运行时 RBAC 事实。Permission 和内置 Role 的发布规则见 `docs/spec/addp权限与角色发布规范.md`。
 
+当管理员在同一 Membership、Scope、有效期和授权原因下分配多个 Role 时，`POST /api/v1/system/tenant/role_assignments` 只接受 `role_ids` 显式列表，并在单一事务内创建全部 Assignment 与审计事实。任一 Role 不存在、不兼容、不允许指定 Scope、重复分配或需要增强认证时，整批不得产生部分授权事实。
+
 平台系统管理员、安全管理员和审计管理员是三个互斥 User Role，不存在全权合并角色。平台高权限身份变化使用 `privileged_change_requests` 和 `privileged_change_approvals`，申请人与审批人必须满足职责分离要求。
 
 Role、Assignment、Membership、组织关系或 Principal 状态变化时，数据库和 Service 必须在同一事务中：

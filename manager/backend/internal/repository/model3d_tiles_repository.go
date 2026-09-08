@@ -21,7 +21,7 @@ type Model3DTilesRepository struct {
 func (r *Model3DTilesRepository) GetTaskByItemFingerprintAndFormat(ctx context.Context, tenantID uint, itemFingerprint, targetFormat string) (*models.Model3DTilesTask, error) {
 	var task models.Model3DTilesTask
 	err := r.db.WithContext(ctx).
-		Where("tenant_id = ? AND config->'source'->>'item_fingerprint' = ? AND config->>'target_format' = ?", tenantID, strings.TrimSpace(itemFingerprint), strings.TrimSpace(targetFormat)).
+		Where("tenant_id = ? AND task_type = ? AND config->'source'->>'item_fingerprint' = ? AND config->>'target_format' = ?", tenantID, commonExecution.TaskTypeModel3DTilesGeneration, strings.TrimSpace(itemFingerprint), strings.TrimSpace(targetFormat)).
 		Order("updated_at DESC, id DESC").First(&task).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
@@ -134,7 +134,7 @@ func (r *Model3DTilesRepository) DeleteResult(ctx context.Context, id, tenantID 
 }
 
 func (r *Model3DTilesRepository) CreateTask(ctx context.Context, task *models.Model3DTilesTask) error {
-	return r.db.WithContext(ctx).Create(task).Error
+	return createTaskDefinition(ctx, r.db, commonExecution.TaskTypeModel3DTilesGeneration, task)
 }
 
 func (r *Model3DTilesRepository) ClaimExecution(
@@ -142,7 +142,7 @@ func (r *Model3DTilesRepository) ClaimExecution(
 ) (*models.Model3DTilesTask, error) {
 	var task models.Model3DTilesTask
 	err := newTaskExecutionLifecycle(r.db).Claim(ctx, taskID, tenantID, execution, taskExecutionClaimSpec{
-		TaskModel: &task, TaskType: commonExecution.TaskTypeModel3DTilesGeneration, TaskLabel: "model3d tiles",
+		TaskModel: &task, TaskType: commonExecution.TaskTypeModel3DTilesGeneration, TaskTypeColumn: true, TaskLabel: "model3d tiles",
 		TaskName: func() string { return task.Name }, TaskConfig: func() commonModels.JSONMap { return task.Config },
 		CurrentResultModel: &models.Model3DTiles{}, OverwriteExistingResult: overwriteExistingResult,
 	})
@@ -181,7 +181,7 @@ func (r *Model3DTilesRepository) GetExecution(ctx context.Context, executionID s
 func (r *Model3DTilesRepository) GetTask(ctx context.Context, id uint, tenantID uint) (*models.Model3DTilesTask, error) {
 	var task models.Model3DTilesTask
 	err := r.db.WithContext(ctx).
-		Where("id = ? AND tenant_id = ?", id, tenantID).
+		Where("id = ? AND tenant_id = ? AND task_type = ?", id, tenantID, commonExecution.TaskTypeModel3DTilesGeneration).
 		First(&task).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
@@ -192,7 +192,7 @@ func (r *Model3DTilesRepository) GetTask(ctx context.Context, id uint, tenantID 
 func (r *Model3DTilesRepository) ListTasks(ctx context.Context, tenantID uint, page, pageSize int) ([]*models.Model3DTilesTask, int64, error) {
 	query := r.db.WithContext(ctx).
 		Model(&models.Model3DTilesTask{}).
-		Where("tenant_id = ?", tenantID)
+		Where("tenant_id = ? AND task_type = ?", tenantID, commonExecution.TaskTypeModel3DTilesGeneration)
 
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -210,11 +210,11 @@ func (r *Model3DTilesRepository) ListTasks(ctx context.Context, tenantID uint, p
 }
 
 func (r *Model3DTilesRepository) UpdateTask(ctx context.Context, task *models.Model3DTilesTask) error {
-	return r.db.WithContext(ctx).Save(task).Error
+	return updateTaskDefinition(ctx, r.db, commonExecution.TaskTypeModel3DTilesGeneration, task)
 }
 
 func (r *Model3DTilesRepository) DeleteTask(ctx context.Context, id uint, tenantID uint) error {
 	return r.db.WithContext(ctx).
-		Where("id = ? AND tenant_id = ?", id, tenantID).
+		Where("id = ? AND tenant_id = ? AND task_type = ?", id, tenantID, commonExecution.TaskTypeModel3DTilesGeneration).
 		Delete(&models.Model3DTilesTask{}).Error
 }

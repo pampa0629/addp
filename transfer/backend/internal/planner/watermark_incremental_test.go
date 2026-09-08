@@ -149,6 +149,60 @@ func TestBuildWatermarkIncrementalPlanAcceptsMySQLIdempotentTarget(t *testing.T)
 	}
 }
 
+func TestValidateTableTransferSpecAcceptsInsertOnlyWatermark(t *testing.T) {
+	spec := TableExportTaskSpec{
+		Runtime: RuntimeSpec{Boundary: runtimeBoundaryBounded},
+		Load: LoadSpec{Mode: loadModeIncremental, ChangeDetection: &ChangeDetectionSpec{
+			Type: changeTypeWatermark, Field: "source_id", TieBreaker: nil, Start: "committed", End: "execution_upper_bound",
+		}},
+		Source: EndpointSpec{Locator: tableLocator(1, "public", "orders"), DataType: dataTypeTable, Representation: representationNative},
+		Target: EndpointSpec{
+			ParentLocator: schemaLocator(2, "public"), Name: "orders", DataType: dataTypeTable,
+			Representation: representationNative, Policy: map[string]interface{}{"apply_mode": "upsert", "keys": []string{"target_id"}},
+		},
+		Transforms: []TransformSpec{{
+			Type: "field_mapping", Mode: "project",
+			Fields: []FieldMappingSpec{{Source: "source_id", Target: "target_id", TargetType: "bigint"}},
+		}},
+		BatchSize: 100,
+	}
+
+	if err := validateTableTransferSpec(spec); err != nil {
+		t.Fatalf("validateTableTransferSpec failed: %v", err)
+	}
+}
+
+func TestValidateTableTransferSpecRejectsWatermarkTargetKeyMismatch(t *testing.T) {
+	tests := []struct {
+		name       string
+		field      string
+		tieBreaker []string
+		keys       []string
+	}{
+		{name: "insert only", field: "id", keys: []string{"other_id"}},
+		{name: "insert and update", field: "updated_at", tieBreaker: []string{"id"}, keys: []string{"other_id"}},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			spec := TableExportTaskSpec{
+				Runtime: RuntimeSpec{Boundary: runtimeBoundaryBounded},
+				Load: LoadSpec{Mode: loadModeIncremental, ChangeDetection: &ChangeDetectionSpec{
+					Type: changeTypeWatermark, Field: testCase.field, TieBreaker: testCase.tieBreaker, Start: "committed", End: "execution_upper_bound",
+				}},
+				Source: EndpointSpec{Locator: tableLocator(1, "public", "orders"), DataType: dataTypeTable, Representation: representationNative},
+				Target: EndpointSpec{
+					ParentLocator: schemaLocator(2, "public"), Name: "orders", DataType: dataTypeTable,
+					Representation: representationNative, Policy: map[string]interface{}{"apply_mode": "upsert", "keys": testCase.keys},
+				},
+				BatchSize: 100,
+			}
+			if err := validateTableTransferSpec(spec); err == nil {
+				t.Fatal("validateTableTransferSpec accepted mismatched target keys")
+			}
+		})
+	}
+}
+
 func TestParseWatermarkIncrementalRejectsLegacyWriteMode(t *testing.T) {
 	config := map[string]interface{}{
 		"runtime": map[string]interface{}{"boundary": "bounded"},

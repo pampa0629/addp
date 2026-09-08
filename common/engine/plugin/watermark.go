@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// NormalizeWatermarkFields validates and orders one watermark field followed by stable tie-breakers.
+// NormalizeWatermarkFields validates and orders one watermark field followed by optional stable tie-breakers.
 func NormalizeWatermarkFields(watermark string, tieBreakers []string) ([]string, error) {
 	watermark = strings.TrimSpace(watermark)
 	if watermark == "" {
@@ -20,9 +20,6 @@ func NormalizeWatermarkFields(watermark string, tieBreakers []string) ([]string,
 		}
 		seen[tieBreaker] = true
 		result = append(result, tieBreaker)
-	}
-	if len(result) == 1 {
-		return nil, fmt.Errorf("watermark requires at least one tie_breaker field")
 	}
 	return result, nil
 }

@@ -2910,6 +2910,7 @@ const docTemplate = `{
                     "example": "execution_upper_bound"
                 },
                 "field": {
+                    "description": "Field 是水位字段；tie_breaker 为空时必须自身是非空、可靠递增且不可变的主键或唯一键，仅同步新增。| Field is the watermark; with an empty tie_breaker it must itself be a non-null, reliably increasing, immutable primary or unique key and synchronizes inserts only.",
                     "type": "string",
                     "example": "updated_at"
                 },
@@ -2921,6 +2922,7 @@ const docTemplate = `{
                     "example": "committed"
                 },
                 "tie_breaker": {
+                    "description": "TieBreaker 为空表示 field 单字段仅新增；非空时必须精确匹配非空主键或唯一约束，用于同步新增和更新。| An empty tie_breaker means insert-only single-field mode; otherwise it must exactly match a non-null primary or unique key for insert-and-update synchronization.",
                     "type": "array",
                     "items": {
                         "type": "string"

@@ -25,7 +25,7 @@ fi
 cd "$ROOT_DIR/common"
 ADDP_MYSQL_INTEGRATION=1 \
     go test ./engine/plugins/mysql \
-    -run '^TestIntegrationMySQLDataProtectionReadContracts$' \
+    -run '^TestIntegrationMySQL(BoundedWatermarkResumeAndIdempotentUpsert|DataProtectionReadContracts)$' \
     -count=1 -v 2>&1 | tee "$WORK_DIR/common-mysql-data-protection.log"
 
 if grep -q -- '--- SKIP:' "$WORK_DIR/common-mysql-data-protection.log"; then

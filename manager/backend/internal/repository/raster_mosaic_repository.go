@@ -21,13 +21,13 @@ func NewRasterMosaicRepository(db *gorm.DB) *RasterMosaicRepository {
 }
 
 func (r *RasterMosaicRepository) CreateTask(ctx context.Context, task *models.RasterMosaicTask) error {
-	return r.db.WithContext(ctx).Create(task).Error
+	return createTaskDefinition(ctx, r.db, commonExecution.TaskTypeRasterMosaicGeneration, task)
 }
 
 func (r *RasterMosaicRepository) GetTask(ctx context.Context, id uint, tenantID uint) (*models.RasterMosaicTask, error) {
 	var task models.RasterMosaicTask
 	err := r.db.WithContext(ctx).
-		Where("id = ? AND tenant_id = ?", id, tenantID).
+		Where("id = ? AND tenant_id = ? AND task_type = ?", id, tenantID, commonExecution.TaskTypeRasterMosaicGeneration).
 		First(&task).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
@@ -38,7 +38,7 @@ func (r *RasterMosaicRepository) GetTask(ctx context.Context, id uint, tenantID 
 func (r *RasterMosaicRepository) ListTasks(ctx context.Context, tenantID uint, page, pageSize int) ([]*models.RasterMosaicTask, int64, error) {
 	query := r.db.WithContext(ctx).
 		Model(&models.RasterMosaicTask{}).
-		Where("tenant_id = ?", tenantID)
+		Where("tenant_id = ? AND task_type = ?", tenantID, commonExecution.TaskTypeRasterMosaicGeneration)
 
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -56,12 +56,12 @@ func (r *RasterMosaicRepository) ListTasks(ctx context.Context, tenantID uint, p
 }
 
 func (r *RasterMosaicRepository) UpdateTask(ctx context.Context, task *models.RasterMosaicTask) error {
-	return r.db.WithContext(ctx).Save(task).Error
+	return updateTaskDefinition(ctx, r.db, commonExecution.TaskTypeRasterMosaicGeneration, task)
 }
 
 func (r *RasterMosaicRepository) DeleteTask(ctx context.Context, id uint, tenantID uint) error {
 	return r.db.WithContext(ctx).
-		Where("id = ? AND tenant_id = ?", id, tenantID).
+		Where("id = ? AND tenant_id = ? AND task_type = ?", id, tenantID, commonExecution.TaskTypeRasterMosaicGeneration).
 		Delete(&models.RasterMosaicTask{}).Error
 }
 
@@ -72,6 +72,7 @@ func (r *RasterMosaicRepository) ClaimExecution(
 	err := newTaskExecutionLifecycle(r.db).Claim(ctx, taskID, tenantID, execution, taskExecutionClaimSpec{
 		TaskModel: &task,
 		TaskType:  commonExecution.TaskTypeRasterMosaicGeneration,
+		TaskTypeColumn: true,
 		TaskLabel: "raster mosaic",
 		TaskName:  func() string { return task.Name },
 		TaskConfig: func() commonModels.JSONMap {

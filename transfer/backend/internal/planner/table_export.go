@@ -1146,6 +1146,11 @@ func validateTableTransferSpec(spec TableExportTaskSpec) error {
 	if err := validateTransformSpecs(spec.Transforms); err != nil {
 		return err
 	}
+	if IsWatermarkIncrementalSpec(spec) {
+		if err := validateWatermarkTargetIdentity(spec); err != nil {
+			return err
+		}
+	}
 	if spec.Source.Query != nil {
 		if err := validateQuerySource(spec.Source, spec.Transforms); err != nil {
 			return err
@@ -1242,8 +1247,8 @@ func validateWatermarkLoad(load LoadSpec) error {
 	if change == nil || strings.TrimSpace(change.Type) != changeTypeWatermark {
 		return fmt.Errorf("incremental load.change_detection.type must be watermark")
 	}
-	if strings.TrimSpace(change.Field) == "" || len(change.TieBreaker) == 0 {
-		return fmt.Errorf("watermark change_detection requires field and tie_breaker")
+	if strings.TrimSpace(change.Field) == "" {
+		return fmt.Errorf("watermark change_detection requires field")
 	}
 	if change.Start != "committed" || change.End != "execution_upper_bound" {
 		return fmt.Errorf("watermark first version requires start=committed and end=execution_upper_bound")
@@ -1257,6 +1262,72 @@ func validateWatermarkLoad(load LoadSpec) error {
 		seen[key] = true
 	}
 	return nil
+}
+
+func validateWatermarkTargetIdentity(spec TableExportTaskSpec) error {
+	change := spec.Load.ChangeDetection
+	if change == nil {
+		return fmt.Errorf("watermark change_detection is required")
+	}
+	sourceIdentity := change.TieBreaker
+	mode := "insert and update"
+	if len(sourceIdentity) == 0 {
+		sourceIdentity = []string{change.Field}
+		mode = "insert-only"
+	}
+	expected, err := mapWatermarkIdentityFields(sourceIdentity, spec.Transforms)
+	if err != nil {
+		return err
+	}
+	actual := policyStrings(spec.Target.Policy, "keys")
+	if !equalFoldedFieldLists(actual, expected) {
+		return fmt.Errorf("watermark %s target policy.keys %v must match mapped source identity fields %v", mode, actual, expected)
+	}
+	return nil
+}
+
+func mapWatermarkIdentityFields(sourceFields []string, transforms []TransformSpec) ([]string, error) {
+	current := append([]string(nil), sourceFields...)
+	for transformIndex, transform := range transforms {
+		if !strings.EqualFold(strings.TrimSpace(transform.Type), "field_mapping") {
+			continue
+		}
+		passthrough := normalizeFieldMappingMode(transform.Mode) == string(executor.FieldMappingModePassthrough)
+		next := make([]string, 0, len(current))
+		for _, source := range current {
+			matches := make([]string, 0, 1)
+			for _, field := range transform.Fields {
+				if strings.EqualFold(strings.TrimSpace(field.Source), strings.TrimSpace(source)) {
+					matches = append(matches, strings.TrimSpace(field.Target))
+				}
+			}
+			if len(matches) == 0 {
+				if passthrough {
+					next = append(next, strings.TrimSpace(source))
+					continue
+				}
+				return nil, fmt.Errorf("watermark source identity field %q is not projected by transform[%d]", source, transformIndex)
+			}
+			if len(matches) != 1 {
+				return nil, fmt.Errorf("watermark source identity field %q must map to exactly one target field in transform[%d]", source, transformIndex)
+			}
+			next = append(next, matches[0])
+		}
+		current = next
+	}
+	return current, nil
+}
+
+func equalFoldedFieldLists(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if !strings.EqualFold(strings.TrimSpace(left[index]), strings.TrimSpace(right[index])) {
+			return false
+		}
+	}
+	return true
 }
 
 func IsWatermarkIncrementalSpec(spec TableExportTaskSpec) bool {

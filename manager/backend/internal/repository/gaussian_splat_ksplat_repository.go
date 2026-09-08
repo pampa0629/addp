@@ -22,13 +22,13 @@ func NewGaussianSplatKSplatRepository(db *gorm.DB) *GaussianSplatKSplatRepositor
 }
 
 func (r *GaussianSplatKSplatRepository) CreateTask(ctx context.Context, task *models.GaussianSplatKSplatTask) error {
-	return r.db.WithContext(ctx).Create(task).Error
+	return createTaskDefinition(ctx, r.db, commonExecution.TaskTypeGaussianSplatKSplatGeneration, task)
 }
 
 func (r *GaussianSplatKSplatRepository) GetTask(ctx context.Context, id uint, tenantID uint) (*models.GaussianSplatKSplatTask, error) {
 	var task models.GaussianSplatKSplatTask
 	err := r.db.WithContext(ctx).
-		Where("id = ? AND tenant_id = ?", id, tenantID).
+		Where("id = ? AND tenant_id = ? AND task_type = ?", id, tenantID, commonExecution.TaskTypeGaussianSplatKSplatGeneration).
 		First(&task).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
@@ -43,7 +43,7 @@ func (r *GaussianSplatKSplatRepository) GetTaskByItemFingerprint(ctx context.Con
 	}
 	var task models.GaussianSplatKSplatTask
 	err := r.db.WithContext(ctx).
-		Where("tenant_id = ? AND config->'source'->>'item_fingerprint' = ?", tenantID, itemFingerprint).
+		Where("tenant_id = ? AND task_type = ? AND config->'source'->>'item_fingerprint' = ?", tenantID, commonExecution.TaskTypeGaussianSplatKSplatGeneration, itemFingerprint).
 		Order("updated_at DESC, id DESC").
 		First(&task).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -55,7 +55,7 @@ func (r *GaussianSplatKSplatRepository) GetTaskByItemFingerprint(ctx context.Con
 func (r *GaussianSplatKSplatRepository) ListTasks(ctx context.Context, tenantID uint, page, pageSize int) ([]*models.GaussianSplatKSplatTask, int64, error) {
 	query := r.db.WithContext(ctx).
 		Model(&models.GaussianSplatKSplatTask{}).
-		Where("tenant_id = ?", tenantID)
+		Where("tenant_id = ? AND task_type = ?", tenantID, commonExecution.TaskTypeGaussianSplatKSplatGeneration)
 
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -73,12 +73,12 @@ func (r *GaussianSplatKSplatRepository) ListTasks(ctx context.Context, tenantID 
 }
 
 func (r *GaussianSplatKSplatRepository) UpdateTask(ctx context.Context, task *models.GaussianSplatKSplatTask) error {
-	return r.db.WithContext(ctx).Save(task).Error
+	return updateTaskDefinition(ctx, r.db, commonExecution.TaskTypeGaussianSplatKSplatGeneration, task)
 }
 
 func (r *GaussianSplatKSplatRepository) DeleteTask(ctx context.Context, id uint, tenantID uint) error {
 	return r.db.WithContext(ctx).
-		Where("id = ? AND tenant_id = ?", id, tenantID).
+		Where("id = ? AND tenant_id = ? AND task_type = ?", id, tenantID, commonExecution.TaskTypeGaussianSplatKSplatGeneration).
 		Delete(&models.GaussianSplatKSplatTask{}).Error
 }
 
@@ -89,6 +89,7 @@ func (r *GaussianSplatKSplatRepository) ClaimExecution(
 	err := newTaskExecutionLifecycle(r.db).Claim(ctx, taskID, tenantID, execution, taskExecutionClaimSpec{
 		TaskModel: &task,
 		TaskType:  commonExecution.TaskTypeGaussianSplatKSplatGeneration,
+		TaskTypeColumn: true,
 		TaskLabel: "gaussian splat KSplat",
 		TaskName:  func() string { return task.Name },
 		TaskConfig: func() commonModels.JSONMap {

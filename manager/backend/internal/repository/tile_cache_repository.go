@@ -23,13 +23,13 @@ func NewTileCacheRepository(db *gorm.DB) *TileCacheRepository {
 }
 
 func (r *TileCacheRepository) CreateTask(ctx context.Context, task *models.TileCacheTask) error {
-	return r.db.WithContext(ctx).Create(task).Error
+	return createTaskDefinition(ctx, r.db, commonExecution.TaskTypeVectorTileCacheGeneration, task)
 }
 
 func (r *TileCacheRepository) GetTask(ctx context.Context, id uint, tenantID uint) (*models.TileCacheTask, error) {
 	var task models.TileCacheTask
 	err := r.db.WithContext(ctx).
-		Where("id = ? AND tenant_id = ?", id, tenantID).
+		Where("id = ? AND tenant_id = ? AND task_type = ?", id, tenantID, commonExecution.TaskTypeVectorTileCacheGeneration).
 		First(&task).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
@@ -40,7 +40,7 @@ func (r *TileCacheRepository) GetTask(ctx context.Context, id uint, tenantID uin
 func (r *TileCacheRepository) GetTileCacheTaskByID(ctx context.Context, id uint) (*models.TileCacheTask, error) {
 	var task models.TileCacheTask
 	err := r.db.WithContext(ctx).
-		Where("id = ?", id).
+		Where("id = ? AND task_type = ?", id, commonExecution.TaskTypeVectorTileCacheGeneration).
 		First(&task).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
@@ -56,8 +56,9 @@ func (r *TileCacheRepository) GetTaskByTargetFingerprintAndProfile(ctx context.C
 	}
 	query := r.db.WithContext(ctx).
 		Where(
-			"tenant_id = ? AND config -> 'target' ->> 'item_fingerprint' = ? AND config ->> 'profile_hash' = ?",
+			"tenant_id = ? AND task_type = ? AND config -> 'target' ->> 'item_fingerprint' = ? AND config ->> 'profile_hash' = ?",
 			tenantID,
+			commonExecution.TaskTypeVectorTileCacheGeneration,
 			itemFingerprint,
 			profileHash,
 		)
@@ -73,7 +74,7 @@ func (r *TileCacheRepository) GetTaskByTargetFingerprintAndProfile(ctx context.C
 }
 
 func (r *TileCacheRepository) ListTasks(ctx context.Context, tenantID uint, page, pageSize int) ([]*models.TileCacheTask, int64, error) {
-	query := r.db.WithContext(ctx).Model(&models.TileCacheTask{}).Where("tenant_id = ?", tenantID)
+	query := r.db.WithContext(ctx).Model(&models.TileCacheTask{}).Where("tenant_id = ? AND task_type = ?", tenantID, commonExecution.TaskTypeVectorTileCacheGeneration)
 
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -90,19 +91,19 @@ func (r *TileCacheRepository) ListTasks(ctx context.Context, tenantID uint, page
 }
 
 func (r *TileCacheRepository) UpdateTask(ctx context.Context, task *models.TileCacheTask) error {
-	return r.db.WithContext(ctx).Save(task).Error
+	return updateTaskDefinition(ctx, r.db, commonExecution.TaskTypeVectorTileCacheGeneration, task)
 }
 
 func (r *TileCacheRepository) DeleteTask(ctx context.Context, id uint, tenantID uint) error {
 	return r.db.WithContext(ctx).
-		Where("id = ? AND tenant_id = ?", id, tenantID).
+		Where("id = ? AND tenant_id = ? AND task_type = ?", id, tenantID, commonExecution.TaskTypeVectorTileCacheGeneration).
 		Delete(&models.TileCacheTask{}).Error
 }
 
 func (r *TileCacheRepository) ListAllTasks(ctx context.Context, tenantID uint) ([]*models.TileCacheTask, error) {
 	var tasks []*models.TileCacheTask
 	err := r.db.WithContext(ctx).
-		Where("tenant_id = ?", tenantID).
+		Where("tenant_id = ? AND task_type = ?", tenantID, commonExecution.TaskTypeVectorTileCacheGeneration).
 		Order("updated_at DESC, id DESC").
 		Find(&tasks).Error
 	return tasks, err
@@ -111,7 +112,7 @@ func (r *TileCacheRepository) ListAllTasks(ctx context.Context, tenantID uint) (
 func (r *TileCacheRepository) DisableTaskForCleanup(ctx context.Context, tenantID uint, id uint, reason string) error {
 	return r.db.WithContext(ctx).
 		Model(&models.TileCacheTask{}).
-		Where("tenant_id = ? AND id = ?", tenantID, id).
+		Where("tenant_id = ? AND id = ? AND task_type = ?", tenantID, id, commonExecution.TaskTypeVectorTileCacheGeneration).
 		Updates(map[string]interface{}{
 			"enabled":               false,
 			"next_run_at":           nil,
@@ -125,6 +126,7 @@ func (r *TileCacheRepository) ClaimExecution(ctx context.Context, taskID, tenant
 	err := newTaskExecutionLifecycle(r.db).Claim(ctx, taskID, tenantID, execution, taskExecutionClaimSpec{
 		TaskModel: &task,
 		TaskType:  commonExecution.TaskTypeVectorTileCacheGeneration,
+		TaskTypeColumn: true,
 		TaskLabel: "vector tile cache",
 		TaskName:  func() string { return task.Name },
 		TaskConfig: func() commonModels.JSONMap {

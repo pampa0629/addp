@@ -762,6 +762,39 @@ definitions:
       width:
         type: integer
     type: object
+  github_com_addp_manager_internal_models.TaskDefinition:
+    properties:
+      config:
+        $ref: '#/definitions/github_com_addp_common_models.JSONMap'
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      description:
+        type: string
+      enabled:
+        type: boolean
+      id:
+        type: integer
+      last_execution_id:
+        type: string
+      last_execution_status:
+        type: string
+      last_run_at:
+        type: string
+      name:
+        type: string
+      semantic_key:
+        type: string
+      task_type:
+        type: string
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+      version:
+        type: integer
+    type: object
   github_com_addp_manager_internal_models.TileCache:
     properties:
       created_at:
@@ -888,10 +921,16 @@ definitions:
         type: string
       name:
         type: string
+      semantic_key:
+        type: string
+      task_type:
+        type: string
       tenant_id:
         type: integer
       updated_at:
         type: string
+      version:
+        type: integer
     type: object
   github_com_addp_manager_internal_preview.ResourceFacts:
     properties:
@@ -1820,6 +1859,19 @@ definitions:
       tile_budget:
         type: integer
     type: object
+  internal_api.DerivedTaskRequest:
+    properties:
+      config:
+        $ref: '#/definitions/github_com_addp_common_models.JSONMap'
+      description:
+        type: string
+      enabled:
+        type: boolean
+      name:
+        type: string
+      version:
+        type: integer
+    type: object
   internal_api.EmbeddingTaskRequest:
     properties:
       config:
@@ -2546,6 +2598,10 @@ definitions:
     type: object
   internal_api.TaskListItem:
     properties:
+      category:
+        type: string
+      config:
+        $ref: '#/definitions/github_com_addp_common_models.JSONMap'
       description:
         type: string
       enabled:
@@ -2558,9 +2614,15 @@ definitions:
         type: string
       name:
         type: string
+      semantic_key:
+        type: string
       task_type:
         type: string
       tenant_id:
+        type: integer
+      updated_at:
+        type: string
+      version:
         type: integer
     type: object
   internal_api.TaskListResponse:
@@ -6773,7 +6835,66 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - manager.derived_artifact.read
+  /tasks/{task_type}:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 任务类型 | Task type
+        in: path
+        name: task_type
+        required: true
+        type: string
+      - description: 任务定义 | Task definition
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.DerivedTaskRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: 任务定义 | Task definition
+          schema:
+            $ref: '#/definitions/github_com_addp_manager_internal_models.TaskDefinition'
+        "400":
+          description: 请求错误 | Bad request
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建 Manager 派生任务 | Create a Manager derived task
+      tags:
+      - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.create
   /tasks/{task_type}/{id}:
+    delete:
+      parameters:
+      - description: 任务类型 | Task type
+        in: path
+        name: task_type
+        required: true
+        type: string
+      - description: 任务 ID | Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "204":
+          description: 删除成功 | Deleted
+      security:
+      - BearerAuth: []
+      summary: 删除 Manager 派生任务 | Delete a Manager derived task
+      tags:
+      - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.delete
     get:
       description: 获取指定类型和ID的任务详细信息 | Get detailed information of a task by type and
         ID
@@ -6815,6 +6936,46 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - manager.derived_artifact.read
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 任务类型 | Task type
+        in: path
+        name: task_type
+        required: true
+        type: string
+      - description: 任务 ID | Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 任务定义，version 必填 | Task definition; version is required
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.DerivedTaskRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 任务定义 | Task definition
+          schema:
+            $ref: '#/definitions/github_com_addp_manager_internal_models.TaskDefinition'
+        "409":
+          description: 版本冲突 | Version conflict
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新 Manager 派生任务 | Update a Manager derived task
+      tags:
+      - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.derived_artifact.update
   /tasks/{task_type}/{id}/execute:
     post:
       consumes:

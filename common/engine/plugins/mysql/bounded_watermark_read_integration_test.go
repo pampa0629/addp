@@ -116,6 +116,17 @@ func TestIntegrationMySQLBoundedWatermarkResumeAndIdempotentUpsert(t *testing.T)
 	if updatedName != "changed-after-snapshot" {
 		t.Fatalf("target row 2 name = %q, want changed-after-snapshot", updatedName)
 	}
+	insertOnly, err := mysqlPlugin.OpenBoundedWatermarkRead(ctx, connInfo, sourcePath, plugin.BoundedWatermarkReadOptions{WatermarkField: "id"})
+	if err != nil {
+		t.Fatalf("open insert-only MySQL watermark read: %v", err)
+	}
+	insertOnlyUpper := insertOnly.UpperBound()
+	if insertOnlyUpper == nil || len(insertOnlyUpper.Values) != 1 || insertOnlyUpper.Values[0] != "3" {
+		t.Fatalf("insert-only MySQL upper bound = %#v, want id 3", insertOnlyUpper)
+	}
+	if err := insertOnly.Close(ctx); err != nil {
+		t.Fatalf("close insert-only MySQL watermark read: %v", err)
+	}
 }
 
 func TestIntegrationMySQLBoundedWatermarkRejectsNonInnoDBSource(t *testing.T) {

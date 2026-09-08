@@ -1098,6 +1098,20 @@ func (t cleanupTaskTarget) IsEmpty() bool {
 
 func cleanupTaskTargetsFromDefinition(definition repository.CleanupTaskDefinition) []cleanupTaskTarget {
 	targets := make([]cleanupTaskTarget, 0, 3)
+	if len(definition.ResourceBindings) > 0 {
+		for _, binding := range definition.ResourceBindings {
+			itemID := uint(0)
+			if binding.ItemID != nil {
+				itemID = *binding.ItemID
+			}
+			targets = append(targets, cleanupTaskTarget{
+				EngineID: binding.EngineID, ItemID: itemID,
+				ItemFingerprint: strings.TrimSpace(binding.ItemFingerprint),
+				Locator:         strings.TrimSpace(binding.Locator), VerifySource: binding.Role == models.TaskResourceRoleSource,
+			})
+		}
+		return targets
+	}
 	if definition.SourceEngineID > 0 || definition.ItemID > 0 || strings.TrimSpace(definition.ItemFingerprint) != "" || strings.TrimSpace(definition.Locator) != "" {
 		targets = append(targets, cleanupTaskTarget{
 			EngineID: definition.SourceEngineID, ItemID: definition.ItemID,

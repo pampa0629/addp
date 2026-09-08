@@ -3138,7 +3138,9 @@ func tileCacheCreateURL(identity QuickViewIdentity, engineID uint, schema, table
 			values.Set("extent_srid", fmt.Sprintf("%d", extentSRID))
 		}
 	}
-	return "/manager/spatial-quick-view/vector-tile-cache?" + values.Encode()
+	values.Set("category", models.TaskCategoryManagedQuickView)
+	values.Set("task_type", commonExecution.TaskTypeVectorTileCacheGeneration)
+	return "/manager/derived-tasks?" + values.Encode()
 }
 
 func tileCacheCreateURLExtent(meta *SpatialMetadataResult) ([]float64, int) {

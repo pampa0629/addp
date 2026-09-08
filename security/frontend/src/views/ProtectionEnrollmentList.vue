@@ -48,10 +48,16 @@
           <template #default="{ row }">{{ formatDateTime(row.requested_expires_at) }}</template>
         </el-table-column>
         <el-table-column prop="rationale" :label="t('security.accessRequest.rationale')" min-width="240" show-overflow-tooltip />
-        <el-table-column :label="t('security.common.actions')" width="150" fixed="right">
+        <el-table-column :label="t('security.common.actions')" width="190" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="decideAccessRequest(row, 'approve')">{{ t('security.accessRequest.approve') }}</el-button>
-            <el-button link type="danger" @click="decideAccessRequest(row, 'reject')">{{ t('security.accessRequest.reject') }}</el-button>
+            <div v-if="row.can_decide" class="access-decision-actions">
+              <el-button link type="primary" @click="decideAccessRequest(row, 'approve')">{{ t('security.accessRequest.approve') }}</el-button>
+              <el-button link type="danger" @click="decideAccessRequest(row, 'reject')">{{ t('security.accessRequest.reject') }}</el-button>
+            </div>
+            <div v-else class="access-decision-unavailable">
+              <el-tag size="small" type="info">{{ t('security.accessRequest.selfSubmitted') }}</el-tag>
+              <span>{{ t(`security.accessRequest.unavailableReasons.${row.decision_unavailable_reason}`) }}</span>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -2055,6 +2061,8 @@ onBeforeUnmount(() => {
 .review-queue-filters { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
 .review-queue-filters .el-select { width: min(340px, 100%); }
 .review-queue-card :deep(.el-card__body) { padding-top: 8px; }
+.access-decision-actions { display: flex; align-items: center; gap: 4px; }
+.access-decision-unavailable { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; color: var(--addp-text-secondary); font-size: 12px; }
 .queue-candidate, .queue-recognition, .queue-evidence { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: 5px; }
 .queue-candidate span, .queue-evidence small { color: var(--addp-text-secondary); font-size: 12px; }
 .queue-recognition code { max-width: 100%; overflow: hidden; color: var(--addp-text-tertiary); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }

@@ -324,6 +324,9 @@
         "assignedElsewhere": "已在其他范围分配",
         "allAssigned": "此授权范围下没有可分配的新角色。",
         "noAssignableRoles": "没有可分配的角色",
+        "selectedCount": "已选择 {count} 个角色",
+        "confirmAssignment": "确认分配",
+        "assignedCount": "已成功分配 {count} 个角色",
         "recommendations": {
           "title": "常用职责",
           "description": "选择职责后仍需确认成员、范围和授权原因。",

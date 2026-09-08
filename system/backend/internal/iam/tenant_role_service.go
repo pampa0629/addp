@@ -15,6 +15,8 @@ import (
 
 const tenantAdministratorRoleKey = "tenant.administrator"
 
+const maxTenantRoleAssignmentBatchSize = 50
+
 var tenantCustomRoleKeyPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$`)
 
 var ErrTenantRoleAssignmentAlreadyExists = fmt.Errorf(
@@ -65,10 +67,10 @@ type DeleteTenantRoleInput struct {
 	Audit            AuditMetadata
 }
 
-type CreateTenantRoleAssignmentInput struct {
+type CreateTenantRoleAssignmentsInput struct {
 	TenantID         int64
 	MembershipID     int64
-	RoleID           int64
+	RoleIDs          []int64
 	ScopeType        string
 	DepartmentID     *int64
 	ProjectGroupID   *int64
@@ -255,9 +257,13 @@ func (s *TenantRoleService) ListAssignments(ctx context.Context, tenantID int64,
 	return s.repository.ListTenantRoleAssignments(ctx, tenantID, filter, page, pageSize)
 }
 
-func (s *TenantRoleService) CreateAssignment(ctx context.Context, input CreateTenantRoleAssignmentInput) (*ManagedTenantRoleAssignment, error) {
-	if input.TenantID <= 0 || input.MembershipID <= 0 || input.RoleID <= 0 || input.ActorPrincipalID <= 0 {
-		return nil, fmt.Errorf("%w: tenant, membership, role and actor are required", commonapi.ErrBadRequest)
+func (s *TenantRoleService) CreateAssignments(ctx context.Context, input CreateTenantRoleAssignmentsInput) ([]ManagedTenantRoleAssignment, error) {
+	roleIDs, err := normalizeTenantRoleAssignmentIDs(input.RoleIDs)
+	if err != nil {
+		return nil, err
+	}
+	if input.TenantID <= 0 || input.MembershipID <= 0 || input.ActorPrincipalID <= 0 {
+		return nil, fmt.Errorf("%w: tenant, membership, roles and actor are required", commonapi.ErrBadRequest)
 	}
 	if input.ScopeType == "" {
 		input.ScopeType = "tenant"
@@ -269,8 +275,8 @@ func (s *TenantRoleService) CreateAssignment(ctx context.Context, input CreateTe
 	if input.ValidUntil != nil && !input.ValidUntil.After(now) {
 		return nil, fmt.Errorf("%w: assignment expiry must be in the future", commonapi.ErrBadRequest)
 	}
-	var assignment *RoleAssignment
-	err := s.repository.Transaction(ctx, func(tx *Repository) error {
+	assignments := make([]*RoleAssignment, 0, len(roleIDs))
+	err = s.repository.Transaction(ctx, func(tx *Repository) error {
 		if _, err := tx.LockPrincipal(ctx, input.ActorPrincipalID); err != nil {
 			return err
 		}
@@ -292,54 +298,89 @@ func (s *TenantRoleService) CreateAssignment(ctx context.Context, input CreateTe
 		if err != nil {
 			return err
 		}
-		var role *TenantRole
-		for index := range roles {
-			if roles[index].ID == input.RoleID {
-				role = &roles[index]
-				break
+		rolesByID := make(map[int64]TenantRole, len(roles))
+		for _, role := range roles {
+			rolesByID[role.ID] = role
+		}
+		selectedRoles := make([]TenantRole, 0, len(roleIDs))
+		requiresStepUp := false
+		for _, roleID := range roleIDs {
+			role, exists := rolesByID[roleID]
+			if !exists {
+				return commonapi.ErrNotFound
 			}
-		}
-		if role == nil {
-			return commonapi.ErrNotFound
-		}
-		if !containsString(role.AllowedPrincipalTypes, string(targetPrincipal.PrincipalType)) {
-			return ErrTenantRoleAssignmentPrincipalTypeNotAllowed
-		}
-		if !containsString(role.AllowedScopeTypes, input.ScopeType) {
-			return commonapi.ErrForbidden
-		}
-		if membership.PrincipalID == input.ActorPrincipalID {
-			highRisk, err := tx.TenantRoleHasHighRiskPermission(ctx, role.ID)
-			if err != nil {
-				return err
+			if !containsString(role.AllowedPrincipalTypes, string(targetPrincipal.PrincipalType)) {
+				return ErrTenantRoleAssignmentPrincipalTypeNotAllowed
 			}
-			if highRisk && ((input.AssuranceLevel != AssuranceLevelAAL2 && input.AssuranceLevel != AssuranceLevelAAL3) ||
-				input.StepUpExpiresAt == nil || !input.StepUpExpiresAt.After(now)) {
-				return ErrStepUpRequired
+			if !containsString(role.AllowedScopeTypes, input.ScopeType) {
+				return commonapi.ErrForbidden
 			}
+			if role.RoleKey == tenantAdministratorRoleKey && input.ValidUntil != nil {
+				return fmt.Errorf("%w: tenant administrator assignment cannot expire", commonapi.ErrBadRequest)
+			}
+			if membership.PrincipalID == input.ActorPrincipalID {
+				highRisk, err := tx.TenantRoleHasHighRiskPermission(ctx, role.ID)
+				if err != nil {
+					return err
+				}
+				requiresStepUp = requiresStepUp || highRisk
+			}
+			selectedRoles = append(selectedRoles, role)
 		}
-		if role.RoleKey == tenantAdministratorRoleKey && input.ValidUntil != nil {
-			return fmt.Errorf("%w: tenant administrator assignment cannot expire", commonapi.ErrBadRequest)
+		if requiresStepUp && ((input.AssuranceLevel != AssuranceLevelAAL2 && input.AssuranceLevel != AssuranceLevelAAL3) ||
+			input.StepUpExpiresAt == nil || !input.StepUpExpiresAt.After(now)) {
+			return ErrStepUpRequired
 		}
 		tenantID := input.TenantID
-		assignment = &RoleAssignment{
-			PrincipalID: membership.PrincipalID, RoleID: role.ID, ScopeType: input.ScopeType, TenantID: &tenantID,
-			DepartmentID: input.DepartmentID, ProjectGroupID: input.ProjectGroupID, Status: "active", ValidFrom: now,
-			ValidUntil: input.ValidUntil, SourceType: "manual", CreatedByPrincipalID: &input.ActorPrincipalID, Reason: strings.TrimSpace(input.Reason),
+		for _, role := range selectedRoles {
+			assignment := &RoleAssignment{
+				PrincipalID: membership.PrincipalID, RoleID: role.ID, ScopeType: input.ScopeType, TenantID: &tenantID,
+				DepartmentID: input.DepartmentID, ProjectGroupID: input.ProjectGroupID, Status: "active", ValidFrom: now,
+				ValidUntil: input.ValidUntil, SourceType: "manual", CreatedByPrincipalID: &input.ActorPrincipalID, Reason: strings.TrimSpace(input.Reason),
+			}
+			if err := tx.CreateTenantRoleAssignment(ctx, assignment); err != nil {
+				return err
+			}
+			if err := NewAuditWriter(tx).Write(ctx, AuditEvent{
+				Metadata: input.Audit, EventName: "iam.tenant_role_assignment.created", Result: AuditResultSucceeded,
+				RiskLevel: AuditRiskMedium, ModuleName: "system", EntityType: "role_assignment", EntityID: strconv.FormatInt(assignment.ID, 10),
+				Details: map[string]any{"tenant_id": input.TenantID, "membership_id": membership.ID, "principal_id": membership.PrincipalID, "role_key": role.RoleKey, "scope_type": input.ScopeType, "authorization_version_changed": true},
+			}); err != nil {
+				return err
+			}
+			assignments = append(assignments, assignment)
 		}
-		if err := tx.CreateTenantRoleAssignment(ctx, assignment); err != nil {
-			return err
-		}
-		return NewAuditWriter(tx).Write(ctx, AuditEvent{
-			Metadata: input.Audit, EventName: "iam.tenant_role_assignment.created", Result: AuditResultSucceeded,
-			RiskLevel: AuditRiskMedium, ModuleName: "system", EntityType: "role_assignment", EntityID: strconv.FormatInt(assignment.ID, 10),
-			Details: map[string]any{"tenant_id": input.TenantID, "membership_id": membership.ID, "principal_id": membership.PrincipalID, "role_key": role.RoleKey, "scope_type": input.ScopeType, "authorization_version_changed": true},
-		})
+		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	return s.repository.GetManagedTenantRoleAssignment(ctx, input.TenantID, assignment.ID)
+	managed := make([]ManagedTenantRoleAssignment, 0, len(assignments))
+	for _, assignment := range assignments {
+		resolved, err := s.repository.GetManagedTenantRoleAssignment(ctx, input.TenantID, assignment.ID)
+		if err != nil {
+			return nil, err
+		}
+		managed = append(managed, *resolved)
+	}
+	return managed, nil
+}
+
+func normalizeTenantRoleAssignmentIDs(roleIDs []int64) ([]int64, error) {
+	if len(roleIDs) == 0 || len(roleIDs) > maxTenantRoleAssignmentBatchSize {
+		return nil, fmt.Errorf("%w: role_ids must contain between 1 and %d roles", commonapi.ErrBadRequest, maxTenantRoleAssignmentBatchSize)
+	}
+	result := append([]int64(nil), roleIDs...)
+	sort.Slice(result, func(left, right int) bool { return result[left] < result[right] })
+	for index, roleID := range result {
+		if roleID <= 0 {
+			return nil, fmt.Errorf("%w: role IDs must be positive", commonapi.ErrBadRequest)
+		}
+		if index > 0 && result[index-1] == roleID {
+			return nil, fmt.Errorf("%w: role_ids must not contain duplicates", commonapi.ErrBadRequest)
+		}
+	}
+	return result, nil
 }
 
 func (s *TenantRoleService) RevokeAssignment(ctx context.Context, input RevokeTenantRoleAssignmentInput) (*ManagedTenantRoleAssignment, error) {

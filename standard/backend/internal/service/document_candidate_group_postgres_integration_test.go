@@ -45,6 +45,14 @@ func TestPostgresDocumentCandidateGroupsPreserveOccurrences(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	identities, err := repo.ListCandidateIdentities(document.ID, tenantID)
+	if err != nil || len(identities) != len(candidates) {
+		t.Fatalf("candidate identities=%+v err=%v", identities, err)
+	}
+	knownCandidates := buildCopilotKnownCandidates(identities, nil)
+	if len(knownCandidates) != 1 || knownCandidates[0].Name != candidates[0].Name || knownCandidates[0].Definition != candidates[0].Definition {
+		t.Fatalf("known candidates=%+v", knownCandidates)
+	}
 
 	svc := &DocumentService{repo: repo}
 	response, err := svc.ListCandidateGroups(document.ID, tenantID, DocumentCandidateGroupListOptions{Page: 1, PageSize: 1})

@@ -22,13 +22,13 @@ func NewRasterCOGRepository(db *gorm.DB) *RasterCOGRepository {
 }
 
 func (r *RasterCOGRepository) CreateTask(ctx context.Context, task *models.RasterCOGTask) error {
-	return r.db.WithContext(ctx).Create(task).Error
+	return createTaskDefinition(ctx, r.db, commonExecution.TaskTypeRasterCOGGeneration, task)
 }
 
 func (r *RasterCOGRepository) GetTask(ctx context.Context, id uint, tenantID uint) (*models.RasterCOGTask, error) {
 	var task models.RasterCOGTask
 	err := r.db.WithContext(ctx).
-		Where("id = ? AND tenant_id = ?", id, tenantID).
+		Where("id = ? AND tenant_id = ? AND task_type = ?", id, tenantID, commonExecution.TaskTypeRasterCOGGeneration).
 		First(&task).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
@@ -43,7 +43,7 @@ func (r *RasterCOGRepository) GetTaskByItemFingerprint(ctx context.Context, tena
 	}
 	var task models.RasterCOGTask
 	err := r.db.WithContext(ctx).
-		Where("tenant_id = ? AND config->'target'->>'item_fingerprint' = ?", tenantID, itemFingerprint).
+		Where("tenant_id = ? AND task_type = ? AND config->'target'->>'item_fingerprint' = ?", tenantID, commonExecution.TaskTypeRasterCOGGeneration, itemFingerprint).
 		Order("updated_at DESC, id DESC").
 		First(&task).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -55,7 +55,7 @@ func (r *RasterCOGRepository) GetTaskByItemFingerprint(ctx context.Context, tena
 func (r *RasterCOGRepository) ListTasks(ctx context.Context, tenantID uint, page, pageSize int) ([]*models.RasterCOGTask, int64, error) {
 	query := r.db.WithContext(ctx).
 		Model(&models.RasterCOGTask{}).
-		Where("tenant_id = ?", tenantID)
+		Where("tenant_id = ? AND task_type = ?", tenantID, commonExecution.TaskTypeRasterCOGGeneration)
 
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -73,12 +73,12 @@ func (r *RasterCOGRepository) ListTasks(ctx context.Context, tenantID uint, page
 }
 
 func (r *RasterCOGRepository) UpdateTask(ctx context.Context, task *models.RasterCOGTask) error {
-	return r.db.WithContext(ctx).Save(task).Error
+	return updateTaskDefinition(ctx, r.db, commonExecution.TaskTypeRasterCOGGeneration, task)
 }
 
 func (r *RasterCOGRepository) DeleteTask(ctx context.Context, id uint, tenantID uint) error {
 	return r.db.WithContext(ctx).
-		Where("id = ? AND tenant_id = ?", id, tenantID).
+		Where("id = ? AND tenant_id = ? AND task_type = ?", id, tenantID, commonExecution.TaskTypeRasterCOGGeneration).
 		Delete(&models.RasterCOGTask{}).Error
 }
 
@@ -89,6 +89,7 @@ func (r *RasterCOGRepository) ClaimExecution(
 	err := newTaskExecutionLifecycle(r.db).Claim(ctx, taskID, tenantID, execution, taskExecutionClaimSpec{
 		TaskModel: &task,
 		TaskType:  commonExecution.TaskTypeRasterCOGGeneration,
+		TaskTypeColumn: true,
 		TaskLabel: "raster COG",
 		TaskName:  func() string { return task.Name },
 		TaskConfig: func() commonModels.JSONMap {

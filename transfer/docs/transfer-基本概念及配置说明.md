@@ -312,11 +312,11 @@ PostgreSQL/MySQL/OceanBase non-spatial native table -> PostgreSQL/MySQL/OceanBas
 bounded + incremental + watermark + upsert
 ```
 
-配置必须声明 `load.change_detection.field`、非空 `tie_breaker`、`start=committed`、`end=execution_upper_bound`，并在 `target.policy.keys` 声明稳定目标键。watermark 字段不得为 NULL；tie breaker 必须精确匹配非空主键或唯一约束，并且稳定、不可变。每次 execution 在源数据库的一致性快照内冻结复合上界，只读取 `(committed_position, execution_upper_bound]` 并稳定排序；MySQL-compatible 源必须是 InnoDB 基表，OceanBase 当前不得包含空间字段。
+配置必须声明 `load.change_detection.field`、`start=committed`、`end=execution_upper_bound`，并在 `target.policy.keys` 声明稳定目标键。`tie_breaker=[]` 表示仅同步新增：watermark field 必须自身精确匹配非空主键或唯一约束，并由用户确认可靠单调递增且不可变，目标 keys 必须是该字段映射后的目标字段。非空 `tie_breaker` 表示同步新增和更新：tie breaker 必须精确匹配非空主键或唯一约束，并且稳定、不可变，目标 keys 必须与其字段映射一一对应。每次 execution 在源数据库的一致性快照内冻结游标上界，只读取 `(committed_position, execution_upper_bound]` 并稳定排序；MySQL-compatible 源必须是 InnoDB 基表，OceanBase 当前不得包含空间字段。
 
 同步主状态存储在 `transfer.sync_states`。position 使用 `type=watermark`、`version=v1` 的 JSON；目标批次提交成功后才允许携带 `state_version` 和本次 fencing token 做 CAS 更新。重复应用必须由目标 `TableUpsertProvider` 幂等吸收：PostgreSQL 使用 `ON CONFLICT ... DO UPDATE`，MySQL 及 MySQL 模式 OceanBase 使用 InnoDB 事务内的 `ON DUPLICATE KEY UPDATE`。MySQL-compatible 目标的配置 keys 必须精确匹配非空主键或唯一约束，且目标表不得存在与配置 keys 不同的唯一约束；OceanBase 当前只支持非空间目标。
 
-第一版只支持 resume：新 execution 从 committed position 继续并在成功后推进主状态。不提供 replay，不发现物理删除，也不支持只读副本 lookback。源表所有 insert/update 必须可靠更新 watermark；时间回拨或未更新 watermark 的变化不在保证范围内。
+第一版只支持 resume：新 execution 从 committed position 继续并在成功后推进主状态。不提供 replay，不发现物理删除，也不支持只读副本 lookback。单字段模式不保证已有记录更新；复合模式要求源表所有 insert/update 都可靠更新 watermark。时间回拨或未更新 watermark 的变化不在保证范围内。
 
 ## 八、Continuous/Kafka v1 契约与当前实现边界
 

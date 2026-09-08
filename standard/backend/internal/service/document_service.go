@@ -44,11 +44,14 @@ var (
 	ErrDocumentFileRequired                  = errors.New("document revision file required")
 	ErrDocumentExtractionUnsupported         = errors.New("document extraction only supports markdown")
 	ErrDocumentExtractionInvalid             = errors.New("document extraction result invalid")
+	ErrDocumentExtractionNamespaceInvalid    = errors.New("document extraction code namespace invalid")
 	ErrDocumentCopilotUnavailable            = errors.New("document copilot unavailable")
 	ErrDocumentPublicationHistory            = errors.New("document publication history exists")
 	ErrDocumentCandidateFormalizationHistory = errors.New("document candidate formalization history exists")
 	documentCandidateCodePattern             = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 )
+
+const maxCopilotKnownCandidates = 200
 
 type DocumentStorageOptions struct {
 	MaxFileSize        int64
@@ -365,10 +368,18 @@ type documentExtractionSection struct {
 	EndLine     int    `json:"end_line"`
 	Text        string `json:"text"`
 }
+type copilotKnownCandidate struct {
+	CandidateType string `json:"candidate_type"`
+	Code          string `json:"code"`
+	Name          string `json:"name"`
+	Definition    string `json:"definition"`
+}
 type copilotDocumentExtractRequest struct {
-	DocumentName string                      `json:"document_name"`
-	VersionLabel string                      `json:"version_label"`
-	Sections     []documentExtractionSection `json:"sections"`
+	DocumentName    string                      `json:"document_name"`
+	VersionLabel    string                      `json:"version_label"`
+	CodeNamespace   *string                     `json:"code_namespace"`
+	KnownCandidates []copilotKnownCandidate     `json:"known_candidates"`
+	Sections        []documentExtractionSection `json:"sections"`
 }
 type copilotEvidence struct {
 	SectionPath string `json:"section_path"`
@@ -404,6 +415,10 @@ type copilotDocumentExtractResponse struct {
 }
 
 func (s *DocumentService) ExtractCandidates(ctx context.Context, documentID, revisionID, tenantID, userID, version int64) (*models.DocumentExtraction, error) {
+	document, err := s.repo.GetByID(documentID, tenantID)
+	if err != nil {
+		return nil, err
+	}
 	revision, err := s.repo.GetRevision(documentID, revisionID, tenantID)
 	if err != nil {
 		return nil, err
@@ -430,15 +445,23 @@ func (s *DocumentService) ExtractCandidates(ctx context.Context, documentID, rev
 	if len(sections) == 0 {
 		return nil, ErrDocumentExtractionInvalid
 	}
-	response, err := s.callCopilotExtract(ctx, tenantID, copilotDocumentExtractRequest{DocumentName: revision.Name, VersionLabel: revision.VersionLabel, Sections: sections})
+	codeNamespace, err := s.documentExtractionCodeNamespace(document)
 	if err != nil {
 		return nil, err
 	}
-	extraction, err := buildDocumentExtraction(tenantID, revisionID, userID, string(content), sections, response)
+	identities, err := s.repo.ListCandidateIdentities(documentID, tenantID)
 	if err != nil {
 		return nil, err
 	}
-	document, err := s.repo.GetByID(documentID, tenantID)
+	knownCandidates := buildCopilotKnownCandidates(identities, codeNamespace)
+	response, err := s.callCopilotExtract(ctx, tenantID, copilotDocumentExtractRequest{
+		DocumentName: revision.Name, VersionLabel: revision.VersionLabel, CodeNamespace: codeNamespace,
+		KnownCandidates: knownCandidates, Sections: sections,
+	})
+	if err != nil {
+		return nil, err
+	}
+	extraction, err := buildDocumentExtraction(tenantID, revisionID, userID, string(content), sections, codeNamespace, response)
 	if err != nil {
 		return nil, err
 	}
@@ -451,6 +474,96 @@ func (s *DocumentService) ExtractCandidates(ctx context.Context, documentID, rev
 		return nil, err
 	}
 	return extraction, nil
+}
+
+func (s *DocumentService) documentExtractionCodeNamespace(document *models.Document) (*string, error) {
+	if document == nil || document.ScopeType != models.StandardScopeDomain {
+		return nil, nil
+	}
+	if document.OwnerDomainID == nil {
+		return nil, ErrDocumentExtractionNamespaceInvalid
+	}
+	code, err := s.repo.GetDomainCode(*document.OwnerDomainID, document.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	code = strings.TrimSpace(code)
+	if len(code) > 50 || !documentCandidateCodePattern.MatchString(code) {
+		return nil, ErrDocumentExtractionNamespaceInvalid
+	}
+	return &code, nil
+}
+
+func buildCopilotKnownCandidates(identities []repository.DocumentCandidateIdentity, codeNamespace *string) []copilotKnownCandidate {
+	sort.SliceStable(identities, func(i, j int) bool {
+		left, right := identities[i], identities[j]
+		if copilotKnownCandidateStateRank(left) != copilotKnownCandidateStateRank(right) {
+			return copilotKnownCandidateStateRank(left) < copilotKnownCandidateStateRank(right)
+		}
+		if !left.ExtractedAt.Equal(right.ExtractedAt) {
+			return left.ExtractedAt.After(right.ExtractedAt)
+		}
+		if left.CandidateType != right.CandidateType {
+			return left.CandidateType < right.CandidateType
+		}
+		if left.Code != right.Code {
+			return left.Code < right.Code
+		}
+		return left.CandidateID > right.CandidateID
+	})
+	result := make([]copilotKnownCandidate, 0, min(len(identities), maxCopilotKnownCandidates))
+	seen := make(map[string]struct{}, len(identities))
+	for _, identity := range identities {
+		candidateType := strings.TrimSpace(identity.CandidateType)
+		code := strings.TrimSpace(identity.Code)
+		name := strings.TrimSpace(identity.Name)
+		definition := strings.TrimSpace(identity.Definition)
+		if !validCopilotKnownCandidateIdentity(candidateType, code, name, definition, codeNamespace) {
+			continue
+		}
+		key := candidateType + "\x00" + code
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, copilotKnownCandidate{
+			CandidateType: candidateType, Code: code,
+			Name: name, Definition: definition,
+		})
+		if len(result) == maxCopilotKnownCandidates {
+			break
+		}
+	}
+	return result
+}
+
+func validCopilotKnownCandidateIdentity(candidateType, code, name, definition string, codeNamespace *string) bool {
+	if candidateType != "glossary" && candidateType != "element" && candidateType != "code_set" && candidateType != "metric" {
+		return false
+	}
+	return candidateCodeBelongsToNamespace(code, codeNamespace) && name != "" && utf8.RuneCountInString(name) <= 200 && definition != "" && utf8.RuneCountInString(definition) <= 4000
+}
+
+func copilotKnownCandidateStateRank(identity repository.DocumentCandidateIdentity) int {
+	if identity.HasFormalization {
+		return 0
+	}
+	switch identity.Status {
+	case models.CandidateGroupStateRetained:
+		return 1
+	case models.CandidateGroupStatePending:
+		return 2
+	default:
+		return 3
+	}
+}
+
+func candidateCodeBelongsToNamespace(code string, codeNamespace *string) bool {
+	code = strings.TrimSpace(code)
+	if len(code) > 100 || !documentCandidateCodePattern.MatchString(code) {
+		return false
+	}
+	return codeNamespace == nil || strings.HasPrefix(code, *codeNamespace+"_")
 }
 
 func (s *DocumentService) callCopilotExtract(ctx context.Context, tenantID int64, request copilotDocumentExtractRequest) (*copilotDocumentExtractResponse, error) {
@@ -554,7 +667,7 @@ func splitMarkdownSections(content string) []documentExtractionSection {
 	return sections
 }
 
-func buildDocumentExtraction(tenantID, revisionID, userID int64, content string, sections []documentExtractionSection, response *copilotDocumentExtractResponse) (*models.DocumentExtraction, error) {
+func buildDocumentExtraction(tenantID, revisionID, userID int64, content string, sections []documentExtractionSection, codeNamespace *string, response *copilotDocumentExtractResponse) (*models.DocumentExtraction, error) {
 	if response == nil || len(response.Candidates) > 200 {
 		return nil, ErrDocumentExtractionInvalid
 	}
@@ -580,7 +693,10 @@ func buildDocumentExtraction(tenantID, revisionID, userID int64, content string,
 			return nil, ErrDocumentExtractionInvalid
 		}
 		code, name, definition := strings.TrimSpace(raw.Code), strings.TrimSpace(raw.Name), strings.TrimSpace(raw.Definition)
-		if !documentCandidateCodePattern.MatchString(code) || len(code) > 100 || name == "" || utf8.RuneCountInString(name) > 200 || definition == "" || utf8.RuneCountInString(definition) > 4000 {
+		if !candidateCodeBelongsToNamespace(code, codeNamespace) {
+			return nil, ErrDocumentExtractionInvalid
+		}
+		if name == "" || utf8.RuneCountInString(name) > 200 || definition == "" || utf8.RuneCountInString(definition) > 4000 {
 			continue
 		}
 		key := candidateType + "\x00" + code

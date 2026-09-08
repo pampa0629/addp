@@ -816,13 +816,13 @@ func newTileCacheExecutionRepositoryTestDB(t *testing.T) *gorm.DB {
 	if err := executiontest.EnsureSQLiteStore(db); err != nil {
 		t.Fatalf("ensure SQLite execution store: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE manager.vector_tile_cache_tasks (
-		id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, name TEXT NOT NULL,
+	if err := db.Exec(`CREATE TABLE manager.task_definitions (
+		id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, task_type TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1, name TEXT NOT NULL,
 		description TEXT, enabled BOOLEAN, schedule TEXT, next_run_at DATETIME, last_run_at DATETIME,
-		last_execution_id TEXT, last_execution_status TEXT, config JSON, created_by INTEGER,
+		last_execution_id TEXT, last_execution_status TEXT, semantic_key TEXT, config JSON, created_by INTEGER,
 		created_at DATETIME, updated_at DATETIME, deleted_at DATETIME
 	)`).Error; err != nil {
-		t.Fatalf("create tile cache task table: %v", err)
+		t.Fatalf("create unified task definition table: %v", err)
 	}
 	if err := db.Exec(`CREATE TABLE manager.vector_tile_cache (
 		id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, item_fingerprint TEXT NOT NULL,
@@ -832,14 +832,6 @@ func newTileCacheExecutionRepositoryTestDB(t *testing.T) *gorm.DB {
 		updated_at DATETIME, deleted_at DATETIME
 	)`).Error; err != nil {
 		t.Fatalf("create tile cache artifact table: %v", err)
-	}
-	if err := db.Exec(`CREATE TABLE manager.vector_materialized_view_tasks (
-		id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, name TEXT NOT NULL,
-		description TEXT, enabled BOOLEAN, schedule TEXT, next_run_at DATETIME, last_run_at DATETIME,
-		last_execution_id TEXT, last_execution_status TEXT, config JSON, created_by INTEGER,
-		created_at DATETIME, updated_at DATETIME, deleted_at DATETIME
-	)`).Error; err != nil {
-		t.Fatalf("create vector materialized view task table: %v", err)
 	}
 	if err := db.Exec(`CREATE TABLE manager.vector_materialized_view (
 		id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, item_fingerprint TEXT NOT NULL,
@@ -852,14 +844,6 @@ func newTileCacheExecutionRepositoryTestDB(t *testing.T) *gorm.DB {
 	)`).Error; err != nil {
 		t.Fatalf("create vector materialized view result table: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE manager.raster_cog_tasks (
-		id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, name TEXT NOT NULL,
-		description TEXT, enabled BOOLEAN, schedule TEXT, next_run_at DATETIME, last_run_at DATETIME,
-		last_execution_id TEXT, last_execution_status TEXT, config JSON, created_by INTEGER,
-		created_at DATETIME, updated_at DATETIME, deleted_at DATETIME
-	)`).Error; err != nil {
-		t.Fatalf("create raster COG task table: %v", err)
-	}
 	if err := db.Exec(`CREATE TABLE manager.raster_cog (
 		id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, item_fingerprint TEXT NOT NULL,
 		item_id INTEGER, locator TEXT, task_id INTEGER, last_execution_id TEXT, source_engine_id INTEGER,
@@ -870,22 +854,6 @@ func newTileCacheExecutionRepositoryTestDB(t *testing.T) *gorm.DB {
 	)`).Error; err != nil {
 		t.Fatalf("create raster COG result table: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE manager.raster_mosaic_tasks (
-		id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, name TEXT NOT NULL,
-		description TEXT, enabled BOOLEAN, schedule TEXT, next_run_at DATETIME, last_run_at DATETIME,
-		last_execution_id TEXT, last_execution_status TEXT, config JSON, created_by INTEGER,
-		created_at DATETIME, updated_at DATETIME, deleted_at DATETIME
-	)`).Error; err != nil {
-		t.Fatalf("create raster mosaic task table: %v", err)
-	}
-	if err := db.Exec(`CREATE TABLE manager.model_3d_glb_tasks (
-		id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, name TEXT NOT NULL,
-		description TEXT, enabled BOOLEAN, schedule TEXT, next_run_at DATETIME, last_run_at DATETIME,
-		last_execution_id TEXT, last_execution_status TEXT, config JSON, created_by INTEGER,
-		created_at DATETIME, updated_at DATETIME, deleted_at DATETIME
-	)`).Error; err != nil {
-		t.Fatalf("create model 3d GLB task table: %v", err)
-	}
 	if err := db.Exec(`CREATE TABLE manager.model_3d_glb (
 		id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, item_fingerprint TEXT NOT NULL,
 		item_id INTEGER, locator TEXT, task_id INTEGER, last_execution_id TEXT, source_engine_id INTEGER,
@@ -894,14 +862,6 @@ func newTileCacheExecutionRepositoryTestDB(t *testing.T) *gorm.DB {
 		created_at DATETIME, updated_at DATETIME, deleted_at DATETIME
 	)`).Error; err != nil {
 		t.Fatalf("create model 3d GLB result table: %v", err)
-	}
-	if err := db.Exec(`CREATE TABLE manager.gaussian_splat_ksplat_tasks (
-		id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, name TEXT NOT NULL,
-		description TEXT, enabled BOOLEAN, schedule TEXT, next_run_at DATETIME, last_run_at DATETIME,
-		last_execution_id TEXT, last_execution_status TEXT, config JSON, created_by INTEGER,
-		created_at DATETIME, updated_at DATETIME, deleted_at DATETIME
-	)`).Error; err != nil {
-		t.Fatalf("create gaussian splat KSplat task table: %v", err)
 	}
 	if err := db.Exec(`CREATE TABLE manager.gaussian_splat_ksplat (
 		id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, item_fingerprint TEXT NOT NULL,
@@ -912,14 +872,6 @@ func newTileCacheExecutionRepositoryTestDB(t *testing.T) *gorm.DB {
 	)`).Error; err != nil {
 		t.Fatalf("create gaussian splat KSplat result table: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE manager.point_cloud_copc_tasks (
-		id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, name TEXT NOT NULL,
-		description TEXT, enabled BOOLEAN, schedule TEXT, next_run_at DATETIME, last_run_at DATETIME,
-		last_execution_id TEXT, last_execution_status TEXT, config JSON, created_by INTEGER,
-		created_at DATETIME, updated_at DATETIME, deleted_at DATETIME
-	)`).Error; err != nil {
-		t.Fatalf("create point cloud COPC task table: %v", err)
-	}
 	if err := db.Exec(`CREATE TABLE manager.point_cloud_copc (
 		id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, item_fingerprint TEXT NOT NULL,
 		item_id INTEGER, locator TEXT, task_id INTEGER, last_execution_id TEXT, source_engine_id INTEGER,
@@ -928,14 +880,6 @@ func newTileCacheExecutionRepositoryTestDB(t *testing.T) *gorm.DB {
 		created_at DATETIME, updated_at DATETIME, deleted_at DATETIME
 	)`).Error; err != nil {
 		t.Fatalf("create point cloud COPC result table: %v", err)
-	}
-	if err := db.Exec(`CREATE TABLE manager.model3d_tiles_tasks (
-		id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, name TEXT NOT NULL,
-		description TEXT, enabled BOOLEAN, schedule TEXT, next_run_at DATETIME, last_run_at DATETIME,
-		last_execution_id TEXT, last_execution_status TEXT, config JSON, created_by INTEGER,
-		created_at DATETIME, updated_at DATETIME, deleted_at DATETIME
-	)`).Error; err != nil {
-		t.Fatalf("create model3d tiles task table: %v", err)
 	}
 	if err := db.Exec(`CREATE TABLE manager.model3d_tiles (
 		id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, item_fingerprint TEXT NOT NULL,
@@ -952,7 +896,7 @@ func newTileCacheExecutionRepositoryTestDB(t *testing.T) *gorm.DB {
 func createTileCacheExecutionRepositoryTestTask(t *testing.T, db *gorm.DB, tenantID uint) models.TileCacheTask {
 	t.Helper()
 	task := models.TileCacheTask{
-		TenantID: tenantID, Name: "tile-cache", Enabled: true,
+		TenantID: tenantID, TaskType: commonExecution.TaskTypeVectorTileCacheGeneration, Name: "tile-cache", Enabled: true,
 		Config: commonModels.JSONMap{"version": 1, "target": commonModels.JSONMap{"item_fingerprint": "fp-1"}},
 	}
 	if err := db.Create(&task).Error; err != nil {
@@ -977,7 +921,7 @@ func newManagerRepositoryTestExecution(executionID string, tenantID int, taskTyp
 func createVectorMaterializedViewExecutionRepositoryTestTask(t *testing.T, db *gorm.DB, tenantID uint) models.VectorMaterializedViewTask {
 	t.Helper()
 	task := models.VectorMaterializedViewTask{
-		TenantID: tenantID, Name: "vector-materialized-view", Enabled: true,
+		TenantID: tenantID, TaskType: commonExecution.TaskTypeVectorMaterializedViewGeneration, Name: "vector-materialized-view", Enabled: true,
 		Config: commonModels.JSONMap{"version": 1, "target": commonModels.JSONMap{"item_fingerprint": "vmv-fp"}},
 	}
 	if err := db.Create(&task).Error; err != nil {
@@ -1009,7 +953,7 @@ func createVectorMaterializedViewExecutionRepositoryTestResult(
 func createRasterCOGExecutionRepositoryTestTask(t *testing.T, db *gorm.DB, tenantID uint) models.RasterCOGTask {
 	t.Helper()
 	task := models.RasterCOGTask{
-		TenantID: tenantID, Name: "raster-cog", Enabled: true,
+		TenantID: tenantID, TaskType: commonExecution.TaskTypeRasterCOGGeneration, Name: "raster-cog", Enabled: true,
 		Config: commonModels.JSONMap{"version": 1, "target": commonModels.JSONMap{"item_fingerprint": "cog-fp"}},
 	}
 	if err := db.Create(&task).Error; err != nil {
@@ -1037,7 +981,7 @@ func createRasterCOGExecutionRepositoryTestResult(
 func createRasterMosaicExecutionRepositoryTestTask(t *testing.T, db *gorm.DB, tenantID uint) models.RasterMosaicTask {
 	t.Helper()
 	task := models.RasterMosaicTask{
-		TenantID: tenantID, Name: "raster-mosaic", Enabled: true,
+		TenantID: tenantID, TaskType: commonExecution.TaskTypeRasterMosaicGeneration, Name: "raster-mosaic", Enabled: true,
 		Config: commonModels.JSONMap{"version": 1, "source": commonModels.JSONMap{"node_locator": "addp://engine/1/path/rasters?type=node"}},
 	}
 	if err := db.Create(&task).Error; err != nil {
@@ -1049,7 +993,7 @@ func createRasterMosaicExecutionRepositoryTestTask(t *testing.T, db *gorm.DB, te
 func createModel3DGLBExecutionRepositoryTestTask(t *testing.T, db *gorm.DB, tenantID uint) models.Model3DGLBTask {
 	t.Helper()
 	task := models.Model3DGLBTask{
-		TenantID: tenantID, Name: "model-3d-glb", Enabled: true,
+		TenantID: tenantID, TaskType: commonExecution.TaskTypeModel3DGLBGeneration, Name: "model-3d-glb", Enabled: true,
 		Config: commonModels.JSONMap{"version": 1, "source": commonModels.JSONMap{"item_fingerprint": "glb-fp"}},
 	}
 	if err := db.Create(&task).Error; err != nil {
@@ -1077,7 +1021,7 @@ func createModel3DGLBExecutionRepositoryTestResult(
 func createGaussianSplatKSplatExecutionRepositoryTestTask(t *testing.T, db *gorm.DB, tenantID uint) models.GaussianSplatKSplatTask {
 	t.Helper()
 	task := models.GaussianSplatKSplatTask{
-		TenantID: tenantID, Name: "gaussian-splat-ksplat", Enabled: true,
+		TenantID: tenantID, TaskType: commonExecution.TaskTypeGaussianSplatKSplatGeneration, Name: "gaussian-splat-ksplat", Enabled: true,
 		Config: commonModels.JSONMap{"version": 1, "source": commonModels.JSONMap{"item_fingerprint": "ksplat-fp"}},
 	}
 	if err := db.Create(&task).Error; err != nil {
@@ -1105,7 +1049,7 @@ func createGaussianSplatKSplatExecutionRepositoryTestResult(
 func createPointCloudCOPCExecutionRepositoryTestTask(t *testing.T, db *gorm.DB, tenantID uint) models.PointCloudCOPCTask {
 	t.Helper()
 	task := models.PointCloudCOPCTask{
-		TenantID: tenantID, Name: "point-cloud-copc", Enabled: true,
+		TenantID: tenantID, TaskType: commonExecution.TaskTypePointCloudCOPCGeneration, Name: "point-cloud-copc", Enabled: true,
 		Config: commonModels.JSONMap{"version": 1, "source": commonModels.JSONMap{"item_fingerprint": "copc-fp"}},
 	}
 	if err := db.Create(&task).Error; err != nil {
@@ -1133,7 +1077,7 @@ func createPointCloudCOPCExecutionRepositoryTestResult(
 func createModel3DTilesExecutionRepositoryTestTask(t *testing.T, db *gorm.DB, tenantID uint, fingerprint, targetFormat string) models.Model3DTilesTask {
 	t.Helper()
 	task := models.Model3DTilesTask{
-		TenantID: tenantID, Name: "model3d-tiles", Enabled: true,
+		TenantID: tenantID, TaskType: commonExecution.TaskTypeModel3DTilesGeneration, Name: "model3d-tiles", Enabled: true,
 		Config: commonModels.JSONMap{
 			"source":        commonModels.JSONMap{"item_fingerprint": fingerprint},
 			"target_format": targetFormat,

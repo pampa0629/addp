@@ -18,33 +18,7 @@ const (
 	Model3DTilesStatusDeleted  = "deleted"
 )
 
-// Model3DTilesTask 分块三维模型瓦片任务定义。
-// target_format 区分 3D Tiles 与 S3M，结果统一写入 Manager infra MinIO。
-type Model3DTilesTask struct {
-	ID       uint `gorm:"primaryKey" json:"id"`
-	TenantID uint `gorm:"not null;index:idx_model3d_tiles_tasks_tenant" json:"tenant_id"`
-
-	Name        string `gorm:"size:255;not null" json:"name"`
-	Description string `gorm:"type:text" json:"description,omitempty"`
-	Enabled     bool   `gorm:"not null" json:"enabled"`
-
-	Schedule            string     `gorm:"size:255" json:"schedule,omitempty"`
-	NextRunAt           *time.Time `json:"next_run_at,omitempty"`
-	LastRunAt           *time.Time `json:"last_run_at,omitempty"`
-	LastExecutionID     *string    `gorm:"size:36;index:idx_model3d_tiles_tasks_last_execution" json:"last_execution_id,omitempty"`
-	LastExecutionStatus *string    `gorm:"size:50" json:"last_execution_status,omitempty"`
-
-	Config    commonModels.JSONMap `gorm:"type:jsonb;not null;default:'{}'" json:"config"`
-	CreatedBy *uint                `json:"created_by,omitempty"`
-
-	CreatedAt time.Time      `gorm:"autoCreateTime;not null" json:"created_at"`
-	UpdatedAt time.Time      `gorm:"autoUpdateTime;not null" json:"updated_at"`
-	DeletedAt gorm.DeletedAt `gorm:"index:idx_model3d_tiles_tasks_deleted_at" json:"-"`
-}
-
-func (Model3DTilesTask) TableName() string {
-	return "manager.model3d_tiles_tasks"
-}
+type Model3DTilesTask = TaskDefinition
 
 // Model3DTiles 记录 Manager infra MinIO 中的分块三维模型瓦片结果。
 // target_format 区分 Cesium 3D Tiles 与 SuperMap S3M，两种格式分别形成独立结果。

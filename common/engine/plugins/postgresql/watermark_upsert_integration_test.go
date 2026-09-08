@@ -72,6 +72,23 @@ func TestIntegrationPostgresBoundedWatermarkResumeAndIdempotentUpsert(t *testing
 	if err := resume.Close(ctx); err != nil {
 		t.Fatalf("close resumed session: %v", err)
 	}
+	insertOnly, err := pg.OpenBoundedWatermarkRead(ctx, connInfo, sourcePath, plugin.BoundedWatermarkReadOptions{WatermarkField: "id"})
+	if err != nil {
+		t.Fatalf("open insert-only watermark read: %v", err)
+	}
+	insertOnlyUpper := insertOnly.UpperBound()
+	if insertOnlyUpper == nil || len(insertOnlyUpper.Values) != 1 || insertOnlyUpper.Values[0] != "4" {
+		t.Fatalf("insert-only upper bound = %#v, want id 4", insertOnlyUpper)
+	}
+	if err := insertOnly.Close(ctx); err != nil {
+		t.Fatalf("close insert-only watermark read: %v", err)
+	}
+	nullableUniqueTable := fmt.Sprintf("watermark_nullable_%d", time.Now().UnixNano())
+	createPostgresPrepareBaseTable(t, ctx, db, schema, nullableUniqueTable, `"id" bigint UNIQUE, "name" text`)
+	defer dropPostgresPrepareTable(db, schema, nullableUniqueTable)
+	if _, err := pg.OpenBoundedWatermarkRead(ctx, connInfo, postgresPrepareTablePath(schema, nullableUniqueTable), plugin.BoundedWatermarkReadOptions{WatermarkField: "id"}); err == nil {
+		t.Fatal("insert-only watermark accepted a nullable unique field")
+	}
 	if _, err := db.ExecContext(ctx, fmt.Sprintf(`UPDATE "%s"."%s" SET name = 'changed-without-watermark' WHERE id = 1`, schema, sourceTable)); err != nil {
 		t.Fatalf("update row without watermark: %v", err)
 	}

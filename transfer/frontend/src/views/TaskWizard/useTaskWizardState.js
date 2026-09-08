@@ -150,7 +150,15 @@ export function useTaskWizardState() {
       targetRepresentation.value === 'native'
   })
 
-  const isWatermarkIncremental = computed(() => runtimeBoundary.value === 'bounded' && loadMode.value === 'incremental')
+  const isInsertOnlyIncremental = computed(() => runtimeBoundary.value === 'bounded' && loadMode.value === 'insert_only')
+  const isWatermarkIncremental = computed(() => runtimeBoundary.value === 'bounded' && ['insert_only', 'incremental'].includes(loadMode.value))
+
+  const watermarkTargetKeys = computed(() => {
+    const sourceIdentity = isInsertOnlyIncremental.value
+      ? [watermarkField.value]
+      : watermarkTieBreakers.value
+    return sourceIdentity.map(mappedTargetField).filter(Boolean)
+  })
 
   const continuousTargetKeys = computed(() => {
     return continuousMappedTargetKeys(fieldMappings.value, continuousKeyFields.value)
@@ -186,13 +194,13 @@ export function useTaskWizardState() {
     const field = String(watermarkField.value || '').trim()
     const tieBreakers = normalizedFieldNames(watermarkTieBreakers.value)
     const keys = normalizedFieldNames(targetKeys.value)
-    const mappedTargets = normalizedFieldNames(fieldMappings.value.map(mapping => mapping?.target_field))
+    const expectedKeys = watermarkTargetKeys.value
     return supportsWatermarkIncremental.value &&
       !!field &&
-      tieBreakers.length > 0 &&
+      (isInsertOnlyIncremental.value || tieBreakers.length > 0) &&
       !tieBreakers.some(name => sameFieldName(name, field)) &&
-      keys.length > 0 &&
-      keys.every(key => mappedTargets.some(target => sameFieldName(target, key)))
+      expectedKeys.length > 0 &&
+      sameFieldList(keys, expectedKeys)
   })
 
   const canGoNext = computed(() => {
@@ -297,7 +305,7 @@ export function useTaskWizardState() {
       change_detection: {
         type: 'watermark',
         field: String(watermarkField.value || '').trim(),
-        tie_breaker: normalizedFieldNames(watermarkTieBreakers.value),
+        tie_breaker: isInsertOnlyIncremental.value ? [] : normalizedFieldNames(watermarkTieBreakers.value),
         start: 'committed',
         end: 'execution_upper_bound'
       }
@@ -723,7 +731,13 @@ export function useTaskWizardState() {
 			updateContinuousKeyFields(primaryKeys)
 			return
 		}
-		loadMode.value = mode === 'incremental' ? 'incremental' : 'snapshot'
+		const nextMode = ['insert_only', 'incremental'].includes(mode) ? mode : 'snapshot'
+		if (loadMode.value !== nextMode && ['insert_only', 'incremental'].includes(nextMode)) {
+			watermarkField.value = ''
+			watermarkTieBreakers.value = []
+			targetKeys.value = []
+		}
+		loadMode.value = nextMode
 		runtimeBoundary.value = 'bounded'
 	}
 
@@ -987,7 +1001,11 @@ export function useTaskWizardState() {
     runtimeBoundary.value = task.config?.runtime?.boundary === 'continuous' ? 'continuous' : 'bounded'
     const load = task.config?.load || {}
 		const changeType = load.change_detection?.type
-		loadMode.value = changeType === 'cdc' ? 'cdc' : (load.mode === 'incremental' ? 'incremental' : 'snapshot')
+		loadMode.value = changeType === 'cdc'
+			? 'cdc'
+			: (load.mode === 'incremental'
+				? (changeType === 'watermark' && normalizedFieldNames(load.change_detection?.tie_breaker).length === 0 ? 'insert_only' : 'incremental')
+				: 'snapshot')
     watermarkField.value = load.change_detection?.field || ''
     watermarkTieBreakers.value = normalizedFieldNames(load.change_detection?.tie_breaker)
     targetKeys.value = normalizedFieldNames(task.config?.target?.policy?.keys)
@@ -1272,18 +1290,34 @@ export function useTaskWizardState() {
   }
 
   function initializeIncrementalDefaults() {
+    const primaryKeys = sourceFields.value.filter(isPrimaryKeyField).map(field => field.name)
+
+    if (isInsertOnlyIncremental.value) {
+      if (!watermarkField.value && primaryKeys.length > 0) {
+        watermarkField.value = primaryKeys[0]
+      }
+      watermarkTieBreakers.value = []
+      targetKeys.value = watermarkTargetKeys.value
+      return
+    }
+
     if (!watermarkField.value) {
       const updatedAt = sourceFields.value.find(field => sameFieldName(field?.name, 'updated_at'))
       if (updatedAt) watermarkField.value = updatedAt.name
     }
 
-    const primaryKeys = sourceFields.value.filter(isPrimaryKeyField).map(field => field.name)
     if (watermarkTieBreakers.value.length === 0 && primaryKeys.length > 0) {
       watermarkTieBreakers.value = primaryKeys.filter(name => !sameFieldName(name, watermarkField.value))
     }
-    if (targetKeys.value.length === 0 && primaryKeys.length > 0) {
-      targetKeys.value = primaryKeys.map(mappedTargetField).filter(Boolean)
-    }
+    targetKeys.value = watermarkTargetKeys.value
+  }
+
+  function synchronizeWatermarkIdentity() {
+    if (!isWatermarkIncremental.value) return
+    watermarkTieBreakers.value = isInsertOnlyIncremental.value
+      ? []
+      : normalizedFieldNames(watermarkTieBreakers.value).filter(name => !sameFieldName(name, watermarkField.value))
+    targetKeys.value = watermarkTargetKeys.value
   }
 
   function updateContinuousKeyFields(values) {
@@ -1459,7 +1493,9 @@ export function useTaskWizardState() {
     transforms,
     isRawCopyTask,
     supportsWatermarkIncremental,
+    isInsertOnlyIncremental,
     isWatermarkIncremental,
+    watermarkTargetKeys,
     watermarkIncrementalValid,
     isContinuousTask,
 		isKafkaContinuousTask,
@@ -1492,6 +1528,7 @@ export function useTaskWizardState() {
     loadTargetFields,
     resetTargetFields,
     initializeIncrementalDefaults,
+    synchronizeWatermarkIdentity,
     updateContinuousKeyFields,
 		setLoadMode,
     autoGenerateFieldMappings,

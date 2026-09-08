@@ -18,7 +18,7 @@ func NewVectorTileSetRepository(db *gorm.DB) *VectorTileSetRepository {
 	return &VectorTileSetRepository{db: db}
 }
 func (r *VectorTileSetRepository) CreateTask(ctx context.Context, task *models.VectorTileSetTask) error {
-	return r.db.WithContext(ctx).Create(task).Error
+	return createTaskDefinition(ctx, r.db, commonExecution.TaskTypeVectorTileSetGeneration, task)
 }
 func (r *VectorTileSetRepository) GetTaskBySemanticHash(ctx context.Context, tenantID uint, semanticHash string, excludeTaskID uint) (*models.VectorTileSetTask, error) {
 	semanticHash = strings.TrimSpace(semanticHash)
@@ -26,7 +26,7 @@ func (r *VectorTileSetRepository) GetTaskBySemanticHash(ctx context.Context, ten
 		return nil, nil
 	}
 	query := r.db.WithContext(ctx).
-		Where("tenant_id = ? AND config ->> 'semantic_hash' = ?", tenantID, semanticHash)
+		Where("tenant_id = ? AND task_type = ? AND config ->> 'semantic_hash' = ?", tenantID, commonExecution.TaskTypeVectorTileSetGeneration, semanticHash)
 	if excludeTaskID > 0 {
 		query = query.Where("id <> ?", excludeTaskID)
 	}
@@ -38,21 +38,21 @@ func (r *VectorTileSetRepository) GetTaskBySemanticHash(ctx context.Context, ten
 	return &task, err
 }
 func (r *VectorTileSetRepository) UpdateTask(ctx context.Context, task *models.VectorTileSetTask) error {
-	return r.db.WithContext(ctx).Save(task).Error
+	return updateTaskDefinition(ctx, r.db, commonExecution.TaskTypeVectorTileSetGeneration, task)
 }
 func (r *VectorTileSetRepository) DeleteTask(ctx context.Context, id, tenantID uint) error {
-	return r.db.WithContext(ctx).Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.VectorTileSetTask{}).Error
+	return r.db.WithContext(ctx).Where("id = ? AND tenant_id = ? AND task_type = ?", id, tenantID, commonExecution.TaskTypeVectorTileSetGeneration).Delete(&models.VectorTileSetTask{}).Error
 }
 func (r *VectorTileSetRepository) GetTask(ctx context.Context, id, tenantID uint) (*models.VectorTileSetTask, error) {
 	var task models.VectorTileSetTask
-	err := r.db.WithContext(ctx).Where("id = ? AND tenant_id = ?", id, tenantID).First(&task).Error
+	err := r.db.WithContext(ctx).Where("id = ? AND tenant_id = ? AND task_type = ?", id, tenantID, commonExecution.TaskTypeVectorTileSetGeneration).First(&task).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
 	return &task, err
 }
 func (r *VectorTileSetRepository) ListTasks(ctx context.Context, tenantID uint, page, pageSize int) ([]*models.VectorTileSetTask, int64, error) {
-	query := r.db.WithContext(ctx).Model(&models.VectorTileSetTask{}).Where("tenant_id = ?", tenantID)
+	query := r.db.WithContext(ctx).Model(&models.VectorTileSetTask{}).Where("tenant_id = ? AND task_type = ?", tenantID, commonExecution.TaskTypeVectorTileSetGeneration)
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
@@ -65,7 +65,7 @@ func (r *VectorTileSetRepository) ListTasks(ctx context.Context, tenantID uint, 
 func (r *VectorTileSetRepository) ClaimExecution(ctx context.Context, taskID, tenantID uint, execution *commonExecution.TaskExecution) (*models.VectorTileSetTask, error) {
 	var task models.VectorTileSetTask
 	err := newTaskExecutionLifecycle(r.db).Claim(ctx, taskID, tenantID, execution, taskExecutionClaimSpec{
-		TaskModel: &task, TaskType: commonExecution.TaskTypeVectorTileSetGeneration, TaskLabel: "vector tile set",
+		TaskModel: &task, TaskType: commonExecution.TaskTypeVectorTileSetGeneration, TaskTypeColumn: true, TaskLabel: "vector tile set",
 		TaskName: func() string { return task.Name }, TaskConfig: func() commonModels.JSONMap { return task.Config },
 	})
 	if err != nil {

@@ -30,23 +30,23 @@ export const quickViewAPI = {
   },
 
   listOptimizationTasks(params = {}) {
-    return request.get('/manager/vector_materialized_view_tasks', { params })
+    return request.get('/manager/tasks', { params: { ...params, task_type: 'vector_materialized_view_generation' } })
   },
 
   getOptimizationTask(id) {
-    return request.get(`/manager/vector_materialized_view_tasks/${id}`)
+    return request.get(`/manager/tasks/vector_materialized_view_generation/${id}`)
   },
 
   createOptimizationTask(payload) {
-    return request.post('/manager/vector_materialized_view_tasks', payload)
+    return request.post('/manager/tasks/vector_materialized_view_generation', payload)
   },
 
   updateOptimizationTask(id, payload) {
-    return request.put(`/manager/vector_materialized_view_tasks/${id}`, payload)
+    return request.put(`/manager/tasks/vector_materialized_view_generation/${id}`, payload)
   },
 
   deleteOptimizationTask(id) {
-    return request.delete(`/manager/vector_materialized_view_tasks/${id}`)
+    return request.delete(`/manager/tasks/vector_materialized_view_generation/${id}`)
   },
 
   executeOptimizationTask(id, payload = {}) {
@@ -70,15 +70,15 @@ export const quickViewAPI = {
   },
 
   listRasterCOGTasks(params = {}) {
-    return request.get('/manager/raster_cog_tasks', { params })
+    return request.get('/manager/tasks', { params: { ...params, task_type: 'raster_cog_generation' } })
   },
 
   getRasterCOGTask(id) {
-    return request.get(`/manager/raster_cog_tasks/${id}`)
+    return request.get(`/manager/tasks/raster_cog_generation/${id}`)
   },
 
   deleteRasterCOGTask(id) {
-    return request.delete(`/manager/raster_cog_tasks/${id}`)
+    return request.delete(`/manager/tasks/raster_cog_generation/${id}`)
   },
 
   executeRasterCOGTask(id, payload = {}) {
@@ -90,23 +90,23 @@ export const quickViewAPI = {
   },
 
   createRasterMosaicTask(payload) {
-    return request.post('/manager/raster_mosaic_tasks', payload)
+    return request.post('/manager/tasks/raster_mosaic_generation', payload)
   },
 
   listRasterMosaicTasks(params = {}) {
-    return request.get('/manager/raster_mosaic_tasks', { params })
+    return request.get('/manager/tasks', { params: { ...params, task_type: 'raster_mosaic_generation' } })
   },
 
   getRasterMosaicTask(id) {
-    return request.get(`/manager/raster_mosaic_tasks/${id}`)
+    return request.get(`/manager/tasks/raster_mosaic_generation/${id}`)
   },
 
   updateRasterMosaicTask(id, payload) {
-    return request.put(`/manager/raster_mosaic_tasks/${id}`, payload)
+    return request.put(`/manager/tasks/raster_mosaic_generation/${id}`, payload)
   },
 
   deleteRasterMosaicTask(id) {
-    return request.delete(`/manager/raster_mosaic_tasks/${id}`)
+    return request.delete(`/manager/tasks/raster_mosaic_generation/${id}`)
   },
 
   executeRasterMosaicTask(id, payload = {}) {
@@ -130,23 +130,23 @@ export const quickViewAPI = {
   },
 
   createModel3DGLBTask(payload) {
-    return request.post('/manager/model_3d_glb_tasks', payload)
+    return request.post('/manager/tasks/model_3d_glb_generation', payload)
   },
 
   listModel3DGLBTasks(params = {}) {
-    return request.get('/manager/model_3d_glb_tasks', { params })
+    return request.get('/manager/tasks', { params: { ...params, task_type: 'model_3d_glb_generation' } })
   },
 
   getModel3DGLBTask(id) {
-    return request.get(`/manager/model_3d_glb_tasks/${id}`)
+    return request.get(`/manager/tasks/model_3d_glb_generation/${id}`)
   },
 
   updateModel3DGLBTask(id, payload) {
-    return request.put(`/manager/model_3d_glb_tasks/${id}`, payload)
+    return request.put(`/manager/tasks/model_3d_glb_generation/${id}`, payload)
   },
 
   deleteModel3DGLBTask(id) {
-    return request.delete(`/manager/model_3d_glb_tasks/${id}`)
+    return request.delete(`/manager/tasks/model_3d_glb_generation/${id}`)
   },
 
   executeModel3DGLBTask(id, payload = {}) {
@@ -170,23 +170,23 @@ export const quickViewAPI = {
   },
 
   createGaussianSplatKSplatTask(payload) {
-    return request.post('/manager/gaussian_splat_ksplat_tasks', payload)
+    return request.post('/manager/tasks/gaussian_splat_ksplat_generation', payload)
   },
 
   listGaussianSplatKSplatTasks(params = {}) {
-    return request.get('/manager/gaussian_splat_ksplat_tasks', { params })
+    return request.get('/manager/tasks', { params: { ...params, task_type: 'gaussian_splat_ksplat_generation' } })
   },
 
   getGaussianSplatKSplatTask(id) {
-    return request.get(`/manager/gaussian_splat_ksplat_tasks/${id}`)
+    return request.get(`/manager/tasks/gaussian_splat_ksplat_generation/${id}`)
   },
 
   updateGaussianSplatKSplatTask(id, payload) {
-    return request.put(`/manager/gaussian_splat_ksplat_tasks/${id}`, payload)
+    return request.put(`/manager/tasks/gaussian_splat_ksplat_generation/${id}`, payload)
   },
 
   deleteGaussianSplatKSplatTask(id) {
-    return request.delete(`/manager/gaussian_splat_ksplat_tasks/${id}`)
+    return request.delete(`/manager/tasks/gaussian_splat_ksplat_generation/${id}`)
   },
 
   executeGaussianSplatKSplatTask(id, payload = {}) {
@@ -214,23 +214,23 @@ export const quickViewAPI = {
   },
 
   createPointCloudCOPCTask(payload) {
-    return request.post('/manager/point_cloud_copc_tasks', payload)
+    return request.post('/manager/tasks/point_cloud_copc_generation', payload)
   },
 
   listPointCloudCOPCTasks(params = {}) {
-    return request.get('/manager/point_cloud_copc_tasks', { params })
+    return request.get('/manager/tasks', { params: { ...params, task_type: 'point_cloud_copc_generation' } })
   },
 
   getPointCloudCOPCTask(id) {
-    return request.get(`/manager/point_cloud_copc_tasks/${id}`)
+    return request.get(`/manager/tasks/point_cloud_copc_generation/${id}`)
   },
 
   updatePointCloudCOPCTask(id, payload) {
-    return request.put(`/manager/point_cloud_copc_tasks/${id}`, payload)
+    return request.put(`/manager/tasks/point_cloud_copc_generation/${id}`, payload)
   },
 
   deletePointCloudCOPCTask(id) {
-    return request.delete(`/manager/point_cloud_copc_tasks/${id}`)
+    return request.delete(`/manager/tasks/point_cloud_copc_generation/${id}`)
   },
 
   executePointCloudCOPCTask(id, payload = {}) {
@@ -254,7 +254,7 @@ export const quickViewAPI = {
   },
 
   listModel3DTilesTasks(params = {}) {
-    return request.get('/manager/model3d_tiles_tasks', { params })
+    return request.get('/manager/tasks', { params: { ...params, task_type: 'model3d_tiles_generation' } })
   },
 
   listModel3DTilesResults(params = {}) {
@@ -266,11 +266,11 @@ export const quickViewAPI = {
   },
 
   getModel3DTilesTask(id) {
-    return request.get(`/manager/model3d_tiles_tasks/${id}`)
+    return request.get(`/manager/tasks/model3d_tiles_generation/${id}`)
   },
 
   deleteModel3DTilesTask(id) {
-    return request.delete(`/manager/model3d_tiles_tasks/${id}`)
+    return request.delete(`/manager/tasks/model3d_tiles_generation/${id}`)
   },
 
   executeModel3DTilesTask(id, payload = {}) {
@@ -285,11 +285,11 @@ export const quickViewAPI = {
     return request.get(`/manager/executions/${executionID}`)
 	},
 
-	listVectorTileSetTasks(params = {}) { return request.get('/manager/vector_tile_set_tasks', { params }) },
-	getVectorTileSetTask(id) { return request.get(`/manager/vector_tile_set_tasks/${id}`) },
-	createVectorTileSetTask(payload) { return request.post('/manager/vector_tile_set_tasks', payload) },
-	updateVectorTileSetTask(id, payload) { return request.put(`/manager/vector_tile_set_tasks/${id}`, payload) },
-	deleteVectorTileSetTask(id) { return request.delete(`/manager/vector_tile_set_tasks/${id}`) },
+	listVectorTileSetTasks(params = {}) { return request.get('/manager/tasks', { params: { ...params, task_type: 'vector_tile_set_generation' } }) },
+	getVectorTileSetTask(id) { return request.get(`/manager/tasks/vector_tile_set_generation/${id}`) },
+	createVectorTileSetTask(payload) { return request.post('/manager/tasks/vector_tile_set_generation', payload) },
+	updateVectorTileSetTask(id, payload) { return request.put(`/manager/tasks/vector_tile_set_generation/${id}`, payload) },
+	deleteVectorTileSetTask(id) { return request.delete(`/manager/tasks/vector_tile_set_generation/${id}`) },
 	executeVectorTileSetTask(id) {
 		return request.post(`/manager/tasks/vector_tile_set_generation/${id}/execute`, { trigger_type: 'manual', source: 'manager' })
 	}

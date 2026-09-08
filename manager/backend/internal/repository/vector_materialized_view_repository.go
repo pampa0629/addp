@@ -22,13 +22,13 @@ func NewVectorMaterializedViewRepository(db *gorm.DB) *VectorMaterializedViewRep
 }
 
 func (r *VectorMaterializedViewRepository) CreateTask(ctx context.Context, task *models.VectorMaterializedViewTask) error {
-	return r.db.WithContext(ctx).Create(task).Error
+	return createTaskDefinition(ctx, r.db, commonExecution.TaskTypeVectorMaterializedViewGeneration, task)
 }
 
 func (r *VectorMaterializedViewRepository) GetTask(ctx context.Context, id uint, tenantID uint) (*models.VectorMaterializedViewTask, error) {
 	var task models.VectorMaterializedViewTask
 	err := r.db.WithContext(ctx).
-		Where("id = ? AND tenant_id = ?", id, tenantID).
+		Where("id = ? AND tenant_id = ? AND task_type = ?", id, tenantID, commonExecution.TaskTypeVectorMaterializedViewGeneration).
 		First(&task).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
@@ -39,7 +39,7 @@ func (r *VectorMaterializedViewRepository) GetTask(ctx context.Context, id uint,
 func (r *VectorMaterializedViewRepository) ListTasks(ctx context.Context, tenantID uint, page, pageSize int) ([]*models.VectorMaterializedViewTask, int64, error) {
 	query := r.db.WithContext(ctx).
 		Model(&models.VectorMaterializedViewTask{}).
-		Where("tenant_id = ?", tenantID)
+		Where("tenant_id = ? AND task_type = ?", tenantID, commonExecution.TaskTypeVectorMaterializedViewGeneration)
 
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -57,19 +57,19 @@ func (r *VectorMaterializedViewRepository) ListTasks(ctx context.Context, tenant
 }
 
 func (r *VectorMaterializedViewRepository) UpdateTask(ctx context.Context, task *models.VectorMaterializedViewTask) error {
-	return r.db.WithContext(ctx).Save(task).Error
+	return updateTaskDefinition(ctx, r.db, commonExecution.TaskTypeVectorMaterializedViewGeneration, task)
 }
 
 func (r *VectorMaterializedViewRepository) DeleteTask(ctx context.Context, id uint, tenantID uint) error {
 	return r.db.WithContext(ctx).
-		Where("id = ? AND tenant_id = ?", id, tenantID).
+		Where("id = ? AND tenant_id = ? AND task_type = ?", id, tenantID, commonExecution.TaskTypeVectorMaterializedViewGeneration).
 		Delete(&models.VectorMaterializedViewTask{}).Error
 }
 
 func (r *VectorMaterializedViewRepository) ListAllTasks(ctx context.Context, tenantID uint) ([]*models.VectorMaterializedViewTask, error) {
 	var tasks []*models.VectorMaterializedViewTask
 	err := r.db.WithContext(ctx).
-		Where("tenant_id = ?", tenantID).
+		Where("tenant_id = ? AND task_type = ?", tenantID, commonExecution.TaskTypeVectorMaterializedViewGeneration).
 		Order("updated_at DESC, id DESC").
 		Find(&tasks).Error
 	return tasks, err
@@ -78,7 +78,7 @@ func (r *VectorMaterializedViewRepository) ListAllTasks(ctx context.Context, ten
 func (r *VectorMaterializedViewRepository) DisableTaskForCleanup(ctx context.Context, tenantID uint, id uint, reason string) error {
 	return r.db.WithContext(ctx).
 		Model(&models.VectorMaterializedViewTask{}).
-		Where("tenant_id = ? AND id = ?", tenantID, id).
+		Where("tenant_id = ? AND id = ? AND task_type = ?", tenantID, id, commonExecution.TaskTypeVectorMaterializedViewGeneration).
 		Updates(map[string]interface{}{
 			"enabled":               false,
 			"next_run_at":           nil,
@@ -109,6 +109,7 @@ func (r *VectorMaterializedViewRepository) ClaimExecution(
 	err := newTaskExecutionLifecycle(r.db).Claim(ctx, taskID, tenantID, execution, taskExecutionClaimSpec{
 		TaskModel:              &task,
 		TaskType:               commonExecution.TaskTypeVectorMaterializedViewGeneration,
+		TaskTypeColumn:         true,
 		TaskLabel:              "vector materialized view",
 		ExcludedResultStatuses: []string{models.VectorMaterializedViewStatusAbandonedExternal},
 		TaskName:               func() string { return task.Name },

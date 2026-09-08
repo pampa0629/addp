@@ -324,6 +324,9 @@
         "assignedElsewhere": "Assigned in another scope",
         "allAssigned": "No additional roles are available in this scope.",
         "noAssignableRoles": "No assignable roles",
+        "selectedCount": "{count} roles selected",
+        "confirmAssignment": "Confirm Assignment",
+        "assignedCount": "{count} roles assigned successfully",
         "recommendations": {
           "title": "Common Responsibilities",
           "description": "After choosing a responsibility, confirm the member, scope, and assignment reason.",

@@ -148,11 +148,22 @@ func (s *AccessRequestService) ListReviewQueue(ctx context.Context, tenantID, re
 	if reviewerID <= 0 {
 		return nil, commonapi.ErrBadRequest
 	}
-	return s.list(
+	result, err := s.list(
 		ctx, tenantID, page, pageSize,
-		"state = ? AND NOT (subject_type = ? AND subject_id = ?)",
-		models.ProtectionAccessRequestStatePending, "user", userIDString(reviewerID),
+		"state = ?",
+		models.ProtectionAccessRequestStatePending,
 	)
+	if err != nil {
+		return nil, err
+	}
+	for index := range result.Data {
+		row := &result.Data[index]
+		row.CanDecide = !(row.SubjectType == "user" && row.SubjectID == userIDString(reviewerID))
+		if !row.CanDecide {
+			row.DecisionUnavailableReason = models.ProtectionAccessRequestDecisionUnavailableSelfApproval
+		}
+	}
+	return result, nil
 }
 
 func (s *AccessRequestService) list(ctx context.Context, tenantID, page, pageSize int64, condition string, values ...any) (*models.ProtectionAccessRequestListResponse, error) {

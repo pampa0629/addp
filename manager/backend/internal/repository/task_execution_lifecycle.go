@@ -16,6 +16,7 @@ import (
 type taskExecutionClaimSpec struct {
 	TaskModel               interface{}
 	TaskType                string
+	TaskTypeColumn          bool
 	TaskLabel               string
 	TaskName                func() string
 	TaskConfig              func() commonModels.JSONMap
@@ -50,9 +51,12 @@ func (l taskExecutionLifecycle) Claim(
 	spec taskExecutionClaimSpec,
 ) error {
 	err := l.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("id = ? AND tenant_id = ?", taskID, tenantID).
-			First(spec.TaskModel).Error; err != nil {
+		taskQuery := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND tenant_id = ?", taskID, tenantID)
+		if spec.TaskTypeColumn {
+			taskQuery = taskQuery.Where("task_type = ?", spec.TaskType)
+		}
+		if err := taskQuery.First(spec.TaskModel).Error; err != nil {
 			return err
 		}
 
@@ -103,9 +107,11 @@ func (l taskExecutionLifecycle) Claim(
 			return err
 		}
 
-		result := tx.Model(spec.TaskModel).
-			Where("id = ? AND tenant_id = ?", taskID, tenantID).
-			Updates(map[string]interface{}{
+		taskUpdate := tx.Model(spec.TaskModel).Where("id = ? AND tenant_id = ?", taskID, tenantID)
+		if spec.TaskTypeColumn {
+			taskUpdate = taskUpdate.Where("task_type = ?", spec.TaskType)
+		}
+		result := taskUpdate.Updates(map[string]interface{}{
 				"last_execution_id": execution.ExecutionID, "last_execution_status": commonExecution.ExecutionStatusPending,
 			})
 		if result.Error != nil {

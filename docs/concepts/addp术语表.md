@@ -117,6 +117,7 @@
 | standard document revision | 标准文档修订 | 标准来源文档一次不可变的内容快照及其版本、来源和生效信息。 | 属于 Standard。Copilot 可从修订内容提取标准候选项，但提取结果必须保留页码、章节或文本片段等证据，并经人工审核后才能发布为正式标准修订。 |
 | standard extraction | 标准提炼批次 | Standard 针对一个确定的标准文档修订发起、由 Copilot 执行的一次候选标准提炼。 | Standard 保存批次、结果与人工处置事实；Copilot 只返回候选内容，不保存 Standard 业务状态，也不能创建或发布正式标准。重复提炼形成新批次，不覆盖旧结果。 |
 | standard extraction candidate | 标准提炼候选 | 从一个标准文档修订中识别出的潜在业务术语、数据元、码值集或指标定义。 | 候选固定引用提炼批次和来源文档修订，状态为 `pending`、`retained` 或 `rejected`；数据元候选的 `data_type` 只能使用 Standard 数据元类型，码值集候选只能使用 `string`、`int`、`bigint`，术语和指标候选不得携带 `data_type`；数据元候选的 `value_domain_kind` 只能使用 `unrestricted`、`range`、`enumeration`。枚举数据元候选必须通过 `code_set_code` 引用同一批次中唯一的码值集候选，非枚举候选不得携带该字段；该编码只闭合候选间语义关系，正式发布数据元时仍必须由 Standard 冻结具体 `code_set_revision_id`。`identifier` 等业务语义不得混入数据类型或值域类型，`numeric`、`date_or_datetime` 等模糊上位提示也不是合法标准数据类型；`retained` 只表示人工认为值得后续建标，仍不是正式标准身份或修订。 |
+| standard candidate code namespace | 标准候选编码命名空间 | Standard 为一次文档提炼确定的候选编码前缀约束。 | `domain` 范围文档使用权威归属业务域编码作为命名空间，新候选编码必须以 `<domain_code>_` 开头；业务域编码必须是小写 `snake_case`，Standard 不自动转换或猜测。租户公共或平台文档不附加领域前缀。Standard 同时向 Copilot 提供同一文档中符合当前命名空间的既有候选类型、编码、名称和定义作为编码复用提示；提示不是模糊合并依据，Copilot 与 Standard 仍分别校验输出编码。 |
 | standard extraction candidate group view | 标准提炼候选聚合视图 | Standard 将同一标准文档稳定身份历次提炼中的确定性同义候选聚合成一个可裁决读取单元。 | 聚合键为候选类型、编码以及规范化名称、定义和完整候选载荷的 SHA-256 语义指纹；码值项和维度先按稳定顺序规范化。同类型、同编码但内容不同的候选仍是不同聚合项，不使用模型相似度自动合并。该视图不持久化、不改写原始候选；每次出现、提炼批次、文档修订、证据、人工处置和正式化事实均完整保留。 |
 | standard candidate formalization | 标准候选正式化 | 将一个已保留标准提炼候选转化为受治理标准草稿，或确认其对应既有相同内容修订的不可变治理事实。 | Standard 根据同类型、同编码的实时比对唯一决定结果：无稳定身份时创建 R1 草稿；已有稳定身份且没有工作修订时，以最新修订为基线创建候选内容的新草稿；候选与现有草稿、审核中或已发布修订内容一致时只建立来源关联。范围冲突、已有不同内容的工作修订、无法解析的码值集或计量单位引用必须拒绝。正式化不得提交审核或发布，候选状态仍保持 `retained`。 |
 | standard extraction candidate comparison | 标准提炼候选比对 | Standard 在读取提炼结果时，将候选与当前租户内同类型、同编码的活动标准稳定身份进行确定性比较所得的动态投影。 | 结果固定为 `new`、`exact`、`content_conflict` 或 `scope_conflict`，差异项明确给出字段及候选值、当前标准值；枚举数据元候选的 `code_set_code` 与现有数据元修订所冻结码值集修订的稳定编码比较，不比较数据库 ID；同名不同编码不自动判为重复。比对不写回候选、不创建标准，也不代替人工裁决。 |
@@ -259,6 +260,10 @@
 
 | 英文术语 | 中文术语 | 定义 | 备注 |
 |---|---|---|---|
+| Manager derived task definition | Manager 派生任务定义 | Manager 对可重复执行的数据派生动作保存的稳定配置；全部类型统一存储，使用 `task_type` 区分强类型配置与执行器。 | 产品分类固定为 `managed_quick_view` 或 `spatial_business`；统一存储不表示统一任务类型或统一结果生命周期。 |
+
+| 英文术语 | 中文术语 | 定义 | 备注 |
+|---|---|---|---|
 | Task | 任务 | 可被执行的业务能力抽象。 | Task 是抽象概念，不是统一任务总表；任务定义归 owner 模块私有表。 |
 | spatial task | 空间任务 | Manager 中按空间数据处理目的组织业务任务的导航与能力分类。 | 不是统一任务表或单一 `task_type`；当前包含“矢量瓦片”，后续空间业务能力按各自任务类型扩展。 |
 | task definition | 任务定义 | “未来应该按什么策略处理什么对象”的定义态。 | 例如 `meta.scan_tasks`、`transfer.transfer_tasks`、`manager.vector_tile_cache_tasks`。 |
@@ -296,7 +301,7 @@
 | derived data | 派生数据 | 通过计算或转换从源 data item 生成、写入业务存储并形成独立 Meta item 的数据。 | Develop 工作流输出属于派生数据；Manager infra 快显结果不属于派生 data item。 |
 | execution boundary | 执行边界 | 一次 execution 是否具有确定结束条件。 | `bounded` 表示处理到本次冻结上界后结束；`continuous` 表示持续等待变化直到被真实停止、失败或失联。 |
 | load mode | 装载方式 | Transfer 从源端读取完整范围还是已提交位置之后的变化。 | 只允许 `snapshot` / `incremental`；它与触发方式和目标应用方式正交。 |
-| watermark | 水位游标 | 以源表中可稳定排序的业务字段识别 insert/update 变化的批增量位置。 | 必须使用 `(watermark_field, tie_breaker...)` 复合游标并冻结每次 bounded execution 的上界；普通 watermark 不发现物理删除，不等同于 CDC。 |
+| watermark | 水位游标 | 以源表中可稳定排序的业务字段识别批增量位置。 | 仅同步新增时，允许使用自身精确匹配非空主键或唯一约束、可靠单调递增且不可变的单字段游标；同步新增和更新时，必须使用 `(watermark_field, tie_breaker...)` 复合游标。两者都冻结每次 bounded execution 的上界，不发现物理删除，也不等同于 CDC。 |
 | CDC | 数据库变更捕获 | 从数据库事务日志持续捕获已提交的 insert、update 和 delete，并按确定的初始化与恢复协议交给下游应用。 | CDC 不等于按 `updated_at` 轮询；PostgreSQL 第一版由 Debezium 读取 logical replication slot，经 Infra Kafka 交给 Transfer。 |
 | Oracle CDC | Oracle 数据库变更捕获 | Transfer 通过独立 Oracle common user 和 Debezium LogMiner 从 redo 捕获普通关系字段；遇到 `MDSYS.SDO_GEOMETRY` 时，由同一 capture generation 在源 schema 内维护 ADDP-owned WKB 镜像表、行级触发器和 DDL guard，再交给统一 continuous worker。 | 支持 CDB/PDB 下有稳定主键、已启用表级 `ALL COLUMN LOGGING` 的普通字段与 Oracle Spatial 单表，固定 `initial_snapshot` 和严格 schema drift；Spatial capture 运行时拒绝源表 DDL，镜像对象由 Transfer 创建并在 Stop 删除。RAC 和普通业务 LOB 仍未开放；长事务仅提供源端压力观测，不改变已提交事务 CDC 语义。不能由 Oracle Engine 普通读取能力自动推断，也不等同 ArcGIS SDE 逻辑变化源。 |
 | ArcGIS SDE logical change source | ArcGIS SDE 逻辑变化源 | 按 ArcGIS enterprise geodatabase 的版本模型、业务事务和 delta table 语义识别的要素变化源。 | 当前完成 Oracle 实例级 workspace 正式核心表组合探测，并冻结 workspace-scoped Provider 契约；首个数据面只允许 traditional versioning，branch versioning 不复用 delta table 路线。Provider 原生位置与 Transfer 提交的 Kafka offset 分离；尚未在没有真实 Enterprise Geodatabase 的情况下声明可运行能力。即使底层使用 Oracle，也不等同 Oracle redo 中的普通表 CDC。 |

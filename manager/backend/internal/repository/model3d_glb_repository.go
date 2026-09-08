@@ -22,13 +22,13 @@ func NewModel3DGLBRepository(db *gorm.DB) *Model3DGLBRepository {
 }
 
 func (r *Model3DGLBRepository) CreateTask(ctx context.Context, task *models.Model3DGLBTask) error {
-	return r.db.WithContext(ctx).Create(task).Error
+	return createTaskDefinition(ctx, r.db, commonExecution.TaskTypeModel3DGLBGeneration, task)
 }
 
 func (r *Model3DGLBRepository) GetTask(ctx context.Context, id uint, tenantID uint) (*models.Model3DGLBTask, error) {
 	var task models.Model3DGLBTask
 	err := r.db.WithContext(ctx).
-		Where("id = ? AND tenant_id = ?", id, tenantID).
+		Where("id = ? AND tenant_id = ? AND task_type = ?", id, tenantID, commonExecution.TaskTypeModel3DGLBGeneration).
 		First(&task).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
@@ -43,7 +43,7 @@ func (r *Model3DGLBRepository) GetTaskByItemFingerprint(ctx context.Context, ten
 	}
 	var task models.Model3DGLBTask
 	err := r.db.WithContext(ctx).
-		Where("tenant_id = ? AND config->'source'->>'item_fingerprint' = ?", tenantID, itemFingerprint).
+		Where("tenant_id = ? AND task_type = ? AND config->'source'->>'item_fingerprint' = ?", tenantID, commonExecution.TaskTypeModel3DGLBGeneration, itemFingerprint).
 		Order("updated_at DESC, id DESC").
 		First(&task).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -55,7 +55,7 @@ func (r *Model3DGLBRepository) GetTaskByItemFingerprint(ctx context.Context, ten
 func (r *Model3DGLBRepository) ListTasks(ctx context.Context, tenantID uint, page, pageSize int) ([]*models.Model3DGLBTask, int64, error) {
 	query := r.db.WithContext(ctx).
 		Model(&models.Model3DGLBTask{}).
-		Where("tenant_id = ?", tenantID)
+		Where("tenant_id = ? AND task_type = ?", tenantID, commonExecution.TaskTypeModel3DGLBGeneration)
 
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -73,12 +73,12 @@ func (r *Model3DGLBRepository) ListTasks(ctx context.Context, tenantID uint, pag
 }
 
 func (r *Model3DGLBRepository) UpdateTask(ctx context.Context, task *models.Model3DGLBTask) error {
-	return r.db.WithContext(ctx).Save(task).Error
+	return updateTaskDefinition(ctx, r.db, commonExecution.TaskTypeModel3DGLBGeneration, task)
 }
 
 func (r *Model3DGLBRepository) DeleteTask(ctx context.Context, id uint, tenantID uint) error {
 	return r.db.WithContext(ctx).
-		Where("id = ? AND tenant_id = ?", id, tenantID).
+		Where("id = ? AND tenant_id = ? AND task_type = ?", id, tenantID, commonExecution.TaskTypeModel3DGLBGeneration).
 		Delete(&models.Model3DGLBTask{}).Error
 }
 
@@ -89,6 +89,7 @@ func (r *Model3DGLBRepository) ClaimExecution(
 	err := newTaskExecutionLifecycle(r.db).Claim(ctx, taskID, tenantID, execution, taskExecutionClaimSpec{
 		TaskModel: &task,
 		TaskType:  commonExecution.TaskTypeModel3DGLBGeneration,
+		TaskTypeColumn: true,
 		TaskLabel: "model 3d GLB",
 		TaskName:  func() string { return task.Name },
 		TaskConfig: func() commonModels.JSONMap {

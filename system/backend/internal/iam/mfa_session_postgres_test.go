@@ -105,8 +105,8 @@ func TestMFASessionClosureAgainstPostgres(t *testing.T) {
 	if infrastructureRoleID == 0 {
 		t.Fatal("infrastructure administrator role is missing")
 	}
-	_, err = roleService.CreateAssignment(ctx, CreateTenantRoleAssignmentInput{
-		TenantID: tenant.ID, MembershipID: membership.ID, RoleID: infrastructureRoleID,
+	_, err = roleService.CreateAssignments(ctx, CreateTenantRoleAssignmentsInput{
+		TenantID: tenant.ID, MembershipID: membership.ID, RoleIDs: []int64{infrastructureRoleID},
 		ScopeType: "tenant", ActorPrincipalID: created.PrincipalID, AssuranceLevel: AssuranceLevelAAL1,
 	})
 	if !errors.Is(err, ErrStepUpRequired) {
@@ -173,13 +173,13 @@ func TestMFASessionClosureAgainstPostgres(t *testing.T) {
 	}
 	assertMFAReplacementFamily(t, db, enrolledSession.FamilyID, steppedUpSession.FamilyID, mfaStepUpRevocationReason)
 	stepUpExpiresAt := currentTime.Add(defaultMFAStepUpTTL)
-	assignment, err := roleService.CreateAssignment(ctx, CreateTenantRoleAssignmentInput{
-		TenantID: tenant.ID, MembershipID: membership.ID, RoleID: infrastructureRoleID,
+	assignments, err := roleService.CreateAssignments(ctx, CreateTenantRoleAssignmentsInput{
+		TenantID: tenant.ID, MembershipID: membership.ID, RoleIDs: []int64{infrastructureRoleID},
 		ScopeType: "tenant", ActorPrincipalID: created.PrincipalID, AssuranceLevel: AssuranceLevelAAL2,
 		StepUpExpiresAt: &stepUpExpiresAt,
 	})
-	if err != nil || assignment.RoleKey != "tenant.infrastructure_administrator" {
-		t.Fatalf("AAL2 high-risk self assignment = %#v err=%v", assignment, err)
+	if err != nil || len(assignments) != 1 || assignments[0].RoleKey != "tenant.infrastructure_administrator" {
+		t.Fatalf("AAL2 high-risk self assignment = %#v err=%v", assignments, err)
 	}
 	refreshedSession, err := tokenService.RotateBrowserRefreshToken(ctx, RotateBrowserRefreshTokenInput{
 		RefreshToken: steppedUpSession.RefreshToken,

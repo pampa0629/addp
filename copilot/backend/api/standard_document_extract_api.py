@@ -24,6 +24,11 @@ require_standard_service = require_tenant_service(
     "/standard-documents/extract",
     response_model=StandardDocumentExtractResponse,
     summary="提炼数据标准候选 | Extract data standard candidates",
+    description="按 Standard 提供的领域编码命名空间与同文档既有候选编码约束生成结果；越界编码整批拒绝 | Generates candidates under the domain code namespace and same-document known-code constraints supplied by Standard; rejects the entire result when any code is outside the namespace",
+    responses={
+        400: {"description": "推理场景配置不符合提炼要求 | Invalid extraction inference configuration"},
+        502: {"description": "推理失败或模型输出违反候选契约 | Inference failed or model output violated the candidate contract"},
+    },
     openapi_extra={
         "x-addp-auth-mode": "permission",
         "x-addp-required-permissions": [COPILOT_STANDARD_DOCUMENT_EXECUTE],

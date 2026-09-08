@@ -1699,11 +1699,35 @@
       "StandardDocumentExtractRequest": {
         "additionalProperties": false,
         "properties": {
+          "code_namespace": {
+            "anyOf": [
+              {
+                "maxLength": 50,
+                "minLength": 1,
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "领域候选编码前缀；非领域文档显式传 null | Domain candidate code prefix; pass null explicitly for non-domain documents",
+            "title": "Code Namespace"
+          },
           "document_name": {
             "maxLength": 200,
             "minLength": 1,
             "title": "Document Name",
             "type": "string"
+          },
+          "known_candidates": {
+            "description": "同一文档中命名空间合规的候选编码复用提示 | Namespace-compliant candidate code reuse hints from the same document",
+            "items": {
+              "$ref": "#/components/schemas/StandardDocumentKnownCandidate"
+            },
+            "maxItems": 200,
+            "title": "Known Candidates",
+            "type": "array"
           },
           "sections": {
             "items": {
@@ -1723,6 +1747,8 @@
         },
         "required": [
           "document_name",
+          "code_namespace",
+          "known_candidates",
           "sections"
         ],
         "title": "StandardDocumentExtractRequest",
@@ -1741,6 +1767,48 @@
           }
         },
         "title": "StandardDocumentExtractResponse",
+        "type": "object"
+      },
+      "StandardDocumentKnownCandidate": {
+        "additionalProperties": false,
+        "properties": {
+          "candidate_type": {
+            "enum": [
+              "glossary",
+              "element",
+              "code_set",
+              "metric"
+            ],
+            "title": "Candidate Type",
+            "type": "string"
+          },
+          "code": {
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "title": "Code",
+            "type": "string"
+          },
+          "definition": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Definition",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "candidate_type",
+          "code",
+          "name",
+          "definition"
+        ],
+        "title": "StandardDocumentKnownCandidate",
         "type": "object"
       },
       "StandardDocumentSection": {
@@ -3048,6 +3116,7 @@
     },
     "/standard-documents/extract": {
       "post": {
+        "description": "按 Standard 提供的领域编码命名空间与同文档既有候选编码约束生成结果；越界编码整批拒绝 | Generates candidates under the domain code namespace and same-document known-code constraints supplied by Standard; rejects the entire result when any code is outside the namespace",
         "operationId": "extract_standard_document_api_v1_copilot_standard_documents_extract_post",
         "parameters": [
           {
@@ -3088,6 +3157,9 @@
             },
             "description": "Successful Response"
           },
+          "400": {
+            "description": "推理场景配置不符合提炼要求 | Invalid extraction inference configuration"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -3097,6 +3169,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "502": {
+            "description": "推理失败或模型输出违反候选契约 | Inference failed or model output violated the candidate contract"
           }
         },
         "security": [

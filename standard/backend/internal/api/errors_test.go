@@ -95,6 +95,7 @@ func TestRespondDocumentExtractionErrorStatusContract(t *testing.T) {
 		{name: "file too large", err: service.ErrDocumentFileTooLarge, want: http.StatusRequestEntityTooLarge},
 		{name: "unsupported", err: service.ErrDocumentExtractionUnsupported, want: http.StatusUnprocessableEntity},
 		{name: "invalid", err: service.ErrDocumentExtractionInvalid, want: http.StatusUnprocessableEntity},
+		{name: "invalid namespace", err: service.ErrDocumentExtractionNamespaceInvalid, want: http.StatusUnprocessableEntity},
 		{name: "copilot unavailable", err: service.ErrDocumentCopilotUnavailable, want: http.StatusServiceUnavailable},
 		{name: "storage unavailable", err: service.ErrDocumentStorageUnavailable, want: http.StatusServiceUnavailable},
 		{name: "internal", err: errors.New("comparison query failed"), want: http.StatusInternalServerError},
@@ -109,6 +110,24 @@ func TestRespondDocumentExtractionErrorStatusContract(t *testing.T) {
 				t.Fatalf("status=%d want=%d body=%s", recorder.Code, test.want, recorder.Body.String())
 			}
 		})
+	}
+}
+
+func TestRespondErrorReturnsDocumentExtractionNamespaceCode(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Set("addp_lang", "en")
+
+	respondError(context, http.StatusInternalServerError, service.ErrDocumentExtractionNamespaceInvalid)
+
+	var response struct {
+		ErrorCode string `json:"error_code"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if recorder.Code != http.StatusUnprocessableEntity || response.ErrorCode != "document_extraction_namespace_invalid" {
+		t.Fatalf("status=%d error_code=%q body=%s", recorder.Code, response.ErrorCode, recorder.Body.String())
 	}
 }
 

@@ -20,12 +20,40 @@ class StandardDocumentSection(BaseModel):
         return self
 
 
+class StandardDocumentKnownCandidate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    candidate_type: Literal["glossary", "element", "code_set", "metric"]
+    code: str = Field(min_length=1, max_length=100, pattern=r"^[a-z][a-z0-9_]*$")
+    name: str = Field(min_length=1, max_length=200)
+    definition: str = Field(min_length=1, max_length=4000)
+
+
 class StandardDocumentExtractRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     document_name: str = Field(min_length=1, max_length=200)
     version_label: str = Field(default="", max_length=50)
+    code_namespace: str | None = Field(
+        min_length=1,
+        max_length=50,
+        pattern=r"^[a-z][a-z0-9_]*$",
+        description="领域候选编码前缀；非领域文档显式传 null | Domain candidate code prefix; pass null explicitly for non-domain documents",
+    )
+    known_candidates: list[StandardDocumentKnownCandidate] = Field(
+        max_length=200,
+        description="同一文档中命名空间合规的候选编码复用提示 | Namespace-compliant candidate code reuse hints from the same document",
+    )
     sections: list[StandardDocumentSection] = Field(min_length=1, max_length=200)
+
+    @model_validator(mode="after")
+    def validate_known_candidate_namespace(self):
+        if self.code_namespace is None:
+            return self
+        prefix = f"{self.code_namespace}_"
+        if any(not candidate.code.startswith(prefix) for candidate in self.known_candidates):
+            raise ValueError("known candidate code must belong to code_namespace")
+        return self
 
 
 class StandardDocumentEvidence(BaseModel):

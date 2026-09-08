@@ -102,7 +102,7 @@ manager/
 - 条件剖析只接受结构化 `data_scope`，条件必须由声明支持的 Provider 在采样前执行并安全绑定参数；全范围和条件范围按 `profile_config_hash` 分别保存。Manager 不接受任意 SQL，也不得退回到采样后过滤。已纳入 Security 保护的 DataItem 在条件值保护契约完成前只允许全范围剖析，条件剖析必须拒绝。
 - 空间相关逻辑不得默认几何字段名为 `geom`，应从 Meta、预览检测或请求参数获取。
 - 不得把 Quick View 称为任务；瓦片缓存生成任务统一使用 `vector_tile_cache_generation` / `manager.vector_tile_cache_tasks`。
-- “空间任务”是 Manager 中空间业务任务的导航与能力分类，不是统一任务表或单一 `task_type`；当前“矢量瓦片”对应 `vector_tile_set_generation`。
+- “快显管理”和“空间任务”是统一派生任务页面中的产品分类，不是单一 `task_type`。全部 Manager 派生任务定义统一写入 `manager.task_definitions`，由 `task_type` 选择强类型配置、执行器和结果策略；不得恢复按类型分表或独立管理页面。
 - 业务矢量瓦片集生成任务统一使用 `vector_tile_set_generation` / `manager.vector_tile_set_tasks`；结果只写用户选择的 Business 存储并触发 Meta scan，不进入 `manager.vector_tile_cache`。
 - “保存为业务瓦片集”必须创建或执行 `vector_tile_set_generation`。ready 缓存仅在源版本和生成 profile 完全一致时作为执行复用候选；复制必须使用临时对象、PMTiles 校验和原子提交，成功后再触发 Meta scan。
 - 矢量物化视图任务统一使用 `vector_materialized_view_generation` / `manager.vector_materialized_view_tasks`；结果只登记 Manager 创建并拥有生命周期的 3857 目标。

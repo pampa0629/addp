@@ -335,6 +335,7 @@
         "dataExplorer": "数据探查",
         "dataRetrieval": "数据检索",
         "vectorizationTasks": "向量化任务",
+		"derivedTasks": "派生任务",
         "spatialQuickView": "快显管理",
         "spatialTasks": "空间任务",
         "vectorTiles": "矢量瓦片",

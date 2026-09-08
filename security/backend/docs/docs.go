@@ -2513,7 +2513,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "返回当前租户等待审批且申请人不是当前用户的申请，申请人不能审批自己的申请 | Return pending requests in the current tenant except requests made by the current user because self-approval is forbidden",
+                "description": "返回当前租户全部待审批申请，并明确当前用户能否审批；本人申请可见但不能审批 | Return every pending request in the current tenant and whether the current user may decide it; self-submitted requests remain visible but cannot be decided by the requester",
                 "produces": [
                     "application/json"
                 ],
@@ -5618,6 +5618,9 @@ const docTemplate = `{
                 "assessment_revision": {
                     "type": "integer"
                 },
+                "can_decide": {
+                    "type": "boolean"
+                },
                 "component": {
                     "$ref": "#/definitions/dataprotection.Component"
                 },
@@ -5635,6 +5638,9 @@ const docTemplate = `{
                     "example": "0"
                 },
                 "decision_rationale": {
+                    "type": "string"
+                },
+                "decision_unavailable_reason": {
                     "type": "string"
                 },
                 "exemption_id": {
@@ -6823,6 +6829,9 @@ const docTemplate = `{
                 "assessment_revision": {
                     "type": "integer"
                 },
+                "can_decide": {
+                    "type": "boolean"
+                },
                 "component": {
                     "$ref": "#/definitions/dataprotection.Component"
                 },
@@ -6840,6 +6849,9 @@ const docTemplate = `{
                     "example": "0"
                 },
                 "decision_rationale": {
+                    "type": "string"
+                },
+                "decision_unavailable_reason": {
                     "type": "string"
                 },
                 "exemption_id": {

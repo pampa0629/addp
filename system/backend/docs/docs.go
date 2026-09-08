@@ -8463,15 +8463,15 @@ const docTemplate = `{
                 "tags": [
                     "租户角色分配 | Tenant Role Assignments"
                 ],
-                "summary": "创建当前租户角色分配 | Create role assignment in the current tenant",
+                "summary": "批量创建当前租户角色分配 | Create role assignments in the current tenant",
                 "parameters": [
                     {
-                        "description": "角色分配 | Role assignment",
+                        "description": "角色分配 | Role assignments",
                         "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_api.IAMCreateTenantRoleAssignmentRequest"
+                            "$ref": "#/definitions/internal_api.IAMCreateTenantRoleAssignmentsRequest"
                         }
                     }
                 ],
@@ -8479,7 +8479,10 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/internal_api.IAMTenantRoleAssignmentResponse"
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_api.IAMTenantRoleAssignmentResponse"
+                            }
                         }
                     },
                     "409": {
@@ -11484,8 +11487,11 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_api.IAMCreateTenantRoleAssignmentRequest": {
+        "internal_api.IAMCreateTenantRoleAssignmentsRequest": {
             "type": "object",
+            "required": [
+                "role_ids"
+            ],
             "properties": {
                 "department_id": {
                     "type": "string"
@@ -11499,8 +11505,14 @@ const docTemplate = `{
                 "reason": {
                     "type": "string"
                 },
-                "role_id": {
-                    "type": "string"
+                "role_ids": {
+                    "type": "array",
+                    "maxItems": 50,
+                    "minItems": 1,
+                    "uniqueItems": true,
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "scope_type": {
                     "type": "string"

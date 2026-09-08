@@ -351,6 +351,7 @@ func main() {
 
 	// 初始化 TaskProvider Handler
 	taskProviderHandler := api.NewTaskProviderHandler(embeddingTaskSvc, tileCacheTaskSvc, vectorMaterializedViewTaskSvc, rasterCOGTaskSvc, taskExecRepo, rasterMosaicTaskSvc)
+	taskProviderHandler.SetTaskDefinitionRepository(repository.NewTaskDefinitionRepository(db))
 	taskProviderHandler.SetModel3DGLBTaskService(model3DGLBTaskSvc)
 	taskProviderHandler.SetGaussianSplatKSplatTaskService(gaussianSplatKSplatTaskSvc)
 	taskProviderHandler.SetPointCloudCOPCTaskService(pointCloudCOPCTaskSvc)

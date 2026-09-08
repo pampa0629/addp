@@ -67,14 +67,14 @@ func TestProtectionAccessRequestApprovalPublishesSubjectScopedAuthorization(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if selfQueue.Total != 0 || len(selfQueue.Data) != 0 {
+	if selfQueue.Total != 1 || len(selfQueue.Data) != 1 || selfQueue.Data[0].ID != created.ID || selfQueue.Data[0].CanDecide || selfQueue.Data[0].DecisionUnavailableReason != "self_approval_forbidden" {
 		t.Fatalf("requester review queue = %#v", selfQueue)
 	}
 	reviewerQueue, err := requests.ListReviewQueue(context.Background(), 7, 42, 1, 20)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reviewerQueue.Total != 1 || len(reviewerQueue.Data) != 1 || reviewerQueue.Data[0].ID != created.ID {
+	if reviewerQueue.Total != 1 || len(reviewerQueue.Data) != 1 || reviewerQueue.Data[0].ID != created.ID || !reviewerQueue.Data[0].CanDecide || reviewerQueue.Data[0].DecisionUnavailableReason != "" {
 		t.Fatalf("reviewer queue = %#v", reviewerQueue)
 	}
 	if _, err := requests.Decide(context.Background(), 7, 41, created.ID, models.DecideProtectionAccessRequest{

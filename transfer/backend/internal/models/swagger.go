@@ -78,9 +78,11 @@ type TransferLoadDoc struct {
 }
 
 type TransferChangeDetectionDoc struct {
-	Type       string   `json:"type" example:"watermark" enums:"watermark,kafka,cdc"`
-	Bootstrap  string   `json:"bootstrap,omitempty" example:"initial_snapshot" enums:"initial_snapshot"`
-	Field      string   `json:"field" example:"updated_at"`
+	Type      string `json:"type" example:"watermark" enums:"watermark,kafka,cdc"`
+	Bootstrap string `json:"bootstrap,omitempty" example:"initial_snapshot" enums:"initial_snapshot"`
+	// Field 是水位字段；tie_breaker 为空时必须自身是非空、可靠递增且不可变的主键或唯一键，仅同步新增。| Field is the watermark; with an empty tie_breaker it must itself be a non-null, reliably increasing, immutable primary or unique key and synchronizes inserts only.
+	Field string `json:"field" example:"updated_at"`
+	// TieBreaker 为空表示 field 单字段仅新增；非空时必须精确匹配非空主键或唯一约束，用于同步新增和更新。| An empty tie_breaker means insert-only single-field mode; otherwise it must exactly match a non-null primary or unique key for insert-and-update synchronization.
 	TieBreaker []string `json:"tie_breaker" example:"id"`
 	Start      string   `json:"start" example:"committed" enums:"committed"`
 	End        string   `json:"end" example:"execution_upper_bound" enums:"execution_upper_bound"`

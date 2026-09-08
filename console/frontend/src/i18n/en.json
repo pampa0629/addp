@@ -335,6 +335,7 @@
         "dataExplorer": "Data Explorer",
         "dataRetrieval": "Data Retrieval",
         "vectorizationTasks": "Vectorization Tasks",
+		"derivedTasks": "Derived Tasks",
         "spatialQuickView": "Quick View Management",
         "spatialTasks": "Spatial Tasks",
         "vectorTiles": "Vector Tiles",

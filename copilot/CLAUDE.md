@@ -18,6 +18,15 @@
 - **领域上下文**：由功能页面提供受限、已验证的业务事实
 - **场景绑定**：按 Tenant 显式绑定 > 平台默认绑定解析 Model Profile
 
+## Standard 文档候选提炼契约
+
+`POST /api/v1/copilot/standard-documents/extract` 只接受 `addp-standard` Tenant Service Principal。Standard 除确定文档修订与绝对行号章节外，还必须显式提供 `code_namespace`（无领域前缀时为 `null`）和最多 200 条同文档 `known_candidates`：
+
+- `code_namespace` 存在时代表 `domain` 范围文档的权威归属业务域编码，必须是小写 `snake_case`；所有返回候选编码必须以 `<code_namespace>_` 开头。不存在时表示租户公共或平台文档，不附加领域前缀。
+- `known_candidates` 只包含命名空间合规的 `candidate_type + code + name + definition`。模型识别到相同业务概念时必须复用该编码；新概念才生成新编码。它不是正式标准列表，也不得触发相似度合并或改写历史候选。
+- Chain 在提示中携带两项约束，Service 在返回前验证全部候选编码及枚举 `code_set_code`；任何越界输出都使整次调用失败。Standard 会在持久化前执行同一信任边界校验。
+- Copilot 仍保持无状态，不读取或写入 Standard 数据库，不处置、正式化或发布候选。
+
 ## 数据库文档
 
 **遇到以下场景时，主动阅读对应文档**：

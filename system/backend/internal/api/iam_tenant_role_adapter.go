@@ -70,9 +70,9 @@ type IAMTenantRoleAssignmentResponse struct {
 	RevokedAt            *time.Time `json:"revoked_at"`
 }
 
-type IAMCreateTenantRoleAssignmentRequest struct {
+type IAMCreateTenantRoleAssignmentsRequest struct {
 	MembershipID   string     `json:"membership_id"`
-	RoleID         string     `json:"role_id"`
+	RoleIDs        []string   `json:"role_ids" binding:"required,min=1,max=50,unique,dive,required" minItems:"1" maxItems:"50"`
 	ScopeType      string     `json:"scope_type"`
 	DepartmentID   *string    `json:"department_id"`
 	ProjectGroupID *string    `json:"project_group_id"`
@@ -91,7 +91,7 @@ type iamTenantRoleService interface {
 	UpdateRole(context.Context, iam.UpdateTenantRoleInput) (*iam.TenantRole, error)
 	DeleteRole(context.Context, iam.DeleteTenantRoleInput) error
 	ListAssignments(context.Context, int64, iam.TenantRoleAssignmentFilter, int, int) ([]iam.ManagedTenantRoleAssignment, int64, error)
-	CreateAssignment(context.Context, iam.CreateTenantRoleAssignmentInput) (*iam.ManagedTenantRoleAssignment, error)
+	CreateAssignments(context.Context, iam.CreateTenantRoleAssignmentsInput) ([]iam.ManagedTenantRoleAssignment, error)
 	RevokeAssignment(context.Context, iam.RevokeTenantRoleAssignmentInput) (*iam.ManagedTenantRoleAssignment, error)
 }
 
@@ -338,25 +338,25 @@ func parseOptionalIAMQueryID(c *gin.Context, name string) (*int64, error) {
 	return &parsed, nil
 }
 
-// CreateAssignment godoc
-// @Summary      创建当前租户角色分配 | Create role assignment in the current tenant
+// CreateAssignments godoc
+// @Summary      批量创建当前租户角色分配 | Create role assignments in the current tenant
 // @Tags         租户角色分配 | Tenant Role Assignments
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        request body IAMCreateTenantRoleAssignmentRequest true "角色分配 | Role assignment"
-// @Success      201 {object} IAMTenantRoleAssignmentResponse
+// @Param        request body IAMCreateTenantRoleAssignmentsRequest true "角色分配 | Role assignments"
+// @Success      201 {array} IAMTenantRoleAssignmentResponse
 // @Failure      409 {object} IAMErrorResponse "角色分配冲突：重复分配或主体类型不兼容 | Role assignment conflict: duplicate assignment or incompatible principal type"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["iam.tenant_role_assignment.create"]
 // @Router       /tenant/role_assignments [post]
-func (h *IAMTenantRoleHandler) CreateAssignment(c *gin.Context) {
+func (h *IAMTenantRoleHandler) CreateAssignments(c *gin.Context) {
 	actorID, tenantID, err := iamTenantUserActor(c)
 	if err != nil {
 		respondIAMError(c, err)
 		return
 	}
-	var request IAMCreateTenantRoleAssignmentRequest
+	var request IAMCreateTenantRoleAssignmentsRequest
 	if err := commonapi.BindOptionalJSONStrict(c, &request); err != nil {
 		respondIAMError(c, fmt.Errorf("%w: invalid role assignment request", commonapi.ErrBadRequest))
 		return
@@ -366,10 +366,14 @@ func (h *IAMTenantRoleHandler) CreateAssignment(c *gin.Context) {
 		respondIAMError(c, fmt.Errorf("%w: membership is required", commonapi.ErrBadRequest))
 		return
 	}
-	roleID, err := parseIAMDecimalID(request.RoleID)
-	if err != nil {
-		respondIAMError(c, fmt.Errorf("%w: role is required", commonapi.ErrBadRequest))
-		return
+	roleIDs := make([]int64, 0, len(request.RoleIDs))
+	for _, value := range request.RoleIDs {
+		roleID, err := parseIAMDecimalID(value)
+		if err != nil {
+			respondIAMError(c, fmt.Errorf("%w: valid roles are required", commonapi.ErrBadRequest))
+			return
+		}
+		roleIDs = append(roleIDs, roleID)
 	}
 	departmentID, err := parseOptionalIAMDecimalID(request.DepartmentID)
 	if err != nil {
@@ -386,12 +390,16 @@ func (h *IAMTenantRoleHandler) CreateAssignment(c *gin.Context) {
 		respondIAMError(c, commonapi.ErrUnauthorized)
 		return
 	}
-	assignment, err := h.service.CreateAssignment(c.Request.Context(), iam.CreateTenantRoleAssignmentInput{TenantID: int64(tenantID), MembershipID: membershipID, RoleID: roleID, ScopeType: request.ScopeType, DepartmentID: departmentID, ProjectGroupID: projectGroupID, ValidUntil: request.ValidUntil, Reason: request.Reason, ActorPrincipalID: int64(actorID), AssuranceLevel: iam.AssuranceLevel(authContext.Authentication.AssuranceLevel), StepUpExpiresAt: authContext.Authentication.StepUpExpiresAt, Audit: iamAuditMetadataWithStatus(c, http.StatusCreated)})
+	assignments, err := h.service.CreateAssignments(c.Request.Context(), iam.CreateTenantRoleAssignmentsInput{TenantID: int64(tenantID), MembershipID: membershipID, RoleIDs: roleIDs, ScopeType: request.ScopeType, DepartmentID: departmentID, ProjectGroupID: projectGroupID, ValidUntil: request.ValidUntil, Reason: request.Reason, ActorPrincipalID: int64(actorID), AssuranceLevel: iam.AssuranceLevel(authContext.Authentication.AssuranceLevel), StepUpExpiresAt: authContext.Authentication.StepUpExpiresAt, Audit: iamAuditMetadataWithStatus(c, http.StatusCreated)})
 	if err != nil {
 		respondIAMError(c, err)
 		return
 	}
-	c.JSON(http.StatusCreated, mapIAMManagedTenantRoleAssignment(*assignment))
+	responses := make([]IAMTenantRoleAssignmentResponse, 0, len(assignments))
+	for _, assignment := range assignments {
+		responses = append(responses, mapIAMManagedTenantRoleAssignment(assignment))
+	}
+	c.JSON(http.StatusCreated, responses)
 }
 
 // RevokeAssignment godoc

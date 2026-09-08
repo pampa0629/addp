@@ -1817,7 +1817,7 @@ definitions:
       name:
         type: string
     type: object
-  internal_api.IAMCreateTenantRoleAssignmentRequest:
+  internal_api.IAMCreateTenantRoleAssignmentsRequest:
     properties:
       department_id:
         type: string
@@ -1827,12 +1827,19 @@ definitions:
         type: string
       reason:
         type: string
-      role_id:
-        type: string
+      role_ids:
+        items:
+          type: string
+        maxItems: 50
+        minItems: 1
+        type: array
+        uniqueItems: true
       scope_type:
         type: string
       valid_until:
         type: string
+    required:
+    - role_ids
     type: object
   internal_api.IAMCreatedTenantInvitationResponse:
     properties:
@@ -9079,19 +9086,21 @@ paths:
       consumes:
       - application/json
       parameters:
-      - description: 角色分配 | Role assignment
+      - description: 角色分配 | Role assignments
         in: body
         name: request
         required: true
         schema:
-          $ref: '#/definitions/internal_api.IAMCreateTenantRoleAssignmentRequest'
+          $ref: '#/definitions/internal_api.IAMCreateTenantRoleAssignmentsRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/internal_api.IAMTenantRoleAssignmentResponse'
+            items:
+              $ref: '#/definitions/internal_api.IAMTenantRoleAssignmentResponse'
+            type: array
         "409":
           description: '角色分配冲突：重复分配或主体类型不兼容 | Role assignment conflict: duplicate
             assignment or incompatible principal type'
@@ -9099,7 +9108,7 @@ paths:
             $ref: '#/definitions/internal_api.IAMErrorResponse'
       security:
       - BearerAuth: []
-      summary: 创建当前租户角色分配 | Create role assignment in the current tenant
+      summary: 批量创建当前租户角色分配 | Create role assignments in the current tenant
       tags:
       - 租户角色分配 | Tenant Role Assignments
       x-addp-auth-mode: permission

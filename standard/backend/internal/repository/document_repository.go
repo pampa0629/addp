@@ -14,6 +14,17 @@ import (
 
 type DocumentRepository struct{ db *gorm.DB }
 
+type DocumentCandidateIdentity struct {
+	CandidateID      int64
+	CandidateType    string
+	Code             string
+	Name             string
+	Definition       string
+	Status           string
+	HasFormalization bool
+	ExtractedAt      time.Time
+}
+
 var (
 	ErrDocumentPublicationHistory            = errors.New("document publication history exists")
 	ErrDocumentCandidateFormalizationHistory = errors.New("document candidate formalization history exists")
@@ -50,6 +61,12 @@ func (r *DocumentRepository) GetByID(id, tenantID int64) (*models.Document, erro
 	var document models.Document
 	err := r.db.Where("id = ? AND tenant_id = ?", id, tenantID).First(&document).Error
 	return &document, commonrepo.WrapDBError(err)
+}
+
+func (r *DocumentRepository) GetDomainCode(id, tenantID int64) (string, error) {
+	var domain models.Domain
+	err := r.db.Select("code").Where("id = ? AND tenant_id = ?", id, tenantID).First(&domain).Error
+	return domain.Code, commonrepo.WrapDBError(err)
 }
 
 func (r *DocumentRepository) ExistsByCode(code string, tenantID int64) (bool, error) {
@@ -397,6 +414,21 @@ func (r *DocumentRepository) ListExtractions(documentID, tenantID int64) ([]mode
 		Where("revision.document_id = ? AND extraction.tenant_id = ?", documentID, tenantID).
 		Order("extraction.id DESC").Preload("Candidates", func(db *gorm.DB) *gorm.DB { return db.Order("id ASC") }).Preload("Candidates.Evidences", func(db *gorm.DB) *gorm.DB { return db.Order("id ASC") }).Preload("Candidates.Formalization").Find(&extractions).Error
 	return extractions, wrapDBError(err)
+}
+
+func (r *DocumentRepository) ListCandidateIdentities(documentID, tenantID int64) ([]DocumentCandidateIdentity, error) {
+	var identities []DocumentCandidateIdentity
+	err := r.db.Table("standard.document_extraction_candidates AS candidate").
+		Select(`candidate.id AS candidate_id, candidate.candidate_type, candidate.code, candidate.name, candidate.definition,
+			candidate.status, extraction.created_at AS extracted_at,
+			CASE WHEN formalization.candidate_id IS NULL THEN FALSE ELSE TRUE END AS has_formalization`).
+		Joins("JOIN standard.document_extractions extraction ON extraction.id = candidate.extraction_id").
+		Joins("JOIN standard.document_revisions revision ON revision.id = extraction.document_revision_id").
+		Joins("LEFT JOIN standard.document_candidate_formalizations formalization ON formalization.candidate_id = candidate.id").
+		Where("revision.document_id = ? AND extraction.tenant_id = ?", documentID, tenantID).
+		Order("extraction.created_at DESC, candidate.id DESC").
+		Find(&identities).Error
+	return identities, wrapDBError(err)
 }
 
 type DocumentCandidateComparisonTarget struct {

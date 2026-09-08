@@ -28,7 +28,16 @@ type CleanupTaskDefinition struct {
 	ItemID              uint
 	ItemFingerprint     string
 	Locator             string
-	CleanupReason       string `gorm:"-"`
+	ResourceBindings    []CleanupTaskResourceBinding `gorm:"-"`
+	CleanupReason       string                       `gorm:"-"`
+}
+
+type CleanupTaskResourceBinding struct {
+	Role            string
+	EngineID        uint
+	ItemID          *uint
+	ItemFingerprint string
+	Locator         string
 }
 
 type CleanupTaskDefinitionRepository struct {
@@ -125,6 +134,9 @@ func (r *CleanupTaskDefinitionRepository) List(ctx context.Context, tenantID uin
 		}
 		var rows []CleanupTaskDefinition
 		query := r.db.WithContext(ctx).Table(spec.Table).Where("deleted_at IS NULL")
+		if spec.Table == "manager.task_definitions" {
+			query = query.Where("task_type = ?", spec.TaskType)
+		}
 		if tenantID > 0 {
 			query = query.Where("tenant_id = ?", tenantID)
 		}
@@ -133,6 +145,16 @@ func (r *CleanupTaskDefinitionRepository) List(ctx context.Context, tenantID uin
 		}
 		for index := range rows {
 			rows[index].TaskType = spec.TaskType
+			if spec.Table == "manager.task_definitions" {
+				var bindings []CleanupTaskResourceBinding
+				if err := r.db.WithContext(ctx).Table("manager.task_resource_bindings").
+					Select("role, engine_id, item_id, item_fingerprint, locator").
+					Where("task_definition_id = ? AND tenant_id = ?", rows[index].ID, rows[index].TenantID).
+					Order("role, ordinal").Find(&bindings).Error; err != nil {
+					return nil, fmt.Errorf("list cleanup task resource bindings for %s/%d: %w", spec.TaskType, rows[index].ID, err)
+				}
+				rows[index].ResourceBindings = bindings
+			}
 		}
 		definitions = append(definitions, rows...)
 	}
@@ -151,8 +173,12 @@ func (r *CleanupTaskDefinitionRepository) Disable(ctx context.Context, definitio
 	if status == "" {
 		status = "missing_source"
 	}
-	return r.db.WithContext(ctx).Table(spec.Table).
-		Where("id = ? AND tenant_id = ? AND deleted_at IS NULL AND enabled = ?", definition.ID, definition.TenantID, true).
+	query := r.db.WithContext(ctx).Table(spec.Table).
+		Where("id = ? AND tenant_id = ? AND deleted_at IS NULL AND enabled = ?", definition.ID, definition.TenantID, true)
+	if spec.Table == "manager.task_definitions" {
+		query = query.Where("task_type = ?", definition.TaskType)
+	}
+	return query.
 		Updates(map[string]interface{}{
 			"enabled":               false,
 			"next_run_at":           nil,
@@ -169,9 +195,11 @@ func (r *CleanupTaskDefinitionRepository) HardDelete(ctx context.Context, defini
 	if err != nil {
 		return err
 	}
-	return r.db.WithContext(ctx).Table(spec.Table).
-		Where("id = ? AND tenant_id = ?", definition.ID, definition.TenantID).
-		Delete(map[string]interface{}{}).Error
+	query := r.db.WithContext(ctx).Table(spec.Table).Where("id = ? AND tenant_id = ?", definition.ID, definition.TenantID)
+	if spec.Table == "manager.task_definitions" {
+		query = query.Where("task_type = ?", definition.TaskType)
+	}
+	return query.Delete(map[string]interface{}{}).Error
 }
 
 func (r *CleanupTaskDefinitionRepository) specForTaskType(taskType string) (CleanupTaskDefinitionSpec, error) {

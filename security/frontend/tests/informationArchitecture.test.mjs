@@ -182,6 +182,8 @@ describe('Security product information architecture', () => {
 
     expect(enrollment).toContain('protectionAccessRequestAPI.reviewQueue')
     expect(enrollment).toContain('protectionAccessRequestAPI.decide')
+    expect(enrollment).toContain('row.can_decide')
+    expect(zhCn.security.accessRequest.unavailableReasons.self_approval_forbidden).toBe('需由另一名审批人处理')
     expect(enrollment).not.toContain('openCreateExemption')
     expect(enrollment).not.toContain('openRenewExemption')
     expect(api).not.toContain('protectionExemptionAPI.create')

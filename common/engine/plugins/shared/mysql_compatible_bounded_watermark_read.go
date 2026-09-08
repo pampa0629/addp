@@ -95,7 +95,11 @@ func (r MySQLCompatibleBoundedWatermarkReader) Open(ctx context.Context, connInf
 	if err != nil {
 		return fail(err)
 	}
-	if err := validateMySQLCompatibleWatermarkTieBreakers(ctx, db, engineType, database, table, cursorFields[1:]); err != nil {
+	identityFields := cursorFields[1:]
+	if len(identityFields) == 0 {
+		identityFields = cursorFields
+	}
+	if err := validateMySQLCompatibleWatermarkIdentityFields(ctx, db, engineType, database, table, identityFields); err != nil {
 		return fail(err)
 	}
 	if opts.Start != nil && len(opts.Start.Values) != len(cursorFields) {
@@ -301,20 +305,20 @@ func mySQLCompatibleWatermarkCursorTypeSupported(fieldType datatype.FieldType) b
 	}
 }
 
-func validateMySQLCompatibleWatermarkTieBreakers(ctx context.Context, db *sql.DB, engineType, database, table string, tieBreakers []string) error {
-	if len(tieBreakers) == 0 {
-		return fmt.Errorf("%s watermark requires tie_breaker fields", engineType)
+func validateMySQLCompatibleWatermarkIdentityFields(ctx context.Context, db *sql.DB, engineType, database, table string, identityFields []string) error {
+	if len(identityFields) == 0 {
+		return fmt.Errorf("%s watermark requires identity fields", engineType)
 	}
 	indexes, err := mysqlCompatibleUniqueIndexes(ctx, db, engineType, "watermark", database, table)
 	if err != nil {
 		return err
 	}
 	for _, index := range indexes {
-		if equalMySQLCompatibleIdentifiers(index, tieBreakers) {
+		if equalMySQLCompatibleIdentifiers(index, identityFields) {
 			return nil
 		}
 	}
-	return fmt.Errorf("%s watermark tie_breaker %v must exactly match a non-prefix unique or primary key", engineType, tieBreakers)
+	return fmt.Errorf("%s watermark identity %v must exactly match a non-prefix unique or primary key", engineType, identityFields)
 }
 
 func mysqlCompatibleUniqueIndexes(ctx context.Context, db *sql.DB, engineType, operation, database, table string) ([][]string, error) {

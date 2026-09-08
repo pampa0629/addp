@@ -17,33 +17,7 @@ const (
 	RasterCOGTargetKindMinIO = "infra_minio_object"
 )
 
-// RasterCOGTask 栅格快显 COG 生成任务定义。
-// 任务配置保存源 item、栅格 facts 与 COG 策略；执行记录写入 common.task_executions。
-type RasterCOGTask struct {
-	ID       uint `gorm:"primaryKey" json:"id"`
-	TenantID uint `gorm:"not null;index:idx_raster_cog_tasks_tenant" json:"tenant_id"`
-
-	Name        string `gorm:"size:255;not null" json:"name"`
-	Description string `gorm:"type:text" json:"description,omitempty"`
-	Enabled     bool   `gorm:"not null" json:"enabled"`
-
-	Schedule            string     `gorm:"size:255" json:"schedule,omitempty"`
-	NextRunAt           *time.Time `json:"next_run_at,omitempty"`
-	LastRunAt           *time.Time `json:"last_run_at,omitempty"`
-	LastExecutionID     *string    `gorm:"size:36;index:idx_raster_cog_tasks_last_execution" json:"last_execution_id,omitempty"`
-	LastExecutionStatus *string    `gorm:"size:50" json:"last_execution_status,omitempty"`
-
-	Config    commonModels.JSONMap `gorm:"type:jsonb;not null;default:'{}'" json:"config"`
-	CreatedBy *uint                `json:"created_by,omitempty"`
-
-	CreatedAt time.Time      `gorm:"autoCreateTime;not null" json:"created_at"`
-	UpdatedAt time.Time      `gorm:"autoUpdateTime;not null" json:"updated_at"`
-	DeletedAt gorm.DeletedAt `gorm:"index:idx_raster_cog_tasks_deleted_at" json:"-"`
-}
-
-func (RasterCOGTask) TableName() string {
-	return "manager.raster_cog_tasks"
-}
+type RasterCOGTask = TaskDefinition
 
 // RasterCOG 记录 Manager 拥有生命周期的栅格快显 COG。
 // 源 TIFF/COG 可以来自 NFS、业务 MinIO 或其他存储；前端消费的 COG 统一登记为 infra MinIO 结果对象。

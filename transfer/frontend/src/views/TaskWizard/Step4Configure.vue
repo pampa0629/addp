@@ -41,6 +41,9 @@
 			<el-form-item v-if="!isKafkaContinuousTask" :label="t('transfer.taskWizard.loadModeLabel')">
 				<el-radio-group v-model="formData.loadMode">
 					<el-radio value="snapshot">{{ t('transfer.taskWizard.snapshotLoad') }}</el-radio>
+					<el-radio value="insert_only" :disabled="!watermarkIncrementalSupported">
+						{{ t('transfer.taskWizard.insertOnlyIncrementalLoad') }}
+					</el-radio>
 					<el-radio value="incremental" :disabled="!watermarkIncrementalSupported">
 						{{ t('transfer.taskWizard.watermarkIncrementalLoad') }}
 					</el-radio>
@@ -119,21 +122,21 @@
         </el-form-item>
       </template>
 
-      <template v-if="!isContinuousTask && formData.loadMode === 'incremental'">
+      <template v-if="!isContinuousTask && ['insert_only', 'incremental'].includes(formData.loadMode)">
         <el-alert
-          :title="t('transfer.taskWizard.watermarkIncrementalNoticeTitle')"
-          :description="t('transfer.taskWizard.watermarkIncrementalNotice')"
+          :title="t(isInsertOnlyMode ? 'transfer.taskWizard.insertOnlyIncrementalNoticeTitle' : 'transfer.taskWizard.watermarkIncrementalNoticeTitle')"
+          :description="t(isInsertOnlyMode ? 'transfer.taskWizard.insertOnlyIncrementalNotice' : 'transfer.taskWizard.watermarkIncrementalNotice')"
           type="warning"
           :closable="false"
           show-icon
           class="incremental-alert"
         />
 
-        <el-form-item :label="t('transfer.taskWizard.watermarkFieldLabel')" required>
+        <el-form-item :label="t(isInsertOnlyMode ? 'transfer.taskWizard.insertOnlyWatermarkFieldLabel' : 'transfer.taskWizard.watermarkFieldLabel')" required>
           <el-select
             v-model="formData.watermarkField"
             filterable
-            :placeholder="t('transfer.taskWizard.watermarkFieldPlaceholder')"
+            :placeholder="t(isInsertOnlyMode ? 'transfer.taskWizard.insertOnlyWatermarkFieldPlaceholder' : 'transfer.taskWizard.watermarkFieldPlaceholder')"
             class="field-select"
           >
             <el-option
@@ -143,13 +146,13 @@
               :value="field.value"
             />
           </el-select>
-          <div class="field-hint block-hint">{{ t('transfer.taskWizard.watermarkFieldHint') }}</div>
-          <div v-if="selectedWatermarkIsPrimaryKey" class="field-warning block-hint">
+          <div class="field-hint block-hint">{{ t(isInsertOnlyMode ? 'transfer.taskWizard.insertOnlyWatermarkFieldHint' : 'transfer.taskWizard.watermarkFieldHint') }}</div>
+          <div v-if="!isInsertOnlyMode && selectedWatermarkIsPrimaryKey" class="field-warning block-hint">
             {{ t('transfer.taskWizard.watermarkPrimaryKeyWarning') }}
           </div>
         </el-form-item>
 
-        <el-form-item :label="t('transfer.taskWizard.tieBreakerLabel')" required>
+        <el-form-item v-if="!isInsertOnlyMode" :label="t('transfer.taskWizard.tieBreakerLabel')" required>
           <el-select
             v-model="formData.watermarkTieBreakers"
             multiple
@@ -169,21 +172,8 @@
         </el-form-item>
 
         <el-form-item :label="t('transfer.taskWizard.targetKeysLabel')" required>
-          <el-select
-            v-model="formData.targetKeys"
-            multiple
-            filterable
-            :placeholder="t('transfer.taskWizard.targetKeysPlaceholder')"
-            class="field-select"
-          >
-            <el-option
-              v-for="field in targetFieldOptions"
-              :key="field.value"
-              :label="field.label"
-              :value="field.value"
-            />
-          </el-select>
-          <div class="field-hint block-hint">{{ t('transfer.taskWizard.targetKeysHint') }}</div>
+          <div class="derived-value">{{ watermarkTargetKeyText }}</div>
+          <div class="field-hint block-hint">{{ t('transfer.taskWizard.watermarkTargetKeysDerivedHint') }}</div>
         </el-form-item>
       </template>
 
@@ -269,6 +259,7 @@ const formData = reactive({
 const isContinuousTask = computed(() => props.wizardState.isContinuousTask.value)
 const isKafkaContinuousTask = computed(() => props.wizardState.isKafkaContinuousTask.value)
 const isDatabaseCDCTask = computed(() => props.wizardState.isDatabaseCDCTask.value)
+const isInsertOnlyMode = computed(() => formData.loadMode === 'insert_only')
 const watermarkIncrementalSupported = computed(() => props.wizardState.supportsWatermarkIncremental.value)
 const databaseCDCSupported = computed(() => props.wizardState.supportsDatabaseCDC.value)
 const databaseCDCUnavailableReasons = computed(() => props.wizardState.databaseCDCUnavailableReasons.value)
@@ -291,6 +282,10 @@ const continuousTargetKeyText = computed(() => {
   return props.wizardState.continuousTargetKeys.value.join(', ') || t('transfer.taskWizard.notConfigured')
 })
 
+const watermarkTargetKeyText = computed(() => {
+  return props.wizardState.watermarkTargetKeys.value.join(', ') || t('transfer.taskWizard.notConfigured')
+})
+
 const sourceFieldOptions = computed(() => {
   return uniqueFieldOptions(
     props.wizardState.sourceFields.value.map(field => ({
@@ -303,15 +298,6 @@ const sourceFieldOptions = computed(() => {
 
 const selectedWatermarkIsPrimaryKey = computed(() => {
   return sourceFieldOptions.value.some(field => field.value === formData.watermarkField && field.primaryKey)
-})
-
-const targetFieldOptions = computed(() => {
-  return uniqueFieldOptions(
-    props.wizardState.fieldMappings.value.map(mapping => ({
-      value: String(mapping?.target_field || '').trim(),
-      type: String(mapping?.target_type || '').trim()
-    }))
-  )
 })
 
 function uniqueFieldOptions(fields) {
@@ -430,7 +416,7 @@ watch(
   () => formData.loadMode,
   (mode) => {
 		props.wizardState.setLoadMode(mode)
-    if (!isContinuousTask.value && mode === 'incremental') {
+    if (!isContinuousTask.value && ['insert_only', 'incremental'].includes(mode)) {
       props.wizardState.initializeIncrementalDefaults()
       formData.watermarkField = props.wizardState.watermarkField.value
       formData.watermarkTieBreakers = [...props.wizardState.watermarkTieBreakers.value]
@@ -440,7 +426,7 @@ watch(
 )
 
 watch(watermarkIncrementalSupported, (supported) => {
-  if (!supported && formData.loadMode === 'incremental') {
+  if (!supported && ['insert_only', 'incremental'].includes(formData.loadMode)) {
     formData.loadMode = 'snapshot'
   }
 })
@@ -457,10 +443,20 @@ watch(
     formData.watermarkTieBreakers = formData.watermarkTieBreakers.filter(item => item !== field)
     props.wizardState.watermarkField.value = field
     props.wizardState.watermarkTieBreakers.value = [...formData.watermarkTieBreakers]
-    props.wizardState.initializeIncrementalDefaults()
+    props.wizardState.synchronizeWatermarkIdentity()
     formData.watermarkTieBreakers = [...props.wizardState.watermarkTieBreakers.value]
     formData.targetKeys = [...props.wizardState.targetKeys.value]
   }
+)
+
+watch(
+  () => formData.watermarkTieBreakers,
+  (fields) => {
+    props.wizardState.watermarkTieBreakers.value = [...fields]
+    props.wizardState.synchronizeWatermarkIdentity()
+    formData.targetKeys = [...props.wizardState.targetKeys.value]
+  },
+  { deep: true }
 )
 </script>
 

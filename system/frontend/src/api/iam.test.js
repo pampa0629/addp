@@ -44,7 +44,7 @@ describe('IAM management API contract', () => {
     iamAPI.tenantRoles.update('7', role)
     iamAPI.tenantRoles.remove('7', 'retired')
     iamAPI.tenantRoleAssignments.list({ membership_id: '9', status: 'active', scope_type: 'tenant' })
-    iamAPI.tenantRoleAssignments.create({ membership_id: '9', role_id: '7', scope_type: 'tenant' })
+    iamAPI.tenantRoleAssignments.create({ membership_id: '9', role_ids: ['7', '8'], scope_type: 'tenant' })
     iamAPI.tenantRoleAssignments.revoke('11', 'rotation')
 
     expect(client.get).toHaveBeenNthCalledWith(1, '/system/tenant/roles', { params: undefined })
@@ -56,7 +56,7 @@ describe('IAM management API contract', () => {
       params: { membership_id: '9', status: 'active', scope_type: 'tenant' }
     })
     expect(client.post).toHaveBeenCalledWith('/system/tenant/role_assignments', {
-      membership_id: '9', role_id: '7', scope_type: 'tenant'
+      membership_id: '9', role_ids: ['7', '8'], scope_type: 'tenant'
     })
     expect(client.post).toHaveBeenCalledWith('/system/tenant/role_assignments/11/revoke', { reason: 'rotation' })
   })

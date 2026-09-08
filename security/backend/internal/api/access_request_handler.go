@@ -97,7 +97,7 @@ func (h *AccessRequestHandler) ListMine(c *gin.Context) {
 }
 
 // @Summary 原值访问待审批申请 | List plaintext access review queue
-// @Description 返回当前租户等待审批且申请人不是当前用户的申请，申请人不能审批自己的申请 | Return pending requests in the current tenant except requests made by the current user because self-approval is forbidden
+// @Description 返回当前租户全部待审批申请，并明确当前用户能否审批；本人申请可见但不能审批 | Return every pending request in the current tenant and whether the current user may decide it; self-submitted requests remain visible but cannot be decided by the requester
 // @Tags Protection Access Request
 // @Produce json
 // @Param page query int false "页码 | Page number"

@@ -15,6 +15,16 @@ class StandardDocumentExtractionService:
         self, request: StandardDocumentExtractRequest
     ) -> StandardDocumentExtractResponse:
         result = await self.chain.extract(request)
+        if request.code_namespace is not None:
+            prefix = f"{request.code_namespace}_"
+            for candidate in result.candidates:
+                if not candidate.code.startswith(prefix):
+                    raise RuntimeError("candidate code must belong to code_namespace")
+                if (
+                    candidate.payload.code_set_code is not None
+                    and not candidate.payload.code_set_code.startswith(prefix)
+                ):
+                    raise RuntimeError("code_set_code must belong to code_namespace")
         intervals: dict[str, list[tuple[int, int]]] = {}
         for section in request.sections:
             intervals.setdefault(section.section_path, []).append(

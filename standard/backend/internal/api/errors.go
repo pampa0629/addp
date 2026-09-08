@@ -158,6 +158,11 @@ func respondError(c *gin.Context, status int, err error) {
 		message = commoni18n.T(c, sysi18n.MsgDocumentExtractionInvalid)
 		errorCode = "document_extraction_invalid"
 		useGenericMessage = false
+	case errors.Is(err, service.ErrDocumentExtractionNamespaceInvalid):
+		status = http.StatusUnprocessableEntity
+		message = commoni18n.T(c, sysi18n.MsgDocumentExtractionNamespaceInvalid)
+		errorCode = "document_extraction_namespace_invalid"
+		useGenericMessage = false
 	case errors.Is(err, service.ErrDocumentCandidateGroupQueryInvalid):
 		status = http.StatusBadRequest
 		message = commoni18n.T(c, sysi18n.MsgDocumentCandidateGroupQueryInvalid)
@@ -277,7 +282,7 @@ func respondDocumentExtractionError(c *gin.Context, err error) {
 		status = http.StatusNotFound
 	case errors.Is(err, service.ErrDocumentFileTooLarge):
 		status = http.StatusRequestEntityTooLarge
-	case errors.Is(err, service.ErrDocumentExtractionUnsupported), errors.Is(err, service.ErrDocumentExtractionInvalid):
+	case errors.Is(err, service.ErrDocumentExtractionUnsupported), errors.Is(err, service.ErrDocumentExtractionInvalid), errors.Is(err, service.ErrDocumentExtractionNamespaceInvalid):
 		status = http.StatusUnprocessableEntity
 	case errors.Is(err, service.ErrDocumentCopilotUnavailable), errors.Is(err, service.ErrDocumentStorageUnavailable):
 		status = http.StatusServiceUnavailable

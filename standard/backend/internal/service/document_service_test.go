@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -174,6 +175,104 @@ func TestExtractCandidatesPersistsCanonicalOutdoorEvidence(t *testing.T) {
 	}
 }
 
+func TestExtractCandidatesSendsDomainNamespaceAndCompliantKnownCandidates(t *testing.T) {
+	type capturedRequest struct {
+		request copilotDocumentExtractRequest
+		err     error
+	}
+	requestCh := make(chan capturedRequest, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request copilotDocumentExtractRequest
+		decodeErr := json.NewDecoder(r.Body).Decode(&request)
+		requestCh <- capturedRequest{request: request, err: decodeErr}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"candidates":[{"candidate_type":"metric","code":"outdoor_participation_count","name":"实际参加活动数","definition":"人员实际参加的有效活动去重数","payload":{"aggregation":"count"},"evidences":[{"section_path":"Outdoor / 指标","start_line":3,"end_line":4}]}]}`))
+	}))
+	defer server.Close()
+
+	db := openDocumentServiceTestDB(t)
+	repo := repository.NewDocumentRepository(db)
+	doc, revision := seedDocumentDraft(t, repo, 8, "outdoor.md")
+	domainID := int64(3)
+	if err := db.Exec(`INSERT INTO standard.domains (id, tenant_id, name, code) VALUES (?, ?, '户外域', 'outdoor')`, domainID, doc.TenantID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&models.Document{}).Where("id = ?", doc.ID).Updates(map[string]interface{}{"scope_type": models.StandardScopeDomain, "owner_domain_id": domainID}).Error; err != nil {
+		t.Fatal(err)
+	}
+	doc.ScopeType, doc.OwnerDomainID = models.StandardScopeDomain, &domainID
+	if err := db.Exec(`INSERT INTO standard.document_extractions (id, tenant_id, document_revision_id, status, requested_by, created_at) VALUES (91, ?, ?, 'completed', 7, ?)`, doc.TenantID, revision.ID, time.Now().Add(-time.Hour)).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO standard.document_extraction_candidates (id, extraction_id, candidate_type, code, name, definition, payload, status, version) VALUES
+		(92, 91, 'metric', 'outdoor_participation_count', '实际参加活动数', '人员实际参加的有效活动去重数', '{}', 'retained', 2),
+		(93, 91, 'metric', 'participation_count', '实际参加活动数', '旧批次中的非领域编码', '{}', 'pending', 1)`).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	content := "# Outdoor\n\n## 指标\n实际参加活动数只统计有效活动。\n"
+	store := &fakeDocumentObjectStore{objects: map[string][]byte{revision.FileKey: []byte(content)}}
+	svc := &DocumentService{repo: repo, objectStore: store, maxFileSize: 1024, timeout: time.Second, copilotURL: server.URL, serviceTokenSource: commonclient.ServiceTokenProviderFunc(func(_ context.Context, _ uint) (string, error) {
+		return "service-token", nil
+	}), httpClient: server.Client()}
+	if _, err := svc.ExtractCandidates(context.Background(), doc.ID, revision.ID, doc.TenantID, 9, doc.Version); err != nil {
+		t.Fatalf("ExtractCandidates: %v", err)
+	}
+	captured := <-requestCh
+	if captured.err != nil {
+		t.Fatalf("decode request: %v", captured.err)
+	}
+	gotRequest := captured.request
+	if gotRequest.CodeNamespace == nil || *gotRequest.CodeNamespace != "outdoor" {
+		t.Fatalf("code_namespace=%v", gotRequest.CodeNamespace)
+	}
+	if len(gotRequest.KnownCandidates) != 1 || gotRequest.KnownCandidates[0].Code != "outdoor_participation_count" || gotRequest.KnownCandidates[0].CandidateType != "metric" {
+		t.Fatalf("known_candidates=%+v", gotRequest.KnownCandidates)
+	}
+}
+
+func TestBuildDocumentExtractionRejectsCandidateOutsideDomainNamespace(t *testing.T) {
+	codeNamespace := "outdoor"
+	content := "# 指标\n实际参加活动数只统计有效活动。"
+	sections := []documentExtractionSection{{SectionPath: "指标", StartLine: 1, EndLine: 2, Text: content}}
+	response := &copilotDocumentExtractResponse{Candidates: []copilotCandidate{{
+		CandidateType: "metric", Code: "participation_count", Name: "实际参加活动数", Definition: "人员实际参加的有效活动去重数",
+		Evidences: []copilotEvidence{{SectionPath: "指标", StartLine: 1, EndLine: 2}},
+	}}}
+	if _, err := buildDocumentExtraction(1, 2, 3, content, sections, &codeNamespace, response); !errors.Is(err, ErrDocumentExtractionInvalid) {
+		t.Fatalf("err=%v, want ErrDocumentExtractionInvalid", err)
+	}
+}
+
+func TestBuildCopilotKnownCandidatesFiltersDeduplicatesAndPrioritizesGovernance(t *testing.T) {
+	codeNamespace := "outdoor"
+	now := time.Now()
+	identities := []repository.DocumentCandidateIdentity{
+		{CandidateID: 1, CandidateType: "metric", Code: "outdoor_participation_count", Name: "待裁决名称", Definition: "较新的待裁决定义", Status: models.CandidateGroupStatePending, ExtractedAt: now},
+		{CandidateID: 2, CandidateType: "metric", Code: "outdoor_participation_count", Name: "正式名称", Definition: "已正式化定义", Status: models.CandidateGroupStateRetained, HasFormalization: true, ExtractedAt: now.Add(-time.Hour)},
+		{CandidateID: 3, CandidateType: "metric", Code: "participation_count", Name: "越界编码", Definition: "不进入提示", Status: models.CandidateGroupStateRetained, ExtractedAt: now},
+	}
+
+	known := buildCopilotKnownCandidates(identities, &codeNamespace)
+	if len(known) != 1 || known[0].Code != "outdoor_participation_count" || known[0].Name != "正式名称" {
+		t.Fatalf("known=%+v", known)
+	}
+}
+
+func TestDocumentExtractionCodeNamespaceRejectsNonSnakeCaseDomainCode(t *testing.T) {
+	db := openDocumentServiceTestDB(t)
+	if err := db.Exec(`INSERT INTO standard.domains (id, tenant_id, name, code) VALUES (3, 8, '户外域', 'Outdoor-Data')`).Error; err != nil {
+		t.Fatal(err)
+	}
+	svc := &DocumentService{repo: repository.NewDocumentRepository(db)}
+	domainID := int64(3)
+	document := &models.Document{TenantID: 8, ScopeType: models.StandardScopeDomain, OwnerDomainID: &domainID}
+
+	if _, err := svc.documentExtractionCodeNamespace(document); !errors.Is(err, ErrDocumentExtractionNamespaceInvalid) {
+		t.Fatalf("err=%v, want ErrDocumentExtractionNamespaceInvalid", err)
+	}
+}
+
 func TestCompareDocumentCandidateClassifiesDeterministicMatches(t *testing.T) {
 	domainID, otherDomainID := int64(2), int64(3)
 	document := &models.Document{ScopeType: models.StandardScopeDomain, OwnerDomainID: &domainID}
@@ -234,7 +333,7 @@ func TestBuildDocumentExtractionRejectsNonstandardValueDomainKind(t *testing.T) 
 		Evidences:     []copilotEvidence{{SectionPath: "数据元", StartLine: 1, EndLine: 2}},
 	}}}
 
-	if _, err := buildDocumentExtraction(1, 2, 3, content, sections, response); !errors.Is(err, ErrDocumentExtractionInvalid) {
+	if _, err := buildDocumentExtraction(1, 2, 3, content, sections, nil, response); !errors.Is(err, ErrDocumentExtractionInvalid) {
 		t.Fatalf("err=%v, want ErrDocumentExtractionInvalid", err)
 	}
 }
@@ -252,7 +351,7 @@ func TestBuildDocumentExtractionRejectsValueDomainKindOnNonElementCandidate(t *t
 		Evidences:     []copilotEvidence{{SectionPath: "指标", StartLine: 1, EndLine: 2}},
 	}}}
 
-	if _, err := buildDocumentExtraction(1, 2, 3, content, sections, response); !errors.Is(err, ErrDocumentExtractionInvalid) {
+	if _, err := buildDocumentExtraction(1, 2, 3, content, sections, nil, response); !errors.Is(err, ErrDocumentExtractionInvalid) {
 		t.Fatalf("err=%v, want ErrDocumentExtractionInvalid", err)
 	}
 }
@@ -281,7 +380,7 @@ func TestBuildDocumentExtractionRejectsInvalidCandidateDataType(t *testing.T) {
 				Evidences:     []copilotEvidence{{SectionPath: "候选", StartLine: 1, EndLine: 2}},
 			}}}
 
-			if _, err := buildDocumentExtraction(1, 2, 3, content, sections, response); !errors.Is(err, ErrDocumentExtractionInvalid) {
+			if _, err := buildDocumentExtraction(1, 2, 3, content, sections, nil, response); !errors.Is(err, ErrDocumentExtractionInvalid) {
 				t.Fatalf("err=%v, want ErrDocumentExtractionInvalid", err)
 			}
 		})
@@ -309,7 +408,7 @@ func TestBuildDocumentExtractionAcceptsTypeSpecificCanonicalDataType(t *testing.
 				Evidences:     []copilotEvidence{{SectionPath: "候选", StartLine: 1, EndLine: 2}},
 			}}}
 
-			extraction, err := buildDocumentExtraction(1, 2, 3, content, sections, response)
+			extraction, err := buildDocumentExtraction(1, 2, 3, content, sections, nil, response)
 			if err != nil || len(extraction.Candidates) != 1 {
 				t.Fatalf("extraction=%+v err=%v", extraction, err)
 			}
@@ -387,7 +486,7 @@ func TestBuildDocumentExtractionRequiresClosedEnumerationCodeSetReference(t *tes
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			extraction, err := buildDocumentExtraction(1, 2, 3, content, sections, &copilotDocumentExtractResponse{Candidates: test.candidates})
+			extraction, err := buildDocumentExtraction(1, 2, 3, content, sections, nil, &copilotDocumentExtractResponse{Candidates: test.candidates})
 			if test.wantErr {
 				if !errors.Is(err, ErrDocumentExtractionInvalid) {
 					t.Fatalf("err=%v, want ErrDocumentExtractionInvalid", err)
@@ -550,6 +649,7 @@ func openDocumentServiceTestDB(t *testing.T) *gorm.DB {
 		t.Fatal(err)
 	}
 	statements := []string{
+		`CREATE TABLE standard.domains (id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, name TEXT NOT NULL, code TEXT NOT NULL)`,
 		`CREATE TABLE standard.documents (id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, scope_type TEXT NOT NULL, owner_domain_id INTEGER, code TEXT NOT NULL, doc_type TEXT NOT NULL, source_org TEXT, steward_id INTEGER, tags TEXT, draft_revision_id INTEGER, created_by INTEGER NOT NULL, updated_by INTEGER, created_at DATETIME, updated_at DATETIME, version INTEGER NOT NULL DEFAULT 1, lifecycle_state TEXT NOT NULL)`,
 		`CREATE UNIQUE INDEX standard.uq_test_documents_tenant_code ON documents (tenant_id, code)`,
 		`CREATE TABLE standard.document_revisions (id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER NOT NULL, revision_no INTEGER NOT NULL, status TEXT NOT NULL, name TEXT NOT NULL, version_label TEXT, publish_date DATETIME, description TEXT, file_key TEXT, file_name TEXT, file_size INTEGER, media_type TEXT, content_sha256 TEXT, change_summary TEXT NOT NULL, effective_from DATETIME, effective_to DATETIME, submitted_by INTEGER, submitted_at DATETIME, published_by INTEGER, published_at DATETIME, created_by INTEGER NOT NULL, updated_by INTEGER, created_at DATETIME, updated_at DATETIME)`,
