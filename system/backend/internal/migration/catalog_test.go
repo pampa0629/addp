@@ -14,8 +14,8 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 130 {
-		t.Fatalf("LatestVersion = %d, want 130", catalog.LatestVersion)
+	if catalog.LatestVersion != 132 {
+		t.Fatalf("LatestVersion = %d, want 132", catalog.LatestVersion)
 	}
 }
 
@@ -32,6 +32,19 @@ func TestSecurityProtectionAccessRequestMigrationReplacesDirectExemptionMutation
 	} {
 		if !strings.Contains(sql, fragment) {
 			t.Fatalf("migration 130 missing %q", fragment)
+		}
+	}
+}
+
+func TestSecurityAccessActorReadMigrationGrantsOnlyTenantRuntimeDirectoryRead(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000131_iam_security_access_actor_read.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 131: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{"'iam.tenant_membership.read'", "'tenant.security_runtime'", "ON CONFLICT (role_id, permission_id) DO NOTHING"} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 131 missing %q", fragment)
 		}
 	}
 }
@@ -294,6 +307,25 @@ func TestExternalOAuthClientManagementMigrationKeepsTenantOwnershipAndRevocation
 	} {
 		if !strings.Contains(sql, fragment) {
 			t.Fatalf("migration 111 missing %q", fragment)
+		}
+	}
+}
+
+func TestTenantServiceAccountManagementMigrationKeepsAggregateBoundary(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000132_iam_tenant_service_account_management.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 132: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"ADD COLUMN version", "uq_tenant_service_principals_name",
+		"^addp_svc_", "client_credentials", "client_secret_basic",
+		"validate_tenant_service_principal_membership",
+		"'iam.service_account.create'", "'iam.service_credential.update'",
+		"'tenant.administrator'", "authorization_version = principal.authorization_version + 1",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 132 missing %q", fragment)
 		}
 	}
 }

@@ -46,6 +46,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Security service token source failed: %v", err)
 	}
+	systemClient := commonclient.NewSystemServiceClient(cfg.SystemURL, tokenSource, nil)
 	metaClient := commonclient.NewMetaClient(cfg.MetaURL, tokenSource)
 	definitions := service.NewDefinitionService(db)
 	enrollments := service.NewEnrollmentService(db)
@@ -53,7 +54,20 @@ func main() {
 	assessments := service.NewAssessmentService(db, func(tenantID uint) service.SecurityFactsReader { return metaClient.WithTenantID(tenantID) })
 	policies := service.NewPolicyService(db)
 	exemptions := service.NewExemptionService(db)
-	accessRequests := service.NewAccessRequestService(db)
+	accessRequests := service.NewAccessRequestService(db, func(ctx context.Context, tenantID int64, ids []int64) (map[int64]string, error) {
+		actors, err := systemClient.WithTenantID(uint(tenantID)).ResolveSecurityAccessActors(ctx, ids)
+		if err != nil {
+			return nil, err
+		}
+		result := make(map[int64]string, len(actors))
+		for _, actor := range actors {
+			result[actor.ID] = actor.DisplayName
+		}
+		return result, nil
+	})
+	if err := accessRequests.BackfillActorSnapshots(ctx); err != nil {
+		log.Fatalf("Security protection access actor snapshot backfill failed: %v", err)
+	}
 	lifecycle := modulelifecycle.NewBusiness("security", commonclient.ModuleRuntimeRoleBackend)
 	router := api.SetupRouter(definitions, enrollments, discoveries, assessments, policies, exemptions, accessRequests, cfg.SystemURL, lifecycle)
 	listener, err := net.Listen("tcp", ":"+cfg.Port)
@@ -66,7 +80,6 @@ func main() {
 			stop()
 		}
 	}()
-	systemClient := commonclient.NewSystemServiceClient(cfg.SystemURL, tokenSource, nil)
 	serviceURL := commonconfig.BuildServiceURL(commonconfig.GetServiceHost(), cfg.Port)
 	registration := systemClient.RegisterAndHeartbeat(ctx, &commonclient.ModuleRegistrationRequest{ModuleName: "security", ModuleURL: serviceURL, RoutePrefix: "/security", HealthCheckURL: serviceURL + "/health/ready", Metadata: map[string]interface{}{"module": "security"}})
 	lifecycle.AttachRegistration(registration)

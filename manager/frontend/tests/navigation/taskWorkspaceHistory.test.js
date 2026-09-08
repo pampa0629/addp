@@ -10,6 +10,8 @@ describe('Manager task workspace history', () => {
     expect(routerSource).toContain("path: 'derived-tasks'")
     expect(derivedTasksSource).toContain("await syncRoute({ task_id: String(row.id) }, 'push')")
     expect(derivedTasksSource).toContain("await syncRoute({ create: '1'")
+    expect(derivedTasksSource).toContain('QuickViewTaskCreator')
+    expect(derivedTasksSource).not.toContain('openDataExplorer')
     expect(derivedTasksSource).toContain('@closed="clearTaskDetailRoute"')
     expect(derivedTasksSource).toContain('@closed="clearEditorRoute"')
   })

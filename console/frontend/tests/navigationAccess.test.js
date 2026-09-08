@@ -7,19 +7,16 @@ const menus = {
       index: '/system/iam',
       children: [
         {
-          index: '/system/iam/identity',
-          access: [
-            { context: 'platform', permissions: ['iam.user.read'] },
-            { context: 'tenant', permissions: ['iam.tenant_membership.read'] }
-          ]
+          index: '/system/iam/accounts',
+          access: [{ context: 'any' }]
         },
         {
-          index: '/system/iam/access',
+          index: '/system/iam/roles',
           access: [{ context: 'tenant', permissions: ['iam.tenant_role.read'] }]
         },
         {
           index: '/system/iam/security',
-          access: [{ context: 'any' }]
+          access: [{ context: 'platform', permissions: ['audit.event.read'] }]
         }
       ]
     }]
@@ -30,15 +27,14 @@ describe('Console navigation access filtering', () => {
   it('matches access rules by both AuthContext type and any granted permission', () => {
     const entry = menus.system.items[0].children[0]
     expect(matchesNavigationAccess(entry, 'platform', ['iam.user.read'])).toBe(true)
-    expect(matchesNavigationAccess(entry, 'tenant', ['iam.user.read'])).toBe(false)
+    expect(matchesNavigationAccess(entry, 'tenant', ['iam.user.read'])).toBe(true)
     expect(matchesNavigationAccess(entry, 'tenant', ['iam.tenant_membership.read'])).toBe(true)
   })
 
-  it('recursively removes unavailable IAM categories and keeps universal security', () => {
+  it('recursively removes unavailable IAM categories and keeps universal account security', () => {
     const filtered = filterSidebarMenus(menus, 'platform', ['iam.user.read'])
     expect(filtered.system.items[0].children.map(item => item.index)).toEqual([
-      '/system/iam/identity',
-      '/system/iam/security'
+      '/system/iam/accounts'
     ])
   })
 
@@ -48,7 +44,7 @@ describe('Console navigation access filtering', () => {
         items: [{
           index: '/system/iam',
           children: [{
-            index: '/system/iam/access',
+            index: '/system/iam/roles',
             access: [{ context: 'tenant', permissions: ['iam.tenant_role.read'] }]
           }]
         }]

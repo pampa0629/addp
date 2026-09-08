@@ -92,15 +92,49 @@ func (s *CatalogReferenceService) Resolve(
 	serviceClientID string,
 	references []CatalogReference,
 ) ([]CatalogReferenceResolution, error) {
-	if s == nil || s.repository == nil || tenantID <= 0 || serviceClientID != "addp-catalog" ||
-		len(references) == 0 || len(references) > MaxCatalogReferenceBatchSize {
+	if serviceClientID != "addp-catalog" {
+		return nil, ErrInvalidCatalogReferenceRequest
+	}
+	return s.resolve(ctx, tenantID, references, CatalogSubjectTypeDepartment, CatalogSubjectTypeUser, CatalogSubjectTypeProjectGroup)
+}
+
+func (s *CatalogReferenceService) ResolveStandardGovernanceUsers(
+	ctx context.Context,
+	tenantID int64,
+	serviceClientID string,
+	references []CatalogReference,
+) ([]CatalogReferenceResolution, error) {
+	if serviceClientID != "addp-standard" {
+		return nil, ErrInvalidCatalogReferenceRequest
+	}
+	return s.resolve(ctx, tenantID, references, CatalogSubjectTypeUser)
+}
+
+func (s *CatalogReferenceService) ResolveSecurityAccessActors(
+	ctx context.Context,
+	tenantID int64,
+	serviceClientID string,
+	references []CatalogReference,
+) ([]CatalogReferenceResolution, error) {
+	if serviceClientID != "addp-security" {
+		return nil, ErrInvalidCatalogReferenceRequest
+	}
+	return s.resolve(ctx, tenantID, references, CatalogSubjectTypeUser)
+}
+
+func (s *CatalogReferenceService) resolve(
+	ctx context.Context,
+	tenantID int64,
+	references []CatalogReference,
+	allowedSubjectTypes ...CatalogSubjectType,
+) ([]CatalogReferenceResolution, error) {
+	if s == nil || s.repository == nil || tenantID <= 0 || len(references) == 0 || len(references) > MaxCatalogReferenceBatchSize {
 		return nil, ErrInvalidCatalogReferenceRequest
 	}
 
-	idsByType := map[CatalogSubjectType][]int64{
-		CatalogSubjectTypeDepartment:   {},
-		CatalogSubjectTypeUser:         {},
-		CatalogSubjectTypeProjectGroup: {},
+	idsByType := make(map[CatalogSubjectType][]int64, len(allowedSubjectTypes))
+	for _, subjectType := range allowedSubjectTypes {
+		idsByType[subjectType] = []int64{}
 	}
 	for _, reference := range references {
 		if reference.ID <= 0 {

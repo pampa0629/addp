@@ -227,3 +227,6 @@ other = "组织资源已被其他用户修改，请刷新后重试"
 
 [system.iam.oauth_client_version_conflict]
 other = "OAuth 客户端已被其他用户修改，请刷新后重试"
+
+[system.iam.service_account_version_conflict]
+other = "服务账号已被其他用户修改，请刷新后重试"

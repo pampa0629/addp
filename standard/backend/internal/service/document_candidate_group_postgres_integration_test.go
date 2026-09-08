@@ -71,7 +71,7 @@ func TestPostgresDocumentCandidateGroupsPreserveOccurrences(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if response.Total != 2 || response.TotalPages != 2 || len(response.Data) != 1 {
+	if response.Total != 2 || response.TotalPages != 2 || response.ComparisonCounts.Exact != 1 || response.ComparisonCounts.ContentConflict != 1 || len(response.Data) != 1 {
 		t.Fatalf("response=%+v", response)
 	}
 	if response.StatusCounts.Retained != 1 || response.StatusCounts.Rejected != 1 || response.StatusCounts.Pending != 0 {
@@ -86,12 +86,12 @@ func TestPostgresDocumentCandidateGroupsPreserveOccurrences(t *testing.T) {
 	}
 
 	filtered, err := svc.ListCandidateGroups(document.ID, tenantID, DocumentCandidateGroupListOptions{State: models.CandidateGroupStateRejected})
-	if err != nil || filtered.Total != 1 || len(filtered.Data) != 1 || filtered.Data[0].State != models.CandidateGroupStateRejected {
+	if err != nil || filtered.Total != 1 || filtered.ComparisonCounts.Exact != 0 || filtered.ComparisonCounts.ContentConflict != 1 || len(filtered.Data) != 1 || filtered.Data[0].State != models.CandidateGroupStateRejected {
 		t.Fatalf("filtered=%+v err=%v", filtered, err)
 	}
 
 	exact, err := svc.ListCandidateGroups(document.ID, tenantID, DocumentCandidateGroupListOptions{ComparisonResult: models.CandidateComparisonExact, PageSize: 1})
-	if err != nil || exact.Total != 1 || exact.TotalPages != 1 || exact.StatusCounts.Retained != 1 || exact.StatusCounts.Rejected != 1 || len(exact.Data) != 1 || exact.Data[0].Candidate.Comparison == nil || exact.Data[0].Candidate.Comparison.Result != models.CandidateComparisonExact {
+	if err != nil || exact.Total != 1 || exact.TotalPages != 1 || exact.StatusCounts.Retained != 1 || exact.StatusCounts.Rejected != 1 || exact.ComparisonCounts.Exact != 1 || exact.ComparisonCounts.ContentConflict != 1 || len(exact.Data) != 1 || exact.Data[0].Candidate.Comparison == nil || exact.Data[0].Candidate.Comparison.Result != models.CandidateComparisonExact {
 		t.Fatalf("exact comparison filter=%+v err=%v", exact, err)
 	}
 	conflict, err := svc.ListCandidateGroups(document.ID, tenantID, DocumentCandidateGroupListOptions{ComparisonResult: models.CandidateComparisonContentConflict, PageSize: 1})

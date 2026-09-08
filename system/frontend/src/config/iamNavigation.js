@@ -1,21 +1,27 @@
 export const IAM_PAGES = [
   {
-    key: 'identity',
-    path: '/iam/identity',
-    routeName: 'IAMIdentity',
-    label: 'system.iam.pages.identity'
-  },
-  {
     key: 'organization',
     path: '/iam/organization',
     routeName: 'IAMOrganization',
     label: 'system.iam.pages.organization'
   },
   {
-    key: 'access',
-    path: '/iam/access',
-    routeName: 'IAMAccess',
-    label: 'system.iam.pages.access'
+    key: 'accounts',
+    path: '/iam/accounts',
+    routeName: 'IAMAccounts',
+    label: 'system.iam.pages.accounts'
+  },
+  {
+    key: 'roles',
+    path: '/iam/roles',
+    routeName: 'IAMRoles',
+    label: 'system.iam.pages.roles'
+  },
+  {
+    key: 'application-access',
+    path: '/iam/application-access',
+    routeName: 'IAMApplicationAccess',
+    label: 'system.iam.pages.applicationAccess'
   },
   {
     key: 'security',
@@ -26,20 +32,22 @@ export const IAM_PAGES = [
 ]
 
 export const IAM_TABS = [
-  { page: 'identity', key: 'users', context: 'platform', permission: 'iam.user.read', label: 'system.iam.tabs.users', panel: 'users' },
-  { page: 'identity', key: 'identity-changes', context: 'platform', permission: 'iam.platform_identity_change.read', label: 'system.iam.tabs.identityChanges', panel: 'identity-changes' },
-  { page: 'identity', key: 'memberships', context: 'tenant', permission: 'iam.tenant_membership.read', label: 'system.iam.tabs.memberships', panel: 'memberships' },
-  { page: 'identity', key: 'invitations', context: 'tenant', permission: 'iam.tenant_invitation.read', label: 'system.iam.tabs.invitations', panel: 'invitations' },
-
   { page: 'organization', key: 'tenants', context: 'platform', permission: 'platform.tenant.read', label: 'system.iam.tabs.tenants', panel: 'tenants' },
   { page: 'organization', key: 'departments', context: 'tenant', permission: 'iam.department.read', label: 'system.iam.tabs.departments', panel: 'departments' },
   { page: 'organization', key: 'project-groups', context: 'tenant', permission: 'iam.project_group.read', label: 'system.iam.tabs.projectGroups', panel: 'project-groups' },
 
-  { page: 'access', key: 'roles', context: 'tenant', permission: 'iam.tenant_role.read', label: 'system.iam.tabs.roles', panel: 'roles' },
-  { page: 'access', key: 'role-assignments', context: 'tenant', permission: 'iam.tenant_role_assignment.read', label: 'system.iam.tabs.roleAssignments', panel: 'role-assignments' },
-  { page: 'access', key: 'oauth-clients', context: 'tenant', permission: 'iam.oauth_client.read', label: 'system.iam.tabs.oauthClients', panel: 'oauth-clients' },
+  { page: 'accounts', key: 'users', context: 'platform', permission: 'iam.user.read', label: 'system.iam.tabs.userAccounts', panel: 'users' },
+  { page: 'accounts', key: 'identity-changes', context: 'platform', permission: 'iam.platform_identity_change.read', label: 'system.iam.tabs.identityChanges', panel: 'identity-changes' },
+  { page: 'accounts', key: 'user-accounts', context: 'tenant', permission: 'iam.tenant_membership.read', label: 'system.iam.tabs.userAccounts', panel: 'user-accounts' },
+  { page: 'accounts', key: 'invitations', context: 'tenant', permission: 'iam.tenant_invitation.read', label: 'system.iam.tabs.userInvitations', panel: 'invitations' },
+  { page: 'accounts', key: 'account-security', context: 'any', label: 'system.iam.tabs.accountSecurity', panel: 'account-security' },
 
-  { page: 'security', key: 'account-security', context: 'any', label: 'system.iam.tabs.accountSecurity', panel: 'account-security' },
+  { page: 'roles', key: 'role-definitions', context: 'tenant', permission: 'iam.tenant_role.read', label: 'system.iam.tabs.roleDefinitions', panel: 'roles' },
+  { page: 'roles', key: 'role-assignments', context: 'tenant', permission: 'iam.tenant_role_assignment.read', label: 'system.iam.tabs.roleAssignments', panel: 'role-assignments' },
+
+  { page: 'application-access', key: 'service-accounts', context: 'tenant', permission: 'iam.service_account.read', label: 'system.iam.tabs.serviceAccounts', panel: 'service-accounts' },
+  { page: 'application-access', key: 'oauth-clients', context: 'tenant', permission: 'iam.oauth_client.read', label: 'system.iam.tabs.externalApplications', panel: 'oauth-clients' },
+
   { page: 'security', key: 'security-policy', context: 'platform', permission: 'iam.security_policy.read', label: 'system.iam.tabs.securityPolicy', panel: 'security-policy' },
   { page: 'security', key: 'audit', context: 'platform', permission: 'audit.event.read', label: 'system.iam.tabs.audit', panel: 'audit', props: { scope: 'platform' } },
   { page: 'security', key: 'audit', context: 'tenant', permission: 'audit.tenant_event.read', label: 'system.iam.tabs.audit', panel: 'audit', props: { scope: 'tenant' } }

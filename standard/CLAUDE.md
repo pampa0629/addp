@@ -318,7 +318,7 @@ standard/
 - 正式化不接受客户端指定目标或动作。无同编码身份时创建 R1 草稿；同编码同范围且无工作修订时以最新修订为基线叠加候选明确字段创建新草稿；与现有 `draft|in_review|published` 修订内容一致时只关联该修订。`scope_conflict`、已有不同内容工作修订、无法唯一解析的计量单位或枚举码值集当前生效已发布修订均返回明确冲突。新指标候选必须由人工在请求中选择 `metric_type`；其他候选不得携带该字段。
 - 正式化入口固定需要 `standard.document.update`，并由服务器根据最终动作条件校验对应类型的 `*.create` 或 `*.update` Permission；无法分类时默认拒绝。创建的草稿仍需人工补齐生效时间、范围约束、指标依赖等治理字段，并沿正式修订审核发布路径处理。
 - 每条证据保存章节、起止行、原文摘录与 SHA-256，始终引用确定的文档修订。
-- `GET /documents/:id/extraction-candidate-groups` 是唯一候选治理读取入口，支持按聚合状态、候选类型和实时比对结果分页筛选；`comparison_result` 固定为 `new|exact|content_conflict|scope_conflict`，必须在分页前按当前标准修订动态计算并筛选。`total` 表示应用全部筛选后的聚合项总数，`status_counts` 始终统计文档全部聚合项、不受当前筛选影响；同时返回代表候选、全部出现记录和动态标准比对。旧的逐批平铺 `GET /documents/:id/extractions` 不再公开。同类型、同编码是标准比对的唯一匹配键；同名不同编码不自动判重。每项差异同时返回字段、候选值和当前标准值，供治理人员直接核对。
+- `GET /documents/:id/extraction-candidate-groups` 是唯一候选治理读取入口，支持按聚合状态、候选类型和实时比对结果分页筛选；`comparison_result` 固定为 `new|exact|content_conflict|scope_conflict`，必须在分页前按当前标准修订动态计算并筛选。`total` 表示应用全部筛选后的聚合项总数；`status_counts` 始终统计文档全部聚合项、不受任何筛选影响；`comparison_counts` 按聚合状态和候选类型过滤后的工作集统计四类实时比对结果，但不应用当前 `comparison_result`，用于同一工作集内的分面切换。响应同时返回代表候选、全部出现记录和动态标准比对。旧的逐批平铺 `GET /documents/:id/extractions` 不再公开。同类型、同编码是标准比对的唯一匹配键；同名不同编码不自动判重。每项差异同时返回字段、候选值和当前标准值，供治理人员直接核对。
 - 比对修订按“稳定身份当前草稿/审核中修订 → 当前生效已发布修订 → 最新历史修订”选择；只比较候选明确给出的字段，缺失字段不构造差异。范围先比较 `scope_type + owner_domain_id`，范围不一致统一为 `scope_conflict`。
 - 枚举数据元候选以 `code_set_code` 与现有数据元修订冻结的码值集修订所属稳定身份编码比较；候选比对不暴露或猜测数据库修订 ID。
 - 指标候选中的聚合方式、维度等执行建模提示由 Model/Develop 消费，不属于 Standard 指标定义字段，因此不参与内容冲突判定。

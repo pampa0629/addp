@@ -33,9 +33,14 @@ cleanup() {
     if [ "$CONTAINER_OWNED" = true ] && docker container inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
         if [ "$status" -ne 0 ]; then
             docker logs "$CONTAINER_NAME" > "$WORK_DIR/opengauss-container.log" 2>&1
+            echo "openGauss container log (last 200 lines):" >&2
             tail -n 200 "$WORK_DIR/opengauss-container.log" >&2
         fi
         docker rm --force "$CONTAINER_NAME" >/dev/null 2>&1 || status=1
+    fi
+    if [ "$status" -ne 0 ] && [ -f "$WORK_DIR/common-opengauss.log" ]; then
+        echo "Common openGauss Go test log (last 120 lines):" >&2
+        tail -n 120 "$WORK_DIR/common-opengauss.log" >&2
     fi
     case "$WORK_DIR" in
         "${TMPDIR:-/tmp}"/addp-common-opengauss.*) rm -rf "$WORK_DIR" ;;

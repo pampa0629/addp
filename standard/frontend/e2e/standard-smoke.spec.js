@@ -140,8 +140,29 @@ const createCandidateGroupResponse = (candidates, { extractionID = 81, revisionI
   status_counts: candidates.reduce((counts, candidate) => {
     counts[candidate.formalization ? 'formalized' : candidate.status] += 1
     return counts
-  }, { pending: 0, retained: 0, rejected: 0, formalized: 0 })
+  }, { pending: 0, retained: 0, rejected: 0, formalized: 0 }),
+  comparison_counts: candidates.reduce((counts, candidate) => {
+    if (candidate.comparison?.result) counts[candidate.comparison.result] += 1
+    return counts
+  }, { new: 0, exact: 0, content_conflict: 0, scope_conflict: 0 })
 })
+
+const filterCandidateGroupResponse = (response, url) => {
+  const state = url.searchParams.get('state') || ''
+  const candidateType = url.searchParams.get('candidate_type') || ''
+  const comparisonResult = url.searchParams.get('comparison_result') || ''
+  const page = Number(url.searchParams.get('page')) || 1
+  const pageSize = Number(url.searchParams.get('page_size')) || response.page_size || 20
+  const comparisonSource = response.data.filter(group => (!state || group.state === state) && (!candidateType || group.candidate.candidate_type === candidateType))
+  const comparisonCounts = comparisonSource.reduce((counts, group) => {
+    if (group.candidate.comparison?.result) counts[group.candidate.comparison.result] += 1
+    return counts
+  }, { new: 0, exact: 0, content_conflict: 0, scope_conflict: 0 })
+  const filtered = comparisonResult ? comparisonSource.filter(group => group.candidate.comparison?.result === comparisonResult) : comparisonSource
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
+  const data = page > totalPages ? [] : filtered.slice((page - 1) * pageSize, page * pageSize)
+  return { ...response, data, total: filtered.length, page, page_size: pageSize, total_pages: totalPages, comparison_counts: comparisonCounts }
+}
 
 const listPages = [
   ['/domains', '业务域管理'],
@@ -611,6 +632,12 @@ test('shows deterministic candidate comparisons and opens the existing standard'
   await expect(page.getByText('内容冲突', { exact: true }).first()).toBeVisible()
   await expect(page.getByText('范围冲突', { exact: true })).toBeVisible()
   await expect(page.getByText('新候选', { exact: true })).toBeVisible()
+  const comparisonFacets = page.getByRole('radiogroup', { name: '比对结果' })
+  await expect(comparisonFacets.getByRole('radio', { name: '全部比对结果 · 5' })).toBeChecked()
+  await expect(comparisonFacets.getByRole('radio', { name: '内容一致 · 1' })).toBeVisible()
+  await expect(comparisonFacets.getByRole('radio', { name: '内容冲突 · 2' })).toBeVisible()
+  await expect(comparisonFacets.getByRole('radio', { name: '范围冲突 · 1' })).toBeVisible()
+  await expect(comparisonFacets.getByRole('radio', { name: '新候选 · 1' })).toBeVisible()
   const activityCandidate = page.locator('.candidate-card').filter({ hasText: 'activity_id' })
   await expect(activityCandidate.getByRole('columnheader', { name: '差异字段' })).toBeVisible()
   await expect(activityCandidate.getByRole('columnheader', { name: '候选值' })).toBeVisible()
@@ -622,6 +649,11 @@ test('shows deterministic candidate comparisons and opens the existing standard'
   const codeItems = codeSetCandidate.locator('.comparison-item')
   await expect(codeItems.nth(0)).toContainText('signup · 报名中 — 已正式报名')
   await expect(codeItems.nth(1)).toContainText('registered · 已报名 — 报名已经确认')
+
+  await comparisonFacets.getByText('内容一致 · 1', { exact: true }).click()
+  await expect(page.getByText('共 1 个候选组')).toBeVisible()
+  await expect(page.locator('.candidate-card')).toHaveCount(1)
+  await expect(page.locator('.candidate-card')).toContainText('leader')
 
   await page.getByRole('button', { name: '查看现有标准' }).first().click()
   await expect(page).toHaveURL(/\/glossaries\/21$/)
@@ -1175,7 +1207,7 @@ async function installMockBackend(page, options = {}) {
       const revision = document?.draft_revision || document?.current_revision
       return fulfillJSON(route, revision ? [revision] : [])
     }
-    if (path === '/api/v1/standard/documents/71/extraction-candidate-groups') return fulfillJSON(route, options.documentCandidateGroups || createCandidateGroupResponse([]))
+    if (path === '/api/v1/standard/documents/71/extraction-candidate-groups') return fulfillJSON(route, filterCandidateGroupResponse(options.documentCandidateGroups || createCandidateGroupResponse([]), url))
     if (path === '/api/v1/standard/documents/71/mappings') {
       return fulfillJSON(route, { elements: [], glossaries: [], metrics: [] })
     }
@@ -1185,7 +1217,7 @@ async function installMockBackend(page, options = {}) {
       const revision = document?.draft_revision || document?.current_revision
       return fulfillJSON(route, revision ? [revision] : [])
     }
-    if (path === '/api/v1/standard/documents/72/extraction-candidate-groups') return fulfillJSON(route, options.documentCandidateGroups || createCandidateGroupResponse([]))
+    if (path === '/api/v1/standard/documents/72/extraction-candidate-groups') return fulfillJSON(route, filterCandidateGroupResponse(options.documentCandidateGroups || createCandidateGroupResponse([]), url))
     if (path === '/api/v1/standard/documents/72/mappings') return fulfillJSON(route, { elements: [], glossaries: [], metrics: [] })
     return fulfillJSON(route, {})
   })

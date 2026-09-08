@@ -78,7 +78,37 @@ test('running list rows and the opened detail refresh independently', () => {
   assert.match(executionListSource, /executionListRefreshInFlight/)
   assert.match(executionListSource, /executionDetailRefreshInFlight/)
   assert.match(executionListSource, /openedExecutionID\.value !== executionID/)
-  assert.match(executionListSource, /watch\(hasRunningListExecution/)
-  assert.match(executionListSource, /watch\(hasRunningOpenedExecution/)
+  assert.match(executionListSource, /watch\(shouldRefreshExecutionList/)
+  assert.match(executionListSource, /watch\(shouldRefreshOpenedExecution/)
   assert.doesNotMatch(executionListSource, /async function refreshRunningExecutions/)
+})
+
+test('execution tree refresh preserves the selected child by execution UUID', () => {
+  const executionListSource = readFileSync(
+    new URL('../src/views/ExecutionList.vue', import.meta.url),
+    'utf8'
+  )
+
+  assert.match(executionListSource, /:current-node-key="currentExecution\?\.execution_id"/)
+  assert.match(executionListSource, /const selectedExecutionID = currentExecution\.value\?\.execution_id/)
+  assert.match(executionListSource, /findExecutionTreeNodeByID\(tree, selectedExecutionID\)\?\.execution \|\| tree\.execution/)
+  assert.match(executionListSource, /function findExecutionTreeNodeByID\(node, executionID\)/)
+})
+
+test('automatic refresh pauses while the page is hidden and catches up when visible', () => {
+  const executionListSource = readFileSync(
+    new URL('../src/views/ExecutionList.vue', import.meta.url),
+    'utf8'
+  )
+
+  assert.match(executionListSource, /const pageVisible = ref\(!document\.hidden\)/)
+  assert.match(executionListSource, /const shouldRefreshExecutionList = computed/)
+  assert.match(executionListSource, /const shouldRefreshOpenedExecution = computed/)
+  assert.match(executionListSource, /if \(!shouldRefreshExecutionList\.value \|\| executionListRefreshInFlight\)/)
+  assert.match(executionListSource, /if \(!shouldRefreshOpenedExecution\.value \|\| !hasValue\(openedExecutionID\.value\)/)
+  assert.match(executionListSource, /function handleVisibilityChange\(\)/)
+  assert.match(executionListSource, /document\.addEventListener\('visibilitychange', handleVisibilityChange\)/)
+  assert.match(executionListSource, /document\.removeEventListener\('visibilitychange', handleVisibilityChange\)/)
+  assert.match(executionListSource, /void refreshRunningExecutionList\(\)/)
+  assert.match(executionListSource, /void refreshOpenedExecution\(\)/)
 })

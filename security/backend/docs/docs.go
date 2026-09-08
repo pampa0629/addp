@@ -5613,6 +5613,20 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_security_internal_models.ProtectionAccessActor": {
+            "type": "object",
+            "properties": {
+                "display_name": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_security_internal_models.ProtectionAccessRequestResponse": {
             "type": "object",
             "properties": {
@@ -5640,10 +5654,6 @@ const docTemplate = `{
                 "decided_at": {
                     "type": "string"
                 },
-                "decided_by": {
-                    "type": "string",
-                    "example": "0"
-                },
                 "decision_rationale": {
                     "type": "string"
                 },
@@ -5662,13 +5672,13 @@ const docTemplate = `{
                 "requested_expires_at": {
                     "type": "string"
                 },
+                "requester": {
+                    "$ref": "#/definitions/github_com_addp_security_internal_models.ProtectionAccessActor"
+                },
+                "reviewer": {
+                    "$ref": "#/definitions/github_com_addp_security_internal_models.ProtectionAccessActor"
+                },
                 "state": {
-                    "type": "string"
-                },
-                "subject_id": {
-                    "type": "string"
-                },
-                "subject_type": {
                     "type": "string"
                 },
                 "target_full_name": {
@@ -6865,10 +6875,6 @@ const docTemplate = `{
                 "decided_at": {
                     "type": "string"
                 },
-                "decided_by": {
-                    "type": "string",
-                    "example": "0"
-                },
                 "decision_rationale": {
                     "type": "string"
                 },
@@ -6887,13 +6893,13 @@ const docTemplate = `{
                 "requested_expires_at": {
                     "type": "string"
                 },
+                "requester": {
+                    "$ref": "#/definitions/github_com_addp_security_internal_models.ProtectionAccessActor"
+                },
+                "reviewer": {
+                    "$ref": "#/definitions/github_com_addp_security_internal_models.ProtectionAccessActor"
+                },
                 "state": {
-                    "type": "string"
-                },
-                "subject_id": {
-                    "type": "string"
-                },
-                "subject_type": {
                     "type": "string"
                 },
                 "target_full_name": {

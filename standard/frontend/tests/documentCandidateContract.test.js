@@ -46,9 +46,13 @@ describe('document candidate contract', () => {
 
   it('filters candidate groups by the live comparison result', () => {
     expect(documentDetailSource).toContain('candidateQuery.comparison_result')
-    expect(documentDetailSource).toContain("['new','exact','content_conflict','scope_conflict']")
+    expect(documentDetailSource).toContain("const comparisonResults = ['new', 'exact', 'content_conflict', 'scope_conflict']")
     expect(documentDetailSource).toContain("standard.document.allComparisonResults")
+    expect(documentDetailSource).toContain('candidateGroupResponse.comparison_counts')
+    expect(documentDetailSource).toContain('<el-radio-group v-model="candidateQuery.comparison_result"')
     expect(zhCn.standard.document.allComparisonResults).toBe('全部比对结果')
     expect(en.standard.document.allComparisonResults).toBe('All Comparison Results')
+    expect(zhCn.standard.document.comparisonFacetLabel).toBe('比对结果')
+    expect(en.standard.document.comparisonFacetLabel).toBe('Comparison Result')
   })
 })

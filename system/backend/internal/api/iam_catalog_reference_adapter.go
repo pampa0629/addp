@@ -40,6 +40,8 @@ type IAMCatalogReferenceBatchResponse struct {
 
 type catalogReferenceService interface {
 	Resolve(context.Context, int64, string, []iam.CatalogReference) ([]iam.CatalogReferenceResolution, error)
+	ResolveStandardGovernanceUsers(context.Context, int64, string, []iam.CatalogReference) ([]iam.CatalogReferenceResolution, error)
+	ResolveSecurityAccessActors(context.Context, int64, string, []iam.CatalogReference) ([]iam.CatalogReferenceResolution, error)
 	ListCandidates(context.Context, int64, string, iam.CatalogSubjectType, string, int, int) ([]iam.CatalogReferenceCandidate, int64, error)
 }
 
@@ -98,7 +100,7 @@ func (h *IAMCatalogReferenceHandler) Resolve(c *gin.Context) {
 		respondIAMError(c, commonapi.ErrUnauthorized)
 		return
 	}
-	results, err := h.service.Resolve(c.Request.Context(), int64(tenantID), *authContext.Client.ClientID, references)
+	results, err := h.service.ResolveStandardGovernanceUsers(c.Request.Context(), int64(tenantID), *authContext.Client.ClientID, references)
 	if err != nil {
 		if errors.Is(err, iam.ErrInvalidCatalogReferenceRequest) {
 			err = fmt.Errorf("%w: invalid catalog reference request", commonapi.ErrBadRequest)
@@ -112,6 +114,66 @@ func (h *IAMCatalogReferenceHandler) Resolve(c *gin.Context) {
 			SubjectType: string(result.SubjectType), ID: strconv.FormatInt(result.ID, 10),
 			Found: result.Found, Referenceable: result.Referenceable,
 			Name: result.Name, Code: result.Code, Status: result.Status,
+			PrincipalStatus: result.PrincipalStatus, MembershipStatus: result.MembershipStatus,
+		})
+	}
+	c.JSON(http.StatusOK, response)
+}
+
+// ResolveSecurityAccessActors godoc
+// @Summary      精确批量解析 Security 原值访问行为人 | Resolve Security plaintext access actors in batch
+// @Description  仅 addp-security Tenant Service Principal 可按当前 Tenant 解析 User Principal 的最小显示摘要，用于固化原值访问申请人和审批人快照 | Only the addp-security tenant service principal may resolve minimal User Principal display summaries in the current tenant for immutable plaintext access requester and reviewer snapshots
+// @Tags         Runtime Security Access Actors
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request body IAMCatalogReferenceBatchRequest true "User 引用集合，最多 200 个 | User references, up to 200"
+// @Success      200 {object} IAMCatalogReferenceBatchResponse
+// @Failure      400 {object} IAMErrorResponse
+// @Failure      401 {object} IAMErrorResponse
+// @Failure      403 {object} IAMErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["iam.tenant_membership.read"]
+// @Router       /runtime/security-access-actors/resolve [post]
+func (h *IAMCatalogReferenceHandler) ResolveSecurityAccessActors(c *gin.Context) {
+	if err := iamServiceOwnsModule(c, "security"); err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	var request IAMCatalogReferenceBatchRequest
+	if err := commonapi.BindOptionalJSONStrict(c, &request); err != nil || len(request.References) == 0 || len(request.References) > iam.MaxCatalogReferenceBatchSize {
+		respondIAMError(c, fmt.Errorf("%w: invalid Security access actor request", commonapi.ErrBadRequest))
+		return
+	}
+	references := make([]iam.CatalogReference, 0, len(request.References))
+	for _, reference := range request.References {
+		id, err := parseCanonicalIAMInt64(reference.ID)
+		if err != nil || reference.SubjectType != string(iam.CatalogSubjectTypeUser) {
+			respondIAMError(c, fmt.Errorf("%w: invalid Security access actor reference", commonapi.ErrBadRequest))
+			return
+		}
+		references = append(references, iam.CatalogReference{SubjectType: iam.CatalogSubjectTypeUser, ID: id})
+	}
+	_, tenantID, _, err := iamTenantActor(c)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	authContext, exists := middleware.IAMAuthContextFromGin(c)
+	if !exists || authContext.Client.ClientID == nil {
+		respondIAMError(c, commonapi.ErrUnauthorized)
+		return
+	}
+	results, err := h.service.ResolveSecurityAccessActors(c.Request.Context(), int64(tenantID), *authContext.Client.ClientID, references)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	response := IAMCatalogReferenceBatchResponse{Results: make([]IAMCatalogReferenceResolution, 0, len(results))}
+	for _, result := range results {
+		response.Results = append(response.Results, IAMCatalogReferenceResolution{
+			SubjectType: string(result.SubjectType), ID: strconv.FormatInt(result.ID, 10), Found: result.Found,
+			Referenceable: result.Referenceable, Name: result.Name, Status: result.Status,
 			PrincipalStatus: result.PrincipalStatus, MembershipStatus: result.MembershipStatus,
 		})
 	}

@@ -1801,6 +1801,13 @@ definitions:
       status:
         $ref: '#/definitions/github_com_addp_system_internal_iam.ProjectGroupStatus'
     type: object
+  internal_api.IAMCreateServiceAccountRequest:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+    type: object
   internal_api.IAMCreateTenantInvitationRequest:
     properties:
       email:
@@ -2471,6 +2478,62 @@ definitions:
       version:
         type: integer
     type: object
+  internal_api.IAMServiceAccountCredentialResponse:
+    properties:
+      client_id:
+        type: string
+      client_secret:
+        type: string
+      created_at:
+        type: string
+      created_by_principal_id:
+        type: string
+      credential_status:
+        $ref: '#/definitions/github_com_addp_system_internal_iam.OAuthClientStatus'
+      description:
+        type: string
+      id:
+        type: string
+      membership_id:
+        type: string
+      membership_status:
+        $ref: '#/definitions/github_com_addp_system_internal_iam.TenantMembershipStatus'
+      name:
+        type: string
+      status:
+        $ref: '#/definitions/github_com_addp_system_internal_iam.PrincipalStatus'
+      updated_at:
+        type: string
+      version:
+        type: integer
+    type: object
+  internal_api.IAMServiceAccountResponse:
+    properties:
+      client_id:
+        type: string
+      created_at:
+        type: string
+      created_by_principal_id:
+        type: string
+      credential_status:
+        $ref: '#/definitions/github_com_addp_system_internal_iam.OAuthClientStatus'
+      description:
+        type: string
+      id:
+        type: string
+      membership_id:
+        type: string
+      membership_status:
+        $ref: '#/definitions/github_com_addp_system_internal_iam.TenantMembershipStatus'
+      name:
+        type: string
+      status:
+        $ref: '#/definitions/github_com_addp_system_internal_iam.PrincipalStatus'
+      updated_at:
+        type: string
+      version:
+        type: integer
+    type: object
   internal_api.IAMTaskAuthorizationSubjectRequest:
     properties:
       definition_hash:
@@ -2792,6 +2855,15 @@ definitions:
         type: integer
       tenant_invitation_ttl_hours:
         type: integer
+      version:
+        type: integer
+    type: object
+  internal_api.IAMUpdateServiceAccountRequest:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
       version:
         type: integer
     type: object
@@ -7381,6 +7453,49 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - system.runtime_registry.read
+  /runtime/security-access-actors/resolve:
+    post:
+      consumes:
+      - application/json
+      description: 仅 addp-security Tenant Service Principal 可按当前 Tenant 解析 User Principal
+        的最小显示摘要，用于固化原值访问申请人和审批人快照 | Only the addp-security tenant service principal
+        may resolve minimal User Principal display summaries in the current tenant
+        for immutable plaintext access requester and reviewer snapshots
+      parameters:
+      - description: User 引用集合，最多 200 个 | User references, up to 200
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMCatalogReferenceBatchRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMCatalogReferenceBatchResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 精确批量解析 Security 原值访问行为人 | Resolve Security plaintext access actors
+        in batch
+      tags:
+      - Runtime Security Access Actors
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.tenant_membership.read
   /runtime/standard-governance-users/candidates:
     get:
       description: 仅 addp-standard Tenant Service Principal 可按名称或用户名分页查询当前租户内可引用的活动用户
@@ -9387,6 +9502,251 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - iam.tenant_role.update
+  /tenant/service_accounts:
+    get:
+      description: 分页查询当前 Tenant 拥有的服务账号；不包含平台内置 Runtime 服务主体 | List tenant-owned
+        service accounts, excluding platform runtime identities
+      parameters:
+      - description: 页码 | Page number
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量 | Page size
+        in: query
+        name: page_size
+        type: integer
+      - description: 名称、说明或 Client ID | Name, description, or client ID
+        in: query
+        name: search
+        type: string
+      - description: '状态：active/suspended | Status: active/suspended'
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            properties:
+              data:
+                items:
+                  $ref: '#/definitions/internal_api.IAMServiceAccountResponse'
+                type: array
+              page:
+                type: integer
+              page_size:
+                type: integer
+              total:
+                type: integer
+              total_pages:
+                type: integer
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 查询服务账号 | List service accounts
+      tags:
+      - 租户服务账号 | Tenant Service Accounts
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.service_account.read
+    post:
+      consumes:
+      - application/json
+      description: 原子创建服务主体、租户成员关系和 Client Credentials 凭据；Client Secret 仅在本响应展示一次
+        | Atomically create the identity, membership, and credential; the client secret
+        is returned once
+      parameters:
+      - description: 服务账号定义 | Service account definition
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMCreateServiceAccountRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_api.IAMServiceAccountCredentialResponse'
+      security:
+      - BearerAuth: []
+      summary: 创建服务账号 | Create service account
+      tags:
+      - 租户服务账号 | Tenant Service Accounts
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.service_account.create
+  /tenant/service_accounts/{id}:
+    get:
+      parameters:
+      - description: 服务账号 ID | Service account ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMServiceAccountResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询服务账号详情 | Get service account
+      tags:
+      - 租户服务账号 | Tenant Service Accounts
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.service_account.read
+    put:
+      consumes:
+      - application/json
+      description: 完整更新名称与说明；Client ID 不可修改 | Fully update name and description; client
+        ID is immutable
+      parameters:
+      - description: 服务账号 ID | Service account ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 定义与版本 | Definition and version
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMUpdateServiceAccountRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMServiceAccountResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 更新服务账号 | Update service account
+      tags:
+      - 租户服务账号 | Tenant Service Accounts
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.service_account.update
+  /tenant/service_accounts/{id}/restore:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 服务账号 ID | Service account ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 版本与原因 | Version and reason
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMVersionedLifecycleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMServiceAccountResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 恢复服务账号 | Restore service account
+      tags:
+      - 租户服务账号 | Tenant Service Accounts
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.service_account.restore
+  /tenant/service_accounts/{id}/rotate-secret:
+    post:
+      consumes:
+      - application/json
+      description: 旧 Client Secret 立即失效，新 Secret 仅在本响应展示一次 | Invalidate the old client
+        secret and return the new secret once
+      parameters:
+      - description: 服务账号 ID | Service account ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 版本与原因 | Version and reason
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMVersionedLifecycleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMServiceAccountCredentialResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 轮换服务账号密钥 | Rotate service account secret
+      tags:
+      - 租户服务账号 | Tenant Service Accounts
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.service_credential.update
+  /tenant/service_accounts/{id}/suspend:
+    post:
+      consumes:
+      - application/json
+      description: 原子暂停服务主体、成员关系和 Client Credentials 凭据，并使已签发令牌失效 | Atomically suspend
+        the identity, membership, and credential and invalidate issued tokens
+      parameters:
+      - description: 服务账号 ID | Service account ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 版本与原因 | Version and reason
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.IAMVersionedLifecycleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMServiceAccountResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 暂停服务账号 | Suspend service account
+      tags:
+      - 租户服务账号 | Tenant Service Accounts
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.service_account.suspend
   /users/me:
     get:
       produces:

@@ -84,6 +84,27 @@ OAuth Client 的管理归属由 `owner_scope` 与 `owner_tenant_id` 表达：
 
 Authorization Request 的读取和批准都必须复核当前 User AuthContext：`owner_scope=tenant` 时只允许 `context_type=tenant` 且当前 Tenant 与 `owner_tenant_id` 完全一致。客户端不得借助用户在其他 Tenant 或 Platform Realm 的会话取得授权；该约束必须在锁定授权请求并签发 Code 的事务中再次校验。
 
+### 2.2 租户服务账号的内部 OAuth Client
+
+服务账号使用的 Confidential OAuth Client 是 Tenant-owned Service Principal 的一对一机器凭据，
+不是“外部 OAuth Client”。它固定使用 `client_credentials`、`client_secret_basic`、`addp.api`
+Scope/Audience，不配置 redirect URI，也不进入 `/tenant/oauth_clients` 查询或管理路径。
+
+服务账号管理 API 固定为：
+
+| Method | Path | 语义 |
+| --- | --- | --- |
+| GET / POST | `/api/v1/system/tenant/service_accounts` | 分页查询或原子创建当前 Tenant 的服务账号 |
+| GET / PUT | `/api/v1/system/tenant/service_accounts/:id` | 读取或完整更新名称与说明 |
+| POST | `/api/v1/system/tenant/service_accounts/:id/suspend` | 原子暂停 Principal、Membership 和凭据 |
+| POST | `/api/v1/system/tenant/service_accounts/:id/restore` | 原子恢复 Principal、Membership 和凭据 |
+| POST | `/api/v1/system/tenant/service_accounts/:id/rotate-secret` | 轮换 Client Secret 并使旧凭据与已签发令牌失效 |
+
+创建和轮换响应可以返回一次 `client_secret`；其他响应、列表、日志和审计均不得返回 Secret
+或 BCrypt Hash。管理权限为 `iam.service_account.create/read/update/suspend/restore` 和
+`iam.service_credential.update`，只授予内置 `tenant.administrator`，不进入 Tenant 自定义 Role
+的可分配 Permission 集合。
+
 ## 三、Refresh Token Family
 
 一次登录或用户授权创建一个 Refresh Token Family。每次刷新必须在单个数据库事务内：

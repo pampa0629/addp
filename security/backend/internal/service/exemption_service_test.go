@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strconv"
 	"testing"
 	"time"
 
@@ -17,7 +18,7 @@ func TestProtectionAccessTargetsExposeAutomaticallyProtectedFieldsAsReviewRequir
 	if err != nil {
 		t.Fatal(err)
 	}
-	requests := NewAccessRequestService(db)
+	requests := NewAccessRequestService(db, testAccessActorResolver)
 	targets, err := requests.Targets(context.Background(), 7, 41, enrollment.Target.ResourceIdentity, managerProtectionOwner, managerPreviewAction)
 	if err != nil {
 		t.Fatal(err)
@@ -51,7 +52,7 @@ func TestProtectionAccessRequestApprovalPublishesSubjectScopedAuthorization(t *t
 		t.Fatal(err)
 	}
 	now := time.Now().UTC().Truncate(time.Second)
-	requests := NewAccessRequestService(db)
+	requests := NewAccessRequestService(db, testAccessActorResolver)
 	requests.now = func() time.Time { return now }
 	if _, err := requests.ListReviewQueue(context.Background(), 7, 42, "", 1, 20); !errors.Is(err, commonapi.ErrBadRequest) {
 		t.Fatalf("missing review scope error = %v", err)
@@ -63,7 +64,7 @@ func TestProtectionAccessRequestApprovalPublishesSubjectScopedAuthorization(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if created.State != models.ProtectionAccessRequestStatePending || created.SubjectID != "41" {
+	if created.State != models.ProtectionAccessRequestStatePending || created.Requester.ID != "41" || created.Requester.DisplayName != "用户 41" {
 		t.Fatalf("created request = %#v", created)
 	}
 	selfQueue, err := requests.ListReviewQueue(context.Background(), 7, 41, models.ProtectionAccessRequestReviewScopePending, 1, 20)
@@ -126,7 +127,7 @@ func TestProtectionAccessRequestApprovalPublishesSubjectScopedAuthorization(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if approvalHistory.Total != 1 || len(approvalHistory.Data) != 1 || approvalHistory.Data[0].State != models.ProtectionAccessRequestStateApproved || approvalHistory.Data[0].DecidedBy == nil || *approvalHistory.Data[0].DecidedBy != 42 || approvalHistory.Data[0].DecisionRationale != "复核通过" {
+	if approvalHistory.Total != 1 || len(approvalHistory.Data) != 1 || approvalHistory.Data[0].State != models.ProtectionAccessRequestStateApproved || approvalHistory.Data[0].Reviewer == nil || approvalHistory.Data[0].Reviewer.ID != "42" || approvalHistory.Data[0].Reviewer.DisplayName != "用户 42" || approvalHistory.Data[0].DecisionRationale != "复核通过" {
 		t.Fatalf("approval review history = %#v", approvalHistory)
 	}
 	changes, err := enrollments.ListChanges(context.Background(), 7, managerProtectionOwner, "", 20)
@@ -153,6 +154,46 @@ func TestProtectionAccessRequestApprovalPublishesSubjectScopedAuthorization(t *t
 	}
 }
 
+func testAccessActorResolver(_ context.Context, tenantID int64, ids []int64) (map[int64]string, error) {
+	if tenantID <= 0 {
+		return nil, errors.New("invalid tenant")
+	}
+	result := make(map[int64]string, len(ids))
+	for _, id := range ids {
+		result[id] = "用户 " + strconv.FormatInt(id, 10)
+	}
+	return result, nil
+}
+
+func TestProtectionAccessRequestBackfillsImmutableActorSnapshots(t *testing.T) {
+	db := openSecurityTestDB(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	reviewerID := int64(42)
+	row := models.ProtectionAccessRequest{
+		ID: "15a0191b-4773-4217-837c-44bfaf148bad", TenantID: 7,
+		AssessmentID: "92826a2d-5bb4-48c6-a632-09683cb247ca", AssessmentRevision: 1,
+		ConsumerOwner: managerProtectionOwner, Action: managerPreviewAction,
+		SubjectType: "user", SubjectID: "41", RequestedExpiresAt: now.Add(time.Hour),
+		Rationale: "历史申请", State: models.ProtectionAccessRequestStateApproved, Version: 2,
+		DecidedBy: &reviewerID, DecidedAt: &now, DecisionRationale: "复核通过",
+		CreatedAt: now, UpdatedAt: now,
+	}
+	if err := db.Create(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	requests := NewAccessRequestService(db, testAccessActorResolver)
+	if err := requests.BackfillActorSnapshots(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	var stored models.ProtectionAccessRequest
+	if err := db.First(&stored, "id = ?", row.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.SubjectDisplayName != "用户 41" || stored.DecidedByDisplayName != "用户 42" {
+		t.Fatalf("actor snapshots = %#v", stored)
+	}
+}
+
 func TestExpiredProtectionAccessRequestStopsPollingAndCanBeResubmitted(t *testing.T) {
 	db, enrollments, finding, _, _ := prepareReviewablePhoneFinding(t)
 	reviewed, err := NewAssessmentService(db, nil).ReviewFinding(context.Background(), 7, 21, finding.ID, models.FindingReviewRequest{Decision: models.FindingReviewDecisionConfirm, Rationale: "确认手机号字段"})
@@ -164,7 +205,7 @@ func TestExpiredProtectionAccessRequestStopsPollingAndCanBeResubmitted(t *testin
 		t.Fatal(err)
 	}
 	now := time.Now().UTC().Truncate(time.Second)
-	requests := NewAccessRequestService(db)
+	requests := NewAccessRequestService(db, testAccessActorResolver)
 	requests.now = func() time.Time { return now }
 	first, err := requests.Create(context.Background(), 7, 41, models.CreateProtectionAccessRequest{
 		AssessmentID: reviewed.Assessment.ID, ConsumerOwner: managerProtectionOwner, Action: managerPreviewAction,
@@ -208,7 +249,7 @@ func TestProtectionAccessRequestRejectsUnsupportedOutletAndDuplicatePending(t *t
 		t.Fatal(err)
 	}
 	now := time.Now().UTC().Truncate(time.Second)
-	requests := NewAccessRequestService(db)
+	requests := NewAccessRequestService(db, testAccessActorResolver)
 	requests.now = func() time.Time { return now }
 	request := models.CreateProtectionAccessRequest{AssessmentID: reviewed.Assessment.ID, ConsumerOwner: managerProtectionOwner, Action: managerPreviewAction, RequestedExpiresAt: now.Add(time.Hour), Rationale: "核验"}
 	if _, err := requests.Create(context.Background(), 7, 41, request); err != nil {
@@ -230,7 +271,7 @@ func TestProtectionAccessRequestApprovalCannotExtendRequestedDeadlineAndRejectDo
 		t.Fatal(err)
 	}
 	now := time.Now().UTC().Truncate(time.Second)
-	requests := NewAccessRequestService(db)
+	requests := NewAccessRequestService(db, testAccessActorResolver)
 	requests.now = func() time.Time { return now }
 	created, err := requests.Create(context.Background(), 7, 41, models.CreateProtectionAccessRequest{
 		AssessmentID: reviewed.Assessment.ID, ConsumerOwner: managerProtectionOwner, Action: managerPreviewAction,

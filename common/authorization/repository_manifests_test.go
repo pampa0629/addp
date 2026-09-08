@@ -13,8 +13,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 437 {
-		t.Fatalf("descriptor count = %d, want 437", len(descriptors))
+	if len(descriptors) != 443 {
+		t.Fatalf("descriptor count = %d, want 443", len(descriptors))
 	}
 	if descriptors[0].Key != "agent.configuration.read" || descriptors[len(descriptors)-1].Key != "workbench.resource_grant.revoke" {
 		t.Fatalf("descriptor boundary keys = %q, %q", descriptors[0].Key, descriptors[len(descriptors)-1].Key)
@@ -33,7 +33,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	assertRepositoryRolePermissions(t, roles, "platform.duckdb_runtime", []string{"system.runtime_registry.update"})
 	assertRepositoryRolePermissions(t, roles, "tenant.agent_runtime", []string{"inference.runtime.execute", "system.engine_descriptor.read"})
 	assertRepositoryRolePermissions(t, roles, "tenant.copilot_runtime", []string{"develop.task.read", "inference.runtime.execute", "system.engine_descriptor.read"})
-	assertRepositoryRolePermissions(t, roles, "tenant.security_runtime", []string{"meta.security_facts.read"})
+	assertRepositoryRolePermissions(t, roles, "tenant.security_runtime", []string{"iam.tenant_membership.read", "meta.security_facts.read"})
 	assertRepositoryRolePrincipalTypes(t, roles, "tenant.data_architect", []string{"user"})
 	assertRepositoryRoleScopes(t, roles, "tenant.data_architect", []string{"tenant"})
 	assertRepositoryRolePermissions(t, roles, "tenant.data_architect", []string{

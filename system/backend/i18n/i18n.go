@@ -36,6 +36,7 @@ const (
 	MsgRoleAssignmentPrincipalTypeNotAllowed = "system.iam.role_assignment_principal_type_not_allowed"
 	MsgOrganizationVersionConflict           = "system.iam.organization_version_conflict"
 	MsgOAuthClientVersionConflict            = "system.iam.oauth_client_version_conflict"
+	MsgServiceAccountVersionConflict         = "system.iam.service_account_version_conflict"
 
 	MsgLogNotFound          = "system.log.not_found"
 	MsgExportFailed         = "system.log.export_failed"

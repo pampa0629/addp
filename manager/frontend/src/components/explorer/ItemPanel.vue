@@ -389,6 +389,7 @@ import { getCatalogEntryBySourceIdentity } from '@/api/catalog'
 import { useAuthStore } from '@/store/auth'
 import { buildSecurityProtectionRoute } from '@/utils/securityNavigation'
 import { normalizeMetaItemMetadata } from '@/utils/itemMetadata'
+import { hasAccessGrantActivated } from '@/utils/plaintextAccess'
 import { LineageViewer, createLineageApi, normalizeLineageGraph } from '@addp/common-frontend/graph'
 
 const DataProfilePanel = defineAsyncComponent(() => import('@/components/explorer/DataProfilePanel.vue'))
@@ -526,7 +527,7 @@ const scheduleAccessStatusPoll = () => {
 const loadAccessTargets = async () => {
   const fingerprint = itemFingerprint.value
   const requestSeq = ++accessTargetsRequestSeq
-  const previousActiveCount = activeAccessCount.value
+  const previousTargets = accessTargets.value
   clearAccessStatusPoll()
   if (!fingerprint || !canRequestPlaintext.value) {
     accessTargets.value = []
@@ -536,8 +537,10 @@ const loadAccessTargets = async () => {
   try {
     const response = await client.get('/security/protection-access-request-targets', { params: { target_identity: fingerprint, consumer_owner: 'manager', action: 'preview' } })
     if (requestSeq === accessTargetsRequestSeq) {
-      accessTargets.value = Array.isArray(response?.data) ? response.data : []
-      if (previousActiveCount === 0 && activeAccessCount.value > 0) {
+      const nextTargets = Array.isArray(response?.data) ? response.data : []
+      const accessGrantActivated = hasAccessGrantActivated(previousTargets, nextTargets)
+      accessTargets.value = nextTargets
+      if (accessGrantActivated) {
         ElMessage.success(t('manager.explorer.plaintextAccess.activated'))
         emit('refresh-preview')
       }

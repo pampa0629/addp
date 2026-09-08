@@ -88,10 +88,13 @@ func (s *DocumentService) ListCandidateGroups(documentID, tenantID int64, opts D
 		}
 		filtered = append(filtered, group)
 	}
+	if err := attachCandidateGroupComparisons(s, document, filtered); err != nil {
+		return nil, err
+	}
+	for _, group := range filtered {
+		incrementCandidateGroupComparisonCount(&response.ComparisonCounts, group.Candidate.Comparison)
+	}
 	if opts.ComparisonResult != "" {
-		if err := attachCandidateGroupComparisons(s, document, filtered); err != nil {
-			return nil, err
-		}
 		matched := make([]models.DocumentExtractionCandidateGroup, 0, len(filtered))
 		for _, group := range filtered {
 			if group.Candidate.Comparison != nil && group.Candidate.Comparison.Result == opts.ComparisonResult {
@@ -108,11 +111,6 @@ func (s *DocumentService) ListCandidateGroups(documentID, tenantID int64, opts D
 	start := min((page-1)*pageSize, len(filtered))
 	end := min(start+pageSize, len(filtered))
 	response.Data = filtered[start:end]
-	if opts.ComparisonResult == "" {
-		if err := attachCandidateGroupComparisons(s, document, response.Data); err != nil {
-			return nil, err
-		}
-	}
 	return response, nil
 }
 
@@ -320,6 +318,22 @@ func incrementCandidateGroupStatusCount(counts *models.DocumentExtractionCandida
 		counts.Rejected++
 	case models.CandidateGroupStateFormalized:
 		counts.Formalized++
+	}
+}
+
+func incrementCandidateGroupComparisonCount(counts *models.DocumentExtractionCandidateGroupComparisonCounts, comparison *models.DocumentExtractionCandidateComparison) {
+	if comparison == nil {
+		return
+	}
+	switch comparison.Result {
+	case models.CandidateComparisonNew:
+		counts.New++
+	case models.CandidateComparisonExact:
+		counts.Exact++
+	case models.CandidateComparisonContentConflict:
+		counts.ContentConflict++
+	case models.CandidateComparisonScopeConflict:
+		counts.ScopeConflict++
 	}
 }
 

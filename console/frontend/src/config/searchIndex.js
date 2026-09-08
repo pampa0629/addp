@@ -75,14 +75,6 @@ export const SEARCH_INDEX = [
   { labelKey: 'console.menus.inference.models', module: 'inference', route: '/inference/settings/models', keywords: ['AI', '推理', '模型', 'Provider', 'Deployment', 'Profile', 'inference', 'model'] },
   // 系统管理
   {
-    labelKey: 'console.menus.system.iamIdentity', module: 'system', route: '/system/iam/identity',
-    access: [
-      { context: 'platform', permissions: ['iam.user.read', 'iam.platform_identity_change.read'] },
-      { context: 'tenant', permissions: ['iam.tenant_membership.read', 'iam.tenant_invitation.read'] },
-    ],
-    keywords: ['身份', '用户', '成员', '服务账号', '租户邀请', '身份变更', 'identity', 'user', 'membership', 'invitation']
-  },
-  {
     labelKey: 'console.menus.system.iamOrganization', module: 'system', route: '/system/iam/organization',
     access: [
       { context: 'platform', permissions: ['platform.tenant.read'] },
@@ -91,14 +83,27 @@ export const SEARCH_INDEX = [
     keywords: ['租户', '组织', '部门', '项目组', 'tenant', 'organization', 'department', 'project group']
   },
   {
-    labelKey: 'console.menus.system.iamAccess', module: 'system', route: '/system/iam/access',
-    access: [{ context: 'tenant', permissions: ['iam.tenant_role.read', 'iam.tenant_role_assignment.read', 'iam.oauth_client.read'] }],
-    keywords: ['角色', '权限', '角色分配', 'OAuth 客户端', 'role', 'permission', 'assignment', 'oauth client', 'access']
+    labelKey: 'console.menus.system.iamAccounts', module: 'system', route: '/system/iam/accounts',
+    access: [{ context: 'any' }],
+    keywords: ['账号', '用户', '邀请', '账号安全', '身份验证器', 'account', 'user', 'invitation', 'MFA']
+  },
+  {
+    labelKey: 'console.menus.system.iamRoles', module: 'system', route: '/system/iam/roles',
+    access: [{ context: 'tenant', permissions: ['iam.tenant_role.read', 'iam.tenant_role_assignment.read'] }],
+    keywords: ['角色', '权限', '角色分配', 'role', 'permission', 'assignment']
+  },
+  {
+    labelKey: 'console.menus.system.iamApplicationAccess', module: 'system', route: '/system/iam/application-access',
+    access: [{ context: 'tenant', permissions: ['iam.service_account.read', 'iam.oauth_client.read'] }],
+    keywords: ['应用接入', '服务账号', '外部应用', 'OAuth', 'Client Credentials', 'service account', 'oauth client']
   },
   {
     labelKey: 'console.menus.system.iamSecurity', module: 'system', route: '/system/iam/security',
-    access: [{ context: 'any' }],
-    keywords: ['账号安全', '身份验证器', '安全策略', '审计', 'MFA', 'security', 'authenticator', 'audit']
+    access: [
+      { context: 'platform', permissions: ['iam.security_policy.read', 'audit.event.read'] },
+      { context: 'tenant', permissions: ['audit.tenant_event.read'] },
+    ],
+    keywords: ['安全策略', '审计', 'security', 'audit']
   },
   { labelKey: 'console.menus.system.modules',      module: 'system', route: '/system/modules',      permissions: ['platform.module.read'], keywords: ['模块管理', '服务注册', '运行实例', 'worker', 'module', 'runtime', 'registry'] },
   { labelKey: 'console.menus.system.engines',      module: 'system', route: '/system/engines',      keywords: ['引擎管理', '数据引擎', '引擎配置', 'engine', 'database'] },

@@ -511,7 +511,7 @@ func (h *DocumentHandler) ExtractCandidates(c *gin.Context) {
 }
 
 // @Summary 获取标准提炼候选聚合视图 | List standard extraction candidate groups
-// @Description 按确定性语义指纹聚合文档历次提炼候选；total 为筛选后总数，status_counts 为不受筛选影响的文档全量状态计数；返回代表候选、全部出现记录及动态标准比对，原始候选和证据不会被改写 | Groups candidates from all document extractions by deterministic semantic fingerprint; total is the filtered count while status_counts covers all groups regardless of filters; returns the representative candidate, all occurrences, and dynamic standard comparison without rewriting raw candidates or evidence
+// @Description 按确定性语义指纹聚合文档历次提炼候选；total 为全部筛选后的总数，status_counts 为不受筛选影响的文档全量状态计数，comparison_counts 为应用状态和类型筛选但不应用比对结果筛选的实时分面计数；返回代表候选、全部出现记录及动态标准比对，原始候选和证据不会被改写 | Groups candidates from all document extractions by deterministic semantic fingerprint; total is the count after all filters, status_counts covers all document groups regardless of filters, and comparison_counts is a live facet count after state and type filters but before the comparison-result filter; returns the representative candidate, all occurrences, and dynamic standard comparison without rewriting raw candidates or evidence
 // @Tags Standard
 // @Produce json
 // @Param state query string false "聚合状态 | Group state" Enums(pending,retained,rejected,formalized)

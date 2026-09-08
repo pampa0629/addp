@@ -108,7 +108,7 @@ manager/
 - CAD 基础预览只允许 `data_type=cad + layout=single + format=dwg|dxf`，统一通过受控 `storage-stream` 把源文件交给 `frontend_renderer=cad`。浏览器收到源文件即具备保存其内容的能力，因此该入口必须使用 `manager.data_item.read`，且产品权限语义不得声称“可预览但不可取得源文件”。
 - 分块三维模型瓦片任务使用 `task_type=model3d_tiles_generation`，结果统一进入 `manager.model3d_tiles`；`target_format=3d_tiles` 调用 `osgb_scene_to_3dtiles`，`target_format=s3m` 调用 `osgb_scene_to_s3m`。不得恢复写业务存储并触发 Meta scan 的旧 Manager 路径。
 - Manager 受管快显任务的语义身份统一为 `tenant_id + item_fingerprint + artifact_variant`。重复创建必须复用原任务 ID，重复执行必须新建 execution 并刷新同一当前结果；`item_id`、`locator`、`source_engine_id` 只作执行与回查事实。派生变体、并发唯一约束和业务派生任务的例外见 `manager/docs/快显实现规范.md`。
-- Raster COG 与 Model3D Tiles 是来源驱动的只读任务定义：只允许 Data Explorer 的 Quick View action 按源事实派生，不提供直接创建或更新任务配置的 API。管理页任务 Tab 的 `task_id` 打开只读任务定义，结果 Tab 的 `task_id` 只筛选该任务结果。
+- Manager 受管快显是来源驱动的只读任务定义：既可从 Data Explorer 当前 item 的 Quick View action 发起，也可从统一生成任务页选择一个源 item 后发起；两处必须调用同一 owner 领域动作，由后端按源事实派生任务定义，不提供允许前端提交私有任务配置的创建或更新 API。管理页的 `task_id` 只打开只读任务定义。
 - Manager 受管当前结果任务统一不启动自身定时调度，但允许 Orchestrator 定时 Pipeline 调用。周期性刷新由用户在 Step 参数中显式配置 `existing_result_action=overwrite`；Manager 不得按 scheduled 来源自动补充已有结果动作。Embedding 的逐 item 调度语义独立保留。
 - COG 生成只能由 Manager 任务执行器派生 GDAL 参数后，通过 `WorkflowRuntimeProvider.InvokeOperator("tiff_to_cog")` direct 调用 GeoPython Workflow；不得退回构造单节点 workflow 或直接拼接 GeoPython Workflow 私有 HTTP。
 - 瓦片缓存生成任务不得隐式创建 3857 物化视图、空间索引或执行准备动作；需要性能准备时必须显式执行矢量物化视图任务。
@@ -123,7 +123,7 @@ manager/
 - Manager 前端遵守 `docs/spec/addp前端路由与可恢复状态规范.md`，模块内公开导航统一通过 `src/utils/moduleNavigation.js`，不得直接形成 iframe 私有历史。
 - Data Explorer 使用 ResourceLocator 表达当前资源身份，默认 `preview` Tab 从 URL 省略，非默认稳定 Tab 使用 `tab` query。
 - 生成任务是唯一管理页，固定提供“快显生成”和“空间数据生成”两个分类；分类、任务类型筛选和当前 `task_id` 必须保留在 canonical query 中，规范化使用 `replace`，跨页面进入资源或任务使用 `push`。
-- Raster COG 与 Model3D Tiles 的创建入口固定为 Data Explorer；TaskProvider `edit_url` 指向统一派生任务页并携带 `category`、`task_type` 和 `task_id`。
+- Manager 受管快显的 TaskProvider `create_url` 指向统一生成任务页并携带 `category=managed_quick_view`、`task_type` 和 `create=1`；页面只选择源 item，不选择目标。`edit_url` 指向同一页面并携带 `category`、`task_type` 和 `task_id`，任务定义保持只读。
 
 ## 开发与验证
 

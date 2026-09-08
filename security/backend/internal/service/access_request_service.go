@@ -18,14 +18,83 @@ import (
 )
 
 type AccessRequestService struct {
-	db  *gorm.DB
-	now func() time.Time
+	db            *gorm.DB
+	now           func() time.Time
+	resolveActors AccessActorResolver
 }
+
+type AccessActorResolver func(context.Context, int64, []int64) (map[int64]string, error)
 
 var ErrProtectionAccessRequestExpired = errors.New("protection access request expired")
 
-func NewAccessRequestService(db *gorm.DB) *AccessRequestService {
-	return &AccessRequestService{db: db, now: time.Now}
+func NewAccessRequestService(db *gorm.DB, resolveActors AccessActorResolver) *AccessRequestService {
+	return &AccessRequestService{db: db, now: time.Now, resolveActors: resolveActors}
+}
+
+func (s *AccessRequestService) BackfillActorSnapshots(ctx context.Context) error {
+	var rows []models.ProtectionAccessRequest
+	if err := s.db.WithContext(ctx).
+		Where("subject_display_name = '' OR (decided_by IS NOT NULL AND decided_by_display_name = '')").
+		Order("tenant_id ASC, created_at ASC, id ASC").
+		Find(&rows).Error; err != nil {
+		return err
+	}
+	rowsByTenant := make(map[int64][]models.ProtectionAccessRequest)
+	for _, row := range rows {
+		rowsByTenant[row.TenantID] = append(rowsByTenant[row.TenantID], row)
+	}
+	for tenantID, tenantRows := range rowsByTenant {
+		ids := make([]int64, 0, len(tenantRows)*2)
+		seen := make(map[int64]struct{}, len(tenantRows)*2)
+		for _, row := range tenantRows {
+			if row.SubjectType != "user" {
+				return errors.New("protection access request contains an unsupported actor type")
+			}
+			subjectID, err := strconv.ParseInt(row.SubjectID, 10, 64)
+			if err != nil || subjectID <= 0 {
+				return errors.New("protection access request contains an invalid actor ID")
+			}
+			if _, ok := seen[subjectID]; !ok {
+				seen[subjectID] = struct{}{}
+				ids = append(ids, subjectID)
+			}
+			if row.DecidedBy != nil {
+				if _, ok := seen[*row.DecidedBy]; !ok {
+					seen[*row.DecidedBy] = struct{}{}
+					ids = append(ids, *row.DecidedBy)
+				}
+			}
+		}
+		displayNames := make(map[int64]string, len(ids))
+		for start := 0; start < len(ids); start += 200 {
+			end := min(start+200, len(ids))
+			resolved, err := s.resolveActorDisplayNames(ctx, tenantID, ids[start:end])
+			if err != nil {
+				return err
+			}
+			for id, displayName := range resolved {
+				displayNames[id] = displayName
+			}
+		}
+		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			for _, row := range tenantRows {
+				subjectID, _ := strconv.ParseInt(row.SubjectID, 10, 64)
+				updates := map[string]any{"subject_display_name": displayNames[subjectID]}
+				if row.DecidedBy != nil {
+					updates["decided_by_display_name"] = displayNames[*row.DecidedBy]
+				}
+				if err := tx.Model(&models.ProtectionAccessRequest{}).
+					Where("tenant_id = ? AND id = ?", tenantID, row.ID).
+					Updates(updates).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *AccessRequestService) Targets(ctx context.Context, tenantID, userID int64, targetIdentity, owner, action string) (*models.ProtectionAccessTargetListResponse, error) {
@@ -117,8 +186,12 @@ func (s *AccessRequestService) Create(ctx context.Context, tenantID, userID int6
 	if tenantID <= 0 || userID <= 0 || uuid.Validate(request.AssessmentID) != nil || request.ConsumerOwner != managerProtectionOwner || request.Action != managerPreviewAction || !validExemptionDeadline(now, request.RequestedExpiresAt) || !validPolicyRationale(request.Rationale) {
 		return nil, commonapi.ErrBadRequest
 	}
+	actors, err := s.resolveActorDisplayNames(ctx, tenantID, []int64{userID})
+	if err != nil {
+		return nil, err
+	}
 	var response *models.ProtectionAccessRequestResponse
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		assessment, current, enrollment, _, err := policyDependencies(tx, tenantID, request.AssessmentID)
 		if err != nil {
 			return err
@@ -141,7 +214,7 @@ func (s *AccessRequestService) Create(ctx context.Context, tenantID, userID int6
 		}
 		row := models.ProtectionAccessRequest{
 			ID: uuid.NewString(), TenantID: tenantID, AssessmentID: assessment.ID, AssessmentRevision: current.Revision,
-			ConsumerOwner: request.ConsumerOwner, Action: request.Action, SubjectType: "user", SubjectID: userIDString(userID),
+			ConsumerOwner: request.ConsumerOwner, Action: request.Action, SubjectType: "user", SubjectID: userIDString(userID), SubjectDisplayName: actors[userID],
 			RequestedExpiresAt: request.RequestedExpiresAt, Rationale: request.Rationale,
 			State: models.ProtectionAccessRequestStatePending, Version: 1, CreatedAt: now, UpdatedAt: now,
 		}
@@ -226,8 +299,12 @@ func (s *AccessRequestService) Decide(ctx context.Context, tenantID, reviewerID 
 	if tenantID <= 0 || reviewerID <= 0 || uuid.Validate(requestID) != nil || request.Version <= 0 || (request.Decision != "approve" && request.Decision != "reject") || !validPolicyRationale(request.Rationale) {
 		return nil, commonapi.ErrBadRequest
 	}
+	actors, err := s.resolveActorDisplayNames(ctx, tenantID, []int64{reviewerID})
+	if err != nil {
+		return nil, err
+	}
 	var response *models.ProtectionAccessRequestResponse
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var row models.ProtectionAccessRequest
 		query := tx
 		if tx.Dialector.Name() == "postgres" {
@@ -265,7 +342,7 @@ func (s *AccessRequestService) Decide(ctx context.Context, tenantID, reviewerID 
 		}
 		update := tx.Model(&row).Where("version = ?", request.Version).Updates(map[string]any{
 			"state": state, "version": gorm.Expr("version + 1"), "decided_by": reviewerID, "decided_at": now,
-			"decision_rationale": request.Rationale, "updated_at": now,
+			"decided_by_display_name": actors[reviewerID], "decision_rationale": request.Rationale, "updated_at": now,
 		})
 		if update.Error != nil {
 			return update.Error
@@ -273,7 +350,7 @@ func (s *AccessRequestService) Decide(ctx context.Context, tenantID, reviewerID 
 		if update.RowsAffected != 1 {
 			return repository.ErrVersionConflict
 		}
-		row.State, row.Version, row.DecidedBy, row.DecidedAt, row.DecisionRationale, row.UpdatedAt = state, row.Version+1, &reviewerID, &now, request.Rationale, now
+		row.State, row.Version, row.DecidedBy, row.DecidedByDisplayName, row.DecidedAt, row.DecisionRationale, row.UpdatedAt = state, row.Version+1, &reviewerID, actors[reviewerID], &now, request.Rationale, now
 		if state == models.ProtectionAccessRequestStateApproved {
 			if err := compileProtectionProjections(tx, enrollment, enrollmentSnapshotHash(enrollment, current.SourceSnapshotHash), now, []string{managerProtectionOwner}); err != nil {
 				return err
@@ -347,12 +424,33 @@ func (s *AccessRequestService) loadResponse(db *gorm.DB, row models.ProtectionAc
 }
 
 func accessRequestResponse(row models.ProtectionAccessRequest, component dataprotection.Component, targetFullName, exemptionID string) *models.ProtectionAccessRequestResponse {
-	return &models.ProtectionAccessRequestResponse{
+	response := &models.ProtectionAccessRequestResponse{
 		ProtectionAccessRequest: row,
+		Requester:               models.ProtectionAccessActor{Type: row.SubjectType, ID: row.SubjectID, DisplayName: row.SubjectDisplayName},
 		Component:               component,
 		TargetFullName:          targetFullName,
 		ExemptionID:             exemptionID,
 	}
+	if row.DecidedBy != nil {
+		response.Reviewer = &models.ProtectionAccessActor{Type: "user", ID: userIDString(*row.DecidedBy), DisplayName: row.DecidedByDisplayName}
+	}
+	return response
+}
+
+func (s *AccessRequestService) resolveActorDisplayNames(ctx context.Context, tenantID int64, ids []int64) (map[int64]string, error) {
+	if s == nil || s.resolveActors == nil || tenantID <= 0 || len(ids) == 0 {
+		return nil, errors.New("protection access actor resolver is required")
+	}
+	resolved, err := s.resolveActors(ctx, tenantID, ids)
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range ids {
+		if strings.TrimSpace(resolved[id]) == "" {
+			return nil, errors.New("protection access actor identity is unavailable")
+		}
+	}
+	return resolved, nil
 }
 
 func userIDString(userID int64) string {

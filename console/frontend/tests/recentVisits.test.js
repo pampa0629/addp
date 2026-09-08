@@ -39,22 +39,22 @@ describe('Console recent visits', () => {
   it('records fixed routes nested under a business category', () => {
     expect(buildRecentVisitEntry({
       module: 'system',
-      fullPath: '/system/iam/access?tab=role-assignments',
+      fullPath: '/system/iam/roles?tab=role-assignments',
       menuConfig: {
         label: 'console.menus.system.label',
         items: [{
           index: '/system/iam',
           label: 'console.menus.system.iam',
           children: [{
-            index: '/system/iam/access',
-            label: 'console.menus.system.iamAccess'
+            index: '/system/iam/roles',
+            label: 'console.menus.system.iamRoles'
           }]
         }]
       }
     })).toMatchObject({
-      key: '/system/iam/access',
-      route: '/system/iam/access?tab=role-assignments',
-      label: 'console.menus.system.iamAccess'
+      key: '/system/iam/roles',
+      route: '/system/iam/roles?tab=role-assignments',
+      label: 'console.menus.system.iamRoles'
     })
   })
 

@@ -99,3 +99,19 @@ func TestNormalizeDocumentCandidateGroupOptions(t *testing.T) {
 		}
 	}
 }
+
+func TestIncrementCandidateGroupComparisonCount(t *testing.T) {
+	counts := models.DocumentExtractionCandidateGroupComparisonCounts{}
+	for _, result := range []string{
+		models.CandidateComparisonNew,
+		models.CandidateComparisonExact,
+		models.CandidateComparisonContentConflict,
+		models.CandidateComparisonScopeConflict,
+	} {
+		incrementCandidateGroupComparisonCount(&counts, &models.DocumentExtractionCandidateComparison{Result: result})
+	}
+	incrementCandidateGroupComparisonCount(&counts, nil)
+	if counts.New != 1 || counts.Exact != 1 || counts.ContentConflict != 1 || counts.ScopeConflict != 1 {
+		t.Fatalf("counts=%+v", counts)
+	}
+}

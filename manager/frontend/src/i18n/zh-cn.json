@@ -43,10 +43,33 @@
 	  "columns": { "name": "任务名称", "type": "任务类型", "engine": "来源引擎", "enabled": "启用", "status": "最近状态", "updatedAt": "更新时间", "actions": "操作" },
 	  "status": { "never": "未执行", "pending": "等待中", "running": "运行中", "success": "成功", "failed": "失败", "cancelled": "已取消" },
 	  "allTypes": "全部任务类型", "total": "共 {total} 条", "enabled": "启用", "disabled": "停用",
-	  "refresh": "刷新", "create": "从数据探查创建", "createSpatial": "新建空间任务", "detail": "详情", "source": "源数据", "viewSource": "在资源树中查看", "edit": "编辑", "execute": "执行", "monitor": "监控", "delete": "删除",
+	  "refresh": "刷新", "createQuickView": "新建快显任务", "createSpatial": "新建空间任务", "detail": "详情", "source": "源数据", "viewSource": "在资源树中查看", "edit": "编辑", "execute": "执行", "monitor": "监控", "delete": "删除",
 	  "sourceItem": "源数据项", "sourceFormat": "源格式", "sourceSize": "源大小", "targetEngine": "目标引擎", "resultName": "生成结果", "lastRunAt": "最近执行时间", "taskDescription": "说明", "empty": "暂无生成任务",
 	  "loadFailed": "加载生成任务失败", "executeQueued": "任务已进入执行队列", "executeFailed": "任务执行失败",
 	  "deleteConfirm": "确认删除该任务定义？已发布的业务数据不会随任务删除。", "deleteSuccess": "任务已删除", "deleteFailed": "删除任务失败"
+	},
+	"quickViewCreator": {
+	  "title": "新建快显任务",
+	  "hint": "选择一个源数据项，系统会根据源数据能力给出可生成的快显类型；快显材料由 Manager 管理，无需选择目标位置。",
+	  "source": "源数据项",
+	  "generationType": "快显类型",
+	  "generate": "生成并执行",
+	  "unsupported": "当前源数据不支持所选快显类型，或已有可直接使用的当前结果。",
+	  "detectFailed": "读取源数据快显能力失败",
+	  "queued": "快显任务已创建并进入执行队列",
+	  "ready": "快显结果已存在，可以直接使用",
+	  "generateFailed": "创建快显任务失败",
+	  "actions": {
+		"vectorMaterializedView": "矢量物化视图",
+		"vectorTileCache": "矢量瓦片缓存",
+		"rasterCOG": "栅格 COG",
+		"model3DGLB": "三维模型 GLB",
+		"model3D3DTiles": "三维模型 3D Tiles",
+		"model3DS3M": "三维模型 S3M",
+		"gaussianSplat": "高斯 KSplat",
+		"pointCloudCOPC": "点云 COPC",
+		"pptxPDF": "演示文稿 PDF"
+	  }
 	},
 	"embeddingConfiguration": {
 	  "title": "向量化配置",

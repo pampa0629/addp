@@ -239,7 +239,7 @@ tenant + assessment_id + consumer_owner + action + subject_type + subject_id
 8. 编译优先级固定为 `ProtectionBaseline -> ProtectionPolicy 收紧 -> ProtectionExemption 主体级限时授权`。授权只改变内容保护，不改变 Owner 资源授权；结构无法证明、查询血缘不明或 Owner 授权拒绝时仍然 fail closed。
 9. 申请审批、Exemption revision 和 ProtectionProjection 新修订必须在同一事务内完成，并调用唯一编译器。Owner 只消费投影，不读取申请或授权表、不保存审批依据，也不增加本地放行接口。
 10. ProtectionAccessRequest 的生命周期状态固定为 `pending|approved|rejected|expired`。`pending` 只表示仍在申请截止时间内等待决策；服务端时间达到 `requested_expires_at` 后，所有查询必须立即将其视为 `expired`，不再算作待审批，不得依赖浏览器时钟推导。
-11. 审批工作区只有一个分页 API，通过必填 `scope=pending|history` 选择视图：`pending` 只返回未过期待审批申请，`history` 返回已批准、已驳回和已过期申请。历史保留申请人、审批人、申请截止时间、决策时间、业务依据和审批意见；已过期而未决策的记录没有审批人和审批意见。
+11. 审批工作区只有一个分页 API，通过必填 `scope=pending|history` 选择视图：`pending` 只返回未过期待审批申请，`history` 返回已批准、已驳回和已过期申请。历史保留申请人、审批人、申请截止时间、决策时间、业务依据和审批意见；已过期而未决策的记录没有审批人和审批意见。申请人和审批人对外统一返回 `{type,id,display_name}` 语义对象：ID 始终是权威审计身份，`display_name` 由 Security 在申请或决策当时通过 System 的受信批量用户引用接口校验并固化，后续用户改名不改写历史。审批列表不得由前端逐行解析身份，也不得在读路径实时依赖 System。
 12. Manager 只消费 Security 返回的有效申请状态。只有 `pending` 触发状态轮询并阻止重复申请；`expired` 和 `rejected` 必须明确展示结果、停止轮询并允许重新申请。新申请创建时，Security 在同一事务中先将同一绑定键上已超时的 `pending` 记录固化为 `expired`，再校验和创建唯一新申请。
 
 ### 7.3 保护定义变化的影响传播

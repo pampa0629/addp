@@ -144,13 +144,21 @@ type DocumentExtractionCandidateGroupStatusCounts struct {
 	Formalized int64 `json:"formalized"`
 }
 
+type DocumentExtractionCandidateGroupComparisonCounts struct {
+	New             int64 `json:"new"`
+	Exact           int64 `json:"exact"`
+	ContentConflict int64 `json:"content_conflict"`
+	ScopeConflict   int64 `json:"scope_conflict"`
+}
+
 type PaginatedDocumentExtractionCandidateGroupResponse struct {
-	Data         []DocumentExtractionCandidateGroup           `json:"data"`
-	Total        int64                                        `json:"total"`
-	Page         int                                          `json:"page"`
-	PageSize     int                                          `json:"page_size"`
-	TotalPages   int                                          `json:"total_pages"`
-	StatusCounts DocumentExtractionCandidateGroupStatusCounts `json:"status_counts"`
+	Data             []DocumentExtractionCandidateGroup               `json:"data"`
+	Total            int64                                            `json:"total"`
+	Page             int                                              `json:"page"`
+	PageSize         int                                              `json:"page_size"`
+	TotalPages       int                                              `json:"total_pages"`
+	StatusCounts     DocumentExtractionCandidateGroupStatusCounts     `json:"status_counts"`
+	ComparisonCounts DocumentExtractionCandidateGroupComparisonCounts `json:"comparison_counts"`
 }
 
 // DocumentCandidateFormalization 是 retained 候选到受治理标准修订的一对一不可变事实。

@@ -70,7 +70,8 @@ import PlatformTenantsPanel from '../components/iam/PlatformTenantsPanel.vue'
 import PlatformUsersPanel from '../components/iam/PlatformUsersPanel.vue'
 import ProjectGroupsPanel from '../components/iam/ProjectGroupsPanel.vue'
 import TenantInvitationsPanel from '../components/iam/TenantInvitationsPanel.vue'
-import TenantMembershipsPanel from '../components/iam/TenantMembershipsPanel.vue'
+import TenantServiceAccountsPanel from '../components/iam/TenantServiceAccountsPanel.vue'
+import TenantUserAccountsPanel from '../components/iam/TenantUserAccountsPanel.vue'
 import TenantRoleAssignmentsPanel from '../components/iam/TenantRoleAssignmentsPanel.vue'
 import TenantRolesPanel from '../components/iam/TenantRolesPanel.vue'
 import SecurityPolicy from './SecurityPolicy.vue'
@@ -98,7 +99,7 @@ const availableTabs = computed(() => availableIAMTabs(pageKey.value, contextType
 const panelComponents = {
   users: markRaw(PlatformUsersPanel),
   'identity-changes': markRaw(IdentityChangesPanel),
-  memberships: markRaw(TenantMembershipsPanel),
+  'user-accounts': markRaw(TenantUserAccountsPanel),
   invitations: markRaw(TenantInvitationsPanel),
   tenants: markRaw(PlatformTenantsPanel),
   departments: markRaw(DepartmentsPanel),
@@ -106,6 +107,7 @@ const panelComponents = {
   roles: markRaw(TenantRolesPanel),
   'role-assignments': markRaw(TenantRoleAssignmentsPanel),
   'oauth-clients': markRaw(OAuthClientsPanel),
+  'service-accounts': markRaw(TenantServiceAccountsPanel),
   'account-security': markRaw(MFASecurityPanel),
   'security-policy': markRaw(SecurityPolicy),
   audit: markRaw(AuditPanel)
@@ -114,7 +116,7 @@ const panelComponents = {
 const panelIcons = {
   users: User,
   'identity-changes': DocumentChecked,
-  memberships: User,
+  'user-accounts': User,
   invitations: Tickets,
   tenants: OfficeBuilding,
   departments: Connection,
@@ -122,6 +124,7 @@ const panelIcons = {
   roles: DocumentChecked,
   'role-assignments': UserFilled,
   'oauth-clients': Key,
+  'service-accounts': Connection,
   'account-security': Lock,
   'security-policy': Setting,
   audit: Bell
@@ -151,7 +154,7 @@ async function selectTab(tab) {
 }
 
 async function openRoleAssignments() {
-  await navigateSystemRoute(router, { name: 'IAMAccess', query: { tab: 'role-assignments' } })
+  await navigateSystemRoute(router, { name: 'IAMRoles', query: { tab: 'role-assignments' } })
 }
 
 watch([availableTabs, () => route.query, pageKey], restoreTabFromRoute, { immediate: true })

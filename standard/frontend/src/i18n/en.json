@@ -458,6 +458,7 @@
       "allCandidateStates": "All Candidate States",
       "allCandidateTypes": "All Candidate Types",
       "allComparisonResults": "All Comparison Results",
+      "comparisonFacetLabel": "Comparison Result",
       "candidateGroupTotal": "{count} candidate groups",
       "candidateOccurrenceCount": "Seen {count} times",
       "candidateFirstSeen": "First",

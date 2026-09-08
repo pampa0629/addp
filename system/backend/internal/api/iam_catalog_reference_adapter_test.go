@@ -110,6 +110,35 @@ func TestIAMCatalogReferenceHandlerStandardGovernanceUsersAreStandardOnly(t *tes
 	}
 }
 
+func TestIAMCatalogReferenceHandlerSecurityAccessActorsAreSecurityOnly(t *testing.T) {
+	service := &fakeIAMCatalogReferenceService{results: []iam.CatalogReferenceResolution{{
+		SubjectType: iam.CatalogSubjectTypeUser, ID: 9, Found: true, Referenceable: true, Name: "Alice", Status: "active",
+	}}}
+	handler, err := NewIAMCatalogReferenceHandler(service)
+	if err != nil {
+		t.Fatal(err)
+	}
+	router := gin.New()
+	router.POST("/security-actors", withCatalogReferenceAuthContext(t, "addp-security"), handler.ResolveSecurityAccessActors)
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/security-actors", strings.NewReader(`{"references":[{"subject_type":"user","id":"9"}]}`))
+	request.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || service.clientID != "addp-security" || len(service.references) != 1 || service.references[0].SubjectType != iam.CatalogSubjectTypeUser {
+		t.Fatalf("status=%d service=%#v body=%s", response.Code, service, response.Body.String())
+	}
+
+	rejected := gin.New()
+	rejected.POST("/security-actors", withCatalogReferenceAuthContext(t, "addp-standard"), handler.ResolveSecurityAccessActors)
+	response = httptest.NewRecorder()
+	request = httptest.NewRequest(http.MethodPost, "/security-actors", strings.NewReader(`{"references":[{"subject_type":"user","id":"9"}]}`))
+	request.Header.Set("Content-Type", "application/json")
+	rejected.ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("standard client status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 type fakeIAMCatalogReferenceService struct {
 	called               bool
 	tenantID             int64
@@ -123,6 +152,18 @@ type fakeIAMCatalogReferenceService struct {
 	candidatePage        int
 	candidateResults     []iam.CatalogReferenceCandidate
 	candidateTotal       int64
+}
+
+func (s *fakeIAMCatalogReferenceService) ResolveStandardGovernanceUsers(
+	ctx context.Context, tenantID int64, clientID string, references []iam.CatalogReference,
+) ([]iam.CatalogReferenceResolution, error) {
+	return s.Resolve(ctx, tenantID, clientID, references)
+}
+
+func (s *fakeIAMCatalogReferenceService) ResolveSecurityAccessActors(
+	ctx context.Context, tenantID int64, clientID string, references []iam.CatalogReference,
+) ([]iam.CatalogReferenceResolution, error) {
+	return s.Resolve(ctx, tenantID, clientID, references)
 }
 
 func (s *fakeIAMCatalogReferenceService) Resolve(

@@ -103,6 +103,15 @@ export const iamAPI = {
     suspend: (clientId, version, reason) => client.post(`/system/tenant/oauth_clients/${clientId}/suspend`, { version, reason }),
     restore: (clientId, version, reason) => client.post(`/system/tenant/oauth_clients/${clientId}/restore`, { version, reason })
   },
+  serviceAccounts: {
+    list: (params) => list('/system/tenant/service_accounts', params),
+    get: (id) => client.get(`/system/tenant/service_accounts/${id}`),
+    create: (data) => client.post('/system/tenant/service_accounts', data),
+    update: (id, data) => client.put(`/system/tenant/service_accounts/${id}`, data),
+    suspend: (id, version, reason) => client.post(`/system/tenant/service_accounts/${id}/suspend`, { version, reason }),
+    restore: (id, version, reason) => client.post(`/system/tenant/service_accounts/${id}/restore`, { version, reason }),
+    rotateSecret: (id, version, reason) => client.post(`/system/tenant/service_accounts/${id}/rotate-secret`, { version, reason })
+  },
   invitations: {
     list: (params) => list('/system/tenant/invitations', params),
     create: (email) => client.post('/system/tenant/invitations', { email }),

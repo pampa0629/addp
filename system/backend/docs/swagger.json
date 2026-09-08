@@ -5801,6 +5801,67 @@
                 ]
             }
         },
+        "/runtime/security-access-actors/resolve": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅 addp-security Tenant Service Principal 可按当前 Tenant 解析 User Principal 的最小显示摘要，用于固化原值访问申请人和审批人快照 | Only the addp-security tenant service principal may resolve minimal User Principal display summaries in the current tenant for immutable plaintext access requester and reviewer snapshots",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Runtime Security Access Actors"
+                ],
+                "summary": "精确批量解析 Security 原值访问行为人 | Resolve Security plaintext access actors in batch",
+                "parameters": [
+                    {
+                        "description": "User 引用集合，最多 200 个 | User references, up to 200",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMCatalogReferenceBatchRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMCatalogReferenceBatchResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.tenant_membership.read"
+                ]
+            }
+        },
         "/runtime/standard-governance-users/candidates": {
             "get": {
                 "security": [
@@ -8905,6 +8966,380 @@
                 ]
             }
         },
+        "/tenant/service_accounts": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "分页查询当前 Tenant 拥有的服务账号；不包含平台内置 Runtime 服务主体 | List tenant-owned service accounts, excluding platform runtime identities",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户服务账号 | Tenant Service Accounts"
+                ],
+                "summary": "查询服务账号 | List service accounts",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "页码 | Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "名称、说明或 Client ID | Name, description, or client ID",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "状态：active/suspended | Status: active/suspended",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "data": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/definitions/internal_api.IAMServiceAccountResponse"
+                                    }
+                                },
+                                "page": {
+                                    "type": "integer"
+                                },
+                                "page_size": {
+                                    "type": "integer"
+                                },
+                                "total": {
+                                    "type": "integer"
+                                },
+                                "total_pages": {
+                                    "type": "integer"
+                                }
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.service_account.read"
+                ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "原子创建服务主体、租户成员关系和 Client Credentials 凭据；Client Secret 仅在本响应展示一次 | Atomically create the identity, membership, and credential; the client secret is returned once",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户服务账号 | Tenant Service Accounts"
+                ],
+                "summary": "创建服务账号 | Create service account",
+                "parameters": [
+                    {
+                        "description": "服务账号定义 | Service account definition",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMCreateServiceAccountRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMServiceAccountCredentialResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.service_account.create"
+                ]
+            }
+        },
+        "/tenant/service_accounts/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户服务账号 | Tenant Service Accounts"
+                ],
+                "summary": "查询服务账号详情 | Get service account",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "服务账号 ID | Service account ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMServiceAccountResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.service_account.read"
+                ]
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "完整更新名称与说明；Client ID 不可修改 | Fully update name and description; client ID is immutable",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户服务账号 | Tenant Service Accounts"
+                ],
+                "summary": "更新服务账号 | Update service account",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "服务账号 ID | Service account ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "定义与版本 | Definition and version",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMUpdateServiceAccountRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMServiceAccountResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.service_account.update"
+                ]
+            }
+        },
+        "/tenant/service_accounts/{id}/restore": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户服务账号 | Tenant Service Accounts"
+                ],
+                "summary": "恢复服务账号 | Restore service account",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "服务账号 ID | Service account ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "版本与原因 | Version and reason",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMVersionedLifecycleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMServiceAccountResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.service_account.restore"
+                ]
+            }
+        },
+        "/tenant/service_accounts/{id}/rotate-secret": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "旧 Client Secret 立即失效，新 Secret 仅在本响应展示一次 | Invalidate the old client secret and return the new secret once",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户服务账号 | Tenant Service Accounts"
+                ],
+                "summary": "轮换服务账号密钥 | Rotate service account secret",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "服务账号 ID | Service account ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "版本与原因 | Version and reason",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMVersionedLifecycleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMServiceAccountCredentialResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.service_credential.update"
+                ]
+            }
+        },
+        "/tenant/service_accounts/{id}/suspend": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "原子暂停服务主体、成员关系和 Client Credentials 凭据，并使已签发令牌失效 | Atomically suspend the identity, membership, and credential and invalidate issued tokens",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户服务账号 | Tenant Service Accounts"
+                ],
+                "summary": "暂停服务账号 | Suspend service account",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "服务账号 ID | Service account ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "版本与原因 | Version and reason",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMVersionedLifecycleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMServiceAccountResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.service_account.suspend"
+                ]
+            }
+        },
         "/users/me": {
             "get": {
                 "security": [
@@ -11625,6 +12060,17 @@
                 }
             }
         },
+        "internal_api.IAMCreateServiceAccountRequest": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_api.IAMCreateTenantInvitationRequest": {
             "type": "object",
             "properties": {
@@ -12655,6 +13101,91 @@
                 }
             }
         },
+        "internal_api.IAMServiceAccountCredentialResponse": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "type": "string"
+                },
+                "client_secret": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by_principal_id": {
+                    "type": "string"
+                },
+                "credential_status": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_iam.OAuthClientStatus"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "membership_id": {
+                    "type": "string"
+                },
+                "membership_status": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_iam.TenantMembershipStatus"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_iam.PrincipalStatus"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.IAMServiceAccountResponse": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by_principal_id": {
+                    "type": "string"
+                },
+                "credential_status": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_iam.OAuthClientStatus"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "membership_id": {
+                    "type": "string"
+                },
+                "membership_status": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_iam.TenantMembershipStatus"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/github_com_addp_system_internal_iam.PrincipalStatus"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_api.IAMTaskAuthorizationSubjectRequest": {
             "type": "object",
             "properties": {
@@ -13144,6 +13675,20 @@
                 },
                 "tenant_invitation_ttl_hours": {
                     "type": "integer"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.IAMUpdateServiceAccountRequest": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
                 },
                 "version": {
                     "type": "integer"

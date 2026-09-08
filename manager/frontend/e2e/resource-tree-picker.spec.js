@@ -20,6 +20,7 @@ const FARMLAND_LOCATOR = 'addp://engine/11/path/public/farmland?type=table&item_
 const RIVERS_LOCATOR = 'addp://engine/11/path/public/rivers?type=table&item_id=1102'
 const DOC_LOCATOR = 'addp://engine/12/path/doc?type=directory&node_id=220'
 const README_LOCATOR = 'addp://engine/12/path/doc/README.md?type=file&item_id=1201'
+const SLIDES_LOCATOR = 'addp://engine/12/path/doc/slides.pptx?type=file&item_id=1202'
 
 test('selects a spatial table through the shared picker and applies capability facts', async ({ page }) => {
   const backend = await installMockBackend(page)
@@ -45,6 +46,40 @@ test('restores the source table from the unified spatial task create URL', async
   await expect(dialog).toBeVisible()
   await expect(dialog.locator('.selection-summary')).toContainText('public.farmland')
   await expect.poll(() => backend.capabilityLocators).toContain(FARMLAND_LOCATOR)
+})
+
+test('creates a managed quick-view task from one selected source without a target', async ({ page }) => {
+  const backend = await installMockBackend(page)
+  await page.goto('/derived-tasks?category=managed_quick_view&task_type=vector_tile_cache_generation&create=1')
+
+  const dialog = page.getByRole('dialog', { name: '新建快显任务' })
+  await expect(dialog).toBeVisible()
+  await chooseEngine(page, dialog, POSTGRES_ENGINE.name)
+  await expandTreeNode(dialog, 'public')
+  await treeNodeContent(dialog, 'farmland').click()
+
+  await expect(dialog.getByText('矢量瓦片缓存', { exact: true })).toBeVisible()
+  await expect(dialog.getByText('目标', { exact: true })).toHaveCount(0)
+  await dialog.getByRole('button', { name: '生成并执行' }).click()
+
+  await expect.poll(() => backend.quickViewActions).toEqual([{
+    locator: FARMLAND_LOCATOR,
+    action: 'generate_vector_tile_cache'
+  }])
+})
+
+test('creates a PPTX PDF quick-view task through its owner action', async ({ page }) => {
+  const backend = await installMockBackend(page)
+  await page.goto('/derived-tasks?category=managed_quick_view&task_type=pptx_pdf_generation&create=1')
+
+  const dialog = page.getByRole('dialog', { name: '新建快显任务' })
+  await chooseEngine(page, dialog, NFS_ENGINE.name)
+  await expandTreeNode(dialog, 'doc')
+  await treeNodeContent(dialog, 'slides.pptx').click()
+
+  await expect(dialog.getByText('演示文稿 PDF', { exact: true })).toBeVisible()
+  await dialog.getByRole('button', { name: '生成并执行' }).click()
+  await expect.poll(() => backend.pptxRequests).toEqual([{ locator: SLIDES_LOCATOR, retry: true }])
 })
 
 test('keeps directory and file vectorization semantics in the shared picker', async ({ page }) => {
@@ -97,7 +132,7 @@ function escapeRegExp(value) {
 }
 
 async function installMockBackend(page) {
-  const state = { capabilityLocators: [] }
+  const state = { capabilityLocators: [], quickViewActions: [], pptxRequests: [] }
 
   await page.addInitScript(() => {
     localStorage.setItem('addp-lang', 'zh-cn')
@@ -147,6 +182,23 @@ async function installMockBackend(page) {
       return fulfillJSON(route, {
         children: locator === DOC_LOCATOR ? nfsTree().children[0].children : nfsTree().children
       })
+    }
+    if (path === '/api/v1/manager/quick-view/actions' && request.method() === 'POST') {
+      state.quickViewActions.push(request.postDataJSON())
+      return fulfillJSON(route, {
+        task_type: 'vector_tile_cache_generation',
+        task_id: 51,
+        execution_id: 'quick-view-execution-1',
+        status: 'pending'
+      }, 202)
+    }
+    if (path === '/api/v1/manager/pptx_pdf/preview' && request.method() === 'POST') {
+      state.pptxRequests.push(request.postDataJSON())
+      return fulfillJSON(route, {
+        status: 'pending',
+        task_id: 52,
+        execution_id: 'pptx-execution-1'
+      }, 202)
     }
     if (path === '/api/v1/manager/quick-view/capability') {
       const locator = url.searchParams.get('locator') || ''
@@ -235,6 +287,14 @@ function nfsTree() {
         path: 'doc/README.md',
         children: [],
         metadata: { item_id: 1201, data_type: 'document', format: 'markdown' }
+      }, {
+        id: SLIDES_LOCATOR,
+        locator: SLIDES_LOCATOR,
+        label: 'slides.pptx',
+        type: 'file',
+        path: 'doc/slides.pptx',
+        children: [],
+        metadata: { item_id: 1202, data_type: 'document', format: 'pptx' }
       }]
     }]
   }
@@ -262,7 +322,8 @@ function quickViewCapability(locator) {
       zoom_recommendation: { min_zoom: 4, max_zoom: 12, tile_budget: 10000 }
     },
     optimization: { available: true, status: 'ready' },
-    realtime_tile: { performance_mode: 'native_mvt' }
+    realtime_tile: { performance_mode: 'native_mvt' },
+    available_actions: ['generate_vector_tile_cache']
   }
 }
 

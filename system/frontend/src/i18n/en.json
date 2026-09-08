@@ -101,9 +101,10 @@
         "tenant": "Tenant context #{id}"
       },
       "pages": {
-        "identity": "Identity & Membership",
-        "organization": "Tenants & Organization",
-        "access": "Roles & Access",
+        "organization": "Organization",
+        "accounts": "Accounts",
+        "roles": "Roles",
+        "applicationAccess": "Application Access",
         "security": "Security & Audit"
       },
       "tabs": {
@@ -111,14 +112,14 @@
         "securityPolicy": "IAM Security Policy",
         "audit": "Audit Log",
         "tenants": "Tenant Lifecycle",
-        "users": "User Lifecycle",
+        "userAccounts": "User Accounts",
         "identityChanges": "Identity Change Review",
-        "memberships": "Memberships",
         "departments": "Departments",
         "projectGroups": "Project Groups",
-        "oauthClients": "External OAuth Clients",
-        "invitations": "Invitations",
-        "roles": "Tenant Roles",
+        "serviceAccounts": "Service Accounts",
+        "externalApplications": "External Applications (OAuth)",
+        "userInvitations": "User Invitations",
+        "roleDefinitions": "Role Definitions",
         "roleAssignments": "Role Assignments"
       },
       "common": {
@@ -230,12 +231,12 @@
         "expiresAt": "Expires At",
         "joinedAt": "Joined At",
         "member": "Member",
-        "memberType": "Member Type",
+        "memberType": "Account Type",
         "currentAccount": "Current Account",
         "source": "Source"
       },
       "memberSelect": {
-        "type": "Member Type",
+        "type": "Account Type",
         "groups": {
           "current": "Current Account",
           "user": "User Accounts",
@@ -301,6 +302,22 @@
         "loading": "Loading OAuth clients",
         "loaded": "Loaded {count} OAuth clients"
       },
+      "serviceAccounts": {
+        "introTitle": "Create dedicated machine identities for automation and external workloads",
+        "introDescription": "Service accounts do not represent people. Each account has its own Client ID and Client Secret and uses Client Credentials for short-lived access within this tenant.",
+        "create": "Create Service Account",
+        "edit": "Edit Service Account",
+        "search": "Search name, description, or Client ID",
+        "clientId": "Client ID",
+        "clientSecret": "Client Secret",
+        "rotateSecret": "Rotate Secret",
+        "rotateHint": "The old Client Secret and issued tokens become invalid immediately. Enter the reason for rotation.",
+        "credentialTitle": "Save Service Account Credentials",
+        "secretOnce": "The Client Secret is shown only once. Copy it now and store it in a secure secret manager.",
+        "clientIdCopied": "Client ID copied",
+        "secretCopied": "Client Secret copied",
+        "copyFailed": "Copy failed. Copy the value manually."
+      },
       "invitations": {
         "create": "Create Invitation",
         "created": "Invitation Created",
@@ -362,8 +379,8 @@
         "endTime": "End Time",
         "eventName": "Event Name",
         "module": "Module",
-        "member": "Actor Member",
-        "actorType": "Actor Type",
+        "member": "Actor Account",
+        "actorType": "Account Type",
         "principal": "Actor Principal",
         "request": "HTTP Request",
         "requestId": "Request ID",

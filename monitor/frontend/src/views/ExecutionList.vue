@@ -238,6 +238,7 @@
             :data="executionTreeData"
             :props="executionTreeProps"
             node-key="node_key"
+            :current-node-key="currentExecution?.execution_id"
             default-expand-all
             highlight-current
             @node-click="handleExecutionTreeNodeClick"
@@ -562,6 +563,7 @@ const detailLoading = ref(false)
 const detailLoadFailed = ref(false)
 const currentExecution = ref(null)
 const metadataExpandedPanels = ref([])
+const pageVisible = ref(!document.hidden)
 useConsolePageDescriptor(router, 'monitor', {
   title: computed(() => t('monitor.execution.recentDetailTitle')),
   subject: computed(() => currentExecution.value?.source_task_name || currentExecution.value?.execution_id || ''),
@@ -638,6 +640,14 @@ const hasRunningListExecution = computed(() => (
 
 const hasRunningOpenedExecution = computed(() => (
   detailDialogVisible.value && isRunningStatus(executionTreeData.value[0]?.execution?.status)
+))
+
+const shouldRefreshExecutionList = computed(() => (
+  pageVisible.value && hasRunningListExecution.value
+))
+
+const shouldRefreshOpenedExecution = computed(() => (
+  pageVisible.value && hasRunningOpenedExecution.value
 ))
 
 const detailStatusMessage = computed(() => {
@@ -1039,8 +1049,9 @@ function openExecutionTree(data) {
   if (!tree) {
     throw new Error('invalid execution tree response')
   }
+  const selectedExecutionID = currentExecution.value?.execution_id
   executionTreeData.value = [tree]
-  currentExecution.value = tree.execution
+  currentExecution.value = findExecutionTreeNodeByID(tree, selectedExecutionID)?.execution || tree.execution
   openedExecutionID.value = tree.execution.execution_id
   detailLoadFailed.value = false
   detailDialogVisible.value = true
@@ -1057,6 +1068,16 @@ function normalizeExecutionTree(node) {
       .map(normalizeExecutionTree)
       .filter(Boolean)
   }
+}
+
+function findExecutionTreeNodeByID(node, executionID) {
+  if (!node || !hasValue(executionID)) return null
+  if (node.execution?.execution_id === executionID) return node
+  for (const child of node.children || []) {
+    const matchedNode = findExecutionTreeNodeByID(child, executionID)
+    if (matchedNode) return matchedNode
+  }
+  return null
 }
 
 function handleExecutionTreeNodeClick(node) {
@@ -1121,7 +1142,7 @@ function leaseStateTagType(state) {
 }
 
 async function refreshOpenedExecution() {
-  if (!hasRunningOpenedExecution.value || !hasValue(openedExecutionID.value) || executionDetailRefreshInFlight) {
+  if (!shouldRefreshOpenedExecution.value || !hasValue(openedExecutionID.value) || executionDetailRefreshInFlight) {
     return
   }
   const executionID = openedExecutionID.value
@@ -1138,7 +1159,7 @@ async function refreshOpenedExecution() {
 }
 
 async function refreshRunningExecutionList() {
-  if (!hasRunningListExecution.value || executionListRefreshInFlight) {
+  if (!shouldRefreshExecutionList.value || executionListRefreshInFlight) {
     return
   }
   executionListRefreshInFlight = true
@@ -1171,6 +1192,13 @@ function stopExecutionDetailAutoRefresh() {
     window.clearInterval(executionDetailRefreshTimer)
     executionDetailRefreshTimer = null
   }
+}
+
+function handleVisibilityChange() {
+  pageVisible.value = !document.hidden
+  if (!pageVisible.value) return
+  if (hasRunningListExecution.value) void refreshRunningExecutionList()
+  if (hasRunningOpenedExecution.value) void refreshOpenedExecution()
 }
 
 function getTriggerText(triggerType) {
@@ -1231,6 +1259,8 @@ function continuousHealthText(health) {
 
 // 初始化
 onMounted(async () => {
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+  pageVisible.value = !document.hidden
   applyQueryFilters(route.query)
   const taskProvidersPromise = loadTaskProviders()
   const executionsPromise = loadExecutions()
@@ -1241,6 +1271,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   stopExecutionListAutoRefresh()
   stopExecutionDetailAutoRefresh()
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
 })
 
 watch(
@@ -1269,7 +1300,7 @@ watch(
   }
 )
 
-watch(hasRunningListExecution, running => {
+watch(shouldRefreshExecutionList, running => {
   if (running) {
     startExecutionListAutoRefresh()
   } else {
@@ -1277,7 +1308,7 @@ watch(hasRunningListExecution, running => {
   }
 })
 
-watch(hasRunningOpenedExecution, running => {
+watch(shouldRefreshOpenedExecution, running => {
   if (running) {
     startExecutionDetailAutoRefresh()
   } else {

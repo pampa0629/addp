@@ -95,7 +95,7 @@ Develop TaskProvider 的 canonical 前端路由为：
 | Asset | 资产分类、申请与反馈 Tab | `category_id`、`tab` |
 | Catalog | 已治理资源 / 资源盘点筛选、分页与条目详情 | `view`、`search`、`entry_type`、`source_status`、`governance_status`、`visibility`、`primary_domain_id`、`accountable_department_id`、`source_engine_id`、`page`、`page_size`；默认 `view=governance` 省略，资源盘点显式使用 `view=inventory`；详情 path `/entries/:id`，以 `tab=curation\|professional\|relations` 恢复非默认子视图，并以同名列表 query 保留返回上下文 |
 | Meta | 扫描引擎与扫描任务入口 | `engine_id`、`task_id`；二者并存时任务所属引擎为事实源 |
-| System | IAM 分类页面、页内对象与审计筛选 | path `/iam/identity\|organization\|access\|security`、`tab`、`event_name`、`result`、`risk_level`、`module_name`、`principal_id`、`principal_type`、`entity_type`、`entity_id`、`page` |
+| System | IAM 分类页面、页内对象与审计筛选 | path `/iam/organization\|accounts\|roles\|application-access\|security`、`tab`、`event_name`、`result`、`risk_level`、`module_name`、`principal_id`、`principal_type`、`entity_type`、`entity_id`、`page` |
 | Standard | 标准文档详情 | path `/documents/:id`；列表筛选 query 原样保留 |
 | Portal | 搜索、资产分类分页与资产详情 | `keyword`、`type_id`、`page`、path `/portal/categories/:id`、`/portal/assets/:id` |
 | Agent | 当前会话 | path `/sessions/:session_id`，Console 公开 URL 为 `/agent/sessions/:session_id` |

@@ -338,13 +338,6 @@ export const SIDEBAR_MENUS = {
         index: '/system/iam', icon: Lock, label: 'console.menus.system.iam',
         children: [
           {
-            index: '/system/iam/identity', icon: Tickets, label: 'console.menus.system.iamIdentity',
-            access: [
-              { context: 'platform', permissions: ['iam.user.read', 'iam.platform_identity_change.read'] },
-              { context: 'tenant', permissions: ['iam.tenant_membership.read', 'iam.tenant_invitation.read'] },
-            ],
-          },
-          {
             index: '/system/iam/organization', icon: Connection, label: 'console.menus.system.iamOrganization',
             access: [
               { context: 'platform', permissions: ['platform.tenant.read'] },
@@ -352,14 +345,25 @@ export const SIDEBAR_MENUS = {
             ],
           },
           {
-            index: '/system/iam/access', icon: Key, label: 'console.menus.system.iamAccess',
+            index: '/system/iam/accounts', icon: Tickets, label: 'console.menus.system.iamAccounts',
+            access: [{ context: 'any' }],
+          },
+          {
+            index: '/system/iam/roles', icon: Key, label: 'console.menus.system.iamRoles',
             access: [
-              { context: 'tenant', permissions: ['iam.tenant_role.read', 'iam.tenant_role_assignment.read', 'iam.oauth_client.read'] },
+              { context: 'tenant', permissions: ['iam.tenant_role.read', 'iam.tenant_role_assignment.read'] },
             ],
           },
           {
+            index: '/system/iam/application-access', icon: Link, label: 'console.menus.system.iamApplicationAccess',
+            access: [{ context: 'tenant', permissions: ['iam.service_account.read', 'iam.oauth_client.read'] }],
+          },
+          {
             index: '/system/iam/security', icon: Lock, label: 'console.menus.system.iamSecurity',
-            access: [{ context: 'any' }],
+            access: [
+              { context: 'platform', permissions: ['iam.security_policy.read', 'audit.event.read'] },
+              { context: 'tenant', permissions: ['audit.tenant_event.read'] },
+            ],
           },
         ],
       },

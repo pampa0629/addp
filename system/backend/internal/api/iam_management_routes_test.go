@@ -62,6 +62,8 @@ func TestRegisterIAMManagementRoutes(t *testing.T) {
 		"GET /api/v1/system/tenant/role_assignments",
 		"GET /api/v1/system/tenant/role_permissions",
 		"GET /api/v1/system/tenant/roles",
+		"GET /api/v1/system/tenant/service_accounts",
+		"GET /api/v1/system/tenant/service_accounts/:id",
 		"GET /api/v1/system/tenant/invitations",
 		"GET /api/v1/system/tenant/invitations/:id",
 		"GET /api/v1/system/tenant/project_groups",
@@ -100,6 +102,10 @@ func TestRegisterIAMManagementRoutes(t *testing.T) {
 		"POST /api/v1/system/tenant/role_assignments",
 		"POST /api/v1/system/tenant/role_assignments/:id/revoke",
 		"POST /api/v1/system/tenant/roles",
+		"POST /api/v1/system/tenant/service_accounts",
+		"POST /api/v1/system/tenant/service_accounts/:id/restore",
+		"POST /api/v1/system/tenant/service_accounts/:id/rotate-secret",
+		"POST /api/v1/system/tenant/service_accounts/:id/suspend",
 		"DELETE /api/v1/system/tenant/roles/:id",
 		"PUT /api/v1/system/platform/tenants/:id",
 		"PUT /api/v1/system/platform/security_policy",
@@ -112,6 +118,7 @@ func TestRegisterIAMManagementRoutes(t *testing.T) {
 		"PUT /api/v1/system/tenant/project_groups/:id",
 		"PUT /api/v1/system/tenant/project_groups/:id/memberships/:membership_id",
 		"PUT /api/v1/system/tenant/roles/:id",
+		"PUT /api/v1/system/tenant/service_accounts/:id",
 	}
 	sort.Strings(want)
 	if len(actual) != len(want) {

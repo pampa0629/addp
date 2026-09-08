@@ -64,7 +64,7 @@ func (r *Repository) ListManagedOAuthClients(
 	status *OAuthClientStatus,
 ) ([]ManagedOAuthClient, int64, error) {
 	query := r.db.WithContext(ctx).Model(&managedOAuthClientRow{}).
-		Where("owner_scope = 'tenant' AND owner_tenant_id = ?", tenantID)
+		Where("owner_scope = 'tenant' AND owner_tenant_id = ? AND service_principal_id IS NULL", tenantID)
 	if normalized := strings.TrimSpace(search); normalized != "" {
 		pattern := "%" + normalized + "%"
 		query = query.Where("client_id ILIKE ? OR display_name ILIKE ?", pattern, pattern)
@@ -108,7 +108,7 @@ func (r *Repository) LockManagedOAuthClient(ctx context.Context, tenantID int64,
 
 func (r *Repository) getManagedOAuthClientRow(ctx context.Context, tenantID int64, clientID string, lock bool) (*managedOAuthClientRow, error) {
 	query := r.db.WithContext(ctx).
-		Where("owner_scope = 'tenant' AND owner_tenant_id = ? AND client_id = ?", tenantID, clientID)
+		Where("owner_scope = 'tenant' AND owner_tenant_id = ? AND service_principal_id IS NULL AND client_id = ?", tenantID, clientID)
 	if lock {
 		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
 	}
@@ -154,7 +154,7 @@ func (r *Repository) UpdateManagedOAuthClient(
 	redirectURIs []string,
 ) error {
 	result := r.db.WithContext(ctx).Table("system.oauth_clients").
-		Where("owner_scope = 'tenant' AND owner_tenant_id = ? AND client_id = ? AND version = ?", tenantID, clientID, version).
+		Where("owner_scope = 'tenant' AND owner_tenant_id = ? AND service_principal_id IS NULL AND client_id = ? AND version = ?", tenantID, clientID, version).
 		Updates(map[string]any{
 			"display_name":  displayName,
 			"redirect_uris": pq.StringArray(append([]string(nil), redirectURIs...)),
@@ -172,7 +172,7 @@ func (r *Repository) UpdateManagedOAuthClientStatus(
 	to OAuthClientStatus,
 ) error {
 	result := r.db.WithContext(ctx).Table("system.oauth_clients").
-		Where("owner_scope = 'tenant' AND owner_tenant_id = ? AND client_id = ? AND version = ? AND status = ?", tenantID, clientID, version, from).
+		Where("owner_scope = 'tenant' AND owner_tenant_id = ? AND service_principal_id IS NULL AND client_id = ? AND version = ? AND status = ?", tenantID, clientID, version, from).
 		Updates(map[string]any{"status": to, "version": gorm.Expr("version + 1")})
 	return r.managedOAuthClientWriteResult(ctx, result, tenantID, clientID)
 }
@@ -186,7 +186,7 @@ func (r *Repository) managedOAuthClientWriteResult(ctx context.Context, result *
 	}
 	var count int64
 	if err := r.db.WithContext(ctx).Table("system.oauth_clients").
-		Where("owner_scope = 'tenant' AND owner_tenant_id = ? AND client_id = ?", tenantID, clientID).
+		Where("owner_scope = 'tenant' AND owner_tenant_id = ? AND service_principal_id IS NULL AND client_id = ?", tenantID, clientID).
 		Count(&count).Error; err != nil {
 		return wrapRepositoryError(err)
 	}

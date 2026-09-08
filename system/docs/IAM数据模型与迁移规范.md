@@ -195,20 +195,23 @@ System 启动顺序固定为：
 
 ## 十一、管理端信息架构
 
-System IAM 管理端只按稳定业务大类提供四个左侧页面，不能把每个管理对象平铺为一个左侧入口，也不能继续把全部对象放入单个工作台：
+System IAM 管理端只按稳定业务大类提供五个左侧页面，不能把每个管理对象平铺为一个左侧入口，也不能继续把全部对象放入单个工作台：
 
 | 页面 | Platform Context | Tenant Context |
 | --- | --- | --- |
-| 身份与成员 `/iam/identity` | 用户、身份变更审批 | 成员关系、租户邀请 |
-| 租户与组织 `/iam/organization` | 租户 | 部门、项目组 |
-| 角色与访问 `/iam/access` | 无可用对象时隐藏 | 租户角色、角色分配、OAuth Client |
-| 安全与审计 `/iam/security` | 当前账号安全、IAM 安全策略、平台审计 | 当前账号安全、租户审计 |
+| 组织管理 `/iam/organization` | 租户管理 | 部门管理、项目组管理 |
+| 账号管理 `/iam/accounts` | 用户账号、身份变更审批、我的账号安全 | 用户账号、用户邀请、我的账号安全 |
+| 角色管理 `/iam/roles` | 无可用对象时隐藏 | 角色定义、角色分配 |
+| 应用接入 `/iam/application-access` | 无可用对象时隐藏 | 服务账号、外部应用（OAuth） |
+| 安全与审计 `/iam/security` | IAM 安全策略、平台审计 | 租户审计 |
 
 页面表达业务大类，页内 `tab` 表达该类中的具体管理对象或流程。Tab 必须继续按当前 AuthContext 类型和 Permission 过滤；某个页面在当前上下文中没有任何可用 Tab 时，Console 左侧入口和 System standalone 导航都必须隐藏，直接访问也不得绕过 Context 与 Permission Guard。
 
-“用户账号”和“服务账号”同属成员管理，但必须在成员关系、角色分配和租户审计的选择器或过滤器内分组并显式标明“成员类型”；OAuth Client 是用户委托访问的客户端软件，不是 User 或 Service Principal，只能归入“角色与访问”。
+“用户账号”和“服务账号”是两类不同管理对象，不能继续混排在同一个主列表中。用户账号页只展示 User Membership；服务账号页只展示当前 Tenant 拥有的 Service Account 聚合对象。角色分配和租户审计仍必须覆盖两类 Principal，并在选择器或过滤器内按“账号类型”分组并显式标记。
 
-Console 公开路由与 System standalone 路由使用同一模块内 path 和 query 契约。旧 `/iam?tab=...` 工作台和 `/settings/security-policy` 路径不保留重定向或兼容读取；审计唯一使用 `/iam/security?tab=audit`，具体 Platform 或 Tenant 范围只从当前 AuthContext 推导。
+服务账号由 Tenant-owned Service Principal、唯一 Tenant Membership 和一对一 Confidential OAuth Client 组成，三者生命周期由同一个服务账号 API 原子管理；内部 OAuth Client 不得出现在“外部应用（OAuth）”列表。外部应用是代表 User 执行 Authorization Code + PKCE 的 Public OAuth Client，不是账号，也不接受 Client Credentials。
+
+Console 公开路由与 System standalone 路由使用同一模块内 path 和 query 契约。旧 `/iam?tab=...` 工作台、`/iam/identity`、`/iam/access` 和 `/settings/security-policy` 路径不保留重定向或兼容读取；审计唯一使用 `/iam/security?tab=audit`，具体 Platform 或 Tenant 范围只从当前 AuthContext 推导。
 
 ## 十二、迁移演进
 

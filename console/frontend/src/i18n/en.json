@@ -463,9 +463,10 @@
       "system": {
         "label": "System",
         "iam": "Identity & Access",
-        "iamIdentity": "Identity & Membership",
-        "iamOrganization": "Tenants & Organization",
-        "iamAccess": "Roles & Access",
+        "iamOrganization": "Organization",
+        "iamAccounts": "Accounts",
+        "iamRoles": "Roles",
+        "iamApplicationAccess": "Application Access",
         "iamSecurity": "Security & Audit",
         "modules": "Modules",
         "engines": "Engines",

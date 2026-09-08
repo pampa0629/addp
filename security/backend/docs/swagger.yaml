@@ -345,6 +345,15 @@ definitions:
         example: "0"
         type: string
     type: object
+  github_com_addp_security_internal_models.ProtectionAccessActor:
+    properties:
+      display_name:
+        type: string
+      id:
+        type: string
+      type:
+        type: string
+    type: object
   github_com_addp_security_internal_models.ProtectionAccessRequestResponse:
     properties:
       action:
@@ -363,9 +372,6 @@ definitions:
         type: string
       decided_at:
         type: string
-      decided_by:
-        example: "0"
-        type: string
       decision_rationale:
         type: string
       decision_unavailable_reason:
@@ -378,11 +384,11 @@ definitions:
         type: string
       requested_expires_at:
         type: string
+      requester:
+        $ref: '#/definitions/github_com_addp_security_internal_models.ProtectionAccessActor'
+      reviewer:
+        $ref: '#/definitions/github_com_addp_security_internal_models.ProtectionAccessActor'
       state:
-        type: string
-      subject_id:
-        type: string
-      subject_type:
         type: string
       target_full_name:
         type: string
@@ -1196,9 +1202,6 @@ definitions:
         type: string
       decided_at:
         type: string
-      decided_by:
-        example: "0"
-        type: string
       decision_rationale:
         type: string
       decision_unavailable_reason:
@@ -1211,11 +1214,11 @@ definitions:
         type: string
       requested_expires_at:
         type: string
+      requester:
+        $ref: '#/definitions/github_com_addp_security_internal_models.ProtectionAccessActor'
+      reviewer:
+        $ref: '#/definitions/github_com_addp_security_internal_models.ProtectionAccessActor'
       state:
-        type: string
-      subject_id:
-        type: string
-      subject_type:
         type: string
       target_full_name:
         type: string

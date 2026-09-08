@@ -22,6 +22,7 @@ func TestNewIAMRuntimeComposesTargetServicesAndFosite(t *testing.T) {
 	}
 	if runtime.Repository == nil || runtime.TokenFamilyService == nil || runtime.IdentityService == nil ||
 		runtime.TenantMembershipService == nil || runtime.ContextSelectionService == nil ||
+		runtime.TenantServiceAccountService == nil || runtime.TenantServiceAccountHandler == nil ||
 		runtime.TenantInvitationService == nil ||
 		runtime.BrowserLoginService == nil || runtime.AuthContextService == nil ||
 		runtime.ContextOptionsService == nil || runtime.ContextSwitchService == nil ||

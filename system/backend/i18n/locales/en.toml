@@ -227,3 +227,6 @@ other = "The organization resource was changed by another user. Refresh and try 
 
 [system.iam.oauth_client_version_conflict]
 other = "The OAuth client was changed by another user. Refresh and try again"
+
+[system.iam.service_account_version_conflict]
+other = "The service account was changed by another user. Refresh and try again"

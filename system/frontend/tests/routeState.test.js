@@ -6,18 +6,18 @@ import {
 
 describe('System recoverable route state', () => {
   it('falls back to the first permitted IAM tab and removes unrelated query state', () => {
-    expect(resolveIAMCategoryRouteState(['memberships', 'invitations'], {
+    expect(resolveIAMCategoryRouteState(['user-accounts', 'invitations'], {
       tab: 'users',
       module_name: 'system'
     })).toEqual({
-      activeTab: 'memberships',
+      activeTab: 'user-accounts',
       query: {},
       changed: true
     })
   })
 
   it('keeps only canonical audit filters and omits page one', () => {
-    expect(resolveIAMCategoryRouteState(['account-security', 'audit'], {
+    expect(resolveIAMCategoryRouteState(['security-policy', 'audit'], {
       tab: 'audit',
       event_name: ' login ',
       result: 'succeeded',
@@ -55,7 +55,7 @@ describe('System recoverable route state', () => {
 
   it('preserves a valid audit page and reports an already canonical route', () => {
     const query = { tab: 'audit', risk_level: 'high', page: '3' }
-    expect(resolveIAMCategoryRouteState(['account-security', 'audit'], query)).toEqual({
+    expect(resolveIAMCategoryRouteState(['security-policy', 'audit'], query)).toEqual({
       activeTab: 'audit',
       query,
       changed: false

@@ -232,7 +232,7 @@ func TestProtectionExemptionAssessmentRevisionAgainstPostgres(t *testing.T) {
 	}
 
 	now := time.Now().UTC().Truncate(time.Second)
-	accessRequests := NewAccessRequestService(tx)
+	accessRequests := NewAccessRequestService(tx, testAccessActorResolver)
 	accessRequests.now = func() time.Time { return now }
 	created, err := accessRequests.Create(context.Background(), 7, 41, models.CreateProtectionAccessRequest{
 		AssessmentID: reviewed.Assessment.ID, ConsumerOwner: "manager", Action: managerPreviewAction,

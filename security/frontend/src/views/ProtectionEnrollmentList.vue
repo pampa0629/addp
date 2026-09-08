@@ -49,7 +49,14 @@
         <el-table-column :label="t('security.accessRequest.resourceField')" min-width="260">
           <template #default="{ row }"><strong>{{ row.target_full_name }}</strong><br><span>{{ row.component?.key }}</span></template>
         </el-table-column>
-        <el-table-column prop="subject_id" :label="t('security.accessRequest.requester')" width="130" />
+        <el-table-column :label="t('security.accessRequest.requester')" min-width="150">
+          <template #default="{ row }">
+            <div class="access-actor">
+              <strong>{{ row.requester?.display_name }}</strong>
+              <span>{{ releaseActorLabel(row.requester?.id) }}</span>
+            </div>
+          </template>
+        </el-table-column>
         <el-table-column :label="t('security.accessRequest.requestedUntil')" width="190">
           <template #default="{ row }">{{ formatDateTime(row.requested_expires_at) }}</template>
         </el-table-column>
@@ -58,7 +65,13 @@
           <template #default="{ row }"><el-tag size="small" :type="accessRequestStateType(row.state)">{{ t(`security.accessRequest.states.${row.state}`) }}</el-tag></template>
         </el-table-column>
         <el-table-column v-if="accessRequestScope === 'history'" :label="t('security.accessRequest.reviewer')" width="130">
-          <template #default="{ row }">{{ row.decided_by || t('security.common.notAvailable') }}</template>
+          <template #default="{ row }">
+            <div v-if="row.reviewer" class="access-actor">
+              <strong>{{ row.reviewer.display_name }}</strong>
+              <span>{{ releaseActorLabel(row.reviewer.id) }}</span>
+            </div>
+            <span v-else>{{ t('security.common.notAvailable') }}</span>
+          </template>
         </el-table-column>
         <el-table-column v-if="accessRequestScope === 'history'" :label="t('security.accessRequest.processedAt')" width="190">
           <template #default="{ row }">{{ formatDateTime(row.decided_at || row.requested_expires_at) }}</template>
@@ -2084,6 +2097,8 @@ onBeforeUnmount(() => {
 .access-review-card__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .access-review-card__header p { margin: 5px 0 0; color: var(--addp-text-secondary); font-size: 13px; }
 .access-review-card__scope { display: flex; align-items: center; gap: 10px; }
+.access-actor { display: flex; flex-direction: column; gap: 2px; }
+.access-actor span { color: var(--addp-text-secondary); font-size: 12px; }
 .list-scope-bar { display: flex; align-items: center; margin-bottom: 12px; }
 .enrollment-card { border-color: var(--addp-border-color); background: var(--addp-bg-primary); }
 .review-queue-intro { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 12px; padding: 13px 15px; border: 1px solid var(--addp-border-color); border-radius: 8px; background: var(--addp-bg-primary); }

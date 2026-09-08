@@ -11,7 +11,7 @@ import (
 func RegisterIAMManagementRoutes(api *gin.RouterGroup, runtime *IAMRuntime, moduleHandler *ModuleRegistryHandler) error {
 	if api == nil || runtime == nil || runtime.Authentication == nil || runtime.FirstPartyCredential == nil ||
 		runtime.PlatformTenantHandler == nil || runtime.PlatformUserHandler == nil ||
-		runtime.TenantMembershipHandler == nil || runtime.OrganizationHandler == nil || runtime.OAuthClientManagementHandler == nil || runtime.AuditHandler == nil ||
+		runtime.TenantMembershipHandler == nil || runtime.OrganizationHandler == nil || runtime.OAuthClientManagementHandler == nil || runtime.TenantServiceAccountHandler == nil || runtime.AuditHandler == nil ||
 		runtime.TenantInvitationHandler == nil ||
 		runtime.TenantRoleHandler == nil ||
 		runtime.PrivilegedIdentityChangeHandler == nil || runtime.SecurityPolicyHandler == nil || moduleHandler == nil {
@@ -179,6 +179,17 @@ func RegisterIAMManagementRoutes(api *gin.RouterGroup, runtime *IAMRuntime, modu
 	if err != nil {
 		return err
 	}
+	serviceAccountPermissions, err := permissionGuards(permission, []string{
+		systemauthorization.PermissionIamServiceAccountCreate,
+		systemauthorization.PermissionIamServiceAccountRead,
+		systemauthorization.PermissionIamServiceAccountRestore,
+		systemauthorization.PermissionIamServiceCredentialUpdate,
+		systemauthorization.PermissionIamServiceAccountSuspend,
+		systemauthorization.PermissionIamServiceAccountUpdate,
+	})
+	if err != nil {
+		return err
+	}
 	tenant := api.Group("/tenant")
 	tenant.Use(runtime.Authentication, runtime.FirstPartyCredential, tenantContext)
 	{
@@ -215,6 +226,16 @@ func RegisterIAMManagementRoutes(api *gin.RouterGroup, runtime *IAMRuntime, modu
 			oauthClients.PUT("/:client_id", oauthClientPermissions[systemauthorization.PermissionIamOauthClientUpdate], runtime.OAuthClientManagementHandler.Update)
 			oauthClients.POST("/:client_id/suspend", oauthClientPermissions[systemauthorization.PermissionIamOauthClientSuspend], runtime.OAuthClientManagementHandler.Suspend)
 			oauthClients.POST("/:client_id/restore", oauthClientPermissions[systemauthorization.PermissionIamOauthClientRestore], runtime.OAuthClientManagementHandler.Restore)
+		}
+		serviceAccounts := tenant.Group("/service_accounts")
+		{
+			serviceAccounts.GET("", serviceAccountPermissions[systemauthorization.PermissionIamServiceAccountRead], runtime.TenantServiceAccountHandler.List)
+			serviceAccounts.POST("", serviceAccountPermissions[systemauthorization.PermissionIamServiceAccountCreate], runtime.TenantServiceAccountHandler.Create)
+			serviceAccounts.GET("/:id", serviceAccountPermissions[systemauthorization.PermissionIamServiceAccountRead], runtime.TenantServiceAccountHandler.Get)
+			serviceAccounts.PUT("/:id", serviceAccountPermissions[systemauthorization.PermissionIamServiceAccountUpdate], runtime.TenantServiceAccountHandler.Update)
+			serviceAccounts.POST("/:id/suspend", serviceAccountPermissions[systemauthorization.PermissionIamServiceAccountSuspend], runtime.TenantServiceAccountHandler.Suspend)
+			serviceAccounts.POST("/:id/restore", serviceAccountPermissions[systemauthorization.PermissionIamServiceAccountRestore], runtime.TenantServiceAccountHandler.Restore)
+			serviceAccounts.POST("/:id/rotate-secret", serviceAccountPermissions[systemauthorization.PermissionIamServiceCredentialUpdate], runtime.TenantServiceAccountHandler.RotateSecret)
 		}
 		tenant.GET("/role_permissions", tenantRolePermissions["iam.tenant_role.read"], runtime.TenantRoleHandler.ListAssignablePermissions)
 		roles := tenant.Group("/roles")

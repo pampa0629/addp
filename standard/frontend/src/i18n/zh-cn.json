@@ -461,6 +461,7 @@
       "allCandidateStates": "全部候选状态",
       "allCandidateTypes": "全部候选类型",
       "allComparisonResults": "全部比对结果",
+      "comparisonFacetLabel": "比对结果",
       "candidateGroupTotal": "共 {count} 个候选组",
       "candidateOccurrenceCount": "出现 {count} 次",
       "candidateFirstSeen": "首次",

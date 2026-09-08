@@ -7,7 +7,7 @@
       </div>
       <div class="header-actions">
         <el-button @click="loadTasks"><el-icon><Refresh /></el-icon>{{ t('manager.derivedTasks.refresh') }}</el-button>
-        <el-button v-if="category === 'managed_quick_view'" type="primary" @click="openDataExplorer"><el-icon><Plus /></el-icon>{{ t('manager.derivedTasks.create') }}</el-button>
+        <el-button v-if="category === 'managed_quick_view'" type="primary" @click="beginQuickViewCreate"><el-icon><Plus /></el-icon>{{ t('manager.derivedTasks.createQuickView') }}</el-button>
         <el-dropdown v-else split-button type="primary" @click="beginCreate(defaultSpatialTaskType)" @command="beginCreate">
           <el-icon><Plus /></el-icon>{{ t('manager.derivedTasks.createSpatial') }}
           <template #dropdown>
@@ -91,6 +91,15 @@
       </el-descriptions>
     </el-drawer>
 
+    <QuickViewTaskCreator
+      v-if="editorType === 'managed_quick_view'"
+      v-model="editorVisible"
+      :task-type="taskType"
+      :locator="editorLocator"
+      @created="handleQuickViewCreated"
+      @closed="clearEditorRoute"
+    />
+
     <VectorTileSetTaskEditor
       v-if="editorType === 'vector_tile_set_generation'"
       v-model="editorVisible"
@@ -129,6 +138,7 @@ import {
   derivedTaskTargetEngineID
 } from '../utils/derivedTaskPresentation'
 import { navigateManagerRoute } from '../utils/moduleNavigation'
+import QuickViewTaskCreator from '../components/tasks/QuickViewTaskCreator.vue'
 import VectorTileSetTaskEditor from '../components/tasks/VectorTileSetTaskEditor.vue'
 import RasterMosaicTaskEditor from '../components/tasks/RasterMosaicTaskEditor.vue'
 
@@ -252,10 +262,17 @@ async function remove(row) {
   try { await deleteDerivedTask(row.task_type, row.id); ElMessage.success(t('manager.derivedTasks.deleteSuccess')); await loadTasks() }
   catch (error) { ElMessage.error(error?.response?.data?.error || t('manager.derivedTasks.deleteFailed')) }
 }
-function openDataExplorer() { navigateManagerRoute(router, { path: '/data-explorer' }) }
 function openSource(row) { navigateManagerRoute(router, { path: '/data-explorer', query: { locator: sourceLocator(row) } }, { history: 'push' }) }
 async function openMonitor(row) { await openMonitorExecution(row.last_execution_id) }
 function isSpatialBusinessTask(row) { return categoryForTaskType(row?.task_type) === 'spatial_business' }
+async function beginQuickViewCreate() {
+  category.value = 'managed_quick_view'
+  editorType.value = 'managed_quick_view'
+  editorLocator.value = String(route.query.locator || '')
+  editingTask.value = null
+  editorVisible.value = true
+  await syncRoute({ create: '1', ...(editorLocator.value ? { locator: editorLocator.value } : {}) }, 'push')
+}
 async function beginCreate(type) {
   category.value = 'spatial_business'
   taskType.value = type
@@ -280,13 +297,21 @@ async function clearTaskDetailRoute() {
 async function clearEditorRoute() {
   editingTask.value = null
   editorLocator.value = ''
+  editorType.value = ''
   if (!route.query.create && !route.query.locator) return
   await syncRoute()
 }
 async function handleEditorSaved() { await loadTasks() }
+async function handleQuickViewCreated(created) {
+  if (created?.taskType) taskType.value = created.taskType
+  page.value = 1
+  await loadTasks()
+}
 function openEditorFromRoute() {
-  if (route.query.create !== '1' || categoryForTaskType(taskType.value) !== 'spatial_business') return
-  editorType.value = taskType.value
+  if (route.query.create !== '1') return
+  if (category.value === 'managed_quick_view') editorType.value = 'managed_quick_view'
+  else if (categoryForTaskType(taskType.value) === 'spatial_business') editorType.value = taskType.value
+  else return
   editorLocator.value = typeof route.query.locator === 'string' ? route.query.locator : ''
   editingTask.value = null
   editorVisible.value = true

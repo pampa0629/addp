@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -11,8 +12,22 @@ import (
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	commonquery "github.com/addp/common/query"
-	"github.com/lib/pq"
 )
+
+const postgresUniqueIndexFieldsQuery = `
+	SELECT i.indexrelid::bigint, i.indnatts, a.attname::text
+	FROM pg_catalog.pg_index i
+	JOIN pg_catalog.pg_class t ON t.oid = i.indrelid
+	JOIN pg_catalog.pg_namespace n ON n.oid = t.relnamespace
+	JOIN pg_catalog.pg_attribute a
+		ON a.attrelid = t.oid
+		AND a.attnum = ANY(i.indkey)
+	WHERE n.nspname = $1
+		AND t.relname = $2
+		AND i.indisunique
+		AND i.indpred IS NULL
+	ORDER BY i.indexrelid, a.attnum
+`
 
 type postgresBoundedWatermarkSession struct {
 	db           *sql.DB
@@ -149,31 +164,55 @@ func validatePostgresUniqueFields(ctx context.Context, db *sql.DB, schema, table
 	if len(fields) == 0 {
 		return fmt.Errorf("postgresql %s requires fields", operation)
 	}
-	rows, err := db.QueryContext(ctx, `
-		SELECT array_agg(a.attname ORDER BY key_column.ordinality)
-		FROM pg_index i
-		JOIN pg_class t ON t.oid = i.indrelid
-		JOIN pg_namespace n ON n.oid = t.relnamespace
-		JOIN LATERAL unnest(i.indkey) WITH ORDINALITY AS key_column(attnum, ordinality) ON true
-		JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = key_column.attnum
-		WHERE n.nspname = $1 AND t.relname = $2 AND i.indisunique AND i.indpred IS NULL
-		GROUP BY i.indexrelid
-	`, schema, table)
+	rows, err := db.QueryContext(ctx, postgresUniqueIndexFieldsQuery, schema, table)
 	if err != nil {
 		return fmt.Errorf("query postgresql %s unique keys: %w", operation, err)
 	}
 	defer rows.Close()
-	want := strings.Join(fields, "\x00")
+	type uniqueIndex struct {
+		columnCount int
+		fields      []string
+	}
+	indexes := make(map[int64]*uniqueIndex)
 	for rows.Next() {
-		var values []string
-		if err := rows.Scan(pq.Array(&values)); err != nil {
+		var indexID int64
+		var indexColumnCount int
+		var field string
+		if err := rows.Scan(&indexID, &indexColumnCount, &field); err != nil {
 			return fmt.Errorf("scan postgresql %s unique keys: %w", operation, err)
 		}
-		if strings.Join(values, "\x00") == want {
+		index := indexes[indexID]
+		if index == nil {
+			index = &uniqueIndex{columnCount: indexColumnCount}
+			indexes[indexID] = index
+		}
+		index.fields = append(index.fields, field)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate postgresql %s unique keys: %w", operation, err)
+	}
+	for _, index := range indexes {
+		if postgresUniqueFieldsMatch(index.fields, index.columnCount, fields) {
 			return nil
 		}
 	}
 	return fmt.Errorf("postgresql %s %v must match a non-partial unique or primary key", operation, fields)
+}
+
+func postgresUniqueFieldsMatch(indexFields []string, indexColumnCount int, fields []string) bool {
+	if len(indexFields) != indexColumnCount || len(indexFields) != len(fields) {
+		return false
+	}
+	got := append([]string(nil), indexFields...)
+	want := append([]string(nil), fields...)
+	sort.Strings(got)
+	sort.Strings(want)
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func quotePostgresFields(fields []string) []string {

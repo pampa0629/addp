@@ -23,22 +23,28 @@ const routes = [
         meta: { requiresAuth: true, title: '系统管理-addp' }
       },
       {
-        path: 'iam/identity',
-        name: 'IAMIdentity',
-        component: iamCategoryPage,
-        meta: { requiresAuth: true, iamPage: 'identity', title: '身份与成员-addp' }
-      },
-      {
         path: 'iam/organization',
         name: 'IAMOrganization',
         component: iamCategoryPage,
-        meta: { requiresAuth: true, iamPage: 'organization', title: '租户与组织-addp' }
+        meta: { requiresAuth: true, iamPage: 'organization', title: '组织管理-addp' }
       },
       {
-        path: 'iam/access',
-        name: 'IAMAccess',
+        path: 'iam/accounts',
+        name: 'IAMAccounts',
         component: iamCategoryPage,
-        meta: { requiresAuth: true, iamPage: 'access', title: '角色与访问-addp' }
+        meta: { requiresAuth: true, iamPage: 'accounts', title: '账号管理-addp' }
+      },
+      {
+        path: 'iam/roles',
+        name: 'IAMRoles',
+        component: iamCategoryPage,
+        meta: { requiresAuth: true, iamPage: 'roles', title: '角色管理-addp' }
+      },
+      {
+        path: 'iam/application-access',
+        name: 'IAMApplicationAccess',
+        component: iamCategoryPage,
+        meta: { requiresAuth: true, iamPage: 'application-access', title: '应用接入-addp' }
       },
       {
         path: 'iam/security',

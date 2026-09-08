@@ -41,6 +41,17 @@ System 只保存 BCrypt Hash；Secret 轮换使旧 Client Credential 立即失�
 的 Membership、Role、Tenant 或 `authorization_version` 变化使已签发 Token 立即失效。
 owner 路由不得接受共享 Internal API Key、`X-Tenant-ID` 或 User Token 代传来构造服务身份。
 
+Tenant 管理员创建“服务账号”时，System 必须在同一事务内创建 Tenant-owned Service Principal、
+该 Tenant 内唯一 Membership，以及与其一对一绑定的 Confidential OAuth Client。管理端只把它们
+作为一个服务账号聚合对象暴露：Client ID 不可修改，Client Secret 只在创建或轮换成功响应中
+返回一次，列表、详情、审计和日志不得返回 Secret 或 Hash。暂停服务账号必须同时暂停 Principal、
+Membership 和内部 OAuth Client，并撤销已签发的活动 Token Family；恢复也必须原子恢复三者。
+
+Tenant-owned Service Principal 不得加入其他 Tenant。它可以通过 Role Assignment 获得其 owner
+Tenant 内明确允许 Service Principal 持有的 Tenant Role，但不能持有只允许 User 的管理角色。
+平台内置 `addp-*` Runtime Service Principal 仍由启动配置和 System Bootstrap 管理，不进入租户
+服务账号的可编辑列表。
+
 ### 1.1 执行 audience 与机器身份命名
 
 Execution Audience、OAuth Client ID 和 Service Principal 是三个独立概念，不得因为当前存在一对一映射就混用名称：

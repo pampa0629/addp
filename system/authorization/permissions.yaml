@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: system
-manifest_version: 19
+manifest_version: 20
 permissions:
   - key: audit.event.export
     allowed_scope_types: [platform]
@@ -426,6 +426,54 @@ permissions:
     status: active
     name_i18n_key: permissions.iam.security_policy.update.name
     description_i18n_key: permissions.iam.security_policy.update.description
+  - key: iam.service_account.create
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.service_account.create.name
+    description_i18n_key: permissions.iam.service_account.create.description
+  - key: iam.service_account.read
+    allowed_scope_types: [tenant]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.service_account.read.name
+    description_i18n_key: permissions.iam.service_account.read.description
+  - key: iam.service_account.restore
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.service_account.restore.name
+    description_i18n_key: permissions.iam.service_account.restore.description
+  - key: iam.service_account.suspend
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.service_account.suspend.name
+    description_i18n_key: permissions.iam.service_account.suspend.description
+  - key: iam.service_account.update
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.service_account.update.name
+    description_i18n_key: permissions.iam.service_account.update.description
+  - key: iam.service_credential.update
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.service_credential.update.name
+    description_i18n_key: permissions.iam.service_credential.update.description
   - key: iam.session.read
     allowed_scope_types: [platform]
     risk_level: low

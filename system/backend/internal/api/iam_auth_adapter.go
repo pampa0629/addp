@@ -568,6 +568,11 @@ func respondIAMError(c *gin.Context, err error) {
 		messageID = sysi18n.MsgOAuthClientVersionConflict
 		code := "resource_version_conflict"
 		errorCode = &code
+	case errors.Is(err, iam.ErrServiceAccountVersionConflict):
+		status = http.StatusConflict
+		messageID = sysi18n.MsgServiceAccountVersionConflict
+		code := "resource_version_conflict"
+		errorCode = &code
 	case errors.Is(err, iam.ErrOrganizationVersionConflict):
 		status = http.StatusConflict
 		messageID = sysi18n.MsgOrganizationVersionConflict

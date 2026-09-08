@@ -43,10 +43,33 @@
 	  "columns": { "name": "Name", "type": "Task Type", "engine": "Source Engine", "enabled": "Enabled", "status": "Latest Status", "updatedAt": "Updated", "actions": "Actions" },
 	  "status": { "never": "Never run", "pending": "Pending", "running": "Running", "success": "Succeeded", "failed": "Failed", "cancelled": "Cancelled" },
 	  "allTypes": "All task types", "total": "{total} total", "enabled": "Enabled", "disabled": "Disabled",
-	  "refresh": "Refresh", "create": "Create from Data Explorer", "createSpatial": "New spatial task", "detail": "Details", "source": "Source", "viewSource": "View in resource tree", "edit": "Edit", "execute": "Execute", "monitor": "Monitor", "delete": "Delete",
+	  "refresh": "Refresh", "createQuickView": "New quick-view task", "createSpatial": "New spatial task", "detail": "Details", "source": "Source", "viewSource": "View in resource tree", "edit": "Edit", "execute": "Execute", "monitor": "Monitor", "delete": "Delete",
 	  "sourceItem": "Source item", "sourceFormat": "Source format", "sourceSize": "Source size", "targetEngine": "Target engine", "resultName": "Generated result", "lastRunAt": "Last run", "taskDescription": "Description", "empty": "No generation tasks",
 	  "loadFailed": "Failed to load generation tasks", "executeQueued": "Task queued", "executeFailed": "Task execution failed",
 	  "deleteConfirm": "Delete this task definition? Published business data will be retained.", "deleteSuccess": "Task deleted", "deleteFailed": "Failed to delete task"
+	},
+	"quickViewCreator": {
+	  "title": "New quick-view task",
+	  "hint": "Select one source item. Available quick-view types are derived from its capabilities; Manager owns the generated material, so no target is required.",
+	  "source": "Source item",
+	  "generationType": "Quick-view type",
+	  "generate": "Generate and run",
+	  "unsupported": "This source does not support the selected quick-view type, or already has a current result that can be used directly.",
+	  "detectFailed": "Failed to load source quick-view capabilities",
+	  "queued": "Quick-view task created and queued",
+	  "ready": "A current quick-view result is already available",
+	  "generateFailed": "Failed to create quick-view task",
+	  "actions": {
+		"vectorMaterializedView": "Vector materialized view",
+		"vectorTileCache": "Vector tile cache",
+		"rasterCOG": "Raster COG",
+		"model3DGLB": "3D model GLB",
+		"model3D3DTiles": "3D model 3D Tiles",
+		"model3DS3M": "3D model S3M",
+		"gaussianSplat": "Gaussian KSplat",
+		"pointCloudCOPC": "Point cloud COPC",
+		"pptxPDF": "Presentation PDF"
+	  }
 	},
 	"embeddingConfiguration": {
 	  "title": "Embedding Configuration",

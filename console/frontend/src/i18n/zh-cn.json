@@ -463,9 +463,10 @@
       "system": {
         "label": "系统管理",
         "iam": "身份与访问管理",
-        "iamIdentity": "身份与成员",
-        "iamOrganization": "租户与组织",
-        "iamAccess": "角色与访问",
+        "iamOrganization": "组织管理",
+        "iamAccounts": "账号管理",
+        "iamRoles": "角色管理",
+        "iamApplicationAccess": "应用接入",
         "iamSecurity": "安全与审计",
         "modules": "模块管理",
         "engines": "引擎管理",

@@ -101,3 +101,25 @@ func TestSystemServiceClientStandardGovernanceUsersPreservesUnavailableReference
 		t.Fatalf("users=%#v err=%v", users, err)
 	}
 }
+
+func TestSystemServiceClientResolvesSecurityAccessActors(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/system/runtime/security-access-actors/resolve" {
+			t.Fatalf("path = %q", r.URL.Path)
+		}
+		if authorization := r.Header.Get("Authorization"); authorization != "Bearer tenant-token" {
+			t.Fatalf("Authorization = %q", authorization)
+		}
+		_, _ = w.Write([]byte(`{"results":[{"subject_type":"user","id":"9","found":true,"referenceable":true,"name":"Alice"}]}`))
+	}))
+	defer server.Close()
+
+	client := NewSystemServiceClient(server.URL, staticSystemServiceTokenSource("tenant-token"), server.Client()).WithTenantID(3)
+	actors, err := client.ResolveSecurityAccessActors(context.Background(), []int64{9})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(actors) != 1 || actors[0].ID != 9 || actors[0].DisplayName != "Alice" {
+		t.Fatalf("actors = %#v", actors)
+	}
+}

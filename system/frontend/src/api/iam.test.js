@@ -114,6 +114,23 @@ describe('IAM management API contract', () => {
     expect(client.post).toHaveBeenCalledWith('/system/tenant/oauth_clients/addp_ext_client/restore', { version: 4, reason: 'connector approved again' })
   })
 
+  it('uses the tenant-owned service account aggregate API family', () => {
+    const definition = { name: 'Nightly Loader', description: 'Imports research files' }
+    iamAPI.serviceAccounts.list({ status: 'active' })
+    iamAPI.serviceAccounts.create(definition)
+    iamAPI.serviceAccounts.update('41', { ...definition, version: 2 })
+    iamAPI.serviceAccounts.suspend('41', 3, 'pipeline paused')
+    iamAPI.serviceAccounts.restore('41', 4, 'pipeline resumed')
+    iamAPI.serviceAccounts.rotateSecret('41', 5, 'scheduled rotation')
+
+    expect(client.get).toHaveBeenCalledWith('/system/tenant/service_accounts', { params: { status: 'active' } })
+    expect(client.post).toHaveBeenCalledWith('/system/tenant/service_accounts', definition)
+    expect(client.put).toHaveBeenCalledWith('/system/tenant/service_accounts/41', { ...definition, version: 2 })
+    expect(client.post).toHaveBeenCalledWith('/system/tenant/service_accounts/41/suspend', { version: 3, reason: 'pipeline paused' })
+    expect(client.post).toHaveBeenCalledWith('/system/tenant/service_accounts/41/restore', { version: 4, reason: 'pipeline resumed' })
+    expect(client.post).toHaveBeenCalledWith('/system/tenant/service_accounts/41/rotate-secret', { version: 5, reason: 'scheduled rotation' })
+  })
+
   it('resets an ordinary local account through the governed platform path', () => {
     const request = { new_password: 'new-secret', reason: 'user lost password' }
 

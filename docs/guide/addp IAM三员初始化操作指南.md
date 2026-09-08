@@ -185,7 +185,7 @@ where assignment.status = 'active'
 3. 输入该账号认证器当前显示的 6 位验证码；
 4. 选择 Platform Context；
 5. 登录后确认 AuthContext 为 `context.type=platform` 且 `authentication.assurance_level=aal2`；
-6. 从 Console 进入“系统管理 -> 身份与访问管理”；该入口按职责展示“身份与成员”“租户与组织”“安全与审计”等分类页面，所有账号都可先进入 `/system/iam/security` 检查当前账号安全状态。
+6. 从 Console 进入“系统管理 -> 身份与访问管理”；该入口按管理对象展示“组织管理”“账号管理”“角色管理”“应用接入”“安全与审计”等分类页面，所有账号都可先进入 `/system/iam/accounts?tab=account-security` 检查当前账号安全状态。
 
 三员权限互斥，登录成功不代表三个账号可以执行相同管理操作。
 

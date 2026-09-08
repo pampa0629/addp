@@ -152,11 +152,14 @@ describe('P2 module public route contracts', () => {
   it('restores categorized System IAM tabs and engine details without removed routes', () => {
     const router = readRepoFile('system/frontend/src/router/index.js')
     expect(router).toContain("path: 'engines/:id'")
-    expect(router).toContain("path: 'iam/identity'")
     expect(router).toContain("path: 'iam/organization'")
-    expect(router).toContain("path: 'iam/access'")
+    expect(router).toContain("path: 'iam/accounts'")
+    expect(router).toContain("path: 'iam/roles'")
+    expect(router).toContain("path: 'iam/application-access'")
     expect(router).toContain("path: 'iam/security'")
     expect(router).not.toContain("path: 'iam'")
+    expect(router).not.toContain("path: 'iam/identity'")
+    expect(router).not.toContain("path: 'iam/access'")
     expect(router).not.toContain("path: 'settings/security-policy'")
 
     const iam = readRepoFile('system/frontend/src/views/IAMCategoryPage.vue')

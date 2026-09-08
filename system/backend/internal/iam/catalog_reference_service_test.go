@@ -59,6 +59,33 @@ func TestCatalogReferenceServiceRejectsOtherClientsAndInvalidSubjects(t *testing
 	}
 }
 
+func TestCatalogReferenceServiceResolvesModuleSpecificUserReferences(t *testing.T) {
+	service, err := NewCatalogReferenceService(&fakeCatalogReferenceRepository{users: []CatalogUserProjection{{
+		ID: 3, DisplayName: "Alice", PrincipalStatus: "active", MembershipStatus: "active", Referenceable: true,
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name     string
+		clientID string
+		resolve  func(context.Context, int64, string, []CatalogReference) ([]CatalogReferenceResolution, error)
+	}{
+		{name: "standard", clientID: "addp-standard", resolve: service.ResolveStandardGovernanceUsers},
+		{name: "security", clientID: "addp-security", resolve: service.ResolveSecurityAccessActors},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			results, err := test.resolve(context.Background(), 7, test.clientID, []CatalogReference{{SubjectType: CatalogSubjectTypeUser, ID: 3}})
+			if err != nil || len(results) != 1 || results[0].Name != "Alice" {
+				t.Fatalf("results=%#v err=%v", results, err)
+			}
+			if _, err := test.resolve(context.Background(), 7, test.clientID, []CatalogReference{{SubjectType: CatalogSubjectTypeDepartment, ID: 1}}); !errors.Is(err, ErrInvalidCatalogReferenceRequest) {
+				t.Fatalf("non-user reference error = %v", err)
+			}
+		})
+	}
+}
+
 func TestCatalogReferenceServiceListsCandidatesForCatalogOnly(t *testing.T) {
 	service, err := NewCatalogReferenceService(&fakeCatalogReferenceRepository{})
 	if err != nil {

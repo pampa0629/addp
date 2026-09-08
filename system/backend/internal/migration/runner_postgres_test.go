@@ -3346,7 +3346,7 @@ func assertSecurityModuleRuntimeConstraints(t *testing.T, db *sql.DB, hasMetaFac
 		     JOIN system.roles role ON role.id = role_permission.role_id
 		     JOIN system.permissions permission ON permission.id = role_permission.permission_id
 		     WHERE role.role_key = 'tenant.security_runtime'
-		       AND permission.permission_key = 'meta.security_facts.read'
+		       AND permission.permission_key IN ('iam.tenant_membership.read', 'meta.security_facts.read')
 		       AND NOT permission.tenant_customizable AND NOT permission.delegable),
 		    (SELECT count(*)
 		     FROM system.tenants tenant
@@ -3370,13 +3370,13 @@ func assertSecurityModuleRuntimeConstraints(t *testing.T, db *sql.DB, hasMetaFac
 	}
 
 	expectedSecurityPermissions, expectedGovernancePermissions := 21, 19
-	expectedTenantRuntime := 0
+	expectedTenantRuntime, expectedTenantRuntimePermissions := 0, 0
 	if hasMetaFactsRuntime {
-		expectedSecurityPermissions, expectedGovernancePermissions, expectedTenantRuntime = 39, 37, 1
+		expectedSecurityPermissions, expectedGovernancePermissions, expectedTenantRuntime, expectedTenantRuntimePermissions = 39, 37, 1, 2
 	}
 	if permissionCount != expectedSecurityPermissions || retiredStandardPermissionCount != 4 || retiredStandardRolePermissionCount != 0 || runtimeRoleCount != 1 ||
 		principalCount != 1 || clientCount != 1 || assignmentCount != 1 ||
-		administratorPermissionCount != expectedGovernancePermissions || governancePermissionCount != expectedGovernancePermissions || tenantRuntimeRoleCount != expectedTenantRuntime || tenantRuntimePermissionCount != expectedTenantRuntime || missingTenantRuntimeBindings != 0 {
+		administratorPermissionCount != expectedGovernancePermissions || governancePermissionCount != expectedGovernancePermissions || tenantRuntimeRoleCount != expectedTenantRuntime || tenantRuntimePermissionCount != expectedTenantRuntimePermissions || missingTenantRuntimeBindings != 0 {
 		t.Fatalf(
 			"Security catalog permissions=%d retired_standard=%d retired_standard_bindings=%d runtime_role=%d principal=%d client=%d assignment=%d administrator=%d governance=%d tenant_runtime=%d tenant_permission=%d missing_tenant_bindings=%d",
 			permissionCount, retiredStandardPermissionCount, retiredStandardRolePermissionCount, runtimeRoleCount, principalCount, clientCount,
@@ -4641,8 +4641,8 @@ func assertIAMCatalogSeed(t *testing.T, db *sql.DB) {
 	if err := db.QueryRow(`SELECT count(DISTINCT owner_module), count(*) FILTER (WHERE owner_module = 'system') FROM system.permissions`).Scan(&ownerCount, &systemPermissionCount); err != nil {
 		t.Fatalf("read seeded Permission owners: %v", err)
 	}
-	if ownerCount != 19 || systemPermissionCount != 122 {
-		t.Fatalf("seeded Permission owners = %d and System Permissions = %d, want 19 and 122", ownerCount, systemPermissionCount)
+	if ownerCount != 19 || systemPermissionCount != 128 {
+		t.Fatalf("seeded Permission owners = %d and System Permissions = %d, want 19 and 128", ownerCount, systemPermissionCount)
 	}
 
 	var invalidRoleCount int

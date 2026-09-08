@@ -15,6 +15,10 @@ export const quickViewAPI = {
     return request.post('/manager/quick-view/actions', { locator, action, ...payload })
   },
 
+  ensurePPTXPDFPreview(locator, payload = {}) {
+    return request.post('/manager/pptx_pdf/preview', { locator, ...payload })
+  },
+
   updatePreferredModeByLocator(locator, preferredMode) {
     return request.patch(
       '/manager/preview-state/preferred-mode',

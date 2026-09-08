@@ -17,22 +17,22 @@ describe('System IAM information architecture', () => {
     ])
 
     expect(availableIAMPages('platform', can).map(page => page.key)).toEqual([
-      'identity',
       'organization',
+      'accounts',
       'security'
     ])
-    expect(availableIAMTabs('identity', 'platform', can).map(tab => tab.key)).toEqual([
+    expect(availableIAMTabs('accounts', 'platform', can).map(tab => tab.key)).toEqual([
       'users',
-      'identity-changes'
+      'identity-changes',
+      'account-security'
     ])
     expect(availableIAMTabs('security', 'platform', can).map(tab => tab.key)).toEqual([
-      'account-security',
       'security-policy',
       'audit'
     ])
   })
 
-  it('groups tenant management objects into the four agreed categories', () => {
+  it('groups tenant management objects into the five agreed categories', () => {
     const can = permissionChecker([
       'iam.tenant_membership.read',
       'iam.tenant_invitation.read',
@@ -40,30 +40,40 @@ describe('System IAM information architecture', () => {
       'iam.project_group.read',
       'iam.tenant_role.read',
       'iam.tenant_role_assignment.read',
+      'iam.service_account.read',
       'iam.oauth_client.read',
       'audit.tenant_event.read'
     ])
 
     expect(availableIAMPages('tenant', can).map(page => page.key)).toEqual([
-      'identity',
       'organization',
-      'access',
+      'accounts',
+      'roles',
+      'application-access',
       'security'
     ])
     expect(availableIAMTabs('organization', 'tenant', can).map(tab => tab.key)).toEqual([
       'departments',
       'project-groups'
     ])
-    expect(availableIAMTabs('access', 'tenant', can).map(tab => tab.key)).toEqual([
-      'roles',
-      'role-assignments',
+    expect(availableIAMTabs('accounts', 'tenant', can).map(tab => tab.key)).toEqual([
+      'user-accounts',
+      'invitations',
+      'account-security'
+    ])
+    expect(availableIAMTabs('roles', 'tenant', can).map(tab => tab.key)).toEqual([
+      'role-definitions',
+      'role-assignments'
+    ])
+    expect(availableIAMTabs('application-access', 'tenant', can).map(tab => tab.key)).toEqual([
+      'service-accounts',
       'oauth-clients'
     ])
   })
 
   it('keeps account security available without exposing unauthorized categories', () => {
     const can = permissionChecker([])
-    expect(availableIAMPages('tenant', can).map(page => page.key)).toEqual(['security'])
-    expect(availableIAMTabs('security', 'tenant', can).map(tab => tab.key)).toEqual(['account-security'])
+    expect(availableIAMPages('tenant', can).map(page => page.key)).toEqual(['accounts'])
+    expect(availableIAMTabs('accounts', 'tenant', can).map(tab => tab.key)).toEqual(['account-security'])
   })
 })
