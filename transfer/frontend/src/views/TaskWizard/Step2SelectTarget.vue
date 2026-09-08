@@ -43,6 +43,7 @@
       <template v-if="!isRuntimeTarget">
       <el-form-item :label="t('transfer.taskWizard.targetEngineLabel')">
         <el-select
+          data-testid="task-target-engine"
           v-model="formData.engineID"
           :placeholder="targetEnginePlaceholder"
           filterable
@@ -63,6 +64,7 @@
 
       <el-form-item v-if="isNativeTableTarget" :label="t('transfer.taskWizard.targetLocationLabel')">
         <ResourceTreePicker
+          data-testid="task-target-parent"
           v-model="targetParentSelection"
           api-base-url="/api/v1/meta"
           :engine-id="formData.engineID"
@@ -80,6 +82,7 @@
 
       <el-form-item v-if="isNativeTableTarget" :label="t('transfer.taskWizard.targetTableLabel')">
         <el-input
+          data-testid="task-target-table"
           v-model="targetTable"
           :placeholder="t('transfer.taskWizard.targetTablePlaceholder')"
           :disabled="!formData.engineID || !targetParentSelection?.identity?.locator"

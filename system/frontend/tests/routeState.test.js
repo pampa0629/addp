@@ -24,6 +24,7 @@ describe('System recoverable route state', () => {
       risk_level: 'invalid',
       module_name: ' system ',
       principal_id: ' 42 ',
+      principal_type: 'user',
       entity_type: 'cleanup',
       entity_id: '42',
       page: '1',
@@ -36,9 +37,18 @@ describe('System recoverable route state', () => {
         result: 'succeeded',
         module_name: 'system',
         principal_id: '42',
+        principal_type: 'user',
         entity_type: 'cleanup',
         entity_id: '42'
       },
+      changed: true
+    })
+  })
+
+  it('drops unsupported audit principal types', () => {
+    expect(resolveIAMRouteState(['tenant-audit'], { principal_type: 'application' })).toEqual({
+      activeTab: 'tenant-audit',
+      query: {},
       changed: true
     })
   })

@@ -90,6 +90,13 @@ bash scripts/test/certify-infra-kafka-ha.sh
 
 需要一次验证全部已登记基础设施集成门禁时，先显式配置各 owner 门禁要求的安全连接变量，再运行 `make test-integration`。该入口严格串行调用 PostgreSQL 和 MongoDB 模块级门禁，避免 `addp_test` 或 `addp_iam_test` 被并发重置；PostgreSQL 门禁不会创建新 database，也不会连接 `addp` 开发业务库。Manager MongoDB 门禁读取 `Outdoor/Persons`；目标为空时只创建一条确定性夹具，并在退出时恢复原状态。
 
+Manager 统一派生任务表、语义唯一约束、资源绑定与资源回收生命周期使用 `addp_test` 验证：
+
+```bash
+MANAGER_POSTGRES_TEST_DSN='postgres://addp:addp_password@127.0.0.1:15432/addp_test?sslmode=disable' \
+  make test-manager-postgres
+```
+
 GitHub Actions 使用每个 Job 独占、随 Job 销毁的 PostgreSQL 15 Service，不连接本地开发环境 Infra；workflow 可以为 Job 创建专用测试 database，但必须由 workflow 声明并由隔离实例生命周期回收。
 
 本地 IAM 发布门禁使用：

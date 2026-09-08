@@ -69,6 +69,7 @@ func NewIAMAuditHandler(service iamAuditQueryService) (*IAMAuditHandler, error) 
 // @Produce      json
 // @Security     BearerAuth
 // @Param        principal_id query integer false "授权主体 ID | Principal ID"
+// @Param        principal_type query string false "授权主体类型：user 或 service_principal | Principal type: user or service_principal"
 // @Param        module_name query string false "模块标识 | Module name"
 // @Param        entity_type query string false "实体类型 | Entity type"
 // @Param        entity_id query string false "实体 ID | Entity ID"
@@ -84,6 +85,7 @@ func (h *IAMAuditHandler) PlatformList(c *gin.Context) { h.list(c, false) }
 // @Produce      json
 // @Security     BearerAuth
 // @Param        principal_id query integer false "成员对应授权主体 ID | Principal ID of the member"
+// @Param        principal_type query string false "操作成员类型：user 或 service_principal | Actor member type: user or service_principal"
 // @Param        module_name query string false "模块标识 | Module name"
 // @Param        entity_type query string false "实体类型 | Entity type"
 // @Param        entity_id query string false "实体 ID | Entity ID"
@@ -171,6 +173,7 @@ func (h *IAMAuditHandler) get(c *gin.Context, tenantScoped bool) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        principal_id query integer false "授权主体 ID | Principal ID"
+// @Param        principal_type query string false "授权主体类型：user 或 service_principal | Principal type: user or service_principal"
 // @Param        module_name query string false "模块标识 | Module name"
 // @Param        entity_type query string false "实体类型 | Entity type"
 // @Param        entity_id query string false "实体 ID | Entity ID"
@@ -186,6 +189,7 @@ func (h *IAMAuditHandler) PlatformSummary(c *gin.Context) { h.summary(c, false) 
 // @Produce      json
 // @Security     BearerAuth
 // @Param        principal_id query integer false "成员对应授权主体 ID | Principal ID of the member"
+// @Param        principal_type query string false "操作成员类型：user 或 service_principal | Actor member type: user or service_principal"
 // @Param        module_name query string false "模块标识 | Module name"
 // @Param        entity_type query string false "实体类型 | Entity type"
 // @Param        entity_id query string false "实体 ID | Entity ID"
@@ -215,6 +219,7 @@ func (h *IAMAuditHandler) summary(c *gin.Context, tenantScoped bool) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        principal_id query integer false "授权主体 ID | Principal ID"
+// @Param        principal_type query string false "授权主体类型：user 或 service_principal | Principal type: user or service_principal"
 // @Param        module_name query string false "模块标识 | Module name"
 // @Param        entity_type query string false "实体类型 | Entity type"
 // @Param        entity_id query string false "实体 ID | Entity ID"
@@ -230,6 +235,7 @@ func (h *IAMAuditHandler) PlatformTrends(c *gin.Context) { h.trends(c, false) }
 // @Produce      json
 // @Security     BearerAuth
 // @Param        principal_id query integer false "成员对应授权主体 ID | Principal ID of the member"
+// @Param        principal_type query string false "操作成员类型：user 或 service_principal | Actor member type: user or service_principal"
 // @Param        module_name query string false "模块标识 | Module name"
 // @Param        entity_type query string false "实体类型 | Entity type"
 // @Param        entity_id query string false "实体 ID | Entity ID"
@@ -267,6 +273,7 @@ func (h *IAMAuditHandler) trends(c *gin.Context, tenantScoped bool) {
 // @Security     BearerAuth
 // @Param        format query string false "csv 或 json | csv or json"
 // @Param        principal_id query integer false "授权主体 ID | Principal ID"
+// @Param        principal_type query string false "授权主体类型：user 或 service_principal | Principal type: user or service_principal"
 // @Param        module_name query string false "模块标识 | Module name"
 // @Param        entity_type query string false "实体类型 | Entity type"
 // @Param        entity_id query string false "实体 ID | Entity ID"
@@ -283,6 +290,7 @@ func (h *IAMAuditHandler) PlatformExport(c *gin.Context) { h.export(c, false) }
 // @Security     BearerAuth
 // @Param        format query string false "csv 或 json | csv or json"
 // @Param        principal_id query integer false "成员对应授权主体 ID | Principal ID of the member"
+// @Param        principal_type query string false "操作成员类型：user 或 service_principal | Actor member type: user or service_principal"
 // @Param        module_name query string false "模块标识 | Module name"
 // @Param        entity_type query string false "实体类型 | Entity type"
 // @Param        entity_id query string false "实体 ID | Entity ID"
@@ -365,11 +373,15 @@ func auditQueryFromRequest(c *gin.Context, tenantScoped bool) (iam.AuditQuery, e
 		}
 		principalID = &parsed
 	}
+	principalType, err := parseIAMPrincipalTypeFilter(c.Query("principal_type"))
+	if err != nil {
+		return iam.AuditQuery{}, err
+	}
 	return iam.AuditQuery{
 		TenantID: tenantID, StartTime: startTime, EndTime: endTime,
 		EventName: strings.TrimSpace(c.Query("event_name")), Result: strings.TrimSpace(c.Query("result")),
 		RiskLevel: strings.TrimSpace(c.Query("risk_level")), ModuleName: strings.TrimSpace(c.Query("module_name")),
-		PrincipalID: principalID, RequestID: strings.TrimSpace(c.Query("request_id")),
+		PrincipalID: principalID, PrincipalType: principalType, RequestID: strings.TrimSpace(c.Query("request_id")),
 		EntityType: strings.TrimSpace(c.Query("entity_type")), EntityID: strings.TrimSpace(c.Query("entity_id")),
 	}, nil
 }

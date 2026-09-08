@@ -267,6 +267,7 @@ func (h *IAMTenantRoleHandler) DeleteRole(c *gin.Context) {
 // @Param        page query int false "页码 | Page number"
 // @Param        page_size query int false "每页数量 | Page size"
 // @Param        membership_id query string false "成员关系 ID | Membership ID"
+// @Param        principal_type query string false "成员类型：user 或 service_principal | Member type: user or service_principal"
 // @Param        status query string false "状态：active 或 revoked | Status: active or revoked"
 // @Param        scope_type query string false "授权范围类型 | Assignment scope type"
 // @Param        department_id query string false "部门 ID，仅 department 范围 | Department ID for department scope"
@@ -308,6 +309,10 @@ func parseIAMTenantRoleAssignmentFilter(c *gin.Context) (iam.TenantRoleAssignmen
 			return filter, fmt.Errorf("%w: invalid membership_id", commonapi.ErrBadRequest)
 		}
 		filter.MembershipID = &parsed
+	}
+	filter.PrincipalType, err = parseIAMPrincipalTypeFilter(c.Query("principal_type"))
+	if err != nil {
+		return filter, err
 	}
 	if value := strings.TrimSpace(c.Query("status")); value != "" {
 		filter.Status = &value

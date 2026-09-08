@@ -121,7 +121,7 @@
 | standard candidate code namespace | 标准候选编码命名空间 | Standard 为一次文档提炼确定的候选编码前缀约束。 | `domain` 范围文档使用权威归属业务域编码作为命名空间，新候选编码必须以 `<domain_code>_` 开头；业务域编码必须是小写 `snake_case`，Standard 不自动转换或猜测。租户公共或平台文档不附加领域前缀。该前缀只约束 Copilot 新候选，不把归属域固化到正式标准稳定编码语义中。Standard 同时向 Copilot 提供同一文档中符合当前命名空间的既有候选类型、编码、名称和定义作为编码复用提示；提示不是模糊合并依据，Copilot 与 Standard 仍分别校验输出编码。 |
 | standard extraction candidate group view | 标准提炼候选聚合视图 | Standard 将同一标准文档稳定身份历次提炼中的确定性同义候选聚合成一个可裁决读取单元。 | 聚合键为候选类型、编码以及规范化名称、定义和完整候选载荷的 SHA-256 语义指纹；码值项和维度先按稳定顺序规范化。同类型、同编码但内容不同的候选仍是不同聚合项，不使用模型相似度自动合并。该视图不持久化、不改写原始候选；每次出现、提炼批次、文档修订、证据、人工处置和正式化事实均完整保留。 |
 | standard candidate formalization | 标准候选正式化 | 将一个已保留标准提炼候选转化为受治理标准草稿，或确认其对应既有相同内容修订的不可变治理事实。 | Standard 根据同类型、同编码的实时比对唯一决定结果：无稳定身份时创建 R1 草稿；已有稳定身份且没有工作修订时，以最新修订为基线创建候选内容的新草稿；候选与现有草稿、审核中或已发布修订内容一致时只建立来源关联。范围冲突、已有不同内容的工作修订、无法解析的码值集或计量单位引用必须拒绝。正式化不得提交审核或发布，候选状态仍保持 `retained`。 |
-| standard extraction candidate comparison | 标准提炼候选比对 | Standard 在读取提炼结果时，将候选与当前租户内同类型、同编码的活动标准稳定身份进行确定性比较所得的动态投影。 | 结果固定为 `new`、`exact`、`content_conflict` 或 `scope_conflict`，差异项明确给出字段及候选值、当前标准值；枚举数据元候选的 `code_set_code` 与现有数据元修订所冻结码值集修订的稳定编码比较，不比较数据库 ID；同名不同编码不自动判为重复。比对不写回候选、不创建标准，也不代替人工裁决。 |
+| standard extraction candidate comparison | 标准提炼候选比对 | Standard 在读取提炼结果时，将候选与当前租户内同类型、同编码的活动标准稳定身份进行确定性比较所得的动态投影。 | 结果固定为 `new`、`exact`、`content_conflict` 或 `scope_conflict`，差异项明确给出字段及候选值、当前标准值；枚举数据元候选的 `code_set_code` 与现有数据元修订所冻结码值集修订的稳定编码比较，不比较数据库 ID；同名不同编码不自动判为重复。候选治理读取可按该实时结果筛选，筛选必须在分页前完成，因此标准当前修订变化后同一查询结果允许随之变化。比对不写回候选、不创建标准，也不代替人工裁决。 |
 | standard extraction evidence | 标准提炼证据 | 支撑某个标准提炼候选的不可变来源片段。 | 必须记录确定的文档修订、Markdown 章节或页码定位、行号/页码范围、原文摘录及内容摘要；证据不能只保存模型解释、置信度或可变的文档稳定身份。 |
 | standard revision status | 标准修订状态 | 可正式发布的标准定义修订所共用的审核发布状态。 | 业务术语、数据元、码值集、指标定义和标准文档等发布型定义统一使用 `draft`、`in_review`、`published`、`withdrawn`；`published` 只表示审核通过且定义不可变，不等同于当前生效。同一稳定身份至多有一个可编辑草稿，可以有多个生效区间不重叠的已发布修订。 |
 | effective standard revision | 当前生效标准修订 | 在指定业务时点满足 `effective_from <= as_of < effective_to` 的已发布修订；`effective_to` 为空表示无上界。 | Standard 按时点动态解析，不保存 `current_revision_id` 缓存；未显式传入 `as_of` 时使用服务端当前时间。同一稳定身份在任一时点至多解析出一个修订。 |
@@ -454,7 +454,7 @@
 | Delegated Access Token | 受委托访问令牌 | System 为 Agent 代表当前用户调用特定 owner 能力签发的短期、限 audience 和 Scope 令牌。 | 不改变原用户和租户；可绑定 AgentRun / ToolCall 用于审计。 |
 | Runtime Service Principal | 运行时服务主体 | Develop、DuckDB Runtime、Workflow Runtime、Jupyter 等工作负载用于 Client Credentials 和控制面识别的 Service Principal。 | 只证明机器身份并消费与自身 audience 匹配的 Execution Authorization 或 Notebook Session Authorization；不继承发起用户、服务创建人、引擎创建人或 Tenant 全量数据权限。 |
 
-面向 Tenant 管理员的成员列表不直接使用“主体类型”作为界面标签。该页面统一显示“成员类型”，并将 `user`、`service_principal` 分别呈现为“用户”和“服务账号”；这只是 Tenant Membership 视角下的用户友好表达，领域模型、API 字段和审计协议仍使用 Principal、Service Principal 与 `principal_type`。
+面向 Tenant 管理员的成员列表不直接使用“主体类型”作为界面标签。该页面统一显示“成员类型”，并将 `user`、`service_principal` 分别呈现为“用户账号”和“服务账号”；涉及 Tenant Membership 选择的控件按“当前账号、用户账号、服务账号”分组，并显式展示成员类型，不依赖名称前缀猜测。这只是 Tenant Membership 视角下的用户友好表达，领域模型、API 字段和审计协议仍使用 Principal、Service Principal 与 `principal_type`。
 
 ## 配置管理
 

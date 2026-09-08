@@ -183,6 +183,7 @@ describe('Security product information architecture', () => {
     expect(enrollment).toContain('protectionAccessRequestAPI.reviewQueue')
     expect(enrollment).toContain('protectionAccessRequestAPI.decide')
     expect(enrollment).toContain('row.can_decide')
+    expect(enrollment).toContain('v-else-if="row.decision_unavailable_reason"')
     expect(enrollment).toContain('security.accessRequest.confirmActions.${decision}')
     expect(zhCn.security.accessRequest.unavailableReasons.self_approval_forbidden).toBe('需由另一名审批人处理')
     expect(zhCn.security.accessRequest.unavailableReasons.request_expired).toContain('重新提交')

@@ -46,17 +46,18 @@ type ManagedTenantMembership struct {
 }
 
 type AuditQuery struct {
-	TenantID    *int64
-	StartTime   *time.Time
-	EndTime     *time.Time
-	EventName   string
-	Result      string
-	RiskLevel   string
-	ModuleName  string
-	PrincipalID *int64
-	RequestID   string
-	EntityType  string
-	EntityID    string
+	TenantID      *int64
+	StartTime     *time.Time
+	EndTime       *time.Time
+	EventName     string
+	Result        string
+	RiskLevel     string
+	ModuleName    string
+	PrincipalID   *int64
+	PrincipalType *PrincipalType
+	RequestID     string
+	EntityType    string
+	EntityID      string
 }
 
 type AuditSummary struct {
@@ -498,6 +499,9 @@ func applyAuditQuery(query *gorm.DB, filter AuditQuery) *gorm.DB {
 	}
 	if filter.PrincipalID != nil {
 		query = query.Where("principal_id = ?", *filter.PrincipalID)
+	}
+	if filter.PrincipalType != nil {
+		query = query.Where("principal_type = ?", *filter.PrincipalType)
 	}
 	if filter.RequestID != "" {
 		query = query.Where("request_id = ?", filter.RequestID)

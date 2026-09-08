@@ -54,7 +54,7 @@
               <el-button link type="primary" @click="decideAccessRequest(row, 'approve')">{{ t('security.accessRequest.approve') }}</el-button>
               <el-button link type="danger" @click="decideAccessRequest(row, 'reject')">{{ t('security.accessRequest.reject') }}</el-button>
             </div>
-            <div v-else class="access-decision-unavailable">
+            <div v-else-if="row.decision_unavailable_reason" class="access-decision-unavailable">
               <el-tag size="small" type="info">{{ t(`security.accessRequest.unavailableLabels.${row.decision_unavailable_reason}`) }}</el-tag>
               <span>{{ t(`security.accessRequest.unavailableReasons.${row.decision_unavailable_reason}`) }}</span>
             </div>

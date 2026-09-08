@@ -175,6 +175,21 @@ case "$ONLINE_SUITE" in
     START_TARGET=-model
     REQUIRED_SUITE_ENV=(SYSTEM_URL GATEWAY_URL STANDARD_URL MODEL_URL ADDP_ONLINE_TEST_USER_ACCESS_TOKEN)
     ;;
+  transfer-insert-only-mysql)
+    START_TARGET=-all
+    REQUIRED_SUITE_ENV=(
+      SYSTEM_URL GATEWAY_URL META_URL TRANSFER_URL CONSOLE_URL
+      ADDP_ONLINE_TEST_USER_ACCESS_TOKEN ADDP_ONLINE_TEST_USER_USERNAME
+      ADDP_ONLINE_TEST_USER_PASSWORD ADDP_ONLINE_TEST_TENANT_ID
+      ADDP_ONLINE_TEST_ENGINE_ID ADDP_ONLINE_TEST_ENGINE_NAME
+      ADDP_ONLINE_TEST_ENGINE_PORT ADDP_ONLINE_TEST_ENGINE_USER
+      ADDP_ONLINE_TEST_ENGINE_PASSWORD ADDP_ONLINE_TEST_ENGINE_DATABASE
+      ADDP_ONLINE_TRANSFER_MYSQL_ENGINE_ID ADDP_ONLINE_TRANSFER_MYSQL_ENGINE_NAME
+      ADDP_ONLINE_TRANSFER_MYSQL_PORT ADDP_ONLINE_TRANSFER_MYSQL_DATABASE
+      ADDP_ONLINE_TRANSFER_MYSQL_USER ADDP_ONLINE_TRANSFER_MYSQL_PASSWORD
+      ADDP_ONLINE_TRANSFER_MYSQL_ROOT_PASSWORD
+    )
+    ;;
   enterprise-catalog-publishing)
     START_TARGET=-all
     REQUIRED_SUITE_ENV=(
@@ -260,6 +275,7 @@ workbench_mysql_cleanup_required=0
 oceanbase_consumer_cleanup_required=0
 manager_minio_cleanup_required=0
 security_transfer_fixture_cleanup_required=0
+transfer_insert_only_cleanup_required=0
 
 run_logged() {
   "$@" 2>&1 | tee -a "$GATE_LOG"
@@ -323,6 +339,13 @@ finish() {
 
   if [ "$security_transfer_fixture_cleanup_required" -eq 1 ]; then
     if ! run_logged bash business/scripts/online-security-transfer-fixture.sh stop; then
+      cleanup=failed
+      gate_status=1
+    fi
+  fi
+
+  if [ "$transfer_insert_only_cleanup_required" -eq 1 ]; then
+    if ! run_logged bash business/scripts/online-transfer-insert-only-fixture.sh stop; then
       cleanup=failed
       gate_status=1
     fi
@@ -423,6 +446,12 @@ elif [ "$ONLINE_SUITE" = "workbench-service-consumption" ]; then
   workbench_mysql_cleanup_required=1
   run_logged bash business/scripts/online-workbench-mysql-fixture.sh stop
   run_logged bash business/scripts/online-workbench-mysql-fixture.sh start
+  run_logged bash scripts/dev/start.sh "$START_TARGET"
+  run_logged npm --prefix console/frontend exec -- playwright install chromium
+elif [ "$ONLINE_SUITE" = "transfer-insert-only-mysql" ]; then
+  transfer_insert_only_cleanup_required=1
+  run_logged bash business/scripts/online-transfer-insert-only-fixture.sh stop
+  run_logged bash business/scripts/online-transfer-insert-only-fixture.sh start
   run_logged bash scripts/dev/start.sh "$START_TARGET"
   run_logged npm --prefix console/frontend exec -- playwright install chromium
 elif [ "$ONLINE_SUITE" = "oceanbase-consumer-flow" ]; then

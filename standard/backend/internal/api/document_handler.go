@@ -516,6 +516,7 @@ func (h *DocumentHandler) ExtractCandidates(c *gin.Context) {
 // @Produce json
 // @Param state query string false "聚合状态 | Group state" Enums(pending,retained,rejected,formalized)
 // @Param candidate_type query string false "候选类型 | Candidate type" Enums(glossary,element,code_set,metric)
+// @Param comparison_result query string false "与当前标准的实时比对结果 | Live comparison result against current standards" Enums(new,exact,content_conflict,scope_conflict)
 // @Param page query int false "页码，默认 1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认 20，最大 100 | Page size, default 20, maximum 100"
 // @Success 200 {object} models.PaginatedDocumentExtractionCandidateGroupResponse
@@ -533,7 +534,7 @@ func (h *DocumentHandler) ListCandidateGroups(c *gin.Context) {
 	if !ok {
 		return
 	}
-	opts := service.DocumentCandidateGroupListOptions{State: c.Query("state"), CandidateType: c.Query("candidate_type")}
+	opts := service.DocumentCandidateGroupListOptions{State: c.Query("state"), CandidateType: c.Query("candidate_type"), ComparisonResult: c.Query("comparison_result")}
 	var err error
 	if value := c.Query("page"); value != "" {
 		opts.Page, err = strconv.Atoi(value)

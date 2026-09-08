@@ -195,6 +195,14 @@ class OpenGaussOfficialMediaReleaseGateTest(unittest.TestCase):
             commands,
         )
         self.assertIn("docker run --detach --name addp-opengauss-official-media-certification --privileged=true", commands)
+        self.assertIn(
+            "docker exec --user omm --env GAUSSHOME=/usr/local/opengauss "
+            "--env PATH=/usr/local/opengauss/bin:/scws/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin "
+            "--env LD_LIBRARY_PATH=/usr/local/opengauss/lib:/scws/lib "
+            "addp-opengauss-official-media-certification "
+            "/usr/local/opengauss/bin/gsql",
+            commands,
+        )
         self.assertIn("CREATE DATABASE addp_opengauss_disposable DBCOMPATIBILITY 'PG'", commands)
         self.assertIn("docker rm --force addp-opengauss-official-media-certification", commands)
         self.assertIn("docker image rm opengauss:6.0.6", commands)

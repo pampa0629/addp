@@ -85,6 +85,7 @@ class OnlineGateTest(unittest.TestCase):
                 "security-plaintext-access",
                 "security-transfer-protection",
                 "standard-model-reference-deletion",
+                "transfer-insert-only-mysql",
                 "workbench-service-consumption",
             },
         )
@@ -114,6 +115,16 @@ class OnlineGateTest(unittest.TestCase):
                 ("transfer", "TRANSFER_URL"),
                 ("develop", "DEVELOP_URL"),
                 ("service", "SERVICE_URL"),
+            ),
+        )
+        transfer_suite = ONLINE_GATE.SUITES["transfer-insert-only-mysql"]
+        self.assertEqual(
+            transfer_suite.services,
+            (
+                ("gateway", "GATEWAY_URL"),
+                ("system", "SYSTEM_URL"),
+                ("meta", "META_URL"),
+                ("transfer", "TRANSFER_URL"),
             ),
         )
         consumer_suite = ONLINE_GATE.SUITES["consumer-engine-recovery"]

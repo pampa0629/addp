@@ -31,6 +31,7 @@ var ErrTenantRoleAssignmentPrincipalTypeNotAllowed = fmt.Errorf(
 
 type TenantRoleAssignmentFilter struct {
 	MembershipID   *int64
+	PrincipalType  *PrincipalType
 	Status         *string
 	ScopeType      *string
 	DepartmentID   *int64
@@ -425,6 +426,9 @@ func (s *TenantRoleService) RevokeAssignment(ctx context.Context, input RevokeTe
 func validateTenantRoleAssignmentFilter(filter TenantRoleAssignmentFilter) error {
 	if filter.MembershipID != nil && *filter.MembershipID <= 0 {
 		return fmt.Errorf("%w: membership filter must be positive", commonapi.ErrBadRequest)
+	}
+	if filter.PrincipalType != nil && *filter.PrincipalType != PrincipalTypeUser && *filter.PrincipalType != PrincipalTypeServicePrincipal {
+		return fmt.Errorf("%w: invalid role assignment principal type filter", commonapi.ErrBadRequest)
 	}
 	if filter.Status != nil && *filter.Status != "active" && *filter.Status != "revoked" {
 		return fmt.Errorf("%w: invalid role assignment status filter", commonapi.ErrBadRequest)

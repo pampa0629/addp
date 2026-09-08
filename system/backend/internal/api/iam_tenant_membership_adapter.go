@@ -83,7 +83,7 @@ func (h *IAMTenantMembershipHandler) List(c *gin.Context) {
 		respondIAMError(c, err)
 		return
 	}
-	principalType, err := parseTenantMembershipPrincipalTypeFilter(c.Query("principal_type"))
+	principalType, err := parseIAMPrincipalTypeFilter(c.Query("principal_type"))
 	if err != nil {
 		respondIAMError(c, err)
 		return
@@ -295,7 +295,7 @@ func parseTenantMembershipStatusFilter(value string) (*iam.TenantMembershipStatu
 	}
 }
 
-func parseTenantMembershipPrincipalTypeFilter(value string) (*iam.PrincipalType, error) {
+func parseIAMPrincipalTypeFilter(value string) (*iam.PrincipalType, error) {
 	if strings.TrimSpace(value) == "" {
 		return nil, nil
 	}
@@ -304,7 +304,7 @@ func parseTenantMembershipPrincipalTypeFilter(value string) (*iam.PrincipalType,
 	case iam.PrincipalTypeUser, iam.PrincipalTypeServicePrincipal:
 		return &principalType, nil
 	default:
-		return nil, fmt.Errorf("%w: invalid membership principal type", commonapi.ErrBadRequest)
+		return nil, fmt.Errorf("%w: invalid principal type", commonapi.ErrBadRequest)
 	}
 }
 

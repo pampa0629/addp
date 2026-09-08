@@ -457,6 +457,7 @@
       "pendingCandidates": "candidate groups pending",
       "allCandidateStates": "All Candidate States",
       "allCandidateTypes": "All Candidate Types",
+      "allComparisonResults": "All Comparison Results",
       "candidateGroupTotal": "{count} candidate groups",
       "candidateOccurrenceCount": "Seen {count} times",
       "candidateFirstSeen": "First",

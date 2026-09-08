@@ -40,6 +40,7 @@
       <el-button v-if="!wizardState.isContinuousTask.value" type="primary" @click="autoMap">{{ t('transfer.taskWizard.autoMap') }}</el-button>
       <el-button
         v-if="canRecommendDecimalDefinitions"
+        data-testid="task-recommend-decimal-definitions"
         :icon="MagicStick"
         :loading="decimalRecommendationLoading"
         @click="recommendDecimalDefinitions"
@@ -60,6 +61,7 @@
     </div>
 
     <el-table
+      data-testid="task-field-mappings"
       :data="wizardState.fieldMappings.value"
       :row-class-name="mappingRowClassName"
       border

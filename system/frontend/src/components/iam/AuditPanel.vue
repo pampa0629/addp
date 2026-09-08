@@ -10,9 +10,20 @@
       <div class="iam-filters audit-filters">
         <el-date-picker v-model="dateRange" type="datetimerange" :range-separator="t('system.iam.audit.to')" :start-placeholder="t('system.iam.audit.startTime')" :end-placeholder="t('system.iam.audit.endTime')" @change="applyFilters" />
         <el-input v-model="filters.event_name" :placeholder="t('system.iam.audit.eventName')" clearable @keyup.enter="applyFilters" @clear="applyFilters" />
-        <el-select v-if="scope === 'tenant'" v-model="filters.principal_id" :placeholder="t('system.iam.audit.member')" clearable filterable @change="applyFilters">
-          <el-option v-for="member in membershipOptions" :key="member.id" :label="memberOptionLabel(member)" :value="String(member.principal_id)" />
-        </el-select>
+        <TenantMemberSelect
+          v-if="scope === 'tenant'"
+          v-model="filters.principal_id"
+          v-model:principal-type="filters.principal_type"
+          :members="membershipOptions"
+          :current-membership-id="currentMembershipID"
+          :placeholder="t('system.iam.audit.member')"
+          :type-placeholder="t('system.iam.audit.actorType')"
+          value-field="principal_id"
+          stringify-value
+          show-type-filter
+          @change="applyFilters"
+          @principal-type-change="applyFilters"
+        />
         <el-select v-model="filters.result" :placeholder="t('system.iam.audit.result')" clearable @change="applyFilters"><el-option v-for="value in results" :key="value" :label="statusLabel(value)" :value="value" /></el-select>
         <el-select v-model="filters.risk_level" :placeholder="t('system.iam.audit.risk')" clearable @change="applyFilters"><el-option v-for="value in risks" :key="value" :label="statusLabel(value)" :value="value" /></el-select>
         <el-select v-model="filters.module_name" :placeholder="t('system.iam.audit.module')" clearable filterable @change="applyFilters">
@@ -32,7 +43,7 @@
       <el-table-column :label="t('system.iam.audit.module')" min-width="160"><template #default="{ row }"><div class="iam-primary-cell"><strong>{{ moduleLabel(row.module_name) }}</strong><span>{{ row.module_name }}</span></div></template></el-table-column>
       <el-table-column :label="t('system.iam.audit.result')" width="120"><template #default="{ row }"><el-tag :type="resultType(row.result)">{{ statusLabel(row.result) }}</el-tag></template></el-table-column>
       <el-table-column :label="t('system.iam.audit.risk')" width="120"><template #default="{ row }"><el-tag :type="riskType(row.risk_level)" effect="plain">{{ statusLabel(row.risk_level) }}</el-tag></template></el-table-column>
-      <el-table-column :label="actorLabel" min-width="180"><template #default="{ row }">{{ actorDisplay(row) }}</template></el-table-column>
+      <el-table-column :label="actorLabel" min-width="250"><template #default="{ row }"><TenantMemberIdentity :member="actorIdentity(row)" :current-membership-id="currentMembershipID" show-status /></template></el-table-column>
       <el-table-column prop="request_id" :label="t('system.iam.audit.requestId')" min-width="220" show-overflow-tooltip />
       <el-table-column :label="t('system.iam.audit.time')" width="180"><template #default="{ row }">{{ formatDate(row.created_at) }}</template></el-table-column>
     </el-table>
@@ -43,7 +54,7 @@
       <el-descriptions v-if="selected" :column="1" border>
         <el-descriptions-item label="ID">{{ selected.id }}</el-descriptions-item>
         <el-descriptions-item :label="t('system.iam.audit.eventName')">{{ selected.event_name }}</el-descriptions-item>
-        <el-descriptions-item :label="actorLabel">{{ actorDisplay(selected) }} / {{ selected.principal_type ? t(`system.iam.principalType.${selected.principal_type}`) : '-' }}</el-descriptions-item>
+        <el-descriptions-item :label="actorLabel"><TenantMemberIdentity :member="actorIdentity(selected)" :current-membership-id="currentMembershipID" show-status /></el-descriptions-item>
         <el-descriptions-item :label="t('system.iam.audit.module')">{{ moduleOptionLabel(selected.module_name) }}</el-descriptions-item>
         <el-descriptions-item :label="t('system.iam.audit.context')">{{ selected.context_type || '-' }} / {{ selected.tenant_id || '-' }}</el-descriptions-item>
         <el-descriptions-item :label="t('system.iam.audit.request')">{{ selected.http_method || '-' }} {{ selected.resource_path || '-' }} / {{ selected.http_status || '-' }}</el-descriptions-item>
@@ -64,7 +75,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { iamAPI } from '../../api/iam'
 import { useAuthStore } from '../../store/auth'
 import { navigateSystemRoute } from '../../utils/moduleNavigation'
-import { AUDIT_MODULE_NAMES, formatMemberOptionLabel, resolveIAMModuleName } from '../../utils/iamPresentation'
+import { AUDIT_MODULE_NAMES, resolveIAMModuleName } from '../../utils/iamPresentation'
+import TenantMemberIdentity from './TenantMemberIdentity.vue'
+import TenantMemberSelect from './TenantMemberSelect.vue'
 
 const props = defineProps({ scope: { type: String, required: true } })
 const { t, te } = useI18n()
@@ -88,6 +101,7 @@ const filters = reactive({
   risk_level: String(route.query.risk_level || ''),
   module_name: String(route.query.module_name || ''),
   principal_id: String(route.query.principal_id || ''),
+  principal_type: String(route.query.principal_type || ''),
   entity_type: String(route.query.entity_type || ''),
   entity_id: String(route.query.entity_id || '')
 })
@@ -113,10 +127,14 @@ function moduleOptionLabel(moduleName) {
   const label = moduleLabel(moduleName)
   return label === moduleName ? moduleName : `${label} · ${moduleName}`
 }
-function memberOptionLabel(member) { return formatMemberOptionLabel(member, currentMembershipID.value, t('system.iam.memberships.currentAccount')) }
-function actorDisplay(event) {
+function actorIdentity(event) {
   const member = membershipByPrincipalID.value.get(String(event.principal_id || ''))
-  return member ? memberOptionLabel(member) : (event.principal_id || '-')
+  return member || {
+    id: '',
+    principal_id: event.principal_id || '-',
+    principal_type: event.principal_type || '',
+    display_name: event.principal_id || '-'
+  }
 }
 function normalizePage(value) {
   const parsed = Number(value)
@@ -143,7 +161,7 @@ async function load() {
 }
 function buildRouteQuery() {
   const query = { tab: String(route.query.tab || '') }
-  for (const key of ['event_name', 'result', 'risk_level', 'module_name', 'principal_id', 'entity_type', 'entity_id']) {
+  for (const key of ['event_name', 'result', 'risk_level', 'module_name', 'principal_id', 'principal_type', 'entity_type', 'entity_id']) {
     const value = String(filters[key] || '').trim()
     if (value) query[key] = value
   }
@@ -179,7 +197,7 @@ async function exportEvents(format) {
   } catch (error) { ElMessage.error(error.response?.data?.error || t('system.iam.common.exportFailed')) }
 }
 watch(() => route.query, async query => {
-  for (const key of ['event_name', 'result', 'risk_level', 'module_name', 'principal_id', 'entity_type', 'entity_id']) {
+  for (const key of ['event_name', 'result', 'risk_level', 'module_name', 'principal_id', 'principal_type', 'entity_type', 'entity_id']) {
     filters[key] = String(query[key] || '')
   }
   page.value = normalizePage(query.page)

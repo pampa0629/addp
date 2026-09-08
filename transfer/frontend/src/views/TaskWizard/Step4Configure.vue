@@ -1,5 +1,5 @@
 <template>
-  <div class="step4-configure">
+  <div class="step4-configure" data-testid="task-configure-step">
     <h3>{{ t('transfer.taskWizard.configPage') }}</h3>
     <p class="step-description">{{ t('transfer.taskWizard.configPageDesc') }}</p>
 
@@ -7,6 +7,7 @@
       <!-- 任务名称 -->
       <el-form-item :label="t('transfer.taskWizard.taskNameLabel2')" prop="taskName" required>
         <el-input
+          data-testid="task-name"
           v-model="formData.taskName"
           :placeholder="t('transfer.taskWizard.taskNamePlaceholder2')"
           maxlength="50"
@@ -39,7 +40,7 @@
       />
 
 			<el-form-item v-if="!isKafkaContinuousTask" :label="t('transfer.taskWizard.loadModeLabel')">
-				<el-radio-group v-model="formData.loadMode">
+					<el-radio-group v-model="formData.loadMode" data-testid="task-load-mode">
 					<el-radio value="snapshot">{{ t('transfer.taskWizard.snapshotLoad') }}</el-radio>
 					<el-radio value="insert_only" :disabled="!watermarkIncrementalSupported">
 						{{ t('transfer.taskWizard.insertOnlyIncrementalLoad') }}
@@ -81,6 +82,7 @@
       <template v-if="isContinuousTask">
         <el-form-item :label="t('transfer.taskWizard.continuousKeyFieldsLabel')" required>
           <el-select
+            data-testid="task-watermark-field"
             v-model="formData.continuousKeyFields"
             multiple
             filterable
@@ -172,7 +174,7 @@
         </el-form-item>
 
         <el-form-item :label="t('transfer.taskWizard.targetKeysLabel')" required>
-          <div class="derived-value">{{ watermarkTargetKeyText }}</div>
+          <div class="derived-value" data-testid="task-watermark-target-keys">{{ watermarkTargetKeyText }}</div>
           <div class="field-hint block-hint">{{ t('transfer.taskWizard.watermarkTargetKeysDerivedHint') }}</div>
         </el-form-item>
       </template>

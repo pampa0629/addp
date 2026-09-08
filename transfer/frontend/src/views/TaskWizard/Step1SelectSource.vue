@@ -6,6 +6,7 @@
     <el-form :model="formData" label-width="120px">
       <el-form-item class="source-picker-form-item" :label="t('transfer.taskWizard.sourceItemLabel')">
         <ResourceTreePicker
+          data-testid="task-source-picker"
           v-model="pickerSelection"
           api-base-url="/api/v1/meta"
           :initial-locator="initialSourceLocator"

@@ -1,5 +1,5 @@
 <template>
-  <div class="step5-review">
+  <div class="step5-review" data-testid="task-review-step">
     <div class="review-header">
       <div>
         <h3>{{ t('transfer.taskWizard.reviewPage') }}</h3>
@@ -11,6 +11,7 @@
         </el-button>
         <el-button
           type="success"
+          data-testid="task-submit"
           @click="$emit('submit')"
           :loading="submitting"
         >

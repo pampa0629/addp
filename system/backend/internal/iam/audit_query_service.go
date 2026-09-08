@@ -78,6 +78,9 @@ func (s *AuditQueryService) validateQuery(query AuditQuery) error {
 	if query.RiskLevel != "" && !containsAuditValue(query.RiskLevel, []string{"low", "medium", "high", "critical"}) {
 		return fmt.Errorf("%w: invalid audit risk level", commonapi.ErrBadRequest)
 	}
+	if query.PrincipalType != nil && *query.PrincipalType != PrincipalTypeUser && *query.PrincipalType != PrincipalTypeServicePrincipal {
+		return fmt.Errorf("%w: invalid audit principal type", commonapi.ErrBadRequest)
+	}
 	query.EventName = strings.TrimSpace(query.EventName)
 	query.ModuleName = strings.TrimSpace(query.ModuleName)
 	query.RequestID = strings.TrimSpace(query.RequestID)

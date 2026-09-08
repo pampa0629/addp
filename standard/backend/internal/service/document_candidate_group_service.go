@@ -20,10 +20,11 @@ const (
 var ErrDocumentCandidateGroupQueryInvalid = errors.New("document candidate group query invalid")
 
 type DocumentCandidateGroupListOptions struct {
-	State         string
-	CandidateType string
-	Page          int
-	PageSize      int
+	State            string
+	CandidateType    string
+	ComparisonResult string
+	Page             int
+	PageSize         int
 }
 
 type documentCandidateGroupBuilder struct {
@@ -87,6 +88,18 @@ func (s *DocumentService) ListCandidateGroups(documentID, tenantID int64, opts D
 		}
 		filtered = append(filtered, group)
 	}
+	if opts.ComparisonResult != "" {
+		if err := attachCandidateGroupComparisons(s, document, filtered); err != nil {
+			return nil, err
+		}
+		matched := make([]models.DocumentExtractionCandidateGroup, 0, len(filtered))
+		for _, group := range filtered {
+			if group.Candidate.Comparison != nil && group.Candidate.Comparison.Result == opts.ComparisonResult {
+				matched = append(matched, group)
+			}
+		}
+		filtered = matched
+	}
 	response.Total = int64(len(filtered))
 	response.TotalPages = max(1, (len(filtered)+pageSize-1)/pageSize)
 	if page > response.TotalPages {
@@ -95,8 +108,10 @@ func (s *DocumentService) ListCandidateGroups(documentID, tenantID int64, opts D
 	start := min((page-1)*pageSize, len(filtered))
 	end := min(start+pageSize, len(filtered))
 	response.Data = filtered[start:end]
-	if err := attachCandidateGroupComparisons(s, document, response.Data); err != nil {
-		return nil, err
+	if opts.ComparisonResult == "" {
+		if err := attachCandidateGroupComparisons(s, document, response.Data); err != nil {
+			return nil, err
+		}
 	}
 	return response, nil
 }
@@ -121,7 +136,8 @@ func attachCandidateGroupComparisons(s *DocumentService, document *models.Docume
 func normalizeDocumentCandidateGroupOptions(opts *DocumentCandidateGroupListOptions) (int, int, error) {
 	validState := opts.State == "" || opts.State == models.CandidateGroupStatePending || opts.State == models.CandidateGroupStateRetained || opts.State == models.CandidateGroupStateRejected || opts.State == models.CandidateGroupStateFormalized
 	validType := opts.CandidateType == "" || opts.CandidateType == "glossary" || opts.CandidateType == "element" || opts.CandidateType == "code_set" || opts.CandidateType == "metric"
-	if !validState || !validType || opts.Page < 0 || opts.PageSize < 0 || opts.PageSize > maxDocumentCandidateGroupPageSize {
+	validComparison := opts.ComparisonResult == "" || opts.ComparisonResult == models.CandidateComparisonNew || opts.ComparisonResult == models.CandidateComparisonExact || opts.ComparisonResult == models.CandidateComparisonContentConflict || opts.ComparisonResult == models.CandidateComparisonScopeConflict
+	if !validState || !validType || !validComparison || opts.Page < 0 || opts.PageSize < 0 || opts.PageSize > maxDocumentCandidateGroupPageSize {
 		return 0, 0, ErrDocumentCandidateGroupQueryInvalid
 	}
 	page := opts.Page

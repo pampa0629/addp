@@ -51,6 +51,7 @@
           <div class="candidate-toolbar">
             <el-select v-model="candidateQuery.state" clearable :placeholder="$t('standard.document.allCandidateStates')" @change="applyCandidateFilters"><el-option v-for="state in ['pending','retained','formalized','rejected']" :key="state" :value="state" :label="candidateGroupStateLabel(state)" /></el-select>
             <el-select v-model="candidateQuery.candidate_type" clearable :placeholder="$t('standard.document.allCandidateTypes')" @change="applyCandidateFilters"><el-option v-for="type in ['glossary','element','code_set','metric']" :key="type" :value="type" :label="candidateTypeLabel(type)" /></el-select>
+            <el-select v-model="candidateQuery.comparison_result" clearable :placeholder="$t('standard.document.allComparisonResults')" @change="applyCandidateFilters"><el-option v-for="result in ['new','exact','content_conflict','scope_conflict']" :key="result" :value="result" :label="comparisonLabel(result)" /></el-select>
             <span>{{ $t('standard.document.candidateGroupTotal', { count: candidateGroupResponse.total }) }}</span>
           </div>
           <el-empty v-if="!candidateGroups.length && !candidateLoading" :description="$t('standard.document.noCandidateGroups')" />
@@ -134,7 +135,7 @@ const loading = ref(false), candidateLoading = ref(false), saving = ref(false), 
 const document = ref({}), history = ref([]), domains = ref([]), mappings = ref({ elements: [], glossaries: [], metrics: [] })
 const revision = reactive({}), identity = reactive({ scope_type: 'tenant_common', owner_domain_id: null, doc_type: 'reference', source_org: '', steward_id: null, tags: [] })
 const formalizationForm = reactive({ change_summary: '', metric_type: '' })
-const candidateQuery = reactive({ state: '', candidate_type: '', page: 1, page_size: 20 })
+const candidateQuery = reactive({ state: '', candidate_type: '', comparison_result: '', page: 1, page_size: 20 })
 const candidateGroupResponse = reactive({ data: [], total: 0, page: 1, page_size: 20, total_pages: 1, status_counts: { pending: 0, retained: 0, rejected: 0, formalized: 0 } })
 const candidateRequests = createLatestRequestCoordinator()
 const documentTypes = ['national', 'industry', 'internal', 'reference']

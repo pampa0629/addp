@@ -4083,6 +4083,15 @@ paths:
         in: query
         name: candidate_type
         type: string
+      - description: 与当前标准的实时比对结果 | Live comparison result against current standards
+        enum:
+        - new
+        - exact
+        - content_conflict
+        - scope_conflict
+        in: query
+        name: comparison_result
+        type: string
       - description: 页码，默认 1 | Page number, default 1
         in: query
         name: page

@@ -11,11 +11,23 @@ CONTAINER_NAME=addp-opengauss-official-media-certification
 DATABASE_NAME=addp_opengauss_disposable
 DATABASE_USER=gaussdb
 DATABASE_PASSWORD='AddpGauss606@'
+OPENGAUSS_HOME=/usr/local/opengauss
+OPENGAUSS_EXEC_PATH=/usr/local/opengauss/bin:/scws/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+OPENGAUSS_LIBRARY_PATH=/usr/local/opengauss/lib:/scws/lib
 REPORT_PATH=${ADDP_OPENGAUSS_CERTIFICATION_REPORT:?ADDP_OPENGAUSS_CERTIFICATION_REPORT is required}
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/addp-opengauss-certification.XXXXXX")
 MEDIA_PATH=$WORK_DIR/openGauss-Docker-6.0.6-x86_64.tar
 CONTAINER_OWNED=false
 IMAGE_OWNED=false
+
+opengauss_gsql() {
+    docker exec --user omm \
+        --env "GAUSSHOME=$OPENGAUSS_HOME" \
+        --env "PATH=$OPENGAUSS_EXEC_PATH" \
+        --env "LD_LIBRARY_PATH=$OPENGAUSS_LIBRARY_PATH" \
+        "$CONTAINER_NAME" \
+        "$OPENGAUSS_HOME/bin/gsql" "$@"
+}
 
 cleanup() {
     status=$?
@@ -100,8 +112,7 @@ unset GS_PASSWORD
 
 ready=false
 for _ in $(seq 1 120); do
-    if docker exec --user omm "$CONTAINER_NAME" \
-        gsql -At -d postgres -p 5432 -c 'SELECT 1' 2>/dev/null | grep -Fxq '1'; then
+    if opengauss_gsql -At -d postgres -p 5432 -c 'SELECT 1' 2>/dev/null | grep -Fxq '1'; then
         ready=true
         break
     fi
@@ -116,10 +127,8 @@ if [ "$ready" != true ]; then
     exit 1
 fi
 
-docker exec --user omm "$CONTAINER_NAME" \
-    gsql -d postgres -p 5432 -c "DROP DATABASE IF EXISTS $DATABASE_NAME"
-docker exec --user omm "$CONTAINER_NAME" \
-    gsql -d postgres -p 5432 -c "CREATE DATABASE $DATABASE_NAME DBCOMPATIBILITY 'PG'"
+opengauss_gsql -d postgres -p 5432 -c "DROP DATABASE IF EXISTS $DATABASE_NAME"
+opengauss_gsql -d postgres -p 5432 -c "CREATE DATABASE $DATABASE_NAME DBCOMPATIBILITY 'PG'"
 
 host_mapping=$(docker port "$CONTAINER_NAME" 5432/tcp)
 host_port=${host_mapping##*:}

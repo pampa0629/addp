@@ -5477,6 +5477,10 @@ paths:
         in: query
         name: principal_id
         type: integer
+      - description: '授权主体类型：user 或 service_principal | Principal type: user or service_principal'
+        in: query
+        name: principal_type
+        type: string
       - description: 模块标识 | Module name
         in: query
         name: module_name
@@ -5551,6 +5555,10 @@ paths:
         in: query
         name: principal_id
         type: integer
+      - description: '授权主体类型：user 或 service_principal | Principal type: user or service_principal'
+        in: query
+        name: principal_type
+        type: string
       - description: 模块标识 | Module name
         in: query
         name: module_name
@@ -5588,6 +5596,10 @@ paths:
         in: query
         name: principal_id
         type: integer
+      - description: '授权主体类型：user 或 service_principal | Principal type: user or service_principal'
+        in: query
+        name: principal_type
+        type: string
       - description: 模块标识 | Module name
         in: query
         name: module_name
@@ -5622,6 +5634,10 @@ paths:
         in: query
         name: principal_id
         type: integer
+      - description: '授权主体类型：user 或 service_principal | Principal type: user or service_principal'
+        in: query
+        name: principal_type
+        type: string
       - description: 模块标识 | Module name
         in: query
         name: module_name
@@ -7625,6 +7641,11 @@ paths:
         in: query
         name: principal_id
         type: integer
+      - description: '操作成员类型：user 或 service_principal | Actor member type: user or
+          service_principal'
+        in: query
+        name: principal_type
+        type: string
       - description: 模块标识 | Module name
         in: query
         name: module_name
@@ -7738,6 +7759,11 @@ paths:
         in: query
         name: principal_id
         type: integer
+      - description: '操作成员类型：user 或 service_principal | Actor member type: user or
+          service_principal'
+        in: query
+        name: principal_type
+        type: string
       - description: 模块标识 | Module name
         in: query
         name: module_name
@@ -7775,6 +7801,11 @@ paths:
         in: query
         name: principal_id
         type: integer
+      - description: '操作成员类型：user 或 service_principal | Actor member type: user or
+          service_principal'
+        in: query
+        name: principal_type
+        type: string
       - description: 模块标识 | Module name
         in: query
         name: module_name
@@ -7809,6 +7840,11 @@ paths:
         in: query
         name: principal_id
         type: integer
+      - description: '操作成员类型：user 或 service_principal | Actor member type: user or
+          service_principal'
+        in: query
+        name: principal_type
+        type: string
       - description: 模块标识 | Module name
         in: query
         name: module_name
@@ -9104,6 +9140,10 @@ paths:
       - description: 成员关系 ID | Membership ID
         in: query
         name: membership_id
+        type: string
+      - description: '成员类型：user 或 service_principal | Member type: user or service_principal'
+        in: query
+        name: principal_type
         type: string
       - description: '状态：active 或 revoked | Status: active or revoked'
         in: query

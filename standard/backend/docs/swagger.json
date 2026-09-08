@@ -2025,6 +2025,18 @@
                         "in": "query"
                     },
                     {
+                        "enum": [
+                            "new",
+                            "exact",
+                            "content_conflict",
+                            "scope_conflict"
+                        ],
+                        "type": "string",
+                        "description": "与当前标准的实时比对结果 | Live comparison result against current standards",
+                        "name": "comparison_result",
+                        "in": "query"
+                    },
+                    {
                         "type": "integer",
                         "description": "页码，默认 1 | Page number, default 1",
                         "name": "page",

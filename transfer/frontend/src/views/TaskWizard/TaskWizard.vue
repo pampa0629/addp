@@ -1,6 +1,8 @@
 <template>
   <div
     class="task-wizard"
+    data-testid="transfer-task-wizard"
+    :data-step="wizardState.currentStep.value"
     :class="{ 'task-wizard--review': wizardState.currentStep.value === 4 }"
     v-loading="loading"
     :element-loading-text="t('transfer.taskWizard.loadingTaskDetail')"
@@ -40,6 +42,7 @@
       <el-button
         v-if="wizardState.currentStep.value < 4"
         type="primary"
+        data-testid="task-wizard-next"
         :disabled="!wizardState.canGoNext.value"
         @click="wizardState.nextStep"
       >

@@ -92,7 +92,7 @@ func TestNormalizeDocumentCandidateGroupOptions(t *testing.T) {
 		t.Fatalf("page=%d pageSize=%d err=%v", page, pageSize, err)
 	}
 	for _, opts := range []DocumentCandidateGroupListOptions{
-		{State: "unknown"}, {CandidateType: "unknown"}, {Page: -1}, {PageSize: 101},
+		{State: "unknown"}, {CandidateType: "unknown"}, {ComparisonResult: "unknown"}, {Page: -1}, {PageSize: 101},
 	} {
 		if _, _, err := normalizeDocumentCandidateGroupOptions(&opts); !errors.Is(err, ErrDocumentCandidateGroupQueryInvalid) {
 			t.Fatalf("opts=%+v err=%v", opts, err)

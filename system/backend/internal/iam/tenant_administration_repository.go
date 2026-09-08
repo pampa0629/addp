@@ -361,6 +361,9 @@ func (r *Repository) ListTenantRoleAssignments(ctx context.Context, tenantID int
 	if filter.MembershipID != nil {
 		base = base.Where("EXISTS (SELECT 1 FROM system.tenant_memberships filtered_membership WHERE filtered_membership.id = ? AND filtered_membership.tenant_id = assignment.tenant_id AND filtered_membership.principal_id = assignment.principal_id)", *filter.MembershipID)
 	}
+	if filter.PrincipalType != nil {
+		base = base.Where("EXISTS (SELECT 1 FROM system.principals filtered_principal WHERE filtered_principal.id = assignment.principal_id AND filtered_principal.principal_type = ?)", *filter.PrincipalType)
+	}
 	if filter.Status != nil {
 		base = base.Where("assignment.status = ?", *filter.Status)
 	}

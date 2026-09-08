@@ -199,9 +199,10 @@ func TestTenantAdministrationClosureAgainstPostgres(t *testing.T) {
 	activeStatus := "active"
 	tenantScope := "tenant"
 	filteredAssignments, filteredTotal, err := roleService.ListAssignments(ctx, tenant.ID, TenantRoleAssignmentFilter{
-		MembershipID: &membershipID,
-		Status:       &activeStatus,
-		ScopeType:    &tenantScope,
+		MembershipID:  &membershipID,
+		PrincipalType: &principalType,
+		Status:        &activeStatus,
+		ScopeType:     &tenantScope,
 	}, 1, 100)
 	if err != nil || filteredTotal != 2 || len(filteredAssignments) != 2 || findBatchAssignmentByRoleKey(t, filteredAssignments, "tenant.infrastructure_administrator").ID != assigned.ID {
 		t.Fatalf("filtered active assignments = %#v total=%d err=%v", filteredAssignments, filteredTotal, err)

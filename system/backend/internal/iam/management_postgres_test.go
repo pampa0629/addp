@@ -268,7 +268,8 @@ func TestIAMManagementServicesAgainstPostgres(t *testing.T) {
 	currentTime = currentTime.Add(time.Second)
 	tenantContext := ContextTypeTenant
 	tenantAudit := AuditMetadata{
-		ContextType: &tenantContext, TenantID: &tenant.ID, RequestID: stringPointer("iam-management-tenant"),
+		ContextType: &tenantContext, TenantID: &tenant.ID, PrincipalID: &createdUser.ID,
+		PrincipalType: &requesterType, RequestID: stringPointer("iam-management-tenant"),
 	}
 	membership, err := membershipService.EstablishMembership(ctx, EstablishTenantMembershipInput{
 		TenantID: tenant.ID, PrincipalID: membershipUser.ID, SourceType: TenantMembershipSourceManual,
@@ -352,6 +353,17 @@ func TestIAMManagementServicesAgainstPostgres(t *testing.T) {
 	for _, auditLog := range tenantLogs {
 		if auditLog.TenantID == nil || *auditLog.TenantID != tenant.ID {
 			t.Fatalf("tenant audit escaped scope: %#v", auditLog)
+		}
+	}
+	userTenantLogs, userTenantTotal, err := auditService.List(ctx, AuditQuery{
+		TenantID: &tenant.ID, PrincipalType: &requesterType,
+	}, 1, 100)
+	if err != nil || userTenantTotal == 0 || len(userTenantLogs) != int(userTenantTotal) {
+		t.Fatalf("user tenant audit list total=%d logs=%d err=%v", userTenantTotal, len(userTenantLogs), err)
+	}
+	for _, auditLog := range userTenantLogs {
+		if auditLog.PrincipalType == nil || *auditLog.PrincipalType != PrincipalTypeUser {
+			t.Fatalf("tenant audit principal type escaped filter: %#v", auditLog)
 		}
 	}
 	var entityLog *AuditLog

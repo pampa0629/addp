@@ -2164,6 +2164,8 @@ Backend 必须按当前冻结 Descriptor 对规则数量、操作符、operand �
 
 真实浏览器先完成不持久化预览，再在标准全量重启后完成持久化闭环：既有通用空间应用的 Value Component 为 `total_area` 显式配置 `gt 0.05`、标签“面积较大”、tone `warning`；草稿保存后重新加载 Component，操作符、operand、标签和 tone 均从 Backend 恢复，证明规则不是前端内存状态。应用随后发布不可变 Revision 4，正式 `/data-apps/c4c0aa6e-70b1-49e8-8ade-8db92f5c6e33` 运行页无需手工查询即返回原值 `0.1094`，同时显示“面积较大”警示徽标和卡片边框；其余 Chart、Map 和 Table 继续正常查询，浏览器 warning/error 日志为空。字段、阈值、标签、应用 ID 和运行结果只作为本地验收证据，没有进入 Workbench 生产代码、默认配置或测试 fixture。
 
+同一长期应用随后完成跨 renderer 的持久配置：Chart 的 `total_area` 使用 `gt 2`、标签“面积突出”、tone `warning`，Map 与 Table 的 `SHAPE_Area` 使用 `gt 0.05`、标签“大面积地块”、tone `warning`。保存草稿后重新加载三个 Component，规则数量及 operand `2 / 0.05 / 0.05` 均从 Backend 恢复，并成功发布不可变 Revision 5；正式运行页也已确认读取“发布修订 5”。当前业务 PostGIS `127.0.0.1:5433` 未启动，Service 数据保护门禁因无法解析 read set 按设计失败关闭，因此 Chart tooltip、Map popup 与 Table 徽标的 Revision 5 真实数据验收等待业务数据源恢复后补齐。上述字段、阈值与标签仍只存在于该应用 Snapshot，没有硬编码到 Workbench、共享 renderer 或测试 fixture。
+
 ## 十五、概念设计状态
 
 当前没有待确认的 Phase 0 概念问题。Phase 5 的 Selection Binding 同页联动、`desktop | wallboard` 展示模式、浏览器会话级全屏、Application Refresh Policy 和 Application Presentation Sections 已完成设计、实现、标准模块门禁与真实浏览器验收；Data Application 资产运营指标的事实源、模块归属以及 Asset 自有 `application` / 具体 Asset 运营分组也已完成运行态复核。外部 BI 的 owner 边界、消费契约、用户委托 OAuth 单一路线和 System 外部 OAuth Client 注册治理已经完成；首个真实 BI 验收载体仍为 Power Query 自定义 Connector 与 Power BI Desktop Import，但因当前缺少 Windows 宿主而暂缓。`common-python` 的产品无关 Service Consumer SDK、离线门禁及真实普通表、空间表和 Outdoor 多服务只读运行验收均已完成；它不替代 callback state、持久外部 Client 生命周期和真实 BI 产品端到端证据，因此正式 BI 接入指南继续保持未完成。

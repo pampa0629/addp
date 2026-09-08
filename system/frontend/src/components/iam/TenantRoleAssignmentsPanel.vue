@@ -23,9 +23,16 @@
 
     <div class="iam-toolbar">
       <div class="iam-filters">
-        <el-select v-model="filters.membership_id" :placeholder="t('system.iam.roleAssignments.allMembers')" clearable filterable @change="reload">
-          <el-option v-for="member in membershipOptions" :key="member.id" :label="memberLabel(member)" :value="member.id" />
-        </el-select>
+        <TenantMemberSelect
+          v-model="filters.membership_id"
+          v-model:principal-type="filters.principal_type"
+          :members="membershipOptions"
+          :current-membership-id="currentMembershipID"
+          :placeholder="t('system.iam.roleAssignments.allMembers')"
+          show-type-filter
+          @change="reload"
+          @principal-type-change="reload"
+        />
         <el-select v-model="filters.scope_type" :placeholder="t('system.iam.roleAssignments.scope')" clearable @change="reload">
           <el-option v-for="scope in scopeTypes" :key="scope" :label="scopeLabel(scope)" :value="scope" />
         </el-select>
@@ -41,7 +48,7 @@
     </div>
 
     <el-table v-loading="loading" :data="rows" stripe>
-      <el-table-column :label="t('system.iam.memberships.member')" min-width="220"><template #default="{ row }"><div class="iam-primary-cell"><strong>{{ memberDisplayName(row) }}</strong><span>{{ memberPrincipalLabel(row) }} · {{ memberIdentifier(row) }}</span></div></template></el-table-column>
+      <el-table-column :label="t('system.iam.memberships.member')" min-width="250"><template #default="{ row }"><TenantMemberIdentity :member="row" :current-membership-id="currentMembershipID" /></template></el-table-column>
       <el-table-column :label="t('system.iam.roles.role')" min-width="210"><template #default="{ row }"><div class="iam-primary-cell"><strong>{{ assignmentRoleName(row) }}</strong><span class="iam-role-key">{{ row.role_key }}</span></div></template></el-table-column>
       <el-table-column :label="t('system.iam.roleAssignments.scope')" width="170"><template #default="{ row }">{{ scopeValue(row) }}</template></el-table-column>
       <el-table-column :label="t('system.iam.common.status')" width="110"><template #default="{ row }"><el-tag :type="row.status === 'active' ? 'success' : 'info'">{{ t(`system.iam.status.${row.status}`) }}</el-tag></template></el-table-column>
@@ -54,7 +61,7 @@
     <el-dialog v-model="dialogVisible" :title="t('system.iam.roleAssignments.create')" width="min(620px, calc(100% - 24px))">
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
         <el-form-item :label="t('system.iam.memberships.member')" prop="membershipId">
-          <el-select v-model="form.membershipId" filterable style="width: 100%"><el-option v-for="member in activeMembers" :key="member.id" :label="memberLabel(member)" :value="member.id" /></el-select>
+          <TenantMemberSelect v-model="form.membershipId" :members="membershipOptions" :current-membership-id="currentMembershipID" active-only />
         </el-form-item>
         <el-form-item :label="t('system.iam.roleAssignments.scope')" prop="scopeType">
           <el-select v-model="form.scopeType" style="width: 100%"><el-option v-for="scope in availableScopeTypes" :key="scope" :label="scopeLabel(scope)" :value="scope" /></el-select>
@@ -105,8 +112,9 @@ import { Check, CircleClose, Connection, DataAnalysis, Plus, Refresh, User, View
 import { useI18n } from 'vue-i18n'
 import { iamAPI } from '../../api/iam'
 import { useAuthStore } from '../../store/auth'
-import { formatMemberOptionLabel } from '../../utils/iamPresentation'
 import MFAStepUpDialog from './MFAStepUpDialog.vue'
+import TenantMemberIdentity from './TenantMemberIdentity.vue'
+import TenantMemberSelect from './TenantMemberSelect.vue'
 import {
   TENANT_ADMINISTRATOR_ROLE_KEY,
   TENANT_ROLE_RECOMMENDATIONS,
@@ -137,12 +145,12 @@ const pageSize = ref(20)
 const total = ref(0)
 const dialogVisible = ref(false)
 const formRef = ref()
-const filters = reactive({ membership_id: '', scope_type: '', status: '' })
+const filters = reactive({ membership_id: '', principal_type: '', scope_type: '', status: '' })
 const form = reactive({ membershipId: '', roleIds: [], scopeType: 'tenant', departmentId: '', projectGroupId: '', validUntil: null, reason: '' })
 const currentMembershipID = computed(() => authStore.authContext?.context?.tenant_membership_id || '')
-const showingCurrentAccount = computed(() => Boolean(currentMembershipID.value && filters.membership_id === currentMembershipID.value))
+const showingCurrentAccount = computed(() => Boolean(currentMembershipID.value && String(filters.membership_id) === String(currentMembershipID.value)))
 const activeMembers = computed(() => membershipOptions.value.filter((member) => member.status === 'active'))
-const selectedMember = computed(() => activeMembers.value.find((member) => member.id === form.membershipId))
+const selectedMember = computed(() => activeMembers.value.find((member) => String(member.id) === String(form.membershipId)))
 const selectedRoles = computed(() => roles.value.filter((role) => form.roleIds.includes(role.id)))
 const compatibleRoles = computed(() => roles.value.filter((role) =>
   (role.allowed_principal_types || []).includes(selectedMember.value?.principal_type)
@@ -178,10 +186,6 @@ const rules = computed(() => ({
 function roleLabel(role) { return resolveRoleName(role, t, te) }
 function assignmentRoleName(row) { return resolveRoleName(row, t, te) }
 function recommendationAssigned(roleKey) { return hasTenantRole(authStore.authContext, roleKey, 'tenant') }
-function memberLabel(member) { return formatMemberOptionLabel(member, currentMembershipID.value, t('system.iam.memberships.currentAccount')) }
-function memberDisplayName(row) { return row.display_name || row.service_principal_name || row.principal_id }
-function memberPrincipalLabel(row) { return t(`system.iam.principalType.${row.principal_type || 'user'}`) }
-function memberIdentifier(row) { return row.username || row.service_principal_name || row.principal_id }
 function scopeLabel(scope) { return resolveTenantScopeLabel(scope, t) }
 function scopeValue(row) { return formatTenantAssignmentScope(row, t) }
 function formatDate(value) { return value ? new Date(value).toLocaleString() : '-' }
@@ -192,6 +196,7 @@ async function load() {
       page: page.value,
       page_size: pageSize.value,
       membership_id: filters.membership_id || undefined,
+      principal_type: filters.principal_type || undefined,
       scope_type: filters.scope_type || undefined,
       status: filters.status || undefined
     })
@@ -249,14 +254,16 @@ async function loadMemberAssignments() {
 }
 function reload() { page.value = 1; return load() }
 function toggleCurrentAccountFilter() {
-  filters.membership_id = showingCurrentAccount.value ? '' : currentMembershipID.value
+  const wasShowingCurrentAccount = showingCurrentAccount.value
+  filters.membership_id = wasShowingCurrentAccount ? '' : currentMembershipID.value
+  if (!wasShowingCurrentAccount) filters.principal_type = ''
   return reload()
 }
 async function openCreate(roleKey = '') {
   Object.assign(form, { membershipId: '', roleIds: [], scopeType: 'tenant', departmentId: '', projectGroupId: '', validUntil: null, reason: '' })
   try {
     await loadOptions()
-    if (activeMembers.value.some((member) => member.id === currentMembershipID.value)) form.membershipId = currentMembershipID.value
+    if (activeMembers.value.some((member) => String(member.id) === String(currentMembershipID.value))) form.membershipId = currentMembershipID.value
     await loadMemberAssignments()
     const recommendedRole = roles.value.find((role) => role.role_key === roleKey)
     const recommendedOption = roleOptions.value.find((role) => role.id === recommendedRole?.id)
@@ -317,7 +324,7 @@ async function revoke(row) {
   }
 }
 async function refreshCurrentMemberAuthorization(membershipId) {
-  if (membershipId !== authStore.authContext?.context?.tenant_membership_id) return
+  if (String(membershipId) !== String(authStore.authContext?.context?.tenant_membership_id || '')) return
   await authStore.refreshAuthorization()
 }
 watch(() => form.membershipId, () => {

@@ -43,4 +43,12 @@ describe('document candidate contract', () => {
     expect(zhCn.standard.document.candidateGroupState.formalized).toBe('已正式化')
     expect(en.standard.document.candidateEvidenceHistory).toContain('Evidence')
   })
+
+  it('filters candidate groups by the live comparison result', () => {
+    expect(documentDetailSource).toContain('candidateQuery.comparison_result')
+    expect(documentDetailSource).toContain("['new','exact','content_conflict','scope_conflict']")
+    expect(documentDetailSource).toContain("standard.document.allComparisonResults")
+    expect(zhCn.standard.document.allComparisonResults).toBe('全部比对结果')
+    expect(en.standard.document.allComparisonResults).toBe('All Comparison Results')
+  })
 })

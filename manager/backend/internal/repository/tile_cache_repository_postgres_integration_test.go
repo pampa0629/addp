@@ -48,7 +48,7 @@ func TestIntegrationPostgresManagerTileCacheConcurrentClaimAndStart(t *testing.T
 			"tile":   commonModels.JSONMap{"format": "mvt"},
 		},
 	}
-	if err := db.Create(&task).Error; err != nil {
+	if err := createTaskDefinition(context.Background(), db, commonExecution.TaskTypeVectorTileCacheGeneration, &task); err != nil {
 		t.Fatalf("create tile cache task: %v", err)
 	}
 
@@ -143,7 +143,7 @@ func TestIntegrationPostgresManagerVectorMaterializedViewConcurrentClaimAndStart
 			"target": commonModels.JSONMap{"item_fingerprint": fmt.Sprintf("manager-vmv-pg-%d", tenantID)},
 		},
 	}
-	if err := db.Create(&task).Error; err != nil {
+	if err := createTaskDefinition(context.Background(), db, commonExecution.TaskTypeVectorMaterializedViewGeneration, &task); err != nil {
 		t.Fatalf("create vector materialized view task: %v", err)
 	}
 
@@ -240,7 +240,7 @@ func TestIntegrationPostgresManagerRasterCOGConcurrentClaimAndStart(t *testing.T
 			"target": commonModels.JSONMap{"item_fingerprint": fmt.Sprintf("manager-cog-pg-%d", tenantID)},
 		},
 	}
-	if err := db.Create(&task).Error; err != nil {
+	if err := createTaskDefinition(context.Background(), db, commonExecution.TaskTypeRasterCOGGeneration, &task); err != nil {
 		t.Fatalf("create raster COG task: %v", err)
 	}
 
@@ -336,7 +336,7 @@ func TestIntegrationPostgresManagerRasterMosaicConcurrentClaimAndStart(t *testin
 			"source": commonModels.JSONMap{"node_locator": fmt.Sprintf("addp://engine/1/path/mosaics/%d?type=node", tenantID)},
 		},
 	}
-	if err := db.Create(&task).Error; err != nil {
+	if err := createTaskDefinition(context.Background(), db, commonExecution.TaskTypeRasterMosaicGeneration, &task); err != nil {
 		t.Fatalf("create raster mosaic task: %v", err)
 	}
 
@@ -432,7 +432,7 @@ func TestIntegrationPostgresManagerModel3DGLBConcurrentClaimAndStart(t *testing.
 			"source": commonModels.JSONMap{"item_fingerprint": fmt.Sprintf("manager-glb-pg-%d", tenantID)},
 		},
 	}
-	if err := db.Create(&task).Error; err != nil {
+	if err := createTaskDefinition(context.Background(), db, commonExecution.TaskTypeModel3DGLBGeneration, &task); err != nil {
 		t.Fatalf("create model 3d GLB task: %v", err)
 	}
 
@@ -529,7 +529,7 @@ func TestIntegrationPostgresManagerGaussianSplatKSplatConcurrentClaimAndStart(t 
 			"source": commonModels.JSONMap{"item_fingerprint": fmt.Sprintf("manager-ksplat-pg-%d", tenantID)},
 		},
 	}
-	if err := db.Create(&task).Error; err != nil {
+	if err := createTaskDefinition(context.Background(), db, commonExecution.TaskTypeGaussianSplatKSplatGeneration, &task); err != nil {
 		t.Fatalf("create gaussian splat KSplat task: %v", err)
 	}
 
@@ -623,7 +623,7 @@ func TestIntegrationPostgresManagerPointCloudCOPCConcurrentClaimAndStart(t *test
 		TenantID: tenantID, Name: "manager-point-cloud-copc-integration", Enabled: true,
 		Config: commonModels.JSONMap{"source": commonModels.JSONMap{"item_fingerprint": fmt.Sprintf("manager-copc-pg-%d", tenantID)}},
 	}
-	if err := db.Create(&task).Error; err != nil {
+	if err := createTaskDefinition(context.Background(), db, commonExecution.TaskTypePointCloudCOPCGeneration, &task); err != nil {
 		t.Fatalf("create point cloud COPC task: %v", err)
 	}
 	repo := NewPointCloudCOPCRepository(db)
@@ -705,7 +705,7 @@ func TestIntegrationPostgresManagerModel3DTilesConcurrentClaimAndStart(t *testin
 			"target_format": models.Model3DTilesTargetFormat3DTiles,
 		},
 	}
-	if err := db.Create(&task).Error; err != nil {
+	if err := createTaskDefinition(context.Background(), db, commonExecution.TaskTypeModel3DTilesGeneration, &task); err != nil {
 		t.Fatalf("create model3d tiles task: %v", err)
 	}
 	repo := NewModel3DTilesRepository(db)
@@ -780,20 +780,24 @@ func TestIntegrationPostgresManagerManagedTaskSemanticIdentityIndexes(t *testing
 		"target":       commonModels.JSONMap{"item_fingerprint": fingerprint},
 		"profile_hash": "profile-a",
 	}
-	if err := db.Create(&models.TileCacheTask{TenantID: tenantID, Name: "tile-a", Enabled: true, Config: tileConfig}).Error; err != nil {
+	firstTileTask := &models.TileCacheTask{TenantID: tenantID, Name: "tile-a", Enabled: true, Config: tileConfig}
+	if err := createTaskDefinition(context.Background(), db, commonExecution.TaskTypeVectorTileCacheGeneration, firstTileTask); err != nil {
 		t.Fatalf("create first tile cache task: %v", err)
 	}
-	if err := db.Create(&models.TileCacheTask{TenantID: tenantID, Name: "tile-b", Enabled: true, Config: tileConfig}).Error; err == nil || !strings.Contains(err.Error(), "idx_vector_tile_cache_tasks_source_profile_unique") {
+	duplicateTileTask := &models.TileCacheTask{TenantID: tenantID, Name: "tile-b", Enabled: true, Config: tileConfig}
+	if err := createTaskDefinition(context.Background(), db, commonExecution.TaskTypeVectorTileCacheGeneration, duplicateTileTask); err == nil || !strings.Contains(err.Error(), "uq_manager_task_definition_semantic") {
 		t.Fatalf("duplicate tile cache task error = %v, want semantic identity index", err)
 	}
 
 	rasterConfig := commonModels.JSONMap{
 		"target": commonModels.JSONMap{"item_fingerprint": fingerprint},
 	}
-	if err := db.Create(&models.RasterCOGTask{TenantID: tenantID, Name: "cog-a", Enabled: true, Config: rasterConfig}).Error; err != nil {
+	firstRasterTask := &models.RasterCOGTask{TenantID: tenantID, Name: "cog-a", Enabled: true, Config: rasterConfig}
+	if err := createTaskDefinition(context.Background(), db, commonExecution.TaskTypeRasterCOGGeneration, firstRasterTask); err != nil {
 		t.Fatalf("create first raster COG task: %v", err)
 	}
-	if err := db.Create(&models.RasterCOGTask{TenantID: tenantID, Name: "cog-b", Enabled: true, Config: rasterConfig}).Error; err == nil || !strings.Contains(err.Error(), "idx_raster_cog_tasks_source_unique") {
+	duplicateRasterTask := &models.RasterCOGTask{TenantID: tenantID, Name: "cog-b", Enabled: true, Config: rasterConfig}
+	if err := createTaskDefinition(context.Background(), db, commonExecution.TaskTypeRasterCOGGeneration, duplicateRasterTask); err == nil || !strings.Contains(err.Error(), "uq_manager_task_definition_semantic") {
 		t.Fatalf("duplicate raster COG task error = %v, want semantic identity index", err)
 	}
 }
@@ -825,19 +829,21 @@ func TestIntegrationPostgresManagerDisablesTileCacheOwnerSchedule(t *testing.T) 
 		Schedule:  "0 * * * *",
 		NextRunAt: &nextRunAt,
 		Config: commonModels.JSONMap{
-			"target": commonModels.JSONMap{"item_fingerprint": fmt.Sprintf("manager-schedule-%d", tenantID)},
-			"tile":   commonModels.JSONMap{"format": "mvt"},
+			"target":       commonModels.JSONMap{"item_fingerprint": fmt.Sprintf("manager-schedule-%d", tenantID)},
+			"profile_hash": "schedule-migration",
+			"tile":         commonModels.JSONMap{"archive_format": "pmtiles", "tile_type": "mvt"},
+			"storage":      commonModels.JSONMap{"storage_ref": "manager-test/schedule.pmtiles"},
 		},
 	}
 	t.Cleanup(func() {
 		_ = db.Unscoped().Where("tenant_id = ?", tenantID).Delete(&models.TileCacheTask{}).Error
 	})
-	if err := db.Create(task).Error; err != nil {
+	if err := createTaskDefinition(context.Background(), db, commonExecution.TaskTypeVectorTileCacheGeneration, task); err != nil {
 		t.Fatalf("create historical scheduled tile cache task: %v", err)
 	}
 	if err := db.Exec(`
 		CREATE INDEX IF NOT EXISTS idx_vector_tile_cache_tasks_schedule
-		ON manager.vector_tile_cache_tasks (enabled, next_run_at)
+		ON manager.task_definitions (enabled, next_run_at)
 	`).Error; err != nil {
 		t.Fatalf("create historical schedule index: %v", err)
 	}
@@ -866,6 +872,9 @@ func TestIntegrationPostgresManagerDisablesTileCacheOwnerSchedule(t *testing.T) 
 }
 
 func managerTileCacheRepositoryIntegrationDSN() string {
+	if dsn := strings.TrimSpace(os.Getenv("MANAGER_POSTGRES_TEST_DSN")); dsn != "" {
+		return dsn
+	}
 	return fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
 		managerTileCacheRepositoryIntegrationEnv("ADDP_TEST_POSTGRES_HOST", "localhost"),
 		managerTileCacheRepositoryIntegrationEnv("ADDP_TEST_POSTGRES_PORT", "15432"),

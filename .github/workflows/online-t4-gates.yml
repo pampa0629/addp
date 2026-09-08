@@ -17,6 +17,7 @@ on:
           - security-mysql-owner-protection
           - security-transfer-protection
           - standard-model-reference-deletion
+          - transfer-insert-only-mysql
           - workbench-service-consumption
 
 permissions:

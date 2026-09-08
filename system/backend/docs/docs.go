@@ -2937,6 +2937,12 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
+                        "description": "授权主体类型：user 或 service_principal | Principal type: user or service_principal",
+                        "name": "principal_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
                         "description": "模块标识 | Module name",
                         "name": "module_name",
                         "in": "query"
@@ -3018,6 +3024,12 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
+                        "description": "授权主体类型：user 或 service_principal | Principal type: user or service_principal",
+                        "name": "principal_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
                         "description": "模块标识 | Module name",
                         "name": "module_name",
                         "in": "query"
@@ -3075,6 +3087,12 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
+                        "description": "授权主体类型：user 或 service_principal | Principal type: user or service_principal",
+                        "name": "principal_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
                         "description": "模块标识 | Module name",
                         "name": "module_name",
                         "in": "query"
@@ -3125,6 +3143,12 @@ const docTemplate = `{
                         "type": "integer",
                         "description": "授权主体 ID | Principal ID",
                         "name": "principal_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "授权主体类型：user 或 service_principal | Principal type: user or service_principal",
+                        "name": "principal_type",
                         "in": "query"
                     },
                     {
@@ -6185,6 +6209,12 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
+                        "description": "操作成员类型：user 或 service_principal | Actor member type: user or service_principal",
+                        "name": "principal_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
                         "description": "模块标识 | Module name",
                         "name": "module_name",
                         "in": "query"
@@ -6324,6 +6354,12 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
+                        "description": "操作成员类型：user 或 service_principal | Actor member type: user or service_principal",
+                        "name": "principal_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
                         "description": "模块标识 | Module name",
                         "name": "module_name",
                         "in": "query"
@@ -6381,6 +6417,12 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
+                        "description": "操作成员类型：user 或 service_principal | Actor member type: user or service_principal",
+                        "name": "principal_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
                         "description": "模块标识 | Module name",
                         "name": "module_name",
                         "in": "query"
@@ -6431,6 +6473,12 @@ const docTemplate = `{
                         "type": "integer",
                         "description": "成员对应授权主体 ID | Principal ID of the member",
                         "name": "principal_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "操作成员类型：user 或 service_principal | Actor member type: user or service_principal",
+                        "name": "principal_type",
                         "in": "query"
                     },
                     {
@@ -8490,6 +8538,12 @@ const docTemplate = `{
                         "type": "string",
                         "description": "成员关系 ID | Membership ID",
                         "name": "membership_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "成员类型：user 或 service_principal | Member type: user or service_principal",
+                        "name": "principal_type",
                         "in": "query"
                     },
                     {

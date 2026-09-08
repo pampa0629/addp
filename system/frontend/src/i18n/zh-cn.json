@@ -228,6 +228,14 @@
         "currentAccount": "当前账号",
         "source": "来源"
       },
+      "memberSelect": {
+        "type": "成员类型",
+        "groups": {
+          "current": "当前账号",
+          "user": "用户账号",
+          "service_principal": "服务账号"
+        }
+      },
       "organization": {
         "versionConflict": "该组织记录已发生变化，请刷新后再提交；当前输入已保留。",
         "parent": "上级部门",
@@ -349,6 +357,7 @@
         "eventName": "事件名称",
         "module": "模块",
         "member": "操作成员",
+        "actorType": "操作者类型",
         "principal": "操作主体",
         "request": "HTTP 请求",
         "requestId": "请求 ID",
@@ -367,7 +376,7 @@
         }
       },
       "principalType": {
-        "user": "用户",
+        "user": "用户账号",
         "service_principal": "服务账号"
       },
       "modules": {

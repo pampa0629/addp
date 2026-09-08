@@ -1,5 +1,5 @@
 <template>
-  <div class="task-detail">
+  <div class="task-detail" data-testid="transfer-task-detail">
     <el-button @click="handleBack" style="margin-bottom: 20px;">
       <el-icon><ArrowLeft /></el-icon>
       {{ t('transfer.taskDetail.back') }}
@@ -26,7 +26,7 @@
               </el-button>
             </template>
             <template v-else-if="isManualTask">
-              <el-button type="primary" @click="handleExecute" :disabled="task.status === 'running'">
+              <el-button type="primary" data-testid="task-execute" @click="handleExecute" :disabled="task.status === 'running'">
                 {{ t('transfer.taskDetail.execute') }}
               </el-button>
             </template>
@@ -290,7 +290,7 @@
       </template>
 
       <el-divider>{{ t('transfer.taskDetail.executionRecords') }}</el-divider>
-      <el-table :data="executions" stripe>
+      <el-table :data="executions" data-testid="task-executions" stripe>
         <el-table-column prop="execution_id" :label="t('transfer.taskDetail.executionId')" width="220" show-overflow-tooltip />
         <el-table-column prop="status" :label="t('transfer.taskDetail.status')" width="100">
           <template #default="{ row }">

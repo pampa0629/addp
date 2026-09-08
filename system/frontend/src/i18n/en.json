@@ -228,6 +228,14 @@
         "currentAccount": "Current Account",
         "source": "Source"
       },
+      "memberSelect": {
+        "type": "Member Type",
+        "groups": {
+          "current": "Current Account",
+          "user": "User Accounts",
+          "service_principal": "Service Accounts"
+        }
+      },
       "organization": {
         "versionConflict": "This organization record changed. Refresh before submitting again; your current input has been preserved.",
         "parent": "Parent Department",
@@ -349,6 +357,7 @@
         "eventName": "Event Name",
         "module": "Module",
         "member": "Actor Member",
+        "actorType": "Actor Type",
         "principal": "Actor Principal",
         "request": "HTTP Request",
         "requestId": "Request ID",
@@ -367,7 +376,7 @@
         }
       },
       "principalType": {
-        "user": "User",
+        "user": "User Account",
         "service_principal": "Service Account"
       },
       "modules": {

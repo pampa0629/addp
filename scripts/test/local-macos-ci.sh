@@ -309,6 +309,7 @@ run_integration_gates() {
     META_POSTGRES_TEST_DSN="$shared_dsn" \
     CATALOG_POSTGRES_TEST_DSN="$shared_dsn" \
     DEVELOP_POSTGRES_TEST_DSN="$shared_dsn" \
+    MANAGER_POSTGRES_TEST_DSN="$shared_dsn" \
     ADDP_TEST_MODEL_POSTGRES_DSN="$shared_dsn" \
     SERVICE_POSTGRES_TEST_DSN="$shared_dsn" \
     STANDARD_POSTGRES_TEST_DSN="$shared_dsn" \

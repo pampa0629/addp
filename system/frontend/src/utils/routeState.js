@@ -1,7 +1,8 @@
 const AUDIT_TABS = new Set(['platform-audit', 'tenant-audit'])
-const AUDIT_QUERY_KEYS = ['event_name', 'result', 'risk_level', 'module_name', 'principal_id', 'entity_type', 'entity_id', 'page']
+const AUDIT_QUERY_KEYS = ['event_name', 'result', 'risk_level', 'module_name', 'principal_id', 'principal_type', 'entity_type', 'entity_id', 'page']
 const AUDIT_RESULTS = new Set(['succeeded', 'failed', 'denied', 'ignored'])
 const AUDIT_RISK_LEVELS = new Set(['low', 'medium', 'high', 'critical'])
+const PRINCIPAL_TYPES = new Set(['user', 'service_principal'])
 
 function queriesEqual(left, right) {
   const rightKeys = Object.keys(right)
@@ -27,6 +28,7 @@ export function resolveIAMRouteState(availableTabKeys, routeQuery = {}) {
       }
       if (key === 'result' && !AUDIT_RESULTS.has(value)) continue
       if (key === 'risk_level' && !AUDIT_RISK_LEVELS.has(value)) continue
+      if (key === 'principal_type' && !PRINCIPAL_TYPES.has(value)) continue
       query[key] = value
     }
   }

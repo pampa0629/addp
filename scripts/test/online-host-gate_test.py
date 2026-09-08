@@ -89,6 +89,10 @@ class OnlineHostGateTest(unittest.TestCase):
             '#!/bin/bash\nprintf "oceanbase-fixture:%s\\n" "$1" >> "$ADDP_TEST_COMMAND_LOG"\n',
         )
         self._write_executable(
+            "business/scripts/online-transfer-insert-only-fixture.sh",
+            '#!/bin/bash\nprintf "transfer-insert-only-fixture:%s\\n" "$1" >> "$ADDP_TEST_COMMAND_LOG"\n',
+        )
+        self._write_executable(
             "business/scripts/online-manager-minio-fixture.sh",
             '#!/bin/bash\nprintf "manager-fixture:%s\\n" "$1" >> "$ADDP_TEST_COMMAND_LOG"\n',
         )
@@ -191,6 +195,13 @@ class OnlineHostGateTest(unittest.TestCase):
                 ADDP_ONLINE_WORKBENCH_MYSQL_USER=workbench_reader
                 ADDP_ONLINE_WORKBENCH_MYSQL_PASSWORD=reader-password-1234
                 ADDP_ONLINE_WORKBENCH_MYSQL_ROOT_PASSWORD=root-password-1234
+                ADDP_ONLINE_TRANSFER_MYSQL_ENGINE_ID=57
+                ADDP_ONLINE_TRANSFER_MYSQL_ENGINE_NAME='Online Transfer MySQL Fixture'
+                ADDP_ONLINE_TRANSFER_MYSQL_PORT=53307
+                ADDP_ONLINE_TRANSFER_MYSQL_DATABASE=transfer_fixture
+                ADDP_ONLINE_TRANSFER_MYSQL_USER=transfer_writer
+                ADDP_ONLINE_TRANSFER_MYSQL_PASSWORD=writer-password-1234
+                ADDP_ONLINE_TRANSFER_MYSQL_ROOT_PASSWORD=transfer-root-password-1234
                 ADDP_ONLINE_OCEANBASE_ENGINE_ID=47
                 ADDP_ONLINE_OCEANBASE_PORT=52881
                 ADDP_ONLINE_OCEANBASE_DATABASE=oceanbase_fixture
@@ -350,6 +361,25 @@ class OnlineHostGateTest(unittest.TestCase):
                 "npm:--prefix console/frontend exec -- playwright install chromium",
                 "make:test-online:ONLINE_SUITE=workbench-service-consumption",
                 "mysql-fixture:stop",
+                "stop",
+            ],
+        )
+
+    def test_runs_transfer_insert_only_suite_with_owned_browser_fixture(self) -> None:
+        result = self._run("transfer-insert-only-mysql")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            self.command_log.read_text(encoding="utf-8").splitlines(),
+            [
+                "stop",
+                "infra-up",
+                "transfer-insert-only-fixture:stop",
+                "transfer-insert-only-fixture:start",
+                "start:-all",
+                "npm:--prefix console/frontend exec -- playwright install chromium",
+                "make:test-online:ONLINE_SUITE=transfer-insert-only-mysql",
+                "transfer-insert-only-fixture:stop",
                 "stop",
             ],
         )

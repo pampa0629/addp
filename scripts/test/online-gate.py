@@ -122,6 +122,15 @@ SUITES: Mapping[str, Suite] = {
             ("model", "MODEL_URL"),
         ),
     ),
+    "transfer-insert-only-mysql": Suite(
+        command=(sys.executable, "scripts/test/transfer-insert-only-mysql-online.py"),
+        services=(
+            ("gateway", "GATEWAY_URL"),
+            ("system", "SYSTEM_URL"),
+            ("meta", "META_URL"),
+            ("transfer", "TRANSFER_URL"),
+        ),
+    ),
     "enterprise-catalog-publishing": Suite(
         command=(sys.executable, "scripts/test/enterprise-catalog-publishing-online.py"),
         services=(
