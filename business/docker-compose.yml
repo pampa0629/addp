@@ -10,6 +10,7 @@
 # - clickhouse: ClickHouse（高性能列式存储 OLAP）
 # - mongodb: MongoDB（文档型 NoSQL 数据库）
 # - oceanbase: OceanBase CE（MySQL 模式分布式关系数据库）
+# - opengauss: openGauss 6.0.6 LTS（PG 兼容模式关系数据库）
 # - neo4j: Neo4j Community Edition（图数据库，知识图谱）
 # - spark-master/workers: Apache Spark 分布式计算引擎
 # - business-redpanda: 业务 Kafka API 消息流
@@ -287,6 +288,23 @@ services:
       start_period: 300s
     restart: unless-stopped
 
+  opengauss:
+    image: opengauss:6.0.6
+    container_name: business-opengauss
+    privileged: true
+    environment:
+      GS_PASSWORD: ${OPENGAUSS_PASSWORD:-AddpGauss606@}
+      OTHER_PG_CONF: |-
+        max_process_memory = ${OPENGAUSS_MAX_PROCESS_MEMORY:-4GB}
+        shared_buffers = ${OPENGAUSS_SHARED_BUFFERS:-512MB}
+    ports:
+      - "${OPENGAUSS_PORT:-5435}:5432"
+    volumes:
+      - opengauss_data:/var/lib/opengauss
+    networks:
+      - business-network
+    restart: unless-stopped
+
   # Redpanda（独立业务 Kafka API 消息流，不承载 ADDP Infra Kafka）
   business-redpanda:
     image: ${BUSINESS_REDPANDA_IMAGE:-docker.redpanda.com/redpandadata/redpanda:v24.3.18}
@@ -486,6 +504,8 @@ volumes:
   oceanbase_data:
     driver: local
   oceanbase_obd_data:
+    driver: local
+  opengauss_data:
     driver: local
   doris_fe_data:
     driver: local

@@ -11,6 +11,7 @@
 | `oracle` | Oracle Database | EngineCatalogProvider + EngineCatalogFactsProvider + SQLQueryRuntimeProvider + TableReadSessionProvider |
 | `mysql` | MySQL | EngineCatalogProvider + EngineCatalogFactsProvider + SQLQueryRuntimeProvider |
 | `oceanbase` | OceanBase（MySQL 模式） | EngineCatalogProvider + EngineCatalogFactsProvider + SQLQueryRuntimeProvider + BoundedWatermarkReadProvider + TableUpsertProvider |
+| `opengauss` | openGauss（PG 兼容模式） | EngineCatalogProvider + EngineCatalogFactsProvider + SQLQueryRuntimeProvider + TableReadSessionProvider + BoundedWatermarkReadProvider + TableUpsertProvider |
 | `doris` | Apache Doris | EngineCatalogProvider + EngineCatalogFactsProvider + SQLQueryRuntimeProvider |
 | `clickhouse` | ClickHouse | EngineCatalogProvider + EngineCatalogFactsProvider + SQLQueryRuntimeProvider |
 | `mongodb` | MongoDB | EngineCatalogProvider + EngineCatalogFactsProvider + QueryRuntimeProvider |
@@ -34,7 +35,7 @@ Kafka common Engine 插件已实现 `service -> topic` 路径、Engine Catalog�
 |------|--------------------------|-------------|-------------|
 | MinIO/S3 | endpoint、access_key | `service`，标题使用引擎实例名称，`full_name=""` | bucket |
 | NFS | server、export_path | `root`，标题使用引擎实例名称，`full_name=""` | directory；根目录下 file 可直接挂到 root |
-| PostgreSQL | host、port、user | `server`，标题使用引擎实例名称，`full_name=""` | schema |
+| PostgreSQL/openGauss | host、port、user | `server`，标题使用引擎实例名称，`full_name=""` | schema |
 | Oracle | host、port、service_name、user | `server`，标题使用引擎实例名称，`full_name=""` | schema |
 | MySQL/OceanBase/Doris/ClickHouse | host、port、user | `server`，标题使用引擎实例名称，`full_name=""` | database |
 | MongoDB/Neo4j | host、port | `server`，标题使用引擎实例名称，`full_name=""` | database |
@@ -62,7 +63,7 @@ bucket、schema、database、directory 是 root 下第一层业务 branch。它�
 |---|---|---|---|
 | MinIO / S3 | object | `object` | `data_type=table/document/media/container`，`format=csv/wps/png/excel` |
 | NFS / 本地文件系统 | file | `file` | `data_type=table/document/media/container`，`format=csv/wps/png/excel` |
-| PostgreSQL / MySQL / OceanBase / Doris / ClickHouse | table / view | `table` / `view` | 通常 `data_type=table` |
+| PostgreSQL / openGauss / MySQL / OceanBase / Doris / ClickHouse | table / view | `table` / `view` | 通常 `data_type=table` |
 | MongoDB | collection | `collection` | 原生 JSON/BSON document 组成的动态 schema 记录集合，固定为 `data_type=table` |
 | Neo4j | graph | `graph` | `data_type=graph` |
 | Kafka | topic | `topic` | 第一版固定 `data_type=unknown`；消息结构由 Transfer 任务的 JSON mapping 定义，不通过 Meta 采样猜测。 |
@@ -168,7 +169,7 @@ Meta scan 内部必须把“跨模块输入路径”和“扫描期规范化资�
 
 full_name 使用引擎原生术语：
 
-- PostgreSQL：`<schema>.<table>`
+- PostgreSQL/openGauss：`<schema>.<table>`
 - MySQL / OceanBase / Doris / ClickHouse：`<database>.<table>`
 
 前端资源摘要和选择结果必须沿用所属引擎的原生路径风格：关系型数据库、MongoDB 和 Neo4j 的层级名称使用 `.`，对象存储和文件系统使用 `/`；Kafka topic 保留原名。`ResourceLocator` 的 `/path/` 仅是平台内部 URI 编码，不是用户可见路径格式。资源摘要同时展示引擎实例名称，不能以 Engine ID 或 locator 代替。
@@ -430,7 +431,7 @@ addp-infra://minio/manager/tenant_7/export/20260622/execution-id?type=prefix
 |---------|---------|------|
 | 对象存储（MinIO/S3） | bucket / path | 可按 bucket 或指定路径触发扫描 |
 | NFS | 挂载根 `/` 或任意目录路径 | 可扫描整个挂载点，也可按目录路径扫描；扫描非根路径时必须先确保 root -> directory 节点链存在 |
-| 关系型数据库（PostgreSQL/MySQL/OceanBase/Doris/ClickHouse） | schema 或 database | 用户按引擎术语选择（PostgreSQL 选 schema；MySQL/OceanBase/Doris/ClickHouse 选 database） |
+| 关系型数据库（PostgreSQL/openGauss/MySQL/OceanBase/Doris/ClickHouse） | schema 或 database | 用户按引擎术语选择（PostgreSQL/openGauss 选 schema；MySQL/OceanBase/Doris/ClickHouse 选 database） |
 | Branch/Leaf 型引擎（MongoDB/Neo4j） | database branch | 用户选择一个或多个 database 触发扫描 |
 | Kafka | service root | basic scan 只发现 topic leaf；第一版不读取消息、不采样 schema、不创建 partition 子节点。 |
 
@@ -454,7 +455,7 @@ addp-infra://minio/manager/tenant_7/export/20260622/execution-id?type=prefix
 
 ### 关系型数据库扫描流程
 
-1. 通过 `EngineCatalogProvider.ListChildren(root)` 获取 namespace 列表（PostgreSQL 为 schema；MySQL/OceanBase/Doris/ClickHouse 为 database）
+1. 通过 `EngineCatalogProvider.ListChildren(root)` 获取 namespace 列表（PostgreSQL/openGauss 为 schema；MySQL/OceanBase/Doris/ClickHouse 为 database）
 2. 插件负责过滤系统 schema/database，或通过 `EngineCatalogCapability.system_filtering` 声明过滤能力
 3. upsert server root `meta_node`，为每个 schema 或 database 创建子 `meta_node`
 4. 通过 `EngineCatalogProvider.ListChildren(namespace)` 获取表/视图，创建 `meta_item`（`item_type = table/view`）

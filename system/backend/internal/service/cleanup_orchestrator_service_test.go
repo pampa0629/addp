@@ -442,6 +442,28 @@ func TestCleanupSummaryDoesNotDoubleCountReportedErrors(t *testing.T) {
 	}
 }
 
+func TestCleanupSummaryIncludesDeletedTaskDefinitions(t *testing.T) {
+	t.Parallel()
+
+	results := map[string]interface{}{
+		"manager": events.CleanupResultData{
+			Status: events.CleanupResultSuccess,
+			Summary: events.CleanupResultSummary{
+				AffectedRecords:        3,
+				DeletedTaskDefinitions: 3,
+			},
+		},
+	}
+	if got := summaryFromResults(results).DeletedTaskDefinitions; got != 3 {
+		t.Fatalf("deleted task definitions = %d, want 3", got)
+	}
+
+	fromMap := cleanupSummaryFromMap(map[string]interface{}{"deleted_task_definitions": float64(4)})
+	if fromMap.DeletedTaskDefinitions != 4 {
+		t.Fatalf("mapped deleted task definitions = %d, want 4", fromMap.DeletedTaskDefinitions)
+	}
+}
+
 type cleanupAuditWriterStub struct {
 	events []iam.AuditEvent
 }

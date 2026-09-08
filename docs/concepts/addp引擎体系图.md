@@ -281,7 +281,7 @@ pg.table(schema="public", name="roads")
 
 | Engine | Facade 原生层级 | 公开发现方法 | 公开读取方法 |
 | --- | --- | --- | --- |
-| PostgreSQL | schema -> table/view | `schemas()`、`tables(schema=...)` | table/view: `head()`、`scan()`、`to_pandas()`；engine: `sql()` |
+| PostgreSQL、openGauss | schema -> table/view | `schemas()`、`tables(schema=...)` | table/view: `head()`、`scan()`、`to_pandas()`；engine: `sql()` |
 | MySQL、Doris、ClickHouse、Spark SQL | database -> table/view | `databases()`、`tables(database=...)` | table/view: `head()`、`scan()`、`to_pandas()`；engine: `sql()` |
 | MongoDB | database -> collection | `databases()`、`collections(database=...)` | collection: `head()`、`scan()`、`to_pandas()`；engine: `mql()` |
 | Neo4j | database -> graph | `databases()`、`graphs(database=...)` | graph: `sample()`；engine: `cypher()` |

@@ -4,9 +4,12 @@
 set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-MEDIA_URL=https://opengauss.obs.cn-south-1.myhuaweicloud.com/6.0.6/openGauss-Docker-6.0.6-x86_64.tar
-MEDIA_SHA256=4c50bd0f8884f3c0716872ee7d277bad99cdee3d75193a948c7ae9d4b7dfd14d
-IMAGE_REFERENCE=opengauss:6.0.6
+# shellcheck source=../lib/opengauss-official-media.sh
+source "$ROOT_DIR/scripts/lib/opengauss-official-media.sh"
+opengauss_select_official_media x86_64
+MEDIA_URL=$OPENGAUSS_OFFICIAL_MEDIA_URL
+MEDIA_SHA256=$OPENGAUSS_OFFICIAL_MEDIA_SHA256
+IMAGE_REFERENCE=$OPENGAUSS_OFFICIAL_IMAGE
 CONTAINER_NAME=addp-opengauss-official-media-certification
 DATABASE_NAME=addp_opengauss_disposable
 DATABASE_USER=gaussdb
@@ -16,7 +19,7 @@ OPENGAUSS_EXEC_PATH=/usr/local/opengauss/bin:/scws/bin:/usr/local/sbin:/usr/loca
 OPENGAUSS_LIBRARY_PATH=/usr/local/opengauss/lib:/scws/lib
 REPORT_PATH=${ADDP_OPENGAUSS_CERTIFICATION_REPORT:?ADDP_OPENGAUSS_CERTIFICATION_REPORT is required}
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/addp-opengauss-certification.XXXXXX")
-MEDIA_PATH=$WORK_DIR/openGauss-Docker-6.0.6-x86_64.tar
+MEDIA_PATH=$WORK_DIR/$OPENGAUSS_OFFICIAL_MEDIA_FILENAME
 CONTAINER_OWNED=false
 IMAGE_OWNED=false
 

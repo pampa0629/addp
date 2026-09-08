@@ -2,7 +2,7 @@
         build-iam-bootstrap build-iam-recovery build-iam-migration-repair \
         dev-start dev-restart dev-stop infra-up infra-down infra-restart infra-status prod-start prod-restart prod-stop prod-health ports-validate
 
-.PHONY: test-business-config test-common-oceanbase test-opengauss-official-media-release
+.PHONY: test-business-config test-common-oceanbase test-common-opengauss test-opengauss-official-media-release
 
 # 默认目标
 .DEFAULT_GOAL := help
@@ -148,18 +148,28 @@ test-business-config: ## 校验 Business Compose 和服务管理脚本（不启�
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --quiet
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --services | grep -Fxq oceanbase
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --images | grep -Fxq oceanbase/oceanbase-ce:4.4.2-lts
+	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --services | grep -Fxq opengauss
+	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --images | grep -Fxq opengauss:6.0.6
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config | grep -Fq '/root/boot/init.d/01-addp-business.sql'
 	@test -f business/oceanbase/init.sql
+	@test -f business/opengauss/init.sql
 	@grep -Fq 'SET NAMES utf8mb4;' business/oceanbase/init.sql
+	@grep -Fq 'CREATE TABLE IF NOT EXISTS addp_engine_probe' business/opengauss/init.sql
+	@grep -Fq 'openGauss-Docker-6.0.6-x86_64.tar' scripts/lib/opengauss-official-media.sh
+	@grep -Fq 'openGauss-Docker-6.0.6-aarch64.tar' scripts/lib/opengauss-official-media.sh
+	@grep -Fq '00ad2206ac93cf28c7702cd624b7c59dc1a146f9dca1f81ed19eeac430416c0b' scripts/lib/opengauss-official-media.sh
 	@test "$$(grep -c -- '--default-character-set=utf8mb4' business/scripts/start.sh)" -ge 4
-	@bash -n business/scripts/start.sh business/scripts/stop.sh business/scripts/restart.sh scripts/utils/register-business.sh
+	@bash -n business/scripts/start.sh business/scripts/stop.sh business/scripts/restart.sh scripts/utils/register-business.sh scripts/lib/opengauss-official-media.sh
 	@bash business/scripts/start.sh --help | grep -Fq -- '-oceanbase'
+	@bash business/scripts/start.sh --help | grep -Fq -- '-opengauss'
 	@bash business/scripts/stop.sh --help | grep -Fq -- '-oceanbase'
+	@bash business/scripts/stop.sh --help | grep -Fq -- '-opengauss'
 
 test-integration: ## 严格串行运行所有已登记的 disposable 基础设施集成门禁
 	@$(MAKE) test-common-postgres
 	@$(MAKE) test-common-mysql-data-protection
 	@$(MAKE) test-common-oceanbase
+	@$(MAKE) test-common-opengauss
 	@$(MAKE) test-manager-postgres
 	@$(MAKE) test-manager-mongodb-security
 	@$(MAKE) test-system-iam-postgres
@@ -183,6 +193,9 @@ test-common-mysql-data-protection: ## 使用一次性 MySQL database 验证 Prov
 
 test-common-oceanbase: ## 使用一次性 OceanBase database 验证 Engine Provider 契约
 	@bash scripts/test/common-oceanbase-gate.sh
+
+test-common-opengauss: ## 使用一次性 openGauss database 验证 Engine Provider 契约
+	@bash scripts/test/common-opengauss-gate.sh
 
 test-manager-postgres: ## 使用测试 PostgreSQL 数据库运行 Manager 统一任务与清理集成门禁
 	@bash scripts/test/manager-postgres-gate.sh

@@ -388,13 +388,14 @@ System 只能依赖 `summary` 中的标准摘要字段计算全局视图，不�
 | `marked_missing_source` | 标记源缺失的产物数量。 |
 | `marked_outdated` | 标记过期的产物数量。 |
 | `disabled_task_definitions` | 禁用的任务定义数量。 |
+| `deleted_task_definitions` | 物理删除的任务定义数量。任务定义删除不等同于物理产物删除，不计入 `deleted_physical_artifacts`。 |
 | `skipped_items` | 跳过数量。 |
 | `error_count` | 错误数量。 |
 | `risk_level` | `low`、`medium`、`high`。 |
 
 模块可以在 `statistics` 中报告私有字段，例如 Manager 的 `deleted_tile_cache`、`deleted_embeddings`、`skipped_external_targets`，但 System 不应把这些字段写入 coordinator 的核心逻辑。
 
-`scanned_items` 是 scan 阶段的候选规模，`affected_records` 只表示 execute 阶段实际改变的记录。System UI 在 scan 结果中必须优先展示“发现项”，不得用值为 0 的 `affected_records` 暗示 scan 未发现候选。scan 结果不得把“候选任务定义数”写入 `disabled_task_definitions`，该字段只记录 execute 实际禁用数。
+`scanned_items` 是 scan 阶段的候选规模，`affected_records` 只表示 execute 阶段实际改变的记录。System UI 在 scan 结果中必须优先展示“发现项”，不得用值为 0 的 `affected_records` 暗示 scan 未发现候选。scan 结果不得把“候选任务定义数”写入 `disabled_task_definitions` 或 `deleted_task_definitions`；二者分别只记录 execute 实际禁用和实际物理删除的任务定义数。System UI 必须把两类任务处理结果明确展示，不能仅依赖 `affected_records` 让用户推断物理删除是否发生。
 
 ## 九、监控与审计
 

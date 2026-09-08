@@ -1,11 +1,13 @@
 package api
 
 import (
+	"bufio"
 	"context"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -47,10 +49,13 @@ type IAMAuditTrendResponse struct {
 
 type iamAuditQueryService interface {
 	List(context.Context, iam.AuditQuery, int, int) ([]iam.AuditLog, int64, error)
+	Export(context.Context, iam.AuditQuery, int, func([]iam.AuditLog) error) (int64, error)
 	Get(context.Context, int64, *int64) (*iam.AuditLog, error)
 	Summary(context.Context, iam.AuditQuery) (*iam.AuditSummary, error)
 	Trends(context.Context, iam.AuditQuery) ([]iam.AuditTrendPoint, error)
 }
+
+const auditExportBatchSize = 1000
 
 type IAMAuditHandler struct {
 	service iamAuditQueryService
@@ -268,6 +273,7 @@ func (h *IAMAuditHandler) trends(c *gin.Context, tenantScoped bool) {
 
 // PlatformExport godoc
 // @Summary      导出平台审计事件 | Export platform audit events
+// @Description  按稳定顺序导出当前筛选条件下的全部审计事件 | Export all audit events matching the current filters in stable order
 // @Tags         平台审计 | Platform Audit
 // @Produce      json,text/csv
 // @Security     BearerAuth
@@ -278,6 +284,7 @@ func (h *IAMAuditHandler) trends(c *gin.Context, tenantScoped bool) {
 // @Param        entity_type query string false "实体类型 | Entity type"
 // @Param        entity_id query string false "实体 ID | Entity ID"
 // @Success      200 {array} IAMAuditEventResponse
+// @Header       200 {integer} X-ADDP-Export-Count "实际导出的事件数 | Number of exported events"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["audit.event.export"]
 // @Router       /platform/audit/events/export [get]
@@ -285,6 +292,7 @@ func (h *IAMAuditHandler) PlatformExport(c *gin.Context) { h.export(c, false) }
 
 // TenantExport godoc
 // @Summary      导出当前租户审计事件 | Export current tenant audit events
+// @Description  按稳定顺序导出当前筛选条件下的全部审计事件 | Export all audit events matching the current filters in stable order
 // @Tags         租户审计 | Tenant Audit
 // @Produce      json,text/csv
 // @Security     BearerAuth
@@ -295,6 +303,7 @@ func (h *IAMAuditHandler) PlatformExport(c *gin.Context) { h.export(c, false) }
 // @Param        entity_type query string false "实体类型 | Entity type"
 // @Param        entity_id query string false "实体 ID | Entity ID"
 // @Success      200 {array} IAMAuditEventResponse
+// @Header       200 {integer} X-ADDP-Export-Count "实际导出的事件数 | Number of exported events"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["audit.tenant_event.export"]
 // @Router       /tenant/audit/events/export [get]
@@ -311,45 +320,125 @@ func (h *IAMAuditHandler) export(c *gin.Context, tenantScoped bool) {
 		respondIAMError(c, fmt.Errorf("%w: export format must be csv or json", commonapi.ErrBadRequest))
 		return
 	}
-	logs, _, err := h.service.List(c.Request.Context(), query, 1, 10000)
+	exportFile, err := os.CreateTemp("", "addp-audit-events-*")
 	if err != nil {
 		respondIAMError(c, err)
 		return
 	}
-	responses := make([]IAMAuditEventResponse, 0, len(logs))
-	for _, log := range logs {
-		mapped, err := mapIAMAuditLog(log)
-		if err != nil {
-			respondIAMError(c, err)
-			return
-		}
-		responses = append(responses, mapped)
-	}
-	filename := "audit_events_" + time.Now().UTC().Format("20060102_150405") + "." + format
-	c.Header("Content-Disposition", "attachment; filename="+filename)
-	if format == "json" {
-		c.JSON(http.StatusOK, responses)
+	exportPath := exportFile.Name()
+	defer func() {
+		_ = exportFile.Close()
+		_ = os.Remove(exportPath)
+	}()
+
+	exported, err := h.writeAuditExport(c.Request.Context(), exportFile, format, query)
+	if err != nil {
+		respondIAMError(c, err)
 		return
 	}
-	c.Header("Content-Type", "text/csv; charset=utf-8")
-	writer := csv.NewWriter(c.Writer)
-	defer writer.Flush()
+	stat, err := exportFile.Stat()
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	if _, err := exportFile.Seek(0, 0); err != nil {
+		respondIAMError(c, err)
+		return
+	}
+
+	filename := "audit_events_" + time.Now().UTC().Format("20060102_150405") + "." + format
+	contentType := "application/json; charset=utf-8"
+	if format == "csv" {
+		contentType = "text/csv; charset=utf-8"
+	}
+	c.DataFromReader(http.StatusOK, stat.Size(), contentType, exportFile, map[string]string{
+		"Content-Disposition": "attachment; filename=" + filename,
+		"X-ADDP-Export-Count": strconv.FormatInt(exported, 10),
+	})
+}
+
+func (h *IAMAuditHandler) writeAuditExport(
+	ctx context.Context,
+	exportFile *os.File,
+	format string,
+	query iam.AuditQuery,
+) (int64, error) {
+	if format == "json" {
+		return h.writeJSONAuditExport(ctx, exportFile, query)
+	}
+	writer := csv.NewWriter(exportFile)
 	if err := writer.Write([]string{
 		"id", "principal_id", "principal_type", "context_type", "tenant_id", "event_name",
 		"result", "risk_level", "module_name", "request_id", "created_at",
 	}); err != nil {
-		return
+		return 0, err
 	}
-	for _, event := range responses {
-		if err := writer.Write([]string{
-			event.ID, stringValue(event.PrincipalID), principalTypeValue(event.PrincipalType),
-			contextTypeValue(event.ContextType), stringValue(event.TenantID), event.EventName,
-			string(event.Result), string(event.RiskLevel), event.ModuleName,
-			stringValue(event.RequestID), event.CreatedAt.Format(time.RFC3339Nano),
-		}); err != nil {
-			return
+	exported, err := h.service.Export(ctx, query, auditExportBatchSize, func(logs []iam.AuditLog) error {
+		for _, log := range logs {
+			event, err := mapIAMAuditLog(log)
+			if err != nil {
+				return err
+			}
+			if err := writer.Write([]string{
+				event.ID, stringValue(event.PrincipalID), principalTypeValue(event.PrincipalType),
+				contextTypeValue(event.ContextType), stringValue(event.TenantID), event.EventName,
+				string(event.Result), string(event.RiskLevel), event.ModuleName,
+				stringValue(event.RequestID), event.CreatedAt.Format(time.RFC3339Nano),
+			}); err != nil {
+				return err
+			}
 		}
+		return nil
+	})
+	writer.Flush()
+	if err != nil {
+		return exported, err
 	}
+	if err := writer.Error(); err != nil {
+		return exported, err
+	}
+	return exported, nil
+}
+
+func (h *IAMAuditHandler) writeJSONAuditExport(
+	ctx context.Context,
+	exportFile *os.File,
+	query iam.AuditQuery,
+) (int64, error) {
+	writer := bufio.NewWriter(exportFile)
+	if err := writer.WriteByte('['); err != nil {
+		return 0, err
+	}
+	encoder := json.NewEncoder(writer)
+	first := true
+	exported, err := h.service.Export(ctx, query, auditExportBatchSize, func(logs []iam.AuditLog) error {
+		for _, log := range logs {
+			event, err := mapIAMAuditLog(log)
+			if err != nil {
+				return err
+			}
+			if !first {
+				if err := writer.WriteByte(','); err != nil {
+					return err
+				}
+			}
+			if err := encoder.Encode(event); err != nil {
+				return err
+			}
+			first = false
+		}
+		return nil
+	})
+	if err != nil {
+		return exported, err
+	}
+	if err := writer.WriteByte(']'); err != nil {
+		return exported, err
+	}
+	if err := writer.Flush(); err != nil {
+		return exported, err
+	}
+	return exported, nil
 }
 
 func auditQueryFromRequest(c *gin.Context, tenantScoped bool) (iam.AuditQuery, error) {

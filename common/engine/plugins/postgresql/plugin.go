@@ -15,8 +15,25 @@ import (
 	"gorm.io/gorm"
 )
 
-// PostgreSQLPlugin PostgreSQL 数据库插件
-type PostgreSQLPlugin struct{}
+// PostgreSQLPlugin implements the PostgreSQL wire-protocol and SQL behavior.
+// The optional identity is used by independently registered engines that have
+// certified this protocol implementation while retaining their own engine type.
+type PostgreSQLPlugin struct {
+	identity *ProtocolIdentity
+}
+
+// ProtocolIdentity identifies an engine that reuses PostgreSQL protocol
+// behavior. It does not copy PostgreSQL capabilities into that engine.
+type ProtocolIdentity struct {
+	EngineType  string
+	DisplayName string
+}
+
+// NewProtocolCompatiblePlugin creates a PostgreSQL protocol implementation
+// whose prepared queries and catalog paths retain the owning engine identity.
+func NewProtocolCompatiblePlugin(identity ProtocolIdentity) *PostgreSQLPlugin {
+	return &PostgreSQLPlugin{identity: &identity}
+}
 
 var (
 	_ plugin.BoundedWatermarkReadProvider        = (*PostgreSQLPlugin)(nil)
@@ -68,11 +85,17 @@ func init() {
 
 // Type 返回数据库类型标识
 func (p *PostgreSQLPlugin) Type() string {
+	if p != nil && p.identity != nil && strings.TrimSpace(p.identity.EngineType) != "" {
+		return strings.ToLower(strings.TrimSpace(p.identity.EngineType))
+	}
 	return "postgresql"
 }
 
 // DisplayName 返回显示名称
 func (p *PostgreSQLPlugin) DisplayName() string {
+	if p != nil && p.identity != nil && strings.TrimSpace(p.identity.DisplayName) != "" {
+		return strings.TrimSpace(p.identity.DisplayName)
+	}
 	return "PostgreSQL"
 }
 

@@ -93,6 +93,8 @@ OAuth 事件的 `details` 仅允许 `client_id`、`grant_type`、`decision`、`s
 
 查询范围由 `principal_id + context_type + tenant_id` 和 Permission 决定，不再使用旧 `user_type` 或 `tenant_id=NULL` 推断全局权限。
 
+导出是筛选结果的完整快照：必须按 `(created_at DESC, id DESC)` 稳定顺序分批读取全部匹配事件，不得因管理列表的 `page_size` 上限静默截断。响应头 `X-ADDP-Export-Count` 返回该快照实际写入文件的事件数，CSV 与 JSON 的数量语义保持一致。
+
 ## 七、相关规范
 
 - [System IAM 数据模型与迁移规范](../IAM数据模型与迁移规范.md)

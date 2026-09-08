@@ -375,6 +375,18 @@ OCEANBASE_PORT=2881
 
 本地容器是单机测试形态，不表达生产集群拓扑。System 注册时使用 `engine_type=oceanbase`、容器网络地址 `business-oceanbase:2881`、账号 `root@test` 和配置的 database/password；不得改登记为 MySQL Engine。
 
+Business openGauss 固定使用 openGauss 6.0.6 LTS 官方 Docker tar，不接受第三方镜像或可变 tag。`business/scripts/start.sh -opengauss` 根据 `uname -m` 从 `scripts/lib/opengauss-official-media.sh` 选择 x86_64/aarch64 官方介质，校验固定 SHA-256 后加载同一 `opengauss:6.0.6` 镜像；首次下载约 1.2 GB（ARM64）或 1.4 GB（AMD64），后续复用本地镜像和缓存。
+
+```bash
+OPENGAUSS_PASSWORD=change-in-production
+OPENGAUSS_DATABASE=business
+OPENGAUSS_PORT=5435
+OPENGAUSS_MAX_PROCESS_MEMORY=4GB
+OPENGAUSS_SHARED_BUFFERS=512MB
+```
+
+本地容器使用 PG 兼容 database，固定账号 `gaussdb`。System 注册时使用 `engine_type=opengauss`、容器网络地址 `business-opengauss:5432` 和配置的 database/password；不得登记为 PostgreSQL Engine。Business 环境只表达非空间表能力，不声明 PostGIS、CDC 或生产集群拓扑。
+
 Business Kafka/Redpanda 是用户业务消息流，与 Infra Kafka 完全隔离。开发环境通过 `business/scripts/start.sh -redpanda` 启动独立 Redpanda 集群，再把只读账号作为 `engine_type=kafka` 的 System Engine 凭据；不得把 Infra Kafka 的 endpoint、principal 或内部 topic 注册为业务 Engine。
 
 ```bash

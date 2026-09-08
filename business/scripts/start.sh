@@ -20,6 +20,7 @@
 #   bash scripts/start.sh -neo4j             # 只启动 Neo4j
 #   bash scripts/start.sh -mysql             # 只启动 MySQL
 #   bash scripts/start.sh -oceanbase         # 只启动 OceanBase CE
+#   bash scripts/start.sh -opengauss         # 只启动 openGauss
 #   bash scripts/start.sh -redpanda          # 只启动业务 Redpanda
 #   bash scripts/start.sh -nfs               # 只启动 NFS
 #   bash scripts/start.sh -postgres -minio   # 启动 PostgreSQL + MinIO
@@ -51,6 +52,7 @@ ENABLE_NEO4J=false
 ENABLE_NFS=false
 ENABLE_MYSQL=false
 ENABLE_OCEANBASE=false
+ENABLE_OPENGAUSS=false
 ENABLE_REDPANDA=false
 HAS_ARGS=false
 
@@ -70,6 +72,7 @@ for arg in "$@"; do
             ENABLE_NFS=true
             ENABLE_MYSQL=true
             ENABLE_OCEANBASE=true
+            ENABLE_OPENGAUSS=true
             ENABLE_REDPANDA=true
             ;;
         -postgres)
@@ -105,6 +108,9 @@ for arg in "$@"; do
         -oceanbase)
             ENABLE_OCEANBASE=true
             ;;
+        -opengauss)
+            ENABLE_OPENGAUSS=true
+            ;;
         -redpanda)
             ENABLE_REDPANDA=true
             ;;
@@ -126,6 +132,7 @@ for arg in "$@"; do
             echo "  bash scripts/start.sh -neo4j                # 只启动 Neo4j"
             echo "  bash scripts/start.sh -mysql               # 只启动 MySQL"
             echo "  bash scripts/start.sh -oceanbase           # 只启动 OceanBase CE"
+            echo "  bash scripts/start.sh -opengauss           # 只启动 openGauss"
             echo "  bash scripts/start.sh -redpanda            # 只启动业务 Redpanda"
             echo "  bash scripts/start.sh -nfs                  # 只启动 NFS"
             echo "  bash scripts/start.sh -postgres -minio      # 启动 PostgreSQL + MinIO"
@@ -206,6 +213,11 @@ if [ "$ENABLE_OCEANBASE" = true ]; then
 else
     echo -e "  OceanBase CE: ✗ (使用 -oceanbase 启用)"
 fi
+if [ "$ENABLE_OPENGAUSS" = true ]; then
+    echo -e "  openGauss: ✓"
+else
+    echo -e "  openGauss: ✗ (使用 -opengauss 启用)"
+fi
 if [ "$ENABLE_REDPANDA" = true ]; then
     echo -e "  Redpanda: ✓"
 else
@@ -255,6 +267,13 @@ case "${ARCH}" in
 esac
 echo ""
 
+if [ "$ENABLE_OPENGAUSS" = true ]; then
+    # shellcheck source=../../scripts/lib/opengauss-official-media.sh
+    source "${PROJECT_ROOT}/../scripts/lib/opengauss-official-media.sh"
+    opengauss_ensure_official_image "$ARCH"
+    echo -e "${GREEN}✓ openGauss ${OPENGAUSS_OFFICIAL_VERSION} 官方介质已校验并加载${NC}"
+fi
+
 # 4. 检查端口占用（幂等）
 PG_PORT=${POSTGRES_PORT:-5433}
 ORACLE_PORT_VAL=${ORACLE_PORT:-15210}
@@ -274,12 +293,21 @@ NEO4J_HTTP_PORT_VAL=${NEO4J_HTTP_PORT:-7474}
 NEO4J_BOLT_PORT_VAL=${NEO4J_BOLT_PORT:-7687}
 MYSQL_PORT_VAL=${MYSQL_PORT:-3306}
 OCEANBASE_PORT_VAL=${OCEANBASE_PORT:-2881}
+OPENGAUSS_PORT_VAL=${OPENGAUSS_PORT:-5435}
 BUSINESS_KAFKA_PORT_VAL=${BUSINESS_KAFKA_PORT:-29092}
 
 if [ "$ENABLE_OCEANBASE" = true ]; then
     case "${OCEANBASE_DATABASE:-business}" in
         ""|*[!A-Za-z0-9_]*)
             echo -e "${RED}✗ OCEANBASE_DATABASE 只允许字母、数字和下划线${NC}"
+            exit 1
+            ;;
+    esac
+fi
+if [ "$ENABLE_OPENGAUSS" = true ]; then
+    case "${OPENGAUSS_DATABASE:-business}" in
+        ""|*[!A-Za-z0-9_]*)
+            echo -e "${RED}✗ OPENGAUSS_DATABASE 只允许字母、数字和下划线${NC}"
             exit 1
             ;;
     esac
@@ -307,6 +335,7 @@ PORTS_TO_CHECK=""
 [ "$ENABLE_NEO4J" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $NEO4J_HTTP_PORT_VAL $NEO4J_BOLT_PORT_VAL"
 [ "$ENABLE_MYSQL" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $MYSQL_PORT_VAL"
 [ "$ENABLE_OCEANBASE" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $OCEANBASE_PORT_VAL"
+[ "$ENABLE_OPENGAUSS" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $OPENGAUSS_PORT_VAL"
 [ "$ENABLE_REDPANDA" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $BUSINESS_KAFKA_PORT_VAL"
 
 for port in $PORTS_TO_CHECK; do
@@ -322,6 +351,7 @@ for port in $PORTS_TO_CHECK; do
            check_port_used_by_self $port "business-neo4j" || \
            check_port_used_by_self $port "business-mysql" || \
            check_port_used_by_self $port "business-oceanbase" || \
+           check_port_used_by_self $port "business-opengauss" || \
            check_port_used_by_self $port "business-redpanda"; then
             echo -e "${GREEN}✓ 端口 ${port} 已被业务库容器使用${NC}"
         else
@@ -487,6 +517,12 @@ fi
 if [ "$ENABLE_OCEANBASE" = true ]; then
     docker compose up -d oceanbase
     echo -e "${GREEN}✓ OceanBase CE 配置已同步${NC}"
+fi
+
+# openGauss
+if [ "$ENABLE_OPENGAUSS" = true ]; then
+    docker compose up -d opengauss
+    echo -e "${GREEN}✓ openGauss 配置已同步${NC}"
 fi
 
 # Redpanda
@@ -722,6 +758,42 @@ if [ "$ENABLE_OCEANBASE" = true ]; then
     fi
 fi
 
+if [ "$ENABLE_OPENGAUSS" = true ]; then
+    OPENGAUSS_READY=false
+    OPENGAUSS_HOME=/usr/local/opengauss
+    OPENGAUSS_EXEC_PATH=/usr/local/opengauss/bin:/scws/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    OPENGAUSS_LIBRARY_PATH=/usr/local/opengauss/lib:/scws/lib
+    opengauss_gsql() {
+        docker exec --interactive --user omm \
+            --env "GAUSSHOME=$OPENGAUSS_HOME" \
+            --env "PATH=$OPENGAUSS_EXEC_PATH" \
+            --env "LD_LIBRARY_PATH=$OPENGAUSS_LIBRARY_PATH" \
+            business-opengauss "$OPENGAUSS_HOME/bin/gsql" "$@"
+    }
+    echo -e "${YELLOW}等待 openGauss 启动 (首次可能需要数分钟)...${NC}"
+    for i in {1..120}; do
+        if opengauss_gsql -At -d postgres -p 5432 -c 'SELECT 1' 2>/dev/null | grep -Fxq '1'; then
+            if ! opengauss_gsql -At -d postgres -p 5432 -c "SELECT 1 FROM pg_database WHERE datname = '${OPENGAUSS_DATABASE:-business}'" | grep -Fxq '1'; then
+                opengauss_gsql -d postgres -p 5432 -c "CREATE DATABASE ${OPENGAUSS_DATABASE:-business} DBCOMPATIBILITY 'PG'"
+            fi
+            opengauss_gsql -d "${OPENGAUSS_DATABASE:-business}" -p 5432 < opengauss/init.sql
+            opengauss_gsql -At -d "${OPENGAUSS_DATABASE:-business}" -p 5432 -c 'SELECT COUNT(*) FROM addp_engine_probe' | grep -Fxq '1'
+            echo -e "${GREEN}✓ openGauss 就绪且样例数据可查询${NC}"
+            OPENGAUSS_READY=true
+            break
+        fi
+        if [ "$(docker inspect --format '{{.State.Running}}' business-opengauss 2>/dev/null || true)" != "true" ]; then
+            echo -e "${RED}✗ openGauss 容器在就绪前退出${NC}"
+            exit 1
+        fi
+        sleep 5
+    done
+    if [ "$OPENGAUSS_READY" != true ]; then
+        echo -e "${RED}✗ openGauss 未在 600 秒内完成初始化${NC}"
+        exit 1
+    fi
+fi
+
 if [ "$ENABLE_ORACLE" = true ]; then
     ORACLE_READY=false
     for i in {1..120}; do
@@ -850,6 +922,9 @@ if [ "$ENABLE_MYSQL" = true ]; then
 fi
 if [ "$ENABLE_OCEANBASE" = true ]; then
     echo -e "OceanBase CE: localhost:${OCEANBASE_PORT_VAL} (database: ${OCEANBASE_DATABASE:-business}, user: root@${OCEANBASE_TENANT_NAME:-test})"
+fi
+if [ "$ENABLE_OPENGAUSS" = true ]; then
+    echo -e "openGauss: localhost:${OPENGAUSS_PORT_VAL} (database: ${OPENGAUSS_DATABASE:-business}, user: gaussdb)"
 fi
 if [ "$ENABLE_REDPANDA" = true ]; then
     echo -e "Kafka API: localhost:${BUSINESS_KAFKA_PORT_VAL}  (Engine 用户: ${BUSINESS_KAFKA_READER_USERNAME:-addp_transfer})"

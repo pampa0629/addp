@@ -432,6 +432,45 @@ func (r *Repository) ListAuditLogs(
 	return logs, total, nil
 }
 
+func (r *Repository) VisitAuditLogs(
+	ctx context.Context,
+	query AuditQuery,
+	batchSize int,
+	visit func([]AuditLog) error,
+) (int64, error) {
+	var exported int64
+	var cursorCreatedAt time.Time
+	var cursorID int64
+	for {
+		batchQuery := applyAuditQuery(r.db.WithContext(ctx).Model(&AuditLog{}), query)
+		if !cursorCreatedAt.IsZero() {
+			batchQuery = batchQuery.Where(
+				"created_at < ? OR (created_at = ? AND id < ?)",
+				cursorCreatedAt,
+				cursorCreatedAt,
+				cursorID,
+			)
+		}
+		var logs []AuditLog
+		if err := batchQuery.Order("created_at DESC, id DESC").Limit(batchSize).Find(&logs).Error; err != nil {
+			return exported, wrapRepositoryError(err)
+		}
+		if len(logs) == 0 {
+			return exported, nil
+		}
+		if err := visit(logs); err != nil {
+			return exported, err
+		}
+		exported += int64(len(logs))
+		if len(logs) < batchSize {
+			return exported, nil
+		}
+		last := logs[len(logs)-1]
+		cursorCreatedAt = last.CreatedAt
+		cursorID = last.ID
+	}
+}
+
 func (r *Repository) GetAuditLog(ctx context.Context, auditID int64, tenantID *int64) (*AuditLog, error) {
 	query := r.db.WithContext(ctx).Model(&AuditLog{}).Where("id = ?", auditID)
 	if tenantID != nil {

@@ -10,6 +10,7 @@ import (
 	_ "github.com/addp/common/engine/plugins/neo4j"
 	_ "github.com/addp/common/engine/plugins/nfs"
 	_ "github.com/addp/common/engine/plugins/oceanbase"
+	_ "github.com/addp/common/engine/plugins/opengauss"
 	_ "github.com/addp/common/engine/plugins/oracle"
 	_ "github.com/addp/common/engine/plugins/postgresql"
 	_ "github.com/addp/common/engine/plugins/s3"

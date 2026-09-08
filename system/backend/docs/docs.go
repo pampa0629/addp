@@ -3001,6 +3001,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "按稳定顺序导出当前筛选条件下的全部审计事件 | Export all audit events matching the current filters in stable order",
                 "produces": [
                     "application/json",
                     "text/csv"
@@ -3054,6 +3055,12 @@ const docTemplate = `{
                             "type": "array",
                             "items": {
                                 "$ref": "#/definitions/internal_api.IAMAuditEventResponse"
+                            }
+                        },
+                        "headers": {
+                            "X-ADDP-Export-Count": {
+                                "type": "integer",
+                                "description": "实际导出的事件数 | Number of exported events"
                             }
                         }
                     }
@@ -6331,6 +6338,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "按稳定顺序导出当前筛选条件下的全部审计事件 | Export all audit events matching the current filters in stable order",
                 "produces": [
                     "application/json",
                     "text/csv"
@@ -6384,6 +6392,12 @@ const docTemplate = `{
                             "type": "array",
                             "items": {
                                 "$ref": "#/definitions/internal_api.IAMAuditEventResponse"
+                            }
+                        },
+                        "headers": {
+                            "X-ADDP-Export-Count": {
+                                "type": "integer",
+                                "description": "实际导出的事件数 | Number of exported events"
                             }
                         }
                     }

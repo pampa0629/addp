@@ -229,6 +229,9 @@ class PostgreSQLSchema:
 class PostgreSQLEngine:
     """PostgreSQL 原生术语的只读目录客户端。"""
 
+    engine_type = "postgresql"
+    display_name = "PostgreSQL"
+
     def __init__(self, *, engine_id: int, descriptor: dict[str, Any], timeout: float) -> None:
         if timeout <= 0:
             raise NotebookEngineCatalogRequestError("timeout 必须大于 0")
@@ -238,9 +241,9 @@ class PostgreSQLEngine:
         self._root_path: dict[str, Any] | None = None
         self._schema_paths: dict[str, dict[str, Any]] = {}
 
-    @staticmethod
-    def validate_descriptor(descriptor: dict[str, Any]) -> None:
-        _validate_native_descriptor(descriptor, "postgresql", "server", (("schema", "branch"), ("table", "leaf")))
+    @classmethod
+    def validate_descriptor(cls, descriptor: dict[str, Any]) -> None:
+        _validate_native_descriptor(descriptor, cls.engine_type, "server", (("schema", "branch"), ("table", "leaf")))
 
     def schemas(self) -> builtins.list[PostgreSQLSchema]:
         deadline = time.monotonic() + self.timeout
@@ -254,12 +257,12 @@ class PostgreSQLEngine:
             self._schemas(deadline)
             schema_path = self._schema_paths.get(schema)
         if schema_path is None:
-            raise NotebookEngineCatalogEntryNotFoundError(f"PostgreSQL schema {schema!r} 不存在")
+            raise NotebookEngineCatalogEntryNotFoundError(f"{self.display_name} schema {schema!r} 不存在")
         entries = self._all_children(schema_path, deadline)
         tables: builtins.list[PostgreSQLTable] = []
         for entry in entries:
             if entry["term"] != "table" or entry["role"] != "leaf":
-                raise NotebookEngineCatalogControlPlaneError("PostgreSQL Engine Catalog 返回了不符合模型的 table 条目")
+                raise NotebookEngineCatalogControlPlaneError(f"{self.display_name} Engine Catalog 返回了不符合模型的 table 条目")
             tables.append(
                 PostgreSQLTable(
                     name=entry["name"], schema=schema, kind=entry["kind"], _client=self,
@@ -274,7 +277,7 @@ class PostgreSQLEngine:
             if table_resource.name == name:
                 return table_resource
         raise NotebookEngineCatalogEntryNotFoundError(
-            f"PostgreSQL table {schema!r}.{name!r} 不存在"
+            f"{self.display_name} table {schema!r}.{name!r} 不存在"
         )
 
     def sql(
@@ -345,14 +348,14 @@ class PostgreSQLEngine:
                 deadline,
             )
             if len(roots) != 1 or roots[0]["role"] != "branch" or roots[0]["term"] != "server":
-                raise NotebookEngineCatalogControlPlaneError("PostgreSQL Engine Catalog 未返回唯一 server root")
+                raise NotebookEngineCatalogControlPlaneError(f"{self.display_name} Engine Catalog 未返回唯一 server root")
             root_path = roots[0]["path"]
             self._root_path = root_path
         entries = self._all_children(root_path, deadline)
         schemas: builtins.list[PostgreSQLSchema] = []
         for entry in entries:
             if entry["term"] != "schema" or entry["role"] != "branch":
-                raise NotebookEngineCatalogControlPlaneError("PostgreSQL Engine Catalog 返回了不符合模型的 schema 条目")
+                raise NotebookEngineCatalogControlPlaneError(f"{self.display_name} Engine Catalog 返回了不符合模型的 schema 条目")
             self._schema_paths[entry["name"]] = entry["path"]
             schemas.append(PostgreSQLSchema(name=entry["name"], _client=self, _path=entry["path"]))
         return schemas
@@ -401,6 +404,13 @@ class PostgreSQLEngine:
         if not isinstance(nodes, builtins.list):
             raise NotebookEngineCatalogControlPlaneError("Notebook Engine Catalog 返回了无效节点列表")
         return [_validate_catalog_entry(node, self.engine_id) for node in nodes]
+
+
+class OpenGaussEngine(PostgreSQLEngine):
+    """openGauss 原生 engine_type 的 schema/table 目录客户端。"""
+
+    engine_type = "opengauss"
+    display_name = "openGauss"
 
 
 class _NativeEngineCatalog:
@@ -1610,6 +1620,7 @@ def _path_parts(value: str, field_name: str) -> builtins.list[str]:
 
 _CLIENT_TYPES: dict[str, type[Any]] = {
     "postgresql": PostgreSQLEngine,
+    "opengauss": OpenGaussEngine,
     "mysql": MySQLEngine,
     "doris": DorisEngine,
     "clickhouse": ClickHouseEngine,
@@ -1663,6 +1674,7 @@ __all__ = [
     "Neo4jGraph",
     "ObjectStorageBucket",
     "ObjectStorageObject",
+    "OpenGaussEngine",
     "PostgreSQLEngine",
     "PostgreSQLSchema",
     "PostgreSQLTable",

@@ -711,6 +711,7 @@ func cleanupSummaryFromMap(summary map[string]interface{}) events.CleanupResultS
 		MarkedMissingSource:      intFromSummaryValue(summary["marked_missing_source"]),
 		MarkedOutdated:           intFromSummaryValue(summary["marked_outdated"]),
 		DisabledTaskDefinitions:  intFromSummaryValue(summary["disabled_task_definitions"]),
+		DeletedTaskDefinitions:   intFromSummaryValue(summary["deleted_task_definitions"]),
 		SkippedItems:             intFromSummaryValue(summary["skipped_items"]),
 		ErrorCount:               intFromSummaryValue(summary["error_count"]),
 		RiskLevel:                stringFromSummaryValue(summary["risk_level"]),
@@ -1052,6 +1053,7 @@ func summaryFromResults(results map[string]interface{}) events.CleanupResultSumm
 		summary.MarkedMissingSource += resultData.Summary.MarkedMissingSource
 		summary.MarkedOutdated += resultData.Summary.MarkedOutdated
 		summary.DisabledTaskDefinitions += resultData.Summary.DisabledTaskDefinitions
+		summary.DeletedTaskDefinitions += resultData.Summary.DeletedTaskDefinitions
 		summary.SkippedItems += resultData.Summary.SkippedItems
 		errorCount := resultData.Summary.ErrorCount
 		if len(resultData.Errors) > errorCount {

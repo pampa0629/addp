@@ -14,9 +14,9 @@
 6. 按 `EngineOrigin()` 加入 `common/engine/plugins/builtin/general` 或 `common/engine/plugins/builtin/extension` 聚合包。
 7. 补充单元测试和必要的 integration 测试。
 
-官方介质认证由 owner 脚本唯一持有下载地址、完整性校验值、启动参数、测试夹具和清理逻辑，协议断言放在 `common/engine/certification/<engine>/`，不能用只有测试文件的插件目录冒充生产实现；workflow 只能调用 `make test-release RELEASE_SUITE=<suite>`。认证通过后仍必须建立独立 `engine_type` 和插件实现，不得因 wire protocol 兼容而复用其他数据库身份。
+官方介质事实由 `scripts/lib/<engine>-official-media.sh` 唯一持有版本、按架构下载地址和完整性校验值；Release owner 脚本持有认证专用启动参数、测试夹具、证据和清理逻辑，协议断言放在 `common/engine/certification/<engine>/`，不能用只有测试文件的插件目录冒充生产实现；workflow 只能调用 `make test-release RELEASE_SUITE=<suite>`。认证通过后仍必须建立独立 `engine_type` 和插件实现，不得因 wire protocol 兼容而复用其他数据库身份。
 
-当前 openGauss 的准入基线固定为 6.0.6 LTS 官方 x86_64 Docker 介质，使用 `make test-release RELEASE_SUITE=opengauss-official-media` 在 Linux x86_64 执行。该 suite 验证官方 tar SHA-256、原生容器启动、PG 兼容 database、`lib/pq` 参数绑定、COPY、MERGE、复合 watermark、唯一键目录查询和查询取消；不进入辅助 macOS 巡检，也不代表 `engine_type=opengauss` 已经完成实现。
+openGauss 的准入基线固定为 6.0.6 LTS 官方 Docker tar：Linux x86_64 Release 认证使用 `make test-release RELEASE_SUITE=opengauss-official-media`，Business 根据主机架构选择官方 x86_64 或 aarch64 介质并校验固定 SHA-256。Release suite 验证原生容器启动、PG 兼容 database、`lib/pq` 参数绑定、COPY、MERGE、复合 watermark、唯一键目录查询和查询取消。正式插件独立注册为 `engine_type=opengauss`，内部复用 PostgreSQL wire protocol 与 SQL 方言实现，但只显式暴露已验证的非空间目录、Facts、查询、批量/游标读取、COPY 写会话、建表、删除、bounded watermark 和幂等 upsert；不声明 PostGIS、CDC、分区变化应用或 PostgreSQL 扩展能力。
 
 聚合包是内置插件编译期登记的唯一手写清单。`make test-engine-plugin-registration` 会自动扫描调用 `plugin.Register` 的生产包，校验每个包恰好进入与 `EngineOrigin()` 一致的一个聚合入口，并禁止上层生产代码通过 blank import 直接加载具体插件。测试和 System API 不得另行维护全量插件类型清单或固定数量；它们应从已登记插件和 descriptor 动态验证通用契约，具体引擎的端口、能力和字段语义由各插件包自己的测试拥有。
 
@@ -133,4 +133,4 @@ git diff --check
 
 涉及前端入口时补跑对应模块构建。
 
-对 openGauss 正式插件开发，先保留上述官方介质认证证据；插件实现完成后再补充可由常规 T2 disposable 基础设施执行的 Provider 集成门禁和跨模块 T4 验收，不能用协议认证替代模块能力验收。
+openGauss 的完成证据必须同时包含上述官方介质认证、常规 T2 disposable Provider 集成门禁和跨模块 T4 验收；不能用协议认证替代模块能力验收。

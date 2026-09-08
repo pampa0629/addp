@@ -1061,6 +1061,7 @@ func managerExecuteSummary(stats *ManagerCleanupStats) events.CleanupResultSumma
 		FreedBytes:               stats.FreedBytes,
 		MarkedMissingSource:      stats.MarkedMissingSource,
 		DisabledTaskDefinitions:  stats.DisabledTaskDefinitions,
+		DeletedTaskDefinitions:   stats.DeletedTaskDefinitions,
 		SkippedItems:             stats.SkippedExternalTargets,
 		ErrorCount:               len(stats.Errors),
 		RiskLevel:                riskLevelForCount(affected),

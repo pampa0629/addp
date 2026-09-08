@@ -65,6 +65,14 @@ BUSINESS_OCEANBASE_USER="${BUSINESS_OCEANBASE_USER:-root@${OCEANBASE_TENANT_NAME
 BUSINESS_OCEANBASE_PASSWORD="${OCEANBASE_PASSWORD:-business_oceanbase_password}"
 BUSINESS_OCEANBASE_AVAILABLE=false
 
+# Business openGauss 配置
+BUSINESS_OPENGAUSS_HOST="${BUSINESS_OPENGAUSS_HOST:-business-opengauss}"
+BUSINESS_OPENGAUSS_PORT="${BUSINESS_OPENGAUSS_PORT:-5432}"
+BUSINESS_OPENGAUSS_DATABASE="${OPENGAUSS_DATABASE:-business}"
+BUSINESS_OPENGAUSS_USER=gaussdb
+BUSINESS_OPENGAUSS_PASSWORD="${OPENGAUSS_PASSWORD:-AddpGauss606@}"
+BUSINESS_OPENGAUSS_AVAILABLE=false
+
 # Business MinIO 配置
 BUSINESS_MINIO_CHECK_PORT="${BUSINESS_MINIO_CHECK_PORT:-${MINIO_API_PORT:-9002}}"
 BUSINESS_MINIO_ENDPOINT="${BUSINESS_MINIO_ENDPOINT:-business-minio:9000}"
@@ -146,6 +154,24 @@ if docker ps --format '{{.Names}}' | grep -qx 'business-oceanbase'; then
   fi
 else
   echo -e "${YELLOW}⚠️  Business OceanBase CE 未启动，跳过注册${NC}"
+fi
+
+# openGauss 是可选业务引擎；只在容器已健康运行时注册。
+if docker ps --format '{{.Names}}' | grep -qx 'business-opengauss'; then
+  if docker exec --user omm \
+    --env GAUSSHOME=/usr/local/opengauss \
+    --env PATH=/usr/local/opengauss/bin:/scws/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    --env LD_LIBRARY_PATH=/usr/local/opengauss/lib:/scws/lib \
+    business-opengauss /usr/local/opengauss/bin/gsql \
+    -At -d "${BUSINESS_OPENGAUSS_DATABASE}" -p 5432 -c 'SELECT 1' 2>/dev/null | grep -Fxq '1'; then
+    BUSINESS_OPENGAUSS_AVAILABLE=true
+    echo -e "${GREEN}✓ Business openGauss 可用${NC}"
+  else
+    echo -e "${RED}✗ Business openGauss 容器已运行但不可查询${NC}"
+    exit 1
+  fi
+else
+  echo -e "${YELLOW}⚠️  Business openGauss 未启动，跳过注册${NC}"
 fi
 
 # 检查 Business MinIO
@@ -274,7 +300,7 @@ echo -e "${BLUE}========================================${NC}"
 register_engine \
   "Business PostgreSQL" \
   "postgresql" \
-  "{\"host\":\"${BUSINESS_PG_HOST}\",\"port\":${BUSINESS_PG_PORT},\"database\":\"${BUSINESS_PG_DB}\",\"username\":\"${BUSINESS_PG_USER}\",\"password\":\"${BUSINESS_PG_PASSWORD}\"}" \
+  "{\"host\":\"${BUSINESS_PG_HOST}\",\"port\":${BUSINESS_PG_PORT},\"database\":\"${BUSINESS_PG_DB}\",\"user\":\"${BUSINESS_PG_USER}\",\"password\":\"${BUSINESS_PG_PASSWORD}\"}" \
   "业务数据库 - PostgreSQL (带 PostGIS 空间扩展)"
 
 # 注册 Business Oracle
@@ -290,6 +316,14 @@ if [ "${BUSINESS_OCEANBASE_AVAILABLE}" = true ]; then
     "oceanbase" \
     "{\"host\":\"${BUSINESS_OCEANBASE_HOST}\",\"port\":${BUSINESS_OCEANBASE_PORT},\"database\":\"${BUSINESS_OCEANBASE_DATABASE}\",\"user\":\"${BUSINESS_OCEANBASE_USER}\",\"password\":\"${BUSINESS_OCEANBASE_PASSWORD}\"}" \
     "业务数据库 - OceanBase Community Edition (MySQL 模式)"
+fi
+
+if [ "${BUSINESS_OPENGAUSS_AVAILABLE}" = true ]; then
+  register_engine \
+    "Business openGauss" \
+    "opengauss" \
+    "{\"host\":\"${BUSINESS_OPENGAUSS_HOST}\",\"port\":${BUSINESS_OPENGAUSS_PORT},\"database\":\"${BUSINESS_OPENGAUSS_DATABASE}\",\"user\":\"${BUSINESS_OPENGAUSS_USER}\",\"password\":\"${BUSINESS_OPENGAUSS_PASSWORD}\",\"sslmode\":\"disable\"}" \
+    "业务数据库 - openGauss 6.0.6 LTS (PG 兼容模式)"
 fi
 
 # 注册 Business MinIO
@@ -310,6 +344,9 @@ echo "  2. Business Oracle (${BUSINESS_ORACLE_HOST}:${BUSINESS_ORACLE_PORT}/${BU
 echo "  3. Business MinIO (${BUSINESS_MINIO_ENDPOINT})"
 if [ "${BUSINESS_OCEANBASE_AVAILABLE}" = true ]; then
   echo "  4. Business OceanBase (${BUSINESS_OCEANBASE_HOST}:${BUSINESS_OCEANBASE_PORT}/${BUSINESS_OCEANBASE_DATABASE})"
+fi
+if [ "${BUSINESS_OPENGAUSS_AVAILABLE}" = true ]; then
+  echo "  5. Business openGauss (${BUSINESS_OPENGAUSS_HOST}:${BUSINESS_OPENGAUSS_PORT}/${BUSINESS_OPENGAUSS_DATABASE})"
 fi
 echo ""
 echo -e "${YELLOW}提示: 可以在「系统管理 -- 引擎管理」页面查看和管理引擎${NC}"

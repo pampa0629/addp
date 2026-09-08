@@ -29,6 +29,14 @@ def postgresql_descriptor(engine_id=21):
     }
 
 
+def opengauss_descriptor(engine_id=22):
+    descriptor = postgresql_descriptor(engine_id)
+    descriptor["name"] = "openGauss"
+    descriptor["engine_type"] = "opengauss"
+    descriptor["capabilities"]["engine_type"] = "opengauss"
+    return descriptor
+
+
 def native_descriptor(engine_type, root_term, levels, engine_id=21):
     return {
         "id": engine_id,
@@ -344,6 +352,20 @@ def test_client_rejects_incompatible_postgresql_catalog_model(monkeypatch, noteb
     monkeypatch.setattr(engines, "list", lambda **_kwargs: [descriptor])
     with pytest.raises(engines.NotebookEngineCatalogUnsupportedError):
         engines.client(21)
+
+
+def test_client_registers_opengauss_as_independent_native_facade(monkeypatch, notebook_session):
+    descriptor = opengauss_descriptor()
+    monkeypatch.setattr(engines, "list", lambda **_kwargs: [descriptor])
+    client = engines.client(22)
+    assert isinstance(client, engines.OpenGaussEngine)
+    assert client.engine_type == "opengauss"
+
+
+def test_opengauss_facade_rejects_postgresql_descriptor(monkeypatch, notebook_session):
+    monkeypatch.setattr(engines, "list", lambda **_kwargs: [postgresql_descriptor(engine_id=22)])
+    with pytest.raises(engines.NotebookEngineCatalogUnsupportedError):
+        engines.OpenGaussEngine.validate_descriptor(postgresql_descriptor(engine_id=22))
 
 
 @pytest.mark.parametrize(

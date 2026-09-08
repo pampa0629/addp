@@ -13,6 +13,7 @@
 - **MongoDB** 🆕：文档型 NoSQL 数据库，端口 27017
 - **MySQL 8.0**：支持 Spatial 与 CDC 的业务关系库测试源，端口 3306
 - **OceanBase Community Edition 4.4.2 LTS**：Apache 2.0 授权、MySQL 模式的国产分布式关系数据库测试源，端口 2881；固定使用 `oceanbase/oceanbase-ce:4.4.2-lts`。
+- **openGauss 6.0.6 LTS**：Apache 2.0 授权、PG 兼容模式的国产关系数据库测试源，端口 5435；启动脚本按 ARM64/AMD64 选择并校验官方 Docker tar，统一加载为 `opengauss:6.0.6`。
 - **Apache Doris**：实时分析数据库，端口 9030, 8030
 - **Apache Spark**：分布式计算引擎，主机端口 7077、18088、11000；默认 Worker 为 Thrift 查询和工作流执行分别保留执行资源
 - **Redpanda**：兼容 Kafka API 的业务消息流，端口 29092
@@ -67,6 +68,9 @@ bash scripts/start.sh -mysql
 # 只启动 OceanBase CE，并幂等初始化可查询样例
 bash scripts/start.sh -oceanbase
 
+# 只启动 openGauss，并幂等初始化可查询样例
+bash scripts/start.sh -opengauss
+
 # 只启动 Oracle，并幂等初始化普通表与 Spatial 样例
 bash scripts/start.sh -oracle
 
@@ -112,6 +116,8 @@ business/
 │   └── test-data.sh                # 普通表与全二维几何族显式测试数据
 ├── oceanbase/                      # OceanBase CE 测试数据
 │   └── init.sql                    # 幂等创建探针与普通关系业务样例表
+├── opengauss/                      # openGauss 测试数据
+│   └── init.sql                    # 幂等创建探针与普通关系业务样例表
 ├── oracle/                         # Oracle 普通表与 Spatial 测试数据
 │   ├── init.sql                     # 幂等初始化 SQL
 │   ├── init-cdc.sh                  # ARCHIVELOG、LogMiner 账号与权限幂等初始化
@@ -138,6 +144,7 @@ business/
 | MinIO | 端口 9000-9001 | 端口 9002-9003 |
 | ClickHouse | - | 端口 9000, 8123 |
 | MongoDB | - | 端口 27017 |
+| openGauss | - | 端口 5435 |
 | 用途 | ADDP 元数据（用户、资源配置、任务定义） | 用户业务数据（上传的数据、文件） |
 | 示例数据 | 用户账号、资源配置表 | Shapefile 空间数据表、用户上传文件 |
 
@@ -149,6 +156,8 @@ business/
 |---------|----------------|------|
 | **ARM64** (Apple Silicon) | `imresamu/postgis-arm64:15-3.4` | ⚡ 原生性能 |
 | **AMD64** (Intel/AMD) | `postgis/postgis:15-3.4` | ⚡ 原生性能 |
+
+openGauss 不使用 Docker Hub 第三方镜像。`scripts/lib/opengauss-official-media.sh` 固定维护 6.0.6 官方 x86_64/aarch64 tar URL 与 SHA-256；首次启动会下载约 1.2–1.4 GB，加载后复用本地 `opengauss:6.0.6`。Business 通过官方入口脚本支持的 `OTHER_PG_CONF` 将本地单机测试默认收敛到 `max_process_memory=4GB`、`shared_buffers=512MB`，可分别用 `OPENGAUSS_MAX_PROCESS_MEMORY`、`OPENGAUSS_SHARED_BUFFERS` 调整；生产集群不能照搬此测试配置。
 
 ## 脚本说明
 
@@ -168,6 +177,8 @@ bash scripts/start.sh
 `bash scripts/start.sh -oceanbase` 启动官方 OceanBase CE 固定 LTS 镜像，并通过纯 SQL 脚本幂等初始化 `${OCEANBASE_DATABASE:-business}`。样例包含连接探针表，以及与 MySQL 普通业务样例对齐的 `customers`、`products`、`orders`、`order_items` 四张关联表，覆盖主外键、唯一约束、索引、Decimal、JSON、布尔和微秒时间字段；当前支持非空间 InnoDB 基表的 bounded watermark 一致性读取、安全建表、可空列增量演进、事务性分批 insert、覆盖策略所需的精确目标表删除，以及按显式非空稳定键执行的事务性幂等 upsert。该容器不初始化或声明空间、CDC 或 Oracle 模式能力，是 `MODE=mini` 的单机测试形态，建议预留至少 2 CPU / 8 GB 内存，不用于生产部署。System 中必须注册为 `engine_type=oceanbase`，容器内连接地址为 `business-oceanbase:2881`，默认账号为 `root@test`；不要登记为 MySQL。
 
 OceanBase Provider 的唯一 T2 入口是仓库根 `make test-common-oceanbase`。对当前 Business 容器验证时，显式传入 `ADDP_TEST_OCEANBASE_HOST`、`ADDP_TEST_OCEANBASE_PORT`、`ADDP_TEST_OCEANBASE_USER` 和 `ADDP_TEST_OCEANBASE_PASSWORD`；门禁固定使用名称含 `disposable` 的专用 database，覆盖连接、实时目录、字段与统计 Facts、BatchRead、可执行查询样例、命名参数、受控只读事务，以及非空间普通表的 bounded watermark resume 和 prepare/session/delete/upsert 写入契约。测试生命周期创建并删除该 database，各用例只清理自己拥有的 gate 表，不读取或修改上述固定业务样例。
+
+`bash scripts/start.sh -opengauss` 启动官方 openGauss 6.0.6 LTS 介质并幂等初始化 `${OPENGAUSS_DATABASE:-business}`。样例与 MySQL/OceanBase 的普通业务域一致，包含 `customers`、`products`、`orders`、`order_items` 和连接探针，覆盖主外键、唯一约束、复合索引、Decimal、Boolean 与时间字段。System 中必须注册为 `engine_type=opengauss`；宿主机连接 `localhost:${OPENGAUSS_PORT:-5435}`，容器网络连接 `business-opengauss:5432`，固定账号 `gaussdb`。不得登记为 PostgreSQL，也不得据 PG 兼容性宣称 PostGIS、CDC 或 PostgreSQL 扩展能力。
 
 ### scripts/online-workbench-mysql-fixture.sh - Workbench T4 MySQL Fixture
 

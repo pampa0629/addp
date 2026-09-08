@@ -5546,6 +5546,8 @@ paths:
       - audit.event.read
   /platform/audit/events/export:
     get:
+      description: 按稳定顺序导出当前筛选条件下的全部审计事件 | Export all audit events matching the current
+        filters in stable order
       parameters:
       - description: csv 或 json | csv or json
         in: query
@@ -5577,6 +5579,10 @@ paths:
       responses:
         "200":
           description: OK
+          headers:
+            X-ADDP-Export-Count:
+              description: 实际导出的事件数 | Number of exported events
+              type: integer
           schema:
             items:
               $ref: '#/definitions/internal_api.IAMAuditEventResponse'
@@ -7750,6 +7756,8 @@ paths:
       - audit.tenant_event.read
   /tenant/audit/events/export:
     get:
+      description: 按稳定顺序导出当前筛选条件下的全部审计事件 | Export all audit events matching the current
+        filters in stable order
       parameters:
       - description: csv 或 json | csv or json
         in: query
@@ -7782,6 +7790,10 @@ paths:
       responses:
         "200":
           description: OK
+          headers:
+            X-ADDP-Export-Count:
+              description: 实际导出的事件数 | Number of exported events
+              type: integer
           schema:
             items:
               $ref: '#/definitions/internal_api.IAMAuditEventResponse'

@@ -563,6 +563,36 @@ jobs:
           gate: Common Engine Provider integration (PostgreSQL 15)
           status: ${{ job.status }}
 
+  common-opengauss:
+    name: Common Engine Provider integration (openGauss 6.0.6 official media)
+    needs: selection
+    if: needs.selection.outputs.common == 'true' || needs.selection.outputs.develop == 'true' || needs.selection.outputs.service == 'true' || needs.selection.outputs.transfer == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: common/go.mod
+          cache: false
+
+      - name: Run Common openGauss gate
+        env:
+          ADDP_OPENGAUSS_MEDIA_CACHE: ${{ runner.temp }}/addp-opengauss-media-cache
+        run: make test-common-opengauss
+
+      - name: Summarize Common openGauss gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Common Engine Provider integration (openGauss 6.0.6 official media)
+          status: ${{ job.status }}
+
   common-oceanbase:
     name: Common Engine Provider integration (OceanBase CE 4.4.2 LTS)
     needs: selection

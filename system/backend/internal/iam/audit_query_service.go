@@ -38,6 +38,30 @@ func (s *AuditQueryService) List(
 	return logs, total, err
 }
 
+func (s *AuditQueryService) Export(
+	ctx context.Context,
+	query AuditQuery,
+	batchSize int,
+	visit func([]AuditLog) error,
+) (int64, error) {
+	if err := s.validateQuery(query); err != nil {
+		return 0, err
+	}
+	if err := validateManagementPagination(1, batchSize); err != nil {
+		return 0, err
+	}
+	if visit == nil {
+		return 0, fmt.Errorf("%w: audit export visitor is required", commonapi.ErrBadRequest)
+	}
+	var exported int64
+	err := s.repository.ReadOnlyRepeatableReadTransaction(ctx, func(tx *Repository) error {
+		var err error
+		exported, err = tx.VisitAuditLogs(ctx, query, batchSize, visit)
+		return err
+	})
+	return exported, err
+}
+
 func (s *AuditQueryService) Get(ctx context.Context, auditID int64, tenantID *int64) (*AuditLog, error) {
 	if s == nil || s.repository == nil {
 		return nil, fmt.Errorf("%w: IAM repository is required", commonapi.ErrBadRequest)

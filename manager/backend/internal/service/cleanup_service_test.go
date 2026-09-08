@@ -76,7 +76,7 @@ func TestManagerCleanupSummaries(t *testing.T) {
 	if executeSummary.AffectedRecords != 28 {
 		t.Fatalf("affected_records = %d, want 28", executeSummary.AffectedRecords)
 	}
-	if executeSummary.DeletedPhysicalArtifacts != 4 || executeSummary.FreedBytes != 1024 || executeSummary.MarkedMissingSource != 6 || executeSummary.DisabledTaskDefinitions != 8 {
+	if executeSummary.DeletedPhysicalArtifacts != 4 || executeSummary.FreedBytes != 1024 || executeSummary.MarkedMissingSource != 6 || executeSummary.DisabledTaskDefinitions != 8 || executeSummary.DeletedTaskDefinitions != 3 {
 		t.Fatalf("execute summary = %#v", executeSummary)
 	}
 	if executeSummary.SkippedItems != 1 || executeSummary.ErrorCount != 2 {

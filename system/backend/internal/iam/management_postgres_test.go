@@ -392,6 +392,27 @@ func TestIAMManagementServicesAgainstPostgres(t *testing.T) {
 	if err != nil || summary.Total != tenantTotal {
 		t.Fatalf("tenant audit summary = %#v err=%v", summary, err)
 	}
+	var exportedTenantLogs []AuditLog
+	exportBatchCount := 0
+	exportedTotal, err := auditService.Export(ctx, AuditQuery{TenantID: &tenant.ID}, 2, func(batch []AuditLog) error {
+		exportBatchCount++
+		if len(batch) > 2 {
+			t.Fatalf("tenant audit export batch size = %d, want at most 2", len(batch))
+		}
+		exportedTenantLogs = append(exportedTenantLogs, batch...)
+		return nil
+	})
+	if err != nil || exportedTotal != tenantTotal || int64(len(exportedTenantLogs)) != tenantTotal || exportBatchCount < 2 {
+		t.Fatalf("tenant audit export total=%d logs=%d batches=%d want=%d err=%v", exportedTotal, len(exportedTenantLogs), exportBatchCount, tenantTotal, err)
+	}
+	for index := 1; index < len(exportedTenantLogs); index++ {
+		previous := exportedTenantLogs[index-1]
+		current := exportedTenantLogs[index]
+		if current.CreatedAt.After(previous.CreatedAt) ||
+			(current.CreatedAt.Equal(previous.CreatedAt) && current.ID >= previous.ID) {
+			t.Fatalf("tenant audit export order escaped stable descending order at %d: previous=%#v current=%#v", index, previous, current)
+		}
+	}
 }
 
 func createGovernedManagementUser(

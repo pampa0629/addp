@@ -12,6 +12,7 @@ from pathlib import Path
 
 
 SCRIPT = Path(__file__).with_name("opengauss-official-media-release-gate.sh")
+MEDIA_HELPER = SCRIPT.parent.parent / "lib/opengauss-official-media.sh"
 
 
 class OpenGaussOfficialMediaReleaseGateTest(unittest.TestCase):
@@ -22,6 +23,9 @@ class OpenGaussOfficialMediaReleaseGateTest(unittest.TestCase):
         self.script = self.repository / "scripts/test/opengauss-official-media-release-gate.sh"
         self.script.parent.mkdir(parents=True)
         self.script.write_text(SCRIPT.read_text(encoding="utf-8"), encoding="utf-8")
+        helper = self.repository / "scripts/lib/opengauss-official-media.sh"
+        helper.parent.mkdir(parents=True)
+        helper.write_text(MEDIA_HELPER.read_text(encoding="utf-8"), encoding="utf-8")
         (self.repository / "common/engine/certification/opengauss").mkdir(parents=True)
         self.fake_bin = self.root / "bin"
         self.fake_bin.mkdir()

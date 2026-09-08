@@ -1177,7 +1177,8 @@
         "stateChanges": {
           "missing": "缺源 {count}",
           "outdated": "过期 {count}",
-          "disabled": "停用任务 {count}"
+          "disabled": "停用任务 {count}",
+          "deleted": "删除任务 {count}"
         },
         "releasedStorageValue": "{artifacts} 个产物 / {bytes}",
         "exceptionsValue": "{skipped} / {errors}"

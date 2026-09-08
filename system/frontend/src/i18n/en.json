@@ -1177,7 +1177,8 @@
         "stateChanges": {
           "missing": "Missing source {count}",
           "outdated": "Outdated {count}",
-          "disabled": "Disabled tasks {count}"
+          "disabled": "Disabled tasks {count}",
+          "deleted": "Deleted tasks {count}"
         },
         "releasedStorageValue": "{artifacts} artifacts / {bytes}",
         "exceptionsValue": "{skipped} / {errors}"

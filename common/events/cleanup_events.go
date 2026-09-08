@@ -106,6 +106,7 @@ type CleanupResultSummary struct {
 	MarkedMissingSource      int    `json:"marked_missing_source,omitempty"`
 	MarkedOutdated           int    `json:"marked_outdated,omitempty"`
 	DisabledTaskDefinitions  int    `json:"disabled_task_definitions,omitempty"`
+	DeletedTaskDefinitions   int    `json:"deleted_task_definitions,omitempty"`
 	SkippedItems             int    `json:"skipped_items,omitempty"`
 	ErrorCount               int    `json:"error_count,omitempty"`
 	RiskLevel                string `json:"risk_level,omitempty"`

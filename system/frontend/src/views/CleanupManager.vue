@@ -565,6 +565,7 @@ import { Search, Refresh, Delete, WarningFilled, Monitor } from '@element-plus/i
 import { openMonitorExecution, openMonitorExecutions } from '@common-ui'
 import { cleanupApi } from '../api/cleanup'
 import { useAuthStore } from '../store/auth'
+import { formatCleanupStateChanges } from '../utils/cleanupPresentation'
 import { navigateSystemRoute } from '../utils/moduleNavigation'
 
 const { t } = useI18n()
@@ -602,6 +603,7 @@ const emptySummary = {
   marked_missing_source: 0,
   marked_outdated: 0,
   disabled_task_definitions: 0,
+  deleted_task_definitions: 0,
   skipped_items: 0,
   error_count: 0,
   risk_level: 'low'
@@ -1033,16 +1035,7 @@ const formatBytes = (value) => {
   return `${(bytes / Math.pow(1024, index)).toFixed(index === 0 ? 0 : 1)} ${units[index]}`
 }
 
-const formatStateChanges = (summary) => {
-  const parts = []
-  const missing = Number(summary?.marked_missing_source || 0)
-  const outdated = Number(summary?.marked_outdated || 0)
-  const disabled = Number(summary?.disabled_task_definitions || 0)
-  if (missing > 0) parts.push(t('system.cleanup.modules.stateChanges.missing', { count: missing }))
-  if (outdated > 0) parts.push(t('system.cleanup.modules.stateChanges.outdated', { count: outdated }))
-  if (disabled > 0) parts.push(t('system.cleanup.modules.stateChanges.disabled', { count: disabled }))
-  return parts.length > 0 ? parts.join(' / ') : '-'
-}
+const formatStateChanges = (summary) => formatCleanupStateChanges(summary, t)
 
 const formatContext = (context) => {
   if (!context || Object.keys(context).length === 0) return '-'
