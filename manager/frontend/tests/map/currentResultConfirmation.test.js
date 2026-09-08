@@ -25,6 +25,17 @@ describe('current result confirmation', () => {
     await expect(executeWithCurrentResultConfirmation(() => Promise.reject(error), vi.fn())).rejects.toBe(error)
   })
 
+  it('confirms before the first request when task detail reports a current result', async () => {
+    const execute = vi.fn().mockResolvedValue({ execution_id: 'exec-3' })
+    const confirm = vi.fn().mockResolvedValue()
+
+    await executeWithCurrentResultConfirmation(execute, confirm, { hasCurrentResult: true })
+
+    expect(confirm).toHaveBeenCalledTimes(1)
+    expect(execute).toHaveBeenCalledTimes(1)
+    expect(execute).toHaveBeenCalledWith({ parameters: { existing_result_action: 'overwrite' } })
+  })
+
   it('maps the standard execution parameter to the quick-view action DTO', () => {
     expect(toQuickViewExistingResultPayload({})).toEqual({})
     expect(toQuickViewExistingResultPayload({ parameters: { existing_result_action: 'overwrite' } }))

@@ -16,6 +16,15 @@ func TestPostgreSQLPartitionedChangeApplyDeclaresUpsertDeleteAndSkip(t *testing.
 	}
 }
 
+func TestPostgreSQLDeclaresRelationQueryParameters(t *testing.T) {
+	t.Parallel()
+
+	types := (&PostgreSQLPlugin{}).Capabilities().Compute.Query.Parameters.Types
+	if !plugin.Contains(types, "relation") {
+		t.Fatalf("query parameter types = %v, want relation", types)
+	}
+}
+
 func TestPostgreSQLPrepareQueryAcceptsBoundPositionalArguments(t *testing.T) {
 	prepared, err := (&PostgreSQLPlugin{}).PrepareQuery(t.Context(), plugin.ConnectionInfo{}, plugin.QueryRequest{
 		Language: "sql",

@@ -141,7 +141,7 @@ func ManagerTaskProviderDeclaration() (*commonModels.TaskProviderDeclaration, er
 				"supports_cancel":           false,
 				"supports_inline_execution": false,
 				"create_url":                "/manager/data-explorer",
-				"edit_url":                  "/manager/data-explorer",
+				"edit_url":                  "/manager/derived-tasks?category=managed_quick_view&task_type=pptx_pdf_generation&task_id=:id",
 				"deprecated":                false,
 			},
 		},
@@ -156,7 +156,7 @@ func ManagerTaskProviderDeclaration() (*commonModels.TaskProviderDeclaration, er
 
 	return &commonModels.TaskProviderDeclaration{
 		DisplayName: "数据管理",
-		Description: "矢量物化视图、矢量瓦片缓存、栅格快显 COG、栅格 mosaic、三维模型 3D Tiles、三维模型 GLB 快显、3DGS - KSplat 快显和对象存储向量化任务",
+		Description: "矢量物化视图、矢量瓦片缓存、栅格快显、三维模型、点云、PPTX PDF 和空间业务数据生成任务",
 
 		// API 端点配置（相对于 base_url，支持 {task_type}/{id} 占位符）
 		TaskListEndpoint:    "/api/v1/manager/tasks",

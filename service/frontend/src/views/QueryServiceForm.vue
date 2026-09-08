@@ -77,8 +77,9 @@
           </template>
 
           <ResourceTreePicker
+            ref="tablePickerRef"
             :api-base-url="metaApiBaseUrl"
-            :engine-types="QUERY_TABLE_ENGINE_TYPES"
+            :engine-filter="queryTableEngineFilter"
             mode="item"
             :node-filter="isQueryableTableVisibleNode"
             :selectable-filter="isQueryableTableNode"
@@ -455,7 +456,7 @@ import {
   withTransientRetry
 } from '@common-ui'
 import {
-  QUERY_TABLE_ENGINE_TYPES,
+  isQueryableTableEngine,
   isQueryableTableNode,
   isQueryableTableVisibleNode
 } from '@/utils/resourceSelection'
@@ -480,6 +481,7 @@ const loadingSampleQuery = ref(false)
 const loadingEngines = ref(false)
 const sampleRequests = createLatestRequestCoordinator()
 const outputContractRequests = createLatestRequestCoordinator()
+const tablePickerRef = ref(null)
 
 const isEdit = computed(() => !!route.params.id)
 
@@ -564,6 +566,7 @@ const hasGeometryField = computed(() => {
 
 const sqlSupportedEngines = computed(() => queryServiceExecutionEngines(engines.value))
 const queryRuntimes = computed(() => federatedQueryRuntimes(engines.value))
+const queryTableEngineFilter = engine => isQueryableTableEngine(engine, queryRuntimes.value)
 const engineOptionLabel = engine => (
   `${engine.name} (${engine.engine_type}) · ${t(`common.engineStatus.${engineSelectionState(engine)}`)}`
 )
@@ -1002,6 +1005,7 @@ const goBack = () => {
 onMounted(async () => {
   // 加载存储引擎列表（SQL 模式下使用）
   await loadStorageEngines()
+  await tablePickerRef.value?.loadEngines()
 
   if (isEdit.value) {
     loading.value = true

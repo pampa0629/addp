@@ -80,7 +80,7 @@
 | Materialization Batch | 物化批次 | Model 为一次逻辑表重算创建的 Tenant 级受控发布聚合，绑定逻辑表版本、目标 Engine、staging、结构指纹和 prepare/publish execution。 | 同一逻辑表同时最多一个活动批次；批次不接受调用方提交 SQL、Schema、表名或 DDL。 |
 | Materialization Read Context | 物化读上下文 | Model 面向同一父 Orchestrator execution 中的 Develop/Quality reader，对已完成有效 write attempt 生成的短期只读批次投影。 | 返回精确 staging locator、字段、结构指纹和批次身份；不返回凭据、DDL 或写入能力，也不替代 reader 自身的 Execution Authorization。 |
 | query parameter | 查询参数 | Develop 查询任务声明的命名输入，统一保存在 `content.query_parameters[]`。 | `type=relation` 表示绑定 ResourceLocator 的数据表参数；`string`、`integer`、`number`、`boolean` 表示类型化值参数。全部参数共享同一命名空间、默认值与单次执行覆盖语义，且名称唯一。 |
-| relation query parameter | 关系查询参数 | 查询参数中代表关系型数据表的 `relation` 类型参数。 | PostgreSQL SQL 直接使用未加引号、未限定 schema 的裸参数名引用；可保存已有表 ResourceLocator 作为默认绑定，也可由手动执行或 Orchestrator 覆盖。Develop 通过 AST 把该关系节点编译为方言安全的物理表标识符。它不是表名字符串参数，也不绑定 LogicalTable ID。 |
+| relation query parameter | 关系查询参数 | 查询参数中代表关系型数据表的 `relation` 类型参数。 | 声明 `compute.query.parameters.types=relation` 的 PostgreSQL 方言引擎 SQL 直接使用未加引号、未限定 schema 的裸参数名引用；当前包括 PostgreSQL 与 openGauss。可保存已有表 ResourceLocator 作为默认绑定，也可由手动执行或 Orchestrator 覆盖。Develop 通过 PostgreSQL AST 把该关系节点编译为方言安全的物理表标识符。它不是表名字符串参数，也不绑定 LogicalTable ID。 |
 | Materialization Group | 物化组 | Model 中定义一组必须作为同一可见版本发布的已审批逻辑表。 | 组内逻辑表必须位于同一 PostgreSQL Engine；Model 在一个目标库事务中完成全部物理替换，跨 Engine 组直接拒绝。 |
 | PreparedQuery | 已准备查询 | Engine Provider 从一次 `QueryRequest` 生成的不可变、一次性查询计划，绑定 Engine、语言、参数、目标路径和 Provider 原生解析结果。 | 读取集合解析、安全门禁和真实执行必须绑定同一个 PreparedQuery；门禁后不再接受新的查询文本或参数。 |
 | QueryAnalysis | 查询分析 | PreparedQuery 基于 Provider 原生语言规则产生的结构化诊断事实，包含稳定诊断码、阶段、严重级别、位置与 schema coverage。 | Develop 等 Owner 只展示和消费该事实，不在浏览器或业务服务中再次用正则、分词或样本字段推断 SQL、MQL、Cypher 语义。 |
@@ -262,7 +262,7 @@
 
 | 英文术语 | 中文术语 | 定义 | 备注 |
 |---|---|---|---|
-| Manager derived task definition | Manager 派生任务定义 | Manager 对可重复执行的数据派生动作保存的稳定配置；全部类型统一存储，使用 `task_type` 区分强类型配置与执行器。 | 产品分类固定为 `managed_quick_view` 或 `spatial_business`；统一存储不表示统一任务类型或统一结果生命周期。 |
+| Manager generation task definition | Manager 生成任务定义 | Manager 对可重复执行的数据生成动作保存的稳定配置；全部类型统一存储，使用 `task_type` 区分强类型配置与执行器。 | 产品界面统一称“生成任务”，分类固定为 `managed_quick_view` 或 `spatial_business`；内部路由和 API 字段仍可使用 `derived` 表达来源到结果的关系，统一存储不表示统一任务类型或统一结果生命周期。 |
 | Task | 任务 | 可被执行的业务能力抽象。 | Task 是抽象概念，不要求平台级统一任务总表；任务定义归 owner 模块存储，owner 可在模块内统一同构定义。 |
 | spatial task | 空间任务 | Manager 中按空间业务派生目的组织的产品分类。 | 与“快显管理”共用 `manager.task_definitions` 控制面，但保持独立 `task_type`、配置校验、执行器与业务结果生命周期。 |
 | task definition | 任务定义 | “未来应该按什么策略处理什么对象”的定义态。 | 例如 `meta.scan_tasks`、`transfer.transfer_tasks`、`manager.task_definitions`。 |
@@ -354,7 +354,7 @@
 | execution output contract | 执行输出契约 | 某个具体任务定义对外承诺的、可被 Orchestrator 后续 Step 引用的稳定执行结果 Schema。 | 只允许声明可跨任务边界传递的持久结果或稳定引用，例如 ResourceLocator；不得暴露 DataFrame、GeoDataFrame 或运行时私有内存句柄。 |
 | execution parameter override | 执行参数覆盖 | 调用方按执行输入契约为某一次 execution 提交的部分参数值。 | 未提交字段保留任务默认值；覆盖不得修改任务定义，不得改变 DAG 结构，也不得绕过最终资源校验和 Execution Authorization。 |
 | query parameter definition | 查询参数定义 | 查询任务为一个命名输入声明唯一参数名、类型以及可选默认值和说明。 | 全部参数类型都可以省略默认值并在执行时填写；定义派生任务级执行输入契约，不再保存显示名称或第二套引用标识。 |
-| query parameter binding | 查询参数绑定 | Develop 在一次 execution 中把查询参数解析为实际执行输入的过程。 | 值参数由 Query Runtime Provider 安全绑定：SQL 使用 `:name`、Cypher 使用 `$name`、MQL 使用 `{\"$param\":\"name\"}`；关系参数只允许 PostgreSQL SQL 中与已声明参数同名的裸关系节点，并由 Develop AST 编译器替换。禁止字符串插值，也禁止用普通值参数替代字段名、关键字和查询片段。 |
+| query parameter binding | 查询参数绑定 | Develop 在一次 execution 中把查询参数解析为实际执行输入的过程。 | 值参数由 Query Runtime Provider 安全绑定：SQL 使用 `:name`、Cypher 使用 `$name`、MQL 使用 `{\"$param\":\"name\"}`；关系参数只允许引擎 capability 显式声明的 PostgreSQL 方言 SQL 中与参数同名的裸关系节点，并由 Develop AST 编译器替换。禁止字符串插值，也禁止用普通值参数替代字段名、关键字和查询片段。 |
 | Develop Adapter Spec | Develop 适配规范 | Develop Backend 按工作流引擎类型和算子 ID 选择的显式执行前转换契约，声明公开资源参数如何派生为运行时参数。 | 负责查询 System Engine Instance、派生 `connection_info/schema/table/path` 并移除公开资源参数；不得按参数名隐式触发。 |
 | Runtime Operator Spec | 运行时算子规范 | Workflow Runtime 实际执行算子时消费的内部契约，只声明运行时真实需要的参数、输入输出端口和执行行为。 | 不解析 ADDP `ResourceLocator`，不承载资源树 UI 配置；`connection_info/schema/table/path` 属于适配层到运行时的内部参数。 |
 | Workflow Access Plan | 工作流访问计划 | Develop、Manager 等调用方把已解析的存储资源转换为 Workflow Runtime 可执行读写计划的内部契约。 | 当前版本为 `addp.workflow.access-plan/v1`；只在执行期携带 `mounted_path` 或 `object_store` 访问参数，不作为用户任务定义、资源身份或长期事实源。 |

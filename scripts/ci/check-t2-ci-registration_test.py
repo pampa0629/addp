@@ -120,6 +120,37 @@ class T2CIRegistrationTest(unittest.TestCase):
             encoding="utf-8",
         )
 
+    def _add_hosted_only_gate(self) -> None:
+        script = self.repository / "scripts/test/common-opengauss-gate.sh"
+        script.write_text(
+            "#!/usr/bin/env bash\n"
+            "# ADDP_T2_HOSTED_ONLY=opengauss\n"
+            "CONTAINER_NAME=addp-opengauss-disposable\n"
+            "docker run --name \"$CONTAINER_NAME\" opengauss:6.0.6\n"
+            "docker rm --force \"$CONTAINER_NAME\"\n",
+            encoding="utf-8",
+        )
+        makefile = self.repository / "Makefile"
+        makefile.write_text(
+            makefile.read_text(encoding="utf-8")
+            + "\ntest-integration-hosted: test-integration\n"
+            + "\t@$(MAKE) test-common-opengauss\n\n"
+            + "test-common-opengauss:\n"
+            + "\t@bash scripts/test/common-opengauss-gate.sh\n",
+            encoding="utf-8",
+        )
+        self.workflow.write_text(
+            self._workflow_text()
+            + "  common-opengauss:\n"
+            + "    steps:\n"
+            + "      - name: Select common gate\n"
+            + "        id: common\n"
+            + "        run: python3 scripts/ci/select-module-gate.py --module common\n"
+            + "      - name: Run openGauss gate\n"
+            + "        run: make test-common-opengauss\n",
+            encoding="utf-8",
+        )
+
     def _set_sample_disposable_database_contract(self, database: str) -> None:
         script = self.repository / "scripts/test/sample-postgres-gate.sh"
         script.write_text(
@@ -203,6 +234,29 @@ class T2CIRegistrationTest(unittest.TestCase):
         )
 
         self.assertEqual([], MODULE.validate_registration(self.repository))
+
+    def test_accepts_hosted_only_gate_outside_local_aggregate(self) -> None:
+        self._add_hosted_only_gate()
+
+        self.assertEqual([], MODULE.validate_registration(self.repository))
+
+    def test_rejects_hosted_only_gate_in_local_aggregate(self) -> None:
+        self._add_hosted_only_gate()
+        makefile = self.repository / "Makefile"
+        makefile.write_text(
+            makefile.read_text(encoding="utf-8").replace(
+                "test-integration:\n",
+                "test-integration:\n\t@$(MAKE) test-common-opengauss\n",
+                1,
+            ),
+            encoding="utf-8",
+        )
+
+        self.assertIn(
+            "scripts/test/common-opengauss-gate.sh: hosted-only target "
+            "test-common-opengauss must not run in local test-integration",
+            MODULE.validate_registration(self.repository),
+        )
 
     def test_accepts_explicit_disposable_database_contract(self) -> None:
         self._set_sample_disposable_database_contract("addp_sample_disposable")

@@ -45,7 +45,7 @@ const routes = [
 		path: 'derived-tasks',
 		name: 'DerivedTasks',
 		component: () => import('../views/DerivedTasks.vue'),
-		meta: { requiresAuth: true, title: '派生任务-addp' }
+		meta: { requiresAuth: true, title: '生成任务-addp' }
 	  },
       {
         path: 'spatial-preview',

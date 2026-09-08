@@ -91,4 +91,3 @@ WHERE NOT EXISTS (SELECT 1 FROM order_items WHERE id = 3);
 INSERT INTO order_items (id, order_id, product_id, quantity, unit_price)
 SELECT 4, 3, 3, 1, 1299.00
 WHERE NOT EXISTS (SELECT 1 FROM order_items WHERE id = 4);
-

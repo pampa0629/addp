@@ -12,6 +12,7 @@ import (
 )
 
 var managedQuickViewTaskTypes = []string{
+	commonExecution.TaskTypePPTXPDFGeneration,
 	commonExecution.TaskTypeVectorTileCacheGeneration,
 	commonExecution.TaskTypeVectorMaterializedViewGeneration,
 	commonExecution.TaskTypeRasterCOGGeneration,
@@ -154,6 +155,8 @@ func taskSemanticKey(taskType string, config commonModels.JSONMap) string {
 		return joinSemantic(firstString(target, "item_fingerprint"), firstString(geometry, "geometry_column"), fmt.Sprint(geometry["target_srid"]))
 	case commonExecution.TaskTypeRasterCOGGeneration:
 		return firstString(target, "item_fingerprint")
+	case commonExecution.TaskTypePPTXPDFGeneration:
+		return joinSemantic(firstString(source, "item_fingerprint"), models.PPTXPDFArtifactVariant)
 	case commonExecution.TaskTypeModel3DGLBGeneration,
 		commonExecution.TaskTypeGaussianSplatKSplatGeneration,
 		commonExecution.TaskTypePointCloudCOPCGeneration:
@@ -259,4 +262,18 @@ func (r *TaskDefinitionRepository) List(ctx context.Context, filter TaskDefiniti
 
 func (r *TaskDefinitionRepository) Delete(ctx context.Context, tenantID uint, taskType string, id uint) error {
 	return deleteTaskDefinition(ctx, r.db, taskType, id, tenantID)
+}
+
+func (r *TaskDefinitionRepository) HasCurrentResult(ctx context.Context, tenantID uint, taskType string, taskID uint) (bool, error) {
+	ownership, ok := managerExecutionOwnerships[taskType]
+	if !ok || ownership.resultTable == "" {
+		return false, nil
+	}
+	var count int64
+	query := r.db.WithContext(ctx).Table(ownership.resultTable).
+		Where("tenant_id = ? AND task_id = ? AND deleted_at IS NULL AND status <> ?", tenantID, taskID, "deleted")
+	if err := query.Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }

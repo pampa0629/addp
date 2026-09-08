@@ -1,17 +1,17 @@
 # task_definitions 表结构说明
 
-> 状态：当前实现说明。`manager.task_definitions` 是 Manager 可重复派生任务定义的唯一存储表。
+> 状态：当前实现说明。`manager.task_definitions` 是 Manager 可重复生成任务定义的唯一存储表。
 
 ## 一、表定位
 
-该表统一保存“快显管理”和“空间任务”两类任务定义。统一的是定义控制面、分页、CRUD 和执行入口；`task_type` 仍选择独立的配置校验、语义身份、执行器和结果生命周期，不允许把不同任务退化成无类型 JSON 作业。
+该表统一保存“快显生成”和“空间数据生成”两类任务定义。统一的是定义控制面、分页、CRUD 和执行入口；`task_type` 仍选择独立的配置校验、语义身份、执行器和结果生命周期，不允许把不同任务退化成无类型 JSON 作业。
 
 当前纳入的任务类型：
 
-- 快显管理：`vector_materialized_view_generation`、`vector_tile_cache_generation`、`raster_cog_generation`、`model_3d_glb_generation`、`model3d_tiles_generation`、`gaussian_splat_ksplat_generation`、`point_cloud_copc_generation`。
-- 空间任务：`vector_tile_set_generation`、`raster_mosaic_generation`。
+- 快显生成：`vector_materialized_view_generation`、`vector_tile_cache_generation`、`raster_cog_generation`、`model_3d_glb_generation`、`model3d_tiles_generation`、`gaussian_splat_ksplat_generation`、`point_cloud_copc_generation`、`pptx_pdf_generation`。
+- 空间数据生成：`vector_tile_set_generation`、`raster_mosaic_generation`。
 
-`embedding` 与按需 PPTX/PDF 预览的定义结构和生命周期不同，不进入本表。
+`embedding` 的定义结构和生命周期不同，不进入本表。按需 PPTX/PDF 预览任务与其他受管快显任务一样进入本表，其 PDF 当前结果仍保存在 `manager.pptx_pdf`。
 
 ## 二、核心字段
 

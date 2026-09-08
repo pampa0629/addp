@@ -128,7 +128,7 @@ func compileQueryPlan(
 	for _, name := range selectFields {
 		field := fields[name]
 		qualified := "addp_source." + dialect.QuoteIdentifier(name)
-		if supportsGeoJSONProjection(engineType) && datatype.IsSpatialFieldType(field.Type) {
+		if supportsGeoJSONProjection(dialect) && datatype.IsSpatialFieldType(field.Type) {
 			selectSQL = append(selectSQL, fmt.Sprintf("ST_AsGeoJSON(%s) AS %s", qualified, dialect.QuoteIdentifier(name)))
 			continue
 		}
@@ -476,8 +476,8 @@ func compileBBoxFilter(value interface{}, service *models.QueryService, protocol
 	if err != nil {
 		return "", err
 	}
-	switch strings.ToLower(strings.TrimSpace(engineType)) {
-	case "postgresql":
+	switch dialect.Name() {
+	case commonquery.DialectPostgreSQL:
 		coordinatePlaceholders := appendQueryPlaceholders(dialect, args, coordinates[0], coordinates[1], coordinates[2], coordinates[3])
 		if protocol == queryProtocolOGC && srid > 0 && srid != 4326 {
 			targetSRID := appendQueryPlaceholders(dialect, args, srid)[0]
@@ -497,7 +497,7 @@ func compileBBoxFilter(value interface{}, service *models.QueryService, protocol
 			envelope = fmt.Sprintf("ST_Transform(%s, 'EPSG:4326', 'EPSG:%d', always_xy := true)", envelope, srid)
 		}
 		return fmt.Sprintf("(ST_Intersects(%s, %s))", column, envelope), nil
-	case "mysql":
+	case commonquery.DialectMySQL:
 		coordinatePlaceholders := appendQueryPlaceholders(dialect, args, coordinates[0], coordinates[1], coordinates[2], coordinates[3])
 		envelopeSRID := 4326
 		if protocol != queryProtocolOGC && srid > 0 {
@@ -536,9 +536,9 @@ func queryPlanDialect(engineType string) (commonquery.Dialect, error) {
 	return commonquery.ForDialect(provider.SQLDialect()), nil
 }
 
-func supportsGeoJSONProjection(engineType string) bool {
-	switch strings.ToLower(strings.TrimSpace(engineType)) {
-	case "postgresql", "mysql", "duckdb":
+func supportsGeoJSONProjection(dialect commonquery.Dialect) bool {
+	switch dialect.Name() {
+	case commonquery.DialectPostgreSQL, commonquery.DialectMySQL, "duckdb":
 		return true
 	default:
 		return false

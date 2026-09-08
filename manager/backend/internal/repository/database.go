@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/exportartifact"
 	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/manager/internal/config"
@@ -1156,15 +1157,23 @@ func ensurePointCloudCOPCSchema(db *gorm.DB) error {
 }
 
 func ensurePPTXPDFSchema(db *gorm.DB) error {
-	if err := db.AutoMigrate(&models.PPTXPDFTask{}, &models.PPTXPDF{}); err != nil {
+	if err := db.AutoMigrate(&models.PPTXPDF{}); err != nil {
 		return err
 	}
-	if err := db.Exec(`
-		CREATE UNIQUE INDEX IF NOT EXISTS idx_pptx_pdf_tasks_source_unique
-		ON manager.pptx_pdf_tasks (tenant_id, item_fingerprint, artifact_variant)
-		WHERE deleted_at IS NULL
-	`).Error; err != nil {
+	var hasLegacyTasks bool
+	if err := db.Raw(`SELECT to_regclass('manager.pptx_pdf_tasks') IS NOT NULL`).Scan(&hasLegacyTasks).Error; err != nil {
 		return err
+	}
+	if hasLegacyTasks {
+		if err := db.Exec(`UPDATE manager.pptx_pdf SET task_id = NULL, last_execution_id = NULL`).Error; err != nil {
+			return err
+		}
+		if err := db.Exec(`DELETE FROM common.task_executions WHERE module = 'manager' AND task_type = ?`, commonExecution.TaskTypePPTXPDFGeneration).Error; err != nil {
+			return err
+		}
+		if err := db.Exec(`DROP TABLE manager.pptx_pdf_tasks CASCADE`).Error; err != nil {
+			return err
+		}
 	}
 	return db.Exec(`
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_pptx_pdf_current_unique

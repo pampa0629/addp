@@ -8,6 +8,7 @@ import {
   nativeCatalogPathText,
   nativeCatalogSegmentText,
   queryCapabilityForEngine,
+  queryParameterTypesForLanguage,
   queryParameterReference,
   queryErrorMessage,
   queryResultFromExecution,
@@ -77,6 +78,21 @@ assert.deepEqual(federatedCapability.federation, {
 assert.equal(queryParameterReference('sql', 'status'), ':status')
 assert.equal(queryParameterReference('cypher', 'status'), '$status')
 assert.equal(queryParameterReference('mql', 'status'), '{"$param":"status"}')
+assert.deepEqual(queryParameterTypesForLanguage(capability, 'cypher'), ['string', 'integer', 'number', 'boolean'])
+assert.deepEqual(queryParameterTypesForLanguage(capability, 'sql'), [])
+const openGaussCapability = queryCapabilityForEngine({
+  engine_type: 'opengauss',
+  capabilities: {
+    compute: {
+      query: {
+        supported: true,
+        languages: ['sql'],
+        parameters: { supported: true, languages: ['sql'], types: ['string', 'relation'] }
+      }
+    }
+  }
+})
+assert.deepEqual(queryParameterTypesForLanguage(openGaussCapability, 'sql'), ['string', 'relation'])
 assert.deepEqual(
   extractQueryParameterReferences('sql', 'SELECT created_at::date FROM events WHERE status = :status'),
   ['status']

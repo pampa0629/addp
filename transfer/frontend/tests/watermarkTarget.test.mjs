@@ -7,18 +7,32 @@ import {
   hasContentWriteCapability,
   hasIdempotentTableUpsert,
   hasNativeTableWriteCapability,
-  hasStorageCapability
+  hasStorageCapability,
+  isNativeTableEngine
 } from '../src/utils/transferDisplay.js'
 
 test('resource-tree engine projection keeps event stream storage sources', () => {
   assert.equal(hasStorageCapability({
     engine_type: 'kafka',
-    engine_family: 'event_stream'
+    capabilities: {
+      engine_family: 'event_stream',
+      storage: { catalog: { supported: true } }
+    }
   }), true)
   assert.equal(hasStorageCapability({
     engine_type: 'spark',
-    engine_family: 'compute'
+    capabilities: {
+      engine_family: 'compute'
+    }
   }), false)
+})
+
+test('native table classification is capability-driven for independently named engines', () => {
+  assert.equal(isNativeTableEngine({
+    engine_type: 'opengauss',
+    capabilities: { engine_family: 'tabular', storage: {} }
+  }), true)
+  assert.equal(isNativeTableEngine({ engine_type: 'postgresql' }), false)
 })
 
 test('watermark source requires declared bounded watermark read', () => {

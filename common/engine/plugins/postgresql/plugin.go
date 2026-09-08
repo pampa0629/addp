@@ -166,8 +166,11 @@ func (p *PostgreSQLPlugin) Capabilities() plugin.EngineCapabilities {
 		SupportsExplain:    true,
 		SupportsCancel:     true,
 		SupportsParameters: true,
-		IdentifierQuote:    `"`,
-		WriterConnector:    "postgres_copy",
+		AdditionalParameterTypes: []string{
+			"relation",
+		},
+		IdentifierQuote: `"`,
+		WriterConnector: "postgres_copy",
 	})
 }
 
@@ -237,7 +240,7 @@ func (p *PostgreSQLPlugin) ExecuteSQL(ctx context.Context, connInfo plugin.Conne
 }
 
 func (p *PostgreSQLPlugin) ReadBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {
-	return plugin.ReadSQLBatch(ctx, p, connInfo, path, opts)
+	return p.readBatch(ctx, connInfo, path, opts)
 }
 
 // ValidateConnectionInfo 验证连接信息

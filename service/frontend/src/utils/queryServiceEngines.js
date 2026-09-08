@@ -1,23 +1,11 @@
-const OBJECT_TABLE_ENGINE_TYPES = new Set(['minio', 's3'])
+import {
+  queryFederationCapability,
+  supportsQueryLanguage
+} from '@addp/common-frontend/basic/src/utils/engineCapabilities.mjs'
 
-const queryCapability = engine => {
-  let capabilities = engine?.capabilities
-  if (typeof capabilities === 'string') {
-    try {
-      capabilities = JSON.parse(capabilities)
-    } catch {
-      return null
-    }
-  }
-  return capabilities?.compute?.query || null
-}
+const supportsSQL = engine => supportsQueryLanguage(engine, 'sql')
 
-const supportsSQL = engine => {
-  const query = queryCapability(engine)
-  return query?.supported === true && (query.languages || []).some(language => String(language).toLowerCase() === 'sql')
-}
-
-const supportsFederation = engine => supportsSQL(engine) && queryCapability(engine)?.federation?.supported === true
+const supportsFederation = engine => supportsSQL(engine) && queryFederationCapability(engine) !== null
 
 export function federatedQueryRuntimes(engines) {
   return (engines || []).filter(engine => engine?.lifecycle_state === 'active' && supportsFederation(engine))
@@ -40,6 +28,5 @@ export function applySQLExecutionEngine(form, selectedEngineID, engines) {
 }
 
 export function tableSelectionUsesRuntime(selection) {
-  const engineType = String(selection?.display?.engine_type || selection?.raw?.engine?.engine_type || '').trim().toLowerCase()
-  return OBJECT_TABLE_ENGINE_TYPES.has(engineType)
+  return String(selection?.resource?.representation || '').trim().toLowerCase() === 'encoded'
 }

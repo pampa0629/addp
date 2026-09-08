@@ -239,10 +239,6 @@ func SetupRouter(
 				pptxPDFGroup.DELETE("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactDelete), pptxPDFHandler.DeleteResult)
 				pptxPDFGroup.GET("/:id/content", permission(managerauthorization.PermissionManagerDerivedArtifactRead), pptxPDFHandler.GetContent)
 			}
-			pptxPDFTasksGroup := api.Group("/pptx_pdf_tasks")
-			{
-				pptxPDFTasksGroup.DELETE("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactDelete), pptxPDFHandler.DeleteTask)
-			}
 		}
 		vectorMaterializedViewGroup := api.Group("/vector_materialized_view")
 		{

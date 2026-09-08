@@ -16,6 +16,27 @@ import (
 )
 
 func (p *PostgreSQLPlugin) OpenTableReadSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableReadSessionOptions) (plugin.TableReadSession, error) {
+	return p.openTableReadSession(ctx, connInfo, path, opts, 0, 0)
+}
+
+func (p *PostgreSQLPlugin) readBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {
+	limit := opts.Limit
+	if limit <= 0 && strings.TrimSpace(opts.Query) == "" {
+		limit = 1000
+	}
+	session, err := p.openTableReadSession(ctx, connInfo, path, plugin.TableReadSessionOptions{
+		Query: opts.Query,
+		Args:  opts.Args,
+		Hints: opts.Hints,
+	}, limit, opts.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer session.Close(context.Background())
+	return session.ReadBatch(ctx, opts.Limit)
+}
+
+func (p *PostgreSQLPlugin) openTableReadSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableReadSessionOptions, limit int, offset int64) (plugin.TableReadSession, error) {
 	if err := resume.RejectUnsupported(opts.ResumeMarker, "postgresql.table_read_session"); err != nil {
 		return nil, err
 	}
@@ -27,7 +48,7 @@ func (p *PostgreSQLPlugin) OpenTableReadSession(ctx context.Context, connInfo pl
 	if err != nil {
 		return nil, fmt.Errorf("failed to open postgresql connection: %w", err)
 	}
-	query, fields, spatialInfo, err := postgresReadSessionQuery(ctx, db, path, opts)
+	query, fields, spatialInfo, encoding, err := postgresReadSessionQuery(ctx, db, path, opts, limit, offset)
 	if err != nil {
 		db.Close()
 		return nil, err
@@ -52,22 +73,34 @@ func (p *PostgreSQLPlugin) OpenTableReadSession(ctx context.Context, connInfo pl
 		cursorName:       cursorName,
 		fields:           fields,
 		spatialInfo:      spatialInfo,
-		geometryEncoding: postgresGeometryEncodingHint(opts.Hints),
+		geometryEncoding: encoding,
+		offset:           offset,
 	}, nil
 }
 
-func postgresReadSessionQuery(ctx context.Context, db *sql.DB, path plugin.EngineCatalogPath, opts plugin.TableReadSessionOptions) (string, []datatype.FieldInfo, *datatype.SpatialInfo, error) {
+func postgresReadSessionQuery(ctx context.Context, db *sql.DB, path plugin.EngineCatalogPath, opts plugin.TableReadSessionOptions, limit int, offset int64) (string, []datatype.FieldInfo, *datatype.SpatialInfo, format.GeometryEncoding, error) {
+	encoding := postgresGeometryEncodingHint(opts.Hints)
+	encodingHint := strings.ToLower(strings.TrimSpace(hintString(opts.Hints, plugin.TableReadHintGeometryEncoding)))
+	if encodingHint != "" && encoding == "" {
+		return "", nil, nil, "", fmt.Errorf("unsupported postgresql geometry read encoding %q", encodingHint)
+	}
 	query := strings.TrimSpace(opts.Query)
 	if query != "" {
-		return query, nil, nil, nil
+		if encoding != "" {
+			return "", nil, nil, "", fmt.Errorf("postgresql spatial row encoding requires a catalog table read, not custom SQL")
+		}
+		if limit > 0 {
+			query = commonquery.ForDialect("postgresql").PaginateQuerySQL(query, limit, int(offset))
+		}
+		return query, nil, nil, "", nil
 	}
 	schema, table, err := tablePathParts(path)
 	if err != nil {
-		return "", nil, nil, err
+		return "", nil, nil, "", err
 	}
 	columns, err := postgresTableColumns(ctx, db, schema, table)
 	if err != nil {
-		return "", nil, nil, err
+		return "", nil, nil, "", err
 	}
 	fields := make([]datatype.FieldInfo, 0, len(columns))
 	for _, column := range columns {
@@ -75,27 +108,27 @@ func postgresReadSessionQuery(ctx context.Context, db *sql.DB, path plugin.Engin
 	}
 	selectedFields, err := postgresSelectedFields(fields, opts.Hints)
 	if err != nil {
-		return "", nil, nil, err
+		return "", nil, nil, "", err
 	}
 	if len(selectedFields) > 0 {
 		fields = selectedFields
 	}
 	selectExpr := postgresSelectExprForFields(fields)
-	switch postgresGeometryEncodingHint(opts.Hints) {
+	switch encoding {
 	case format.GeometryEncodingGeoJSON:
 		if expr, err := postgresGeoJSONSelectExpr(columns, opts.Hints, fields); err != nil {
-			return "", nil, nil, err
+			return "", nil, nil, "", err
 		} else if expr != "" {
 			selectExpr = expr
 		}
 	case format.GeometryEncodingEWKB:
 		if expr, err := postgresEWKBSelectExpr(columns, opts.Hints, fields); err != nil {
-			return "", nil, nil, err
+			return "", nil, nil, "", err
 		} else if expr != "" {
 			selectExpr = expr
 		}
 	}
-	return commonquery.ForDialect("postgresql").SelectTableSQL(selectExpr, schema, table, "", "", 0, 0), fields, postgresSpatialInfoFromFieldsWithHints(fields, opts.Hints), nil
+	return commonquery.ForDialect("postgresql").SelectTableSQL(selectExpr, schema, table, "", "", limit, int(offset)), fields, postgresSpatialInfoFromFieldsWithHints(fields, opts.Hints), encoding, nil
 }
 
 func postgresSelectedFields(fields []datatype.FieldInfo, hints map[string]interface{}) ([]datatype.FieldInfo, error) {

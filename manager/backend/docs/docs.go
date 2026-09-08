@@ -2528,66 +2528,6 @@ const docTemplate = `{
                 ]
             }
         },
-        "/pptx_pdf_tasks/{id}": {
-            "delete": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "删除 PPTX PDF 快显任务定义，不删除源 DataItem 或 execution 历史；调用方应先删除当前受管结果。| Delete the PPTX PDF preview task definition without deleting the source DataItem or execution history; callers should delete the current managed result first.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Manager"
-                ],
-                "summary": "删除 PPTX PDF 快显任务 | Delete PPTX PDF preview task",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "任务 ID | Task ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "删除成功 | Deleted successfully",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "任务 ID 无效 | Invalid task ID",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "404": {
-                        "description": "任务不存在 | Task not found",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "删除失败 | Delete failed",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "manager.derived_artifact.delete"
-                ]
-            }
-        },
         "/preview": {
             "get": {
                 "security": [
@@ -9240,6 +9180,9 @@ const docTemplate = `{
             "properties": {
                 "execution_contract": {
                     "$ref": "#/definitions/taskprovider.ExecutionContract"
+                },
+                "has_current_result": {
+                    "type": "boolean"
                 },
                 "id": {
                     "type": "integer"

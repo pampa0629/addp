@@ -50,7 +50,7 @@ func NewTabularCapabilities(engineType, namespaceTerm string, opts TabularCapabi
 				SupportsExplain: opts.SupportsExplain,
 				SupportsCancel:  opts.SupportsCancel,
 				ReadSession:     opts.QueryReadSession,
-				Parameters:      queryParameterCapability(opts.SupportsParameters, "sql"),
+				Parameters:      queryParameterCapability(opts.SupportsParameters, "sql", opts.AdditionalParameterTypes...),
 			},
 		},
 	}
@@ -110,6 +110,7 @@ type TabularCapabilityOptions struct {
 	SupportsExplain                       bool
 	SupportsCancel                        bool
 	SupportsParameters                    bool
+	AdditionalParameterTypes              []string
 	DefaultLanguage                       string
 	IdentifierQuote                       string
 	Description                           string
@@ -250,14 +251,16 @@ func NewGraphCapabilities(engineType string) EngineCapabilities {
 	}
 }
 
-func queryParameterCapability(supported bool, language string) *QueryParameterCapability {
+func queryParameterCapability(supported bool, language string, additionalTypes ...string) *QueryParameterCapability {
 	if !supported {
 		return nil
 	}
+	types := []string{"string", "integer", "number", "boolean"}
+	types = append(types, additionalTypes...)
 	return &QueryParameterCapability{
 		Supported: true,
 		Languages: []string{language},
-		Types:     []string{"string", "integer", "number", "boolean"},
+		Types:     types,
 	}
 }
 

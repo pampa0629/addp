@@ -175,7 +175,7 @@
       "warningMissingWhere": "The statement has no WHERE condition and may affect all data",
       "relationParameterNameInvalid": "Table parameter names must start with a lowercase letter and contain only lowercase letters, digits, and underscores",
       "relationSqlRequired": "Table parameters support SQL queries only",
-      "relationPostgresRequired": "Table parameters require a PostgreSQL query engine",
+      "relationEngineRequired": "The current query engine does not declare table-parameter support",
       "selectDefaultTable": "Select Default Table",
       "changeDefaultTable": "Change",
       "clearDefaultTable": "Clear",

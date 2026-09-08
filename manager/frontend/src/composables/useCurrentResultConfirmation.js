@@ -4,7 +4,7 @@ import { executeWithCurrentResultConfirmation } from '@/utils/currentResultConfi
 
 export const useCurrentResultConfirmation = () => {
   const { t } = useI18n()
-  return execute => executeWithCurrentResultConfirmation(execute, () => ElMessageBox.confirm(
+  return (execute, options = {}) => executeWithCurrentResultConfirmation(execute, () => ElMessageBox.confirm(
     t('manager.common.currentResultOverwriteConfirm'),
     t('manager.common.currentResultOverwriteTitle'),
     {
@@ -12,5 +12,5 @@ export const useCurrentResultConfirmation = () => {
       confirmButtonText: t('manager.common.currentResultOverwriteButton'),
       cancelButtonText: t('common.cancel')
     }
-  ))
+  ), options)
 }

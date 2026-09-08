@@ -1,91 +1,56 @@
-function parseCapabilities(engine) {
-  const raw = engine?.capabilities
-  if (!raw) return null
-  if (typeof raw === 'object') return raw
-  if (typeof raw !== 'string') return null
-  try {
-    return JSON.parse(raw)
-  } catch (_error) {
-    return null
-  }
-}
-
-function normalizeType(engineOrType) {
-  const value = typeof engineOrType === 'string' ? engineOrType : engineOrType?.engine_type
-  return String(value || '').toLowerCase()
-}
+import {
+  engineCapabilityFamily,
+  hasDeclaredStorageCapability,
+  isContentStorageEngine,
+  isNativeTableStorageEngine,
+  parseEngineCapabilities
+} from '@addp/common-frontend/basic/src/utils/engineCapabilities.mjs'
 
 export function hasStorageCapability(engine) {
-  const caps = parseCapabilities(engine)
-  if (caps) {
-    const storage = caps.storage || {}
-    const store = storage.store || {}
-    if (Boolean(
-      storage.catalog?.supported ||
-      storage.facts?.supported ||
-      Object.values(store).some(Boolean)
-    )) {
-      return true
-    }
-  }
-  const family = String(caps?.engine_family || engine?.engine_family || '').toLowerCase()
-  if (['tabular', 'dynamic_schema', 'document', 'graph', 'object', 'file', 'event_stream'].includes(family)) {
-    return true
-  }
-  return isNativeTableEngine(engine) || isContentEngine(engine) || isDocumentEngine(engine) || isGraphEngine(engine)
+  return hasDeclaredStorageCapability(engine)
 }
 
 export function hasIdempotentTableUpsert(engine) {
-  const upsert = parseCapabilities(engine)?.storage?.store?.table_upsert
+  const upsert = parseEngineCapabilities(engine)?.storage?.store?.table_upsert
   return upsert?.supported === true && upsert?.idempotent === true
 }
 
 export function hasNativeTableWriteCapability(engine) {
-  const store = parseCapabilities(engine)?.storage?.store
+  const store = parseEngineCapabilities(engine)?.storage?.store
   return store?.table_write_prepare === true &&
     (store?.batch_write === true || store?.table_write_session === true)
 }
 
 export function hasContentWriteCapability(engine) {
-  return parseCapabilities(engine)?.storage?.store?.stream_write === true
+  return parseEngineCapabilities(engine)?.storage?.store?.stream_write === true
 }
 
 export function hasBoundedWatermarkRead(engine) {
-  return parseCapabilities(engine)?.storage?.store?.bounded_watermark_read === true
+  return parseEngineCapabilities(engine)?.storage?.store?.bounded_watermark_read === true
 }
 
 export function hasAtomicPartitionedTableChangeApply(engine, requiredOperations = ['upsert']) {
-  const apply = parseCapabilities(engine)?.storage?.store?.partitioned_table_change_apply
+  const apply = parseEngineCapabilities(engine)?.storage?.store?.partitioned_table_change_apply
   if (apply?.supported !== true || apply?.atomic_position_commit !== true || apply?.monotonic !== true) return false
   if (!Array.isArray(apply.position_types) || !apply.position_types.includes('kafka_offset/v1')) return false
   const operations = Array.isArray(apply.operations) ? apply.operations : []
   return requiredOperations.every(operation => operations.includes(operation))
 }
 
-export function isNativeTableEngine(engineOrType) {
-  const caps = typeof engineOrType === 'object' ? parseCapabilities(engineOrType) : null
-  if (caps?.engine_family === 'tabular') return true
-  const type = normalizeType(engineOrType)
-  return ['postgres', 'mysql', 'doris', 'clickhouse', 'sqlite', 'spatialite', 'spark_sql'].some(token => type.includes(token))
+export function isNativeTableEngine(engine) {
+  return isNativeTableStorageEngine(engine)
 }
 
-export function isContentEngine(engineOrType) {
-  const caps = typeof engineOrType === 'object' ? parseCapabilities(engineOrType) : null
-  if (['file', 'object'].includes(caps?.engine_family)) return true
-  const type = normalizeType(engineOrType)
-  return ['nfs', 's3', 'minio', 'oss', 'objectstore', 'file'].some(token => type.includes(token))
+export function isContentEngine(engine) {
+  return isContentStorageEngine(engine)
 }
 
-export function isDocumentEngine(engineOrType) {
-  const caps = typeof engineOrType === 'object' ? parseCapabilities(engineOrType) : null
-  if (caps?.engine_family === 'document') return true
-  return normalizeType(engineOrType).includes('mongo')
+export function isDocumentEngine(engine) {
+  return hasStorageCapability(engine) && engineCapabilityFamily(engine) === 'document'
 }
 
-export function isGraphEngine(engineOrType) {
-  const caps = typeof engineOrType === 'object' ? parseCapabilities(engineOrType) : null
-  if (caps?.engine_family === 'graph') return true
-  return normalizeType(engineOrType).includes('neo4j')
+export function isGraphEngine(engine) {
+  return hasStorageCapability(engine) && engineCapabilityFamily(engine) === 'graph'
 }
 
 export function engineCategoryLabel(engineOrType) {

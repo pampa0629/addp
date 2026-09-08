@@ -11,6 +11,7 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	"github.com/addp/common/logger"
 	commoni18n "github.com/addp/common/middleware/i18n"
+	commonModels "github.com/addp/common/models"
 	manageri18n "github.com/addp/manager/i18n"
 	rastercogref "github.com/addp/manager/internal/cog"
 	"github.com/addp/manager/internal/models"
@@ -76,7 +77,14 @@ func (h *PPTXPDFHandler) EnsurePreview(c *gin.Context) {
 		return
 	}
 	tenantID, userID := tenantIDValue(c), userIDValue(c)
-	task := &models.PPTXPDFTask{TenantID: tenantID, Enabled: true, Locator: strings.TrimSpace(req.Locator), CreatedBy: &userID}
+	task := &models.PPTXPDFTask{
+		TenantID:  tenantID,
+		TaskType:  commonExecution.TaskTypePPTXPDFGeneration,
+		Version:   1,
+		Enabled:   true,
+		Config:    commonModels.JSONMap{"source": commonModels.JSONMap{"item_locator": strings.TrimSpace(req.Locator)}},
+		CreatedBy: &userID,
+	}
 	if err := h.service.EnsureTask(c.Request.Context(), task); err != nil {
 		if errors.Is(err, service.ErrInvalidPPTXPDFSource) {
 			managerErrorWithDetail(c, http.StatusBadRequest, manageri18n.MsgInvalidRequestBody, err.Error())
@@ -85,12 +93,12 @@ func (h *PPTXPDFHandler) EnsurePreview(c *gin.Context) {
 		managerErrorWithDetail(c, http.StatusInternalServerError, manageri18n.MsgPPTXPDFResolveFailed, err.Error())
 		return
 	}
-	current, err := h.service.Current(c.Request.Context(), tenantID, task.ItemFingerprint)
+	current, sourceVersion, err := h.service.CurrentForTask(c.Request.Context(), task)
 	if err != nil {
 		managerErrorWithDetail(c, http.StatusInternalServerError, manageri18n.MsgPPTXPDFResolveFailed, err.Error())
 		return
 	}
-	if current != nil && current.Status == models.PPTXPDFStatusReady && current.SourceVersion == task.SourceVersion {
+	if current != nil && current.Status == models.PPTXPDFStatusReady && current.SourceVersion == sourceVersion {
 		c.JSON(http.StatusOK, PPTXPDFPreviewResponse{Status: "ready", TaskID: task.ID, ResultID: current.ID, PreviewURL: current.ContentURL, PageCount: current.PageCount, SizeBytes: current.SizeBytes})
 		return
 	}
@@ -101,7 +109,7 @@ func (h *PPTXPDFHandler) EnsurePreview(c *gin.Context) {
 		c.JSON(http.StatusAccepted, PPTXPDFPreviewResponse{Status: *task.LastExecutionStatus, TaskID: task.ID, ExecutionID: *task.LastExecutionID})
 		return
 	}
-	if !req.Retry && task.LastExecutionStatus != nil && isPPTXPDFTerminalFailure(*task.LastExecutionStatus) && (current == nil || current.SourceVersion == task.SourceVersion) {
+	if !req.Retry && task.LastExecutionStatus != nil && isPPTXPDFTerminalFailure(*task.LastExecutionStatus) && (current == nil || current.SourceVersion == sourceVersion) {
 		message := ""
 		resultID := uint(0)
 		if current != nil {
@@ -252,39 +260,4 @@ func (h *PPTXPDFHandler) DeleteResult(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, manageri18n.MsgPPTXPDFResultDeleted)})
-}
-
-// DeleteTask 删除 PPTX PDF 快显任务定义。
-// @Summary 删除 PPTX PDF 快显任务 | Delete PPTX PDF preview task
-// @Description 删除 PPTX PDF 快显任务定义，不删除源 DataItem 或 execution 历史；调用方应先删除当前受管结果。| Delete the PPTX PDF preview task definition without deleting the source DataItem or execution history; callers should delete the current managed result first.
-// @Tags Manager
-// @Produce json
-// @Param id path int true "任务 ID | Task ID"
-// @Success 200 {object} map[string]interface{} "删除成功 | Deleted successfully"
-// @Failure 400 {object} map[string]interface{} "任务 ID 无效 | Invalid task ID"
-// @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
-// @Failure 500 {object} map[string]interface{} "删除失败 | Delete failed"
-// @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["manager.derived_artifact.delete"]
-// @Router /pptx_pdf_tasks/{id} [delete]
-// @Security BearerAuth
-func (h *PPTXPDFHandler) DeleteTask(c *gin.Context) {
-	if h == nil || h.service == nil {
-		managerError(c, http.StatusServiceUnavailable, manageri18n.MsgPPTXPDFServiceUnavailable)
-		return
-	}
-	id64, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil || id64 == 0 {
-		managerError(c, http.StatusBadRequest, manageri18n.MsgInvalidPPTXPDFTaskID)
-		return
-	}
-	if err := h.service.DeleteTask(c.Request.Context(), uint(id64), tenantIDValue(c)); err != nil {
-		if errors.Is(err, service.ErrPPTXPDFTaskNotFound) {
-			managerError(c, http.StatusNotFound, manageri18n.MsgPPTXPDFTaskNotFound)
-			return
-		}
-		managerErrorWithDetail(c, http.StatusInternalServerError, manageri18n.MsgPPTXPDFDeleteFailed, err.Error())
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"message": commoni18n.T(c, manageri18n.MsgPPTXPDFTaskDeleted)})
 }

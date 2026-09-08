@@ -338,7 +338,7 @@ func validateQueryParameterCapability(engineType string, query *QueryCapability)
 	seenTypes := map[string]bool{}
 	for _, parameterType := range parameters.Types {
 		switch parameterType {
-		case "string", "integer", "number", "boolean":
+		case "string", "integer", "number", "boolean", "relation":
 		default:
 			return fmt.Errorf("%s declares unsupported query parameter type %q", engineType, parameterType)
 		}
@@ -346,6 +346,9 @@ func validateQueryParameterCapability(engineType string, query *QueryCapability)
 			return fmt.Errorf("%s declares duplicate query parameter type %q", engineType, parameterType)
 		}
 		seenTypes[parameterType] = true
+	}
+	if seenTypes["relation"] && !seenLanguages["sql"] {
+		return fmt.Errorf("%s declares relation query parameters without sql language", engineType)
 	}
 	return nil
 }

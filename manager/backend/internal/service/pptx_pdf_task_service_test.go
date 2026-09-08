@@ -29,7 +29,7 @@ func TestNormalizePPTXPDFTaskBuildsStableManagedTarget(t *testing.T) {
 	size := int64(374_334_451)
 	task := &models.PPTXPDFTask{
 		TenantID: 7,
-		Locator:  "addp://engine/12/path/addp/doc/slides.pptx?type=object&item_id=77",
+		Config:   commonModels.JSONMap{"source": commonModels.JSONMap{"item_locator": "addp://engine/12/path/addp/doc/slides.pptx?type=object&item_id=77"}},
 	}
 	meta := fakePPTXPDFMetaClient{item: &commonModels.MetaItem{
 		ID: 77, TenantID: 7, EngineID: 12, ItemType: "object", Name: "slides.pptx",
@@ -39,15 +39,16 @@ func TestNormalizePPTXPDFTaskBuildsStableManagedTarget(t *testing.T) {
 	if err := resolvePPTXPDFTaskSource(meta, task, "manager"); err != nil {
 		t.Fatalf("resolvePPTXPDFTaskSource() error = %v", err)
 	}
-	if task.Name != "slides.pptx" || task.ItemID != 77 || task.SourceEngineID != 12 {
-		t.Fatalf("normalized identity = name %q, item_id %d", task.Name, task.ItemID)
+	config, err := decodePPTXPDFTaskConfig(task)
+	if err != nil {
+		t.Fatalf("decode task config: %v", err)
+	}
+	if task.Name != "slides.pptx" || config.Source.ItemID != 77 || config.Source.SourceEngineID != 12 {
+		t.Fatalf("normalized identity = name %q, source %#v", task.Name, config.Source)
 	}
 	expectedFingerprint := commonModels.GenerateItemFingerprint(12, "addp/doc/slides.pptx")
-	if task.ItemFingerprint != expectedFingerprint || task.SourceVersion == "" || task.SourceSizeBytes != size {
-		t.Fatalf("server identity = fingerprint %q, version %q, size %d", task.ItemFingerprint, task.SourceVersion, task.SourceSizeBytes)
-	}
-	if task.ArtifactVariant != models.PPTXPDFArtifactVariant {
-		t.Fatalf("artifact variant = %q", task.ArtifactVariant)
+	if config.Source.ItemFingerprint != expectedFingerprint || config.Source.SourceVersion == "" || config.Source.SourceSizeBytes != size {
+		t.Fatalf("server identity = source %#v", config.Source)
 	}
 	result, ok := asJSONMap(task.Config["result"])
 	if !ok {
@@ -78,7 +79,7 @@ func TestNormalizePPTXPDFTaskRejectsWrongSourceIdentity(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			task := &models.PPTXPDFTask{SourceEngineID: 12, ItemID: tc.itemID, Locator: tc.locator}
+			task := &models.PPTXPDFTask{Config: commonModels.JSONMap{"source": commonModels.JSONMap{"source_engine_id": 12, "item_id": tc.itemID, "item_locator": tc.locator}}}
 			err := normalizePPTXPDFTask(task)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("error = %v, want substring %q", err, tc.want)
@@ -88,13 +89,13 @@ func TestNormalizePPTXPDFTaskRejectsWrongSourceIdentity(t *testing.T) {
 }
 
 func TestResolvePPTXPDFTaskSourceRejectsUnverifiedMetaIdentity(t *testing.T) {
-	task := &models.PPTXPDFTask{TenantID: 7, Locator: "addp://engine/12/path/doc/slides.pptx?type=file&item_id=77"}
+	task := &models.PPTXPDFTask{TenantID: 7, Config: commonModels.JSONMap{"source": commonModels.JSONMap{"item_locator": "addp://engine/12/path/doc/slides.pptx?type=file&item_id=77"}}}
 	meta := fakePPTXPDFMetaClient{item: &commonModels.MetaItem{ID: 77, TenantID: 7, EngineID: 12, ItemType: "file", Name: "other.pptx", FullName: "doc/other.pptx"}}
 	if err := resolvePPTXPDFTaskSource(meta, task, "manager"); err == nil || !errors.Is(err, ErrInvalidPPTXPDFSource) || !strings.Contains(err.Error(), "does not match") {
 		t.Fatalf("error = %v", err)
 	}
 
-	task = &models.PPTXPDFTask{TenantID: 7, Locator: "addp://engine/12/path/doc/slides.pptx?type=file&item_id=77"}
+	task = &models.PPTXPDFTask{TenantID: 7, Config: commonModels.JSONMap{"source": commonModels.JSONMap{"item_locator": "addp://engine/12/path/doc/slides.pptx?type=file&item_id=77"}}}
 	if err := resolvePPTXPDFTaskSource(fakePPTXPDFMetaClient{err: errors.New("meta unavailable")}, task, "manager"); err == nil || !strings.Contains(err.Error(), "meta unavailable") {
 		t.Fatalf("error = %v", err)
 	}
@@ -102,10 +103,11 @@ func TestResolvePPTXPDFTaskSourceRejectsUnverifiedMetaIdentity(t *testing.T) {
 
 func TestPPTXPDFExecutionMetadataIncludesManagedArtifactLineage(t *testing.T) {
 	task := &models.PPTXPDFTask{
-		TenantID:        7,
-		ItemID:          77,
-		ItemFingerprint: "pptx-fingerprint",
-		Locator:         "addp://engine/12/path/addp/doc/slides.pptx?type=object&item_id=77",
+		TenantID: 7,
+		Config: commonModels.JSONMap{"source": commonModels.JSONMap{
+			"item_id": 77, "item_fingerprint": "pptx-fingerprint",
+			"item_locator": "addp://engine/12/path/addp/doc/slides.pptx?type=object&item_id=77",
+		}},
 	}
 	built := &PPTXPDFExecutionResult{
 		StorageRef: rastercogref.ObjectStorageRef("manager", "tenant_7/document-preview/pptx-fingerprint/slides.pdf"),
@@ -130,7 +132,7 @@ func TestPPTXPDFExecutionMetadataIncludesManagedArtifactLineage(t *testing.T) {
 	if facts.SchemaVersion != commonExecution.LineageFactsSchemaVersion {
 		t.Fatalf("schema_version = %q", facts.SchemaVersion)
 	}
-	if len(facts.Inputs) != 1 || facts.Inputs[0].Locator != task.Locator || facts.Inputs[0].ItemID == nil || *facts.Inputs[0].ItemID != task.ItemID {
+	if len(facts.Inputs) != 1 || facts.Inputs[0].Locator != "addp://engine/12/path/addp/doc/slides.pptx?type=object&item_id=77" || facts.Inputs[0].ItemID == nil || *facts.Inputs[0].ItemID != 77 {
 		t.Fatalf("inputs = %#v", facts.Inputs)
 	}
 	if len(facts.Outputs) != 1 || facts.Outputs[0].Locator != "addp-infra://minio/manager/tenant_7/document-preview/pptx-fingerprint/slides.pdf?type=object" {
@@ -153,14 +155,6 @@ func (c *recordingPPTXPDFCleaner) DeleteByStorageRef(_ context.Context, storageR
 func TestPPTXPDFTaskServiceDeletesManagedResultBeforeTask(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	for _, statement := range []string{
-		`CREATE TABLE manager.pptx_pdf_tasks (
-			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, name TEXT NOT NULL,
-			description TEXT, enabled BOOLEAN, schedule TEXT, next_run_at DATETIME,
-			item_fingerprint TEXT NOT NULL, artifact_variant TEXT NOT NULL, source_engine_id INTEGER NOT NULL,
-			item_id INTEGER NOT NULL, locator TEXT NOT NULL, source_version TEXT NOT NULL,
-			source_size_bytes INTEGER NOT NULL, last_run_at DATETIME, last_execution_id TEXT,
-			last_execution_status TEXT, config JSON, created_by INTEGER, created_at DATETIME,
-			updated_at DATETIME, deleted_at DATETIME)`,
 		`CREATE TABLE manager.pptx_pdf (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, item_fingerprint TEXT NOT NULL,
 			artifact_variant TEXT NOT NULL, source_version TEXT NOT NULL, source_engine_id INTEGER NOT NULL,
@@ -179,19 +173,20 @@ func TestPPTXPDFTaskServiceDeletesManagedResultBeforeTask(t *testing.T) {
 	svc := NewPPTXPDFTaskService(repo)
 	svc.SetCleaner(cleaner)
 	task := &models.PPTXPDFTask{
-		TenantID: 7, Name: "slides.pptx", Enabled: true, ItemFingerprint: "pptx-fingerprint",
-		ArtifactVariant: models.PPTXPDFArtifactVariant, SourceEngineID: 12, ItemID: 77,
-		Locator:       "addp://engine/12/path/doc/slides.pptx?type=object&item_id=77",
-		SourceVersion: "version-1", Config: commonModels.JSONMap{},
+		TenantID: 7, Name: "slides.pptx", Enabled: true,
+		Config: commonModels.JSONMap{"source": commonModels.JSONMap{
+			"item_fingerprint": "pptx-fingerprint", "source_engine_id": 12, "item_id": 77,
+			"item_locator": "addp://engine/12/path/doc/slides.pptx?type=object&item_id=77", "source_version": "version-1",
+		}},
 	}
 	if err := repo.CreateTask(context.Background(), task); err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
 	storageRef := rastercogref.ObjectStorageRef("manager", "tenant_7/document-preview/pptx-fingerprint/slides.pdf")
 	result := &models.PPTXPDF{
-		TenantID: 7, ItemFingerprint: task.ItemFingerprint, ArtifactVariant: models.PPTXPDFArtifactVariant,
-		SourceVersion: task.SourceVersion, SourceEngineID: task.SourceEngineID, ItemID: task.ItemID,
-		Locator: task.Locator, TaskID: &task.ID, StorageRef: storageRef, FileName: "slides.pdf",
+		TenantID: 7, ItemFingerprint: "pptx-fingerprint", ArtifactVariant: models.PPTXPDFArtifactVariant,
+		SourceVersion: "version-1", SourceEngineID: 12, ItemID: 77,
+		Locator: "addp://engine/12/path/doc/slides.pptx?type=object&item_id=77", TaskID: &task.ID, StorageRef: storageRef, FileName: "slides.pdf",
 		SizeBytes: 1024, PageCount: 3, Status: models.PPTXPDFStatusReady, Metadata: commonModels.JSONMap{},
 	}
 	if err := repo.CreateResult(context.Background(), result); err != nil {

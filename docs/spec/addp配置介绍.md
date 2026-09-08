@@ -375,14 +375,12 @@ OCEANBASE_PORT=2881
 
 本地容器是单机测试形态，不表达生产集群拓扑。System 注册时使用 `engine_type=oceanbase`、容器网络地址 `business-oceanbase:2881`、账号 `root@test` 和配置的 database/password；不得改登记为 MySQL Engine。
 
-Business openGauss 固定使用 openGauss 6.0.6 LTS 官方 Docker tar，不接受第三方镜像或可变 tag。`business/scripts/start.sh -opengauss` 根据 `uname -m` 从 `scripts/lib/opengauss-official-media.sh` 选择 x86_64/aarch64 官方介质，校验固定 SHA-256 后加载同一 `opengauss:6.0.6` 镜像；首次下载约 1.2 GB（ARM64）或 1.4 GB（AMD64），后续复用本地镜像和缓存。
+Business openGauss 固定使用 openGauss 6.0.6 LTS 官方 Docker tar，不接受第三方镜像或可变 tag。当前 `business/scripts/start.sh -opengauss` 只允许在具备 NUMA 的 Linux x86_64 主机选择并校验官方 x86_64 介质，加载为 `opengauss:6.0.6`；首次下载约 1.4 GB，后续复用本地镜像和缓存。官方 6.0.6 Docker 构建包含 MOT，而 Docker Desktop for macOS 不提供它需要的 NUMA 拓扑，因此 macOS 本地巡检不启动 openGauss，实库门禁由 GitHub Actions Linux x86_64 Job 承担。`scripts/lib/opengauss-official-media.sh` 仍维护 aarch64 官方介质事实，供后续具备 NUMA 的 Linux ARM64 专项认证使用，未认证前不得作为 Business 默认路径。
 
 ```bash
 OPENGAUSS_PASSWORD=change-in-production
 OPENGAUSS_DATABASE=business
 OPENGAUSS_PORT=5435
-OPENGAUSS_MAX_PROCESS_MEMORY=4GB
-OPENGAUSS_SHARED_BUFFERS=512MB
 ```
 
 本地容器使用 PG 兼容 database，固定账号 `gaussdb`。System 注册时使用 `engine_type=opengauss`、容器网络地址 `business-opengauss:5432` 和配置的 database/password；不得登记为 PostgreSQL Engine。Business 环境只表达非空间表能力，不声明 PostGIS、CDC 或生产集群拓扑。

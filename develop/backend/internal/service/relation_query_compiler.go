@@ -97,12 +97,9 @@ func compileExistingTableResultQuery(
 	if err != nil {
 		return nil, err
 	}
-	dialect, err := queryDialectForEngine(engineType)
+	dialect, err := relationQueryDialectForEngine(engineType)
 	if err != nil {
 		return nil, err
-	}
-	if !dialect.IsPostgreSQL() {
-		return nil, fmt.Errorf("relation 查询参数写入仅支持 PostgreSQL")
 	}
 	inputTables, engineID, err := relationParameterTables(bindings, relationLocators, dialect)
 	if err != nil {
@@ -114,7 +111,7 @@ func compileExistingTableResultQuery(
 	}
 	locator, err := resourcetree.ParseURI(strings.TrimSpace(targetLocator))
 	if err != nil || locator.EngineID != engineID || locator.Type != resourcetree.TypeTable || len(locator.Path) != 2 {
-		return nil, fmt.Errorf("target_locator 必须是与 relation 查询参数同引擎的 PostgreSQL 表")
+		return nil, fmt.Errorf("target_locator 必须是与 relation 查询参数同引擎的数据表")
 	}
 	content := models.DevTaskContent{}
 	for key, value := range task.Content {
@@ -143,12 +140,9 @@ func compileRelationPreviewQuery(
 	if err != nil || !hasRelationParameters {
 		return task, err
 	}
-	dialect, err := queryDialectForEngine(engineType)
+	dialect, err := relationQueryDialectForEngine(engineType)
 	if err != nil {
 		return nil, err
-	}
-	if !dialect.IsPostgreSQL() {
-		return nil, fmt.Errorf("relation 查询参数预览仅支持 PostgreSQL")
 	}
 	relationLocators, err := relationLocatorsFromInputs(bindings, effectiveInputs)
 	if err != nil {
@@ -188,6 +182,27 @@ func queryDialectForEngine(engineType string) (commonQuery.Dialect, error) {
 	return commonQuery.ForDialect(provider.SQLDialect()), nil
 }
 
+func relationQueryDialectForEngine(engineType string) (commonQuery.Dialect, error) {
+	registered, err := plugin.Get(engineType)
+	if err != nil {
+		return commonQuery.Dialect{}, err
+	}
+	capabilities := registered.Capabilities()
+	compute := capabilities.Compute
+	if compute == nil || compute.Query == nil || compute.Query.Parameters == nil ||
+		!plugin.Contains(compute.Query.Parameters.Types, "relation") {
+		return commonQuery.Dialect{}, fmt.Errorf("引擎 %s 未声明 relation 查询参数能力", engineType)
+	}
+	dialect, err := queryDialectForEngine(engineType)
+	if err != nil {
+		return commonQuery.Dialect{}, err
+	}
+	if !dialect.IsPostgreSQL() {
+		return commonQuery.Dialect{}, fmt.Errorf("引擎 %s 的 relation 查询参数不是 PostgreSQL 方言", engineType)
+	}
+	return dialect, nil
+}
+
 func relationLocatorsFromInputs(
 	bindings []relationParameterBinding,
 	effectiveInputs map[string]interface{},
@@ -221,7 +236,7 @@ func relationParameterTables(
 		locatorText, exists := relationLocators[binding.Name]
 		locator, err := resourcetree.ParseURI(strings.TrimSpace(locatorText))
 		if !exists || err != nil || locator.EngineID == 0 || locator.Type != resourcetree.TypeTable || len(locator.Path) != 2 {
-			return nil, 0, fmt.Errorf("查询参数 %s 必须绑定 PostgreSQL 表 ResourceLocator", binding.Name)
+			return nil, 0, fmt.Errorf("查询参数 %s 必须绑定同引擎数据表 ResourceLocator", binding.Name)
 		}
 		if engineID == 0 {
 			engineID = locator.EngineID

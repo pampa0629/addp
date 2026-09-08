@@ -682,7 +682,7 @@ def run_scenario(
                 cleanup_errors.append(str(error))
         if pptx_task_id is not None:
             try:
-                client.request("DELETE", f"/api/v1/manager/pptx_pdf_tasks/{pptx_task_id}", (200,))
+                client.request("DELETE", f"/api/v1/manager/tasks/{PPTX_TASK_TYPE}/{pptx_task_id}", (204,))
                 client.request("GET", f"/api/v1/manager/tasks/{PPTX_TASK_TYPE}/{pptx_task_id}", (404,))
                 pptx_cleanup["task_deleted"] = True
             except SuiteError as error:

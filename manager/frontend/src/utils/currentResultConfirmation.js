@@ -5,7 +5,11 @@ export const requiresCurrentResultConfirmation = error => (
   error?.response?.data?.code === EXISTING_RESULT_ACTION_REQUIRED
 )
 
-export const executeWithCurrentResultConfirmation = async (execute, confirm) => {
+export const executeWithCurrentResultConfirmation = async (execute, confirm, options = {}) => {
+  if (options.hasCurrentResult) {
+    await confirm()
+    return execute({ parameters: { existing_result_action: 'overwrite' } })
+  }
   try {
     return await execute({})
   } catch (error) {

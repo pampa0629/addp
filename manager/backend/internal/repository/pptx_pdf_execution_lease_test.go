@@ -74,9 +74,9 @@ func TestPPTXPDFExpiredLeaseFailsExecutionTaskAndBuildingResult(t *testing.T) {
 		t.Fatalf("claim pending PPTX execution lease = %#v error = %v", lease, err)
 	}
 	result := &models.PPTXPDF{
-		TenantID: task.TenantID, ItemFingerprint: task.ItemFingerprint, ArtifactVariant: models.PPTXPDFArtifactVariant,
-		SourceVersion: task.SourceVersion, SourceEngineID: task.SourceEngineID, ItemID: task.ItemID,
-		Locator: task.Locator, TaskID: &task.ID, LastExecutionID: &execution.ExecutionID,
+		TenantID: task.TenantID, ItemFingerprint: "pptx-fingerprint", ArtifactVariant: models.PPTXPDFArtifactVariant,
+		SourceVersion: "version-1", SourceEngineID: 12, ItemID: 77,
+		Locator: "addp://engine/12/path/doc/slides.pptx?type=object&item_id=77", TaskID: &task.ID, LastExecutionID: &execution.ExecutionID,
 		StorageRef: "object-store-ref", FileName: "slides.pdf", Status: models.PPTXPDFStatusBuilding,
 		Metadata: commonModels.JSONMap{},
 	}
@@ -138,9 +138,9 @@ func TestPPTXPDFUnleasedRunningExecutionFailsExecutionTaskAndBuildingResult(t *t
 		t.Fatalf("make legacy task summary running: %v", err)
 	}
 	result := &models.PPTXPDF{
-		TenantID: task.TenantID, ItemFingerprint: task.ItemFingerprint, ArtifactVariant: models.PPTXPDFArtifactVariant,
-		SourceVersion: task.SourceVersion, SourceEngineID: task.SourceEngineID, ItemID: task.ItemID,
-		Locator: task.Locator, TaskID: &task.ID, LastExecutionID: &execution.ExecutionID,
+		TenantID: task.TenantID, ItemFingerprint: "pptx-fingerprint", ArtifactVariant: models.PPTXPDFArtifactVariant,
+		SourceVersion: "version-1", SourceEngineID: 12, ItemID: 77,
+		Locator: "addp://engine/12/path/doc/slides.pptx?type=object&item_id=77", TaskID: &task.ID, LastExecutionID: &execution.ExecutionID,
 		StorageRef: "object-store-ref", FileName: "slides.pdf", Status: models.PPTXPDFStatusBuilding,
 		Metadata: commonModels.JSONMap{},
 	}
@@ -182,14 +182,6 @@ func newPPTXPDFExecutionLeaseTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db := newTileCacheExecutionRepositoryTestDB(t)
 	for _, statement := range []string{
-		`CREATE TABLE manager.pptx_pdf_tasks (
-			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, name TEXT NOT NULL,
-			description TEXT, enabled BOOLEAN, schedule TEXT, next_run_at DATETIME,
-			item_fingerprint TEXT NOT NULL, artifact_variant TEXT NOT NULL, source_engine_id INTEGER NOT NULL,
-			item_id INTEGER NOT NULL, locator TEXT NOT NULL, source_version TEXT NOT NULL,
-			source_size_bytes INTEGER NOT NULL, last_run_at DATETIME, last_execution_id TEXT,
-			last_execution_status TEXT, config JSON, created_by INTEGER, created_at DATETIME,
-			updated_at DATETIME, deleted_at DATETIME)`,
 		`CREATE TABLE manager.pptx_pdf (
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, item_fingerprint TEXT NOT NULL,
 			artifact_variant TEXT NOT NULL, source_version TEXT NOT NULL, source_engine_id INTEGER NOT NULL,
@@ -209,10 +201,12 @@ func newPPTXPDFExecutionLeaseTestDB(t *testing.T) *gorm.DB {
 func createPPTXPDFExecutionLeaseTestTask(t *testing.T, db *gorm.DB, tenantID uint) models.PPTXPDFTask {
 	t.Helper()
 	task := models.PPTXPDFTask{
-		TenantID: tenantID, Name: "slides.pptx", Enabled: true, ItemFingerprint: "pptx-fingerprint",
-		ArtifactVariant: models.PPTXPDFArtifactVariant, SourceEngineID: 12, ItemID: 77,
-		Locator:       "addp://engine/12/path/doc/slides.pptx?type=object&item_id=77",
-		SourceVersion: "version-1", SourceSizeBytes: 1024, Config: commonModels.JSONMap{"version": 1},
+		TenantID: tenantID, TaskType: commonExecution.TaskTypePPTXPDFGeneration, Version: 1, Name: "slides.pptx", Enabled: true,
+		Config: commonModels.JSONMap{"source": commonModels.JSONMap{
+			"item_fingerprint": "pptx-fingerprint", "source_engine_id": 12, "item_id": 77,
+			"item_locator":   "addp://engine/12/path/doc/slides.pptx?type=object&item_id=77",
+			"source_version": "version-1", "source_size_bytes": 1024,
+		}},
 	}
 	if err := db.Create(&task).Error; err != nil {
 		t.Fatalf("create PPTX execution lease task: %v", err)

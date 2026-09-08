@@ -36,7 +36,7 @@ var managerExecutionOwnerships = map[string]managerExecutionOwnership{
 	commonExecution.TaskTypeModel3DTilesGeneration:           {taskTable: "manager.task_definitions", taskTypeColumn: true, resultTable: "manager.model3d_tiles", buildingStatus: "building", cleanupManagedArtifact: true},
 	commonExecution.TaskTypeGaussianSplatKSplatGeneration:    {taskTable: "manager.task_definitions", taskTypeColumn: true, resultTable: "manager.gaussian_splat_ksplat", buildingStatus: "building", cleanupManagedArtifact: true},
 	commonExecution.TaskTypePointCloudCOPCGeneration:         {taskTable: "manager.task_definitions", taskTypeColumn: true, resultTable: "manager.point_cloud_copc", buildingStatus: "building", cleanupManagedArtifact: true},
-	commonExecution.TaskTypePPTXPDFGeneration:                {taskTable: "manager.pptx_pdf_tasks", resultTable: "manager.pptx_pdf", buildingStatus: "building", cleanupManagedArtifact: true},
+	commonExecution.TaskTypePPTXPDFGeneration:                {taskTable: "manager.task_definitions", taskTypeColumn: true, resultTable: "manager.pptx_pdf", buildingStatus: "building", cleanupManagedArtifact: true},
 	commonExecution.TaskTypeEmbedding:                        {taskTable: "manager.embedding_tasks"},
 	commonExecution.TaskTypeDataProfiling:                    {},
 }

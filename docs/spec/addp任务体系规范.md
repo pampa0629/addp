@@ -39,7 +39,7 @@
 12. Quality `check|materialization_gate`、Meta `scan`、Transfer bounded `sync` 和 Orchestrator 来源的 Develop `query` 的 execution worker 必须是 owner 模块附属的独立进程；Manager 的 bounded execution 统一由 Manager Backend 内嵌的有界执行监督器运行。两种部署形态都必须使用 PostgreSQL execution claim + lease，部署形态不能改变 execution 所有权协议。
 13. owner scheduler 运行在 owner Backend，只负责按任务定义发现到期任务并创建 durable `pending` execution；Worker 不可用不得阻止 scheduler 创建 execution。dispatcher 只负责 outbox/delivery 投递，二者都不得替代 execution worker 成为业务执行事实源。
 14. bounded runtime queue 的唯一主路线是 `common.task_executions` PostgreSQL claim，不保留 Redis/Asynq、请求内 goroutine 或进程内 channel。独立 Worker 与 owner Backend 内嵌监督器是明确的模块级部署选择，不得在同一模块内双轨消费；continuous runtime、dispatcher 和 maintenance loop 继续使用各自专用协议，不强行迁入 bounded claim。
-15. Manager `pptx_pdf_generation` 是 bounded 预览派生产物任务：任务定义归 `manager.pptx_pdf_tasks`，结果归 `manager.pptx_pdf`。Manager 领域执行器通过 Common `WorkflowRuntimeProvider` direct 调用 `document_workflow/document_to_pdf`；Document Workflow 是纯执行层，LibreOffice 只作为其内部依赖，不拥有 Manager 任务、execution 或 artifact 状态。
+15. Manager `pptx_pdf_generation` 是 bounded 预览生成任务：任务定义统一归 `manager.task_definitions`，结果归 `manager.pptx_pdf`。Manager 领域执行器通过 Common `WorkflowRuntimeProvider` direct 调用 `document_workflow/document_to_pdf`；Document Workflow 是纯执行层，LibreOffice 只作为其内部依赖，不拥有 Manager 任务、execution 或 artifact 状态。
 
 `pptx_pdf_generation` 声明 `supports_schedule=false`。普通预览按需触发：`GET /manager/preview` 只返回 artifact 状态，不得隐式创建任务或 execution；前端收到 `preview_artifact_missing` 后显式调用创建与执行 API。已有 `pending` / `running` execution 时复用其状态，失败后只允许用户显式重试。Orchestrator 只在用户显式配置预热或批量编排时调用同一 Manager TaskProvider 任务，不直接调用 Runtime，也不建立第二条执行路线。
 
@@ -109,7 +109,7 @@ Manager 的 `vector_tile_cache_generation`、`vector_tile_set_generation`、`vec
 7. 同一任务已有 `pending` 或 `running` execution 时，owner 模块必须拒绝并发重复执行；已结束 execution 不阻止后续再次执行。
 8. 允许多个任务并存的业务派生场景，语义身份必须包含完整源范围、目标存储、目标名称、placement 和关键生成配置。只有规范化语义真正不同时才能并存，不得用不同任务名称制造重复定义。
 9. owner 模块拥有当前结果生命周期、且重复执行会覆盖该结果或其物理产物时，服务端必须要求本次 execution 显式提交 `parameters.existing_result_action=overwrite`。未声明动作时返回 HTTP 409 和稳定错误码 `existing_result_action_required`，且不得创建 execution、重置结果状态或清理物理产物。当前结果存在检查、active execution 检查和 execution 创建必须位于同一个任务定义行锁事务中。
-10. `existing_result_action` 是执行动作，不是 UI 确认状态，也不得由服务端根据 `trigger_type` 或 `source` 自动补充。人工执行由前端在收到 409 后展示二次确认，确认后重试并提交 `overwrite`；Orchestrator 可以把 `overwrite` 保存为 Step 参数，并在手动或定时 Pipeline 的每次下游调用中原样提交。任务自身调度若后续开放，保存或启用 schedule 时必须让用户明确知晓会自动刷新当前结果，并由 owner scheduler 在每次 execution 请求中显式提交同一动作。
+10. `existing_result_action` 是执行动作，不是 UI 确认状态，也不得由服务端根据 `trigger_type` 或 `source` 自动补充。任务详情可以投影只读的 `has_current_result`，人工执行前端据此先确认、再首次提交 `overwrite`，避免把预期 409 当作正常交互；若确认与提交之间状态发生变化，服务端仍以 409 和稳定错误码兜住竞态，前端只对该错误码再次确认。Orchestrator 可以把 `overwrite` 保存为 Step 参数，并在手动或定时 Pipeline 的每次下游调用中原样提交。任务自身调度若后续开放，保存或启用 schedule 时必须让用户明确知晓会自动刷新当前结果，并由 owner scheduler 在每次 execution 请求中显式提交同一动作。
 
 删除边界保持分离：删除任务定义不默认删除当前结果或 execution 历史；删除当前结果也不删除任务定义。产物 owner 必须在本模块生命周期规范中明确物理对象清理顺序。
 

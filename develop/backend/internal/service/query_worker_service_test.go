@@ -40,6 +40,35 @@ func TestCompileExistingTableResultQueryQuotesRuntimeLocators(t *testing.T) {
 	}
 }
 
+func TestCompileExistingTableResultQueryAcceptsDeclaredOpenGaussRelationCapability(t *testing.T) {
+	task := &models.DevTask{
+		DevType: commonExecution.TaskTypeQuery,
+		Content: models.DevTaskContent{
+			"query_type": "sql", "query": "SELECT id FROM source",
+			"query_parameters": []interface{}{map[string]interface{}{"name": "source", "type": "relation"}},
+		},
+	}
+	compiled, err := compileExistingTableResultQuery(
+		task,
+		map[string]string{"source": "addp://engine/9/path/business/source?type=table"},
+		"addp://engine/9/path/business/result?type=table",
+		"opengauss",
+	)
+	if err != nil {
+		t.Fatalf("compile openGauss relation query: %v", err)
+	}
+	if got := compiled.Content["query"]; got != `INSERT INTO "business"."result" SELECT id FROM "business"."source"` {
+		t.Fatalf("compiled query = %q", got)
+	}
+}
+
+func TestRelationQueryDialectRejectsEngineWithoutDeclaredCapability(t *testing.T) {
+	_, err := relationQueryDialectForEngine("mysql")
+	if err == nil || !strings.Contains(err.Error(), "未声明 relation") {
+		t.Fatalf("relation dialect error = %v", err)
+	}
+}
+
 func TestCompileExistingTableResultQueryRejectsCrossEngineTarget(t *testing.T) {
 	task := &models.DevTask{
 		Content: models.DevTaskContent{

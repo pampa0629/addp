@@ -175,7 +175,7 @@
       "warningMissingWhere": "语句没有 WHERE 条件，可能影响全部数据",
       "relationParameterNameInvalid": "数据表参数名必须以小写字母开头，且只能包含小写字母、数字和下划线",
       "relationSqlRequired": "数据表参数仅支持 SQL 查询",
-      "relationPostgresRequired": "数据表参数必须选择 PostgreSQL 查询引擎",
+      "relationEngineRequired": "当前查询引擎未声明数据表参数能力",
       "selectDefaultTable": "选择默认表",
       "changeDefaultTable": "更换",
       "clearDefaultTable": "清除",

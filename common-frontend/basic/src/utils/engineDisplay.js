@@ -1,7 +1,11 @@
+import { engineCapabilityFamily } from './engineCapabilities.mjs'
+
 export const getEngineFamily = (engine = {}) => {
   const summary = normalizeCapabilitiesView(engine.capabilities_view).summary
   const familyBadge = summary.find(badge => badge.id === 'engine_family')
-  return familyFromCapabilityValue(familyBadge?.value || familyBadge?.value_key) || engine.engine_family || ''
+  return familyFromCapabilityValue(familyBadge?.value || familyBadge?.value_key) ||
+    engineCapabilityFamily(engine) ||
+    engine.engine_family || ''
 }
 
 export const getEngineIconName = (engine = {}) => {

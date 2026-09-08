@@ -294,9 +294,6 @@ services:
     privileged: true
     environment:
       GS_PASSWORD: ${OPENGAUSS_PASSWORD:-AddpGauss606@}
-      OTHER_PG_CONF: |-
-        max_process_memory = ${OPENGAUSS_MAX_PROCESS_MEMORY:-4GB}
-        shared_buffers = ${OPENGAUSS_SHARED_BUFFERS:-512MB}
     ports:
       - "${OPENGAUSS_PORT:-5435}:5432"
     volumes:

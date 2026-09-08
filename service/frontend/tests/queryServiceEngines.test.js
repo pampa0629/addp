@@ -33,7 +33,7 @@ test('maps the selected real engine to exactly one SQL execution field', () => {
 })
 
 test('requires a runtime only for object table engines', () => {
-  assert.equal(tableSelectionUsesRuntime({ display: { engine_type: 'minio' } }), true)
-  assert.equal(tableSelectionUsesRuntime({ display: { engine_type: 'postgresql' } }), false)
-  assert.equal(tableSelectionUsesRuntime({ display: { engine_type: 'oracle' } }), false)
+  assert.equal(tableSelectionUsesRuntime({ resource: { representation: 'encoded' }, display: { engine_type: 'minio' } }), true)
+  assert.equal(tableSelectionUsesRuntime({ resource: { representation: 'native' }, display: { engine_type: 'opengauss' } }), false)
+  assert.equal(tableSelectionUsesRuntime({ display: { engine_type: 'minio' } }), false)
 })

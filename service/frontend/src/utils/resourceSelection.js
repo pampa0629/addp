@@ -1,14 +1,31 @@
-export const QUERY_TABLE_ENGINE_TYPES = ['postgresql', 'oracle', 'mysql', 'doris', 'clickhouse', 'minio', 's3']
-export const NATIVE_TABLE_ENGINE_TYPES = ['postgresql', 'oracle', 'mysql', 'doris', 'clickhouse']
+import {
+  isContentStorageEngine,
+  isNativeTableStorageEngine,
+  queryFederationCapability,
+  supportsQueryLanguage
+} from '@addp/common-frontend/basic/src/utils/engineCapabilities.mjs'
+
 export const OBJECT_TABLE_FORMATS = ['parquet']
-export const PMTILES_ENGINE_TYPES = ['s3', 'minio', 'nfs']
 
 export function isNativeTableEngine(engine) {
-  return NATIVE_TABLE_ENGINE_TYPES.includes(String(engine?.engine_type || '').toLowerCase())
+  return isNativeTableStorageEngine(engine)
 }
 
 export function isPMTilesEngine(engine) {
-  return PMTILES_ENGINE_TYPES.includes(String(engine?.engine_type || '').toLowerCase()) && engine?.is_builtin !== true
+  return isContentStorageEngine(engine) && engine?.is_builtin !== true
+}
+
+export function isQueryableTableEngine(engine, runtimes = []) {
+  if (isNativeTableEngine(engine)) {
+    return supportsQueryLanguage(engine, 'sql')
+  }
+  if (!isContentStorageEngine(engine)) return false
+  const engineType = String(engine?.engine_type || '').trim().toLowerCase()
+  return (runtimes || []).some(runtime => {
+    const federation = queryFederationCapability(runtime)
+    return federation?.sourceEngineTypes.has(engineType) &&
+      OBJECT_TABLE_FORMATS.some(format => federation.objectFormats.has(format))
+  })
 }
 
 export function isQueryableTableNode(node) {

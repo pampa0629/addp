@@ -20,7 +20,7 @@ esac
 cd "$ROOT_DIR/common"
 ADDP_POSTGRES_INTEGRATION=1 \
     go test ./engine/plugins/postgresql \
-    -run '^(TestIntegrationPostgresBoundedWatermarkResumeAndIdempotentUpsert|TestIntegrationResolvePostgresQuery(ReadSet|OutputLineage))' \
+    -run '^(TestIntegrationPostgresBoundedWatermarkResumeAndIdempotentUpsert|TestIntegrationPostgresReadBatchHonorsSpatialEncoding|TestIntegrationResolvePostgresQuery(ReadSet|OutputLineage))' \
     -count=1 -v 2>&1 | tee "$WORK_DIR/common-postgres.log"
 
 if grep -q -- '--- SKIP:' "$WORK_DIR/common-postgres.log"; then

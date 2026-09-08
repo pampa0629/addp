@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	commonquery "github.com/addp/common/query"
 )
@@ -46,6 +47,9 @@ func TestBuildDSNUsesPostgreSQLWireProtocol(t *testing.T) {
 	}
 	if got := p.SQLDialect(); got != commonquery.DialectPostgreSQL {
 		t.Fatalf("SQLDialect() = %q, want %q", got, commonquery.DialectPostgreSQL)
+	}
+	if got := p.Capabilities().Compute.Query.Parameters.Types; !plugin.Contains(got, "relation") {
+		t.Fatalf("query parameter types = %v, want relation", got)
 	}
 }
 
@@ -95,4 +99,31 @@ func TestPreparedQueryKeepsOpenGaussProviderIdentity(t *testing.T) {
 	if _, _, err := plugin.ConsumeSQLPreparedQuery(prepared, p); err != nil {
 		t.Fatalf("prepared query is not owned by openGauss provider: %v", err)
 	}
+}
+
+func TestWriteProvidersRejectUnadvertisedSpatialDataBeforeConnecting(t *testing.T) {
+	p := &Plugin{}
+	fields := []datatype.FieldInfo{{Name: "shape", Type: datatype.FieldTypeGeometry}}
+	spatialInfo := datatype.NewSingleGeometrySpatialInfo("shape", "Point", 4326, 0)
+	assertSpatialError := func(name string, err error) {
+		t.Helper()
+		if err == nil || !strings.Contains(err.Error(), "does not support spatial fields") {
+			t.Fatalf("%s spatial error = %v", name, err)
+		}
+	}
+
+	assertSpatialError("PrepareTableWrite", p.PrepareTableWrite(
+		t.Context(), nil, plugin.EngineCatalogPath{}, plugin.TableWriteOptions{Fields: fields},
+	))
+	_, err := p.OpenTableWriteSession(
+		t.Context(), nil, plugin.EngineCatalogPath{}, plugin.TableWriteSessionOptions{SpatialInfo: spatialInfo},
+	)
+	assertSpatialError("OpenTableWriteSession", err)
+	assertSpatialError("PrepareTableUpsert", p.PrepareTableUpsert(
+		t.Context(), nil, plugin.EngineCatalogPath{}, plugin.TableUpsertOptions{SpatialInfo: spatialInfo},
+	))
+	assertSpatialError("UpsertBatch", p.UpsertBatch(
+		t.Context(), nil, plugin.EngineCatalogPath{},
+		&plugin.BatchData{Fields: fields}, plugin.TableUpsertOptions{},
+	))
 }

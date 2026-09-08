@@ -125,6 +125,9 @@ func TestTaskProviderTaskDetailUsesDirectObjectShape(t *testing.T) {
 	if err := tileCacheRepo.CreateTask(context.Background(), task); err != nil {
 		t.Fatalf("create tile cache task: %v", err)
 	}
+	if err := db.Exec(`INSERT INTO manager.vector_tile_cache (tenant_id, task_id) VALUES (?, ?)`, 1, task.ID).Error; err != nil {
+		t.Fatalf("create tile cache result: %v", err)
+	}
 
 	handler := NewTaskProviderHandler(
 		nil,
@@ -133,6 +136,7 @@ func TestTaskProviderTaskDetailUsesDirectObjectShape(t *testing.T) {
 		nil,
 		nil,
 	)
+	handler.SetTaskDefinitionRepository(repository.NewTaskDefinitionRepository(db))
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
 		setTenantAuthContextForTest(c, 1, 1)
@@ -152,6 +156,7 @@ func TestTaskProviderTaskDetailUsesDirectObjectShape(t *testing.T) {
 		TaskType          string `json:"task_type"`
 		Status            string `json:"status"`
 		Data              any    `json:"data"`
+		HasCurrentResult  bool   `json:"has_current_result"`
 		ExecutionContract struct {
 			InputSchema map[string]interface{} `json:"input_schema"`
 		} `json:"execution_contract"`
@@ -164,6 +169,9 @@ func TestTaskProviderTaskDetailUsesDirectObjectShape(t *testing.T) {
 	}
 	if resp.Status != "" || resp.Data != nil {
 		t.Fatalf("response wraps standard task detail, status=%q data=%#v body=%s", resp.Status, resp.Data, w.Body.String())
+	}
+	if !resp.HasCurrentResult {
+		t.Fatalf("has_current_result = false, want true; body=%s", w.Body.String())
 	}
 	properties, _ := resp.ExecutionContract.InputSchema["properties"].(map[string]interface{})
 	if _, ok := properties["existing_result_action"]; !ok {
@@ -226,6 +234,7 @@ func TestManagerDerivedTaskListUsesUnifiedCategoryAndTypeFilters(t *testing.T) {
 	model3DTilesRepo := repository.NewModel3DTilesRepository(db)
 	model3DGLBRepo := repository.NewModel3DGLBRepository(db)
 	gaussianSplatKSplatRepo := repository.NewGaussianSplatKSplatRepository(db)
+	pptxPDFRepo := repository.NewPPTXPDFRepository(db)
 
 	if err := tileCacheRepo.CreateTask(context.Background(), &models.TileCacheTask{
 		TenantID: 1,
@@ -344,6 +353,15 @@ func TestManagerDerivedTaskListUsesUnifiedCategoryAndTypeFilters(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("create gaussian splat KSplat generation task: %v", err)
 	}
+	if err := pptxPDFRepo.CreateTask(context.Background(), &models.PPTXPDFTask{
+		TenantID: 1, Name: "presentation PDF generation task", Enabled: true,
+		Config: commonModels.JSONMap{"source": commonModels.JSONMap{
+			"item_locator":     "addp://engine/11/path/docs/slides.pptx?type=file&item_id=48",
+			"source_engine_id": uint(11), "item_fingerprint": "pptx-api-task", "item_id": uint(48), "format": "pptx",
+		}},
+	}); err != nil {
+		t.Fatalf("create PPTX PDF generation task: %v", err)
+	}
 
 	handler := NewTaskProviderHandler(
 		service.NewEmbeddingTaskService(embeddingRepo, nil, nil, nil),
@@ -371,6 +389,7 @@ func TestManagerDerivedTaskListUsesUnifiedCategoryAndTypeFilters(t *testing.T) {
 		commonExecution.TaskTypeModel3DTilesGeneration:           true,
 		commonExecution.TaskTypeModel3DGLBGeneration:             true,
 		commonExecution.TaskTypeGaussianSplatKSplatGeneration:    true,
+		commonExecution.TaskTypePPTXPDFGeneration:                true,
 	})
 	assertUnifiedTaskTypeSet(t, router, "/tasks?task_type=vector_tile_cache_generation", map[string]bool{
 		commonExecution.TaskTypeVectorTileCacheGeneration: true,
@@ -1059,6 +1078,7 @@ func newTaskProviderHandlerTestDB(t *testing.T) *gorm.DB {
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		tenant_id INTEGER NOT NULL,
 		task_id INTEGER,
+		status TEXT NOT NULL DEFAULT 'ready',
 		deleted_at DATETIME
 	)`).Error; err != nil {
 		t.Fatalf("create vector_tile_cache table: %v", err)

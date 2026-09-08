@@ -382,7 +382,7 @@ func TestValidatePluginCapabilitiesAcceptsQueryParameters(t *testing.T) {
 				Parameters: &QueryParameterCapability{
 					Supported: true,
 					Languages: []string{"sql"},
-					Types:     []string{"string", "integer", "number", "boolean"},
+					Types:     []string{"string", "integer", "number", "boolean", "relation"},
 				},
 			}},
 		},
@@ -456,5 +456,30 @@ func TestValidatePluginCapabilitiesRejectsInvalidQueryParameters(t *testing.T) {
 	err := ValidatePluginCapabilities(plugin)
 	if err == nil || !strings.Contains(err.Error(), "unsupported language") {
 		t.Fatalf("ValidatePluginCapabilities() error = %v, want unsupported language error", err)
+	}
+}
+
+func TestValidatePluginCapabilitiesRejectsRelationParametersOutsideSQL(t *testing.T) {
+	plugin := &queryParameterCapabilityPlugin{
+		MockPlugin: MockPlugin{TypeValue: "invalid_relation_parameters"},
+		caps: EngineCapabilities{
+			SchemaVersion: CapabilitiesSchemaVersion,
+			EngineType:    "invalid_relation_parameters",
+			EngineFamily:  "test",
+			Compute: &ComputeCapabilities{Query: &QueryCapability{
+				Supported: true,
+				Languages: []string{"cypher"},
+				Parameters: &QueryParameterCapability{
+					Supported: true,
+					Languages: []string{"cypher"},
+					Types:     []string{"relation"},
+				},
+			}},
+		},
+	}
+
+	err := ValidatePluginCapabilities(plugin)
+	if err == nil || !strings.Contains(err.Error(), "without sql language") {
+		t.Fatalf("ValidatePluginCapabilities() error = %v, want relation language error", err)
 	}
 }

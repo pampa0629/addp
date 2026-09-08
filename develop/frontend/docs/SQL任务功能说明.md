@@ -280,7 +280,7 @@ CREATE TABLE common.task_executions (
 
 ### 参数化查询
 
-查询任务通过 `content.query_parameters[]` 声明全部命名参数，并派生任务级 `execution_contract`。每个参数只保存 `name + type + default? + description?`，面板只展示唯一参数名。值参数类型为 `string`、`integer`、`number`、`boolean`：SQL 使用 `:name`，Cypher 使用 `$name`，MQL 使用 `{\"$param\":\"name\"}` 结构化值节点，由对应 Engine Provider 原生绑定。PostgreSQL SQL 还可声明 `type=relation` 的数据表参数，直接以未加引号、未限定 schema 的裸 `name` 引用；Develop 通过 PostgreSQL AST 把已声明关系节点安全编译为实际表标识符。所有类型都可以保存默认值，也可以缺省并在执行时填写；有效值统一按“本次覆盖 > 保存默认值 > 缺失则拒绝执行”解析。两类参数共享同一命名空间和“查询参数”面板；均不允许字符串插值或动态替换字段名和查询片段。
+查询任务通过 `content.query_parameters[]` 声明全部命名参数，并派生任务级 `execution_contract`。每个参数只保存 `name + type + default? + description?`，面板只展示唯一参数名。值参数类型为 `string`、`integer`、`number`、`boolean`：SQL 使用 `:name`，Cypher 使用 `$name`，MQL 使用 `{\"$param\":\"name\"}` 结构化值节点，由对应 Engine Provider 原生绑定。声明 `compute.query.parameters.types=relation` 的 PostgreSQL 方言引擎 SQL 还可声明 `type=relation` 的数据表参数，当前包括 PostgreSQL 与 openGauss；直接以未加引号、未限定 schema 的裸 `name` 引用，Develop 通过 PostgreSQL AST 把已声明关系节点安全编译为实际表标识符。所有类型都可以保存默认值，也可以缺省并在执行时填写；有效值统一按“本次覆盖 > 保存默认值 > 缺失则拒绝执行”解析。两类参数共享同一命名空间和“查询参数”面板；均不允许字符串插值或动态替换字段名和查询片段。
 
 ## 技术实现
 

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -32,6 +33,50 @@ type PPTXPDFCleaner interface {
 
 type pptxPDFMetaClient interface {
 	GetItemByIDForTenant(tenantID, itemID uint) (*commonModels.MetaItem, error)
+}
+
+type pptxPDFTaskConfig struct {
+	Source  pptxPDFTaskSource    `json:"source"`
+	Result  pptxPDFTaskResult    `json:"result"`
+	Options commonModels.JSONMap `json:"options,omitempty"`
+}
+
+type pptxPDFTaskSource struct {
+	ItemLocator     string `json:"item_locator"`
+	SourceEngineID  uint   `json:"source_engine_id"`
+	ItemID          uint   `json:"item_id"`
+	ItemFingerprint string `json:"item_fingerprint"`
+	SourceVersion   string `json:"source_version"`
+	SourceSizeBytes int64  `json:"source_size_bytes"`
+	Format          string `json:"format"`
+}
+
+type pptxPDFTaskResult struct {
+	StorageRef string `json:"storage_ref"`
+	FileName   string `json:"file_name"`
+}
+
+func decodePPTXPDFTaskConfig(task *models.PPTXPDFTask) (pptxPDFTaskConfig, error) {
+	var config pptxPDFTaskConfig
+	if task == nil {
+		return config, errors.New("PPTX PDF task is nil")
+	}
+	payload, err := json.Marshal(task.Config)
+	if err != nil {
+		return config, err
+	}
+	if err := json.Unmarshal(payload, &config); err != nil {
+		return config, err
+	}
+	return config, nil
+}
+
+func encodePPTXPDFTaskConfig(task *models.PPTXPDFTask, config pptxPDFTaskConfig) error {
+	payload, err := json.Marshal(config)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(payload, &task.Config)
 }
 
 var (
@@ -91,7 +136,11 @@ func (s *PPTXPDFTaskService) EnsureTask(ctx context.Context, task *models.PPTXPD
 	if err := resolvePPTXPDFTaskSource(s.meta, task, s.bucket); err != nil {
 		return err
 	}
-	existing, err := s.repo.GetTaskByFingerprint(ctx, task.TenantID, task.ItemFingerprint)
+	config, err := decodePPTXPDFTaskConfig(task)
+	if err != nil {
+		return err
+	}
+	existing, err := s.repo.GetTaskByFingerprint(ctx, task.TenantID, config.Source.ItemFingerprint)
 	if err != nil {
 		return err
 	}
@@ -99,7 +148,7 @@ func (s *PPTXPDFTaskService) EnsureTask(ctx context.Context, task *models.PPTXPD
 		if createErr := s.repo.CreateTask(ctx, task); createErr == nil {
 			return nil
 		} else {
-			existing, err = s.repo.GetTaskByFingerprint(ctx, task.TenantID, task.ItemFingerprint)
+			existing, err = s.repo.GetTaskByFingerprint(ctx, task.TenantID, config.Source.ItemFingerprint)
 			if err != nil {
 				return err
 			}
@@ -113,8 +162,7 @@ func (s *PPTXPDFTaskService) EnsureTask(ctx context.Context, task *models.PPTXPD
 
 func (s *PPTXPDFTaskService) reuseTask(ctx context.Context, task, existing *models.PPTXPDFTask) error {
 	existing.Name, existing.Description, existing.Enabled = task.Name, task.Description, task.Enabled
-	existing.SourceEngineID, existing.ItemID, existing.Locator = task.SourceEngineID, task.ItemID, task.Locator
-	existing.SourceVersion, existing.SourceSizeBytes, existing.Config = task.SourceVersion, task.SourceSizeBytes, task.Config.Clone()
+	existing.Config = task.Config.Clone()
 	if existing.CreatedBy == nil {
 		existing.CreatedBy = task.CreatedBy
 	}
@@ -127,6 +175,15 @@ func (s *PPTXPDFTaskService) reuseTask(ctx context.Context, task, existing *mode
 
 func (s *PPTXPDFTaskService) Current(ctx context.Context, tenantID uint, fingerprint string) (*models.PPTXPDF, error) {
 	return s.repo.Current(ctx, tenantID, fingerprint)
+}
+
+func (s *PPTXPDFTaskService) CurrentForTask(ctx context.Context, task *models.PPTXPDFTask) (*models.PPTXPDF, string, error) {
+	config, err := decodePPTXPDFTaskConfig(task)
+	if err != nil {
+		return nil, "", err
+	}
+	current, err := s.repo.Current(ctx, task.TenantID, config.Source.ItemFingerprint)
+	return current, config.Source.SourceVersion, err
 }
 
 func (s *PPTXPDFTaskService) Execute(ctx context.Context, taskID, tenantID uint, triggerType, source string, parentExecutionID *string, overwrite bool) (string, error) {
@@ -167,12 +224,16 @@ func (s *PPTXPDFTaskService) RunClaimedExecution(ctx context.Context, execution 
 		startedAt = *execution.StartedAt
 	}
 	result, err := s.prepareResult(ctx, task, executionID)
+	config, configErr := decodePPTXPDFTaskConfig(task)
+	if err == nil {
+		err = configErr
+	}
 	var built *PPTXPDFExecutionResult
 	if err == nil {
 		if s.executor == nil {
 			err = errors.New("PPTX PDF executor is not configured")
 		} else {
-			built, err = s.executor.BuildPPTXPDF(ctx, PPTXPDFExecutionRequest{TenantID: task.TenantID, SourceEngineID: task.SourceEngineID, ItemID: task.ItemID, ItemFingerprint: task.ItemFingerprint, Locator: task.Locator, SourceVersion: task.SourceVersion, SourceSizeBytes: task.SourceSizeBytes, StorageRef: result.StorageRef, FileName: result.FileName})
+			built, err = s.executor.BuildPPTXPDF(ctx, PPTXPDFExecutionRequest{TenantID: task.TenantID, SourceEngineID: config.Source.SourceEngineID, ItemID: config.Source.ItemID, ItemFingerprint: config.Source.ItemFingerprint, Locator: config.Source.ItemLocator, SourceVersion: config.Source.SourceVersion, SourceSizeBytes: config.Source.SourceSizeBytes, StorageRef: result.StorageRef, FileName: result.FileName})
 		}
 	}
 	metadata := commonModels.JSONMap{}
@@ -213,10 +274,14 @@ func pptxPDFExecutionMetadata(task *models.PPTXPDFTask, built *PPTXPDFExecutionR
 	if err != nil {
 		return nil, fmt.Errorf("build PPTX PDF output lineage: %w", err)
 	}
+	config, err := decodePPTXPDFTaskConfig(task)
+	if err != nil {
+		return nil, err
+	}
 	return managerExecutionLineage(
 		built.Metadata.Clone(),
 		commonExecution.TaskTypePPTXPDFGeneration,
-		[]commonExecution.LineageResourceRef{managerItemLineageRef(task.Locator, task.ItemFingerprint, task.ItemID)},
+		[]commonExecution.LineageResourceRef{managerItemLineageRef(config.Source.ItemLocator, config.Source.ItemFingerprint, config.Source.ItemID)},
 		[]commonExecution.LineageResourceRef{output},
 		"",
 		"",
@@ -224,20 +289,24 @@ func pptxPDFExecutionMetadata(task *models.PPTXPDFTask, built *PPTXPDFExecutionR
 }
 
 func (s *PPTXPDFTaskService) prepareResult(ctx context.Context, task *models.PPTXPDFTask, executionID string) (*models.PPTXPDF, error) {
-	current, err := s.repo.Current(ctx, task.TenantID, task.ItemFingerprint)
+	config, err := decodePPTXPDFTaskConfig(task)
 	if err != nil {
 		return nil, err
 	}
-	storageRef, fileName := pptxPDFTarget(task, s.bucket)
+	current, err := s.repo.Current(ctx, task.TenantID, config.Source.ItemFingerprint)
+	if err != nil {
+		return nil, err
+	}
+	storageRef, fileName := config.Result.StorageRef, config.Result.FileName
 	if current != nil {
-		fields := map[string]interface{}{"source_version": task.SourceVersion, "source_engine_id": task.SourceEngineID, "item_id": task.ItemID, "locator": task.Locator, "task_id": task.ID, "last_execution_id": executionID, "storage_ref": storageRef, "file_name": fileName, "status": models.PPTXPDFStatusBuilding, "metadata": commonModels.JSONMap{}, "error_message": "", "content_url": pptxPDFContentURL(current.ID), "updated_at": time.Now()}
+		fields := map[string]interface{}{"source_version": config.Source.SourceVersion, "source_engine_id": config.Source.SourceEngineID, "item_id": config.Source.ItemID, "locator": config.Source.ItemLocator, "task_id": task.ID, "last_execution_id": executionID, "storage_ref": storageRef, "file_name": fileName, "status": models.PPTXPDFStatusBuilding, "metadata": commonModels.JSONMap{}, "error_message": "", "content_url": pptxPDFContentURL(current.ID), "updated_at": time.Now()}
 		if err := s.repo.UpdateResult(ctx, current.ID, task.TenantID, fields); err != nil {
 			return nil, err
 		}
 		current.StorageRef, current.FileName = storageRef, fileName
 		return current, nil
 	}
-	result := &models.PPTXPDF{TenantID: task.TenantID, ItemFingerprint: task.ItemFingerprint, ArtifactVariant: models.PPTXPDFArtifactVariant, SourceVersion: task.SourceVersion, SourceEngineID: task.SourceEngineID, ItemID: task.ItemID, Locator: task.Locator, TaskID: &task.ID, LastExecutionID: &executionID, StorageRef: storageRef, FileName: fileName, Status: models.PPTXPDFStatusBuilding, Metadata: commonModels.JSONMap{}, CreatedBy: task.CreatedBy}
+	result := &models.PPTXPDF{TenantID: task.TenantID, ItemFingerprint: config.Source.ItemFingerprint, ArtifactVariant: models.PPTXPDFArtifactVariant, SourceVersion: config.Source.SourceVersion, SourceEngineID: config.Source.SourceEngineID, ItemID: config.Source.ItemID, Locator: config.Source.ItemLocator, TaskID: &task.ID, LastExecutionID: &executionID, StorageRef: storageRef, FileName: fileName, Status: models.PPTXPDFStatusBuilding, Metadata: commonModels.JSONMap{}, CreatedBy: task.CreatedBy}
 	if err := s.repo.CreateResult(ctx, result); err != nil {
 		return nil, err
 	}
@@ -250,15 +319,19 @@ func resolvePPTXPDFTaskSource(meta pptxPDFMetaClient, task *models.PPTXPDFTask, 
 	if err := normalizePPTXPDFTask(task); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidPPTXPDFSource, err)
 	}
+	config, err := decodePPTXPDFTaskConfig(task)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidPPTXPDFSource, err)
+	}
 	if meta == nil {
 		return errors.New("Meta client is required to resolve PPTX source identity")
 	}
-	item, err := meta.GetItemByIDForTenant(task.TenantID, task.ItemID)
+	item, err := meta.GetItemByIDForTenant(task.TenantID, config.Source.ItemID)
 	if err != nil {
 		return fmt.Errorf("resolve PPTX source item from Meta: %w", err)
 	}
-	loc, _ := resourcetree.ParseURI(task.Locator)
-	if item == nil || item.ID != task.ItemID || item.TenantID != task.TenantID || item.EngineID != task.SourceEngineID ||
+	loc, _ := resourcetree.ParseURI(config.Source.ItemLocator)
+	if item == nil || item.ID != config.Source.ItemID || item.TenantID != task.TenantID || item.EngineID != config.Source.SourceEngineID ||
 		!strings.EqualFold(strings.TrimSpace(item.ItemType), strings.TrimSpace(string(loc.Type))) || item.FullName != loc.FullName() {
 		return fmt.Errorf("%w: PPTX locator does not match the current Meta DataItem", ErrInvalidPPTXPDFSource)
 	}
@@ -266,35 +339,41 @@ func resolvePPTXPDFTaskSource(meta pptxPDFMetaClient, task *models.PPTXPDFTask, 
 	if task.Name == "" {
 		task.Name = filepath.Base(item.FullName)
 	}
-	task.SourceVersion = sourceVersionForItem(task.ItemFingerprint, *item)
-	task.SourceSizeBytes = 0
+	config.Source.SourceVersion = sourceVersionForItem(config.Source.ItemFingerprint, *item)
+	config.Source.SourceSizeBytes = 0
 	if item.ObjectSizeBytes != nil {
-		task.SourceSizeBytes = *item.ObjectSizeBytes
+		config.Source.SourceSizeBytes = *item.ObjectSizeBytes
 	} else if item.SizeBytes != nil {
-		task.SourceSizeBytes = *item.SizeBytes
+		config.Source.SourceSizeBytes = *item.SizeBytes
 	}
-	storageRef, fileName := pptxPDFTarget(task, bucket)
-	task.Config = commonModels.JSONMap{"source": commonModels.JSONMap{"item_locator": task.Locator, "source_engine_id": task.SourceEngineID, "item_id": task.ItemID, "item_fingerprint": task.ItemFingerprint, "source_version": task.SourceVersion, "source_size_bytes": task.SourceSizeBytes, "format": "pptx"}, "result": commonModels.JSONMap{"storage_ref": storageRef, "file_name": fileName}, "options": commonModels.JSONMap{"strip_embedded_media": true}}
-	return nil
+	config.Result.StorageRef, config.Result.FileName = pptxPDFTarget(task.TenantID, config.Source, bucket)
+	config.Options = commonModels.JSONMap{"strip_embedded_media": true}
+	return encodePPTXPDFTaskConfig(task, config)
 }
 
 func normalizePPTXPDFTask(task *models.PPTXPDFTask) error {
 	if task == nil {
 		return errors.New("PPTX PDF task is nil")
 	}
-	task.Name, task.Description, task.Locator = strings.TrimSpace(task.Name), strings.TrimSpace(task.Description), strings.TrimSpace(task.Locator)
-	task.ItemFingerprint, task.SourceVersion = strings.TrimSpace(task.ItemFingerprint), strings.TrimSpace(task.SourceVersion)
-	if task.Locator == "" {
+	task.Name, task.Description = strings.TrimSpace(task.Name), strings.TrimSpace(task.Description)
+	config, err := decodePPTXPDFTaskConfig(task)
+	if err != nil {
+		return err
+	}
+	config.Source.ItemLocator = strings.TrimSpace(config.Source.ItemLocator)
+	config.Source.ItemFingerprint = strings.TrimSpace(config.Source.ItemFingerprint)
+	config.Source.SourceVersion = strings.TrimSpace(config.Source.SourceVersion)
+	if config.Source.ItemLocator == "" {
 		return errors.New("PPTX PDF task requires locator")
 	}
-	loc, err := resourcetree.ParseURI(task.Locator)
+	loc, err := resourcetree.ParseURI(config.Source.ItemLocator)
 	if err != nil {
 		return fmt.Errorf("PPTX PDF locator is invalid: %w", err)
 	}
-	if task.SourceEngineID != 0 && loc.EngineID != task.SourceEngineID {
+	if config.Source.SourceEngineID != 0 && loc.EngineID != config.Source.SourceEngineID {
 		return errors.New("PPTX PDF locator engine_id does not match source_engine_id")
 	}
-	task.SourceEngineID = loc.EngineID
+	config.Source.SourceEngineID = loc.EngineID
 	if loc.Type != resourcetree.TypeFile && loc.Type != resourcetree.TypeObject {
 		return errors.New("PPTX PDF locator must identify a file or object")
 	}
@@ -304,23 +383,24 @@ func normalizePPTXPDFTask(task *models.PPTXPDFTask) error {
 	if loc.ItemID == nil || *loc.ItemID == 0 {
 		return errors.New("PPTX PDF locator must reference a scanned item with item_id")
 	}
-	if task.ItemID != 0 && task.ItemID != *loc.ItemID {
+	if config.Source.ItemID != 0 && config.Source.ItemID != *loc.ItemID {
 		return errors.New("PPTX PDF locator item_id does not match item_id")
 	}
-	task.ItemID = *loc.ItemID
-	expectedFingerprint := commonModels.GenerateItemFingerprint(task.SourceEngineID, loc.FullName())
-	if task.ItemFingerprint != "" && task.ItemFingerprint != expectedFingerprint {
+	config.Source.ItemID = *loc.ItemID
+	expectedFingerprint := commonModels.GenerateItemFingerprint(config.Source.SourceEngineID, loc.FullName())
+	if config.Source.ItemFingerprint != "" && config.Source.ItemFingerprint != expectedFingerprint {
 		return errors.New("PPTX PDF item_fingerprint does not match source locator")
 	}
-	task.ItemFingerprint = expectedFingerprint
-	task.ArtifactVariant = models.PPTXPDFArtifactVariant
+	config.Source.ItemFingerprint = expectedFingerprint
+	config.Source.Format = "pptx"
+	task.TaskType = commonExecution.TaskTypePPTXPDFGeneration
 	task.Schedule, task.NextRunAt = "", nil
-	return nil
+	return encodePPTXPDFTaskConfig(task, config)
 }
 
-func pptxPDFTarget(task *models.PPTXPDFTask, bucket string) (string, string) {
+func pptxPDFTarget(tenantID uint, source pptxPDFTaskSource, bucket string) (string, string) {
 	name := "presentation.pdf"
-	if loc, err := resourcetree.ParseURI(task.Locator); err == nil {
+	if loc, err := resourcetree.ParseURI(source.ItemLocator); err == nil {
 		base := filepath.Base(loc.FullName())
 		if strings.EqualFold(filepath.Ext(base), ".pptx") {
 			base = strings.TrimSuffix(base, filepath.Ext(base))
@@ -329,7 +409,7 @@ func pptxPDFTarget(task *models.PPTXPDFTask, bucket string) (string, string) {
 			name = base + ".pdf"
 		}
 	}
-	objectName := joinFilePath(fmt.Sprintf("tenant_%d/document-preview/%s", task.TenantID, task.ItemFingerprint), name)
+	objectName := joinFilePath(fmt.Sprintf("tenant_%d/document-preview/%s", tenantID, source.ItemFingerprint), name)
 	return rastercogref.ObjectStorageRef(firstNonEmptyConfig(bucket, "manager"), objectName), name
 }
 

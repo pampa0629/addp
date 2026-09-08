@@ -300,7 +300,7 @@
           <el-form-item :label="t('service.tile.selectTableLabel')">
             <ResourceTreePicker
               :api-base-url="metaApiBaseUrl"
-              :engine-types="NATIVE_TABLE_ENGINE_TYPES"
+              :engine-filter="isNativeTableEngine"
               mode="item"
               :node-filter="isNativeTableVisibleNode"
               :selectable-filter="isNativeTableNode"
@@ -339,7 +339,7 @@
           <el-form-item :label="t('service.tile.tileDatasetLabel')">
             <ResourceTreePicker
               :api-base-url="metaApiBaseUrl"
-              :engine-types="PMTILES_ENGINE_TYPES"
+              :engine-filter="isPMTilesEngine"
               mode="item"
               :node-filter="isPMTilesVisibleNode"
               :selectable-filter="isPMTilesNode"
@@ -391,11 +391,11 @@ import { navigateServiceRoute } from '@/utils/moduleNavigation'
 import { tilePreviewConfig, tilePreviewCoordinate } from '../utils/tileServicePreview'
 import { ResourceTreePicker, detectTableMetadata, locatorPathFromSelection, useConsolePageDescriptor } from '@common-ui'
 import {
-  NATIVE_TABLE_ENGINE_TYPES,
-  PMTILES_ENGINE_TYPES,
   defaultTileLayerName,
+  isNativeTableEngine,
   isNativeTableNode,
   isNativeTableVisibleNode,
+  isPMTilesEngine,
   isPMTilesNode,
   isPMTilesVisibleNode
 } from '@/utils/resourceSelection'

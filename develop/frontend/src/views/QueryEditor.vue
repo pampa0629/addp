@@ -798,6 +798,7 @@ import {
   nativeCatalogPathText,
   nativeCatalogSegmentText,
   queryParameterReference,
+  queryParameterTypesForLanguage,
   queryCapabilityForEngine,
   queryResultFromExecution,
   extractQueryParameterReferences,
@@ -1012,13 +1013,15 @@ const valueParametersSupported = computed(() => Boolean(
 ))
 const relationParametersSupported = computed(() => Boolean(
   currentQueryLanguage.value === 'sql' &&
-  String(selectedTarget.value?.engine?.engine_type || '').toLowerCase().includes('postgres')
+  queryParameterTypesForLanguage(selectedCapability.value, currentQueryLanguage.value).includes('relation')
 ))
 const queryParametersSupported = computed(() => valueParametersSupported.value || relationParametersSupported.value)
-const valueQueryParameterTypes = computed(() => selectedCapability.value.parameters?.types || [])
-const queryParameterTypes = computed(() => relationParametersSupported.value
-  ? ['relation', ...valueQueryParameterTypes.value]
-  : valueQueryParameterTypes.value)
+const queryParameterTypes = computed(() => queryParameterTypesForLanguage(
+  selectedCapability.value,
+  currentQueryLanguage.value
+))
+const valueQueryParameterTypes = computed(() => queryParameterTypes.value
+  .filter(type => type !== 'relation'))
 const valueQueryParameters = computed(() => queryParameters.value.filter(parameter => parameter.type !== 'relation'))
 const relationQueryParameters = computed(() => queryParameters.value.filter(parameter => parameter.type === 'relation'))
 const queryExecutionContract = computed(() => buildQueryExecutionContract(queryParameters.value, { engineId: selectedEngineId.value }))
@@ -1038,12 +1041,12 @@ const hasMissingParameterDefaults = computed(() => missingParameterDefaultCount.
 const relationTaskValid = computed(() => !hasRelationParameters.value || (
 	  relationQueryParameters.value.every(parameter => !queryParameterNameError(parameter, queryParameters.value.indexOf(parameter))) &&
   currentQueryLanguage.value === 'sql' &&
-  String(selectedTarget.value?.engine?.engine_type || '').toLowerCase().includes('postgres')
+  relationParametersSupported.value
 ))
 const relationTaskError = computed(() => {
 	  if (relationQueryParameters.value.some(parameter => queryParameterNameError(parameter, queryParameters.value.indexOf(parameter)))) return t('develop.query.relationParameterNameInvalid')
   if (currentQueryLanguage.value !== 'sql') return t('develop.query.relationSqlRequired')
-  return t('develop.query.relationPostgresRequired')
+  return t('develop.query.relationEngineRequired')
 })
 const parameterSyncMessage = computed(() => {
   if (hasUnresolvedParameters.value && hasUnusedParameters.value) return t('develop.query.parameterSyncBoth')

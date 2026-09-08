@@ -284,7 +284,7 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         "addp-infra://minio/manager/tenant_",
         "/api/v1/manager/point_cloud_copc/",
         "/api/v1/manager/pptx_pdf/preview",
-        "/api/v1/manager/pptx_pdf_tasks/",
+        "/api/v1/manager/tasks/{PPTX_TASK_TYPE}/",
         '"cache_reused": True',
     ):
         if fragment not in owner:

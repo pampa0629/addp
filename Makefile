@@ -1,4 +1,4 @@
-.PHONY: help build build-images select-image-services local-ci test test-changed test-module test-platform test-local-ci-runner test-infra-postgresql-init test-book test-engine-plugin-registration test-engine-startup-isolation test-integration test-online test-online-runner test-release test-release-runner test-go test-agent-frontend test-asset-frontend test-catalog-frontend test-common-frontend test-console-frontend test-copilot test-document-workflow test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-security-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-workbench-frontend test-execution-fixtures test-projection-store-ownership test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-common-postgres test-common-mysql-data-protection test-manager-postgres test-manager-mongodb-security test-system-iam-postgres test-asset-postgres test-meta-postgres test-catalog-postgres test-develop-postgres test-model-postgres test-quality-postgres test-security-postgres test-service-postgres test-standard-postgres test-transfer-postgres test-workbench-postgres test-arcgis-open-formats \
+.PHONY: help build build-images select-image-services local-ci test test-changed test-module test-platform test-local-ci-runner test-infra-postgresql-init test-book test-engine-plugin-registration test-engine-startup-isolation test-integration test-integration-hosted test-online test-online-runner test-release test-release-runner test-go test-agent-frontend test-asset-frontend test-catalog-frontend test-common-frontend test-console-frontend test-copilot test-document-workflow test-develop-frontend test-graph-frontend test-inference-frontend test-manager-frontend test-model-frontend test-quality-frontend test-security-frontend test-meta-frontend test-monitor-frontend test-orchestrator-frontend test-portal-frontend test-service-frontend test-standard-frontend test-system-frontend test-transfer-frontend test-workbench-frontend test-execution-fixtures test-projection-store-ownership test-authorization authorization-generate test-agent-eval test-agent-eval-release compare-agent-eval compare-agent-eval-release test-common-python test-common-python-cli-release test-common-postgres test-common-mysql-data-protection test-manager-postgres test-manager-mongodb-security test-system-iam-postgres test-asset-postgres test-meta-postgres test-catalog-postgres test-develop-postgres test-model-postgres test-quality-postgres test-security-postgres test-service-postgres test-standard-postgres test-transfer-postgres test-workbench-postgres test-arcgis-open-formats \
         build-iam-bootstrap build-iam-recovery build-iam-migration-repair \
         dev-start dev-restart dev-stop infra-up infra-down infra-restart infra-status prod-start prod-restart prod-stop prod-health ports-validate
 
@@ -165,11 +165,10 @@ test-business-config: ## 校验 Business Compose 和服务管理脚本（不启�
 	@bash business/scripts/stop.sh --help | grep -Fq -- '-oceanbase'
 	@bash business/scripts/stop.sh --help | grep -Fq -- '-opengauss'
 
-test-integration: ## 严格串行运行所有已登记的 disposable 基础设施集成门禁
+test-integration: ## 严格串行运行所有本地可执行的 disposable 基础设施集成门禁
 	@$(MAKE) test-common-postgres
 	@$(MAKE) test-common-mysql-data-protection
 	@$(MAKE) test-common-oceanbase
-	@$(MAKE) test-common-opengauss
 	@$(MAKE) test-manager-postgres
 	@$(MAKE) test-manager-mongodb-security
 	@$(MAKE) test-system-iam-postgres
@@ -185,6 +184,9 @@ test-integration: ## 严格串行运行所有已登记的 disposable 基础设�
 	@$(MAKE) test-transfer-postgres
 	@$(MAKE) test-workbench-postgres
 
+test-integration-hosted: test-integration ## 严格串行追加 hosted-only disposable 基础设施门禁
+	@$(MAKE) test-common-opengauss
+
 test-common-postgres: ## 使用一次性 PostgreSQL 数据库运行 Common Engine Provider、execution store 与保护投影存储集成门禁
 	@bash scripts/test/common-postgres-gate.sh
 
@@ -194,7 +196,7 @@ test-common-mysql-data-protection: ## 使用一次性 MySQL database 验证 Prov
 test-common-oceanbase: ## 使用一次性 OceanBase database 验证 Engine Provider 契约
 	@bash scripts/test/common-oceanbase-gate.sh
 
-test-common-opengauss: ## 使用一次性 openGauss database 验证 Engine Provider 契约
+test-common-opengauss: ## 在 Linux x86_64 hosted runner 使用一次性 openGauss database 验证 Provider 契约
 	@bash scripts/test/common-opengauss-gate.sh
 
 test-manager-postgres: ## 使用测试 PostgreSQL 数据库运行 Manager 统一任务与清理集成门禁

@@ -14,7 +14,7 @@
       "dataExplorer": "Data Explorer",
       "dataRetrieval": "Data Retrieval",
       "vectorizationTasks": "Vectorization Tasks",
-	  "derivedTasks": "Derived Tasks",
+	  "derivedTasks": "Generation Tasks",
       "embeddingConfiguration": "Embedding Configuration",
       "spatialQuickView": "Quick View Management",
       "tileCache": "Vector Quick View - Tile Cache",
@@ -31,20 +31,20 @@
       "pointCloudCOPC": "Point Cloud Quick View - COPC"
     },
 	"derivedTasks": {
-	  "title": "Derived Tasks",
-	  "description": "Manage quick-view derivations and spatial business tasks in one place. Deleting a task definition does not delete published business data.",
-	  "categories": { "managedQuickView": "Quick View Management", "spatialBusiness": "Spatial Tasks" },
+	  "title": "Generation Tasks",
+	  "description": "Manage tasks that generate quick-view materials and spatial business data from source data.",
+	  "categories": { "managedQuickView": "Quick-view Generation", "spatialBusiness": "Spatial Data Generation" },
 	  "types": {
 		"vectorMaterializedView": "Vector Materialized View", "vectorTileCache": "Vector Tile Cache",
 		"rasterCOG": "Raster COG", "rasterMosaic": "Raster Mosaic",
 		"model3DGLB": "3D Model GLB", "model3DTiles": "3D Model Tiles",
-		"gaussianSplat": "Gaussian KSplat", "pointCloudCOPC": "Point Cloud COPC", "vectorTileSet": "Business Vector Tile Set"
+		"gaussianSplat": "Gaussian KSplat", "pointCloudCOPC": "Point Cloud COPC", "vectorTileSet": "Business Vector Tile Set", "pptxPDF": "Presentation PDF"
 	  },
 	  "columns": { "name": "Name", "type": "Task Type", "engine": "Source Engine", "enabled": "Enabled", "status": "Latest Status", "updatedAt": "Updated", "actions": "Actions" },
 	  "status": { "never": "Never run", "pending": "Pending", "running": "Running", "success": "Succeeded", "failed": "Failed", "cancelled": "Cancelled" },
 	  "allTypes": "All task types", "total": "{total} total", "enabled": "Enabled", "disabled": "Disabled",
-	  "refresh": "Refresh", "create": "Create from Data Explorer", "createSpatial": "New spatial task", "detail": "Details", "edit": "Edit", "execute": "Execute", "monitor": "Monitor", "delete": "Delete",
-	  "version": "Version", "semanticKey": "Semantic identity", "config": "Typed configuration", "empty": "No derived tasks",
+	  "refresh": "Refresh", "create": "Create from Data Explorer", "createSpatial": "New spatial task", "detail": "Details", "source": "Source", "viewSource": "View in resource tree", "edit": "Edit", "execute": "Execute", "monitor": "Monitor", "delete": "Delete",
+	  "sourceItem": "Source item", "sourceFormat": "Source format", "sourceSize": "Source size", "targetEngine": "Target engine", "resultName": "Generated result", "lastRunAt": "Last run", "taskDescription": "Description", "empty": "No generation tasks",
 	  "loadFailed": "Failed to load derived tasks", "executeQueued": "Task queued", "executeFailed": "Task execution failed",
 	  "deleteConfirm": "Delete this task definition? Published business data will be retained.", "deleteSuccess": "Task deleted", "deleteFailed": "Failed to delete task"
 	},

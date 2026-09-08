@@ -182,9 +182,9 @@ class FakeGatewayClient:
         if path == "/api/v1/manager/pptx_pdf/302" and method == "DELETE":
             self.pptx_result_exists = False
             return response(200)
-        if path == "/api/v1/manager/pptx_pdf_tasks/202" and method == "DELETE":
+        if path == "/api/v1/manager/tasks/pptx_pdf_generation/202" and method == "DELETE":
             self.pptx_task_exists = False
-            return response(200)
+            return response(204)
         if path == "/api/v1/manager/tasks/pptx_pdf_generation/202" and method == "GET":
             return response(200 if self.pptx_task_exists else 404)
         if path == "/api/v1/manager/point_cloud_copc/301" and method == "DELETE":
@@ -288,7 +288,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
         self.assertEqual(browser_calls[0][1]["pptx_page_count"], 3)
         self.assertLess(
             client.calls.index(("DELETE", "/api/v1/manager/pptx_pdf/302")),
-            client.calls.index(("DELETE", "/api/v1/manager/pptx_pdf_tasks/202")),
+            client.calls.index(("DELETE", "/api/v1/manager/tasks/pptx_pdf_generation/202")),
         )
 
     def test_browser_failure_still_deletes_both_results_and_tasks(self) -> None:

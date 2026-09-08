@@ -224,6 +224,28 @@ func TestCompileQueryPlanUsesPostgreSQLPlaceholdersForSpatialFilter(t *testing.T
 	}
 }
 
+func TestCompileQueryPlanUsesDeclaredOpenGaussPostgreSQLDialect(t *testing.T) {
+	t.Parallel()
+
+	queryService := testPublishedQueryService()
+	plan, err := compileQueryPlan(
+		queryService,
+		&models.QueryExecutionRequest{Page: models.QueryPageRequest{Limit: 5}},
+		queryProtocolREST,
+		"opengauss",
+		"SELECT id, name, score FROM business.items",
+		nil,
+		nil,
+		newQueryTokenCodec([]byte("openGauss-query-plan-test-key")),
+	)
+	if err != nil {
+		t.Fatalf("compileQueryPlan(openGauss) error = %v", err)
+	}
+	if !strings.Contains(plan.SQL, `addp_source."id"`) || !strings.Contains(plan.SQL, " LIMIT 6") {
+		t.Fatalf("openGauss query plan = %s", plan.SQL)
+	}
+}
+
 func TestQueryTokenRejectsTamperingAndBindsCompositeFeatureID(t *testing.T) {
 	t.Parallel()
 

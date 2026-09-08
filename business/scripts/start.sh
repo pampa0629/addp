@@ -268,9 +268,13 @@ esac
 echo ""
 
 if [ "$ENABLE_OPENGAUSS" = true ]; then
+    if [ "$(uname -s)" != "Linux" ] || [ "$ARCH" != "x86_64" ]; then
+        echo -e "${RED}✗ openGauss 6.0.6 官方 Docker 介质需要具备 NUMA 的 Linux x86_64 主机；macOS 请使用 GitHub Actions T2${NC}"
+        exit 1
+    fi
     # shellcheck source=../../scripts/lib/opengauss-official-media.sh
     source "${PROJECT_ROOT}/../scripts/lib/opengauss-official-media.sh"
-    opengauss_ensure_official_image "$ARCH"
+    opengauss_ensure_official_image x86_64
     echo -e "${GREEN}✓ openGauss ${OPENGAUSS_OFFICIAL_VERSION} 官方介质已校验并加载${NC}"
 fi
 
@@ -543,7 +547,7 @@ if [ "$ENABLE_NFS" = true ]; then
 
     if [ "$EUID" -ne 0 ]; then
         echo -e "${RED}✗ 配置 macOS NFS 需要 sudo 权限${NC}"
-        echo -e "${YELLOW}请使用: sudo bash scripts/start.sh -nfs${NC}"
+        echo -e "${YELLOW}请在仓库根目录使用: sudo bash business/scripts/start.sh -nfs${NC}"
         exit 1
     fi
 

@@ -81,6 +81,13 @@ function normalizeQueryParameterCapability(value, queryLanguages) {
   return { supported: true, languages, types }
 }
 
+export function queryParameterTypesForLanguage(capability, language) {
+  const parameters = capability?.parameters
+  const normalizedLanguage = String(language || '').trim().toLowerCase()
+  if (!parameters?.supported || !parameters.languages.includes(normalizedLanguage)) return []
+  return [...parameters.types]
+}
+
 export function queryParameterReference(language, name) {
   const normalizedLanguage = String(language || '').trim().toLowerCase()
   const normalizedName = String(name || '').trim()

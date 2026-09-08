@@ -13,7 +13,7 @@
 - **MongoDB** 🆕：文档型 NoSQL 数据库，端口 27017
 - **MySQL 8.0**：支持 Spatial 与 CDC 的业务关系库测试源，端口 3306
 - **OceanBase Community Edition 4.4.2 LTS**：Apache 2.0 授权、MySQL 模式的国产分布式关系数据库测试源，端口 2881；固定使用 `oceanbase/oceanbase-ce:4.4.2-lts`。
-- **openGauss 6.0.6 LTS**：Apache 2.0 授权、PG 兼容模式的国产关系数据库测试源，端口 5435；启动脚本按 ARM64/AMD64 选择并校验官方 Docker tar，统一加载为 `opengauss:6.0.6`。
+- **openGauss 6.0.6 LTS**：Apache 2.0 授权、PG 兼容模式的国产关系数据库测试源，端口 5435；当前只在具备 NUMA 的 Linux x86_64 主机使用并校验官方 Docker tar，统一加载为 `opengauss:6.0.6`。
 - **Apache Doris**：实时分析数据库，端口 9030, 8030
 - **Apache Spark**：分布式计算引擎，主机端口 7077、18088、11000；默认 Worker 为 Thrift 查询和工作流执行分别保留执行资源
 - **Redpanda**：兼容 Kafka API 的业务消息流，端口 29092
@@ -157,7 +157,7 @@ business/
 | **ARM64** (Apple Silicon) | `imresamu/postgis-arm64:15-3.4` | ⚡ 原生性能 |
 | **AMD64** (Intel/AMD) | `postgis/postgis:15-3.4` | ⚡ 原生性能 |
 
-openGauss 不使用 Docker Hub 第三方镜像。`scripts/lib/opengauss-official-media.sh` 固定维护 6.0.6 官方 x86_64/aarch64 tar URL 与 SHA-256；首次启动会下载约 1.2–1.4 GB，加载后复用本地 `opengauss:6.0.6`。Business 通过官方入口脚本支持的 `OTHER_PG_CONF` 将本地单机测试默认收敛到 `max_process_memory=4GB`、`shared_buffers=512MB`，可分别用 `OPENGAUSS_MAX_PROCESS_MEMORY`、`OPENGAUSS_SHARED_BUFFERS` 调整；生产集群不能照搬此测试配置。
+openGauss 不使用 Docker Hub 第三方镜像。`scripts/lib/opengauss-official-media.sh` 固定维护 6.0.6 官方 x86_64/aarch64 tar URL 与 SHA-256；当前 Business 和 T2 只使用已通过发布认证的 x86_64 介质。6.0.6 官方 Docker 构建包含 MOT，MOT 需要有效 NUMA 拓扑；Docker Desktop for macOS 不提供该拓扑，官方 ARM64 与 x86_64 镜像都会在启动期失败。因此 macOS 本地巡检不启动 openGauss，Provider 实库门禁由 GitHub Actions 的 Linux x86_64 Job 承担，不能用跳过或第三方镜像伪装本地通过。
 
 ## 脚本说明
 

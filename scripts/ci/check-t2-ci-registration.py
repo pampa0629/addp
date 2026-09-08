@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify registration of hosted disposable-service T2 gates."""
+"""Verify registration of disposable-service and hosted-only T2 gates."""
 
 from __future__ import annotations
 
@@ -27,6 +27,9 @@ def load_module_gate():
 
 
 MODULE_GATE = load_module_gate()
+HOSTED_ONLY_PATTERN = re.compile(
+    r"(?m)^#\s*ADDP_T2_HOSTED_ONLY=(?P<runtime>[a-zA-Z0-9_-]+)\s*$"
+)
 
 
 def gate_requires_explicit_disposable_database(content: str) -> bool:
@@ -50,6 +53,22 @@ def discover_hosted_service_gates(
             "no scripts/test/*-gate.sh files declare ADDP_T2_SERVICES"
         )
     return sorted(gates)
+
+
+def discover_hosted_only_gates(
+    repository: Path,
+) -> list[tuple[str, str, str, str]]:
+    gates: list[tuple[str, str, str, str]] = []
+    for path in sorted((repository / "scripts/test").glob("*-gate.sh")):
+        content = path.read_text(encoding="utf-8")
+        match = HOSTED_ONLY_PATTERN.search(content)
+        if match is None:
+            continue
+        script = path.relative_to(repository).as_posix()
+        name = path.name.removesuffix("-gate.sh")
+        owner = name.split("-", 1)[0]
+        gates.append((script, f"test-{name}", owner, match.group("runtime")))
+    return gates
 
 
 def workflow_service_block(job: str, service: str) -> str | None:
@@ -103,6 +122,7 @@ def validate_registration(repository: Path) -> list[str]:
     steps = yaml_blocks(workflow, r"(?m)^      - name:\s*.+$")
     errors: list[str] = []
     integration_recipe = make_recipe(makefile, "test-integration")
+    hosted_integration_recipe = make_recipe(makefile, "test-integration-hosted")
 
     if integration_recipe is None:
         errors.append("Makefile target test-integration is missing")
@@ -195,6 +215,60 @@ def validate_registration(repository: Path) -> list[str]:
             selection_step,
         ):
             errors.append(f"{script}: shared module change selector is missing")
+
+    for script, target, owner, runtime in discover_hosted_only_gates(repository):
+        recipe = make_recipe(makefile, target)
+        if recipe is None:
+            errors.append(f"{script}: Makefile target {target} is missing")
+        elif script not in recipe:
+            errors.append(f"{script}: Makefile target {target} does not invoke its owner script")
+        if hosted_integration_recipe is None:
+            errors.append("Makefile target test-integration-hosted is missing")
+        elif not re.search(
+            rf"(?m)^\t@?\$\(MAKE\)\s+{re.escape(target)}\s*$",
+            hosted_integration_recipe,
+        ):
+            errors.append(
+                f"{script}: root test-integration-hosted does not invoke {target} sequentially"
+            )
+        if integration_recipe is not None and re.search(
+            rf"(?m)^\t@?\$\(MAKE\)\s+{re.escape(target)}\s*$",
+            integration_recipe,
+        ):
+            errors.append(
+                f"{script}: hosted-only target {target} must not run in local test-integration"
+            )
+        target_job = next(
+            (
+                job
+                for job in jobs
+                if re.search(
+                    rf"(?m)^\s*(?:-\s*)?run:\s*make\s+{re.escape(target)}\s*$",
+                    job,
+                )
+            ),
+            None,
+        )
+        if target_job is None:
+            errors.append(f"{script}: GitHub Actions target {target} is missing")
+        script_content = (repository / script).read_text(encoding="utf-8")
+        if "disposable" not in script_content or "docker run" not in script_content or "docker rm" not in script_content:
+            errors.append(
+                f"{script}: hosted-only {runtime} gate must own a disposable Docker lifecycle"
+            )
+        selection_step = next(
+            (
+                step
+                for step in steps
+                if re.search(rf"(?m)^\s*id:\s*{re.escape(owner)}\s*$", step)
+            ),
+            None,
+        )
+        if selection_step is None or not re.search(
+            rf"python3\s+scripts/ci/select-module-gate\.py\s+--module\s+['\"]?{re.escape(owner)}['\"]?",
+            selection_step or "",
+        ):
+            errors.append(f"{script}: shared module change selector is missing")
     return errors
 
 
@@ -208,7 +282,8 @@ def main() -> int:
     repository = parse_args().repository.resolve()
     try:
         errors = validate_registration(repository)
-        count = len(discover_hosted_service_gates(repository))
+        hosted_service_count = len(discover_hosted_service_gates(repository))
+        hosted_only_count = len(discover_hosted_only_gates(repository))
     except (RegistrationError, subprocess.CalledProcessError) as error:
         print(f"T2 CI registration check failed: {error}", file=sys.stderr)
         return 1
@@ -216,7 +291,11 @@ def main() -> int:
         for error in errors:
             print(f"T2 CI registration check failed: {error}", file=sys.stderr)
         return 1
-    print(f"T2 CI registration check passed: {count} hosted-service gates are registered.")
+    print(
+        "T2 CI registration check passed: "
+        f"{hosted_service_count} hosted-service gates and "
+        f"{hosted_only_count} hosted-only gates are registered."
+    )
     return 0
 
 

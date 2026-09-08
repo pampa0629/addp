@@ -26,7 +26,7 @@
 
         <ResourceTreePicker
           :api-base-url="metaApiBaseUrl"
-          :engine-types="NATIVE_TABLE_ENGINE_TYPES"
+          :engine-filter="isNativeTableEngine"
           mode="item"
           :node-filter="isNativeTableVisibleNode"
           :selectable-filter="isNativeTableNode"
@@ -324,7 +324,7 @@ import {
 } from '@element-plus/icons-vue'
 import publishedServiceAPI from '../api/publishedService'
 import { ResourceTreePicker, detectTableMetadata, locatorPathFromSelection } from '@common-ui'
-import { NATIVE_TABLE_ENGINE_TYPES, isNativeTableNode, isNativeTableVisibleNode } from '@/utils/resourceSelection'
+import { isNativeTableEngine, isNativeTableNode, isNativeTableVisibleNode } from '@/utils/resourceSelection'
 import { navigateServiceRoute } from '@/utils/moduleNavigation'
 
 const { t } = useI18n()

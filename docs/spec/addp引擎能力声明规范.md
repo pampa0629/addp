@@ -425,7 +425,7 @@ type QueryFederationCapability struct {
 | `parameters` | 可选的类型化查询参数能力；声明后必须由 Provider 原生安全绑定。 |
 | `federation` | 可选的多数据源联邦查询能力；声明后必须实现 `FederatedQueryRuntimeProvider`。 |
 
-`parameters.languages` 只列出当前 Provider 已实现参数绑定的查询语言，`parameters.types` 第一版只允许 `string`、`integer`、`number`、`boolean`。查询工作台只能在当前语言位于该列表时开放参数定义。SQL 的用户输入语法统一为 `:name`，Provider 必须编译为当前驱动占位符并通过 `QueryOptions.Args` 绑定；Cypher 使用 `$name` 并通过原生参数 Map 执行；MQL 使用 `{\"$param\":\"name\"}` 结构化参数节点，在 JSON 解析后替换为类型化值。参数能力不得通过字符串替换实现，也不得用于动态标识符或查询片段。
+`parameters.languages` 只列出当前 Provider 或 Owner 安全编译器已实现参数绑定的查询语言，`parameters.types` 允许 `string`、`integer`、`number`、`boolean` 与 `relation`。查询工作台只能开放当前语言实际声明的参数类型，不得再根据 `engine_type` 补充。SQL 值参数的用户输入语法统一为 `:name`，Provider 必须编译为当前驱动占位符并通过 `QueryOptions.Args` 绑定；Cypher 使用 `$name` 并通过原生参数 Map 执行；MQL 使用 `{\"$param\":\"name\"}` 结构化参数节点，在 JSON 解析后替换为类型化值。`relation` 只能由 Develop 的 PostgreSQL AST 编译器在同一引擎内将已声明的裸关系名替换为 ResourceLocator 解析得到的方言安全物理表标识符；当前由 PostgreSQL 与 openGauss 声明。所有参数能力都不得通过字符串替换实现，也不得用于任意动态标识符或查询片段。
 
 DuckDB Runtime 第一阶段声明 `runtime_api="addp.query-runtime/v1"`、`source_engine_types=["postgresql","mysql","minio","s3"]`、`object_formats=["parquet"]`。能力只声明当前真正实现并验证过的连接器；Doris、ClickHouse、Spark SQL、MongoDB、Neo4j、Kafka 等不能仅因 ADDP 已支持该 Engine 类型就自动列入。
 

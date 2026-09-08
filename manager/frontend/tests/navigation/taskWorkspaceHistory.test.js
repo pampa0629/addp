@@ -20,6 +20,19 @@ describe('Manager task workspace history', () => {
     }
   })
 
+  it('uses the shared cross-module monitor route and canonical resource-tree locator', () => {
+    expect(derivedTasksSource).toContain('openMonitorExecution(row.last_execution_id)')
+    expect(derivedTasksSource).not.toContain("navigateConsoleModuleRoute(router, 'monitor'")
+    expect(derivedTasksSource).toContain("path: '/data-explorer', query: { locator: sourceLocator(row) }")
+  })
+
+  it('shows engine names and a user-oriented task detail instead of internal identifiers', () => {
+    expect(derivedTasksSource).toContain('useQuickViewResourceDisplay(t)')
+    expect(derivedTasksSource).not.toContain('`#${engineID}`')
+    expect(derivedTasksSource).not.toContain('selectedTask.semantic_key')
+    expect(derivedTasksSource).not.toContain('JSON.stringify(selectedTask?.config')
+  })
+
   it('keeps the independent vectorization workspace history behavior', () => {
     expect(vectorizationSource).toContain("history: 'push'")
     expect(vectorizationSource).toContain('requestCreateDialog')

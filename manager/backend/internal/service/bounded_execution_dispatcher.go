@@ -135,25 +135,6 @@ func (d *BoundedExecutionDispatcher) RunClaimedExecution(ctx context.Context, ex
 			return taskLoadError(execution, err)
 		}
 		task.Config = execution.ExecutionConfig.Clone()
-		var frozen struct {
-			Source struct {
-				Locator         string `json:"item_locator"`
-				SourceEngineID  uint   `json:"source_engine_id"`
-				ItemID          uint   `json:"item_id"`
-				ItemFingerprint string `json:"item_fingerprint"`
-				SourceVersion   string `json:"source_version"`
-				SourceSizeBytes int64  `json:"source_size_bytes"`
-			} `json:"source"`
-		}
-		payload, marshalErr := json.Marshal(execution.ExecutionConfig)
-		if marshalErr != nil {
-			return fmt.Errorf("encode frozen PPTX PDF execution config: %w", marshalErr)
-		}
-		if err := json.Unmarshal(payload, &frozen); err != nil {
-			return fmt.Errorf("decode frozen PPTX PDF execution config: %w", err)
-		}
-		task.Locator, task.SourceEngineID, task.ItemID = frozen.Source.Locator, frozen.Source.SourceEngineID, frozen.Source.ItemID
-		task.ItemFingerprint, task.SourceVersion, task.SourceSizeBytes = frozen.Source.ItemFingerprint, frozen.Source.SourceVersion, frozen.Source.SourceSizeBytes
 		return d.pptxPDF.RunClaimedExecution(ctx, execution, lease, task)
 	case commonExecution.TaskTypeEmbedding:
 		return d.runEmbedding(ctx, execution, lease, taskID)

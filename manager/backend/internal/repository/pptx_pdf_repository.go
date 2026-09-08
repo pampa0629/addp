@@ -19,12 +19,12 @@ type PPTXPDFRepository struct{ db *gorm.DB }
 func NewPPTXPDFRepository(db *gorm.DB) *PPTXPDFRepository { return &PPTXPDFRepository{db: db} }
 
 func (r *PPTXPDFRepository) CreateTask(ctx context.Context, task *models.PPTXPDFTask) error {
-	return r.db.WithContext(ctx).Create(task).Error
+	return createTaskDefinition(ctx, r.db, commonExecution.TaskTypePPTXPDFGeneration, task)
 }
 
 func (r *PPTXPDFRepository) GetTask(ctx context.Context, id, tenantID uint) (*models.PPTXPDFTask, error) {
 	var task models.PPTXPDFTask
-	err := r.db.WithContext(ctx).Where("id = ? AND tenant_id = ?", id, tenantID).First(&task).Error
+	err := r.db.WithContext(ctx).Where("id = ? AND tenant_id = ? AND task_type = ?", id, tenantID, commonExecution.TaskTypePPTXPDFGeneration).First(&task).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
@@ -34,7 +34,7 @@ func (r *PPTXPDFRepository) GetTask(ctx context.Context, id, tenantID uint) (*mo
 func (r *PPTXPDFRepository) GetTaskByFingerprint(ctx context.Context, tenantID uint, fingerprint string) (*models.PPTXPDFTask, error) {
 	var task models.PPTXPDFTask
 	err := r.db.WithContext(ctx).
-		Where("tenant_id = ? AND item_fingerprint = ? AND artifact_variant = ?", tenantID, strings.TrimSpace(fingerprint), models.PPTXPDFArtifactVariant).
+		Where("tenant_id = ? AND task_type = ? AND config->'source'->>'item_fingerprint' = ?", tenantID, commonExecution.TaskTypePPTXPDFGeneration, strings.TrimSpace(fingerprint)).
 		First(&task).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
@@ -43,7 +43,7 @@ func (r *PPTXPDFRepository) GetTaskByFingerprint(ctx context.Context, tenantID u
 }
 
 func (r *PPTXPDFRepository) ListTasks(ctx context.Context, tenantID uint, page, pageSize int) ([]*models.PPTXPDFTask, int64, error) {
-	query := r.db.WithContext(ctx).Model(&models.PPTXPDFTask{}).Where("tenant_id = ?", tenantID)
+	query := r.db.WithContext(ctx).Model(&models.PPTXPDFTask{}).Where("tenant_id = ? AND task_type = ?", tenantID, commonExecution.TaskTypePPTXPDFGeneration)
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
@@ -55,19 +55,17 @@ func (r *PPTXPDFRepository) ListTasks(ctx context.Context, tenantID uint, page, 
 }
 
 func (r *PPTXPDFRepository) SaveTask(ctx context.Context, task *models.PPTXPDFTask) error {
-	return r.db.WithContext(ctx).Save(task).Error
+	return updateTaskDefinition(ctx, r.db, commonExecution.TaskTypePPTXPDFGeneration, task)
 }
 
 func (r *PPTXPDFRepository) DeleteTask(ctx context.Context, id, tenantID uint) error {
-	return r.db.WithContext(ctx).
-		Where("id = ? AND tenant_id = ?", id, tenantID).
-		Delete(&models.PPTXPDFTask{}).Error
+	return deleteTaskDefinition(ctx, r.db, commonExecution.TaskTypePPTXPDFGeneration, id, tenantID)
 }
 
 func (r *PPTXPDFRepository) ClaimExecution(ctx context.Context, taskID, tenantID uint, execution *commonExecution.TaskExecution, overwrite bool) (*models.PPTXPDFTask, error) {
 	var task models.PPTXPDFTask
 	err := newTaskExecutionLifecycle(r.db).Claim(ctx, taskID, tenantID, execution, taskExecutionClaimSpec{
-		TaskModel: &task, TaskType: commonExecution.TaskTypePPTXPDFGeneration, TaskLabel: "PPTX PDF",
+		TaskModel: &task, TaskType: commonExecution.TaskTypePPTXPDFGeneration, TaskTypeColumn: true, TaskLabel: "PPTX PDF",
 		TaskName: func() string { return task.Name }, TaskConfig: func() commonModels.JSONMap { return task.Config },
 		CurrentResultModel: &models.PPTXPDF{}, ExcludedResultStatuses: []string{models.PPTXPDFStatusDeleted},
 		OverwriteExistingResult: overwrite,
@@ -106,7 +104,7 @@ func (r *PPTXPDFRepository) CompleteExecutionWithLease(ctx context.Context, task
 			}
 		}
 		result := tx.Model(&models.PPTXPDFTask{}).
-			Where("id = ? AND tenant_id = ? AND last_execution_id = ? AND last_execution_status = ?", taskID, tenantID, lease.ExecutionID, commonExecution.ExecutionStatusRunning).
+			Where("id = ? AND tenant_id = ? AND task_type = ? AND last_execution_id = ? AND last_execution_status = ?", taskID, tenantID, commonExecution.TaskTypePPTXPDFGeneration, lease.ExecutionID, commonExecution.ExecutionStatusRunning).
 			Updates(map[string]interface{}{"last_execution_status": status, "updated_at": completedAt.UTC()})
 		if result.Error != nil {
 			return result.Error

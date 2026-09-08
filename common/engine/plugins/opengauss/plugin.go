@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/plugins/postgresql"
 	commonquery "github.com/addp/common/query"
@@ -81,8 +82,11 @@ func (p *Plugin) Capabilities() plugin.EngineCapabilities {
 		SupportsExplain:      true,
 		SupportsCancel:       true,
 		SupportsParameters:   true,
-		IdentifierQuote:      `"`,
-		WriterConnector:      "postgres_copy",
+		AdditionalParameterTypes: []string{
+			"relation",
+		},
+		IdentifierQuote: `"`,
+		WriterConnector: "postgres_copy",
 	})
 }
 
@@ -141,10 +145,16 @@ func (p *Plugin) OpenBoundedWatermarkRead(ctx context.Context, connInfo plugin.C
 }
 
 func (p *Plugin) PrepareTableWrite(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableWriteOptions) error {
+	if err := validateNonSpatialWrite(opts.Fields, opts.SpatialInfo); err != nil {
+		return err
+	}
 	return p.protocol().PrepareTableWrite(ctx, connInfo, path, opts)
 }
 
 func (p *Plugin) OpenTableWriteSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableWriteSessionOptions) (plugin.TableWriteSession, error) {
+	if err := validateNonSpatialWrite(opts.Fields, opts.SpatialInfo); err != nil {
+		return nil, err
+	}
 	session, err := p.protocol().OpenTableWriteSession(ctx, connInfo, path, opts)
 	if err != nil {
 		return nil, err
@@ -169,11 +179,34 @@ func (s *tableWriteSession) CommitMarker() *resume.Marker {
 }
 
 func (p *Plugin) PrepareTableUpsert(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableUpsertOptions) error {
+	if err := validateNonSpatialWrite(opts.Fields, opts.SpatialInfo); err != nil {
+		return err
+	}
 	return p.protocol().PrepareTableUpsert(ctx, connInfo, path, opts)
 }
 
 func (p *Plugin) UpsertBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, batch *plugin.BatchData, opts plugin.TableUpsertOptions) error {
+	if err := validateNonSpatialWrite(opts.Fields, opts.SpatialInfo); err != nil {
+		return err
+	}
+	if batch != nil {
+		if err := validateNonSpatialWrite(batch.Fields, batch.Spatial); err != nil {
+			return err
+		}
+	}
 	return p.protocol().UpsertBatch(ctx, connInfo, path, batch, opts)
+}
+
+func validateNonSpatialWrite(fields []datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) error {
+	if spatialInfo != nil && spatialInfo.IsSpatial() {
+		return fmt.Errorf("openGauss provider does not support spatial fields")
+	}
+	for _, field := range fields {
+		if datatype.IsSpatialFieldType(field.Type) {
+			return fmt.Errorf("openGauss provider does not support spatial fields")
+		}
+	}
+	return nil
 }
 
 func (p *Plugin) DeleteResource(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath) error {

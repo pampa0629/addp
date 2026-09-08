@@ -209,6 +209,7 @@ type TaskProviderTaskDetailResponse struct {
 	TenantID          uint                           `json:"tenant_id"`
 	TaskType          string                         `json:"task_type"`
 	Name              string                         `json:"name"`
+	HasCurrentResult  bool                           `json:"has_current_result"`
 	ExecutionContract taskprovider.ExecutionContract `json:"execution_contract"`
 }
 
@@ -1098,14 +1099,30 @@ func (h *TaskProviderHandler) UpdateDerivedTask(c *gin.Context) {
 // @Security BearerAuth
 func (h *TaskProviderHandler) DeleteDerivedTask(c *gin.Context) {
 	taskType := strings.TrimSpace(c.Param("task_type"))
-	taskService := h.derivedTaskService(taskType)
-	if taskService == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "不支持的派生任务类型: " + taskType})
-		return
-	}
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务ID"})
+		return
+	}
+	if taskType == commonExecution.TaskTypePPTXPDFGeneration {
+		if h.pptxPDFTaskSvc == nil {
+			managerError(c, http.StatusServiceUnavailable, manageri18n.MsgPPTXPDFServiceUnavailable)
+			return
+		}
+		if err := h.pptxPDFTaskSvc.DeleteTask(c.Request.Context(), uint(id), tenantIDValue(c)); err != nil {
+			if errors.Is(err, service.ErrPPTXPDFTaskNotFound) {
+				c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(commonapi.MapErrorToHTTPStatus(err), gin.H{"error": err.Error()})
+			return
+		}
+		c.Status(http.StatusNoContent)
+		return
+	}
+	taskService := h.derivedTaskService(taskType)
+	if taskService == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "不支持的派生任务类型: " + taskType})
 		return
 	}
 	if err := taskService.Delete(c.Request.Context(), uint(id), tenantIDValue(c)); err != nil {
@@ -1234,7 +1251,7 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
 			return
 		}
-		respondManagerTaskDetail(c, taskType, tileCacheTaskResponse(task))
+		h.respondManagerTaskDetail(c, taskType, tileCacheTaskResponse(task))
 	case commonExecution.TaskTypeVectorTileSetGeneration:
 		task, err := h.vectorTileSetTaskSvc.GetByID(ctx, uint(id), tenantID)
 		if err != nil {
@@ -1245,7 +1262,7 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
 			return
 		}
-		respondManagerTaskDetail(c, taskType, task)
+		h.respondManagerTaskDetail(c, taskType, task)
 	case commonExecution.TaskTypeVectorMaterializedViewGeneration:
 		task, err := h.vectorMaterializedViewTaskSvc.GetByID(ctx, uint(id), tenantID)
 		if err != nil {
@@ -1256,7 +1273,7 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
 			return
 		}
-		respondManagerTaskDetail(c, taskType, vectorMaterializedViewTaskResponse(task))
+		h.respondManagerTaskDetail(c, taskType, vectorMaterializedViewTaskResponse(task))
 	case commonExecution.TaskTypeRasterCOGGeneration:
 		task, err := h.rasterCOGTaskSvc.GetByID(ctx, uint(id), tenantID)
 		if err != nil {
@@ -1267,7 +1284,7 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
 			return
 		}
-		respondManagerTaskDetail(c, taskType, rasterCOGTaskResponse(task))
+		h.respondManagerTaskDetail(c, taskType, rasterCOGTaskResponse(task))
 	case commonExecution.TaskTypeRasterMosaicGeneration:
 		task, err := h.rasterMosaicTaskSvc.GetByID(ctx, uint(id), tenantID)
 		if err != nil {
@@ -1278,7 +1295,7 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
 			return
 		}
-		respondManagerTaskDetail(c, taskType, rasterMosaicTaskResponse(task))
+		h.respondManagerTaskDetail(c, taskType, rasterMosaicTaskResponse(task))
 	case commonExecution.TaskTypeModel3DTilesGeneration:
 		task, err := h.model3DTilesTaskSvc.GetByID(ctx, uint(id), tenantID)
 		if err != nil {
@@ -1289,7 +1306,7 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
 			return
 		}
-		respondManagerTaskDetail(c, taskType, model3DTilesTaskResponse(task))
+		h.respondManagerTaskDetail(c, taskType, model3DTilesTaskResponse(task))
 	case commonExecution.TaskTypeModel3DGLBGeneration:
 		task, err := h.model3DGLBTaskSvc.GetByID(ctx, uint(id), tenantID)
 		if err != nil {
@@ -1300,7 +1317,7 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
 			return
 		}
-		respondManagerTaskDetail(c, taskType, model3DGLBTaskResponse(task))
+		h.respondManagerTaskDetail(c, taskType, model3DGLBTaskResponse(task))
 	case commonExecution.TaskTypeGaussianSplatKSplatGeneration:
 		task, err := h.gaussianSplatKSplatTaskSvc.GetByID(ctx, uint(id), tenantID)
 		if err != nil {
@@ -1311,7 +1328,7 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
 			return
 		}
-		respondManagerTaskDetail(c, taskType, gaussianSplatKSplatTaskResponse(task))
+		h.respondManagerTaskDetail(c, taskType, gaussianSplatKSplatTaskResponse(task))
 	case commonExecution.TaskTypePointCloudCOPCGeneration:
 		task, err := h.pointCloudCOPCTaskSvc.GetByID(ctx, uint(id), tenantID)
 		if err != nil {
@@ -1322,7 +1339,7 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
 			return
 		}
-		respondManagerTaskDetail(c, taskType, pointCloudCOPCTaskResponse(task))
+		h.respondManagerTaskDetail(c, taskType, pointCloudCOPCTaskResponse(task))
 	case commonExecution.TaskTypePPTXPDFGeneration:
 		task, err := h.pptxPDFTaskSvc.GetByID(ctx, uint(id), tenantID)
 		if err != nil {
@@ -1333,7 +1350,7 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
 			return
 		}
-		respondManagerTaskDetail(c, taskType, task)
+		h.respondManagerTaskDetail(c, taskType, task)
 	case commonExecution.TaskTypeEmbedding:
 		task, err := h.embeddingTaskSvc.GetByID(ctx, uint(id), tenantID)
 		if err != nil {
@@ -1344,13 +1361,13 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
 			return
 		}
-		respondManagerTaskDetail(c, taskType, embeddingTaskResponse(task))
+		h.respondManagerTaskDetail(c, taskType, embeddingTaskResponse(task))
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "不支持的任务类型: " + taskType})
 	}
 }
 
-func respondManagerTaskDetail(c *gin.Context, taskType string, task interface{}) {
+func (h *TaskProviderHandler) respondManagerTaskDetail(c *gin.Context, taskType string, task interface{}) {
 	encoded, err := json.Marshal(task)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "任务详情序列化失败"})
@@ -1362,6 +1379,19 @@ func respondManagerTaskDetail(c *gin.Context, taskType string, task interface{})
 		return
 	}
 	result["execution_contract"] = managerTaskExecutionContract(taskType)
+	if h.taskDefinitionRepo != nil && managerTaskRequiresExistingResultAction(taskType) {
+		id, ok := result["id"].(float64)
+		if !ok || id <= 0 {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "任务详情缺少有效任务ID"})
+			return
+		}
+		hasCurrentResult, err := h.taskDefinitionRepo.HasCurrentResult(c.Request.Context(), tenantIDValue(c), taskType, uint(id))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		result["has_current_result"] = hasCurrentResult
+	}
 	c.JSON(http.StatusOK, result)
 }
 

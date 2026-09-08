@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# common-opengauss-gate.sh - Run the openGauss Provider contract in an owned disposable container.
+# common-opengauss-gate.sh - Run the hosted-only openGauss Provider contract.
+# ADDP_T2_HOSTED_ONLY=opengauss
 
 set -euo pipefail
 
@@ -14,7 +15,6 @@ DATABASE_PASSWORD='AddpGauss606@'
 OPENGAUSS_HOME=/usr/local/opengauss
 OPENGAUSS_EXEC_PATH=/usr/local/opengauss/bin:/scws/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 OPENGAUSS_LIBRARY_PATH=/usr/local/opengauss/lib:/scws/lib
-OPENGAUSS_OTHER_PG_CONF=$'max_process_memory = 4GB\nshared_buffers = 512MB'
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/addp-common-opengauss.XXXXXX")
 CONTAINER_OWNED=false
 
@@ -57,19 +57,22 @@ if docker container inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
     exit 1
 fi
 
-opengauss_ensure_official_image "$(uname -m)"
+if [ "$(uname -s)" != "Linux" ] || [ "$(uname -m)" != "x86_64" ]; then
+    echo "openGauss 6.0.6 official Docker media requires a Linux x86_64 runtime with NUMA; run this gate in GitHub Actions" >&2
+    exit 1
+fi
+
+opengauss_ensure_official_image x86_64
 
 export GS_PASSWORD=$DATABASE_PASSWORD
-export OTHER_PG_CONF=$OPENGAUSS_OTHER_PG_CONF
 CONTAINER_OWNED=true
 docker run --detach \
     --name "$CONTAINER_NAME" \
     --privileged=true \
     --publish 127.0.0.1::5432 \
     --env GS_PASSWORD \
-    --env OTHER_PG_CONF \
     "$OPENGAUSS_OFFICIAL_IMAGE" >/dev/null
-unset GS_PASSWORD OTHER_PG_CONF
+unset GS_PASSWORD
 
 ready=false
 for _ in $(seq 1 120); do

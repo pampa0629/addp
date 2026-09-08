@@ -399,7 +399,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             "addp.lineage-facts/v1 /api/v1/meta/scan/run/manual "
             "/api/v1/monitor/executions/by-execution-id/ "
             "addp-infra://minio/manager/tenant_ /api/v1/manager/point_cloud_copc/ "
-            "/api/v1/manager/pptx_pdf/preview /api/v1/manager/pptx_pdf_tasks/ "
+            "/api/v1/manager/pptx_pdf/preview /api/v1/manager/tasks/{PPTX_TASK_TYPE}/ "
             '"cache_reused": True\n',
             encoding="utf-8",
         )

@@ -499,7 +499,7 @@ Agent 的 `test-agent-eval` 与 `test-agent-frontend` 保持独立：前者只�
 
 AI 完成一组改动后使用 `make test-changed`；默认读取相对 `HEAD` 的已跟踪改动及未跟踪文件，或通过 `BASE_REF=<ref>` 指定比较基线。`scripts/test/changed-gate.py` 始终保留平台 T0，把普通路径映射到已登记 owner，并从 `go.mod`、前端 Git 跟踪源码/配置对 `common-frontend` 的实际引用、Python requirements 推导共享模块消费者，再复用模块门禁计划且去重。若受影响模块含声明了外部 Service 的 T2，仍须提供对应安全连接条件，不会自动跳过。
 
-托管外部服务 T2 不再由 CI 注册器维护 PostgreSQL、MongoDB、MySQL、OceanBase 等类型分支。Gate 脚本用 `ADDP_T2_SERVICES` 声明一个或多个 GitHub Actions Service 名称；平台检查据此自动验证同名 Make 入口、`test-integration` 串行聚合、owner 变更选择、CI Job、显式镜像 tag 和 sha256 digest。新增数据库类型只需遵守这份声明契约，不修改发现器代码。OceanBase 的唯一入口是 `make test-common-oceanbase`；它要求 `ADDP_TEST_OCEANBASE_PASSWORD`，仅允许名称含 `disposable` 的 database，并由测试生命周期创建、清空和删除该 database，拒绝依赖 Business 固定样例。
+托管外部服务 T2 不再由 CI 注册器维护 PostgreSQL、MongoDB、MySQL、OceanBase 等类型分支。Gate 脚本用 `ADDP_T2_SERVICES` 声明一个或多个 GitHub Actions Service 名称；平台检查据此自动验证同名 Make 入口、`test-integration` 串行聚合、owner 变更选择、CI Job、显式镜像 tag 和 sha256 digest。无法由 GitHub `services` 编排、且本地平台不具备运行条件的门禁使用 `ADDP_T2_HOSTED_ONLY=<runtime>`，登记到 `test-integration-hosted` 并由 owner 脚本独占创建和清理 disposable Docker 生命周期；注册器同时禁止它进入 macOS `test-integration`。新增数据库类型只需遵守对应声明契约，不修改发现器代码。OceanBase 的唯一入口是 `make test-common-oceanbase`；它要求 `ADDP_TEST_OCEANBASE_PASSWORD`，仅允许名称含 `disposable` 的 database，并由测试生命周期创建、清空和删除该 database，拒绝依赖 Business 固定样例。
 
 GitHub Actions 中的模块 T0-T3 选择统一调用 `scripts/ci/select-module-gate.py --module <owner>`。该选择器复用 `changed-gate.py` 的 owner 影响计算：workflow、共享 action、CI 脚本、根 `Makefile` 或矩阵实现变更时选中全部模块；普通模块、共享依赖、离线评测场景和已登记 gate 脚本变更则按 owner 选择。Workflow 只负责准备对应的隔离环境并调用根 `Makefile` 标准入口，不再复制 owner 路径表。`scripts/ci/select-gate-by-paths.sh` 仅保留给 CLI wheel / Keychain 等非模块 T5 产品门禁。
 

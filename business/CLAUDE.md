@@ -8,7 +8,7 @@
 
 - PostgreSQL/PostGIS、MySQL：业务关系库与 CDC 测试源。
 - OceanBase Community Edition：国产分布式关系数据库的 MySQL 模式测试源，以独立 `engine_type=oceanbase` 注册；启动时幂等初始化探针及普通关系业务样例，支持非空间普通表的 bounded watermark source 与 prepare/session/delete/upsert 集成验证，不包含空间、CDC 或 Oracle 模式能力。
-- openGauss 6.0.6 LTS：从按架构固定 SHA-256 的官方 Docker tar 加载，以独立 `engine_type=opengauss` 注册；启动时幂等初始化普通关系业务样例，首版只声明经门禁验证的 PG 兼容非空间目录、查询、读取、COPY 写会话、bounded watermark 与 upsert，不包含 PostGIS、CDC 或 PostgreSQL 扩展能力。
+- openGauss 6.0.6 LTS：在具备 NUMA 的 Linux x86_64 主机从固定 SHA-256 的官方 Docker tar 加载，以独立 `engine_type=opengauss` 注册；macOS 不启动其含 MOT 的官方容器，实库门禁由 GitHub Actions hosted-only T2 承担；启动时幂等初始化普通关系业务样例，首版只声明经门禁验证的 PG 兼容非空间目录、查询、读取、COPY 写会话、bounded watermark 与 upsert，不包含 PostGIS、CDC 或 PostgreSQL 扩展能力。
 - OceanBase 跨模块 T4 只由 `scripts/online-oceanbase-consumer-fixture.sh` 管理固定源/目标表；Fixture 不创建 Engine Instance，并必须在退出路径恢复 5 行源基线和空目标表。
 - Oracle Free 23ai：普通表、Schema、Oracle Spatial、只读快照、普通表 CDC 与 Oracle Spatial CDC 测试源；ArcGIS SDE 作为后续独立能力路线预留。
 - Redpanda：独立业务 Kafka API 消息流，不承载 ADDP Infra Kafka topic。

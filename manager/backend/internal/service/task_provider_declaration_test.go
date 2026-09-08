@@ -16,10 +16,14 @@ func TestManagerTaskProviderDeclaration(t *testing.T) {
 		t.Fatalf("invalid declaration: %v", err)
 	}
 	capabilities, _ := taskprovider.ParseCapabilities(string(*declaration.Capabilities))
-	for _, taskType := range []string{"vector_tile_set_generation", "vector_tile_cache_generation", "embedding"} {
+	for _, taskType := range []string{"vector_tile_set_generation", "vector_tile_cache_generation", "pptx_pdf_generation", "embedding"} {
 		if capabilities.CapabilityFor(taskType) == nil {
 			t.Fatalf("missing task type %s", taskType)
 		}
+	}
+	pptx := capabilities.CapabilityFor("pptx_pdf_generation")
+	if pptx == nil || !strings.Contains(pptx.EditURL, "/manager/derived-tasks?") {
+		t.Fatalf("pptx_pdf_generation edit_url = %q, want unified generation task route", pptx.EditURL)
 	}
 	for _, taskType := range []string{"vector_tile_set_generation", "raster_mosaic_generation"} {
 		capability := capabilities.CapabilityFor(taskType)
