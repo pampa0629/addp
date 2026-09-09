@@ -53,6 +53,12 @@ const routes = [
         meta: { requiresAuth: true, iamPage: 'security', title: '审计管理-addp' }
       },
       {
+        path: 'account/security',
+        name: 'AccountSecurity',
+        component: () => import('../views/AccountSecurity.vue'),
+        meta: { requiresAuth: true, title: '我的账号-addp' }
+      },
+      {
         path: 'modules',
         name: 'Modules',
         component: () => import('../views/Modules.vue'),

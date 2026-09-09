@@ -22,7 +22,11 @@
           </span>
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item @click="handleLogout">
+              <el-dropdown-item @click="handleMyAccount">
+                <el-icon><User /></el-icon>
+                {{ t('system.layout.myAccount') }}
+              </el-dropdown-item>
+              <el-dropdown-item divided @click="handleLogout">
                 <el-icon><SwitchButton /></el-icon>
                 {{ t('system.layout.logout') }}
               </el-dropdown-item>
@@ -150,6 +154,7 @@ const iamPageIcons = {
 }
 const iamPageIcon = page => iamPageIcons[page] || Lock
 const sidebarWidth = computed(() => isCompactViewport.value ? '64px' : '200px')
+const handleMyAccount = () => router.push({ name: 'AccountSecurity' })
 const handleLogout = () => {
   authStore.logout()
   ElMessage.success(t('system.layout.logoutSuccess'))

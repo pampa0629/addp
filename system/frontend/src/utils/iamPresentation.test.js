@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
+  assuranceLevelKey,
   buildPermissionGroups,
+  findCurrentContextOption,
   formatMemberOptionLabel,
   groupTenantMembers,
   groupPermissionsByNamespace,
@@ -11,6 +13,21 @@ import {
 } from './iamPresentation'
 
 describe('IAM presentation helpers', () => {
+  it('resolves the current tenant presentation without exposing its internal id', () => {
+    const options = [
+      { type: 'platform', current: false },
+      { type: 'tenant', tenant_id: '1', tenant_membership_id: '7', tenant_name: 'Research Lab', tenant_code: 'lab', current: true }
+    ]
+    expect(findCurrentContextOption(options, { type: 'tenant', tenant_id: '1', tenant_membership_id: '7' }))
+      .toEqual(options[1])
+  })
+
+  it('maps only supported assurance values to presentation keys', () => {
+    expect(assuranceLevelKey('AAL2')).toBe('aal2')
+    expect(assuranceLevelKey('')).toBe('unknown')
+    expect(assuranceLevelKey('custom')).toBe('unknown')
+  })
+
   it('marks the current tenant membership without guessing from its username', () => {
     const member = { id: '7', display_name: 'Alice', username: 'alice', principal_id: '3' }
     expect(formatMemberOptionLabel(member, '7', 'Current account')).toBe('Current account · Alice (alice)')

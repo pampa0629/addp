@@ -1,4 +1,5 @@
 import os
+import signal
 import shutil
 import subprocess
 import tempfile
@@ -22,6 +23,7 @@ class OnlineHostGateTest(unittest.TestCase):
         self.external = self.root / "external"
         self.artifacts = self.external / "artifacts"
         self.command_log = self.external / "commands.log"
+        self.background_pids = self.external / "background-pids"
         (self.repository / "scripts/test").mkdir(parents=True)
         (self.repository / "scripts/infra").mkdir(parents=True)
         (self.repository / "scripts/dev").mkdir(parents=True)
@@ -35,7 +37,17 @@ class OnlineHostGateTest(unittest.TestCase):
         )
         self._write_executable(
             "scripts/dev/start.sh",
-            '#!/bin/bash\nprintf "start:%s\\n" "$*" >> "$ADDP_TEST_COMMAND_LOG"\n',
+            textwrap.dedent(
+                """\
+                #!/bin/bash
+                printf "start:%s\\n" "$*" >> "$ADDP_TEST_COMMAND_LOG"
+                if [ "${ADDP_TEST_START_RETAINS_OUTPUT:-0}" = "1" ]; then
+                  sleep 30 &
+                  printf "%s\\n" "$!" >> "$ADDP_TEST_BACKGROUND_PIDS"
+                  printf "started:%s\\n" "$*"
+                fi
+                """
+            ),
         )
         self._write_executable(
             "scripts/dev/stop-exact-process.sh",
@@ -46,6 +58,11 @@ class OnlineHostGateTest(unittest.TestCase):
             textwrap.dedent(
                 """\
                 #!/bin/bash
+                if [ -f "${ADDP_TEST_BACKGROUND_PIDS:-}" ]; then
+                  while IFS= read -r pid; do
+                    kill "$pid" 2>/dev/null || true
+                  done < "$ADDP_TEST_BACKGROUND_PIDS"
+                fi
                 printf "stop\n" >> "$ADDP_TEST_COMMAND_LOG"
                 [ "${ADDP_TEST_STOP_FAIL:-0}" != "1" ]
                 """
@@ -233,6 +250,14 @@ class OnlineHostGateTest(unittest.TestCase):
         subprocess.run(["git", "commit", "-qm", "fixture"], cwd=self.repository, check=True)
 
     def tearDown(self) -> None:
+        if self.background_pids.exists():
+            for value in self.background_pids.read_text(
+                encoding="utf-8"
+            ).splitlines():
+                try:
+                    os.kill(int(value), signal.SIGTERM)
+                except (ProcessLookupError, ValueError):
+                    pass
         self.temporary.cleanup()
 
     def _write_executable(self, relative: str, content: str) -> None:
@@ -250,6 +275,7 @@ class OnlineHostGateTest(unittest.TestCase):
                 "ADDP_ONLINE_ENV_FILE": str(self.env_file),
                 "ADDP_ONLINE_ARTIFACT_DIR": str(self.artifacts),
                 "ADDP_TEST_COMMAND_LOG": str(self.command_log),
+                "ADDP_TEST_BACKGROUND_PIDS": str(self.background_pids),
                 "ONLINE_SUITE": suite,
                 "PATH": str(self.repository) + os.pathsep + environment["PATH"],
             }
@@ -261,6 +287,7 @@ class OnlineHostGateTest(unittest.TestCase):
             env=environment,
             capture_output=True,
             text=True,
+            timeout=5,
         )
 
     def test_dispatches_registered_suite_and_always_stops_application(self) -> None:
@@ -402,6 +429,18 @@ class OnlineHostGateTest(unittest.TestCase):
                 "oceanbase-fixture:stop",
             ],
         )
+
+    def test_daemon_launcher_does_not_keep_gate_log_pipe_open(self) -> None:
+        result = self._run(
+            "standard-model-reference-deletion",
+            ADDP_TEST_START_RETAINS_OUTPUT="1",
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("started:-model", result.stdout)
+        summary = (self.artifacts / "summary.txt").read_text(encoding="utf-8")
+        self.assertIn("result=passed", summary)
+        self.assertIn("cleanup=passed", summary)
 
     def test_runs_manager_lineage_suite_with_manager_minio_fixture(self) -> None:
         result = self._run("manager-internal-artifact-lineage")

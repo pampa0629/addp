@@ -11,6 +11,7 @@
       "moduleMgmt": "模块管理",
       "engineMgmt": "引擎管理",
       "cleanup": "资源回收",
+      "myAccount": "我的账号",
       "logout": "退出登录",
       "logoutSuccess": "退出成功"
     },
@@ -88,7 +89,6 @@
     },
     "iam": {
       "title": "身份与访问管理",
-      "assurance": "认证强度：{level}",
       "noPermission": "当前授权上下文没有可用的身份与访问管理权限",
       "setup": {
         "title": "当前账号仅负责租户组织与权限管理",
@@ -96,8 +96,20 @@
         "action": "配置角色"
       },
       "context": {
-        "platform": "平台管理上下文",
-        "tenant": "租户上下文 #{id}"
+        "platform": "当前管理范围：平台",
+        "tenant": "当前租户：{name}（{code}）",
+        "tenantUnknown": "当前租户"
+      },
+      "session": {
+        "label": "当前会话：{state}",
+        "detail": "认证保证等级：{level}",
+        "levels": {
+          "aal1": "基础认证",
+          "aal2": "多因素认证",
+          "aal3": "高强度认证",
+          "not_applicable": "机器凭据",
+          "unknown": "未知"
+        }
       },
       "pages": {
         "organization": "组织管理",
@@ -107,7 +119,6 @@
         "security": "审计管理"
       },
       "tabs": {
-        "accountSecurity": "账号安全",
         "securityPolicy": "IAM 安全策略",
         "audit": "审计日志",
         "tenants": "租户生命周期",
@@ -165,8 +176,8 @@
         "updatedAt": "更新时间"
       },
       "security": {
-        "authenticator": "身份验证器",
-        "totp": "基于时间的一次性验证码（TOTP）",
+        "multiFactor": "多因素认证",
+        "totpDescription": "使用基于时间的一次性验证码（TOTP）保护当前账号",
         "enabled": "已启用",
         "notEnabled": "未启用",
         "enable": "启用",
@@ -176,12 +187,17 @@
         "manualKey": "手动输入密钥",
         "verificationCode": "6 位验证码",
         "verifyAndEnable": "验证并启用",
-        "enabledSuccess": "身份验证器已启用，当前会话已提升至 AAL2",
+        "enabledSuccess": "多因素认证已启用，当前会话已完成多因素认证",
         "enrollmentFailed": "无法开始身份验证器登记",
         "invalidCode": "验证码无效或已过期",
         "stepUpTitle": "确认高风险操作",
         "continueOperation": "验证并继续",
         "stepUpFailed": "无法开始增强认证"
+      },
+      "account": {
+        "title": "我的账号",
+        "security": "安全设置",
+        "securityDescription": "管理当前登录账号的认证凭据与登录保护。"
       },
       "tenants": {
         "create": "创建租户",

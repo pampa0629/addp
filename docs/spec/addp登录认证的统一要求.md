@@ -247,7 +247,19 @@ Context Selection Ticket 只保存 Hash，不能进入 Cookie、URL、浏览器�
 - 整个过程不打断用户当前操作；
 - Refresh Token Family 默认固定 30 天，达到最终有效期后必须重新登录。
 
-### 6.4 上下文切换
+### 6.4 User 认证保证等级
+
+认证保证等级（AAL）是当前 Browser Token Family 的认证事实，不是 Tenant 配置、User 的固定属性或权限等级。同一 User 可以同时拥有认证强度不同的独立会话；登记 MFA Credential 是 User 凭据事实，完成第二因子验证才会将当前会话建立或替换为 AAL2。
+
+| 等级 | 当前产品语义 | 实施状态 |
+| --- | --- | --- |
+| `aal1` | 已通过本地密码等单一因子完成基础认证 | 已实现 |
+| `aal2` | 已通过密码和 TOTP 完成多因素认证 | 已实现；高风险操作还必须校验 `step_up_expires_at` |
+| `aal3` | 更高保证等级 | 仅为 AuthContext 与存储协议预留，当前不存在签发路径 |
+
+Service Principal 的机器凭据不应伪装为 User AAL，其 AuthContext 固定使用 `not_applicable`。前端面向管理员时应展示“基础认证”“多因素认证”等业务含义，把 AAL 原始值放在辅助说明中，不得将其表达为 Tenant 或账号的永久安全等级。
+
+### 6.5 上下文切换
 
 第一方浏览器使用唯一目标端点：
 
@@ -260,7 +272,7 @@ POST /api/v1/system/auth/context-switches
 
 `context-options` 返回 Principal 当前全部有效 Platform / Tenant Context，并显式标记当前 Context。具备有效平台角色但当前认证强度不足时，Platform 选项仍返回并标记 `requires_step_up=true`；该标记只用于前端发起增强认证，不能绕过切换 Service 的 AAL2/AAL3 校验。Tenant 选项按 Tenant Code、Tenant ID 稳定排序，Platform 固定在最前。
 
-### 4.4 普通 User 的 TOTP 登记与会话内 step-up
+### 6.6 普通 User 的 TOTP 登记与会话内 step-up
 
 普通 User 通过唯一的当前用户安全设置接口自助登记 TOTP。开始登记必须同时提交当前本地账号密码；System 在一个事务内锁定 Principal、Local Account 和当前 Browser Token Family，重新验证密码，确认不存在激活的 TOTP Credential，然后创建 5 分钟有效的一次性 Enrollment。Enrollment 绑定 Principal、当前授权版本和源 Token Family，Secret 只在开始响应中以 Base32 和 `otpauth://` URI 返回一次，数据库只保存加密值，日志与审计不得记录 Secret、URI、验证码或 Enrollment Token。
 
@@ -272,7 +284,7 @@ POST /api/v1/system/auth/context-switches
 
 step-up 成功响应复用唯一 Browser Access Token 响应结构，服务端同时替换 HttpOnly Refresh Cookie。前端必须原地接收新 Access Token、刷新 AuthContext 并继续被中断的操作，不得要求用户退出后重新登录。AAL2 的 `step_up_expires_at` 不得晚于替换 Family 的固定最终期限；过期后需要再次 step-up，但不主动注销仍可用于低风险操作的 Tenant Session。
 
-### 4.5 普通 User 的受控 TOTP 重置
+### 6.7 普通 User 的受控 TOTP 重置
 
 普通 User 遗失认证器或 TOTP Secret 且无法完成登录前 Challenge 时，由 Platform Context 中持有 `iam.mfa_credential.reset` 的平台安全管理员执行唯一受控重置。请求必须提供非空原因，目标必须是有效 User、具有 active 或 locked 的 Local Account、具有唯一 active TOTP Credential，且不能持有任何当前有效 Platform Role。平台三员不得使用该接口，继续只允许本人维护凭据或通过离线三员整体恢复处理灾难场景。
 
@@ -286,7 +298,7 @@ refresh 与 context switch 同时针对同一 Family 时，按 `Principal -> 目
 
 CLI / OAuth Client 不能调用 Context Switch 修改既有 Family。它们需要另一个 Context 时必须重新执行用户授权，并永久绑定批准时选择的 Context。
 
-### 6.5 主动退出
+### 6.8 主动退出
 
 第一方浏览器主动退出必须同时提交当前内存 Access Token 和同一 Family 的 Refresh Token Cookie。System 只接受 `auth_type=first_party`、`client_id=addp-web`，且 Refresh Token 的 `issued_access_token_id` 指向所提交 Access Token 的当前有效凭据对；不得只凭 Access Token、只凭 Cookie，或跨 Family 撤销会话。
 
@@ -294,7 +306,7 @@ CLI / OAuth Client 不能调用 Context Switch 修改既有 Family。它们需�
 
 logout 与 refresh / context switch 同时针对同一 Family 时，只允许一个事务完成状态转换。先完成 logout 时，等待者统一返回未授权；先完成 refresh 时，使用旧凭据的 logout 返回未授权；先完成 context switch 时，旧凭据的 logout 返回未授权。重复 logout 也统一返回未授权，不识别已撤销 Token 形成幂等旁路，且不得重复写审计。无论服务端返回成功还是未授权，浏览器都必须清除本地内存状态和相关 Cookie，并广播退出事件。
 
-### 6.6 HTTP 契约
+### 6.9 HTTP 契约
 
 `POST /login` 使用判别字段返回且只返回一种结果：
 
@@ -314,7 +326,7 @@ Context 选项统一包含 `type`、`current`、`requires_step_up`；Tenant 选�
 
 Refresh 缺少 Cookie 或 Runtime 明确返回未授权时清除全部会话 Cookie；409 锁竞争和 500 服务故障不得清 Cookie。Logout 无论 Runtime 成功、未授权或失败都必须清除全部会话 Cookie；只有首次成功撤销返回 204，其他结果按上述状态码返回。
 
-### 6.7 当前用户自服务
+### 6.10 当前用户自服务
 
 `GET /users/me` 只返回当前全局 User/Profile：十进制字符串 `id`、`display_name`、可空 `primary_email`、可空 `locale`、`created_at`、`updated_at`，以及可空 `local_account`。`local_account` 仅包含展示用户名 `username`；纯外部 IdP User 没有 Local Account 时必须返回 `null`。该响应不得包含旧 `user_type`、单一 `tenant_id`、Principal 状态、授权版本、Role、Permission 或 Membership；当前 Context 和权限只能从 `/auth/context` 获取。
 
@@ -322,7 +334,7 @@ Refresh 缺少 Cookie 或 Runtime 明确返回未授权时清除全部会话 Coo
 
 当前密码错误返回 HTTP 400 和稳定 `error_code=invalid_current_password`，不得返回会触发 Browser AuthSession 刷新的 Token 401；新旧密码相同返回 400 和 `error_code=password_unchanged`。成功返回 `changed_at` 与 `revoked_family_count`，同时清除当前浏览器全部会话 Cookie，前端清空内存 Token、广播退出并跳转登录。
 
-### 6.8 租户邀请接受
+### 6.11 租户邀请接受
 
 System 创建 Tenant Invitation 时返回的唯一浏览器入口固定为 Console 同 origin 下的
 `/invitations/accept?invitation=<opaque-secret>`。Console 拥有该公开页面和会话接管，System

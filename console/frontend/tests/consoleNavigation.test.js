@@ -112,6 +112,8 @@ describe('Console navigation bridge', () => {
     expect(searchIndex('角色分配', key => key, [
       'iam.tenant_role_assignment.read'
     ], 'platform')).toEqual([])
+    expect(searchIndex('多因素认证', key => key, [], 'tenant').map(item => item.route))
+      .toContain('/system/account/security')
   })
 
   it('keeps the enterprise Catalog reachable from every Console discovery surface', () => {

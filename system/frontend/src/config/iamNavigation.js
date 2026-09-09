@@ -40,7 +40,6 @@ export const IAM_TABS = [
   { page: 'accounts', key: 'identity-changes', context: 'platform', permission: 'iam.platform_identity_change.read', label: 'system.iam.tabs.identityChanges', panel: 'identity-changes' },
   { page: 'accounts', key: 'user-accounts', context: 'tenant', permission: 'iam.tenant_membership.read', label: 'system.iam.tabs.userAccounts', panel: 'user-accounts' },
   { page: 'accounts', key: 'invitations', context: 'tenant', permission: 'iam.tenant_invitation.read', label: 'system.iam.tabs.userInvitations', panel: 'invitations' },
-  { page: 'accounts', key: 'account-security', context: 'any', label: 'system.iam.tabs.accountSecurity', panel: 'account-security' },
 
   { page: 'roles', key: 'role-definitions', context: 'tenant', permission: 'iam.tenant_role.read', label: 'system.iam.tabs.roleDefinitions', panel: 'roles' },
   { page: 'roles', key: 'role-assignments', context: 'tenant', permission: 'iam.tenant_role_assignment.read', label: 'system.iam.tabs.roleAssignments', panel: 'role-assignments' },

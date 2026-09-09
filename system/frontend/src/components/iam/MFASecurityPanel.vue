@@ -4,8 +4,8 @@
       <div class="iam-security-row__identity">
         <el-icon><Iphone /></el-icon>
         <div>
-          <strong>{{ t('system.iam.security.authenticator') }}</strong>
-          <span>{{ t('system.iam.security.totp') }}</span>
+          <strong>{{ t('system.iam.security.multiFactor') }}</strong>
+          <span>{{ t('system.iam.security.totpDescription') }}</span>
         </div>
       </div>
       <div class="iam-security-row__action">

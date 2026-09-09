@@ -5,7 +5,9 @@
         <h2>{{ pageTitle }}</h2>
         <div class="iam-context-line">
           <el-tag effect="plain">{{ contextLabel }}</el-tag>
-          <span>{{ t('system.iam.assurance', { level: authContext?.authentication?.assurance_level?.toUpperCase() || '-' }) }}</span>
+          <el-tooltip :content="sessionAssuranceDetail" placement="bottom">
+            <span>{{ sessionAssuranceLabel }}</span>
+          </el-tooltip>
         </div>
       </div>
       <el-button :icon="Refresh" :loading="refreshing" circle :aria-label="t('system.iam.common.refresh')" @click="refreshContext" />
@@ -48,7 +50,6 @@ import {
   DocumentChecked,
   InfoFilled,
   Key,
-  Lock,
   OfficeBuilding,
   Refresh,
   Setting,
@@ -65,7 +66,6 @@ import AuditPanel from '../components/iam/AuditPanel.vue'
 import APIConsumersPanel from '@/components/iam/APIConsumersPanel.vue'
 import DepartmentsPanel from '../components/iam/DepartmentsPanel.vue'
 import IdentityChangesPanel from '../components/iam/IdentityChangesPanel.vue'
-import MFASecurityPanel from '../components/iam/MFASecurityPanel.vue'
 import OAuthClientsPanel from '../components/iam/OAuthClientsPanel.vue'
 import PlatformTenantsPanel from '../components/iam/PlatformTenantsPanel.vue'
 import PlatformUsersPanel from '../components/iam/PlatformUsersPanel.vue'
@@ -77,6 +77,7 @@ import TenantRoleAssignmentsPanel from '../components/iam/TenantRoleAssignmentsP
 import TenantRolesPanel from '../components/iam/TenantRolesPanel.vue'
 import SecurityPolicy from './SecurityPolicy.vue'
 import { needsTenantRoleSetup } from '../utils/iamRoles'
+import { assuranceLevelKey, findCurrentContextOption } from '../utils/iamPresentation'
 import { navigateSystemRoute } from '../utils/moduleNavigation'
 import { resolveIAMCategoryRouteState } from '../utils/routeState'
 
@@ -86,16 +87,29 @@ const route = useRoute()
 const router = useRouter()
 const activeTab = ref('')
 const refreshing = ref(false)
+const currentContextOption = ref(null)
 const authContext = computed(() => authStore.authContext)
 const contextType = computed(() => authStore.contextType)
 const pageKey = computed(() => String(route.meta?.iamPage || ''))
 const pageDefinition = computed(() => findIAMPage(pageKey.value))
 const pageTitle = computed(() => pageDefinition.value ? t(pageDefinition.value.label) : t('system.iam.title'))
-const contextLabel = computed(() => contextType.value === 'platform'
-  ? t('system.iam.context.platform')
-  : t('system.iam.context.tenant', { id: authContext.value?.context?.tenant_id || '-' }))
+const contextLabel = computed(() => {
+  if (contextType.value === 'platform') return t('system.iam.context.platform')
+  if (!currentContextOption.value) return t('system.iam.context.tenantUnknown')
+  return t('system.iam.context.tenant', {
+    name: currentContextOption.value.tenant_name,
+    code: currentContextOption.value.tenant_code
+  })
+})
+const assuranceKey = computed(() => assuranceLevelKey(authContext.value?.authentication?.assurance_level))
+const assuranceLevel = computed(() => authContext.value?.authentication?.assurance_level?.toUpperCase() || '-')
+const sessionAssuranceLabel = computed(() => t('system.iam.session.label', {
+  state: t(`system.iam.session.levels.${assuranceKey.value}`)
+}))
+const sessionAssuranceDetail = computed(() => t('system.iam.session.detail', { level: assuranceLevel.value }))
 const showTenantRoleSetup = computed(() => needsTenantRoleSetup(authContext.value))
 const availableTabs = computed(() => availableIAMTabs(pageKey.value, contextType.value, permission => authStore.hasPermission(permission)))
+let contextOptionRequestID = 0
 
 const panelComponents = {
   users: markRaw(PlatformUsersPanel),
@@ -110,7 +124,6 @@ const panelComponents = {
   'oauth-clients': markRaw(OAuthClientsPanel),
   'service-accounts': markRaw(TenantServiceAccountsPanel),
   'api-consumers': markRaw(APIConsumersPanel),
-  'account-security': markRaw(MFASecurityPanel),
   'security-policy': markRaw(SecurityPolicy),
   audit: markRaw(AuditPanel)
 }
@@ -128,7 +141,6 @@ const panelIcons = {
   'oauth-clients': Key,
   'service-accounts': Connection,
   'api-consumers': Key,
-  'account-security': Lock,
   'security-policy': Setting,
   audit: Bell
 }
@@ -161,11 +173,28 @@ async function openRoleAssignments() {
 }
 
 watch([availableTabs, () => route.query, pageKey], restoreTabFromRoute, { immediate: true })
+watch(
+  () => [contextType.value, authContext.value?.context?.tenant_id, authContext.value?.context?.tenant_membership_id],
+  loadCurrentContextOption,
+  { immediate: true }
+)
+
+async function loadCurrentContextOption() {
+  const requestID = ++contextOptionRequestID
+  try {
+    const options = await authStore.fetchContextOptions()
+    if (requestID !== contextOptionRequestID) return
+    currentContextOption.value = findCurrentContextOption(options, authContext.value?.context)
+  } catch {
+    if (requestID === contextOptionRequestID) currentContextOption.value = null
+  }
+}
 
 async function refreshContext() {
   refreshing.value = true
   try {
     await authStore.fetchAuthContext()
+    await loadCurrentContextOption()
     ElMessage.success(t('system.iam.common.refreshed'))
   } catch (error) {
     ElMessage.error(error.response?.data?.error || t('system.iam.common.loadFailed'))

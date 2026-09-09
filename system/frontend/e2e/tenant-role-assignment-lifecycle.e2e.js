@@ -165,6 +165,13 @@ test('tenant administrator filters members and assigns multiple roles in one req
       await fulfillJSON(route, 200, { id: '1', username: 'e2e-admin', display_name: 'E2E Administrator' })
       return
     }
+    if (path.endsWith('/auth/context-options')) {
+      await fulfillJSON(route, 200, { contexts: [{
+        type: 'tenant', tenant_id: '1', tenant_membership_id: '11',
+        tenant_name: 'E2E Tenant', tenant_code: 'e2e', current: true, requires_step_up: false
+      }] })
+      return
+    }
     if (path.endsWith('/auth/context')) {
       authContextRequests += 1
       await fulfillJSON(route, 200, {
@@ -346,6 +353,13 @@ test('high-risk self assignment completes MFA step-up and retries the original r
       await fulfillJSON(route, 200, { id: '1', username: 'e2e-admin', display_name: 'E2E Administrator' })
       return
     }
+    if (path.endsWith('/auth/context-options')) {
+      await fulfillJSON(route, 200, { contexts: [{
+        type: 'tenant', tenant_id: '1', tenant_membership_id: '11',
+        tenant_name: 'E2E Tenant', tenant_code: 'e2e', current: true, requires_step_up: false
+      }] })
+      return
+    }
     if (path.endsWith('/auth/context')) {
       authContextRequests += 1
       await fulfillJSON(route, 200, {
@@ -423,7 +437,7 @@ test('high-risk self assignment completes MFA step-up and retries the original r
   await page.locator('button.auth-login-primary').click()
 
   await expect(page).toHaveURL(/\/iam\/roles\?tab=role-assignments$/)
-  await expect(page.getByText('认证强度：AAL1', { exact: true })).toBeVisible()
+  await expect(page.getByText('当前会话：基础认证', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: '分配角色', exact: true }).click()
 
   const assignmentDialog = page.getByRole('dialog', { name: '分配角色' })

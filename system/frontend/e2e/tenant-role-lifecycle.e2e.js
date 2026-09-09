@@ -121,6 +121,13 @@ test('tenant administrator manages a custom role with localized bulk permission 
       await fulfillJSON(route, 200, { id: '1', username: 'e2e-admin', display_name: 'E2E Administrator' })
       return
     }
+    if (path.endsWith('/auth/context-options')) {
+      await fulfillJSON(route, 200, { contexts: [{
+        type: 'tenant', tenant_id: '1', tenant_membership_id: '11',
+        tenant_name: 'E2E Tenant', tenant_code: 'e2e', current: true, requires_step_up: false
+      }] })
+      return
+    }
     if (path.endsWith('/auth/context')) {
       await fulfillJSON(route, 200, {
         principal: { id: '1', principal_type: 'user' },

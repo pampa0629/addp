@@ -1034,10 +1034,9 @@ func vectorTileCacheTaskConfigFromQuickView(capability *service.QuickViewCapabil
 		target["table"] = strings.TrimSpace(source.Table)
 	}
 
-	minZoom, maxZoom := 0, 12
-	if capability.RenderFacts != nil && capability.RenderFacts.ZoomRecommendation != nil {
-		minZoom = capability.RenderFacts.ZoomRecommendation.MinZoom
-		maxZoom = capability.RenderFacts.ZoomRecommendation.MaxZoom
+	minZoom, maxZoom, extent, extentSRID, err := automaticVectorTileCacheRecommendation(capability)
+	if err != nil {
+		return nil, err
 	}
 	tile := commonModels.JSONMap{
 		"archive_format":  "pmtiles",
@@ -1047,13 +1046,8 @@ func vectorTileCacheTaskConfigFromQuickView(capability *service.QuickViewCapabil
 		"max_zoom":        maxZoom,
 		"target_srid":     commonSpatial.SRIDWebMercator,
 		"source_srid":     source.SpatialMeta.SRID,
-	}
-	extent, extentSRID := quickViewTileCacheExtent(source.SpatialMeta)
-	if len(extent) == 4 {
-		tile["extent"] = extent
-	}
-	if extentSRID > 0 {
-		tile["extent_srid"] = extentSRID
+		"extent":          extent,
+		"extent_srid":     extentSRID,
 	}
 	options := commonModels.JSONMap{
 		"geometry_column": strings.TrimSpace(source.SpatialMeta.GeomColumn),
@@ -1070,17 +1064,32 @@ func vectorTileCacheTaskConfigFromQuickView(capability *service.QuickViewCapabil
 	}, nil
 }
 
-func quickViewTileCacheExtent(meta *service.SpatialMetadataResult) ([]float64, int) {
-	if meta == nil {
-		return nil, 0
+func automaticVectorTileCacheRecommendation(capability *service.QuickViewCapability) (int, int, []float64, int, error) {
+	if capability == nil || capability.RenderFacts == nil || capability.RenderFacts.ZoomRecommendation == nil {
+		return 0, 0, nil, 0, errors.New("quick view capability missing vector tile cache zoom recommendation")
 	}
-	if len(meta.RenderExtent) == 4 && meta.RenderExtentSRID > 0 {
-		return append([]float64(nil), meta.RenderExtent...), meta.RenderExtentSRID
+	facts := capability.RenderFacts
+	recommendation := facts.ZoomRecommendation
+	if recommendation.Status != "estimated" || recommendation.TileBudget <= 0 || recommendation.EstimatedTileCount <= 0 {
+		return 0, 0, nil, 0, errors.New("quick view vector tile cache generation requires an estimated zoom recommendation")
 	}
-	if len(meta.Extent) == 4 && meta.ExtentSRID > 0 {
-		return append([]float64(nil), meta.Extent...), meta.ExtentSRID
+	if len(facts.RenderExtent) != 4 || facts.RenderExtentSRID <= 0 {
+		return 0, 0, nil, 0, errors.New("quick view vector tile cache generation requires a reliable render extent")
 	}
-	return nil, 0
+	extent := [4]float64{facts.RenderExtent[0], facts.RenderExtent[1], facts.RenderExtent[2], facts.RenderExtent[3]}
+	estimatedTileCount, ok := commonSpatial.EstimateWebMercatorQuadTileRange(
+		extent,
+		facts.RenderExtentSRID,
+		recommendation.MinZoom,
+		recommendation.MaxZoom,
+	)
+	if !ok || estimatedTileCount != recommendation.EstimatedTileCount {
+		return 0, 0, nil, 0, errors.New("quick view vector tile cache zoom recommendation does not match render extent")
+	}
+	if estimatedTileCount > recommendation.TileBudget {
+		return 0, 0, nil, 0, errors.New("quick view vector tile cache recommendation exceeds candidate tile budget")
+	}
+	return recommendation.MinZoom, recommendation.MaxZoom, append([]float64(nil), facts.RenderExtent...), facts.RenderExtentSRID, nil
 }
 
 func rasterCOGTaskConfigFromQuickView(capability *service.QuickViewCapability, source service.QuickViewSource) (commonModels.JSONMap, error) {

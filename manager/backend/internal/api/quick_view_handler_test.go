@@ -1142,9 +1142,14 @@ func TestVectorTileCacheTaskConfigFromQuickViewUsesLocatorIdentityForFile(t *tes
 		Locator:              locator,
 		CanGenerateTileCache: true,
 		RenderFacts: &service.QuickViewRenderFacts{
+			RenderExtent:     []float64{110, 20, 120, 30},
+			RenderExtentSRID: commonSpatial.SRIDWGS84,
 			ZoomRecommendation: &service.ZoomRecommendation{
-				MinZoom: 2,
-				MaxZoom: 10,
+				MinZoom:            2,
+				MaxZoom:            10,
+				Status:             "estimated",
+				EstimatedTileCount: 1311,
+				TileBudget:         10_000,
 			},
 		},
 	}
@@ -1184,9 +1189,40 @@ func TestVectorTileCacheTaskConfigFromQuickViewUsesLocatorIdentityForFile(t *tes
 	if tile["archive_format"] != "pmtiles" || tile["tile_type"] != "mvt" || tile["target_srid"] != commonSpatial.SRIDWebMercator || tile["source_srid"] != 4326 {
 		t.Fatalf("tile config = %#v, want PMTiles/MVT 4326->3857", tile)
 	}
+	if tile["extent_srid"] != commonSpatial.SRIDWGS84 {
+		t.Fatalf("tile extent_srid = %v, want render extent SRID 4326", tile["extent_srid"])
+	}
 	options, _ := asJSONMap(config["options"])
 	if options["geometry_column"] != "geometry" {
 		t.Fatalf("geometry_column = %v, want geometry", options["geometry_column"])
+	}
+}
+
+func TestVectorTileCacheTaskConfigFromQuickViewRejectsManualZoomRecommendation(t *testing.T) {
+	capability := &service.QuickViewCapability{
+		ItemFingerprint:      "fp-farmland",
+		Locator:              "addp://engine/26/path/public/farmland?type=table&item_id=100",
+		CanGenerateTileCache: true,
+		RenderFacts: &service.QuickViewRenderFacts{
+			ZoomRecommendation: &service.ZoomRecommendation{
+				MinZoom:    3,
+				MaxZoom:    18,
+				Status:     "manual_required",
+				TileBudget: 10_000,
+			},
+		},
+	}
+	source := service.QuickViewSource{
+		EngineID: 26,
+		SpatialMeta: &service.SpatialMetadataResult{
+			GeomColumn: "geom",
+			SRID:       4326,
+		},
+	}
+
+	_, err := vectorTileCacheTaskConfigFromQuickView(capability, source)
+	if err == nil || !strings.Contains(err.Error(), "estimated zoom recommendation") {
+		t.Fatalf("vectorTileCacheTaskConfigFromQuickView() error = %v, want manual recommendation rejection", err)
 	}
 }
 
@@ -1203,7 +1239,15 @@ func TestQuickViewVectorTileCacheActionCreatesCanonicalTaskAndExecution(t *testi
 		Locator:              locator,
 		CanGenerateTileCache: true,
 		RenderFacts: &service.QuickViewRenderFacts{
-			ZoomRecommendation: &service.ZoomRecommendation{MinZoom: 2, MaxZoom: 10},
+			RenderExtent:     []float64{110, 20, 120, 30},
+			RenderExtentSRID: commonSpatial.SRIDWGS84,
+			ZoomRecommendation: &service.ZoomRecommendation{
+				MinZoom:            2,
+				MaxZoom:            10,
+				Status:             "estimated",
+				EstimatedTileCount: 1311,
+				TileBudget:         10_000,
+			},
 		},
 	}
 	source := service.QuickViewSource{

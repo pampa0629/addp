@@ -200,12 +200,16 @@ System IAM 管理端只按稳定业务大类提供五个左侧页面，不能把
 | 页面 | Platform Context | Tenant Context |
 | --- | --- | --- |
 | 组织管理 `/iam/organization` | 租户管理 | 部门管理、项目组管理 |
-| 账号管理 `/iam/accounts` | 用户账号、身份变更审批、我的账号安全 | 用户账号、用户邀请、我的账号安全 |
+| 账号管理 `/iam/accounts` | 用户账号、身份变更审批 | 用户账号、用户邀请 |
 | 角色管理 `/iam/roles` | 无可用对象时隐藏 | 角色定义、角色分配 |
 | 应用接入 `/iam/application-access` | 无可用对象时隐藏 | 机器身份、API 消费方、外部应用（OAuth） |
 | 审计管理 `/iam/security` | IAM 安全策略、平台审计 | 租户审计 |
 
 页面表达业务大类，页内 `tab` 表达该类中的具体管理对象或流程。Tab 必须继续按当前 AuthContext 类型和 Permission 过滤；某个页面在当前上下文中没有任何可用 Tab 时，Console 左侧入口和 System standalone 导航都必须隐藏，直接访问也不得绕过 Context 与 Permission Guard。
+
+当前 User 的凭据与 MFA 是跨 Tenant Context 的全局自服务对象，不是租户账号管理对象。它的唯一页面为 `/account/security`，由 Console 和 System standalone 右上角“我的账号”入口打开，不得再作为 `/iam/accounts` 内的 Tab。页面标题使用“我的账号”，当前功能分组使用“安全设置”，TOTP 功能使用“多因素认证”。
+
+IAM 管理页页头必须用业务语言表达当前作用范围和会话认证状态：Tenant Context 显示“当前租户：名称（编码）”，Platform Context 显示“当前管理范围：平台”；不得向用户展示 `租户上下文 #<id>` 等内部标识。AAL 按“基础认证”“多因素认证”等语义展示，原始协议值只作为辅助说明。Tenant 名称和编码使用现有 `context-options` 权威结果，不得根据 Tenant ID 猜测或建立第二套查询。
 
 “用户账号”和“机器身份”是两类不同管理对象，不能继续混排在同一个主列表中。用户账号页只展示 User Membership；机器身份页展示当前 Tenant 拥有的 Service Account，以及已加入当前 Tenant 的 Platform-owned Runtime Service Principal，并以结构化管理归属显式区分。角色管理中的角色分配页只展示 User；Service Principal 的角色入口归机器身份页；租户审计仍覆盖两类 Principal，并在选择器或过滤器内按“账号类型”分组并显式标记。
 

@@ -84,8 +84,16 @@ export const SEARCH_INDEX = [
   },
   {
     labelKey: 'console.menus.system.iamAccounts', module: 'system', route: '/system/iam/accounts',
+    access: [
+      { context: 'platform', permissions: ['iam.user.read', 'iam.platform_identity_change.read'] },
+      { context: 'tenant', permissions: ['iam.tenant_membership.read', 'iam.tenant_invitation.read'] },
+    ],
+    keywords: ['账号', '用户', '邀请', 'account', 'user', 'invitation']
+  },
+  {
+    labelKey: 'console.myAccount', module: 'system', route: '/system/account/security',
     access: [{ context: 'any' }],
-    keywords: ['账号', '用户', '邀请', '账号安全', '身份验证器', 'account', 'user', 'invitation', 'MFA']
+    keywords: ['我的账号', '安全设置', '多因素认证', '身份验证器', 'my account', 'security settings', 'MFA', 'TOTP']
   },
   {
     labelKey: 'console.menus.system.iamRoles', module: 'system', route: '/system/iam/roles',

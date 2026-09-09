@@ -1632,6 +1632,80 @@ func TestQuickViewCapabilityRecommendsZoomFromCGCS20003DegreeGaussKrugerExtent(t
 	}
 }
 
+func TestQuickViewCapabilityDoesNotOfferAutomaticTileCacheWithoutReliableRenderExtent(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	svc := NewQuickViewService(db, nil)
+	svc.SetCapabilityOptions(QuickViewCapabilityOptions{DirectFlatGeobufMaxRows: 2_000})
+
+	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
+		Identity: QuickViewIdentity{
+			TenantID:        7,
+			ItemFingerprint: commonModels.GenerateItemFingerprint(8, "public.farmland"),
+			Locator:         "addp://engine/8/path/public/farmland?type=table&item_id=55",
+		},
+		EngineID: 8,
+		Schema:   "public",
+		Table:    "farmland",
+		CanTile:  true,
+		SpatialMeta: &SpatialMetadataResult{
+			GeomColumn:  "geom",
+			SRID:        32650,
+			Extent:      []float64{500_000, 2_700_000, 510_000, 2_710_000},
+			ExtentSRID:  32650,
+			RecordCount: 127,
+		},
+	})
+	if err != nil {
+		t.Fatalf("build quick view capability: %v", err)
+	}
+	if capability.CanGenerateTileCache || capability.TileCacheGeneration.Available {
+		t.Fatalf("tile generation = available:%v can:%v, want unavailable without reliable render extent", capability.TileCacheGeneration.Available, capability.CanGenerateTileCache)
+	}
+	if capability.TileCacheGeneration.Reason != "tile cache generation requires a reliable render extent and an estimated zoom range" {
+		t.Fatalf("tile generation reason = %q", capability.TileCacheGeneration.Reason)
+	}
+	for _, action := range capability.AvailableActions {
+		if action == QuickViewActionGenerateTileCache {
+			t.Fatalf("available actions = %#v, must not contain automatic tile cache generation", capability.AvailableActions)
+		}
+	}
+	if capability.RenderFacts == nil || capability.RenderFacts.ZoomRecommendation == nil || capability.RenderFacts.ZoomRecommendation.Status != "manual_required" {
+		t.Fatalf("zoom recommendation = %#v, want manual_required", capability.RenderFacts)
+	}
+}
+
+func TestApplyOptimizationRenderFactsRecomputesBudgetedZoomFromRenderExtent(t *testing.T) {
+	facts := &QuickViewRenderFacts{
+		SourceSRID:       32650,
+		SourceExtent:     []float64{500_000, 2_700_000, 510_000, 2_710_000},
+		SourceExtentSRID: 32650,
+		ZoomRecommendation: &ZoomRecommendation{
+			MinZoom:    3,
+			MaxZoom:    18,
+			Status:     "manual_required",
+			TileBudget: quickViewCandidateTileBudget,
+		},
+	}
+	optimization := &VectorMaterializedViewInfo{
+		Available:        true,
+		RenderExtent:     []float64{108.55648171959794, 24.52585476646484, 114.3433679860587, 30.244050172136756},
+		RenderExtentSRID: spatial.SRIDWGS84,
+	}
+
+	applyOptimizationRenderFacts(facts, optimization)
+
+	if facts.RenderExtentSource != "vector_materialized_view_generation" || facts.RenderExtentSRID != spatial.SRIDWGS84 {
+		t.Fatalf("render extent facts = %#v, want vector materialized view WGS84 extent", facts)
+	}
+	recommendation := facts.ZoomRecommendation
+	if recommendation == nil || recommendation.Status != "estimated" || recommendation.MinZoom != 4 || recommendation.MaxZoom != 12 {
+		t.Fatalf("zoom recommendation = %#v, want estimated 4-12", recommendation)
+	}
+	if recommendation.EstimatedTileCount != 6_751 || recommendation.TileBudget != quickViewCandidateTileBudget {
+		t.Fatalf("zoom recommendation = %#v, want 6751 candidates within budget", recommendation)
+	}
+}
+
 func TestQuickViewCapabilityLimitsFarmlandDefaultZoomByCandidateTileBudget(t *testing.T) {
 	db := newTileCacheTaskServiceTestDB(t)
 	svc := NewQuickViewService(db, nil)

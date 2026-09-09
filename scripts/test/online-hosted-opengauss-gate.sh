@@ -111,6 +111,14 @@ run_logged() {
   "$@" 2>&1 | tee -a "$GATE_LOG"
 }
 
+run_daemon_launcher_logged() {
+  local previous_size command_status=0
+  previous_size=$(wc -c < "$GATE_LOG")
+  "$@" >> "$GATE_LOG" 2>&1 || command_status=$?
+  tail -c "+$((previous_size + 1))" "$GATE_LOG"
+  return "$command_status"
+}
+
 finish() {
   local status=$?
   local cleanup=passed
@@ -187,7 +195,10 @@ fixture_owned=1
 run_logged bash business/scripts/online-opengauss-consumer-fixture.sh start
 application_owned=1
 for start_target in -manager -develop -service; do
-  run_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
+  # start.sh deliberately leaves application processes running. Writing its
+  # output straight to the gate log prevents those children from retaining a
+  # tee pipe and blocking the Hosted lifecycle after the launcher exits.
+  run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh "$start_target"
 done
 
 run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --output "$1"' _ "$IDENTITY_ENV"

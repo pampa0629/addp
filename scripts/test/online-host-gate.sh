@@ -282,6 +282,14 @@ run_logged() {
   "$@" 2>&1 | tee -a "$GATE_LOG"
 }
 
+run_daemon_launcher_logged() {
+  local previous_size command_status=0
+  previous_size=$(wc -c < "$GATE_LOG")
+  "$@" >> "$GATE_LOG" 2>&1 || command_status=$?
+  tail -c "+$((previous_size + 1))" "$GATE_LOG"
+  return "$command_status"
+}
+
 observe_module_lifecycle() {
   local phase=$1
   local timeout=$2
@@ -398,7 +406,7 @@ if [ "$ONLINE_SUITE" = "module-registry-recovery" ]; then
   process_timeout=${ADDP_ONLINE_PROCESS_TIMEOUT_SECONDS:-60}
   lease_timeout=${ADDP_ONLINE_LEASE_TIMEOUT_SECONDS:-60}
 
-  run_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process --wait-live -manager
+  run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process --wait-live -manager
   observe_module_lifecycle business-before-system "$process_timeout"
   manager_instance_id=$(python3 - "$ADDP_ONLINE_ARTIFACT_DIR/module-lifecycle-business-before-system.json" <<'PY'
 import json
@@ -409,16 +417,16 @@ with open(sys.argv[1], encoding="utf-8") as evidence:
 PY
   )
 
-  run_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process -system
+  run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process -system
   observe_module_lifecycle manager-registered "$process_timeout" "$manager_instance_id"
 
-  run_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process -gateway
+  run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process -gateway
   observe_module_lifecycle gateway-established "$process_timeout" "$manager_instance_id"
 
   run_logged bash scripts/dev/stop-exact-process.sh -system
   observe_module_lifecycle system-interrupted "$lease_timeout" "$manager_instance_id"
 
-  run_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process -system
+  run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh --exact-process -system
   observe_module_lifecycle system-recovered "$process_timeout" "$manager_instance_id"
 
   # Release the real Manager route before the existing two-probe lease and
@@ -431,7 +439,7 @@ elif [ "$ONLINE_SUITE" = "consumer-engine-recovery" ]; then
   engine_restore_required=1
   run_logged bash business/scripts/online-engine-fixture.sh stop
   run_logged bash business/scripts/online-engine-fixture.sh start
-  run_logged bash scripts/dev/start.sh
+  run_daemon_launcher_logged bash scripts/dev/start.sh
   run_logged npm --prefix console/frontend exec -- playwright install chromium
   run_logged python3 scripts/test/consumer-process-stability-online.py \
     --capture \
@@ -441,19 +449,19 @@ elif [ "$ONLINE_SUITE" = "enterprise-catalog-publishing" ]; then
   engine_fixture_cleanup_required=1
   run_logged bash business/scripts/online-engine-fixture.sh stop
   run_logged bash business/scripts/online-engine-fixture.sh start
-  run_logged bash scripts/dev/start.sh "$START_TARGET"
+  run_daemon_launcher_logged bash scripts/dev/start.sh "$START_TARGET"
   run_logged npm --prefix console/frontend exec -- playwright install chromium
 elif [ "$ONLINE_SUITE" = "workbench-service-consumption" ]; then
   workbench_mysql_cleanup_required=1
   run_logged bash business/scripts/online-workbench-mysql-fixture.sh stop
   run_logged bash business/scripts/online-workbench-mysql-fixture.sh start
-  run_logged bash scripts/dev/start.sh "$START_TARGET"
+  run_daemon_launcher_logged bash scripts/dev/start.sh "$START_TARGET"
   run_logged npm --prefix console/frontend exec -- playwright install chromium
 elif [ "$ONLINE_SUITE" = "transfer-insert-only-mysql" ]; then
   transfer_insert_only_cleanup_required=1
   run_logged bash business/scripts/online-transfer-insert-only-fixture.sh stop
   run_logged bash business/scripts/online-transfer-insert-only-fixture.sh start
-  run_logged bash scripts/dev/start.sh "$START_TARGET"
+  run_daemon_launcher_logged bash scripts/dev/start.sh "$START_TARGET"
   run_logged npm --prefix console/frontend exec -- playwright install chromium
 elif [ "$ONLINE_SUITE" = "oceanbase-consumer-flow" ]; then
   oceanbase_consumer_cleanup_required=1
@@ -462,7 +470,7 @@ elif [ "$ONLINE_SUITE" = "oceanbase-consumer-flow" ]; then
   export ADDP_ONLINE_CONSUMER_ENGINE_TYPE=oceanbase
   export ADDP_ONLINE_CONSUMER_ENGINE_ID="$ADDP_ONLINE_OCEANBASE_ENGINE_ID"
   export ADDP_ONLINE_CONSUMER_NAMESPACE="$ADDP_ONLINE_OCEANBASE_DATABASE"
-  run_logged bash scripts/dev/start.sh "$START_TARGET"
+  run_daemon_launcher_logged bash scripts/dev/start.sh "$START_TARGET"
 elif [ "$ONLINE_SUITE" = "security-mysql-owner-protection" ]; then
   engine_fixture_cleanup_required=1
   workbench_mysql_cleanup_required=1
@@ -470,21 +478,21 @@ elif [ "$ONLINE_SUITE" = "security-mysql-owner-protection" ]; then
   run_logged bash business/scripts/online-workbench-mysql-fixture.sh stop
   run_logged bash business/scripts/online-engine-fixture.sh start
   run_logged bash business/scripts/online-workbench-mysql-fixture.sh start
-  run_logged bash scripts/dev/start.sh "$START_TARGET"
+  run_daemon_launcher_logged bash scripts/dev/start.sh "$START_TARGET"
 elif [ "$ONLINE_SUITE" = "manager-internal-artifact-lineage" ]; then
   manager_minio_cleanup_required=1
   run_logged bash business/scripts/online-manager-minio-fixture.sh stop
   run_logged bash business/scripts/online-manager-minio-fixture.sh start
-  run_logged bash scripts/dev/start.sh "$START_TARGET"
+  run_daemon_launcher_logged bash scripts/dev/start.sh "$START_TARGET"
   run_logged npm --prefix console/frontend exec -- playwright install chromium
 elif [ "$ONLINE_SUITE" = "security-transfer-protection" ] ||
   [ "$ONLINE_SUITE" = "security-plaintext-access" ]; then
   security_transfer_fixture_cleanup_required=1
   run_logged bash business/scripts/online-security-transfer-fixture.sh stop
   run_logged bash business/scripts/online-security-transfer-fixture.sh start
-  run_logged bash scripts/dev/start.sh "$START_TARGET"
+  run_daemon_launcher_logged bash scripts/dev/start.sh "$START_TARGET"
 else
-  run_logged bash scripts/dev/start.sh "$START_TARGET"
+  run_daemon_launcher_logged bash scripts/dev/start.sh "$START_TARGET"
 fi
 
 run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"

@@ -679,6 +679,7 @@ func (s *QuickViewService) BuildCapability(ctx context.Context, identity QuickVi
 	}
 	capability.RenderFacts = renderFactsFromSpatialMeta(spatialMeta)
 	applyOptimizationRenderFacts(capability.RenderFacts, optimizationInfo)
+	applyAutomaticTileCacheGenerationReadiness(capability)
 	applyAvailableActions(capability)
 
 	return capability, nil
@@ -840,6 +841,7 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 	}
 	capability.RenderFacts = renderFactsFromSpatialMeta(source.SpatialMeta)
 	applyOptimizationRenderFacts(capability.RenderFacts, optimizationInfo)
+	applyAutomaticTileCacheGenerationReadiness(capability)
 	applyAvailableActions(capability)
 
 	return capability, nil
@@ -910,6 +912,24 @@ func applyAvailableActions(capability *QuickViewCapability) {
 		}
 	}
 	capability.AvailableActions = actions
+}
+
+func applyAutomaticTileCacheGenerationReadiness(capability *QuickViewCapability) {
+	if capability == nil || !capability.CanGenerateTileCache {
+		return
+	}
+	var recommendation *ZoomRecommendation
+	if capability.RenderFacts != nil {
+		recommendation = capability.RenderFacts.ZoomRecommendation
+	}
+	if recommendation != nil && recommendation.Status == "estimated" &&
+		recommendation.TileBudget > 0 && recommendation.EstimatedTileCount > 0 &&
+		recommendation.EstimatedTileCount <= recommendation.TileBudget {
+		return
+	}
+	capability.CanGenerateTileCache = false
+	capability.TileCacheGeneration.Available = false
+	capability.TileCacheGeneration.Reason = "tile cache generation requires a reliable render extent and an estimated zoom range"
 }
 
 func shouldRecommendVectorMaterializedView(capability *QuickViewCapability) bool {
@@ -3167,8 +3187,13 @@ func quickViewZoomRecommendation(meta *SpatialMetadataResult) ZoomRecommendation
 	if ok {
 		recommendation.MaxZoom = budgetMaxZoom
 		recommendation.EstimatedTileCount = estimatedTileCount
-		recommendation.Status = "estimated"
-		recommendation.Reason = "computed from render extent and candidate tile budget"
+		if estimatedTileCount > quickViewCandidateTileBudget {
+			recommendation.Status = "manual_required"
+			recommendation.Reason = "minimum visible zoom exceeds candidate tile budget"
+		} else {
+			recommendation.Status = "estimated"
+			recommendation.Reason = "computed from render extent and candidate tile budget"
+		}
 	}
 	return recommendation
 }
@@ -3222,14 +3247,43 @@ func applyOptimizationRenderFacts(facts *QuickViewRenderFacts, optimization *Vec
 		facts.RenderExtentSRID = optimization.RenderExtentSRID
 		facts.RenderExtentSource = "vector_materialized_view_generation"
 	}
-	if facts.ZoomRecommendation == nil {
-		facts.ZoomRecommendation = &ZoomRecommendation{
-			MinZoom:    3,
-			MaxZoom:    12,
-			Status:     "estimated",
-			Reason:     "ready vector materialized view target",
-			TileBudget: quickViewCandidateTileBudget,
-		}
+	if len(facts.RenderExtent) != 4 || !isReliableZoomExtentSRID(facts.RenderExtentSRID) {
+		return
+	}
+	maxZoom := 18
+	if facts.ZoomRecommendation != nil && facts.ZoomRecommendation.MaxZoom > 0 {
+		maxZoom = facts.ZoomRecommendation.MaxZoom
+	}
+	minZoom := spatial.CalculateMinZoomFromExtent(facts.RenderExtent, facts.RenderExtentSRID)
+	if minZoom < 3 {
+		minZoom = 3
+	}
+	if maxZoom < minZoom {
+		maxZoom = minZoom
+	}
+	recommendedMaxZoom, estimatedTileCount, ok := spatial.RecommendMaxZoomByTileBudget(
+		[4]float64{facts.RenderExtent[0], facts.RenderExtent[1], facts.RenderExtent[2], facts.RenderExtent[3]},
+		facts.RenderExtentSRID,
+		minZoom,
+		maxZoom,
+		quickViewCandidateTileBudget,
+	)
+	if !ok {
+		return
+	}
+	status := "estimated"
+	reason := "computed from ready vector materialized view render extent and candidate tile budget"
+	if estimatedTileCount > quickViewCandidateTileBudget {
+		status = "manual_required"
+		reason = "minimum visible zoom exceeds candidate tile budget"
+	}
+	facts.ZoomRecommendation = &ZoomRecommendation{
+		MinZoom:            minZoom,
+		MaxZoom:            recommendedMaxZoom,
+		Status:             status,
+		Reason:             reason,
+		EstimatedTileCount: estimatedTileCount,
+		TileBudget:         quickViewCandidateTileBudget,
 	}
 }
 

@@ -30,6 +30,24 @@ export function resolveIAMModuleName(moduleName, t, te) {
   return te(key) ? t(key) : normalized
 }
 
+export function findCurrentContextOption(options, context) {
+  const contextType = String(context?.type || '')
+  const tenantID = String(context?.tenant_id || '')
+  const membershipID = String(context?.tenant_membership_id || '')
+  return (options || []).find((option) => {
+    if (option?.type !== contextType) return false
+    if (option.current === true) return true
+    if (contextType !== 'tenant') return true
+    return String(option.tenant_id || '') === tenantID &&
+      String(option.tenant_membership_id || '') === membershipID
+  }) || null
+}
+
+export function assuranceLevelKey(level) {
+  const normalized = String(level || '').toLowerCase()
+  return ['aal1', 'aal2', 'aal3', 'not_applicable'].includes(normalized) ? normalized : 'unknown'
+}
+
 export function tenantMemberDisplayName(member) {
   return member?.display_name || member?.service_principal_name || member?.username || member?.principal_id || '-'
 }

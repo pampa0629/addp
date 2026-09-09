@@ -431,6 +431,7 @@
 | API Consumer | API 消费方 | Tenant 为外部系统调用已发布数据面 API 建立的调用方登记，持有精确的 Consumer Service Reference、速率限制和可轮换 API Credential。 | 不是 User、Principal、Service Account、Runtime Service Principal、OAuth Client 或控制面 Application；API Credential 不能访问 `/api/v1/*` 控制面，最终服务授权由 Service owner 按 Tenant、Service Reference 和服务生命周期判断。 |
 | API Consumer Credential | API 消费凭据 | API Consumer 用于数据面请求认证的长期随机凭据，明文只在创建时展示一次，服务端只保存 SHA-256 Hash。 | 固定通过 `X-API-Key` 传递，只能用于显式挂载 API Consumer Guard 的数据面路由；不能兑换 OAuth Token、不能产生 AuthContext、Role 或 Membership。 |
 | Authentication Method | 认证方式 | 主体证明身份的方法，例如本地密码、Passkey、MFA、外部 IdP 或工作负载认证。 | CLI Authorization Code + PKCE 和 Device Flow 是登录交互通道，不是独立用户体系。 |
+| Authentication Assurance Level (AAL) | 认证保证等级 | 当前 User 会话基于已完成认证方式得出的认证可信程度。 | 属于当前 Token Family 的不可变认证事实，不是 Tenant 配置、User 的永久等级或权限大小；当前产品签发 AAL1 和 AAL2，AAL3 仅为协议预留。 |
 | Permission | 权限 | ADDP 产品定义的稳定、最小功能动作。 | Tenant 可以组合 Permission 创建 Role，但不能创造任意 Permission 字符串。 |
 | Role | 角色 | Permission 的命名集合。 | Role 本身不表达业务资源实例；具体作用范围由 Role Assignment 和 owner Resource Grant / Policy 决定。 |
 | Data Architect | 数据架构师 | 负责维护 Tenant 全局数据架构与建模约束的内置业务角色。 | 当前使用 `tenant.data_architect`，只允许 Tenant Scope 和 User Principal，负责业务实体、实体关系、逻辑模型、数仓分层、命名规范与质量 SLA。 |

@@ -11,6 +11,7 @@
       "moduleMgmt": "Modules",
       "engineMgmt": "Engines",
       "cleanup": "Resource Reclaim",
+      "myAccount": "My Account",
       "logout": "Logout",
       "logoutSuccess": "Logged out successfully"
     },
@@ -88,7 +89,6 @@
     },
     "iam": {
       "title": "Identity & Access Management",
-      "assurance": "Assurance: {level}",
       "noPermission": "The current authorization context has no IAM management permission",
       "setup": {
         "title": "This account currently manages tenant organization and access only",
@@ -96,8 +96,20 @@
         "action": "Configure Roles"
       },
       "context": {
-        "platform": "Platform management context",
-        "tenant": "Tenant context #{id}"
+        "platform": "Current management scope: Platform",
+        "tenant": "Current tenant: {name} ({code})",
+        "tenantUnknown": "Current tenant"
+      },
+      "session": {
+        "label": "Current session: {state}",
+        "detail": "Authentication assurance level: {level}",
+        "levels": {
+          "aal1": "Basic authentication",
+          "aal2": "Multi-factor authentication",
+          "aal3": "High-assurance authentication",
+          "not_applicable": "Machine credential",
+          "unknown": "Unknown"
+        }
       },
       "pages": {
         "organization": "Organization",
@@ -107,7 +119,6 @@
         "security": "Audit Management"
       },
       "tabs": {
-        "accountSecurity": "Account Security",
         "securityPolicy": "IAM Security Policy",
         "audit": "Audit Log",
         "tenants": "Tenant Lifecycle",
@@ -165,8 +176,8 @@
         "updatedAt": "Updated At"
       },
       "security": {
-        "authenticator": "Authenticator",
-        "totp": "Time-based one-time password (TOTP)",
+        "multiFactor": "Multi-factor authentication",
+        "totpDescription": "Protect the current account with a time-based one-time password (TOTP)",
         "enabled": "Enabled",
         "notEnabled": "Not enabled",
         "enable": "Enable",
@@ -176,12 +187,17 @@
         "manualKey": "Manual setup key",
         "verificationCode": "6-digit verification code",
         "verifyAndEnable": "Verify and enable",
-        "enabledSuccess": "Authenticator enabled and the current session is now AAL2",
+        "enabledSuccess": "Multi-factor authentication is enabled for the current session",
         "enrollmentFailed": "Could not begin authenticator enrollment",
         "invalidCode": "The verification code is invalid or expired",
         "stepUpTitle": "Confirm high-risk operation",
         "continueOperation": "Verify and continue",
         "stepUpFailed": "Could not begin step-up authentication"
+      },
+      "account": {
+        "title": "My Account",
+        "security": "Security Settings",
+        "securityDescription": "Manage authentication credentials and sign-in protection for the current account."
       },
       "tenants": {
         "create": "Create Tenant",

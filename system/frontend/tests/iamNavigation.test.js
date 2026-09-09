@@ -23,8 +23,7 @@ describe('System IAM information architecture', () => {
     ])
     expect(availableIAMTabs('accounts', 'platform', can).map(tab => tab.key)).toEqual([
       'users',
-      'identity-changes',
-      'account-security'
+      'identity-changes'
     ])
     expect(availableIAMTabs('security', 'platform', can).map(tab => tab.key)).toEqual([
       'security-policy',
@@ -59,8 +58,7 @@ describe('System IAM information architecture', () => {
     ])
     expect(availableIAMTabs('accounts', 'tenant', can).map(tab => tab.key)).toEqual([
       'user-accounts',
-      'invitations',
-      'account-security'
+      'invitations'
     ])
     expect(availableIAMTabs('roles', 'tenant', can).map(tab => tab.key)).toEqual([
       'role-definitions',
@@ -73,9 +71,9 @@ describe('System IAM information architecture', () => {
     ])
   })
 
-  it('keeps account security available without exposing unauthorized categories', () => {
+  it('does not expose IAM management categories without permission', () => {
     const can = permissionChecker([])
-    expect(availableIAMPages('tenant', can).map(page => page.key)).toEqual(['accounts'])
-    expect(availableIAMTabs('accounts', 'tenant', can).map(tab => tab.key)).toEqual(['account-security'])
+    expect(availableIAMPages('tenant', can)).toEqual([])
+    expect(availableIAMTabs('accounts', 'tenant', can)).toEqual([])
   })
 })
