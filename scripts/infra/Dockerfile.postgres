@@ -2,14 +2,14 @@
 # 支持多架构：x86_64 和 ARM64
 #
 # 构建参数：
-#   - POSTGRES_BASE_IMAGE: 基础镜像（根据架构自动选择）
+#   - POSTGRES_BASE_IMAGE: 基础镜像（默认 postgres:15-bookworm，可显式覆盖）
 #
 # 功能：
-#   - PostGIS 15 + PostgreSQL 15
+#   - PostgreSQL 15 + PostGIS 3
 #   - pgvector v0.8.0（向量检索扩展）
 
-# 使用构建参数指定基础镜像
-ARG POSTGRES_BASE_IMAGE=postgis/postgis:15-3.4
+# 使用仍受支持的 Debian bookworm 路线，避免旧 bullseye 仓库元数据失效。
+ARG POSTGRES_BASE_IMAGE=postgres:15-bookworm
 FROM ${POSTGRES_BASE_IMAGE}
 
 # 标签信息
@@ -17,10 +17,13 @@ LABEL maintainer="ADDP Team"
 LABEL description="PostgreSQL 15 with PostGIS and pgvector for ADDP Infrastructure"
 LABEL pgvector.version="0.8.0"
 
-# 安装构建依赖和 pgvector
-RUN apt-get update && apt-get install -y \
+# 安装 PostGIS 运行扩展以及 pgvector 构建依赖。
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    ca-certificates \
     git \
+    postgresql-15-postgis-3 \
+    postgresql-15-postgis-3-scripts \
     postgresql-server-dev-15 \
     && rm -rf /var/lib/apt/lists/*
 

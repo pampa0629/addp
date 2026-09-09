@@ -290,8 +290,8 @@ func main() {
 	pointCloudCOPCTaskSvc.SetCleaner(service.NewMinIOPointCloudCOPCCleaner(minioClient, minioBucket))
 	var postGISTileGenerator *mvt.PMTilesGenerator
 	if systemClient != nil {
-		tileCacheTaskSvc.SetSourceEngineResolver(func(ctx context.Context, engineID uint) (*commonModels.Engine, error) {
-			return systemClient.GetEngine(engineID)
+		tileCacheTaskSvc.SetSourceEngineResolver(func(ctx context.Context, tenantID, engineID uint) (*commonModels.Engine, error) {
+			return systemClient.GetEngineForTenant(ctx, tenantID, engineID)
 		})
 		postGISTileGenerator = mvt.NewPMTilesGenerator(mvt.NewTileGenerator(systemClient, cfg.TileCache.MaxDBConns))
 		tileCacheTaskSvc.SetTileGenerator(

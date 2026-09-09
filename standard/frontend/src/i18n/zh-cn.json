@@ -471,6 +471,7 @@
       "candidateVariantDifferencesTitle": "语义变体差异摘要",
       "candidateVariantDifferencesHint": "以下 {count} 个字段在本族变体之间存在差异",
       "candidateVariantIndex": "变体 {index}",
+      "candidateVariantJumpLabel": "定位到变体 {index}",
       "candidateVariantField": {
         "name": "名称",
         "definition": "定义",

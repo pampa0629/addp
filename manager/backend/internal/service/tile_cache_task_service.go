@@ -55,7 +55,7 @@ type TileCacheTaskService struct {
 	quickViewSvc                *QuickViewService
 	metaClient                  *commonClient.MetaClient
 	sourceVersionResolver       func(context.Context, uint, tileCacheTaskTargetIdentity) (string, error)
-	sourceEngineResolver        func(context.Context, uint) (*commonModels.Engine, error)
+	sourceEngineResolver        func(context.Context, uint, uint) (*commonModels.Engine, error)
 	tileGenerator               TileCacheGenerator
 	workflowTileGenerator       WorkflowTileCacheGenerator
 	tileTargetResolver          RealtimeTileTargetResolver
@@ -128,7 +128,7 @@ func (s *TileCacheTaskService) SetSourceVersionResolver(resolver func(context.Co
 	s.sourceVersionResolver = resolver
 }
 
-func (s *TileCacheTaskService) SetSourceEngineResolver(resolver func(context.Context, uint) (*commonModels.Engine, error)) {
+func (s *TileCacheTaskService) SetSourceEngineResolver(resolver func(context.Context, uint, uint) (*commonModels.Engine, error)) {
 	s.sourceEngineResolver = resolver
 }
 
@@ -793,7 +793,7 @@ func (s *TileCacheTaskService) prepareExecutionTileCache(ctx context.Context, ta
 	tableSource := identity.SourceKind == string(resourcetree.TypeTable)
 	workflowTableSource := false
 	if tableSource && s.sourceEngineResolver != nil {
-		sourceEngine, err := s.sourceEngineResolver(ctx, identity.EngineID)
+		sourceEngine, err := s.sourceEngineResolver(ctx, task.TenantID, identity.EngineID)
 		if err != nil {
 			return nil, execCfg, mvt.QuickViewConfig{}, nil, false, fmt.Errorf("resolve tile cache source engine: %w", err)
 		}

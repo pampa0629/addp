@@ -120,6 +120,13 @@ Tenant 自定义 Role：
 4. Role 更新必须递增受影响 Principal 的 `authorization_version`；
 5. 删除前必须处理现有 Assignment，不允许静默留下悬空授权。
 
+Tenant Role 管理界面展示 Permission 时，必须按“owner 模块 → 资源 → 动作”组织：
+
+1. owner 模块读取 Manifest 的 `owner_module`，资源和动作读取 Permission Key 的稳定分段；
+2. 资源名称与动作名称必须使用 System 前端国际化词条，完整 Permission Key 只作为技术参考，不作为主要名称；
+3. System 只维护资源段和动作段的展示词汇，不复制 Permission 集合、风险等级、允许 Scope 或其他授权事实；
+4. 发布门禁必须校验所有 `tenant_customizable=true` 的 active Permission 在 `zh-cn` 和 `en` 下都有资源名称，不允许运行时回退为 snake_case 技术标识。
+
 ## 六、Role Assignment 与 Scope
 
 Role Assignment 绑定 Principal、Role、Scope、来源、有效期和生命周期状态。Scope 类型固定为：

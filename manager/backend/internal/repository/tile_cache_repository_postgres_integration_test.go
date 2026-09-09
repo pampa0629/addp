@@ -45,7 +45,7 @@ func TestIntegrationPostgresManagerTileCacheConcurrentClaimAndStart(t *testing.T
 		TenantID: tenantID, Name: "manager-tile-cache-integration", Enabled: true,
 		Config: commonModels.JSONMap{
 			"target": commonModels.JSONMap{"item_fingerprint": fmt.Sprintf("manager-pg-%d", tenantID)},
-			"tile":   commonModels.JSONMap{"format": "mvt"},
+			"tile":   commonModels.JSONMap{"archive_format": "pmtiles", "tile_type": "mvt"},
 		},
 	}
 	if err := createTaskDefinition(context.Background(), db, commonExecution.TaskTypeVectorTileCacheGeneration, &task); err != nil {

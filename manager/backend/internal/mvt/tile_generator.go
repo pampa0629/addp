@@ -28,7 +28,7 @@ type TileGenerator struct {
 
 // ResourceService 资源服务接口（避免循环依赖）
 type ResourceService interface {
-	GetEngine(engineID uint) (*commonModels.Engine, error)
+	GetEngineForTenant(ctx context.Context, tenantID, engineID uint) (*commonModels.Engine, error)
 }
 
 // NewTileGenerator 创建瓦片生成器
@@ -245,7 +245,7 @@ func (g *TileGenerator) GetAllColumns(ctx context.Context, db *sql.DB, schema, t
 
 // getOrCreateDBPool 获取或创建数据库连接池。底层连接池由 common dbbridge/plugin 统一管理。
 func (g *TileGenerator) getOrCreateDBPool(ctx context.Context, engineID, tenantID uint) (*sql.DB, error) {
-	resource, err := g.resourceService.GetEngine(engineID)
+	resource, err := g.resourceService.GetEngineForTenant(ctx, tenantID, engineID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get resource: %w", err)
 	}

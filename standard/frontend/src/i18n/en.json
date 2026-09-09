@@ -468,6 +468,7 @@
       "candidateVariantDifferencesTitle": "Semantic Variant Differences",
       "candidateVariantDifferencesHint": "The following {count} fields differ across variants in this family",
       "candidateVariantIndex": "Variant {index}",
+      "candidateVariantJumpLabel": "Jump to variant {index}",
       "candidateVariantField": {
         "name": "Name",
         "definition": "Definition",

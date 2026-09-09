@@ -816,14 +816,11 @@ func (h *QuickViewHandler) createAndExecuteModel3DTilesTask(
 	if h.model3DTilesTaskSvc == nil {
 		return 0, "", errors.New("model3d tiles task service is not initialized")
 	}
-	if capability == nil || source.Model3D == nil || source.Model3D.Format != "osgb_scene" {
-		return 0, "", errors.New("quick view source is not an OSGB Scene")
-	}
-	sourceMap, err := quickViewArtifactSourceConfig(capability, source.EngineID, source.Model3D.Format, source.Model3D.SourceSizeBytes)
+	config, err := model3DTilesTaskConfigFromQuickView(capability, source, targetFormat)
 	if err != nil {
 		return 0, "", err
 	}
-	task := models.Model3DTilesTask{TenantID: capability.TenantID, Name: quickViewActionTaskName("分块三维模型瓦片", capability), Enabled: true, Config: commonModels.JSONMap{"source": sourceMap, "target_format": targetFormat, "result": commonModels.JSONMap{}}, CreatedBy: &userID}
+	task := models.Model3DTilesTask{TenantID: capability.TenantID, Name: quickViewActionTaskName("分块三维模型瓦片", capability), Enabled: true, Config: config, CreatedBy: &userID}
 	if err := h.model3DTilesTaskSvc.Create(ctx, &task); err != nil {
 		return 0, "", err
 	}
@@ -1043,7 +1040,8 @@ func vectorTileCacheTaskConfigFromQuickView(capability *service.QuickViewCapabil
 		maxZoom = capability.RenderFacts.ZoomRecommendation.MaxZoom
 	}
 	tile := commonModels.JSONMap{
-		"format":          "mvt",
+		"archive_format":  "pmtiles",
+		"tile_type":       "mvt",
 		"tile_matrix_set": "WebMercatorQuad",
 		"min_zoom":        minZoom,
 		"max_zoom":        maxZoom,
@@ -1135,6 +1133,21 @@ func model3DGLBTaskConfigFromQuickView(capability *service.QuickViewCapability, 
 	return commonModels.JSONMap{
 		"source": sourceMap,
 		"result": commonModels.JSONMap{},
+	}, nil
+}
+
+func model3DTilesTaskConfigFromQuickView(capability *service.QuickViewCapability, source service.QuickViewSource, targetFormat string) (commonModels.JSONMap, error) {
+	if capability == nil || source.Model3D == nil || source.Model3D.Format != "osgb_scene" {
+		return nil, errors.New("quick view source is not an OSGB Scene")
+	}
+	sourceMap, err := quickViewArtifactSourceConfig(capability, source.EngineID, source.Model3D.Format, source.Model3D.SourceSizeBytes)
+	if err != nil {
+		return nil, err
+	}
+	return commonModels.JSONMap{
+		"source":        sourceMap,
+		"target_format": targetFormat,
+		"result":        commonModels.JSONMap{},
 	}, nil
 }
 

@@ -2176,6 +2176,8 @@ Selection Binding 的源选择是浏览器会话内的瞬时交互状态，不�
 
 本节已落地：通用 Chart renderer 使用 Element Plus 当前主题的 warning 语义色和单选状态；通用 GeoJSON renderer 向 OpenLayers 传递显式的 `preserveView` 决策，并为 popup 配置 `24px` 可视边距和零时长自动平移；Workbench 只在 Selection Binding 触发的目标 Map 重查中启用该瞬时视野策略。普通 desktop 与 wallboard 运行画布现共用一条 placement 填充布局。`make test-common-frontend`（77 项）与 `make test-workbench-frontend`（79 项及 Vite production build）均通过。
 
+用户在长期正式应用 `c4c0aa6e-70b1-49e8-8ade-8db92f5c6e33` 刷新后确认本节四项运行效果正常：Map 填满 placement、popup 完整可见、Chart 选择联动不再触发 Map 缩放过程、当前柱子具有明确主题色反馈。首次执行 Workbench 全模块门禁时，platform T0、Workbench Go T1、Frontend T1/T3、production build 与 Swagger 覆盖均通过，集成阶段因调用 shell 未设置 `WORKBENCH_POSTGRES_TEST_DSN` 而按规范失败关闭；确认根因后使用仓库标准 `addp_test` DSN 重新执行完整 `make test-module MODULE=workbench`，全部门禁一次通过。该环境补参不改变测试入口、数据库清单或产品代码。
+
 ## 十五、概念设计状态
 
 当前没有待确认的 Phase 0 概念问题。Phase 5 的 Selection Binding 同页联动、`desktop | wallboard` 展示模式、浏览器会话级全屏、Application Refresh Policy 和 Application Presentation Sections 已完成设计、实现、标准模块门禁与真实浏览器验收；Data Application 资产运营指标的事实源、模块归属以及 Asset 自有 `application` / 具体 Asset 运营分组也已完成运行态复核。外部 BI 的 owner 边界、消费契约、用户委托 OAuth 单一路线和 System 外部 OAuth Client 注册治理已经完成；首个真实 BI 验收载体仍为 Power Query 自定义 Connector 与 Power BI Desktop Import，但因当前缺少 Windows 宿主而暂缓。`common-python` 的产品无关 Service Consumer SDK、离线门禁及真实普通表、空间表和 Outdoor 多服务只读运行验收均已完成；它不替代 callback state、持久外部 Client 生命周期和真实 BI 产品端到端证据，因此正式 BI 接入指南继续保持未完成。

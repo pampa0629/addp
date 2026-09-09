@@ -701,6 +701,8 @@ test('shows deterministic candidate comparisons and opens the existing standard'
   await expect(variantDifferences).toContainText('成员关系状态')
   await expect(variantDifferences.getByText('变体 1')).toHaveCount(2)
   await expect(variantDifferences.getByText('变体 2')).toHaveCount(2)
+  await variantDifferences.getByRole('button', { name: '定位到变体 2' }).first().click()
+  await expect(codeSetCandidate.nth(1)).toBeFocused()
   const codeItems = codeSetCandidate.locator('.comparison-item')
   await expect(codeItems.nth(0)).toContainText('signup · 报名中 — 已正式报名')
   await expect(codeItems.nth(1)).toContainText('registered · 已报名 — 报名已经确认')

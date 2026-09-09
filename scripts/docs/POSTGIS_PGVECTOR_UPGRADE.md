@@ -17,16 +17,16 @@ ADDP系统PostgreSQL已升级为PostGIS镜像,并添加pgvector扩展支持,实�
 |------|---------|---------|----------|----------|
 | ARM64 | `addp-postgres-pgvector:latest` (本地) | ✅ 预装 | ✅ 预装 v0.8.0 | **秒级** ⚡ |
 | ARM64 | `pampa0629/addp-postgres:15-arm64` (Docker Hub) | ✅ 预装 | ✅ 预装 v0.8.0 | **秒级** ⚡ |
-| AMD64 | `postgis/postgis:15-3.4` + 编译 | ✅ 预装 | ✅ 编译安装 | 2-3分钟 |
+| AMD64 | `postgres:15-bookworm` + 仓库 Dockerfile 构建 | ✅ PGDG 安装 | ✅ 编译安装 v0.8.0 | 2-3分钟 |
 
-**推荐使用预构建镜像**（已在 docker-compose.infra.yml 中配置）。
+ARM64 推荐使用预构建镜像；AMD64 由 `scripts/infra/up.sh` 在镜像缺失时通过仓库 Dockerfile 自动构建。
 
 ### 业务数据库 (business/docker-compose.yml)
 
 | 架构 | 镜像 | PostGIS | pgvector |
 |------|------|---------|----------|
 | ARM64 | `imresamu/postgis-arm64:15-3.4` | ✅ 预装 | ❌ 不需要 |
-| AMD64 | `postgis/postgis:15-3.4` | ✅ 预装 | ❌ 不需要 |
+| AMD64 | `addp-postgres-pgvector:latest`（本地） | ✅ PGDG 安装 | ✅ 预装 v0.8.0 |
 
 ## 使用方法
 

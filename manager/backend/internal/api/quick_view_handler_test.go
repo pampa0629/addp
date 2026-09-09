@@ -879,6 +879,121 @@ func TestGaussianSplatKSplatTaskConfigFromQuickViewUsesCapabilityIdentity(t *tes
 	}
 }
 
+func TestQuickViewGeneratedConfigsAreAcceptedByOwningTaskServices(t *testing.T) {
+	db := newTaskProviderHandlerTestDB(t)
+	ctx := context.Background()
+
+	t.Run("vector materialized view", func(t *testing.T) {
+		config, err := vectorMaterializedViewTaskConfigFromQuickView(
+			&service.QuickViewCapability{Locator: "addp://engine/11/path/public/roads?type=table&item_id=99"},
+			service.QuickViewSource{
+				EngineID: 11, Schema: "public", Table: "roads",
+				SpatialMeta: &service.SpatialMetadataResult{GeomColumn: "shape", SRID: 4326},
+			},
+		)
+		if err != nil {
+			t.Fatalf("build config: %v", err)
+		}
+		task := &models.VectorMaterializedViewTask{TenantID: 7, Name: "vector materialized", Enabled: true, Config: config}
+		svc := service.NewVectorMaterializedViewTaskService(repository.NewVectorMaterializedViewRepository(db), nil)
+		if err := svc.Create(ctx, task); err != nil {
+			t.Fatalf("owning service rejected quick-view config: %v", err)
+		}
+	})
+
+	t.Run("raster COG", func(t *testing.T) {
+		locator := "addp://engine/26/path/rasters/dem.tif?type=file&item_id=42"
+		config, err := rasterCOGTaskConfigFromQuickView(
+			&service.QuickViewCapability{
+				TenantID: 7, Locator: locator, SourceKind: service.QuickViewSourceKindRaster,
+				ItemFingerprint: commonModels.GenerateItemFingerprint(26, "rasters/dem.tif"),
+			},
+			service.QuickViewSource{EngineID: 26, Raster: &service.RasterQuickViewSource{Profile: "geotiff", SizeBytes: 8192}},
+		)
+		if err != nil {
+			t.Fatalf("build config: %v", err)
+		}
+		task := &models.RasterCOGTask{TenantID: 7, Name: "raster COG", Enabled: true, Config: config}
+		if err := service.NewRasterCOGTaskService(repository.NewRasterCOGRepository(db)).Create(ctx, task); err != nil {
+			t.Fatalf("owning service rejected quick-view config: %v", err)
+		}
+	})
+
+	t.Run("model 3d GLB", func(t *testing.T) {
+		locator := "addp://engine/26/path/3d/models/building.ifc?type=file&item_id=77"
+		config, err := model3DGLBTaskConfigFromQuickView(
+			&service.QuickViewCapability{
+				TenantID: 7, Locator: locator, SourceKind: service.QuickViewSourceKindModel3D,
+				ItemFingerprint: commonModels.GenerateItemFingerprint(26, "3d/models/building.ifc"),
+			},
+			service.QuickViewSource{EngineID: 26, Model3D: &service.Model3DGLBSource{Format: "ifc", SourceSizeBytes: 4096}},
+		)
+		if err != nil {
+			t.Fatalf("build config: %v", err)
+		}
+		task := &models.Model3DGLBTask{TenantID: 7, Name: "model GLB", Enabled: true, Config: config}
+		if err := service.NewModel3DGLBTaskService(repository.NewModel3DGLBRepository(db)).Create(ctx, task); err != nil {
+			t.Fatalf("owning service rejected quick-view config: %v", err)
+		}
+	})
+
+	t.Run("model 3d tiles formats", func(t *testing.T) {
+		locator := "addp://engine/26/path/3d/osgb/scene?type=file&item_id=78"
+		capability := &service.QuickViewCapability{
+			TenantID: 7, Locator: locator,
+			ItemFingerprint: commonModels.GenerateItemFingerprint(26, "3d/osgb/scene"),
+		}
+		source := service.QuickViewSource{EngineID: 26, Model3D: &service.Model3DGLBSource{Format: "osgb_scene", SourceSizeBytes: 8192}}
+		svc := service.NewModel3DTilesTaskService(repository.NewModel3DTilesRepository(db))
+		for _, targetFormat := range []string{models.Model3DTilesTargetFormat3DTiles, models.Model3DTilesTargetFormatS3M} {
+			config, err := model3DTilesTaskConfigFromQuickView(capability, source, targetFormat)
+			if err != nil {
+				t.Fatalf("build %s config: %v", targetFormat, err)
+			}
+			task := &models.Model3DTilesTask{TenantID: 7, Name: "model tiles " + targetFormat, Enabled: true, Config: config}
+			if err := svc.Create(ctx, task); err != nil {
+				t.Fatalf("owning service rejected %s quick-view config: %v", targetFormat, err)
+			}
+		}
+	})
+
+	t.Run("gaussian splat KSplat", func(t *testing.T) {
+		locator := "addp://engine/26/path/3d/gaussian/model.ply?type=file&item_id=79"
+		config, err := gaussianSplatKSplatTaskConfigFromQuickView(
+			&service.QuickViewCapability{
+				TenantID: 7, Locator: locator, SourceKind: service.QuickViewSourceKindGaussianSplat,
+				ItemFingerprint: commonModels.GenerateItemFingerprint(26, "3d/gaussian/model.ply"),
+			},
+			service.QuickViewSource{EngineID: 26, GaussianSplat: &service.GaussianSplatKSplatSource{Format: "ply", SourceSizeBytes: 16384}},
+		)
+		if err != nil {
+			t.Fatalf("build config: %v", err)
+		}
+		task := &models.GaussianSplatKSplatTask{TenantID: 7, Name: "gaussian KSplat", Enabled: true, Config: config}
+		if err := service.NewGaussianSplatKSplatTaskService(repository.NewGaussianSplatKSplatRepository(db)).Create(ctx, task); err != nil {
+			t.Fatalf("owning service rejected quick-view config: %v", err)
+		}
+	})
+
+	t.Run("point cloud COPC", func(t *testing.T) {
+		locator := "addp://engine/26/path/point-cloud/sample.las?type=file&item_id=80"
+		config, err := pointCloudCOPCTaskConfigFromQuickView(
+			&service.QuickViewCapability{
+				TenantID: 7, Locator: locator, SourceKind: service.QuickViewSourceKindPointCloud,
+				ItemFingerprint: commonModels.GenerateItemFingerprint(26, "point-cloud/sample.las"),
+			},
+			service.QuickViewSource{EngineID: 26, PointCloud: &service.PointCloudCOPCSource{Format: "las", SourceSizeBytes: 32768}},
+		)
+		if err != nil {
+			t.Fatalf("build config: %v", err)
+		}
+		task := &models.PointCloudCOPCTask{TenantID: 7, Name: "point cloud COPC", Enabled: true, Config: config}
+		if err := service.NewPointCloudCOPCTaskService(repository.NewPointCloudCOPCRepository(db)).Create(ctx, task); err != nil {
+			t.Fatalf("owning service rejected quick-view config: %v", err)
+		}
+	})
+}
+
 func TestRasterMosaicTileStyleQueryParsing(t *testing.T) {
 	gamma, ok := parseOptionalPositiveFloat("0.7")
 	if !ok || gamma != 0.7 {
@@ -1063,12 +1178,70 @@ func TestVectorTileCacheTaskConfigFromQuickViewUsesLocatorIdentityForFile(t *tes
 		t.Fatalf("table is present for file target: %#v", target)
 	}
 	tile, _ := asJSONMap(config["tile"])
-	if tile["format"] != "mvt" || tile["target_srid"] != commonSpatial.SRIDWebMercator || tile["source_srid"] != 4326 {
-		t.Fatalf("tile config = %#v, want mvt 4326->3857", tile)
+	if _, exists := tile["format"]; exists {
+		t.Fatalf("tile config contains removed format field: %#v", tile)
+	}
+	if tile["archive_format"] != "pmtiles" || tile["tile_type"] != "mvt" || tile["target_srid"] != commonSpatial.SRIDWebMercator || tile["source_srid"] != 4326 {
+		t.Fatalf("tile config = %#v, want PMTiles/MVT 4326->3857", tile)
 	}
 	options, _ := asJSONMap(config["options"])
 	if options["geometry_column"] != "geometry" {
 		t.Fatalf("geometry_column = %v, want geometry", options["geometry_column"])
+	}
+}
+
+func TestQuickViewVectorTileCacheActionCreatesCanonicalTaskAndExecution(t *testing.T) {
+	db := newTaskProviderHandlerTestDB(t)
+	repo := repository.NewTileCacheRepository(db)
+	executionRepo := commonExecution.NewTaskExecutionRepository(db)
+	taskService := service.NewTileCacheTaskService(repo, executionRepo)
+	handler := &QuickViewHandler{tileCacheTaskSvc: taskService}
+	locator := "addp://engine/26/path/shp/farmland.shp?type=file&item_id=100"
+	capability := &service.QuickViewCapability{
+		TenantID:             7,
+		ItemFingerprint:      commonModels.GenerateItemFingerprint(26, "shp/farmland.shp"),
+		Locator:              locator,
+		CanGenerateTileCache: true,
+		RenderFacts: &service.QuickViewRenderFacts{
+			ZoomRecommendation: &service.ZoomRecommendation{MinZoom: 2, MaxZoom: 10},
+		},
+	}
+	source := service.QuickViewSource{
+		EngineID:         26,
+		DirectFlatGeobuf: true,
+		SpatialMeta: &service.SpatialMetadataResult{
+			GeomColumn:  "geometry",
+			SRID:        4326,
+			Extent:      []float64{110, 20, 120, 30},
+			ExtentSRID:  4326,
+			RecordCount: 73090,
+		},
+	}
+
+	taskID, executionID, err := handler.createAndExecuteTileCacheTask(context.Background(), 1, capability, source, false)
+	if err != nil {
+		t.Fatalf("createAndExecuteTileCacheTask() error = %v", err)
+	}
+	if taskID == 0 || executionID == "" {
+		t.Fatalf("task_id=%d execution_id=%q, want submitted task", taskID, executionID)
+	}
+	task, err := repo.GetTask(context.Background(), taskID, capability.TenantID)
+	if err != nil || task == nil {
+		t.Fatalf("GetTask() task=%#v err=%v", task, err)
+	}
+	tile, _ := asJSONMap(task.Config["tile"])
+	if _, exists := tile["format"]; exists {
+		t.Fatalf("persisted tile config contains removed format field: %#v", tile)
+	}
+	if tile["archive_format"] != "pmtiles" || tile["tile_type"] != "mvt" {
+		t.Fatalf("persisted tile config = %#v, want canonical PMTiles/MVT", tile)
+	}
+	execution, err := executionRepo.GetByExecutionID(context.Background(), executionID, int(capability.TenantID))
+	if err != nil || execution == nil {
+		t.Fatalf("GetByExecutionID() execution=%#v err=%v", execution, err)
+	}
+	if execution.TaskType != commonExecution.TaskTypeVectorTileCacheGeneration || execution.Status != commonExecution.ExecutionStatusPending {
+		t.Fatalf("execution = %#v, want pending vector tile cache generation", execution)
 	}
 }
 

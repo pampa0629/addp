@@ -30,9 +30,13 @@ type TenantRole struct {
 }
 
 type TenantAssignablePermission struct {
-	PermissionKey     string
-	RiskLevel         string
-	AllowedScopeTypes pq.StringArray `gorm:"column:allowed_scope_types;type:text[]"`
+	PermissionKey      string
+	OwnerModule        string
+	Action             string
+	RiskLevel          string
+	AllowedScopeTypes  pq.StringArray `gorm:"column:allowed_scope_types;type:text[]"`
+	NameI18nKey        string
+	DescriptionI18nKey string
 }
 
 type ManagedTenantRoleAssignment struct {
@@ -259,7 +263,7 @@ func (r *Repository) ListTenantRoles(ctx context.Context, tenantID int64) ([]Ten
 func (r *Repository) ListTenantAssignablePermissions(ctx context.Context) ([]TenantAssignablePermission, error) {
 	var permissions []TenantAssignablePermission
 	err := r.db.WithContext(ctx).Table("system.permissions").
-		Select("permission_key, risk_level, allowed_scope_types").
+		Select("permission_key, owner_module, action, risk_level, allowed_scope_types, name_i18n_key, description_i18n_key").
 		Where("status = 'active' AND tenant_customizable = true").
 		Order("permission_key ASC").Scan(&permissions).Error
 	return permissions, wrapRepositoryError(err)

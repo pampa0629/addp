@@ -12,9 +12,9 @@
 --   * manager schema: Manager 模块专用（向量嵌入表）
 
 -- ==================== PostGIS 扩展 ====================
--- PostGIS 扩展预装于 PostGIS 镜像中
+-- PostGIS 扩展预装于 ADDP PostgreSQL 镜像中
 -- ARM64: imresamu/postgis-arm64:15-3.4
--- AMD64: postgis/postgis:15-3.4
+-- AMD64: addp-postgres-pgvector:latest（基于 postgres:15-bookworm 构建）
 CREATE EXTENSION IF NOT EXISTS postgis;
 
 -- ADDP Infra 只使用 PostGIS 核心 geometry/geography 能力。基础镜像会默认安装

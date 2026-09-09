@@ -2619,10 +2619,18 @@ definitions:
     type: object
   internal_api.IAMTenantAssignablePermissionResponse:
     properties:
+      action:
+        type: string
       allowed_scope_types:
         items:
           type: string
         type: array
+      description_i18n_key:
+        type: string
+      name_i18n_key:
+        type: string
+      owner_module:
+        type: string
       permission_key:
         type: string
       risk_level:

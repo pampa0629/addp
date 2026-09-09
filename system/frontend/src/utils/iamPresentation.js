@@ -88,3 +88,50 @@ export function groupPermissionsByNamespace(items, getPermissionKey = (item) => 
       )
     }))
 }
+
+export function permissionIdentity(permission) {
+  const permissionKey = String(permission?.permission_key || permission || '').trim()
+  const segments = permissionKey.split('.')
+  return {
+    permissionKey,
+    ownerModule: String(permission?.owner_module || segments[0] || '').trim(),
+    resource: segments.length >= 3 ? segments.slice(1, -1).join('.') : '',
+    action: String(permission?.action || segments.at(-1) || '').trim()
+  }
+}
+
+export function permissionResourceI18nKey(permission) {
+  return `system.iam.roles.resources.${permissionIdentity(permission).resource}`
+}
+
+export function permissionMatchesScopes(permission, scopeTypes) {
+  const allowed = new Set(permission?.allowed_scope_types || [])
+  return (scopeTypes || []).every((scopeType) => allowed.has(scopeType))
+}
+
+export function buildPermissionGroups(items, options = {}) {
+  const search = String(options.search || '').trim().toLocaleLowerCase()
+  const scopeTypes = options.scopeTypes || []
+  const selected = new Set(options.selectedKeys || [])
+  const getSearchValues = options.getSearchValues || (() => [])
+  return groupPermissionsByNamespace(
+    (items || []).filter((permission) => {
+      if (!permissionMatchesScopes(permission, scopeTypes)) return false
+      if (!search) return true
+      const identity = permissionIdentity(permission)
+      return [
+        identity.permissionKey,
+        identity.ownerModule,
+        identity.resource,
+        identity.action,
+        permission?.name_i18n_key,
+        permission?.description_i18n_key,
+        ...getSearchValues(permission)
+      ].some((value) => String(value || '').toLocaleLowerCase().includes(search))
+    }),
+    (permission) => permissionIdentity(permission).ownerModule
+  ).map((group) => ({
+    ...group,
+    selectedCount: group.permissions.filter((permission) => selected.has(permission.permission_key)).length
+  }))
+}

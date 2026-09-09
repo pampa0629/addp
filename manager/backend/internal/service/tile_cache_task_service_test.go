@@ -206,7 +206,11 @@ func TestDatabaseTableTileCacheGenerationUsesFlatGeobufWorkflow(t *testing.T) {
 			}}
 			svc.SetTileGenerator(native, 4)
 			svc.SetWorkflowTileGenerator(workflow)
-			svc.SetSourceEngineResolver(func(context.Context, uint) (*commonModels.Engine, error) {
+			var resolvedTenantID uint
+			var resolvedEngineID uint
+			svc.SetSourceEngineResolver(func(_ context.Context, tenantID, engineID uint) (*commonModels.Engine, error) {
+				resolvedTenantID = tenantID
+				resolvedEngineID = engineID
 				return &commonModels.Engine{EngineType: engineType}, nil
 			})
 			svc.SetSourceVersionResolver(func(context.Context, uint, tileCacheTaskTargetIdentity) (string, error) {
@@ -230,6 +234,9 @@ func TestDatabaseTableTileCacheGenerationUsesFlatGeobufWorkflow(t *testing.T) {
 			}
 			if workflow.calls != 1 || workflow.lastReq.Identity.SourceKind != "table" || workflow.lastReq.Identity.Schema != "public" {
 				t.Fatalf("workflow calls=%d request=%#v", workflow.calls, workflow.lastReq)
+			}
+			if resolvedTenantID != task.TenantID || resolvedEngineID != 11 {
+				t.Fatalf("source engine resolver tenant=%d engine=%d, want tenant=%d engine=11", resolvedTenantID, resolvedEngineID, task.TenantID)
 			}
 		})
 	}

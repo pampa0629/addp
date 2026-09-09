@@ -13288,11 +13288,23 @@ const docTemplate = `{
         "internal_api.IAMTenantAssignablePermissionResponse": {
             "type": "object",
             "properties": {
+                "action": {
+                    "type": "string"
+                },
                 "allowed_scope_types": {
                     "type": "array",
                     "items": {
                         "type": "string"
                     }
+                },
+                "description_i18n_key": {
+                    "type": "string"
+                },
+                "name_i18n_key": {
+                    "type": "string"
+                },
+                "owner_module": {
+                    "type": "string"
                 },
                 "permission_key": {
                     "type": "string"

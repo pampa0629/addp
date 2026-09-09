@@ -53,7 +53,11 @@ describe('document candidate contract', () => {
     expect(documentDetailSource).toContain('buildCandidateVariantDifferences')
     expect(documentDetailSource).toContain('variant_differences: buildCandidateVariantDifferences(family)')
     expect(documentDetailSource).toContain('standard.document.candidateVariantDifferencesTitle')
+    expect(documentDetailSource).toContain('focusCandidateVariant(family.family_key, item.semantic_fingerprint)')
+    expect(documentDetailSource).toContain('tabindex="-1"')
     expect(zhCn.standard.document.candidateVariantDifferencesTitle).toBe('语义变体差异摘要')
+    expect(zhCn.standard.document.candidateVariantJumpLabel).toBe('定位到变体 {index}')
+    expect(en.standard.document.candidateVariantJumpLabel).toBe('Jump to variant {index}')
     expect(en.standard.document.candidateVariantIndex).toBe('Variant {index}')
   })
 

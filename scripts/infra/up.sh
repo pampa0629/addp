@@ -35,8 +35,7 @@ if [ -f ./.env ]; then
   set +a
 fi
 
-# Detect CPU architecture and set PostgreSQL image
-# Note: docker-compose.infra.yml has default value, only override if needed for compatibility
+# Detect CPU architecture and select the single supported PostgreSQL image path.
 if [ -z "${POSTGRES_IMAGE:-}" ]; then
     ARCH=$(uname -m)
     case "${ARCH}" in
@@ -53,7 +52,8 @@ if [ -z "${POSTGRES_IMAGE:-}" ]; then
             echo -e "${YELLOW}🏗️  检测到 ARM64 架构，使用预构建镜像: ${POSTGRES_IMAGE}${NC}"
             ;;
         *)
-            echo -e "${YELLOW}⚠️  未知架构 ${ARCH}，使用默认镜像${NC}"
+            echo -e "${RED}✗ 不支持的 CPU 架构: ${ARCH}；请显式设置 POSTGRES_IMAGE${NC}"
+            exit 1
             ;;
     esac
 fi
@@ -213,7 +213,7 @@ fi
 
 # Images to check
 IMAGES=(
-  "${POSTGRES_IMAGE:-postgis/postgis:15-3.4}"
+  "$POSTGRES_IMAGE"
   "redis:7-alpine"
   "minio/minio:latest"
   "getmeili/meilisearch:v1.7"

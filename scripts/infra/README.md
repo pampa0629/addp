@@ -499,9 +499,9 @@ POSTGRES_IMAGE=imresamu/postgis-arm64:15-3.4 ./scripts/infra/up.sh
 - `addp_iam_test` - 幂等创建，供 System IAM 发布门禁独占串行复用
 
 **安装的扩展**:
-- **PostGIS 3.4** - 空间数据操作支持
+- **PostGIS 3** - 通过 PostgreSQL 官方 PGDG bookworm 软件源安装
   - 在开发库和 `addp_test` 中创建 postgis 扩展
-- **pgvector 0.7.0** - 向量检索支持
+- **pgvector 0.8.0** - 向量检索支持
   - 从源码编译安装
   - 仅在开发库的 `manager` Schema 中支持向量嵌入和相似度搜索
 

@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildPermissionGroups,
   formatMemberOptionLabel,
   groupTenantMembers,
   groupPermissionsByNamespace,
+  permissionIdentity,
+  permissionMatchesScopes,
+  permissionResourceI18nKey,
   resolveIAMModuleName
 } from './iamPresentation'
 
@@ -47,5 +51,40 @@ describe('IAM presentation helpers', () => {
     const te = (key) => key === 'system.iam.modules.system'
     expect(resolveIAMModuleName('system', t, te)).toBe('System Management')
     expect(resolveIAMModuleName('extension', t, te)).toBe('extension')
+  })
+
+  it('derives stable permission presentation fields from the permission key', () => {
+    expect(permissionIdentity({ permission_key: 'manager.data_item.read' })).toEqual({
+      permissionKey: 'manager.data_item.read',
+      ownerModule: 'manager',
+      resource: 'data_item',
+      action: 'read'
+    })
+    expect(permissionResourceI18nKey({ permission_key: 'manager.data_item.read' }))
+      .toBe('system.iam.roles.resources.data_item')
+  })
+
+  it('requires permissions to support every selected role scope', () => {
+    const permission = { allowed_scope_types: ['tenant', 'department'] }
+    expect(permissionMatchesScopes(permission, ['tenant'])).toBe(true)
+    expect(permissionMatchesScopes(permission, ['tenant', 'project_group'])).toBe(false)
+  })
+
+  it('builds searchable permission groups with selected counts', () => {
+    const permissions = [
+      { permission_key: 'meta.scan_task.execute', owner_module: 'meta', action: 'execute', allowed_scope_types: ['tenant'] },
+      { permission_key: 'manager.data_item.read', owner_module: 'manager', action: 'read', allowed_scope_types: ['tenant', 'department'] },
+      { permission_key: 'manager.data_item.update', owner_module: 'manager', action: 'update', allowed_scope_types: ['tenant'] }
+    ]
+    expect(buildPermissionGroups(permissions, {
+      search: 'Data Item',
+      scopeTypes: ['tenant', 'department'],
+      selectedKeys: ['manager.data_item.read'],
+      getSearchValues: (permission) => permission.permission_key === 'manager.data_item.read' ? ['Data Item'] : []
+    })).toEqual([{
+      namespace: 'manager',
+      permissions: [permissions[1]],
+      selectedCount: 1
+    }])
   })
 })

@@ -20,25 +20,41 @@
     </div>
 
     <el-table v-loading="loading" :data="filteredRows" stripe>
-      <el-table-column :label="t('system.iam.roles.role')" min-width="220">
+      <el-table-column :label="t('system.iam.roles.role')" min-width="300">
         <template #default="{ row }">
-          <div class="iam-primary-cell"><strong>{{ roleName(row) }}</strong><span>{{ row.role_key }}</span></div>
+          <div class="iam-primary-cell">
+            <strong>{{ roleName(row) }}</strong>
+            <span>{{ row.role_key }}</span>
+            <span v-if="roleDescription(row)" class="iam-role-description">{{ roleDescription(row) }}</span>
+          </div>
         </template>
       </el-table-column>
       <el-table-column :label="t('system.iam.roles.type')" width="150">
         <template #default="{ row }"><el-tag effect="plain">{{ t(`system.iam.roles.types.${row.role_type}`) }}</el-tag></template>
       </el-table-column>
-      <el-table-column :label="t('system.iam.common.description')" min-width="260">
-        <template #default="{ row }"><span class="iam-list-text">{{ roleDescription(row) || '-' }}</span></template>
+      <el-table-column :label="t('system.iam.roles.applicableContext')" min-width="240">
+        <template #default="{ row }">
+          <div class="iam-context-tags">
+            <div>
+              <span class="iam-context-label">{{ t('system.iam.roles.scopes') }}</span>
+              <el-tag v-for="scope in row.allowed_scope_types" :key="scope" class="iam-inline-tag" effect="plain">{{ scopeLabel(scope) }}</el-tag>
+            </div>
+            <div>
+              <span class="iam-context-label">{{ t('system.iam.roles.applicableMembers') }}</span>
+              <el-tag v-for="principalType in row.allowed_principal_types" :key="principalType" class="iam-inline-tag" type="info" effect="plain">{{ memberTypeLabel(principalType) }}</el-tag>
+            </div>
+          </div>
+        </template>
       </el-table-column>
-      <el-table-column :label="t('system.iam.roles.scopes')" min-width="180">
-        <template #default="{ row }"><el-tag v-for="scope in row.allowed_scope_types" :key="scope" class="iam-inline-tag" effect="plain">{{ scopeLabel(scope) }}</el-tag></template>
-      </el-table-column>
-      <el-table-column :label="t('system.iam.roles.applicableMembers')" min-width="160">
-        <template #default="{ row }"><el-tag v-for="principalType in row.allowed_principal_types" :key="principalType" class="iam-inline-tag" type="info" effect="plain">{{ memberTypeLabel(principalType) }}</el-tag></template>
-      </el-table-column>
-      <el-table-column :label="t('system.iam.roles.permissions')" width="150">
-        <template #default="{ row }"><el-button link type="primary" :icon="View" @click="openPermissionDetails(row)">{{ t('system.iam.roles.permissionCount', { count: row.permission_keys.length }) }}</el-button></template>
+      <el-table-column :label="t('system.iam.roles.permissionOverview')" min-width="220">
+        <template #default="{ row }">
+          <el-button class="iam-permission-summary-button" link type="primary" :icon="View" @click="openPermissionDetails(row)">
+            <span class="iam-permission-summary">
+              <strong>{{ t('system.iam.roles.permissionCount', { count: row.permission_keys.length }) }}</strong>
+              <span>{{ rolePermissionModuleSummary(row) }}</span>
+            </span>
+          </el-button>
+        </template>
       </el-table-column>
       <el-table-column :label="t('system.iam.common.actions')" width="170" fixed="right">
         <template #default="{ row }">
@@ -48,7 +64,7 @@
       </el-table-column>
     </el-table>
 
-    <el-dialog v-model="dialogVisible" class="addp-dialog" :title="editing ? t('system.iam.roles.edit') : t('system.iam.roles.create')" width="min(680px, calc(100% - 24px))">
+    <el-dialog v-model="dialogVisible" class="addp-dialog" :title="editing ? t('system.iam.roles.edit') : t('system.iam.roles.create')" width="min(980px, calc(100vw - 24px))">
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
         <el-form-item v-if="!editing" :label="t('system.iam.roles.key')" prop="roleKey"><el-input v-model="form.roleKey" /></el-form-item>
         <el-form-item :label="t('system.iam.common.name')" prop="name"><el-input v-model="form.name" /></el-form-item>
@@ -59,12 +75,67 @@
           </el-checkbox-group>
         </el-form-item>
         <el-form-item :label="t('system.iam.roles.permissions')" prop="permissionKeys">
-          <el-select v-model="form.permissionKeys" multiple filterable collapse-tags collapse-tags-tooltip :max-collapse-tags="3" style="width: 100%">
-            <el-option-group v-for="group in groupedPermissionOptions" :key="group.namespace" :label="permissionGroupTitle(group)">
-              <el-option v-for="permission in group.permissions" :key="permission.permission_key" :label="permission.permission_key" :value="permission.permission_key" />
-            </el-option-group>
-          </el-select>
-          <div v-if="form.permissionKeys.length" class="iam-role-selection-detail">{{ t('system.iam.roles.selectedPermissionCount', { count: form.permissionKeys.length }) }}</div>
+          <div class="iam-permission-picker">
+            <div class="iam-permission-picker__toolbar">
+              <el-input v-model="permissionSearch" :placeholder="t('system.iam.roles.searchPermissions')" clearable :prefix-icon="Search" />
+              <span class="iam-role-selection-detail">{{ t('system.iam.roles.selectedPermissionCount', { count: form.permissionKeys.length }) }}</span>
+              <el-button v-if="form.permissionKeys.length" link type="primary" @click="clearPermissionSelection">{{ t('system.iam.roles.clearSelection') }}</el-button>
+            </div>
+            <el-alert
+              v-if="incompatiblePermissionKeys.length"
+              class="iam-permission-picker__alert"
+              type="warning"
+              :closable="false"
+              show-icon
+              :title="t('system.iam.roles.scopeMismatch', { count: incompatiblePermissionKeys.length })"
+            >
+              <template #default>
+                <el-button link type="warning" @click="clearIncompatiblePermissions">{{ t('system.iam.roles.removeIncompatible') }}</el-button>
+              </template>
+            </el-alert>
+            <div v-if="permissionGroups.length" class="iam-permission-picker__body">
+              <nav class="iam-permission-modules" :aria-label="t('system.iam.roles.permissionModules')">
+                <button
+                  v-for="group in permissionGroups"
+                  :key="group.namespace"
+                  type="button"
+                  class="iam-permission-module"
+                  :class="{ 'is-active': activePermissionNamespace === group.namespace }"
+                  @click="activePermissionNamespace = group.namespace"
+                >
+                  <span>{{ moduleLabel(group.namespace) }}</span>
+                  <small>{{ t('system.iam.roles.moduleSelection', { selected: group.selectedCount, total: group.permissions.length }) }}</small>
+                </button>
+              </nav>
+              <div v-if="activePermissionGroup" class="iam-permission-list">
+                <div class="iam-permission-list__heading">
+                  <div>
+                    <strong>{{ permissionGroupTitle(activePermissionGroup) }}</strong>
+                    <span>{{ t('system.iam.roles.permissionPickerHint') }}</span>
+                  </div>
+                  <div>
+                    <el-button link type="primary" @click="selectActivePermissionGroup">{{ t('system.iam.roles.selectVisible') }}</el-button>
+                    <el-button link @click="clearActivePermissionGroup">{{ t('system.iam.roles.clearModule') }}</el-button>
+                  </div>
+                </div>
+                <el-scrollbar max-height="360px">
+                  <el-checkbox-group v-model="form.permissionKeys" class="iam-permission-options">
+                    <el-checkbox v-for="permission in activePermissionGroup.permissions" :key="permission.permission_key" :value="permission.permission_key" class="iam-permission-option">
+                      <span class="iam-permission-option__content">
+                        <span class="iam-permission-option__title">
+                          <strong>{{ permissionDisplayName(permission) }}</strong>
+                          <el-tag size="small" effect="plain">{{ actionLabel(permissionIdentity(permission).action) }}</el-tag>
+                          <el-tag size="small" effect="plain" :type="riskTagType(permission.risk_level)">{{ t('system.iam.roles.risk', { level: riskLabel(permission.risk_level) }) }}</el-tag>
+                        </span>
+                        <span class="iam-permission-option__key">{{ permission.permission_key }}</span>
+                      </span>
+                    </el-checkbox>
+                  </el-checkbox-group>
+                </el-scrollbar>
+              </div>
+            </div>
+            <el-empty v-else :description="t('system.iam.roles.noMatchingPermissions')" :image-size="64" />
+          </div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -83,8 +154,17 @@
           <div class="iam-permission-group__heading">
             <strong>{{ permissionGroupTitle(group) }}</strong>
           </div>
-          <div class="iam-permission-group__items">
-            <el-tag v-for="permissionKey in group.permissions" :key="permissionKey" class="iam-permission-tag" effect="plain">{{ permissionKey }}</el-tag>
+          <div class="iam-permission-detail-list">
+            <div v-for="permission in group.permissions" :key="permission.permission_key" class="iam-permission-detail-row">
+              <div>
+                <strong>{{ permissionDisplayName(permission) }}</strong>
+                <span>{{ permission.permission_key }}</span>
+              </div>
+              <div class="iam-permission-detail-row__meta">
+                <el-tag size="small" effect="plain">{{ actionLabel(permissionIdentity(permission).action) }}</el-tag>
+                <el-tag v-if="permission.risk_level" size="small" effect="plain" :type="riskTagType(permission.risk_level)">{{ t('system.iam.roles.risk', { level: riskLabel(permission.risk_level) }) }}</el-tag>
+              </div>
+            </div>
           </div>
         </div>
       </template>
@@ -93,14 +173,21 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete, Edit, Plus, Refresh, Search, View } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { iamAPI } from '../../api/iam'
 import { useAuthStore } from '../../store/auth'
 import { resolveRoleDescription, resolveRoleName } from '../../utils/iamRoles'
-import { groupPermissionsByNamespace, resolveIAMModuleName } from '../../utils/iamPresentation'
+import {
+  buildPermissionGroups,
+  groupPermissionsByNamespace,
+  permissionIdentity,
+  permissionMatchesScopes,
+  permissionResourceI18nKey,
+  resolveIAMModuleName
+} from '../../utils/iamPresentation'
 
 const { t, te } = useI18n()
 const authStore = useAuthStore()
@@ -117,7 +204,9 @@ const permissionDetailVisible = ref(false)
 const permissionDetailRole = ref(null)
 const editing = ref(null)
 const formRef = ref()
-const filters = reactive({ search: '', roleType: '', principalType: '', scopeType: '' })
+const permissionSearch = ref('')
+const activePermissionNamespace = ref('')
+const filters = reactive({ search: '', roleType: '', principalType: 'user', scopeType: '' })
 const form = reactive({ roleKey: '', name: '', description: '', scopeTypes: ['tenant'], permissionKeys: [] })
 const filteredRows = computed(() => {
   const search = filters.search.trim().toLocaleLowerCase()
@@ -128,14 +217,46 @@ const filteredRows = computed(() => {
     (!filters.scopeType || (role.allowed_scope_types || []).includes(filters.scopeType))
   )
 })
-const groupedPermissionOptions = computed(() => groupPermissionsByNamespace(permissions.value, (permission) => permission.permission_key))
-const permissionDetailGroups = computed(() => groupPermissionsByNamespace(permissionDetailRole.value?.permission_keys || []))
+const permissionCatalogByKey = computed(() => new Map(permissions.value.map((permission) => [permission.permission_key, permission])))
+const permissionGroups = computed(() => buildPermissionGroups(permissions.value, {
+  search: permissionSearch.value,
+  scopeTypes: form.scopeTypes,
+  selectedKeys: form.permissionKeys,
+  getSearchValues: (permission) => [
+    permissionDisplayName(permission),
+    actionLabel(permissionIdentity(permission).action),
+    moduleLabel(permissionIdentity(permission).ownerModule)
+  ]
+}))
+const activePermissionGroup = computed(() => permissionGroups.value.find((group) => group.namespace === activePermissionNamespace.value) || permissionGroups.value[0] || null)
+const incompatiblePermissionKeys = computed(() => form.permissionKeys.filter((permissionKey) => {
+  const permission = permissionCatalogByKey.value.get(permissionKey)
+  return permission && !permissionMatchesScopes(permission, form.scopeTypes)
+}))
+const permissionDetailGroups = computed(() => groupPermissionsByNamespace(
+  (permissionDetailRole.value?.permission_keys || []).map(permissionMetadata),
+  (permission) => permissionIdentity(permission).ownerModule
+))
 const rules = computed(() => ({
   roleKey: [{ required: !editing.value, message: t('system.iam.validation.required'), trigger: 'blur' }],
   name: [{ required: true, message: t('system.iam.validation.required'), trigger: 'blur' }],
   scopeTypes: [{ type: 'array', required: true, min: 1, message: t('system.iam.validation.required'), trigger: 'change' }],
-  permissionKeys: [{ type: 'array', required: true, min: 1, message: t('system.iam.validation.required'), trigger: 'change' }]
+  permissionKeys: [
+    { type: 'array', required: true, min: 1, message: t('system.iam.validation.required'), trigger: 'change' },
+    {
+      validator: (_rule, _value, callback) => incompatiblePermissionKeys.value.length
+        ? callback(new Error(t('system.iam.roles.scopeMismatch', { count: incompatiblePermissionKeys.value.length })))
+        : callback(),
+      trigger: 'change'
+    }
+  ]
 }))
+
+watch(permissionGroups, (groups) => {
+  if (!groups.some((group) => group.namespace === activePermissionNamespace.value)) {
+    activePermissionNamespace.value = groups[0]?.namespace || ''
+  }
+}, { immediate: true })
 
 function roleName(role) {
   return resolveRoleName(role, t, te)
@@ -143,10 +264,48 @@ function roleName(role) {
 function roleDescription(role) { return resolveRoleDescription(role, t, te) }
 function scopeLabel(scope) { return t(`system.iam.roles.scope.${scope}`) }
 function memberTypeLabel(principalType) { return t(`system.iam.principalType.${principalType}`) }
+function moduleLabel(namespace) { return resolveIAMModuleName(namespace, t, te) }
 function permissionGroupTitle(group) {
-  const label = resolveIAMModuleName(group.namespace, t, te)
-  const namespace = label === group.namespace ? group.namespace : `${label} · ${group.namespace}`
-  return `${namespace} (${group.permissions.length})`
+  return `${moduleLabel(group.namespace)} (${group.permissions.length})`
+}
+function rolePermissionModuleSummary(role) {
+  const groups = groupPermissionsByNamespace(role?.permission_keys || [])
+  const labels = groups.slice(0, 2).map((group) => moduleLabel(group.namespace))
+  if (groups.length > 2) labels.push(`+${groups.length - 2}`)
+  return labels.join(' · ') || '-'
+}
+function permissionMetadata(permissionKey) {
+  const existing = permissionCatalogByKey.value.get(permissionKey)
+  if (existing) return existing
+  const identity = permissionIdentity(permissionKey)
+  return {
+    permission_key: identity.permissionKey,
+    owner_module: identity.ownerModule,
+    action: identity.action,
+    risk_level: '',
+    allowed_scope_types: []
+  }
+}
+function permissionDisplayName(permission) {
+  return t(permissionResourceI18nKey(permission))
+}
+function actionLabel(action) {
+  return t(`system.iam.roles.actions.${action}`)
+}
+function riskLabel(risk) { return t(`system.iam.status.${risk}`) }
+function riskTagType(risk) { return ({ low: 'info', medium: 'warning', high: 'danger', critical: 'danger' })[risk] || 'info' }
+function clearPermissionSelection() { form.permissionKeys = [] }
+function selectActivePermissionGroup() {
+  const keys = activePermissionGroup.value?.permissions.map((permission) => permission.permission_key) || []
+  form.permissionKeys = [...new Set([...form.permissionKeys, ...keys])].sort()
+}
+function clearActivePermissionGroup() {
+  const keys = new Set(activePermissionGroup.value?.permissions.map((permission) => permission.permission_key) || [])
+  form.permissionKeys = form.permissionKeys.filter((permissionKey) => !keys.has(permissionKey))
+}
+function clearIncompatiblePermissions() {
+  const keys = new Set(incompatiblePermissionKeys.value)
+  form.permissionKeys = form.permissionKeys.filter((permissionKey) => !keys.has(permissionKey))
 }
 function openPermissionDetails(role) { permissionDetailRole.value = role; permissionDetailVisible.value = true }
 async function load() {
@@ -165,11 +324,13 @@ async function load() {
 }
 function openCreate() {
   editing.value = null
+  permissionSearch.value = ''
   Object.assign(form, { roleKey: '', name: '', description: '', scopeTypes: ['tenant'], permissionKeys: [] })
   dialogVisible.value = true
 }
 function openEdit(row) {
   editing.value = row
+  permissionSearch.value = ''
   Object.assign(form, { roleKey: row.role_key, name: row.name || '', description: row.description || '', scopeTypes: [...row.allowed_scope_types], permissionKeys: [...row.permission_keys] })
   dialogVisible.value = true
 }
@@ -207,13 +368,50 @@ onMounted(load)
 
 <style scoped>
 .iam-inline-tag { margin: 2px 6px 2px 0; }
-.iam-list-text { color: var(--addp-text-secondary); font-size: 12px; line-height: 1.5; }
-.iam-role-selection-detail { width: 100%; margin-top: 6px; color: var(--addp-text-secondary); font-size: 12px; }
+.iam-role-description { max-width: 420px; margin-top: 4px; color: var(--addp-text-secondary); line-height: 1.45; white-space: normal; }
+.iam-context-tags { display: flex; flex-direction: column; gap: 6px; }
+.iam-context-label { display: inline-block; min-width: 56px; margin-right: 6px; color: var(--addp-text-secondary); font-size: 12px; }
+.iam-permission-summary-button { height: auto; max-width: 100%; padding: 4px 0; }
+.iam-permission-summary { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: 3px; line-height: 1.35; }
+.iam-permission-summary span { max-width: 190px; overflow: hidden; color: var(--addp-text-secondary); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.iam-role-selection-detail { color: var(--addp-text-secondary); font-size: 12px; white-space: nowrap; }
+.iam-permission-picker { width: 100%; overflow: hidden; border: 1px solid var(--addp-border-color); border-radius: 8px; }
+.iam-permission-picker__toolbar { display: flex; align-items: center; gap: 12px; padding: 12px; border-bottom: 1px solid var(--addp-border-color); }
+.iam-permission-picker__toolbar .el-input { flex: 1; }
+.iam-permission-picker__alert { border-radius: 0; }
+.iam-permission-picker__body { display: grid; grid-template-columns: minmax(180px, 220px) 1fr; min-height: 390px; }
+.iam-permission-modules { padding: 8px; overflow-y: auto; border-right: 1px solid var(--addp-border-color); background: var(--addp-bg-secondary); }
+.iam-permission-module { display: flex; width: 100%; padding: 10px 12px; border: 0; border-radius: 6px; background: transparent; color: var(--addp-text-primary); cursor: pointer; flex-direction: column; align-items: flex-start; gap: 4px; text-align: left; }
+.iam-permission-module:hover { background: var(--addp-bg-secondary); }
+.iam-permission-module.is-active { background: var(--el-color-primary-light-9); color: var(--el-color-primary); }
+.iam-permission-module small { color: var(--addp-text-secondary); }
+.iam-permission-list { min-width: 0; }
+.iam-permission-list__heading { display: flex; min-height: 64px; padding: 10px 14px; border-bottom: 1px solid var(--addp-border-color); align-items: center; justify-content: space-between; gap: 12px; }
+.iam-permission-list__heading > div:first-child { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.iam-permission-list__heading span { color: var(--addp-text-secondary); font-size: 12px; }
+.iam-permission-options { display: flex; padding: 4px 14px 14px; flex-direction: column; }
+.iam-permission-option { width: 100%; height: auto; margin: 0; padding: 12px 0; border-bottom: 1px solid var(--addp-border-color); align-items: flex-start; }
+.iam-permission-option:last-child { border-bottom: 0; }
+.iam-permission-option :deep(.el-checkbox__input) { margin-top: 3px; }
+.iam-permission-option :deep(.el-checkbox__label) { min-width: 0; padding-left: 10px; white-space: normal; }
+.iam-permission-option__content { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
+.iam-permission-option__title { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--addp-text-primary); }
+.iam-permission-option__key { color: var(--addp-text-secondary); font-family: var(--addp-font-family-mono, monospace); font-size: 12px; overflow-wrap: anywhere; }
 .iam-role-detail-heading { display: flex; flex-direction: column; gap: 4px; padding-bottom: 16px; border-bottom: 1px solid var(--addp-border-color); }
 .iam-role-detail-heading strong { color: var(--addp-text-primary); font-size: 18px; }
 .iam-role-detail-heading span { color: var(--addp-text-secondary); font-size: 12px; overflow-wrap: anywhere; }
 .iam-permission-group { padding: 16px 0; border-bottom: 1px solid var(--addp-border-color); }
 .iam-permission-group__heading { margin-bottom: 10px; color: var(--addp-text-primary); }
-.iam-permission-group__items { display: flex; flex-wrap: wrap; gap: 8px; }
-.iam-permission-tag { max-width: 100%; height: auto; min-height: 24px; white-space: normal; overflow-wrap: anywhere; }
+.iam-permission-detail-list { display: flex; flex-direction: column; }
+.iam-permission-detail-row { display: flex; padding: 10px 0; border-top: 1px solid var(--addp-border-color); align-items: center; justify-content: space-between; gap: 12px; }
+.iam-permission-detail-row > div:first-child { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.iam-permission-detail-row span { color: var(--addp-text-secondary); font-family: var(--addp-font-family-mono, monospace); font-size: 12px; overflow-wrap: anywhere; }
+.iam-permission-detail-row__meta { display: flex; flex-shrink: 0; gap: 6px; }
+@media (max-width: 760px) {
+  .iam-permission-picker__toolbar { align-items: stretch; flex-wrap: wrap; }
+  .iam-permission-picker__body { display: flex; flex-direction: column; }
+  .iam-permission-modules { display: flex; max-height: 150px; border-right: 0; border-bottom: 1px solid var(--addp-border-color); flex-wrap: wrap; }
+  .iam-permission-module { width: auto; min-width: 150px; flex: 1; }
+  .iam-permission-list__heading { align-items: flex-start; flex-direction: column; }
+}
 </style>

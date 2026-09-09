@@ -52,9 +52,10 @@ func TestTaskProviderListTasksUsesStandardItemsShape(t *testing.T) {
 				"locator":          "postgresql://11/public/roads",
 			},
 			"tile": commonModels.JSONMap{
-				"format":   "mvt",
-				"min_zoom": 0,
-				"max_zoom": 12,
+				"archive_format": "pmtiles",
+				"tile_type":      "mvt",
+				"min_zoom":       0,
+				"max_zoom":       12,
 			},
 		},
 	}); err != nil {
@@ -116,9 +117,10 @@ func TestTaskProviderTaskDetailUsesDirectObjectShape(t *testing.T) {
 				"locator":          "postgresql://11/public/roads",
 			},
 			"tile": commonModels.JSONMap{
-				"format":   "mvt",
-				"min_zoom": 0,
-				"max_zoom": 12,
+				"archive_format": "pmtiles",
+				"tile_type":      "mvt",
+				"min_zoom":       0,
+				"max_zoom":       12,
 			},
 		},
 	}
@@ -247,9 +249,10 @@ func TestManagerDerivedTaskListUsesUnifiedCategoryAndTypeFilters(t *testing.T) {
 				"locator":          "postgresql://11/public/roads",
 			},
 			"tile": commonModels.JSONMap{
-				"format":   "mvt",
-				"min_zoom": 0,
-				"max_zoom": 12,
+				"archive_format": "pmtiles",
+				"tile_type":      "mvt",
+				"min_zoom":       0,
+				"max_zoom":       12,
 			},
 		},
 	}); err != nil {
@@ -688,7 +691,7 @@ func TestTaskExecuteTileCacheReturnsPendingAndRejectsActiveExecution(t *testing.
 		Enabled:  true,
 		Config: commonModels.JSONMap{
 			"target": commonModels.JSONMap{"item_fingerprint": "api-contract-fingerprint"},
-			"tile":   commonModels.JSONMap{"format": "mvt"},
+			"tile":   commonModels.JSONMap{"archive_format": "pmtiles", "tile_type": "mvt"},
 		},
 	}
 	if err := tileCacheRepo.CreateTask(context.Background(), task); err != nil {

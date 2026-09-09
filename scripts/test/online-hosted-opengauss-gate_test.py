@@ -8,6 +8,7 @@ from pathlib import Path
 
 
 SCRIPT = Path(__file__).with_name("online-hosted-opengauss-gate.sh")
+POSTGRES_DOCKERFILE = SCRIPT.parents[1] / "infra/Dockerfile.postgres"
 
 
 class OnlineHostedOpenGaussGateTest(unittest.TestCase):
@@ -148,6 +149,15 @@ class OnlineHostedOpenGaussGateTest(unittest.TestCase):
         image_checks = script.index("# Images to check")
         self.assertLess(selection, build)
         self.assertLess(build, image_checks)
+        self.assertNotIn("postgis/postgis:15-3.4", script)
+
+    def test_postgres_image_uses_supported_debian_base_and_installs_postgis(self) -> None:
+        dockerfile = POSTGRES_DOCKERFILE.read_text(encoding="utf-8")
+
+        self.assertIn("ARG POSTGRES_BASE_IMAGE=postgres:15-bookworm", dockerfile)
+        self.assertIn("postgresql-15-postgis-3", dockerfile)
+        self.assertNotIn("postgis/postgis:", dockerfile)
+        self.assertNotIn("Check-Valid-Until=false", dockerfile)
 
 
 if __name__ == "__main__":

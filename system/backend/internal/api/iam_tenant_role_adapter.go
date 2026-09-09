@@ -29,9 +29,13 @@ type IAMTenantRoleResponse struct {
 }
 
 type IAMTenantAssignablePermissionResponse struct {
-	PermissionKey     string   `json:"permission_key"`
-	RiskLevel         string   `json:"risk_level"`
-	AllowedScopeTypes []string `json:"allowed_scope_types"`
+	PermissionKey      string   `json:"permission_key"`
+	OwnerModule        string   `json:"owner_module"`
+	Action             string   `json:"action"`
+	RiskLevel          string   `json:"risk_level"`
+	AllowedScopeTypes  []string `json:"allowed_scope_types"`
+	NameI18nKey        string   `json:"name_i18n_key"`
+	DescriptionI18nKey string   `json:"description_i18n_key"`
 }
 
 type IAMTenantRoleRequest struct {
@@ -153,9 +157,21 @@ func (h *IAMTenantRoleHandler) ListAssignablePermissions(c *gin.Context) {
 	}
 	responses := make([]IAMTenantAssignablePermissionResponse, 0, len(permissions))
 	for _, permission := range permissions {
-		responses = append(responses, IAMTenantAssignablePermissionResponse{PermissionKey: permission.PermissionKey, RiskLevel: permission.RiskLevel, AllowedScopeTypes: []string(permission.AllowedScopeTypes)})
+		responses = append(responses, mapIAMTenantAssignablePermission(permission))
 	}
 	c.JSON(http.StatusOK, responses)
+}
+
+func mapIAMTenantAssignablePermission(permission iam.TenantAssignablePermission) IAMTenantAssignablePermissionResponse {
+	return IAMTenantAssignablePermissionResponse{
+		PermissionKey:      permission.PermissionKey,
+		OwnerModule:        permission.OwnerModule,
+		Action:             permission.Action,
+		RiskLevel:          permission.RiskLevel,
+		AllowedScopeTypes:  []string(permission.AllowedScopeTypes),
+		NameI18nKey:        permission.NameI18nKey,
+		DescriptionI18nKey: permission.DescriptionI18nKey,
+	}
 }
 
 // CreateRole godoc
