@@ -60,12 +60,13 @@ type DecideProtectionAccessRequest struct {
 // ProtectionAccessRequestReviewFilter is the domain-level filter for the
 // tenant approval workspace. HTTP parsing stays in the API layer.
 type ProtectionAccessRequestReviewFilter struct {
-	Scope           string
-	State           string
-	RequesterSearch string
-	ResourceSearch  string
-	CreatedFrom     *time.Time
-	CreatedTo       *time.Time
+	Scope              string
+	State              string
+	AuthorizationState string
+	RequesterSearch    string
+	ResourceSearch     string
+	CreatedFrom        *time.Time
+	CreatedTo          *time.Time
 }
 
 type ProtectionAccessRequestResponse struct {

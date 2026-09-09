@@ -312,6 +312,24 @@ func TestProtectionExemptionAssessmentRevisionAgainstPostgres(t *testing.T) {
 	if history.Total != 2 || authorizationStates[reactivated.ID] != models.ProtectionExemptionStateActive || authorizationStates[approved.ID] != models.ProtectionExemptionStateSuperseded {
 		t.Fatalf("postgres reactivated request authorization history = %#v", history)
 	}
+	activeHistory, err := accessRequests.ListReviewQueue(context.Background(), 7, 42, models.ProtectionAccessRequestReviewFilter{
+		Scope: models.ProtectionAccessRequestReviewScopeHistory, AuthorizationState: models.ProtectionExemptionStateActive,
+	}, 1, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if activeHistory.Total != 1 || activeHistory.Data[0].ID != reactivated.ID {
+		t.Fatalf("postgres active authorization filter = %#v", activeHistory)
+	}
+	supersededHistory, err := accessRequests.ListReviewQueue(context.Background(), 7, 42, models.ProtectionAccessRequestReviewFilter{
+		Scope: models.ProtectionAccessRequestReviewScopeHistory, AuthorizationState: models.ProtectionExemptionStateSuperseded,
+	}, 1, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if supersededHistory.Total != 1 || supersededHistory.Data[0].ID != approved.ID {
+		t.Fatalf("postgres superseded authorization filter = %#v", supersededHistory)
+	}
 	assertLatestPostgresManagerProjectionAuthorization(t, tx, enrollment.ID, managerPreviewAction, "41", true)
 }
 

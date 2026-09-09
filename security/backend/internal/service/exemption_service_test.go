@@ -172,6 +172,15 @@ func TestProtectionAccessRequestApprovalPublishesSubjectScopedAuthorization(t *t
 	if revokedHistory.Total != 1 || len(revokedHistory.Data) != 1 || revokedHistory.Data[0].AuthorizationState != models.ProtectionExemptionStateRevoked || revokedHistory.Data[0].AuthorizedUntil == nil || !revokedHistory.Data[0].AuthorizedUntil.Equal(now.Add(time.Hour)) {
 		t.Fatalf("revoked authorization review history = %#v", revokedHistory)
 	}
+	revokedFilter := reviewAccessRequestFilter(models.ProtectionAccessRequestReviewScopeHistory)
+	revokedFilter.AuthorizationState = models.ProtectionExemptionStateRevoked
+	revokedOnly, err := requests.ListReviewQueue(context.Background(), 7, 42, revokedFilter, 1, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if revokedOnly.Total != 1 || len(revokedOnly.Data) != 1 || revokedOnly.Data[0].ID != approved.ID {
+		t.Fatalf("revoked authorization filter = %#v", revokedOnly)
+	}
 }
 
 func TestEffectiveAccessRequestAuthorizationState(t *testing.T) {
@@ -265,6 +274,16 @@ func TestProtectionAccessReviewQueueFiltersAndPaginatesOnServer(t *testing.T) {
 	if approvedOnly.Total != 1 || approvedOnly.Data[0].ID != approvedRequest.ID {
 		t.Fatalf("approved filter = %#v", approvedOnly)
 	}
+	history.State = ""
+	history.AuthorizationState = models.ProtectionExemptionStateExpired
+	authorizationExpiredOnly, err := requests.ListReviewQueue(context.Background(), 7, 99, history, 1, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if authorizationExpiredOnly.Total != 1 || authorizationExpiredOnly.Data[0].ID != approvedRequest.ID || authorizationExpiredOnly.Data[0].AuthorizationState != models.ProtectionExemptionStateExpired {
+		t.Fatalf("expired authorization filter = %#v", authorizationExpiredOnly)
+	}
+	history.AuthorizationState = ""
 	history.State = models.ProtectionAccessRequestStateExpired
 	expiredOnly, err := requests.ListReviewQueue(context.Background(), 7, 99, history, 1, 20)
 	if err != nil {
@@ -308,6 +327,16 @@ func TestProtectionAccessReviewQueueFiltersAndPaginatesOnServer(t *testing.T) {
 	invalidState.State = models.ProtectionAccessRequestStateApproved
 	if _, err := requests.ListReviewQueue(context.Background(), 7, 99, invalidState, 1, 20); !errors.Is(err, commonapi.ErrBadRequest) {
 		t.Fatalf("pending state filter error = %v", err)
+	}
+	invalidAuthorizationState := reviewAccessRequestFilter(models.ProtectionAccessRequestReviewScopePending)
+	invalidAuthorizationState.AuthorizationState = models.ProtectionExemptionStateActive
+	if _, err := requests.ListReviewQueue(context.Background(), 7, 99, invalidAuthorizationState, 1, 20); !errors.Is(err, commonapi.ErrBadRequest) {
+		t.Fatalf("pending authorization state filter error = %v", err)
+	}
+	invalidAuthorizationState = reviewAccessRequestFilter(models.ProtectionAccessRequestReviewScopeHistory)
+	invalidAuthorizationState.AuthorizationState = "unknown"
+	if _, err := requests.ListReviewQueue(context.Background(), 7, 99, invalidAuthorizationState, 1, 20); !errors.Is(err, commonapi.ErrBadRequest) {
+		t.Fatalf("unknown authorization state filter error = %v", err)
 	}
 	invalidRange := reviewAccessRequestFilter(models.ProtectionAccessRequestReviewScopeHistory)
 	invalidRange.CreatedFrom, invalidRange.CreatedTo = &to, &from

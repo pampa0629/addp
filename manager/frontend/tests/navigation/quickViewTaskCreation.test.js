@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  currentQuickViewResultTaskType,
   generationOptionsForCapability,
   quickViewCreationEmptyReason,
   quickViewTaskTypeForAction
@@ -57,9 +58,11 @@ describe('quick-view task creation', () => {
   })
 
   it('recognizes a ready PPTX PDF result from backend capability state', () => {
-    expect(quickViewCreationEmptyReason({
+    const capability = {
       pptx_pdf: { status: 'ready', result_id: 19 }
-    }, 'pptx_pdf_generation')).toBe('currentResult')
+    }
+    expect(quickViewCreationEmptyReason(capability, 'pptx_pdf_generation')).toBe('currentResult')
+    expect(currentQuickViewResultTaskType(capability)).toBe('pptx_pdf_generation')
   })
 
   it('keeps a capability without a current result classified as unsupported', () => {

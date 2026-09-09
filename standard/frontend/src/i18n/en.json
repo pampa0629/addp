@@ -460,6 +460,8 @@
       "allCandidateTypes": "All Candidate Types",
       "allComparisonResults": "All Comparison Results",
       "comparisonFacetLabel": "Comparison Result",
+      "comparisonFacetHelpLabel": "About comparison result counts",
+      "comparisonFacetHint": "Semantic variants in the same candidate family may have different comparison results, so category counts do not necessarily add up to the total number of candidate families.",
       "candidateFamilyTotal": "{families} candidate families, {variants} semantic variants",
       "candidateFamilyVariantCount": "{count} semantic variants",
       "candidateFamilyOccurrenceCount": "Seen {count} times in total",

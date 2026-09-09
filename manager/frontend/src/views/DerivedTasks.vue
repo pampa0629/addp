@@ -283,7 +283,7 @@ async function viewTaskResult(row) {
       ElMessage.warning(t('manager.derivedTasks.resultUnavailable'))
       return
     }
-    await openQuickViewResult(router, locator)
+    await openQuickViewResult(router, locator, detail.task_type || row.task_type)
   } catch (error) {
     ElMessage.error(error?.response?.data?.error || error?.message || t('manager.derivedTasks.viewResultFailed'))
   } finally {

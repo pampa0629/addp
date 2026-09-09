@@ -1,4 +1,5 @@
 import importlib.util
+import re
 import sys
 import tempfile
 import textwrap
@@ -91,6 +92,22 @@ class OnlineCIRegistrationTest(unittest.TestCase):
 
     def test_accepts_one_profile_and_workflow_choice_per_registered_suite(self) -> None:
         CHECK.check_registration(self.repository)
+
+    def test_hosted_setup_node_pin_matches_platform_ci(self) -> None:
+        repository = SCRIPT.parents[2]
+        online = (
+            repository / ".github/workflows/online-t4-gates.yml"
+        ).read_text(encoding="utf-8")
+        platform = (
+            repository / ".github/workflows/platform-ci.yml"
+        ).read_text(encoding="utf-8")
+
+        def setup_node_pin(text: str) -> str:
+            match = re.search(r"actions/setup-node@([0-9a-f]{40})", text)
+            self.assertIsNotNone(match)
+            return match.group(1)  # type: ignore[union-attr]
+
+        self.assertEqual(setup_node_pin(online), setup_node_pin(platform))
 
     def test_discovers_hosted_profile_from_metadata(self) -> None:
         hosted = self.repository / "scripts/test/online-hosted-example-gate.sh"

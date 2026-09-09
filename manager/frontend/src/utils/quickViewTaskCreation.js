@@ -46,8 +46,10 @@ const CURRENT_RESULT_CHECKS = {
 }
 
 export function quickViewCreationEmptyReason(capability = {}, taskType = '') {
-  const checks = taskType
-    ? [CURRENT_RESULT_CHECKS[taskType]].filter(Boolean)
-    : Object.values(CURRENT_RESULT_CHECKS)
-  return checks.some(check => check(capability)) ? 'currentResult' : 'unsupported'
+  return currentQuickViewResultTaskType(capability, taskType) ? 'currentResult' : 'unsupported'
+}
+
+export function currentQuickViewResultTaskType(capability = {}, taskType = '') {
+  const candidates = taskType ? [taskType] : Object.keys(CURRENT_RESULT_CHECKS)
+  return candidates.find(candidate => CURRENT_RESULT_CHECKS[candidate]?.(capability)) || ''
 }

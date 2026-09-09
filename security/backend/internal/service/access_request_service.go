@@ -237,6 +237,7 @@ func (s *AccessRequestService) ListMine(ctx context.Context, tenantID, userID, p
 func (s *AccessRequestService) ListReviewQueue(ctx context.Context, tenantID, reviewerID int64, filter models.ProtectionAccessRequestReviewFilter, page, pageSize int64) (*models.ProtectionAccessRequestListResponse, error) {
 	filter.Scope = strings.TrimSpace(filter.Scope)
 	filter.State = strings.TrimSpace(filter.State)
+	filter.AuthorizationState = strings.TrimSpace(filter.AuthorizationState)
 	filter.RequesterSearch = strings.TrimSpace(filter.RequesterSearch)
 	filter.ResourceSearch = strings.TrimSpace(filter.ResourceSearch)
 	if reviewerID <= 0 || (filter.Scope != models.ProtectionAccessRequestReviewScopePending && filter.Scope != models.ProtectionAccessRequestReviewScopeHistory) ||
@@ -246,6 +247,9 @@ func (s *AccessRequestService) ListReviewQueue(ctx context.Context, tenantID, re
 	}
 	if filter.State != "" && (filter.Scope != models.ProtectionAccessRequestReviewScopeHistory ||
 		(filter.State != models.ProtectionAccessRequestStateApproved && filter.State != models.ProtectionAccessRequestStateRejected && filter.State != models.ProtectionAccessRequestStateExpired)) {
+		return nil, commonapi.ErrBadRequest
+	}
+	if filter.AuthorizationState != "" && (filter.Scope != models.ProtectionAccessRequestReviewScopeHistory || !validAccessRequestAuthorizationState(filter.AuthorizationState)) {
 		return nil, commonapi.ErrBadRequest
 	}
 	now := s.now().UTC()
@@ -276,6 +280,9 @@ func (s *AccessRequestService) ListReviewQueue(ctx context.Context, tenantID, re
 			Where("(LOWER(enrollment.target_full_name) LIKE ? ESCAPE '!' OR LOWER(assessment.component_key) LIKE ? ESCAPE '!')", pattern, pattern)
 		base = base.Where("assessment_id IN (?)", assessmentIDs)
 	}
+	if filter.AuthorizationState != "" {
+		base = s.filterByAuthorizationState(ctx, tenantID, base, filter.AuthorizationState, now)
+	}
 	if filter.CreatedFrom != nil {
 		base = base.Where("created_at >= ?", filter.CreatedFrom.UTC())
 	}
@@ -296,6 +303,61 @@ func (s *AccessRequestService) ListReviewQueue(ctx context.Context, tenantID, re
 		}
 	}
 	return result, nil
+}
+
+func validAccessRequestAuthorizationState(state string) bool {
+	switch state {
+	case models.ProtectionExemptionStateActive,
+		models.ProtectionExemptionStateExpired,
+		models.ProtectionExemptionStateRevoked,
+		models.ProtectionExemptionStateSuperseded:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *AccessRequestService) filterByAuthorizationState(ctx context.Context, tenantID int64, base *gorm.DB, state string, now time.Time) *gorm.DB {
+	requestIDs := s.db.WithContext(ctx).
+		Table("security.protection_access_requests AS authorization_request").
+		Select("authorization_request.id").
+		Joins(`JOIN security.protection_exemptions AS authorization_exemption
+			ON authorization_exemption.tenant_id = authorization_request.tenant_id
+			AND authorization_exemption.assessment_id = authorization_request.assessment_id
+			AND authorization_exemption.consumer_owner = authorization_request.consumer_owner
+			AND authorization_exemption.action = authorization_request.action
+			AND authorization_exemption.subject_type = authorization_request.subject_type
+			AND authorization_exemption.subject_id = authorization_request.subject_id`).
+		Joins(`JOIN security.protection_exemption_revisions AS authorization_revision
+			ON authorization_revision.tenant_id = authorization_exemption.tenant_id
+			AND authorization_revision.exemption_id = authorization_exemption.id
+			AND authorization_revision.revision = authorization_exemption.current_revision`).
+		Joins(`JOIN security.resource_security_assessments AS authorization_assessment
+			ON authorization_assessment.tenant_id = authorization_request.tenant_id
+			AND authorization_assessment.id = authorization_request.assessment_id`).
+		Where("authorization_request.tenant_id = ? AND authorization_request.state = ?", tenantID, models.ProtectionAccessRequestStateApproved)
+
+	switch state {
+	case models.ProtectionExemptionStateActive:
+		requestIDs = requestIDs.Where(`authorization_revision.source_request_id = authorization_request.id
+			AND authorization_revision.state <> ? AND authorization_exemption.state <> ?
+			AND authorization_revision.assessment_revision = authorization_assessment.current_revision
+			AND authorization_revision.expires_at > ?`, models.ProtectionExemptionStateRevoked, models.ProtectionExemptionStateRevoked, now)
+	case models.ProtectionExemptionStateExpired:
+		requestIDs = requestIDs.Where(`authorization_revision.source_request_id = authorization_request.id
+			AND authorization_revision.state <> ? AND authorization_exemption.state <> ?
+			AND authorization_revision.assessment_revision = authorization_assessment.current_revision
+			AND authorization_revision.expires_at <= ?`, models.ProtectionExemptionStateRevoked, models.ProtectionExemptionStateRevoked, now)
+	case models.ProtectionExemptionStateRevoked:
+		requestIDs = requestIDs.Where(`authorization_revision.source_request_id = authorization_request.id
+			AND (authorization_revision.state = ? OR authorization_exemption.state = ?)`, models.ProtectionExemptionStateRevoked, models.ProtectionExemptionStateRevoked)
+	case models.ProtectionExemptionStateSuperseded:
+		requestIDs = requestIDs.Where(`authorization_revision.source_request_id <> authorization_request.id
+			OR (authorization_revision.source_request_id = authorization_request.id
+				AND authorization_revision.state <> ? AND authorization_exemption.state <> ?
+				AND authorization_revision.assessment_revision <> authorization_assessment.current_revision)`, models.ProtectionExemptionStateRevoked, models.ProtectionExemptionStateRevoked)
+	}
+	return base.Where("id IN (?)", requestIDs)
 }
 
 func (s *AccessRequestService) list(ctx context.Context, tenantID, page, pageSize int64, now time.Time, condition string, values ...any) (*models.ProtectionAccessRequestListResponse, error) {

@@ -463,6 +463,8 @@
       "allCandidateTypes": "全部候选类型",
       "allComparisonResults": "全部比对结果",
       "comparisonFacetLabel": "比对结果",
+      "comparisonFacetHelpLabel": "比对结果计数说明",
+      "comparisonFacetHint": "同一候选族内的不同语义变体可能属于不同比对结果，因此各分类数量之和不一定等于候选族总数。",
       "candidateFamilyTotal": "共 {families} 个候选族，{variants} 个语义变体",
       "candidateFamilyVariantCount": "{count} 个语义变体",
       "candidateFamilyOccurrenceCount": "累计出现 {count} 次",

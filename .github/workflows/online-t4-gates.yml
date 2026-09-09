@@ -101,7 +101,7 @@ jobs:
           cache: false
 
       - name: Set up Node.js
-        uses: actions/setup-node@1e60f620b9541d8f60fbf4cdad0a14cdf598b9db # v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .node-version
           cache: npm

@@ -99,11 +99,12 @@ func (h *AccessRequestHandler) ListMine(c *gin.Context) {
 }
 
 // @Summary 原值访问审批工作区 | List plaintext access review workspace
-// @Description 按 scope 分页返回未过期待审批申请或审批记录，并支持按处理结果、申请人、资源或字段及申请时间筛选；本人申请可见但不能自审 | Return paginated unexpired pending requests or review history by scope, with optional outcome, requester, resource or field, and request-time filters; self-submitted requests remain visible but cannot be self-approved
+// @Description 按 scope 分页返回未过期待审批申请或审批记录，并支持按处理结果、当前授权状态、申请人、资源或字段及申请时间筛选；本人申请可见但不能自审 | Return paginated unexpired pending requests or review history by scope, with optional outcome, current grant state, requester, resource or field, and request-time filters; self-submitted requests remain visible but cannot be self-approved
 // @Tags Protection Access Request
 // @Produce json
 // @Param scope query string true "视图 pending|history | View pending|history" Enums(pending,history)
 // @Param state query string false "审批记录处理结果 approved|rejected|expired，仅 history 可用 | Review history outcome approved|rejected|expired, history only" Enums(approved,rejected,expired)
+// @Param authorization_state query string false "当前授权状态 active|expired|revoked|superseded，仅 history 可用 | Current grant state active|expired|revoked|superseded, history only" Enums(active,expired,revoked,superseded)
 // @Param requester_search query string false "申请人显示名或用户 ID | Requester display name or user ID"
 // @Param resource_search query string false "资源全名或字段路径 | Resource full name or field path"
 // @Param created_from query string false "申请时间起点（RFC3339，含边界） | Request creation start time (RFC3339, inclusive)"
@@ -132,12 +133,13 @@ func (h *AccessRequestHandler) ReviewQueue(c *gin.Context) {
 		return
 	}
 	filter := models.ProtectionAccessRequestReviewFilter{
-		Scope:           c.Query("scope"),
-		State:           c.Query("state"),
-		RequesterSearch: c.Query("requester_search"),
-		ResourceSearch:  c.Query("resource_search"),
-		CreatedFrom:     createdFrom,
-		CreatedTo:       createdTo,
+		Scope:              c.Query("scope"),
+		State:              c.Query("state"),
+		AuthorizationState: c.Query("authorization_state"),
+		RequesterSearch:    c.Query("requester_search"),
+		ResourceSearch:     c.Query("resource_search"),
+		CreatedFrom:        createdFrom,
+		CreatedTo:          createdTo,
 	}
 	result, err := h.requests.ListReviewQueue(c.Request.Context(), getTenantID(c), getUserID(c), filter, int64(page), int64(pageSize))
 	if err != nil {

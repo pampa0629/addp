@@ -66,6 +66,7 @@ import { useCurrentResultConfirmation } from '@/composables/useCurrentResultConf
 import { toQuickViewExistingResultPayload } from '@/utils/currentResultConfirmation'
 import { openQuickViewResult } from '@/utils/quickViewResultNavigation'
 import {
+  currentQuickViewResultTaskType,
   generationOptionsForCapability,
   quickViewCreationEmptyReason,
   quickViewTaskTypeForAction
@@ -87,6 +88,7 @@ const detecting = ref(false)
 const submitting = ref(false)
 const capabilityError = ref('')
 const emptyReason = ref('unsupported')
+const currentResultTaskType = ref('')
 let detectionSequence = 0
 
 const sourceLocator = computed(() => String(sourceSelection.value?.identity?.locator || '').trim())
@@ -108,6 +110,7 @@ function reset() {
   submitting.value = false
   capabilityError.value = ''
   emptyReason.value = 'unsupported'
+  currentResultTaskType.value = ''
 }
 
 function applyOptions(nextOptions) {
@@ -130,6 +133,7 @@ watch(sourceSelection, async selection => {
     if (sequence !== detectionSequence) return
     applyOptions(generationOptionsForCapability(capability, props.taskType))
     emptyReason.value = quickViewCreationEmptyReason(capability, props.taskType)
+    currentResultTaskType.value = currentQuickViewResultTaskType(capability, props.taskType)
   } catch (error) {
     if (sequence !== detectionSequence) return
     capabilityError.value = error?.response?.data?.error || t('manager.quickViewCreator.detectFailed')
@@ -175,7 +179,7 @@ async function viewCurrentResult() {
   if (!hasCurrentResult.value) return
   submitting.value = true
   try {
-    await openQuickViewResult(router, sourceLocator.value)
+    await openQuickViewResult(router, sourceLocator.value, currentResultTaskType.value || props.taskType)
   } catch (error) {
     ElMessage.error(error?.response?.data?.error || error?.message || t('manager.quickViewCreator.viewFailed'))
   } finally {

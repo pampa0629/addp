@@ -63,6 +63,11 @@ describe('document candidate contract', () => {
     expect(en.standard.document.allComparisonResults).toBe('All Comparison Results')
     expect(zhCn.standard.document.comparisonFacetLabel).toBe('比对结果')
     expect(en.standard.document.comparisonFacetLabel).toBe('Comparison Result')
+    expect(documentDetailSource).toContain("standard.document.comparisonFacetHint")
+    expect(documentDetailSource).toContain("standard.document.comparisonFacetHelpLabel")
+    expect(documentDetailSource).toContain('<InfoFilled />')
+    expect(zhCn.standard.document.comparisonFacetHint).toContain('各分类数量之和不一定等于候选族总数')
+    expect(en.standard.document.comparisonFacetHint).toContain('do not necessarily add up')
   })
 
   it('searches candidate groups by representative code or name', () => {

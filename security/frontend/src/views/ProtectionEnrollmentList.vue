@@ -66,6 +66,14 @@
         >
           <el-option v-for="state in ['approved', 'rejected', 'expired']" :key="state" :label="t(`security.accessRequest.states.${state}`)" :value="state" />
         </el-select>
+        <el-select
+          v-if="accessRequestScope === 'history'"
+          v-model="accessRequestFilters.authorizationState"
+          clearable
+          :placeholder="t('security.accessRequest.filters.allAuthorizationStates')"
+        >
+          <el-option v-for="state in ['active', 'expired', 'revoked', 'superseded']" :key="state" :label="t(`security.accessRequest.authorizationStates.${state}`)" :value="state" />
+        </el-select>
         <el-date-picker
           v-model="accessRequestCreatedRange"
           type="datetimerange"
@@ -1032,7 +1040,7 @@ const accessRequestPage = ref(1)
 const accessRequestPageSize = ref(10)
 const accessRequestLoading = ref(false)
 const accessRequestScope = ref('pending')
-const accessRequestFilters = reactive({ resourceSearch: '', requesterSearch: '', state: '' })
+const accessRequestFilters = reactive({ resourceSearch: '', requesterSearch: '', state: '', authorizationState: '' })
 const accessRequestCreatedRange = ref([])
 const reviewingFinding = ref(null)
 const reviewSaving = ref(false)
@@ -1065,6 +1073,7 @@ const hasAccessRequestFilters = computed(() => Boolean(
   accessRequestFilters.resourceSearch ||
   accessRequestFilters.requesterSearch ||
   accessRequestFilters.state ||
+  accessRequestFilters.authorizationState ||
   accessRequestCreatedRange.value?.length
 ))
 const governanceLoading = computed(() => findingsLoading.value || assessmentsLoading.value)
@@ -1451,6 +1460,7 @@ function accessRequestQueueParams(page) {
   return {
     scope: accessRequestScope.value,
     state: accessRequestScope.value === 'history' ? accessRequestFilters.state || undefined : undefined,
+    authorization_state: accessRequestScope.value === 'history' ? accessRequestFilters.authorizationState || undefined : undefined,
     requester_search: accessRequestFilters.requesterSearch || undefined,
     resource_search: accessRequestFilters.resourceSearch || undefined,
     created_from: range[0] instanceof Date ? range[0].toISOString() : undefined,
@@ -1487,6 +1497,7 @@ async function loadAccessRequestQueue(page = accessRequestPage.value) {
 async function handleAccessRequestScopeChange() {
   accessRequestPage.value = 1
   accessRequestFilters.state = ''
+  accessRequestFilters.authorizationState = ''
   await loadAccessRequestQueue(1)
 }
 
@@ -1499,6 +1510,7 @@ async function resetAccessRequestFilters() {
   accessRequestFilters.resourceSearch = ''
   accessRequestFilters.requesterSearch = ''
   accessRequestFilters.state = ''
+  accessRequestFilters.authorizationState = ''
   accessRequestCreatedRange.value = []
   accessRequestPage.value = 1
   await loadAccessRequestQueue(1)
