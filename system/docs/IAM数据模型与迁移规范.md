@@ -88,7 +88,7 @@ Department Membership 的 `membership_type` 使用 `primary` / `additional`，`r
 
 列表和详情只返回当前 Tenant 内对象，跨 Tenant ID 与不存在统一返回 `404`。成员创建只接受当前 Tenant 的 `tenant_membership_id`，不能由前端提交 User ID 猜测 Membership。所有写接口使用具体请求 DTO，并返回更新后的完整资源；生命周期动作必须携带 `version` 和非空 `reason`。
 
-`GET /api/v1/system/tenant/memberships` 支持 `search`、`status` 和 `principal_type=user|service_principal` 组合过滤。管理界面将 `principal_type` 呈现为“成员类型”，值显示为“用户账号”或“服务账号”，不得改名或新增平行协议字段。角色分配和 Tenant 审计必须复用同一 Tenant Membership 选择控件，按“当前账号、用户账号、服务账号”分组并显式展示类型；角色分配只允许从有效 Membership 创建授权，历史审计允许选择全部生命周期 Membership。
+`GET /api/v1/system/tenant/memberships` 支持 `search`、`status` 和 `principal_type=user|service_principal` 组合过滤。管理界面将 `principal_type` 呈现为“账号类型”，值显示为“用户账号”或“服务账号”，不得改名或新增平行协议字段。“角色管理 > 角色分配”固定查询 User Membership；“应用接入 > 机器身份”通过每行的 Membership 查看或管理 Service Principal 角色；Tenant 审计复用同一 Tenant Membership 选择控件并按“当前账号、用户账号、服务账号”分组。角色分配只允许从有效 Membership 创建授权，历史审计允许选择全部生命周期 Membership。
 
 ## 五、Permission、Role 与高权限治理
 
@@ -202,14 +202,16 @@ System IAM 管理端只按稳定业务大类提供五个左侧页面，不能把
 | 组织管理 `/iam/organization` | 租户管理 | 部门管理、项目组管理 |
 | 账号管理 `/iam/accounts` | 用户账号、身份变更审批、我的账号安全 | 用户账号、用户邀请、我的账号安全 |
 | 角色管理 `/iam/roles` | 无可用对象时隐藏 | 角色定义、角色分配 |
-| 应用接入 `/iam/application-access` | 无可用对象时隐藏 | 服务账号、外部应用（OAuth） |
+| 应用接入 `/iam/application-access` | 无可用对象时隐藏 | 机器身份、API 消费方、外部应用（OAuth） |
 | 审计管理 `/iam/security` | IAM 安全策略、平台审计 | 租户审计 |
 
 页面表达业务大类，页内 `tab` 表达该类中的具体管理对象或流程。Tab 必须继续按当前 AuthContext 类型和 Permission 过滤；某个页面在当前上下文中没有任何可用 Tab 时，Console 左侧入口和 System standalone 导航都必须隐藏，直接访问也不得绕过 Context 与 Permission Guard。
 
-“用户账号”和“服务账号”是两类不同管理对象，不能继续混排在同一个主列表中。用户账号页只展示 User Membership；服务账号页只展示当前 Tenant 拥有的 Service Account 聚合对象。角色分配和租户审计仍必须覆盖两类 Principal，并在选择器或过滤器内按“账号类型”分组并显式标记。
+“用户账号”和“机器身份”是两类不同管理对象，不能继续混排在同一个主列表中。用户账号页只展示 User Membership；机器身份页展示当前 Tenant 拥有的 Service Account，以及已加入当前 Tenant 的 Platform-owned Runtime Service Principal，并以结构化管理归属显式区分。角色管理中的角色分配页只展示 User；Service Principal 的角色入口归机器身份页；租户审计仍覆盖两类 Principal，并在选择器或过滤器内按“账号类型”分组并显式标记。
 
-服务账号由 Tenant-owned Service Principal、唯一 Tenant Membership 和一对一 Confidential OAuth Client 组成，三者生命周期由同一个服务账号 API 原子管理；内部 OAuth Client 不得出现在“外部应用（OAuth）”列表。外部应用是代表 User 执行 Authorization Code + PKCE 的 Public OAuth Client，不是账号，也不接受 Client Credentials。
+Tenant-owned 服务账号由 Service Principal、唯一 Tenant Membership 和一对一 Confidential OAuth Client 组成，三者生命周期由同一个服务账号 API 原子管理；内部 OAuth Client 不得出现在“外部应用（OAuth）”列表。Platform-owned Runtime Service Principal 在机器身份视图中只读，不向 Tenant 管理员暴露凭据轮换、定义修改或生命周期操作。两类机器身份的角色展示均复用 Role Assignment API；只有 Tenant-owned 服务账号允许 Tenant 管理员创建或撤销兼容的 Runtime Role Assignment。外部应用是代表 User 执行 Authorization Code + PKCE 的 Public OAuth Client，不是账号，也不接受 Client Credentials。
+
+API 消费方只用于外部系统消费已发布的数据面 API，不是 Principal，不建立 Tenant Membership、Role Assignment 或 OAuth Client。System 保存 API Consumer、一次性展示的 API Consumer Credential Hash，以及精确的 `ConsumerServiceReference(service_type, service_id)`；首期只允许绑定 Service 已正式发布到服务消费目录的 Query Service。Gateway 只在显式数据面路由验证凭据、限流和记录调用，Service owner 必须再次验证 Credential，并按当前 Tenant、精确 Service Reference、服务状态和发布状态完成最终授权。`X-API-Key` 不得进入 `/api/v1/*` 控制面；控制面继续只接受其路由声明的 Bearer Credential。
 
 Console 公开路由与 System standalone 路由使用同一模块内 path 和 query 契约。旧 `/iam?tab=...` 工作台、`/iam/identity`、`/iam/access` 和 `/settings/security-policy` 路径不保留重定向或兼容读取；审计唯一使用 `/iam/security?tab=audit`，具体 Platform 或 Tenant 范围只从当前 AuthContext 推导。
 

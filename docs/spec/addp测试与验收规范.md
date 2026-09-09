@@ -95,17 +95,18 @@ T3 的 PR 主路径使用独立端口、受控 API 夹具和非个人登录态�
 
 ### 5.1 专用环境
 
-T4 只在隔离的 ADDP 测试部署执行：
+T4 只在隔离的 ADDP 测试部署执行，并按运行条件选择唯一部署 profile：
 
-- 使用带 `self-hosted`、`macOS`、`addp-online` 标签的专用 Runner 和 `addp-online` GitHub Environment。
-- Runner 使用独立账号和独立 checkout，不复用个人开发工作区或开发服务进程。
+- 常规 Online suite 使用带 `self-hosted`、`macOS`、`addp-online` 标签的专用 Runner 和 `addp-online` GitHub Environment，复用专用部署中的稳定 Tenant、User 和 Engine Instance。
+- 只有明确声明 Linux/CPU 限制的 suite 可登记 GitHub Hosted profile。该 profile 每轮必须在干净 `ubuntu-24.04` x86_64 Runner 上从零启动 disposable Infra、Tenant、User、Engine Instance 和业务引擎，退出时全部销毁；不使用 GitHub Environment 或仓库 Secret。
+- self-hosted Runner 使用独立账号和独立 checkout；Hosted Runner 使用 Actions 当次临时 checkout。两者都不复用个人开发工作区或开发服务进程。
 - 服务只绑定 Runner 可访问的回环地址；通用预检拒绝外部服务地址。
-- 仓库根不得保存 T4 `.env`。Tenant、数据库连接和凭据由仓库外绝对路径环境文件注入。
-- `ADDP_ONLINE_HOST` 必须精确为 `1`；宿主机门禁必须在任何停止、启动或重启操作前完成只读准入检查。
-- `POSTGRES_DB` 必须精确为 `addp_online`，并拒绝 `addp`、`addp_test`、`addp_iam_test`。该数据库只属于专用 T4 部署，不属于本地共享 PostgreSQL 测试清单。
-- 证据目录必须位于仓库外；工作区必须干净，构建身份必须与当前 checkout 一致。
+- 仓库根不得保存 T4 `.env`。self-hosted profile 的 Tenant、数据库连接和凭据由仓库外绝对路径环境文件注入；Hosted profile 只能使用当次 disposable 部署产生、位于 `runner.temp` 的 owner-only 凭据文件。
+- `ADDP_ONLINE_HOST` 必须精确为 `1`；Hosted profile 还必须同时校验 `GITHUB_ACTIONS=true`、`RUNNER_OS=Linux` 和 `ADDP_ONLINE_HOSTED=1`。生命周期门禁必须在任何停止、启动或重启操作前完成只读准入检查。
+- `POSTGRES_DB` 必须精确为 `addp_online`，并拒绝 `addp`、`addp_test`、`addp_iam_test`。该数据库只属于当前 T4 部署，不属于本地共享 PostgreSQL 测试清单。
+- 证据目录必须位于仓库外；凭据目录不得被 artifact 归档。工作区必须干净，构建身份必须与当前 checkout 一致。
 
-专用宿主机编排只调用现有 Infra、开发生命周期脚本和 `make test-online`，不得在 workflow 或宿主机脚本中复制模块启动逻辑和业务断言。退出路径必须停止本次应用进程并报告清理结果；Infra 可在专用 Runner 常驻，且不属于可选业务引擎。
+两种 profile 共用同一个 `make test-online` 分发器和 owner 业务断言，生命周期脚本只负责当次环境和夹具。编排只调用现有 Infra、开发生命周期脚本和 `make test-online`，不得在 workflow 中复制模块启动逻辑或业务断言。退出路径必须停止本次应用进程并报告清理结果；self-hosted Infra 可在专用 Runner 常驻，Hosted Infra 必须随 Job 销毁。
 
 ### 5.2 开关、身份与拓扑预检
 
@@ -136,7 +137,7 @@ T4 只在隔离的 ADDP 测试部署执行：
 
 企业资源目录发布类 T4 使用同一永久 PostgreSQL Engine Instance 及其 owner 生命周期入口创建的稳定表 `public.addp_online_catalog_fixture`。专用环境必须预置可引用的 Standard Domain 和 Department；首次运行可将该永久数据源对应的 `discovered` CatalogEntry 初始化为稳定 `curated` fixture，后续运行必须在验收后恢复其编目聚合。同一 suite 必须重复执行真实 Meta 扫描并证明 fingerprint 与 CatalogEntry UUID 幂等，验证 `inventory` / `governance` 视图、治理覆盖率固定维度和精确来源身份解析；真实浏览器使用同一专用 User 登录 Console，验证覆盖率页、目录详情与 Domain / Department / Engine 名称选择器，并将浏览器 warning/error 计入失败。每轮创建的 Asset 和 AssetCategory 必须经正式 API 下架、删除并证明零残留；不得直接 SQL 清理。
 
-Manager 平台内部产物类 T4 使用专用 Business MinIO Fixture 和永久 MinIO Engine Instance。Fixture owner 幂等写入仓库内确定性小型 LAS 与多页 PPTX 样本；suite 经 Gateway 触发真实 Meta scan，并使用扫描所得的 ResourceLocator、item ID 和 fingerprint 验证两条正式链路：`point_cloud_copc_generation` 必须由 PointCloud Runtime 从业务对象存储读取源文件、向 Manager infra MinIO 发布 COPC，并由 Manager execution 写入 `addp.lineage-facts/v1`；PPTX 预览必须首次触发 `pptx_pdf_generation`，由 Document Workflow / LibreOffice 发布多页静态 PDF，同源再次请求只复用同一任务与结果，不创建第二次 execution。Monitor API 与真实浏览器必须展示同一业务输入和 `addp-infra://` 输出；浏览器还必须在 Data Explorer 翻到后续 PDF 页，跨过 Engine 状态周期刷新后仍保持当前页。退出路径通过 Manager 正式 API 删除两类结果与任务、验证对象不可再读取及临时资源零残留；不得直接操作数据库或 infra MinIO 清理。
+Manager 平台内部产物类 T4 使用专用 Business MinIO Fixture 和永久 MinIO Engine Instance。Fixture owner 幂等写入仓库内确定性小型 LAS 与多页 PPTX 样本；suite 经 Gateway 触发真实 Meta scan，并使用扫描所得的 ResourceLocator、item ID 和 fingerprint 验证两条正式链路：`point_cloud_copc_generation` 必须由 PointCloud Runtime 从业务对象存储读取源文件、向 Manager infra MinIO 发布 COPC，并由 Manager execution 写入 `addp.lineage-facts/v1`；PPTX 预览必须由 Quick View Capability 声明 `generate_pptx_pdf`，并通过统一 action 入口首次触发 `pptx_pdf_generation`，由 Document Workflow / LibreOffice 发布多页静态 PDF，同源再次读取 Capability 只复用同一任务与结果，不创建第二次 execution。Monitor API 与真实浏览器必须展示同一业务输入和 `addp-infra://` 输出；浏览器还必须在 Data Explorer 翻到后续 PDF 页，跨过 Engine 状态周期刷新后仍保持当前页。退出路径通过 Manager 正式 API 删除两类结果与任务、验证对象不可再读取及临时资源零残留；不得直接操作数据库或 infra MinIO 清理。
 
 限时原值访问 T4 必须使用两名不同的专用 User，覆盖 `manager/preview` 的完整流程：申请用户在 Manager 出口发起申请，另一名审批用户在 Security 审批，批准后仅申请用户在有效期内看到原值，审批用户和其他用户仍看到遮盖值。到期后不得刷新 Security 投影或调用 Security 判定，必须直接由 Manager 根据本地投影恢复遮盖。Enrollment、Assessment、AccessRequest、Exemption 聚合及不可变修订属于专用 Tenant 的长期治理与审计事实，不作为临时业务资源删除；Assessment 修订使授权立即失效的事务语义由 Security PostgreSQL T2 覆盖，禁止为了 T4 重复运行而篡改或删除不可变审计历史。
 
@@ -144,11 +145,13 @@ MySQL 邮箱四出口保护类 T4 使用专用 MySQL Fixture 的 `customers.emai
 
 OceanBase 消费链路 T4 使用专用 OceanBase CE MySQL 模式 Fixture 和永久 `engine_type=oceanbase` Engine Instance。Fixture 固定维护一个 5 行非空间 InnoDB watermark 源表和一个同构空目标表；suite 必须经 Meta 扫描取得两个 ResourceLocator，以同一条 bounded watermark Transfer 任务依次验证首批 5 行、源表确定性更新/新增后的 2 行增量，以及再次执行的 0 行空增量。目标采用 `upsert` 和唯一稳定键 `id`，不得把 OceanBase 降格注册为 MySQL 或为模块增加类型分支。首批与增量完成后，Manager 表预览、Develop SQL 和临时 Query Service 必须通过各自正式数据出口读取同一目标 ResourceLocator，并得到一致 checksum，最终固定为 6 行且无重复键；Manager 预览还必须确认扫描结构中的完整列顺序。临时 Transfer 任务和 Query Service 必须按捕获 ID 删除并确认 404；物理 Fixture 在成功、失败和中断退出路径恢复源表基线与空目标表后停止。该 suite 只登记手工 `workflow_dispatch`，首次真实通过前不得增加定时触发。
 
+openGauss 消费链路 T4 复用上述关系引擎 owner 断言，但只在 GitHub Hosted `ubuntu-24.04` x86_64 profile 上运行。生命周期从固定 SHA-256 的 openGauss 6.0.6 LTS 官方介质启动独占容器，创建 `addp_online` 平台库、非默认 Tenant、最小权限消费 User、只含 `system.engine.create/read/execute` 的 Engine Provisioner 和临时 `engine_type=opengauss` Engine Instance。Business Fixture 只管理数据库并输出 owner-only Engine 描述，不调用 System API；System IAM owner helper 只创建身份和 Token，通用 Online 注册器使用 Engine Provisioner Token 通过正式 System API 注册并验证 Engine。Fixture 以 `public` schema 作为 namespace，使用 openGauss 原生 `MERGE` 推进相同的 5/2/0 watermark 数据集；Manager、Transfer、Develop 和 Service 必须通过与 OceanBase 相同的通用 ResourceLocator、SQLDialect 和 Provider 路径得到同一 6 行 checksum，上层模块不得新增 `opengauss` 分支。当次 Engine Instance 只随 disposable 平台库销毁，Token 和连接凭据只保存在不归档的 owner-only `runner.temp` 目录；Engine 注册后必须在进入业务断言前从进程环境清除 Provisioner Token 与数据库凭据，业务证据不得包含凭据。该 suite 只登记手工 `workflow_dispatch`，首次真实通过前不得增加定时触发。
+
 Transfer 仅新增 MySQL T4 使用永久 PostgreSQL 与 MySQL Engine Instance，并由专属复合 Fixture 管理两端物理表。真实 User 必须从 Console 页面选择源表和目标库、进入字段映射、通过正式“分析源数据并推荐精度”接口把无声明精度的 PostgreSQL `numeric` 收敛为不会截断当前值的 MySQL `DECIMAL(6,2)`，再以主键 `id` 作为唯一 watermark 创建任务。页面自动执行的首轮必须读写 6 行；Fixture 同时修改 `id=1` 并新增 `id=7` 后，用户从任务详情再次执行必须只读写 1 行。最终 MySQL 目标必须共 7 行、`id=1` 保持首轮值、`id=7` 为新增值且无重复键，以证明单字段水位只覆盖严格递增新增、不承诺旧记录更新。浏览器还必须断言任务配置的 `tie_breaker=[]`、目标 `upsert` 键为 `id`，捕获并删除临时任务且确认 404；Fixture 在全部退出路径删除两端固定表并停止两个容器。该 suite 只登记手工 `workflow_dispatch`，首次真实通过前不得增加定时触发。
 
 ### 5.3 数据、超时与清理
 
-T4 临时夹具优先通过 owner 正式 API 创建；正式 API 无法建立必要前置状态时，才允许 owner 提供专用测试 helper。Engine Instance 等永久身份按上一节使用预置专用 Fixture，不适用“每轮创建后删除”。跨模块 Online 场景不得以直接 SQL 作为常规夹具路线。
+T4 临时夹具优先通过 owner 正式 API 创建；正式 API 无法建立必要前置状态时，才允许 owner 提供专用测试 helper。Hosted profile 的全新平台库在尚无可登录 User 时，可由 System-owned helper 调用正式 IAM Service 创建当次 Tenant、User、Role 和 Session；helper 必须限定 GitHub Hosted Linux 及 `addp_online`，不得通过 SQL 写入 Principal、Role、Assignment 或 Token。Engine Instance 等永久身份按上一节使用预置专用 Fixture，不适用“每轮创建后删除”；Hosted disposable profile 的当次 Engine Instance 随平台数据卷整体销毁。跨模块 Online 场景不得以直接 SQL 作为常规夹具路线。
 
 每个 suite 必须：
 

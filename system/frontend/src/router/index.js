@@ -71,12 +71,6 @@ const routes = [
         meta: { requiresAuth: true, title: '系统管理-addp', requiredPermissions: ['system.engine.read'] }
       },
       {
-        path: 'applications',
-        name: 'Applications',
-        component: () => import('../views/Applications.vue'),
-        meta: { requiresAuth: true, title: '应用管理-addp', requiredPermissions: ['system.application.read'] }
-      },
-      {
         path: 'cleanup',
         name: 'CleanupManager',
         component: () => import('../views/CleanupManager.vue'),

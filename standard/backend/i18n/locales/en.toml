@@ -160,8 +160,8 @@ other = "The extraction result contains no valid candidates with traceable evide
 [standard.document.extraction_namespace_invalid]
 other = "The owning domain code is not a valid candidate namespace; use lowercase snake_case"
 
-[standard.document.candidate_group_query_invalid]
-other = "Candidate group filters or pagination parameters are invalid"
+[standard.document.candidate_family_query_invalid]
+other = "Candidate family filters or pagination parameters are invalid"
 
 [standard.document.copilot_unavailable]
 other = "The Copilot standard extraction service is temporarily unavailable"

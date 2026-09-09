@@ -68,6 +68,53 @@ test('creates a managed quick-view task from one selected source without a targe
   }])
 })
 
+test('opens the source preview when the selected source already has a current quick-view result', async ({ page }) => {
+  const backend = await installMockBackend(page)
+  await page.goto(`/derived-tasks?category=managed_quick_view&task_type=vector_tile_cache_generation&create=1&locator=${encodeURIComponent(RIVERS_LOCATOR)}`)
+
+  const dialog = page.getByRole('dialog', { name: '新建快显任务' })
+  await expect(dialog.getByText('当前源数据已存在可直接使用的快显结果，无需重复生成。')).toBeVisible()
+  await expect(dialog.getByRole('button', { name: '生成并执行' })).toHaveCount(0)
+  await dialog.getByRole('button', { name: '查看已有结果' }).click()
+
+  await expect.poll(() => backend.preferredModeRequests).toEqual([{
+    locator: RIVERS_LOCATOR,
+    preferred_mode: 'map_quick_view'
+  }])
+
+  await expect.poll(() => {
+    const url = new URL(page.url())
+    return { pathname: url.pathname, locator: url.searchParams.get('locator') }
+  }).toEqual({ pathname: '/data-explorer', locator: RIVERS_LOCATOR })
+})
+
+test('opens a managed task current result from the task list after verifying the result still exists', async ({ page }) => {
+  const backend = await installMockBackend(page, { includeResultTask: true })
+  await page.goto('/derived-tasks?category=managed_quick_view')
+
+  const row = page.getByRole('row', { name: /public\.rivers 瓦片缓存/ })
+  await row.getByRole('button', { name: '结果', exact: true }).click()
+
+  await expect.poll(() => backend.taskDetailRequests).toEqual(['vector_tile_cache_generation/61'])
+  await expect.poll(() => backend.preferredModeRequests).toEqual([{
+    locator: RIVERS_LOCATOR,
+    preferred_mode: 'map_quick_view'
+  }])
+  await expect.poll(() => new URL(page.url()).pathname).toBe('/data-explorer')
+})
+
+test('keeps the user on the task list when the managed task current result no longer exists', async ({ page }) => {
+  const backend = await installMockBackend(page, { includeResultTask: true, resultExists: false })
+  await page.goto('/derived-tasks?category=managed_quick_view')
+
+  const row = page.getByRole('row', { name: /public\.rivers 瓦片缓存/ })
+  await row.getByRole('button', { name: '结果', exact: true }).click()
+
+  await expect(page.getByText('当前任务暂无可用的快显结果')).toBeVisible()
+  expect(backend.preferredModeRequests).toEqual([])
+  expect(new URL(page.url()).pathname).toBe('/derived-tasks')
+})
+
 test('creates a PPTX PDF quick-view task through its owner action', async ({ page }) => {
   const backend = await installMockBackend(page)
   await page.goto('/derived-tasks?category=managed_quick_view&task_type=pptx_pdf_generation&create=1')
@@ -79,7 +126,10 @@ test('creates a PPTX PDF quick-view task through its owner action', async ({ pag
 
   await expect(dialog.getByText('演示文稿 PDF', { exact: true })).toBeVisible()
   await dialog.getByRole('button', { name: '生成并执行' }).click()
-  await expect.poll(() => backend.pptxRequests).toEqual([{ locator: SLIDES_LOCATOR, retry: true }])
+  await expect.poll(() => backend.quickViewActions).toContainEqual({
+    locator: SLIDES_LOCATOR,
+    action: 'generate_pptx_pdf'
+  })
 })
 
 test('keeps directory and file vectorization semantics in the shared picker', async ({ page }) => {
@@ -131,8 +181,8 @@ function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-async function installMockBackend(page) {
-  const state = { capabilityLocators: [], quickViewActions: [], pptxRequests: [] }
+async function installMockBackend(page, options = {}) {
+  const state = { capabilityLocators: [], quickViewActions: [], preferredModeRequests: [], taskDetailRequests: [] }
 
   await page.addInitScript(() => {
     localStorage.setItem('addp-lang', 'zh-cn')
@@ -184,26 +234,24 @@ async function installMockBackend(page) {
       })
     }
     if (path === '/api/v1/manager/quick-view/actions' && request.method() === 'POST') {
-      state.quickViewActions.push(request.postDataJSON())
+      const payload = request.postDataJSON()
+      state.quickViewActions.push(payload)
+      const isPPTX = payload.action === 'generate_pptx_pdf'
       return fulfillJSON(route, {
-        task_type: 'vector_tile_cache_generation',
-        task_id: 51,
-        execution_id: 'quick-view-execution-1',
+        task_type: isPPTX ? 'pptx_pdf_generation' : 'vector_tile_cache_generation',
+        task_id: isPPTX ? 52 : 51,
+        execution_id: isPPTX ? 'pptx-execution-1' : 'quick-view-execution-1',
         status: 'pending'
-      }, 202)
-    }
-    if (path === '/api/v1/manager/pptx_pdf/preview' && request.method() === 'POST') {
-      state.pptxRequests.push(request.postDataJSON())
-      return fulfillJSON(route, {
-        status: 'pending',
-        task_id: 52,
-        execution_id: 'pptx-execution-1'
       }, 202)
     }
     if (path === '/api/v1/manager/quick-view/capability') {
       const locator = url.searchParams.get('locator') || ''
       state.capabilityLocators.push(locator)
       return fulfillJSON(route, quickViewCapability(locator))
+    }
+    if (path === '/api/v1/manager/preview-state/preferred-mode' && request.method() === 'PATCH') {
+      state.preferredModeRequests.push(request.postDataJSON())
+      return fulfillJSON(route, {})
     }
     if (path === '/api/v1/manager/engines') {
       return fulfillJSON(route, { data: [POSTGRES_ENGINE, NFS_ENGINE] })
@@ -212,7 +260,12 @@ async function installMockBackend(page) {
       return fulfillJSON(route, tileCacheTask())
     }
     if (path === '/api/v1/manager/tasks') {
-      return fulfillJSON(route, { items: [], total: 0, page: 1, page_size: 20 })
+      const items = options.includeResultTask ? [resultTask()] : []
+      return fulfillJSON(route, { items, total: items.length, page: 1, page_size: 20 })
+    }
+    if (path === '/api/v1/manager/tasks/vector_tile_cache_generation/61') {
+      state.taskDetailRequests.push('vector_tile_cache_generation/61')
+      return fulfillJSON(route, { ...resultTask(), has_current_result: options.resultExists !== false })
     }
     if (path === '/api/v1/manager/vector_tile_cache') {
       return fulfillJSON(route, { data: [], total: 0 })
@@ -301,6 +354,16 @@ function nfsTree() {
 }
 
 function quickViewCapability(locator) {
+  if (locator === SLIDES_LOCATOR) {
+    return {
+      locator,
+      source_kind: 'document',
+      source_engine_id: NFS_ENGINE.id,
+      item_fingerprint: 'fingerprint-slides',
+      available_actions: ['generate_pptx_pdf'],
+      pptx_pdf: { format: 'pptx', status: 'missing' }
+    }
+  }
   const parsedTable = locator === RIVERS_LOCATOR ? 'rivers' : 'farmland'
   return {
     locator,
@@ -323,7 +386,8 @@ function quickViewCapability(locator) {
     },
     optimization: { available: true, status: 'ready' },
     realtime_tile: { performance_mode: 'native_mvt' },
-    available_actions: ['generate_vector_tile_cache']
+    default_vector_tile_cache_id: locator === RIVERS_LOCATOR ? 61 : 0,
+    available_actions: locator === RIVERS_LOCATOR ? [] : ['generate_vector_tile_cache']
   }
 }
 
@@ -357,6 +421,25 @@ function tileCacheTask() {
       },
       storage: {},
       options: { geometry_column: 'geometry' }
+    }
+  }
+}
+
+function resultTask() {
+  return {
+    id: 61,
+    task_type: 'vector_tile_cache_generation',
+    category: 'managed_quick_view',
+    name: 'public.rivers 瓦片缓存',
+    enabled: true,
+    last_execution_status: 'success',
+    last_execution_id: 'result-execution-61',
+    updated_at: '2026-09-08T12:00:00Z',
+    config: {
+      target: {
+        source_engine_id: POSTGRES_ENGINE.id,
+        item_locator: RIVERS_LOCATOR
+      }
     }
   }
 }

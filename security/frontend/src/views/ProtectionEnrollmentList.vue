@@ -99,6 +99,29 @@
         <el-table-column v-if="accessRequestScope === 'history'" :label="t('security.accessRequest.state')" width="110">
           <template #default="{ row }"><el-tag size="small" :type="accessRequestStateType(row.state)">{{ t(`security.accessRequest.states.${row.state}`) }}</el-tag></template>
         </el-table-column>
+        <el-table-column v-if="accessRequestScope === 'history'" :label="t('security.accessRequest.authorizationState')" min-width="170">
+          <template #default="{ row }">
+            <div v-if="row.authorization_state" class="access-authorization-state">
+              <el-tag size="small" :type="accessAuthorizationStateType(row.authorization_state)">
+                {{ t(`security.accessRequest.authorizationStates.${row.authorization_state}`) }}
+              </el-tag>
+              <span v-if="row.authorized_until">
+                {{ t('security.accessRequest.authorizedUntil', { time: formatDateTime(row.authorized_until) }) }}
+              </span>
+              <el-button
+                v-if="canReadExemptions && row.enrollment_id && row.exemption_id"
+                class="access-authorization-link"
+                link
+                type="primary"
+                size="small"
+                @click="openAccessRequestAuthorization(row)"
+              >
+                {{ t('security.accessRequest.viewAuthorization') }}
+              </el-button>
+            </div>
+            <span v-else>{{ t('security.accessRequest.authorizationStates.not_granted') }}</span>
+          </template>
+        </el-table-column>
         <el-table-column v-if="accessRequestScope === 'history'" :label="t('security.accessRequest.reviewer')" width="130">
           <template #default="{ row }">
             <div v-if="row.reviewer" class="access-actor">
@@ -639,7 +662,13 @@
           </div>
           <el-skeleton v-if="exemptionsLoading" class="exemption-loading" :rows="2" animated />
           <div v-else-if="exemptions.length > 0" class="exemption-list">
-            <article v-for="exemption in exemptions" :key="exemption.id" class="exemption-card">
+            <article
+              v-for="exemption in exemptions"
+              :key="exemption.id"
+              :ref="element => setExemptionCardRef(exemption.id, element)"
+              class="exemption-card"
+              :class="{ 'is-focused': exemption.id === focusedExemptionID }"
+            >
               <div class="exemption-card__main">
                 <div class="exemption-card__title">
                   <strong>{{ assessmentComponent(exemption.assessment_id) }}</strong>
@@ -982,6 +1011,8 @@ const assessments = ref([])
 const assessmentsLoading = ref(false)
 const exemptions = ref([])
 const exemptionsLoading = ref(false)
+const focusedExemptionID = ref('')
+const exemptionCardRefs = new Map()
 const componentOptions = ref([])
 const componentsLoading = ref(false)
 const sensitiveTypes = ref([])
@@ -1481,6 +1512,21 @@ function accessRequestStateType(state) {
   if (state === 'approved') return 'success'
   if (state === 'rejected') return 'danger'
   return 'info'
+}
+
+function accessAuthorizationStateType(state) {
+  if (state === 'active') return 'success'
+  if (state === 'revoked') return 'danger'
+  return 'info'
+}
+
+async function openAccessRequestAuthorization(row) {
+  try {
+    const enrollment = await protectionEnrollmentAPI.get(row.enrollment_id)
+    await openDetail(enrollment, row.exemption_id)
+  } catch (error) {
+    ElMessage.error(error.message || t('security.exemption.loadFailed'))
+  }
 }
 
 async function decideAccessRequest(row, decision) {
@@ -2015,15 +2061,28 @@ async function createEnrollment() {
   }
 }
 
-function openDetail(row) {
+function setExemptionCardRef(exemptionID, element) {
+  if (element) exemptionCardRefs.set(exemptionID, element)
+  else exemptionCardRefs.delete(exemptionID)
+}
+
+async function focusExemptionCard() {
+  if (!focusedExemptionID.value) return
+  await nextTick()
+  exemptionCardRefs.get(focusedExemptionID.value)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+}
+
+async function openDetail(row, exemptionID = '') {
   detailRow.value = row
+  focusedExemptionID.value = exemptionID
   detailDrawer.value = true
   findingsPage.value = 1
   findings.value = []
   findingsTotal.value = 0
   assessments.value = []
   exemptions.value = []
-  loadGovernance(1)
+  await loadGovernance(1)
+  await focusExemptionCard()
 }
 
 function handleDetailClosed() {
@@ -2034,6 +2093,8 @@ function handleDetailClosed() {
   exemptions.value = []
   findingsLoading.value = false
   exemptionsLoading.value = false
+  focusedExemptionID.value = ''
+  exemptionCardRefs.clear()
   detailRow.value = null
 }
 
@@ -2200,6 +2261,9 @@ onBeforeUnmount(() => {
 .access-review-filters > :deep(.el-date-editor) { width: min(360px, 100%); }
 .access-actor { display: flex; flex-direction: column; gap: 2px; }
 .access-actor span { color: var(--addp-text-secondary); font-size: 12px; }
+.access-authorization-state { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.access-authorization-state span { color: var(--addp-text-secondary); font-size: 12px; }
+.access-authorization-link { height: auto; padding: 0; }
 .list-scope-bar { display: flex; align-items: center; margin-bottom: 12px; }
 .enrollment-card { border-color: var(--addp-border-color); background: var(--addp-bg-primary); }
 .review-queue-intro { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 12px; padding: 13px 15px; border: 1px solid var(--addp-border-color); border-radius: 8px; background: var(--addp-bg-primary); }
@@ -2301,6 +2365,7 @@ h4 { margin: 24px 0 12px; }
 .exemption-loading { margin-top: 14px; }
 .exemption-list { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
 .exemption-card { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 12px 14px; border: 1px solid var(--addp-border-color); border-radius: 8px; background: var(--addp-bg-secondary); }
+.exemption-card.is-focused { border-color: var(--el-color-primary); box-shadow: 0 0 0 1px var(--el-color-primary); }
 .exemption-card__main { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 4px; }
 .exemption-card__title { display: flex; align-items: center; gap: 8px; }
 .exemption-card__title strong { min-width: 0; overflow-wrap: anywhere; }

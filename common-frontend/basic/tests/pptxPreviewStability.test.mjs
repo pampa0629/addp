@@ -11,6 +11,10 @@ test('PPTX preview reloads only when the ResourceLocator identity changes', () =
 
   assert.match(pptxPreview, /watch\(\(\) => props\.source\?\.locator, \(\) => resolvePreview\(\), \{ immediate: true \}\)/)
   assert.doesNotMatch(pptxPreview, /watch\(\(\) => props\.source, [\s\S]*deep: true/)
+  assert.match(pptxPreview, /\/api\/v1\/manager\/quick-view\/capability\?locator=/)
+  assert.match(pptxPreview, /action:\s*'generate_pptx_pdf'/)
+  assert.match(pptxPreview, /\['failed', 'stale'\]\.includes\(artifact\.status\) && !retry/)
+  assert.doesNotMatch(pptxPreview, /\/api\/v1\/manager\/pptx_pdf\/preview/)
 })
 
 test('PDF preview compares stable watch sources instead of a newly allocated array', () => {

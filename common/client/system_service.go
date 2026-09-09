@@ -351,21 +351,30 @@ func (c *SystemServiceClient) listModules(ctx context.Context, path string) ([]*
 	return response.Modules, nil
 }
 
-type APIKeyValidationResponse struct {
-	Valid              bool       `json:"valid"`
-	AppID              uint       `json:"app_id"`
-	AppName            string     `json:"app_name"`
-	AllowedServices    []string   `json:"allowed_services"`
-	RateLimitPerMinute int        `json:"rate_limit_per_minute"`
-	ExpiresAt          *time.Time `json:"expires_at"`
+type APIConsumerServiceReference struct {
+	ServiceType string `json:"service_type"`
+	ServiceID   uint   `json:"service_id"`
 }
 
-func (c *SystemServiceClient) ValidateAPIKey(ctx context.Context, keyHash string) (*APIKeyValidationResponse, error) {
+type APIConsumerCredentialValidationResponse struct {
+	Valid              bool                          `json:"valid"`
+	APIConsumerID      uint                          `json:"api_consumer_id"`
+	APIConsumerName    string                        `json:"api_consumer_name"`
+	TenantID           uint                          `json:"tenant_id"`
+	ServiceGrants      []APIConsumerServiceReference `json:"service_grants"`
+	RateLimitPerMinute int                           `json:"rate_limit_per_minute"`
+	ExpiresAt          *time.Time                    `json:"expires_at,omitempty"`
+}
+
+func (c *SystemServiceClient) ValidateAPIConsumerCredential(
+	ctx context.Context,
+	keyHash string,
+) (*APIConsumerCredentialValidationResponse, error) {
 	if strings.TrimSpace(keyHash) == "" {
-		return nil, errors.New("API key hash is required")
+		return nil, errors.New("API consumer credential hash is required")
 	}
-	var response APIKeyValidationResponse
-	path := "/api/v1/system/runtime/api-keys/validate?key_hash=" + url.QueryEscape(keyHash)
+	var response APIConsumerCredentialValidationResponse
+	path := "/api/v1/system/runtime/api-consumer-credentials/validate?key_hash=" + url.QueryEscape(keyHash)
 	if err := c.doPlatformJSON(ctx, http.MethodGet, path, nil, &response); err != nil {
 		return nil, err
 	}

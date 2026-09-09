@@ -24,7 +24,7 @@ class FakeGatewayClient:
         self.pointcloud_result_exists = False
         self.pptx_task_exists = False
         self.pptx_result_exists = False
-        self.pptx_preview_calls = 0
+        self.pptx_capability_calls = 0
         self.calls: list[tuple[str, str]] = []
         self.pointcloud_item_id = 91
         self.pptx_item_id = 92
@@ -149,25 +149,35 @@ class FakeGatewayClient:
                     raise AssertionError(f"unexpected PointCloud Range headers: {headers!r}")
                 return response(206, raw=b"COPC fixture")
             return response(404)
-        if path == "/api/v1/manager/pptx_pdf/preview" and method == "POST":
-            if body != {"locator": self.pptx_locator}:
-                raise AssertionError(f"unexpected PPTX preview body: {body!r}")
-            self.pptx_preview_calls += 1
-            if self.pptx_preview_calls == 1:
-                self.pptx_task_exists = True
-                self.pptx_result_exists = True
-                return response(202, {
-                    "status": "pending",
-                    "task_id": 202,
-                    "execution_id": "manager-execution-2",
+        if path.startswith("/api/v1/manager/quick-view/capability?") and method == "GET":
+            self.pptx_capability_calls += 1
+            if not self.pptx_result_exists:
+                return response(200, {
+                    "available_actions": ["generate_pptx_pdf"],
+                    "pptx_pdf": {"format": "pptx", "status": "missing"},
                 })
             return response(200, {
-                "status": "ready",
+                "available_actions": [],
+                "pptx_pdf": {
+                    "status": "ready",
+                    "task_id": 202,
+                    "result_id": 302,
+                    "preview_url": "/api/v1/manager/pptx_pdf/302/content",
+                    "page_count": 3,
+                    "size_bytes": 4096,
+                },
+            })
+        if path == "/api/v1/manager/quick-view/actions" and method == "POST":
+            if body != {"locator": self.pptx_locator, "action": "generate_pptx_pdf"}:
+                raise AssertionError(f"unexpected PPTX action body: {body!r}")
+            self.pptx_task_exists = True
+            self.pptx_result_exists = True
+            return response(202, {
+                "action": "generate_pptx_pdf",
+                "task_type": SUITE.PPTX_TASK_TYPE,
+                "status": "pending",
                 "task_id": 202,
-                "result_id": 302,
-                "preview_url": "/api/v1/manager/pptx_pdf/302/content",
-                "page_count": 3,
-                "size_bytes": 4096,
+                "execution_id": "manager-execution-2",
             })
         if path == "/api/v1/manager/executions/manager-execution-2":
             return response(200, self.lineage_execution(SUITE.PPTX_TASK_TYPE))
@@ -284,7 +294,7 @@ class ManagerInternalArtifactLineageOnlineTest(unittest.TestCase):
         self.assertFalse(client.pointcloud_result_exists)
         self.assertFalse(client.pptx_task_exists)
         self.assertFalse(client.pptx_result_exists)
-        self.assertEqual(client.pptx_preview_calls, 2)
+        self.assertEqual(client.pptx_capability_calls, 2)
         self.assertEqual(browser_calls[0][1]["pptx_page_count"], 3)
         self.assertLess(
             client.calls.index(("DELETE", "/api/v1/manager/pptx_pdf/302")),

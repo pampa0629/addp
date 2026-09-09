@@ -73,8 +73,11 @@ type ProtectionAccessRequestResponse struct {
 	Requester                 ProtectionAccessActor    `json:"requester"`
 	Reviewer                  *ProtectionAccessActor   `json:"reviewer,omitempty"`
 	Component                 dataprotection.Component `json:"component"`
+	EnrollmentID              string                   `json:"enrollment_id"`
 	TargetFullName            string                   `json:"target_full_name"`
 	ExemptionID               string                   `json:"exemption_id,omitempty"`
+	AuthorizationState        string                   `json:"authorization_state,omitempty"`
+	AuthorizedUntil           *time.Time               `json:"authorized_until,omitempty"`
 	CanDecide                 bool                     `json:"can_decide"`
 	DecisionUnavailableReason string                   `json:"decision_unavailable_reason,omitempty"`
 }

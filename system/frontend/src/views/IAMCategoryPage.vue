@@ -62,6 +62,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../store/auth'
 import { availableIAMTabs, findIAMPage } from '../config/iamNavigation'
 import AuditPanel from '../components/iam/AuditPanel.vue'
+import APIConsumersPanel from '@/components/iam/APIConsumersPanel.vue'
 import DepartmentsPanel from '../components/iam/DepartmentsPanel.vue'
 import IdentityChangesPanel from '../components/iam/IdentityChangesPanel.vue'
 import MFASecurityPanel from '../components/iam/MFASecurityPanel.vue'
@@ -108,6 +109,7 @@ const panelComponents = {
   'role-assignments': markRaw(TenantRoleAssignmentsPanel),
   'oauth-clients': markRaw(OAuthClientsPanel),
   'service-accounts': markRaw(TenantServiceAccountsPanel),
+  'api-consumers': markRaw(APIConsumersPanel),
   'account-security': markRaw(MFASecurityPanel),
   'security-policy': markRaw(SecurityPolicy),
   audit: markRaw(AuditPanel)
@@ -125,6 +127,7 @@ const panelIcons = {
   'role-assignments': UserFilled,
   'oauth-clients': Key,
   'service-accounts': Connection,
+  'api-consumers': Key,
   'account-security': Lock,
   'security-policy': Setting,
   audit: Bell

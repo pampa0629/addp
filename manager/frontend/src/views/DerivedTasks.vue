@@ -54,6 +54,7 @@
         <template #default="{ row }">
           <el-button link type="primary" @click="showDetail(row)">{{ t('manager.derivedTasks.detail') }}</el-button>
           <el-button v-if="sourceLocator(row)" link @click="openSource(row)">{{ t('manager.derivedTasks.source') }}</el-button>
+          <el-button v-if="isManagedQuickViewTask(row)" link type="primary" :loading="viewingTaskID === row.id" @click="viewTaskResult(row)">{{ t('manager.derivedTasks.result') }}</el-button>
           <el-button v-if="isSpatialBusinessTask(row)" link @click="beginEdit(row)">{{ t('manager.derivedTasks.edit') }}</el-button>
           <el-button link type="primary" :loading="executingTaskID === row.id" :disabled="!row.enabled || isExecuting(row)" @click="execute(row)">{{ t('manager.derivedTasks.execute') }}</el-button>
           <el-button v-if="row.last_execution_id" link @click="openMonitor(row)">{{ t('manager.derivedTasks.monitor') }}</el-button>
@@ -70,6 +71,7 @@
     <el-drawer v-model="detailVisible" :title="selectedTask?.name || t('manager.derivedTasks.detail')" size="560px" @closed="clearTaskDetailRoute">
       <div v-if="selectedTask" class="detail-actions">
         <el-button v-if="sourceLocator(selectedTask)" type="primary" plain @click="openSource(selectedTask)">{{ t('manager.derivedTasks.viewSource') }}</el-button>
+        <el-button v-if="isManagedQuickViewTask(selectedTask) && selectedTask.has_current_result" type="primary" :loading="viewingTaskID === selectedTask.id" @click="viewTaskResult(selectedTask)">{{ t('manager.derivedTasks.viewResult') }}</el-button>
         <el-button :loading="executingTaskID === selectedTask.id" :disabled="!selectedTask.enabled || isExecuting(selectedTask)" @click="execute(selectedTask)">{{ t('manager.derivedTasks.execute') }}</el-button>
         <el-button v-if="selectedTask.last_execution_id" @click="openMonitor(selectedTask)">{{ t('manager.derivedTasks.monitor') }}</el-button>
       </div>
@@ -138,6 +140,7 @@ import {
   derivedTaskTargetEngineID
 } from '../utils/derivedTaskPresentation'
 import { navigateManagerRoute } from '../utils/moduleNavigation'
+import { openQuickViewResult } from '../utils/quickViewResultNavigation'
 import QuickViewTaskCreator from '../components/tasks/QuickViewTaskCreator.vue'
 import VectorTileSetTaskEditor from '../components/tasks/VectorTileSetTaskEditor.vue'
 import RasterMosaicTaskEditor from '../components/tasks/RasterMosaicTaskEditor.vue'
@@ -160,6 +163,7 @@ const editorType = ref('')
 const editorLocator = ref('')
 const editingTask = ref(null)
 const executingTaskID = ref(0)
+const viewingTaskID = ref(0)
 
 const taskTypes = {
   managed_quick_view: [
@@ -209,6 +213,7 @@ function sourceFormat(task) { return derivedTaskSourceFormat(task).toUpperCase()
 function sourceSize(task) { return derivedTaskSourceSize(task) }
 function resultName(task) { return derivedTaskResultName(task) }
 function isExecuting(task) { return ['pending', 'running'].includes(task?.last_execution_status) }
+function isManagedQuickViewTask(task) { return categoryForTaskType(task?.task_type) === 'managed_quick_view' }
 
 async function syncRoute(extra = {}, history = 'replace') {
   const query = { category: category.value }
@@ -263,6 +268,28 @@ async function remove(row) {
   catch (error) { ElMessage.error(error?.response?.data?.error || t('manager.derivedTasks.deleteFailed')) }
 }
 function openSource(row) { navigateManagerRoute(router, { path: '/data-explorer', query: { locator: sourceLocator(row) } }, { history: 'push' }) }
+async function viewTaskResult(row) {
+  viewingTaskID.value = row.id
+  try {
+    const detail = row.has_current_result === true
+      ? row
+      : payload(await getDerivedTask(row.task_type, row.id))
+    if (!detail?.has_current_result) {
+      ElMessage.warning(t('manager.derivedTasks.resultUnavailable'))
+      return
+    }
+    const locator = sourceLocator(detail)
+    if (!locator) {
+      ElMessage.warning(t('manager.derivedTasks.resultUnavailable'))
+      return
+    }
+    await openQuickViewResult(router, locator)
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.error || error?.message || t('manager.derivedTasks.viewResultFailed'))
+  } finally {
+    viewingTaskID.value = 0
+  }
+}
 async function openMonitor(row) { await openMonitorExecution(row.last_execution_id) }
 function isSpatialBusinessTask(row) { return categoryForTaskType(row?.task_type) === 'spatial_business' }
 async function beginQuickViewCreate() {

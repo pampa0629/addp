@@ -191,7 +191,7 @@ Portal 是同步 BFF 和消费界面，只展示 Asset 返回的履约状态；�
 - 已轮换 Refresh Token 被重复使用时，撤销整个 Token Family；
 - CLI 只把 Refresh Token 保存到 OS Keychain，Access Token 保持短期。
 
-OAuth 数据模型不复用 `system.applications/api_keys`：API Key 表达应用身份，OAuth Client 表达获得用户授权的客户端软件，两者生命周期和审计语义不同。
+OAuth 数据模型不复用 `system.api_consumers/api_consumer_credentials`：API Consumer Credential 只识别已登记的数据面 API 消费方，OAuth Client 表达获得用户授权或 Service Principal Token 的客户端软件，两者生命周期和审计语义不同。API Consumer 不生成 AuthContext，也不能访问控制面 API。
 
 内部模块使用 Fosite Client Credentials Grant 获取 Service Access Token。每个模块使用
 独立 Confidential OAuth Client，Client 必须一对一绑定一个 Service Principal；Client
@@ -212,6 +212,7 @@ Service Principal 只能访问显式挂载在 `/api/v1/system/runtime/*` 等 Ser
 - 在 CLI、Agent 或 owner 模块内保存 `JWT_SECRET`；
 - 客户端提交 Principal、User、Tenant、Membership、Role 或 `user_type` 并被服务端信任；
 - 用 API Key、OAuth Scope 或平台角色模拟 Tenant 业务授权；
+- 在 `/api/v1/*` 控制面路由接受 `X-API-Key`，或仅由 Gateway 判断 API Consumer 的最终资源权限；
 - 通过 Scope 提升 Role Permission 或跨 Tenant 权限；
 - 业务模块从 Token 字符串、日志或前端状态反推授权上下文；
 - 恢复 `user_type` 与 Role Assignment 双轨权限判断。

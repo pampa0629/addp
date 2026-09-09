@@ -20,18 +20,18 @@ type AccessLoggerMiddleware struct {
 
 // AccessLog 访问日志模型
 type AccessLog struct {
-	ID             uint      `gorm:"primaryKey;column:id"`
-	ApplicationID  *uint     `gorm:"column:application_id"`
-	APIKeyPrefix   string    `gorm:"column:api_key_prefix;size:20"`
-	ServiceName    string    `gorm:"column:service_name;size:255"`
-	RequestMethod  string    `gorm:"column:request_method;size:10"`
-	RequestPath    string    `gorm:"column:request_path;type:text"`
-	RequestParams  string    `gorm:"column:request_params;type:jsonb"` // JSONB stored as string
-	ResponseStatus int       `gorm:"column:response_status"`
-	ResponseTimeMs int       `gorm:"column:response_time_ms"`
-	CacheHit       bool      `gorm:"column:cache_hit;default:false"`
-	RateLimited    bool      `gorm:"column:rate_limited;default:false"`
-	AccessedAt     time.Time `gorm:"column:accessed_at;default:now()"`
+	ID               uint      `gorm:"primaryKey;column:id"`
+	APIConsumerID    *uint     `gorm:"column:api_consumer_id"`
+	CredentialPrefix string    `gorm:"column:api_credential_prefix;size:20"`
+	ServiceName      string    `gorm:"column:service_name;size:255"`
+	RequestMethod    string    `gorm:"column:request_method;size:10"`
+	RequestPath      string    `gorm:"column:request_path;type:text"`
+	RequestParams    string    `gorm:"column:request_params;type:jsonb"` // JSONB stored as string
+	ResponseStatus   int       `gorm:"column:response_status"`
+	ResponseTimeMs   int       `gorm:"column:response_time_ms"`
+	CacheHit         bool      `gorm:"column:cache_hit;default:false"`
+	RateLimited      bool      `gorm:"column:rate_limited;default:false"`
+	AccessedAt       time.Time `gorm:"column:accessed_at;default:now()"`
 }
 
 // TableName 指定表名
@@ -89,16 +89,16 @@ func (m *AccessLoggerMiddleware) buildAccessLog(
 		return nil
 	}
 
-	apiKeyInfoRaw, exists := c.Get("api_key_info")
-	apiKeyInfo, ok := apiKeyInfoRaw.(*client.APIKeyValidationResponse)
-	if !exists || !ok || apiKeyInfo == nil {
+	infoRaw, exists := c.Get("api_consumer_info")
+	info, ok := infoRaw.(*client.APIConsumerCredentialValidationResponse)
+	if !exists || !ok || info == nil {
 		return nil
 	}
 
-	apiKeyPrefix := ""
-	if prefix, exists := c.Get("api_key_prefix"); exists {
+	credentialPrefix := ""
+	if prefix, exists := c.Get("api_credential_prefix"); exists {
 		if p, ok := prefix.(string); ok {
-			apiKeyPrefix = p
+			credentialPrefix = p
 		}
 	}
 
@@ -111,17 +111,17 @@ func (m *AccessLoggerMiddleware) buildAccessLog(
 
 	serviceName := extractServiceName(c.Request.URL.Path)
 	return &AccessLog{
-		ApplicationID:  &apiKeyInfo.AppID,
-		APIKeyPrefix:   apiKeyPrefix,
-		ServiceName:    serviceName,
-		RequestMethod:  c.Request.Method,
-		RequestPath:    c.Request.URL.Path,
-		RequestParams:  safeRequestParams(c.Request.URL.Query()),
-		ResponseStatus: statusCode,
-		ResponseTimeMs: responseTimeMs,
-		CacheHit:       cacheHit,
-		RateLimited:    statusCode == 429,
-		AccessedAt:     time.Now(),
+		APIConsumerID:    &info.APIConsumerID,
+		CredentialPrefix: credentialPrefix,
+		ServiceName:      serviceName,
+		RequestMethod:    c.Request.Method,
+		RequestPath:      c.Request.URL.Path,
+		RequestParams:    safeRequestParams(c.Request.URL.Query()),
+		ResponseStatus:   statusCode,
+		ResponseTimeMs:   responseTimeMs,
+		CacheHit:         cacheHit,
+		RateLimited:      statusCode == 429,
+		AccessedAt:       time.Now(),
 	}
 }
 

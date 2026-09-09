@@ -362,6 +362,10 @@ definitions:
         type: string
       assessment_revision:
         type: integer
+      authorization_state:
+        type: string
+      authorized_until:
+        type: string
       can_decide:
         type: boolean
       component:
@@ -375,6 +379,8 @@ definitions:
       decision_rationale:
         type: string
       decision_unavailable_reason:
+        type: string
+      enrollment_id:
         type: string
       exemption_id:
         type: string
@@ -1192,6 +1198,10 @@ definitions:
         type: string
       assessment_revision:
         type: integer
+      authorization_state:
+        type: string
+      authorized_until:
+        type: string
       can_decide:
         type: boolean
       component:
@@ -1205,6 +1215,8 @@ definitions:
       decision_rationale:
         type: string
       decision_unavailable_reason:
+        type: string
+      enrollment_id:
         type: string
       exemption_id:
         type: string

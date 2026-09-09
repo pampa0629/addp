@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/datatype"
 	commonExecution "github.com/addp/common/execution"
 	commonModels "github.com/addp/common/models"
@@ -130,6 +131,109 @@ func TestQuickViewCapabilityUsesLocatorDirectFlatGeobufForSmallSpatialItem(t *te
 	}
 	if capability.QuickView.SourceCRS != "EPSG:4326" || capability.QuickView.TransformStatus != "not_transformed" || capability.QuickView.PreviewHint != "direct_renderable" {
 		t.Fatalf("quick_view CRS contract = %q/%q/%q, want EPSG:4326/not_transformed/direct_renderable", capability.QuickView.SourceCRS, capability.QuickView.TransformStatus, capability.QuickView.PreviewHint)
+	}
+}
+
+func TestPPTXQuickViewCapabilityDeclaresGenerationActionFromBackendFacts(t *testing.T) {
+	db := newTileCacheTaskServiceTestDB(t)
+	createPPTXPDFCapabilityTestTable(t, db)
+	svc := NewQuickViewService(db, nil)
+	locator := "addp://engine/26/path/docs/slides.pptx?type=file&item_id=99"
+	fingerprint := commonModels.GenerateItemFingerprint(26, "docs/slides.pptx")
+
+	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
+		Identity: QuickViewIdentity{TenantID: 7, ItemFingerprint: fingerprint, Locator: locator},
+		EngineID: 26,
+		PPTX:     &PPTXPDFQuickViewSource{Format: "pptx", Layout: "single", SourceSizeBytes: 4096},
+	})
+	if err != nil {
+		t.Fatalf("BuildCapabilityFromSource() error = %v", err)
+	}
+	if capability.SourceKind != QuickViewSourceKindDocument {
+		t.Fatalf("source_kind = %q, want %q", capability.SourceKind, QuickViewSourceKindDocument)
+	}
+	if capability.PPTXPDF == nil || capability.PPTXPDF.Status != QuickViewPPTXPDFStatusMissing {
+		t.Fatalf("pptx_pdf = %#v, want missing state", capability.PPTXPDF)
+	}
+	if len(capability.AvailableActions) != 1 || capability.AvailableActions[0] != QuickViewActionGeneratePPTXPDF {
+		t.Fatalf("available_actions = %#v, want PPTX PDF generation", capability.AvailableActions)
+	}
+}
+
+func TestPPTXQuickViewCapabilityReturnsFreshReadyResultWithoutGenerationAction(t *testing.T) {
+	updatedAt := time.Date(2026, time.September, 9, 0, 0, 0, 0, time.UTC)
+	size := int64(4096)
+	item := commonModels.MetaItem{
+		ID: 99, TenantID: 7, EngineID: 26, ItemType: "file", Name: "slides.pptx",
+		FullName: "docs/slides.pptx", ObjectSizeBytes: &size, DataUpdatedAt: &updatedAt,
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/meta/items/99" {
+			t.Fatalf("Meta path = %q", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(item)
+	}))
+	defer server.Close()
+	metaClient := commonClient.NewMetaClient(server.URL, commonClient.ServiceTokenProviderFunc(func(context.Context, uint) (string, error) {
+		return "test-token", nil
+	}))
+	db := newTileCacheTaskServiceTestDB(t)
+	createPPTXPDFCapabilityTestTable(t, db)
+	locator := "addp://engine/26/path/docs/slides.pptx?type=file&item_id=99"
+	fingerprint := commonModels.GenerateItemFingerprint(26, item.FullName)
+	result := models.PPTXPDF{
+		TenantID: 7, ItemFingerprint: fingerprint, ArtifactVariant: models.PPTXPDFArtifactVariant,
+		SourceVersion: sourceVersionForItem(fingerprint, item), SourceEngineID: 26, ItemID: 99, Locator: locator,
+		StorageRef: "managed", FileName: "slides.pdf", SizeBytes: 8192, PageCount: 3,
+		ContentURL: "/api/v1/manager/pptx_pdf/1/content", Status: models.PPTXPDFStatusReady,
+		Metadata: commonModels.JSONMap{},
+	}
+	if err := db.Create(&result).Error; err != nil {
+		t.Fatalf("create ready PPTX PDF result: %v", err)
+	}
+	svc := NewQuickViewService(db, metaClient)
+	capability, err := svc.BuildCapabilityFromSource(context.Background(), QuickViewSource{
+		Identity: QuickViewIdentity{TenantID: 7, ItemFingerprint: fingerprint, Locator: locator},
+		EngineID: 26,
+		PPTX:     &PPTXPDFQuickViewSource{Format: "pptx", Layout: "single", SourceSizeBytes: size},
+	})
+	if err != nil {
+		t.Fatalf("BuildCapabilityFromSource() error = %v", err)
+	}
+	if capability.PPTXPDF == nil || capability.PPTXPDF.Status != models.PPTXPDFStatusReady || capability.PPTXPDF.ResultID == nil {
+		t.Fatalf("pptx_pdf = %#v, want ready result", capability.PPTXPDF)
+	}
+	if len(capability.AvailableActions) != 0 {
+		t.Fatalf("available_actions = %#v, want none for ready result", capability.AvailableActions)
+	}
+}
+
+func createPPTXPDFCapabilityTestTable(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	if err := db.Exec(`CREATE TABLE IF NOT EXISTS manager.pptx_pdf (
+		id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, item_fingerprint TEXT NOT NULL,
+		artifact_variant TEXT NOT NULL, source_version TEXT NOT NULL, source_engine_id INTEGER NOT NULL,
+		item_id INTEGER NOT NULL, locator TEXT NOT NULL, task_id INTEGER, last_execution_id TEXT,
+		storage_ref TEXT NOT NULL, file_name TEXT NOT NULL, size_bytes INTEGER NOT NULL, page_count INTEGER NOT NULL,
+		content_url TEXT, status TEXT NOT NULL, metadata JSON, error_message TEXT, created_by INTEGER,
+		created_at DATETIME, updated_at DATETIME, deleted_at DATETIME)`).Error; err != nil {
+		t.Fatalf("create PPTX PDF table: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Exec(`DROP TABLE IF EXISTS manager.pptx_pdf`).Error })
+}
+
+func TestPPTXQuickViewSourceRequiresCanonicalDocumentFacts(t *testing.T) {
+	valid := PPTXPDFQuickViewSourceFromAttributes(map[string]interface{}{
+		"item":    map[string]interface{}{"data_type": "document", "format": "pptx", "layout": "single"},
+		"storage": map[string]interface{}{"total_size": float64(8192)},
+	})
+	if valid == nil || valid.Format != "pptx" || valid.SourceSizeBytes != 8192 {
+		t.Fatalf("valid PPTX source = %#v", valid)
+	}
+	if got := PPTXPDFQuickViewSourceFromAttributes(map[string]interface{}{
+		"item": map[string]interface{}{"data_type": "document", "format": "pdf", "layout": "single"},
+	}); got != nil {
+		t.Fatalf("PDF source = %#v, want nil", got)
 	}
 }
 

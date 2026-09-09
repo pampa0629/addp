@@ -12,12 +12,12 @@ func RegisterIAMMigratedBusinessRoutes(
 	api *gin.RouterGroup,
 	runtime *IAMRuntime,
 	engineHandler *EngineHandler,
-	applicationHandler *ApplicationHandler,
+	apiConsumerHandler *APIConsumerHandler,
 	cleanupHandler *CleanupHandler,
 ) error {
 	if api == nil || runtime == nil || runtime.Authentication == nil ||
 		runtime.UserAccessCredential == nil || runtime.BusinessCredential == nil ||
-		engineHandler == nil || applicationHandler == nil || cleanupHandler == nil {
+		engineHandler == nil || apiConsumerHandler == nil || cleanupHandler == nil {
 		return errors.New("IAM 业务路由依赖不完整")
 	}
 	permission := func(keys ...string) (gin.HandlerFunc, error) {
@@ -84,33 +84,33 @@ func RegisterIAMMigratedBusinessRoutes(
 		)
 	}
 
-	applicationPermissions := make(map[string]gin.HandlerFunc)
+	apiConsumerPermissions := make(map[string]gin.HandlerFunc)
 	for _, key := range []string{
-		"system.application.create",
-		"system.application.read",
-		"system.application.update",
-		"system.application.delete",
-		"system.api_key.create",
-		"system.api_key.read",
-		"system.api_key.revoke",
+		"iam.api_consumer.create",
+		"iam.api_consumer.read",
+		"iam.api_consumer.update",
+		"iam.api_consumer.delete",
+		"iam.api_consumer_credential.create",
+		"iam.api_consumer_credential.read",
+		"iam.api_consumer_credential.revoke",
 	} {
 		guard, err := permission(key)
 		if err != nil {
 			return err
 		}
-		applicationPermissions[key] = guard
+		apiConsumerPermissions[key] = guard
 	}
-	applications := api.Group("/applications")
-	applications.Use(runtime.Authentication, runtime.UserAccessCredential)
+	apiConsumers := api.Group("/tenant/api-consumers")
+	apiConsumers.Use(runtime.Authentication, runtime.UserAccessCredential)
 	{
-		applications.POST("", applicationPermissions["system.application.create"], applicationHandler.CreateApplication)
-		applications.GET("", applicationPermissions["system.application.read"], applicationHandler.ListApplications)
-		applications.GET("/:id", applicationPermissions["system.application.read"], applicationHandler.GetApplication)
-		applications.PUT("/:id", applicationPermissions["system.application.update"], applicationHandler.UpdateApplication)
-		applications.DELETE("/:id", applicationPermissions["system.application.delete"], applicationHandler.DeleteApplication)
-		applications.POST("/:id/keys", applicationPermissions["system.api_key.create"], applicationHandler.GenerateAPIKey)
-		applications.GET("/:id/keys", applicationPermissions["system.api_key.read"], applicationHandler.ListAPIKeys)
-		applications.DELETE("/:id/keys/:key_id", applicationPermissions["system.api_key.revoke"], applicationHandler.RevokeAPIKey)
+		apiConsumers.POST("", apiConsumerPermissions["iam.api_consumer.create"], apiConsumerHandler.Create)
+		apiConsumers.GET("", apiConsumerPermissions["iam.api_consumer.read"], apiConsumerHandler.List)
+		apiConsumers.GET("/:id", apiConsumerPermissions["iam.api_consumer.read"], apiConsumerHandler.Get)
+		apiConsumers.PUT("/:id", apiConsumerPermissions["iam.api_consumer.update"], apiConsumerHandler.Update)
+		apiConsumers.DELETE("/:id", apiConsumerPermissions["iam.api_consumer.delete"], apiConsumerHandler.Delete)
+		apiConsumers.POST("/:id/credentials", apiConsumerPermissions["iam.api_consumer_credential.create"], apiConsumerHandler.CreateCredential)
+		apiConsumers.GET("/:id/credentials", apiConsumerPermissions["iam.api_consumer_credential.read"], apiConsumerHandler.ListCredentials)
+		apiConsumers.DELETE("/:id/credentials/:credential_id", apiConsumerPermissions["iam.api_consumer_credential.revoke"], apiConsumerHandler.RevokeCredential)
 	}
 
 	cleanupRead, err := permission("system.cleanup.read")

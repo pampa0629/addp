@@ -151,12 +151,12 @@ func TestRespondErrorReturnsDocumentExtractionNamespaceCode(t *testing.T) {
 	}
 }
 
-func TestRespondErrorReturnsCandidateGroupQueryCode(t *testing.T) {
+func TestRespondErrorReturnsCandidateFamilyQueryCode(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	context, _ := gin.CreateTestContext(recorder)
 	context.Set("addp_lang", "en")
 
-	respondError(context, http.StatusInternalServerError, service.ErrDocumentCandidateGroupQueryInvalid)
+	respondError(context, http.StatusInternalServerError, service.ErrDocumentCandidateFamilyQueryInvalid)
 
 	var response struct {
 		ErrorCode string `json:"error_code"`
@@ -164,7 +164,7 @@ func TestRespondErrorReturnsCandidateGroupQueryCode(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
 	}
-	if recorder.Code != http.StatusBadRequest || response.ErrorCode != "document_candidate_group_query_invalid" {
+	if recorder.Code != http.StatusBadRequest || response.ErrorCode != "document_candidate_family_query_invalid" {
 		t.Fatalf("status=%d error_code=%q body=%s", recorder.Code, response.ErrorCode, recorder.Body.String())
 	}
 }

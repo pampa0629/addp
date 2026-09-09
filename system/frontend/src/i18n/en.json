@@ -10,7 +10,6 @@
       "iam": "Identity & Access",
       "moduleMgmt": "Modules",
       "engineMgmt": "Engines",
-      "appMgmt": "Applications",
       "cleanup": "Resource Reclaim",
       "logout": "Logout",
       "logoutSuccess": "Logged out successfully"
@@ -116,7 +115,8 @@
         "identityChanges": "Identity Change Review",
         "departments": "Departments",
         "projectGroups": "Project Groups",
-        "serviceAccounts": "Service Accounts",
+        "serviceAccounts": "Machine Identities",
+        "apiConsumers": "API Consumers",
         "externalApplications": "External Applications (OAuth)",
         "userInvitations": "User Invitations",
         "roleDefinitions": "Role Definitions",
@@ -303,11 +303,21 @@
         "loaded": "Loaded {count} OAuth clients"
       },
       "serviceAccounts": {
-        "introTitle": "Create dedicated machine identities for automation and external workloads",
-        "introDescription": "Service accounts do not represent people. Each account has its own Client ID and Client Secret and uses Client Credentials for short-lived access within this tenant.",
+        "introTitle": "View and manage machine identities used by this tenant",
+        "introDescription": "Platform runtime accounts are system-managed and expose roles as read-only. Tenant service accounts are tenant-managed, including credentials, lifecycle, and roles. Neither represents a person.",
         "create": "Create Service Account",
         "edit": "Edit Service Account",
         "search": "Search name, description, or Client ID",
+        "accountType": "Machine Identity Type",
+        "identity": "Machine Identity",
+        "types": {
+          "tenant": "Tenant Service Account",
+          "platform": "Platform Runtime Account"
+        },
+        "manageRoles": "Manage Roles",
+        "viewRoles": "View Roles",
+        "roleDrawerTitle": "{name} · Roles",
+        "platformReadOnly": "Platform runtime accounts are system-managed. Their definition, credentials, lifecycle, and roles are read-only.",
         "clientId": "Client ID",
         "clientSecret": "Client Secret",
         "rotateSecret": "Rotate Secret",
@@ -353,7 +363,7 @@
       },
       "roleAssignments": {
         "create": "Assign Role",
-        "allMembers": "All Members",
+        "allMembers": "All User Accounts",
         "scope": "Scope",
         "departmentId": "Department ID",
         "projectGroupId": "Project Group ID",
@@ -1019,16 +1029,18 @@
         }
       }
     },
-    "app": {
-      "title": "Application Management",
-      "create": "Create Application",
-      "allServices": "All Services",
+    "apiConsumer": {
+      "title": "API Consumers",
+      "create": "Create Consumer",
+      "boundaryTitle": "Only for calling explicitly granted data-service APIs",
+      "boundaryDescription": "API consumer credentials cannot sign in or access any /api/v1 control-plane endpoint. Phase 1 supports published query services only.",
+      "noServices": "No service grants",
       "ratePerMin": "{rate} req/min",
       "columns": {
         "id": "ID",
-        "name": "App Name",
+        "name": "Consumer Name",
         "description": "Description",
-        "allowedServices": "Allowed Services",
+        "allowedServices": "Service Grants",
         "rateLimit": "Rate Limit",
         "status": "Status",
         "createdAt": "Created At",
@@ -1039,23 +1051,23 @@
         "suspended": "Suspended"
       },
       "actions": {
-        "apiKeys": "API Keys",
+        "credentials": "Credentials",
         "edit": "Edit",
         "delete": "Delete"
       },
       "dialog": {
-        "create": "Create Application",
-        "edit": "Edit Application",
+        "create": "Create API Consumer",
+        "edit": "Edit API Consumer",
         "confirm": "Confirm",
         "cancel": "Cancel"
       },
       "form": {
-        "name": "App Name",
-        "namePlaceholder": "Enter application name",
+        "name": "Consumer Name",
+        "namePlaceholder": "For example: External reporting",
         "description": "Description",
-        "descPlaceholder": "Enter application description",
-        "allowedServices": "Allowed Services",
-        "allowedServicesPlaceholder": "Select allowed services (leave empty for all)",
+        "descPlaceholder": "Describe the calling system and purpose",
+        "allowedServices": "Service Grants",
+        "allowedServicesPlaceholder": "Select at least one published query service",
         "rateLimit": "Rate Limit",
         "rateLimitTip": "Maximum requests per minute",
         "status": "Status",
@@ -1063,22 +1075,22 @@
         "suspended": "Suspended"
       },
       "services": {
-        "poi": "POI Service",
-        "address": "Address Service",
-        "map": "Map Service",
-        "data": "Data Service"
+        "public": "Public",
+        "private": "Tenant",
+        "fallback": "Query service #{id}"
       },
       "rules": {
-        "nameRequired": "Please enter application name",
+        "nameRequired": "Please enter a consumer name",
+        "serviceRequired": "Select at least one service grant",
         "rateLimitRequired": "Please set rate limit"
       },
-      "keys": {
-        "title": "API Keys - {name}",
-        "generate": "Generate New Key",
+      "credentials": {
+        "title": "Consumer Credentials - {name}",
+        "generate": "Create Credential",
         "neverUsed": "Never used",
         "columns": {
           "id": "ID",
-          "prefix": "Key Prefix",
+          "prefix": "Credential Prefix",
           "name": "Name",
           "lastUsed": "Last Used",
           "status": "Status",
@@ -1091,42 +1103,43 @@
         },
         "revoke": "Revoke",
         "generateDialog": {
-          "title": "Generate API Key",
-          "name": "Key Name",
-          "namePlaceholder": "Enter key name (for identification)",
+          "title": "Create API Consumer Credential",
+          "name": "Credential Name",
+          "namePlaceholder": "For example: Production",
           "expiresAt": "Expiry Date",
           "expiresAtPlaceholder": "Select expiry date (optional)",
           "expiresAtTip": "Leave empty for no expiry",
           "generate": "Generate",
           "cancel": "Cancel",
           "rules": {
-            "nameRequired": "Please enter key name"
+            "nameRequired": "Please enter a credential name"
           }
         },
         "showDialog": {
-          "title": "API Key Generated",
+          "title": "API Consumer Credential Created",
           "warning": "Important",
-          "warningMsg": "Please copy and save the API Key now. It will not be shown again after closing this window!",
+          "warningMsg": "Copy and save the credential now. It cannot be viewed again after closing this dialog.",
           "copy": "Copy",
           "close": "I've saved it, close"
         }
       },
       "msg": {
-        "loadFailed": "Failed to load application list",
+        "loadFailed": "Failed to load API consumers",
+        "servicesLoadFailed": "Failed to load grantable services",
         "createSuccess": "Created successfully",
         "updateSuccess": "Updated successfully",
         "opFailed": "Operation failed",
-        "deleteConfirm": "Are you sure you want to delete application \"{name}\"? This will also delete all its API Keys.",
+        "deleteConfirm": "Delete API consumer \"{name}\"? All its credentials will be invalidated.",
         "deleteTitle": "Confirm Delete",
         "deleteSuccess": "Deleted successfully",
         "deleteFailed": "Failed to delete",
-        "keysLoadFailed": "Failed to load API Keys",
-        "keyGenFailed": "Failed to generate key",
+        "keysLoadFailed": "Failed to load consumer credentials",
+        "keyGenFailed": "Failed to create consumer credential",
         "keyCopied": "Copied to clipboard",
         "keyCopyFailed": "Copy failed, please copy manually",
         "keyRevoked": "Revoked successfully",
         "keyRevokeFailed": "Failed to revoke",
-        "revokeConfirm": "Are you sure you want to revoke API Key \"{name}\"? It will be invalidated immediately.",
+        "revokeConfirm": "Revoke consumer credential \"{name}\"? It will become invalid within 30 seconds.",
         "revokeTitle": "Confirm Revoke"
       }
     },

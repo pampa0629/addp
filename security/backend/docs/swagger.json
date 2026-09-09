@@ -5671,6 +5671,12 @@
                 "assessment_revision": {
                     "type": "integer"
                 },
+                "authorization_state": {
+                    "type": "string"
+                },
+                "authorized_until": {
+                    "type": "string"
+                },
                 "can_decide": {
                     "type": "boolean"
                 },
@@ -5690,6 +5696,9 @@
                     "type": "string"
                 },
                 "decision_unavailable_reason": {
+                    "type": "string"
+                },
+                "enrollment_id": {
                     "type": "string"
                 },
                 "exemption_id": {
@@ -6892,6 +6901,12 @@
                 "assessment_revision": {
                     "type": "integer"
                 },
+                "authorization_state": {
+                    "type": "string"
+                },
+                "authorized_until": {
+                    "type": "string"
+                },
                 "can_decide": {
                     "type": "boolean"
                 },
@@ -6911,6 +6926,9 @@
                     "type": "string"
                 },
                 "decision_unavailable_reason": {
+                    "type": "string"
+                },
+                "enrollment_id": {
                     "type": "string"
                 },
                 "exemption_id": {

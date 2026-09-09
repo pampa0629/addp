@@ -120,7 +120,7 @@ Engine Instance 是永久身份，因此 suite 禁止按 Run ID 创建后删除�
 3. 真实 User Token 校验 Tenant、非管理员角色和最小权限后，所有平台操作只经 Gateway：触发一次 Meta deep scan，以扫描得到的两条 DataItem 身份分别执行 `point_cloud_copc_generation` 和 PPTX 按需预览。
 4. Manager owner execution 必须产生唯一 `addp.lineage-facts/v1` 输入、输出和 derive operation；输入是 Business ResourceLocator，输出是 `addp-infra://minio/manager/tenant_{id}/point-cloud-copc/...copc.laz?type=object`，Monitor 按 execution ID 读取到的事实必须与 owner 完全相同。
 5. suite 经 Manager 内容 API 验证 COPC Range 读取；真实浏览器打开正式 Monitor 执行详情，确认业务输入可进入 Data Explorer，平台内部产物明确标识且不伪造业务资源跳转。
-6. PPTX 场景先通过正式预览入口触发一次 `pptx_pdf_generation`，等待真实 LibreOffice 转换完成并断言 PDF 为三页；同源第二次调用必须返回同一 task/result 且不返回新的 execution ID。真实浏览器打开 Data Explorer 后翻到第 2 页，跨过 15 秒 Engine 状态刷新仍保持第 2 页，并且整个页面生命周期只请求一次 ready 预览。
+6. PPTX 场景先读取 Quick View Capability 并通过其 `generate_pptx_pdf` action 触发一次 `pptx_pdf_generation`，等待真实 LibreOffice 转换完成并断言 PDF 为三页；同源第二次读取 Capability 必须返回同一 task/result 且不创建新的 execution。真实浏览器打开 Data Explorer 后翻到第 2 页，跨过 15 秒 Engine 状态刷新仍保持第 2 页，并且已就绪预览在整个页面生命周期不再发起生成 action。
 7. `finally` 只通过 Manager API 按本轮 ID 删除 COPC、PPTX PDF 及两类任务，再以内容 404、任务 404 和 fingerprint 结果总数为零共同证明无临时业务资源残留；Host Gate 最后停止 Business MinIO Fixture 与全套 ADDP。
 
 2026-09-06 在同一 owner suite 中补充小型多页 PPTX 的首次 LibreOffice 转换、同源缓存复用、Manager/Monitor 血缘一致性和浏览器翻页稳定性契约；不新增第二条 T4 suite。当前仍是“实现就绪、专用 Runner 首跑待执行”。

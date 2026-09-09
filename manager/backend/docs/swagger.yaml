@@ -1221,6 +1221,8 @@ definitions:
         $ref: '#/definitions/github_com_addp_manager_internal_service.VectorMaterializedViewInfo'
       point_cloud:
         $ref: '#/definitions/github_com_addp_manager_internal_service.QuickViewPointCloudInfo'
+      pptx_pdf:
+        $ref: '#/definitions/github_com_addp_manager_internal_service.QuickViewPPTXPDFInfo'
       preferred_mode:
         type: string
       quick_view:
@@ -1361,6 +1363,27 @@ definitions:
         items:
           $ref: '#/definitions/github_com_addp_manager_internal_service.QuickViewModel3DTilesFormatInfo'
         type: array
+    type: object
+  github_com_addp_manager_internal_service.QuickViewPPTXPDFInfo:
+    properties:
+      error_message:
+        type: string
+      format:
+        type: string
+      last_execution_id:
+        type: string
+      page_count:
+        type: integer
+      preview_url:
+        type: string
+      result_id:
+        type: integer
+      size_bytes:
+        type: integer
+      status:
+        type: string
+      task_id:
+        type: integer
     type: object
   github_com_addp_manager_internal_service.QuickViewPointCloudInfo:
     properties:
@@ -2251,34 +2274,6 @@ definitions:
       source_engine_id:
         type: integer
       source_size_bytes:
-        type: integer
-    type: object
-  internal_api.PPTXPDFPreviewRequest:
-    properties:
-      locator:
-        type: string
-      retry:
-        type: boolean
-    required:
-    - locator
-    type: object
-  internal_api.PPTXPDFPreviewResponse:
-    properties:
-      error:
-        type: string
-      execution_id:
-        type: string
-      page_count:
-        type: integer
-      preview_url:
-        type: string
-      result_id:
-        type: integer
-      size_bytes:
-        type: integer
-      status:
-        type: string
-      task_id:
         type: integer
     type: object
   internal_api.PointCloudCOPCTaskRequest:
@@ -4514,52 +4509,6 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - manager.derived_artifact.read
-  /pptx_pdf/preview:
-    post:
-      consumes:
-      - application/json
-      parameters:
-      - description: PPTX source identity
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/internal_api.PPTXPDFPreviewRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: 快显已就绪 | Preview ready
-          schema:
-            $ref: '#/definitions/internal_api.PPTXPDFPreviewResponse'
-        "202":
-          description: 转换已受理或执行中 | Conversion accepted or running
-          schema:
-            $ref: '#/definitions/internal_api.PPTXPDFPreviewResponse'
-        "400":
-          description: 请求参数错误 | Bad request
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: 服务执行错误 | Internal server error
-          schema:
-            additionalProperties: true
-            type: object
-        "503":
-          description: 服务不可用 | Service unavailable
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取或生成 PPTX PDF 快显 | Resolve or generate PPTX PDF preview
-      tags:
-      - Manager
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - manager.data_item.read
-      - manager.derived_artifact.create
   /preview:
     get:
       description: 根据资源定位符预览数据内容，支持表格、消息主题、文件等多种资源 | Preview data content by resource
@@ -4765,10 +4714,10 @@ paths:
       consumes:
       - application/json
       description: 前端只提交 Resource Locator 和后端 capability 返回的 action。后端基于同一份快显能力事实创建并执行对应任务，支持生成矢量瓦片缓存、栅格
-        COG、三维模型 GLB、3D Tiles、S3M、3DGS KSplat 和点云 COPC 快显。 | Execute a backend-declared
-        quick view action by Resource Locator. The backend creates and executes the
-        corresponding task from capability facts, including 3D Tiles and S3M quick-view
-        generation.
+        COG、三维模型 GLB、3D Tiles、S3M、3DGS KSplat、点云 COPC 和 PPTX 静态 PDF 快显。 | Execute
+        a backend-declared quick view action by Resource Locator. The backend creates
+        and executes the corresponding task from capability facts, including PPTX
+        static PDF generation.
       parameters:
       - description: 快显动作请求 | Quick view action request
         in: body

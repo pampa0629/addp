@@ -161,6 +161,7 @@ describe('P2 module public route contracts', () => {
     expect(router).not.toContain("path: 'iam/identity'")
     expect(router).not.toContain("path: 'iam/access'")
     expect(router).not.toContain("path: 'settings/security-policy'")
+    expect(router).not.toContain("path: 'applications'")
 
     const iam = readRepoFile('system/frontend/src/views/IAMCategoryPage.vue')
     const routeState = readRepoFile('system/frontend/src/utils/routeState.js')

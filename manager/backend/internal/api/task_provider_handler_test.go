@@ -1194,6 +1194,32 @@ func newTaskProviderHandlerTestDB(t *testing.T) *gorm.DB {
 	)`).Error; err != nil {
 		t.Fatalf("create point_cloud_copc table: %v", err)
 	}
+	if err := db.Exec(`CREATE TABLE manager.pptx_pdf (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		tenant_id INTEGER NOT NULL,
+		item_fingerprint TEXT NOT NULL,
+		artifact_variant TEXT NOT NULL,
+		source_version TEXT NOT NULL,
+		source_engine_id INTEGER NOT NULL,
+		item_id INTEGER NOT NULL,
+		locator TEXT NOT NULL,
+		task_id INTEGER,
+		last_execution_id TEXT,
+		storage_ref TEXT NOT NULL,
+		file_name TEXT NOT NULL,
+		size_bytes INTEGER NOT NULL,
+		page_count INTEGER NOT NULL,
+		content_url TEXT,
+		status TEXT NOT NULL,
+		metadata JSON,
+		error_message TEXT,
+		created_by INTEGER,
+		created_at DATETIME,
+		updated_at DATETIME,
+		deleted_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create pptx_pdf table: %v", err)
+	}
 	if err := executiontest.EnsureSQLiteStore(db); err != nil {
 		t.Fatalf("ensure SQLite execution store: %v", err)
 	}

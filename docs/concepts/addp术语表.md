@@ -121,8 +121,9 @@
 | standard extraction candidate | 标准提炼候选 | 从一个标准文档修订中识别出的潜在业务术语、数据元、码值集或指标定义。 | 候选固定引用提炼批次和来源文档修订，状态为 `pending`、`retained` 或 `rejected`；数据元候选的 `data_type` 只能使用 Standard 数据元类型，码值集候选只能使用 `string`、`int`、`bigint`，术语和指标候选不得携带 `data_type`；数据元候选的 `value_domain_kind` 只能使用 `unrestricted`、`range`、`enumeration`。枚举数据元候选必须通过 `code_set_code` 引用同一批次中唯一的码值集候选，非枚举候选不得携带该字段；该编码只闭合候选间语义关系，正式发布数据元时仍必须由 Standard 冻结具体 `code_set_revision_id`。`identifier` 等业务语义不得混入数据类型或值域类型，`numeric`、`date_or_datetime` 等模糊上位提示也不是合法标准数据类型；`retained` 只表示人工认为值得后续建标，仍不是正式标准身份或修订。 |
 | standard candidate code namespace | 标准候选编码命名空间 | Standard 为一次文档提炼确定的候选编码前缀约束。 | `domain` 范围文档使用权威归属业务域编码作为命名空间，新候选编码必须以 `<domain_code>_` 开头；业务域编码必须是小写 `snake_case`，Standard 不自动转换或猜测。租户公共或平台文档不附加领域前缀。该前缀只约束 Copilot 新候选，不把归属域固化到正式标准稳定编码语义中。Standard 同时向 Copilot 提供同一文档中符合当前命名空间的既有候选类型、编码、名称和定义作为编码复用提示；提示不是模糊合并依据，Copilot 与 Standard 仍分别校验输出编码。 |
 | standard extraction candidate group view | 标准提炼候选聚合视图 | Standard 将同一标准文档稳定身份历次提炼中的确定性同义候选聚合成一个可裁决读取单元。 | 聚合键为候选类型、编码以及规范化名称、定义和完整候选载荷的 SHA-256 语义指纹；码值项和维度先按稳定顺序规范化。同类型、同编码但内容不同的候选仍是不同聚合项，不使用模型相似度自动合并。治理读取支持按代表候选的编码或名称进行大小写不敏感的规范化子串检索；检索在分页和实时比对结果分面统计前执行。该视图不持久化、不改写原始候选；每次出现、提炼批次、文档修订、证据、人工处置和正式化事实均完整保留。 |
+| standard extraction candidate family view | 标准提炼候选族视图 | Standard 将同一文档内候选类型和稳定编码相同的候选聚合项组织为一个可折叠治理读取单元。 | 候选族键固定为 `candidate_type + code`，只负责组织同编码语义变体，不合并语义指纹、不持久化，也不是新的聚合根。公开治理读取按候选族分页，同时返回筛选后的候选族总数和语义变体总数；筛选作用于变体，族内只返回命中的独立变体，人工动作仍只作用于具体变体的代表候选。 |
 | standard candidate formalization | 标准候选正式化 | 将一个已保留标准提炼候选转化为受治理标准草稿，或确认其对应既有相同内容修订的不可变治理事实。 | Standard 根据同类型、同编码的实时比对唯一决定结果：无稳定身份时创建 R1 草稿；已有稳定身份且没有工作修订时，以最新修订为基线创建候选内容的新草稿；候选与现有草稿、审核中或已发布修订内容一致时只建立来源关联。范围冲突、已有不同内容的工作修订、无法解析的码值集或计量单位引用必须拒绝。正式化不得提交审核或发布，候选状态仍保持 `retained`。 |
-| standard extraction candidate comparison | 标准提炼候选比对 | Standard 在读取提炼结果时，将候选与当前租户内同类型、同编码的活动标准稳定身份进行确定性比较所得的动态投影。 | 结果固定为 `new`、`exact`、`content_conflict` 或 `scope_conflict`，差异项明确给出字段及候选值、当前标准值；枚举数据元候选的 `code_set_code` 与现有数据元修订所冻结码值集修订的稳定编码比较，不比较数据库 ID；同名不同编码不自动判为重复。候选治理读取可按该实时结果筛选，筛选必须在分页前完成；实时结果分面计数应用聚合状态、候选类型和编码/名称关键词过滤，但不应用当前比对结果过滤，供治理人员切换同一工作集视角。标准当前修订变化后同一查询结果及分面计数允许随之变化。比对不写回候选、不创建标准，也不代替人工裁决。 |
+| standard extraction candidate comparison | 标准提炼候选比对 | Standard 在读取提炼结果时，将候选与当前租户内同类型、同编码的活动标准稳定身份进行确定性比较所得的动态投影。 | 结果固定为 `new`、`exact`、`content_conflict` 或 `scope_conflict`，差异项明确给出字段及候选值、当前标准值；枚举数据元候选的 `code_set_code` 与现有数据元修订所冻结码值集修订的稳定编码比较，不比较数据库 ID；同名不同编码不自动判为重复。候选治理读取可按该实时结果筛选，筛选必须在候选族分页前完成；候选族分面计数应用聚合状态、候选类型和编码/名称关键词过滤，但不应用当前比对结果过滤。一个候选族包含多类实时比对结果时可同时计入多个分面，因此各分类计数不要求相加等于 `all`。标准当前修订变化后同一查询结果及分面计数允许随之变化。比对不写回候选、不创建标准，也不代替人工裁决。 |
 | standard extraction evidence | 标准提炼证据 | 支撑某个标准提炼候选的不可变来源片段。 | 必须记录确定的文档修订、Markdown 章节或页码定位、行号/页码范围、原文摘录及内容摘要；证据不能只保存模型解释、置信度或可变的文档稳定身份。 |
 | standard revision status | 标准修订状态 | 可正式发布的标准定义修订所共用的审核发布状态。 | 业务术语、数据元、码值集、指标定义和标准文档等发布型定义统一使用 `draft`、`in_review`、`published`、`withdrawn`；`published` 只表示审核通过且定义不可变，不等同于当前生效。同一稳定身份至多有一个可编辑草稿，可以有多个生效区间不重叠的已发布修订。 |
 | effective standard revision | 当前生效标准修订 | 在指定业务时点满足 `effective_from <= as_of < effective_to` 的已发布修订；`effective_to` 为空表示无上界。 | Standard 按时点动态解析，不保存 `current_revision_id` 缓存；未显式传入 `as_of` 时使用服务端当前时间。同一稳定身份在任一时点至多解析出一个修订。 |
@@ -425,7 +426,10 @@
 | Tenant Membership | 租户成员关系 | User 或 Service Principal 进入某个 Tenant 的有效关系。 | 一个主体可有多个 Membership，但一次业务会话只能选择一个当前 Tenant。 |
 | Principal | 授权主体 | 一次请求中接受授权判断的主体，可以是 User 或 Service Principal。 | 不等于 OAuth Client、Department、Project Group 或 Role。 |
 | Service Principal | 服务主体 | 应用、自动化任务或工作负载使用的非人 Principal。 | 不伪装成 User，不使用用户密码，也不得持有平台三员角色。 |
-| Service Account | 服务账号 | Tenant 管理员面向非人工作负载管理的账号视图，由一个 Tenant-owned Service Principal、该 Tenant 内唯一 Membership 和一个独立 Confidential OAuth Client 共同组成。 | 不是 User，也不是 External OAuth Client；Client ID 固定、Client Secret 只在创建或轮换时展示一次。数据库和授权协议仍使用 Service Principal，不新增平行身份实体。 |
+| Service Account | 服务账号 | Tenant 管理员创建并管理的非人工作负载账号，由一个 Tenant-owned Service Principal、该 Tenant 内唯一 Membership 和一个独立 Confidential OAuth Client 共同组成。 | 不是 User，也不是 External OAuth Client；Client ID 固定、Client Secret 只在创建或轮换时展示一次。数据库和授权协议仍使用 Service Principal，不新增平行身份实体。 |
+| Machine Identity Management View | 机器身份管理视图 | “应用接入”中统一查看当前 Tenant 可用机器身份的管理视图，同时呈现 Tenant-owned Service Account 和已加入当前 Tenant 的 Platform-owned Runtime Service Principal。 | “机器身份”只作为聚合管理入口名称，不新增领域实体。两类对象仍保持不同领域语义；平台运行账号只读，Tenant 管理员不得编辑其定义、生命周期或凭据。角色展示与分配复用同一 Role Assignment 事实和 API。 |
+| API Consumer | API 消费方 | Tenant 为外部系统调用已发布数据面 API 建立的调用方登记，持有精确的 Consumer Service Reference、速率限制和可轮换 API Credential。 | 不是 User、Principal、Service Account、Runtime Service Principal、OAuth Client 或控制面 Application；API Credential 不能访问 `/api/v1/*` 控制面，最终服务授权由 Service owner 按 Tenant、Service Reference 和服务生命周期判断。 |
+| API Consumer Credential | API 消费凭据 | API Consumer 用于数据面请求认证的长期随机凭据，明文只在创建时展示一次，服务端只保存 SHA-256 Hash。 | 固定通过 `X-API-Key` 传递，只能用于显式挂载 API Consumer Guard 的数据面路由；不能兑换 OAuth Token、不能产生 AuthContext、Role 或 Membership。 |
 | Authentication Method | 认证方式 | 主体证明身份的方法，例如本地密码、Passkey、MFA、外部 IdP 或工作负载认证。 | CLI Authorization Code + PKCE 和 Device Flow 是登录交互通道，不是独立用户体系。 |
 | Permission | 权限 | ADDP 产品定义的稳定、最小功能动作。 | Tenant 可以组合 Permission 创建 Role，但不能创造任意 Permission 字符串。 |
 | Role | 角色 | Permission 的命名集合。 | Role 本身不表达业务资源实例；具体作用范围由 Role Assignment 和 owner Resource Grant / Policy 决定。 |
@@ -442,7 +446,7 @@
 | Break-glass Grant | 紧急访问授权 | 在紧急处置中经双人批准产生的限定动作、限定时长且全程审计的临时授权。 | 不是常驻 root，不能删除审计记录或静默修改平台三员规则。 |
 | Platform Statistics Viewer | 平台统计查看者 | 读取已发布跨租户聚合指标的独立平台只读角色。 | 不自动包含在平台三员角色中，不授予 Tenant 业务明细访问权。 |
 | AuthContext | 授权上下文 | System 对访问令牌完成验证并基于当前 Principal、会话模式、Tenant Membership、Role Assignment 和客户端约束生成的权威身份与授权投影。 | 是 Go/Python 模块消费主体事实的唯一契约；不包含主体可访问的全部资源列表，`/users/me` 不是 Token 验证接口。 |
-| External OAuth Client | 外部 OAuth 客户端 | 代表 `addp-cli`、外部 BI 或桌面工具等请求用户授权的客户端软件；管理归属可以是 Platform 或单个 Tenant。 | 不是 ADDP User、Service Principal、Tenant、Service Account 或 Application；Tenant 外部 Client 固定使用 Authorization Code + PKCE、无 Client Secret，且只能获得其 owner Tenant 内当前 User 的委托授权。服务账号内部绑定的 Confidential OAuth Client 只是机器凭据，不进入外部应用管理列表。 |
+| External OAuth Client | 外部 OAuth 客户端 | 代表 `addp-cli`、外部 BI 或桌面工具等请求用户授权的客户端软件；管理归属可以是 Platform 或单个 Tenant。 | 不是 ADDP User、Service Principal、Tenant、Service Account 或 API Consumer；Tenant 外部 Client 固定使用 Authorization Code + PKCE、无 Client Secret，且只能获得其 owner Tenant 内当前 User 的委托授权。服务账号内部绑定的 Confidential OAuth Client 只是机器凭据，不进入外部应用管理列表。 |
 | OAuth Authorization Request | OAuth 授权请求 | OAuth Client 在打开浏览器前向 System 创建的短期、一次性授权上下文，持有已校验的 Client、redirect URI、Scope 和 PKCE challenge。 | 浏览器只携带随机 `request_id`；取消凭据只在客户端内存保存，System 只保存其 Hash。它不是 Authorization Code 或用户会话。 |
 | OAuth Scope | OAuth 授权范围 | 一枚访问令牌被允许执行的最大能力集合。 | 只能缩小权限，不取代 Tenant Membership、Role Permission、owner 资源权限或审批。 |
 | User Access Token | 用户访问令牌 | 以当前 ADDP 用户为主体、用于访问业务 API 的短期 Bearer Token。 | 通过 AuthContext 解析；不将客户端参数视为用户或租户事实。 |
@@ -456,7 +460,7 @@
 | Delegated Access Token | 受委托访问令牌 | System 为 Agent 代表当前用户调用特定 owner 能力签发的短期、限 audience 和 Scope 令牌。 | 不改变原用户和租户；可绑定 AgentRun / ToolCall 用于审计。 |
 | Runtime Service Principal | 运行时服务主体 | Develop、DuckDB Runtime、Workflow Runtime、Jupyter 等工作负载用于 Client Credentials 和控制面识别的 Service Principal。 | 只证明机器身份并消费与自身 audience 匹配的 Execution Authorization 或 Notebook Session Authorization；不继承发起用户、服务创建人、引擎创建人或 Tenant 全量数据权限。 |
 
-面向 Tenant 管理员的界面不直接使用“主体类型”作为标签。用户账号与服务账号必须在账号管理中分开呈现；只有角色分配、组织成员选择和审计筛选等确实需要跨账号类别选择时，才使用“账号类型”，并按“当前账号、用户账号、服务账号”分组，不依赖名称前缀猜测。组织内“成员类型”仅用于主部门、附加部门等组织关系语义。领域模型、API 字段和审计协议仍使用 Principal、Service Principal 与 `principal_type`。
+面向 Tenant 管理员的界面不直接使用“主体类型”作为标签。用户账号与机器身份必须分开呈现；角色管理中的“角色分配”只面向用户账号，服务主体的角色查看与分配从“应用接入 > 机器身份”进入。“机器身份”页内必须继续显式区分“租户服务账号”和“平台运行账号”，不能把两者合并成同一种可管理账号。只有组织成员选择和审计筛选等确实需要跨账号类别选择时，才使用“账号类型”，并按“当前账号、用户账号、服务账号”分组，不依赖名称前缀猜测。组织内“成员类型”仅用于主部门、附加部门等组织关系语义。领域模型、API 字段和审计协议仍使用 Principal、Service Principal 与 `principal_type`。
 
 ## 配置管理
 

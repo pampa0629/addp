@@ -6,7 +6,6 @@ import (
 
 	commonConfig "github.com/addp/common/config"
 	commonExecution "github.com/addp/common/execution"
-	"github.com/addp/system/internal/models"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -53,8 +52,5 @@ func AutoMigrateNonIAM(db *gorm.DB) error {
 	if err := commonExecution.EnsureStore(db); err != nil {
 		return err
 	}
-	return db.AutoMigrate(
-		&models.Application{},
-		&models.APIKey{},
-	)
+	return nil
 }

@@ -458,6 +458,9 @@ elif [ "$ONLINE_SUITE" = "oceanbase-consumer-flow" ]; then
   oceanbase_consumer_cleanup_required=1
   run_logged bash business/scripts/online-oceanbase-consumer-fixture.sh stop
   run_logged bash business/scripts/online-oceanbase-consumer-fixture.sh start
+  export ADDP_ONLINE_CONSUMER_ENGINE_TYPE=oceanbase
+  export ADDP_ONLINE_CONSUMER_ENGINE_ID="$ADDP_ONLINE_OCEANBASE_ENGINE_ID"
+  export ADDP_ONLINE_CONSUMER_NAMESPACE="$ADDP_ONLINE_OCEANBASE_DATABASE"
   run_logged bash scripts/dev/start.sh "$START_TARGET"
 elif [ "$ONLINE_SUITE" = "security-mysql-owner-protection" ]; then
   engine_fixture_cleanup_required=1

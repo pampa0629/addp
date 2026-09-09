@@ -15,6 +15,7 @@ type IAMServiceAccountResponse struct {
 	ID                   string                     `json:"id"`
 	Name                 string                     `json:"name"`
 	Description          string                     `json:"description"`
+	OwnerScope           string                     `json:"owner_scope" enums:"platform,tenant"`
 	Status               iam.PrincipalStatus        `json:"status"`
 	MembershipID         string                     `json:"membership_id"`
 	MembershipStatus     iam.TenantMembershipStatus `json:"membership_status"`
@@ -55,7 +56,7 @@ func NewIAMTenantServiceAccountHandler(service *iam.TenantServiceAccountService)
 
 // List godoc
 // @Summary 查询服务账号 | List service accounts
-// @Description 分页查询当前 Tenant 拥有的服务账号；不包含平台内置 Runtime 服务主体 | List tenant-owned service accounts, excluding platform runtime identities
+// @Description 分页查询当前 Tenant 可用的机器身份；Tenant-owned 服务账号可管理，Platform-owned Runtime 服务主体只读 | List machine identities available in the current tenant; tenant-owned service accounts are manageable and platform-owned runtime identities are read-only
 // @Tags 租户服务账号 | Tenant Service Accounts
 // @Produce json
 // @Security BearerAuth
@@ -63,6 +64,7 @@ func NewIAMTenantServiceAccountHandler(service *iam.TenantServiceAccountService)
 // @Param page_size query int false "每页数量 | Page size"
 // @Param search query string false "名称、说明或 Client ID | Name, description, or client ID"
 // @Param status query string false "状态：active/suspended | Status: active/suspended"
+// @Param owner_scope query string false "管理归属：tenant/platform | Management ownership: tenant/platform"
 // @Success 200 {object} object{data=[]IAMServiceAccountResponse,total=int64,page=int,page_size=int,total_pages=int}
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["iam.service_account.read"]
@@ -77,8 +79,13 @@ func (h *IAMTenantServiceAccountHandler) List(c *gin.Context) {
 		respondIAMError(c, err)
 		return
 	}
+	ownerScope, err := parseServiceAccountOwnerScope(c.Query("owner_scope"))
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
 	page, pageSize := commonapi.ParsePagination(c)
-	accounts, total, err := h.service.List(c.Request.Context(), int64(tenantID), page, pageSize, c.Query("search"), status)
+	accounts, total, err := h.service.List(c.Request.Context(), int64(tenantID), page, pageSize, c.Query("search"), status, ownerScope)
 	if err != nil {
 		respondIAMError(c, err)
 		return
@@ -308,10 +315,21 @@ func parseServiceAccountStatus(raw string) (*iam.PrincipalStatus, error) {
 	return &status, nil
 }
 
+func parseServiceAccountOwnerScope(raw string) (*string, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	ownerScope := strings.TrimSpace(raw)
+	if ownerScope != "platform" && ownerScope != "tenant" {
+		return nil, commonapi.ErrBadRequest
+	}
+	return &ownerScope, nil
+}
+
 func mapIAMServiceAccount(account iam.TenantServiceAccount) IAMServiceAccountResponse {
 	return IAMServiceAccountResponse{
 		ID: strconv.FormatInt(account.ID, 10), Name: account.Name, Description: account.Description,
-		Status: account.Status, MembershipID: strconv.FormatInt(account.MembershipID, 10),
+		OwnerScope: account.OwnerScope, Status: account.Status, MembershipID: strconv.FormatInt(account.MembershipID, 10),
 		MembershipStatus: account.MembershipStatus, ClientID: account.ClientID,
 		CredentialStatus: account.CredentialStatus, Version: account.Version,
 		CreatedByPrincipalID: strconv.FormatInt(account.CreatedByPrincipalID, 10),

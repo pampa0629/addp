@@ -36,7 +36,7 @@ func extractFromURL(path string) (string, string) {
 		{regexp.MustCompile(`^/api/v1/system/users/(\d+)`), "user"},
 		{regexp.MustCompile(`^/api/v1/system/engines/(\d+)`), "engine"},
 		{regexp.MustCompile(`^/api/v1/system/tenants/(\d+)`), "tenant"},
-		{regexp.MustCompile(`^/api/v1/system/applications/(\d+)`), "application"},
+		{regexp.MustCompile(`^/api/v1/system/tenant/api-consumers/(\d+)`), "api_consumer"},
 
 		// Manager 模块
 		{regexp.MustCompile(`^/api/v1/manager/resources/(\d+)`), "resource"},

@@ -47,12 +47,12 @@
         </el-card>
 
         <el-card class="section-card">
-          <template #header><div class="card-header"><h3>{{ $t('standard.document.extractionResults') }}</h3><el-tag type="info">{{ pendingCandidateCount }} {{ $t('standard.document.pendingCandidates') }}</el-tag></div></template>
+          <template #header><div class="card-header"><h3>{{ $t('standard.document.extractionResults') }}</h3><el-tag type="info">{{ pendingCandidateCount }} {{ $t('standard.document.pendingCandidateVariants') }}</el-tag></div></template>
           <div class="candidate-toolbar">
             <el-input v-model="candidateQuery.keyword" class="candidate-search" :prefix-icon="Search" clearable :placeholder="$t('standard.document.candidateSearchPlaceholder')" :aria-label="$t('standard.document.candidateSearchPlaceholder')" @change="applyCandidateFilters" />
             <el-select v-model="candidateQuery.state" clearable :placeholder="$t('standard.document.allCandidateStates')" @change="applyCandidateFilters"><el-option v-for="state in ['pending','retained','formalized','rejected']" :key="state" :value="state" :label="candidateGroupStateLabel(state)" /></el-select>
             <el-select v-model="candidateQuery.candidate_type" clearable :placeholder="$t('standard.document.allCandidateTypes')" @change="applyCandidateFilters"><el-option v-for="type in ['glossary','element','code_set','metric']" :key="type" :value="type" :label="candidateTypeLabel(type)" /></el-select>
-            <span>{{ $t('standard.document.candidateGroupTotal', { count: candidateGroupResponse.total }) }}</span>
+            <span>{{ $t('standard.document.candidateFamilyTotal', { families: candidateFamilyResponse.total, variants: candidateFamilyResponse.variant_total }) }}</span>
           </div>
           <div class="candidate-comparison-facets">
             <span id="candidate-comparison-filter-label">{{ $t('standard.document.comparisonFacetLabel') }}</span>
@@ -61,39 +61,49 @@
               <el-radio-button v-for="result in comparisonResults" :key="result" :value="result">{{ comparisonLabel(result) }} · {{ comparisonCount(result) }}</el-radio-button>
             </el-radio-group>
           </div>
-          <el-empty v-if="!candidateGroups.length && !candidateLoading" :description="$t('standard.document.noCandidateGroups')" />
+          <el-empty v-if="!candidateFamilies.length && !candidateLoading" :description="$t('standard.document.noCandidateFamilies')" />
           <div v-loading="candidateLoading">
-            <el-card v-for="group in candidateGroups" :key="group.semantic_fingerprint" shadow="never" class="candidate-card">
-              <div class="candidate-header"><div><el-tag size="small">{{ candidateTypeLabel(group.candidate.candidate_type) }}</el-tag><strong>{{ group.candidate.name }}</strong><code>{{ group.candidate.code }}</code></div><el-tag :type="candidateGroupStateTagType(group.state)">{{ candidateGroupStateLabel(group.state) }}</el-tag></div>
-              <div class="candidate-group-meta"><span>{{ $t('standard.document.candidateOccurrenceCount', { count: group.occurrence_count }) }}</span><span>{{ $t('standard.document.candidateFirstSeen') }} {{ formatTime(group.first_seen_at) }}</span><span>{{ $t('standard.document.candidateLastSeen') }} {{ formatTime(group.last_seen_at) }}</span></div>
-              <p>{{ group.candidate.definition }}</p>
-              <div v-if="group.candidate.payload?.code_set_code" class="candidate-reference"><span>{{ $t('standard.document.codeSetReference') }}</span><code>{{ group.candidate.payload.code_set_code }}</code></div>
-              <div v-if="group.candidate.comparison" class="candidate-comparison">
-                <div class="comparison-summary">
-                  <el-tag size="small" :type="comparisonTagType(group.candidate.comparison.result)">{{ comparisonLabel(group.candidate.comparison.result) }}</el-tag>
-                  <span>{{ comparisonSummary(group.candidate.comparison.result) }}</span>
-                </div>
-                <div v-if="group.candidate.comparison.standard_id" class="comparison-target">
-                  <span>{{ $t('standard.document.comparisonTarget') }}: <strong>{{ group.candidate.comparison.name }}</strong> <code>{{ group.candidate.comparison.code }}</code> · {{ scopeLabel(group.candidate.comparison.scope_type) }}<template v-if="group.candidate.comparison.owner_domain_id"> / {{ domainName(group.candidate.comparison.owner_domain_id) }}</template> · R{{ group.candidate.comparison.revision_no }} · {{ statusLabel(group.candidate.comparison.revision_status) }}</span>
-                  <el-button link type="primary" size="small" @click="openComparedStandard(group.candidate)">{{ $t('standard.document.openExistingStandard') }}</el-button>
-                </div>
-                <el-table v-if="group.candidate.comparison.differences?.length" :data="group.candidate.comparison.differences" size="small" border class="comparison-differences">
-                  <el-table-column :label="$t('standard.document.differenceField')" width="140"><template #default="{ row }">{{ comparisonFieldLabel(row.field) }}</template></el-table-column>
-                  <el-table-column :label="$t('standard.document.candidateValue')" min-width="220"><template #default="{ row }"><div class="comparison-value"><template v-if="row.candidate_value.kind === 'code_items'"><div v-for="item in row.candidate_value.items || []" :key="item.code" class="comparison-item"><code>{{ item.code }}</code> · {{ item.name }}<span v-if="item.definition"> — {{ item.definition }}</span></div></template><template v-else>{{ comparisonValueText(row.candidate_value, row.field) }}</template></div></template></el-table-column>
-                  <el-table-column :label="$t('standard.document.standardValue')" min-width="220"><template #default="{ row }"><div class="comparison-value"><template v-if="row.standard_value.kind === 'code_items'"><div v-for="item in row.standard_value.items || []" :key="item.code" class="comparison-item"><code>{{ item.code }}</code> · {{ item.name }}<span v-if="item.definition"> — {{ item.definition }}</span></div></template><template v-else>{{ comparisonValueText(row.standard_value, row.field) }}</template></div></template></el-table-column>
-                </el-table>
-              </div>
-              <pre v-if="Object.keys(group.candidate.payload || {}).length">{{ JSON.stringify(group.candidate.payload, null, 2) }}</pre>
-              <el-collapse class="candidate-occurrences"><el-collapse-item :name="group.semantic_fingerprint"><template #title>{{ $t('standard.document.candidateEvidenceHistory', { count: group.occurrence_count }) }}</template><div v-for="occurrence in group.occurrences" :key="occurrence.candidate_id" class="candidate-occurrence"><div class="candidate-occurrence-header"><span>#{{ occurrence.extraction_id }} · R{{ revisionNo(occurrence.document_revision_id) }} · {{ formatTime(occurrence.extracted_at) }}</span><el-tag size="small" :type="occurrence.formalization ? 'success' : occurrence.status === 'pending' ? 'warning' : occurrence.status === 'retained' ? 'success' : 'info'">{{ occurrence.formalization ? candidateGroupStateLabel('formalized') : candidateStatusLabel(occurrence.status) }}</el-tag></div><blockquote v-for="evidence in occurrence.evidences || []" :key="evidence.id"><small>{{ evidence.section_path }} · L{{ evidence.start_line }}-{{ evidence.end_line }} · {{ shortHash(evidence.excerpt_hash) }}</small><div>{{ evidence.excerpt }}</div></blockquote></div></el-collapse-item></el-collapse>
-              <div v-if="group.state === 'pending' && canUpdate" class="candidate-actions"><el-button size="small" type="success" @click="decideCandidate(group.candidate, 'retained')">{{ $t('standard.document.retainCandidate') }}</el-button><el-button size="small" @click="decideCandidate(group.candidate, 'rejected')">{{ $t('standard.document.rejectCandidate') }}</el-button></div>
-              <div v-else-if="group.state === 'formalized' && group.candidate.formalization" class="formalization-result">
-                <span>{{ formalizationActionLabel(group.candidate.formalization.action) }} · R{{ group.candidate.formalization.revision_no }} · {{ statusLabel(group.candidate.formalization.target_revision_status) }}</span>
-                <el-button link type="primary" size="small" @click="openFormalizedStandard(group.candidate)">{{ $t('standard.document.openFormalizedStandard') }}</el-button>
-              </div>
-              <div v-else-if="group.state === 'retained' && canFormalizeCandidate(group.candidate)" class="candidate-actions"><el-button size="small" type="primary" @click="openFormalization(group.candidate)">{{ formalizationButtonLabel(group.candidate) }}</el-button></div>
-            </el-card>
+            <el-collapse v-model="expandedCandidateFamilies" class="candidate-families">
+              <el-collapse-item v-for="family in candidateFamilies" :key="family.family_key" :name="family.family_key" class="candidate-family">
+                <template #title>
+                  <div class="candidate-family-header">
+                    <div><el-tag size="small">{{ candidateTypeLabel(family.candidate_type) }}</el-tag><strong>{{ family.representative_name }}</strong><code>{{ family.code }}</code></div>
+                    <div class="candidate-family-meta"><span>{{ $t('standard.document.candidateFamilyVariantCount', { count: family.variant_count }) }}</span><span>{{ $t('standard.document.candidateFamilyOccurrenceCount', { count: family.occurrence_count }) }}</span></div>
+                  </div>
+                </template>
+                <el-card v-for="group in family.variants" :key="group.semantic_fingerprint" shadow="never" class="candidate-card">
+                  <div class="candidate-header"><div><strong>{{ group.candidate.name }}</strong><code>{{ group.candidate.code }}</code></div><el-tag :type="candidateGroupStateTagType(group.state)">{{ candidateGroupStateLabel(group.state) }}</el-tag></div>
+                  <div class="candidate-group-meta"><span>{{ $t('standard.document.candidateOccurrenceCount', { count: group.occurrence_count }) }}</span><span>{{ $t('standard.document.candidateFirstSeen') }} {{ formatTime(group.first_seen_at) }}</span><span>{{ $t('standard.document.candidateLastSeen') }} {{ formatTime(group.last_seen_at) }}</span></div>
+                  <p>{{ group.candidate.definition }}</p>
+                  <div v-if="group.candidate.payload?.code_set_code" class="candidate-reference"><span>{{ $t('standard.document.codeSetReference') }}</span><code>{{ group.candidate.payload.code_set_code }}</code></div>
+                  <div v-if="group.candidate.comparison" class="candidate-comparison">
+                    <div class="comparison-summary">
+                      <el-tag size="small" :type="comparisonTagType(group.candidate.comparison.result)">{{ comparisonLabel(group.candidate.comparison.result) }}</el-tag>
+                      <span>{{ comparisonSummary(group.candidate.comparison.result) }}</span>
+                    </div>
+                    <div v-if="group.candidate.comparison.standard_id" class="comparison-target">
+                      <span>{{ $t('standard.document.comparisonTarget') }}: <strong>{{ group.candidate.comparison.name }}</strong> <code>{{ group.candidate.comparison.code }}</code> · {{ scopeLabel(group.candidate.comparison.scope_type) }}<template v-if="group.candidate.comparison.owner_domain_id"> / {{ domainName(group.candidate.comparison.owner_domain_id) }}</template> · R{{ group.candidate.comparison.revision_no }} · {{ statusLabel(group.candidate.comparison.revision_status) }}</span>
+                      <el-button link type="primary" size="small" @click="openComparedStandard(group.candidate)">{{ $t('standard.document.openExistingStandard') }}</el-button>
+                    </div>
+                    <el-table v-if="group.candidate.comparison.differences?.length" :data="group.candidate.comparison.differences" size="small" border class="comparison-differences">
+                      <el-table-column :label="$t('standard.document.differenceField')" width="140"><template #default="{ row }">{{ comparisonFieldLabel(row.field) }}</template></el-table-column>
+                      <el-table-column :label="$t('standard.document.candidateValue')" min-width="220"><template #default="{ row }"><div class="comparison-value"><template v-if="row.candidate_value.kind === 'code_items'"><div v-for="item in row.candidate_value.items || []" :key="item.code" class="comparison-item"><code>{{ item.code }}</code> · {{ item.name }}<span v-if="item.definition"> — {{ item.definition }}</span></div></template><template v-else>{{ comparisonValueText(row.candidate_value, row.field) }}</template></div></template></el-table-column>
+                      <el-table-column :label="$t('standard.document.standardValue')" min-width="220"><template #default="{ row }"><div class="comparison-value"><template v-if="row.standard_value.kind === 'code_items'"><div v-for="item in row.standard_value.items || []" :key="item.code" class="comparison-item"><code>{{ item.code }}</code> · {{ item.name }}<span v-if="item.definition"> — {{ item.definition }}</span></div></template><template v-else>{{ comparisonValueText(row.standard_value, row.field) }}</template></div></template></el-table-column>
+                    </el-table>
+                  </div>
+                  <pre v-if="Object.keys(group.candidate.payload || {}).length">{{ JSON.stringify(group.candidate.payload, null, 2) }}</pre>
+                  <el-collapse class="candidate-occurrences"><el-collapse-item :name="group.semantic_fingerprint"><template #title>{{ $t('standard.document.candidateEvidenceHistory', { count: group.occurrence_count }) }}</template><div v-for="occurrence in group.occurrences" :key="occurrence.candidate_id" class="candidate-occurrence"><div class="candidate-occurrence-header"><span>#{{ occurrence.extraction_id }} · R{{ revisionNo(occurrence.document_revision_id) }} · {{ formatTime(occurrence.extracted_at) }}</span><el-tag size="small" :type="occurrence.formalization ? 'success' : occurrence.status === 'pending' ? 'warning' : occurrence.status === 'retained' ? 'success' : 'info'">{{ occurrence.formalization ? candidateGroupStateLabel('formalized') : candidateStatusLabel(occurrence.status) }}</el-tag></div><blockquote v-for="evidence in occurrence.evidences || []" :key="evidence.id"><small>{{ evidence.section_path }} · L{{ evidence.start_line }}-{{ evidence.end_line }} · {{ shortHash(evidence.excerpt_hash) }}</small><div>{{ evidence.excerpt }}</div></blockquote></div></el-collapse-item></el-collapse>
+                  <div v-if="group.state === 'pending' && canUpdate" class="candidate-actions"><el-button size="small" type="success" @click="decideCandidate(group.candidate, 'retained')">{{ $t('standard.document.retainCandidate') }}</el-button><el-button size="small" @click="decideCandidate(group.candidate, 'rejected')">{{ $t('standard.document.rejectCandidate') }}</el-button></div>
+                  <div v-else-if="group.state === 'formalized' && group.candidate.formalization" class="formalization-result">
+                    <span>{{ formalizationActionLabel(group.candidate.formalization.action) }} · R{{ group.candidate.formalization.revision_no }} · {{ statusLabel(group.candidate.formalization.target_revision_status) }}</span>
+                    <el-button link type="primary" size="small" @click="openFormalizedStandard(group.candidate)">{{ $t('standard.document.openFormalizedStandard') }}</el-button>
+                  </div>
+                  <div v-else-if="group.state === 'retained' && canFormalizeCandidate(group.candidate)" class="candidate-actions"><el-button size="small" type="primary" @click="openFormalization(group.candidate)">{{ formalizationButtonLabel(group.candidate) }}</el-button></div>
+                </el-card>
+              </el-collapse-item>
+            </el-collapse>
           </div>
-          <el-pagination v-if="candidateGroupResponse.total > candidateQuery.page_size" class="candidate-pagination" background layout="prev, pager, next" :current-page="candidateQuery.page" :page-size="candidateQuery.page_size" :total="candidateGroupResponse.total" @current-change="changeCandidatePage" />
+          <el-pagination v-if="candidateFamilyResponse.total > candidateQuery.page_size" class="candidate-pagination" background layout="prev, pager, next" :current-page="candidateQuery.page" :page-size="candidateQuery.page_size" :total="candidateFamilyResponse.total" @current-change="changeCandidatePage" />
         </el-card>
 
         <el-card class="section-card">
@@ -143,7 +153,8 @@ const document = ref({}), history = ref([]), domains = ref([]), mappings = ref({
 const revision = reactive({}), identity = reactive({ scope_type: 'tenant_common', owner_domain_id: null, doc_type: 'reference', source_org: '', steward_id: null, tags: [] })
 const formalizationForm = reactive({ change_summary: '', metric_type: '' })
 const candidateQuery = reactive({ keyword: '', state: '', candidate_type: '', comparison_result: '', page: 1, page_size: 20 })
-const candidateGroupResponse = reactive({ data: [], total: 0, page: 1, page_size: 20, total_pages: 1, status_counts: { pending: 0, retained: 0, rejected: 0, formalized: 0 }, comparison_counts: { new: 0, exact: 0, content_conflict: 0, scope_conflict: 0 } })
+const candidateFamilyResponse = reactive({ data: [], total: 0, variant_total: 0, page: 1, page_size: 20, total_pages: 1, variant_status_counts: { pending: 0, retained: 0, rejected: 0, formalized: 0 }, family_comparison_counts: { all: 0, new: 0, exact: 0, content_conflict: 0, scope_conflict: 0 } })
+const expandedCandidateFamilies = ref([])
 const candidateRequests = createLatestRequestCoordinator()
 const documentTypes = ['national', 'industry', 'internal', 'reference']
 const comparisonResults = ['new', 'exact', 'content_conflict', 'scope_conflict']
@@ -151,10 +162,10 @@ const editable = computed(() => canUpdate.value && revision.status === 'draft' &
 const reviewing = computed(() => revision.status === 'in_review' && document.value.draft_revision_id === revision.id)
 const canExtract = computed(() => canCreateExtraction.value && Boolean(revision.file_name) && (revision.media_type === 'text/markdown' || revision.file_name?.toLowerCase().endsWith('.md')))
 const title = computed(() => revision.name || document.value.code || t('standard.document.detailTitle'))
-const candidateGroups = computed(() => candidateGroupResponse.data || [])
-const pendingCandidateCount = computed(() => candidateGroupResponse.status_counts?.pending || 0)
-const comparisonCount = result => candidateGroupResponse.comparison_counts?.[result] || 0
-const comparisonFacetTotal = computed(() => comparisonResults.reduce((total, result) => total + comparisonCount(result), 0))
+const candidateFamilies = computed(() => candidateFamilyResponse.data || [])
+const pendingCandidateCount = computed(() => candidateFamilyResponse.variant_status_counts?.pending || 0)
+const comparisonCount = result => candidateFamilyResponse.family_comparison_counts?.[result] || 0
+const comparisonFacetTotal = computed(() => candidateFamilyResponse.family_comparison_counts?.all || 0)
 const requiresMetricType = computed(() => formalizationCandidate.value?.candidate_type === 'metric' && formalizationCandidate.value?.comparison?.result === 'new')
 const formalizationDialogHint = computed(() => formalizationCandidate.value ? t(`standard.document.formalizationHint.${formalizationCandidate.value.comparison?.result || 'new'}`) : '')
 useConsolePageDescriptor(router, 'standard', { title: computed(() => t('standard.document.recentVisitTitle')), subject: title, ready: computed(() => Boolean(document.value.id)) })
@@ -195,36 +206,42 @@ const goBack = () => navigateStandardRoute(router, { path: '/documents', query: 
 async function load() {
   loading.value = true
   try {
-    const [aggregate, revisions, candidateRows, mappingRows] = await Promise.all([documentAPI.get(route.params.id), documentAPI.listRevisions(route.params.id), documentAPI.listCandidateGroups(route.params.id, candidateQuery), documentAPI.getMappings(route.params.id)])
-    document.value = aggregate; history.value = revisions || []; Object.assign(candidateGroupResponse, candidateRows); mappings.value = mappingRows || { elements: [], glossaries: [], metrics: [] }
+    const [aggregate, revisions, candidateRows, mappingRows] = await Promise.all([documentAPI.get(route.params.id), documentAPI.listRevisions(route.params.id), documentAPI.listCandidateFamilies(route.params.id, candidateQuery), documentAPI.getMappings(route.params.id)])
+    document.value = aggregate; history.value = revisions || []; applyCandidateFamilyResponse(candidateRows); mappings.value = mappingRows || { elements: [], glossaries: [], metrics: [] }
     Object.assign(identity, { scope_type: aggregate.scope_type, owner_domain_id: aggregate.owner_domain_id || null, doc_type: aggregate.doc_type, source_org: aggregate.source_org || '', steward_id: aggregate.steward_id || null, tags: aggregate.tags || [] })
     setRevision(aggregate.draft_revision || aggregate.current_revision || history.value[0])
   } catch (error) { ElMessage.error(getStandardErrorMessage(error, t, 'standard.common.loadFailed')); goBack() }
   finally { loading.value = false }
 }
 const candidateRequestKey = params => JSON.stringify({ document_id: String(route.params.id), ...params })
-async function loadCandidateGroups() {
+function applyCandidateFamilyResponse(result) {
+  Object.assign(candidateFamilyResponse, result)
+  const availableKeys = new Set((result.data || []).map(family => family.family_key))
+  const retainedKeys = expandedCandidateFamilies.value.filter(key => availableKeys.has(key))
+  expandedCandidateFamilies.value = result.data?.length === 1 ? [result.data[0].family_key] : retainedKeys
+}
+async function loadCandidateFamilies() {
   const params = { ...candidateQuery }
   const key = candidateRequestKey(params)
   const request = candidateRequests.begin(key)
   candidateLoading.value = true
   try {
-    const result = await documentAPI.listCandidateGroups(route.params.id, params)
+    const result = await documentAPI.listCandidateFamilies(route.params.id, params)
     if (!candidateRequests.isCurrent(request, candidateRequestKey({ ...candidateQuery }))) return
     if (candidateQuery.page > result.total_pages) {
       candidateQuery.page = result.total_pages
-      await loadCandidateGroups()
+      await loadCandidateFamilies()
       return
     }
-    Object.assign(candidateGroupResponse, result)
+    applyCandidateFamilyResponse(result)
   } catch (error) {
     if (candidateRequests.isCurrent(request, candidateRequestKey({ ...candidateQuery }))) ElMessage.error(getStandardErrorMessage(error, t, 'standard.common.loadFailed'))
   } finally {
     if (candidateRequests.isCurrent(request, candidateRequestKey({ ...candidateQuery }))) candidateLoading.value = false
   }
 }
-function applyCandidateFilters() { candidateQuery.page = 1; loadCandidateGroups() }
-function changeCandidatePage(page) { candidateQuery.page = page; loadCandidateGroups() }
+function applyCandidateFilters() { candidateQuery.page = 1; loadCandidateFamilies() }
+function changeCandidatePage(page) { candidateQuery.page = page; loadCandidateFamilies() }
 async function saveAll() {
   if (!revision.name?.trim() || !revision.change_summary?.trim()) { ElMessage.warning(t('standard.document.revisionRequired')); return }
   if (identity.scope_type === 'domain' && !identity.owner_domain_id) { ElMessage.warning(t('standard.common.selectDomain')); return }
@@ -239,7 +256,7 @@ function selectRevision(row) { setRevision(row) }
 async function uploadRevision(file) { if (!editable.value || uploading.value) return; uploading.value = true; try { const data = new FormData(); data.append('file', file.raw); await documentAPI.uploadFile(document.value.id, revision.id, data, document.value.version); ElMessage.success(t('standard.document.uploadSuccess')); await load() } catch (error) { ElMessage.error(getStandardErrorMessage(error, t)) } finally { uploading.value = false } }
 async function downloadRevision() { try { const blob = await documentAPI.download(document.value.id, revision.id); saveBlob(blob, revision.file_name || revision.name) } catch (error) { ElMessage.error(getStandardErrorMessage(error, t, 'standard.document.downloadFailed')) } }
 async function extractCandidates() { if (extracting.value) return; extracting.value = true; try { await documentAPI.extractCandidates(document.value.id, revision.id, document.value.version); ElMessage.success(t('standard.document.extractionSuccess')); await load() } catch (error) { ElMessage.error(getStandardErrorMessage(error, t)) } finally { extracting.value = false } }
-async function decideCandidate(candidate, status) { try { await documentAPI.updateCandidate(candidate.id, { version: candidate.version, status }); await loadCandidateGroups(); ElMessage.success(t('standard.common.updateSuccess')) } catch (error) { ElMessage.error(getStandardErrorMessage(error, t)) } }
+async function decideCandidate(candidate, status) { try { await documentAPI.updateCandidate(candidate.id, { version: candidate.version, status }); await loadCandidateFamilies(); ElMessage.success(t('standard.common.updateSuccess')) } catch (error) { ElMessage.error(getStandardErrorMessage(error, t)) } }
 function openFormalization(candidate) {
   formalizationCandidate.value = candidate
   formalizationForm.change_summary = t('standard.document.formalizationDefaultSummary', { name: candidate.name })
@@ -253,7 +270,7 @@ async function submitFormalization() {
     const candidate = formalizationCandidate.value
     await documentAPI.formalizeCandidate(candidate.id, { version: candidate.version, change_summary: formalizationForm.change_summary.trim(), ...(requiresMetricType.value ? { metric_type: formalizationForm.metric_type } : {}) })
     formalizationDialog.value = false
-    await loadCandidateGroups()
+    await loadCandidateFamilies()
     ElMessage.success(t('standard.document.formalizationSuccess'))
   } catch (error) { ElMessage.error(getStandardErrorMessage(error, t)) }
   finally { formalizing.value = false }
@@ -271,6 +288,6 @@ onMounted(async () => { try { domains.value = flattenDomains(await domainAPI.lis
 </script>
 
 <style scoped>
-.document-detail { padding:20px; }.page-header,.header-left,.header-right,.card-header,.file-row,.candidate-header,.candidate-reference,.comparison-summary,.comparison-target,.formalization-result,.candidate-toolbar,.candidate-comparison-facets,.candidate-group-meta,.candidate-occurrence-header { display:flex; align-items:center; gap:12px; }.page-header,.card-header,.candidate-header,.comparison-target,.formalization-result,.candidate-occurrence-header { justify-content:space-between; }.page-header { margin-bottom:20px; }.header-left h2,.card-header h3 { margin:0; }.section-card { margin-bottom:20px; }.file-row,.candidate-toolbar,.candidate-comparison-facets,.candidate-comparison-facets .el-radio-group,.candidate-group-meta { flex-wrap:wrap; }.hint { margin-top:14px; }.candidate-toolbar,.candidate-comparison-facets { margin-bottom:14px; }.candidate-toolbar .candidate-search { width:280px; }.candidate-toolbar .el-select { width:180px; }.candidate-toolbar > span,.candidate-comparison-facets > span,.candidate-group-meta { color:var(--addp-text-secondary); }.candidate-group-meta { margin-top:8px; font-size:13px; }.candidate-card { margin-bottom:10px; }.candidate-header > div { display:flex; align-items:center; gap:8px; }.candidate-reference { margin:8px 0; color:var(--addp-text-secondary); }.candidate-reference code { color:var(--addp-text-primary); overflow-wrap:anywhere; }.candidate-comparison { margin:10px 0; padding:10px 12px; border:1px solid var(--el-border-color-light); border-radius:6px; background:var(--addp-bg-secondary); }.comparison-target { margin-top:8px; }.comparison-target span { min-width:0; overflow-wrap:anywhere; }.comparison-differences { margin-top:10px; }.comparison-value { white-space:pre-wrap; overflow-wrap:anywhere; color:var(--addp-text-primary); }.comparison-item + .comparison-item { margin-top:4px; }.candidate-card pre { white-space:pre-wrap; background:var(--addp-bg-secondary); padding:10px; border-radius:4px; }.candidate-card blockquote { margin:8px 0; padding:8px 12px; border-left:3px solid var(--el-color-primary); background:var(--addp-bg-secondary); }.candidate-card blockquote small { color:var(--addp-text-secondary); }.candidate-occurrences { margin:10px 0; }.candidate-occurrence + .candidate-occurrence { margin-top:12px; padding-top:12px; border-top:1px solid var(--addp-border-color-light); }.candidate-actions { text-align:right; }.candidate-pagination { justify-content:flex-end; margin-top:16px; }.formalization-result { margin-top:12px; padding:8px 10px; border-radius:6px; background:var(--el-color-success-light-9); color:var(--el-color-success-dark-2); }.formalization-form { margin-top:18px; }.formalization-form code { margin-left:8px; }.mapping-tag { margin:4px; }
+.document-detail { padding:20px; }.page-header,.header-left,.header-right,.card-header,.file-row,.candidate-header,.candidate-family-header,.candidate-family-header > div,.candidate-family-meta,.candidate-reference,.comparison-summary,.comparison-target,.formalization-result,.candidate-toolbar,.candidate-comparison-facets,.candidate-group-meta,.candidate-occurrence-header { display:flex; align-items:center; gap:12px; }.page-header,.card-header,.candidate-header,.candidate-family-header,.comparison-target,.formalization-result,.candidate-occurrence-header { justify-content:space-between; }.page-header { margin-bottom:20px; }.header-left h2,.card-header h3 { margin:0; }.section-card { margin-bottom:20px; }.file-row,.candidate-toolbar,.candidate-comparison-facets,.candidate-comparison-facets .el-radio-group,.candidate-group-meta,.candidate-family-header { flex-wrap:wrap; }.hint { margin-top:14px; }.candidate-toolbar,.candidate-comparison-facets { margin-bottom:14px; }.candidate-toolbar .candidate-search { width:280px; }.candidate-toolbar .el-select { width:180px; }.candidate-toolbar > span,.candidate-comparison-facets > span,.candidate-group-meta,.candidate-family-meta { color:var(--addp-text-secondary); }.candidate-group-meta { margin-top:8px; font-size:13px; }.candidate-families { border-top:0; }.candidate-family { margin-bottom:12px; border:1px solid var(--el-border-color-light); border-radius:6px; overflow:hidden; }.candidate-family :deep(.el-collapse-item__header) { height:auto; min-height:48px; padding:10px 14px; border-bottom:0; background:var(--addp-bg-secondary); }.candidate-family :deep(.el-collapse-item__wrap) { border-bottom:0; }.candidate-family :deep(.el-collapse-item__content) { padding:12px 14px 2px; }.candidate-family-header { width:100%; padding-right:12px; }.candidate-family-meta { font-size:13px; }.candidate-card { margin-bottom:10px; }.candidate-header > div { display:flex; align-items:center; gap:8px; }.candidate-reference { margin:8px 0; color:var(--addp-text-secondary); }.candidate-reference code { color:var(--addp-text-primary); overflow-wrap:anywhere; }.candidate-comparison { margin:10px 0; padding:10px 12px; border:1px solid var(--el-border-color-light); border-radius:6px; background:var(--addp-bg-secondary); }.comparison-target { margin-top:8px; }.comparison-target span { min-width:0; overflow-wrap:anywhere; }.comparison-differences { margin-top:10px; }.comparison-value { white-space:pre-wrap; overflow-wrap:anywhere; color:var(--addp-text-primary); }.comparison-item + .comparison-item { margin-top:4px; }.candidate-card pre { white-space:pre-wrap; background:var(--addp-bg-secondary); padding:10px; border-radius:4px; }.candidate-card blockquote { margin:8px 0; padding:8px 12px; border-left:3px solid var(--el-color-primary); background:var(--addp-bg-secondary); }.candidate-card blockquote small { color:var(--addp-text-secondary); }.candidate-occurrences { margin:10px 0; }.candidate-occurrence + .candidate-occurrence { margin-top:12px; padding-top:12px; border-top:1px solid var(--addp-border-color-light); }.candidate-actions { text-align:right; }.candidate-pagination { justify-content:flex-end; margin-top:16px; }.formalization-result { margin-top:12px; padding:8px 10px; border-radius:6px; background:var(--el-color-success-light-9); color:var(--el-color-success-dark-2); }.formalization-form { margin-top:18px; }.formalization-form code { margin-left:8px; }.mapping-tag { margin:4px; }
 @media (max-width:768px) { .document-detail { padding:12px; }.page-header { align-items:flex-start; flex-wrap:wrap; }.document-detail :deep(.el-col) { max-width:100%; flex:0 0 100%; } }
 </style>

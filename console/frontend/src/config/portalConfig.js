@@ -356,7 +356,7 @@ export const SIDEBAR_MENUS = {
           },
           {
             index: '/system/iam/application-access', icon: Link, label: 'console.menus.system.iamApplicationAccess',
-            access: [{ context: 'tenant', permissions: ['iam.service_account.read', 'iam.oauth_client.read'] }],
+            access: [{ context: 'tenant', permissions: ['iam.service_account.read', 'iam.api_consumer.read', 'iam.oauth_client.read'] }],
           },
           {
             index: '/system/iam/security', icon: Lock, label: 'console.menus.system.iamSecurity',
@@ -370,7 +370,6 @@ export const SIDEBAR_MENUS = {
       { index: '/system/modules',      icon: Operation,  label: 'console.menus.system.modules', recentLabel: 'console.menus.system.recentModules', permissions: ['platform.module.read'] },
       { index: '/system/engines',      icon: Connection, label: 'console.menus.system.engines', recentLabel: 'console.menus.system.recentEngines', permissions: ['system.engine.read'] },
       { index: '/configuration',       icon: SetUp,      label: 'console.configuration.title', recentLabel: 'console.menus.system.recentConfiguration' },
-      { index: '/system/applications', icon: Key,        label: 'console.menus.system.applications', recentLabel: 'console.menus.system.recentApplications', permissions: ['system.application.read'] },
       { index: '/system/cleanup',      icon: Refresh,    label: 'console.menus.system.cleanup', recentLabel: 'console.menus.system.recentCleanup', permissions: ['system.cleanup.read'] },
     ],
   },

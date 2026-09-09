@@ -8,6 +8,10 @@
     <div class="iam-toolbar">
       <div class="iam-filters">
         <el-input v-model="filters.search" :placeholder="t('system.iam.serviceAccounts.search')" clearable :prefix-icon="Search" @keyup.enter="reload" @clear="reload" />
+        <el-select v-model="filters.owner_scope" :placeholder="t('system.iam.serviceAccounts.accountType')" clearable @change="reload">
+          <el-option value="tenant" :label="t('system.iam.serviceAccounts.types.tenant')" />
+          <el-option value="platform" :label="t('system.iam.serviceAccounts.types.platform')" />
+        </el-select>
         <el-select v-model="filters.status" :placeholder="t('system.iam.common.status')" clearable @change="reload">
           <el-option v-for="status in statuses" :key="status" :label="statusLabel(status)" :value="status" />
         </el-select>
@@ -17,20 +21,24 @@
     </div>
 
     <el-table v-loading="loading" :data="rows" stripe>
-      <el-table-column :label="t('system.iam.tabs.serviceAccounts')" min-width="220">
+      <el-table-column :label="t('system.iam.serviceAccounts.identity')" min-width="220">
         <template #default="{ row }"><div class="iam-primary-cell"><strong>{{ row.name }}</strong><span>{{ row.description || '-' }}</span></div></template>
+      </el-table-column>
+      <el-table-column :label="t('system.iam.serviceAccounts.accountType')" width="150">
+        <template #default="{ row }"><el-tag :type="isTenantManaged(row) ? 'primary' : 'info'" effect="plain">{{ accountTypeLabel(row) }}</el-tag></template>
       </el-table-column>
       <el-table-column :label="t('system.iam.serviceAccounts.clientId')" min-width="240">
         <template #default="{ row }"><span class="iam-copy-value">{{ row.client_id }}</span><el-button link type="primary" :icon="CopyDocument" @click="copyText(row.client_id, 'clientIdCopied')">{{ t('system.iam.common.copy') }}</el-button></template>
       </el-table-column>
       <el-table-column :label="t('system.iam.common.status')" width="120"><template #default="{ row }"><el-tag :type="row.status === 'active' ? 'success' : 'warning'">{{ statusLabel(row.status) }}</el-tag></template></el-table-column>
       <el-table-column :label="t('system.iam.common.updatedAt')" width="180"><template #default="{ row }">{{ formatDate(row.updated_at) }}</template></el-table-column>
-      <el-table-column :label="t('system.iam.common.actions')" width="300" fixed="right">
+      <el-table-column :label="t('system.iam.common.actions')" width="380" fixed="right">
         <template #default="{ row }">
-          <el-button v-if="can('iam.service_account.update')" link type="primary" :icon="Edit" @click="openEdit(row)">{{ t('system.iam.common.edit') }}</el-button>
-          <el-button v-if="can('iam.service_credential.update')" link type="primary" :icon="Key" @click="rotateSecret(row)">{{ t('system.iam.serviceAccounts.rotateSecret') }}</el-button>
-          <el-button v-if="row.status === 'active' && can('iam.service_account.suspend')" link type="warning" :icon="VideoPause" @click="changeStatus(row, 'suspend')">{{ t('system.iam.common.suspend') }}</el-button>
-          <el-button v-if="row.status === 'suspended' && can('iam.service_account.restore')" link type="success" :icon="RefreshLeft" @click="changeStatus(row, 'restore')">{{ t('system.iam.common.restore') }}</el-button>
+          <el-button v-if="can('iam.tenant_role_assignment.read')" link type="primary" :icon="UserFilled" @click="openRoles(row)">{{ t(canManageRoles(row) ? 'system.iam.serviceAccounts.manageRoles' : 'system.iam.serviceAccounts.viewRoles') }}</el-button>
+          <el-button v-if="isTenantManaged(row) && can('iam.service_account.update')" link type="primary" :icon="Edit" @click="openEdit(row)">{{ t('system.iam.common.edit') }}</el-button>
+          <el-button v-if="isTenantManaged(row) && can('iam.service_credential.update')" link type="primary" :icon="Key" @click="rotateSecret(row)">{{ t('system.iam.serviceAccounts.rotateSecret') }}</el-button>
+          <el-button v-if="isTenantManaged(row) && row.status === 'active' && can('iam.service_account.suspend')" link type="warning" :icon="VideoPause" @click="changeStatus(row, 'suspend')">{{ t('system.iam.common.suspend') }}</el-button>
+          <el-button v-if="isTenantManaged(row) && row.status === 'suspended' && can('iam.service_account.restore')" link type="success" :icon="RefreshLeft" @click="changeStatus(row, 'restore')">{{ t('system.iam.common.restore') }}</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -53,16 +61,26 @@
       </dl>
       <template #footer><el-button type="primary" @click="credentialVisible = false">{{ t('system.iam.common.done') }}</el-button></template>
     </el-dialog>
+
+    <el-drawer v-model="rolesVisible" :title="roleDrawerTitle" size="min(960px, calc(100% - 24px))" destroy-on-close>
+      <el-alert v-if="selectedAccount && !isTenantManaged(selectedAccount)" class="iam-panel-intro" type="info" :closable="false" show-icon :title="t('system.iam.serviceAccounts.platformReadOnly')" />
+      <TenantRoleAssignmentsPanel
+        v-if="selectedAccount"
+        :fixed-membership="selectedAccount"
+        :read-only="!canManageRoles(selectedAccount)"
+      />
+    </el-drawer>
   </section>
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { CopyDocument, Edit, Key, Plus, Refresh, RefreshLeft, Search, VideoPause } from '@element-plus/icons-vue'
+import { CopyDocument, Edit, Key, Plus, Refresh, RefreshLeft, Search, UserFilled, VideoPause } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { iamAPI } from '../../api/iam'
 import { useAuthStore } from '../../store/auth'
+import TenantRoleAssignmentsPanel from './TenantRoleAssignmentsPanel.vue'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
@@ -74,14 +92,20 @@ const submitting = ref(false)
 const page = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
-const filters = reactive({ search: '', status: '' })
+const filters = reactive({ search: '', owner_scope: '', status: '' })
 const formVisible = ref(false)
 const editing = ref(null)
 const form = reactive({ name: '', description: '' })
 const credentialVisible = ref(false)
 const credential = reactive({ clientId: '', clientSecret: '' })
+const rolesVisible = ref(false)
+const selectedAccount = ref(null)
+const roleDrawerTitle = computed(() => selectedAccount.value ? t('system.iam.serviceAccounts.roleDrawerTitle', { name: selectedAccount.value.name }) : '')
 
 function statusLabel(status) { return t(`system.iam.status.${status}`) }
+function isTenantManaged(row) { return row.owner_scope === 'tenant' }
+function canManageRoles(row) { return isTenantManaged(row) && (can('iam.tenant_role_assignment.create') || can('iam.tenant_role_assignment.revoke')) }
+function accountTypeLabel(row) { return t(`system.iam.serviceAccounts.types.${row.owner_scope}`) }
 function formatDate(value) { return value ? new Date(value).toLocaleString() : '-' }
 
 async function load() {
@@ -100,6 +124,7 @@ async function load() {
 function reload() { page.value = 1; return load() }
 function openCreate() { editing.value = null; form.name = ''; form.description = ''; formVisible.value = true }
 function openEdit(row) { editing.value = row; form.name = row.name; form.description = row.description || ''; formVisible.value = true }
+function openRoles(row) { selectedAccount.value = row; rolesVisible.value = true }
 
 async function submitForm() {
   if (!form.name.trim()) {

@@ -12,7 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 统一 IAM（全局 User、Tenant Membership、组织、角色、权限和平台三员分立）
 - 日志管理（审计日志存储和查询、统计分析、导出）
 - 引擎管理（通用引擎连接、扩展运行时注册与能力展示，含 Schema/表枚举）
-- 应用管理（外部应用注册、API Key 管理）
+- API 消费方（外部数据面 API 调用方登记、服务授权与 API 消费凭据管理）
 - 资源回收管理（跨模块评估和执行资源回收）
 - 模块注册与发现（供 Gateway 动态路由）
 - TaskProvider 模块角色声明与动态发现（供 Orchestrator 查询调用）
@@ -81,11 +81,11 @@ backend/
 │   │   ├── tenant_handler.go          # 租户管理
 │   │   ├── log_handler.go             # 日志管理
 │   │   ├── engine_handler.go          # 引擎管理
-│   │   ├── application_handler.go     # 应用与 API Key 管理
+│   │   ├── api_consumer_handler.go    # API 消费方与消费凭据管理
 │   │   ├── cleanup_handler.go         # 资源回收
 │   │   ├── module_registry_handler.go # 模块注册与发现
 │   │   ├── task_provider_handler.go   # TaskProvider 读取投影
-│   │   └── internal_handler.go        # API Key 验证（内部 API）
+│   │   └── internal_handler.go        # API 消费凭据验证（Runtime API）
 │   ├── config/         # 配置管理
 │   ├── middleware/     # 中间件（认证、日志等）
 │   ├── models/         # 数据模型和请求/响应结构
@@ -93,7 +93,7 @@ backend/
 │   │   ├── tenant.go
 │   │   ├── log.go
 │   │   ├── engine.go
-│   │   ├── application.go     # 应用 + APIKey 模型
+│   │   ├── api_consumer.go    # API 消费方、精确服务授权与凭据模型
 │   │   ├── cleanup.go         # 资源回收任务模型
 │   │   └── module_registry.go # 模块定义、运行实例与角色声明模型
 │   ├── repository/     # 数据访问层
@@ -119,7 +119,7 @@ frontend/src/
 │   ├── tenant.js         # 租户管理 API
 │   ├── engines.js        # 引擎管理 API
 │   ├── logs.js           # 日志管理 API
-│   ├── applications.js   # 应用管理 API
+│   ├── apiConsumers.js   # API 消费方管理 API
 │   ├── cleanup.js        # 资源回收 API
 │   └── manager.js        # 外部 Manager 模块 API（预览等）
 ├── components/       # 可复用组件
@@ -146,7 +146,7 @@ frontend/src/
 │   ├── Tenants.vue        # 租户管理
 │   ├── Logs.vue           # 日志管理
 │   ├── Engines.vue        # 引擎管理
-│   ├── Applications.vue   # 应用与 API Key 管理
+│   ├── IAMCategoryPage.vue # IAM 分类页；应用接入组合 API 消费方与 OAuth
 │   ├── CleanupManager.vue # 资源回收管理
 │   └── Developer.vue      # 开发者工具页面
 └── router/           # 路由配置
@@ -176,8 +176,9 @@ frontend/src/
 | tenants | system | 租户表，多租户隔离 |
 | audit_logs | system | 审计日志表 |
 | engines | system | 引擎配置表，含加密连接信息 |
-| applications | system | 外部应用表 |
-| api_keys | system | 应用 API Key 表（存储 SHA256 hash） |
+| api_consumers | system | Tenant 数据面 API 消费方 |
+| api_consumer_service_grants | system | 消费方可访问的精确服务引用 |
+| api_consumer_credentials | system | API 消费凭据（仅保存 SHA256 hash） |
 | oauth_authorization_requests | system | 浏览器授权前的短期已校验请求、取消凭据 Hash 和一次性状态 |
 | iam_recovery_attempts | system | 三员整体凭据恢复尝试，仅保存一次性 Secret Hash 与终态事实 |
 | refresh_token_families | system | 浏览器和 OAuth Refresh Token Family |
@@ -243,15 +244,11 @@ frontend/src/
 - `connection_info` 为 JSONB 类型，灵活存储不同类型的连接配置
 - 敏感字段 (password, access_key 等) 使用 **AES-256-GCM** 加密存储
 
-**system.applications 表**:
-- 外部应用注册信息，用于管理第三方应用的 API Key
-- 字段: `id`, `name`, `description`, `tenant_id`, `allowed_services`, `rate_limit_per_minute`, `status`
-- 软删除支持（`deleted_at`）
-
-**system.api_keys 表**:
-- API Key 存储（仅存 SHA256 hash，明文仅在创建时返回一次）
-- 字段: `id`, `application_id`, `key_prefix`, `key_hash`, `name`, `last_used_at`, `expires_at`, `status`
-- Key 格式：`addp_live_` 前缀 + 随机字符串
+**system.api_consumers / system.api_consumer_service_grants / system.api_consumer_credentials**:
+- API Consumer 只表达外部系统对已发布数据面 API 的机器调用，不生成 Principal 或 AuthContext；
+- Service Grant 使用 `(service_type, service_id)` 精确引用 owner 服务，首期只允许 `query`；
+- Credential 以 `addp_api_` 开头，System 只保存 SHA256 hash，明文仅在创建时返回一次；
+- Gateway 只在正式数据面入口识别该凭据，`/api/v1/*` 控制面必须显式拒绝；Service owner 再按 Tenant 与精确服务引用完成最终授权。
 
 **system.module_definitions / system.module_runtime_instances 表**:
 - `module_definitions` 按稳定 `module_name` 保存持久定义和管理员 `enabled` 状态，进程离线不删除定义
@@ -321,9 +318,10 @@ frontend/src/
    - 自动加密: 创建/更新引擎时自动加密敏感字段
    - 自动解密: 查询引擎时自动解密返回
 
-3. **API Key 安全** (system.api_keys)
+3. **API 消费凭据安全** (`system.api_consumer_credentials`)
    - 存储：仅存 SHA256 hash，明文仅在创建时返回一次
-   - 验证：`GET /api/v1/system/runtime/api-keys/validate` 只供持有 `system.api_key.read` 的 Gateway Platform Service Principal 调用
+   - 验证：`GET /api/v1/system/runtime/api-consumer-credentials/validate` 只供持有 `iam.api_consumer_runtime.read` 的 Gateway 与 Service Platform Service Principal 调用
+   - 边界：凭据只用于发布的数据面 API，不能访问控制面 API
 
 ### 访问控制
 
@@ -383,7 +381,7 @@ frontend/src/
 - `GET /api/v1/system/runtime/modules/:module_name` - Gateway Platform Service Principal 查询模块详情；
 - `GET /api/v1/system/runtime/task-providers` - Platform Service Principal 读取模块定义中的 TaskProvider 声明及当前动态可用性；
 - `POST /api/v1/system/runtime/engines` - Workflow Runtime Platform Service Principal 注册自身内置 Runtime；
-- `GET /api/v1/system/runtime/api-keys/validate` - Gateway Platform Service Principal 验证外部 API Key Hash；
+- `GET /api/v1/system/runtime/api-consumer-credentials/validate` - Gateway 或 Service Platform Service Principal 验证 API Consumer Credential Hash；
 - `GET /api/v1/system/runtime/engine-descriptors` - Tenant Service Principal 列出当前 Tenant 可见的脱敏 Engine Runtime Descriptor；
 - `GET /api/v1/system/runtime/engine-descriptors/:id` - Tenant Service Principal 读取当前 Tenant 可见的单个脱敏 Engine Runtime Descriptor；
 - `POST /api/v1/system/tenant/audit/events` - Tenant Service Principal 追加当前 Tenant 审计事件。
@@ -392,15 +390,17 @@ Module Name 必须与 OAuth Client `addp-<module>` 一致；Principal、Context 
 
 Engine Runtime Descriptor 不包含 `connection_info`。只有工作流或脚本 Runtime 可投影非密密的 `protocol/host/port`；数据引擎连接信息必须继续通过 Execution Authorization 或已明确授权的详情路由获取。
 
-### 应用管理（需认证）
-- `POST /api/v1/system/applications` - 创建应用
-- `GET /api/v1/system/applications` - 获取应用列表
-- `GET /api/v1/system/applications/:id` - 获取指定应用
-- `PUT /api/v1/system/applications/:id` - 更新应用
-- `DELETE /api/v1/system/applications/:id` - 删除应用
-- `POST /api/v1/system/applications/:id/keys` - 为应用生成 API Key
-- `GET /api/v1/system/applications/:id/keys` - 列出应用的 API Key
-- `DELETE /api/v1/system/applications/:id/keys/:key_id` - 撤销 API Key
+### API 消费方（Tenant User + 精确 Permission）
+- `POST /api/v1/system/tenant/api-consumers` - 创建 API 消费方并绑定精确服务引用
+- `GET /api/v1/system/tenant/api-consumers` - 获取当前 Tenant 的 API 消费方列表
+- `GET /api/v1/system/tenant/api-consumers/:id` - 获取 API 消费方详情
+- `PUT /api/v1/system/tenant/api-consumers/:id` - 更新名称、说明、服务授权和速率限制
+- `DELETE /api/v1/system/tenant/api-consumers/:id` - 删除 API 消费方并使全部凭据失效
+- `POST /api/v1/system/tenant/api-consumers/:id/credentials` - 生成 API 消费凭据
+- `GET /api/v1/system/tenant/api-consumers/:id/credentials` - 列出凭据元数据
+- `DELETE /api/v1/system/tenant/api-consumers/:id/credentials/:credential_id` - 撤销凭据
+
+API 消费方不是 Principal，不能分配 Role。首期只绑定 Service Consumer Catalog 中的 Query Service；Gateway 只在 `/api/query/:serviceName/query` 数据面路由接受 `X-API-Key`，`/api/v1/*` 控制面必须显式拒绝该 Header。Service owner 根据当前 Query Service 的 Tenant、ID、状态和发布状态执行最终授权。
 
 ### 资源回收（仅租户管理员）
 - `POST /api/v1/system/admin/cleanup/scan` - 创建资源回收评估任务
@@ -411,7 +411,7 @@ Engine Runtime Descriptor 不包含 `connection_info`。只有工作流或脚本
 ### 前端公开路由
 
 - IAM 左侧导航按业务大类固定为 `/iam/organization`、`/iam/accounts`、`/iam/roles`、`/iam/application-access`、`/iam/security` 五个页面；具体管理对象使用页内稳定 `tab`，默认 Tab 省略，无权限或无效 Tab 规范化为该分类下的首个可用值。
-- `/iam/organization` 承载租户、部门和项目组；`/iam/accounts` 承载用户账号、用户邀请、平台身份变更和当前账号安全；`/iam/roles` 承载角色定义和角色分配；`/iam/application-access` 承载租户服务账号和外部 OAuth 应用；`/iam/security` 承载 IAM 平台安全策略以及当前 Context 审计。
+- `/iam/organization` 承载租户、部门和项目组；`/iam/accounts` 承载用户账号、用户邀请、平台身份变更和当前账号安全；`/iam/roles` 承载角色定义和用户账号角色分配；`/iam/application-access` 承载机器身份、API 消费方和外部 OAuth 应用，其中平台运行账号只读、租户服务账号可管理且 Service Principal 角色入口只存在于此；`/iam/security` 承载 IAM 平台安全策略以及当前 Context 审计。
 - 引擎详情唯一使用 `/engines/:id`，详情稳定子视图使用 `tab=connection|capabilities`，默认基础信息省略。
 - 审计入口唯一使用 `/iam/security?tab=audit`，审计范围由当前 Platform 或 Tenant Context 决定，并支持 `module_name`、`principal_id`、`principal_type`、`entity_type`、`entity_id` 稳定筛选；资源回收不再跳转不存在的 `Logs` route。
 - 模块管理唯一使用 `/modules`；页面只对持有 `platform.module.read` 的 Platform User 显示，启停还要求 `platform.module.update`。

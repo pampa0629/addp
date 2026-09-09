@@ -165,8 +165,8 @@ func TestExtractCandidatesPersistsCanonicalOutdoorEvidence(t *testing.T) {
 	if err != nil || len(loaded) != 1 || len(loaded[0].Candidates) != 1 || loaded[0].Candidates[0].Payload.Aggregation == nil || *loaded[0].Candidates[0].Payload.Aggregation != "count" {
 		t.Fatalf("loaded=%+v err=%v", loaded, err)
 	}
-	listed, err := svc.ListCandidateGroups(doc.ID, doc.TenantID, DocumentCandidateGroupListOptions{})
-	if err != nil || len(listed.Data) != 1 || listed.Data[0].Candidate.Comparison == nil || listed.Data[0].Candidate.Comparison.Result != models.CandidateComparisonExact {
+	listed, err := svc.ListCandidateFamilies(doc.ID, doc.TenantID, DocumentCandidateFamilyListOptions{})
+	if err != nil || len(listed.Data) != 1 || len(listed.Data[0].Variants) != 1 || listed.Data[0].Variants[0].Candidate.Comparison == nil || listed.Data[0].Variants[0].Candidate.Comparison.Result != models.CandidateComparisonExact {
 		t.Fatalf("listed comparison=%+v err=%v", listed, err)
 	}
 	updated, err := repo.GetByID(doc.ID, doc.TenantID)

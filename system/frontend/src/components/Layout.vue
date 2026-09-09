@@ -70,10 +70,6 @@
               <el-icon><Connection /></el-icon>
               <span>{{ t('system.layout.engineMgmt') }}</span>
             </el-menu-item>
-            <el-menu-item v-if="authStore.hasPermission('system.application.read')" index="/applications">
-              <el-icon><Key /></el-icon>
-              <span>{{ t('system.layout.appMgmt') }}</span>
-            </el-menu-item>
             <el-menu-item v-if="authStore.hasPermission('system.cleanup.read')" index="/cleanup">
               <el-icon><Refresh /></el-icon>
               <span>{{ t('system.layout.cleanup') }}</span>

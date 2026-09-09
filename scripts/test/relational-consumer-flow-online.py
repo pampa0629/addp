@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Accept one real OceanBase flow through Transfer, Develop, and Service."""
+"""Accept one real relational-engine flow through Transfer, Develop, and Service."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ import subprocess
 import sys
 import time
 import urllib.parse
+from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Iterable, Mapping
@@ -18,7 +19,7 @@ from typing import Iterable, Mapping
 
 SUPPORT_PATH = Path(__file__).with_name("security-transfer-protection-online.py")
 SUPPORT_SPEC = importlib.util.spec_from_file_location(
-    "oceanbase_consumer_flow_support", SUPPORT_PATH
+    "relational_consumer_flow_support", SUPPORT_PATH
 )
 SUPPORT = importlib.util.module_from_spec(SUPPORT_SPEC)
 assert SUPPORT_SPEC.loader is not None
@@ -38,10 +39,6 @@ build_item_locator = SUPPORT.build_item_locator
 cleanup_tasks = SUPPORT.cleanup_tasks
 
 
-SOURCE_TABLE = "addp_online_consumer_source"
-TARGET_TABLE = "addp_online_consumer_target"
-TASK_PREFIX = "addp_online_oceanbase_consumer_"
-SERVICE_PREFIX = "addp-online-oceanbase-consumer-"
 TERMINAL_STATUSES = {"success", "failed", "cancelled", "timeout"}
 FORBIDDEN_ADMIN_ROLES = SUPPORT.FORBIDDEN_ADMIN_ROLES
 REQUIRED_PERMISSIONS = {
@@ -63,19 +60,60 @@ REQUIRED_PERMISSIONS = {
     "transfer.task.read",
 }
 
-BASELINE_ROWS = [
-    {"id": "1", "item_code": "OB-1001", "quantity": 2, "amount": "19.90"},
-    {"id": "2", "item_code": "OB-1002", "quantity": 4, "amount": "39.50"},
-    {"id": "3", "item_code": "OB-1003", "quantity": 1, "amount": "99.00"},
-    {"id": "4", "item_code": "OB-1004", "quantity": 8, "amount": "12.25"},
-    {"id": "5", "item_code": "OB-1005", "quantity": 3, "amount": "50.75"},
-]
-FINAL_ROWS = [
-    BASELINE_ROWS[0],
-    {"id": "2", "item_code": "OB-1002", "quantity": 5, "amount": "44.50"},
-    *BASELINE_ROWS[2:],
-    {"id": "6", "item_code": "OB-1006", "quantity": 6, "amount": "66.60"},
-]
+@dataclass(frozen=True)
+class ConsumerProfile:
+    engine_type: str
+    namespace_kind: str
+    item_code_prefix: str
+    identifier_quote: str
+    fixture_script: str
+
+    @property
+    def task_prefix(self) -> str:
+        return f"addp_online_{self.engine_type}_consumer_"
+
+    @property
+    def service_prefix(self) -> str:
+        return f"addp-online-{self.engine_type}-consumer-"
+
+
+PROFILES: Mapping[str, ConsumerProfile] = {
+    "oceanbase": ConsumerProfile(
+        engine_type="oceanbase",
+        namespace_kind="database",
+        item_code_prefix="OB",
+        identifier_quote="`",
+        fixture_script="business/scripts/online-oceanbase-consumer-fixture.sh",
+    ),
+    "opengauss": ConsumerProfile(
+        engine_type="opengauss",
+        namespace_kind="schema",
+        item_code_prefix="OG",
+        identifier_quote='"',
+        fixture_script="business/scripts/online-opengauss-consumer-fixture.sh",
+    ),
+}
+
+SOURCE_TABLE = "addp_online_consumer_source"
+TARGET_TABLE = "addp_online_consumer_target"
+
+
+def expected_rows(profile: ConsumerProfile) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    prefix = profile.item_code_prefix
+    baseline = [
+        {"id": "1", "item_code": f"{prefix}-1001", "quantity": 2, "amount": "19.90"},
+        {"id": "2", "item_code": f"{prefix}-1002", "quantity": 4, "amount": "39.50"},
+        {"id": "3", "item_code": f"{prefix}-1003", "quantity": 1, "amount": "99.00"},
+        {"id": "4", "item_code": f"{prefix}-1004", "quantity": 8, "amount": "12.25"},
+        {"id": "5", "item_code": f"{prefix}-1005", "quantity": 3, "amount": "50.75"},
+    ]
+    final = [
+        baseline[0],
+        {"id": "2", "item_code": f"{prefix}-1002", "quantity": 5, "amount": "44.50"},
+        *baseline[2:],
+        {"id": "6", "item_code": f"{prefix}-1006", "quantity": 6, "amount": "66.60"},
+    ]
+    return baseline, final
 
 
 def validate_user_identity(client: GatewayClient, tenant_id: int) -> dict[str, object]:
@@ -88,12 +126,12 @@ def validate_user_identity(client: GatewayClient, tenant_id: int) -> dict[str, o
     token = _object(context.get("token"), "AuthContext token")
     authorization = _object(context.get("authorization"), "AuthContext authorization")
     if principal.get("type") != "user":
-        raise SuiteError("Online OceanBase token must belong to a User")
+        raise SuiteError("Online relational consumer token must belong to a User")
     principal_id = positive_int(principal.get("id"), "AuthContext principal.id")
     if tenant.get("type") != "tenant" or tenant.get("tenant_id") != str(tenant_id):
-        raise SuiteError("Online OceanBase token must use the configured Tenant Context")
+        raise SuiteError("Online relational consumer token must use the configured Tenant Context")
     if token.get("type") not in {"first_party_access_token", "oauth_access_token"}:
-        raise SuiteError("Online OceanBase token must be a User Access Token")
+        raise SuiteError("Online relational consumer token must be a User Access Token")
     assignments = _array(authorization.get("role_assignments"), "AuthContext role_assignments")
     roles: set[str] = set()
     permissions: set[str] = set()
@@ -110,13 +148,13 @@ def validate_user_identity(client: GatewayClient, tenant_id: int) -> dict[str, o
     forbidden = roles & FORBIDDEN_ADMIN_ROLES
     if forbidden:
         raise SuiteError(
-            "Online OceanBase token must not use administrator roles: "
+            "Online relational consumer token must not use administrator roles: "
             + ", ".join(sorted(forbidden))
         )
     missing = REQUIRED_PERMISSIONS - permissions
     if missing:
         raise SuiteError(
-            "Online OceanBase token is missing required permissions: "
+            "Online relational consumer token is missing required permissions: "
             + ", ".join(sorted(missing))
         )
     return {
@@ -129,7 +167,10 @@ def validate_user_identity(client: GatewayClient, tenant_id: int) -> dict[str, o
 
 
 def validate_engine(
-    client: GatewayClient, engine_id: int, deadline: float
+    client: GatewayClient,
+    engine_id: int,
+    profile: ConsumerProfile,
+    deadline: float,
 ) -> dict[str, object]:
     last_status = "unknown"
     while time.monotonic() < deadline:
@@ -137,41 +178,61 @@ def validate_engine(
             client.request(
                 "GET", f"/api/v1/system/engines/{engine_id}", (200,)
             ).payload,
-            "OceanBase Engine Instance",
+            f"{profile.engine_type} Engine Instance",
         )
-        if engine.get("engine_type") != "oceanbase":
-            raise SuiteError("configured Engine Instance must use engine_type=oceanbase")
+        if engine.get("engine_type") != profile.engine_type:
+            raise SuiteError(
+                "configured Engine Instance must use "
+                f"engine_type={profile.engine_type}"
+            )
         if engine.get("lifecycle_state") != "active":
-            raise SuiteError("configured OceanBase Engine Instance must be active")
+            raise SuiteError(
+                f"configured {profile.engine_type} Engine Instance must be active"
+            )
         last_status = str(engine.get("connection_status", "unknown"))
         if last_status == "online":
             return {
                 "engine_id": str(engine_id),
-                "engine_type": "oceanbase",
+                "engine_type": profile.engine_type,
                 "lifecycle_state": "active",
                 "connection_status": "online",
             }
         time.sleep(1)
     raise SuiteError(
-        f"configured OceanBase Engine Instance did not become online; last status={last_status}"
+        f"configured {profile.engine_type} Engine Instance did not become online; "
+        f"last status={last_status}"
     )
 
 
-def build_database_locator(engine_id: int, item: Mapping[str, object], database: str) -> str:
-    node_id = positive_int(item.get("node_id"), "OceanBase database node id")
-    query = urllib.parse.urlencode({"type": "database", "node_id": node_id})
+def build_namespace_locator(
+    engine_id: int,
+    item: Mapping[str, object],
+    namespace: str,
+    profile: ConsumerProfile,
+) -> str:
+    node_id = positive_int(
+        item.get("node_id"), f"{profile.engine_type} {profile.namespace_kind} node id"
+    )
+    query = urllib.parse.urlencode(
+        {"type": profile.namespace_kind, "node_id": node_id}
+    )
     return (
         f"addp://engine/{engine_id}/path/"
-        f"{urllib.parse.quote(database, safe='')}?{query}"
+        f"{urllib.parse.quote(namespace, safe='')}?{query}"
     )
 
 
 def transfer_payload(
-    name: str, source_locator: str, target_parent_locator: str
+    name: str,
+    source_locator: str,
+    target_parent_locator: str,
+    profile: ConsumerProfile,
 ) -> dict[str, object]:
     return {
         "name": name,
-        "description": "Dedicated Online OceanBase cross-module consumer acceptance",
+        "description": (
+            f"Dedicated Online {profile.engine_type} cross-module consumer acceptance"
+        ),
         "task_type": "sync",
         "config": {
             "runtime": {"boundary": "bounded"},
@@ -272,8 +333,12 @@ def develop_rows(
     client: GatewayClient,
     engine_id: int,
     target_locator: str,
+    profile: ConsumerProfile,
     deadline: float,
 ) -> list[dict[str, object]]:
+    quoted_target = (
+        f"{profile.identifier_quote}{TARGET_TABLE}{profile.identifier_quote}"
+    )
     started = _object(
         client.request(
             "POST",
@@ -284,8 +349,8 @@ def develop_rows(
                 "trigger_type": "manual",
                 "content": {
                     "query": (
-                        f"SELECT id, item_code, quantity, amount FROM `{TARGET_TABLE}` "
-                        "ORDER BY id"
+                        "SELECT id, item_code, quantity, amount "
+                        f"FROM {quoted_target} ORDER BY id"
                     ),
                     "query_type": "sql",
                     "target_locator": target_locator,
@@ -326,24 +391,31 @@ def develop_rows(
     raise SuiteError("Develop execution did not finish before the deadline")
 
 
-def manager_rows(client: GatewayClient, locator: str) -> list[dict[str, object]]:
+def manager_rows(
+    client: GatewayClient, locator: str, profile: ConsumerProfile
+) -> list[dict[str, object]]:
     columns, rows = SUPPORT.preview_rows(client, locator)
     expected_columns = ["id", "item_code", "quantity", "amount", "updated_at"]
     if columns != expected_columns:
         raise SuiteError(
-            "Manager OceanBase preview returned unexpected columns; "
+            f"Manager {profile.engine_type} preview returned unexpected columns; "
             f"got={columns}, want={expected_columns}"
         )
     return rows
 
 
-def service_payload(name: str, engine_id: int, locator: str) -> dict[str, object]:
+def service_payload(
+    name: str,
+    engine_id: int,
+    locator: str,
+    profile: ConsumerProfile,
+) -> dict[str, object]:
     fields = ["id", "item_code", "quantity", "amount"]
     return {
         "service_name": name,
-        "title": "OceanBase consumer flow Online fixture",
+        "title": f"{profile.engine_type} consumer flow Online fixture",
         "description": "Transfer output consumed through a Query Service",
-        "keywords": ["oceanbase", "online"],
+        "keywords": [profile.engine_type, "online"],
         "config_type": "table",
         "engine_id": engine_id,
         "data_config": {
@@ -407,11 +479,16 @@ def normalize_rows(rows: Iterable[Mapping[str, object]], owner: str) -> list[dic
 
 
 def assert_rows(
-    rows: Iterable[Mapping[str, object]], expected: list[dict[str, object]], owner: str
+    rows: Iterable[Mapping[str, object]],
+    expected: list[dict[str, object]],
+    owner: str,
+    profile: ConsumerProfile,
 ) -> dict[str, object]:
     normalized = normalize_rows(rows, owner)
     if normalized != expected:
-        raise SuiteError(f"{owner} did not return the expected OceanBase target rows")
+        raise SuiteError(
+            f"{owner} did not return the expected {profile.engine_type} target rows"
+        )
     encoded = json.dumps(normalized, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return {
         "rows": len(normalized),
@@ -419,12 +496,12 @@ def assert_rows(
     }
 
 
-def advance_fixture() -> None:
+def advance_fixture(profile: ConsumerProfile) -> None:
     repository = Path(__file__).resolve().parents[2]
     result = subprocess.run(
         [
             "bash",
-            str(repository / "business/scripts/online-oceanbase-consumer-fixture.sh"),
+            str(repository / profile.fixture_script),
             "advance",
         ],
         cwd=repository,
@@ -434,7 +511,7 @@ def advance_fixture() -> None:
     )
     if result.returncode != 0:
         message = result.stderr.strip() or result.stdout.strip() or "unknown error"
-        raise SuiteError(f"OceanBase fixture advance failed: {message}")
+        raise SuiteError(f"{profile.engine_type} fixture advance failed: {message}")
 
 
 def cleanup_service(client: GatewayClient, service_id: int | None) -> None:
@@ -450,29 +527,33 @@ def run_scenario(
     client: GatewayClient,
     tenant_id: int,
     engine_id: int,
-    database: str,
+    namespace: str,
+    profile: ConsumerProfile,
     run_id: str,
     timeout: float,
 ) -> dict[str, object]:
     deadline = time.monotonic() + timeout
+    baseline_rows, final_rows = expected_rows(profile)
     identity = validate_user_identity(client, tenant_id)
-    engine = validate_engine(client, engine_id, deadline)
+    engine = validate_engine(client, engine_id, profile, deadline)
     initial_scan = wait_for_scan(client, engine_id, deadline)
     source_item = find_item(
-        client, engine_id, f"{database}.{SOURCE_TABLE}", "table"
+        client, engine_id, f"{namespace}.{SOURCE_TABLE}", "table"
     )
     target_item = find_item(
-        client, engine_id, f"{database}.{TARGET_TABLE}", "table"
+        client, engine_id, f"{namespace}.{TARGET_TABLE}", "table"
     )
     source_locator = build_item_locator(engine_id, source_item)
     target_locator = build_item_locator(engine_id, target_item)
-    target_parent_locator = build_database_locator(engine_id, target_item, database)
+    target_parent_locator = build_namespace_locator(
+        engine_id, target_item, namespace, profile
+    )
 
     safe_service_run_id = "".join(
         character.lower() if character.isalnum() else "-" for character in run_id
     ).strip("-")
-    service_name = (SERVICE_PREFIX + safe_service_run_id)[:120].rstrip("-")
-    task_name = (TASK_PREFIX + "".join(
+    service_name = (profile.service_prefix + safe_service_run_id)[:120].rstrip("-")
+    task_name = (profile.task_prefix + "".join(
         character if character.isalnum() else "_" for character in run_id
     ))[:255]
 
@@ -484,21 +565,25 @@ def run_scenario(
     try:
         task_id = create_task(
             client,
-            transfer_payload(task_name, source_locator, target_parent_locator),
+            transfer_payload(
+                task_name, source_locator, target_parent_locator, profile
+            ),
             task_ids,
         )
         initial_transfer = assert_transfer_counts(
             run_task(client, task_id, deadline), 5, "initial watermark execution"
         )
         manager_initial = assert_rows(
-            manager_rows(client, target_locator),
-            BASELINE_ROWS,
+            manager_rows(client, target_locator, profile),
+            baseline_rows,
             "Manager initial preview",
+            profile,
         )
         develop_initial = assert_rows(
-            develop_rows(client, engine_id, target_locator, deadline),
-            BASELINE_ROWS,
+            develop_rows(client, engine_id, target_locator, profile, deadline),
+            baseline_rows,
             "Develop initial query",
+            profile,
         )
 
         created_service = _object(
@@ -506,16 +591,19 @@ def run_scenario(
                 "POST",
                 "/api/v1/service/query",
                 (201,),
-                service_payload(service_name, engine_id, target_locator),
+                service_payload(service_name, engine_id, target_locator, profile),
             ).payload,
             "Query Service",
         )
         service_id = positive_int(created_service.get("id"), "Query Service id")
         service_initial = assert_rows(
-            service_rows(client, service_name), BASELINE_ROWS, "Service initial query"
+            service_rows(client, service_name),
+            baseline_rows,
+            "Service initial query",
+            profile,
         )
 
-        advance_fixture()
+        advance_fixture(profile)
         incremental_transfer = assert_transfer_counts(
             run_task(client, task_id, deadline), 2, "incremental watermark execution"
         )
@@ -523,17 +611,22 @@ def run_scenario(
             run_task(client, task_id, deadline), 0, "empty watermark execution"
         )
         manager_final = assert_rows(
-            manager_rows(client, target_locator),
-            FINAL_ROWS,
+            manager_rows(client, target_locator, profile),
+            final_rows,
             "Manager final preview",
+            profile,
         )
         develop_final = assert_rows(
-            develop_rows(client, engine_id, target_locator, deadline),
-            FINAL_ROWS,
+            develop_rows(client, engine_id, target_locator, profile, deadline),
+            final_rows,
             "Develop final query",
+            profile,
         )
         service_final = assert_rows(
-            service_rows(client, service_name), FINAL_ROWS, "Service final query"
+            service_rows(client, service_name),
+            final_rows,
+            "Service final query",
+            profile,
         )
         consumer_checksums = {
             manager_final["checksum"],
@@ -542,16 +635,18 @@ def run_scenario(
         }
         if len(consumer_checksums) != 1:
             raise SuiteError(
-                "Manager, Develop, and Service returned different OceanBase results"
+                "Manager, Develop, and Service returned different "
+                f"{profile.engine_type} results"
             )
 
         result = {
-            "schema_version": "addp.oceanbase-consumer-flow-online/v1",
+            "schema_version": "addp.relational-consumer-flow-online/v1",
             "result": "passed",
             "identity": identity,
             "engine": engine,
             "fixture": {
-                "database": database,
+                "namespace_kind": profile.namespace_kind,
+                "namespace": namespace,
                 "source_table": SOURCE_TABLE,
                 "target_table": TARGET_TABLE,
                 "scan_execution_id": initial_scan,
@@ -598,9 +693,16 @@ def main() -> int:
         required_environment("ADDP_ONLINE_TEST_TENANT_ID"),
         "ADDP_ONLINE_TEST_TENANT_ID",
     )
+    engine_type = required_environment("ADDP_ONLINE_CONSUMER_ENGINE_TYPE")
+    profile = PROFILES.get(engine_type)
+    if profile is None:
+        raise SuiteError(
+            "ADDP_ONLINE_CONSUMER_ENGINE_TYPE must name a registered relational "
+            "consumer profile"
+        )
     engine_id = positive_int(
-        required_environment("ADDP_ONLINE_OCEANBASE_ENGINE_ID"),
-        "ADDP_ONLINE_OCEANBASE_ENGINE_ID",
+        required_environment("ADDP_ONLINE_CONSUMER_ENGINE_ID"),
+        "ADDP_ONLINE_CONSUMER_ENGINE_ID",
     )
     timeout = float(os.environ.get("ADDP_ONLINE_TEST_TIMEOUT_SECONDS", "900"))
     if timeout <= 60:
@@ -614,7 +716,8 @@ def main() -> int:
         client,
         tenant_id,
         engine_id,
-        required_environment("ADDP_ONLINE_OCEANBASE_DATABASE"),
+        required_environment("ADDP_ONLINE_CONSUMER_NAMESPACE"),
+        profile,
         required_environment("ADDP_ONLINE_TEST_RUN_ID"),
         timeout,
     )

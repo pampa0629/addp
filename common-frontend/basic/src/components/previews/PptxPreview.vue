@@ -105,25 +105,39 @@ const resolvePreview = async (existingToken, retry = false) => {
     return
   }
   try {
-    const result = await requestJSON('/api/v1/manager/pptx_pdf/preview', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ locator: source.locator, ...(retry ? { retry: true } : {}) })
-    })
+    const capability = await requestJSON(`/api/v1/manager/quick-view/capability?locator=${encodeURIComponent(source.locator)}`)
     if (token !== loadToken) return
-    if (result.status === 'ready' && result.preview_url) {
-      preview.value = result
+    const artifact = capability?.pptx_pdf || {}
+    if (artifact.status === 'ready' && artifact.preview_url) {
+      preview.value = artifact
       loading.value = false
       return
     }
-    if (result.status === 'failed') {
+    if (['failed', 'stale'].includes(artifact.status) && !retry) {
       loading.value = false
-      error.value = result.error || t('pptxPreview.failed')
+      error.value = artifact.error_message || t(artifact.status === 'stale' ? 'pptxPreview.stale' : 'pptxPreview.failed')
       return
     }
-    if (!result.execution_id) {
+    if (artifact.status === 'building' && artifact.last_execution_id) {
+      pollTimer = window.setTimeout(() => pollExecution(artifact.last_execution_id, token), 800)
+      return
+    }
+    if (!Array.isArray(capability?.available_actions) || !capability.available_actions.includes('generate_pptx_pdf')) {
       throw new Error(t('pptxPreview.failed'))
     }
+    const result = await requestJSON('/api/v1/manager/quick-view/actions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        locator: source.locator,
+        action: 'generate_pptx_pdf',
+        ...(retry && artifact.result_id
+          ? { existing_result_action: 'overwrite' }
+          : {})
+      })
+    })
+    if (token !== loadToken) return
+    if (!result.execution_id) throw new Error(t('pptxPreview.failed'))
     pollTimer = window.setTimeout(() => pollExecution(result.execution_id, token), 800)
   } catch (err) {
     if (token === loadToken) {

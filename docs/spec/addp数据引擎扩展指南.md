@@ -133,4 +133,4 @@ git diff --check
 
 涉及前端入口时补跑对应模块构建。
 
-openGauss 的完成证据必须同时包含上述官方介质认证、常规 T2 disposable Provider 集成门禁和跨模块 T4 验收；不能用协议认证替代模块能力验收。
+openGauss 的完成证据必须同时包含上述官方介质认证、常规 T2 disposable Provider 集成门禁和 `opengauss-consumer-flow` 跨模块 T4 验收；T4 固定在 GitHub Hosted Linux x86_64 disposable 部署执行，复用通用关系引擎消费链路断言，不能用协议认证替代模块能力验收。

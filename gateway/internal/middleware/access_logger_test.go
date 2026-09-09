@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestAccessLogOnlyCapturesSafeAPIKeyRequestMetadata(t *testing.T) {
+func TestAccessLogOnlyCapturesSafeAPIConsumerRequestMetadata(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	body := `{"username":"operator","password":"body-password","code":"123456","challenge":"body-challenge","access_token":"body-token"}`
 	request := httptest.NewRequest(
@@ -22,16 +22,16 @@ func TestAccessLogOnlyCapturesSafeAPIKeyRequestMetadata(t *testing.T) {
 	)
 	context, _ := gin.CreateTestContext(httptest.NewRecorder())
 	context.Request = request
-	context.Set("api_key_info", &client.APIKeyValidationResponse{AppID: 42})
-	context.Set("api_key_prefix", "addp_key_pre")
+	context.Set("api_consumer_info", &client.APIConsumerCredentialValidationResponse{APIConsumerID: 42})
+	context.Set("api_credential_prefix", "addp_api_pre")
 
 	middleware := &AccessLoggerMiddleware{db: &gorm.DB{}}
 	entry := middleware.buildAccessLog(context, http.StatusCreated, 17)
 	if entry == nil {
-		t.Fatal("API Key request did not produce an access log entry")
+		t.Fatal("API consumer request did not produce an access log entry")
 	}
-	if entry.ApplicationID == nil || *entry.ApplicationID != 42 || entry.APIKeyPrefix != "addp_key_pre" {
-		t.Fatalf("API Key facts = %#v", entry)
+	if entry.APIConsumerID == nil || *entry.APIConsumerID != 42 || entry.CredentialPrefix != "addp_api_pre" {
+		t.Fatalf("API consumer facts = %#v", entry)
 	}
 	if !strings.Contains(entry.RequestParams, `"search":["visible"]`) {
 		t.Fatalf("safe query parameter missing: %s", entry.RequestParams)
@@ -67,11 +67,11 @@ func TestAccessLogRejectsBrowserAndPublicRequests(t *testing.T) {
 	}
 }
 
-func TestAPIKeyLogPrefixIsBounded(t *testing.T) {
-	if got := apiKeyLogPrefix("short"); got != "" {
+func TestAPICredentialLogPrefixIsBounded(t *testing.T) {
+	if got := apiCredentialLogPrefix("short"); got != "" {
 		t.Fatalf("short prefix = %q", got)
 	}
-	if got := apiKeyLogPrefix("addp_key_0123456789abcdef"); got != "addp_key_012" {
+	if got := apiCredentialLogPrefix("addp_api_0123456789abcdef"); got != "addp_api_012" {
 		t.Fatalf("bounded prefix = %q", got)
 	}
 }

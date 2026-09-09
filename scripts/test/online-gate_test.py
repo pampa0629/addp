@@ -81,6 +81,7 @@ class OnlineGateTest(unittest.TestCase):
                 "manager-internal-artifact-lineage",
                 "module-registry-recovery",
                 "oceanbase-consumer-flow",
+                "opengauss-consumer-flow",
                 "security-mysql-owner-protection",
                 "security-plaintext-access",
                 "security-transfer-protection",
@@ -117,6 +118,9 @@ class OnlineGateTest(unittest.TestCase):
                 ("service", "SERVICE_URL"),
             ),
         )
+        opengauss_suite = ONLINE_GATE.SUITES["opengauss-consumer-flow"]
+        self.assertEqual(opengauss_suite.command, oceanbase_suite.command)
+        self.assertEqual(opengauss_suite.services, oceanbase_suite.services)
         transfer_suite = ONLINE_GATE.SUITES["transfer-insert-only-mysql"]
         self.assertEqual(
             transfer_suite.services,

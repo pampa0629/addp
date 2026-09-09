@@ -99,7 +99,7 @@ Authentication Method 表达主体如何证明身份，可以包括：
 
 CLI 和 Device Flow 是登录交互通道，不是新的用户体系。无论入口如何，最终都必须建立 ADDP 内部会话和 AuthContext。
 
-OAuth Client 的管理归属不产生 Principal 或 Permission。Platform 内置 Client 由 migration 建立；Tenant 外部 Client 由当前 Tenant 管理，固定为无 Secret 的公共 Client，并使用 Authorization Code + PKCE。Tenant 外部 Client 的授权决定必须同时满足当前 User、当前 Tenant Membership、Client owner Tenant 三者一致；API Key 和 Client Credentials 不得替代这条用户委托关系。
+OAuth Client 的管理归属不产生 Principal 或 Permission。Platform 内置 Client 由 migration 建立；Tenant 外部 Client 由当前 Tenant 管理，固定为无 Secret 的公共 Client，并使用 Authorization Code + PKCE。Tenant 外部 Client 的授权决定必须同时满足当前 User、当前 Tenant Membership、Client owner Tenant 三者一致；API Consumer Credential 和 Client Credentials 不得替代这条用户委托关系。
 
 ### 4.4 外部 IdP 与身份联合
 
@@ -427,7 +427,7 @@ System IAM 负责统一身份和通用授权事实，但不承载所有业务资
 7. **Permission 所有权**：业务 Permission 由对应 owner 模块定义，通过唯一发布期聚合生成 System 运行时目录；System 不拥有业务实现语义，模块也不在启动时动态注册 Permission。
 8. **资源显式 Deny**：支持并优先于 Allow，用于密级数据和例外隔离。
 9. **外部身份供应**：同时保留管理员预配和策略控制的即时供应，不默认开启即时供应。
-10. **Service Principal**：纳入同一 IAM 主体模型，但与 User、OAuth Client、API Key 严格分离。
+10. **Service Principal**：纳入同一 IAM 主体模型，但与 User、OAuth Client、API Consumer 严格分离；API Consumer 不属于 Principal 体系，只表达对已发布数据面 API 的外部机器调用方。
 
 ## 十四、规范与后续专题
 

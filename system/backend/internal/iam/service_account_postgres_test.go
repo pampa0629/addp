@@ -56,6 +56,26 @@ func TestTenantServiceAccountServiceAgainstPostgres(t *testing.T) {
 		RequestID: stringPointer("service-account-management"),
 	}
 	establishContextSelectionMembership(t, ctx, membershipService, tenant.ID, user.PrincipalID, audit)
+	var platformRuntimeID int64
+	if err := db.Raw(`
+		SELECT service_principal.id
+		FROM system.service_principals service_principal
+		JOIN system.oauth_clients oauth_client
+		  ON oauth_client.service_principal_id = service_principal.id
+		 AND oauth_client.owner_scope = 'platform'
+		WHERE service_principal.owner_scope = 'platform'
+		ORDER BY service_principal.id
+		LIMIT 1
+	`).Scan(&platformRuntimeID).Error; err != nil || platformRuntimeID == 0 {
+		t.Fatalf("find platform runtime identity: id=%d error=%v", platformRuntimeID, err)
+	}
+	if err := db.Exec(`
+		INSERT INTO system.tenant_memberships (
+			tenant_id, principal_id, status, source_type, joined_at, created_by_principal_id
+		) VALUES (?, ?, 'active', 'bootstrap', ?, ?)
+	`, tenant.ID, platformRuntimeID, now, user.PrincipalID).Error; err != nil {
+		t.Fatalf("establish platform runtime membership: %v", err)
+	}
 
 	created, err := service.Create(ctx, CreateTenantServiceAccountInput{
 		TenantID: tenant.ID, ActorPrincipalID: user.PrincipalID,
@@ -129,9 +149,32 @@ func TestTenantServiceAccountServiceAgainstPostgres(t *testing.T) {
 		t.Fatalf("restored service account = %#v, error = %v", restored, err)
 	}
 
-	accounts, total, err := service.List(ctx, tenant.ID, 1, 20, "Research", nil)
+	accounts, total, err := service.List(ctx, tenant.ID, 1, 20, "Research", nil, nil)
 	if err != nil || total != 1 || len(accounts) != 1 || accounts[0].ID != restored.ID {
 		t.Fatalf("list service accounts = %#v total=%d error=%v", accounts, total, err)
+	}
+	runtimeScope := "platform"
+	runtimeAccounts, runtimeTotal, err := service.List(ctx, tenant.ID, 1, 20, "", nil, &runtimeScope)
+	if err != nil || runtimeTotal != 1 || len(runtimeAccounts) != 1 ||
+		runtimeAccounts[0].ID != platformRuntimeID || runtimeAccounts[0].OwnerScope != "platform" {
+		t.Fatalf("list platform runtime accounts = %#v total=%d error=%v", runtimeAccounts, runtimeTotal, err)
+	}
+	if _, err := service.Get(ctx, tenant.ID, platformRuntimeID); !errors.Is(err, commonapi.ErrNotFound) {
+		t.Fatalf("platform runtime get error = %v, want not found", err)
+	}
+	tenantScope := "tenant"
+	tenantAccounts, tenantTotal, err := service.List(ctx, tenant.ID, 1, 20, "", nil, &tenantScope)
+	if err != nil || tenantTotal != 1 || len(tenantAccounts) != 1 ||
+		tenantAccounts[0].ID != restored.ID || tenantAccounts[0].OwnerScope != "tenant" {
+		t.Fatalf("list tenant-managed accounts = %#v total=%d error=%v", tenantAccounts, tenantTotal, err)
+	}
+	allAccounts, allTotal, err := service.List(ctx, tenant.ID, 1, 20, "", nil, nil)
+	if err != nil || allTotal != 2 || len(allAccounts) != 2 || allAccounts[0].OwnerScope != "tenant" || allAccounts[1].OwnerScope != "platform" {
+		t.Fatalf("list all machine identities = %#v total=%d error=%v", allAccounts, allTotal, err)
+	}
+	otherRuntimeAccounts, otherRuntimeTotal, err := service.List(ctx, otherTenant.ID, 1, 20, "", nil, &runtimeScope)
+	if err != nil || otherRuntimeTotal != 0 || len(otherRuntimeAccounts) != 0 {
+		t.Fatalf("platform runtime membership leaked across tenants: accounts=%#v total=%d error=%v", otherRuntimeAccounts, otherRuntimeTotal, err)
 	}
 	externalClients, externalTotal, err := externalOAuthService.List(ctx, tenant.ID, 1, 20, "", nil)
 	if err != nil || externalTotal != 0 || len(externalClients) != 0 {

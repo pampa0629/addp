@@ -3991,8 +3991,8 @@ func assertAuthorizationCatalogRetirement(t *testing.T, db *sql.DB) {
 	`).Scan(&activePermissionCount, &disabledPermissionCount); err != nil {
 		t.Fatalf("read retired Permission counts: %v", err)
 	}
-	if activePermissionCount < 345 || disabledPermissionCount != 76 {
-		t.Fatalf("Permission status counts = active:%d disabled:%d, want at least 345 and exactly 76", activePermissionCount, disabledPermissionCount)
+	if activePermissionCount < 345 || disabledPermissionCount != 83 {
+		t.Fatalf("Permission status counts = active:%d disabled:%d, want at least 345 and exactly 83", activePermissionCount, disabledPermissionCount)
 	}
 
 	var disabledRoles string
@@ -4641,8 +4641,38 @@ func assertIAMCatalogSeed(t *testing.T, db *sql.DB) {
 	if err := db.QueryRow(`SELECT count(DISTINCT owner_module), count(*) FILTER (WHERE owner_module = 'system') FROM system.permissions`).Scan(&ownerCount, &systemPermissionCount); err != nil {
 		t.Fatalf("read seeded Permission owners: %v", err)
 	}
-	if ownerCount != 19 || systemPermissionCount != 128 {
-		t.Fatalf("seeded Permission owners = %d and System Permissions = %d, want 19 and 128", ownerCount, systemPermissionCount)
+	if ownerCount != 19 || systemPermissionCount != 136 {
+		t.Fatalf("seeded Permission owners = %d and System Permissions = %d, want 19 and 136", ownerCount, systemPermissionCount)
+	}
+
+	var obsoletePermissionCount, apiConsumerPermissionCount int
+	if err := db.QueryRow(`
+		SELECT
+			count(*) FILTER (WHERE permission_key LIKE 'system.application.%' OR permission_key LIKE 'system.api_key.%'),
+			count(*) FILTER (WHERE permission_key LIKE 'iam.api_consumer%' AND status = 'active')
+		FROM system.permissions
+	`).Scan(&obsoletePermissionCount, &apiConsumerPermissionCount); err != nil {
+		t.Fatalf("read API Consumer Permission boundary: %v", err)
+	}
+	if obsoletePermissionCount != 7 || apiConsumerPermissionCount != 8 {
+		t.Fatalf("API Consumer Permission boundary = old:%d new:%d, want old history:7 new active:8", obsoletePermissionCount, apiConsumerPermissionCount)
+	}
+	var activeObsoletePermissionCount int
+	if err := db.QueryRow(`
+		SELECT count(*) FROM system.permissions
+		WHERE status = 'active'
+		  AND (permission_key LIKE 'system.application.%' OR permission_key LIKE 'system.api_key.%')
+	`).Scan(&activeObsoletePermissionCount); err != nil {
+		t.Fatalf("read active obsolete API permissions: %v", err)
+	}
+	if activeObsoletePermissionCount != 0 {
+		t.Fatalf("active obsolete API permissions = %d, want 0", activeObsoletePermissionCount)
+	}
+	for _, table := range []string{"api_consumers", "api_consumer_service_grants", "api_consumer_credentials"} {
+		var exists bool
+		if err := db.QueryRow(`SELECT to_regclass('system.' || $1) IS NOT NULL`, table).Scan(&exists); err != nil || !exists {
+			t.Fatalf("API Consumer table %s exists=%t err=%v", table, exists, err)
+		}
 	}
 
 	var invalidRoleCount int

@@ -6,12 +6,17 @@ function source(relativePath) {
 }
 
 describe('tenant member selector ownership', () => {
-  it('uses one IAM selector for role assignments and tenant audit', () => {
+  it('keeps user assignment and service-account assignment on distinct page entries', () => {
     const roleAssignments = source('../src/components/iam/TenantRoleAssignmentsPanel.vue')
     const audit = source('../src/components/iam/AuditPanel.vue')
+    const serviceAccounts = source('../src/components/iam/TenantServiceAccountsPanel.vue')
     const selector = source('../src/components/iam/TenantMemberSelect.vue')
 
     expect(roleAssignments).toContain('<TenantMemberSelect')
+    expect(roleAssignments).toContain("principal_type: fixedMembership.value ? 'service_principal' : 'user'")
+    expect(roleAssignments).toContain("iamAPI.memberships.listAll({ principal_type: 'user' })")
+    expect(serviceAccounts).toContain('<TenantRoleAssignmentsPanel')
+    expect(serviceAccounts).toContain(':fixed-membership="selectedAccount"')
     expect(audit).toContain('<TenantMemberSelect')
     expect(selector).toContain('<TenantMemberIdentity')
     expect(roleAssignments).not.toContain('v-for="member in membershipOptions"')

@@ -41,6 +41,7 @@ describe('System IAM information architecture', () => {
       'iam.tenant_role.read',
       'iam.tenant_role_assignment.read',
       'iam.service_account.read',
+      'iam.api_consumer.read',
       'iam.oauth_client.read',
       'audit.tenant_event.read'
     ])
@@ -67,6 +68,7 @@ describe('System IAM information architecture', () => {
     ])
     expect(availableIAMTabs('application-access', 'tenant', can).map(tab => tab.key)).toEqual([
       'service-accounts',
+      'api-consumers',
       'oauth-clients'
     ])
   })

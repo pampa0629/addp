@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: system
-manifest_version: 20
+manifest_version: 21
 permissions:
   - key: audit.event.export
     allowed_scope_types: [platform]
@@ -82,6 +82,70 @@ permissions:
     status: disabled
     name_i18n_key: permissions.audit.tenant_subject.read.name
     description_i18n_key: permissions.audit.tenant_subject.read.description
+  - key: iam.api_consumer.create
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.api_consumer.create.name
+    description_i18n_key: permissions.iam.api_consumer.create.description
+  - key: iam.api_consumer.delete
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.api_consumer.delete.name
+    description_i18n_key: permissions.iam.api_consumer.delete.description
+  - key: iam.api_consumer.read
+    allowed_scope_types: [tenant]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.api_consumer.read.name
+    description_i18n_key: permissions.iam.api_consumer.read.description
+  - key: iam.api_consumer.update
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.api_consumer.update.name
+    description_i18n_key: permissions.iam.api_consumer.update.description
+  - key: iam.api_consumer_credential.create
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.api_consumer_credential.create.name
+    description_i18n_key: permissions.iam.api_consumer_credential.create.description
+  - key: iam.api_consumer_credential.read
+    allowed_scope_types: [tenant]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.api_consumer_credential.read.name
+    description_i18n_key: permissions.iam.api_consumer_credential.read.description
+  - key: iam.api_consumer_credential.revoke
+    allowed_scope_types: [tenant]
+    risk_level: high
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.api_consumer_credential.revoke.name
+    description_i18n_key: permissions.iam.api_consumer_credential.revoke.description
+  - key: iam.api_consumer_runtime.read
+    allowed_scope_types: [platform]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.iam.api_consumer_runtime.read.name
+    description_i18n_key: permissions.iam.api_consumer_runtime.read.description
   - key: iam.department.create
     allowed_scope_types: [tenant]
     risk_level: medium
@@ -850,62 +914,6 @@ permissions:
     status: disabled
     name_i18n_key: permissions.statistics.tenant_breakdown.read.name
     description_i18n_key: permissions.statistics.tenant_breakdown.read.description
-  - key: system.api_key.create
-    allowed_scope_types: [tenant]
-    risk_level: medium
-    tenant_customizable: false
-    delegable: false
-    status: active
-    name_i18n_key: permissions.system.api_key.create.name
-    description_i18n_key: permissions.system.api_key.create.description
-  - key: system.api_key.read
-    allowed_scope_types: [platform, tenant]
-    risk_level: low
-    tenant_customizable: false
-    delegable: false
-    status: active
-    name_i18n_key: permissions.system.api_key.read.name
-    description_i18n_key: permissions.system.api_key.read.description
-  - key: system.api_key.revoke
-    allowed_scope_types: [tenant]
-    risk_level: high
-    tenant_customizable: false
-    delegable: false
-    status: active
-    name_i18n_key: permissions.system.api_key.revoke.name
-    description_i18n_key: permissions.system.api_key.revoke.description
-  - key: system.application.create
-    allowed_scope_types: [tenant]
-    risk_level: medium
-    tenant_customizable: false
-    delegable: false
-    status: active
-    name_i18n_key: permissions.system.application.create.name
-    description_i18n_key: permissions.system.application.create.description
-  - key: system.application.delete
-    allowed_scope_types: [tenant]
-    risk_level: high
-    tenant_customizable: false
-    delegable: false
-    status: active
-    name_i18n_key: permissions.system.application.delete.name
-    description_i18n_key: permissions.system.application.delete.description
-  - key: system.application.read
-    allowed_scope_types: [tenant]
-    risk_level: low
-    tenant_customizable: false
-    delegable: false
-    status: active
-    name_i18n_key: permissions.system.application.read.name
-    description_i18n_key: permissions.system.application.read.description
-  - key: system.application.update
-    allowed_scope_types: [tenant]
-    risk_level: medium
-    tenant_customizable: false
-    delegable: false
-    status: active
-    name_i18n_key: permissions.system.application.update.name
-    description_i18n_key: permissions.system.application.update.description
   - key: system.cleanup.execute
     allowed_scope_types: [tenant]
     risk_level: medium

@@ -13,13 +13,13 @@ import (
 )
 
 const (
-	defaultDocumentCandidateGroupPageSize = 20
-	maxDocumentCandidateGroupPageSize     = 100
+	defaultDocumentCandidateFamilyPageSize = 20
+	maxDocumentCandidateFamilyPageSize     = 100
 )
 
-var ErrDocumentCandidateGroupQueryInvalid = errors.New("document candidate group query invalid")
+var ErrDocumentCandidateFamilyQueryInvalid = errors.New("document candidate family query invalid")
 
-type DocumentCandidateGroupListOptions struct {
+type DocumentCandidateFamilyListOptions struct {
 	State            string
 	CandidateType    string
 	Keyword          string
@@ -57,8 +57,8 @@ type canonicalDocumentCandidatePayload struct {
 	Items              []models.DocumentExtractionCandidatePayloadItem `json:"items"`
 }
 
-func (s *DocumentService) ListCandidateGroups(documentID, tenantID int64, opts DocumentCandidateGroupListOptions) (*models.PaginatedDocumentExtractionCandidateGroupResponse, error) {
-	page, pageSize, err := normalizeDocumentCandidateGroupOptions(&opts)
+func (s *DocumentService) ListCandidateFamilies(documentID, tenantID int64, opts DocumentCandidateFamilyListOptions) (*models.PaginatedDocumentExtractionCandidateFamilyResponse, error) {
+	page, pageSize, err := normalizeDocumentCandidateFamilyOptions(&opts)
 	if err != nil {
 		return nil, err
 	}
@@ -72,15 +72,15 @@ func (s *DocumentService) ListCandidateGroups(documentID, tenantID int64, opts D
 	}
 	groups := buildDocumentCandidateGroups(extractions)
 
-	response := &models.PaginatedDocumentExtractionCandidateGroupResponse{
-		Data:       []models.DocumentExtractionCandidateGroup{},
+	response := &models.PaginatedDocumentExtractionCandidateFamilyResponse{
+		Data:       []models.DocumentExtractionCandidateFamily{},
 		Page:       page,
 		PageSize:   pageSize,
 		TotalPages: 1,
 	}
 	filtered := make([]models.DocumentExtractionCandidateGroup, 0, len(groups))
 	for _, group := range groups {
-		incrementCandidateGroupStatusCount(&response.StatusCounts, group.State)
+		incrementCandidateVariantStatusCount(&response.VariantStatusCounts, group.State)
 		if opts.State != "" && group.State != opts.State {
 			continue
 		}
@@ -95,8 +95,8 @@ func (s *DocumentService) ListCandidateGroups(documentID, tenantID int64, opts D
 	if err := attachCandidateGroupComparisons(s, document, filtered); err != nil {
 		return nil, err
 	}
-	for _, group := range filtered {
-		incrementCandidateGroupComparisonCount(&response.ComparisonCounts, group.Candidate.Comparison)
+	for _, family := range buildDocumentCandidateFamilies(filtered) {
+		incrementCandidateFamilyComparisonCounts(&response.FamilyComparisonCounts, family)
 	}
 	if opts.ComparisonResult != "" {
 		matched := make([]models.DocumentExtractionCandidateGroup, 0, len(filtered))
@@ -107,14 +107,16 @@ func (s *DocumentService) ListCandidateGroups(documentID, tenantID int64, opts D
 		}
 		filtered = matched
 	}
-	response.Total = int64(len(filtered))
-	response.TotalPages = max(1, (len(filtered)+pageSize-1)/pageSize)
+	families := buildDocumentCandidateFamilies(filtered)
+	response.Total = int64(len(families))
+	response.VariantTotal = int64(len(filtered))
+	response.TotalPages = max(1, (len(families)+pageSize-1)/pageSize)
 	if page > response.TotalPages {
 		return response, nil
 	}
-	start := min((page-1)*pageSize, len(filtered))
-	end := min(start+pageSize, len(filtered))
-	response.Data = filtered[start:end]
+	start := min((page-1)*pageSize, len(families))
+	end := min(start+pageSize, len(families))
+	response.Data = families[start:end]
 	return response, nil
 }
 
@@ -135,13 +137,13 @@ func attachCandidateGroupComparisons(s *DocumentService, document *models.Docume
 	return nil
 }
 
-func normalizeDocumentCandidateGroupOptions(opts *DocumentCandidateGroupListOptions) (int, int, error) {
+func normalizeDocumentCandidateFamilyOptions(opts *DocumentCandidateFamilyListOptions) (int, int, error) {
 	opts.Keyword = strings.ToLower(normalizeCandidateSemanticText(opts.Keyword))
 	validState := opts.State == "" || opts.State == models.CandidateGroupStatePending || opts.State == models.CandidateGroupStateRetained || opts.State == models.CandidateGroupStateRejected || opts.State == models.CandidateGroupStateFormalized
 	validType := opts.CandidateType == "" || opts.CandidateType == "glossary" || opts.CandidateType == "element" || opts.CandidateType == "code_set" || opts.CandidateType == "metric"
 	validComparison := opts.ComparisonResult == "" || opts.ComparisonResult == models.CandidateComparisonNew || opts.ComparisonResult == models.CandidateComparisonExact || opts.ComparisonResult == models.CandidateComparisonContentConflict || opts.ComparisonResult == models.CandidateComparisonScopeConflict
-	if !validState || !validType || !validComparison || opts.Page < 0 || opts.PageSize < 0 || opts.PageSize > maxDocumentCandidateGroupPageSize {
-		return 0, 0, ErrDocumentCandidateGroupQueryInvalid
+	if !validState || !validType || !validComparison || opts.Page < 0 || opts.PageSize < 0 || opts.PageSize > maxDocumentCandidateFamilyPageSize {
+		return 0, 0, ErrDocumentCandidateFamilyQueryInvalid
 	}
 	page := opts.Page
 	if page == 0 {
@@ -149,7 +151,7 @@ func normalizeDocumentCandidateGroupOptions(opts *DocumentCandidateGroupListOpti
 	}
 	pageSize := opts.PageSize
 	if pageSize == 0 {
-		pageSize = defaultDocumentCandidateGroupPageSize
+		pageSize = defaultDocumentCandidateFamilyPageSize
 	}
 	return page, pageSize, nil
 }
@@ -158,6 +160,43 @@ func documentCandidateMatchesKeyword(candidate models.DocumentExtractionCandidat
 	code := strings.ToLower(normalizeCandidateSemanticText(candidate.Code))
 	name := strings.ToLower(normalizeCandidateSemanticText(candidate.Name))
 	return strings.Contains(code, keyword) || strings.Contains(name, keyword)
+}
+
+func buildDocumentCandidateFamilies(groups []models.DocumentExtractionCandidateGroup) []models.DocumentExtractionCandidateFamily {
+	families := make([]models.DocumentExtractionCandidateFamily, 0, len(groups))
+	indexes := make(map[string]int, len(groups))
+	for _, group := range groups {
+		key := documentCandidateFamilyKey(group.Candidate)
+		index, exists := indexes[key]
+		if !exists {
+			indexes[key] = len(families)
+			families = append(families, models.DocumentExtractionCandidateFamily{
+				FamilyKey:          key,
+				CandidateType:      group.Candidate.CandidateType,
+				Code:               group.Candidate.Code,
+				RepresentativeName: group.Candidate.Name,
+				FirstSeenAt:        group.FirstSeenAt,
+				LastSeenAt:         group.LastSeenAt,
+				Variants:           []models.DocumentExtractionCandidateGroup{},
+			})
+			index = len(families) - 1
+		}
+		family := &families[index]
+		family.Variants = append(family.Variants, group)
+		family.VariantCount++
+		family.OccurrenceCount += group.OccurrenceCount
+		if group.FirstSeenAt.Before(family.FirstSeenAt) {
+			family.FirstSeenAt = group.FirstSeenAt
+		}
+		if group.LastSeenAt.After(family.LastSeenAt) {
+			family.LastSeenAt = group.LastSeenAt
+		}
+	}
+	return families
+}
+
+func documentCandidateFamilyKey(candidate models.DocumentExtractionCandidate) string {
+	return candidate.CandidateType + ":" + candidate.Code
 }
 
 func buildDocumentCandidateGroups(extractions []models.DocumentExtraction) []models.DocumentExtractionCandidateGroup {
@@ -319,7 +358,7 @@ func normalizeCandidateItems(values []models.DocumentExtractionCandidatePayloadI
 	return result
 }
 
-func incrementCandidateGroupStatusCount(counts *models.DocumentExtractionCandidateGroupStatusCounts, state string) {
+func incrementCandidateVariantStatusCount(counts *models.DocumentExtractionCandidateVariantStatusCounts, state string) {
 	switch state {
 	case models.CandidateGroupStatePending:
 		counts.Pending++
@@ -332,18 +371,24 @@ func incrementCandidateGroupStatusCount(counts *models.DocumentExtractionCandida
 	}
 }
 
-func incrementCandidateGroupComparisonCount(counts *models.DocumentExtractionCandidateGroupComparisonCounts, comparison *models.DocumentExtractionCandidateComparison) {
-	if comparison == nil {
-		return
+func incrementCandidateFamilyComparisonCounts(counts *models.DocumentExtractionCandidateFamilyComparisonCounts, family models.DocumentExtractionCandidateFamily) {
+	counts.All++
+	results := make(map[string]struct{}, len(family.Variants))
+	for _, variant := range family.Variants {
+		if variant.Candidate.Comparison != nil {
+			results[variant.Candidate.Comparison.Result] = struct{}{}
+		}
 	}
-	switch comparison.Result {
-	case models.CandidateComparisonNew:
+	if _, ok := results[models.CandidateComparisonNew]; ok {
 		counts.New++
-	case models.CandidateComparisonExact:
+	}
+	if _, ok := results[models.CandidateComparisonExact]; ok {
 		counts.Exact++
-	case models.CandidateComparisonContentConflict:
+	}
+	if _, ok := results[models.CandidateComparisonContentConflict]; ok {
 		counts.ContentConflict++
-	case models.CandidateComparisonScopeConflict:
+	}
+	if _, ok := results[models.CandidateComparisonScopeConflict]; ok {
 		counts.ScopeConflict++
 	}
 }

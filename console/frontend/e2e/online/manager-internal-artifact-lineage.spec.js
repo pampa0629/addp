@@ -72,12 +72,12 @@ test('Manager lineage and cached PPTX preview remain stable across engine refres
   })
   const browserMessages = []
   const failedBusinessResponses = []
-  let pptxPreviewRequests = 0
+  let pptxGenerationRequests = 0
   let managerEngineRequests = 0
   page.on('request', requestEvent => {
     const pathname = new URL(requestEvent.url()).pathname
-    if (requestEvent.method() === 'POST' && pathname === '/api/v1/manager/pptx_pdf/preview') {
-      pptxPreviewRequests += 1
+    if (requestEvent.method() === 'POST' && pathname === '/api/v1/manager/quick-view/actions') {
+      pptxGenerationRequests += 1
     }
     if (requestEvent.method() === 'GET' && pathname === '/api/v1/manager/engines') {
       managerEngineRequests += 1
@@ -144,7 +144,7 @@ test('Manager lineage and cached PPTX preview remain stable across engine refres
     const engineRequestsAfterPreviewReady = managerEngineRequests
     await expect.poll(() => managerEngineRequests, { timeout: 25_000 }).toBeGreaterThan(engineRequestsAfterPreviewReady)
     await expect(currentPageInput).toHaveValue('2')
-    expect(pptxPreviewRequests).toBe(1)
+    expect(pptxGenerationRequests).toBe(0)
     expect(failedBusinessResponses).toEqual([])
     expect(browserMessages).toEqual([])
 
@@ -162,7 +162,7 @@ test('Manager lineage and cached PPTX preview remain stable across engine refres
       pptx_item_id: pptxItemID,
       pptx_page_count: pptxPageCount,
       pptx_page_after_engine_refresh: 2,
-      pptx_preview_requests: pptxPreviewRequests,
+      pptx_generation_requests: pptxGenerationRequests,
       browser_warning_errors: 0
     }
     writeFileSync(

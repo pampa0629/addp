@@ -58,7 +58,19 @@ SUITES: Mapping[str, Suite] = {
         services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL")),
     ),
     "oceanbase-consumer-flow": Suite(
-        command=(sys.executable, "scripts/test/oceanbase-consumer-flow-online.py"),
+        command=(sys.executable, "scripts/test/relational-consumer-flow-online.py"),
+        services=(
+            ("gateway", "GATEWAY_URL"),
+            ("system", "SYSTEM_URL"),
+            ("meta", "META_URL"),
+            ("manager", "MANAGER_URL"),
+            ("transfer", "TRANSFER_URL"),
+            ("develop", "DEVELOP_URL"),
+            ("service", "SERVICE_URL"),
+        ),
+    ),
+    "opengauss-consumer-flow": Suite(
+        command=(sys.executable, "scripts/test/relational-consumer-flow-online.py"),
         services=(
             ("gateway", "GATEWAY_URL"),
             ("system", "SYSTEM_URL"),

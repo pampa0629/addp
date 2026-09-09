@@ -55,11 +55,12 @@ func NewTenantServiceAccountService(repository *Repository) *TenantServiceAccoun
 	return &TenantServiceAccountService{repository: repository}
 }
 
-func (s *TenantServiceAccountService) List(ctx context.Context, tenantID int64, page, pageSize int, search string, status *PrincipalStatus) ([]TenantServiceAccount, int64, error) {
-	if tenantID <= 0 || validateManagementPagination(page, pageSize) != nil || (status != nil && !validServiceAccountStatus(*status)) {
+func (s *TenantServiceAccountService) List(ctx context.Context, tenantID int64, page, pageSize int, search string, status *PrincipalStatus, ownerScope *string) ([]TenantServiceAccount, int64, error) {
+	if tenantID <= 0 || validateManagementPagination(page, pageSize) != nil || (status != nil && !validServiceAccountStatus(*status)) ||
+		(ownerScope != nil && *ownerScope != "platform" && *ownerScope != "tenant") {
 		return nil, 0, commonapi.ErrBadRequest
 	}
-	return s.repository.ListTenantServiceAccounts(ctx, tenantID, page, pageSize, search, status)
+	return s.repository.ListTenantServiceAccounts(ctx, tenantID, page, pageSize, search, status, ownerScope)
 }
 
 func (s *TenantServiceAccountService) Get(ctx context.Context, tenantID, accountID int64) (*TenantServiceAccount, error) {

@@ -167,10 +167,10 @@ func respondError(c *gin.Context, status int, err error) {
 		message = commoni18n.T(c, sysi18n.MsgDocumentExtractionNamespaceInvalid)
 		errorCode = "document_extraction_namespace_invalid"
 		useGenericMessage = false
-	case errors.Is(err, service.ErrDocumentCandidateGroupQueryInvalid):
+	case errors.Is(err, service.ErrDocumentCandidateFamilyQueryInvalid):
 		status = http.StatusBadRequest
-		message = commoni18n.T(c, sysi18n.MsgDocumentCandidateGroupQueryInvalid)
-		errorCode = "document_candidate_group_query_invalid"
+		message = commoni18n.T(c, sysi18n.MsgDocumentCandidateFamilyQueryInvalid)
+		errorCode = "document_candidate_family_query_invalid"
 		useGenericMessage = false
 	case errors.Is(err, service.ErrCandidateNotRetained):
 		status = http.StatusConflict

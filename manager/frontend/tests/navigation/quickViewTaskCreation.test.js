@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
   generationOptionsForCapability,
-  isPPTXGenerationSource,
   quickViewCreationEmptyReason,
   quickViewTaskTypeForAction
 } from '../../src/utils/quickViewTaskCreation.js'
@@ -24,12 +23,17 @@ describe('quick-view task creation', () => {
 
   it('maps actions back to their canonical task type', () => {
     expect(quickViewTaskTypeForAction('generate_point_cloud_copc')).toBe('point_cloud_copc_generation')
+    expect(quickViewTaskTypeForAction('generate_pptx_pdf')).toBe('pptx_pdf_generation')
   })
 
-  it('recognizes a PPTX item from resource facts or locator path', () => {
-    expect(isPPTXGenerationSource({ resource: { format: 'pptx' } })).toBe(true)
-    expect(isPPTXGenerationSource({ identity: { locator: 'addp://engine/4/path/docs/slides.pptx?type=object&item_id=9' } })).toBe(true)
-    expect(isPPTXGenerationSource({ resource: { format: 'pdf' } })).toBe(false)
+  it('exposes PPTX generation only when declared by the backend capability', () => {
+    expect(generationOptionsForCapability({
+      available_actions: ['generate_pptx_pdf']
+    }, 'pptx_pdf_generation').map(option => option.action)).toEqual(['generate_pptx_pdf'])
+
+    expect(generationOptionsForCapability({
+      available_actions: []
+    }, 'pptx_pdf_generation')).toEqual([])
   })
 
   it('distinguishes an existing GLB result from an unsupported source', () => {
@@ -52,9 +56,21 @@ describe('quick-view task creation', () => {
     }, 'model3d_tiles_generation')).toBe('currentResult')
   })
 
+  it('recognizes a ready PPTX PDF result from backend capability state', () => {
+    expect(quickViewCreationEmptyReason({
+      pptx_pdf: { status: 'ready', result_id: 19 }
+    }, 'pptx_pdf_generation')).toBe('currentResult')
+  })
+
   it('keeps a capability without a current result classified as unsupported', () => {
     expect(quickViewCreationEmptyReason({
       available_actions: []
     }, 'gaussian_splat_ksplat_generation')).toBe('unsupported')
+  })
+
+  it('recognizes any current result when the task list is not filtered by type', () => {
+    expect(quickViewCreationEmptyReason({
+      default_vector_tile_cache_id: 12
+    })).toBe('currentResult')
   })
 })

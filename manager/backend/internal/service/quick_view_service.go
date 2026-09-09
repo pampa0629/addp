@@ -50,6 +50,7 @@ const (
 	QuickViewSourceKindModel3D       = "model_3d"
 	QuickViewSourceKindGaussianSplat = "gaussian_splat"
 	QuickViewSourceKindPointCloud    = "point_cloud"
+	QuickViewSourceKindDocument      = "document"
 
 	QuickViewActionSwitchQuickView             = "switch_quick_view"
 	QuickViewActionBackToBasicPreview          = "back_to_basic_preview"
@@ -61,6 +62,7 @@ const (
 	QuickViewActionGeneratePointCloudCOPC      = "generate_point_cloud_copc"
 	QuickViewActionGenerateModel3D3DTiles      = "generate_model3d_3d_tiles"
 	QuickViewActionGenerateModel3DS3M          = "generate_model3d_s3m"
+	QuickViewActionGeneratePPTXPDF             = "generate_pptx_pdf"
 
 	QuickViewRenderSourceCachedTile          = "cached_tile"
 	QuickViewRenderSourceClientCOG           = "client_cog_render"
@@ -71,6 +73,7 @@ const (
 	QuickViewRenderSourceModel3DGLB          = "model_3d_glb"
 	QuickViewRenderSourceGaussianSplatKSplat = "gaussian_splat_ksplat"
 	QuickViewRenderSourcePointCloudCOPC      = "point_cloud_copc"
+	QuickViewRenderSourcePPTXPDF             = "pptx_pdf"
 
 	RealtimeTilePerformanceReady3857Target = "ready_3857_target"
 	RealtimeTilePerformanceSource3857Index = "source_3857_indexed"
@@ -93,6 +96,9 @@ const (
 	RasterUnavailableReasonMissingCRS            = "missing_crs"
 	RasterCRSInferenceGeographicExtent           = "geographic_extent_without_declared_crs"
 	RasterUnavailableReasonClientBudgetExceeded  = "client_render_budget_exceeded"
+
+	QuickViewPPTXPDFStatusMissing = "missing"
+	QuickViewPPTXPDFStatusStale   = "stale"
 )
 
 type QuickViewService struct {
@@ -104,6 +110,7 @@ type QuickViewService struct {
 	gaussianSplatRepo *repository.GaussianSplatKSplatRepository
 	pointCloudRepo    *repository.PointCloudCOPCRepository
 	model3DTilesRepo  *repository.Model3DTilesRepository
+	pptxPDFRepo       *repository.PPTXPDFRepository
 	workflowEngines   workflowEngineLister
 	metaClient        *commonClient.MetaClient
 	options           QuickViewCapabilityOptions
@@ -123,6 +130,7 @@ func NewQuickViewService(
 		gaussianSplatRepo: repository.NewGaussianSplatKSplatRepository(db),
 		pointCloudRepo:    repository.NewPointCloudCOPCRepository(db),
 		model3DTilesRepo:  repository.NewModel3DTilesRepository(db),
+		pptxPDFRepo:       repository.NewPPTXPDFRepository(db),
 		metaClient:        metaClient,
 	}
 }
@@ -196,6 +204,7 @@ type QuickViewSource struct {
 	Model3D            *Model3DGLBSource
 	GaussianSplat      *GaussianSplatKSplatSource
 	PointCloud         *PointCloudCOPCSource
+	PPTX               *PPTXPDFQuickViewSource
 	DirectFlatGeobuf   bool
 	FlatGeobufURL      string
 	CanTile            bool
@@ -285,6 +294,12 @@ type PointCloudCOPCSource struct {
 	Bounds3D        *datatype.Bounds3D
 }
 
+type PPTXPDFQuickViewSource struct {
+	Format          string
+	Layout          string
+	SourceSizeBytes int64
+}
+
 type RealtimeTileTarget struct {
 	Schema                       string
 	Table                        string
@@ -324,6 +339,7 @@ type QuickViewCapability struct {
 	Model3DTiles         *QuickViewModel3DTilesInfo  `json:"model3d_tiles,omitempty"`
 	GaussianSplat        *QuickViewGaussianSplatInfo `json:"gaussian_splat,omitempty"`
 	PointCloud           *QuickViewPointCloudInfo    `json:"point_cloud,omitempty"`
+	PPTXPDF              *QuickViewPPTXPDFInfo       `json:"pptx_pdf,omitempty"`
 	Optimization         *VectorMaterializedViewInfo `json:"optimization,omitempty"`
 	RealtimeTile         *QuickViewRealtimeTileInfo  `json:"realtime_tile,omitempty"`
 	TileCacheGeneration  TileCacheGeneration         `json:"vector_tile_cache_generation"`
@@ -492,6 +508,18 @@ type QuickViewPointCloudInfo struct {
 	Bounds3D          *datatype.Bounds3D `json:"bounds_3d,omitempty"`
 	UnavailableReason string             `json:"unavailable_reason,omitempty"`
 	RecommendedAction string             `json:"recommended_action,omitempty"`
+}
+
+type QuickViewPPTXPDFInfo struct {
+	Format          string  `json:"format"`
+	Status          string  `json:"status"`
+	ResultID        *uint   `json:"result_id,omitempty"`
+	TaskID          *uint   `json:"task_id,omitempty"`
+	LastExecutionID *string `json:"last_execution_id,omitempty"`
+	PreviewURL      string  `json:"preview_url,omitempty"`
+	PageCount       int     `json:"page_count,omitempty"`
+	SizeBytes       int64   `json:"size_bytes,omitempty"`
+	ErrorMessage    string  `json:"error_message,omitempty"`
 }
 
 type QuickViewRenderFacts struct {
@@ -729,7 +757,11 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 	}
 	capability.Optimization = optimizationInfo
 
-	if source.RasterMosaic != nil {
+	if source.PPTX != nil {
+		if err := s.applyPPTXPDFCapability(ctx, capability, identity, source.PPTX); err != nil {
+			return nil, err
+		}
+	} else if source.RasterMosaic != nil {
 		s.applyRasterMosaicCapability(capability, source.RasterMosaic)
 	} else if source.Raster != nil {
 		if err := s.applyRasterCapability(ctx, capability, identity, source.Raster, source.EngineID); err != nil {
@@ -789,7 +821,7 @@ func (s *QuickViewService) BuildCapabilityFromSource(ctx context.Context, source
 	if !capability.TileCacheGeneration.Available {
 		capability.CanGenerateTileCache = false
 	}
-	if source.Raster != nil || source.RasterMosaic != nil || source.Model3D != nil || source.GaussianSplat != nil || source.PointCloud != nil {
+	if source.Raster != nil || source.RasterMosaic != nil || source.Model3D != nil || source.GaussianSplat != nil || source.PointCloud != nil || source.PPTX != nil {
 		capability.CanGenerateTileCache = false
 		capability.TileCacheGeneration = TileCacheGeneration{
 			Available: false,
@@ -871,6 +903,12 @@ func applyAvailableActions(capability *QuickViewCapability) {
 		capability.PointCloud.RecommendedAction == commonExecution.TaskTypePointCloudCOPCGeneration {
 		add(QuickViewActionGeneratePointCloudCOPC)
 	}
+	if capability.SourceKind == QuickViewSourceKindDocument && capability.PPTXPDF != nil {
+		switch capability.PPTXPDF.Status {
+		case QuickViewPPTXPDFStatusMissing, QuickViewPPTXPDFStatusStale, models.PPTXPDFStatusFailed:
+			add(QuickViewActionGeneratePPTXPDF)
+		}
+	}
 	capability.AvailableActions = actions
 }
 
@@ -920,11 +958,118 @@ func quickViewSourceKind(source QuickViewSource) string {
 		return QuickViewSourceKindGaussianSplat
 	case source.PointCloud != nil:
 		return QuickViewSourceKindPointCloud
+	case source.PPTX != nil:
+		return QuickViewSourceKindDocument
 	case source.SpatialMeta != nil || source.CanTile || source.DirectFlatGeobuf || source.RealtimeTileTarget != nil:
 		return QuickViewSourceKindVector
 	default:
 		return ""
 	}
+}
+
+func (s *QuickViewService) applyPPTXPDFCapability(ctx context.Context, capability *QuickViewCapability, identity QuickViewIdentity, source *PPTXPDFQuickViewSource) error {
+	if capability == nil || source == nil {
+		return nil
+	}
+	capability.Optimization = nil
+	capability.RealtimeTile = nil
+	capability.DefaultTileCacheID = nil
+	capability.CanGenerateTileCache = false
+	capability.CanUseQuickView = false
+	capability.TileCacheGeneration = TileCacheGeneration{
+		Available: false,
+		Reason:    "document quick view does not use vector tile cache generation",
+	}
+	capability.PPTXPDF = &QuickViewPPTXPDFInfo{
+		Format: strings.ToLower(strings.TrimSpace(source.Format)),
+		Status: QuickViewPPTXPDFStatusMissing,
+	}
+	capability.Status = QuickViewStatusUnavailable
+	capability.UnavailableReason = "requires_pptx_pdf_generation"
+
+	if s.pptxPDFRepo == nil {
+		return nil
+	}
+	task, err := s.pptxPDFRepo.GetTaskByFingerprint(ctx, identity.TenantID, identity.ItemFingerprint)
+	if err != nil {
+		return err
+	}
+	if task != nil {
+		capability.PPTXPDF.TaskID = &task.ID
+		capability.PPTXPDF.LastExecutionID = task.LastExecutionID
+		if task.LastExecutionStatus != nil {
+			switch *task.LastExecutionStatus {
+			case commonExecution.ExecutionStatusPending, commonExecution.ExecutionStatusRunning:
+				capability.PPTXPDF.Status = models.PPTXPDFStatusBuilding
+				capability.Status = QuickViewStatusGenerating
+				capability.UnavailableReason = "pptx_pdf_generation_in_progress"
+			case commonExecution.ExecutionStatusFailed, commonExecution.ExecutionStatusTimeout, commonExecution.ExecutionStatusCancelled:
+				capability.PPTXPDF.Status = models.PPTXPDFStatusFailed
+				capability.Status = QuickViewStatusFailed
+				capability.UnavailableReason = "pptx_pdf_generation_failed"
+			}
+		}
+	}
+
+	current, err := s.pptxPDFRepo.Current(ctx, identity.TenantID, identity.ItemFingerprint)
+	if err != nil {
+		return err
+	}
+	if current == nil {
+		return nil
+	}
+	capability.PPTXPDF.ResultID = &current.ID
+	capability.PPTXPDF.TaskID = current.TaskID
+	capability.PPTXPDF.LastExecutionID = current.LastExecutionID
+	capability.PPTXPDF.ErrorMessage = strings.TrimSpace(current.ErrorMessage)
+	capability.PPTXPDF.Status = current.Status
+	if current.Status == models.PPTXPDFStatusReady {
+		fresh, err := s.pptxPDFResultIsFresh(identity, current)
+		if err != nil {
+			return err
+		}
+		if !fresh {
+			capability.PPTXPDF.Status = QuickViewPPTXPDFStatusStale
+			capability.UnavailableReason = "pptx_pdf_result_stale"
+			return nil
+		}
+		capability.Status = QuickViewStatusAvailable
+		capability.UnavailableReason = ""
+		capability.RenderSource = QuickViewRenderSourcePPTXPDF
+		capability.PPTXPDF.PreviewURL = current.ContentURL
+		capability.PPTXPDF.PageCount = current.PageCount
+		capability.PPTXPDF.SizeBytes = current.SizeBytes
+		return nil
+	}
+	if current.Status == models.PPTXPDFStatusBuilding {
+		capability.Status = QuickViewStatusGenerating
+		capability.UnavailableReason = "pptx_pdf_generation_in_progress"
+	} else if current.Status == models.PPTXPDFStatusFailed {
+		capability.Status = QuickViewStatusFailed
+		capability.UnavailableReason = "pptx_pdf_generation_failed"
+	}
+	return nil
+}
+
+func (s *QuickViewService) pptxPDFResultIsFresh(identity QuickViewIdentity, current *models.PPTXPDF) (bool, error) {
+	if current == nil {
+		return false, nil
+	}
+	if s.metaClient == nil {
+		return false, errors.New("Meta client is required to validate PPTX PDF source version")
+	}
+	parsed, err := resourcetree.ParseURI(identity.Locator)
+	if err != nil || parsed.ItemID == nil || *parsed.ItemID == 0 {
+		return false, errors.New("PPTX PDF capability requires a scanned item locator")
+	}
+	item, err := s.metaClient.GetItemByIDForTenant(identity.TenantID, *parsed.ItemID)
+	if err != nil {
+		return false, err
+	}
+	if item == nil || item.TenantID != identity.TenantID || item.EngineID != parsed.EngineID || item.FullName != parsed.FullName() {
+		return false, errors.New("PPTX PDF capability source does not match current Meta item")
+	}
+	return current.SourceVersion == sourceVersionForItem(identity.ItemFingerprint, *item), nil
 }
 
 func (s *QuickViewService) applyRasterCapability(ctx context.Context, capability *QuickViewCapability, identity QuickViewIdentity, raster *RasterQuickViewSource, engineID uint) error {
@@ -2596,6 +2741,26 @@ func Model3DGLBSourceFromAttributes(attrs map[string]interface{}) *Model3DGLBSou
 	storageInfo := commonJSON.Section(attrs, "storage")
 	return &Model3DGLBSource{
 		Format:          itemFormat,
+		Layout:          itemLayout,
+		SourceSizeBytes: commonJSON.InterfaceInt64(storageInfo["total_size"]),
+	}
+}
+
+func PPTXPDFQuickViewSourceFromAttributes(attrs map[string]interface{}) *PPTXPDFQuickViewSource {
+	if len(attrs) == 0 {
+		return nil
+	}
+	if !strings.EqualFold(commonJSON.String(attrs, "item", "data_type"), string(datatype.Document)) ||
+		!strings.EqualFold(commonJSON.String(attrs, "item", "format"), string(format.FormatPPTX)) {
+		return nil
+	}
+	itemLayout := strings.ToLower(strings.TrimSpace(commonJSON.String(attrs, "item", "layout")))
+	if itemLayout != "" && itemLayout != string(format.LayoutSingle) {
+		return nil
+	}
+	storageInfo := commonJSON.Section(attrs, "storage")
+	return &PPTXPDFQuickViewSource{
+		Format:          string(format.FormatPPTX),
 		Layout:          itemLayout,
 		SourceSizeBytes: commonJSON.InterfaceInt64(storageInfo["total_size"]),
 	}

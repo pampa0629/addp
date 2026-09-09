@@ -730,71 +730,16 @@ definitions:
     - TenantStatusActive
     - TenantStatusSuspended
     - TenantStatusClosed
-  github_com_addp_system_internal_models.APIKey:
+  github_com_addp_system_internal_models.APIConsumer:
     properties:
-      application_id:
-        type: integer
       created_at:
         type: string
-      created_by:
+      created_by_principal_id:
         type: integer
-      expires_at:
-        type: string
-      id:
-        type: integer
-      key_prefix:
-        description: '"addp_live_" 前缀'
-        type: string
-      last_used_at:
-        type: string
-      name:
-        type: string
-      plain_text_key:
-        description: 临时字段（仅在创建时返回明文 Key）
-        type: string
-      revoked_at:
-        type: string
-      revoked_by:
-        type: integer
-      status:
-        type: string
-    type: object
-  github_com_addp_system_internal_models.APIKeyValidationResponse:
-    properties:
-      allowed_services:
+      credentials:
         items:
-          type: string
+          $ref: '#/definitions/github_com_addp_system_internal_models.APIConsumerCredential'
         type: array
-      app_id:
-        type: integer
-      app_name:
-        type: string
-      expires_at:
-        type: string
-      rate_limit_per_minute:
-        type: integer
-      valid:
-        type: boolean
-    type: object
-  github_com_addp_system_internal_models.Application:
-    properties:
-      allowed_services:
-        description: 允许访问的服务列表
-        items:
-          type: string
-        type: array
-      api_keys:
-        description: 关联
-        items:
-          $ref: '#/definitions/github_com_addp_system_internal_models.APIKey'
-        type: array
-      created_at:
-        type: string
-      created_by:
-        type: integer
-      deleted_at:
-        description: 软删除
-        type: string
       description:
         type: string
       id:
@@ -802,14 +747,88 @@ definitions:
       name:
         type: string
       rate_limit_per_minute:
-        description: 每分钟请求数限制
         type: integer
+      service_grants:
+        items:
+          $ref: '#/definitions/github_com_addp_system_internal_models.APIConsumerServiceGrant'
+        type: array
       status:
         type: string
       tenant_id:
         type: integer
       updated_at:
         type: string
+    type: object
+  github_com_addp_system_internal_models.APIConsumerCredential:
+    properties:
+      api_consumer_id:
+        type: integer
+      created_at:
+        type: string
+      created_by_principal_id:
+        type: integer
+      expires_at:
+        type: string
+      id:
+        type: integer
+      key_prefix:
+        type: string
+      last_used_at:
+        type: string
+      name:
+        type: string
+      plain_text_credential:
+        type: string
+      revoked_at:
+        type: string
+      revoked_by_principal_id:
+        type: integer
+      status:
+        type: string
+    type: object
+  github_com_addp_system_internal_models.APIConsumerCredentialValidationResponse:
+    properties:
+      api_consumer_id:
+        type: integer
+      api_consumer_name:
+        type: string
+      expires_at:
+        type: string
+      rate_limit_per_minute:
+        type: integer
+      service_grants:
+        items:
+          $ref: '#/definitions/github_com_addp_system_internal_models.APIConsumerServiceReference'
+        type: array
+      tenant_id:
+        type: integer
+      valid:
+        type: boolean
+    type: object
+  github_com_addp_system_internal_models.APIConsumerServiceGrant:
+    properties:
+      api_consumer_id:
+        type: integer
+      created_at:
+        type: string
+      id:
+        type: integer
+      service_id:
+        type: integer
+      service_type:
+        type: string
+    type: object
+  github_com_addp_system_internal_models.APIConsumerServiceReference:
+    properties:
+      service_id:
+        type: integer
+      service_type:
+        enum:
+        - query
+        type: string
+    required:
+    - service_id
+    - service_type
     type: object
   github_com_addp_system_internal_models.CapabilitiesView:
     properties:
@@ -891,27 +910,34 @@ definitions:
   github_com_addp_system_internal_models.ConnectionInfo:
     additionalProperties: true
     type: object
-  github_com_addp_system_internal_models.CreateAPIKeyRequest:
+  github_com_addp_system_internal_models.CreateAPIConsumerCredentialRequest:
     properties:
       expires_at:
         type: string
       name:
+        maxLength: 120
         type: string
     type: object
-  github_com_addp_system_internal_models.CreateApplicationRequest:
+  github_com_addp_system_internal_models.CreateAPIConsumerRequest:
     properties:
-      allowed_services:
-        items:
-          type: string
-        type: array
       description:
+        maxLength: 500
         type: string
       name:
+        maxLength: 120
         type: string
       rate_limit_per_minute:
+        maximum: 100000
+        minimum: 1
         type: integer
+      service_grants:
+        items:
+          $ref: '#/definitions/github_com_addp_system_internal_models.APIConsumerServiceReference'
+        minItems: 1
+        type: array
     required:
     - name
+    - service_grants
     type: object
   github_com_addp_system_internal_models.Engine:
     properties:
@@ -1381,12 +1407,6 @@ definitions:
       updated_at:
         type: string
     type: object
-  github_com_addp_system_internal_models.SuccessResponse:
-    properties:
-      message:
-        example: 操作成功
-        type: string
-    type: object
   github_com_addp_system_internal_models.TaskProgress:
     properties:
       completed:
@@ -1419,19 +1439,27 @@ definitions:
       task_id:
         type: string
     type: object
-  github_com_addp_system_internal_models.UpdateApplicationRequest:
+  github_com_addp_system_internal_models.UpdateAPIConsumerRequest:
     properties:
-      allowed_services:
-        items:
-          type: string
-        type: array
       description:
+        maxLength: 500
         type: string
       name:
+        maxLength: 120
         type: string
       rate_limit_per_minute:
+        maximum: 100000
+        minimum: 1
         type: integer
+      service_grants:
+        items:
+          $ref: '#/definitions/github_com_addp_system_internal_models.APIConsumerServiceReference'
+        minItems: 1
+        type: array
       status:
+        enum:
+        - active
+        - suspended
         type: string
     type: object
   internal_api.CreateExecuteTaskRequest:
@@ -2500,6 +2528,11 @@ definitions:
         $ref: '#/definitions/github_com_addp_system_internal_iam.TenantMembershipStatus'
       name:
         type: string
+      owner_scope:
+        enum:
+        - platform
+        - tenant
+        type: string
       status:
         $ref: '#/definitions/github_com_addp_system_internal_iam.PrincipalStatus'
       updated_at:
@@ -2526,6 +2559,11 @@ definitions:
       membership_status:
         $ref: '#/definitions/github_com_addp_system_internal_iam.TenantMembershipStatus'
       name:
+        type: string
+      owner_scope:
+        enum:
+        - platform
+        - tenant
         type: string
       status:
         $ref: '#/definitions/github_com_addp_system_internal_iam.PrincipalStatus'
@@ -3773,242 +3811,6 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - system.cleanup.read
-  /applications:
-    get:
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: 获取应用列表 | List applications
-      tags:
-      - 应用管理 | Application Management
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - system.application.read
-    post:
-      consumes:
-      - application/json
-      parameters:
-      - description: 应用信息 | Application info
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/github_com_addp_system_internal_models.CreateApplicationRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.Application'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: 创建应用 | Create application
-      tags:
-      - 应用管理 | Application Management
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - system.application.create
-  /applications/{id}:
-    delete:
-      parameters:
-      - description: 应用ID | Application ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.SuccessResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: 删除应用 | Delete application
-      tags:
-      - 应用管理 | Application Management
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - system.application.delete
-    get:
-      parameters:
-      - description: 应用ID | Application ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.Application'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: 获取应用详情 | Get application detail
-      tags:
-      - 应用管理 | Application Management
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - system.application.read
-    put:
-      consumes:
-      - application/json
-      parameters:
-      - description: 应用ID | Application ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: 应用更新信息 | Application update info
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/github_com_addp_system_internal_models.UpdateApplicationRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.Application'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: 更新应用 | Update application
-      tags:
-      - 应用管理 | Application Management
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - system.application.update
-  /applications/{id}/keys:
-    get:
-      parameters:
-      - description: 应用ID | Application ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: 获取 API Key 列表 | List API keys
-      tags:
-      - 应用管理 | Application Management
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - system.api_key.read
-    post:
-      consumes:
-      - application/json
-      parameters:
-      - description: 应用ID | Application ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: API Key 信息 | API key info
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/github_com_addp_system_internal_models.CreateAPIKeyRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.APIKey'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: 生成 API Key | Generate API key
-      tags:
-      - 应用管理 | Application Management
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - system.api_key.create
-  /applications/{id}/keys/{key_id}:
-    delete:
-      parameters:
-      - description: 应用ID | Application ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: API Key ID
-        in: path
-        name: key_id
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.SuccessResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: 撤销 API Key | Revoke API key
-      tags:
-      - 应用管理 | Application Management
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - system.api_key.revoke
   /auth/context:
     get:
       produces:
@@ -6765,11 +6567,11 @@ paths:
       tags:
       - 认证 | Authentication
       x-addp-auth-mode: public
-  /runtime/api-keys/validate:
+  /runtime/api-consumer-credentials/validate:
     get:
-      description: Gateway 平台 Service Principal 验证外部请求携带的 API Key Hash；服务间认证本身仍只使用
-        Bearer | The Gateway platform service principal validates an external API
-        key hash; service-to-service authentication itself remains Bearer-only
+      description: Gateway 或 Service 平台 Service Principal 验证数据面 API 消费凭据；服务间认证本身仍只使用
+        Bearer | Gateway or Service validates a data-plane API consumer credential;
+        service-to-service authentication remains Bearer-only
       parameters:
       - description: API Key Hash
         in: query
@@ -6782,7 +6584,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_addp_system_internal_models.APIKeyValidationResponse'
+            $ref: '#/definitions/github_com_addp_system_internal_models.APIConsumerCredentialValidationResponse'
         "400":
           description: Bad Request
           schema:
@@ -6801,12 +6603,12 @@ paths:
             $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: 验证外部 API Key Hash | Validate external API key hash
+      summary: 验证 API 消费凭据 Hash | Validate API consumer credential hash
       tags:
-      - 应用 API Key | Application API Keys
+      - API 消费方 | API Consumers
       x-addp-auth-mode: permission
       x-addp-required-permissions:
-      - system.api_key.read
+      - iam.api_consumer_runtime.read
   /runtime/catalog-references/candidates:
     get:
       description: 仅 addp-catalog Tenant Service Principal 可按名称或编码分页查询当前可引用的 Department
@@ -7755,6 +7557,218 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - platform.tenant.read
+  /tenant/api-consumers:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取 API 消费方列表 | List API consumers
+      tags:
+      - API 消费方 | API Consumers
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.api_consumer.read
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: API 消费方 | API consumer
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_system_internal_models.CreateAPIConsumerRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.APIConsumer'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 创建 API 消费方 | Create API consumer
+      tags:
+      - API 消费方 | API Consumers
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.api_consumer.create
+  /tenant/api-consumers/{id}:
+    delete:
+      parameters:
+      - description: API 消费方 ID | API consumer ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+      security:
+      - BearerAuth: []
+      summary: 删除 API 消费方 | Delete API consumer
+      tags:
+      - API 消费方 | API Consumers
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.api_consumer.delete
+    get:
+      parameters:
+      - description: API 消费方 ID | API consumer ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.APIConsumer'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取 API 消费方 | Get API consumer
+      tags:
+      - API 消费方 | API Consumers
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.api_consumer.read
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: API 消费方 ID | API consumer ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 更新内容 | Update
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_system_internal_models.UpdateAPIConsumerRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.APIConsumer'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 更新 API 消费方 | Update API consumer
+      tags:
+      - API 消费方 | API Consumers
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.api_consumer.update
+  /tenant/api-consumers/{id}/credentials:
+    get:
+      parameters:
+      - description: API 消费方 ID | API consumer ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取 API 消费凭据列表 | List API consumer credentials
+      tags:
+      - API 消费方 | API Consumers
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.api_consumer_credential.read
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: API 消费方 ID | API consumer ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 凭据配置 | Credential
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_system_internal_models.CreateAPIConsumerCredentialRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.APIConsumerCredential'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_addp_system_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 创建 API 消费凭据 | Create API consumer credential
+      tags:
+      - API 消费方 | API Consumers
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.api_consumer_credential.create
+  /tenant/api-consumers/{id}/credentials/{credential_id}:
+    delete:
+      parameters:
+      - description: API 消费方 ID | API consumer ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 凭据 ID | Credential ID
+        in: path
+        name: credential_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+      security:
+      - BearerAuth: []
+      summary: 撤销 API 消费凭据 | Revoke API consumer credential
+      tags:
+      - API 消费方 | API Consumers
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.api_consumer_credential.revoke
   /tenant/audit/events:
     get:
       parameters:
@@ -9504,8 +9518,10 @@ paths:
       - iam.tenant_role.update
   /tenant/service_accounts:
     get:
-      description: 分页查询当前 Tenant 拥有的服务账号；不包含平台内置 Runtime 服务主体 | List tenant-owned
-        service accounts, excluding platform runtime identities
+      description: 分页查询当前 Tenant 可用的机器身份；Tenant-owned 服务账号可管理，Platform-owned Runtime
+        服务主体只读 | List machine identities available in the current tenant; tenant-owned
+        service accounts are manageable and platform-owned runtime identities are
+        read-only
       parameters:
       - description: 页码 | Page number
         in: query
@@ -9522,6 +9538,10 @@ paths:
       - description: '状态：active/suspended | Status: active/suspended'
         in: query
         name: status
+        type: string
+      - description: '管理归属：tenant/platform | Management ownership: tenant/platform'
+        in: query
+        name: owner_scope
         type: string
       produces:
       - application/json

@@ -46,6 +46,7 @@ export const IAM_TABS = [
   { page: 'roles', key: 'role-assignments', context: 'tenant', permission: 'iam.tenant_role_assignment.read', label: 'system.iam.tabs.roleAssignments', panel: 'role-assignments' },
 
   { page: 'application-access', key: 'service-accounts', context: 'tenant', permission: 'iam.service_account.read', label: 'system.iam.tabs.serviceAccounts', panel: 'service-accounts' },
+  { page: 'application-access', key: 'api-consumers', context: 'tenant', permission: 'iam.api_consumer.read', label: 'system.iam.tabs.apiConsumers', panel: 'api-consumers' },
   { page: 'application-access', key: 'oauth-clients', context: 'tenant', permission: 'iam.oauth_client.read', label: 'system.iam.tabs.externalApplications', panel: 'oauth-clients' },
 
   { page: 'security', key: 'security-policy', context: 'platform', permission: 'iam.security_policy.read', label: 'system.iam.tabs.securityPolicy', panel: 'security-policy' },

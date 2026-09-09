@@ -10,7 +10,6 @@
       "iam": "身份与访问管理",
       "moduleMgmt": "模块管理",
       "engineMgmt": "引擎管理",
-      "appMgmt": "应用管理",
       "cleanup": "资源回收",
       "logout": "退出登录",
       "logoutSuccess": "退出成功"
@@ -116,7 +115,8 @@
         "identityChanges": "身份变更审批",
         "departments": "部门管理",
         "projectGroups": "项目组管理",
-        "serviceAccounts": "服务账号",
+        "serviceAccounts": "机器身份",
+        "apiConsumers": "API 消费方",
         "externalApplications": "外部应用（OAuth）",
         "userInvitations": "用户邀请",
         "roleDefinitions": "角色定义",
@@ -303,11 +303,21 @@
         "loaded": "已加载 {count} 个 OAuth 客户端"
       },
       "serviceAccounts": {
-        "introTitle": "为自动化任务和外部工作负载创建独立机器身份",
-        "introDescription": "服务账号不代表真实用户。每个账号拥有独立 Client ID 和 Client Secret，并通过 Client Credentials 获取当前租户内的短期访问令牌。",
+        "introTitle": "统一查看和管理当前租户使用的机器身份",
+        "introDescription": "平台运行账号由系统维护，仅可查看角色；租户服务账号由租户管理员创建，可管理凭据、生命周期和角色。两者都不代表真实用户。",
         "create": "创建服务账号",
         "edit": "编辑服务账号",
         "search": "搜索名称、说明或 Client ID",
+        "accountType": "机器身份类型",
+        "identity": "机器身份",
+        "types": {
+          "tenant": "租户服务账号",
+          "platform": "平台运行账号"
+        },
+        "manageRoles": "配置角色",
+        "viewRoles": "查看角色",
+        "roleDrawerTitle": "{name} · 角色",
+        "platformReadOnly": "平台运行账号由系统维护，其定义、凭据、生命周期和角色均为只读。",
         "clientId": "Client ID",
         "clientSecret": "Client Secret",
         "rotateSecret": "轮换密钥",
@@ -353,7 +363,7 @@
       },
       "roleAssignments": {
         "create": "分配角色",
-        "allMembers": "全部成员",
+        "allMembers": "全部用户账号",
         "scope": "授权范围",
         "departmentId": "部门 ID",
         "projectGroupId": "项目组 ID",
@@ -1019,16 +1029,18 @@
         }
       }
     },
-    "app": {
-      "title": "应用管理",
-      "create": "创建应用",
-      "allServices": "全部服务",
+    "apiConsumer": {
+      "title": "API 消费方",
+      "create": "创建消费方",
+      "boundaryTitle": "仅用于调用已授权的数据服务 API",
+      "boundaryDescription": "API 消费凭据不能登录平台，也不能访问任何 /api/v1 控制面接口。首期仅支持已发布的查询服务。",
+      "noServices": "未授权服务",
       "ratePerMin": "{rate} 次/分钟",
       "columns": {
         "id": "ID",
-        "name": "应用名称",
+        "name": "消费方名称",
         "description": "描述",
-        "allowedServices": "允许服务",
+        "allowedServices": "授权服务",
         "rateLimit": "速率限制",
         "status": "状态",
         "createdAt": "创建时间",
@@ -1039,23 +1051,23 @@
         "suspended": "暂停"
       },
       "actions": {
-        "apiKeys": "API Keys",
+        "credentials": "消费凭据",
         "edit": "编辑",
         "delete": "删除"
       },
       "dialog": {
-        "create": "创建应用",
-        "edit": "编辑应用",
+        "create": "创建 API 消费方",
+        "edit": "编辑 API 消费方",
         "confirm": "确定",
         "cancel": "取消"
       },
       "form": {
-        "name": "应用名称",
-        "namePlaceholder": "请输入应用名称",
+        "name": "消费方名称",
+        "namePlaceholder": "例如：外部报表系统",
         "description": "描述",
-        "descPlaceholder": "请输入应用描述",
-        "allowedServices": "允许服务",
-        "allowedServicesPlaceholder": "选择允许访问的服务（留空表示全部）",
+        "descPlaceholder": "说明调用系统及用途",
+        "allowedServices": "授权服务",
+        "allowedServicesPlaceholder": "至少选择一个已发布查询服务",
         "rateLimit": "速率限制",
         "rateLimitTip": "每分钟允许的最大请求次数",
         "status": "状态",
@@ -1063,22 +1075,22 @@
         "suspended": "暂停"
       },
       "services": {
-        "poi": "POI 服务",
-        "address": "地址服务",
-        "map": "地图服务",
-        "data": "数据服务"
+        "public": "公开",
+        "private": "租户内",
+        "fallback": "查询服务 #{id}"
       },
       "rules": {
-        "nameRequired": "请输入应用名称",
+        "nameRequired": "请输入消费方名称",
+        "serviceRequired": "请至少选择一个授权服务",
         "rateLimitRequired": "请设置速率限制"
       },
-      "keys": {
-        "title": "API Keys - {name}",
-        "generate": "生成新 Key",
+      "credentials": {
+        "title": "消费凭据 - {name}",
+        "generate": "创建消费凭据",
         "neverUsed": "从未使用",
         "columns": {
           "id": "ID",
-          "prefix": "Key 前缀",
+          "prefix": "凭据前缀",
           "name": "名称",
           "lastUsed": "最后使用",
           "status": "状态",
@@ -1091,42 +1103,43 @@
         },
         "revoke": "撤销",
         "generateDialog": {
-          "title": "生成 API Key",
-          "name": "Key 名称",
-          "namePlaceholder": "请输入 Key 名称（便于识别）",
+          "title": "创建 API 消费凭据",
+          "name": "凭据名称",
+          "namePlaceholder": "例如：生产环境",
           "expiresAt": "过期时间",
           "expiresAtPlaceholder": "选择过期时间（可选）",
           "expiresAtTip": "留空表示永不过期",
           "generate": "生成",
           "cancel": "取消",
           "rules": {
-            "nameRequired": "请输入 Key 名称"
+            "nameRequired": "请输入凭据名称"
           }
         },
         "showDialog": {
-          "title": "API Key 已生成",
+          "title": "API 消费凭据已创建",
           "warning": "重要提示",
-          "warningMsg": "请立即复制并保存 API Key，关闭窗口后将无法再次查看！",
+          "warningMsg": "请立即复制并保存凭据，关闭窗口后将无法再次查看。",
           "copy": "复制",
           "close": "我已保存，关闭"
         }
       },
       "msg": {
-        "loadFailed": "加载应用列表失败",
+        "loadFailed": "加载 API 消费方失败",
+        "servicesLoadFailed": "加载可授权服务失败",
         "createSuccess": "创建成功",
         "updateSuccess": "更新成功",
         "opFailed": "操作失败",
-        "deleteConfirm": "确定要删除应用 \"{name}\" 吗？这将同时删除该应用的所有 API Keys。",
+        "deleteConfirm": "确定要删除 API 消费方 \"{name}\" 吗？其全部消费凭据将同时失效。",
         "deleteTitle": "确认删除",
         "deleteSuccess": "删除成功",
         "deleteFailed": "删除失败",
-        "keysLoadFailed": "加载 API Keys 失败",
-        "keyGenFailed": "生成 Key 失败",
+        "keysLoadFailed": "加载消费凭据失败",
+        "keyGenFailed": "创建消费凭据失败",
         "keyCopied": "已复制到剪贴板",
         "keyCopyFailed": "复制失败，请手动复制",
         "keyRevoked": "撤销成功",
         "keyRevokeFailed": "撤销失败",
-        "revokeConfirm": "确定要撤销 API Key \"{name}\" 吗？撤销后该 Key 将立即失效。",
+        "revokeConfirm": "确定要撤销消费凭据 \"{name}\" 吗？撤销后最长 30 秒内失效。",
         "revokeTitle": "确认撤销"
       }
     },

@@ -107,6 +107,54 @@ func TestQuickViewModel3DGLBActionPropagatesExistingResultConfirmation(t *testin
 	}
 }
 
+type quickViewPPTXMetaClient struct {
+	item *commonModels.MetaItem
+}
+
+func (f quickViewPPTXMetaClient) GetItemByIDForTenant(_, _ uint) (*commonModels.MetaItem, error) {
+	return f.item, nil
+}
+
+func TestQuickViewPPTXActionCreatesAndExecutesOwnerTask(t *testing.T) {
+	db := newTaskProviderHandlerTestDB(t)
+	repo := repository.NewPPTXPDFRepository(db)
+	taskSvc := service.NewPPTXPDFTaskService(repo)
+	size := int64(4096)
+	updatedAt := time.Date(2026, time.September, 9, 0, 0, 0, 0, time.UTC)
+	taskSvc.SetMetaClient(quickViewPPTXMetaClient{item: &commonModels.MetaItem{
+		ID: 77, TenantID: 7, EngineID: 26, ItemType: "file", Name: "slides.pptx",
+		FullName: "docs/slides.pptx", ObjectSizeBytes: &size, DataUpdatedAt: &updatedAt,
+	}})
+	taskSvc.SetBucket("manager")
+	handler := &QuickViewHandler{pptxPDFTaskSvc: taskSvc}
+	locator := "addp://engine/26/path/docs/slides.pptx?type=file&item_id=77"
+	fingerprint := commonModels.GenerateItemFingerprint(26, "docs/slides.pptx")
+	capability := &service.QuickViewCapability{
+		TenantID: 7, ItemFingerprint: fingerprint, Locator: locator,
+		SourceKind: service.QuickViewSourceKindDocument,
+	}
+	source := service.QuickViewSource{
+		EngineID: 26,
+		PPTX:     &service.PPTXPDFQuickViewSource{Format: "pptx", SourceSizeBytes: size},
+	}
+
+	taskID, executionID, err := handler.createAndExecutePPTXPDFTask(context.Background(), 1, capability, source, false)
+	if err != nil {
+		t.Fatalf("createAndExecutePPTXPDFTask() error = %v", err)
+	}
+	if taskID == 0 || executionID == "" {
+		t.Fatalf("task_id=%d execution_id=%q, want submitted task", taskID, executionID)
+	}
+	task, err := repo.GetTask(context.Background(), taskID, 7)
+	if err != nil || task == nil {
+		t.Fatalf("GetTask() task=%#v err=%v", task, err)
+	}
+	sourceConfig, _ := asJSONMap(task.Config["source"])
+	if sourceConfig["format"] != "pptx" || sourceConfig["item_locator"] != locator {
+		t.Fatalf("task source = %#v, want canonical PPTX locator", sourceConfig)
+	}
+}
+
 func TestVectorMaterializedViewTaskConfigFromQuickViewUsesCanonicalSourceFacts(t *testing.T) {
 	locator := "addp://engine/11/path/public/roads?type=table&item_id=99"
 	config, err := vectorMaterializedViewTaskConfigFromQuickView(
@@ -605,6 +653,28 @@ func TestApplyLocatorQuickViewURLsSetsRasterMosaicTileTemplate(t *testing.T) {
 	}
 	if !strings.Contains(capability.QuickView.TileURLTemplate, "gamma=0.6") {
 		t.Fatalf("tile_url_template = %q, want default gamma", capability.QuickView.TileURLTemplate)
+	}
+}
+
+func TestQuickViewSourceFromPreviewDetectsPPTXFromCanonicalAttributes(t *testing.T) {
+	locator := "addp://engine/26/path/docs/slides.pptx?type=file&item_id=77"
+	tenantID := uint(7)
+	source := quickViewSourceFromPreview(locator, &tenantID, &preview.PreviewResult{
+		Metadata: &preview.PreviewMetadata{Locator: locator, ItemFingerprint: "fp-pptx"},
+	}, &models.TablePreview{
+		Object: &models.ObjectPreview{
+			EngineID: 26,
+			Attributes: commonModels.JSONMap{
+				"item":    commonModels.JSONMap{"data_type": "document", "format": "pptx", "layout": "single"},
+				"storage": commonModels.JSONMap{"total_size": int64(4096)},
+			},
+		},
+	})
+	if source.PPTX == nil || source.PPTX.Format != "pptx" {
+		t.Fatalf("PPTX source = %#v, want canonical PPTX facts", source.PPTX)
+	}
+	if source.DirectFlatGeobuf || source.CanTile {
+		t.Fatalf("PPTX source must not expose vector quick-view paths: %#v", source)
 	}
 }
 

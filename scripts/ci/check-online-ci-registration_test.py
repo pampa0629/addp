@@ -92,6 +92,29 @@ class OnlineCIRegistrationTest(unittest.TestCase):
     def test_accepts_one_profile_and_workflow_choice_per_registered_suite(self) -> None:
         CHECK.check_registration(self.repository)
 
+    def test_discovers_hosted_profile_from_metadata(self) -> None:
+        hosted = self.repository / "scripts/test/online-hosted-example-gate.sh"
+        hosted.write_text(
+            "# ADDP_ONLINE_SUITES=hosted-suite\n"
+            "# ADDP_ONLINE_RUNNER=github-hosted-linux-x86_64\n",
+            encoding="utf-8",
+        )
+
+        profiles = CHECK.load_deployment_profiles(self.repository)
+
+        self.assertEqual(
+            profiles["hosted-suite"], "github-hosted-linux-x86_64"
+        )
+
+    def test_rejects_hosted_profile_without_runner_metadata(self) -> None:
+        hosted = self.repository / "scripts/test/online-hosted-example-gate.sh"
+        hosted.write_text(
+            "# ADDP_ONLINE_SUITES=hosted-suite\n", encoding="utf-8"
+        )
+
+        with self.assertRaisesRegex(CHECK.RegistrationError, "Hosted Online metadata"):
+            CHECK.load_deployment_profiles(self.repository)
+
     def test_rejects_missing_deployment_profile(self) -> None:
         script = self.repository / "scripts/test/online-host-gate.sh"
         script.write_text(
@@ -399,7 +422,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             "addp.lineage-facts/v1 /api/v1/meta/scan/run/manual "
             "/api/v1/monitor/executions/by-execution-id/ "
             "addp-infra://minio/manager/tenant_ /api/v1/manager/point_cloud_copc/ "
-            "/api/v1/manager/pptx_pdf/preview /api/v1/manager/tasks/{PPTX_TASK_TYPE}/ "
+            "/api/v1/manager/quick-view/capability /api/v1/manager/quick-view/actions "
+            "/api/v1/manager/tasks/{PPTX_TASK_TYPE}/ "
             '"cache_reused": True\n',
             encoding="utf-8",
         )
@@ -408,7 +432,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         browser.write_text(
             ".execution-lineage__group .execution-lineage__resource-action "
             "平台内部产物|Platform-internal artifact platform_internal_outputs "
-            ".pptx-preview .pdf-preview pptx_page_after_engine_refresh pptx_preview_requests\n",
+            ".pptx-preview .pdf-preview pptx_page_after_engine_refresh pptx_generation_requests\n",
             encoding="utf-8",
         )
         config = self.repository / "console/frontend/playwright.online.config.js"
@@ -464,20 +488,20 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             "/api/v1/meta/scan/run/manual\n/api/v1/manager/preview\n",
             encoding="utf-8",
         )
-        owner = self.repository / "scripts/test/oceanbase-consumer-flow-online.py"
+        owner = self.repository / "scripts/test/relational-consumer-flow-online.py"
         owner.write_text(
-            'engine.get("engine_type") != "oceanbase"\n'
+            'engine.get("engine_type") != profile.engine_type\n'
             '"type": "watermark"\n"start": "committed"\n'
             '"end": "execution_upper_bound"\n"apply_mode": "upsert"\n'
             '"manager.data_item.read"\n'
-            "/api/v1/develop/executions\n/api/query/\nadvance_fixture()\n"
+            "/api/v1/develop/executions\n/api/query/\nadvance_fixture(profile)\n"
             '"empty_resume"\ncleanup_tasks(client, task_ids)\n'
             'cleanup_service(client, service_id)\n"residual_resources": 0\n',
             encoding="utf-8",
         )
         for relative in (
             "scripts/test/online-oceanbase-consumer-fixture_test.py",
-            "scripts/test/oceanbase-consumer-flow-online_test.py",
+            "scripts/test/relational-consumer-flow-online_test.py",
         ):
             (self.repository / relative).write_text("fixture\n", encoding="utf-8")
 
@@ -495,12 +519,87 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             )
         support.write_text(support_text, encoding="utf-8")
         owner.write_text(
-            owner.read_text(encoding="utf-8").replace("advance_fixture()", ""),
+            owner.read_text(encoding="utf-8").replace("advance_fixture(profile)", ""),
             encoding="utf-8",
         )
         with self.assertRaisesRegex(CHECK.RegistrationError, "advance_fixture"):
             CHECK.validate_oceanbase_consumer_flow_profile(
                 self.repository, {"oceanbase-consumer-flow"}
+            )
+
+    def test_requires_opengauss_hosted_owner_and_identity_contracts(self) -> None:
+        hosted = self.repository / "scripts/test/online-hosted-opengauss-gate.sh"
+        hosted.write_text(
+            "# ADDP_ONLINE_SUITES=opengauss-consumer-flow\n"
+            "# ADDP_ONLINE_RUNNER=github-hosted-linux-x86_64\n"
+            "GITHUB_ACTIONS RUNNER_OS Linux x86_64 POSTGRES_DB=addp_online\n"
+            "ADDP_ONLINE_SECRET_DIR go run ./cmd/online-test-fixture\n"
+            "ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN\n"
+            "opengauss-official-media.sh refusing to reuse existing image\n"
+            "bash business/scripts/online-opengauss-consumer-fixture.sh start\n"
+            "python3 scripts/test/online-engine-registration.py\n"
+            '--descriptor "$ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE"\n'
+            "for start_target in -manager -develop -service\n"
+            "unset ADDP_TEST_OPENGAUSS_DSN\n"
+            'make test-online "ONLINE_SUITE=$ONLINE_SUITE"\n'
+            "bash scripts/dev/stop.sh\n"
+            "bash scripts/infra/down.sh --volumes --force\n",
+            encoding="utf-8",
+        )
+        fixture = self.repository / "business/scripts/online-opengauss-consumer-fixture.sh"
+        fixture.parent.mkdir(parents=True, exist_ok=True)
+        fixture.write_text(
+            "opengauss_ensure_official_image x86_64 refusing to reuse existing image addp-opengauss-online-disposable "
+            "addp_opengauss_online addp_online_consumer_source addp_online_consumer_target "
+            "MERGE INTO container_exists start|advance|stop|status ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE "
+            '"engine_type": "opengauss"\n',
+            encoding="utf-8",
+        )
+        registration = self.repository / "scripts/test/online-engine-registration.py"
+        registration.write_text(
+            '/api/v1/system/engines\ntest_result.get("success") is not True\n'
+            "ADDP_ONLINE_CONSUMER_ENGINE_ID\n",
+            encoding="utf-8",
+        )
+        owner = self.repository / "scripts/test/relational-consumer-flow-online.py"
+        owner.write_text(
+            '"opengauss": ConsumerProfile(\nnamespace_kind="schema"\n'
+            'identifier_quote=\'"\'\n'
+            'fixture_script="business/scripts/online-opengauss-consumer-fixture.sh"\n'
+            '"schema_version": "addp.relational-consumer-flow-online/v1"\n'
+            '"residual_resources": 0\n',
+            encoding="utf-8",
+        )
+        for relative in (
+            "scripts/test/online-hosted-opengauss-gate_test.py",
+            "scripts/test/online-engine-registration_test.py",
+            "scripts/test/online-opengauss-consumer-fixture_test.py",
+            "scripts/test/relational-consumer-flow-online_test.py",
+            "system/backend/cmd/online-test-fixture/main_test.go",
+        ):
+            path = self.repository / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("fixture\n", encoding="utf-8")
+        identity = self.repository / "system/backend/cmd/online-test-fixture/main.go"
+        identity.write_text(
+            'RoleKey: "online.engine_provisioner"\n'
+            '"system.engine.create"\n"system.engine.execute"\n'
+            'RoleKey: "online.relational_consumer"\n'
+            '"ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN"\n',
+            encoding="utf-8",
+        )
+
+        CHECK.validate_opengauss_consumer_flow_profile(
+            self.repository, {"opengauss-consumer-flow"}
+        )
+
+        fixture.write_text(
+            fixture.read_text(encoding="utf-8").replace("MERGE INTO", ""),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(CHECK.RegistrationError, "MERGE INTO"):
+            CHECK.validate_opengauss_consumer_flow_profile(
+                self.repository, {"opengauss-consumer-flow"}
             )
 
 

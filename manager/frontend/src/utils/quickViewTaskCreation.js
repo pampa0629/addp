@@ -6,13 +6,11 @@ const DEFINITIONS = [
   ['generate_model3d_3d_tiles', 'model3d_tiles_generation', 'manager.quickViewCreator.actions.model3D3DTiles'],
   ['generate_model3d_s3m', 'model3d_tiles_generation', 'manager.quickViewCreator.actions.model3DS3M'],
   ['generate_gaussian_splat_ksplat', 'gaussian_splat_ksplat_generation', 'manager.quickViewCreator.actions.gaussianSplat'],
-  ['generate_point_cloud_copc', 'point_cloud_copc_generation', 'manager.quickViewCreator.actions.pointCloudCOPC']
+  ['generate_point_cloud_copc', 'point_cloud_copc_generation', 'manager.quickViewCreator.actions.pointCloudCOPC'],
+  ['generate_pptx_pdf', 'pptx_pdf_generation', 'manager.quickViewCreator.actions.pptxPDF']
 ].map(([action, taskType, labelKey]) => ({ action, taskType, labelKey }))
 
-export const PPTX_PDF_GENERATION_ACTION = 'generate_pptx_pdf'
-
 export function quickViewTaskTypeForAction(action) {
-  if (action === PPTX_PDF_GENERATION_ACTION) return 'pptx_pdf_generation'
   return DEFINITIONS.find(definition => definition.action === action)?.taskType || ''
 }
 
@@ -41,25 +39,15 @@ const CURRENT_RESULT_CHECKS = {
     ))
   ),
   gaussian_splat_ksplat_generation: capability => hasResultID(capability?.gaussian_splat?.result_id),
-  point_cloud_copc_generation: capability => hasResultID(capability?.point_cloud?.result_id)
+  point_cloud_copc_generation: capability => hasResultID(capability?.point_cloud?.result_id),
+  pptx_pdf_generation: capability => (
+    capability?.pptx_pdf?.status === 'ready' && hasResultID(capability?.pptx_pdf?.result_id)
+  )
 }
 
 export function quickViewCreationEmptyReason(capability = {}, taskType = '') {
-  return CURRENT_RESULT_CHECKS[taskType]?.(capability) ? 'currentResult' : 'unsupported'
-}
-
-export function pptxGenerationOptions(taskType = '') {
-  if (taskType && taskType !== 'pptx_pdf_generation') return []
-  return [{
-    action: PPTX_PDF_GENERATION_ACTION,
-    taskType: 'pptx_pdf_generation',
-    labelKey: 'manager.quickViewCreator.actions.pptxPDF'
-  }]
-}
-
-export function isPPTXGenerationSource(selection) {
-  const format = String(selection?.resource?.format || selection?.raw?.node?.metadata?.format || '').trim().toLowerCase()
-  if (format === 'pptx') return true
-  const locator = String(selection?.identity?.locator || '').split('?')[0].toLowerCase()
-  return locator.endsWith('.pptx')
+  const checks = taskType
+    ? [CURRENT_RESULT_CHECKS[taskType]].filter(Boolean)
+    : Object.values(CURRENT_RESULT_CHECKS)
+  return checks.some(check => check(capability)) ? 'currentResult' : 'unsupported'
 }

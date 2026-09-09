@@ -92,6 +92,28 @@ func (h *ConsumerCatalogHandler) ListServices(c *gin.Context) {
 	})
 }
 
+// ListAPIConsumerGrantableServices godoc
+// @Summary API 消费方可授权服务列表 | List services grantable to API consumers
+// @Tags ServiceConsumer
+// @Produce json
+// @Param search query string false "搜索词 | Search"
+// @Param page query int false "页码 | Page" default(1) minimum(1)
+// @Param page_size query int false "每页数量 | Page size" default(20) minimum(1) maximum(100)
+// @Success 200 {object} models.ConsumerServiceListResponse
+// @Failure 400 {object} map[string]string
+// @Failure 401 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["service.definition.read"]
+// @Router /consumer/api-consumer-services [get]
+// @Security BearerAuth
+func (h *ConsumerCatalogHandler) ListAPIConsumerGrantableServices(c *gin.Context) {
+	// 与正式 Consumer Catalog 复用同一 owner 过滤，只改变管理者所需 Permission；
+	// 未提供 service_type 时，现有列表语义固定返回首期 Query Service。
+	h.ListServices(c)
+}
+
 // GetService godoc
 // @Summary 获取服务消费描述 | Get service consumer descriptor
 // @Tags ServiceConsumer

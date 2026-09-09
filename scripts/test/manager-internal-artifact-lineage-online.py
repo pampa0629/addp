@@ -551,11 +551,18 @@ def run_scenario(
         if not pointcloud_content.raw or len(pointcloud_content.raw) > 64:
             raise SuiteError("PointCloud COPC Range response is empty or unbounded")
 
+        initial_capability = _object(client.request(
+            "GET",
+            f"/api/v1/manager/quick-view/capability?{urllib.parse.urlencode({'locator': pptx_locator})}",
+            (200,),
+        ).payload, "initial PPTX capability")
+        if "generate_pptx_pdf" not in _array(initial_capability.get("available_actions"), "initial PPTX actions"):
+            raise SuiteError("initial PPTX capability must declare generate_pptx_pdf")
         first_preview = client.request(
             "POST",
-            "/api/v1/manager/pptx_pdf/preview",
+            "/api/v1/manager/quick-view/actions",
             (202,),
-            {"locator": pptx_locator},
+            {"locator": pptx_locator, "action": "generate_pptx_pdf"},
         )
         first_preview_payload = _object(first_preview.payload, "initial PPTX preview")
         if first_preview_payload.get("status") not in {"pending", "running"}:
@@ -599,21 +606,19 @@ def run_scenario(
         if pptx_monitor_facts != pptx_manager_facts:
             raise SuiteError("Monitor PPTX lineage facts differ from the Manager owner facts")
 
-        cached_preview = _object(
+        cached_capability = _object(
             client.request(
-                "POST",
-                "/api/v1/manager/pptx_pdf/preview",
+                "GET",
+                f"/api/v1/manager/quick-view/capability?{urllib.parse.urlencode({'locator': pptx_locator})}",
                 (200,),
-                {"locator": pptx_locator},
             ).payload,
-            "cached PPTX preview",
+            "cached PPTX capability",
         )
+        cached_preview = _object(cached_capability.get("pptx_pdf"), "cached PPTX capability result")
         if cached_preview.get("status") != "ready":
-            raise SuiteError("second PPTX preview request must reuse the ready artifact")
-        if cached_preview.get("execution_id"):
-            raise SuiteError("cached PPTX preview must not return a new execution_id")
+            raise SuiteError("second PPTX capability request must reuse the ready artifact")
         if positive_int(cached_preview.get("task_id"), "cached PPTX task id") != pptx_task_id:
-            raise SuiteError("cached PPTX preview must reuse the initial task")
+            raise SuiteError("cached PPTX capability must reuse the initial task")
         pptx_result_id = positive_int(cached_preview.get("result_id"), "cached PPTX result id")
         pptx_page_count = positive_int(cached_preview.get("page_count"), "cached PPTX page_count")
         if pptx_page_count != 3:

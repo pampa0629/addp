@@ -113,61 +113,101 @@ const createDocumentFixture = (overrides = {}) => {
   }
 }
 
-const createCandidateGroupResponse = (candidates, { extractionID = 81, revisionID = 711, extractedAt = '2026-09-06T08:00:00Z' } = {}) => ({
-  data: candidates.map(candidate => ({
-    semantic_fingerprint: `fixture-${candidate.id}`,
-    state: candidate.formalization ? 'formalized' : candidate.status,
-    occurrence_count: 1,
-    first_seen_at: extractedAt,
-    last_seen_at: extractedAt,
-    candidate,
-    occurrences: [{
-      candidate_id: candidate.id,
-      extraction_id: extractionID,
-      document_revision_id: revisionID,
-      requested_by: 1,
-      extracted_at: extractedAt,
-      status: candidate.status,
-      version: candidate.version,
-      evidences: candidate.evidences || [],
-      ...(candidate.formalization ? { formalization: candidate.formalization } : {})
-    }]
-  })),
-  total: candidates.length,
-  page: 1,
-  page_size: 20,
-  total_pages: 1,
-  status_counts: candidates.reduce((counts, candidate) => {
-    counts[candidate.formalization ? 'formalized' : candidate.status] += 1
-    return counts
-  }, { pending: 0, retained: 0, rejected: 0, formalized: 0 }),
-  comparison_counts: candidates.reduce((counts, candidate) => {
-    if (candidate.comparison?.result) counts[candidate.comparison.result] += 1
-    return counts
-  }, { new: 0, exact: 0, content_conflict: 0, scope_conflict: 0 })
-})
+const createCandidateGroups = (candidates, { extractionID = 81, revisionID = 711, extractedAt = '2026-09-06T08:00:00Z' } = {}) => candidates.map(candidate => ({
+  semantic_fingerprint: `fixture-${candidate.id}`,
+  state: candidate.formalization ? 'formalized' : candidate.status,
+  occurrence_count: 1,
+  first_seen_at: extractedAt,
+  last_seen_at: extractedAt,
+  candidate,
+  occurrences: [{
+    candidate_id: candidate.id,
+    extraction_id: extractionID,
+    document_revision_id: revisionID,
+    requested_by: 1,
+    extracted_at: extractedAt,
+    status: candidate.status,
+    version: candidate.version,
+    evidences: candidate.evidences || [],
+    ...(candidate.formalization ? { formalization: candidate.formalization } : {})
+  }]
+}))
 
-const filterCandidateGroupResponse = (response, url) => {
+const groupCandidateFamilies = groups => {
+  const familiesByKey = new Map()
+  groups.forEach(group => {
+    const familyKey = `${group.candidate.candidate_type}:${group.candidate.code}`
+    let family = familiesByKey.get(familyKey)
+    if (!family) {
+      family = {
+        family_key: familyKey,
+        candidate_type: group.candidate.candidate_type,
+        code: group.candidate.code,
+        representative_name: group.candidate.name,
+        variant_count: 0,
+        occurrence_count: 0,
+        first_seen_at: group.first_seen_at,
+        last_seen_at: group.last_seen_at,
+        variants: []
+      }
+      familiesByKey.set(familyKey, family)
+    }
+    family.variants.push(group)
+    family.variant_count += 1
+    family.occurrence_count += group.occurrence_count
+    if (group.first_seen_at < family.first_seen_at) family.first_seen_at = group.first_seen_at
+    if (group.last_seen_at > family.last_seen_at) family.last_seen_at = group.last_seen_at
+  })
+  return [...familiesByKey.values()]
+}
+
+const createFamilyComparisonCounts = groups => {
+  const families = groupCandidateFamilies(groups)
+  return families.reduce((counts, family) => {
+    const results = new Set(family.variants.map(group => group.candidate.comparison?.result).filter(Boolean))
+    results.forEach(result => { counts[result] += 1 })
+    return counts
+  }, { all: families.length, new: 0, exact: 0, content_conflict: 0, scope_conflict: 0 })
+}
+
+const createCandidateFamilyResponse = (candidates, options = {}) => {
+  const groups = createCandidateGroups(candidates, options)
+  const families = groupCandidateFamilies(groups)
+  return {
+    data: families,
+    total: families.length,
+    variant_total: groups.length,
+    page: 1,
+    page_size: 20,
+    total_pages: 1,
+    variant_status_counts: candidates.reduce((counts, candidate) => {
+      counts[candidate.formalization ? 'formalized' : candidate.status] += 1
+      return counts
+    }, { pending: 0, retained: 0, rejected: 0, formalized: 0 }),
+    family_comparison_counts: createFamilyComparisonCounts(groups)
+  }
+}
+
+const filterCandidateFamilyResponse = (response, url) => {
   const state = url.searchParams.get('state') || ''
   const candidateType = url.searchParams.get('candidate_type') || ''
   const keyword = (url.searchParams.get('keyword') || '').trim().replace(/\s+/g, ' ').toLocaleLowerCase()
   const comparisonResult = url.searchParams.get('comparison_result') || ''
   const page = Number(url.searchParams.get('page')) || 1
   const pageSize = Number(url.searchParams.get('page_size')) || response.page_size || 20
-  const comparisonSource = response.data.filter(group => {
+  const allVariants = response.data.flatMap(family => family.variants)
+  const comparisonSource = allVariants.filter(group => {
     if (state && group.state !== state) return false
     if (candidateType && group.candidate.candidate_type !== candidateType) return false
     if (!keyword) return true
     return [group.candidate.code, group.candidate.name].some(value => String(value || '').trim().replace(/\s+/g, ' ').toLocaleLowerCase().includes(keyword))
   })
-  const comparisonCounts = comparisonSource.reduce((counts, group) => {
-    if (group.candidate.comparison?.result) counts[group.candidate.comparison.result] += 1
-    return counts
-  }, { new: 0, exact: 0, content_conflict: 0, scope_conflict: 0 })
+  const comparisonCounts = createFamilyComparisonCounts(comparisonSource)
   const filtered = comparisonResult ? comparisonSource.filter(group => group.candidate.comparison?.result === comparisonResult) : comparisonSource
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
-  const data = page > totalPages ? [] : filtered.slice((page - 1) * pageSize, page * pageSize)
-  return { ...response, data, total: filtered.length, page, page_size: pageSize, total_pages: totalPages, comparison_counts: comparisonCounts }
+  const families = groupCandidateFamilies(filtered)
+  const totalPages = Math.max(1, Math.ceil(families.length / pageSize))
+  const data = page > totalPages ? [] : families.slice((page - 1) * pageSize, page * pageSize)
+  return { ...response, data, total: families.length, variant_total: filtered.length, page, page_size: pageSize, total_pages: totalPages, family_comparison_counts: comparisonCounts }
 }
 
 const listPages = [
@@ -624,26 +664,24 @@ test('restores document detail from its canonical route and returns to the filte
 test('shows deterministic candidate comparisons and opens the existing standard', async ({ page }) => {
   await installMockBackend(page, {
     documents: [createDocumentFixture()],
-    documentCandidateGroups: createCandidateGroupResponse([
+    documentCandidateFamilies: createCandidateFamilyResponse([
         { id: 811, candidate_type: 'glossary', code: 'leader', name: '领队', definition: '发起并组织户外活动的人', payload: {}, status: 'pending', version: 1, evidences: [], comparison: { result: 'exact', standard_id: 21, code: 'leader', name: '领队', scope_type: 'domain', owner_domain_id: 2, revision_id: 211, revision_no: 1, revision_status: 'draft', differences: [] } },
         { id: 812, candidate_type: 'element', code: 'activity_id', name: '活动编号', definition: '活动的唯一编号', payload: { data_type: 'string' }, status: 'pending', version: 1, evidences: [], comparison: { result: 'content_conflict', standard_id: 41, code: 'activity_id', name: '活动编号', scope_type: 'domain', owner_domain_id: 2, revision_id: 411, revision_no: 1, revision_status: 'draft', differences: [{ field: 'definition', candidate_value: { kind: 'text', text: '活动的唯一编号' }, standard_value: { kind: 'text', text: '户外活动主体的稳定标识' } }, { field: 'data_type', candidate_value: { kind: 'text', text: 'string' }, standard_value: { kind: 'text', text: 'bigint' } }] } },
         { id: 813, candidate_type: 'metric', code: 'participant_count', name: '活动参与人数', definition: '参加活动的总人数', payload: {}, status: 'pending', version: 1, evidences: [], comparison: { result: 'scope_conflict', standard_id: 51, code: 'participant_count', name: '活动参与人数', scope_type: 'domain', owner_domain_id: 1, revision_id: 511, revision_no: 1, revision_status: 'draft', differences: [{ field: 'owner_domain_id', candidate_value: { kind: 'integer', integer: 2 }, standard_value: { kind: 'integer', integer: 1 } }] } },
         { id: 814, candidate_type: 'code_set', code: 'outdoor_level', name: '户外等级', definition: '户外活动难度等级', payload: {}, status: 'pending', version: 1, evidences: [], comparison: { result: 'new', differences: [] } },
-        { id: 815, candidate_type: 'code_set', code: 'member_status', name: '成员状态', definition: '成员参与状态', payload: {}, status: 'pending', version: 1, evidences: [], comparison: { result: 'content_conflict', standard_id: 61, code: 'member_status', name: '成员状态', scope_type: 'domain', owner_domain_id: 2, revision_id: 611, revision_no: 1, revision_status: 'draft', differences: [{ field: 'items', candidate_value: { kind: 'code_items', items: [{ code: 'signup', name: '报名中', definition: '已正式报名' }] }, standard_value: { kind: 'code_items', items: [{ code: 'registered', name: '已报名', definition: '报名已经确认' }] } }] } }
+        { id: 815, candidate_type: 'code_set', code: 'member_status', name: '成员状态', definition: '成员参与状态', payload: {}, status: 'pending', version: 1, evidences: [], comparison: { result: 'content_conflict', standard_id: 61, code: 'member_status', name: '成员状态', scope_type: 'domain', owner_domain_id: 2, revision_id: 611, revision_no: 1, revision_status: 'draft', differences: [{ field: 'items', candidate_value: { kind: 'code_items', items: [{ code: 'signup', name: '报名中', definition: '已正式报名' }] }, standard_value: { kind: 'code_items', items: [{ code: 'registered', name: '已报名', definition: '报名已经确认' }] } }] } },
+        { id: 816, candidate_type: 'code_set', code: 'member_status', name: '成员关系状态', definition: '成员与户外活动的关系状态', payload: {}, status: 'pending', version: 1, evidences: [], comparison: { result: 'content_conflict', standard_id: 61, code: 'member_status', name: '成员状态', scope_type: 'domain', owner_domain_id: 2, revision_id: 611, revision_no: 1, revision_status: 'draft', differences: [{ field: 'definition', candidate_value: { kind: 'text', text: '成员与户外活动的关系状态' }, standard_value: { kind: 'text', text: '成员参与状态' } }] } }
     ])
   })
 
   await page.goto('/documents/71')
-  await expect(page.getByText('内容一致', { exact: true })).toBeVisible()
-  await expect(page.getByText('内容冲突', { exact: true }).first()).toBeVisible()
-  await expect(page.getByText('范围冲突', { exact: true })).toBeVisible()
-  await expect(page.getByText('新候选', { exact: true })).toBeVisible()
   const comparisonFacets = page.getByRole('radiogroup', { name: '比对结果' })
   await expect(comparisonFacets.getByRole('radio', { name: '全部比对结果 · 5' })).toBeChecked()
   await expect(comparisonFacets.getByRole('radio', { name: '内容一致 · 1' })).toBeVisible()
   await expect(comparisonFacets.getByRole('radio', { name: '内容冲突 · 2' })).toBeVisible()
   await expect(comparisonFacets.getByRole('radio', { name: '范围冲突 · 1' })).toBeVisible()
   await expect(comparisonFacets.getByRole('radio', { name: '新候选 · 1' })).toBeVisible()
+  await page.locator('.candidate-family').filter({ hasText: 'activity_id' }).locator('.el-collapse-item__header').first().click()
   const activityCandidate = page.locator('.candidate-card').filter({ hasText: 'activity_id' })
   await expect(activityCandidate.getByRole('columnheader', { name: '差异字段' })).toBeVisible()
   await expect(activityCandidate.getByRole('columnheader', { name: '候选值' })).toBeVisible()
@@ -651,6 +689,7 @@ test('shows deterministic candidate comparisons and opens the existing standard'
   await expect(activityCandidate.locator('.comparison-differences').getByText('活动的唯一编号', { exact: true })).toBeVisible()
   await expect(activityCandidate.getByText('户外活动主体的稳定标识', { exact: true })).toBeVisible()
   await expect(activityCandidate.getByText('bigint', { exact: true })).toBeVisible()
+  await page.locator('.candidate-family').filter({ hasText: 'member_status' }).locator('.el-collapse-item__header').first().click()
   const codeSetCandidate = page.locator('.candidate-card').filter({ hasText: 'member_status' })
   const codeItems = codeSetCandidate.locator('.comparison-item')
   await expect(codeItems.nth(0)).toContainText('signup · 报名中 — 已正式报名')
@@ -659,16 +698,18 @@ test('shows deterministic candidate comparisons and opens the existing standard'
   const candidateSearch = page.getByRole('textbox', { name: '搜索候选编码或名称' })
   await candidateSearch.fill('MEMBER_STATUS')
   await candidateSearch.press('Enter')
-  await expect(page.getByText('共 1 个候选组')).toBeVisible()
+  await expect(page.getByText('共 1 个候选族，2 个语义变体')).toBeVisible()
   await expect(comparisonFacets.getByRole('radio', { name: '全部比对结果 · 1' })).toBeChecked()
   await expect(comparisonFacets.getByRole('radio', { name: '内容冲突 · 1' })).toBeVisible()
-  await expect(page.locator('.candidate-card')).toContainText('member_status')
+  await expect(page.locator('.candidate-family')).toContainText('2 个语义变体')
+  await expect(page.locator('.candidate-card')).toHaveCount(2)
+  await expect(page.locator('.candidate-card').first()).toContainText('member_status')
   await candidateSearch.fill('')
   await candidateSearch.press('Enter')
-  await expect(page.getByText('共 5 个候选组')).toBeVisible()
+  await expect(page.getByText('共 5 个候选族，6 个语义变体')).toBeVisible()
 
   await comparisonFacets.getByText('内容一致 · 1', { exact: true }).click()
-  await expect(page.getByText('共 1 个候选组')).toBeVisible()
+  await expect(page.getByText('共 1 个候选族，1 个语义变体')).toBeVisible()
   await expect(page.locator('.candidate-card')).toHaveCount(1)
   await expect(page.locator('.candidate-card')).toContainText('leader')
 
@@ -1224,7 +1265,7 @@ async function installMockBackend(page, options = {}) {
       const revision = document?.draft_revision || document?.current_revision
       return fulfillJSON(route, revision ? [revision] : [])
     }
-    if (path === '/api/v1/standard/documents/71/extraction-candidate-groups') return fulfillJSON(route, filterCandidateGroupResponse(options.documentCandidateGroups || createCandidateGroupResponse([]), url))
+    if (path === '/api/v1/standard/documents/71/extraction-candidate-families') return fulfillJSON(route, filterCandidateFamilyResponse(options.documentCandidateFamilies || createCandidateFamilyResponse([]), url))
     if (path === '/api/v1/standard/documents/71/mappings') {
       return fulfillJSON(route, { elements: [], glossaries: [], metrics: [] })
     }
@@ -1234,7 +1275,7 @@ async function installMockBackend(page, options = {}) {
       const revision = document?.draft_revision || document?.current_revision
       return fulfillJSON(route, revision ? [revision] : [])
     }
-    if (path === '/api/v1/standard/documents/72/extraction-candidate-groups') return fulfillJSON(route, filterCandidateGroupResponse(options.documentCandidateGroups || createCandidateGroupResponse([]), url))
+    if (path === '/api/v1/standard/documents/72/extraction-candidate-families') return fulfillJSON(route, filterCandidateFamilyResponse(options.documentCandidateFamilies || createCandidateFamilyResponse([]), url))
     if (path === '/api/v1/standard/documents/72/mappings') return fulfillJSON(route, { elements: [], glossaries: [], metrics: [] })
     return fulfillJSON(route, {})
   })

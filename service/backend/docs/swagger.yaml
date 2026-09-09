@@ -1898,6 +1898,65 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - service.catalog.read
+  /consumer/api-consumer-services:
+    get:
+      parameters:
+      - description: 搜索词 | Search
+        in: query
+        name: search
+        type: string
+      - default: 1
+        description: 页码 | Page
+        in: query
+        minimum: 1
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量 | Page size
+        in: query
+        maximum: 100
+        minimum: 1
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_service_internal_models.ConsumerServiceListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: API 消费方可授权服务列表 | List services grantable to API consumers
+      tags:
+      - ServiceConsumer
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - service.definition.read
   /consumer/services:
     get:
       parameters:

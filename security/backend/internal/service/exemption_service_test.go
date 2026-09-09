@@ -113,7 +113,7 @@ func TestProtectionAccessRequestApprovalPublishesSubjectScopedAuthorization(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if approved.State != models.ProtectionAccessRequestStateApproved || approved.ExemptionID == "" {
+	if approved.State != models.ProtectionAccessRequestStateApproved || approved.EnrollmentID != reviewed.Assessment.EnrollmentID || approved.ExemptionID == "" || approved.AuthorizationState != models.ProtectionExemptionStateActive || approved.AuthorizedUntil == nil || !approved.AuthorizedUntil.Equal(now.Add(time.Hour)) {
 		t.Fatalf("approved request = %#v", approved)
 	}
 	pendingAfterApproval, err := requests.ListReviewQueue(context.Background(), 7, 42, reviewAccessRequestFilter(models.ProtectionAccessRequestReviewScopePending), 1, 20)
@@ -127,7 +127,7 @@ func TestProtectionAccessRequestApprovalPublishesSubjectScopedAuthorization(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if approvalHistory.Total != 1 || len(approvalHistory.Data) != 1 || approvalHistory.Data[0].State != models.ProtectionAccessRequestStateApproved || approvalHistory.Data[0].Reviewer == nil || approvalHistory.Data[0].Reviewer.ID != "42" || approvalHistory.Data[0].Reviewer.DisplayName != "用户 42" || approvalHistory.Data[0].DecisionRationale != "复核通过" {
+	if approvalHistory.Total != 1 || len(approvalHistory.Data) != 1 || approvalHistory.Data[0].State != models.ProtectionAccessRequestStateApproved || approvalHistory.Data[0].EnrollmentID != reviewed.Assessment.EnrollmentID || approvalHistory.Data[0].AuthorizationState != models.ProtectionExemptionStateActive || approvalHistory.Data[0].AuthorizedUntil == nil || !approvalHistory.Data[0].AuthorizedUntil.Equal(now.Add(time.Hour)) || approvalHistory.Data[0].Reviewer == nil || approvalHistory.Data[0].Reviewer.ID != "42" || approvalHistory.Data[0].Reviewer.DisplayName != "用户 42" || approvalHistory.Data[0].DecisionRationale != "复核通过" {
 		t.Fatalf("approval review history = %#v", approvalHistory)
 	}
 	changes, err := enrollments.ListChanges(context.Background(), 7, managerProtectionOwner, "", 20)
@@ -151,6 +151,57 @@ func TestProtectionAccessRequestApprovalPublishesSubjectScopedAuthorization(t *t
 	}
 	if _, exists := other["userInfo"].(map[string]any)["phone"]; exists {
 		t.Fatal("authorization leaked to another user")
+	}
+
+	exemptions := NewExemptionService(db)
+	exemptions.now = func() time.Time { return now.Add(30 * time.Minute) }
+	currentExemption, err := exemptions.Get(context.Background(), 7, approved.ExemptionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = exemptions.Revoke(context.Background(), 7, 42, approved.ExemptionID, models.RevokeProtectionExemptionRequest{
+		Version: currentExemption.Version, Rationale: "提前撤销原值访问授权",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	requests.now = func() time.Time { return now.Add(30 * time.Minute) }
+	revokedHistory, err := requests.ListReviewQueue(context.Background(), 7, 42, reviewAccessRequestFilter(models.ProtectionAccessRequestReviewScopeHistory), 1, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if revokedHistory.Total != 1 || len(revokedHistory.Data) != 1 || revokedHistory.Data[0].AuthorizationState != models.ProtectionExemptionStateRevoked || revokedHistory.Data[0].AuthorizedUntil == nil || !revokedHistory.Data[0].AuthorizedUntil.Equal(now.Add(time.Hour)) {
+		t.Fatalf("revoked authorization review history = %#v", revokedHistory)
+	}
+}
+
+func TestEffectiveAccessRequestAuthorizationState(t *testing.T) {
+	now := time.Date(2026, time.September, 8, 10, 0, 0, 0, time.UTC)
+	baseExemption := models.ProtectionExemption{State: models.ProtectionExemptionStateActive}
+	baseRevision := models.ProtectionExemptionRevision{
+		SourceRequestID: "request-1", AssessmentRevision: 3,
+		State: models.ProtectionExemptionStateActive, ExpiresAt: now.Add(time.Hour),
+	}
+	tests := []struct {
+		name               string
+		requestID          string
+		exemption          models.ProtectionExemption
+		current            models.ProtectionExemptionRevision
+		assessmentRevision int64
+		at                 time.Time
+		want               string
+	}{
+		{name: "active", requestID: "request-1", exemption: baseExemption, current: baseRevision, assessmentRevision: 3, at: now, want: models.ProtectionExemptionStateActive},
+		{name: "expired", requestID: "request-1", exemption: baseExemption, current: baseRevision, assessmentRevision: 3, at: now.Add(time.Hour), want: models.ProtectionExemptionStateExpired},
+		{name: "revoked", requestID: "request-1", exemption: models.ProtectionExemption{State: models.ProtectionExemptionStateRevoked}, current: models.ProtectionExemptionRevision{SourceRequestID: "request-1", AssessmentRevision: 3, State: models.ProtectionExemptionStateRevoked, ExpiresAt: now.Add(time.Hour)}, assessmentRevision: 3, at: now, want: models.ProtectionExemptionStateRevoked},
+		{name: "assessment superseded", requestID: "request-1", exemption: baseExemption, current: baseRevision, assessmentRevision: 4, at: now, want: models.ProtectionExemptionStateSuperseded},
+		{name: "later grant superseded", requestID: "request-1", exemption: baseExemption, current: models.ProtectionExemptionRevision{SourceRequestID: "request-2", AssessmentRevision: 3, State: models.ProtectionExemptionStateActive, ExpiresAt: now.Add(time.Hour)}, assessmentRevision: 3, at: now, want: models.ProtectionExemptionStateSuperseded},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := effectiveAccessRequestAuthorizationState(test.requestID, test.exemption, test.current, test.assessmentRevision, test.at); got != test.want {
+				t.Fatalf("state = %q, want %q", got, test.want)
+			}
+		})
 	}
 }
 

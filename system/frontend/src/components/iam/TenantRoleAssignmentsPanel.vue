@@ -24,14 +24,12 @@
     <div class="iam-toolbar">
       <div class="iam-filters">
         <TenantMemberSelect
+          v-if="!fixedMembership"
           v-model="filters.membership_id"
-          v-model:principal-type="filters.principal_type"
           :members="membershipOptions"
           :current-membership-id="currentMembershipID"
           :placeholder="t('system.iam.roleAssignments.allMembers')"
-          show-type-filter
           @change="reload"
-          @principal-type-change="reload"
         />
         <el-select v-model="filters.scope_type" :placeholder="t('system.iam.roleAssignments.scope')" clearable @change="reload">
           <el-option v-for="scope in scopeTypes" :key="scope" :label="scopeLabel(scope)" :value="scope" />
@@ -39,21 +37,21 @@
         <el-select v-model="filters.status" :placeholder="t('system.iam.common.status')" clearable @change="reload">
           <el-option v-for="status in assignmentStatuses" :key="status" :label="t(`system.iam.status.${status}`)" :value="status" />
         </el-select>
-        <el-button :type="showingCurrentAccount ? 'primary' : 'default'" :icon="User" :disabled="!currentMembershipID" @click="toggleCurrentAccountFilter">
+        <el-button v-if="!fixedMembership" :type="showingCurrentAccount ? 'primary' : 'default'" :icon="User" :disabled="!currentMembershipID" @click="toggleCurrentAccountFilter">
           {{ t('system.iam.memberships.currentAccount') }}
         </el-button>
         <el-button :icon="Refresh" @click="load">{{ t('system.iam.common.refresh') }}</el-button>
       </div>
-      <el-button v-if="can('iam.tenant_role_assignment.create')" type="primary" :icon="Plus" @click="openCreate">{{ t('system.iam.roleAssignments.create') }}</el-button>
+      <el-button v-if="!props.readOnly && (!fixedMember || fixedMember.status === 'active') && can('iam.tenant_role_assignment.create')" type="primary" :icon="Plus" @click="openCreate">{{ t('system.iam.roleAssignments.create') }}</el-button>
     </div>
 
     <el-table v-loading="loading" :data="rows" stripe>
-      <el-table-column :label="t('system.iam.memberships.member')" min-width="250"><template #default="{ row }"><TenantMemberIdentity :member="row" :current-membership-id="currentMembershipID" /></template></el-table-column>
+      <el-table-column v-if="!fixedMembership" :label="t('system.iam.memberships.member')" min-width="250"><template #default="{ row }"><TenantMemberIdentity :member="row" :current-membership-id="currentMembershipID" /></template></el-table-column>
       <el-table-column :label="t('system.iam.roles.role')" min-width="210"><template #default="{ row }"><div class="iam-primary-cell"><strong>{{ assignmentRoleName(row) }}</strong><span class="iam-role-key">{{ row.role_key }}</span></div></template></el-table-column>
       <el-table-column :label="t('system.iam.roleAssignments.scope')" width="170"><template #default="{ row }">{{ scopeValue(row) }}</template></el-table-column>
       <el-table-column :label="t('system.iam.common.status')" width="110"><template #default="{ row }"><el-tag :type="row.status === 'active' ? 'success' : 'info'">{{ t(`system.iam.status.${row.status}`) }}</el-tag></template></el-table-column>
       <el-table-column :label="t('system.iam.roleAssignments.validUntil')" width="180"><template #default="{ row }">{{ formatDate(row.valid_until) }}</template></el-table-column>
-      <el-table-column :label="t('system.iam.common.actions')" width="110" fixed="right"><template #default="{ row }"><el-button v-if="can('iam.tenant_role_assignment.revoke') && row.status === 'active'" link type="danger" :icon="CircleClose" @click="revoke(row)">{{ t('system.iam.common.revoke') }}</el-button></template></el-table-column>
+      <el-table-column v-if="!props.readOnly" :label="t('system.iam.common.actions')" width="110" fixed="right"><template #default="{ row }"><el-button v-if="can('iam.tenant_role_assignment.revoke') && row.status === 'active'" link type="danger" :icon="CircleClose" @click="revoke(row)">{{ t('system.iam.common.revoke') }}</el-button></template></el-table-column>
     </el-table>
 
     <el-pagination v-model:current-page="page" v-model:page-size="pageSize" class="iam-pagination" :total="total" :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next" @current-change="load" @size-change="reload" />
@@ -61,7 +59,8 @@
     <el-dialog v-model="dialogVisible" :title="t('system.iam.roleAssignments.create')" width="min(620px, calc(100% - 24px))">
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
         <el-form-item :label="t('system.iam.memberships.member')" prop="membershipId">
-          <TenantMemberSelect v-model="form.membershipId" :members="membershipOptions" :current-membership-id="currentMembershipID" active-only />
+          <TenantMemberIdentity v-if="fixedMembership" :member="fixedMember" />
+          <TenantMemberSelect v-else v-model="form.membershipId" :members="membershipOptions" :current-membership-id="currentMembershipID" active-only />
         </el-form-item>
         <el-form-item :label="t('system.iam.roleAssignments.scope')" prop="scopeType">
           <el-select v-model="form.scopeType" style="width: 100%"><el-option v-for="scope in availableScopeTypes" :key="scope" :label="scopeLabel(scope)" :value="scope" /></el-select>
@@ -126,6 +125,11 @@ import {
   tenantRoleKeys
 } from '../../utils/iamRoles'
 
+const props = defineProps({
+  fixedMembership: { type: Object, default: null },
+  readOnly: { type: Boolean, default: false }
+})
+
 const { t, te } = useI18n()
 const MAX_ROLE_ASSIGNMENT_BATCH_SIZE = 50
 const authStore = useAuthStore()
@@ -145,8 +149,17 @@ const pageSize = ref(20)
 const total = ref(0)
 const dialogVisible = ref(false)
 const formRef = ref()
-const filters = reactive({ membership_id: '', principal_type: '', scope_type: '', status: '' })
+const filters = reactive({ membership_id: '', scope_type: '', status: '' })
 const form = reactive({ membershipId: '', roleIds: [], scopeType: 'tenant', departmentId: '', projectGroupId: '', validUntil: null, reason: '' })
+const fixedMembership = computed(() => props.fixedMembership)
+const fixedMember = computed(() => fixedMembership.value ? {
+  id: fixedMembership.value.membership_id,
+  principal_id: fixedMembership.value.id,
+  principal_type: 'service_principal',
+  display_name: fixedMembership.value.name,
+  status: fixedMembership.value.membership_status
+} : null)
+const effectiveMembershipID = computed(() => fixedMembership.value?.membership_id || filters.membership_id || '')
 const currentMembershipID = computed(() => authStore.authContext?.context?.tenant_membership_id || '')
 const showingCurrentAccount = computed(() => Boolean(currentMembershipID.value && String(filters.membership_id) === String(currentMembershipID.value)))
 const activeMembers = computed(() => membershipOptions.value.filter((member) => member.status === 'active'))
@@ -169,7 +182,7 @@ const selectedRoleOptions = computed(() => roleOptions.value.filter((role) => fo
 const availableRoleCount = computed(() => roleOptions.value.filter((role) => !role.assigned).length)
 const hasTenantAdministratorSelected = computed(() => selectedRoles.value.some((role) => role.role_key === TENANT_ADMINISTRATOR_ROLE_KEY))
 const canSubmitAssignments = computed(() => form.roleIds.length > 0 && selectedRoleOptions.value.length === form.roleIds.length && selectedRoleOptions.value.every((role) => !role.assigned))
-const showRecommendations = computed(() => can('iam.tenant_role_assignment.create') && tenantRoleKeys(authStore.authContext).includes(TENANT_ADMINISTRATOR_ROLE_KEY))
+const showRecommendations = computed(() => !fixedMembership.value && can('iam.tenant_role_assignment.create') && tenantRoleKeys(authStore.authContext).includes(TENANT_ADMINISTRATOR_ROLE_KEY))
 const recommendationIcons = {
   'tenant.infrastructure_administrator': Connection,
   'tenant.data_viewer': View,
@@ -195,8 +208,8 @@ async function load() {
     const result = await iamAPI.tenantRoleAssignments.list({
       page: page.value,
       page_size: pageSize.value,
-      membership_id: filters.membership_id || undefined,
-      principal_type: filters.principal_type || undefined,
+      membership_id: effectiveMembershipID.value || undefined,
+      principal_type: fixedMembership.value ? 'service_principal' : 'user',
       scope_type: filters.scope_type || undefined,
       status: filters.status || undefined
     })
@@ -209,9 +222,14 @@ async function load() {
   }
 }
 async function loadOptions() {
+  if (fixedMembership.value) {
+    roles.value = await iamAPI.tenantRoles.list() || []
+    membershipOptions.value = fixedMember.value ? [fixedMember.value] : []
+    return
+  }
   const [roleRows, memberRows] = await Promise.all([
     iamAPI.tenantRoles.list(),
-    iamAPI.memberships.listAll()
+    iamAPI.memberships.listAll({ principal_type: 'user' })
   ])
   roles.value = roleRows || []
   membershipOptions.value = memberRows || []
@@ -256,14 +274,14 @@ function reload() { page.value = 1; return load() }
 function toggleCurrentAccountFilter() {
   const wasShowingCurrentAccount = showingCurrentAccount.value
   filters.membership_id = wasShowingCurrentAccount ? '' : currentMembershipID.value
-  if (!wasShowingCurrentAccount) filters.principal_type = ''
   return reload()
 }
 async function openCreate(roleKey = '') {
   Object.assign(form, { membershipId: '', roleIds: [], scopeType: 'tenant', departmentId: '', projectGroupId: '', validUntil: null, reason: '' })
   try {
     await loadOptions()
-    if (activeMembers.value.some((member) => String(member.id) === String(currentMembershipID.value))) form.membershipId = currentMembershipID.value
+    if (fixedMembership.value) form.membershipId = fixedMembership.value.membership_id
+    else if (activeMembers.value.some((member) => String(member.id) === String(currentMembershipID.value))) form.membershipId = currentMembershipID.value
     await loadMemberAssignments()
     const recommendedRole = roles.value.find((role) => role.role_key === roleKey)
     const recommendedOption = roleOptions.value.find((role) => role.id === recommendedRole?.id)
@@ -341,7 +359,12 @@ watch(() => form.roleIds, () => {
 }, { deep: true })
 onMounted(() => {
   load()
-  loadFilterOptions()
+  if (!fixedMembership.value) loadFilterOptions()
+})
+watch(() => fixedMembership.value?.membership_id, () => {
+  page.value = 1
+  dialogVisible.value = false
+  load()
 })
 </script>
 

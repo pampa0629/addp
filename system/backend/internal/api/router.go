@@ -56,7 +56,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	auditWriter := iam.NewAuditWriter(runtime.Repository)
 
 	engineRepo := repository.NewEngineRepository(db)
-	appRepo := repository.NewApplicationRepository(db)
+	apiConsumerRepo := repository.NewAPIConsumerRepository(db)
 	moduleRegistryRepo := repository.NewModuleRegistryRepository(db)
 	engineService := service.NewEngineService(engineRepo, cfg.EncryptionKey, redisClient)
 	engineHandler := NewEngineHandler(engineService)
@@ -84,7 +84,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		panic(fmt.Errorf("装配 IAM Task Authorization Subject Handler 失败: %w", err))
 	}
 	runtime.TaskAuthorizationSubjectHandler = taskAuthorizationSubjectHandler
-	appService := service.NewApplicationService(appRepo)
+	apiConsumerService := service.NewAPIConsumerService(apiConsumerRepo)
 	moduleRegistryService := service.NewModuleRegistryService(moduleRegistryRepo)
 	taskProviderService := service.NewTaskProviderService(moduleRegistryService)
 	moduleRegistryHandler := NewModuleRegistryHandler(moduleRegistryService)
@@ -129,7 +129,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		api,
 		runtime,
 		engineHandler,
-		NewApplicationHandler(appService),
+		NewAPIConsumerHandler(apiConsumerService),
 		NewCleanupHandler(cleanupService),
 	); err != nil {
 		panic(fmt.Errorf("注册 IAM 业务路由失败: %w", err))
@@ -143,16 +143,16 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	); err != nil {
 		panic(fmt.Errorf("注册 IAM Service Runtime 路由失败: %w", err))
 	}
-	serviceInternalHandler := NewInternalHandler(appService)
+	serviceInternalHandler := NewInternalHandler(apiConsumerService)
 	platformContext, err := middleware.NewIAMServiceContextGuard("platform")
 	if err != nil {
 		panic(fmt.Errorf("创建 API Key 平台上下文守卫失败: %w", err))
 	}
-	apiKeyValidate, err := middleware.NewIAMPermissionGuard("system.api_key.read")
+	apiConsumerCredentialValidate, err := middleware.NewIAMPermissionGuard("iam.api_consumer_runtime.read")
 	if err != nil {
-		panic(fmt.Errorf("创建 API Key 校验权限守卫失败: %w", err))
+		panic(fmt.Errorf("创建 API 消费凭据校验权限守卫失败: %w", err))
 	}
-	api.GET("/runtime/api-keys/validate", runtime.Authentication, runtime.ServiceCredential, platformContext, apiKeyValidate, serviceInternalHandler.ValidateAPIKeyService)
+	api.GET("/runtime/api-consumer-credentials/validate", runtime.Authentication, runtime.ServiceCredential, platformContext, apiConsumerCredentialValidate, serviceInternalHandler.ValidateAPIConsumerCredential)
 	configurationManagement := api.Group("/configuration-management")
 	configurationManagement.Use(runtime.Authentication, runtime.UserAccessCredential)
 	configurationManagement.GET("/entries", moduleRegistryHandler.ListConfigurationManagementEntries)

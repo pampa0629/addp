@@ -14,15 +14,16 @@ func TestProtectionAccessRequestResponseUsesActorObjectsOnly(t *testing.T) {
 			SubjectID:   "4",
 			DecidedBy:   func() *int64 { value := int64(32); return &value }(),
 		},
-		Requester: ProtectionAccessActor{Type: "user", ID: "4", DisplayName: "Requester"},
-		Reviewer:  &reviewer,
+		Requester:    ProtectionAccessActor{Type: "user", ID: "4", DisplayName: "Requester"},
+		Reviewer:     &reviewer,
+		EnrollmentID: "5cba79c0-5900-4250-9768-89af983d89cf",
 	}
 	payload, err := json.Marshal(response)
 	if err != nil {
 		t.Fatal(err)
 	}
 	jsonText := string(payload)
-	for _, expected := range []string{`"requester":{"type":"user","id":"4","display_name":"Requester"}`, `"reviewer":{"type":"user","id":"32","display_name":"Reviewer"}`} {
+	for _, expected := range []string{`"requester":{"type":"user","id":"4","display_name":"Requester"}`, `"reviewer":{"type":"user","id":"32","display_name":"Reviewer"}`, `"enrollment_id":"5cba79c0-5900-4250-9768-89af983d89cf"`} {
 		if !strings.Contains(jsonText, expected) {
 			t.Fatalf("response JSON %s missing %s", jsonText, expected)
 		}

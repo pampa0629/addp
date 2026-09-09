@@ -1984,21 +1984,21 @@
                 ]
             }
         },
-        "/documents/{id}/extraction-candidate-groups": {
+        "/documents/{id}/extraction-candidate-families": {
             "get": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "按确定性语义指纹聚合文档历次提炼候选；total 为全部筛选后的总数，status_counts 为不受筛选影响的文档全量状态计数，comparison_counts 为应用状态、类型和关键词筛选但不应用比对结果筛选的实时分面计数；返回代表候选、全部出现记录及动态标准比对，原始候选和证据不会被改写 | Groups candidates from all document extractions by deterministic semantic fingerprint; total is the count after all filters, status_counts covers all document groups regardless of filters, and comparison_counts is a live facet count after state, type, and keyword filters but before the comparison-result filter; returns the representative candidate, all occurrences, and dynamic standard comparison without rewriting raw candidates or evidence",
+                "description": "按候选类型和稳定编码组织独立语义变体并按候选族分页；total 为筛选后的候选族数，variant_total 为筛选后的语义变体数，variant_status_counts 为不受筛选影响的文档全量变体状态计数，family_comparison_counts 为应用状态、类型和关键词但不应用比对结果筛选的候选族分面计数；族内只返回命中筛选的独立变体及其出现记录和动态标准比对，不合并语义指纹或改写原始事实 | Organizes independent semantic variants by candidate type and stable code and paginates candidate families; total is the filtered family count, variant_total is the filtered semantic-variant count, variant_status_counts covers all document variants regardless of filters, and family_comparison_counts applies state, type, and keyword filters but ignores the comparison-result filter; each family returns only matched independent variants with occurrences and live standard comparisons without merging fingerprints or rewriting source facts",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Standard"
                 ],
-                "summary": "获取标准提炼候选聚合视图 | List standard extraction candidate groups",
+                "summary": "获取标准提炼候选族视图 | List standard extraction candidate families",
                 "parameters": [
                     {
                         "enum": [
@@ -2059,7 +2059,7 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_standard_internal_models.PaginatedDocumentExtractionCandidateGroupResponse"
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.PaginatedDocumentExtractionCandidateFamilyResponse"
                         }
                     },
                     "400": {
@@ -8121,6 +8121,67 @@
                 }
             }
         },
+        "github_com_addp_standard_internal_models.DocumentExtractionCandidateFamily": {
+            "type": "object",
+            "properties": {
+                "candidate_type": {
+                    "type": "string",
+                    "enum": [
+                        "glossary",
+                        "element",
+                        "code_set",
+                        "metric"
+                    ]
+                },
+                "code": {
+                    "type": "string"
+                },
+                "family_key": {
+                    "type": "string"
+                },
+                "first_seen_at": {
+                    "type": "string"
+                },
+                "last_seen_at": {
+                    "type": "string"
+                },
+                "occurrence_count": {
+                    "type": "integer"
+                },
+                "representative_name": {
+                    "type": "string"
+                },
+                "variant_count": {
+                    "type": "integer"
+                },
+                "variants": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentExtractionCandidateGroup"
+                    }
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.DocumentExtractionCandidateFamilyComparisonCounts": {
+            "type": "object",
+            "properties": {
+                "all": {
+                    "type": "integer"
+                },
+                "content_conflict": {
+                    "type": "integer"
+                },
+                "exact": {
+                    "type": "integer"
+                },
+                "new": {
+                    "type": "integer"
+                },
+                "scope_conflict": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_addp_standard_internal_models.DocumentExtractionCandidateGroup": {
             "type": "object",
             "properties": {
@@ -8153,40 +8214,6 @@
                         "rejected",
                         "formalized"
                     ]
-                }
-            }
-        },
-        "github_com_addp_standard_internal_models.DocumentExtractionCandidateGroupComparisonCounts": {
-            "type": "object",
-            "properties": {
-                "content_conflict": {
-                    "type": "integer"
-                },
-                "exact": {
-                    "type": "integer"
-                },
-                "new": {
-                    "type": "integer"
-                },
-                "scope_conflict": {
-                    "type": "integer"
-                }
-            }
-        },
-        "github_com_addp_standard_internal_models.DocumentExtractionCandidateGroupStatusCounts": {
-            "type": "object",
-            "properties": {
-                "formalized": {
-                    "type": "integer"
-                },
-                "pending": {
-                    "type": "integer"
-                },
-                "rejected": {
-                    "type": "integer"
-                },
-                "retained": {
-                    "type": "integer"
                 }
             }
         },
@@ -8302,6 +8329,23 @@
                 },
                 "name": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.DocumentExtractionCandidateVariantStatusCounts": {
+            "type": "object",
+            "properties": {
+                "formalized": {
+                    "type": "integer"
+                },
+                "pending": {
+                    "type": "integer"
+                },
+                "rejected": {
+                    "type": "integer"
+                },
+                "retained": {
+                    "type": "integer"
                 }
             }
         },
@@ -9116,17 +9160,17 @@
                 }
             }
         },
-        "github_com_addp_standard_internal_models.PaginatedDocumentExtractionCandidateGroupResponse": {
+        "github_com_addp_standard_internal_models.PaginatedDocumentExtractionCandidateFamilyResponse": {
             "type": "object",
             "properties": {
-                "comparison_counts": {
-                    "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentExtractionCandidateGroupComparisonCounts"
-                },
                 "data": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentExtractionCandidateGroup"
+                        "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentExtractionCandidateFamily"
                     }
+                },
+                "family_comparison_counts": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentExtractionCandidateFamilyComparisonCounts"
                 },
                 "page": {
                     "type": "integer"
@@ -9134,13 +9178,16 @@
                 "page_size": {
                     "type": "integer"
                 },
-                "status_counts": {
-                    "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentExtractionCandidateGroupStatusCounts"
-                },
                 "total": {
                     "type": "integer"
                 },
                 "total_pages": {
+                    "type": "integer"
+                },
+                "variant_status_counts": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentExtractionCandidateVariantStatusCounts"
+                },
+                "variant_total": {
                     "type": "integer"
                 }
             }

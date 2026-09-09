@@ -68,17 +68,21 @@ func TestPostgresDocumentCandidateGroupsPreserveOccurrences(t *testing.T) {
 	}
 
 	svc := &DocumentService{repo: repo}
-	response, err := svc.ListCandidateGroups(document.ID, tenantID, DocumentCandidateGroupListOptions{Page: 1, PageSize: 1})
+	response, err := svc.ListCandidateFamilies(document.ID, tenantID, DocumentCandidateFamilyListOptions{Page: 1, PageSize: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if response.Total != 2 || response.TotalPages != 2 || response.ComparisonCounts.Exact != 1 || response.ComparisonCounts.ContentConflict != 1 || len(response.Data) != 1 {
+	if response.Total != 1 || response.VariantTotal != 2 || response.TotalPages != 1 || response.FamilyComparisonCounts.All != 1 || response.FamilyComparisonCounts.Exact != 1 || response.FamilyComparisonCounts.ContentConflict != 1 || len(response.Data) != 1 {
 		t.Fatalf("response=%+v", response)
 	}
-	if response.StatusCounts.Retained != 1 || response.StatusCounts.Rejected != 1 || response.StatusCounts.Pending != 0 {
-		t.Fatalf("status counts=%+v", response.StatusCounts)
+	if response.VariantStatusCounts.Retained != 1 || response.VariantStatusCounts.Rejected != 1 || response.VariantStatusCounts.Pending != 0 {
+		t.Fatalf("variant status counts=%+v", response.VariantStatusCounts)
 	}
-	group := response.Data[0]
+	family := response.Data[0]
+	if family.FamilyKey != "glossary:"+code || family.VariantCount != 2 || family.OccurrenceCount != 3 || len(family.Variants) != 2 {
+		t.Fatalf("family=%+v", family)
+	}
+	group := family.Variants[0]
 	if group.State != models.CandidateGroupStateRetained || group.OccurrenceCount != 2 || group.Candidate.ID != candidates[0].ID {
 		t.Fatalf("group=%+v", group)
 	}
@@ -86,34 +90,34 @@ func TestPostgresDocumentCandidateGroupsPreserveOccurrences(t *testing.T) {
 		t.Fatalf("occurrences/comparison=%+v", group)
 	}
 
-	filtered, err := svc.ListCandidateGroups(document.ID, tenantID, DocumentCandidateGroupListOptions{State: models.CandidateGroupStateRejected})
-	if err != nil || filtered.Total != 1 || filtered.ComparisonCounts.Exact != 0 || filtered.ComparisonCounts.ContentConflict != 1 || len(filtered.Data) != 1 || filtered.Data[0].State != models.CandidateGroupStateRejected {
+	filtered, err := svc.ListCandidateFamilies(document.ID, tenantID, DocumentCandidateFamilyListOptions{State: models.CandidateGroupStateRejected})
+	if err != nil || filtered.Total != 1 || filtered.VariantTotal != 1 || filtered.FamilyComparisonCounts.All != 1 || filtered.FamilyComparisonCounts.Exact != 0 || filtered.FamilyComparisonCounts.ContentConflict != 1 || len(filtered.Data) != 1 || len(filtered.Data[0].Variants) != 1 || filtered.Data[0].Variants[0].State != models.CandidateGroupStateRejected {
 		t.Fatalf("filtered=%+v err=%v", filtered, err)
 	}
 
-	exact, err := svc.ListCandidateGroups(document.ID, tenantID, DocumentCandidateGroupListOptions{ComparisonResult: models.CandidateComparisonExact, PageSize: 1})
-	if err != nil || exact.Total != 1 || exact.TotalPages != 1 || exact.StatusCounts.Retained != 1 || exact.StatusCounts.Rejected != 1 || exact.ComparisonCounts.Exact != 1 || exact.ComparisonCounts.ContentConflict != 1 || len(exact.Data) != 1 || exact.Data[0].Candidate.Comparison == nil || exact.Data[0].Candidate.Comparison.Result != models.CandidateComparisonExact {
+	exact, err := svc.ListCandidateFamilies(document.ID, tenantID, DocumentCandidateFamilyListOptions{ComparisonResult: models.CandidateComparisonExact, PageSize: 1})
+	if err != nil || exact.Total != 1 || exact.VariantTotal != 1 || exact.TotalPages != 1 || exact.VariantStatusCounts.Retained != 1 || exact.VariantStatusCounts.Rejected != 1 || exact.FamilyComparisonCounts.All != 1 || exact.FamilyComparisonCounts.Exact != 1 || exact.FamilyComparisonCounts.ContentConflict != 1 || len(exact.Data) != 1 || len(exact.Data[0].Variants) != 1 || exact.Data[0].Variants[0].Candidate.Comparison == nil || exact.Data[0].Variants[0].Candidate.Comparison.Result != models.CandidateComparisonExact {
 		t.Fatalf("exact comparison filter=%+v err=%v", exact, err)
 	}
-	conflict, err := svc.ListCandidateGroups(document.ID, tenantID, DocumentCandidateGroupListOptions{ComparisonResult: models.CandidateComparisonContentConflict, PageSize: 1})
-	if err != nil || conflict.Total != 1 || conflict.TotalPages != 1 || len(conflict.Data) != 1 || conflict.Data[0].Candidate.Comparison == nil || conflict.Data[0].Candidate.Comparison.Result != models.CandidateComparisonContentConflict {
+	conflict, err := svc.ListCandidateFamilies(document.ID, tenantID, DocumentCandidateFamilyListOptions{ComparisonResult: models.CandidateComparisonContentConflict, PageSize: 1})
+	if err != nil || conflict.Total != 1 || conflict.VariantTotal != 1 || conflict.TotalPages != 1 || len(conflict.Data) != 1 || len(conflict.Data[0].Variants) != 1 || conflict.Data[0].Variants[0].Candidate.Comparison == nil || conflict.Data[0].Variants[0].Candidate.Comparison.Result != models.CandidateComparisonContentConflict {
 		t.Fatalf("content conflict filter=%+v err=%v", conflict, err)
 	}
-	newCandidates, err := svc.ListCandidateGroups(document.ID, tenantID, DocumentCandidateGroupListOptions{ComparisonResult: models.CandidateComparisonNew})
-	if err != nil || newCandidates.Total != 0 || len(newCandidates.Data) != 0 {
+	newCandidates, err := svc.ListCandidateFamilies(document.ID, tenantID, DocumentCandidateFamilyListOptions{ComparisonResult: models.CandidateComparisonNew})
+	if err != nil || newCandidates.Total != 0 || newCandidates.VariantTotal != 0 || newCandidates.FamilyComparisonCounts.All != 1 || len(newCandidates.Data) != 0 {
 		t.Fatalf("new comparison filter=%+v err=%v", newCandidates, err)
 	}
-	keyword, err := svc.ListCandidateGroups(document.ID, tenantID, DocumentCandidateGroupListOptions{Keyword: "  冲突  "})
-	if err != nil || keyword.Total != 1 || keyword.StatusCounts.Retained != 1 || keyword.StatusCounts.Rejected != 1 || keyword.ComparisonCounts.Exact != 0 || keyword.ComparisonCounts.ContentConflict != 1 || len(keyword.Data) != 1 || keyword.Data[0].Candidate.ID != candidates[2].ID {
+	keyword, err := svc.ListCandidateFamilies(document.ID, tenantID, DocumentCandidateFamilyListOptions{Keyword: "  冲突  "})
+	if err != nil || keyword.Total != 1 || keyword.VariantTotal != 1 || keyword.VariantStatusCounts.Retained != 1 || keyword.VariantStatusCounts.Rejected != 1 || keyword.FamilyComparisonCounts.All != 1 || keyword.FamilyComparisonCounts.Exact != 0 || keyword.FamilyComparisonCounts.ContentConflict != 1 || len(keyword.Data) != 1 || len(keyword.Data[0].Variants) != 1 || keyword.Data[0].Variants[0].Candidate.ID != candidates[2].ID {
 		t.Fatalf("keyword filter=%+v err=%v", keyword, err)
 	}
-	codeKeyword, err := svc.ListCandidateGroups(document.ID, tenantID, DocumentCandidateGroupListOptions{Keyword: strings.ToUpper(code), ComparisonResult: models.CandidateComparisonExact})
-	if err != nil || codeKeyword.Total != 1 || codeKeyword.ComparisonCounts.Exact != 1 || codeKeyword.ComparisonCounts.ContentConflict != 1 || len(codeKeyword.Data) != 1 {
+	codeKeyword, err := svc.ListCandidateFamilies(document.ID, tenantID, DocumentCandidateFamilyListOptions{Keyword: strings.ToUpper(code), ComparisonResult: models.CandidateComparisonExact})
+	if err != nil || codeKeyword.Total != 1 || codeKeyword.VariantTotal != 1 || codeKeyword.FamilyComparisonCounts.All != 1 || codeKeyword.FamilyComparisonCounts.Exact != 1 || codeKeyword.FamilyComparisonCounts.ContentConflict != 1 || len(codeKeyword.Data) != 1 {
 		t.Fatalf("code keyword with comparison filter=%+v err=%v", codeKeyword, err)
 	}
 
-	farPage, err := svc.ListCandidateGroups(document.ID, tenantID, DocumentCandidateGroupListOptions{Page: int(^uint(0) >> 1), PageSize: 1})
-	if err != nil || farPage.Total != 2 || farPage.TotalPages != 2 || len(farPage.Data) != 0 {
+	farPage, err := svc.ListCandidateFamilies(document.ID, tenantID, DocumentCandidateFamilyListOptions{Page: int(^uint(0) >> 1), PageSize: 1})
+	if err != nil || farPage.Total != 1 || farPage.VariantTotal != 2 || farPage.TotalPages != 1 || len(farPage.Data) != 0 {
 		t.Fatalf("far page=%+v err=%v", farPage, err)
 	}
 }

@@ -510,8 +510,8 @@ func (h *DocumentHandler) ExtractCandidates(c *gin.Context) {
 	c.JSON(http.StatusCreated, result)
 }
 
-// @Summary 获取标准提炼候选聚合视图 | List standard extraction candidate groups
-// @Description 按确定性语义指纹聚合文档历次提炼候选；total 为全部筛选后的总数，status_counts 为不受筛选影响的文档全量状态计数，comparison_counts 为应用状态、类型和关键词筛选但不应用比对结果筛选的实时分面计数；返回代表候选、全部出现记录及动态标准比对，原始候选和证据不会被改写 | Groups candidates from all document extractions by deterministic semantic fingerprint; total is the count after all filters, status_counts covers all document groups regardless of filters, and comparison_counts is a live facet count after state, type, and keyword filters but before the comparison-result filter; returns the representative candidate, all occurrences, and dynamic standard comparison without rewriting raw candidates or evidence
+// @Summary 获取标准提炼候选族视图 | List standard extraction candidate families
+// @Description 按候选类型和稳定编码组织独立语义变体并按候选族分页；total 为筛选后的候选族数，variant_total 为筛选后的语义变体数，variant_status_counts 为不受筛选影响的文档全量变体状态计数，family_comparison_counts 为应用状态、类型和关键词但不应用比对结果筛选的候选族分面计数；族内只返回命中筛选的独立变体及其出现记录和动态标准比对，不合并语义指纹或改写原始事实 | Organizes independent semantic variants by candidate type and stable code and paginates candidate families; total is the filtered family count, variant_total is the filtered semantic-variant count, variant_status_counts covers all document variants regardless of filters, and family_comparison_counts applies state, type, and keyword filters but ignores the comparison-result filter; each family returns only matched independent variants with occurrences and live standard comparisons without merging fingerprints or rewriting source facts
 // @Tags Standard
 // @Produce json
 // @Param state query string false "聚合状态 | Group state" Enums(pending,retained,rejected,formalized)
@@ -520,7 +520,7 @@ func (h *DocumentHandler) ExtractCandidates(c *gin.Context) {
 // @Param comparison_result query string false "与当前标准的实时比对结果 | Live comparison result against current standards" Enums(new,exact,content_conflict,scope_conflict)
 // @Param page query int false "页码，默认 1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认 20，最大 100 | Page size, default 20, maximum 100"
-// @Success 200 {object} models.PaginatedDocumentExtractionCandidateGroupResponse
+// @Success 200 {object} models.PaginatedDocumentExtractionCandidateFamilyResponse
 // @Failure 400 {object} map[string]string
 // @Failure 401 {object} map[string]string "需要登录 | Authentication required"
 // @Failure 403 {object} map[string]string "无权访问 | Access denied"
@@ -528,33 +528,33 @@ func (h *DocumentHandler) ExtractCandidates(c *gin.Context) {
 // @Failure 500 {object} map[string]string
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.document.read"]
-// @Router /documents/{id}/extraction-candidate-groups [get]
+// @Router /documents/{id}/extraction-candidate-families [get]
 // @Security BearerAuth
-func (h *DocumentHandler) ListCandidateGroups(c *gin.Context) {
+func (h *DocumentHandler) ListCandidateFamilies(c *gin.Context) {
 	id, ok := elementPathID(c, "id")
 	if !ok {
 		return
 	}
-	opts := service.DocumentCandidateGroupListOptions{State: c.Query("state"), CandidateType: c.Query("candidate_type"), Keyword: c.Query("keyword"), ComparisonResult: c.Query("comparison_result")}
+	opts := service.DocumentCandidateFamilyListOptions{State: c.Query("state"), CandidateType: c.Query("candidate_type"), Keyword: c.Query("keyword"), ComparisonResult: c.Query("comparison_result")}
 	var err error
 	if value := c.Query("page"); value != "" {
 		opts.Page, err = strconv.Atoi(value)
 		if err != nil {
-			respondError(c, http.StatusBadRequest, service.ErrDocumentCandidateGroupQueryInvalid)
+			respondError(c, http.StatusBadRequest, service.ErrDocumentCandidateFamilyQueryInvalid)
 			return
 		}
 	}
 	if value := c.Query("page_size"); value != "" {
 		opts.PageSize, err = strconv.Atoi(value)
 		if err != nil {
-			respondError(c, http.StatusBadRequest, service.ErrDocumentCandidateGroupQueryInvalid)
+			respondError(c, http.StatusBadRequest, service.ErrDocumentCandidateFamilyQueryInvalid)
 			return
 		}
 	}
-	items, err := h.svc.ListCandidateGroups(id, getTenantID(c), opts)
+	items, err := h.svc.ListCandidateFamilies(id, getTenantID(c), opts)
 	if err != nil {
 		status := http.StatusInternalServerError
-		if errors.Is(err, service.ErrDocumentCandidateGroupQueryInvalid) {
+		if errors.Is(err, service.ErrDocumentCandidateFamilyQueryInvalid) {
 			status = http.StatusBadRequest
 		}
 		respondError(c, status, err)

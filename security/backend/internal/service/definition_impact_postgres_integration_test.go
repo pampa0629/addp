@@ -254,7 +254,7 @@ func TestProtectionExemptionAssessmentRevisionAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if history.Total != 1 || len(history.Data) != 1 || history.Data[0].ID != approved.ID {
+	if history.Total != 1 || len(history.Data) != 1 || history.Data[0].ID != approved.ID || history.Data[0].AuthorizationState != models.ProtectionExemptionStateActive || history.Data[0].AuthorizedUntil == nil || !history.Data[0].AuthorizedUntil.Equal(now.Add(time.Hour)) {
 		t.Fatalf("postgres filtered access request history = %#v", history)
 	}
 	assertLatestPostgresManagerProjectionAuthorization(t, tx, enrollment.ID, managerPreviewAction, "41", true)
@@ -274,6 +274,15 @@ func TestProtectionExemptionAssessmentRevisionAgainstPostgres(t *testing.T) {
 	if loaded.EffectiveState != models.ProtectionExemptionStateSuperseded || loaded.Current.AssessmentRevision == revised.CurrentRevision {
 		t.Fatalf("postgres superseded exemption = %#v, assessment = %#v", loaded, revised)
 	}
+	history, err = accessRequests.ListReviewQueue(context.Background(), 7, 42, models.ProtectionAccessRequestReviewFilter{
+		Scope: models.ProtectionAccessRequestReviewScopeHistory, State: models.ProtectionAccessRequestStateApproved,
+	}, 1, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if history.Total != 1 || history.Data[0].AuthorizationState != models.ProtectionExemptionStateSuperseded {
+		t.Fatalf("postgres superseded request authorization = %#v", history)
+	}
 	assertLatestPostgresManagerProjectionAuthorization(t, tx, enrollment.ID, managerPreviewAction, "41", false)
 
 	requestedAgain, err := accessRequests.Create(context.Background(), 7, 41, models.CreateProtectionAccessRequest{
@@ -289,6 +298,19 @@ func TestProtectionExemptionAssessmentRevisionAgainstPostgres(t *testing.T) {
 	}
 	if reactivated.State != models.ProtectionAccessRequestStateApproved || reactivated.ExemptionID != approved.ExemptionID {
 		t.Fatalf("postgres reactivated request = %#v, assessment = %#v", reactivated, revised)
+	}
+	history, err = accessRequests.ListReviewQueue(context.Background(), 7, 42, models.ProtectionAccessRequestReviewFilter{
+		Scope: models.ProtectionAccessRequestReviewScopeHistory, State: models.ProtectionAccessRequestStateApproved,
+	}, 1, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authorizationStates := make(map[string]string, len(history.Data))
+	for _, item := range history.Data {
+		authorizationStates[item.ID] = item.AuthorizationState
+	}
+	if history.Total != 2 || authorizationStates[reactivated.ID] != models.ProtectionExemptionStateActive || authorizationStates[approved.ID] != models.ProtectionExemptionStateSuperseded {
+		t.Fatalf("postgres reactivated request authorization history = %#v", history)
 	}
 	assertLatestPostgresManagerProjectionAuthorization(t, tx, enrollment.ID, managerPreviewAction, "41", true)
 }

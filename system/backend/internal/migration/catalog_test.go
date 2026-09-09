@@ -14,8 +14,36 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 132 {
-		t.Fatalf("LatestVersion = %d, want 132", catalog.LatestVersion)
+	if catalog.LatestVersion != 133 {
+		t.Fatalf("LatestVersion = %d, want 133", catalog.LatestVersion)
+	}
+}
+
+func TestAPIConsumerBoundaryMigrationRemovesControlPlaneAPIKeyPath(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000133_iam_api_consumer_boundary.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 133: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"DROP TABLE IF EXISTS system.api_keys CASCADE",
+		"DROP TABLE IF EXISTS system.applications CASCADE",
+		"UPDATE system.permissions",
+		"SET status = 'disabled'",
+		"CREATE TABLE system.api_consumers",
+		"CREATE TABLE system.api_consumer_service_grants",
+		"CREATE TABLE system.api_consumer_credentials",
+		"service_type IN ('query')",
+		"'iam.api_consumer.read'",
+		"'iam.api_consumer_runtime.read'",
+		"'tenant.administrator'",
+		"'service.definition.read'",
+		"'platform.gateway_runtime', 'platform.service_runtime'",
+		"authorization_version = principal.authorization_version + 1",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 133 missing %q", fragment)
+		}
 	}
 }
 

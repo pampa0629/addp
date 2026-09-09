@@ -18,6 +18,7 @@ type TenantServiceAccount struct {
 	ID                   int64
 	Name                 string
 	Description          string
+	OwnerScope           string
 	Status               PrincipalStatus
 	MembershipID         int64
 	MembershipStatus     TenantMembershipStatus
@@ -33,6 +34,7 @@ type tenantServiceAccountRow struct {
 	ID                   int64                  `gorm:"column:id"`
 	Name                 string                 `gorm:"column:name"`
 	Description          string                 `gorm:"column:description"`
+	OwnerScope           string                 `gorm:"column:owner_scope"`
 	Status               PrincipalStatus        `gorm:"column:status"`
 	MembershipID         int64                  `gorm:"column:membership_id"`
 	MembershipStatus     TenantMembershipStatus `gorm:"column:membership_status"`
@@ -51,8 +53,9 @@ func (r *Repository) ListTenantServiceAccounts(
 	pageSize int,
 	search string,
 	status *PrincipalStatus,
+	ownerScope *string,
 ) ([]TenantServiceAccount, int64, error) {
-	query := r.tenantServiceAccountQuery(ctx, tenantID)
+	query := r.tenantServiceAccountListQuery(ctx, tenantID)
 	if normalized := strings.TrimSpace(search); normalized != "" {
 		pattern := "%" + normalized + "%"
 		query = query.Where("service_principal.name ILIKE ? OR service_principal.description ILIKE ? OR oauth_client.client_id ILIKE ?", pattern, pattern, pattern)
@@ -60,13 +63,16 @@ func (r *Repository) ListTenantServiceAccounts(
 	if status != nil {
 		query = query.Where("principal.status = ?", *status)
 	}
+	if ownerScope != nil {
+		query = query.Where("service_principal.owner_scope = ?", *ownerScope)
+	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, wrapRepositoryError(err)
 	}
 	var rows []tenantServiceAccountRow
 	if err := query.Select(tenantServiceAccountSelect).
-		Order("service_principal.updated_at DESC, service_principal.id ASC").
+		Order("CASE WHEN service_principal.owner_scope = 'tenant' THEN 0 ELSE 1 END, service_principal.updated_at DESC, service_principal.id ASC").
 		Offset((page - 1) * pageSize).Limit(pageSize).Scan(&rows).Error; err != nil {
 		return nil, 0, wrapRepositoryError(err)
 	}
@@ -86,7 +92,7 @@ func (r *Repository) LockTenantServiceAccount(ctx context.Context, tenantID, acc
 }
 
 func (r *Repository) getTenantServiceAccount(ctx context.Context, tenantID, accountID int64, lock bool) (*TenantServiceAccount, error) {
-	query := r.tenantServiceAccountQuery(ctx, tenantID).Where("service_principal.id = ?", accountID)
+	query := r.tenantManagedServiceAccountQuery(ctx, tenantID).Where("service_principal.id = ?", accountID)
 	if lock {
 		query = query.Clauses(clause.Locking{Strength: "UPDATE", Table: clause.Table{Name: "service_principal"}})
 	}
@@ -102,6 +108,7 @@ const tenantServiceAccountSelect = `
 	service_principal.id,
 	service_principal.name,
 	service_principal.description,
+	service_principal.owner_scope,
 	principal.status,
 	membership.id AS membership_id,
 	membership.status AS membership_status,
@@ -112,7 +119,18 @@ const tenantServiceAccountSelect = `
 	service_principal.created_at,
 	service_principal.updated_at`
 
-func (r *Repository) tenantServiceAccountQuery(ctx context.Context, tenantID int64) *gorm.DB {
+func (r *Repository) tenantServiceAccountListQuery(ctx context.Context, tenantID int64) *gorm.DB {
+	return r.db.WithContext(ctx).Table("system.service_principals AS service_principal").
+		Joins("JOIN system.principals AS principal ON principal.id = service_principal.id AND principal.principal_type = 'service_principal'").
+		Joins("JOIN system.tenant_memberships AS membership ON membership.tenant_id = ? AND membership.principal_id = service_principal.id", tenantID).
+		Joins(`JOIN system.oauth_clients AS oauth_client
+			ON oauth_client.service_principal_id = service_principal.id
+			AND ((service_principal.owner_scope = 'tenant' AND oauth_client.owner_scope = 'tenant' AND oauth_client.owner_tenant_id = ?)
+				OR (service_principal.owner_scope = 'platform' AND oauth_client.owner_scope = 'platform'))`, tenantID).
+		Where("(service_principal.owner_scope = 'tenant' AND service_principal.owner_tenant_id = ?) OR service_principal.owner_scope = 'platform'", tenantID)
+}
+
+func (r *Repository) tenantManagedServiceAccountQuery(ctx context.Context, tenantID int64) *gorm.DB {
 	return r.db.WithContext(ctx).Table("system.service_principals AS service_principal").
 		Joins("JOIN system.principals AS principal ON principal.id = service_principal.id AND principal.principal_type = 'service_principal'").
 		Joins("JOIN system.tenant_memberships AS membership ON membership.tenant_id = service_principal.owner_tenant_id AND membership.principal_id = service_principal.id").
@@ -280,7 +298,7 @@ func (r *Repository) serviceAccountWriteResult(ctx context.Context, result *gorm
 
 func mapTenantServiceAccountRow(row tenantServiceAccountRow) TenantServiceAccount {
 	return TenantServiceAccount{
-		ID: row.ID, Name: row.Name, Description: row.Description, Status: row.Status,
+		ID: row.ID, Name: row.Name, Description: row.Description, OwnerScope: row.OwnerScope, Status: row.Status,
 		MembershipID: row.MembershipID, MembershipStatus: row.MembershipStatus,
 		ClientID: row.ClientID, CredentialStatus: row.CredentialStatus, Version: row.Version,
 		CreatedByPrincipalID: row.CreatedByPrincipalID,

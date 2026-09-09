@@ -86,19 +86,19 @@ func TestDocumentCandidateSemanticFingerprintNormalizesItemAndDimensionOrder(t *
 	}
 }
 
-func TestNormalizeDocumentCandidateGroupOptions(t *testing.T) {
-	opts := DocumentCandidateGroupListOptions{Keyword: "  OUTDOOR   Person  "}
-	page, pageSize, err := normalizeDocumentCandidateGroupOptions(&opts)
+func TestNormalizeDocumentCandidateFamilyOptions(t *testing.T) {
+	opts := DocumentCandidateFamilyListOptions{Keyword: "  OUTDOOR   Person  "}
+	page, pageSize, err := normalizeDocumentCandidateFamilyOptions(&opts)
 	if err != nil || page != 1 || pageSize != 20 {
 		t.Fatalf("page=%d pageSize=%d err=%v", page, pageSize, err)
 	}
 	if opts.Keyword != "outdoor person" {
 		t.Fatalf("keyword=%q", opts.Keyword)
 	}
-	for _, opts := range []DocumentCandidateGroupListOptions{
+	for _, opts := range []DocumentCandidateFamilyListOptions{
 		{State: "unknown"}, {CandidateType: "unknown"}, {ComparisonResult: "unknown"}, {Page: -1}, {PageSize: 101},
 	} {
-		if _, _, err := normalizeDocumentCandidateGroupOptions(&opts); !errors.Is(err, ErrDocumentCandidateGroupQueryInvalid) {
+		if _, _, err := normalizeDocumentCandidateFamilyOptions(&opts); !errors.Is(err, ErrDocumentCandidateFamilyQueryInvalid) {
 			t.Fatalf("opts=%+v err=%v", opts, err)
 		}
 	}
@@ -116,18 +116,32 @@ func TestDocumentCandidateMatchesKeywordUsesNormalizedCodeOrName(t *testing.T) {
 	}
 }
 
-func TestIncrementCandidateGroupComparisonCount(t *testing.T) {
-	counts := models.DocumentExtractionCandidateGroupComparisonCounts{}
-	for _, result := range []string{
-		models.CandidateComparisonNew,
-		models.CandidateComparisonExact,
-		models.CandidateComparisonContentConflict,
-		models.CandidateComparisonScopeConflict,
-	} {
-		incrementCandidateGroupComparisonCount(&counts, &models.DocumentExtractionCandidateComparison{Result: result})
+func TestBuildDocumentCandidateFamiliesKeepsSemanticVariantsIndependent(t *testing.T) {
+	firstSeen := time.Date(2026, 9, 1, 9, 0, 0, 0, time.UTC)
+	lastSeen := firstSeen.Add(24 * time.Hour)
+	groups := []models.DocumentExtractionCandidateGroup{
+		{SemanticFingerprint: "exact", OccurrenceCount: 2, FirstSeenAt: firstSeen, LastSeenAt: lastSeen, Candidate: models.DocumentExtractionCandidate{CandidateType: "element", Code: "outdoor_person_id", Name: "人员标识", Comparison: &models.DocumentExtractionCandidateComparison{Result: models.CandidateComparisonExact}}},
+		{SemanticFingerprint: "conflict", OccurrenceCount: 1, FirstSeenAt: lastSeen, LastSeenAt: lastSeen, Candidate: models.DocumentExtractionCandidate{CandidateType: "element", Code: "outdoor_person_id", Name: "户外人员标识", Comparison: &models.DocumentExtractionCandidateComparison{Result: models.CandidateComparisonContentConflict}}},
+		{SemanticFingerprint: "glossary", OccurrenceCount: 1, FirstSeenAt: firstSeen, LastSeenAt: firstSeen, Candidate: models.DocumentExtractionCandidate{CandidateType: "glossary", Code: "outdoor_person_id", Name: "人员标识", Comparison: &models.DocumentExtractionCandidateComparison{Result: models.CandidateComparisonNew}}},
 	}
-	incrementCandidateGroupComparisonCount(&counts, nil)
-	if counts.New != 1 || counts.Exact != 1 || counts.ContentConflict != 1 || counts.ScopeConflict != 1 {
+
+	families := buildDocumentCandidateFamilies(groups)
+	if len(families) != 2 {
+		t.Fatalf("families=%+v", families)
+	}
+	family := families[0]
+	if family.FamilyKey != "element:outdoor_person_id" || family.VariantCount != 2 || family.OccurrenceCount != 3 || len(family.Variants) != 2 || family.RepresentativeName != "人员标识" || !family.FirstSeenAt.Equal(firstSeen) || !family.LastSeenAt.Equal(lastSeen) {
+		t.Fatalf("family=%+v", family)
+	}
+	if family.Variants[0].SemanticFingerprint != "exact" || family.Variants[1].SemanticFingerprint != "conflict" {
+		t.Fatalf("variants=%+v", family.Variants)
+	}
+
+	counts := models.DocumentExtractionCandidateFamilyComparisonCounts{}
+	for _, item := range families {
+		incrementCandidateFamilyComparisonCounts(&counts, item)
+	}
+	if counts.All != 2 || counts.New != 1 || counts.Exact != 1 || counts.ContentConflict != 1 || counts.ScopeConflict != 0 {
 		t.Fatalf("counts=%+v", counts)
 	}
 }

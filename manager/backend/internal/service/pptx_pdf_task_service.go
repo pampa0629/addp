@@ -177,15 +177,6 @@ func (s *PPTXPDFTaskService) Current(ctx context.Context, tenantID uint, fingerp
 	return s.repo.Current(ctx, tenantID, fingerprint)
 }
 
-func (s *PPTXPDFTaskService) CurrentForTask(ctx context.Context, task *models.PPTXPDFTask) (*models.PPTXPDF, string, error) {
-	config, err := decodePPTXPDFTaskConfig(task)
-	if err != nil {
-		return nil, "", err
-	}
-	current, err := s.repo.Current(ctx, task.TenantID, config.Source.ItemFingerprint)
-	return current, config.Source.SourceVersion, err
-}
-
 func (s *PPTXPDFTaskService) Execute(ctx context.Context, taskID, tenantID uint, triggerType, source string, parentExecutionID *string, overwrite bool) (string, error) {
 	normalizedTrigger, err := commonExecution.NormalizeTriggerType(triggerType)
 	if err != nil {

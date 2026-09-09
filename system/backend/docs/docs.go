@@ -255,377 +255,6 @@ const docTemplate = `{
                 ]
             }
         },
-        "/applications": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "应用管理 | Application Management"
-                ],
-                "summary": "获取应用列表 | List applications",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "system.application.read"
-                ]
-            },
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "应用管理 | Application Management"
-                ],
-                "summary": "创建应用 | Create application",
-                "parameters": [
-                    {
-                        "description": "应用信息 | Application info",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.CreateApplicationRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.Application"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "system.application.create"
-                ]
-            }
-        },
-        "/applications/{id}": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "应用管理 | Application Management"
-                ],
-                "summary": "获取应用详情 | Get application detail",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "应用ID | Application ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.Application"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "system.application.read"
-                ]
-            },
-            "put": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "应用管理 | Application Management"
-                ],
-                "summary": "更新应用 | Update application",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "应用ID | Application ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "应用更新信息 | Application update info",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.UpdateApplicationRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.Application"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "system.application.update"
-                ]
-            },
-            "delete": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "应用管理 | Application Management"
-                ],
-                "summary": "删除应用 | Delete application",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "应用ID | Application ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.SuccessResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "system.application.delete"
-                ]
-            }
-        },
-        "/applications/{id}/keys": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "应用管理 | Application Management"
-                ],
-                "summary": "获取 API Key 列表 | List API keys",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "应用ID | Application ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "system.api_key.read"
-                ]
-            },
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "应用管理 | Application Management"
-                ],
-                "summary": "生成 API Key | Generate API key",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "应用ID | Application ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "API Key 信息 | API key info",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.CreateAPIKeyRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.APIKey"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "system.api_key.create"
-                ]
-            }
-        },
-        "/applications/{id}/keys/{key_id}": {
-            "delete": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "应用管理 | Application Management"
-                ],
-                "summary": "撤销 API Key | Revoke API key",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "应用ID | Application ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "integer",
-                        "description": "API Key ID",
-                        "name": "key_id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.SuccessResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "system.api_key.revoke"
-                ]
-            }
-        },
         "/auth/context": {
             "get": {
                 "security": [
@@ -4806,21 +4435,21 @@ const docTemplate = `{
                 "x-addp-auth-mode": "public"
             }
         },
-        "/runtime/api-keys/validate": {
+        "/runtime/api-consumer-credentials/validate": {
             "get": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "Gateway 平台 Service Principal 验证外部请求携带的 API Key Hash；服务间认证本身仍只使用 Bearer | The Gateway platform service principal validates an external API key hash; service-to-service authentication itself remains Bearer-only",
+                "description": "Gateway 或 Service 平台 Service Principal 验证数据面 API 消费凭据；服务间认证本身仍只使用 Bearer | Gateway or Service validates a data-plane API consumer credential; service-to-service authentication remains Bearer-only",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "应用 API Key | Application API Keys"
+                    "API 消费方 | API Consumers"
                 ],
-                "summary": "验证外部 API Key Hash | Validate external API key hash",
+                "summary": "验证 API 消费凭据 Hash | Validate API consumer credential hash",
                 "parameters": [
                     {
                         "type": "string",
@@ -4834,7 +4463,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_system_internal_models.APIKeyValidationResponse"
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.APIConsumerCredentialValidationResponse"
                         }
                     },
                     "400": {
@@ -4864,7 +4493,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "system.api_key.read"
+                    "iam.api_consumer_runtime.read"
                 ]
             }
         },
@@ -6251,6 +5880,341 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "platform.tenant.read"
+                ]
+            }
+        },
+        "/tenant/api-consumers": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "API 消费方 | API Consumers"
+                ],
+                "summary": "获取 API 消费方列表 | List API consumers",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.api_consumer.read"
+                ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "API 消费方 | API Consumers"
+                ],
+                "summary": "创建 API 消费方 | Create API consumer",
+                "parameters": [
+                    {
+                        "description": "API 消费方 | API consumer",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.CreateAPIConsumerRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.APIConsumer"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.api_consumer.create"
+                ]
+            }
+        },
+        "/tenant/api-consumers/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "API 消费方 | API Consumers"
+                ],
+                "summary": "获取 API 消费方 | Get API consumer",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "API 消费方 ID | API consumer ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.APIConsumer"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.api_consumer.read"
+                ]
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "API 消费方 | API Consumers"
+                ],
+                "summary": "更新 API 消费方 | Update API consumer",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "API 消费方 ID | API consumer ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "更新内容 | Update",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.UpdateAPIConsumerRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.APIConsumer"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.api_consumer.update"
+                ]
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "API 消费方 | API Consumers"
+                ],
+                "summary": "删除 API 消费方 | Delete API consumer",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "API 消费方 ID | API consumer ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.api_consumer.delete"
+                ]
+            }
+        },
+        "/tenant/api-consumers/{id}/credentials": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "API 消费方 | API Consumers"
+                ],
+                "summary": "获取 API 消费凭据列表 | List API consumer credentials",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "API 消费方 ID | API consumer ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.api_consumer_credential.read"
+                ]
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "API 消费方 | API Consumers"
+                ],
+                "summary": "创建 API 消费凭据 | Create API consumer credential",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "API 消费方 ID | API consumer ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "凭据配置 | Credential",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.CreateAPIConsumerCredentialRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.APIConsumerCredential"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_system_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.api_consumer_credential.create"
+                ]
+            }
+        },
+        "/tenant/api-consumers/{id}/credentials/{credential_id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "API 消费方 | API Consumers"
+                ],
+                "summary": "撤销 API 消费凭据 | Revoke API consumer credential",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "API 消费方 ID | API consumer ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "凭据 ID | Credential ID",
+                        "name": "credential_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.api_consumer_credential.revoke"
                 ]
             }
         },
@@ -8980,7 +8944,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "分页查询当前 Tenant 拥有的服务账号；不包含平台内置 Runtime 服务主体 | List tenant-owned service accounts, excluding platform runtime identities",
+                "description": "分页查询当前 Tenant 可用的机器身份；Tenant-owned 服务账号可管理，Platform-owned Runtime 服务主体只读 | List machine identities available in the current tenant; tenant-owned service accounts are manageable and platform-owned runtime identities are read-only",
                 "produces": [
                     "application/json"
                 ],
@@ -9011,6 +8975,12 @@ const docTemplate = `{
                         "type": "string",
                         "description": "状态：active/suspended | Status: active/suspended",
                         "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "管理归属：tenant/platform | Management ownership: tenant/platform",
+                        "name": "owner_scope",
                         "in": "query"
                     }
                 ],
@@ -10468,101 +10438,20 @@ const docTemplate = `{
                 "TenantStatusClosed"
             ]
         },
-        "github_com_addp_system_internal_models.APIKey": {
+        "github_com_addp_system_internal_models.APIConsumer": {
             "type": "object",
             "properties": {
-                "application_id": {
-                    "type": "integer"
-                },
                 "created_at": {
                     "type": "string"
                 },
-                "created_by": {
+                "created_by_principal_id": {
                     "type": "integer"
                 },
-                "expires_at": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "key_prefix": {
-                    "description": "\"addp_live_\" 前缀",
-                    "type": "string"
-                },
-                "last_used_at": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "plain_text_key": {
-                    "description": "临时字段（仅在创建时返回明文 Key）",
-                    "type": "string"
-                },
-                "revoked_at": {
-                    "type": "string"
-                },
-                "revoked_by": {
-                    "type": "integer"
-                },
-                "status": {
-                    "type": "string"
-                }
-            }
-        },
-        "github_com_addp_system_internal_models.APIKeyValidationResponse": {
-            "type": "object",
-            "properties": {
-                "allowed_services": {
+                "credentials": {
                     "type": "array",
                     "items": {
-                        "type": "string"
+                        "$ref": "#/definitions/github_com_addp_system_internal_models.APIConsumerCredential"
                     }
-                },
-                "app_id": {
-                    "type": "integer"
-                },
-                "app_name": {
-                    "type": "string"
-                },
-                "expires_at": {
-                    "type": "string"
-                },
-                "rate_limit_per_minute": {
-                    "type": "integer"
-                },
-                "valid": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "github_com_addp_system_internal_models.Application": {
-            "type": "object",
-            "properties": {
-                "allowed_services": {
-                    "description": "允许访问的服务列表",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "api_keys": {
-                    "description": "关联",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_addp_system_internal_models.APIKey"
-                    }
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "created_by": {
-                    "type": "integer"
-                },
-                "deleted_at": {
-                    "description": "软删除",
-                    "type": "string"
                 },
                 "description": {
                     "type": "string"
@@ -10574,8 +10463,13 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "rate_limit_per_minute": {
-                    "description": "每分钟请求数限制",
                     "type": "integer"
+                },
+                "service_grants": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_system_internal_models.APIConsumerServiceGrant"
+                    }
                 },
                 "status": {
                     "type": "string"
@@ -10585,6 +10479,114 @@ const docTemplate = `{
                 },
                 "updated_at": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.APIConsumerCredential": {
+            "type": "object",
+            "properties": {
+                "api_consumer_id": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by_principal_id": {
+                    "type": "integer"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "key_prefix": {
+                    "type": "string"
+                },
+                "last_used_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "plain_text_credential": {
+                    "type": "string"
+                },
+                "revoked_at": {
+                    "type": "string"
+                },
+                "revoked_by_principal_id": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.APIConsumerCredentialValidationResponse": {
+            "type": "object",
+            "properties": {
+                "api_consumer_id": {
+                    "type": "integer"
+                },
+                "api_consumer_name": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "rate_limit_per_minute": {
+                    "type": "integer"
+                },
+                "service_grants": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_system_internal_models.APIConsumerServiceReference"
+                    }
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "valid": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.APIConsumerServiceGrant": {
+            "type": "object",
+            "properties": {
+                "api_consumer_id": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "service_id": {
+                    "type": "integer"
+                },
+                "service_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_system_internal_models.APIConsumerServiceReference": {
+            "type": "object",
+            "required": [
+                "service_id",
+                "service_type"
+            ],
+            "properties": {
+                "service_id": {
+                    "type": "integer"
+                },
+                "service_type": {
+                    "type": "string",
+                    "enum": [
+                        "query"
+                    ]
                 }
             }
         },
@@ -10706,37 +10708,44 @@ const docTemplate = `{
             "type": "object",
             "additionalProperties": true
         },
-        "github_com_addp_system_internal_models.CreateAPIKeyRequest": {
+        "github_com_addp_system_internal_models.CreateAPIConsumerCredentialRequest": {
             "type": "object",
             "properties": {
                 "expires_at": {
                     "type": "string"
                 },
                 "name": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 120
                 }
             }
         },
-        "github_com_addp_system_internal_models.CreateApplicationRequest": {
+        "github_com_addp_system_internal_models.CreateAPIConsumerRequest": {
             "type": "object",
             "required": [
-                "name"
+                "name",
+                "service_grants"
             ],
             "properties": {
-                "allowed_services": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
                 "description": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 500
                 },
                 "name": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 120
                 },
                 "rate_limit_per_minute": {
-                    "type": "integer"
+                    "type": "integer",
+                    "maximum": 100000,
+                    "minimum": 1
+                },
+                "service_grants": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_system_internal_models.APIConsumerServiceReference"
+                    }
                 }
             }
         },
@@ -11428,15 +11437,6 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_system_internal_models.SuccessResponse": {
-            "type": "object",
-            "properties": {
-                "message": {
-                    "type": "string",
-                    "example": "操作成功"
-                }
-            }
-        },
         "github_com_addp_system_internal_models.TaskProgress": {
             "type": "object",
             "properties": {
@@ -11483,26 +11483,35 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_addp_system_internal_models.UpdateApplicationRequest": {
+        "github_com_addp_system_internal_models.UpdateAPIConsumerRequest": {
             "type": "object",
             "properties": {
-                "allowed_services": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
                 "description": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 500
                 },
                 "name": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 120
                 },
                 "rate_limit_per_minute": {
-                    "type": "integer"
+                    "type": "integer",
+                    "maximum": 100000,
+                    "minimum": 1
+                },
+                "service_grants": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_system_internal_models.APIConsumerServiceReference"
+                    }
                 },
                 "status": {
-                    "type": "string"
+                    "type": "string",
+                    "enum": [
+                        "active",
+                        "suspended"
+                    ]
                 }
             }
         },
@@ -13141,6 +13150,13 @@ const docTemplate = `{
                 "name": {
                     "type": "string"
                 },
+                "owner_scope": {
+                    "type": "string",
+                    "enum": [
+                        "platform",
+                        "tenant"
+                    ]
+                },
                 "status": {
                     "$ref": "#/definitions/github_com_addp_system_internal_iam.PrincipalStatus"
                 },
@@ -13181,6 +13197,13 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string"
+                },
+                "owner_scope": {
+                    "type": "string",
+                    "enum": [
+                        "platform",
+                        "tenant"
+                    ]
                 },
                 "status": {
                     "$ref": "#/definitions/github_com_addp_system_internal_iam.PrincipalStatus"

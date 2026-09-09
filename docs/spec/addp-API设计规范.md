@@ -778,11 +778,18 @@ Service 的端点投影。此类路由必须同时校验精确 Permission 和固
 
 执行入口的 Swagger 必须把稳定入口能力写入 `x-addp-required-permissions`，把服务端依据已解析执行效果动态追加校验的完整候选集合写入 `x-addp-conditional-permissions`。条件权限只用于描述动态校验契约和覆盖关系，不表示 any-of，也不替代 owner 的资源授权判断。
 
-**（3）应用认证（API Key）**
+**（3）API 消费方认证（API Consumer Credential）**
 
 ```http
-X-API-Key: <app_api_key>
+X-API-Key: addp_api_<credential>
 ```
+
+API Consumer Credential 只允许用于平台正式发布的数据面协议入口。它不生成
+Principal 或 AuthContext，不能访问 `/api/v1/*` 控制面 API，也不能代替 User Bearer、
+Service Access Token、OAuth Client 或 owner Resource Grant。Gateway 负责前置认证、限流和
+访问记录；资源 owner 必须再次验证 Credential，并按 Consumer Tenant 与精确
+`(service_type, service_id)` Grant 完成最终授权。请求不得同时携带 `Authorization` 和
+`X-API-Key`。
 
 **（4）浏览器原生资源认证（Browser Resource Access Ticket）**
 

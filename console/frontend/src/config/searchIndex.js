@@ -94,8 +94,8 @@ export const SEARCH_INDEX = [
   },
   {
     labelKey: 'console.menus.system.iamApplicationAccess', module: 'system', route: '/system/iam/application-access',
-    access: [{ context: 'tenant', permissions: ['iam.service_account.read', 'iam.oauth_client.read'] }],
-    keywords: ['应用接入', '服务账号', '外部应用', 'OAuth', 'Client Credentials', 'service account', 'oauth client']
+    access: [{ context: 'tenant', permissions: ['iam.service_account.read', 'iam.api_consumer.read', 'iam.oauth_client.read'] }],
+    keywords: ['应用接入', '服务账号', 'API消费方', 'API密钥', '外部应用', 'OAuth', 'Client Credentials', 'service account', 'api consumer', 'oauth client']
   },
   {
     labelKey: 'console.menus.system.iamSecurity', module: 'system', route: '/system/iam/security',
@@ -107,7 +107,6 @@ export const SEARCH_INDEX = [
   },
   { labelKey: 'console.menus.system.modules',      module: 'system', route: '/system/modules',      permissions: ['platform.module.read'], keywords: ['模块管理', '服务注册', '运行实例', 'worker', 'module', 'runtime', 'registry'] },
   { labelKey: 'console.menus.system.engines',      module: 'system', route: '/system/engines',      keywords: ['引擎管理', '数据引擎', '引擎配置', 'engine', 'database'] },
-  { labelKey: 'console.menus.system.applications', module: 'system', route: '/system/applications', keywords: ['应用管理', 'API密钥', 'application', 'api key'] },
 ]
 
 /**

@@ -55,7 +55,12 @@ func SetupRouter(
 	// 查询服务端点（支持公开访问，handler内部会检查权限）
 	// 可选认证：有 Bearer Header 就解析 AuthContext，没有就按公开访问处理。
 	optionalAuth := optionalSystemAuth(cfg.SystemServiceURL)
-	router.POST("/api/query/:serviceName/query", optionalAuth, queryServiceHandler.QueryData)
+	router.POST(
+		"/api/query/:serviceName/query",
+		optionalAuth,
+		optionalAPIConsumerAuth(systemServiceClient),
+		queryServiceHandler.QueryData,
+	)
 
 	// 图查询服务执行端点（支持公开访问）
 	router.POST("/api/gquery/:serviceName", optionalAuth, graphQueryHandler.ExecuteQuery)
@@ -112,6 +117,11 @@ func SetupRouter(
 
 		// Service Consumer Catalog 只返回当前调用者可执行的只读消费投影。
 		if consumerCatalogHandler != nil {
+			api.GET(
+				"/consumer/api-consumer-services",
+				permission(serviceauthorization.PermissionServiceDefinitionRead),
+				consumerCatalogHandler.ListAPIConsumerGrantableServices,
+			)
 			consumerAPI := api.Group("/consumer/services")
 			consumerAPI.Use(
 				permission(serviceauthorization.PermissionServiceDataReadExecute),

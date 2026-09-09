@@ -137,28 +137,43 @@ type DocumentExtractionCandidateGroup struct {
 	Occurrences         []DocumentExtractionCandidateOccurrence `json:"occurrences"`
 }
 
-type DocumentExtractionCandidateGroupStatusCounts struct {
+// DocumentExtractionCandidateFamily 以候选类型和稳定编码组织多个独立语义变体。
+type DocumentExtractionCandidateFamily struct {
+	FamilyKey          string                             `json:"family_key"`
+	CandidateType      string                             `json:"candidate_type" enums:"glossary,element,code_set,metric"`
+	Code               string                             `json:"code"`
+	RepresentativeName string                             `json:"representative_name"`
+	VariantCount       int                                `json:"variant_count"`
+	OccurrenceCount    int                                `json:"occurrence_count"`
+	FirstSeenAt        time.Time                          `json:"first_seen_at"`
+	LastSeenAt         time.Time                          `json:"last_seen_at"`
+	Variants           []DocumentExtractionCandidateGroup `json:"variants"`
+}
+
+type DocumentExtractionCandidateVariantStatusCounts struct {
 	Pending    int64 `json:"pending"`
 	Retained   int64 `json:"retained"`
 	Rejected   int64 `json:"rejected"`
 	Formalized int64 `json:"formalized"`
 }
 
-type DocumentExtractionCandidateGroupComparisonCounts struct {
+type DocumentExtractionCandidateFamilyComparisonCounts struct {
+	All             int64 `json:"all"`
 	New             int64 `json:"new"`
 	Exact           int64 `json:"exact"`
 	ContentConflict int64 `json:"content_conflict"`
 	ScopeConflict   int64 `json:"scope_conflict"`
 }
 
-type PaginatedDocumentExtractionCandidateGroupResponse struct {
-	Data             []DocumentExtractionCandidateGroup               `json:"data"`
-	Total            int64                                            `json:"total"`
-	Page             int                                              `json:"page"`
-	PageSize         int                                              `json:"page_size"`
-	TotalPages       int                                              `json:"total_pages"`
-	StatusCounts     DocumentExtractionCandidateGroupStatusCounts     `json:"status_counts"`
-	ComparisonCounts DocumentExtractionCandidateGroupComparisonCounts `json:"comparison_counts"`
+type PaginatedDocumentExtractionCandidateFamilyResponse struct {
+	Data                   []DocumentExtractionCandidateFamily               `json:"data"`
+	Total                  int64                                             `json:"total"`
+	VariantTotal           int64                                             `json:"variant_total"`
+	Page                   int                                               `json:"page"`
+	PageSize               int                                               `json:"page_size"`
+	TotalPages             int                                               `json:"total_pages"`
+	VariantStatusCounts    DocumentExtractionCandidateVariantStatusCounts    `json:"variant_status_counts"`
+	FamilyComparisonCounts DocumentExtractionCandidateFamilyComparisonCounts `json:"family_comparison_counts"`
 }
 
 // DocumentCandidateFormalization 是 retained 候选到受治理标准修订的一对一不可变事实。

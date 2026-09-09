@@ -9,11 +9,11 @@ import (
 
 // CacheItem 缓存项
 type CacheItem struct {
-	Data      *client.APIKeyValidationResponse
+	Data      *client.APIConsumerCredentialValidationResponse
 	ExpiresAt time.Time
 }
 
-// LocalCache 本地内存缓存（用于 API Key 验证结果）
+// LocalCache 缓存 API 消费凭据验证结果。
 type LocalCache struct {
 	items map[string]*CacheItem
 	mu    sync.RWMutex
@@ -35,8 +35,8 @@ func NewLocalCache(ttl time.Duration) *LocalCache {
 }
 
 // Get 获取缓存
-// key: API Key 的 hash
-func (c *LocalCache) Get(key string) *client.APIKeyValidationResponse {
+// key: API 消费凭据的 SHA256 hash
+func (c *LocalCache) Get(key string) *client.APIConsumerCredentialValidationResponse {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -54,7 +54,7 @@ func (c *LocalCache) Get(key string) *client.APIKeyValidationResponse {
 }
 
 // Set 设置缓存
-func (c *LocalCache) Set(key string, data *client.APIKeyValidationResponse) {
+func (c *LocalCache) Set(key string, data *client.APIConsumerCredentialValidationResponse) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 

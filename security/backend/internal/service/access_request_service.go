@@ -221,7 +221,7 @@ func (s *AccessRequestService) Create(ctx context.Context, tenantID, userID int6
 		if err := tx.Create(&row).Error; err != nil {
 			return policyDBError(err)
 		}
-		response = accessRequestResponse(row, current.Component, enrollment.TargetFullName, "")
+		response = accessRequestResponse(row, current.Component, enrollment.ID, enrollment.TargetFullName, "")
 		return nil
 	})
 	return response, err
@@ -318,7 +318,7 @@ func (s *AccessRequestService) listQuery(ctx context.Context, tenantID, page, pa
 	data := make([]models.ProtectionAccessRequestResponse, 0, len(rows))
 	for _, row := range rows {
 		row = effectiveAccessRequest(row, now)
-		built, err := s.loadResponse(s.db.WithContext(ctx), row)
+		built, err := s.loadResponse(s.db.WithContext(ctx), row, now)
 		if err != nil {
 			return nil, err
 		}
@@ -407,7 +407,11 @@ func (s *AccessRequestService) Decide(ctx context.Context, tenantID, reviewerID 
 			}
 		}
 		_ = assessment
-		response = accessRequestResponse(row, current.Component, enrollment.TargetFullName, exemptionID)
+		response = accessRequestResponse(row, current.Component, enrollment.ID, enrollment.TargetFullName, exemptionID)
+		if state == models.ProtectionAccessRequestStateApproved {
+			response.AuthorizationState = models.ProtectionExemptionStateActive
+			response.AuthorizedUntil = &request.ExpiresAt
+		}
 		return nil
 	})
 	return response, err
@@ -450,7 +454,7 @@ func approveSubjectExemption(tx *gorm.DB, request models.ProtectionAccessRequest
 	return exemption.ID, nil
 }
 
-func (s *AccessRequestService) loadResponse(db *gorm.DB, row models.ProtectionAccessRequest) (*models.ProtectionAccessRequestResponse, error) {
+func (s *AccessRequestService) loadResponse(db *gorm.DB, row models.ProtectionAccessRequest, now time.Time) (*models.ProtectionAccessRequestResponse, error) {
 	var revision models.ResourceSecurityAssessmentRevision
 	if err := db.Where("tenant_id = ? AND assessment_id = ? AND revision = ?", row.TenantID, row.AssessmentID, row.AssessmentRevision).First(&revision).Error; err != nil {
 		return nil, err
@@ -470,14 +474,64 @@ func (s *AccessRequestService) loadResponse(db *gorm.DB, row models.ProtectionAc
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}
-	return accessRequestResponse(row, revision.Component, enrollment.TargetFullName, exemptionID), nil
+	response := accessRequestResponse(row, revision.Component, enrollment.ID, enrollment.TargetFullName, exemptionID)
+	if row.State != models.ProtectionAccessRequestStateApproved {
+		return response, nil
+	}
+	if exemptionID == "" {
+		return nil, errors.New("approved protection access request is missing its exemption")
+	}
+	var exemptionRevisions []models.ProtectionExemptionRevision
+	if err := db.Where(
+		"tenant_id = ? AND exemption_id = ? AND (revision = ? OR source_request_id = ?)",
+		row.TenantID, exemption.ID, exemption.CurrentRevision, row.ID,
+	).Order("revision DESC").Find(&exemptionRevisions).Error; err != nil {
+		return nil, err
+	}
+	currentExemptionRevision, grantRevision := findAccessRequestExemptionRevisions(exemptionRevisions, exemption.CurrentRevision, row.ID)
+	if currentExemptionRevision == nil || grantRevision == nil {
+		return nil, errors.New("approved protection access request is missing its exemption revision")
+	}
+	response.AuthorizationState = effectiveAccessRequestAuthorizationState(row.ID, exemption, *currentExemptionRevision, assessment.CurrentRevision, now)
+	response.AuthorizedUntil = &grantRevision.ExpiresAt
+	return response, nil
 }
 
-func accessRequestResponse(row models.ProtectionAccessRequest, component dataprotection.Component, targetFullName, exemptionID string) *models.ProtectionAccessRequestResponse {
+func findAccessRequestExemptionRevisions(revisions []models.ProtectionExemptionRevision, currentRevision int64, requestID string) (*models.ProtectionExemptionRevision, *models.ProtectionExemptionRevision) {
+	var current, grant *models.ProtectionExemptionRevision
+	for index := range revisions {
+		revision := &revisions[index]
+		if revision.Revision == currentRevision {
+			current = revision
+		}
+		if grant == nil && revision.SourceRequestID == requestID && revision.State == models.ProtectionExemptionStateActive {
+			grant = revision
+		}
+	}
+	return current, grant
+}
+
+func effectiveAccessRequestAuthorizationState(requestID string, exemption models.ProtectionExemption, current models.ProtectionExemptionRevision, assessmentRevision int64, now time.Time) string {
+	switch {
+	case current.SourceRequestID != requestID:
+		return models.ProtectionExemptionStateSuperseded
+	case current.State == models.ProtectionExemptionStateRevoked || exemption.State == models.ProtectionExemptionStateRevoked:
+		return models.ProtectionExemptionStateRevoked
+	case current.AssessmentRevision != assessmentRevision:
+		return models.ProtectionExemptionStateSuperseded
+	case !now.Before(current.ExpiresAt):
+		return models.ProtectionExemptionStateExpired
+	default:
+		return models.ProtectionExemptionStateActive
+	}
+}
+
+func accessRequestResponse(row models.ProtectionAccessRequest, component dataprotection.Component, enrollmentID, targetFullName, exemptionID string) *models.ProtectionAccessRequestResponse {
 	response := &models.ProtectionAccessRequestResponse{
 		ProtectionAccessRequest: row,
 		Requester:               models.ProtectionAccessActor{Type: row.SubjectType, ID: row.SubjectID, DisplayName: row.SubjectDisplayName},
 		Component:               component,
+		EnrollmentID:            enrollmentID,
 		TargetFullName:          targetFullName,
 		ExemptionID:             exemptionID,
 	}

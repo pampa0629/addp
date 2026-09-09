@@ -2340,76 +2340,6 @@ const docTemplate = `{
                 ]
             }
         },
-        "/pptx_pdf/preview": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Manager"
-                ],
-                "summary": "获取或生成 PPTX PDF 快显 | Resolve or generate PPTX PDF preview",
-                "parameters": [
-                    {
-                        "description": "PPTX source identity",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.PPTXPDFPreviewRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "快显已就绪 | Preview ready",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.PPTXPDFPreviewResponse"
-                        }
-                    },
-                    "202": {
-                        "description": "转换已受理或执行中 | Conversion accepted or running",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.PPTXPDFPreviewResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "请求参数错误 | Bad request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "服务执行错误 | Internal server error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "503": {
-                        "description": "服务不可用 | Service unavailable",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "manager.data_item.read",
-                    "manager.derived_artifact.create"
-                ]
-            }
-        },
         "/pptx_pdf/{id}": {
             "delete": {
                 "security": [
@@ -2824,7 +2754,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "前端只提交 Resource Locator 和后端 capability 返回的 action。后端基于同一份快显能力事实创建并执行对应任务，支持生成矢量瓦片缓存、栅格 COG、三维模型 GLB、3D Tiles、S3M、3DGS KSplat 和点云 COPC 快显。 | Execute a backend-declared quick view action by Resource Locator. The backend creates and executes the corresponding task from capability facts, including 3D Tiles and S3M quick-view generation.",
+                "description": "前端只提交 Resource Locator 和后端 capability 返回的 action。后端基于同一份快显能力事实创建并执行对应任务，支持生成矢量瓦片缓存、栅格 COG、三维模型 GLB、3D Tiles、S3M、3DGS KSplat、点云 COPC 和 PPTX 静态 PDF 快显。 | Execute a backend-declared quick view action by Resource Locator. The backend creates and executes the corresponding task from capability facts, including PPTX static PDF generation.",
                 "consumes": [
                     "application/json"
                 ],
@@ -7029,6 +6959,9 @@ const docTemplate = `{
                 "point_cloud": {
                     "$ref": "#/definitions/github_com_addp_manager_internal_service.QuickViewPointCloudInfo"
                 },
+                "pptx_pdf": {
+                    "$ref": "#/definitions/github_com_addp_manager_internal_service.QuickViewPPTXPDFInfo"
+                },
                 "preferred_mode": {
                     "type": "string"
                 },
@@ -7240,6 +7173,38 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/github_com_addp_manager_internal_service.QuickViewModel3DTilesFormatInfo"
                     }
+                }
+            }
+        },
+        "github_com_addp_manager_internal_service.QuickViewPPTXPDFInfo": {
+            "type": "object",
+            "properties": {
+                "error_message": {
+                    "type": "string"
+                },
+                "format": {
+                    "type": "string"
+                },
+                "last_execution_id": {
+                    "type": "string"
+                },
+                "page_count": {
+                    "type": "integer"
+                },
+                "preview_url": {
+                    "type": "string"
+                },
+                "result_id": {
+                    "type": "integer"
+                },
+                "size_bytes": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "task_id": {
+                    "type": "integer"
                 }
             }
         },
@@ -8588,49 +8553,6 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "source_size_bytes": {
-                    "type": "integer"
-                }
-            }
-        },
-        "internal_api.PPTXPDFPreviewRequest": {
-            "type": "object",
-            "required": [
-                "locator"
-            ],
-            "properties": {
-                "locator": {
-                    "type": "string"
-                },
-                "retry": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "internal_api.PPTXPDFPreviewResponse": {
-            "type": "object",
-            "properties": {
-                "error": {
-                    "type": "string"
-                },
-                "execution_id": {
-                    "type": "string"
-                },
-                "page_count": {
-                    "type": "integer"
-                },
-                "preview_url": {
-                    "type": "string"
-                },
-                "result_id": {
-                    "type": "integer"
-                },
-                "size_bytes": {
-                    "type": "integer"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "task_id": {
                     "type": "integer"
                 }
             }

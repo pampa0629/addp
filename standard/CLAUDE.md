@@ -313,12 +313,13 @@ standard/
 - 候选状态固定为 `pending`、`retained`、`rejected`；处置使用候选自己的并发 `version`，`retained` 不会自动创建或发布正式标准。
 - 文档候选治理页面只消费跨提炼批次的候选聚合视图，不再逐批平铺原始候选。聚合项以 `candidate_type + code + normalized(name, definition, payload)` 的 SHA-256 指纹确定；字符串折叠空白，维度去重排序，码值项按编码、名称、定义排序。同类型、同编码但规范化内容不同的候选必须分组展示，禁止用模型相似度自动合并。
 - 聚合视图不持久化，也不是新的聚合根。每个聚合项返回一个代表候选和按时间倒序排列的全部出现记录；出现记录保留候选 ID、提炼批次、文档修订、状态、版本、证据和正式化事实。存在正式化事实时聚合状态为 `formalized`；否则由最近一次已人工裁决的同义候选决定 `retained|rejected`；从未裁决时为 `pending`。人工动作只作用于代表候选，不批量回写其他原始候选。
+- 候选治理公开读取在聚合项之上按 `candidate_type + code` 形成候选族。候选族只是可折叠的只读组织投影，不合并语义变体、不持久化，也不改变裁决边界；族内每个聚合项继续按自己的语义指纹和代表候选独立裁决。分页必须在候选族形成后执行，禁止前端对单页聚合项做不完整分组。
 - `standard.document_candidate_formalizations` 为候选的一对一不可变正式化事实，保存服务器判定的 `created_identity|created_revision|linked_existing`、目标稳定身份/修订及操作者。正式化要求候选为 `retained`，使用候选 `version` 并在同一事务中创建目标草稿或确认既有修订、写入正式化事实、递增候选版本；重复正式化返回 409。正式化后候选继续保持 `retained` 且不再允许重新裁决，避免来源事实与目标修订失配。
 - 只要文档已有候选正式化事实，即使文档和目标标准都尚未发布，也不得删除来源文档；目标标准后续删除不会删除该事实，正式化记录保留目标编码、稳定身份 ID、修订 ID 和当时状态作为历史快照。
 - 正式化不接受客户端指定目标或动作。无同编码身份时创建 R1 草稿；同编码同范围且无工作修订时以最新修订为基线叠加候选明确字段创建新草稿；与现有 `draft|in_review|published` 修订内容一致时只关联该修订。`scope_conflict`、已有不同内容工作修订、无法唯一解析的计量单位或枚举码值集当前生效已发布修订均返回明确冲突。新指标候选必须由人工在请求中选择 `metric_type`；其他候选不得携带该字段。
 - 正式化入口固定需要 `standard.document.update`，并由服务器根据最终动作条件校验对应类型的 `*.create` 或 `*.update` Permission；无法分类时默认拒绝。创建的草稿仍需人工补齐生效时间、范围约束、指标依赖等治理字段，并沿正式修订审核发布路径处理。
 - 每条证据保存章节、起止行、原文摘录与 SHA-256，始终引用确定的文档修订。
-- `GET /documents/:id/extraction-candidate-groups` 是唯一候选治理读取入口，支持按聚合状态、候选类型、关键词和实时比对结果分页筛选；`keyword` 对代表候选的编码或名称执行大小写不敏感、空白规范化后的子串匹配，`comparison_result` 固定为 `new|exact|content_conflict|scope_conflict`，二者都必须在分页前生效。`total` 表示应用全部筛选后的聚合项总数；`status_counts` 始终统计文档全部聚合项、不受任何筛选影响；`comparison_counts` 按聚合状态、候选类型和关键词过滤后的工作集统计四类实时比对结果，但不应用当前 `comparison_result`，用于同一工作集内的分面切换。标准比对必须按当前标准修订动态计算。响应同时返回代表候选、全部出现记录和动态标准比对。旧的逐批平铺 `GET /documents/:id/extractions` 不再公开。同类型、同编码是标准比对的唯一匹配键；同名不同编码不自动判重。每项差异同时返回字段、候选值和当前标准值，供治理人员直接核对。
+- `GET /documents/:id/extraction-candidate-families` 是唯一候选治理读取入口，支持按聚合状态、候选类型、关键词和实时比对结果分页筛选；旧的 `/extraction-candidate-groups` 不再公开。`keyword` 对每个语义变体代表候选的编码或名称执行大小写不敏感、空白规范化后的子串匹配，`comparison_result` 固定为 `new|exact|content_conflict|scope_conflict`，全部筛选都在候选族形成和分页前作用于语义变体，族内只返回命中变体。`total` 表示筛选后的候选族总数，`variant_total` 表示筛选后的语义变体总数；`variant_status_counts` 始终统计文档全部语义变体、不受任何筛选影响；`family_comparison_counts` 按聚合状态、候选类型和关键词过滤后的候选族统计 `all` 及四类实时比对结果，但不应用当前 `comparison_result`。同一候选族可因不同变体同时计入多个比对分类，各分类不要求相加等于 `all`。标准比对必须按当前标准修订动态计算。响应中的族内变体继续返回代表候选、全部出现记录和动态标准比对。旧的逐批平铺 `GET /documents/:id/extractions` 不再公开。同类型、同编码是标准比对的唯一匹配键；同名不同编码不自动判重。每项差异同时返回字段、候选值和当前标准值，供治理人员直接核对。
 - 比对修订按“稳定身份当前草稿/审核中修订 → 当前生效已发布修订 → 最新历史修订”选择；只比较候选明确给出的字段，缺失字段不构造差异。范围先比较 `scope_type + owner_domain_id`，范围不一致统一为 `scope_conflict`。
 - 枚举数据元候选以 `code_set_code` 与现有数据元修订冻结的码值集修订所属稳定身份编码比较；候选比对不暴露或猜测数据库修订 ID。
 - 指标候选中的聚合方式、维度等执行建模提示由 Model/Develop 消费，不属于 Standard 指标定义字段，因此不参与内容冲突判定。
@@ -427,7 +428,7 @@ POST /api/v1/standard/documents/:id/revisions/:revision_id/withdraw
 POST /api/v1/standard/documents/:id/revisions/:revision_id/file # 上传或替换草稿修订文件
 GET /api/v1/standard/documents/:id/revisions/:revision_id/file # 下载确定修订文件
 POST /api/v1/standard/documents/:id/revisions/:revision_id/extractions # Copilot 提炼
-GET /api/v1/standard/documents/:id/extraction-candidate-groups # 跨批次候选聚合、出现记录与动态 Standard 比对
+GET /api/v1/standard/documents/:id/extraction-candidate-families # 按同类型同编码组织跨批次候选语义变体、出现记录与动态 Standard 比对
 PUT /api/v1/standard/document-extraction-candidates/:candidate_id # retained/rejected 人工处置
 POST /api/v1/standard/document-extraction-candidates/:candidate_id/formalization # retained 候选创建受控草稿或关联一致修订
 GET/PUT /api/v1/standard/documents/:id/mappings # 多维关联（数据元/术语/指标）

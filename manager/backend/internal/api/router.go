@@ -232,10 +232,8 @@ func SetupRouter(
 			}
 		}
 		if pptxPDFHandler != nil {
-			pptxPDFHandler.SetExecutionEnqueueNotifier(notifyExecutionEnqueued)
 			pptxPDFGroup := api.Group("/pptx_pdf")
 			{
-				pptxPDFGroup.POST("/preview", permission(managerauthorization.PermissionManagerDataItemRead, managerauthorization.PermissionManagerDerivedArtifactCreate), pptxPDFHandler.EnsurePreview)
 				pptxPDFGroup.DELETE("/:id", permission(managerauthorization.PermissionManagerDerivedArtifactDelete), pptxPDFHandler.DeleteResult)
 				pptxPDFGroup.GET("/:id/content", permission(managerauthorization.PermissionManagerDerivedArtifactRead), pptxPDFHandler.GetContent)
 			}
@@ -319,6 +317,7 @@ func SetupRouter(
 			quickViewHandler.SetTileCacheTaskService(taskProviderHandler.tileCacheTaskSvc)
 			quickViewHandler.SetVectorMaterializedViewTaskService(taskProviderHandler.vectorMaterializedViewTaskSvc)
 			quickViewHandler.SetArtifactTaskServices(taskProviderHandler.rasterCOGTaskSvc, taskProviderHandler.model3DGLBTaskSvc, taskProviderHandler.gaussianSplatKSplatTaskSvc, taskProviderHandler.pointCloudCOPCTaskSvc, taskProviderHandler.model3DTilesTaskSvc)
+			quickViewHandler.SetPPTXPDFTaskService(taskProviderHandler.pptxPDFTaskSvc)
 		}
 		api.GET("/quick-view/capability", permission(managerauthorization.PermissionManagerDataItemRead), quickViewHandler.GetQuickViewCapabilityByLocator)
 		api.POST("/quick-view/actions", permission(managerauthorization.PermissionManagerDerivedArtifactCreate), quickViewHandler.ExecuteQuickViewAction)

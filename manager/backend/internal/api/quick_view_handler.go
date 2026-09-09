@@ -67,6 +67,7 @@ type QuickViewHandler struct {
 	gaussianSplatKSplatTaskSvc *service.GaussianSplatKSplatTaskService
 	pointCloudCOPCTaskSvc      *service.PointCloudCOPCTaskService
 	model3DTilesTaskSvc        *service.Model3DTilesTaskService
+	pptxPDFTaskSvc             *service.PPTXPDFTaskService
 	notifyExecutionEnqueued    func()
 }
 
@@ -88,6 +89,10 @@ func (h *QuickViewHandler) SetArtifactTaskServices(rasterCOGTaskSvc *service.Ras
 	h.gaussianSplatKSplatTaskSvc = gaussianSplatKSplatTaskSvc
 	h.pointCloudCOPCTaskSvc = pointCloudCOPCTaskSvc
 	h.model3DTilesTaskSvc = model3DTilesTaskSvc
+}
+
+func (h *QuickViewHandler) SetPPTXPDFTaskService(taskSvc *service.PPTXPDFTaskService) {
+	h.pptxPDFTaskSvc = taskSvc
 }
 
 func (h *QuickViewHandler) SetExecutionEnqueueNotifier(notify func()) {
@@ -181,7 +186,7 @@ func (h *QuickViewHandler) GetQuickViewCapabilityByLocator(c *gin.Context) {
 
 // ExecuteQuickViewAction 执行 locator 快显动作
 // @Summary 执行 locator 快显动作 | Execute locator quick view action
-// @Description 前端只提交 Resource Locator 和后端 capability 返回的 action。后端基于同一份快显能力事实创建并执行对应任务，支持生成矢量瓦片缓存、栅格 COG、三维模型 GLB、3D Tiles、S3M、3DGS KSplat 和点云 COPC 快显。 | Execute a backend-declared quick view action by Resource Locator. The backend creates and executes the corresponding task from capability facts, including 3D Tiles and S3M quick-view generation.
+// @Description 前端只提交 Resource Locator 和后端 capability 返回的 action。后端基于同一份快显能力事实创建并执行对应任务，支持生成矢量瓦片缓存、栅格 COG、三维模型 GLB、3D Tiles、S3M、3DGS KSplat、点云 COPC 和 PPTX 静态 PDF 快显。 | Execute a backend-declared quick view action by Resource Locator. The backend creates and executes the corresponding task from capability facts, including PPTX static PDF generation.
 // @Tags Manager
 // @Accept json
 // @Produce json
@@ -264,6 +269,9 @@ func (h *QuickViewHandler) ExecuteQuickViewAction(c *gin.Context) {
 			targetFormat = models.Model3DTilesTargetFormatS3M
 		}
 		taskID, executionID, err = h.createAndExecuteModel3DTilesTask(c.Request.Context(), userID, capability, source, targetFormat, overwriteExistingResult)
+	case service.QuickViewActionGeneratePPTXPDF:
+		taskType = commonExecution.TaskTypePPTXPDFGeneration
+		taskID, executionID, err = h.createAndExecutePPTXPDFTask(c.Request.Context(), userID, capability, source, overwriteExistingResult)
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported quick view action: " + action})
 		return
@@ -278,6 +286,10 @@ func (h *QuickViewHandler) ExecuteQuickViewAction(c *gin.Context) {
 		}
 		if errors.Is(err, service.ErrModel3DTilesTaskExecutionBusy) {
 			c.JSON(http.StatusConflict, gin.H{"error": commoni18n.T(c, manageri18n.MsgModel3DTilesExecutionBusy)})
+			return
+		}
+		if errors.Is(err, service.ErrTaskExecutionBusy) {
+			c.JSON(http.StatusConflict, gin.H{"error": commoni18n.T(c, manageri18n.MsgTaskExecutionBusy)})
 			return
 		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -771,6 +783,32 @@ func (h *QuickViewHandler) createAndExecuteModel3DGLBTask(ctx context.Context, u
 	return task.ID, executionID, nil
 }
 
+func (h *QuickViewHandler) createAndExecutePPTXPDFTask(ctx context.Context, userID uint, capability *service.QuickViewCapability, source service.QuickViewSource, overwriteExistingResult bool) (uint, string, error) {
+	if h.pptxPDFTaskSvc == nil {
+		return 0, "", errors.New("PPTX PDF task service is not initialized")
+	}
+	if capability == nil || capability.SourceKind != service.QuickViewSourceKindDocument || source.PPTX == nil {
+		return 0, "", errors.New("quick view source is not a PPTX PDF generation source")
+	}
+	task := models.PPTXPDFTask{
+		TenantID: capability.TenantID,
+		Name:     quickViewActionTaskName("PPTX 静态 PDF 快显", capability),
+		Enabled:  true,
+		Config: commonModels.JSONMap{
+			"source": commonModels.JSONMap{"item_locator": strings.TrimSpace(capability.Locator)},
+		},
+		CreatedBy: &userID,
+	}
+	if err := h.pptxPDFTaskSvc.EnsureTask(ctx, &task); err != nil {
+		return 0, "", err
+	}
+	executionID, err := h.pptxPDFTaskSvc.Execute(ctx, task.ID, capability.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, overwriteExistingResult)
+	if err != nil {
+		return task.ID, "", err
+	}
+	return task.ID, executionID, nil
+}
+
 func (h *QuickViewHandler) createAndExecuteModel3DTilesTask(
 	ctx context.Context, userID uint, capability *service.QuickViewCapability, source service.QuickViewSource,
 	targetFormat string, overwriteExistingResult bool,
@@ -1246,6 +1284,15 @@ func quickViewSourceFromPreview(locator string, tenantID *uint, result *preview.
 		source.FlatGeobufURL = locatorQuickViewFlatGeobufURL(source.Identity.Locator, tablePreview)
 	}
 	if tablePreview.Object != nil {
+		pptx := service.PPTXPDFQuickViewSourceFromAttributes(tablePreview.Object.Attributes)
+		if pptx != nil {
+			source.EngineID = tablePreview.Object.EngineID
+			source.PPTX = pptx
+			source.DirectFlatGeobuf = false
+			source.FlatGeobufURL = ""
+			source.CanTile = false
+			return source
+		}
 		pointCloud := service.PointCloudCOPCSourceFromAttributes(tablePreview.Object.Attributes)
 		if pointCloud != nil {
 			source.EngineID = tablePreview.Object.EngineID

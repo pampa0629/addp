@@ -104,7 +104,7 @@ func TestQueryServiceRouteProxiesCanonicalPostOnly(t *testing.T) {
 		"service": proxy.NewServiceProxy(upstream.URL),
 	}}
 	r := gin.New()
-	registerQueryServiceRoute(r, registeredModuleHandler("service", discovery))
+	r.POST("/api/query/:serviceName/query", registeredModuleHandler("service", discovery))
 	gateway := httptest.NewServer(r)
 	defer gateway.Close()
 

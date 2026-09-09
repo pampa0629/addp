@@ -390,8 +390,19 @@ func (h *QueryServiceHandler) QueryData(c *gin.Context) {
 		return
 	}
 
-	// 检查访问权限
-	if !service.PublicAccess {
+	// API Consumer Credential 始终要求当前 Tenant 与精确 Query Service Grant 匹配；
+	// 未携带 API Consumer Credential 时继续执行公开访问或 User AuthContext 路径。
+	if status, apiConsumerRequest := apiConsumerServiceAccessStatus(
+		c, service.TenantID, models.ConsumerServiceTypeQuery, service.ID,
+	); apiConsumerRequest {
+		if status != 0 {
+			auditState.errorCode = "api_consumer_service_denied"
+			c.JSON(status, gin.H{
+				"error": commoni18n.T(c, commoni18n.MsgForbidden), "error_code": auditState.errorCode,
+			})
+			return
+		}
+	} else if !service.PublicAccess {
 		// 非公开服务需要认证且租户匹配
 		if tenantID == 0 {
 			auditState.errorCode = "authentication_required"

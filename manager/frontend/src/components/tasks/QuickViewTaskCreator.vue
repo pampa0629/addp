@@ -45,7 +45,10 @@
 
     <template #footer>
       <el-button @click="emit('update:modelValue', false)">{{ t('common.cancel') }}</el-button>
-      <el-button type="primary" :loading="submitting" :disabled="!canSubmit" @click="submit">
+      <el-button v-if="hasCurrentResult" type="primary" :loading="submitting" @click="viewCurrentResult">
+        {{ t('manager.quickViewCreator.viewCurrentResult') }}
+      </el-button>
+      <el-button v-else type="primary" :loading="submitting" :disabled="!canSubmit" @click="submit">
         {{ t('manager.quickViewCreator.generate') }}
       </el-button>
     </template>
@@ -54,17 +57,16 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { ResourceTreePicker } from '@addp/common-frontend'
 import { quickViewAPI } from '@/api/quickView'
 import { useCurrentResultConfirmation } from '@/composables/useCurrentResultConfirmation'
 import { toQuickViewExistingResultPayload } from '@/utils/currentResultConfirmation'
+import { openQuickViewResult } from '@/utils/quickViewResultNavigation'
 import {
   generationOptionsForCapability,
-  isPPTXGenerationSource,
-  PPTX_PDF_GENERATION_ACTION,
-  pptxGenerationOptions,
   quickViewCreationEmptyReason,
   quickViewTaskTypeForAction
 } from '@/utils/quickViewTaskCreation'
@@ -76,6 +78,7 @@ const props = defineProps({
 })
 const emit = defineEmits(['update:modelValue', 'created', 'closed'])
 const { t } = useI18n()
+const router = useRouter()
 const confirmCurrentResult = useCurrentResultConfirmation()
 const sourceSelection = ref(null)
 const options = ref([])
@@ -88,6 +91,13 @@ let detectionSequence = 0
 
 const sourceLocator = computed(() => String(sourceSelection.value?.identity?.locator || '').trim())
 const canSubmit = computed(() => Boolean(sourceLocator.value && selectedAction.value && !detecting.value))
+const hasCurrentResult = computed(() => (
+  Boolean(sourceLocator.value)
+  && options.value.length === 0
+  && !detecting.value
+  && !capabilityError.value
+  && emptyReason.value === 'currentResult'
+))
 
 function reset() {
   detectionSequence += 1
@@ -114,12 +124,6 @@ watch(sourceSelection, async selection => {
   emptyReason.value = 'unsupported'
   if (!selection) return
 
-  if (isPPTXGenerationSource(selection)) {
-    applyOptions(pptxGenerationOptions(props.taskType))
-    return
-  }
-  if (props.taskType === 'pptx_pdf_generation') return
-
   detecting.value = true
   try {
     const capability = await quickViewAPI.getQuickViewCapabilityByLocator(sourceLocator.value)
@@ -142,16 +146,11 @@ async function submit() {
   if (!canSubmit.value) return
   submitting.value = true
   try {
-    let response
-    if (selectedAction.value === PPTX_PDF_GENERATION_ACTION) {
-      response = await quickViewAPI.ensurePPTXPDFPreview(sourceLocator.value, { retry: true })
-    } else {
-      response = await confirmCurrentResult(payload => quickViewAPI.executeQuickViewAction(
-        sourceLocator.value,
-        selectedAction.value,
-        toQuickViewExistingResultPayload(payload)
-      ))
-    }
+    const response = await confirmCurrentResult(payload => quickViewAPI.executeQuickViewAction(
+      sourceLocator.value,
+      selectedAction.value,
+      toQuickViewExistingResultPayload(payload)
+    ))
     const result = response?.data ?? response
     const taskType = result?.task_type || quickViewTaskTypeForAction(selectedAction.value)
     ElMessage.success(result?.status === 'ready'
@@ -167,6 +166,18 @@ async function submit() {
   } catch (error) {
     if (error === 'cancel' || error === 'close') return
     ElMessage.error(error?.response?.data?.error || error?.message || t('manager.quickViewCreator.generateFailed'))
+  } finally {
+    submitting.value = false
+  }
+}
+
+async function viewCurrentResult() {
+  if (!hasCurrentResult.value) return
+  submitting.value = true
+  try {
+    await openQuickViewResult(router, sourceLocator.value)
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.error || error?.message || t('manager.quickViewCreator.viewFailed'))
   } finally {
     submitting.value = false
   }

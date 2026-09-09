@@ -5678,6 +5678,12 @@ const docTemplate = `{
                 "assessment_revision": {
                     "type": "integer"
                 },
+                "authorization_state": {
+                    "type": "string"
+                },
+                "authorized_until": {
+                    "type": "string"
+                },
                 "can_decide": {
                     "type": "boolean"
                 },
@@ -5697,6 +5703,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "decision_unavailable_reason": {
+                    "type": "string"
+                },
+                "enrollment_id": {
                     "type": "string"
                 },
                 "exemption_id": {
@@ -6899,6 +6908,12 @@ const docTemplate = `{
                 "assessment_revision": {
                     "type": "integer"
                 },
+                "authorization_state": {
+                    "type": "string"
+                },
+                "authorized_until": {
+                    "type": "string"
+                },
                 "can_decide": {
                     "type": "boolean"
                 },
@@ -6918,6 +6933,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "decision_unavailable_reason": {
+                    "type": "string"
+                },
+                "enrollment_id": {
                     "type": "string"
                 },
                 "exemption_id": {

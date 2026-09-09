@@ -42,11 +42,11 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 	systemServiceClient := commonClient.NewSystemServiceClient(cfg.SystemServiceURL, serviceTokenSource, nil)
 	systemClient := client.NewSystemClient(systemServiceClient)
 
-	// 初始化本地缓存（5分钟 TTL）
-	localCache := cache.NewLocalCache(5 * time.Minute)
+	// 消费凭据撤销需要快速生效，Gateway 只保留短期本地正缓存。
+	localCache := cache.NewLocalCache(30 * time.Second)
 
 	// 创建中间件实例
-	apiKeyAuthMiddleware := middleware.NewAPIKeyAuthMiddleware(systemClient, localCache, redisClient)
+	apiConsumerAuthMiddleware := middleware.NewAPIConsumerAuthMiddleware(systemClient, localCache)
 	rateLimiterMiddleware := middleware.NewRateLimiterMiddleware(redisClient)
 	accessLoggerMiddleware := middleware.NewAccessLoggerMiddleware(db)
 
@@ -89,11 +89,16 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 	systemProxy := proxy.NewServiceProxy(cfg.SystemServiceURL)
 	serviceHandler := registeredModuleHandler("service", moduleDiscovery)
 
-	// 查询服务数据访问端点（公开，无需 API Key，认证由 Service 模块内部判断）
-	registerQueryServiceRoute(router, serviceHandler)
+	// Query Service 是首期 API Consumer 数据面。公开请求或 Bearer 请求仍由 Service 判断；
+	// 携带 X-API-Key 时，Gateway 先完成调用方认证、限流和访问日志。
+	query := router.Group("/api/query")
+	query.Use(apiConsumerAuthMiddleware.Handler())
+	query.Use(accessLoggerMiddleware.Handler())
+	query.Use(rateLimiterMiddleware.Handler())
+	query.POST("/:serviceName/query", serviceHandler)
 	router.POST("/api/gquery/:serviceName", serviceHandler)
 
-	// OGC API Features 公开路由（不需要 API Key 认证）
+	// OGC API Features 公开路由（不接受 API Consumer Credential）
 	ogc := router.Group("/ogc")
 	{
 		ogc.GET("/features/:serviceName", serviceHandler)
@@ -103,7 +108,7 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 		ogc.GET("/features/:serviceName/collections/:collectionId/items/:featureId", serviceHandler)
 	}
 
-	// WMTS 公开路由（不需要 API Key 认证，认证由 Service 模块内部判断）
+	// WMTS 公开路由（认证由 Service 模块内部判断）
 	wmts := router.Group("/wmts")
 	{
 		wmts.GET("/:serviceName", serviceHandler)
@@ -120,18 +125,16 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 		ogcTiles.GET("/:serviceName/tiles/:layer/:tileMatrixSetId/:tileMatrix/:tileRow/:tileCol", serviceHandler)
 	}
 
-	// XYZ Tiles 公开路由（不需要 API Key 认证，认证由 Service 模块内部判断）
+	// XYZ Tiles 公开路由（认证由 Service 模块内部判断）
 	// 注意：Gin 不支持 :y.:format 语法，使用 /*yformat 通配符，由 Service 后端解析
 	tiles := router.Group("/tiles")
 	{
 		tiles.GET("/:serviceName/:layerName/:z/:x/*yformat", serviceHandler)
 	}
 
-	// ============ 受保护的路由（需要 API Key 鉴权）============
+	// 控制面只接受各 owner 路由声明的 Bearer Credential，显式拒绝 API Consumer Credential。
 	api := router.Group("/api/v1")
-	api.Use(apiKeyAuthMiddleware.Handler())   // API Key 验证
-	api.Use(accessLoggerMiddleware.Handler()) // API Key 访问日志，包裹限流器以记录 429
-	api.Use(rateLimiterMiddleware.Handler())  // 限流
+	api.Use(middleware.RejectAPIConsumerCredentialOnControlPlane())
 	{
 		registerModuleRoutes(api, systemProxy, moduleDiscovery)
 	}
@@ -150,10 +153,6 @@ func selectModuleBackend(module *commonClient.ModuleInfo, now time.Time) (string
 		}
 	}
 	return "", false
-}
-
-func registerQueryServiceRoute(router gin.IRoutes, handler gin.HandlerFunc) {
-	router.POST("/api/query/:serviceName/query", handler)
 }
 
 type moduleProxyLookup interface {
@@ -202,6 +201,13 @@ func initDatabase(cfg *config.Config) *gorm.DB {
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		log.Printf("Failed to connect to database: %v (continuing without DB)", err)
+		return nil
+	}
+	if err := db.Exec(`
+		ALTER TABLE IF EXISTS gateway.api_access_logs DROP COLUMN IF EXISTS application_id;
+		ALTER TABLE IF EXISTS gateway.api_access_logs DROP COLUMN IF EXISTS api_key_prefix;
+	`).Error; err != nil {
+		log.Printf("Failed to remove obsolete Gateway access log columns: %v (continuing without access log DB)", err)
 		return nil
 	}
 	if err := db.AutoMigrate(&middleware.AccessLog{}); err != nil {

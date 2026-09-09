@@ -47,6 +47,24 @@ def load_deployment_profiles(repository: Path) -> dict[str, str]:
     profiles = dict(matches)
     if len(profiles) != len(matches):
         raise RegistrationError("online deployment profiles contain duplicate suites")
+    for hosted_path in sorted(
+        (repository / "scripts/test").glob("online-hosted-*-gate.sh")
+    ):
+        hosted_text = hosted_path.read_text(encoding="utf-8")
+        hosted_suite = re.search(
+            r"(?m)^# ADDP_ONLINE_SUITES=([a-z][a-z0-9-]*)$", hosted_text
+        )
+        hosted_runner = re.search(
+            r"(?m)^# ADDP_ONLINE_RUNNER=([a-z][a-z0-9_-]*)$", hosted_text
+        )
+        if hosted_suite is None or hosted_runner is None:
+            raise RegistrationError(
+                f"{hosted_path.relative_to(repository)} is missing Hosted Online metadata"
+            )
+        suite = hosted_suite.group(1)
+        if suite in profiles:
+            raise RegistrationError(f"Online suite {suite} has multiple deployment profiles")
+        profiles[suite] = hosted_runner.group(1)
     return profiles
 
 
@@ -283,7 +301,8 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         "/api/v1/monitor/executions/by-execution-id/",
         "addp-infra://minio/manager/tenant_",
         "/api/v1/manager/point_cloud_copc/",
-        "/api/v1/manager/pptx_pdf/preview",
+        "/api/v1/manager/quick-view/capability",
+        "/api/v1/manager/quick-view/actions",
         "/api/v1/manager/tasks/{PPTX_TASK_TYPE}/",
         '"cache_reused": True',
     ):
@@ -302,7 +321,7 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
         "platform_internal_outputs",
         ".pptx-preview .pdf-preview",
         "pptx_page_after_engine_refresh",
-        "pptx_preview_requests",
+        "pptx_generation_requests",
     ):
         if fragment not in browser:
             raise RegistrationError(
@@ -522,9 +541,9 @@ def validate_oceanbase_consumer_flow_profile(
         )
     for relative in (
         "business/scripts/online-oceanbase-consumer-fixture.sh",
-        "scripts/test/oceanbase-consumer-flow-online.py",
+        "scripts/test/relational-consumer-flow-online.py",
         "scripts/test/online-oceanbase-consumer-fixture_test.py",
-        "scripts/test/oceanbase-consumer-flow-online_test.py",
+        "scripts/test/relational-consumer-flow-online_test.py",
     ):
         if not (repository / relative).is_file():
             raise RegistrationError(f"oceanbase-consumer-flow requires {relative}")
@@ -546,13 +565,13 @@ def validate_oceanbase_consumer_flow_profile(
                 f"oceanbase-consumer-flow fixture contract is missing {fragment}"
             )
     owner = (
-        repository / "scripts/test/oceanbase-consumer-flow-online.py"
+        repository / "scripts/test/relational-consumer-flow-online.py"
     ).read_text(encoding="utf-8")
     owner_contract = owner + (
         repository / "scripts/test/security-transfer-protection-online.py"
     ).read_text(encoding="utf-8")
     for fragment in (
-        'engine.get("engine_type") != "oceanbase"',
+        'engine.get("engine_type") != profile.engine_type',
         "/api/v1/meta/scan/run/manual",
         '"type": "watermark"',
         '"start": "committed"',
@@ -562,7 +581,7 @@ def validate_oceanbase_consumer_flow_profile(
         "/api/v1/manager/preview",
         "/api/v1/develop/executions",
         "/api/query/",
-        "advance_fixture()",
+        "advance_fixture(profile)",
         '"empty_resume"',
         "cleanup_tasks(client, task_ids)",
         "cleanup_service(client, service_id)",
@@ -572,6 +591,124 @@ def validate_oceanbase_consumer_flow_profile(
             raise RegistrationError(
                 f"oceanbase-consumer-flow owner contract is missing {fragment}"
             )
+
+
+def validate_opengauss_consumer_flow_profile(
+    repository: Path, registered: set[str]
+) -> None:
+    if "opengauss-consumer-flow" not in registered:
+        return
+    hosted = (repository / "scripts/test/online-hosted-opengauss-gate.sh").read_text(
+        encoding="utf-8"
+    )
+    for fragment in (
+        "# ADDP_ONLINE_SUITES=opengauss-consumer-flow",
+        "GITHUB_ACTIONS",
+        "RUNNER_OS",
+        "Linux",
+        "x86_64",
+        "POSTGRES_DB=addp_online",
+        "ADDP_ONLINE_SECRET_DIR",
+        "go run ./cmd/online-test-fixture",
+        "ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN",
+        "opengauss-official-media.sh",
+        "refusing to reuse existing image",
+        "bash business/scripts/online-opengauss-consumer-fixture.sh start",
+        "python3 scripts/test/online-engine-registration.py",
+        "--descriptor \"$ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE\"",
+        "for start_target in -manager -develop -service",
+        "unset ADDP_TEST_OPENGAUSS_DSN",
+        'make test-online "ONLINE_SUITE=$ONLINE_SUITE"',
+        "bash scripts/dev/stop.sh",
+        "bash scripts/infra/down.sh --volumes --force",
+    ):
+        if fragment not in hosted:
+            raise RegistrationError(
+                f"opengauss-consumer-flow Hosted profile is missing {fragment}"
+            )
+    for relative in (
+        "business/scripts/online-opengauss-consumer-fixture.sh",
+        "scripts/test/online-hosted-opengauss-gate.sh",
+        "scripts/test/online-hosted-opengauss-gate_test.py",
+        "scripts/test/online-engine-registration.py",
+        "scripts/test/online-engine-registration_test.py",
+        "scripts/test/online-opengauss-consumer-fixture_test.py",
+        "scripts/test/relational-consumer-flow-online.py",
+        "scripts/test/relational-consumer-flow-online_test.py",
+        "system/backend/cmd/online-test-fixture/main.go",
+        "system/backend/cmd/online-test-fixture/main_test.go",
+    ):
+        if not (repository / relative).is_file():
+            raise RegistrationError(f"opengauss-consumer-flow requires {relative}")
+    fixture = (
+        repository / "business/scripts/online-opengauss-consumer-fixture.sh"
+    ).read_text(encoding="utf-8")
+    for fragment in (
+        "opengauss_ensure_official_image x86_64",
+        "refusing to reuse existing image",
+        "addp-opengauss-online-disposable",
+        "addp_opengauss_online",
+        "addp_online_consumer_source",
+        "addp_online_consumer_target",
+        "MERGE INTO",
+        "container_exists",
+        "start|advance|stop|status",
+        "ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE",
+        '"engine_type": "opengauss"',
+    ):
+        if fragment not in fixture:
+            raise RegistrationError(
+                f"opengauss-consumer-flow fixture contract is missing {fragment}"
+            )
+    if "/api/v1/system/engines" in fixture:
+        raise RegistrationError(
+            "opengauss-consumer-flow Business fixture must not own System Engine registration"
+        )
+    registration = (
+        repository / "scripts/test/online-engine-registration.py"
+    ).read_text(encoding="utf-8")
+    for fragment in (
+        "/api/v1/system/engines",
+        'test_result.get("success") is not True',
+        "ADDP_ONLINE_CONSUMER_ENGINE_ID",
+    ):
+        if fragment not in registration:
+            raise RegistrationError(
+                f"opengauss-consumer-flow registration helper is missing {fragment}"
+            )
+    owner = (
+        repository / "scripts/test/relational-consumer-flow-online.py"
+    ).read_text(encoding="utf-8")
+    for fragment in (
+        '"opengauss": ConsumerProfile(',
+        'namespace_kind="schema"',
+        'identifier_quote=\'"\'',
+        'fixture_script="business/scripts/online-opengauss-consumer-fixture.sh"',
+        '"schema_version": "addp.relational-consumer-flow-online/v1"',
+        '"residual_resources": 0',
+    ):
+        if fragment not in owner:
+            raise RegistrationError(
+                f"opengauss-consumer-flow owner contract is missing {fragment}"
+            )
+    identity_fixture = (
+        repository / "system/backend/cmd/online-test-fixture/main.go"
+    ).read_text(encoding="utf-8")
+    for fragment in (
+        'RoleKey: "online.engine_provisioner"',
+        '"system.engine.create"',
+        '"system.engine.execute"',
+        'RoleKey: "online.relational_consumer"',
+        '"ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN"',
+    ):
+        if fragment not in identity_fixture:
+            raise RegistrationError(
+                f"opengauss-consumer-flow identity fixture is missing {fragment}"
+            )
+    if "ADDP_ONLINE_FIXTURE_ADMIN_ACCESS_TOKEN" in identity_fixture:
+        raise RegistrationError(
+            "opengauss-consumer-flow must not issue an administrator fixture token"
+        )
 
 
 def validate_transfer_insert_only_mysql_profile(
@@ -697,6 +834,25 @@ def load_workflow_suites(repository: Path) -> set[str]:
     missing = [fragment for fragment in required_fragments if fragment not in text]
     if missing:
         raise RegistrationError("Online T4 workflow is missing: " + ", ".join(missing))
+    hosted_gates = sorted(
+        (repository / "scripts/test").glob("online-hosted-*-gate.sh")
+    )
+    for hosted_gate in hosted_gates:
+        relative = hosted_gate.relative_to(repository).as_posix()
+        for fragment in (
+            f"bash {relative} --check-only",
+            f"bash {relative}",
+            "ADDP_ONLINE_HOSTED: \"1\"",
+            "ADDP_ONLINE_SECRET_DIR:",
+        ):
+            if fragment not in text:
+                raise RegistrationError(
+                    f"Online T4 workflow is missing Hosted profile fragment: {fragment}"
+                )
+    if hosted_gates and "node-version-file: .node-version" not in text:
+        raise RegistrationError(
+            "Online T4 Hosted profile must use the repository .node-version"
+        )
     job_environment_blocks = re.findall(
         r"(?ms)^    env:\n(?P<body>(?:      [^\n]*\n)+)",
         text,
@@ -709,10 +865,11 @@ def load_workflow_suites(repository: Path) -> set[str]:
         "ADDP_ONLINE_ARTIFACT_DIR: "
         "${{ runner.temp }}/addp-online-${{ github.run_id }}"
     )
-    if text.count(artifact_assignment) != 2:
+    expected_artifact_assignments = 2 * (1 + len(hosted_gates))
+    if text.count(artifact_assignment) != expected_artifact_assignments:
         raise RegistrationError(
             "Online T4 workflow must configure the Runner temp artifact directory "
-            "on both lifecycle steps"
+            "on both lifecycle steps for every Runner profile"
         )
     if re.search(r"(?m)^  schedule:\s*$", text):
         raise RegistrationError("Online T4 workflow must remain manual until the first real run passes")
@@ -746,6 +903,7 @@ def check_registration(repository: Path) -> None:
     validate_security_plaintext_access_profile(repository, registered)
     validate_security_mysql_owner_protection_profile(repository, registered)
     validate_oceanbase_consumer_flow_profile(repository, registered)
+    validate_opengauss_consumer_flow_profile(repository, registered)
     validate_transfer_insert_only_mysql_profile(repository, registered)
 
 

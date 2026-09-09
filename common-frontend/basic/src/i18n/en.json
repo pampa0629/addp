@@ -358,6 +358,7 @@
     "converting": "Generating presentation preview",
     "convertingHint": "Large files are converted to PDF in the background and shown automatically when ready.",
     "failed": "Presentation preview generation failed",
+    "stale": "The source file has changed. Refresh to regenerate the presentation preview.",
     "identityMissing": "The data item identity required to create a preview task is missing."
   },
   "officePreview": {

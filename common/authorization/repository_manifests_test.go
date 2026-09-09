@@ -13,8 +13,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 443 {
-		t.Fatalf("descriptor count = %d, want 443", len(descriptors))
+	if len(descriptors) != 444 {
+		t.Fatalf("descriptor count = %d, want 444", len(descriptors))
 	}
 	if descriptors[0].Key != "agent.configuration.read" || descriptors[len(descriptors)-1].Key != "workbench.resource_grant.revoke" {
 		t.Fatalf("descriptor boundary keys = %q, %q", descriptors[0].Key, descriptors[len(descriptors)-1].Key)
@@ -158,7 +158,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"system.runtime_registry.update",
 	})
 	assertRepositoryRolePermissions(t, roles, "platform.gateway_runtime", []string{
-		"system.api_key.read",
+		"iam.api_consumer_runtime.read",
 		"system.runtime_registry.read",
 	})
 	assertRepositoryRolePermissions(t, roles, "platform.model_runtime", []string{
@@ -171,6 +171,7 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"system.runtime_registry.update",
 	})
 	assertRepositoryRolePermissions(t, roles, "platform.service_runtime", []string{
+		"iam.api_consumer_runtime.read",
 		"platform.tenant.read",
 		"system.runtime_registry.update",
 	})

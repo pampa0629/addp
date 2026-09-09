@@ -141,6 +141,8 @@ Role Assignment 的写入服务必须在持久化前校验目标 Principal 的�
 
 管理界面的 Role 选择器必须使用 Membership 的 `principal_type` 和 Role 的 `allowed_principal_types` 进行结构化过滤，只展示对目标 Principal 可分配的 Role。不得根据 Role Key 后缀、展示名称或其他字符串约定识别 Runtime Role。
 
+Tenant 管理界面按账号类别提供唯一授权入口：“角色管理 > 角色分配”只查询和选择 User Membership；Service Principal 的角色查看与分配只从“应用接入 > 机器身份”进入，并继续复用相同的 Role Assignment API、校验和审计事实。Platform-owned Runtime Service Principal 在该视图中只读，不允许 Tenant 管理员创建或撤销其系统引导的 Role Assignment；Tenant-owned Service Account 只可选择 `allowed_principal_types` 包含 `service_principal` 的 Role。
+
 ## 七、HTTP 与 Tool 授权声明
 
 每个公开 OpenAPI Operation 必须声明 `x-addp-auth-mode`：

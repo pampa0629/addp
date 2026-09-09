@@ -31,24 +31,33 @@ describe('document candidate contract', () => {
     expect(en.standard.document.formalizationAction.linked_existing).toBe('Existing revision linked')
   })
 
-  it('uses the single paginated cross-extraction candidate group route', () => {
-    expect(documentDetailSource).toContain('documentAPI.listCandidateGroups')
+  it('uses the single paginated candidate family route without merging semantic variants', () => {
+    expect(documentDetailSource).toContain('documentAPI.listCandidateFamilies')
     expect(documentDetailSource).not.toContain('documentAPI.listExtractions')
-    expect(standardApiSource).toContain('/extraction-candidate-groups')
+    expect(documentDetailSource).not.toContain('documentAPI.listCandidateGroups')
+    expect(standardApiSource).toContain('/extraction-candidate-families')
+    expect(standardApiSource).not.toContain('/extraction-candidate-groups')
     expect(standardApiSource).not.toContain('listExtractions')
+    expect(documentDetailSource).toContain('family.family_key')
+    expect(documentDetailSource).toContain('family.variants')
     expect(documentDetailSource).toContain('group.semantic_fingerprint')
     expect(documentDetailSource).toContain('group.occurrences')
+    expect(documentDetailSource).toContain('candidateFamilyResponse.variant_total')
+    expect(documentDetailSource).toContain('candidateFamilyResponse.variant_status_counts')
     expect(documentDetailSource).toContain('createLatestRequestCoordinator')
     expect(documentDetailSource).toContain('candidateQuery.page > result.total_pages')
     expect(zhCn.standard.document.candidateGroupState.formalized).toBe('已正式化')
+    expect(zhCn.standard.document.candidateFamilyTotal).toContain('语义变体')
+    expect(en.standard.document.candidateFamilyVariantCount).toContain('semantic variants')
     expect(en.standard.document.candidateEvidenceHistory).toContain('Evidence')
   })
 
-  it('filters candidate groups by the live comparison result', () => {
+  it('filters candidate families by the live family comparison facet', () => {
     expect(documentDetailSource).toContain('candidateQuery.comparison_result')
     expect(documentDetailSource).toContain("const comparisonResults = ['new', 'exact', 'content_conflict', 'scope_conflict']")
     expect(documentDetailSource).toContain("standard.document.allComparisonResults")
-    expect(documentDetailSource).toContain('candidateGroupResponse.comparison_counts')
+    expect(documentDetailSource).toContain('candidateFamilyResponse.family_comparison_counts')
+    expect(documentDetailSource).toContain('candidateFamilyResponse.family_comparison_counts?.all')
     expect(documentDetailSource).toContain('<el-radio-group v-model="candidateQuery.comparison_result"')
     expect(zhCn.standard.document.allComparisonResults).toBe('全部比对结果')
     expect(en.standard.document.allComparisonResults).toBe('All Comparison Results')

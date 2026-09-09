@@ -5,17 +5,22 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 
-SCRIPT = Path(__file__).with_name("oceanbase-consumer-flow-online.py")
-SPEC = importlib.util.spec_from_file_location("oceanbase_consumer_flow_online", SCRIPT)
+SCRIPT = Path(__file__).with_name("relational-consumer-flow-online.py")
+SPEC = importlib.util.spec_from_file_location("relational_consumer_flow_online", SCRIPT)
 ONLINE = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
 sys.modules[SPEC.name] = ONLINE
 SPEC.loader.exec_module(ONLINE)
 
 
-class OceanBaseConsumerFlowOnlineTest(unittest.TestCase):
+class RelationalConsumerFlowOnlineTest(unittest.TestCase):
+    oceanbase = ONLINE.PROFILES["oceanbase"]
+    opengauss = ONLINE.PROFILES["opengauss"]
+
     def test_transfer_uses_bounded_watermark_and_idempotent_upsert(self) -> None:
-        payload = ONLINE.transfer_payload("gate", "source", "target-parent")
+        payload = ONLINE.transfer_payload(
+            "gate", "source", "target-parent", self.oceanbase
+        )
         config = payload["config"]
 
         self.assertEqual(config["runtime"], {"boundary": "bounded"})
@@ -55,6 +60,22 @@ class OceanBaseConsumerFlowOnlineTest(unittest.TestCase):
         )
         with self.assertRaisesRegex(ONLINE.SuiteError, "duplicate stable keys"):
             ONLINE.normalize_rows([rows[0], rows[0]], "owner")
+
+    def test_profiles_share_assertions_but_keep_native_namespace_and_dialect(self) -> None:
+        self.assertEqual(self.oceanbase.namespace_kind, "database")
+        self.assertEqual(self.oceanbase.identifier_quote, "`")
+        self.assertEqual(self.opengauss.namespace_kind, "schema")
+        self.assertEqual(self.opengauss.identifier_quote, '"')
+        baseline, final = ONLINE.expected_rows(self.opengauss)
+        self.assertEqual(baseline[0]["item_code"], "OG-1001")
+        self.assertEqual(final[-1]["item_code"], "OG-1006")
+
+    def test_namespace_locator_uses_profile_catalog_level(self) -> None:
+        item = {"node_id": 27}
+        self.assertEqual(
+            ONLINE.build_namespace_locator(17, item, "public", self.opengauss),
+            "addp://engine/17/path/public?type=schema&node_id=27",
+        )
 
     @patch.object(ONLINE.time, "sleep")
     @patch.object(ONLINE.time, "monotonic", side_effect=(1.0, 2.0))
@@ -98,7 +119,9 @@ class OceanBaseConsumerFlowOnlineTest(unittest.TestCase):
         )
 
         with self.assertRaisesRegex(ONLINE.SuiteError, "engine_type=oceanbase"):
-            ONLINE.validate_engine(client, 17, ONLINE.time.monotonic() + 1)
+            ONLINE.validate_engine(
+                client, 17, self.oceanbase, ONLINE.time.monotonic() + 1
+            )
 
     def test_manager_preview_uses_locator_and_requires_expected_schema(self) -> None:
         client = Mock()
@@ -127,7 +150,9 @@ class OceanBaseConsumerFlowOnlineTest(unittest.TestCase):
             },
         )
 
-        rows = ONLINE.manager_rows(client, "addp://engine/47/path/db/table")
+        rows = ONLINE.manager_rows(
+            client, "addp://engine/47/path/db/table", self.oceanbase
+        )
 
         self.assertEqual(rows[0]["item_code"], "OB-1001")
         request_path = client.request.call_args.args[1]
@@ -142,7 +167,9 @@ class OceanBaseConsumerFlowOnlineTest(unittest.TestCase):
             },
         )
         with self.assertRaisesRegex(ONLINE.SuiteError, "unexpected columns"):
-            ONLINE.manager_rows(client, "addp://engine/47/path/db/table")
+            ONLINE.manager_rows(
+                client, "addp://engine/47/path/db/table", self.oceanbase
+            )
 
     def test_cleanup_service_confirms_the_resource_is_absent(self) -> None:
         client = Mock()

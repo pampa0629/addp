@@ -27,22 +27,21 @@ func NewRateLimiterMiddleware(redisClient *redis.Client) *RateLimiterMiddleware 
 // Handler 中间件处理函数
 func (m *RateLimiterMiddleware) Handler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 检查是否有 API Key 信息（由 APIKeyAuthMiddleware 设置）
-		apiKeyInfoRaw, exists := c.Get("api_key_info")
+		infoRaw, exists := c.Get("api_consumer_info")
 		if !exists {
-			// 没有 API Key 信息，跳过限流（可能是内部请求）
+			// 没有 API 消费方上下文时，不执行消费方级限流。
 			c.Next()
 			return
 		}
 
-		apiKeyInfo, ok := apiKeyInfoRaw.(*client.APIKeyValidationResponse)
-		if !ok || apiKeyInfo == nil {
+		info, ok := infoRaw.(*client.APIConsumerCredentialValidationResponse)
+		if !ok || info == nil {
 			c.Next()
 			return
 		}
 
 		// 执行限流检查
-		allowed, err := m.checkRateLimit(apiKeyInfo.AppID, apiKeyInfo.RateLimitPerMinute)
+		allowed, err := m.checkRateLimit(info.APIConsumerID, info.RateLimitPerMinute)
 		if err != nil {
 			log.Printf("Rate limit check failed: %v", err)
 			// 限流检查失败，为了安全起见，允许通过（避免误伤）
@@ -52,8 +51,8 @@ func (m *RateLimiterMiddleware) Handler() gin.HandlerFunc {
 
 		if !allowed {
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
-				"error": "Rate limit exceeded",
-				"limit": apiKeyInfo.RateLimitPerMinute,
+				"error":  "Rate limit exceeded",
+				"limit":  info.RateLimitPerMinute,
 				"window": "1 minute",
 			})
 			return
@@ -67,13 +66,13 @@ func (m *RateLimiterMiddleware) Handler() gin.HandlerFunc {
 // appID: 应用 ID
 // limit: 每分钟请求数限制
 // 返回: true=允许通过, false=超过限制
-func (m *RateLimiterMiddleware) checkRateLimit(appID uint, limit int) (bool, error) {
+func (m *RateLimiterMiddleware) checkRateLimit(apiConsumerID uint, limit int) (bool, error) {
 	if m.redisClient == nil {
 		return true, nil // Redis 不可用，允许通过
 	}
 
 	ctx := context.Background()
-	key := fmt.Sprintf("ratelimit:app:%d", appID)
+	key := fmt.Sprintf("ratelimit:api-consumer:%d", apiConsumerID)
 
 	// 使用 Lua 脚本实现原子操作
 	script := `
@@ -102,13 +101,13 @@ func (m *RateLimiterMiddleware) checkRateLimit(appID uint, limit int) (bool, err
 }
 
 // GetCurrentCount 获取当前计数（用于监控）
-func (m *RateLimiterMiddleware) GetCurrentCount(appID uint) (int, error) {
+func (m *RateLimiterMiddleware) GetCurrentCount(apiConsumerID uint) (int, error) {
 	if m.redisClient == nil {
 		return 0, fmt.Errorf("redis client is nil")
 	}
 
 	ctx := context.Background()
-	key := fmt.Sprintf("ratelimit:app:%d", appID)
+	key := fmt.Sprintf("ratelimit:api-consumer:%d", apiConsumerID)
 
 	val, err := m.redisClient.Get(ctx, key).Int()
 	if err == redis.Nil {
@@ -122,25 +121,25 @@ func (m *RateLimiterMiddleware) GetCurrentCount(appID uint) (int, error) {
 }
 
 // ResetCount 重置计数（用于管理）
-func (m *RateLimiterMiddleware) ResetCount(appID uint) error {
+func (m *RateLimiterMiddleware) ResetCount(apiConsumerID uint) error {
 	if m.redisClient == nil {
 		return fmt.Errorf("redis client is nil")
 	}
 
 	ctx := context.Background()
-	key := fmt.Sprintf("ratelimit:app:%d", appID)
+	key := fmt.Sprintf("ratelimit:api-consumer:%d", apiConsumerID)
 
 	return m.redisClient.Del(ctx, key).Err()
 }
 
 // GetTTL 获取当前窗口剩余时间
-func (m *RateLimiterMiddleware) GetTTL(appID uint) (time.Duration, error) {
+func (m *RateLimiterMiddleware) GetTTL(apiConsumerID uint) (time.Duration, error) {
 	if m.redisClient == nil {
 		return 0, fmt.Errorf("redis client is nil")
 	}
 
 	ctx := context.Background()
-	key := fmt.Sprintf("ratelimit:app:%d", appID)
+	key := fmt.Sprintf("ratelimit:api-consumer:%d", apiConsumerID)
 
 	return m.redisClient.TTL(ctx, key).Result()
 }

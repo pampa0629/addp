@@ -22,11 +22,11 @@ func TestRegisterIAMMigratedBusinessRoutes(t *testing.T) {
 		t.Fatal(err)
 	}
 	engineHandler := NewEngineHandler(service.NewEngineService(repository.NewEngineRepository(db), nil, nil))
-	applicationHandler := NewApplicationHandler(service.NewApplicationService(repository.NewApplicationRepository(db)))
+	apiConsumerHandler := NewAPIConsumerHandler(service.NewAPIConsumerService(repository.NewAPIConsumerRepository(db)))
 	cleanupHandler := NewCleanupHandler(nil)
 	router := gin.New()
 	api := router.Group("/api/v1/system")
-	if err := RegisterIAMMigratedBusinessRoutes(api, runtime, engineHandler, applicationHandler, cleanupHandler); err != nil {
+	if err := RegisterIAMMigratedBusinessRoutes(api, runtime, engineHandler, apiConsumerHandler, cleanupHandler); err != nil {
 		t.Fatalf("RegisterIAMMigratedBusinessRoutes() error = %v", err)
 	}
 
@@ -36,20 +36,20 @@ func TestRegisterIAMMigratedBusinessRoutes(t *testing.T) {
 	}
 	sort.Strings(actual)
 	want := []string{
-		"DELETE /api/v1/system/applications/:id",
-		"DELETE /api/v1/system/applications/:id/keys/:key_id",
+		"DELETE /api/v1/system/tenant/api-consumers/:id",
+		"DELETE /api/v1/system/tenant/api-consumers/:id/credentials/:credential_id",
 		"DELETE /api/v1/system/engines/:id",
-		"GET /api/v1/system/applications",
-		"GET /api/v1/system/applications/:id",
-		"GET /api/v1/system/applications/:id/keys",
+		"GET /api/v1/system/tenant/api-consumers",
+		"GET /api/v1/system/tenant/api-consumers/:id",
+		"GET /api/v1/system/tenant/api-consumers/:id/credentials",
 		"GET /api/v1/system/admin/cleanup/history",
 		"GET /api/v1/system/admin/cleanup/tasks/:task_id",
 		"GET /api/v1/system/engine-types",
 		"GET /api/v1/system/engines",
 		"GET /api/v1/system/engines/:id",
 		"GET /api/v1/system/engines/:id/deletion-assessments/:assessment_id",
-		"POST /api/v1/system/applications",
-		"POST /api/v1/system/applications/:id/keys",
+		"POST /api/v1/system/tenant/api-consumers",
+		"POST /api/v1/system/tenant/api-consumers/:id/credentials",
 		"POST /api/v1/system/admin/cleanup/execute",
 		"POST /api/v1/system/admin/cleanup/scan",
 		"POST /api/v1/system/engines",
@@ -60,7 +60,7 @@ func TestRegisterIAMMigratedBusinessRoutes(t *testing.T) {
 		"POST /api/v1/system/engines/:id/spatial-workspaces/:ecosystem/:kind/enable",
 		"POST /api/v1/system/engines/:id/test",
 		"POST /api/v1/system/engines/test-connection",
-		"PUT /api/v1/system/applications/:id",
+		"PUT /api/v1/system/tenant/api-consumers/:id",
 		"PUT /api/v1/system/engines/:id",
 	}
 	sort.Strings(want)
