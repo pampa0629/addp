@@ -66,6 +66,7 @@ ORIGINAL_ARGS=("$@")
 
 cd "${ROOT_DIR}"
 source "${SCRIPT_DIR}/lifecycle-lock.sh"
+source "${SCRIPT_DIR}/node-dependencies.sh"
 addp_acquire_lifecycle_lock restart "$@"
 source "${SCRIPT_DIR}/jupyter-env.sh"
 
@@ -277,11 +278,7 @@ ensure_model3d_node_dependencies() {
         return 1
     fi
     echo "  安装 Model3D Workflow Node 依赖..."
-    if [ -f "$dir/package-lock.json" ]; then
-        (cd "$dir" && npm ci --omit=dev)
-    else
-        (cd "$dir" && npm install --omit=dev)
-    fi
+    addp_install_node_dependencies "$dir" --omit=dev
     echo "  ✓ Model3D Workflow Node 依赖安装完成"
 }
 

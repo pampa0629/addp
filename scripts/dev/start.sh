@@ -70,6 +70,7 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "${ROOT_DIR}"
 
 source "${SCRIPT_DIR}/lifecycle-lock.sh"
+source "${SCRIPT_DIR}/node-dependencies.sh"
 addp_acquire_lifecycle_lock start "$@"
 
 export PROJECT_ROOT="${ROOT_DIR}"
@@ -108,11 +109,7 @@ ensure_model3d_node_dependencies() {
     exit 1
   fi
   echo "安装 Model3D Workflow Node 依赖..."
-  if [ -f "$dir/package-lock.json" ]; then
-    (cd "$dir" && npm ci --omit=dev)
-  else
-    (cd "$dir" && npm install --omit=dev)
-  fi
+  addp_install_node_dependencies "$dir" --omit=dev
   echo -e "${GREEN}✓ Model3D Workflow Node 依赖安装完成${NC}"
 }
 
@@ -2818,18 +2815,18 @@ ensure_node_modules() {
   local dir="$1"
   local vite_bin="$dir/node_modules/.bin/vite"
   if [ ! -d "$dir/node_modules" ]; then
-    echo "检测到 $dir 缺少依赖，执行 npm install ..."
-    (cd "$dir" && npm install)
+    echo "检测到 $dir 缺少依赖，执行 npm ci ..."
+    addp_install_node_dependencies "$dir"
   fi
   # 某些情况下 node_modules 存在但 devDependencies 未装全，补装一次
   if [ ! -x "$vite_bin" ]; then
     echo "未发现 Vite，可执行文件缺失：$vite_bin"
-    echo "在 $dir 重新安装依赖 (包含 devDependencies)..."
-    (cd "$dir" && npm install)
+    echo "在 $dir 通过 npm ci 重新安装依赖 (包含 devDependencies)..."
+    addp_install_node_dependencies "$dir"
   fi
   if [ ! -x "$vite_bin" ]; then
     echo -e "${RED}✗ 依赖安装后仍未找到 Vite: $vite_bin${NC}"
-    echo "请检查网络代理或手动执行: (cd $dir && npm install)"
+    echo "请检查网络代理或手动执行: (cd $dir && npm ci)"
     exit 1
   fi
 }

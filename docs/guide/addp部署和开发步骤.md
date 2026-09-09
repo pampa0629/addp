@@ -39,6 +39,8 @@ bash scripts/dev/start.sh
 
 开发环境的 `start.sh`、`restart.sh`、`stop.sh` 和 `keepalive.sh` 使用工作区级生命周期锁。同一工作区已有启动、停止或重启操作执行时，新的生命周期操作会立即失败并显示当前操作信息，不能并行修改 `.dev-pids`、`.dev-bins` 或运行进程。详细契约见 [开发服务生命周期与构建身份规范](../spec/addp开发服务生命周期与构建身份规范.md)。
 
+开发生命周期安装 Node 依赖时以 `package-lock.json` 为不可变构建输入，并统一执行 `npm ci`；缺少锁文件时直接失败，锁文件生成只属于显式的依赖维护流程。因此本地启动和 Hosted Online 门禁不会在安装依赖时改写已跟踪的锁文件或污染构建身份。
+
 自动启动以下内容:
 1. 基础设施 (如未运行)
 2. 所有后端服务 (System、Manager、Meta、Transfer、Orchestrator、Develop、GeoPython Workflow、Model3D Workflow Engine、PointCloud Workflow Engine)
