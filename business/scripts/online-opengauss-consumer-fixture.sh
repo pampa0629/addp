@@ -37,7 +37,7 @@ esac
 [ "$#" -eq 1 ] || fail "exactly one action is required"
 
 opengauss_gsql() {
-  docker exec --user omm \
+  docker exec --interactive --user omm \
     --env "GAUSSHOME=$OPENGAUSS_HOME" \
     --env "PATH=$OPENGAUSS_EXEC_PATH" \
     --env "LD_LIBRARY_PATH=$OPENGAUSS_LIBRARY_PATH" \

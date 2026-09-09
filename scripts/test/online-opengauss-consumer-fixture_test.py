@@ -180,6 +180,7 @@ class OnlineOpenGaussConsumerFixtureTest(unittest.TestCase):
         commands = self.log.read_text(encoding="utf-8")
         self.assertIn("load --input", commands)
         self.assertIn("--label com.addp.online-fixture=opengauss-consumer-flow", commands)
+        self.assertIn("exec --interactive --user omm", commands)
         self.assertIn("CREATE DATABASE addp_opengauss_online DBCOMPATIBILITY 'PG'", commands)
         self.assertGreaterEqual(
             commands.count('DROP TABLE IF EXISTS "addp_online_consumer_target"'), 2
