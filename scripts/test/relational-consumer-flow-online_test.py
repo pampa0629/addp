@@ -106,22 +106,14 @@ class RelationalConsumerFlowOnlineTest(unittest.TestCase):
             ("POST", "/api/v1/transfer/task-definitions/17/start", (200,)),
         )
 
-    def test_engine_identity_cannot_fall_back_to_mysql(self) -> None:
-        client = Mock()
-        client.request.return_value = ONLINE.SUPPORT.Response(
-            200,
-            {
-                "id": 17,
-                "engine_type": "mysql",
-                "lifecycle_state": "active",
-                "connection_status": "online",
-            },
-        )
-
-        with self.assertRaisesRegex(ONLINE.SuiteError, "engine_type=oceanbase"):
-            ONLINE.validate_engine(
-                client, 17, self.oceanbase, ONLINE.time.monotonic() + 1
+    def test_consumer_identity_does_not_require_system_engine_control_plane(self) -> None:
+        self.assertNotIn("system.engine.read", ONLINE.REQUIRED_PERMISSIONS)
+        self.assertTrue(
+            all(
+                not permission.startswith("system.engine.")
+                for permission in ONLINE.REQUIRED_PERMISSIONS
             )
+        )
 
     def test_manager_preview_uses_locator_and_requires_expected_schema(self) -> None:
         client = Mock()

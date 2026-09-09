@@ -42,11 +42,12 @@
 	  },
 	  "columns": { "name": "Name", "type": "Task Type", "engine": "Source Engine", "enabled": "Enabled", "status": "Latest Status", "updatedAt": "Updated", "actions": "Actions" },
 	  "status": { "never": "Never run", "pending": "Pending", "running": "Running", "success": "Succeeded", "failed": "Failed", "cancelled": "Cancelled" },
-	  "allTypes": "All task types", "total": "{total} total", "enabled": "Enabled", "disabled": "Disabled",
+	  "allTypes": "All task types", "allStatuses": "All statuses", "total": "{total} total", "enabled": "Enabled", "disabled": "Disabled",
 	  "refresh": "Refresh", "createQuickView": "New quick-view task", "createSpatial": "New spatial task", "detail": "Details", "source": "Source", "viewSource": "View in resource tree", "result": "Result", "viewResult": "View result", "edit": "Edit", "execute": "Execute", "monitor": "Monitor", "delete": "Delete",
 	  "sourceItem": "Source item", "sourceFormat": "Source format", "sourceSize": "Source size", "targetEngine": "Target engine", "resultName": "Generated result", "lastRunAt": "Last run", "taskDescription": "Description", "empty": "No generation tasks",
 	  "loadFailed": "Failed to load generation tasks", "executeQueued": "Task queued", "executeFailed": "Task execution failed", "resultUnavailable": "This task has no available quick-view result", "viewResultFailed": "Failed to open the quick-view result",
-	  "deleteConfirm": "Delete this task definition? Published business data will be retained.", "deleteSuccess": "Task deleted", "deleteFailed": "Failed to delete task"
+	  "deleteConfirm": "Delete this task definition? Published business data will be retained.", "deleteSuccess": "Task deleted", "deleteFailed": "Failed to delete task",
+	  "batchDelete": "Delete selected ({count})", "batchDeleteTitle": "Delete selected tasks", "batchDeleteConfirm": "Delete the {count} selected task definitions? Published business data will be retained.", "batchDeleteSuccess": "Deleted {deleted} tasks", "batchDeletePartial": "Deleted {deleted} tasks; {failed} failed"
 	},
 	"quickViewCreator": {
 	  "title": "New quick-view task",

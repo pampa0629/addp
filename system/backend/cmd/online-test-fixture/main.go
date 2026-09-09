@@ -24,6 +24,8 @@ import (
 
 const hostedDatabase = "addp_online"
 
+const engineProvisionerRoleKey = "tenant.infrastructure_administrator"
+
 var consumerPermissions = []string{
 	"develop.data_read.execute",
 	"develop.task.execute",
@@ -36,17 +38,10 @@ var consumerPermissions = []string{
 	"service.definition.create",
 	"service.definition.delete",
 	"service.definition.read",
-	"system.engine.read",
 	"transfer.task.create",
 	"transfer.task.delete",
 	"transfer.task.execute",
 	"transfer.task.read",
-}
-
-var engineProvisionerPermissions = []string{
-	"system.engine.create",
-	"system.engine.execute",
-	"system.engine.read",
 }
 
 func main() {
@@ -194,15 +189,9 @@ func run(args []string, environment []string) error {
 	if err != nil {
 		return fmt.Errorf("establish engine provisioner membership: %w", err)
 	}
-	provisionerRole, err := roleService.CreateRole(ctx, iam.CreateTenantRoleInput{
-		TenantID: tenant.ID, RoleKey: "online.engine_provisioner",
-		Name: "Online engine provisioner", Description: "Ephemeral Hosted T4 Engine registration permissions",
-		ScopeTypes: []string{"tenant"}, PermissionKeys: engineProvisionerPermissions,
-		ActorPrincipalID: administrator.PrincipalID,
-		Audit:            audit("hosted-online-engine-provisioner-role"),
-	})
+	provisionerRole, err := repository.GetActiveBuiltinRoleByKey(ctx, engineProvisionerRoleKey)
 	if err != nil {
-		return fmt.Errorf("create engine provisioner role: %w", err)
+		return fmt.Errorf("resolve engine provisioner role: %w", err)
 	}
 	if _, err := roleService.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{
 		TenantID: tenant.ID, MembershipID: provisionerMembership.Membership.ID,

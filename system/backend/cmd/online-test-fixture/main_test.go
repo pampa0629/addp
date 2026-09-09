@@ -3,25 +3,67 @@ package main
 import (
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
+
+	commonauthorization "github.com/addp/common/authorization"
 )
 
-func TestFixtureRolesKeepEngineProvisioningOutOfConsumerIdentity(t *testing.T) {
-	wantProvisioner := []string{
-		"system.engine.create",
-		"system.engine.execute",
-		"system.engine.read",
-	}
-	if !reflect.DeepEqual(engineProvisionerPermissions, wantProvisioner) {
-		t.Fatalf("engine provisioner permissions = %#v, want %#v", engineProvisionerPermissions, wantProvisioner)
+func TestFixtureRolesKeepSystemEngineControlPlaneOutOfConsumerIdentity(t *testing.T) {
+	if engineProvisionerRoleKey != "tenant.infrastructure_administrator" {
+		t.Fatalf("engine provisioner role = %q", engineProvisionerRoleKey)
 	}
 	for _, permission := range consumerPermissions {
-		if permission == "system.engine.create" || permission == "system.engine.execute" {
-			t.Fatalf("consumer role must not provision engines: %s", permission)
+		if strings.HasPrefix(permission, "system.engine.") {
+			t.Fatalf("consumer role must not access the System Engine control plane: %s", permission)
 		}
 	}
+}
+
+func TestFixtureAuthorizationContractMatchesPublishedCatalog(t *testing.T) {
+	repositoryRoot := filepath.Clean(filepath.Join("..", "..", "..", ".."))
+	catalog, err := commonauthorization.LoadRepositoryAuthorizationCatalog(repositoryRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	permissions := make(map[string]commonauthorization.PermissionDescriptor, len(catalog.Permissions))
+	for _, permission := range catalog.Permissions {
+		permissions[permission.Key] = permission
+	}
+	for _, key := range consumerPermissions {
+		permission, exists := permissions[key]
+		if !exists {
+			t.Fatalf("consumer permission %q is not published", key)
+		}
+		if permission.Status != "active" || !permission.TenantCustomizable || !contains(permission.AllowedScopeTypes, "tenant") {
+			t.Fatalf("consumer permission %q must remain active and tenant-customizable at tenant scope", key)
+		}
+	}
+
+	for _, role := range catalog.Roles {
+		if role.Key != engineProvisionerRoleKey {
+			continue
+		}
+		if role.RoleType != "tenant_builtin" || !contains(role.AllowedScopeTypes, "tenant") || !contains(role.AllowedPrincipalTypes, "user") {
+			t.Fatalf("engine provisioner role has incompatible assignment contract: %#v", role)
+		}
+		for _, required := range []string{"system.engine.create", "system.engine.execute", "system.engine.read"} {
+			if !contains(role.Permissions, required) {
+				t.Fatalf("engine provisioner role is missing %q", required)
+			}
+		}
+		return
+	}
+	t.Fatalf("engine provisioner role %q is not published", engineProvisionerRoleKey)
+}
+
+func contains(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 func TestValidateHostedEnvironment(t *testing.T) {

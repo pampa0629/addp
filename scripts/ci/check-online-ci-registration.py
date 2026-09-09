@@ -572,7 +572,7 @@ def validate_oceanbase_consumer_flow_profile(
         repository / "scripts/test/security-transfer-protection-online.py"
     ).read_text(encoding="utf-8")
     for fragment in (
-        'engine.get("engine_type") != profile.engine_type',
+        '"verification_owner": "deployment_profile"',
         "/api/v1/meta/scan/run/manual",
         '"type": "watermark"',
         '"start": "committed"',
@@ -592,6 +592,10 @@ def validate_oceanbase_consumer_flow_profile(
             raise RegistrationError(
                 f"oceanbase-consumer-flow owner contract is missing {fragment}"
             )
+    if "/api/v1/system/engines" in owner or '"system.engine.read"' in owner:
+        raise RegistrationError(
+            "oceanbase-consumer-flow consumer must not access the System Engine control plane"
+        )
 
 
 def validate_opengauss_consumer_flow_profile(
@@ -697,6 +701,7 @@ def validate_opengauss_consumer_flow_profile(
         'namespace_kind="schema"',
         'identifier_quote=\'"\'',
         'fixture_script="business/scripts/online-opengauss-consumer-fixture.sh"',
+        '"verification_owner": "deployment_profile"',
         '"schema_version": "addp.relational-consumer-flow-online/v1"',
         '"residual_resources": 0',
     ):
@@ -704,13 +709,16 @@ def validate_opengauss_consumer_flow_profile(
             raise RegistrationError(
                 f"opengauss-consumer-flow owner contract is missing {fragment}"
             )
+    if "/api/v1/system/engines" in owner or '"system.engine.read"' in owner:
+        raise RegistrationError(
+            "opengauss-consumer-flow consumer must not access the System Engine control plane"
+        )
     identity_fixture = (
         repository / "system/backend/cmd/online-test-fixture/main.go"
     ).read_text(encoding="utf-8")
     for fragment in (
-        'RoleKey: "online.engine_provisioner"',
-        '"system.engine.create"',
-        '"system.engine.execute"',
+        'engineProvisionerRoleKey = "tenant.infrastructure_administrator"',
+        "repository.GetActiveBuiltinRoleByKey(ctx, engineProvisionerRoleKey)",
         'RoleKey: "online.relational_consumer"',
         '"ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN"',
     ):
@@ -718,6 +726,10 @@ def validate_opengauss_consumer_flow_profile(
             raise RegistrationError(
                 f"opengauss-consumer-flow identity fixture is missing {fragment}"
             )
+    if '"system.engine.read"' in identity_fixture:
+        raise RegistrationError(
+            "opengauss-consumer-flow consumer role must not include System Engine permissions"
+        )
     if "ADDP_ONLINE_FIXTURE_ADMIN_ACCESS_TOKEN" in identity_fixture:
         raise RegistrationError(
             "opengauss-consumer-flow must not issue an administrator fixture token"

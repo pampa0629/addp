@@ -104,6 +104,7 @@
         "label": "Current session: {state}",
         "detail": "Authentication assurance level: {level}",
         "levels": {
+          "syncing": "Syncing",
           "aal1": "Basic authentication",
           "aal2": "Multi-factor authentication",
           "aal3": "High-assurance authentication",
@@ -196,6 +197,8 @@
       },
       "account": {
         "title": "My Account",
+        "syncing": "Syncing account information",
+        "unavailable": "Account information is temporarily unavailable",
         "security": "Security Settings",
         "securityDescription": "Manage authentication credentials and sign-in protection for the current account."
       },
@@ -363,8 +366,19 @@
         "type": "Role Type",
         "scopes": "Allowed Scopes",
         "permissions": "Permissions",
-        "applicableMembers": "Applicable Accounts",
+        "applicableMembers": "Applicable Account Types",
         "applicableContext": "Applicable Accounts & Scopes",
+        "audience": {
+          "title": "View by Applicable Account",
+          "user": "User Account Roles",
+          "service_principal": "Machine Identity Roles",
+          "all": "All Roles",
+          "hints": {
+            "user": "For real users. Assign these roles from the Role Assignments tab on this page.",
+            "service_principal": "For service accounts and platform runtime accounts. Assign roles from Application Access > Machine Identities.",
+            "all": "View user account roles and machine identity roles together."
+          }
+        },
         "permissionOverview": "Permission Overview",
         "permissionCount": "{count} items",
         "permissionDetails": "Role Permission Details",

@@ -62,6 +62,22 @@ function tenantAdministratorRole() {
   }
 }
 
+function tenantRuntimeRole() {
+  return {
+    id: '2',
+    role_key: 'tenant.agent_runtime',
+    name: 'Agent 运行账号',
+    description: '供 Agent 机器身份运行任务。',
+    name_i18n_key: null,
+    description_i18n_key: null,
+    role_type: 'tenant_builtin',
+    allowed_scope_types: ['tenant'],
+    allowed_principal_types: ['service_principal'],
+    immutable: true,
+    permission_keys: ['agent.run.execute']
+  }
+}
+
 function customRole(input, overrides = {}) {
   return {
     id: '700',
@@ -140,7 +156,7 @@ test('tenant administrator manages a custom role with localized bulk permission 
       return
     }
     if (path.endsWith('/tenant/roles') && method === 'GET') {
-      await fulfillJSON(route, 200, [tenantAdministratorRole(), ...(role ? [role] : [])])
+      await fulfillJSON(route, 200, [tenantAdministratorRole(), tenantRuntimeRole(), ...(role ? [role] : [])])
       return
     }
     if (path.endsWith('/tenant/role_permissions') && method === 'GET') {
@@ -180,6 +196,15 @@ test('tenant administrator manages a custom role with localized bulk permission 
   await expect(page).toHaveURL(/\/iam\/roles$/)
   await expect(page.getByRole('heading', { name: '角色管理' })).toBeVisible()
   await expect(page.getByRole('tab', { name: '角色定义' })).toBeVisible()
+  await expect(page.getByRole('radio', { name: '用户账号角色 1' })).toBeChecked()
+  await expect(page.getByRole('row').filter({ hasText: 'tenant.administrator' })).toBeVisible()
+  await expect(page.getByRole('row').filter({ hasText: 'tenant.agent_runtime' })).toHaveCount(0)
+
+  await page.locator('.el-radio-button').filter({ hasText: '机器身份角色' }).click()
+  await expect(page.getByText('角色分配统一从“应用接入 > 机器身份”进入。')).toBeVisible()
+  await expect(page.getByRole('row').filter({ hasText: 'tenant.agent_runtime' })).toBeVisible()
+  await expect(page.getByRole('row').filter({ hasText: 'tenant.administrator' })).toHaveCount(0)
+  await page.locator('.el-radio-button').filter({ hasText: '用户账号角色' }).click()
 
   await page.getByRole('button', { name: '创建自定义角色', exact: true }).click()
   let dialog = page.getByRole('dialog', { name: '创建自定义角色' })

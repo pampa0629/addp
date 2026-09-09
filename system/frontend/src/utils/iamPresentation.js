@@ -48,6 +48,13 @@ export function assuranceLevelKey(level) {
   return ['aal1', 'aal2', 'aal3', 'not_applicable'].includes(normalized) ? normalized : 'unknown'
 }
 
+export function accountSessionIsLoading(authState) {
+  if (authState?.sessionStatus === 'error') return false
+  return authState?.sessionStatus === 'initializing' || (
+    Boolean(authState?.isAuthenticated) && (!authState?.user || !authState?.authContext)
+  )
+}
+
 export function tenantMemberDisplayName(member) {
   return member?.display_name || member?.service_principal_name || member?.username || member?.principal_id || '-'
 }
@@ -86,6 +93,20 @@ export function groupTenantMembers(members, currentMembershipID, options = {}) {
     { key: 'user', members: grouped.filter((member) => member?.principal_type === 'user') },
     { key: 'service_principal', members: grouped.filter((member) => member?.principal_type === 'service_principal') }
   ].filter((group) => group.members.length > 0)
+}
+
+export function roleSupportsPrincipalType(role, principalType) {
+  if (!principalType) return true
+  return (role?.allowed_principal_types || []).includes(principalType)
+}
+
+export function rolePrincipalTypeCounts(roles) {
+  const items = roles || []
+  return {
+    all: items.length,
+    user: items.filter((role) => roleSupportsPrincipalType(role, 'user')).length,
+    service_principal: items.filter((role) => roleSupportsPrincipalType(role, 'service_principal')).length
+  }
 }
 
 export function groupPermissionsByNamespace(items, getPermissionKey = (item) => item) {

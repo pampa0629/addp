@@ -223,11 +223,12 @@ func firstUint(m commonModels.JSONMap, keys ...string) uint {
 }
 
 type TaskDefinitionFilter struct {
-	TenantID uint
-	TaskType string
-	Category string
-	Page     int
-	PageSize int
+	TenantID        uint
+	TaskType        string
+	Category        string
+	ExecutionStatus string
+	Page            int
+	PageSize        int
 }
 
 type TaskDefinitionRepository struct{ db *gorm.DB }
@@ -249,6 +250,9 @@ func (r *TaskDefinitionRepository) List(ctx context.Context, filter TaskDefiniti
 		default:
 			query = query.Where("task_type IN ?", ManagerDerivedTaskTypes())
 		}
+	}
+	if executionStatus := strings.TrimSpace(filter.ExecutionStatus); executionStatus != "" {
+		query = query.Where("last_execution_status = ?", executionStatus)
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {

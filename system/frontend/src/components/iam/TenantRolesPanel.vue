@@ -1,13 +1,31 @@
 <template>
   <section class="iam-panel">
+    <div class="iam-role-audience">
+      <div class="iam-role-audience__heading">
+        <strong>{{ t('system.iam.roles.audience.title') }}</strong>
+        <span>{{ audienceHint }}</span>
+      </div>
+      <el-radio-group v-model="filters.principalType" class="iam-role-audience__options">
+        <el-radio-button value="user">
+          {{ t('system.iam.roles.audience.user') }}
+          <span class="iam-role-audience__count">{{ audienceCounts.user }}</span>
+        </el-radio-button>
+        <el-radio-button value="service_principal">
+          {{ t('system.iam.roles.audience.service_principal') }}
+          <span class="iam-role-audience__count">{{ audienceCounts.service_principal }}</span>
+        </el-radio-button>
+        <el-radio-button value="">
+          {{ t('system.iam.roles.audience.all') }}
+          <span class="iam-role-audience__count">{{ audienceCounts.all }}</span>
+        </el-radio-button>
+      </el-radio-group>
+    </div>
+
     <div class="iam-toolbar">
       <div class="iam-filters">
         <el-input v-model="filters.search" :placeholder="t('system.iam.roles.search')" clearable :prefix-icon="Search" />
         <el-select v-model="filters.roleType" :placeholder="t('system.iam.roles.type')" clearable>
           <el-option v-for="roleType in roleTypes" :key="roleType" :label="t(`system.iam.roles.types.${roleType}`)" :value="roleType" />
-        </el-select>
-        <el-select v-model="filters.principalType" :placeholder="t('system.iam.roles.applicableMembers')" clearable>
-          <el-option v-for="principalType in principalTypes" :key="principalType" :label="memberTypeLabel(principalType)" :value="principalType" />
         </el-select>
         <el-select v-model="filters.scopeType" :placeholder="t('system.iam.roles.scopes')" clearable>
           <el-option v-for="scope in scopeOptions" :key="scope" :label="scopeLabel(scope)" :value="scope" />
@@ -186,6 +204,8 @@ import {
   permissionIdentity,
   permissionMatchesScopes,
   permissionResourceI18nKey,
+  rolePrincipalTypeCounts,
+  roleSupportsPrincipalType,
   resolveIAMModuleName
 } from '../../utils/iamPresentation'
 
@@ -194,7 +214,6 @@ const authStore = useAuthStore()
 const can = (permission) => authStore.hasPermission(permission)
 const scopeOptions = ['tenant', 'department', 'project_group']
 const roleTypes = ['tenant_builtin', 'tenant_custom']
-const principalTypes = ['user', 'service_principal']
 const rows = ref([])
 const permissions = ref([])
 const loading = ref(false)
@@ -208,12 +227,14 @@ const permissionSearch = ref('')
 const activePermissionNamespace = ref('')
 const filters = reactive({ search: '', roleType: '', principalType: 'user', scopeType: '' })
 const form = reactive({ roleKey: '', name: '', description: '', scopeTypes: ['tenant'], permissionKeys: [] })
+const audienceCounts = computed(() => rolePrincipalTypeCounts(rows.value))
+const audienceHint = computed(() => t(`system.iam.roles.audience.hints.${filters.principalType || 'all'}`))
 const filteredRows = computed(() => {
   const search = filters.search.trim().toLocaleLowerCase()
   return rows.value.filter((role) =>
     (!search || [roleName(role), role.role_key, roleDescription(role)].some((value) => String(value || '').toLocaleLowerCase().includes(search))) &&
     (!filters.roleType || role.role_type === filters.roleType) &&
-    (!filters.principalType || (role.allowed_principal_types || []).includes(filters.principalType)) &&
+    roleSupportsPrincipalType(role, filters.principalType) &&
     (!filters.scopeType || (role.allowed_scope_types || []).includes(filters.scopeType))
   )
 })
@@ -367,6 +388,12 @@ onMounted(load)
 </script>
 
 <style scoped>
+.iam-role-audience { display: flex; margin-bottom: 16px; padding: 16px; border: 1px solid var(--addp-border-color); border-radius: 8px; background: var(--addp-bg-secondary); align-items: center; justify-content: space-between; gap: 16px; }
+.iam-role-audience__heading { display: flex; min-width: 0; flex-direction: column; gap: 5px; }
+.iam-role-audience__heading strong { color: var(--addp-text-primary); }
+.iam-role-audience__heading span { color: var(--addp-text-secondary); font-size: 13px; line-height: 1.45; }
+.iam-role-audience__options { flex-shrink: 0; }
+.iam-role-audience__count { display: inline-flex; min-width: 22px; height: 18px; margin-left: 5px; padding: 0 5px; border-radius: 9px; background: var(--addp-bg-primary); align-items: center; justify-content: center; font-size: 12px; }
 .iam-inline-tag { margin: 2px 6px 2px 0; }
 .iam-role-description { max-width: 420px; margin-top: 4px; color: var(--addp-text-secondary); line-height: 1.45; white-space: normal; }
 .iam-context-tags { display: flex; flex-direction: column; gap: 6px; }
@@ -408,6 +435,10 @@ onMounted(load)
 .iam-permission-detail-row span { color: var(--addp-text-secondary); font-family: var(--addp-font-family-mono, monospace); font-size: 12px; overflow-wrap: anywhere; }
 .iam-permission-detail-row__meta { display: flex; flex-shrink: 0; gap: 6px; }
 @media (max-width: 760px) {
+  .iam-role-audience { align-items: stretch; flex-direction: column; }
+  .iam-role-audience__options { display: flex; }
+  .iam-role-audience__options :deep(.el-radio-button) { flex: 1; }
+  .iam-role-audience__options :deep(.el-radio-button__inner) { width: 100%; padding-right: 8px; padding-left: 8px; }
   .iam-permission-picker__toolbar { align-items: stretch; flex-wrap: wrap; }
   .iam-permission-picker__body { display: flex; flex-direction: column; }
   .iam-permission-modules { display: flex; max-height: 150px; border-right: 0; border-bottom: 1px solid var(--addp-border-color); flex-wrap: wrap; }

@@ -565,7 +565,10 @@ import { Search, Refresh, Delete, WarningFilled, Monitor } from '@element-plus/i
 import { openMonitorExecution, openMonitorExecutions } from '@common-ui'
 import { cleanupApi } from '../api/cleanup'
 import { useAuthStore } from '../store/auth'
-import { formatCleanupStateChanges } from '../utils/cleanupPresentation'
+import {
+  formatCleanupStateChanges,
+  selectCleanupHistoryResults
+} from '../utils/cleanupPresentation'
 import { navigateSystemRoute } from '../utils/moduleNavigation'
 
 const { t } = useI18n()
@@ -861,8 +864,20 @@ const loadHistory = async () => {
     historyLoading.value = true
     const response = await cleanupApi.getTaskHistory({ page: 1, page_size: 10 })
     taskHistory.value = response.tasks || []
-    latestScanTaskId.value = taskHistory.value.find(task => task.action === 'scan')?.task_id || ''
-    latestExecuteTaskId.value = taskHistory.value.find(task => task.action === 'execute')?.task_id || ''
+    const historyResults = selectCleanupHistoryResults(taskHistory.value)
+    latestScanTaskId.value = historyResults.latestScanTaskId
+    latestExecuteTaskId.value = historyResults.latestExecuteTaskId
+
+    const resultTaskIds = [...new Set([
+      historyResults.latestCompletedScanTaskId,
+      historyResults.latestCompletedResultTaskId
+    ].filter(Boolean))]
+    const resultEntries = await Promise.all(resultTaskIds.map(async taskId => (
+      [taskId, await cleanupApi.getTaskStatus(taskId)]
+    )))
+    const resultsByTaskId = new Map(resultEntries)
+    scanResult.value = resultsByTaskId.get(historyResults.latestCompletedScanTaskId) || null
+    latestResult.value = resultsByTaskId.get(historyResults.latestCompletedResultTaskId) || null
   } catch (error) {
     console.error('加载任务历史失败:', error)
   } finally {

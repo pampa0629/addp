@@ -607,6 +607,7 @@ type PointCloudCOPCTaskResponse struct {
 // @Produce json
 // @Param task_type query string false "任务类型过滤：vector_tile_cache_generation|vector_tile_set_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|embedding | Task type filter"
 // @Param category query string false "Manager 派生任务产品分类：managed_quick_view|spatial_business | Manager derived-task product category"
+// @Param execution_status query string false "最近执行状态精确过滤，例如 failed | Exact latest execution status filter, for example failed"
 // @Param page query int false "页码，默认1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认20 | Page size, default 20"
 // @Success 200 {object} TaskListResponse "任务列表 | Task list"
@@ -636,9 +637,10 @@ func (h *TaskProviderHandler) listTasks(c *gin.Context, taskType string) {
 	var items []TaskListItem
 	var total int64
 	category := strings.TrimSpace(c.Query("category"))
+	executionStatus := strings.TrimSpace(c.Query("execution_status"))
 	if h.taskDefinitionRepo != nil && (category != "" || taskType == "" || repository.ManagerDerivedTaskCategory(taskType) != "") {
 		tasks, count, err := h.taskDefinitionRepo.List(ctx, repository.TaskDefinitionFilter{
-			TenantID: tenantID, TaskType: taskType, Category: category, Page: page, PageSize: pageSize,
+			TenantID: tenantID, TaskType: taskType, Category: category, ExecutionStatus: executionStatus, Page: page, PageSize: pageSize,
 		})
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

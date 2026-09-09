@@ -53,7 +53,6 @@ REQUIRED_PERMISSIONS = {
     "service.definition.create",
     "service.definition.delete",
     "service.definition.read",
-    "system.engine.read",
     "transfer.task.create",
     "transfer.task.delete",
     "transfer.task.execute",
@@ -164,44 +163,6 @@ def validate_user_identity(client: GatewayClient, tenant_id: int) -> dict[str, o
         "roles": sorted(roles),
         "permissions_verified": sorted(REQUIRED_PERMISSIONS),
     }
-
-
-def validate_engine(
-    client: GatewayClient,
-    engine_id: int,
-    profile: ConsumerProfile,
-    deadline: float,
-) -> dict[str, object]:
-    last_status = "unknown"
-    while time.monotonic() < deadline:
-        engine = _object(
-            client.request(
-                "GET", f"/api/v1/system/engines/{engine_id}", (200,)
-            ).payload,
-            f"{profile.engine_type} Engine Instance",
-        )
-        if engine.get("engine_type") != profile.engine_type:
-            raise SuiteError(
-                "configured Engine Instance must use "
-                f"engine_type={profile.engine_type}"
-            )
-        if engine.get("lifecycle_state") != "active":
-            raise SuiteError(
-                f"configured {profile.engine_type} Engine Instance must be active"
-            )
-        last_status = str(engine.get("connection_status", "unknown"))
-        if last_status == "online":
-            return {
-                "engine_id": str(engine_id),
-                "engine_type": profile.engine_type,
-                "lifecycle_state": "active",
-                "connection_status": "online",
-            }
-        time.sleep(1)
-    raise SuiteError(
-        f"configured {profile.engine_type} Engine Instance did not become online; "
-        f"last status={last_status}"
-    )
 
 
 def build_namespace_locator(
@@ -535,7 +496,11 @@ def run_scenario(
     deadline = time.monotonic() + timeout
     baseline_rows, final_rows = expected_rows(profile)
     identity = validate_user_identity(client, tenant_id)
-    engine = validate_engine(client, engine_id, profile, deadline)
+    engine = {
+        "engine_id": str(engine_id),
+        "engine_type": profile.engine_type,
+        "verification_owner": "deployment_profile",
+    }
     initial_scan = wait_for_scan(client, engine_id, deadline)
     source_item = find_item(
         client, engine_id, f"{namespace}.{SOURCE_TABLE}", "table"

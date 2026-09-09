@@ -4436,6 +4436,12 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "type": "string",
+                        "description": "最近执行状态精确过滤，例如 failed | Exact latest execution status filter, for example failed",
+                        "name": "execution_status",
+                        "in": "query"
+                    },
+                    {
                         "type": "integer",
                         "description": "页码，默认1 | Page number, default 1",
                         "name": "page",

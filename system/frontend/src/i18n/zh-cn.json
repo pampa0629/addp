@@ -104,6 +104,7 @@
         "label": "当前会话：{state}",
         "detail": "认证保证等级：{level}",
         "levels": {
+          "syncing": "正在同步",
           "aal1": "基础认证",
           "aal2": "多因素认证",
           "aal3": "高强度认证",
@@ -196,6 +197,8 @@
       },
       "account": {
         "title": "我的账号",
+        "syncing": "正在同步账号信息",
+        "unavailable": "账号信息暂不可用",
         "security": "安全设置",
         "securityDescription": "管理当前登录账号的认证凭据与登录保护。"
       },
@@ -363,8 +366,19 @@
         "type": "角色类型",
         "scopes": "允许范围",
         "permissions": "权限",
-        "applicableMembers": "适用账号",
+        "applicableMembers": "适用账号类型",
         "applicableContext": "适用对象与范围",
+        "audience": {
+          "title": "按适用账号查看",
+          "user": "用户账号角色",
+          "service_principal": "机器身份角色",
+          "all": "全部角色",
+          "hints": {
+            "user": "用于真实用户；角色分配在本页的“角色分配”中完成。",
+            "service_principal": "用于服务账号和平台运行账号；角色分配统一从“应用接入 > 机器身份”进入。",
+            "all": "同时查看用户账号角色和机器身份角色。"
+          }
+        },
         "permissionOverview": "权限概览",
         "permissionCount": "{count} 项",
         "permissionDetails": "角色权限明细",

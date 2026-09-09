@@ -96,7 +96,7 @@ Department Membership 的 `membership_type` 使用 `primary` / `additional`，`r
 
 当管理员在同一 Membership、Scope、有效期和授权原因下分配多个 Role 时，`POST /api/v1/system/tenant/role_assignments` 只接受 `role_ids` 显式列表，并在单一事务内创建全部 Assignment 与审计事实。任一 Role 不存在、不兼容、不允许指定 Scope、重复分配或需要增强认证时，整批不得产生部分授权事实。
 
-租户 Role 管理列表必须保持单行可浏览：Permission 集合只在主列表展示数量，完整 Permission 按命名空间分组后在详情视图查看，不得用逗号拼接长文本撑高整张表。列表至少支持名称或标识搜索、Role 类型、适用成员类型和允许 Scope 过滤。Role Assignment 列表支持按 Membership 与 `principal_type=user|service_principal` 组合过滤，成员列必须显式展示成员类型；“当前账号”只通过 AuthContext 的 `tenant_membership_id` 识别，不按用户名、邮箱或展示名称猜测。
+租户 Role 管理列表必须保持单行可浏览：Permission 集合只在主列表展示数量，完整 Permission 按命名空间分组后在详情视图查看，不得用逗号拼接长文本撑高整张表。角色定义首先按 `allowed_principal_types` 分为“用户账号角色”和“机器身份角色”，默认展示用户账号角色，并允许查看全部角色；分类不得依赖 Role Key 后缀或展示名称。列表还必须支持名称或标识搜索、Role 类型和允许 Scope 过滤。Role Assignment 列表支持按 Membership 与 `principal_type=user|service_principal` 组合过滤，成员列必须显式展示成员类型；“当前账号”只通过 AuthContext 的 `tenant_membership_id` 识别，不按用户名、邮箱或展示名称猜测。
 
 Tenant 审计的成员筛选以所选 Tenant Membership 的 `principal_id` 查询既有审计协议，并支持按 `principal_type=user|service_principal` 过滤操作者类型；成员列必须显式展示操作者类型。模块筛选使用 `module_name` 的稳定协议值。界面必须以本地化模块名称作为主标签、稳定 `module_name` 作为辅助标识，不得把中文名称写入审计事实或新增兼容字段。审计导出必须覆盖当前筛选条件下的全部事件，不得复用普通列表的单页上限静默截断；后端使用稳定排序的分批读取和有界内存文件生成，响应通过 `X-ADDP-Export-Count` 明确返回实际导出条数。
 

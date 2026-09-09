@@ -28,10 +28,17 @@
       <el-select v-model="taskType" clearable :placeholder="t('manager.derivedTasks.allTypes')" @change="changeFilter">
         <el-option v-for="option in taskTypeOptions" :key="option.value" :label="t(option.label)" :value="option.value" />
       </el-select>
+      <el-select v-model="executionStatus" clearable :placeholder="t('manager.derivedTasks.allStatuses')" @change="changeStatusFilter">
+        <el-option :label="t('manager.derivedTasks.status.failed')" value="failed" />
+      </el-select>
+      <el-button type="danger" plain :disabled="selectedTasks.length === 0" :loading="batchDeleting" @click="removeSelected">
+        {{ t('manager.derivedTasks.batchDelete', { count: selectedTasks.length }) }}
+      </el-button>
       <span class="summary">{{ t('manager.derivedTasks.total', { total }) }}</span>
     </div>
 
-    <el-table v-loading="loading" :data="tasks" stripe>
+    <el-table v-loading="loading" :data="tasks" stripe @selection-change="handleSelectionChange">
+      <el-table-column type="selection" width="48" />
       <el-table-column :label="t('manager.derivedTasks.columns.name')" min-width="220" show-overflow-tooltip>
         <template #default="{ row }"><el-button link type="primary" @click="showDetail(row)">{{ row.name }}</el-button></template>
       </el-table-column>
@@ -139,6 +146,7 @@ import {
   derivedTaskSourceSize,
   derivedTaskTargetEngineID
 } from '../utils/derivedTaskPresentation'
+import { deleteSelectedDerivedTasks } from '../utils/derivedTaskBatch'
 import { navigateManagerRoute } from '../utils/moduleNavigation'
 import { openQuickViewResult } from '../utils/quickViewResultNavigation'
 import QuickViewTaskCreator from '../components/tasks/QuickViewTaskCreator.vue'
@@ -151,6 +159,7 @@ const { t } = useI18n()
 const confirmCurrentResult = useCurrentResultConfirmation()
 const { engineName, loadQuickViewEngines, resourcePath } = useQuickViewResourceDisplay(t)
 const routeTaskType = typeof route.query.task_type === 'string' ? route.query.task_type : ''
+const routeExecutionStatus = route.query.execution_status === 'failed' ? 'failed' : ''
 const tasks = ref([])
 const loading = ref(false)
 const total = ref(0)
@@ -164,6 +173,9 @@ const editorLocator = ref('')
 const editingTask = ref(null)
 const executingTaskID = ref(0)
 const viewingTaskID = ref(0)
+const executionStatus = ref(routeExecutionStatus)
+const selectedTasks = ref([])
+const batchDeleting = ref(false)
 
 const taskTypes = {
   managed_quick_view: [
@@ -218,22 +230,26 @@ function isManagedQuickViewTask(task) { return categoryForTaskType(task?.task_ty
 async function syncRoute(extra = {}, history = 'replace') {
   const query = { category: category.value }
   if (taskType.value) query.task_type = taskType.value
+  if (executionStatus.value) query.execution_status = executionStatus.value
   Object.assign(query, extra)
   await navigateManagerRoute(router, { path: '/derived-tasks', query }, { history })
 }
 async function loadTasks() {
   loading.value = true
   try {
-    const response = payload(await listDerivedTasks({ category: category.value, task_type: taskType.value || undefined, page: page.value, page_size: pageSize.value }))
+    const response = payload(await listDerivedTasks({ category: category.value, task_type: taskType.value || undefined, execution_status: executionStatus.value || undefined, page: page.value, page_size: pageSize.value }))
     tasks.value = response?.items || []
     total.value = Number(response?.total || 0)
+    selectedTasks.value = []
   } catch (error) {
     ElMessage.error(error?.response?.data?.error || t('manager.derivedTasks.loadFailed'))
   } finally { loading.value = false }
 }
 async function changeCategory() { taskType.value = ''; page.value = 1; detailVisible.value = false; editorVisible.value = false; await syncRoute(); await loadTasks() }
 async function changeFilter() { page.value = 1; detailVisible.value = false; editorVisible.value = false; await syncRoute(); await loadTasks() }
+async function changeStatusFilter() { page.value = 1; detailVisible.value = false; editorVisible.value = false; await syncRoute(); await loadTasks() }
 async function changePageSize() { page.value = 1; await loadTasks() }
+function handleSelectionChange(selection) { selectedTasks.value = selection }
 async function showDetail(row, updateRoute = true) {
   try {
     selectedTask.value = { ...row, ...payload(await getDerivedTask(row.task_type, row.id)) }
@@ -266,6 +282,32 @@ async function remove(row) {
   await ElMessageBox.confirm(t('manager.derivedTasks.deleteConfirm'), t('manager.derivedTasks.delete'), { type: 'warning' })
   try { await deleteDerivedTask(row.task_type, row.id); ElMessage.success(t('manager.derivedTasks.deleteSuccess')); await loadTasks() }
   catch (error) { ElMessage.error(error?.response?.data?.error || t('manager.derivedTasks.deleteFailed')) }
+}
+async function removeSelected() {
+  if (selectedTasks.value.length === 0) return
+  try {
+    await ElMessageBox.confirm(
+      t('manager.derivedTasks.batchDeleteConfirm', { count: selectedTasks.value.length }),
+      t('manager.derivedTasks.batchDeleteTitle'),
+      { type: 'warning' }
+    )
+  } catch (error) {
+    if (error === 'cancel' || error === 'close') return
+    throw error
+  }
+
+  batchDeleting.value = true
+  try {
+    const result = await deleteSelectedDerivedTasks(selectedTasks.value, deleteDerivedTask)
+    if (result.failed > 0) {
+      ElMessage.warning(t('manager.derivedTasks.batchDeletePartial', result))
+    } else {
+      ElMessage.success(t('manager.derivedTasks.batchDeleteSuccess', result))
+    }
+    await loadTasks()
+  } finally {
+    batchDeleting.value = false
+  }
 }
 function openSource(row) { navigateManagerRoute(router, { path: '/data-explorer', query: { locator: sourceLocator(row) } }, { history: 'push' }) }
 async function viewTaskResult(row) {
@@ -346,9 +388,10 @@ function openEditorFromRoute() {
 
 watch(() => route.query, async (query) => {
   const nextType = typeof query.task_type === 'string' ? query.task_type : ''
+  const nextExecutionStatus = query.execution_status === 'failed' ? 'failed' : ''
   const nextCategory = categoryForTaskType(nextType) || (query.category === 'spatial_business' ? 'spatial_business' : 'managed_quick_view')
-  if (nextCategory !== category.value || nextType !== taskType.value) {
-    category.value = nextCategory; taskType.value = nextType; page.value = 1; await loadTasks()
+  if (nextCategory !== category.value || nextType !== taskType.value || nextExecutionStatus !== executionStatus.value) {
+    category.value = nextCategory; taskType.value = nextType; executionStatus.value = nextExecutionStatus; page.value = 1; await loadTasks()
   }
   if (query.task_id) await openTaskFromRoute()
   else if (query.create === '1') openEditorFromRoute()

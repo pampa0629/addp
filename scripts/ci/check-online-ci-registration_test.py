@@ -508,7 +508,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         )
         owner = self.repository / "scripts/test/relational-consumer-flow-online.py"
         owner.write_text(
-            'engine.get("engine_type") != profile.engine_type\n'
+            '"verification_owner": "deployment_profile"\n'
             '"type": "watermark"\n"start": "committed"\n'
             '"end": "execution_upper_bound"\n"apply_mode": "upsert"\n'
             '"manager.data_item.read"\n'
@@ -593,6 +593,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             '"opengauss": ConsumerProfile(\nnamespace_kind="schema"\n'
             'identifier_quote=\'"\'\n'
             'fixture_script="business/scripts/online-opengauss-consumer-fixture.sh"\n'
+            '"verification_owner": "deployment_profile"\n'
             '"schema_version": "addp.relational-consumer-flow-online/v1"\n'
             '"residual_resources": 0\n',
             encoding="utf-8",
@@ -609,8 +610,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             path.write_text("fixture\n", encoding="utf-8")
         identity = self.repository / "system/backend/cmd/online-test-fixture/main.go"
         identity.write_text(
-            'RoleKey: "online.engine_provisioner"\n'
-            '"system.engine.create"\n"system.engine.execute"\n'
+            'engineProvisionerRoleKey = "tenant.infrastructure_administrator"\n'
+            'repository.GetActiveBuiltinRoleByKey(ctx, engineProvisionerRoleKey)\n'
             'RoleKey: "online.relational_consumer"\n'
             '"ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN"\n',
             encoding="utf-8",
@@ -619,6 +620,24 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         CHECK.validate_opengauss_consumer_flow_profile(
             self.repository, {"opengauss-consumer-flow"}
         )
+
+        owner_text = owner.read_text(encoding="utf-8")
+        owner.write_text(owner_text + '"system.engine.read"\n', encoding="utf-8")
+        with self.assertRaisesRegex(CHECK.RegistrationError, "consumer must not access"):
+            CHECK.validate_opengauss_consumer_flow_profile(
+                self.repository, {"opengauss-consumer-flow"}
+            )
+        owner.write_text(owner_text, encoding="utf-8")
+
+        identity_text = identity.read_text(encoding="utf-8")
+        identity.write_text(
+            identity_text + '"system.engine.read"\n', encoding="utf-8"
+        )
+        with self.assertRaisesRegex(CHECK.RegistrationError, "consumer role must not"):
+            CHECK.validate_opengauss_consumer_flow_profile(
+                self.repository, {"opengauss-consumer-flow"}
+            )
+        identity.write_text(identity_text, encoding="utf-8")
 
         infra_up = self.repository / "scripts/infra/up.sh"
         infra_up_text = infra_up.read_text(encoding="utf-8")

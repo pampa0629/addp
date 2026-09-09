@@ -365,6 +365,11 @@ func TestManagerDerivedTaskListUsesUnifiedCategoryAndTypeFilters(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("create PPTX PDF generation task: %v", err)
 	}
+	if err := db.Table("manager.task_definitions").
+		Where("tenant_id = ? AND name = ?", 1, "tile cache task").
+		Update("last_execution_status", commonExecution.ExecutionStatusFailed).Error; err != nil {
+		t.Fatalf("mark tile cache task failed: %v", err)
+	}
 
 	handler := NewTaskProviderHandler(
 		service.NewEmbeddingTaskService(embeddingRepo, nil, nil, nil),
@@ -395,6 +400,9 @@ func TestManagerDerivedTaskListUsesUnifiedCategoryAndTypeFilters(t *testing.T) {
 		commonExecution.TaskTypePPTXPDFGeneration:                true,
 	})
 	assertUnifiedTaskTypeSet(t, router, "/tasks?task_type=vector_tile_cache_generation", map[string]bool{
+		commonExecution.TaskTypeVectorTileCacheGeneration: true,
+	})
+	assertUnifiedTaskTypeSet(t, router, "/tasks?category=managed_quick_view&execution_status=failed", map[string]bool{
 		commonExecution.TaskTypeVectorTileCacheGeneration: true,
 	})
 }

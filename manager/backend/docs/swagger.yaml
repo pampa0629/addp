@@ -5862,6 +5862,11 @@ paths:
         in: query
         name: category
         type: string
+      - description: 最近执行状态精确过滤，例如 failed | Exact latest execution status filter,
+          for example failed
+        in: query
+        name: execution_status
+        type: string
       - description: 页码，默认1 | Page number, default 1
         in: query
         name: page

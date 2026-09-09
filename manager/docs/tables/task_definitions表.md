@@ -40,6 +40,8 @@
 
 ## 四、唯一 API
 
+任务列表通过 `category`、`task_type`、`execution_status`、`page` 和 `page_size` 组合筛选；`execution_status` 精确匹配最近一次执行状态，例如 `failed`。批量删除只允许前端显式列举用户已勾选的任务，并逐项调用唯一 DELETE，不提供“删除当前筛选全部”的隐式成员接口。
+
 ```text
 GET    /api/v1/manager/tasks?category=managed_quick_view|spatial_business&task_type=...
 POST   /api/v1/manager/tasks/{task_type}

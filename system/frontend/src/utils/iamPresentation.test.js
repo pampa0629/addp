@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  accountSessionIsLoading,
   assuranceLevelKey,
   buildPermissionGroups,
   findCurrentContextOption,
@@ -9,10 +10,39 @@ import {
   permissionIdentity,
   permissionMatchesScopes,
   permissionResourceI18nKey,
+  rolePrincipalTypeCounts,
+  roleSupportsPrincipalType,
   resolveIAMModuleName
 } from './iamPresentation'
 
 describe('IAM presentation helpers', () => {
+  it('keeps account session presentation in loading state until both user and auth context arrive', () => {
+    expect(accountSessionIsLoading({
+      sessionStatus: 'initializing',
+      isAuthenticated: false,
+      user: null,
+      authContext: null
+    })).toBe(true)
+    expect(accountSessionIsLoading({
+      sessionStatus: 'authenticated',
+      isAuthenticated: true,
+      user: { id: '1' },
+      authContext: null
+    })).toBe(true)
+    expect(accountSessionIsLoading({
+      sessionStatus: 'authenticated',
+      isAuthenticated: true,
+      user: { id: '1' },
+      authContext: { authentication: { assurance_level: 'aal2' } }
+    })).toBe(false)
+    expect(accountSessionIsLoading({
+      sessionStatus: 'error',
+      isAuthenticated: true,
+      user: null,
+      authContext: null
+    })).toBe(false)
+  })
+
   it('resolves the current tenant presentation without exposing its internal id', () => {
     const options = [
       { type: 'platform', current: false },
@@ -103,5 +133,22 @@ describe('IAM presentation helpers', () => {
       permissions: [permissions[1]],
       selectedCount: 1
     }])
+  })
+
+  it('classifies roles by declared account type without inspecting role keys', () => {
+    const roles = [
+      { role_key: 'tenant.reader', allowed_principal_types: ['user'] },
+      { role_key: 'custom-machine-role', allowed_principal_types: ['service_principal'] },
+      { role_key: 'tenant.shared', allowed_principal_types: ['user', 'service_principal'] }
+    ]
+
+    expect(roleSupportsPrincipalType(roles[0], 'user')).toBe(true)
+    expect(roleSupportsPrincipalType(roles[0], 'service_principal')).toBe(false)
+    expect(roleSupportsPrincipalType(roles[1], 'service_principal')).toBe(true)
+    expect(rolePrincipalTypeCounts(roles)).toEqual({
+      all: 3,
+      user: 2,
+      service_principal: 2
+    })
   })
 })
