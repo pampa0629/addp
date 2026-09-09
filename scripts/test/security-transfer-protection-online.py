@@ -140,6 +140,23 @@ def required_environment(name: str) -> str:
     return value
 
 
+def execution_failure_diagnostics(execution: Mapping[str, object]) -> str:
+    diagnostics = {
+        key: execution[key]
+        for key in ("execution_id", "current_step", "error_details")
+        if execution.get(key) not in (None, "", {})
+    }
+    if not diagnostics:
+        return ""
+    return json.dumps(
+        diagnostics,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )[:4000]
+
+
 def validate_user_identity(client: GatewayClient, tenant_id: int) -> dict[str, object]:
     context = _object(
         client.request("GET", "/api/v1/system/auth/context", (200,)).payload,
@@ -204,7 +221,9 @@ def wait_for_scan(client: GatewayClient, engine_id: int, deadline: float) -> str
         if status == "success":
             return execution_id
         if status in TERMINAL_STATUSES:
-            raise SuiteError(f"Meta scan ended with status {status}")
+            diagnostics = execution_failure_diagnostics(execution)
+            suffix = f": {diagnostics}" if diagnostics else ""
+            raise SuiteError(f"Meta scan ended with status {status}{suffix}")
         time.sleep(1)
     raise SuiteError("Meta scan did not finish before the convergence timeout")
 

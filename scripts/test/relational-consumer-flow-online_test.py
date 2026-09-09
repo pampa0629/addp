@@ -70,6 +70,36 @@ class RelationalConsumerFlowOnlineTest(unittest.TestCase):
         self.assertEqual(baseline[0]["item_code"], "OG-1001")
         self.assertEqual(final[-1]["item_code"], "OG-1006")
 
+    @patch.object(ONLINE.time, "sleep")
+    @patch.object(ONLINE.time, "monotonic", return_value=1.0)
+    def test_failed_meta_scan_reports_execution_diagnostics(
+        self, _monotonic: Mock, _sleep: Mock
+    ) -> None:
+        client = Mock()
+        client.request.side_effect = [
+            ONLINE.SUPPORT.Response(201, {"execution_id": "scan-1"}),
+            ONLINE.SUPPORT.Response(
+                200,
+                {
+                    "execution_id": "scan-1",
+                    "status": "failed",
+                    "current_step": "执行失败: openGauss catalog query failed",
+                    "error_details": {
+                        "message": "openGauss catalog query failed",
+                        "failed_targets_count": 1,
+                    },
+                },
+            ),
+        ]
+
+        with self.assertRaises(ONLINE.SuiteError) as raised:
+            ONLINE.wait_for_scan(client, 17, 10.0)
+
+        message = str(raised.exception)
+        self.assertIn("scan-1", message)
+        self.assertIn("openGauss catalog query failed", message)
+        self.assertIn("failed_targets_count", message)
+
     def test_namespace_locator_uses_profile_catalog_level(self) -> None:
         item = {"node_id": 27}
         self.assertEqual(
