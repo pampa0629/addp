@@ -39,7 +39,7 @@ def git(repository: Path, *args: str) -> str:
         capture_output=True,
         text=True,
     )
-    return result.stdout.strip()
+    return result.stdout.rstrip()
 
 
 def parse_service(value: str) -> Service:
@@ -135,8 +135,12 @@ def run_preflight(args: argparse.Namespace) -> dict[str, object]:
         raise PreflightError("--repository is required for a full Online preflight")
     repository = args.repository.resolve()
     expected_commit = git(repository, "rev-parse", "HEAD")
-    if git(repository, "status", "--porcelain"):
-        raise PreflightError("Online tests require a clean repository build identity")
+    repository_changes = git(repository, "status", "--short", "--untracked-files=all")
+    if repository_changes:
+        raise PreflightError(
+            "Online tests require a clean repository build identity; detected changes:\n"
+            f"{repository_changes}"
+        )
 
     services = [parse_service(value) for value in args.service]
     if not services:

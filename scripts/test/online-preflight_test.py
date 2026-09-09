@@ -139,7 +139,10 @@ class OnlinePreflightTest(unittest.TestCase):
     )
     def test_rejects_dirty_repository(self):
         (self.repository / "tracked").write_text("dirty\n")
-        with self.assertRaisesRegex(ONLINE_PREFLIGHT.PreflightError, "clean repository"):
+        with self.assertRaisesRegex(
+            ONLINE_PREFLIGHT.PreflightError,
+            r"clean repository build identity; detected changes:\n M tracked",
+        ):
             ONLINE_PREFLIGHT.run_preflight(self.args())
 
     @patch.dict(
