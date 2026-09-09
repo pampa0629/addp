@@ -45,7 +45,8 @@ async function render() {
       if (selection) emit('result-select', selection)
     })
   }
-  chart.setOption(buildChartOption(props.rows, props.config, locale.value), true)
+  const selectionColor = getComputedStyle(element.value).getPropertyValue('--el-color-warning').trim()
+  chart.setOption(buildChartOption(props.rows, props.config, locale.value, { selectionColor }), true)
 }
 
 onMounted(() => {

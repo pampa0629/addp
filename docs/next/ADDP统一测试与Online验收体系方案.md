@@ -105,11 +105,12 @@ Engine Instance 是永久身份，因此 suite 禁止按 Run ID 创建后删除�
 
 1. Host Gate 全量启动 System、Gateway、Service、Workbench 和 Console；`business/scripts/online-workbench-mysql-fixture.sh` 使用外部环境变量启动 `business-mysql`，重建仓库既有 `customers + orders` 确定性数据并创建仅有 `SELECT` 的专用账号，同时为 Playwright 安装专用 Chromium。
 2. 专用环境长期预置指向该账号的 MySQL Engine Instance，身份由 `ADDP_ONLINE_WORKBENCH_MYSQL_ENGINE_ID` 提供；suite 不创建、修改或删除 Engine Instance。
-3. 真实 User Token 先校验 Tenant、非管理员角色及 Service/Workbench 最小权限，随后所有平台操作只经 Gateway：检测 SQL 输出契约、发布私有 Query Service、读取 Consumer Descriptor、创建 Data Application 草稿和执行查询。
-4. 临时 Query Service 固定名为 `commerce-order-analysis`，SQL 只 JOIN 既有表并排除姓名、邮箱、电话和地址；MySQL 将 `BOOLEAN` 暴露为 `TINYINT`，publisher 只把已知语义的 `active_customer` 显式发布为 `bool`，Service 再按冻结契约归一化 `0 | 1`；验证 `order_no` cursor、五类动态筛选、decimal/boolean/timestamp/null、完整有限 CSV，以及无 SpatialInfo 时 Map 不可用。
-5. 浏览器使用同一专用 User 登录 Console 并核对浏览器 AuthContext 与 API User 身份一致，在同一应用草稿中依次打开两个 Component 的正式编辑器，验证 Table 两行结果、Chart canvas 和无空间契约下不存在 Map。
-6. 浏览器经正式 Service API 更新公开默认字段策略以改变 `contract_fingerprint`；刷新同一应用后 Component 编辑器必须显示契约变化告警并禁用预览查询。API 层同时确认已保存快照仍持有旧指纹，不增加 Workbench 执行 API 或测试旁路。
-7. `finally` 只按本轮捕获的未发布 Data Application UUID 和 Query Service ID 删除临时资源并逐项验证 404；Fixture 和全套 ADDP 再由 Host Gate 统一停止。最终发布运行态由 Outdoor 双服务场景验收，不能为自动清理增加已发布应用强删旁路。
+3. 两个真实 User Token 先各自校验 AuthContext：现有专用 User 必须属于同一 Tenant、不含管理员角色且只具备 Service/Workbench 场景权限；独立 `ADDP_ONLINE_TEST_TENANT_ADMIN_ACCESS_TOKEN` 必须属于同一 Tenant 的 User、含 `tenant.administrator` 角色且具备当次 API 消费方生命周期所用权限。两者都不得是个人会话或平台管理员 Token。
+4. 非管理员 User 的所有平台操作只经 Gateway：检测 SQL 输出契约，发布私有主 Query Service `commerce-order-analysis` 和同契约未授权 Query Service `commerce-order-analysis-denied`，读取主服务 Consumer Descriptor，创建 Data Application 草稿并执行查询。SQL 只 JOIN 既有表并排除姓名、邮箱、电话和地址；MySQL 将 `BOOLEAN` 暴露为 `TINYINT`，publisher 只把已知语义的 `active_customer` 显式发布为 `bool`，Service 再按冻结契约归一化 `0 | 1`。
+5. Tenant Administrator 只经 System 正式 API 创建一个仅授权主 Query Service 的 API 消费方及一枚凭据。凭据只保存在 suite 进程内存，不写入报告或日志；用它调用主服务必须返回 200，调用未授权服务必须返回 `403 api_consumer_service_denied`，调用 `/api/v1/system/tenant/api-consumers` 必须返回 `401 api_consumer_control_plane_denied`。删除 API 消费方后，旧凭据必须在 45 秒内收敛为 `401 api_consumer_credential_invalid`。
+6. API 层还要验证 `order_no` cursor、五类动态筛选、decimal/boolean/timestamp/null、完整有限 CSV，以及无 SpatialInfo 时 Map 不可用。浏览器使用非管理员专用 User 登录 Console 并核对浏览器 AuthContext 与 API User 身份一致，在同一应用草稿中依次打开两个 Component 的正式编辑器，验证 Table 两行结果、Chart canvas 和无空间契约下不存在 Map。
+7. 浏览器经正式 Service API 更新主服务的公开默认字段策略以改变 `contract_fingerprint`；刷新同一应用后 Component 编辑器必须显示契约变化告警并禁用预览查询。API 层同时确认已保存快照仍持有旧指纹，不增加 Workbench 执行 API 或测试旁路。
+8. `finally` 只按本轮捕获 ID 删除 API 消费方及其级联凭据、未发布 Data Application 和两个 Query Service，并逐项验证 404 或凭据失效；Fixture 和全套 ADDP 再由 Host Gate 统一停止。最终发布运行态由 Outdoor 双服务场景验收，不能为自动清理增加已发布应用强删旁路。
 
 2026-08-26 已完成 owner suite、浏览器 Table/Chart/Map/契约变化链路、只读 MySQL Fixture、Host Gate profile、workflow choice、CI 登记检查和确定性协议测试。当前仍是“实现就绪、专用 Runner 首跑待执行”，不得勾选 Workbench 专题中的真实 Online 验收项。
 

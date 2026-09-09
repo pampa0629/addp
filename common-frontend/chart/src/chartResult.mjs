@@ -26,10 +26,11 @@ export function validateChartResult(rows, config, hasMore = false) {
   return { valid: true, reason: '' }
 }
 
-export function buildChartOption(rows, config, locale = 'zh-CN') {
+export function buildChartOption(rows, config, locale = 'zh-CN', options = {}) {
   const presentations = config.field_presentations || []
   const dimensionPresentation = fieldPresentationFor(config.dimension, presentations)
   const labels = rows.map((row) => formatFieldPresentationValue(row?.[config.dimension], dimensionPresentation, locale, ''))
+  const selection = chartSelectionOption(options)
   if (config.chart_type === 'pie') {
     const measure = config.measures[0]
     const measurePresentation = fieldPresentationFor(measure, presentations)
@@ -40,6 +41,7 @@ export function buildChartOption(rows, config, locale = 'zh-CN') {
         name: fieldPresentationLabel(measure, presentations),
         type: 'pie',
         radius: ['35%', '70%'],
+        ...selection,
         data: rows.map((row, index) => ({ name: labels[index], value: Number(row[measure]) })),
         tooltip: { valueFormatter: (value) => formatFieldPresentationValueWithState(value, measurePresentation, locale) },
       }]
@@ -72,10 +74,19 @@ export function buildChartOption(rows, config, locale = 'zh-CN') {
       return {
         name: fieldPresentationLabel(measure, presentations),
         type: config.chart_type,
+        ...selection,
         data: rows.map((row) => Number(row?.[measure])),
         tooltip: { valueFormatter: (value) => formatFieldPresentationValueWithState(value, presentation, locale) },
       }
     })
+  }
+}
+
+function chartSelectionOption(options) {
+  const selectionColor = String(options?.selectionColor || '').trim()
+  return {
+    selectedMode: 'single',
+    ...(selectionColor ? { select: { itemStyle: { color: selectionColor } } } : {}),
   }
 }
 

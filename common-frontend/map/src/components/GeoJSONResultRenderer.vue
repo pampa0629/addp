@@ -4,6 +4,7 @@
       :features="features"
       :base-map-type="baseMapType"
       :height="height"
+      :preserve-view="preserveView"
       :popup-options="{ fields: config.tooltip_fields || [], primaryField: config.label_field || '', fieldPresentations: config.field_presentations || [], locale }"
       :feature-style="featureStyle"
       @feature-click="selectFeature"
@@ -34,7 +35,8 @@ const props = defineProps({
   spatial: { type: Object, required: true },
   hasMore: { type: Boolean, default: false },
   baseMapType: { type: String, default: 'osm' },
-  height: { type: String, default: '420px' }
+  height: { type: String, default: '420px' },
+  preserveView: { type: Boolean, default: false }
 })
 const emit = defineEmits(['invalid', 'result-select', 'view-state-change'])
 const { locale } = useI18n()
@@ -68,6 +70,7 @@ watchEffect(() => {
 <style scoped>
 .geojson-result-renderer {
   position: relative;
+  height: 100%;
 }
 
 .map-legend {

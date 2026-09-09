@@ -53,6 +53,19 @@ test('adds a controlled state label to chart tooltips without recoloring series 
   assert.equal(option.series[0].itemStyle, undefined)
 })
 
+test('enables one theme-controlled selected item without changing numeric series data', () => {
+  const option = buildChartOption(
+    [{ city: 'A', amount: 2 }, { city: 'B', amount: 3 }],
+    { chart_type: 'bar', dimension: 'city', measures: ['amount'] },
+    'zh-CN',
+    { selectionColor: 'theme-selection-color' },
+  )
+
+  assert.deepEqual(option.series[0].data, [2, 3])
+  assert.equal(option.series[0].selectedMode, 'single')
+  assert.equal(option.series[0].select.itemStyle.color, 'theme-selection-color')
+})
+
 test('rejects incomplete or invalid pie data', () => {
   const config = { chart_type: 'pie', dimension: 'city', measures: ['amount'] }
   assert.equal(validateChartResult([{ city: 'A', amount: -1 }], config).reason, 'invalid_measure')

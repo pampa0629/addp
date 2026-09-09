@@ -297,6 +297,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             )
             + "\nSYSTEM_URL GATEWAY_URL SERVICE_URL WORKBENCH_URL CONSOLE_URL\n"
             + "ADDP_ONLINE_TEST_USER_USERNAME ADDP_ONLINE_TEST_USER_PASSWORD\n"
+            + "ADDP_ONLINE_TEST_TENANT_ADMIN_ACCESS_TOKEN\n"
             + "ADDP_ONLINE_WORKBENCH_MYSQL_ENGINE_ID\n"
             + "bash business/scripts/online-workbench-mysql-fixture.sh start\n"
             + "bash business/scripts/online-workbench-mysql-fixture.sh stop\n"
@@ -572,6 +573,15 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             '"engine_type": "opengauss"\n',
             encoding="utf-8",
         )
+        postgres_dockerfile = self.repository / "scripts/infra/Dockerfile.postgres"
+        postgres_dockerfile.parent.mkdir(parents=True, exist_ok=True)
+        postgres_dockerfile.write_text("FROM postgres:15\n", encoding="utf-8")
+        (self.repository / "scripts/infra/up.sh").write_text(
+            "BUILD_REPOSITORY_POSTGRES_IMAGE=true\n"
+            "docker build --file scripts/infra/Dockerfile.postgres \\\n"
+            '  --tag "$POSTGRES_IMAGE" scripts/infra\n',
+            encoding="utf-8",
+        )
         registration = self.repository / "scripts/test/online-engine-registration.py"
         registration.write_text(
             '/api/v1/system/engines\ntest_result.get("success") is not True\n'
@@ -609,6 +619,20 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         CHECK.validate_opengauss_consumer_flow_profile(
             self.repository, {"opengauss-consumer-flow"}
         )
+
+        infra_up = self.repository / "scripts/infra/up.sh"
+        infra_up_text = infra_up.read_text(encoding="utf-8")
+        infra_up.write_text(
+            infra_up_text.replace(
+                "docker build --file scripts/infra/Dockerfile.postgres", "docker build"
+            ),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(CHECK.RegistrationError, "Infra lifecycle"):
+            CHECK.validate_opengauss_consumer_flow_profile(
+                self.repository, {"opengauss-consumer-flow"}
+            )
+        infra_up.write_text(infra_up_text, encoding="utf-8")
 
         fixture.write_text(
             fixture.read_text(encoding="utf-8").replace("MERGE INTO", ""),

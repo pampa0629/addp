@@ -1,5 +1,5 @@
 <template>
-  <div data-testid="renderer-host">
+  <div class="renderer-host" data-testid="renderer-host">
     <el-empty
       v-if="rendererType === 'value' && !resultReady"
       :description="t('workbench.noData')"
@@ -39,6 +39,8 @@
       :config="config"
       :spatial="descriptor.output_contract.spatial"
       :has-more="Boolean(page?.has_more)"
+      height="100%"
+      :preserve-view="preserveView"
       @invalid="invalidReason = $event"
       @result-select="emit('result-select', $event)"
     />
@@ -65,7 +67,8 @@ const props = defineProps({
   config: { type: Object, required: true },
   descriptor: { type: Object, default: null },
   page: { type: Object, default: () => ({}) },
-  resultReady: { type: Boolean, default: true }
+  resultReady: { type: Boolean, default: true },
+  preserveView: { type: Boolean, default: false }
 })
 const emit = defineEmits(['result-select'])
 const { t } = useI18n()
@@ -89,3 +92,11 @@ const invalidReason = computed({
 })
 watch(() => [props.rows, props.config, props.page], () => { emittedReason.value = '' }, { deep: true })
 </script>
+
+<style scoped>
+.renderer-host {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+</style>

@@ -47,6 +47,7 @@
             :descriptor="state(placement.component_id).descriptor"
             :page="state(placement.component_id).page"
             :result-ready="state(placement.component_id).query_completed"
+            :preserve-view="state(placement.component_id).preserve_map_view"
             @result-select="applySelection(placement.component_id, $event)"
           />
         </template>
@@ -126,11 +127,11 @@ function component(id) {
 }
 
 function state(id) {
-  return componentStates[id] || { rows: [], page: {}, descriptor: null, descriptor_error: '', contract_error: '', query_error: '', querying: false, exporting: false, query_completed: false, cursors: [''], cursor_index: 0 }
+  return componentStates[id] || { rows: [], page: {}, descriptor: null, descriptor_error: '', contract_error: '', query_error: '', querying: false, exporting: false, query_completed: false, preserve_map_view: false, cursors: [''], cursor_index: 0 }
 }
 
 function createComponentState() {
-  return { rows: [], page: { has_more: false, next_cursor: '' }, descriptor: null, descriptor_error: '', contract_error: '', query_error: '', querying: false, exporting: false, query_completed: false, cursors: [''], cursor_index: 0, descriptorRequests: createLatestRequestCoordinator(), requests: createLatestRequestCoordinator() }
+  return { rows: [], page: { has_more: false, next_cursor: '' }, descriptor: null, descriptor_error: '', contract_error: '', query_error: '', querying: false, exporting: false, query_completed: false, preserve_map_view: false, cursors: [''], cursor_index: 0, descriptorRequests: createLatestRequestCoordinator(), requests: createLatestRequestCoordinator() }
 }
 
 function updateParameterValues(values) {
@@ -183,11 +184,12 @@ async function loadDescriptor(item) {
   }
 }
 
-async function queryComponent(componentID, cursor = '', cursorIndex = 0, cursors = ['']) {
+async function queryComponent(componentID, cursor = '', cursorIndex = 0, cursors = [''], options = {}) {
   const item = component(componentID)
   const current = componentStates[componentID]
   if (!item || !canExecuteComponentQuery(current)) return
   const request = current.requests.begin(componentID)
+  current.preserve_map_view = options.preserveMapView === true
   current.querying = true
   current.query_error = ''
   try {
@@ -214,7 +216,9 @@ async function applySelection(componentID, selection) {
     const update = buildSelectionUpdate(application.value.snapshot, componentID, current.descriptor, current.rows, selection)
     if (!update) return
     updateParameterValues(update.parameter_values)
-    await Promise.all(update.component_ids.map((targetID) => queryComponent(targetID)))
+    await Promise.all(update.component_ids.map((targetID) => queryComponent(targetID, '', 0, [''], {
+      preserveMapView: component(targetID)?.renderer_type === 'map',
+    })))
   } catch {
     ElMessage.error(t('workbench.selectionApplyFailed'))
   }
@@ -345,5 +349,40 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.runtime{min-height:100vh;padding:24px;background:var(--addp-bg-secondary);box-sizing:border-box}.runtime-header,.runtime-actions,.component-header,.component-header-actions{display:flex;align-items:center}.runtime-header,.component-header{justify-content:space-between}.runtime-header{margin-bottom:16px;gap:24px}.runtime-header--compact{justify-content:flex-end}.runtime-header h1{margin:0;color:var(--addp-text-primary);font-size:28px}.runtime-header p{margin:6px 0 0;color:var(--addp-text-secondary)}.runtime-actions,.component-header-actions{gap:12px}.runtime-actions{color:var(--addp-text-secondary);flex-wrap:wrap}.parameters-card{margin-bottom:16px}.parameter-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}.parameter-field{display:flex;flex-direction:column;gap:8px;color:var(--addp-text-primary)}.parameter-field em{color:var(--el-color-danger);font-style:normal}.runtime-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));grid-auto-rows:64px;gap:12px}.runtime-component{min-width:0;overflow:auto}.component-header{gap:12px}.component-pagination{display:flex;align-items:center;justify-content:flex-end;gap:12px;margin-top:12px;color:var(--addp-text-secondary)}.runtime--embedded{height:calc(100vh - 72px);min-height:0;overflow:auto}.runtime--wallboard{height:100vh;min-height:0;overflow:hidden;display:flex;flex-direction:column;padding:16px}.runtime--embedded.runtime--wallboard{height:calc(100vh - 72px)}.runtime--wallboard .runtime-header,.runtime--wallboard .parameters-card{flex:0 0 auto;margin-bottom:12px}.runtime--wallboard .runtime-grid{flex:1;min-height:0;grid-auto-rows:minmax(0,1fr)}.runtime--wallboard .runtime-component{min-height:0;overflow:hidden;display:flex;flex-direction:column}.runtime--wallboard .runtime-component:deep(.el-card__body){flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column}.runtime--wallboard .runtime-component:deep([data-testid="renderer-host"]){flex:1;min-height:0;height:100%}.runtime--wallboard .runtime-component:deep(.chart-renderer),.runtime--wallboard .runtime-component:deep(.map-container){height:100%!important;min-height:0}@media(max-width:900px){.runtime{padding:16px}.runtime-header{align-items:flex-start;flex-direction:column}.runtime-header--compact{align-items:flex-end}.runtime-grid{display:flex;flex-direction:column}.runtime-component{min-height:360px}.runtime--wallboard .runtime-grid{display:grid}.runtime--wallboard .runtime-component{min-height:0}}
+.runtime { min-height: 100vh; padding: 24px; background: var(--addp-bg-secondary); box-sizing: border-box; }
+.runtime-header, .runtime-actions, .component-header, .component-header-actions { display: flex; align-items: center; }
+.runtime-header, .component-header { justify-content: space-between; }
+.runtime-header { margin-bottom: 16px; gap: 24px; }
+.runtime-header--compact { justify-content: flex-end; }
+.runtime-header h1 { margin: 0; color: var(--addp-text-primary); font-size: 28px; }
+.runtime-header p { margin: 6px 0 0; color: var(--addp-text-secondary); }
+.runtime-actions, .component-header-actions { gap: 12px; }
+.runtime-actions { color: var(--addp-text-secondary); flex-wrap: wrap; }
+.parameters-card { margin-bottom: 16px; }
+.parameter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+.parameter-field { display: flex; flex-direction: column; gap: 8px; color: var(--addp-text-primary); }
+.parameter-field em { color: var(--el-color-danger); font-style: normal; }
+.runtime-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); grid-auto-rows: 64px; gap: 12px; }
+.runtime-component { min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+.runtime-component:deep(.el-card__body) { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
+.runtime-component:deep([data-testid="renderer-host"]) { flex: 1; min-height: 0; height: 100%; }
+.runtime-component:deep(.chart-renderer),
+.runtime-component:deep(.map-container),
+.runtime-component:deep(.geojson-result-renderer) { height: 100% !important; min-height: 0; }
+.component-header { gap: 12px; }
+.component-pagination { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 12px; color: var(--addp-text-secondary); }
+.runtime--embedded { height: calc(100vh - 72px); min-height: 0; overflow: auto; }
+.runtime--wallboard { height: 100vh; min-height: 0; overflow: hidden; display: flex; flex-direction: column; padding: 16px; }
+.runtime--embedded.runtime--wallboard { height: calc(100vh - 72px); }
+.runtime--wallboard .runtime-header, .runtime--wallboard .parameters-card { flex: 0 0 auto; margin-bottom: 12px; }
+.runtime--wallboard .runtime-grid { flex: 1; min-height: 0; grid-auto-rows: minmax(0, 1fr); }
+@media (max-width: 900px) {
+  .runtime { padding: 16px; }
+  .runtime-header { align-items: flex-start; flex-direction: column; }
+  .runtime-header--compact { align-items: flex-end; }
+  .runtime-grid { display: flex; flex-direction: column; }
+  .runtime-component { min-height: 360px; }
+  .runtime--wallboard .runtime-grid { display: grid; }
+  .runtime--wallboard .runtime-component { min-height: 0; }
+}
 </style>

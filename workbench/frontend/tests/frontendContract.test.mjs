@@ -145,6 +145,19 @@ test('state presentation stays a controlled renderer configuration without raw c
   assert.doesNotMatch(stateEditor, /#[0-9a-fA-F]{3,8}|rgb\(|expression|formatter/)
 })
 
+test('runtime fills placements and keeps selection feedback transient', () => {
+  const canvas = readSource('../src/components/DataApplicationCanvas.vue')
+  const rendererHost = readSource('../src/components/WorkbenchRendererHost.vue')
+
+  assert.match(canvas, /:preserve-view="state\(placement\.component_id\)\.preserve_map_view"/)
+  assert.match(canvas, /preserveMapView:\s*component\(targetID\)\?\.renderer_type === ['"]map['"]/)
+  assert.match(canvas, /\.runtime-component:deep\(\.el-card__body\)[^{]*\{[^}]*flex:\s*1[^}]*min-height:\s*0/s)
+  assert.match(canvas, /:deep\(\[data-testid="renderer-host"\]\)[^{]*\{[^}]*flex:\s*1[^}]*height:\s*100%/s)
+  assert.match(rendererHost, /:preserve-view="preserveView"/)
+  assert.match(rendererHost, /height="100%"/)
+  assert.doesNotMatch(canvas, /selected_row_index|selectedRowIndex/)
+})
+
 test('component editor ignores async results from an obsolete service context', () => {
   const editor = readSource('../src/components/ApplicationComponentEditor.vue')
 

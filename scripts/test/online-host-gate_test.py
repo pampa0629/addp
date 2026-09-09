@@ -178,6 +178,7 @@ class OnlineHostGateTest(unittest.TestCase):
                 PORTAL_URL=http://127.0.0.1:8088
                 MANAGER_SERVICE_CLIENT_SECRET=manager-online-secret-0123456789abcdef
                 ADDP_ONLINE_TEST_USER_ACCESS_TOKEN=addp_at_online
+                ADDP_ONLINE_TEST_TENANT_ADMIN_ACCESS_TOKEN=addp_at_online_tenant_admin
                 ADDP_ONLINE_TEST_APPROVER_ACCESS_TOKEN=addp_at_online_approver
                 ADDP_ONLINE_TEST_USER_USERNAME=online-user
                 ADDP_ONLINE_TEST_USER_PASSWORD=online-password

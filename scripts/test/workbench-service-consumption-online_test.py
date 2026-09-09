@@ -19,7 +19,7 @@ def response(status, payload=None, *, headers=None, raw=b""):
 
 class FakeClient:
     def __init__(self) -> None:
-        self.service_exists = False
+        self.services: dict[int, str] = {}
         self.application_exists = False
         self.application_status = "unpublished"
         self.application_version = 1
@@ -116,8 +116,9 @@ class FakeClient:
         if path == "/api/v1/service/sql/output-contract":
             return response(200, self.contract())
         if path == "/api/v1/service/query" and method == "POST":
-            self.service_exists = True
-            return response(201, {"id": 23, "tenant_id": 42, "service_name": SUITE.SERVICE_NAME})
+            service_id = 23 if body["service_name"] == SUITE.SERVICE_NAME else 24
+            self.services[service_id] = body["service_name"]
+            return response(201, {"id": service_id, "tenant_id": 42, "service_name": body["service_name"]})
         if path == "/api/v1/service/consumer/services/query/23":
             return response(200, self.descriptor())
         if path == "/api/v1/workbench/data_applications" and method == "POST":
@@ -152,11 +153,13 @@ class FakeClient:
                     "snapshot": self.application_snapshot,
                 })
             return response(404)
-        if path == "/api/v1/service/query/23":
+        if path.startswith("/api/v1/service/query/"):
+            service_id = int(path.rsplit("/", 1)[1])
             if method == "DELETE":
-                self.service_exists = False
+                self.services.pop(service_id, None)
                 return response(200)
-            return response(200 if self.service_exists else 404, {"id": 23} if self.service_exists else {})
+            exists = service_id in self.services
+            return response(200 if exists else 404, {"id": service_id} if exists else {})
         raise AssertionError(f"unexpected request {method} {path} body={body!r}")
 
     @staticmethod
@@ -205,30 +208,162 @@ class FakeClient:
         )
 
 
+class FakeAdminClient:
+    def __init__(self) -> None:
+        self.consumer_exists = False
+        self.credential_exists = False
+
+    def request(self, method, path, expected, body=None):
+        if path == "/api/v1/system/auth/context":
+            return response(
+                200,
+                {
+                    "principal": {"type": "user", "id": "61"},
+                    "context": {"type": "tenant", "tenant_id": "42"},
+                    "token": {"type": "first_party_access_token"},
+                    "authorization": {
+                        "role_assignments": [
+                            {
+                                "role_key": "tenant.administrator",
+                                "permissions": sorted(SUITE.API_CONSUMER_ADMIN_PERMISSIONS),
+                            }
+                        ]
+                    },
+                },
+            )
+        if path == "/api/v1/system/tenant/api-consumers" and method == "POST":
+            self.consumer_exists = True
+            return response(
+                201,
+                {
+                    "id": 71,
+                    "tenant_id": 42,
+                    "service_grants": body["service_grants"],
+                },
+            )
+        consumer_path = "/api/v1/system/tenant/api-consumers/71"
+        if path == consumer_path:
+            if method == "DELETE":
+                self.consumer_exists = False
+                self.credential_exists = False
+                return response(204)
+            return response(200 if self.consumer_exists else 404, {"id": 71} if self.consumer_exists else {})
+        if path == consumer_path + "/credentials" and method == "POST":
+            self.credential_exists = True
+            return response(
+                201,
+                {
+                    "id": 81,
+                    "plain_text_credential": "addp_api_test-secret",
+                },
+            )
+        raise AssertionError(f"unexpected admin request {method} {path} body={body!r}")
+
+
+class FakeAPIConsumerClient:
+    def __init__(self, admin: FakeAdminClient) -> None:
+        self.admin = admin
+        self.fail_ungranted = False
+
+    def request(self, method, path, expected, body=None, headers=None):
+        if path == "/api/v1/system/tenant/api-consumers":
+            return response(401, {"error_code": "api_consumer_control_plane_denied"})
+        raise AssertionError(f"unexpected API consumer request {method} {path} body={body!r}")
+
+    def query(self, service_name, body, expected):
+        if not self.admin.consumer_exists:
+            return response(401, {"error_code": "api_consumer_credential_invalid"})
+        if service_name == SUITE.SERVICE_NAME:
+            return response(200, {"data": []})
+        if service_name == SUITE.DENIED_SERVICE_NAME:
+            if self.fail_ungranted:
+                raise SUITE.SuiteError("injected API consumer boundary failure")
+            return response(403, {"error_code": "api_consumer_service_denied"})
+        raise AssertionError(f"unexpected API consumer service {service_name}")
+
+
 class WorkbenchServiceConsumptionOnlineTest(unittest.TestCase):
     def test_accepts_mysql_cursor_export_application_and_contract_change(self) -> None:
         client = FakeClient()
+        admin = FakeAdminClient()
+        api_consumer = FakeAPIConsumerClient(admin)
 
-        report = SUITE.run_suite(client, 42, 9, "run-1")
+        report = SUITE.run_suite(
+            client,
+            admin,
+            42,
+            9,
+            "run-1",
+            api_consumer_client_factory=lambda _: api_consumer,
+        )
 
+        self.assertEqual(report["schema_version"], "addp.workbench-service-consumption-online/v2")
         self.assertEqual(report["source_engine"], "mysql")
+        self.assertEqual(report["route"], ["system", "gateway", "service", "workbench"])
         self.assertEqual(report["cursor"]["rows"], 4)
         self.assertEqual(report["export"]["rows"], 4)
+        self.assertEqual(report["api_consumer"]["allowed_status"], 200)
+        self.assertEqual(
+            report["api_consumer"]["ungranted_error_code"],
+            "api_consumer_service_denied",
+        )
+        self.assertEqual(
+            report["api_consumer"]["control_plane_error_code"],
+            "api_consumer_control_plane_denied",
+        )
+        self.assertEqual(
+            report["api_consumer"]["revoked_credential_error_code"],
+            "api_consumer_credential_invalid",
+        )
+        self.assertNotIn("addp_api_test-secret", json.dumps(report))
         self.assertTrue(report["contract_change_blocked"])
         self.assertEqual(report["renderers"], {"table": True, "chart": True, "map": False})
+        self.assertEqual(report["created_resources"], 5)
+        self.assertEqual(report["deleted_resources"], 5)
         self.assertEqual(report["residual_resources"], 0)
         self.assertFalse(client.application_exists)
-        self.assertFalse(client.service_exists)
+        self.assertFalse(client.services)
+        self.assertFalse(admin.consumer_exists)
+        self.assertFalse(admin.credential_exists)
 
     def test_failure_still_deletes_created_application_and_service(self) -> None:
         client = FakeClient()
+        admin = FakeAdminClient()
         client.fail_query = True
 
         with self.assertRaisesRegex(SUITE.SuiteError, "injected query failure"):
-            SUITE.run_suite(client, 42, 9, "run-1")
+            SUITE.run_suite(
+                client,
+                admin,
+                42,
+                9,
+                "run-1",
+                api_consumer_client_factory=lambda _: FakeAPIConsumerClient(admin),
+            )
 
         self.assertFalse(client.application_exists)
-        self.assertFalse(client.service_exists)
+        self.assertFalse(client.services)
+
+    def test_api_consumer_failure_still_revokes_credential_and_deletes_all_resources(self) -> None:
+        client = FakeClient()
+        admin = FakeAdminClient()
+        api_consumer = FakeAPIConsumerClient(admin)
+        api_consumer.fail_ungranted = True
+
+        with self.assertRaisesRegex(SUITE.SuiteError, "injected API consumer boundary failure"):
+            SUITE.run_suite(
+                client,
+                admin,
+                42,
+                9,
+                "run-1",
+                api_consumer_client_factory=lambda _: api_consumer,
+            )
+
+        self.assertFalse(client.application_exists)
+        self.assertFalse(client.services)
+        self.assertFalse(admin.consumer_exists)
+        self.assertFalse(admin.credential_exists)
 
     def test_rejects_administrator_identity(self) -> None:
         client = FakeClient()
@@ -243,6 +378,20 @@ class WorkbenchServiceConsumptionOnlineTest(unittest.TestCase):
         client.request = request
         with self.assertRaisesRegex(SUITE.SuiteError, "administrator roles"):
             SUITE.validate_user_identity(client, 42)
+
+    def test_rejects_api_consumer_administrator_without_tenant_role(self) -> None:
+        admin = FakeAdminClient()
+        original = admin.request
+
+        def request(method, path, expected, body=None):
+            result = original(method, path, expected, body)
+            if path == "/api/v1/system/auth/context":
+                result.payload["authorization"]["role_assignments"][0]["role_key"] = "tenant.data_viewer"
+            return result
+
+        admin.request = request
+        with self.assertRaisesRegex(SUITE.SuiteError, "tenant.administrator"):
+            SUITE.validate_api_consumer_admin_identity(admin, 42)
 
     def test_validates_browser_report_contract(self) -> None:
         report = {

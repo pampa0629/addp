@@ -50,6 +50,11 @@ describe('document candidate contract', () => {
     expect(zhCn.standard.document.candidateFamilyTotal).toContain('语义变体')
     expect(en.standard.document.candidateFamilyVariantCount).toContain('semantic variants')
     expect(en.standard.document.candidateEvidenceHistory).toContain('Evidence')
+    expect(documentDetailSource).toContain('buildCandidateVariantDifferences')
+    expect(documentDetailSource).toContain('variant_differences: buildCandidateVariantDifferences(family)')
+    expect(documentDetailSource).toContain('standard.document.candidateVariantDifferencesTitle')
+    expect(zhCn.standard.document.candidateVariantDifferencesTitle).toBe('语义变体差异摘要')
+    expect(en.standard.document.candidateVariantIndex).toBe('Variant {index}')
   })
 
   it('filters candidate families by the live family comparison facet', () => {

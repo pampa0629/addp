@@ -69,6 +69,8 @@ for command in bash curl docker git go make node npm python3; do
   command -v "$command" >/dev/null 2>&1 || fail "missing required command: $command"
 done
 docker compose version >/dev/null 2>&1 || fail "docker compose is required"
+[ -f "$ROOT_DIR/scripts/infra/Dockerfile.postgres" ] ||
+  fail "missing repository Infra PostgreSQL Dockerfile"
 
 for container in addp-postgres addp-redis addp-minio addp-meilisearch addp-redpanda addp-opengauss-online-disposable; do
   if docker container inspect "$container" >/dev/null 2>&1; then

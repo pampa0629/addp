@@ -3242,10 +3242,11 @@ paths:
       - security.protection_access_request.update
   /protection-access-requests/review-queue:
     get:
-      description: 按 scope 分页返回未过期待审批申请或审批记录，并支持按处理结果、申请人、资源或字段及申请时间筛选；本人申请可见但不能自审
+      description: 按 scope 分页返回未过期待审批申请或审批记录，并支持按处理结果、当前授权状态、申请人、资源或字段及申请时间筛选；本人申请可见但不能自审
         | Return paginated unexpired pending requests or review history by scope,
-        with optional outcome, requester, resource or field, and request-time filters;
-        self-submitted requests remain visible but cannot be self-approved
+        with optional outcome, current grant state, requester, resource or field,
+        and request-time filters; self-submitted requests remain visible but cannot
+        be self-approved
       parameters:
       - description: 视图 pending|history | View pending|history
         enum:
@@ -3263,6 +3264,16 @@ paths:
         - expired
         in: query
         name: state
+        type: string
+      - description: 当前授权状态 active|expired|revoked|superseded，仅 history 可用 | Current
+          grant state active|expired|revoked|superseded, history only
+        enum:
+        - active
+        - expired
+        - revoked
+        - superseded
+        in: query
+        name: authorization_state
         type: string
       - description: 申请人显示名或用户 ID | Requester display name or user ID
         in: query

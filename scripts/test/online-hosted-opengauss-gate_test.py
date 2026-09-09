@@ -22,11 +22,16 @@ class OnlineHostedOpenGaussGateTest(unittest.TestCase):
         self.secrets = self.root / "secrets"
         (self.repository / "scripts/test").mkdir(parents=True)
         (self.repository / "scripts/lib").mkdir(parents=True)
+        (self.repository / "scripts/infra").mkdir(parents=True)
         self.bin.mkdir()
         shutil.copy2(SCRIPT, self.repository / "scripts/test/online-hosted-opengauss-gate.sh")
         shutil.copy2(
             SCRIPT.parents[1] / "lib/opengauss-official-media.sh",
             self.repository / "scripts/lib/opengauss-official-media.sh",
+        )
+        shutil.copy2(
+            SCRIPT.parents[1] / "infra/Dockerfile.postgres",
+            self.repository / "scripts/infra/Dockerfile.postgres",
         )
         self._executable(
             "uname",
@@ -134,6 +139,15 @@ class OnlineHostedOpenGaussGateTest(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("refusing to reuse existing image", result.stderr)
+
+    def test_infra_builds_repository_postgres_image_before_image_checks(self) -> None:
+        script = (SCRIPT.parents[1] / "infra/up.sh").read_text(encoding="utf-8")
+
+        selection = script.index("BUILD_REPOSITORY_POSTGRES_IMAGE=true")
+        build = script.index("docker build --file scripts/infra/Dockerfile.postgres")
+        image_checks = script.index("# Images to check")
+        self.assertLess(selection, build)
+        self.assertLess(build, image_checks)
 
 
 if __name__ == "__main__":

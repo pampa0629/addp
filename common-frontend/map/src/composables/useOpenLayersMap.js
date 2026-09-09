@@ -195,7 +195,11 @@ export function useOpenLayersMap(config, options = {}) {
         element: popupElement.value,
         offset: [0, -12],
         positioning: 'bottom-center',
-        stopEvent: true
+        stopEvent: true,
+        autoPan: {
+          margin: 24,
+          animation: { duration: 0 }
+        }
       })
       mapInstance.value.addOverlay(popupOverlay.value)
     } else if (mapInstance.value.getTarget() !== container) {

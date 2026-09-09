@@ -415,7 +415,7 @@ develop:results   → Develop 模块查询结果索引
 
 **特性**:
 - ✅ 自动检测 CPU 架构（x86_64/ARM64）并选择合适的 PostgreSQL 镜像
-- ✅ 自动检查并拉取缺失的 Docker 镜像
+- ✅ x86_64 自动构建仓库 PostgreSQL 镜像，其他缺失镜像自动拉取
 - ✅ 端口占用检查（5432, 6379, 9000-9001, 7700）
 - ✅ 服务运行状态检查（幂等操作,已运行服务不会重启）
 - ✅ 健康检查等待（确保服务完全就绪）
@@ -560,8 +560,10 @@ POSTGRES_IMAGE=imresamu/postgis-arm64:15-3.4 ./scripts/infra/up.sh
 
 **x86_64**（默认）:
 ```bash
-POSTGRES_IMAGE=postgis/postgis:15-3.4
+POSTGRES_IMAGE=addp-postgres-pgvector:latest
 ```
+
+镜像缺失时，`up.sh` 自动从 `scripts/infra/Dockerfile.postgres` 构建，不依赖外部同名镜像仓库。
 
 **ARM64**（macOS M1/M2, ARM64 Linux）:
 ```bash
@@ -634,8 +636,8 @@ KAFKA_CONNECT_IMAGE=quay.io/debezium/connect:3.6.0.Final
 KAFKA_CONNECT_PORT=18083
 KAFKA_CONNECT_BOOTSTRAP_SERVERS=redpanda:29092
 
-# PostgreSQL 镜像（可选,默认 x86_64）
-POSTGRES_IMAGE=postgis/postgis:15-3.4
+# PostgreSQL 镜像（可选；留空时按架构选择）
+POSTGRES_IMAGE=
 # ARM64: POSTGRES_IMAGE=imresamu/postgis-arm64:15-3.4
 
 # 跳过初始化（可选）

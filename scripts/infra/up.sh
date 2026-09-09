@@ -16,6 +16,7 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "${PROJECT_ROOT}"
 
 COMPOSE_FILES=(-f docker-compose.infra.yml)
+BUILD_REPOSITORY_POSTGRES_IMAGE=false
 
 compose() {
   docker compose "${COMPOSE_FILES[@]}" "$@"
@@ -40,10 +41,11 @@ if [ -z "${POSTGRES_IMAGE:-}" ]; then
     ARCH=$(uname -m)
     case "${ARCH}" in
         x86_64)
-            # AMD64: 暂无预构建镜像，需要本地构建
+            # AMD64: 使用仓库 Dockerfile 构建包含 pgvector 的本地镜像
             export POSTGRES_IMAGE="addp-postgres-pgvector:latest"
+            BUILD_REPOSITORY_POSTGRES_IMAGE=true
             echo -e "${YELLOW}🏗️  检测到 AMD64 架构${NC}"
-            echo -e "${YELLOW}    如需使用，请先构建本地镜像: docker build -f scripts/infra/Dockerfile.postgres -t addp-postgres-pgvector:latest scripts/infra/${NC}"
+            echo -e "${YELLOW}    使用仓库 PostgreSQL 镜像: ${POSTGRES_IMAGE}${NC}"
             ;;
         aarch64|arm64)
             # ARM64: 使用 Docker Hub 预构建镜像
@@ -201,6 +203,13 @@ else
 fi
 
 echo -e "${YELLOW}▶ 检查 Docker 镜像...${NC}"
+
+if [ "$BUILD_REPOSITORY_POSTGRES_IMAGE" = "true" ] &&
+  ! docker image inspect "$POSTGRES_IMAGE" >/dev/null 2>&1; then
+  echo -e "  ${BLUE}构建仓库 PostgreSQL 镜像: $POSTGRES_IMAGE${NC}"
+  docker build --file scripts/infra/Dockerfile.postgres \
+    --tag "$POSTGRES_IMAGE" scripts/infra
+fi
 
 # Images to check
 IMAGES=(

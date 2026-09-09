@@ -202,6 +202,7 @@ def validate_workbench_service_consumption_profile(repository: Path, registered:
         "SYSTEM_URL GATEWAY_URL SERVICE_URL WORKBENCH_URL CONSOLE_URL",
         "ADDP_ONLINE_TEST_USER_USERNAME",
         "ADDP_ONLINE_TEST_USER_PASSWORD",
+        "ADDP_ONLINE_TEST_TENANT_ADMIN_ACCESS_TOKEN",
         "ADDP_ONLINE_WORKBENCH_MYSQL_ENGINE_ID",
         "bash business/scripts/online-workbench-mysql-fixture.sh start",
         "bash business/scripts/online-workbench-mysql-fixture.sh stop",
@@ -626,8 +627,20 @@ def validate_opengauss_consumer_flow_profile(
             raise RegistrationError(
                 f"opengauss-consumer-flow Hosted profile is missing {fragment}"
             )
+    infra_up = (repository / "scripts/infra/up.sh").read_text(encoding="utf-8")
+    for fragment in (
+        "BUILD_REPOSITORY_POSTGRES_IMAGE=true",
+        "docker build --file scripts/infra/Dockerfile.postgres",
+        '--tag "$POSTGRES_IMAGE" scripts/infra',
+    ):
+        if fragment not in infra_up:
+            raise RegistrationError(
+                f"opengauss-consumer-flow Infra lifecycle is missing {fragment}"
+            )
     for relative in (
         "business/scripts/online-opengauss-consumer-fixture.sh",
+        "scripts/infra/Dockerfile.postgres",
+        "scripts/infra/up.sh",
         "scripts/test/online-hosted-opengauss-gate.sh",
         "scripts/test/online-hosted-opengauss-gate_test.py",
         "scripts/test/online-engine-registration.py",

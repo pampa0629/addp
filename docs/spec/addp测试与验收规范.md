@@ -122,6 +122,8 @@ T4 只在隔离的 ADDP 测试部署执行，并按运行条件选择唯一部�
 
 每个断言只验证规范定义的唯一身份链路，不在 User Token、Service Token 和直接 SQL 之间兼容回退。Repository / Migration 的直接数据库夹具属于 T2，不能替代 T4 API 授权验收。
 
+API 消费方数据面边界由 `workbench-service-consumption` 复用同一 Business MySQL Fixture 和临时 Query Service 验收，不另建平行 suite。该场景必须分离两个真实 User Token：非管理员 Token 只负责 Service / Workbench 发布与消费，专用 Tenant Administrator Token 只负责 API 消费方与凭据生命周期。suite 通过正式 API 创建一个只授权主 Query Service 的 API 消费方，并必须同时证明：已授权服务返回 200；同 Tenant 未授权 Query Service 返回 `403 api_consumer_service_denied`；任一 `/api/v1/*` 控制面路由返回 `401 api_consumer_control_plane_denied`；删除 API 消费方后，旧凭据在 Gateway 30 秒正缓存对应的 45 秒有界收敛窗口内返回 `401 api_consumer_credential_invalid`。报告、日志和错误不得包含完整 API Key，每轮必须按捕获 ID 删除 API 消费方、其级联凭据、Data Application 和两个临时 Query Service，并验证零残留。
+
 模块注册与恢复类 T4 必须使用正式进程入口至少证明：
 
 1. 业务模块先启动、System 后启动时，模块先为 Alive/Not Ready，不能处理业务；System 恢复后使用同一 `instance_id` 自动进入 Ready。

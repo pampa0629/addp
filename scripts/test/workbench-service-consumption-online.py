@@ -9,6 +9,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -19,6 +20,7 @@ from typing import Any, Callable, Iterable, Mapping
 
 
 SERVICE_NAME = "commerce-order-analysis"
+DENIED_SERVICE_NAME = "commerce-order-analysis-denied"
 SQL = """SELECT
   o.order_no,
   c.customer_code,
@@ -68,6 +70,13 @@ FORBIDDEN_ADMIN_ROLES = {
     "platform.system_administrator",
     "tenant.administrator",
 }
+API_CONSUMER_ADMIN_PERMISSIONS = {
+    "iam.api_consumer.create",
+    "iam.api_consumer.delete",
+    "iam.api_consumer.read",
+    "iam.api_consumer_credential.create",
+}
+API_CONSUMER_REVOCATION_TIMEOUT_SECONDS = 45.0
 
 
 class SuiteError(RuntimeError):
@@ -80,6 +89,49 @@ class Response:
     payload: Any
     headers: Mapping[str, str]
     raw: bytes = b""
+
+
+def _http_request(
+    base_url: str,
+    timeout: float,
+    method: str,
+    path: str,
+    expected: Iterable[int],
+    headers: Mapping[str, str],
+    body: dict[str, object] | None = None,
+) -> Response:
+    data = None if body is None else json.dumps(body).encode()
+    request = urllib.request.Request(
+        base_url + path,
+        data=data,
+        method=method,
+        headers=dict(headers),
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            status = response.status
+            raw = response.read()
+            response_headers = dict(response.headers.items())
+    except urllib.error.HTTPError as error:
+        status = error.code
+        raw = error.read()
+        response_headers = dict(error.headers.items()) if error.headers else {}
+    except (urllib.error.URLError, TimeoutError) as error:
+        raise SuiteError(f"{method} {path} transport failed: {error}") from error
+    content_type = next(
+        (value for key, value in response_headers.items() if key.lower() == "content-type"),
+        "",
+    ).lower()
+    payload: Any = {}
+    if raw and ("json" in content_type or status >= 400):
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError as error:
+            raise SuiteError(f"{method} {path} returned invalid JSON") from error
+    if status not in set(expected):
+        code = payload.get("error_code", "unknown") if isinstance(payload, dict) else "unknown"
+        raise SuiteError(f"{method} {path} returned HTTP {status} ({code})")
+    return Response(status=status, payload=payload, headers=response_headers, raw=raw)
 
 
 class GatewayClient:
@@ -99,44 +151,21 @@ class GatewayClient:
         body: dict[str, object] | None = None,
         headers: Mapping[str, str] | None = None,
     ) -> Response:
-        data = None if body is None else json.dumps(body).encode()
         request_headers = {
             "Accept": "application/json",
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.token}",
         }
         request_headers.update(headers or {})
-        request = urllib.request.Request(
-            self.base_url + path,
-            data=data,
-            method=method,
-            headers=request_headers,
+        return _http_request(
+            self.base_url,
+            self.timeout,
+            method,
+            path,
+            expected,
+            request_headers,
+            body,
         )
-        try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                status = response.status
-                raw = response.read()
-                response_headers = dict(response.headers.items())
-        except urllib.error.HTTPError as error:
-            status = error.code
-            raw = error.read()
-            response_headers = dict(error.headers.items()) if error.headers else {}
-        except (urllib.error.URLError, TimeoutError) as error:
-            raise SuiteError(f"{method} {path} transport failed: {error}") from error
-        content_type = next(
-            (value for key, value in response_headers.items() if key.lower() == "content-type"),
-            "",
-        ).lower()
-        payload: Any = {}
-        if raw and ("json" in content_type or status >= 400):
-            try:
-                payload = json.loads(raw)
-            except json.JSONDecodeError as error:
-                raise SuiteError(f"{method} {path} returned invalid JSON") from error
-        if status not in set(expected):
-            code = payload.get("error_code", "unknown") if isinstance(payload, dict) else "unknown"
-            raise SuiteError(f"{method} {path} returned HTTP {status} ({code})")
-        return Response(status=status, payload=payload, headers=response_headers, raw=raw)
 
     def request(
         self,
@@ -160,6 +189,57 @@ class GatewayClient:
             (200,),
             body,
             {"X-ADDP-Query-Intent": intent},
+        )
+
+
+class APIConsumerClient:
+    def __init__(self, base_url: str, credential: str, timeout: float) -> None:
+        parsed = urllib.parse.urlsplit(base_url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise SuiteError("GATEWAY_URL must be an absolute HTTP(S) URL")
+        if not credential.startswith("addp_api_"):
+            raise SuiteError("created API consumer credential has an invalid prefix")
+        self.base_url = base_url.rstrip("/")
+        self._credential = credential
+        self.timeout = timeout
+
+    def request(
+        self,
+        method: str,
+        path: str,
+        expected: Iterable[int],
+        body: dict[str, object] | None = None,
+        headers: Mapping[str, str] | None = None,
+    ) -> Response:
+        request_headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "X-API-Key": self._credential,
+        }
+        request_headers.update(headers or {})
+        return _http_request(
+            self.base_url,
+            self.timeout,
+            method,
+            path,
+            expected,
+            request_headers,
+            body,
+        )
+
+    def query(
+        self,
+        service_name: str,
+        body: dict[str, object],
+        expected: Iterable[int],
+    ) -> Response:
+        path = "/api/query/" + urllib.parse.quote(service_name, safe="") + "/query"
+        return self.request(
+            "POST",
+            path,
+            expected,
+            body,
+            {"X-ADDP-Query-Intent": "query"},
         )
 
 
@@ -229,16 +309,91 @@ def validate_user_identity(client: GatewayClient, tenant_id: int) -> dict[str, o
     }
 
 
-def assert_no_existing_service(client: GatewayClient) -> None:
-    query = urllib.parse.urlencode({"search": SERVICE_NAME, "page": 1, "limit": 100})
-    result = _object(client.request("GET", f"/api/v1/service/query?{query}", (200,)).payload, "Query Service list")
-    matches = [
-        item
-        for item in _array(result.get("data"), "Query Service list data")
-        if isinstance(item, dict) and item.get("service_name") == SERVICE_NAME
-    ]
-    if matches:
-        raise SuiteError(f"stale Query Service {SERVICE_NAME} exists before the run")
+def validate_api_consumer_admin_identity(client: GatewayClient, tenant_id: int) -> dict[str, object]:
+    context = _object(
+        client.request("GET", "/api/v1/system/auth/context", (200,)).payload,
+        "Tenant Administrator AuthContext",
+    )
+    principal = _object(context.get("principal"), "Tenant Administrator principal")
+    tenant = _object(context.get("context"), "Tenant Administrator context")
+    token = _object(context.get("token"), "Tenant Administrator token")
+    authorization = _object(context.get("authorization"), "Tenant Administrator authorization")
+    if principal.get("type") != "user":
+        raise SuiteError("API consumer administrator token must belong to a User")
+    principal_id = positive_int(principal.get("id"), "Tenant Administrator principal.id")
+    if tenant.get("type") != "tenant" or tenant.get("tenant_id") != str(tenant_id):
+        raise SuiteError("API consumer administrator token must use the configured Tenant Context")
+    if token.get("type") not in {"first_party_access_token", "oauth_access_token"}:
+        raise SuiteError("API consumer administrator token must be a User Access Token")
+    assignments = _array(authorization.get("role_assignments"), "Tenant Administrator role_assignments")
+    roles: set[str] = set()
+    permissions: set[str] = set()
+    for assignment in assignments:
+        item = _object(assignment, "Tenant Administrator role assignment")
+        role = item.get("role_key")
+        granted = item.get("permissions")
+        if not isinstance(role, str) or not isinstance(granted, list) or not all(isinstance(key, str) for key in granted):
+            raise SuiteError("Tenant Administrator role assignment is incomplete")
+        roles.add(role)
+        permissions.update(granted)
+    if "tenant.administrator" not in roles:
+        raise SuiteError("API consumer administrator token must have the tenant.administrator role")
+    forbidden = roles & {"platform.audit_administrator", "platform.security_administrator", "platform.system_administrator"}
+    if forbidden:
+        raise SuiteError("API consumer administrator token must not use platform administrator roles: " + ", ".join(sorted(forbidden)))
+    missing = API_CONSUMER_ADMIN_PERMISSIONS - permissions
+    if missing:
+        raise SuiteError("API consumer administrator token is missing required permissions: " + ", ".join(sorted(missing)))
+    return {
+        "principal_id": str(principal_id),
+        "principal_type": "user",
+        "tenant_id": str(tenant_id),
+        "roles": sorted(roles),
+        "permissions_verified": sorted(API_CONSUMER_ADMIN_PERMISSIONS),
+    }
+
+
+def assert_no_existing_services(client: GatewayClient) -> None:
+    for service_name in (SERVICE_NAME, DENIED_SERVICE_NAME):
+        query = urllib.parse.urlencode({"search": service_name, "page": 1, "limit": 100})
+        result = _object(
+            client.request("GET", f"/api/v1/service/query?{query}", (200,)).payload,
+            "Query Service list",
+        )
+        matches = [
+            item
+            for item in _array(result.get("data"), "Query Service list data")
+            if isinstance(item, dict) and item.get("service_name") == service_name
+        ]
+        if matches:
+            raise SuiteError(f"stale Query Service {service_name} exists before the run")
+
+
+def query_service_payload(
+    service_name: str,
+    title: str,
+    description: str,
+    engine_id: int,
+    contract: dict[str, object],
+) -> dict[str, object]:
+    return {
+        "service_name": service_name,
+        "title": title,
+        "description": description,
+        "keywords": ["commerce", "mysql", "workbench-online"],
+        "config_type": "sql",
+        "engine_id": engine_id,
+        "sql_query": SQL,
+        "data_config": {
+            "stable_key": ["order_no"],
+            "default_fields": FIELDS,
+            "filterable_fields": FILTERABLE_FIELDS,
+        },
+        "output_contract": contract,
+        "protocols": {"rest_api": {"enabled": True, "formats": ["json", "csv"]}},
+        "public_access": False,
+        "max_features": 100,
+    }
 
 
 def validate_output_contract(contract: dict[str, object], *, published: bool) -> None:
@@ -420,6 +575,40 @@ def query_body(limit: int, cursor: str = "", format_name: str = "json") -> dict[
     }
 
 
+def require_error_code(response: Response, expected: str, resource: str) -> None:
+    payload = _object(response.payload, resource)
+    if payload.get("error_code") != expected:
+        raise SuiteError(f"{resource} must return error_code={expected}")
+
+
+def wait_for_revoked_api_consumer_credential(
+    client: APIConsumerClient,
+    *,
+    timeout_seconds: float = API_CONSUMER_REVOCATION_TIMEOUT_SECONDS,
+) -> None:
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        response = client.query(SERVICE_NAME, query_body(1), (200, 401))
+        if response.status == 401:
+            require_error_code(response, "api_consumer_credential_invalid", "revoked API consumer credential")
+            return
+        if time.monotonic() >= deadline:
+            raise SuiteError(
+                "deleted API consumer credential remained valid beyond "
+                f"{timeout_seconds:g} seconds"
+            )
+        time.sleep(1)
+
+
+def delete_api_consumer(client: GatewayClient, api_consumer_id: int) -> None:
+    path = f"/api/v1/system/tenant/api-consumers/{api_consumer_id}"
+    current = client.request("GET", path, (200, 404))
+    if current.status == 200:
+        client.request("DELETE", path, (204,))
+    if client.request("GET", path, (404,)).status != 404:
+        raise SuiteError("deleted API consumer remained readable")
+
+
 def validate_rows(rows: list[object]) -> list[str]:
     order_numbers: list[str] = []
     for raw in rows:
@@ -483,18 +672,31 @@ def validate_csv_export(client: GatewayClient) -> dict[str, object]:
 
 def run_suite(
     client: GatewayClient,
+    admin_client: GatewayClient,
     tenant_id: int,
     engine_id: int,
     run_id: str,
     browser_runner: Callable[[int, str, str], dict[str, object]] | None = None,
+    api_consumer_client_factory: Callable[[str], APIConsumerClient] | None = None,
 ) -> dict[str, object]:
     service_id: int | None = None
+    service_ids: list[int] = []
     application_id: str | None = None
+    api_consumer_id: int | None = None
+    api_consumer_credential_created = False
+    api_consumer_client: APIConsumerClient | None = None
     created = 0
     deleted = 0
     cleanup_errors: list[str] = []
     identity = validate_user_identity(client, tenant_id)
-    assert_no_existing_service(client)
+    api_consumer_admin_identity = validate_api_consumer_admin_identity(admin_client, tenant_id)
+    assert_no_existing_services(client)
+    if api_consumer_client_factory is None:
+        api_consumer_client_factory = lambda credential: APIConsumerClient(
+            client.base_url,
+            credential,
+            client.timeout,
+        )
     try:
         detected_contract = _object(
             client.request(
@@ -507,36 +709,36 @@ def run_suite(
         )
         validate_output_contract(detected_contract, published=False)
         contract = published_output_contract(detected_contract)
-        service = _object(
-            client.request(
-                "POST",
-                "/api/v1/service/query",
-                (201,),
-                {
-                    "service_name": SERVICE_NAME,
-                    "title": "Commerce order analysis",
-                    "description": "PII-safe read-only order analysis over Business MySQL",
-                    "keywords": ["commerce", "mysql", "workbench-online"],
-                    "config_type": "sql",
-                    "engine_id": engine_id,
-                    "sql_query": SQL,
-                    "data_config": {
-                        "stable_key": ["order_no"],
-                        "default_fields": FIELDS,
-                        "filterable_fields": FILTERABLE_FIELDS,
-                    },
-                    "output_contract": contract,
-                    "protocols": {"rest_api": {"enabled": True, "formats": ["json", "csv"]}},
-                    "public_access": False,
-                    "max_features": 100,
-                },
-            ).payload,
-            "created Query Service",
-        )
-        service_id = positive_int(service.get("id"), "Query Service id")
-        if service.get("tenant_id") != tenant_id or service.get("service_name") != SERVICE_NAME:
-            raise SuiteError("created Query Service identity is invalid")
-        created += 1
+        for service_name, title, description in (
+            (
+                SERVICE_NAME,
+                "Commerce order analysis",
+                "PII-safe read-only order analysis over Business MySQL",
+            ),
+            (
+                DENIED_SERVICE_NAME,
+                "Commerce order analysis denied fixture",
+                "Same-Tenant Query Service intentionally omitted from the API consumer grant",
+            ),
+        ):
+            service = _object(
+                client.request(
+                    "POST",
+                    "/api/v1/service/query",
+                    (201,),
+                    query_service_payload(service_name, title, description, engine_id, contract),
+                ).payload,
+                f"created Query Service {service_name}",
+            )
+            current_service_id = positive_int(service.get("id"), f"Query Service {service_name} id")
+            service_ids.append(current_service_id)
+            created += 1
+            if service.get("tenant_id") != tenant_id or service.get("service_name") != service_name:
+                raise SuiteError(f"created Query Service {service_name} identity is invalid")
+            if service_name == SERVICE_NAME:
+                service_id = current_service_id
+        if service_id is None:
+            raise SuiteError("primary Query Service was not created")
         descriptor_path = f"/api/v1/service/consumer/services/query/{service_id}"
         descriptor = _object(client.request("GET", descriptor_path, (200,)).payload, "Consumer Descriptor")
         original_fingerprint = validate_descriptor(descriptor, service_id)
@@ -554,6 +756,7 @@ def run_suite(
         if not isinstance(application_id_value, str) or not application_id_value:
             raise SuiteError("created Workbench Data Application id is missing")
         application_id = application_id_value
+        created += 1
         snapshot = _object(application.get("snapshot"), "created Workbench Data Application snapshot")
         components = _array(snapshot.get("components"), "created Workbench Data Application components")
         if application.get("tenant_id") != tenant_id or len(components) != 2 or any(
@@ -561,10 +764,80 @@ def run_suite(
             for item in components
         ):
             raise SuiteError("Workbench Data Application did not bind the current Tenant and authoritative contract fingerprint")
-        created += 1
 
         cursor_evidence = validate_json_pages(client)
         csv_evidence = validate_csv_export(client)
+
+        api_consumer = _object(
+            admin_client.request(
+                "POST",
+                "/api/v1/system/tenant/api-consumers",
+                (201,),
+                {
+                    "name": f"Workbench Online API consumer {run_id}",
+                    "description": "Temporary API consumer for the Workbench Service Online acceptance suite",
+                    "service_grants": [{"service_type": "query", "service_id": service_id}],
+                    "rate_limit_per_minute": 60,
+                },
+            ).payload,
+            "created API consumer",
+        )
+        api_consumer_id = positive_int(api_consumer.get("id"), "API consumer id")
+        created += 1
+        grants = _array(api_consumer.get("service_grants"), "created API consumer service_grants")
+        grant_refs = {
+            (item.get("service_type"), item.get("service_id"))
+            for item in grants
+            if isinstance(item, dict)
+        }
+        if api_consumer.get("tenant_id") != tenant_id or grant_refs != {("query", service_id)}:
+            raise SuiteError("created API consumer did not preserve the exact Query Service grant")
+
+        credential_record = _object(
+            admin_client.request(
+                "POST",
+                f"/api/v1/system/tenant/api-consumers/{api_consumer_id}/credentials",
+                (201,),
+                {"name": f"workbench-online-{run_id}"},
+            ).payload,
+            "created API consumer credential",
+        )
+        positive_int(credential_record.get("id"), "API consumer credential id")
+        api_consumer_credential_created = True
+        created += 1
+        plain_text_credential = credential_record.get("plain_text_credential")
+        if not isinstance(plain_text_credential, str) or not plain_text_credential.startswith("addp_api_"):
+            raise SuiteError("created API consumer credential is missing its one-time API Key")
+        api_consumer_client = api_consumer_client_factory(plain_text_credential)
+        del plain_text_credential
+        del credential_record
+
+        allowed = api_consumer_client.query(SERVICE_NAME, query_body(1), (200,))
+        denied = api_consumer_client.query(DENIED_SERVICE_NAME, query_body(1), (403,))
+        require_error_code(denied, "api_consumer_service_denied", "ungranted Query Service")
+        control_plane = api_consumer_client.request(
+            "GET",
+            "/api/v1/system/tenant/api-consumers",
+            (401,),
+        )
+        require_error_code(
+            control_plane,
+            "api_consumer_control_plane_denied",
+            "API consumer control-plane request",
+        )
+        delete_api_consumer(admin_client, api_consumer_id)
+        api_consumer_id = None
+        deleted += 1
+        wait_for_revoked_api_consumer_credential(api_consumer_client)
+        api_consumer_credential_created = False
+        deleted += 1
+        api_consumer_evidence = {
+            "allowed_status": allowed.status,
+            "ungranted_error_code": "api_consumer_service_denied",
+            "control_plane_error_code": "api_consumer_control_plane_denied",
+            "revoked_credential_error_code": "api_consumer_credential_invalid",
+            "credential_exposed_in_report": False,
+        }
 
         browser_evidence: dict[str, object] = {}
         if browser_runner is not None:
@@ -590,11 +863,13 @@ def run_suite(
             raise SuiteError("Workbench Data Application fingerprints changed without an explicit draft update")
 
         return {
-            "schema_version": "addp.workbench-service-consumption-online/v1",
+            "schema_version": "addp.workbench-service-consumption-online/v2",
             "service_name": SERVICE_NAME,
             "source_engine": "mysql",
-            "route": ["service", "workbench"],
+            "route": ["system", "gateway", "service", "workbench"],
             "identity": identity,
+            "api_consumer_administrator_identity": api_consumer_admin_identity,
+            "api_consumer": api_consumer_evidence,
             "cursor": cursor_evidence,
             "export": csv_evidence,
             "browser": browser_evidence,
@@ -605,6 +880,20 @@ def run_suite(
             "residual_resources": 0,
         }
     finally:
+        if api_consumer_id is not None:
+            try:
+                delete_api_consumer(admin_client, api_consumer_id)
+                deleted += 1
+                api_consumer_id = None
+            except SuiteError as error:
+                cleanup_errors.append(f"API consumer: {error}")
+        if api_consumer_credential_created and api_consumer_client is not None:
+            try:
+                wait_for_revoked_api_consumer_credential(api_consumer_client)
+                deleted += 1
+                api_consumer_credential_created = False
+            except SuiteError as error:
+                cleanup_errors.append(f"API consumer credential: {error}")
         if application_id is not None:
             try:
                 current = client.request("GET", f"/api/v1/workbench/data_applications/{application_id}", (200, 404))
@@ -632,13 +921,13 @@ def run_suite(
                     deleted += 1
             except SuiteError as error:
                 cleanup_errors.append(f"Workbench Data Application: {error}")
-        if service_id is not None:
+        for current_service_id in reversed(service_ids):
             try:
-                client.request("DELETE", f"/api/v1/service/query/{service_id}", (200, 404))
-                if client.request("GET", f"/api/v1/service/query/{service_id}", (404,)).status == 404:
+                client.request("DELETE", f"/api/v1/service/query/{current_service_id}", (200, 404))
+                if client.request("GET", f"/api/v1/service/query/{current_service_id}", (404,)).status == 404:
                     deleted += 1
             except SuiteError as error:
-                cleanup_errors.append(f"Query Service: {error}")
+                cleanup_errors.append(f"Query Service {current_service_id}: {error}")
         if cleanup_errors:
             raise SuiteError("cleanup failed: " + "; ".join(cleanup_errors))
         if deleted != created:
@@ -746,6 +1035,11 @@ def main() -> int:
             required_environment("ADDP_ONLINE_TEST_USER_ACCESS_TOKEN"),
             timeout,
         )
+        admin_client = GatewayClient(
+            required_environment("GATEWAY_URL"),
+            required_environment("ADDP_ONLINE_TEST_TENANT_ADMIN_ACCESS_TOKEN"),
+            timeout,
+        )
         required_environment("CONSOLE_URL")
         required_environment("ADDP_ONLINE_TEST_USER_USERNAME")
         required_environment("ADDP_ONLINE_TEST_USER_PASSWORD")
@@ -754,6 +1048,7 @@ def main() -> int:
         repository = Path(environment.get("ADDP_ONLINE_REPOSITORY", Path(__file__).parents[2])).resolve()
         report = run_suite(
             client,
+            admin_client,
             tenant_id,
             engine_id,
             required_environment("ADDP_ONLINE_TEST_RUN_ID"),

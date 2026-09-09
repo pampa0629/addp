@@ -2513,7 +2513,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "按 scope 分页返回未过期待审批申请或审批记录，并支持按处理结果、申请人、资源或字段及申请时间筛选；本人申请可见但不能自审 | Return paginated unexpired pending requests or review history by scope, with optional outcome, requester, resource or field, and request-time filters; self-submitted requests remain visible but cannot be self-approved",
+                "description": "按 scope 分页返回未过期待审批申请或审批记录，并支持按处理结果、当前授权状态、申请人、资源或字段及申请时间筛选；本人申请可见但不能自审 | Return paginated unexpired pending requests or review history by scope, with optional outcome, current grant state, requester, resource or field, and request-time filters; self-submitted requests remain visible but cannot be self-approved",
                 "produces": [
                     "application/json"
                 ],
@@ -2542,6 +2542,18 @@ const docTemplate = `{
                         "type": "string",
                         "description": "审批记录处理结果 approved|rejected|expired，仅 history 可用 | Review history outcome approved|rejected|expired, history only",
                         "name": "state",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "active",
+                            "expired",
+                            "revoked",
+                            "superseded"
+                        ],
+                        "type": "string",
+                        "description": "当前授权状态 active|expired|revoked|superseded，仅 history 可用 | Current grant state active|expired|revoked|superseded, history only",
+                        "name": "authorization_state",
                         "in": "query"
                     },
                     {
