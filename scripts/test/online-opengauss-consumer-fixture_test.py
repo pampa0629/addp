@@ -103,6 +103,13 @@ class OnlineOpenGaussConsumerFixtureTest(unittest.TestCase):
             """,
         )
         self._executable(
+            "sleep",
+            """
+            #!/usr/bin/env bash
+            printf 'sleep %s\n' "$*" >> "$ADDP_TEST_DOCKER_LOG"
+            """,
+        )
+        self._executable(
             "docker",
             """
             #!/usr/bin/env bash
@@ -138,6 +145,19 @@ class OnlineOpenGaussConsumerFixtureTest(unittest.TestCase):
                   exec)
                     input=$(cat)
                     [ -z "$input" ] || printf 'stdin:%s\n' "$input" >> "$ADDP_TEST_DOCKER_LOG"
+                    if [[ "$*" == *"cat /proc/1/comm"* ]]; then
+                      readiness_state=$ADDP_TEST_STATE/readiness-state
+                      readiness_attempt=0
+                      [ ! -f "$readiness_state" ] || readiness_attempt=$(cat "$readiness_state")
+                      readiness_attempt=$((readiness_attempt + 1))
+                      printf '%s\n' "$readiness_attempt" > "$readiness_state"
+                      if [ "${ADDP_TEST_BOOTSTRAP_TRANSITION:-0}" = "1" ] && [ "$readiness_attempt" = "1" ]; then
+                        printf '%s\n' bash
+                      else
+                        printf '%s\n' gaussdb
+                      fi
+                      exit
+                    fi
                     case "$* $input" in
                       *"updated_at >"*) printf '%s\n' 2 ;;
                       *"COUNT"*addp_online_consumer_source*) printf '%s\n' 5 ;;
@@ -208,6 +228,17 @@ class OnlineOpenGaussConsumerFixtureTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("restricted to GitHub Actions", result.stderr)
         self.assertFalse(self.log.exists())
+
+    def test_waits_for_final_gaussdb_process_before_sql_readiness(self) -> None:
+        started = self.run_fixture(
+            "start", ADDP_TEST_BOOTSTRAP_TRANSITION="1"
+        )
+
+        self.assertEqual(started.returncode, 0, started.stderr)
+        commands = self.log.read_text(encoding="utf-8")
+        self.assertGreaterEqual(commands.count("cat /proc/1/comm"), 2)
+        self.assertEqual(commands.count("SELECT 1"), 1)
+        self.assertIn("sleep 5", commands)
 
     def test_rejects_engine_descriptor_inside_repository(self) -> None:
         result = self.run_fixture(

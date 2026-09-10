@@ -115,7 +115,7 @@ unset GS_PASSWORD
 
 ready=false
 for _ in $(seq 1 120); do
-    if opengauss_gsql -At -d postgres -p 5432 -c 'SELECT 1' 2>/dev/null | grep -Fxq '1'; then
+    if opengauss_official_container_ready "$CONTAINER_NAME" opengauss_gsql; then
         ready=true
         break
     fi

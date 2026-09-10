@@ -198,7 +198,7 @@ case "$action" in
       "$OPENGAUSS_OFFICIAL_IMAGE" >/dev/null
     unset GS_PASSWORD
     for _ in $(seq 1 120); do
-      if container_running && opengauss_gsql -At -d postgres -p 5432 -c 'SELECT 1' 2>/dev/null | grep -Fxq '1'; then
+      if container_running && opengauss_official_container_ready "$CONTAINER_NAME" opengauss_gsql; then
         opengauss_gsql -d postgres -p 5432 -c "CREATE DATABASE $DATABASE_NAME DBCOMPATIBILITY 'PG'" >/dev/null
         reset_fixture
         write_engine_descriptor

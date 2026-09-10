@@ -87,6 +87,13 @@ class OpenGaussOfficialMediaReleaseGateTest(unittest.TestCase):
             """,
         )
         self._write_executable(
+            "sleep",
+            """
+            #!/usr/bin/env bash
+            printf 'sleep %s\n' "$*" >> "$FAKE_COMMAND_LOG"
+            """,
+        )
+        self._write_executable(
             "go",
             """
             #!/usr/bin/env bash
@@ -136,6 +143,19 @@ class OpenGaussOfficialMediaReleaseGateTest(unittest.TestCase):
                 exit
             fi
             if [ "$1" = "exec" ]; then
+                if [[ "$*" == *"cat /proc/1/comm"* ]]; then
+                    readiness_state=$FAKE_STATE/readiness-state
+                    readiness_attempt=0
+                    [ ! -f "$readiness_state" ] || readiness_attempt=$(cat "$readiness_state")
+                    readiness_attempt=$((readiness_attempt + 1))
+                    printf '%s\n' "$readiness_attempt" > "$readiness_state"
+                    if [ "${FAKE_BOOTSTRAP_TRANSITION:-0}" = "1" ] && [ "$readiness_attempt" = "1" ]; then
+                        printf '%s\n' bash
+                    else
+                        printf '%s\n' gaussdb
+                    fi
+                    exit
+                fi
                 case "$*" in
                     *"SELECT 1"*) printf '%s\n' 1 ;;
                 esac
@@ -230,6 +250,15 @@ class OpenGaussOfficialMediaReleaseGateTest(unittest.TestCase):
         self.assertNotEqual(0, result.returncode)
         self.assertIn("requires Linux x86_64", result.stderr)
         self.assertFalse(self.command_log.exists())
+
+    def test_waits_for_final_gaussdb_process_before_sql_readiness(self) -> None:
+        result = self._run(FAKE_BOOTSTRAP_TRANSITION="1")
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        commands = self.command_log.read_text(encoding="utf-8")
+        self.assertGreaterEqual(commands.count("cat /proc/1/comm"), 2)
+        self.assertEqual(commands.count("SELECT 1"), 1)
+        self.assertIn("sleep 5", commands)
 
     def test_refuses_to_replace_existing_image(self) -> None:
         result = self._run(FAKE_PREEXIST_IMAGE="1")

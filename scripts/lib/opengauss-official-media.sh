@@ -4,6 +4,18 @@
 OPENGAUSS_OFFICIAL_VERSION=6.0.6
 OPENGAUSS_OFFICIAL_IMAGE=opengauss:6.0.6
 
+opengauss_official_container_ready() {
+    local container_name=$1
+    local gsql_function=$2
+    local pid1_command
+
+    # The official entrypoint first exposes a temporary initialization server,
+    # stops it, and only then replaces PID 1 with the final gaussdb process.
+    pid1_command=$(docker exec "$container_name" cat /proc/1/comm 2>/dev/null | tr -d '\r\n') || return 1
+    [ "$pid1_command" = "gaussdb" ] || return 1
+    "$gsql_function" -At -d postgres -p 5432 -c 'SELECT 1' 2>/dev/null | grep -Fxq '1'
+}
+
 opengauss_select_official_media() {
     local machine_arch=${1:-$(uname -m)}
     case "$machine_arch" in
