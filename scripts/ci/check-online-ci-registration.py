@@ -14,7 +14,7 @@ class RegistrationError(RuntimeError):
     pass
 
 
-def load_registered_suites(repository: Path) -> set[str]:
+def load_suite_registry(repository: Path) -> dict[str, object]:
     path = repository / "scripts/test/online-gate.py"
     spec = importlib.util.spec_from_file_location("addp_online_gate_registration", path)
     if spec is None or spec.loader is None:
@@ -22,7 +22,24 @@ def load_registered_suites(repository: Path) -> set[str]:
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
-    return set(module.SUITES)
+    return dict(module.SUITES)
+
+
+def load_registered_suites(registry: dict[str, object]) -> set[str]:
+    return set(registry)
+
+
+def load_nightly_suites(registry: dict[str, object]) -> set[str]:
+    nightly: set[str] = set()
+    for name, suite in registry.items():
+        enabled = getattr(suite, "nightly", False)
+        if not isinstance(enabled, bool):
+            raise RegistrationError(
+                f"Online suite {name} nightly registration must be boolean"
+            )
+        if enabled:
+            nightly.add(name)
+    return nightly
 
 
 def load_deployment_profiles(repository: Path) -> dict[str, str]:
@@ -841,7 +858,9 @@ def validate_transfer_insert_only_mysql_profile(
             )
 
 
-def load_workflow_suites(repository: Path) -> set[str]:
+def load_workflow_suites(
+    repository: Path, nightly_suites: set[str]
+) -> set[str]:
     path = repository / ".github/workflows/online-t4-gates.yml"
     if not path.is_file():
         raise RegistrationError(f"{path.relative_to(repository)} is missing")
@@ -896,8 +915,60 @@ def load_workflow_suites(repository: Path) -> set[str]:
             "Online T4 workflow must configure the Runner temp artifact directory "
             "on both lifecycle steps for every Runner profile"
         )
-    if re.search(r"(?m)^  schedule:\s*$", text):
-        raise RegistrationError("Online T4 workflow must remain manual until the first real run passes")
+    has_schedule = re.search(r"(?m)^  schedule:\s*$", text) is not None
+    if has_schedule and not nightly_suites:
+        raise RegistrationError(
+            "Online T4 workflow must remain manual until the first real run passes"
+        )
+    if nightly_suites and not has_schedule:
+        raise RegistrationError(
+            "Online nightly suite registration requires a workflow schedule"
+        )
+    if has_schedule:
+        cron_values = re.findall(
+            r"(?m)^    - cron: [\"']([^\"']+)[\"']$", text
+        )
+        if len(cron_values) != 1 or re.fullmatch(
+            r"(?:[0-5]?\d) (?:[01]?\d|2[0-3]) \* \* \*", cron_values[0]
+        ) is None:
+            raise RegistrationError(
+                "Online T4 nightly schedule must contain exactly one daily UTC cron"
+            )
+        jobs_text = text.split("\njobs:\n", 1)
+        if len(jobs_text) != 2:
+            raise RegistrationError("Online T4 workflow jobs are missing")
+        job_blocks = re.findall(
+            r"(?ms)^  ([a-z][a-z0-9-]*):\n(.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)",
+            jobs_text[1],
+        )
+        scheduled_workflow_suites: set[str] = set()
+        for job_name, body in job_blocks:
+            if "github.event_name == 'schedule'" in body:
+                suite = re.search(
+                    r"(?m)^      ONLINE_SUITE_INPUT: ([a-z][a-z0-9-]*)$", body
+                )
+                if suite is None:
+                    raise RegistrationError(
+                        f"scheduled Online T4 job {job_name} must set a fixed "
+                        "ONLINE_SUITE_INPUT"
+                    )
+                suite_name = suite.group(1)
+                if f"group: online-t4-{suite_name}" not in body:
+                    raise RegistrationError(
+                        f"scheduled Online T4 job {job_name} must use its fixed "
+                        "suite concurrency group"
+                    )
+                scheduled_workflow_suites.add(suite_name)
+            elif "github.event_name == 'workflow_dispatch'" not in body:
+                raise RegistrationError(
+                    f"Online T4 job {job_name} must explicitly exclude schedule events"
+                )
+        if scheduled_workflow_suites != nightly_suites:
+            raise RegistrationError(
+                "Online workflow nightly suites "
+                f"{sorted(scheduled_workflow_suites)} do not match registered nightly "
+                f"suites {sorted(nightly_suites)}"
+            )
     options = re.search(
         r"(?m)^        options:\n(?P<body>(?:          - [a-z][a-z0-9-]*\n)+)",
         text,
@@ -908,9 +979,11 @@ def load_workflow_suites(repository: Path) -> set[str]:
 
 
 def check_registration(repository: Path) -> None:
-    registered = load_registered_suites(repository)
+    registry = load_suite_registry(repository)
+    registered = load_registered_suites(registry)
+    nightly = load_nightly_suites(registry)
     profiles = load_deployment_profiles(repository)
-    workflow = load_workflow_suites(repository)
+    workflow = load_workflow_suites(repository, nightly)
     if set(profiles) != registered:
         raise RegistrationError(
             f"Online deployment profiles {sorted(profiles)} do not match registered suites {sorted(registered)}"

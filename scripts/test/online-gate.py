@@ -39,6 +39,7 @@ class OnlineStageError(OnlineGateError):
 class Suite:
     command: tuple[str, ...]
     services: tuple[tuple[str, str], ...]
+    nightly: bool = False
 
 
 # Only executable owner-maintained Online suites belong here. Do not register
@@ -80,6 +81,7 @@ SUITES: Mapping[str, Suite] = {
             ("develop", "DEVELOP_URL"),
             ("service", "SERVICE_URL"),
         ),
+        nightly=True,
     ),
     "manager-internal-artifact-lineage": Suite(
         command=(sys.executable, "scripts/test/manager-internal-artifact-lineage-online.py"),

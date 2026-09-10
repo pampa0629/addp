@@ -121,6 +121,8 @@ class OnlineGateTest(unittest.TestCase):
         opengauss_suite = ONLINE_GATE.SUITES["opengauss-consumer-flow"]
         self.assertEqual(opengauss_suite.command, oceanbase_suite.command)
         self.assertEqual(opengauss_suite.services, oceanbase_suite.services)
+        self.assertTrue(opengauss_suite.nightly)
+        self.assertFalse(oceanbase_suite.nightly)
         transfer_suite = ONLINE_GATE.SUITES["transfer-insert-only-mysql"]
         self.assertEqual(
             transfer_suite.services,

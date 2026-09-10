@@ -153,6 +153,70 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         with self.assertRaisesRegex(CHECK.RegistrationError, "must remain manual"):
             CHECK.check_registration(self.repository)
 
+    def test_rejects_graduated_nightly_suite_without_workflow_schedule(self) -> None:
+        gate = self.repository / "scripts/test/online-gate.py"
+        gate.write_text(
+            gate.read_text(encoding="utf-8")
+            .replace(
+                "    services: tuple[tuple[str, str], ...]\n",
+                "    services: tuple[tuple[str, str], ...]\n"
+                "    nightly: bool = False\n",
+            )
+            .replace(
+                '"second-suite": Suite(("second",), (("gateway", "GATEWAY_URL"),)),',
+                '"second-suite": Suite('
+                '("second",), (("gateway", "GATEWAY_URL"),), nightly=True),',
+            ),
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(CHECK.RegistrationError, "nightly suite"):
+            CHECK.check_registration(self.repository)
+
+    def test_rejects_nightly_job_without_fixed_suite_concurrency(self) -> None:
+        gate = self.repository / "scripts/test/online-gate.py"
+        gate.write_text(
+            gate.read_text(encoding="utf-8")
+            .replace(
+                "    services: tuple[tuple[str, str], ...]\n",
+                "    services: tuple[tuple[str, str], ...]\n"
+                "    nightly: bool = False\n",
+            )
+            .replace(
+                '"second-suite": Suite(("second",), (("gateway", "GATEWAY_URL"),)),',
+                '"second-suite": Suite('
+                '("second",), (("gateway", "GATEWAY_URL"),), nightly=True),',
+            ),
+            encoding="utf-8",
+        )
+        self.workflow.write_text(
+            self._workflow()
+            .replace(
+                "  workflow_dispatch:\n",
+                "  schedule:\n    - cron: '0 1 * * *'\n  workflow_dispatch:\n",
+            )
+            .replace(
+                "  online:\n",
+                "  online:\n"
+                "    if: github.event_name == 'schedule'\n"
+                "    env:\n"
+                "      ONLINE_SUITE_INPUT: second-suite\n",
+            ),
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(CHECK.RegistrationError, "concurrency group"):
+            CHECK.check_registration(self.repository)
+
+    def test_repository_schedules_only_graduated_opengauss_profile(self) -> None:
+        repository = SCRIPT.parents[2]
+
+        registry = CHECK.load_suite_registry(repository)
+        nightly = CHECK.load_nightly_suites(registry)
+
+        self.assertEqual(nightly, {"opengauss-consumer-flow"})
+        CHECK.check_registration(repository)
+
     def test_rejects_workflow_without_readiness_check(self) -> None:
         self.workflow.write_text(
             self._workflow().replace(
