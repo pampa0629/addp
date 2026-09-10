@@ -16,7 +16,6 @@ import (
 	"github.com/addp/service/internal/models"
 	svc "github.com/addp/service/internal/service"
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 // QueryServiceHandler 处理查询服务相关的 HTTP 请求
@@ -80,7 +79,7 @@ func (h *QueryServiceHandler) CreateService(c *gin.Context) {
 	result, err := h.svc.CreateService(c.Request.Context(), &req, tenantID, userID)
 	if err != nil {
 		// 区分不同的错误类型
-		if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, commonapi.ErrNotFound) {
+		if errors.Is(err, commonapi.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		} else {
 			// 验证错误和业务错误都返回 400
@@ -179,7 +178,7 @@ func (h *QueryServiceHandler) GetService(c *gin.Context) {
 
 	result, err := h.svc.GetService(uint(id))
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, commonapi.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Service not found"})
 		} else {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get service: " + err.Error()})
@@ -220,7 +219,7 @@ func (h *QueryServiceHandler) UpdateService(c *gin.Context) {
 
 	result, err := h.svc.UpdateService(uint(id), &req)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, commonapi.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Service not found"})
 		} else {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -252,7 +251,7 @@ func (h *QueryServiceHandler) DeleteService(c *gin.Context) {
 	}
 
 	if err := h.svc.DeleteService(uint(id)); err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, commonapi.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Service not found"})
 		} else {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete service: " + err.Error()})
@@ -286,7 +285,7 @@ func (h *QueryServiceHandler) CheckSourceSnapshot(c *gin.Context) {
 	result, err := h.svc.CheckSourceSnapshot(uint(id), tenantIDValue(c))
 	if err != nil {
 		status := http.StatusInternalServerError
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, commonapi.ErrNotFound) {
 			status = http.StatusNotFound
 		}
 		c.JSON(status, gin.H{"error": commoni18n.TWithDetail(c, servicei18n.MsgSnapshotCheckFailed, err.Error())})
@@ -318,7 +317,7 @@ func (h *QueryServiceHandler) RefreshSourceSnapshot(c *gin.Context) {
 	result, err := h.svc.RefreshSourceSnapshot(uint(id), tenantIDValue(c))
 	if err != nil {
 		status := http.StatusBadRequest
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, commonapi.ErrNotFound) {
 			status = http.StatusNotFound
 		}
 		c.JSON(status, gin.H{"error": commoni18n.TWithDetail(c, servicei18n.MsgSnapshotRefreshFailed, err.Error())})
@@ -355,7 +354,7 @@ func (h *QueryServiceHandler) QueryData(c *gin.Context) {
 	// 先通过服务名称查找服务(不过滤租户),然后检查权限
 	service, err := h.svc.GetServiceModelByNameOnly(serviceName)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, commonapi.ErrNotFound) {
+		if errors.Is(err, commonapi.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, servicei18n.MsgServiceNotFound), "error_code": "service_not_found"})
 		} else {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": commoni18n.T(c, servicei18n.MsgServiceLookupFailed), "error_code": "service_lookup_failed"})
