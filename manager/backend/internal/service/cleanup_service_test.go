@@ -292,6 +292,13 @@ func TestManagerCleanupFindsAndPhysicallyDeletesPreviouslyDisabledUnknownEngineT
 	if err != nil || logical.DisabledTaskDefinitions != 1 {
 		t.Fatalf("logical cleanup = %#v, error = %v", logical, err)
 	}
+	var marked models.TaskDefinition
+	if err := db.Table("manager.task_definitions").Where("id = ?", 1).Take(&marked).Error; err != nil {
+		t.Fatalf("load logically cleaned task: %v", err)
+	}
+	if marked.Enabled || marked.BindingStatus != models.TaskBindingStatusMissing || marked.BindingIssue != models.TaskBindingIssueMissingEngine {
+		t.Fatalf("logically cleaned task = %#v", marked)
+	}
 	physical, err := svc.ExecuteCleanup(context.Background(), 1, events.CleanupModePhysical, nil)
 	if err != nil || physical.DeletedTaskDefinitions != 1 {
 		t.Fatalf("physical cleanup = %#v, error = %v", physical, err)

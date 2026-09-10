@@ -190,6 +190,33 @@ other = "该三维瓦片快显任务正在生成，不能重复执行"
 [manager.error.existing_result_action_required]
 other = "已有当前结果，本次执行必须明确选择覆盖已有结果"
 
+[manager.error.invalid_task_id]
+other = "无效的任务 ID"
+
+[manager.error.task_not_found]
+other = "任务不存在"
+
+[manager.error.task_version_conflict]
+other = "任务已被其他操作者更新，请刷新后重试"
+
+[manager.error.task_binding_still_active]
+other = "任务资源绑定仍然有效，无需重新绑定"
+
+[manager.error.task_rebind_invalid_request]
+other = "重新绑定必须提供当前任务版本和新的源资源"
+
+[manager.error.task_rebind_unsupported_type]
+other = "当前任务类型不支持源资源重新绑定"
+
+[manager.error.task_rebind_capability_mismatch]
+other = "所选资源不支持该任务的生成类型"
+
+[manager.error.task_rebind_unavailable]
+other = "任务重新绑定服务暂不可用"
+
+[manager.error.task_rebind_failed]
+other = "重新绑定任务源资源失败"
+
 [manager.error.data_profile_unsupported]
 other = "当前资源不支持数据剖析"
 

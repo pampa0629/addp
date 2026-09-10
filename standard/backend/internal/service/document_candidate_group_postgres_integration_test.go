@@ -66,6 +66,17 @@ func TestPostgresDocumentCandidateGroupsPreserveOccurrences(t *testing.T) {
 	if len(knownCandidates) != 1 || knownCandidates[0].Name != candidates[0].Name || knownCandidates[0].Definition != candidates[0].Definition {
 		t.Fatalf("known candidates=%+v", knownCandidates)
 	}
+	decision := models.DocumentCandidateFamilyDecision{
+		DocumentID: document.ID, CandidateType: "glossary", Code: code, WinnerCandidateID: candidates[0].ID, Reason: "定义更符合当前标准",
+		Members: []models.DocumentCandidateFamilyDecisionMemberSnapshot{
+			{CandidateID: candidates[0].ID, SemanticFingerprint: "exact", Name: candidates[0].Name, Version: 2, Status: models.CandidateGroupStateRetained},
+			{CandidateID: candidates[2].ID, SemanticFingerprint: "conflict", Name: candidates[2].Name, Version: 2, Status: models.CandidateGroupStateRejected},
+		},
+		CreatedBy: reviewer,
+	}
+	if err := db.Create(&decision).Error; err != nil {
+		t.Fatal(err)
+	}
 
 	svc := &DocumentService{repo: repo}
 	response, err := svc.ListCandidateFamilies(document.ID, tenantID, DocumentCandidateFamilyListOptions{Page: 1, PageSize: 1})
@@ -79,7 +90,7 @@ func TestPostgresDocumentCandidateGroupsPreserveOccurrences(t *testing.T) {
 		t.Fatalf("variant status counts=%+v", response.VariantStatusCounts)
 	}
 	family := response.Data[0]
-	if family.FamilyKey != "glossary:"+code || family.VariantCount != 2 || family.OccurrenceCount != 3 || len(family.Variants) != 2 {
+	if family.FamilyKey != "glossary:"+code || family.VariantCount != 2 || family.TotalVariantCount != 2 || family.OccurrenceCount != 3 || family.DecisionCount != 1 || len(family.Variants) != 2 {
 		t.Fatalf("family=%+v", family)
 	}
 	group := family.Variants[0]
@@ -93,6 +104,9 @@ func TestPostgresDocumentCandidateGroupsPreserveOccurrences(t *testing.T) {
 	filtered, err := svc.ListCandidateFamilies(document.ID, tenantID, DocumentCandidateFamilyListOptions{State: models.CandidateGroupStateRejected})
 	if err != nil || filtered.Total != 1 || filtered.VariantTotal != 1 || filtered.FamilyComparisonCounts.All != 1 || filtered.FamilyComparisonCounts.Exact != 0 || filtered.FamilyComparisonCounts.ContentConflict != 1 || len(filtered.Data) != 1 || len(filtered.Data[0].Variants) != 1 || filtered.Data[0].Variants[0].State != models.CandidateGroupStateRejected {
 		t.Fatalf("filtered=%+v err=%v", filtered, err)
+	}
+	if filtered.Data[0].TotalVariantCount != 2 {
+		t.Fatalf("filtered total_variant_count=%d, want 2", filtered.Data[0].TotalVariantCount)
 	}
 
 	exact, err := svc.ListCandidateFamilies(document.ID, tenantID, DocumentCandidateFamilyListOptions{ComparisonResult: models.CandidateComparisonExact, PageSize: 1})

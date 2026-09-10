@@ -305,6 +305,19 @@ definitions:
     - component_id
     - component_parameter_key
     type: object
+  github_com_addp_workbench_internal_models.DataApplicationParameterPreset:
+    properties:
+      key:
+        type: string
+      name:
+        type: string
+      parameter_values:
+        type: object
+    required:
+    - key
+    - name
+    - parameter_values
+    type: object
   github_com_addp_workbench_internal_models.DataApplicationResponse:
     properties:
       created_at:
@@ -384,6 +397,10 @@ definitions:
       parameter_bindings:
         items:
           $ref: '#/definitions/github_com_addp_workbench_internal_models.DataApplicationParameterBinding'
+        type: array
+      parameter_presets:
+        items:
+          $ref: '#/definitions/github_com_addp_workbench_internal_models.DataApplicationParameterPreset'
         type: array
       parameters:
         items:

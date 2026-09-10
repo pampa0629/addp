@@ -498,14 +498,13 @@ func (s *CleanupService) cleanupTaskDefinitions(ctx context.Context, tenantID ui
 			stats.DeletedTaskDefinitions++
 			continue
 		}
-		if !task.Enabled {
+		if err := s.taskDefinitionRepo.MarkBindingMissing(ctx, task, task.CleanupReason); err != nil {
+			stats.Errors = append(stats.Errors, fmt.Sprintf("mark %s task %d binding missing: %v", task.TaskType, task.ID, err))
 			continue
 		}
-		if err := s.taskDefinitionRepo.Disable(ctx, task, task.CleanupReason); err != nil {
-			stats.Errors = append(stats.Errors, fmt.Sprintf("disable %s task %d: %v", task.TaskType, task.ID, err))
-			continue
+		if task.Enabled {
+			stats.DisabledTaskDefinitions++
 		}
-		stats.DisabledTaskDefinitions++
 	}
 	return nil
 }
@@ -863,18 +862,18 @@ func (s *CleanupService) taskTargetMissingReason(
 		return ""
 	}
 	if engineID := uintFromCleanupContext(cleanupContext, "engine_id"); engineID > 0 && target.EngineID == engineID {
-		return "missing_engine"
+		return models.TaskBindingIssueMissingEngine
 	}
 	if validEngineIDs != nil && target.EngineID > 0 {
 		if _, exists := validEngineIDs[target.EngineID]; !exists {
-			return "missing_engine"
+			return models.TaskBindingIssueMissingEngine
 		}
 	}
 	if !target.VerifySource {
 		return ""
 	}
 	if !s.sourceExists(ctx, tenantID, target.Locator, target.ItemID) {
-		return "missing_source"
+		return models.TaskBindingIssueMissingSource
 	}
 	return ""
 }

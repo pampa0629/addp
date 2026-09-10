@@ -1,7 +1,30 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createLatestRequestCoordinator } from '../../../common-frontend/basic/src/utils/latestRequest.js'
+import { buildDataApplicationRuntimeRoute, dataApplicationDeliveryContext, dataApplicationDeliveryItems } from '../src/utils/dataApplicationDelivery.mjs'
 import { commitLatestDataApplicationRequest, dataApplicationDeletionContext, dataApplicationListPageContext } from '../src/utils/dataApplicationDraft.mjs'
+
+test('builds delivery entries only from the immutable published runtime snapshot', () => {
+  const runtime = {
+    revision_number: 6,
+    snapshot: {
+      parameter_presets: [
+        { key: 'changsha', name: '长沙场景' },
+        { key: 'zhuzhou', name: '株洲场景' },
+      ],
+    },
+  }
+
+  assert.equal(dataApplicationDeliveryContext(' application-a ', 6), 'delivery:application-a:6')
+  assert.deepEqual(dataApplicationDeliveryItems(runtime, '默认参数'), [
+    { presetKey: '', name: '默认参数' },
+    { presetKey: 'changsha', name: '长沙场景' },
+    { presetKey: 'zhuzhou', name: '株洲场景' },
+  ])
+  assert.deepEqual(dataApplicationDeliveryItems(null, '默认参数'), [])
+  assert.equal(buildDataApplicationRuntimeRoute('application/a'), '/data-apps/application%2Fa')
+  assert.equal(buildDataApplicationRuntimeRoute('application/a', 'scene one'), '/data-apps/application%2Fa?preset=scene%20one')
+})
 
 test('normalizes list pages and deletion versions into stable request contexts', () => {
   assert.equal(dataApplicationListPageContext(2), 'page:2')
@@ -55,6 +78,27 @@ test('rejects list commits after the page is unmounted', async () => {
 
   assert.equal(await load, false)
   assert.equal(committed, false)
+})
+
+test('does not commit a published runtime snapshot after the delivery dialog closes', async () => {
+  const requests = createLatestRequestCoordinator()
+  const targetContext = dataApplicationDeliveryContext('application-a', 6)
+  const request = requests.begin(targetContext)
+  let release
+  const response = new Promise((resolve) => { release = resolve })
+  let runtime = null
+  const load = response.then((value) => commitLatestDataApplicationRequest(
+    requests,
+    request,
+    targetContext,
+    () => { runtime = value },
+  ))
+
+  requests.invalidate()
+  release({ revision_number: 6 })
+
+  assert.equal(await load, false)
+  assert.equal(runtime, null)
 })
 
 test('does not start deletion when its confirmation settles after unmount', async () => {

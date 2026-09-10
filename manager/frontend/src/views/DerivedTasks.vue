@@ -31,6 +31,9 @@
       <el-select v-model="executionStatus" clearable :placeholder="t('manager.derivedTasks.allStatuses')" @change="changeStatusFilter">
         <el-option :label="t('manager.derivedTasks.status.failed')" value="failed" />
       </el-select>
+      <el-select v-model="bindingStatus" clearable :placeholder="t('manager.derivedTasks.allBindingStatuses')" @change="changeStatusFilter">
+        <el-option :label="t('manager.derivedTasks.bindingStatus.missing')" value="missing" />
+      </el-select>
       <el-button type="danger" plain :disabled="selectedTasks.length === 0" :loading="batchDeleting" @click="removeSelected">
         {{ t('manager.derivedTasks.batchDelete', { count: selectedTasks.length }) }}
       </el-button>
@@ -51,6 +54,9 @@
       <el-table-column :label="t('manager.derivedTasks.columns.enabled')" width="90">
         <template #default="{ row }"><el-tag :type="row.enabled ? 'success' : 'info'">{{ row.enabled ? t('manager.derivedTasks.enabled') : t('manager.derivedTasks.disabled') }}</el-tag></template>
       </el-table-column>
+      <el-table-column :label="t('manager.derivedTasks.columns.bindingStatus')" width="130">
+        <template #default="{ row }"><el-tag :type="bindingStatusType(row)">{{ bindingStatusLabel(row) }}</el-tag></template>
+      </el-table-column>
       <el-table-column :label="t('manager.derivedTasks.columns.status')" width="130">
         <template #default="{ row }"><el-tag :type="statusType(row.last_execution_status)">{{ statusLabel(row.last_execution_status) }}</el-tag></template>
       </el-table-column>
@@ -62,6 +68,7 @@
           <el-button link type="primary" @click="showDetail(row)">{{ t('manager.derivedTasks.detail') }}</el-button>
           <el-button v-if="sourceLocator(row)" link @click="openSource(row)">{{ t('manager.derivedTasks.source') }}</el-button>
           <el-button v-if="isManagedQuickViewTask(row)" link type="primary" :loading="viewingTaskID === row.id" @click="viewTaskResult(row)">{{ t('manager.derivedTasks.result') }}</el-button>
+          <el-button v-if="isRebindableTask(row)" link type="warning" @click="beginRebind(row)">{{ t('manager.derivedTasks.rebind') }}</el-button>
           <el-button v-if="isSpatialBusinessTask(row)" link @click="beginEdit(row)">{{ t('manager.derivedTasks.edit') }}</el-button>
           <el-button link type="primary" :loading="executingTaskID === row.id" :disabled="!row.enabled || isExecuting(row)" @click="execute(row)">{{ t('manager.derivedTasks.execute') }}</el-button>
           <el-button v-if="row.last_execution_id" link @click="openMonitor(row)">{{ t('manager.derivedTasks.monitor') }}</el-button>
@@ -79,12 +86,14 @@
       <div v-if="selectedTask" class="detail-actions">
         <el-button v-if="sourceLocator(selectedTask)" type="primary" plain @click="openSource(selectedTask)">{{ t('manager.derivedTasks.viewSource') }}</el-button>
         <el-button v-if="isManagedQuickViewTask(selectedTask) && selectedTask.has_current_result" type="primary" :loading="viewingTaskID === selectedTask.id" @click="viewTaskResult(selectedTask)">{{ t('manager.derivedTasks.viewResult') }}</el-button>
+        <el-button v-if="isRebindableTask(selectedTask)" type="warning" @click="beginRebind(selectedTask)">{{ t('manager.derivedTasks.rebind') }}</el-button>
         <el-button :loading="executingTaskID === selectedTask.id" :disabled="!selectedTask.enabled || isExecuting(selectedTask)" @click="execute(selectedTask)">{{ t('manager.derivedTasks.execute') }}</el-button>
         <el-button v-if="selectedTask.last_execution_id" @click="openMonitor(selectedTask)">{{ t('manager.derivedTasks.monitor') }}</el-button>
       </div>
       <el-descriptions v-if="selectedTask" :column="1" border>
         <el-descriptions-item :label="t('manager.derivedTasks.columns.type')">{{ taskTypeLabel(selectedTask.task_type) }}</el-descriptions-item>
         <el-descriptions-item :label="t('manager.derivedTasks.columns.status')">{{ statusLabel(selectedTask.last_execution_status) }}</el-descriptions-item>
+        <el-descriptions-item :label="t('manager.derivedTasks.columns.bindingStatus')">{{ bindingStatusLabel(selectedTask) }}</el-descriptions-item>
         <el-descriptions-item :label="t('manager.derivedTasks.columns.enabled')">{{ selectedTask.enabled ? t('manager.derivedTasks.enabled') : t('manager.derivedTasks.disabled') }}</el-descriptions-item>
         <el-descriptions-item :label="t('manager.derivedTasks.columns.engine')">{{ sourceEngineLabel(selectedTask) }}</el-descriptions-item>
         <el-descriptions-item v-if="sourceLocator(selectedTask)" :label="t('manager.derivedTasks.sourceItem')">
@@ -105,6 +114,7 @@
       v-model="editorVisible"
       :task-type="taskType"
       :locator="editorLocator"
+      :rebind-task="rebindingTask"
       @created="handleQuickViewCreated"
       @closed="clearEditorRoute"
     />
@@ -160,6 +170,7 @@ const confirmCurrentResult = useCurrentResultConfirmation()
 const { engineName, loadQuickViewEngines, resourcePath } = useQuickViewResourceDisplay(t)
 const routeTaskType = typeof route.query.task_type === 'string' ? route.query.task_type : ''
 const routeExecutionStatus = route.query.execution_status === 'failed' ? 'failed' : ''
+const routeBindingStatus = route.query.binding_status === 'missing' ? 'missing' : ''
 const tasks = ref([])
 const loading = ref(false)
 const total = ref(0)
@@ -171,9 +182,11 @@ const editorVisible = ref(false)
 const editorType = ref('')
 const editorLocator = ref('')
 const editingTask = ref(null)
+const rebindingTask = ref(null)
 const executingTaskID = ref(0)
 const viewingTaskID = ref(0)
 const executionStatus = ref(routeExecutionStatus)
+const bindingStatus = ref(routeBindingStatus)
 const selectedTasks = ref([])
 const batchDeleting = ref(false)
 
@@ -213,6 +226,13 @@ function statusType(value) {
   if (value === 'pending' || value === 'running') return 'warning'
   return 'info'
 }
+function bindingStatusLabel(task) {
+  if (task?.binding_status !== 'missing') return t('manager.derivedTasks.bindingStatus.active')
+  if (task.binding_issue === 'missing_engine') return t('manager.derivedTasks.bindingStatus.missingEngine')
+  if (task.binding_issue === 'missing_source') return t('manager.derivedTasks.bindingStatus.missingSource')
+  return t('manager.derivedTasks.bindingStatus.missing')
+}
+function bindingStatusType(task) { return task?.binding_status === 'missing' ? 'danger' : 'success' }
 function formatTime(value) { return value ? new Date(value).toLocaleString() : '-' }
 function sourceLocator(task) { return derivedTaskSourceLocator(task) }
 function sourceEngineLabel(task) { return engineName(derivedTaskSourceEngineID(task)) }
@@ -226,18 +246,20 @@ function sourceSize(task) { return derivedTaskSourceSize(task) }
 function resultName(task) { return derivedTaskResultName(task) }
 function isExecuting(task) { return ['pending', 'running'].includes(task?.last_execution_status) }
 function isManagedQuickViewTask(task) { return categoryForTaskType(task?.task_type) === 'managed_quick_view' }
+function isRebindableTask(task) { return isManagedQuickViewTask(task) && task?.binding_status === 'missing' }
 
 async function syncRoute(extra = {}, history = 'replace') {
   const query = { category: category.value }
   if (taskType.value) query.task_type = taskType.value
   if (executionStatus.value) query.execution_status = executionStatus.value
+  if (bindingStatus.value) query.binding_status = bindingStatus.value
   Object.assign(query, extra)
   await navigateManagerRoute(router, { path: '/derived-tasks', query }, { history })
 }
 async function loadTasks() {
   loading.value = true
   try {
-    const response = payload(await listDerivedTasks({ category: category.value, task_type: taskType.value || undefined, execution_status: executionStatus.value || undefined, page: page.value, page_size: pageSize.value }))
+    const response = payload(await listDerivedTasks({ category: category.value, task_type: taskType.value || undefined, execution_status: executionStatus.value || undefined, binding_status: bindingStatus.value || undefined, page: page.value, page_size: pageSize.value }))
     tasks.value = response?.items || []
     total.value = Number(response?.total || 0)
     selectedTasks.value = []
@@ -339,6 +361,7 @@ async function beginQuickViewCreate() {
   editorType.value = 'managed_quick_view'
   editorLocator.value = String(route.query.locator || '')
   editingTask.value = null
+  rebindingTask.value = null
   editorVisible.value = true
   await syncRoute({ create: '1', ...(editorLocator.value ? { locator: editorLocator.value } : {}) }, 'push')
 }
@@ -348,6 +371,7 @@ async function beginCreate(type) {
   editorType.value = type
   editorLocator.value = String(route.query.locator || '')
   editingTask.value = null
+  rebindingTask.value = null
   editorVisible.value = true
   await syncRoute({ create: '1', ...(editorLocator.value ? { locator: editorLocator.value } : {}) }, 'push')
 }
@@ -359,52 +383,84 @@ async function beginEdit(row) {
     editorVisible.value = true
   } catch (error) { ElMessage.error(error?.response?.data?.error || t('manager.derivedTasks.loadFailed')) }
 }
+async function beginRebind(row) {
+  try {
+    const detail = { ...row, ...payload(await getDerivedTask(row.task_type, row.id)) }
+    category.value = 'managed_quick_view'
+    taskType.value = detail.task_type
+    selectedTask.value = null
+    detailVisible.value = false
+    editingTask.value = null
+    rebindingTask.value = detail
+    editorType.value = 'managed_quick_view'
+    editorLocator.value = ''
+    editorVisible.value = true
+    await syncRoute({ rebind_task_id: String(detail.id) }, 'push')
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.error || t('manager.derivedTasks.loadFailed'))
+  }
+}
 async function clearTaskDetailRoute() {
   if (!route.query.task_id) return
   await syncRoute()
 }
 async function clearEditorRoute() {
   editingTask.value = null
+  rebindingTask.value = null
   editorLocator.value = ''
   editorType.value = ''
-  if (!route.query.create && !route.query.locator) return
+  if (!route.query.create && !route.query.locator && !route.query.rebind_task_id) return
   await syncRoute()
 }
 async function handleEditorSaved() { await loadTasks() }
 async function handleQuickViewCreated(created) {
   if (created?.taskType) taskType.value = created.taskType
+  rebindingTask.value = null
   page.value = 1
   await loadTasks()
 }
-function openEditorFromRoute() {
+async function openEditorFromRoute() {
+  const rebindTaskID = Number(route.query.rebind_task_id)
+  if (Number.isInteger(rebindTaskID) && rebindTaskID > 0 && category.value === 'managed_quick_view' && taskType.value) {
+    const detail = payload(await getDerivedTask(taskType.value, rebindTaskID))
+    rebindingTask.value = detail
+    editingTask.value = null
+    editorType.value = 'managed_quick_view'
+    editorLocator.value = ''
+    editorVisible.value = true
+    return
+  }
   if (route.query.create !== '1') return
   if (category.value === 'managed_quick_view') editorType.value = 'managed_quick_view'
   else if (categoryForTaskType(taskType.value) === 'spatial_business') editorType.value = taskType.value
   else return
   editorLocator.value = typeof route.query.locator === 'string' ? route.query.locator : ''
   editingTask.value = null
+  rebindingTask.value = null
   editorVisible.value = true
 }
 
 watch(() => route.query, async (query) => {
   const nextType = typeof query.task_type === 'string' ? query.task_type : ''
   const nextExecutionStatus = query.execution_status === 'failed' ? 'failed' : ''
+  const nextBindingStatus = query.binding_status === 'missing' ? 'missing' : ''
   const nextCategory = categoryForTaskType(nextType) || (query.category === 'spatial_business' ? 'spatial_business' : 'managed_quick_view')
-  if (nextCategory !== category.value || nextType !== taskType.value || nextExecutionStatus !== executionStatus.value) {
-    category.value = nextCategory; taskType.value = nextType; executionStatus.value = nextExecutionStatus; page.value = 1; await loadTasks()
+  if (nextCategory !== category.value || nextType !== taskType.value || nextExecutionStatus !== executionStatus.value || nextBindingStatus !== bindingStatus.value) {
+    category.value = nextCategory; taskType.value = nextType; executionStatus.value = nextExecutionStatus; bindingStatus.value = nextBindingStatus; page.value = 1; await loadTasks()
   }
   if (query.task_id) await openTaskFromRoute()
-  else if (query.create === '1') openEditorFromRoute()
+  else if (query.create === '1' || query.rebind_task_id) await openEditorFromRoute()
 })
 onMounted(async () => {
   const extra = {}
   if (route.query.task_id) extra.task_id = route.query.task_id
   if (route.query.create === '1') extra.create = '1'
+  if (route.query.rebind_task_id) extra.rebind_task_id = route.query.rebind_task_id
   if (typeof route.query.locator === 'string' && route.query.locator) extra.locator = route.query.locator
   await syncRoute(extra)
   await Promise.all([loadQuickViewEngines(), loadTasks()])
   if (extra.task_id) await openTaskFromRoute()
-  else if (extra.create) openEditorFromRoute()
+  else if (extra.create || extra.rebind_task_id) await openEditorFromRoute()
 })
 </script>
 

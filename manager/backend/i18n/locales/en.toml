@@ -190,6 +190,33 @@ other = "This model3d tiles quick view task already has an active execution"
 [manager.error.existing_result_action_required]
 other = "A current result already exists. This execution must explicitly choose to overwrite it"
 
+[manager.error.invalid_task_id]
+other = "Invalid task ID"
+
+[manager.error.task_not_found]
+other = "Task not found"
+
+[manager.error.task_version_conflict]
+other = "The task was updated by another actor. Refresh and try again"
+
+[manager.error.task_binding_still_active]
+other = "The task resource binding is still active and does not need to be rebound"
+
+[manager.error.task_rebind_invalid_request]
+other = "Rebinding requires the current task version and a new source resource"
+
+[manager.error.task_rebind_unsupported_type]
+other = "This task type does not support source resource rebinding"
+
+[manager.error.task_rebind_capability_mismatch]
+other = "The selected resource does not support this task generation type"
+
+[manager.error.task_rebind_unavailable]
+other = "Task source rebinding is unavailable"
+
+[manager.error.task_rebind_failed]
+other = "Failed to rebind the task source resource"
+
 [manager.error.data_profile_unsupported]
 other = "Data profiling is not supported for this resource"
 

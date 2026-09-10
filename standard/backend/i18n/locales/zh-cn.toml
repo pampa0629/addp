@@ -163,6 +163,9 @@ other = "归属业务域编码不符合候选命名空间规范，请先将业�
 [standard.document.candidate_family_query_invalid]
 other = "候选族筛选或分页参数无效"
 
+[standard.document.candidate_family_decision_invalid]
+other = "候选族裁决必须填写一至一千个字符的理由，显式选择同一候选族当前全部两个至一百个不同语义变体，并指定唯一胜出候选"
+
 [standard.document.copilot_unavailable]
 other = "Copilot 标准提炼服务暂时不可用"
 

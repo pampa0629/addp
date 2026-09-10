@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -38,6 +39,67 @@ func TestExecuteQuickViewActionRejectsLegacyAndInvalidExistingResultAction(t *te
 		if response.Code != http.StatusBadRequest {
 			t.Fatalf("body=%s status=%d, want 400; response=%s", body, response.Code, response.Body.String())
 		}
+	}
+}
+
+func TestManagedQuickViewActionForTaskPreservesArtifactVariant(t *testing.T) {
+	tests := []struct {
+		name    string
+		task    *models.TaskDefinition
+		want    string
+		wantErr bool
+	}{
+		{name: "GLB", task: &models.TaskDefinition{TaskType: commonExecution.TaskTypeModel3DGLBGeneration}, want: service.QuickViewActionGenerateModel3DGLB},
+		{name: "3D Tiles", task: &models.TaskDefinition{TaskType: commonExecution.TaskTypeModel3DTilesGeneration, Config: commonModels.JSONMap{"target_format": models.Model3DTilesTargetFormat3DTiles}}, want: service.QuickViewActionGenerateModel3D3DTiles},
+		{name: "S3M", task: &models.TaskDefinition{TaskType: commonExecution.TaskTypeModel3DTilesGeneration, Config: commonModels.JSONMap{"target_format": models.Model3DTilesTargetFormatS3M}}, want: service.QuickViewActionGenerateModel3DS3M},
+		{name: "invalid variant", task: &models.TaskDefinition{TaskType: commonExecution.TaskTypeModel3DTilesGeneration, Config: commonModels.JSONMap{}}, wantErr: true},
+		{name: "business task", task: &models.TaskDefinition{TaskType: commonExecution.TaskTypeVectorTileSetGeneration}, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := managedQuickViewActionForTask(tt.task)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("managedQuickViewActionForTask() = %q, want error", got)
+				}
+				return
+			}
+			if err != nil || got != tt.want {
+				t.Fatalf("managedQuickViewActionForTask() = %q, %v; want %q", got, err, tt.want)
+			}
+		})
+	}
+}
+
+func TestRebindManagedQuickViewTaskRejectsActiveBinding(t *testing.T) {
+	db := newTaskProviderHandlerTestDB(t)
+	repo := repository.NewModel3DGLBRepository(db)
+	taskSvc := service.NewModel3DGLBTaskService(repo)
+	task := &models.TaskDefinition{
+		TenantID: 7, Name: "active", Enabled: true,
+		Config: commonModels.JSONMap{
+			"source": commonModels.JSONMap{
+				"item_locator":     "addp://engine/26/path/models/building.ifc?type=file&item_id=77",
+				"source_engine_id": uint(26), "item_fingerprint": "active-fingerprint", "item_id": uint(77), "format": "ifc",
+			},
+			"result": commonModels.JSONMap{},
+		},
+	}
+	if err := taskSvc.Create(context.Background(), task); err != nil {
+		t.Fatalf("create active task: %v", err)
+	}
+	handler := &QuickViewHandler{taskDefinitionRepo: repository.NewTaskDefinitionRepository(db)}
+	router := gin.New()
+	router.Use(func(c *gin.Context) { setTenantAuthContextForTest(c, 7, 1); c.Next() })
+	router.POST("/tasks/:task_type/:id/rebind", handler.RebindManagedQuickViewTask)
+
+	response := httptest.NewRecorder()
+	body := fmt.Sprintf(`{"version":%d,"locator":"addp://engine/27/path/models/replacement.ifc?type=file&item_id=78"}`, task.Version)
+	request := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/tasks/%s/%d/rebind", commonExecution.TaskTypeModel3DGLBGeneration, task.ID), strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409; response=%s", response.Code, response.Body.String())
 	}
 }
 

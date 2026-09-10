@@ -148,6 +148,8 @@ export const documentAPI = {
   download(id, revisionId) { return client.get(`/standard/documents/${id}/revisions/${revisionId}/file`, { responseType: 'blob' }) },
   extractCandidates(id, revisionId, version) { return client.post(`/standard/documents/${id}/revisions/${revisionId}/extractions`, { version }) },
   listCandidateFamilies(id, params) { return client.get(`/standard/documents/${id}/extraction-candidate-families`, { params }) },
+  listCandidateFamilyDecisions(id, params) { return client.get(`/standard/documents/${id}/extraction-candidate-family-decisions`, { params }) },
+  decideCandidateFamily(id, data) { return client.post(`/standard/documents/${id}/extraction-candidates/batch_decide`, data) },
   updateCandidate(candidateId, data) { return client.put(`/standard/document-extraction-candidates/${candidateId}`, data) },
   formalizeCandidate(candidateId, data) { return client.post(`/standard/document-extraction-candidates/${candidateId}/formalization`, data) }
 }

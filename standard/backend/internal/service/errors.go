@@ -42,6 +42,7 @@ var (
 	ErrCandidateReferenceUnavailable          = fmt.Errorf("%w: standard candidate reference cannot be resolved uniquely", commonapi.ErrConflict)
 	ErrCandidateFormalizationDenied           = fmt.Errorf("%w: standard candidate formalization permission denied", commonapi.ErrForbidden)
 	ErrCandidateFormalizationInvalid          = fmt.Errorf("%w: invalid standard candidate formalization", commonapi.ErrBadRequest)
+	ErrCandidateFamilyDecisionInvalid         = fmt.Errorf("%w: invalid document candidate family decision", commonapi.ErrBadRequest)
 )
 
 func mapDeleteConflict(err, referencedError error) error {

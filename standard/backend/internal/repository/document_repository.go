@@ -3,10 +3,12 @@ package repository
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
 	commonrepo "github.com/addp/common/repository"
+	candidateutil "github.com/addp/standard/internal/candidate"
 	"github.com/addp/standard/internal/models"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -25,9 +27,16 @@ type DocumentCandidateIdentity struct {
 	ExtractedAt      time.Time
 }
 
+type DocumentCandidateFamilyDecisionCount struct {
+	CandidateType string
+	Code          string
+	DecisionCount int64
+}
+
 var (
 	ErrDocumentPublicationHistory            = errors.New("document publication history exists")
 	ErrDocumentCandidateFormalizationHistory = errors.New("document candidate formalization history exists")
+	ErrCandidateFamilyDecisionInvalid        = errors.New("document candidate family decision invalid")
 )
 
 func NewDocumentRepository(db *gorm.DB) *DocumentRepository { return &DocumentRepository{db: db} }
@@ -792,6 +801,143 @@ func (r *DocumentRepository) UpdateCandidateStatus(candidateID, tenantID, userID
 		return tx.Where("candidate_id = ?", candidateID).Order("id ASC").Find(&candidate.Evidences).Error
 	}))
 	return &candidate, err
+}
+
+func (r *DocumentRepository) DecideCandidateFamily(documentID, tenantID, userID, winnerCandidateID int64, reason string, members []models.DocumentCandidateFamilyDecisionMember) (*models.DocumentCandidateFamilyDecisionResponse, error) {
+	ordered := append([]models.DocumentCandidateFamilyDecisionMember(nil), members...)
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i].CandidateID < ordered[j].CandidateID })
+	ids := make([]int64, len(ordered))
+	expectedVersions := make(map[int64]int64, len(ordered))
+	for index, member := range ordered {
+		ids[index] = member.CandidateID
+		expectedVersions[member.CandidateID] = member.Version
+	}
+
+	response := &models.DocumentCandidateFamilyDecisionResponse{}
+	err := wrapDBError(r.db.Transaction(func(tx *gorm.DB) error {
+		var document models.Document
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Where("id = ? AND tenant_id = ?", documentID, tenantID).First(&document).Error; err != nil {
+			return commonrepo.WrapDBError(err)
+		}
+		var candidates []models.DocumentExtractionCandidate
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Table("standard.document_extraction_candidates AS candidate").Select("candidate.*").
+			Joins("JOIN standard.document_extractions extraction ON extraction.id = candidate.extraction_id").
+			Joins("JOIN standard.document_revisions revision ON revision.id = extraction.document_revision_id").
+			Where("candidate.id IN ? AND extraction.tenant_id = ? AND revision.document_id = ?", ids, tenantID, documentID).
+			Order("candidate.id ASC").Find(&candidates).Error; err != nil {
+			return err
+		}
+		if len(candidates) != len(ordered) {
+			return gorm.ErrRecordNotFound
+		}
+
+		fingerprints := make(map[string]struct{}, len(candidates))
+		candidateType, code := candidates[0].CandidateType, candidates[0].Code
+		winnerFound := false
+		for _, value := range candidates {
+			if value.CandidateType != candidateType || value.Code != code {
+				return ErrCandidateFamilyDecisionInvalid
+			}
+			fingerprint := candidateutil.SemanticFingerprint(value)
+			if _, exists := fingerprints[fingerprint]; exists {
+				return ErrCandidateFamilyDecisionInvalid
+			}
+			fingerprints[fingerprint] = struct{}{}
+			if value.Version != expectedVersions[value.ID] {
+				return ErrVersionConflict
+			}
+			winnerFound = winnerFound || value.ID == winnerCandidateID
+		}
+		if !winnerFound {
+			return ErrCandidateFamilyDecisionInvalid
+		}
+		var familyCandidates []models.DocumentExtractionCandidate
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Table("standard.document_extraction_candidates AS candidate").Select("candidate.*").
+			Joins("JOIN standard.document_extractions extraction ON extraction.id = candidate.extraction_id").
+			Joins("JOIN standard.document_revisions revision ON revision.id = extraction.document_revision_id").
+			Where("extraction.tenant_id = ? AND revision.document_id = ? AND candidate.candidate_type = ? AND candidate.code = ?", tenantID, documentID, candidateType, code).
+			Order("candidate.id ASC").Find(&familyCandidates).Error; err != nil {
+			return err
+		}
+		familyFingerprints := make(map[string]struct{}, len(familyCandidates))
+		familyCandidateIDs := make([]int64, len(familyCandidates))
+		for index, value := range familyCandidates {
+			familyFingerprints[candidateutil.SemanticFingerprint(value)] = struct{}{}
+			familyCandidateIDs[index] = value.ID
+		}
+		if len(fingerprints) != len(familyFingerprints) {
+			return ErrCandidateFamilyDecisionInvalid
+		}
+
+		var formalizationCount int64
+		if err := tx.Model(&models.DocumentCandidateFormalization{}).Where("candidate_id IN ?", familyCandidateIDs).Count(&formalizationCount).Error; err != nil {
+			return err
+		}
+		if formalizationCount != 0 {
+			return ErrCandidateAlreadyFormalized
+		}
+
+		now := time.Now().UTC()
+		snapshots := make([]models.DocumentCandidateFamilyDecisionMemberSnapshot, 0, len(candidates))
+		for index := range candidates {
+			value := &candidates[index]
+			status := models.CandidateGroupStateRejected
+			if value.ID == winnerCandidateID {
+				status = models.CandidateGroupStateRetained
+			}
+			result := tx.Model(&models.DocumentExtractionCandidate{}).Where("id = ? AND version = ?", value.ID, value.Version).Updates(map[string]interface{}{
+				"status": status, "reviewed_by": userID, "reviewed_at": now, "version": gorm.Expr("version + 1"),
+			})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected != 1 {
+				return ErrVersionConflict
+			}
+			value.Status, value.ReviewedBy, value.ReviewedAt, value.Version = status, &userID, &now, value.Version+1
+			snapshots = append(snapshots, models.DocumentCandidateFamilyDecisionMemberSnapshot{
+				CandidateID: value.ID, SemanticFingerprint: candidateutil.SemanticFingerprint(*value), Name: value.Name, Version: value.Version, Status: value.Status,
+			})
+		}
+		decision := models.DocumentCandidateFamilyDecision{
+			DocumentID: documentID, CandidateType: candidateType, Code: code, WinnerCandidateID: winnerCandidateID,
+			Reason: reason, Members: snapshots, CreatedBy: userID, CreatedAt: now,
+		}
+		if err := tx.Create(&decision).Error; err != nil {
+			return err
+		}
+		response.Decision = decision
+		response.Candidates = candidates
+		return nil
+	}))
+	return response, err
+}
+
+func (r *DocumentRepository) ListCandidateFamilyDecisions(documentID, tenantID int64, candidateType, code string, page, pageSize int) ([]models.DocumentCandidateFamilyDecision, int64, error) {
+	if _, err := r.GetByID(documentID, tenantID); err != nil {
+		return nil, 0, err
+	}
+	query := r.db.Model(&models.DocumentCandidateFamilyDecision{}).
+		Where("document_id = ? AND candidate_type = ? AND code = ?", documentID, candidateType, code)
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var decisions []models.DocumentCandidateFamilyDecision
+	if err := query.Order("id DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&decisions).Error; err != nil {
+		return nil, 0, err
+	}
+	return decisions, total, nil
+}
+
+func (r *DocumentRepository) ListCandidateFamilyDecisionCounts(documentID, tenantID int64) ([]DocumentCandidateFamilyDecisionCount, error) {
+	var counts []DocumentCandidateFamilyDecisionCount
+	err := r.db.Table("standard.document_candidate_family_decisions AS decision").
+		Select("decision.candidate_type, decision.code, COUNT(*) AS decision_count").
+		Joins("JOIN standard.documents document ON document.id = decision.document_id").
+		Where("decision.document_id = ? AND document.tenant_id = ?", documentID, tenantID).
+		Group("decision.candidate_type, decision.code").Find(&counts).Error
+	return counts, wrapDBError(err)
 }
 
 func (r *DocumentRepository) getRevisionByID(db *gorm.DB, id, documentID int64) (*models.DocumentRevision, error) {

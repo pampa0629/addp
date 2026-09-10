@@ -92,6 +92,47 @@ func TestEmailMetadataDetectorRecognizesExactSemanticAliases(t *testing.T) {
 	}
 }
 
+func TestIdentityDocumentNumberMetadataDetectorRecognizesOnlyExactSemanticAliases(t *testing.T) {
+	detector := configuredDetector{
+		Binding: models.Detector{
+			TenantID: 7, CapabilityKey: models.FindingDetectorIdentityDocumentNumberMetadataV1,
+			SensitiveDataTypeID: 11, ConfidenceThreshold: 0.9, Enabled: true,
+		},
+		DataType: models.SensitiveDataType{ID: 11, TenantID: 7},
+		Capability: models.DetectorCapability{
+			Key: models.FindingDetectorIdentityDocumentNumberMetadataV1, Code: "identity_document_number_metadata",
+		},
+	}
+	fields := []datatype.FieldInfo{
+		{Name: "id_card_number", Path: []string{"id_card_number"}, Type: datatype.FieldTypeString},
+		{Name: "customer__identity_document_no", Type: datatype.FieldTypeString},
+		{Name: "身份证件号码", Path: []string{"身份证件号码"}, Type: datatype.FieldTypeString},
+		{Name: "id", Path: []string{"id"}, Type: datatype.FieldTypeString},
+		{Name: "user_id", Path: []string{"user_id"}, Type: datatype.FieldTypeString},
+		{Name: "certificate_no", Path: []string{"certificate_no"}, Type: datatype.FieldTypeString},
+		{Name: "id_card_verified", Path: []string{"id_card_verified"}, Type: datatype.FieldTypeString},
+		{Name: "national_id", Path: []string{"national_id"}, Type: datatype.FieldTypeInt},
+	}
+	facts := dataprotection.DataItemSecurityFacts{
+		Fields: fields, SourceSnapshotHash: "sha256:identity-document-test", ObservedAt: time.Now().UTC(),
+	}
+	findings, err := NewDiscoveryService(nil, nil).detectFieldFindings(
+		models.ProtectionEnrollment{ID: "enrollment", TenantID: 7}, "execution", detector, facts,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(findings) != 3 {
+		t.Fatalf("findings = %#v", findings)
+	}
+	if findings[0].ComponentKey != "id_card_number" || findings[1].ComponentKey != "customer__identity_document_no" || findings[2].ComponentKey != "身份证件号码" {
+		t.Fatalf("identity document component keys = %#v", findings)
+	}
+	if findings[1].Evidence["semantic_terminal"] != "identity_document_no" || findings[1].Evidence["matched_alias"] != "identitydocumentno" {
+		t.Fatalf("identity document evidence = %#v", findings[1].Evidence)
+	}
+}
+
 func TestEmailMetadataFindingCompilesGenericSuppressionForEveryStructuredOutlet(t *testing.T) {
 	db := openSecurityTestDB(t)
 	definitions := newTestDefinitionService(db)

@@ -4442,6 +4442,12 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "type": "string",
+                        "description": "任务绑定状态：active|missing | Task binding status: active|missing",
+                        "name": "binding_status",
+                        "in": "query"
+                    },
+                    {
                         "type": "integer",
                         "description": "页码，默认1 | Page number, default 1",
                         "name": "page",
@@ -4768,6 +4774,92 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "manager.derived_artifact.create"
+                ]
+            }
+        },
+        "/tasks/{task_type}/{id}/rebind": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "只接受失效任务的当前版本与新 Resource Locator。Manager 按原任务类型和产物变体重新校验快显能力、生成规范配置并恢复资源绑定；本操作不创建 execution。 | Accept the current version of a missing task and a new Resource Locator. Manager validates capability for the original task type and artifact variant, rebuilds canonical configuration and restores resource bindings without creating an execution.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Manager"
+                ],
+                "summary": "重新绑定受管快显任务源资源 | Rebind a managed quick view task source",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "任务类型 | Task type",
+                        "name": "task_type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "失效任务 ID | Missing task ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "源资源重绑请求 | Source rebind request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.RebindManagedQuickViewTaskRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "重绑后的规范任务 | Canonical rebound task",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.RebindManagedQuickViewTaskResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "参数或源能力不匹配 | Invalid request or unsupported source capability",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "任务或资源不存在 | Task or resource not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "版本冲突或任务绑定仍有效 | Version conflict or task binding is still active",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "服务器内部错误 | Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "manager.data_item.read",
+                    "manager.derived_artifact.update"
                 ]
             }
         },
@@ -6272,6 +6364,12 @@ const docTemplate = `{
         "github_com_addp_manager_internal_models.TaskDefinition": {
             "type": "object",
             "properties": {
+                "binding_issue": {
+                    "type": "string"
+                },
+                "binding_status": {
+                    "type": "string"
+                },
                 "config": {
                     "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
                 },
@@ -6479,6 +6577,12 @@ const docTemplate = `{
         "github_com_addp_manager_internal_models.VectorTileSetTask": {
             "type": "object",
             "properties": {
+                "binding_issue": {
+                    "type": "string"
+                },
+                "binding_status": {
+                    "type": "string"
+                },
                 "config": {
                     "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
                 },
@@ -9001,6 +9105,35 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api.RebindManagedQuickViewTaskRequest": {
+            "type": "object",
+            "required": [
+                "locator",
+                "version"
+            ],
+            "properties": {
+                "locator": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.RebindManagedQuickViewTaskResponse": {
+            "type": "object",
+            "properties": {
+                "replaced_task_id": {
+                    "type": "integer"
+                },
+                "task_id": {
+                    "type": "integer"
+                },
+                "task_type": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_api.TaskExecuteRequest": {
             "type": "object",
             "properties": {
@@ -9042,6 +9175,12 @@ const docTemplate = `{
         "internal_api.TaskListItem": {
             "type": "object",
             "properties": {
+                "binding_issue": {
+                    "type": "string"
+                },
+                "binding_status": {
+                    "type": "string"
+                },
                 "category": {
                     "type": "string"
                 },

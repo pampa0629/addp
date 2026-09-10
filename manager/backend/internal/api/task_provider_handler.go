@@ -110,6 +110,8 @@ type TaskListItem struct {
 	Enabled             bool                 `json:"enabled"`
 	LastExecutionID     *string              `json:"last_execution_id,omitempty"`
 	LastExecutionStatus *string              `json:"last_execution_status,omitempty"`
+	BindingStatus       string               `json:"binding_status"`
+	BindingIssue        string               `json:"binding_issue,omitempty"`
 	UpdatedAt           time.Time            `json:"updated_at"`
 	Config              commonModels.JSONMap `json:"config"`
 }
@@ -128,6 +130,7 @@ func taskListItem(task *models.TaskDefinition) TaskListItem {
 		SemanticKey: task.SemanticKey,
 		Name:        task.Name, Description: task.Description, Enabled: task.Enabled,
 		LastExecutionID: task.LastExecutionID, LastExecutionStatus: task.LastExecutionStatus,
+		BindingStatus: task.BindingStatus, BindingIssue: task.BindingIssue,
 		UpdatedAt: task.UpdatedAt,
 		Config:    task.Config,
 	}
@@ -608,6 +611,7 @@ type PointCloudCOPCTaskResponse struct {
 // @Param task_type query string false "任务类型过滤：vector_tile_cache_generation|vector_tile_set_generation|vector_materialized_view_generation|raster_cog_generation|raster_mosaic_generation|model_3d_glb_generation|model3d_tiles_generation|gaussian_splat_ksplat_generation|point_cloud_copc_generation|embedding | Task type filter"
 // @Param category query string false "Manager 派生任务产品分类：managed_quick_view|spatial_business | Manager derived-task product category"
 // @Param execution_status query string false "最近执行状态精确过滤，例如 failed | Exact latest execution status filter, for example failed"
+// @Param binding_status query string false "任务绑定状态：active|missing | Task binding status: active|missing"
 // @Param page query int false "页码，默认1 | Page number, default 1"
 // @Param page_size query int false "每页数量，默认20 | Page size, default 20"
 // @Success 200 {object} TaskListResponse "任务列表 | Task list"
@@ -638,9 +642,14 @@ func (h *TaskProviderHandler) listTasks(c *gin.Context, taskType string) {
 	var total int64
 	category := strings.TrimSpace(c.Query("category"))
 	executionStatus := strings.TrimSpace(c.Query("execution_status"))
+	bindingStatus := strings.TrimSpace(c.Query("binding_status"))
+	if bindingStatus != "" && bindingStatus != models.TaskBindingStatusActive && bindingStatus != models.TaskBindingStatusMissing {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "binding_status must be active or missing"})
+		return
+	}
 	if h.taskDefinitionRepo != nil && (category != "" || taskType == "" || repository.ManagerDerivedTaskCategory(taskType) != "") {
 		tasks, count, err := h.taskDefinitionRepo.List(ctx, repository.TaskDefinitionFilter{
-			TenantID: tenantID, TaskType: taskType, Category: category, ExecutionStatus: executionStatus, Page: page, PageSize: pageSize,
+			TenantID: tenantID, TaskType: taskType, Category: category, ExecutionStatus: executionStatus, BindingStatus: bindingStatus, Page: page, PageSize: pageSize,
 		})
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

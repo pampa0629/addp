@@ -619,6 +619,25 @@ definitions:
     - change_summary
     - version
     type: object
+  github_com_addp_standard_internal_models.DecideDocumentCandidateFamilyRequest:
+    properties:
+      members:
+        items:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.DocumentCandidateFamilyDecisionMember'
+        maxItems: 100
+        minItems: 2
+        type: array
+      reason:
+        maxLength: 1000
+        type: string
+      winner_candidate_id:
+        minimum: 1
+        type: integer
+    required:
+    - members
+    - reason
+    - winner_candidate_id
+    type: object
   github_com_addp_standard_internal_models.DocumentAggregate:
     properties:
       code:
@@ -670,6 +689,71 @@ definitions:
         type: integer
       version:
         type: integer
+    type: object
+  github_com_addp_standard_internal_models.DocumentCandidateFamilyDecision:
+    properties:
+      candidate_type:
+        enum:
+        - glossary
+        - element
+        - code_set
+        - metric
+        type: string
+      code:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      document_id:
+        type: integer
+      id:
+        type: integer
+      members:
+        items:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.DocumentCandidateFamilyDecisionMemberSnapshot'
+        type: array
+      reason:
+        type: string
+      winner_candidate_id:
+        type: integer
+    type: object
+  github_com_addp_standard_internal_models.DocumentCandidateFamilyDecisionMember:
+    properties:
+      candidate_id:
+        minimum: 1
+        type: integer
+      version:
+        minimum: 1
+        type: integer
+    required:
+    - candidate_id
+    - version
+    type: object
+  github_com_addp_standard_internal_models.DocumentCandidateFamilyDecisionMemberSnapshot:
+    properties:
+      candidate_id:
+        type: integer
+      name:
+        type: string
+      semantic_fingerprint:
+        type: string
+      status:
+        enum:
+        - retained
+        - rejected
+        type: string
+      version:
+        type: integer
+    type: object
+  github_com_addp_standard_internal_models.DocumentCandidateFamilyDecisionResponse:
+    properties:
+      candidates:
+        items:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.DocumentExtractionCandidate'
+        type: array
+      decision:
+        $ref: '#/definitions/github_com_addp_standard_internal_models.DocumentCandidateFamilyDecision'
     type: object
   github_com_addp_standard_internal_models.DocumentCandidateFormalization:
     properties:
@@ -910,6 +994,8 @@ definitions:
         type: string
       code:
         type: string
+      decision_count:
+        type: integer
       family_key:
         type: string
       first_seen_at:
@@ -920,6 +1006,8 @@ definitions:
         type: integer
       representative_name:
         type: string
+      total_variant_count:
+        type: integer
       variant_count:
         type: integer
       variants:
@@ -1588,6 +1676,21 @@ definitions:
       data:
         items:
           $ref: '#/definitions/github_com_addp_standard_internal_models.CodeSetAggregate'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  github_com_addp_standard_internal_models.PaginatedDocumentCandidateFamilyDecisionResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.DocumentCandidateFamilyDecision'
         type: array
       page:
         type: integer
@@ -4199,6 +4302,146 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - standard.document.read
+  /documents/{id}/extraction-candidate-family-decisions:
+    get:
+      description: 按事件 ID 倒序分页返回指定候选族的追加式不可变裁决事实；每条事件冻结理由、胜出候选、操作者以及全部成员的裁决后快照 | Returns
+        append-only immutable decision facts for one candidate family, ordered by
+        event ID descending; each event freezes the reason, winner, actor, and post-decision
+        snapshots of all members
+      parameters:
+      - description: 文档 ID | Document ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 候选类型 | Candidate type
+        enum:
+        - glossary
+        - element
+        - code_set
+        - metric
+        in: query
+        name: candidate_type
+        required: true
+        type: string
+      - description: 候选族稳定编码 | Candidate family stable code
+        in: query
+        name: code
+        required: true
+        type: string
+      - description: 页码，默认 1 | Page number, default 1
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量，默认 20，最大 100 | Page size, default 20, maximum 100
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_standard_internal_models.PaginatedDocumentCandidateFamilyDecisionResponse'
+        "400":
+          description: 候选类型、编码或分页参数无效，error_code=candidate_family_decision_invalid
+            | Invalid candidate type, code, or pagination; error_code=candidate_family_decision_invalid
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: 需要登录 | Authentication required
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: 无权访问 | Access denied
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取标准候选族裁决历史 | List standard candidate family decision history
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.document.read
+  /documents/{id}/extraction-candidates/batch_decide:
+    post:
+      consumes:
+      - application/json
+      description: 显式列出同一候选族当前全部语义指纹互异的代表候选，填写人工理由，保留唯一胜出候选并驳回其余候选，同时追加不可变裁决事件；缺少当前变体或任一成员、理由无效、已正式化、版本冲突时整批回滚
+        | Explicitly lists all current representative candidates with distinct semantic
+        fingerprints in one family, records a human reason, retains the sole winner,
+        rejects the others, and appends an immutable decision event; the entire command
+        rolls back if any current variant is omitted or any member or reason is invalid,
+        formalized, or stale
+      parameters:
+      - description: 文档 ID | Document ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 候选成员、并发版本、胜出候选及 1–1000 字符人工理由 | Candidate members, concurrency
+          versions, winner, and a 1–1000 character human reason
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_standard_internal_models.DecideDocumentCandidateFamilyRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_standard_internal_models.DocumentCandidateFamilyDecisionResponse'
+        "400":
+          description: 理由、成员数量、重复成员、跨族成员或胜出候选无效，error_code=candidate_family_decision_invalid
+            | Invalid reason, member count, duplicate member, cross-family member,
+            or winner; error_code=candidate_family_decision_invalid
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: 候选已正式化或并发版本冲突 | Candidate already formalized or concurrency
+            version conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 原子裁决文档候选族 | Atomically decide a document candidate family
+      tags:
+      - Standard
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - standard.document.update
   /documents/{id}/mappings:
     get:
       produces:

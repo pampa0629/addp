@@ -1,4 +1,5 @@
 import { validSelectionValue } from './dataApplicationSelection.mjs'
+import { defaultApplicationParameterValues } from './dataApplicationParameters.mjs'
 
 export const APPLICATION_PRESENTATION_SECTIONS = Object.freeze(['title', 'parameters', 'query_actions'])
 
@@ -37,10 +38,17 @@ function requiredApplicationParametersExecutable(snapshot, values, requireDeclar
   return true
 }
 
-export function initialApplicationParameterValues(snapshot) {
+export function applicationParameterPreset(snapshot, presetKey) {
+  if (typeof presetKey !== 'string' || presetKey === '') return null
+  return (snapshot?.parameter_presets || []).find((preset) => preset.key === presetKey) || null
+}
+
+export function initialApplicationParameterValues(snapshot, presetKey = '') {
+  const preset = applicationParameterPreset(snapshot, presetKey)
+  if (!preset) return defaultApplicationParameterValues(snapshot)
   return Object.fromEntries((snapshot?.parameters || []).map((parameter) => [
     parameter.key,
-    Object.prototype.hasOwnProperty.call(parameter, 'default_value') ? structuredClone(parameter.default_value) : '',
+    structuredClone(preset.parameter_values[parameter.key]),
   ]))
 }
 
@@ -189,11 +197,10 @@ export function canAttemptApplicationQuery(components, states) {
   return (components || []).length > 0 && components.every((component) => !states?.[component.id]?.contract_error)
 }
 
-export function canRunPublishedApplicationInitialQuery(snapshot, states) {
+export function canRunPublishedApplicationInitialQuery(snapshot, states, values = initialApplicationParameterValues(snapshot), requireDeclaredValues = true) {
   const components = snapshot?.components || []
   if (components.length === 0 || !components.every((component) => canExecuteComponentQuery(states?.[component.id]))) return false
-  const values = initialApplicationParameterValues(snapshot)
-  if (!requiredApplicationParametersExecutable(snapshot, values, true)) return false
+  if (!requiredApplicationParametersExecutable(snapshot, values, requireDeclaredValues)) return false
   try {
     components.forEach((component) => buildComponentQuery(snapshot, component, values))
     return true

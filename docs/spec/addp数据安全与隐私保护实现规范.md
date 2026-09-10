@@ -148,6 +148,8 @@ Detector 执行采用唯一的“能力注册 + 租户绑定”路径：
 
 结构化邮箱首期使用独立的 `addp.detector.email_metadata/v1` 能力。它与手机号字段元数据能力共享“结构化路径末级名称或 `__` 扁平路径语义末级名称”的确定性取值规则，但只在字符串字段的规范化末级名称与 `email`、`emailaddress`、`邮箱`、`电子邮箱` 精确匹配时产生邮箱 Finding。Finding 保留 Meta 发布的真实物理 `component_key`，不读取或验证邮箱业务值；邮箱格式或内容采样不是该能力的后续串行步骤。租户必须把该能力显式绑定到邮箱 SensitiveDataType，并为对应初始保护等级配置 ProtectionBaseline，识别结果才可能形成字段级保护。
 
+结构化身份证件号码首期使用独立的 `addp.detector.identity_document_number_metadata/v1` 能力。它只处理表和集合的字符串字段，并复用相同的确定性语义末级名称规则；规范化名称必须与 `idcard`、`idcardno`、`idcardnumber`、`identitycard`、`identitycardno`、`identitycardnumber`、`identitydocumentno`、`identitydocumentnumber`、`nationalid`、`nationalidno`、`nationalidnumber`、`身份证`、`身份证号`、`身份证号码`、`身份证件号`、`身份证件号码` 之一精确匹配。不得把 `id`、`user_id`、普通 `certificate_no` 或包含额外业务后缀的字段自动判为身份证件号码。该能力只产生不含业务值的 Finding，不校验号码格式、地区码、出生日期、校验位或持有人身份。租户必须显式绑定 SensitiveDataType 并配置 ProtectionBaseline；在身份证件号码专用遮盖算法进入规范前，默认规则只应选用 `suppress` 或 `deny`，不得把当前固定 11 位 ASCII 数字的手机号遮盖参数复用于身份证件号码。
+
 1. Security 只为已进入 `enrolling` 的显式 Enrollment 创建发现 execution。
 2. Worker 使用 `addp-security` Tenant Service Access Token 精确读取 owner 已授权技术事实，不订阅 Meta 全量 DataItem 变化。
 3. Detector 先使用字段路径、名称、注释、类型和结构；证据不足时才受控采样。

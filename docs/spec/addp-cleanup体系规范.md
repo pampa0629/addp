@@ -116,8 +116,9 @@ Manager 资源回收执行方只治理 Manager-owned 派生产物和缓存：
 Manager 任务定义残留治理规则：
 
 - 任务配置中 `source` 与 `target` 的强绑定 Engine、ResourceLocator、item ID 或 fingerprint 任一已失效，该任务都是 cleanup 候选；不得只解析单一 `target` 字段。
-- 普通手工 scan 必须同时发现已启用与曾被逻辑回收禁用的孤儿任务定义。`logical_cleanup` 只禁用仍启用的候选；无 lifecycle context 的手工 `physical_cleanup` 允许硬删除孤儿任务定义，包括先前已被逻辑回收禁用的定义。
-- Engine 生命周期 cleanup 不得物理删除用户任务定义；即使请求的 cleanup mode 为 `physical_cleanup`，任务定义仍映射为禁用并记录 `missing_engine`，供用户后续显式重绑或删除。
+- 普通手工 scan 必须同时发现已启用与曾被逻辑回收禁用的孤儿任务定义。`logical_cleanup` 对全部候选写入 `binding_status=missing` 和确定的 `binding_issue`，并禁用仍启用的候选；无 lifecycle context 的手工 `physical_cleanup` 允许硬删除孤儿任务定义，包括先前已被逻辑回收禁用的定义。
+- Engine 生命周期 cleanup 不得物理删除用户任务定义；即使请求的 cleanup mode 为 `physical_cleanup`，任务定义仍映射为禁用并记录 `binding_status=missing`、`binding_issue=missing_engine`，供用户后续显式重绑或删除。
+- 任务绑定状态与执行摘要正交。cleanup 不得把 `missing_engine`、`missing_source` 写入 `last_execution_status`，也不得覆盖原有最近 execution 摘要。
 
 Manager 不得：
 
@@ -342,7 +343,7 @@ cleanup 使用平台级 `cleanup_mode`，不使用数据库语境的 `soft_delet
 
 | 模式 | 语义 | 典型处理 |
 | --- | --- | --- |
-| `logical_cleanup` | 逻辑清理。让对象离开活跃路径，但保留必要状态和摘要。 | Meta soft delete；Manager artifact state 标记 `deleted`、`missing_source` 或 `outdated`；任务定义禁用并记录原因。 |
+| `logical_cleanup` | 逻辑清理。让对象离开活跃路径，但保留必要状态和摘要。 | Meta soft delete；Manager artifact state 标记 `deleted`、`missing_source` 或 `outdated`；任务定义禁用并在独立绑定状态中记录原因。 |
 | `physical_cleanup` | 物理清理。删除实际资源。 | 删除对象存储 key、PG 派生对象、向量行、Redis key、缓存文件。 |
 
 模块映射规则：
@@ -619,7 +620,7 @@ curl -sS "$BASE/monitor/executions/by-execution-id/$EXECUTION_ID/tree" \
 | --- | --- |
 | item 删除后 artifact state 如何处理 | 有审计和诊断价值的 artifact state 默认标记 `missing_source`，从活跃查询中隐藏；纯缓存可物理删除，但必须保留 execution / audit 摘要。 |
 | engine 删除前如何检查影响 | 先执行无副作用的只读影响评估；确认后进入 `deleting` 并权威复扫。参与模块缺失、运行任务、扫描失败或影响摘要变化时硬阻断删除。 |
-| engine 删除后任务定义如何处理 | 用户创建的任务、服务和治理配置统一保留；可重绑定的报告为 `rebindable`，强绑定配置禁用并记录 `missing_engine`。只有 Meta 快照、缓存和明确登记的派生产物可以随 engine 生命周期物理清理。 |
+| engine 删除后任务定义如何处理 | 用户创建的任务、服务和治理配置统一保留；可重绑定的报告为 `rebindable`，强绑定配置禁用并以独立绑定状态记录 `missing_engine`，不得污染最近执行状态。只有 Meta 快照、缓存和明确登记的派生产物可以随 engine 生命周期物理清理。 |
 | 删除后重新注册能否自动重绑定 | 不能按名称或相似连接信息猜测、映射或改写绑定。相同物理身份的普通注册返回“需要恢复”的冲突；用户显式恢复墓碑时沿用原 Engine ID，仍引用该 ID 的既有绑定在实例重新在线后自然恢复可执行。不同物理身份必须创建新的 Engine Instance，并由用户在 owner 模块显式选择后原子重绑并保留审计。 |
 | tenant 删除后如何处理 cleanup | 必须通过 system-owned cleanup execution 汇总各模块结果；业务资源可清理，System 审计日志保留或归档。 |
 | 源事实变化后如何处理派生产物 | 主路径是事件驱动标记 `outdated`；查询和执行时做惰性复查作为防线；不因 facts 变化直接物理删除派生产物。 |

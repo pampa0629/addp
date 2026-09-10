@@ -335,7 +335,14 @@ test('data application list isolates pagination and deletion lifecycle contexts'
   assert.match(list, /import\s*\{[^}]*\bonBeforeUnmount\b[^}]*\bonMounted\b[^}]*\}\s*from\s*['"]vue['"]/s)
   assert.match(list, /listLoadRequests\s*=\s*createLatestRequestCoordinator\(\)/)
   assert.match(list, /listDeletionRequests\s*=\s*createLatestRequestCoordinator\(\)/)
+  assert.match(list, /deliveryRequests\s*=\s*createLatestRequestCoordinator\(\)/)
   assert.match(list, /v-loading="loading \|\| Boolean\(deletingID\)"/)
+  assert.match(list, /getDataApplicationRuntime\(target\.id\)/)
+  assert.match(list, /dataApplicationDeliveryItems\(deliveryRuntime\.value/)
+  assert.match(list, /openDataApplicationRuntime\(deliveryTarget\.value\.id, item\.presetKey\)/)
+  assert.match(list, /dataApplicationRuntimeURL\(deliveryTarget\.value\.id, item\.presetKey\)/)
+  assert.match(list, /@opened="focusDeliveryClose"/)
+  assert.match(list, /deliveryCloseButton\.value\?\.\$el\?\.focus\(\)/)
   assert.match(draft, /dataApplicationListPageContext/)
   assert.match(draft, /dataApplicationDeletionContext/)
   assert.match(draft, /commitLatestDataApplicationRequest/)
@@ -346,7 +353,7 @@ test('data application list isolates pagination and deletion lifecycle contexts'
   assert.match(loadSource, /catch[\s\S]*commitListLoad\(request/)
   assert.match(loadSource, /finally[\s\S]*commitListLoad\(request/)
 
-  const removeSource = list.slice(list.indexOf('async function remove('), list.indexOf('function openRuntime('))
+  const removeSource = list.slice(list.indexOf('async function remove('), list.indexOf('async function openDelivery('))
   assert.ok(removeSource.indexOf('listDeletionRequests.begin(targetContext)') < removeSource.indexOf('confirmDataApplicationAction'))
   assert.ok(removeSource.indexOf('confirmDataApplicationAction') < removeSource.indexOf('deleteDataApplication'))
   assert.match(removeSource, /currentDeletionContext\(row\.id\) !== targetContext/)
@@ -358,13 +365,17 @@ test('data application list isolates pagination and deletion lifecycle contexts'
   assert.match(list, /onBeforeUnmount\(invalidateListRequests\)/)
   assert.match(list, /listLoadRequests\.invalidate\(\)/)
   assert.match(list, /listDeletionRequests\.invalidate\(\)/)
+  assert.match(list, /deliveryRequests\.invalidate\(\)/)
   assert.equal(zhCn.workbench.deleteFailed, '删除失败')
   assert.equal(en.workbench.deleteFailed, 'Delete failed')
+  assert.equal(zhCn.workbench.deliver, '交付')
+  assert.equal(en.workbench.deliver, 'Deliver')
 })
 
 test('published data applications open the canonical Console runtime directly', () => {
   const navigation = readSource('../src/utils/moduleNavigation.js')
-  assert.match(navigation, /resolveConsoleRouteUrl\(`\/data-apps\/\$\{encodeURIComponent\(id\)\}`/)
+  assert.match(navigation, /buildDataApplicationRuntimeRoute\(applicationID, presetKey\)/)
+  assert.match(navigation, /resolveConsoleRouteUrl\(route\)/)
   assert.match(navigation, /window\.open\(url,\s*['_"]_blank['_"],\s*['_"]noopener,noreferrer['_"]\)/)
 
   for (const relative of [

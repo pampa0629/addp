@@ -581,6 +581,18 @@ System 已提供面向租户管理员的外部 OAuth Client 注册治理：客�
 
 正式“可直接照做”的产品接入指南仍须等待真实 BI Connector 完成 OAuth、Descriptor、cursor、刷新、权限撤销和契约变化验收，再把经过验证的请求样例整理成文。具体 BI 品牌只是验收载体，不进入 Service Descriptor 或 ADDP 核心领域模型。
 
+### 5.10 Application Parameter Preset
+
+**Application Parameter Preset / 应用参数预设** 是 Data Application 创作者为当前 Snapshot 中全部 Application Parameter 定义的一组完整命名值。它用于把重复使用的参数组合发布为最终用户可直接选择的业务场景，而不是让用户每次重新理解并填写服务参数。
+
+参数预设属于 Data Application 草稿和不可变 Application Revision Snapshot，不单独建表、不拥有 CRUD、授权或发布生命周期。每项只保存稳定 `key`、用户可见 `name` 和按 Application Parameter key 索引的完整 `parameter_values`；数量、key、名称和值类型必须受限。`parameter_values` 必须与当前参数集合完全一致，每个值必须同时通过该参数全部 Parameter Binding 对应的 Consumer Descriptor 输入类型和操作符校验。预设不保存 ServiceReference、查询模板、筛选表达式、结果、cursor、Token 或 URL。
+
+运行时选择预设必须原子替换当前参数状态，先使受影响 Component 的在途查询和导出失效，再复用既有“查询全部组件”主路径执行；不能为预设建立第二套请求编译器。用户随后手工修改参数或通过 Selection Binding 改写参数时，当前预设选择自然清空，实际值继续只存在于浏览器会话中。“恢复默认值”使用 Application Parameter 自身的 `default_value`，不把默认值复制成隐藏预设。
+
+正式运行链接允许使用唯一查询参数 `preset=<key>` 引用已发布 Revision 中的预设。URL 不接受 JSON、重复参数或任意原始参数值；未知、空白或重复 `preset` 失败关闭并回到应用默认参数，不猜测名称、不读取草稿预设。链接不会授予权限，运行页仍按当前访问者身份读取 Data Application Revision 并调用 Service。
+
+首期不建设个人预设、最近使用、跨应用模板、预设继承、部分参数覆盖或后台保存运行状态。没有参数或没有已发布预设的应用不显示预设控件；预设只提升最终应用的可重复使用与可分享性，不改变 Workbench 的 Service-native、只读消费边界。
+
 ## 六、Service Consumer Descriptor 与 Consumer Catalog
 
 ### 6.1 必要性
@@ -1255,6 +1267,15 @@ Workbench 不因为 Phase 5 增强而取得数据建模、SQL、指标定义或�
 - [x] 实现只编译现有 Snapshot 概念的空间探索创作向导，并完成无持久副作用浏览器验收；
 - [x] 实现保存前整页预览，并让创作端与已发布运行端复用唯一应用运行画布；
 - [ ] 数据量超过有界 GeoJSON 上限前，先定义 Tile / OGC Features 的稳定消费契约，不增加无界 Query Service 旁路。
+
+### Phase 7：可复用运行场景
+
+- [x] 确认 Application Parameter Preset 是发布快照内的命名参数场景，不是查询模板、个人状态或独立聚合根；
+- [x] 实现完整参数集合、受控数量与强类型值的 Backend 保存和发布校验；
+- [x] 实现创作者预设配置、运行页预设选择和恢复默认值；
+- [x] 实现只携带 `preset` key 的正式运行链接，不接受任意原始参数值；
+- [x] 验证预设选择、手工修改、Selection Binding、异步失效、不可变 Revision 和权限边界；
+- [x] 实现应用管理页从当前已发布 Revision 按需读取交付入口，并提供默认参数与各预设的运行、复制链接操作。
 
 ## 十三、第一阶段明确延期
 
@@ -2178,11 +2199,31 @@ Selection Binding 的源选择是浏览器会话内的瞬时交互状态，不�
 
 用户在长期正式应用 `c4c0aa6e-70b1-49e8-8ade-8db92f5c6e33` 刷新后确认本节四项运行效果正常：Map 填满 placement、popup 完整可见、Chart 选择联动不再触发 Map 缩放过程、当前柱子具有明确主题色反馈。首次执行 Workbench 全模块门禁时，platform T0、Workbench Go T1、Frontend T1/T3、production build 与 Swagger 覆盖均通过，集成阶段因调用 shell 未设置 `WORKBENCH_POSTGRES_TEST_DSN` 而按规范失败关闭；确认根因后使用仓库标准 `addp_test` DSN 重新执行完整 `make test-module MODULE=workbench`，全部门禁一次通过。该环境补参不改变测试入口、数据库清单或产品代码。
 
+### 14.48 Application Parameter Preset 可复用运行场景（2026-09-09）
+
+Data Application 现可把一组完整参数值发布为 **Application Parameter Preset / 应用参数预设**。预设直接属于草稿 Snapshot，并随发布进入不可变 Application Revision；它不单独建表，不增加 CRUD、授权、发布或后台任务生命周期。每个预设只保存稳定 URL-safe `key`、用户可见 `name` 和覆盖当前全部 Application Parameter 的 `parameter_values`，不保存查询结果、Service Token、筛选表达式或服务调用模板。
+
+Workbench Backend 对预设数量、key、名称、参数集合完整性和重复项失败关闭，并让每个值同时通过该参数全部 Parameter Binding 所指向的当前 Consumer Descriptor 类型与操作符校验。Frontend 创作端复用唯一参数值输入组件编辑预设；运行端通过选择预设原子替换全部参数，沿用既有 `queryAll`、请求 generation、导出失效和 Selection Binding 主路径。手工修改参数或图表选择联动会清除当前预设标识，恢复默认值则重新采用 Application Parameter 默认值，不产生第二套查询状态。
+
+正式运行链接只接受单个 `?preset=<key>`。合法 key 在首次运行前解析为 Revision 中冻结的完整值；未知 key、重复 query 参数和任意原始参数 query 均不生效，运行端回到应用默认值。链接中不暴露参数值，也不引入 Workbench 私有授权语义；访问控制继续完全服从既有 Data Application、Service 和 Gateway 权限链路。
+
+本地确定性门禁已通过：Workbench Backend `go test ./...`、Swagger 12 个公开路由覆盖、Frontend 83 项测试与 Vite production build、使用允许的 `addp_test` 数据库执行的 `make test-module MODULE=workbench` 集成门禁均通过。真实浏览器继续使用既有长期应用 `c4c0aa6e-70b1-49e8-8ade-8db92f5c6e33`，没有新建临时应用：草稿配置“长沙场景”和“株洲场景”后保存并发布不可变 Revision 6；创作预览中的选择、手工修改清除选择、恢复默认值及查询均正常。
+
+正式 `?preset=zhuzhou` 链接自动选择“株洲场景”并以株洲市执行首次查询；未知 key、重复 `preset` 和附带原始 `city` 均失败关闭并使用默认长沙市。合法预设下点击 Chart 数据项后，Selection Binding 清除预设选择并沿既有链路查询目标城市，Map、Table、Value 和 Chart 结果一致，浏览器 warning/error 日志为空。长沙、株洲、城市字段、应用 ID 和结果只作为验收证据存在于具体 Snapshot 与本节记录，没有进入 Workbench 生产代码、默认配置或共享组件；Service、Asset、Catalog、Orchestrator 和 IAM 均未增加预设旁路。
+
+### 14.49 Data Application 发布后交付入口（2026-09-10）
+
+应用管理页的发布后操作已从直接打开默认运行页收敛为唯一“交付”入口。用户打开交付对话框时，Frontend 按需调用现有 Data Application Runtime API，读取当前不可变已发布 Revision，并列出默认参数入口和该 Revision 中的全部 Application Parameter Preset；每项可直接运行或复制正式 Console 同源链接。未发布草稿中的新增或修改预设不会混入交付列表，下线应用不显示交付入口。
+
+本次没有扩展列表 DTO、没有逐行补请求，也没有新增 Backend API、数据库投影或权限。Runtime Snapshot 只在用户显式打开某个应用的交付对话框时读取一次；对话框关闭、切换目标或页面卸载会失效尚未完成的请求，迟到响应不能回写后续会话。正式链接继续只使用 `/data-apps/:application_id` 和可选的单个 `preset` key，不增加第二条运行路由。
+
+Frontend 复用既有 Console URL 解析、Runtime API、latest-request coordinator 和 i18n 体系；链接构造与交付项编译由 Workbench 纯函数唯一维护。真实浏览器在长期应用 `c4c0aa6e-70b1-49e8-8ade-8db92f5c6e33` 上读取到发布修订 6，并展示“默认参数”“长沙场景”“株洲场景”三个交付项；株洲复制操作返回成功提示，页面 warning/error 日志为空。标准 `make test-module MODULE=workbench` 门禁已通过，包括 platform T0、Workbench Go、Frontend 85 项测试、production build、Swagger 12 个公开路由覆盖和 `addp_test` PostgreSQL 集成；书稿和差异格式校验也通过。上述应用和预设仍只作为验收证据，不进入产品默认配置。
+
 ## 十五、概念设计状态
 
 当前没有待确认的 Phase 0 概念问题。Phase 5 的 Selection Binding 同页联动、`desktop | wallboard` 展示模式、浏览器会话级全屏、Application Refresh Policy 和 Application Presentation Sections 已完成设计、实现、标准模块门禁与真实浏览器验收；Data Application 资产运营指标的事实源、模块归属以及 Asset 自有 `application` / 具体 Asset 运营分组也已完成运行态复核。外部 BI 的 owner 边界、消费契约、用户委托 OAuth 单一路线和 System 外部 OAuth Client 注册治理已经完成；首个真实 BI 验收载体仍为 Power Query 自定义 Connector 与 Power BI Desktop Import，但因当前缺少 Windows 宿主而暂缓。`common-python` 的产品无关 Service Consumer SDK、离线门禁及真实普通表、空间表和 Outdoor 多服务只读运行验收均已完成；它不替代 callback state、持久外部 Client 生命周期和真实 BI 产品端到端证据，因此正式 BI 接入指南继续保持未完成。
 
-14.19 的 Data Application 直接创作收口、Outdoor 双服务真实验收、14.20 的 Business MySQL 本地异构验收，以及 14.21–14.23 的 Phase 6 场景化组合、空间探索创作向导和保存前整页预览均已完成。验收数据只作运行证据，没有进入 Workbench 领域模型、生产代码或默认配置。14.46 的通用状态呈现契约、编辑器、共享 renderer、本地门禁，以及保存、重新加载、不可变 Revision 5 发布和 Value、Chart、Map、Table 四类 renderer 的正式运行闭环均已完成。Phase 6 当前确认范围已经收口；真实数据量没有超过有界 GeoJSON 上限前不启动 Tile / OGC Features，也不继续堆叠 renderer。
+14.19 的 Data Application 直接创作收口、Outdoor 双服务真实验收、14.20 的 Business MySQL 本地异构验收，以及 14.21–14.23 的 Phase 6 场景化组合、空间探索创作向导和保存前整页预览均已完成。验收数据只作运行证据，没有进入 Workbench 领域模型、生产代码或默认配置。14.46 的通用状态呈现契约、编辑器、共享 renderer、本地门禁，以及保存、重新加载、不可变 Revision 5 发布和 Value、Chart、Map、Table 四类 renderer 的正式运行闭环均已完成。14.48 的 Application Parameter Preset 已完成概念、不可变快照、强校验、创作配置、运行选择、只含 preset key 的正式链接及真实浏览器闭环；14.49 又完成从当前不可变已发布 Revision 按需生成管理页交付入口，Phase 7 当前确认范围已经收口。真实数据量没有超过有界 GeoJSON 上限前不启动 Tile / OGC Features，也不继续堆叠 renderer。
 
 14.24 的历史契约清理已经通过用户确认完成；Outdoor 长期应用已显式重绑当前 Service 24 契约并发布 Revision 3，Revision 2 保持不可变。14.26–14.27 的通用 Service Consumer SDK、公开导出、单元测试、README、发布门禁和真实运行验收已经完成。14.28 已在 MySQL Engine Provider 内补齐受限、精确、失败关闭的 QueryReadSet 与直接列 QueryOutputLineage，并完成 Business MySQL Service、Python SDK、契约漂移阻断、显式重绑、不可变 Revision 2 及最终 Data Application Table / Chart 的运行态验收；14.29 进一步完成最终应用对 Descriptor 临时失败和查询临时失败的可恢复状态收敛，契约变化仍严格阻断；14.30 完成 Component 编辑器的 Descriptor、查询和导出异步上下文隔离，服务切换或关闭后的迟到结果不再污染当前草稿；14.31 完成编辑器游标翻页的原子提交，失败请求不再产生旧数据与新页码混合的假状态；14.32 已完成运行画布按 Parameter Binding 精确失效旧参数请求的实现、标准前端门禁与发布 Revision 2 的真实浏览器验收；14.33 进一步把参数竞态收敛为可控 Promise 行为测试，不再只依赖浏览器时序和源码合同；14.34 已用同一 generation 和可控 Promise 阻断迟到导出的文件下载副作用；14.35 已为 Descriptor 初始加载与查询重试建立独立 latest-request generation，旧响应不再覆盖新状态；14.36 已把同源运行路由 A/B 快速切换的迟到成功、错误和 loading 收尾纳入同一 latest-request 提交门禁；14.37 在运行页卸载时立即失效 Revision 请求；14.38 使 Component 编辑器的弹窗关闭与页面卸载共享同一 Descriptor、查询和导出失效入口；14.39 进一步把创建页、编辑页 ID 切换、应用加载、Descriptor 派生加载和页面卸载收敛到唯一 editor route generation；14.40 又把保存、发布、下线从确认到响应收尾的副作用纳入独立 mutation generation；14.41 把列表翻页、删除确认、DELETE 响应和删除后刷新也收敛到同一 Data Application request 提交语义；14.42 进一步把空间探索向导的 Catalog、汇总 Descriptor、空间 Descriptor、关闭重开和卸载收敛到三个相互独立但共享同一提交语义的会话 generation；14.43 已把 Element Plus 全量注册与 Map 运行依赖移出 Workbench 首屏，并建立入口 chunk 硬预算和正式 Console 运行验收；14.44 已完成已发布应用在 Descriptor 与必填默认值均可执行时只复用一次“查询全部组件”主路径，草稿手工查询、参数提交和 Wallboard 后续刷新语义不变；14.45 已完成通用字段呈现契约、共享 renderer 实现、本地门禁，以及真实应用从编辑、预览、保存、不可变 Revision 3 发布到正式运行页自动首查的完整闭环。Power Query 路线继续保留；获得 Windows 宿主后再在 `service/connectors/power-query/` 完成具体 Connector 与真实 BI 门禁。没有真实宿主证据前不修改 OAuth 或 Service API，也不提前编写“可直接照做”的正式 BI 接入指南。当前唯一未闭合的同专题自动化证据是 `workbench-service-consumption` T4：具备专用 runner 后应优先补跑，本地验收不能替代该 Online Gate。不要修改 Service 查询路由、引入 API Key 私有授权、数据库直连或增加 Workbench / Python 代理。跨模块综合统计和 Workbench 运行埋点继续暂缓；只有确认成功打开次数、独立访问用户和 Revision 分布确有独立产品价值时，才进入 Workbench owner 运行准入事实设计。在独立价值确认前不进入多页面、`mobile`、页面轮播、通用动作、后台定时任务或第二套运行状态。若后续实现与现有公开契约冲突，必须先回到本专题及正式规范修订设计，不得增加兼容路由、兼容字段或 Workbench 私有旁路。
 

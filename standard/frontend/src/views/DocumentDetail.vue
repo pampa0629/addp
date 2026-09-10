@@ -75,7 +75,7 @@
                 <template #title>
                   <div class="candidate-family-header">
                     <div><el-tag size="small">{{ candidateTypeLabel(family.candidate_type) }}</el-tag><strong>{{ family.representative_name }}</strong><code>{{ family.code }}</code></div>
-                    <div class="candidate-family-meta"><span>{{ $t('standard.document.candidateFamilyVariantCount', { count: family.variant_count }) }}</span><span>{{ $t('standard.document.candidateFamilyOccurrenceCount', { count: family.occurrence_count }) }}</span></div>
+                    <div class="candidate-family-meta"><span>{{ family.variant_count === family.total_variant_count ? $t('standard.document.candidateFamilyVariantCount', { count: family.variant_count }) : $t('standard.document.candidateFamilyVisibleVariantCount', { visible: family.variant_count, total: family.total_variant_count }) }}</span><span>{{ $t('standard.document.candidateFamilyOccurrenceCount', { count: family.occurrence_count }) }}</span><el-button v-if="family.decision_count" link type="primary" size="small" @click.stop="openCandidateFamilyDecisionHistory(family)">{{ $t('standard.document.candidateFamilyDecisionHistoryCount', { count: family.decision_count }) }}</el-button></div>
                   </div>
                 </template>
                 <section v-if="family.variant_differences.length" class="candidate-variant-differences" :aria-label="$t('standard.document.candidateVariantDifferencesTitle')">
@@ -100,6 +100,7 @@
                     </div>
                   </div>
                 </section>
+                <el-alert v-if="canUpdate && family.total_variant_count > family.variant_count" class="candidate-family-decision-hint" :title="$t('standard.document.candidateFamilyDecisionFilteredHint', { visible: family.variant_count, total: family.total_variant_count })" type="info" :closable="false" show-icon />
                 <el-card v-for="(group, variantIndex) in family.variants" :id="candidateVariantCardId(family.family_key, group.semantic_fingerprint)" :key="group.semantic_fingerprint" shadow="never" class="candidate-card" tabindex="-1">
                   <div class="candidate-header"><div><el-tag size="small" type="info">{{ $t('standard.document.candidateVariantIndex', { index: variantIndex + 1 }) }}</el-tag><strong>{{ group.candidate.name }}</strong><code>{{ group.candidate.code }}</code></div><el-tag :type="candidateGroupStateTagType(group.state)">{{ candidateGroupStateLabel(group.state) }}</el-tag></div>
                   <div class="candidate-group-meta"><span>{{ $t('standard.document.candidateOccurrenceCount', { count: group.occurrence_count }) }}</span><span>{{ $t('standard.document.candidateFirstSeen') }} {{ formatTime(group.first_seen_at) }}</span><span>{{ $t('standard.document.candidateLastSeen') }} {{ formatTime(group.last_seen_at) }}</span></div>
@@ -122,8 +123,8 @@
                   </div>
                   <pre v-if="Object.keys(group.candidate.payload || {}).length">{{ JSON.stringify(group.candidate.payload, null, 2) }}</pre>
                   <el-collapse class="candidate-occurrences"><el-collapse-item :name="group.semantic_fingerprint"><template #title>{{ $t('standard.document.candidateEvidenceHistory', { count: group.occurrence_count }) }}</template><div v-for="occurrence in group.occurrences" :key="occurrence.candidate_id" class="candidate-occurrence"><div class="candidate-occurrence-header"><span>#{{ occurrence.extraction_id }} · R{{ revisionNo(occurrence.document_revision_id) }} · {{ formatTime(occurrence.extracted_at) }}</span><el-tag size="small" :type="occurrence.formalization ? 'success' : occurrence.status === 'pending' ? 'warning' : occurrence.status === 'retained' ? 'success' : 'info'">{{ occurrence.formalization ? candidateGroupStateLabel('formalized') : candidateStatusLabel(occurrence.status) }}</el-tag></div><blockquote v-for="evidence in occurrence.evidences || []" :key="evidence.id"><small>{{ evidence.section_path }} · L{{ evidence.start_line }}-{{ evidence.end_line }} · {{ shortHash(evidence.excerpt_hash) }}</small><div>{{ evidence.excerpt }}</div></blockquote></div></el-collapse-item></el-collapse>
-                  <div v-if="group.state === 'pending' && canUpdate" class="candidate-actions"><el-button size="small" type="success" @click="decideCandidate(group.candidate, 'retained')">{{ $t('standard.document.retainCandidate') }}</el-button><el-button size="small" @click="decideCandidate(group.candidate, 'rejected')">{{ $t('standard.document.rejectCandidate') }}</el-button></div>
-                  <div v-else-if="group.state === 'formalized' && group.candidate.formalization" class="formalization-result">
+                  <div v-if="canUpdate && (group.state === 'pending' || canDecideCandidateFamily(family))" class="candidate-actions"><el-button v-if="group.state === 'pending'" size="small" type="success" @click="decideCandidate(group.candidate, 'retained')">{{ $t('standard.document.retainCandidate') }}</el-button><el-button v-if="group.state === 'pending'" size="small" @click="decideCandidate(group.candidate, 'rejected')">{{ $t('standard.document.rejectCandidate') }}</el-button><el-button v-if="canDecideCandidateFamily(family)" size="small" type="primary" plain :loading="decidingCandidateFamily === family.family_key" @click="decideCandidateFamily(family, group)">{{ $t('standard.document.selectCandidateFamilyWinner') }}</el-button></div>
+                  <div v-if="group.state === 'formalized' && group.candidate.formalization" class="formalization-result">
                     <span>{{ formalizationActionLabel(group.candidate.formalization.action) }} · R{{ group.candidate.formalization.revision_no }} · {{ statusLabel(group.candidate.formalization.target_revision_status) }}</span>
                     <el-button link type="primary" size="small" @click="openFormalizedStandard(group.candidate)">{{ $t('standard.document.openFormalizedStandard') }}</el-button>
                   </div>
@@ -146,6 +147,18 @@
         <el-card class="section-card"><template #header><h3>{{ $t('standard.common.metadata') }}</h3></template><el-descriptions :column="1" size="small"><el-descriptions-item :label="$t('standard.common.id')">{{ document.id }}</el-descriptions-item><el-descriptions-item :label="$t('standard.common.createdAt')">{{ formatTime(document.created_at) }}</el-descriptions-item><el-descriptions-item :label="$t('standard.common.updatedAt')">{{ formatTime(document.updated_at) }}</el-descriptions-item></el-descriptions></el-card>
       </el-col>
     </el-row>
+
+    <el-dialog v-model="candidateDecisionHistoryDialog" :title="$t('standard.document.candidateFamilyDecisionHistoryTitle', { code: candidateDecisionHistoryFamily?.code || '' })" width="760px" class="addp-dialog" destroy-on-close>
+      <el-table v-loading="candidateDecisionHistoryLoading" :data="candidateDecisionHistory.data" border>
+        <el-table-column :label="$t('standard.document.candidateFamilyDecisionTime')" width="180"><template #default="{ row }">{{ formatTime(row.created_at) }}</template></el-table-column>
+        <el-table-column :label="$t('standard.document.candidateFamilyDecisionWinner')" min-width="170"><template #default="{ row }"><strong>{{ candidateDecisionWinner(row)?.name || `#${row.winner_candidate_id}` }}</strong><div><code>#{{ row.winner_candidate_id }}</code></div></template></el-table-column>
+        <el-table-column prop="reason" :label="$t('standard.document.candidateFamilyDecisionReason')" min-width="240" show-overflow-tooltip />
+        <el-table-column :label="$t('standard.document.candidateFamilyDecisionMemberCount')" width="90"><template #default="{ row }">{{ row.members?.length || 0 }}</template></el-table-column>
+        <el-table-column :label="$t('standard.document.candidateFamilyDecisionOperator')" width="100"><template #default="{ row }">#{{ row.created_by }}</template></el-table-column>
+      </el-table>
+      <el-pagination v-if="candidateDecisionHistory.total > candidateDecisionHistory.page_size" class="candidate-pagination" background layout="prev, pager, next" :current-page="candidateDecisionHistory.page" :page-size="candidateDecisionHistory.page_size" :total="candidateDecisionHistory.total" @current-change="changeCandidateDecisionHistoryPage" />
+      <template #footer><el-button @click="candidateDecisionHistoryDialog = false">{{ $t('standard.common.close') }}</el-button></template>
+    </el-dialog>
 
     <el-dialog v-model="formalizationDialog" :title="$t('standard.document.formalizationTitle')" width="560px" class="addp-dialog" destroy-on-close>
       <el-alert :title="formalizationDialogHint" type="info" :closable="false" show-icon />
@@ -178,12 +191,14 @@ import { navigateStandardRoute } from '@/utils/moduleNavigation'
 
 const { t, locale } = useI18n(), route = useRoute(), router = useRouter(), authStore = useAuthStore()
 const { canUpdate, canPublish, canCreateExtraction } = useStandardPermissions('document')
-const loading = ref(false), candidateLoading = ref(false), saving = ref(false), uploading = ref(false), extracting = ref(false), formalizing = ref(false), formalizationDialog = ref(false), formalizationCandidate = ref(null)
+const loading = ref(false), candidateLoading = ref(false), saving = ref(false), uploading = ref(false), extracting = ref(false), formalizing = ref(false), formalizationDialog = ref(false), formalizationCandidate = ref(null), decidingCandidateFamily = ref('')
+const candidateDecisionHistoryDialog = ref(false), candidateDecisionHistoryLoading = ref(false), candidateDecisionHistoryFamily = ref(null)
 const document = ref({}), history = ref([]), domains = ref([]), mappings = ref({ elements: [], glossaries: [], metrics: [] })
 const revision = reactive({}), identity = reactive({ scope_type: 'tenant_common', owner_domain_id: null, doc_type: 'reference', source_org: '', steward_id: null, tags: [] })
 const formalizationForm = reactive({ change_summary: '', metric_type: '' })
 const candidateQuery = reactive({ keyword: '', state: '', candidate_type: '', comparison_result: '', page: 1, page_size: 20 })
 const candidateFamilyResponse = reactive({ data: [], total: 0, variant_total: 0, page: 1, page_size: 20, total_pages: 1, variant_status_counts: { pending: 0, retained: 0, rejected: 0, formalized: 0 }, family_comparison_counts: { all: 0, new: 0, exact: 0, content_conflict: 0, scope_conflict: 0 } })
+const candidateDecisionHistory = reactive({ data: [], total: 0, page: 1, page_size: 20, total_pages: 1 })
 const expandedCandidateFamilies = ref([])
 const candidateRequests = createLatestRequestCoordinator()
 const documentTypes = ['national', 'industry', 'internal', 'reference']
@@ -215,6 +230,7 @@ const canFormalizeCandidate = candidate => {
   const action = candidate.comparison.result === 'new' ? 'create' : 'update'
   return authStore.hasPermission(buildStandardPermission(candidate.candidate_type, action))
 }
+const canDecideCandidateFamily = family => family.variant_count >= 2 && family.variant_count === family.total_variant_count && !family.variants.some(group => group.state === 'formalized')
 const comparisonFieldLabel = field => field ? t(`standard.document.comparisonField.${field}`) : ''
 const candidateVariantFieldLabel = field => t(`standard.document.candidateVariantField.${field}`)
 const candidateVariantCardId = (familyKey, semanticFingerprint) => `candidate-variant-${encodeURIComponent(familyKey)}-${encodeURIComponent(semanticFingerprint)}`
@@ -295,6 +311,60 @@ async function uploadRevision(file) { if (!editable.value || uploading.value) re
 async function downloadRevision() { try { const blob = await documentAPI.download(document.value.id, revision.id); saveBlob(blob, revision.file_name || revision.name) } catch (error) { ElMessage.error(getStandardErrorMessage(error, t, 'standard.document.downloadFailed')) } }
 async function extractCandidates() { if (extracting.value) return; extracting.value = true; try { await documentAPI.extractCandidates(document.value.id, revision.id, document.value.version); ElMessage.success(t('standard.document.extractionSuccess')); await load() } catch (error) { ElMessage.error(getStandardErrorMessage(error, t)) } finally { extracting.value = false } }
 async function decideCandidate(candidate, status) { try { await documentAPI.updateCandidate(candidate.id, { version: candidate.version, status }); await loadCandidateFamilies(); ElMessage.success(t('standard.common.updateSuccess')) } catch (error) { ElMessage.error(getStandardErrorMessage(error, t)) } }
+async function decideCandidateFamily(family, winner) {
+  if (decidingCandidateFamily.value || !canDecideCandidateFamily(family)) return
+  try {
+    const { value } = await ElMessageBox.prompt(t('standard.document.candidateFamilyDecisionConfirm', { name: winner.candidate.name, count: family.variant_count - 1 }), t('standard.document.candidateFamilyDecisionTitle'), {
+      type: 'warning', inputType: 'textarea', inputPlaceholder: t('standard.document.candidateFamilyDecisionReasonPlaceholder'), confirmButtonText: t('standard.document.confirmCandidateFamilyDecision'),
+      inputValidator: input => {
+        const reason = input?.trim() || ''
+        if (!reason) return t('standard.document.candidateFamilyDecisionReasonRequired')
+        if (Array.from(reason).length > 1000) return t('standard.document.candidateFamilyDecisionReasonTooLong')
+        return true
+      }
+    })
+    decidingCandidateFamily.value = family.family_key
+    await documentAPI.decideCandidateFamily(document.value.id, {
+      winner_candidate_id: winner.candidate.id,
+      members: family.variants.map(group => ({ candidate_id: group.candidate.id, version: group.candidate.version })),
+      reason: value.trim()
+    })
+    await loadCandidateFamilies()
+    ElMessage.success(t('standard.document.candidateFamilyDecisionSuccess'))
+  } catch (error) {
+    if (!isCanceledInteraction(error)) ElMessage.error(getStandardErrorMessage(error, t))
+  } finally {
+    decidingCandidateFamily.value = ''
+  }
+}
+const candidateDecisionWinner = decision => decision.members?.find(member => member.candidate_id === decision.winner_candidate_id)
+async function loadCandidateFamilyDecisionHistory() {
+  if (!candidateDecisionHistoryFamily.value) return
+  candidateDecisionHistoryLoading.value = true
+  try {
+    const result = await documentAPI.listCandidateFamilyDecisions(document.value.id, {
+      candidate_type: candidateDecisionHistoryFamily.value.candidate_type,
+      code: candidateDecisionHistoryFamily.value.code,
+      page: candidateDecisionHistory.page,
+      page_size: candidateDecisionHistory.page_size
+    })
+    Object.assign(candidateDecisionHistory, result)
+  } catch (error) {
+    ElMessage.error(getStandardErrorMessage(error, t, 'standard.common.loadFailed'))
+  } finally {
+    candidateDecisionHistoryLoading.value = false
+  }
+}
+function openCandidateFamilyDecisionHistory(family) {
+  candidateDecisionHistoryFamily.value = family
+  Object.assign(candidateDecisionHistory, { data: [], total: family.decision_count || 0, page: 1, page_size: 20, total_pages: 1 })
+  candidateDecisionHistoryDialog.value = true
+  loadCandidateFamilyDecisionHistory()
+}
+function changeCandidateDecisionHistoryPage(page) {
+  candidateDecisionHistory.page = page
+  loadCandidateFamilyDecisionHistory()
+}
 function openFormalization(candidate) {
   formalizationCandidate.value = candidate
   formalizationForm.change_summary = t('standard.document.formalizationDefaultSummary', { name: candidate.name })
@@ -326,6 +396,6 @@ onMounted(async () => { try { domains.value = flattenDomains(await domainAPI.lis
 </script>
 
 <style scoped>
-.document-detail { padding:20px; }.page-header,.header-left,.header-right,.card-header,.file-row,.candidate-header,.candidate-family-header,.candidate-family-header > div,.candidate-family-meta,.candidate-reference,.comparison-summary,.comparison-target,.formalization-result,.candidate-toolbar,.candidate-comparison-facets,.candidate-comparison-label,.candidate-group-meta,.candidate-occurrence-header,.candidate-variant-differences-header,.candidate-variant-value { display:flex; align-items:center; gap:12px; }.page-header,.card-header,.candidate-header,.candidate-family-header,.comparison-target,.formalization-result,.candidate-occurrence-header { justify-content:space-between; }.page-header { margin-bottom:20px; }.header-left h2,.card-header h3 { margin:0; }.section-card { margin-bottom:20px; }.file-row,.candidate-toolbar,.candidate-comparison-facets,.candidate-comparison-facets .el-radio-group,.candidate-group-meta,.candidate-family-header { flex-wrap:wrap; }.hint { margin-top:14px; }.candidate-toolbar,.candidate-comparison-facets { margin-bottom:14px; }.candidate-toolbar .candidate-search { width:280px; }.candidate-toolbar .el-select { width:180px; }.candidate-toolbar > span,.candidate-comparison-label,.candidate-group-meta,.candidate-family-meta,.candidate-variant-differences-header span { color:var(--addp-text-secondary); }.candidate-comparison-label { gap:2px; }.candidate-comparison-help { color:var(--addp-text-secondary); }.candidate-group-meta { margin-top:8px; font-size:13px; }.candidate-families { border-top:0; }.candidate-family { margin-bottom:12px; border:1px solid var(--el-border-color-light); border-radius:6px; overflow:hidden; }.candidate-family :deep(.el-collapse-item__header) { height:auto; min-height:48px; padding:10px 14px; border-bottom:0; background:var(--addp-bg-secondary); }.candidate-family :deep(.el-collapse-item__wrap) { border-bottom:0; }.candidate-family :deep(.el-collapse-item__content) { padding:12px 14px 2px; }.candidate-family-header { width:100%; padding-right:12px; }.candidate-family-meta { font-size:13px; }.candidate-variant-differences { margin-bottom:12px; padding:12px; border:1px solid var(--el-color-warning-light-5); border-radius:6px; background:var(--el-color-warning-light-9); }.candidate-variant-differences-header { margin-bottom:10px; flex-wrap:wrap; }.candidate-variant-difference-row { display:grid; grid-template-columns:120px minmax(0,1fr); gap:10px; padding:8px 0; border-top:1px solid var(--el-border-color-light); }.candidate-variant-values,.candidate-variant-code-items { display:flex; flex-direction:column; gap:6px; min-width:0; }.candidate-variant-value { align-items:flex-start; min-width:0; overflow-wrap:anywhere; }.candidate-variant-jump { flex:none; padding:0; border:0; background:transparent; cursor:pointer; }.candidate-variant-jump:focus-visible { outline:2px solid var(--el-color-primary); outline-offset:2px; border-radius:4px; }.candidate-card { margin-bottom:10px; }.candidate-card:focus { box-shadow:0 0 0 2px var(--el-color-primary-light-5); }.candidate-header > div { display:flex; align-items:center; gap:8px; }.candidate-reference { margin:8px 0; color:var(--addp-text-secondary); }.candidate-reference code { color:var(--addp-text-primary); overflow-wrap:anywhere; }.candidate-comparison { margin:10px 0; padding:10px 12px; border:1px solid var(--el-border-color-light); border-radius:6px; background:var(--addp-bg-secondary); }.comparison-target { margin-top:8px; }.comparison-target span { min-width:0; overflow-wrap:anywhere; }.comparison-differences { margin-top:10px; }.comparison-value { white-space:pre-wrap; overflow-wrap:anywhere; color:var(--addp-text-primary); }.comparison-item + .comparison-item { margin-top:4px; }.candidate-card pre { white-space:pre-wrap; background:var(--addp-bg-secondary); padding:10px; border-radius:4px; }.candidate-card blockquote { margin:8px 0; padding:8px 12px; border-left:3px solid var(--el-color-primary); background:var(--addp-bg-secondary); }.candidate-card blockquote small { color:var(--addp-text-secondary); }.candidate-occurrences { margin:10px 0; }.candidate-occurrence + .candidate-occurrence { margin-top:12px; padding-top:12px; border-top:1px solid var(--addp-border-color-light); }.candidate-actions { text-align:right; }.candidate-pagination { justify-content:flex-end; margin-top:16px; }.formalization-result { margin-top:12px; padding:8px 10px; border-radius:6px; background:var(--el-color-success-light-9); color:var(--el-color-success-dark-2); }.formalization-form { margin-top:18px; }.formalization-form code { margin-left:8px; }.mapping-tag { margin:4px; }
+.document-detail { padding:20px; }.page-header,.header-left,.header-right,.card-header,.file-row,.candidate-header,.candidate-family-header,.candidate-family-header > div,.candidate-family-meta,.candidate-reference,.comparison-summary,.comparison-target,.formalization-result,.candidate-toolbar,.candidate-comparison-facets,.candidate-comparison-label,.candidate-group-meta,.candidate-occurrence-header,.candidate-variant-differences-header,.candidate-variant-value { display:flex; align-items:center; gap:12px; }.page-header,.card-header,.candidate-header,.candidate-family-header,.comparison-target,.formalization-result,.candidate-occurrence-header { justify-content:space-between; }.page-header { margin-bottom:20px; }.header-left h2,.card-header h3 { margin:0; }.section-card { margin-bottom:20px; }.file-row,.candidate-toolbar,.candidate-comparison-facets,.candidate-comparison-facets .el-radio-group,.candidate-group-meta,.candidate-family-header { flex-wrap:wrap; }.hint { margin-top:14px; }.candidate-toolbar,.candidate-comparison-facets { margin-bottom:14px; }.candidate-toolbar .candidate-search { width:280px; }.candidate-toolbar .el-select { width:180px; }.candidate-toolbar > span,.candidate-comparison-label,.candidate-group-meta,.candidate-family-meta,.candidate-variant-differences-header span { color:var(--addp-text-secondary); }.candidate-comparison-label { gap:2px; }.candidate-comparison-help { color:var(--addp-text-secondary); }.candidate-group-meta { margin-top:8px; font-size:13px; }.candidate-families { border-top:0; }.candidate-family { margin-bottom:12px; border:1px solid var(--el-border-color-light); border-radius:6px; overflow:hidden; }.candidate-family :deep(.el-collapse-item__header) { height:auto; min-height:48px; padding:10px 14px; border-bottom:0; background:var(--addp-bg-secondary); }.candidate-family :deep(.el-collapse-item__wrap) { border-bottom:0; }.candidate-family :deep(.el-collapse-item__content) { padding:12px 14px 2px; }.candidate-family-header { width:100%; padding-right:12px; }.candidate-family-meta { font-size:13px; }.candidate-variant-differences { margin-bottom:12px; padding:12px; border:1px solid var(--el-color-warning-light-5); border-radius:6px; background:var(--el-color-warning-light-9); }.candidate-variant-differences-header { margin-bottom:10px; flex-wrap:wrap; }.candidate-variant-difference-row { display:grid; grid-template-columns:120px minmax(0,1fr); gap:10px; padding:8px 0; border-top:1px solid var(--el-border-color-light); }.candidate-variant-values,.candidate-variant-code-items { display:flex; flex-direction:column; gap:6px; min-width:0; }.candidate-variant-value { align-items:flex-start; min-width:0; overflow-wrap:anywhere; }.candidate-variant-jump { flex:none; padding:0; border:0; background:transparent; cursor:pointer; }.candidate-variant-jump:focus-visible { outline:2px solid var(--el-color-primary); outline-offset:2px; border-radius:4px; }.candidate-family-decision-hint { margin-bottom:12px; }.candidate-card { margin-bottom:10px; }.candidate-card:focus { box-shadow:0 0 0 2px var(--el-color-primary-light-5); }.candidate-header > div { display:flex; align-items:center; gap:8px; }.candidate-reference { margin:8px 0; color:var(--addp-text-secondary); }.candidate-reference code { color:var(--addp-text-primary); overflow-wrap:anywhere; }.candidate-comparison { margin:10px 0; padding:10px 12px; border:1px solid var(--el-border-color-light); border-radius:6px; background:var(--addp-bg-secondary); }.comparison-target { margin-top:8px; }.comparison-target span { min-width:0; overflow-wrap:anywhere; }.comparison-differences { margin-top:10px; }.comparison-value { white-space:pre-wrap; overflow-wrap:anywhere; color:var(--addp-text-primary); }.comparison-item + .comparison-item { margin-top:4px; }.candidate-card pre { white-space:pre-wrap; background:var(--addp-bg-secondary); padding:10px; border-radius:4px; }.candidate-card blockquote { margin:8px 0; padding:8px 12px; border-left:3px solid var(--el-color-primary); background:var(--addp-bg-secondary); }.candidate-card blockquote small { color:var(--addp-text-secondary); }.candidate-occurrences { margin:10px 0; }.candidate-occurrence + .candidate-occurrence { margin-top:12px; padding-top:12px; border-top:1px solid var(--addp-border-color-light); }.candidate-actions { text-align:right; }.candidate-pagination { justify-content:flex-end; margin-top:16px; }.formalization-result { margin-top:12px; padding:8px 10px; border-radius:6px; background:var(--el-color-success-light-9); color:var(--el-color-success-dark-2); }.formalization-form { margin-top:18px; }.formalization-form code { margin-left:8px; }.mapping-tag { margin:4px; }
 @media (max-width:768px) { .document-detail { padding:12px; }.page-header { align-items:flex-start; flex-wrap:wrap; }.document-detail :deep(.el-col) { max-width:100%; flex:0 0 100%; }.candidate-variant-difference-row { grid-template-columns:1fr; } }
 </style>

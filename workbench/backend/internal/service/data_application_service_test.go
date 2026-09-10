@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
 	"testing"
 	"time"
@@ -175,17 +176,22 @@ func TestDataApplicationServiceOwnsSnapshotAndImmutableRevision(t *testing.T) {
 	repository := newMemoryDataApplicationRepository()
 	descriptors := &fakeDescriptorReader{descriptor: testDescriptor(false)}
 	applications := NewDataApplicationService(repository, descriptors, nil)
+	initialSnapshot := testDataApplicationSnapshot()
+	initialSnapshot.ParameterPresets = []models.DataApplicationParameterPreset{{
+		Key: "paid-orders", Name: "Paid orders",
+		ParameterValues: map[string]json.RawMessage{"component_1.status": json.RawMessage(`"paid"`)},
+	}}
 
 	created, err := applications.Create(context.Background(), 7, 11, DescriptorRequest{BearerToken: "user-token"}, models.DataApplicationCreateRequest{
-		Name: "Order application", Description: "Published order application", Snapshot: testDataApplicationSnapshot(),
+		Name: "Order application", Description: "Published order application", Snapshot: initialSnapshot,
 	})
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
-	if created.Version != 1 || created.PublicationStatus != models.PublicationStatusUnpublished || created.Snapshot.Page.DisplayMode != models.ApplicationDisplayModeDesktop || created.Snapshot.Page.RefreshIntervalSeconds == nil || *created.Snapshot.Page.RefreshIntervalSeconds != models.ApplicationRefreshIntervalDisabled || len(created.Snapshot.Page.VisibleSections) != 3 || len(created.Snapshot.Components) != 1 || len(created.Snapshot.Parameters) != 1 {
+	if created.Version != 1 || created.PublicationStatus != models.PublicationStatusUnpublished || created.Snapshot.Page.DisplayMode != models.ApplicationDisplayModeDesktop || created.Snapshot.Page.RefreshIntervalSeconds == nil || *created.Snapshot.Page.RefreshIntervalSeconds != models.ApplicationRefreshIntervalDisabled || len(created.Snapshot.Page.VisibleSections) != 3 || len(created.Snapshot.Components) != 1 || len(created.Snapshot.Parameters) != 1 || len(created.Snapshot.ParameterPresets) != 1 {
 		t.Fatalf("created application = %#v", created)
 	}
-	if created.Snapshot.Parameters == nil || created.Snapshot.ParameterBindings == nil || created.Snapshot.SelectionBindings == nil || created.Snapshot.Page.VisibleSections == nil || created.Snapshot.Page.Placements == nil {
+	if created.Snapshot.Parameters == nil || created.Snapshot.ParameterPresets == nil || created.Snapshot.ParameterBindings == nil || created.Snapshot.SelectionBindings == nil || created.Snapshot.Page.VisibleSections == nil || created.Snapshot.Page.Placements == nil {
 		t.Fatalf("snapshot collections must use JSON arrays: %#v", created.Snapshot)
 	}
 	if created.Snapshot.Components[0].Title != "Orders" || created.Snapshot.Components[0].ServiceRef.ServiceID != 23 {
@@ -222,6 +228,7 @@ func TestDataApplicationServiceOwnsSnapshotAndImmutableRevision(t *testing.T) {
 	draft.Page.DisplayMode = models.ApplicationDisplayModeWallboard
 	draft.Page.RefreshIntervalSeconds = applicationRefreshInterval(models.ApplicationRefreshInterval30Seconds)
 	draft.Page.VisibleSections = []string{models.ApplicationVisibleSectionTitle}
+	draft.ParameterPresets[0].Name = "Edited preset"
 	updated, err := applications.Update(context.Background(), 7, 11, created.ID, DescriptorRequest{BearerToken: "user-token"}, models.DataApplicationUpdateRequest{
 		Name: "Edited draft", Description: published.Description, Snapshot: draft, Version: 2,
 	})
@@ -232,7 +239,7 @@ func TestDataApplicationServiceOwnsSnapshotAndImmutableRevision(t *testing.T) {
 		t.Fatalf("updated application = %#v", updated)
 	}
 	runtimeAfterEdit, err := applications.Runtime(7, 11, created.ID)
-	if err != nil || runtimeAfterEdit.Name != "Order application" || runtimeAfterEdit.Snapshot.Page.Title == "Edited draft page" || runtimeAfterEdit.Snapshot.Page.DisplayMode != models.ApplicationDisplayModeDesktop || runtimeAfterEdit.Snapshot.Page.RefreshIntervalSeconds == nil || *runtimeAfterEdit.Snapshot.Page.RefreshIntervalSeconds != models.ApplicationRefreshIntervalDisabled || len(runtimeAfterEdit.Snapshot.Page.VisibleSections) != 3 {
+	if err != nil || runtimeAfterEdit.Name != "Order application" || runtimeAfterEdit.Snapshot.Page.Title == "Edited draft page" || runtimeAfterEdit.Snapshot.Page.DisplayMode != models.ApplicationDisplayModeDesktop || runtimeAfterEdit.Snapshot.Page.RefreshIntervalSeconds == nil || *runtimeAfterEdit.Snapshot.Page.RefreshIntervalSeconds != models.ApplicationRefreshIntervalDisabled || len(runtimeAfterEdit.Snapshot.Page.VisibleSections) != 3 || runtimeAfterEdit.Snapshot.ParameterPresets[0].Name != "Paid orders" {
 		t.Fatalf("published revision changed with draft: runtime=%#v err=%v", runtimeAfterEdit, err)
 	}
 
@@ -337,8 +344,74 @@ func TestDataApplicationServiceUsesEmptyArraysWithoutComponentParameters(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if created.Snapshot.Parameters == nil || created.Snapshot.ParameterBindings == nil || created.Snapshot.SelectionBindings == nil || len(created.Snapshot.Parameters) != 0 || len(created.Snapshot.ParameterBindings) != 0 || len(created.Snapshot.SelectionBindings) != 0 {
-		t.Fatalf("empty application binding collections = %#v, %#v, %#v", created.Snapshot.Parameters, created.Snapshot.ParameterBindings, created.Snapshot.SelectionBindings)
+	if created.Snapshot.Parameters == nil || created.Snapshot.ParameterPresets == nil || created.Snapshot.ParameterBindings == nil || created.Snapshot.SelectionBindings == nil || len(created.Snapshot.Parameters) != 0 || len(created.Snapshot.ParameterPresets) != 0 || len(created.Snapshot.ParameterBindings) != 0 || len(created.Snapshot.SelectionBindings) != 0 {
+		t.Fatalf("empty application binding collections = %#v, %#v, %#v, %#v", created.Snapshot.Parameters, created.Snapshot.ParameterPresets, created.Snapshot.ParameterBindings, created.Snapshot.SelectionBindings)
+	}
+}
+
+func TestDataApplicationServiceValidatesParameterPresets(t *testing.T) {
+	descriptor := testDescriptor(false)
+	applications := NewDataApplicationService(newMemoryDataApplicationRepository(), &fakeDescriptorReader{descriptor: descriptor}, nil)
+	valid := testDataApplicationSnapshot()
+	valid.Components[0].ContractFingerprint = testFingerprint()
+	valid.ParameterPresets = []models.DataApplicationParameterPreset{{
+		Key: "paid-orders", Name: "Paid orders",
+		ParameterValues: map[string]json.RawMessage{"component_1.status": json.RawMessage(`"paid"`)},
+	}}
+	if err := applications.validateSnapshot(context.Background(), DescriptorRequest{}, valid); err != nil {
+		t.Fatalf("valid parameter preset error = %v", err)
+	}
+
+	tests := map[string]func(*models.DataApplicationSnapshot){
+		"invalid key": func(snapshot *models.DataApplicationSnapshot) { snapshot.ParameterPresets[0].Key = "Paid Orders" },
+		"blank name":  func(snapshot *models.DataApplicationSnapshot) { snapshot.ParameterPresets[0].Name = " " },
+		"duplicate key": func(snapshot *models.DataApplicationSnapshot) {
+			snapshot.ParameterPresets = append(snapshot.ParameterPresets, snapshot.ParameterPresets[0])
+		},
+		"missing parameter": func(snapshot *models.DataApplicationSnapshot) {
+			delete(snapshot.ParameterPresets[0].ParameterValues, "component_1.status")
+		},
+		"unknown parameter": func(snapshot *models.DataApplicationSnapshot) {
+			snapshot.ParameterPresets[0].ParameterValues["unknown"] = json.RawMessage(`"paid"`)
+		},
+		"wrong value type": func(snapshot *models.DataApplicationSnapshot) {
+			snapshot.ParameterPresets[0].ParameterValues["component_1.status"] = json.RawMessage(`42`)
+		},
+		"required unset": func(snapshot *models.DataApplicationSnapshot) {
+			snapshot.Parameters[0].Required = true
+			snapshot.ParameterPresets[0].ParameterValues["component_1.status"] = json.RawMessage(`null`)
+		},
+		"preset without parameters": func(snapshot *models.DataApplicationSnapshot) {
+			snapshot.Components[0].ParameterDefinitions = nil
+			snapshot.Components[0].QueryTemplate.ParameterFilters = nil
+			snapshot.Components[0].DefaultParameterValues = nil
+			snapshot.Parameters = nil
+			snapshot.ParameterBindings = nil
+			snapshot.ParameterPresets[0].ParameterValues = map[string]json.RawMessage{}
+		},
+		"too many presets": func(snapshot *models.DataApplicationSnapshot) {
+			for index := 1; index <= 20; index++ {
+				snapshot.ParameterPresets = append(snapshot.ParameterPresets, models.DataApplicationParameterPreset{
+					Key: fmt.Sprintf("preset-%d", index), Name: fmt.Sprintf("Preset %d", index),
+					ParameterValues: map[string]json.RawMessage{"component_1.status": json.RawMessage(`"paid"`)},
+				})
+			}
+		},
+	}
+	for name, mutate := range tests {
+		t.Run(name, func(t *testing.T) {
+			snapshot := cloneDataApplicationSnapshot(t, valid)
+			mutate(&snapshot)
+			if err := applications.validateSnapshot(context.Background(), DescriptorRequest{}, snapshot); !errors.Is(err, ErrInvalidDataApplication) {
+				t.Fatalf("validateSnapshot() error = %v", err)
+			}
+		})
+	}
+
+	optionalUnset := cloneDataApplicationSnapshot(t, valid)
+	optionalUnset.ParameterPresets[0].ParameterValues["component_1.status"] = json.RawMessage(`null`)
+	if err := applications.validateSnapshot(context.Background(), DescriptorRequest{}, optionalUnset); err != nil {
+		t.Fatalf("optional unset parameter preset error = %v", err)
 	}
 }
 
@@ -499,6 +572,7 @@ func testDataApplicationSnapshot() models.DataApplicationSnapshot {
 			RendererType:           models.RendererTypeTable, RendererConfig: json.RawMessage(`{"columns":["id","amount"]}`),
 		}},
 		Parameters:        []models.DataApplicationParameter{{Key: "component_1.status", Label: "Status", ControlType: "select", DefaultValue: json.RawMessage(`"paid"`)}},
+		ParameterPresets:  []models.DataApplicationParameterPreset{},
 		ParameterBindings: []models.DataApplicationParameterBinding{{ApplicationParameterKey: "component_1.status", ComponentID: "9e95f345-d2c1-4c79-a582-12b65b1550bd", ComponentParameterKey: "status"}},
 		SelectionBindings: []models.DataApplicationSelectionBinding{},
 	}

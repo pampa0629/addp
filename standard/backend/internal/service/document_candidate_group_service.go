@@ -1,20 +1,19 @@
 package service
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"sort"
 	"strings"
 	"time"
 
+	candidateutil "github.com/addp/standard/internal/candidate"
 	"github.com/addp/standard/internal/models"
 )
 
 const (
-	defaultDocumentCandidateFamilyPageSize = 20
-	maxDocumentCandidateFamilyPageSize     = 100
+	defaultDocumentCandidateFamilyPageSize  = 20
+	maxDocumentCandidateFamilyPageSize      = 100
+	maxDocumentCandidateDecisionReasonRunes = 1000
 )
 
 var ErrDocumentCandidateFamilyQueryInvalid = errors.New("document candidate family query invalid")
@@ -37,26 +36,6 @@ type documentCandidateGroupBuilder struct {
 	representativeSeen time.Time
 }
 
-type canonicalDocumentCandidate struct {
-	CandidateType string                            `json:"candidate_type"`
-	Code          string                            `json:"code"`
-	Name          string                            `json:"name"`
-	Definition    string                            `json:"definition"`
-	Payload       canonicalDocumentCandidatePayload `json:"payload"`
-}
-
-type canonicalDocumentCandidatePayload struct {
-	DataType           string                                          `json:"data_type"`
-	ValueDomainKind    string                                          `json:"value_domain_kind"`
-	CodeSetCode        string                                          `json:"code_set_code"`
-	Unit               string                                          `json:"unit"`
-	CalculationFormula string                                          `json:"calculation_formula"`
-	StatisticalScope   string                                          `json:"statistical_scope"`
-	Aggregation        string                                          `json:"aggregation"`
-	Dimensions         []string                                        `json:"dimensions"`
-	Items              []models.DocumentExtractionCandidatePayloadItem `json:"items"`
-}
-
 func (s *DocumentService) ListCandidateFamilies(documentID, tenantID int64, opts DocumentCandidateFamilyListOptions) (*models.PaginatedDocumentExtractionCandidateFamilyResponse, error) {
 	page, pageSize, err := normalizeDocumentCandidateFamilyOptions(&opts)
 	if err != nil {
@@ -71,6 +50,18 @@ func (s *DocumentService) ListCandidateFamilies(documentID, tenantID int64, opts
 		return nil, err
 	}
 	groups := buildDocumentCandidateGroups(extractions)
+	decisionRows, err := s.repo.ListCandidateFamilyDecisionCounts(documentID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	decisionCounts := make(map[string]int64, len(decisionRows))
+	for _, row := range decisionRows {
+		decisionCounts[row.CandidateType+":"+row.Code] = row.DecisionCount
+	}
+	totalVariantCounts := make(map[string]int, len(groups))
+	for _, group := range groups {
+		totalVariantCounts[documentCandidateFamilyKey(group.Candidate)]++
+	}
 
 	response := &models.PaginatedDocumentExtractionCandidateFamilyResponse{
 		Data:       []models.DocumentExtractionCandidateFamily{},
@@ -108,6 +99,10 @@ func (s *DocumentService) ListCandidateFamilies(documentID, tenantID int64, opts
 		filtered = matched
 	}
 	families := buildDocumentCandidateFamilies(filtered)
+	for index := range families {
+		families[index].TotalVariantCount = totalVariantCounts[families[index].FamilyKey]
+		families[index].DecisionCount = decisionCounts[families[index].FamilyKey]
+	}
 	response.Total = int64(len(families))
 	response.VariantTotal = int64(len(filtered))
 	response.TotalPages = max(1, (len(families)+pageSize-1)/pageSize)
@@ -118,6 +113,16 @@ func (s *DocumentService) ListCandidateFamilies(documentID, tenantID int64, opts
 	end := min(start+pageSize, len(families))
 	response.Data = families[start:end]
 	return response, nil
+}
+
+func (s *DocumentService) ListCandidateFamilyDecisions(documentID, tenantID int64, candidateType, code string, page, pageSize int) ([]models.DocumentCandidateFamilyDecision, int64, error) {
+	candidateType = strings.TrimSpace(candidateType)
+	code = strings.TrimSpace(code)
+	validType := candidateType == "glossary" || candidateType == "element" || candidateType == "code_set" || candidateType == "metric"
+	if !validType || code == "" || len(code) > 100 || page < 1 || pageSize < 1 || pageSize > maxDocumentCandidateFamilyPageSize {
+		return nil, 0, ErrCandidateFamilyDecisionInvalid
+	}
+	return s.repo.ListCandidateFamilyDecisions(documentID, tenantID, candidateType, code, page, pageSize)
 }
 
 func attachCandidateGroupComparisons(s *DocumentService, document *models.Document, groups []models.DocumentExtractionCandidateGroup) error {
@@ -292,70 +297,11 @@ func selectDocumentCandidateGroupRepresentative(builder *documentCandidateGroupB
 }
 
 func documentCandidateSemanticFingerprint(candidate models.DocumentExtractionCandidate) string {
-	canonical := canonicalDocumentCandidate{
-		CandidateType: candidate.CandidateType,
-		Code:          candidate.Code,
-		Name:          normalizeCandidateSemanticText(candidate.Name),
-		Definition:    normalizeCandidateSemanticText(candidate.Definition),
-		Payload: canonicalDocumentCandidatePayload{
-			DataType: normalizedCandidatePointer(candidate.Payload.DataType), ValueDomainKind: normalizedCandidatePointer(candidate.Payload.ValueDomainKind),
-			CodeSetCode: normalizedCandidatePointer(candidate.Payload.CodeSetCode), Unit: normalizedCandidatePointer(candidate.Payload.Unit),
-			CalculationFormula: normalizedCandidatePointer(candidate.Payload.CalculationFormula), StatisticalScope: normalizedCandidatePointer(candidate.Payload.StatisticalScope),
-			Aggregation: normalizedCandidatePointer(candidate.Payload.Aggregation), Dimensions: normalizeCandidateDimensions(candidate.Payload.Dimensions),
-			Items: normalizeCandidateItems(candidate.Payload.Items),
-		},
-	}
-	encoded, _ := json.Marshal(canonical)
-	sum := sha256.Sum256(encoded)
-	return hex.EncodeToString(sum[:])
+	return candidateutil.SemanticFingerprint(candidate)
 }
 
 func normalizeCandidateSemanticText(value string) string {
-	return strings.Join(strings.Fields(value), " ")
-}
-
-func normalizedCandidatePointer(value *string) string {
-	if value == nil {
-		return ""
-	}
-	return normalizeCandidateSemanticText(*value)
-}
-
-func normalizeCandidateDimensions(values []string) []string {
-	seen := map[string]struct{}{}
-	result := make([]string, 0, len(values))
-	for _, value := range values {
-		normalized := normalizeCandidateSemanticText(value)
-		if normalized == "" {
-			continue
-		}
-		if _, exists := seen[normalized]; exists {
-			continue
-		}
-		seen[normalized] = struct{}{}
-		result = append(result, normalized)
-	}
-	sort.Strings(result)
-	return result
-}
-
-func normalizeCandidateItems(values []models.DocumentExtractionCandidatePayloadItem) []models.DocumentExtractionCandidatePayloadItem {
-	result := make([]models.DocumentExtractionCandidatePayloadItem, 0, len(values))
-	for _, value := range values {
-		result = append(result, models.DocumentExtractionCandidatePayloadItem{
-			Code: normalizeCandidateSemanticText(value.Code), Name: normalizeCandidateSemanticText(value.Name), Definition: normalizeCandidateSemanticText(value.Definition),
-		})
-	}
-	sort.SliceStable(result, func(i, j int) bool {
-		if result[i].Code != result[j].Code {
-			return result[i].Code < result[j].Code
-		}
-		if result[i].Name != result[j].Name {
-			return result[i].Name < result[j].Name
-		}
-		return result[i].Definition < result[j].Definition
-	})
-	return result
+	return candidateutil.NormalizeText(value)
 }
 
 func incrementCandidateVariantStatusCount(counts *models.DocumentExtractionCandidateVariantStatusCounts, state string) {

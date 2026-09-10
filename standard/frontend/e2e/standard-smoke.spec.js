@@ -145,6 +145,8 @@ const groupCandidateFamilies = groups => {
         code: group.candidate.code,
         representative_name: group.candidate.name,
         variant_count: 0,
+        total_variant_count: 0,
+        decision_count: 0,
         occurrence_count: 0,
         first_seen_at: group.first_seen_at,
         last_seen_at: group.last_seen_at,
@@ -154,6 +156,7 @@ const groupCandidateFamilies = groups => {
     }
     family.variants.push(group)
     family.variant_count += 1
+    family.total_variant_count += 1
     family.occurrence_count += group.occurrence_count
     if (group.first_seen_at < family.first_seen_at) family.first_seen_at = group.first_seen_at
     if (group.last_seen_at > family.last_seen_at) family.last_seen_at = group.last_seen_at
@@ -196,6 +199,8 @@ const filterCandidateFamilyResponse = (response, url) => {
   const page = Number(url.searchParams.get('page')) || 1
   const pageSize = Number(url.searchParams.get('page_size')) || response.page_size || 20
   const allVariants = response.data.flatMap(family => family.variants)
+  const totalVariantCounts = new Map(response.data.map(family => [family.family_key, family.total_variant_count]))
+  const decisionCounts = new Map(response.data.map(family => [family.family_key, family.decision_count || 0]))
   const comparisonSource = allVariants.filter(group => {
     if (state && group.state !== state) return false
     if (candidateType && group.candidate.candidate_type !== candidateType) return false
@@ -205,6 +210,10 @@ const filterCandidateFamilyResponse = (response, url) => {
   const comparisonCounts = createFamilyComparisonCounts(comparisonSource)
   const filtered = comparisonResult ? comparisonSource.filter(group => group.candidate.comparison?.result === comparisonResult) : comparisonSource
   const families = groupCandidateFamilies(filtered)
+  families.forEach(family => {
+    family.total_variant_count = totalVariantCounts.get(family.family_key) || family.total_variant_count
+    family.decision_count = decisionCounts.get(family.family_key) || 0
+  })
   const totalPages = Math.max(1, Math.ceil(families.length / pageSize))
   const data = page > totalPages ? [] : families.slice((page - 1) * pageSize, page * pageSize)
   return { ...response, data, total: families.length, variant_total: filtered.length, page, page_size: pageSize, total_pages: totalPages, family_comparison_counts: comparisonCounts }
@@ -662,7 +671,7 @@ test('restores document detail from its canonical route and returns to the filte
 })
 
 test('shows deterministic candidate comparisons and opens the existing standard', async ({ page }) => {
-  await installMockBackend(page, {
+  const backend = await installMockBackend(page, {
     documents: [createDocumentFixture()],
     documentCandidateFamilies: createCandidateFamilyResponse([
         { id: 811, candidate_type: 'glossary', code: 'leader', name: '领队', definition: '发起并组织户外活动的人', payload: {}, status: 'pending', version: 1, evidences: [], comparison: { result: 'exact', standard_id: 21, code: 'leader', name: '领队', scope_type: 'domain', owner_domain_id: 2, revision_id: 211, revision_no: 1, revision_status: 'draft', differences: [] } },
@@ -708,6 +717,34 @@ test('shows deterministic candidate comparisons and opens the existing standard'
   await expect(codeItems.nth(1)).toContainText('registered · 已报名 — 报名已经确认')
 
   const candidateSearch = page.getByRole('textbox', { name: '搜索候选编码或名称' })
+  await candidateSearch.fill('成员关系状态')
+  await candidateSearch.press('Enter')
+  await expect(page.getByText('显示 1/2 个语义变体')).toBeVisible()
+  await expect(page.getByText('当前仅显示本族 1/2 个语义变体；请清除筛选后再执行胜出裁决。')).toBeVisible()
+  await expect(page.getByRole('button', { name: '设为族内胜出变体' })).toHaveCount(0)
+  await candidateSearch.fill('')
+  await candidateSearch.press('Enter')
+  await expect(page.getByText('共 5 个候选族，6 个语义变体')).toBeVisible()
+  const memberStatusFamily = page.locator('.candidate-family').filter({ hasText: 'member_status' })
+  const memberStatusCards = memberStatusFamily.locator('.candidate-card')
+  await memberStatusCards.nth(1).getByRole('button', { name: '设为族内胜出变体' }).click()
+  await page.getByPlaceholder('请说明选择该变体的业务依据、证据或取舍').fill('定义覆盖成员与户外活动的完整关系')
+  await page.getByRole('button', { name: '确认裁决' }).click()
+  await expect.poll(() => backend.getCandidateDecisionRequests()).toEqual([{
+    winner_candidate_id: 816,
+    members: [{ candidate_id: 815, version: 1 }, { candidate_id: 816, version: 1 }],
+    reason: '定义覆盖成员与户外活动的完整关系'
+  }])
+  await expect(memberStatusCards.nth(0)).toContainText('已驳回')
+  await expect(memberStatusCards.nth(1)).toContainText('已保留')
+  await expect(page.getByText('候选族裁决完成')).toBeVisible()
+  await memberStatusFamily.getByRole('button', { name: '裁决历史（1）', exact: true }).click()
+  const decisionHistory = page.getByRole('dialog', { name: '候选族裁决历史 · member_status' })
+  await expect(decisionHistory).toContainText('成员关系状态')
+  await expect(decisionHistory).toContainText('定义覆盖成员与户外活动的完整关系')
+  await expect(decisionHistory).toContainText('#816')
+  await decisionHistory.getByRole('button', { name: '关闭', exact: true }).click()
+
   await candidateSearch.fill('MEMBER_STATUS')
   await candidateSearch.press('Enter')
   await expect(page.getByText('共 1 个候选族，2 个语义变体')).toBeVisible()
@@ -936,10 +973,13 @@ async function installMockBackend(page, options = {}) {
   let glossaryCreateRequests = 0
   const domainUpdateRequests = []
   const domainDeleteRequests = []
+  const candidateDecisionRequests = []
+  const candidateFamilyDecisions = []
   let metricDocumentLinked = false
   const documents = (options.documents || []).map(item => ({ ...item }))
   const elements = (options.elements || []).map(item => ({ ...item }))
   const glossaryFixtures = structuredClone(glossaries)
+  const documentCandidateFamilyResponse = structuredClone(options.documentCandidateFamilies || createCandidateFamilyResponse([]))
   if (options.glossaryPublicationHistory) {
     const published = { ...glossaryFixtures[0].draft_revision, status: 'published' }
     Object.assign(glossaryFixtures[0], {
@@ -1176,6 +1216,48 @@ async function installMockBackend(page, options = {}) {
       documents.push(document)
       return fulfillJSON(route, document, 201)
     }
+    if (request.method() === 'POST' && path === '/api/v1/standard/documents/71/extraction-candidates/batch_decide') {
+      const body = request.postDataJSON()
+      candidateDecisionRequests.push(structuredClone(body))
+      const statuses = new Map(body.members.map(member => [member.candidate_id, member.candidate_id === body.winner_candidate_id ? 'retained' : 'rejected']))
+      const decidedCandidates = []
+      documentCandidateFamilyResponse.data.forEach(family => {
+        family.variants.forEach(group => {
+          const status = statuses.get(group.candidate.id)
+          if (!status) return
+          group.state = status
+          group.candidate.status = status
+          group.candidate.version += 1
+          group.occurrences.forEach(occurrence => {
+            if (occurrence.candidate_id !== group.candidate.id) return
+            occurrence.status = status
+            occurrence.version += 1
+          })
+          decidedCandidates.push(structuredClone(group.candidate))
+        })
+      })
+      const allVariants = documentCandidateFamilyResponse.data.flatMap(family => family.variants)
+      documentCandidateFamilyResponse.variant_status_counts = allVariants.reduce((counts, group) => {
+        counts[group.state] += 1
+        return counts
+      }, { pending: 0, retained: 0, rejected: 0, formalized: 0 })
+      const winner = decidedCandidates.find(candidate => candidate.id === body.winner_candidate_id)
+      const family = documentCandidateFamilyResponse.data.find(item => item.candidate_type === winner?.candidate_type && item.code === winner?.code)
+      const decision = {
+        id: candidateFamilyDecisions.length + 1,
+        document_id: 71,
+        candidate_type: winner?.candidate_type,
+        code: winner?.code,
+        winner_candidate_id: body.winner_candidate_id,
+        reason: body.reason,
+        members: decidedCandidates.map(candidate => ({ candidate_id: candidate.id, semantic_fingerprint: `fingerprint-${candidate.id}`, name: candidate.name, version: candidate.version, status: candidate.status })),
+        created_by: 1,
+        created_at: '2026-09-09T08:00:00Z'
+      }
+      candidateFamilyDecisions.unshift(decision)
+      if (family) family.decision_count = candidateFamilyDecisions.filter(item => item.candidate_type === family.candidate_type && item.code === family.code).length
+      return fulfillJSON(route, { decision, candidates: decidedCandidates })
+    }
     if (request.method() === 'POST' && path === '/api/v1/standard/documents/72/revisions/721/file' && options.uploadError) {
       actionRequests.push(path)
       return fulfillJSON(route, { error: options.uploadError }, 413)
@@ -1277,7 +1359,15 @@ async function installMockBackend(page, options = {}) {
       const revision = document?.draft_revision || document?.current_revision
       return fulfillJSON(route, revision ? [revision] : [])
     }
-    if (path === '/api/v1/standard/documents/71/extraction-candidate-families') return fulfillJSON(route, filterCandidateFamilyResponse(options.documentCandidateFamilies || createCandidateFamilyResponse([]), url))
+    if (path === '/api/v1/standard/documents/71/extraction-candidate-families') return fulfillJSON(route, filterCandidateFamilyResponse(documentCandidateFamilyResponse, url))
+    if (path === '/api/v1/standard/documents/71/extraction-candidate-family-decisions') {
+      const candidateType = url.searchParams.get('candidate_type')
+      const code = url.searchParams.get('code')
+      const page = Number(url.searchParams.get('page')) || 1
+      const pageSize = Number(url.searchParams.get('page_size')) || 20
+      const matched = candidateFamilyDecisions.filter(item => item.candidate_type === candidateType && item.code === code)
+      return fulfillJSON(route, { data: matched.slice((page - 1) * pageSize, page * pageSize), total: matched.length, page, page_size: pageSize, total_pages: Math.max(1, Math.ceil(matched.length / pageSize)) })
+    }
     if (path === '/api/v1/standard/documents/71/mappings') {
       return fulfillJSON(route, { elements: [], glossaries: [], metrics: [] })
     }
@@ -1287,7 +1377,7 @@ async function installMockBackend(page, options = {}) {
       const revision = document?.draft_revision || document?.current_revision
       return fulfillJSON(route, revision ? [revision] : [])
     }
-    if (path === '/api/v1/standard/documents/72/extraction-candidate-families') return fulfillJSON(route, filterCandidateFamilyResponse(options.documentCandidateFamilies || createCandidateFamilyResponse([]), url))
+    if (path === '/api/v1/standard/documents/72/extraction-candidate-families') return fulfillJSON(route, filterCandidateFamilyResponse(documentCandidateFamilyResponse, url))
     if (path === '/api/v1/standard/documents/72/mappings') return fulfillJSON(route, { elements: [], glossaries: [], metrics: [] })
     return fulfillJSON(route, {})
   })
@@ -1297,6 +1387,7 @@ async function installMockBackend(page, options = {}) {
     getDeleteRequests: () => [...deleteRequests],
     getDomainUpdateRequests: () => [...domainUpdateRequests],
     getDomainDeleteRequests: () => [...domainDeleteRequests],
+    getCandidateDecisionRequests: () => structuredClone(candidateDecisionRequests),
     getGlossaryCreateRequests: () => glossaryCreateRequests,
     isMetricDocumentLinked: () => metricDocumentLinked
   }

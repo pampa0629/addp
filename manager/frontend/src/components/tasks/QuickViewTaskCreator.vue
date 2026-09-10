@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     :model-value="modelValue"
-    :title="t('manager.quickViewCreator.title')"
+    :title="isRebind ? t('manager.quickViewCreator.rebindTitle') : t('manager.quickViewCreator.title')"
     width="860px"
     destroy-on-close
     @update:model-value="emit('update:modelValue', $event)"
@@ -12,7 +12,7 @@
       type="info"
       :closable="false"
       show-icon
-      :title="t('manager.quickViewCreator.hint')"
+      :title="isRebind ? t('manager.quickViewCreator.rebindHint') : t('manager.quickViewCreator.hint')"
     />
 
     <el-form label-position="top">
@@ -27,7 +27,7 @@
         </div>
       </el-form-item>
 
-      <el-form-item v-if="sourceSelection" :label="t('manager.quickViewCreator.generationType')">
+      <el-form-item v-if="sourceSelection && !isRebind" :label="t('manager.quickViewCreator.generationType')">
         <el-radio-group v-if="options.length" v-model="selectedAction" class="generation-options">
           <el-radio v-for="option in options" :key="option.action" :value="option.action">
             {{ t(option.labelKey) }}
@@ -45,7 +45,10 @@
 
     <template #footer>
       <el-button @click="emit('update:modelValue', false)">{{ t('common.cancel') }}</el-button>
-      <el-button v-if="hasCurrentResult" type="primary" :loading="submitting" @click="viewCurrentResult">
+      <el-button v-if="isRebind" type="primary" :loading="submitting" :disabled="!canSubmit" @click="submit">
+        {{ t('manager.quickViewCreator.rebind') }}
+      </el-button>
+      <el-button v-else-if="hasCurrentResult" type="primary" :loading="submitting" @click="viewCurrentResult">
         {{ t('manager.quickViewCreator.viewCurrentResult') }}
       </el-button>
       <el-button v-else type="primary" :loading="submitting" :disabled="!canSubmit" @click="submit">
@@ -62,6 +65,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { ResourceTreePicker } from '@addp/common-frontend'
 import { quickViewAPI } from '@/api/quickView'
+import { rebindDerivedTask } from '@/api/derivedTasks'
 import { useCurrentResultConfirmation } from '@/composables/useCurrentResultConfirmation'
 import { toQuickViewExistingResultPayload } from '@/utils/currentResultConfirmation'
 import { openQuickViewResult } from '@/utils/quickViewResultNavigation'
@@ -75,7 +79,8 @@ import {
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
   taskType: { type: String, default: '' },
-  locator: { type: String, default: '' }
+  locator: { type: String, default: '' },
+  rebindTask: { type: Object, default: null }
 })
 const emit = defineEmits(['update:modelValue', 'created', 'closed'])
 const { t } = useI18n()
@@ -91,9 +96,16 @@ const emptyReason = ref('unsupported')
 const currentResultTaskType = ref('')
 let detectionSequence = 0
 
+const isRebind = computed(() => Boolean(props.rebindTask?.id))
 const sourceLocator = computed(() => String(sourceSelection.value?.identity?.locator || '').trim())
-const canSubmit = computed(() => Boolean(sourceLocator.value && selectedAction.value && !detecting.value))
+const canSubmit = computed(() => Boolean(
+  sourceLocator.value
+  && !detecting.value
+  && (isRebind.value || selectedAction.value)
+))
 const hasCurrentResult = computed(() => (
+  !isRebind.value
+  &&
   Boolean(sourceLocator.value)
   && options.value.length === 0
   && !detecting.value
@@ -126,6 +138,7 @@ watch(sourceSelection, async selection => {
   capabilityError.value = ''
   emptyReason.value = 'unsupported'
   if (!selection) return
+  if (isRebind.value) return
 
   detecting.value = true
   try {
@@ -142,7 +155,7 @@ watch(sourceSelection, async selection => {
   }
 })
 
-watch(() => [props.modelValue, props.taskType, props.locator], ([visible]) => {
+watch(() => [props.modelValue, props.taskType, props.locator, props.rebindTask?.id], ([visible]) => {
   if (visible) reset()
 }, { immediate: true })
 
@@ -150,6 +163,21 @@ async function submit() {
   if (!canSubmit.value) return
   submitting.value = true
   try {
+    if (isRebind.value) {
+      const response = await rebindDerivedTask(props.rebindTask.task_type, props.rebindTask.id, {
+        version: props.rebindTask.version,
+        locator: sourceLocator.value
+      })
+      const result = response?.data ?? response
+      ElMessage.success(t('manager.quickViewCreator.rebound'))
+      emit('created', {
+        taskType: String(result?.task_type || props.rebindTask.task_type),
+        taskId: Number(result?.task_id || 0),
+        rebound: true
+      })
+      emit('update:modelValue', false)
+      return
+    }
     const response = await confirmCurrentResult(payload => quickViewAPI.executeQuickViewAction(
       sourceLocator.value,
       selectedAction.value,
@@ -169,7 +197,9 @@ async function submit() {
     emit('update:modelValue', false)
   } catch (error) {
     if (error === 'cancel' || error === 'close') return
-    ElMessage.error(error?.response?.data?.error || error?.message || t('manager.quickViewCreator.generateFailed'))
+    ElMessage.error(error?.response?.data?.error || error?.message || t(isRebind.value
+      ? 'manager.quickViewCreator.rebindFailed'
+      : 'manager.quickViewCreator.generateFailed'))
   } finally {
     submitting.value = false
   }

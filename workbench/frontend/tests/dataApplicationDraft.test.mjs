@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createLatestRequestCoordinator } from '../../../common-frontend/basic/src/utils/latestRequest.js'
-import { buildDataApplicationPreview, commitLatestDataApplicationRequest, confirmDataApplicationAction, dataApplicationEditorMutationContext, dataApplicationEditorRouteContext, normalizedApplicationSnapshot } from '../src/utils/dataApplicationDraft.mjs'
+import { applicationParameterPresetsValid, buildDataApplicationPreview, commitLatestDataApplicationRequest, confirmDataApplicationAction, createApplicationParameterPreset, dataApplicationEditorMutationContext, dataApplicationEditorRouteContext, normalizedApplicationSnapshot, synchronizeApplicationParameterPresets } from '../src/utils/dataApplicationDraft.mjs'
 
 test('normalizes a Vue-style reactive snapshot without cloning the Proxy directly', () => {
   const snapshot = new Proxy({
@@ -14,6 +14,7 @@ test('normalizes a Vue-style reactive snapshot without cloning the Proxy directl
     parameter_bindings: [
       { application_parameter_key: 'used', component_id: 'component-a', component_parameter_key: 'status' },
     ],
+    parameter_presets: [],
   }, {})
 
   assert.deepEqual(normalizedApplicationSnapshot(snapshot), {
@@ -23,7 +24,63 @@ test('normalizes a Vue-style reactive snapshot without cloning the Proxy directl
     parameter_bindings: [
       { application_parameter_key: 'used', component_id: 'component-a', component_parameter_key: 'status' },
     ],
+    parameter_presets: [],
   })
+})
+
+test('keeps parameter presets complete when application parameters change', () => {
+  const snapshot = {
+    parameters: [
+      { key: 'city', control_type: 'text', default_value: '长沙市' },
+      { key: 'minimum', control_type: 'number', required: false },
+    ],
+    parameter_presets: [{ key: 'changsha', name: '长沙', parameter_values: { city: '株洲市', obsolete: true } }],
+  }
+
+  synchronizeApplicationParameterPresets(snapshot)
+
+  assert.deepEqual(snapshot.parameter_presets, [{
+    key: 'changsha',
+    name: '长沙',
+    parameter_values: { city: '株洲市', minimum: null },
+  }])
+})
+
+test('creates a detached complete parameter preset from application defaults', () => {
+  const snapshot = {
+    parameters: [
+      { key: 'city', control_type: 'text', default_value: '长沙市' },
+      { key: 'bounds', control_type: 'bbox' },
+      { key: 'enabled', control_type: 'checkbox' },
+    ],
+  }
+
+  const preset = createApplicationParameterPreset(snapshot, 'changsha', '长沙场景')
+  assert.deepEqual(preset, {
+    key: 'changsha',
+    name: '长沙场景',
+    parameter_values: { city: '长沙市', bounds: [], enabled: false },
+  })
+  preset.parameter_values.city = '株洲市'
+  assert.equal(snapshot.parameters[0].default_value, '长沙市')
+})
+
+test('validates preset identity and complete required parameter values', () => {
+  const snapshot = {
+    parameters: [
+      { key: 'city', required: true },
+      { key: 'minimum', required: false },
+    ],
+    parameter_presets: [{ key: 'changsha', name: '长沙场景', parameter_values: { city: '长沙市', minimum: null } }],
+  }
+  assert.equal(applicationParameterPresetsValid(snapshot), true)
+
+  snapshot.parameter_presets.push({ key: 'changsha', name: '重复', parameter_values: { city: '株洲市', minimum: null } })
+  assert.equal(applicationParameterPresetsValid(snapshot), false)
+  snapshot.parameter_presets[1].key = 'Invalid Key'
+  assert.equal(applicationParameterPresetsValid(snapshot), false)
+  snapshot.parameter_presets = [{ key: 'missing', name: '缺值', parameter_values: { minimum: null } }]
+  assert.equal(applicationParameterPresetsValid(snapshot), false)
 })
 
 test('treats lifecycle dialog cancellation as a normal false result', async () => {
@@ -54,6 +111,7 @@ test('builds a detached preview from the same normalized payload as draft persis
       components: [{ id: 'component-a' }],
       parameters: [{ key: 'used' }],
       parameter_bindings: [{ application_parameter_key: 'used', component_id: 'component-a', component_parameter_key: 'filter' }],
+      parameter_presets: [],
     },
   })
   preview.snapshot.page.title = 'Preview interaction'

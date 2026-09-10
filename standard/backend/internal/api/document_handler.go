@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 
+	commonapi "github.com/addp/common/api"
 	commonAuth "github.com/addp/common/middleware/auth"
 	commoni18n "github.com/addp/common/middleware/i18n"
 	sysi18n "github.com/addp/standard/i18n"
@@ -563,6 +564,60 @@ func (h *DocumentHandler) ListCandidateFamilies(c *gin.Context) {
 	c.JSON(http.StatusOK, items)
 }
 
+// @Summary 获取标准候选族裁决历史 | List standard candidate family decision history
+// @Description 按事件 ID 倒序分页返回指定候选族的追加式不可变裁决事实；每条事件冻结理由、胜出候选、操作者以及全部成员的裁决后快照 | Returns append-only immutable decision facts for one candidate family, ordered by event ID descending; each event freezes the reason, winner, actor, and post-decision snapshots of all members
+// @Tags Standard
+// @Produce json
+// @Param id path int true "文档 ID | Document ID"
+// @Param candidate_type query string true "候选类型 | Candidate type" Enums(glossary,element,code_set,metric)
+// @Param code query string true "候选族稳定编码 | Candidate family stable code"
+// @Param page query int false "页码，默认 1 | Page number, default 1"
+// @Param page_size query int false "每页数量，默认 20，最大 100 | Page size, default 20, maximum 100"
+// @Success 200 {object} models.PaginatedDocumentCandidateFamilyDecisionResponse
+// @Failure 400 {object} map[string]string "候选类型、编码或分页参数无效，error_code=candidate_family_decision_invalid | Invalid candidate type, code, or pagination; error_code=candidate_family_decision_invalid"
+// @Failure 401 {object} map[string]string "需要登录 | Authentication required"
+// @Failure 403 {object} map[string]string "无权访问 | Access denied"
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.document.read"]
+// @Router /documents/{id}/extraction-candidate-family-decisions [get]
+// @Security BearerAuth
+func (h *DocumentHandler) ListCandidateFamilyDecisions(c *gin.Context) {
+	documentID, ok := elementPathID(c, "id")
+	if !ok {
+		return
+	}
+	page, pageSize := 1, 20
+	var err error
+	if value := c.Query("page"); value != "" {
+		page, err = strconv.Atoi(value)
+		if err != nil {
+			respondError(c, http.StatusBadRequest, service.ErrCandidateFamilyDecisionInvalid)
+			return
+		}
+	}
+	if value := c.Query("page_size"); value != "" {
+		pageSize, err = strconv.Atoi(value)
+		if err != nil {
+			respondError(c, http.StatusBadRequest, service.ErrCandidateFamilyDecisionInvalid)
+			return
+		}
+	}
+	items, total, err := h.svc.ListCandidateFamilyDecisions(documentID, getTenantID(c), c.Query("candidate_type"), c.Query("code"), page, pageSize)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, service.ErrCandidateFamilyDecisionInvalid) {
+			status = http.StatusBadRequest
+		} else if errors.Is(err, commonapi.ErrNotFound) {
+			status = http.StatusNotFound
+		}
+		respondError(c, status, err)
+		return
+	}
+	commonapi.RespondPaginated(c, items, total, page, pageSize)
+}
+
 // @Summary 裁决文档提炼候选 | Review document extraction candidate
 // @Tags Standard
 // @Accept json
@@ -584,6 +639,38 @@ func (h *DocumentHandler) UpdateCandidate(c *gin.Context) {
 		return
 	}
 	result, err := h.svc.UpdateCandidateStatus(id, getTenantID(c), getUserID(c), &req)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// @Summary 原子裁决文档候选族 | Atomically decide a document candidate family
+// @Description 显式列出同一候选族当前全部语义指纹互异的代表候选，填写人工理由，保留唯一胜出候选并驳回其余候选，同时追加不可变裁决事件；缺少当前变体或任一成员、理由无效、已正式化、版本冲突时整批回滚 | Explicitly lists all current representative candidates with distinct semantic fingerprints in one family, records a human reason, retains the sole winner, rejects the others, and appends an immutable decision event; the entire command rolls back if any current variant is omitted or any member or reason is invalid, formalized, or stale
+// @Tags Standard
+// @Accept json
+// @Produce json
+// @Param id path int true "文档 ID | Document ID"
+// @Param request body models.DecideDocumentCandidateFamilyRequest true "候选成员、并发版本、胜出候选及 1–1000 字符人工理由 | Candidate members, concurrency versions, winner, and a 1–1000 character human reason"
+// @Success 200 {object} models.DocumentCandidateFamilyDecisionResponse
+// @Failure 400 {object} map[string]string "理由、成员数量、重复成员、跨族成员或胜出候选无效，error_code=candidate_family_decision_invalid | Invalid reason, member count, duplicate member, cross-family member, or winner; error_code=candidate_family_decision_invalid"
+// @Failure 404 {object} map[string]string
+// @Failure 409 {object} map[string]string "候选已正式化或并发版本冲突 | Candidate already formalized or concurrency version conflict"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["standard.document.update"]
+// @Router /documents/{id}/extraction-candidates/batch_decide [post]
+// @Security BearerAuth
+func (h *DocumentHandler) DecideCandidateFamily(c *gin.Context) {
+	documentID, ok := elementPathID(c, "id")
+	if !ok {
+		return
+	}
+	var req models.DecideDocumentCandidateFamilyRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	result, err := h.svc.DecideCandidateFamily(documentID, getTenantID(c), getUserID(c), &req)
 	if err != nil {
 		respondError(c, http.StatusBadRequest, err)
 		return

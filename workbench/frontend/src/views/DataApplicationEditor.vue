@@ -68,6 +68,31 @@
     </el-card>
 
     <el-card>
+      <template #header>
+        <div class="card-header">
+          <div><strong>{{ t('workbench.applicationParameterPresets') }}</strong><span>{{ t('workbench.applicationParameterPresetsHint') }}</span></div>
+          <el-button link type="primary" :disabled="application.snapshot.parameters.length === 0 || application.snapshot.parameter_presets.length >= 20" @click="addParameterPreset">{{ t('workbench.addParameterPreset') }}</el-button>
+        </div>
+      </template>
+      <el-empty v-if="application.snapshot.parameter_presets.length === 0" :description="t('workbench.noApplicationParameterPresets')" />
+      <div v-else class="parameter-presets">
+        <div v-for="(preset, presetIndex) in application.snapshot.parameter_presets" :key="presetIndex" class="parameter-preset-card">
+          <div class="parameter-preset-heading">
+            <el-input v-model="preset.name" maxlength="100" :placeholder="t('workbench.parameterPresetName')" />
+            <el-input v-model="preset.key" maxlength="64" :placeholder="t('workbench.parameterPresetKey')" />
+            <el-button link type="danger" @click="removeParameterPreset(presetIndex)">{{ t('workbench.delete') }}</el-button>
+          </div>
+          <div class="parameter-grid">
+            <label v-for="parameter in application.snapshot.parameters" :key="parameter.key" class="parameter-field">
+              <span>{{ parameter.label }}<em v-if="parameter.required">*</em></span>
+              <ApplicationParameterValueInput v-model="preset.parameter_values[parameter.key]" :control-type="parameter.control_type" />
+            </label>
+          </div>
+        </div>
+      </div>
+    </el-card>
+
+    <el-card>
       <template #header><div class="card-header"><strong>{{ t('workbench.parameterBindings') }}</strong><span>{{ t('workbench.parameterBindingsHint') }}</span></div></template>
       <el-table :data="bindingRows">
         <el-table-column prop="componentTitle" :label="t('workbench.component')" min-width="180" />
@@ -165,7 +190,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { createLatestRequestCoordinator } from '@common-ui'
 import { createDataApplication, getDataApplication, offlineDataApplication, publishDataApplication, updateDataApplication } from '../api/dataApplications'
 import { getConsumerDescriptor } from '../api/services'
-import { buildDataApplicationPreview, commitLatestDataApplicationRequest, confirmDataApplicationAction, dataApplicationEditorMutationContext, dataApplicationEditorRouteContext, normalizedApplicationSnapshot } from '../utils/dataApplicationDraft.mjs'
+import { applicationParameterPresetsValid, buildDataApplicationPreview, commitLatestDataApplicationRequest, confirmDataApplicationAction, createApplicationParameterPreset, dataApplicationEditorMutationContext, dataApplicationEditorRouteContext, normalizedApplicationSnapshot, synchronizeApplicationParameterPresets } from '../utils/dataApplicationDraft.mjs'
 import { APPLICATION_PRESENTATION_SECTIONS, canHideApplicationParameters } from '../utils/dataApplicationRuntime.mjs'
 import { affectedSelectionComponentIDs, compatibleSelectionParameters as compatibleSelectionParameterList, selectionSourceFields } from '../utils/dataApplicationSelection.mjs'
 import { navigateWorkbenchRoute, openDataApplicationRuntime } from '../utils/moduleNavigation'
@@ -210,7 +235,7 @@ function emptyApplication() {
     snapshot: {
       schema_version: 'addp.workbench_data_application/v1',
       page: { id: crypto.randomUUID(), title: '', display_mode: 'desktop', refresh_interval_seconds: 0, visible_sections: [...APPLICATION_PRESENTATION_SECTIONS], placements: [] },
-      components: [], parameters: [], parameter_bindings: [], selection_bindings: [],
+      components: [], parameters: [], parameter_presets: [], parameter_bindings: [], selection_bindings: [],
     },
   }
 }
@@ -224,6 +249,7 @@ function assignApplication(data) {
   application.has_unpublished_changes = data.has_unpublished_changes
   application.current_revision_number = data.current_revision_number
   application.snapshot = structuredClone(data.snapshot)
+  application.snapshot.parameter_presets ||= []
   baseline.value = serializeDraft()
 }
 
@@ -318,6 +344,29 @@ function visibleSectionsChanged() {
   validatePresentationSections()
 }
 
+function addParameterPreset() {
+  if (application.snapshot.parameters.length === 0 || application.snapshot.parameter_presets.length >= 20) return
+  let index = application.snapshot.parameter_presets.length + 1
+  const usedKeys = new Set(application.snapshot.parameter_presets.map((preset) => preset.key))
+  while (usedKeys.has(`preset-${index}`)) index += 1
+  application.snapshot.parameter_presets.push(createApplicationParameterPreset(
+    application.snapshot,
+    `preset-${index}`,
+    t('workbench.newParameterPresetName', { index }),
+  ))
+}
+
+function removeParameterPreset(index) {
+  application.snapshot.parameter_presets.splice(index, 1)
+}
+
+function validateParameterPresets() {
+  synchronizeApplicationParameterPresets(application.snapshot)
+  if (applicationParameterPresetsValid(application.snapshot)) return true
+  ElMessage.warning(t('workbench.invalidParameterPresets'))
+  return false
+}
+
 function sourceFields(componentID) {
   return selectionSourceFields(application.snapshot, componentID, descriptorByComponent[componentID])
 }
@@ -410,6 +459,7 @@ function normalizedSnapshot() {
 
 function openDraftPreview() {
   if (!validatePresentationSections()) return
+  if (!validateParameterPresets()) return
   if (!application.name.trim() || !application.snapshot.page.title.trim() || application.snapshot.components.length === 0) {
     return ElMessage.warning(t('workbench.incompleteDataApplicationPreview'))
   }
@@ -442,6 +492,7 @@ async function load(routeName, applicationID) {
 
 async function save() {
   if (!validatePresentationSections()) return
+  if (!validateParameterPresets()) return
   if (!application.name.trim() || application.snapshot.components.length === 0) return ElMessage.warning(t('workbench.incompleteDataApplication'))
   const action = 'save'
   const creating = isCreate.value
@@ -524,6 +575,7 @@ function applySpatialExploration({ generated, descriptors }) {
   application.snapshot.parameters = generated.parameters
   application.snapshot.parameter_bindings = generated.parameterBindings
   application.snapshot.selection_bindings = generated.selectionBindings
+  application.snapshot.parameter_presets = []
   application.snapshot.page.placements = generated.placements
   for (const component of generated.components) {
     const descriptor = sameServiceReference(component.service_ref, descriptors.aggregate.ref) ? descriptors.aggregate : descriptors.spatial
@@ -604,6 +656,7 @@ function pruneUnusedApplicationParameters() {
   application.snapshot.selection_bindings = application.snapshot.selection_bindings
     .map((binding) => ({ ...binding, assignments: binding.assignments.filter((assignment) => used.has(assignment.application_parameter_key)) }))
     .filter((binding) => binding.assignments.length > 0)
+  synchronizeApplicationParameterPresets(application.snapshot)
 }
 
 onBeforeUnmount(invalidateEditorContextRequests)
@@ -611,5 +664,5 @@ watch(() => [route.name, route.params.id], ([routeName, applicationID]) => load(
 </script>
 
 <style scoped>
-.page{display:flex;flex-direction:column;gap:16px}.page-header,.actions,.card-header,.layout-actions,.component-heading,.component-actions,.selection-binding-heading,.selection-binding-actions{display:flex;align-items:center}.page-header,.card-header,.component-heading,.selection-binding-heading{justify-content:space-between}.actions,.layout-actions,.component-actions,.selection-binding-actions{gap:8px;flex-wrap:wrap}.page-header h2{margin:0;color:var(--addp-text-primary)}.page-header p,.card-header span,.component-heading span,.component-heading small,.selection-binding-actions span,.presentation-sections>span{color:var(--addp-text-secondary)}.page-header p{margin:6px 0 0}.card-header>div:first-child{display:flex;flex-direction:column;gap:4px}.card-header span,.selection-binding-actions span,.presentation-sections>span{font-size:12px}.full{width:100%}.presentation-sections{display:flex;flex-direction:column;gap:6px}.components,.selection-bindings{display:flex;flex-direction:column;gap:12px}.component-card,.selection-binding-card{padding:16px;border:1px solid var(--addp-border-color);border-radius:8px}.component-heading,.selection-binding-heading{margin-bottom:12px}.component-heading>div:first-child{display:flex;gap:12px;align-items:center}.selection-binding-heading>.el-select{width:min(320px,100%)}:deep(.draft-preview-dialog .el-dialog__body){padding:0;overflow:hidden}@media(max-width:900px){.component-heading,.selection-binding-heading{align-items:stretch;flex-direction:column}.component-actions,.selection-binding-actions{justify-content:space-between}}
+.page{display:flex;flex-direction:column;gap:16px}.page-header,.actions,.card-header,.layout-actions,.component-heading,.component-actions,.selection-binding-heading,.selection-binding-actions,.parameter-preset-heading{display:flex;align-items:center}.page-header,.card-header,.component-heading,.selection-binding-heading{justify-content:space-between}.actions,.layout-actions,.component-actions,.selection-binding-actions{gap:8px;flex-wrap:wrap}.page-header h2{margin:0;color:var(--addp-text-primary)}.page-header p,.card-header span,.component-heading span,.component-heading small,.selection-binding-actions span,.presentation-sections>span{color:var(--addp-text-secondary)}.page-header p{margin:6px 0 0}.card-header>div:first-child{display:flex;flex-direction:column;gap:4px}.card-header span,.selection-binding-actions span,.presentation-sections>span{font-size:12px}.full{width:100%}.presentation-sections{display:flex;flex-direction:column;gap:6px}.components,.selection-bindings,.parameter-presets{display:flex;flex-direction:column;gap:12px}.component-card,.selection-binding-card,.parameter-preset-card{padding:16px;border:1px solid var(--addp-border-color);border-radius:8px}.component-heading,.selection-binding-heading,.parameter-preset-heading{margin-bottom:12px}.component-heading>div:first-child{display:flex;gap:12px;align-items:center}.parameter-preset-heading{gap:12px}.parameter-preset-heading>.el-input:first-child{flex:2}.parameter-preset-heading>.el-input:nth-child(2){flex:1}.parameter-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}.parameter-field{display:flex;flex-direction:column;gap:6px;color:var(--addp-text-primary)}.parameter-field em{color:var(--el-color-danger);font-style:normal}.selection-binding-heading>.el-select{width:min(320px,100%)}:deep(.draft-preview-dialog .el-dialog__body){padding:0;overflow:hidden}@media(max-width:900px){.component-heading,.selection-binding-heading,.parameter-preset-heading{align-items:stretch;flex-direction:column}.component-actions,.selection-binding-actions{justify-content:space-between}}
 </style>

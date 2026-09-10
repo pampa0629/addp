@@ -23,11 +23,16 @@
 | `name` / `description` / `enabled` | 通用定义字段 |
 | `schedule` / `next_run_at` | owner 调度字段；当前纳入类型统一不启用自身调度 |
 | `last_run_at` / `last_execution_id` / `last_execution_status` | 最近执行摘要，不替代 `common.task_executions` |
+| `binding_status` / `binding_issue` | 强资源绑定的聚合可用状态与失效原因；`active` 时原因为空，`missing` 时原因为 `missing_engine` 或 `missing_source` |
 | `semantic_key` | 由对应任务类型从规范化配置投影出的稳定语义身份 |
 | `config` | 任务类型专有配置，只能由对应校验器解释 |
 | `created_by` / `created_at` / `updated_at` / `deleted_at` | 审计与生命周期字段 |
 
 活跃定义按 `(tenant_id, task_type, semantic_key)` 唯一；空 `semantic_key` 不参与该唯一约束。
+
+`binding_status` 与 `last_execution_status` 正交：前者是 Manager cleanup 对当前绑定的持久化结论，后者只保存最近 execution 状态。任务创建或重新保存有效配置时，必须把 `binding_status` 重置为 `active` 并清空 `binding_issue`；逻辑回收不得覆盖已有执行摘要。
+
+受管快显任务只允许对 `binding_status=missing` 的定义执行显式源重绑。重绑请求携带当前 `version` 与新的 ResourceLocator，由 Manager 校验源能力并重建强类型配置；重绑不创建 execution。新语义身份若已存在任务，则返回该规范任务并删除旧失效定义，避免重复语义身份。
 
 ## 三、资源与结果边界
 
@@ -40,7 +45,7 @@
 
 ## 四、唯一 API
 
-任务列表通过 `category`、`task_type`、`execution_status`、`page` 和 `page_size` 组合筛选；`execution_status` 精确匹配最近一次执行状态，例如 `failed`。批量删除只允许前端显式列举用户已勾选的任务，并逐项调用唯一 DELETE，不提供“删除当前筛选全部”的隐式成员接口。
+任务列表通过 `category`、`task_type`、`execution_status`、`binding_status`、`page` 和 `page_size` 组合筛选；`execution_status` 精确匹配最近一次执行状态，例如 `failed`，`binding_status` 只接受 `active` 或 `missing`。批量删除只允许前端显式列举用户已勾选的任务，并逐项调用唯一 DELETE，不提供“删除当前筛选全部”的隐式成员接口。
 
 ```text
 GET    /api/v1/manager/tasks?category=managed_quick_view|spatial_business&task_type=...

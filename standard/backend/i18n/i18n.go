@@ -60,6 +60,7 @@ const (
 	MsgDocumentExtractionInvalid              = "standard.document.extraction_invalid"
 	MsgDocumentExtractionNamespaceInvalid     = "standard.document.extraction_namespace_invalid"
 	MsgDocumentCandidateFamilyQueryInvalid    = "standard.document.candidate_family_query_invalid"
+	MsgCandidateFamilyDecisionInvalid         = "standard.document.candidate_family_decision_invalid"
 	MsgDocumentCopilotUnavailable             = "standard.document.copilot_unavailable"
 	MsgDocumentPublicationHistory             = "standard.document.publication_history"
 	MsgDocumentCandidateFormalizationHistory  = "standard.document.candidate_formalization_history"

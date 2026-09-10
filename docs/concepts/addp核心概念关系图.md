@@ -160,6 +160,7 @@ mindmap
       Data Application 独立聚合根
       Data Application Component 服务消费与呈现配置
       Application Revision 不可变发布快照
+      Application Parameter Preset 发布的命名参数场景
       Selection Binding 结果选择到应用参数
       Application Display Mode desktop与wallboard
       Application Refresh Policy 大屏前台刷新
@@ -479,6 +480,9 @@ graph TB
     提炼候选 -->|同文档且命名空间合规的类型/编码/名称/定义作为复用提示| 提炼批次
     提炼候选 -->|类型+编码+规范化内容指纹，只读计算| 候选聚合视图[标准提炼候选聚合视图]
     候选聚合视图 -->|代表候选承载人工动作| 提炼候选
+    候选聚合视图 -->|显式成员id+version原子选择一个胜出变体| 提炼候选
+    提炼候选 -->|同事务冻结完整成员结果与人工理由| 候选族裁决事件[标准候选族裁决事件]
+    标准文档 -->|生命周期内保留追加式治理历史| 候选族裁决事件
     提炼候选 -->|枚举数据元以稳定编码引用同批候选| 提炼候选
     提炼候选 -->|retained 后人工发起且绝不直接发布| 候选正式化[标准候选正式化]
     候选正式化 -->|新身份 R1 草稿或既有身份新草稿| 正式标准修订[业务术语/数据元/码值集/指标修订]

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/manager/internal/models"
 	"gorm.io/gorm"
 )
 
@@ -23,6 +24,8 @@ type CleanupTaskDefinition struct {
 	TaskType            string
 	Enabled             bool
 	LastExecutionStatus *string
+	BindingStatus       string
+	BindingIssue        string
 	Config              commonModels.JSONMap
 	SourceEngineID      uint
 	ItemID              uint
@@ -161,7 +164,7 @@ func (r *CleanupTaskDefinitionRepository) List(ctx context.Context, tenantID uin
 	return definitions, nil
 }
 
-func (r *CleanupTaskDefinitionRepository) Disable(ctx context.Context, definition CleanupTaskDefinition, reason string) error {
+func (r *CleanupTaskDefinitionRepository) MarkBindingMissing(ctx context.Context, definition CleanupTaskDefinition, reason string) error {
 	if r == nil || r.db == nil {
 		return nil
 	}
@@ -169,21 +172,25 @@ func (r *CleanupTaskDefinitionRepository) Disable(ctx context.Context, definitio
 	if err != nil {
 		return err
 	}
-	status := strings.TrimSpace(reason)
-	if status == "" {
-		status = "missing_source"
+	issue := strings.TrimSpace(reason)
+	if issue == "" {
+		issue = models.TaskBindingIssueMissingSource
+	}
+	if issue != models.TaskBindingIssueMissingEngine && issue != models.TaskBindingIssueMissingSource {
+		return fmt.Errorf("unsupported Manager task binding issue %q", issue)
 	}
 	query := r.db.WithContext(ctx).Table(spec.Table).
-		Where("id = ? AND tenant_id = ? AND deleted_at IS NULL AND enabled = ?", definition.ID, definition.TenantID, true)
+		Where("id = ? AND tenant_id = ? AND deleted_at IS NULL", definition.ID, definition.TenantID)
 	if spec.Table == "manager.task_definitions" {
 		query = query.Where("task_type = ?", definition.TaskType)
 	}
 	return query.
 		Updates(map[string]interface{}{
-			"enabled":               false,
-			"next_run_at":           nil,
-			"last_execution_status": status,
-			"updated_at":            time.Now(),
+			"enabled":        false,
+			"next_run_at":    nil,
+			"binding_status": models.TaskBindingStatusMissing,
+			"binding_issue":  issue,
+			"updated_at":     time.Now(),
 		}).Error
 }
 

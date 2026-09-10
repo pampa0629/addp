@@ -367,7 +367,11 @@ func TestManagerDerivedTaskListUsesUnifiedCategoryAndTypeFilters(t *testing.T) {
 	}
 	if err := db.Table("manager.task_definitions").
 		Where("tenant_id = ? AND name = ?", 1, "tile cache task").
-		Update("last_execution_status", commonExecution.ExecutionStatusFailed).Error; err != nil {
+		Updates(map[string]interface{}{
+			"last_execution_status": commonExecution.ExecutionStatusFailed,
+			"binding_status":        models.TaskBindingStatusMissing,
+			"binding_issue":         models.TaskBindingIssueMissingEngine,
+		}).Error; err != nil {
 		t.Fatalf("mark tile cache task failed: %v", err)
 	}
 
@@ -405,6 +409,26 @@ func TestManagerDerivedTaskListUsesUnifiedCategoryAndTypeFilters(t *testing.T) {
 	assertUnifiedTaskTypeSet(t, router, "/tasks?category=managed_quick_view&execution_status=failed", map[string]bool{
 		commonExecution.TaskTypeVectorTileCacheGeneration: true,
 	})
+	assertUnifiedTaskTypeSet(t, router, "/tasks?category=managed_quick_view&binding_status=missing", map[string]bool{
+		commonExecution.TaskTypeVectorTileCacheGeneration: true,
+	})
+	bindingReq := httptest.NewRequest(http.MethodGet, "/tasks?category=managed_quick_view&binding_status=missing", nil)
+	bindingW := httptest.NewRecorder()
+	router.ServeHTTP(bindingW, bindingReq)
+	var bindingResp TaskListResponse
+	if err := json.Unmarshal(bindingW.Body.Bytes(), &bindingResp); err != nil {
+		t.Fatalf("decode binding-status response: %v; body=%s", err, bindingW.Body.String())
+	}
+	if len(bindingResp.Items) != 1 || bindingResp.Items[0].BindingStatus != models.TaskBindingStatusMissing || bindingResp.Items[0].BindingIssue != models.TaskBindingIssueMissingEngine {
+		t.Fatalf("binding-status response = %#v", bindingResp.Items)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/tasks?binding_status=unknown", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("invalid binding_status status = %d, want %d, body=%s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
 }
 
 func TestCreateEmbeddingTaskRejectsLegacyTopLevelFields(t *testing.T) {

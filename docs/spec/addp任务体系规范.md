@@ -85,6 +85,15 @@ Manager 的 `vector_tile_cache_generation`、`vector_tile_set_generation`、`vec
 
 这些字段是语义基线，不要求抽取共享表或共享 Go struct。各模块可以增加模块私有字段，但不得改变以上字段含义。
 
+任务定义存在存储引擎强绑定时，owner 应另行保存任务绑定状态，不得复用 `last_execution_status` 表达资源失效：
+
+- `binding_status=active` 表示当前保存的全部强绑定仍可用；`binding_status=missing` 表示至少一个强绑定经 owner cleanup 判定失效。
+- `binding_issue` 只在 `binding_status=missing` 时使用，稳定值为 `missing_engine` 或 `missing_source`。
+- 任务重新保存并通过 owner 的绑定校验后，必须把绑定状态恢复为 `active` 并清空 `binding_issue`。
+- 任务绑定状态是 owner 持久化的 cleanup 结论，不是实时引擎连通性观测；`last_execution_status` 始终只保存最近 execution 的状态。
+- 显式重绑必须由 owner 重新解析新资源、校验任务类型能力并重建规范化绑定，客户端不得直接提交 owner 私有配置。重绑只恢复任务定义，不隐式创建 execution；用户需要生成结果时继续调用标准执行入口。
+- 重绑后的语义身份若已存在活跃任务，owner 必须合并到该规范任务并移除旧失效定义，不能保留两个等价定义；旧任务的历史 execution 与既有产物保留其原始来源事实，不得改写为新资源的历史。
+
 ### 任务授权主体
 
 可被 owner scheduler 或 Orchestrator 定时执行的持久任务必须保存 Task Authorization Subject。该事实固定由 `authorization_principal_id + authorization_membership_id + authorization_version + authorized_at` 构成，并满足：

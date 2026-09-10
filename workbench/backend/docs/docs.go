@@ -1383,6 +1383,25 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_workbench_internal_models.DataApplicationParameterPreset": {
+            "type": "object",
+            "required": [
+                "key",
+                "name",
+                "parameter_values"
+            ],
+            "properties": {
+                "key": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "parameter_values": {
+                    "type": "object"
+                }
+            }
+        },
         "github_com_addp_workbench_internal_models.DataApplicationResponse": {
             "type": "object",
             "properties": {
@@ -1506,6 +1525,12 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/github_com_addp_workbench_internal_models.DataApplicationParameterBinding"
+                    }
+                },
+                "parameter_presets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_workbench_internal_models.DataApplicationParameterPreset"
                     }
                 },
                 "parameters": {

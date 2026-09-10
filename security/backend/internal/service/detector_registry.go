@@ -37,6 +37,16 @@ var installedDetectorCapabilities = []models.DetectorCapability{
 		RecommendedThreshold: 0.9,
 	},
 	{
+		Key: models.FindingDetectorIdentityDocumentNumberMetadataV1, Code: "identity_document_number_metadata", Version: "v1",
+		NameI18nKey: "security.detectorCapabilities.identityDocumentNumberMetadata.name", DescriptionI18nKey: "security.detectorCapabilities.identityDocumentNumberMetadata.description",
+		MethodI18nKey: "security.detectorCapabilities.identityDocumentNumberMetadata.method", PrivacyI18nKey: "security.detectorCapabilities.identityDocumentNumberMetadata.privacy",
+		LimitationsI18nKey: "security.detectorCapabilities.identityDocumentNumberMetadata.limitations",
+		TargetKind:         detectorTargetFieldMetadata, EvidenceSource: detectorEvidenceMetadata,
+		SupportedItemTypes:   []string{string(resourcetree.TypeTable), string(resourcetree.TypeCollection)},
+		SupportedFieldTypes:  []string{string(datatype.FieldTypeString)},
+		RecommendedThreshold: 0.9,
+	},
+	{
 		Key: models.FindingDetectorPhoneDocumentV1, Code: "phone_document_text", Version: "v1",
 		NameI18nKey: "security.detectorCapabilities.phoneDocument.name", DescriptionI18nKey: "security.detectorCapabilities.phoneDocument.description",
 		MethodI18nKey: "security.detectorCapabilities.phoneDocument.method", PrivacyI18nKey: "security.detectorCapabilities.phoneDocument.privacy",
@@ -54,6 +64,13 @@ var fieldMetadataDetectorAliases = map[string]map[string]struct{}{
 	},
 	models.FindingDetectorEmailMetadataV1: {
 		"email": {}, "emailaddress": {}, "邮箱": {}, "电子邮箱": {},
+	},
+	models.FindingDetectorIdentityDocumentNumberMetadataV1: {
+		"idcard": {}, "idcardno": {}, "idcardnumber": {},
+		"identitycard": {}, "identitycardno": {}, "identitycardnumber": {},
+		"identitydocumentno": {}, "identitydocumentnumber": {},
+		"nationalid": {}, "nationalidno": {}, "nationalidnumber": {},
+		"身份证": {}, "身份证号": {}, "身份证号码": {}, "身份证件号": {}, "身份证件号码": {},
 	},
 }
 

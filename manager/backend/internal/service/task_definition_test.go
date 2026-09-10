@@ -13,6 +13,7 @@ func ensureDerivedTaskDefinitionTestTables(t *testing.T, db *gorm.DB) {
 			id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, task_type TEXT NOT NULL,
 			version INTEGER NOT NULL DEFAULT 1, name TEXT NOT NULL, description TEXT, enabled BOOLEAN,
 			last_execution_id TEXT, last_execution_status TEXT, last_run_at DATETIME, next_run_at DATETIME,
+			binding_status TEXT NOT NULL DEFAULT 'active', binding_issue TEXT NOT NULL DEFAULT '',
 			schedule TEXT, semantic_key TEXT NOT NULL DEFAULT '', created_by INTEGER, config JSON,
 			created_at DATETIME, updated_at DATETIME, deleted_at DATETIME)`,
 		`CREATE TABLE manager.task_resource_bindings (

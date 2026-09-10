@@ -2121,6 +2121,198 @@ const docTemplate = `{
                 ]
             }
         },
+        "/documents/{id}/extraction-candidate-family-decisions": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按事件 ID 倒序分页返回指定候选族的追加式不可变裁决事实；每条事件冻结理由、胜出候选、操作者以及全部成员的裁决后快照 | Returns append-only immutable decision facts for one candidate family, ordered by event ID descending; each event freezes the reason, winner, actor, and post-decision snapshots of all members",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "获取标准候选族裁决历史 | List standard candidate family decision history",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "文档 ID | Document ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "enum": [
+                            "glossary",
+                            "element",
+                            "code_set",
+                            "metric"
+                        ],
+                        "type": "string",
+                        "description": "候选类型 | Candidate type",
+                        "name": "candidate_type",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "候选族稳定编码 | Candidate family stable code",
+                        "name": "code",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码，默认 1 | Page number, default 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页数量，默认 20，最大 100 | Page size, default 20, maximum 100",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.PaginatedDocumentCandidateFamilyDecisionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "候选类型、编码或分页参数无效，error_code=candidate_family_decision_invalid | Invalid candidate type, code, or pagination; error_code=candidate_family_decision_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "需要登录 | Authentication required",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "无权访问 | Access denied",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.document.read"
+                ]
+            }
+        },
+        "/documents/{id}/extraction-candidates/batch_decide": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "显式列出同一候选族当前全部语义指纹互异的代表候选，填写人工理由，保留唯一胜出候选并驳回其余候选，同时追加不可变裁决事件；缺少当前变体或任一成员、理由无效、已正式化、版本冲突时整批回滚 | Explicitly lists all current representative candidates with distinct semantic fingerprints in one family, records a human reason, retains the sole winner, rejects the others, and appends an immutable decision event; the entire command rolls back if any current variant is omitted or any member or reason is invalid, formalized, or stale",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Standard"
+                ],
+                "summary": "原子裁决文档候选族 | Atomically decide a document candidate family",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "文档 ID | Document ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "候选成员、并发版本、胜出候选及 1–1000 字符人工理由 | Candidate members, concurrency versions, winner, and a 1–1000 character human reason",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.DecideDocumentCandidateFamilyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentCandidateFamilyDecisionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "理由、成员数量、重复成员、跨族成员或胜出候选无效，error_code=candidate_family_decision_invalid | Invalid reason, member count, duplicate member, cross-family member, or winner; error_code=candidate_family_decision_invalid",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "候选已正式化或并发版本冲突 | Candidate already formalized or concurrency version conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "standard.document.update"
+                ]
+            }
+        },
         "/documents/{id}/mappings": {
             "get": {
                 "security": [
@@ -7726,6 +7918,32 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_addp_standard_internal_models.DecideDocumentCandidateFamilyRequest": {
+            "type": "object",
+            "required": [
+                "members",
+                "reason",
+                "winner_candidate_id"
+            ],
+            "properties": {
+                "members": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "minItems": 2,
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentCandidateFamilyDecisionMember"
+                    }
+                },
+                "reason": {
+                    "type": "string",
+                    "maxLength": 1000
+                },
+                "winner_candidate_id": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
         "github_com_addp_standard_internal_models.DocumentAggregate": {
             "type": "object",
             "properties": {
@@ -7799,6 +8017,102 @@ const docTemplate = `{
                 },
                 "version": {
                     "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.DocumentCandidateFamilyDecision": {
+            "type": "object",
+            "properties": {
+                "candidate_type": {
+                    "type": "string",
+                    "enum": [
+                        "glossary",
+                        "element",
+                        "code_set",
+                        "metric"
+                    ]
+                },
+                "code": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "document_id": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "members": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentCandidateFamilyDecisionMemberSnapshot"
+                    }
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "winner_candidate_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.DocumentCandidateFamilyDecisionMember": {
+            "type": "object",
+            "required": [
+                "candidate_id",
+                "version"
+            ],
+            "properties": {
+                "candidate_id": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "version": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.DocumentCandidateFamilyDecisionMemberSnapshot": {
+            "type": "object",
+            "properties": {
+                "candidate_id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "semantic_fingerprint": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "retained",
+                        "rejected"
+                    ]
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.DocumentCandidateFamilyDecisionResponse": {
+            "type": "object",
+            "properties": {
+                "candidates": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentExtractionCandidate"
+                    }
+                },
+                "decision": {
+                    "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentCandidateFamilyDecision"
                 }
             }
         },
@@ -8143,6 +8457,9 @@ const docTemplate = `{
                 "code": {
                     "type": "string"
                 },
+                "decision_count": {
+                    "type": "integer"
+                },
                 "family_key": {
                     "type": "string"
                 },
@@ -8157,6 +8474,9 @@ const docTemplate = `{
                 },
                 "representative_name": {
                     "type": "string"
+                },
+                "total_variant_count": {
+                    "type": "integer"
                 },
                 "variant_count": {
                     "type": "integer"
@@ -9151,6 +9471,29 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/github_com_addp_standard_internal_models.CodeSetAggregate"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_standard_internal_models.PaginatedDocumentCandidateFamilyDecisionResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_standard_internal_models.DocumentCandidateFamilyDecision"
                     }
                 },
                 "page": {

@@ -144,6 +144,8 @@ type DocumentExtractionCandidateFamily struct {
 	Code               string                             `json:"code"`
 	RepresentativeName string                             `json:"representative_name"`
 	VariantCount       int                                `json:"variant_count"`
+	TotalVariantCount  int                                `json:"total_variant_count"`
+	DecisionCount      int64                              `json:"decision_count"`
 	OccurrenceCount    int                                `json:"occurrence_count"`
 	FirstSeenAt        time.Time                          `json:"first_seen_at"`
 	LastSeenAt         time.Time                          `json:"last_seen_at"`
@@ -174,6 +176,31 @@ type PaginatedDocumentExtractionCandidateFamilyResponse struct {
 	TotalPages             int                                               `json:"total_pages"`
 	VariantStatusCounts    DocumentExtractionCandidateVariantStatusCounts    `json:"variant_status_counts"`
 	FamilyComparisonCounts DocumentExtractionCandidateFamilyComparisonCounts `json:"family_comparison_counts"`
+}
+
+type DocumentCandidateFamilyDecisionMemberSnapshot struct {
+	CandidateID         int64  `json:"candidate_id"`
+	SemanticFingerprint string `json:"semantic_fingerprint"`
+	Name                string `json:"name"`
+	Version             int64  `json:"version"`
+	Status              string `json:"status" enums:"retained,rejected"`
+}
+
+// DocumentCandidateFamilyDecision 是一次候选族胜出裁决形成的追加式治理事实。
+type DocumentCandidateFamilyDecision struct {
+	ID                int64                                           `gorm:"primaryKey;autoIncrement" json:"id"`
+	DocumentID        int64                                           `gorm:"not null;index" json:"document_id"`
+	CandidateType     string                                          `gorm:"size:20;not null;index" json:"candidate_type" enums:"glossary,element,code_set,metric"`
+	Code              string                                          `gorm:"size:100;not null;index" json:"code"`
+	WinnerCandidateID int64                                           `gorm:"not null" json:"winner_candidate_id"`
+	Reason            string                                          `gorm:"type:text;not null" json:"reason"`
+	Members           []DocumentCandidateFamilyDecisionMemberSnapshot `gorm:"type:jsonb;serializer:json;not null" json:"members"`
+	CreatedBy         int64                                           `gorm:"not null;index" json:"created_by"`
+	CreatedAt         time.Time                                       `json:"created_at"`
+}
+
+func (DocumentCandidateFamilyDecision) TableName() string {
+	return "standard.document_candidate_family_decisions"
 }
 
 // DocumentCandidateFormalization 是 retained 候选到受治理标准修订的一对一不可变事实。
@@ -356,6 +383,30 @@ type CreateDocumentExtractionRequest struct {
 type UpdateDocumentExtractionCandidateRequest struct {
 	Version int64  `json:"version" binding:"required,gt=0" minimum:"1"`
 	Status  string `json:"status" binding:"required" enums:"retained,rejected"`
+}
+
+type DocumentCandidateFamilyDecisionMember struct {
+	CandidateID int64 `json:"candidate_id" binding:"required,gt=0" minimum:"1"`
+	Version     int64 `json:"version" binding:"required,gt=0" minimum:"1"`
+}
+
+type DecideDocumentCandidateFamilyRequest struct {
+	WinnerCandidateID int64                                   `json:"winner_candidate_id" binding:"required,gt=0" minimum:"1"`
+	Members           []DocumentCandidateFamilyDecisionMember `json:"members" binding:"required,min=2,max=100,dive" minItems:"2" maxItems:"100"`
+	Reason            string                                  `json:"reason" binding:"required,max=1000" maxLength:"1000"`
+}
+
+type DocumentCandidateFamilyDecisionResponse struct {
+	Decision   DocumentCandidateFamilyDecision `json:"decision"`
+	Candidates []DocumentExtractionCandidate   `json:"candidates"`
+}
+
+type PaginatedDocumentCandidateFamilyDecisionResponse struct {
+	Data       []DocumentCandidateFamilyDecision `json:"data"`
+	Total      int64                             `json:"total"`
+	Page       int                               `json:"page"`
+	PageSize   int                               `json:"page_size"`
+	TotalPages int                               `json:"total_pages"`
 }
 
 type FormalizeDocumentExtractionCandidateRequest struct {

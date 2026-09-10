@@ -402,6 +402,7 @@ test-service-frontend: ## 运行 Service 前端确定性测试与构建
 
 test-standard-frontend: ## 运行 Standard 前端确定性测试与构建
 	@cd standard/frontend && npm test
+	@cd standard/frontend && npm run test:e2e
 	@cd standard/frontend && npm run build
 
 test-system-frontend: ## 运行 System 前端确定性测试与构建

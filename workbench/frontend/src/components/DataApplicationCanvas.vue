@@ -11,11 +11,28 @@
     </header>
 
     <el-card v-if="showParameters && application.snapshot.parameters?.length" class="parameters-card">
-      <template #header><strong>{{ t('workbench.queryParameters') }}</strong></template>
+      <template #header>
+        <div class="parameter-card-header">
+          <strong>{{ t('workbench.queryParameters') }}</strong>
+          <div class="parameter-preset-actions">
+            <el-select
+              v-if="parameterPresets.length"
+              v-model="selectedPresetKey"
+              data-testid="parameter-preset-select"
+              :placeholder="t('workbench.selectParameterPreset')"
+              @change="applyParameterPreset"
+            >
+              <el-option v-for="preset in parameterPresets" :key="preset.key" :label="preset.name" :value="preset.key" />
+            </el-select>
+            <el-button v-if="mode === 'published' && selectedPresetKey" @click="copyPresetLink">{{ t('workbench.copyPresetLink') }}</el-button>
+            <el-button @click="resetParameters">{{ t('workbench.resetParameters') }}</el-button>
+          </div>
+        </div>
+      </template>
       <div class="parameter-grid">
         <label v-for="parameter in application.snapshot.parameters" :key="parameter.key" class="parameter-field">
           <span>{{ parameter.label }}<em v-if="parameter.required">*</em></span>
-          <RuntimeParameterInput :model-value="parameterValues[parameter.key]" :control-type="parameter.control_type" @update:model-value="updateParameterValue(parameter.key, $event)" />
+          <ApplicationParameterValueInput :model-value="parameterValues[parameter.key]" :control-type="parameter.control_type" @update:model-value="updateParameterValue(parameter.key, $event)" />
         </label>
       </div>
     </el-card>
@@ -62,36 +79,22 @@
 </template>
 
 <script setup>
-import { computed, defineComponent, h, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ElDatePicker, ElInput, ElInputNumber, ElMessage, ElOption, ElSelect, ElSwitch } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { createLatestRequestCoordinator } from '@common-ui'
 import { executeDescriptorOperation, getConsumerDescriptor } from '../api/services'
-import { applicationRefreshDelayMilliseconds, buildComponentQuery, buildSelectionUpdate, canAttemptApplicationQuery, canExecuteComponentQuery, canRunApplicationRefresh, canRunPublishedApplicationInitialQuery, commitLatestComponentDescriptorState, componentBlockingError, initialApplicationParameterValues, invalidateApplicationParameterResults, runtimeGridStyle, runtimeLayoutStyle, runtimeSectionVisible } from '../utils/dataApplicationRuntime.mjs'
+import { defaultApplicationParameterValues } from '../utils/dataApplicationParameters.mjs'
+import { applicationParameterPreset, applicationRefreshDelayMilliseconds, buildComponentQuery, buildSelectionUpdate, canAttemptApplicationQuery, canExecuteComponentQuery, canRunApplicationRefresh, canRunPublishedApplicationInitialQuery, commitLatestComponentDescriptorState, componentBlockingError, initialApplicationParameterValues, invalidateApplicationParameterResults, runtimeGridStyle, runtimeLayoutStyle, runtimeSectionVisible } from '../utils/dataApplicationRuntime.mjs'
 import { descriptorSupportsExport, downloadCurrentBoundedExport, exportFormatForRenderer } from '../utils/boundedExport.mjs'
+import ApplicationParameterValueInput from './ApplicationParameterValueInput.vue'
 import WorkbenchRendererHost from './WorkbenchRendererHost.vue'
 
 const props = defineProps({
   application: { type: Object, required: true },
   mode: { type: String, default: 'published', validator: (value) => ['published', 'draft-preview'].includes(value) },
   embedded: { type: Boolean, default: false },
-})
-
-const RuntimeParameterInput = defineComponent({
-  props: { modelValue: { default: '' }, controlType: { type: String, required: true } },
-  emits: ['update:modelValue'],
-  setup(parameterProps, { emit }) {
-    const { t } = useI18n()
-    const update = (value) => emit('update:modelValue', value)
-    return () => {
-      if (parameterProps.controlType === 'number') return h(ElInputNumber, { modelValue: parameterProps.modelValue, 'onUpdate:modelValue': update, controls: false })
-      if (parameterProps.controlType === 'checkbox') return h(ElSwitch, { modelValue: Boolean(parameterProps.modelValue), 'onUpdate:modelValue': update })
-      if (parameterProps.controlType === 'select') return h(ElSelect, { modelValue: parameterProps.modelValue, 'onUpdate:modelValue': update, clearable: true }, () => [h(ElOption, { value: true, label: t('workbench.booleanValues.true') }), h(ElOption, { value: false, label: t('workbench.booleanValues.false') })])
-      if (parameterProps.controlType === 'multiselect') return h(ElSelect, { modelValue: parameterProps.modelValue, 'onUpdate:modelValue': update, multiple: true, filterable: true, allowCreate: true, defaultFirstOption: true })
-      if (parameterProps.controlType === 'date' || parameterProps.controlType === 'datetime') return h(ElDatePicker, { modelValue: parameterProps.modelValue, 'onUpdate:modelValue': update, type: parameterProps.controlType === 'datetime' ? 'datetime' : 'date', valueFormat: parameterProps.controlType === 'datetime' ? 'YYYY-MM-DDTHH:mm:ssZ' : 'YYYY-MM-DD' })
-      return h(ElInput, { modelValue: parameterProps.modelValue, 'onUpdate:modelValue': update })
-    }
-  },
+  initialPresetKey: { type: String, default: '' },
 })
 
 const { t } = useI18n()
@@ -101,13 +104,15 @@ const queryingAll = ref(false)
 const runtimeElement = ref(null)
 const isFullscreen = ref(false)
 const fullscreenSupported = ref(false)
-const parameterValues = reactive(initialApplicationParameterValues(props.application.snapshot))
+const selectedPresetKey = ref(applicationParameterPreset(props.application.snapshot, props.initialPresetKey)?.key || '')
+const parameterValues = reactive(initialApplicationParameterValues(props.application.snapshot, selectedPresetKey.value))
 const componentStates = reactive({})
 const queryAllRequests = createLatestRequestCoordinator()
 const isWallboard = computed(() => application.value.snapshot.page?.display_mode === 'wallboard')
 const showTitle = computed(() => runtimeSectionVisible(application.value.snapshot.page, 'title'))
 const showParameters = computed(() => runtimeSectionVisible(application.value.snapshot.page, 'parameters'))
 const showQueryActions = computed(() => runtimeSectionVisible(application.value.snapshot.page, 'query_actions'))
+const parameterPresets = computed(() => application.value.snapshot.parameter_presets || [])
 const canQueryAll = computed(() => canAttemptApplicationQuery(application.value.snapshot.components, componentStates))
 const refreshDelayMilliseconds = computed(() => applicationRefreshDelayMilliseconds(application.value.snapshot.page))
 const statusLabel = computed(() => props.mode === 'draft-preview' ? t('workbench.draftPreviewBadge') : t('workbench.revisionLabel', { revision: application.value.revision_number }))
@@ -134,16 +139,46 @@ function createComponentState() {
   return { rows: [], page: { has_more: false, next_cursor: '' }, descriptor: null, descriptor_error: '', contract_error: '', query_error: '', querying: false, exporting: false, query_completed: false, preserve_map_view: false, cursors: [''], cursor_index: 0, descriptorRequests: createLatestRequestCoordinator(), requests: createLatestRequestCoordinator() }
 }
 
-function updateParameterValues(values) {
+function updateParameterValues(values, presetKey = '') {
   const parameterKeys = Object.keys(values)
   queryAllRequests.invalidate()
   queryingAll.value = false
   invalidateApplicationParameterResults(application.value.snapshot, componentStates, parameterKeys)
-  Object.assign(parameterValues, values)
+  for (const key of Object.keys(parameterValues)) {
+    if (!Object.prototype.hasOwnProperty.call(values, key) && !application.value.snapshot.parameters.some((parameter) => parameter.key === key)) delete parameterValues[key]
+  }
+  Object.assign(parameterValues, structuredClone(values))
+  selectedPresetKey.value = presetKey
 }
 
 function updateParameterValue(parameterKey, value) {
   updateParameterValues({ [parameterKey]: value })
+}
+
+async function applyParameterPreset(presetKey) {
+  const preset = applicationParameterPreset(application.value.snapshot, presetKey)
+  if (!preset) return
+  updateParameterValues(initialApplicationParameterValues(application.value.snapshot, preset.key), preset.key)
+  await queryAll()
+}
+
+async function resetParameters() {
+  updateParameterValues(defaultApplicationParameterValues(application.value.snapshot))
+  await queryAll()
+}
+
+async function copyPresetLink() {
+  if (props.mode !== 'published' || !selectedPresetKey.value) return
+  const url = new URL(window.location.href)
+  url.search = ''
+  url.hash = ''
+  url.searchParams.set('preset', selectedPresetKey.value)
+  try {
+    await navigator.clipboard.writeText(url.toString())
+    ElMessage.success(t('workbench.presetLinkCopied'))
+  } catch {
+    ElMessage.error(t('workbench.presetLinkCopyFailed'))
+  }
 }
 
 async function loadDescriptors() {
@@ -329,7 +364,7 @@ onMounted(async () => {
   document.addEventListener('visibilitychange', handleVisibilityChange)
   await loadDescriptors()
   if (props.mode === 'published') {
-    if (canRunPublishedApplicationInitialQuery(application.value.snapshot, componentStates)) await queryAll()
+    if (canRunPublishedApplicationInitialQuery(application.value.snapshot, componentStates, parameterValues, !selectedPresetKey.value)) await queryAll()
     scheduleAutomaticRefresh()
   } else {
     await refreshAndSchedule()
@@ -350,8 +385,11 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .runtime { min-height: 100vh; padding: 24px; background: var(--addp-bg-secondary); box-sizing: border-box; }
-.runtime-header, .runtime-actions, .component-header, .component-header-actions { display: flex; align-items: center; }
+.runtime-header, .runtime-actions, .component-header, .component-header-actions, .parameter-card-header, .parameter-preset-actions { display: flex; align-items: center; }
 .runtime-header, .component-header { justify-content: space-between; }
+.parameter-card-header { justify-content: space-between; gap: 16px; }
+.parameter-preset-actions { gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.parameter-preset-actions .el-select { width: min(280px, 100%); }
 .runtime-header { margin-bottom: 16px; gap: 24px; }
 .runtime-header--compact { justify-content: flex-end; }
 .runtime-header h1 { margin: 0; color: var(--addp-text-primary); font-size: 28px; }
@@ -379,6 +417,8 @@ onBeforeUnmount(() => {
 @media (max-width: 900px) {
   .runtime { padding: 16px; }
   .runtime-header { align-items: flex-start; flex-direction: column; }
+  .parameter-card-header { align-items: stretch; flex-direction: column; }
+  .parameter-preset-actions { justify-content: flex-start; }
   .runtime-header--compact { align-items: flex-end; }
   .runtime-grid { display: flex; flex-direction: column; }
   .runtime-component { min-height: 360px; }

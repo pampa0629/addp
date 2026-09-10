@@ -421,6 +421,7 @@ jobs:
           - module: standard
             name: Standard
             target: test-standard-frontend
+            playwright: true
           - module: security
             name: Security
             target: test-security-frontend

@@ -19,6 +19,7 @@ func TestCleanupTaskDefinitionRepositoryListsDisabledAndHardDeletes(t *testing.T
 	if err := db.Exec(`CREATE TABLE manager.task_definitions (
 		id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, task_type TEXT NOT NULL,
 		enabled BOOLEAN NOT NULL, next_run_at DATETIME, last_execution_status TEXT, config JSON NOT NULL,
+		binding_status TEXT NOT NULL DEFAULT 'active', binding_issue TEXT NOT NULL DEFAULT '',
 		updated_at DATETIME, deleted_at DATETIME)`).Error; err != nil {
 		t.Fatalf("create task_definitions: %v", err)
 	}
@@ -29,8 +30,8 @@ func TestCleanupTaskDefinitionRepositoryListsDisabledAndHardDeletes(t *testing.T
 		t.Fatalf("create task_resource_bindings: %v", err)
 	}
 	if err := db.Exec(`
-		INSERT INTO manager.task_definitions (tenant_id, task_type, enabled, config)
-		VALUES (7, 'model_3d_glb_generation', FALSE, '{}');
+		INSERT INTO manager.task_definitions (tenant_id, task_type, enabled, last_execution_status, config)
+		VALUES (7, 'model_3d_glb_generation', FALSE, 'success', '{}');
 		INSERT INTO manager.task_definitions (tenant_id, task_type, enabled, config)
 		VALUES (7, 'point_cloud_copc_generation', TRUE, '{}');
 		INSERT INTO manager.task_resource_bindings (task_definition_id, tenant_id, role, engine_id, locator, ordinal)
@@ -51,6 +52,19 @@ func TestCleanupTaskDefinitionRepositoryListsDisabledAndHardDeletes(t *testing.T
 	}
 	if len(definitions) != 2 || definitions[0].Enabled || !definitions[1].Enabled {
 		t.Fatalf("definitions = %#v", definitions)
+	}
+	if err := repo.MarkBindingMissing(context.Background(), definitions[0], "missing_engine"); err != nil {
+		t.Fatalf("MarkBindingMissing() error = %v", err)
+	}
+	var marked CleanupTaskDefinition
+	if err := db.Table("manager.task_definitions").Where("id = ?", definitions[0].ID).Take(&marked).Error; err != nil {
+		t.Fatalf("load marked task: %v", err)
+	}
+	if marked.Enabled || marked.BindingStatus != "missing" || marked.BindingIssue != "missing_engine" {
+		t.Fatalf("marked task = %#v", marked)
+	}
+	if marked.LastExecutionStatus == nil || *marked.LastExecutionStatus != "success" {
+		t.Fatalf("last execution status was overwritten: %#v", marked.LastExecutionStatus)
 	}
 	if err := repo.HardDelete(context.Background(), definitions[0]); err != nil {
 		t.Fatalf("HardDelete() error = %v", err)

@@ -18,9 +18,13 @@ import (
 	"gorm.io/datatypes"
 )
 
-const maxDataApplicationComponents = 24
+const (
+	maxDataApplicationComponents       = 24
+	maxDataApplicationParameterPresets = 20
+)
 
 var applicationParameterKeyPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_.-]{0,127}$`)
+var applicationParameterPresetKeyPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,63}$`)
 
 type dataApplicationRepository interface {
 	List(tenantID, ownerUserID int64, offset, limit int) ([]models.DataApplication, int64, error)
@@ -252,10 +256,91 @@ func (s *DataApplicationService) validateSnapshot(ctx context.Context, request D
 	if err := validateApplicationParameters(snapshot.Parameters, snapshot.ParameterBindings, components, componentParameters, descriptors); err != nil {
 		return err
 	}
+	if err := validateApplicationParameterPresets(snapshot.ParameterPresets, snapshot.Parameters, snapshot.ParameterBindings, components, componentParameters, descriptors); err != nil {
+		return err
+	}
 	if err := validateApplicationPresentationSections(snapshot.Page, snapshot.Parameters, snapshot.ParameterBindings, components); err != nil {
 		return err
 	}
 	return validateSelectionBindings(snapshot.SelectionBindings, snapshot.Parameters, snapshot.ParameterBindings, components, descriptors)
+}
+
+func validateApplicationParameterPresets(presets []models.DataApplicationParameterPreset, parameters []models.DataApplicationParameter, bindings []models.DataApplicationParameterBinding, components map[string]models.DataApplicationComponent, componentParameters map[string]map[string]models.ComponentParameterDefinition, descriptors map[string]*models.ConsumerDescriptor) error {
+	if len(presets) > maxDataApplicationParameterPresets || (len(presets) > 0 && len(parameters) == 0) {
+		return ErrInvalidDataApplication
+	}
+	parameterByKey := make(map[string]models.DataApplicationParameter, len(parameters))
+	bindingsByParameter := make(map[string][]models.DataApplicationParameterBinding, len(parameters))
+	for _, parameter := range parameters {
+		parameterByKey[parameter.Key] = parameter
+	}
+	for _, binding := range bindings {
+		bindingsByParameter[binding.ApplicationParameterKey] = append(bindingsByParameter[binding.ApplicationParameterKey], binding)
+	}
+	seenKeys := make(map[string]struct{}, len(presets))
+	for _, preset := range presets {
+		if !applicationParameterPresetKeyPattern.MatchString(preset.Key) || strings.TrimSpace(preset.Name) == "" || len([]rune(preset.Name)) > 100 || len(preset.ParameterValues) != len(parameters) {
+			return ErrInvalidDataApplication
+		}
+		if _, duplicate := seenKeys[preset.Key]; duplicate {
+			return ErrInvalidDataApplication
+		}
+		seenKeys[preset.Key] = struct{}{}
+		for key := range preset.ParameterValues {
+			if _, exists := parameterByKey[key]; !exists {
+				return ErrInvalidDataApplication
+			}
+		}
+		for _, parameter := range parameters {
+			raw, exists := preset.ParameterValues[parameter.Key]
+			if !exists || len(raw) == 0 {
+				return ErrInvalidDataApplication
+			}
+			for _, binding := range bindingsByParameter[parameter.Key] {
+				component, exists := components[binding.ComponentID]
+				if !exists {
+					return ErrInvalidDataApplication
+				}
+				if _, exists := componentParameters[binding.ComponentID][binding.ComponentParameterKey]; !exists {
+					return ErrInvalidDataApplication
+				}
+				target, exists := componentParameterTargetFor(component, descriptors[binding.ComponentID], binding.ComponentParameterKey)
+				if !exists {
+					return ErrInvalidDataApplication
+				}
+				if !rawApplicationParameterHasValue(raw, target.Operator) {
+					if parameter.Required || !validUnsetApplicationParameterValue(raw, parameter.ControlType, target.Operator) {
+						return ErrInvalidDataApplication
+					}
+					continue
+				}
+				if validateRawFilterValue(raw, models.ConsumerQueryField{Type: target.Type}, target.Operator, descriptors[binding.ComponentID].InputContract.Filter.MaxInValues) != nil {
+					return ErrInvalidDataApplication
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func validUnsetApplicationParameterValue(raw json.RawMessage, controlType, operator string) bool {
+	var value any
+	if len(raw) == 0 || json.Unmarshal(raw, &value) != nil {
+		return false
+	}
+	if value == nil {
+		return true
+	}
+	if boolean, ok := value.(bool); ok {
+		return !boolean && (operator == "is_null" || operator == "is_not_null")
+	}
+	if text, ok := value.(string); ok {
+		return text == "" && contains([]string{"text", "date", "datetime"}, controlType)
+	}
+	if values, ok := value.([]any); ok {
+		return len(values) == 0 && contains([]string{"multiselect", "bbox"}, controlType)
+	}
+	return false
 }
 
 func validateApplicationPlacements(placements []models.DataApplicationComponentLayout, components map[string]models.DataApplicationComponent) error {
@@ -670,11 +755,17 @@ func canonicalizeDataApplicationSnapshot(snapshot *models.DataApplicationSnapsho
 	if snapshot.Parameters == nil {
 		snapshot.Parameters = []models.DataApplicationParameter{}
 	}
+	if snapshot.ParameterPresets == nil {
+		snapshot.ParameterPresets = []models.DataApplicationParameterPreset{}
+	}
 	if snapshot.ParameterBindings == nil {
 		snapshot.ParameterBindings = []models.DataApplicationParameterBinding{}
 	}
 	if snapshot.SelectionBindings == nil {
 		snapshot.SelectionBindings = []models.DataApplicationSelectionBinding{}
+	}
+	for index := range snapshot.ParameterPresets {
+		snapshot.ParameterPresets[index].Name = strings.TrimSpace(snapshot.ParameterPresets[index].Name)
 	}
 	for index := range snapshot.Components {
 		component := &snapshot.Components[index]

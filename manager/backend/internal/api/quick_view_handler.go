@@ -22,6 +22,7 @@ import (
 	"github.com/addp/manager/internal/engineaccess"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/preview"
+	"github.com/addp/manager/internal/repository"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
@@ -68,6 +69,7 @@ type QuickViewHandler struct {
 	pointCloudCOPCTaskSvc      *service.PointCloudCOPCTaskService
 	model3DTilesTaskSvc        *service.Model3DTilesTaskService
 	pptxPDFTaskSvc             *service.PPTXPDFTaskService
+	taskDefinitionRepo         *repository.TaskDefinitionRepository
 	notifyExecutionEnqueued    func()
 }
 
@@ -93,6 +95,10 @@ func (h *QuickViewHandler) SetArtifactTaskServices(rasterCOGTaskSvc *service.Ras
 
 func (h *QuickViewHandler) SetPPTXPDFTaskService(taskSvc *service.PPTXPDFTaskService) {
 	h.pptxPDFTaskSvc = taskSvc
+}
+
+func (h *QuickViewHandler) SetTaskDefinitionRepository(repo *repository.TaskDefinitionRepository) {
+	h.taskDefinitionRepo = repo
 }
 
 func (h *QuickViewHandler) SetExecutionEnqueueNotifier(notify func()) {
@@ -153,6 +159,17 @@ type ExecuteQuickViewActionResponse struct {
 	TaskID      uint   `json:"task_id"`
 	ExecutionID string `json:"execution_id"`
 	Status      string `json:"status"`
+}
+
+type RebindManagedQuickViewTaskRequest struct {
+	Version uint   `json:"version" binding:"required"`
+	Locator string `json:"locator" binding:"required"`
+}
+
+type RebindManagedQuickViewTaskResponse struct {
+	TaskType       string `json:"task_type"`
+	TaskID         uint   `json:"task_id"`
+	ReplacedTaskID uint   `json:"replaced_task_id"`
 }
 
 // GetQuickViewCapabilityByLocator 获取 locator 快显能力
@@ -240,41 +257,10 @@ func (h *QuickViewHandler) ExecuteQuickViewAction(c *gin.Context) {
 	}
 
 	userID := userIDValue(c)
-	var taskType string
-	var taskID uint
+	taskType, taskID, err := h.createQuickViewTask(c.Request.Context(), userID, action, capability, source)
 	var executionID string
-	switch action {
-	case service.QuickViewActionGenerateTileCache:
-		taskType = commonExecution.TaskTypeVectorTileCacheGeneration
-		taskID, executionID, err = h.createAndExecuteTileCacheTask(c.Request.Context(), userID, capability, source, overwriteExistingResult)
-	case service.QuickViewActionGenerateVectorMaterialized:
-		taskType = commonExecution.TaskTypeVectorMaterializedViewGeneration
-		taskID, executionID, err = h.createAndExecuteVectorMaterializedViewTask(c.Request.Context(), userID, capability, source, overwriteExistingResult)
-	case service.QuickViewActionGenerateRasterCOG:
-		taskType = commonExecution.TaskTypeRasterCOGGeneration
-		taskID, executionID, err = h.createAndExecuteRasterCOGTask(c.Request.Context(), userID, capability, source, overwriteExistingResult)
-	case service.QuickViewActionGenerateModel3DGLB:
-		taskType = commonExecution.TaskTypeModel3DGLBGeneration
-		taskID, executionID, err = h.createAndExecuteModel3DGLBTask(c.Request.Context(), userID, capability, source, overwriteExistingResult)
-	case service.QuickViewActionGenerateGaussianSplatKSplat:
-		taskType = commonExecution.TaskTypeGaussianSplatKSplatGeneration
-		taskID, executionID, err = h.createAndExecuteGaussianSplatKSplatTask(c.Request.Context(), userID, capability, source, overwriteExistingResult)
-	case service.QuickViewActionGeneratePointCloudCOPC:
-		taskType = commonExecution.TaskTypePointCloudCOPCGeneration
-		taskID, executionID, err = h.createAndExecutePointCloudCOPCTask(c.Request.Context(), userID, capability, source, overwriteExistingResult)
-	case service.QuickViewActionGenerateModel3D3DTiles, service.QuickViewActionGenerateModel3DS3M:
-		taskType = commonExecution.TaskTypeModel3DTilesGeneration
-		targetFormat := models.Model3DTilesTargetFormat3DTiles
-		if action == service.QuickViewActionGenerateModel3DS3M {
-			targetFormat = models.Model3DTilesTargetFormatS3M
-		}
-		taskID, executionID, err = h.createAndExecuteModel3DTilesTask(c.Request.Context(), userID, capability, source, targetFormat, overwriteExistingResult)
-	case service.QuickViewActionGeneratePPTXPDF:
-		taskType = commonExecution.TaskTypePPTXPDFGeneration
-		taskID, executionID, err = h.createAndExecutePPTXPDFTask(c.Request.Context(), userID, capability, source, overwriteExistingResult)
-	default:
-		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported quick view action: " + action})
-		return
+	if err == nil {
+		executionID, err = h.executeQuickViewTask(c.Request.Context(), taskType, taskID, capability.TenantID, overwriteExistingResult)
 	}
 	if err != nil {
 		if errors.Is(err, service.ErrExistingResultActionRequired) {
@@ -305,6 +291,147 @@ func (h *QuickViewHandler) ExecuteQuickViewAction(c *gin.Context) {
 		ExecutionID: executionID,
 		Status:      commonExecution.ExecutionStatusPending,
 	})
+}
+
+// RebindManagedQuickViewTask 重新绑定失效受管快显任务的源资源
+// @Summary 重新绑定受管快显任务源资源 | Rebind a managed quick view task source
+// @Description 只接受失效任务的当前版本与新 Resource Locator。Manager 按原任务类型和产物变体重新校验快显能力、生成规范配置并恢复资源绑定；本操作不创建 execution。 | Accept the current version of a missing task and a new Resource Locator. Manager validates capability for the original task type and artifact variant, rebuilds canonical configuration and restores resource bindings without creating an execution.
+// @Tags Manager
+// @Accept json
+// @Produce json
+// @Param task_type path string true "任务类型 | Task type"
+// @Param id path int true "失效任务 ID | Missing task ID"
+// @Param body body RebindManagedQuickViewTaskRequest true "源资源重绑请求 | Source rebind request"
+// @Success 200 {object} RebindManagedQuickViewTaskResponse "重绑后的规范任务 | Canonical rebound task"
+// @Failure 400 {object} map[string]interface{} "参数或源能力不匹配 | Invalid request or unsupported source capability"
+// @Failure 404 {object} map[string]interface{} "任务或资源不存在 | Task or resource not found"
+// @Failure 409 {object} map[string]interface{} "版本冲突或任务绑定仍有效 | Version conflict or task binding is still active"
+// @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.data_item.read","manager.derived_artifact.update"]
+// @Router /tasks/{task_type}/{id}/rebind [post]
+// @Security BearerAuth
+func (h *QuickViewHandler) RebindManagedQuickViewTask(c *gin.Context) {
+	if h.taskDefinitionRepo == nil {
+		managerError(c, http.StatusServiceUnavailable, manageri18n.MsgTaskRebindUnavailable)
+		return
+	}
+	taskType := strings.TrimSpace(c.Param("task_type"))
+	if repository.ManagerDerivedTaskCategory(taskType) != models.TaskCategoryManagedQuickView {
+		managerError(c, http.StatusBadRequest, manageri18n.MsgTaskRebindUnsupportedType)
+		return
+	}
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || id == 0 {
+		managerError(c, http.StatusBadRequest, manageri18n.MsgInvalidTaskID)
+		return
+	}
+	var req RebindManagedQuickViewTaskRequest
+	if err := commonapi.BindOptionalJSONStrict(c, &req); err != nil {
+		managerErrorWithDetail(c, http.StatusBadRequest, manageri18n.MsgInvalidRequestBody, err.Error())
+		return
+	}
+	req.Locator = strings.TrimSpace(req.Locator)
+	if req.Version == 0 || req.Locator == "" {
+		managerError(c, http.StatusBadRequest, manageri18n.MsgTaskRebindInvalidRequest)
+		return
+	}
+
+	tenantID := tenantIDValue(c)
+	task, err := h.taskDefinitionRepo.Get(c.Request.Context(), tenantID, taskType, uint(id))
+	if err != nil {
+		managerErrorWithDetail(c, http.StatusInternalServerError, manageri18n.MsgTaskRebindFailed, err.Error())
+		return
+	}
+	if task == nil {
+		managerError(c, http.StatusNotFound, manageri18n.MsgTaskNotFound)
+		return
+	}
+	if task.Version != req.Version {
+		c.JSON(http.StatusConflict, gin.H{
+			"error":           commoni18n.T(c, manageri18n.MsgTaskVersionConflict),
+			"code":            "version_conflict",
+			"current_version": task.Version,
+		})
+		return
+	}
+	if task.BindingStatus != models.TaskBindingStatusMissing {
+		managerError(c, http.StatusConflict, manageri18n.MsgTaskBindingStillActive)
+		return
+	}
+	action, err := managedQuickViewActionForTask(task)
+	if err != nil {
+		managerErrorWithDetail(c, http.StatusBadRequest, manageri18n.MsgTaskRebindUnsupportedType, err.Error())
+		return
+	}
+	capability, err := h.quickViewCapabilityForLocator(c.Request.Context(), &tenantID, req.Locator)
+	if err != nil {
+		quickViewLocatorError(c, err)
+		return
+	}
+	source, err := h.quickViewSourceForLocator(c.Request.Context(), &tenantID, req.Locator)
+	if err != nil {
+		quickViewLocatorError(c, err)
+		return
+	}
+	createdTaskType, replacementID, err := h.createQuickViewTask(c.Request.Context(), userIDValue(c), action, capability, source)
+	if err != nil {
+		managerErrorWithDetail(c, http.StatusBadRequest, manageri18n.MsgTaskRebindFailed, err.Error())
+		return
+	}
+	if createdTaskType != taskType {
+		managerError(c, http.StatusBadRequest, manageri18n.MsgTaskRebindCapabilityMismatch)
+		return
+	}
+	if err := h.taskDefinitionRepo.RetireMissingTask(c.Request.Context(), tenantID, taskType, task.ID, req.Version, replacementID); err != nil {
+		switch {
+		case errors.Is(err, repository.ErrTaskDefinitionVersionConflict):
+			managerError(c, http.StatusConflict, manageri18n.MsgTaskVersionConflict)
+		case errors.Is(err, repository.ErrTaskBindingNotMissing):
+			managerError(c, http.StatusConflict, manageri18n.MsgTaskBindingStillActive)
+		case errors.Is(err, repository.ErrTaskDefinitionNotFound):
+			managerError(c, http.StatusNotFound, manageri18n.MsgTaskNotFound)
+		default:
+			managerErrorWithDetail(c, http.StatusInternalServerError, manageri18n.MsgTaskRebindFailed, err.Error())
+		}
+		return
+	}
+	c.JSON(http.StatusOK, RebindManagedQuickViewTaskResponse{
+		TaskType: taskType, TaskID: replacementID, ReplacedTaskID: task.ID,
+	})
+}
+
+func managedQuickViewActionForTask(task *models.TaskDefinition) (string, error) {
+	if task == nil {
+		return "", errors.New("task is required")
+	}
+	switch task.TaskType {
+	case commonExecution.TaskTypeVectorTileCacheGeneration:
+		return service.QuickViewActionGenerateTileCache, nil
+	case commonExecution.TaskTypeVectorMaterializedViewGeneration:
+		return service.QuickViewActionGenerateVectorMaterialized, nil
+	case commonExecution.TaskTypeRasterCOGGeneration:
+		return service.QuickViewActionGenerateRasterCOG, nil
+	case commonExecution.TaskTypeModel3DGLBGeneration:
+		return service.QuickViewActionGenerateModel3DGLB, nil
+	case commonExecution.TaskTypeGaussianSplatKSplatGeneration:
+		return service.QuickViewActionGenerateGaussianSplatKSplat, nil
+	case commonExecution.TaskTypePointCloudCOPCGeneration:
+		return service.QuickViewActionGeneratePointCloudCOPC, nil
+	case commonExecution.TaskTypePPTXPDFGeneration:
+		return service.QuickViewActionGeneratePPTXPDF, nil
+	case commonExecution.TaskTypeModel3DTilesGeneration:
+		switch stringFromConfig(task.Config["target_format"]) {
+		case models.Model3DTilesTargetFormat3DTiles:
+			return service.QuickViewActionGenerateModel3D3DTiles, nil
+		case models.Model3DTilesTargetFormatS3M:
+			return service.QuickViewActionGenerateModel3DS3M, nil
+		default:
+			return "", errors.New("model3d tiles task target_format is invalid")
+		}
+	default:
+		return "", fmt.Errorf("unsupported managed quick view task type: %s", task.TaskType)
+	}
 }
 
 // UpdatePreferredModeByLocator 更新 locator 预览模式偏好
@@ -758,204 +885,168 @@ func (h *QuickViewHandler) quickViewSourceForLocator(ctx context.Context, tenant
 	return source, nil
 }
 
+func (h *QuickViewHandler) createQuickViewTask(
+	ctx context.Context,
+	userID uint,
+	action string,
+	capability *service.QuickViewCapability,
+	source service.QuickViewSource,
+) (string, uint, error) {
+	if capability == nil {
+		return "", 0, errors.New("quick view capability is required")
+	}
+	task := &models.TaskDefinition{TenantID: capability.TenantID, Enabled: true, CreatedBy: &userID}
+	var err error
+	switch action {
+	case service.QuickViewActionGenerateTileCache:
+		if h.tileCacheTaskSvc == nil {
+			return "", 0, errors.New("vector tile cache task service is not initialized")
+		}
+		task.TaskType = commonExecution.TaskTypeVectorTileCacheGeneration
+		task.Name = quickViewActionTaskName("矢量瓦片缓存", capability)
+		task.Config, err = vectorTileCacheTaskConfigFromQuickView(capability, source)
+		if err == nil {
+			err = h.tileCacheTaskSvc.Create(ctx, task)
+		}
+	case service.QuickViewActionGenerateVectorMaterialized:
+		if h.vectorMaterializedTaskSvc == nil {
+			return "", 0, errors.New("vector materialized view task service is not initialized")
+		}
+		task.TaskType = commonExecution.TaskTypeVectorMaterializedViewGeneration
+		task.Name = quickViewActionTaskName("矢量物化视图", capability)
+		task.Config, err = vectorMaterializedViewTaskConfigFromQuickView(capability, source)
+		if err == nil {
+			err = h.vectorMaterializedTaskSvc.Create(ctx, task)
+		}
+	case service.QuickViewActionGenerateRasterCOG:
+		if h.rasterCOGTaskSvc == nil {
+			return "", 0, errors.New("raster COG task service is not initialized")
+		}
+		task.TaskType = commonExecution.TaskTypeRasterCOGGeneration
+		task.Name = quickViewActionTaskName("栅格 COG 快显", capability)
+		task.Config, err = rasterCOGTaskConfigFromQuickView(capability, source)
+		if err == nil {
+			err = h.rasterCOGTaskSvc.Create(ctx, task)
+		}
+	case service.QuickViewActionGenerateModel3DGLB:
+		if h.model3DGLBTaskSvc == nil {
+			return "", 0, errors.New("model 3d GLB task service is not initialized")
+		}
+		task.TaskType = commonExecution.TaskTypeModel3DGLBGeneration
+		task.Name = quickViewActionTaskName("三维模型 GLB 快显", capability)
+		task.Config, err = model3DGLBTaskConfigFromQuickView(capability, source)
+		if err == nil {
+			err = h.model3DGLBTaskSvc.Create(ctx, task)
+		}
+	case service.QuickViewActionGenerateGaussianSplatKSplat:
+		if h.gaussianSplatKSplatTaskSvc == nil {
+			return "", 0, errors.New("gaussian splat KSplat task service is not initialized")
+		}
+		task.TaskType = commonExecution.TaskTypeGaussianSplatKSplatGeneration
+		task.Name = quickViewActionTaskName("3DGS KSplat 快显", capability)
+		task.Config, err = gaussianSplatKSplatTaskConfigFromQuickView(capability, source)
+		if err == nil {
+			err = h.gaussianSplatKSplatTaskSvc.Create(ctx, task)
+		}
+	case service.QuickViewActionGeneratePointCloudCOPC:
+		if h.pointCloudCOPCTaskSvc == nil {
+			return "", 0, errors.New("point cloud COPC task service is not initialized")
+		}
+		task.TaskType = commonExecution.TaskTypePointCloudCOPCGeneration
+		task.Name = quickViewActionTaskName("点云 COPC 快显", capability)
+		task.Config, err = pointCloudCOPCTaskConfigFromQuickView(capability, source)
+		if err == nil {
+			err = h.pointCloudCOPCTaskSvc.Create(ctx, task)
+		}
+	case service.QuickViewActionGenerateModel3D3DTiles, service.QuickViewActionGenerateModel3DS3M:
+		if h.model3DTilesTaskSvc == nil {
+			return "", 0, errors.New("model3d tiles task service is not initialized")
+		}
+		targetFormat := models.Model3DTilesTargetFormat3DTiles
+		if action == service.QuickViewActionGenerateModel3DS3M {
+			targetFormat = models.Model3DTilesTargetFormatS3M
+		}
+		task.TaskType = commonExecution.TaskTypeModel3DTilesGeneration
+		task.Name = quickViewActionTaskName("分块三维模型瓦片", capability)
+		task.Config, err = model3DTilesTaskConfigFromQuickView(capability, source, targetFormat)
+		if err == nil {
+			err = h.model3DTilesTaskSvc.Create(ctx, task)
+		}
+	case service.QuickViewActionGeneratePPTXPDF:
+		if h.pptxPDFTaskSvc == nil {
+			return "", 0, errors.New("PPTX PDF task service is not initialized")
+		}
+		if capability.SourceKind != service.QuickViewSourceKindDocument || source.PPTX == nil {
+			return "", 0, errors.New("quick view source is not a PPTX PDF generation source")
+		}
+		task.TaskType = commonExecution.TaskTypePPTXPDFGeneration
+		task.Name = quickViewActionTaskName("PPTX 静态 PDF 快显", capability)
+		task.Config = commonModels.JSONMap{"source": commonModels.JSONMap{"item_locator": strings.TrimSpace(capability.Locator)}}
+		err = h.pptxPDFTaskSvc.EnsureTask(ctx, task)
+	default:
+		return "", 0, fmt.Errorf("unsupported quick view action: %s", action)
+	}
+	if err != nil {
+		return task.TaskType, task.ID, err
+	}
+	return task.TaskType, task.ID, nil
+}
+
+func (h *QuickViewHandler) executeQuickViewTask(
+	ctx context.Context,
+	taskType string,
+	taskID uint,
+	tenantID uint,
+	overwriteExistingResult bool,
+) (string, error) {
+	switch taskType {
+	case commonExecution.TaskTypeVectorTileCacheGeneration:
+		return h.tileCacheTaskSvc.Execute(ctx, taskID, tenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, overwriteExistingResult)
+	case commonExecution.TaskTypeVectorMaterializedViewGeneration:
+		return h.vectorMaterializedTaskSvc.Execute(ctx, taskID, tenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, overwriteExistingResult)
+	case commonExecution.TaskTypeRasterCOGGeneration:
+		return h.rasterCOGTaskSvc.Execute(ctx, taskID, tenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, overwriteExistingResult)
+	case commonExecution.TaskTypeModel3DGLBGeneration:
+		return h.model3DGLBTaskSvc.Execute(ctx, taskID, tenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, overwriteExistingResult)
+	case commonExecution.TaskTypeGaussianSplatKSplatGeneration:
+		return h.gaussianSplatKSplatTaskSvc.Execute(ctx, taskID, tenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, overwriteExistingResult)
+	case commonExecution.TaskTypePointCloudCOPCGeneration:
+		return h.pointCloudCOPCTaskSvc.Execute(ctx, taskID, tenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, overwriteExistingResult)
+	case commonExecution.TaskTypeModel3DTilesGeneration:
+		return h.model3DTilesTaskSvc.Execute(ctx, taskID, tenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, overwriteExistingResult)
+	case commonExecution.TaskTypePPTXPDFGeneration:
+		return h.pptxPDFTaskSvc.Execute(ctx, taskID, tenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, overwriteExistingResult)
+	default:
+		return "", fmt.Errorf("unsupported managed quick view task type: %s", taskType)
+	}
+}
+
+func (h *QuickViewHandler) createAndExecuteQuickViewTask(
+	ctx context.Context,
+	userID uint,
+	action string,
+	capability *service.QuickViewCapability,
+	source service.QuickViewSource,
+	overwriteExistingResult bool,
+) (uint, string, error) {
+	taskType, taskID, err := h.createQuickViewTask(ctx, userID, action, capability, source)
+	if err != nil {
+		return taskID, "", err
+	}
+	executionID, err := h.executeQuickViewTask(ctx, taskType, taskID, capability.TenantID, overwriteExistingResult)
+	return taskID, executionID, err
+}
+
 func (h *QuickViewHandler) createAndExecuteModel3DGLBTask(ctx context.Context, userID uint, capability *service.QuickViewCapability, source service.QuickViewSource, overwriteExistingResult bool) (uint, string, error) {
-	if h.model3DGLBTaskSvc == nil {
-		return 0, "", errors.New("model 3d GLB task service is not initialized")
-	}
-	config, err := model3DGLBTaskConfigFromQuickView(capability, source)
-	if err != nil {
-		return 0, "", err
-	}
-	task := models.Model3DGLBTask{
-		TenantID:  capability.TenantID,
-		Name:      quickViewActionTaskName("三维模型 GLB 快显", capability),
-		Enabled:   true,
-		Config:    config,
-		CreatedBy: &userID,
-	}
-	if err := h.model3DGLBTaskSvc.Create(ctx, &task); err != nil {
-		return 0, "", err
-	}
-	executionID, err := h.model3DGLBTaskSvc.Execute(ctx, task.ID, capability.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, overwriteExistingResult)
-	if err != nil {
-		return task.ID, "", err
-	}
-	return task.ID, executionID, nil
+	return h.createAndExecuteQuickViewTask(ctx, userID, service.QuickViewActionGenerateModel3DGLB, capability, source, overwriteExistingResult)
 }
 
 func (h *QuickViewHandler) createAndExecutePPTXPDFTask(ctx context.Context, userID uint, capability *service.QuickViewCapability, source service.QuickViewSource, overwriteExistingResult bool) (uint, string, error) {
-	if h.pptxPDFTaskSvc == nil {
-		return 0, "", errors.New("PPTX PDF task service is not initialized")
-	}
-	if capability == nil || capability.SourceKind != service.QuickViewSourceKindDocument || source.PPTX == nil {
-		return 0, "", errors.New("quick view source is not a PPTX PDF generation source")
-	}
-	task := models.PPTXPDFTask{
-		TenantID: capability.TenantID,
-		Name:     quickViewActionTaskName("PPTX 静态 PDF 快显", capability),
-		Enabled:  true,
-		Config: commonModels.JSONMap{
-			"source": commonModels.JSONMap{"item_locator": strings.TrimSpace(capability.Locator)},
-		},
-		CreatedBy: &userID,
-	}
-	if err := h.pptxPDFTaskSvc.EnsureTask(ctx, &task); err != nil {
-		return 0, "", err
-	}
-	executionID, err := h.pptxPDFTaskSvc.Execute(ctx, task.ID, capability.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, overwriteExistingResult)
-	if err != nil {
-		return task.ID, "", err
-	}
-	return task.ID, executionID, nil
-}
-
-func (h *QuickViewHandler) createAndExecuteModel3DTilesTask(
-	ctx context.Context, userID uint, capability *service.QuickViewCapability, source service.QuickViewSource,
-	targetFormat string, overwriteExistingResult bool,
-) (uint, string, error) {
-	if h.model3DTilesTaskSvc == nil {
-		return 0, "", errors.New("model3d tiles task service is not initialized")
-	}
-	config, err := model3DTilesTaskConfigFromQuickView(capability, source, targetFormat)
-	if err != nil {
-		return 0, "", err
-	}
-	task := models.Model3DTilesTask{TenantID: capability.TenantID, Name: quickViewActionTaskName("分块三维模型瓦片", capability), Enabled: true, Config: config, CreatedBy: &userID}
-	if err := h.model3DTilesTaskSvc.Create(ctx, &task); err != nil {
-		return 0, "", err
-	}
-	executionID, err := h.model3DTilesTaskSvc.Execute(
-		ctx, task.ID, capability.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, overwriteExistingResult,
-	)
-	if err != nil {
-		return task.ID, "", err
-	}
-	return task.ID, executionID, nil
-}
-
-func (h *QuickViewHandler) createAndExecuteRasterCOGTask(ctx context.Context, userID uint, capability *service.QuickViewCapability, source service.QuickViewSource, overwriteExistingResult bool) (uint, string, error) {
-	if h.rasterCOGTaskSvc == nil {
-		return 0, "", errors.New("raster COG task service is not initialized")
-	}
-	config, err := rasterCOGTaskConfigFromQuickView(capability, source)
-	if err != nil {
-		return 0, "", err
-	}
-	task := models.RasterCOGTask{
-		TenantID:  capability.TenantID,
-		Name:      quickViewActionTaskName("栅格 COG 快显", capability),
-		Enabled:   true,
-		Config:    config,
-		CreatedBy: &userID,
-	}
-	if err := h.rasterCOGTaskSvc.Create(ctx, &task); err != nil {
-		return 0, "", err
-	}
-	executionID, err := h.rasterCOGTaskSvc.Execute(ctx, task.ID, capability.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, overwriteExistingResult)
-	if err != nil {
-		return task.ID, "", err
-	}
-	return task.ID, executionID, nil
-}
-
-func (h *QuickViewHandler) createAndExecuteGaussianSplatKSplatTask(ctx context.Context, userID uint, capability *service.QuickViewCapability, source service.QuickViewSource, overwriteExistingResult bool) (uint, string, error) {
-	if h.gaussianSplatKSplatTaskSvc == nil {
-		return 0, "", errors.New("gaussian splat KSplat task service is not initialized")
-	}
-	config, err := gaussianSplatKSplatTaskConfigFromQuickView(capability, source)
-	if err != nil {
-		return 0, "", err
-	}
-	task := models.GaussianSplatKSplatTask{
-		TenantID:  capability.TenantID,
-		Name:      quickViewActionTaskName("3DGS KSplat 快显", capability),
-		Enabled:   true,
-		Config:    config,
-		CreatedBy: &userID,
-	}
-	if err := h.gaussianSplatKSplatTaskSvc.Create(ctx, &task); err != nil {
-		return 0, "", err
-	}
-	executionID, err := h.gaussianSplatKSplatTaskSvc.Execute(ctx, task.ID, capability.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, overwriteExistingResult)
-	if err != nil {
-		return task.ID, "", err
-	}
-	return task.ID, executionID, nil
-}
-
-func (h *QuickViewHandler) createAndExecutePointCloudCOPCTask(ctx context.Context, userID uint, capability *service.QuickViewCapability, source service.QuickViewSource, overwriteExistingResult bool) (uint, string, error) {
-	if h.pointCloudCOPCTaskSvc == nil {
-		return 0, "", errors.New("point cloud COPC task service is not initialized")
-	}
-	config, err := pointCloudCOPCTaskConfigFromQuickView(capability, source)
-	if err != nil {
-		return 0, "", err
-	}
-	task := models.PointCloudCOPCTask{
-		TenantID:  capability.TenantID,
-		Name:      quickViewActionTaskName("点云 COPC 快显", capability),
-		Enabled:   true,
-		Config:    config,
-		CreatedBy: &userID,
-	}
-	if err := h.pointCloudCOPCTaskSvc.Create(ctx, &task); err != nil {
-		return 0, "", err
-	}
-	executionID, err := h.pointCloudCOPCTaskSvc.Execute(ctx, task.ID, capability.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, overwriteExistingResult)
-	if err != nil {
-		return task.ID, "", err
-	}
-	return task.ID, executionID, nil
+	return h.createAndExecuteQuickViewTask(ctx, userID, service.QuickViewActionGeneratePPTXPDF, capability, source, overwriteExistingResult)
 }
 
 func (h *QuickViewHandler) createAndExecuteTileCacheTask(ctx context.Context, userID uint, capability *service.QuickViewCapability, source service.QuickViewSource, overwriteExistingResult bool) (uint, string, error) {
-	if h.tileCacheTaskSvc == nil {
-		return 0, "", errors.New("vector tile cache task service is not initialized")
-	}
-	config, err := vectorTileCacheTaskConfigFromQuickView(capability, source)
-	if err != nil {
-		return 0, "", err
-	}
-	task := models.TileCacheTask{
-		TenantID:  capability.TenantID,
-		Name:      quickViewActionTaskName("矢量瓦片缓存", capability),
-		Enabled:   true,
-		Config:    config,
-		CreatedBy: &userID,
-	}
-	if err := h.tileCacheTaskSvc.Create(ctx, &task); err != nil {
-		return 0, "", err
-	}
-	executionID, err := h.tileCacheTaskSvc.Execute(ctx, task.ID, capability.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, overwriteExistingResult)
-	if err != nil {
-		return task.ID, "", err
-	}
-	return task.ID, executionID, nil
-}
-
-func (h *QuickViewHandler) createAndExecuteVectorMaterializedViewTask(ctx context.Context, userID uint, capability *service.QuickViewCapability, source service.QuickViewSource, overwriteExistingResult bool) (uint, string, error) {
-	if h.vectorMaterializedTaskSvc == nil {
-		return 0, "", errors.New("vector materialized view task service is not initialized")
-	}
-	config, err := vectorMaterializedViewTaskConfigFromQuickView(capability, source)
-	if err != nil {
-		return 0, "", err
-	}
-	task := models.VectorMaterializedViewTask{
-		TenantID:  capability.TenantID,
-		Name:      quickViewActionTaskName("矢量物化视图", capability),
-		Enabled:   true,
-		Config:    config,
-		CreatedBy: &userID,
-	}
-	if err := h.vectorMaterializedTaskSvc.Create(ctx, &task); err != nil {
-		return 0, "", err
-	}
-	executionID, err := h.vectorMaterializedTaskSvc.Execute(ctx, task.ID, capability.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleManager, nil, overwriteExistingResult)
-	if err != nil {
-		return task.ID, "", err
-	}
-	return task.ID, executionID, nil
+	return h.createAndExecuteQuickViewTask(ctx, userID, service.QuickViewActionGenerateTileCache, capability, source, overwriteExistingResult)
 }
 
 func vectorMaterializedViewTaskConfigFromQuickView(capability *service.QuickViewCapability, source service.QuickViewSource) (commonModels.JSONMap, error) {

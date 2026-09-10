@@ -63,6 +63,7 @@ type DataApplicationSnapshot struct {
 	Page              DataApplicationPage               `json:"page" binding:"required"`
 	Components        []DataApplicationComponent        `json:"components" binding:"required"`
 	Parameters        []DataApplicationParameter        `json:"parameters"`
+	ParameterPresets  []DataApplicationParameterPreset  `json:"parameter_presets"`
 	ParameterBindings []DataApplicationParameterBinding `json:"parameter_bindings"`
 	SelectionBindings []DataApplicationSelectionBinding `json:"selection_bindings"`
 }
@@ -103,6 +104,12 @@ type DataApplicationParameter struct {
 	ControlType  string          `json:"control_type" binding:"required"`
 	Required     bool            `json:"required"`
 	DefaultValue json.RawMessage `json:"default_value,omitempty" swaggertype:"object"`
+}
+
+type DataApplicationParameterPreset struct {
+	Key             string                     `json:"key" binding:"required"`
+	Name            string                     `json:"name" binding:"required"`
+	ParameterValues map[string]json.RawMessage `json:"parameter_values" binding:"required" swaggertype:"object"`
 }
 
 type DataApplicationParameterBinding struct {

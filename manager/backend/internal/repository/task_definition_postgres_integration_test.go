@@ -89,10 +89,12 @@ func TestIntegrationPostgresManagerUnifiedTaskDefinitionLifecycle(t *testing.T) 
 		t.Fatalf("obsolete execution count = %d, want 0", obsoleteExecutionCount)
 	}
 
+	legacyBindingStatus := "missing_source"
 	task := &models.TaskDefinition{
-		TenantID: tenantID,
-		Name:     "unknown-engine vector tile set",
-		Enabled:  true,
+		TenantID:            tenantID,
+		Name:                "unknown-engine vector tile set",
+		Enabled:             true,
+		LastExecutionStatus: &legacyBindingStatus,
 		Config: commonModels.JSONMap{
 			"semantic_hash": fmt.Sprintf("manager-task-%d", tenantID),
 			"source": commonModels.JSONMap{
@@ -109,6 +111,19 @@ func TestIntegrationPostgresManagerUnifiedTaskDefinitionLifecycle(t *testing.T) 
 	}
 	if err := createTaskDefinition(context.Background(), db, commonExecution.TaskTypeVectorTileSetGeneration, task); err != nil {
 		t.Fatalf("create unified task definition: %v", err)
+	}
+	if err := normalizeTaskDefinitionBindingStatus(db); err != nil {
+		t.Fatalf("normalize historical binding status: %v", err)
+	}
+	var migrated models.TaskDefinition
+	if err := db.Where("id = ?", task.ID).Take(&migrated).Error; err != nil {
+		t.Fatalf("load normalized task: %v", err)
+	}
+	if migrated.BindingStatus != models.TaskBindingStatusMissing || migrated.BindingIssue != models.TaskBindingIssueMissingSource || migrated.LastExecutionStatus != nil {
+		t.Fatalf("normalized historical task = %#v", migrated)
+	}
+	if err := db.Model(&models.TaskDefinition{}).Where("id = ?", task.ID).Update("last_execution_status", commonExecution.ExecutionStatusSuccess).Error; err != nil {
+		t.Fatalf("set recent execution status: %v", err)
 	}
 	duplicateTask := &models.TaskDefinition{
 		TenantID: tenantID,
@@ -136,12 +151,18 @@ func TestIntegrationPostgresManagerUnifiedTaskDefinitionLifecycle(t *testing.T) 
 	if err != nil || len(definitions) != 1 {
 		t.Fatalf("list cleanup definitions = %#v, error = %v", definitions, err)
 	}
-	if err := cleanupRepo.Disable(context.Background(), definitions[0], "missing_engine"); err != nil {
-		t.Fatalf("disable cleanup definition: %v", err)
+	if err := cleanupRepo.MarkBindingMissing(context.Background(), definitions[0], "missing_engine"); err != nil {
+		t.Fatalf("mark cleanup definition binding missing: %v", err)
 	}
 	disabledDefinitions, err := cleanupRepo.List(context.Background(), tenantID)
 	if err != nil || len(disabledDefinitions) != 1 || disabledDefinitions[0].Enabled {
 		t.Fatalf("disabled cleanup definitions = %#v, error = %v", disabledDefinitions, err)
+	}
+	if disabledDefinitions[0].BindingStatus != models.TaskBindingStatusMissing || disabledDefinitions[0].BindingIssue != models.TaskBindingIssueMissingEngine {
+		t.Fatalf("cleanup binding status = %#v", disabledDefinitions[0])
+	}
+	if disabledDefinitions[0].LastExecutionStatus == nil || *disabledDefinitions[0].LastExecutionStatus != commonExecution.ExecutionStatusSuccess {
+		t.Fatalf("cleanup overwrote last execution status: %#v", disabledDefinitions[0].LastExecutionStatus)
 	}
 	if err := cleanupRepo.HardDelete(context.Background(), disabledDefinitions[0]); err != nil {
 		t.Fatalf("hard delete cleanup definition: %v", err)
@@ -156,6 +177,46 @@ func TestIntegrationPostgresManagerUnifiedTaskDefinitionLifecycle(t *testing.T) 
 	}
 	if taskCount != 0 || bindingCount != 0 {
 		t.Fatalf("cleanup residual task count = %d, binding count = %d", taskCount, bindingCount)
+	}
+
+	missingManaged := &models.TaskDefinition{
+		TenantID: tenantID, Name: "missing managed task", Enabled: false,
+		Config: commonModels.JSONMap{"source": commonModels.JSONMap{
+			"source_engine_id": uint(990003), "item_locator": "addp://engine/990003/path/models/old.ifc?type=file&item_id=93",
+			"item_id": uint(93), "item_fingerprint": "missing-managed-source", "format": "ifc",
+		}},
+	}
+	if err := createTaskDefinition(context.Background(), db, commonExecution.TaskTypeModel3DGLBGeneration, missingManaged); err != nil {
+		t.Fatalf("create missing managed task: %v", err)
+	}
+	if err := db.Model(&models.TaskDefinition{}).Where("id = ?", missingManaged.ID).Updates(map[string]interface{}{
+		"binding_status": models.TaskBindingStatusMissing,
+		"binding_issue":  models.TaskBindingIssueMissingEngine,
+	}).Error; err != nil {
+		t.Fatalf("mark managed task missing: %v", err)
+	}
+	replacementManaged := &models.TaskDefinition{
+		TenantID: tenantID, Name: "replacement managed task", Enabled: true,
+		Config: commonModels.JSONMap{"source": commonModels.JSONMap{
+			"source_engine_id": uint(990004), "item_locator": "addp://engine/990004/path/models/new.ifc?type=file&item_id=94",
+			"item_id": uint(94), "item_fingerprint": "replacement-managed-source", "format": "ifc",
+		}},
+	}
+	if err := createTaskDefinition(context.Background(), db, commonExecution.TaskTypeModel3DGLBGeneration, replacementManaged); err != nil {
+		t.Fatalf("create replacement managed task: %v", err)
+	}
+	taskDefinitionRepo := NewTaskDefinitionRepository(db)
+	if err := taskDefinitionRepo.RetireMissingTask(
+		context.Background(), tenantID, commonExecution.TaskTypeModel3DGLBGeneration,
+		missingManaged.ID, missingManaged.Version, replacementManaged.ID,
+	); err != nil {
+		t.Fatalf("retire missing managed task: %v", err)
+	}
+	if retired, err := taskDefinitionRepo.Get(context.Background(), tenantID, commonExecution.TaskTypeModel3DGLBGeneration, missingManaged.ID); err != nil || retired != nil {
+		t.Fatalf("retired managed task = %#v, error = %v", retired, err)
+	}
+	if replacement, err := taskDefinitionRepo.Get(context.Background(), tenantID, commonExecution.TaskTypeModel3DGLBGeneration, replacementManaged.ID); err != nil || replacement == nil {
+		t.Fatalf("replacement managed task = %#v, error = %v", replacement, err)
 	}
 }
 

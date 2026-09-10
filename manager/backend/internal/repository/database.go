@@ -194,6 +194,15 @@ func ensureTaskDefinitionSchema(db *gorm.DB) error {
 	if err := db.AutoMigrate(&models.TaskDefinition{}, &models.TaskResourceBinding{}); err != nil {
 		return err
 	}
+	if err := normalizeTaskDefinitionBindingStatus(db); err != nil {
+		return err
+	}
+	if err := db.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_manager_task_definitions_tenant_binding_status
+		ON manager.task_definitions (tenant_id, binding_status)
+	`).Error; err != nil {
+		return err
+	}
 	if err := db.Exec(`
 		CREATE UNIQUE INDEX IF NOT EXISTS uq_manager_task_definition_semantic
 		ON manager.task_definitions (tenant_id, task_type, semantic_key)
@@ -204,6 +213,16 @@ func ensureTaskDefinitionSchema(db *gorm.DB) error {
 	return db.Exec(`
 		CREATE UNIQUE INDEX IF NOT EXISTS uq_manager_task_resource_binding
 		ON manager.task_resource_bindings (task_definition_id, role, ordinal)
+	`).Error
+}
+
+func normalizeTaskDefinitionBindingStatus(db *gorm.DB) error {
+	return db.Exec(`
+		UPDATE manager.task_definitions
+		SET binding_status = 'missing',
+			binding_issue = last_execution_status,
+			last_execution_status = NULL
+		WHERE last_execution_status IN ('missing_engine', 'missing_source')
 	`).Error
 }
 

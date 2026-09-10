@@ -21,14 +21,32 @@
     default-first-option
     @update:model-value="update"
   />
+  <div v-else-if="controlType === 'bbox'" class="bbox-inputs">
+    <el-input-number
+      v-for="position in 4"
+      :key="position"
+      :model-value="Array.isArray(modelValue) ? modelValue[position - 1] : undefined"
+      :controls="false"
+      @update:model-value="updateBbox(position - 1, $event)"
+    />
+  </div>
   <el-input v-else :model-value="modelValue" @update:model-value="update" />
 </template>
 
 <script setup>
 import { useI18n } from 'vue-i18n'
 
-defineProps({ modelValue: { default: '' }, controlType: { type: String, required: true } })
+const props = defineProps({ modelValue: { default: '' }, controlType: { type: String, required: true } })
 const emit = defineEmits(['update:modelValue'])
 const { t } = useI18n()
 const update = (value) => emit('update:modelValue', value)
+const updateBbox = (index, value) => {
+  const next = Array.isArray(props.modelValue) ? [...props.modelValue] : ['', '', '', '']
+  next[index] = value
+  emit('update:modelValue', next)
+}
 </script>
+
+<style scoped>
+.bbox-inputs{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+</style>

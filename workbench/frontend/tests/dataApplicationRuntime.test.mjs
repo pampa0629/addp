@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createLatestRequestCoordinator } from '../../../common-frontend/basic/src/utils/latestRequest.js'
-import { applicationRefreshDelayMilliseconds, buildComponentQuery, buildSelectionUpdate, canAttemptApplicationQuery, canExecuteComponentQuery, canHideApplicationParameters, canRunApplicationRefresh, canRunPublishedApplicationInitialQuery, commitLatestComponentDescriptorState, commitLatestDataApplicationLoad, componentBlockingError, componentIDsForApplicationParameters, initialApplicationParameterValues, invalidateApplicationParameterResults, runtimeGridStyle, runtimeLayoutStyle, runtimeSectionVisible } from '../src/utils/dataApplicationRuntime.mjs'
+import { defaultApplicationParameterValues } from '../src/utils/dataApplicationParameters.mjs'
+import { applicationParameterPreset, applicationRefreshDelayMilliseconds, buildComponentQuery, buildSelectionUpdate, canAttemptApplicationQuery, canExecuteComponentQuery, canHideApplicationParameters, canRunApplicationRefresh, canRunPublishedApplicationInitialQuery, commitLatestComponentDescriptorState, commitLatestDataApplicationLoad, componentBlockingError, componentIDsForApplicationParameters, initialApplicationParameterValues, invalidateApplicationParameterResults, runtimeGridStyle, runtimeLayoutStyle, runtimeSectionVisible } from '../src/utils/dataApplicationRuntime.mjs'
 import { downloadCurrentBoundedExport } from '../src/utils/boundedExport.mjs'
 
 const component = {
@@ -32,7 +33,21 @@ const snapshot = {
     source_component_id: 'component-source',
     assignments: [{ source_field: 'amount', application_parameter_key: 'minimum_amount' }],
   }],
+  parameter_presets: [{ key: 'high-value', name: 'High value', parameter_values: { minimum_amount: 100, missing_rows: true } }],
 }
+
+test('resolves only a stable preset key and initializes a detached complete value set', () => {
+  assert.equal(applicationParameterPreset(snapshot, 'high-value')?.name, 'High value')
+  assert.equal(applicationParameterPreset(snapshot, 'unknown'), null)
+  assert.equal(applicationParameterPreset(snapshot, ['high-value']), null)
+  assert.deepEqual(initialApplicationParameterValues(snapshot, 'high-value'), { minimum_amount: 100, missing_rows: true })
+  assert.deepEqual(initialApplicationParameterValues(snapshot, 'unknown'), { minimum_amount: 10, missing_rows: false })
+
+  const values = initialApplicationParameterValues(snapshot, 'high-value')
+  values.minimum_amount = 200
+  assert.equal(snapshot.parameter_presets[0].parameter_values.minimum_amount, 100)
+  assert.deepEqual(defaultApplicationParameterValues(snapshot), { minimum_amount: 10, missing_rows: false })
+})
 
 test('builds a component query only from explicit application parameter bindings', () => {
   const values = initialApplicationParameterValues(snapshot)
@@ -348,6 +363,12 @@ test('runs one published initial query only when descriptors and required defaul
   const missingDefault = structuredClone(publishedSnapshot)
   delete missingDefault.parameters[0].default_value
   assert.equal(canRunPublishedApplicationInitialQuery(missingDefault, readyStates), false)
+  assert.equal(canRunPublishedApplicationInitialQuery(
+    missingDefault,
+    readyStates,
+    initialApplicationParameterValues(missingDefault, 'high-value'),
+    false,
+  ), true)
 
   const emptyStringDefault = structuredClone(publishedSnapshot)
   emptyStringDefault.parameters[0].default_value = ''

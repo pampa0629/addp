@@ -1014,6 +1014,39 @@ func (s *DocumentService) UpdateCandidateStatus(candidateID, tenantID, userID in
 	return result, nil
 }
 
+func (s *DocumentService) DecideCandidateFamily(documentID, tenantID, userID int64, req *models.DecideDocumentCandidateFamilyRequest) (*models.DocumentCandidateFamilyDecisionResponse, error) {
+	if req == nil || req.WinnerCandidateID <= 0 || len(req.Members) < 2 || len(req.Members) > maxDocumentCandidateFamilyPageSize {
+		return nil, ErrCandidateFamilyDecisionInvalid
+	}
+	req.Reason = strings.TrimSpace(req.Reason)
+	if req.Reason == "" || utf8.RuneCountInString(req.Reason) > maxDocumentCandidateDecisionReasonRunes {
+		return nil, ErrCandidateFamilyDecisionInvalid
+	}
+	seen := make(map[int64]struct{}, len(req.Members))
+	winnerFound := false
+	for _, member := range req.Members {
+		if member.CandidateID <= 0 || member.Version <= 0 {
+			return nil, ErrCandidateFamilyDecisionInvalid
+		}
+		if _, exists := seen[member.CandidateID]; exists {
+			return nil, ErrCandidateFamilyDecisionInvalid
+		}
+		seen[member.CandidateID] = struct{}{}
+		winnerFound = winnerFound || member.CandidateID == req.WinnerCandidateID
+	}
+	if !winnerFound {
+		return nil, ErrCandidateFamilyDecisionInvalid
+	}
+	result, err := s.repo.DecideCandidateFamily(documentID, tenantID, userID, req.WinnerCandidateID, req.Reason, req.Members)
+	if errors.Is(err, repository.ErrCandidateFamilyDecisionInvalid) {
+		return nil, ErrCandidateFamilyDecisionInvalid
+	}
+	if err != nil {
+		return nil, mapCandidateFormalizationError(err)
+	}
+	return result, nil
+}
+
 type CandidateFormalizationAuthorization struct {
 	Create map[string]bool
 	Update map[string]bool

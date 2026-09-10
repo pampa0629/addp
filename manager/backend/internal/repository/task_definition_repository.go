@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -9,6 +10,13 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+)
+
+var (
+	ErrTaskDefinitionNotFound        = errors.New("task definition not found")
+	ErrTaskDefinitionVersionConflict = errors.New("task definition version conflict")
+	ErrTaskBindingNotMissing         = errors.New("task binding is not missing")
 )
 
 var managedQuickViewTaskTypes = []string{
@@ -52,6 +60,8 @@ func taskDefinitionScope(db *gorm.DB, taskType string) *gorm.DB {
 
 func createTaskDefinition(ctx context.Context, db *gorm.DB, taskType string, task *models.TaskDefinition) error {
 	task.TaskType = taskType
+	task.BindingStatus = models.TaskBindingStatusActive
+	task.BindingIssue = ""
 	if task.Version == 0 {
 		task.Version = 1
 	}
@@ -66,6 +76,8 @@ func createTaskDefinition(ctx context.Context, db *gorm.DB, taskType string, tas
 
 func updateTaskDefinition(ctx context.Context, db *gorm.DB, taskType string, task *models.TaskDefinition) error {
 	task.TaskType = taskType
+	task.BindingStatus = models.TaskBindingStatusActive
+	task.BindingIssue = ""
 	task.Version++
 	task.SemanticKey = taskSemanticKey(taskType, task.Config)
 	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -227,6 +239,7 @@ type TaskDefinitionFilter struct {
 	TaskType        string
 	Category        string
 	ExecutionStatus string
+	BindingStatus   string
 	Page            int
 	PageSize        int
 }
@@ -235,6 +248,79 @@ type TaskDefinitionRepository struct{ db *gorm.DB }
 
 func NewTaskDefinitionRepository(db *gorm.DB) *TaskDefinitionRepository {
 	return &TaskDefinitionRepository{db: db}
+}
+
+func (r *TaskDefinitionRepository) Get(ctx context.Context, tenantID uint, taskType string, id uint) (*models.TaskDefinition, error) {
+	var task models.TaskDefinition
+	err := r.db.WithContext(ctx).
+		Where("id = ? AND tenant_id = ? AND task_type = ?", id, tenantID, strings.TrimSpace(taskType)).
+		First(&task).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	return &task, err
+}
+
+// RetireMissingTask removes a stale missing definition after a canonical
+// source-driven replacement has been created. Historical executions and
+// artifacts keep their original task_id; only the active control-plane
+// definition and its current resource bindings are retired.
+func (r *TaskDefinitionRepository) RetireMissingTask(
+	ctx context.Context,
+	tenantID uint,
+	taskType string,
+	id uint,
+	expectedVersion uint,
+	replacementID uint,
+) error {
+	if id == 0 || replacementID == 0 {
+		return ErrTaskDefinitionNotFound
+	}
+	if id == replacementID {
+		return nil
+	}
+	taskType = strings.TrimSpace(taskType)
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var task models.TaskDefinition
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND tenant_id = ? AND task_type = ?", id, tenantID, taskType).
+			First(&task).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrTaskDefinitionNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if task.Version != expectedVersion {
+			return ErrTaskDefinitionVersionConflict
+		}
+		if task.BindingStatus != models.TaskBindingStatusMissing {
+			return ErrTaskBindingNotMissing
+		}
+
+		var replacementCount int64
+		if err := tx.Model(&models.TaskDefinition{}).
+			Where("id = ? AND tenant_id = ? AND task_type = ?", replacementID, tenantID, taskType).
+			Count(&replacementCount).Error; err != nil {
+			return err
+		}
+		if replacementCount != 1 {
+			return ErrTaskDefinitionNotFound
+		}
+		if err := tx.Where("task_definition_id = ? AND tenant_id = ?", id, tenantID).
+			Delete(&models.TaskResourceBinding{}).Error; err != nil {
+			return err
+		}
+		result := tx.Where("id = ? AND tenant_id = ? AND task_type = ?", id, tenantID, taskType).
+			Delete(&models.TaskDefinition{})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return ErrTaskDefinitionNotFound
+		}
+		return nil
+	})
 }
 
 func (r *TaskDefinitionRepository) List(ctx context.Context, filter TaskDefinitionFilter) ([]*models.TaskDefinition, int64, error) {
@@ -253,6 +339,9 @@ func (r *TaskDefinitionRepository) List(ctx context.Context, filter TaskDefiniti
 	}
 	if executionStatus := strings.TrimSpace(filter.ExecutionStatus); executionStatus != "" {
 		query = query.Where("last_execution_status = ?", executionStatus)
+	}
+	if bindingStatus := strings.TrimSpace(filter.BindingStatus); bindingStatus != "" {
+		query = query.Where("binding_status = ?", bindingStatus)
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {

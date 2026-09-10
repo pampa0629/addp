@@ -45,6 +45,7 @@ func TestRespondErrorMapsStructuredErrorsAndLanguage(t *testing.T) {
 		{name: "candidate already formalized", err: service.ErrCandidateAlreadyFormalized, fallback: http.StatusInternalServerError, wantStatus: http.StatusConflict, wantBody: "already been formalized"},
 		{name: "candidate formalization denied", err: service.ErrCandidateFormalizationDenied, fallback: http.StatusInternalServerError, wantStatus: http.StatusForbidden, wantBody: "Permission to create or update"},
 		{name: "candidate formalization invalid", err: service.ErrCandidateFormalizationInvalid, fallback: http.StatusInternalServerError, wantStatus: http.StatusBadRequest, wantBody: "formalization request is invalid"},
+		{name: "candidate family decision invalid", err: service.ErrCandidateFamilyDecisionInvalid, fallback: http.StatusInternalServerError, wantStatus: http.StatusBadRequest, wantBody: "two to one hundred distinct semantic variants"},
 		{name: "unknown bad request", err: fmt.Errorf("binding internals"), fallback: http.StatusBadRequest, wantStatus: http.StatusBadRequest, wantBody: "Invalid request parameters"},
 		{name: "wrapped document not found", err: fmt.Errorf("link document: %w", commonapi.ErrNotFound), fallback: http.StatusBadRequest, wantStatus: http.StatusNotFound, wantBody: "Resource not found"},
 	}
@@ -165,6 +166,24 @@ func TestRespondErrorReturnsCandidateFamilyQueryCode(t *testing.T) {
 		t.Fatal(err)
 	}
 	if recorder.Code != http.StatusBadRequest || response.ErrorCode != "document_candidate_family_query_invalid" {
+		t.Fatalf("status=%d error_code=%q body=%s", recorder.Code, response.ErrorCode, recorder.Body.String())
+	}
+}
+
+func TestRespondErrorReturnsCandidateFamilyDecisionCode(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Set("addp_lang", "en")
+
+	respondError(context, http.StatusInternalServerError, service.ErrCandidateFamilyDecisionInvalid)
+
+	var response struct {
+		ErrorCode string `json:"error_code"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if recorder.Code != http.StatusBadRequest || response.ErrorCode != "candidate_family_decision_invalid" {
 		t.Fatalf("status=%d error_code=%q body=%s", recorder.Code, response.ErrorCode, recorder.Body.String())
 	}
 }

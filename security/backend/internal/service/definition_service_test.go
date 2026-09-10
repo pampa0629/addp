@@ -90,7 +90,7 @@ func TestDetectorBindingUsesOnlyInstalledCapabilitiesAndProtectsTypeReference(t 
 	}
 
 	capabilities := svc.ListDetectorCapabilities()
-	if len(capabilities) != 3 || capabilities[0].Key != models.FindingDetectorPhoneMetadataV2 || capabilities[1].Key != models.FindingDetectorEmailMetadataV1 {
+	if len(capabilities) != 4 || capabilities[0].Key != models.FindingDetectorPhoneMetadataV2 || capabilities[1].Key != models.FindingDetectorEmailMetadataV1 || capabilities[2].Key != models.FindingDetectorIdentityDocumentNumberMetadataV1 {
 		t.Fatalf("capabilities = %#v", capabilities)
 	}
 	capabilities[0].SupportedItemTypes[0] = "mutated"

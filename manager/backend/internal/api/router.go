@@ -318,9 +318,11 @@ func SetupRouter(
 			quickViewHandler.SetVectorMaterializedViewTaskService(taskProviderHandler.vectorMaterializedViewTaskSvc)
 			quickViewHandler.SetArtifactTaskServices(taskProviderHandler.rasterCOGTaskSvc, taskProviderHandler.model3DGLBTaskSvc, taskProviderHandler.gaussianSplatKSplatTaskSvc, taskProviderHandler.pointCloudCOPCTaskSvc, taskProviderHandler.model3DTilesTaskSvc)
 			quickViewHandler.SetPPTXPDFTaskService(taskProviderHandler.pptxPDFTaskSvc)
+			quickViewHandler.SetTaskDefinitionRepository(taskProviderHandler.taskDefinitionRepo)
 		}
 		api.GET("/quick-view/capability", permission(managerauthorization.PermissionManagerDataItemRead), quickViewHandler.GetQuickViewCapabilityByLocator)
 		api.POST("/quick-view/actions", permission(managerauthorization.PermissionManagerDerivedArtifactCreate), quickViewHandler.ExecuteQuickViewAction)
+		api.POST("/tasks/:task_type/:id/rebind", permission(managerauthorization.PermissionManagerDataItemRead, managerauthorization.PermissionManagerDerivedArtifactUpdate), quickViewHandler.RebindManagedQuickViewTask)
 		api.GET("/quick-view/flatgeobuf", permission(managerauthorization.PermissionManagerContentRead), quickViewHandler.GetQuickViewFlatGeobufByLocator)
 		api.GET("/quick-view/geojson", permission(managerauthorization.PermissionManagerContentRead), quickViewHandler.GetQuickViewGeoJSONByLocator)
 		api.GET("/quick-view/tiles/:z/:x/:y.mvt", permission(managerauthorization.PermissionManagerDerivedArtifactRead), quickViewHandler.GetQuickViewTileByLocator)

@@ -103,6 +103,84 @@ test('opens a managed task current result from the task list after verifying the
   await expect.poll(() => new URL(page.url()).pathname).toBe('/data-explorer')
 })
 
+test('filters failed generation tasks and deletes only the selected tasks', async ({ page }) => {
+  const backend = await installMockBackend(page, { includeFailedTasks: true })
+  await page.goto('/derived-tasks?category=managed_quick_view')
+
+  await page.locator('.toolbar .el-select').nth(1).click()
+  await page.getByRole('option', { name: '失败', exact: true }).click()
+
+  await expect.poll(() => backend.taskListQueries.some(query => (
+    query.category === 'managed_quick_view' && query.executionStatus === 'failed'
+  ))).toBe(true)
+  await expect.poll(() => new URL(page.url()).searchParams.get('execution_status')).toBe('failed')
+
+  const farmlandRow = page.getByRole('row', { name: /失败任务 - farmland/ })
+  const buildingRow = page.getByRole('row', { name: /失败任务 - building/ })
+  await farmlandRow.locator('.el-checkbox').click()
+  await buildingRow.locator('.el-checkbox').click()
+  await page.getByRole('button', { name: '批量删除（2）', exact: true }).click()
+
+  const dialog = page.getByRole('dialog', { name: '批量删除任务' })
+  await expect(dialog).toContainText('确认删除已选择的 2 个任务定义？')
+  await dialog.getByRole('button', { name: '确定', exact: true }).click()
+
+  await expect.poll(() => [...backend.deletedTasks].sort()).toEqual([
+    'model_3d_glb_generation/72',
+    'vector_tile_cache_generation/71'
+  ])
+  await expect(page.getByText('已删除 2 个任务')).toBeVisible()
+  await expect(page.getByText('暂无生成任务')).toBeVisible()
+  expect(backend.tasks.map(task => task.id)).toEqual([73])
+})
+
+test('filters generation tasks with missing resource bindings and explains the issue', async ({ page }) => {
+  const backend = await installMockBackend(page, { includeFailedTasks: true })
+  await page.goto('/derived-tasks?category=managed_quick_view&binding_status=missing')
+
+  await expect.poll(() => backend.taskListQueries.some(query => (
+    query.category === 'managed_quick_view' && query.bindingStatus === 'missing'
+  ))).toBe(true)
+  await expect(page.getByText('失败任务 - farmland')).toBeVisible()
+  await expect(page.getByText('失败任务 - building')).toBeVisible()
+  await expect(page.getByText('成功任务 - rivers')).toHaveCount(0)
+  await expect(page.getByText('源数据缺失', { exact: true })).toBeVisible()
+  await expect(page.getByText('引擎已删除', { exact: true })).toBeVisible()
+})
+
+test('rebinds a missing managed quick-view task without starting an execution', async ({ page }) => {
+  const backend = await installMockBackend(page, { includeFailedTasks: true })
+  await page.goto('/derived-tasks?category=managed_quick_view&binding_status=missing')
+
+  const row = page.getByRole('row', { name: /失败任务 - farmland/ })
+  await row.getByRole('button', { name: '重新绑定', exact: true }).click()
+
+  await expect.poll(() => {
+    const url = new URL(page.url())
+    return {
+      taskType: url.searchParams.get('task_type'),
+      rebindTaskID: url.searchParams.get('rebind_task_id')
+    }
+  }).toEqual({ taskType: 'vector_tile_cache_generation', rebindTaskID: '71' })
+  await page.reload()
+
+  const dialog = page.getByRole('dialog', { name: '重新绑定源资源' })
+  await expect(dialog).toContainText('重新绑定不会自动执行任务')
+  await chooseEngine(page, dialog, POSTGRES_ENGINE.name)
+  await expandTreeNode(dialog, 'public')
+  await treeNodeContent(dialog, 'rivers').click()
+  await dialog.getByRole('button', { name: '确认重新绑定', exact: true }).click()
+
+  await expect.poll(() => backend.rebindRequests).toEqual([{
+    taskType: 'vector_tile_cache_generation',
+    taskID: 71,
+    body: { version: 1, locator: RIVERS_LOCATOR }
+  }])
+  expect(backend.quickViewActions).toEqual([])
+  await expect(page.getByText('源资源已重新绑定，可按需执行任务')).toBeVisible()
+  await expect(page.getByText('失败任务 - farmland')).toHaveCount(0)
+})
+
 test('keeps the user on the task list when the managed task current result no longer exists', async ({ page }) => {
   const backend = await installMockBackend(page, { includeResultTask: true, resultExists: false })
   await page.goto('/derived-tasks?category=managed_quick_view')
@@ -182,7 +260,19 @@ function escapeRegExp(value) {
 }
 
 async function installMockBackend(page, options = {}) {
-  const state = { capabilityLocators: [], quickViewActions: [], preferredModeRequests: [], taskDetailRequests: [] }
+  const tasks = options.includeFailedTasks
+    ? failedTaskFixtures()
+    : (options.includeResultTask ? [resultTask()] : [])
+  const state = {
+    capabilityLocators: [],
+    quickViewActions: [],
+    preferredModeRequests: [],
+    taskDetailRequests: [],
+    taskListQueries: [],
+    deletedTasks: [],
+    rebindRequests: [],
+    tasks
+  }
 
   await page.addInitScript(() => {
     localStorage.setItem('addp-lang', 'zh-cn')
@@ -259,13 +349,44 @@ async function installMockBackend(page, options = {}) {
     if (path === '/api/v1/manager/tasks/vector_tile_set_generation/41') {
       return fulfillJSON(route, tileCacheTask())
     }
-    if (path === '/api/v1/manager/tasks') {
-      const items = options.includeResultTask ? [resultTask()] : []
-      return fulfillJSON(route, { items, total: items.length, page: 1, page_size: 20 })
+    const taskRebindMatch = path.match(/^\/api\/v1\/manager\/tasks\/([^/]+)\/(\d+)\/rebind$/)
+    if (taskRebindMatch && request.method() === 'POST') {
+      const taskType = decodeURIComponent(taskRebindMatch[1])
+      const taskID = Number(taskRebindMatch[2])
+      state.rebindRequests.push({ taskType, taskID, body: request.postDataJSON() })
+      state.tasks = state.tasks.filter(task => task.id !== taskID)
+      return fulfillJSON(route, { task_type: taskType, task_id: 81, replaced_task_id: taskID })
     }
-    if (path === '/api/v1/manager/tasks/vector_tile_cache_generation/61') {
-      state.taskDetailRequests.push('vector_tile_cache_generation/61')
-      return fulfillJSON(route, { ...resultTask(), has_current_result: options.resultExists !== false })
+    const taskMemberMatch = path.match(/^\/api\/v1\/manager\/tasks\/([^/]+)\/(\d+)$/)
+    if (taskMemberMatch && request.method() === 'GET') {
+      const taskType = decodeURIComponent(taskMemberMatch[1])
+      const taskID = Number(taskMemberMatch[2])
+      const task = state.tasks.find(task => task.task_type === taskType && task.id === taskID) || {}
+      if (taskType === 'vector_tile_cache_generation' && taskID === 61) {
+        state.taskDetailRequests.push('vector_tile_cache_generation/61')
+        return fulfillJSON(route, { ...task, has_current_result: options.resultExists !== false })
+      }
+      return fulfillJSON(route, task)
+    }
+    if (taskMemberMatch && request.method() === 'DELETE') {
+      const taskKey = `${decodeURIComponent(taskMemberMatch[1])}/${taskMemberMatch[2]}`
+      state.deletedTasks.push(taskKey)
+      state.tasks = state.tasks.filter(task => `${task.task_type}/${task.id}` !== taskKey)
+      return fulfillJSON(route, {})
+    }
+    if (path === '/api/v1/manager/tasks') {
+      const executionStatus = url.searchParams.get('execution_status') || ''
+      const bindingStatus = url.searchParams.get('binding_status') || ''
+      state.taskListQueries.push({
+        category: url.searchParams.get('category') || '',
+        executionStatus,
+        bindingStatus
+      })
+      let items = executionStatus
+        ? state.tasks.filter(task => task.last_execution_status === executionStatus)
+        : state.tasks
+      if (bindingStatus) items = items.filter(task => task.binding_status === bindingStatus)
+      return fulfillJSON(route, { items, total: items.length, page: 1, page_size: 20 })
     }
     if (path === '/api/v1/manager/vector_tile_cache') {
       return fulfillJSON(route, { data: [], total: 0 })
@@ -442,6 +563,46 @@ function resultTask() {
       }
     }
   }
+}
+
+function failedTaskFixtures() {
+  return [{
+    id: 71,
+    version: 1,
+    task_type: 'vector_tile_cache_generation',
+    category: 'managed_quick_view',
+    name: '失败任务 - farmland',
+    enabled: true,
+    last_execution_status: 'failed',
+    binding_status: 'missing',
+    binding_issue: 'missing_source',
+    updated_at: '2026-09-09T12:00:00Z',
+    config: { target: { source_engine_id: POSTGRES_ENGINE.id, item_locator: FARMLAND_LOCATOR } }
+  }, {
+    id: 72,
+    version: 1,
+    task_type: 'model_3d_glb_generation',
+    category: 'managed_quick_view',
+    name: '失败任务 - building',
+    enabled: true,
+    last_execution_status: 'failed',
+    binding_status: 'missing',
+    binding_issue: 'missing_engine',
+    updated_at: '2026-09-09T12:01:00Z',
+    config: { source: { source_engine_id: NFS_ENGINE.id, item_locator: README_LOCATOR } }
+  }, {
+    id: 73,
+    version: 1,
+    task_type: 'vector_tile_cache_generation',
+    category: 'managed_quick_view',
+    name: '成功任务 - rivers',
+    enabled: true,
+    last_execution_status: 'success',
+    binding_status: 'active',
+    binding_issue: '',
+    updated_at: '2026-09-09T12:02:00Z',
+    config: { target: { source_engine_id: POSTGRES_ENGINE.id, item_locator: RIVERS_LOCATOR } }
+  }]
 }
 
 async function fulfillJSON(route, body, status = 200) {

@@ -819,7 +819,8 @@ func newTileCacheExecutionRepositoryTestDB(t *testing.T) *gorm.DB {
 	if err := db.Exec(`CREATE TABLE manager.task_definitions (
 		id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER NOT NULL, task_type TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1, name TEXT NOT NULL,
 		description TEXT, enabled BOOLEAN, schedule TEXT, next_run_at DATETIME, last_run_at DATETIME,
-		last_execution_id TEXT, last_execution_status TEXT, semantic_key TEXT, config JSON, created_by INTEGER,
+		last_execution_id TEXT, last_execution_status TEXT, binding_status TEXT NOT NULL DEFAULT 'active', binding_issue TEXT NOT NULL DEFAULT '',
+		semantic_key TEXT, config JSON, created_by INTEGER,
 		created_at DATETIME, updated_at DATETIME, deleted_at DATETIME
 	)`).Error; err != nil {
 		t.Fatalf("create unified task definition table: %v", err)

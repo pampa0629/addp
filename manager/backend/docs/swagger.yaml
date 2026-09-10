@@ -764,6 +764,10 @@ definitions:
     type: object
   github_com_addp_manager_internal_models.TaskDefinition:
     properties:
+      binding_issue:
+        type: string
+      binding_status:
+        type: string
       config:
         $ref: '#/definitions/github_com_addp_common_models.JSONMap'
       created_at:
@@ -901,6 +905,10 @@ definitions:
     type: object
   github_com_addp_manager_internal_models.VectorTileSetTask:
     properties:
+      binding_issue:
+        type: string
+      binding_status:
+        type: string
       config:
         $ref: '#/definitions/github_com_addp_common_models.JSONMap'
       created_at:
@@ -2563,6 +2571,25 @@ definitions:
       target_engine_id:
         type: integer
     type: object
+  internal_api.RebindManagedQuickViewTaskRequest:
+    properties:
+      locator:
+        type: string
+      version:
+        type: integer
+    required:
+    - locator
+    - version
+    type: object
+  internal_api.RebindManagedQuickViewTaskResponse:
+    properties:
+      replaced_task_id:
+        type: integer
+      task_id:
+        type: integer
+      task_type:
+        type: string
+    type: object
   internal_api.TaskExecuteRequest:
     properties:
       parameters:
@@ -2593,6 +2620,10 @@ definitions:
     type: object
   internal_api.TaskListItem:
     properties:
+      binding_issue:
+        type: string
+      binding_status:
+        type: string
       category:
         type: string
       config:
@@ -5867,6 +5898,10 @@ paths:
         in: query
         name: execution_status
         type: string
+      - description: '任务绑定状态：active|missing | Task binding status: active|missing'
+        in: query
+        name: binding_status
+        type: string
       - description: 页码，默认1 | Page number, default 1
         in: query
         name: page
@@ -6094,6 +6129,68 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - manager.derived_artifact.create
+  /tasks/{task_type}/{id}/rebind:
+    post:
+      consumes:
+      - application/json
+      description: 只接受失效任务的当前版本与新 Resource Locator。Manager 按原任务类型和产物变体重新校验快显能力、生成规范配置并恢复资源绑定；本操作不创建
+        execution。 | Accept the current version of a missing task and a new Resource
+        Locator. Manager validates capability for the original task type and artifact
+        variant, rebuilds canonical configuration and restores resource bindings without
+        creating an execution.
+      parameters:
+      - description: 任务类型 | Task type
+        in: path
+        name: task_type
+        required: true
+        type: string
+      - description: 失效任务 ID | Missing task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 源资源重绑请求 | Source rebind request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.RebindManagedQuickViewTaskRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 重绑后的规范任务 | Canonical rebound task
+          schema:
+            $ref: '#/definitions/internal_api.RebindManagedQuickViewTaskResponse'
+        "400":
+          description: 参数或源能力不匹配 | Invalid request or unsupported source capability
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: 任务或资源不存在 | Task or resource not found
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: 版本冲突或任务绑定仍有效 | Version conflict or task binding is still active
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: 服务器内部错误 | Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 重新绑定受管快显任务源资源 | Rebind a managed quick view task source
+      tags:
+      - Manager
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.data_item.read
+      - manager.derived_artifact.update
   /uploads:
     post:
       consumes:
