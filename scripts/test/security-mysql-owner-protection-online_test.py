@@ -101,6 +101,17 @@ class SecurityMySQLOwnerProtectionOnlineTest(unittest.TestCase):
         self.assertEqual(config["transforms"], [])
         self.assertEqual(config["target"]["policy"], {"apply_mode": "replace"})
 
+    def test_table_service_payload_leaves_stable_key_to_service_snapshot(self) -> None:
+        payload = ONLINE.service_payload(
+            "online-service", 17, "addp://engine/17/path/public/customers"
+        )
+
+        self.assertEqual(
+            payload["data_config"]["locator"],
+            "addp://engine/17/path/public/customers",
+        )
+        self.assertNotIn("stable_key", payload["data_config"])
+
 
 if __name__ == "__main__":
     unittest.main()

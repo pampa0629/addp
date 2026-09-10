@@ -70,6 +70,17 @@ class RelationalConsumerFlowOnlineTest(unittest.TestCase):
         self.assertEqual(baseline[0]["item_code"], "OG-1001")
         self.assertEqual(final[-1]["item_code"], "OG-1006")
 
+    def test_table_service_payload_leaves_stable_key_to_service_snapshot(self) -> None:
+        payload = ONLINE.service_payload(
+            "online-service", 17, "addp://engine/17/path/public/orders", self.opengauss
+        )
+
+        self.assertEqual(
+            payload["data_config"]["locator"],
+            "addp://engine/17/path/public/orders",
+        )
+        self.assertNotIn("stable_key", payload["data_config"])
+
     @patch.object(ONLINE.time, "sleep")
     @patch.object(ONLINE.time, "monotonic", return_value=1.0)
     def test_failed_meta_scan_reports_execution_diagnostics(

@@ -382,7 +382,6 @@ def service_payload(
         "engine_id": engine_id,
         "data_config": {
             "locator": locator,
-            "stable_key": ["id"],
             "default_fields": fields,
             "filterable_fields": ["id", "item_code"],
         },

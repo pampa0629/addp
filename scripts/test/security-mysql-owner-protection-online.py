@@ -431,7 +431,6 @@ def service_payload(name: str, engine_id: int, locator: str) -> dict[str, object
         "engine_id": engine_id,
         "data_config": {
             "locator": locator,
-            "stable_key": ["id"],
             "default_fields": ["id", "customer_code", "email"],
             "filterable_fields": ["id"],
         },
