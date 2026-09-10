@@ -13,6 +13,9 @@ func TestFixtureRolesKeepSystemEngineControlPlaneOutOfConsumerIdentity(t *testin
 	if engineProvisionerRoleKey != "tenant.infrastructure_administrator" {
 		t.Fatalf("engine provisioner role = %q", engineProvisionerRoleKey)
 	}
+	if !contains(consumerPermissions, "system.execution_authorization.create") {
+		t.Fatal("consumer role must be able to derive a scoped execution authorization")
+	}
 	for _, permission := range consumerPermissions {
 		if strings.HasPrefix(permission, "system.engine.") {
 			t.Fatalf("consumer role must not access the System Engine control plane: %s", permission)

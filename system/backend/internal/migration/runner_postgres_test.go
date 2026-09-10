@@ -15,6 +15,61 @@ import (
 	"github.com/addp/system/internal/testsupport"
 )
 
+func TestExecutionAuthorizationTenantCustomizationForwardMigrationAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("set ADDP_SYSTEM_POSTGRES_TEST_DSN to a disposable PostgreSQL 15+ database")
+	}
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
+
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`DROP SCHEMA IF EXISTS system CASCADE; DROP SCHEMA IF EXISTS common CASCADE`); err != nil {
+		t.Fatalf("reset execution authorization customization migration schemas: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	through133, through134 := migrationFilesBeforeAndThrough(t, "000134_iam_execution_authorization_tenant_customization.up.sql")
+	if err := (&Runner{DSN: dsn, FS: through133, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply migrations through 133: %v", err)
+	}
+
+	var customizable bool
+	if err := db.QueryRow(`
+		SELECT tenant_customizable
+		FROM system.permissions
+		WHERE permission_key = 'system.execution_authorization.create'
+	`).Scan(&customizable); err != nil {
+		t.Fatalf("read execution authorization permission before migration 134: %v", err)
+	}
+	if customizable {
+		t.Fatal("execution authorization permission must not be tenant-customizable before migration 134")
+	}
+
+	if err := (&Runner{DSN: dsn, FS: through134, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply execution authorization customization migration 134: %v", err)
+	}
+	var version int
+	var dirty bool
+	if err := db.QueryRow(`SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
+		t.Fatalf("read migration 134 version: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT tenant_customizable
+		FROM system.permissions
+		WHERE permission_key = 'system.execution_authorization.create'
+	`).Scan(&customizable); err != nil {
+		t.Fatalf("read execution authorization permission after migration 134: %v", err)
+	}
+	if version != 134 || dirty || !customizable {
+		t.Fatalf("migration 134 state=(%d,%t) tenant_customizable=%t, want (134,false,true)", version, dirty, customizable)
+	}
+}
+
 func TestManagerTransferRuntimeForwardMigrationsAgainstPostgres(t *testing.T) {
 	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
 	if dsn == "" {

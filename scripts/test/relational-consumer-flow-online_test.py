@@ -137,6 +137,9 @@ class RelationalConsumerFlowOnlineTest(unittest.TestCase):
         )
 
     def test_consumer_identity_does_not_require_system_engine_control_plane(self) -> None:
+        self.assertIn(
+            "system.execution_authorization.create", ONLINE.REQUIRED_PERMISSIONS
+        )
         self.assertNotIn("system.engine.read", ONLINE.REQUIRED_PERMISSIONS)
         self.assertTrue(
             all(

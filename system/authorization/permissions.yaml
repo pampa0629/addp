@@ -981,7 +981,7 @@ permissions:
   - key: system.execution_authorization.create
     allowed_scope_types: [tenant, department, project_group]
     risk_level: low
-    tenant_customizable: false
+    tenant_customizable: true
     delegable: false
     status: active
     name_i18n_key: permissions.system.execution_authorization.create.name

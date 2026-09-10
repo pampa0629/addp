@@ -53,6 +53,7 @@ REQUIRED_PERMISSIONS = {
     "service.definition.create",
     "service.definition.delete",
     "service.definition.read",
+    "system.execution_authorization.create",
     "transfer.task.create",
     "transfer.task.delete",
     "transfer.task.execute",

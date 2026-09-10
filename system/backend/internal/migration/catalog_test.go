@@ -14,8 +14,24 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 133 {
-		t.Fatalf("LatestVersion = %d, want 133", catalog.LatestVersion)
+	if catalog.LatestVersion != 134 {
+		t.Fatalf("LatestVersion = %d, want 134", catalog.LatestVersion)
+	}
+}
+
+func TestExecutionAuthorizationTenantCustomizationMigrationPublishesMinimumRoleBoundary(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000134_iam_execution_authorization_tenant_customization.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 134: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"permission_key = 'system.execution_authorization.create'",
+		"SET tenant_customizable = true",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 134 missing %q", fragment)
+		}
 	}
 }
 

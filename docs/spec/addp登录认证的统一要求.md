@@ -72,6 +72,8 @@ Execution Audience、OAuth Client ID 和 Service Principal 是三个独立概念
 | `service` | `addp-service` |
 | `duckdb` | `addp-duckdb` |
 
+`system.execution_authorization.create` 是用户从当前权限派生短期 Execution Authorization 的机制权限，固定为低风险、Tenant 可定制且不可委托。该权限单独不授予任何数据读写或 Engine 控制面能力；System 签发时必须继续校验 audience 对应的功能 Permission、全部 effect Permission 与目标 Engine 边界。Tenant 自定义角色需要执行 Develop 查询时，必须显式同时授予 `system.execution_authorization.create`、`develop.task.execute` 和对应的 `develop.data_*.execute`，不得以 Tenant 管理员角色作为执行授权的隐式前置。
+
 Tenant Runtime 必须提交正整数 `tenant_id`，并绑定该 Service Principal 的有效 Membership。
 平台控制面必须显式提交 `context_type=platform`，只允许平台所有 Service Principal 的专用
 Platform Service Role；平台三员 Role 仍只允许实名 User。两种 Context 参数互斥，不能用
