@@ -18,6 +18,20 @@ import (
 // outside the openGauss capability surface.
 type Plugin struct{}
 
+var openGaussSystemSchemas = []string{
+	"blockchain",
+	"coverage",
+	"cstore",
+	"db4ai",
+	"dbe_perf",
+	"dbe_pldebugger",
+	"dbe_pldeveloper",
+	"dbe_sql_util",
+	"pkg_service",
+	"snapshot",
+	"sqladvisor",
+}
+
 var (
 	_ plugin.BatchReadableProvider                = (*Plugin)(nil)
 	_ plugin.BoundedWatermarkReadProvider         = (*Plugin)(nil)
@@ -44,10 +58,15 @@ func (p *Plugin) DisplayName() string  { return "openGauss" }
 func (p *Plugin) EngineOrigin() string { return "general" }
 
 func (p *Plugin) protocol() *postgresql.PostgreSQLPlugin {
-	return postgresql.NewProtocolCompatiblePlugin(postgresql.ProtocolIdentity{
-		EngineType:  p.Type(),
-		DisplayName: p.DisplayName(),
-	})
+	return postgresql.NewProtocolCompatiblePlugin(p.protocolIdentity())
+}
+
+func (p *Plugin) protocolIdentity() postgresql.ProtocolIdentity {
+	return postgresql.ProtocolIdentity{
+		EngineType:              p.Type(),
+		DisplayName:             p.DisplayName(),
+		AdditionalSystemSchemas: append([]string(nil), openGaussSystemSchemas...),
+	}
 }
 
 func (p *Plugin) ConnectionSpec() plugin.ConnectionSpec {

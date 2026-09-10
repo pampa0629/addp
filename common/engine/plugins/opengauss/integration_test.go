@@ -91,6 +91,11 @@ func TestIntegrationOpenGaussProviderContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListChildren(root) error = %v", err)
 	}
+	for _, systemSchema := range openGaussSystemSchemas {
+		if findOpenGaussCatalogEntry(schemas, systemSchema) != nil {
+			t.Fatalf("openGauss system schema %q leaked into the catalog: %#v", systemSchema, catalogEntryNames(schemas))
+		}
+	}
 	schema := findOpenGaussCatalogEntry(schemas, schemaName)
 	if schema == nil || schema.Term != plugin.EngineCatalogTermSchema {
 		t.Fatalf("schema %q not found in %#v", schemaName, catalogEntryNames(schemas))

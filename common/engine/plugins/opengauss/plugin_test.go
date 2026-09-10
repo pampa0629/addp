@@ -10,6 +10,28 @@ import (
 	commonquery "github.com/addp/common/query"
 )
 
+func TestProtocolIdentityDeclaresOpenGaussSystemSchemas(t *testing.T) {
+	t.Parallel()
+
+	identity := (&Plugin{}).protocolIdentity()
+	if !reflect.DeepEqual(identity.AdditionalSystemSchemas, openGaussSystemSchemas) {
+		t.Fatalf("additional system schemas = %#v, want %#v", identity.AdditionalSystemSchemas, openGaussSystemSchemas)
+	}
+
+	for _, schema := range []string{"coverage", "dbe_perf"} {
+		found := false
+		for _, declared := range identity.AdditionalSystemSchemas {
+			if declared == schema {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("openGauss system schema %q must be excluded from the catalog", schema)
+		}
+	}
+}
+
 func TestConnectionSpecUsesOpenGaussDefaults(t *testing.T) {
 	p := &Plugin{}
 	if got, want := p.DefaultPort(), 5432; got != want {

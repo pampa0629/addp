@@ -3,6 +3,7 @@ package postgresql
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -27,6 +28,9 @@ type PostgreSQLPlugin struct {
 type ProtocolIdentity struct {
 	EngineType  string
 	DisplayName string
+	// AdditionalSystemSchemas extends PostgreSQL's built-in catalog filter for
+	// a protocol-compatible engine's own reserved schemas.
+	AdditionalSystemSchemas []string
 }
 
 // NewProtocolCompatiblePlugin creates a PostgreSQL protocol implementation
@@ -295,20 +299,9 @@ func (p *PostgreSQLPlugin) listNamespaces(ctx context.Context, db *gorm.DB, root
 		superMapLeafFilter = "AND lower(table_name) NOT IN (" + superMapSDXSystemTableSQLList() + ")"
 	}
 
-	query := `
-		SELECT
-			schema_name as name,
-			(SELECT COUNT(*)
-			 FROM information_schema.tables
-			 WHERE table_schema = s.schema_name
-			   AND table_type = 'BASE TABLE'
-			   ` + superMapLeafFilter + `) as leaf_count
-		FROM information_schema.schemata s
-		WHERE schema_name NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
-		ORDER BY schema_name
-	`
+	query, args := p.listNamespacesQuery(superMapLeafFilter)
 
-	err = db.WithContext(ctx).Raw(query).Scan(&rows).Error
+	err = db.WithContext(ctx).Raw(query, args...).Scan(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to list namespaces: %w", err)
 	}
@@ -318,6 +311,30 @@ func (p *PostgreSQLPlugin) listNamespaces(ctx context.Context, db *gorm.DB, root
 		namespaces = append(namespaces, plugin.TabularNamespaceCatalogEntry(root, "schema", row.Name, row.LeafCount))
 	}
 	return namespaces, nil
+}
+
+func (p *PostgreSQLPlugin) listNamespacesQuery(superMapLeafFilter string) (string, []interface{}) {
+	systemSchemas := p.systemSchemaNames()
+	placeholders := make([]string, len(systemSchemas))
+	args := make([]interface{}, len(systemSchemas))
+	for index, schema := range systemSchemas {
+		placeholders[index] = "?"
+		args[index] = schema
+	}
+
+	query := `
+		SELECT
+			schema_name as name,
+			(SELECT COUNT(*)
+			 FROM information_schema.tables
+			 WHERE table_schema = s.schema_name
+			   AND table_type = 'BASE TABLE'
+			   ` + superMapLeafFilter + `) as leaf_count
+		FROM information_schema.schemata s
+		WHERE lower(schema_name) NOT IN (` + strings.Join(placeholders, ", ") + `)
+		ORDER BY schema_name
+	`
+	return query, args
 }
 
 type postgresNamespaceRow struct {
@@ -474,22 +491,36 @@ func (p *PostgreSQLPlugin) getTableRowCount(ctx context.Context, db *gorm.DB, sc
 
 // isSystemSchema 判断是否为系统 Schema
 func (p *PostgreSQLPlugin) isSystemSchema(schemaName string) bool {
-	normalized := strings.ToLower(schemaName)
-	systemSchemas := map[string]bool{
-		"pg_catalog":         true,
-		"information_schema": true,
-		"pg_toast":           true,
-		"pg_temp_1":          true,
-		"pg_toast_temp_1":    true,
+	normalized := strings.ToLower(strings.TrimSpace(schemaName))
+	for _, systemSchema := range p.systemSchemaNames() {
+		if normalized == systemSchema {
+			return true
+		}
 	}
 
-	// 检查是否在系统 schema 列表中
-	if systemSchemas[normalized] {
-		return true
-	}
-
-	// 检查是否以 pg_toast_ 或 pg_temp_ 开头
 	return strings.HasPrefix(normalized, "pg_toast_") || strings.HasPrefix(normalized, "pg_temp_")
+}
+
+func (p *PostgreSQLPlugin) systemSchemaNames() []string {
+	names := map[string]struct{}{
+		"information_schema": {},
+		"pg_catalog":         {},
+		"pg_toast":           {},
+	}
+	if p != nil && p.identity != nil {
+		for _, schema := range p.identity.AdditionalSystemSchemas {
+			if normalized := strings.ToLower(strings.TrimSpace(schema)); normalized != "" {
+				names[normalized] = struct{}{}
+			}
+		}
+	}
+
+	result := make([]string, 0, len(names))
+	for name := range names {
+		result = append(result, name)
+	}
+	sort.Strings(result)
+	return result
 }
 
 func (p *PostgreSQLPlugin) hasSuperMapSDXSystemTables(ctx context.Context, db *gorm.DB) (bool, error) {

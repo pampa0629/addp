@@ -2,6 +2,7 @@ package postgresql
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/addp/common/datatype"
@@ -53,6 +54,32 @@ func TestPostgreSQLIsSystemSchema(t *testing.T) {
 
 	if plugin.isSystemSchema("public") {
 		t.Fatal("isSystemSchema(\"public\") = true, want false")
+	}
+}
+
+func TestProtocolCompatibleCatalogFiltersAdditionalSystemSchemasBeforeLeafCounts(t *testing.T) {
+	t.Parallel()
+
+	plugin := NewProtocolCompatiblePlugin(ProtocolIdentity{
+		EngineType:              "opengauss",
+		DisplayName:             "openGauss",
+		AdditionalSystemSchemas: []string{" Coverage ", "DBE_PERF", "coverage"},
+	})
+
+	if !plugin.isSystemSchema("coverage") || !plugin.isSystemSchema("DBE_PERF") {
+		t.Fatal("protocol-specific system schemas must be filtered")
+	}
+	if plugin.isSystemSchema("public") {
+		t.Fatal("business schema public must remain visible")
+	}
+
+	query, args := plugin.listNamespacesQuery("")
+	if !strings.Contains(query, "WHERE lower(schema_name) NOT IN") {
+		t.Fatalf("namespace query must filter schemas before evaluating leaf counts: %s", query)
+	}
+	wantArgs := []interface{}{"coverage", "dbe_perf", "information_schema", "pg_catalog", "pg_toast"}
+	if !reflect.DeepEqual(args, wantArgs) {
+		t.Fatalf("namespace query args = %#v, want %#v", args, wantArgs)
 	}
 }
 
