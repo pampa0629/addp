@@ -54,7 +54,7 @@ func TestValidateTableProjectionAcceptsOutdoorPhoneAndRejectsDrift(t *testing.T)
 		SourceSnapshotHash: snapshotHash,
 		Rules: []Rule{{
 			Action: "preview", Component: component,
-			Decision: Decision{Effect: EffectMask, Algorithm: AlgorithmKeepPrefixSuffixV1, Parameters: map[string]any{"prefix_runes": 3, "suffix_runes": 4, "replacement": "****", "exact_runes": 11, "character_class": "ascii_digit"}, InvalidValueEffect: EffectSuppress},
+			Decision: Decision{Effect: EffectMask, Algorithm: AlgorithmKeepPrefixSuffixV2, Parameters: map[string]any{"prefix_runes": 3, "suffix_runes": 4, "mask_rune": "*"}, InvalidValueEffect: EffectSuppress},
 		}},
 		ValidFrom: now.Add(-time.Hour), ExpiresAt: now.Add(time.Hour),
 	}

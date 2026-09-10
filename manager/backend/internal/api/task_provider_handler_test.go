@@ -130,6 +130,15 @@ func TestTaskProviderTaskDetailUsesDirectObjectShape(t *testing.T) {
 	if err := db.Exec(`INSERT INTO manager.vector_tile_cache (tenant_id, task_id) VALUES (?, ?)`, 1, task.ID).Error; err != nil {
 		t.Fatalf("create tile cache result: %v", err)
 	}
+	if err := db.Model(&models.TaskDefinition{}).
+		Where("id = ?", task.ID).
+		Updates(map[string]interface{}{
+			"version":        5,
+			"binding_status": models.TaskBindingStatusMissing,
+			"binding_issue":  models.TaskBindingIssueMissingEngine,
+		}).Error; err != nil {
+		t.Fatalf("mark tile cache task binding missing: %v", err)
+	}
 
 	handler := NewTaskProviderHandler(
 		nil,
@@ -156,6 +165,10 @@ func TestTaskProviderTaskDetailUsesDirectObjectShape(t *testing.T) {
 	var resp struct {
 		ID                uint   `json:"id"`
 		TaskType          string `json:"task_type"`
+		Category          string `json:"category"`
+		Version           uint   `json:"version"`
+		BindingStatus     string `json:"binding_status"`
+		BindingIssue      string `json:"binding_issue"`
 		Status            string `json:"status"`
 		Data              any    `json:"data"`
 		HasCurrentResult  bool   `json:"has_current_result"`
@@ -168,6 +181,10 @@ func TestTaskProviderTaskDetailUsesDirectObjectShape(t *testing.T) {
 	}
 	if resp.ID != task.ID || resp.TaskType != commonExecution.TaskTypeVectorTileCacheGeneration {
 		t.Fatalf("response = %#v, want direct tile cache task object; body=%s", resp, w.Body.String())
+	}
+	if resp.Category != models.TaskCategoryManagedQuickView || resp.Version != 5 ||
+		resp.BindingStatus != models.TaskBindingStatusMissing || resp.BindingIssue != models.TaskBindingIssueMissingEngine {
+		t.Fatalf("task control fields = %#v, want current version and binding state; body=%s", resp, w.Body.String())
 	}
 	if resp.Status != "" || resp.Data != nil {
 		t.Fatalf("response wraps standard task detail, status=%q data=%#v body=%s", resp.Status, resp.Data, w.Body.String())

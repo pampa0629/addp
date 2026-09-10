@@ -36,6 +36,7 @@ type DocumentCandidateFamilyDecisionCount struct {
 var (
 	ErrDocumentPublicationHistory            = errors.New("document publication history exists")
 	ErrDocumentCandidateFormalizationHistory = errors.New("document candidate formalization history exists")
+	ErrCandidateFamilyDecisionRequired       = errors.New("document candidate family decision required")
 	ErrCandidateFamilyDecisionInvalid        = errors.New("document candidate family decision invalid")
 )
 
@@ -772,10 +773,26 @@ func uniqueStrings(values []string) []string {
 func (r *DocumentRepository) UpdateCandidateStatus(candidateID, tenantID, userID, expectedVersion int64, status string) (*models.DocumentExtractionCandidate, error) {
 	var candidate models.DocumentExtractionCandidate
 	err := wrapDBError(r.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Table("standard.document_extraction_candidates AS candidate").Select("candidate.*").
+		context, err := lockDocumentCandidateContext(tx, candidateID, tenantID)
+		if err != nil {
+			return err
+		}
+		candidate = context.Candidate
+
+		var familyCandidates []models.DocumentExtractionCandidate
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Table("standard.document_extraction_candidates AS candidate").Select("candidate.*").
 			Joins("JOIN standard.document_extractions extraction ON extraction.id = candidate.extraction_id").
-			Where("candidate.id = ? AND extraction.tenant_id = ?", candidateID, tenantID).First(&candidate).Error; err != nil {
-			return commonrepo.WrapDBError(err)
+			Joins("JOIN standard.document_revisions revision ON revision.id = extraction.document_revision_id").
+			Where("extraction.tenant_id = ? AND revision.document_id = ? AND candidate.candidate_type = ? AND candidate.code = ?", tenantID, context.Document.ID, candidate.CandidateType, candidate.Code).
+			Order("candidate.id ASC").Find(&familyCandidates).Error; err != nil {
+			return err
+		}
+		fingerprints := make(map[string]struct{}, len(familyCandidates))
+		for _, value := range familyCandidates {
+			fingerprints[candidateutil.SemanticFingerprint(value)] = struct{}{}
+			if len(fingerprints) > 1 {
+				return ErrCandidateFamilyDecisionRequired
+			}
 		}
 		if candidate.Version != expectedVersion {
 			return ErrVersionConflict

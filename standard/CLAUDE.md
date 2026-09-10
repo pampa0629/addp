@@ -310,11 +310,11 @@ standard/
 - `domain` 范围文档提炼时，Standard 必须按 `owner_domain_id` 读取当前租户权威业务域编码并作为 `code_namespace` 传给 Copilot；业务域编码必须符合小写 `snake_case`，新候选的 `code` 以及枚举引用的 `code_set_code` 必须属于 `<code_namespace>_` 前缀。`tenant_common` 与 `platform` 文档不附加领域前缀。这是候选生成约束，不是正式标准稳定编码的业务域前缀约束。Standard 不自动转换不合规业务域编码，也不从文档名称猜测命名空间。
 - Standard 同时从该文档稳定身份的全部历史提炼中构造最多 200 条 `known_candidates`，每条只包含 `candidate_type + code + name + definition`。仅编码符合当前命名空间的历史候选可以进入提示，按类型与编码去重，并依次优先选择已正式化、已保留、待裁决、已驳回候选中的最近出现内容；该读取使用轻量身份投影，不加载证据原文或完整候选载荷。Copilot 对同一概念必须优先复用已知编码。该列表只是生成约束上下文，不是新的持久化事实，也不得用于模型相似度合并。Copilot 在返回前校验命名空间，Standard 在持久化边界再次校验；任一候选越界时整批拒绝，禁止静默丢弃越界项。
 - Copilot 与 Standard 共用唯一候选数据类型词汇。数据元候选的 `data_type` 只允许 `string|int|bigint|float|decimal|date|datetime|bool|json|text`，码值集候选只允许 `string|int|bigint`，术语和指标候选必须为 `null`；`identifier` 属于业务语义，`numeric`、`date_or_datetime` 等模糊上位提示不是合法标准数据类型。数据元候选的 `value_domain_kind` 只允许 `unrestricted|range|enumeration`，其他候选必须为 `null`。枚举数据元候选必须通过 `code_set_code` 引用同一提炼批次中唯一的码值集候选；非枚举数据元以及其他候选不得携带该字段。候选引用只使用稳定编码，正式数据元修订仍由 Standard 按生效时点选择并冻结具体 `code_set_revision_id`。Copilot 输出 Schema 先约束，Standard 在持久化前再次校验字段适用性和批次内引用闭包；历史提炼批次保持不可变，契约修正后通过新提炼批次表达新结果。
-- 候选状态固定为 `pending`、`retained`、`rejected`；处置使用候选自己的并发 `version`，`retained` 不会自动创建或发布正式标准。
+- 候选状态固定为 `pending`、`retained`、`rejected`；处置使用候选自己的并发 `version`，`retained` 不会自动创建或发布正式标准。单项处置只适用于当前文档、候选类型与稳定编码下恰好一个语义变体的候选族；一旦存在两个及以上语义变体，单项接口必须返回 409 `candidate_family_decision_required`，只能通过候选族胜出裁决完成处置，禁止绕过理由审计或留下同族互相矛盾的状态。
 - 文档候选治理页面只消费跨提炼批次的候选聚合视图，不再逐批平铺原始候选。聚合项以 `candidate_type + code + normalized(name, definition, payload)` 的 SHA-256 指纹确定；字符串折叠空白，维度去重排序，码值项按编码、名称、定义排序。同类型、同编码但规范化内容不同的候选必须分组展示，禁止用模型相似度自动合并。
 - 聚合视图不持久化，也不是新的聚合根。每个聚合项返回一个代表候选和按时间倒序排列的全部出现记录；出现记录保留候选 ID、提炼批次、文档修订、状态、版本、证据和正式化事实。存在正式化事实时聚合状态为 `formalized`；否则由最近一次已人工裁决的同义候选决定 `retained|rejected`；从未裁决时为 `pending`。人工动作只作用于代表候选，不批量回写其他原始候选。
 - 候选治理公开读取在聚合项之上按 `candidate_type + code` 形成候选族。候选族只是可折叠的只读组织投影，不合并语义变体、不持久化，也不改变单个候选的身份；族内每个聚合项继续以自己的语义指纹和代表候选为裁决成员。分页必须在候选族形成后执行，禁止前端对单页聚合项做不完整分组。
-- 候选族胜出裁决使用显式成员原子批量命令，不把候选族升级为聚合根。请求必须列出同一文档、同一类型和编码、语义指纹互异的当前全部代表候选 `candidate_id + version`，成员数为 2–100，指定其中唯一一个胜出候选，并填写去除首尾空白后 1–1000 字符的人工理由；Standard 先锁定来源文档，再按候选 ID 稳定加锁，在同一事务中把胜出候选置为 `retained`、其余置为 `rejected`、递增各自版本并追加一条 `document_candidate_family_decisions` 不可变治理事件。事件冻结候选类型、编码、胜出候选、理由、操作者、时间和全部成员的候选 ID、语义指纹、名称、裁决后版本及结果；后续重新裁决只追加新事件，不覆盖既有事件。任一当前变体缺失、成员跨族或重复、候选已正式化、理由无效或版本冲突时整批回滚，不能留下事件；原始内容、提炼批次与证据不改写，后续新提炼仍可产生新的待裁决变体。候选族读取同时返回未受筛选影响的 `total_variant_count` 和该族 `decision_count`，前端只有在当前返回完整候选族时才提供胜出裁决入口。裁决历史通过独立分页读取接口按事件 ID 倒序返回，禁止把无界事件历史嵌入候选族列表。
+- 候选族胜出裁决是多语义变体候选族的唯一处置路线，使用显式成员原子批量命令，不把候选族升级为聚合根。请求必须列出同一文档、同一类型和编码、语义指纹互异的当前全部代表候选 `candidate_id + version`，成员数为 2–100，指定其中唯一一个胜出候选，并填写去除首尾空白后 1–1000 字符的人工理由；Standard 先锁定来源文档，再按候选 ID 稳定加锁，在同一事务中把胜出候选置为 `retained`、其余置为 `rejected`、递增各自版本并追加一条 `document_candidate_family_decisions` 不可变治理事件。事件冻结候选类型、编码、胜出候选、理由、操作者、时间和全部成员的候选 ID、语义指纹、名称、裁决后版本及结果；后续重新裁决只追加新事件，不覆盖既有事件。任一当前变体缺失、成员跨族或重复、候选已正式化、理由无效或版本冲突时整批回滚，不能留下事件；原始内容、提炼批次与证据不改写，后续新提炼仍可产生新的待裁决变体。候选族读取同时返回未受筛选影响的 `total_variant_count` 和该族 `decision_count`，前端只有在当前返回完整候选族时才提供胜出裁决入口，并且不得同时提供单项处置入口。裁决历史通过独立分页读取接口按事件 ID 倒序返回，禁止把无界事件历史嵌入候选族列表。
 - `standard.document_candidate_formalizations` 为候选的一对一不可变正式化事实，保存服务器判定的 `created_identity|created_revision|linked_existing`、目标稳定身份/修订及操作者。正式化要求候选为 `retained`，使用候选 `version` 并在同一事务中创建目标草稿或确认既有修订、写入正式化事实、递增候选版本；重复正式化返回 409。正式化后候选继续保持 `retained` 且不再允许重新裁决，避免来源事实与目标修订失配。
 - 只要文档已有候选正式化事实，即使文档和目标标准都尚未发布，也不得删除来源文档；目标标准后续删除不会删除该事实，正式化记录保留目标编码、稳定身份 ID、修订 ID 和当时状态作为历史快照。
 - 正式化不接受客户端指定目标或动作。无同编码身份时创建 R1 草稿；同编码同范围且无工作修订时以最新修订为基线叠加候选明确字段创建新草稿；与现有 `draft|in_review|published` 修订内容一致时只关联该修订。`scope_conflict`、已有不同内容工作修订、无法唯一解析的计量单位或枚举码值集当前生效已发布修订均返回明确冲突。新指标候选必须由人工在请求中选择 `metric_type`；其他候选不得携带该字段。
@@ -432,7 +432,7 @@ POST /api/v1/standard/documents/:id/revisions/:revision_id/extractions # Copilot
 GET /api/v1/standard/documents/:id/extraction-candidate-families # 按同类型同编码组织跨批次候选语义变体、出现记录与动态 Standard 比对
 GET /api/v1/standard/documents/:id/extraction-candidate-family-decisions # 按候选类型和编码分页读取追加式裁决历史
 POST /api/v1/standard/documents/:id/extraction-candidates/batch_decide # 显式列出同族代表候选并原子选择一个胜出变体
-PUT /api/v1/standard/document-extraction-candidates/:candidate_id # retained/rejected 人工处置
+PUT /api/v1/standard/document-extraction-candidates/:candidate_id # 仅单语义变体候选族的 retained/rejected 人工处置
 POST /api/v1/standard/document-extraction-candidates/:candidate_id/formalization # retained 候选创建受控草稿或关联一致修订
 GET/PUT /api/v1/standard/documents/:id/mappings # 多维关联（数据元/术语/指标）
 ```

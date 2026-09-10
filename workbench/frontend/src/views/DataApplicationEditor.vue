@@ -9,7 +9,7 @@
         <el-button v-if="application.publication_status === 'unpublished'" :disabled="dirty" :loading="publishing" type="success" @click="publish">{{ t('workbench.publish') }}</el-button>
         <el-button v-else-if="application.publication_status === 'offline' || application.has_unpublished_changes" :disabled="dirty" :loading="publishing" type="success" @click="publish">{{ t('workbench.publishRevision') }}</el-button>
         <el-button v-if="application.publication_status === 'published'" :loading="offlining" @click="offline">{{ t('workbench.offline') }}</el-button>
-        <el-button v-if="application.publication_status === 'published'" @click="openRuntime">{{ t('workbench.run') }}</el-button>
+        <el-button v-if="application.publication_status === 'published'" @click="openDelivery">{{ t('workbench.deliver') }}</el-button>
       </div>
     </div>
 
@@ -176,6 +176,7 @@
     </el-card>
     <ApplicationComponentEditor v-model="componentEditorVisible" :component="editingComponent" @save="saveComponent" />
     <SpatialExplorationWizard v-model="spatialWizardVisible" @apply="applySpatialExploration" />
+    <DataApplicationDeliveryDialog :key="deliveryDialogContext" ref="deliveryDialog" />
     <el-dialog v-model="draftPreviewVisible" class="draft-preview-dialog" fullscreen destroy-on-close :title="t('workbench.draftPreviewTitle')">
       <DataApplicationCanvas v-if="draftPreviewApplication" :application="draftPreviewApplication" mode="draft-preview" embedded />
     </el-dialog>
@@ -193,10 +194,11 @@ import { getConsumerDescriptor } from '../api/services'
 import { applicationParameterPresetsValid, buildDataApplicationPreview, commitLatestDataApplicationRequest, confirmDataApplicationAction, createApplicationParameterPreset, dataApplicationEditorMutationContext, dataApplicationEditorRouteContext, normalizedApplicationSnapshot, synchronizeApplicationParameterPresets } from '../utils/dataApplicationDraft.mjs'
 import { APPLICATION_PRESENTATION_SECTIONS, canHideApplicationParameters } from '../utils/dataApplicationRuntime.mjs'
 import { affectedSelectionComponentIDs, compatibleSelectionParameters as compatibleSelectionParameterList, selectionSourceFields } from '../utils/dataApplicationSelection.mjs'
-import { navigateWorkbenchRoute, openDataApplicationRuntime } from '../utils/moduleNavigation'
+import { navigateWorkbenchRoute } from '../utils/moduleNavigation'
 import ApplicationComponentEditor from '../components/ApplicationComponentEditor.vue'
 import ApplicationParameterValueInput from '../components/ApplicationParameterValueInput.vue'
 import DataApplicationCanvas from '../components/DataApplicationCanvas.vue'
+import DataApplicationDeliveryDialog from '../components/DataApplicationDeliveryDialog.vue'
 import SpatialExplorationWizard from '../components/SpatialExplorationWizard.vue'
 
 const { t } = useI18n()
@@ -204,6 +206,7 @@ const route = useRoute()
 const rawRouter = useRouter()
 const router = { push: (location) => navigateWorkbenchRoute(rawRouter, location) }
 const isCreate = computed(() => route.name === 'DataApplicationCreate')
+const deliveryDialogContext = computed(() => dataApplicationEditorRouteContext(route.name, route.params.id))
 const loading = ref(false)
 const saving = ref(false)
 const publishing = ref(false)
@@ -213,6 +216,7 @@ const componentEditorVisible = ref(false)
 const spatialWizardVisible = ref(false)
 const draftPreviewVisible = ref(false)
 const draftPreviewApplication = ref(null)
+const deliveryDialog = ref(null)
 const editingComponent = ref(null)
 const application = reactive(emptyApplication())
 const descriptorByComponent = reactive({})
@@ -528,6 +532,7 @@ async function publish() {
     commitEditorMutation(request, action, () => {
       assignApplication(data)
       ElMessage.success(t('workbench.published'))
+      deliveryDialog.value?.open(data.id, data.current_revision_number)
     })
   } catch (error) {
     commitEditorMutation(request, action, () => {
@@ -558,8 +563,8 @@ async function offline() {
   }
 }
 
-function openRuntime() {
-  return openDataApplicationRuntime(application.id)
+function openDelivery() {
+  return deliveryDialog.value?.open(application.id, application.current_revision_number)
 }
 
 function openAddComponent() {

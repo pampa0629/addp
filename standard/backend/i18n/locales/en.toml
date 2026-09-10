@@ -163,6 +163,9 @@ other = "The owning domain code is not a valid candidate namespace; use lowercas
 [standard.document.candidate_family_query_invalid]
 other = "Candidate family filters or pagination parameters are invalid"
 
+[standard.document.candidate_family_decision_required]
+other = "This candidate belongs to a multi-variant family; use the candidate family winner decision and provide a reason"
+
 [standard.document.candidate_family_decision_invalid]
 other = "A candidate family decision requires a one to one thousand character reason, all current two to one hundred distinct semantic variants from one family, and one winner"
 

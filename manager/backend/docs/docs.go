@@ -9245,6 +9245,15 @@ const docTemplate = `{
         "internal_api.TaskProviderTaskDetailResponse": {
             "type": "object",
             "properties": {
+                "binding_issue": {
+                    "type": "string"
+                },
+                "binding_status": {
+                    "type": "string"
+                },
+                "category": {
+                    "type": "string"
+                },
                 "execution_contract": {
                     "$ref": "#/definitions/taskprovider.ExecutionContract"
                 },
@@ -9257,10 +9266,16 @@ const docTemplate = `{
                 "name": {
                     "type": "string"
                 },
+                "semantic_key": {
+                    "type": "string"
+                },
                 "task_type": {
                     "type": "string"
                 },
                 "tenant_id": {
+                    "type": "integer"
+                },
+                "version": {
                     "type": "integer"
                 }
             }

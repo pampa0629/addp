@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 	"unicode/utf8"
 )
@@ -106,7 +107,10 @@ func protectValue(value any, decision Decision) (valueResult, error) {
 		if !ok {
 			return invalidValueResult(decision)
 		}
-		masked, err := maskKeepPrefixSuffix(text, decision.Parameters)
+		if decision.Algorithm != AlgorithmKeepPrefixSuffixV2 {
+			return valueResult{}, errors.New("unsupported structured value masking algorithm")
+		}
+		masked, err := maskKeepPrefixSuffixV2(text, decision.Parameters)
 		if err != nil {
 			return invalidValueResult(decision)
 		}
@@ -134,8 +138,8 @@ func invalidEffect(decision Decision) string {
 	return EffectDeny
 }
 
-func maskKeepPrefixSuffix(value string, parameters map[string]any) (string, error) {
-	if err := validateKeepPrefixSuffixParameters(parameters); err != nil {
+func maskKeepPrefixSuffixV2(value string, parameters map[string]any) (string, error) {
+	if err := validateKeepPrefixSuffixV2Parameters(parameters); err != nil {
 		return "", err
 	}
 	prefix, err := integerParameter(parameters, "prefix_runes")
@@ -146,28 +150,39 @@ func maskKeepPrefixSuffix(value string, parameters map[string]any) (string, erro
 	if err != nil {
 		return "", err
 	}
-	exact, err := integerParameter(parameters, "exact_runes")
-	if err != nil {
-		return "", err
+	maskRune := parameters["mask_rune"].(string)
+	if !utf8.ValidString(value) {
+		return "", errors.New("value is not valid UTF-8")
 	}
-	replacement := parameters["replacement"].(string)
 	runes := []rune(value)
-	if len(runes) != exact || prefix+suffix >= len(runes) {
-		return "", errors.New("value length does not match masking parameters")
+	if prefix > len(runes) || suffix > len(runes)-prefix || prefix+suffix >= len(runes) {
+		return "", errors.New("value is too short for masking parameters")
 	}
-	if parameters["character_class"] == "ascii_digit" {
-		for _, current := range runes {
-			if current < '0' || current > '9' {
-				return "", errors.New("value character class does not match masking parameters")
-			}
-		}
-	}
-	return string(runes[:prefix]) + replacement + string(runes[len(runes)-suffix:]), nil
+	return string(runes[:prefix]) + strings.Repeat(maskRune, len(runes)-prefix-suffix) + string(runes[len(runes)-suffix:]), nil
 }
 
-func validateKeepPrefixSuffixParameters(parameters map[string]any) error {
-	if len(parameters) != 5 {
+func validateKeepPrefixSuffixV2Parameters(parameters map[string]any) error {
+	if len(parameters) != 3 {
 		return errors.New("invalid mask parameters")
+	}
+	prefix, err := integerParameter(parameters, "prefix_runes")
+	if err != nil || prefix < 0 {
+		return errors.New("invalid mask prefix")
+	}
+	suffix, err := integerParameter(parameters, "suffix_runes")
+	if err != nil || suffix < 0 {
+		return errors.New("invalid mask suffix")
+	}
+	maskRune, ok := parameters["mask_rune"].(string)
+	if !ok || !utf8.ValidString(maskRune) || len([]rune(maskRune)) != 1 {
+		return errors.New("invalid mask rune")
+	}
+	return nil
+}
+
+func validatePhoneOccurrencesV1Parameters(parameters map[string]any) error {
+	if len(parameters) != 5 {
+		return errors.New("invalid phone occurrence mask parameters")
 	}
 	prefix, err := integerParameter(parameters, "prefix_runes")
 	if err != nil || prefix < 0 {

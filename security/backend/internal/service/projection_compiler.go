@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/addp/common/dataprotection"
@@ -254,19 +253,19 @@ func resolveProtectionCandidateFromFacts(
 func protectionDecisionFromBaseline(baseline models.ProtectionBaseline) (dataprotection.Decision, error) {
 	switch baseline.Effect {
 	case dataprotection.EffectMask:
-		if baseline.Algorithm != dataprotection.AlgorithmKeepPrefixSuffixV1 || baseline.KeepPrefix < 0 || baseline.KeepSuffix < 0 || baseline.KeepPrefix+baseline.KeepSuffix >= 11 {
-			return dataprotection.Decision{}, errors.New("phone protection baseline is invalid")
+		if baseline.Algorithm != dataprotection.AlgorithmKeepPrefixSuffixV2 || baseline.KeepPrefix < 0 || baseline.KeepSuffix < 0 {
+			return dataprotection.Decision{}, errors.New("structured field protection baseline is invalid")
 		}
 		return dataprotection.Decision{
 			Effect: baseline.Effect, Algorithm: baseline.Algorithm, InvalidValueEffect: baseline.InvalidValueEffect,
-			Parameters: map[string]any{"prefix_runes": baseline.KeepPrefix, "suffix_runes": baseline.KeepSuffix, "replacement": strings.Repeat("*", 11-baseline.KeepPrefix-baseline.KeepSuffix), "exact_runes": 11, "character_class": "ascii_digit"},
+			Parameters: map[string]any{"prefix_runes": baseline.KeepPrefix, "suffix_runes": baseline.KeepSuffix, "mask_rune": "*"},
 		}, nil
 	case dataprotection.EffectSuppress:
 		return dataprotection.Decision{Effect: dataprotection.EffectSuppress, InvalidValueEffect: dataprotection.EffectSuppress}, nil
 	case dataprotection.EffectDeny:
 		return dataprotection.Decision{Effect: dataprotection.EffectDeny, InvalidValueEffect: dataprotection.EffectDeny}, nil
 	default:
-		return dataprotection.Decision{}, errors.New("phone protection baseline is invalid")
+		return dataprotection.Decision{}, errors.New("structured field protection baseline is invalid")
 	}
 }
 

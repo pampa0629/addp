@@ -23,53 +23,21 @@
       <el-pagination v-model:current-page="page" :page-size="20" :total="total" layout="prev, pager, next, total" @current-change="load" />
     </el-card>
 
-    <el-dialog
-      v-model="deliveryVisible"
-      class="addp-dialog"
-      :title="t('workbench.deliveryTitle')"
-      width="min(680px, calc(100vw - 24px))"
-      @opened="focusDeliveryClose"
-      @close="invalidateDeliveryRequest"
-      @closed="clearDelivery"
-    >
-      <div v-loading="deliveryLoading" class="delivery-content">
-        <template v-if="deliveryRuntime">
-          <div class="delivery-header">
-            <strong>{{ deliveryRuntime.name }}</strong>
-            <p>{{ t('workbench.deliveryHint', { revision: deliveryRuntime.revision_number }) }}</p>
-          </div>
-          <div class="delivery-list">
-            <div v-for="item in deliveryItems" :key="item.presetKey || 'default'" class="delivery-item">
-              <div class="delivery-identity">
-                <strong>{{ item.name }}</strong>
-                <code v-if="item.presetKey">{{ item.presetKey }}</code>
-              </div>
-              <div class="delivery-actions">
-                <el-button @click="runDelivery(item)">{{ t('workbench.run') }}</el-button>
-                <el-button type="primary" @click="copyDeliveryLink(item)">{{ t('workbench.copyLink') }}</el-button>
-              </div>
-            </div>
-          </div>
-        </template>
-      </div>
-      <template #footer>
-        <el-button ref="deliveryCloseButton" @click="deliveryVisible = false">{{ t('common.close') }}</el-button>
-      </template>
-    </el-dialog>
+    <DataApplicationDeliveryDialog ref="deliveryDialog" />
   </div>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { createLatestRequestCoordinator } from '@common-ui'
-import { deleteDataApplication, getDataApplicationRuntime, listDataApplications } from '../api/dataApplications'
-import { dataApplicationDeliveryContext, dataApplicationDeliveryItems } from '../utils/dataApplicationDelivery.mjs'
+import { deleteDataApplication, listDataApplications } from '../api/dataApplications'
 import { commitLatestDataApplicationRequest, confirmDataApplicationAction, dataApplicationDeletionContext, dataApplicationListPageContext } from '../utils/dataApplicationDraft.mjs'
-import { dataApplicationRuntimeURL, navigateWorkbenchRoute, openDataApplicationRuntime } from '../utils/moduleNavigation'
+import { navigateWorkbenchRoute } from '../utils/moduleNavigation'
+import DataApplicationDeliveryDialog from '../components/DataApplicationDeliveryDialog.vue'
 
 const { t } = useI18n()
 const rawRouter = useRouter()
@@ -79,15 +47,9 @@ const total = ref(0)
 const page = ref(1)
 const loading = ref(false)
 const deletingID = ref('')
-const deliveryVisible = ref(false)
-const deliveryLoading = ref(false)
-const deliveryCloseButton = ref(null)
-const deliveryTarget = ref(null)
-const deliveryRuntime = ref(null)
+const deliveryDialog = ref(null)
 const listLoadRequests = createLatestRequestCoordinator()
 const listDeletionRequests = createLatestRequestCoordinator()
-const deliveryRequests = createLatestRequestCoordinator()
-const deliveryItems = computed(() => dataApplicationDeliveryItems(deliveryRuntime.value, t('workbench.defaultScenario')))
 
 function statusType(status) {
   if (status === 'published') return 'success'
@@ -163,59 +125,10 @@ function commitListDeletion(request, targetContext, commit) {
 function invalidateListRequests() {
   listLoadRequests.invalidate()
   listDeletionRequests.invalidate()
-  deliveryRequests.invalidate()
 }
 
-async function openDelivery(row) {
-  const target = { id: row.id, revisionNumber: row.current_revision_number }
-  const targetContext = dataApplicationDeliveryContext(target.id, target.revisionNumber)
-  const request = deliveryRequests.begin(targetContext)
-  deliveryTarget.value = target
-  deliveryRuntime.value = null
-  deliveryVisible.value = true
-  deliveryLoading.value = true
-  try {
-    const { data } = await getDataApplicationRuntime(target.id)
-    commitDelivery(request, targetContext, () => { deliveryRuntime.value = data })
-  } catch (error) {
-    commitDelivery(request, targetContext, () => {
-      deliveryVisible.value = false
-      ElMessage.error(error?.response?.data?.error || t('workbench.loadDeliveryFailed'))
-    })
-  } finally {
-    commitDelivery(request, targetContext, () => { deliveryLoading.value = false })
-  }
-}
-
-function commitDelivery(request, targetContext, commit) {
-  return commitLatestDataApplicationRequest(deliveryRequests, request, targetContext, commit)
-}
-
-function runDelivery(item) {
-  return openDataApplicationRuntime(deliveryTarget.value.id, item.presetKey)
-}
-
-async function copyDeliveryLink(item) {
-  try {
-    await navigator.clipboard.writeText(dataApplicationRuntimeURL(deliveryTarget.value.id, item.presetKey))
-    ElMessage.success(t('workbench.linkCopied'))
-  } catch {
-    ElMessage.error(t('workbench.linkCopyFailed'))
-  }
-}
-
-function invalidateDeliveryRequest() {
-  deliveryRequests.invalidate()
-  deliveryLoading.value = false
-}
-
-function focusDeliveryClose() {
-  deliveryCloseButton.value?.$el?.focus()
-}
-
-function clearDelivery() {
-  deliveryTarget.value = null
-  deliveryRuntime.value = null
+function openDelivery(row) {
+  return deliveryDialog.value?.open(row.id, row.current_revision_number)
 }
 
 onMounted(load)
@@ -223,5 +136,5 @@ onBeforeUnmount(invalidateListRequests)
 </script>
 
 <style scoped>
-.page{display:flex;flex-direction:column;gap:16px}.page-header{display:flex;justify-content:space-between;align-items:center}.page-header h2{margin:0;color:var(--addp-text-primary)}.page-header p{margin:6px 0 0;color:var(--addp-text-secondary)}.el-pagination{margin-top:16px;justify-content:flex-end}.delivery-content{min-height:120px}.delivery-header p{margin:6px 0 0;color:var(--addp-text-secondary)}.delivery-list{display:flex;flex-direction:column;gap:8px;margin-top:16px}.delivery-item{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 16px;background:var(--addp-bg-secondary);border:1px solid var(--addp-border-color);border-radius:8px}.delivery-identity{display:flex;align-items:center;gap:8px;min-width:0}.delivery-identity strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.delivery-identity code{color:var(--addp-text-secondary)}.delivery-actions{display:flex;flex-shrink:0;gap:8px}@media (max-width:768px){.page-header,.delivery-item{align-items:stretch;flex-direction:column}.delivery-actions{justify-content:flex-end}}
+.page{display:flex;flex-direction:column;gap:16px}.page-header{display:flex;justify-content:space-between;align-items:center}.page-header h2{margin:0;color:var(--addp-text-primary)}.page-header p{margin:6px 0 0;color:var(--addp-text-secondary)}.el-pagination{margin-top:16px;justify-content:flex-end}@media (max-width:768px){.page-header{align-items:stretch;flex-direction:column}}
 </style>

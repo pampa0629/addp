@@ -47,6 +47,10 @@ describe('Security product information architecture', () => {
     expect(baselines).toContain('security.baseline.mappingHint')
     expect(baselines).toContain('security.baseline.effectImpactTitle')
     expect(baselines).toContain('security.baseline.effectImpact.${form.effect}')
+    expect(baselines).toContain("algorithm: mask ? 'addp.mask.keep_prefix_suffix/v2' : ''")
+    expect(baselines).not.toContain('keep_prefix_suffix/v1')
+    expect(baselines).not.toContain('form.keep_prefix + form.keep_suffix >= 11')
+    expect(baselines).not.toContain(':max="10"')
   })
 
   it('uses user-facing names and relation selectors instead of numeric IDs', () => {

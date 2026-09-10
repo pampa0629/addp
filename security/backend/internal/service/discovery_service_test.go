@@ -229,7 +229,7 @@ func TestDiscoveryCreatesValueFreeFindingAndManagerActiveProjection(t *testing.T
 	if _, err := definitions.CreateDetector(models.DetectorRequest{CapabilityKey: models.FindingDetectorPhoneMetadataV2, SensitiveDataTypeID: dataType.ID, ConfidenceThreshold: 0.9}, 7, 11); err != nil {
 		t.Fatal(err)
 	}
-	baseline, err := definitions.CreateBaseline(models.ProtectionBaselineRequest{SensitiveDataTypeID: dataType.ID, SecurityGradeID: grade.ID, Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV1, KeepPrefix: 3, KeepSuffix: 4, InvalidValueEffect: dataprotection.EffectSuppress}, 7, 11)
+	baseline, err := definitions.CreateBaseline(models.ProtectionBaselineRequest{SensitiveDataTypeID: dataType.ID, SecurityGradeID: grade.ID, Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2, KeepPrefix: 3, KeepSuffix: 4, InvalidValueEffect: dataprotection.EffectSuppress}, 7, 11)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -312,7 +312,7 @@ func TestDiscoveryCreatesValueFreeFindingAndManagerActiveProjection(t *testing.T
 	projection := managerChanges.Changes[1].Projection
 	requireManagerProjectionEffects(t, projection, dataprotection.EffectMask)
 	previewRule := managerProjectionRule(t, projection, managerPreviewAction)
-	if previewRule.Component.Key != "userInfo.phone" || previewRule.Decision.Parameters["exact_runes"] != float64(11) && previewRule.Decision.Parameters["exact_runes"] != 11 {
+	if previewRule.Component.Key != "userInfo.phone" || previewRule.Decision.Algorithm != dataprotection.AlgorithmKeepPrefixSuffixV2 || previewRule.Decision.Parameters["mask_rune"] != "*" {
 		t.Fatalf("active projection = %#v", projection)
 	}
 	developChanges, err := enrollments.ListChanges(context.Background(), 7, "develop", "", 20)
@@ -533,7 +533,7 @@ func TestDocumentDiscoveryCreatesSearchIndexProjectionWithoutPersistingSampleTex
 	if _, err := definitions.CreateDetector(models.DetectorRequest{CapabilityKey: models.FindingDetectorPhoneDocumentV1, SensitiveDataTypeID: dataType.ID, ConfidenceThreshold: 0.9}, 7, 11); err != nil {
 		t.Fatal(err)
 	}
-	_, err = definitions.CreateBaseline(models.ProtectionBaselineRequest{SensitiveDataTypeID: dataType.ID, SecurityGradeID: grade.ID, Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV1, KeepPrefix: 3, KeepSuffix: 4, InvalidValueEffect: dataprotection.EffectSuppress}, 7, 11)
+	_, err = definitions.CreateBaseline(models.ProtectionBaselineRequest{SensitiveDataTypeID: dataType.ID, SecurityGradeID: grade.ID, Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2, KeepPrefix: 3, KeepSuffix: 4, InvalidValueEffect: dataprotection.EffectSuppress}, 7, 11)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -647,7 +647,7 @@ func TestDetectorBindingControlsDiscoveryWithoutSensitiveTypeCodeFallback(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := definitions.CreateBaseline(models.ProtectionBaselineRequest{SensitiveDataTypeID: dataType.ID, SecurityGradeID: grade.ID, Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV1, KeepPrefix: 3, KeepSuffix: 4, InvalidValueEffect: dataprotection.EffectSuppress}, 7, 11); err != nil {
+	if _, err := definitions.CreateBaseline(models.ProtectionBaselineRequest{SensitiveDataTypeID: dataType.ID, SecurityGradeID: grade.ID, Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2, KeepPrefix: 3, KeepSuffix: 4, InvalidValueEffect: dataprotection.EffectSuppress}, 7, 11); err != nil {
 		t.Fatal(err)
 	}
 

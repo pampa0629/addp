@@ -210,8 +210,8 @@ func installActiveTransferProjectionForComponent(t *testing.T, store *projection
 		SchemaVersion: dataprotection.ProjectionSchemaV2, ProjectionID: "projection-transfer-active", Revision: "00000000000000000001",
 		ConsumerOwner: "transfer", State: dataprotection.ProjectionStateActive, Target: target, SourceSnapshotHash: snapshot,
 		Rules: []dataprotection.Rule{{Action: exportAction, Component: component, Decision: dataprotection.Decision{
-			Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV1,
-			Parameters:         map[string]interface{}{"prefix_runes": 3, "suffix_runes": 4, "replacement": "****", "exact_runes": 11, "character_class": "ascii_digit"},
+			Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2,
+			Parameters:         map[string]interface{}{"prefix_runes": 3, "suffix_runes": 4, "mask_rune": "*"},
 			InvalidValueEffect: dataprotection.EffectSuppress,
 		}}}, ValidFrom: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour),
 	}

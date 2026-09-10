@@ -3908,6 +3908,9 @@ paths:
     put:
       consumes:
       - application/json
+      description: 仅当候选所在文档、候选类型与编码下恰好一个语义变体时执行单项保留或驳回；多语义变体候选族必须使用原子胜出裁决 | Retains
+        or rejects one candidate only when its document, type, and code identify exactly
+        one semantic variant; multi-variant families require the atomic winner decision
       parameters:
       - description: 裁决状态及并发版本 | Decision and concurrency version
         in: body
@@ -3923,7 +3926,9 @@ paths:
           schema:
             $ref: '#/definitions/github_com_addp_standard_internal_models.DocumentExtractionCandidate'
         "409":
-          description: Conflict
+          description: 多语义变体候选族必须使用胜出裁决，error_code=candidate_family_decision_required；或候选已正式化、并发版本冲突
+            | Multi-variant family requires winner decision, error_code=candidate_family_decision_required;
+            or candidate already formalized or version conflict
           schema:
             additionalProperties:
               type: string

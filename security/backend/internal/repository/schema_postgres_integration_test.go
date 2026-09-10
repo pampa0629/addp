@@ -42,7 +42,13 @@ func TestSecurityMigrateAgainstPostgres(t *testing.T) {
 		Rules: []legacyProjectionRuleV1{{
 			Action:    "preview",
 			Component: dataprotection.Component{Key: "phone", Path: []dataprotection.PathSegment{{Name: "phone", Container: "scalar"}}, ValueType: "string", SchemaFingerprint: "sha256:postgres-migration-schema"},
-			Decision:  legacyProjectionDecisionV1{Effect: dataprotection.EffectSuppress, InvalidValueEffect: dataprotection.EffectSuppress},
+			Decision: legacyProjectionDecisionV1{
+				Effect: dataprotection.EffectMask, Algorithm: legacyKeepPrefixSuffixAlgorithmV1,
+				Parameters: map[string]any{
+					"prefix_runes": 3, "suffix_runes": 4, "replacement": "****", "exact_runes": 11, "character_class": "ascii_digit",
+				},
+				InvalidValueEffect: dataprotection.EffectSuppress,
+			},
 		}},
 		ValidFrom: now.Add(-time.Hour), ExpiresAt: now.Add(time.Hour),
 	})
@@ -70,6 +76,10 @@ func TestSecurityMigrateAgainstPostgres(t *testing.T) {
 	}
 	if migratedProjection.SchemaVersion != dataprotection.ProjectionSchemaV2 {
 		t.Fatalf("migrated projection schema = %s", migratedProjection.SchemaVersion)
+	}
+	decision := migratedProjection.Rules[0].Decision
+	if decision.Algorithm != dataprotection.AlgorithmKeepPrefixSuffixV2 || decision.Parameters["mask_rune"] != "*" || len(decision.Parameters) != 3 {
+		t.Fatalf("migrated PostgreSQL Security decision = %#v", decision)
 	}
 	for _, table := range []string{
 		"security_classifications", "security_grades", "sensitive_data_types", "detectors", "protection_baselines",

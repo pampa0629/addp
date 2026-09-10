@@ -25,7 +25,7 @@ const (
 	EffectSuppress = "suppress"
 	EffectDeny     = "deny"
 
-	AlgorithmKeepPrefixSuffixV1 = "addp.mask.keep_prefix_suffix/v1"
+	AlgorithmKeepPrefixSuffixV2 = "addp.mask.keep_prefix_suffix/v2"
 )
 
 var (
@@ -196,11 +196,17 @@ func (d Decision) validate() error {
 		return errors.New("invalid protection effect")
 	}
 	if d.Effect == EffectMask {
-		if d.Algorithm != AlgorithmKeepPrefixSuffixV1 && d.Algorithm != AlgorithmPhoneOccurrencesV1 {
+		switch d.Algorithm {
+		case AlgorithmKeepPrefixSuffixV2:
+			if err := validateKeepPrefixSuffixV2Parameters(d.Parameters); err != nil {
+				return err
+			}
+		case AlgorithmPhoneOccurrencesV1:
+			if err := validatePhoneOccurrencesV1Parameters(d.Parameters); err != nil {
+				return err
+			}
+		default:
 			return errors.New("unsupported masking algorithm")
-		}
-		if err := validateKeepPrefixSuffixParameters(d.Parameters); err != nil {
-			return err
 		}
 	}
 	if d.Effect != EffectMask && d.Algorithm != "" {

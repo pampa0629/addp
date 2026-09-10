@@ -2,6 +2,7 @@ package projectionstore
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -222,7 +223,7 @@ func TestStoreRecordsAndRejectsUnknownMigration(t *testing.T) {
 	if err := db.Table(store.migrationsTable).Order("version").Pluck("version", &versions).Error; err != nil {
 		t.Fatal(err)
 	}
-	if len(versions) != 1 || versions[0] != initialProjectionStoreMigration {
+	if len(versions) != 2 || versions[0] != initialProjectionStoreMigration || versions[1] != keepPrefixSuffixV2StoreMigration {
 		t.Fatalf("migration versions = %#v", versions)
 	}
 	if err := db.Exec("INSERT INTO "+store.migrationsTable+" (version) VALUES (?)", "999_unknown").Error; err != nil {
@@ -230,6 +231,136 @@ func TestStoreRecordsAndRejectsUnknownMigration(t *testing.T) {
 	}
 	if _, err := New(db, "manager", "manager", nil); err == nil {
 		t.Fatal("unknown migration version was accepted")
+	}
+}
+
+func TestStoreMigratesPersistedProjectionSchemaAndStructuredMaskToV2(t *testing.T) {
+	db := openProjectionStoreDB(t)
+	store, err := New(db, "manager", "manager", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	target := dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: "sha256:item"}
+	projection := dataprotection.Projection{
+		SchemaVersion: dataprotection.ProjectionSchemaV2, ProjectionID: "projection-legacy-mask", Revision: "00000000000000000001",
+		ConsumerOwner: "manager", State: dataprotection.ProjectionStateActive,
+		Target:             target,
+		SourceSnapshotHash: "sha256:snapshot",
+		Rules: []dataprotection.Rule{{Action: "preview", Component: dataprotection.Component{
+			Key: "phone", Path: []dataprotection.PathSegment{{Name: "phone", Container: "scalar"}}, ValueType: "string", SchemaFingerprint: "sha256:schema",
+		}, Decision: dataprotection.Decision{
+			Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2, InvalidValueEffect: dataprotection.EffectSuppress,
+			Parameters: map[string]any{"prefix_runes": 3, "suffix_runes": 4, "mask_rune": "*"},
+		}}},
+		ValidFrom: now.Add(-time.Hour), ExpiresAt: now.Add(time.Hour),
+	}
+	if err := projection.Seal(); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ApplyBatch(context.Background(), 7, "", &dataprotection.ProjectionChangesResponse{
+		SchemaVersion: dataprotection.ProjectionChangesSchemaV1,
+		Changes:       []dataprotection.ProjectionChange{{ChangeID: "legacy-mask-change", Operation: dataprotection.ChangeOperationUpsert, Projection: &projection}},
+		NextCursor:    "legacy-mask-cursor",
+	}, now); err != nil {
+		t.Fatal(err)
+	}
+	projection.Rules[0].Decision.Algorithm = "addp.mask.keep_prefix_suffix/v1"
+	projection.Rules[0].Decision.Parameters = map[string]any{
+		"prefix_runes": 3, "suffix_runes": 4, "replacement": "****", "exact_runes": 11, "character_class": "ascii_digit",
+	}
+	projection.SchemaVersion = "addp.protection_projection/v1"
+	if err := projection.Seal(); err != nil {
+		t.Fatal(err)
+	}
+	payload, err := json.Marshal(projection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Table(store.entriesTable).Where("tenant_id = ? AND projection_id = ?", 7, projection.ProjectionID).Update("projection_payload", string(payload)).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("DELETE FROM "+store.migrationsTable+" WHERE version = ?", keepPrefixSuffixV2StoreMigration).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	migratedStore, err := New(db, "manager", "manager", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gate := migratedStore.Gate(7, target, now)
+	if !gate.Managed || gate.Err != nil || len(gate.Projections) != 1 {
+		t.Fatalf("migrated gate = %#v", gate)
+	}
+	if gate.Projections[0].SchemaVersion != dataprotection.ProjectionSchemaV2 {
+		t.Fatalf("migrated owner projection schema = %q", gate.Projections[0].SchemaVersion)
+	}
+	decision := gate.Projections[0].Rules[0].Decision
+	if decision.Algorithm != dataprotection.AlgorithmKeepPrefixSuffixV2 || decision.Parameters["mask_rune"] != "*" || len(decision.Parameters) != 3 {
+		t.Fatalf("migrated owner decision = %#v", decision)
+	}
+}
+
+func TestStoreResealsProjectionWhenOnlyPersistedSchemaChanges(t *testing.T) {
+	db := openProjectionStoreDB(t)
+	store, err := New(db, "manager", "manager", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	target := dataprotection.ResourceReference{OwnerModule: "meta", ResourceType: "data_item", ResourceIdentity: "sha256:schema-only-item"}
+	projection := dataprotection.Projection{
+		SchemaVersion: dataprotection.ProjectionSchemaV2, ProjectionID: "projection-legacy-schema-only", Revision: "00000000000000000001",
+		ConsumerOwner: "manager", State: dataprotection.ProjectionStateActive,
+		Target:             target,
+		SourceSnapshotHash: "sha256:schema-only-snapshot",
+		Rules: []dataprotection.Rule{{Action: "preview", Component: dataprotection.Component{
+			Key: "email", Path: []dataprotection.PathSegment{{Name: "email", Container: "scalar"}}, ValueType: "string", SchemaFingerprint: "sha256:schema-only",
+		}, Decision: dataprotection.Decision{
+			Effect: dataprotection.EffectSuppress, InvalidValueEffect: dataprotection.EffectSuppress,
+		}}},
+		ValidFrom: now.Add(-time.Hour), ExpiresAt: now.Add(time.Hour),
+	}
+	if err := projection.Seal(); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ApplyBatch(context.Background(), 7, "", &dataprotection.ProjectionChangesResponse{
+		SchemaVersion: dataprotection.ProjectionChangesSchemaV1,
+		Changes:       []dataprotection.ProjectionChange{{ChangeID: "legacy-schema-only-change", Operation: dataprotection.ChangeOperationUpsert, Projection: &projection}},
+		NextCursor:    "legacy-schema-only-cursor",
+	}, now); err != nil {
+		t.Fatal(err)
+	}
+	projection.SchemaVersion = "addp.protection_projection/v1"
+	if err := projection.Seal(); err != nil {
+		t.Fatal(err)
+	}
+	legacyChecksum := projection.Checksum
+	payload, err := json.Marshal(projection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Table(store.entriesTable).Where("tenant_id = ? AND projection_id = ?", 7, projection.ProjectionID).Update("projection_payload", string(payload)).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("DELETE FROM "+store.migrationsTable+" WHERE version = ?", keepPrefixSuffixV2StoreMigration).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	migratedStore, err := New(db, "manager", "manager", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gate := migratedStore.Gate(7, target, now)
+	if !gate.Managed || gate.Err != nil || len(gate.Projections) != 1 {
+		t.Fatalf("migrated gate = %#v", gate)
+	}
+	migrated := gate.Projections[0]
+	if migrated.SchemaVersion != dataprotection.ProjectionSchemaV2 || migrated.Checksum == legacyChecksum {
+		t.Fatalf("schema-only migrated projection schema=%q checksum=%q", migrated.SchemaVersion, migrated.Checksum)
+	}
+	if err := migrated.Validate(time.Time{}); err != nil {
+		t.Fatalf("validate schema-only migrated projection: %v", err)
 	}
 }
 

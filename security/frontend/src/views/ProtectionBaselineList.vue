@@ -89,10 +89,10 @@
           </el-form-item>
           <div class="form-grid">
             <el-form-item :label="t('security.fields.keep_prefix')">
-              <el-input-number v-model="form.keep_prefix" :min="0" :max="10" controls-position="right" />
+              <el-input-number v-model="form.keep_prefix" :min="0" controls-position="right" />
             </el-form-item>
             <el-form-item :label="t('security.fields.keep_suffix')">
-              <el-input-number v-model="form.keep_suffix" :min="0" :max="10" controls-position="right" />
+              <el-input-number v-model="form.keep_suffix" :min="0" controls-position="right" />
             </el-form-item>
           </div>
           <el-form-item :label="t('security.fields.invalid_value_effect')" required>
@@ -179,8 +179,8 @@ watch(() => form.effect, effect => {
 })
 
 async function save() {
-  if (!form.sensitive_data_type_id || !form.security_grade_id || (form.effect === 'mask' && form.keep_prefix + form.keep_suffix >= 11)) {
-    ElMessage.warning(form.effect === 'mask' && form.keep_prefix + form.keep_suffix >= 11 ? t('security.baseline.invalidMaskLength') : t('security.baseline.required'))
+  if (!form.sensitive_data_type_id || !form.security_grade_id) {
+    ElMessage.warning(t('security.baseline.required'))
     return
   }
   saving.value = true
@@ -190,7 +190,7 @@ async function save() {
       sensitive_data_type_id: Number(form.sensitive_data_type_id),
       security_grade_id: Number(form.security_grade_id),
       effect: form.effect,
-      algorithm: mask ? 'addp.mask.keep_prefix_suffix/v1' : '',
+      algorithm: mask ? 'addp.mask.keep_prefix_suffix/v2' : '',
       keep_prefix: mask ? Number(form.keep_prefix) : 0,
       keep_suffix: mask ? Number(form.keep_suffix) : 0,
       invalid_value_effect: mask ? form.invalid_value_effect : form.effect,

@@ -48,6 +48,12 @@ func TestPostgresDocumentCandidateFamilyDecision(t *testing.T) {
 		t.Fatal(err)
 	}
 	repo := NewDocumentRepository(db)
+	if _, err := repo.UpdateCandidateStatus(candidates[0].ID, tenantID, 9, 1, "retained"); !errors.Is(err, ErrCandidateFamilyDecisionRequired) {
+		t.Fatalf("single decision error = %v, want ErrCandidateFamilyDecisionRequired", err)
+	}
+	assertCandidateDecisionRows(t, db, candidates, []string{"pending", "pending"}, []int64{1, 1})
+	assertCandidateDecisionEventCount(t, db, document.ID, 0)
+
 	staleMembers := []models.DocumentCandidateFamilyDecisionMember{{CandidateID: candidates[0].ID, Version: 1}, {CandidateID: candidates[1].ID, Version: 2}}
 	if _, err := repo.DecideCandidateFamily(document.ID, tenantID, 9, candidates[0].ID, "过期请求不应落库", staleMembers); !errors.Is(err, ErrVersionConflict) {
 		t.Fatalf("stale decision error = %v, want ErrVersionConflict", err)

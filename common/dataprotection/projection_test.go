@@ -21,7 +21,7 @@ func TestProjectionSealAndValidate(t *testing.T) {
 	}
 }
 
-func TestProtectDocumentMasksNestedPhoneAndSuppressesInvalidValue(t *testing.T) {
+func TestProtectDocumentMasksStructuredStringsByActualRuneLength(t *testing.T) {
 	rule := testProjection(time.Now().UTC()).Rules[0]
 	document := map[string]any{"userInfo": map[string]any{"phone": "13661384499"}}
 	if err := ProtectDocument(document, "preview", []Rule{rule}, SubjectReference{}); err != nil {
@@ -40,12 +40,62 @@ func TestProtectDocumentMasksNestedPhoneAndSuppressesInvalidValue(t *testing.T) 
 		t.Fatal("invalid phone was not suppressed")
 	}
 
-	nonDigit := map[string]any{"userInfo": map[string]any{"phone": "136ABCD4499"}}
-	if err := ProtectDocument(nonDigit, "preview", []Rule{rule}, SubjectReference{}); err != nil {
-		t.Fatalf("ProtectDocument(non-digit) error = %v", err)
+	email := map[string]any{"userInfo": map[string]any{"phone": "alice@example.com"}}
+	if err := ProtectDocument(email, "preview", []Rule{rule}, SubjectReference{}); err != nil {
+		t.Fatalf("ProtectDocument(email) error = %v", err)
 	}
-	if _, exists := nonDigit["userInfo"].(map[string]any)["phone"]; exists {
-		t.Fatal("non-ASCII-digit phone was not suppressed")
+	if got := email["userInfo"].(map[string]any)["phone"]; got != "ali**********.com" {
+		t.Fatalf("masked email = %#v, want ali**********.com", got)
+	}
+
+	unicodeValue := map[string]any{"userInfo": map[string]any{"phone": "中间字符测试甲乙"}}
+	if err := ProtectDocument(unicodeValue, "preview", []Rule{rule}, SubjectReference{}); err != nil {
+		t.Fatalf("ProtectDocument(unicode) error = %v", err)
+	}
+	if got := unicodeValue["userInfo"].(map[string]any)["phone"]; got != "中间字*测试甲乙" {
+		t.Fatalf("masked unicode value = %#v, want 中间字*测试甲乙", got)
+	}
+}
+
+func TestProjectionRejectsLegacyStructuredMaskAlgorithm(t *testing.T) {
+	projection := testProjection(time.Now().UTC())
+	projection.Rules[0].Decision.Algorithm = legacyAlgorithmKeepPrefixSuffixV1
+	projection.Rules[0].Decision.Parameters = map[string]any{
+		"prefix_runes": 3, "suffix_runes": 4, "replacement": "****",
+		"exact_runes": 11, "character_class": "ascii_digit",
+	}
+	if err := projection.Seal(); err != nil {
+		t.Fatal(err)
+	}
+	if err := projection.Validate(time.Time{}); err == nil {
+		t.Fatal("Validate() accepted the removed v1 structured mask runtime contract")
+	}
+}
+
+func TestMigrateKeepPrefixSuffixAlgorithmV2ResealsProjection(t *testing.T) {
+	projection := testProjection(time.Now().UTC())
+	projection.Rules[0].Decision.Algorithm = legacyAlgorithmKeepPrefixSuffixV1
+	projection.Rules[0].Decision.Parameters = map[string]any{
+		"prefix_runes": 3, "suffix_runes": 4, "replacement": "****",
+		"exact_runes": 11, "character_class": "ascii_digit",
+	}
+	if err := projection.Seal(); err != nil {
+		t.Fatal(err)
+	}
+	legacyChecksum := projection.Checksum
+	changed, err := MigrateKeepPrefixSuffixAlgorithmV2(&projection)
+	if err != nil || !changed {
+		t.Fatalf("MigrateKeepPrefixSuffixAlgorithmV2() changed=%v error=%v", changed, err)
+	}
+	decision := projection.Rules[0].Decision
+	if decision.Algorithm != AlgorithmKeepPrefixSuffixV2 || decision.Parameters["mask_rune"] != "*" || len(decision.Parameters) != 3 {
+		t.Fatalf("migrated decision = %#v", decision)
+	}
+	if projection.Checksum == legacyChecksum {
+		t.Fatal("migration did not reseal the changed projection")
+	}
+	if err := projection.Validate(time.Time{}); err != nil {
+		t.Fatalf("migrated projection validation: %v", err)
 	}
 }
 
@@ -134,8 +184,8 @@ func testProjection(now time.Time) Projection {
 			},
 			Decision: Decision{
 				Effect:             EffectMask,
-				Algorithm:          AlgorithmKeepPrefixSuffixV1,
-				Parameters:         map[string]any{"prefix_runes": 3, "suffix_runes": 4, "replacement": "****", "exact_runes": 11, "character_class": "ascii_digit"},
+				Algorithm:          AlgorithmKeepPrefixSuffixV2,
+				Parameters:         map[string]any{"prefix_runes": 3, "suffix_runes": 4, "mask_rune": "*"},
 				InvalidValueEffect: EffectSuppress,
 			},
 		}},

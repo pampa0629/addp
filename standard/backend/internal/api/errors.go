@@ -172,6 +172,11 @@ func respondError(c *gin.Context, status int, err error) {
 		message = commoni18n.T(c, sysi18n.MsgDocumentCandidateFamilyQueryInvalid)
 		errorCode = "document_candidate_family_query_invalid"
 		useGenericMessage = false
+	case errors.Is(err, service.ErrCandidateFamilyDecisionRequired):
+		status = http.StatusConflict
+		message = commoni18n.T(c, sysi18n.MsgCandidateFamilyDecisionRequired)
+		errorCode = "candidate_family_decision_required"
+		useGenericMessage = false
 	case errors.Is(err, service.ErrCandidateFamilyDecisionInvalid):
 		status = http.StatusBadRequest
 		message = commoni18n.T(c, sysi18n.MsgCandidateFamilyDecisionInvalid)

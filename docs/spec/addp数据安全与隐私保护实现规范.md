@@ -148,7 +148,7 @@ Detector 执行采用唯一的“能力注册 + 租户绑定”路径：
 
 结构化邮箱首期使用独立的 `addp.detector.email_metadata/v1` 能力。它与手机号字段元数据能力共享“结构化路径末级名称或 `__` 扁平路径语义末级名称”的确定性取值规则，但只在字符串字段的规范化末级名称与 `email`、`emailaddress`、`邮箱`、`电子邮箱` 精确匹配时产生邮箱 Finding。Finding 保留 Meta 发布的真实物理 `component_key`，不读取或验证邮箱业务值；邮箱格式或内容采样不是该能力的后续串行步骤。租户必须把该能力显式绑定到邮箱 SensitiveDataType，并为对应初始保护等级配置 ProtectionBaseline，识别结果才可能形成字段级保护。
 
-结构化身份证件号码首期使用独立的 `addp.detector.identity_document_number_metadata/v1` 能力。它只处理表和集合的字符串字段，并复用相同的确定性语义末级名称规则；规范化名称必须与 `idcard`、`idcardno`、`idcardnumber`、`identitycard`、`identitycardno`、`identitycardnumber`、`identitydocumentno`、`identitydocumentnumber`、`nationalid`、`nationalidno`、`nationalidnumber`、`身份证`、`身份证号`、`身份证号码`、`身份证件号`、`身份证件号码` 之一精确匹配。不得把 `id`、`user_id`、普通 `certificate_no` 或包含额外业务后缀的字段自动判为身份证件号码。该能力只产生不含业务值的 Finding，不校验号码格式、地区码、出生日期、校验位或持有人身份。租户必须显式绑定 SensitiveDataType 并配置 ProtectionBaseline；在身份证件号码专用遮盖算法进入规范前，默认规则只应选用 `suppress` 或 `deny`，不得把当前固定 11 位 ASCII 数字的手机号遮盖参数复用于身份证件号码。
+结构化身份证件号码首期使用独立的 `addp.detector.identity_document_number_metadata/v1` 能力。它只处理表和集合的字符串字段，并复用相同的确定性语义末级名称规则；规范化名称必须与 `idcard`、`idcardno`、`idcardnumber`、`identitycard`、`identitycardno`、`identitycardnumber`、`identitydocumentno`、`identitydocumentnumber`、`nationalid`、`nationalidno`、`nationalidnumber`、`身份证`、`身份证号`、`身份证号码`、`身份证件号`、`身份证件号码` 之一精确匹配。不得把 `id`、`user_id`、普通 `certificate_no` 或包含额外业务后缀的字段自动判为身份证件号码。该能力只产生不含业务值的 Finding，不校验号码格式、地区码、出生日期、校验位或持有人身份。租户必须显式绑定 SensitiveDataType 并配置 ProtectionBaseline；字段值可使用通用 `addp.mask.keep_prefix_suffix/v2` 按实际长度遮盖，号码格式核验仍不属于遮盖算法职责。
 
 1. Security 只为已进入 `enrolling` 的显式 Enrollment 创建发现 execution。
 2. Worker 使用 `addp-security` Tenant Service Access Token 精确读取 owner 已授权技术事实，不订阅 Meta 全量 DataItem 变化。
@@ -292,13 +292,11 @@ tenant + assessment_id + consumer_owner + action + subject_type + subject_id
       },
       "decision": {
         "effect": "mask",
-        "algorithm": "addp.mask.keep_prefix_suffix/v1",
+        "algorithm": "addp.mask.keep_prefix_suffix/v2",
         "parameters": {
           "prefix_runes": 3,
           "suffix_runes": 4,
-          "replacement": "****",
-          "exact_runes": 11,
-          "character_class": "ascii_digit"
+          "mask_rune": "*"
         },
         "invalid_value_effect": "suppress"
       },
@@ -405,7 +403,7 @@ Owner 必须在单个本地数据库事务中：
 
 同一 Owner 存在 Backend、bounded Worker、continuous Worker 等多个数据面进程时，投影表和 cursor 是 owner schema 内的共享持久事实，只允许一个同步进程推进 Security 变化流并发送 Owner 级 acknowledgement。每个实际读取进程必须在一次 execution 开始前比较共享持久 cursor 与本进程内存索引 cursor；不一致时先从 owner 本地数据库原子重载，再执行门禁。这样 acknowledgement 表示投影已经持久安装，而任一稍后执行的数据面进程都不会在缓存尚未刷新时返回明文。该检查只访问 Owner 本地数据库，不形成 Security 请求依赖。
 
-`protection_projection_entries`、`protection_projection_checkpoints` 及其存储迁移元数据是统一的 Owner 本地投影存储契约，必须由 `common/dataprotection/projectionstore` 唯一定义和迁移。各 Owner 只选择自身 schema、固定 `consumer_owner` 和可选的本地变化屏障，不得复制 DDL、增加 Owner 私有列或维护独立迁移路线。存储初始化必须在数据库事务和 schema 级迁移锁内顺序执行公共迁移，记录已应用版本，并在载入投影前校验真实 PostgreSQL 列、类型、可空性、默认值、主键和必要索引。已存在表与当前契约不一致、迁移版本未知或迁移失败时，Owner 必须启动失败而不得进入 Ready。
+`protection_projection_entries`、`protection_projection_checkpoints` 及其存储迁移元数据是统一的 Owner 本地投影存储契约，必须由 `common/dataprotection/projectionstore` 唯一定义和迁移。各 Owner 只选择自身 schema、固定 `consumer_owner` 和可选的本地变化屏障，不得复制 DDL、增加 Owner 私有列或维护独立迁移路线。存储初始化必须在数据库事务和 schema 级迁移锁内顺序执行公共迁移，记录已应用版本，并在载入投影前校验真实 PostgreSQL 列、类型、可空性、默认值、主键和必要索引。已存在表与当前契约不一致、迁移版本未知或迁移失败时，Owner 必须启动失败而不得进入 Ready。存量 payload 的单向收敛必须复用 `common/dataprotection` 唯一转换器，严格按“投影协议结构升级→投影内算法升级→当前契约校验与 checksum 重算”的顺序执行；Security 中央当前投影、历史变化载荷与 Owner 本地投影不得分别实现协议转换。一次性存储迁移不构成运行时兼容，数据面始终只接受当前协议。
 
 新的数据出口 Owner 不得自行建表；必须复用同一 `projectionstore` 构造入口，并通过真实 PostgreSQL 同构门禁证明新 schema 与已有 Owner 一致。平台一致性门禁还必须拒绝 `common/dataprotection/projectionstore` 之外出现这些投影存储表的 Go/SQL 定义，防止新模块复制 DDL 形成第二条迁移路线。数据库存储迁移版本与 `addp.protection_projection/v2` 业务投影协议版本分开管理：前者保证本地持久结构收敛，后者保证 Security 与 Owner 对默认保护和按主体临时授权语义的一致理解。Security 启动迁移必须把存量 v1 记录及历史变化原地单向改写为 v2 并重算 checksum；旧租户级 `allow` 只保留其保护性 fallback，sequence 与 cursor 不变，不保留运行时兼容解析或双协议变化流。
 
@@ -607,9 +605,11 @@ cd common && go run ./authorization/cmd/manifest --coverage-report --repository-
 | `common/dataprotection` | ProtectionProjection 值对象、严格校验、checksum、路径遍历和确定性保护算法 |
 | `common/client/security.go` | Security Bearer-only Client、变化流和 acknowledgement 调用；不实现业务决策 |
 
-`common/dataprotection` 首期只开放 `addp.mask.keep_prefix_suffix/v1`、抑制和拒绝执行语义。算法按 Unicode rune 计数；参数非法、值长度不足或不符合投影已确认值类型时执行 `invalid_value_effect`，不返回原值。
+`common/dataprotection` 的结构化字段遮盖只开放 `addp.mask.keep_prefix_suffix/v2`，并提供抑制和拒绝执行语义。算法按 Unicode rune 计数；参数非法、值长度不足或不符合投影已确认值类型时执行 `invalid_value_effect`，不返回原值。
 
-`addp.mask.keep_prefix_suffix/v1` 不接受宽松或未知参数，固定要求 `prefix_runes`、`suffix_runes`、`replacement`、`exact_runes` 和 `character_class`。首期 `character_class` 只允许 `ascii_digit`；手机号投影固定 `exact_runes=11`。长度不等于 11、包含非 ASCII 数字或类型不是 string 都是 invalid value，必须执行 `invalid_value_effect`。
+`addp.mask.keep_prefix_suffix/v2` 不接受宽松或未知参数，固定要求非负整数 `prefix_runes`、非负整数 `suffix_runes` 和恰好一个 Unicode rune 的 `mask_rune`。输入必须是有效 UTF-8 字符串且实际 rune 数严格大于前后保留数之和；算法保留指定前缀和后缀，并按被隐藏 rune 的实际数量重复 `mask_rune`。算法不限定总长度和字符类别，也不承担手机号、邮箱或证件号码格式校验；类型错误、UTF-8 非法或长度不足都是 invalid value，必须执行 `invalid_value_effect`。
+
+`addp.mask.phone_occurrences/v1` 仍只用于文档正文中的精确 11 位 ASCII 数字片段，继续使用 `exact_runes`、`character_class` 和固定 `replacement`；它不是结构化字段遮盖算法。升级时 Security 中央 Projection、历史变化载荷、ProtectionBaseline 和各 Owner 本地 Projection Store 必须通过一次性迁移统一改写为 v2 并重新计算 checksum；数据面不得同时接受 `keep_prefix_suffix/v1` 和 v2。
 
 ## 十四、Outdoor 手机号首个纵向切片
 

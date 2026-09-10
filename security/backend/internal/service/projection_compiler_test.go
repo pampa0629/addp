@@ -100,6 +100,22 @@ func TestManagerProfileDecisionIsSystemDerivedAndNeverMasks(t *testing.T) {
 	}
 }
 
+func TestProtectionDecisionFromBaselineUsesLengthAdaptiveStructuredMask(t *testing.T) {
+	decision, err := protectionDecisionFromBaseline(models.ProtectionBaseline{
+		Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2,
+		KeepPrefix: 3, KeepSuffix: 4, InvalidValueEffect: dataprotection.EffectSuppress,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decision.Algorithm != dataprotection.AlgorithmKeepPrefixSuffixV2 || decision.Parameters["mask_rune"] != "*" || len(decision.Parameters) != 3 {
+		t.Fatalf("compiled structured mask = %#v", decision)
+	}
+	if _, exists := decision.Parameters["exact_runes"]; exists {
+		t.Fatalf("compiled structured mask retained fixed-length parameters: %#v", decision.Parameters)
+	}
+}
+
 func TestProtectionCandidateDecisionStatesUseTheCompilerSelectionPath(t *testing.T) {
 	finding := models.SensitiveFinding{
 		ID: "finding", SensitiveDataTypeID: 10, DetectorVersion: models.FindingDetectorPhoneMetadataV2,

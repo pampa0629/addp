@@ -1275,7 +1275,7 @@ Workbench 不因为 Phase 5 增强而取得数据建模、SQL、指标定义或�
 - [x] 实现创作者预设配置、运行页预设选择和恢复默认值；
 - [x] 实现只携带 `preset` key 的正式运行链接，不接受任意原始参数值；
 - [x] 验证预设选择、手工修改、Selection Binding、异步失效、不可变 Revision 和权限边界；
-- [x] 实现应用管理页从当前已发布 Revision 按需读取交付入口，并提供默认参数与各预设的运行、复制链接操作。
+- [x] 实现唯一交付组件：应用管理页可按需打开，编辑器发布成功后立即打开，并提供当前已发布 Revision 默认参数与各预设的运行、复制链接操作。
 
 ## 十三、第一阶段明确延期
 
@@ -2213,17 +2213,17 @@ Workbench Backend 对预设数量、key、名称、参数集合完整性和重�
 
 ### 14.49 Data Application 发布后交付入口（2026-09-10）
 
-应用管理页的发布后操作已从直接打开默认运行页收敛为唯一“交付”入口。用户打开交付对话框时，Frontend 按需调用现有 Data Application Runtime API，读取当前不可变已发布 Revision，并列出默认参数入口和该 Revision 中的全部 Application Parameter Preset；每项可直接运行或复制正式 Console 同源链接。未发布草稿中的新增或修改预设不会混入交付列表，下线应用不显示交付入口。
+Data Application 的发布后操作已从直接打开默认运行页收敛为唯一“交付”入口。应用管理页中的已发布记录和编辑器中的已发布应用都复用同一个 `DataApplicationDeliveryDialog`；编辑器发布请求只有在当前路由、当前 mutation generation 仍有效并提交新 Revision 后，才立即打开该交付入口，创作者不必返回列表页。用户打开交付对话框时，Frontend 按需调用现有 Data Application Runtime API，读取当前不可变已发布 Revision，并列出默认参数入口和该 Revision 中的全部 Application Parameter Preset；每项可直接运行或复制正式 Console 同源链接。未发布草稿中的新增或修改预设不会混入交付列表，下线应用不显示交付入口。
 
-本次没有扩展列表 DTO、没有逐行补请求，也没有新增 Backend API、数据库投影或权限。Runtime Snapshot 只在用户显式打开某个应用的交付对话框时读取一次；对话框关闭、切换目标或页面卸载会失效尚未完成的请求，迟到响应不能回写后续会话。正式链接继续只使用 `/data-apps/:application_id` 和可选的单个 `preset` key，不增加第二条运行路由。
+本次没有扩展列表 DTO、没有逐行补请求，也没有新增 Backend API、数据库投影或权限。Runtime Snapshot 只在用户显式打开交付入口，或当前发布操作成功提交后读取一次；对话框关闭、切换目标或组件卸载会失效尚未完成的请求，迟到响应不能回写后续会话。交付界面、Runtime 请求、运行与复制链接副作用都由该组件唯一持有，列表页和编辑器只负责传入应用 ID 与已发布修订号，不再各自维护交付状态或直达运行分支。正式链接继续只使用 `/data-apps/:application_id` 和可选的单个 `preset` key，不增加第二条运行路由。
 
-Frontend 复用既有 Console URL 解析、Runtime API、latest-request coordinator 和 i18n 体系；链接构造与交付项编译由 Workbench 纯函数唯一维护。真实浏览器在长期应用 `c4c0aa6e-70b1-49e8-8ade-8db92f5c6e33` 上读取到发布修订 6，并展示“默认参数”“长沙场景”“株洲场景”三个交付项；株洲复制操作返回成功提示，页面 warning/error 日志为空。标准 `make test-module MODULE=workbench` 门禁已通过，包括 platform T0、Workbench Go、Frontend 85 项测试、production build、Swagger 12 个公开路由覆盖和 `addp_test` PostgreSQL 集成；书稿和差异格式校验也通过。上述应用和预设仍只作为验收证据，不进入产品默认配置。
+Frontend 复用既有 Console URL 解析、Runtime API、latest-request coordinator 和 i18n 体系；链接构造与交付项编译由 Workbench 纯函数唯一维护。源码契约测试同时锁定交付组件唯一所有权、列表与编辑器只依赖组件公开 `open` 方法，以及发布成功提交后才打开交付入口。真实浏览器分别从长期应用 `c4c0aa6e-70b1-49e8-8ade-8db92f5c6e33` 的编辑器和应用管理页打开同一交付组件，两处均读取到发布修订 6，并展示“默认参数”“长沙场景”“株洲场景”三个交付项；关闭按钮获得键盘焦点，页面 warning/error 日志为空。为避免产生无意义的 Revision 7，本轮没有再次发布既有应用，发布后即时打开行为由 mutation 提交点的确定性契约测试覆盖。标准 `make test-module MODULE=workbench` 门禁已通过，包括 platform T0、Workbench Go、Frontend 86 项测试、production build、Swagger 12 个公开路由覆盖和 `addp_test` PostgreSQL 集成；书稿和差异格式校验也通过。上述应用和预设仍只作为验收证据，不进入产品默认配置。
 
 ## 十五、概念设计状态
 
 当前没有待确认的 Phase 0 概念问题。Phase 5 的 Selection Binding 同页联动、`desktop | wallboard` 展示模式、浏览器会话级全屏、Application Refresh Policy 和 Application Presentation Sections 已完成设计、实现、标准模块门禁与真实浏览器验收；Data Application 资产运营指标的事实源、模块归属以及 Asset 自有 `application` / 具体 Asset 运营分组也已完成运行态复核。外部 BI 的 owner 边界、消费契约、用户委托 OAuth 单一路线和 System 外部 OAuth Client 注册治理已经完成；首个真实 BI 验收载体仍为 Power Query 自定义 Connector 与 Power BI Desktop Import，但因当前缺少 Windows 宿主而暂缓。`common-python` 的产品无关 Service Consumer SDK、离线门禁及真实普通表、空间表和 Outdoor 多服务只读运行验收均已完成；它不替代 callback state、持久外部 Client 生命周期和真实 BI 产品端到端证据，因此正式 BI 接入指南继续保持未完成。
 
-14.19 的 Data Application 直接创作收口、Outdoor 双服务真实验收、14.20 的 Business MySQL 本地异构验收，以及 14.21–14.23 的 Phase 6 场景化组合、空间探索创作向导和保存前整页预览均已完成。验收数据只作运行证据，没有进入 Workbench 领域模型、生产代码或默认配置。14.46 的通用状态呈现契约、编辑器、共享 renderer、本地门禁，以及保存、重新加载、不可变 Revision 5 发布和 Value、Chart、Map、Table 四类 renderer 的正式运行闭环均已完成。14.48 的 Application Parameter Preset 已完成概念、不可变快照、强校验、创作配置、运行选择、只含 preset key 的正式链接及真实浏览器闭环；14.49 又完成从当前不可变已发布 Revision 按需生成管理页交付入口，Phase 7 当前确认范围已经收口。真实数据量没有超过有界 GeoJSON 上限前不启动 Tile / OGC Features，也不继续堆叠 renderer。
+14.19 的 Data Application 直接创作收口、Outdoor 双服务真实验收、14.20 的 Business MySQL 本地异构验收，以及 14.21–14.23 的 Phase 6 场景化组合、空间探索创作向导和保存前整页预览均已完成。验收数据只作运行证据，没有进入 Workbench 领域模型、生产代码或默认配置。14.46 的通用状态呈现契约、编辑器、共享 renderer、本地门禁，以及保存、重新加载、不可变 Revision 5 发布和 Value、Chart、Map、Table 四类 renderer 的正式运行闭环均已完成。14.48 的 Application Parameter Preset 已完成概念、不可变快照、强校验、创作配置、运行选择、只含 preset key 的正式链接及真实浏览器闭环；14.49 又完成当前不可变已发布 Revision 的唯一交付组件、管理页入口和编辑器发布后即时交付闭环，Phase 7 当前确认范围已经收口。真实数据量没有超过有界 GeoJSON 上限前不启动 Tile / OGC Features，也不继续堆叠 renderer。
 
 14.24 的历史契约清理已经通过用户确认完成；Outdoor 长期应用已显式重绑当前 Service 24 契约并发布 Revision 3，Revision 2 保持不可变。14.26–14.27 的通用 Service Consumer SDK、公开导出、单元测试、README、发布门禁和真实运行验收已经完成。14.28 已在 MySQL Engine Provider 内补齐受限、精确、失败关闭的 QueryReadSet 与直接列 QueryOutputLineage，并完成 Business MySQL Service、Python SDK、契约漂移阻断、显式重绑、不可变 Revision 2 及最终 Data Application Table / Chart 的运行态验收；14.29 进一步完成最终应用对 Descriptor 临时失败和查询临时失败的可恢复状态收敛，契约变化仍严格阻断；14.30 完成 Component 编辑器的 Descriptor、查询和导出异步上下文隔离，服务切换或关闭后的迟到结果不再污染当前草稿；14.31 完成编辑器游标翻页的原子提交，失败请求不再产生旧数据与新页码混合的假状态；14.32 已完成运行画布按 Parameter Binding 精确失效旧参数请求的实现、标准前端门禁与发布 Revision 2 的真实浏览器验收；14.33 进一步把参数竞态收敛为可控 Promise 行为测试，不再只依赖浏览器时序和源码合同；14.34 已用同一 generation 和可控 Promise 阻断迟到导出的文件下载副作用；14.35 已为 Descriptor 初始加载与查询重试建立独立 latest-request generation，旧响应不再覆盖新状态；14.36 已把同源运行路由 A/B 快速切换的迟到成功、错误和 loading 收尾纳入同一 latest-request 提交门禁；14.37 在运行页卸载时立即失效 Revision 请求；14.38 使 Component 编辑器的弹窗关闭与页面卸载共享同一 Descriptor、查询和导出失效入口；14.39 进一步把创建页、编辑页 ID 切换、应用加载、Descriptor 派生加载和页面卸载收敛到唯一 editor route generation；14.40 又把保存、发布、下线从确认到响应收尾的副作用纳入独立 mutation generation；14.41 把列表翻页、删除确认、DELETE 响应和删除后刷新也收敛到同一 Data Application request 提交语义；14.42 进一步把空间探索向导的 Catalog、汇总 Descriptor、空间 Descriptor、关闭重开和卸载收敛到三个相互独立但共享同一提交语义的会话 generation；14.43 已把 Element Plus 全量注册与 Map 运行依赖移出 Workbench 首屏，并建立入口 chunk 硬预算和正式 Console 运行验收；14.44 已完成已发布应用在 Descriptor 与必填默认值均可执行时只复用一次“查询全部组件”主路径，草稿手工查询、参数提交和 Wallboard 后续刷新语义不变；14.45 已完成通用字段呈现契约、共享 renderer 实现、本地门禁，以及真实应用从编辑、预览、保存、不可变 Revision 3 发布到正式运行页自动首查的完整闭环。Power Query 路线继续保留；获得 Windows 宿主后再在 `service/connectors/power-query/` 完成具体 Connector 与真实 BI 门禁。没有真实宿主证据前不修改 OAuth 或 Service API，也不提前编写“可直接照做”的正式 BI 接入指南。当前唯一未闭合的同专题自动化证据是 `workbench-service-consumption` T4：具备专用 runner 后应优先补跑，本地验收不能替代该 Online Gate。不要修改 Service 查询路由、引入 API Key 私有授权、数据库直连或增加 Workbench / Python 代理。跨模块综合统计和 Workbench 运行埋点继续暂缓；只有确认成功打开次数、独立访问用户和 Revision 分布确有独立产品价值时，才进入 Workbench owner 运行准入事实设计。在独立价值确认前不进入多页面、`mobile`、页面轮播、通用动作、后台定时任务或第二套运行状态。若后续实现与现有公开契约冲突，必须先回到本专题及正式规范修订设计，不得增加兼容路由、兼容字段或 Workbench 私有旁路。
 

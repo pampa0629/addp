@@ -619,12 +619,13 @@ func (h *DocumentHandler) ListCandidateFamilyDecisions(c *gin.Context) {
 }
 
 // @Summary 裁决文档提炼候选 | Review document extraction candidate
+// @Description 仅当候选所在文档、候选类型与编码下恰好一个语义变体时执行单项保留或驳回；多语义变体候选族必须使用原子胜出裁决 | Retains or rejects one candidate only when its document, type, and code identify exactly one semantic variant; multi-variant families require the atomic winner decision
 // @Tags Standard
 // @Accept json
 // @Produce json
 // @Param request body models.UpdateDocumentExtractionCandidateRequest true "裁决状态及并发版本 | Decision and concurrency version"
 // @Success 200 {object} models.DocumentExtractionCandidate
-// @Failure 409 {object} map[string]string
+// @Failure 409 {object} map[string]string "多语义变体候选族必须使用胜出裁决，error_code=candidate_family_decision_required；或候选已正式化、并发版本冲突 | Multi-variant family requires winner decision, error_code=candidate_family_decision_required; or candidate already formalized or version conflict"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.document.update"]
 // @Router /document-extraction-candidates/{candidate_id} [put]

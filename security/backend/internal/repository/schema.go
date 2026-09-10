@@ -12,7 +12,10 @@ func Migrate(db *gorm.DB) error {
 		if err := migrateSQLite(db); err != nil {
 			return err
 		}
-		return migrateProtectionProjectionSchemaV2(db)
+		if err := migrateProtectionProjectionSchemaV2(db); err != nil {
+			return err
+		}
+		return migrateKeepPrefixSuffixAlgorithmV2(db)
 	}
 	if db.Dialector.Name() == "postgres" {
 		if err := db.Exec("CREATE SCHEMA IF NOT EXISTS security").Error; err != nil {
@@ -70,7 +73,10 @@ func Migrate(db *gorm.DB) error {
 			}
 		}
 	}
-	return migrateProtectionProjectionSchemaV2(db)
+	if err := migrateProtectionProjectionSchemaV2(db); err != nil {
+		return err
+	}
+	return migrateKeepPrefixSuffixAlgorithmV2(db)
 }
 
 func migrateSQLite(db *gorm.DB) error {

@@ -314,7 +314,7 @@ test('data application mutations commit only inside their current editor route',
   }
 
   const publishSource = editor.slice(editor.indexOf('async function publish()'), editor.indexOf('async function offline()'))
-  const offlineSource = editor.slice(editor.indexOf('async function offline()'), editor.indexOf('function openRuntime()'))
+  const offlineSource = editor.slice(editor.indexOf('async function offline()'), editor.indexOf('function openDelivery()'))
   assert.ok(publishSource.indexOf('beginEditorMutation(action)') < publishSource.indexOf('confirmDataApplicationAction'))
   assert.ok(offlineSource.indexOf('beginEditorMutation(action)') < offlineSource.indexOf('confirmDataApplicationAction'))
 
@@ -335,14 +335,7 @@ test('data application list isolates pagination and deletion lifecycle contexts'
   assert.match(list, /import\s*\{[^}]*\bonBeforeUnmount\b[^}]*\bonMounted\b[^}]*\}\s*from\s*['"]vue['"]/s)
   assert.match(list, /listLoadRequests\s*=\s*createLatestRequestCoordinator\(\)/)
   assert.match(list, /listDeletionRequests\s*=\s*createLatestRequestCoordinator\(\)/)
-  assert.match(list, /deliveryRequests\s*=\s*createLatestRequestCoordinator\(\)/)
   assert.match(list, /v-loading="loading \|\| Boolean\(deletingID\)"/)
-  assert.match(list, /getDataApplicationRuntime\(target\.id\)/)
-  assert.match(list, /dataApplicationDeliveryItems\(deliveryRuntime\.value/)
-  assert.match(list, /openDataApplicationRuntime\(deliveryTarget\.value\.id, item\.presetKey\)/)
-  assert.match(list, /dataApplicationRuntimeURL\(deliveryTarget\.value\.id, item\.presetKey\)/)
-  assert.match(list, /@opened="focusDeliveryClose"/)
-  assert.match(list, /deliveryCloseButton\.value\?\.\$el\?\.focus\(\)/)
   assert.match(draft, /dataApplicationListPageContext/)
   assert.match(draft, /dataApplicationDeletionContext/)
   assert.match(draft, /commitLatestDataApplicationRequest/)
@@ -353,7 +346,7 @@ test('data application list isolates pagination and deletion lifecycle contexts'
   assert.match(loadSource, /catch[\s\S]*commitListLoad\(request/)
   assert.match(loadSource, /finally[\s\S]*commitListLoad\(request/)
 
-  const removeSource = list.slice(list.indexOf('async function remove('), list.indexOf('async function openDelivery('))
+  const removeSource = list.slice(list.indexOf('async function remove('), list.indexOf('function commitListLoad('))
   assert.ok(removeSource.indexOf('listDeletionRequests.begin(targetContext)') < removeSource.indexOf('confirmDataApplicationAction'))
   assert.ok(removeSource.indexOf('confirmDataApplicationAction') < removeSource.indexOf('deleteDataApplication'))
   assert.match(removeSource, /currentDeletionContext\(row\.id\) !== targetContext/)
@@ -365,27 +358,51 @@ test('data application list isolates pagination and deletion lifecycle contexts'
   assert.match(list, /onBeforeUnmount\(invalidateListRequests\)/)
   assert.match(list, /listLoadRequests\.invalidate\(\)/)
   assert.match(list, /listDeletionRequests\.invalidate\(\)/)
-  assert.match(list, /deliveryRequests\.invalidate\(\)/)
   assert.equal(zhCn.workbench.deleteFailed, '删除失败')
   assert.equal(en.workbench.deleteFailed, 'Delete failed')
+})
+
+test('one delivery component owns published runtime loading and is reused by list and editor', () => {
+  const delivery = readSource('../src/components/DataApplicationDeliveryDialog.vue')
+  const list = readSource('../src/views/DataApplicationList.vue')
+  const editor = readSource('../src/views/DataApplicationEditor.vue')
+  const zhCn = JSON.parse(readSource('../src/i18n/zh-cn.json'))
+  const en = JSON.parse(readSource('../src/i18n/en.json'))
+
+  assert.match(delivery, /requests\s*=\s*createLatestRequestCoordinator\(\)/)
+  assert.match(delivery, /getDataApplicationRuntime\(nextTarget\.id\)/)
+  assert.match(delivery, /dataApplicationDeliveryItems\(runtime\.value/)
+  assert.match(delivery, /openDataApplicationRuntime\(target\.value\.id, item\.presetKey\)/)
+  assert.match(delivery, /dataApplicationRuntimeURL\(target\.value\.id, item\.presetKey\)/)
+  assert.match(delivery, /@opened="focusClose"/)
+  assert.match(delivery, /closeButton\.value\?\.\$el\?\.focus\(\)/)
+  assert.match(delivery, /defineExpose\(\{ open \}\)/)
+  assert.match(delivery, /onBeforeUnmount\(invalidateRequest\)/)
+
+  for (const source of [list, editor]) {
+    assert.match(source, /import DataApplicationDeliveryDialog from ['"]\.\.\/components\/DataApplicationDeliveryDialog\.vue['"]/)
+    assert.match(source, /<DataApplicationDeliveryDialog[^>]*ref="deliveryDialog"[^>]*\/>/)
+    assert.match(source, /deliveryDialog\.value\?\.open\(/)
+    assert.doesNotMatch(source, /getDataApplicationRuntime|openDataApplicationRuntime|dataApplicationRuntimeURL|dataApplicationDeliveryItems/)
+  }
+  assert.match(editor, /:key="deliveryDialogContext"/)
+  assert.match(editor, /deliveryDialogContext\s*=\s*computed\(\(\)\s*=>\s*dataApplicationEditorRouteContext\(route\.name, route\.params\.id\)\)/)
+
+  const publishSource = editor.slice(editor.indexOf('async function publish()'), editor.indexOf('async function offline()'))
+  const publishCommit = publishSource.slice(publishSource.indexOf('commitEditorMutation(request, action, () => {'))
+  assert.ok(publishCommit.indexOf('assignApplication(data)') < publishCommit.indexOf('deliveryDialog.value?.open(data.id, data.current_revision_number)'))
   assert.equal(zhCn.workbench.deliver, '交付')
   assert.equal(en.workbench.deliver, 'Deliver')
 })
 
-test('published data applications open the canonical Console runtime directly', () => {
+test('delivery component opens the canonical Console runtime directly', () => {
   const navigation = readSource('../src/utils/moduleNavigation.js')
+  const delivery = readSource('../src/components/DataApplicationDeliveryDialog.vue')
   assert.match(navigation, /buildDataApplicationRuntimeRoute\(applicationID, presetKey\)/)
   assert.match(navigation, /resolveConsoleRouteUrl\(route\)/)
   assert.match(navigation, /window\.open\(url,\s*['_"]_blank['_"],\s*['_"]noopener,noreferrer['_"]\)/)
-
-  for (const relative of [
-    '../src/views/DataApplicationList.vue',
-    '../src/views/DataApplicationEditor.vue',
-  ]) {
-    const source = readSource(relative)
-    assert.match(source, /openDataApplicationRuntime/)
-    assert.doesNotMatch(source, /window\.open\(`\/data-apps\//)
-  }
+  assert.match(delivery, /openDataApplicationRuntime/)
+  assert.doesNotMatch(delivery, /window\.open\(`\/data-apps\//)
 })
 
 test('resolves shared map runtime peers from the Workbench dependency tree', () => {

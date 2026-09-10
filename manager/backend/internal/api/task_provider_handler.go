@@ -211,7 +211,12 @@ type TaskProviderTaskDetailResponse struct {
 	ID                uint                           `json:"id"`
 	TenantID          uint                           `json:"tenant_id"`
 	TaskType          string                         `json:"task_type"`
+	Category          string                         `json:"category,omitempty"`
+	Version           uint                           `json:"version,omitempty"`
+	SemanticKey       string                         `json:"semantic_key,omitempty"`
 	Name              string                         `json:"name"`
+	BindingStatus     string                         `json:"binding_status,omitempty"`
+	BindingIssue      string                         `json:"binding_issue,omitempty"`
 	HasCurrentResult  bool                           `json:"has_current_result"`
 	ExecutionContract taskprovider.ExecutionContract `json:"execution_contract"`
 }
@@ -1389,14 +1394,34 @@ func (h *TaskProviderHandler) respondManagerTaskDetail(c *gin.Context, taskType 
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "任务详情序列化失败"})
 		return
 	}
-	result["execution_contract"] = managerTaskExecutionContract(taskType)
-	if h.taskDefinitionRepo != nil && managerTaskRequiresExistingResultAction(taskType) {
-		id, ok := result["id"].(float64)
-		if !ok || id <= 0 {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "任务详情缺少有效任务ID"})
+	taskID, ok := result["id"].(float64)
+	if !ok || taskID <= 0 {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "任务详情缺少有效任务ID"})
+		return
+	}
+	if category := repository.ManagerDerivedTaskCategory(taskType); category != "" && h.taskDefinitionRepo != nil {
+		definition, err := h.taskDefinitionRepo.Get(c.Request.Context(), tenantIDValue(c), taskType, uint(taskID))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		hasCurrentResult, err := h.taskDefinitionRepo.HasCurrentResult(c.Request.Context(), tenantIDValue(c), taskType, uint(id))
+		if definition == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
+			return
+		}
+		result["category"] = category
+		result["version"] = definition.Version
+		result["semantic_key"] = definition.SemanticKey
+		result["binding_status"] = definition.BindingStatus
+		if definition.BindingIssue == "" {
+			delete(result, "binding_issue")
+		} else {
+			result["binding_issue"] = definition.BindingIssue
+		}
+	}
+	result["execution_contract"] = managerTaskExecutionContract(taskType)
+	if h.taskDefinitionRepo != nil && managerTaskRequiresExistingResultAction(taskType) {
+		hasCurrentResult, err := h.taskDefinitionRepo.HasCurrentResult(c.Request.Context(), tenantIDValue(c), taskType, uint(taskID))
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return

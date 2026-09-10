@@ -477,7 +477,7 @@ func (s *DefinitionService) validateBaseline(req models.ProtectionBaselineReques
 	}
 	switch req.Effect {
 	case dataprotection.EffectMask:
-		if req.Algorithm != dataprotection.AlgorithmKeepPrefixSuffixV1 {
+		if req.Algorithm != dataprotection.AlgorithmKeepPrefixSuffixV2 {
 			return commonapi.ErrBadRequest
 		}
 	case dataprotection.EffectSuppress, dataprotection.EffectDeny:

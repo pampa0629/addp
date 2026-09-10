@@ -2666,6 +2666,12 @@ definitions:
     type: object
   internal_api.TaskProviderTaskDetailResponse:
     properties:
+      binding_issue:
+        type: string
+      binding_status:
+        type: string
+      category:
+        type: string
       execution_contract:
         $ref: '#/definitions/taskprovider.ExecutionContract'
       has_current_result:
@@ -2674,9 +2680,13 @@ definitions:
         type: integer
       name:
         type: string
+      semantic_key:
+        type: string
       task_type:
         type: string
       tenant_id:
+        type: integer
+      version:
         type: integer
     type: object
   internal_api.TileCacheTaskRequest:

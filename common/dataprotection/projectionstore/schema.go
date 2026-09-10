@@ -2,15 +2,21 @@ package projectionstore
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
+	"github.com/addp/common/dataprotection"
 	"gorm.io/gorm"
 )
 
-const initialProjectionStoreMigration = "001_initial_projection_store"
+const (
+	initialProjectionStoreMigration  = "001_initial_projection_store"
+	keepPrefixSuffixV2StoreMigration = "002_keep_prefix_suffix_v2"
+)
 
 type storeMigration struct {
 	version string
@@ -19,6 +25,7 @@ type storeMigration struct {
 
 var storeMigrations = []storeMigration{
 	{version: initialProjectionStoreMigration, apply: createInitialProjectionStore},
+	{version: keepPrefixSuffixV2StoreMigration, apply: migrateKeepPrefixSuffixV2},
 }
 
 type postgresColumnDefinition struct {
@@ -197,6 +204,41 @@ func createInitialProjectionStore(tx *gorm.DB, store *Store) error {
 	for _, statement := range statements {
 		if err := tx.Exec(statement).Error; err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func migrateKeepPrefixSuffixV2(tx *gorm.DB, store *Store) error {
+	var rows []projectionRow
+	if err := tx.Table(store.entriesTable).Find(&rows).Error; err != nil {
+		return fmt.Errorf("read protection projections for mask migration: %w", err)
+	}
+	for _, row := range rows {
+		projection, schemaChanged, err := dataprotection.MigrateProjectionPayloadV2([]byte(row.ProjectionPayload))
+		if err != nil {
+			return fmt.Errorf("migrate protection projection %s schema: %w", row.ProjectionID, err)
+		}
+		algorithmChanged, err := dataprotection.MigrateKeepPrefixSuffixAlgorithmV2(&projection)
+		if err != nil {
+			return fmt.Errorf("migrate protection projection %s mask algorithm: %w", row.ProjectionID, err)
+		}
+		if schemaChanged && !algorithmChanged {
+			if err := projection.Seal(); err != nil {
+				return fmt.Errorf("seal protection projection %s after schema migration: %w", row.ProjectionID, err)
+			}
+		}
+		if err := projection.Validate(time.Time{}); err != nil {
+			return fmt.Errorf("validate protection projection %s after migration: %w", row.ProjectionID, err)
+		}
+		payload, err := json.Marshal(projection)
+		if err != nil {
+			return fmt.Errorf("encode protection projection %s after migration: %w", row.ProjectionID, err)
+		}
+		if err := tx.Table(store.entriesTable).
+			Where("tenant_id = ? AND projection_id = ?", row.TenantID, row.ProjectionID).
+			Update("projection_payload", string(payload)).Error; err != nil {
+			return fmt.Errorf("update protection projection %s after migration: %w", row.ProjectionID, err)
 		}
 	}
 	return nil

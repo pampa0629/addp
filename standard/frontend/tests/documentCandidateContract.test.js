@@ -82,6 +82,12 @@ describe('document candidate contract', () => {
     expect(en.standard.document.candidateFamilyDecisionHistoryCount).toContain('Decision history')
   })
 
+  it('keeps one decision route for each candidate family shape', () => {
+    expect(documentDetailSource).toContain("const canDecideSingleCandidate = (family, group) => family.total_variant_count === 1 && group.state === 'pending'")
+    expect(documentDetailSource).toContain('v-if="canDecideSingleCandidate(family, group)"')
+    expect(documentDetailSource).not.toContain('v-if="group.state === \'pending\'" size="small" type="success"')
+  })
+
   it('filters candidate families by the live family comparison facet', () => {
     expect(documentDetailSource).toContain('candidateQuery.comparison_result')
     expect(documentDetailSource).toContain("const comparisonResults = ['new', 'exact', 'content_conflict', 'scope_conflict']")

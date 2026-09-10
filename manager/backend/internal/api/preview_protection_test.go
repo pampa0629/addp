@@ -44,7 +44,7 @@ func TestPreviewProtectionMasksOutdoorPhoneAtResponseBoundary(t *testing.T) {
 	}
 }
 
-func TestPreviewProtectionSuppressesInvalidPhoneWithoutLeakingValue(t *testing.T) {
+func TestPreviewProtectionSuppressesTooShortStructuredValueWithoutLeakingIt(t *testing.T) {
 	now := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
 	req := outdoorPersonsPreviewRequest()
 	projection := activeOutdoorPhoneProjection(t, req, now)
@@ -58,7 +58,7 @@ func TestPreviewProtectionSuppressesInvalidPhoneWithoutLeakingValue(t *testing.T
 	result := &preview.PreviewResult{
 		PreviewType: "table",
 		Data: &models.TablePreview{Rows: []map[string]interface{}{
-			{"userInfo": map[string]interface{}{"phone": "136ABCD4499"}},
+			{"userInfo": map[string]interface{}{"phone": "123"}},
 		}},
 	}
 	if err := applyPreviewProtection(result, rules, dataprotection.SubjectReference{}); err != nil {
@@ -66,7 +66,7 @@ func TestPreviewProtectionSuppressesInvalidPhoneWithoutLeakingValue(t *testing.T
 	}
 	userInfo := result.Data.(*models.TablePreview).Rows[0]["userInfo"].(map[string]interface{})
 	if _, exists := userInfo["phone"]; exists {
-		t.Fatalf("invalid protected phone was returned: %#v", userInfo)
+		t.Fatalf("invalid protected structured value was returned: %#v", userInfo)
 	}
 }
 
@@ -161,10 +161,9 @@ func activeOutdoorPhoneProjection(t *testing.T, req *preview.PreviewResolverRequ
 				Action:    managerprotection.ActionPreview,
 				Component: component,
 				Decision: dataprotection.Decision{
-					Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV1,
+					Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2,
 					Parameters: map[string]any{
-						"prefix_runes": 3, "suffix_runes": 4, "replacement": "****",
-						"exact_runes": 11, "character_class": "ascii_digit",
+						"prefix_runes": 3, "suffix_runes": 4, "mask_rune": "*",
 					},
 					InvalidValueEffect: dataprotection.EffectSuppress,
 				},

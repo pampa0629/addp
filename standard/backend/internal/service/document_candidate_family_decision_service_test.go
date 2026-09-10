@@ -10,6 +10,63 @@ import (
 	"gorm.io/gorm"
 )
 
+func TestUpdateCandidateStatusRequiresFamilyDecisionForMultipleSemanticVariants(t *testing.T) {
+	db := openDocumentServiceTestDB(t)
+	repo := repository.NewDocumentRepository(db)
+	document, revision := seedDocumentDraft(t, repo, 7, "outdoor.md")
+	extraction := models.DocumentExtraction{TenantID: document.TenantID, DocumentRevisionID: revision.ID, Status: "completed", RequestedBy: 3}
+	if err := db.Create(&extraction).Error; err != nil {
+		t.Fatal(err)
+	}
+	candidates := []models.DocumentExtractionCandidate{
+		{ExtractionID: extraction.ID, CandidateType: "glossary", Code: "outdoor_activity", Name: "户外活动", Definition: "定义一", Status: "pending", Version: 1},
+		{ExtractionID: extraction.ID, CandidateType: "glossary", Code: "outdoor_activity", Name: "户外运动", Definition: "定义二", Status: "pending", Version: 1},
+	}
+	if err := db.Create(&candidates).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := (&DocumentService{repo: repo}).UpdateCandidateStatus(candidates[0].ID, document.TenantID, 11, &models.UpdateDocumentExtractionCandidateRequest{Version: 1, Status: "retained"})
+	if !errors.Is(err, ErrCandidateFamilyDecisionRequired) {
+		t.Fatalf("error = %v, want ErrCandidateFamilyDecisionRequired", err)
+	}
+	var stored []models.DocumentExtractionCandidate
+	if err := db.Order("id ASC").Find(&stored, "id IN ?", []int64{candidates[0].ID, candidates[1].ID}).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, candidate := range stored {
+		if candidate.Status != models.CandidateGroupStatePending || candidate.Version != 1 || candidate.ReviewedAt != nil {
+			t.Fatalf("candidate changed after blocked single decision: %+v", candidate)
+		}
+	}
+	assertNoCandidateFamilyDecision(t, db)
+}
+
+func TestUpdateCandidateStatusAllowsOneSemanticVariant(t *testing.T) {
+	db := openDocumentServiceTestDB(t)
+	repo := repository.NewDocumentRepository(db)
+	document, revision := seedDocumentDraft(t, repo, 7, "outdoor.md")
+	extraction := models.DocumentExtraction{TenantID: document.TenantID, DocumentRevisionID: revision.ID, Status: "completed", RequestedBy: 3}
+	if err := db.Create(&extraction).Error; err != nil {
+		t.Fatal(err)
+	}
+	candidates := []models.DocumentExtractionCandidate{
+		{ExtractionID: extraction.ID, CandidateType: "glossary", Code: "outdoor_activity", Name: "户外 活动", Definition: "同一定义", Status: "pending", Version: 1},
+		{ExtractionID: extraction.ID, CandidateType: "glossary", Code: "outdoor_activity", Name: "户外\n活动", Definition: "同一定义", Status: "pending", Version: 1},
+	}
+	if err := db.Create(&candidates).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := (&DocumentService{repo: repo}).UpdateCandidateStatus(candidates[1].ID, document.TenantID, 11, &models.UpdateDocumentExtractionCandidateRequest{Version: 1, Status: "rejected"})
+	if err != nil {
+		t.Fatalf("UpdateCandidateStatus() error = %v", err)
+	}
+	if result.Status != models.CandidateGroupStateRejected || result.Version != 2 || result.ReviewedBy == nil || *result.ReviewedBy != 11 {
+		t.Fatalf("result = %+v", result)
+	}
+}
+
 func TestDecideCandidateFamilyRetainsOneVariantAndRejectsTheOthersAtomically(t *testing.T) {
 	db := openDocumentServiceTestDB(t)
 	repo := repository.NewDocumentRepository(db)

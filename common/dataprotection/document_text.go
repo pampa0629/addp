@@ -105,7 +105,7 @@ func MaskPhoneOccurrences(text string, decision Decision) (string, error) {
 	if decision.Effect != EffectMask || decision.Algorithm != AlgorithmPhoneOccurrencesV1 {
 		return "", errors.New("invalid phone occurrence masking decision")
 	}
-	if err := validateKeepPrefixSuffixParameters(decision.Parameters); err != nil {
+	if err := validatePhoneOccurrencesV1Parameters(decision.Parameters); err != nil {
 		return "", err
 	}
 	prefix, _ := integerParameter(decision.Parameters, "prefix_runes")

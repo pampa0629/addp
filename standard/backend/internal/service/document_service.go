@@ -1123,6 +1123,8 @@ func (s *DocumentService) FormalizeCandidate(candidateID, tenantID, userID int64
 
 func mapCandidateFormalizationError(err error) error {
 	switch {
+	case errors.Is(err, repository.ErrCandidateFamilyDecisionRequired):
+		return ErrCandidateFamilyDecisionRequired
 	case errors.Is(err, repository.ErrCandidateNotRetained):
 		return ErrCandidateNotRetained
 	case errors.Is(err, repository.ErrCandidateAlreadyFormalized):

@@ -602,7 +602,7 @@ Transfer 切片已冻结 `export` 动作边界，不恢复旧 `export` 任务类
 ### 2026-08-31：阶段 2 模块基础与旧路线单切完成
 
 - 建立 Security Backend、Frontend 与 Worker 骨架，固定 `security` Schema、8194 / 5191 端口、`/api/v1/security` 单一路径、Permission Manifest、Swagger、模块注册、Docker 和 Console 入口；
-- 建立 SecurityClassification、SecurityGrade、SensitiveDataType 和 ProtectionBaseline 的租户隔离、乐观版本与引用约束，手机号保护基线只接受稳定算法 `addp.mask.keep_prefix_suffix/v1`；
+- 建立 SecurityClassification、SecurityGrade、SensitiveDataType 和 ProtectionBaseline 的租户隔离、乐观版本与引用约束，结构化字段保护基线只接受按实际长度执行的稳定算法 `addp.mask.keep_prefix_suffix/v2`；
 - 建立 `common/dataprotection` 的 Protection Projection v2、checksum、失效关闭校验、主体级临时授权及确定性 Unicode 遮盖能力，将 `common/security` 无兼容地改名为 `common/secretcipher`；
 - 从 Standard 完整删除 Classification、GradingLevel、Element Revision 安全字段及 API、Permission、前端、Swagger、国际化、测试和旧迁移脚本，不保留旧 ID、旧表双轨或兼容读取；
 - 完成 IAM 目录、内置角色、Service Principal、根 Makefile、PostgreSQL 门禁、构建镜像登记、前端 CI、T2 CI 和运行时生命周期登记；阶段 3 之前 Security 尚不扫描 Meta，也不改变 Manager 未纳管预览路径。
