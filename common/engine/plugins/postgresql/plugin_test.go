@@ -77,6 +77,9 @@ func TestProtocolCompatibleCatalogFiltersAdditionalSystemSchemasBeforeLeafCounts
 	if !strings.Contains(query, "WHERE lower(schema_name) NOT IN") {
 		t.Fatalf("namespace query must filter schemas before evaluating leaf counts: %s", query)
 	}
+	if !strings.Contains(query, "has_schema_privilege(s.schema_name, 'USAGE')") {
+		t.Fatalf("namespace query must filter schemas by the current connection identity: %s", query)
+	}
 	wantArgs := []interface{}{"coverage", "dbe_perf", "information_schema", "pg_catalog", "pg_toast"}
 	if !reflect.DeepEqual(args, wantArgs) {
 		t.Fatalf("namespace query args = %#v, want %#v", args, wantArgs)

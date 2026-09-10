@@ -55,7 +55,7 @@ ADDP 中容易混淆的三个概念需要明确区分：
 边界原则：
 
 - System 负责引擎控制面、连通性检测和实时 Engine Catalog 发现，对外提供 `POST /api/v1/system/engines/:id/catalog/children`。路由中的 `catalog` 已由 `engines/:id` 限定，不表示企业 Catalog。连通性字段是最近一次检测缓存，不是长期持有的连接句柄。
-- MongoDB 实时 Engine Catalog 只展示当前认证主体经原生 roles 授权的数据库和集合；ADDP 的 Tenant/Engine 使用授权控制“谁能使用该 Engine Instance”，不复制或覆盖 MongoDB 内部数据库权限。
+- 实时 Engine Catalog 只展示当前连接身份按引擎原生权限可访问的资源：MongoDB 按 roles 枚举数据库和集合，关系型引擎按 schema `USAGE` 或等价权限枚举命名空间。ADDP 的 Tenant/Engine 使用授权只控制“谁能使用该 Engine Instance”，不复制、扩大或覆盖引擎内部权限。
 - Meta 负责扫描任务、元数据落库、元数据快照查询和索引事件，不再提供新的实时浏览公共接口。
 - Manager 负责数据管理体验和数据预览；展示已纳管资产时消费 Meta 快照，读取真实内容时走 Manager 后端预览能力。
 

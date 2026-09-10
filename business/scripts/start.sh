@@ -776,7 +776,7 @@ if [ "$ENABLE_OPENGAUSS" = true ]; then
     }
     echo -e "${YELLOW}等待 openGauss 启动 (首次可能需要数分钟)...${NC}"
     for i in {1..120}; do
-        if opengauss_gsql -At -d postgres -p 5432 -c 'SELECT 1' 2>/dev/null | grep -Fxq '1'; then
+        if opengauss_official_container_ready business-opengauss opengauss_gsql; then
             if ! opengauss_gsql -At -d postgres -p 5432 -c "SELECT 1 FROM pg_database WHERE datname = '${OPENGAUSS_DATABASE:-business}'" | grep -Fxq '1'; then
                 opengauss_gsql -d postgres -p 5432 -c "CREATE DATABASE ${OPENGAUSS_DATABASE:-business} DBCOMPATIBILITY 'PG'"
             fi

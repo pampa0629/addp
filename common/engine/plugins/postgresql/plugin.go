@@ -332,6 +332,7 @@ func (p *PostgreSQLPlugin) listNamespacesQuery(superMapLeafFilter string) (strin
 			   ` + superMapLeafFilter + `) as leaf_count
 		FROM information_schema.schemata s
 		WHERE lower(schema_name) NOT IN (` + strings.Join(placeholders, ", ") + `)
+		  AND has_schema_privilege(s.schema_name, 'USAGE')
 		ORDER BY schema_name
 	`
 	return query, args

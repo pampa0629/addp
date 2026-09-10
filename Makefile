@@ -161,6 +161,7 @@ test-business-config: ## 校验 Business Compose 和服务管理脚本（不启�
 	@grep -Fq 'openGauss-Docker-6.0.6-x86_64.tar' scripts/lib/opengauss-official-media.sh
 	@grep -Fq 'openGauss-Docker-6.0.6-aarch64.tar' scripts/lib/opengauss-official-media.sh
 	@grep -Fq '00ad2206ac93cf28c7702cd624b7c59dc1a146f9dca1f81ed19eeac430416c0b' scripts/lib/opengauss-official-media.sh
+	@grep -Fq 'opengauss_official_container_ready business-opengauss opengauss_gsql' business/scripts/start.sh
 	@test "$$(grep -c -- '--default-character-set=utf8mb4' business/scripts/start.sh)" -ge 4
 	@bash -n business/scripts/start.sh business/scripts/stop.sh business/scripts/restart.sh scripts/utils/register-business.sh scripts/lib/opengauss-official-media.sh
 	@bash business/scripts/start.sh --help | grep -Fq -- '-oceanbase'
