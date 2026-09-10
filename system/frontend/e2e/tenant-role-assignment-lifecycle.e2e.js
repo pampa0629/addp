@@ -27,6 +27,16 @@ const members = [
   }
 ]
 
+const departments = [
+  { id: '301', code: 'research', name: '研究中心', status: 'active', version: 1 },
+  { id: '302', code: 'retired', name: '已停用部门', status: 'disabled', version: 2 }
+]
+
+const projectGroups = [
+  { id: '401', code: 'joint_project', name: '联合项目', status: 'active', version: 1 },
+  { id: '402', code: 'closed_project', name: '已关闭项目', status: 'closed', version: 2 }
+]
+
 const roles = [
   {
     id: '101',
@@ -56,7 +66,7 @@ const roles = [
     name: '数据管理员',
     description: '',
     role_type: 'tenant_builtin',
-    allowed_scope_types: ['tenant'],
+    allowed_scope_types: ['tenant', 'department'],
     allowed_principal_types: ['user'],
     immutable: true,
     permission_keys: ['manager.data_item.update']
@@ -197,6 +207,14 @@ test('tenant administrator filters members and assigns multiple roles in one req
       await fulfillJSON(route, 200, roles)
       return
     }
+    if (path.endsWith('/tenant/departments') && method === 'GET') {
+      await fulfillJSON(route, 200, paginated(departments, 100))
+      return
+    }
+    if (path.endsWith('/tenant/project_groups') && method === 'GET') {
+      await fulfillJSON(route, 200, paginated(projectGroups, 100))
+      return
+    }
     if (path.endsWith('/tenant/role_assignments') && method === 'GET') {
       const query = Object.fromEntries(url.searchParams.entries())
       listQueries.push(query)
@@ -221,6 +239,9 @@ test('tenant administrator filters members and assigns multiple roles in one req
           role_id: selectedRole.id,
           role_key: selectedRole.role_key,
           role_name: selectedRole.name,
+          scope_type: input.scope_type,
+          department_id: input.department_id,
+          project_group_id: input.project_group_id,
           reason: input.reason
         })
       })
@@ -276,6 +297,19 @@ test('tenant administrator filters members and assigns multiple roles in one req
   const memberListbox = page.locator(`[id="${memberListboxID}"]`)
   await memberListbox.getByRole('option', { name: /Alice Researcher/ }).click()
   await expect(dialog).toContainText('Alice Researcher')
+  await page.keyboard.press('Escape')
+
+  const scopeCombobox = dialog.getByRole('combobox', { name: '授权范围' })
+  const scopeListboxID = await scopeCombobox.getAttribute('aria-controls')
+  await scopeCombobox.press('ArrowDown')
+  await page.locator(`[id="${scopeListboxID}"]`).getByRole('option', { name: '部门', exact: true }).click()
+  const departmentCombobox = dialog.getByRole('combobox', { name: /部门/ })
+  const departmentListboxID = await departmentCombobox.getAttribute('aria-controls')
+  await departmentCombobox.press('ArrowDown')
+  const departmentListbox = page.locator(`[id="${departmentListboxID}"]`)
+  await departmentListbox.getByRole('option', { name: '研究中心 (research)', exact: true }).click()
+  await expect(page.getByRole('option', { name: '已停用部门 (retired)', exact: true })).toHaveCount(0)
+
   const roleCombobox = dialog.getByRole('combobox', { name: /角色/ })
   const roleListboxID = await roleCombobox.getAttribute('aria-controls')
   await expect(roleCombobox).toBeEnabled()
@@ -292,6 +326,7 @@ test('tenant administrator filters members and assigns multiple roles in one req
   const stewardRow = page.getByRole('row').filter({ hasText: '数据管理员' }).filter({ hasText: 'Alice Researcher' })
   await expect(viewerRow).toBeVisible()
   await expect(stewardRow).toBeVisible()
+  await expect(viewerRow).toContainText('部门 · 研究中心 (research)')
   expect(authContextRequests).toBeGreaterThanOrEqual(1)
 
   await viewerRow.getByRole('button', { name: '撤销', exact: true }).click()
@@ -307,8 +342,8 @@ test('tenant administrator filters members and assigns multiple roles in one req
       input: {
         membership_id: '12',
         role_ids: ['102', '103'],
-        scope_type: 'tenant',
-        department_id: null,
+        scope_type: 'department',
+        department_id: '301',
         project_group_id: null,
         valid_until: null,
         reason: 'E2E batch assignment'
@@ -382,6 +417,14 @@ test('high-risk self assignment completes MFA step-up and retries the original r
     }
     if (path.endsWith('/tenant/roles') && method === 'GET') {
       await fulfillJSON(route, 200, roles)
+      return
+    }
+    if (path.endsWith('/tenant/departments') && method === 'GET') {
+      await fulfillJSON(route, 200, paginated(departments, 100))
+      return
+    }
+    if (path.endsWith('/tenant/project_groups') && method === 'GET') {
+      await fulfillJSON(route, 200, paginated(projectGroups, 100))
       return
     }
     if (path.endsWith('/tenant/role_assignments') && method === 'GET') {

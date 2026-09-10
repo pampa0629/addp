@@ -36,19 +36,10 @@ func TestProtectionBaselineChangesRecompileAffectedEnrollmentAtomically(t *testi
 		t.Fatalf("stale baseline delete error = %v", err)
 	}
 	assertLatestManagerProjection(t, enrollments, 7, dataprotection.ProjectionStateActive, dataprotection.EffectSuppress, 3)
-	if err := svc.DeleteBaseline(updated.ID, 7, updated.Version); err != nil {
-		t.Fatal(err)
+	if err := svc.DeleteBaseline(updated.ID, 7, updated.Version); !errors.Is(err, commonapi.ErrConflict) {
+		t.Fatalf("initial default baseline delete error = %v, want conflict", err)
 	}
-	assertLatestManagerProjection(t, enrollments, 7, dataprotection.ProjectionStateEnrolling, "", 4)
-
-	if _, err := svc.CreateBaseline(models.ProtectionBaselineRequest{
-		SensitiveDataTypeID: dataType.ID, SecurityGradeID: grade.ID,
-		Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2,
-		KeepPrefix: 3, KeepSuffix: 4, InvalidValueEffect: dataprotection.EffectSuppress,
-	}, 7, 31); err != nil {
-		t.Fatal(err)
-	}
-	assertLatestManagerProjection(t, enrollments, 7, dataprotection.ProjectionStateActive, dataprotection.EffectMask, 5)
+	assertLatestManagerProjection(t, enrollments, 7, dataprotection.ProjectionStateActive, dataprotection.EffectSuppress, 3)
 }
 
 func TestDetectorBindingUsesOnlyInstalledCapabilitiesAndProtectsTypeReference(t *testing.T) {
@@ -62,7 +53,7 @@ func TestDetectorBindingUsesOnlyInstalledCapabilitiesAndProtectsTypeReference(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	dataType, err := svc.CreateType(models.SensitiveDataTypeRequest{Code: "contact", Name: "联系方式", SecurityClassificationID: classification.ID, DefaultSecurityGradeID: grade.ID}, 7, 11)
+	dataType, err := svc.createTypeWithoutBaseline(models.SensitiveDataTypeRequest{Code: "contact", Name: "联系方式", SecurityClassificationID: classification.ID, DefaultSecurityGradeID: grade.ID}, 7, 11)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,6 +224,13 @@ func TestSensitiveDataTypeDefaultGradeChangeRecompilesOnlyCandidateFinding(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := svc.CreateBaseline(models.ProtectionBaselineRequest{
+		SensitiveDataTypeID: dataType.ID, SecurityGradeID: newGrade.ID,
+		Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2,
+		KeepPrefix: 3, KeepSuffix: 4, InvalidValueEffect: dataprotection.EffectSuppress,
+	}, 7, 31); err != nil {
+		t.Fatal(err)
+	}
 	updated, err := svc.UpdateType(dataType.ID, 7, 31, models.SensitiveDataTypeRequest{
 		Name: dataType.Name, Description: dataType.Description,
 		SecurityClassificationID: dataType.SecurityClassificationID, DefaultSecurityGradeID: newGrade.ID,
@@ -244,7 +242,7 @@ func TestSensitiveDataTypeDefaultGradeChangeRecompilesOnlyCandidateFinding(t *te
 	if updated.DefaultSecurityGradeID != newGrade.ID {
 		t.Fatalf("updated type = %#v", updated)
 	}
-	assertLatestManagerProjection(t, enrollments, 7, dataprotection.ProjectionStateEnrolling, "", 3)
+	assertLatestManagerProjection(t, enrollments, 7, dataprotection.ProjectionStateActive, dataprotection.EffectMask, 3)
 
 	assessments := NewAssessmentService(db, nil)
 	if _, err := assessments.ReviewFinding(context.Background(), 7, 32, finding.ID, models.FindingReviewRequest{
@@ -252,7 +250,7 @@ func TestSensitiveDataTypeDefaultGradeChangeRecompilesOnlyCandidateFinding(t *te
 	}); err != nil {
 		t.Fatal(err)
 	}
-	assertLatestManagerProjection(t, enrollments, 7, dataprotection.ProjectionStateEnrolling, "", 4)
+	assertLatestManagerProjection(t, enrollments, 7, dataprotection.ProjectionStateActive, dataprotection.EffectMask, 4)
 	current, err := svc.GetType(dataType.ID, 7)
 	if err != nil {
 		t.Fatal(err)
@@ -264,7 +262,7 @@ func TestSensitiveDataTypeDefaultGradeChangeRecompilesOnlyCandidateFinding(t *te
 	}); err != nil {
 		t.Fatal(err)
 	}
-	assertLatestManagerProjection(t, enrollments, 7, dataprotection.ProjectionStateEnrolling, "", 4)
+	assertLatestManagerProjection(t, enrollments, 7, dataprotection.ProjectionStateActive, dataprotection.EffectMask, 4)
 }
 
 func TestSensitiveDataTypeChangeDoesNotRecompileStaleFinding(t *testing.T) {
@@ -288,15 +286,15 @@ func TestSensitiveDataTypeChangeDoesNotRecompileStaleFinding(t *testing.T) {
 	assertLatestManagerProjection(t, enrollments, 7, dataprotection.ProjectionStateActive, dataprotection.EffectMask, 2)
 }
 
-func TestSensitiveDataTypeCannotBeDeletedAfterFindingWhenBaselineIsRemoved(t *testing.T) {
+func TestSensitiveDataTypeCannotRemoveInitialBaselineOrDeleteReferencedType(t *testing.T) {
 	db, _, _, dataType, grade := prepareReviewablePhoneFinding(t)
 	svc := newTestDefinitionService(db)
 	var baseline models.ProtectionBaseline
 	if err := db.Where("tenant_id = ? AND sensitive_data_type_id = ? AND security_grade_id = ?", 7, dataType.ID, grade.ID).First(&baseline).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.DeleteBaseline(baseline.ID, 7, baseline.Version); err != nil {
-		t.Fatal(err)
+	if err := svc.DeleteBaseline(baseline.ID, 7, baseline.Version); !errors.Is(err, commonapi.ErrConflict) {
+		t.Fatalf("DeleteBaseline() error = %v, want initial baseline conflict", err)
 	}
 	if err := svc.DeleteType(dataType.ID, 7); !errors.Is(err, commonapi.ErrConflict) {
 		t.Fatalf("DeleteType() error = %v, want Finding reference conflict", err)
@@ -354,16 +352,46 @@ func TestDefinitionServiceBuildsPhoneProtectionBaselineWithoutStandardIDs(t *tes
 	svc := newTestDefinitionService(db)
 	classification, _ := svc.CreateClassification(models.DefinitionRequest{Code: "personal_information", Name: "个人信息"}, 7, 11)
 	grade, _ := svc.CreateGrade(models.DefinitionRequest{Code: "l3", Name: "较高风险", RiskOrder: 3}, 7, 11)
-	dataType, err := svc.CreateType(models.SensitiveDataTypeRequest{Code: "phone_number", Name: "手机号码", SecurityClassificationID: classification.ID, DefaultSecurityGradeID: grade.ID}, 7, 11)
+	dataType, err := svc.CreateType(models.CreateSensitiveDataTypeRequest{
+		Code: "phone_number", Name: "手机号码", SecurityClassificationID: classification.ID, DefaultSecurityGradeID: grade.ID,
+		DefaultProtection: &models.DefaultProtectionRequest{
+			Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2,
+			KeepPrefix: 3, KeepSuffix: 4, InvalidValueEffect: dataprotection.EffectSuppress,
+		},
+	}, 7, 11)
 	if err != nil {
 		t.Fatalf("CreateType() error = %v", err)
 	}
-	baseline, err := svc.CreateBaseline(models.ProtectionBaselineRequest{SensitiveDataTypeID: dataType.ID, SecurityGradeID: grade.ID, Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2, KeepPrefix: 3, KeepSuffix: 4, InvalidValueEffect: dataprotection.EffectSuppress}, 7, 11)
-	if err != nil {
-		t.Fatalf("CreateBaseline() error = %v", err)
+	var baseline models.ProtectionBaseline
+	if err := db.Where("tenant_id = ? AND sensitive_data_type_id = ? AND security_grade_id = ?", 7, dataType.ID, grade.ID).First(&baseline).Error; err != nil {
+		t.Fatalf("initial baseline query error = %v", err)
 	}
 	if baseline.KeepPrefix != 3 || baseline.KeepSuffix != 4 || !baseline.Enabled {
 		t.Fatalf("baseline = %#v", baseline)
+	}
+}
+
+func TestSensitiveDataTypeCreationRollsBackWhenDefaultProtectionIsInvalid(t *testing.T) {
+	db := openSecurityTestDB(t)
+	svc := newTestDefinitionService(db)
+	classification, _ := svc.CreateClassification(models.DefinitionRequest{Code: "personal_information", Name: "个人信息"}, 7, 11)
+	grade, _ := svc.CreateGrade(models.DefinitionRequest{Code: "l3", Name: "较高风险", RiskOrder: 3}, 7, 11)
+
+	_, err := svc.CreateType(models.CreateSensitiveDataTypeRequest{
+		Code: "unsafe_custom", Name: "无效自定义类型", SecurityClassificationID: classification.ID, DefaultSecurityGradeID: grade.ID,
+		DefaultProtection: &models.DefaultProtectionRequest{
+			Effect: dataprotection.EffectMask, Algorithm: "unsupported-mask/v1",
+		},
+	}, 7, 11)
+	if !errors.Is(err, commonapi.ErrBadRequest) {
+		t.Fatalf("CreateType() error = %v, want bad request", err)
+	}
+	var typeCount int64
+	if err := db.Model(&models.SensitiveDataType{}).Where("tenant_id = ? AND code = ?", 7, "unsafe_custom").Count(&typeCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if typeCount != 0 {
+		t.Fatalf("invalid definition left %d sensitive data type rows", typeCount)
 	}
 }
 
@@ -384,17 +412,26 @@ func TestDefinitionServiceRejectsDeletingReferencedDefinitions(t *testing.T) {
 	svc := newTestDefinitionService(db)
 	classification, _ := svc.CreateClassification(models.DefinitionRequest{Code: "personal", Name: "个人信息"}, 7, 11)
 	grade, _ := svc.CreateGrade(models.DefinitionRequest{Code: "l3", Name: "三级", RiskOrder: 3}, 7, 11)
-	dataType, _ := svc.CreateType(models.SensitiveDataTypeRequest{Code: "phone", Name: "手机号码", SecurityClassificationID: classification.ID, DefaultSecurityGradeID: grade.ID}, 7, 11)
+	dataType, _ := svc.createTypeWithoutBaseline(models.SensitiveDataTypeRequest{Code: "phone", Name: "手机号码", SecurityClassificationID: classification.ID, DefaultSecurityGradeID: grade.ID}, 7, 11)
 	_, _ = svc.CreateBaseline(models.ProtectionBaselineRequest{SensitiveDataTypeID: dataType.ID, SecurityGradeID: grade.ID, Effect: dataprotection.EffectMask, Algorithm: dataprotection.AlgorithmKeepPrefixSuffixV2, KeepPrefix: 3, KeepSuffix: 4}, 7, 11)
 
 	for name, deleteDefinition := range map[string]func() error{
 		"classification": func() error { return svc.DeleteClassification(classification.ID, 7) },
 		"grade":          func() error { return svc.DeleteGrade(grade.ID, 7) },
-		"type":           func() error { return svc.DeleteType(dataType.ID, 7) },
 	} {
 		if err := deleteDefinition(); !errors.Is(err, commonapi.ErrConflict) {
 			t.Errorf("Delete %s error = %v, want ErrConflict", name, err)
 		}
+	}
+	if err := svc.DeleteType(dataType.ID, 7); err != nil {
+		t.Fatalf("DeleteType() error = %v", err)
+	}
+	var baselineCount int64
+	if err := db.Model(&models.ProtectionBaseline{}).Where("tenant_id = ? AND sensitive_data_type_id = ?", 7, dataType.ID).Count(&baselineCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if baselineCount != 0 {
+		t.Fatalf("baseline count after type deletion = %d", baselineCount)
 	}
 }
 
@@ -403,7 +440,7 @@ func TestDefinitionServiceRequiresStableMaskingAlgorithm(t *testing.T) {
 	svc := newTestDefinitionService(db)
 	classification, _ := svc.CreateClassification(models.DefinitionRequest{Code: "personal", Name: "个人信息"}, 7, 11)
 	grade, _ := svc.CreateGrade(models.DefinitionRequest{Code: "l3", Name: "三级", RiskOrder: 3}, 7, 11)
-	dataType, _ := svc.CreateType(models.SensitiveDataTypeRequest{Code: "phone", Name: "手机号码", SecurityClassificationID: classification.ID, DefaultSecurityGradeID: grade.ID}, 7, 11)
+	dataType, _ := svc.createTypeWithoutBaseline(models.SensitiveDataTypeRequest{Code: "phone", Name: "手机号码", SecurityClassificationID: classification.ID, DefaultSecurityGradeID: grade.ID}, 7, 11)
 
 	_, err := svc.CreateBaseline(models.ProtectionBaselineRequest{SensitiveDataTypeID: dataType.ID, SecurityGradeID: grade.ID, Effect: dataprotection.EffectMask, Algorithm: "mask.keep_prefix_suffix", KeepPrefix: 3, KeepSuffix: 4}, 7, 11)
 	if !errors.Is(err, commonapi.ErrBadRequest) {

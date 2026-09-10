@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 vi.mock('../src/api/client', () => ({ default: { get: vi.fn(path => path), post: vi.fn((path, data) => ({path,data})), put: vi.fn((path,data)=>({path,data})), delete: vi.fn((path,config)=>config?{path,config}:path) } }))
 import client from '../src/api/client'
-import { assessmentAPI, classificationAPI, definitionProfileAPI, detectorAPI, detectorCapabilityAPI, discoveryQualityAPI, findingAPI, gradeAPI, sensitiveDataTypeAPI, protectionAccessRequestAPI, protectionBaselineAPI, protectionEnrollmentAPI, protectionExemptionAPI, metaAPI } from '../src/api/security'
+import { assessmentAPI, classificationAPI, definitionProfileAPI, detectorAPI, detectorCapabilityAPI, discoveryQualityAPI, findingAPI, gradeAPI, sensitiveDataTypeAPI, protectionAccessRequestAPI, protectionBaselineAPI, protectionEnrollmentAPI, protectionExemptionAPI, protectionPolicyAPI, metaAPI } from '../src/api/security'
 
 describe('Security API paths', () => {
   it('uses the single /security route family', () => {
@@ -32,6 +32,12 @@ describe('Security API paths', () => {
     const revokeAssessment = assessmentAPI.revoke('assessment-1', { version: 2, rationale: 'verified' })
     expect(revokeAssessment.path).toBe('/security/assessments/assessment-1')
     expect(revokeAssessment.config.data).toEqual({ version: 2, rationale: 'verified' })
+    const policyParams = { enrollment_id: 'enrollment-1', page: 1, page_size: 100 }
+    protectionPolicyAPI.list(policyParams)
+    expect(client.get).toHaveBeenLastCalledWith('/security/protection-policies', { params: policyParams })
+    expect(protectionPolicyAPI.create({ assessment_id: 'assessment-1' }).path).toBe('/security/protection-policies')
+    expect(protectionPolicyAPI.update('policy-1', { effect: 'deny' }).path).toBe('/security/protection-policies/policy-1')
+    expect(protectionPolicyAPI.revoke('policy-1', { version: 2, rationale: 'restore' }).config.data).toEqual({ version: 2, rationale: 'restore' })
 
     const targetParams = { target_identity: 'fingerprint', consumer_owner: 'manager', action: 'preview' }
     protectionAccessRequestAPI.targets(targetParams)

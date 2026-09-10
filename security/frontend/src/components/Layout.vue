@@ -5,7 +5,6 @@
     <el-container><el-aside width="220px"><el-menu router :default-active="route.path">
       <el-menu-item index="/classification-grading"><el-icon><DataBoard /></el-icon>{{ t('security.resources.classificationGrading') }}</el-menu-item>
       <el-menu-item index="/sensitive-data-definitions"><el-icon><Key /></el-icon>{{ t('security.resources.sensitiveDataDefinition') }}</el-menu-item>
-      <el-menu-item index="/protection-baselines"><el-icon><SetUp /></el-icon>{{ t('security.resources.protectionBaseline') }}</el-menu-item>
       <el-menu-item index="/protection-enrollments"><el-icon><CircleCheck /></el-icon>{{ t('security.resources.protectionEnrollment') }}</el-menu-item>
     </el-menu></el-aside><el-main><router-view /></el-main></el-container>
   </el-container>
@@ -14,7 +13,7 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { Lock, DataBoard, Key, SetUp, CircleCheck } from '@element-plus/icons-vue'
+import { Lock, DataBoard, Key, CircleCheck } from '@element-plus/icons-vue'
 import { useAuthStore } from '../store/auth'
 const embedded = ref(false); const route = useRoute(); const router = useRouter(); const auth = useAuthStore(); const { t } = useI18n()
 onMounted(() => { embedded.value = window.self !== window.top })

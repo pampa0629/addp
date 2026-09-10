@@ -15,6 +15,54 @@ sys.modules[SPEC.name] = ONLINE
 SPEC.loader.exec_module(ONLINE)
 
 
+class DefinitionProbeClient:
+    def __init__(self) -> None:
+        self.types = []
+        self.baselines = []
+        self.next_type_id = 100
+        self.next_baseline_id = 200
+
+    def request(self, method, path, expected, body=None):
+        if method == "GET" and path == "/api/v1/security/sensitive-data-types":
+            return ONLINE.SUPPORT.Response(200, list(self.types))
+        if method == "GET" and path == "/api/v1/security/protection-baselines":
+            return ONLINE.SUPPORT.Response(200, list(self.baselines))
+        if method == "POST" and path == "/api/v1/security/sensitive-data-types":
+            protection = body["default_protection"]
+            if protection["algorithm"] != ONLINE.STRUCTURED_MASK_ALGORITHM:
+                return ONLINE.SUPPORT.Response(400, {"error_code": "bad_request"})
+            type_id = str(self.next_type_id)
+            baseline_id = str(self.next_baseline_id)
+            self.next_type_id += 1
+            self.next_baseline_id += 1
+            created = {"id": type_id, **body, "version": "1"}
+            created.pop("default_protection")
+            self.types.append(created)
+            self.baselines.append(
+                {
+                    "id": baseline_id,
+                    "sensitive_data_type_id": type_id,
+                    "security_grade_id": str(body["default_security_grade_id"]),
+                    **protection,
+                    "enabled": True,
+                    "version": "1",
+                }
+            )
+            return ONLINE.SUPPORT.Response(201, created)
+        if method == "DELETE" and path.startswith(
+            "/api/v1/security/sensitive-data-types/"
+        ):
+            type_id = path.rsplit("/", 1)[1]
+            self.types = [item for item in self.types if item["id"] != type_id]
+            self.baselines = [
+                item
+                for item in self.baselines
+                if item["sensitive_data_type_id"] != type_id
+            ]
+            return ONLINE.SUPPORT.Response(200, {"message": "deleted"})
+        raise AssertionError(f"unexpected request: {method} {path} {expected} {body}")
+
+
 class SecurityMySQLOwnerProtectionOnlineTest(unittest.TestCase):
     def test_owner_actions_cover_the_four_projection_bindings(self) -> None:
         self.assertEqual(
@@ -36,6 +84,7 @@ class SecurityMySQLOwnerProtectionOnlineTest(unittest.TestCase):
                     {
                         "id": "11",
                         "code": "email",
+                        "security_classification_id": "12",
                         "default_security_grade_id": "21",
                     }
                 ],
@@ -71,11 +120,30 @@ class SecurityMySQLOwnerProtectionOnlineTest(unittest.TestCase):
             governance,
             {
                 "sensitive_data_type_id": "11",
+                "security_classification_id": "12",
+                "security_grade_id": "21",
                 "detector_id": "31",
                 "baseline_id": "41",
                 "effect": "suppress",
             },
         )
+
+    def test_default_protection_probe_is_atomic_and_leaves_no_resources(self) -> None:
+        client = DefinitionProbeClient()
+
+        evidence = ONLINE.exercise_default_protection_transaction(
+            client, 12, 21
+        )
+
+        self.assertEqual(evidence["effect"], "mask")
+        self.assertEqual(evidence["algorithm"], ONLINE.STRUCTURED_MASK_ALGORITHM)
+        self.assertEqual(evidence["invalid_request_status"], 400)
+        self.assertTrue(evidence["rollback_verified"])
+        self.assertTrue(evidence["cleanup_verified"])
+        self.assertEqual(client.types, [])
+        self.assertEqual(client.baselines, [])
+        self.assertIn("security.sensitive_data_type.create", ONLINE.REQUIRED_PERMISSIONS)
+        self.assertIn("security.sensitive_data_type.delete", ONLINE.REQUIRED_PERMISSIONS)
 
     def test_email_suppression_keeps_all_non_sensitive_rows(self) -> None:
         evidence = ONLINE.assert_email_suppressed(

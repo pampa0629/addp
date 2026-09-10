@@ -22,11 +22,12 @@ func NewPolicyHandler(policies *service.PolicyService) *PolicyHandler {
 }
 
 // @Summary 保护策略列表 | List protection policies
-// @Description 分页返回当前租户针对正式 Assessment 的显式收紧策略及当前不可变修订 | Return explicit tightening policies and current immutable revisions for formal Assessments in the current tenant
+// @Description 分页返回当前租户针对正式 Assessment 的显式收紧策略及当前不可变修订，可按保护纳管精确筛选 | Return explicit tightening policies and current immutable revisions for formal Assessments in the current tenant, optionally filtered by protection enrollment
 // @Tags Protection Policy
 // @Produce json
 // @Param page query int false "页码 | Page number"
 // @Param page_size query int false "每页数量，最大 100 | Page size, maximum 100"
+// @Param enrollment_id query string false "保护纳管 ID | Protection enrollment ID"
 // @Success 200 {object} ProtectionPolicyListResponse
 // @Failure 400 {object} map[string]string
 // @Failure 401 {object} map[string]string
@@ -38,7 +39,7 @@ func NewPolicyHandler(policies *service.PolicyService) *PolicyHandler {
 // @Security BearerAuth
 func (h *PolicyHandler) List(c *gin.Context) {
 	page, pageSize := commonapi.ParsePagination(c)
-	result, err := h.policies.List(c.Request.Context(), getTenantID(c), int64(page), int64(pageSize))
+	result, err := h.policies.List(c.Request.Context(), getTenantID(c), int64(page), int64(pageSize), c.Query("enrollment_id"))
 	if err != nil {
 		respondError(c, err)
 		return

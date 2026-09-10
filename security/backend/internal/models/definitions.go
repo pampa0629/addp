@@ -135,6 +135,15 @@ type DefinitionProfileApplication struct {
 	CreatedGrades          int    `json:"created_grades"`
 }
 
+type CreateSensitiveDataTypeRequest struct {
+	Code                     string                    `json:"code" binding:"required"`
+	Name                     string                    `json:"name" binding:"required"`
+	Description              string                    `json:"description"`
+	SecurityClassificationID int64                     `json:"security_classification_id" binding:"required"`
+	DefaultSecurityGradeID   int64                     `json:"default_security_grade_id" binding:"required"`
+	DefaultProtection        *DefaultProtectionRequest `json:"default_protection" binding:"required"`
+}
+
 type SensitiveDataTypeRequest struct {
 	Code                     string `json:"code" binding:"required"`
 	Name                     string `json:"name" binding:"required"`
@@ -142,6 +151,14 @@ type SensitiveDataTypeRequest struct {
 	SecurityClassificationID int64  `json:"security_classification_id" binding:"required"`
 	DefaultSecurityGradeID   int64  `json:"default_security_grade_id" binding:"required"`
 	Version                  int64  `json:"version"`
+}
+
+type DefaultProtectionRequest struct {
+	Effect             string `json:"effect" binding:"required"`
+	Algorithm          string `json:"algorithm"`
+	KeepPrefix         int    `json:"keep_prefix"`
+	KeepSuffix         int    `json:"keep_suffix"`
+	InvalidValueEffect string `json:"invalid_value_effect"`
 }
 
 type DetectorRequest struct {

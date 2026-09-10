@@ -22,7 +22,7 @@ flowchart TB
     Classification[SecurityClassification<br/>安全分类]
     Grade[SecurityGrade<br/>安全等级]
     Detector[Detector<br/>检测器]
-    Baseline[ProtectionBaseline<br/>保护基线<br/>界面：默认保护规则]
+    Baseline[ProtectionBaseline<br/>保护基线<br/>界面：敏感定义中的默认保护]
     Enrollment[ProtectionEnrollment<br/>保护纳管<br/>界面：受保护资源]
     Finding[SensitiveFinding<br/>敏感发现]
     Assessment[ResourceSecurityAssessment<br/>资源安全评估]
@@ -65,16 +65,15 @@ ProtectionBaseline 或 SensitiveDataType 的保护语义变化由 Security 根�
 
 ### 2.1 产品信息架构
 
-Security 的领域事实保持独立，产品入口收敛为四个工作区，不按数据库实体逐一暴露同级菜单：
+Security 的领域事实保持独立，产品入口收敛为三个工作区，不按数据库实体逐一暴露同级菜单：
 
 | 产品入口 | 承载事实与操作 | 定位 |
 | --- | --- | --- |
 | 分类分级体系 | SecurityClassification、SecurityGrade、definition profile | 以“分类目录”和“保护等级”两个页签维护低频基础定义；平台推荐定义可由用户显式、一键补齐。分类回答业务或合规归属，等级回答风险与保护强度，二者相互独立 |
-| 敏感数据定义 | SensitiveDataType、Detector | 以敏感类型为主视图，把具体识别方式收进对应类型，统一回答“什么数据敏感、如何发现、发现后先采用哪个分类与等级” |
-| 默认保护规则 | ProtectionBaseline | 定义敏感类型与保护等级组合下自动采用且不可放宽的最低保护效果 |
-| 受保护资源 | ProtectionEnrollment 及其 Finding、Assessment、Projection 状态 | 选择 Meta 已扫描资源纳入数据保护，并观察发现、复核和各 Owner 保护规则同步状态 |
+| 敏感数据定义 | SensitiveDataType、Detector、ProtectionBaseline | 以敏感类型为主视图，把具体识别方式和“敏感类型 + 保护等级”的默认保护收进对应类型，统一回答“什么数据敏感、如何发现、默认怎样保护” |
+| 受保护资源 | ProtectionEnrollment 及其 Finding、Assessment、ProtectionPolicy、Projection 状态 | 选择 Meta 已扫描资源纳入数据保护，复核或调整具体组件的分类分级结论，在默认保护之上按资源与出口显式收紧，并观察各 Owner 保护规则同步状态 |
 
-这只是产品信息架构收敛，不合并 Security 的领域对象。“分类分级体系”是低频基础定义工作区，不是新的领域对象；稳定技术术语仍为 `ProtectionBaseline` 和 `ProtectionEnrollment`；“默认保护规则”“受保护资源”只用于面向用户的页面与导航，“纳入数据保护”是创建 ProtectionEnrollment 的动作。
+这只是产品信息架构收敛，不合并 Security 的领域对象。“分类分级体系”是低频基础定义工作区，不是新的领域对象；稳定技术术语仍为 `ProtectionBaseline`、`ProtectionPolicy` 和 `ProtectionEnrollment`。“默认保护”是敏感数据定义的从属配置，不再暴露独立产品入口；“受保护资源”用于具体资源结论与只能收紧的保护策略；“纳入数据保护”是创建 ProtectionEnrollment 的动作。
 
 ## 三、专业资源身份与 Catalog
 

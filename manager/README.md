@@ -99,7 +99,7 @@ CSV、JSON、Parquet、Excel、Shapefile、GeoJSON、图片、PDF、文本
 ### 向量化与混合检索
 1. 向量化对象是 data item，资源树 node 只作为批量选择范围。
 2. 资源树 item / node 向量化是一次性 execution，不创建任务定义。
-3. 独立向量化页面创建 `manager.embedding_tasks`，TaskProvider `task_type=embedding`。
+3. “数据任务”的“向量化任务”Tab 创建 `manager.embedding_tasks`，TaskProvider `task_type=embedding`。
 4. 向量化结果写入 `manager.embeddings`，搜索只消费 `status=ready` 且模型、维度匹配的结果。
 5. Meilisearch 负责全文和属性检索，pgvector 负责向量命中，Manager 搜索服务负责融合结果。
 

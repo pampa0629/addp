@@ -63,11 +63,24 @@ export function resolveTenantScopeLabel(scope, t) {
   return i18nKey ? t(i18nKey) : normalizedScope || '-'
 }
 
-export function formatTenantAssignmentScope(assignment, t) {
+export function formatOrganizationOptionLabel(organization) {
+  const name = String(organization?.name || '').trim()
+  const code = String(organization?.code || '').trim()
+  if (name && code) return `${name} (${code})`
+  return name || code || '-'
+}
+
+export function formatTenantAssignmentScope(assignment, t, organizationLabels = {}) {
   const scopeType = normalizedScopeValue(assignment?.scope_type)
   const label = resolveTenantScopeLabel(scopeType, t)
-  if (scopeType === 'department') return `${label} #${normalizedScopeValue(assignment?.department_id)}`
-  if (scopeType === 'project_group') return `${label} #${normalizedScopeValue(assignment?.project_group_id)}`
+  if (scopeType === 'department') {
+    const id = normalizedScopeValue(assignment?.department_id)
+    return `${label} · ${organizationLabels.department?.get(id) || `#${id}`}`
+  }
+  if (scopeType === 'project_group') {
+    const id = normalizedScopeValue(assignment?.project_group_id)
+    return `${label} · ${organizationLabels.project_group?.get(id) || `#${id}`}`
+  }
   return label
 }
 

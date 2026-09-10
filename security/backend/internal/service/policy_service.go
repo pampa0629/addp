@@ -149,16 +149,24 @@ func (s *PolicyService) appendRevision(ctx context.Context, tenantID, userID int
 	return result, err
 }
 
-func (s *PolicyService) List(ctx context.Context, tenantID, page, pageSize int64) (*models.ProtectionPolicyListResponse, error) {
-	if tenantID <= 0 || page <= 0 || pageSize <= 0 || pageSize > 100 {
+func (s *PolicyService) List(ctx context.Context, tenantID, page, pageSize int64, enrollmentID string) (*models.ProtectionPolicyListResponse, error) {
+	enrollmentID = strings.TrimSpace(enrollmentID)
+	if tenantID <= 0 || page <= 0 || pageSize <= 0 || pageSize > 100 || (enrollmentID != "" && uuid.Validate(enrollmentID) != nil) {
 		return nil, commonapi.ErrBadRequest
 	}
+	base := s.db.WithContext(ctx).Model(&models.ProtectionPolicy{}).Where("tenant_id = ?", tenantID)
+	if enrollmentID != "" {
+		assessmentIDs := s.db.Model(&models.ResourceSecurityAssessment{}).
+			Select("id").
+			Where("tenant_id = ? AND enrollment_id = ?", tenantID, enrollmentID)
+		base = base.Where("assessment_id IN (?)", assessmentIDs)
+	}
 	var total int64
-	if err := s.db.WithContext(ctx).Model(&models.ProtectionPolicy{}).Where("tenant_id = ?", tenantID).Count(&total).Error; err != nil {
+	if err := base.Count(&total).Error; err != nil {
 		return nil, err
 	}
 	var rows []models.ProtectionPolicy
-	if err := s.db.WithContext(ctx).Where("tenant_id = ?", tenantID).Order("updated_at DESC, id ASC").Offset(int((page - 1) * pageSize)).Limit(int(pageSize)).Find(&rows).Error; err != nil {
+	if err := base.Order("updated_at DESC, id ASC").Offset(int((page - 1) * pageSize)).Limit(int(pageSize)).Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	data := make([]models.ProtectionPolicyResponse, 0, len(rows))

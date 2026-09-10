@@ -33,6 +33,16 @@ func TestProtectionPolicyTightensAndRevokeFallsBackToBaseline(t *testing.T) {
 	if created.Version != 1 || created.CurrentRevision != 1 || created.Current.Effect != dataprotection.EffectSuppress || created.State != models.ProtectionPolicyStateActive || len(created.History) != 1 {
 		t.Fatalf("created policy = %#v", created)
 	}
+	listed, err := policies.List(context.Background(), 7, 1, 100, finding.EnrollmentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if listed.Total != 1 || len(listed.Data) != 1 || listed.Data[0].ID != created.ID {
+		t.Fatalf("filtered policies = %#v", listed)
+	}
+	if _, err := policies.List(context.Background(), 7, 1, 100, "not-a-uuid"); !errors.Is(err, commonapi.ErrBadRequest) {
+		t.Fatalf("invalid enrollment filter error = %v", err)
+	}
 	if _, err := policies.Create(context.Background(), 7, 31, models.CreateProtectionPolicyRequest{
 		AssessmentID: reviewed.Assessment.ID, ConsumerOwner: "manager", Action: managerPreviewAction,
 		Effect: dataprotection.EffectDeny, Rationale: "重复绑定",

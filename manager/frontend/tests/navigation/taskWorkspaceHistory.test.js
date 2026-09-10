@@ -35,9 +35,19 @@ describe('Manager task workspace history', () => {
     expect(derivedTasksSource).not.toContain('JSON.stringify(selectedTask?.config')
   })
 
-  it('keeps the independent vectorization workspace history behavior', () => {
+  it('integrates vectorization into the canonical data-task route while preserving workspace history', () => {
+    expect(routerSource).not.toContain("path: 'vectorization-tasks'")
+    expect(derivedTasksSource).toContain("name=\"embedding\"")
+    expect(derivedTasksSource).toContain('<VectorizationTasks')
+    expect(vectorizationSource).toContain("tasks: ['category', 'create', 'task_id']")
     expect(vectorizationSource).toContain("history: 'push'")
     expect(vectorizationSource).toContain('requestCreateDialog')
     expect(vectorizationSource).toContain('requestEditTask')
+  })
+
+  it('does not expose Manager infra quick-view results as task actions', () => {
+    expect(derivedTasksSource).not.toContain('viewTaskResult')
+    expect(derivedTasksSource).not.toContain("manager.derivedTasks.viewResult")
+    expect(derivedTasksSource).not.toContain("manager.derivedTasks.result')")
   })
 })

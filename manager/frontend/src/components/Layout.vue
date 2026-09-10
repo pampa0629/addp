@@ -47,17 +47,13 @@
             <el-icon><Document /></el-icon>
             <span>{{ t('manager.layout.dataRetrieval') }}</span>
           </el-menu-item>
-          <el-menu-item index="/vectorization-tasks">
-            <el-icon><List /></el-icon>
-            <span>{{ t('manager.layout.vectorizationTasks') }}</span>
-          </el-menu-item>
 		  <el-menu-item v-if="authStore.hasAnyPermission(['manager.configuration.read'])" index="/settings/embedding">
 			<el-icon><Setting /></el-icon>
 			<span>{{ t('manager.layout.embeddingConfiguration') }}</span>
 		  </el-menu-item>
           <el-menu-item index="/derived-tasks">
             <el-icon><Operation /></el-icon>
-            <span>{{ t('manager.layout.derivedTasks') }}</span>
+            <span>{{ t('manager.layout.dataTasks') }}</span>
           </el-menu-item>
         </el-menu>
       </el-aside>
@@ -82,7 +78,6 @@ import {
   SwitchButton,
   Search,
   Document,
-  List,
 	Operation,
   Setting
 } from '@element-plus/icons-vue'

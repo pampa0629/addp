@@ -127,7 +127,7 @@ func TestManualAssessmentUsesCurrentMetaComponentAndCanBeRevoked(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dataType, err := definitions.CreateType(models.SensitiveDataTypeRequest{Code: "phone", Name: "手机号", SecurityClassificationID: classification.ID, DefaultSecurityGradeID: grade.ID}, 7, 11)
+	dataType, err := definitions.createTypeWithoutBaseline(models.SensitiveDataTypeRequest{Code: "phone", Name: "手机号", SecurityClassificationID: classification.ID, DefaultSecurityGradeID: grade.ID}, 7, 11)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -266,7 +266,7 @@ func prepareReviewablePhoneFinding(t *testing.T) (*gorm.DB, *EnrollmentService, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	dataType, err := definitions.CreateType(models.SensitiveDataTypeRequest{Code: "phone", Name: "手机号", SecurityClassificationID: classification.ID, DefaultSecurityGradeID: grade.ID}, 7, 11)
+	dataType, err := definitions.createTypeWithoutBaseline(models.SensitiveDataTypeRequest{Code: "phone", Name: "手机号", SecurityClassificationID: classification.ID, DefaultSecurityGradeID: grade.ID}, 7, 11)
 	if err != nil {
 		t.Fatal(err)
 	}

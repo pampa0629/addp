@@ -146,6 +146,8 @@ Role Assignment 的写入服务必须在持久化前校验目标 Principal 的�
 
 租户管理端通过唯一的 `POST /api/v1/system/tenant/role_assignments` 创建 Role Assignment。请求使用显式 `role_ids` 列表，只表示把同一个 Membership 在同一 Scope、有效期和授权原因下分配给多个 Role。`role_ids` 必须包含 `1-50` 个无重复的十进制 Role ID；单角色分配也使用只含一个元素的列表，不接受旧 `role_id` 字段。服务必须在同一事务内按 Role ID 稳定顺序完成 Membership、Principal 类型、Scope、有效期、增强认证和重复分配校验，再写入全部 Assignment 及各自审计事实；任一角色失败时整批回滚，成功时返回全部新建 Assignment。
 
+Department 和 Project Group Scope 必须引用当前 Tenant 内可用的组织事实：Department 必须为 `active`，Project Group 不得为 `closed`，且目标 Tenant Membership 必须具有对应的有效 Department Membership 或 Project Group Membership。写入服务必须在同一事务内按 `tenant_id + id` 锁定并复核组织对象与成员关系；跨 Tenant 或不存在对象返回 `404 Not Found`，对象不可用或缺少有效组织成员关系返回 `409 Conflict`。管理界面必须通过可搜索选择器展示组织名称与稳定 Code，仅在提交协议中使用 ID，不得要求管理员手工输入或识别裸 ID。
+
 管理界面的 Role 选择器必须使用 Membership 的 `principal_type` 和 Role 的 `allowed_principal_types` 进行结构化过滤，只展示对目标 Principal 可分配的 Role。不得根据 Role Key 后缀、展示名称或其他字符串约定识别 Runtime Role。
 
 Tenant 管理界面按账号类别提供唯一授权入口：“角色管理 > 角色分配”只查询和选择 User Membership；Service Principal 的角色查看与分配只从“应用接入 > 机器身份”进入，并继续复用相同的 Role Assignment API、校验和审计事实。Platform-owned Runtime Service Principal 在该视图中只读，不允许 Tenant 管理员创建或撤销其系统引导的 Role Assignment；Tenant-owned Service Account 只可选择 `allowed_principal_types` 包含 `service_principal` 的 Role。

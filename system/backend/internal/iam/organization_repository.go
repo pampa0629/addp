@@ -162,6 +162,14 @@ func (r *Repository) GetDepartmentMembership(ctx context.Context, tenantID, depa
 	return &membership, nil
 }
 
+func (r *Repository) LockActiveDepartmentMembershipByTenantMembership(ctx context.Context, tenantID, departmentID, tenantMembershipID int64) error {
+	var membership DepartmentMembership
+	err := r.db.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("tenant_id = ? AND department_id = ? AND tenant_membership_id = ? AND status = ?", tenantID, departmentID, tenantMembershipID, OrganizationMembershipStatusActive).
+		Take(&membership).Error
+	return wrapRepositoryError(err)
+}
+
 func (r *Repository) CreateDepartmentMembership(ctx context.Context, membership *DepartmentMembership) error {
 	return wrapRepositoryError(r.db.WithContext(ctx).Create(membership).Error)
 }
@@ -276,6 +284,14 @@ func (r *Repository) GetProjectGroupMembership(ctx context.Context, tenantID, gr
 		return nil, wrapRepositoryError(err)
 	}
 	return &membership, nil
+}
+
+func (r *Repository) LockActiveProjectGroupMembershipByTenantMembership(ctx context.Context, tenantID, groupID, tenantMembershipID int64) error {
+	var membership ProjectGroupMembership
+	err := r.db.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("tenant_id = ? AND project_group_id = ? AND tenant_membership_id = ? AND status = ?", tenantID, groupID, tenantMembershipID, OrganizationMembershipStatusActive).
+		Take(&membership).Error
+	return wrapRepositoryError(err)
 }
 
 func (r *Repository) CreateProjectGroupMembership(ctx context.Context, membership *ProjectGroupMembership) error {

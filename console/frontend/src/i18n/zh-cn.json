@@ -335,8 +335,7 @@
         "label": "数据管理",
         "dataExplorer": "数据探查",
         "dataRetrieval": "数据检索",
-        "vectorizationTasks": "向量化任务",
-		"derivedTasks": "生成任务",
+		"dataTasks": "数据任务",
         "spatialQuickView": "快显管理",
         "spatialTasks": "空间任务",
         "vectorTiles": "矢量瓦片",
@@ -387,7 +386,6 @@
         "label": "数据安全",
         "classificationGrading": "分类分级体系",
         "sensitiveDataDefinitions": "敏感数据定义",
-        "defaultProtectionRules": "默认保护规则",
         "protectedResources": "受保护资源"
       },
       "develop": {

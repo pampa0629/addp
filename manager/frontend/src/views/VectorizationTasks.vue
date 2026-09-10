@@ -1,6 +1,6 @@
 <template>
-  <div class="vectorization">
-    <el-card>
+  <div class="vectorization" :class="{ 'is-embedded': embedded }">
+    <el-card :shadow="embedded ? 'never' : 'always'">
       <el-tabs v-model="activeTab" @tab-change="handleTabChange">
         <el-tab-pane :label="t('manager.vectorization.tasksTab')" name="tasks">
           <div class="tab-toolbar task-tab-toolbar">
@@ -381,6 +381,13 @@ import {
   isVectorizableRangeNode
 } from '../utils/vectorization'
 
+defineProps({
+  embedded: {
+    type: Boolean,
+    default: false
+  }
+})
+
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
@@ -388,8 +395,8 @@ const router = useRouter()
 const resolveRouteState = routeQuery => resolveManagerTaskWorkspaceRouteState({
   routeQuery,
   allowedQueryByTab: {
-    tasks: ['create', 'task_id'],
-    results: ['task_id']
+    tasks: ['category', 'create', 'task_id'],
+    results: ['category', 'task_id']
   }
 })
 const activeTab = ref(resolveRouteState(route.query).tab)
@@ -655,7 +662,7 @@ const openCreateDialog = async () => {
 }
 
 const requestCreateDialog = async () => {
-  const routeState = resolveRouteState({ tab: 'tasks', create: '1' })
+  const routeState = resolveRouteState({ ...route.query, tab: 'tasks', create: '1', task_id: undefined })
   await navigateManagerRoute(router, {
     path: route.path,
     query: routeState.query
@@ -680,7 +687,7 @@ const openEditDialog = async (task) => {
 }
 
 const requestEditTask = async (task) => {
-  const routeState = resolveRouteState({ tab: 'tasks', task_id: task.id })
+  const routeState = resolveRouteState({ ...route.query, tab: 'tasks', task_id: task.id, create: undefined })
   await navigateManagerRoute(router, {
     path: route.path,
     query: routeState.query
@@ -767,7 +774,7 @@ const viewTaskResults = async (task) => {
     : null
   resultsPage.value = 1
   activeTab.value = 'results'
-  const routeState = resolveRouteState({ tab: 'results', task_id: task.id })
+  const routeState = resolveRouteState({ ...route.query, tab: 'results', task_id: task.id, create: undefined })
   await navigateManagerRoute(router, {
     path: route.path,
     query: routeState.query
@@ -1085,6 +1092,15 @@ onMounted(async () => {
 <style scoped>
 .vectorization {
   padding: 20px;
+}
+
+.vectorization.is-embedded {
+  padding: 0;
+}
+
+.vectorization.is-embedded :deep(.el-card) {
+  border: 0;
+  background: transparent;
 }
 
 .tab-toolbar {

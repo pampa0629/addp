@@ -52,6 +52,14 @@ export const assessmentAPI = {
   revoke: (id, data) => client.delete(`/security/assessments/${id}`, { data })
 }
 
+export const protectionPolicyAPI = {
+  list: params => client.get('/security/protection-policies', { params }),
+  get: id => client.get(`/security/protection-policies/${id}`),
+  create: data => client.post('/security/protection-policies', data),
+  update: (id, data) => client.put(`/security/protection-policies/${id}`, data),
+  revoke: (id, data) => client.delete(`/security/protection-policies/${id}`, { data })
+}
+
 export const protectionExemptionAPI = {
   list: params => client.get('/security/protection-exemptions', { params }),
   get: id => client.get(`/security/protection-exemptions/${id}`),

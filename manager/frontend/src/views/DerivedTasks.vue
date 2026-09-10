@@ -5,7 +5,7 @@
         <h2>{{ t('manager.derivedTasks.title') }}</h2>
         <p>{{ t('manager.derivedTasks.description') }}</p>
       </div>
-      <div class="header-actions">
+      <div v-if="category !== 'embedding'" class="header-actions">
         <el-button @click="loadTasks"><el-icon><Refresh /></el-icon>{{ t('manager.derivedTasks.refresh') }}</el-button>
         <el-button v-if="category === 'managed_quick_view'" type="primary" @click="beginQuickViewCreate"><el-icon><Plus /></el-icon>{{ t('manager.derivedTasks.createQuickView') }}</el-button>
         <el-dropdown v-else split-button type="primary" @click="beginCreate(defaultSpatialTaskType)" @command="beginCreate">
@@ -22,8 +22,12 @@
     <el-tabs v-model="category" @tab-change="changeCategory">
       <el-tab-pane :label="t('manager.derivedTasks.categories.managedQuickView')" name="managed_quick_view" />
       <el-tab-pane :label="t('manager.derivedTasks.categories.spatialBusiness')" name="spatial_business" />
+      <el-tab-pane :label="t('manager.derivedTasks.categories.embedding')" name="embedding" />
     </el-tabs>
 
+    <VectorizationTasks v-if="category === 'embedding'" embedded />
+
+    <template v-else>
     <div class="toolbar">
       <el-select v-model="taskType" clearable :placeholder="t('manager.derivedTasks.allTypes')" @change="changeFilter">
         <el-option v-for="option in taskTypeOptions" :key="option.value" :label="t(option.label)" :value="option.value" />
@@ -67,7 +71,6 @@
         <template #default="{ row }">
           <el-button link type="primary" @click="showDetail(row)">{{ t('manager.derivedTasks.detail') }}</el-button>
           <el-button v-if="sourceLocator(row)" link @click="openSource(row)">{{ t('manager.derivedTasks.source') }}</el-button>
-          <el-button v-if="isManagedQuickViewTask(row)" link type="primary" :loading="viewingTaskID === row.id" @click="viewTaskResult(row)">{{ t('manager.derivedTasks.result') }}</el-button>
           <el-button v-if="isRebindableTask(row)" link type="warning" @click="beginRebind(row)">{{ t('manager.derivedTasks.rebind') }}</el-button>
           <el-button v-if="isSpatialBusinessTask(row)" link @click="beginEdit(row)">{{ t('manager.derivedTasks.edit') }}</el-button>
           <el-button link type="primary" :loading="executingTaskID === row.id" :disabled="!row.enabled || isExecuting(row)" @click="execute(row)">{{ t('manager.derivedTasks.execute') }}</el-button>
@@ -85,7 +88,6 @@
     <el-drawer v-model="detailVisible" :title="selectedTask?.name || t('manager.derivedTasks.detail')" size="560px" @closed="clearTaskDetailRoute">
       <div v-if="selectedTask" class="detail-actions">
         <el-button v-if="sourceLocator(selectedTask)" type="primary" plain @click="openSource(selectedTask)">{{ t('manager.derivedTasks.viewSource') }}</el-button>
-        <el-button v-if="isManagedQuickViewTask(selectedTask) && selectedTask.has_current_result" type="primary" :loading="viewingTaskID === selectedTask.id" @click="viewTaskResult(selectedTask)">{{ t('manager.derivedTasks.viewResult') }}</el-button>
         <el-button v-if="isRebindableTask(selectedTask)" type="warning" @click="beginRebind(selectedTask)">{{ t('manager.derivedTasks.rebind') }}</el-button>
         <el-button :loading="executingTaskID === selectedTask.id" :disabled="!selectedTask.enabled || isExecuting(selectedTask)" @click="execute(selectedTask)">{{ t('manager.derivedTasks.execute') }}</el-button>
         <el-button v-if="selectedTask.last_execution_id" @click="openMonitor(selectedTask)">{{ t('manager.derivedTasks.monitor') }}</el-button>
@@ -102,7 +104,7 @@
         <el-descriptions-item v-if="sourceFormat(selectedTask)" :label="t('manager.derivedTasks.sourceFormat')">{{ sourceFormat(selectedTask) }}</el-descriptions-item>
         <el-descriptions-item v-if="sourceSize(selectedTask) !== null" :label="t('manager.derivedTasks.sourceSize')">{{ formatBytes(sourceSize(selectedTask)) }}</el-descriptions-item>
         <el-descriptions-item v-if="targetEngineLabel(selectedTask)" :label="t('manager.derivedTasks.targetEngine')">{{ targetEngineLabel(selectedTask) }}</el-descriptions-item>
-        <el-descriptions-item v-if="resultName(selectedTask)" :label="t('manager.derivedTasks.resultName')">{{ resultName(selectedTask) }}</el-descriptions-item>
+        <el-descriptions-item v-if="isSpatialBusinessTask(selectedTask) && resultName(selectedTask)" :label="t('manager.derivedTasks.resultName')">{{ resultName(selectedTask) }}</el-descriptions-item>
         <el-descriptions-item :label="t('manager.derivedTasks.lastRunAt')">{{ formatTime(selectedTask.last_run_at) }}</el-descriptions-item>
         <el-descriptions-item :label="t('manager.derivedTasks.columns.updatedAt')">{{ formatTime(selectedTask.updated_at) }}</el-descriptions-item>
         <el-descriptions-item v-if="selectedTask.description" :label="t('manager.derivedTasks.taskDescription')">{{ selectedTask.description }}</el-descriptions-item>
@@ -135,11 +137,12 @@
       @saved="handleEditorSaved"
       @closed="clearEditorRoute"
     />
+    </template>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -158,10 +161,11 @@ import {
 } from '../utils/derivedTaskPresentation'
 import { deleteSelectedDerivedTasks } from '../utils/derivedTaskBatch'
 import { navigateManagerRoute } from '../utils/moduleNavigation'
-import { openQuickViewResult } from '../utils/quickViewResultNavigation'
 import QuickViewTaskCreator from '../components/tasks/QuickViewTaskCreator.vue'
 import VectorTileSetTaskEditor from '../components/tasks/VectorTileSetTaskEditor.vue'
 import RasterMosaicTaskEditor from '../components/tasks/RasterMosaicTaskEditor.vue'
+
+const VectorizationTasks = defineAsyncComponent(() => import('./VectorizationTasks.vue'))
 
 const route = useRoute()
 const router = useRouter()
@@ -184,7 +188,6 @@ const editorLocator = ref('')
 const editingTask = ref(null)
 const rebindingTask = ref(null)
 const executingTaskID = ref(0)
-const viewingTaskID = ref(0)
 const executionStatus = ref(routeExecutionStatus)
 const bindingStatus = ref(routeBindingStatus)
 const selectedTasks = ref([])
@@ -209,7 +212,11 @@ const taskTypes = {
 function categoryForTaskType(value) {
   return Object.entries(taskTypes).find(([, types]) => types.some(([type]) => type === value))?.[0] || ''
 }
-const category = ref(categoryForTaskType(routeTaskType) || (route.query.category === 'spatial_business' ? 'spatial_business' : 'managed_quick_view'))
+function categoryFromRoute(query, type = '') {
+  if (type === 'embedding' || query.category === 'embedding') return 'embedding'
+  return categoryForTaskType(type) || (query.category === 'spatial_business' ? 'spatial_business' : 'managed_quick_view')
+}
+const category = ref(categoryFromRoute(route.query, routeTaskType))
 const taskType = ref(routeTaskType)
 const taskTypeOptions = computed(() => (taskTypes[category.value] || []).map(([value, label]) => ({ value, label })))
 const defaultSpatialTaskType = computed(() => taskType.value && categoryForTaskType(taskType.value) === 'spatial_business' ? taskType.value : 'vector_tile_set_generation')
@@ -257,6 +264,7 @@ async function syncRoute(extra = {}, history = 'replace') {
   await navigateManagerRoute(router, { path: '/derived-tasks', query }, { history })
 }
 async function loadTasks() {
+  if (category.value === 'embedding') return
   loading.value = true
   try {
     const response = payload(await listDerivedTasks({ category: category.value, task_type: taskType.value || undefined, execution_status: executionStatus.value || undefined, binding_status: bindingStatus.value || undefined, page: page.value, page_size: pageSize.value }))
@@ -267,7 +275,18 @@ async function loadTasks() {
     ElMessage.error(error?.response?.data?.error || t('manager.derivedTasks.loadFailed'))
   } finally { loading.value = false }
 }
-async function changeCategory() { taskType.value = ''; page.value = 1; detailVisible.value = false; editorVisible.value = false; await syncRoute(); await loadTasks() }
+async function changeCategory() {
+  taskType.value = ''
+  executionStatus.value = ''
+  bindingStatus.value = ''
+  page.value = 1
+  detailVisible.value = false
+  editorVisible.value = false
+  await syncRoute()
+  if (category.value !== 'embedding') {
+    await Promise.all([loadQuickViewEngines(), loadTasks()])
+  }
+}
 async function changeFilter() { page.value = 1; detailVisible.value = false; editorVisible.value = false; await syncRoute(); await loadTasks() }
 async function changeStatusFilter() { page.value = 1; detailVisible.value = false; editorVisible.value = false; await syncRoute(); await loadTasks() }
 async function changePageSize() { page.value = 1; await loadTasks() }
@@ -332,28 +351,6 @@ async function removeSelected() {
   }
 }
 function openSource(row) { navigateManagerRoute(router, { path: '/data-explorer', query: { locator: sourceLocator(row) } }, { history: 'push' }) }
-async function viewTaskResult(row) {
-  viewingTaskID.value = row.id
-  try {
-    const detail = row.has_current_result === true
-      ? row
-      : payload(await getDerivedTask(row.task_type, row.id))
-    if (!detail?.has_current_result) {
-      ElMessage.warning(t('manager.derivedTasks.resultUnavailable'))
-      return
-    }
-    const locator = sourceLocator(detail)
-    if (!locator) {
-      ElMessage.warning(t('manager.derivedTasks.resultUnavailable'))
-      return
-    }
-    await openQuickViewResult(router, locator, detail.task_type || row.task_type)
-  } catch (error) {
-    ElMessage.error(error?.response?.data?.error || error?.message || t('manager.derivedTasks.viewResultFailed'))
-  } finally {
-    viewingTaskID.value = 0
-  }
-}
 async function openMonitor(row) { await openMonitorExecution(row.last_execution_id) }
 function isSpatialBusinessTask(row) { return categoryForTaskType(row?.task_type) === 'spatial_business' }
 async function beginQuickViewCreate() {
@@ -444,12 +441,21 @@ watch(() => route.query, async (query) => {
   const nextType = typeof query.task_type === 'string' ? query.task_type : ''
   const nextExecutionStatus = query.execution_status === 'failed' ? 'failed' : ''
   const nextBindingStatus = query.binding_status === 'missing' ? 'missing' : ''
-  const nextCategory = categoryForTaskType(nextType) || (query.category === 'spatial_business' ? 'spatial_business' : 'managed_quick_view')
+  const nextCategory = categoryFromRoute(query, nextType)
   if (nextCategory !== category.value || nextType !== taskType.value || nextExecutionStatus !== executionStatus.value || nextBindingStatus !== bindingStatus.value) {
-    category.value = nextCategory; taskType.value = nextType; executionStatus.value = nextExecutionStatus; bindingStatus.value = nextBindingStatus; page.value = 1; await loadTasks()
+    category.value = nextCategory
+    taskType.value = nextType
+    executionStatus.value = nextExecutionStatus
+    bindingStatus.value = nextBindingStatus
+    page.value = 1
+    if (nextCategory !== 'embedding') {
+      await Promise.all([loadQuickViewEngines(), loadTasks()])
+    }
   }
-  if (query.task_id) await openTaskFromRoute()
-  else if (query.create === '1' || query.rebind_task_id) await openEditorFromRoute()
+  if (nextCategory !== 'embedding') {
+    if (query.task_id) await openTaskFromRoute()
+    else if (query.create === '1' || query.rebind_task_id) await openEditorFromRoute()
+  }
 })
 onMounted(async () => {
   const extra = {}
@@ -458,9 +464,13 @@ onMounted(async () => {
   if (route.query.rebind_task_id) extra.rebind_task_id = route.query.rebind_task_id
   if (typeof route.query.locator === 'string' && route.query.locator) extra.locator = route.query.locator
   await syncRoute(extra)
-  await Promise.all([loadQuickViewEngines(), loadTasks()])
-  if (extra.task_id) await openTaskFromRoute()
-  else if (extra.create || extra.rebind_task_id) await openEditorFromRoute()
+  if (category.value !== 'embedding') {
+    await Promise.all([loadQuickViewEngines(), loadTasks()])
+  }
+  if (category.value !== 'embedding') {
+    if (extra.task_id) await openTaskFromRoute()
+    else if (extra.create || extra.rebind_task_id) await openEditorFromRoute()
+  }
 })
 </script>
 

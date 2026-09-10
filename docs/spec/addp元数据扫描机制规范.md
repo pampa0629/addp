@@ -512,7 +512,8 @@ node 扫描仍由 detector 从 catalog 范围重新发现 item 并落库。item 
 | System 定时扫描 | `scheduled` | `deep` | `false` |
 | Meta 前端手动扫描 | `manual` | 第一阶段固定 `deep`；API 支持用户选择 | 第一阶段固定 `false`；API 支持用户选择 |
 | Meta 前端定时扫描 | `scheduled` | 用户选择，默认 `deep` | 默认 `false` |
-| Manager 刷新按钮 | `manual` | `deep` | `true` |
+| Manager node 刷新 | `manual` | `basic` | `true` |
+| Manager item 刷新 | `manual` | `deep` | `true` |
 | Manager 预览前 deep 补齐 | `manual` | `deep` | `false` |
 | Transfer 完成后触发 | `manual` | `basic` 或按导入结果决定 | `false` |
 
@@ -535,7 +536,16 @@ Manager 预览 item 前的 deep 补齐流程：
 
 Manager 不检查 `attributes.capabilities.extraction.metadata_extracted`，也不检查 `format_info`、`type_info`、`access_index` 中的格式专有字段来判断是否需要补齐。具体 provider 是否能抽取某类事实、是否因为格式不支持或成本限制而跳过，只由 Meta deep scan 结果表达。
 
-Manager 刷新按钮固定：
+Manager node 刷新固定：
+
+```json
+{
+  "scan_depth": "basic",
+  "force": true
+}
+```
+
+Manager item 刷新固定：
 
 ```json
 {
@@ -548,16 +558,16 @@ Manager 的刷新行为必须区分 node 和 item：
 
 | 刷新对象 | 行为要求 |
 |---|---|
-| node | 可异步触发 Meta deep + force 扫描；前端刷新树即可，不要求等待整个扫描完成。 |
+| node | 异步触发 Meta basic + force 扫描，用于重新枚举该范围并发现新 node / item；不打开 file / object 内容做深度增强。扫描完成后前端重新读取资源树。 |
 | item | 创建单个 known item refresh execution；前端对该 execution 做局部等待，完成后重新读取 item 元数据和预览。 |
 
 Manager 的 item refresh 不保留后端同步扫描入口。所谓“立等可用”是 UI 对同一条 execution 的前台等待体验，不是绕过 execution 的另一条刷新实现。
 
 item 刷新只刷新 item 本身，但必须包含该 item 的所有 content。对于 Shapefile 这类 `layout=multi` 的 item，刷新时必须使用已入库 `attributes.item.refs` 的完整 refs 集合作为 provider 输入；只读取 `.shp` 主文件会导致字段或空间信息被错误覆盖或丢失。`refs` 不是 catalog scan target，Manager 也不得把它展开后自行发起目录扫描。
 
-Manager 预览前的 deep 补齐与刷新按钮不同：补齐使用 `force=false`，只在 item 未达到 deep 或源数据过期时扫描；刷新按钮使用 `force=true`，用于用户明确要求重建当前 item 元数据。
+Manager 预览前的 deep 补齐与 item 刷新按钮不同：补齐使用 `force=false`，只在 item 未达到 deep 或源数据过期时扫描；item 刷新按钮使用 `force=true`，用于用户明确要求重建当前 item 元数据。node 刷新不执行 deep 增强，只重新发现范围内的资源树与 data item 身份。
 
-刷新按钮的语义是强制 Meta 重新生成当前目标范围内的元数据事实。是否重建全文索引、content hash、access index 等派生事实由 Meta 和对应 provider 根据 deep scan 规则统一处理，Manager 不应绕过 Meta 直接写搜索索引或局部 attributes。
+刷新按钮的语义是强制 Meta 按当前目标类型重新生成事实：node 使用 basic 重新发现身份，item 使用 deep 重建已知 item 的深层事实。是否重建全文索引、content hash、access index 等派生事实只由 item deep scan 和对应 provider 根据规则统一处理，Manager 不应绕过 Meta 直接写搜索索引或局部 attributes。
 
 Manager 刷新目标必须是当前选中的 engine / node / item，不能默认全 engine。
 

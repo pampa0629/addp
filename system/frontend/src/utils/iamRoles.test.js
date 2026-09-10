@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createAuthStore } from '@common-ui'
 import {
   buildTenantRoleOptions,
+  formatOrganizationOptionLabel,
   formatTenantAssignmentScope,
   hasTenantRole,
   needsTenantRoleSetup,
@@ -69,10 +70,14 @@ describe('IAM tenant role presentation', () => {
     })[key])
 
     expect(formatTenantAssignmentScope({ scope_type: 'tenant' }, translate)).toBe('租户')
-    expect(formatTenantAssignmentScope({ scope_type: 'department', department_id: '8' }, translate)).toBe('部门 #8')
+    expect(formatTenantAssignmentScope({ scope_type: 'department', department_id: '8' }, translate, {
+      department: new Map([['8', '研究中心 (research)']])
+    })).toBe('部门 · 研究中心 (research)')
+    expect(formatTenantAssignmentScope({ scope_type: 'department', department_id: '9' }, translate)).toBe('部门 · #9')
     expect(formatTenantAssignmentScope({}, translate)).toBe('-')
+    expect(formatOrganizationOptionLabel({ name: '研究中心', code: 'research' })).toBe('研究中心 (research)')
     expect(resolveTenantScopeLabel('custom_scope', translate)).toBe('custom_scope')
-    expect(translate).toHaveBeenCalledTimes(2)
+    expect(translate).toHaveBeenCalledTimes(3)
   })
 
   it('refreshes the access token before reloading authorization context', async () => {

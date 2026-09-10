@@ -93,15 +93,10 @@ import { useI18n } from 'vue-i18n'
 import { ResourceTree } from '@addp/common-frontend'
 import { parseLocator } from '@addp/common-frontend'
 import { useExplorerStore } from '@/stores/explorer'
-import client from '@/api/client'
 import {
-  canShowVectorizeAction,
-  isEmbeddingReady,
-  isVectorizableObjectNode,
-  isVectorizableRangeNode,
-  isStorageEngineNode
-} from '@/utils/vectorization'
-import { resolveCanonicalNodeSelection } from '@/utils/dataExplorerSelection'
+  resolveCanonicalNodeSelection,
+  resourceTreeRefreshKind
+} from '@/utils/dataExplorerSelection'
 
 const { t } = useI18n()
 
@@ -118,7 +113,6 @@ const emit = defineEmits(['node-select'])
 
 const store = useExplorerStore()
 const resourceTreeRef = ref(null)
-const embeddingStates = ref({})
 const catalogRootLoadPromises = new Map()
 let scanStatusTimer = 0
 const activeScan = ref({
@@ -141,43 +135,6 @@ const nodeActions = computed(() => {
       icon: 'Refresh',
       disabled: (node) => !isNodeEngineAvailable(node),
       visible: () => true
-    },
-    // 已向量化状态提示（仅支持向量化的单个对象）
-    {
-      id: 'embedding-ready',
-      name: 'embedding-ready',
-      label: t('manager.explorer.vectorized'),
-      tooltip: t('manager.explorer.vectorized'),
-      icon: 'Select',
-      color: '#67c23a',
-      disabled: () => true,
-      visible: (node) => {
-        const state = embeddingStates.value[node.locator || node.id]
-        return isVectorizableObjectNode(node) && isEmbeddingReady(state)
-      }
-    },
-    // 向量化操作（仅支持向量化且尚未 ready 的单个对象）
-    {
-      id: 'embedding',
-      name: 'embedding',
-      label: t('manager.explorer.vectorize'),
-      icon: 'MagicStick',
-      disabled: (node) => !isNodeEngineAvailable(node),
-      visible: (node) => {
-        const state = embeddingStates.value[node.locator || node.id]
-        return isVectorizableObjectNode(node) && canShowVectorizeAction(node, state)
-      }
-    },
-    // 批量向量化操作（MinIO/S3 的目录、前缀或 Bucket）
-    {
-      id: 'embedding-batch',
-      name: 'embedding-batch',
-      label: t('manager.explorer.batchVectorize'),
-      icon: 'MagicStick',
-      disabled: (node) => !isNodeEngineAvailable(node),
-      visible: (node) => {
-        return isVectorizableRangeNode(node)
-      }
     }
   ]
 })
@@ -263,9 +220,6 @@ const handleNodeClick = async (node) => {
   // 选择节点
   store.selectNode(locator)
   emit('node-select', { node: selectedNode, locator })
-  if (isNodeEngineAvailable(selectedNode)) {
-    await loadItemEmbeddingState(selectedNode, locator)
-  }
 
   // 关键：@node-collapse / @node-expand 在 element-plus 中先于 @node-click 触发，
   // 因此这里读到的是"点击后"的 store 状态，而不是点击前的状态。
@@ -299,21 +253,6 @@ const handleNodeClick = async (node) => {
   }
 }
 
-const loadItemEmbeddingState = async (node, locator) => {
-  if (!node || node.type !== 'object') return
-  try {
-    const loc = parseLocator(locator)
-    if (!loc.itemId) return
-    const state = await client.get(`/manager/items/${loc.itemId}/embedding`)
-    embeddingStates.value = {
-      ...embeddingStates.value,
-      [locator]: state
-    }
-  } catch (error) {
-    console.warn('加载 item 向量化状态失败:', error)
-  }
-}
-
 // 事件处理：节点操作
 const handleNodeAction = async ({ node, action }) => {
   const locator = node.locator || node.id
@@ -326,7 +265,7 @@ const handleNodeAction = async ({ node, action }) => {
   if (action === 'refresh') {
     try {
       startScanStatus(t('manager.explorer.scanSubmitting'), t('manager.explorer.scanSubmitting'), 5)
-      if (isBranchNode(node)) {
+      if (resourceTreeRefreshKind(locator) === 'node') {
         await store.refreshNode(locator, {
           onSubmitted: (run) => updateScanStatusFromRun(run, t('manager.explorer.scanSubmitted')),
           onProgress: updateScanStatusFromRun,
@@ -342,64 +281,6 @@ const handleNodeAction = async ({ node, action }) => {
       ElMessage.error(t('manager.explorer.refreshFailed', { error: error.message }))
     }
     return
-  }
-
-  if (action === 'embedding' || action === 'embedding-batch') {
-    // 只支持 MinIO/S3 对象存储
-    if (!isStorageEngineNode(node)) {
-      ElMessage.warning(t('manager.explorer.vectorizeOnlyStorage'))
-      return
-    }
-
-    try {
-      // 解析 locator 提取参数
-      const loc = parseLocator(locator)
-      let request
-      if (action === 'embedding') {
-        if (!isVectorizableObjectNode(node)) {
-          ElMessage.warning(t('manager.explorer.vectorizeSingleFileOnly'))
-          return
-        }
-        if (!loc.itemId) {
-          ElMessage.warning(t('manager.explorer.vectorizeSingleFileOnly'))
-          return
-        }
-        request = {
-          scope: 'item',
-          target: {
-            engine_id: loc.engineId,
-            item_id: loc.itemId,
-            locator
-          }
-        }
-      } else {
-        if (!isVectorizableRangeNode(node) || !loc.nodeId) {
-          ElMessage.warning(t('manager.explorer.batchVectorizeDirOnly'))
-          return
-        }
-        request = {
-          scope: 'node',
-          target: {
-            engine_id: loc.engineId,
-            node_id: loc.nodeId,
-            locator,
-            recursive: true
-          }
-        }
-      }
-
-      await client.post('/manager/embedding_executions', request)
-
-      if (action === 'embedding') {
-        await loadItemEmbeddingState(node, locator)
-        ElMessage.success(t('manager.explorer.vectorizeSubmitted', { key: node.label }))
-      } else {
-        ElMessage.success(t('manager.explorer.batchVectorizeSubmitted', { label: node.label }))
-      }
-    } catch (error) {
-      console.error('向量化失败:', error)
-      ElMessage.error(t('manager.explorer.vectorizeFailed', { error: error.response?.data?.error || error.message }))
-    }
   }
 }
 

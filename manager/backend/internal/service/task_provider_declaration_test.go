@@ -25,6 +25,13 @@ func TestManagerTaskProviderDeclaration(t *testing.T) {
 	if pptx == nil || !strings.Contains(pptx.EditURL, "/manager/derived-tasks?") {
 		t.Fatalf("pptx_pdf_generation edit_url = %q, want unified generation task route", pptx.EditURL)
 	}
+	embedding := capabilities.CapabilityFor("embedding")
+	if embedding == nil {
+		t.Fatal("missing embedding capability")
+	}
+	if embedding.CreateURL != "/manager/derived-tasks?category=embedding&create=1" || embedding.EditURL != "/manager/derived-tasks?category=embedding&task_id=:id" {
+		t.Fatalf("embedding routes = %q / %q, want unified data task route", embedding.CreateURL, embedding.EditURL)
+	}
 	for _, taskType := range []string{
 		"vector_tile_set_generation",
 		"raster_mosaic_generation",

@@ -425,6 +425,7 @@ jobs:
           - module: security
             name: Security
             target: test-security-frontend
+            playwright: true
           - module: system
             name: System
             target: test-system-frontend

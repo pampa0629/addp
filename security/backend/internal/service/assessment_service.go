@@ -88,7 +88,7 @@ func (s *AssessmentService) ReviewFinding(ctx context.Context, tenantID, reviewe
 		if request.Decision == models.FindingReviewDecisionAdjust {
 			gradeID = *request.SecurityGradeID
 		}
-		if err := ensureAssessmentGrade(tx, tenantID, gradeID); err != nil {
+		if err := ensureAssessmentBaseline(tx, tenantID, dataType.ID, gradeID); err != nil {
 			return err
 		}
 		review.SensitiveDataTypeID = &dataTypeID
@@ -238,7 +238,7 @@ func (s *AssessmentService) CreateManual(ctx context.Context, tenantID, reviewer
 		if err := tx.Where("tenant_id = ? AND id = ?", tenantID, request.SensitiveDataTypeID).First(&dataType).Error; err != nil {
 			return assessmentDBError(err)
 		}
-		if err := ensureAssessmentGrade(tx, tenantID, request.SecurityGradeID); err != nil {
+		if err := ensureAssessmentBaseline(tx, tenantID, dataType.ID, request.SecurityGradeID); err != nil {
 			return err
 		}
 		now := s.now().UTC()
@@ -294,7 +294,7 @@ func (s *AssessmentService) Revise(ctx context.Context, tenantID, reviewerID int
 		if err := tx.Where("tenant_id = ? AND id = ?", tenantID, request.SensitiveDataTypeID).First(&dataType).Error; err != nil {
 			return assessmentDBError(err)
 		}
-		if err := ensureAssessmentGrade(tx, tenantID, request.SecurityGradeID); err != nil {
+		if err := ensureAssessmentBaseline(tx, tenantID, dataType.ID, request.SecurityGradeID); err != nil {
 			return err
 		}
 		now := s.now().UTC()
@@ -473,13 +473,21 @@ func lockOrCreateAssessment(tx *gorm.DB, tenantID, reviewerID int64, finding mod
 	return &assessment, revision, nil
 }
 
-func ensureAssessmentGrade(tx *gorm.DB, tenantID, gradeID int64) error {
+func ensureAssessmentBaseline(tx *gorm.DB, tenantID, sensitiveDataTypeID, gradeID int64) error {
 	var count int64
 	if err := tx.Model(&models.SecurityGrade{}).Where("tenant_id = ? AND id = ?", tenantID, gradeID).Count(&count).Error; err != nil {
 		return err
 	}
 	if count != 1 {
 		return commonapi.ErrNotFound
+	}
+	if err := tx.Model(&models.ProtectionBaseline{}).
+		Where("tenant_id = ? AND sensitive_data_type_id = ? AND security_grade_id = ? AND enabled = ?", tenantID, sensitiveDataTypeID, gradeID, true).
+		Count(&count).Error; err != nil {
+		return err
+	}
+	if count != 1 {
+		return commonapi.ErrConflict
 	}
 	return nil
 }

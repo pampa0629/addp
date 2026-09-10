@@ -583,6 +583,9 @@
                   </el-tag>
                   <p class="explanation-primary">{{ effectiveDefinitionSummary(finding) }}</p>
                   <p>{{ baselineDescription(finding) }}</p>
+                  <p v-if="activeAssessmentForFinding(finding)" class="resource-policy-summary">
+                    {{ assessmentProtectionSummary(activeAssessmentForFinding(finding)) }}
+                  </p>
                 </section>
 
                 <section class="explanation-stage">
@@ -610,8 +613,23 @@
                 <el-button type="danger" plain @click="openFindingReview(finding, 'reject')">{{ t('security.finding.markFalsePositive') }}</el-button>
                 <el-button type="primary" plain @click="openFindingReview(finding, 'confirm')">{{ t('security.finding.review') }}</el-button>
               </div>
-              <div v-else-if="activeAssessmentForFinding(finding) && canUpdateAssessments" class="finding-card__actions">
-                <el-button type="danger" plain @click="revokeAssessment(activeAssessmentForFinding(finding))">
+              <div v-else-if="activeAssessmentForFinding(finding)" class="finding-card__actions">
+                <el-button
+                  v-if="canConfigurePolicy(activeAssessmentForFinding(finding))"
+                  type="primary"
+                  plain
+                  @click="openPolicy(activeAssessmentForFinding(finding))"
+                >
+                  {{ policyForAssessment(activeAssessmentForFinding(finding))?.state === 'active' ? t('security.policy.adjust') : t('security.policy.tighten') }}
+                </el-button>
+                <el-button
+                  v-if="policyForAssessment(activeAssessmentForFinding(finding))?.state === 'active' && canRevokePolicies"
+                  plain
+                  @click="revokePolicy(activeAssessmentForFinding(finding))"
+                >
+                  {{ t('security.policy.restoreDefault') }}
+                </el-button>
+                <el-button v-if="canUpdateAssessments" type="danger" plain @click="revokeAssessment(activeAssessmentForFinding(finding))">
                   {{ t('security.assessment.revokeConclusion') }}
                 </el-button>
               </div>
@@ -636,11 +654,29 @@
                 <strong>{{ assessment.component_key }}</strong>
                 <span>{{ assessmentSummary(assessment) }}</span>
                 <p>{{ assessment.current?.rationale }}</p>
+                <p v-if="assessment.current?.conclusion === 'sensitive'" class="resource-policy-summary">
+                  {{ assessmentProtectionSummary(assessment) }}
+                </p>
               </div>
               <div class="manual-assessment-card__actions">
                 <el-tag :type="assessment.current?.conclusion === 'sensitive' ? 'success' : 'info'">
                   {{ assessmentConclusionLabel(assessment.current?.conclusion) }}
                 </el-tag>
+                <el-button
+                  v-if="assessment.current?.conclusion === 'sensitive' && canConfigurePolicy(assessment)"
+                  link
+                  type="primary"
+                  @click="openPolicy(assessment)"
+                >
+                  {{ policyForAssessment(assessment)?.state === 'active' ? t('security.policy.adjust') : t('security.policy.tighten') }}
+                </el-button>
+                <el-button
+                  v-if="assessment.current?.conclusion === 'sensitive' && policyForAssessment(assessment)?.state === 'active' && canRevokePolicies"
+                  link
+                  @click="revokePolicy(assessment)"
+                >
+                  {{ t('security.policy.restoreDefault') }}
+                </el-button>
                 <el-button
                   v-if="assessment.current?.conclusion === 'sensitive' && canUpdateAssessments"
                   link
@@ -831,13 +867,13 @@
           </el-form-item>
           <template v-if="reviewForm.decision === 'adjust'">
             <el-form-item :label="t('security.finding.sensitiveDataType')" required>
-              <el-select v-model="reviewForm.sensitiveDataTypeID" class="wide" :placeholder="t('security.finding.selectSensitiveDataType')">
+              <el-select v-model="reviewForm.sensitiveDataTypeID" class="wide" :placeholder="t('security.finding.selectSensitiveDataType')" @change="applyReviewDefaultGrade">
                 <el-option v-for="item in sensitiveTypes" :key="item.id" :label="item.name" :value="String(item.id)" />
               </el-select>
             </el-form-item>
             <el-form-item :label="t('security.finding.securityGrade')" required>
               <el-select v-model="reviewForm.securityGradeID" class="wide" :placeholder="t('security.finding.selectSecurityGrade')">
-                <el-option v-for="item in securityGrades" :key="item.id" :label="item.name" :value="String(item.id)" />
+                <el-option v-for="item in activeGradesForType(reviewForm.sensitiveDataTypeID)" :key="item.id" :label="item.name" :value="String(item.id)" />
               </el-select>
             </el-form-item>
           </template>
@@ -889,7 +925,7 @@
         </el-form-item>
         <el-form-item :label="t('security.finding.securityGrade')" required>
           <el-select v-model="manualAssessmentForm.securityGradeID" class="wide" :placeholder="t('security.finding.selectSecurityGrade')">
-            <el-option v-for="item in securityGrades" :key="item.id" :label="item.name" :value="String(item.id)" />
+            <el-option v-for="item in activeGradesForType(manualAssessmentForm.sensitiveDataTypeID)" :key="item.id" :label="item.name" :value="String(item.id)" />
           </el-select>
         </el-form-item>
         <el-form-item :label="t('security.assessment.rationale')" required>
@@ -909,6 +945,42 @@
         <el-button type="primary" :loading="manualAssessmentSaving" @click="submitManualAssessment">
           {{ t('security.assessment.confirmDesignation') }}
         </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="policyDialog"
+      class="addp-dialog"
+      :title="t('security.policy.title')"
+      width="min(600px, calc(100vw - 24px))"
+    >
+      <template v-if="policyAssessment">
+        <el-alert type="info" :closable="false" :title="t('security.policy.hint')" />
+        <div class="policy-target">
+          <strong>{{ policyAssessment.component_key }}</strong>
+          <span>{{ assessmentSummary(policyAssessment) }}</span>
+          <span>{{ assessmentProtectionSummary(policyAssessment) }}</span>
+        </div>
+        <el-form label-position="top">
+          <el-form-item :label="t('security.policy.scope')">
+            <el-input :model-value="t('security.policy.managerPreview')" disabled />
+          </el-form-item>
+          <el-form-item :label="t('security.policy.effect')" required>
+            <el-radio-group v-model="policyForm.effect">
+              <el-radio-button v-for="effect in stricterPolicyEffects(policyAssessment)" :key="effect" :value="effect">
+                {{ effectLabel(effect) }}
+              </el-radio-button>
+            </el-radio-group>
+            <div class="field-help">{{ t(`security.baseline.effectImpact.${policyForm.effect}`) }}</div>
+          </el-form-item>
+          <el-form-item :label="t('security.policy.rationale')" required>
+            <el-input v-model="policyForm.rationale" type="textarea" :rows="4" maxlength="2000" show-word-limit :placeholder="t('security.policy.rationalePlaceholder')" />
+          </el-form-item>
+        </el-form>
+      </template>
+      <template #footer>
+        <el-button @click="policyDialog = false">{{ t('security.common.cancel') }}</el-button>
+        <el-button type="primary" :loading="policySaving" @click="savePolicy">{{ t('security.policy.confirm') }}</el-button>
       </template>
     </el-dialog>
 
@@ -942,7 +1014,7 @@ import {
   openMonitorExecution,
   resolveCanonicalTabRouteState
 } from '@common-ui'
-import { assessmentAPI, classificationAPI, detectorCapabilityAPI, findingAPI, gradeAPI, metaAPI, protectionAccessRequestAPI, protectionEnrollmentAPI, protectionExemptionAPI, sensitiveDataTypeAPI } from '../api/security'
+import { assessmentAPI, classificationAPI, detectorCapabilityAPI, findingAPI, gradeAPI, metaAPI, protectionAccessRequestAPI, protectionBaselineAPI, protectionEnrollmentAPI, protectionExemptionAPI, protectionPolicyAPI, sensitiveDataTypeAPI } from '../api/security'
 import { useAuthStore } from '../store/auth'
 import {
   buildFindingReviewPayload,
@@ -1001,6 +1073,7 @@ const detailDrawer = ref(false)
 const releaseDialog = ref(false)
 const reviewDialog = ref(false)
 const manualAssessmentDialog = ref(false)
+const policyDialog = ref(false)
 const selectedResource = ref(null)
 const selectedItem = ref(null)
 const selectedItemLoading = ref(false)
@@ -1017,6 +1090,8 @@ const findingsPageSize = 20
 const findingsLoading = ref(false)
 const assessments = ref([])
 const assessmentsLoading = ref(false)
+const policies = ref([])
+const policiesLoading = ref(false)
 const exemptions = ref([])
 const exemptionsLoading = ref(false)
 const focusedExemptionID = ref('')
@@ -1026,6 +1101,7 @@ const componentsLoading = ref(false)
 const sensitiveTypes = ref([])
 const securityClassifications = ref([])
 const securityGrades = ref([])
+const protectionBaselines = ref([])
 const detectorCapabilities = ref([])
 const reviewQueueRows = ref([])
 const reviewQueueTotal = ref(0)
@@ -1050,6 +1126,9 @@ const reviewForm = reactive({ decision: 'confirm', sensitiveDataTypeID: '', secu
 const manualRationaleInput = ref(null)
 const manualAssessmentSaving = ref(false)
 const manualAssessmentForm = reactive({ componentKey: '', sensitiveDataTypeID: '', securityGradeID: '', rationale: '' })
+const policySaving = ref(false)
+const policyAssessment = ref(null)
+const policyForm = reactive({ effect: '', rationale: '' })
 let selectedItemRequest = 0
 let findingsRequest = 0
 let refreshTimer = null
@@ -1066,6 +1145,10 @@ const canReviewFindings = computed(() => auth.hasPermission('security.finding.up
 const canReadAssessments = computed(() => auth.hasPermission('security.assessment.read'))
 const canCreateAssessments = computed(() => auth.hasPermission('security.assessment.create'))
 const canUpdateAssessments = computed(() => auth.hasPermission('security.assessment.update'))
+const canReadPolicies = computed(() => auth.hasPermission('security.policy.read'))
+const canCreatePolicies = computed(() => auth.hasPermission('security.policy.create'))
+const canUpdatePolicies = computed(() => auth.hasPermission('security.policy.update'))
+const canRevokePolicies = computed(() => auth.hasPermission('security.policy.delete'))
 const canReadExemptions = computed(() => auth.hasPermission('security.protection_exemption.read'))
 const canRevokeExemptions = computed(() => auth.hasPermission('security.protection_exemption.delete'))
 const canReviewAccessRequests = computed(() => auth.hasPermission('security.protection_access_request.update'))
@@ -1076,7 +1159,7 @@ const hasAccessRequestFilters = computed(() => Boolean(
   accessRequestFilters.authorizationState ||
   accessRequestCreatedRange.value?.length
 ))
-const governanceLoading = computed(() => findingsLoading.value || assessmentsLoading.value)
+const governanceLoading = computed(() => findingsLoading.value || assessmentsLoading.value || policiesLoading.value)
 const manualAssessments = computed(() => assessments.value.filter(item => item.current?.source_kind === 'manual'))
 const reviewQueueCapabilities = computed(() => {
   const capabilities = new Map(detectorCapabilities.value.map(item => [String(item.key || ''), item]))
@@ -1412,12 +1495,57 @@ function assessmentConclusionLabel(conclusion) {
   return t(`security.assessment.conclusions.${normalized}`)
 }
 
+function baselineForAssessment(assessment) {
+  return protectionBaselines.value.find(item => item.enabled
+    && String(item.sensitive_data_type_id) === String(assessment?.current?.sensitive_data_type_id)
+    && String(item.security_grade_id) === String(assessment?.current?.security_grade_id)) || null
+}
+
+function policyForAssessment(assessment) {
+  return policies.value.find(item => item.assessment_id === assessment?.id
+    && item.consumer_owner === 'manager'
+    && item.action === 'preview') || null
+}
+
+function protectionEffectRank(effect) {
+  return ({ mask: 1, suppress: 2, deny: 3 })[String(effect || '')] || 0
+}
+
+function stricterPolicyEffects(assessment) {
+  const baseline = baselineForAssessment(assessment)
+  const baselineRank = protectionEffectRank(baseline?.effect)
+  return ['mask', 'suppress', 'deny'].filter(effect => protectionEffectRank(effect) > baselineRank)
+}
+
+function canConfigurePolicy(assessment) {
+  if (!canReadPolicies.value || stricterPolicyEffects(assessment).length === 0) return false
+  return policyForAssessment(assessment) ? canUpdatePolicies.value : canCreatePolicies.value
+}
+
+function assessmentProtectionSummary(assessment) {
+  const baseline = baselineForAssessment(assessment)
+  if (!baseline) return t('security.policy.baselineMissing')
+  const policy = policyForAssessment(assessment)
+  if (policy?.state === 'active') {
+    return t('security.policy.activeSummary', { baseline: effectLabel(baseline.effect), policy: effectLabel(policy.current?.effect) })
+  }
+  return t('security.policy.defaultSummary', { baseline: effectLabel(baseline.effect) })
+}
+
+function activeGradesForType(typeID) {
+  const activeGradeIDs = new Set(protectionBaselines.value
+    .filter(item => item.enabled && String(item.sensitive_data_type_id) === String(typeID))
+    .map(item => String(item.security_grade_id)))
+  return securityGrades.value.filter(item => activeGradeIDs.has(String(item.id)))
+}
+
 async function loadFindingDefinitions() {
-  if (sensitiveTypes.value.length && securityClassifications.value.length && securityGrades.value.length) return
-  const [types, classifications, grades] = await Promise.all([sensitiveDataTypeAPI.list(), classificationAPI.list(), gradeAPI.list()])
+  if (sensitiveTypes.value.length && securityClassifications.value.length && securityGrades.value.length && protectionBaselines.value.length) return
+  const [types, classifications, grades, baselines] = await Promise.all([sensitiveDataTypeAPI.list(), classificationAPI.list(), gradeAPI.list(), protectionBaselineAPI.list()])
   sensitiveTypes.value = Array.isArray(types) ? types : []
   securityClassifications.value = Array.isArray(classifications) ? classifications : []
   securityGrades.value = Array.isArray(grades) ? grades : []
+  protectionBaselines.value = Array.isArray(baselines) ? baselines : []
 }
 
 async function loadDetectorCapabilities() {
@@ -1602,6 +1730,23 @@ async function loadAssessments() {
   }
 }
 
+async function loadPolicies() {
+  const row = detailRow.value
+  if (!canReadPolicies.value || !row?.id) {
+    policies.value = []
+    return
+  }
+  policiesLoading.value = true
+  try {
+    const response = await protectionPolicyAPI.list({ enrollment_id: row.id, page: 1, page_size: 100 })
+    policies.value = Array.isArray(response?.data) ? response.data : []
+  } catch (error) {
+    ElMessage.error(error.message || t('security.policy.loadFailed'))
+  } finally {
+    policiesLoading.value = false
+  }
+}
+
 async function loadExemptions() {
   const row = detailRow.value
   if (!canReadExemptions.value || !row?.id) {
@@ -1623,6 +1768,7 @@ async function loadGovernance(page = findingsPage.value) {
   await Promise.all([
     loadFindings(page),
     loadAssessments(),
+    loadPolicies(),
     loadExemptions(),
     loadFindingDefinitions().catch(error => ElMessage.error(error.message || t('security.finding.loadDefinitionsFailed')))
   ])
@@ -1681,6 +1827,11 @@ function applyDefaultGrade(typeID) {
   manualAssessmentForm.securityGradeID = String(selectedType?.default_security_grade_id || '')
 }
 
+function applyReviewDefaultGrade(typeID) {
+  const selectedType = sensitiveTypes.value.find(item => String(item.id) === String(typeID))
+  reviewForm.securityGradeID = String(selectedType?.default_security_grade_id || '')
+}
+
 async function openManualAssessment() {
   manualAssessmentForm.componentKey = ''
   manualAssessmentForm.sensitiveDataTypeID = ''
@@ -1730,6 +1881,85 @@ async function submitManualAssessment() {
     ElMessage.error(error.message || t('security.common.failed'))
   } finally {
     manualAssessmentSaving.value = false
+  }
+}
+
+function openPolicy(assessment) {
+  const effects = stricterPolicyEffects(assessment)
+  if (!effects.length) {
+    ElMessage.info(t('security.policy.alreadyStrictest'))
+    return
+  }
+  const existing = policyForAssessment(assessment)
+  policyAssessment.value = assessment
+  policyForm.effect = existing?.state === 'active' && effects.includes(existing.current?.effect)
+    ? existing.current.effect
+    : effects[0]
+  policyForm.rationale = existing?.state === 'active' ? String(existing.current?.rationale || '') : ''
+  policyDialog.value = true
+}
+
+async function savePolicy() {
+  if (!policyAssessment.value || !policyForm.effect || !policyForm.rationale.trim()) {
+    ElMessage.warning(t('security.policy.required'))
+    return
+  }
+  policySaving.value = true
+  try {
+    const existing = policyForAssessment(policyAssessment.value)
+    if (existing) {
+      await protectionPolicyAPI.update(existing.id, {
+        version: Number(existing.version),
+        effect: policyForm.effect,
+        rationale: policyForm.rationale.trim()
+      })
+    } else {
+      await protectionPolicyAPI.create({
+        assessment_id: policyAssessment.value.id,
+        consumer_owner: 'manager',
+        action: 'preview',
+        effect: policyForm.effect,
+        rationale: policyForm.rationale.trim()
+      })
+    }
+    policyDialog.value = false
+    await load({ background: true })
+    await loadGovernance(findingsPage.value)
+    scheduleAutoRefresh({ reset: true })
+    ElMessage.success(t('security.policy.saved'))
+  } catch (error) {
+    ElMessage.error(error.message || t('security.common.failed'))
+  } finally {
+    policySaving.value = false
+  }
+}
+
+async function revokePolicy(assessment) {
+  const policy = policyForAssessment(assessment)
+  if (!policy || policy.state !== 'active') return
+  try {
+    const result = await ElMessageBox.prompt(
+      t('security.policy.restorePrompt', { component: assessment.component_key }),
+      t('security.policy.restoreDefault'),
+      {
+        confirmButtonText: t('security.policy.confirmRestore'),
+        cancelButtonText: t('security.common.cancel'),
+        inputType: 'textarea',
+        inputPlaceholder: t('security.policy.restoreRationalePlaceholder'),
+        inputValidator: value => String(value || '').trim() ? true : t('security.policy.rationaleRequired')
+      }
+    )
+    await protectionPolicyAPI.revoke(policy.id, {
+      version: Number(policy.version),
+      rationale: String(result.value || '').trim()
+    })
+    await load({ background: true })
+    await loadGovernance(findingsPage.value)
+    scheduleAutoRefresh({ reset: true })
+    ElMessage.success(t('security.policy.restored'))
+  } catch (error) {
+    if (error === 'cancel' || error === 'close') return
+    ElMessage.error(error.message || t('security.common.failed'))
   }
 }
 
@@ -2092,6 +2322,7 @@ async function openDetail(row, exemptionID = '') {
   findings.value = []
   findingsTotal.value = 0
   assessments.value = []
+  policies.value = []
   exemptions.value = []
   await loadGovernance(1)
   await focusExemptionCard()
@@ -2102,8 +2333,10 @@ function handleDetailClosed() {
   findings.value = []
   findingsTotal.value = 0
   assessments.value = []
+  policies.value = []
   exemptions.value = []
   findingsLoading.value = false
+  policiesLoading.value = false
   exemptionsLoading.value = false
   focusedExemptionID.value = ''
   exemptionCardRefs.clear()
@@ -2369,7 +2602,10 @@ h4 { margin: 24px 0 12px; }
 .manual-assessment-card > div:first-child { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
 .manual-assessment-card strong { overflow-wrap: anywhere; }
 .manual-assessment-card span, .manual-assessment-card p { margin: 0; color: var(--addp-text-secondary); font-size: 12px; line-height: 1.5; }
+.manual-assessment-card .resource-policy-summary, .resource-policy-summary { color: var(--addp-text-primary); font-weight: 600; }
 .manual-assessment-card__actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
+.policy-target { display: flex; flex-direction: column; gap: 4px; margin: 16px 0; padding: 12px 14px; border: 1px solid var(--addp-border-color); border-radius: 8px; background: var(--addp-bg-secondary); }
+.policy-target span { color: var(--addp-text-secondary); font-size: 12px; line-height: 1.5; }
 .exemption-section { margin-top: 24px; }
 .exemption-section__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
 .exemption-section__header h4 { margin: 0; }

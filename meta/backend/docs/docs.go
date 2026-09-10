@@ -1396,7 +1396,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "按 locator 提交一次后台深度扫描，刷新 Meta 资源树事实 | Submit a background deep scan by locator to refresh Meta resource tree facts",
+                "description": "按 node locator 提交一次后台基础扫描，重新发现 Meta 资源树中的 node 和 item | Submit a background basic scan by node locator to rediscover Meta resource tree nodes and items",
                 "produces": [
                     "application/json"
                 ],
@@ -1414,7 +1414,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "ResourceLocator URI",
+                        "description": "node ResourceLocator URI",
                         "name": "locator",
                         "in": "query",
                         "required": true

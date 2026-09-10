@@ -11,6 +11,7 @@ import (
 	"github.com/addp/common/resourcetree"
 	metaErrors "github.com/addp/meta/internal/errors"
 	"github.com/addp/meta/internal/models"
+	"github.com/addp/meta/internal/scanflow"
 	"github.com/gin-gonic/gin"
 )
 
@@ -176,11 +177,11 @@ func (h *Handler) SearchResourceTree(c *gin.Context) {
 
 // RefreshResourceTreeNode 刷新标准资源树节点
 // @Summary 刷新标准资源树节点 | Refresh resource tree node
-// @Description 按 locator 提交一次后台深度扫描，刷新 Meta 资源树事实 | Submit a background deep scan by locator to refresh Meta resource tree facts
+// @Description 按 node locator 提交一次后台基础扫描，重新发现 Meta 资源树中的 node 和 item | Submit a background basic scan by node locator to rediscover Meta resource tree nodes and items
 // @Tags Meta Resource Tree
 // @Produce json
 // @Param engine_id path int true "存储引擎ID | Engine ID"
-// @Param locator query string true "ResourceLocator URI"
+// @Param locator query string true "node ResourceLocator URI"
 // @Success 202 {object} map[string]interface{} "已提交的刷新运行 | Submitted refresh run"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 401 {object} map[string]interface{} "未授权 | Unauthorized"
@@ -215,8 +216,12 @@ func (h *Handler) RefreshResourceTreeNode(c *gin.Context) {
 		h.handleServiceError(c, fmt.Errorf("%w: locator engine_id %d does not match requested engine_id %d", metaErrors.ErrInvalidResourceLocator, loc.EngineID, engineID))
 		return
 	}
-	if (loc.ItemID == nil || *loc.ItemID == 0) && (loc.NodeID == nil || *loc.NodeID == 0) {
-		h.handleServiceError(c, fmt.Errorf("%w: resource tree refresh requires locator node_id or item_id", metaErrors.ErrInvalidResourceLocator))
+	if loc.ItemID != nil && *loc.ItemID > 0 {
+		h.handleServiceError(c, fmt.Errorf("%w: resource tree refresh requires a node locator; use item refresh for item_id", metaErrors.ErrInvalidResourceLocator))
+		return
+	}
+	if loc.NodeID == nil || *loc.NodeID == 0 {
+		h.handleServiceError(c, fmt.Errorf("%w: resource tree refresh requires locator node_id", metaErrors.ErrInvalidResourceLocator))
 		return
 	}
 
@@ -235,21 +240,14 @@ func (h *Handler) RefreshResourceTreeNode(c *gin.Context) {
 }
 
 func refreshResourceTreeScanRequest(loc *resourcetree.ResourceLocator) *models.ScanRequest {
-	req := &models.ScanRequest{
+	return &models.ScanRequest{
 		EngineID:    loc.EngineID,
-		ScanDepth:   "deep",
+		NodeID:      *loc.NodeID,
+		ScanDepth:   scanflow.ScanDepthBasic,
 		Force:       true,
 		TriggerType: commonExecution.TriggerTypeManual,
 		Source:      commonExecution.ModuleMeta,
 	}
-	if loc.ItemID != nil && *loc.ItemID > 0 {
-		req.ItemID = *loc.ItemID
-		return req
-	}
-	if loc.NodeID != nil && *loc.NodeID > 0 {
-		req.NodeID = *loc.NodeID
-	}
-	return req
 }
 
 func parseUintPath(c *gin.Context, key string) (uint, bool) {

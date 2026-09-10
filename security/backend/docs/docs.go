@@ -4086,7 +4086,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "分页返回当前租户针对正式 Assessment 的显式收紧策略及当前不可变修订 | Return explicit tightening policies and current immutable revisions for formal Assessments in the current tenant",
+                "description": "分页返回当前租户针对正式 Assessment 的显式收紧策略及当前不可变修订，可按保护纳管精确筛选 | Return explicit tightening policies and current immutable revisions for formal Assessments in the current tenant, optionally filtered by protection enrollment",
                 "produces": [
                     "application/json"
                 ],
@@ -4105,6 +4105,12 @@ const docTemplate = `{
                         "type": "integer",
                         "description": "每页数量，最大 100 | Page size, maximum 100",
                         "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "保护纳管 ID | Protection enrollment ID",
+                        "name": "enrollment_id",
                         "in": "query"
                     }
                 ],
@@ -4791,18 +4797,19 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "在同一事务创建敏感数据类型及其自动发现初始等级的有效默认保护规则 | Create a sensitive data type and the active default protection rule for its initial discovery grade in one transaction",
                 "tags": [
                     "Sensitive Data Type"
                 ],
-                "summary": "创建敏感数据类型 | Create sensitive data type",
+                "summary": "创建敏感数据定义 | Create sensitive data definition",
                 "parameters": [
                     {
-                        "description": "敏感数据类型 | Sensitive data type",
+                        "description": "敏感数据定义 | Sensitive data definition",
                         "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_security_internal_models.SensitiveDataTypeRequest"
+                            "$ref": "#/definitions/github_com_addp_security_internal_models.CreateSensitiveDataTypeRequest"
                         }
                     }
                 ],
@@ -5383,6 +5390,59 @@ const docTemplate = `{
             "properties": {
                 "locator": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_addp_security_internal_models.CreateSensitiveDataTypeRequest": {
+            "type": "object",
+            "required": [
+                "code",
+                "default_protection",
+                "default_security_grade_id",
+                "name",
+                "security_classification_id"
+            ],
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "default_protection": {
+                    "$ref": "#/definitions/github_com_addp_security_internal_models.DefaultProtectionRequest"
+                },
+                "default_security_grade_id": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "security_classification_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_security_internal_models.DefaultProtectionRequest": {
+            "type": "object",
+            "required": [
+                "effect"
+            ],
+            "properties": {
+                "algorithm": {
+                    "type": "string"
+                },
+                "effect": {
+                    "type": "string"
+                },
+                "invalid_value_effect": {
+                    "type": "string"
+                },
+                "keep_prefix": {
+                    "type": "integer"
+                },
+                "keep_suffix": {
+                    "type": "integer"
                 }
             }
         },

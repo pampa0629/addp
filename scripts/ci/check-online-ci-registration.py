@@ -516,6 +516,12 @@ def validate_security_mysql_owner_protection_profile(
     for fragment in (
         "/api/v1/meta/scan/run/manual",
         "/api/v1/security/sensitive-data-types",
+        "security.sensitive_data_type.create",
+        "security.sensitive_data_type.delete",
+        '"default_protection"',
+        '"invalid_request_status"',
+        '"rollback_verified"',
+        '"cleanup_verified"',
         "addp.detector.email_metadata/v1",
         "/api/v1/security/protection-baselines",
         "/api/v1/security/protection-enrollments",

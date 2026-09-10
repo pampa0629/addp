@@ -73,7 +73,7 @@
 | `can_use_quick_view=false` 且 `can_generate_vector_tile_cache=true` | 展示“生成瓦片缓存”；如果 capability 或瓦片响应提示矢量物化视图，优先展示“执行矢量物化视图”入口 |
 | `can_use_quick_view=false` 且 `can_generate_vector_tile_cache=false` | 不展示生成按钮，只展示不可用原因 |
 
-从预览页跳转时，统一派生任务页应自动带入当前 item 上下文、产品分类和 `task_type`；任务定义统一写入 `manager.task_definitions`。
+从预览页跳转时，统一“数据任务”页应自动带入当前 item 上下文、产品分类和 `task_type`；任务定义统一写入 `manager.task_definitions`。
 
 预览页和 Explorer 内嵌预览都必须按同一规则展示矢量物化视图诊断：
 

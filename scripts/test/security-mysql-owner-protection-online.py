@@ -42,6 +42,9 @@ TARGET_SCHEMA = "addp_online_security"
 TARGET_TABLE = "mysql_email_transfer"
 EMAIL_TYPE_CODE = "email"
 EMAIL_DETECTOR = "addp.detector.email_metadata/v1"
+DEFAULT_PROTECTION_PROBE_CODE = "online_default_protection_probe"
+DEFAULT_PROTECTION_ROLLBACK_CODE = "online_default_protection_rollback_probe"
+STRUCTURED_MASK_ALGORITHM = "addp.mask.keep_prefix_suffix/v2"
 SERVICE_PREFIX = "addp-online-security-mysql-email-"
 TASK_PREFIX = "addp_online_security_mysql_email_"
 TERMINAL_STATUSES = {"success", "failed", "cancelled", "timeout"}
@@ -68,6 +71,8 @@ REQUIRED_PERMISSIONS = {
     "security.finding.read",
     "security.finding.update",
     "security.protection_baseline.read",
+    "security.sensitive_data_type.create",
+    "security.sensitive_data_type.delete",
     "security.sensitive_data_type.read",
     "service.data_read.execute",
     "service.definition.create",
@@ -169,6 +174,10 @@ def validate_governance(client: GatewayClient) -> dict[str, object]:
         raise SuiteError("the Tenant must define exactly one email sensitive data type")
     email_type = email_types[0]
     type_id = positive_int(email_type.get("id"), "email sensitive data type id")
+    classification_id = positive_int(
+        email_type.get("security_classification_id"),
+        "email security classification id",
+    )
     grade_id = positive_int(
         email_type.get("default_security_grade_id"), "email default security grade id"
     )
@@ -196,10 +205,162 @@ def validate_governance(client: GatewayClient) -> dict[str, object]:
         raise SuiteError("the email default protection baseline must be enabled with suppress effect")
     return {
         "sensitive_data_type_id": str(type_id),
+        "security_classification_id": str(classification_id),
+        "security_grade_id": str(grade_id),
         "detector_id": str(positive_int(bindings[0].get("id"), "email detector id")),
         "baseline_id": str(positive_int(matches[0].get("id"), "email baseline id")),
         "effect": "suppress",
     }
+
+
+def _definition_matches(
+    client: GatewayClient, path: str, key: str, value: object
+) -> list[dict[str, object]]:
+    return [item for item in definition_array(client, path) if item.get(key) == value]
+
+
+def cleanup_default_protection_probe(client: GatewayClient, code: str) -> None:
+    matches = _definition_matches(
+        client, "/api/v1/security/sensitive-data-types", "code", code
+    )
+    if len(matches) > 1:
+        raise SuiteError(f"default protection probe {code} is not unique")
+    if not matches:
+        return
+    type_id = positive_int(matches[0].get("id"), f"{code} sensitive data type id")
+    client.request(
+        "DELETE",
+        f"/api/v1/security/sensitive-data-types/{type_id}",
+        (200,),
+    )
+    if _definition_matches(
+        client, "/api/v1/security/sensitive-data-types", "code", code
+    ):
+        raise SuiteError(f"default protection probe {code} was not deleted")
+    baselines = _definition_matches(
+        client,
+        "/api/v1/security/protection-baselines",
+        "sensitive_data_type_id",
+        str(type_id),
+    )
+    if baselines:
+        raise SuiteError(f"default protection probe {code} left child baselines")
+
+
+def default_protection_probe_payload(
+    code: str,
+    classification_id: int,
+    grade_id: int,
+    *,
+    algorithm: str = STRUCTURED_MASK_ALGORITHM,
+) -> dict[str, object]:
+    return {
+        "code": code,
+        "name": "Online default protection probe",
+        "description": "Disposable T4 transaction probe",
+        "security_classification_id": classification_id,
+        "default_security_grade_id": grade_id,
+        "default_protection": {
+            "effect": "mask",
+            "algorithm": algorithm,
+            "keep_prefix": 2,
+            "keep_suffix": 2,
+            "invalid_value_effect": "suppress",
+        },
+    }
+
+
+def exercise_default_protection_transaction(
+    client: GatewayClient,
+    classification_id: int,
+    grade_id: int,
+) -> dict[str, object]:
+    cleanup_default_protection_probe(client, DEFAULT_PROTECTION_PROBE_CODE)
+    cleanup_default_protection_probe(client, DEFAULT_PROTECTION_ROLLBACK_CODE)
+    evidence: dict[str, object] = {}
+    created_type_id: int | None = None
+    try:
+        created = _object(
+            client.request(
+                "POST",
+                "/api/v1/security/sensitive-data-types",
+                (201,),
+                default_protection_probe_payload(
+                    DEFAULT_PROTECTION_PROBE_CODE, classification_id, grade_id
+                ),
+            ).payload,
+            "default protection probe SensitiveDataType",
+        )
+        created_type_id = positive_int(
+            created.get("id"), "default protection probe sensitive data type id"
+        )
+        if created.get("code") != DEFAULT_PROTECTION_PROBE_CODE:
+            raise SuiteError("default protection probe returned a different code")
+
+        current_types = _definition_matches(
+            client,
+            "/api/v1/security/sensitive-data-types",
+            "code",
+            DEFAULT_PROTECTION_PROBE_CODE,
+        )
+        if len(current_types) != 1 or str(current_types[0].get("id")) != str(
+            created_type_id
+        ):
+            raise SuiteError("created default protection probe is not uniquely visible")
+        baselines = _definition_matches(
+            client,
+            "/api/v1/security/protection-baselines",
+            "sensitive_data_type_id",
+            str(created_type_id),
+        )
+        if len(baselines) != 1:
+            raise SuiteError("default protection probe must create exactly one baseline")
+        baseline = baselines[0]
+        if (
+            str(baseline.get("security_grade_id")) != str(grade_id)
+            or baseline.get("effect") != "mask"
+            or baseline.get("algorithm") != STRUCTURED_MASK_ALGORITHM
+            or baseline.get("keep_prefix") != 2
+            or baseline.get("keep_suffix") != 2
+            or baseline.get("invalid_value_effect") != "suppress"
+            or baseline.get("enabled") is not True
+        ):
+            raise SuiteError("default protection probe baseline does not match the command")
+        baseline_id = positive_int(
+            baseline.get("id"), "default protection probe baseline id"
+        )
+
+        rollback = client.request(
+            "POST",
+            "/api/v1/security/sensitive-data-types",
+            (400,),
+            default_protection_probe_payload(
+                DEFAULT_PROTECTION_ROLLBACK_CODE,
+                classification_id,
+                grade_id,
+                algorithm="addp.mask.invalid/v1",
+            ),
+        )
+        if _definition_matches(
+            client,
+            "/api/v1/security/sensitive-data-types",
+            "code",
+            DEFAULT_PROTECTION_ROLLBACK_CODE,
+        ):
+            raise SuiteError("invalid default protection left a sensitive data type")
+        evidence = {
+            "sensitive_data_type_id": str(created_type_id),
+            "baseline_id": str(baseline_id),
+            "effect": "mask",
+            "algorithm": STRUCTURED_MASK_ALGORITHM,
+            "invalid_request_status": rollback.status,
+            "rollback_verified": True,
+        }
+    finally:
+        cleanup_default_protection_probe(client, DEFAULT_PROTECTION_ROLLBACK_CODE)
+        cleanup_default_protection_probe(client, DEFAULT_PROTECTION_PROBE_CODE)
+    evidence["cleanup_verified"] = True
+    return evidence
 
 
 def ensure_enrollment(
@@ -524,6 +685,14 @@ def run_scenario(
     deadline = time.monotonic() + timeout
     identity = validate_user_identity(client, tenant_id)
     governance = validate_governance(client)
+    default_protection_transaction = exercise_default_protection_transaction(
+        client,
+        positive_int(
+            governance.get("security_classification_id"),
+            "governance security classification id",
+        ),
+        positive_int(governance.get("security_grade_id"), "governance security grade id"),
+    )
     source_scan = wait_for_scan(client, source_engine_id, deadline)
     target_scan = wait_for_scan(client, target_engine_id, deadline)
     source_full_name = f"{source_database}.{SOURCE_TABLE}"
@@ -594,6 +763,7 @@ def run_scenario(
             "result": "passed",
             "identity": identity,
             "governance": governance,
+            "default_protection_transaction": default_protection_transaction,
             "fixture": {
                 "source_engine_id": str(source_engine_id),
                 "target_engine_id": str(target_engine_id),
@@ -617,8 +787,8 @@ def run_scenario(
                     "records_written": transfer_execution.get("records_written"),
                 },
             },
-            "created_resources": 1 + len(task_ids),
-            "deleted_resources": 1 + len(task_ids),
+            "created_resources": 3 + len(task_ids),
+            "deleted_resources": 3 + len(task_ids),
             "residual_resources": 0,
         }
     except BaseException as error:

@@ -33,3 +33,14 @@ export const resolveCanonicalNodeSelection = async ({ node, locator, loadTree })
     locator: canonicalLocator,
   }
 }
+
+/**
+ * 刷新语义由 ResourceLocator 身份决定，不由用于展示的 type 推测。
+ * whole-layout item 可能具有 directory 类型，但仍必须走 item deep refresh。
+ */
+export const resourceTreeRefreshKind = (locator) => {
+  const loc = parseLocator(locator)
+  if (loc.itemId) return 'item'
+  if (loc.nodeId) return 'node'
+  throw new Error('resource tree refresh requires node_id or item_id')
+}

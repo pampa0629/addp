@@ -71,6 +71,30 @@ describe('Manager task workspace recoverable route state', () => {
     })
   })
 
+  it('preserves the embedding category across its task and result subviews', () => {
+    const allowedQueryByTab = {
+      tasks: ['category', 'create', 'task_id'],
+      results: ['category', 'task_id']
+    }
+
+    expect(resolveManagerTaskWorkspaceRouteState({
+      routeQuery: { category: 'embedding', create: '1' },
+      allowedQueryByTab
+    })).toEqual({
+      tab: 'tasks',
+      query: { category: 'embedding', create: '1' },
+      changed: false
+    })
+    expect(resolveManagerTaskWorkspaceRouteState({
+      routeQuery: { category: 'embedding', tab: 'results', task_id: '7' },
+      allowedQueryByTab
+    })).toEqual({
+      tab: 'results',
+      query: { category: 'embedding', task_id: '7', tab: 'results' },
+      changed: false
+    })
+  })
+
   it('keeps canonical create and edit state on the task tab', () => {
     const options = {
       allowedQueryByTab: {

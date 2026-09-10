@@ -336,9 +336,10 @@ func (h *DefinitionHandler) GetType(c *gin.Context) {
 	c.JSON(http.StatusOK, row)
 }
 
-// @Summary 创建敏感数据类型 | Create sensitive data type
+// @Summary 创建敏感数据定义 | Create sensitive data definition
+// @Description 在同一事务创建敏感数据类型及其自动发现初始等级的有效默认保护规则 | Create a sensitive data type and the active default protection rule for its initial discovery grade in one transaction
 // @Tags Sensitive Data Type
-// @Param request body models.SensitiveDataTypeRequest true "敏感数据类型 | Sensitive data type"
+// @Param request body models.CreateSensitiveDataTypeRequest true "敏感数据定义 | Sensitive data definition"
 // @Success 201 {object} models.SensitiveDataType
 // @Failure 400 {object} map[string]string
 // @Failure 401 {object} map[string]string
@@ -351,7 +352,7 @@ func (h *DefinitionHandler) GetType(c *gin.Context) {
 // @Router /sensitive-data-types [post]
 // @Security BearerAuth
 func (h *DefinitionHandler) CreateType(c *gin.Context) {
-	var req models.SensitiveDataTypeRequest
+	var req models.CreateSensitiveDataTypeRequest
 	if c.ShouldBindJSON(&req) != nil {
 		respondError(c, errBadRequest)
 		return

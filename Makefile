@@ -340,8 +340,9 @@ test-quality-frontend: ## 运行 Quality 前端路由、浏览器与构建门禁
 	@cd quality/frontend && npm run test:e2e
 	@cd quality/frontend && npm run build
 
-test-security-frontend: ## 运行 Security 前端确定性测试与构建
+test-security-frontend: ## 运行 Security 前端确定性测试、浏览器回归与构建
 	@cd security/frontend && npm test
+	@cd security/frontend && npm run test:e2e
 	@cd security/frontend && npm run build
 
 test-agent-frontend: ## 运行 Agent 前端确定性测试与构建门禁

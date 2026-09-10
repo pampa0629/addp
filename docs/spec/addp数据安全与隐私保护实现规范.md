@@ -104,6 +104,10 @@ owner 资源消失、源版本或结构指纹变化时：
 
 `version` 只表示资源并发版本；发布修订号必须使用具有领域含义的字段。所有更新、删除、发布、审核、启停和退出纳管操作必须携带正整数 `version`，冲突返回 `409 resource_version_conflict`。
 
+SensitiveDataType 与 ProtectionBaseline 仍是独立领域对象，但产品上的“创建敏感数据定义”是一个原子应用命令：请求必须同时提交 SensitiveDataType 及其自动发现初始 SecurityGrade 的完整默认保护决策，Security 在同一数据库事务创建两个对象。请求失败时不得留下没有初始 ProtectionBaseline 的 SensitiveDataType。其他等级的 ProtectionBaseline 仍在该敏感类型的“默认保护”从属工作区中独立维护。
+
+该原子应用命令只校验 `security.sensitive_data_type.create`；初始 ProtectionBaseline 是命令内部强制创建的组成部分，不再要求调用者额外持有 `security.protection_baseline.create`。后续独立补充其他等级规则时仍校验 ProtectionBaseline 对应权限。
+
 ## 五、纳管状态机与激活屏障
 
 `ProtectionEnrollment.state` 只允许：
@@ -251,9 +255,9 @@ tenant + assessment_id + consumer_owner + action + subject_type + subject_id
 | 变化 | 受影响范围 | 编译行为 |
 | --- | --- | --- |
 | ProtectionBaseline 创建 | 当前 SensitiveDataType + SecurityGrade 已存在 Finding 或正式 Assessment 的 Enrollment | 新基线与对应新投影在同一事务生效 |
-| ProtectionBaseline 完整更新、启停或改绑类型/等级 | 更新前绑定与更新后绑定范围的并集 | 基线新版本与全部受影响投影在同一事务生效 |
-| ProtectionBaseline 删除 | 删除前绑定范围 | 必须携带资源 `version`；删除与受影响投影重编译在同一事务完成，无其他有效规则时回到 `enrolling` 资源级 deny |
-| SensitiveDataType 自动发现初始等级更新 | 当前类型 Finding 所属 Enrollment | 只重新计算候选 Finding；正式 Assessment revision 已冻结类型、分类和等级，不随定义静默改写 |
+| ProtectionBaseline 完整更新、启停或改绑类型/等级 | 更新前绑定与更新后绑定范围的并集 | 基线新版本与全部受影响投影在同一事务生效；当前 SensitiveDataType 初始等级对应基线不得停用或改绑 |
+| ProtectionBaseline 删除 | 删除前绑定范围 | 必须携带资源 `version`；当前 SensitiveDataType 初始等级对应基线不得单独删除，其他基线的删除与受影响投影重编译在同一事务完成 |
+| SensitiveDataType 自动发现初始等级更新 | 当前类型 Finding 所属 Enrollment | 更新前必须验证新组合已有有效 ProtectionBaseline；只重新计算候选 Finding，正式 Assessment revision 已冻结类型、分类和等级，不随定义静默改写 |
 | Detector 自动采用置信度更新 | 当前 Tenant 的 `enrolling|active` Enrollment | 与 Detector 改绑、启停使用同一有界重新发现路径；新 execution 读取提交后的唯一当前绑定，不改写历史 Finding |
 | SecurityClassification、SecurityGrade 名称、描述、层级、排序或风险顺序更新 | 无执行影响 | 不发布空转投影；治理展示读取定义新版本，历史 Assessment revision 仍保留原引用 |
 
@@ -513,7 +517,7 @@ Service 必须在同一个 PreparedQuery 上依次完成 `ReadSet()`、命中判
 
 | 方法 | 路径 | 作用 |
 | --- | --- | --- |
-| `GET/POST` | `/sensitive-data-types` | 列表/创建敏感数据类型 |
+| `GET/POST` | `/sensitive-data-types` | 列表/创建敏感数据类型；POST 必须携带 `default_protection`，并原子创建该类型初始等级的有效 ProtectionBaseline |
 | `GET/PUT/DELETE` | `/sensitive-data-types/{id}` | 详情/完整更新/删除 |
 | `GET` | `/definition-profiles` | 查询平台随版本提供的只读推荐定义方案 |
 | `POST` | `/definition-profile-applications` | 显式、幂等地按稳定编码补齐当前 Tenant 缺失的推荐分类和等级；不覆盖已有同编码定义 |
@@ -524,8 +528,8 @@ Service 必须在同一个 PreparedQuery 上依次完成 `ReadSet()`、命中判
 | `GET/POST` | `/detectors` | 检测器管理 |
 | `GET/PUT/DELETE` | `/detectors/{id}` | 检测器详情/完整更新/删除 |
 | `GET` | `/detector-capabilities` | 查询当前平台版本内置的只读识别能力注册表 |
-| `GET/POST` | `/protection-baselines` | 保护基线管理 |
-| `GET/PUT/DELETE` | `/protection-baselines/{id}` | 基线详情/完整更新/删除；删除 body 必须携带 `version`，写入与受影响投影重编译保持原子 |
+| `GET/POST` | `/protection-baselines` | 敏感数据定义内部的默认保护列表/补充其他等级规则；不对应独立产品页面 |
+| `GET/PUT/DELETE` | `/protection-baselines/{id}` | 基线详情/完整更新/删除；删除 body 必须携带 `version`，写入与受影响投影重编译保持原子；当前初始等级基线不得停用、改绑或单独删除 |
 | `GET/POST` | `/protection-enrollments` | 纳管列表/创建；GET 使用 `scope=current|released|all` 服务端分页筛选，默认 `current`；`released` 按退出完成时间倒序 |
 | `GET` | `/protection-enrollments/{id}` | 纳管详情与激活进度 |
 | `POST` | `/protection-enrollments/{id}/re-enrollments` | 携带已退出记录的 `version` 创建新的 ProtectionEnrollment；旧记录保持只读，目标已有未退出记录时冲突 |
@@ -540,7 +544,7 @@ Service 必须在同一个 PreparedQuery 上依次完成 `ReadSet()`、命中判
 | `GET` | `/assessments/{id}` | 评估详情和修订历史 |
 | `POST` | `/assessments/{id}/revisions` | 在同一评估聚合上形成新的正式修订 |
 | `DELETE` | `/assessments/{id}` | 携带 `version` 和原因，追加 `not_sensitive` 修订以撤销当前正式结论，不删除历史 |
-| `GET/POST` | `/protection-policies` | 保护策略列表/创建；创建产生首个不可变修订 |
+| `GET/POST` | `/protection-policies` | 保护策略列表/创建；列表可按 `enrollment_id` 精确筛选，创建产生首个不可变修订 |
 | `GET/PUT/DELETE` | `/protection-policies/{id}` | 策略详情/完整更新/撤销；更新和撤销均携带 `version` 并追加不可变修订 |
 | `GET` | `/protection-access-request-targets` | Manager 预览按 DataItem fingerprint 查询当前用户可申请的字段、最近申请的有效状态和有效临时授权；自动发现但尚未形成正式 Assessment 的字段只返回不可申请原因 |
 | `GET/POST` | `/protection-access-requests` | 当前用户分页查询自己的申请/从 Manager 预览提交按用户原值访问申请 |
@@ -692,6 +696,7 @@ Manager 必须按已实现的动作执行器逐项开放已纳管 DataItem，不
 15. ProtectionBaseline 变化按旧、新绑定精准重编译且与定义写入原子提交；SensitiveDataType 自动发现初始等级变化只影响未复核候选；Detector 自动采用置信度变化走有界重新发现；正式 Assessment 不漂移；无关 Enrollment 不产生投影新版本，编译失败时定义写入回滚。
 16. Manager 预览只列出当前投影中的字段：已有正式敏感 Assessment 的字段可申请；自动发现但尚未正式复核的字段继续保护并明确标注“需先完成复核”，不得因不具备申请条件而从保护状态中消失。
 17. ProtectionAccessRequest 只能由当前可信用户从 Manager 预览发起，申请人与审批人必须不同；批准后形成的 ProtectionExemption 只对该用户的 `manager/preview` 生效。到期、撤销或 Assessment 修订变化后即使 Security 不可达也自动回落到 Policy 与 Baseline；主体不匹配、结构冲突、血缘不明和 Owner 授权拒绝仍然 fail closed。不存在直接创建、续期、管理员绕过或租户级原值授权路径。
+18. `security-mysql-owner-protection` Online T4 必须通过 Gateway 实际创建一个可清理的 SensitiveDataType，并确认同一命令生成唯一有效初始 ProtectionBaseline；非法默认保护必须整体回滚且不留下类型。事务探针清理后，再由同一 suite 验证 Manager、Develop、Service 和 Transfer 已安装并执行真实保护投影，报告必须分别保留事务、回滚、清理和 Owner 出口证据。
 
 代码实施后的标准本地入口至少为：
 

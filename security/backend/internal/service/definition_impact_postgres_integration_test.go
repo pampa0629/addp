@@ -101,14 +101,14 @@ func TestDefinitionImpactAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	phoneType, err := definitions.CreateType(models.SensitiveDataTypeRequest{
+	phoneType, err := definitions.createTypeWithoutBaseline(models.SensitiveDataTypeRequest{
 		Code: "phone", Name: "手机号", SecurityClassificationID: classification.ID,
 		DefaultSecurityGradeID: grade.ID,
 	}, 7, 11)
 	if err != nil {
 		t.Fatal(err)
 	}
-	otherType, err := definitions.CreateType(models.SensitiveDataTypeRequest{
+	otherType, err := definitions.createTypeWithoutBaseline(models.SensitiveDataTypeRequest{
 		Code: "other", Name: "其他", SecurityClassificationID: classification.ID,
 		DefaultSecurityGradeID: grade.ID,
 	}, 7, 11)
@@ -203,7 +203,7 @@ func TestProtectionExemptionAssessmentRevisionAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	phoneType, err := definitions.CreateType(models.SensitiveDataTypeRequest{
+	phoneType, err := definitions.createTypeWithoutBaseline(models.SensitiveDataTypeRequest{
 		Code: "phone", Name: "手机号", SecurityClassificationID: classification.ID,
 		DefaultSecurityGradeID: grade.ID,
 	}, 7, 11)

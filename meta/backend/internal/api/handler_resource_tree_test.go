@@ -91,6 +91,21 @@ func TestResourceTreeRefreshHandlerMapsMissingLocatorIdentityToBadRequest(t *tes
 	}
 }
 
+func TestResourceTreeRefreshHandlerRejectsItemLocator(t *testing.T) {
+	router, cleanup := newResourceTreeRefreshHandlerTestRouter(t)
+	defer cleanup()
+
+	resp := httptest.NewRecorder()
+	locator := url.QueryEscape("addp://engine/9/path/manager/report.pdf?type=object&item_id=17")
+	req := httptest.NewRequest(http.MethodPost, "/resource-tree/9/refresh?locator="+locator, nil)
+	req.Header.Set("Authorization", "Bearer user-token")
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+	}
+}
+
 func TestResourceTreeRefreshHandlerSubmitsNodeScanRun(t *testing.T) {
 	router, cleanup := newResourceTreeRefreshHandlerTestRouter(t)
 	defer cleanup()
@@ -118,6 +133,9 @@ func TestResourceTreeRefreshHandlerSubmitsNodeScanRun(t *testing.T) {
 	}
 	if got := jsonMapStringSliceForAPITest(body.Data.Run.ExecutionConfig, "catalog_paths"); len(got) != 1 || got[0] != "manager" {
 		t.Fatalf("run catalog_paths = %#v, want [manager]", got)
+	}
+	if body.Data.Run.ExecutionConfig["scan_depth"] != "basic" || body.Data.Run.ExecutionConfig["force"] != true {
+		t.Fatalf("run scan options = %#v, want basic + force", body.Data.Run.ExecutionConfig)
 	}
 	if body.Data.Run.Source != commonExecution.ModuleMeta {
 		t.Fatalf("run source = %q, want meta", body.Data.Run.Source)

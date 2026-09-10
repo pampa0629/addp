@@ -17,7 +17,7 @@ Manager 拥有的成功 execution 必须在 `common.task_executions.metadata.lin
 空间快显与瓦片缓存的目标边界：
 
 - `manager.preview_state`：预览状态，表达某个 data item 的用户预览模式偏好与轻量交互设置（包括表格可见字段）；是否可快显、推荐渲染源和默认瓦片缓存结果由 Quick View Capability API 动态合成。
-- `manager.task_definitions`：Manager 生成任务定义的唯一表；`task_type` 选择强类型配置、校验器和执行器，产品分类只投影为“快显生成”与“空间数据生成”。
+- `manager.task_definitions`：Manager 生成类任务定义的唯一表；`task_type` 选择强类型配置、校验器和执行器，产品分类投影为“快显任务”与“空间数据任务”。向量化任务继续使用 `manager.embedding_tasks`，三类任务只在统一“数据任务”工作台合并呈现，不合并存储和结果生命周期。
 - `manager.task_resource_bindings`：任务定义对源/目标资源的规范化绑定，供引擎生命周期检查和资源回收使用；不得再从异构 `config` JSON 猜测资源归属。
 - `manager.vector_materialized_view`：矢量物化视图结果状态，只登记 Manager 创建并拥有生命周期的 3857 矢量物化视图目标；同源 schema 下自动识别的外部 3857 目标只读消费，不进入该表。
 - `manager.raster_cog`：栅格快显 COG生成结果，只登记 Manager 创建或登记到 infra MinIO 的 COG 副本；源 NFS 或业务 MinIO COG 不直接暴露给前端。
@@ -91,13 +91,15 @@ manager/
 - 存储型 item 原始下载走 `downloads/file` 的 ResourceLocator + DownloadPlan；前端不得从 preview metadata refs 拼接 multi 文件下载。
 - 向量化用户界面使用“向量化”，英文 API、表名和 TaskProvider `task_type` 统一使用 `embedding`；不得新增 `vectorization` 双轨路径。
 - 向量化对象只能是 data item；资源树 node 只是批量选择范围，不产生 node 向量化结果。
-- 资源树 item / node 向量化是 ad-hoc execution，不写入 `manager.embedding_tasks`；只有独立向量化页面创建的配置才是任务定义。
+- 资源树 item / node 向量化是 ad-hoc execution，不写入 `manager.embedding_tasks`；只有“数据任务”的“向量化任务”Tab 创建的配置才是任务定义。
+- 资源树行内只保留刷新快捷操作；向量化从当前选中资源的操作区或统一“数据任务”入口发起，不在每个树行展示向量化状态或快捷图标。
+- 资源树 node 刷新固定执行 Meta `basic + force`，用于发现当前范围的新 node / item；item 刷新固定执行 known-item `deep + force`，只重建该 item 自身的深层元数据。
 - 表格数据剖析只按 `data_type=table` 和当前内容选择上下文开放；不得按 `item_type`、engine type 或文件扩展名硬编码。首期剖析是 `data_profiling` ad-hoc execution，结果写 Manager 私有表，不写 Meta attributes，不创建 `manager.data_profile_tasks`，也不声明 TaskProvider capability。
 - 数据剖析不得使用当前预览页、分页记录或前端数组计算；采样和指标计算必须走统一 Provider 与服务端预算。刷新失败必须保留上一份成功结果。
 - 条件剖析只接受结构化 `data_scope`，条件必须由声明支持的 Provider 在采样前执行并安全绑定参数；全范围和条件范围按 `profile_config_hash` 分别保存。Manager 不接受任意 SQL，也不得退回到采样后过滤。已纳入 Security 保护的 DataItem 在条件值保护契约完成前只允许全范围剖析，条件剖析必须拒绝。
 - 空间相关逻辑不得默认几何字段名为 `geom`，应从 Meta、预览检测或请求参数获取。
 - 不得把 Quick View 称为任务；瓦片缓存生成任务统一使用 `manager.task_definitions` 中的 `task_type=vector_tile_cache_generation`。
-- “快显生成”和“空间数据生成”是统一生成任务页面中的产品分类，不是单一 `task_type`。全部 Manager 生成任务定义统一写入 `manager.task_definitions`，由 `task_type` 选择强类型配置、执行器和结果策略；不得恢复按类型分表或独立管理页面。
+- “快显任务”和“空间数据任务”是统一“数据任务”工作台中的产品分类，不是单一 `task_type`。全部 Manager 生成类任务定义统一写入 `manager.task_definitions`，由 `task_type` 选择强类型配置、执行器和结果策略；向量化任务作为第三个 Tab 呈现，但继续使用 `manager.embedding_tasks` 及其独立调度和结果语义。不得恢复生成类型独立管理页面或向量化独立一级页面。
 - 统一任务表、语义唯一约束、资源绑定和资源回收生命周期的真实 PostgreSQL 验收统一走 `MANAGER_POSTGRES_TEST_DSN=... make test-manager-postgres`；普通 Go 测试不得把该场景降级为内存替身。
 - 业务矢量瓦片集生成任务统一使用 `manager.task_definitions` 中的 `task_type=vector_tile_set_generation`；结果只写用户选择的 Business 存储并触发 Meta scan，不进入 `manager.vector_tile_cache`。
 - “保存为业务瓦片集”必须创建或执行 `vector_tile_set_generation`。ready 缓存仅在源版本和生成 profile 完全一致时作为执行复用候选；复制必须使用临时对象、PMTiles 校验和原子提交，成功后再触发 Meta scan。
@@ -108,7 +110,7 @@ manager/
 - CAD 基础预览只允许 `data_type=cad + layout=single + format=dwg|dxf`，统一通过受控 `storage-stream` 把源文件交给 `frontend_renderer=cad`。浏览器收到源文件即具备保存其内容的能力，因此该入口必须使用 `manager.data_item.read`，且产品权限语义不得声称“可预览但不可取得源文件”。
 - 分块三维模型瓦片任务使用 `task_type=model3d_tiles_generation`，结果统一进入 `manager.model3d_tiles`；`target_format=3d_tiles` 调用 `osgb_scene_to_3dtiles`，`target_format=s3m` 调用 `osgb_scene_to_s3m`。不得恢复写业务存储并触发 Meta scan 的旧 Manager 路径。
 - Manager 受管快显任务的语义身份统一为 `tenant_id + item_fingerprint + artifact_variant`。重复创建必须复用原任务 ID，重复执行必须新建 execution 并刷新同一当前结果；`item_id`、`locator`、`source_engine_id` 只作执行与回查事实。派生变体、并发唯一约束和业务派生任务的例外见 `manager/docs/快显实现规范.md`。
-- Manager 受管快显是来源驱动的只读任务定义：既可从 Data Explorer 当前 item 的 Quick View action 发起，也可从统一生成任务页选择一个源 item 后发起；两处必须调用同一 owner 领域动作，由后端按源事实派生任务定义，不提供允许前端提交私有任务配置的创建或更新 API。管理页的 `task_id` 只打开只读任务定义。
+- Manager 受管快显是来源驱动的只读任务定义：既可从 Data Explorer 当前 item 的 Quick View action 发起，也可从统一“数据任务”页选择一个源 item 后发起；两处必须调用同一 owner 领域动作，由后端按源事实派生任务定义，不提供允许前端提交私有任务配置的创建或更新 API。管理页的 `task_id` 只打开只读任务定义。
 - Manager 受管当前结果任务统一不启动自身定时调度，但允许 Orchestrator 定时 Pipeline 调用。周期性刷新由用户在 Step 参数中显式配置 `existing_result_action=overwrite`；Manager 不得按 scheduled 来源自动补充已有结果动作。Embedding 的逐 item 调度语义独立保留。
 - COG 生成只能由 Manager 任务执行器派生 GDAL 参数后，通过 `WorkflowRuntimeProvider.InvokeOperator("tiff_to_cog")` direct 调用 GeoPython Workflow；不得退回构造单节点 workflow 或直接拼接 GeoPython Workflow 私有 HTTP。
 - 瓦片缓存生成任务不得隐式创建 3857 物化视图、空间索引或执行准备动作；需要性能准备时必须显式执行矢量物化视图任务。
@@ -122,8 +124,8 @@ manager/
 
 - Manager 前端遵守 `docs/spec/addp前端路由与可恢复状态规范.md`，模块内公开导航统一通过 `src/utils/moduleNavigation.js`，不得直接形成 iframe 私有历史。
 - Data Explorer 使用 ResourceLocator 表达当前资源身份，默认 `preview` Tab 从 URL 省略，非默认稳定 Tab 使用 `tab` query。
-- 生成任务是唯一管理页，固定提供“快显生成”和“空间数据生成”两个分类；分类、任务类型筛选和当前 `task_id` 必须保留在 canonical query 中，规范化使用 `replace`，跨页面进入资源或任务使用 `push`。
-- Manager 受管快显的 TaskProvider `create_url` 指向统一生成任务页并携带 `category=managed_quick_view`、`task_type` 和 `create=1`；页面只选择源 item，不选择目标。`edit_url` 指向同一页面并携带 `category`、`task_type` 和 `task_id`，任务定义保持只读。
+- “数据任务”是 Manager 唯一任务管理页，固定提供“快显任务”“空间数据任务”“向量化任务”三个一级 Tab；分别使用 `category=managed_quick_view|spatial_business|embedding`，分类、任务类型筛选、向量化子视图和当前 `task_id` 必须保留在 canonical query 中，规范化使用 `replace`，跨页面进入资源或任务使用 `push`。
+- Manager 受管快显的 TaskProvider `create_url` 指向统一“数据任务”页并携带 `category=managed_quick_view`、`task_type` 和 `create=1`；页面只选择源 item，不选择目标。`edit_url` 指向同一页面并携带 `category`、`task_type` 和 `task_id`，任务定义保持只读。Embedding 的 `create_url` / `edit_url` 指向同一路由并携带 `category=embedding`，不得恢复 `/manager/vectorization-tasks` 独立页面。
 
 ## 开发与验证
 

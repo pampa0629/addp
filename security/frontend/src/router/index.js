@@ -5,13 +5,11 @@ import Layout from '../components/Layout.vue'
 import Login from '../views/Login.vue'
 import ClassificationGrading from '../views/ClassificationGrading.vue'
 import SensitiveDataDefinitions from '../views/SensitiveDataDefinitions.vue'
-import ProtectionBaselineList from '../views/ProtectionBaselineList.vue'
 import ProtectionEnrollmentList from '../views/ProtectionEnrollmentList.vue'
 
 const children = [
   { path: 'classification-grading', component: ClassificationGrading, meta: { requiresAuth: true } },
-  { path: 'sensitive-data-definitions', component: SensitiveDataDefinitions, meta: { requiresAuth: true } },
-  { path: 'protection-baselines', component: ProtectionBaselineList, meta: { requiresAuth: true } }
+  { path: 'sensitive-data-definitions', component: SensitiveDataDefinitions, meta: { requiresAuth: true } }
 ]
 children.push({ path: 'protection-enrollments', component: ProtectionEnrollmentList, meta: { requiresAuth: true } })
 

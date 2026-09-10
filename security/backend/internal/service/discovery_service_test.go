@@ -144,7 +144,7 @@ func TestEmailMetadataFindingCompilesGenericSuppressionForEveryStructuredOutlet(
 	if err != nil {
 		t.Fatal(err)
 	}
-	dataType, err := definitions.CreateType(models.SensitiveDataTypeRequest{Code: "email", Name: "邮箱", SecurityClassificationID: classification.ID, DefaultSecurityGradeID: grade.ID}, 7, 11)
+	dataType, err := definitions.createTypeWithoutBaseline(models.SensitiveDataTypeRequest{Code: "email", Name: "邮箱", SecurityClassificationID: classification.ID, DefaultSecurityGradeID: grade.ID}, 7, 11)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +222,7 @@ func TestDiscoveryCreatesValueFreeFindingAndManagerActiveProjection(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	dataType, err := definitions.CreateType(models.SensitiveDataTypeRequest{Code: "contact_number", Name: "联系电话", SecurityClassificationID: classification.ID, DefaultSecurityGradeID: grade.ID}, 7, 11)
+	dataType, err := definitions.createTypeWithoutBaseline(models.SensitiveDataTypeRequest{Code: "contact_number", Name: "联系电话", SecurityClassificationID: classification.ID, DefaultSecurityGradeID: grade.ID}, 7, 11)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -526,7 +526,7 @@ func TestDocumentDiscoveryCreatesSearchIndexProjectionWithoutPersistingSampleTex
 	if err != nil {
 		t.Fatal(err)
 	}
-	dataType, err := definitions.CreateType(models.SensitiveDataTypeRequest{Code: "phone", Name: "手机号", SecurityClassificationID: classification.ID, DefaultSecurityGradeID: grade.ID}, 7, 11)
+	dataType, err := definitions.createTypeWithoutBaseline(models.SensitiveDataTypeRequest{Code: "phone", Name: "手机号", SecurityClassificationID: classification.ID, DefaultSecurityGradeID: grade.ID}, 7, 11)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -643,7 +643,7 @@ func TestDetectorBindingControlsDiscoveryWithoutSensitiveTypeCodeFallback(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	dataType, err := definitions.CreateType(models.SensitiveDataTypeRequest{Code: "phone", Name: "手机号", SecurityClassificationID: classification.ID, DefaultSecurityGradeID: grade.ID}, 7, 11)
+	dataType, err := definitions.createTypeWithoutBaseline(models.SensitiveDataTypeRequest{Code: "phone", Name: "手机号", SecurityClassificationID: classification.ID, DefaultSecurityGradeID: grade.ID}, 7, 11)
 	if err != nil {
 		t.Fatal(err)
 	}

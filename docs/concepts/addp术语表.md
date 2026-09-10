@@ -152,8 +152,8 @@
 | SensitiveFinding | 敏感发现 | Detector 根据专业事实和受控样本生成的、带证据与置信度的候选结论。 | Finding 不是正式治理事实；达到对应 Detector 绑定的自动采用置信度时可编译保守基线，防止审核滞后导致明文泄露。 |
 | SensitiveDiscoveryQualitySummary | 敏感发现质量摘要 | Security 根据现有 Finding、不可变复核和 Assessment 当前修订即时聚合的只读质量观察。 | 当前候选只取各在保护 Enrollment 的最新成功发现；历史人工复核按资源、组件和检测能力版本折叠为最新结论，避免重复发现放大样本。人工补充只作为可能漏检的线索，不直接归因于某个 Detector，也不持久化为新的业务事实。 |
 | ResourceSecurityAssessment | 资源安全评估 | 对确定专业资源或组件做出的正式安全分类分级结论。 | 可由 Finding 复核确认/调整形成，也可由治理人员从 Meta 当前组件清单中人工指定；撤销通过不可变修订表达，不删除历史。Catalog 可联邦展示，但不复制或改绑该事实。 |
-| ProtectionBaseline | 保护基线 | 对敏感类型与安全等级组合规定最低保护效果的规则。 | Owner 可以执行更严结果，不得降低基线；产品页面称“默认保护规则”，强调它是未另行收紧时自动采用的完整规则，而不是等待后续配置的半成品。 |
-| ProtectionPolicy | 保护策略 | 针对一个正式资源安全评估、消费 Owner 和动作，对保护基线作显式收紧的可版本化控制面决策。 | 无显式策略时仍执行 Assessment 对应的 ProtectionBaseline；首期策略只能收紧为 `mask|suppress|deny`，不能放宽基线，也不承载授权或受控例外。策略由 Security 拥有，不在 Manager、Transfer、Develop 或 Service 中复制编辑。 |
+| ProtectionBaseline | 保护基线 | 对敏感类型与安全等级组合规定最低保护效果的规则。 | Owner 可以执行更严结果，不得降低基线；产品界面在“敏感数据定义”中称“默认保护”，强调它是未另行收紧时自动采用的完整规则，而不是等待后续配置的半成品。创建 SensitiveDataType 时必须在同一事务创建其自动发现初始等级的有效 ProtectionBaseline。 |
+| ProtectionPolicy | 保护策略 | 针对一个正式资源安全评估、消费 Owner 和动作，对保护基线作显式收紧的可版本化控制面决策。 | 无显式策略时仍执行 Assessment 对应的 ProtectionBaseline；首期策略只能收紧为 `mask|suppress|deny`，不能放宽基线，也不承载授权或受控例外。产品界面只在“受保护资源”中编辑或撤销策略；策略由 Security 拥有，不在 Manager、Transfer、Develop 或 Service 中复制编辑。 |
 | ProtectionAccessRequest | 原值访问申请 | 用户从实际数据出口针对一个正式资源安全评估、具体 Owner 动作和期限发起的原值访问申请。 | 状态固定为 `pending|approved|rejected|expired`。申请主体只能取当前可信 AuthContext，不能由请求正文指定；申请人和审批人的 Principal ID 是权威身份，Security 在动作发生时通过 System 受信租户用户引用固化显示名快照，列表不实时逐行跨模块查询；申请本身不产生明文访问权，超过申请截止时间后由 Security 按服务端时间统一视为已过期并保留在审批历史中。 |
 | ProtectionExemption | 临时原值授权 | Security 审批原值访问申请后，针对申请用户、正式评估修订、消费 Owner 和具体出口动作形成的显式、限时、可审计授权。 | 不替代 Owner 的资源授权；仅在调用主体完全匹配时取消对应字段的内容变换，最长 30 天。到期、撤销或 Assessment 产生新修订后自动回落到 ProtectionPolicy 与 ProtectionBaseline，Owner 不得设置本地授权。 |
 | ProtectionProjection | 保护投影 | Security 为某个 Owner 出口编译的、带版本、有效期、校验和发布游标的最小可执行契约。 | Owner 后台拉取并本地执行；用户数据请求不逐次调用 Security。 |
@@ -266,7 +266,8 @@
 
 | 英文术语 | 中文术语 | 定义 | 备注 |
 |---|---|---|---|
-| Manager generation task definition | Manager 生成任务定义 | Manager 对可重复执行的数据生成动作保存的稳定配置；全部类型统一存储，使用 `task_type` 区分强类型配置与执行器。 | 产品界面统一称“生成任务”，分类固定为 `managed_quick_view` 或 `spatial_business`；内部路由和 API 字段仍可使用 `derived` 表达来源到结果的关系，统一存储不表示统一任务类型或统一结果生命周期。 |
+| Manager data task workspace | Manager 数据任务工作台 | Manager 中统一管理可重复执行任务定义的产品页面。 | 产品界面名称固定为“数据任务”，提供“快显任务”“空间数据任务”“向量化任务”三个一级 Tab；页面合并不改变不同任务定义、执行器和结果状态的存储边界。 |
+| Manager generation task definition | Manager 生成任务定义 | Manager 对可重复执行的数据生成动作保存的稳定配置；全部生成类型统一存储，使用 `task_type` 区分强类型配置与执行器。 | 在“数据任务”的“快显任务”或“空间数据任务”Tab 中呈现；内部路由和 API 字段仍可使用 `derived` 表达来源到结果的关系，统一存储不表示统一任务类型或统一结果生命周期。 |
 | Task | 任务 | 可被执行的业务能力抽象。 | Task 是抽象概念，不要求平台级统一任务总表；任务定义归 owner 模块存储，owner 可在模块内统一同构定义。 |
 | spatial task | 空间任务 | Manager 中按空间业务派生目的组织的产品分类。 | 与“快显管理”共用 `manager.task_definitions` 控制面，但保持独立 `task_type`、配置校验、执行器与业务结果生命周期。 |
 | task definition | 任务定义 | “未来应该按什么策略处理什么对象”的定义态。 | 例如 `meta.scan_tasks`、`transfer.transfer_tasks`、`manager.task_definitions`。 |

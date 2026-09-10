@@ -2,6 +2,7 @@ package iam
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"sort"
@@ -26,6 +27,21 @@ var ErrTenantRoleAssignmentAlreadyExists = fmt.Errorf(
 
 var ErrTenantRoleAssignmentPrincipalTypeNotAllowed = fmt.Errorf(
 	"%w: tenant role cannot be assigned to the target principal type",
+	commonapi.ErrConflict,
+)
+
+var ErrTenantRoleAssignmentScopeNotFound = fmt.Errorf(
+	"%w: tenant role assignment scope target does not exist in the tenant",
+	commonapi.ErrNotFound,
+)
+
+var ErrTenantRoleAssignmentScopeUnavailable = fmt.Errorf(
+	"%w: tenant role assignment scope target is unavailable",
+	commonapi.ErrConflict,
+)
+
+var ErrTenantRoleAssignmentScopeMembershipRequired = fmt.Errorf(
+	"%w: tenant role assignment scope requires an active organization membership",
 	commonapi.ErrConflict,
 )
 
@@ -284,12 +300,18 @@ func (s *TenantRoleService) CreateAssignments(ctx context.Context, input CreateT
 		if _, err := tx.LockTenantForUpdate(ctx, input.TenantID); err != nil {
 			return err
 		}
+		if err := validateAssignmentScopeTarget(ctx, tx, input.TenantID, input.ScopeType, input.DepartmentID, input.ProjectGroupID); err != nil {
+			return err
+		}
 		membership, err := tx.LockTenantMembershipByID(ctx, input.MembershipID)
 		if err != nil {
 			return err
 		}
 		if membership.TenantID != input.TenantID || membership.Status != TenantMembershipStatusActive || (membership.ExpiresAt != nil && !membership.ExpiresAt.After(now)) {
 			return commonapi.ErrForbidden
+		}
+		if err := validateAssignmentScopeMembership(ctx, tx, input.TenantID, membership.ID, input.ScopeType, input.DepartmentID, input.ProjectGroupID); err != nil {
+			return err
 		}
 		targetPrincipal, err := tx.LockPrincipal(ctx, membership.PrincipalID)
 		if err != nil {
@@ -511,6 +533,48 @@ func validateAssignmentScope(scope string, departmentID, projectGroupID *int64) 
 		return fmt.Errorf("%w: invalid assignment scope", commonapi.ErrBadRequest)
 	}
 	return nil
+}
+
+func validateAssignmentScopeTarget(ctx context.Context, repository *Repository, tenantID int64, scope string, departmentID, projectGroupID *int64) error {
+	switch scope {
+	case "department":
+		department, err := repository.LockDepartment(ctx, tenantID, *departmentID)
+		if err != nil {
+			if errors.Is(err, commonapi.ErrNotFound) {
+				return ErrTenantRoleAssignmentScopeNotFound
+			}
+			return err
+		}
+		if department.Status != DepartmentStatusActive {
+			return ErrTenantRoleAssignmentScopeUnavailable
+		}
+	case "project_group":
+		projectGroup, err := repository.LockProjectGroup(ctx, tenantID, *projectGroupID)
+		if err != nil {
+			if errors.Is(err, commonapi.ErrNotFound) {
+				return ErrTenantRoleAssignmentScopeNotFound
+			}
+			return err
+		}
+		if projectGroup.Status == ProjectGroupStatusClosed {
+			return ErrTenantRoleAssignmentScopeUnavailable
+		}
+	}
+	return nil
+}
+
+func validateAssignmentScopeMembership(ctx context.Context, repository *Repository, tenantID, tenantMembershipID int64, scope string, departmentID, projectGroupID *int64) error {
+	var err error
+	switch scope {
+	case "department":
+		err = repository.LockActiveDepartmentMembershipByTenantMembership(ctx, tenantID, *departmentID, tenantMembershipID)
+	case "project_group":
+		err = repository.LockActiveProjectGroupMembershipByTenantMembership(ctx, tenantID, *projectGroupID, tenantMembershipID)
+	}
+	if errors.Is(err, commonapi.ErrNotFound) {
+		return ErrTenantRoleAssignmentScopeMembershipRequired
+	}
+	return err
 }
 
 func uniqueSorted(values []string) []string {

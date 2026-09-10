@@ -1,24 +1,26 @@
 <template>
-  <section class="page">
-    <header class="page-header">
+  <section class="baseline-bindings">
+    <div class="section-header">
       <div>
-        <h2>{{ t('security.resources.protectionBaseline') }}</h2>
-        <p>{{ t('security.descriptions.protectionBaseline') }}</p>
+        <p class="section-description">{{ t('security.baseline.mappingHint') }}</p>
+        <p class="section-context">{{ sensitiveType.name }} · {{ sensitiveType.code }}</p>
       </div>
-      <el-button v-if="can('create')" type="primary" @click="openCreate">
+      <el-button v-if="can('create') && availableGrades.length" type="primary" @click="openCreate">
         {{ t('security.baseline.create') }}
       </el-button>
-    </header>
+    </div>
 
-    <el-alert :title="t('security.baseline.mappingHint')" type="info" :closable="false" show-icon />
+    <el-alert :title="t('security.baseline.initialRuleHint')" type="info" :closable="false" show-icon />
 
     <div class="table-panel">
       <el-table v-loading="loading" :data="rows" row-key="id">
-        <el-table-column :label="t('security.fields.sensitive_data_type_id')" min-width="180">
-          <template #default="{ row }">{{ referenceLabel(types, row.sensitive_data_type_id) }}</template>
-        </el-table-column>
         <el-table-column :label="t('security.fields.security_grade_id')" min-width="170">
-          <template #default="{ row }">{{ referenceLabel(grades, row.security_grade_id) }}</template>
+          <template #default="{ row }">
+            {{ referenceLabel(grades, row.security_grade_id) }}
+            <el-tag v-if="isInitialBaseline(row)" class="initial-tag" size="small" type="primary">
+              {{ t('security.baseline.initialRule') }}
+            </el-tag>
+          </template>
         </el-table-column>
         <el-table-column :label="t('security.baseline.defaultProtection')" min-width="230">
           <template #default="{ row }">
@@ -27,11 +29,6 @@
             <div v-if="row.effect === 'mask'" class="secondary-text">
               {{ t('security.baseline.maskSummary', { prefix: row.keep_prefix, suffix: row.keep_suffix }) }}
             </div>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('security.fields.invalid_value_effect')" min-width="160">
-          <template #default="{ row }">
-            {{ row.effect === 'mask' ? effectLabel(row.invalid_value_effect) : t('security.common.notApplicable') }}
           </template>
         </el-table-column>
         <el-table-column :label="t('security.baseline.ruleEffective')" width="120">
@@ -44,7 +41,9 @@
         <el-table-column :label="t('security.common.actions')" width="150" fixed="right">
           <template #default="{ row }">
             <el-button v-if="can('update')" link @click="openEdit(row)">{{ t('security.common.edit') }}</el-button>
-            <el-button v-if="can('delete')" link type="danger" @click="remove(row)">{{ t('security.common.delete') }}</el-button>
+            <el-button v-if="can('delete') && !isInitialBaseline(row)" link type="danger" @click="remove(row)">
+              {{ t('security.common.delete') }}
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -53,24 +52,18 @@
 
     <el-dialog
       v-model="dialog"
+      append-to-body
       class="addp-dialog"
       :title="editing ? t('security.baseline.edit') : t('security.baseline.create')"
       width="min(620px, calc(100vw - 24px))"
     >
       <el-alert :title="t('security.baseline.formHint')" type="info" :closable="false" show-icon />
       <el-form label-position="top" class="baseline-form">
-        <div class="form-grid">
-          <el-form-item :label="t('security.fields.sensitive_data_type_id')" required>
-            <el-select v-model="form.sensitive_data_type_id" class="wide" filterable>
-              <el-option v-for="item in types" :key="item.id" :value="Number(item.id)" :label="definitionLabel(item)" />
-            </el-select>
-          </el-form-item>
-          <el-form-item :label="t('security.fields.security_grade_id')" required>
-            <el-select v-model="form.security_grade_id" class="wide" filterable>
-              <el-option v-for="item in orderedGrades" :key="item.id" :value="Number(item.id)" :label="definitionLabel(item)" />
-            </el-select>
-          </el-form-item>
-        </div>
+        <el-form-item :label="t('security.fields.security_grade_id')" required>
+          <el-select v-model="form.security_grade_id" class="wide" filterable :disabled="Boolean(editing)">
+            <el-option v-for="item in availableGrades" :key="item.id" :value="Number(item.id)" :label="definitionLabel(item)" />
+          </el-select>
+        </el-form-item>
         <el-form-item :label="t('security.fields.effect')" required>
           <el-radio-group v-model="form.effect">
             <el-radio-button value="mask">{{ effectLabel('mask') }}</el-radio-button>
@@ -103,7 +96,7 @@
             <div class="field-help">{{ t('security.baseline.invalidValueHelp') }}</div>
           </el-form-item>
         </template>
-        <el-form-item :label="t('security.baseline.ruleEffective')">
+        <el-form-item v-if="!isEditingInitial" :label="t('security.baseline.ruleEffective')">
           <el-switch v-model="form.enabled" :active-text="t('security.baseline.effective')" :inactive-text="t('security.baseline.inactive')" />
         </el-form-item>
       </el-form>
@@ -119,21 +112,26 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { gradeAPI, protectionBaselineAPI, sensitiveDataTypeAPI } from '../api/security'
+import { gradeAPI, protectionBaselineAPI } from '../api/security'
 import { useAuthStore } from '../store/auth'
 import { protectionEffectI18nKey } from '../utils/foundationForm.mjs'
 
+const props = defineProps({ sensitiveType: { type: Object, required: true } })
+const emit = defineEmits(['changed'])
 const { t } = useI18n()
 const auth = useAuthStore()
 const rows = ref([])
-const types = ref([])
 const grades = ref([])
 const loading = ref(false)
 const saving = ref(false)
 const dialog = ref(false)
 const editing = ref(null)
-const form = reactive({ sensitive_data_type_id: null, security_grade_id: null, effect: 'mask', keep_prefix: 3, keep_suffix: 4, invalid_value_effect: 'suppress', enabled: true, version: 0 })
+const form = reactive({ security_grade_id: null, effect: 'mask', keep_prefix: 3, keep_suffix: 4, invalid_value_effect: 'suppress', enabled: true, version: 0 })
 const orderedGrades = computed(() => [...grades.value].sort((left, right) => Number(left.risk_order) - Number(right.risk_order)))
+const availableGrades = computed(() => editing.value
+  ? orderedGrades.value.filter(item => String(item.id) === String(editing.value.security_grade_id))
+  : orderedGrades.value.filter(item => !rows.value.some(row => String(row.security_grade_id) === String(item.id))))
+const isEditingInitial = computed(() => Boolean(editing.value && isInitialBaseline(editing.value)))
 
 function can(action) { return auth.hasPermission(`security.protection_baseline.${action}`) }
 function definitionLabel(item) { return t('security.common.referenceOption', { name: item.name, code: item.code }) }
@@ -145,14 +143,16 @@ function effectLabel(effect) {
   const key = protectionEffectI18nKey(effect)
   return key ? t(key) : t('security.common.notAvailable')
 }
+function isInitialBaseline(row) {
+  return String(row.security_grade_id) === String(props.sensitiveType.default_security_grade_id)
+}
 
 async function load() {
   loading.value = true
   try {
-    const result = await Promise.all([protectionBaselineAPI.list(), sensitiveDataTypeAPI.list(), gradeAPI.list()])
-    rows.value = Array.isArray(result[0]) ? result[0] : []
-    types.value = Array.isArray(result[1]) ? result[1] : []
-    grades.value = Array.isArray(result[2]) ? result[2] : []
+    const [allBaselines, allGrades] = await Promise.all([protectionBaselineAPI.list(), gradeAPI.list()])
+    rows.value = (Array.isArray(allBaselines) ? allBaselines : []).filter(item => String(item.sensitive_data_type_id) === String(props.sensitiveType.id))
+    grades.value = Array.isArray(allGrades) ? allGrades : []
   } catch (error) {
     ElMessage.error(error.message || t('security.common.failed'))
   } finally {
@@ -161,8 +161,7 @@ async function load() {
 }
 
 function reset(row = {}) {
-  form.sensitive_data_type_id = row.sensitive_data_type_id ? Number(row.sensitive_data_type_id) : (types.value[0] ? Number(types.value[0].id) : null)
-  form.security_grade_id = row.security_grade_id ? Number(row.security_grade_id) : (orderedGrades.value[0] ? Number(orderedGrades.value[0].id) : null)
+  form.security_grade_id = row.security_grade_id ? Number(row.security_grade_id) : (availableGrades.value[0] ? Number(availableGrades.value[0].id) : null)
   form.effect = row.effect || 'mask'
   form.keep_prefix = Number(row.keep_prefix ?? 3)
   form.keep_suffix = Number(row.keep_suffix ?? 4)
@@ -179,7 +178,7 @@ watch(() => form.effect, effect => {
 })
 
 async function save() {
-  if (!form.sensitive_data_type_id || !form.security_grade_id) {
+  if (!form.security_grade_id) {
     ElMessage.warning(t('security.baseline.required'))
     return
   }
@@ -187,14 +186,14 @@ async function save() {
   try {
     const mask = form.effect === 'mask'
     const payload = {
-      sensitive_data_type_id: Number(form.sensitive_data_type_id),
+      sensitive_data_type_id: Number(props.sensitiveType.id),
       security_grade_id: Number(form.security_grade_id),
       effect: form.effect,
       algorithm: mask ? 'addp.mask.keep_prefix_suffix/v2' : '',
       keep_prefix: mask ? Number(form.keep_prefix) : 0,
       keep_suffix: mask ? Number(form.keep_suffix) : 0,
       invalid_value_effect: mask ? form.invalid_value_effect : form.effect,
-      enabled: Boolean(form.enabled)
+      enabled: isEditingInitial.value ? true : Boolean(form.enabled)
     }
     if (editing.value) {
       payload.version = form.version
@@ -204,6 +203,7 @@ async function save() {
     }
     dialog.value = false
     await load()
+    emit('changed')
     ElMessage.success(t('security.common.saved'))
   } catch (error) {
     ElMessage.error(error.message || t('security.common.failed'))
@@ -214,9 +214,10 @@ async function save() {
 
 async function remove(row) {
   try {
-    await ElMessageBox.confirm(t('security.baseline.confirmDelete', { type: referenceLabel(types.value, row.sensitive_data_type_id), grade: referenceLabel(grades.value, row.security_grade_id) }), t('security.common.hint'), { type: 'warning' })
+    await ElMessageBox.confirm(t('security.baseline.confirmDelete', { type: props.sensitiveType.name, grade: referenceLabel(grades.value, row.security_grade_id) }), t('security.common.hint'), { type: 'warning' })
     await protectionBaselineAPI.delete(row.id, { version: Number(row.version) })
     await load()
+    emit('changed')
   } catch (error) {
     if (error !== 'cancel' && error !== 'close') ElMessage.error(error.message || t('security.common.failed'))
   }
@@ -226,13 +227,14 @@ onMounted(load)
 </script>
 
 <style scoped>
-.page { min-height: 100%; padding: 20px; background: var(--addp-bg-secondary); color: var(--addp-text-primary); }
-.page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 16px; }
-.page-header h2 { margin: 0; }
-.page-header p { margin: 8px 0 0; color: var(--addp-text-secondary); }
+.baseline-bindings { min-height: 0; }
+.section-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 16px; }
+.section-description { margin: 0; color: var(--addp-text-secondary); line-height: 1.6; }
+.section-context { margin: 6px 0 0; color: var(--addp-text-primary); font-weight: 600; }
 .table-panel { margin-top: 16px; overflow: hidden; border: 1px solid var(--addp-border-color); border-radius: 6px; background: var(--addp-bg-primary); }
 .primary-text { color: var(--addp-text-primary); font-weight: 600; }
 .secondary-text, .field-help { margin-top: 4px; color: var(--addp-text-tertiary); font-size: 12px; line-height: 1.5; }
+.initial-tag { margin-left: 8px; }
 .effect-impact { display: flex; width: 100%; gap: 8px; margin-top: 10px; padding: 10px 12px; box-sizing: border-box; border: 1px solid var(--addp-border-color); border-radius: 6px; background: var(--addp-bg-secondary); color: var(--addp-text-secondary); font-size: 13px; line-height: 1.5; }
 .effect-impact-title { flex: 0 0 auto; color: var(--addp-text-primary); font-weight: 600; }
 .baseline-form { margin-top: 20px; }

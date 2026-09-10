@@ -9358,9 +9358,15 @@ paths:
             items:
               $ref: '#/definitions/internal_api.IAMTenantRoleAssignmentResponse'
             type: array
+        "404":
+          description: 授权范围不存在或不属于当前租户 | Assignment scope not found in the current
+            tenant
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
         "409":
-          description: '角色分配冲突：重复分配或主体类型不兼容 | Role assignment conflict: duplicate
-            assignment or incompatible principal type'
+          description: '角色分配冲突：重复分配、主体类型不兼容、授权范围不可用或缺少组织成员关系 | Role assignment conflict:
+            duplicate assignment, incompatible principal type, unavailable scope,
+            or missing organization membership'
           schema:
             $ref: '#/definitions/internal_api.IAMErrorResponse'
       security:

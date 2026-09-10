@@ -74,6 +74,7 @@ export const iamAPI = {
   },
   departments: {
     list: (params) => list('/system/tenant/departments', params),
+    listAll: (params) => listAll('/system/tenant/departments', params),
     get: (id) => client.get(`/system/tenant/departments/${id}`),
     create: (data) => client.post('/system/tenant/departments', data),
     update: (id, data) => client.put(`/system/tenant/departments/${id}`, data),
@@ -86,6 +87,7 @@ export const iamAPI = {
   },
   projectGroups: {
     list: (params) => list('/system/tenant/project_groups', params),
+    listAll: (params) => listAll('/system/tenant/project_groups', params),
     get: (id) => client.get(`/system/tenant/project_groups/${id}`),
     create: (data) => client.post('/system/tenant/project_groups', data),
     update: (id, data) => client.put(`/system/tenant/project_groups/${id}`, data),

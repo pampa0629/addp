@@ -88,6 +88,15 @@ other = "该成员已在此授权范围拥有该角色，无需重复分配。"
 [system.iam.role_assignment_principal_type_not_allowed]
 other = "该角色不能分配给此类型的成员。"
 
+[system.iam.role_assignment_scope_not_found]
+other = "选择的授权范围不存在或不属于当前租户。"
+
+[system.iam.role_assignment_scope_unavailable]
+other = "选择的授权范围已停用或关闭。"
+
+[system.iam.role_assignment_scope_membership_required]
+other = "只能在该成员已加入的有效部门或项目组范围内分配角色。"
+
 [system.log.not_found]
 other = "日志不存在"
 

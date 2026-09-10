@@ -43,6 +43,7 @@ func TestTenantAdministrationClosureAgainstPostgres(t *testing.T) {
 	tenantService := NewPlatformTenantService(repository, now)
 	membershipService := NewTenantMembershipService(repository, now)
 	roleService := NewTenantRoleService(repository, now)
+	organizationService := NewOrganizationService(repository, now)
 	tokenService, err := NewTokenFamilyService(repository, BrowserSessionConfig{
 		ResourceTicketOwners: []string{"system"},
 	}, nil, now)
@@ -174,6 +175,85 @@ func TestTenantAdministrationClosureAgainstPostgres(t *testing.T) {
 		t.Fatalf("atomic invalid role assignment batch count = %d, err=%v", invalidRuntimeAssignmentCount, err)
 	}
 	dataViewerRole := findTenantRoleByKey(t, roles, "tenant.data_viewer")
+	missingDepartmentID := int64(987654321)
+	if _, err := roleService.CreateAssignments(ctx, CreateTenantRoleAssignmentsInput{
+		TenantID: tenant.ID, MembershipID: membership.Membership.ID, RoleIDs: []int64{dataViewerRole.ID},
+		ScopeType: "department", DepartmentID: &missingDepartmentID, Reason: "invalid department scope",
+		ActorPrincipalID: initialAdministrator.ID, Audit: tenantAudit,
+	}); !errors.Is(err, ErrTenantRoleAssignmentScopeNotFound) || !errors.Is(err, commonapi.ErrNotFound) {
+		t.Fatalf("missing department role assignment error = %v, want scope not found", err)
+	}
+	disabledDepartment, err := organizationService.CreateDepartment(ctx, CreateDepartmentInput{
+		TenantID: tenant.ID, ActorPrincipalID: initialAdministrator.ID,
+		Code: "disabled_scope", Name: "Disabled Scope", Audit: tenantAudit,
+	})
+	if err != nil {
+		t.Fatalf("create disabled assignment scope fixture: %v", err)
+	}
+	disabledDepartment, err = organizationService.DisableDepartment(ctx, ChangeDepartmentStatusInput{
+		TenantID: tenant.ID, DepartmentID: disabledDepartment.ID, Version: disabledDepartment.Version,
+		ActorPrincipalID: initialAdministrator.ID, Reason: "scope retired", Audit: tenantAudit,
+	})
+	if err != nil {
+		t.Fatalf("disable assignment scope fixture: %v", err)
+	}
+	if _, err := roleService.CreateAssignments(ctx, CreateTenantRoleAssignmentsInput{
+		TenantID: tenant.ID, MembershipID: membership.Membership.ID, RoleIDs: []int64{dataViewerRole.ID},
+		ScopeType: "department", DepartmentID: &disabledDepartment.ID, Reason: "disabled department scope",
+		ActorPrincipalID: initialAdministrator.ID, Audit: tenantAudit,
+	}); !errors.Is(err, ErrTenantRoleAssignmentScopeUnavailable) || !errors.Is(err, commonapi.ErrConflict) {
+		t.Fatalf("disabled department role assignment error = %v, want scope unavailable", err)
+	}
+	closedProjectGroup, err := organizationService.CreateProjectGroup(ctx, CreateProjectGroupInput{
+		TenantID: tenant.ID, ActorPrincipalID: initialAdministrator.ID,
+		Code: "closed_scope", Name: "Closed Scope", Status: ProjectGroupStatusActive, Audit: tenantAudit,
+	})
+	if err != nil {
+		t.Fatalf("create closed assignment scope fixture: %v", err)
+	}
+	closedProjectGroup, err = organizationService.CloseProjectGroup(ctx, CloseProjectGroupInput{
+		TenantID: tenant.ID, ProjectGroupID: closedProjectGroup.ID, Version: closedProjectGroup.Version,
+		ActorPrincipalID: initialAdministrator.ID, Reason: "scope completed", Audit: tenantAudit,
+	})
+	if err != nil {
+		t.Fatalf("close assignment scope fixture: %v", err)
+	}
+	if _, err := roleService.CreateAssignments(ctx, CreateTenantRoleAssignmentsInput{
+		TenantID: tenant.ID, MembershipID: membership.Membership.ID, RoleIDs: []int64{dataViewerRole.ID},
+		ScopeType: "project_group", ProjectGroupID: &closedProjectGroup.ID, Reason: "closed project scope",
+		ActorPrincipalID: initialAdministrator.ID, Audit: tenantAudit,
+	}); !errors.Is(err, ErrTenantRoleAssignmentScopeUnavailable) || !errors.Is(err, commonapi.ErrConflict) {
+		t.Fatalf("closed project group role assignment error = %v, want scope unavailable", err)
+	}
+	activeDepartment, err := organizationService.CreateDepartment(ctx, CreateDepartmentInput{
+		TenantID: tenant.ID, ActorPrincipalID: initialAdministrator.ID,
+		Code: "research_scope", Name: "Research Scope", Audit: tenantAudit,
+	})
+	if err != nil {
+		t.Fatalf("create active assignment scope fixture: %v", err)
+	}
+	if _, err := roleService.CreateAssignments(ctx, CreateTenantRoleAssignmentsInput{
+		TenantID: tenant.ID, MembershipID: membership.Membership.ID, RoleIDs: []int64{dataViewerRole.ID},
+		ScopeType: "department", DepartmentID: &activeDepartment.ID, Reason: "missing department membership",
+		ActorPrincipalID: initialAdministrator.ID, Audit: tenantAudit,
+	}); !errors.Is(err, ErrTenantRoleAssignmentScopeMembershipRequired) || !errors.Is(err, commonapi.ErrConflict) {
+		t.Fatalf("department role assignment without membership error = %v, want scope membership required", err)
+	}
+	if _, err := organizationService.CreateDepartmentMembership(ctx, CreateDepartmentMembershipInput{
+		TenantID: tenant.ID, DepartmentID: activeDepartment.ID, TenantMembershipID: membership.Membership.ID,
+		ActorPrincipalID: initialAdministrator.ID, MembershipType: DepartmentMembershipTypePrimary,
+		RelationRole: DepartmentRelationRoleMember, Audit: tenantAudit,
+	}); err != nil {
+		t.Fatalf("create active assignment scope membership: %v", err)
+	}
+	departmentAssignments, err := roleService.CreateAssignments(ctx, CreateTenantRoleAssignmentsInput{
+		TenantID: tenant.ID, MembershipID: membership.Membership.ID, RoleIDs: []int64{dataViewerRole.ID},
+		ScopeType: "department", DepartmentID: &activeDepartment.ID, Reason: "research access",
+		ActorPrincipalID: initialAdministrator.ID, Audit: tenantAudit,
+	})
+	if err != nil || len(departmentAssignments) != 1 || departmentAssignments[0].DepartmentID == nil || *departmentAssignments[0].DepartmentID != activeDepartment.ID {
+		t.Fatalf("active department role assignment = %#v error=%v", departmentAssignments, err)
+	}
 	assignedBatch, err := roleService.CreateAssignments(ctx, CreateTenantRoleAssignmentsInput{
 		TenantID: tenant.ID, MembershipID: membership.Membership.ID, RoleIDs: []int64{infrastructureRole.ID, dataViewerRole.ID},
 		ScopeType: "tenant", Reason: "engine administration", ActorPrincipalID: initialAdministrator.ID, Audit: tenantAudit,

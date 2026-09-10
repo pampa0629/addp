@@ -28,6 +28,29 @@ describe('IAM management API contract', () => {
     })
   })
 
+  it('collects every organization page for assignment scope selectors', async () => {
+    client.get
+      .mockResolvedValueOnce({ data: [{ id: '3', code: 'research' }], total_pages: 2 })
+      .mockResolvedValueOnce({ data: [{ id: '4', code: 'operations' }], total_pages: 2 })
+      .mockResolvedValueOnce({ data: [{ id: '5', code: 'joint_project' }], total_pages: 1 })
+
+    await expect(iamAPI.departments.listAll()).resolves.toEqual([
+      { id: '3', code: 'research' },
+      { id: '4', code: 'operations' }
+    ])
+    await expect(iamAPI.projectGroups.listAll()).resolves.toEqual([{ id: '5', code: 'joint_project' }])
+
+    expect(client.get).toHaveBeenNthCalledWith(1, '/system/tenant/departments', {
+      params: { page: 1, page_size: 100 }
+    })
+    expect(client.get).toHaveBeenNthCalledWith(2, '/system/tenant/departments', {
+      params: { page: 2, page_size: 100 }
+    })
+    expect(client.get).toHaveBeenNthCalledWith(3, '/system/tenant/project_groups', {
+      params: { page: 1, page_size: 100 }
+    })
+  })
+
   it('creates and initializes tenants through the platform tenant path', () => {
     iamAPI.platformTenants.listAdministratorCandidates({ search: 'alice' })
     iamAPI.platformTenants.create({

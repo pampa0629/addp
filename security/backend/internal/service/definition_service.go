@@ -155,19 +155,48 @@ func (s *DefinitionService) ListTypes(tenantID int64) ([]models.SensitiveDataTyp
 func (s *DefinitionService) GetType(id, tenantID int64) (*models.SensitiveDataType, error) {
 	return s.types.Get(id, tenantID)
 }
-func (s *DefinitionService) CreateType(req models.SensitiveDataTypeRequest, tenantID, userID int64) (*models.SensitiveDataType, error) {
-	if err := s.validateTypeRefs(req.SecurityClassificationID, req.DefaultSecurityGradeID, tenantID); err != nil {
-		return nil, err
-	}
+func (s *DefinitionService) CreateType(req models.CreateSensitiveDataTypeRequest, tenantID, userID int64) (*models.SensitiveDataType, error) {
 	row := &models.SensitiveDataType{TenantID: tenantID, Code: strings.TrimSpace(req.Code), Name: strings.TrimSpace(req.Name), Description: strings.TrimSpace(req.Description), SecurityClassificationID: req.SecurityClassificationID, DefaultSecurityGradeID: req.DefaultSecurityGradeID, CreatedBy: userID}
-	if row.Code == "" || row.Name == "" {
+	if row.Code == "" || row.Name == "" || req.DefaultProtection == nil {
 		return nil, commonapi.ErrBadRequest
 	}
-	if err := s.types.Create(row); err != nil {
+	baselineRequest := models.ProtectionBaselineRequest{
+		SecurityGradeID:    req.DefaultSecurityGradeID,
+		Effect:             strings.TrimSpace(req.DefaultProtection.Effect),
+		Algorithm:          strings.TrimSpace(req.DefaultProtection.Algorithm),
+		KeepPrefix:         req.DefaultProtection.KeepPrefix,
+		KeepSuffix:         req.DefaultProtection.KeepSuffix,
+		InvalidValueEffect: strings.TrimSpace(req.DefaultProtection.InvalidValueEffect),
+	}
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		definitions := s.withDB(tx)
+		if err := definitions.validateTypeRefs(req.SecurityClassificationID, req.DefaultSecurityGradeID, tenantID); err != nil {
+			return err
+		}
+		if err := definitions.types.Create(row); err != nil {
+			return err
+		}
+		baselineRequest.SensitiveDataTypeID = row.ID
+		if err := definitions.validateBaseline(baselineRequest, tenantID); err != nil {
+			return err
+		}
+		baseline := &models.ProtectionBaseline{
+			TenantID: tenantID, SensitiveDataTypeID: row.ID, SecurityGradeID: row.DefaultSecurityGradeID,
+			Effect: baselineRequest.Effect, Algorithm: baselineRequest.Algorithm,
+			KeepPrefix: baselineRequest.KeepPrefix, KeepSuffix: baselineRequest.KeepSuffix,
+			InvalidValueEffect: baselineRequest.InvalidValueEffect, Enabled: true, CreatedBy: userID,
+		}
+		if baseline.InvalidValueEffect == "" {
+			baseline.InvalidValueEffect = dataprotection.EffectSuppress
+		}
+		return definitions.baselines.Create(baseline)
+	})
+	if err != nil {
 		return nil, err
 	}
 	return row, nil
 }
+
 func (s *DefinitionService) UpdateType(id, tenantID, userID int64, req models.SensitiveDataTypeRequest) (*models.SensitiveDataType, error) {
 	if strings.TrimSpace(req.Name) == "" {
 		return nil, commonapi.ErrBadRequest
@@ -181,6 +210,14 @@ func (s *DefinitionService) UpdateType(id, tenantID, userID int64, req models.Se
 		current, err := definitions.types.Get(id, tenantID)
 		if err != nil {
 			return err
+		}
+		if current.Version != req.Version {
+			return repository.ErrVersionConflict
+		}
+		if current.DefaultSecurityGradeID != req.DefaultSecurityGradeID {
+			if err := definitions.requireActiveBaseline(tenantID, id, req.DefaultSecurityGradeID); err != nil {
+				return err
+			}
 		}
 		if err := definitions.types.Update(id, tenantID, req.Version, map[string]interface{}{"name": strings.TrimSpace(req.Name), "description": strings.TrimSpace(req.Description), "security_classification_id": req.SecurityClassificationID, "default_security_grade_id": req.DefaultSecurityGradeID, "updated_by": userID}); err != nil {
 			return err
@@ -202,9 +239,6 @@ func (s *DefinitionService) UpdateType(id, tenantID, userID int64, req models.Se
 func (s *DefinitionService) DeleteType(id, tenantID int64) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		definitions := s.withDB(tx)
-		if err := rejectReferences(definitions.baselines, tenantID, "sensitive_data_type_id = ?", id); err != nil {
-			return err
-		}
 		if err := rejectReferences(definitions.detectors, tenantID, "sensitive_data_type_id = ?", id); err != nil {
 			return err
 		}
@@ -215,6 +249,9 @@ func (s *DefinitionService) DeleteType(id, tenantID int64) error {
 			return err
 		}
 		if err := rejectReferences(repository.New[models.ResourceSecurityAssessmentRevision](tx), tenantID, "sensitive_data_type_id = ?", id); err != nil {
+			return err
+		}
+		if err := tx.Where("tenant_id = ? AND sensitive_data_type_id = ?", tenantID, id).Delete(&models.ProtectionBaseline{}).Error; err != nil {
 			return err
 		}
 		return definitions.types.Delete(id, tenantID)
@@ -420,9 +457,17 @@ func (s *DefinitionService) UpdateBaseline(id, tenantID, userID int64, req model
 		if err != nil {
 			return err
 		}
+		if current.Version != req.Version {
+			return repository.ErrVersionConflict
+		}
 		enabled := current.Enabled
 		if req.Enabled != nil {
 			enabled = *req.Enabled
+		}
+		if currentDefault, err := definitions.isInitialDefaultBaseline(current); err != nil {
+			return err
+		} else if currentDefault && (!enabled || current.SensitiveDataTypeID != req.SensitiveDataTypeID || current.SecurityGradeID != req.SecurityGradeID) {
+			return commonapi.ErrConflict
 		}
 		invalid := req.InvalidValueEffect
 		if invalid == "" {
@@ -454,6 +499,14 @@ func (s *DefinitionService) DeleteBaseline(id, tenantID int64, version int64) er
 		current, err := definitions.baselines.Get(id, tenantID)
 		if err != nil {
 			return err
+		}
+		if current.Version != version {
+			return repository.ErrVersionConflict
+		}
+		if initial, err := definitions.isInitialDefaultBaseline(current); err != nil {
+			return err
+		} else if initial {
+			return commonapi.ErrConflict
 		}
 		result := tx.Where("id = ? AND tenant_id = ? AND version = ?", id, tenantID, version).Delete(&models.ProtectionBaseline{})
 		if result.Error != nil {
@@ -498,6 +551,29 @@ func (s *DefinitionService) validateBaseline(req models.ProtectionBaselineReques
 		return commonapi.ErrBadRequest
 	}
 	return nil
+}
+
+func (s *DefinitionService) requireActiveBaseline(tenantID, sensitiveDataTypeID, securityGradeID int64) error {
+	var count int64
+	if err := s.db.Model(&models.ProtectionBaseline{}).
+		Where("tenant_id = ? AND sensitive_data_type_id = ? AND security_grade_id = ? AND enabled = ?", tenantID, sensitiveDataTypeID, securityGradeID, true).
+		Count(&count).Error; err != nil {
+		return err
+	}
+	if count != 1 {
+		return commonapi.ErrConflict
+	}
+	return nil
+}
+
+func (s *DefinitionService) isInitialDefaultBaseline(baseline *models.ProtectionBaseline) (bool, error) {
+	var count int64
+	if err := s.db.Model(&models.SensitiveDataType{}).
+		Where("tenant_id = ? AND id = ? AND default_security_grade_id = ?", baseline.TenantID, baseline.SensitiveDataTypeID, baseline.SecurityGradeID).
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count == 1, nil
 }
 
 func rejectReferences[T any](repo *repository.Repository[T], tenantID int64, query string, args ...interface{}) error {

@@ -25,7 +25,7 @@ func TestReconcileStructuredOwnerProjectionsUpgradesLegacyEnrollmentOnce(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	dataType, err := definitions.CreateType(models.SensitiveDataTypeRequest{Code: "phone", Name: "手机号", SecurityClassificationID: classification.ID, DefaultSecurityGradeID: grade.ID}, 7, 11)
+	dataType, err := definitions.createTypeWithoutBaseline(models.SensitiveDataTypeRequest{Code: "phone", Name: "手机号", SecurityClassificationID: classification.ID, DefaultSecurityGradeID: grade.ID}, 7, 11)
 	if err != nil {
 		t.Fatal(err)
 	}

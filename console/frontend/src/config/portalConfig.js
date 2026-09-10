@@ -87,7 +87,6 @@ export const PAGE_MAPS = {
   manager: {
     'data-explorer': 'data-explorer',
     'data-retrieval': 'data-retrieval',
-    'vectorization-tasks': 'vectorization-tasks',
 	'derived-tasks': 'derived-tasks',
     '': 'data-explorer',
   },
@@ -211,8 +210,7 @@ export const SIDEBAR_MENUS = {
     items: [
       { index: '/manager/data-explorer',       icon: Search,   label: 'console.menus.manager.dataExplorer' },
       { index: '/manager/data-retrieval',      icon: Document, label: 'console.menus.manager.dataRetrieval' },
-      { index: '/manager/vectorization-tasks', icon: List,     label: 'console.menus.manager.vectorizationTasks' },
-	  { index: '/manager/derived-tasks', icon: Operation, label: 'console.menus.manager.derivedTasks' },
+	  { index: '/manager/derived-tasks', icon: Operation, label: 'console.menus.manager.dataTasks' },
     ],
   },
   standard: {
@@ -254,7 +252,6 @@ export const SIDEBAR_MENUS = {
     items: [
       { index: '/security/classification-grading', icon: SortDown, label: 'console.menus.security.classificationGrading' },
       { index: '/security/sensitive-data-definitions', icon: Key, label: 'console.menus.security.sensitiveDataDefinitions' },
-      { index: '/security/protection-baselines', icon: SetUp, label: 'console.menus.security.defaultProtectionRules' },
       { index: '/security/protection-enrollments', icon: CircleCheck, label: 'console.menus.security.protectedResources' },
     ],
   },

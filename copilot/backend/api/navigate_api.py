@@ -28,7 +28,7 @@ ADDP 数据平台模块说明：
 - /meta/tasks - 元数据扫描任务
 - /manager/data-explorer - 数据探索（浏览和查询数据）
 - /manager/data-retrieval - 数据检索
-- /manager/vectorization-tasks - 向量化任务
+- /manager/derived-tasks - 数据任务（快显任务、空间数据任务、向量化任务）
 
 【数据治理】
 - /standard/domains - 数据标准域

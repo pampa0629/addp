@@ -12,8 +12,7 @@ export const SEARCH_INDEX = [
   // 数据管理
   { labelKey: 'console.menus.manager.dataExplorer',       module: 'manager', route: '/manager/data-explorer',       keywords: ['数据探查', '数据浏览', '数据目录', 'explorer', 'browse'] },
   { labelKey: 'console.menus.manager.dataRetrieval',      module: 'manager', route: '/manager/data-retrieval',      keywords: ['数据检索', '搜索', 'retrieval', 'search'] },
-  { labelKey: 'console.menus.manager.vectorizationTasks', module: 'manager', route: '/manager/vectorization-tasks', keywords: ['向量化', '向量', 'vector', 'embedding'] },
-  { labelKey: 'console.menus.manager.derivedTasks', module: 'manager', route: '/manager/derived-tasks', keywords: ['派生任务', '快显管理', '空间任务', '瓦片缓存', '物化视图', 'COG', 'Mosaic', 'GLB', '3D Tiles', 'KSplat', 'COPC', 'derived tasks'] },
+  { labelKey: 'console.menus.manager.dataTasks', module: 'manager', route: '/manager/derived-tasks', keywords: ['数据任务', '快显任务', '空间数据任务', '向量化任务', '向量化', '向量', 'vector', 'embedding', '瓦片缓存', '物化视图', 'COG', 'Mosaic', 'GLB', '3D Tiles', 'KSplat', 'COPC', 'data tasks'] },
   // 数据标准
   { labelKey: 'console.menus.standard.domains',      module: 'standard', route: '/standard/domains',      keywords: ['业务域', '业务领域', 'domain'] },
   { labelKey: 'console.menus.standard.collections',  module: 'standard', route: '/standard/collections',  keywords: ['标准集', '标准包', '审核', 'standard collection'] },
@@ -35,8 +34,7 @@ export const SEARCH_INDEX = [
   { labelKey: 'console.menus.quality.issues',           module: 'quality', route: '/quality/issues',           keywords: ['质量问题', '问题工单', 'issue'] },
   // 数据安全
   { labelKey: 'console.menus.security.classificationGrading', module: 'security', route: '/security/classification-grading', keywords: ['分类分级体系', '安全分类', '安全等级', '分类目录', '保护等级', 'classification', 'grading', 'grade'] },
-  { labelKey: 'console.menus.security.sensitiveDataDefinitions', module: 'security', route: '/security/sensitive-data-definitions', keywords: ['敏感数据定义', '敏感数据类型', '识别方式', '检测能力', '手机号', '隐私', 'sensitive data', 'detector', 'privacy'] },
-  { labelKey: 'console.menus.security.defaultProtectionRules', module: 'security', route: '/security/protection-baselines', keywords: ['默认保护规则', '保护基线', '脱敏', '遮盖', 'mask', 'protection baseline', 'protection rule'] },
+  { labelKey: 'console.menus.security.sensitiveDataDefinitions', module: 'security', route: '/security/sensitive-data-definitions', keywords: ['敏感数据定义', '敏感数据类型', '识别方式', '检测能力', '默认保护规则', '保护基线', '脱敏', '遮盖', '手机号', '隐私', 'sensitive data', 'detector', 'mask', 'protection baseline', 'protection rule', 'privacy'] },
   { labelKey: 'console.menus.security.protectedResources', module: 'security', route: '/security/protection-enrollments', keywords: ['受保护资源', '保护纳管', '纳入数据保护', 'enrollment', 'protected resources'] },
   // 数据开发
   { labelKey: 'console.menus.develop.sql',      module: 'develop', route: '/develop/sql',      keywords: ['SQL', 'SQL工作台', '查询', '开发', 'workbench', 'query'] },

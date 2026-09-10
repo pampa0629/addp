@@ -588,6 +588,21 @@ func respondIAMError(c *gin.Context, err error) {
 		messageID = sysi18n.MsgRoleAssignmentPrincipalTypeNotAllowed
 		code := "role_assignment_principal_type_not_allowed"
 		errorCode = &code
+	case errors.Is(err, iam.ErrTenantRoleAssignmentScopeNotFound):
+		status = http.StatusNotFound
+		messageID = sysi18n.MsgRoleAssignmentScopeNotFound
+		code := "role_assignment_scope_not_found"
+		errorCode = &code
+	case errors.Is(err, iam.ErrTenantRoleAssignmentScopeUnavailable):
+		status = http.StatusConflict
+		messageID = sysi18n.MsgRoleAssignmentScopeUnavailable
+		code := "role_assignment_scope_unavailable"
+		errorCode = &code
+	case errors.Is(err, iam.ErrTenantRoleAssignmentScopeMembershipRequired):
+		status = http.StatusConflict
+		messageID = sysi18n.MsgRoleAssignmentScopeMembershipRequired
+		code := "role_assignment_scope_membership_required"
+		errorCode = &code
 	case errors.Is(err, iam.ErrStepUpRequired):
 		status = http.StatusForbidden
 		messageID = sysi18n.MsgStepUpRequired

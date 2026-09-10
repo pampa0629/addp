@@ -44,8 +44,8 @@ func ManagerTaskProviderDeclaration() (*commonModels.TaskProviderDeclaration, er
 				"supports_schedule":         true,
 				"supports_cancel":           false,
 				"supports_inline_execution": false,
-				"create_url":                "/manager/vectorization-tasks?create=1",
-				"edit_url":                  "/manager/vectorization-tasks?task_id=:id",
+				"create_url":                "/manager/derived-tasks?category=embedding&create=1",
+				"edit_url":                  "/manager/derived-tasks?category=embedding&task_id=:id",
 				"deprecated":                false,
 			},
 			{

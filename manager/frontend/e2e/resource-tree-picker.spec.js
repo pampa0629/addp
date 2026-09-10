@@ -88,19 +88,20 @@ test('opens the source preview when the selected source already has a current qu
   }).toEqual({ pathname: '/data-explorer', locator: RIVERS_LOCATOR })
 })
 
-test('opens a managed task current result from the task list after verifying the result still exists', async ({ page }) => {
+test('opens a managed quick-view task source from the task list without exposing infra result navigation', async ({ page }) => {
   const backend = await installMockBackend(page, { includeResultTask: true })
   await page.goto('/derived-tasks?category=managed_quick_view')
 
   const row = page.getByRole('row', { name: /public\.rivers 瓦片缓存/ })
-  await row.getByRole('button', { name: '结果', exact: true }).click()
+  await expect(row.getByRole('button', { name: '结果', exact: true })).toHaveCount(0)
+  await row.getByRole('button', { name: '源数据', exact: true }).click()
 
-  await expect.poll(() => backend.taskDetailRequests).toEqual(['vector_tile_cache_generation/61'])
-  await expect.poll(() => backend.preferredModeRequests).toEqual([{
-    locator: RIVERS_LOCATOR,
-    preferred_mode: 'map_quick_view'
-  }])
-  await expect.poll(() => new URL(page.url()).pathname).toBe('/data-explorer')
+  await expect.poll(() => {
+    const url = new URL(page.url())
+    return { pathname: url.pathname, locator: url.searchParams.get('locator') }
+  }).toEqual({ pathname: '/data-explorer', locator: RIVERS_LOCATOR })
+  expect(backend.taskDetailRequests).toEqual([])
+  expect(backend.preferredModeRequests).toEqual([])
 })
 
 test('filters failed generation tasks and deletes only the selected tasks', async ({ page }) => {
@@ -130,7 +131,7 @@ test('filters failed generation tasks and deletes only the selected tasks', asyn
     'vector_tile_cache_generation/71'
   ])
   await expect(page.getByText('已删除 2 个任务')).toBeVisible()
-  await expect(page.getByText('暂无生成任务')).toBeVisible()
+  await expect(page.getByText('暂无数据任务')).toBeVisible()
   expect(backend.tasks.map(task => task.id)).toEqual([73])
 })
 
@@ -181,18 +182,6 @@ test('rebinds a missing managed quick-view task without starting an execution', 
   await expect(page.getByText('失败任务 - farmland')).toHaveCount(0)
 })
 
-test('keeps the user on the task list when the managed task current result no longer exists', async ({ page }) => {
-  const backend = await installMockBackend(page, { includeResultTask: true, resultExists: false })
-  await page.goto('/derived-tasks?category=managed_quick_view')
-
-  const row = page.getByRole('row', { name: /public\.rivers 瓦片缓存/ })
-  await row.getByRole('button', { name: '结果', exact: true }).click()
-
-  await expect(page.getByText('当前任务暂无可用的快显结果')).toBeVisible()
-  expect(backend.preferredModeRequests).toEqual([])
-  expect(new URL(page.url()).pathname).toBe('/derived-tasks')
-})
-
 test('creates a PPTX PDF quick-view task through its owner action', async ({ page }) => {
   const backend = await installMockBackend(page)
   await page.goto('/derived-tasks?category=managed_quick_view&task_type=pptx_pdf_generation&create=1')
@@ -212,7 +201,7 @@ test('creates a PPTX PDF quick-view task through its owner action', async ({ pag
 
 test('keeps directory and file vectorization semantics in the shared picker', async ({ page }) => {
   await installMockBackend(page)
-  await page.goto('/vectorization-tasks?create=1')
+  await page.goto('/derived-tasks?category=embedding&create=1')
 
   const dialog = page.getByRole('dialog', { name: '新建向量化任务' })
   await expect(dialog).toBeVisible()

@@ -48,7 +48,7 @@
     <el-table v-loading="loading" :data="rows" stripe>
       <el-table-column v-if="!fixedMembership" :label="t('system.iam.memberships.member')" min-width="250"><template #default="{ row }"><TenantMemberIdentity :member="row" :current-membership-id="currentMembershipID" /></template></el-table-column>
       <el-table-column :label="t('system.iam.roles.role')" min-width="210"><template #default="{ row }"><div class="iam-primary-cell"><strong>{{ assignmentRoleName(row) }}</strong><span class="iam-role-key">{{ row.role_key }}</span></div></template></el-table-column>
-      <el-table-column :label="t('system.iam.roleAssignments.scope')" width="170"><template #default="{ row }">{{ scopeValue(row) }}</template></el-table-column>
+      <el-table-column :label="t('system.iam.roleAssignments.scope')" min-width="230"><template #default="{ row }">{{ scopeValue(row) }}</template></el-table-column>
       <el-table-column :label="t('system.iam.common.status')" width="110"><template #default="{ row }"><el-tag :type="row.status === 'active' ? 'success' : 'info'">{{ t(`system.iam.status.${row.status}`) }}</el-tag></template></el-table-column>
       <el-table-column :label="t('system.iam.roleAssignments.validUntil')" width="180"><template #default="{ row }">{{ formatDate(row.valid_until) }}</template></el-table-column>
       <el-table-column v-if="!props.readOnly" :label="t('system.iam.common.actions')" width="110" fixed="right"><template #default="{ row }"><el-button v-if="can('iam.tenant_role_assignment.revoke') && row.status === 'active'" link type="danger" :icon="CircleClose" @click="revoke(row)">{{ t('system.iam.common.revoke') }}</el-button></template></el-table-column>
@@ -65,8 +65,16 @@
         <el-form-item :label="t('system.iam.roleAssignments.scope')" prop="scopeType">
           <el-select v-model="form.scopeType" style="width: 100%"><el-option v-for="scope in availableScopeTypes" :key="scope" :label="scopeLabel(scope)" :value="scope" /></el-select>
         </el-form-item>
-        <el-form-item v-if="form.scopeType === 'department'" :label="t('system.iam.roleAssignments.departmentId')" prop="departmentId"><el-input v-model="form.departmentId" /></el-form-item>
-        <el-form-item v-if="form.scopeType === 'project_group'" :label="t('system.iam.roleAssignments.projectGroupId')" prop="projectGroupId"><el-input v-model="form.projectGroupId" /></el-form-item>
+        <el-form-item v-if="form.scopeType === 'department'" :label="t('system.iam.roleAssignments.department')" prop="departmentId">
+          <el-select v-model="form.departmentId" filterable style="width: 100%">
+            <el-option v-for="department in assignableDepartments" :key="department.id" :label="organizationLabel(department)" :value="String(department.id)" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="form.scopeType === 'project_group'" :label="t('system.iam.roleAssignments.projectGroup')" prop="projectGroupId">
+          <el-select v-model="form.projectGroupId" filterable style="width: 100%">
+            <el-option v-for="group in assignableProjectGroups" :key="group.id" :label="organizationLabel(group)" :value="String(group.id)" />
+          </el-select>
+        </el-form-item>
         <el-form-item :label="t('system.iam.roles.role')" prop="roleIds">
           <el-select
             v-model="form.roleIds"
@@ -118,6 +126,7 @@ import {
   TENANT_ADMINISTRATOR_ROLE_KEY,
   TENANT_ROLE_RECOMMENDATIONS,
   buildTenantRoleOptions,
+  formatOrganizationOptionLabel,
   formatTenantAssignmentScope,
   hasTenantRole,
   resolveRoleName,
@@ -139,6 +148,8 @@ const assignmentStatuses = ['active', 'revoked']
 const rows = ref([])
 const roles = ref([])
 const membershipOptions = ref([])
+const departments = ref([])
+const projectGroups = ref([])
 const memberAssignments = ref([])
 const loading = ref(false)
 const assignmentsLoading = ref(false)
@@ -163,6 +174,12 @@ const effectiveMembershipID = computed(() => fixedMembership.value?.membership_i
 const currentMembershipID = computed(() => authStore.authContext?.context?.tenant_membership_id || '')
 const showingCurrentAccount = computed(() => Boolean(currentMembershipID.value && String(filters.membership_id) === String(currentMembershipID.value)))
 const activeMembers = computed(() => membershipOptions.value.filter((member) => member.status === 'active'))
+const assignableDepartments = computed(() => departments.value.filter((department) => department.status === 'active'))
+const assignableProjectGroups = computed(() => projectGroups.value.filter((group) => group.status !== 'closed'))
+const organizationLabels = computed(() => ({
+  department: new Map(departments.value.map((department) => [String(department.id), formatOrganizationOptionLabel(department)])),
+  project_group: new Map(projectGroups.value.map((group) => [String(group.id), formatOrganizationOptionLabel(group)]))
+}))
 const selectedMember = computed(() => activeMembers.value.find((member) => String(member.id) === String(form.membershipId)))
 const selectedRoles = computed(() => roles.value.filter((role) => form.roleIds.includes(role.id)))
 const compatibleRoles = computed(() => roles.value.filter((role) =>
@@ -170,8 +187,8 @@ const compatibleRoles = computed(() => roles.value.filter((role) =>
 ))
 const availableScopeTypes = computed(() => scopeTypes.filter((scope) => compatibleRoles.value.some((role) => (role.allowed_scope_types || []).includes(scope))))
 const roleSelectionReady = computed(() => Boolean(selectedMember.value?.principal_type && form.scopeType &&
-  (form.scopeType !== 'department' || form.departmentId.trim()) &&
-  (form.scopeType !== 'project_group' || form.projectGroupId.trim())))
+  (form.scopeType !== 'department' || form.departmentId) &&
+  (form.scopeType !== 'project_group' || form.projectGroupId)))
 const roleOptions = computed(() => roleSelectionReady.value ? buildTenantRoleOptions(roles.value, memberAssignments.value, {
   principalType: selectedMember.value.principal_type,
   scopeType: form.scopeType,
@@ -192,15 +209,16 @@ const rules = computed(() => ({
   membershipId: [{ required: true, message: t('system.iam.validation.required'), trigger: 'change' }],
   roleIds: [{ required: true, type: 'array', min: 1, message: t('system.iam.validation.required'), trigger: 'change' }],
   scopeType: [{ required: true, message: t('system.iam.validation.required'), trigger: 'change' }],
-  departmentId: [{ required: form.scopeType === 'department', message: t('system.iam.validation.required'), trigger: 'blur' }],
-  projectGroupId: [{ required: form.scopeType === 'project_group', message: t('system.iam.validation.required'), trigger: 'blur' }]
+  departmentId: [{ required: form.scopeType === 'department', message: t('system.iam.validation.required'), trigger: 'change' }],
+  projectGroupId: [{ required: form.scopeType === 'project_group', message: t('system.iam.validation.required'), trigger: 'change' }]
 }))
 
 function roleLabel(role) { return resolveRoleName(role, t, te) }
 function assignmentRoleName(row) { return resolveRoleName(row, t, te) }
+function organizationLabel(organization) { return formatOrganizationOptionLabel(organization) }
 function recommendationAssigned(roleKey) { return hasTenantRole(authStore.authContext, roleKey, 'tenant') }
 function scopeLabel(scope) { return resolveTenantScopeLabel(scope, t) }
-function scopeValue(row) { return formatTenantAssignmentScope(row, t) }
+function scopeValue(row) { return formatTenantAssignmentScope(row, t, organizationLabels.value) }
 function formatDate(value) { return value ? new Date(value).toLocaleString() : '-' }
 async function load() {
   loading.value = true
@@ -222,17 +240,18 @@ async function load() {
   }
 }
 async function loadOptions() {
-  if (fixedMembership.value) {
-    roles.value = await iamAPI.tenantRoles.list() || []
-    membershipOptions.value = fixedMember.value ? [fixedMember.value] : []
-    return
-  }
-  const [roleRows, memberRows] = await Promise.all([
+  const [roleRows, memberRows, departmentRows, projectGroupRows] = await Promise.all([
     iamAPI.tenantRoles.list(),
-    iamAPI.memberships.listAll({ principal_type: 'user' })
+    fixedMembership.value
+      ? Promise.resolve(fixedMember.value ? [fixedMember.value] : [])
+      : iamAPI.memberships.listAll({ principal_type: 'user' }),
+    iamAPI.departments.listAll(),
+    iamAPI.projectGroups.listAll()
   ])
   roles.value = roleRows || []
   membershipOptions.value = memberRows || []
+  departments.value = departmentRows || []
+  projectGroups.value = projectGroupRows || []
 }
 async function loadFilterOptions() {
   try {

@@ -36,16 +36,10 @@ const routes = [
         meta: { requiresAuth: true, title: '数据检索-addp' }
       },
       {
-        path: 'vectorization-tasks',
-        name: 'VectorizationTasks',
-        component: () => import('../views/VectorizationTasks.vue'),
-        meta: { requiresAuth: true, title: '向量化任务-addp' }
-      },
-      {
 		path: 'derived-tasks',
 		name: 'DerivedTasks',
 		component: () => import('../views/DerivedTasks.vue'),
-		meta: { requiresAuth: true, title: '生成任务-addp' }
+		meta: { requiresAuth: true, title: '数据任务-addp' }
 	  },
       {
         path: 'spatial-preview',

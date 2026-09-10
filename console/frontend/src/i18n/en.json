@@ -335,8 +335,7 @@
         "label": "Data Management",
         "dataExplorer": "Data Explorer",
         "dataRetrieval": "Data Retrieval",
-        "vectorizationTasks": "Vectorization Tasks",
-		"derivedTasks": "Generation Tasks",
+		"dataTasks": "Data Tasks",
         "spatialQuickView": "Quick View Management",
         "spatialTasks": "Spatial Tasks",
         "vectorTiles": "Vector Tiles",
@@ -387,7 +386,6 @@
         "label": "Data Security",
         "classificationGrading": "Classification & Grading",
         "sensitiveDataDefinitions": "Sensitive Data Definitions",
-        "defaultProtectionRules": "Default Protection Rules",
         "protectedResources": "Protected Resources"
       },
       "develop": {

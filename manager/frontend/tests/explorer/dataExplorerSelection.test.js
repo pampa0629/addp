@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { resolveCanonicalNodeSelection } from '../../src/utils/dataExplorerSelection.js'
+import {
+  resolveCanonicalNodeSelection,
+  resourceTreeRefreshKind,
+} from '../../src/utils/dataExplorerSelection.js'
 
 describe('data explorer node selection', () => {
   it('resolves a synthetic engine root before it can be selected or routed', async () => {
@@ -52,5 +55,12 @@ describe('data explorer node selection', () => {
       locator: canonicalNode.locator,
     })
     expect(loadTree).not.toHaveBeenCalled()
+  })
+})
+
+describe('resource tree refresh identity', () => {
+  it('uses locator identity instead of the visual node type', () => {
+    expect(resourceTreeRefreshKind('addp://engine/11/path/models?type=directory&node_id=267')).toBe('node')
+    expect(resourceTreeRefreshKind('addp://engine/11/path/models?type=directory&item_id=418')).toBe('item')
   })
 })

@@ -88,6 +88,15 @@ other = "This member already has the role in this scope; no duplicate assignment
 [system.iam.role_assignment_principal_type_not_allowed]
 other = "The role cannot be assigned to this member type."
 
+[system.iam.role_assignment_scope_not_found]
+other = "The selected assignment scope does not exist or does not belong to the current tenant."
+
+[system.iam.role_assignment_scope_unavailable]
+other = "The selected assignment scope is disabled or closed."
+
+[system.iam.role_assignment_scope_membership_required]
+other = "Roles can only be assigned within an active department or project group that the member has joined."
+
 [system.log.not_found]
 other = "Log not found"
 
