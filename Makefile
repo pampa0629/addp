@@ -165,6 +165,7 @@ test-business-config: ## 校验 Business Compose 和服务管理脚本（不启�
 	@test -f business/opengauss/init.sql
 	@grep -Fq 'SET NAMES utf8mb4;' business/oceanbase/init.sql
 	@grep -Fq 'CREATE TABLE IF NOT EXISTS addp_engine_probe' business/tidb/init.sql
+	@grep -Fq 'docker run --rm -i --network business_business-network' business/scripts/start.sh
 	@grep -Fq 'CREATE TABLE IF NOT EXISTS addp_engine_probe' business/opengauss/init.sql
 	@grep -Fq 'openGauss-Docker-6.0.6-x86_64.tar' scripts/lib/opengauss-official-media.sh
 	@grep -Fq 'openGauss-Docker-6.0.6-aarch64.tar' scripts/lib/opengauss-official-media.sh

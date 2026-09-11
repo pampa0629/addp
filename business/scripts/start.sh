@@ -800,7 +800,7 @@ if [ "$ENABLE_TIDB" = true ]; then
     TIDB_READY=false
     TIDB_CLIENT_IMAGE=mysql:8.0@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b
     tidb_mysql() {
-        docker run --rm --network business_business-network \
+        docker run --rm -i --network business_business-network \
             -e "MYSQL_PWD=${TIDB_PASSWORD:-}" \
             "$TIDB_CLIENT_IMAGE" mysql \
             -hbusiness-tidb -P4000 -u"${TIDB_USER:-root}" \
