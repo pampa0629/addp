@@ -22,6 +22,7 @@ on:
           - standard-model-reference-deletion
           - tidb-consumer-flow
           - transfer-insert-only-mysql
+          - transfer-relational-sql-etl
           - workbench-service-consumption
 
 permissions:

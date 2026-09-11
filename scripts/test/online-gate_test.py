@@ -88,6 +88,7 @@ class OnlineGateTest(unittest.TestCase):
                 "standard-model-reference-deletion",
                 "tidb-consumer-flow",
                 "transfer-insert-only-mysql",
+                "transfer-relational-sql-etl",
                 "workbench-service-consumption",
             },
         )
@@ -138,6 +139,8 @@ class OnlineGateTest(unittest.TestCase):
                 ("transfer", "TRANSFER_URL"),
             ),
         )
+        sql_etl_suite = ONLINE_GATE.SUITES["transfer-relational-sql-etl"]
+        self.assertEqual(sql_etl_suite.services, transfer_suite.services)
         consumer_suite = ONLINE_GATE.SUITES["consumer-engine-recovery"]
         self.assertEqual(
             consumer_suite.services,

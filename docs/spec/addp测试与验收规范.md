@@ -151,6 +151,8 @@ openGauss 消费链路 T4 复用上述关系引擎 owner 断言，但只在 GitH
 
 Transfer 仅新增 MySQL T4 使用永久 PostgreSQL 与 MySQL Engine Instance，并由专属复合 Fixture 管理两端物理表。真实 User 必须从 Console 页面选择源表和目标库、进入字段映射、通过正式“分析源数据并推荐精度”接口把无声明精度的 PostgreSQL `numeric` 收敛为不会截断当前值的 MySQL `DECIMAL(6,2)`，再以主键 `id` 作为唯一 watermark 创建任务。页面自动执行的首轮必须读写 6 行；Fixture 同时修改 `id=1` 并新增 `id=7` 后，用户从任务详情再次执行必须只读写 1 行。最终 MySQL 目标必须共 7 行、`id=1` 保持首轮值、`id=7` 为新增值且无重复键，以证明单字段水位只覆盖严格递增新增、不承诺旧记录更新。浏览器还必须断言任务配置的 `tie_breaker=[]`、目标 `upsert` 键为 `id`，捕获并删除临时任务且确认 404；Fixture 在全部退出路径删除两端固定表并停止两个容器。该 suite 只登记手工 `workflow_dispatch`，首次真实通过前不得增加定时触发。
 
+Transfer 关系型 SQL ETL T4 使用永久 PostgreSQL Engine Instance，由专属 Fixture 管理同一数据库中的固定源表和目标表。真实 User 必须从 Console 选择源表，确认单语言引擎只显示固定 `SQL` 而不提供 MQL 或语言下拉，通过基础构造器选择输出字段并配置两个参数化行过滤，再选择 PostgreSQL 目标位置创建 snapshot 任务。浏览器必须断言保存事实只有标准 `source.query` SQL statement 与类型化 parameters、下一步字段映射只包含实际投影字段，并等待 Worker 读写恰好 2 行；Fixture 必须核对目标行集合、金额汇总和列顺序，以同时证明过滤与投影语义。临时任务必须通过正式 API 删除并确认 404，Fixture 在全部退出路径删除两端固定表并停止 PostgreSQL 容器。该 suite 只登记手工 `workflow_dispatch`，首次真实通过前不得增加定时触发。
+
 ### 5.3 数据、超时与清理
 
 T4 临时夹具优先通过 owner 正式 API 创建；正式 API 无法建立必要前置状态时，才允许 owner 提供专用测试 helper。Hosted profile 的全新平台库在尚无可登录 User 时，可由 System-owned helper 调用正式 IAM Service 创建当次 Tenant、User、Role 和 Session；helper 必须限定 GitHub Hosted Linux 及 `addp_online`，不得通过 SQL 写入 Principal、Role、Assignment 或 Token。Engine Instance 等永久身份按上一节使用预置专用 Fixture，不适用“每轮创建后删除”；Hosted disposable profile 的当次 Engine Instance 随平台数据卷整体销毁。跨模块 Online 场景不得以直接 SQL 作为常规夹具路线。

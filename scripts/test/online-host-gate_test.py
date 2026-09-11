@@ -114,6 +114,10 @@ class OnlineHostGateTest(unittest.TestCase):
             '#!/bin/bash\nprintf "transfer-insert-only-fixture:%s\\n" "$1" >> "$ADDP_TEST_COMMAND_LOG"\n',
         )
         self._write_executable(
+            "business/scripts/online-transfer-relational-sql-etl-fixture.sh",
+            '#!/bin/bash\nprintf "transfer-sql-etl-fixture:%s\\n" "$1" >> "$ADDP_TEST_COMMAND_LOG"\n',
+        )
+        self._write_executable(
             "business/scripts/online-manager-minio-fixture.sh",
             '#!/bin/bash\nprintf "manager-fixture:%s\\n" "$1" >> "$ADDP_TEST_COMMAND_LOG"\n',
         )
@@ -417,6 +421,25 @@ class OnlineHostGateTest(unittest.TestCase):
                 "npm:--prefix console/frontend exec -- playwright install chromium",
                 "make:test-online:ONLINE_SUITE=transfer-insert-only-mysql",
                 "transfer-insert-only-fixture:stop",
+                "stop",
+            ],
+        )
+
+    def test_runs_transfer_relational_sql_etl_with_owned_browser_fixture(self) -> None:
+        result = self._run("transfer-relational-sql-etl")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            self.command_log.read_text(encoding="utf-8").splitlines(),
+            [
+                "stop",
+                "infra-up",
+                "transfer-sql-etl-fixture:stop",
+                "transfer-sql-etl-fixture:start",
+                "start:-all",
+                "npm:--prefix console/frontend exec -- playwright install chromium",
+                "make:test-online:ONLINE_SUITE=transfer-relational-sql-etl",
+                "transfer-sql-etl-fixture:stop",
                 "stop",
             ],
         )

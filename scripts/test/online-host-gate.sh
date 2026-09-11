@@ -199,6 +199,16 @@ case "$ONLINE_SUITE" in
       ADDP_ONLINE_TRANSFER_MYSQL_ROOT_PASSWORD
     )
     ;;
+  transfer-relational-sql-etl)
+    START_TARGET=-all
+    REQUIRED_SUITE_ENV=(
+      SYSTEM_URL GATEWAY_URL META_URL TRANSFER_URL CONSOLE_URL
+      ADDP_ONLINE_TEST_USER_ACCESS_TOKEN ADDP_ONLINE_TEST_USER_USERNAME
+      ADDP_ONLINE_TEST_USER_PASSWORD ADDP_ONLINE_TEST_TENANT_ID
+      ADDP_ONLINE_TEST_ENGINE_ID ADDP_ONLINE_TEST_ENGINE_NAME
+      ADDP_ONLINE_TEST_ENGINE_USER ADDP_ONLINE_TEST_ENGINE_DATABASE
+    )
+    ;;
   enterprise-catalog-publishing)
     START_TARGET=-all
     REQUIRED_SUITE_ENV=(
@@ -287,6 +297,7 @@ tidb_consumer_cleanup_required=0
 manager_minio_cleanup_required=0
 security_transfer_fixture_cleanup_required=0
 transfer_insert_only_cleanup_required=0
+transfer_relational_sql_etl_cleanup_required=0
 
 run_logged() {
   "$@" 2>&1 | tee -a "$GATE_LOG"
@@ -365,6 +376,13 @@ finish() {
 
   if [ "$transfer_insert_only_cleanup_required" -eq 1 ]; then
     if ! run_logged bash business/scripts/online-transfer-insert-only-fixture.sh stop; then
+      cleanup=failed
+      gate_status=1
+    fi
+  fi
+
+  if [ "$transfer_relational_sql_etl_cleanup_required" -eq 1 ]; then
+    if ! run_logged bash business/scripts/online-transfer-relational-sql-etl-fixture.sh stop; then
       cleanup=failed
       gate_status=1
     fi
@@ -477,6 +495,12 @@ elif [ "$ONLINE_SUITE" = "transfer-insert-only-mysql" ]; then
   transfer_insert_only_cleanup_required=1
   run_logged bash business/scripts/online-transfer-insert-only-fixture.sh stop
   run_logged bash business/scripts/online-transfer-insert-only-fixture.sh start
+  run_daemon_launcher_logged bash scripts/dev/start.sh "$START_TARGET"
+  run_logged npm --prefix console/frontend exec -- playwright install chromium
+elif [ "$ONLINE_SUITE" = "transfer-relational-sql-etl" ]; then
+  transfer_relational_sql_etl_cleanup_required=1
+  run_logged bash business/scripts/online-transfer-relational-sql-etl-fixture.sh stop
+  run_logged bash business/scripts/online-transfer-relational-sql-etl-fixture.sh start
   run_daemon_launcher_logged bash scripts/dev/start.sh "$START_TARGET"
   run_logged npm --prefix console/frontend exec -- playwright install chromium
 elif [ "$ONLINE_SUITE" = "oceanbase-consumer-flow" ]; then

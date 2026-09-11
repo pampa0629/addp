@@ -1,5 +1,5 @@
 <template>
-  <div class="relational-sql-builder">
+  <div class="relational-sql-builder" data-testid="relational-sql-builder">
     <div class="builder-toolbar">
       <el-radio-group :model-value="mode" @change="changeMode">
         <el-radio-button value="visual">{{ t('transfer.taskWizard.sqlBuilder.visualMode') }}</el-radio-button>
@@ -28,10 +28,10 @@
             <p>{{ t('transfer.taskWizard.sqlBuilder.outputFieldsHint') }}</p>
           </div>
           <div class="section-actions">
-            <el-button size="small" @click="selectAllFields">
+            <el-button data-testid="sql-select-all-fields" size="small" @click="selectAllFields">
               {{ t('transfer.taskWizard.sqlBuilder.selectAll') }}
             </el-button>
-            <el-button size="small" @click="clearSelectedFields">
+            <el-button data-testid="sql-clear-selected-fields" size="small" @click="clearSelectedFields">
               {{ t('transfer.taskWizard.sqlBuilder.clearSelection') }}
             </el-button>
           </div>
@@ -45,6 +45,7 @@
           <el-checkbox
             v-for="field in visibleFields"
             :key="field.name"
+            :data-testid="`sql-output-field-${field.name}`"
             :value="field.name"
             class="field-option"
           >
@@ -73,8 +74,14 @@
           :title="t('transfer.taskWizard.sqlBuilder.parametersUnsupported')"
         />
 
-        <div v-for="(filter, index) in draft.filters" :key="index" class="filter-row">
+        <div
+          v-for="(filter, index) in draft.filters"
+          :key="index"
+          :data-testid="`sql-filter-${index}`"
+          class="filter-row"
+        >
           <el-select
+            data-testid="sql-filter-field"
             :model-value="filter.field"
             filterable
             :placeholder="t('transfer.taskWizard.sqlBuilder.filterField')"
@@ -88,6 +95,7 @@
             />
           </el-select>
           <el-select
+            data-testid="sql-filter-operator"
             :model-value="filter.operator"
             :placeholder="t('transfer.taskWizard.sqlBuilder.filterOperator')"
             @change="changeFilterOperator(index, $event)"
@@ -153,7 +161,11 @@
           </el-button>
         </div>
 
-        <el-button :disabled="!parametersSupported || filterableFields.length === 0" @click="addFilter">
+        <el-button
+          data-testid="sql-add-filter"
+          :disabled="!parametersSupported || filterableFields.length === 0"
+          @click="addFilter"
+        >
           {{ t('transfer.taskWizard.sqlBuilder.addFilter') }}
         </el-button>
       </section>

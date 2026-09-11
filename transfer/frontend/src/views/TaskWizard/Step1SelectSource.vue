@@ -83,6 +83,7 @@
       >
         <div class="query-source-config">
           <el-switch
+            data-testid="task-query-source-toggle"
             v-model="querySourceEnabled"
             :active-text="t('transfer.taskWizard.querySourceEnabled')"
             @change="syncQuerySource"
@@ -96,10 +97,15 @@
           <template v-if="querySourceEnabled">
             <div class="query-language-control">
               <span>{{ t('transfer.taskWizard.queryLanguageLabel') }}</span>
-              <el-tag v-if="queryLanguageOptions.length === 1" type="info">
+              <el-tag v-if="queryLanguageOptions.length === 1" data-testid="task-query-language-fixed" type="info">
                 {{ queryLanguageOptions[0].toUpperCase() }}
               </el-tag>
-              <el-select v-else v-model="queryLanguage" @change="handleQueryLanguageChange">
+              <el-select
+                v-else
+                data-testid="task-query-language-select"
+                v-model="queryLanguage"
+                @change="handleQueryLanguageChange"
+              >
                 <el-option
                   v-for="language in queryLanguageOptions"
                   :key="language"

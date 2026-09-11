@@ -21,6 +21,8 @@ test('查询语言由源引擎能力决定且关系型源使用轻量 SQL 构造
   assert.match(step1Source, /queryLanguageOptions = computed\(\(\) => selectedSourceQueryCapability/)
   assert.match(step1Source, /v-for="language in queryLanguageOptions"/)
   assert.match(step1Source, /<RelationalSQLQueryBuilder/)
+  assert.match(step1Source, /data-testid="task-query-language-fixed"/)
+  assert.match(step1Source, /data-testid="task-query-language-select"/)
   assert.doesNotMatch(step1Source, /<el-option label="MQL" value="mql"/)
   assert.doesNotMatch(step1Source, /<el-option label="SQL" value="sql"/)
 })
