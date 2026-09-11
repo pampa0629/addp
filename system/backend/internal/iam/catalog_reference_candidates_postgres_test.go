@@ -49,7 +49,7 @@ func TestCatalogReferenceCandidatesAgainstPostgres(t *testing.T) {
 	establishContextSelectionMembership(t, ctx, membershipService, tenant.ID, user.PrincipalID, tenantAudit)
 	department, err := organizationService.CreateDepartment(ctx, CreateDepartmentInput{
 		TenantID: tenant.ID, ActorPrincipalID: user.PrincipalID,
-		Code: "sales", Name: "Sales", Audit: tenantAudit,
+		Name: "Sales", Audit: tenantAudit,
 	})
 	if err != nil {
 		t.Fatalf("create candidate department: %v", err)
@@ -62,7 +62,7 @@ func TestCatalogReferenceCandidatesAgainstPostgres(t *testing.T) {
 		t.Fatalf("create project group reference: %v", err)
 	}
 
-	departments, total, err := repository.ListCatalogDepartmentCandidates(ctx, tenant.ID, "sales", 1, 20)
+	departments, total, err := repository.ListCatalogDepartmentCandidates(ctx, tenant.ID, "Sales", 1, 20)
 	if err != nil || total != 1 || len(departments) != 1 || departments[0].ID != department.ID || departments[0].SubjectType != CatalogSubjectTypeDepartment {
 		t.Fatalf("departments=%#v total=%d err=%v", departments, total, err)
 	}

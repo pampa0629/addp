@@ -15,10 +15,10 @@
         <template #default="{ row }"><div class="iam-primary-cell"><strong>{{ row.display_name }}</strong><span>{{ row.username || row.principal_id }}</span></div></template>
       </el-table-column>
       <el-table-column v-if="kind === 'department'" :label="t('system.iam.organization.membershipType')" width="150">
-        <template #default="{ row }">{{ t(`system.iam.organization.${row.membership_type}`) }}</template>
+        <template #default="{ row }">{{ organizationLabel(row.membership_type) }}</template>
       </el-table-column>
       <el-table-column :label="t('system.iam.organization.relationRole')" width="140">
-        <template #default="{ row }">{{ t(`system.iam.organization.${relationRole(row)}`) }}</template>
+        <template #default="{ row }">{{ organizationLabel(relationRole(row)) }}</template>
       </el-table-column>
       <el-table-column :label="t('system.iam.common.status')" width="110">
         <template #default="{ row }"><el-tag :type="row.status === 'active' ? 'success' : 'info'">{{ statusLabel(row.status) }}</el-tag></template>
@@ -108,6 +108,7 @@ const form = reactive({ tenantMembershipId: '', membershipType: 'additional', re
 const formValid = computed(() => (formMode.value === 'edit' || Boolean(form.tenantMembershipId)) && Boolean(form.relationRole) && (props.kind !== 'department' || Boolean(form.membershipType)))
 
 function statusLabel(value) { return t(`system.iam.status.${value}`) }
+function organizationLabel(value) { return value ? t(`system.iam.organization.${value}`) : '' }
 function relationRole(row) { return props.kind === 'department' ? row.department_role : row.project_group_role }
 function reload() { page.value = 1; return load() }
 async function load() {
@@ -122,8 +123,8 @@ async function load() {
 async function loadCandidates(search = '') {
   candidateLoading.value = true
   try {
-    const result = await iamAPI.memberships.list({ page: 1, page_size: 100, status: 'active', search: search.trim() || undefined })
-    candidates.value = result.data || []
+    const result = await iamAPI.memberships.list({ page: 1, page_size: 100, status: 'active', principal_type: 'user', search: search.trim() || undefined })
+    candidates.value = (result.data || []).filter(candidate => candidate.principal_type === 'user')
   } catch (error) { ElMessage.error(error.response?.data?.error || t('system.iam.common.loadFailed')) }
   finally { candidateLoading.value = false }
 }

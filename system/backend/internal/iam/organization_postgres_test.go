@@ -54,17 +54,20 @@ func TestOrganizationServiceAgainstPostgres(t *testing.T) {
 
 	root, err := organizationService.CreateDepartment(ctx, CreateDepartmentInput{
 		TenantID: tenant.ID, ActorPrincipalID: user.PrincipalID,
-		Code: "root", Name: "Root", Audit: tenantAudit,
+		Name: "Root", Audit: tenantAudit,
 	})
 	if err != nil {
 		t.Fatalf("create root department: %v", err)
 	}
 	child, err := organizationService.CreateDepartment(ctx, CreateDepartmentInput{
 		TenantID: tenant.ID, ActorPrincipalID: user.PrincipalID, ParentID: &root.ID,
-		Code: "child", Name: "Child", Audit: tenantAudit,
+		Name: "Child", Audit: tenantAudit,
 	})
 	if err != nil {
 		t.Fatalf("create child department: %v", err)
+	}
+	if !organizationCodePattern.MatchString(root.Code) || !organizationCodePattern.MatchString(child.Code) || root.Code == child.Code {
+		t.Fatalf("generated department codes root=%q child=%q", root.Code, child.Code)
 	}
 	if _, err := organizationService.UpdateDepartment(ctx, UpdateDepartmentInput{
 		TenantID: tenant.ID, DepartmentID: root.ID, Version: root.Version,
@@ -121,6 +124,28 @@ func TestOrganizationServiceAgainstPostgres(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("create future project group: %v", err)
+	}
+	serviceAccount, err := NewTenantServiceAccountService(repository).Create(ctx, CreateTenantServiceAccountInput{
+		TenantID: tenant.ID, ActorPrincipalID: user.PrincipalID,
+		Name: "Organization Robot", Description: "must not join people organizations", Audit: tenantAudit,
+	})
+	if err != nil {
+		t.Fatalf("create service account membership fixture: %v", err)
+	}
+	if _, err := organizationService.CreateDepartmentMembership(ctx, CreateDepartmentMembershipInput{
+		TenantID: tenant.ID, DepartmentID: child.ID,
+		TenantMembershipID: serviceAccount.Account.MembershipID, ActorPrincipalID: user.PrincipalID,
+		MembershipType: DepartmentMembershipTypeAdditional, RelationRole: DepartmentRelationRoleMember,
+		Audit: tenantAudit,
+	}); !errors.Is(err, ErrOrganizationMembershipPrincipalTypeNotAllowed) || !errors.Is(err, commonapi.ErrConflict) {
+		t.Fatalf("add service account to department error = %v, want principal type conflict", err)
+	}
+	if _, err := organizationService.CreateProjectGroupMembership(ctx, CreateProjectGroupMembershipInput{
+		TenantID: tenant.ID, ProjectGroupID: projectGroup.ID,
+		TenantMembershipID: serviceAccount.Account.MembershipID, ActorPrincipalID: user.PrincipalID,
+		RelationRole: ProjectGroupRelationRoleMember, Audit: tenantAudit,
+	}); !errors.Is(err, ErrOrganizationMembershipPrincipalTypeNotAllowed) || !errors.Is(err, commonapi.ErrConflict) {
+		t.Fatalf("add service account to project group error = %v, want principal type conflict", err)
 	}
 	projectMembership, err := organizationService.CreateProjectGroupMembership(ctx, CreateProjectGroupMembershipInput{
 		TenantID: tenant.ID, ProjectGroupID: projectGroup.ID,

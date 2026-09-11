@@ -449,6 +449,7 @@
           "entity_relation": "实体关系",
           "entry": "目录条目",
           "execution": "执行记录",
+          "execution_authorization": "执行授权",
           "external_registration": "外部服务注册",
           "finding": "安全发现",
           "glossary": "业务术语",

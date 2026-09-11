@@ -97,6 +97,9 @@ other = "The selected assignment scope is disabled or closed."
 [system.iam.role_assignment_scope_membership_required]
 other = "Roles can only be assigned within an active department or project group that the member has joined."
 
+[system.iam.organization_membership_principal_type_not_allowed]
+other = "Only user accounts can join departments and project groups; machine identities cannot be organization members."
+
 [system.log.not_found]
 other = "Log not found"
 

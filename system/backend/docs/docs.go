@@ -6967,6 +6967,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/internal_api.IAMOrganizationMembershipResponse"
                         }
+                    },
+                    "409": {
+                        "description": "成员不是用户账号、部门已停用或成员状态不可用 | Member is not a user account, department is disabled, or membership is unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",
@@ -8413,6 +8419,12 @@ const docTemplate = `{
                         "description": "Created",
                         "schema": {
                             "$ref": "#/definitions/internal_api.IAMOrganizationMembershipResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "成员不是用户账号、项目组已关闭或成员状态不可用 | Member is not a user account, project group is closed, or membership is unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
                         }
                     }
                 },
@@ -11984,9 +11996,6 @@ const docTemplate = `{
         "internal_api.IAMCreateDepartmentRequest": {
             "type": "object",
             "properties": {
-                "code": {
-                    "type": "string"
-                },
                 "name": {
                     "type": "string"
                 },

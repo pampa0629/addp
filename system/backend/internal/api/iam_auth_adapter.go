@@ -603,6 +603,11 @@ func respondIAMError(c *gin.Context, err error) {
 		messageID = sysi18n.MsgRoleAssignmentScopeMembershipRequired
 		code := "role_assignment_scope_membership_required"
 		errorCode = &code
+	case errors.Is(err, iam.ErrOrganizationMembershipPrincipalTypeNotAllowed):
+		status = http.StatusConflict
+		messageID = sysi18n.MsgOrganizationMembershipPrincipalTypeNotAllowed
+		code := "organization_membership_principal_type_not_allowed"
+		errorCode = &code
 	case errors.Is(err, iam.ErrStepUpRequired):
 		status = http.StatusForbidden
 		messageID = sysi18n.MsgStepUpRequired

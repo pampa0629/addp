@@ -25,7 +25,6 @@ type IAMDepartmentResponse struct {
 
 type IAMCreateDepartmentRequest struct {
 	ParentID *string `json:"parent_id"`
-	Code     string  `json:"code"`
 	Name     string  `json:"name"`
 }
 
@@ -185,7 +184,7 @@ func (h *IAMOrganizationHandler) CreateDepartment(c *gin.Context) {
 	}
 	department, err := h.service.CreateDepartment(c.Request.Context(), iam.CreateDepartmentInput{
 		TenantID: int64(tenantID), ActorPrincipalID: int64(actorID), ParentID: parentID,
-		Code: request.Code, Name: request.Name, Audit: iamAuditMetadataWithStatus(c, http.StatusCreated),
+		Name: request.Name, Audit: iamAuditMetadataWithStatus(c, http.StatusCreated),
 	})
 	if err != nil {
 		respondIAMError(c, err)
@@ -363,6 +362,7 @@ func (h *IAMOrganizationHandler) ListDepartmentMemberships(c *gin.Context) {
 // @Param id path string true "部门 ID | Department ID"
 // @Param request body IAMCreateDepartmentMembershipRequest true "成员关系 | Membership"
 // @Success 201 {object} IAMOrganizationMembershipResponse
+// @Failure 409 {object} IAMErrorResponse "成员不是用户账号、部门已停用或成员状态不可用 | Member is not a user account, department is disabled, or membership is unavailable"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["iam.department_membership.create"]
 // @Router /tenant/departments/{id}/memberships [post]
@@ -686,6 +686,7 @@ func (h *IAMOrganizationHandler) ListProjectGroupMemberships(c *gin.Context) {
 // @Param id path string true "项目组 ID | Project group ID"
 // @Param request body IAMCreateProjectGroupMembershipRequest true "成员关系 | Membership"
 // @Success 201 {object} IAMOrganizationMembershipResponse
+// @Failure 409 {object} IAMErrorResponse "成员不是用户账号、项目组已关闭或成员状态不可用 | Member is not a user account, project group is closed, or membership is unavailable"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["iam.project_group_membership.create"]
 // @Router /tenant/project_groups/{id}/memberships [post]

@@ -465,7 +465,7 @@
 | Delegated Access Token | 受委托访问令牌 | System 为 Agent 代表当前用户调用特定 owner 能力签发的短期、限 audience 和 Scope 令牌。 | 不改变原用户和租户；可绑定 AgentRun / ToolCall 用于审计。 |
 | Runtime Service Principal | 运行时服务主体 | Develop、DuckDB Runtime、Workflow Runtime、Jupyter 等工作负载用于 Client Credentials 和控制面识别的 Service Principal。 | 只证明机器身份并消费与自身 audience 匹配的 Execution Authorization 或 Notebook Session Authorization；不继承发起用户、服务创建人、引擎创建人或 Tenant 全量数据权限。 |
 
-面向 Tenant 管理员的界面不直接使用“主体类型”作为标签。用户账号与机器身份必须分开呈现；角色管理中的“角色分配”只面向用户账号，服务主体的角色查看与分配从“应用接入 > 机器身份”进入。“机器身份”页内必须继续显式区分“租户服务账号”和“平台运行账号”，不能把两者合并成同一种可管理账号。只有组织成员选择和审计筛选等确实需要跨账号类别选择时，才使用“账号类型”，并按“当前账号、用户账号、服务账号”分组，不依赖名称前缀猜测。组织内“成员类型”仅用于主部门、附加部门等组织关系语义。领域模型、API 字段和审计协议仍使用 Principal、Service Principal 与 `principal_type`。
+面向 Tenant 管理员的界面不直接使用“主体类型”作为标签。用户账号与机器身份必须分开呈现；角色管理中的“角色分配”只面向用户账号，服务主体的角色查看与分配从“应用接入 > 机器身份”进入。“机器身份”页内必须继续显式区分“租户服务账号”和“平台运行账号”，不能把两者合并成同一种可管理账号。Department 和 Project Group 是人员组织，成员只能来自用户账号，组织成员选择不得展示机器身份；审计筛选等确实需要跨账号类别选择时才使用“账号类型”，并按“当前账号、用户账号、服务账号”分组，不依赖名称前缀猜测。组织内“成员类型”仅用于主部门、附加部门等组织关系语义。领域模型、API 字段和审计协议仍使用 Principal、Service Principal 与 `principal_type`。
 
 ## 配置管理
 

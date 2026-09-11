@@ -136,6 +136,34 @@ func TestIAMAuthHandlerContract(t *testing.T) {
 		}
 	})
 
+	t.Run("organization membership principal type conflict is localized with a stable domain error", func(t *testing.T) {
+		for _, test := range []struct {
+			name, language, message string
+		}{
+			{name: "zh-cn", language: "zh-cn", message: "部门和项目组只能添加用户账号，机器身份不能加入组织。"},
+			{name: "en", language: "en", message: "Only user accounts can join departments and project groups; machine identities cannot be organization members."},
+		} {
+			t.Run(test.name, func(t *testing.T) {
+				router := gin.New()
+				router.Use(i18nmiddleware.I18nMiddleware())
+				router.GET("/conflict", func(c *gin.Context) {
+					respondIAMError(c, iam.ErrOrganizationMembershipPrincipalTypeNotAllowed)
+				})
+				request := httptest.NewRequest(http.MethodGet, "/conflict", nil)
+				request.Header.Set("Accept-Language", test.language)
+				recorder := httptest.NewRecorder()
+				router.ServeHTTP(recorder, request)
+
+				var response IAMErrorResponse
+				decodeIAMResponse(t, recorder, &response)
+				if recorder.Code != http.StatusConflict || response.ErrorCode == nil ||
+					*response.ErrorCode != "organization_membership_principal_type_not_allowed" || response.Error != test.message {
+					t.Fatalf("organization membership principal type conflict status=%d response=%#v", recorder.Code, response)
+				}
+			})
+		}
+	})
+
 	t.Run("multi-context login returns only a selection challenge", func(t *testing.T) {
 		membershipID := int64(22)
 		tenantID := int64(11)

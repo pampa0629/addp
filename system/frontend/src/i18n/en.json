@@ -449,6 +449,7 @@
           "entity_relation": "Entity Relation",
           "entry": "Catalog Entry",
           "execution": "Execution Record",
+          "execution_authorization": "Execution Authorization",
           "external_registration": "External Service Registration",
           "finding": "Security Finding",
           "glossary": "Business Glossary",

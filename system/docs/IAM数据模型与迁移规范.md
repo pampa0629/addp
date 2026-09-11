@@ -62,11 +62,11 @@ TOTP 登记完成和 Browser step-up 都创建新的 AAL2 Token Family，再撤�
 
 Department、Project Group、Department Membership 和 Project Group Membership 都是可独立读取、具有独立生命周期的主资源，统一使用非空正整数 `version` 作为乐观并发版本。所有更新、停用、关闭和成员关系结束操作必须在同一事务中按 `tenant_id + id + version` 原子校验、写入并递增版本；版本冲突不得产生组织事实、授权版本或审计副作用。
 
-Department 使用 `active` / `disabled` 生命周期。Department 是可被 Catalog 等 owner 软引用的稳定组织身份，不提供物理删除 API；停用后不允许建立新的成员关系或责任引用，既有历史仍可解析，允许管理员显式恢复。Department code 在创建后不可修改，层级更新必须继续满足同 Tenant、无循环约束。部门结构变更必须持有当前 Tenant 的结构级事务锁，生命周期变更与成员关系写入必须锁定同一 Department 聚合根，避免并发创建循环或在停用过程中新增成员。
+Department 使用 `active` / `disabled` 生命周期。Department 是可被 Catalog 等 owner 软引用的稳定组织身份，不提供物理删除 API；停用后不允许建立新的成员关系或责任引用，既有历史仍可解析，允许管理员显式恢复。Department code 是创建时由 System 生成的稳定技术标识，不接受管理员填写，创建后不可修改；层级更新必须继续满足同 Tenant、无循环约束。部门结构变更必须持有当前 Tenant 的结构级事务锁，生命周期变更与成员关系写入必须锁定同一 Department 聚合根，避免并发创建循环或在停用过程中新增成员。
 
 Project Group 使用 `planned` / `active` / `closed` 生命周期。`planned` 可以推进为 `active`，`planned` 或 `active` 可以关闭；`closed` 是不可逆终态。关闭后不允许新增或恢复成员关系，既有临时授权按授权上下文规则失效。`starts_at` / `ends_at` 只表达计划周期，关闭动作不得用实际关闭时间覆盖 `ends_at`；实际关闭时间和原因保存在审计事实中。Project Group code 在创建后不可修改，第一阶段不支持嵌套。生命周期变更与成员关系写入必须锁定同一 Project Group 聚合根。
 
-Department Membership 的 `membership_type` 使用 `primary` / `additional`，`relation_role` 使用 `member` / `leader`；同一 Tenant Membership 最多一个有效主部门。Project Group Membership 的 `relation_role` 使用 `member` / `leader` / `coordinator`。两类成员关系都使用 `active` / `ended`，`ended` 是历史终态；成员身份、所属组织和 Tenant Membership 创建后不可变，需要调整时必须结束旧关系并创建新关系。
+Department Membership 的 `membership_type` 使用 `primary` / `additional`，`relation_role` 使用 `member` / `leader`；同一 Tenant Membership 最多一个有效主部门。Project Group Membership 的 `relation_role` 使用 `member` / `leader` / `coordinator`。两类组织成员关系都只接受 `principal_type=user` 的 Tenant Membership；Service Principal 是机器身份，不得加入 Department 或 Project Group。两类成员关系都使用 `active` / `ended`，`ended` 是历史终态；成员身份、所属组织和 Tenant Membership 创建后不可变，需要调整时必须结束旧关系并创建新关系。
 
 公开管理 API 只存在于当前 Tenant Context，固定使用以下单一路由，不接受 `tenant_id`：
 

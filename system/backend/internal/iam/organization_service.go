@@ -9,14 +9,20 @@ import (
 	"time"
 
 	commonapi "github.com/addp/common/api"
+	"github.com/google/uuid"
 )
 
 var organizationCodePattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}[a-z0-9]$|^[a-z]$`)
 
+var ErrOrganizationMembershipPrincipalTypeNotAllowed = fmt.Errorf(
+	"%w: organization membership only accepts user principals",
+	commonapi.ErrConflict,
+)
+
 type CreateDepartmentInput struct {
 	TenantID, ActorPrincipalID int64
 	ParentID                   *int64
-	Code, Name                 string
+	Name                       string
 	Audit                      AuditMetadata
 }
 
@@ -114,15 +120,13 @@ func (s *OrganizationService) GetDepartment(ctx context.Context, tenantID, depar
 }
 
 func (s *OrganizationService) CreateDepartment(ctx context.Context, input CreateDepartmentInput) (*Department, error) {
-	code, name, err := validateOrganizationIdentity(input.Code, input.Name)
-	if err != nil || input.TenantID <= 0 || input.ActorPrincipalID <= 0 {
-		if err != nil {
-			return nil, err
-		}
+	name := strings.TrimSpace(input.Name)
+	if name == "" || input.TenantID <= 0 || input.ActorPrincipalID <= 0 {
 		return nil, commonapi.ErrBadRequest
 	}
+	code := "department_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	department := &Department{TenantID: input.TenantID, ParentID: input.ParentID, Code: code, Name: name, Status: DepartmentStatusActive, Version: 1}
-	err = s.repository.Transaction(ctx, func(tx *Repository) error {
+	err := s.repository.Transaction(ctx, func(tx *Repository) error {
 		if err := tx.LockDepartmentStructure(ctx, input.TenantID); err != nil {
 			return err
 		}
@@ -270,6 +274,9 @@ func (s *OrganizationService) CreateDepartmentMembership(ctx context.Context, in
 		}
 		if tenantMembership.Status != TenantMembershipStatusActive || tenantMembership.PrincipalStatus != PrincipalStatusActive {
 			return fmt.Errorf("%w: tenant membership is not active", commonapi.ErrConflict)
+		}
+		if tenantMembership.PrincipalType != PrincipalTypeUser {
+			return ErrOrganizationMembershipPrincipalTypeNotAllowed
 		}
 		if _, err := tx.LockPrincipal(ctx, tenantMembership.PrincipalID); err != nil {
 			return err
@@ -431,6 +438,9 @@ func (s *OrganizationService) CreateProjectGroupMembership(ctx context.Context, 
 		}
 		if tenantMembership.Status != TenantMembershipStatusActive || tenantMembership.PrincipalStatus != PrincipalStatusActive {
 			return fmt.Errorf("%w: tenant membership is not active", commonapi.ErrConflict)
+		}
+		if tenantMembership.PrincipalType != PrincipalTypeUser {
+			return ErrOrganizationMembershipPrincipalTypeNotAllowed
 		}
 		if _, err := tx.LockPrincipal(ctx, tenantMembership.PrincipalID); err != nil {
 			return err
