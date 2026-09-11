@@ -11,6 +11,22 @@ import (
 	"github.com/addp/common/engine/plugin"
 )
 
+type MySQLCompatibleUpsertValueReference string
+
+const (
+	MySQLCompatibleUpsertValueReferenceRowAlias       MySQLCompatibleUpsertValueReference = "row_alias"
+	MySQLCompatibleUpsertValueReferenceValuesFunction MySQLCompatibleUpsertValueReference = "values_function"
+)
+
+func (reference MySQLCompatibleUpsertValueReference) Valid() bool {
+	switch reference {
+	case MySQLCompatibleUpsertValueReferenceRowAlias, MySQLCompatibleUpsertValueReferenceValuesFunction:
+		return true
+	default:
+		return false
+	}
+}
+
 // PrepareTableUpsert prepares a non-spatial MySQL-compatible target whose only
 // unique constraints exactly match the configured stable keys.
 func (w MySQLCompatibleTableWriter) PrepareTableUpsert(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableUpsertOptions) error {
@@ -21,6 +37,9 @@ func (w MySQLCompatibleTableWriter) PrepareTableUpsert(ctx context.Context, conn
 // replay targets while keeping preparation and validation on the shared path.
 func (w MySQLCompatibleTableWriter) PrepareTableUpsertWithTargetPolicy(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableUpsertOptions, requireTargetAbsent bool) error {
 	if err := w.validate(); err != nil {
+		return err
+	}
+	if err := w.validateUpsertValueReference(); err != nil {
 		return err
 	}
 	if HasSpatialTableWrite(opts.Fields, opts.SpatialInfo) {
@@ -76,6 +95,9 @@ func (w MySQLCompatibleTableWriter) UpsertBatch(ctx context.Context, connInfo pl
 		return nil
 	}
 	if err := w.validate(); err != nil {
+		return err
+	}
+	if err := w.validateUpsertValueReference(); err != nil {
 		return err
 	}
 	if HasSpatialTableWrite(opts.Fields, opts.SpatialInfo) || HasSpatialTableWrite(batch.Fields, batch.Spatial) {
@@ -156,10 +178,21 @@ func (w MySQLCompatibleTableWriter) upsertRowsTx(ctx context.Context, tx *sql.Tx
 			end = len(batch.Rows)
 		}
 		statement, args := mysqlCompatibleInsertSQL(database, table, columns, batch.Rows[start:end])
-		statement += mysqlCompatibleOnDuplicateKeyClause(columns, keys)
+		upsertClause, err := mysqlCompatibleOnDuplicateKeyClause(columns, keys, w.UpsertValueReference)
+		if err != nil {
+			return fmt.Errorf("build %s upsert clause: %w", w.engineType(), err)
+		}
+		statement += upsertClause
 		if _, err := tx.ExecContext(ctx, statement, args...); err != nil {
 			return fmt.Errorf("execute %s upsert rows %d-%d: %w", w.engineType(), start, end, err)
 		}
+	}
+	return nil
+}
+
+func (w MySQLCompatibleTableWriter) validateUpsertValueReference() error {
+	if !w.UpsertValueReference.Valid() {
+		return fmt.Errorf("%s table upsert requires a valid value reference", w.engineType())
 	}
 	return nil
 }
@@ -286,7 +319,10 @@ func mysqlCompatibleUniqueIndexesMatchKeys(keys []string, indexes [][]string) bo
 	return true
 }
 
-func mysqlCompatibleOnDuplicateKeyClause(columns, keys []string) string {
+func mysqlCompatibleOnDuplicateKeyClause(columns, keys []string, reference MySQLCompatibleUpsertValueReference) (string, error) {
+	if !reference.Valid() {
+		return "", fmt.Errorf("invalid MySQL-compatible upsert value reference %q", reference)
+	}
 	dialect := mysqlCompatibleDialect()
 	keySet := make(map[string]bool, len(keys))
 	for _, key := range keys {
@@ -298,11 +334,21 @@ func mysqlCompatibleOnDuplicateKeyClause(columns, keys []string) string {
 			continue
 		}
 		quoted := dialect.QuoteIdentifier(column)
-		updates = append(updates, quoted+" = new_values."+quoted)
+		updates = append(updates, mysqlCompatibleUpsertAssignment(quoted, reference))
 	}
 	if len(updates) == 0 && len(keys) > 0 {
 		quoted := dialect.QuoteIdentifier(keys[0])
-		updates = append(updates, quoted+" = new_values."+quoted)
+		updates = append(updates, mysqlCompatibleUpsertAssignment(quoted, reference))
 	}
-	return " AS new_values ON DUPLICATE KEY UPDATE " + strings.Join(updates, ", ")
+	if reference == MySQLCompatibleUpsertValueReferenceValuesFunction {
+		return " ON DUPLICATE KEY UPDATE " + strings.Join(updates, ", "), nil
+	}
+	return " AS new_values ON DUPLICATE KEY UPDATE " + strings.Join(updates, ", "), nil
+}
+
+func mysqlCompatibleUpsertAssignment(quotedColumn string, reference MySQLCompatibleUpsertValueReference) string {
+	if reference == MySQLCompatibleUpsertValueReferenceValuesFunction {
+		return quotedColumn + " = VALUES(" + quotedColumn + ")"
+	}
+	return quotedColumn + " = new_values." + quotedColumn
 }

@@ -9,7 +9,12 @@ import (
 )
 
 func TestMySQLCompatibleTableWriterValidatesUpsertKeys(t *testing.T) {
-	writer := MySQLCompatibleTableWriter{EngineType: "oceanbase", EngineName: "OceanBase", DefaultPort: 2881}
+	writer := MySQLCompatibleTableWriter{
+		EngineType:           "oceanbase",
+		EngineName:           "OceanBase",
+		DefaultPort:          2881,
+		UpsertValueReference: MySQLCompatibleUpsertValueReferenceRowAlias,
+	}
 	keys, err := writer.validateTableUpsertOptions(plugin.TableUpsertOptions{
 		Fields: []datatype.FieldInfo{
 			{Name: "tenant_id", Type: datatype.FieldTypeBigInt},
@@ -50,20 +55,53 @@ func TestMySQLCompatibleUniqueIndexesMustAllMatchConfiguredKeys(t *testing.T) {
 }
 
 func TestMySQLCompatibleOnDuplicateKeyClauseUpdatesOnlyNonKeyColumns(t *testing.T) {
-	got := mysqlCompatibleOnDuplicateKeyClause([]string{"id", "name", "updated_at"}, []string{"id"})
+	got, err := mysqlCompatibleOnDuplicateKeyClause(
+		[]string{"id", "name", "updated_at"},
+		[]string{"id"},
+		MySQLCompatibleUpsertValueReferenceRowAlias,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
 	want := " AS new_values ON DUPLICATE KEY UPDATE `name` = new_values.`name`, `updated_at` = new_values.`updated_at`"
 	if got != want {
 		t.Fatalf("mysqlCompatibleOnDuplicateKeyClause() = %q, want %q", got, want)
 	}
 
-	keyOnly := mysqlCompatibleOnDuplicateKeyClause([]string{"id"}, []string{"id"})
+	keyOnly, err := mysqlCompatibleOnDuplicateKeyClause([]string{"id"}, []string{"id"}, MySQLCompatibleUpsertValueReferenceRowAlias)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !strings.Contains(keyOnly, "`id` = new_values.`id`") {
 		t.Fatalf("key-only clause = %q, want idempotent no-op update", keyOnly)
 	}
 }
 
+func TestMySQLCompatibleOnDuplicateKeyClauseSupportsTiDBValuesFunction(t *testing.T) {
+	got, err := mysqlCompatibleOnDuplicateKeyClause(
+		[]string{"id", "name", "updated_at"},
+		[]string{"id"},
+		MySQLCompatibleUpsertValueReferenceValuesFunction,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := " ON DUPLICATE KEY UPDATE `name` = VALUES(`name`), `updated_at` = VALUES(`updated_at`)"
+	if got != want {
+		t.Fatalf("mysqlCompatibleOnDuplicateKeyClause() = %q, want %q", got, want)
+	}
+	if _, err := mysqlCompatibleOnDuplicateKeyClause([]string{"id"}, []string{"id"}, MySQLCompatibleUpsertValueReference("unknown")); err == nil {
+		t.Fatal("unknown upsert value reference must fail closed")
+	}
+}
+
 func TestMySQLCompatibleTableWriterRejectsSpatialUpsert(t *testing.T) {
-	writer := MySQLCompatibleTableWriter{EngineType: "oceanbase", EngineName: "OceanBase", DefaultPort: 2881}
+	writer := MySQLCompatibleTableWriter{
+		EngineType:           "oceanbase",
+		EngineName:           "OceanBase",
+		DefaultPort:          2881,
+		UpsertValueReference: MySQLCompatibleUpsertValueReferenceRowAlias,
+	}
 	err := writer.PrepareTableUpsert(nil, nil, plugin.EngineCatalogPath{}, plugin.TableUpsertOptions{
 		Fields: []datatype.FieldInfo{{Name: "id", Type: datatype.FieldTypeBigInt}, {Name: "shape", Type: datatype.FieldTypeGeometry}},
 		Keys:   []string{"id"},

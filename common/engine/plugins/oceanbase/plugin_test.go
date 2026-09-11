@@ -97,8 +97,11 @@ func TestCapabilitiesMatchImplementedProviders(t *testing.T) {
 	if err := plugin.ValidatePluginCapabilities(p); err != nil {
 		t.Fatal(err)
 	}
-	if !p.SupportsControlledReadOnlySQL() || !p.SupportsParameterizedQueries() {
-		t.Fatal("OceanBase SQL runtime must declare controlled read-only and parameter binding")
+	if got := p.ControlledReadOnlySQLBoundary(); got != plugin.ControlledReadOnlySQLBoundaryDatabaseTransaction {
+		t.Fatalf("OceanBase controlled read-only boundary = %q, want database transaction", got)
+	}
+	if !p.SupportsParameterizedQueries() {
+		t.Fatal("OceanBase SQL runtime must declare parameter binding")
 	}
 	if got := caps.Compute.Query.IdentifierQuotes["sql"]; got != "`" {
 		t.Fatalf("OceanBase SQL identifier quote = %q, want backtick", got)

@@ -120,6 +120,20 @@ func TestBindSQLRuntimeParametersRejectsMixedParameterModes(t *testing.T) {
 	}
 }
 
+func TestControlledReadOnlySQLBoundaryValidation(t *testing.T) {
+	for _, boundary := range []ControlledReadOnlySQLBoundary{
+		ControlledReadOnlySQLBoundaryDatabaseTransaction,
+		ControlledReadOnlySQLBoundaryValidatedStatement,
+	} {
+		if !boundary.Valid() {
+			t.Fatalf("boundary %q must be valid", boundary)
+		}
+	}
+	if ControlledReadOnlySQLBoundary("").Valid() || ControlledReadOnlySQLBoundary("unknown").Valid() {
+		t.Fatal("unknown controlled read-only SQL boundaries must fail closed")
+	}
+}
+
 func TestPrepareSQLRuntimeQueryBindsOnceAndFailsClosedWithoutReadSetResolver(t *testing.T) {
 	provider := &fakeSQLRuntimeProvider{}
 	prepared, err := provider.PrepareQuery(t.Context(), ConnectionInfo{"host": "db"}, QueryRequest{

@@ -182,7 +182,9 @@ func (p *MySQLPlugin) SupportsParameterizedQueries() bool {
 	return true
 }
 
-func (p *MySQLPlugin) SupportsControlledReadOnlySQL() bool { return true }
+func (p *MySQLPlugin) ControlledReadOnlySQLBoundary() plugin.ControlledReadOnlySQLBoundary {
+	return plugin.ControlledReadOnlySQLBoundaryDatabaseTransaction
+}
 
 func (p *MySQLPlugin) ExecuteSQL(ctx context.Context, connInfo plugin.ConnectionInfo, sql string, opts plugin.QueryOptions) (*plugin.QueryResult, error) {
 	return plugin.ExecuteSQLWithConnectionPool(ctx, p, connInfo, sql, opts)

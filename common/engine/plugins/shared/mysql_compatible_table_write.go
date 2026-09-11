@@ -31,10 +31,11 @@ func ApplyMySQLCompatibleTableWriteLimits(capabilities *plugin.EngineCapabilitie
 // Engine-specific plugins remain responsible for declaring capabilities and
 // keeping unsupported extensions, such as spatial writes, outside this path.
 type MySQLCompatibleTableWriter struct {
-	EngineType      string
-	EngineName      string
-	DefaultPort     int
-	WriterConnector string
+	EngineType           string
+	EngineName           string
+	DefaultPort          int
+	WriterConnector      string
+	UpsertValueReference MySQLCompatibleUpsertValueReference
 }
 
 func (w MySQLCompatibleTableWriter) PrepareTableWrite(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableWriteOptions) error {

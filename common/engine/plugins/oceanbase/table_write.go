@@ -9,9 +9,10 @@ import (
 
 func (p *Plugin) tableWriter() shared.MySQLCompatibleTableWriter {
 	return shared.MySQLCompatibleTableWriter{
-		EngineType:  p.Type(),
-		EngineName:  p.DisplayName(),
-		DefaultPort: p.DefaultPort(),
+		EngineType:           p.Type(),
+		EngineName:           p.DisplayName(),
+		DefaultPort:          p.DefaultPort(),
+		UpsertValueReference: shared.MySQLCompatibleUpsertValueReferenceRowAlias,
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/addp/common/engine/plugin"
 	commonquery "github.com/addp/common/query"
 )
 
@@ -18,6 +19,7 @@ func TestSupportsReadOnlySQLExecution(t *testing.T) {
 		{engineType: "oceanbase", want: true},
 		{engineType: "oracle", want: true},
 		{engineType: "doris", want: true},
+		{engineType: "tidb", want: true},
 		{engineType: "clickhouse", want: false},
 		{engineType: "spark", want: true},
 		{engineType: "mongodb", want: false},
@@ -31,20 +33,30 @@ func TestSupportsReadOnlySQLExecution(t *testing.T) {
 	}
 }
 
-func TestReadOnlyTransactionStrategyUsesOracleStatement(t *testing.T) {
-	if options := readOnlyTxOptions("oracle"); options != nil {
-		t.Fatalf("Oracle transaction options = %#v, want nil so the driver can begin a normal transaction", options)
+func TestReadOnlySQLExecutionUsesProviderBoundary(t *testing.T) {
+	tests := []struct {
+		engineType string
+		want       plugin.ControlledReadOnlySQLBoundary
+	}{
+		{engineType: "postgresql", want: plugin.ControlledReadOnlySQLBoundaryDatabaseTransaction},
+		{engineType: "mysql", want: plugin.ControlledReadOnlySQLBoundaryDatabaseTransaction},
+		{engineType: "tidb", want: plugin.ControlledReadOnlySQLBoundaryValidatedStatement},
+		{engineType: "spark", want: plugin.ControlledReadOnlySQLBoundaryValidatedStatement},
 	}
-	if !requiresSQLReadOnlyStatement("oracle") {
-		t.Fatal("Oracle must apply read-only mode with SET TRANSACTION READ ONLY")
-	}
-
-	options := readOnlyTxOptions("postgresql")
-	if options == nil || !options.ReadOnly {
-		t.Fatalf("PostgreSQL transaction options = %#v, want ReadOnly=true", options)
-	}
-	if requiresSQLReadOnlyStatement("postgresql") {
-		t.Fatal("PostgreSQL must not use the Oracle-specific read-only statement")
+	for _, test := range tests {
+		t.Run(test.engineType, func(t *testing.T) {
+			registered, err := plugin.Get(test.engineType)
+			if err != nil {
+				t.Fatal(err)
+			}
+			controlled, ok := registered.(plugin.ControlledReadOnlySQLProvider)
+			if !ok {
+				t.Fatalf("engine %s does not implement ControlledReadOnlySQLProvider", test.engineType)
+			}
+			if got := controlled.ControlledReadOnlySQLBoundary(); got != test.want {
+				t.Fatalf("engine %s boundary = %q, want %q", test.engineType, got, test.want)
+			}
+		})
 	}
 }
 

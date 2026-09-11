@@ -100,8 +100,11 @@ func TestCapabilitiesExposeOnlyCertifiedOpenGaussProviders(t *testing.T) {
 	if err := plugin.ValidatePluginCapabilities(p); err != nil {
 		t.Fatal(err)
 	}
-	if !p.SupportsControlledReadOnlySQL() || !p.SupportsParameterizedQueries() {
-		t.Fatal("openGauss must declare controlled read-only SQL and parameter binding")
+	if got := p.ControlledReadOnlySQLBoundary(); got != plugin.ControlledReadOnlySQLBoundaryDatabaseTransaction {
+		t.Fatalf("openGauss controlled read-only boundary = %q, want database transaction", got)
+	}
+	if !p.SupportsParameterizedQueries() {
+		t.Fatal("openGauss must declare parameter binding")
 	}
 }
 

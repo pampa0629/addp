@@ -16,9 +16,10 @@ import (
 
 func (p *MySQLPlugin) nonSpatialTableWriter() shared.MySQLCompatibleTableWriter {
 	return shared.MySQLCompatibleTableWriter{
-		EngineType:  p.Type(),
-		EngineName:  p.DisplayName(),
-		DefaultPort: p.DefaultPort(),
+		EngineType:           p.Type(),
+		EngineName:           p.DisplayName(),
+		DefaultPort:          p.DefaultPort(),
+		UpsertValueReference: shared.MySQLCompatibleUpsertValueReferenceRowAlias,
 	}
 }
 

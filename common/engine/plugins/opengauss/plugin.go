@@ -143,9 +143,11 @@ func (p *Plugin) OpenQueryReadSession(ctx context.Context, prepared plugin.Prepa
 	return p.protocol().OpenQueryReadSession(ctx, prepared)
 }
 
-func (p *Plugin) SQLDialect() string                  { return commonquery.DialectPostgreSQL }
-func (p *Plugin) SupportsParameterizedQueries() bool  { return true }
-func (p *Plugin) SupportsControlledReadOnlySQL() bool { return true }
+func (p *Plugin) SQLDialect() string                 { return commonquery.DialectPostgreSQL }
+func (p *Plugin) SupportsParameterizedQueries() bool { return true }
+func (p *Plugin) ControlledReadOnlySQLBoundary() plugin.ControlledReadOnlySQLBoundary {
+	return plugin.ControlledReadOnlySQLBoundaryDatabaseTransaction
+}
 
 func (p *Plugin) ExecuteSQL(ctx context.Context, connInfo plugin.ConnectionInfo, sql string, opts plugin.QueryOptions) (*plugin.QueryResult, error) {
 	return plugin.ExecuteSQLWithConnectionPool(ctx, p, connInfo, sql, opts)

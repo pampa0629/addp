@@ -7,6 +7,7 @@ import (
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/engine/plugins/shared"
 	commonquery "github.com/addp/common/query"
 )
 
@@ -77,6 +78,9 @@ func TestCatalogFactsBoundaryAndTypeMapping(t *testing.T) {
 
 func TestCapabilitiesMatchImplementedProviders(t *testing.T) {
 	p := &Plugin{}
+	if got := p.tableWriter().UpsertValueReference; got != shared.MySQLCompatibleUpsertValueReferenceValuesFunction {
+		t.Fatalf("TiDB upsert value reference = %q, want VALUES(column)", got)
+	}
 	caps := p.Capabilities()
 	if !caps.Storage.Store.TableWritePrepare || !caps.Storage.Store.TableWriteSession || !caps.Storage.Store.Delete {
 		t.Fatalf("TiDB must declare native table prepare/session/delete capabilities: %#v", caps.Storage.Store)
@@ -97,8 +101,11 @@ func TestCapabilitiesMatchImplementedProviders(t *testing.T) {
 	if err := plugin.ValidatePluginCapabilities(p); err != nil {
 		t.Fatal(err)
 	}
-	if !p.SupportsControlledReadOnlySQL() || !p.SupportsParameterizedQueries() {
-		t.Fatal("TiDB SQL runtime must declare controlled read-only and parameter binding")
+	if got := p.ControlledReadOnlySQLBoundary(); got != plugin.ControlledReadOnlySQLBoundaryValidatedStatement {
+		t.Fatalf("TiDB controlled read-only boundary = %q, want validated statement", got)
+	}
+	if !p.SupportsParameterizedQueries() {
+		t.Fatal("TiDB SQL runtime must declare parameter binding")
 	}
 	if got := caps.Compute.Query.IdentifierQuotes["sql"]; got != "`" {
 		t.Fatalf("TiDB SQL identifier quote = %q, want backtick", got)

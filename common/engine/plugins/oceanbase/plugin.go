@@ -149,10 +149,12 @@ func (p *Plugin) queryProvenance() shared.MySQLCompatibleQueryProvenance {
 	}
 }
 
-func (p *Plugin) SQLDialect() string                  { return commonquery.DialectMySQL }
-func (p *Plugin) SupportsParameterizedQueries() bool  { return true }
-func (p *Plugin) SupportsControlledReadOnlySQL() bool { return true }
-func (p *Plugin) GORMDialect() string                 { return "mysql" }
+func (p *Plugin) SQLDialect() string                 { return commonquery.DialectMySQL }
+func (p *Plugin) SupportsParameterizedQueries() bool { return true }
+func (p *Plugin) ControlledReadOnlySQLBoundary() plugin.ControlledReadOnlySQLBoundary {
+	return plugin.ControlledReadOnlySQLBoundaryDatabaseTransaction
+}
+func (p *Plugin) GORMDialect() string { return "mysql" }
 
 func (p *Plugin) ExecuteSQL(ctx context.Context, connInfo plugin.ConnectionInfo, sql string, opts plugin.QueryOptions) (*plugin.QueryResult, error) {
 	return plugin.ExecuteSQLWithConnectionPool(ctx, p, connInfo, sql, opts)

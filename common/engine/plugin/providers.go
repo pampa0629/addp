@@ -379,12 +379,28 @@ type SQLQueryRuntimeProvider interface {
 	ExecuteSQL(ctx context.Context, connInfo ConnectionInfo, sql string, opts QueryOptions) (*QueryResult, error)
 }
 
-// ControlledReadOnlySQLProvider declares that the SQL runtime can enforce a
-// database-level read-only execution boundary. Callers must consume this
-// contract instead of maintaining engine_type allowlists.
+type ControlledReadOnlySQLBoundary string
+
+const (
+	ControlledReadOnlySQLBoundaryDatabaseTransaction ControlledReadOnlySQLBoundary = "database_transaction"
+	ControlledReadOnlySQLBoundaryValidatedStatement  ControlledReadOnlySQLBoundary = "validated_statement"
+)
+
+func (boundary ControlledReadOnlySQLBoundary) Valid() bool {
+	switch boundary {
+	case ControlledReadOnlySQLBoundaryDatabaseTransaction, ControlledReadOnlySQLBoundaryValidatedStatement:
+		return true
+	default:
+		return false
+	}
+}
+
+// ControlledReadOnlySQLProvider declares how the SQL runtime establishes its
+// controlled read-only execution boundary. Callers consume this contract
+// instead of maintaining engine_type allowlists.
 type ControlledReadOnlySQLProvider interface {
 	SQLQueryRuntimeProvider
-	SupportsControlledReadOnlySQL() bool
+	ControlledReadOnlySQLBoundary() ControlledReadOnlySQLBoundary
 }
 
 // ParameterizedSQLQueryRuntimeProvider explicitly declares that QueryOptions.Args

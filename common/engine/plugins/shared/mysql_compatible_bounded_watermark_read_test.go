@@ -1,11 +1,30 @@
 package shared
 
 import (
+	"context"
+	"database/sql"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/addp/common/datatype"
+	"github.com/addp/common/engine/plugin"
 )
+
+func TestMySQLCompatibleBoundedWatermarkReaderRequiresReadOnlyBoundary(t *testing.T) {
+	reader := MySQLCompatibleBoundedWatermarkReader{
+		EngineType: "tidb",
+		BuildDSN: func(plugin.ConnectionInfo) (string, error) {
+			return "", nil
+		},
+		DescribeTable: func(context.Context, *sql.DB, string, string) (*MySQLCompatibleWatermarkTable, error) {
+			return nil, nil
+		},
+	}
+	if _, err := reader.validate(); err == nil || !strings.Contains(err.Error(), "read-only boundary") {
+		t.Fatalf("validate() error = %v, want missing read-only boundary", err)
+	}
+}
 
 func TestStringifyMySQLCompatibleCursorUsesCanonicalTemporalValues(t *testing.T) {
 	stamp := time.Date(2026, 7, 12, 8, 9, 10, 123456000, time.UTC)

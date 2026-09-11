@@ -235,8 +235,8 @@ func ExecuteGraphQuery(ctx context.Context, engine *models.Engine, query string)
 	return &plugin.GraphQueryResult{QueryResult: *qr}, nil
 }
 
-// SupportsReadOnlySQLExecution reports whether dbbridge can establish a real
-// database read-only transaction for the engine. Unsupported engines must be
+// SupportsReadOnlySQLExecution reports whether dbbridge can establish the
+// provider-declared controlled read-only boundary. Unsupported engines must be
 // rejected instead of falling back to an ordinary privileged connection.
 func SupportsReadOnlySQLExecution(engineType string) bool {
 	registered, err := plugin.Get(strings.ToLower(strings.TrimSpace(engineType)))
@@ -244,38 +244,12 @@ func SupportsReadOnlySQLExecution(engineType string) bool {
 		return false
 	}
 	provider, ok := registered.(plugin.ControlledReadOnlySQLProvider)
-	return ok && provider.SupportsControlledReadOnlySQL()
+	return ok && provider.ControlledReadOnlySQLBoundary().Valid()
 }
 
-func readOnlyTxOptions(dialect string) *sql.TxOptions {
-	if strings.EqualFold(strings.TrimSpace(dialect), commonquery.DialectOracle) {
-		// The Oracle driver rejects ReadOnly=true in database/sql BeginTx.
-		return nil
-	}
-	return &sql.TxOptions{ReadOnly: true}
-}
-
-func requiresSQLReadOnlyStatement(dialect string) bool {
-	return strings.EqualFold(strings.TrimSpace(dialect), commonquery.DialectOracle)
-}
-
-func beginReadOnlyTransaction(ctx context.Context, db *sql.DB, dialect string) (*sql.Tx, error) {
-	tx, err := db.BeginTx(ctx, readOnlyTxOptions(dialect))
-	if err != nil {
-		return nil, err
-	}
-	if requiresSQLReadOnlyStatement(dialect) {
-		if _, err := tx.ExecContext(ctx, "SET TRANSACTION READ ONLY"); err != nil {
-			_ = tx.Rollback()
-			return nil, err
-		}
-	}
-	return tx, nil
-}
-
-// ExecuteReadOnlyQuery executes one SQL query in a database-enforced read-only
-// transaction. It is the only dbbridge path for User executions classified as
-// read.
+// ExecuteReadOnlyQuery executes one SQL query through the provider-declared
+// controlled read-only boundary. It is the only dbbridge path for User
+// executions classified as read.
 func ExecuteReadOnlyQuery(ctx context.Context, engine *models.Engine, query string, parameters map[string]interface{}, limit int) (*plugin.QueryResult, error) {
 	if engine == nil || !SupportsReadOnlySQLExecution(engine.EngineType) {
 		return nil, fmt.Errorf("引擎不支持受控只读 SQL 执行")
@@ -304,7 +278,7 @@ func ExecuteReadOnlyQuery(ctx context.Context, engine *models.Engine, query stri
 	if err != nil {
 		return nil, fmt.Errorf("获取数据库连接失败：%w", err)
 	}
-	tx, err := beginReadOnlyTransaction(ctx, sqlDB, dialect)
+	tx, err := plugin.BeginControlledReadOnlySQLTransaction(ctx, sqlDB, dialect, sqlRuntime.ControlledReadOnlySQLBoundary(), sql.LevelDefault)
 	if err != nil {
 		return nil, fmt.Errorf("开启只读事务失败：%w", err)
 	}

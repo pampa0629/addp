@@ -12,8 +12,9 @@ import (
 
 func (p *MySQLPlugin) OpenBoundedWatermarkRead(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.BoundedWatermarkReadOptions) (plugin.BoundedWatermarkReadSession, error) {
 	reader := shared.MySQLCompatibleBoundedWatermarkReader{
-		EngineType: p.Type(),
-		BuildDSN:   p.serverDSN,
+		EngineType:       p.Type(),
+		ReadOnlyBoundary: p.ControlledReadOnlySQLBoundary(),
+		BuildDSN:         p.serverDSN,
 		DescribeTable: func(ctx context.Context, db *sql.DB, database, table string) (*shared.MySQLCompatibleWatermarkTable, error) {
 			columns, err := mysqlTableColumns(ctx, db, database, table)
 			if err != nil {

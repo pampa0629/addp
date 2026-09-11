@@ -36,6 +36,17 @@ func ExecuteSQLWithConnectionPool(ctx context.Context, poolPlugin interface {
 			return nil, fmt.Errorf("read-only SQL validation failed: %w", err)
 		}
 	}
+	var readOnlyBoundary ControlledReadOnlySQLBoundary
+	if opts.ReadOnly {
+		controlled, ok := any(poolPlugin).(ControlledReadOnlySQLProvider)
+		if !ok {
+			return nil, fmt.Errorf("引擎 %s 不支持受控只读 SQL 执行", poolPlugin.Type())
+		}
+		readOnlyBoundary = controlled.ControlledReadOnlySQLBoundary()
+		if !readOnlyBoundary.Valid() {
+			return nil, fmt.Errorf("引擎 %s 的受控只读 SQL 边界无效：%q", poolPlugin.Type(), readOnlyBoundary)
+		}
+	}
 	if opts.Limit > 0 {
 		sql = commonquery.ForDialect(poolPlugin.SQLDialect()).PaginateQuerySQL(sql, opts.Limit, 0)
 	}
@@ -69,7 +80,7 @@ func ExecuteSQLWithConnectionPool(ctx context.Context, poolPlugin interface {
 	}
 
 	if opts.ReadOnly {
-		return executeReadOnlySQL(ctx, db, poolPlugin.SQLDialect(), sql, opts.Args)
+		return executeReadOnlySQL(ctx, db, poolPlugin.SQLDialect(), readOnlyBoundary, sql, opts.Args)
 	}
 	rows, err := db.WithContext(ctx).Raw(sql, opts.Args...).Rows()
 	if err != nil {
@@ -78,24 +89,12 @@ func ExecuteSQLWithConnectionPool(ctx context.Context, poolPlugin interface {
 	return scanRuntimeSQLRows(rows)
 }
 
-func executeReadOnlySQL(ctx context.Context, db *gorm.DB, dialect, query string, args []interface{}) (*QueryResult, error) {
+func executeReadOnlySQL(ctx context.Context, db *gorm.DB, dialect string, boundary ControlledReadOnlySQLBoundary, query string, args []interface{}) (*QueryResult, error) {
 	sqlDB, err := db.DB()
 	if err != nil {
 		return nil, fmt.Errorf("获取数据库连接失败：%w", err)
 	}
-	dialectName := strings.ToLower(strings.TrimSpace(dialect))
-	var txOptions *sql.TxOptions
-	switch dialectName {
-	case commonquery.DialectPostgreSQL, commonquery.DialectMySQL:
-		txOptions = &sql.TxOptions{ReadOnly: true}
-	case commonquery.DialectOracle:
-		// go-ora rejects database/sql's ReadOnly option; Oracle exposes the
-		// same database-enforced boundary through SET TRANSACTION READ ONLY.
-		txOptions = nil
-	default:
-		return nil, fmt.Errorf("引擎 %s 不支持受控只读 SQL 执行", dialect)
-	}
-	tx, err := sqlDB.BeginTx(ctx, txOptions)
+	tx, err := BeginControlledReadOnlySQLTransaction(ctx, sqlDB, dialect, boundary, sql.LevelDefault)
 	if err != nil {
 		return nil, fmt.Errorf("开启只读事务失败：%w", err)
 	}
@@ -105,11 +104,6 @@ func executeReadOnlySQL(ctx context.Context, db *gorm.DB, dialect, query string,
 			_ = tx.Rollback()
 		}
 	}()
-	if dialectName == commonquery.DialectOracle {
-		if _, err := tx.ExecContext(ctx, "SET TRANSACTION READ ONLY"); err != nil {
-			return nil, fmt.Errorf("设置只读事务失败：%w", err)
-		}
-	}
 	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -123,6 +117,49 @@ func executeReadOnlySQL(ctx context.Context, db *gorm.DB, dialect, query string,
 	}
 	committed = true
 	return result, nil
+}
+
+// BeginControlledReadOnlySQLTransaction begins the transaction required by a
+// declared read-only boundary. Validated-statement callers must validate or
+// generate the SQL before calling this helper.
+func BeginControlledReadOnlySQLTransaction(ctx context.Context, db *sql.DB, dialect string, boundary ControlledReadOnlySQLBoundary, isolation sql.IsolationLevel) (*sql.Tx, error) {
+	if db == nil {
+		return nil, fmt.Errorf("SQL database cannot be nil")
+	}
+	dialectName := strings.ToLower(strings.TrimSpace(dialect))
+	switch boundary {
+	case ControlledReadOnlySQLBoundaryDatabaseTransaction:
+		if dialectName != commonquery.DialectPostgreSQL && dialectName != commonquery.DialectMySQL && dialectName != commonquery.DialectOracle {
+			return nil, fmt.Errorf("SQL 方言 %s 不支持数据库事务只读边界", dialect)
+		}
+		var options *sql.TxOptions
+		if dialectName == commonquery.DialectOracle {
+			if isolation != sql.LevelDefault {
+				options = &sql.TxOptions{Isolation: isolation}
+			}
+		} else {
+			options = &sql.TxOptions{Isolation: isolation, ReadOnly: true}
+		}
+		tx, err := db.BeginTx(ctx, options)
+		if err != nil {
+			return nil, err
+		}
+		if dialectName == commonquery.DialectOracle {
+			if _, err := tx.ExecContext(ctx, "SET TRANSACTION READ ONLY"); err != nil {
+				_ = tx.Rollback()
+				return nil, fmt.Errorf("设置只读事务失败：%w", err)
+			}
+			return tx, nil
+		}
+		return tx, nil
+	case ControlledReadOnlySQLBoundaryValidatedStatement:
+		if isolation == sql.LevelDefault {
+			return db.BeginTx(ctx, nil)
+		}
+		return db.BeginTx(ctx, &sql.TxOptions{Isolation: isolation})
+	default:
+		return nil, fmt.Errorf("受控只读 SQL 边界无效：%q", boundary)
+	}
 }
 
 func scanRuntimeSQLRows(rows *sql.Rows) (*QueryResult, error) {

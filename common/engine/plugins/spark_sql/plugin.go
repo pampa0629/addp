@@ -93,7 +93,9 @@ func (p *SparkSQLPlugin) SQLDialect() string {
 	return commonquery.DialectSparkSQL
 }
 
-func (p *SparkSQLPlugin) SupportsControlledReadOnlySQL() bool { return true }
+func (p *SparkSQLPlugin) ControlledReadOnlySQLBoundary() plugin.ControlledReadOnlySQLBoundary {
+	return plugin.ControlledReadOnlySQLBoundaryValidatedStatement
+}
 
 func (p *SparkSQLPlugin) ExecuteSQL(ctx context.Context, connInfo plugin.ConnectionInfo, sql string, opts plugin.QueryOptions) (*plugin.QueryResult, error) {
 	if opts.ReadOnly {

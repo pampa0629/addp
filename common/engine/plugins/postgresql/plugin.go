@@ -237,7 +237,9 @@ func (p *PostgreSQLPlugin) SupportsParameterizedQueries() bool {
 	return true
 }
 
-func (p *PostgreSQLPlugin) SupportsControlledReadOnlySQL() bool { return true }
+func (p *PostgreSQLPlugin) ControlledReadOnlySQLBoundary() plugin.ControlledReadOnlySQLBoundary {
+	return plugin.ControlledReadOnlySQLBoundaryDatabaseTransaction
+}
 
 func (p *PostgreSQLPlugin) ExecuteSQL(ctx context.Context, connInfo plugin.ConnectionInfo, sql string, opts plugin.QueryOptions) (*plugin.QueryResult, error) {
 	return plugin.ExecuteSQLWithConnectionPool(ctx, p, connInfo, sql, opts)

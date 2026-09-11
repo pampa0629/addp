@@ -10,8 +10,9 @@ import (
 
 func (p *Plugin) OpenBoundedWatermarkRead(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.BoundedWatermarkReadOptions) (plugin.BoundedWatermarkReadSession, error) {
 	reader := shared.MySQLCompatibleBoundedWatermarkReader{
-		EngineType: p.Type(),
-		BuildDSN:   p.BuildDSN,
+		EngineType:       p.Type(),
+		ReadOnlyBoundary: p.ControlledReadOnlySQLBoundary(),
+		BuildDSN:         p.BuildDSN,
 		DescribeTable: func(ctx context.Context, db *sql.DB, database, table string) (*shared.MySQLCompatibleWatermarkTable, error) {
 			return shared.DescribeNonSpatialMySQLCompatibleWatermarkTable(ctx, db, p.Type(), database, table, oceanBaseCatalogFieldType)
 		},

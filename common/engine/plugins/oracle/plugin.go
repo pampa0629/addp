@@ -206,7 +206,9 @@ func (p *OraclePlugin) SupportsParameterizedQueries() bool {
 	return true
 }
 
-func (p *OraclePlugin) SupportsControlledReadOnlySQL() bool { return true }
+func (p *OraclePlugin) ControlledReadOnlySQLBoundary() plugin.ControlledReadOnlySQLBoundary {
+	return plugin.ControlledReadOnlySQLBoundaryDatabaseTransaction
+}
 
 func (p *OraclePlugin) ExecuteSQL(ctx context.Context, connInfo plugin.ConnectionInfo, query string, opts plugin.QueryOptions) (*plugin.QueryResult, error) {
 	return plugin.ExecuteSQLWithConnectionPool(ctx, p, connInfo, query, opts)

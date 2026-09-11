@@ -149,7 +149,9 @@ func (p *DorisPlugin) SupportsParameterizedQueries() bool {
 	return true
 }
 
-func (p *DorisPlugin) SupportsControlledReadOnlySQL() bool { return true }
+func (p *DorisPlugin) ControlledReadOnlySQLBoundary() plugin.ControlledReadOnlySQLBoundary {
+	return plugin.ControlledReadOnlySQLBoundaryDatabaseTransaction
+}
 
 func (p *DorisPlugin) ExecuteSQL(ctx context.Context, connInfo plugin.ConnectionInfo, sql string, opts plugin.QueryOptions) (*plugin.QueryResult, error) {
 	if opts.ReadOnly {

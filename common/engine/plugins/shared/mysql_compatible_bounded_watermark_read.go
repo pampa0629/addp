@@ -34,10 +34,11 @@ type MySQLCompatibleWatermarkTable struct {
 // MySQLCompatibleBoundedWatermarkReader owns the consistent-snapshot and
 // compound-cursor algorithm shared by verified MySQL-compatible engines.
 type MySQLCompatibleBoundedWatermarkReader struct {
-	EngineType    string
-	BuildDSN      func(plugin.ConnectionInfo) (string, error)
-	DescribeTable func(context.Context, *sql.DB, string, string) (*MySQLCompatibleWatermarkTable, error)
-	DecodeValue   func(string, interface{}, []datatype.FieldInfo, *datatype.SpatialInfo) (interface{}, error)
+	EngineType       string
+	ReadOnlyBoundary plugin.ControlledReadOnlySQLBoundary
+	BuildDSN         func(plugin.ConnectionInfo) (string, error)
+	DescribeTable    func(context.Context, *sql.DB, string, string) (*MySQLCompatibleWatermarkTable, error)
+	DecodeValue      func(string, interface{}, []datatype.FieldInfo, *datatype.SpatialInfo) (interface{}, error)
 }
 
 type mysqlCompatibleBoundedWatermarkSession struct {
@@ -106,7 +107,7 @@ func (r MySQLCompatibleBoundedWatermarkReader) Open(ctx context.Context, connInf
 		return fail(fmt.Errorf("%s watermark start cursor has %d values, want %d", engineType, len(opts.Start.Values), len(cursorFields)))
 	}
 
-	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
+	tx, err := plugin.BeginControlledReadOnlySQLTransaction(ctx, db, commonquery.DialectMySQL, r.ReadOnlyBoundary, sql.LevelRepeatableRead)
 	if err != nil {
 		return fail(fmt.Errorf("begin %s watermark consistent snapshot: %w", engineType, err))
 	}
@@ -170,6 +171,9 @@ func (r MySQLCompatibleBoundedWatermarkReader) validate() (string, error) {
 	engineType := strings.ToLower(strings.TrimSpace(r.EngineType))
 	if engineType == "" {
 		return "", fmt.Errorf("mysql-compatible bounded watermark reader requires engine type")
+	}
+	if !r.ReadOnlyBoundary.Valid() {
+		return "", fmt.Errorf("%s bounded watermark reader requires a valid read-only boundary", engineType)
 	}
 	if r.BuildDSN == nil {
 		return "", fmt.Errorf("%s bounded watermark reader requires BuildDSN", engineType)
