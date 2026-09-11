@@ -680,6 +680,19 @@ func moduleRegistryFailureLog(operation string, registration ModuleRegistrationR
 			apiError.ResponseBody,
 		)
 	}
+	var tokenError *ServiceTokenError
+	if errors.As(err, &tokenError) {
+		return fmt.Sprintf(
+			"%s status_code=%d error_code=%q retryable=%t response_reason=%q response_content_type=%q response_body_bytes=%d",
+			prefix,
+			tokenError.StatusCode,
+			tokenError.Code,
+			tokenError.Retryable,
+			tokenError.ResponseReason,
+			tokenError.ResponseContentType,
+			tokenError.ResponseBodyBytes,
+		)
+	}
 	return fmt.Sprintf("%s error=%q", prefix, err)
 }
 

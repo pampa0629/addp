@@ -169,6 +169,9 @@ other = "This candidate belongs to a multi-variant family; use the candidate fam
 [standard.document.candidate_family_decision_invalid]
 other = "A candidate family decision requires a one to one thousand character reason, all current two to one hundred distinct semantic variants from one family, and one winner"
 
+[standard.document.candidate_representative_stale]
+other = "This candidate is no longer the current representative of its semantic variant; refresh the candidate list and try again"
+
 [standard.document.copilot_unavailable]
 other = "The Copilot standard extraction service is temporarily unavailable"
 

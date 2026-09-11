@@ -292,7 +292,7 @@ func TestResourceTreePreservesLiteTimeFactsInTreeMetadata(t *testing.T) {
 	bucket := createResourceTreeNode(t, db, models.MetaNode{
 		TenantID: 7, EngineID: 9, ParentNodeID: &root.ID,
 		NodeType: "bucket", Name: "addp", FullName: "addp", Depth: 1,
-		ScannedAt: &scannedAt,
+		ScannedAt: &scannedAt, ItemCount: 1,
 	})
 	item := createResourceTreeItem(t, db, models.MetaItem{
 		TenantID: 7, EngineID: 9, NodeID: bucket.ID,
@@ -305,6 +305,12 @@ func TestResourceTreePreservesLiteTimeFactsInTreeMetadata(t *testing.T) {
 	nodeResult, err := svc.GetNode(t.Context(), 7, 9, "addp://engine/9/path/addp?type=bucket&node_id="+uintStringForTest(bucket.ID))
 	if err != nil {
 		t.Fatalf("GetNode() error = %v", err)
+	}
+	if got := nodeResult.Metadata["scanned_at"]; got != scannedAt.Format(time.RFC3339) {
+		t.Fatalf("parent scanned_at metadata = %#v, want %s", got, scannedAt.Format(time.RFC3339))
+	}
+	if got := nodeResult.Metadata["item_count"]; got != 1 {
+		t.Fatalf("parent item_count metadata = %#v, want 1", got)
 	}
 	var itemNodeFound bool
 	for _, child := range nodeResult.Children {

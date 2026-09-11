@@ -195,9 +195,12 @@ test('tenant administrator manages a custom role with localized bulk permission 
 
   await expect(page).toHaveURL(/\/iam\/roles$/)
   await expect(page.getByRole('heading', { name: '角色管理' })).toBeVisible()
+  await expect(page.getByText(/当前租户：/)).toHaveCount(0)
+  await expect(page.getByText(/当前会话：/)).toHaveCount(0)
   await expect(page.getByRole('tab', { name: '角色定义' })).toBeVisible()
   await expect(page.getByRole('radio', { name: '用户账号角色 1' })).toBeChecked()
   await expect(page.getByRole('row').filter({ hasText: 'tenant.administrator' })).toBeVisible()
+  await expect(page.getByRole('row').filter({ hasText: 'tenant.administrator' })).toContainText('系统内置，不可修改')
   await expect(page.getByRole('row').filter({ hasText: 'tenant.agent_runtime' })).toHaveCount(0)
 
   await page.locator('.el-radio-button').filter({ hasText: '机器身份角色' }).click()
@@ -215,6 +218,7 @@ test('tenant administrator manages a custom role with localized bulk permission 
   const permissionSearch = dialog.getByPlaceholder('搜索权限名称、标识、模块或动作')
   await permissionSearch.fill('运行任务')
   await expect(dialog.getByText('运行任务', { exact: true }).first()).toBeVisible()
+  await expect(dialog.getByText('执行', { exact: true })).toBeVisible()
   await expect(dialog.getByText('数据项', { exact: true })).toHaveCount(0)
   await dialog.getByRole('button', { name: '选择当前结果', exact: true }).click()
   await expect(dialog.getByText('已选择 2 项权限', { exact: true })).toBeVisible()

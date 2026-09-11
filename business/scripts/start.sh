@@ -20,6 +20,7 @@
 #   bash scripts/start.sh -neo4j             # 只启动 Neo4j
 #   bash scripts/start.sh -mysql             # 只启动 MySQL
 #   bash scripts/start.sh -oceanbase         # 只启动 OceanBase CE
+#   bash scripts/start.sh -tidb              # 只启动 TiDB 8.5.8
 #   bash scripts/start.sh -opengauss         # 只启动 openGauss
 #   bash scripts/start.sh -redpanda          # 只启动业务 Redpanda
 #   bash scripts/start.sh -nfs               # 只启动 NFS
@@ -52,6 +53,7 @@ ENABLE_NEO4J=false
 ENABLE_NFS=false
 ENABLE_MYSQL=false
 ENABLE_OCEANBASE=false
+ENABLE_TIDB=false
 ENABLE_OPENGAUSS=false
 ENABLE_REDPANDA=false
 HAS_ARGS=false
@@ -72,6 +74,7 @@ for arg in "$@"; do
             ENABLE_NFS=true
             ENABLE_MYSQL=true
             ENABLE_OCEANBASE=true
+            ENABLE_TIDB=true
             ENABLE_OPENGAUSS=true
             ENABLE_REDPANDA=true
             ;;
@@ -108,6 +111,9 @@ for arg in "$@"; do
         -oceanbase)
             ENABLE_OCEANBASE=true
             ;;
+        -tidb)
+            ENABLE_TIDB=true
+            ;;
         -opengauss)
             ENABLE_OPENGAUSS=true
             ;;
@@ -132,6 +138,7 @@ for arg in "$@"; do
             echo "  bash scripts/start.sh -neo4j                # 只启动 Neo4j"
             echo "  bash scripts/start.sh -mysql               # 只启动 MySQL"
             echo "  bash scripts/start.sh -oceanbase           # 只启动 OceanBase CE"
+            echo "  bash scripts/start.sh -tidb                # 只启动 TiDB 8.5.8"
             echo "  bash scripts/start.sh -opengauss           # 只启动 openGauss"
             echo "  bash scripts/start.sh -redpanda            # 只启动业务 Redpanda"
             echo "  bash scripts/start.sh -nfs                  # 只启动 NFS"
@@ -212,6 +219,11 @@ if [ "$ENABLE_OCEANBASE" = true ]; then
     echo -e "  OceanBase CE: ✓"
 else
     echo -e "  OceanBase CE: ✗ (使用 -oceanbase 启用)"
+fi
+if [ "$ENABLE_TIDB" = true ]; then
+    echo -e "  TiDB 8.5.8: ✓"
+else
+    echo -e "  TiDB 8.5.8: ✗ (使用 -tidb 启用)"
 fi
 if [ "$ENABLE_OPENGAUSS" = true ]; then
     echo -e "  openGauss: ✓"
@@ -297,6 +309,7 @@ NEO4J_HTTP_PORT_VAL=${NEO4J_HTTP_PORT:-7474}
 NEO4J_BOLT_PORT_VAL=${NEO4J_BOLT_PORT:-7687}
 MYSQL_PORT_VAL=${MYSQL_PORT:-3306}
 OCEANBASE_PORT_VAL=${OCEANBASE_PORT:-2881}
+TIDB_PORT_VAL=${TIDB_PORT:-4000}
 OPENGAUSS_PORT_VAL=${OPENGAUSS_PORT:-5435}
 BUSINESS_KAFKA_PORT_VAL=${BUSINESS_KAFKA_PORT:-29092}
 
@@ -304,6 +317,20 @@ if [ "$ENABLE_OCEANBASE" = true ]; then
     case "${OCEANBASE_DATABASE:-business}" in
         ""|*[!A-Za-z0-9_]*)
             echo -e "${RED}✗ OCEANBASE_DATABASE 只允许字母、数字和下划线${NC}"
+            exit 1
+            ;;
+    esac
+fi
+if [ "$ENABLE_TIDB" = true ]; then
+    case "${TIDB_DATABASE:-business}" in
+        ""|*[!A-Za-z0-9_]*)
+            echo -e "${RED}✗ TIDB_DATABASE 只允许字母、数字和下划线${NC}"
+            exit 1
+            ;;
+    esac
+    case "${TIDB_USER:-root}" in
+        ""|*[!A-Za-z0-9_.-]*)
+            echo -e "${RED}✗ TIDB_USER 只允许字母、数字、点、短横线和下划线${NC}"
             exit 1
             ;;
     esac
@@ -339,6 +366,7 @@ PORTS_TO_CHECK=""
 [ "$ENABLE_NEO4J" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $NEO4J_HTTP_PORT_VAL $NEO4J_BOLT_PORT_VAL"
 [ "$ENABLE_MYSQL" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $MYSQL_PORT_VAL"
 [ "$ENABLE_OCEANBASE" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $OCEANBASE_PORT_VAL"
+[ "$ENABLE_TIDB" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $TIDB_PORT_VAL"
 [ "$ENABLE_OPENGAUSS" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $OPENGAUSS_PORT_VAL"
 [ "$ENABLE_REDPANDA" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $BUSINESS_KAFKA_PORT_VAL"
 
@@ -355,6 +383,7 @@ for port in $PORTS_TO_CHECK; do
            check_port_used_by_self $port "business-neo4j" || \
            check_port_used_by_self $port "business-mysql" || \
            check_port_used_by_self $port "business-oceanbase" || \
+           check_port_used_by_self $port "business-tidb" || \
            check_port_used_by_self $port "business-opengauss" || \
            check_port_used_by_self $port "business-redpanda"; then
             echo -e "${GREEN}✓ 端口 ${port} 已被业务库容器使用${NC}"
@@ -521,6 +550,11 @@ fi
 if [ "$ENABLE_OCEANBASE" = true ]; then
     docker compose up -d oceanbase
     echo -e "${GREEN}✓ OceanBase CE 配置已同步${NC}"
+fi
+
+if [ "$ENABLE_TIDB" = true ]; then
+    docker compose up -d tidb-pd tidb-tikv tidb
+    echo -e "${GREEN}✓ TiDB 8.5.8 三组件配置已同步${NC}"
 fi
 
 # openGauss
@@ -762,6 +796,34 @@ if [ "$ENABLE_OCEANBASE" = true ]; then
     fi
 fi
 
+if [ "$ENABLE_TIDB" = true ]; then
+    TIDB_READY=false
+    TIDB_CLIENT_IMAGE=mysql:8.0@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b
+    tidb_mysql() {
+        docker run --rm --network business_business-network \
+            -e "MYSQL_PWD=${TIDB_PASSWORD:-}" \
+            "$TIDB_CLIENT_IMAGE" mysql \
+            -hbusiness-tidb -P4000 -u"${TIDB_USER:-root}" \
+            --protocol=tcp --connect-timeout=5 --default-character-set=utf8mb4 "$@"
+    }
+    echo -e "${YELLOW}等待 TiDB 8.5.8 三组件启动...${NC}"
+    for i in {1..180}; do
+        if tidb_mysql -Nse 'SELECT 1' >/dev/null 2>&1; then
+            tidb_mysql -e "CREATE DATABASE IF NOT EXISTS \`${TIDB_DATABASE:-business}\` CHARACTER SET utf8mb4"
+            tidb_mysql -D"${TIDB_DATABASE:-business}" < tidb/init.sql
+            tidb_mysql -Nse "SELECT COUNT(*) FROM \`${TIDB_DATABASE:-business}\`.addp_engine_probe" | grep -qx '1'
+            echo -e "${GREEN}✓ TiDB 8.5.8 就绪且样例数据可查询${NC}"
+            TIDB_READY=true
+            break
+        fi
+        sleep 2
+    done
+    if [ "$TIDB_READY" != true ]; then
+        echo -e "${RED}✗ TiDB 8.5.8 未在 360 秒内完成初始化${NC}"
+        exit 1
+    fi
+fi
+
 if [ "$ENABLE_OPENGAUSS" = true ]; then
     OPENGAUSS_READY=false
     OPENGAUSS_HOME=/usr/local/opengauss
@@ -926,6 +988,9 @@ if [ "$ENABLE_MYSQL" = true ]; then
 fi
 if [ "$ENABLE_OCEANBASE" = true ]; then
     echo -e "OceanBase CE: localhost:${OCEANBASE_PORT_VAL} (database: ${OCEANBASE_DATABASE:-business}, user: root@${OCEANBASE_TENANT_NAME:-test})"
+fi
+if [ "$ENABLE_TIDB" = true ]; then
+    echo -e "TiDB 8.5.8: localhost:${TIDB_PORT_VAL} (database: ${TIDB_DATABASE:-business}, user: ${TIDB_USER:-root})"
 fi
 if [ "$ENABLE_OPENGAUSS" = true ]; then
     echo -e "openGauss: localhost:${OPENGAUSS_PORT_VAL} (database: ${OPENGAUSS_DATABASE:-business}, user: gaussdb)"

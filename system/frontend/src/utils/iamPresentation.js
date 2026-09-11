@@ -30,22 +30,15 @@ export function resolveIAMModuleName(moduleName, t, te) {
   return te(key) ? t(key) : normalized
 }
 
-export function findCurrentContextOption(options, context) {
-  const contextType = String(context?.type || '')
-  const tenantID = String(context?.tenant_id || '')
-  const membershipID = String(context?.tenant_membership_id || '')
-  return (options || []).find((option) => {
-    if (option?.type !== contextType) return false
-    if (option.current === true) return true
-    if (contextType !== 'tenant') return true
-    return String(option.tenant_id || '') === tenantID &&
-      String(option.tenant_membership_id || '') === membershipID
-  }) || null
-}
-
 export function assuranceLevelKey(level) {
   const normalized = String(level || '').toLowerCase()
   return ['aal1', 'aal2', 'aal3', 'not_applicable'].includes(normalized) ? normalized : 'unknown'
+}
+
+export function resolveMembershipSourceLabel(sourceType, t, te) {
+  const normalized = String(sourceType || '').trim()
+  const key = `system.iam.source.${normalized}`
+  return normalized && te(key) ? t(key) : t('system.iam.source.unknown')
 }
 
 export function accountSessionIsLoading(authState) {
@@ -125,6 +118,30 @@ export function groupPermissionsByNamespace(items, getPermissionKey = (item) => 
       permissions: permissions.sort((left, right) =>
         String(getPermissionKey(left)).localeCompare(String(getPermissionKey(right)))
       )
+    }))
+}
+
+export function groupPermissionsByResource(items, selectedKeys = []) {
+  const selected = new Set(selectedKeys || [])
+  const groups = new Map()
+  for (const permission of items || []) {
+    const identity = permissionIdentity(permission)
+    if (!identity.permissionKey) continue
+    const resource = identity.resource || identity.permissionKey
+    if (!groups.has(resource)) groups.set(resource, [])
+    groups.get(resource).push(permission)
+  }
+  return [...groups.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([resource, permissions]) => ({
+      resource,
+      permissions: permissions.sort((left, right) => {
+        const leftIdentity = permissionIdentity(left)
+        const rightIdentity = permissionIdentity(right)
+        return leftIdentity.action.localeCompare(rightIdentity.action) ||
+          leftIdentity.permissionKey.localeCompare(rightIdentity.permissionKey)
+      }),
+      selectedCount: permissions.filter((permission) => selected.has(permissionIdentity(permission).permissionKey)).length
     }))
 }
 

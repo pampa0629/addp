@@ -5,6 +5,7 @@
 #   bash scripts/restart.sh              # 重启默认服务 (PostgreSQL + MinIO)
 #   bash scripts/restart.sh -mysql       # 只重启 MySQL
 #   bash scripts/restart.sh -oceanbase   # 只重启 OceanBase CE
+#   bash scripts/restart.sh -tidb        # 只重启 TiDB 8.5.8 三组件
 #   bash scripts/restart.sh -opengauss   # 只重启 openGauss
 #   bash scripts/restart.sh -all         # 重启所有服务
 

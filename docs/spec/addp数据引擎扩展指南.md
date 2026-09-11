@@ -18,6 +18,10 @@
 
 openGauss 的准入基线固定为 6.0.6 LTS 官方 Docker tar：Linux x86_64 Release 认证使用 `make test-release RELEASE_SUITE=opengauss-official-media`，Business 和常规 T2 使用同一固定 URL、SHA-256 与镜像。官方 6.0.6 Docker 构建包含 MOT，Docker Desktop for macOS 缺少其所需 NUMA 拓扑，所以 openGauss 实库门禁是显式登记的 hosted-only T2，不进入 macOS `make local-ci`；不得改用第三方镜像、跳过用例或覆盖系统配置制造本地绿色。Release suite 验证原生容器启动、PG 兼容 database、`lib/pq` 参数绑定、COPY、MERGE、复合 watermark、唯一键目录查询和查询取消。正式插件独立注册为 `engine_type=opengauss`，内部复用 PostgreSQL wire protocol 与 SQL 方言实现，但只显式暴露已验证的非空间目录、Facts、查询、批量/游标读取、COPY 写会话、建表、删除、bounded watermark 和幂等 upsert；不声明 PostGIS、CDC、分区变化应用或 PostgreSQL 扩展能力。
 
+TiDB 的准入基线固定为 8.5.8，并且只使用 PingCAP 在 Docker Hub 公开发布的 `pingcap/pd`、`pingcap/tikv`、`pingcap/tidb` 三组件镜像；Business、Linux x86_64 GitHub Hosted T2 与 macOS Docker Desktop T2/T4 必须使用同一版本并按 OCI digest 固定，不使用 TiDB Enterprise 镜像、第三方重打包镜像或需要人工申请的介质。TiDB 源代码与官方镜像路线基于 Apache 2.0，可免 License 文件和激活用于无人值守开发测试；正式插件独立注册为 `engine_type=tidb`，内部复用 MySQL wire protocol、SQL 方言和已认证的 MySQL-compatible Provider，但只声明非空间目录、Facts、查询、BatchRead、bounded watermark、建表、删除、写会话和幂等 upsert。官方兼容性文档明确不支持 MySQL replication protocol 与空间类型/索引，因此不得推导 CDC、分区变化应用或空间能力。
+
+第三个国产数据库的 T0 取舍固定为 TiDB：[PingCAP 微众银行案例](https://www.pingcap.com/case-study/webank-cuts-costs-scaling-tidb-petabytes/)公开了自 2019 年采用 TiDB、运行 80 余集群和 PB 级数据的金融生产实践，足以证明国内重点行业采用；[TiDB、PD、TiKV 开源仓库](https://github.com/pingcap)采用 Apache 2.0，官方 Docker Hub 三组件镜像可公开拉取并固定 OCI digest，且启动不需要 License 文件、激活或人工申请。[达梦官方行业案例](https://eco.dameng.com/cases/)覆盖银行、政务、能源等大量信创核心场景，市场采用更强，但 [DM8 官方试用说明](https://eco.dameng.com/document/dm/zh-cn/faq/faq-dm-product)明确默认试用期一年、到期后必须购买 License，否则数据库停止服务；[人大金仓官方一汽案例](https://www.kingbase.com.cn/explore/tech-blog/%E6%97%B6%E5%BA%8F%E6%95%B0%E6%8D%AE%E5%BA%93%E9%87%8D%E5%A1%91%E6%99%BA%E9%80%A0%E6%9C%AA%E6%9D%A5%EF%BC%9A%E9%87%91%E4%BB%93%E6%95%B0%E6%8D%AE%E5%BA%93%E5%BC%95%E9%A2%86%E5%B7%A5%E4%B8%9A%E4%BA%92/)说明其已在大型制造业生产环境规模化落地，但 [KingbaseES License 手册](https://help.kingbase.com.cn/v8/install-updata/license-information/license-information-2.html)明确非商用 License 为严格期限的临时授权，开发版也只有一年试用期。后两者不能满足长期、无人值守、免人工申请 License 的 GitHub Actions 基线，因此不进入本阶段实现，也不得以第三方镜像绕过授权条件。
+
 聚合包是内置插件编译期登记的唯一手写清单。`make test-engine-plugin-registration` 会自动扫描调用 `plugin.Register` 的生产包，校验每个包恰好进入与 `EngineOrigin()` 一致的一个聚合入口，并禁止上层生产代码通过 blank import 直接加载具体插件。测试和 System API 不得另行维护全量插件类型清单或固定数量；它们应从已登记插件和 descriptor 动态验证通用契约，具体引擎的端口、能力和字段语义由各插件包自己的测试拥有。
 
 System 的引擎类型列表、注册表单、默认值和校验规则均由 `GET /api/v1/system/engine-types` 返回的插件描述驱动。新增引擎时不得在 `system/frontend` 或 `common-frontend` 增加 `engine_type` 判断；若现有 `ConnectionFieldSpec` 无法表达所需交互，应先扩展通用描述协议和共享渲染器，再实现具体插件。
@@ -134,3 +138,5 @@ git diff --check
 涉及前端入口时补跑对应模块构建。
 
 openGauss 的完成证据必须同时包含上述官方介质认证、常规 T2 disposable Provider 集成门禁和 `opengauss-consumer-flow` 跨模块 T4 验收；T4 固定在 GitHub Hosted Linux x86_64 disposable 部署执行，复用通用关系引擎消费链路断言，不能用协议认证替代模块能力验收。
+
+TiDB 的完成证据必须同时包含固定三组件官方镜像 digest、Linux x86_64 GitHub Hosted 与 macOS Docker Desktop 均可执行的常规 T2 disposable Provider 集成门禁、Business 幂等样例，以及 macOS 专用 Runner 上 `tidb-consumer-flow` 的 Manager / Transfer / Develop / Service 跨模块 T4 与三组件清理零残留证据；T2 与 T4 复用同一个无卷 Compose，不得用 MySQL 门禁或单组件 SQL 连接冒充 TiDB 验收。T4 首次真实成功前只允许手工 `workflow_dispatch`，不得增加 schedule。

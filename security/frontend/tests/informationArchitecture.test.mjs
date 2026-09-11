@@ -252,4 +252,21 @@ describe('Security product information architecture', () => {
     expect(zhCn.security.policy.hint).toContain('不能放宽')
     expect(zhCn.security.policy.hint).toContain('申请与审批')
   })
+
+  it('revises every formal assessment through the protected-resource aggregate', () => {
+    const enrollment = readSource('../src/views/ProtectionEnrollmentList.vue')
+    const api = readSource('../src/api/security.js')
+    const zhCn = JSON.parse(readSource('../src/i18n/zh-cn.json'))
+
+    expect(enrollment).toContain('openAssessmentRevision(assessmentForFinding(finding))')
+    expect(enrollment).toContain('openAssessmentRevision(assessment)')
+    expect(enrollment).toContain('activeGradesForType(assessmentRevisionForm.sensitiveDataTypeID)')
+    expect(enrollment).toContain('version: revisingAssessment.value.version')
+    expect(enrollment).toContain('assessmentAPI.revise(revisingAssessment.value.id')
+    expect(api).toContain('client.post(`/security/assessments/${id}/revisions`')
+    expect(api).not.toContain('client.put(`/security/assessments/${id}`')
+    expect(zhCn.security.assessment.reviseConclusion).toBe('调整结论')
+    expect(zhCn.security.assessment.reviseHint).toContain('不可变修订')
+    expect(zhCn.security.assessment.reviseHint).toContain('重新编译各数据出口规则')
+  })
 })

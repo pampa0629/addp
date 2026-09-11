@@ -1,16 +1,7 @@
 <template>
   <div class="iam-category-page">
     <header class="iam-page-header">
-      <div>
-        <h2>{{ pageTitle }}</h2>
-        <div class="iam-context-line">
-          <el-tag effect="plain">{{ contextLabel }}</el-tag>
-          <el-tooltip :content="sessionAssuranceDetail" placement="bottom">
-            <span>{{ sessionAssuranceLabel }}</span>
-          </el-tooltip>
-        </div>
-      </div>
-      <el-button :icon="Refresh" :loading="refreshing" circle :aria-label="t('system.iam.common.refresh')" @click="refreshContext" />
+      <h2>{{ pageTitle }}</h2>
     </header>
 
     <section v-if="showTenantRoleSetup && activeTab !== 'role-assignments'" class="iam-setup-guide" aria-live="polite">
@@ -43,7 +34,6 @@
 
 <script setup>
 import { computed, markRaw, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
 import {
   Bell,
   Connection,
@@ -51,7 +41,6 @@ import {
   InfoFilled,
   Key,
   OfficeBuilding,
-  Refresh,
   Setting,
   Share,
   Tickets,
@@ -77,7 +66,6 @@ import TenantRoleAssignmentsPanel from '../components/iam/TenantRoleAssignmentsP
 import TenantRolesPanel from '../components/iam/TenantRolesPanel.vue'
 import SecurityPolicy from './SecurityPolicy.vue'
 import { needsTenantRoleSetup } from '../utils/iamRoles'
-import { assuranceLevelKey, findCurrentContextOption } from '../utils/iamPresentation'
 import { navigateSystemRoute } from '../utils/moduleNavigation'
 import { resolveIAMCategoryRouteState } from '../utils/routeState'
 
@@ -86,30 +74,13 @@ const authStore = useAuthStore()
 const route = useRoute()
 const router = useRouter()
 const activeTab = ref('')
-const refreshing = ref(false)
-const currentContextOption = ref(null)
 const authContext = computed(() => authStore.authContext)
 const contextType = computed(() => authStore.contextType)
 const pageKey = computed(() => String(route.meta?.iamPage || ''))
 const pageDefinition = computed(() => findIAMPage(pageKey.value))
 const pageTitle = computed(() => pageDefinition.value ? t(pageDefinition.value.label) : t('system.iam.title'))
-const contextLabel = computed(() => {
-  if (contextType.value === 'platform') return t('system.iam.context.platform')
-  if (!currentContextOption.value) return t('system.iam.context.tenantUnknown')
-  return t('system.iam.context.tenant', {
-    name: currentContextOption.value.tenant_name,
-    code: currentContextOption.value.tenant_code
-  })
-})
-const assuranceKey = computed(() => assuranceLevelKey(authContext.value?.authentication?.assurance_level))
-const assuranceLevel = computed(() => authContext.value?.authentication?.assurance_level?.toUpperCase() || '-')
-const sessionAssuranceLabel = computed(() => t('system.iam.session.label', {
-  state: t(`system.iam.session.levels.${assuranceKey.value}`)
-}))
-const sessionAssuranceDetail = computed(() => t('system.iam.session.detail', { level: assuranceLevel.value }))
 const showTenantRoleSetup = computed(() => needsTenantRoleSetup(authContext.value))
 const availableTabs = computed(() => availableIAMTabs(pageKey.value, contextType.value, permission => authStore.hasPermission(permission)))
-let contextOptionRequestID = 0
 
 const panelComponents = {
   users: markRaw(PlatformUsersPanel),
@@ -173,42 +144,12 @@ async function openRoleAssignments() {
 }
 
 watch([availableTabs, () => route.query, pageKey], restoreTabFromRoute, { immediate: true })
-watch(
-  () => [contextType.value, authContext.value?.context?.tenant_id, authContext.value?.context?.tenant_membership_id],
-  loadCurrentContextOption,
-  { immediate: true }
-)
-
-async function loadCurrentContextOption() {
-  const requestID = ++contextOptionRequestID
-  try {
-    const options = await authStore.fetchContextOptions()
-    if (requestID !== contextOptionRequestID) return
-    currentContextOption.value = findCurrentContextOption(options, authContext.value?.context)
-  } catch {
-    if (requestID === contextOptionRequestID) currentContextOption.value = null
-  }
-}
-
-async function refreshContext() {
-  refreshing.value = true
-  try {
-    await authStore.fetchAuthContext()
-    await loadCurrentContextOption()
-    ElMessage.success(t('system.iam.common.refreshed'))
-  } catch (error) {
-    ElMessage.error(error.response?.data?.error || t('system.iam.common.loadFailed'))
-  } finally {
-    refreshing.value = false
-  }
-}
 </script>
 
 <style>
 .iam-category-page { min-width: 0; color: var(--addp-text-primary); }
-.iam-page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 12px; }
-.iam-page-header h2 { margin: 0 0 8px; font-size: 22px; font-weight: 600; letter-spacing: 0; }
-.iam-context-line { display: flex; align-items: center; gap: 10px; color: var(--addp-text-secondary); font-size: 13px; }
+.iam-page-header { margin-bottom: 12px; }
+.iam-page-header h2 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: 0; }
 .iam-setup-guide { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 12px 14px; margin-bottom: 14px; border: 1px solid var(--addp-border-color); border-left: 3px solid var(--el-color-primary); background: var(--addp-bg-primary); }
 .iam-setup-guide__icon { flex: 0 0 auto; color: var(--el-color-primary); font-size: 20px; }
 .iam-setup-guide__content { display: flex; flex: 1; flex-direction: column; gap: 3px; min-width: 0; }

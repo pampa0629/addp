@@ -1541,7 +1541,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "仅当候选所在文档、候选类型与编码下恰好一个语义变体时执行单项保留或驳回；多语义变体候选族必须使用原子胜出裁决 | Retains or rejects one candidate only when its document, type, and code identify exactly one semantic variant; multi-variant families require the atomic winner decision",
+                "description": "仅当候选所在文档、候选类型与编码下恰好一个语义变体，且请求候选为该变体的当前代表时执行单项保留或驳回；多语义变体候选族必须使用原子胜出裁决 | Retains or rejects one candidate only when its document, type, and code identify exactly one semantic variant and the requested candidate is its current representative; multi-variant families require the atomic winner decision",
                 "consumes": [
                     "application/json"
                 ],
@@ -1571,7 +1571,7 @@ const docTemplate = `{
                         }
                     },
                     "409": {
-                        "description": "多语义变体候选族必须使用胜出裁决，error_code=candidate_family_decision_required；或候选已正式化、并发版本冲突 | Multi-variant family requires winner decision, error_code=candidate_family_decision_required; or candidate already formalized or version conflict",
+                        "description": "历史非代表候选返回 error_code=candidate_representative_stale；多语义变体候选族必须使用胜出裁决，error_code=candidate_family_decision_required；或候选已正式化、并发版本冲突 | Historical non-representative candidate returns error_code=candidate_representative_stale; multi-variant family requires winner decision, error_code=candidate_family_decision_required; or candidate already formalized or version conflict",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -1593,7 +1593,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "服务器根据实时比对唯一决定创建 R1 草稿、创建既有标准的新修订草稿或关联内容一致修订；不会提交审核或发布 | The server uniquely decides whether to create an R1 draft, create a new draft revision, or link an identical revision; it never submits or publishes",
+                "description": "仅允许已保留且仍是其语义变体当前代表的候选；服务器根据实时比对唯一决定创建 R1 草稿、创建既有标准的新修订草稿或关联内容一致修订，不会提交审核或发布 | Only a retained candidate that remains the current representative of its semantic variant may be formalized; the server uniquely decides whether to create an R1 draft, create a new draft revision, or link an identical revision, and never submits or publishes",
                 "consumes": [
                     "application/json"
                 ],
@@ -1657,7 +1657,7 @@ const docTemplate = `{
                         }
                     },
                     "409": {
-                        "description": "Conflict",
+                        "description": "历史非代表候选返回 error_code=candidate_representative_stale；或候选状态、并发版本、目标工作修订冲突 | Historical non-representative candidate returns error_code=candidate_representative_stale; or candidate state, version, or target work revision conflicts",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -2281,7 +2281,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "理由、成员数量、重复成员、跨族成员或胜出候选无效，error_code=candidate_family_decision_invalid | Invalid reason, member count, duplicate member, cross-family member, or winner; error_code=candidate_family_decision_invalid",
+                        "description": "理由、成员数量、重复成员、跨族成员、非当前代表成员或胜出候选无效，error_code=candidate_family_decision_invalid | Invalid reason, member count, duplicate member, cross-family member, non-current representative, or winner; error_code=candidate_family_decision_invalid",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {

@@ -65,6 +65,15 @@ BUSINESS_OCEANBASE_USER="${BUSINESS_OCEANBASE_USER:-root@${OCEANBASE_TENANT_NAME
 BUSINESS_OCEANBASE_PASSWORD="${OCEANBASE_PASSWORD:-business_oceanbase_password}"
 BUSINESS_OCEANBASE_AVAILABLE=false
 
+# Business TiDB 配置
+BUSINESS_TIDB_HOST="${BUSINESS_TIDB_HOST:-business-tidb}"
+BUSINESS_TIDB_PORT="${BUSINESS_TIDB_PORT:-4000}"
+BUSINESS_TIDB_DATABASE="${TIDB_DATABASE:-business}"
+BUSINESS_TIDB_USER="${TIDB_USER:-root}"
+BUSINESS_TIDB_PASSWORD="${TIDB_PASSWORD:-}"
+BUSINESS_TIDB_AVAILABLE=false
+TIDB_CLIENT_IMAGE=mysql:8.0@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b
+
 # Business openGauss 配置
 BUSINESS_OPENGAUSS_HOST="${BUSINESS_OPENGAUSS_HOST:-business-opengauss}"
 BUSINESS_OPENGAUSS_PORT="${BUSINESS_OPENGAUSS_PORT:-5432}"
@@ -154,6 +163,23 @@ if docker ps --format '{{.Names}}' | grep -qx 'business-oceanbase'; then
   fi
 else
   echo -e "${YELLOW}⚠️  Business OceanBase CE 未启动，跳过注册${NC}"
+fi
+
+if docker ps --format '{{.Names}}' | grep -qx 'business-tidb'; then
+  if docker run --rm --network "${BUSINESS_DOCKER_NETWORK}" \
+    -e "MYSQL_PWD=${BUSINESS_TIDB_PASSWORD}" \
+    "${TIDB_CLIENT_IMAGE}" mysql \
+    -h"${BUSINESS_TIDB_HOST}" -P"${BUSINESS_TIDB_PORT}" \
+    -u"${BUSINESS_TIDB_USER}" --protocol=tcp --connect-timeout=5 \
+    -D"${BUSINESS_TIDB_DATABASE}" -Nse 'SELECT 1' 2>/dev/null | grep -Fxq '1'; then
+    BUSINESS_TIDB_AVAILABLE=true
+    echo -e "${GREEN}✓ Business TiDB 8.5.8 可用${NC}"
+  else
+    echo -e "${RED}✗ Business TiDB 容器已运行但不可查询${NC}"
+    exit 1
+  fi
+else
+  echo -e "${YELLOW}⚠️  Business TiDB 未启动，跳过注册${NC}"
 fi
 
 # openGauss 是可选业务引擎；只在容器已健康运行时注册。
@@ -318,6 +344,14 @@ if [ "${BUSINESS_OCEANBASE_AVAILABLE}" = true ]; then
     "业务数据库 - OceanBase Community Edition (MySQL 模式)"
 fi
 
+if [ "${BUSINESS_TIDB_AVAILABLE}" = true ]; then
+  register_engine \
+    "Business TiDB" \
+    "tidb" \
+    "{\"host\":\"${BUSINESS_TIDB_HOST}\",\"port\":${BUSINESS_TIDB_PORT},\"database\":\"${BUSINESS_TIDB_DATABASE}\",\"user\":\"${BUSINESS_TIDB_USER}\",\"password\":\"${BUSINESS_TIDB_PASSWORD}\"}" \
+    "业务数据库 - TiDB 8.5.8 (MySQL 协议)"
+fi
+
 if [ "${BUSINESS_OPENGAUSS_AVAILABLE}" = true ]; then
   register_engine \
     "Business openGauss" \
@@ -345,8 +379,11 @@ echo "  3. Business MinIO (${BUSINESS_MINIO_ENDPOINT})"
 if [ "${BUSINESS_OCEANBASE_AVAILABLE}" = true ]; then
   echo "  4. Business OceanBase (${BUSINESS_OCEANBASE_HOST}:${BUSINESS_OCEANBASE_PORT}/${BUSINESS_OCEANBASE_DATABASE})"
 fi
+if [ "${BUSINESS_TIDB_AVAILABLE}" = true ]; then
+  echo "  5. Business TiDB (${BUSINESS_TIDB_HOST}:${BUSINESS_TIDB_PORT}/${BUSINESS_TIDB_DATABASE})"
+fi
 if [ "${BUSINESS_OPENGAUSS_AVAILABLE}" = true ]; then
-  echo "  5. Business openGauss (${BUSINESS_OPENGAUSS_HOST}:${BUSINESS_OPENGAUSS_PORT}/${BUSINESS_OPENGAUSS_DATABASE})"
+  echo "  6. Business openGauss (${BUSINESS_OPENGAUSS_HOST}:${BUSINESS_OPENGAUSS_PORT}/${BUSINESS_OPENGAUSS_DATABASE})"
 fi
 echo ""
 echo -e "${YELLOW}提示: 可以在「系统管理 -- 引擎管理」页面查看和管理引擎${NC}"

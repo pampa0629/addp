@@ -2,7 +2,7 @@
         build-iam-bootstrap build-iam-recovery build-iam-migration-repair \
         dev-start dev-restart dev-stop infra-up infra-down infra-restart infra-status prod-start prod-restart prod-stop prod-health ports-validate
 
-.PHONY: test-business-config test-common-oceanbase test-common-opengauss test-common-oracle-decimal test-common-doris-decimal test-common-clickhouse-decimal test-opengauss-official-media-release
+.PHONY: test-business-config test-common-oceanbase test-common-opengauss test-common-tidb test-common-oracle-decimal test-common-doris-decimal test-common-clickhouse-decimal test-opengauss-official-media-release
 
 # 默认目标
 .DEFAULT_GOAL := help
@@ -151,12 +151,20 @@ test-business-config: ## 校验 Business Compose 和服务管理脚本（不启�
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --quiet
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --services | grep -Fxq oceanbase
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --images | grep -Fxq oceanbase/oceanbase-ce:4.4.2-lts
+	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --services | grep -Fxq tidb-pd
+	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --services | grep -Fxq tidb-tikv
+	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --services | grep -Fxq tidb
+	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --images | grep -Fxq pingcap/pd:v8.5.8@sha256:424e896800e42e1b7eb585b604c8daa3454110d0f0df5ab41f7c5f49164d3aef
+	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --images | grep -Fxq pingcap/tikv:v8.5.8@sha256:ab84580b6795868940231aa778a34b082d19e4417e6d66f755c609bebdbbfd69
+	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --images | grep -Fxq pingcap/tidb:v8.5.8@sha256:df168c764bf2dfdb166dc37a5c3b0e210d29d5f3ab2d33317fd0fdf7b32037f5
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --services | grep -Fxq opengauss
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --images | grep -Fxq opengauss:6.0.6
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config | grep -Fq '/root/boot/init.d/01-addp-business.sql'
 	@test -f business/oceanbase/init.sql
+	@test -f business/tidb/init.sql
 	@test -f business/opengauss/init.sql
 	@grep -Fq 'SET NAMES utf8mb4;' business/oceanbase/init.sql
+	@grep -Fq 'CREATE TABLE IF NOT EXISTS addp_engine_probe' business/tidb/init.sql
 	@grep -Fq 'CREATE TABLE IF NOT EXISTS addp_engine_probe' business/opengauss/init.sql
 	@grep -Fq 'openGauss-Docker-6.0.6-x86_64.tar' scripts/lib/opengauss-official-media.sh
 	@grep -Fq 'openGauss-Docker-6.0.6-aarch64.tar' scripts/lib/opengauss-official-media.sh
@@ -165,6 +173,7 @@ test-business-config: ## 校验 Business Compose 和服务管理脚本（不启�
 	@test "$$(grep -c -- '--default-character-set=utf8mb4' business/scripts/start.sh)" -ge 4
 	@bash -n business/scripts/start.sh business/scripts/stop.sh business/scripts/restart.sh scripts/utils/register-business.sh scripts/lib/opengauss-official-media.sh
 	@bash business/scripts/start.sh --help | grep -Fq -- '-oceanbase'
+	@bash business/scripts/start.sh --help | grep -Fq -- '-tidb'
 	@bash business/scripts/start.sh --help | grep -Fq -- '-opengauss'
 	@bash business/scripts/stop.sh --help | grep -Fq -- '-oceanbase'
 	@bash business/scripts/stop.sh --help | grep -Fq -- '-opengauss'
@@ -174,6 +183,7 @@ test-integration: ## 严格串行运行所有本地可执行的 disposable 基�
 	@$(MAKE) test-common-postgres
 	@$(MAKE) test-common-mysql-data-protection
 	@$(MAKE) test-common-oceanbase
+	@$(MAKE) test-common-tidb
 	@$(MAKE) test-manager-postgres
 	@$(MAKE) test-manager-mongodb-security
 	@$(MAKE) test-system-iam-postgres
@@ -203,6 +213,9 @@ test-common-mysql-data-protection: ## 使用一次性 MySQL database 验证 Prov
 
 test-common-oceanbase: ## 使用一次性 OceanBase database 验证 Engine Provider 契约
 	@bash scripts/test/common-oceanbase-gate.sh
+
+test-common-tidb: ## 使用一次性 TiDB database 验证 Engine Provider 契约
+	@bash scripts/test/common-tidb-gate.sh
 
 test-common-opengauss: ## 在 Linux x86_64 hosted runner 使用一次性 openGauss database 验证 Provider 契约
 	@bash scripts/test/common-opengauss-gate.sh
@@ -272,7 +285,7 @@ test-online: ## 运行指定 Online suite（必须设置 ONLINE_SUITE 和 ADDP_O
 	@python3 scripts/test/online-gate.py --repository "$(CURDIR)" --suite "$(ONLINE_SUITE)"
 
 test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
-	@python3 -m unittest scripts/test/online-gate_test.py scripts/test/online-preflight_test.py scripts/test/online-host-gate_test.py scripts/test/online-hosted-opengauss-gate_test.py scripts/test/online-engine-registration_test.py scripts/test/online-engine-fixture_test.py scripts/test/online-workbench-mysql-fixture_test.py scripts/test/online-oceanbase-consumer-fixture_test.py scripts/test/online-opengauss-consumer-fixture_test.py scripts/test/online-transfer-insert-only-fixture_test.py scripts/test/online-manager-minio-fixture_test.py scripts/test/online-security-transfer-fixture_test.py scripts/test/consumer-engine-recovery-online_test.py scripts/test/consumer-process-stability-online_test.py scripts/test/module-registry-recovery-online_test.py scripts/test/relational-consumer-flow-online_test.py scripts/test/transfer-insert-only-mysql-online_test.py scripts/test/standard-model-reference-deletion-online_test.py scripts/test/enterprise-catalog-publishing-online_test.py scripts/test/workbench-service-consumption-online_test.py scripts/test/manager-internal-artifact-lineage-online_test.py scripts/test/security-transfer-protection-online_test.py scripts/test/security-plaintext-access-online_test.py scripts/test/security-mysql-owner-protection-online_test.py scripts/ci/check-online-ci-registration_test.py
+	@python3 -m unittest scripts/test/online-gate_test.py scripts/test/online-preflight_test.py scripts/test/online-host-gate_test.py scripts/test/online-hosted-opengauss-gate_test.py scripts/test/online-engine-registration_test.py scripts/test/online-engine-fixture_test.py scripts/test/online-workbench-mysql-fixture_test.py scripts/test/online-oceanbase-consumer-fixture_test.py scripts/test/online-tidb-consumer-fixture_test.py scripts/test/online-opengauss-consumer-fixture_test.py scripts/test/online-transfer-insert-only-fixture_test.py scripts/test/online-manager-minio-fixture_test.py scripts/test/online-security-transfer-fixture_test.py scripts/test/consumer-engine-recovery-online_test.py scripts/test/consumer-process-stability-online_test.py scripts/test/module-registry-recovery-online_test.py scripts/test/relational-consumer-flow-online_test.py scripts/test/transfer-insert-only-mysql-online_test.py scripts/test/standard-model-reference-deletion-online_test.py scripts/test/enterprise-catalog-publishing-online_test.py scripts/test/workbench-service-consumption-online_test.py scripts/test/manager-internal-artifact-lineage-online_test.py scripts/test/security-transfer-protection-online_test.py scripts/test/security-plaintext-access-online_test.py scripts/test/security-mysql-owner-protection-online_test.py scripts/ci/check-online-ci-registration_test.py
 	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
 
 test-release: ## 运行指定 T5 发布套件；用法：make test-release RELEASE_SUITE=common-python-cli

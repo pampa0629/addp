@@ -86,6 +86,7 @@ class OnlineGateTest(unittest.TestCase):
                 "security-plaintext-access",
                 "security-transfer-protection",
                 "standard-model-reference-deletion",
+                "tidb-consumer-flow",
                 "transfer-insert-only-mysql",
                 "workbench-service-consumption",
             },
@@ -123,6 +124,10 @@ class OnlineGateTest(unittest.TestCase):
         self.assertEqual(opengauss_suite.services, oceanbase_suite.services)
         self.assertTrue(opengauss_suite.nightly)
         self.assertFalse(oceanbase_suite.nightly)
+        tidb_suite = ONLINE_GATE.SUITES["tidb-consumer-flow"]
+        self.assertEqual(tidb_suite.command, oceanbase_suite.command)
+        self.assertEqual(tidb_suite.services, oceanbase_suite.services)
+        self.assertFalse(tidb_suite.nightly)
         transfer_suite = ONLINE_GATE.SUITES["transfer-insert-only-mysql"]
         self.assertEqual(
             transfer_suite.services,

@@ -185,6 +185,31 @@ func TestSystemServiceClientPreservesRegistryAPIErrorDiagnostics(t *testing.T) {
 	}
 }
 
+func TestModuleRegistryFailureLogPreservesSafeServiceTokenDiagnostics(t *testing.T) {
+	t.Parallel()
+
+	diagnostic := moduleRegistryFailureLog("heartbeat", ModuleRegistrationRequest{
+		ModuleName: "manager", InstanceID: "manager-1", Role: ModuleRuntimeRoleBackend,
+	}, &ServiceTokenError{
+		Code: "service_token_response_malformed", Retryable: true,
+		ResponseReason: "json_decode_failed", ResponseContentType: "application/json",
+		ResponseBodyBytes: 41,
+	})
+	for _, expected := range []string{
+		"operation=heartbeat", "module=manager", "instance_id=manager-1", "role=backend",
+		`error_code="service_token_response_malformed"`, "retryable=true",
+		`response_reason="json_decode_failed"`, `response_content_type="application/json"`,
+		"response_body_bytes=41",
+	} {
+		if !strings.Contains(diagnostic, expected) {
+			t.Fatalf("diagnostic %q does not contain %q", diagnostic, expected)
+		}
+	}
+	if strings.Contains(diagnostic, "access_token") {
+		t.Fatalf("diagnostic leaked token response content: %q", diagnostic)
+	}
+}
+
 func TestRegisterAndHeartbeatGeneratesBackendInstanceDeclaration(t *testing.T) {
 	t.Parallel()
 

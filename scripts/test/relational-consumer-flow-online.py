@@ -92,6 +92,13 @@ PROFILES: Mapping[str, ConsumerProfile] = {
         identifier_quote='"',
         fixture_script="business/scripts/online-opengauss-consumer-fixture.sh",
     ),
+    "tidb": ConsumerProfile(
+        engine_type="tidb",
+        namespace_kind="database",
+        item_code_prefix="TIDB",
+        identifier_quote="`",
+        fixture_script="business/scripts/online-tidb-consumer-fixture.sh",
+    ),
 }
 
 SOURCE_TABLE = "addp_online_consumer_source"

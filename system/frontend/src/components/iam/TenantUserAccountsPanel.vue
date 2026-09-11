@@ -10,7 +10,7 @@
 
     <el-table v-loading="loading" :data="rows" stripe>
       <el-table-column :label="t('system.iam.tabs.userAccounts')" min-width="220"><template #default="{ row }"><div class="iam-primary-cell"><strong>{{ row.display_name }} <el-tag v-if="isCurrentMembership(row)" size="small" effect="plain">{{ t('system.iam.memberships.currentAccount') }}</el-tag></strong><span>{{ row.username || row.principal_id }}</span></div></template></el-table-column>
-      <el-table-column :label="t('system.iam.memberships.source')" width="150"><template #default="{ row }">{{ t(`system.iam.source.${row.source_type}`) }}</template></el-table-column>
+      <el-table-column :label="t('system.iam.memberships.source')" width="150"><template #default="{ row }">{{ sourceLabel(row.source_type) }}</template></el-table-column>
       <el-table-column :label="t('system.iam.common.status')" width="120"><template #default="{ row }"><el-tag :type="statusType(row.status)">{{ statusLabel(row.status) }}</el-tag></template></el-table-column>
       <el-table-column :label="t('system.iam.memberships.joinedAt')" width="180"><template #default="{ row }">{{ formatDate(row.joined_at) }}</template></el-table-column>
       <el-table-column :label="t('system.iam.memberships.expiresAt')" width="180"><template #default="{ row }">{{ formatDate(row.expires_at) }}</template></el-table-column>
@@ -40,8 +40,9 @@ import { CircleClose, Edit, Refresh, RefreshLeft, Search, VideoPause } from '@el
 import { useI18n } from 'vue-i18n'
 import { iamAPI } from '../../api/iam'
 import { useAuthStore } from '../../store/auth'
+import { resolveMembershipSourceLabel } from '../../utils/iamPresentation'
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 const authStore = useAuthStore()
 const can = (permission) => authStore.hasPermission(permission)
 const statuses = ['active', 'suspended', 'ended']
@@ -57,6 +58,7 @@ const expiryRow = ref(null)
 const expiryDate = ref(null)
 
 function statusLabel(status) { return t(`system.iam.status.${status}`) }
+function sourceLabel(sourceType) { return resolveMembershipSourceLabel(sourceType, t, te) }
 function isCurrentMembership(row) { return row.id === authStore.authContext?.context?.tenant_membership_id }
 function statusType(status) { return ({ active: 'success', suspended: 'warning', ended: 'info' })[status] || 'info' }
 function formatDate(value) { return value ? new Date(value).toLocaleString() : '-' }

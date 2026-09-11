@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/addp/standard/internal/models"
 )
@@ -51,6 +52,47 @@ func SemanticFingerprint(value models.DocumentExtractionCandidate) string {
 
 func NormalizeText(value string) string {
 	return strings.Join(strings.Fields(value), " ")
+}
+
+// GovernanceState mirrors the read projection's precedence for one candidate occurrence.
+func GovernanceState(value models.DocumentExtractionCandidate) string {
+	if value.Formalization != nil {
+		return models.CandidateGroupStateFormalized
+	}
+	if value.ReviewedAt != nil && (value.Status == models.CandidateGroupStateRetained || value.Status == models.CandidateGroupStateRejected) {
+		return value.Status
+	}
+	return models.CandidateGroupStatePending
+}
+
+// IsPreferredRepresentative applies the single deterministic representative rule shared by reads and writes.
+func IsPreferredRepresentative(candidate models.DocumentExtractionCandidate, seenAt time.Time, current models.DocumentExtractionCandidate, currentSeenAt time.Time) bool {
+	candidateState, currentState := GovernanceState(candidate), GovernanceState(current)
+	candidateRank, currentRank := governanceStateRank(candidateState), governanceStateRank(currentState)
+	if candidateRank != currentRank {
+		return candidateRank > currentRank
+	}
+	switch candidateState {
+	case models.CandidateGroupStateFormalized:
+		candidateTime, currentTime := candidate.Formalization.CreatedAt, current.Formalization.CreatedAt
+		return candidateTime.After(currentTime) || (candidateTime.Equal(currentTime) && candidate.ID > current.ID)
+	case models.CandidateGroupStateRetained, models.CandidateGroupStateRejected:
+		candidateTime, currentTime := *candidate.ReviewedAt, *current.ReviewedAt
+		return candidateTime.After(currentTime) || (candidateTime.Equal(currentTime) && candidate.ID > current.ID)
+	default:
+		return seenAt.After(currentSeenAt) || (seenAt.Equal(currentSeenAt) && candidate.ID > current.ID)
+	}
+}
+
+func governanceStateRank(state string) int {
+	switch state {
+	case models.CandidateGroupStateFormalized:
+		return 2
+	case models.CandidateGroupStateRetained, models.CandidateGroupStateRejected:
+		return 1
+	default:
+		return 0
+	}
 }
 
 func normalizedPointer(value *string) string {

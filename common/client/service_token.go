@@ -23,16 +23,23 @@ type PlatformServiceTokenProvider interface {
 }
 
 type ServiceTokenError struct {
-	Code       string
-	StatusCode int
-	Retryable  bool
+	Code                string
+	StatusCode          int
+	Retryable           bool
+	ResponseReason      string
+	ResponseContentType string
+	ResponseBodyBytes   int
 }
 
 func (e *ServiceTokenError) Error() string {
-	if e.StatusCode > 0 {
-		return fmt.Sprintf("service token endpoint returned HTTP %d: %s", e.StatusCode, e.Code)
+	detail := e.Code
+	if e.ResponseReason != "" {
+		detail += ": " + e.ResponseReason
 	}
-	return e.Code
+	if e.StatusCode > 0 {
+		return fmt.Sprintf("service token endpoint returned HTTP %d: %s", e.StatusCode, detail)
+	}
+	return detail
 }
 
 // ServiceTokenInvalidator removes a rejected tenant token from a provider's
@@ -188,16 +195,62 @@ func (s *OAuthServiceTokenSource) token(ctx context.Context, cacheKey string, co
 			Retryable: response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= http.StatusInternalServerError,
 		}
 	}
-	var payload serviceTokenResponse
-	decoder := json.NewDecoder(strings.NewReader(string(responseBody)))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&payload); err != nil {
-		return "", &ServiceTokenError{Code: "service token endpoint returned an invalid token response"}
+	responseContentType := strings.TrimSpace(response.Header.Get("Content-Type"))
+	if len(responseContentType) > 256 {
+		responseContentType = responseContentType[:256]
 	}
-	if !strings.HasPrefix(payload.AccessToken, "addp_at_") ||
-		!strings.EqualFold(payload.TokenType, "Bearer") || payload.ExpiresIn <= 0 || payload.ExpiresIn > 300 ||
-		(payload.Scope != "" && payload.Scope != "addp.api") {
-		return "", &ServiceTokenError{Code: "service token endpoint returned an invalid token response"}
+	responseDiagnostics := ServiceTokenError{
+		ResponseContentType: responseContentType,
+		ResponseBodyBytes:   len(responseBody),
+	}
+	var envelope any
+	if err := json.Unmarshal(responseBody, &envelope); err != nil {
+		responseDiagnostics.Code = "service_token_response_malformed"
+		responseDiagnostics.Retryable = true
+		responseDiagnostics.ResponseReason = "json_decode_failed"
+		return "", &responseDiagnostics
+	}
+	fields, ok := envelope.(map[string]any)
+	if !ok {
+		responseDiagnostics.Code = "service_token_response_invalid"
+		responseDiagnostics.ResponseReason = "top_level_type"
+		return "", &responseDiagnostics
+	}
+	allowedFields := map[string]struct{}{
+		"access_token": {},
+		"token_type":   {},
+		"expires_in":   {},
+		"scope":        {},
+	}
+	for field := range fields {
+		if _, allowed := allowedFields[field]; !allowed {
+			responseDiagnostics.Code = "service_token_response_invalid"
+			responseDiagnostics.ResponseReason = "unexpected_fields"
+			return "", &responseDiagnostics
+		}
+	}
+	var payload serviceTokenResponse
+	if err := json.Unmarshal(responseBody, &payload); err != nil {
+		responseDiagnostics.Code = "service_token_response_invalid"
+		responseDiagnostics.ResponseReason = "field_types"
+		return "", &responseDiagnostics
+	}
+	responseDiagnostics.Code = "service_token_response_invalid"
+	if !strings.HasPrefix(payload.AccessToken, "addp_at_") || len(payload.AccessToken) == len("addp_at_") {
+		responseDiagnostics.ResponseReason = "access_token"
+		return "", &responseDiagnostics
+	}
+	if !strings.EqualFold(payload.TokenType, "Bearer") {
+		responseDiagnostics.ResponseReason = "token_type"
+		return "", &responseDiagnostics
+	}
+	if payload.ExpiresIn <= 0 || payload.ExpiresIn > 300 {
+		responseDiagnostics.ResponseReason = "expires_in"
+		return "", &responseDiagnostics
+	}
+	if payload.Scope != "" && payload.Scope != "addp.api" {
+		responseDiagnostics.ResponseReason = "scope"
+		return "", &responseDiagnostics
 	}
 	s.cache[cacheKey] = cachedServiceToken{value: payload.AccessToken, expiresAt: now.Add(time.Duration(payload.ExpiresIn) * time.Second)}
 	return payload.AccessToken, nil

@@ -11,6 +11,7 @@
 # - mongodb: MongoDB（文档型 NoSQL 数据库）
 # - oceanbase: OceanBase CE（MySQL 模式分布式关系数据库）
 # - opengauss: openGauss 6.0.6 LTS（PG 兼容模式关系数据库）
+# - tidb-pd/tidb-tikv/tidb: TiDB 8.5.8 三组件分布式关系数据库
 # - neo4j: Neo4j Community Edition（图数据库，知识图谱）
 # - spark-master/workers: Apache Spark 分布式计算引擎
 # - business-redpanda: 业务 Kafka API 消息流
@@ -288,6 +289,56 @@ services:
       start_period: 300s
     restart: unless-stopped
 
+  tidb-pd:
+    image: pingcap/pd:v8.5.8@sha256:424e896800e42e1b7eb585b604c8daa3454110d0f0df5ab41f7c5f49164d3aef
+    container_name: business-tidb-pd
+    command:
+      - --name=tidb-pd
+      - --data-dir=/data/pd
+      - --client-urls=http://0.0.0.0:2379
+      - --peer-urls=http://0.0.0.0:2380
+      - --advertise-client-urls=http://tidb-pd:2379
+      - --advertise-peer-urls=http://tidb-pd:2380
+      - --initial-cluster=tidb-pd=http://tidb-pd:2380
+    volumes:
+      - tidb_pd_data:/data/pd
+    networks:
+      - business-network
+    restart: unless-stopped
+
+  tidb-tikv:
+    image: pingcap/tikv:v8.5.8@sha256:ab84580b6795868940231aa778a34b082d19e4417e6d66f755c609bebdbbfd69
+    container_name: business-tidb-tikv
+    command:
+      - --addr=0.0.0.0:20160
+      - --advertise-addr=tidb-tikv:20160
+      - --data-dir=/data/tikv
+      - --pd=tidb-pd:2379
+    depends_on:
+      - tidb-pd
+    volumes:
+      - tidb_tikv_data:/data/tikv
+    networks:
+      - business-network
+    restart: unless-stopped
+
+  tidb:
+    image: pingcap/tidb:v8.5.8@sha256:df168c764bf2dfdb166dc37a5c3b0e210d29d5f3ab2d33317fd0fdf7b32037f5
+    container_name: business-tidb
+    command:
+      - --store=tikv
+      - --path=tidb-pd:2379
+      - --host=0.0.0.0
+      - --advertise-address=tidb
+    depends_on:
+      - tidb-pd
+      - tidb-tikv
+    ports:
+      - "${TIDB_PORT:-4000}:4000"
+    networks:
+      - business-network
+    restart: unless-stopped
+
   opengauss:
     image: opengauss:6.0.6
     container_name: business-opengauss
@@ -503,6 +554,10 @@ volumes:
   oceanbase_obd_data:
     driver: local
   opengauss_data:
+    driver: local
+  tidb_pd_data:
+    driver: local
+  tidb_tikv_data:
     driver: local
   doris_fe_data:
     driver: local

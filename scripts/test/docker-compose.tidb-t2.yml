@@ -1,0 +1,37 @@
+services:
+  tidb-pd:
+    image: pingcap/pd:v8.5.8@sha256:424e896800e42e1b7eb585b604c8daa3454110d0f0df5ab41f7c5f49164d3aef
+    command:
+      - --name=tidb-pd
+      - --data-dir=/tmp/pd
+      - --client-urls=http://0.0.0.0:2379
+      - --peer-urls=http://0.0.0.0:2380
+      - --advertise-client-urls=http://tidb-pd:2379
+      - --advertise-peer-urls=http://tidb-pd:2380
+      - --initial-cluster=tidb-pd=http://tidb-pd:2380
+    restart: "no"
+
+  tidb-tikv:
+    image: pingcap/tikv:v8.5.8@sha256:ab84580b6795868940231aa778a34b082d19e4417e6d66f755c609bebdbbfd69
+    command:
+      - --addr=0.0.0.0:20160
+      - --advertise-addr=tidb-tikv:20160
+      - --data-dir=/tmp/tikv
+      - --pd=tidb-pd:2379
+    depends_on:
+      - tidb-pd
+    restart: "no"
+
+  tidb:
+    image: pingcap/tidb:v8.5.8@sha256:df168c764bf2dfdb166dc37a5c3b0e210d29d5f3ab2d33317fd0fdf7b32037f5
+    command:
+      - --store=tikv
+      - --path=tidb-pd:2379
+      - --host=0.0.0.0
+      - --advertise-address=tidb
+    depends_on:
+      - tidb-pd
+      - tidb-tikv
+    ports:
+      - "127.0.0.1:${TIDB_T2_PORT:-14000}:4000"
+    restart: "no"

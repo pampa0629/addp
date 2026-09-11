@@ -7,6 +7,7 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	commonrepo "github.com/addp/common/repository"
+	candidateutil "github.com/addp/standard/internal/candidate"
 	"github.com/addp/standard/internal/models"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -19,6 +20,7 @@ var (
 	ErrCandidateScopeConflict        = errors.New("standard candidate scope conflicts with target")
 	ErrCandidateTargetDraftExists    = errors.New("standard candidate target has a work revision")
 	ErrCandidateReferenceUnavailable = errors.New("standard candidate reference cannot be resolved uniquely")
+	ErrCandidateRepresentativeStale  = errors.New("standard candidate is not the current representative")
 )
 
 type DocumentCandidateContext struct {
@@ -65,6 +67,22 @@ func (r *DocumentRepository) FormalizeCandidate(candidateID, tenantID, userID in
 			return err
 		}
 		candidate, document := &context.Candidate, &context.Document
+		var familyCandidates []models.DocumentExtractionCandidate
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Table("standard.document_extraction_candidates AS candidate").Select("candidate.*").
+			Joins("JOIN standard.document_extractions extraction ON extraction.id = candidate.extraction_id").
+			Joins("JOIN standard.document_revisions revision ON revision.id = extraction.document_revision_id").
+			Where("extraction.tenant_id = ? AND revision.document_id = ? AND candidate.candidate_type = ? AND candidate.code = ?", tenantID, document.ID, candidate.CandidateType, candidate.Code).
+			Order("candidate.id ASC").Find(&familyCandidates).Error; err != nil {
+			return err
+		}
+		representatives, _, err := selectCurrentCandidateRepresentatives(tx, familyCandidates)
+		if err != nil {
+			return err
+		}
+		representative, exists := representatives[candidateutil.SemanticFingerprint(*candidate)]
+		if !exists || representative.candidate.ID != candidate.ID {
+			return ErrCandidateRepresentativeStale
+		}
 		if candidate.Version != plan.CandidateVersion || document.Version != plan.SourceDocumentVersion || candidate.CandidateType != plan.CandidateType {
 			return ErrCandidateFormalizationStale
 		}

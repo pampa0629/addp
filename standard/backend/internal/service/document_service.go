@@ -1125,6 +1125,8 @@ func mapCandidateFormalizationError(err error) error {
 	switch {
 	case errors.Is(err, repository.ErrCandidateFamilyDecisionRequired):
 		return ErrCandidateFamilyDecisionRequired
+	case errors.Is(err, repository.ErrCandidateRepresentativeStale):
+		return ErrCandidateRepresentativeStale
 	case errors.Is(err, repository.ErrCandidateNotRetained):
 		return ErrCandidateNotRetained
 	case errors.Is(err, repository.ErrCandidateAlreadyFormalized):

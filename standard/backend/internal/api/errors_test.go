@@ -47,6 +47,7 @@ func TestRespondErrorMapsStructuredErrorsAndLanguage(t *testing.T) {
 		{name: "candidate formalization invalid", err: service.ErrCandidateFormalizationInvalid, fallback: http.StatusInternalServerError, wantStatus: http.StatusBadRequest, wantBody: "formalization request is invalid"},
 		{name: "candidate family decision required", err: service.ErrCandidateFamilyDecisionRequired, fallback: http.StatusInternalServerError, wantStatus: http.StatusConflict, wantBody: "multi-variant family"},
 		{name: "candidate family decision invalid", err: service.ErrCandidateFamilyDecisionInvalid, fallback: http.StatusInternalServerError, wantStatus: http.StatusBadRequest, wantBody: "two to one hundred distinct semantic variants"},
+		{name: "candidate representative stale", err: service.ErrCandidateRepresentativeStale, fallback: http.StatusInternalServerError, wantStatus: http.StatusConflict, wantBody: "no longer the current representative"},
 		{name: "unknown bad request", err: fmt.Errorf("binding internals"), fallback: http.StatusBadRequest, wantStatus: http.StatusBadRequest, wantBody: "Invalid request parameters"},
 		{name: "wrapped document not found", err: fmt.Errorf("link document: %w", commonapi.ErrNotFound), fallback: http.StatusBadRequest, wantStatus: http.StatusNotFound, wantBody: "Resource not found"},
 	}
@@ -203,6 +204,24 @@ func TestRespondErrorReturnsCandidateFamilyDecisionRequiredCode(t *testing.T) {
 		t.Fatal(err)
 	}
 	if recorder.Code != http.StatusConflict || response.ErrorCode != "candidate_family_decision_required" {
+		t.Fatalf("status=%d error_code=%q body=%s", recorder.Code, response.ErrorCode, recorder.Body.String())
+	}
+}
+
+func TestRespondErrorReturnsCandidateRepresentativeStaleCode(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Set("addp_lang", "en")
+
+	respondError(context, http.StatusInternalServerError, service.ErrCandidateRepresentativeStale)
+
+	var response struct {
+		ErrorCode string `json:"error_code"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if recorder.Code != http.StatusConflict || response.ErrorCode != "candidate_representative_stale" {
 		t.Fatalf("status=%d error_code=%q body=%s", recorder.Code, response.ErrorCode, recorder.Body.String())
 	}
 }

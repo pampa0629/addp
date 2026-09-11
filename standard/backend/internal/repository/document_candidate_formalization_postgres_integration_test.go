@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"testing"
@@ -47,7 +48,52 @@ func TestPostgresDocumentCandidateFormalization(t *testing.T) {
 		_ = db.Where("tenant_id = ?", tenantID).Delete(&models.Document{}).Error
 	})
 
-	result, err := NewDocumentRepository(db).FormalizeCandidate(candidate.ID, tenantID, 9, DocumentCandidateFormalizationPlan{
+	repo := NewDocumentRepository(db)
+	t.Run("rejects historical non-representative candidate", func(t *testing.T) {
+		historicalCode := fmt.Sprintf("outdoor_historical_%d", tenantID)
+		historicalDocument := models.Document{TenantID: tenantID, ScopeType: models.StandardScopeTenantCommon, Code: "doc_" + historicalCode, DocType: "internal", CreatedBy: 1, Version: 1, LifecycleState: "active"}
+		if err := db.Create(&historicalDocument).Error; err != nil {
+			t.Fatal(err)
+		}
+		historicalRevision := models.DocumentRevision{DocumentID: historicalDocument.ID, RevisionNo: 1, Status: models.RevisionStatusDraft, Name: "历史正式化校验", ChangeSummary: "initial", CreatedBy: 1}
+		if err := db.Create(&historicalRevision).Error; err != nil {
+			t.Fatal(err)
+		}
+		historicalExtraction := models.DocumentExtraction{TenantID: tenantID, DocumentRevisionID: historicalRevision.ID, Status: "completed", RequestedBy: 1}
+		if err := db.Create(&historicalExtraction).Error; err != nil {
+			t.Fatal(err)
+		}
+		firstReviewedAt := time.Now().UTC().Add(-time.Minute)
+		currentReviewedAt := firstReviewedAt.Add(time.Minute)
+		reviewerID := int64(9)
+		historicalCandidates := []models.DocumentExtractionCandidate{
+			{ExtractionID: historicalExtraction.ID, CandidateType: "glossary", Code: historicalCode, Name: "户外 活动", Definition: "同一定义", Status: "retained", Version: 1, ReviewedBy: &reviewerID, ReviewedAt: &firstReviewedAt},
+			{ExtractionID: historicalExtraction.ID, CandidateType: "glossary", Code: historicalCode, Name: "户外\n活动", Definition: "同一定义", Status: "retained", Version: 1, ReviewedBy: &reviewerID, ReviewedAt: &currentReviewedAt},
+		}
+		if err := db.Create(&historicalCandidates).Error; err != nil {
+			t.Fatal(err)
+		}
+		_, err := repo.FormalizeCandidate(historicalCandidates[0].ID, tenantID, 9, DocumentCandidateFormalizationPlan{
+			Action: models.CandidateFormalizationCreatedIdentity, CandidateType: "glossary", CandidateVersion: 1,
+			SourceDocumentVersion: 1, ChangeSummary: "历史出现记录不得正式化",
+		})
+		if !errors.Is(err, ErrCandidateRepresentativeStale) {
+			t.Fatalf("error = %v, want ErrCandidateRepresentativeStale", err)
+		}
+		var formalizationCount, glossaryCount int64
+		ids := []int64{historicalCandidates[0].ID, historicalCandidates[1].ID}
+		if err := db.Model(&models.DocumentCandidateFormalization{}).Where("candidate_id IN ?", ids).Count(&formalizationCount).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Model(&models.Glossary{}).Where("tenant_id = ? AND code = ?", tenantID, historicalCode).Count(&glossaryCount).Error; err != nil {
+			t.Fatal(err)
+		}
+		if formalizationCount != 0 || glossaryCount != 0 {
+			t.Fatalf("formalization_count=%d glossary_count=%d, want no side effects", formalizationCount, glossaryCount)
+		}
+	})
+
+	result, err := repo.FormalizeCandidate(candidate.ID, tenantID, 9, DocumentCandidateFormalizationPlan{
 		Action: models.CandidateFormalizationCreatedIdentity, CandidateType: "glossary", CandidateVersion: 1,
 		SourceDocumentVersion: 1, ChangeSummary: "由户外标准文档提炼",
 	})

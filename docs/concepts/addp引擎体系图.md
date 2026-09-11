@@ -282,7 +282,7 @@ pg.table(schema="public", name="roads")
 | Engine | Facade 原生层级 | 公开发现方法 | 公开读取方法 |
 | --- | --- | --- | --- |
 | PostgreSQL、openGauss | schema -> table/view | `schemas()`、`tables(schema=...)` | table/view: `head()`、`scan()`、`to_pandas()`；engine: `sql()` |
-| MySQL、Doris、ClickHouse、Spark SQL | database -> table/view | `databases()`、`tables(database=...)` | table/view: `head()`、`scan()`、`to_pandas()`；engine: `sql()` |
+| MySQL、OceanBase、TiDB、Doris、ClickHouse、Spark SQL | database -> table/view | `databases()`、`tables(database=...)` | table/view: `head()`、`scan()`、`to_pandas()`；engine: `sql()` |
 | MongoDB | database -> collection | `databases()`、`collections(database=...)` | collection: `head()`、`scan()`、`to_pandas()`；engine: `mql()` |
 | Neo4j | database -> graph | `databases()`、`graphs(database=...)` | graph: `sample()`；engine: `cypher()` |
 | MinIO、S3 | bucket -> prefix -> object | `buckets()`、`objects(bucket=..., prefix=...)` | object: `open()`、`read_range()` |
@@ -341,7 +341,7 @@ pg.sql("SELECT * FROM public.farmland WHERE id > $1", params=[100], max_rows=100
 
 | 引擎族 | 引擎 |
 | --- | --- |
-| 表格型 | PostgreSQL、Oracle、MySQL、OceanBase、Doris、ClickHouse、Spark SQL |
+| 表格型 | PostgreSQL、Oracle、MySQL、OceanBase、openGauss、TiDB、Doris、ClickHouse、Spark SQL |
 | 动态 schema 记录集合型 | MongoDB |
 | 图数据库 | Neo4j |
 | 对象存储 | MinIO、S3 |
@@ -371,7 +371,7 @@ pg.sql("SELECT * FROM public.farmland WHERE id > $1", params=[100], max_rows=100
 - Jupyter 必须由 Develop 创建受控计算会话，不向 Notebook 注入长期明文 Engine 连接，不直接返回共享 Lab 作为数据访问主路径。Notebook 只能获得按 Execution Authorization 收窄的临时访问能力。
 - Kafka topic 通过 `service -> topic` Engine Catalog 暴露；partition 只作为 ChangeStreamReader assignment、position 和 diagnostics，不进入资源树。
 - 业务 Kafka 是 System Engine；Infra Kafka 来自 ADDP 部署配置，不注册 Engine Instance，但复用相同 Kafka client/reader 底层实现。
-- SQL metadata 复用只允许在事实来源和语义一致的引擎家族内发生，例如 MySQL、OceanBase MySQL 模式和 Doris 共享 `information_schema` helper；PostgreSQL、ClickHouse、Spark SQL 等差异较大的实现保留在各自插件内。共享协议或 SQL 方言不改变 `engine_type`；所有方言差异必须由 `SQLDialectProvider.SQLDialect()` 声明，上层不维护兼容引擎白名单。
+- SQL metadata 复用只允许在事实来源和语义一致的引擎家族内发生，例如 MySQL、OceanBase MySQL 模式、TiDB 和 Doris 共享 `information_schema` helper；PostgreSQL、ClickHouse、Spark SQL 等差异较大的实现保留在各自插件内。共享协议或 SQL 方言不改变 `engine_type`；所有方言差异必须由 `SQLDialectProvider.SQLDialect()` 声明，上层不维护兼容引擎白名单。
 - AI 调用统一走 `InferenceRuntimeProvider` 和 `addp.inference/v1`。调用方不得直连 OpenAI、DashScope、Ollama 或其他厂商协议，也不得读取厂商 API Key。
 - 第一版只允许一个 active、平台内置且声明 `compute.inference.supported=true` 的 Inference Runtime Engine Instance。调用方必须通过 System Runtime Descriptor 精确解析该实例；零个或多个候选都明确失败，不得使用模块环境变量、固定端口、列表第一项或隐藏 fallback 选择 Runtime。
 - `compute.inference` 只声明 Runtime 支持的统一操作和输入模态，不保存动态 Provider、Deployment 或 Profile 列表；动态资源由 Inference 控制面查询。

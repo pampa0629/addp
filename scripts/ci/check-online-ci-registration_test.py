@@ -612,6 +612,71 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                 self.repository, {"oceanbase-consumer-flow"}
             )
 
+    def test_requires_tidb_consumer_flow_owner_and_digest_contract(self) -> None:
+        host = self.repository / "scripts/test/online-host-gate.sh"
+        host.write_text(
+            host.read_text(encoding="utf-8")
+            + "\ntidb-consumer-flow)\n"
+            + "SYSTEM_URL GATEWAY_URL META_URL MANAGER_URL TRANSFER_URL DEVELOP_URL SERVICE_URL\n"
+            + "ADDP_ONLINE_TIDB_ENGINE_ID ADDP_ONLINE_TIDB_PORT\n"
+            + "ADDP_ONLINE_TIDB_DATABASE ADDP_ONLINE_TIDB_USER\n"
+            + "bash business/scripts/online-tidb-consumer-fixture.sh start\n"
+            + "bash business/scripts/online-tidb-consumer-fixture.sh stop\n"
+            + 'bash scripts/dev/start.sh "$START_TARGET"\n',
+            encoding="utf-8",
+        )
+        fixture = self.repository / "business/scripts/online-tidb-consumer-fixture.sh"
+        fixture.parent.mkdir(parents=True, exist_ok=True)
+        fixture.write_text(
+            "ADDP_ONLINE_HOST docker-compose.tidb-t2.yml addp-online-tidb-consumer "
+            "addp_online_consumer_source addp_online_consumer_target "
+            "start|advance|stop|status reset_fixture "
+            "down --volumes --remove-orphans assert_zero_residue\n",
+            encoding="utf-8",
+        )
+        compose = self.repository / "scripts/test/docker-compose.tidb-t2.yml"
+        compose.write_text(
+            "services:\n"
+            "  tidb-pd:\n"
+            "    image: pingcap/pd:v8.5.8@sha256:" + "a" * 64 + "\n"
+            "  tidb-tikv:\n"
+            "    image: pingcap/tikv:v8.5.8@sha256:" + "b" * 64 + "\n"
+            "  tidb:\n"
+            "    image: pingcap/tidb:v8.5.8@sha256:" + "c" * 64 + "\n",
+            encoding="utf-8",
+        )
+        owner = self.repository / "scripts/test/relational-consumer-flow-online.py"
+        owner.write_text(
+            '"tidb": ConsumerProfile(\n'
+            'namespace_kind="database"\nitem_code_prefix="TIDB"\n'
+            'identifier_quote="`"\n'
+            'fixture_script="business/scripts/online-tidb-consumer-fixture.sh"\n'
+            '"verification_owner": "deployment_profile"\n'
+            '"schema_version": "addp.relational-consumer-flow-online/v1"\n'
+            '"residual_resources": 0\n',
+            encoding="utf-8",
+        )
+        for relative in (
+            "scripts/test/online-tidb-consumer-fixture_test.py",
+            "scripts/test/relational-consumer-flow-online_test.py",
+        ):
+            (self.repository / relative).write_text("fixture\n", encoding="utf-8")
+
+        CHECK.validate_tidb_consumer_flow_profile(
+            self.repository, {"tidb-consumer-flow"}
+        )
+        compose.write_text(
+            compose.read_text(encoding="utf-8").replace(
+                "pingcap/tidb:v8.5.8@sha256:" + "c" * 64,
+                "pingcap/tidb:v8.5.8",
+            ),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(CHECK.RegistrationError, "pin pingcap/tidb"):
+            CHECK.validate_tidb_consumer_flow_profile(
+                self.repository, {"tidb-consumer-flow"}
+            )
+
     def test_requires_opengauss_hosted_owner_and_identity_contracts(self) -> None:
         hosted = self.repository / "scripts/test/online-hosted-opengauss-gate.sh"
         hosted.write_text(

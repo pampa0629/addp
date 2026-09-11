@@ -151,6 +151,52 @@ class T2CIRegistrationTest(unittest.TestCase):
             encoding="utf-8",
         )
 
+    def _add_owned_service_gate(self, tidb_image: str) -> None:
+        script = self.repository / "scripts/test/common-tidb-gate.sh"
+        script.write_text(
+            "#!/usr/bin/env bash\n"
+            "# ADDP_T2_OWNED_SERVICES=tidb-pd,tidb-tikv,tidb\n"
+            "# ADDP_T2_COMPOSE_FILE=scripts/test/docker-compose.tidb-t2.yml\n"
+            "database=addp_tidb_disposable\n"
+            "docker compose up -d tidb-pd tidb-tikv tidb\n"
+            "docker compose down --volumes --remove-orphans\n",
+            encoding="utf-8",
+        )
+        compose = self.repository / "scripts/test/docker-compose.tidb-t2.yml"
+        compose.write_text(
+            "services:\n"
+            "  tidb-pd:\n"
+            "    image: pingcap/pd:v8.5.8@sha256:" + "b" * 64 + "\n"
+            "  tidb-tikv:\n"
+            "    image: pingcap/tikv:v8.5.8@sha256:" + "c" * 64 + "\n"
+            "  tidb:\n"
+            f"    image: {tidb_image}\n",
+            encoding="utf-8",
+        )
+        makefile = self.repository / "Makefile"
+        makefile.write_text(
+            makefile.read_text(encoding="utf-8").replace(
+                "\t@$(MAKE) test-sample-postgres\n",
+                "\t@$(MAKE) test-sample-postgres\n"
+                "\t@$(MAKE) test-common-tidb\n",
+                1,
+            )
+            + "\ntest-common-tidb:\n"
+            + "\t@bash scripts/test/common-tidb-gate.sh\n",
+            encoding="utf-8",
+        )
+        self.workflow.write_text(
+            self._workflow_text()
+            + "  common-tidb:\n"
+            + "    steps:\n"
+            + "      - name: Select common gate\n"
+            + "        id: common\n"
+            + "        run: python3 scripts/ci/select-module-gate.py --module common\n"
+            + "      - name: Run TiDB gate\n"
+            + "        run: make test-common-tidb\n",
+            encoding="utf-8",
+        )
+
     def _set_sample_disposable_database_contract(self, database: str) -> None:
         script = self.repository / "scripts/test/sample-postgres-gate.sh"
         script.write_text(
@@ -240,6 +286,13 @@ class T2CIRegistrationTest(unittest.TestCase):
 
         self.assertEqual([], MODULE.validate_registration(self.repository))
 
+    def test_accepts_owned_service_gate(self) -> None:
+        self._add_owned_service_gate(
+            "pingcap/tidb:v8.5.8@sha256:" + "d" * 64
+        )
+
+        self.assertEqual([], MODULE.validate_registration(self.repository))
+
     def test_rejects_hosted_only_gate_in_local_aggregate(self) -> None:
         self._add_hosted_only_gate()
         makefile = self.repository / "Makefile"
@@ -267,6 +320,15 @@ class T2CIRegistrationTest(unittest.TestCase):
         self.assertIn(
             "scripts/test/common-mysql-data-protection-gate.sh: mysql service image "
             "must pin an explicit tag and digest in test-common-mysql-data-protection job",
+            MODULE.validate_registration(self.repository),
+        )
+
+    def test_rejects_unpinned_owned_service_image(self) -> None:
+        self._add_owned_service_gate("pingcap/tidb:v8.5.8")
+
+        self.assertIn(
+            "scripts/test/common-tidb-gate.sh: tidb image must pin an explicit tag "
+            "and digest in scripts/test/docker-compose.tidb-t2.yml",
             MODULE.validate_registration(self.repository),
         )
 

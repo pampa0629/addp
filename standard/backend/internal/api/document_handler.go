@@ -619,13 +619,13 @@ func (h *DocumentHandler) ListCandidateFamilyDecisions(c *gin.Context) {
 }
 
 // @Summary 裁决文档提炼候选 | Review document extraction candidate
-// @Description 仅当候选所在文档、候选类型与编码下恰好一个语义变体时执行单项保留或驳回；多语义变体候选族必须使用原子胜出裁决 | Retains or rejects one candidate only when its document, type, and code identify exactly one semantic variant; multi-variant families require the atomic winner decision
+// @Description 仅当候选所在文档、候选类型与编码下恰好一个语义变体，且请求候选为该变体的当前代表时执行单项保留或驳回；多语义变体候选族必须使用原子胜出裁决 | Retains or rejects one candidate only when its document, type, and code identify exactly one semantic variant and the requested candidate is its current representative; multi-variant families require the atomic winner decision
 // @Tags Standard
 // @Accept json
 // @Produce json
 // @Param request body models.UpdateDocumentExtractionCandidateRequest true "裁决状态及并发版本 | Decision and concurrency version"
 // @Success 200 {object} models.DocumentExtractionCandidate
-// @Failure 409 {object} map[string]string "多语义变体候选族必须使用胜出裁决，error_code=candidate_family_decision_required；或候选已正式化、并发版本冲突 | Multi-variant family requires winner decision, error_code=candidate_family_decision_required; or candidate already formalized or version conflict"
+// @Failure 409 {object} map[string]string "历史非代表候选返回 error_code=candidate_representative_stale；多语义变体候选族必须使用胜出裁决，error_code=candidate_family_decision_required；或候选已正式化、并发版本冲突 | Historical non-representative candidate returns error_code=candidate_representative_stale; multi-variant family requires winner decision, error_code=candidate_family_decision_required; or candidate already formalized or version conflict"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.document.update"]
 // @Router /document-extraction-candidates/{candidate_id} [put]
@@ -655,7 +655,7 @@ func (h *DocumentHandler) UpdateCandidate(c *gin.Context) {
 // @Param id path int true "文档 ID | Document ID"
 // @Param request body models.DecideDocumentCandidateFamilyRequest true "候选成员、并发版本、胜出候选及 1–1000 字符人工理由 | Candidate members, concurrency versions, winner, and a 1–1000 character human reason"
 // @Success 200 {object} models.DocumentCandidateFamilyDecisionResponse
-// @Failure 400 {object} map[string]string "理由、成员数量、重复成员、跨族成员或胜出候选无效，error_code=candidate_family_decision_invalid | Invalid reason, member count, duplicate member, cross-family member, or winner; error_code=candidate_family_decision_invalid"
+// @Failure 400 {object} map[string]string "理由、成员数量、重复成员、跨族成员、非当前代表成员或胜出候选无效，error_code=candidate_family_decision_invalid | Invalid reason, member count, duplicate member, cross-family member, non-current representative, or winner; error_code=candidate_family_decision_invalid"
 // @Failure 404 {object} map[string]string
 // @Failure 409 {object} map[string]string "候选已正式化或并发版本冲突 | Candidate already formalized or concurrency version conflict"
 // @x-addp-auth-mode "permission"
@@ -680,7 +680,7 @@ func (h *DocumentHandler) DecideCandidateFamily(c *gin.Context) {
 }
 
 // @Summary 正式化文档提炼候选 | Formalize document extraction candidate
-// @Description 服务器根据实时比对唯一决定创建 R1 草稿、创建既有标准的新修订草稿或关联内容一致修订；不会提交审核或发布 | The server uniquely decides whether to create an R1 draft, create a new draft revision, or link an identical revision; it never submits or publishes
+// @Description 仅允许已保留且仍是其语义变体当前代表的候选；服务器根据实时比对唯一决定创建 R1 草稿、创建既有标准的新修订草稿或关联内容一致修订，不会提交审核或发布 | Only a retained candidate that remains the current representative of its semantic variant may be formalized; the server uniquely decides whether to create an R1 draft, create a new draft revision, or link an identical revision, and never submits or publishes
 // @Tags Standard
 // @Accept json
 // @Produce json
@@ -690,7 +690,7 @@ func (h *DocumentHandler) DecideCandidateFamily(c *gin.Context) {
 // @Failure 400 {object} map[string]string "正式化请求或候选编码无效，编码错误返回 error_code=invalid_standard_code | Invalid formalization request or candidate code; code errors return error_code=invalid_standard_code"
 // @Failure 403 {object} map[string]string
 // @Failure 404 {object} map[string]string
-// @Failure 409 {object} map[string]string
+// @Failure 409 {object} map[string]string "历史非代表候选返回 error_code=candidate_representative_stale；或候选状态、并发版本、目标工作修订冲突 | Historical non-representative candidate returns error_code=candidate_representative_stale; or candidate state, version, or target work revision conflicts"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.document.update"]
 // @x-addp-conditional-permissions ["standard.glossary.create","standard.glossary.update","standard.element.create","standard.element.update","standard.code_set.create","standard.code_set.update","standard.metric.create","standard.metric.update"]

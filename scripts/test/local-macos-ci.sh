@@ -368,6 +368,7 @@ start_disposable_databases() {
     fail "disposable OceanBase failed to start"
   fi
   wait_for_disposable_database oceanbase OceanBase "$OCEANBASE_CONTAINER_NAME" 127.0.0.1:12881 720
+
 }
 
 run_infra() {

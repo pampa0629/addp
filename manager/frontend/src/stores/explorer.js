@@ -308,7 +308,6 @@ export const useExplorerStore = defineStore('explorer', {
 
       try {
         const loc = parseLocator(locator)
-        const previousDepth = this.engineTreeDepths[loc.engineId] || 2
         const response = await dataExplorerAPI.refreshNode(loc.engineId, locator)
         const result = response?.data || response
         const run = result?.run || result?.data?.run
@@ -318,10 +317,8 @@ export const useExplorerStore = defineStore('explorer', {
           notifyRefreshHook(hooks.onScanCompleted, result.run)
         }
 
-        this.clearEngineNodeCache(loc.engineId)
-        delete this.engineTrees[loc.engineId]
-        delete this.engineTreeDepths[loc.engineId]
-        await this.loadTree(loc.engineId, previousDepth, true)
+        delete this.nodeChildrenCache[locator]
+        await this.loadNodeChildren(locator, true)
 
         return result
       } catch (error) {
@@ -333,7 +330,7 @@ export const useExplorerStore = defineStore('explorer', {
     },
 
     /**
-     * 刷新节点（仅重载树，不重新拉取预览）
+     * 刷新节点并重载目标节点的直接子资源。
      */
     async refreshNode(locator, hooks = {}) {
       return await this.refreshTree(locator, hooks)
@@ -609,9 +606,6 @@ export const useExplorerStore = defineStore('explorer', {
       if (!forceRefresh && this.nodeChildrenCache[locator]) {
         const cache = this.nodeChildrenCache[locator]
         if (Date.now() - cache.timestamp < this.cacheConfig.maxAge) {
-          if (cache.children.length === 0 && existingNode?.children?.length) {
-            return existingNode.children
-          }
           return cache.children
         }
       }
@@ -619,19 +613,16 @@ export const useExplorerStore = defineStore('explorer', {
       try {
         // 3. 调用后端 API
         const response = await dataExplorerAPI.getNodeChildren(loc.engineId, locator)
-        // API 客户端已经通过 extractData 提取了 response.data
-        // 后端返回 { parent_locator: ..., children: [...] }
+        // API 客户端已经通过 extractData 提取了 response.data。
+        // 后端返回当前节点的权威事实及其直接子资源。
         const children = response.children || []
-        if (children.length === 0 && existingNode?.children?.length) {
-          return existingNode.children
-        }
 
         // 获取引擎类型并为子节点添加 engineType
         const engine = this.engines.find(e => e.id === loc.engineId)
-        if (engine && children.length > 0) {
-          children.forEach(child => {
-            this.addEngineTypeToTree(child, engine.engine_type)
-          })
+        if (engine && response?.locator) {
+          this.addEngineTypeToTree(response, engine.engine_type)
+        } else if (engine && children.length > 0) {
+          children.forEach(child => this.addEngineTypeToTree(child, engine.engine_type))
         }
 
         // 4. 更新缓存
@@ -642,10 +633,12 @@ export const useExplorerStore = defineStore('explorer', {
 
         // 5. 更新引擎树（增量更新）
         if (this.engineTrees[loc.engineId]) {
+          const parentFacts = response?.locator ? { ...response } : {}
           const updated = this.updateTreeNode(this.engineTrees[loc.engineId], locator, {
+            ...parentFacts,
             children,
             loaded: true,
-            hasChildren: children.length > 0 || existingNode?.hasChildren === true
+            hasChildren: children.length > 0 || response?.hasChildren === true
           })
 
           if (updated) {
@@ -889,20 +882,6 @@ export const useExplorerStore = defineStore('explorer', {
       }
     },
 
-    clearEngineNodeCache(engineId) {
-      const next = {}
-      for (const [locator, cache] of Object.entries(this.nodeChildrenCache)) {
-        try {
-          const loc = parseLocator(locator)
-          if (loc.engineId !== engineId) {
-            next[locator] = cache
-          }
-        } catch {
-          next[locator] = cache
-        }
-      }
-      this.nodeChildrenCache = next
-    }
   }
 })
 

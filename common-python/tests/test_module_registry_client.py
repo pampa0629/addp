@@ -37,6 +37,36 @@ class ModuleRegistryClientTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(error=error, heartbeat=heartbeat):
                 self.assertEqual(ModuleRegistryClient._retryable(error, heartbeat=heartbeat), expected)
 
+    def test_failure_log_preserves_safe_service_token_diagnostics(self):
+        registration = ModuleRegistration(
+            module_name="agent",
+            module_url="http://agent:8190",
+            route_prefix="/agent",
+        )
+        error = ServiceTokenError(
+            "service_token_response_malformed",
+            retryable=True,
+            response_reason="json_decode_failed",
+            response_content_type="application/json",
+            response_body_bytes=41,
+        )
+
+        with self.assertLogs("addp.module_registry", level="WARNING") as captured:
+            ModuleRegistryClient._log_failure("heartbeat", registration, error)
+
+        diagnostic = captured.output[0]
+        for expected in (
+            "operation=heartbeat",
+            "module=agent",
+            "error_code='service_token_response_malformed'",
+            "retryable=True",
+            "response_reason='json_decode_failed'",
+            "response_content_type='application/json'",
+            "response_body_bytes=41",
+        ):
+            self.assertIn(expected, diagnostic)
+        self.assertNotIn("access_token", diagnostic)
+
     async def test_register_uses_platform_service_token_and_typed_declaration(self):
         token_requests = 0
         registered_instance_id = ""

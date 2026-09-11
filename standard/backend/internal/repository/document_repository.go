@@ -770,6 +770,57 @@ func uniqueStrings(values []string) []string {
 	return result
 }
 
+type documentCandidateRepresentative struct {
+	candidate models.DocumentExtractionCandidate
+	seenAt    time.Time
+}
+
+func selectCurrentCandidateRepresentatives(tx *gorm.DB, candidates []models.DocumentExtractionCandidate) (map[string]documentCandidateRepresentative, bool, error) {
+	candidateIDs := make([]int64, 0, len(candidates))
+	extractionIDs := make([]int64, 0, len(candidates))
+	seenExtractionIDs := make(map[int64]struct{}, len(candidates))
+	for _, value := range candidates {
+		candidateIDs = append(candidateIDs, value.ID)
+		if _, exists := seenExtractionIDs[value.ExtractionID]; !exists {
+			seenExtractionIDs[value.ExtractionID] = struct{}{}
+			extractionIDs = append(extractionIDs, value.ExtractionID)
+		}
+	}
+
+	var formalizations []models.DocumentCandidateFormalization
+	if err := tx.Where("candidate_id IN ?", candidateIDs).Find(&formalizations).Error; err != nil {
+		return nil, false, err
+	}
+	formalizationByCandidateID := make(map[int64]*models.DocumentCandidateFormalization, len(formalizations))
+	for index := range formalizations {
+		formalizationByCandidateID[formalizations[index].CandidateID] = &formalizations[index]
+	}
+
+	var extractions []models.DocumentExtraction
+	if err := tx.Select("id", "created_at").Where("id IN ?", extractionIDs).Find(&extractions).Error; err != nil {
+		return nil, false, err
+	}
+	extractedAt := make(map[int64]time.Time, len(extractions))
+	for _, extraction := range extractions {
+		extractedAt[extraction.ID] = extraction.CreatedAt
+	}
+
+	representatives := make(map[string]documentCandidateRepresentative, len(candidates))
+	for _, value := range candidates {
+		seenAt, exists := extractedAt[value.ExtractionID]
+		if !exists {
+			return nil, false, fmt.Errorf("candidate extraction %d is unavailable", value.ExtractionID)
+		}
+		value.Formalization = formalizationByCandidateID[value.ID]
+		fingerprint := candidateutil.SemanticFingerprint(value)
+		current, exists := representatives[fingerprint]
+		if !exists || candidateutil.IsPreferredRepresentative(value, seenAt, current.candidate, current.seenAt) {
+			representatives[fingerprint] = documentCandidateRepresentative{candidate: value, seenAt: seenAt}
+		}
+	}
+	return representatives, len(formalizations) != 0, nil
+}
+
 func (r *DocumentRepository) UpdateCandidateStatus(candidateID, tenantID, userID, expectedVersion int64, status string) (*models.DocumentExtractionCandidate, error) {
 	var candidate models.DocumentExtractionCandidate
 	err := wrapDBError(r.db.Transaction(func(tx *gorm.DB) error {
@@ -787,21 +838,21 @@ func (r *DocumentRepository) UpdateCandidateStatus(candidateID, tenantID, userID
 			Order("candidate.id ASC").Find(&familyCandidates).Error; err != nil {
 			return err
 		}
-		fingerprints := make(map[string]struct{}, len(familyCandidates))
-		for _, value := range familyCandidates {
-			fingerprints[candidateutil.SemanticFingerprint(value)] = struct{}{}
-			if len(fingerprints) > 1 {
-				return ErrCandidateFamilyDecisionRequired
-			}
+		representatives, hasFormalization, err := selectCurrentCandidateRepresentatives(tx, familyCandidates)
+		if err != nil {
+			return err
+		}
+		if len(representatives) > 1 {
+			return ErrCandidateFamilyDecisionRequired
+		}
+		representative, exists := representatives[candidateutil.SemanticFingerprint(candidate)]
+		if !exists || representative.candidate.ID != candidateID {
+			return ErrCandidateRepresentativeStale
 		}
 		if candidate.Version != expectedVersion {
 			return ErrVersionConflict
 		}
-		var formalizationCount int64
-		if err := tx.Model(&models.DocumentCandidateFormalization{}).Where("candidate_id = ?", candidateID).Count(&formalizationCount).Error; err != nil {
-			return err
-		}
-		if formalizationCount != 0 {
+		if hasFormalization {
 			return ErrCandidateAlreadyFormalized
 		}
 		now := time.Now().UTC()
@@ -848,7 +899,7 @@ func (r *DocumentRepository) DecideCandidateFamily(documentID, tenantID, userID,
 			return gorm.ErrRecordNotFound
 		}
 
-		fingerprints := make(map[string]struct{}, len(candidates))
+		selectedByFingerprint := make(map[string]models.DocumentExtractionCandidate, len(candidates))
 		candidateType, code := candidates[0].CandidateType, candidates[0].Code
 		winnerFound := false
 		for _, value := range candidates {
@@ -856,10 +907,10 @@ func (r *DocumentRepository) DecideCandidateFamily(documentID, tenantID, userID,
 				return ErrCandidateFamilyDecisionInvalid
 			}
 			fingerprint := candidateutil.SemanticFingerprint(value)
-			if _, exists := fingerprints[fingerprint]; exists {
+			if _, exists := selectedByFingerprint[fingerprint]; exists {
 				return ErrCandidateFamilyDecisionInvalid
 			}
-			fingerprints[fingerprint] = struct{}{}
+			selectedByFingerprint[fingerprint] = value
 			if value.Version != expectedVersions[value.ID] {
 				return ErrVersionConflict
 			}
@@ -876,22 +927,21 @@ func (r *DocumentRepository) DecideCandidateFamily(documentID, tenantID, userID,
 			Order("candidate.id ASC").Find(&familyCandidates).Error; err != nil {
 			return err
 		}
-		familyFingerprints := make(map[string]struct{}, len(familyCandidates))
-		familyCandidateIDs := make([]int64, len(familyCandidates))
-		for index, value := range familyCandidates {
-			familyFingerprints[candidateutil.SemanticFingerprint(value)] = struct{}{}
-			familyCandidateIDs[index] = value.ID
-		}
-		if len(fingerprints) != len(familyFingerprints) {
-			return ErrCandidateFamilyDecisionInvalid
-		}
-
-		var formalizationCount int64
-		if err := tx.Model(&models.DocumentCandidateFormalization{}).Where("candidate_id IN ?", familyCandidateIDs).Count(&formalizationCount).Error; err != nil {
+		representatives, hasFormalization, err := selectCurrentCandidateRepresentatives(tx, familyCandidates)
+		if err != nil {
 			return err
 		}
-		if formalizationCount != 0 {
+		if hasFormalization {
 			return ErrCandidateAlreadyFormalized
+		}
+		if len(selectedByFingerprint) != len(representatives) {
+			return ErrCandidateFamilyDecisionInvalid
+		}
+		for fingerprint, selected := range selectedByFingerprint {
+			current, exists := representatives[fingerprint]
+			if !exists || current.candidate.ID != selected.ID {
+				return ErrCandidateFamilyDecisionInvalid
+			}
 		}
 
 		now := time.Now().UTC()

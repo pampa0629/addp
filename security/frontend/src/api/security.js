@@ -48,7 +48,7 @@ export const discoveryQualityAPI = {
 export const assessmentAPI = {
   list: params => client.get('/security/assessments', { params }),
   create: data => client.post('/security/assessments', data),
-  update: (id, data) => client.put(`/security/assessments/${id}`, data),
+  revise: (id, data) => client.post(`/security/assessments/${id}/revisions`, data),
   revoke: (id, data) => client.delete(`/security/assessments/${id}`, { data })
 }
 

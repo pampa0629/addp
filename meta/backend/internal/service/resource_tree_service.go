@@ -58,6 +58,13 @@ func (s *ResourceTreeService) GetNode(ctx context.Context, tenantID, engineID ui
 	if err != nil {
 		return nil, err
 	}
+	targetNode, err := s.metadataQueryService.GetMetaNodeByID(tenantID, *loc.NodeID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: failed to get meta node: %v", metaErrors.ErrNodeNotFound, err)
+	}
+	if targetNode.EngineID != engineID {
+		return nil, fmt.Errorf("%w: locator node_id does not belong to engine_id %d", metaErrors.ErrNodeNotFound, engineID)
+	}
 	childNodes, err := s.metadataQueryService.GetNodeChildren(tenantID, *loc.NodeID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: failed to get meta node children: %v", metaErrors.ErrNodeNotFound, err)
@@ -82,12 +89,11 @@ func (s *ResourceTreeService) GetNode(ctx context.Context, tenantID, engineID ui
 		children = s.treeBuilder.ConvertMetaNodes(engine, presentationNodes)
 	}
 
-	parent := s.treeBuilder.ConvertNodeToTree(loc, map[string]interface{}{
-		"engine_id":   engine.ID,
-		"engine_type": engine.EngineType,
-		"full_name":   loc.FullName(),
-		"node_id":     *loc.NodeID,
-	})
+	parentNodes := s.treeBuilder.ConvertMetaNodes(engine, commonNodesFromLite([]metaModels.MetaNodeLite{*targetNode}))
+	if len(parentNodes) != 1 {
+		return nil, fmt.Errorf("%w: failed to convert meta node", metaErrors.ErrNodeNotFound)
+	}
+	parent := parentNodes[0]
 	parent.Children = children
 	parent.HasChildren = len(children) > 0
 	return parent, nil

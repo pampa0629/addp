@@ -70,6 +70,206 @@ func TestExecutionAuthorizationTenantCustomizationForwardMigrationAgainstPostgre
 	}
 }
 
+func TestSecurityTenantScopeForwardMigrationAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("set ADDP_SYSTEM_POSTGRES_TEST_DSN to a disposable PostgreSQL 15+ database")
+	}
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
+
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`DROP SCHEMA IF EXISTS system CASCADE; DROP SCHEMA IF EXISTS common CASCADE`); err != nil {
+		t.Fatalf("reset Security tenant-scope migration schemas: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	through134, through135 := migrationFilesBeforeAndThrough(t, "000135_iam_security_tenant_scope.up.sql")
+	if err := (&Runner{DSN: dsn, FS: through134, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply migrations through 134: %v", err)
+	}
+	administratorID, tenantID := seedInitializedMigrationTenant(t, db, "security-scope", "Security Scope")
+
+	var userID, membershipID int64
+	if err := db.QueryRow(`INSERT INTO system.principals (principal_type) VALUES ('user') RETURNING id`).Scan(&userID); err != nil {
+		t.Fatalf("create Security scope user principal: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO system.users (id, display_name) VALUES ($1, 'Security Scope User')`, userID); err != nil {
+		t.Fatalf("create Security scope user: %v", err)
+	}
+	if err := db.QueryRow(`
+		INSERT INTO system.tenant_memberships
+		    (tenant_id, principal_id, status, source_type, joined_at, created_by_principal_id)
+		VALUES ($1, $2, 'active', 'manual', now(), $3)
+		RETURNING id
+	`, tenantID, userID, administratorID).Scan(&membershipID); err != nil {
+		t.Fatalf("create Security scope tenant membership: %v", err)
+	}
+
+	createRole := func(key, name string, scopes string) int64 {
+		t.Helper()
+		var roleID int64
+		if err := db.QueryRow(fmt.Sprintf(`
+			INSERT INTO system.roles
+			    (tenant_id, role_key, name, description, role_type, allowed_scope_types,
+			     allowed_principal_types, immutable, status, created_by_principal_id)
+			VALUES ($1, $2, $3, '', 'tenant_custom', %s, ARRAY['user'], false, 'active', $4)
+			RETURNING id
+		`, scopes), tenantID, key, name, administratorID).Scan(&roleID); err != nil {
+			t.Fatalf("create %s: %v", key, err)
+		}
+		return roleID
+	}
+	wideRoleID := createRole("custom.security_wide", "Security Wide", "ARRAY['tenant', 'department', 'project_group']::text[]")
+	tenantRoleID := createRole("custom.security_tenant", "Security Tenant", "ARRAY['tenant']::text[]")
+
+	for _, roleID := range []int64{wideRoleID, tenantRoleID} {
+		if _, err := db.Exec(`
+			INSERT INTO system.role_permissions
+			    (role_id, permission_id, source_type, created_by_principal_id)
+			SELECT $1, permission.id, 'tenant', $2
+			FROM system.permissions AS permission
+			WHERE permission.permission_key = 'security.assessment.read'
+		`, roleID, administratorID); err != nil {
+			t.Fatalf("grant Security permission to custom role %d: %v", roleID, err)
+		}
+		if _, err := db.Exec(`
+			INSERT INTO system.role_assignments
+			    (principal_id, role_id, scope_type, tenant_id, status, valid_from,
+			     source_type, created_by_principal_id, reason)
+			VALUES ($1, $2, 'tenant', $3, 'active', now(), 'manual', $4, 'migration test')
+		`, userID, roleID, tenantID, administratorID); err != nil {
+			t.Fatalf("assign custom role %d: %v", roleID, err)
+		}
+	}
+
+	var authorizationVersionBefore int64
+	if err := db.QueryRow(`SELECT authorization_version FROM system.principals WHERE id = $1`, userID).Scan(&authorizationVersionBefore); err != nil {
+		t.Fatalf("read authorization version before migration 135: %v", err)
+	}
+	var familyID int64
+	if err := db.QueryRow(`
+		INSERT INTO system.refresh_token_families
+		    (principal_id, context_type, tenant_membership_id, issued_authorization_version,
+		     client_id, auth_type, audiences, scopes, authentication_methods, assurance_level,
+		     authenticated_at, expires_at)
+		VALUES
+		    ($1, 'tenant', $2, $3, 'addp-web', 'first_party', ARRAY['addp.api'], ARRAY[]::text[],
+		     ARRAY['password'], 'aal1', now() - interval '1 minute', now() + interval '1 hour')
+		RETURNING id
+	`, userID, membershipID, authorizationVersionBefore).Scan(&familyID); err != nil {
+		t.Fatalf("create Security scope token family: %v", err)
+	}
+
+	if err := (&Runner{DSN: dsn, FS: through135, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply Security tenant-scope migration 135: %v", err)
+	}
+
+	var version int
+	var dirty bool
+	if err := db.QueryRow(`SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
+		t.Fatalf("read migration 135 version: %v", err)
+	}
+	if version != 135 || dirty {
+		t.Fatalf("migration 135 state=(%d,%t), want (135,false)", version, dirty)
+	}
+
+	var nonTenantPermissionCount, incompatibleBindingCount, wideBindingCount, tenantBindingCount int
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM system.permissions
+		WHERE owner_module = 'security'
+		  AND status = 'active'
+		  AND allowed_scope_types IS DISTINCT FROM ARRAY['tenant']::text[]
+	`).Scan(&nonTenantPermissionCount); err != nil {
+		t.Fatalf("count non-tenant Security permissions: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM system.role_permissions AS role_permission
+		JOIN system.roles AS role ON role.id = role_permission.role_id
+		JOIN system.permissions AS permission ON permission.id = role_permission.permission_id
+		WHERE permission.owner_module = 'security'
+		  AND permission.status = 'active'
+		  AND NOT (role.allowed_scope_types <@ ARRAY['tenant']::text[])
+	`).Scan(&incompatibleBindingCount); err != nil {
+		t.Fatalf("count incompatible Security role bindings: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM system.role_permissions AS role_permission
+		JOIN system.permissions AS permission ON permission.id = role_permission.permission_id
+		WHERE role_permission.role_id = $1
+		  AND permission.owner_module = 'security'
+	`, wideRoleID).Scan(&wideBindingCount); err != nil {
+		t.Fatalf("count wide custom role Security bindings: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM system.role_permissions AS role_permission
+		JOIN system.permissions AS permission ON permission.id = role_permission.permission_id
+		WHERE role_permission.role_id = $1
+		  AND permission.owner_module = 'security'
+	`, tenantRoleID).Scan(&tenantBindingCount); err != nil {
+		t.Fatalf("count tenant custom role Security bindings: %v", err)
+	}
+	if nonTenantPermissionCount != 0 || incompatibleBindingCount != 0 || wideBindingCount != 0 || tenantBindingCount != 1 {
+		t.Fatalf(
+			"migration 135 non_tenant_permissions=%d incompatible_bindings=%d wide_bindings=%d tenant_bindings=%d, want 0,0,0,1",
+			nonTenantPermissionCount, incompatibleBindingCount, wideBindingCount, tenantBindingCount,
+		)
+	}
+
+	var securityManagerPermissionCount, protectedDataRequesterPermissionCount int
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM system.role_permissions AS role_permission
+		JOIN system.roles AS role ON role.id = role_permission.role_id
+		JOIN system.permissions AS permission ON permission.id = role_permission.permission_id
+		WHERE role.tenant_id IS NULL
+		  AND role.role_key = 'tenant.security_manager'
+		  AND permission.owner_module = 'security'
+	`).Scan(&securityManagerPermissionCount); err != nil {
+		t.Fatalf("count tenant Security Manager permissions: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM system.role_permissions AS role_permission
+		JOIN system.roles AS role ON role.id = role_permission.role_id
+		JOIN system.permissions AS permission ON permission.id = role_permission.permission_id
+		WHERE role.tenant_id IS NULL
+		  AND role.role_key = 'tenant.protected_data_requester'
+		  AND permission.owner_module = 'security'
+	`).Scan(&protectedDataRequesterPermissionCount); err != nil {
+		t.Fatalf("count tenant Protected Data Requester permissions: %v", err)
+	}
+	if securityManagerPermissionCount != 37 || protectedDataRequesterPermissionCount != 2 {
+		t.Fatalf(
+			"migration 135 security_manager_permissions=%d protected_data_requester_permissions=%d, want 37,2",
+			securityManagerPermissionCount, protectedDataRequesterPermissionCount,
+		)
+	}
+
+	var authorizationVersionAfter int64
+	var revokedReason *string
+	if err := db.QueryRow(`SELECT authorization_version FROM system.principals WHERE id = $1`, userID).Scan(&authorizationVersionAfter); err != nil {
+		t.Fatalf("read authorization version after migration 135: %v", err)
+	}
+	if err := db.QueryRow(`SELECT revoked_reason FROM system.refresh_token_families WHERE id = $1`, familyID).Scan(&revokedReason); err != nil {
+		t.Fatalf("read Security scope token family after migration 135: %v", err)
+	}
+	if authorizationVersionAfter <= authorizationVersionBefore {
+		t.Fatalf("authorization version after migration 135 = %d, want greater than %d", authorizationVersionAfter, authorizationVersionBefore)
+	}
+	if revokedReason == nil || *revokedReason != "security_permission_scope_changed" {
+		t.Fatalf("token family revoked_reason = %v, want security_permission_scope_changed", revokedReason)
+	}
+}
+
 func TestManagerTransferRuntimeForwardMigrationsAgainstPostgres(t *testing.T) {
 	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
 	if dsn == "" {
@@ -3376,16 +3576,18 @@ func assertSecurityModuleRuntimeConstraints(t *testing.T, db *sql.DB, hasMetaFac
 		t.Fatalf("read Security runtime identity: %v", err)
 	}
 
-	var administratorPermissionCount, governancePermissionCount int
+	var administratorPermissionCount, governancePermissionCount, securityManagerPermissionCount, protectedDataRequesterPermissionCount int
 	if err := db.QueryRow(`
 		SELECT
 		    count(*) FILTER (WHERE role.role_key = 'tenant.administrator'),
-		    count(*) FILTER (WHERE role.role_key = 'tenant.governance_manager')
+		    count(*) FILTER (WHERE role.role_key = 'tenant.governance_manager'),
+		    count(*) FILTER (WHERE role.role_key = 'tenant.security_manager'),
+		    count(*) FILTER (WHERE role.role_key = 'tenant.protected_data_requester')
 		FROM system.role_permissions role_permission
 		JOIN system.roles role ON role.id = role_permission.role_id
 		JOIN system.permissions permission ON permission.id = role_permission.permission_id
 		WHERE permission.owner_module = 'security' AND permission.status = 'active'
-	`).Scan(&administratorPermissionCount, &governancePermissionCount); err != nil {
+	`).Scan(&administratorPermissionCount, &governancePermissionCount, &securityManagerPermissionCount, &protectedDataRequesterPermissionCount); err != nil {
 		t.Fatalf("read Security governance role bindings: %v", err)
 	}
 	var tenantRuntimeRoleCount, tenantRuntimePermissionCount, missingTenantRuntimeBindings int
@@ -3424,18 +3626,24 @@ func assertSecurityModuleRuntimeConstraints(t *testing.T, db *sql.DB, hasMetaFac
 		t.Fatalf("read Security tenant runtime boundary: %v", err)
 	}
 
-	expectedSecurityPermissions, expectedGovernancePermissions := 21, 19
+	expectedSecurityPermissions, expectedAdministratorPermissions, expectedGovernancePermissions := 21, 19, 19
+	expectedSecurityManagerPermissions, expectedProtectedDataRequesterPermissions := 0, 0
 	expectedTenantRuntime, expectedTenantRuntimePermissions := 0, 0
 	if hasMetaFactsRuntime {
-		expectedSecurityPermissions, expectedGovernancePermissions, expectedTenantRuntime, expectedTenantRuntimePermissions = 39, 37, 1, 2
+		expectedSecurityPermissions, expectedAdministratorPermissions, expectedGovernancePermissions = 39, 37, 0
+		expectedSecurityManagerPermissions, expectedProtectedDataRequesterPermissions = 37, 2
+		expectedTenantRuntime, expectedTenantRuntimePermissions = 1, 2
 	}
 	if permissionCount != expectedSecurityPermissions || retiredStandardPermissionCount != 4 || retiredStandardRolePermissionCount != 0 || runtimeRoleCount != 1 ||
 		principalCount != 1 || clientCount != 1 || assignmentCount != 1 ||
-		administratorPermissionCount != expectedGovernancePermissions || governancePermissionCount != expectedGovernancePermissions || tenantRuntimeRoleCount != expectedTenantRuntime || tenantRuntimePermissionCount != expectedTenantRuntimePermissions || missingTenantRuntimeBindings != 0 {
+		administratorPermissionCount != expectedAdministratorPermissions || governancePermissionCount != expectedGovernancePermissions ||
+		securityManagerPermissionCount != expectedSecurityManagerPermissions || protectedDataRequesterPermissionCount != expectedProtectedDataRequesterPermissions ||
+		tenantRuntimeRoleCount != expectedTenantRuntime || tenantRuntimePermissionCount != expectedTenantRuntimePermissions || missingTenantRuntimeBindings != 0 {
 		t.Fatalf(
-			"Security catalog permissions=%d retired_standard=%d retired_standard_bindings=%d runtime_role=%d principal=%d client=%d assignment=%d administrator=%d governance=%d tenant_runtime=%d tenant_permission=%d missing_tenant_bindings=%d",
+			"Security catalog permissions=%d retired_standard=%d retired_standard_bindings=%d runtime_role=%d principal=%d client=%d assignment=%d administrator=%d governance=%d security_manager=%d protected_data_requester=%d tenant_runtime=%d tenant_permission=%d missing_tenant_bindings=%d",
 			permissionCount, retiredStandardPermissionCount, retiredStandardRolePermissionCount, runtimeRoleCount, principalCount, clientCount,
-			assignmentCount, administratorPermissionCount, governancePermissionCount, tenantRuntimeRoleCount, tenantRuntimePermissionCount, missingTenantRuntimeBindings,
+			assignmentCount, administratorPermissionCount, governancePermissionCount, securityManagerPermissionCount, protectedDataRequesterPermissionCount,
+			tenantRuntimeRoleCount, tenantRuntimePermissionCount, missingTenantRuntimeBindings,
 		)
 	}
 }

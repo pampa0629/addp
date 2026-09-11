@@ -44,6 +44,7 @@ var (
 	ErrCandidateFormalizationInvalid          = fmt.Errorf("%w: invalid standard candidate formalization", commonapi.ErrBadRequest)
 	ErrCandidateFamilyDecisionRequired        = fmt.Errorf("%w: document candidate family decision required", commonapi.ErrConflict)
 	ErrCandidateFamilyDecisionInvalid         = fmt.Errorf("%w: invalid document candidate family decision", commonapi.ErrBadRequest)
+	ErrCandidateRepresentativeStale           = fmt.Errorf("%w: standard candidate representative changed", commonapi.ErrConflict)
 )
 
 func mapDeleteConflict(err, referencedError error) error {

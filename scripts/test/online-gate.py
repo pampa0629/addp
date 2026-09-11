@@ -83,6 +83,18 @@ SUITES: Mapping[str, Suite] = {
         ),
         nightly=True,
     ),
+    "tidb-consumer-flow": Suite(
+        command=(sys.executable, "scripts/test/relational-consumer-flow-online.py"),
+        services=(
+            ("gateway", "GATEWAY_URL"),
+            ("system", "SYSTEM_URL"),
+            ("meta", "META_URL"),
+            ("manager", "MANAGER_URL"),
+            ("transfer", "TRANSFER_URL"),
+            ("develop", "DEVELOP_URL"),
+            ("service", "SERVICE_URL"),
+        ),
+    ),
     "manager-internal-artifact-lineage": Suite(
         command=(sys.executable, "scripts/test/manager-internal-artifact-lineage-online.py"),
         services=(

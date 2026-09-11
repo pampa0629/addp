@@ -1600,7 +1600,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "分页返回当前租户不含原始敏感值的不可变检测发现、目标资源快照、可选初审记录，以及由当前检测绑定、正式评估、默认保护规则和真实出口投影批量组装的只读解释链；可按纳管、来源快照、发现执行、当前快照、复核状态、敏感类型和识别能力版本筛选 | Return immutable, value-free detector findings with target snapshots, optional first reviews, and a read-only explanation chain batch-assembled from current control-plane facts; filter by enrollment, source snapshot, discovery execution, current snapshot, review state, sensitive type, and detector version",
+                "description": "分页返回当前租户不含原始敏感值的不可变检测发现、目标资源快照、可选初审记录，以及由当前检测绑定、正式评估、默认保护规则和真实出口投影批量组装的只读解释链；当前组件结构仍匹配正式评估时，解释在敏感或已撤销状态下都返回精确 assessment_id，供调用方继续在原聚合上修订；可按纳管、来源快照、发现执行、当前快照、复核状态、敏感类型和识别能力版本筛选 | Return immutable, value-free detector findings with target snapshots, optional first reviews, and a read-only explanation chain batch-assembled from current control-plane facts; while the current component schema still matches a formal assessment, the explanation returns its exact assessment_id for both sensitive and revoked states so callers can continue revising the same aggregate; filter by enrollment, source snapshot, discovery execution, current snapshot, review state, sensitive type, and detector version",
                 "produces": [
                     "application/json"
                 ],
@@ -1721,7 +1721,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "返回单个不含原始敏感值的检测证据、可选初审记录，以及由当前控制面事实组装的只读保护解释链 | Return one value-free detector observation with its optional first review and a read-only protection explanation assembled from current control-plane facts",
+                "description": "返回单个不含原始敏感值的检测证据、可选初审记录，以及由当前控制面事实组装的只读保护解释链；当前组件结构仍匹配正式评估时，敏感或已撤销状态都返回精确 assessment_id | Return one value-free detector observation with its optional first review and a read-only protection explanation assembled from current control-plane facts; while the current component schema still matches a formal assessment, its exact assessment_id is returned for both sensitive and revoked states",
                 "produces": [
                     "application/json"
                 ],

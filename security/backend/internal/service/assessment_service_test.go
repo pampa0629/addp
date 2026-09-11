@@ -78,6 +78,36 @@ func TestFindingReviewRejectsHistoricalSnapshot(t *testing.T) {
 	}
 }
 
+func TestRevokedFindingKeepsExactAssessmentForLaterRevision(t *testing.T) {
+	db, _, finding, _, _ := prepareReviewablePhoneFinding(t)
+	assessments := NewAssessmentService(db, nil)
+	reviewed, err := assessments.ReviewFinding(context.Background(), 7, 21, finding.ID, models.FindingReviewRequest{
+		Decision: models.FindingReviewDecisionConfirm, Rationale: "确认当前字段为敏感信息",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	revoked, err := assessments.Revoke(context.Background(), 7, 22, reviewed.Assessment.ID, models.RevokeAssessmentRequest{
+		Version: reviewed.Assessment.Version, Rationale: "复核后暂时撤销敏感结论",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	listed, err := NewDiscoveryService(db, nil).ListFindings(context.Background(), 7, FindingListFilter{
+		EnrollmentID: finding.EnrollmentID, SourceSnapshotHash: finding.SourceSnapshotHash, DiscoveryExecutionID: finding.DiscoveryExecutionID,
+	}, 1, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if listed.Total != 1 || listed.Data[0].Explanation.DecisionState != models.FindingDecisionRevoked || listed.Data[0].Explanation.AssessmentID != revoked.ID {
+		t.Fatalf("revoked finding explanation = %#v", listed)
+	}
+	if listed.Data[0].Explanation.EffectiveSensitiveDataTypeID != nil || listed.Data[0].Explanation.Baseline != nil {
+		t.Fatalf("revoked finding must not expose an effective protection candidate: %#v", listed.Data[0].Explanation)
+	}
+}
+
 func TestRejectedFindingReturnsManagerToEnrollingDeny(t *testing.T) {
 	db, enrollments, finding, _, _ := prepareReviewablePhoneFinding(t)
 	assessments := NewAssessmentService(db, nil)
@@ -251,6 +281,24 @@ func TestManualAssessmentUsesCurrentMetaComponentAndCanBeRevoked(t *testing.T) {
 	}
 	if _, err := assessments.Revoke(context.Background(), 7, 22, createdAssessment.ID, models.RevokeAssessmentRequest{Version: revoked.Version, Rationale: "重复撤销"}); !errors.Is(err, commonapi.ErrConflict) {
 		t.Fatalf("duplicate revoke error = %v", err)
+	}
+	restored, err := assessments.Revise(context.Background(), 7, 23, createdAssessment.ID, models.AssessmentRevisionRequest{
+		Version: revoked.Version, SensitiveDataTypeID: dataType.ID, SecurityGradeID: grade.ID,
+		Rationale: "补充核对业务字典后重新认定为敏感字段",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restored.Version != 3 || restored.Current.Revision != 3 || restored.Current.Conclusion != models.AssessmentConclusionSensitive || restored.Current.CreatedBy != 23 || len(restored.History) != 3 {
+		t.Fatalf("restored assessment = %#v", restored)
+	}
+	managerChanges, err = enrollments.ListChanges(context.Background(), 7, "manager", "", 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	latest = managerChanges.Changes[len(managerChanges.Changes)-1].Projection
+	if latest == nil || latest.State != dataprotection.ProjectionStateActive || managerProjectionRule(t, latest, managerPreviewAction).Component.Key != "members__emergency_contact" {
+		t.Fatalf("restored manager projection = %#v", latest)
 	}
 }
 

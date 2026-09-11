@@ -723,7 +723,9 @@ func (s *DiscoveryService) buildFindingExplanations(ctx context.Context, tenantI
 			gradeID := candidate.SecurityGradeID
 			explanation.EffectiveSecurityGradeID = &gradeID
 		}
-		explanation.AssessmentID = candidate.AssessmentID
+		if assessmentPointer != nil && revisionPointer != nil && revisionPointer.Component.SchemaFingerprint == finding.Component.SchemaFingerprint {
+			explanation.AssessmentID = assessmentPointer.ID
+		}
 
 		if included && candidate.SensitiveDataTypeID > 0 && candidate.SecurityGradeID > 0 {
 			if baseline, exists := baselineByTarget[findingBaselineKey{typeID: candidate.SensitiveDataTypeID, gradeID: candidate.SecurityGradeID}]; exists {

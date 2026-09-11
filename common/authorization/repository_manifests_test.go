@@ -16,13 +16,18 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	if len(descriptors) != 444 {
 		t.Fatalf("descriptor count = %d, want 444", len(descriptors))
 	}
+	for _, descriptor := range descriptors {
+		if descriptor.OwnerModule == "security" && !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"}) {
+			t.Fatalf("Security permission %q scopes = %#v, want tenant only", descriptor.Key, descriptor.AllowedScopeTypes)
+		}
+	}
 	if descriptors[0].Key != "agent.configuration.read" || descriptors[len(descriptors)-1].Key != "workbench.resource_grant.revoke" {
 		t.Fatalf("descriptor boundary keys = %q, %q", descriptors[0].Key, descriptors[len(descriptors)-1].Key)
 	}
 
 	roles := report.Roles
-	if len(roles) != 64 {
-		t.Fatalf("role count = %d, want 64", len(roles))
+	if len(roles) != 66 {
+		t.Fatalf("role count = %d, want 66", len(roles))
 	}
 	if roles[0].Key != "platform.agent_runtime" || roles[len(roles)-1].Key != "tenant.transfer_runtime" {
 		t.Fatalf("role boundary keys = %q, %q", roles[0].Key, roles[len(roles)-1].Key)
@@ -206,8 +211,6 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"manager.search.execute",
 		"meta.catalog.read",
 		"meta.lineage.read",
-		"security.protection_access_request.create",
-		"security.protection_access_request.read",
 		"service.data_read.execute",
 		"workbench.data_application.create",
 		"workbench.data_application.delete",
@@ -249,8 +252,6 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"meta.scan_task.execute",
 		"meta.scan_task.read",
 		"meta.scan_task.update",
-		"security.protection_access_request.create",
-		"security.protection_access_request.read",
 	})
 	assertRepositoryRolePermissions(t, roles, "tenant.data_engineer", []string{
 		"develop.data_read.execute",
@@ -275,8 +276,6 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"orchestrator.workflow.execute",
 		"orchestrator.workflow.read",
 		"orchestrator.workflow.update",
-		"security.protection_access_request.create",
-		"security.protection_access_request.read",
 		"system.execution_authorization.create",
 		"transfer.task.create",
 		"transfer.task.delete",
@@ -372,43 +371,6 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"quality.rule_application.delete",
 		"quality.rule_application.read",
 		"quality.rule_application.update",
-		"security.assessment.create",
-		"security.assessment.read",
-		"security.assessment.update",
-		"security.classification.create",
-		"security.classification.delete",
-		"security.classification.read",
-		"security.classification.update",
-		"security.detector.create",
-		"security.detector.delete",
-		"security.detector.read",
-		"security.detector.update",
-		"security.enrollment.create",
-		"security.enrollment.read",
-		"security.enrollment.update",
-		"security.finding.read",
-		"security.finding.update",
-		"security.grade.create",
-		"security.grade.delete",
-		"security.grade.read",
-		"security.grade.update",
-		"security.policy.create",
-		"security.policy.delete",
-		"security.policy.read",
-		"security.policy.update",
-		"security.protection_access_request.create",
-		"security.protection_access_request.read",
-		"security.protection_access_request.update",
-		"security.protection_baseline.create",
-		"security.protection_baseline.delete",
-		"security.protection_baseline.read",
-		"security.protection_baseline.update",
-		"security.protection_exemption.delete",
-		"security.protection_exemption.read",
-		"security.sensitive_data_type.create",
-		"security.sensitive_data_type.delete",
-		"security.sensitive_data_type.read",
-		"security.sensitive_data_type.update",
 		"standard.code_set.create",
 		"standard.code_set.delete",
 		"standard.code_set.publish",
@@ -450,6 +412,51 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		"standard.unit.read",
 		"standard.unit.update",
 		"system.execution_authorization.create",
+	})
+	assertRepositoryRoleScopes(t, roles, "tenant.protected_data_requester", []string{"tenant"})
+	assertRepositoryRolePermissions(t, roles, "tenant.protected_data_requester", []string{
+		"security.protection_access_request.create",
+		"security.protection_access_request.read",
+	})
+	assertRepositoryRoleScopes(t, roles, "tenant.security_manager", []string{"tenant"})
+	assertRepositoryRolePermissions(t, roles, "tenant.security_manager", []string{
+		"security.assessment.create",
+		"security.assessment.read",
+		"security.assessment.update",
+		"security.classification.create",
+		"security.classification.delete",
+		"security.classification.read",
+		"security.classification.update",
+		"security.detector.create",
+		"security.detector.delete",
+		"security.detector.read",
+		"security.detector.update",
+		"security.enrollment.create",
+		"security.enrollment.read",
+		"security.enrollment.update",
+		"security.finding.read",
+		"security.finding.update",
+		"security.grade.create",
+		"security.grade.delete",
+		"security.grade.read",
+		"security.grade.update",
+		"security.policy.create",
+		"security.policy.delete",
+		"security.policy.read",
+		"security.policy.update",
+		"security.protection_access_request.create",
+		"security.protection_access_request.read",
+		"security.protection_access_request.update",
+		"security.protection_baseline.create",
+		"security.protection_baseline.delete",
+		"security.protection_baseline.read",
+		"security.protection_baseline.update",
+		"security.protection_exemption.delete",
+		"security.protection_exemption.read",
+		"security.sensitive_data_type.create",
+		"security.sensitive_data_type.delete",
+		"security.sensitive_data_type.read",
+		"security.sensitive_data_type.update",
 	})
 	assertRepositoryRolePermissions(t, roles, "tenant.monitoring_operator", []string{
 		"monitor.alert_incident.read",

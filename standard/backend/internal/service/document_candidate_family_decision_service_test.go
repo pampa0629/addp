@@ -67,6 +67,37 @@ func TestUpdateCandidateStatusAllowsOneSemanticVariant(t *testing.T) {
 	}
 }
 
+func TestUpdateCandidateStatusRejectsHistoricalOccurrenceInsteadOfCurrentRepresentative(t *testing.T) {
+	db := openDocumentServiceTestDB(t)
+	repo := repository.NewDocumentRepository(db)
+	document, revision := seedDocumentDraft(t, repo, 7, "outdoor.md")
+	extraction := models.DocumentExtraction{TenantID: document.TenantID, DocumentRevisionID: revision.ID, Status: "completed", RequestedBy: 3}
+	if err := db.Create(&extraction).Error; err != nil {
+		t.Fatal(err)
+	}
+	candidates := []models.DocumentExtractionCandidate{
+		{ExtractionID: extraction.ID, CandidateType: "glossary", Code: "outdoor_activity", Name: "户外 活动", Definition: "同一定义", Status: "pending", Version: 1},
+		{ExtractionID: extraction.ID, CandidateType: "glossary", Code: "outdoor_activity", Name: "户外\n活动", Definition: "同一定义", Status: "pending", Version: 1},
+	}
+	if err := db.Create(&candidates).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := (&DocumentService{repo: repo}).UpdateCandidateStatus(candidates[0].ID, document.TenantID, 11, &models.UpdateDocumentExtractionCandidateRequest{Version: 1, Status: "retained"})
+	if !errors.Is(err, ErrCandidateRepresentativeStale) {
+		t.Fatalf("error = %v, want ErrCandidateRepresentativeStale", err)
+	}
+	var stored []models.DocumentExtractionCandidate
+	if err := db.Order("id ASC").Find(&stored, "id IN ?", []int64{candidates[0].ID, candidates[1].ID}).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, candidate := range stored {
+		if candidate.Status != models.CandidateGroupStatePending || candidate.Version != 1 || candidate.ReviewedAt != nil {
+			t.Fatalf("candidate changed after historical representative rejection: %+v", candidate)
+		}
+	}
+}
+
 func TestDecideCandidateFamilyRetainsOneVariantAndRejectsTheOthersAtomically(t *testing.T) {
 	db := openDocumentServiceTestDB(t)
 	repo := repository.NewDocumentRepository(db)
@@ -192,6 +223,46 @@ func TestDecideCandidateFamilyRejectsInvalidMembershipWithoutSideEffects(t *test
 			assertNoCandidateFamilyDecision(t, db)
 		})
 	}
+}
+
+func TestDecideCandidateFamilyRejectsHistoricalOccurrenceInsteadOfCurrentRepresentative(t *testing.T) {
+	db := openDocumentServiceTestDB(t)
+	repo := repository.NewDocumentRepository(db)
+	document, revision := seedDocumentDraft(t, repo, 7, "outdoor.md")
+	extraction := models.DocumentExtraction{TenantID: document.TenantID, DocumentRevisionID: revision.ID, Status: "completed", RequestedBy: 3}
+	if err := db.Create(&extraction).Error; err != nil {
+		t.Fatal(err)
+	}
+	candidates := []models.DocumentExtractionCandidate{
+		{ExtractionID: extraction.ID, CandidateType: "glossary", Code: "outdoor_activity", Name: "户外 活动", Definition: "定义一", Status: "pending", Version: 1},
+		{ExtractionID: extraction.ID, CandidateType: "glossary", Code: "outdoor_activity", Name: "户外运动", Definition: "定义二", Status: "pending", Version: 1},
+		{ExtractionID: extraction.ID, CandidateType: "glossary", Code: "outdoor_activity", Name: "户外\n活动", Definition: "定义一", Status: "pending", Version: 1},
+	}
+	if err := db.Create(&candidates).Error; err != nil {
+		t.Fatal(err)
+	}
+	request := &models.DecideDocumentCandidateFamilyRequest{
+		WinnerCandidateID: candidates[0].ID,
+		Reason:            "旧出现记录不能代替当前代表候选",
+		Members: []models.DocumentCandidateFamilyDecisionMember{
+			{CandidateID: candidates[0].ID, Version: 1},
+			{CandidateID: candidates[1].ID, Version: 1},
+		},
+	}
+
+	if _, err := (&DocumentService{repo: repo}).DecideCandidateFamily(document.ID, document.TenantID, 11, request); !errors.Is(err, ErrCandidateFamilyDecisionInvalid) {
+		t.Fatalf("error = %v, want ErrCandidateFamilyDecisionInvalid", err)
+	}
+	var stored []models.DocumentExtractionCandidate
+	if err := db.Order("id ASC").Find(&stored, "id IN ?", []int64{candidates[0].ID, candidates[1].ID, candidates[2].ID}).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, candidate := range stored {
+		if candidate.Status != models.CandidateGroupStatePending || candidate.Version != 1 || candidate.ReviewedAt != nil {
+			t.Fatalf("candidate changed after historical representative rejection: %+v", candidate)
+		}
+	}
+	assertNoCandidateFamilyDecision(t, db)
 }
 
 func TestDecideCandidateFamilyRejectsStaleMemberAndRollsBackAllMembers(t *testing.T) {

@@ -15,4 +15,5 @@ import (
 	_ "github.com/addp/common/engine/plugins/postgresql"
 	_ "github.com/addp/common/engine/plugins/s3"
 	_ "github.com/addp/common/engine/plugins/spark_sql"
+	_ "github.com/addp/common/engine/plugins/tidb"
 )

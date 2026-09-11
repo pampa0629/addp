@@ -220,6 +220,38 @@ test('keeps directory and file vectorization semantics in the shared picker', as
   await expect(dialog.getByText('递归', { exact: true })).toHaveCount(0)
 })
 
+test('keeps a deep resource-tree node selected and populated after a basic refresh', async ({ page }) => {
+  const browserErrors = []
+  page.on('console', message => {
+    if (message.type() === 'error') browserErrors.push(message.text())
+  })
+  page.on('pageerror', error => browserErrors.push(error.message))
+
+  const backend = await installMockBackend(page, { refreshRegression: true })
+  await page.goto(`/data-explorer?locator=${encodeURIComponent(DOC_LOCATOR)}`)
+
+  const docContent = treeNodeContent(page, 'doc')
+  const nodeRefresh = docContent.getByTitle('基础刷新：重新发现此节点下的新资源')
+  await expect(docContent).toBeVisible()
+  await expect(docContent.locator('..')).toHaveClass(/is-current/)
+  await expect(page.getByRole('button', { name: 'README.md', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'slides.pptx', exact: true })).toBeVisible()
+  await expect(nodeRefresh).toBeVisible()
+
+  await nodeRefresh.click()
+
+  await expect.poll(() => backend.nodeRefreshRequests).toEqual([DOC_LOCATOR])
+  await expect.poll(() => backend.scanExecutionRequests).toBe(1)
+  await expect.poll(() => backend.treeRequests).toBe(1)
+  await expect(docContent.locator('..')).toHaveClass(/is-current/)
+  await expect(page.getByRole('button', { name: 'README.md', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'slides.pptx', exact: true })).toBeVisible()
+
+  await expandTreeNode(page, 'doc')
+  await expect(page.getByTitle('深度刷新：重建当前数据项的完整元数据')).toHaveCount(2)
+  expect(browserErrors).toEqual([])
+})
+
 async function chooseEngine(page, dialog, engineName) {
   await dialog.locator('.resource-tree-picker .el-select').first().click()
   await page.getByRole('option', { name: new RegExp(engineName) }).click()
@@ -260,6 +292,9 @@ async function installMockBackend(page, options = {}) {
     taskListQueries: [],
     deletedTasks: [],
     rebindRequests: [],
+    nodeRefreshRequests: [],
+    scanExecutionRequests: 0,
+    treeRequests: 0,
     tasks
   }
 
@@ -304,13 +339,38 @@ async function installMockBackend(page, options = {}) {
       return fulfillJSON(route, { ancestors: postgresAncestors(url.searchParams.get('locator')) })
     }
     if (path === `/api/v1/meta/resource-tree/${NFS_ENGINE.id}`) {
-      return fulfillJSON(route, nfsTree())
+      state.treeRequests += 1
+      return fulfillJSON(route, options.refreshRegression ? nfsShallowTree() : nfsTree())
+    }
+    if (path === `/api/v1/meta/resource-tree/${NFS_ENGINE.id}/ancestors`) {
+      return fulfillJSON(route, {
+        target_locator: DOC_LOCATOR,
+        ancestors: [nfsShallowTree(), nfsDocNode()]
+      })
+    }
+    if (path === `/api/v1/meta/resource-tree/${NFS_ENGINE.id}/refresh` && request.method() === 'POST') {
+      state.nodeRefreshRequests.push(url.searchParams.get('locator') || '')
+      return fulfillJSON(route, {
+        run: {
+          execution_id: 'node-refresh-execution-1',
+          status: 'pending',
+          progress: 10,
+          current_step: 'queued'
+        }
+      }, 202)
+    }
+    if (path === '/api/v1/meta/executions/node-refresh-execution-1') {
+      state.scanExecutionRequests += 1
+      return fulfillJSON(route, {
+        execution_id: 'node-refresh-execution-1',
+        status: 'success',
+        progress: 100,
+        current_step: 'completed'
+      })
     }
     if (path === `/api/v1/meta/resource-tree/${NFS_ENGINE.id}/node`) {
       const locator = url.searchParams.get('locator') || ''
-      return fulfillJSON(route, {
-        children: locator === DOC_LOCATOR ? nfsTree().children[0].children : nfsTree().children
-      })
+      return fulfillJSON(route, locator === DOC_LOCATOR ? nfsDocNode() : nfsTree())
     }
     if (path === '/api/v1/manager/quick-view/actions' && request.method() === 'POST') {
       const payload = request.postDataJSON()
@@ -437,28 +497,42 @@ function nfsTree() {
     locator: 'addp://engine/12/path/?type=root&node_id=200',
     label: NFS_ENGINE.name,
     type: 'root',
+    children: [nfsDocNode()]
+  }
+}
+
+function nfsShallowTree() {
+  return {
+    ...nfsTree(),
+    children: []
+  }
+}
+
+function nfsDocNode() {
+  return {
+    id: DOC_LOCATOR,
+    locator: DOC_LOCATOR,
+    label: 'doc',
+    type: 'directory',
+    hasChildren: true,
+    loaded: true,
+    metadata: { item_count: 2, scanned_at: '2026-09-11T04:18:56Z' },
     children: [{
-      id: DOC_LOCATOR,
-      locator: DOC_LOCATOR,
-      label: 'doc',
-      type: 'directory',
-      children: [{
-        id: README_LOCATOR,
-        locator: README_LOCATOR,
-        label: 'README.md',
-        type: 'file',
-        path: 'doc/README.md',
-        children: [],
-        metadata: { item_id: 1201, data_type: 'document', format: 'markdown' }
-      }, {
-        id: SLIDES_LOCATOR,
-        locator: SLIDES_LOCATOR,
-        label: 'slides.pptx',
-        type: 'file',
-        path: 'doc/slides.pptx',
-        children: [],
-        metadata: { item_id: 1202, data_type: 'document', format: 'pptx' }
-      }]
+      id: README_LOCATOR,
+      locator: README_LOCATOR,
+      label: 'README.md',
+      type: 'file',
+      path: 'doc/README.md',
+      children: [],
+      metadata: { item_id: 1201, data_type: 'document', format: 'markdown' }
+    }, {
+      id: SLIDES_LOCATOR,
+      locator: SLIDES_LOCATOR,
+      label: 'slides.pptx',
+      type: 'file',
+      path: 'doc/slides.pptx',
+      children: [],
+      metadata: { item_id: 1202, data_type: 'document', format: 'pptx' }
     }]
   }
 }

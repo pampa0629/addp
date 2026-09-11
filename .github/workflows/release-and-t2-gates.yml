@@ -728,6 +728,34 @@ jobs:
           gate: Common Engine Provider integration (OceanBase CE 4.4.2 LTS)
           status: ${{ job.status }}
 
+  common-tidb:
+    name: Common Engine Provider integration (TiDB 8.5.8)
+    needs: selection
+    if: needs.selection.outputs.common == 'true' || needs.selection.outputs.develop == 'true' || needs.selection.outputs.service == 'true' || needs.selection.outputs.transfer == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: common/go.mod
+          cache: false
+
+      - name: Run Common TiDB gate
+        run: make test-common-tidb
+
+      - name: Summarize Common TiDB gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Common Engine Provider integration (TiDB 8.5.8)
+          status: ${{ job.status }}
+
   common-mysql-data-protection:
     name: Common and Owner data protection contracts (MySQL 8)
     needs: selection

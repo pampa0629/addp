@@ -169,6 +169,9 @@ other = "该候选属于多语义变体候选族，请使用候选族胜出裁�
 [standard.document.candidate_family_decision_invalid]
 other = "候选族裁决必须填写一至一千个字符的理由，显式选择同一候选族当前全部两个至一百个不同语义变体，并指定唯一胜出候选"
 
+[standard.document.candidate_representative_stale]
+other = "该候选不是当前语义变体的代表候选，请刷新候选列表后重试"
+
 [standard.document.copilot_unavailable]
 other = "Copilot 标准提炼服务暂时不可用"
 

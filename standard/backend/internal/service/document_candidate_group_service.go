@@ -29,10 +29,6 @@ type DocumentCandidateFamilyListOptions struct {
 
 type documentCandidateGroupBuilder struct {
 	group              models.DocumentExtractionCandidateGroup
-	hasFormalization   bool
-	formalizationTime  time.Time
-	hasReview          bool
-	reviewTime         time.Time
 	representativeSeen time.Time
 }
 
@@ -218,7 +214,7 @@ func buildDocumentCandidateGroups(extractions []models.DocumentExtraction) []mod
 			if builder == nil {
 				builder = &documentCandidateGroupBuilder{group: models.DocumentExtractionCandidateGroup{
 					SemanticFingerprint: fingerprint,
-					State:               models.CandidateGroupStatePending,
+					State:               candidateutil.GovernanceState(candidate),
 					FirstSeenAt:         extraction.CreatedAt,
 					LastSeenAt:          extraction.CreatedAt,
 					Candidate:           candidate,
@@ -273,26 +269,9 @@ func buildDocumentCandidateGroups(extractions []models.DocumentExtraction) []mod
 }
 
 func selectDocumentCandidateGroupRepresentative(builder *documentCandidateGroupBuilder, candidate models.DocumentExtractionCandidate, seenAt time.Time) {
-	if candidate.Formalization != nil {
-		formalizedAt := candidate.Formalization.CreatedAt
-		if !builder.hasFormalization || formalizedAt.After(builder.formalizationTime) || (formalizedAt.Equal(builder.formalizationTime) && candidate.ID > builder.group.Candidate.ID) {
-			builder.hasFormalization, builder.formalizationTime = true, formalizedAt
-			builder.group.State, builder.group.Candidate = models.CandidateGroupStateFormalized, candidate
-		}
-		return
-	}
-	if builder.hasFormalization {
-		return
-	}
-	if candidate.ReviewedAt != nil && (candidate.Status == models.CandidateGroupStateRetained || candidate.Status == models.CandidateGroupStateRejected) {
-		if !builder.hasReview || candidate.ReviewedAt.After(builder.reviewTime) || (candidate.ReviewedAt.Equal(builder.reviewTime) && candidate.ID > builder.group.Candidate.ID) {
-			builder.hasReview, builder.reviewTime = true, *candidate.ReviewedAt
-			builder.group.State, builder.group.Candidate = candidate.Status, candidate
-		}
-		return
-	}
-	if !builder.hasReview && (seenAt.After(builder.representativeSeen) || (seenAt.Equal(builder.representativeSeen) && candidate.ID > builder.group.Candidate.ID)) {
-		builder.representativeSeen, builder.group.Candidate = seenAt, candidate
+	if candidateutil.IsPreferredRepresentative(candidate, seenAt, builder.group.Candidate, builder.representativeSeen) {
+		builder.representativeSeen = seenAt
+		builder.group.State, builder.group.Candidate = candidateutil.GovernanceState(candidate), candidate
 	}
 }
 

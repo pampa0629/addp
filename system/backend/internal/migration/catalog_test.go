@@ -14,8 +14,27 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 134 {
-		t.Fatalf("LatestVersion = %d, want 134", catalog.LatestVersion)
+	if catalog.LatestVersion != 135 {
+		t.Fatalf("LatestVersion = %d, want 135", catalog.LatestVersion)
+	}
+}
+
+func TestSecurityTenantScopeMigrationPublishesSingleScopeBoundary(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000135_iam_security_tenant_scope.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 135: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"owner_module = 'security'",
+		"'tenant.protected_data_requester'",
+		"'tenant.security_manager'",
+		"SET allowed_scope_types = ARRAY['tenant']::text[]",
+		"revoked_reason = 'security_permission_scope_changed'",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 135 missing %q", fragment)
+		}
 	}
 }
 

@@ -37,6 +37,21 @@ export function buildFindingReviewPayload({ decision, sensitiveDataTypeID, secur
   return payload
 }
 
+export function buildAssessmentRevisionPayload({ version, sensitiveDataTypeID, securityGradeID, rationale }) {
+  return {
+    version: Number(version),
+    sensitive_data_type_id: Number(sensitiveDataTypeID),
+    security_grade_id: Number(securityGradeID),
+    rationale: String(rationale || '').trim()
+  }
+}
+
+const PROTECTION_EFFECT_RANK = Object.freeze({ mask: 1, suppress: 2, deny: 3 })
+
+export function isProtectionEffectStricter(effect, baselineEffect) {
+  return (PROTECTION_EFFECT_RANK[String(effect || '')] || 0) > (PROTECTION_EFFECT_RANK[String(baselineEffect || '')] || 0)
+}
+
 export function resolveReviewQueueFilters(routeQuery = {}) {
   const queryValue = value => String(Array.isArray(value) ? value[0] || '' : value || '').trim()
   const parsedTypeID = Number(queryValue(routeQuery.sensitive_data_type_id))

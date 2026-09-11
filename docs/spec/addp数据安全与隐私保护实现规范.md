@@ -2,7 +2,7 @@
 
 版本：v1.0
 
-更新日期：2026-08-31
+更新日期：2026-09-11
 
 本规范定义 ADDP `Security` 模块的唯一实现主线。概念解释见 [ADDP 数据安全与隐私保护体系图](../concepts/addp数据安全与隐私保护体系图.md)。
 
@@ -27,6 +27,7 @@
 7. 保护只在 Owner 服务端出口执行，浏览器不接收明文后再遮盖。
 8. 用户数据请求不同步调用 Security、Catalog 或 Meta，只读取 Owner 本地有效投影。
 9. 原值访问只允许由当前用户从真实数据出口申请、由另一名有审批权限的用户在 Security 审批，并以按用户、按字段、按出口、限时的投影授权执行；不保留基于角色名称、记录创建人、管理员身份或租户范围的本地绕过路径。
+10. 当前 Security 管理权限只允许 `tenant` Scope。Security 聚合和管理 API 只消费 Tenant Context，且不拥有 Department、Project Group 与专业资源之间的权威归属或授权策略；因此 Role Assignment 的组织 Scope 不能被当成 Security 资源过滤。租户级安全治理使用 `tenant.security_manager`，普通用户发起原值访问申请使用 `tenant.protected_data_requester` 或等价的 Tenant-only 自定义 Role；允许组织 Scope 的数据工程、数据治理和数据查看角色不再隐式携带 Security Permission。未来若支持组织级 Security 授权，必须先补齐 owner 资源身份、Scope Binding、显式 Deny 与最终策略校验契约，再同步开放 Permission Scope，不能只修改权限目录。
 
 ## 二、模块、运行角色与基础设施
 
@@ -183,6 +184,7 @@ Meta 专用技术事实读取契约固定为 `GET /api/v1/meta/runtime/data-item
 - 自动发现漏检时，治理人员可以在既有 Enrollment 上人工指定敏感组件。组件候选必须由 Security Backend 使用 `addp-security` Tenant Service Access Token 精确读取 Meta security facts，并只返回当前尚未形成任何正式 Assessment 的组件；已经确认、调整或撤销过的组件必须在既有 Assessment 上继续治理，不得重新列入“遗漏字段”候选。创建命令只提交所选 `component_key`、Enrollment `version`、SensitiveDataType、SecurityGrade 和原因；服务端必须重新读取并校验当前组件、结构指纹和 Tenant，不信任浏览器提交组件结构。
 - Assessment 聚合只保存当前 revision 指针、资源并发 `version` 和审计字段；每个不可变 revision 通过 `source_kind=finding|manual` 区分来源，通过 `conclusion=sensitive|not_sensitive` 表达当前正式结论，并冻结可选 Finding/review、SensitiveDataType、SecurityClassification、SecurityGrade、来源结构快照 Hash 和已确认组件结构。该依赖快照不得包含原始样本值。
 - 治理人员发现既有正式 Assessment 错误时，必须携带 Assessment `version` 和原因追加 `conclusion=not_sensitive` 修订；不得删除或改写 Assessment、Finding、review 或历史 revision。后续重新认定为敏感时仍在同一 Assessment 聚合追加 `sensitive` 修订。
+- “受保护资源”是调整正式 Assessment 的唯一产品入口。无论 Assessment 来源于 Finding 复核还是人工指定、当前结论是 `sensitive` 还是 `not_sensitive`，界面都必须在既有聚合上提供“调整结论”；表单预填当前 SensitiveDataType 和 SecurityGrade，只允许选择已有有效 ProtectionBaseline 的组合，并要求填写本次修订依据。提交固定调用 `POST /assessments/{id}/revisions` 并携带当前 `version`，成功后刷新当前资源的 Assessment、ProtectionPolicy 和 Owner 同步状态；不得重新复核 Finding、重新人工指定组件、调用 `PUT /assessments/{id}` 或建立独立 Assessment 管理页面。
 - 编译器合并有效 Assessment、ProtectionBaseline 和 ProtectionPolicy，对同一资源、组件、消费 Owner 和动作始终选择更严格结果。
 - 候选基线与正式 Assessment 都必须进入同一编译器和同一投影变化流；不允许 Owner 实现“自动发现脱敏”与“正式策略脱敏”两条路线。
 - 当 Finding 被驳回或正式 Assessment 被撤销，且同一组件不存在其他有效正式结论时，唯一编译器必须移除该字段规则；若整个资源不再有字段规则，则发布新的 `enrolling` 资源级拒绝投影。不得通过删除投影使 Owner 回到明文路径。
@@ -191,7 +193,7 @@ Finding 查询响应必须同时提供只读的 `explanation`，把已经存在�
 
 1. `capability` 说明产生该 Finding 的平台检测能力，`automatic_adoption_threshold` 取当前 Tenant 的 Detector 绑定；Finding 的置信度仍以不可变观测值为准。
 2. `decision_state` 只允许 `automatic|formal|awaiting_review|detector_inactive|baseline_missing|rejected|revoked|superseded`。`automatic` 表示当前 Finding 达到绑定阈值并命中有效 ProtectionBaseline；`formal` 表示当前组件由有效 `sensitive` Assessment revision 支撑；`revoked` 表示该组件当前正式结论已撤销为 `not_sensitive`；`superseded` 表示该历史 Finding 的确认结果已不再是当前组件的有效 Assessment revision；其余状态必须明确说明为什么没有形成字段级规则。`governance_source=detector_default|assessment` 在基线缺失时仍保留候选结论的来源。
-3. `effective_*_id`、`assessment_id` 和 `baseline` 必须由 Security 后端按唯一编译器使用的同一候选选择规则组装；前端不得根据名称、默认值或列表数据自行猜测。
+3. `effective_*_id` 和 `baseline` 必须由 Security 后端按唯一编译器使用的同一候选选择规则组装。当前 Finding 的组件结构与正式 Assessment 当前修订仍匹配时，`assessment_id` 必须始终返回该精确聚合 ID，包括结论为 `not_sensitive` 的 `revoked` 状态；没有正式 Assessment 或组件结构已冲突时才省略。前端只能使用该 ID 回到原聚合继续修订，不得根据字段名、名称、默认值或列表顺序猜测关联。
 4. `outlets` 必须读取当前已发布 Projection，并按组件精确列出每个 Owner 的 `projection_state`、安装确认状态以及投影中的 action/effect/algorithm。它描述当前控制面真实产物，而不是根据 ProtectionBaseline 预测的结果，也不是具体数据请求的执行记录；资源级 `enrolling` 拒绝没有字段规则时返回空 `rules`。
 5. `explanation` 是查询期只读组合结果，不持久化、不进入 Projection checksum，也不包含原始敏感值、样本、连接信息或完整投影载荷。列表查询必须批量装配，禁止逐 Finding 发起数据库查询。
 
@@ -589,7 +591,7 @@ security.protection_projection.update
 security.audit.read
 ```
 
-实施时必须在 `security/authorization/permissions.yaml` 声明精确 Permission，不能在 Handler、Swagger 或前端中发明未登记字符串。Runtime `read|update` Permission 只授予固定参与 Owner 的 Service Principal，不进入 Tenant 自定义 Role 选项。`update` 只允许写入当前固定消费 Owner 的单调 acknowledgement checkpoint，不表示可编辑 Projection。
+实施时必须在 `security/authorization/permissions.yaml` 声明精确 Permission，不能在 Handler、Swagger 或前端中发明未登记字符串。所有 active Security Permission 都只允许 `tenant` Scope；管理能力由 `tenant.security_manager` 承载，原值申请人的 `create|read` 由 `tenant.protected_data_requester` 承载，两者都不得并入允许 Department 或 Project Group Scope 的内置 Role。Runtime `read|update` Permission 只授予固定参与 Owner 的 Service Principal，不进入 Tenant 自定义 Role 选项。`update` 只允许写入当前固定消费 Owner 的单调 acknowledgement checkpoint，不表示可编辑 Projection。
 
 Security 管理 API 只使用 canonical Bearer Tenant AuthContext；不接受 Internal API Key、`X-Tenant-ID`、调用方提交 Principal 或 Cookie 认证。Runtime API 使用 `addp-manager`、`addp-transfer`、`addp-develop`、`addp-service` 等各自 Tenant Service Access Token，Security 从 AuthContext 中识别固定 Client 和 Tenant。
 

@@ -73,7 +73,7 @@ Security 的领域事实保持独立，产品入口收敛为三个工作区，�
 | 敏感数据定义 | SensitiveDataType、Detector、ProtectionBaseline | 以敏感类型为主视图，把具体识别方式和“敏感类型 + 保护等级”的默认保护收进对应类型，统一回答“什么数据敏感、如何发现、默认怎样保护” |
 | 受保护资源 | ProtectionEnrollment 及其 Finding、Assessment、ProtectionPolicy、Projection 状态 | 选择 Meta 已扫描资源纳入数据保护，复核或调整具体组件的分类分级结论，在默认保护之上按资源与出口显式收紧，并观察各 Owner 保护规则同步状态 |
 
-这只是产品信息架构收敛，不合并 Security 的领域对象。“分类分级体系”是低频基础定义工作区，不是新的领域对象；稳定技术术语仍为 `ProtectionBaseline`、`ProtectionPolicy` 和 `ProtectionEnrollment`。“默认保护”是敏感数据定义的从属配置，不再暴露独立产品入口；“受保护资源”用于具体资源结论与只能收紧的保护策略；“纳入数据保护”是创建 ProtectionEnrollment 的动作。
+这只是产品信息架构收敛，不合并 Security 的领域对象。“分类分级体系”是低频基础定义工作区，不是新的领域对象；稳定技术术语仍为 `ProtectionBaseline`、`ProtectionPolicy` 和 `ProtectionEnrollment`。“默认保护”是敏感数据定义的从属配置，不再暴露独立产品入口；“受保护资源”用于具体资源结论与只能收紧的保护策略，其中既有正式 Assessment 无论来源和当前结论都只能在原聚合上追加修订，不重新走 Finding 初审或人工指定；“纳入数据保护”是创建 ProtectionEnrollment 的动作。
 
 ## 三、专业资源身份与 Catalog
 
@@ -121,6 +121,8 @@ Catalog 建档后通过 SourceBinding 联邦展示 Security 事实；Security �
 | Catalog | 企业目录身份、SourceBinding、业务语义关联、责任、治理状态和目录可见性 | Security 专业事实的第二份可编辑结果 |
 | System / IAM | Principal、Tenant、Role、Permission、AuthContext 和审计基础设施 | 敏感数据识别和字段保护策略 |
 | 资源 Owner | Resource Grant / Policy、最终资源动作判断和本模块服务端出口保护执行 | 第二套安全分类分级和私有脱敏规则体系 |
+
+当前 Security 的分类分级、敏感类型、检测、纳管、评估、保护规则和原值访问审批都是 Tenant 级治理事实，其管理 Permission 只允许 `tenant` Scope。租户安全治理与普通用户原值申请分别由 Tenant-only 的 `tenant.security_manager`、`tenant.protected_data_requester` 承载，不混入可按 Department 或 Project Group 分配的数据角色。组织 Scope 只会产生候选能力，不能替代 owner 资源归属和策略判断；在 Security 尚未建立可信 Scope Binding 与 owner 最终授权校验前，不开放组织级 Security Permission，也不把组织 Scope 伪装成列表过滤条件。
 
 ## 五、控制面与数据面
 

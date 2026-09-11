@@ -32,6 +32,7 @@ PostgreSQL、Redis、MinIO 和 Meilisearch 当前来源于 `docker-compose.infra
 - Spark Thrift Server: `11000`
 - Business Kafka bootstrap: `29092`
 - OceanBase SQL: `2881`
+- TiDB SQL: `4000`
 - openGauss SQL: `5435`（容器端口 `5432`）
 
 来源：`business/docker-compose.yml`，可通过 `business/.env` 覆盖。脚本固定使用这些端口，不会自动改动；若被其他进程占用，启动脚本会给出警告并继续尝试（可能失败）。
@@ -48,6 +49,7 @@ SPARK_MASTER_UI=18088
 SPARK_THRIFT_PORT=11000
 BUSINESS_KAFKA_PORT=29092
 OCEANBASE_PORT=2881
+TIDB_PORT=4000
 OPENGAUSS_PORT=5435
 ```
 

@@ -613,9 +613,16 @@
                 <el-button type="danger" plain @click="openFindingReview(finding, 'reject')">{{ t('security.finding.markFalsePositive') }}</el-button>
                 <el-button type="primary" plain @click="openFindingReview(finding, 'confirm')">{{ t('security.finding.review') }}</el-button>
               </div>
-              <div v-else-if="activeAssessmentForFinding(finding)" class="finding-card__actions">
+              <div v-else-if="assessmentForFinding(finding)" class="finding-card__actions">
                 <el-button
-                  v-if="canConfigurePolicy(activeAssessmentForFinding(finding))"
+                  v-if="canUpdateAssessments"
+                  plain
+                  @click="openAssessmentRevision(assessmentForFinding(finding))"
+                >
+                  {{ t('security.assessment.reviseConclusion') }}
+                </el-button>
+                <el-button
+                  v-if="activeAssessmentForFinding(finding) && canConfigurePolicy(activeAssessmentForFinding(finding))"
                   type="primary"
                   plain
                   @click="openPolicy(activeAssessmentForFinding(finding))"
@@ -629,7 +636,7 @@
                 >
                   {{ t('security.policy.restoreDefault') }}
                 </el-button>
-                <el-button v-if="canUpdateAssessments" type="danger" plain @click="revokeAssessment(activeAssessmentForFinding(finding))">
+                <el-button v-if="activeAssessmentForFinding(finding) && canUpdateAssessments" type="danger" plain @click="revokeAssessment(activeAssessmentForFinding(finding))">
                   {{ t('security.assessment.revokeConclusion') }}
                 </el-button>
               </div>
@@ -662,6 +669,13 @@
                 <el-tag :type="assessment.current?.conclusion === 'sensitive' ? 'success' : 'info'">
                   {{ assessmentConclusionLabel(assessment.current?.conclusion) }}
                 </el-tag>
+                <el-button
+                  v-if="canUpdateAssessments"
+                  link
+                  @click="openAssessmentRevision(assessment)"
+                >
+                  {{ t('security.assessment.reviseConclusion') }}
+                </el-button>
                 <el-button
                   v-if="assessment.current?.conclusion === 'sensitive' && canConfigurePolicy(assessment)"
                   link
@@ -949,6 +963,58 @@
     </el-dialog>
 
     <el-dialog
+      v-model="assessmentRevisionDialog"
+      class="addp-dialog"
+      :title="t('security.assessment.reviseTitle')"
+      width="min(640px, calc(100vw - 24px))"
+      @opened="focusAssessmentRevisionRationale"
+      @closed="revisingAssessment = null"
+    >
+      <template v-if="revisingAssessment">
+        <el-alert type="info" :closable="false" :title="t('security.assessment.reviseHint')" />
+        <div class="policy-target">
+          <strong>{{ revisingAssessment.component_key }}</strong>
+          <span>{{ assessmentConclusionLabel(revisingAssessment.current?.conclusion) }}</span>
+          <span>{{ assessmentSummary(revisingAssessment) }}</span>
+        </div>
+        <el-form label-position="top">
+          <el-form-item :label="t('security.finding.sensitiveDataType')" required>
+            <el-select
+              v-model="assessmentRevisionForm.sensitiveDataTypeID"
+              class="wide"
+              :placeholder="t('security.finding.selectSensitiveDataType')"
+              @change="applyAssessmentRevisionDefaultGrade"
+            >
+              <el-option v-for="item in sensitiveTypes" :key="item.id" :label="item.name" :value="String(item.id)" />
+            </el-select>
+          </el-form-item>
+          <el-form-item :label="t('security.finding.securityGrade')" required>
+            <el-select v-model="assessmentRevisionForm.securityGradeID" class="wide" :placeholder="t('security.finding.selectSecurityGrade')">
+              <el-option v-for="item in activeGradesForType(assessmentRevisionForm.sensitiveDataTypeID)" :key="item.id" :label="item.name" :value="String(item.id)" />
+            </el-select>
+          </el-form-item>
+          <el-form-item :label="t('security.assessment.revisionRationale')" required>
+            <el-input
+              ref="assessmentRevisionRationaleInput"
+              v-model="assessmentRevisionForm.rationale"
+              type="textarea"
+              :rows="4"
+              maxlength="2000"
+              show-word-limit
+              :placeholder="t('security.assessment.revisionRationalePlaceholder')"
+            />
+          </el-form-item>
+        </el-form>
+      </template>
+      <template #footer>
+        <el-button @click="assessmentRevisionDialog = false">{{ t('security.common.cancel') }}</el-button>
+        <el-button type="primary" :loading="assessmentRevisionSaving" @click="submitAssessmentRevision">
+          {{ t('security.assessment.confirmRevision') }}
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
       v-model="policyDialog"
       class="addp-dialog"
       :title="t('security.policy.title')"
@@ -1017,11 +1083,13 @@ import {
 import { assessmentAPI, classificationAPI, detectorCapabilityAPI, findingAPI, gradeAPI, metaAPI, protectionAccessRequestAPI, protectionBaselineAPI, protectionEnrollmentAPI, protectionExemptionAPI, protectionPolicyAPI, sensitiveDataTypeAPI } from '../api/security'
 import { useAuthStore } from '../store/auth'
 import {
+  buildAssessmentRevisionPayload,
   buildFindingReviewPayload,
   discoveryRefreshMarker,
   findingDecisionState,
   findingOutletRules,
   findingReviewState,
+  isProtectionEffectStricter,
   isZeroFindingDiscovery,
   needsEnrollmentRefresh,
   normalizeDiscoverySummary,
@@ -1073,6 +1141,7 @@ const detailDrawer = ref(false)
 const releaseDialog = ref(false)
 const reviewDialog = ref(false)
 const manualAssessmentDialog = ref(false)
+const assessmentRevisionDialog = ref(false)
 const policyDialog = ref(false)
 const selectedResource = ref(null)
 const selectedItem = ref(null)
@@ -1126,6 +1195,10 @@ const reviewForm = reactive({ decision: 'confirm', sensitiveDataTypeID: '', secu
 const manualRationaleInput = ref(null)
 const manualAssessmentSaving = ref(false)
 const manualAssessmentForm = reactive({ componentKey: '', sensitiveDataTypeID: '', securityGradeID: '', rationale: '' })
+const revisingAssessment = ref(null)
+const assessmentRevisionRationaleInput = ref(null)
+const assessmentRevisionSaving = ref(false)
+const assessmentRevisionForm = reactive({ sensitiveDataTypeID: '', securityGradeID: '', rationale: '' })
 const policySaving = ref(false)
 const policyAssessment = ref(null)
 const policyForm = reactive({ effect: '', rationale: '' })
@@ -1476,10 +1549,14 @@ function findingStatePresentation(finding) {
 }
 
 function activeAssessmentForFinding(finding) {
+  const assessment = assessmentForFinding(finding)
+  return assessment?.current?.conclusion === 'sensitive' ? assessment : null
+}
+
+function assessmentForFinding(finding) {
   const id = String(finding?.explanation?.assessment_id || '')
   if (!id) return null
-  const assessment = assessments.value.find(item => item.id === id)
-  return assessment?.current?.conclusion === 'sensitive' ? assessment : null
+  return assessments.value.find(item => item.id === id) || null
 }
 
 function assessmentSummary(assessment) {
@@ -1507,14 +1584,9 @@ function policyForAssessment(assessment) {
     && item.action === 'preview') || null
 }
 
-function protectionEffectRank(effect) {
-  return ({ mask: 1, suppress: 2, deny: 3 })[String(effect || '')] || 0
-}
-
 function stricterPolicyEffects(assessment) {
   const baseline = baselineForAssessment(assessment)
-  const baselineRank = protectionEffectRank(baseline?.effect)
-  return ['mask', 'suppress', 'deny'].filter(effect => protectionEffectRank(effect) > baselineRank)
+  return ['mask', 'suppress', 'deny'].filter(effect => isProtectionEffectStricter(effect, baseline?.effect))
 }
 
 function canConfigurePolicy(assessment) {
@@ -1526,7 +1598,7 @@ function assessmentProtectionSummary(assessment) {
   const baseline = baselineForAssessment(assessment)
   if (!baseline) return t('security.policy.baselineMissing')
   const policy = policyForAssessment(assessment)
-  if (policy?.state === 'active') {
+  if (policy?.state === 'active' && isProtectionEffectStricter(policy.current?.effect, baseline.effect)) {
     return t('security.policy.activeSummary', { baseline: effectLabel(baseline.effect), policy: effectLabel(policy.current?.effect) })
   }
   return t('security.policy.defaultSummary', { baseline: effectLabel(baseline.effect) })
@@ -1832,6 +1904,11 @@ function applyReviewDefaultGrade(typeID) {
   reviewForm.securityGradeID = String(selectedType?.default_security_grade_id || '')
 }
 
+function applyAssessmentRevisionDefaultGrade(typeID) {
+  const selectedType = sensitiveTypes.value.find(item => String(item.id) === String(typeID))
+  assessmentRevisionForm.securityGradeID = String(selectedType?.default_security_grade_id || '')
+}
+
 async function openManualAssessment() {
   manualAssessmentForm.componentKey = ''
   manualAssessmentForm.sensitiveDataTypeID = ''
@@ -1881,6 +1958,53 @@ async function submitManualAssessment() {
     ElMessage.error(error.message || t('security.common.failed'))
   } finally {
     manualAssessmentSaving.value = false
+  }
+}
+
+function focusAssessmentRevisionRationale() {
+  nextTick(() => assessmentRevisionRationaleInput.value?.focus?.())
+}
+
+async function openAssessmentRevision(assessment) {
+  if (!assessment?.id) return
+  try {
+    await loadFindingDefinitions()
+  } catch (error) {
+    ElMessage.error(error.message || t('security.finding.loadDefinitionsFailed'))
+    return
+  }
+  revisingAssessment.value = assessment
+  assessmentRevisionForm.sensitiveDataTypeID = String(assessment.current?.sensitive_data_type_id || '')
+  assessmentRevisionForm.securityGradeID = String(assessment.current?.security_grade_id || '')
+  assessmentRevisionForm.rationale = ''
+  if (!activeGradesForType(assessmentRevisionForm.sensitiveDataTypeID).some(item => String(item.id) === assessmentRevisionForm.securityGradeID)) {
+    applyAssessmentRevisionDefaultGrade(assessmentRevisionForm.sensitiveDataTypeID)
+  }
+  assessmentRevisionDialog.value = true
+}
+
+async function submitAssessmentRevision() {
+  if (!revisingAssessment.value || !assessmentRevisionForm.sensitiveDataTypeID || !assessmentRevisionForm.securityGradeID || !assessmentRevisionForm.rationale.trim()) {
+    ElMessage.warning(t('security.assessment.revisionRequired'))
+    return
+  }
+  assessmentRevisionSaving.value = true
+  try {
+    const revised = await assessmentAPI.revise(revisingAssessment.value.id, buildAssessmentRevisionPayload({
+      version: revisingAssessment.value.version,
+      ...assessmentRevisionForm
+    }))
+    const index = assessments.value.findIndex(item => item.id === revised?.id)
+    if (index >= 0) assessments.value.splice(index, 1, revised)
+    assessmentRevisionDialog.value = false
+    await load({ background: true })
+    await loadGovernance(findingsPage.value)
+    scheduleAutoRefresh({ reset: true })
+    ElMessage.success(t('security.assessment.revised'))
+  } catch (error) {
+    ElMessage.error(error.message || t('security.common.failed'))
+  } finally {
+    assessmentRevisionSaving.value = false
   }
 }
 

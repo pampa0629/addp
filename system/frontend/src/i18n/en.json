@@ -95,11 +95,6 @@
         "description": "Engines, Meta, and other business capabilities require explicit tenant role assignments.",
         "action": "Configure Roles"
       },
-      "context": {
-        "platform": "Current management scope: Platform",
-        "tenant": "Current tenant: {name} ({code})",
-        "tenantUnknown": "Current tenant"
-      },
       "session": {
         "label": "Current session: {state}",
         "detail": "Authentication assurance level: {level}",
@@ -380,13 +375,14 @@
           }
         },
         "permissionOverview": "Permission Overview",
+        "immutableHint": "System built-in; cannot be modified",
         "permissionCount": "{count} items",
         "permissionDetails": "Role Permission Details",
         "selectedPermissionCount": "{count} permissions selected",
         "searchPermissions": "Search permission name, key, module, or action",
         "permissionModules": "Permission Modules",
         "moduleSelection": "{selected} of {total} selected",
-        "permissionPickerHint": "Choose a module, then select its permissions. Permission keys are shown only as technical references.",
+        "permissionPickerHint": "Permissions are grouped by resource and action. Choose a module, then select the required actions. Permission keys are shown only as technical references.",
         "selectVisible": "Select Current Results",
         "clearModule": "Clear Current Results",
         "clearSelection": "Clear Selection",
@@ -584,7 +580,8 @@
         "invitation": "Invitation",
         "idp_jit": "IdP JIT",
         "directory_sync": "Directory Sync",
-        "bootstrap": "Bootstrap"
+        "bootstrap": "Bootstrap",
+        "unknown": "Unknown source"
       },
       "status": {
         "active": "Active",
@@ -1557,6 +1554,14 @@
       "governance_manager": {
         "name": "Governance Manager",
         "description": "Manages data standards, quality rules, check tasks, and quality issues."
+      },
+      "protected_data_requester": {
+        "name": "Protected Data Requester",
+        "description": "Views requestable protected fields tenant-wide and submits time-limited raw-value access requests for the current user."
+      },
+      "security_manager": {
+        "name": "Data Security Manager",
+        "description": "Manages sensitive data definitions, protected resources, protection rules, and raw-value access reviews tenant-wide."
       },
       "graph_engineer": {
         "name": "Graph Engineer",

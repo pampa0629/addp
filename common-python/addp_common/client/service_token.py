@@ -14,17 +14,92 @@ import httpx
 class ServiceTokenError(RuntimeError):
     """Raised when a service access token cannot be obtained."""
 
-    def __init__(self, code: str, *, status_code: int = 0, retryable: bool = False) -> None:
-        super().__init__(code)
+    def __init__(
+        self,
+        code: str,
+        *,
+        status_code: int = 0,
+        retryable: bool = False,
+        response_reason: str = "",
+        response_content_type: str = "",
+        response_body_bytes: int = 0,
+    ) -> None:
+        detail = f"{code}: {response_reason}" if response_reason else code
+        super().__init__(detail)
         self.code = code
         self.status_code = status_code
         self.retryable = retryable
+        self.response_reason = response_reason
+        self.response_content_type = response_content_type
+        self.response_body_bytes = response_body_bytes
 
 
 @dataclass(frozen=True)
 class _CachedToken:
     value: str
     expires_at: float
+
+
+_SERVICE_TOKEN_RESPONSE_FIELDS = {"access_token", "token_type", "expires_in", "scope"}
+
+
+def _service_token_response_error(
+    response: httpx.Response,
+    code: str,
+    reason: str,
+    *,
+    retryable: bool = False,
+) -> ServiceTokenError:
+    return ServiceTokenError(
+        code,
+        retryable=retryable,
+        response_reason=reason,
+        response_content_type=response.headers.get("Content-Type", "").strip()[:256],
+        response_body_bytes=len(response.content),
+    )
+
+
+def _parse_service_token_response(response: httpx.Response) -> tuple[str, int]:
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise _service_token_response_error(
+            response,
+            "service_token_response_malformed",
+            "json_decode_failed",
+            retryable=True,
+        ) from exc
+    if not isinstance(payload, dict):
+        raise _service_token_response_error(
+            response,
+            "service_token_response_invalid",
+            "top_level_type",
+        )
+    if set(payload) - _SERVICE_TOKEN_RESPONSE_FIELDS:
+        raise _service_token_response_error(
+            response,
+            "service_token_response_invalid",
+            "unexpected_fields",
+        )
+
+    access_token = payload.get("access_token")
+    token_type = payload.get("token_type")
+    expires_in = payload.get("expires_in")
+    scope = payload.get("scope", "")
+    if not isinstance(access_token, str) or not access_token.startswith("addp_at_") or access_token == "addp_at_":
+        raise _service_token_response_error(response, "service_token_response_invalid", "access_token")
+    if not isinstance(token_type, str) or token_type.lower() != "bearer":
+        raise _service_token_response_error(response, "service_token_response_invalid", "token_type")
+    if (
+        not isinstance(expires_in, int)
+        or isinstance(expires_in, bool)
+        or expires_in <= 0
+        or expires_in > 300
+    ):
+        raise _service_token_response_error(response, "service_token_response_invalid", "expires_in")
+    if scope not in {"", "addp.api"}:
+        raise _service_token_response_error(response, "service_token_response_invalid", "scope")
+    return access_token, expires_in
 
 
 class OAuthServiceTokenSource:
@@ -90,26 +165,7 @@ class OAuthServiceTokenSource:
                     status_code=response.status_code,
                     retryable=response.status_code == 429 or response.status_code >= 500,
                 )
-            try:
-                payload = response.json()
-                access_token = payload["access_token"]
-                token_type = payload["token_type"]
-                expires_in = payload["expires_in"]
-                scope = payload.get("scope", "")
-            except (KeyError, TypeError, ValueError) as exc:
-                raise ServiceTokenError("invalid_service_token_response") from exc
-            if (
-                not isinstance(access_token, str)
-                or not access_token.startswith("addp_at_")
-                or not isinstance(token_type, str)
-                or token_type.lower() != "bearer"
-                or not isinstance(expires_in, int)
-                or isinstance(expires_in, bool)
-                or expires_in <= 0
-                or expires_in > 300
-                or scope not in {"", "addp.api"}
-            ):
-                raise ServiceTokenError("invalid_service_token_response")
+            access_token, expires_in = _parse_service_token_response(response)
             self._cache[cache_key] = _CachedToken(access_token, now + expires_in)
             return access_token
 
@@ -194,26 +250,7 @@ class SyncOAuthServiceTokenSource:
                     status_code=response.status_code,
                     retryable=response.status_code == 429 or response.status_code >= 500,
                 )
-            try:
-                payload = response.json()
-                access_token = payload["access_token"]
-                token_type = payload["token_type"]
-                expires_in = payload["expires_in"]
-                scope = payload.get("scope", "")
-            except (KeyError, TypeError, ValueError) as exc:
-                raise ServiceTokenError("invalid_service_token_response") from exc
-            if (
-                not isinstance(access_token, str)
-                or not access_token.startswith("addp_at_")
-                or not isinstance(token_type, str)
-                or token_type.lower() != "bearer"
-                or not isinstance(expires_in, int)
-                or isinstance(expires_in, bool)
-                or expires_in <= 0
-                or expires_in > 300
-                or scope not in {"", "addp.api"}
-            ):
-                raise ServiceTokenError("invalid_service_token_response")
+            access_token, expires_in = _parse_service_token_response(response)
             self._cache[cache_key] = _CachedToken(access_token, now + expires_in)
             return access_token
 

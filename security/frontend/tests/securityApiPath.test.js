@@ -29,6 +29,10 @@ describe('Security API paths', () => {
     expect(protectionEnrollmentAPI.components('enrollment-1')).toBe('/security/protection-enrollments/enrollment-1/components')
 
     expect(assessmentAPI.create({ enrollment_id: 'enrollment-1' }).path).toBe('/security/assessments')
+    const reviseAssessment = assessmentAPI.revise('assessment-1', { version: 1, sensitive_data_type_id: 4, security_grade_id: 5, rationale: 'verified' })
+    expect(reviseAssessment.path).toBe('/security/assessments/assessment-1/revisions')
+    expect(reviseAssessment.data).toEqual({ version: 1, sensitive_data_type_id: 4, security_grade_id: 5, rationale: 'verified' })
+    expect(assessmentAPI).not.toHaveProperty('update')
     const revokeAssessment = assessmentAPI.revoke('assessment-1', { version: 2, rationale: 'verified' })
     expect(revokeAssessment.path).toBe('/security/assessments/assessment-1')
     expect(revokeAssessment.config.data).toEqual({ version: 2, rationale: 'verified' })

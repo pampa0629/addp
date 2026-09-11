@@ -375,6 +375,17 @@ OCEANBASE_PORT=2881
 
 本地容器是单机测试形态，不表达生产集群拓扑。System 注册时使用 `engine_type=oceanbase`、容器网络地址 `business-oceanbase:2881`、账号 `root@test` 和配置的 database/password；不得改登记为 MySQL Engine。
 
+Business TiDB 固定使用 PingCAP 官方 8.5.8 `pd`、`tikv`、`tidb` 三组件镜像及 OCI digest，Compose 不提供镜像覆盖入口；同一镜像契约同时用于 Linux x86_64 GitHub Hosted 与 macOS Docker Desktop。启动不读取 License 文件、不执行激活，也不得替换为 Enterprise 或第三方重打包镜像。
+
+```bash
+TIDB_DATABASE=business
+TIDB_USER=root
+TIDB_PASSWORD=
+TIDB_PORT=4000
+```
+
+`business/scripts/start.sh -tidb` 启动三组件并幂等初始化普通关系样例。System 注册时使用独立 `engine_type=tidb`、容器网络地址 `business-tidb:4000` 和配置的 database/user/password；不得登记为 MySQL Engine，也不得据 MySQL 协议兼容性声明 CDC、空间或分区变化应用能力。
+
 Business openGauss 固定使用 openGauss 6.0.6 LTS 官方 Docker tar，不接受第三方镜像或可变 tag。当前 `business/scripts/start.sh -opengauss` 只允许在具备 NUMA 的 Linux x86_64 主机选择并校验官方 x86_64 介质，加载为 `opengauss:6.0.6`；首次下载约 1.4 GB，后续复用本地镜像和缓存。官方 6.0.6 Docker 构建包含 MOT，而 Docker Desktop for macOS 不提供它需要的 NUMA 拓扑，因此 macOS 本地巡检不启动 openGauss，实库门禁由 GitHub Actions Linux x86_64 Job 承担。`scripts/lib/opengauss-official-media.sh` 仍维护 aarch64 官方介质事实，供后续具备 NUMA 的 Linux ARM64 专项认证使用，未认证前不得作为 Business 默认路径。
 
 ```bash

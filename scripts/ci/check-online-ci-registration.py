@@ -621,6 +621,95 @@ def validate_oceanbase_consumer_flow_profile(
         )
 
 
+def validate_tidb_consumer_flow_profile(
+    repository: Path, registered: set[str]
+) -> None:
+    if "tidb-consumer-flow" not in registered:
+        return
+    host_gate = (repository / "scripts/test/online-host-gate.sh").read_text(
+        encoding="utf-8"
+    )
+    required_fragments = (
+        "tidb-consumer-flow)",
+        "SYSTEM_URL GATEWAY_URL META_URL MANAGER_URL TRANSFER_URL DEVELOP_URL SERVICE_URL",
+        "ADDP_ONLINE_TIDB_ENGINE_ID",
+        "ADDP_ONLINE_TIDB_PORT",
+        "ADDP_ONLINE_TIDB_DATABASE",
+        "ADDP_ONLINE_TIDB_USER",
+        "bash business/scripts/online-tidb-consumer-fixture.sh start",
+        "bash business/scripts/online-tidb-consumer-fixture.sh stop",
+        'bash scripts/dev/start.sh "$START_TARGET"',
+    )
+    missing = [fragment for fragment in required_fragments if fragment not in host_gate]
+    if missing:
+        raise RegistrationError(
+            "tidb-consumer-flow profile is missing: " + ", ".join(missing)
+        )
+    for relative in (
+        "business/scripts/online-tidb-consumer-fixture.sh",
+        "scripts/test/docker-compose.tidb-t2.yml",
+        "scripts/test/online-tidb-consumer-fixture_test.py",
+        "scripts/test/relational-consumer-flow-online.py",
+        "scripts/test/relational-consumer-flow-online_test.py",
+    ):
+        if not (repository / relative).is_file():
+            raise RegistrationError(f"tidb-consumer-flow requires {relative}")
+    fixture = (
+        repository / "business/scripts/online-tidb-consumer-fixture.sh"
+    ).read_text(encoding="utf-8")
+    for fragment in (
+        "ADDP_ONLINE_HOST",
+        "docker-compose.tidb-t2.yml",
+        "addp-online-tidb-consumer",
+        "addp_online_consumer_source",
+        "addp_online_consumer_target",
+        "start|advance|stop|status",
+        "reset_fixture",
+        "down --volumes --remove-orphans",
+        "assert_zero_residue",
+    ):
+        if fragment not in fixture:
+            raise RegistrationError(
+                f"tidb-consumer-flow fixture contract is missing {fragment}"
+            )
+    compose = (
+        repository / "scripts/test/docker-compose.tidb-t2.yml"
+    ).read_text(encoding="utf-8")
+    for image in ("pingcap/pd", "pingcap/tikv", "pingcap/tidb"):
+        if re.search(
+            rf"(?m)^\s*image:\s*{re.escape(image)}:v8\.5\.8@sha256:[0-9a-f]{{64}}\s*$",
+            compose,
+        ) is None:
+            raise RegistrationError(
+                f"tidb-consumer-flow Compose must pin {image}:v8.5.8 by digest"
+            )
+    if re.search(r"(?m)^volumes:\s*$", compose):
+        raise RegistrationError(
+            "tidb-consumer-flow Compose must remain disposable and volume-free"
+        )
+    owner = (
+        repository / "scripts/test/relational-consumer-flow-online.py"
+    ).read_text(encoding="utf-8")
+    for fragment in (
+        '"tidb": ConsumerProfile(',
+        'namespace_kind="database"',
+        'item_code_prefix="TIDB"',
+        'identifier_quote="`"',
+        'fixture_script="business/scripts/online-tidb-consumer-fixture.sh"',
+        '"verification_owner": "deployment_profile"',
+        '"schema_version": "addp.relational-consumer-flow-online/v1"',
+        '"residual_resources": 0',
+    ):
+        if fragment not in owner:
+            raise RegistrationError(
+                f"tidb-consumer-flow owner contract is missing {fragment}"
+            )
+    if "/api/v1/system/engines" in owner or '"system.engine.read"' in owner:
+        raise RegistrationError(
+            "tidb-consumer-flow consumer must not access the System Engine control plane"
+        )
+
+
 def validate_opengauss_consumer_flow_profile(
     repository: Path, registered: set[str]
 ) -> None:
@@ -1007,6 +1096,7 @@ def check_registration(repository: Path) -> None:
     validate_security_plaintext_access_profile(repository, registered)
     validate_security_mysql_owner_protection_profile(repository, registered)
     validate_oceanbase_consumer_flow_profile(repository, registered)
+    validate_tidb_consumer_flow_profile(repository, registered)
     validate_opengauss_consumer_flow_profile(repository, registered)
     validate_transfer_insert_only_mysql_profile(repository, registered)
 

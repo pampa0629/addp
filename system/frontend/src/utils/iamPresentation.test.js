@@ -3,16 +3,17 @@ import {
   accountSessionIsLoading,
   assuranceLevelKey,
   buildPermissionGroups,
-  findCurrentContextOption,
   formatMemberOptionLabel,
   groupTenantMembers,
   groupPermissionsByNamespace,
+  groupPermissionsByResource,
   permissionIdentity,
   permissionMatchesScopes,
   permissionResourceI18nKey,
   rolePrincipalTypeCounts,
   roleSupportsPrincipalType,
-  resolveIAMModuleName
+  resolveIAMModuleName,
+  resolveMembershipSourceLabel
 } from './iamPresentation'
 
 describe('IAM presentation helpers', () => {
@@ -41,15 +42,6 @@ describe('IAM presentation helpers', () => {
       user: null,
       authContext: null
     })).toBe(false)
-  })
-
-  it('resolves the current tenant presentation without exposing its internal id', () => {
-    const options = [
-      { type: 'platform', current: false },
-      { type: 'tenant', tenant_id: '1', tenant_membership_id: '7', tenant_name: 'Research Lab', tenant_code: 'lab', current: true }
-    ]
-    expect(findCurrentContextOption(options, { type: 'tenant', tenant_id: '1', tenant_membership_id: '7' }))
-      .toEqual(options[1])
   })
 
   it('maps only supported assurance values to presentation keys', () => {
@@ -93,11 +85,45 @@ describe('IAM presentation helpers', () => {
     ])
   })
 
+  it('groups module permissions by resource and sorts actions with selection counts', () => {
+    const permissions = [
+      { permission_key: 'manager.data_item.update', action: 'update' },
+      { permission_key: 'manager.connection.read', action: 'read' },
+      { permission_key: 'manager.data_item.read', action: 'read' }
+    ]
+
+    expect(groupPermissionsByResource(permissions, ['manager.data_item.read'])).toEqual([
+      {
+        resource: 'connection',
+        permissions: [permissions[1]],
+        selectedCount: 0
+      },
+      {
+        resource: 'data_item',
+        permissions: [permissions[2], permissions[0]],
+        selectedCount: 1
+      }
+    ])
+  })
+
   it('uses localized module names and falls back to the stable identifier', () => {
     const t = (key) => ({ 'system.iam.modules.system': 'System Management' })[key] || key
     const te = (key) => key === 'system.iam.modules.system'
     expect(resolveIAMModuleName('system', t, te)).toBe('System Management')
     expect(resolveIAMModuleName('extension', t, te)).toBe('extension')
+  })
+
+  it('resolves only declared membership sources without constructing undefined i18n keys', () => {
+    const messages = {
+      'system.iam.source.manual': 'Manual',
+      'system.iam.source.unknown': 'Unknown source'
+    }
+    const t = (key) => messages[key]
+    const te = (key) => Object.hasOwn(messages, key)
+
+    expect(resolveMembershipSourceLabel('manual', t, te)).toBe('Manual')
+    expect(resolveMembershipSourceLabel(undefined, t, te)).toBe('Unknown source')
+    expect(resolveMembershipSourceLabel('legacy', t, te)).toBe('Unknown source')
   })
 
   it('derives stable permission presentation fields from the permission key', () => {

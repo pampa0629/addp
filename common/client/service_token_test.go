@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -312,6 +313,75 @@ func TestOAuthServiceTokenSourceReportsSafeOAuthErrorCode(t *testing.T) {
 	}
 }
 
+func TestOAuthServiceTokenSourceClassifiesMalformedSuccessResponseAsRetryableWithoutLeakingBody(t *testing.T) {
+	t.Parallel()
+
+	const malformedBody = `{"access_token":"addp_at_sensitive_token"`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_, _ = w.Write([]byte(malformedBody))
+	}))
+	defer server.Close()
+
+	source, err := NewOAuthServiceTokenSource(server.URL, "addp-manager", testServiceClientSecret, server.Client())
+	if err != nil {
+		t.Fatalf("NewOAuthServiceTokenSource() error = %v", err)
+	}
+	_, err = source.PlatformToken(context.Background())
+	var tokenError *ServiceTokenError
+	if !errors.As(err, &tokenError) {
+		t.Fatalf("PlatformToken() error type = %T, want *ServiceTokenError", err)
+	}
+	if tokenError.Code != "service_token_response_malformed" || !tokenError.Retryable ||
+		tokenError.ResponseReason != "json_decode_failed" ||
+		tokenError.ResponseContentType != "application/json; charset=utf-8" ||
+		tokenError.ResponseBodyBytes != len(malformedBody) {
+		t.Fatalf("ServiceTokenError = %#v", tokenError)
+	}
+	if strings.Contains(err.Error(), "addp_at_sensitive_token") {
+		t.Fatal("PlatformToken() error leaked the token response body")
+	}
+}
+
+func TestOAuthServiceTokenSourceClassifiesSemanticSuccessResponseAsDeterministic(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		body   string
+		reason string
+	}{
+		{name: "missing access token", body: `{"token_type":"bearer","expires_in":300,"scope":"addp.api"}`, reason: "access_token"},
+		{name: "unexpected field", body: `{"access_token":"addp_at_valid","token_type":"bearer","expires_in":300,"scope":"addp.api","refresh_token":"addp_rt_sensitive"}`, reason: "unexpected_fields"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(test.body))
+			}))
+			defer server.Close()
+
+			source, err := NewOAuthServiceTokenSource(server.URL, "addp-manager", testServiceClientSecret, server.Client())
+			if err != nil {
+				t.Fatalf("NewOAuthServiceTokenSource() error = %v", err)
+			}
+			_, err = source.PlatformToken(context.Background())
+			var tokenError *ServiceTokenError
+			if !errors.As(err, &tokenError) {
+				t.Fatalf("PlatformToken() error type = %T, want *ServiceTokenError", err)
+			}
+			if tokenError.Code != "service_token_response_invalid" || tokenError.Retryable ||
+				tokenError.ResponseReason != test.reason || tokenError.ResponseBodyBytes != len(test.body) {
+				t.Fatalf("ServiceTokenError = %#v", tokenError)
+			}
+			if strings.Contains(err.Error(), "addp_at_") {
+				t.Fatal("PlatformToken() error leaked a token value")
+			}
+		})
+	}
+}
+
 func TestOAuthServiceTokenSourceRejectsUnexpectedScope(t *testing.T) {
 	t.Parallel()
 
@@ -324,7 +394,10 @@ func TestOAuthServiceTokenSourceRejectsUnexpectedScope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewOAuthServiceTokenSource() error = %v", err)
 	}
-	if _, err := source.Token(context.Background(), 7); err == nil || !strings.Contains(err.Error(), "invalid token response") {
-		t.Fatalf("Token() error = %v", err)
+	_, err = source.Token(context.Background(), 7)
+	var tokenError *ServiceTokenError
+	if !errors.As(err, &tokenError) || tokenError.Code != "service_token_response_invalid" ||
+		tokenError.ResponseReason != "scope" || tokenError.Retryable {
+		t.Fatalf("Token() error = %#v", err)
 	}
 }

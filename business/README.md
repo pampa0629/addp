@@ -13,6 +13,7 @@
 - **MongoDB** 🆕：文档型 NoSQL 数据库，端口 27017
 - **MySQL 8.0**：支持 Spatial 与 CDC 的业务关系库测试源，端口 3306
 - **OceanBase Community Edition 4.4.2 LTS**：Apache 2.0 授权、MySQL 模式的国产分布式关系数据库测试源，端口 2881；固定使用 `oceanbase/oceanbase-ce:4.4.2-lts`。
+- **TiDB 8.5.8**：Apache 2.0 的国产分布式 SQL 数据库测试源，端口 4000；固定使用 PingCAP 官方 PD/TiKV/TiDB 三组件镜像及 OCI digest，不提供镜像覆盖入口。
 - **openGauss 6.0.6 LTS**：Apache 2.0 授权、PG 兼容模式的国产关系数据库测试源，端口 5435；当前只在具备 NUMA 的 Linux x86_64 主机使用并校验官方 Docker tar，统一加载为 `opengauss:6.0.6`。
 - **Apache Doris**：实时分析数据库，端口 9030, 8030
 - **Apache Spark**：分布式计算引擎，主机端口 7077、18088、11000；默认 Worker 为 Thrift 查询和工作流执行分别保留执行资源
@@ -68,6 +69,9 @@ bash scripts/start.sh -mysql
 # 只启动 OceanBase CE，并幂等初始化可查询样例
 bash scripts/start.sh -oceanbase
 
+# 只启动 TiDB 三组件，并幂等初始化可查询样例
+bash scripts/start.sh -tidb
+
 # 只启动 openGauss，并幂等初始化可查询样例
 bash scripts/start.sh -opengauss
 
@@ -98,6 +102,7 @@ business/
 │   ├── restart.sh                  # 重启服务
 │   ├── online-engine-fixture.sh    # T4 专用 PostgreSQL Fixture 生命周期
 │   ├── online-workbench-mysql-fixture.sh # Workbench T4 专用只读 MySQL Fixture
+│   ├── online-tidb-consumer-fixture.sh # TiDB 消费链路 T4 专用三组件 Fixture
 │   ├── online-manager-minio-fixture.sh # Manager 血缘与文档快显 T4 专用 MinIO Fixture
 │   └── online-security-transfer-fixture.sh # Security/Transfer T4 复合 Fixture
 │
@@ -115,6 +120,8 @@ business/
 │   ├── init-cdc.sh                 # 专用 CDC 用户幂等初始化
 │   └── test-data.sh                # 普通表与全二维几何族显式测试数据
 ├── oceanbase/                      # OceanBase CE 测试数据
+│   └── init.sql                    # 幂等创建探针与普通关系业务样例表
+├── tidb/                           # TiDB 测试数据
 │   └── init.sql                    # 幂等创建探针与普通关系业务样例表
 ├── opengauss/                      # openGauss 测试数据
 │   └── init.sql                    # 幂等创建探针与普通关系业务样例表
@@ -144,6 +151,7 @@ business/
 | MinIO | 端口 9000-9001 | 端口 9002-9003 |
 | ClickHouse | - | 端口 9000, 8123 |
 | MongoDB | - | 端口 27017 |
+| TiDB | - | 端口 4000 |
 | openGauss | - | 端口 5435 |
 | 用途 | ADDP 元数据（用户、资源配置、任务定义） | 用户业务数据（上传的数据、文件） |
 | 示例数据 | 用户账号、资源配置表 | Shapefile 空间数据表、用户上传文件 |
@@ -178,6 +186,10 @@ bash scripts/start.sh
 
 OceanBase Provider 的唯一 T2 入口是仓库根 `make test-common-oceanbase`。对当前 Business 容器验证时，显式传入 `ADDP_TEST_OCEANBASE_HOST`、`ADDP_TEST_OCEANBASE_PORT`、`ADDP_TEST_OCEANBASE_USER` 和 `ADDP_TEST_OCEANBASE_PASSWORD`；门禁固定使用名称含 `disposable` 的专用 database，覆盖连接、实时目录、字段与统计 Facts、BatchRead、可执行查询样例、命名参数、受控只读事务，以及非空间普通表的 bounded watermark resume 和 prepare/session/delete/upsert 写入契约。测试生命周期创建并删除该 database，各用例只清理自己拥有的 gate 表，不读取或修改上述固定业务样例。
 
+`bash scripts/start.sh -tidb` 启动 PingCAP 官方 TiDB 8.5.8 三组件，并幂等初始化 `${TIDB_DATABASE:-business}`。样例包含连接探针及 `customers`、`orders` 普通关系表；System 中必须注册为 `engine_type=tidb`，宿主机连接 `localhost:${TIDB_PORT:-4000}`，容器网络连接 `business-tidb:4000`，默认账号 `root`、空密码。镜像在 Compose 中直接固定版本和 digest，不接受环境变量覆盖。首版只开放经真实 T2 验证的非空间目录、查询、bounded watermark 和普通表写入能力，不声明 MySQL replication、TiCDC、空间或分区变化应用。
+
+TiDB Provider 的唯一 T2 入口是仓库根 `make test-common-tidb`。门禁拥有独立的无卷三组件 Compose project，创建并删除名称含 `disposable` 的 database，覆盖真实目录/Facts、参数查询、BatchRead、Snapshot Isolation 下的 bounded watermark resume，以及 prepare/session/delete/upsert；成功、失败和中断均执行 `down --volumes --remove-orphans` 并验证容器零残留。同一 owner 脚本可在 Linux x86_64 GitHub Hosted 和 macOS Docker Desktop 执行。
+
 `bash scripts/start.sh -opengauss` 启动官方 openGauss 6.0.6 LTS 介质并幂等初始化 `${OPENGAUSS_DATABASE:-business}`。样例与 MySQL/OceanBase 的普通业务域一致，包含 `customers`、`products`、`orders`、`order_items` 和连接探针，覆盖主外键、唯一约束、复合索引、Decimal、Boolean 与时间字段。System 中必须注册为 `engine_type=opengauss`；宿主机连接 `localhost:${OPENGAUSS_PORT:-5435}`，容器网络连接 `business-opengauss:5432`，固定账号 `gaussdb`。不得登记为 PostgreSQL，也不得据 PG 兼容性宣称 PostGIS、CDC 或 PostgreSQL 扩展能力。
 
 ### scripts/online-workbench-mysql-fixture.sh - Workbench T4 MySQL Fixture
@@ -199,6 +211,17 @@ bash scripts/online-oceanbase-consumer-fixture.sh start
 bash scripts/online-oceanbase-consumer-fixture.sh advance
 bash scripts/online-oceanbase-consumer-fixture.sh status
 bash scripts/online-oceanbase-consumer-fixture.sh stop
+```
+
+### scripts/online-tidb-consumer-fixture.sh - TiDB 消费链路 T4 Fixture
+
+该入口只允许 `ADDP_ONLINE_HOST=1` 的 macOS 专用 Runner 使用，只接受仓库外 `ADDP_ONLINE_TIDB_*` 环境变量，并复用 `scripts/test/docker-compose.tidb-t2.yml` 中固定 digest、无数据卷的 PD/TiKV/TiDB 三组件拓扑。`start` 重建 5 行 watermark 源表和同构空目标表，`advance` 更新 1 行并新增 1 行，`stop` 执行 `down --volumes --remove-orphans` 并验证本次 Compose project 容器零残留。永久 Engine Instance 必须以 `engine_type=tidb` 指向 `localhost:${ADDP_ONLINE_TIDB_PORT}`；Fixture 不创建、修改或删除 Engine Instance。个人开发环境不得调用该脚本。
+
+```bash
+bash scripts/online-tidb-consumer-fixture.sh start
+bash scripts/online-tidb-consumer-fixture.sh advance
+bash scripts/online-tidb-consumer-fixture.sh status
+bash scripts/online-tidb-consumer-fixture.sh stop
 ```
 
 ### scripts/online-manager-minio-fixture.sh - Manager 内部产物血缘 T4 Fixture
@@ -291,6 +314,7 @@ docker-compose logs -f minio       # MinIO 日志
 docker-compose logs -f clickhouse  # ClickHouse 日志
 docker-compose logs -f mongodb     # MongoDB 日志
 docker-compose logs -f oceanbase   # OceanBase CE 日志
+docker-compose logs -f tidb        # TiDB SQL 节点日志
 docker-compose logs -f business-redpanda # Business Redpanda 日志
 docker-compose logs -f doris-fe    # Doris 日志
 docker-compose logs -f spark-master  # Spark 日志

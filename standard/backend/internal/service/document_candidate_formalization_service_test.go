@@ -62,6 +62,35 @@ func TestFormalizeCandidateRejectsHistoricalCandidateWithInvalidStableCode(t *te
 	}
 }
 
+func TestFormalizeCandidateRejectsHistoricalOccurrenceInsteadOfCurrentRepresentative(t *testing.T) {
+	db := openCandidateFormalizationTestDB(t)
+	historical := seedCandidateFormalizationContext(t, db, "candidate_term", "候选 术语", "候选定义")
+	current := models.DocumentExtractionCandidate{
+		ExtractionID: historical.ExtractionID, CandidateType: historical.CandidateType, Code: historical.Code,
+		Name: "候选\n术语", Definition: historical.Definition, Status: models.CandidateGroupStateRetained, Version: 1,
+	}
+	if err := db.Create(&current).Error; err != nil {
+		t.Fatal(err)
+	}
+	svc := NewDocumentService(repository.NewDocumentRepository(db), nil, nil, DocumentStorageOptions{})
+	defer svc.Stop()
+
+	_, err := svc.FormalizeCandidate(historical.ID, 7, 11, &models.FormalizeDocumentExtractionCandidateRequest{Version: 1, ChangeSummary: "历史出现记录不得正式化"}, CandidateFormalizationAuthorization{Create: map[string]bool{"glossary": true}})
+	if !errors.Is(err, ErrCandidateRepresentativeStale) {
+		t.Fatalf("error = %v, want ErrCandidateRepresentativeStale", err)
+	}
+	var formalizationCount, glossaryCount int64
+	if err := db.Model(&models.DocumentCandidateFormalization{}).Count(&formalizationCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&models.Glossary{}).Where("tenant_id = ? AND code = ?", 7, historical.Code).Count(&glossaryCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if formalizationCount != 0 || glossaryCount != 0 {
+		t.Fatalf("formalization_count=%d glossary_count=%d, want no side effects", formalizationCount, glossaryCount)
+	}
+}
+
 func TestFormalizeCandidateLinksExactRevisionAndRequiresUpdatePermission(t *testing.T) {
 	db := openCandidateFormalizationTestDB(t)
 	candidate := seedCandidateFormalizationContext(t, db, "existing_term", "户外活动", "户外活动定义")

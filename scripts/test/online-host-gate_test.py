@@ -106,6 +106,10 @@ class OnlineHostGateTest(unittest.TestCase):
             '#!/bin/bash\nprintf "oceanbase-fixture:%s\\n" "$1" >> "$ADDP_TEST_COMMAND_LOG"\n',
         )
         self._write_executable(
+            "business/scripts/online-tidb-consumer-fixture.sh",
+            '#!/bin/bash\nprintf "tidb-fixture:%s\\n" "$1" >> "$ADDP_TEST_COMMAND_LOG"\n',
+        )
+        self._write_executable(
             "business/scripts/online-transfer-insert-only-fixture.sh",
             '#!/bin/bash\nprintf "transfer-insert-only-fixture:%s\\n" "$1" >> "$ADDP_TEST_COMMAND_LOG"\n',
         )
@@ -225,6 +229,11 @@ class OnlineHostGateTest(unittest.TestCase):
                 ADDP_ONLINE_OCEANBASE_DATABASE=oceanbase_fixture
                 ADDP_ONLINE_OCEANBASE_USER=root@test
                 ADDP_ONLINE_OCEANBASE_PASSWORD=oceanbase-password-1234
+                ADDP_ONLINE_TIDB_ENGINE_ID=67
+                ADDP_ONLINE_TIDB_PORT=54000
+                ADDP_ONLINE_TIDB_DATABASE=tidb_fixture
+                ADDP_ONLINE_TIDB_USER=root
+                ADDP_ONLINE_TIDB_PASSWORD=
                 ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID=27
                 ADDP_ONLINE_MANAGER_MINIO_PORT=59002
                 ADDP_ONLINE_MANAGER_MINIO_ACCESS_KEY=online-manager
@@ -427,6 +436,24 @@ class OnlineHostGateTest(unittest.TestCase):
                 "make:test-online:ONLINE_SUITE=oceanbase-consumer-flow",
                 "stop",
                 "oceanbase-fixture:stop",
+            ],
+        )
+
+    def test_runs_tidb_consumer_flow_with_owned_fixture(self) -> None:
+        result = self._run("tidb-consumer-flow")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            self.command_log.read_text(encoding="utf-8").splitlines(),
+            [
+                "stop",
+                "infra-up",
+                "tidb-fixture:stop",
+                "tidb-fixture:start",
+                "start:-all",
+                "make:test-online:ONLINE_SUITE=tidb-consumer-flow",
+                "stop",
+                "tidb-fixture:stop",
             ],
         )
 

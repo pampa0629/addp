@@ -48,6 +48,88 @@ func TestPostgresDocumentCandidateFamilyDecision(t *testing.T) {
 		t.Fatal(err)
 	}
 	repo := NewDocumentRepository(db)
+	t.Run("rejects historical occurrence instead of current representative", func(t *testing.T) {
+		historicalDocument := models.Document{TenantID: tenantID, ScopeType: models.StandardScopeTenantCommon, Code: fmt.Sprintf("family_representative_%d", tenantID), DocType: "internal", CreatedBy: 1, Version: 1, LifecycleState: "active"}
+		if err := db.Create(&historicalDocument).Error; err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			_ = db.Where("id = ? AND tenant_id = ?", historicalDocument.ID, tenantID).Delete(&models.Document{}).Error
+		})
+		historicalRevision := models.DocumentRevision{DocumentID: historicalDocument.ID, RevisionNo: 1, Status: models.RevisionStatusDraft, Name: "历史代表校验", ChangeSummary: "initial", CreatedBy: 1}
+		if err := db.Create(&historicalRevision).Error; err != nil {
+			t.Fatal(err)
+		}
+		historicalExtraction := models.DocumentExtraction{TenantID: tenantID, DocumentRevisionID: historicalRevision.ID, Status: "completed", RequestedBy: 1}
+		if err := db.Create(&historicalExtraction).Error; err != nil {
+			t.Fatal(err)
+		}
+		historicalCandidates := []models.DocumentExtractionCandidate{
+			{ExtractionID: historicalExtraction.ID, CandidateType: "glossary", Code: "outdoor_activity", Name: "户外 活动", Definition: "定义一", Status: "pending", Version: 1},
+			{ExtractionID: historicalExtraction.ID, CandidateType: "glossary", Code: "outdoor_activity", Name: "户外运动", Definition: "定义二", Status: "pending", Version: 1},
+			{ExtractionID: historicalExtraction.ID, CandidateType: "glossary", Code: "outdoor_activity", Name: "户外\n活动", Definition: "定义一", Status: "pending", Version: 1},
+		}
+		if err := db.Create(&historicalCandidates).Error; err != nil {
+			t.Fatal(err)
+		}
+		members := []models.DocumentCandidateFamilyDecisionMember{
+			{CandidateID: historicalCandidates[0].ID, Version: 1},
+			{CandidateID: historicalCandidates[1].ID, Version: 1},
+		}
+		if _, err := repo.DecideCandidateFamily(historicalDocument.ID, tenantID, 9, historicalCandidates[0].ID, "历史出现记录不能代替当前代表候选", members); !errors.Is(err, ErrCandidateFamilyDecisionInvalid) {
+			t.Fatalf("historical representative error = %v, want ErrCandidateFamilyDecisionInvalid", err)
+		}
+		var stored []models.DocumentExtractionCandidate
+		ids := []int64{historicalCandidates[0].ID, historicalCandidates[1].ID, historicalCandidates[2].ID}
+		if err := db.Order("id ASC").Find(&stored, "id IN ?", ids).Error; err != nil {
+			t.Fatal(err)
+		}
+		if len(stored) != 3 {
+			t.Fatalf("stored historical candidates = %+v", stored)
+		}
+		for _, value := range stored {
+			if value.Status != models.CandidateGroupStatePending || value.Version != 1 || value.ReviewedAt != nil {
+				t.Fatalf("historical candidate changed after rejected decision: %+v", value)
+			}
+		}
+		assertCandidateDecisionEventCount(t, db, historicalDocument.ID, 0)
+	})
+	t.Run("single decision rejects historical occurrence", func(t *testing.T) {
+		singleDocument := models.Document{TenantID: tenantID, ScopeType: models.StandardScopeTenantCommon, Code: fmt.Sprintf("single_representative_%d", tenantID), DocType: "internal", CreatedBy: 1, Version: 1, LifecycleState: "active"}
+		if err := db.Create(&singleDocument).Error; err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			_ = db.Where("id = ? AND tenant_id = ?", singleDocument.ID, tenantID).Delete(&models.Document{}).Error
+		})
+		singleRevision := models.DocumentRevision{DocumentID: singleDocument.ID, RevisionNo: 1, Status: models.RevisionStatusDraft, Name: "单变体历史代表校验", ChangeSummary: "initial", CreatedBy: 1}
+		if err := db.Create(&singleRevision).Error; err != nil {
+			t.Fatal(err)
+		}
+		singleExtraction := models.DocumentExtraction{TenantID: tenantID, DocumentRevisionID: singleRevision.ID, Status: "completed", RequestedBy: 1}
+		if err := db.Create(&singleExtraction).Error; err != nil {
+			t.Fatal(err)
+		}
+		singleCandidates := []models.DocumentExtractionCandidate{
+			{ExtractionID: singleExtraction.ID, CandidateType: "glossary", Code: "outdoor_route", Name: "户外 路线", Definition: "同一定义", Status: "pending", Version: 1},
+			{ExtractionID: singleExtraction.ID, CandidateType: "glossary", Code: "outdoor_route", Name: "户外\n路线", Definition: "同一定义", Status: "pending", Version: 1},
+		}
+		if err := db.Create(&singleCandidates).Error; err != nil {
+			t.Fatal(err)
+		}
+		if _, err := repo.UpdateCandidateStatus(singleCandidates[0].ID, tenantID, 9, 1, models.CandidateGroupStateRetained); !errors.Is(err, ErrCandidateRepresentativeStale) {
+			t.Fatalf("historical single decision error = %v, want ErrCandidateRepresentativeStale", err)
+		}
+		assertCandidateDecisionRows(t, db, singleCandidates, []string{"pending", "pending"}, []int64{1, 1})
+		result, err := repo.UpdateCandidateStatus(singleCandidates[1].ID, tenantID, 9, 1, models.CandidateGroupStateRetained)
+		if err != nil {
+			t.Fatalf("current representative decision error = %v", err)
+		}
+		if result.ID != singleCandidates[1].ID || result.Status != models.CandidateGroupStateRetained || result.Version != 2 {
+			t.Fatalf("current representative result = %+v", result)
+		}
+	})
+
 	if _, err := repo.UpdateCandidateStatus(candidates[0].ID, tenantID, 9, 1, "retained"); !errors.Is(err, ErrCandidateFamilyDecisionRequired) {
 		t.Fatalf("single decision error = %v, want ErrCandidateFamilyDecisionRequired", err)
 	}

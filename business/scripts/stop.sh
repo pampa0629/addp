@@ -5,6 +5,7 @@
 #   bash scripts/stop.sh              # 停止所有运行中的业务库容器
 #   bash scripts/stop.sh -mysql       # 只停止 MySQL
 #   bash scripts/stop.sh -oceanbase   # 只停止 OceanBase CE
+#   bash scripts/stop.sh -tidb        # 只停止 TiDB 8.5.8 三组件
 #   bash scripts/stop.sh -opengauss   # 只停止 openGauss
 #   bash scripts/stop.sh -postgres    # 只停止 PostgreSQL
 #   bash scripts/stop.sh -oracle      # 只停止 Oracle
@@ -29,7 +30,7 @@ for arg in "$@"; do
     case $arg in
         -all) HAS_ARGS=false; break ;;
         -h|--help)
-            echo "使用方法: bash scripts/stop.sh [-postgres|-oracle|-supermap-postgresql|-minio|-clickhouse|-mongodb|-doris|-spark|-neo4j|-mysql|-oceanbase|-opengauss|-redpanda|-nfs|-all]"
+            echo "使用方法: bash scripts/stop.sh [-postgres|-oracle|-supermap-postgresql|-minio|-clickhouse|-mongodb|-doris|-spark|-neo4j|-mysql|-oceanbase|-tidb|-opengauss|-redpanda|-nfs|-all]"
             exit 0
             ;;
         -nfs)
@@ -40,6 +41,9 @@ for arg in "$@"; do
             case "$key" in
                 postgres|oracle|supermap-postgresql|minio|clickhouse|mongodb|neo4j|mysql|oceanbase|opengauss)
                     SERVICES+=("$key")
+                    ;;
+                tidb)
+                    SERVICES+=("tidb" "tidb-tikv" "tidb-pd")
                     ;;
                 redpanda)
                     SERVICES+=("business-redpanda")

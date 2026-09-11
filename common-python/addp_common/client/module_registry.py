@@ -280,6 +280,23 @@ class ModuleRegistryClient:
                 exc.response_body,
             )
             return
+        if isinstance(exc, ServiceTokenError):
+            logger.warning(
+                "module registry request failed: operation=%s module=%s instance_id=%s role=%s "
+                "status_code=%s error_code=%r retryable=%s response_reason=%r "
+                "response_content_type=%r response_body_bytes=%s",
+                operation,
+                registration.module_name,
+                registration.instance_id,
+                registration.role,
+                exc.status_code,
+                exc.code,
+                exc.retryable,
+                exc.response_reason,
+                exc.response_content_type,
+                exc.response_body_bytes,
+            )
+            return
         logger.warning(
             "module registry request failed: operation=%s module=%s instance_id=%s role=%s error=%r",
             operation,

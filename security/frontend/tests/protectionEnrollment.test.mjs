@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildAssessmentRevisionPayload,
   buildFindingReviewPayload,
   discoveryRefreshMarker,
   findingReviewState,
+  isProtectionEffectStricter,
   isZeroFindingDiscovery,
   needsEnrollmentRefresh,
   normalizeDiscoverySummary,
@@ -57,6 +59,25 @@ describe('finding review form', () => {
   it('derives the immutable first-review state', () => {
     expect(findingReviewState({})).toBe('pending')
     expect(findingReviewState({ review: { decision: 'reject' } })).toBe('reject')
+  })
+})
+
+describe('formal assessment revision form', () => {
+  it('uses the aggregate version and normalized formal decision fields', () => {
+    expect(buildAssessmentRevisionPayload({
+      version: '2', sensitiveDataTypeID: '4', securityGradeID: '5', rationale: '  revised basis  '
+    })).toEqual({
+      version: 2,
+      sensitive_data_type_id: 4,
+      security_grade_id: 5,
+      rationale: 'revised basis'
+    })
+  })
+
+  it('only presents a resource policy as tightening when it exceeds the revised baseline', () => {
+    expect(isProtectionEffectStricter('suppress', 'mask')).toBe(true)
+    expect(isProtectionEffectStricter('suppress', 'suppress')).toBe(false)
+    expect(isProtectionEffectStricter('suppress', 'deny')).toBe(false)
   })
 })
 

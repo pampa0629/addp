@@ -95,11 +95,6 @@
         "description": "引擎、Meta 和其他业务能力需要通过独立租户角色显式授权。",
         "action": "配置角色"
       },
-      "context": {
-        "platform": "当前管理范围：平台",
-        "tenant": "当前租户：{name}（{code}）",
-        "tenantUnknown": "当前租户"
-      },
       "session": {
         "label": "当前会话：{state}",
         "detail": "认证保证等级：{level}",
@@ -380,13 +375,14 @@
           }
         },
         "permissionOverview": "权限概览",
+        "immutableHint": "系统内置，不可修改",
         "permissionCount": "{count} 项",
         "permissionDetails": "角色权限明细",
         "selectedPermissionCount": "已选择 {count} 项权限",
         "searchPermissions": "搜索权限名称、标识、模块或动作",
         "permissionModules": "权限模块",
         "moduleSelection": "已选 {selected} / 共 {total}",
-        "permissionPickerHint": "先选择模块，再勾选该模块下的权限。权限标识仅作为技术参考。",
+        "permissionPickerHint": "权限按资源和动作分组；先选择模块，再勾选需要的动作。权限标识仅作为技术参考。",
         "selectVisible": "选择当前结果",
         "clearModule": "清除当前结果",
         "clearSelection": "清空已选",
@@ -584,7 +580,8 @@
         "invitation": "邀请",
         "idp_jit": "IdP 即时供应",
         "directory_sync": "目录同步",
-        "bootstrap": "初始引导"
+        "bootstrap": "初始引导",
+        "unknown": "未知来源"
       },
       "status": {
         "active": "有效",
@@ -1557,6 +1554,14 @@
       "governance_manager": {
         "name": "数据治理管理员",
         "description": "管理数据标准、质量规则、检查任务和质量问题。"
+      },
+      "protected_data_requester": {
+        "name": "受保护数据申请人",
+        "description": "在租户范围内查看可申请的受保护字段，并为本人发起限时原值访问申请。"
+      },
+      "security_manager": {
+        "name": "数据安全管理员",
+        "description": "在租户范围内管理敏感数据定义、受保护资源、保护规则和原值访问审批。"
       },
       "graph_engineer": {
         "name": "图谱工程师",

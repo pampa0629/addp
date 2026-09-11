@@ -126,15 +126,23 @@ const activeScan = ref({
 // 节点操作（根据节点类型动态生成）
 const nodeActions = computed(() => {
   return [
-    // 刷新操作（所有节点都支持）
     {
-      id: 'refresh',
-      name: 'refresh',
+      id: 'refresh-node',
+      name: 'refresh-node',
       label: t('manager.explorer.refresh'),
-      tooltip: t('manager.explorer.refreshTooltip'),
+      tooltip: t('manager.explorer.refreshNodeTooltip'),
       icon: 'Refresh',
       disabled: (node) => !isNodeEngineAvailable(node),
-      visible: () => true
+      visible: (node) => refreshKindForNode(node) === 'node'
+    },
+    {
+      id: 'refresh-item',
+      name: 'refresh-item',
+      label: t('manager.explorer.refresh'),
+      tooltip: t('manager.explorer.refreshItemTooltip'),
+      icon: 'Refresh',
+      disabled: (node) => !isNodeEngineAvailable(node),
+      visible: (node) => refreshKindForNode(node) === 'item'
     }
   ]
 })
@@ -262,7 +270,7 @@ const handleNodeAction = async ({ node, action }) => {
     return
   }
 
-  if (action === 'refresh') {
+  if (action === 'refresh-node' || action === 'refresh-item') {
     try {
       startScanStatus(t('manager.explorer.scanSubmitting'), t('manager.explorer.scanSubmitting'), 5)
       if (resourceTreeRefreshKind(locator) === 'node') {
@@ -353,6 +361,15 @@ const nodeEngineID = (node) => {
   if (node?.engineId) return node.engineId
   const locator = node?.locator || node?.id
   return locator ? parseLocator(locator)?.engineId : null
+}
+
+const refreshKindForNode = (node) => {
+  const locator = node?.locator || node?.id || ''
+  try {
+    return resourceTreeRefreshKind(locator)
+  } catch {
+    return ''
+  }
 }
 
 const isNodeEngineAvailable = (node) => store.isEngineAvailable(nodeEngineID(node))

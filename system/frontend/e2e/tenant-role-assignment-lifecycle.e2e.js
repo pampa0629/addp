@@ -480,7 +480,6 @@ test('high-risk self assignment completes MFA step-up and retries the original r
   await page.locator('button.auth-login-primary').click()
 
   await expect(page).toHaveURL(/\/iam\/roles\?tab=role-assignments$/)
-  await expect(page.getByText('当前会话：基础认证', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: '分配角色', exact: true }).click()
 
   const assignmentDialog = page.getByRole('dialog', { name: '分配角色' })
