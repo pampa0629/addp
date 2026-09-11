@@ -101,13 +101,13 @@ func (h *EnrollmentHandler) Get(c *gin.Context) {
 }
 
 // @Summary 重新纳入数据保护 | Re-enroll data protection
-// @Description 从已退出记录冻结的目标引用创建全新的 activating 纳管并重新经过四个必要 Owner 的保护激活屏障；旧记录及其退出审计保持只读，同一目标已有未退出纳管时冲突 | Create a new activating enrollment from the target reference frozen in a released record and run the four required owners through the protection activation barrier again; the old record and exit audit remain read-only, and an existing live enrollment for the same target causes a conflict
+// @Description 从已退出记录冻结的目标引用创建全新的 activating 纳管并重新经过四个必要 Owner 的保护激活屏障；成功后递增来源记录版本并返回 source_enrollment_version 与完整新 enrollment，旧记录的状态和退出审计保持只读；版本冲突返回 409 + resource_version_conflict，同一目标已有未退出纳管返回 409 + protection_enrollment_already_active | Create a new activating enrollment from the target reference frozen in a released record and run the four required owners through the protection activation barrier again; on success, increment the source record version and return source_enrollment_version plus the complete new enrollment while keeping the old state and exit audit read-only; version conflicts return 409 + resource_version_conflict, and an existing live enrollment returns 409 + protection_enrollment_already_active
 // @Tags Protection Enrollment
 // @Accept json
 // @Produce json
 // @Param id path string true "已退出纳管 ID | Released enrollment ID"
 // @Param request body models.ReEnrollProtectionEnrollmentRequest true "已退出记录版本 | Released record version"
-// @Success 201 {object} models.ProtectionEnrollmentResponse
+// @Success 201 {object} models.ReEnrollProtectionEnrollmentResponse
 // @Failure 400 {object} map[string]string
 // @Failure 401 {object} map[string]string
 // @Failure 403 {object} map[string]string
@@ -133,7 +133,7 @@ func (h *EnrollmentHandler) ReEnroll(c *gin.Context) {
 }
 
 // @Summary 退出保护纳管 | Release protection enrollment
-// @Description 沿单一 release 路径发布退出变化并等待所有必要 Owner 原子删除本地纳管索引；basis=manual 表示常规人工退出，basis=no_supported_findings 仅在最近成功发现零命中且无进行中发现时接受并冻结来源快照；等待期间继续保持保护 | Publish release changes through the single release path and wait for every required owner to atomically remove its local enrollment index; basis=manual is a regular manual release, while basis=no_supported_findings is accepted only when the latest successful discovery has zero findings and no discovery is running, and freezes the source snapshot; protection remains in force while waiting
+// @Description 沿单一 release 路径发布退出变化并等待所有必要 Owner 原子删除本地纳管索引；basis=manual 表示常规人工退出，basis=no_supported_findings 仅在最近成功发现零命中且无进行中发现时接受并冻结来源快照；等待期间继续保持保护；版本冲突返回 409 + resource_version_conflict，零命中证据不再成立返回 409 + no_supported_findings_release_unavailable | Publish release changes through the single release path and wait for every required owner to atomically remove its local enrollment index; basis=manual is a regular manual release, while basis=no_supported_findings is accepted only when the latest successful discovery has zero findings and no discovery is running, and freezes the source snapshot; protection remains in force while waiting; version conflicts return 409 + resource_version_conflict, while invalidated zero-finding evidence returns 409 + no_supported_findings_release_unavailable
 // @Tags Protection Enrollment
 // @Accept json
 // @Produce json
@@ -165,7 +165,7 @@ func (h *EnrollmentHandler) Release(c *gin.Context) {
 }
 
 // @Summary 创建重新发现执行 | Create rediscovery execution
-// @Description 为已进入 enrolling 或 active 的纳管创建一次有界重新发现；同一纳管同时至多一个 pending/running 执行 | Create one bounded rediscovery for an enrollment in enrolling or active state; at most one pending or running execution may exist for the same enrollment
+// @Description 为已进入 enrolling 或 active 的纳管创建一次有界重新发现并返回递增后的 enrollment_version；版本冲突返回 409 + resource_version_conflict，同一纳管已有 pending/running 执行时返回 409 + protection_discovery_execution_in_progress | Create one bounded rediscovery for an enrollment in enrolling or active state and return the incremented enrollment_version; version conflicts return 409 + resource_version_conflict, while an existing pending or running execution returns 409 + protection_discovery_execution_in_progress
 // @Tags Protection Enrollment
 // @Accept json
 // @Produce json

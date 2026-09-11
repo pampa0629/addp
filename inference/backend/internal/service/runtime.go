@@ -40,6 +40,21 @@ type resolvedModel struct {
 	credential string
 }
 
+type dashScopeEmbeddingResponse struct {
+	Output struct {
+		Embeddings []struct {
+			Index     int       `json:"index"`
+			Embedding []float32 `json:"embedding"`
+		} `json:"embeddings"`
+	} `json:"output"`
+	Usage struct {
+		Input int `json:"input_tokens"`
+		Image int `json:"image_tokens"`
+	} `json:"usage"`
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
 type ProbeResponse struct {
 	Reachable            bool   `json:"reachable"`
 	ProviderConnectionID string `json:"provider_connection_id"`
@@ -406,20 +421,7 @@ func (s *Runtime) Embed(ctx context.Context, req commoninference.EmbeddingReques
 				return nil, ErrUnsupported
 			}
 		}
-		var upstream struct {
-			Output struct {
-				Embeddings []struct {
-					Index     int       `json:"index"`
-					Embedding []float32 `json:"embedding"`
-				} `json:"embeddings"`
-			} `json:"output"`
-			Usage struct {
-				Input int `json:"input_tokens"`
-				Image int `json:"image_tokens"`
-			} `json:"usage"`
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		}
+		var upstream dashScopeEmbeddingResponse
 		if err := s.invokeAt(ctx, resolved, resolved.provider.Endpoint, map[string]interface{}{"model": resolved.deployment.UpstreamModel, "input": map[string]interface{}{"contents": contents}}, &upstream); err != nil {
 			return nil, err
 		}
@@ -505,40 +507,63 @@ func (s *Runtime) Probe(ctx context.Context, actor Actor, deploymentID string) (
 	if err != nil || !canManageProvider(actor, provider) {
 		return nil, ErrNotFound
 	}
-	endpoint := provider.Endpoint
-	if provider.AdapterType == AdapterOpenAICompatible {
-		endpoint, err = joinEndpoint(provider.Endpoint, "models/"+url.PathEscape(deployment.UpstreamModel))
+	credential := ""
+	if provider.CredentialCiphertext != "" {
+		credential, err = secretcipher.Decrypt(provider.CredentialCiphertext, s.encryptionKey)
 		if err != nil {
+			return nil, fmt.Errorf("decrypt provider credential: %w", err)
+		}
+	}
+	statusCode := http.StatusOK
+	switch provider.AdapterType {
+	case AdapterOpenAICompatible:
+		endpoint, joinErr := joinEndpoint(provider.Endpoint, "models/"+url.PathEscape(deployment.UpstreamModel))
+		if joinErr != nil {
 			return nil, ErrInvalidRequest
 		}
-	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, ErrInvalidRequest
-	}
-	if provider.CredentialCiphertext != "" {
-		credential, decryptErr := secretcipher.Decrypt(provider.CredentialCiphertext, s.encryptionKey)
-		if decryptErr != nil {
-			return nil, fmt.Errorf("decrypt provider credential: %w", decryptErr)
+		request, requestErr := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+		if requestErr != nil {
+			return nil, ErrInvalidRequest
 		}
-		request.Header.Set("Authorization", "Bearer "+credential)
-	}
-	response, err := s.client.Do(request)
-	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return nil, ErrTimeout
+		if credential != "" {
+			request.Header.Set("Authorization", "Bearer "+credential)
 		}
-		return nil, fmt.Errorf("%w: %v", ErrUpstreamUnavailable, err)
+		response, requestErr := s.client.Do(request)
+		if requestErr != nil {
+			if errors.Is(requestErr, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				return nil, ErrTimeout
+			}
+			return nil, fmt.Errorf("%w: %v", ErrUpstreamUnavailable, requestErr)
+		}
+		defer response.Body.Close()
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1<<20))
+		if response.StatusCode >= 500 {
+			return nil, ErrUpstreamUnavailable
+		}
+		if response.StatusCode < 200 || response.StatusCode >= 400 {
+			return nil, ErrUpstreamFailed
+		}
+		statusCode = response.StatusCode
+	case AdapterDashScopeMultimodal:
+		resolved := &resolvedModel{deployment: deployment, provider: provider, credential: credential}
+		var upstream dashScopeEmbeddingResponse
+		body := map[string]interface{}{
+			"model": deployment.UpstreamModel,
+			"input": map[string]interface{}{"contents": []map[string]interface{}{{"text": "ADDP inference runtime probe"}}},
+		}
+		if err := s.invokeAt(ctx, resolved, provider.Endpoint, body, &upstream); err != nil {
+			return nil, err
+		}
+		if upstream.Code != "" || len(upstream.Output.Embeddings) != 1 || len(upstream.Output.Embeddings[0].Embedding) == 0 {
+			return nil, fmt.Errorf("%w: invalid DashScope embedding response", ErrUpstreamFailed)
+		}
+		if deployment.Dimension > 0 && deployment.Dimension != len(upstream.Output.Embeddings[0].Embedding) {
+			return nil, fmt.Errorf("%w: deployment dimension mismatch", ErrUpstreamFailed)
+		}
+	default:
+		return nil, ErrUnsupported
 	}
-	defer response.Body.Close()
-	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1<<20))
-	if response.StatusCode >= 500 {
-		return nil, ErrUpstreamUnavailable
-	}
-	if response.StatusCode < 200 || response.StatusCode >= 400 {
-		return nil, ErrUpstreamFailed
-	}
-	return &ProbeResponse{Reachable: true, ProviderConnectionID: provider.ID, ModelDeploymentID: deployment.ID, AdapterType: provider.AdapterType, StatusCode: response.StatusCode}, nil
+	return &ProbeResponse{Reachable: true, ProviderConnectionID: provider.ID, ModelDeploymentID: deployment.ID, AdapterType: provider.AdapterType, StatusCode: statusCode}, nil
 }
 
 func (s *Runtime) resolve(ctx context.Context, tenantID uint, profileID, operation, modality string) (*resolvedModel, error) {

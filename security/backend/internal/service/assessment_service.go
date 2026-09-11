@@ -12,6 +12,7 @@ import (
 	"github.com/addp/common/dataprotection"
 	"github.com/addp/common/datatype"
 	"github.com/addp/security/internal/models"
+	"github.com/addp/security/internal/repository"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -197,7 +198,7 @@ func (s *AssessmentService) CreateManual(ctx context.Context, tenantID, reviewer
 		return nil, assessmentDBError(err)
 	}
 	if enrollment.Version != request.EnrollmentVersion {
-		return nil, fmt.Errorf("%w: enrollment version is %d", commonapi.ErrConflict, enrollment.Version)
+		return nil, fmt.Errorf("%w: enrollment version is %d", repository.ErrVersionConflict, enrollment.Version)
 	}
 	facts, err := s.factsFor(uint(tenantID)).GetDataItemSecurityFacts(ctx, enrollment.TargetIdentity)
 	if err != nil {
@@ -224,7 +225,10 @@ func (s *AssessmentService) CreateManual(ctx context.Context, tenantID, reviewer
 		if err := query.Where("tenant_id = ? AND id = ? AND state IN ?", tenantID, request.EnrollmentID, []string{models.EnrollmentStateEnrolling, models.EnrollmentStateActive}).First(&enrollment).Error; err != nil {
 			return assessmentDBError(err)
 		}
-		if enrollment.Version != request.EnrollmentVersion || enrollment.LatestSourceSnapshotHash != facts.SourceSnapshotHash {
+		if enrollment.Version != request.EnrollmentVersion {
+			return repository.ErrVersionConflict
+		}
+		if enrollment.LatestSourceSnapshotHash != facts.SourceSnapshotHash {
 			return commonapi.ErrConflict
 		}
 		var count int64
@@ -284,7 +288,7 @@ func (s *AssessmentService) Revise(ctx context.Context, tenantID, reviewerID int
 			return assessmentDBError(err)
 		}
 		if assessment.Version != request.Version {
-			return fmt.Errorf("%w: assessment version is %d", commonapi.ErrConflict, assessment.Version)
+			return fmt.Errorf("%w: assessment version is %d", repository.ErrVersionConflict, assessment.Version)
 		}
 		var current models.ResourceSecurityAssessmentRevision
 		if err := tx.Where("tenant_id = ? AND assessment_id = ? AND revision = ?", tenantID, assessment.ID, assessment.CurrentRevision).First(&current).Error; err != nil {
@@ -318,7 +322,7 @@ func (s *AssessmentService) Revise(ctx context.Context, tenantID, reviewerID int
 			return update.Error
 		}
 		if update.RowsAffected != 1 {
-			return commonapi.ErrConflict
+			return repository.ErrVersionConflict
 		}
 		assessment.Version++
 		assessment.CurrentRevision = revisionNumber
@@ -353,7 +357,7 @@ func (s *AssessmentService) Revoke(ctx context.Context, tenantID, reviewerID int
 			return assessmentDBError(err)
 		}
 		if assessment.Version != request.Version {
-			return fmt.Errorf("%w: assessment version is %d", commonapi.ErrConflict, assessment.Version)
+			return fmt.Errorf("%w: assessment version is %d", repository.ErrVersionConflict, assessment.Version)
 		}
 		var current models.ResourceSecurityAssessmentRevision
 		if err := tx.Where("tenant_id = ? AND assessment_id = ? AND revision = ?", tenantID, assessment.ID, assessment.CurrentRevision).First(&current).Error; err != nil {
@@ -382,7 +386,7 @@ func (s *AssessmentService) Revoke(ctx context.Context, tenantID, reviewerID int
 			return update.Error
 		}
 		if update.RowsAffected != 1 {
-			return commonapi.ErrConflict
+			return repository.ErrVersionConflict
 		}
 		assessment.Version++
 		assessment.CurrentRevision = revisionNumber

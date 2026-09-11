@@ -305,6 +305,7 @@ func (h *Handler) DeleteDeployment(c *gin.Context) {
 
 // ProbeDeployment godoc
 // @Summary 探测 Model Deployment | Probe model deployment
+// @Description 通过 Deployment 对应适配器执行最小真实请求，验证端点、凭据与上游模型 | Perform a minimal real request through the deployment adapter to verify the endpoint, credential, and upstream model
 // @Tags Inference Deployment
 // @Produce json
 // @Param id path string true "Deployment ID"

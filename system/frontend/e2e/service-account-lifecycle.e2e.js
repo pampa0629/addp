@@ -3,6 +3,32 @@ import { expect, test } from '@playwright/test'
 const initialSecret = 'e2e-initial-client-secret'
 const rotatedSecret = 'e2e-rotated-client-secret'
 const clientID = 'addp_svc_browser_e2e'
+const machineRole = {
+  id: '701',
+  role_key: 'tenant.agent_runtime',
+  name: null,
+  description: null,
+  name_i18n_key: 'roles.tenant.agent_runtime.name',
+  description_i18n_key: 'roles.tenant.agent_runtime.description',
+  role_type: 'tenant_builtin',
+  allowed_scope_types: ['tenant'],
+  allowed_principal_types: ['service_principal'],
+  immutable: true,
+  permission_keys: ['inference.runtime.execute']
+}
+const userRole = {
+  id: '702',
+  role_key: 'tenant.data_viewer',
+  name: null,
+  description: null,
+  name_i18n_key: 'roles.tenant.data_viewer.name',
+  description_i18n_key: 'roles.tenant.data_viewer.description',
+  role_type: 'tenant_builtin',
+  allowed_scope_types: ['tenant', 'department', 'project_group'],
+  allowed_principal_types: ['user'],
+  immutable: true,
+  permission_keys: ['manager.data_item.read']
+}
 const permissions = [
   'iam.service_account.create',
   'iam.service_account.read',
@@ -10,6 +36,7 @@ const permissions = [
   'iam.service_account.suspend',
   'iam.service_account.update',
   'iam.service_credential.update',
+  'iam.api_consumer.read',
   'iam.oauth_client.read',
   'iam.tenant_role.read',
   'iam.tenant_role_assignment.create',
@@ -68,6 +95,7 @@ async function fulfillJSON(route, status, body) {
 
 test('tenant administrator manages a service account lifecycle without leaking secrets', async ({ page }) => {
   let account = null
+  let tenantAssignments = []
   const mutations = []
 
   await page.route('**/api/v1/system/**', async (route) => {
@@ -114,7 +142,14 @@ test('tenant administrator manages a service account lifecycle without leaking s
       return
     }
     if (path.endsWith('/tenant/service_accounts') && method === 'GET') {
-      await fulfillJSON(route, 200, paginated([...(account ? [account] : []), platformRuntimeAccount()]))
+      const ownerScope = url.searchParams.get('owner_scope')
+      if (!['tenant', 'platform'].includes(ownerScope)) {
+        throw new Error(`service account owner_scope must be explicit, got ${ownerScope}`)
+      }
+      const rows = ownerScope === 'platform'
+        ? [platformRuntimeAccount()]
+        : [...(account ? [account] : [])]
+      await fulfillJSON(route, 200, paginated(rows))
       return
     }
     if (path.endsWith('/tenant/role_assignments') && method === 'GET') {
@@ -129,8 +164,36 @@ test('tenant administrator manages a service account lifecycle without leaking s
         scope_type: 'tenant',
         status: 'active',
         valid_until: null
-      }] : []
+      }] : tenantAssignments
       await fulfillJSON(route, 200, paginated(assignments))
+      return
+    }
+    if (path.endsWith('/tenant/roles') && method === 'GET') {
+      await fulfillJSON(route, 200, [machineRole, userRole])
+      return
+    }
+    if ((path.endsWith('/tenant/departments') || path.endsWith('/tenant/project_groups')) && method === 'GET') {
+      await fulfillJSON(route, 200, paginated([]))
+      return
+    }
+    if (path.endsWith('/tenant/role_assignments') && method === 'POST') {
+      const input = request.postDataJSON()
+      mutations.push({ action: 'assign-role', input })
+      tenantAssignments = [{
+        id: '601',
+        membership_id: '201',
+        principal_id: '101',
+        principal_type: 'service_principal',
+        display_name: 'E2E Nightly Loader',
+        role_id: machineRole.id,
+        role_key: machineRole.role_key,
+        role_name: null,
+        role_name_i18n_key: machineRole.name_i18n_key,
+        scope_type: 'tenant',
+        status: 'active',
+        valid_until: null
+      }]
+      await fulfillJSON(route, 201, tenantAssignments)
       return
     }
     if (path.endsWith('/tenant/service_accounts') && method === 'POST') {
@@ -165,18 +228,27 @@ test('tenant administrator manages a service account lifecycle without leaking s
     throw new Error(`unexpected IAM E2E request: ${method} ${path}`)
   })
 
-  await page.goto('/login?redirect=/iam/application-access')
+  await page.goto(`/login?redirect=${encodeURIComponent('/iam/application-access?tab=tenant-service-accounts')}`)
   await page.locator('input[autocomplete="username"]').fill('e2e-admin')
   await page.locator('input[autocomplete="current-password"]').fill('not-transmitted')
   await page.locator('button.auth-login-primary').click()
 
-  await expect(page).toHaveURL(/\/iam\/application-access$/)
+  await expect(page).toHaveURL(/\/iam\/application-access\?tab=tenant-service-accounts$/)
   await expect(page.getByRole('heading', { name: '应用接入' })).toBeVisible()
-  await expect(page.getByRole('tab', { name: '机器身份' })).toBeVisible()
-  await expect(page.getByRole('tab', { name: '外部应用（OAuth）' })).toBeVisible()
+  expect((await page.getByRole('tab').allTextContents()).map(text => text.trim())).toEqual([
+    'API 消费方',
+    '外部应用（OAuth）',
+    '租户服务账号',
+    '平台运行账号'
+  ])
+  await expect(page.getByText('平台内部定时任务和模块运行无需创建此账号。')).toBeVisible()
+  await expect(page.getByRole('row').filter({ hasText: 'addp-manager' })).toHaveCount(0)
+
+  await page.getByRole('tab', { name: '平台运行账号' }).click()
+  await expect(page).toHaveURL(/\/iam\/application-access\?tab=platform-runtime-accounts$/)
+  await expect(page.getByRole('button', { name: '创建租户服务账号', exact: true })).toHaveCount(0)
 
   const platformRow = page.getByRole('row').filter({ hasText: 'addp-manager' })
-  await expect(platformRow).toContainText('平台运行账号')
   await expect(platformRow.getByRole('button', { name: '查看角色', exact: true })).toBeVisible()
   await expect(platformRow.getByRole('button', { name: '编辑', exact: true })).toHaveCount(0)
   await expect(platformRow.getByRole('button', { name: '轮换密钥', exact: true })).toHaveCount(0)
@@ -188,25 +260,41 @@ test('tenant administrator manages a service account lifecycle without leaking s
   await expect(roleDrawer.getByRole('button', { name: '撤销', exact: true })).toHaveCount(0)
   await roleDrawer.locator('.el-drawer__close-btn').click()
 
-  await page.getByRole('button', { name: '创建服务账号', exact: true }).click()
-  const createDialog = page.getByRole('dialog', { name: '创建服务账号' })
+  await page.getByRole('tab', { name: '租户服务账号' }).click()
+  await expect(page).toHaveURL(/\/iam\/application-access\?tab=tenant-service-accounts$/)
+  await expect(page.getByRole('row').filter({ hasText: 'addp-manager' })).toHaveCount(0)
+
+  await page.getByRole('button', { name: '创建租户服务账号', exact: true }).click()
+  const createDialog = page.getByRole('dialog', { name: '创建租户服务账号' })
   await createDialog.getByRole('textbox').nth(0).fill('E2E Nightly Loader')
   await createDialog.getByRole('textbox').nth(1).fill('Disposable browser test account')
   await createDialog.getByRole('button', { name: '确认', exact: true }).click()
 
-  const credentialDialog = page.getByRole('dialog', { name: '保存服务账号凭据' })
+  const credentialDialog = page.getByRole('dialog', { name: '保存租户服务账号凭据' })
   await expect(credentialDialog).toContainText(clientID)
   await expect(credentialDialog).toContainText(initialSecret)
   await credentialDialog.getByRole('button', { name: '完成', exact: true }).click()
   await expect(page.getByText(initialSecret, { exact: true })).toHaveCount(0)
 
   let row = page.getByRole('row').filter({ hasText: 'E2E Nightly Loader' })
-  await expect(row).toContainText('租户服务账号')
   await expect(row.getByRole('button', { name: '配置角色', exact: true })).toBeVisible()
   await expect(row).toContainText(clientID)
   await row.getByRole('button', { name: '配置角色', exact: true }).click()
   const tenantRoleDrawer = page.getByRole('dialog', { name: 'E2E Nightly Loader · 角色' })
+  await expect(tenantRoleDrawer).toContainText('用户账号角色不会出现在候选列表中')
   await expect(tenantRoleDrawer.getByRole('button', { name: '分配角色', exact: true })).toBeVisible()
+  await tenantRoleDrawer.getByRole('button', { name: '分配角色', exact: true }).click()
+  const assignmentDialog = page.getByRole('dialog', { name: '分配角色' })
+  const roleCombobox = assignmentDialog.getByRole('combobox', { name: /角色/ })
+  const roleListboxID = await roleCombobox.getAttribute('aria-controls')
+  await roleCombobox.press('ArrowDown')
+  const roleListbox = page.locator(`[id="${roleListboxID}"]`)
+  await expect(roleListbox.getByRole('option', { name: /Agent 执行运行时/ })).toBeVisible()
+  await expect(roleListbox.getByRole('option', { name: /数据查看者/ })).toHaveCount(0)
+  await roleListbox.getByRole('option', { name: /Agent 执行运行时/ }).click()
+  await assignmentDialog.locator('textarea').fill('E2E machine role assignment')
+  await assignmentDialog.getByRole('button', { name: '确认分配', exact: true }).click()
+  await expect(tenantRoleDrawer.getByRole('row').filter({ hasText: 'Agent 执行运行时' })).toBeVisible()
   await tenantRoleDrawer.locator('.el-drawer__close-btn').click()
   await row.getByRole('button', { name: '暂停', exact: true }).click()
   let prompt = page.getByRole('dialog', { name: '暂停' })
@@ -231,6 +319,18 @@ test('tenant administrator manages a service account lifecycle without leaking s
 
   expect(mutations).toEqual([
     { action: 'create', input: { name: 'E2E Nightly Loader', description: 'Disposable browser test account' } },
+    {
+      action: 'assign-role',
+      input: {
+        membership_id: '201',
+        role_ids: ['701'],
+        scope_type: 'tenant',
+        department_id: null,
+        project_group_id: null,
+        valid_until: null,
+        reason: 'E2E machine role assignment'
+      }
+    },
     { action: 'suspend', input: { version: 1, reason: 'scheduled pause' } },
     { action: 'restore', input: { version: 2, reason: 'scheduled resume' } },
     { action: 'rotate-secret', input: { version: 3, reason: 'scheduled rotation' } }

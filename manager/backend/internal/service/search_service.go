@@ -27,6 +27,7 @@ var (
 
 const (
 	queryEmbeddingRuneLimit = 3500
+	rrfRankConstant         = 60.0
 )
 
 // HybridSearchService 提供混合检索能力（全文检索 + 向量语义检索）
@@ -46,8 +47,8 @@ type HybridSearchService struct {
 type SearchDocument struct {
 	DocumentID     string                 `json:"document_id"`
 	Locator        string                 `json:"locator,omitempty"`
-	Score          float64                `json:"score"`
-	MatchMethods   []string               `json:"match_methods,omitempty"`   // 检索方式: ["keyword", "vector", "hybrid"]
+	Score          float64                `json:"score"`                     // 归一化 RRF 融合分，取值范围 [0, 1]
+	MatchMethods   []string               `json:"match_methods,omitempty"`   // 实际命中方式: ["keyword", "vector"]
 	VectorDistance float64                `json:"vector_distance,omitempty"` // 向量距离（如果有向量匹配）
 	EngineID       uint                   `json:"engine_id"`
 	EngineName     string                 `json:"engine_name,omitempty"`
@@ -81,7 +82,6 @@ type VectorDocument struct {
 	Locator        string                 `json:"locator,omitempty"`
 	TenantID       uint                   `json:"tenant_id,omitempty"`
 	EngineID       uint                   `json:"engine_id,omitempty"`
-	Score          float64                `json:"score"`
 	Distance       float64                `json:"distance"`
 	ModelProfileID string                 `json:"model_profile_id"`
 	Title          string                 `json:"title,omitempty"`
@@ -97,11 +97,10 @@ type VectorDocument struct {
 
 // SearchResult 混合检索总体响应结构
 type SearchResult struct {
-	Total      int              `json:"total"`
-	Page       int              `json:"page"`
-	PageSize   int              `json:"page_size"`
-	Hits       []SearchDocument `json:"results"`
-	VectorHits []VectorDocument `json:"vector_hits,omitempty"`
+	Total    int              `json:"total"`
+	Page     int              `json:"page"`
+	PageSize int              `json:"page_size"`
+	Hits     []SearchDocument `json:"results"`
 }
 
 // NewHybridSearchService 构建混合检索服务（全文检索 + 向量检索）
@@ -281,6 +280,7 @@ func (s *HybridSearchService) SearchDocuments(
 	}
 
 	offset := (page - 1) * pageSize
+	candidateLimit := offset + pageSize
 
 	// 构建过滤条件
 	filter := buildSearchFilter(tenantID, engineID)
@@ -292,8 +292,8 @@ func (s *HybridSearchService) SearchDocuments(
 		AttributesToHighlight: []string{"name", "title", "full_name", "content_preview", "description", "tags", "keywords", "author"},
 		HighlightPreTag:       "<mark>",
 		HighlightPostTag:      "</mark>",
-		Offset:                int64(offset),
-		Limit:                 int64(pageSize),
+		Offset:                0,
+		Limit:                 int64(candidateLimit),
 		ShowMatchesPosition:   false,
 	}
 
@@ -304,64 +304,137 @@ func (s *HybridSearchService) SearchDocuments(
 		return nil, fmt.Errorf("failed to execute search: %w", err)
 	}
 
-	// 解析结果
-	result := &SearchResult{
-		Total:    int(resp.EstimatedTotalHits),
-		Page:     page,
-		PageSize: pageSize,
-		Hits:     make([]SearchDocument, 0, len(resp.Hits)),
-	}
-
-	// 标记全文检索结果为 keyword 匹配
+	keywordHits := make([]SearchDocument, 0, len(resp.Hits))
 	for _, hit := range resp.Hits {
-		doc := mapMeilisearchHit(hit)
-		doc.MatchMethods = []string{"keyword"}
-		result.Hits = append(result.Hits, doc)
+		keywordHits = append(keywordHits, mapMeilisearchHit(hit))
 	}
 
-	// 向量检索
+	var vectorHits []VectorDocument
 	if s.vectorRepo != nil && s.configurationProvider != nil && s.bindingService != nil && s.inferenceClient != nil {
-		vectorHits, err := s.vectorSearch(ctx, tenantID, engineID, query)
+		vectorHits, err = s.vectorSearch(ctx, tenantID, engineID, query)
 		if err != nil {
 			s.log.Warn("向量检索失败，已忽略", "error", err)
-		} else {
-			result.VectorHits = vectorHits
-			// 合并去重逻辑：检查是否已通过关键词检索到
-			existing := make(map[string]int, len(result.Hits)) // document_id -> index in result.Hits
-			for idx, doc := range result.Hits {
-				if doc.DocumentID != "" {
-					existing[doc.DocumentID] = idx
-				}
-			}
-
-			for _, vdoc := range vectorHits {
-				if vdoc.DocumentID == "" {
-					continue
-				}
-				if idx, found := existing[vdoc.DocumentID]; found {
-					// 该文档已通过关键词检索到，合并检索方式
-					result.Hits[idx].MatchMethods = append(result.Hits[idx].MatchMethods, "vector")
-					result.Hits[idx].VectorDistance = vdoc.Distance
-					// 保留关键词检索的 Score，但添加向量距离信息
-					s.log.Debug("文档通过混合检索匹配",
-						"document_id", vdoc.DocumentID,
-						"keyword_score", result.Hits[idx].Score,
-						"vector_distance", vdoc.Distance,
-					)
-				} else {
-					// 仅通过向量检索到，添加为新结果
-					converted := vectorDocumentToSearchDocument(vdoc)
-					result.Hits = append(result.Hits, converted)
-					existing[converted.DocumentID] = len(result.Hits) - 1
-				}
-			}
-			if len(result.Hits) > result.Total {
-				result.Total = len(result.Hits)
-			}
+			vectorHits = nil
 		}
 	}
 
-	return result, nil
+	return fuseSearchDocuments(keywordHits, int(resp.EstimatedTotalHits), vectorHits, page, pageSize), nil
+}
+
+type fusedSearchCandidate struct {
+	document    SearchDocument
+	keywordRank int
+	vectorRank  int
+}
+
+// fuseSearchDocuments 使用对称 RRF 融合两个检索器的内部排名，再对唯一结果集分页。
+func fuseSearchDocuments(keywordHits []SearchDocument, keywordTotal int, vectorHits []VectorDocument, page, pageSize int) *SearchResult {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 10
+	}
+
+	candidates := make([]*fusedSearchCandidate, 0, len(keywordHits)+len(vectorHits))
+	byDocumentID := make(map[string]*fusedSearchCandidate, len(keywordHits)+len(vectorHits))
+	for idx, document := range keywordHits {
+		document.MatchMethods = []string{"keyword"}
+		candidate := &fusedSearchCandidate{document: document, keywordRank: idx + 1}
+		candidates = append(candidates, candidate)
+		if document.DocumentID != "" {
+			byDocumentID[document.DocumentID] = candidate
+		}
+	}
+
+	for idx, vectorHit := range vectorHits {
+		if vectorHit.DocumentID == "" {
+			continue
+		}
+		if candidate, ok := byDocumentID[vectorHit.DocumentID]; ok {
+			candidate.vectorRank = idx + 1
+			candidate.document.MatchMethods = []string{"keyword", "vector"}
+			mergeVectorSearchFacts(&candidate.document, vectorDocumentToSearchDocument(vectorHit))
+			continue
+		}
+
+		document := vectorDocumentToSearchDocument(vectorHit)
+		candidate := &fusedSearchCandidate{document: document, vectorRank: idx + 1}
+		candidates = append(candidates, candidate)
+		byDocumentID[vectorHit.DocumentID] = candidate
+	}
+
+	maxRRFScore := 2.0 / (rrfRankConstant + 1.0)
+	for _, candidate := range candidates {
+		score := 0.0
+		if candidate.keywordRank > 0 {
+			score += 1.0 / (rrfRankConstant + float64(candidate.keywordRank))
+		}
+		if candidate.vectorRank > 0 {
+			score += 1.0 / (rrfRankConstant + float64(candidate.vectorRank))
+		}
+		candidate.document.Score = score / maxRRFScore
+	}
+
+	sort.SliceStable(candidates, func(i, j int) bool {
+		left, right := candidates[i], candidates[j]
+		if left.document.Score != right.document.Score {
+			return left.document.Score > right.document.Score
+		}
+		if (left.keywordRank > 0) != (right.keywordRank > 0) {
+			return left.keywordRank > 0
+		}
+		return left.document.DocumentID < right.document.DocumentID
+	})
+
+	start := (page - 1) * pageSize
+	if start > len(candidates) {
+		start = len(candidates)
+	}
+	end := min(start+pageSize, len(candidates))
+	hits := make([]SearchDocument, 0, end-start)
+	for _, candidate := range candidates[start:end] {
+		hits = append(hits, candidate.document)
+	}
+	if keywordTotal < len(keywordHits) {
+		keywordTotal = len(keywordHits)
+	}
+	total := max(keywordTotal, len(candidates))
+
+	return &SearchResult{
+		Total:    total,
+		Page:     page,
+		PageSize: pageSize,
+		Hits:     hits,
+	}
+}
+
+func mergeVectorSearchFacts(target *SearchDocument, vector SearchDocument) {
+	target.VectorDistance = vector.VectorDistance
+	if target.Locator == "" {
+		target.Locator = vector.Locator
+	}
+	if target.EngineID == 0 {
+		target.EngineID = vector.EngineID
+	}
+	if target.EngineName == "" {
+		target.EngineName = vector.EngineName
+	}
+	if target.EngineType == "" {
+		target.EngineType = vector.EngineType
+	}
+	if target.Bucket == "" {
+		target.Bucket = vector.Bucket
+	}
+	if target.Path == "" {
+		target.Path = vector.Path
+	}
+	if target.Name == "" {
+		target.Name = vector.Name
+	}
+	if target.FileName == "" {
+		target.FileName = vector.FileName
+	}
 }
 
 func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID, engineID *uint, query string) ([]VectorDocument, error) {
@@ -433,7 +506,6 @@ func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID, engine
 			EngineID:       emb.EngineID,
 			ModelProfileID: emb.ModelProfileID,
 			Distance:       item.Distance,
-			Score:          similarityFromDistance(item.Distance),
 			FileName:       locatorLastSegment(emb.Locator),
 			Name:           locatorLastSegment(emb.Locator),
 		}
@@ -580,13 +652,6 @@ func truncateQueryRunes(text string, limit int) string {
 	return string(runes[:limit])
 }
 
-func similarityFromDistance(distance float64) float64 {
-	if distance <= 0 {
-		return 1
-	}
-	return 1 / (1 + distance)
-}
-
 func min(a, b int) int {
 	if a < b {
 		return a
@@ -702,7 +767,6 @@ func vectorDocumentToSearchDocument(v VectorDocument) SearchDocument {
 
 	doc := SearchDocument{
 		DocumentID:     v.DocumentID,
-		Score:          v.Score,
 		MatchMethods:   []string{"vector"}, // 标记为向量匹配
 		VectorDistance: v.Distance,         // 保存向量距离
 		EngineID:       v.EngineID,
@@ -840,11 +904,6 @@ func mapMeilisearchHit(hit interface{}) SearchDocument {
 			}
 		}
 		doc.Highlights = highlights
-	}
-
-	// 相关度分数
-	if score, ok := hitMap["_rankingScore"].(float64); ok {
-		doc.Score = score
 	}
 
 	return doc

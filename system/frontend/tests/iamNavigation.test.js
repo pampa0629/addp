@@ -65,9 +65,10 @@ describe('System IAM information architecture', () => {
       'role-assignments'
     ])
     expect(availableIAMTabs('application-access', 'tenant', can).map(tab => tab.key)).toEqual([
-      'service-accounts',
       'api-consumers',
-      'oauth-clients'
+      'oauth-clients',
+      'tenant-service-accounts',
+      'platform-runtime-accounts'
     ])
   })
 

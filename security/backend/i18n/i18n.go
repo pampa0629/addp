@@ -18,6 +18,8 @@ const (
 	MsgDeleteSuccess                         = "security.common.delete_success"
 	MsgProjectionCursorConflict              = "security.projection.cursor_conflict"
 	MsgNoSupportedFindingsReleaseUnavailable = "security.enrollment.no_supported_findings_release_unavailable"
+	MsgDiscoveryExecutionInProgress          = "security.enrollment.discovery_execution_in_progress"
+	MsgLiveEnrollmentAlreadyExists           = "security.enrollment.already_active"
 	MsgProtectionAccessRequestExpired        = "security.access_request.expired"
 )
 

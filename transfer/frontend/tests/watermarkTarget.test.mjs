@@ -8,7 +8,8 @@ import {
   hasIdempotentTableUpsert,
   hasNativeTableWriteCapability,
   hasStorageCapability,
-  isNativeTableEngine
+  isNativeTableEngine,
+  queryReadSessionCapability
 } from '../src/utils/transferDisplay.js'
 
 test('resource-tree engine projection keeps event stream storage sources', () => {
@@ -33,6 +34,35 @@ test('native table classification is capability-driven for independently named e
     capabilities: { engine_family: 'tabular', storage: {} }
   }), true)
   assert.equal(isNativeTableEngine({ engine_type: 'postgresql' }), false)
+})
+
+test('query source languages and defaults come only from the read-session capability', () => {
+  assert.deepEqual(queryReadSessionCapability({
+    engine_type: 'independent-relational-engine',
+    capabilities: JSON.stringify({
+      engine_family: 'tabular',
+      compute: {
+        query: {
+          supported: true,
+          read_session: true,
+          languages: ['SQL'],
+          default_language: 'sql',
+          identifier_quotes: { sql: '`', mql: '"' },
+          parameters: { supported: true, languages: ['sql'], types: ['string'] }
+        }
+      }
+    })
+  }), {
+    engineFamily: 'tabular',
+    languages: ['sql'],
+    defaultLanguage: 'sql',
+    identifierQuotes: { sql: '`' },
+    parameterLanguages: new Set(['sql'])
+  })
+  assert.equal(queryReadSessionCapability({
+    capabilities: { compute: { query: { supported: true, read_session: false, languages: ['mql'] } } }
+  }), null)
+  assert.equal(queryReadSessionCapability({ engine_type: 'postgresql' }), null)
 })
 
 test('watermark source requires declared bounded watermark read', () => {

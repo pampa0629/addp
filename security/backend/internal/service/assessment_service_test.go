@@ -11,6 +11,7 @@ import (
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/resourcetree"
 	"github.com/addp/security/internal/models"
+	"github.com/addp/security/internal/repository"
 	"gorm.io/gorm"
 )
 
@@ -53,6 +54,15 @@ func TestFindingReviewCreatesAssessmentAndFormalCompilerRevision(t *testing.T) {
 	}
 	if revised.Version != 2 || revised.CurrentRevision != 2 || revised.Current.Revision != 2 || revised.Current.CreatedBy != 22 || len(revised.History) != 2 {
 		t.Fatalf("revised assessment = %#v", revised)
+	}
+	if _, err := assessments.Revise(context.Background(), 7, 23, revised.ID, models.AssessmentRevisionRequest{
+		Version: 1, SensitiveDataTypeID: dataType.ID, SecurityGradeID: grade.ID, Rationale: "陈旧版本不得覆盖当前修订",
+	}); !errors.Is(err, repository.ErrVersionConflict) {
+		t.Fatalf("stale assessment revision error = %v", err)
+	}
+	afterConflict, err := assessments.Get(context.Background(), 7, revised.ID)
+	if err != nil || afterConflict.Version != 2 || afterConflict.CurrentRevision != 2 || len(afterConflict.History) != 2 {
+		t.Fatalf("assessment changed after version conflict = %#v, err=%v", afterConflict, err)
 	}
 	changes, err := enrollments.ListChanges(context.Background(), 7, "manager", "", 20)
 	if err != nil {
@@ -224,6 +234,13 @@ func TestManualAssessmentUsesCurrentMetaComponentAndCanBeRevoked(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := assessments.CreateManual(context.Background(), 7, 21, models.CreateManualAssessmentRequest{
+		EnrollmentID: created.ID, EnrollmentVersion: currentEnrollment.Version + 1,
+		ComponentKey: "members__emergency_contact", SensitiveDataTypeID: dataType.ID,
+		SecurityGradeID: grade.ID, Rationale: "陈旧纳管版本不得创建正式结论",
+	}); !errors.Is(err, repository.ErrVersionConflict) {
+		t.Fatalf("stale manual assessment error = %v", err)
+	}
 	createdAssessment, err := assessments.CreateManual(context.Background(), 7, 21, models.CreateManualAssessmentRequest{
 		EnrollmentID: created.ID, EnrollmentVersion: currentEnrollment.Version,
 		ComponentKey: "members__emergency_contact", SensitiveDataTypeID: dataType.ID,
@@ -291,6 +308,15 @@ func TestManualAssessmentUsesCurrentMetaComponentAndCanBeRevoked(t *testing.T) {
 	}
 	if restored.Version != 3 || restored.Current.Revision != 3 || restored.Current.Conclusion != models.AssessmentConclusionSensitive || restored.Current.CreatedBy != 23 || len(restored.History) != 3 {
 		t.Fatalf("restored assessment = %#v", restored)
+	}
+	if _, err := assessments.Revoke(context.Background(), 7, 24, restored.ID, models.RevokeAssessmentRequest{
+		Version: 2, Rationale: "陈旧版本不得撤销最新结论",
+	}); !errors.Is(err, repository.ErrVersionConflict) {
+		t.Fatalf("stale assessment revoke error = %v", err)
+	}
+	afterConflict, err := assessments.Get(context.Background(), 7, restored.ID)
+	if err != nil || afterConflict.Version != 3 || afterConflict.CurrentRevision != 3 || len(afterConflict.History) != 3 {
+		t.Fatalf("assessment changed after stale revoke = %#v, err=%v", afterConflict, err)
 	}
 	managerChanges, err = enrollments.ListChanges(context.Background(), 7, "manager", "", 20)
 	if err != nil {

@@ -3759,7 +3759,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "执行全文检索与向量语义检索的混合搜索 | Execute hybrid search combining full-text and vector semantic search",
+                "description": "执行全文检索与向量语义检索，对候选去重后使用对称 RRF 融合排序并统一分页 | Execute full-text and vector semantic retrieval, then deduplicate, rank with symmetric RRF, and paginate the fused candidates",
                 "produces": [
                     "application/json"
                 ],
@@ -7736,7 +7736,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "match_methods": {
-                    "description": "检索方式: [\"keyword\", \"vector\", \"hybrid\"]",
+                    "description": "实际命中方式: [\"keyword\", \"vector\"]",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -7764,6 +7764,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "score": {
+                    "description": "归一化 RRF 融合分，取值范围 [0, 1]",
                     "type": "number"
                 },
                 "title": {
@@ -7795,12 +7796,6 @@ const docTemplate = `{
                 },
                 "total": {
                     "type": "integer"
-                },
-                "vector_hits": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_addp_manager_internal_service.VectorDocument"
-                    }
                 }
             }
         },
@@ -7936,62 +7931,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "locator": {
-                    "type": "string"
-                }
-            }
-        },
-        "github_com_addp_manager_internal_service.VectorDocument": {
-            "type": "object",
-            "properties": {
-                "bucket": {
-                    "type": "string"
-                },
-                "content_preview": {
-                    "type": "string"
-                },
-                "distance": {
-                    "type": "number"
-                },
-                "document_id": {
-                    "type": "string"
-                },
-                "engine_id": {
-                    "type": "integer"
-                },
-                "engine_name": {
-                    "type": "string"
-                },
-                "engine_type": {
-                    "type": "string"
-                },
-                "file_name": {
-                    "type": "string"
-                },
-                "locator": {
-                    "type": "string"
-                },
-                "metadata": {
-                    "type": "object",
-                    "additionalProperties": true
-                },
-                "model_profile_id": {
-                    "type": "string"
-                },
-                "name": {
-                    "description": "文件名",
-                    "type": "string"
-                },
-                "path": {
-                    "description": "目录路径（以 / 结尾）",
-                    "type": "string"
-                },
-                "score": {
-                    "type": "number"
-                },
-                "tenant_id": {
-                    "type": "integer"
-                },
-                "title": {
                     "type": "string"
                 }
             }

@@ -46,6 +46,26 @@ export function buildAssessmentRevisionPayload({ version, sensitiveDataTypeID, s
   }
 }
 
+export function isResourceVersionConflict(error) {
+  return error?.response?.status === 409 && error?.response?.data?.error_code === 'resource_version_conflict'
+}
+
+export function isProtectionAccessRequestExpired(error) {
+  return error?.response?.status === 409 && error?.response?.data?.error_code === 'protection_access_request_expired'
+}
+
+export function isNoSupportedFindingsReleaseUnavailable(error) {
+  return error?.response?.status === 409 && error?.response?.data?.error_code === 'no_supported_findings_release_unavailable'
+}
+
+export function isDiscoveryExecutionInProgress(error) {
+  return error?.response?.status === 409 && error?.response?.data?.error_code === 'protection_discovery_execution_in_progress'
+}
+
+export function isProtectionEnrollmentAlreadyActive(error) {
+  return error?.response?.status === 409 && error?.response?.data?.error_code === 'protection_enrollment_already_active'
+}
+
 const PROTECTION_EFFECT_RANK = Object.freeze({ mask: 1, suppress: 2, deny: 3 })
 
 export function isProtectionEffectStricter(effect, baselineEffect) {

@@ -122,9 +122,10 @@
         "identityChanges": "身份变更审批",
         "departments": "部门管理",
         "projectGroups": "项目组管理",
-        "serviceAccounts": "机器身份",
         "apiConsumers": "API 消费方",
         "externalApplications": "外部应用（OAuth）",
+        "tenantServiceAccounts": "租户服务账号",
+        "platformRuntimeAccounts": "平台运行账号",
         "userInvitations": "用户邀请",
         "roleDefinitions": "角色定义",
         "roleAssignments": "角色分配"
@@ -317,26 +318,29 @@
         "loaded": "已加载 {count} 个 OAuth 客户端"
       },
       "serviceAccounts": {
-        "introTitle": "统一查看和管理当前租户使用的机器身份",
-        "introDescription": "平台运行账号由系统维护，仅可查看角色；租户服务账号由租户管理员创建，可管理凭据、生命周期和角色。两者都不代表真实用户。",
-        "create": "创建服务账号",
-        "edit": "编辑服务账号",
-        "search": "搜索名称、说明或 Client ID",
-        "accountType": "机器身份类型",
-        "identity": "机器身份",
-        "types": {
-          "tenant": "租户服务账号",
-          "platform": "平台运行账号"
+        "intro": {
+          "tenant": {
+            "title": "管理租户服务账号",
+            "description": "用于必须以独立机器身份调用当前租户 API 的外部自动化工作负载。平台内部定时任务和模块运行无需创建此账号。"
+          },
+          "platform": {
+            "title": "查看平台运行账号",
+            "description": "由系统随平台模块自动维护，用于内部运行时调用。租户管理员只能查看其在当前租户的角色，不能创建、编辑或管理凭据。"
+          }
         },
+        "create": "创建租户服务账号",
+        "edit": "编辑租户服务账号",
+        "search": "搜索名称、说明或 Client ID",
         "manageRoles": "配置角色",
         "viewRoles": "查看角色",
         "roleDrawerTitle": "{name} · 角色",
         "platformReadOnly": "平台运行账号由系统维护，其定义、凭据、生命周期和角色均为只读。",
+        "tenantRoleHint": "这里只管理当前租户服务账号可使用的机器身份角色；用户账号角色不会出现在候选列表中。",
         "clientId": "Client ID",
         "clientSecret": "Client Secret",
         "rotateSecret": "轮换密钥",
         "rotateHint": "轮换后旧 Client Secret 立即失效，已签发令牌也会失效。请输入轮换原因。",
-        "credentialTitle": "保存服务账号凭据",
+        "credentialTitle": "保存租户服务账号凭据",
         "secretOnce": "Client Secret 只显示这一次，请立即复制并保存到安全的密钥管理系统。",
         "clientIdCopied": "Client ID 已复制",
         "secretCopied": "Client Secret 已复制",
@@ -370,14 +374,15 @@
           "all": "全部角色",
           "hints": {
             "user": "用于真实用户；角色分配在本页的“角色分配”中完成。",
-            "service_principal": "用于服务账号和平台运行账号；角色分配统一从“应用接入 > 机器身份”进入。",
+            "service_principal": "用于租户服务账号和平台运行账号；租户服务账号可在“应用接入”中配置角色，平台运行账号仅可查看。",
             "all": "同时查看用户账号角色和机器身份角色。"
           }
         },
         "permissionOverview": "权限概览",
         "immutableHint": "系统内置，不可修改",
         "permissionCount": "{count} 项",
-        "permissionDetails": "角色权限明细",
+        "details": "角色详情",
+        "permissionDetails": "权限明细",
         "selectedPermissionCount": "已选择 {count} 项权限",
         "searchPermissions": "搜索权限名称、标识、模块或动作",
         "permissionModules": "权限模块",
@@ -394,37 +399,52 @@
           "approve": "批准",
           "cancel": "取消执行",
           "certify": "认证",
+          "close": "关闭",
           "create": "创建",
           "delete": "删除",
           "deprecate": "废弃",
           "execute": "执行",
           "export": "导出",
+          "initialize": "初始化",
+          "link": "关联",
           "offline": "下线",
           "publish": "发布",
           "read": "查看",
           "rebind": "重新绑定",
+          "reactivate": "重新启用",
           "reject": "拒绝",
+          "reset": "重置",
+          "restore": "恢复",
           "retry": "重试",
           "revoke": "撤销",
+          "suspend": "停用",
+          "unlink": "解除关联",
           "update": "修改"
         },
         "resources": {
           "alert_incident": "告警事件",
           "alert_rule": "告警规则",
           "analysis": "图谱分析",
+          "api_consumer": "API 消费方",
+          "api_consumer_credential": "API 消费方凭据",
+          "api_consumer_runtime": "API 消费运行时",
           "application": "资产申请",
           "assessment": "安全评估",
           "audit": "目录审计",
           "authorization": "资产授权",
+          "backup": "备份",
           "build_task": "图谱构建任务",
           "catalog": "元数据目录",
           "category": "资产分类",
           "check_task": "质量检查任务",
           "classification": "数据分级分类",
+          "cleanup": "清理任务",
           "code_set": "码表",
           "collection": "集合",
           "collection_assignment": "集合归属",
+          "configuration": "配置",
           "content": "数据内容",
+          "content_index": "内容索引",
           "data_application": "数据应用",
           "data_ddl": "数据结构变更",
           "data_external_effect": "数据外部影响操作",
@@ -433,6 +453,9 @@
           "data_read": "数据读取",
           "data_write": "数据写入",
           "definition": "服务定义",
+          "department": "部门",
+          "department_membership": "部门成员关系",
+          "deployment": "推理部署",
           "derived_artifact": "衍生产物",
           "detector": "敏感数据探测器",
           "document": "标准文档",
@@ -440,50 +463,100 @@
           "domain": "标准主题域",
           "dw_layer": "数仓分层",
           "element": "数据元",
+          "engine": "引擎",
+          "engine_descriptor": "引擎描述",
           "enrollment": "数据保护纳管",
           "entity": "业务实体",
           "entity_relation": "实体关系",
           "entry": "目录条目",
+          "event": "审计事件",
           "execution": "执行记录",
           "execution_authorization": "执行授权",
+          "external_identity": "外部身份",
           "external_registration": "外部服务注册",
           "finding": "安全发现",
           "glossary": "业务术语",
           "grade": "数据等级",
           "graph": "知识图谱",
+          "health": "健康状态",
+          "identity_provider": "身份提供方",
           "inspect": "元数据检查",
           "inventory": "资源清单",
           "issue": "质量问题",
+          "knowledge_graph": "知识图谱",
           "lineage": "数据血缘",
+          "local_account": "本地账号",
           "logical_model": "逻辑模型",
           "management": "资产管理",
           "materialization": "模型物化",
           "materialization_gate": "物化质量门禁",
           "materialization_group": "物化任务组",
+          "materialization_read": "物化结果读取",
           "materialized_target": "物化目标",
           "metric": "指标",
+          "mfa_credential": "多因素认证凭据",
+          "module": "模块",
           "notebook": "Notebook",
+          "notebook_session_authorization": "Notebook 会话授权",
           "notification_delivery": "通知投递",
           "notification_destination": "通知目标",
+          "oauth_client": "OAuth 客户端",
           "ontology": "本体",
+          "operation": "操作记录",
+          "permission": "权限",
+          "platform_identity_change": "平台身份变更",
+          "platform_role_change": "平台角色变更",
           "policy": "安全策略",
+          "profile": "推理配置",
+          "project_group": "项目组",
+          "project_group_membership": "项目组成员关系",
           "protection_access_request": "数据保护访问申请",
           "protection_baseline": "数据保护基线",
           "protection_exemption": "数据保护豁免",
+          "protection_projection": "数据保护投影",
+          "provider": "推理服务提供方",
+          "provider_credential": "推理服务提供方凭据",
           "rating": "资产评价",
+          "reference": "目录引用",
+          "report": "审计报告",
+          "resource_grant": "资源授权",
+          "restore_request": "恢复申请",
           "review": "图谱审核",
+          "role": "角色",
           "rule_application": "质量规则应用",
           "run": "运行任务",
+          "runtime": "运行时",
+          "runtime_registry": "运行时注册表",
           "scan_task": "元数据扫描任务",
           "search": "数据搜索",
+          "security_facts": "安全事实",
+          "security_policy": "安全策略配置",
           "sensitive_data_type": "敏感数据类型",
+          "service_account": "租户服务账号",
+          "service_credential": "服务账号凭据",
           "session": "会话",
           "source": "目录来源",
           "sql": "SQL 生成",
+          "standard_document": "标准文档",
+          "standard_reference": "标准引用",
           "statistics": "监控统计",
+          "subject": "主体",
+          "summary": "摘要",
           "task": "任务",
+          "task_authorization": "任务授权",
+          "task_provider": "任务提供者",
+          "tenant": "租户",
+          "tenant_breakdown": "租户明细",
+          "tenant_event": "租户审计事件",
+          "tenant_idp_connection": "租户身份提供方连接",
+          "tenant_invitation": "用户邀请",
+          "tenant_membership": "租户成员关系",
+          "tenant_role": "租户角色",
+          "tenant_role_assignment": "租户角色分配",
+          "tenant_subject": "租户主体",
           "transfer": "数据传输生成",
           "unit": "计量单位",
+          "user": "用户账号",
           "workflow": "工作流"
         },
         "types": {
@@ -1506,6 +1579,74 @@
       "administrator": {
         "name": "租户组织与权限管理员",
         "description": "管理租户成员、邀请、角色与角色分配；不包含基础设施和业务权限。"
+      },
+      "agent_runtime": {
+        "name": "Agent 执行运行时",
+        "description": "供 Agent 在租户范围内调用推理能力并读取引擎描述。"
+      },
+      "copilot_runtime": {
+        "name": "Copilot 执行运行时",
+        "description": "供 Copilot 读取开发任务、调用推理能力并读取引擎描述。"
+      },
+      "document_runtime": {
+        "name": "文档派生运行时",
+        "description": "供 Document 工作负载在租户范围内创建文档派生产物。"
+      },
+      "duckdb_runtime": {
+        "name": "DuckDB 联邦查询运行时",
+        "description": "供 DuckDB 在租户范围内消费单次执行授权并获取精确的引擎访问。"
+      },
+      "geopython_runtime": {
+        "name": "GeoPython 派生运行时",
+        "description": "供 GeoPython 工作负载在租户范围内创建空间数据派生产物。"
+      },
+      "graph_runtime": {
+        "name": "知识图谱执行运行时",
+        "description": "供 Graph 调用图谱抽取能力，并读取业务实体、实体关系和引擎信息。"
+      },
+      "manager_runtime": {
+        "name": "数据管理执行运行时",
+        "description": "供 Manager 在租户范围内检索元数据、使用引擎、发起传输任务并消费执行授权。"
+      },
+      "model3d_runtime": {
+        "name": "三维模型派生运行时",
+        "description": "供 Model3D 工作负载在租户范围内创建三维模型派生产物。"
+      },
+      "model_runtime": {
+        "name": "数据建模执行运行时",
+        "description": "供 Model 读取数据标准和引擎描述，并消费建模执行授权。"
+      },
+      "monitor_runtime": {
+        "name": "运行监控运行时",
+        "description": "供 Monitor 读取元数据扫描任务并写入租户审计事件。"
+      },
+      "pointcloud_runtime": {
+        "name": "点云派生运行时",
+        "description": "供 PointCloud 工作负载在租户范围内创建点云派生产物。"
+      },
+      "quality_runtime": {
+        "name": "数据质量执行运行时",
+        "description": "供 Quality 读取元数据、数据标准和物化信息，并消费质量执行授权。"
+      },
+      "security_runtime": {
+        "name": "数据保护运行时",
+        "description": "供 Security 读取租户成员和元数据安全事实，维护数据保护投影。"
+      },
+      "service_runtime": {
+        "name": "数据服务执行运行时",
+        "description": "供 Service 使用引擎和元数据、执行数据服务、维护血缘并写入租户审计事件。"
+      },
+      "spark_runtime": {
+        "name": "Spark 执行运行时",
+        "description": "供 Spark 工作负载读取当前租户可用的引擎信息。"
+      },
+      "standard_runtime": {
+        "name": "数据标准执行运行时",
+        "description": "供 Standard 读取租户成员、执行标准文档解析并更新模型标准引用。"
+      },
+      "transfer_runtime": {
+        "name": "数据传输执行运行时",
+        "description": "供 Transfer 使用引擎和元数据，并消费用户派生的数据传输授权。"
       },
       "ai_user": {
         "name": "AI 用户",

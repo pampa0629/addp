@@ -119,6 +119,11 @@ type ReEnrollProtectionEnrollmentRequest struct {
 	Version int64 `json:"version" binding:"required"`
 }
 
+type ReEnrollProtectionEnrollmentResponse struct {
+	SourceEnrollmentVersion int64                        `json:"source_enrollment_version"`
+	Enrollment              ProtectionEnrollmentResponse `json:"enrollment"`
+}
+
 type ProtectionTargetSnapshot struct {
 	EngineID uint   `json:"engine_id"`
 	ItemType string `json:"item_type"`
@@ -136,10 +141,11 @@ type CreateProtectionDiscoveryExecutionRequest struct {
 }
 
 type ProtectionDiscoveryExecutionResponse struct {
-	ExecutionID  string    `json:"execution_id"`
-	EnrollmentID string    `json:"enrollment_id"`
-	Status       string    `json:"status"`
-	CreatedAt    time.Time `json:"created_at"`
+	ExecutionID       string    `json:"execution_id"`
+	EnrollmentID      string    `json:"enrollment_id"`
+	EnrollmentVersion int64     `json:"enrollment_version"`
+	Status            string    `json:"status"`
+	CreatedAt         time.Time `json:"created_at"`
 }
 
 type ProtectionOwnerProgress struct {

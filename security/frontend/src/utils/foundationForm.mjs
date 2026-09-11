@@ -33,6 +33,11 @@ export function sortFoundationRows(resource, rows) {
   })
 }
 
+export function isNonNegativeIntegerValue(value) {
+  if (value === null || value === undefined || value === '') return false
+  return Number.isInteger(Number(value)) && Number(value) >= 0
+}
+
 const protectionEffects = new Set(['mask', 'suppress', 'deny'])
 
 export function protectionEffectI18nKey(effect) {

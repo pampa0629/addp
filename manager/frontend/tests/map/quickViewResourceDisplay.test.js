@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { parseLocatorSafe } from '@addp/common-frontend'
+import { normalizeEngineCatalog, resolveEngineName } from '../../src/utils/enginePresentation.js'
 import {
-  normalizeQuickViewEngines,
   quickViewDisplayText,
-  quickViewEngineName,
   quickViewResourceLabel,
   quickViewResourcePath
 } from '../../src/utils/quickViewResourceDisplay.js'
@@ -12,8 +11,8 @@ describe('quickViewResourceDisplay', () => {
   it('uses the engine name instead of exposing its numeric id', () => {
     const engines = [{ id: 26, name: 'CAD 文件存储' }]
 
-    expect(quickViewEngineName(engines, 26)).toBe('CAD 文件存储')
-    expect(quickViewEngineName(engines, 99)).toBe('')
+    expect(resolveEngineName(engines, 26)).toBe('CAD 文件存储')
+    expect(resolveEngineName(engines, 99)).toBe('')
   })
 
   it('formats a ResourceLocator as a readable hierarchy path', () => {
@@ -33,7 +32,7 @@ describe('quickViewResourceDisplay', () => {
   it('normalizes engine list API wrappers', () => {
     const engines = [{ id: 1, name: 'PostGIS' }]
 
-    expect(normalizeQuickViewEngines({ data: engines })).toEqual(engines)
-    expect(normalizeQuickViewEngines({ data: { data: engines } })).toEqual(engines)
+    expect(normalizeEngineCatalog({ data: engines })).toEqual(engines)
+    expect(normalizeEngineCatalog({ data: { data: engines } })).toEqual(engines)
   })
 })

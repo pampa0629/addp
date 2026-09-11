@@ -149,6 +149,30 @@ func (h *AccessRequestHandler) ReviewQueue(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
+// @Summary 原值访问申请审批详情 | Get plaintext access request review detail
+// @Description 按当前租户返回一条申请的最新状态、审计身份与当前审批人的可审批性，供版本冲突后显式重新加载 | Return the latest request state, audit identities, and decision availability for the current reviewer within the tenant, for explicit reload after a version conflict
+// @Tags Protection Access Request
+// @Produce json
+// @Param id path string true "申请 ID | Request ID"
+// @Success 200 {object} ProtectionAccessRequestResponse
+// @Failure 400 {object} map[string]string
+// @Failure 401 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["security.protection_access_request.update"]
+// @Router /protection-access-requests/{id} [get]
+// @Security BearerAuth
+func (h *AccessRequestHandler) GetForReview(c *gin.Context) {
+	result, err := h.requests.GetForReview(c.Request.Context(), getTenantID(c), getUserID(c), c.Param("id"))
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
 func parseOptionalRFC3339Query(c *gin.Context, key string) (*time.Time, error) {
 	values := c.Request.URL.Query()[key]
 	if len(values) > 1 {
@@ -166,7 +190,7 @@ func parseOptionalRFC3339Query(c *gin.Context, key string) (*time.Time, error) {
 }
 
 // @Summary 审批原值访问申请 | Decide plaintext access request
-// @Description 申请人不能审批自己的申请，超过申请截止时间后也不能审批；批准后原子生成按用户临时授权和新投影 | The requester cannot decide their own request, and an expired request cannot be decided; approval atomically creates a subject-scoped temporary grant and projection
+// @Description 申请人不能审批自己的申请，超过申请截止时间后也不能审批；批准后原子生成按用户临时授权和新投影；版本冲突返回 409 + resource_version_conflict，申请过期返回 409 + protection_access_request_expired | The requester cannot decide their own request, and an expired request cannot be decided; approval atomically creates a subject-scoped temporary grant and projection; version conflicts return 409 + resource_version_conflict, and expiration returns 409 + protection_access_request_expired
 // @Tags Protection Access Request
 // @Accept json
 // @Produce json

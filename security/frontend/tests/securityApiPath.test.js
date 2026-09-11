@@ -28,6 +28,7 @@ describe('Security API paths', () => {
     expect(client.get).toHaveBeenLastCalledWith('/security/findings', { params: findingParams })
     expect(protectionEnrollmentAPI.components('enrollment-1')).toBe('/security/protection-enrollments/enrollment-1/components')
 
+    expect(assessmentAPI.get('assessment-1')).toBe('/security/assessments/assessment-1')
     expect(assessmentAPI.create({ enrollment_id: 'enrollment-1' }).path).toBe('/security/assessments')
     const reviseAssessment = assessmentAPI.revise('assessment-1', { version: 1, sensitive_data_type_id: 4, security_grade_id: 5, rationale: 'verified' })
     expect(reviseAssessment.path).toBe('/security/assessments/assessment-1/revisions')
@@ -47,6 +48,7 @@ describe('Security API paths', () => {
     protectionAccessRequestAPI.targets(targetParams)
     expect(client.get).toHaveBeenLastCalledWith('/security/protection-access-request-targets', { params: targetParams })
     expect(protectionAccessRequestAPI.create({ assessment_id: 'assessment-1' }).path).toBe('/security/protection-access-requests')
+    expect(protectionAccessRequestAPI.getForReview('request-1')).toBe('/security/protection-access-requests/request-1')
     expect(protectionAccessRequestAPI.decide('request-1', { decision: 'approve' }).path).toBe('/security/protection-access-requests/request-1/decisions')
 
     const revokeExemption = protectionExemptionAPI.revoke('exemption-1', { version: 3, rationale: 'done' })

@@ -1,10 +1,9 @@
 import { ref } from 'vue'
 import { parseLocatorSafe } from '@addp/common-frontend'
 import { dataExplorerAPI } from '../api/dataExplorer'
+import { normalizeEngineCatalog, resolveEngineName } from '../utils/enginePresentation'
 import {
-  normalizeQuickViewEngines,
   quickViewDisplayText,
-  quickViewEngineName,
   quickViewResourceLabel,
   quickViewResourcePath
 } from '../utils/quickViewResourceDisplay'
@@ -14,7 +13,7 @@ export function useQuickViewResourceDisplay(t) {
 
   const loadQuickViewEngines = async () => {
     try {
-      engines.value = normalizeQuickViewEngines(await dataExplorerAPI.getEngines())
+      engines.value = normalizeEngineCatalog(await dataExplorerAPI.getEngines())
     } catch (error) {
       console.error('加载快显引擎列表失败:', error)
       engines.value = []
@@ -22,7 +21,7 @@ export function useQuickViewResourceDisplay(t) {
   }
 
   const engineName = (engineId) => (
-    quickViewEngineName(engines.value, engineId) ||
+    resolveEngineName(engines.value, engineId) ||
     (Number(engineId || 0) ? t('manager.quickViewDisplay.unknownEngine') : '-')
   )
 
@@ -32,7 +31,7 @@ export function useQuickViewResourceDisplay(t) {
 
   const resourceLabel = (engineId, locator) => (
     quickViewResourceLabel(
-      quickViewEngineName(engines.value, engineId) || (Number(engineId || 0) ? t('manager.quickViewDisplay.unknownEngine') : ''),
+      resolveEngineName(engines.value, engineId) || (Number(engineId || 0) ? t('manager.quickViewDisplay.unknownEngine') : ''),
       quickViewResourcePath(locator, parseLocatorSafe)
     ) || '-'
   )

@@ -88,7 +88,7 @@ Department Membership 的 `membership_type` 使用 `primary` / `additional`，`r
 
 列表和详情只返回当前 Tenant 内对象，跨 Tenant ID 与不存在统一返回 `404`。成员创建只接受当前 Tenant 的 `tenant_membership_id`，不能由前端提交 User ID 猜测 Membership。所有写接口使用具体请求 DTO，并返回更新后的完整资源；生命周期动作必须携带 `version` 和非空 `reason`。
 
-`GET /api/v1/system/tenant/memberships` 支持 `search`、`status` 和 `principal_type=user|service_principal` 组合过滤。管理界面将 `principal_type` 呈现为“账号类型”，值显示为“用户账号”或“服务账号”，不得改名或新增平行协议字段。“角色管理 > 角色分配”固定查询 User Membership；“应用接入 > 机器身份”通过每行的 Membership 查看或管理 Service Principal 角色；Tenant 审计复用同一 Tenant Membership 选择控件并按“当前账号、用户账号、服务账号”分组。角色分配只允许从有效 Membership 创建授权，历史审计允许选择全部生命周期 Membership。
+`GET /api/v1/system/tenant/memberships` 支持 `search`、`status` 和 `principal_type=user|service_principal` 组合过滤。管理界面将 `principal_type` 呈现为“账号类型”，值显示为“用户账号”或“服务账号”，不得改名或新增平行协议字段。“角色管理 > 角色分配”固定查询 User Membership；“应用接入 > 租户服务账号”和“应用接入 > 平台运行账号”分别通过每行的 Membership 管理或查看 Service Principal 角色；Tenant 审计复用同一 Tenant Membership 选择控件并按“当前账号、用户账号、服务账号”分组。角色分配只允许从有效 Membership 创建授权，历史审计允许选择全部生命周期 Membership。
 
 ## 五、Permission、Role 与高权限治理
 
@@ -98,7 +98,7 @@ Department Membership 的 `membership_type` 使用 `primary` / `additional`，`r
 
 Department 和 Project Group Scope 必须引用当前 Tenant 的可用组织对象，且目标 Tenant Membership 必须已具有对应的有效组织成员关系。后端在创建 Assignment 的同一事务内复核 Department 为 `active`、Project Group 不为 `closed`，并锁定对应的 Department Membership 或 Project Group Membership；跨 Tenant 或不存在返回 `404`，不可用或缺少有效组织成员关系返回 `409`。前端只允许通过可搜索选择器选择组织名称和 Code，提交时保持 `department_id` / `project_group_id` 稳定协议；列表主要展示名称和 Code，只在历史对象无法解析时回退展示 ID。
 
-租户 Role 管理列表必须保持单行可浏览：Permission 集合只在主列表展示数量，完整 Permission 按命名空间分组后在详情视图查看，不得用逗号拼接长文本撑高整张表。角色定义首先按 `allowed_principal_types` 分为“用户账号角色”和“机器身份角色”，默认展示用户账号角色，并允许查看全部角色；分类不得依赖 Role Key 后缀或展示名称。列表还必须支持名称或标识搜索、Role 类型和允许 Scope 过滤。Role Assignment 列表支持按 Membership 与 `principal_type=user|service_principal` 组合过滤，成员列必须显式展示成员类型；“当前账号”只通过 AuthContext 的 `tenant_membership_id` 识别，不按用户名、邮箱或展示名称猜测。
+租户 Role 管理列表必须保持单行可浏览：主列表只展示 Role 名称、标识、类型、适用对象与 Scope、Permission 数量及模块摘要；Role 描述和完整 Permission 必须统一放在详情视图，Permission 按命名空间、资源与动作分组，不得用长描述或逗号拼接文本撑高整张表。角色定义首先按 `allowed_principal_types` 分为“用户账号角色”和“机器身份角色”，默认展示用户账号角色，并允许查看全部角色；分类不得依赖 Role Key 后缀或展示名称。列表还必须支持名称或标识搜索、Role 类型和允许 Scope 过滤。Role Assignment 列表支持按 Membership 与 `principal_type=user|service_principal` 组合过滤，成员列必须显式展示成员类型；“当前账号”只通过 AuthContext 的 `tenant_membership_id` 识别，不按用户名、邮箱或展示名称猜测。
 
 Tenant 审计的成员筛选以所选 Tenant Membership 的 `principal_id` 查询既有审计协议，并支持按 `principal_type=user|service_principal` 过滤操作者类型；成员列必须显式展示操作者类型。模块筛选使用 `module_name` 的稳定协议值。界面必须以本地化模块名称作为主标签、稳定 `module_name` 作为辅助标识，不得把中文名称写入审计事实或新增兼容字段。审计导出必须覆盖当前筛选条件下的全部事件，不得复用普通列表的单页上限静默截断；后端使用稳定排序的分批读取和有界内存文件生成，响应通过 `X-ADDP-Export-Count` 明确返回实际导出条数。
 
@@ -204,7 +204,7 @@ System IAM 管理端只按稳定业务大类提供五个左侧页面，不能把
 | 组织管理 `/iam/organization` | 租户管理 | 部门管理、项目组管理 |
 | 账号管理 `/iam/accounts` | 用户账号、身份变更审批 | 用户账号、用户邀请 |
 | 角色管理 `/iam/roles` | 无可用对象时隐藏 | 角色定义、角色分配 |
-| 应用接入 `/iam/application-access` | 无可用对象时隐藏 | 机器身份、API 消费方、外部应用（OAuth） |
+| 应用接入 `/iam/application-access` | 无可用对象时隐藏 | API 消费方、外部应用（OAuth）、租户服务账号、平台运行账号 |
 | 审计管理 `/iam/security` | IAM 安全策略、平台审计 | 租户审计 |
 
 页面表达业务大类，页内 `tab` 表达该类中的具体管理对象或流程。Tab 必须继续按当前 AuthContext 类型和 Permission 过滤；某个页面在当前上下文中没有任何可用 Tab 时，Console 左侧入口和 System standalone 导航都必须隐藏，直接访问也不得绕过 Context 与 Permission Guard。
@@ -213,9 +213,13 @@ System IAM 管理端只按稳定业务大类提供五个左侧页面，不能把
 
 IAM 管理页页头必须用业务语言表达当前作用范围和会话认证状态：Tenant Context 显示“当前租户：名称（编码）”，Platform Context 显示“当前管理范围：平台”；不得向用户展示 `租户上下文 #<id>` 等内部标识。AAL 按“基础认证”“多因素认证”等语义展示，原始协议值只作为辅助说明。Tenant 名称和编码使用现有 `context-options` 权威结果，不得根据 Tenant ID 猜测或建立第二套查询。
 
-“用户账号”和“机器身份”是两类不同管理对象，不能继续混排在同一个主列表中。用户账号页只展示 User Membership；机器身份页展示当前 Tenant 拥有的 Service Account，以及已加入当前 Tenant 的 Platform-owned Runtime Service Principal，并以结构化管理归属显式区分。角色管理中的角色分配页只展示 User；Service Principal 的角色入口归机器身份页；租户审计仍覆盖两类 Principal，并在选择器或过滤器内按“账号类型”分组并显式标记。
+“用户账号”、“租户服务账号”和“平台运行账号”是三类管理责任不同的对象，不得混排在同一主列表中。用户账号页只展示 User Membership；租户服务账号页只展示租户可管理的 Tenant-owned Service Principal；平台运行账号页只展示已加入当前 Tenant 的 Platform-owned Runtime Service Principal。角色管理中的角色分配页只展示 User；Service Principal 的角色入口分别归入“租户服务账号”和“平台运行账号”页；租户审计仍覆盖两类 Principal，并在选择器或过滤器内按“账号类型”分组并显式标记。
 
-Tenant-owned 服务账号由 Service Principal、唯一 Tenant Membership 和一对一 Confidential OAuth Client 组成，三者生命周期由同一个服务账号 API 原子管理；内部 OAuth Client 不得出现在“外部应用（OAuth）”列表。Platform-owned Runtime Service Principal 在机器身份视图中只读，不向 Tenant 管理员暴露凭据轮换、定义修改或生命周期操作。两类机器身份的角色展示均复用 Role Assignment API；只有 Tenant-owned 服务账号允许 Tenant 管理员创建或撤销兼容的 Runtime Role Assignment。外部应用是代表 User 执行 Authorization Code + PKCE 的 Public OAuth Client，不是账号，也不接受 Client Credentials。
+Tenant-owned 服务账号由 Service Principal、唯一 Tenant Membership 和一对一 Confidential OAuth Client 组成，三者生命周期由同一个服务账号 API 原子管理；内部 OAuth Client 不得出现在“外部应用（OAuth）”列表。Platform-owned Runtime Service Principal 在独立的“平台运行账号”页中只读，不向 Tenant 管理员暴露凭据轮换、定义修改或生命周期操作。两类机器身份的角色展示均复用 Role Assignment API；只有 Tenant-owned 服务账号允许 Tenant 管理员创建或撤销兼容的 Runtime Role Assignment。外部应用是代表 User 执行 Authorization Code + PKCE 的 Public OAuth Client，不是账号，也不接受 Client Credentials。
+
+“应用接入”页签按 Tenant 管理员的常见工作频率排列：“API 消费方”、“外部应用（OAuth）”、“租户服务账号”、“平台运行账号”。前两项是对外接入的主要工作流；租户服务账号是高级自动化能力；平台运行账号只用于运行时角色查看与故障排查。该顺序是唯一默认顺序，不保留旧“机器身份”混合页签或其 query 兼容路径。
+
+租户服务账号和平台运行账号的角色列表与选择器必须优先显示角色的本地化业务名称，稳定 `role_key` 只作为技术识别辅助展示；所有内置 Tenant Role 的中英文名称和描述必须随 Role Catalog 同步发布并由清单覆盖测试约束。
 
 API 消费方只用于外部系统消费已发布的数据面 API，不是 Principal，不建立 Tenant Membership、Role Assignment 或 OAuth Client。System 保存 API Consumer、一次性展示的 API Consumer Credential Hash，以及精确的 `ConsumerServiceReference(service_type, service_id)`；首期只允许绑定 Service 已正式发布到服务消费目录的 Query Service。Gateway 只在显式数据面路由验证凭据、限流和记录调用，Service owner 必须再次验证 Credential，并按当前 Tenant、精确 Service Reference、服务状态和发布状态完成最终授权。`X-API-Key` 不得进入 `/api/v1/*` 控制面；控制面继续只接受其路由声明的 Bearer Credential。
 

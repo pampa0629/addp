@@ -32,13 +32,26 @@ func respondError(c *gin.Context, err error) {
 		status, key = http.StatusConflict, securityi18n.MsgProjectionCursorConflict
 	case errors.Is(err, service.ErrNoSupportedFindingsReleaseUnavailable):
 		status, key = http.StatusConflict, securityi18n.MsgNoSupportedFindingsReleaseUnavailable
+	case errors.Is(err, service.ErrDiscoveryExecutionInProgress):
+		status, key = http.StatusConflict, securityi18n.MsgDiscoveryExecutionInProgress
+	case errors.Is(err, service.ErrLiveEnrollmentAlreadyExists):
+		status, key = http.StatusConflict, securityi18n.MsgLiveEnrollmentAlreadyExists
 	}
 	response := gin.H{"error": commoni18n.T(c, key)}
+	if errors.Is(err, repository.ErrVersionConflict) {
+		response["error_code"] = "resource_version_conflict"
+	}
 	if errors.Is(err, service.ErrProjectionCursorConflict) {
 		response["error_code"] = "protection_projection_cursor_conflict"
 	}
 	if errors.Is(err, service.ErrNoSupportedFindingsReleaseUnavailable) {
 		response["error_code"] = "no_supported_findings_release_unavailable"
+	}
+	if errors.Is(err, service.ErrDiscoveryExecutionInProgress) {
+		response["error_code"] = "protection_discovery_execution_in_progress"
+	}
+	if errors.Is(err, service.ErrLiveEnrollmentAlreadyExists) {
+		response["error_code"] = "protection_enrollment_already_active"
 	}
 	if errors.Is(err, service.ErrProtectionAccessRequestExpired) {
 		response["error_code"] = "protection_access_request_expired"

@@ -72,7 +72,7 @@ export function useTaskWizardState() {
   const sourceFormat = ref('')
   const sourceLocator = ref('')
   const sourceQueryEnabled = ref(false)
-  const sourceQueryLanguage = ref('mql')
+  const sourceQueryLanguage = ref('')
   const sourceQueryStatement = ref('')
   const sourceQueryParameters = ref({})
   const sourceQueryValid = ref(true)
@@ -636,7 +636,7 @@ export function useTaskWizardState() {
 
     if (sourceChanged) {
       sourceQueryEnabled.value = false
-      sourceQueryLanguage.value = 'mql'
+      sourceQueryLanguage.value = ''
       sourceQueryStatement.value = ''
       sourceQueryParameters.value = {}
       sourceQueryValid.value = true
@@ -663,7 +663,7 @@ export function useTaskWizardState() {
 
   function updateSourceQuery({ enabled: nextEnabled, language, statement, parameters, valid = true } = {}) {
     sourceQueryEnabled.value = nextEnabled === true
-    sourceQueryLanguage.value = String(language || 'mql').trim().toLowerCase()
+    sourceQueryLanguage.value = String(language || '').trim().toLowerCase()
     sourceQueryStatement.value = String(statement || '')
     sourceQueryParameters.value = parameters && typeof parameters === 'object' && !Array.isArray(parameters)
       ? parameters
@@ -1034,7 +1034,7 @@ export function useTaskWizardState() {
       sourceLocator.value = source.locator || ''
       sourceConfig.value = extractSourceConfig(source)
       sourceQueryEnabled.value = !!source.query
-      sourceQueryLanguage.value = String(source.query?.language || 'mql').toLowerCase()
+      sourceQueryLanguage.value = String(source.query?.language || '').toLowerCase()
       sourceQueryStatement.value = source.query?.statement || ''
       sourceQueryParameters.value = source.query?.parameters && typeof source.query.parameters === 'object'
         ? source.query.parameters
@@ -1418,7 +1418,7 @@ export function useTaskWizardState() {
     sourceFormat.value = ''
     sourceLocator.value = ''
     sourceQueryEnabled.value = false
-    sourceQueryLanguage.value = 'mql'
+    sourceQueryLanguage.value = ''
     sourceQueryStatement.value = ''
     sourceQueryParameters.value = {}
     sourceQueryValid.value = true

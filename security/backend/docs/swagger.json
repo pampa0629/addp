@@ -98,7 +98,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "从服务端校验过的 Meta 当前组件创建来源为 manual 的正式敏感评估，并通过唯一编译器发布保护投影；浏览器不能提交组件结构或自由文本路径 | Create a formal sensitive assessment with manual source from a server-validated current Meta component and publish protection projections through the only compiler; clients cannot submit component structures or free-form paths",
+                "description": "从服务端校验过的 Meta 当前组件创建来源为 manual 的正式敏感评估，并通过唯一编译器发布保护投影；浏览器不能提交组件结构或自由文本路径，纳管版本不匹配返回 409 + resource_version_conflict | Create a formal sensitive assessment with manual source from a server-validated current Meta component and publish protection projections through the only compiler; clients cannot submit component structures or free-form paths, and an enrollment version mismatch returns 409 + resource_version_conflict",
                 "consumes": [
                     "application/json"
                 ],
@@ -276,7 +276,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "携带资源版本追加 not_sensitive 不可变修订并通过唯一编译器移除当前字段规则；不删除 Finding、复核或历史评估 | Append an immutable not_sensitive revision with resource-version concurrency and remove the current field rule through the only compiler; findings, reviews, and assessment history are retained",
+                "description": "携带资源版本追加 not_sensitive 不可变修订并通过唯一编译器移除当前字段规则；不删除 Finding、复核或历史评估，版本不匹配返回 409 + resource_version_conflict | Append an immutable not_sensitive revision with resource-version concurrency and remove the current field rule through the only compiler; findings, reviews, and assessment history are retained, and a version mismatch returns 409 + resource_version_conflict",
                 "consumes": [
                     "application/json"
                 ],
@@ -380,7 +380,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "使用资源版本并发控制，在同一 Assessment 聚合追加不可变正式修订并重新编译保护投影 | Append an immutable formal revision with resource-version concurrency control and recompile the protection projection",
+                "description": "使用资源版本并发控制，在同一 Assessment 聚合追加不可变正式修订并重新编译保护投影；版本不匹配返回 409 + resource_version_conflict | Append an immutable formal revision with resource-version concurrency control and recompile the protection projection; a version mismatch returns 409 + resource_version_conflict",
                 "consumes": [
                     "application/json"
                 ],
@@ -2636,6 +2636,89 @@
                 ]
             }
         },
+        "/protection-access-requests/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按当前租户返回一条申请的最新状态、审计身份与当前审批人的可审批性，供版本冲突后显式重新加载 | Return the latest request state, audit identities, and decision availability for the current reviewer within the tenant, for explicit reload after a version conflict",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Protection Access Request"
+                ],
+                "summary": "原值访问申请审批详情 | Get plaintext access request review detail",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "申请 ID | Request ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.ProtectionAccessRequestResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "security.protection_access_request.update"
+                ]
+            }
+        },
         "/protection-access-requests/{id}/decisions": {
             "post": {
                 "security": [
@@ -2643,7 +2726,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "申请人不能审批自己的申请，超过申请截止时间后也不能审批；批准后原子生成按用户临时授权和新投影 | The requester cannot decide their own request, and an expired request cannot be decided; approval atomically creates a subject-scoped temporary grant and projection",
+                "description": "申请人不能审批自己的申请，超过申请截止时间后也不能审批；批准后原子生成按用户临时授权和新投影；版本冲突返回 409 + resource_version_conflict，申请过期返回 409 + protection_access_request_expired | The requester cannot decide their own request, and an expired request cannot be decided; approval atomically creates a subject-scoped temporary grant and projection; version conflicts return 409 + resource_version_conflict, and expiration returns 409 + protection_access_request_expired",
                 "consumes": [
                     "application/json"
                 ],
@@ -3497,7 +3580,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "为已进入 enrolling 或 active 的纳管创建一次有界重新发现；同一纳管同时至多一个 pending/running 执行 | Create one bounded rediscovery for an enrollment in enrolling or active state; at most one pending or running execution may exist for the same enrollment",
+                "description": "为已进入 enrolling 或 active 的纳管创建一次有界重新发现并返回递增后的 enrollment_version；版本冲突返回 409 + resource_version_conflict，同一纳管已有 pending/running 执行时返回 409 + protection_discovery_execution_in_progress | Create one bounded rediscovery for an enrollment in enrolling or active state and return the incremented enrollment_version; version conflicts return 409 + resource_version_conflict, while an existing pending or running execution returns 409 + protection_discovery_execution_in_progress",
                 "consumes": [
                     "application/json"
                 ],
@@ -3601,7 +3684,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "从已退出记录冻结的目标引用创建全新的 activating 纳管并重新经过四个必要 Owner 的保护激活屏障；旧记录及其退出审计保持只读，同一目标已有未退出纳管时冲突 | Create a new activating enrollment from the target reference frozen in a released record and run the four required owners through the protection activation barrier again; the old record and exit audit remain read-only, and an existing live enrollment for the same target causes a conflict",
+                "description": "从已退出记录冻结的目标引用创建全新的 activating 纳管并重新经过四个必要 Owner 的保护激活屏障；成功后递增来源记录版本并返回 source_enrollment_version 与完整新 enrollment，旧记录的状态和退出审计保持只读；版本冲突返回 409 + resource_version_conflict，同一目标已有未退出纳管返回 409 + protection_enrollment_already_active | Create a new activating enrollment from the target reference frozen in a released record and run the four required owners through the protection activation barrier again; on success, increment the source record version and return source_enrollment_version plus the complete new enrollment while keeping the old state and exit audit read-only; version conflicts return 409 + resource_version_conflict, and an existing live enrollment returns 409 + protection_enrollment_already_active",
                 "consumes": [
                     "application/json"
                 ],
@@ -3634,7 +3717,7 @@
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/github_com_addp_security_internal_models.ProtectionEnrollmentResponse"
+                            "$ref": "#/definitions/github_com_addp_security_internal_models.ReEnrollProtectionEnrollmentResponse"
                         }
                     },
                     "400": {
@@ -3705,7 +3788,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "沿单一 release 路径发布退出变化并等待所有必要 Owner 原子删除本地纳管索引；basis=manual 表示常规人工退出，basis=no_supported_findings 仅在最近成功发现零命中且无进行中发现时接受并冻结来源快照；等待期间继续保持保护 | Publish release changes through the single release path and wait for every required owner to atomically remove its local enrollment index; basis=manual is a regular manual release, while basis=no_supported_findings is accepted only when the latest successful discovery has zero findings and no discovery is running, and freezes the source snapshot; protection remains in force while waiting",
+                "description": "沿单一 release 路径发布退出变化并等待所有必要 Owner 原子删除本地纳管索引；basis=manual 表示常规人工退出，basis=no_supported_findings 仅在最近成功发现零命中且无进行中发现时接受并冻结来源快照；等待期间继续保持保护；版本冲突返回 409 + resource_version_conflict，零命中证据不再成立返回 409 + no_supported_findings_release_unavailable | Publish release changes through the single release path and wait for every required owner to atomically remove its local enrollment index; basis=manual is a regular manual release, while basis=no_supported_findings is accepted only when the latest successful discovery has zero findings and no discovery is running, and freezes the source snapshot; protection remains in force while waiting; version conflicts return 409 + resource_version_conflict, while invalidated zero-finding evidence returns 409 + no_supported_findings_release_unavailable",
                 "consumes": [
                     "application/json"
                 ],
@@ -3975,7 +4058,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "使用资源版本追加 revoked 修订并立即回落到默认或字段保护规则 | Append a revoked revision with resource-version concurrency control and immediately fall back to the default or field protection rule",
+                "description": "使用资源版本追加 revoked 修订并立即回落到默认或字段保护规则；版本冲突返回 409 与稳定错误码 resource_version_conflict | Append a revoked revision with resource-version concurrency control and immediately fall back to the default or field protection rule; version conflicts return 409 with the stable resource_version_conflict code",
                 "consumes": [
                     "application/json"
                 ],
@@ -4340,7 +4423,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "使用资源版本追加 active 不可变修订；新效果只能等于或严于当前保护基线 | Append an active immutable revision using resource-version concurrency control; the new effect must be at least as strict as the current baseline",
+                "description": "使用资源版本追加 active 不可变修订；新效果只能等于或严于当前保护基线；版本冲突返回 409 和稳定错误码 resource_version_conflict | Append an active immutable revision using resource-version concurrency control; the new effect must be at least as strict as the current baseline; version conflicts return 409 with the stable error code resource_version_conflict",
                 "consumes": [
                     "application/json"
                 ],
@@ -4442,7 +4525,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "使用资源版本追加 revoked 不可变修订并回落到 Assessment 加 ProtectionBaseline；不解除纳管或放行明文 | Append a revoked immutable revision using resource-version concurrency control and fall back to Assessment plus ProtectionBaseline; enrollment and plaintext protection remain in force",
+                "description": "使用资源版本追加 revoked 不可变修订并回落到 Assessment 加 ProtectionBaseline；不解除纳管或放行明文；版本冲突返回 409 和稳定错误码 resource_version_conflict | Append a revoked immutable revision using resource-version concurrency control and fall back to Assessment plus ProtectionBaseline; enrollment and plaintext protection remain in force; version conflicts return 409 with the stable error code resource_version_conflict",
                 "consumes": [
                     "application/json"
                 ],
@@ -5953,6 +6036,9 @@
                 "enrollment_id": {
                     "type": "string"
                 },
+                "enrollment_version": {
+                    "type": "integer"
+                },
                 "execution_id": {
                     "type": "string"
                 },
@@ -6300,6 +6386,17 @@
             ],
             "properties": {
                 "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_security_internal_models.ReEnrollProtectionEnrollmentResponse": {
+            "type": "object",
+            "properties": {
+                "enrollment": {
+                    "$ref": "#/definitions/github_com_addp_security_internal_models.ProtectionEnrollmentResponse"
+                },
+                "source_enrollment_version": {
                     "type": "integer"
                 }
             }

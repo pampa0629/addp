@@ -129,11 +129,15 @@ activating -> enrolling -> active -> releasing -> released
 
 Security 后端必须以一份固定 Owner 契约同时作为必要 Owner 集合和可豁免主动作绑定的唯一事实源。Enrollment 门禁创建、全量投影编译、定义影响传播、变化流读取与确认校验、历史投影升级均必须从该契约派生；不得在各服务中重复维护 Owner 切片或另建 action 分支。新增数据出口 Owner 时，必须在同一变更中补齐契约、编译器、Owner 执行器和一致性门禁。
 
-已退出记录上的“重新纳入保护”只是创建新 ProtectionEnrollment 的便捷入口，不是状态回退。请求必须携带已退出 Enrollment 的正整数 `version`；Security 在同一事务锁定并验证来源记录仍为 `released`，使用其冻结的目标引用和最小目标快照创建新的 `activating` Enrollment 与四个 Owner 的初始门禁。旧 Enrollment、退出原因、退出依据和时间保持只读。若同一目标已有未退出 Enrollment，返回 `409`，不得产生第二条活动生命周期。
+已退出记录上的“重新纳入保护”只是创建新 ProtectionEnrollment 的便捷入口，不是状态回退。请求必须携带已退出 Enrollment 的正整数 `version`；Security 在同一事务锁定并验证来源记录仍为 `released`，使用其冻结的目标引用和最小目标快照创建新的 `activating` Enrollment 与四个 Owner 的初始门禁，并递增来源 Enrollment 的并发版本。旧 Enrollment 的状态、退出原因、退出依据和退出时间保持只读。成功响应固定返回 `source_enrollment_version` 和完整的新 `enrollment`；前端立即替换来源版本，并切换到新生命周期。若同一目标已有未退出 Enrollment，返回 `409 + protection_enrollment_already_active`，不得产生第二条活动生命周期。
+
+“受保护资源”的重新纳入必须使用正式确认对话框，完整展示冻结的资源和原退出记录。来源版本冲突时返回 `409 + resource_version_conflict`，前端保留重新纳入意图、禁用旧版本再次提交，并只提供“加载最新退出记录”的显式操作；用户主动加载后，只有来源状态仍为 `released` 才能再次确认，不得自动重试。收到 `protection_enrollment_already_active` 时，前端关闭确认对话框并切换到当前保护生命周期，不得复用来源记录再次创建。
 
 Enrollment 查询响应必须分别返回每个 Owner 当前投影的 `projection_state`、该版本的 `acknowledged` 状态，以及从当前投影去重、稳定排序得到的 `rules[{action,effect}]`；旧的纯 `effects` 汇总字段删除，不保留双轨。协议层 acknowledgement 只表示 Owner 已在本地事务中原子持久当前 revision；产品界面统一表述为保护规则“待同步”“已同步”或“已解除”，不使用易被理解为软件安装的“待安装/已安装”，也不表述为“已生效”。同步确认不能在 UI 中被解释为某个具体请求已经执行成功，也不能扩大为该 Owner 的所有引擎和数据形态均支持字段级处理。产品界面必须区分“字段规则已同步”“基础保护已同步”“待同步”和“已解除”；遮盖、移除等 effect 只能连同 action 表述为当前投影要求。具体请求无法满足动作、结构、血缘或执行器约束时仍须失效关闭。
 
 退出纳管只使用同一个 Release 子资源路径。Release 请求除 Enrollment `version` 和必填原因外，必须携带稳定依据 `basis=manual|no_supported_findings`；Enrollment 必须冻结 `release_basis`、`release_requested_by`、`release_requested_at` 和当次退出依据的 `release_source_snapshot_hash`。`no_supported_findings` 只允许在最近一次发现已成功、当前快照 Finding 数为 0，且同一 Enrollment 不存在 pending/running 发现 execution 时提交；服务端在同一退出事务内校验，不信任前端判断。
+
+退出纳管发生 Enrollment 版本冲突时必须返回 `409 + resource_version_conflict`。“受保护资源”的退出对话框必须保持打开并保留当次退出依据和原因，禁用旧版本再次提交；只有用户显式选择“放弃当前输入并加载最新受保护资源”后才调用 `GET /protection-enrollments/{id}` 建立最新基线。若最新状态已经是 `releasing|released`，则关闭对话框并告知无需重复退出；仍可退出时清空旧原因并要求重新确认，不得自动重试、自动合并或沿用旧原因提交。`no_supported_findings` 的事务内证据校验失败必须返回 `409 + no_supported_findings_release_unavailable`；前端关闭该零命中退出动作、刷新最新资源状态并明确提示重新核实，不得降级为 `manual`、复用旧原因或绕过服务端证据校验。
 
 ## 六、敏感发现执行
 
@@ -166,6 +170,9 @@ Detector 执行采用唯一的“能力注册 + 租户绑定”路径：
 9. Enrollment 查询必须返回最近一次成功发现的摘要：`status=not_completed|completed`、该快照的 `finding_count`、`pending_review_count` 和 `reviewed_count`。列表查询必须通过 Finding 与不可变初审记录批量聚合，不得为每个 Enrollment 新增 Finding 或 review 查询。
 10. `completed + finding_count=0` 只表示当前已启用检测能力对该次快照零命中，不是“资源已被证明不含敏感数据”的 Assessment。Enrollment 继续保持 `enrolling` 和资源级 `deny`，不得自动编译 `allow`。
 11. 治理人员可以基于零命中摘要显式确认“当前无需保护”，但该确认的唯一效果是使用 `basis=no_supported_findings` 创建 Release 并进入 `releasing`；不创建空 Assessment、`allow` Policy 或第二条放行路径。
+
+显式重新发现必须在“受保护资源”中使用正式确认对话框，并携带 Enrollment 当前 `version`。版本冲突时必须返回 `409 + resource_version_conflict`，前端保留重新发现意图、禁用旧版本再次提交，并只提供“加载最新受保护资源”的显式操作；用户主动加载后，只有最新状态仍为 `enrolling|active` 才能再次确认，不得自动重试。若同一 Enrollment 已有 pending/running 发现 execution，服务端返回 `409 + protection_discovery_execution_in_progress`；前端关闭确认对话框、刷新资源状态并告知等待当前发现完成，不得创建并行任务。创建成功响应必须返回递增后的 `enrollment_version`，前端立即替换本地版本。
+
 12. 识别质量摘要必须直接聚合现有事实，不新增统计表或异步双写。`current_finding_count` 与 `awaiting_review_count` 只取状态非 `released` Enrollment 的 `latest_discovery_execution_id + latest_source_snapshot_hash`；人工复核质量样本按 `{enrollment_id, component_key, detector_version}` 只取最新 review，分别统计 `confirm|adjust|reject`。确认属于敏感数据的比率为 `(confirm + adjust) / reviewed_sample_count`，分母为零时返回 `null`，不得显示伪造的 `0%`。
 13. 来源为 `manual` 的 Assessment 当前修订分别统计 `sensitive` 与 `not_sensitive`，只表达当前人工补充及已撤销数量。该数据可以按 SensitiveDataType 过滤，但不得分摊到 Detector、宣称为已证明漏检或据此自动修改检测配置。
 
@@ -184,7 +191,8 @@ Meta 专用技术事实读取契约固定为 `GET /api/v1/meta/runtime/data-item
 - 自动发现漏检时，治理人员可以在既有 Enrollment 上人工指定敏感组件。组件候选必须由 Security Backend 使用 `addp-security` Tenant Service Access Token 精确读取 Meta security facts，并只返回当前尚未形成任何正式 Assessment 的组件；已经确认、调整或撤销过的组件必须在既有 Assessment 上继续治理，不得重新列入“遗漏字段”候选。创建命令只提交所选 `component_key`、Enrollment `version`、SensitiveDataType、SecurityGrade 和原因；服务端必须重新读取并校验当前组件、结构指纹和 Tenant，不信任浏览器提交组件结构。
 - Assessment 聚合只保存当前 revision 指针、资源并发 `version` 和审计字段；每个不可变 revision 通过 `source_kind=finding|manual` 区分来源，通过 `conclusion=sensitive|not_sensitive` 表达当前正式结论，并冻结可选 Finding/review、SensitiveDataType、SecurityClassification、SecurityGrade、来源结构快照 Hash 和已确认组件结构。该依赖快照不得包含原始样本值。
 - 治理人员发现既有正式 Assessment 错误时，必须携带 Assessment `version` 和原因追加 `conclusion=not_sensitive` 修订；不得删除或改写 Assessment、Finding、review 或历史 revision。后续重新认定为敏感时仍在同一 Assessment 聚合追加 `sensitive` 修订。
-- “受保护资源”是调整正式 Assessment 的唯一产品入口。无论 Assessment 来源于 Finding 复核还是人工指定、当前结论是 `sensitive` 还是 `not_sensitive`，界面都必须在既有聚合上提供“调整结论”；表单预填当前 SensitiveDataType 和 SecurityGrade，只允许选择已有有效 ProtectionBaseline 的组合，并要求填写本次修订依据。提交固定调用 `POST /assessments/{id}/revisions` 并携带当前 `version`，成功后刷新当前资源的 Assessment、ProtectionPolicy 和 Owner 同步状态；不得重新复核 Finding、重新人工指定组件、调用 `PUT /assessments/{id}` 或建立独立 Assessment 管理页面。
+- “受保护资源”是调整和审计正式 Assessment 的唯一产品入口。无论 Assessment 来源于 Finding 复核还是人工指定、当前结论是 `sensitive` 还是 `not_sensitive`，界面都必须在既有聚合上提供“调整结论”；表单预填当前 SensitiveDataType 和 SecurityGrade，只允许选择已有有效 ProtectionBaseline 的组合，并要求填写本次修订依据。提交固定调用 `POST /assessments/{id}/revisions` 并携带当前 `version`，成功后刷新当前资源的 Assessment、ProtectionPolicy 和 Owner 同步状态。Assessment `version` 不匹配时必须返回 `409 + resource_version_conflict`；前端保持调整弹窗、全部输入和脏状态，停止继续提交并提供“放弃当前输入并加载最新结论”的显式操作，只有用户主动执行后才调用 `GET /assessments/{id}` 替换本地版本和表单基线，不得自动重试或静默合并。界面还必须从同一 Assessment 入口按需调用 `GET /assessments/{id}` 展示倒序的不可变修订历史，至少包括修订号、是否当前、来源、结论、当时冻结的敏感类型/分类/等级、依据、操作人和时间；列表接口不得为此携带完整历史，前端不得把当前定义名称写回历史或另建历史事实。不得重新复核 Finding、重新人工指定组件、调用 `PUT /assessments/{id}` 或建立独立 Assessment 管理页面。
+- 撤销正式敏感结论必须继续留在“受保护资源”，使用正式表单对话框收集撤销依据并调用 `DELETE /assessments/{id}`。版本冲突时保持对话框和撤销依据、禁用旧版本再次提交；只有用户显式放弃当前输入后才调用 `GET /assessments/{id}` 建立最新基线。若最新结论已经是 `not_sensitive`，则关闭对话框并告知无需重复撤销；仍为 `sensitive` 时清空旧依据并要求重新填写，不得自动重试、自动合并或沿用旧依据提交。
 - 编译器合并有效 Assessment、ProtectionBaseline 和 ProtectionPolicy，对同一资源、组件、消费 Owner 和动作始终选择更严格结果。
 - 候选基线与正式 Assessment 都必须进入同一编译器和同一投影变化流；不允许 Owner 实现“自动发现脱敏”与“正式策略脱敏”两条路线。
 - 当 Finding 被驳回或正式 Assessment 被撤销，且同一组件不存在其他有效正式结论时，唯一编译器必须移除该字段规则；若整个资源不再有字段规则，则发布新的 `enrolling` 资源级拒绝投影。不得通过删除投影使 Owner 回到明文路径。
@@ -224,6 +232,8 @@ tenant + assessment_id + consumer_owner + action
 5. 撤销 Policy 通过 `DELETE` 表达，但不物理删除历史：携带 `version` 和原因，追加 `revoked` 修订。撤销后编译器回落到 Assessment + ProtectionBaseline，不解除纳管、不删除投影、不返回明文。
 6. 没有显式 Policy 不是异常，也不要求用户为每个敏感字段创建策略。Assessment + ProtectionBaseline 是默认且完整的最低保护路径。
 7. Policy 变更与 ProtectionProjection 新修订必须在同一数据库事务完成，并继续调用唯一编译器；禁止新增 Policy 专用投影生成旁路。
+8. 更新既有 Policy 时，资源版本不匹配必须返回 `409` 和稳定错误码 `resource_version_conflict`。“受保护资源”的策略编辑对话框必须保留用户尚未提交成功的效果和调整依据、禁用旧版本再次提交，并只提供显式的“放弃当前输入并加载最新策略”动作；该动作必须同时重新读取 Policy、其绑定的 Assessment 和当前 ProtectionBaseline，按最新默认保护重新计算可选收紧效果，不得自动重试、自动合并或静默覆盖最新修订。
+9. 撤销既有 Policy 也必须使用“受保护资源”内的正式表单对话框收集恢复依据。版本冲突时保持对话框和恢复依据、禁用旧版本再次提交；只有用户显式放弃当前输入后才重新读取 Policy、其绑定的 Assessment 和当前 ProtectionBaseline。若最新 Policy 已撤销或最新 Assessment 不再是有效敏感结论，则关闭对话框并告知无需重复操作；仍可撤销时以最新状态建立空白恢复依据，不得自动重试或沿用旧依据提交。
 
 用途约束和双人复核仍属于后续范围，不得借 ProtectionPolicy 或 ProtectionExemption API 伪装实现。
 
@@ -249,6 +259,8 @@ tenant + assessment_id + consumer_owner + action + subject_type + subject_id
 10. ProtectionAccessRequest 的生命周期状态固定为 `pending|approved|rejected|expired`。`pending` 只表示仍在申请截止时间内等待决策；服务端时间达到 `requested_expires_at` 后，所有查询必须立即将其视为 `expired`，不再算作待审批，不得依赖浏览器时钟推导。
 11. 审批工作区只有一个分页 API，通过必填 `scope=pending|history` 选择视图：`pending` 只返回未过期待审批申请，`history` 返回已批准、已驳回和已过期申请。历史保留申请人、审批人、申请截止时间、决策时间、业务依据和审批意见；已过期而未决策的记录没有审批人和审批意见。审批结论与当前授权状态必须分开表达：`approved` 只表示当时审批通过，批准记录还必须按服务端时间和当前 ProtectionExemption、Assessment revision 返回 `authorization_state=active|expired|revoked|superseded` 与原授权截止时间；被拒绝或申请过期未决策时不产生授权状态。历史视图可按同一组 `authorization_state` 值进行服务端筛选；筛选以当前授权事实为准，只命中曾产生授权的批准记录，并在分页、总数统计之前完成。响应同时返回所属 `enrollment_id`，审批工作区只能据此进入既有受保护资源详情和授权撤销路径，不得按资源名称猜测关联，也不得另建第二套授权详情或撤销流程。申请人和审批人对外统一返回 `{type,id,display_name}` 语义对象：ID 始终是权威审计身份，`display_name` 由 Security 在申请或决策当时通过 System 的受信批量用户引用接口校验并固化，后续用户改名不改写历史。审批列表不得由前端逐行解析身份，也不得在读路径实时依赖 System。
 12. Manager 只消费 Security 返回的有效申请状态。只有 `pending` 触发状态轮询并阻止重复申请；`expired` 和 `rejected` 必须明确展示结果、停止轮询并允许重新申请。新申请创建时，Security 在同一事务中先将同一绑定键上已超时的 `pending` 记录固化为 `expired`，再校验和创建唯一新申请。
+13. ProtectionExemption 只能在“受保护资源”详情中提前撤销，并必须使用正式表单对话框收集撤销依据。版本冲突时保持对话框和撤销依据、禁用旧版本再次提交；只有用户显式放弃当前输入后才重新读取该 ProtectionExemption。若最新 `effective_state` 已不是 `active`，则关闭对话框并告知无需重复撤销；仍然生效时以最新版本建立空白撤销依据，由用户重新确认，不得自动重试、自动合并或沿用旧依据提交。
+14. 批准和驳回必须共用“受保护资源”审批工作区中的正式表单对话框，完整展示资源、字段、申请人、申请期限和业务依据，并另行收集审批依据。审批版本冲突时保持对话框、审批动作和审批依据，禁用旧版本再次提交；只有用户显式放弃当前输入后才调用 `GET /protection-access-requests/{id}` 读取最新申请。若最新申请已不是未过期的 `pending`、当前审批人已不可审批，则关闭对话框并刷新审批工作区；仍可审批时以最新版本建立空白审批依据，由用户重新确认。不得自动重试、自动合并或沿用旧依据提交。服务端明确返回 `protection_access_request_expired` 时，前端直接关闭对话框、刷新工作区并告知申请已过期。
 
 ### 7.3 保护定义变化的影响传播
 
@@ -536,7 +548,7 @@ Service 必须在同一个 PreparedQuery 上依次完成 `ReadSet()`、命中判
 | `GET` | `/protection-enrollments/{id}` | 纳管详情与激活进度 |
 | `POST` | `/protection-enrollments/{id}/re-enrollments` | 携带已退出记录的 `version` 创建新的 ProtectionEnrollment；旧记录保持只读，目标已有未退出记录时冲突 |
 | `POST` | `/protection-enrollments/{id}/releases` | 显式退出纳管，body 必须携带 `version` 和原因 |
-| `POST` | `/protection-enrollments/{id}/discovery-executions` | 携带 `version` 显式创建一次有界重新发现执行；同一纳管同时至多一个 pending/running 执行 |
+| `POST` | `/protection-enrollments/{id}/discovery-executions` | 携带 `version` 显式创建一次有界重新发现执行并返回递增后的 `enrollment_version`；版本冲突与已有 pending/running 执行分别返回稳定 409 错误码 |
 | `GET` | `/findings` | 敏感发现分页查询；支持按 Enrollment、来源快照、当前快照、复核状态、敏感类型和识别能力版本筛选，并返回目标资源快照、可选初审记录及后端组装的只读保护解释链 |
 | `GET` | `/findings/{id}` | 不含原值的证据详情、可选初审记录及后端组装的只读保护解释链 |
 | `POST` | `/findings/{id}/reviews` | 确认、调整或驳回 Finding |
@@ -551,6 +563,7 @@ Service 必须在同一个 PreparedQuery 上依次完成 `ReadSet()`、命中判
 | `GET` | `/protection-access-request-targets` | Manager 预览按 DataItem fingerprint 查询当前用户可申请的字段、最近申请的有效状态和有效临时授权；自动发现但尚未形成正式 Assessment 的字段只返回不可申请原因 |
 | `GET/POST` | `/protection-access-requests` | 当前用户分页查询自己的申请/从 Manager 预览提交按用户原值访问申请 |
 | `GET` | `/protection-access-requests/review-queue` | 审批人员分页查询当前租户审批工作区；必填 `scope=pending|history`，并可按申请人、资源或字段、申请时间筛选；`history` 还可按 `approved|rejected|expired` 处理结果及 `active|expired|revoked|superseded` 当前授权状态进行服务端筛选。待审批视图排除已过期记录并明确本人申请不可自审；审批记录视图返回完整决策审计信息，并为批准记录返回当前 `authorization_state`、原授权截止时间和用于进入既有授权详情的 `enrollment_id` |
+| `GET` | `/protection-access-requests/{id}` | 审批人员按当前租户读取一条申请的最新状态与可审批性，用于版本冲突后的显式重新加载 |
 | `POST` | `/protection-access-requests/{id}/decisions` | 另一名审批人员批准或驳回申请；批准期限不得超过用户申请期限和 30 天上限 |
 | `GET` | `/protection-exemptions` | 治理人员分页查询审批后形成的临时原值授权 |
 | `GET` | `/protection-exemptions/{id}` | 查询临时原值授权及不可变修订历史 |

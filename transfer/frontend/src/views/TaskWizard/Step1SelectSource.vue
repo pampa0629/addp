@@ -94,16 +94,36 @@
             :title="t('transfer.taskWizard.querySourceHint')"
           />
           <template v-if="querySourceEnabled">
-            <el-select v-model="queryLanguage" @change="syncQuerySource">
-              <el-option label="MQL" value="mql" />
-              <el-option label="SQL" value="sql" />
-            </el-select>
+            <div class="query-language-control">
+              <span>{{ t('transfer.taskWizard.queryLanguageLabel') }}</span>
+              <el-tag v-if="queryLanguageOptions.length === 1" type="info">
+                {{ queryLanguageOptions[0].toUpperCase() }}
+              </el-tag>
+              <el-select v-else v-model="queryLanguage" @change="handleQueryLanguageChange">
+                <el-option
+                  v-for="language in queryLanguageOptions"
+                  :key="language"
+                  :label="language.toUpperCase()"
+                  :value="language"
+                />
+              </el-select>
+            </div>
             <MongoStructureQueryBuilder
               v-if="isMongoMqlSource"
               :model-value="queryStatement"
               :collection="selectedMongoCollection"
               :source-fields="mongoSourceFields"
               @update:model-value="handleMongoQueryUpdate"
+            />
+            <RelationalSQLQueryBuilder
+              v-else-if="isRelationalSqlSource"
+              :model-value="queryStatement"
+              :parameters="queryParameters"
+              :source-path="relationalSourcePath"
+              :source-fields="catalogSourceFields"
+              :identifier-quote="selectedSourceQueryCapability?.identifierQuotes?.sql || ''"
+              :parameters-supported="selectedSourceQueryCapability?.parameterLanguages?.has('sql') === true"
+              @update:query="handleRelationalQueryUpdate"
             />
             <el-input
               v-else
@@ -115,6 +135,7 @@
             />
             <div v-if="queryStatementError" class="query-error">{{ queryStatementError }}</div>
             <el-input
+              v-if="!isRelationalSqlSource"
               v-model="queryParametersText"
               type="textarea"
               :rows="3"
@@ -143,6 +164,7 @@ import {
   formatLabel,
   hasStorageCapability,
   isContentEngine,
+  queryReadSessionCapability,
   representationLabel
 } from '@/utils/transferDisplay'
 import {
@@ -152,6 +174,7 @@ import {
 } from './containerSource.mjs'
 import { queryStatementValid } from './runtimeTarget.mjs'
 import MongoStructureQueryBuilder from './MongoStructureQueryBuilder.vue'
+import RelationalSQLQueryBuilder from './RelationalSQLQueryBuilder.vue'
 import { mongoStructureOutputFields, parseMongoStructureQuery } from './mongoStructureQuery.mjs'
 
 const { t } = useI18n()
@@ -171,8 +194,9 @@ const selectedNode = ref(null)
 const pickerSelection = ref(null)
 const containerChildName = ref('')
 const querySourceEnabled = ref(props.wizardState.sourceQueryEnabled.value)
-const queryLanguage = ref(props.wizardState.sourceQueryLanguage.value || 'mql')
+const queryLanguage = ref(props.wizardState.sourceQueryLanguage.value || '')
 const queryStatement = ref(props.wizardState.sourceQueryStatement.value || '')
+const queryParameters = ref({ ...(props.wizardState.sourceQueryParameters.value || {}) })
 const queryParametersText = ref(JSON.stringify(props.wizardState.sourceQueryParameters.value || {}, null, 2))
 const queryStatementError = ref('')
 const queryParametersError = ref('')
@@ -196,6 +220,8 @@ const selectedContainerChild = computed(() => {
   if (!isContainerSource.value) return null
   return resolveContainerTableChild(selectedNode.value?.attributes || {}, containerChildName.value)
 })
+const selectedSourceQueryCapability = computed(() => queryReadSessionCapability(selectedEngine.value))
+const queryLanguageOptions = computed(() => selectedSourceQueryCapability.value?.languages || [])
 
 const selectedTransferDataType = computed(() => {
   return selectedContainerChild.value ? 'table' : selectedDataType.value
@@ -204,12 +230,16 @@ const querySourceAvailable = computed(() => {
   return !!selectedNode.value &&
     props.wizardState.runtimeBoundary.value === 'bounded' &&
     selectedTransferDataType.value === 'table' &&
-    representationForSelection(selectedNode.value, selectedEngine.value) === 'native'
+    representationForSelection(selectedNode.value, selectedEngine.value) === 'native' &&
+    selectedSourceQueryCapability.value !== null
 })
 const isMongoMqlSource = computed(() => {
-  const engineType = selectedEngine.value?.engine_type || props.wizardState.sourceEngineType.value
-  return queryLanguage.value === 'mql' && String(engineType || '').toLowerCase().includes('mongodb')
+  return queryLanguage.value === 'mql' && selectedSourceQueryCapability.value?.engineFamily === 'dynamic_schema'
 })
+const isRelationalSqlSource = computed(() => {
+  return queryLanguage.value === 'sql' && selectedSourceQueryCapability.value?.engineFamily === 'tabular'
+})
+const relationalSourcePath = computed(() => pathNames(selectedNode.value))
 const selectedMongoCollection = computed(() => {
   const names = pathNames(selectedNode.value)
   if (names.length > 0) return names[names.length - 1]
@@ -224,12 +254,34 @@ watch(
   (statement) => {
     if (statement === queryStatement.value) return
     querySourceEnabled.value = props.wizardState.sourceQueryEnabled.value
-    queryLanguage.value = props.wizardState.sourceQueryLanguage.value || 'mql'
+    queryLanguage.value = props.wizardState.sourceQueryLanguage.value || selectedSourceQueryCapability.value?.defaultLanguage || ''
     queryStatement.value = statement || ''
-    queryParametersText.value = JSON.stringify(props.wizardState.sourceQueryParameters.value || {}, null, 2)
+    queryParameters.value = { ...(props.wizardState.sourceQueryParameters.value || {}) }
+    queryParametersText.value = JSON.stringify(queryParameters.value, null, 2)
   },
   { flush: 'post' }
 )
+
+watch(selectedSourceQueryCapability, capability => {
+  if (!capability) {
+    querySourceEnabled.value = false
+    queryLanguage.value = ''
+    queryStatement.value = ''
+    queryParameters.value = {}
+    queryParametersText.value = '{}'
+    syncQuerySource()
+    return
+  }
+  if (capability.languages.includes(queryLanguage.value)) return
+  queryLanguage.value = capability.defaultLanguage
+  queryStatement.value = ''
+  queryParameters.value = {}
+  queryParametersText.value = '{}'
+  if (catalogSourceFields.value.length > 0) {
+    props.wizardState.replaceSourceFields(catalogSourceFields.value, selectedNode.value?.attributes || {})
+  }
+  syncQuerySource()
+}, { immediate: true })
 
 watch(selectedNode, async (node) => {
   catalogSourceFields.value = []
@@ -267,6 +319,7 @@ function syncQuerySource() {
     queryParametersError.value = error.message || t('transfer.taskWizard.queryParametersInvalid')
     parameters = {}
   }
+  queryParameters.value = parameters
   props.wizardState.updateSourceQuery({
     enabled: querySourceEnabled.value,
     language: queryLanguage.value,
@@ -279,10 +332,39 @@ function syncQuerySource() {
   }
 }
 
+function handleQueryLanguageChange(language) {
+  queryLanguage.value = language
+  queryStatement.value = ''
+  queryParameters.value = {}
+  queryParametersText.value = '{}'
+  props.wizardState.replaceSourceFields(catalogSourceFields.value, selectedNode.value?.attributes || {})
+  syncQuerySource()
+}
+
 function handleMongoQueryUpdate(statement) {
   queryStatement.value = statement
   syncQuerySource()
   syncMongoQueryOutputFields(statement)
+}
+
+function handleRelationalQueryUpdate(query) {
+  queryStatement.value = query?.statement || ''
+  queryParameters.value = query?.parameters && typeof query.parameters === 'object' && !Array.isArray(query.parameters)
+    ? query.parameters
+    : {}
+  queryParametersText.value = JSON.stringify(queryParameters.value, null, 2)
+  queryStatementError.value = query?.valid === false ? t('transfer.taskWizard.queryStatementRequired') : ''
+  queryParametersError.value = ''
+  props.wizardState.updateSourceQuery({
+    enabled: querySourceEnabled.value,
+    language: queryLanguage.value,
+    statement: queryStatement.value,
+    parameters: queryParameters.value,
+    valid: query?.valid !== false
+  })
+  if (Array.isArray(query?.fields)) {
+    props.wizardState.replaceSourceFields(query.fields, selectedNode.value?.attributes || {})
+  }
 }
 
 function syncMongoQueryOutputFields(statement) {
@@ -906,6 +988,18 @@ onMounted(async () => {
   width: min(960px, 100%);
   display: grid;
   gap: 12px;
+}
+
+.query-language-control {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--addp-text-secondary);
+  font-size: 13px;
+}
+
+.query-language-control :deep(.el-select) {
+  width: 180px;
 }
 
 .query-error {

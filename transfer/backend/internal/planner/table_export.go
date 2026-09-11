@@ -897,12 +897,17 @@ func buildTableSourcePlan(endpoint EndpointSpec, engine EngineBinding, transform
 			return executor.TableSourcePlan{}, fmt.Errorf("build query source catalog path: %w", err)
 		}
 		capabilities := effectiveEngineCapabilities(engine)
-		if capabilities == nil || capabilities.Compute == nil || capabilities.Compute.Query == nil || !capabilities.Compute.Query.ReadSession {
+		if capabilities == nil || capabilities.Compute == nil || capabilities.Compute.Query == nil ||
+			!capabilities.Compute.Query.Supported || !capabilities.Compute.Query.ReadSession {
 			return executor.TableSourcePlan{}, fmt.Errorf("query source engine %q does not declare query read_session", engineType)
+		}
+		language := strings.ToLower(strings.TrimSpace(endpoint.Query.Language))
+		if !queryCapabilitySupportsLanguage(capabilities.Compute.Query, language) {
+			return executor.TableSourcePlan{}, fmt.Errorf("query source engine %q does not support language %q", engineType, language)
 		}
 		request := engineplugin.QueryRequest{
 			EngineID:   engine.EngineID,
-			Language:   strings.ToLower(strings.TrimSpace(endpoint.Query.Language)),
+			Language:   language,
 			Query:      strings.TrimSpace(endpoint.Query.Statement),
 			TargetPath: &path,
 			Options: engineplugin.QueryOptions{
@@ -991,6 +996,18 @@ func buildTableSourcePlan(endpoint EndpointSpec, engine EngineBinding, transform
 	default:
 		return executor.TableSourcePlan{}, fmt.Errorf("unsupported source representation %q", endpoint.Representation)
 	}
+}
+
+func queryCapabilitySupportsLanguage(capability *engineplugin.QueryCapability, language string) bool {
+	if capability == nil || strings.TrimSpace(language) == "" {
+		return false
+	}
+	for _, supported := range capability.Languages {
+		if strings.EqualFold(strings.TrimSpace(supported), language) {
+			return true
+		}
+	}
+	return false
 }
 
 func applyContainerChildParseOptions(endpoint EndpointSpec, descriptor dataitem.ItemDescriptor, opts *format.ParseOptions) error {

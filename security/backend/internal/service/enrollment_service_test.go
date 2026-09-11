@@ -121,14 +121,17 @@ func TestExplicitRediscoveryIsUniqueAndRenewsLatestSchemaProjection(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if created.Status != "pending" || created.EnrollmentID != current.ID {
+	if created.Status != "pending" || created.EnrollmentID != current.ID || created.EnrollmentVersion != current.Version+1 {
 		t.Fatalf("rediscovery = %#v", created)
 	}
 	afterCreate, err := enrollments.Get(context.Background(), 7, current.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := enrollments.CreateDiscoveryExecution(context.Background(), 7, 41, current.ID, models.CreateProtectionDiscoveryExecutionRequest{Version: afterCreate.Version}); !errors.Is(err, commonapi.ErrConflict) {
+	if _, err := enrollments.CreateDiscoveryExecution(context.Background(), 7, 41, current.ID, models.CreateProtectionDiscoveryExecutionRequest{Version: current.Version}); !errors.Is(err, repository.ErrVersionConflict) {
+		t.Fatalf("stale rediscovery error = %v", err)
+	}
+	if _, err := enrollments.CreateDiscoveryExecution(context.Background(), 7, 41, current.ID, models.CreateProtectionDiscoveryExecutionRequest{Version: afterCreate.Version}); !errors.Is(err, ErrDiscoveryExecutionInProgress) {
 		t.Fatalf("duplicate rediscovery error = %v", err)
 	}
 	execution, lease, err := discoveries.ClaimNext(context.Background(), "security-rediscovery-test", time.Now().UTC(), time.Minute)
@@ -208,9 +211,11 @@ func TestReleasedEnrollmentCanCreateANewProtectionLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	releasedAt := time.Date(2026, 9, 3, 10, 0, 0, 0, time.UTC)
+	releaseRequestedAt := releasedAt.Add(-5 * time.Minute)
 	if err := db.Model(&models.ProtectionEnrollment{}).Where("tenant_id = ? AND id = ?", 7, created.ID).Updates(map[string]any{
 		"state": models.EnrollmentStateReleased, "release_basis": models.ReleaseBasisManual,
-		"release_reason": "test release", "released_at": releasedAt,
+		"release_reason": "test release", "release_requested_by": 17,
+		"release_requested_at": releaseRequestedAt, "released_at": releasedAt,
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -222,12 +227,16 @@ func TestReleasedEnrollmentCanCreateANewProtectionLifecycle(t *testing.T) {
 		t.Fatalf("stale re-enrollment error = %v", err)
 	}
 
-	reenrolled, err := svc.ReEnroll(context.Background(), 7, 21, source.ID, models.ReEnrollProtectionEnrollmentRequest{Version: source.Version})
+	result, err := svc.ReEnroll(context.Background(), 7, 21, source.ID, models.ReEnrollProtectionEnrollmentRequest{Version: source.Version})
 	if err != nil {
 		t.Fatal(err)
 	}
+	reenrolled := result.Enrollment
 	if reenrolled.ID == source.ID || reenrolled.State != models.EnrollmentStateActivating || reenrolled.CreatedBy != 21 || len(reenrolled.OwnerProgress) != len(requiredProtectionOwnerContracts) {
 		t.Fatalf("new enrollment = %#v", reenrolled)
+	}
+	if result.SourceEnrollmentVersion != source.Version+1 {
+		t.Fatalf("source enrollment version = %d", result.SourceEnrollmentVersion)
 	}
 	if reenrolled.Target != source.Target || reenrolled.TargetSnapshot != source.TargetSnapshot {
 		t.Fatalf("re-enrolled target changed: source=%#v new=%#v", source, reenrolled)
@@ -236,10 +245,13 @@ func TestReleasedEnrollmentCanCreateANewProtectionLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if unchanged.State != models.EnrollmentStateReleased || unchanged.ReleaseReason != "test release" || unchanged.ReleasedAt == nil || !unchanged.ReleasedAt.Equal(releasedAt) {
+	if unchanged.State != models.EnrollmentStateReleased || unchanged.Version != source.Version+1 || unchanged.ReleaseBasis != models.ReleaseBasisManual || unchanged.ReleaseReason != "test release" || unchanged.ReleaseRequestedBy == nil || *unchanged.ReleaseRequestedBy != 17 || unchanged.ReleaseRequestedAt == nil || !unchanged.ReleaseRequestedAt.Equal(releaseRequestedAt) || unchanged.ReleasedAt == nil || !unchanged.ReleasedAt.Equal(releasedAt) {
 		t.Fatalf("released audit changed = %#v", unchanged)
 	}
-	if _, err := svc.ReEnroll(context.Background(), 7, 21, source.ID, models.ReEnrollProtectionEnrollmentRequest{Version: source.Version}); !errors.Is(err, commonapi.ErrConflict) {
+	if _, err := svc.ReEnroll(context.Background(), 7, 21, source.ID, models.ReEnrollProtectionEnrollmentRequest{Version: source.Version}); !errors.Is(err, repository.ErrVersionConflict) {
+		t.Fatalf("stale duplicate re-enrollment error = %v", err)
+	}
+	if _, err := svc.ReEnroll(context.Background(), 7, 21, source.ID, models.ReEnrollProtectionEnrollmentRequest{Version: unchanged.Version}); !errors.Is(err, ErrLiveEnrollmentAlreadyExists) {
 		t.Fatalf("duplicate live re-enrollment error = %v", err)
 	}
 }

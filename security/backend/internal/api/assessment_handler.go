@@ -107,7 +107,7 @@ func (h *AssessmentHandler) List(c *gin.Context) {
 }
 
 // @Summary 人工指定敏感组件 | Create manual security assessment
-// @Description 从服务端校验过的 Meta 当前组件创建来源为 manual 的正式敏感评估，并通过唯一编译器发布保护投影；浏览器不能提交组件结构或自由文本路径 | Create a formal sensitive assessment with manual source from a server-validated current Meta component and publish protection projections through the only compiler; clients cannot submit component structures or free-form paths
+// @Description 从服务端校验过的 Meta 当前组件创建来源为 manual 的正式敏感评估，并通过唯一编译器发布保护投影；浏览器不能提交组件结构或自由文本路径，纳管版本不匹配返回 409 + resource_version_conflict | Create a formal sensitive assessment with manual source from a server-validated current Meta component and publish protection projections through the only compiler; clients cannot submit component structures or free-form paths, and an enrollment version mismatch returns 409 + resource_version_conflict
 // @Tags Security Assessment
 // @Accept json
 // @Produce json
@@ -162,7 +162,7 @@ func (h *AssessmentHandler) Get(c *gin.Context) {
 }
 
 // @Summary 新增安全评估修订 | Create security assessment revision
-// @Description 使用资源版本并发控制，在同一 Assessment 聚合追加不可变正式修订并重新编译保护投影 | Append an immutable formal revision with resource-version concurrency control and recompile the protection projection
+// @Description 使用资源版本并发控制，在同一 Assessment 聚合追加不可变正式修订并重新编译保护投影；版本不匹配返回 409 + resource_version_conflict | Append an immutable formal revision with resource-version concurrency control and recompile the protection projection; a version mismatch returns 409 + resource_version_conflict
 // @Tags Security Assessment
 // @Accept json
 // @Produce json
@@ -194,7 +194,7 @@ func (h *AssessmentHandler) Revise(c *gin.Context) {
 }
 
 // @Summary 撤销正式安全评估 | Revoke formal security assessment
-// @Description 携带资源版本追加 not_sensitive 不可变修订并通过唯一编译器移除当前字段规则；不删除 Finding、复核或历史评估 | Append an immutable not_sensitive revision with resource-version concurrency and remove the current field rule through the only compiler; findings, reviews, and assessment history are retained
+// @Description 携带资源版本追加 not_sensitive 不可变修订并通过唯一编译器移除当前字段规则；不删除 Finding、复核或历史评估，版本不匹配返回 409 + resource_version_conflict | Append an immutable not_sensitive revision with resource-version concurrency and remove the current field rule through the only compiler; findings, reviews, and assessment history are retained, and a version mismatch returns 409 + resource_version_conflict
 // @Tags Security Assessment
 // @Accept json
 // @Produce json

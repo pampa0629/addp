@@ -38,7 +38,7 @@ func (p *Plugin) TestConnection(ctx context.Context, connInfo plugin.ConnectionI
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/health", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/health/ready", nil)
 	if err != nil {
 		return err
 	}

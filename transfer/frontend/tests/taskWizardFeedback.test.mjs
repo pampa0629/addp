@@ -10,8 +10,20 @@ const step3Source = await readFile(
   new URL('../src/views/TaskWizard/Step3FieldMapping.vue', import.meta.url),
   'utf8'
 )
+const step1Source = await readFile(
+  new URL('../src/views/TaskWizard/Step1SelectSource.vue', import.meta.url),
+  'utf8'
+)
 const zhCN = JSON.parse(await readFile(new URL('../src/i18n/zh-cn.json', import.meta.url), 'utf8'))
 const en = JSON.parse(await readFile(new URL('../src/i18n/en.json', import.meta.url), 'utf8'))
+
+test('查询语言由源引擎能力决定且关系型源使用轻量 SQL 构造器', () => {
+  assert.match(step1Source, /queryLanguageOptions = computed\(\(\) => selectedSourceQueryCapability/)
+  assert.match(step1Source, /v-for="language in queryLanguageOptions"/)
+  assert.match(step1Source, /<RelationalSQLQueryBuilder/)
+  assert.doesNotMatch(step1Source, /<el-option label="MQL" value="mql"/)
+  assert.doesNotMatch(step1Source, /<el-option label="SQL" value="sql"/)
+})
 
 test('数据库 CDC 不可用时通过问号按钮展示原因', () => {
   assert.match(

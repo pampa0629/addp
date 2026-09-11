@@ -70,7 +70,7 @@ func (h *ExemptionHandler) Get(c *gin.Context) {
 }
 
 // @Summary 撤销临时原值授权 | Revoke temporary plaintext grant
-// @Description 使用资源版本追加 revoked 修订并立即回落到默认或字段保护规则 | Append a revoked revision with resource-version concurrency control and immediately fall back to the default or field protection rule
+// @Description 使用资源版本追加 revoked 修订并立即回落到默认或字段保护规则；版本冲突返回 409 与稳定错误码 resource_version_conflict | Append a revoked revision with resource-version concurrency control and immediately fall back to the default or field protection rule; version conflicts return 409 with the stable resource_version_conflict code
 // @Tags Protection Access Grant
 // @Accept json
 // @Produce json

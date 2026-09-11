@@ -103,7 +103,7 @@ snapshot checkpoint 用于 progress / diagnostics，不表示可从 checkpoint �
 | `object` | `addp://engine/3/path/bucket/exports/roads.csv?type=object` |
 | 已入库 source item | `addp://engine/3/path/bucket/roads.shp?type=object&item_id=12` |
 
-### 2.3 Bounded query source 与 MongoDB 结构整形
+### 2.3 Bounded query source 与轻量 ETL 构造
 
 `bounded + native table` source 可以声明 `source.query`，由源引擎的 `QueryReadSessionProvider` 执行只读查询，Transfer 仍通过统一 table reader / writer 主链路分批搬运查询结果：
 
@@ -131,6 +131,16 @@ MongoDB 控制台提供一个通用结构整形构建器，当前覆盖两类基
 基础构建器不暴露 MQL 的 `$match`、`$sort`、`$ifNull`、投影别名和 `preserveNullAndEmptyArrays` 等实现细节，不提供递归自动摊平，不猜测多个数组之间的业务粒度，也不开放 `$group`、`$lookup`、`$unionWith` 等业务计算。父文档随行字段只是同一文档 `$project` 的上下文复制，不是关联、聚合或跨 Collection 读取。需要其他只读 MQL 能力时使用高级编辑器；指标、标准化、维度和事实加工仍属于 Develop。
 
 结构整形与 PostgreSQL 字段映射的职责必须分离：结构整形只决定“一行代表什么”和“哪些 MongoDB 源字段进入查询结果”；编译器为查询结果自动生成确定性、无点号的内部字段名。下一步 `field_mapping` 只展示实际查询输出，不展示其余 MongoDB 原始字段，并负责 PostgreSQL 目标字段名、类型、可空性等目标定义。数组展开的父文档标识属于关系行必需来源，基础模式自动携带且不得从映射中删除；`activity_id` 等业务目标名只在 `field_mapping` 中声明。
+
+关系型 native table 的 Console 基础 SQL 构造器只扩展 Transfer 的轻量 ETL 能力，不是第二个 SQL IDE：
+
+- 源关系固定为用户已选择的单个 native table，基础界面只允许选择输出字段和配置一层“满足全部 / 满足任一”行过滤。
+- 过滤操作符按 Meta 字段类型开放；基础集合为等于、不等于、为空、不为空、属于列表，可比较标量另支持大于、大于等于、小于和小于等于。不对 geometry、JSON 结构或其他无稳定跨方言谓词的类型开放值过滤。
+- 所有过滤值必须生成稳定命名参数 `:p1`、`:p2` 并写入 `source.query.parameters`，不得将值拼入 SQL。schema、table 和 column 的引号必须消费 Engine capability 的 `identifier_quotes.sql`，不按 `engine_type` 猜测。
+- 基础构造器不提供 Join、多表输入、聚合、计算字段、输出别名、排序、Limit 或方言私有函数。目标字段名和类型继续由后续 `field_mapping` 配置；复杂 SQL 加工归 Develop。
+- 基础界面直接以已选字段生成确定输出字段，下一步 `field_mapping` 只消费该输出。仅当 SQL 严格属于上述可逆子集时才能反向显示为基础表单；其他合法只读 SQL 统一进入高级编辑器。
+
+查询入口必须由所选 Engine Instance 的 `compute.query` 能力驱动：只有 `supported=true`、`read_session=true` 且 `languages` 非空时才开放。单语言引擎直接使用 `default_language` 或唯一语言，不显示无意义的语言下拉框；仅当引擎真实声明多种语言时才允许在声明集合内切换。切换 Engine 或源资源必须清理不兼容的查询语句、参数和基础构造状态，不得把 MQL 带入 SQL 引擎或反之。
 
 ## 三、table Transfer 支持范围
 

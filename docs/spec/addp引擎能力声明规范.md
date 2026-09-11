@@ -502,7 +502,7 @@ type InferenceCapability struct {
 | `modalities` | Runtime 可接收的输入模态，取值为 `text`、`image` 的子集。 |
 | `streaming` | `chat` 是否支持标准流式响应。 |
 
-该能力只表达 Runtime 数据面，不展开动态 Provider Connection、Model Deployment 或 Model Profile。System 保存或刷新 `inference_runtime` Engine Instance 时只探测 `/health` 和 Runtime capability；模型列表及凭据由 Inference owner 控制面管理。声明该能力的插件必须实现 `InferenceRuntimeProvider`，调用方不得根据厂商名称选择私有客户端。
+该能力只表达 Runtime 数据面，不展开动态 Provider Connection、Model Deployment 或 Model Profile。System 保存或刷新 `inference_runtime` Engine Instance 时只探测 `/health/ready` 和 Runtime capability；模型列表及凭据由 Inference owner 控制面管理。声明该能力的插件必须实现 `InferenceRuntimeProvider`，调用方不得根据厂商名称选择私有客户端。
 
 第一版 `inference_runtime` 固定为平台内置单实例。调用方通过 System Runtime Descriptor 发现唯一 active 且声明该能力的实例；零个或多个候选都必须明确失败。后续如需按网络区域、安全域、GPU 集群、故障域或 SLA 部署多个 Runtime，必须先增加显式 Runtime Engine Instance 绑定和实例身份规则，不能按列表顺序或健康状态自动切换。
 

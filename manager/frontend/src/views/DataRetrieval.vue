@@ -167,8 +167,11 @@ import { navigateManagerRoute } from '@/utils/moduleNavigation'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Document, Clock, Search } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
-import { parseLocator } from '@addp/common-frontend'
+import { formatLocatorDisplayPath, parseLocator } from '@addp/common-frontend'
 import searchAPI from '@/api/search'
+import { dataExplorerAPI } from '@/api/dataExplorer'
+import { retrievalResultPath } from '@/utils/dataRetrievalPresentation'
+import { normalizeEngineCatalog, resolveEngineName } from '@/utils/enginePresentation'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -183,6 +186,7 @@ const hasSearched = ref(false)
 const historyVisible = ref(false)
 const historyLoading = ref(false)
 const historyItems = ref([])
+const engines = ref([])
 const historyLimit = 10
 
 const highlightOrder = [
@@ -273,8 +277,17 @@ const handleClearHistory = async () => {
   }
 }
 
+const loadEngines = async () => {
+  try {
+    engines.value = normalizeEngineCatalog(await dataExplorerAPI.getEngines())
+  } catch (error) {
+    console.error('[DataRetrieval] 加载引擎目录失败', error)
+    engines.value = []
+  }
+}
+
 onMounted(() => {
-  loadHistory()
+  Promise.all([loadHistory(), loadEngines()])
 })
 
 const handleSearch = async () => {
@@ -363,19 +376,15 @@ const getSnippet = (item = {}) => {
 }
 
 const formatResource = (item = {}) => {
-  const name = item.engine_name || ''
-  const id = item.engine_id
+  const name = String(item.engine_name || '').trim() || resolveEngineName(engines.value, item.engine_id)
   if (name) {
     return name
-  }
-  if (id) {
-    return t('manager.retrieval.engineWithId', { id })
   }
   return t('manager.retrieval.unknownEngine')
 }
 
 const formatResultPath = (item = {}) => {
-  return item.full_name || item.path || item.relative_path || ''
+  return retrievalResultPath(item, formatLocatorDisplayPath)
 }
 
 const formatDate = (value) => {

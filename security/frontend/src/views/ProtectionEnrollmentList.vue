@@ -148,8 +148,8 @@
         <el-table-column v-if="accessRequestScope === 'pending'" :label="t('security.common.actions')" width="190" fixed="right">
           <template #default="{ row }">
             <div v-if="row.can_decide" class="access-decision-actions">
-              <el-button link type="primary" @click="decideAccessRequest(row, 'approve')">{{ t('security.accessRequest.approve') }}</el-button>
-              <el-button link type="danger" @click="decideAccessRequest(row, 'reject')">{{ t('security.accessRequest.reject') }}</el-button>
+              <el-button link type="primary" @click="openAccessRequestDecision(row, 'approve')">{{ t('security.accessRequest.approve') }}</el-button>
+              <el-button link type="danger" @click="openAccessRequestDecision(row, 'reject')">{{ t('security.accessRequest.reject') }}</el-button>
             </div>
             <div v-else-if="row.decision_unavailable_reason" class="access-decision-unavailable">
               <el-tag size="small" type="info">{{ t(`security.accessRequest.unavailableLabels.${row.decision_unavailable_reason}`) }}</el-tag>
@@ -233,8 +233,7 @@
                 v-if="canCreate && row.state === 'released'"
                 link
                 type="primary"
-                :loading="reenrollingID === row.id"
-                @click="reEnroll(row)"
+                @click="openReEnrollment(row)"
               >
                 {{ t('security.enrollment.reEnroll') }}
               </el-button>
@@ -614,6 +613,9 @@
                 <el-button type="primary" plain @click="openFindingReview(finding, 'confirm')">{{ t('security.finding.review') }}</el-button>
               </div>
               <div v-else-if="assessmentForFinding(finding)" class="finding-card__actions">
+                <el-button plain @click="openAssessmentHistory(assessmentForFinding(finding))">
+                  {{ t('security.assessment.history') }}
+                </el-button>
                 <el-button
                   v-if="canUpdateAssessments"
                   plain
@@ -632,11 +634,11 @@
                 <el-button
                   v-if="policyForAssessment(activeAssessmentForFinding(finding))?.state === 'active' && canRevokePolicies"
                   plain
-                  @click="revokePolicy(activeAssessmentForFinding(finding))"
+                  @click="openPolicyRestore(activeAssessmentForFinding(finding))"
                 >
                   {{ t('security.policy.restoreDefault') }}
                 </el-button>
-                <el-button v-if="activeAssessmentForFinding(finding) && canUpdateAssessments" type="danger" plain @click="revokeAssessment(activeAssessmentForFinding(finding))">
+                <el-button v-if="activeAssessmentForFinding(finding) && canUpdateAssessments" type="danger" plain @click="openAssessmentRevoke(activeAssessmentForFinding(finding))">
                   {{ t('security.assessment.revokeConclusion') }}
                 </el-button>
               </div>
@@ -669,6 +671,9 @@
                 <el-tag :type="assessment.current?.conclusion === 'sensitive' ? 'success' : 'info'">
                   {{ assessmentConclusionLabel(assessment.current?.conclusion) }}
                 </el-tag>
+                <el-button link @click="openAssessmentHistory(assessment)">
+                  {{ t('security.assessment.history') }}
+                </el-button>
                 <el-button
                   v-if="canUpdateAssessments"
                   link
@@ -687,7 +692,7 @@
                 <el-button
                   v-if="assessment.current?.conclusion === 'sensitive' && policyForAssessment(assessment)?.state === 'active' && canRevokePolicies"
                   link
-                  @click="revokePolicy(assessment)"
+                  @click="openPolicyRestore(assessment)"
                 >
                   {{ t('security.policy.restoreDefault') }}
                 </el-button>
@@ -695,7 +700,7 @@
                   v-if="assessment.current?.conclusion === 'sensitive' && canUpdateAssessments"
                   link
                   type="danger"
-                  @click="revokeAssessment(assessment)"
+                  @click="openAssessmentRevoke(assessment)"
                 >
                   {{ t('security.assessment.revokeConclusion') }}
                 </el-button>
@@ -744,7 +749,7 @@
                   v-if="canRevokeExemptions && exemption.effective_state === 'active'"
                   link
                   type="danger"
-                  @click="revokeExemption(exemption)"
+                  @click="openExemptionRevoke(exemption)"
                 >
                   {{ t('security.exemption.revoke') }}
                 </el-button>
@@ -797,15 +802,13 @@
           <el-button
             v-if="canCreate && detailRow.state === 'released'"
             type="primary"
-            :loading="reenrollingID === detailRow.id"
-            @click="reEnroll(detailRow)"
+            @click="openReEnrollment(detailRow)"
           >
             {{ t('security.enrollment.reEnroll') }}
           </el-button>
           <el-button
             v-if="canRelease && ['enrolling', 'active'].includes(detailRow.state)"
-            :loading="rediscovering"
-            @click="rediscover(detailRow)"
+            @click="openRediscovery(detailRow)"
           >
             {{ t('security.enrollment.rediscover') }}
           </el-button>
@@ -820,6 +823,59 @@
         </div>
       </template>
     </el-drawer>
+
+    <el-dialog
+      v-model="accessRequestDecisionDialog"
+      class="addp-dialog"
+      :title="accessRequestDecisionTitle"
+      width="min(600px, calc(100vw - 24px))"
+      :close-on-click-modal="!accessRequestDecisionSaving"
+      :close-on-press-escape="!accessRequestDecisionSaving"
+      :show-close="!accessRequestDecisionSaving"
+      @opened="focusAccessRequestDecisionCancel"
+      @closed="closeAccessRequestDecisionDialog"
+    >
+      <template v-if="decidingAccessRequest">
+        <el-alert type="warning" :closable="false" :title="accessRequestDecisionHint" />
+        <div v-if="accessRequestDecisionConflict" class="version-conflict-notice" role="alert">
+          <span>{{ t('security.accessRequest.decisionVersionConflict') }}</span>
+          <el-button link type="primary" :loading="accessRequestDecisionReloading" @click="reloadAccessRequestDecisionBaseline">
+            {{ t('security.accessRequest.reloadLatestForDecision') }}
+          </el-button>
+        </div>
+        <div class="policy-target">
+          <strong>{{ decidingAccessRequest.target_full_name }} · {{ decidingAccessRequest.component?.key }}</strong>
+          <span>{{ t('security.accessRequest.requester') }}：{{ decidingAccessRequest.requester?.display_name }}（{{ releaseActorLabel(decidingAccessRequest.requester?.id) }}）</span>
+          <span>{{ t('security.accessRequest.requestedUntil') }}：{{ formatDateTime(decidingAccessRequest.requested_expires_at) }}</span>
+          <span>{{ t('security.accessRequest.rationale') }}：{{ decidingAccessRequest.rationale }}</span>
+        </div>
+        <el-form label-position="top">
+          <el-form-item :label="t('security.accessRequest.decisionRationaleLabel')" required>
+            <el-input
+              v-model="accessRequestDecisionForm.rationale"
+              type="textarea"
+              :rows="4"
+              maxlength="2000"
+              show-word-limit
+              :placeholder="t('security.accessRequest.decisionRationale')"
+            />
+          </el-form-item>
+        </el-form>
+      </template>
+      <template #footer>
+        <el-button ref="accessRequestDecisionCancelButton" :disabled="accessRequestDecisionSaving" @click="accessRequestDecisionDialog = false">
+          {{ t('security.common.cancel') }}
+        </el-button>
+        <el-button
+          :type="accessRequestDecision === 'reject' ? 'danger' : 'primary'"
+          :loading="accessRequestDecisionSaving"
+          :disabled="accessRequestDecisionConflict"
+          @click="submitAccessRequestDecision"
+        >
+          {{ t(`security.accessRequest.confirmActions.${accessRequestDecision}`) }}
+        </el-button>
+      </template>
+    </el-dialog>
 
     <el-dialog v-model="reviewDialog" class="addp-dialog" :title="t('security.finding.reviewTitle')" width="min(640px, calc(100vw - 24px))" @opened="focusReviewRationale">
       <template v-if="reviewingFinding">
@@ -963,15 +1019,69 @@
     </el-dialog>
 
     <el-dialog
+      v-model="assessmentHistoryDialog"
+      class="addp-dialog"
+      :title="t('security.assessment.historyTitle')"
+      width="min(720px, calc(100vw - 24px))"
+      @closed="closeAssessmentHistory"
+    >
+      <div v-loading="assessmentHistoryLoading" class="assessment-history">
+        <template v-if="assessmentHistory">
+          <div class="policy-target">
+            <strong>{{ assessmentHistory.component_key }}</strong>
+            <span>{{ t('security.assessment.historyHint') }}</span>
+          </div>
+          <el-timeline v-if="assessmentHistory.history?.length">
+            <el-timeline-item
+              v-for="revision in assessmentHistory.history"
+              :key="revision.id"
+              :timestamp="formatDateTime(revision.created_at)"
+              :type="isCurrentAssessmentRevision(revision) ? 'primary' : undefined"
+              placement="top"
+            >
+              <article class="assessment-history__item">
+                <div class="assessment-history__header">
+                  <strong>{{ t('security.assessment.revisionLabel', { revision: revision.revision }) }}</strong>
+                  <el-tag v-if="isCurrentAssessmentRevision(revision)" size="small" type="primary">
+                    {{ t('security.assessment.currentRevision') }}
+                  </el-tag>
+                  <el-tag size="small" :type="revision.conclusion === 'sensitive' ? 'success' : 'info'">
+                    {{ assessmentConclusionLabel(revision.conclusion) }}
+                  </el-tag>
+                  <el-tag size="small" effect="plain">
+                    {{ assessmentRevisionSourceLabel(revision.source_kind) }}
+                  </el-tag>
+                </div>
+                <p class="assessment-history__summary">{{ assessmentRevisionSummary(revision) }}</p>
+                <p>{{ revision.rationale }}</p>
+                <small>{{ t('security.assessment.historyMeta', { actor: assessmentActorLabel(revision.created_by), time: formatDateTime(revision.created_at) }) }}</small>
+              </article>
+            </el-timeline-item>
+          </el-timeline>
+          <el-empty v-else :description="t('security.assessment.emptyHistory')" :image-size="64" />
+        </template>
+      </div>
+      <template #footer>
+        <el-button @click="assessmentHistoryDialog = false">{{ t('security.common.close') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
       v-model="assessmentRevisionDialog"
       class="addp-dialog"
       :title="t('security.assessment.reviseTitle')"
       width="min(640px, calc(100vw - 24px))"
       @opened="focusAssessmentRevisionRationale"
-      @closed="revisingAssessment = null"
+      @closed="closeAssessmentRevision"
     >
       <template v-if="revisingAssessment">
         <el-alert type="info" :closable="false" :title="t('security.assessment.reviseHint')" />
+        <div v-if="assessmentRevisionConflict" class="version-conflict-notice" role="alert">
+          <span>{{ t('security.assessment.versionConflict') }}</span>
+          <el-button link type="primary" :loading="assessmentRevisionReloading" @click="reloadAssessmentRevisionBaseline">
+            {{ t('security.assessment.reloadLatest') }}
+          </el-button>
+        </div>
         <div class="policy-target">
           <strong>{{ revisingAssessment.component_key }}</strong>
           <span>{{ assessmentConclusionLabel(revisingAssessment.current?.conclusion) }}</span>
@@ -1008,8 +1118,103 @@
       </template>
       <template #footer>
         <el-button @click="assessmentRevisionDialog = false">{{ t('security.common.cancel') }}</el-button>
-        <el-button type="primary" :loading="assessmentRevisionSaving" @click="submitAssessmentRevision">
+        <el-button type="primary" :loading="assessmentRevisionSaving" :disabled="assessmentRevisionConflict" @click="submitAssessmentRevision">
           {{ t('security.assessment.confirmRevision') }}
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="assessmentRevokeDialog"
+      class="addp-dialog"
+      :title="t('security.assessment.revokeTitle')"
+      width="min(560px, calc(100vw - 24px))"
+      :close-on-click-modal="!assessmentRevokeSaving"
+      :close-on-press-escape="!assessmentRevokeSaving"
+      :show-close="!assessmentRevokeSaving"
+      @opened="focusAssessmentRevokeCancel"
+      @closed="closeAssessmentRevokeDialog"
+    >
+      <template v-if="revokingAssessment">
+        <el-alert type="warning" :closable="false" :title="t('security.assessment.revokeHint')" />
+        <div v-if="assessmentRevokeConflict" class="version-conflict-notice" role="alert">
+          <span>{{ t('security.assessment.revokeVersionConflict') }}</span>
+          <el-button link type="primary" :loading="assessmentRevokeReloading" @click="reloadAssessmentRevokeBaseline">
+            {{ t('security.assessment.reloadLatestForRevoke') }}
+          </el-button>
+        </div>
+        <div class="policy-target">
+          <strong>{{ revokingAssessment.component_key }}</strong>
+          <span>{{ assessmentConclusionLabel(revokingAssessment.current?.conclusion) }}</span>
+          <span>{{ assessmentSummary(revokingAssessment) }}</span>
+        </div>
+        <el-form label-position="top">
+          <el-form-item :label="t('security.assessment.revokeRationale')" required>
+            <el-input
+              v-model="assessmentRevokeForm.rationale"
+              type="textarea"
+              :rows="4"
+              maxlength="2000"
+              show-word-limit
+              :placeholder="t('security.assessment.revokeRationalePlaceholder')"
+            />
+          </el-form-item>
+        </el-form>
+      </template>
+      <template #footer>
+        <el-button ref="assessmentRevokeCancelButton" :disabled="assessmentRevokeSaving" @click="assessmentRevokeDialog = false">
+          {{ t('security.common.cancel') }}
+        </el-button>
+        <el-button type="danger" :loading="assessmentRevokeSaving" :disabled="assessmentRevokeConflict" @click="submitAssessmentRevoke">
+          {{ t('security.assessment.confirmRevoke') }}
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="exemptionRevokeDialog"
+      class="addp-dialog"
+      :title="t('security.exemption.revokeTitle')"
+      width="min(560px, calc(100vw - 24px))"
+      :close-on-click-modal="!exemptionRevokeSaving"
+      :close-on-press-escape="!exemptionRevokeSaving"
+      :show-close="!exemptionRevokeSaving"
+      @opened="focusExemptionRevokeCancel"
+      @closed="closeExemptionRevokeDialog"
+    >
+      <template v-if="revokingExemption">
+        <el-alert type="warning" :closable="false" :title="t('security.exemption.revokeHint')" />
+        <div v-if="exemptionRevokeConflict" class="version-conflict-notice" role="alert">
+          <span>{{ t('security.exemption.revokeVersionConflict') }}</span>
+          <el-button link type="primary" :loading="exemptionRevokeReloading" @click="reloadExemptionRevokeBaseline">
+            {{ t('security.exemption.reloadLatestForRevoke') }}
+          </el-button>
+        </div>
+        <div class="policy-target">
+          <strong>{{ assessmentComponent(revokingExemption.assessment_id) }}</strong>
+          <span>{{ t('security.exemption.subject') }}：{{ revokingExemption.subject_id }}</span>
+          <span>{{ ownerLabel(revokingExemption.consumer_owner) }} · {{ actionLabel(revokingExemption.action) }}</span>
+          <span>{{ t('security.exemption.expiresAt') }}：{{ formatDateTime(revokingExemption.current?.expires_at) }}</span>
+        </div>
+        <el-form label-position="top">
+          <el-form-item :label="t('security.exemption.revokeRationale')" required>
+            <el-input
+              v-model="exemptionRevokeForm.rationale"
+              type="textarea"
+              :rows="4"
+              maxlength="2000"
+              show-word-limit
+              :placeholder="t('security.exemption.revokeRationalePlaceholder')"
+            />
+          </el-form-item>
+        </el-form>
+      </template>
+      <template #footer>
+        <el-button ref="exemptionRevokeCancelButton" :disabled="exemptionRevokeSaving" @click="exemptionRevokeDialog = false">
+          {{ t('security.common.cancel') }}
+        </el-button>
+        <el-button type="danger" :loading="exemptionRevokeSaving" :disabled="exemptionRevokeConflict" @click="submitExemptionRevoke">
+          {{ t('security.exemption.confirmRevoke') }}
         </el-button>
       </template>
     </el-dialog>
@@ -1019,9 +1224,16 @@
       class="addp-dialog"
       :title="t('security.policy.title')"
       width="min(600px, calc(100vw - 24px))"
+      @closed="closePolicyDialog"
     >
       <template v-if="policyAssessment">
         <el-alert type="info" :closable="false" :title="t('security.policy.hint')" />
+        <div v-if="policyVersionConflict" class="version-conflict-notice" role="alert">
+          <span>{{ t('security.policy.versionConflict') }}</span>
+          <el-button link type="primary" :loading="policyReloading" @click="reloadPolicyBaseline">
+            {{ t('security.policy.reloadLatest') }}
+          </el-button>
+        </div>
         <div class="policy-target">
           <strong>{{ policyAssessment.component_key }}</strong>
           <span>{{ assessmentSummary(policyAssessment) }}</span>
@@ -1046,22 +1258,162 @@
       </template>
       <template #footer>
         <el-button @click="policyDialog = false">{{ t('security.common.cancel') }}</el-button>
-        <el-button type="primary" :loading="policySaving" @click="savePolicy">{{ t('security.policy.confirm') }}</el-button>
+        <el-button type="primary" :loading="policySaving" :disabled="policyVersionConflict" @click="savePolicy">{{ t('security.policy.confirm') }}</el-button>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="releaseDialog" class="addp-dialog" :title="releaseDialogTitle" width="min(560px, calc(100vw - 24px))">
-      <el-alert type="warning" :closable="false" :title="releaseDialogWarning" />
-      <el-input
-        v-model="releaseReason"
-        class="release-reason"
-        type="textarea"
-        :rows="3"
-        :placeholder="releaseReasonPlaceholder"
-      />
+    <el-dialog
+      v-model="policyRestoreDialog"
+      class="addp-dialog"
+      :title="t('security.policy.restoreDefault')"
+      width="min(560px, calc(100vw - 24px))"
+      :close-on-click-modal="!policyRestoreSaving"
+      :close-on-press-escape="!policyRestoreSaving"
+      :show-close="!policyRestoreSaving"
+      @opened="focusPolicyRestoreCancel"
+      @closed="closePolicyRestoreDialog"
+    >
+      <template v-if="policyRestoreAssessment">
+        <el-alert type="warning" :closable="false" :title="t('security.policy.restoreHint')" />
+        <div v-if="policyRestoreConflict" class="version-conflict-notice" role="alert">
+          <span>{{ t('security.policy.restoreVersionConflict') }}</span>
+          <el-button link type="primary" :loading="policyRestoreReloading" @click="reloadPolicyRestoreBaseline">
+            {{ t('security.policy.reloadLatestForRestore') }}
+          </el-button>
+        </div>
+        <div class="policy-target">
+          <strong>{{ policyRestoreAssessment.component_key }}</strong>
+          <span>{{ assessmentSummary(policyRestoreAssessment) }}</span>
+          <span>{{ assessmentProtectionSummary(policyRestoreAssessment) }}</span>
+        </div>
+        <el-form label-position="top">
+          <el-form-item :label="t('security.policy.restoreRationale')" required>
+            <el-input
+              v-model="policyRestoreForm.rationale"
+              type="textarea"
+              :rows="4"
+              maxlength="2000"
+              show-word-limit
+              :placeholder="t('security.policy.restoreRationalePlaceholder')"
+            />
+          </el-form-item>
+        </el-form>
+      </template>
       <template #footer>
-        <el-button @click="releaseDialog = false">{{ t('security.common.cancel') }}</el-button>
-        <el-button type="danger" :loading="saving" @click="releaseEnrollment">{{ releaseConfirmLabel }}</el-button>
+        <el-button ref="policyRestoreCancelButton" :disabled="policyRestoreSaving" @click="policyRestoreDialog = false">{{ t('security.common.cancel') }}</el-button>
+        <el-button type="danger" :loading="policyRestoreSaving" :disabled="policyRestoreConflict" @click="submitPolicyRestore">
+          {{ t('security.policy.confirmRestore') }}
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="reEnrollmentDialog"
+      class="addp-dialog"
+      :title="t('security.enrollment.reEnrollTitle')"
+      width="min(560px, calc(100vw - 24px))"
+      :close-on-click-modal="!reEnrollmentSaving"
+      :close-on-press-escape="!reEnrollmentSaving"
+      :show-close="!reEnrollmentSaving"
+      @opened="focusReEnrollmentCancel"
+      @closed="closeReEnrollmentDialog"
+    >
+      <template v-if="reEnrollmentSource">
+        <el-alert
+          type="warning"
+          :closable="false"
+          :title="t('security.enrollment.reEnrollWarning', { resource: resourceName(reEnrollmentSource) })"
+        />
+        <div v-if="reEnrollmentConflict" class="version-conflict-notice" role="alert">
+          <span>{{ t('security.enrollment.reEnrollmentVersionConflict') }}</span>
+          <el-button link type="primary" :loading="reEnrollmentReloading" @click="reloadReEnrollmentBaseline">
+            {{ t('security.enrollment.reloadLatestForReEnrollment') }}
+          </el-button>
+        </div>
+        <div class="policy-target">
+          <strong>{{ reEnrollmentSource.target_snapshot?.full_name || t('security.common.notAvailable') }}</strong>
+          <span>{{ t('security.enrollment.releaseBasisLabel') }}：{{ releaseBasisLabel(reEnrollmentSource.release_basis) }}</span>
+          <span>{{ t('security.enrollment.releasedAt') }}：{{ formatDateTime(reEnrollmentSource.released_at) }}</span>
+          <span>{{ t('security.enrollment.releaseReasonLabel') }}：{{ reEnrollmentSource.release_reason || t('security.common.notAvailable') }}</span>
+        </div>
+      </template>
+      <template #footer>
+        <el-button ref="reEnrollmentCancelButton" :disabled="reEnrollmentSaving" @click="reEnrollmentDialog = false">{{ t('security.common.cancel') }}</el-button>
+        <el-button type="primary" :loading="reEnrollmentSaving" :disabled="reEnrollmentConflict" @click="submitReEnrollment">
+          {{ t('security.enrollment.confirmReEnroll') }}
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="rediscoveryDialog"
+      class="addp-dialog"
+      :title="t('security.enrollment.rediscoverTitle')"
+      width="min(560px, calc(100vw - 24px))"
+      :close-on-click-modal="!rediscoverySaving"
+      :close-on-press-escape="!rediscoverySaving"
+      :show-close="!rediscoverySaving"
+      @opened="focusRediscoveryCancel"
+      @closed="closeRediscoveryDialog"
+    >
+      <template v-if="rediscoveryEnrollment">
+        <el-alert type="info" :closable="false" :title="t('security.enrollment.rediscoverHint')" />
+        <div v-if="rediscoveryConflict" class="version-conflict-notice" role="alert">
+          <span>{{ t('security.enrollment.rediscoveryVersionConflict') }}</span>
+          <el-button link type="primary" :loading="rediscoveryReloading" @click="reloadRediscoveryBaseline">
+            {{ t('security.enrollment.reloadLatestForRediscovery') }}
+          </el-button>
+        </div>
+        <div class="policy-target">
+          <strong>{{ rediscoveryEnrollment.target_snapshot?.full_name || t('security.common.notAvailable') }}</strong>
+          <span>{{ t('security.enrollment.lastDiscovered') }}：{{ formatDateTime(rediscoveryEnrollment.last_discovered_at) }}</span>
+        </div>
+      </template>
+      <template #footer>
+        <el-button ref="rediscoveryCancelButton" :disabled="rediscoverySaving" @click="rediscoveryDialog = false">{{ t('security.common.cancel') }}</el-button>
+        <el-button type="primary" :loading="rediscoverySaving" :disabled="rediscoveryConflict" @click="submitRediscovery">
+          {{ t('security.enrollment.confirmRediscover') }}
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="releaseDialog"
+      class="addp-dialog"
+      :title="releaseDialogTitle"
+      width="min(560px, calc(100vw - 24px))"
+      :close-on-click-modal="!releaseSaving"
+      :close-on-press-escape="!releaseSaving"
+      :show-close="!releaseSaving"
+      @opened="focusReleaseCancel"
+      @closed="closeReleaseDialog"
+    >
+      <el-alert type="warning" :closable="false" :title="releaseDialogWarning" />
+      <div v-if="releaseConflict" class="version-conflict-notice" role="alert">
+        <span>{{ t('security.enrollment.releaseVersionConflict') }}</span>
+        <el-button link type="primary" :loading="releaseReloading" @click="reloadReleaseBaseline">
+          {{ t('security.enrollment.reloadLatestForRelease') }}
+        </el-button>
+      </div>
+      <el-form label-position="top" class="release-form">
+        <el-form-item :label="t('security.enrollment.resource')">
+          <span>{{ releasing?.target_snapshot?.full_name || t('security.common.notAvailable') }}</span>
+        </el-form-item>
+        <el-form-item :label="t('security.enrollment.releaseBasisLabel')">
+          <el-tag type="info" effect="plain">{{ releaseBasisLabel(releaseBasis) }}</el-tag>
+        </el-form-item>
+        <el-form-item :label="t('security.enrollment.releaseReasonLabel')" required>
+          <el-input
+            v-model="releaseReason"
+            type="textarea"
+            :rows="3"
+            :placeholder="releaseReasonPlaceholder"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button ref="releaseCancelButton" :disabled="releaseSaving" @click="releaseDialog = false">{{ t('security.common.cancel') }}</el-button>
+        <el-button type="danger" :loading="releaseSaving" :disabled="releaseConflict" @click="releaseEnrollment">{{ releaseConfirmLabel }}</el-button>
       </template>
     </el-dialog>
   </section>
@@ -1071,7 +1423,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { QuestionFilled, Refresh } from '@element-plus/icons-vue'
 import {
   ResourceTreePicker,
@@ -1089,7 +1441,12 @@ import {
   findingDecisionState,
   findingOutletRules,
   findingReviewState,
+  isDiscoveryExecutionInProgress,
+  isNoSupportedFindingsReleaseUnavailable,
+  isProtectionAccessRequestExpired,
+  isProtectionEnrollmentAlreadyActive,
   isProtectionEffectStricter,
+  isResourceVersionConflict,
   isZeroFindingDiscovery,
   needsEnrollmentRefresh,
   normalizeDiscoverySummary,
@@ -1134,15 +1491,33 @@ const manualRefreshing = ref(false)
 const autoRefreshActive = ref(false)
 const lastRefreshedAt = ref(null)
 const saving = ref(false)
-const rediscovering = ref(false)
-const reenrollingID = ref('')
 const createDrawer = ref(false)
 const detailDrawer = ref(false)
 const releaseDialog = ref(false)
+const releaseCancelButton = ref(null)
+const releaseSaving = ref(false)
+const releaseReloading = ref(false)
+const releaseConflict = ref(false)
+const rediscoveryDialog = ref(false)
+const rediscoveryCancelButton = ref(null)
+const rediscoverySaving = ref(false)
+const rediscoveryReloading = ref(false)
+const rediscoveryConflict = ref(false)
+const rediscoveryEnrollment = ref(null)
+const reEnrollmentDialog = ref(false)
+const reEnrollmentCancelButton = ref(null)
+const reEnrollmentSaving = ref(false)
+const reEnrollmentReloading = ref(false)
+const reEnrollmentConflict = ref(false)
+const reEnrollmentSource = ref(null)
 const reviewDialog = ref(false)
 const manualAssessmentDialog = ref(false)
+const assessmentHistoryDialog = ref(false)
 const assessmentRevisionDialog = ref(false)
+const assessmentRevokeDialog = ref(false)
+const exemptionRevokeDialog = ref(false)
 const policyDialog = ref(false)
+const policyRestoreDialog = ref(false)
 const selectedResource = ref(null)
 const selectedItem = ref(null)
 const selectedItemLoading = ref(false)
@@ -1187,6 +1562,14 @@ const accessRequestLoading = ref(false)
 const accessRequestScope = ref('pending')
 const accessRequestFilters = reactive({ resourceSearch: '', requesterSearch: '', state: '', authorizationState: '' })
 const accessRequestCreatedRange = ref([])
+const accessRequestDecisionDialog = ref(false)
+const accessRequestDecisionCancelButton = ref(null)
+const accessRequestDecisionSaving = ref(false)
+const accessRequestDecisionReloading = ref(false)
+const accessRequestDecisionConflict = ref(false)
+const decidingAccessRequest = ref(null)
+const accessRequestDecision = ref('approve')
+const accessRequestDecisionForm = reactive({ rationale: '' })
 const reviewingFinding = ref(null)
 const reviewSaving = ref(false)
 const reviewBasisExpanded = ref([])
@@ -1195,15 +1578,49 @@ const reviewForm = reactive({ decision: 'confirm', sensitiveDataTypeID: '', secu
 const manualRationaleInput = ref(null)
 const manualAssessmentSaving = ref(false)
 const manualAssessmentForm = reactive({ componentKey: '', sensitiveDataTypeID: '', securityGradeID: '', rationale: '' })
+const assessmentHistory = ref(null)
+const assessmentHistoryLoading = ref(false)
 const revisingAssessment = ref(null)
 const assessmentRevisionRationaleInput = ref(null)
 const assessmentRevisionSaving = ref(false)
+const assessmentRevisionReloading = ref(false)
+const assessmentRevisionConflict = ref(false)
 const assessmentRevisionForm = reactive({ sensitiveDataTypeID: '', securityGradeID: '', rationale: '' })
+const assessmentRevokeCancelButton = ref(null)
+const assessmentRevokeSaving = ref(false)
+const assessmentRevokeReloading = ref(false)
+const assessmentRevokeConflict = ref(false)
+const revokingAssessment = ref(null)
+const assessmentRevokeForm = reactive({ rationale: '' })
+const exemptionRevokeCancelButton = ref(null)
+const exemptionRevokeSaving = ref(false)
+const exemptionRevokeReloading = ref(false)
+const exemptionRevokeConflict = ref(false)
+const revokingExemption = ref(null)
+const exemptionRevokeForm = reactive({ rationale: '' })
 const policySaving = ref(false)
+const policyReloading = ref(false)
+const policyVersionConflict = ref(false)
 const policyAssessment = ref(null)
 const policyForm = reactive({ effect: '', rationale: '' })
+const policyRestoreCancelButton = ref(null)
+const policyRestoreSaving = ref(false)
+const policyRestoreReloading = ref(false)
+const policyRestoreConflict = ref(false)
+const policyRestoreAssessment = ref(null)
+const policyRestoreForm = reactive({ rationale: '' })
 let selectedItemRequest = 0
 let findingsRequest = 0
+let assessmentHistoryRequest = 0
+let accessRequestDecisionReloadRequest = 0
+let assessmentRevisionReloadRequest = 0
+let assessmentRevokeReloadRequest = 0
+let exemptionRevokeReloadRequest = 0
+let policyReloadRequest = 0
+let policyRestoreReloadRequest = 0
+let releaseReloadRequest = 0
+let rediscoveryReloadRequest = 0
+let reEnrollmentReloadRequest = 0
 let refreshTimer = null
 let autoRefreshStartedAt = 0
 let autoRefreshTimedOut = false
@@ -1249,6 +1666,8 @@ const refreshFeedback = computed(() => {
   const language = locale.value === 'en' ? 'en-US' : 'zh-CN'
   return t('security.enrollment.lastRefreshed', { time: lastRefreshedAt.value.toLocaleTimeString(language) })
 })
+const accessRequestDecisionTitle = computed(() => t(`security.accessRequest.${accessRequestDecision.value}`))
+const accessRequestDecisionHint = computed(() => t(`security.accessRequest.${accessRequestDecision.value}Hint`))
 const emptyDescription = computed(() => t(`security.enrollment.emptyStates.${listScope.value}`))
 const reviewRationalePlaceholder = computed(() => t(`security.finding.rationalePlaceholders.${reviewForm.decision}`))
 const reviewRemainingLabel = computed(() => {
@@ -1560,16 +1979,36 @@ function assessmentForFinding(finding) {
 }
 
 function assessmentSummary(assessment) {
+  return assessmentRevisionSummary(assessment.current)
+}
+
+function assessmentRevisionSummary(revision) {
   return t('security.assessment.summary', {
-    type: typeName(assessment.current?.sensitive_data_type_id),
-    classification: classificationName(assessment.current?.security_classification_id),
-    grade: gradeName(assessment.current?.security_grade_id)
+    type: typeName(revision?.sensitive_data_type_id),
+    classification: classificationName(revision?.security_classification_id),
+    grade: gradeName(revision?.security_grade_id)
   })
 }
 
 function assessmentConclusionLabel(conclusion) {
   const normalized = conclusion === 'sensitive' ? 'sensitive' : 'not_sensitive'
   return t(`security.assessment.conclusions.${normalized}`)
+}
+
+function assessmentRevisionSourceLabel(sourceKind) {
+  const normalized = sourceKind === 'finding' ? 'finding' : 'manual'
+  return t(`security.assessment.sources.${normalized}`)
+}
+
+function assessmentActorLabel(actorID) {
+  const normalized = Number(actorID)
+  return Number.isInteger(normalized) && normalized > 0
+    ? t('security.enrollment.userId', { id: normalized })
+    : t('security.common.notAvailable')
+}
+
+function isCurrentAssessmentRevision(revision) {
+  return Number(revision?.revision) === Number(assessmentHistory.value?.current_revision)
 }
 
 function baselineForAssessment(assessment) {
@@ -1741,25 +2180,96 @@ async function openAccessRequestAuthorization(row) {
   }
 }
 
-async function decideAccessRequest(row, decision) {
+function focusAccessRequestDecisionCancel() {
+  nextTick(() => (accessRequestDecisionCancelButton.value?.$el || accessRequestDecisionCancelButton.value)?.focus?.())
+}
+
+function openAccessRequestDecision(row, decision) {
+  if (!row?.id || !row.can_decide || !['approve', 'reject'].includes(decision)) return
+  accessRequestDecisionReloadRequest += 1
+  decidingAccessRequest.value = row
+  accessRequestDecision.value = decision
+  accessRequestDecisionForm.rationale = ''
+  accessRequestDecisionConflict.value = false
+  accessRequestDecisionDialog.value = true
+}
+
+function closeAccessRequestDecisionDialog() {
+  accessRequestDecisionReloadRequest += 1
+  decidingAccessRequest.value = null
+  accessRequestDecision.value = 'approve'
+  accessRequestDecisionForm.rationale = ''
+  accessRequestDecisionConflict.value = false
+  accessRequestDecisionReloading.value = false
+}
+
+function replaceAccessRequest(latest) {
+  const index = accessRequestRows.value.findIndex(item => item.id === latest?.id)
+  if (index >= 0) accessRequestRows.value.splice(index, 1, latest)
+}
+
+async function reloadAccessRequestDecisionBaseline() {
+  if (!decidingAccessRequest.value?.id) return
+  const request = ++accessRequestDecisionReloadRequest
+  accessRequestDecisionReloading.value = true
   try {
-    const result = await ElMessageBox.prompt(
-      t(`security.accessRequest.${decision}Prompt`, { field: row.component?.key || '' }),
-      t(`security.accessRequest.${decision}`),
-      { confirmButtonText: t(`security.accessRequest.confirmActions.${decision}`), cancelButtonText: t('security.common.cancel'), inputType: 'textarea', inputPlaceholder: t('security.accessRequest.decisionRationale'), inputValidator: value => Boolean(String(value || '').trim()) || t('security.accessRequest.decisionRationaleRequired') }
-    )
+    const latest = await protectionAccessRequestAPI.getForReview(decidingAccessRequest.value.id)
+    if (request !== accessRequestDecisionReloadRequest) return
+    replaceAccessRequest(latest)
+    if (latest?.state !== 'pending' || !latest.can_decide) {
+      accessRequestDecisionDialog.value = false
+      await loadAccessRequestQueue(accessRequestPage.value)
+      ElMessage.info(t('security.accessRequest.alreadyProcessed'))
+      return
+    }
+    decidingAccessRequest.value = latest
+    accessRequestDecisionForm.rationale = ''
+    accessRequestDecisionConflict.value = false
+    ElMessage.success(t('security.accessRequest.decisionReloadedLatest'))
+    focusAccessRequestDecisionCancel()
+  } catch (error) {
+    if (request !== accessRequestDecisionReloadRequest) return
+    ElMessage.error(error.message || t('security.accessRequest.loadFailed'))
+  } finally {
+    if (request === accessRequestDecisionReloadRequest) accessRequestDecisionReloading.value = false
+  }
+}
+
+async function submitAccessRequestDecision() {
+  const row = decidingAccessRequest.value
+  const decision = accessRequestDecision.value
+  if (!row?.id || !['approve', 'reject'].includes(decision)) return
+  if (!accessRequestDecisionForm.rationale.trim()) {
+    ElMessage.warning(t('security.accessRequest.decisionRationaleRequired'))
+    return
+  }
+  accessRequestDecisionSaving.value = true
+  try {
     await protectionAccessRequestAPI.decide(row.id, {
       version: Number(row.version),
       decision,
       expires_at: decision === 'approve' ? row.requested_expires_at : undefined,
-      rationale: String(result.value).trim()
+      rationale: accessRequestDecisionForm.rationale.trim()
     })
+    accessRequestDecisionDialog.value = false
     ElMessage.success(t(`security.accessRequest.${decision}d`))
     accessRequestPage.value = 1
     await Promise.all([loadAccessRequestQueue(), load({ background: true })])
   } catch (error) {
-    if (error === 'cancel' || error === 'close') return
+    if (isResourceVersionConflict(error)) {
+      accessRequestDecisionConflict.value = true
+      ElMessage.warning(t('security.accessRequest.decisionVersionConflict'))
+      return
+    }
+    if (isProtectionAccessRequestExpired(error)) {
+      accessRequestDecisionDialog.value = false
+      await loadAccessRequestQueue(accessRequestPage.value)
+      ElMessage.info(t('security.accessRequest.expiredBeforeDecision'))
+      return
+    }
     ElMessage.error(error.message || t('security.accessRequest.decisionFailed'))
+  } finally {
+    accessRequestDecisionSaving.value = false
   }
 }
 
@@ -1846,29 +2356,83 @@ async function loadGovernance(page = findingsPage.value) {
   ])
 }
 
-async function revokeExemption(exemption) {
+function focusExemptionRevokeCancel() {
+  nextTick(() => (exemptionRevokeCancelButton.value?.$el || exemptionRevokeCancelButton.value)?.focus?.())
+}
+
+function openExemptionRevoke(exemption) {
+  if (!exemption?.id || exemption.effective_state !== 'active') return
+  exemptionRevokeReloadRequest += 1
+  revokingExemption.value = exemption
+  exemptionRevokeForm.rationale = ''
+  exemptionRevokeConflict.value = false
+  exemptionRevokeDialog.value = true
+}
+
+function closeExemptionRevokeDialog() {
+  exemptionRevokeReloadRequest += 1
+  revokingExemption.value = null
+  exemptionRevokeForm.rationale = ''
+  exemptionRevokeConflict.value = false
+  exemptionRevokeReloading.value = false
+}
+
+function replaceExemption(latest) {
+  const index = exemptions.value.findIndex(item => item.id === latest?.id)
+  if (index >= 0) exemptions.value.splice(index, 1, latest)
+}
+
+async function reloadExemptionRevokeBaseline() {
+  if (!revokingExemption.value?.id) return
+  const request = ++exemptionRevokeReloadRequest
+  exemptionRevokeReloading.value = true
   try {
-    const result = await ElMessageBox.prompt(
-      t('security.exemption.revokePrompt', { field: assessmentComponent(exemption.assessment_id), outlet: ownerLabel(exemption.consumer_owner) }),
-      t('security.exemption.revokeTitle'),
-      {
-        confirmButtonText: t('security.exemption.confirmRevoke'),
-        cancelButtonText: t('security.common.cancel'),
-        inputType: 'textarea',
-        inputPlaceholder: t('security.exemption.revokeRationalePlaceholder'),
-        inputValidator: value => String(value || '').trim() ? true : t('security.exemption.rationaleRequired')
-      }
-    )
-    await protectionExemptionAPI.revoke(exemption.id, {
-      version: Number(exemption.version),
-      rationale: String(result.value || '').trim()
+    const latest = await protectionExemptionAPI.get(revokingExemption.value.id)
+    if (request !== exemptionRevokeReloadRequest) return
+    replaceExemption(latest)
+    if (latest?.effective_state !== 'active') {
+      exemptionRevokeDialog.value = false
+      ElMessage.info(t('security.exemption.alreadyInactive'))
+      return
+    }
+    revokingExemption.value = latest
+    exemptionRevokeForm.rationale = ''
+    exemptionRevokeConflict.value = false
+    ElMessage.success(t('security.exemption.revokeReloadedLatest'))
+    focusExemptionRevokeCancel()
+  } catch (error) {
+    if (request !== exemptionRevokeReloadRequest) return
+    ElMessage.error(error.message || t('security.exemption.loadFailed'))
+  } finally {
+    if (request === exemptionRevokeReloadRequest) exemptionRevokeReloading.value = false
+  }
+}
+
+async function submitExemptionRevoke() {
+  if (!revokingExemption.value?.id) return
+  if (!exemptionRevokeForm.rationale.trim()) {
+    ElMessage.warning(t('security.exemption.rationaleRequired'))
+    return
+  }
+  exemptionRevokeSaving.value = true
+  try {
+    await protectionExemptionAPI.revoke(revokingExemption.value.id, {
+      version: Number(revokingExemption.value.version),
+      rationale: exemptionRevokeForm.rationale.trim()
     })
+    exemptionRevokeDialog.value = false
     await Promise.all([loadExemptions(), load({ background: true })])
     scheduleAutoRefresh({ reset: true })
     ElMessage.success(t('security.exemption.revoked'))
   } catch (error) {
-    if (error === 'cancel' || error === 'close') return
+    if (isResourceVersionConflict(error)) {
+      exemptionRevokeConflict.value = true
+      ElMessage.warning(t('security.exemption.revokeVersionConflict'))
+      return
+    }
     ElMessage.error(error.message || t('security.common.failed'))
+  } finally {
+    exemptionRevokeSaving.value = false
   }
 }
 
@@ -1961,26 +2525,89 @@ async function submitManualAssessment() {
   }
 }
 
+async function openAssessmentHistory(assessment) {
+  if (!assessment?.id) return
+  const request = ++assessmentHistoryRequest
+  assessmentHistory.value = null
+  assessmentHistoryDialog.value = true
+  assessmentHistoryLoading.value = true
+  try {
+    const detail = await assessmentAPI.get(assessment.id)
+    if (request !== assessmentHistoryRequest) return
+    assessmentHistory.value = detail
+  } catch (error) {
+    if (request !== assessmentHistoryRequest) return
+    assessmentHistoryDialog.value = false
+    ElMessage.error(error.message || t('security.assessment.historyLoadFailed'))
+  } finally {
+    if (request === assessmentHistoryRequest) assessmentHistoryLoading.value = false
+  }
+}
+
+function closeAssessmentHistory() {
+  assessmentHistoryRequest += 1
+  assessmentHistory.value = null
+  assessmentHistoryLoading.value = false
+}
+
 function focusAssessmentRevisionRationale() {
   nextTick(() => assessmentRevisionRationaleInput.value?.focus?.())
 }
 
 async function openAssessmentRevision(assessment) {
   if (!assessment?.id) return
+  assessmentRevisionReloadRequest += 1
   try {
     await loadFindingDefinitions()
   } catch (error) {
     ElMessage.error(error.message || t('security.finding.loadDefinitionsFailed'))
     return
   }
+  applyAssessmentRevisionBaseline(assessment)
+  assessmentRevisionConflict.value = false
+  assessmentRevisionDialog.value = true
+}
+
+function applyAssessmentRevisionBaseline(assessment) {
   revisingAssessment.value = assessment
-  assessmentRevisionForm.sensitiveDataTypeID = String(assessment.current?.sensitive_data_type_id || '')
-  assessmentRevisionForm.securityGradeID = String(assessment.current?.security_grade_id || '')
+  assessmentRevisionForm.sensitiveDataTypeID = String(assessment?.current?.sensitive_data_type_id || '')
+  assessmentRevisionForm.securityGradeID = String(assessment?.current?.security_grade_id || '')
   assessmentRevisionForm.rationale = ''
   if (!activeGradesForType(assessmentRevisionForm.sensitiveDataTypeID).some(item => String(item.id) === assessmentRevisionForm.securityGradeID)) {
     applyAssessmentRevisionDefaultGrade(assessmentRevisionForm.sensitiveDataTypeID)
   }
-  assessmentRevisionDialog.value = true
+}
+
+function closeAssessmentRevision() {
+  assessmentRevisionReloadRequest += 1
+  revisingAssessment.value = null
+  assessmentRevisionConflict.value = false
+  assessmentRevisionReloading.value = false
+}
+
+async function reloadAssessmentRevisionBaseline() {
+  if (!revisingAssessment.value?.id) return
+  const request = ++assessmentRevisionReloadRequest
+  assessmentRevisionReloading.value = true
+  try {
+    const latest = await assessmentAPI.get(revisingAssessment.value.id)
+    if (request !== assessmentRevisionReloadRequest) return
+    replaceAssessment(latest)
+    applyAssessmentRevisionBaseline(latest)
+    assessmentRevisionConflict.value = false
+    ElMessage.success(t('security.assessment.reloadedLatest'))
+    focusAssessmentRevisionRationale()
+  } catch (error) {
+    if (request !== assessmentRevisionReloadRequest) return
+    ElMessage.error(error.message || t('security.assessment.reloadFailed'))
+  } finally {
+    if (request === assessmentRevisionReloadRequest) assessmentRevisionReloading.value = false
+  }
+}
+
+function replaceAssessment(latest) {
+  const index = assessments.value.findIndex(item => item.id === latest?.id)
+  if (index >= 0) assessments.value.splice(index, 1, latest)
 }
 
 async function submitAssessmentRevision() {
@@ -2002,6 +2629,11 @@ async function submitAssessmentRevision() {
     scheduleAutoRefresh({ reset: true })
     ElMessage.success(t('security.assessment.revised'))
   } catch (error) {
+    if (isResourceVersionConflict(error)) {
+      assessmentRevisionConflict.value = true
+      ElMessage.warning(t('security.assessment.versionConflict'))
+      return
+    }
     ElMessage.error(error.message || t('security.common.failed'))
   } finally {
     assessmentRevisionSaving.value = false
@@ -2009,18 +2641,71 @@ async function submitAssessmentRevision() {
 }
 
 function openPolicy(assessment) {
+  policyReloadRequest += 1
+  policyVersionConflict.value = false
+  if (!applyPolicyBaseline(assessment, policyForAssessment(assessment))) return
+  policyDialog.value = true
+}
+
+function applyPolicyBaseline(assessment, policy) {
   const effects = stricterPolicyEffects(assessment)
   if (!effects.length) {
     ElMessage.info(t('security.policy.alreadyStrictest'))
-    return
+    return false
   }
-  const existing = policyForAssessment(assessment)
   policyAssessment.value = assessment
-  policyForm.effect = existing?.state === 'active' && effects.includes(existing.current?.effect)
-    ? existing.current.effect
+  policyForm.effect = policy?.state === 'active' && effects.includes(policy.current?.effect)
+    ? policy.current.effect
     : effects[0]
-  policyForm.rationale = existing?.state === 'active' ? String(existing.current?.rationale || '') : ''
-  policyDialog.value = true
+  policyForm.rationale = policy?.state === 'active' ? String(policy.current?.rationale || '') : ''
+  return true
+}
+
+function closePolicyDialog() {
+  policyReloadRequest += 1
+  policyAssessment.value = null
+  policyVersionConflict.value = false
+  policyReloading.value = false
+}
+
+async function reloadPolicyBaseline() {
+  const assessment = policyAssessment.value
+  const policy = policyForAssessment(assessment)
+  if (!assessment?.id || !policy?.id) return
+  const request = ++policyReloadRequest
+  policyReloading.value = true
+  try {
+    const latestContext = await fetchLatestPolicyContext(assessment, policy)
+    if (request !== policyReloadRequest) return
+    applyLatestPolicyContext(latestContext)
+    if (!applyPolicyBaseline(latestContext.assessment, latestContext.policy)) {
+      policyDialog.value = false
+      return
+    }
+    policyVersionConflict.value = false
+    ElMessage.success(t('security.policy.reloadedLatest'))
+  } catch (error) {
+    if (request !== policyReloadRequest) return
+    ElMessage.error(error.message || t('security.policy.reloadFailed'))
+  } finally {
+    if (request === policyReloadRequest) policyReloading.value = false
+  }
+}
+
+async function fetchLatestPolicyContext(assessment, policy) {
+  const [latestPolicy, latestAssessment, latestBaselines] = await Promise.all([
+    protectionPolicyAPI.get(policy.id),
+    assessmentAPI.get(assessment.id),
+    protectionBaselineAPI.list()
+  ])
+  return { policy: latestPolicy, assessment: latestAssessment, baselines: latestBaselines }
+}
+
+function applyLatestPolicyContext(context) {
+  protectionBaselines.value = Array.isArray(context.baselines) ? context.baselines : []
+  const policyIndex = policies.value.findIndex(item => item.id === context.policy?.id)
+  if (policyIndex >= 0) policies.value.splice(policyIndex, 1, context.policy)
+  replaceAssessment(context.assessment)
 }
 
 async function savePolicy() {
@@ -2052,65 +2737,171 @@ async function savePolicy() {
     scheduleAutoRefresh({ reset: true })
     ElMessage.success(t('security.policy.saved'))
   } catch (error) {
+    if (policyForAssessment(policyAssessment.value) && isResourceVersionConflict(error)) {
+      policyVersionConflict.value = true
+      ElMessage.warning(t('security.policy.versionConflict'))
+      return
+    }
     ElMessage.error(error.message || t('security.common.failed'))
   } finally {
     policySaving.value = false
   }
 }
 
-async function revokePolicy(assessment) {
+function focusPolicyRestoreCancel() {
+  nextTick(() => (policyRestoreCancelButton.value?.$el || policyRestoreCancelButton.value)?.focus?.())
+}
+
+function openPolicyRestore(assessment) {
   const policy = policyForAssessment(assessment)
   if (!policy || policy.state !== 'active') return
+  policyRestoreReloadRequest += 1
+  policyRestoreAssessment.value = assessment
+  policyRestoreForm.rationale = ''
+  policyRestoreConflict.value = false
+  policyRestoreDialog.value = true
+}
+
+function closePolicyRestoreDialog() {
+  policyRestoreReloadRequest += 1
+  policyRestoreAssessment.value = null
+  policyRestoreForm.rationale = ''
+  policyRestoreConflict.value = false
+  policyRestoreReloading.value = false
+}
+
+async function reloadPolicyRestoreBaseline() {
+  const assessment = policyRestoreAssessment.value
+  const policy = policyForAssessment(assessment)
+  if (!assessment?.id || !policy?.id) return
+  const request = ++policyRestoreReloadRequest
+  policyRestoreReloading.value = true
   try {
-    const result = await ElMessageBox.prompt(
-      t('security.policy.restorePrompt', { component: assessment.component_key }),
-      t('security.policy.restoreDefault'),
-      {
-        confirmButtonText: t('security.policy.confirmRestore'),
-        cancelButtonText: t('security.common.cancel'),
-        inputType: 'textarea',
-        inputPlaceholder: t('security.policy.restoreRationalePlaceholder'),
-        inputValidator: value => String(value || '').trim() ? true : t('security.policy.rationaleRequired')
-      }
-    )
+    const latestContext = await fetchLatestPolicyContext(assessment, policy)
+    if (request !== policyRestoreReloadRequest) return
+    applyLatestPolicyContext(latestContext)
+    if (latestContext.policy?.state !== 'active' || latestContext.assessment?.current?.conclusion !== 'sensitive') {
+      policyRestoreDialog.value = false
+      ElMessage.info(t('security.policy.alreadyRestored'))
+      return
+    }
+    policyRestoreAssessment.value = latestContext.assessment
+    policyRestoreForm.rationale = ''
+    policyRestoreConflict.value = false
+    ElMessage.success(t('security.policy.restoreReloadedLatest'))
+    focusPolicyRestoreCancel()
+  } catch (error) {
+    if (request !== policyRestoreReloadRequest) return
+    ElMessage.error(error.message || t('security.policy.reloadFailed'))
+  } finally {
+    if (request === policyRestoreReloadRequest) policyRestoreReloading.value = false
+  }
+}
+
+async function submitPolicyRestore() {
+  const assessment = policyRestoreAssessment.value
+  const policy = policyForAssessment(assessment)
+  if (!policy || policy.state !== 'active') return
+  if (!policyRestoreForm.rationale.trim()) {
+    ElMessage.warning(t('security.policy.rationaleRequired'))
+    return
+  }
+  policyRestoreSaving.value = true
+  try {
     await protectionPolicyAPI.revoke(policy.id, {
       version: Number(policy.version),
-      rationale: String(result.value || '').trim()
+      rationale: policyRestoreForm.rationale.trim()
     })
+    policyRestoreDialog.value = false
     await load({ background: true })
     await loadGovernance(findingsPage.value)
     scheduleAutoRefresh({ reset: true })
     ElMessage.success(t('security.policy.restored'))
   } catch (error) {
-    if (error === 'cancel' || error === 'close') return
+    if (isResourceVersionConflict(error)) {
+      policyRestoreConflict.value = true
+      ElMessage.warning(t('security.policy.restoreVersionConflict'))
+      return
+    }
     ElMessage.error(error.message || t('security.common.failed'))
+  } finally {
+    policyRestoreSaving.value = false
   }
 }
 
-async function revokeAssessment(assessment) {
+function focusAssessmentRevokeCancel() {
+  nextTick(() => (assessmentRevokeCancelButton.value?.$el || assessmentRevokeCancelButton.value)?.focus?.())
+}
+
+function openAssessmentRevoke(assessment) {
+  if (!assessment?.id || assessment.current?.conclusion !== 'sensitive') return
+  assessmentRevokeReloadRequest += 1
+  revokingAssessment.value = assessment
+  assessmentRevokeForm.rationale = ''
+  assessmentRevokeConflict.value = false
+  assessmentRevokeDialog.value = true
+}
+
+function closeAssessmentRevokeDialog() {
+  assessmentRevokeReloadRequest += 1
+  revokingAssessment.value = null
+  assessmentRevokeForm.rationale = ''
+  assessmentRevokeConflict.value = false
+  assessmentRevokeReloading.value = false
+}
+
+async function reloadAssessmentRevokeBaseline() {
+  if (!revokingAssessment.value?.id) return
+  const request = ++assessmentRevokeReloadRequest
+  assessmentRevokeReloading.value = true
   try {
-    const result = await ElMessageBox.prompt(
-      t('security.assessment.revokePrompt', { component: assessment.component_key }),
-      t('security.assessment.revokeTitle'),
-      {
-        confirmButtonText: t('security.assessment.confirmRevoke'),
-        cancelButtonText: t('security.common.cancel'),
-        inputType: 'textarea',
-        inputPlaceholder: t('security.assessment.revokeRationalePlaceholder'),
-        inputValidator: value => String(value || '').trim() ? true : t('security.assessment.revokeRationaleRequired')
-      }
-    )
-    await assessmentAPI.revoke(assessment.id, {
-      version: Number(assessment.version),
-      rationale: String(result.value || '').trim()
+    const latest = await assessmentAPI.get(revokingAssessment.value.id)
+    if (request !== assessmentRevokeReloadRequest) return
+    replaceAssessment(latest)
+    if (latest?.current?.conclusion !== 'sensitive') {
+      assessmentRevokeDialog.value = false
+      ElMessage.info(t('security.assessment.alreadyRevoked'))
+      return
+    }
+    revokingAssessment.value = latest
+    assessmentRevokeForm.rationale = ''
+    assessmentRevokeConflict.value = false
+    ElMessage.success(t('security.assessment.revokeReloadedLatest'))
+    focusAssessmentRevokeCancel()
+  } catch (error) {
+    if (request !== assessmentRevokeReloadRequest) return
+    ElMessage.error(error.message || t('security.assessment.reloadFailed'))
+  } finally {
+    if (request === assessmentRevokeReloadRequest) assessmentRevokeReloading.value = false
+  }
+}
+
+async function submitAssessmentRevoke() {
+  if (!revokingAssessment.value?.id) return
+  if (!assessmentRevokeForm.rationale.trim()) {
+    ElMessage.warning(t('security.assessment.revokeRationaleRequired'))
+    return
+  }
+  assessmentRevokeSaving.value = true
+  try {
+    await assessmentAPI.revoke(revokingAssessment.value.id, {
+      version: Number(revokingAssessment.value.version),
+      rationale: assessmentRevokeForm.rationale.trim()
     })
+    assessmentRevokeDialog.value = false
     await load({ background: true })
     await loadGovernance(findingsPage.value)
     scheduleAutoRefresh({ reset: true })
     ElMessage.success(t('security.assessment.revoked'))
   } catch (error) {
-    if (error === 'cancel' || error === 'close') return
+    if (isResourceVersionConflict(error)) {
+      assessmentRevokeConflict.value = true
+      ElMessage.warning(t('security.assessment.revokeVersionConflict'))
+      return
+    }
     ElMessage.error(error.message || t('security.common.failed'))
+  } finally {
+    assessmentRevokeSaving.value = false
   }
 }
 
@@ -2467,74 +3258,261 @@ function handleDetailClosed() {
   detailRow.value = null
 }
 
-async function rediscover(row) {
-  rediscovering.value = true
+function focusRediscoveryCancel() {
+  nextTick(() => (rediscoveryCancelButton.value?.$el || rediscoveryCancelButton.value)?.focus?.())
+}
+
+function openRediscovery(row) {
+  if (!row?.id || !['enrolling', 'active'].includes(row.state)) return
+  rediscoveryReloadRequest += 1
+  rediscoveryEnrollment.value = row
+  rediscoveryConflict.value = false
+  rediscoveryDialog.value = true
+}
+
+function closeRediscoveryDialog() {
+  rediscoveryReloadRequest += 1
+  rediscoveryEnrollment.value = null
+  rediscoveryConflict.value = false
+  rediscoveryReloading.value = false
+}
+
+async function reloadRediscoveryBaseline() {
+  if (!rediscoveryEnrollment.value?.id) return
+  const request = ++rediscoveryReloadRequest
+  rediscoveryReloading.value = true
+  try {
+    const latest = await protectionEnrollmentAPI.get(rediscoveryEnrollment.value.id)
+    if (request !== rediscoveryReloadRequest) return
+    replaceEnrollment(latest)
+    if (!['enrolling', 'active'].includes(latest?.state)) {
+      rediscoveryDialog.value = false
+      await load({ background: true })
+      ElMessage.info(t('security.enrollment.rediscoveryUnavailable'))
+      return
+    }
+    rediscoveryEnrollment.value = latest
+    rediscoveryConflict.value = false
+    ElMessage.success(t('security.enrollment.rediscoveryReloadedLatest'))
+    focusRediscoveryCancel()
+  } catch (error) {
+    if (request !== rediscoveryReloadRequest) return
+    ElMessage.error(error.message || t('security.enrollment.rediscoveryLoadFailed'))
+  } finally {
+    if (request === rediscoveryReloadRequest) rediscoveryReloading.value = false
+  }
+}
+
+async function submitRediscovery() {
+  const row = rediscoveryEnrollment.value
+  if (!row?.id || rediscoveryConflict.value) return
+  rediscoverySaving.value = true
   try {
     const baselineMarker = discoveryRefreshMarker(row)
     const execution = await protectionEnrollmentAPI.rediscover(row.id, { version: Number(row.version) })
+    if (Number(execution?.enrollment_version) > 0) {
+      replaceEnrollment({ ...row, version: Number(execution.enrollment_version) })
+    }
     discoveryRefreshWatches.set(row.id, baselineMarker)
+    rediscoveryDialog.value = false
     await load({ background: true, syncFindings: true })
     scheduleAutoRefresh({ reset: true })
     ElMessage.success(t('security.enrollment.rediscoveryCreated'))
     if (execution?.execution_id) await openMonitorExecution(execution.execution_id)
   } catch (error) {
+    if (isResourceVersionConflict(error)) {
+      rediscoveryConflict.value = true
+      ElMessage.warning(t('security.enrollment.rediscoveryVersionConflict'))
+      return
+    }
+    if (isDiscoveryExecutionInProgress(error)) {
+      discoveryRefreshWatches.set(row.id, discoveryRefreshMarker(row))
+      rediscoveryDialog.value = false
+      await load({ background: true })
+      scheduleAutoRefresh({ reset: true })
+      ElMessage.info(t('security.enrollment.discoveryExecutionInProgress'))
+      return
+    }
     ElMessage.error(error.message || t('security.common.failed'))
   } finally {
-    rediscovering.value = false
+    rediscoverySaving.value = false
   }
 }
 
-async function reEnroll(row) {
+function focusReEnrollmentCancel() {
+  nextTick(() => (reEnrollmentCancelButton.value?.$el || reEnrollmentCancelButton.value)?.focus?.())
+}
+
+function openReEnrollment(row) {
+  if (!row?.id || row.state !== 'released') return
+  reEnrollmentReloadRequest += 1
+  reEnrollmentSource.value = row
+  reEnrollmentConflict.value = false
+  reEnrollmentDialog.value = true
+}
+
+function closeReEnrollmentDialog() {
+  reEnrollmentReloadRequest += 1
+  reEnrollmentSource.value = null
+  reEnrollmentConflict.value = false
+  reEnrollmentReloading.value = false
+}
+
+async function reloadReEnrollmentBaseline() {
+  if (!reEnrollmentSource.value?.id) return
+  const request = ++reEnrollmentReloadRequest
+  reEnrollmentReloading.value = true
   try {
-    await ElMessageBox.confirm(
-      t('security.enrollment.reEnrollWarning', { resource: resourceName(row) }),
-      t('security.enrollment.reEnroll'),
-      {
-        confirmButtonText: t('security.enrollment.confirmReEnroll'),
-        cancelButtonText: t('security.common.cancel'),
-        type: 'warning'
-      }
-    )
-    reenrollingID.value = row.id
-    await protectionEnrollmentAPI.reEnroll(row.id, { version: Number(row.version) })
+    const latest = await protectionEnrollmentAPI.get(reEnrollmentSource.value.id)
+    if (request !== reEnrollmentReloadRequest) return
+    replaceEnrollment(latest)
+    if (latest?.state !== 'released') {
+      reEnrollmentDialog.value = false
+      await load({ background: true })
+      ElMessage.info(t('security.enrollment.reEnrollmentUnavailable'))
+      return
+    }
+    reEnrollmentSource.value = latest
+    reEnrollmentConflict.value = false
+    ElMessage.success(t('security.enrollment.reEnrollmentReloadedLatest'))
+    focusReEnrollmentCancel()
+  } catch (error) {
+    if (request !== reEnrollmentReloadRequest) return
+    ElMessage.error(error.message || t('security.enrollment.reEnrollmentLoadFailed'))
+  } finally {
+    if (request === reEnrollmentReloadRequest) reEnrollmentReloading.value = false
+  }
+}
+
+async function submitReEnrollment() {
+  const source = reEnrollmentSource.value
+  if (!source?.id || reEnrollmentConflict.value) return
+  reEnrollmentSaving.value = true
+  try {
+    const result = await protectionEnrollmentAPI.reEnroll(source.id, { version: Number(source.version) })
+    replaceEnrollment({ ...source, version: Number(result.source_enrollment_version) })
+    reEnrollmentDialog.value = false
     detailDrawer.value = false
     listScope.value = 'current'
     currentPage.value = 1
+    rows.value = [result.enrollment]
+    total.value = 1
     await load()
     scheduleAutoRefresh({ reset: true })
     ElMessage.success(t('security.enrollment.reEnrolled'))
   } catch (error) {
-    if (error === 'cancel' || error === 'close') return
+    if (isResourceVersionConflict(error)) {
+      reEnrollmentConflict.value = true
+      ElMessage.warning(t('security.enrollment.reEnrollmentVersionConflict'))
+      return
+    }
+    if (isProtectionEnrollmentAlreadyActive(error)) {
+      reEnrollmentDialog.value = false
+      detailDrawer.value = false
+      listScope.value = 'current'
+      currentPage.value = 1
+      await load({ background: true })
+      scheduleAutoRefresh({ reset: true })
+      ElMessage.info(t('security.enrollment.enrollmentAlreadyActive'))
+      return
+    }
     ElMessage.error(error.message || t('security.common.failed'))
   } finally {
-    reenrollingID.value = ''
+    reEnrollmentSaving.value = false
   }
 }
 
 function openRelease(row, basis = 'manual') {
+  releaseReloadRequest += 1
   releasing.value = row
   releaseBasis.value = basis
   releaseReason.value = ''
+  releaseConflict.value = false
   releaseDialog.value = true
 }
 
-async function releaseEnrollment() {
-  if (!releaseReason.value.trim()) return ElMessage.warning(t('security.enrollment.releaseReasonRequired'))
-  saving.value = true
+function focusReleaseCancel() {
+  nextTick(() => (releaseCancelButton.value?.$el || releaseCancelButton.value)?.focus?.())
+}
+
+function closeReleaseDialog() {
+  releaseReloadRequest += 1
+  releasing.value = null
+  releaseReason.value = ''
+  releaseBasis.value = 'manual'
+  releaseConflict.value = false
+  releaseReloading.value = false
+}
+
+function replaceEnrollment(latest) {
+  const index = rows.value.findIndex(item => item.id === latest?.id)
+  if (index >= 0) rows.value.splice(index, 1, latest)
+  if (detailRow.value?.id === latest?.id) detailRow.value = latest
+}
+
+async function reloadReleaseBaseline() {
+  if (!releasing.value?.id) return
+  const request = ++releaseReloadRequest
+  releaseReloading.value = true
   try {
-    await protectionEnrollmentAPI.release(releasing.value.id, {
+    const latest = await protectionEnrollmentAPI.get(releasing.value.id)
+    if (request !== releaseReloadRequest) return
+    replaceEnrollment(latest)
+    if (['releasing', 'released'].includes(latest?.state)) {
+      releaseDialog.value = false
+      await load({ background: true })
+      ElMessage.info(t('security.enrollment.alreadyReleasing'))
+      return
+    }
+    if (releaseBasis.value === 'no_supported_findings' && !isZeroFindingDiscovery(latest)) {
+      releaseDialog.value = false
+      await load({ background: true })
+      ElMessage.info(t('security.enrollment.noSupportedFindingsReleaseUnavailable'))
+      return
+    }
+    releasing.value = latest
+    releaseReason.value = ''
+    releaseConflict.value = false
+    ElMessage.success(t('security.enrollment.releaseReloadedLatest'))
+    focusReleaseCancel()
+  } catch (error) {
+    if (request !== releaseReloadRequest) return
+    ElMessage.error(error.message || t('security.enrollment.releaseLoadFailed'))
+  } finally {
+    if (request === releaseReloadRequest) releaseReloading.value = false
+  }
+}
+
+async function releaseEnrollment() {
+  if (!releasing.value?.id || releaseConflict.value) return
+  if (!releaseReason.value.trim()) return ElMessage.warning(t('security.enrollment.releaseReasonRequired'))
+  releaseSaving.value = true
+  try {
+    const released = await protectionEnrollmentAPI.release(releasing.value.id, {
       version: Number(releasing.value.version),
       basis: releaseBasis.value,
       reason: releaseReason.value.trim()
     })
+    replaceEnrollment(released)
     releaseDialog.value = false
     await load()
     scheduleAutoRefresh({ reset: true })
     ElMessage.success(t('security.enrollment.releaseStarted'))
   } catch (error) {
+    if (isResourceVersionConflict(error)) {
+      releaseConflict.value = true
+      ElMessage.warning(t('security.enrollment.releaseVersionConflict'))
+      return
+    }
+    if (isNoSupportedFindingsReleaseUnavailable(error)) {
+      releaseDialog.value = false
+      await load({ background: true })
+      ElMessage.info(t('security.enrollment.noSupportedFindingsReleaseUnavailable'))
+      return
+    }
     ElMessage.error(error.message || t('security.common.failed'))
   } finally {
-    saving.value = false
+    releaseSaving.value = false
   }
 }
 
@@ -2730,6 +3708,14 @@ h4 { margin: 24px 0 12px; }
 .manual-assessment-card__actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
 .policy-target { display: flex; flex-direction: column; gap: 4px; margin: 16px 0; padding: 12px 14px; border: 1px solid var(--addp-border-color); border-radius: 8px; background: var(--addp-bg-secondary); }
 .policy-target span { color: var(--addp-text-secondary); font-size: 12px; line-height: 1.5; }
+.assessment-history { min-height: 120px; }
+.assessment-history :deep(.el-timeline) { padding-left: 6px; }
+.assessment-history__item { padding: 12px 14px; border: 1px solid var(--addp-border-color); border-radius: 8px; background: var(--addp-bg-secondary); }
+.assessment-history__header { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+.assessment-history__item p { margin: 7px 0 0; color: var(--addp-text-secondary); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.assessment-history__item .assessment-history__summary { color: var(--addp-text-primary); font-weight: 600; }
+.assessment-history__item small { display: block; margin-top: 8px; color: var(--addp-text-tertiary); }
+.version-conflict-notice { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; padding: 10px 12px; color: var(--el-color-warning); border: 1px solid var(--el-color-warning); border-radius: 8px; background: var(--addp-bg-secondary); font-size: 13px; line-height: 1.5; }
 .exemption-section { margin-top: 24px; }
 .exemption-section__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
 .exemption-section__header h4 { margin: 0; }
@@ -2776,7 +3762,7 @@ h4 { margin: 24px 0 12px; }
 .technical-details { margin-top: 18px; }
 .technical-value { overflow-wrap: anywhere; font-family: monospace; color: var(--addp-text-secondary); }
 .detail-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
-.release-reason { margin-top: 16px; }
+.release-form { margin-top: 16px; }
 :deep(.el-card__body) { padding: 0; }
 :deep(.el-table) { background: var(--addp-bg-primary); }
 :deep(.el-drawer__body) { padding-top: 8px; }
@@ -2793,6 +3779,7 @@ h4 { margin: 24px 0 12px; }
   .owner-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 720px) {
+  .version-conflict-notice { align-items: flex-start; flex-direction: column; }
   .access-review-card__header { flex-direction: column; }
   .access-review-filters > .el-input, .access-review-filters > .el-select, .access-review-filters > :deep(.el-date-editor) { width: 100%; }
   .review-queue-intro { align-items: flex-start; flex-direction: column; }

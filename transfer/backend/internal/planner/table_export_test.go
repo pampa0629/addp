@@ -69,6 +69,41 @@ func TestBuildTableTransferPlanForMongoQuerySource(t *testing.T) {
 	}
 }
 
+func TestBuildTableTransferPlanRejectsMQLForPostgreSQLSource(t *testing.T) {
+	spec := TableExportTaskSpec{
+		Runtime: RuntimeSpec{Boundary: runtimeBoundaryBounded},
+		Load:    LoadSpec{Mode: loadModeSnapshot},
+		Source: EndpointSpec{
+			Locator:        "addp://engine/11/path/public/farmland?type=table",
+			DataType:       dataTypeTable,
+			Representation: representationNative,
+			Query: &QuerySourceSpec{
+				Language:  "mql",
+				Statement: `{"find":"farmland","filter":{}}`,
+			},
+		},
+		Target: EndpointSpec{
+			ParentLocator:  schemaLocator(12, "public"),
+			Name:           "outdoors",
+			DataType:       dataTypeTable,
+			Representation: representationNative,
+			Policy:         map[string]interface{}{"apply_mode": "replace"},
+		},
+		Transforms: []TransformSpec{{
+			Type: "field_mapping", Mode: "project",
+			Fields: []FieldMappingSpec{{Source: "person_id", Target: "person_id", TargetType: "string"}},
+		}},
+	}
+
+	_, err := BuildTableTransferPlan(spec, StaticEngineResolver{
+		11: {Type: "postgresql", EngineID: 11},
+		12: {Type: "postgresql", EngineID: 12},
+	})
+	if err == nil || !strings.Contains(err.Error(), `does not support language "mql"`) {
+		t.Fatalf("BuildTableTransferPlan() error = %v, want capability language rejection", err)
+	}
+}
+
 func TestBuildTableTransferPlanRejectsBareMongoPipeline(t *testing.T) {
 	spec := TableExportTaskSpec{
 		Runtime: RuntimeSpec{Boundary: runtimeBoundaryBounded},

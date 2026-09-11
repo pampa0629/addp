@@ -21,6 +21,8 @@ Security 对 Transfer 的稳定动作名为 `export`，它表示受保护数据�
 
 MongoDB 查询的 Console 基础结构整形构建器只是一种 MQL authoring 能力：通用支持 `可选单次 $unwind -> $project`，保存事实仍只有 `source.query` 中的标准 MQL command object。基础界面只决定文档/单数组的行粒度和源字段选择；单数组模式只允许展开一个数组，可以选择多个数组元素叶子字段，并可选择多个不位于任何数组下的父文档叶子字段随每个元素行重复携带；文档标识自动携带。查询输出名由编译器确定，PostgreSQL 目标名称和类型只在后续 `field_mapping` 配置。构建器不得暴露筛选、排序、空数组保留、投影别名等 MQL 拼装细节，不得保存第二份 DSL、硬编码业务 collection/字段、猜测多数组粒度或承担业务聚合；超出可逆子集的合法查询进入高级 MQL 编辑器。
 
+关系型查询的 Console 基础构建器只承担 Transfer 的轻量 ETL authoring：源关系固定为用户已经选择的一个 native table，通用支持字段投影和一层 `all|any` 行过滤，过滤值全部编译为 `source.query.parameters` 中的类型化参数。可用查询语言、默认语言和标识符引号必须来自所选 Engine Instance 的 `compute.query` capability；单语言引擎不提供语言选择，未声明 `read_session` 的引擎不开放查询源。保存事实仍只有标准 `source.query.language=sql`、SQL `statement` 和 `parameters`，不得保存第二份可视化 DSL。基础构建器不得提供 Join、多表输入、聚合、计算字段、别名、排序、Limit 或方言私有函数；目标字段名和类型继续只由后续 `field_mapping` 配置，复杂数据开发归 Develop。只有严格属于可逆子集的 SQL 才能显示为基础表单，其他合法只读 SQL 进入高级 SQL 编辑器。
+
 ## 技术栈与端口
 
 - 后端：Go + Gin + GORM，默认端口 `8083`，环境变量 `TRANSFER_BACKEND_PORT`。

@@ -17,7 +17,7 @@ func TestPostgresDocumentCandidateFormalization(t *testing.T) {
 	if dsn == "" {
 		t.Skip("STANDARD_POSTGRES_TEST_DSN is not set")
 	}
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{TranslateError: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,6 +90,48 @@ func TestPostgresDocumentCandidateFormalization(t *testing.T) {
 		}
 		if formalizationCount != 0 || glossaryCount != 0 {
 			t.Fatalf("formalization_count=%d glossary_count=%d, want no side effects", formalizationCount, glossaryCount)
+		}
+	})
+	t.Run("maps concurrently created target to stale plan", func(t *testing.T) {
+		raceCode := fmt.Sprintf("outdoor_race_%d", tenantID)
+		raceDocument := models.Document{TenantID: tenantID, ScopeType: models.StandardScopeTenantCommon, Code: "doc_" + raceCode, DocType: "internal", CreatedBy: 1, Version: 1, LifecycleState: "active"}
+		if err := db.Create(&raceDocument).Error; err != nil {
+			t.Fatal(err)
+		}
+		raceRevision := models.DocumentRevision{DocumentID: raceDocument.ID, RevisionNo: 1, Status: models.RevisionStatusDraft, Name: "并发目标校验", ChangeSummary: "initial", CreatedBy: 1}
+		if err := db.Create(&raceRevision).Error; err != nil {
+			t.Fatal(err)
+		}
+		raceExtraction := models.DocumentExtraction{TenantID: tenantID, DocumentRevisionID: raceRevision.ID, Status: "completed", RequestedBy: 1}
+		if err := db.Create(&raceExtraction).Error; err != nil {
+			t.Fatal(err)
+		}
+		raceCandidate := models.DocumentExtractionCandidate{ExtractionID: raceExtraction.ID, CandidateType: "glossary", Code: raceCode, Name: "并发候选", Definition: "预检时目标不存在", Status: "retained", Version: 1}
+		if err := db.Create(&raceCandidate).Error; err != nil {
+			t.Fatal(err)
+		}
+		concurrentTarget := models.Glossary{TenantID: tenantID, ScopeType: models.StandardScopeTenantCommon, Code: raceCode, CreatedBy: 2, Version: 1, LifecycleState: "active"}
+		if err := db.Create(&concurrentTarget).Error; err != nil {
+			t.Fatal(err)
+		}
+
+		_, err := repo.FormalizeCandidate(raceCandidate.ID, tenantID, 9, DocumentCandidateFormalizationPlan{
+			Action: models.CandidateFormalizationCreatedIdentity, CandidateType: "glossary", CandidateVersion: 1,
+			SourceDocumentVersion: 1, ChangeSummary: "并发创建必须使预检计划失效",
+		})
+		if !errors.Is(err, ErrCandidateFormalizationStale) {
+			t.Fatalf("error = %v, want ErrCandidateFormalizationStale", err)
+		}
+		var formalizationCount int64
+		if err := db.Model(&models.DocumentCandidateFormalization{}).Where("candidate_id = ?", raceCandidate.ID).Count(&formalizationCount).Error; err != nil {
+			t.Fatal(err)
+		}
+		var storedCandidate models.DocumentExtractionCandidate
+		if err := db.First(&storedCandidate, raceCandidate.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+		if formalizationCount != 0 || storedCandidate.Version != 1 {
+			t.Fatalf("formalization_count=%d candidate_version=%d, want rolled back stale plan", formalizationCount, storedCandidate.Version)
 		}
 	})
 

@@ -16,5 +16,9 @@ other = "删除成功"
 other = "保护投影游标无效、倒退或不属于当前消费方"
 [security.enrollment.no_supported_findings_release_unavailable]
 other = "最近一次成功发现不再满足零命中确认条件，请刷新或重新发现后重试"
+[security.enrollment.discovery_execution_in_progress]
+other = "当前资源已有敏感发现任务正在等待或执行，请完成后重试"
+[security.enrollment.already_active]
+other = "该资源已经存在保护中的纳管生命周期"
 [security.access_request.expired]
 other = "原值访问申请已超过截止时间，请申请人重新提交"

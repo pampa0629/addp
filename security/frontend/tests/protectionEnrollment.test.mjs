@@ -4,7 +4,12 @@ import {
   buildFindingReviewPayload,
   discoveryRefreshMarker,
   findingReviewState,
+  isDiscoveryExecutionInProgress,
+  isNoSupportedFindingsReleaseUnavailable,
+  isProtectionAccessRequestExpired,
+  isProtectionEnrollmentAlreadyActive,
   isProtectionEffectStricter,
+  isResourceVersionConflict,
   isZeroFindingDiscovery,
   needsEnrollmentRefresh,
   normalizeDiscoverySummary,
@@ -78,6 +83,36 @@ describe('formal assessment revision form', () => {
     expect(isProtectionEffectStricter('suppress', 'mask')).toBe(true)
     expect(isProtectionEffectStricter('suppress', 'suppress')).toBe(false)
     expect(isProtectionEffectStricter('suppress', 'deny')).toBe(false)
+  })
+
+  it('recognizes only the canonical resource version conflict response', () => {
+    expect(isResourceVersionConflict({ response: { status: 409, data: { error_code: 'resource_version_conflict' } } })).toBe(true)
+    expect(isResourceVersionConflict({ response: { status: 409, data: { error_code: 'conflict' } } })).toBe(false)
+    expect(isResourceVersionConflict({ response: { status: 500, data: { error_code: 'resource_version_conflict' } } })).toBe(false)
+  })
+
+  it('recognizes only the canonical expired access-request conflict', () => {
+    expect(isProtectionAccessRequestExpired({ response: { status: 409, data: { error_code: 'protection_access_request_expired' } } })).toBe(true)
+    expect(isProtectionAccessRequestExpired({ response: { status: 409, data: { error_code: 'resource_version_conflict' } } })).toBe(false)
+    expect(isProtectionAccessRequestExpired({ response: { status: 400, data: { error_code: 'protection_access_request_expired' } } })).toBe(false)
+  })
+
+  it('recognizes only the canonical zero-finding release evidence conflict', () => {
+    expect(isNoSupportedFindingsReleaseUnavailable({ response: { status: 409, data: { error_code: 'no_supported_findings_release_unavailable' } } })).toBe(true)
+    expect(isNoSupportedFindingsReleaseUnavailable({ response: { status: 409, data: { error_code: 'resource_version_conflict' } } })).toBe(false)
+    expect(isNoSupportedFindingsReleaseUnavailable({ response: { status: 400, data: { error_code: 'no_supported_findings_release_unavailable' } } })).toBe(false)
+  })
+
+  it('recognizes only the canonical in-progress discovery conflict', () => {
+    expect(isDiscoveryExecutionInProgress({ response: { status: 409, data: { error_code: 'protection_discovery_execution_in_progress' } } })).toBe(true)
+    expect(isDiscoveryExecutionInProgress({ response: { status: 409, data: { error_code: 'resource_version_conflict' } } })).toBe(false)
+    expect(isDiscoveryExecutionInProgress({ response: { status: 500, data: { error_code: 'protection_discovery_execution_in_progress' } } })).toBe(false)
+  })
+
+  it('recognizes only the canonical active-enrollment conflict', () => {
+    expect(isProtectionEnrollmentAlreadyActive({ response: { status: 409, data: { error_code: 'protection_enrollment_already_active' } } })).toBe(true)
+    expect(isProtectionEnrollmentAlreadyActive({ response: { status: 409, data: { error_code: 'resource_version_conflict' } } })).toBe(false)
+    expect(isProtectionEnrollmentAlreadyActive({ response: { status: 500, data: { error_code: 'protection_enrollment_already_active' } } })).toBe(false)
   })
 })
 

@@ -60,7 +60,7 @@ import PlatformTenantsPanel from '../components/iam/PlatformTenantsPanel.vue'
 import PlatformUsersPanel from '../components/iam/PlatformUsersPanel.vue'
 import ProjectGroupsPanel from '../components/iam/ProjectGroupsPanel.vue'
 import TenantInvitationsPanel from '../components/iam/TenantInvitationsPanel.vue'
-import TenantServiceAccountsPanel from '../components/iam/TenantServiceAccountsPanel.vue'
+import ServicePrincipalAccountsPanel from '../components/iam/ServicePrincipalAccountsPanel.vue'
 import TenantUserAccountsPanel from '../components/iam/TenantUserAccountsPanel.vue'
 import TenantRoleAssignmentsPanel from '../components/iam/TenantRoleAssignmentsPanel.vue'
 import TenantRolesPanel from '../components/iam/TenantRolesPanel.vue'
@@ -93,7 +93,7 @@ const panelComponents = {
   roles: markRaw(TenantRolesPanel),
   'role-assignments': markRaw(TenantRoleAssignmentsPanel),
   'oauth-clients': markRaw(OAuthClientsPanel),
-  'service-accounts': markRaw(TenantServiceAccountsPanel),
+  'service-principal-accounts': markRaw(ServicePrincipalAccountsPanel),
   'api-consumers': markRaw(APIConsumersPanel),
   'security-policy': markRaw(SecurityPolicy),
   audit: markRaw(AuditPanel)
@@ -110,7 +110,7 @@ const panelIcons = {
   roles: DocumentChecked,
   'role-assignments': UserFilled,
   'oauth-clients': Key,
-  'service-accounts': Connection,
+  'service-principal-accounts': Connection,
   'api-consumers': Key,
   'security-policy': Setting,
   audit: Bell

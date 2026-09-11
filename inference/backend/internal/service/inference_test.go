@@ -282,6 +282,56 @@ func TestDiscoverModelsRejectsNonOpenAIAdapter(t *testing.T) {
 	}
 }
 
+func TestProbeDashScopeMultimodalUsesAuthenticatedEmbeddingRequest(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/embedding" {
+			t.Errorf("unexpected probe request: %s %s", r.Method, r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer dashscope-secret" {
+			t.Errorf("unexpected authorization header")
+		}
+		var body struct {
+			Model string `json:"model"`
+			Input struct {
+				Contents []map[string]string `json:"contents"`
+			} `json:"input"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body.Model != "qwen3-vl-embedding" || len(body.Input.Contents) != 1 || strings.TrimSpace(body.Input.Contents[0]["text"]) == "" {
+			t.Errorf("unexpected probe payload: %+v", body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"output":{"embeddings":[{"index":0,"embedding":[0.1,0.2,0.3]}]},"usage":{"input_tokens":4}}`))
+	}))
+	defer upstream.Close()
+
+	ctx := context.Background()
+	store := newTestStore(t)
+	control := NewControlPlane(store, testEncryptionKey)
+	platform := Actor{ContextType: models.ScopePlatform, PrincipalID: 52}
+	provider, err := control.CreateProvider(ctx, platform, ProviderInput{Name: "dashscope", ScopeType: models.ScopePlatform, AdapterType: AdapterDashScopeMultimodal, Endpoint: upstream.URL + "/embedding", AllowAllTenants: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := control.SetCredential(ctx, platform, provider.ID, "dashscope-secret"); err != nil {
+		t.Fatal(err)
+	}
+	deployment, err := control.CreateDeployment(ctx, platform, DeploymentInput{ProviderConnectionID: provider.ID, Name: "multimodal", UpstreamModel: "qwen3-vl-embedding", Operations: []string{"embedding"}, Modalities: []string{"text", "image"}, Dimension: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	response, err := NewRuntime(store, testEncryptionKey).Probe(ctx, platform, deployment.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !response.Reachable || response.StatusCode != http.StatusOK || response.AdapterType != AdapterDashScopeMultimodal {
+		t.Fatalf("unexpected probe response: %+v", response)
+	}
+}
+
 func TestInvalidStatusIsRejected(t *testing.T) {
 	_, err := normalizeStatus("enabled")
 	if err == nil {

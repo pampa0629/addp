@@ -103,7 +103,7 @@ func (h *PolicyHandler) Get(c *gin.Context) {
 }
 
 // @Summary 更新保护策略 | Update protection policy
-// @Description 使用资源版本追加 active 不可变修订；新效果只能等于或严于当前保护基线 | Append an active immutable revision using resource-version concurrency control; the new effect must be at least as strict as the current baseline
+// @Description 使用资源版本追加 active 不可变修订；新效果只能等于或严于当前保护基线；版本冲突返回 409 和稳定错误码 resource_version_conflict | Append an active immutable revision using resource-version concurrency control; the new effect must be at least as strict as the current baseline; version conflicts return 409 with the stable error code resource_version_conflict
 // @Tags Protection Policy
 // @Accept json
 // @Produce json
@@ -135,7 +135,7 @@ func (h *PolicyHandler) Update(c *gin.Context) {
 }
 
 // @Summary 撤销保护策略 | Revoke protection policy
-// @Description 使用资源版本追加 revoked 不可变修订并回落到 Assessment 加 ProtectionBaseline；不解除纳管或放行明文 | Append a revoked immutable revision using resource-version concurrency control and fall back to Assessment plus ProtectionBaseline; enrollment and plaintext protection remain in force
+// @Description 使用资源版本追加 revoked 不可变修订并回落到 Assessment 加 ProtectionBaseline；不解除纳管或放行明文；版本冲突返回 409 和稳定错误码 resource_version_conflict | Append a revoked immutable revision using resource-version concurrency control and fall back to Assessment plus ProtectionBaseline; enrollment and plaintext protection remain in force; version conflicts return 409 with the stable error code resource_version_conflict
 // @Tags Protection Policy
 // @Accept json
 // @Produce json

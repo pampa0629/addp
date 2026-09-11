@@ -1,4 +1,9 @@
 import { describe, expect, it } from 'vitest'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import en from '../i18n/en.json'
+import zhCN from '../i18n/zh-cn.json'
 import {
   accountSessionIsLoading,
   assuranceLevelKey,
@@ -17,6 +22,40 @@ import {
 } from './iamPresentation'
 
 describe('IAM presentation helpers', () => {
+  it('localizes every built-in tenant role declared by the role catalog', () => {
+    const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..')
+    const catalog = readFileSync(resolve(repositoryRoot, 'system/authorization/builtin_roles.yaml'), 'utf8')
+    const roleMessageKeys = [...catalog.matchAll(/^\s+(?:name|description)_i18n_key: (roles\.tenant\.[a-z0-9_]+\.(?:name|description))$/gm)]
+      .map((match) => match[1])
+    const hasMessage = (messages, key) => key.split('.').reduce((value, segment) => value?.[segment], messages) != null
+
+    expect(roleMessageKeys.length).toBeGreaterThan(0)
+    for (const [locale, messages] of [['zh-CN', zhCN], ['en', en]]) {
+      expect(roleMessageKeys.filter((key) => !hasMessage(messages, key)), `${locale} built-in tenant role translations`).toEqual([])
+    }
+  })
+
+  it('localizes every resource and action declared by permission manifests', () => {
+    const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..')
+    const permissionKeys = readdirSync(repositoryRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .flatMap((entry) => {
+        const manifestPath = resolve(repositoryRoot, entry.name, 'authorization/permissions.yaml')
+        if (!existsSync(manifestPath)) return []
+        return [...readFileSync(manifestPath, 'utf8').matchAll(/^  - key: ([a-z0-9_.]+)$/gm)]
+          .map((match) => match[1])
+      })
+
+    const resources = [...new Set(permissionKeys.map((key) => key.split('.')[1]))].sort()
+    const actions = [...new Set(permissionKeys.map((key) => key.split('.').at(-1)))].sort()
+
+    for (const [locale, messages] of [['zh-CN', zhCN], ['en', en]]) {
+      const roleMessages = messages.system.iam.roles
+      expect(resources.filter((resource) => !roleMessages.resources[resource]), `${locale} resource translations`).toEqual([])
+      expect(actions.filter((action) => !roleMessages.actions[action]), `${locale} action translations`).toEqual([])
+    }
+  })
+
   it('keeps account session presentation in loading state until both user and auth context arrive', () => {
     expect(accountSessionIsLoading({
       sessionStatus: 'initializing',

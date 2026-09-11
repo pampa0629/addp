@@ -27,7 +27,7 @@ func NewSearchHandler(searchService *service.HybridSearchService, historyService
 
 // Search 执行混合检索（全文检索 + 向量语义检索）
 // @Summary 执行混合检索 | Execute hybrid search
-// @Description 执行全文检索与向量语义检索的混合搜索 | Execute hybrid search combining full-text and vector semantic search
+// @Description 执行全文检索与向量语义检索，对候选去重后使用对称 RRF 融合排序并统一分页 | Execute full-text and vector semantic retrieval, then deduplicate, rank with symmetric RRF, and paginate the fused candidates
 // @Tags Manager
 // @Produce json
 // @Param q query string true "搜索关键词 | Search query"

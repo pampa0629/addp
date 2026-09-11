@@ -41,9 +41,10 @@
       <el-table-column :label="t('system.iam.roles.role')" min-width="300">
         <template #default="{ row }">
           <div class="iam-primary-cell">
-            <strong>{{ roleName(row) }}</strong>
+            <el-button class="iam-role-name-button" link type="primary" @click="openRoleDetails(row)">
+              <strong>{{ roleName(row) }}</strong>
+            </el-button>
             <span>{{ row.role_key }}</span>
-            <span v-if="roleDescription(row)" class="iam-role-description">{{ roleDescription(row) }}</span>
           </div>
         </template>
       </el-table-column>
@@ -66,9 +67,9 @@
       </el-table-column>
       <el-table-column :label="t('system.iam.roles.permissionOverview')" min-width="220">
         <template #default="{ row }">
-          <el-button class="iam-permission-summary-button" link type="primary" :icon="View" @click="openPermissionDetails(row)">
+          <el-button class="iam-permission-summary-button" link type="primary" :icon="View" @click="openRoleDetails(row)">
             <span class="iam-permission-summary">
-              <strong>{{ t('system.iam.roles.permissionCount', { count: row.permission_keys.length }) }}</strong>
+              <strong>{{ t('system.iam.roles.permissionCount', { count: (row.permission_keys || []).length }) }}</strong>
               <span>{{ rolePermissionModuleSummary(row) }}</span>
             </span>
           </el-button>
@@ -168,11 +169,44 @@
       </template>
     </el-dialog>
 
-    <el-drawer v-model="permissionDetailVisible" :title="t('system.iam.roles.permissionDetails')" size="min(620px, 92vw)">
-      <template v-if="permissionDetailRole">
+    <el-drawer v-model="roleDetailVisible" :title="t('system.iam.roles.details')" size="min(620px, 92vw)">
+      <template v-if="roleDetailRole">
         <div class="iam-role-detail-heading">
-          <strong>{{ roleName(permissionDetailRole) }}</strong>
-          <span>{{ permissionDetailRole.role_key }}</span>
+          <div>
+            <strong>{{ roleName(roleDetailRole) }}</strong>
+            <span>{{ roleDetailRole.role_key }}</span>
+          </div>
+          <el-tag effect="plain">{{ t(`system.iam.roles.types.${roleDetailRole.role_type}`) }}</el-tag>
+        </div>
+        <p v-if="roleDescription(roleDetailRole)" class="iam-role-detail-description">{{ roleDescription(roleDetailRole) }}</p>
+        <div class="iam-role-detail-context">
+          <div>
+            <span>{{ t('system.iam.roles.applicableMembers') }}</span>
+            <div>
+              <el-tag
+                v-for="principalType in roleDetailRole.allowed_principal_types"
+                :key="principalType"
+                class="iam-inline-tag"
+                type="info"
+                effect="plain"
+              >{{ memberTypeLabel(principalType) }}</el-tag>
+            </div>
+          </div>
+          <div>
+            <span>{{ t('system.iam.roles.scopes') }}</span>
+            <div>
+              <el-tag
+                v-for="scope in roleDetailRole.allowed_scope_types"
+                :key="scope"
+                class="iam-inline-tag"
+                effect="plain"
+              >{{ scopeLabel(scope) }}</el-tag>
+            </div>
+          </div>
+        </div>
+        <div class="iam-role-detail-section-heading">
+          <strong>{{ t('system.iam.roles.permissionDetails') }}</strong>
+          <span>{{ t('system.iam.roles.permissionCount', { count: (roleDetailRole.permission_keys || []).length }) }}</span>
         </div>
         <div v-for="group in permissionDetailGroups" :key="group.namespace" class="iam-permission-group">
           <div class="iam-permission-group__heading">
@@ -231,8 +265,8 @@ const permissions = ref([])
 const loading = ref(false)
 const submitting = ref(false)
 const dialogVisible = ref(false)
-const permissionDetailVisible = ref(false)
-const permissionDetailRole = ref(null)
+const roleDetailVisible = ref(false)
+const roleDetailRole = ref(null)
 const editing = ref(null)
 const formRef = ref()
 const permissionSearch = ref('')
@@ -271,7 +305,7 @@ const incompatiblePermissionKeys = computed(() => form.permissionKeys.filter((pe
   return permission && !permissionMatchesScopes(permission, form.scopeTypes)
 }))
 const permissionDetailGroups = computed(() => groupPermissionsByNamespace(
-  (permissionDetailRole.value?.permission_keys || []).map(permissionMetadata),
+  (roleDetailRole.value?.permission_keys || []).map(permissionMetadata),
   (permission) => permissionIdentity(permission).ownerModule
 ).map((group) => ({
   ...group,
@@ -334,7 +368,8 @@ function permissionResourceName(permission) {
   return te(key) ? t(key) : permissionIdentity(permission).resource || permissionIdentity(permission).permissionKey
 }
 function actionLabel(action) {
-  return t(`system.iam.roles.actions.${action}`)
+  const key = `system.iam.roles.actions.${action}`
+  return action && te(key) ? t(key) : action || '-'
 }
 function riskLabel(risk) { return t(`system.iam.status.${risk}`) }
 function riskTagType(risk) { return ({ low: 'info', medium: 'warning', high: 'danger', critical: 'danger' })[risk] || 'info' }
@@ -351,7 +386,7 @@ function clearIncompatiblePermissions() {
   const keys = new Set(incompatiblePermissionKeys.value)
   form.permissionKeys = form.permissionKeys.filter((permissionKey) => !keys.has(permissionKey))
 }
-function openPermissionDetails(role) { permissionDetailRole.value = role; permissionDetailVisible.value = true }
+function openRoleDetails(role) { roleDetailRole.value = role; roleDetailVisible.value = true }
 async function load() {
   loading.value = true
   try {
@@ -418,7 +453,7 @@ onMounted(load)
 .iam-role-audience__options { flex-shrink: 0; }
 .iam-role-audience__count { display: inline-flex; min-width: 22px; height: 18px; margin-left: 5px; padding: 0 5px; border-radius: 9px; background: var(--addp-bg-primary); align-items: center; justify-content: center; font-size: 12px; }
 .iam-inline-tag { margin: 2px 6px 2px 0; }
-.iam-role-description { max-width: 420px; margin-top: 4px; color: var(--addp-text-secondary); line-height: 1.45; white-space: normal; }
+.iam-role-name-button { display: inline-flex; width: fit-content; height: auto; padding: 0; font-size: inherit; }
 .iam-context-tags { display: flex; flex-direction: column; gap: 6px; }
 .iam-context-label { display: inline-block; min-width: 56px; margin-right: 6px; color: var(--addp-text-secondary); font-size: 12px; }
 .iam-permission-summary-button { height: auto; max-width: 100%; padding: 4px 0; }
@@ -451,9 +486,17 @@ onMounted(load)
 .iam-permission-option__content { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
 .iam-permission-option__title { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--addp-text-primary); }
 .iam-permission-option__key { color: var(--addp-text-secondary); font-family: var(--addp-font-family-mono, monospace); font-size: 12px; overflow-wrap: anywhere; }
-.iam-role-detail-heading { display: flex; flex-direction: column; gap: 4px; padding-bottom: 16px; border-bottom: 1px solid var(--addp-border-color); }
+.iam-role-detail-heading { display: flex; padding-bottom: 14px; border-bottom: 1px solid var(--addp-border-color); align-items: flex-start; justify-content: space-between; gap: 12px; }
+.iam-role-detail-heading > div { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
 .iam-role-detail-heading strong { color: var(--addp-text-primary); font-size: 18px; }
 .iam-role-detail-heading span { color: var(--addp-text-secondary); font-size: 12px; overflow-wrap: anywhere; }
+.iam-role-detail-description { margin: 14px 0 0; color: var(--addp-text-secondary); line-height: 1.6; }
+.iam-role-detail-context { display: grid; margin-top: 14px; padding: 12px 14px; border: 1px solid var(--addp-border-color); border-radius: 8px; background: var(--addp-bg-secondary); grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.iam-role-detail-context > div { display: flex; min-width: 0; flex-direction: column; gap: 6px; }
+.iam-role-detail-context > div > span { color: var(--addp-text-secondary); font-size: 12px; }
+.iam-role-detail-section-heading { display: flex; margin-top: 20px; padding-bottom: 10px; border-bottom: 1px solid var(--addp-border-color); align-items: center; justify-content: space-between; gap: 12px; }
+.iam-role-detail-section-heading strong { color: var(--addp-text-primary); }
+.iam-role-detail-section-heading span { color: var(--addp-text-secondary); font-size: 12px; }
 .iam-permission-group { padding: 16px 0; border-bottom: 1px solid var(--addp-border-color); }
 .iam-permission-group__heading { margin-bottom: 10px; color: var(--addp-text-primary); }
 .iam-permission-detail-list { display: flex; flex-direction: column; }
@@ -474,5 +517,6 @@ onMounted(load)
   .iam-permission-modules { display: flex; max-height: 150px; border-right: 0; border-bottom: 1px solid var(--addp-border-color); flex-wrap: wrap; }
   .iam-permission-module { width: auto; min-width: 150px; flex: 1; }
   .iam-permission-list__heading { align-items: flex-start; flex-direction: column; }
+  .iam-role-detail-context { grid-template-columns: 1fr; }
 }
 </style>

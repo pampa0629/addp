@@ -47,6 +47,7 @@ export const discoveryQualityAPI = {
 
 export const assessmentAPI = {
   list: params => client.get('/security/assessments', { params }),
+  get: id => client.get(`/security/assessments/${id}`),
   create: data => client.post('/security/assessments', data),
   revise: (id, data) => client.post(`/security/assessments/${id}/revisions`, data),
   revoke: (id, data) => client.delete(`/security/assessments/${id}`, { data })
@@ -70,6 +71,7 @@ export const protectionAccessRequestAPI = {
   targets: params => client.get('/security/protection-access-request-targets', { params }),
   mine: params => client.get('/security/protection-access-requests', { params }),
   reviewQueue: params => client.get('/security/protection-access-requests/review-queue', { params }),
+  getForReview: id => client.get(`/security/protection-access-requests/${id}`),
   create: data => client.post('/security/protection-access-requests', data),
   decide: (id, data) => client.post(`/security/protection-access-requests/${id}/decisions`, data)
 }

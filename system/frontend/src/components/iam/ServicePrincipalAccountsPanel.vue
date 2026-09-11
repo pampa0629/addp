@@ -1,38 +1,31 @@
 <template>
   <section class="iam-panel">
     <el-alert class="iam-panel-intro" type="info" :closable="false" show-icon>
-      <template #title>{{ t('system.iam.serviceAccounts.introTitle') }}</template>
-      <p>{{ t('system.iam.serviceAccounts.introDescription') }}</p>
+      <template #title>{{ t(`system.iam.serviceAccounts.intro.${props.ownerScope}.title`) }}</template>
+      <p>{{ t(`system.iam.serviceAccounts.intro.${props.ownerScope}.description`) }}</p>
     </el-alert>
 
     <div class="iam-toolbar">
       <div class="iam-filters">
         <el-input v-model="filters.search" :placeholder="t('system.iam.serviceAccounts.search')" clearable :prefix-icon="Search" @keyup.enter="reload" @clear="reload" />
-        <el-select v-model="filters.owner_scope" :placeholder="t('system.iam.serviceAccounts.accountType')" clearable @change="reload">
-          <el-option value="tenant" :label="t('system.iam.serviceAccounts.types.tenant')" />
-          <el-option value="platform" :label="t('system.iam.serviceAccounts.types.platform')" />
-        </el-select>
         <el-select v-model="filters.status" :placeholder="t('system.iam.common.status')" clearable @change="reload">
           <el-option v-for="status in statuses" :key="status" :label="statusLabel(status)" :value="status" />
         </el-select>
         <el-button :icon="Refresh" @click="reload">{{ t('system.iam.common.refresh') }}</el-button>
       </div>
-      <el-button v-if="can('iam.service_account.create')" type="primary" :icon="Plus" @click="openCreate">{{ t('system.iam.serviceAccounts.create') }}</el-button>
+      <el-button v-if="isTenantView && can('iam.service_account.create')" type="primary" :icon="Plus" @click="openCreate">{{ t('system.iam.serviceAccounts.create') }}</el-button>
     </div>
 
     <el-table v-loading="loading" :data="rows" stripe>
-      <el-table-column :label="t('system.iam.serviceAccounts.identity')" min-width="220">
+      <el-table-column :label="t('system.iam.common.name')" min-width="220">
         <template #default="{ row }"><div class="iam-primary-cell"><strong>{{ row.name }}</strong><span>{{ row.description || '-' }}</span></div></template>
-      </el-table-column>
-      <el-table-column :label="t('system.iam.serviceAccounts.accountType')" width="150">
-        <template #default="{ row }"><el-tag :type="isTenantManaged(row) ? 'primary' : 'info'" effect="plain">{{ accountTypeLabel(row) }}</el-tag></template>
       </el-table-column>
       <el-table-column :label="t('system.iam.serviceAccounts.clientId')" min-width="240">
         <template #default="{ row }"><span class="iam-copy-value">{{ row.client_id }}</span><el-button link type="primary" :icon="CopyDocument" @click="copyText(row.client_id, 'clientIdCopied')">{{ t('system.iam.common.copy') }}</el-button></template>
       </el-table-column>
       <el-table-column :label="t('system.iam.common.status')" width="120"><template #default="{ row }"><el-tag :type="row.status === 'active' ? 'success' : 'warning'">{{ statusLabel(row.status) }}</el-tag></template></el-table-column>
       <el-table-column :label="t('system.iam.common.updatedAt')" width="180"><template #default="{ row }">{{ formatDate(row.updated_at) }}</template></el-table-column>
-      <el-table-column :label="t('system.iam.common.actions')" width="380" fixed="right">
+      <el-table-column :label="t('system.iam.common.actions')" :width="isTenantView ? 380 : 140" fixed="right">
         <template #default="{ row }">
           <el-button v-if="can('iam.tenant_role_assignment.read')" link type="primary" :icon="UserFilled" @click="openRoles(row)">{{ t(canManageRoles(row) ? 'system.iam.serviceAccounts.manageRoles' : 'system.iam.serviceAccounts.viewRoles') }}</el-button>
           <el-button v-if="isTenantManaged(row) && can('iam.service_account.update')" link type="primary" :icon="Edit" @click="openEdit(row)">{{ t('system.iam.common.edit') }}</el-button>
@@ -64,6 +57,7 @@
 
     <el-drawer v-model="rolesVisible" :title="roleDrawerTitle" size="min(960px, calc(100% - 24px))" destroy-on-close>
       <el-alert v-if="selectedAccount && !isTenantManaged(selectedAccount)" class="iam-panel-intro" type="info" :closable="false" show-icon :title="t('system.iam.serviceAccounts.platformReadOnly')" />
+      <el-alert v-else-if="selectedAccount" class="iam-panel-intro" type="info" :closable="false" show-icon :title="t('system.iam.serviceAccounts.tenantRoleHint')" />
       <TenantRoleAssignmentsPanel
         v-if="selectedAccount"
         :fixed-membership="selectedAccount"
@@ -82,9 +76,17 @@ import { iamAPI } from '../../api/iam'
 import { useAuthStore } from '../../store/auth'
 import TenantRoleAssignmentsPanel from './TenantRoleAssignmentsPanel.vue'
 
+const props = defineProps({
+  ownerScope: {
+    type: String,
+    required: true,
+    validator: value => ['tenant', 'platform'].includes(value)
+  }
+})
 const { t } = useI18n()
 const authStore = useAuthStore()
 const can = (permission) => authStore.hasPermission(permission)
+const isTenantView = computed(() => props.ownerScope === 'tenant')
 const statuses = ['active', 'suspended']
 const rows = ref([])
 const loading = ref(false)
@@ -92,7 +94,7 @@ const submitting = ref(false)
 const page = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
-const filters = reactive({ search: '', owner_scope: '', status: '' })
+const filters = reactive({ search: '', status: '' })
 const formVisible = ref(false)
 const editing = ref(null)
 const form = reactive({ name: '', description: '' })
@@ -105,13 +107,12 @@ const roleDrawerTitle = computed(() => selectedAccount.value ? t('system.iam.ser
 function statusLabel(status) { return t(`system.iam.status.${status}`) }
 function isTenantManaged(row) { return row.owner_scope === 'tenant' }
 function canManageRoles(row) { return isTenantManaged(row) && (can('iam.tenant_role_assignment.create') || can('iam.tenant_role_assignment.revoke')) }
-function accountTypeLabel(row) { return t(`system.iam.serviceAccounts.types.${row.owner_scope}`) }
 function formatDate(value) { return value ? new Date(value).toLocaleString() : '-' }
 
 async function load() {
   loading.value = true
   try {
-    const result = await iamAPI.serviceAccounts.list({ page: page.value, page_size: pageSize.value, ...filters })
+    const result = await iamAPI.serviceAccounts.list({ page: page.value, page_size: pageSize.value, owner_scope: props.ownerScope, ...filters })
     rows.value = result.data || []
     total.value = result.total || 0
   } catch (error) {

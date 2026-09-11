@@ -14,8 +14,26 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 135 {
-		t.Fatalf("LatestVersion = %d, want 135", catalog.LatestVersion)
+	if catalog.LatestVersion != 136 {
+		t.Fatalf("LatestVersion = %d, want 136", catalog.LatestVersion)
+	}
+}
+
+func TestDuckDBRuntimeCatalogMigrationPublishesMinimumExecutionBoundary(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000136_iam_duckdb_runtime_catalog.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 136: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'tenant.duckdb_runtime'",
+		"'system.execution_authorization.execute'",
+		"permission.permission_key <> 'system.execution_authorization.execute'",
+		"'duckdb_runtime_role_permissions_changed'",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 136 missing %q", fragment)
+		}
 	}
 }
 

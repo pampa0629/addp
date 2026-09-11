@@ -10,6 +10,39 @@ export function hasStorageCapability(engine) {
   return hasDeclaredStorageCapability(engine)
 }
 
+export function queryReadSessionCapability(engine) {
+  const capabilities = parseEngineCapabilities(engine)
+  const query = capabilities?.compute?.query
+  if (query?.supported !== true || query?.read_session !== true) return null
+
+  const languages = [...new Set((Array.isArray(query.languages) ? query.languages : [])
+    .map(value => String(value || '').trim().toLowerCase())
+    .filter(Boolean))]
+  if (languages.length === 0) return null
+
+  const declaredDefault = String(query.default_language || '').trim().toLowerCase()
+  const identifierQuotes = query.identifier_quotes && typeof query.identifier_quotes === 'object' && !Array.isArray(query.identifier_quotes)
+    ? Object.fromEntries(Object.entries(query.identifier_quotes).flatMap(([language, quote]) => {
+      const normalizedLanguage = String(language || '').trim().toLowerCase()
+      const normalizedQuote = String(quote || '')
+      return languages.includes(normalizedLanguage) && Array.from(normalizedQuote).length === 1
+        ? [[normalizedLanguage, normalizedQuote]]
+        : []
+    }))
+    : {}
+  const parameterLanguages = query.parameters?.supported === true
+    ? new Set((query.parameters.languages || []).map(value => String(value || '').trim().toLowerCase()).filter(Boolean))
+    : new Set()
+
+  return {
+    engineFamily: String(capabilities?.engine_family || '').trim().toLowerCase(),
+    languages,
+    defaultLanguage: languages.includes(declaredDefault) ? declaredDefault : languages[0],
+    identifierQuotes,
+    parameterLanguages
+  }
+}
+
 export function hasIdempotentTableUpsert(engine) {
   const upsert = parseEngineCapabilities(engine)?.storage?.store?.table_upsert
   return upsert?.supported === true && upsert?.idempotent === true

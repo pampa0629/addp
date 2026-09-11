@@ -119,6 +119,7 @@ func SetupRouter(svc *service.DefinitionService, enrollments *service.Enrollment
 	accessRequestsAPI.GET("", permission(securityauthorization.PermissionSecurityProtectionAccessRequestRead), accessRequestHandler.ListMine)
 	accessRequestsAPI.POST("", permission(securityauthorization.PermissionSecurityProtectionAccessRequestCreate), accessRequestHandler.Create)
 	accessRequestsAPI.GET("/review-queue", permission(securityauthorization.PermissionSecurityProtectionAccessRequestUpdate), accessRequestHandler.ReviewQueue)
+	accessRequestsAPI.GET("/:id", permission(securityauthorization.PermissionSecurityProtectionAccessRequestUpdate), accessRequestHandler.GetForReview)
 	accessRequestsAPI.POST("/:id/decisions", permission(securityauthorization.PermissionSecurityProtectionAccessRequestUpdate), accessRequestHandler.Decide)
 
 	runtime := api.Group("/runtime")

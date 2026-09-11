@@ -17,7 +17,7 @@ while [ "$#" -gt 0 ]; do
             shift 2
             ;;
         *)
-            echo "usage: $0 [--package iam|oauth|api|migration] [--test service-account|tenant-invitation|catalog-reference-candidates|catalog-integrity|invitation-enrollment-removal|execution-audience|security-module-repair|security-access-request-repair|execution-authorization-lease-boundary|portal-runtime-removal|service-execution-audit|workbench-runtime|workbench-data-application|workbench-catalog-read|workbench-resource-grant|model-catalog-read|standard-catalog-read|service-catalog-read|develop-catalog-read|develop-transfer-execution|quality-catalog-read|model-writer-decoupling|catalog-engine-descriptor-read|catalog-project-group-read|transfer-task-provider]" >&2
+            echo "usage: $0 [--package iam|oauth|api|migration] [--test service-account|tenant-invitation|catalog-reference-candidates|catalog-integrity|invitation-enrollment-removal|execution-audience|duckdb-runtime-catalog|security-module-repair|security-access-request-repair|execution-authorization-lease-boundary|portal-runtime-removal|service-execution-audit|workbench-runtime|workbench-data-application|workbench-catalog-read|workbench-resource-grant|model-catalog-read|standard-catalog-read|service-catalog-read|develop-catalog-read|develop-transfer-execution|quality-catalog-read|model-writer-decoupling|catalog-engine-descriptor-read|catalog-project-group-read|transfer-task-provider]" >&2
             exit 2
             ;;
     esac
@@ -100,6 +100,13 @@ case "$TEST_FILTER" in
             exit 2
         fi
         test_pattern='^TestExecutionAudienceForwardMigrationAgainstPostgres$'
+        ;;
+    duckdb-runtime-catalog)
+        if [ "$PACKAGE_FILTER" != "migration" ]; then
+            echo "duckdb-runtime-catalog test requires --package migration" >&2
+            exit 2
+        fi
+        test_pattern='^TestDuckDBRuntimeCatalogForwardMigrationAgainstPostgres$'
         ;;
     security-module-repair)
         if [ "$PACKAGE_FILTER" != "migration" ]; then

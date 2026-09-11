@@ -26,8 +26,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	}
 
 	roles := report.Roles
-	if len(roles) != 66 {
-		t.Fatalf("role count = %d, want 66", len(roles))
+	if len(roles) != 67 {
+		t.Fatalf("role count = %d, want 67", len(roles))
 	}
 	if roles[0].Key != "platform.agent_runtime" || roles[len(roles)-1].Key != "tenant.transfer_runtime" {
 		t.Fatalf("role boundary keys = %q, %q", roles[0].Key, roles[len(roles)-1].Key)
@@ -36,6 +36,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	assertRepositoryRolePermissions(t, roles, "platform.catalog_runtime", []string{"platform.tenant.read", "system.runtime_registry.update"})
 	assertRepositoryRolePermissions(t, roles, "tenant.catalog_runtime", []string{"develop.catalog.read", "iam.department.read", "iam.tenant_membership.read", "meta.catalog.read", "model.catalog.read", "quality.catalog.read", "service.catalog.read", "standard.catalog.read", "standard.domain.read", "standard.element.read", "standard.glossary.read", "workbench.catalog.read"})
 	assertRepositoryRolePermissions(t, roles, "platform.duckdb_runtime", []string{"system.runtime_registry.update"})
+	assertRepositoryRolePermissions(t, roles, "tenant.duckdb_runtime", []string{"system.execution_authorization.execute"})
+	assertRepositoryRolePrincipalTypes(t, roles, "tenant.duckdb_runtime", []string{"service_principal"})
 	assertRepositoryRolePermissions(t, roles, "tenant.agent_runtime", []string{"inference.runtime.execute", "system.engine_descriptor.read"})
 	assertRepositoryRolePermissions(t, roles, "tenant.copilot_runtime", []string{"develop.task.read", "inference.runtime.execute", "system.engine_descriptor.read"})
 	assertRepositoryRolePermissions(t, roles, "tenant.security_runtime", []string{"iam.tenant_membership.read", "meta.security_facts.read"})

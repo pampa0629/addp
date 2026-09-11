@@ -15,6 +15,118 @@ import (
 	"github.com/addp/system/internal/testsupport"
 )
 
+func TestDuckDBRuntimeCatalogForwardMigrationAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("set ADDP_SYSTEM_POSTGRES_TEST_DSN to a disposable PostgreSQL 15+ database")
+	}
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
+
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`DROP SCHEMA IF EXISTS system CASCADE; DROP SCHEMA IF EXISTS common CASCADE`); err != nil {
+		t.Fatalf("reset DuckDB runtime catalog migration schemas: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	through135, through136 := migrationFilesBeforeAndThrough(t, "000136_iam_duckdb_runtime_catalog.up.sql")
+	if err := (&Runner{DSN: dsn, FS: through135, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply migrations through 135: %v", err)
+	}
+
+	var principalID int64
+	if err := db.QueryRow(`
+		SELECT principal.id
+		FROM system.principals AS principal
+		JOIN system.service_principals AS service_principal ON service_principal.id = principal.id
+		WHERE service_principal.name = 'addp-duckdb'
+	`).Scan(&principalID); err != nil {
+		t.Fatalf("read DuckDB principal before migration 136: %v", err)
+	}
+	_, tenantID := seedInitializedMigrationTenant(t, db, "duckdb-runtime-migration", "DuckDB Runtime Migration")
+	if _, err := db.Exec(`
+		INSERT INTO system.tenant_memberships
+		    (tenant_id, principal_id, status, source_type, joined_at)
+		VALUES ($1, $2, 'active', 'bootstrap', now())
+	`, tenantID, principalID); err != nil {
+		t.Fatalf("create DuckDB tenant membership before migration 136: %v", err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO system.role_assignments
+		    (principal_id, role_id, scope_type, tenant_id, status, valid_from, source_type, reason)
+		SELECT $1, role.id, 'tenant', $2, 'active', now(), 'bootstrap', 'migration test DuckDB runtime'
+		FROM system.roles AS role
+		WHERE role.tenant_id IS NULL AND role.role_key = 'tenant.duckdb_runtime'
+	`, principalID, tenantID); err != nil {
+		t.Fatalf("create DuckDB runtime assignment before migration 136: %v", err)
+	}
+	var authorizationVersionBefore int64
+	if err := db.QueryRow(`SELECT authorization_version FROM system.principals WHERE id = $1`, principalID).Scan(&authorizationVersionBefore); err != nil {
+		t.Fatalf("read DuckDB authorization version before migration 136: %v", err)
+	}
+	var permissionCountBefore int
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM system.role_permissions AS role_permission
+		JOIN system.roles AS role ON role.id = role_permission.role_id
+		WHERE role.tenant_id IS NULL AND role.role_key = 'tenant.duckdb_runtime'
+	`).Scan(&permissionCountBefore); err != nil {
+		t.Fatalf("count DuckDB runtime permissions before migration 136: %v", err)
+	}
+	if permissionCountBefore != 2 {
+		t.Fatalf("DuckDB runtime permissions before migration 136 = %d, want 2", permissionCountBefore)
+	}
+
+	if err := (&Runner{DSN: dsn, FS: through136, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply DuckDB runtime catalog migration 136: %v", err)
+	}
+
+	var version, totalPermissionCount, executionPermissionCount, roleDefinitionCount int
+	var dirty bool
+	var authorizationVersionAfter int64
+	if err := db.QueryRow(`SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
+		t.Fatalf("read migration 136 version: %v", err)
+	}
+	if err := db.QueryRow(`SELECT authorization_version FROM system.principals WHERE id = $1`, principalID).Scan(&authorizationVersionAfter); err != nil {
+		t.Fatalf("read DuckDB authorization version after migration 136: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT count(*),
+		       count(*) FILTER (WHERE permission.permission_key = 'system.execution_authorization.execute')
+		FROM system.role_permissions AS role_permission
+		JOIN system.roles AS role ON role.id = role_permission.role_id
+		JOIN system.permissions AS permission ON permission.id = role_permission.permission_id
+		WHERE role.tenant_id IS NULL AND role.role_key = 'tenant.duckdb_runtime'
+	`).Scan(&totalPermissionCount, &executionPermissionCount); err != nil {
+		t.Fatalf("read DuckDB runtime permissions after migration 136: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT count(*)
+		FROM system.roles
+		WHERE tenant_id IS NULL
+		  AND role_key = 'tenant.duckdb_runtime'
+		  AND name_i18n_key = 'roles.tenant.duckdb_runtime.name'
+		  AND description_i18n_key = 'roles.tenant.duckdb_runtime.description'
+		  AND role_type = 'tenant_builtin'
+		  AND allowed_scope_types = ARRAY['tenant']::text[]
+		  AND allowed_principal_types = ARRAY['service_principal']::text[]
+		  AND immutable
+		  AND status = 'active'
+	`).Scan(&roleDefinitionCount); err != nil {
+		t.Fatalf("read DuckDB runtime role definition after migration 136: %v", err)
+	}
+	if version != 136 || dirty || totalPermissionCount != 1 || executionPermissionCount != 1 || roleDefinitionCount != 1 || authorizationVersionAfter <= authorizationVersionBefore {
+		t.Fatalf(
+			"migration 136 state=(%d,%t) permissions=%d execution=%d role=%d authorization_version=%d->%d",
+			version, dirty, totalPermissionCount, executionPermissionCount, roleDefinitionCount, authorizationVersionBefore, authorizationVersionAfter,
+		)
+	}
+}
+
 func TestExecutionAuthorizationTenantCustomizationForwardMigrationAgainstPostgres(t *testing.T) {
 	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
 	if dsn == "" {
@@ -3251,7 +3363,7 @@ func assertDuckDBRuntimeConstraints(t *testing.T, db *sql.DB) {
 		JOIN system.roles role ON role.id = role_permission.role_id
 		JOIN system.permissions permission ON permission.id = role_permission.permission_id
 		WHERE role.tenant_id IS NULL AND role.role_key = 'tenant.duckdb_runtime'
-		  AND permission.permission_key IN ('system.execution_authorization.execute', 'meta.catalog.read')
+		  AND permission.permission_key = 'system.execution_authorization.execute'
 	`).Scan(&rolePermissionCount); err != nil {
 		t.Fatalf("count DuckDB runtime permissions: %v", err)
 	}
@@ -3275,7 +3387,7 @@ func assertDuckDBRuntimeConstraints(t *testing.T, db *sql.DB) {
 	`).Scan(&sourceConstraintCount); err != nil {
 		t.Fatalf("count execution authorization source constraint: %v", err)
 	}
-	if roleCount != 1 || rolePermissionCount != 2 || principalCount != 1 || clientCount != 1 || sourceConstraintCount != 1 {
+	if roleCount != 1 || rolePermissionCount != 1 || principalCount != 1 || clientCount != 1 || sourceConstraintCount != 1 {
 		t.Fatalf(
 			"DuckDB runtime catalog role=%d permissions=%d principal=%d client=%d source_constraint=%d",
 			roleCount, rolePermissionCount, principalCount, clientCount, sourceConstraintCount,

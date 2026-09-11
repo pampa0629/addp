@@ -16,5 +16,9 @@ other = "Deleted successfully"
 other = "The protection projection cursor is invalid, regressing, or not issued for this consumer"
 [security.enrollment.no_supported_findings_release_unavailable]
 other = "The latest successful discovery no longer meets the zero-finding confirmation conditions. Refresh or rediscover and try again"
+[security.enrollment.discovery_execution_in_progress]
+other = "A sensitive discovery execution is already pending or running for this resource. Try again after it completes"
+[security.enrollment.already_active]
+other = "This resource already has an active protection enrollment lifecycle"
 [security.access_request.expired]
 other = "The plaintext access request has expired. Ask the requester to submit a new request"

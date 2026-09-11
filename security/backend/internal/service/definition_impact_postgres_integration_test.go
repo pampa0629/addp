@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	commonapi "github.com/addp/common/api"
 	"github.com/addp/common/dataprotection"
 	commonmodels "github.com/addp/common/models"
 	"github.com/addp/common/resourcetree"
@@ -45,9 +44,12 @@ func TestEnrollmentLifecycleAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	releasedAt := time.Now().UTC()
+	releaseRequestedAt := releasedAt.Add(-5 * time.Minute)
 	if err := tx.Model(&models.ProtectionEnrollment{}).Where("tenant_id = ? AND id = ?", 7, created.ID).Updates(map[string]any{
 		"state": models.EnrollmentStateReleased, "release_basis": models.ReleaseBasisManual,
-		"release_reason": "postgres lifecycle test", "released_at": time.Now().UTC(),
+		"release_reason": "postgres lifecycle test", "release_requested_by": 17,
+		"release_requested_at": releaseRequestedAt, "released_at": releasedAt,
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -55,18 +57,29 @@ func TestEnrollmentLifecycleAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reenrolled, err := service.ReEnroll(context.Background(), 7, 21, source.ID, models.ReEnrollProtectionEnrollmentRequest{Version: source.Version})
+	result, err := service.ReEnroll(context.Background(), 7, 21, source.ID, models.ReEnrollProtectionEnrollmentRequest{Version: source.Version})
 	if err != nil {
 		t.Fatal(err)
 	}
+	reenrolled := result.Enrollment
 	if reenrolled.ID == source.ID || reenrolled.State != models.EnrollmentStateActivating || reenrolled.Target != source.Target {
 		t.Fatalf("postgres re-enrollment = %#v", reenrolled)
 	}
-	if _, err := service.ReEnroll(context.Background(), 7, 21, source.ID, models.ReEnrollProtectionEnrollmentRequest{Version: source.Version}); !errors.Is(err, commonapi.ErrConflict) {
+	if result.SourceEnrollmentVersion != source.Version+1 {
+		t.Fatalf("postgres source enrollment version = %d", result.SourceEnrollmentVersion)
+	}
+	if _, err := service.ReEnroll(context.Background(), 7, 21, source.ID, models.ReEnrollProtectionEnrollmentRequest{Version: source.Version}); !errors.Is(err, repository.ErrVersionConflict) {
+		t.Fatalf("postgres stale duplicate lifecycle error = %v", err)
+	}
+	latestSource, err := service.Get(context.Background(), 7, source.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.ReEnroll(context.Background(), 7, 21, source.ID, models.ReEnrollProtectionEnrollmentRequest{Version: latestSource.Version}); !errors.Is(err, ErrLiveEnrollmentAlreadyExists) {
 		t.Fatalf("postgres duplicate active lifecycle error = %v", err)
 	}
 	unchanged, err := service.Get(context.Background(), 7, source.ID)
-	if err != nil || unchanged.State != models.EnrollmentStateReleased || unchanged.ReleaseReason != "postgres lifecycle test" {
+	if err != nil || unchanged.State != models.EnrollmentStateReleased || unchanged.Version != source.Version+1 || unchanged.ReleaseBasis != models.ReleaseBasisManual || unchanged.ReleaseReason != "postgres lifecycle test" || unchanged.ReleaseRequestedBy == nil || *unchanged.ReleaseRequestedBy != 17 || unchanged.ReleaseRequestedAt == nil || !unchanged.ReleaseRequestedAt.Equal(releaseRequestedAt) || unchanged.ReleasedAt == nil || !unchanged.ReleasedAt.Equal(releasedAt) {
 		t.Fatalf("postgres released audit = %#v, err=%v", unchanged, err)
 	}
 }

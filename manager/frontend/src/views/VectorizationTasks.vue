@@ -176,7 +176,11 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="model" :label="t('manager.vectorization.model')" min-width="150" show-overflow-tooltip />
+            <el-table-column :label="t('manager.vectorization.model')" min-width="220" show-overflow-tooltip>
+              <template #default="{ row }">
+                {{ modelLabel(row.model_profile_id) }}
+              </template>
+            </el-table-column>
             <el-table-column prop="dimension" :label="t('manager.vectorization.dimension')" width="110" />
             <el-table-column :label="t('manager.vectorization.vectorizedAt')" width="180">
               <template #default="{ row }">
@@ -327,7 +331,7 @@
           {{ targetResourcePath(selectedTask) }}
         </el-descriptions-item>
         <el-descriptions-item :label="t('manager.vectorization.modelProfile')">
-          {{ selectedTask.config?.embedding?.model_profile_id || '-' }}
+          {{ modelLabel(selectedTask.config?.embedding?.model_profile_id) }}
         </el-descriptions-item>
         <el-descriptions-item :label="t('manager.vectorization.profileVersion')">
           {{ selectedTask.config?.embedding?.profile_version || '-' }}
@@ -373,10 +377,14 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { openMonitorExecution, parseLocatorSafe, ResourceTreePicker, ScheduleConfig, ScheduleDisplay } from '@addp/common-frontend'
 import client from '../api/client'
+import { listInferenceDeployments, listInferenceProfiles } from '../api/embeddingConfiguration'
 import { formatDateTime } from '../utils/formatters'
+import { normalizeEngineCatalog, resolveEngineName } from '../utils/enginePresentation'
 import {
   DEFAULT_VECTOR_MAX_FILE_SIZE_MB,
   SUPPORTED_VECTOR_EXTENSIONS,
+  buildEmbeddingModelLabels,
+  embeddingModelLabel,
   isVectorizableObjectNode,
   isVectorizableRangeNode
 } from '../utils/vectorization'
@@ -414,6 +422,8 @@ const engineOptions = ref([])
 const resultNodeDialogVisible = ref(false)
 const resultResourceSelection = ref(null)
 const selectedResultNode = ref(null)
+const inferenceProfiles = ref([])
+const inferenceDeployments = ref([])
 
 const tasks = ref([])
 const tasksLoading = ref(false)
@@ -434,6 +444,7 @@ const selectedTask = ref(null)
 const embeddingStatuses = ['ready', 'outdated', 'failed', 'unsupported', 'missing_source']
 const storageEngineTypes = new Set(['minio', 's3', 'nfs', 'nas'])
 const supportedExtensions = SUPPORTED_VECTOR_EXTENSIONS
+const embeddingModelLabels = computed(() => buildEmbeddingModelLabels(inferenceProfiles.value, inferenceDeployments.value))
 
 const formTitle = computed(() => editingId.value ? t('manager.vectorization.editTitle') : t('manager.vectorization.createTitle'))
 const resultNodeFilterLabel = computed(() => {
@@ -786,9 +797,26 @@ const loadStorageEngines = async (force = false) => {
     return engineOptions.value
   }
   const response = await client.get('/manager/engines')
-  engineOptions.value = (response.data || []).filter((engine) => storageEngineTypes.has(String(engine.engine_type || '').toLowerCase()))
+  engineOptions.value = normalizeEngineCatalog(response).filter((engine) => storageEngineTypes.has(String(engine.engine_type || '').toLowerCase()))
   return engineOptions.value
 }
+
+const loadInferenceModelCatalog = async () => {
+  try {
+    const [profilePage, deploymentPage] = await Promise.all([
+      listInferenceProfiles(),
+      listInferenceDeployments()
+    ])
+    inferenceProfiles.value = profilePage.data || []
+    inferenceDeployments.value = deploymentPage.data || []
+  } catch (error) {
+    console.error('加载向量模型目录失败:', error)
+    inferenceProfiles.value = []
+    inferenceDeployments.value = []
+  }
+}
+
+const modelLabel = (modelProfileID) => embeddingModelLabel(modelProfileID, embeddingModelLabels.value)
 
 const openResultNodeDialog = async () => {
   resultResourceSelection.value = null
@@ -905,8 +933,7 @@ const targetResourcePath = (task) => {
 }
 
 const engineName = (engineID) => {
-  const engine = engineOptions.value.find((item) => Number(item.id) === Number(engineID))
-  return engine?.name || (engineID ? t('manager.vectorization.engineWithId', { id: engineID }) : '-')
+  return resolveEngineName(engineOptions.value, engineID) || (engineID ? t('manager.quickViewDisplay.unknownEngine') : '-')
 }
 
 const resultResourcePath = (result) => {
@@ -1081,7 +1108,7 @@ watch(() => route.query, restoreWorkspaceFromRoute)
 
 onMounted(async () => {
   await restoreWorkspaceFromRoute()
-  await loadStorageEngines()
+  await Promise.all([loadStorageEngines(), loadInferenceModelCatalog()])
   await loadTasks()
   await loadResults()
   routeDataReady = true

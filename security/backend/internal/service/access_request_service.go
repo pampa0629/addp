@@ -294,15 +294,41 @@ func (s *AccessRequestService) ListReviewQueue(ctx context.Context, tenantID, re
 		return nil, err
 	}
 	for index := range result.Data {
-		row := &result.Data[index]
-		if filter.Scope == models.ProtectionAccessRequestReviewScopePending && row.SubjectType == "user" && row.SubjectID == userIDString(reviewerID) {
-			row.CanDecide = false
-			row.DecisionUnavailableReason = models.ProtectionAccessRequestDecisionUnavailableSelfApproval
-		} else if filter.Scope == models.ProtectionAccessRequestReviewScopePending {
-			row.CanDecide = true
+		if filter.Scope == models.ProtectionAccessRequestReviewScopePending {
+			applyAccessRequestReviewAvailability(&result.Data[index], reviewerID)
 		}
 	}
 	return result, nil
+}
+
+func (s *AccessRequestService) GetForReview(ctx context.Context, tenantID, reviewerID int64, requestID string) (*models.ProtectionAccessRequestResponse, error) {
+	requestID = strings.TrimSpace(requestID)
+	if tenantID <= 0 || reviewerID <= 0 || uuid.Validate(requestID) != nil {
+		return nil, commonapi.ErrBadRequest
+	}
+	now := s.now().UTC()
+	var row models.ProtectionAccessRequest
+	if err := s.db.WithContext(ctx).Where("tenant_id = ? AND id = ?", tenantID, requestID).First(&row).Error; err != nil {
+		return nil, policyDBError(err)
+	}
+	row = effectiveAccessRequest(row, now)
+	response, err := s.loadResponse(s.db.WithContext(ctx), row, now)
+	if err != nil {
+		return nil, err
+	}
+	applyAccessRequestReviewAvailability(response, reviewerID)
+	return response, nil
+}
+
+func applyAccessRequestReviewAvailability(row *models.ProtectionAccessRequestResponse, reviewerID int64) {
+	if row == nil || row.State != models.ProtectionAccessRequestStatePending {
+		return
+	}
+	if row.SubjectType == "user" && row.SubjectID == userIDString(reviewerID) {
+		row.DecisionUnavailableReason = models.ProtectionAccessRequestDecisionUnavailableSelfApproval
+		return
+	}
+	row.CanDecide = true
 }
 
 func validAccessRequestAuthorizationState(state string) bool {

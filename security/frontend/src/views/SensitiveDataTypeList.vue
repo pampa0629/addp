@@ -92,10 +92,10 @@
               <el-input :model-value="t('security.options.algorithms.keepPrefixSuffix')" disabled />
             </el-form-item>
             <div class="form-grid">
-              <el-form-item :label="t('security.fields.keep_prefix')">
+              <el-form-item :label="t('security.fields.keep_prefix')" required>
                 <el-input-number v-model="form.default_keep_prefix" :min="0" controls-position="right" />
               </el-form-item>
-              <el-form-item :label="t('security.fields.keep_suffix')">
+              <el-form-item :label="t('security.fields.keep_suffix')" required>
                 <el-input-number v-model="form.default_keep_suffix" :min="0" controls-position="right" />
               </el-form-item>
             </div>
@@ -147,7 +147,7 @@ import { classificationAPI, detectorAPI, gradeAPI, protectionBaselineAPI, sensit
 import { useAuthStore } from '../store/auth'
 import DetectorBindings from './DetectorBindings.vue'
 import ProtectionBaselineBindings from './ProtectionBaselineBindings.vue'
-import { protectionEffectI18nKey } from '../utils/foundationForm.mjs'
+import { isNonNegativeIntegerValue, protectionEffectI18nKey } from '../utils/foundationForm.mjs'
 
 const { t } = useI18n()
 const auth = useAuthStore()
@@ -264,6 +264,16 @@ async function save() {
   if (!form.code.trim() || !form.name.trim() || !form.security_classification_id || !form.default_security_grade_id) {
     ElMessage.warning(t('security.sensitiveType.required'))
     return
+  }
+  if (!editing.value && form.default_effect === 'mask') {
+    const missingMaskField = [
+      ['keep_prefix', form.default_keep_prefix],
+      ['keep_suffix', form.default_keep_suffix]
+    ].find(([, value]) => !isNonNegativeIntegerValue(value))
+    if (missingMaskField) {
+      ElMessage.warning(t('security.common.requiredField', { name: t(`security.fields.${missingMaskField[0]}`) }))
+      return
+    }
   }
   saving.value = true
   try {

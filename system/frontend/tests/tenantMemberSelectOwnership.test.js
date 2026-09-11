@@ -9,7 +9,7 @@ describe('tenant member selector ownership', () => {
   it('keeps user assignment and service-account assignment on distinct page entries', () => {
     const roleAssignments = source('../src/components/iam/TenantRoleAssignmentsPanel.vue')
     const audit = source('../src/components/iam/AuditPanel.vue')
-    const serviceAccounts = source('../src/components/iam/TenantServiceAccountsPanel.vue')
+    const serviceAccounts = source('../src/components/iam/ServicePrincipalAccountsPanel.vue')
     const selector = source('../src/components/iam/TenantMemberSelect.vue')
 
     expect(roleAssignments).toContain('<TenantMemberSelect')

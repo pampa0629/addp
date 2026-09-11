@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildFoundationPayload, initialFoundationFieldValue, protectionEffectI18nKey, sortFoundationRows } from '../src/utils/foundationForm.mjs'
+import { buildFoundationPayload, initialFoundationFieldValue, isNonNegativeIntegerValue, protectionEffectI18nKey, sortFoundationRows } from '../src/utils/foundationForm.mjs'
 
 describe('Security foundation form payload', () => {
   it('keeps an optional parent relation absent instead of serializing ID zero', () => {
@@ -42,5 +42,16 @@ describe('Security foundation form payload', () => {
     expect(protectionEffectI18nKey(undefined)).toBeNull()
     expect(protectionEffectI18nKey('unknown')).toBeNull()
     expect(protectionEffectI18nKey('mask')).toBe('security.options.effects.mask')
+  })
+
+  it('requires explicit non-negative integer values for masking boundaries', () => {
+    expect(isNonNegativeIntegerValue(0)).toBe(true)
+    expect(isNonNegativeIntegerValue('3')).toBe(true)
+    expect(isNonNegativeIntegerValue(null)).toBe(false)
+    expect(isNonNegativeIntegerValue(undefined)).toBe(false)
+    expect(isNonNegativeIntegerValue('')).toBe(false)
+    expect(isNonNegativeIntegerValue(Number.NaN)).toBe(false)
+    expect(isNonNegativeIntegerValue(-1)).toBe(false)
+    expect(isNonNegativeIntegerValue(1.5)).toBe(false)
   })
 })

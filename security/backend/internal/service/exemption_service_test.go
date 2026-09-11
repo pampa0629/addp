@@ -102,6 +102,20 @@ func TestProtectionAccessRequestApprovalPublishesSubjectScopedAuthorization(t *t
 	if reviewerQueue.Total != 1 || len(reviewerQueue.Data) != 1 || reviewerQueue.Data[0].ID != created.ID || !reviewerQueue.Data[0].CanDecide || reviewerQueue.Data[0].DecisionUnavailableReason != "" {
 		t.Fatalf("reviewer queue = %#v", reviewerQueue)
 	}
+	reviewerDetail, err := requests.GetForReview(context.Background(), 7, 42, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reviewerDetail.ID != created.ID || !reviewerDetail.CanDecide || reviewerDetail.DecisionUnavailableReason != "" {
+		t.Fatalf("reviewer detail = %#v", reviewerDetail)
+	}
+	selfDetail, err := requests.GetForReview(context.Background(), 7, 41, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selfDetail.CanDecide || selfDetail.DecisionUnavailableReason != models.ProtectionAccessRequestDecisionUnavailableSelfApproval {
+		t.Fatalf("requester detail = %#v", selfDetail)
+	}
 	if _, err := requests.Decide(context.Background(), 7, 41, created.ID, models.DecideProtectionAccessRequest{
 		Version: created.Version, Decision: "approve", ExpiresAt: now.Add(time.Hour), Rationale: "本人审批",
 	}); !errors.Is(err, commonapi.ErrConflict) {
@@ -115,6 +129,13 @@ func TestProtectionAccessRequestApprovalPublishesSubjectScopedAuthorization(t *t
 	}
 	if approved.State != models.ProtectionAccessRequestStateApproved || approved.EnrollmentID != reviewed.Assessment.EnrollmentID || approved.ExemptionID == "" || approved.AuthorizationState != models.ProtectionExemptionStateActive || approved.AuthorizedUntil == nil || !approved.AuthorizedUntil.Equal(now.Add(time.Hour)) {
 		t.Fatalf("approved request = %#v", approved)
+	}
+	approvedDetail, err := requests.GetForReview(context.Background(), 7, 42, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if approvedDetail.State != models.ProtectionAccessRequestStateApproved || approvedDetail.CanDecide || approvedDetail.Reviewer == nil || approvedDetail.Reviewer.ID != "42" {
+		t.Fatalf("approved detail = %#v", approvedDetail)
 	}
 	pendingAfterApproval, err := requests.ListReviewQueue(context.Background(), 7, 42, reviewAccessRequestFilter(models.ProtectionAccessRequestReviewScopePending), 1, 20)
 	if err != nil {

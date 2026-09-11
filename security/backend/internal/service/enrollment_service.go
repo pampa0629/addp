@@ -26,6 +26,8 @@ import (
 var (
 	ErrProjectionCursorConflict              = errors.New("protection projection cursor conflict")
 	ErrNoSupportedFindingsReleaseUnavailable = errors.New("no-supported-findings release unavailable")
+	ErrDiscoveryExecutionInProgress          = errors.New("protection discovery execution in progress")
+	ErrLiveEnrollmentAlreadyExists           = errors.New("live protection enrollment already exists")
 )
 
 type EnrollmentService struct {
@@ -66,7 +68,7 @@ func (s *EnrollmentService) Create(ctx context.Context, tenantID, userID int64, 
 	return s.Get(ctx, tenantID, enrollment.ID)
 }
 
-func (s *EnrollmentService) ReEnroll(ctx context.Context, tenantID, userID int64, id string, request models.ReEnrollProtectionEnrollmentRequest) (*models.ProtectionEnrollmentResponse, error) {
+func (s *EnrollmentService) ReEnroll(ctx context.Context, tenantID, userID int64, id string, request models.ReEnrollProtectionEnrollmentRequest) (*models.ReEnrollProtectionEnrollmentResponse, error) {
 	if tenantID <= 0 || userID <= 0 || uuid.Validate(id) != nil || request.Version <= 0 {
 		return nil, commonapi.ErrBadRequest
 	}
@@ -90,14 +92,45 @@ func (s *EnrollmentService) ReEnroll(ctx context.Context, tenantID, userID int64
 		if source.State != models.EnrollmentStateReleased {
 			return commonapi.ErrConflict
 		}
+		var liveCount int64
+		if err := tx.Model(&models.ProtectionEnrollment{}).
+			Where("tenant_id = ? AND target_owner = ? AND target_type = ? AND target_identity = ? AND state <> ?", tenantID, source.TargetOwner, source.TargetType, source.TargetIdentity, models.EnrollmentStateReleased).
+			Count(&liveCount).Error; err != nil {
+			return err
+		}
+		if liveCount != 0 {
+			return ErrLiveEnrollmentAlreadyExists
+		}
 		var createErr error
 		created, createErr = createProtectionEnrollment(tx, tenantID, userID, source.Target(), source.TargetSnapshot(), now)
-		return createErr
+		if errors.Is(createErr, commonapi.ErrConflict) {
+			return ErrLiveEnrollmentAlreadyExists
+		}
+		if createErr != nil {
+			return createErr
+		}
+		update := tx.Model(&source).Where("tenant_id = ? AND id = ? AND version = ?", tenantID, source.ID, request.Version).Updates(map[string]any{
+			"version": gorm.Expr("version + 1"), "updated_at": now,
+		})
+		if update.Error != nil {
+			return update.Error
+		}
+		if update.RowsAffected != 1 {
+			return repository.ErrVersionConflict
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	return s.Get(ctx, tenantID, created.ID)
+	enrollment, err := s.Get(ctx, tenantID, created.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &models.ReEnrollProtectionEnrollmentResponse{
+		SourceEnrollmentVersion: request.Version + 1,
+		Enrollment:              *enrollment,
+	}, nil
 }
 
 func createProtectionEnrollment(tx *gorm.DB, tenantID, userID int64, target dataprotection.ResourceReference, snapshot models.ProtectionTargetSnapshot, now time.Time) (models.ProtectionEnrollment, error) {
@@ -341,7 +374,7 @@ func (s *EnrollmentService) CreateDiscoveryExecution(ctx context.Context, tenant
 			return err
 		}
 		if active != 0 {
-			return commonapi.ErrConflict
+			return ErrDiscoveryExecutionInProgress
 		}
 		now := s.now().UTC()
 		execution := newDiscoveryExecution(enrollment, int(userID), commonexecution.TriggerTypeManual, now)
@@ -357,7 +390,10 @@ func (s *EnrollmentService) CreateDiscoveryExecution(ctx context.Context, tenant
 		if update.RowsAffected != 1 {
 			return repository.ErrVersionConflict
 		}
-		response = &models.ProtectionDiscoveryExecutionResponse{ExecutionID: execution.ExecutionID, EnrollmentID: enrollment.ID, Status: execution.Status, CreatedAt: execution.CreatedAt}
+		response = &models.ProtectionDiscoveryExecutionResponse{
+			ExecutionID: execution.ExecutionID, EnrollmentID: enrollment.ID,
+			EnrollmentVersion: request.Version + 1, Status: execution.Status, CreatedAt: execution.CreatedAt,
+		}
 		return nil
 	})
 	return response, err

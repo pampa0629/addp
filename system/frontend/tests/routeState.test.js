@@ -16,6 +16,19 @@ describe('System recoverable route state', () => {
     })
   })
 
+  it('removes the retired mixed machine-identity tab instead of keeping a compatibility route', () => {
+    expect(resolveIAMCategoryRouteState([
+      'api-consumers',
+      'oauth-clients',
+      'tenant-service-accounts',
+      'platform-runtime-accounts'
+    ], { tab: 'service-accounts' })).toEqual({
+      activeTab: 'api-consumers',
+      query: {},
+      changed: true
+    })
+  })
+
   it('keeps only canonical audit filters and omits page one', () => {
     expect(resolveIAMCategoryRouteState(['security-policy', 'audit'], {
       tab: 'audit',

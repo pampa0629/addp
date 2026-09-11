@@ -121,16 +121,18 @@
         "document_id": "abc123",
         "file_name": "城市数据.csv",
         "engine_name": "业务数据库",
-        "score": 0.95,
+        "score": 0.5,
+        "match_methods": ["keyword"],
         "highlights": {
           "content": ["包含<mark>城市</mark>相关信息"]
         }
       }
-    ],
-    "vector_hits": [...]
+    ]
   }
 }
 ```
+
+`results` 是全文与向量候选经去重、RRF 融合排序和统一分页后的唯一结果集。`score` 是取值范围为 `[0, 1]` 的归一化融合分；同一结果的 `match_methods` 同时包含 `keyword` 和 `vector` 时表示混合命中。
 
 **副作用**：自动创建或更新搜索历史记录
 

@@ -454,6 +454,7 @@
                         "BearerAuth": []
                     }
                 ],
+                "description": "通过 Deployment 对应适配器执行最小真实请求，验证端点、凭据与上游模型 | Perform a minimal real request through the deployment adapter to verify the endpoint, credential, and upstream model",
                 "produces": [
                     "application/json"
                 ],
