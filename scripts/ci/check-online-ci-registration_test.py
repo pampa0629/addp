@@ -128,6 +128,18 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             profiles["hosted-suite"], "github-hosted-linux-x86_64"
         )
 
+    def test_discovers_owner_managed_profile_from_metadata(self) -> None:
+        owner_managed = self.repository / "scripts/test/online-owner-managed-example-gate.sh"
+        owner_managed.write_text(
+            "# ADDP_ONLINE_SUITES=licensed-suite\n"
+            "# ADDP_ONLINE_RUNNER=owner-managed-linux-x86_64\n",
+            encoding="utf-8",
+        )
+
+        profiles = CHECK.load_deployment_profiles(self.repository)
+
+        self.assertEqual(profiles["licensed-suite"], "owner-managed-linux-x86_64")
+
     def test_rejects_hosted_profile_without_runner_metadata(self) -> None:
         hosted = self.repository / "scripts/test/online-hosted-example-gate.sh"
         hosted.write_text(

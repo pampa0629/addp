@@ -231,7 +231,7 @@ const canFormalizeCandidate = candidate => {
   return authStore.hasPermission(buildStandardPermission(candidate.candidate_type, action))
 }
 const canDecideSingleCandidate = (family, group) => family.total_variant_count === 1 && group.state === 'pending'
-const canDecideCandidateFamily = family => family.variant_count >= 2 && family.variant_count === family.total_variant_count && !family.variants.some(group => group.state === 'formalized')
+const canDecideCandidateFamily = family => family.variant_count >= 2 && family.variant_count === family.total_variant_count && /^[0-9a-f]{64}$/.test(family.snapshot_token || '') && !family.variants.some(group => group.state === 'formalized')
 const comparisonFieldLabel = field => field ? t(`standard.document.comparisonField.${field}`) : ''
 const candidateVariantFieldLabel = field => t(`standard.document.candidateVariantField.${field}`)
 const candidateVariantCardId = (familyKey, semanticFingerprint) => `candidate-variant-${encodeURIComponent(familyKey)}-${encodeURIComponent(semanticFingerprint)}`
@@ -327,7 +327,7 @@ async function decideCandidateFamily(family, winner) {
     decidingCandidateFamily.value = family.family_key
     await documentAPI.decideCandidateFamily(document.value.id, {
       winner_candidate_id: winner.candidate.id,
-      members: family.variants.map(group => ({ candidate_id: group.candidate.id, version: group.candidate.version })),
+      snapshot_token: family.snapshot_token,
       reason: value.trim()
     })
     await loadCandidateFamilies()

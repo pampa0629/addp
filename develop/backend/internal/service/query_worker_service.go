@@ -80,7 +80,8 @@ func (s *QueryWorkerService) executeOrdinary(
 			err = resolveErr
 		} else {
 			authorization, err = s.executor.sqlEngine.IssueFederatedReadExecutionAuthorizationFromExecution(
-				ctx, uint(execution.TenantID), parentExecutionID, executionID, engineIDs, devTask.Timeout,
+				ctx, uint(execution.TenantID), parentExecutionID, executionID, engineIDs,
+				lease.Attempt, lease.Token, devTask.Timeout,
 			)
 		}
 	} else {
@@ -90,7 +91,8 @@ func (s *QueryWorkerService) executeOrdinary(
 			err = fmt.Errorf("Develop query snapshot has no engine or query")
 		} else {
 			authorization, err = s.executor.sqlEngine.IssueSQLExecutionAuthorizationFromExecution(
-				ctx, uint(execution.TenantID), parentExecutionID, executionID, *engineID, queryText, devTask.Timeout,
+				ctx, uint(execution.TenantID), parentExecutionID, executionID, *engineID,
+				lease.Attempt, lease.Token, queryText, devTask.Timeout,
 			)
 		}
 	}

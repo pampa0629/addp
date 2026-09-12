@@ -22,7 +22,7 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-const hostedDatabase = "addp_online"
+const onlineDatabase = "addp_online"
 
 const engineProvisionerRoleKey = "tenant.infrastructure_administrator"
 
@@ -47,7 +47,7 @@ var consumerPermissions = []string{
 
 func main() {
 	if err := run(os.Args[1:], os.Environ()); err != nil {
-		fmt.Fprintf(os.Stderr, "Hosted Online identity fixture failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "External Online identity fixture failed: %v\n", err)
 		os.Exit(1)
 	}
 }
@@ -62,14 +62,14 @@ func run(args []string, environment []string) error {
 	if flags.NArg() != 0 || strings.TrimSpace(*output) == "" {
 		return errors.New("usage: online-test-fixture --output <absolute-path>")
 	}
-	if err := validateHostedEnvironment(environment, *output); err != nil {
+	if err := validateExternalEnvironment(environment, *output); err != nil {
 		return err
 	}
 
 	commonconfig.LoadEnv()
 	cfg := config.Load()
-	if cfg.PostgresDB != hostedDatabase {
-		return fmt.Errorf("POSTGRES_DB must be exactly %s", hostedDatabase)
+	if cfg.PostgresDB != onlineDatabase {
+		return fmt.Errorf("POSTGRES_DB must be exactly %s", onlineDatabase)
 	}
 	db, err := gorm.Open(postgres.Open(cfg.PostgreSQLDSN()), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
@@ -81,8 +81,8 @@ func run(args []string, environment []string) error {
 	if err := db.Raw("SELECT current_database()").Scan(&database).Error; err != nil {
 		return fmt.Errorf("resolve current database: %w", err)
 	}
-	if database != hostedDatabase {
-		return fmt.Errorf("connected database must be exactly %s", hostedDatabase)
+	if database != onlineDatabase {
+		return fmt.Errorf("connected database must be exactly %s", onlineDatabase)
 	}
 	if err := iamcli.RequireCurrentMigration(db); err != nil {
 		return err
@@ -92,7 +92,7 @@ func run(args []string, environment []string) error {
 		return fmt.Errorf("inspect disposable user principals: %w", err)
 	}
 	if users != 0 {
-		return errors.New("disposable Hosted Online database already contains User principals")
+		return errors.New("disposable External Online database already contains User principals")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
@@ -115,37 +115,37 @@ func run(args []string, environment []string) error {
 		return err
 	}
 
-	reserve, err := createUser(ctx, identity, "hosted-online-reserve")
+	reserve, err := createUser(ctx, identity, "external-online-reserve")
 	if err != nil {
 		return err
 	}
 	if _, err := tenantService.Create(ctx, iam.CreateTenantInput{
-		Code: "hosted-online-reserve", Name: "Hosted Online Reserve",
+		Code: "external-online-reserve", Name: "External Online Reserve",
 		InitialAdministratorPrincipalID: reserve.PrincipalID,
 		ActorPrincipalID:                reserve.PrincipalID,
-		Audit:                           audit("hosted-online-reserve-tenant"),
+		Audit:                           audit("external-online-reserve-tenant"),
 	}); err != nil {
 		return fmt.Errorf("create reserve tenant: %w", err)
 	}
 
-	administrator, err := createUser(ctx, identity, "hosted-online-administrator")
+	administrator, err := createUser(ctx, identity, "external-online-administrator")
 	if err != nil {
 		return err
 	}
 	tenant, err := tenantService.Create(ctx, iam.CreateTenantInput{
-		Code: "hosted-online", Name: "Hosted Online",
+		Code: "external-online", Name: "External Online",
 		InitialAdministratorPrincipalID: administrator.PrincipalID,
 		ActorPrincipalID:                administrator.PrincipalID,
-		Audit:                           audit("hosted-online-tenant"),
+		Audit:                           audit("external-online-tenant"),
 	})
 	if err != nil {
-		return fmt.Errorf("create Hosted Online tenant: %w", err)
+		return fmt.Errorf("create External Online tenant: %w", err)
 	}
 	if tenant.ID <= 1 {
-		return errors.New("Hosted Online tenant must not use the default Tenant ID")
+		return errors.New("External Online tenant must not use the default Tenant ID")
 	}
 
-	consumer, err := createUser(ctx, identity, "hosted-online-consumer")
+	consumer, err := createUser(ctx, identity, "external-online-consumer")
 	if err != nil {
 		return err
 	}
@@ -153,31 +153,31 @@ func run(args []string, environment []string) error {
 		TenantID: tenant.ID, PrincipalID: consumer.PrincipalID,
 		SourceType:           iam.TenantMembershipSourceManual,
 		CreatedByPrincipalID: &administrator.PrincipalID,
-		Audit:                audit("hosted-online-consumer-membership"),
+		Audit:                audit("external-online-consumer-membership"),
 	})
 	if err != nil {
 		return fmt.Errorf("establish consumer membership: %w", err)
 	}
 	role, err := roleService.CreateRole(ctx, iam.CreateTenantRoleInput{
 		TenantID: tenant.ID, RoleKey: "online.relational_consumer",
-		Name: "Online relational consumer", Description: "Ephemeral Hosted T4 minimum permissions",
+		Name: "Online relational consumer", Description: "Ephemeral external T4 minimum permissions",
 		ScopeTypes: []string{"tenant"}, PermissionKeys: consumerPermissions,
 		ActorPrincipalID: administrator.PrincipalID,
-		Audit:            audit("hosted-online-consumer-role"),
+		Audit:            audit("external-online-consumer-role"),
 	})
 	if err != nil {
 		return fmt.Errorf("create consumer role: %w", err)
 	}
 	if _, err := roleService.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{
 		TenantID: tenant.ID, MembershipID: membership.Membership.ID,
-		RoleIDs: []int64{role.ID}, ScopeType: "tenant", Reason: "Hosted T4 acceptance",
+		RoleIDs: []int64{role.ID}, ScopeType: "tenant", Reason: "External T4 acceptance",
 		ActorPrincipalID: administrator.PrincipalID,
-		Audit:            audit("hosted-online-consumer-assignment"),
+		Audit:            audit("external-online-consumer-assignment"),
 	}); err != nil {
 		return fmt.Errorf("assign consumer role: %w", err)
 	}
 
-	provisioner, err := createUser(ctx, identity, "hosted-online-engine-provisioner")
+	provisioner, err := createUser(ctx, identity, "external-online-engine-provisioner")
 	if err != nil {
 		return err
 	}
@@ -185,7 +185,7 @@ func run(args []string, environment []string) error {
 		TenantID: tenant.ID, PrincipalID: provisioner.PrincipalID,
 		SourceType:           iam.TenantMembershipSourceManual,
 		CreatedByPrincipalID: &administrator.PrincipalID,
-		Audit:                audit("hosted-online-engine-provisioner-membership"),
+		Audit:                audit("external-online-engine-provisioner-membership"),
 	})
 	if err != nil {
 		return fmt.Errorf("establish engine provisioner membership: %w", err)
@@ -196,17 +196,17 @@ func run(args []string, environment []string) error {
 	}
 	if _, err := roleService.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{
 		TenantID: tenant.ID, MembershipID: provisionerMembership.Membership.ID,
-		RoleIDs: []int64{provisionerRole.ID}, ScopeType: "tenant", Reason: "Hosted T4 Engine registration",
+		RoleIDs: []int64{provisionerRole.ID}, ScopeType: "tenant", Reason: "External T4 Engine registration",
 		ActorPrincipalID: administrator.PrincipalID,
-		Audit:            audit("hosted-online-engine-provisioner-assignment"),
+		Audit:            audit("external-online-engine-provisioner-assignment"),
 	}); err != nil {
 		return fmt.Errorf("assign engine provisioner role: %w", err)
 	}
-	provisionerSession, err := issueSession(ctx, selectionService, provisioner.PrincipalID, "hosted-online-engine-provisioner-session")
+	provisionerSession, err := issueSession(ctx, selectionService, provisioner.PrincipalID, "external-online-engine-provisioner-session")
 	if err != nil {
 		return err
 	}
-	consumerSession, err := issueSession(ctx, selectionService, consumer.PrincipalID, "hosted-online-consumer-session")
+	consumerSession, err := issueSession(ctx, selectionService, consumer.PrincipalID, "external-online-consumer-session")
 	if err != nil {
 		return err
 	}
@@ -218,11 +218,11 @@ func run(args []string, environment []string) error {
 	if err := writeEnvironmentFile(*output, values); err != nil {
 		return err
 	}
-	fmt.Printf("Hosted Online identity fixture created for Tenant %d\n", tenant.ID)
+	fmt.Printf("External Online identity fixture created for Tenant %d\n", tenant.ID)
 	return nil
 }
 
-func validateHostedEnvironment(environment []string, output string) error {
+func validateExternalEnvironment(environment []string, output string) error {
 	values := make(map[string]string, len(environment))
 	for _, entry := range environment {
 		key, value, found := strings.Cut(entry, "=")
@@ -230,8 +230,14 @@ func validateHostedEnvironment(environment []string, output string) error {
 			values[key] = value
 		}
 	}
-	if values["GITHUB_ACTIONS"] != "true" || values["RUNNER_OS"] != "Linux" || values["ADDP_ONLINE_HOSTED"] != "1" {
-		return errors.New("fixture is restricted to a GitHub Hosted Linux Online gate")
+	profileCount := 0
+	for _, key := range []string{"ADDP_ONLINE_HOSTED", "ADDP_ONLINE_OWNER_MANAGED"} {
+		if values[key] == "1" {
+			profileCount++
+		}
+	}
+	if values["GITHUB_ACTIONS"] != "true" || values["RUNNER_OS"] != "Linux" || profileCount != 1 {
+		return errors.New("fixture requires exactly one GitHub Hosted or owner-managed Linux Online profile")
 	}
 	if !filepath.IsAbs(output) {
 		return errors.New("output path must be absolute")
@@ -244,7 +250,7 @@ func createUser(ctx context.Context, service *iam.IdentityService, username stri
 	if _, err := rand.Read(passwordBytes); err != nil {
 		return nil, fmt.Errorf("generate disposable password: %w", err)
 	}
-	password := "Hosted-" + base64.RawURLEncoding.EncodeToString(passwordBytes)
+	password := "External-" + base64.RawURLEncoding.EncodeToString(passwordBytes)
 	created, err := service.CreateLocalUser(ctx, iam.CreateLocalUserInput{
 		Username: username, Password: password, DisplayName: username,
 		Audit: audit(username),

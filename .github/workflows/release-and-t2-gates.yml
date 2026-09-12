@@ -282,6 +282,92 @@ jobs:
           status: ${{ job.status }}
           details-file: ${{ runner.temp }}/addp-opengauss-official-media/release-summary.md
 
+  kingbase-official-media-certification:
+    name: KingbaseES V9R1C10 official media certification (owner-managed Linux x86_64)
+    needs: selection
+    if: github.event_name == 'workflow_dispatch' && needs.selection.outputs.common == 'true'
+    runs-on: [self-hosted, Linux, X64, addp-kingbase]
+    environment: addp-kingbase
+    timeout-minutes: 45
+    env:
+      ADDP_KINGBASE_GATE_ENV_FILE: ${{ vars.ADDP_KINGBASE_GATE_ENV_FILE }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: common/go.mod
+          cache: false
+
+      - name: Run KingbaseES official-media certification
+        env:
+          ADDP_RELEASE_ARTIFACT_DIR: ${{ runner.temp }}/addp-kingbase-official-media
+        run: make test-release RELEASE_SUITE=kingbase-official-media
+
+      - name: Upload KingbaseES certification evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: kingbase-official-media-certification
+          path: ${{ runner.temp }}/addp-kingbase-official-media/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Summarize KingbaseES official-media certification
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: KingbaseES V9R1C10 official media certification (owner-managed Linux x86_64)
+          status: ${{ job.status }}
+          details-file: ${{ runner.temp }}/addp-kingbase-official-media/release-summary.md
+
+  common-kingbase-provider-verification:
+    name: Common KingbaseES Provider T2 (owner-managed Linux x86_64)
+    needs: selection
+    if: github.event_name == 'workflow_dispatch' && needs.selection.outputs.common == 'true'
+    runs-on: [self-hosted, Linux, X64, addp-kingbase]
+    environment: addp-kingbase
+    timeout-minutes: 45
+    env:
+      ADDP_KINGBASE_GATE_ENV_FILE: ${{ vars.ADDP_KINGBASE_GATE_ENV_FILE }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: common/go.mod
+          cache: false
+
+      - name: Run KingbaseES Provider T2
+        env:
+          ADDP_KINGBASE_T2_ARTIFACT_DIR: ${{ runner.temp }}/addp-common-kingbase
+        run: make test-common-kingbase
+
+      - name: Upload KingbaseES Provider evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: common-kingbase-provider-t2
+          path: ${{ runner.temp }}/addp-common-kingbase/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Summarize KingbaseES Provider T2
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Common KingbaseES Provider T2 (owner-managed Linux x86_64)
+          status: ${{ job.status }}
+          details-file: ${{ runner.temp }}/addp-common-kingbase/t2-summary.md
+
   system-iam-postgres-verification:
     name: System IAM verification (PostgreSQL 15)
     needs: selection

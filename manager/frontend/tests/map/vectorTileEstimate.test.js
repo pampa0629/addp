@@ -27,9 +27,10 @@ describe('vectorTileEstimate', () => {
     expect(editorSource).toContain("zoomAboveRecommendation ? 'warning' : 'info'")
   })
 
-  it('uses the single derived-tasks route for vector tile tasks', () => {
-    expect(routerSource).toContain("path: 'derived-tasks'")
-    expect(layoutSource).toContain('index="/derived-tasks"')
+  it('uses the canonical spatial task route inside the shared task workspace', () => {
+    expect(routerSource).toContain("path: 'tasks/spatial'")
+    expect(layoutSource).toContain('index="/tasks/spatial"')
+    expect(routerSource).not.toContain("path: 'derived-tasks'")
     expect(routerSource).not.toContain('spatial-tasks/vector-tiles')
     expect(layoutSource).not.toContain('spatial-tasks/vector-tiles')
   })
@@ -58,7 +59,7 @@ describe('vectorTileEstimate', () => {
   })
 
   it('opens the unified spatial task editor from the data preview action', () => {
-    expect(previewPanelSource).toContain("name: 'DerivedTasks'")
+    expect(previewPanelSource).toContain("name: 'SpatialDataTasks'")
     expect(previewPanelSource).toContain("task_type: 'vector_tile_set_generation'")
     expect(previewPanelSource).toContain("create: '1'")
     expect(derivedTasksSource).toContain('VectorTileSetTaskEditor')

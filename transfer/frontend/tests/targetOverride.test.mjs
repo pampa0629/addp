@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 
 import {
   TARGET_OVERRIDE_POLICY,
+  targetOverrideAfterParentSelection,
   targetOverrideEligible,
   withTargetOverride
 } from '../src/views/TaskWizard/targetOverride.mjs'
@@ -34,4 +35,23 @@ test('target override augments a complete saved default target', () => {
     override_policy: TARGET_OVERRIDE_POLICY
   })
   assert.equal(withTargetOverride(target, false), target)
+})
+
+test('restoring the same target parent preserves existing-table override state', () => {
+  assert.deepEqual(targetOverrideAfterParentSelection({
+    parentChanged: false,
+    existingTarget: true,
+    overrideEnabled: true
+  }), {
+    existingTarget: true,
+    overrideEnabled: true
+  })
+  assert.deepEqual(targetOverrideAfterParentSelection({
+    parentChanged: true,
+    existingTarget: true,
+    overrideEnabled: true
+  }), {
+    existingTarget: false,
+    overrideEnabled: false
+  })
 })

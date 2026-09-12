@@ -71,7 +71,7 @@ Develop TaskProvider 的 canonical 前端路由为：
 | 模块 | 页面或状态 | Canonical 表达 |
 | --- | --- | --- |
 | Manager | 数据资源与预览子视图 | `locator`、`tab` |
-| Manager | 快显与空间任务工作区 | `tab`、`task_id`、`create=1` 及页面定义的创建来源参数；默认任务 Tab 省略 |
+| Manager | 数据任务工作区 | 分类使用 `/manager/tasks/quick-view`、`/manager/tasks/spatial`、`/manager/tasks/embedding` 三个 canonical path；query 只保存 `task_type`、向量化页内 `tab`、`task_id`、`create=1` 及页面定义的创建来源参数，默认页内任务视图省略 `tab` |
 | Develop | SQL、工作流、Notebook 创建或编辑 | `action`、`id` |
 | Develop | 执行列表筛选与分页 | `dev_type`、`status`、`trigger_type`、`source_task_id`、`start_date`、`end_date`、`page`、`page_size` |
 | Orchestrator | 编排创建与编辑 | path `/orchestrations/new`、`/orchestrations/:id/edit` |

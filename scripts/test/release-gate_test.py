@@ -109,7 +109,12 @@ class ReleaseGateTest(unittest.TestCase):
     def test_registers_only_current_t5_suites(self) -> None:
         self.assertEqual(
             set(RELEASE_GATE.SUITES),
-            {"agent-evaluation", "common-python-cli", "opengauss-official-media"},
+            {
+                "agent-evaluation",
+                "common-python-cli",
+                "kingbase-official-media",
+                "opengauss-official-media",
+            },
         )
         self.assertEqual(
             RELEASE_GATE.SUITES["agent-evaluation"].target,
@@ -126,6 +131,14 @@ class ReleaseGateTest(unittest.TestCase):
         self.assertEqual(
             RELEASE_GATE.SUITES["opengauss-official-media"].workflow_job,
             "opengauss-official-media-certification",
+        )
+        self.assertEqual(
+            RELEASE_GATE.SUITES["kingbase-official-media"].target,
+            "test-kingbase-official-media-release",
+        )
+        self.assertEqual(
+            RELEASE_GATE.SUITES["kingbase-official-media"].workflow_job,
+            "kingbase-official-media-certification",
         )
 
     def test_rejects_unknown_suite(self) -> None:

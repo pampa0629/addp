@@ -69,9 +69,13 @@ func contains(values []string, target string) bool {
 	return false
 }
 
-func TestValidateHostedEnvironment(t *testing.T) {
+func TestValidateExternalEnvironment(t *testing.T) {
 	valid := []string{"GITHUB_ACTIONS=true", "RUNNER_OS=Linux", "ADDP_ONLINE_HOSTED=1"}
-	if err := validateHostedEnvironment(valid, filepath.Join(t.TempDir(), "fixture.env")); err != nil {
+	if err := validateExternalEnvironment(valid, filepath.Join(t.TempDir(), "fixture.env")); err != nil {
+		t.Fatal(err)
+	}
+	ownerManaged := []string{"GITHUB_ACTIONS=true", "RUNNER_OS=Linux", "ADDP_ONLINE_OWNER_MANAGED=1"}
+	if err := validateExternalEnvironment(ownerManaged, filepath.Join(t.TempDir(), "fixture.env")); err != nil {
 		t.Fatal(err)
 	}
 	for _, invalid := range [][]string{
@@ -79,11 +83,15 @@ func TestValidateHostedEnvironment(t *testing.T) {
 		{"GITHUB_ACTIONS=true", "RUNNER_OS=macOS", "ADDP_ONLINE_HOSTED=1"},
 		{"GITHUB_ACTIONS=true", "RUNNER_OS=Linux", "ADDP_ONLINE_HOSTED=0"},
 	} {
-		if err := validateHostedEnvironment(invalid, filepath.Join(t.TempDir(), "fixture.env")); err == nil {
+		if err := validateExternalEnvironment(invalid, filepath.Join(t.TempDir(), "fixture.env")); err == nil {
 			t.Fatalf("environment %#v was accepted", invalid)
 		}
 	}
-	if err := validateHostedEnvironment(valid, "relative.env"); err == nil {
+	both := []string{"GITHUB_ACTIONS=true", "RUNNER_OS=Linux", "ADDP_ONLINE_HOSTED=1", "ADDP_ONLINE_OWNER_MANAGED=1"}
+	if err := validateExternalEnvironment(both, filepath.Join(t.TempDir(), "fixture.env")); err == nil {
+		t.Fatal("multiple external profiles were accepted")
+	}
+	if err := validateExternalEnvironment(valid, "relative.env"); err == nil {
 		t.Fatal("relative output path was accepted")
 	}
 }

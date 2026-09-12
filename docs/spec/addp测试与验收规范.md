@@ -42,6 +42,9 @@ make test-module MODULE=<module>
 # 全部已登记 disposable 基础设施门禁
 make test-integration
 
+# 仅在持有合法 License 的受保护 self-hosted Runner 运行
+make test-integration-owner-managed
+
 # 一个已登记的跨模块 Online suite
 make test-online ONLINE_SUITE=<suite>
 
@@ -107,10 +110,11 @@ T4 只在隔离的 ADDP 测试部署执行，并按运行条件选择唯一部�
 - 服务只绑定 Runner 可访问的回环地址；通用预检拒绝外部服务地址。
 - 仓库根不得保存 T4 `.env`。self-hosted profile 的 Tenant、数据库连接和凭据由仓库外绝对路径环境文件注入；Hosted profile 只能使用当次 disposable 部署产生、位于 `runner.temp` 的 owner-only 凭据文件。
 - `ADDP_ONLINE_HOST` 必须精确为 `1`；Hosted profile 还必须同时校验 `GITHUB_ACTIONS=true`、`RUNNER_OS=Linux` 和 `ADDP_ONLINE_HOSTED=1`。生命周期门禁必须在任何停止、启动或重启操作前完成只读准入检查。
+- License 受控 owner-managed profile 必须同时校验 `GITHUB_ACTIONS=true`、`RUNNER_OS=Linux`、`ADDP_ONLINE_OWNER_MANAGED=1`、外部 owner-only 环境文件权限、官方介质 SHA-256 与 License SHA-256；Hosted 与 owner-managed 标记必须互斥。
 - `POSTGRES_DB` 必须精确为 `addp_online`，并拒绝 `addp`、`addp_test`、`addp_iam_test`。该数据库只属于当前 T4 部署，不属于本地共享 PostgreSQL 测试清单。
 - 证据目录必须位于仓库外；凭据目录不得被 artifact 归档。工作区必须干净，构建身份必须与当前 checkout 一致。
 
-两种 profile 共用同一个 `make test-online` 分发器和 owner 业务断言，生命周期脚本只负责当次环境和夹具。编排只调用现有 Infra、开发生命周期脚本和 `make test-online`，不得在 workflow 中复制模块启动逻辑或业务断言。退出路径必须停止本次应用进程并报告清理结果；self-hosted Infra 可在专用 Runner 常驻，Hosted Infra 必须随 Job 销毁。
+三种 profile 共用同一个 `make test-online` 分发器和 owner 业务断言，生命周期脚本只负责当次环境和夹具。编排只调用现有 Infra、开发生命周期脚本和 `make test-online`，不得在 workflow 中复制模块启动逻辑或业务断言。退出路径必须停止本次应用进程并报告清理结果；常规 macOS self-hosted Infra 可在专用 Runner 常驻，Hosted 与 License 受控 owner-managed profile 的 Infra 必须随 Job 销毁。
 
 ### 5.2 开关、身份与拓扑预检
 
@@ -155,7 +159,7 @@ OceanBase 消费链路 T4 使用专用 OceanBase CE MySQL 模式 Fixture 和永�
 
 TiDB 消费链路 T4 复用同一个关系引擎 owner 断言，在带 `self-hosted`、`macOS`、`addp-online` 标签的专用 Runner 上使用固定官方 digest、无数据卷的 PD/TiKV/TiDB 三组件 Fixture 和永久 `engine_type=tidb` Engine Instance。Fixture 固定重建 5 行非空间 watermark 源表和同构空目标表；suite 必须经 Meta 扫描取得 ResourceLocator，以同一条 bounded watermark + upsert Transfer 任务验证 5/2/0 三次读取计数，并由 Manager、Develop 与临时 Query Service 对最终 6 行结果计算相同 checksum。上层模块只消费通用 ResourceLocator、SQLDialect 和 Provider，不得把 TiDB 登记为 MySQL 或增加 `tidb` 类型分支。临时任务和服务必须按捕获 ID 删除并确认 404；成功、失败和中断退出路径都必须执行 `down --volumes --remove-orphans` 并验证三组件容器零残留。该 suite 首次真实通过前只登记手工 `workflow_dispatch`，不得增加定时触发。
 
-KingbaseES 消费链路 T4 复用同一个关系引擎 owner 断言，仅在带 `self-hosted`、`Linux`、`X64`、`addp-kingbase` 标签的受保护 Runner 上使用固定 SHA-256 的 V9R1C10 `V009R001C010B0004` 官方介质和 owner 正规 License。Fixture 每轮启动无卷 `DB_MODE=pg` disposable 容器，固定重建 5 行非空间 watermark 源表和同构空目标表；以永久 `engine_type=kingbase` Engine Instance 经 Meta 扫描取得 ResourceLocator，以 bounded watermark + `ON CONFLICT` upsert 验证 5/2/0 和最终 6 行 checksum，并由 Manager、Transfer、Develop、Service 经各自正式出口取得一致结果。上层模块只消费通用 ResourceLocator、SQLDialect 和 Provider，不得增加 `kingbase` 分支。成功、失败和中断路径都必须删除本轮容器、临时任务与服务，验证零残留；License 和镜像 tar 不归档。首次真实通过前只允许手工 `workflow_dispatch`。
+KingbaseES 消费链路 T4 复用同一个关系引擎 owner 断言，仅在带 `self-hosted`、`Linux`、`X64`、`addp-kingbase` 标签的受保护 Runner 上使用固定 SHA-256 的 V9R1C10 `V009R001C010B0004` 官方介质和 owner 正规 License。Fixture 每轮启动无卷 `DB_MODE=pg` disposable 容器，固定重建 5 行非空间 watermark 源表和同构空目标表，并输出 owner-only Engine 描述；通用注册器以最小权限 Provisioner Token 通过正式 System API 创建当次 `engine_type=kingbase` Engine Instance。suite 经 Meta 扫描取得 ResourceLocator，以 bounded watermark + `ON CONFLICT` upsert 验证 5/2/0 和最终 6 行 checksum，并由 Manager、Transfer、Develop、Service 经各自正式出口取得一致结果。上层模块只消费通用 ResourceLocator、SQLDialect 和 Provider，不得增加 `kingbase` 分支。成功、失败和中断路径都必须删除本轮平台库、Engine Instance、容器、镜像、临时任务、服务和 owner-only 凭据目录，验证零残留；License 和镜像 tar 不归档。首次真实通过前只允许手工 `workflow_dispatch`。
 
 openGauss 消费链路 T4 复用上述关系引擎 owner 断言，但只在 GitHub Hosted `ubuntu-24.04` x86_64 profile 上运行。生命周期从固定 SHA-256 的 openGauss 6.0.6 LTS 官方介质启动独占容器，创建 `addp_online` 平台库、非默认 Tenant、最小权限消费 User、只含 `system.engine.create/read/execute` 的 Engine Provisioner 和临时 `engine_type=opengauss` Engine Instance。Business Fixture 只管理数据库并输出 owner-only Engine 描述，不调用 System API；System IAM owner helper 只创建身份和 Token，通用 Online 注册器使用 Engine Provisioner Token 通过正式 System API 注册并验证 Engine。Fixture 以 `public` schema 作为 namespace，使用 openGauss 原生 `MERGE` 推进相同的 5/2/0 watermark 数据集；Manager、Transfer、Develop 和 Service 必须通过与 OceanBase 相同的通用 ResourceLocator、SQLDialect 和 Provider 路径得到同一 6 行 checksum，上层模块不得新增 `opengauss` 分支。当次 Engine Instance 只随 disposable 平台库销毁，Token 和连接凭据只保存在不归档的 owner-only `runner.temp` 目录；Engine 注册后必须在进入业务断言前从进程环境清除 Provisioner Token 与数据库凭据，业务证据不得包含凭据。该 suite 在首次真实通过并确认构建身份、清理和零残留证据后，同时保留手工 `workflow_dispatch` 并登记每日夜间 `schedule`；定时事件只能选择 openGauss Hosted Job，其他 Online Job 必须显式排除定时事件。
 

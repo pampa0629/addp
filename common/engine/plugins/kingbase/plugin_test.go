@@ -74,6 +74,11 @@ func TestKingbaseSystemSchemasAreDeclared(t *testing.T) {
 			t.Fatalf("system schema %q missing from %#v", schema, identity.AdditionalSystemSchemas)
 		}
 	}
+	for _, table := range kingbaseSystemTables {
+		if !contains(identity.AdditionalSystemTables, table) {
+			t.Fatalf("system table %q missing from %#v", table, identity.AdditionalSystemTables)
+		}
+	}
 }
 
 func TestKingbaseRejectsSpatialWrites(t *testing.T) {

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	candidateutil "github.com/addp/standard/internal/candidate"
 	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/repository"
 )
@@ -93,6 +94,10 @@ func TestPostgresDocumentCandidateGroupsPreserveOccurrences(t *testing.T) {
 	if family.FamilyKey != "glossary:"+code || family.VariantCount != 2 || family.TotalVariantCount != 2 || family.OccurrenceCount != 3 || family.DecisionCount != 1 || len(family.Variants) != 2 {
 		t.Fatalf("family=%+v", family)
 	}
+	expectedSnapshotToken := candidateutil.FamilySnapshotToken("glossary", code, []models.DocumentExtractionCandidate{candidates[0], candidates[2]})
+	if family.SnapshotToken != expectedSnapshotToken || len(family.SnapshotToken) != 64 {
+		t.Fatalf("family snapshot_token=%q, want %q", family.SnapshotToken, expectedSnapshotToken)
+	}
 	group := family.Variants[0]
 	if group.State != models.CandidateGroupStateRetained || group.OccurrenceCount != 2 || group.Candidate.ID != candidates[0].ID {
 		t.Fatalf("group=%+v", group)
@@ -107,6 +112,9 @@ func TestPostgresDocumentCandidateGroupsPreserveOccurrences(t *testing.T) {
 	}
 	if filtered.Data[0].TotalVariantCount != 2 {
 		t.Fatalf("filtered total_variant_count=%d, want 2", filtered.Data[0].TotalVariantCount)
+	}
+	if filtered.Data[0].SnapshotToken != family.SnapshotToken {
+		t.Fatalf("filtered snapshot_token=%q, want full family token %q", filtered.Data[0].SnapshotToken, family.SnapshotToken)
 	}
 
 	exact, err := svc.ListCandidateFamilies(document.ID, tenantID, DocumentCandidateFamilyListOptions{ComparisonResult: models.CandidateComparisonExact, PageSize: 1})

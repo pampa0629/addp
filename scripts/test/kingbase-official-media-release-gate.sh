@@ -67,6 +67,7 @@ for command in curl docker go python3; do
         exit 1
     fi
 done
+kingbase_load_owner_environment "$ROOT_DIR"
 kingbase_validate_license_input "$ROOT_DIR"
 
 if docker container inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
@@ -145,6 +146,15 @@ if grep -q -- '--- SKIP:' "${REPORT_PATH%.json}-go-test.log"; then
     exit 1
 fi
 
+docker rm --force "$CONTAINER_NAME" >/dev/null
+CONTAINER_OWNED=false
+docker image rm "$KINGBASE_OFFICIAL_IMAGE" >/dev/null
+IMAGE_OWNED=false
+if docker ps -a --filter "label=com.addp.certification=kingbase" --format '{{.Names}}' | grep -q .; then
+    echo "KingbaseES certification container residual detected" >&2
+    exit 1
+fi
+
 python3 - "$REPORT_PATH" "$KINGBASE_OFFICIAL_MEDIA_URL" "$KINGBASE_OFFICIAL_MEDIA_SHA256" "$KINGBASE_OFFICIAL_MEDIA_MD5" "$KINGBASE_OFFICIAL_IMAGE" "$image_id" "$ADDP_KINGBASE_LICENSE_SHA256" <<'PY'
 import json
 import sys
@@ -166,6 +176,7 @@ Path(report_path).write_text(
             "runner": {"os": "linux", "architecture": "x86_64"},
             "database_mode": "pg",
             "upsert_syntax": "on_conflict",
+            "zero_residue": True,
         },
         sort_keys=True,
     )

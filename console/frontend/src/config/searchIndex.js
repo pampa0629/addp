@@ -12,7 +12,9 @@ export const SEARCH_INDEX = [
   // 数据管理
   { labelKey: 'console.menus.manager.dataExplorer',       module: 'manager', route: '/manager/data-explorer',       keywords: ['数据探查', '数据浏览', '数据目录', 'explorer', 'browse'] },
   { labelKey: 'console.menus.manager.dataRetrieval',      module: 'manager', route: '/manager/data-retrieval',      keywords: ['数据检索', '搜索', 'retrieval', 'search'] },
-  { labelKey: 'console.menus.manager.dataTasks', module: 'manager', route: '/manager/derived-tasks', keywords: ['数据任务', '快显任务', '空间数据任务', '向量化任务', '向量化', '向量', 'vector', 'embedding', '瓦片缓存', '物化视图', 'COG', 'Mosaic', 'GLB', '3D Tiles', 'KSplat', 'COPC', 'data tasks'] },
+  { labelKey: 'console.menus.manager.quickViewTasks', module: 'manager', route: '/manager/tasks/quick-view', keywords: ['数据任务', '快显任务', '瓦片缓存', '物化视图', 'COG', 'GLB', '3D Tiles', 'KSplat', 'COPC', 'quick view'] },
+  { labelKey: 'console.menus.manager.spatialDataTasks', module: 'manager', route: '/manager/tasks/spatial', keywords: ['数据任务', '空间数据任务', '矢量瓦片集', '栅格 Mosaic', 'spatial data tasks'] },
+  { labelKey: 'console.menus.manager.embeddingTasks', module: 'manager', route: '/manager/tasks/embedding', keywords: ['数据任务', '向量化任务', '向量化', '向量', 'vector', 'embedding'] },
   // 数据标准
   { labelKey: 'console.menus.standard.domains',      module: 'standard', route: '/standard/domains',      keywords: ['业务域', '业务领域', 'domain'] },
   { labelKey: 'console.menus.standard.collections',  module: 'standard', route: '/standard/collections',  keywords: ['标准集', '标准包', '审核', 'standard collection'] },

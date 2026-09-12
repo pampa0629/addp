@@ -60,27 +60,31 @@ func TestPostgreSQLIsSystemSchema(t *testing.T) {
 func TestProtocolCompatibleCatalogFiltersAdditionalSystemSchemasBeforeLeafCounts(t *testing.T) {
 	t.Parallel()
 
-	plugin := NewProtocolCompatiblePlugin(ProtocolIdentity{
+	protocol := NewProtocolCompatiblePlugin(ProtocolIdentity{
 		EngineType:              "opengauss",
 		DisplayName:             "openGauss",
 		AdditionalSystemSchemas: []string{" Coverage ", "DBE_PERF", "coverage"},
+		AdditionalSystemTables:  []string{" SYS_STAT_STATEMENTS_ALL ", "sys_stat_statements", "sys_stat_statements"},
 	})
 
-	if !plugin.isSystemSchema("coverage") || !plugin.isSystemSchema("DBE_PERF") {
+	if !protocol.isSystemSchema("coverage") || !protocol.isSystemSchema("DBE_PERF") {
 		t.Fatal("protocol-specific system schemas must be filtered")
 	}
-	if plugin.isSystemSchema("public") {
+	if protocol.isSystemSchema("public") {
 		t.Fatal("business schema public must remain visible")
 	}
 
-	query, args := plugin.listNamespacesQuery("")
+	query, args := protocol.listNamespacesQuery(false)
 	if !strings.Contains(query, "WHERE lower(schema_name) NOT IN") {
 		t.Fatalf("namespace query must filter schemas before evaluating leaf counts: %s", query)
+	}
+	if !strings.Contains(query, "AND lower(table_name) NOT IN (?, ?)") {
+		t.Fatalf("namespace query must filter protocol-specific system tables from leaf counts: %s", query)
 	}
 	if !strings.Contains(query, "has_schema_privilege(s.schema_name, 'USAGE')") {
 		t.Fatalf("namespace query must filter schemas by the current connection identity: %s", query)
 	}
-	wantArgs := []interface{}{"coverage", "dbe_perf", "information_schema", "pg_catalog", "pg_toast"}
+	wantArgs := []interface{}{"sys_stat_statements", "sys_stat_statements_all", "coverage", "dbe_perf", "information_schema", "pg_catalog", "pg_toast"}
 	if !reflect.DeepEqual(args, wantArgs) {
 		t.Fatalf("namespace query args = %#v, want %#v", args, wantArgs)
 	}
@@ -96,14 +100,38 @@ func TestFilterPostgreSQLSystemTablesRequiresDetectedSuperMapSDX(t *testing.T) {
 		{Name: "sm_business_table"},
 	}
 
-	withoutSDX := filterPostgreSQLSystemTables(tables, false)
+	postgres := &PostgreSQLPlugin{}
+	withoutSDX := postgres.filterSystemTables(tables, false)
 	if len(withoutSDX) != len(tables) {
-		t.Fatalf("filterPostgreSQLSystemTables without SDX returned %d tables, want %d", len(withoutSDX), len(tables))
+		t.Fatalf("filterSystemTables without SDX returned %d tables, want %d", len(withoutSDX), len(tables))
 	}
 
-	withSDX := filterPostgreSQLSystemTables(tables, true)
+	withSDX := postgres.filterSystemTables(tables, true)
 	if len(withSDX) != 2 || withSDX[0].Name != "roads" || withSDX[1].Name != "sm_business_table" {
-		t.Fatalf("filterPostgreSQLSystemTables with SDX = %#v, want roads and sm_business_table", withSDX)
+		t.Fatalf("filterSystemTables with SDX = %#v, want roads and sm_business_table", withSDX)
+	}
+}
+
+func TestProtocolCompatibleCatalogFiltersAndRejectsAdditionalSystemTables(t *testing.T) {
+	t.Parallel()
+
+	protocol := NewProtocolCompatiblePlugin(ProtocolIdentity{
+		EngineType:             "kingbase",
+		DisplayName:            "KingbaseES",
+		AdditionalSystemTables: []string{"sys_stat_statements", "sys_stat_statements_all"},
+	})
+	tables := []datatype.TableInfo{{Name: "customers"}, {Name: "SYS_STAT_STATEMENTS"}, {Name: "sys_stat_statements_all"}}
+	filtered := protocol.filterSystemTables(tables, false)
+	if len(filtered) != 1 || filtered[0].Name != "customers" {
+		t.Fatalf("filterSystemTables() = %#v, want customers", filtered)
+	}
+
+	hiddenPath := plugin.TabularItemPath(26, plugin.EngineCatalogTermSchema, "public", "sys_stat_statements")
+	if _, err := protocol.ResolvePath(t.Context(), nil, hiddenPath); !plugin.IsEngineCatalogErrorKind(err, plugin.EngineCatalogErrorNotFound) {
+		t.Fatalf("ResolvePath(hidden table) error = %v, want not_found", err)
+	}
+	if _, err := protocol.DescribeEngineCatalogFacts(t.Context(), nil, hiddenPath, plugin.EngineCatalogFactsOptions{}); !plugin.IsEngineCatalogErrorKind(err, plugin.EngineCatalogErrorNotFound) {
+		t.Fatalf("DescribeEngineCatalogFacts(hidden table) error = %v, want not_found", err)
 	}
 }
 

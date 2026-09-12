@@ -133,6 +133,13 @@ const createCandidateGroups = (candidates, { extractionID = 81, revisionID = 711
   }]
 }))
 
+const createCandidateFamilySnapshotToken = family => {
+  const seed = [family.candidate_type, family.code, ...family.variants.flatMap(group => [group.candidate.id, group.candidate.version, group.semantic_fingerprint])].join('|')
+  let hash = 0
+  for (const character of seed) hash = (hash * 31 + character.codePointAt(0)) >>> 0
+  return hash.toString(16).padStart(64, '0')
+}
+
 const groupCandidateFamilies = groups => {
   const familiesByKey = new Map()
   groups.forEach(group => {
@@ -161,7 +168,7 @@ const groupCandidateFamilies = groups => {
     if (group.first_seen_at < family.first_seen_at) family.first_seen_at = group.first_seen_at
     if (group.last_seen_at > family.last_seen_at) family.last_seen_at = group.last_seen_at
   })
-  return [...familiesByKey.values()]
+  return [...familiesByKey.values()].map(family => ({ ...family, snapshot_token: createCandidateFamilySnapshotToken(family) }))
 }
 
 const createFamilyComparisonCounts = groups => {
@@ -201,6 +208,7 @@ const filterCandidateFamilyResponse = (response, url) => {
   const allVariants = response.data.flatMap(family => family.variants)
   const totalVariantCounts = new Map(response.data.map(family => [family.family_key, family.total_variant_count]))
   const decisionCounts = new Map(response.data.map(family => [family.family_key, family.decision_count || 0]))
+  const snapshotTokens = new Map(response.data.map(family => [family.family_key, family.snapshot_token]))
   const comparisonSource = allVariants.filter(group => {
     if (state && group.state !== state) return false
     if (candidateType && group.candidate.candidate_type !== candidateType) return false
@@ -213,6 +221,7 @@ const filterCandidateFamilyResponse = (response, url) => {
   families.forEach(family => {
     family.total_variant_count = totalVariantCounts.get(family.family_key) || family.total_variant_count
     family.decision_count = decisionCounts.get(family.family_key) || 0
+    family.snapshot_token = snapshotTokens.get(family.family_key) || family.snapshot_token
   })
   const totalPages = Math.max(1, Math.ceil(families.length / pageSize))
   const data = page > totalPages ? [] : families.slice((page - 1) * pageSize, page * pageSize)
@@ -671,16 +680,18 @@ test('restores document detail from its canonical route and returns to the filte
 })
 
 test('shows deterministic candidate comparisons and opens the existing standard', async ({ page }) => {
-  const backend = await installMockBackend(page, {
-    documents: [createDocumentFixture()],
-    documentCandidateFamilies: createCandidateFamilyResponse([
+  const documentCandidateFamilies = createCandidateFamilyResponse([
         { id: 811, candidate_type: 'glossary', code: 'leader', name: '领队', definition: '发起并组织户外活动的人', payload: {}, status: 'pending', version: 1, evidences: [], comparison: { result: 'exact', standard_id: 21, code: 'leader', name: '领队', scope_type: 'domain', owner_domain_id: 2, revision_id: 211, revision_no: 1, revision_status: 'draft', differences: [] } },
         { id: 812, candidate_type: 'element', code: 'activity_id', name: '活动编号', definition: '活动的唯一编号', payload: { data_type: 'string' }, status: 'pending', version: 1, evidences: [], comparison: { result: 'content_conflict', standard_id: 41, code: 'activity_id', name: '活动编号', scope_type: 'domain', owner_domain_id: 2, revision_id: 411, revision_no: 1, revision_status: 'draft', differences: [{ field: 'definition', candidate_value: { kind: 'text', text: '活动的唯一编号' }, standard_value: { kind: 'text', text: '户外活动主体的稳定标识' } }, { field: 'data_type', candidate_value: { kind: 'text', text: 'string' }, standard_value: { kind: 'text', text: 'bigint' } }] } },
         { id: 813, candidate_type: 'metric', code: 'participant_count', name: '活动参与人数', definition: '参加活动的总人数', payload: {}, status: 'pending', version: 1, evidences: [], comparison: { result: 'scope_conflict', standard_id: 51, code: 'participant_count', name: '活动参与人数', scope_type: 'domain', owner_domain_id: 1, revision_id: 511, revision_no: 1, revision_status: 'draft', differences: [{ field: 'owner_domain_id', candidate_value: { kind: 'integer', integer: 2 }, standard_value: { kind: 'integer', integer: 1 } }] } },
         { id: 814, candidate_type: 'code_set', code: 'outdoor_level', name: '户外等级', definition: '户外活动难度等级', payload: {}, status: 'pending', version: 1, evidences: [], comparison: { result: 'new', differences: [] } },
         { id: 815, candidate_type: 'code_set', code: 'member_status', name: '成员状态', definition: '成员参与状态', payload: {}, status: 'pending', version: 1, evidences: [], comparison: { result: 'content_conflict', standard_id: 61, code: 'member_status', name: '成员状态', scope_type: 'domain', owner_domain_id: 2, revision_id: 611, revision_no: 1, revision_status: 'draft', differences: [{ field: 'items', candidate_value: { kind: 'code_items', items: [{ code: 'signup', name: '报名中', definition: '已正式报名' }] }, standard_value: { kind: 'code_items', items: [{ code: 'registered', name: '已报名', definition: '报名已经确认' }] } }] } },
         { id: 816, candidate_type: 'code_set', code: 'member_status', name: '成员关系状态', definition: '成员与户外活动的关系状态', payload: {}, status: 'pending', version: 1, evidences: [], comparison: { result: 'content_conflict', standard_id: 61, code: 'member_status', name: '成员状态', scope_type: 'domain', owner_domain_id: 2, revision_id: 611, revision_no: 1, revision_status: 'draft', differences: [{ field: 'definition', candidate_value: { kind: 'text', text: '成员与户外活动的关系状态' }, standard_value: { kind: 'text', text: '成员参与状态' } }] } }
-    ])
+  ])
+  const memberStatusSnapshotToken = documentCandidateFamilies.data.find(family => family.code === 'member_status').snapshot_token
+  const backend = await installMockBackend(page, {
+    documents: [createDocumentFixture()],
+    documentCandidateFamilies
   })
 
   await page.goto('/documents/71')
@@ -735,7 +746,7 @@ test('shows deterministic candidate comparisons and opens the existing standard'
   await page.getByRole('button', { name: '确认裁决' }).click()
   await expect.poll(() => backend.getCandidateDecisionRequests()).toEqual([{
     winner_candidate_id: 816,
-    members: [{ candidate_id: 815, version: 1 }, { candidate_id: 816, version: 1 }],
+    snapshot_token: memberStatusSnapshotToken,
     reason: '定义覆盖成员与户外活动的完整关系'
   }])
   await expect(memberStatusCards.nth(0)).toContainText('已驳回')
@@ -1226,7 +1237,9 @@ async function installMockBackend(page, options = {}) {
     if (request.method() === 'POST' && path === '/api/v1/standard/documents/71/extraction-candidates/batch_decide') {
       const body = request.postDataJSON()
       candidateDecisionRequests.push(structuredClone(body))
-      const statuses = new Map(body.members.map(member => [member.candidate_id, member.candidate_id === body.winner_candidate_id ? 'retained' : 'rejected']))
+      const family = documentCandidateFamilyResponse.data.find(item => item.variants.some(group => group.candidate.id === body.winner_candidate_id))
+      if (!family || body.snapshot_token !== family.snapshot_token) return fulfillJSON(route, { error: 'candidate family snapshot stale', error_code: 'candidate_family_snapshot_stale' }, 409)
+      const statuses = new Map(family.variants.map(group => [group.candidate.id, group.candidate.id === body.winner_candidate_id ? 'retained' : 'rejected']))
       const decidedCandidates = []
       documentCandidateFamilyResponse.data.forEach(family => {
         family.variants.forEach(group => {
@@ -1249,7 +1262,7 @@ async function installMockBackend(page, options = {}) {
         return counts
       }, { pending: 0, retained: 0, rejected: 0, formalized: 0 })
       const winner = decidedCandidates.find(candidate => candidate.id === body.winner_candidate_id)
-      const family = documentCandidateFamilyResponse.data.find(item => item.candidate_type === winner?.candidate_type && item.code === winner?.code)
+      family.snapshot_token = createCandidateFamilySnapshotToken(family)
       const decision = {
         id: candidateFamilyDecisions.length + 1,
         document_id: 71,

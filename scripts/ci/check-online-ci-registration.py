@@ -84,24 +84,32 @@ def load_deployment_profiles(repository: Path) -> dict[str, str]:
     profiles = dict(matches)
     if len(profiles) != len(matches):
         raise RegistrationError("online deployment profiles contain duplicate suites")
-    for hosted_path in sorted(
+    external_paths = sorted(
         (repository / "scripts/test").glob("online-hosted-*-gate.sh")
-    ):
-        hosted_text = hosted_path.read_text(encoding="utf-8")
-        hosted_suite = re.search(
-            r"(?m)^# ADDP_ONLINE_SUITES=([a-z][a-z0-9-]*)$", hosted_text
+    ) + sorted(
+        (repository / "scripts/test").glob("online-owner-managed-*-gate.sh")
+    )
+    for external_path in external_paths:
+        external_text = external_path.read_text(encoding="utf-8")
+        external_suite = re.search(
+            r"(?m)^# ADDP_ONLINE_SUITES=([a-z][a-z0-9-]*)$", external_text
         )
-        hosted_runner = re.search(
-            r"(?m)^# ADDP_ONLINE_RUNNER=([a-z][a-z0-9_-]*)$", hosted_text
+        external_runner = re.search(
+            r"(?m)^# ADDP_ONLINE_RUNNER=([a-z][a-z0-9_-]*)$", external_text
         )
-        if hosted_suite is None or hosted_runner is None:
-            raise RegistrationError(
-                f"{hosted_path.relative_to(repository)} is missing Hosted Online metadata"
+        if external_suite is None or external_runner is None:
+            profile_kind = (
+                "Hosted"
+                if external_path.name.startswith("online-hosted-")
+                else "owner-managed"
             )
-        suite = hosted_suite.group(1)
+            raise RegistrationError(
+                f"{external_path.relative_to(repository)} is missing {profile_kind} Online metadata"
+            )
+        suite = external_suite.group(1)
         if suite in profiles:
             raise RegistrationError(f"Online suite {suite} has multiple deployment profiles")
-        profiles[suite] = hosted_runner.group(1)
+        profiles[suite] = external_runner.group(1)
     return profiles
 
 
@@ -935,6 +943,85 @@ def validate_opengauss_consumer_flow_profile(
         )
 
 
+def validate_kingbase_consumer_flow_profile(
+    repository: Path, registered: set[str]
+) -> None:
+    if "kingbase-consumer-flow" not in registered:
+        return
+    owner_gate = (
+        repository / "scripts/test/online-owner-managed-kingbase-gate.sh"
+    ).read_text(encoding="utf-8")
+    for fragment in (
+        "# ADDP_ONLINE_SUITES=kingbase-consumer-flow",
+        "# ADDP_ONLINE_RUNNER=owner-managed-linux-x86_64",
+        "ADDP_ONLINE_OWNER_MANAGED",
+        "kingbase_load_owner_environment",
+        "kingbase_validate_license_input",
+        "bash business/scripts/online-kingbase-consumer-fixture.sh start",
+        "bash business/scripts/online-kingbase-consumer-fixture.sh stop",
+        "scripts/test/online-engine-registration.py",
+        'make test-online "ONLINE_SUITE=$ONLINE_SUITE"',
+        "media_sha256=",
+        "license_sha256=",
+    ):
+        if fragment not in owner_gate:
+            raise RegistrationError(
+                f"kingbase-consumer-flow owner-managed profile is missing {fragment}"
+            )
+    for relative in (
+        "business/scripts/online-kingbase-consumer-fixture.sh",
+        "scripts/lib/kingbase-official-media.sh",
+        "scripts/test/online-owner-managed-kingbase-gate.sh",
+        "scripts/test/online-owner-managed-kingbase-gate_test.py",
+        "scripts/test/online-kingbase-consumer-fixture_test.py",
+        "scripts/test/online-engine-registration.py",
+        "scripts/test/relational-consumer-flow-online.py",
+        "scripts/test/relational-consumer-flow-online_test.py",
+    ):
+        if not (repository / relative).is_file():
+            raise RegistrationError(f"kingbase-consumer-flow requires {relative}")
+    fixture = (
+        repository / "business/scripts/online-kingbase-consumer-fixture.sh"
+    ).read_text(encoding="utf-8")
+    for fragment in (
+        "kingbase_ensure_official_image",
+        "kingbase_validate_license_input",
+        "docker create",
+        "docker rm --force",
+        "docker image rm",
+        "addp-kingbase-online-disposable",
+        "addp_kingbase_online",
+        "addp_online_consumer_source",
+        "addp_online_consumer_target",
+        "ON CONFLICT (id) DO UPDATE",
+        '"engine_type": "kingbase"',
+        "start|advance|stop|status",
+    ):
+        if fragment not in fixture:
+            raise RegistrationError(
+                f"kingbase-consumer-flow fixture contract is missing {fragment}"
+            )
+    owner = (
+        repository / "scripts/test/relational-consumer-flow-online.py"
+    ).read_text(encoding="utf-8")
+    for fragment in (
+        '"kingbase": ConsumerProfile(',
+        'engine_type="kingbase"',
+        'namespace_kind="schema"',
+        'fixture_script="business/scripts/online-kingbase-consumer-fixture.sh"',
+        '"schema_version": "addp.relational-consumer-flow-online/v1"',
+        '"residual_resources": 0',
+    ):
+        if fragment not in owner:
+            raise RegistrationError(
+                f"kingbase-consumer-flow owner contract is missing {fragment}"
+            )
+    if "/api/v1/system/engines" in owner:
+        raise RegistrationError(
+            "kingbase-consumer-flow consumer must not access the System Engine control plane"
+        )
+
+
 def validate_transfer_insert_only_mysql_profile(
     repository: Path, registered: set[str]
 ) -> None:
@@ -1105,21 +1192,29 @@ def load_workflow_suites(
     hosted_gates = sorted(
         (repository / "scripts/test").glob("online-hosted-*-gate.sh")
     )
-    for hosted_gate in hosted_gates:
-        relative = hosted_gate.relative_to(repository).as_posix()
+    owner_managed_gates = sorted(
+        (repository / "scripts/test").glob("online-owner-managed-*-gate.sh")
+    )
+    for external_gate in hosted_gates + owner_managed_gates:
+        relative = external_gate.relative_to(repository).as_posix()
+        lifecycle_flag = (
+            'ADDP_ONLINE_HOSTED: "1"'
+            if external_gate in hosted_gates
+            else 'ADDP_ONLINE_OWNER_MANAGED: "1"'
+        )
         for fragment in (
             f"bash {relative} --check-only",
             f"bash {relative}",
-            "ADDP_ONLINE_HOSTED: \"1\"",
+            lifecycle_flag,
             "ADDP_ONLINE_SECRET_DIR:",
         ):
             if fragment not in text:
                 raise RegistrationError(
-                    f"Online T4 workflow is missing Hosted profile fragment: {fragment}"
+                    f"Online T4 workflow is missing external profile fragment: {fragment}"
                 )
-    if hosted_gates and "node-version-file: .node-version" not in text:
+    if (hosted_gates or owner_managed_gates) and "node-version-file: .node-version" not in text:
         raise RegistrationError(
-            "Online T4 Hosted profile must use the repository .node-version"
+            "Online T4 external profiles must use the repository .node-version"
         )
     job_environment_blocks = re.findall(
         r"(?ms)^    env:\n(?P<body>(?:      [^\n]*\n)+)",
@@ -1133,7 +1228,9 @@ def load_workflow_suites(
         "ADDP_ONLINE_ARTIFACT_DIR: "
         "${{ runner.temp }}/addp-online-${{ github.run_id }}"
     )
-    expected_artifact_assignments = 2 * (1 + len(hosted_gates))
+    expected_artifact_assignments = 2 * (
+        1 + len(hosted_gates) + len(owner_managed_gates)
+    )
     if text.count(artifact_assignment) != expected_artifact_assignments:
         raise RegistrationError(
             "Online T4 workflow must configure the Runner temp artifact directory "
@@ -1221,6 +1318,7 @@ def check_registration(repository: Path) -> None:
     validate_oceanbase_consumer_flow_profile(repository, registered)
     validate_tidb_consumer_flow_profile(repository, registered)
     validate_opengauss_consumer_flow_profile(repository, registered)
+    validate_kingbase_consumer_flow_profile(repository, registered)
     validate_transfer_insert_only_mysql_profile(repository, registered)
 
 

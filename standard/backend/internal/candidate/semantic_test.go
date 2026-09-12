@@ -35,3 +35,25 @@ func TestIsPreferredRepresentativeUsesGovernanceThenTimeThenID(t *testing.T) {
 		t.Fatal("higher candidate ID must break an equal-time tie")
 	}
 }
+
+func TestFamilySnapshotTokenIsOrderIndependentAndVersionSensitive(t *testing.T) {
+	members := []models.DocumentExtractionCandidate{
+		{ID: 12, CandidateType: "glossary", Code: "outdoor_activity", Name: "户外活动", Definition: "定义二", Version: 4},
+		{ID: 11, CandidateType: "glossary", Code: "outdoor_activity", Name: "户外活动", Definition: "定义一", Version: 3},
+	}
+	token := FamilySnapshotToken("glossary", "outdoor_activity", members)
+	if len(token) != 64 {
+		t.Fatalf("token length = %d, want 64", len(token))
+	}
+	if reordered := FamilySnapshotToken("glossary", "outdoor_activity", []models.DocumentExtractionCandidate{members[1], members[0]}); reordered != token {
+		t.Fatalf("reordered token = %q, want %q", reordered, token)
+	}
+	changed := append([]models.DocumentExtractionCandidate(nil), members...)
+	changed[0].Version++
+	if FamilySnapshotToken("glossary", "outdoor_activity", changed) == token {
+		t.Fatal("candidate version change must invalidate the family snapshot token")
+	}
+	if FamilySnapshotToken("glossary", "outdoor_route", members) == token {
+		t.Fatal("candidate family identity must be part of the snapshot token")
+	}
+}

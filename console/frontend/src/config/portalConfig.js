@@ -87,7 +87,9 @@ export const PAGE_MAPS = {
   manager: {
     'data-explorer': 'data-explorer',
     'data-retrieval': 'data-retrieval',
-	'derived-tasks': 'derived-tasks',
+    'tasks/quick-view': 'tasks/quick-view',
+    'tasks/spatial': 'tasks/spatial',
+    'tasks/embedding': 'tasks/embedding',
     '': 'data-explorer',
   },
   meta: {
@@ -208,9 +210,16 @@ export const SIDEBAR_MENUS = {
   manager: {
     label: 'console.menus.manager.label', icon: DataAnalysis,
     items: [
-      { index: '/manager/data-explorer',       icon: Search,   label: 'console.menus.manager.dataExplorer' },
-      { index: '/manager/data-retrieval',      icon: Document, label: 'console.menus.manager.dataRetrieval' },
-	  { index: '/manager/derived-tasks', icon: Operation, label: 'console.menus.manager.dataTasks' },
+      { index: '/manager/data-explorer',  icon: Search,   label: 'console.menus.manager.dataExplorer' },
+      { index: '/manager/data-retrieval', icon: Document, label: 'console.menus.manager.dataRetrieval' },
+      {
+        index: '/manager/tasks', icon: Operation, label: 'console.menus.manager.dataTasks',
+        children: [
+          { index: '/manager/tasks/quick-view', icon: Monitor, label: 'console.menus.manager.quickViewTasks' },
+          { index: '/manager/tasks/spatial', icon: MapLocation, label: 'console.menus.manager.spatialDataTasks' },
+          { index: '/manager/tasks/embedding', icon: Connection, label: 'console.menus.manager.embeddingTasks' },
+        ],
+      },
     ],
   },
   standard: {

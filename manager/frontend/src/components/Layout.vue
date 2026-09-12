@@ -51,10 +51,24 @@
 			<el-icon><Setting /></el-icon>
 			<span>{{ t('manager.layout.embeddingConfiguration') }}</span>
 		  </el-menu-item>
-          <el-menu-item index="/derived-tasks">
+          <el-sub-menu index="/tasks">
+            <template #title>
             <el-icon><Operation /></el-icon>
             <span>{{ t('manager.layout.dataTasks') }}</span>
-          </el-menu-item>
+            </template>
+            <el-menu-item index="/tasks/quick-view">
+              <el-icon><View /></el-icon>
+              <span>{{ t('manager.layout.quickViewTasks') }}</span>
+            </el-menu-item>
+            <el-menu-item index="/tasks/spatial">
+              <el-icon><MapLocation /></el-icon>
+              <span>{{ t('manager.layout.spatialDataTasks') }}</span>
+            </el-menu-item>
+            <el-menu-item index="/tasks/embedding">
+              <el-icon><Connection /></el-icon>
+              <span>{{ t('manager.layout.embeddingTasks') }}</span>
+            </el-menu-item>
+          </el-sub-menu>
         </el-menu>
       </el-aside>
 
@@ -79,6 +93,9 @@ import {
   Search,
   Document,
 	Operation,
+  View,
+  MapLocation,
+  Connection,
   Setting
 } from '@element-plus/icons-vue'
 

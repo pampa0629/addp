@@ -233,7 +233,11 @@ import {
   resolveColumnarCompression,
   withColumnarCompressionOption
 } from './columnarCompression.mjs'
-import { TARGET_OVERRIDE_POLICY, targetOverrideEligible as isTargetOverrideEligible } from './targetOverride.mjs'
+import {
+  TARGET_OVERRIDE_POLICY,
+  targetOverrideAfterParentSelection,
+  targetOverrideEligible as isTargetOverrideEligible
+} from './targetOverride.mjs'
 import {
 	dataTypeLabel,
 	engineOptionLabel,
@@ -672,21 +676,26 @@ async function handleTargetParentSelect(selection) {
       const selected = await selectExistingNativeTarget(selection)
       if (!selected) return
     } else {
-      selectedExistingTarget.value = false
-      if (targetOverrideEnabled.value) {
-        targetOverrideEnabled.value = false
-        props.wizardState.setTargetOverridePolicy('')
-      }
       const previousParentLocator = targetParentLocator.value
       const nextParentLocator = selection?.identity?.locator || ''
       const parentChanged = !sameTargetParentIdentity(previousParentLocator, nextParentLocator)
+      const nextOverrideState = targetOverrideAfterParentSelection({
+        parentChanged,
+        existingTarget: selectedExistingTarget.value,
+        overrideEnabled: targetOverrideEnabled.value
+      })
+      selectedExistingTarget.value = nextOverrideState.existingTarget
+      targetOverrideEnabled.value = nextOverrideState.overrideEnabled
+      if (!nextOverrideState.overrideEnabled) {
+        props.wizardState.setTargetOverridePolicy('')
+      }
       targetParentSelection.value = selection
       normalizedTargetParentLocator.value = ''
       targetSchema.value = targetParentNameFromSelection(selection)
       if (parentChanged) {
         targetTable.value = ''
+        props.wizardState.resetTargetFields?.()
       }
-      props.wizardState.resetTargetFields?.()
     }
   } else if (isContentTarget.value) {
     if (selection.resource?.kind === 'item') {

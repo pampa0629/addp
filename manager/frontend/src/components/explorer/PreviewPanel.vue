@@ -2045,9 +2045,8 @@ const handleGenerateVectorTileSet = async () => {
   const target = spatialPreviewTarget.value
   if (!target?.locator) return
   await navigateManagerRoute(router, {
-    name: 'DerivedTasks',
+    name: 'SpatialDataTasks',
     query: {
-      category: 'spatial_business',
       task_type: 'vector_tile_set_generation',
       create: '1',
       locator: target.locator

@@ -3312,7 +3312,6 @@ func flatGeobufURL(engineID uint, schema, table, geomColumn string, pageSize int
 
 func tileCacheCreateURL(identity QuickViewIdentity, engineID uint, schema, table string, meta *SpatialMetadataResult) string {
 	values := url.Values{}
-	values.Set("tab", "tasks")
 	values.Set("create", "1")
 	locator := strings.TrimSpace(identity.Locator)
 	if locator == "" {
@@ -3357,9 +3356,8 @@ func tileCacheCreateURL(identity QuickViewIdentity, engineID uint, schema, table
 			values.Set("extent_srid", fmt.Sprintf("%d", extentSRID))
 		}
 	}
-	values.Set("category", models.TaskCategoryManagedQuickView)
 	values.Set("task_type", commonExecution.TaskTypeVectorTileCacheGeneration)
-	return "/manager/derived-tasks?" + values.Encode()
+	return "/manager/tasks/quick-view?" + values.Encode()
 }
 
 func tileCacheCreateURLExtent(meta *SpatialMetadataResult) ([]float64, int) {

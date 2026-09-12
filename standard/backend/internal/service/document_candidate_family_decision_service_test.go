@@ -2,9 +2,11 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
+	candidateutil "github.com/addp/standard/internal/candidate"
 	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/repository"
 	"gorm.io/gorm"
@@ -117,12 +119,8 @@ func TestDecideCandidateFamilyRetainsOneVariantAndRejectsTheOthersAtomically(t *
 
 	result, err := (&DocumentService{repo: repo}).DecideCandidateFamily(document.ID, document.TenantID, 11, &models.DecideDocumentCandidateFamilyRequest{
 		WinnerCandidateID: candidates[1].ID,
+		SnapshotToken:     candidateFamilySnapshotToken(candidates),
 		Reason:            "  定义更准确并覆盖户外业务边界  ",
-		Members: []models.DocumentCandidateFamilyDecisionMember{
-			{CandidateID: candidates[2].ID, Version: 1},
-			{CandidateID: candidates[0].ID, Version: 1},
-			{CandidateID: candidates[1].ID, Version: 1},
-		},
 	})
 	if err != nil {
 		t.Fatalf("DecideCandidateFamily() error = %v", err)
@@ -153,76 +151,30 @@ func TestDecideCandidateFamilyRetainsOneVariantAndRejectsTheOthersAtomically(t *
 	}
 }
 
-func TestDecideCandidateFamilyRejectsInvalidMembershipWithoutSideEffects(t *testing.T) {
-	tests := []struct {
-		name       string
-		candidates []models.DocumentExtractionCandidate
-	}{
-		{
-			name: "duplicate semantic variant",
-			candidates: []models.DocumentExtractionCandidate{
-				{CandidateType: "glossary", Code: "outdoor_activity", Name: "户外 活动", Definition: "在户外开展的活动", Status: "pending", Version: 1},
-				{CandidateType: "glossary", Code: "outdoor_activity", Name: "户外\n活动", Definition: "在户外开展的活动", Status: "pending", Version: 1},
-			},
-		},
-		{
-			name: "cross family member",
-			candidates: []models.DocumentExtractionCandidate{
-				{CandidateType: "glossary", Code: "outdoor_activity", Name: "户外活动", Definition: "在户外开展的活动", Status: "pending", Version: 1},
-				{CandidateType: "glossary", Code: "outdoor_member", Name: "户外成员", Definition: "参加户外活动的人", Status: "pending", Version: 1},
-			},
-		},
-		{
-			name: "omitted current variant",
-			candidates: []models.DocumentExtractionCandidate{
-				{CandidateType: "glossary", Code: "outdoor_activity", Name: "户外活动", Definition: "定义一", Status: "pending", Version: 1},
-				{CandidateType: "glossary", Code: "outdoor_activity", Name: "户外运动", Definition: "定义二", Status: "pending", Version: 1},
-				{CandidateType: "glossary", Code: "outdoor_activity", Name: "户外活动概念", Definition: "定义三", Status: "pending", Version: 1},
-			},
-		},
+func TestDecideCandidateFamilyRejectsSingleSemanticVariantWithoutSideEffects(t *testing.T) {
+	db := openDocumentServiceTestDB(t)
+	repo := repository.NewDocumentRepository(db)
+	document, revision := seedDocumentDraft(t, repo, 7, "outdoor.md")
+	extraction := models.DocumentExtraction{TenantID: document.TenantID, DocumentRevisionID: revision.ID, Status: "completed", RequestedBy: 3}
+	if err := db.Create(&extraction).Error; err != nil {
+		t.Fatal(err)
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			db := openDocumentServiceTestDB(t)
-			repo := repository.NewDocumentRepository(db)
-			document, revision := seedDocumentDraft(t, repo, 7, "outdoor.md")
-			extraction := models.DocumentExtraction{TenantID: document.TenantID, DocumentRevisionID: revision.ID, Status: "completed", RequestedBy: 3}
-			if err := db.Create(&extraction).Error; err != nil {
-				t.Fatal(err)
-			}
-			for index := range test.candidates {
-				test.candidates[index].ExtractionID = extraction.ID
-			}
-			if err := db.Create(&test.candidates).Error; err != nil {
-				t.Fatal(err)
-			}
-			request := &models.DecideDocumentCandidateFamilyRequest{
-				WinnerCandidateID: test.candidates[0].ID,
-				Reason:            "选择定义更完整的变体",
-				Members: []models.DocumentCandidateFamilyDecisionMember{
-					{CandidateID: test.candidates[0].ID, Version: 1},
-					{CandidateID: test.candidates[1].ID, Version: 1},
-				},
-			}
-			if _, err := (&DocumentService{repo: repo}).DecideCandidateFamily(document.ID, document.TenantID, 11, request); !errors.Is(err, ErrCandidateFamilyDecisionInvalid) {
-				t.Fatalf("error = %v, want ErrCandidateFamilyDecisionInvalid", err)
-			}
-			var stored []models.DocumentExtractionCandidate
-			ids := make([]int64, len(test.candidates))
-			for index := range test.candidates {
-				ids[index] = test.candidates[index].ID
-			}
-			if err := db.Order("id ASC").Find(&stored, "id IN ?", ids).Error; err != nil {
-				t.Fatal(err)
-			}
-			for _, candidate := range stored {
-				if candidate.Status != models.CandidateGroupStatePending || candidate.Version != 1 || candidate.ReviewedAt != nil {
-					t.Fatalf("candidate changed after rejected decision: %+v", candidate)
-				}
-			}
-			assertNoCandidateFamilyDecision(t, db)
-		})
+	candidates := []models.DocumentExtractionCandidate{
+		{ExtractionID: extraction.ID, CandidateType: "glossary", Code: "outdoor_activity", Name: "户外 活动", Definition: "在户外开展的活动", Status: "pending", Version: 1},
+		{ExtractionID: extraction.ID, CandidateType: "glossary", Code: "outdoor_activity", Name: "户外\n活动", Definition: "在户外开展的活动", Status: "pending", Version: 1},
 	}
+	if err := db.Create(&candidates).Error; err != nil {
+		t.Fatal(err)
+	}
+	request := &models.DecideDocumentCandidateFamilyRequest{
+		WinnerCandidateID: candidates[1].ID,
+		SnapshotToken:     candidateFamilySnapshotToken(candidates[1:]),
+		Reason:            "单语义变体必须使用单项处置",
+	}
+	if _, err := (&DocumentService{repo: repo}).DecideCandidateFamily(document.ID, document.TenantID, 11, request); !errors.Is(err, ErrCandidateFamilyDecisionInvalid) {
+		t.Fatalf("error = %v, want ErrCandidateFamilyDecisionInvalid", err)
+	}
+	assertNoCandidateFamilyDecision(t, db)
 }
 
 func TestDecideCandidateFamilyRejectsHistoricalOccurrenceInsteadOfCurrentRepresentative(t *testing.T) {
@@ -243,11 +195,8 @@ func TestDecideCandidateFamilyRejectsHistoricalOccurrenceInsteadOfCurrentReprese
 	}
 	request := &models.DecideDocumentCandidateFamilyRequest{
 		WinnerCandidateID: candidates[0].ID,
+		SnapshotToken:     candidateFamilySnapshotToken([]models.DocumentExtractionCandidate{candidates[2], candidates[1]}),
 		Reason:            "旧出现记录不能代替当前代表候选",
-		Members: []models.DocumentCandidateFamilyDecisionMember{
-			{CandidateID: candidates[0].ID, Version: 1},
-			{CandidateID: candidates[1].ID, Version: 1},
-		},
 	}
 
 	if _, err := (&DocumentService{repo: repo}).DecideCandidateFamily(document.ID, document.TenantID, 11, request); !errors.Is(err, ErrCandidateFamilyDecisionInvalid) {
@@ -265,7 +214,7 @@ func TestDecideCandidateFamilyRejectsHistoricalOccurrenceInsteadOfCurrentReprese
 	assertNoCandidateFamilyDecision(t, db)
 }
 
-func TestDecideCandidateFamilyRejectsStaleMemberAndRollsBackAllMembers(t *testing.T) {
+func TestDecideCandidateFamilyRejectsStaleSnapshotAndRollsBackAllMembers(t *testing.T) {
 	db := openDocumentServiceTestDB(t)
 	repo := repository.NewDocumentRepository(db)
 	document, revision := seedDocumentDraft(t, repo, 7, "outdoor.md")
@@ -280,16 +229,15 @@ func TestDecideCandidateFamilyRejectsStaleMemberAndRollsBackAllMembers(t *testin
 	if err := db.Create(&candidates).Error; err != nil {
 		t.Fatal(err)
 	}
+	staleCandidates := append([]models.DocumentExtractionCandidate(nil), candidates...)
+	staleCandidates[1].Version = 1
 	request := &models.DecideDocumentCandidateFamilyRequest{
 		WinnerCandidateID: candidates[0].ID,
+		SnapshotToken:     candidateFamilySnapshotToken(staleCandidates),
 		Reason:            "选择定义更完整的变体",
-		Members: []models.DocumentCandidateFamilyDecisionMember{
-			{CandidateID: candidates[0].ID, Version: 1},
-			{CandidateID: candidates[1].ID, Version: 1},
-		},
 	}
-	if _, err := (&DocumentService{repo: repo}).DecideCandidateFamily(document.ID, document.TenantID, 11, request); !errors.Is(err, repository.ErrVersionConflict) {
-		t.Fatalf("error = %v, want version conflict", err)
+	if _, err := (&DocumentService{repo: repo}).DecideCandidateFamily(document.ID, document.TenantID, 11, request); !errors.Is(err, ErrCandidateFamilySnapshotStale) {
+		t.Fatalf("error = %v, want ErrCandidateFamilySnapshotStale", err)
 	}
 	var stored []models.DocumentExtractionCandidate
 	if err := db.Order("id ASC").Find(&stored, "id IN ?", []int64{candidates[0].ID, candidates[1].ID}).Error; err != nil {
@@ -303,18 +251,52 @@ func TestDecideCandidateFamilyRejectsStaleMemberAndRollsBackAllMembers(t *testin
 
 func TestDecideCandidateFamilyRejectsInvalidRequestShape(t *testing.T) {
 	svc := &DocumentService{}
+	validToken := strings.Repeat("a", 64)
 	requests := []*models.DecideDocumentCandidateFamilyRequest{
 		nil,
-		{WinnerCandidateID: 1, Reason: "理由", Members: []models.DocumentCandidateFamilyDecisionMember{{CandidateID: 1, Version: 1}}},
-		{WinnerCandidateID: 2, Reason: "理由", Members: []models.DocumentCandidateFamilyDecisionMember{{CandidateID: 1, Version: 1}, {CandidateID: 1, Version: 1}}},
-		{WinnerCandidateID: 3, Reason: "理由", Members: []models.DocumentCandidateFamilyDecisionMember{{CandidateID: 1, Version: 1}, {CandidateID: 2, Version: 1}}},
-		{WinnerCandidateID: 1, Reason: "   ", Members: []models.DocumentCandidateFamilyDecisionMember{{CandidateID: 1, Version: 1}, {CandidateID: 2, Version: 1}}},
-		{WinnerCandidateID: 1, Reason: strings.Repeat("理", 1001), Members: []models.DocumentCandidateFamilyDecisionMember{{CandidateID: 1, Version: 1}, {CandidateID: 2, Version: 1}}},
+		{WinnerCandidateID: 0, SnapshotToken: validToken, Reason: "理由"},
+		{WinnerCandidateID: 1, SnapshotToken: "", Reason: "理由"},
+		{WinnerCandidateID: 1, SnapshotToken: strings.Repeat("A", 64), Reason: "理由"},
+		{WinnerCandidateID: 1, SnapshotToken: strings.Repeat("z", 64), Reason: "理由"},
+		{WinnerCandidateID: 1, SnapshotToken: validToken, Reason: "   "},
+		{WinnerCandidateID: 1, SnapshotToken: validToken, Reason: strings.Repeat("理", 1001)},
 	}
 	for index, request := range requests {
 		if _, err := svc.DecideCandidateFamily(1, 7, 11, request); !errors.Is(err, ErrCandidateFamilyDecisionInvalid) {
 			t.Fatalf("request[%d] error = %v, want ErrCandidateFamilyDecisionInvalid", index, err)
 		}
+	}
+}
+
+func TestDecideCandidateFamilySupportsMoreThanOneHundredVariants(t *testing.T) {
+	db := openDocumentServiceTestDB(t)
+	repo := repository.NewDocumentRepository(db)
+	document, revision := seedDocumentDraft(t, repo, 7, "outdoor.md")
+	extraction := models.DocumentExtraction{TenantID: document.TenantID, DocumentRevisionID: revision.ID, Status: "completed", RequestedBy: 3}
+	if err := db.Create(&extraction).Error; err != nil {
+		t.Fatal(err)
+	}
+	candidates := make([]models.DocumentExtractionCandidate, 101)
+	for index := range candidates {
+		candidates[index] = models.DocumentExtractionCandidate{
+			ExtractionID: extraction.ID, CandidateType: "glossary", Code: "outdoor_activity",
+			Name: "户外活动", Definition: fmt.Sprintf("语义定义 %03d", index), Status: "pending", Version: 1,
+		}
+	}
+	if err := db.Create(&candidates).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := (&DocumentService{repo: repo}).DecideCandidateFamily(document.ID, document.TenantID, 11, &models.DecideDocumentCandidateFamilyRequest{
+		WinnerCandidateID: candidates[100].ID,
+		SnapshotToken:     candidateFamilySnapshotToken(candidates),
+		Reason:            "候选族不能因为超过一百个语义变体而失去治理路径",
+	})
+	if err != nil {
+		t.Fatalf("DecideCandidateFamily() error = %v", err)
+	}
+	if len(result.Candidates) != 101 || len(result.Decision.Members) != 101 {
+		t.Fatalf("candidates=%d decision_members=%d, want 101", len(result.Candidates), len(result.Decision.Members))
 	}
 }
 
@@ -360,11 +342,8 @@ func TestDecideCandidateFamilyRejectsFormalizedMemberWithoutSideEffects(t *testi
 	}
 	request := &models.DecideDocumentCandidateFamilyRequest{
 		WinnerCandidateID: candidates[1].ID,
+		SnapshotToken:     candidateFamilySnapshotToken(candidates),
 		Reason:            "选择未正式化的变体",
-		Members: []models.DocumentCandidateFamilyDecisionMember{
-			{CandidateID: candidates[0].ID, Version: 2},
-			{CandidateID: candidates[1].ID, Version: 1},
-		},
 	}
 	if _, err := (&DocumentService{repo: repo}).DecideCandidateFamily(document.ID, document.TenantID, 11, request); !errors.Is(err, ErrCandidateAlreadyFormalized) {
 		t.Fatalf("error = %v, want ErrCandidateAlreadyFormalized", err)
@@ -401,11 +380,8 @@ func TestDecideCandidateFamilyRejectsFormalizedHistoricalOccurrenceWithoutSideEf
 	}
 	request := &models.DecideDocumentCandidateFamilyRequest{
 		WinnerCandidateID: candidates[2].ID,
+		SnapshotToken:     candidateFamilySnapshotToken([]models.DocumentExtractionCandidate{candidates[0], candidates[2]}),
 		Reason:            "选择新语义变体",
-		Members: []models.DocumentCandidateFamilyDecisionMember{
-			{CandidateID: candidates[1].ID, Version: 1},
-			{CandidateID: candidates[2].ID, Version: 1},
-		},
 	}
 	if _, err := (&DocumentService{repo: repo}).DecideCandidateFamily(document.ID, document.TenantID, 11, request); !errors.Is(err, ErrCandidateAlreadyFormalized) {
 		t.Fatalf("error = %v, want ErrCandidateAlreadyFormalized", err)
@@ -429,4 +405,11 @@ func assertNoCandidateFamilyDecision(t *testing.T, db *gorm.DB) {
 	if count != 0 {
 		t.Fatalf("candidate family decision count = %d, want 0", count)
 	}
+}
+
+func candidateFamilySnapshotToken(candidates []models.DocumentExtractionCandidate) string {
+	if len(candidates) == 0 {
+		return ""
+	}
+	return candidateutil.FamilySnapshotToken(candidates[0].CandidateType, candidates[0].Code, candidates)
 }

@@ -78,6 +78,7 @@ class OnlineGateTest(unittest.TestCase):
             {
                 "consumer-engine-recovery",
                 "enterprise-catalog-publishing",
+                "kingbase-consumer-flow",
                 "manager-internal-artifact-lineage",
                 "manager-hybrid-search",
                 "module-registry-recovery",
@@ -130,6 +131,10 @@ class OnlineGateTest(unittest.TestCase):
         self.assertEqual(tidb_suite.command, oceanbase_suite.command)
         self.assertEqual(tidb_suite.services, oceanbase_suite.services)
         self.assertFalse(tidb_suite.nightly)
+        kingbase_suite = ONLINE_GATE.SUITES["kingbase-consumer-flow"]
+        self.assertEqual(kingbase_suite.command, oceanbase_suite.command)
+        self.assertEqual(kingbase_suite.services, oceanbase_suite.services)
+        self.assertFalse(kingbase_suite.nightly)
         transfer_suite = ONLINE_GATE.SUITES["transfer-insert-only-mysql"]
         self.assertEqual(
             transfer_suite.services,

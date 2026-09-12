@@ -3,7 +3,6 @@ package repository
 import (
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
@@ -38,6 +37,7 @@ var (
 	ErrDocumentCandidateFormalizationHistory = errors.New("document candidate formalization history exists")
 	ErrCandidateFamilyDecisionRequired       = errors.New("document candidate family decision required")
 	ErrCandidateFamilyDecisionInvalid        = errors.New("document candidate family decision invalid")
+	ErrCandidateFamilySnapshotStale          = errors.New("document candidate family snapshot is stale")
 )
 
 func NewDocumentRepository(db *gorm.DB) *DocumentRepository { return &DocumentRepository{db: db} }
@@ -871,54 +871,22 @@ func (r *DocumentRepository) UpdateCandidateStatus(candidateID, tenantID, userID
 	return &candidate, err
 }
 
-func (r *DocumentRepository) DecideCandidateFamily(documentID, tenantID, userID, winnerCandidateID int64, reason string, members []models.DocumentCandidateFamilyDecisionMember) (*models.DocumentCandidateFamilyDecisionResponse, error) {
-	ordered := append([]models.DocumentCandidateFamilyDecisionMember(nil), members...)
-	sort.Slice(ordered, func(i, j int) bool { return ordered[i].CandidateID < ordered[j].CandidateID })
-	ids := make([]int64, len(ordered))
-	expectedVersions := make(map[int64]int64, len(ordered))
-	for index, member := range ordered {
-		ids[index] = member.CandidateID
-		expectedVersions[member.CandidateID] = member.Version
-	}
-
+func (r *DocumentRepository) DecideCandidateFamily(documentID, tenantID, userID, winnerCandidateID int64, snapshotToken, reason string) (*models.DocumentCandidateFamilyDecisionResponse, error) {
 	response := &models.DocumentCandidateFamilyDecisionResponse{}
 	err := wrapDBError(r.db.Transaction(func(tx *gorm.DB) error {
 		var document models.Document
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Where("id = ? AND tenant_id = ?", documentID, tenantID).First(&document).Error; err != nil {
 			return commonrepo.WrapDBError(err)
 		}
-		var candidates []models.DocumentExtractionCandidate
+		var winner models.DocumentExtractionCandidate
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Table("standard.document_extraction_candidates AS candidate").Select("candidate.*").
 			Joins("JOIN standard.document_extractions extraction ON extraction.id = candidate.extraction_id").
 			Joins("JOIN standard.document_revisions revision ON revision.id = extraction.document_revision_id").
-			Where("candidate.id IN ? AND extraction.tenant_id = ? AND revision.document_id = ?", ids, tenantID, documentID).
-			Order("candidate.id ASC").Find(&candidates).Error; err != nil {
+			Where("candidate.id = ? AND extraction.tenant_id = ? AND revision.document_id = ?", winnerCandidateID, tenantID, documentID).
+			First(&winner).Error; err != nil {
 			return err
 		}
-		if len(candidates) != len(ordered) {
-			return gorm.ErrRecordNotFound
-		}
-
-		selectedByFingerprint := make(map[string]models.DocumentExtractionCandidate, len(candidates))
-		candidateType, code := candidates[0].CandidateType, candidates[0].Code
-		winnerFound := false
-		for _, value := range candidates {
-			if value.CandidateType != candidateType || value.Code != code {
-				return ErrCandidateFamilyDecisionInvalid
-			}
-			fingerprint := candidateutil.SemanticFingerprint(value)
-			if _, exists := selectedByFingerprint[fingerprint]; exists {
-				return ErrCandidateFamilyDecisionInvalid
-			}
-			selectedByFingerprint[fingerprint] = value
-			if value.Version != expectedVersions[value.ID] {
-				return ErrVersionConflict
-			}
-			winnerFound = winnerFound || value.ID == winnerCandidateID
-		}
-		if !winnerFound {
-			return ErrCandidateFamilyDecisionInvalid
-		}
+		candidateType, code := winner.CandidateType, winner.Code
 		var familyCandidates []models.DocumentExtractionCandidate
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Table("standard.document_extraction_candidates AS candidate").Select("candidate.*").
 			Joins("JOIN standard.document_extractions extraction ON extraction.id = candidate.extraction_id").
@@ -934,14 +902,23 @@ func (r *DocumentRepository) DecideCandidateFamily(documentID, tenantID, userID,
 		if hasFormalization {
 			return ErrCandidateAlreadyFormalized
 		}
-		if len(selectedByFingerprint) != len(representatives) {
+		if len(representatives) < 2 {
 			return ErrCandidateFamilyDecisionInvalid
 		}
-		for fingerprint, selected := range selectedByFingerprint {
-			current, exists := representatives[fingerprint]
-			if !exists || current.candidate.ID != selected.ID {
-				return ErrCandidateFamilyDecisionInvalid
+		candidates := make([]models.DocumentExtractionCandidate, 0, len(representatives))
+		winnerFound := false
+		for _, value := range familyCandidates {
+			fingerprint := candidateutil.SemanticFingerprint(value)
+			if representative := representatives[fingerprint]; representative.candidate.ID == value.ID {
+				candidates = append(candidates, value)
+				winnerFound = winnerFound || value.ID == winnerCandidateID
 			}
+		}
+		if candidateutil.FamilySnapshotToken(candidateType, code, candidates) != snapshotToken {
+			return ErrCandidateFamilySnapshotStale
+		}
+		if !winnerFound {
+			return ErrCandidateFamilyDecisionInvalid
 		}
 
 		now := time.Now().UTC()

@@ -62,6 +62,7 @@ const (
 	MsgDocumentCandidateFamilyQueryInvalid    = "standard.document.candidate_family_query_invalid"
 	MsgCandidateFamilyDecisionRequired        = "standard.document.candidate_family_decision_required"
 	MsgCandidateFamilyDecisionInvalid         = "standard.document.candidate_family_decision_invalid"
+	MsgCandidateFamilySnapshotStale           = "standard.document.candidate_family_snapshot_stale"
 	MsgCandidateRepresentativeStale           = "standard.document.candidate_representative_stale"
 	MsgDocumentCopilotUnavailable             = "standard.document.copilot_unavailable"
 	MsgDocumentPublicationHistory             = "standard.document.publication_history"

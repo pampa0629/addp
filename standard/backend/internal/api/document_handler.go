@@ -648,16 +648,16 @@ func (h *DocumentHandler) UpdateCandidate(c *gin.Context) {
 }
 
 // @Summary 原子裁决文档候选族 | Atomically decide a document candidate family
-// @Description 显式列出同一候选族当前全部语义指纹互异的代表候选，填写人工理由，保留唯一胜出候选并驳回其余候选，同时追加不可变裁决事件；缺少当前变体或任一成员、理由无效、已正式化、版本冲突时整批回滚 | Explicitly lists all current representative candidates with distinct semantic fingerprints in one family, records a human reason, retains the sole winner, rejects the others, and appends an immutable decision event; the entire command rolls back if any current variant is omitted or any member or reason is invalid, formalized, or stale
+// @Description 提交候选族完整读取快照令牌、唯一胜出代表候选和人工理由；服务端在文档锁内重算当前全部代表候选与令牌，保留胜出候选、驳回其余候选并追加不可变裁决事件 | Submits the complete family snapshot token, sole winning representative, and human reason; under the document lock, the server recomputes all current representatives and the token, retains the winner, rejects the others, and appends an immutable decision event
 // @Tags Standard
 // @Accept json
 // @Produce json
 // @Param id path int true "文档 ID | Document ID"
-// @Param request body models.DecideDocumentCandidateFamilyRequest true "候选成员、并发版本、胜出候选及 1–1000 字符人工理由 | Candidate members, concurrency versions, winner, and a 1–1000 character human reason"
+// @Param request body models.DecideDocumentCandidateFamilyRequest true "候选族快照令牌、胜出候选及 1–1000 字符人工理由 | Family snapshot token, winner, and a 1–1000 character human reason"
 // @Success 200 {object} models.DocumentCandidateFamilyDecisionResponse
-// @Failure 400 {object} map[string]string "理由、成员数量、重复成员、跨族成员、非当前代表成员或胜出候选无效，error_code=candidate_family_decision_invalid | Invalid reason, member count, duplicate member, cross-family member, non-current representative, or winner; error_code=candidate_family_decision_invalid"
+// @Failure 400 {object} map[string]string "理由、快照令牌格式或胜出候选无效，error_code=candidate_family_decision_invalid | Invalid reason, snapshot token format, or winner; error_code=candidate_family_decision_invalid"
 // @Failure 404 {object} map[string]string
-// @Failure 409 {object} map[string]string "候选已正式化或并发版本冲突 | Candidate already formalized or concurrency version conflict"
+// @Failure 409 {object} map[string]string "快照令牌过期返回 error_code=candidate_family_snapshot_stale；或候选已正式化 | Stale snapshot token returns error_code=candidate_family_snapshot_stale; or a candidate is already formalized"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["standard.document.update"]
 // @Router /documents/{id}/extraction-candidates/batch_decide [post]

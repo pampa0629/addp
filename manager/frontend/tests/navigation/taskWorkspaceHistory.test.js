@@ -6,8 +6,13 @@ const vectorizationSource = readFileSync(new URL('../../src/views/VectorizationT
 const routerSource = readFileSync(new URL('../../src/router/index.js', import.meta.url), 'utf8')
 
 describe('Manager task workspace history', () => {
-  it('uses one canonical derived task route for filters, details, and spatial creation', () => {
-    expect(routerSource).toContain("path: 'derived-tasks'")
+  it('uses category paths backed by one task workspace for filters, details, and creation', () => {
+    expect(routerSource).toContain("path: 'tasks/quick-view'")
+    expect(routerSource).toContain("path: 'tasks/spatial'")
+    expect(routerSource).toContain("path: 'tasks/embedding'")
+    expect(routerSource).not.toContain("path: 'derived-tasks'")
+    expect(derivedTasksSource).toContain("managed_quick_view: '/tasks/quick-view'")
+    expect(derivedTasksSource).toContain("spatial_business: '/tasks/spatial'")
     expect(derivedTasksSource).toContain("await syncRoute({ task_id: String(row.id) }, 'push')")
     expect(derivedTasksSource).toContain("await syncRoute({ create: '1'")
     expect(derivedTasksSource).toContain('QuickViewTaskCreator')
@@ -37,9 +42,10 @@ describe('Manager task workspace history', () => {
 
   it('integrates vectorization into the canonical data-task route while preserving workspace history', () => {
     expect(routerSource).not.toContain("path: 'vectorization-tasks'")
-    expect(derivedTasksSource).toContain("name=\"embedding\"")
+    expect(routerSource).toContain("taskCategory: 'embedding'")
+    expect(derivedTasksSource).not.toContain('@tab-change="changeCategory"')
     expect(derivedTasksSource).toContain('<VectorizationTasks')
-    expect(vectorizationSource).toContain("tasks: ['category', 'create', 'task_id']")
+    expect(vectorizationSource).toContain("tasks: ['create', 'task_id']")
     expect(vectorizationSource).toContain("history: 'push'")
     expect(vectorizationSource).toContain('requestCreateDialog')
     expect(vectorizationSource).toContain('requestEditTask')

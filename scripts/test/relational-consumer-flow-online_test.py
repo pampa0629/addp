@@ -16,6 +16,7 @@ SPEC.loader.exec_module(ONLINE)
 class RelationalConsumerFlowOnlineTest(unittest.TestCase):
     oceanbase = ONLINE.PROFILES["oceanbase"]
     opengauss = ONLINE.PROFILES["opengauss"]
+    kingbase = ONLINE.PROFILES["kingbase"]
     tidb = ONLINE.PROFILES["tidb"]
 
     def test_transfer_uses_bounded_watermark_and_idempotent_upsert(self) -> None:
@@ -67,11 +68,16 @@ class RelationalConsumerFlowOnlineTest(unittest.TestCase):
         self.assertEqual(self.oceanbase.identifier_quote, "`")
         self.assertEqual(self.opengauss.namespace_kind, "schema")
         self.assertEqual(self.opengauss.identifier_quote, '"')
+        self.assertEqual(self.kingbase.namespace_kind, "schema")
+        self.assertEqual(self.kingbase.identifier_quote, '"')
         self.assertEqual(self.tidb.namespace_kind, "database")
         self.assertEqual(self.tidb.identifier_quote, "`")
         baseline, final = ONLINE.expected_rows(self.opengauss)
         self.assertEqual(baseline[0]["item_code"], "OG-1001")
         self.assertEqual(final[-1]["item_code"], "OG-1006")
+        kingbase_baseline, kingbase_final = ONLINE.expected_rows(self.kingbase)
+        self.assertEqual(kingbase_baseline[0]["item_code"], "KB-1001")
+        self.assertEqual(kingbase_final[-1]["item_code"], "KB-1006")
         tidb_baseline, tidb_final = ONLINE.expected_rows(self.tidb)
         self.assertEqual(tidb_baseline[0]["item_code"], "TIDB-1001")
         self.assertEqual(tidb_final[-1]["item_code"], "TIDB-1006")

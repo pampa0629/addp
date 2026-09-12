@@ -12,3 +12,8 @@ export function withTargetOverride(endpoint, enabled) {
   if (!enabled) return endpoint
   return { ...endpoint, override_policy: TARGET_OVERRIDE_POLICY }
 }
+
+export function targetOverrideAfterParentSelection({ parentChanged, existingTarget, overrideEnabled }) {
+  if (!parentChanged) return { existingTarget, overrideEnabled }
+  return { existingTarget: false, overrideEnabled: false }
+}

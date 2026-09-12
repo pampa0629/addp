@@ -140,6 +140,7 @@ type DocumentExtractionCandidateGroup struct {
 // DocumentExtractionCandidateFamily 以候选类型和稳定编码组织多个独立语义变体。
 type DocumentExtractionCandidateFamily struct {
 	FamilyKey          string                             `json:"family_key"`
+	SnapshotToken      string                             `json:"snapshot_token"`
 	CandidateType      string                             `json:"candidate_type" enums:"glossary,element,code_set,metric"`
 	Code               string                             `json:"code"`
 	RepresentativeName string                             `json:"representative_name"`
@@ -385,15 +386,10 @@ type UpdateDocumentExtractionCandidateRequest struct {
 	Status  string `json:"status" binding:"required" enums:"retained,rejected"`
 }
 
-type DocumentCandidateFamilyDecisionMember struct {
-	CandidateID int64 `json:"candidate_id" binding:"required,gt=0" minimum:"1"`
-	Version     int64 `json:"version" binding:"required,gt=0" minimum:"1"`
-}
-
 type DecideDocumentCandidateFamilyRequest struct {
-	WinnerCandidateID int64                                   `json:"winner_candidate_id" binding:"required,gt=0" minimum:"1"`
-	Members           []DocumentCandidateFamilyDecisionMember `json:"members" binding:"required,min=2,max=100,dive" minItems:"2" maxItems:"100"`
-	Reason            string                                  `json:"reason" binding:"required,max=1000" maxLength:"1000"`
+	WinnerCandidateID int64  `json:"winner_candidate_id" binding:"required,gt=0" minimum:"1"`
+	SnapshotToken     string `json:"snapshot_token" binding:"required,len=64" minLength:"64" maxLength:"64"`
+	Reason            string `json:"reason" binding:"required,max=1000" maxLength:"1000"`
 }
 
 type DocumentCandidateFamilyDecisionResponse struct {

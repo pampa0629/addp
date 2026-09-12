@@ -182,6 +182,11 @@ func respondError(c *gin.Context, status int, err error) {
 		message = commoni18n.T(c, sysi18n.MsgCandidateFamilyDecisionInvalid)
 		errorCode = "candidate_family_decision_invalid"
 		useGenericMessage = false
+	case errors.Is(err, service.ErrCandidateFamilySnapshotStale):
+		status = http.StatusConflict
+		message = commoni18n.T(c, sysi18n.MsgCandidateFamilySnapshotStale)
+		errorCode = "candidate_family_snapshot_stale"
+		useGenericMessage = false
 	case errors.Is(err, service.ErrCandidateRepresentativeStale):
 		status = http.StatusConflict
 		message = commoni18n.T(c, sysi18n.MsgCandidateRepresentativeStale)

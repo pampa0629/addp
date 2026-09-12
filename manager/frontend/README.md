@@ -50,7 +50,9 @@ Manager 前端使用 System 模块的认证服务：
 所有路由使用 `/manager/` 作为 base path:
 - `/manager/data-explorer` - 数据探查（默认首页）
 - `/manager/data-retrieval` - 数据检索
-- `/manager/derived-tasks?category=embedding` - 数据任务中的向量化任务 Tab
+- `/manager/tasks/quick-view` - 数据任务中的快显任务
+- `/manager/tasks/spatial` - 数据任务中的空间数据任务
+- `/manager/tasks/embedding` - 数据任务中的向量化任务（页内包含任务与结果视图）
 - `/manager/spatial-preview` - 空间预览
 
 **注意**: 引擎管理由 System 模块负责，Manager 模块仅提供数据访问和预览服务。

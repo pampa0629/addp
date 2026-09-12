@@ -207,11 +207,13 @@ func (s *SQLEngineService) IssueSQLExecutionAuthorizationFromExecution(
 	parentExecutionID uuid.UUID,
 	executionID uuid.UUID,
 	engineID uint,
+	attempt int,
+	leaseToken string,
 	sqlContent string,
 	timeout int,
 ) (*IssuedSQLExecutionAuthorization, error) {
 	if s == nil || s.cfg == nil || s.systemService == nil || tenantID == 0 || engineID == 0 ||
-		parentExecutionID == uuid.Nil || executionID == uuid.Nil {
+		parentExecutionID == uuid.Nil || executionID == uuid.Nil || attempt <= 0 || strings.TrimSpace(leaseToken) == "" {
 		return nil, fmt.Errorf("SQL 执行授权服务未正确初始化")
 	}
 	timeout = s.normalizedTimeoutForTenant(ctx, tenantID, timeout)
@@ -221,7 +223,8 @@ func (s *SQLEngineService) IssueSQLExecutionAuthorizationFromExecution(
 	}
 	timeout = s.normalizedTimeoutForTenant(ctx, tenantID, timeout)
 	return s.issueExecutionAuthorizationFromExecution(
-		ctx, tenantID, parentExecutionID, executionID, []uint{engineID}, []SQLExecutionEffect{effect}, expiresIn, "develop",
+		ctx, tenantID, parentExecutionID, executionID, attempt, leaseToken,
+		[]uint{engineID}, []SQLExecutionEffect{effect}, expiresIn, "develop",
 	)
 }
 
@@ -238,7 +241,7 @@ func (s *SQLEngineService) IssueReadExecutionAuthorizationFromExecution(
 	}
 	timeout = s.normalizedTimeoutForTenant(ctx, tenantID, timeout)
 	return s.issueExecutionAuthorizationFromExecution(
-		ctx, tenantID, parentExecutionID, executionID, engineIDs, []SQLExecutionEffect{SQLExecutionEffectRead},
+		ctx, tenantID, parentExecutionID, executionID, 0, "", engineIDs, []SQLExecutionEffect{SQLExecutionEffectRead},
 		int64(s.normalizedTimeout(timeout)+30), "develop",
 	)
 }
@@ -249,11 +252,14 @@ func (s *SQLEngineService) IssueFederatedReadExecutionAuthorizationFromExecution
 	parentExecutionID uuid.UUID,
 	executionID uuid.UUID,
 	engineIDs []uint,
+	attempt int,
+	leaseToken string,
 	timeout int,
 ) (*IssuedSQLExecutionAuthorization, error) {
 	timeout = s.normalizedTimeoutForTenant(ctx, tenantID, timeout)
 	return s.issueExecutionAuthorizationFromExecution(
-		ctx, tenantID, parentExecutionID, executionID, engineIDs, []SQLExecutionEffect{SQLExecutionEffectRead},
+		ctx, tenantID, parentExecutionID, executionID, attempt, leaseToken,
+		engineIDs, []SQLExecutionEffect{SQLExecutionEffectRead},
 		int64(s.normalizedTimeout(timeout)+30), "duckdb",
 	)
 }
@@ -294,6 +300,8 @@ func (s *SQLEngineService) issueExecutionAuthorizationFromExecution(
 	tenantID uint,
 	parentExecutionID uuid.UUID,
 	executionID uuid.UUID,
+	attempt int,
+	leaseToken string,
 	engineIDs []uint,
 	effects []SQLExecutionEffect,
 	expiresIn int64,
@@ -309,6 +317,8 @@ func (s *SQLEngineService) issueExecutionAuthorizationFromExecution(
 			ParentExecutionID: parentExecutionID.String(),
 			Audience:          audience,
 			ExecutionID:       executionID.String(),
+			Attempt:           attempt,
+			LeaseToken:        leaseToken,
 			Accesses:          executionEngineAccessScopes(engineIDs, effects),
 			ExpiresIn:         expiresIn,
 		},

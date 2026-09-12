@@ -108,6 +108,101 @@ func TestIntegrationPlannerPlanExecutesPostgresGeoJSONReadTransform(t *testing.T
 	}
 }
 
+func TestIntegrationPlannerTargetOverrideAppendsOnlyToExistingPostgresTable(t *testing.T) {
+	if os.Getenv("ADDP_POSTGRES_INTEGRATION") != "1" {
+		t.Skip("set ADDP_POSTGRES_INTEGRATION=1 to run PostgreSQL integration test")
+	}
+
+	ctx := context.Background()
+	connInfo := plannerIntegrationPostgresConnInfo(t)
+	pg := &postgresql.PostgreSQLPlugin{}
+	db := openPlannerIntegrationPostgres(t, ctx, pg, connInfo)
+
+	schemaName := plannerIntegrationPostgresTestSchema(t, ctx, db)
+	sourceTable := "override_source"
+	defaultTarget := "default_target"
+	overrideTarget := "override_target"
+	for _, tableName := range []string{sourceTable, defaultTarget, overrideTarget} {
+		if _, err := db.ExecContext(ctx, fmt.Sprintf(`
+			CREATE TABLE "%s"."%s" (
+				id bigint NOT NULL,
+				name text NOT NULL
+			)
+		`, schemaName, tableName)); err != nil {
+			t.Fatalf("create table %s failed: %v", tableName, err)
+		}
+	}
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(`
+		INSERT INTO "%s"."%s" (id, name)
+		VALUES (1, 'first'), (2, 'second')
+	`, schemaName, sourceTable)); err != nil {
+		t.Fatalf("insert source rows failed: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(`
+		INSERT INTO "%s"."%s" (id, name) VALUES (900, 'default sentinel')
+	`, schemaName, defaultTarget)); err != nil {
+		t.Fatalf("insert default target sentinel failed: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(`
+		INSERT INTO "%s"."%s" (id, name) VALUES (800, 'override sentinel')
+	`, schemaName, overrideTarget)); err != nil {
+		t.Fatalf("insert override target sentinel failed: %v", err)
+	}
+
+	spec := overridableNativeTableSpec()
+	spec.Source.Locator = tableLocator(1, schemaName, sourceTable)
+	spec.Target.ParentLocator = schemaLocator(2, schemaName)
+	spec.Target.Name = defaultTarget
+	spec.Transforms[0].Fields = []FieldMappingSpec{
+		{Source: "id", Target: "id", TargetType: "bigint"},
+		{Source: "name", Target: "name", TargetType: "string"},
+	}
+	resolved, err := ResolveTargetOverride(spec, tableLocator(2, schemaName, overrideTarget))
+	if err != nil {
+		t.Fatalf("ResolveTargetOverride failed: %v", err)
+	}
+
+	caps := pg.Capabilities()
+	build, err := BuildTableTransferPlan(resolved, StaticEngineResolver{
+		1: {Type: "postgresql", ConnInfo: connInfo, Capabilities: &caps},
+		2: {Type: "postgresql", ConnInfo: connInfo, Capabilities: &caps},
+	})
+	if err != nil {
+		t.Fatalf("BuildTableTransferPlan failed: %v", err)
+	}
+	if !build.Plan.Target.ManagedExisting || build.Plan.Target.DeleteBeforeWrite {
+		t.Fatalf("override target plan = %#v, want managed existing append", build.Plan.Target)
+	}
+
+	tableExecutor := &executor.TableTransferExecutor{
+		SourceNativeReader:         pg,
+		SourceTableSessionProvider: pg,
+		TargetTableSessionProvider: pg,
+	}
+	metrics, err := tableExecutor.Execute(ctx, build.Plan)
+	if err != nil {
+		t.Fatalf("Execute target override transfer failed: %v", err)
+	}
+	if metrics.RecordsRead != 2 || metrics.RecordsWritten != 2 {
+		t.Fatalf("metrics = %#v, want two transferred rows", metrics)
+	}
+
+	assertPlannerIntegrationTableIDs(t, ctx, db, schemaName, defaultTarget, "900")
+	assertPlannerIntegrationTableIDs(t, ctx, db, schemaName, overrideTarget, "1,2,800")
+}
+
+func assertPlannerIntegrationTableIDs(t *testing.T, ctx context.Context, db *sql.DB, schemaName, tableName, want string) {
+	t.Helper()
+	var got string
+	query := fmt.Sprintf(`SELECT string_agg(id::text, ',' ORDER BY id) FROM "%s"."%s"`, schemaName, tableName)
+	if err := db.QueryRowContext(ctx, query).Scan(&got); err != nil {
+		t.Fatalf("read table %s ids failed: %v", tableName, err)
+	}
+	if got != want {
+		t.Fatalf("table %s ids = %q, want %q", tableName, got, want)
+	}
+}
+
 func plannerIntegrationPostgresConnInfo(t *testing.T) engineplugin.ConnectionInfo {
 	t.Helper()
 	return testpg.ConnInfoFromEnv(t)

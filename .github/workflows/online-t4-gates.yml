@@ -12,6 +12,7 @@ on:
         options:
           - consumer-engine-recovery
           - enterprise-catalog-publishing
+          - kingbase-consumer-flow
           - manager-internal-artifact-lineage
           - manager-hybrid-search
           - module-registry-recovery
@@ -32,7 +33,7 @@ permissions:
 jobs:
   online-t4:
     name: Online T4 (${{ inputs.suite }})
-    if: github.event_name == 'workflow_dispatch' && inputs.suite != 'opengauss-consumer-flow'
+    if: github.event_name == 'workflow_dispatch' && inputs.suite != 'opengauss-consumer-flow' && inputs.suite != 'kingbase-consumer-flow'
     concurrency:
       group: online-t4-${{ inputs.suite }}
       cancel-in-progress: false
@@ -142,5 +143,74 @@ jobs:
         uses: ./.github/actions/ci-gate-summary
         with:
           gate: Online T4 (opengauss-consumer-flow, Linux x86_64)
+          status: ${{ job.status }}
+          details-file: ${{ runner.temp }}/addp-online-${{ github.run_id }}/summary.txt
+
+  kingbase-owner-managed-t4:
+    name: Online T4 (kingbase-consumer-flow, owner-managed Linux x86_64)
+    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'kingbase-consumer-flow'
+    concurrency:
+      group: online-t4-kingbase-consumer-flow
+      cancel-in-progress: false
+    runs-on:
+      - self-hosted
+      - Linux
+      - X64
+      - addp-kingbase
+    environment: addp-kingbase
+    timeout-minutes: 90
+    env:
+      ADDP_ONLINE_HOST: "1"
+      ADDP_ONLINE_OWNER_MANAGED: "1"
+      ADDP_KINGBASE_GATE_ENV_FILE: ${{ vars.ADDP_KINGBASE_GATE_ENV_FILE }}
+      ONLINE_SUITE_INPUT: kingbase-consumer-flow
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: system/backend/go.mod
+          cache: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: '**/package-lock.json'
+
+      - name: Validate owner-managed KingbaseES readiness
+        env:
+          ADDP_ONLINE_ARTIFACT_DIR: ${{ runner.temp }}/addp-online-${{ github.run_id }}
+          ADDP_ONLINE_SECRET_DIR: ${{ runner.temp }}/addp-online-secret-${{ github.run_id }}
+        run: bash scripts/test/online-owner-managed-kingbase-gate.sh --check-only
+
+      - name: Run owner-managed KingbaseES Online gate
+        env:
+          ADDP_ONLINE_ARTIFACT_DIR: ${{ runner.temp }}/addp-online-${{ github.run_id }}
+          ADDP_ONLINE_SECRET_DIR: ${{ runner.temp }}/addp-online-secret-${{ github.run_id }}
+        run: bash scripts/test/online-owner-managed-kingbase-gate.sh
+
+      - name: Upload owner-managed KingbaseES evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: online-t4-kingbase-consumer-flow-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/addp-online-${{ github.run_id }}/
+            logs/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Summarize owner-managed KingbaseES T4 gate
+        if: always()
+        uses: ./.github/actions/ci-gate-summary
+        with:
+          gate: Online T4 (kingbase-consumer-flow, owner-managed Linux x86_64)
           status: ${{ job.status }}
           details-file: ${{ runner.temp }}/addp-online-${{ github.run_id }}/summary.txt

@@ -31,6 +31,9 @@ type ProtocolIdentity struct {
 	// AdditionalSystemSchemas extends PostgreSQL's built-in catalog filter for
 	// a protocol-compatible engine's own reserved schemas.
 	AdditionalSystemSchemas []string
+	// AdditionalSystemTables extends the catalog filter for protocol-compatible
+	// engines that expose reserved objects inside an otherwise business schema.
+	AdditionalSystemTables []string
 }
 
 // NewProtocolCompatiblePlugin creates a PostgreSQL protocol implementation
@@ -73,14 +76,6 @@ var superMapSDXSystemTableNames = []string{
 	"smversiondtitems",
 	"smversions",
 }
-
-var superMapSDXSystemTableNameSet = func() map[string]struct{} {
-	result := make(map[string]struct{}, len(superMapSDXSystemTableNames))
-	for _, name := range superMapSDXSystemTableNames {
-		result[name] = struct{}{}
-	}
-	return result
-}()
 
 // init 函数在包被导入时自动注册插件
 func init() {
@@ -199,14 +194,23 @@ func (p *PostgreSQLPlugin) tabularCatalogCallbacks() plugin.TabularCatalogCallba
 }
 
 func (p *PostgreSQLPlugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.EngineCatalogPath, opts plugin.ListOptions) ([]plugin.EngineCatalogEntry, error) {
+	if err := p.rejectHiddenCatalogPath(parent); err != nil {
+		return nil, err
+	}
 	return plugin.ListTabularCatalogChildren(ctx, p.tabularCatalogCallbacks(), &plugin.Engine{ID: parent.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, parent, opts)
 }
 
 func (p *PostgreSQLPlugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath) (*plugin.EngineCatalogEntry, error) {
+	if err := p.rejectHiddenCatalogPath(path); err != nil {
+		return nil, err
+	}
 	return plugin.ResolveTabularCatalogPath(ctx, p.tabularCatalogCallbacks(), &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path)
 }
 
 func (p *PostgreSQLPlugin) DescribeEngineCatalogFacts(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error) {
+	if err := p.rejectHiddenCatalogPath(path); err != nil {
+		return nil, err
+	}
 	return plugin.DescribeTabularCatalogFacts(ctx, p.tabularCatalogCallbacks(), &plugin.Engine{ID: path.EngineID, EngineType: p.Type(), ConnectionInfo: connInfo}, path, opts)
 }
 
@@ -296,12 +300,7 @@ func (p *PostgreSQLPlugin) listNamespaces(ctx context.Context, db *gorm.DB, root
 		return nil, err
 	}
 
-	superMapLeafFilter := ""
-	if superMapSDXDetected {
-		superMapLeafFilter = "AND lower(table_name) NOT IN (" + superMapSDXSystemTableSQLList() + ")"
-	}
-
-	query, args := p.listNamespacesQuery(superMapLeafFilter)
+	query, args := p.listNamespacesQuery(superMapSDXDetected)
 
 	err = db.WithContext(ctx).Raw(query, args...).Scan(&rows).Error
 	if err != nil {
@@ -315,13 +314,24 @@ func (p *PostgreSQLPlugin) listNamespaces(ctx context.Context, db *gorm.DB, root
 	return namespaces, nil
 }
 
-func (p *PostgreSQLPlugin) listNamespacesQuery(superMapLeafFilter string) (string, []interface{}) {
+func (p *PostgreSQLPlugin) listNamespacesQuery(superMapSDXDetected bool) (string, []interface{}) {
+	systemTables := p.catalogSystemTableNames(superMapSDXDetected)
+	tablePlaceholders := make([]string, len(systemTables))
+	args := make([]interface{}, 0, len(systemTables)+len(p.systemSchemaNames()))
+	for index, table := range systemTables {
+		tablePlaceholders[index] = "?"
+		args = append(args, table)
+	}
+	tableFilter := ""
+	if len(tablePlaceholders) > 0 {
+		tableFilter = "AND lower(table_name) NOT IN (" + strings.Join(tablePlaceholders, ", ") + ")"
+	}
+
 	systemSchemas := p.systemSchemaNames()
 	placeholders := make([]string, len(systemSchemas))
-	args := make([]interface{}, len(systemSchemas))
 	for index, schema := range systemSchemas {
 		placeholders[index] = "?"
-		args[index] = schema
+		args = append(args, schema)
 	}
 
 	query := `
@@ -331,7 +341,7 @@ func (p *PostgreSQLPlugin) listNamespacesQuery(superMapLeafFilter string) (strin
 			 FROM information_schema.tables
 			 WHERE table_schema = s.schema_name
 			   AND table_type = 'BASE TABLE'
-			   ` + superMapLeafFilter + `) as leaf_count
+			   ` + tableFilter + `) as leaf_count
 		FROM information_schema.schemata s
 		WHERE lower(schema_name) NOT IN (` + strings.Join(placeholders, ", ") + `)
 		  AND has_schema_privilege(s.schema_name, 'USAGE')
@@ -401,7 +411,7 @@ func (p *PostgreSQLPlugin) listTables(ctx context.Context, db *gorm.DB, schema s
 		})
 	}
 
-	return filterPostgreSQLSystemTables(tables, superMapSDXDetected), nil
+	return p.filterSystemTables(tables, superMapSDXDetected), nil
 }
 
 type postgresTableRow struct {
@@ -526,6 +536,67 @@ func (p *PostgreSQLPlugin) systemSchemaNames() []string {
 	return result
 }
 
+func (p *PostgreSQLPlugin) additionalSystemTableNames() []string {
+	names := map[string]struct{}{}
+	if p != nil && p.identity != nil {
+		for _, table := range p.identity.AdditionalSystemTables {
+			if normalized := strings.ToLower(strings.TrimSpace(table)); normalized != "" {
+				names[normalized] = struct{}{}
+			}
+		}
+	}
+
+	result := make([]string, 0, len(names))
+	for name := range names {
+		result = append(result, name)
+	}
+	sort.Strings(result)
+	return result
+}
+
+func (p *PostgreSQLPlugin) catalogSystemTableNames(superMapSDXDetected bool) []string {
+	names := map[string]struct{}{}
+	for _, name := range p.additionalSystemTableNames() {
+		names[name] = struct{}{}
+	}
+	if superMapSDXDetected {
+		for _, name := range superMapSDXSystemTableNames {
+			names[name] = struct{}{}
+		}
+	}
+
+	result := make([]string, 0, len(names))
+	for name := range names {
+		result = append(result, name)
+	}
+	sort.Strings(result)
+	return result
+}
+
+func (p *PostgreSQLPlugin) isAdditionalSystemTableName(tableName string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(tableName))
+	for _, name := range p.additionalSystemTableNames() {
+		if normalized == name {
+			return true
+		}
+	}
+	return false
+}
+
+func (p *PostgreSQLPlugin) rejectHiddenCatalogPath(path plugin.EngineCatalogPath) error {
+	segments := plugin.EngineCatalogPathWithoutRoot(path).Segments
+	if len(segments) == 0 {
+		return nil
+	}
+	if p.isSystemSchema(segments[0].Name) {
+		return plugin.WrapEngineCatalogError(plugin.EngineCatalogErrorNotFound, fmt.Errorf("catalog namespace %q is hidden", segments[0].Name))
+	}
+	if len(segments) > 1 && p.isAdditionalSystemTableName(segments[len(segments)-1].Name) {
+		return plugin.WrapEngineCatalogError(plugin.EngineCatalogErrorNotFound, fmt.Errorf("catalog table %q is hidden", segments[len(segments)-1].Name))
+	}
+	return nil
+}
+
 func (p *PostgreSQLPlugin) hasSuperMapSDXSystemTables(ctx context.Context, db *gorm.DB) (bool, error) {
 	var count int64
 	err := db.WithContext(ctx).Raw(`
@@ -540,24 +611,24 @@ func (p *PostgreSQLPlugin) hasSuperMapSDXSystemTables(ctx context.Context, db *g
 	return count >= superMapSDXSystemTableThreshold, nil
 }
 
-func filterPostgreSQLSystemTables(tables []datatype.TableInfo, superMapSDXDetected bool) []datatype.TableInfo {
-	if !superMapSDXDetected {
+func (p *PostgreSQLPlugin) filterSystemTables(tables []datatype.TableInfo, superMapSDXDetected bool) []datatype.TableInfo {
+	systemTableNames := p.catalogSystemTableNames(superMapSDXDetected)
+	if len(systemTableNames) == 0 {
 		return tables
+	}
+	systemTableNameSet := make(map[string]struct{}, len(systemTableNames))
+	for _, name := range systemTableNames {
+		systemTableNameSet[name] = struct{}{}
 	}
 
 	filtered := make([]datatype.TableInfo, 0, len(tables))
 	for _, table := range tables {
-		if isSuperMapSDXSystemTableName(table.Name) {
+		if _, hidden := systemTableNameSet[strings.ToLower(strings.TrimSpace(table.Name))]; hidden {
 			continue
 		}
 		filtered = append(filtered, table)
 	}
 	return filtered
-}
-
-func isSuperMapSDXSystemTableName(tableName string) bool {
-	_, ok := superMapSDXSystemTableNameSet[strings.ToLower(strings.TrimSpace(tableName))]
-	return ok
 }
 
 func superMapSDXSystemTableSQLList() string {

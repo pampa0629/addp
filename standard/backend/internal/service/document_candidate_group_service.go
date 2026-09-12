@@ -55,8 +55,14 @@ func (s *DocumentService) ListCandidateFamilies(documentID, tenantID int64, opts
 		decisionCounts[row.CandidateType+":"+row.Code] = row.DecisionCount
 	}
 	totalVariantCounts := make(map[string]int, len(groups))
-	for _, group := range groups {
-		totalVariantCounts[documentCandidateFamilyKey(group.Candidate)]++
+	snapshotTokens := make(map[string]string, len(groups))
+	for _, family := range buildDocumentCandidateFamilies(groups) {
+		totalVariantCounts[family.FamilyKey] = family.VariantCount
+		candidates := make([]models.DocumentExtractionCandidate, len(family.Variants))
+		for index := range family.Variants {
+			candidates[index] = family.Variants[index].Candidate
+		}
+		snapshotTokens[family.FamilyKey] = candidateutil.FamilySnapshotToken(family.CandidateType, family.Code, candidates)
 	}
 
 	response := &models.PaginatedDocumentExtractionCandidateFamilyResponse{
@@ -97,6 +103,7 @@ func (s *DocumentService) ListCandidateFamilies(documentID, tenantID int64, opts
 	families := buildDocumentCandidateFamilies(filtered)
 	for index := range families {
 		families[index].TotalVariantCount = totalVariantCounts[families[index].FamilyKey]
+		families[index].SnapshotToken = snapshotTokens[families[index].FamilyKey]
 		families[index].DecisionCount = decisionCounts[families[index].FamilyKey]
 	}
 	response.Total = int64(len(families))

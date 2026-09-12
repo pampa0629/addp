@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	candidateutil "github.com/addp/standard/internal/candidate"
 	"github.com/addp/standard/internal/models"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -72,11 +73,8 @@ func TestPostgresDocumentCandidateFamilyDecision(t *testing.T) {
 		if err := db.Create(&historicalCandidates).Error; err != nil {
 			t.Fatal(err)
 		}
-		members := []models.DocumentCandidateFamilyDecisionMember{
-			{CandidateID: historicalCandidates[0].ID, Version: 1},
-			{CandidateID: historicalCandidates[1].ID, Version: 1},
-		}
-		if _, err := repo.DecideCandidateFamily(historicalDocument.ID, tenantID, 9, historicalCandidates[0].ID, "历史出现记录不能代替当前代表候选", members); !errors.Is(err, ErrCandidateFamilyDecisionInvalid) {
+		snapshotToken := candidateutil.FamilySnapshotToken("glossary", "outdoor_activity", []models.DocumentExtractionCandidate{historicalCandidates[2], historicalCandidates[1]})
+		if _, err := repo.DecideCandidateFamily(historicalDocument.ID, tenantID, 9, historicalCandidates[0].ID, snapshotToken, "历史出现记录不能代替当前代表候选"); !errors.Is(err, ErrCandidateFamilyDecisionInvalid) {
 			t.Fatalf("historical representative error = %v, want ErrCandidateFamilyDecisionInvalid", err)
 		}
 		var stored []models.DocumentExtractionCandidate
@@ -136,15 +134,17 @@ func TestPostgresDocumentCandidateFamilyDecision(t *testing.T) {
 	assertCandidateDecisionRows(t, db, candidates, []string{"pending", "pending"}, []int64{1, 1})
 	assertCandidateDecisionEventCount(t, db, document.ID, 0)
 
-	staleMembers := []models.DocumentCandidateFamilyDecisionMember{{CandidateID: candidates[0].ID, Version: 1}, {CandidateID: candidates[1].ID, Version: 2}}
-	if _, err := repo.DecideCandidateFamily(document.ID, tenantID, 9, candidates[0].ID, "过期请求不应落库", staleMembers); !errors.Is(err, ErrVersionConflict) {
-		t.Fatalf("stale decision error = %v, want ErrVersionConflict", err)
+	staleCandidates := append([]models.DocumentExtractionCandidate(nil), candidates...)
+	staleCandidates[1].Version = 2
+	staleToken := candidateutil.FamilySnapshotToken("glossary", "outdoor_activity", staleCandidates)
+	if _, err := repo.DecideCandidateFamily(document.ID, tenantID, 9, candidates[0].ID, staleToken, "过期请求不应落库"); !errors.Is(err, ErrCandidateFamilySnapshotStale) {
+		t.Fatalf("stale decision error = %v, want ErrCandidateFamilySnapshotStale", err)
 	}
 	assertCandidateDecisionRows(t, db, candidates, []string{"pending", "pending"}, []int64{1, 1})
 	assertCandidateDecisionEventCount(t, db, document.ID, 0)
 
-	members := []models.DocumentCandidateFamilyDecisionMember{{CandidateID: candidates[1].ID, Version: 1}, {CandidateID: candidates[0].ID, Version: 1}}
-	result, err := repo.DecideCandidateFamily(document.ID, tenantID, 9, candidates[1].ID, "定义二更符合户外业务口径", members)
+	snapshotToken := candidateutil.FamilySnapshotToken("glossary", "outdoor_activity", candidates)
+	result, err := repo.DecideCandidateFamily(document.ID, tenantID, 9, candidates[1].ID, snapshotToken, "定义二更符合户外业务口径")
 	if err != nil {
 		t.Fatalf("DecideCandidateFamily() error = %v", err)
 	}
@@ -154,8 +154,8 @@ func TestPostgresDocumentCandidateFamilyDecision(t *testing.T) {
 	assertCandidateDecisionRows(t, db, candidates, []string{"rejected", "retained"}, []int64{2, 2})
 	assertCandidateDecisionEventCount(t, db, document.ID, 1)
 
-	secondMembers := []models.DocumentCandidateFamilyDecisionMember{{CandidateID: candidates[0].ID, Version: 2}, {CandidateID: candidates[1].ID, Version: 2}}
-	second, err := repo.DecideCandidateFamily(document.ID, tenantID, 10, candidates[0].ID, "补充证据后重新选择定义一", secondMembers)
+	secondToken := candidateutil.FamilySnapshotToken("glossary", "outdoor_activity", result.Candidates)
+	second, err := repo.DecideCandidateFamily(document.ID, tenantID, 10, candidates[0].ID, secondToken, "补充证据后重新选择定义一")
 	if err != nil {
 		t.Fatalf("second DecideCandidateFamily() error = %v", err)
 	}
@@ -177,6 +177,60 @@ func TestPostgresDocumentCandidateFamilyDecision(t *testing.T) {
 	if len(firstPage) != 1 || firstPage[0].ID != result.Decision.ID || firstPage[0].Reason != "定义二更符合户外业务口径" || firstPage[0].WinnerCandidateID != candidates[1].ID {
 		t.Fatalf("first immutable decision = %+v", firstPage)
 	}
+	t.Run("supports more than one hundred semantic variants", func(t *testing.T) {
+		largeDocument := models.Document{TenantID: tenantID, ScopeType: models.StandardScopeTenantCommon, Code: fmt.Sprintf("large_family_%d", tenantID), DocType: "internal", CreatedBy: 1, Version: 1, LifecycleState: "active"}
+		if err := db.Create(&largeDocument).Error; err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			_ = db.Where("id = ? AND tenant_id = ?", largeDocument.ID, tenantID).Delete(&models.Document{}).Error
+		})
+		largeRevision := models.DocumentRevision{DocumentID: largeDocument.ID, RevisionNo: 1, Status: models.RevisionStatusDraft, Name: "大候选族裁决", ChangeSummary: "initial", CreatedBy: 1}
+		if err := db.Create(&largeRevision).Error; err != nil {
+			t.Fatal(err)
+		}
+		largeExtraction := models.DocumentExtraction{TenantID: tenantID, DocumentRevisionID: largeRevision.ID, Status: "completed", RequestedBy: 1}
+		if err := db.Create(&largeExtraction).Error; err != nil {
+			t.Fatal(err)
+		}
+		largeCandidates := make([]models.DocumentExtractionCandidate, 101)
+		for index := range largeCandidates {
+			largeCandidates[index] = models.DocumentExtractionCandidate{
+				ExtractionID: largeExtraction.ID, CandidateType: "glossary", Code: "outdoor_large_family",
+				Name: fmt.Sprintf("户外活动变体%d", index+1), Definition: fmt.Sprintf("独立业务定义%d", index+1),
+				Status: models.CandidateGroupStatePending, Version: 1,
+			}
+		}
+		if err := db.Create(&largeCandidates).Error; err != nil {
+			t.Fatal(err)
+		}
+		largeToken := candidateutil.FamilySnapshotToken("glossary", "outdoor_large_family", largeCandidates)
+		largeResult, err := repo.DecideCandidateFamily(largeDocument.ID, tenantID, 9, largeCandidates[0].ID, largeToken, "完整治理超过一百个语义变体")
+		if err != nil {
+			t.Fatalf("large DecideCandidateFamily() error = %v", err)
+		}
+		if len(largeResult.Candidates) != 101 || len(largeResult.Decision.Members) != 101 || largeResult.Decision.WinnerCandidateID != largeCandidates[0].ID {
+			t.Fatalf("large decision sizes = candidates %d, members %d, winner %d", len(largeResult.Candidates), len(largeResult.Decision.Members), largeResult.Decision.WinnerCandidateID)
+		}
+		retained, rejected := 0, 0
+		for _, value := range largeResult.Candidates {
+			if value.Version != 2 {
+				t.Fatalf("large candidate %d version = %d, want 2", value.ID, value.Version)
+			}
+			switch value.Status {
+			case models.CandidateGroupStateRetained:
+				retained++
+			case models.CandidateGroupStateRejected:
+				rejected++
+			default:
+				t.Fatalf("large candidate %d status = %q", value.ID, value.Status)
+			}
+		}
+		if retained != 1 || rejected != 100 {
+			t.Fatalf("large decision statuses = retained %d, rejected %d", retained, rejected)
+		}
+		assertCandidateDecisionEventCount(t, db, largeDocument.ID, 1)
+	})
 	invalid := models.DocumentCandidateFamilyDecision{
 		DocumentID: document.ID, CandidateType: "glossary", Code: "outdoor_activity", WinnerCandidateID: candidates[0].ID,
 		Reason: "   ", Members: second.Decision.Members, CreatedBy: 10,

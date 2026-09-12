@@ -31,6 +31,11 @@ var kingbaseSystemSchemas = []string{
 	"xlog_record_read",
 }
 
+var kingbaseSystemTables = []string{
+	"sys_stat_statements",
+	"sys_stat_statements_all",
+}
+
 var (
 	_ plugin.BatchReadableProvider                = (*Plugin)(nil)
 	_ plugin.BoundedWatermarkReadProvider         = (*Plugin)(nil)
@@ -65,6 +70,7 @@ func (p *Plugin) protocolIdentity() postgresql.ProtocolIdentity {
 		EngineType:              p.Type(),
 		DisplayName:             p.DisplayName(),
 		AdditionalSystemSchemas: append([]string(nil), kingbaseSystemSchemas...),
+		AdditionalSystemTables:  append([]string(nil), kingbaseSystemTables...),
 	}
 }
 

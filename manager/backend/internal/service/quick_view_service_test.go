@@ -1796,7 +1796,6 @@ func TestQuickViewCapabilityTileCacheCreateURLCarriesSpatialContext(t *testing.T
 	}
 	query := parsed.Query()
 	want := map[string]string{
-		"tab":              "tasks",
 		"create":           "1",
 		"locator":          locator,
 		"item_id":          "54",

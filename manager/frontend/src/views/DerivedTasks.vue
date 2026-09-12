@@ -2,7 +2,7 @@
   <div class="derived-tasks page-container">
     <div class="page-header">
       <div>
-        <h2>{{ t('manager.derivedTasks.title') }}</h2>
+        <h2>{{ pageTitle }}</h2>
         <p>{{ t('manager.derivedTasks.description') }}</p>
       </div>
       <div v-if="category !== 'embedding'" class="header-actions">
@@ -18,12 +18,6 @@
         </el-dropdown>
       </div>
     </div>
-
-    <el-tabs v-model="category" @tab-change="changeCategory">
-      <el-tab-pane :label="t('manager.derivedTasks.categories.managedQuickView')" name="managed_quick_view" />
-      <el-tab-pane :label="t('manager.derivedTasks.categories.spatialBusiness')" name="spatial_business" />
-      <el-tab-pane :label="t('manager.derivedTasks.categories.embedding')" name="embedding" />
-    </el-tabs>
 
     <VectorizationTasks v-if="category === 'embedding'" embedded />
 
@@ -180,7 +174,6 @@ const router = useRouter()
 const { t } = useI18n()
 const confirmCurrentResult = useCurrentResultConfirmation()
 const { engineName, loadQuickViewEngines, resourcePath } = useQuickViewResourceDisplay(t)
-const routeTaskType = typeof route.query.task_type === 'string' ? route.query.task_type : ''
 const routeExecutionStatus = route.query.execution_status === 'failed' ? 'failed' : ''
 const routeBindingStatus = route.query.binding_status === 'missing' ? 'missing' : ''
 const tasks = ref([])
@@ -221,14 +214,32 @@ const taskTypes = {
 function categoryForTaskType(value) {
   return Object.entries(taskTypes).find(([, types]) => types.some(([type]) => type === value))?.[0] || ''
 }
-function categoryFromRoute(query, type = '') {
-  if (type === 'embedding' || query.category === 'embedding') return 'embedding'
-  return categoryForTaskType(type) || (query.category === 'spatial_business' ? 'spatial_business' : 'managed_quick_view')
+const taskRoutePaths = {
+  managed_quick_view: '/tasks/quick-view',
+  spatial_business: '/tasks/spatial',
+  embedding: '/tasks/embedding'
 }
-const category = ref(categoryFromRoute(route.query, routeTaskType))
-const taskType = ref(routeTaskType)
+function categoryFromRoute(currentRoute) {
+  return Object.hasOwn(taskRoutePaths, currentRoute.meta?.taskCategory)
+    ? currentRoute.meta.taskCategory
+    : 'managed_quick_view'
+}
+function taskTypeFromRoute(currentRoute, currentCategory) {
+  const value = typeof currentRoute.query.task_type === 'string' ? currentRoute.query.task_type : ''
+  return categoryForTaskType(value) === currentCategory ? value : ''
+}
+const category = ref(categoryFromRoute(route))
+const taskType = ref(taskTypeFromRoute(route, category.value))
 const taskTypeOptions = computed(() => (taskTypes[category.value] || []).map(([value, label]) => ({ value, label })))
 const defaultSpatialTaskType = computed(() => taskType.value && categoryForTaskType(taskType.value) === 'spatial_business' ? taskType.value : 'vector_tile_set_generation')
+const pageTitle = computed(() => {
+  const keys = {
+    managed_quick_view: 'manager.derivedTasks.categories.managedQuickView',
+    spatial_business: 'manager.derivedTasks.categories.spatialBusiness',
+    embedding: 'manager.derivedTasks.categories.embedding'
+  }
+  return t(keys[category.value])
+})
 
 function payload(response) { return response?.data ?? response }
 function taskTypeLabel(value) {
@@ -278,12 +289,12 @@ function isManagedQuickViewTask(task) { return categoryForTaskType(task?.task_ty
 function isRebindableTask(task) { return isManagedQuickViewTask(task) && task?.binding_status === 'missing' }
 
 async function syncRoute(extra = {}, history = 'replace') {
-  const query = { category: category.value }
+  const query = {}
   if (taskType.value) query.task_type = taskType.value
   if (executionStatus.value) query.execution_status = executionStatus.value
   if (bindingStatus.value) query.binding_status = bindingStatus.value
   Object.assign(query, extra)
-  await navigateManagerRoute(router, { path: '/derived-tasks', query }, { history })
+  await navigateManagerRoute(router, { path: taskRoutePaths[category.value], query }, { history })
 }
 async function loadTasks() {
   if (category.value === 'embedding') return
@@ -296,18 +307,6 @@ async function loadTasks() {
   } catch (error) {
     ElMessage.error(error?.response?.data?.error || t('manager.derivedTasks.loadFailed'))
   } finally { loading.value = false }
-}
-async function changeCategory() {
-  taskType.value = ''
-  executionStatus.value = ''
-  bindingStatus.value = ''
-  page.value = 1
-  detailVisible.value = false
-  editorVisible.value = false
-  await syncRoute()
-  if (category.value !== 'embedding') {
-    await Promise.all([loadQuickViewEngines(), loadTasks()])
-  }
 }
 async function changeFilter() { page.value = 1; detailVisible.value = false; editorVisible.value = false; await syncRoute(); await loadTasks() }
 async function changeStatusFilter() { page.value = 1; detailVisible.value = false; editorVisible.value = false; await syncRoute(); await loadTasks() }
@@ -481,17 +480,19 @@ async function openEditorFromRoute() {
   editorVisible.value = true
 }
 
-watch(() => route.query, async (query) => {
-  const nextType = typeof query.task_type === 'string' ? query.task_type : ''
+watch(() => [route.meta.taskCategory, route.query], async ([, query]) => {
+  const nextCategory = categoryFromRoute(route)
+  const nextType = taskTypeFromRoute(route, nextCategory)
   const nextExecutionStatus = query.execution_status === 'failed' ? 'failed' : ''
   const nextBindingStatus = query.binding_status === 'missing' ? 'missing' : ''
-  const nextCategory = categoryFromRoute(query, nextType)
   if (nextCategory !== category.value || nextType !== taskType.value || nextExecutionStatus !== executionStatus.value || nextBindingStatus !== bindingStatus.value) {
     category.value = nextCategory
     taskType.value = nextType
     executionStatus.value = nextExecutionStatus
     bindingStatus.value = nextBindingStatus
     page.value = 1
+    detailVisible.value = false
+    editorVisible.value = false
     if (nextCategory !== 'embedding') {
       await Promise.all([loadQuickViewEngines(), loadTasks()])
     }
@@ -507,7 +508,7 @@ onMounted(async () => {
   if (route.query.create === '1') extra.create = '1'
   if (route.query.rebind_task_id) extra.rebind_task_id = route.query.rebind_task_id
   if (typeof route.query.locator === 'string' && route.query.locator) extra.locator = route.query.locator
-  await syncRoute(extra)
+  if (category.value !== 'embedding') await syncRoute(extra)
   if (category.value !== 'embedding') {
     await Promise.all([loadQuickViewEngines(), loadTasks()])
   }

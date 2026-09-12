@@ -95,49 +95,45 @@ func TestIntegrationManagerMongoOutdoorPersonsPreviewMasksPhone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("active projection validation failed: %v", err)
 	}
+	originalPhones := make(map[int]interface{})
+	for index, row := range table.Rows {
+		userInfo, ok := row["userInfo"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if phone, exists := userInfo["phone"]; exists {
+			originalPhones[index] = phone
+		}
+	}
 	result := &preview.PreviewResult{PreviewType: "table", Data: table}
 	if err := applyPreviewProtection(result, rules, dataprotection.SubjectReference{}); err != nil {
 		t.Fatalf("MongoDB preview protection failed: %v", err)
 	}
 
 	maskedPhones := 0
-	for _, row := range table.Rows {
-		userInfo, ok := row["userInfo"].(map[string]interface{})
+	for index, original := range originalPhones {
+		userInfo, ok := table.Rows[index]["userInfo"].(map[string]interface{})
 		if !ok {
+			t.Fatalf("protected MongoDB preview removed the parent object for row %d", index)
+		}
+		phone, exists := userInfo["phone"]
+		originalText, isString := original.(string)
+		originalRunes := []rune(originalText)
+		if !isString || len(originalRunes) <= 7 {
+			if exists {
+				t.Fatalf("protected MongoDB preview retained an invalid phone value for row %d", index)
+			}
 			continue
 		}
-		phone, ok := userInfo["phone"].(string)
-		if !ok {
-			continue
+		expected := string(originalRunes[:3]) + strings.Repeat("*", len(originalRunes)-7) + string(originalRunes[len(originalRunes)-4:])
+		if phone != expected {
+			t.Fatalf("protected MongoDB preview mask mismatch for row %d: got rune length %d, want %d", index, len([]rune(fmt.Sprint(phone))), len([]rune(expected)))
 		}
-		if isMaskedMainlandPhone(phone) {
-			maskedPhones++
-			continue
-		}
-		t.Fatal("protected MongoDB preview returned a phone value outside the masking contract")
+		maskedPhones++
 	}
 	if maskedPhones == 0 {
 		t.Fatal("protected MongoDB preview contained no masked phone")
 	}
-}
-
-func isMaskedMainlandPhone(value string) bool {
-	runes := []rune(value)
-	if len(runes) != 11 {
-		return false
-	}
-	for index, current := range runes {
-		if index >= 3 && index < 7 {
-			if current != '*' {
-				return false
-			}
-			continue
-		}
-		if current < '0' || current > '9' {
-			return false
-		}
-	}
-	return true
 }
 
 func ensureMongoOutdoorPersonsFixture(t *testing.T) plugin.ConnectionInfo {

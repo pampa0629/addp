@@ -84,6 +84,25 @@ describe('Console navigation bridge', () => {
     expect(portalSource).toContain("sidebarModules.value = ['system']")
   })
 
+  it('lists Manager task categories vertically under the Data Tasks parent menu', () => {
+    const configSource = readFileSync(new URL('../src/config/portalConfig.js', import.meta.url), 'utf8')
+    const searchSource = readFileSync(new URL('../src/config/searchIndex.js', import.meta.url), 'utf8')
+    const zhCn = JSON.parse(readFileSync(new URL('../src/i18n/zh-cn.json', import.meta.url), 'utf8'))
+    const en = JSON.parse(readFileSync(new URL('../src/i18n/en.json', import.meta.url), 'utf8'))
+
+    for (const path of ['quick-view', 'spatial', 'embedding']) {
+      expect(configSource).toContain(`index: '/manager/tasks/${path}'`)
+      expect(searchSource).toContain(`route: '/manager/tasks/${path}'`)
+    }
+    expect(configSource).not.toContain("index: '/manager/derived-tasks'")
+    expect(zhCn.console.menus.manager.quickViewTasks).toBe('快显任务')
+    expect(zhCn.console.menus.manager.spatialDataTasks).toBe('空间数据任务')
+    expect(zhCn.console.menus.manager.embeddingTasks).toBe('向量化任务')
+    expect(en.console.menus.manager.quickViewTasks).toBe('Quick-view Tasks')
+    expect(en.console.menus.manager.spatialDataTasks).toBe('Spatial Data Tasks')
+    expect(en.console.menus.manager.embeddingTasks).toBe('Vectorization Tasks')
+  })
+
   it('groups IAM navigation into five business-category pages', () => {
     const configSource = readFileSync(new URL('../src/config/portalConfig.js', import.meta.url), 'utf8')
     const routerSource = readFileSync(new URL('../../../system/frontend/src/router/index.js', import.meta.url), 'utf8')

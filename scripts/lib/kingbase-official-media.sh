@@ -15,7 +15,7 @@ kingbase_verify_sha256() {
     local expected=$1
     local file_path=$2
     if command -v sha256sum >/dev/null 2>&1; then
-        printf '%s  %s\n' "$expected" "$file_path" | sha256sum --check --status
+        [ "$(sha256sum "$file_path" | awk '{print $1}')" = "$expected" ]
         return
     fi
     if command -v shasum >/dev/null 2>&1; then
@@ -90,6 +90,37 @@ kingbase_container_ready() {
     kingbase_ksql "$container_name" -U "$database_user" -d kingbase -p "$KINGBASE_DATABASE_PORT" -At -c 'SELECT 1' 2>/dev/null | grep -Fxq '1'
 }
 
+kingbase_load_owner_environment() {
+    local repository=$1
+    local env_file=${ADDP_KINGBASE_GATE_ENV_FILE:-}
+
+    [ -n "$env_file" ] || return 0
+    if [ "${env_file#/}" = "$env_file" ] || [ ! -f "$env_file" ]; then
+        echo "ADDP_KINGBASE_GATE_ENV_FILE must identify an absolute owner-managed file" >&2
+        return 1
+    fi
+    case "$(cd "$(dirname "$env_file")" && pwd)/$(basename "$env_file")" in
+        "$repository"/*)
+            echo "ADDP_KINGBASE_GATE_ENV_FILE must be outside the repository" >&2
+            return 1
+            ;;
+    esac
+    local permissions
+    if permissions=$(stat -c '%a' "$env_file" 2>/dev/null); then
+        :
+    else
+        permissions=$(stat -f '%Lp' "$env_file")
+    fi
+    if (( (8#$permissions & 8#077) != 0 )); then
+        echo "ADDP_KINGBASE_GATE_ENV_FILE must not be accessible by group or other users" >&2
+        return 1
+    fi
+    set -a
+    # shellcheck disable=SC1090
+    source "$env_file"
+    set +a
+}
+
 kingbase_validate_license_input() {
     local repository=$1
     local license_file=${ADDP_KINGBASE_LICENSE_FILE:-}
@@ -109,7 +140,12 @@ kingbase_validate_license_input() {
             return 1
             ;;
     esac
-    case "$license_sha256" in
+    if ! printf '%s\n' "$license_sha256" | grep -Eq '^[0-9a-f]{64}$'; then
+        echo "ADDP_KINGBASE_LICENSE_SHA256 must be a lowercase SHA-256" >&2
+        return 1
+    fi
+    case "${#license_sha256}:$license_sha256" in
+        64:*) ;;
         [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
         *) echo "ADDP_KINGBASE_LICENSE_SHA256 must be a lowercase SHA-256" >&2; return 1 ;;
     esac
@@ -123,10 +159,14 @@ kingbase_install_license_into_created_container() {
     local container_name=$1
     local license_file=$2
     local work_dir=$3
-    local staged_license=$work_dir/license.dat
+    local staged_license
+    local copy_status=0
 
+    staged_license=$(mktemp "$work_dir/license.XXXXXX")
     cp "$license_file" "$staged_license"
     chmod 0644 "$staged_license"
-    docker cp "$staged_license" "$container_name:$KINGBASE_HOME/bin/license.dat"
+    docker cp "$staged_license" "$container_name:$KINGBASE_HOME/bin/license.dat" || copy_status=$?
     chmod 0600 "$staged_license"
+    rm -f "$staged_license"
+    return "$copy_status"
 }

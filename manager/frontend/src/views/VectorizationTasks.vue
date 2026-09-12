@@ -403,8 +403,8 @@ const router = useRouter()
 const resolveRouteState = routeQuery => resolveManagerTaskWorkspaceRouteState({
   routeQuery,
   allowedQueryByTab: {
-    tasks: ['category', 'create', 'task_id'],
-    results: ['category', 'task_id']
+    tasks: ['create', 'task_id'],
+    results: ['task_id']
   }
 })
 const activeTab = ref(resolveRouteState(route.query).tab)

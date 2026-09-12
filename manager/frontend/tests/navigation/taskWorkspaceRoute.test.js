@@ -71,10 +71,10 @@ describe('Manager task workspace recoverable route state', () => {
     })
   })
 
-  it('preserves the embedding category across its task and result subviews', () => {
+  it('uses the embedding path as category identity and keeps only subview state in query', () => {
     const allowedQueryByTab = {
-      tasks: ['category', 'create', 'task_id'],
-      results: ['category', 'task_id']
+      tasks: ['create', 'task_id'],
+      results: ['task_id']
     }
 
     expect(resolveManagerTaskWorkspaceRouteState({
@@ -82,16 +82,16 @@ describe('Manager task workspace recoverable route state', () => {
       allowedQueryByTab
     })).toEqual({
       tab: 'tasks',
-      query: { category: 'embedding', create: '1' },
-      changed: false
+      query: { create: '1' },
+      changed: true
     })
     expect(resolveManagerTaskWorkspaceRouteState({
       routeQuery: { category: 'embedding', tab: 'results', task_id: '7' },
       allowedQueryByTab
     })).toEqual({
       tab: 'results',
-      query: { category: 'embedding', task_id: '7', tab: 'results' },
-      changed: false
+      query: { task_id: '7', tab: 'results' },
+      changed: true
     })
   })
 

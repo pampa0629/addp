@@ -2,7 +2,7 @@
         build-iam-bootstrap build-iam-recovery build-iam-migration-repair \
         dev-start dev-restart dev-stop infra-up infra-down infra-restart infra-status prod-start prod-restart prod-stop prod-health ports-validate
 
-.PHONY: test-business-config test-common-oceanbase test-common-opengauss test-common-tidb test-common-oracle-decimal test-common-doris-decimal test-common-clickhouse-decimal test-opengauss-official-media-release
+.PHONY: test-business-config test-common-oceanbase test-common-opengauss test-common-tidb test-common-kingbase test-common-oracle-decimal test-common-doris-decimal test-common-clickhouse-decimal test-opengauss-official-media-release test-kingbase-official-media-release test-integration-owner-managed
 
 # 默认目标
 .DEFAULT_GOAL := help
@@ -129,6 +129,9 @@ test-common-python-cli-release:
 test-opengauss-official-media-release:
 	@bash scripts/test/opengauss-official-media-release-gate.sh
 
+test-kingbase-official-media-release:
+	@bash scripts/test/kingbase-official-media-release-gate.sh
+
 test-module: ## 运行指定模块的 T0-T3 门禁；用法：make test-module MODULE=standard
 	@python3 scripts/test/module-gate.py --repository "$(CURDIR)" --module "$(MODULE)"
 
@@ -164,21 +167,28 @@ test-business-config: ## 校验 Business Compose 和服务管理脚本（不启�
 	@test -f business/oceanbase/init.sql
 	@test -f business/tidb/init.sql
 	@test -f business/opengauss/init.sql
+	@test -f business/kingbase/init.sql
 	@grep -Fq 'SET NAMES utf8mb4;' business/oceanbase/init.sql
 	@grep -Fq 'CREATE TABLE IF NOT EXISTS addp_engine_probe' business/tidb/init.sql
 	@grep -Fq 'docker run --rm -i --network business_business-network' business/scripts/start.sh
 	@grep -Fq 'CREATE TABLE IF NOT EXISTS addp_engine_probe' business/opengauss/init.sql
+	@grep -Fq 'CREATE TABLE IF NOT EXISTS addp_engine_probe' business/kingbase/init.sql
+	@grep -Fq 'FROM pg_database' business/scripts/kingbase.sh
+	@! grep -Fq 'sys_database' business/scripts/kingbase.sh
+	@grep -Fq 'V009R001C010B0004' scripts/lib/kingbase-official-media.sh
+	@grep -Fq '16a436608cc204349e510cb136b8fc1fcbdf6874aee7b204cdac20a3522282da' scripts/lib/kingbase-official-media.sh
 	@grep -Fq 'openGauss-Docker-6.0.6-x86_64.tar' scripts/lib/opengauss-official-media.sh
 	@grep -Fq 'openGauss-Docker-6.0.6-aarch64.tar' scripts/lib/opengauss-official-media.sh
 	@grep -Fq '00ad2206ac93cf28c7702cd624b7c59dc1a146f9dca1f81ed19eeac430416c0b' scripts/lib/opengauss-official-media.sh
 	@grep -Fq 'opengauss_official_container_ready business-opengauss opengauss_gsql' business/scripts/start.sh
 	@test "$$(grep -c -- '--default-character-set=utf8mb4' business/scripts/start.sh)" -ge 4
-	@bash -n business/scripts/start.sh business/scripts/stop.sh business/scripts/restart.sh scripts/utils/register-business.sh scripts/lib/opengauss-official-media.sh
+	@bash -n business/scripts/start.sh business/scripts/stop.sh business/scripts/restart.sh business/scripts/kingbase.sh scripts/utils/register-business.sh scripts/lib/opengauss-official-media.sh scripts/lib/kingbase-official-media.sh scripts/test/common-kingbase-gate.sh scripts/test/kingbase-official-media-release-gate.sh
 	@bash business/scripts/start.sh --help | grep -Fq -- '-oceanbase'
 	@bash business/scripts/start.sh --help | grep -Fq -- '-tidb'
 	@bash business/scripts/start.sh --help | grep -Fq -- '-opengauss'
 	@bash business/scripts/stop.sh --help | grep -Fq -- '-oceanbase'
 	@bash business/scripts/stop.sh --help | grep -Fq -- '-opengauss'
+	@bash business/scripts/kingbase.sh --help | grep -Fq -- 'start|stop|status'
 	@python3 -m unittest scripts/test/common-doris-decimal-gate_test.py
 
 test-integration: ## 严格串行运行所有本地可执行的 disposable 基础设施集成门禁
@@ -207,6 +217,9 @@ test-integration-hosted: test-integration ## 严格串行追加 hosted-only disp
 	@$(MAKE) test-common-doris-decimal
 	@$(MAKE) test-common-clickhouse-decimal
 
+test-integration-owner-managed: ## 仅在具备合法凭据的 owner-managed Runner 串行运行受控门禁
+	@$(MAKE) test-common-kingbase
+
 test-common-postgres: ## 使用一次性 PostgreSQL 数据库运行 Common Engine Provider、execution store 与保护投影存储集成门禁
 	@bash scripts/test/common-postgres-gate.sh
 
@@ -221,6 +234,9 @@ test-common-tidb: ## 使用一次性 TiDB database 验证 Engine Provider 契约
 
 test-common-opengauss: ## 在 Linux x86_64 hosted runner 使用一次性 openGauss database 验证 Provider 契约
 	@bash scripts/test/common-opengauss-gate.sh
+
+test-common-kingbase: ## 在 owner-managed Linux x86_64 Runner 使用正规 License 验证 KingbaseES Provider 契约
+	@bash scripts/test/common-kingbase-gate.sh
 
 test-common-oracle-decimal: ## 使用一次性 Oracle database 验证 Decimal Provider 契约
 	@bash scripts/test/common-oracle-decimal-gate.sh
@@ -267,7 +283,7 @@ test-service-postgres: ## 使用一次性 PostgreSQL 数据库运行 Service 数
 test-standard-postgres: ## 使用一次性 PostgreSQL 数据库运行 Standard 集成门禁
 	@bash scripts/test/standard-postgres-gate.sh
 
-test-transfer-postgres: ## 使用测试 PostgreSQL 数据库运行 Transfer schema 与受保护导出集成门禁
+test-transfer-postgres: ## 使用测试 PostgreSQL 数据库运行 Transfer schema、受保护导出与目标覆盖集成门禁
 	@bash scripts/test/transfer-postgres-gate.sh
 
 test-workbench-postgres: ## 使用一次性 PostgreSQL 数据库运行 Workbench Data Application 集成门禁
@@ -287,14 +303,14 @@ test-online: ## 运行指定 Online suite（必须设置 ONLINE_SUITE 和 ADDP_O
 	@python3 scripts/test/online-gate.py --repository "$(CURDIR)" --suite "$(ONLINE_SUITE)"
 
 test-online-runner: ## 运行 Online 分发器和预检器的确定性测试
-	@python3 -m unittest scripts/test/online-gate_test.py scripts/test/online-preflight_test.py scripts/test/online-host-gate_test.py scripts/test/online-hosted-opengauss-gate_test.py scripts/test/online-engine-registration_test.py scripts/test/online-engine-fixture_test.py scripts/test/online-workbench-mysql-fixture_test.py scripts/test/online-oceanbase-consumer-fixture_test.py scripts/test/online-tidb-consumer-fixture_test.py scripts/test/online-opengauss-consumer-fixture_test.py scripts/test/online-transfer-insert-only-fixture_test.py scripts/test/online-transfer-relational-sql-etl-fixture_test.py scripts/test/online-manager-minio-fixture_test.py scripts/test/online-security-transfer-fixture_test.py scripts/test/consumer-engine-recovery-online_test.py scripts/test/consumer-process-stability-online_test.py scripts/test/module-registry-recovery-online_test.py scripts/test/relational-consumer-flow-online_test.py scripts/test/transfer-insert-only-mysql-online_test.py scripts/test/transfer-relational-sql-etl-online_test.py scripts/test/standard-model-reference-deletion-online_test.py scripts/test/enterprise-catalog-publishing-online_test.py scripts/test/workbench-service-consumption-online_test.py scripts/test/manager-internal-artifact-lineage-online_test.py scripts/test/manager-hybrid-search-online_test.py scripts/test/security-transfer-protection-online_test.py scripts/test/security-plaintext-access-online_test.py scripts/test/security-mysql-owner-protection-online_test.py scripts/ci/check-online-ci-registration_test.py
+	@python3 -m unittest scripts/test/online-gate_test.py scripts/test/online-preflight_test.py scripts/test/online-host-gate_test.py scripts/test/online-hosted-opengauss-gate_test.py scripts/test/online-owner-managed-kingbase-gate_test.py scripts/test/online-engine-registration_test.py scripts/test/online-engine-fixture_test.py scripts/test/online-workbench-mysql-fixture_test.py scripts/test/online-oceanbase-consumer-fixture_test.py scripts/test/online-tidb-consumer-fixture_test.py scripts/test/online-opengauss-consumer-fixture_test.py scripts/test/online-kingbase-consumer-fixture_test.py scripts/test/online-transfer-insert-only-fixture_test.py scripts/test/online-transfer-relational-sql-etl-fixture_test.py scripts/test/online-manager-minio-fixture_test.py scripts/test/online-security-transfer-fixture_test.py scripts/test/consumer-engine-recovery-online_test.py scripts/test/consumer-process-stability-online_test.py scripts/test/module-registry-recovery-online_test.py scripts/test/relational-consumer-flow-online_test.py scripts/test/transfer-insert-only-mysql-online_test.py scripts/test/transfer-relational-sql-etl-online_test.py scripts/test/standard-model-reference-deletion-online_test.py scripts/test/enterprise-catalog-publishing-online_test.py scripts/test/workbench-service-consumption-online_test.py scripts/test/manager-internal-artifact-lineage-online_test.py scripts/test/manager-hybrid-search-online_test.py scripts/test/security-transfer-protection-online_test.py scripts/test/security-plaintext-access-online_test.py scripts/test/security-mysql-owner-protection-online_test.py scripts/ci/check-online-ci-registration_test.py
 	@python3 scripts/ci/check-online-ci-registration.py --repository "$(CURDIR)"
 
 test-release: ## 运行指定 T5 发布套件；用法：make test-release RELEASE_SUITE=common-python-cli
 	@python3 scripts/test/release-gate.py --repository "$(CURDIR)" --suite "$(RELEASE_SUITE)"
 
 test-release-runner: ## 运行 T5 分发器和 CI 登记检查的确定性测试
-	@python3 -m unittest scripts/test/release-gate_test.py scripts/test/opengauss-official-media-release-gate_test.py scripts/ci/check-release-ci-registration_test.py
+	@python3 -m unittest scripts/test/release-gate_test.py scripts/test/opengauss-official-media-release-gate_test.py scripts/test/kingbase-official-media-release-gate_test.py scripts/ci/check-release-ci-registration_test.py
 	@python3 scripts/ci/check-release-ci-registration.py --repository "$(CURDIR)"
 
 test-platform: ## 运行无外部服务依赖的平台一致性门禁

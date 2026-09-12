@@ -1,6 +1,6 @@
 # ADDP 账号与权限体系
 
-更新日期：2026-08-01
+更新日期：2026-09-12
 
 状态：正式概念文档。本文定义 ADDP IAM 的稳定概念、事实归属和授权边界，不预设 Fosite、Keycloak、Casdoor、OIDC Provider、SAML 或具体策略引擎。
 
@@ -439,4 +439,4 @@ System IAM 负责统一身份和通用授权事实，但不承载所有业务资
 - `system/docs/IAM数据模型与迁移规范.md`；
 - `system/docs/OAuth与Fosite实现说明.md`。
 
-未完成能力分别由 `docs/next/addp-IAM owner资源授权与Asset衔接设计.md`、`docs/next/addp-IAM OIDC启用设计.md` 和 `docs/next/addp-IAM外部IdP与账号供应设计.md` 跟进。后续实现完成后必须把稳定结论并入正式文档并删除对应 next 文档。
+Owner Resource Grant / Policy 与 Asset 衔接的稳定边界已并入 `docs/spec/addp企业资源目录实现规范.md` 以及各 owner 规范，不再维护独立 IAM next 文档。尚未完成的 IAM 协议能力仅由 `docs/next/addp-IAM OIDC启用设计.md` 和 `docs/next/addp-IAM外部IdP与账号供应设计.md` 跟进；实现完成后必须把稳定结论并入正式文档并删除对应 next 文档。

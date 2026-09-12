@@ -92,6 +92,13 @@ PROFILES: Mapping[str, ConsumerProfile] = {
         identifier_quote='"',
         fixture_script="business/scripts/online-opengauss-consumer-fixture.sh",
     ),
+    "kingbase": ConsumerProfile(
+        engine_type="kingbase",
+        namespace_kind="schema",
+        item_code_prefix="KB",
+        identifier_quote='"',
+        fixture_script="business/scripts/online-kingbase-consumer-fixture.sh",
+    ),
     "tidb": ConsumerProfile(
         engine_type="tidb",
         namespace_kind="database",

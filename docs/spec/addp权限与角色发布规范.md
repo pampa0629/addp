@@ -1,6 +1,6 @@
 # ADDP 权限与角色发布规范
 
-更新日期：2026-08-01
+更新日期：2026-09-12
 
 状态：正式规范。本文定义 Permission、Role、Role Assignment、Scope、模块 Manifest、发布期聚合和路由授权声明的唯一规则。
 

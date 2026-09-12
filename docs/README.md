@@ -39,7 +39,6 @@
 - [System IAM 数据模型与迁移规范](../system/docs/IAM数据模型与迁移规范.md)
 - [System OAuth 与 Fosite 实现说明](../system/docs/OAuth与Fosite实现说明.md)
 - [IAM 三员初始化操作指南](guide/addp%20IAM三员初始化操作指南.md)
-- [IAM owner 资源授权与 Asset 衔接设计](next/addp-IAM%20owner资源授权与Asset衔接设计.md)
 - [IAM OIDC 启用设计](next/addp-IAM%20OIDC启用设计.md)
 - [IAM 外部 IdP 与账号供应设计](next/addp-IAM外部IdP与账号供应设计.md)
 - [元数据体系图](concepts/addp元数据体系图.md)
@@ -117,7 +116,7 @@ AI 模型接入、在线厂商账号、内网模型服务、模型档案、场�
 2. [模块架构图](concepts/addp模块架构图.md)：确认 Console、System、Service、Asset 和 Portal 的现有边界。
 3. [数据服务体系图](concepts/addp数据服务体系图.md)：确认查询服务、瓦片服务和外部服务注册的发布与执行职责。
 4. [API 设计规范](spec/addp-API设计规范.md)：确认结构化查询、cursor 分页、Bearer、Service Principal 和 BFF 边界。
-5. [IAM owner 资源授权与 Asset 衔接设计](next/addp-IAM%20owner资源授权与Asset衔接设计.md)：确认 Asset 申请履约与 owner 最终授权主路径。
+5. [企业资源目录实现规范](spec/addp企业资源目录实现规范.md)：确认 CatalogEntry、Asset 选源、授权来源与 owner 最终授权边界。
 6. [Workbench 数据服务消费与数据应用专题](next/ADDP%20Workbench数据服务消费与数据应用专题.md)：查看当前决策、阶段计划、延期范围和未决问题。
 7. [Outdoor 业务数据治理推进方案](next/Outdoor业务数据治理推进方案.md)：仅作为首个真实验收场景，不作为 Workbench 平台模型。
 

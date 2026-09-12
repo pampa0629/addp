@@ -80,8 +80,8 @@ class OnlineEngineRegistrationTest(unittest.TestCase):
         with self.assertRaisesRegex(REGISTRATION.RegistrationError, "owner-only"):
             REGISTRATION.load_descriptor(self.descriptor)
 
-    def test_hosted_environment_rejects_external_system(self) -> None:
-        base, token = REGISTRATION.require_hosted_environment(
+    def test_external_environment_rejects_external_system(self) -> None:
+        base, token = REGISTRATION.require_external_environment(
             {
                 "GITHUB_ACTIONS": "true",
                 "RUNNER_OS": "Linux",
@@ -93,13 +93,35 @@ class OnlineEngineRegistrationTest(unittest.TestCase):
         self.assertEqual(base, "http://127.0.0.1:8180")
         self.assertEqual(token, "addp_at_engine")
         with self.assertRaisesRegex(REGISTRATION.RegistrationError, "loopback"):
-            REGISTRATION.require_hosted_environment(
+            REGISTRATION.require_external_environment(
                 {
                     "GITHUB_ACTIONS": "true",
                     "RUNNER_OS": "Linux",
                     "ADDP_ONLINE_HOSTED": "1",
                     "SYSTEM_URL": "https://system.example.com",
                     "ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN": "addp_at_engine",
+                }
+            )
+
+    def test_owner_managed_environment_is_an_independent_external_profile(self) -> None:
+        base, token = REGISTRATION.require_external_environment(
+            {
+                "GITHUB_ACTIONS": "true",
+                "RUNNER_OS": "Linux",
+                "ADDP_ONLINE_OWNER_MANAGED": "1",
+                "SYSTEM_URL": "http://localhost:8180",
+                "ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN": "addp_at_engine",
+            }
+        )
+        self.assertEqual(base, "http://localhost:8180")
+        self.assertEqual(token, "addp_at_engine")
+        with self.assertRaisesRegex(REGISTRATION.RegistrationError, "exactly one"):
+            REGISTRATION.require_external_environment(
+                {
+                    "GITHUB_ACTIONS": "true",
+                    "RUNNER_OS": "Linux",
+                    "ADDP_ONLINE_HOSTED": "1",
+                    "ADDP_ONLINE_OWNER_MANAGED": "1",
                 }
             )
 

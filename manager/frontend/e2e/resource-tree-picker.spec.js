@@ -25,7 +25,7 @@ const TILE_SET_LOCATOR = 'addp://engine/12/path/tiles/farmland.pmtiles?type=file
 
 test('selects a spatial table through the shared picker and applies capability facts', async ({ page }) => {
   const backend = await installMockBackend(page)
-  await page.goto('/derived-tasks?category=spatial_business&task_type=vector_tile_set_generation&create=1')
+  await page.goto('/tasks/spatial?task_type=vector_tile_set_generation&create=1')
 
   const dialog = page.getByRole('dialog', { name: '新建任务' })
   await expect(dialog).toBeVisible()
@@ -41,7 +41,7 @@ test('selects a spatial table through the shared picker and applies capability f
 
 test('restores the source table from the unified spatial task create URL', async ({ page }) => {
   const backend = await installMockBackend(page)
-  await page.goto(`/derived-tasks?category=spatial_business&task_type=vector_tile_set_generation&create=1&locator=${encodeURIComponent(FARMLAND_LOCATOR)}`)
+  await page.goto(`/tasks/spatial?task_type=vector_tile_set_generation&create=1&locator=${encodeURIComponent(FARMLAND_LOCATOR)}`)
 
   const dialog = page.getByRole('dialog', { name: '新建任务' })
   await expect(dialog).toBeVisible()
@@ -51,7 +51,7 @@ test('restores the source table from the unified spatial task create URL', async
 
 test('creates a managed quick-view task from one selected source without a target', async ({ page }) => {
   const backend = await installMockBackend(page)
-  await page.goto('/derived-tasks?category=managed_quick_view&task_type=vector_tile_cache_generation&create=1')
+  await page.goto('/tasks/quick-view?task_type=vector_tile_cache_generation&create=1')
 
   const dialog = page.getByRole('dialog', { name: '新建快显任务' })
   await expect(dialog).toBeVisible()
@@ -71,7 +71,7 @@ test('creates a managed quick-view task from one selected source without a targe
 
 test('opens the source preview when the selected source already has a current quick-view result', async ({ page }) => {
   const backend = await installMockBackend(page)
-  await page.goto(`/derived-tasks?category=managed_quick_view&task_type=vector_tile_cache_generation&create=1&locator=${encodeURIComponent(RIVERS_LOCATOR)}`)
+  await page.goto(`/tasks/quick-view?task_type=vector_tile_cache_generation&create=1&locator=${encodeURIComponent(RIVERS_LOCATOR)}`)
 
   const dialog = page.getByRole('dialog', { name: '新建快显任务' })
   await expect(dialog.getByText('当前源数据已存在可直接使用的快显结果，无需重复生成。')).toBeVisible()
@@ -91,7 +91,7 @@ test('opens the source preview when the selected source already has a current qu
 
 test('opens a managed quick-view task source from the task list without exposing infra result navigation', async ({ page }) => {
   const backend = await installMockBackend(page, { includeResultTask: true })
-  await page.goto('/derived-tasks?category=managed_quick_view')
+  await page.goto('/tasks/quick-view')
 
   const row = page.getByRole('row', { name: /public\.rivers 瓦片缓存/ })
   await expect(row.getByRole('button', { name: '结果', exact: true })).toHaveCount(0)
@@ -108,7 +108,7 @@ test('opens a managed quick-view task source from the task list without exposing
 
 test('opens a spatial task target only after resolving the Meta data item', async ({ page }) => {
   const backend = await installMockBackend(page, { includeSpatialTask: true })
-  await page.goto('/derived-tasks?category=spatial_business')
+  await page.goto('/tasks/spatial')
 
   const row = page.getByRole('row', { name: /耕地矢量瓦片集/ })
   await row.getByRole('button', { name: '目标数据', exact: true }).click()
@@ -125,7 +125,7 @@ test('opens a spatial task target only after resolving the Meta data item', asyn
 
 test('filters failed generation tasks and deletes only the selected tasks', async ({ page }) => {
   const backend = await installMockBackend(page, { includeFailedTasks: true })
-  await page.goto('/derived-tasks?category=managed_quick_view')
+  await page.goto('/tasks/quick-view')
 
   await page.locator('.toolbar .el-select').nth(1).click()
   await page.getByRole('option', { name: '失败', exact: true }).click()
@@ -156,7 +156,7 @@ test('filters failed generation tasks and deletes only the selected tasks', asyn
 
 test('filters generation tasks with missing resource bindings and explains the issue', async ({ page }) => {
   const backend = await installMockBackend(page, { includeFailedTasks: true })
-  await page.goto('/derived-tasks?category=managed_quick_view&binding_status=missing')
+  await page.goto('/tasks/quick-view?binding_status=missing')
 
   await expect.poll(() => backend.taskListQueries.some(query => (
     query.category === 'managed_quick_view' && query.bindingStatus === 'missing'
@@ -170,7 +170,7 @@ test('filters generation tasks with missing resource bindings and explains the i
 
 test('rebinds a missing managed quick-view task without starting an execution', async ({ page }) => {
   const backend = await installMockBackend(page, { includeFailedTasks: true })
-  await page.goto('/derived-tasks?category=managed_quick_view&binding_status=missing')
+  await page.goto('/tasks/quick-view?binding_status=missing')
 
   const row = page.getByRole('row', { name: /失败任务 - farmland/ })
   await row.getByRole('button', { name: '重新绑定', exact: true }).click()
@@ -203,7 +203,7 @@ test('rebinds a missing managed quick-view task without starting an execution', 
 
 test('creates a PPTX PDF quick-view task through its owner action', async ({ page }) => {
   const backend = await installMockBackend(page)
-  await page.goto('/derived-tasks?category=managed_quick_view&task_type=pptx_pdf_generation&create=1')
+  await page.goto('/tasks/quick-view?task_type=pptx_pdf_generation&create=1')
 
   const dialog = page.getByRole('dialog', { name: '新建快显任务' })
   await chooseEngine(page, dialog, NFS_ENGINE.name)
@@ -220,7 +220,7 @@ test('creates a PPTX PDF quick-view task through its owner action', async ({ pag
 
 test('keeps directory and file vectorization semantics in the shared picker', async ({ page }) => {
   await installMockBackend(page)
-  await page.goto('/derived-tasks?category=embedding&create=1')
+  await page.goto('/tasks/embedding?create=1')
 
   const dialog = page.getByRole('dialog', { name: '新建向量化任务' })
   await expect(dialog).toBeVisible()

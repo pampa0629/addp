@@ -210,6 +210,38 @@ func TestDescribeTabularItemOnlyRunsRowCountWhenStatisticsRequested(t *testing.T
 	}
 }
 
+func TestDescribeTabularItemRejectsMissingTableBeforeReadingColumns(t *testing.T) {
+	columnCalls := 0
+	callbacks := TabularCatalogCallbacks{
+		ListNamespaces: func(context.Context, *gorm.DB, EngineCatalogPath) ([]EngineCatalogEntry, error) {
+			return nil, nil
+		},
+		ListTables: func(context.Context, *gorm.DB, string) ([]datatype.TableInfo, error) {
+			return nil, nil
+		},
+		ListColumns: func(context.Context, *gorm.DB, string, string) ([]datatype.FieldInfo, error) {
+			columnCalls++
+			return nil, nil
+		},
+	}
+	engine := &Engine{ID: 7004, EngineType: "tabular_catalog_test"}
+	path := TabularItemPath(engine.ID, EngineCatalogTermDatabase, "analytics", "missing")
+
+	Register(&tabularCatalogTestPlugin{})
+	t.Cleanup(func() {
+		Unregister("tabular_catalog_test")
+		ClosePool(engine.ID)
+	})
+
+	_, err := DescribeTabularCatalogFacts(context.Background(), callbacks, engine, path, EngineCatalogFactsOptions{})
+	if !IsEngineCatalogErrorKind(err, EngineCatalogErrorNotFound) {
+		t.Fatalf("DescribeTabularCatalogFacts(missing table) error = %v, want not_found", err)
+	}
+	if columnCalls != 0 {
+		t.Fatalf("column calls = %d, want 0 for missing table", columnCalls)
+	}
+}
+
 func TestDescribeTabularItemCarriesSpatialFactsWhenRequested(t *testing.T) {
 	srid := 4326
 	spatialCalls := 0

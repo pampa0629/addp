@@ -153,7 +153,7 @@ SECURITY_POSTGRES_TEST_DSN='postgres://addp:addp_password@localhost:15432/addp_t
   make test-security-postgres
 ```
 
-Transfer PostgreSQL 受保护 bounded snapshot 导出门禁使用：
+Transfer PostgreSQL schema、受保护 bounded snapshot 导出与既有表目标覆盖门禁使用：
 
 ```bash
 ADDP_TEST_POSTGRES_HOST=localhost \

@@ -22,14 +22,14 @@ func TestManagerTaskProviderDeclaration(t *testing.T) {
 		}
 	}
 	pptx := capabilities.CapabilityFor("pptx_pdf_generation")
-	if pptx == nil || !strings.Contains(pptx.EditURL, "/manager/derived-tasks?") {
+	if pptx == nil || !strings.Contains(pptx.EditURL, "/manager/tasks/quick-view?") {
 		t.Fatalf("pptx_pdf_generation edit_url = %q, want unified generation task route", pptx.EditURL)
 	}
 	embedding := capabilities.CapabilityFor("embedding")
 	if embedding == nil {
 		t.Fatal("missing embedding capability")
 	}
-	if embedding.CreateURL != "/manager/derived-tasks?category=embedding&create=1" || embedding.EditURL != "/manager/derived-tasks?category=embedding&task_id=:id" {
+	if embedding.CreateURL != "/manager/tasks/embedding?create=1" || embedding.EditURL != "/manager/tasks/embedding?task_id=:id" {
 		t.Fatalf("embedding routes = %q / %q, want unified data task route", embedding.CreateURL, embedding.EditURL)
 	}
 	for _, taskType := range []string{
@@ -45,8 +45,15 @@ func TestManagerTaskProviderDeclaration(t *testing.T) {
 		"pptx_pdf_generation",
 	} {
 		capability := capabilities.CapabilityFor(taskType)
-		if capability == nil || !strings.HasPrefix(capability.CreateURL, "/manager/derived-tasks?") {
-			t.Fatalf("%s create_url = %q, want unified derived task route", taskType, capability.CreateURL)
+		if capability == nil {
+			t.Fatalf("missing task capability %s", taskType)
+		}
+		wantPath := "/manager/tasks/quick-view?"
+		if taskType == "vector_tile_set_generation" || taskType == "raster_mosaic_generation" {
+			wantPath = "/manager/tasks/spatial?"
+		}
+		if !strings.HasPrefix(capability.CreateURL, wantPath) {
+			t.Fatalf("%s create_url = %q, want canonical task category route %q", taskType, capability.CreateURL, wantPath)
 		}
 		if !strings.Contains(capability.CreateURL, "task_type="+taskType) || !strings.Contains(capability.CreateURL, "create=1") {
 			t.Fatalf("%s create_url = %q, want task type and create state", taskType, capability.CreateURL)

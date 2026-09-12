@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Register one disposable Hosted Online Engine through the canonical System API."""
+"""Register one disposable external-profile Online Engine through the System API."""
 
 from __future__ import annotations
 
@@ -19,14 +19,15 @@ class RegistrationError(RuntimeError):
     pass
 
 
-def require_hosted_environment(environment: Mapping[str, str]) -> tuple[str, str]:
-    if (
-        environment.get("GITHUB_ACTIONS") != "true"
-        or environment.get("RUNNER_OS") != "Linux"
-        or environment.get("ADDP_ONLINE_HOSTED") != "1"
-    ):
+def require_external_environment(environment: Mapping[str, str]) -> tuple[str, str]:
+    profiles = {
+        name
+        for name in ("ADDP_ONLINE_HOSTED", "ADDP_ONLINE_OWNER_MANAGED")
+        if environment.get(name) == "1"
+    }
+    if environment.get("GITHUB_ACTIONS") != "true" or environment.get("RUNNER_OS") != "Linux" or len(profiles) != 1:
         raise RegistrationError(
-            "Engine registration is restricted to a GitHub Hosted Linux Online gate"
+            "Engine registration requires exactly one GitHub Hosted or owner-managed Linux Online profile"
         )
     system_url = environment.get("SYSTEM_URL", "").rstrip("/")
     parsed = urllib.parse.urlsplit(system_url)
@@ -63,7 +64,7 @@ def load_descriptor(path: Path) -> dict[str, object]:
     if not isinstance(raw.get("engine_type"), str) or not raw["engine_type"]:
         raise RegistrationError("Engine descriptor engine_type is required")
     if raw.get("engine_origin") != "general":
-        raise RegistrationError("Hosted Online only registers general Engines")
+        raise RegistrationError("External Online profiles only register general Engines")
     if not isinstance(raw.get("connection_info"), dict) or not raw["connection_info"]:
         raise RegistrationError("Engine descriptor connection_info is required")
     return raw
@@ -168,12 +169,12 @@ def main() -> int:
     args = parser.parse_args()
     if args.descriptor.resolve() == args.output.resolve():
         raise RegistrationError("Engine descriptor and result paths must be different")
-    base_url, token = require_hosted_environment(os.environ)
+    base_url, token = require_external_environment(os.environ)
     descriptor = load_descriptor(args.descriptor)
     engine_id = register_engine(base_url, token, descriptor)
     write_result(args.output, engine_id)
     print(
-        f"Hosted Online Engine registered: type={descriptor['engine_type']}, id={engine_id}"
+        f"External Online Engine registered: type={descriptor['engine_type']}, id={engine_id}"
     )
     return 0
 
@@ -182,5 +183,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except RegistrationError as error:
-        print(f"Hosted Online Engine registration failed: {error}", file=sys.stderr)
+        print(f"External Online Engine registration failed: {error}", file=sys.stderr)
         raise SystemExit(1)

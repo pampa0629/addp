@@ -44,6 +44,7 @@ var (
 	ErrCandidateFormalizationInvalid          = fmt.Errorf("%w: invalid standard candidate formalization", commonapi.ErrBadRequest)
 	ErrCandidateFamilyDecisionRequired        = fmt.Errorf("%w: document candidate family decision required", commonapi.ErrConflict)
 	ErrCandidateFamilyDecisionInvalid         = fmt.Errorf("%w: invalid document candidate family decision", commonapi.ErrBadRequest)
+	ErrCandidateFamilySnapshotStale           = fmt.Errorf("%w: document candidate family snapshot changed", commonapi.ErrConflict)
 	ErrCandidateRepresentativeStale           = fmt.Errorf("%w: standard candidate representative changed", commonapi.ErrConflict)
 )
 

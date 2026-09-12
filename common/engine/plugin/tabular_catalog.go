@@ -164,6 +164,13 @@ func DescribeTabularCatalogFacts(ctx context.Context, callbacks TabularCatalogCa
 
 	namespace := segments[0].Name
 	table := segments[len(segments)-1].Name
+	tableInfo, hasTableInfo, err := findTableInfo(ctx, callbacks, db, namespace, table)
+	if err != nil {
+		return nil, err
+	}
+	if !hasTableInfo {
+		return nil, WrapEngineCatalogError(EngineCatalogErrorNotFound, fmt.Errorf("catalog table %q not found in namespace %q", table, namespace))
+	}
 	columns, err := callbacks.ListColumns(ctx, db, namespace, table)
 	if err != nil {
 		return nil, err
@@ -171,13 +178,8 @@ func DescribeTabularCatalogFacts(ctx context.Context, callbacks TabularCatalogCa
 
 	fields := NormalizeFieldInfos(columns)
 
-	tableInfo, hasTableInfo := findTableInfo(ctx, callbacks, db, namespace, table)
-	kind := EngineCatalogKindTable
-	var updatedAt *time.Time
-	if hasTableInfo {
-		kind = tableCatalogKind(tableInfo)
-		updatedAt = tableInfo.UpdatedAt
-	}
+	kind := tableCatalogKind(tableInfo)
+	updatedAt := tableInfo.UpdatedAt
 	if opts.IncludeStatistics && callbacks.RowCount != nil {
 		rowCount, err := callbacks.RowCount(ctx, db, namespace, table)
 		if err == nil {
@@ -299,20 +301,20 @@ func TabularNamespaceCatalogEntry(root EngineCatalogPath, namespaceTerm, name st
 	}
 }
 
-func findTableInfo(ctx context.Context, callbacks TabularCatalogCallbacks, db *gorm.DB, namespace, tableName string) (datatype.TableInfo, bool) {
+func findTableInfo(ctx context.Context, callbacks TabularCatalogCallbacks, db *gorm.DB, namespace, tableName string) (datatype.TableInfo, bool, error) {
 	if callbacks.ListTables == nil {
-		return datatype.TableInfo{}, false
+		return datatype.TableInfo{}, false, nil
 	}
 	tables, err := callbacks.ListTables(ctx, db, namespace)
 	if err != nil {
-		return datatype.TableInfo{}, false
+		return datatype.TableInfo{}, false, err
 	}
 	for _, table := range tables {
 		if table.Name == tableName {
-			return table, true
+			return table, true, nil
 		}
 	}
-	return datatype.TableInfo{}, false
+	return datatype.TableInfo{}, false, nil
 }
 
 func tableCatalogKind(table datatype.TableInfo) string {

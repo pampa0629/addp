@@ -15,6 +15,7 @@
 - **OceanBase Community Edition 4.4.2 LTS**：Apache 2.0 授权、MySQL 模式的国产分布式关系数据库测试源，端口 2881；固定使用 `oceanbase/oceanbase-ce:4.4.2-lts`。
 - **TiDB 8.5.8**：Apache 2.0 的国产分布式 SQL 数据库测试源，端口 4000；固定使用 PingCAP 官方 PD/TiKV/TiDB 三组件镜像及 OCI digest，不提供镜像覆盖入口。
 - **openGauss 6.0.6 LTS**：Apache 2.0 授权、PG 兼容模式的国产关系数据库测试源，端口 5435；当前只在具备 NUMA 的 Linux x86_64 主机使用并校验官方 Docker tar，统一加载为 `opengauss:6.0.6`。
+- **KingbaseES V9R1C10**：固定 `V009R001C010B0004` 官方 Docker tar 与 SHA-256、使用 owner 正规 License 的 PG 模式国产关系数据库测试源，端口 5436；只通过 owner-managed Linux x86_64 disposable 生命周期启动。
 - **Apache Doris**：实时分析数据库，端口 9030, 8030
 - **Apache Spark**：分布式计算引擎，主机端口 7077、18088、11000；默认 Worker 为 Thrift 查询和工作流执行分别保留执行资源
 - **Redpanda**：兼容 Kafka API 的业务消息流，端口 29092
@@ -75,6 +76,9 @@ bash scripts/start.sh -tidb
 # 只启动 openGauss，并幂等初始化可查询样例
 bash scripts/start.sh -opengauss
 
+# 启动 License 受控的 disposable KingbaseES 样例；不进入 start.sh -all
+bash scripts/kingbase.sh start
+
 # 只启动 Oracle，并幂等初始化普通表与 Spatial 样例
 bash scripts/start.sh -oracle
 
@@ -100,9 +104,11 @@ business/
 │   ├── start.sh                    # 启动服务
 │   ├── stop.sh                     # 停止服务
 │   ├── restart.sh                  # 重启服务
+│   ├── kingbase.sh                 # owner-managed KingbaseES disposable 样例
 │   ├── online-engine-fixture.sh    # T4 专用 PostgreSQL Fixture 生命周期
 │   ├── online-workbench-mysql-fixture.sh # Workbench T4 专用只读 MySQL Fixture
 │   ├── online-tidb-consumer-fixture.sh # TiDB 消费链路 T4 专用三组件 Fixture
+│   ├── online-kingbase-consumer-fixture.sh # KingbaseES 消费链路 T4 专用许可受控 Fixture
 │   ├── online-manager-minio-fixture.sh # Manager 血缘与文档快显 T4 专用 MinIO Fixture
 │   └── online-security-transfer-fixture.sh # Security/Transfer T4 复合 Fixture
 │
@@ -124,6 +130,8 @@ business/
 ├── tidb/                           # TiDB 测试数据
 │   └── init.sql                    # 幂等创建探针与普通关系业务样例表
 ├── opengauss/                      # openGauss 测试数据
+│   └── init.sql                    # 幂等创建探针与普通关系业务样例表
+├── kingbase/                       # KingbaseES 测试数据
 │   └── init.sql                    # 幂等创建探针与普通关系业务样例表
 ├── oracle/                         # Oracle 普通表与 Spatial 测试数据
 │   ├── init.sql                     # 幂等初始化 SQL
@@ -153,6 +161,7 @@ business/
 | MongoDB | - | 端口 27017 |
 | TiDB | - | 端口 4000 |
 | openGauss | - | 端口 5435 |
+| KingbaseES | - | 端口 5436；仅 owner-managed disposable 样例 |
 | 用途 | ADDP 元数据（用户、资源配置、任务定义） | 用户业务数据（上传的数据、文件） |
 | 示例数据 | 用户账号、资源配置表 | Shapefile 空间数据表、用户上传文件 |
 
@@ -166,6 +175,8 @@ business/
 | **AMD64** (Intel/AMD) | `postgis/postgis:15-3.4` | ⚡ 原生性能 |
 
 openGauss 不使用 Docker Hub 第三方镜像。`scripts/lib/opengauss-official-media.sh` 固定维护 6.0.6 官方 x86_64/aarch64 tar URL 与 SHA-256；当前 Business 和 T2 只使用已通过发布认证的 x86_64 介质。6.0.6 官方 Docker 构建包含 MOT，MOT 需要有效 NUMA 拓扑；Docker Desktop for macOS 不提供该拓扑，官方 ARM64 与 x86_64 镜像都会在启动期失败。因此 macOS 本地巡检不启动 openGauss，Provider 实库门禁由 GitHub Actions 的 Linux x86_64 Job 承担，不能用跳过或第三方镜像伪装本地通过。
+
+KingbaseES 不使用第三方镜像，也不把官方介质或 License 写入仓库、Compose、日志或 Artifact。`scripts/lib/kingbase-official-media.sh` 固定 V9R1C10 `V009R001C010B0004` Linux x86_64 官方 tar 与 SHA-256；`business/scripts/kingbase.sh` 要求仓库外 `ADDP_KINGBASE_LICENSE_FILE` 及其 `ADDP_KINGBASE_LICENSE_SHA256`，通过 `docker create` 后注入授权，再启动无卷容器。内置 90 天试用 License 不作为可重复门禁路线，macOS Docker Desktop 与 GitHub Hosted 不承担正式验证。
 
 ## 脚本说明
 
@@ -191,6 +202,8 @@ OceanBase Provider 的唯一 T2 入口是仓库根 `make test-common-oceanbase`�
 TiDB Provider 的唯一 T2 入口是仓库根 `make test-common-tidb`。门禁拥有独立的无卷三组件 Compose project，创建并删除名称含 `disposable` 的 database，覆盖真实目录/Facts、参数查询、BatchRead、Snapshot Isolation 下的 bounded watermark resume，以及 prepare/session/delete/upsert；成功、失败和中断均执行 `down --volumes --remove-orphans` 并验证容器零残留。同一 owner 脚本可在 Linux x86_64 GitHub Hosted 和 macOS Docker Desktop 执行。
 
 `bash scripts/start.sh -opengauss` 启动官方 openGauss 6.0.6 LTS 介质并幂等初始化 `${OPENGAUSS_DATABASE:-business}`。样例与 MySQL/OceanBase 的普通业务域一致，包含 `customers`、`products`、`orders`、`order_items` 和连接探针，覆盖主外键、唯一约束、复合索引、Decimal、Boolean 与时间字段。System 中必须注册为 `engine_type=opengauss`；宿主机连接 `localhost:${OPENGAUSS_PORT:-5435}`，容器网络连接 `business-opengauss:5432`，固定账号 `gaussdb`。不得登记为 PostgreSQL，也不得据 PG 兼容性宣称 PostGIS、CDC 或 PostgreSQL 扩展能力。
+
+`bash scripts/kingbase.sh start` 在 owner-managed Linux x86_64 主机启动无卷 KingbaseES PG 模式容器，并反复执行 `business/kingbase/init.sql` 收敛探针、`customers`、`products`、`orders` 与 `order_items` 样例。调用前必须从 owner-only 环境注入 `KINGBASE_PASSWORD`、`ADDP_KINGBASE_LICENSE_FILE` 与 `ADDP_KINGBASE_LICENSE_SHA256`；可选覆盖 `KINGBASE_DATABASE`、`KINGBASE_USER` 与 `KINGBASE_PORT`。System 中必须注册为 `engine_type=kingbase`，宿主机连接 `127.0.0.1:${KINGBASE_PORT:-5436}`。停止使用 `bash scripts/kingbase.sh stop`，脚本删除本轮容器并验证零残留。
 
 ### scripts/online-workbench-mysql-fixture.sh - Workbench T4 MySQL Fixture
 

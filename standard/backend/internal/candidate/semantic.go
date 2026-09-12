@@ -31,6 +31,18 @@ type canonicalDocumentCandidatePayload struct {
 	Items              []models.DocumentExtractionCandidatePayloadItem `json:"items"`
 }
 
+type canonicalCandidateFamilySnapshot struct {
+	CandidateType string                                   `json:"candidate_type"`
+	Code          string                                   `json:"code"`
+	Members       []canonicalCandidateFamilySnapshotMember `json:"members"`
+}
+
+type canonicalCandidateFamilySnapshotMember struct {
+	CandidateID         int64  `json:"candidate_id"`
+	Version             int64  `json:"version"`
+	SemanticFingerprint string `json:"semantic_fingerprint"`
+}
+
 func SemanticFingerprint(value models.DocumentExtractionCandidate) string {
 	canonical := canonicalDocumentCandidate{
 		CandidateType: value.CandidateType,
@@ -52,6 +64,25 @@ func SemanticFingerprint(value models.DocumentExtractionCandidate) string {
 
 func NormalizeText(value string) string {
 	return strings.Join(strings.Fields(value), " ")
+}
+
+// FamilySnapshotToken binds a family decision to the complete current representative projection.
+func FamilySnapshotToken(candidateType, code string, candidates []models.DocumentExtractionCandidate) string {
+	members := make([]canonicalCandidateFamilySnapshotMember, len(candidates))
+	for index, value := range candidates {
+		members[index] = canonicalCandidateFamilySnapshotMember{
+			CandidateID: value.ID, Version: value.Version, SemanticFingerprint: SemanticFingerprint(value),
+		}
+	}
+	sort.Slice(members, func(i, j int) bool {
+		if members[i].SemanticFingerprint != members[j].SemanticFingerprint {
+			return members[i].SemanticFingerprint < members[j].SemanticFingerprint
+		}
+		return members[i].CandidateID < members[j].CandidateID
+	})
+	encoded, _ := json.Marshal(canonicalCandidateFamilySnapshot{CandidateType: candidateType, Code: code, Members: members})
+	sum := sha256.Sum256(encoded)
+	return hex.EncodeToString(sum[:])
 }
 
 // GovernanceState mirrors the read projection's precedence for one candidate occurrence.

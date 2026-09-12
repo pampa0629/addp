@@ -152,6 +152,51 @@ func TestExecuteWithParamsFromParentExecutionQueuesQueryWithoutBackendAuthorizat
 	}
 }
 
+func TestIssueSQLExecutionAuthorizationFromExecutionCarriesClaimLease(t *testing.T) {
+	parentExecutionID := uuid.New()
+	executionID := uuid.New()
+	leaseToken := uuid.New()
+	expiresAt := time.Now().UTC().Add(5 * time.Minute)
+
+	system := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodPost || request.URL.Path != "/api/v1/system/runtime/execution-authorizations" {
+			t.Fatalf("unexpected authorization request: %s %s", request.Method, request.URL.Path)
+		}
+		var input commonClient.IssueExecutionAuthorizationFromExecutionRequest
+		if err := json.NewDecoder(request.Body).Decode(&input); err != nil {
+			t.Fatalf("decode authorization request: %v", err)
+		}
+		if input.ParentExecutionID != parentExecutionID.String() || input.ExecutionID != executionID.String() ||
+			input.Attempt != 2 || input.LeaseToken != leaseToken.String() {
+			t.Fatalf("authorization provenance = %#v", input)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(commonClient.IssuedExecutionAuthorization{
+			ID: "41", ExecutionID: executionID.String(), Audience: commonExecution.AudienceDevelop,
+			Accesses:  []commonClient.ExecutionEngineAccessScope{{EngineID: "12", Effects: []string{"read"}}},
+			ExpiresAt: expiresAt, ActorPrincipalID: "31", TenantID: "7",
+			TenantMembershipID: "37", IssuedAuthorizationVersion: "5", SourceType: "user",
+		})
+	}))
+	defer system.Close()
+
+	service := NewSQLEngineService(
+		&config.Config{DefaultQueryTimeout: 30, MaxQueryTimeout: 300},
+		commonClient.NewSystemServiceClient(system.URL, staticServiceTokenSource("addp_at_develop"), system.Client()),
+		nil,
+	)
+	authorization, err := service.IssueSQLExecutionAuthorizationFromExecution(
+		context.Background(), 7, parentExecutionID, executionID, 12, 2, leaseToken.String(), "SELECT 1", 60,
+	)
+	if err != nil {
+		t.Fatalf("issue authorization: %v", err)
+	}
+	if authorization.AuthorizationID != 41 || authorization.ActorPrincipalID != 31 {
+		t.Fatalf("authorization = %#v", authorization)
+	}
+}
+
 func TestApplySQLExecutionAuthorizationFactsPersistsOnlyReferences(t *testing.T) {
 	expiresAt := time.Date(2026, 7, 29, 10, 15, 0, 0, time.UTC)
 	execution := &commonExecution.TaskExecution{ExecutionID: "execution-1"}

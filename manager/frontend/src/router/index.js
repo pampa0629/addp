@@ -36,10 +36,22 @@ const routes = [
         meta: { requiresAuth: true, title: '数据检索-addp' }
       },
       {
-		path: 'derived-tasks',
-		name: 'DerivedTasks',
+		path: 'tasks/quick-view',
+		name: 'QuickViewTasks',
 		component: () => import('../views/DerivedTasks.vue'),
-		meta: { requiresAuth: true, title: '数据任务-addp' }
+		meta: { requiresAuth: true, title: '快显任务-addp', taskCategory: 'managed_quick_view' }
+	  },
+      {
+		path: 'tasks/spatial',
+		name: 'SpatialDataTasks',
+		component: () => import('../views/DerivedTasks.vue'),
+		meta: { requiresAuth: true, title: '空间数据任务-addp', taskCategory: 'spatial_business' }
+	  },
+      {
+		path: 'tasks/embedding',
+		name: 'EmbeddingTasks',
+		component: () => import('../views/DerivedTasks.vue'),
+		meta: { requiresAuth: true, title: '向量化任务-addp', taskCategory: 'embedding' }
 	  },
       {
         path: 'spatial-preview',

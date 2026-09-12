@@ -82,8 +82,8 @@ func TestIntegrationMongoEncodedRecordExportMasksOutdoorPersonsBeforeCanonicalEx
 			if !ok {
 				continue
 			}
-			if !isTransferMaskedMainlandPhone(phone) {
-				t.Fatal("protected MongoDB export emitted a phone outside the masking contract")
+			if !isTransferKeepPrefixSuffixMask(phone) {
+				t.Fatal("protected MongoDB export emitted a phone outside the keep-prefix-suffix masking contract")
 			}
 			maskedPhones++
 		}
@@ -196,8 +196,8 @@ func TestIntegrationMongoAggregateTransferProtectsOnlyProjectedOutdoorPersonFiel
 			if !exists {
 				continue
 			}
-			if !isTransferMaskedMainlandPhone(phone) {
-				t.Fatal("protected MongoDB aggregate emitted an unmasked phone")
+			if !isTransferKeepPrefixSuffixMask(phone) {
+				t.Fatal("protected MongoDB aggregate emitted a phone outside the keep-prefix-suffix masking contract")
 			}
 			maskedPhones++
 		}
@@ -299,19 +299,13 @@ func transferMongoEnvOrDefault(name, fallback string) string {
 	return fallback
 }
 
-func isTransferMaskedMainlandPhone(value string) bool {
+func isTransferKeepPrefixSuffixMask(value string) bool {
 	runes := []rune(value)
-	if len(runes) != 11 {
+	if len(runes) <= 7 {
 		return false
 	}
-	for index, current := range runes {
-		if index >= 3 && index < 7 {
-			if current != '*' {
-				return false
-			}
-			continue
-		}
-		if current < '0' || current > '9' {
+	for index := 3; index < len(runes)-4; index++ {
+		if runes[index] != '*' {
 			return false
 		}
 	}

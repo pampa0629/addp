@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ADDP_T2_SERVICES=postgres
-# transfer-postgres-gate.sh - Run Transfer PostgreSQL schema and protected export integration tests.
+# transfer-postgres-gate.sh - Run Transfer PostgreSQL schema, protected export, and target override integration tests.
 
 set -euo pipefail
 
@@ -20,8 +20,8 @@ esac
 cd "$ROOT_DIR/transfer/backend"
 ADDP_POSTGRES_INTEGRATION=1 \
     ADDP_TEST_POSTGRES_DATABASE="$database" \
-    go test ./internal/repository ./internal/protection \
-    -run '^(TestIntegrationPostgresExecutionLogsMigrateOutOfErrorDetails|TestIntegrationPostgresBoundedExportMasksBeforeTargetWrite)$' \
+    go test ./internal/repository ./internal/protection ./internal/planner \
+    -run '^(TestIntegrationPostgresExecutionLogsMigrateOutOfErrorDetails|TestIntegrationPostgresBoundedExportMasksBeforeTargetWrite|TestIntegrationPlannerTargetOverrideAppendsOnlyToExistingPostgresTable)$' \
     -count=1 -v 2>&1 | tee "$WORK_DIR/transfer.log"
 if grep -q -- '--- SKIP:' "$WORK_DIR/transfer.log"; then
     echo "Transfer PostgreSQL gate refuses skipped tests" >&2
