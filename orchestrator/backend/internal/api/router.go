@@ -80,6 +80,16 @@ func SetupRouter(
 	}
 
 	{
+		// TaskProvider 仅允许 Orchestrator Runtime 使用专用最小权限访问。
+		taskProvider := api.Group("/task-provider")
+		taskProvider.Use(commonAuth.MustNewServiceClientGuard("addp-orchestrator"))
+		{
+			taskProvider.GET("/tasks", permission(orchestratorauthorization.PermissionOrchestratorTaskProviderRead), handler.ListProviderOrchestrationTasks)
+			taskProvider.GET("/tasks/:task_type/:id", permission(orchestratorauthorization.PermissionOrchestratorTaskProviderRead), handler.GetProviderOrchestrationTask)
+			taskProvider.POST("/tasks/:task_type/:id/execute", permission(orchestratorauthorization.PermissionOrchestratorTaskProviderExecute), handler.ExecuteProviderOrchestrationTask)
+			taskProvider.GET("/executions/:execution_id", permission(orchestratorauthorization.PermissionOrchestratorTaskProviderRead), handler.GetTaskProviderExecution)
+		}
+
 		// 编排管理
 		api.POST("/orchestrations", permission(
 			orchestratorauthorization.PermissionOrchestratorWorkflowCreate,
@@ -106,8 +116,6 @@ func SetupRouter(
 
 		// 模块任务列表 (用于拖拽复用，动态调用)
 		api.GET("/tasks", permission(orchestratorauthorization.PermissionOrchestratorWorkflowRead), handler.ListModuleTasks)
-		api.GET("/tasks/:task_type/:id", permission(orchestratorauthorization.PermissionOrchestratorWorkflowRead), handler.GetProviderOrchestrationTask)
-		api.POST("/tasks/:task_type/:id/execute", permission(orchestratorauthorization.PermissionOrchestratorWorkflowExecute), handler.ExecuteProviderOrchestrationTask)
 	}
 
 	return router

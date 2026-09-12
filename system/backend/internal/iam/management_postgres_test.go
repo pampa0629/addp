@@ -434,7 +434,7 @@ func createGovernedManagementUser(
 	if err := db.Exec(`
 		INSERT INTO system.role_assignments (
 			principal_id, role_id, scope_type, status, valid_from, source_type,
-			created_by_principal_id, reason
+			created_by_principal_id, grant_reason
 		)
 		SELECT ?, role.id, 'platform', 'active', now(), 'bootstrap', NULL, 'management integration test'
 		FROM system.roles role

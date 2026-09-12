@@ -9,6 +9,7 @@ import (
 	commonapi "github.com/addp/common/api"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/lib/pq"
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
@@ -41,14 +42,24 @@ type TenantAssignablePermission struct {
 
 type ManagedTenantRoleAssignment struct {
 	RoleAssignment
-	MembershipID         int64
-	PrincipalType        PrincipalType
-	DisplayName          string
-	Username             *string
-	ServicePrincipalName *string
-	RoleKey              string
-	RoleName             *string
-	RoleNameI18nKey      *string
+	MembershipID                int64
+	PrincipalType               PrincipalType
+	DisplayName                 string
+	Username                    *string
+	ServicePrincipalName        *string
+	RoleKey                     string
+	RoleName                    *string
+	RoleNameI18nKey             *string
+	EffectiveState              string
+	SameScopeActiveAssignmentID *int64
+	GrantedByPrincipalType      *PrincipalType
+	GrantedByDisplayName        *string
+	GrantedByIdentifier         *string
+	GrantedByStatus             *PrincipalStatus
+	RevokedByPrincipalType      *PrincipalType
+	RevokedByDisplayName        *string
+	RevokedByIdentifier         *string
+	RevokedByStatus             *PrincipalStatus
 }
 
 type BuiltinServiceRuntimeBinding struct {
@@ -351,10 +362,10 @@ func (r *Repository) ListActiveRoleHolderPrincipalIDs(ctx context.Context, roleI
 	return ids, wrapRepositoryError(err)
 }
 
-func (r *Repository) DisableTenantCustomRole(ctx context.Context, roleID, actorID int64, at time.Time) error {
+func (r *Repository) DisableTenantCustomRole(ctx context.Context, roleID, actorID int64, reason string, at time.Time) error {
 	if err := r.db.WithContext(ctx).Model(&RoleAssignment{}).
 		Where("role_id = ? AND status = 'active'", roleID).
-		Updates(map[string]any{"status": "revoked", "revoked_by_principal_id": actorID, "revoked_at": at}).Error; err != nil {
+		Updates(map[string]any{"status": "revoked", "revoked_by_principal_id": actorID, "revoked_at": at, "revoked_reason": reason}).Error; err != nil {
 		return wrapRepositoryError(err)
 	}
 	return wrapRepositoryError(r.db.WithContext(ctx).Model(&Role{}).Where("id = ?", roleID).Update("status", "disabled").Error)
@@ -368,8 +379,19 @@ func (r *Repository) ListTenantRoleAssignments(ctx context.Context, tenantID int
 	if filter.PrincipalType != nil {
 		base = base.Where("EXISTS (SELECT 1 FROM system.principals filtered_principal WHERE filtered_principal.id = assignment.principal_id AND filtered_principal.principal_type = ?)", *filter.PrincipalType)
 	}
-	if filter.Status != nil {
-		base = base.Where("assignment.status = ?", *filter.Status)
+	effectiveState := "effective"
+	if filter.EffectiveState != nil {
+		effectiveState = *filter.EffectiveState
+	}
+	switch effectiveState {
+	case "scheduled":
+		base = base.Where("assignment.status = 'active' AND assignment.valid_from > now()")
+	case "effective":
+		base = base.Where("assignment.status = 'active' AND assignment.valid_from <= now() AND (assignment.valid_until IS NULL OR assignment.valid_until > now())")
+	case "expired":
+		base = base.Where("assignment.status = 'active' AND assignment.valid_until IS NOT NULL AND assignment.valid_until <= now()")
+	case "revoked":
+		base = base.Where("assignment.status = 'revoked'")
 	}
 	if filter.ScopeType != nil {
 		base = base.Where("assignment.scope_type = ?", *filter.ScopeType)
@@ -385,16 +407,7 @@ func (r *Repository) ListTenantRoleAssignments(ctx context.Context, tenantID int
 		return nil, 0, wrapRepositoryError(err)
 	}
 	var assignments []ManagedTenantRoleAssignment
-	err := base.Select(`assignment.*, membership.id AS membership_id, principal.principal_type,
-		COALESCE(user_profile.display_name, service_principal.name) AS display_name, account.username,
-		service_principal.name AS service_principal_name,
-		role.role_key, role.name AS role_name, role.name_i18n_key AS role_name_i18n_key`).
-		Joins("JOIN system.roles role ON role.id = assignment.role_id").
-		Joins("JOIN system.tenant_memberships membership ON membership.tenant_id = assignment.tenant_id AND membership.principal_id = assignment.principal_id").
-		Joins("JOIN system.principals principal ON principal.id = assignment.principal_id").
-		Joins("LEFT JOIN system.users user_profile ON user_profile.id = assignment.principal_id").
-		Joins("LEFT JOIN system.local_accounts account ON account.user_id = assignment.principal_id").
-		Joins("LEFT JOIN system.service_principals service_principal ON service_principal.id = assignment.principal_id").
+	err := withManagedTenantRoleAssignmentProjection(base).
 		Order("assignment.id DESC").Offset((page - 1) * pageSize).Limit(pageSize).Scan(&assignments).Error
 	return assignments, total, wrapRepositoryError(err)
 }
@@ -405,17 +418,9 @@ func (r *Repository) GetManagedTenantRoleAssignment(
 	assignmentID int64,
 ) (*ManagedTenantRoleAssignment, error) {
 	var assignment ManagedTenantRoleAssignment
-	err := r.db.WithContext(ctx).Table("system.role_assignments assignment").
-		Select(`assignment.*, membership.id AS membership_id, principal.principal_type,
-			COALESCE(user_profile.display_name, service_principal.name) AS display_name, account.username,
-			service_principal.name AS service_principal_name,
-			role.role_key, role.name AS role_name, role.name_i18n_key AS role_name_i18n_key`).
-		Joins("JOIN system.roles role ON role.id = assignment.role_id").
-		Joins("JOIN system.tenant_memberships membership ON membership.tenant_id = assignment.tenant_id AND membership.principal_id = assignment.principal_id").
-		Joins("JOIN system.principals principal ON principal.id = assignment.principal_id").
-		Joins("LEFT JOIN system.users user_profile ON user_profile.id = assignment.principal_id").
-		Joins("LEFT JOIN system.local_accounts account ON account.user_id = assignment.principal_id").
-		Joins("LEFT JOIN system.service_principals service_principal ON service_principal.id = assignment.principal_id").
+	err := withManagedTenantRoleAssignmentProjection(
+		r.db.WithContext(ctx).Table("system.role_assignments assignment"),
+	).
 		Where("assignment.id = ? AND assignment.tenant_id = ?", assignmentID, tenantID).
 		Limit(1).
 		Scan(&assignment).Error
@@ -428,6 +433,56 @@ func (r *Repository) GetManagedTenantRoleAssignment(
 	return &assignment, nil
 }
 
+func withManagedTenantRoleAssignmentProjection(query *gorm.DB) *gorm.DB {
+	return query.Select(`assignment.*, membership.id AS membership_id, principal.principal_type,
+			COALESCE(user_profile.display_name, service_principal.name) AS display_name, account.username,
+			service_principal.name AS service_principal_name,
+			role.role_key, role.name AS role_name, role.name_i18n_key AS role_name_i18n_key,
+			CASE
+				WHEN assignment.status = 'revoked' THEN 'revoked'
+				WHEN assignment.valid_from > now() THEN 'scheduled'
+				WHEN assignment.valid_until IS NOT NULL AND assignment.valid_until <= now() THEN 'expired'
+				ELSE 'effective'
+			END AS effective_state,
+			CASE WHEN assignment.status = 'revoked' THEN (
+				SELECT active_assignment.id
+				FROM system.role_assignments active_assignment
+				WHERE active_assignment.principal_id = assignment.principal_id
+				  AND active_assignment.role_id = assignment.role_id
+				  AND active_assignment.scope_type = assignment.scope_type
+				  AND active_assignment.tenant_id IS NOT DISTINCT FROM assignment.tenant_id
+				  AND active_assignment.department_id IS NOT DISTINCT FROM assignment.department_id
+				  AND active_assignment.project_group_id IS NOT DISTINCT FROM assignment.project_group_id
+				  AND active_assignment.status = 'active'
+				  AND active_assignment.valid_from <= now()
+				  AND (active_assignment.valid_until IS NULL OR active_assignment.valid_until > now())
+				ORDER BY active_assignment.id DESC
+				LIMIT 1
+			) END AS same_scope_active_assignment_id,
+			granted_actor.principal_type AS granted_by_principal_type,
+			COALESCE(granted_user.display_name, granted_service.name) AS granted_by_display_name,
+			COALESCE(granted_account.username, granted_service.name) AS granted_by_identifier,
+			granted_actor.status AS granted_by_status,
+			revoked_actor.principal_type AS revoked_by_principal_type,
+			COALESCE(revoked_user.display_name, revoked_service.name) AS revoked_by_display_name,
+			COALESCE(revoked_account.username, revoked_service.name) AS revoked_by_identifier,
+			revoked_actor.status AS revoked_by_status`).
+		Joins("JOIN system.roles role ON role.id = assignment.role_id").
+		Joins("JOIN system.tenant_memberships membership ON membership.tenant_id = assignment.tenant_id AND membership.principal_id = assignment.principal_id").
+		Joins("JOIN system.principals principal ON principal.id = assignment.principal_id").
+		Joins("LEFT JOIN system.users user_profile ON user_profile.id = assignment.principal_id").
+		Joins("LEFT JOIN system.local_accounts account ON account.user_id = assignment.principal_id").
+		Joins("LEFT JOIN system.service_principals service_principal ON service_principal.id = assignment.principal_id").
+		Joins("LEFT JOIN system.principals granted_actor ON granted_actor.id = assignment.created_by_principal_id").
+		Joins("LEFT JOIN system.users granted_user ON granted_user.id = granted_actor.id").
+		Joins("LEFT JOIN system.local_accounts granted_account ON granted_account.user_id = granted_actor.id").
+		Joins("LEFT JOIN system.service_principals granted_service ON granted_service.id = granted_actor.id").
+		Joins("LEFT JOIN system.principals revoked_actor ON revoked_actor.id = assignment.revoked_by_principal_id").
+		Joins("LEFT JOIN system.users revoked_user ON revoked_user.id = revoked_actor.id").
+		Joins("LEFT JOIN system.local_accounts revoked_account ON revoked_account.user_id = revoked_actor.id").
+		Joins("LEFT JOIN system.service_principals revoked_service ON revoked_service.id = revoked_actor.id")
+}
+
 func (r *Repository) LockTenantRoleAssignment(ctx context.Context, tenantID, assignmentID int64) (*RoleAssignment, error) {
 	var assignment RoleAssignment
 	err := r.db.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -435,9 +490,9 @@ func (r *Repository) LockTenantRoleAssignment(ctx context.Context, tenantID, ass
 	return &assignment, wrapRepositoryError(err)
 }
 
-func (r *Repository) RevokeTenantRoleAssignment(ctx context.Context, assignmentID, actorID int64, at time.Time) error {
+func (r *Repository) RevokeTenantRoleAssignment(ctx context.Context, assignmentID, actorID int64, reason string, at time.Time) error {
 	result := r.db.WithContext(ctx).Model(&RoleAssignment{}).Where("id = ? AND status = 'active'", assignmentID).
-		Updates(map[string]any{"status": "revoked", "revoked_by_principal_id": actorID, "revoked_at": at})
+		Updates(map[string]any{"status": "revoked", "revoked_by_principal_id": actorID, "revoked_at": at, "revoked_reason": reason})
 	if result.Error != nil {
 		return wrapRepositoryError(result.Error)
 	}

@@ -34,8 +34,8 @@ func taskProviderModuleRequestForTest() *models.ModuleRegistrationRequest {
 		ModuleURL: "http://meta-a:8082", RoutePrefix: "/meta",
 		TaskProvider: &commonmodels.TaskProviderDeclaration{
 			DisplayName: "Meta", Description: "Metadata tasks",
-			TaskListEndpoint: "/api/v1/meta/tasks", TaskDetailEndpoint: "/api/v1/meta/tasks/{task_type}/{id}",
-			TaskExecuteEndpoint: "/api/v1/meta/tasks/{task_type}/{id}/execute", TaskStatusEndpoint: "/api/v1/meta/executions/{execution_id}",
+			TaskListEndpoint: "/api/v1/meta/task-provider/tasks", TaskDetailEndpoint: "/api/v1/meta/task-provider/tasks/{task_type}/{id}",
+			TaskExecuteEndpoint: "/api/v1/meta/task-provider/tasks/{task_type}/{id}/execute", TaskStatusEndpoint: "/api/v1/meta/task-provider/executions/{execution_id}",
 			Capabilities: &capabilities,
 		},
 	}

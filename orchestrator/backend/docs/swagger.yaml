@@ -111,6 +111,19 @@ definitions:
         example: 请求参数错误
         type: string
     type: object
+  github_com_addp_orchestrator_internal_models.ListProviderOrchestrationTasksResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/github_com_addp_orchestrator_internal_models.ProviderOrchestrationTask'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+    type: object
   github_com_addp_orchestrator_internal_models.OrchestrationDefinitionRequest:
     properties:
       description:
@@ -233,6 +246,115 @@ definitions:
       output_schema:
         additionalProperties: true
         type: object
+    type: object
+  taskprovider.ExecutionStatusResponse:
+    properties:
+      actor_principal_id:
+        description: |-
+          User-derived execution authorization facts. The raw User/Service tokens
+          and engine connection details are never persisted in task executions.
+        type: integer
+      actor_tenant_membership_id:
+        type: integer
+      attempt:
+        type: integer
+      authorization_expires_at:
+        type: string
+      bytes_read:
+        description: Transfer 读取字节数
+        type: integer
+      bytes_written:
+        description: Transfer 写入字节数
+        type: integer
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      current_step:
+        description: 当前步骤（Orchestrator/Workflow）
+        type: string
+      error_details:
+        allOf:
+        - $ref: '#/definitions/models.JSONMap'
+        description: 错误详情（仅失败时有值）
+      execution_authorization_id:
+        type: integer
+      execution_boundary:
+        description: ExecutionBoundary separates finite queue work from long-running
+          runtime sessions.
+        type: string
+      execution_config:
+        allOf:
+        - $ref: '#/definitions/models.JSONMap'
+        description: JSONB 字段
+      execution_id:
+        description: 执行标识
+        type: string
+      execution_time_ms:
+        description: 性能指标
+        type: integer
+      id:
+        type: integer
+      issued_authorization_version:
+        type: integer
+      max_attempts:
+        type: integer
+      metadata:
+        allOf:
+        - $ref: '#/definitions/models.JSONMap'
+        description: 模块特有扩展数据（结果、断点、步骤结果等）
+      module:
+        description: 模块标识
+        type: string
+      outputs:
+        $ref: '#/definitions/models.JSONMap'
+      parent_execution_id:
+        description: 父执行（Orchestrator 子步骤追踪父编排）
+        type: string
+      progress:
+        description: 0-100
+        type: integer
+      records_read:
+        description: Transfer 读取记录数
+        type: integer
+      records_written:
+        description: Transfer 写入记录数
+        type: integer
+      retry_of_execution_id:
+        type: string
+      rows_affected:
+        description: SQL 影响行数
+        type: integer
+      source:
+        description: 触发来源模块
+        type: string
+      source_task_id:
+        description: 关联原始任务
+        type: string
+      source_task_name:
+        description: 任务名称（冗余，便于查询）
+        type: string
+      started_at:
+        description: 时间戳
+        type: string
+      status:
+        description: 执行状态
+        type: string
+      task_type:
+        description: 稳定执行类型；可来自任务定义或 ad-hoc execution
+        type: string
+      tenant_id:
+        type: integer
+      trigger_type:
+        description: 触发信息
+        type: string
+      triggered_by:
+        description: 触发用户ID
+        type: integer
+      updated_at:
+        type: string
+    required:
+    - outputs
     type: object
 host: localhost:8084
 info:
@@ -547,6 +669,189 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - orchestrator.workflow.read
+  /task-provider/executions/{execution_id}:
+    get:
+      parameters:
+      - description: 执行 UUID | Execution UUID
+        in: path
+        name: execution_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/taskprovider.ExecutionStatusResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取 TaskProvider 编排执行状态 | Get TaskProvider orchestration execution status
+      tags:
+      - Orchestrator
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - orchestrator.task_provider.read
+  /task-provider/tasks:
+    get:
+      description: 按标准 TaskProvider 协议列出 Orchestrator 自身的编排任务；task_type 仅支持 orchestration。|
+        List Orchestrator tasks through the standard TaskProvider protocol; task_type
+        only supports orchestration.
+      parameters:
+      - description: 任务类型，固定为 orchestration | Task type, fixed to orchestration
+        in: query
+        name: task_type
+        type: string
+      - default: 1
+        description: 页码 | Page
+        in: query
+        name: page
+        type: integer
+      - default: 100
+        description: 每页数量 | Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_orchestrator_internal_models.ListProviderOrchestrationTasksResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 列出 TaskProvider 编排任务 | List TaskProvider orchestration tasks
+      tags:
+      - Orchestrator
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - orchestrator.task_provider.read
+  /task-provider/tasks/{task_type}/{id}:
+    get:
+      description: 按标准 TaskProvider 路径获取 Orchestrator 编排任务详情；task_type 仅支持 orchestration。|
+        Get Orchestrator task detail through the standard TaskProvider path; task_type
+        only supports orchestration.
+      parameters:
+      - description: 任务类型，固定为 orchestration | Task type, fixed to orchestration
+        in: path
+        name: task_type
+        required: true
+        type: string
+      - description: 编排 ID | Orchestration ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_orchestrator_internal_models.ProviderOrchestrationTask'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 当前身份未绑定租户 | Current identity is not bound to a tenant
+          schema:
+            $ref: '#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取 TaskProvider 编排任务详情 | Get TaskProvider orchestration task detail
+      tags:
+      - Orchestrator
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - orchestrator.task_provider.read
+  /task-provider/tasks/{task_type}/{id}/execute:
+    post:
+      consumes:
+      - application/json
+      description: 按标准 TaskProvider 协议执行 Orchestrator 编排任务；task_type 仅支持 orchestration。|
+        Execute an Orchestrator task through the standard TaskProvider protocol; task_type
+        only supports orchestration.
+      parameters:
+      - description: 任务类型，固定为 orchestration | Task type, fixed to orchestration
+        in: path
+        name: task_type
+        required: true
+        type: string
+      - description: 编排 ID | Orchestration ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: TaskProvider 执行请求 | TaskProvider execution request
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/internal_api.orchestrationTaskProviderExecuteRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/internal_api.orchestrationTaskProviderExecuteResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: 当前身份未绑定租户 | Current identity is not bound to a tenant
+          schema:
+            $ref: '#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 执行 TaskProvider 编排任务 | Execute TaskProvider orchestration task
+      tags:
+      - Orchestrator
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - orchestrator.task_provider.execute
   /task-providers:
     get:
       description: 从 System 模块定义读取 TaskProvider 声明，并附带当前 Backend 租约投影的动态可用性 | Read
@@ -685,108 +990,6 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - orchestrator.workflow.read
-  /tasks/{task_type}/{id}:
-    get:
-      description: 按标准 TaskProvider 路径获取 Orchestrator 编排任务详情；task_type 仅支持 orchestration。|
-        Get Orchestrator task detail through the standard TaskProvider path; task_type
-        only supports orchestration.
-      parameters:
-      - description: 任务类型，固定为 orchestration | Task type, fixed to orchestration
-        in: path
-        name: task_type
-        required: true
-        type: string
-      - description: 编排 ID | Orchestration ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/github_com_addp_orchestrator_internal_models.ProviderOrchestrationTask'
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties: true
-            type: object
-        "403":
-          description: 当前身份未绑定租户 | Current identity is not bound to a tenant
-          schema:
-            $ref: '#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse'
-        "404":
-          description: Not Found
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 获取 TaskProvider 编排任务详情 | Get TaskProvider orchestration task detail
-      tags:
-      - Orchestrator
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - orchestrator.workflow.read
-  /tasks/{task_type}/{id}/execute:
-    post:
-      consumes:
-      - application/json
-      description: 按标准 TaskProvider 协议执行 Orchestrator 编排任务；task_type 仅支持 orchestration。|
-        Execute an Orchestrator task through the standard TaskProvider protocol; task_type
-        only supports orchestration.
-      parameters:
-      - description: 任务类型，固定为 orchestration | Task type, fixed to orchestration
-        in: path
-        name: task_type
-        required: true
-        type: string
-      - description: 编排 ID | Orchestration ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      - description: TaskProvider 执行请求 | TaskProvider execution request
-        in: body
-        name: request
-        schema:
-          $ref: '#/definitions/internal_api.orchestrationTaskProviderExecuteRequest'
-      produces:
-      - application/json
-      responses:
-        "202":
-          description: Accepted
-          schema:
-            $ref: '#/definitions/internal_api.orchestrationTaskProviderExecuteResponse'
-        "400":
-          description: Bad Request
-          schema:
-            additionalProperties: true
-            type: object
-        "403":
-          description: 当前身份未绑定租户 | Current identity is not bound to a tenant
-          schema:
-            $ref: '#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse'
-        "404":
-          description: Not Found
-          schema:
-            additionalProperties: true
-            type: object
-        "500":
-          description: Internal Server Error
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: 执行 TaskProvider 编排任务 | Execute TaskProvider orchestration task
-      tags:
-      - Orchestrator
-      x-addp-auth-mode: permission
-      x-addp-required-permissions:
-      - orchestrator.workflow.execute
 securityDefinitions:
   BearerAuth:
     in: header

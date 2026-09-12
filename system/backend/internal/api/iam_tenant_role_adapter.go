@@ -50,28 +50,41 @@ type IAMDeleteTenantRoleRequest struct {
 	Reason string `json:"reason"`
 }
 
+type IAMRoleAssignmentActorResponse struct {
+	PrincipalID   string  `json:"principal_id"`
+	PrincipalType string  `json:"principal_type"`
+	DisplayName   *string `json:"display_name"`
+	Identifier    *string `json:"identifier"`
+	Status        string  `json:"status"`
+}
+
 type IAMTenantRoleAssignmentResponse struct {
-	ID                   string     `json:"id"`
-	MembershipID         string     `json:"membership_id"`
-	PrincipalID          string     `json:"principal_id"`
-	PrincipalType        string     `json:"principal_type"`
-	DisplayName          string     `json:"display_name"`
-	Username             *string    `json:"username"`
-	ServicePrincipalName *string    `json:"service_principal_name,omitempty"`
-	RoleID               string     `json:"role_id"`
-	RoleKey              string     `json:"role_key"`
-	RoleName             *string    `json:"role_name"`
-	RoleNameI18nKey      *string    `json:"role_name_i18n_key"`
-	ScopeType            string     `json:"scope_type"`
-	DepartmentID         *string    `json:"department_id"`
-	ProjectGroupID       *string    `json:"project_group_id"`
-	Status               string     `json:"status"`
-	ValidFrom            time.Time  `json:"valid_from"`
-	ValidUntil           *time.Time `json:"valid_until"`
-	Reason               string     `json:"reason"`
-	CreatedByPrincipalID *string    `json:"created_by_principal_id"`
-	RevokedByPrincipalID *string    `json:"revoked_by_principal_id"`
-	RevokedAt            *time.Time `json:"revoked_at"`
+	ID                          string                          `json:"id"`
+	MembershipID                string                          `json:"membership_id"`
+	PrincipalID                 string                          `json:"principal_id"`
+	PrincipalType               string                          `json:"principal_type"`
+	DisplayName                 string                          `json:"display_name"`
+	Username                    *string                         `json:"username"`
+	ServicePrincipalName        *string                         `json:"service_principal_name,omitempty"`
+	RoleID                      string                          `json:"role_id"`
+	RoleKey                     string                          `json:"role_key"`
+	RoleName                    *string                         `json:"role_name"`
+	RoleNameI18nKey             *string                         `json:"role_name_i18n_key"`
+	ScopeType                   string                          `json:"scope_type"`
+	DepartmentID                *string                         `json:"department_id"`
+	ProjectGroupID              *string                         `json:"project_group_id"`
+	Status                      string                          `json:"status"`
+	EffectiveState              string                          `json:"effective_state"`
+	ValidFrom                   time.Time                       `json:"valid_from"`
+	ValidUntil                  *time.Time                      `json:"valid_until"`
+	SourceType                  string                          `json:"source_type"`
+	GrantReason                 *string                         `json:"grant_reason"`
+	GrantedBy                   *IAMRoleAssignmentActorResponse `json:"granted_by"`
+	CreatedAt                   time.Time                       `json:"created_at"`
+	RevokedReason               *string                         `json:"revoked_reason"`
+	RevokedBy                   *IAMRoleAssignmentActorResponse `json:"revoked_by"`
+	RevokedAt                   *time.Time                      `json:"revoked_at"`
+	SameScopeActiveAssignmentID *string                         `json:"same_scope_active_assignment_id"`
 }
 
 type IAMCreateTenantRoleAssignmentsRequest struct {
@@ -95,6 +108,7 @@ type iamTenantRoleService interface {
 	UpdateRole(context.Context, iam.UpdateTenantRoleInput) (*iam.TenantRole, error)
 	DeleteRole(context.Context, iam.DeleteTenantRoleInput) error
 	ListAssignments(context.Context, int64, iam.TenantRoleAssignmentFilter, int, int) ([]iam.ManagedTenantRoleAssignment, int64, error)
+	GetAssignment(context.Context, int64, int64) (*iam.ManagedTenantRoleAssignment, error)
 	CreateAssignments(context.Context, iam.CreateTenantRoleAssignmentsInput) ([]iam.ManagedTenantRoleAssignment, error)
 	RevokeAssignment(context.Context, iam.RevokeTenantRoleAssignmentInput) (*iam.ManagedTenantRoleAssignment, error)
 }
@@ -284,7 +298,7 @@ func (h *IAMTenantRoleHandler) DeleteRole(c *gin.Context) {
 // @Param        page_size query int false "每页数量 | Page size"
 // @Param        membership_id query string false "成员关系 ID | Membership ID"
 // @Param        principal_type query string false "成员类型：user 或 service_principal | Member type: user or service_principal"
-// @Param        status query string false "状态：active 或 revoked | Status: active or revoked"
+// @Param        effective_state query string false "当前状态：scheduled、effective、expired 或 revoked；默认 effective | Current state: scheduled, effective, expired, or revoked; defaults to effective"
 // @Param        scope_type query string false "授权范围类型 | Assignment scope type"
 // @Param        department_id query string false "部门 ID，仅 department 范围 | Department ID for department scope"
 // @Param        project_group_id query string false "项目组 ID，仅 project_group 范围 | Project group ID for project_group scope"
@@ -330,8 +344,8 @@ func parseIAMTenantRoleAssignmentFilter(c *gin.Context) (iam.TenantRoleAssignmen
 	if err != nil {
 		return filter, err
 	}
-	if value := strings.TrimSpace(c.Query("status")); value != "" {
-		filter.Status = &value
+	if value := strings.TrimSpace(c.Query("effective_state")); value != "" {
+		filter.EffectiveState = &value
 	}
 	if value := strings.TrimSpace(c.Query("scope_type")); value != "" {
 		filter.ScopeType = &value
@@ -345,6 +359,36 @@ func parseIAMTenantRoleAssignmentFilter(c *gin.Context) (iam.TenantRoleAssignmen
 		return filter, err
 	}
 	return filter, nil
+}
+
+// GetAssignment godoc
+// @Summary      查询当前租户角色分配详情 | Get role assignment details in the current tenant
+// @Tags         租户角色分配 | Tenant Role Assignments
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path string true "角色分配 ID | Role assignment ID"
+// @Success      200 {object} IAMTenantRoleAssignmentResponse
+// @Failure      404 {object} IAMErrorResponse "角色分配不存在或不属于当前租户 | Role assignment not found in the current tenant"
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["iam.tenant_role_assignment.read"]
+// @Router       /tenant/role_assignments/{id} [get]
+func (h *IAMTenantRoleHandler) GetAssignment(c *gin.Context) {
+	_, tenantID, err := iamTenantUserActor(c)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	assignmentID, err := parseIAMDecimalID(c.Param("id"))
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	assignment, err := h.service.GetAssignment(c.Request.Context(), int64(tenantID), assignmentID)
+	if err != nil {
+		respondIAMError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, mapIAMManagedTenantRoleAssignment(*assignment))
 }
 
 func parseOptionalIAMQueryID(c *gin.Context, name string) (*int64, error) {
@@ -474,16 +518,49 @@ func mapIAMManagedTenantRoleAssignment(assignment iam.ManagedTenantRoleAssignmen
 	response.RoleKey = assignment.RoleKey
 	response.RoleName = assignment.RoleName
 	response.RoleNameI18nKey = assignment.RoleNameI18nKey
+	response.EffectiveState = assignment.EffectiveState
+	response.GrantedBy = mapIAMRoleAssignmentActor(
+		assignment.CreatedByPrincipalID,
+		assignment.GrantedByPrincipalType,
+		assignment.GrantedByDisplayName,
+		assignment.GrantedByIdentifier,
+		assignment.GrantedByStatus,
+	)
+	response.RevokedBy = mapIAMRoleAssignmentActor(
+		assignment.RevokedByPrincipalID,
+		assignment.RevokedByPrincipalType,
+		assignment.RevokedByDisplayName,
+		assignment.RevokedByIdentifier,
+		assignment.RevokedByStatus,
+	)
+	response.SameScopeActiveAssignmentID = formatOptionalIAMID(assignment.SameScopeActiveAssignmentID)
 	return response
 }
 
 func mapIAMRoleAssignment(assignment iam.RoleAssignment) IAMTenantRoleAssignmentResponse {
-	response := IAMTenantRoleAssignmentResponse{ID: strconv.FormatInt(assignment.ID, 10), PrincipalID: strconv.FormatInt(assignment.PrincipalID, 10), RoleID: strconv.FormatInt(assignment.RoleID, 10), ScopeType: assignment.ScopeType, Status: assignment.Status, ValidFrom: assignment.ValidFrom.UTC(), ValidUntil: utcTimePointer(assignment.ValidUntil), Reason: assignment.Reason, RevokedAt: utcTimePointer(assignment.RevokedAt)}
+	response := IAMTenantRoleAssignmentResponse{ID: strconv.FormatInt(assignment.ID, 10), PrincipalID: strconv.FormatInt(assignment.PrincipalID, 10), RoleID: strconv.FormatInt(assignment.RoleID, 10), ScopeType: assignment.ScopeType, Status: assignment.Status, ValidFrom: assignment.ValidFrom.UTC(), ValidUntil: utcTimePointer(assignment.ValidUntil), SourceType: assignment.SourceType, GrantReason: assignment.GrantReason, CreatedAt: assignment.CreatedAt.UTC(), RevokedReason: assignment.RevokedReason, RevokedAt: utcTimePointer(assignment.RevokedAt)}
 	response.DepartmentID = formatOptionalIAMID(assignment.DepartmentID)
 	response.ProjectGroupID = formatOptionalIAMID(assignment.ProjectGroupID)
-	response.CreatedByPrincipalID = formatOptionalIAMID(assignment.CreatedByPrincipalID)
-	response.RevokedByPrincipalID = formatOptionalIAMID(assignment.RevokedByPrincipalID)
 	return response
+}
+
+func mapIAMRoleAssignmentActor(
+	principalID *int64,
+	principalType *iam.PrincipalType,
+	displayName *string,
+	identifier *string,
+	status *iam.PrincipalStatus,
+) *IAMRoleAssignmentActorResponse {
+	if principalID == nil || principalType == nil || status == nil {
+		return nil
+	}
+	return &IAMRoleAssignmentActorResponse{
+		PrincipalID:   strconv.FormatInt(*principalID, 10),
+		PrincipalType: string(*principalType),
+		DisplayName:   displayName,
+		Identifier:    identifier,
+		Status:        string(*status),
+	}
 }
 
 func parseOptionalIAMDecimalID(value *string) (*int64, error) {

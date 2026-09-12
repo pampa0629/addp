@@ -157,6 +157,9 @@ func TestCreateAdHocExecutionPersistsNoTransferTaskDefinition(t *testing.T) {
 func TestRuntimeTargetTaskRequiresOrchestratorInputs(t *testing.T) {
 	db := newTransferTaskServiceTestDB(t)
 	taskService := NewTaskService(db, nil, nil)
+	taskService.SetEngineResolver(planner.StaticEngineResolver{
+		1: {Type: "mongodb", EngineID: 1},
+	})
 	task, err := taskService.CreateTask(context.Background(), &models.CreateTaskRequest{
 		Name: "managed-dim", TaskType: commonExecution.TaskTypeSync,
 		Config: validRuntimeTargetTransferTaskConfig(),
@@ -199,6 +202,26 @@ func TestRuntimeTargetTaskRequiresOrchestratorInputs(t *testing.T) {
 	}
 	if persistedExecution.ParentExecutionID == nil || *persistedExecution.ParentExecutionID != parentExecutionID {
 		t.Fatalf("parent_execution_id = %v, want %s", persistedExecution.ParentExecutionID, parentExecutionID)
+	}
+}
+
+func TestCreateTaskRejectsQueryLanguageOutsideSourceCapability(t *testing.T) {
+	db := newTransferTaskServiceTestDB(t)
+	taskService := NewTaskService(db, nil, nil)
+	taskService.SetEngineResolver(planner.StaticEngineResolver{
+		1: {Type: "postgresql", EngineID: 1},
+	})
+
+	_, err := taskService.CreateTask(context.Background(), &models.CreateTaskRequest{
+		Name: "invalid-query-language", TaskType: commonExecution.TaskTypeSync,
+		Config: func() map[string]interface{} {
+			config := validRuntimeTargetTransferTaskConfig()
+			config["source"].(map[string]interface{})["locator"] = "addp://engine/1/path/public/entries?type=table"
+			return config
+		}(),
+	}, 7, 9)
+	if !errors.Is(err, ErrInvalidTaskConfig) || !strings.Contains(err.Error(), `does not support language "mql"`) {
+		t.Fatalf("CreateTask() error = %v, want query capability rejection", err)
 	}
 }
 
@@ -764,7 +787,7 @@ func validRuntimeTargetTransferTaskConfig() map[string]interface{} {
 		"runtime": map[string]interface{}{"boundary": "bounded"},
 		"load":    map[string]interface{}{"mode": "snapshot"},
 		"source": map[string]interface{}{
-			"locator": "addp://engine/1/path/outdoor/entries?type=table", "data_type": "table", "representation": "native",
+			"locator": "addp://engine/1/path/outdoor/entries?type=collection", "data_type": "table", "representation": "native",
 			"query": map[string]interface{}{"language": "mql", "statement": `{"aggregate":"entries","pipeline":[{"$project":{"person_id":"$person.id"}}]}`},
 		},
 		"target": map[string]interface{}{

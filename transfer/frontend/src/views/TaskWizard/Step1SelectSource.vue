@@ -117,6 +117,7 @@
             <MongoStructureQueryBuilder
               v-if="isMongoMqlSource"
               :model-value="queryStatement"
+              :parameters="queryParameters"
               :collection="selectedMongoCollection"
               :source-fields="mongoSourceFields"
               @update:model-value="handleMongoQueryUpdate"
@@ -129,6 +130,7 @@
               :source-fields="catalogSourceFields"
               :identifier-quote="selectedSourceQueryCapability?.identifierQuotes?.sql || ''"
               :parameters-supported="selectedSourceQueryCapability?.parameterLanguages?.has('sql') === true"
+              :parameter-types="selectedSourceQueryCapability?.parameterTypes"
               @update:query="handleRelationalQueryUpdate"
             />
             <el-input
@@ -141,7 +143,7 @@
             />
             <div v-if="queryStatementError" class="query-error">{{ queryStatementError }}</div>
             <el-input
-              v-if="!isRelationalSqlSource"
+              v-if="!isRelationalSqlSource && !isMongoMqlSource"
               v-model="queryParametersText"
               type="textarea"
               :rows="3"
@@ -374,7 +376,10 @@ function handleRelationalQueryUpdate(query) {
 }
 
 function syncMongoQueryOutputFields(statement) {
-  const parsed = parseMongoStructureQuery(statement)
+  const parsed = parseMongoStructureQuery(statement, {
+    collection: selectedMongoCollection.value,
+    sourceFields: catalogSourceFields.value
+  })
   if (!parsed.supported) return
   const fields = mongoStructureOutputFields(parsed.model, catalogSourceFields.value)
   props.wizardState.replaceSourceFields(fields)
@@ -580,7 +585,10 @@ async function loadFieldsForNode(node) {
     const fieldList = Array.isArray(response?.data) ? response.data : (response || [])
     catalogSourceFields.value = fieldList
     if (querySourceEnabled.value && isMongoMqlSource.value) {
-      const parsed = parseMongoStructureQuery(queryStatement.value)
+      const parsed = parseMongoStructureQuery(queryStatement.value, {
+        collection: selectedMongoCollection.value,
+        sourceFields: fieldList
+      })
       if (parsed.supported) {
         props.wizardState.replaceSourceFields(mongoStructureOutputFields(parsed.model, fieldList))
         return

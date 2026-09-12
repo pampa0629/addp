@@ -14,6 +14,14 @@ const step1Source = await readFile(
   new URL('../src/views/TaskWizard/Step1SelectSource.vue', import.meta.url),
   'utf8'
 )
+const relationalSQLBuilderSource = await readFile(
+  new URL('../src/views/TaskWizard/RelationalSQLQueryBuilder.vue', import.meta.url),
+  'utf8'
+)
+const mongoStructureBuilderSource = await readFile(
+  new URL('../src/views/TaskWizard/MongoStructureQueryBuilder.vue', import.meta.url),
+  'utf8'
+)
 const zhCN = JSON.parse(await readFile(new URL('../src/i18n/zh-cn.json', import.meta.url), 'utf8'))
 const en = JSON.parse(await readFile(new URL('../src/i18n/en.json', import.meta.url), 'utf8'))
 
@@ -21,10 +29,31 @@ test('查询语言由源引擎能力决定且关系型源使用轻量 SQL 构造
   assert.match(step1Source, /queryLanguageOptions = computed\(\(\) => selectedSourceQueryCapability/)
   assert.match(step1Source, /v-for="language in queryLanguageOptions"/)
   assert.match(step1Source, /<RelationalSQLQueryBuilder/)
+  assert.match(step1Source, /:parameter-types="selectedSourceQueryCapability\?\.parameterTypes"/)
   assert.match(step1Source, /data-testid="task-query-language-fixed"/)
   assert.match(step1Source, /data-testid="task-query-language-select"/)
   assert.doesNotMatch(step1Source, /<el-option label="MQL" value="mql"/)
   assert.doesNotMatch(step1Source, /<el-option label="SQL" value="sql"/)
+})
+
+test('关系型 SQL 构造器不提供高级 SQL 编辑路径', () => {
+  assert.match(relationalSQLBuilderSource, /v-if="unsupportedReason"/)
+  assert.match(relationalSQLBuilderSource, /:model-value="modelValue"[\s\S]*?readonly/)
+  assert.doesNotMatch(relationalSQLBuilderSource, /el-radio-group/)
+  assert.doesNotMatch(relationalSQLBuilderSource, /advancedMode|emitAdvancedQuery|parseAdvancedParameters/)
+  assert.match(relationalSQLBuilderSource, /fieldKind\(filter\.field\) === 'exact-number'/)
+  assert.equal(zhCN.transfer.taskWizard.sqlBuilder.readOnlySql, '只读 SQL 和参数')
+  assert.equal(en.transfer.taskWizard.sqlBuilder.readOnlySql, 'Read-only SQL and parameters')
+})
+
+test('MongoDB MQL 构造器不提供高级编辑路径且失配查询只读', () => {
+  assert.match(mongoStructureBuilderSource, /v-if="unsupportedReason"/)
+  assert.match(mongoStructureBuilderSource, /:model-value="modelValue" type="textarea" :rows="10" readonly/)
+  assert.match(mongoStructureBuilderSource, /parseMongoStructureQuery\(statement, \{[^]*?sourceFields: props\.sourceFields/)
+  assert.doesNotMatch(mongoStructureBuilderSource, /advancedMode|changeMode|emitRawStatement/)
+  assert.match(step1Source, /v-if="!isRelationalSqlSource && !isMongoMqlSource"/)
+  assert.equal(zhCN.transfer.taskWizard.mongoBuilder.readOnlyMql, '只读 MQL')
+  assert.equal(en.transfer.taskWizard.mongoBuilder.readOnlyMql, 'Read-only MQL')
 })
 
 test('数据库 CDC 不可用时通过问号按钮展示原因', () => {

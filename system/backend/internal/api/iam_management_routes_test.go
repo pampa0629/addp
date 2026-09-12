@@ -60,6 +60,7 @@ func TestRegisterIAMManagementRoutes(t *testing.T) {
 		"GET /api/v1/system/tenant/oauth_clients",
 		"GET /api/v1/system/tenant/oauth_clients/:client_id",
 		"GET /api/v1/system/tenant/role_assignments",
+		"GET /api/v1/system/tenant/role_assignments/:id",
 		"GET /api/v1/system/tenant/role_permissions",
 		"GET /api/v1/system/tenant/roles",
 		"GET /api/v1/system/tenant/service_accounts",

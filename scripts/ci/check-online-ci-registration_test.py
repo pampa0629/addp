@@ -72,13 +72,18 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                     options:
                       - first-suite
                       - second-suite
+            permissions:
+              contents: read
             jobs:
               online:
+                if: github.event_name == 'workflow_dispatch'
                 runs-on:
                   - self-hosted
                   - macOS
                   - addp-online
                 environment: addp-online
+                env:
+                  ADDP_ONLINE_ENV_FILE: ${{ vars.ADDP_ONLINE_ENV_FILE }}
                 steps:
                   - env:
                       ADDP_ONLINE_ARTIFACT_DIR: ${{ runner.temp }}/addp-online-${{ github.run_id }}
@@ -86,7 +91,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
                   - env:
                       ADDP_ONLINE_ARTIFACT_DIR: ${{ runner.temp }}/addp-online-${{ github.run_id }}
                     run: bash scripts/test/online-host-gate.sh
-                  - uses: actions/upload-artifact@pinned
+                  - uses: actions/upload-artifact@0123456789abcdef0123456789abcdef01234567
             """
         )
 
@@ -151,6 +156,55 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             encoding="utf-8",
         )
         with self.assertRaisesRegex(CHECK.RegistrationError, "must remain manual"):
+            CHECK.check_registration(self.repository)
+
+    def test_rejects_self_hosted_job_without_manual_dispatch_guard(self) -> None:
+        self.workflow.write_text(
+            self._workflow().replace(
+                "    if: github.event_name == 'workflow_dispatch'\n", ""
+            ),
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(
+            CHECK.RegistrationError, "workflow_dispatch or a fixed schedule"
+        ):
+            CHECK.check_registration(self.repository)
+
+    def test_rejects_self_hosted_job_with_repository_secret(self) -> None:
+        self.workflow.write_text(
+            self._workflow().replace(
+                "      ADDP_ONLINE_ENV_FILE: ${{ vars.ADDP_ONLINE_ENV_FILE }}\n",
+                "      ADDP_ONLINE_ENV_FILE: ${{ vars.ADDP_ONLINE_ENV_FILE }}\n"
+                "      FORBIDDEN_SECRET: ${{ secrets.FORBIDDEN_SECRET }}\n",
+            ),
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(
+            CHECK.RegistrationError, "must not receive repository secrets"
+        ):
+            CHECK.check_registration(self.repository)
+
+    def test_rejects_self_hosted_job_with_unpinned_action(self) -> None:
+        self.workflow.write_text(
+            self._workflow().replace(
+                "actions/upload-artifact@0123456789abcdef0123456789abcdef01234567",
+                "actions/upload-artifact@v7",
+            ),
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(CHECK.RegistrationError, "immutable commit SHA"):
+            CHECK.check_registration(self.repository)
+
+    def test_rejects_online_workflow_with_write_token(self) -> None:
+        self.workflow.write_text(
+            self._workflow().replace("contents: read", "contents: write"),
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(CHECK.RegistrationError, "permissions"):
             CHECK.check_registration(self.repository)
 
     def test_rejects_graduated_nightly_suite_without_workflow_schedule(self) -> None:

@@ -429,6 +429,8 @@ type QueryFederationCapability struct {
 
 `parameters.languages` 只列出当前 Provider 或 Owner 安全编译器已实现参数绑定的查询语言，`parameters.types` 允许 `string`、`integer`、`number`、`boolean` 与 `relation`。查询工作台只能开放当前语言实际声明的参数类型，不得再根据 `engine_type` 补充。SQL 值参数的用户输入语法统一为 `:name`，Provider 必须编译为当前驱动占位符并通过 `QueryOptions.Args` 绑定；Cypher 使用 `$name` 并通过原生参数 Map 执行；MQL 使用 `{\"$param\":\"name\"}` 结构化参数节点，在 JSON 解析后替换为类型化值。`relation` 只能由 Develop 的 PostgreSQL AST 编译器在同一引擎内将已声明的裸关系名替换为 ResourceLocator 解析得到的方言安全物理表标识符；当前由 PostgreSQL 与 openGauss 声明。所有参数能力都不得通过字符串替换实现，也不得用于任意动态标识符或查询片段。
 
+参数类型采用运行时值语义：`integer` 表示 JSON 可无损表达的整数，`number` 表示双精度数值并同时接受整数值。任意精度 `bigint` 与 `decimal` 不新增 capability 类型；持久化任务和前端构造器必须把它们作为十进制文本通过 `string` 传递，由 SQL Provider 原生绑定后利用列上下文完成数据库类型推断，禁止先转换为 JavaScript Number 或 Go float64。执行 Owner 必须在调用 Provider 前同时校验参数能力已启用、当前语言已声明且每个运行时值属于已声明类型，不能只校验参数名。
+
 DuckDB Runtime 第一阶段声明 `runtime_api="addp.query-runtime/v1"`、`source_engine_types=["postgresql","mysql","minio","s3"]`、`object_formats=["parquet"]`。能力只声明当前真正实现并验证过的连接器；Doris、ClickHouse、Spark SQL、MongoDB、Neo4j、Kafka 等不能仅因 ADDP 已支持该 Engine 类型就自动列入。
 
 联邦 Runtime 的资源引用名由 Source Owner preview 作为 `ResourceFact.query_names.federated_sql` 提供，并与 Runtime 解析规则使用同一共享标识符规范。DuckDB 当前形式为 `<sanitized_source_engine_name>.<schema>.<table>` 或对象表的 `<sanitized_source_engine_name>.<table>`。Copilot 和前端不得各自实现 engine name 清洗或从 locator/full_name 拼接联邦引用。

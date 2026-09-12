@@ -57,7 +57,8 @@ test('query source languages and defaults come only from the read-session capabi
     languages: ['sql'],
     defaultLanguage: 'sql',
     identifierQuotes: { sql: '`' },
-    parameterLanguages: new Set(['sql'])
+    parameterLanguages: new Set(['sql']),
+    parameterTypes: new Set(['string'])
   })
   assert.equal(queryReadSessionCapability({
     capabilities: { compute: { query: { supported: true, read_session: false, languages: ['mql'] } } }

@@ -29,148 +29,27 @@
     </el-tabs>
 
     <template v-if="activeWorkspace === 'resources'">
-    <el-card v-if="canReviewAccessRequests" class="access-review-card" shadow="never">
-      <template #header>
-        <div class="access-review-card__header">
-          <div>
-            <strong>{{ t('security.accessRequest.reviewTitle') }}</strong>
-            <p>{{ t('security.accessRequest.reviewDescription') }}</p>
-          </div>
-          <div class="access-review-card__scope">
-            <el-radio-group v-model="accessRequestScope" size="small" @change="handleAccessRequestScopeChange">
-              <el-radio-button value="pending">{{ t('security.accessRequest.scopes.pending') }}</el-radio-button>
-              <el-radio-button value="history">{{ t('security.accessRequest.scopes.history') }}</el-radio-button>
-            </el-radio-group>
-            <el-tag v-if="accessRequestTotal > 0" :type="accessRequestScope === 'pending' ? 'warning' : 'info'" effect="plain">{{ accessRequestTotal }}</el-tag>
-          </div>
-        </div>
-      </template>
-      <div class="access-review-filters">
-        <el-input
-          v-model.trim="accessRequestFilters.resourceSearch"
-          clearable
-          :placeholder="t('security.accessRequest.filters.resourcePlaceholder')"
-          @keyup.enter="applyAccessRequestFilters"
-        />
-        <el-input
-          v-model.trim="accessRequestFilters.requesterSearch"
-          clearable
-          :placeholder="t('security.accessRequest.filters.requesterPlaceholder')"
-          @keyup.enter="applyAccessRequestFilters"
-        />
-        <el-select
-          v-if="accessRequestScope === 'history'"
-          v-model="accessRequestFilters.state"
-          clearable
-          :placeholder="t('security.accessRequest.filters.allStates')"
-        >
-          <el-option v-for="state in ['approved', 'rejected', 'expired']" :key="state" :label="t(`security.accessRequest.states.${state}`)" :value="state" />
-        </el-select>
-        <el-select
-          v-if="accessRequestScope === 'history'"
-          v-model="accessRequestFilters.authorizationState"
-          clearable
-          :placeholder="t('security.accessRequest.filters.allAuthorizationStates')"
-        >
-          <el-option v-for="state in ['active', 'expired', 'revoked', 'superseded']" :key="state" :label="t(`security.accessRequest.authorizationStates.${state}`)" :value="state" />
-        </el-select>
-        <el-date-picker
-          v-model="accessRequestCreatedRange"
-          type="datetimerange"
-          unlink-panels
-          :range-separator="t('security.accessRequest.filters.to')"
-          :start-placeholder="t('security.accessRequest.filters.createdFrom')"
-          :end-placeholder="t('security.accessRequest.filters.createdTo')"
-        />
-        <el-button type="primary" @click="applyAccessRequestFilters">{{ t('security.accessRequest.filters.search') }}</el-button>
-        <el-button v-if="hasAccessRequestFilters" @click="resetAccessRequestFilters">{{ t('security.accessRequest.filters.reset') }}</el-button>
-      </div>
-      <el-table v-loading="accessRequestLoading" :data="accessRequestRows" size="small">
-        <el-table-column :label="t('security.accessRequest.resourceField')" min-width="260">
-          <template #default="{ row }"><strong>{{ row.target_full_name }}</strong><br><span>{{ row.component?.key }}</span></template>
-        </el-table-column>
-        <el-table-column :label="t('security.accessRequest.requester')" min-width="150">
-          <template #default="{ row }">
-            <div class="access-actor">
-              <strong>{{ row.requester?.display_name }}</strong>
-              <span>{{ releaseActorLabel(row.requester?.id) }}</span>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('security.accessRequest.requestedUntil')" width="190">
-          <template #default="{ row }">{{ formatDateTime(row.requested_expires_at) }}</template>
-        </el-table-column>
-        <el-table-column :label="t('security.accessRequest.createdAt')" width="190">
-          <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
-        </el-table-column>
-        <el-table-column prop="rationale" :label="t('security.accessRequest.rationale')" min-width="240" show-overflow-tooltip />
-        <el-table-column v-if="accessRequestScope === 'history'" :label="t('security.accessRequest.state')" width="110">
-          <template #default="{ row }"><el-tag size="small" :type="accessRequestStateType(row.state)">{{ t(`security.accessRequest.states.${row.state}`) }}</el-tag></template>
-        </el-table-column>
-        <el-table-column v-if="accessRequestScope === 'history'" :label="t('security.accessRequest.authorizationState')" min-width="170">
-          <template #default="{ row }">
-            <div v-if="row.authorization_state" class="access-authorization-state">
-              <el-tag size="small" :type="accessAuthorizationStateType(row.authorization_state)">
-                {{ t(`security.accessRequest.authorizationStates.${row.authorization_state}`) }}
-              </el-tag>
-              <span v-if="row.authorized_until">
-                {{ t('security.accessRequest.authorizedUntil', { time: formatDateTime(row.authorized_until) }) }}
-              </span>
-              <el-button
-                v-if="canReadExemptions && row.enrollment_id && row.exemption_id"
-                class="access-authorization-link"
-                link
-                type="primary"
-                size="small"
-                @click="openAccessRequestAuthorization(row)"
-              >
-                {{ t('security.accessRequest.viewAuthorization') }}
-              </el-button>
-            </div>
-            <span v-else>{{ t('security.accessRequest.authorizationStates.not_granted') }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column v-if="accessRequestScope === 'history'" :label="t('security.accessRequest.reviewer')" width="130">
-          <template #default="{ row }">
-            <div v-if="row.reviewer" class="access-actor">
-              <strong>{{ row.reviewer.display_name }}</strong>
-              <span>{{ releaseActorLabel(row.reviewer.id) }}</span>
-            </div>
-            <span v-else>{{ t('security.common.notAvailable') }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column v-if="accessRequestScope === 'history'" :label="t('security.accessRequest.processedAt')" width="190">
-          <template #default="{ row }">{{ formatDateTime(row.decided_at || row.requested_expires_at) }}</template>
-        </el-table-column>
-        <el-table-column v-if="accessRequestScope === 'history'" prop="decision_rationale" :label="t('security.accessRequest.decisionRationaleLabel')" min-width="220" show-overflow-tooltip>
-          <template #default="{ row }">{{ row.decision_rationale || t('security.common.notAvailable') }}</template>
-        </el-table-column>
-        <el-table-column v-if="accessRequestScope === 'pending'" :label="t('security.common.actions')" width="190" fixed="right">
-          <template #default="{ row }">
-            <div v-if="row.can_decide" class="access-decision-actions">
-              <el-button link type="primary" @click="openAccessRequestDecision(row, 'approve')">{{ t('security.accessRequest.approve') }}</el-button>
-              <el-button link type="danger" @click="openAccessRequestDecision(row, 'reject')">{{ t('security.accessRequest.reject') }}</el-button>
-            </div>
-            <div v-else-if="row.decision_unavailable_reason" class="access-decision-unavailable">
-              <el-tag size="small" type="info">{{ t(`security.accessRequest.unavailableLabels.${row.decision_unavailable_reason}`) }}</el-tag>
-              <span>{{ t(`security.accessRequest.unavailableReasons.${row.decision_unavailable_reason}`) }}</span>
-            </div>
-          </template>
-        </el-table-column>
-      </el-table>
-      <el-empty v-if="!accessRequestLoading && accessRequestRows.length === 0" :description="t(`security.accessRequest.emptyStates.${accessRequestScope}`)" :image-size="48" />
-      <div v-if="accessRequestTotal > accessRequestPageSize" class="pagination">
-        <el-pagination
-          v-model:current-page="accessRequestPage"
-          v-model:page-size="accessRequestPageSize"
-          background
-          layout="total, sizes, prev, pager, next"
-          :page-sizes="[10, 20, 50, 100]"
-          :total="accessRequestTotal"
-          @change="handleAccessRequestPageChange"
-        />
-      </div>
-    </el-card>
+      <AccessRequestReviewWorkspace
+        v-if="canReviewAccessRequests"
+        v-model:scope="accessRequestScope"
+        v-model:created-range="accessRequestCreatedRange"
+        v-model:page="accessRequestPage"
+        v-model:page-size="accessRequestPageSize"
+        :rows="accessRequestRows"
+        :total="accessRequestTotal"
+        :loading="accessRequestLoading"
+        :filters="accessRequestFilters"
+        :can-read-exemptions="canReadExemptions"
+        :release-actor-label="releaseActorLabel"
+        :format-date-time="formatDateTime"
+        @update:filters="updateAccessRequestFilters"
+        @scope-change="handleAccessRequestScopeChange"
+        @apply-filters="applyAccessRequestFilters"
+        @reset-filters="resetAccessRequestFilters"
+        @page-change="handleAccessRequestPageChange"
+        @open-authorization="openAccessRequestAuthorization"
+        @decide="openAccessRequestDecision"
+      />
     <div class="list-scope-bar">
       <el-radio-group v-model="listScope" size="small" @change="handleScopeChange">
         <el-radio-button value="current">{{ t('security.enrollment.listScopes.current') }}</el-radio-button>
@@ -366,19 +245,24 @@
     >
       <div class="create-flow">
         <el-alert type="info" :closable="false" :title="t('security.enrollment.createHint')" />
-        <ResourceTreePicker
-          v-model="selectedResource"
-          api-base-url="/api/v1/meta"
-          mode="item"
-          :initial-locator="initialLocator"
-          :engine-label="t('security.enrollment.engine')"
-          :engine-placeholder="t('security.enrollment.enginePlaceholder')"
-          :search-placeholder="t('security.enrollment.searchCurrentEngine')"
-          :search-all-engines-placeholder="t('security.enrollment.searchAllEngines')"
-          :search-empty-text="t('security.enrollment.resourceNotFound')"
-          tree-height="min(52vh, 520px)"
-          @select="handleResourceSelect"
-        />
+        <el-form ref="createFormRef" :model="createForm" :rules="createFormRules" label-position="top">
+          <el-form-item class="enrollment-resource-field" :label="t('security.enrollment.resource')" prop="resource" required>
+            <ResourceTreePicker
+              v-model="createForm.resource"
+              api-base-url="/api/v1/meta"
+              mode="item"
+              :initial-locator="initialLocator"
+              :engine-label="t('security.enrollment.engine')"
+              :engine-placeholder="t('security.enrollment.enginePlaceholder')"
+              :search-placeholder="t('security.enrollment.searchCurrentEngine')"
+              :search-all-engines-placeholder="t('security.enrollment.searchAllEngines')"
+              :search-empty-text="t('security.enrollment.resourceNotFound')"
+              tree-height="min(52vh, 520px)"
+              @update:model-value="handleResourceModelUpdate"
+              @select="handleResourceSelect"
+            />
+          </el-form-item>
+        </el-form>
 
         <el-skeleton v-if="selectedItemLoading" :rows="3" animated />
         <section v-else-if="selectedItem" class="selection-card">
@@ -391,7 +275,7 @@
           </div>
           <el-descriptions :column="2" border size="small">
             <el-descriptions-item :label="t('security.enrollment.engine')">
-              {{ selectedResource?.display?.engine_name || engineLabel(selectedItem.engine_id) }}
+              {{ createForm.resource?.display?.engine_name || engineLabel(selectedItem.engine_id) }}
             </el-descriptions-item>
             <el-descriptions-item :label="t('security.enrollment.lastScanned')">
               {{ formatDateTime(selectedItem.scanned_at) }}
@@ -415,7 +299,7 @@
         <el-button
           type="primary"
           :loading="saving"
-          :disabled="!selectedItem || Boolean(existingEnrollment)"
+          :disabled="selectedItemLoading || Boolean(existingEnrollment)"
           @click="createEnrollment"
         >
           {{ t('security.enrollment.confirmCreate') }}
@@ -492,272 +376,83 @@
 
           <el-skeleton v-if="governanceLoading" :rows="3" animated />
           <template v-else>
-          <div v-if="canReadFindings && findings.length > 0" class="finding-list">
-            <article v-for="finding in findings" :key="finding.id" class="finding-card">
-              <div class="finding-card__header">
-                <div>
-                  <strong>{{ finding.component_key }}</strong>
-                  <span>{{ typeName(finding.sensitive_data_type_id) }}</span>
-                </div>
-                <el-tag size="small" :type="findingStatePresentation(finding).type">
-                  {{ findingStatePresentation(finding).label }}
-                </el-tag>
-              </div>
-              <div class="finding-explanation">
-                <section class="explanation-stage">
-                  <div class="explanation-stage__title">
-                    <span>1</span>
-                    <strong>{{ t('security.finding.explanationStages.detection') }}</strong>
-                  </div>
-                  <p class="explanation-primary">{{ capabilityName(finding) }}</p>
-                  <p>{{ evidenceDescription(finding) }}</p>
-                  <dl class="detection-rule-audit">
-                    <div>
-                      <dt>{{ t('security.finding.ruleAudit.actualEvidence') }}</dt>
-                      <dd>{{ evidenceAuditDescription(finding) }}</dd>
-                    </div>
-                    <div class="detection-rule-audit__details">
-                      <dt>{{ t('security.finding.ruleAudit.details') }}</dt>
-                      <dd>
-                        <el-popover
-                          placement="top-start"
-                          trigger="click"
-                          :width="420"
-                          popper-class="security-rule-popover"
-                        >
-                          <template #reference>
-                            <el-button
-                              class="rule-help-button"
-                              link
-                              type="primary"
-                              :icon="QuestionFilled"
-                              :aria-label="t('security.finding.ruleAudit.viewDetails')"
-                            />
-                          </template>
-                          <dl class="recognition-rule-details">
-                            <div>
-                              <dt>{{ t('security.finding.ruleAudit.method') }}</dt>
-                              <dd>{{ capabilityText(finding, 'method_i18n_key') }}</dd>
-                            </div>
-                            <div>
-                              <dt>{{ t('security.finding.ruleAudit.scope') }}</dt>
-                              <dd>{{ capabilityScope(finding) }}</dd>
-                            </div>
-                            <div>
-                              <dt>{{ t('security.finding.ruleAudit.privacy') }}</dt>
-                              <dd>{{ capabilityText(finding, 'privacy_i18n_key') }}</dd>
-                            </div>
-                            <div>
-                              <dt>{{ t('security.finding.ruleAudit.limitations') }}</dt>
-                              <dd>{{ capabilityText(finding, 'limitations_i18n_key') }}</dd>
-                            </div>
-                            <div>
-                              <dt>{{ t('security.finding.ruleAudit.version') }}</dt>
-                              <dd class="technical-value">{{ finding.explanation?.capability?.key || finding.detector_version }}</dd>
-                            </div>
-                          </dl>
-                        </el-popover>
-                      </dd>
-                    </div>
-                  </dl>
-                  <div class="explanation-tags">
-                    <el-tag size="small" effect="plain">{{ t('security.finding.confidenceValue', { value: confidenceLabel(finding.confidence) }) }}</el-tag>
-                    <el-tag
-                      v-if="finding.explanation?.automatic_adoption_threshold != null"
-                      size="small"
-                      :type="finding.explanation.meets_automatic_threshold ? 'success' : 'warning'"
-                    >
-                      {{ t('security.finding.thresholdValue', { value: confidenceLabel(finding.explanation.automatic_adoption_threshold) }) }}
-                    </el-tag>
-                  </div>
-                </section>
+            <EnrollmentFindingList
+              v-if="canReadFindings && findings.length > 0"
+              v-model:page="findingsPage"
+              :findings="findings"
+              :total="findingsTotal"
+              :page-size="findingsPageSize"
+              :can-review="canReviewFindings"
+              :can-update-assessments="canUpdateAssessments"
+              :can-revoke-policies="canRevokePolicies"
+              :type-name="typeName"
+              :finding-state-presentation="findingStatePresentation"
+              :capability-name="capabilityName"
+              :evidence-description="evidenceDescription"
+              :evidence-audit-description="evidenceAuditDescription"
+              :capability-text="capabilityText"
+              :capability-scope="capabilityScope"
+              :confidence-label="confidenceLabel"
+              :decision-presentation="decisionPresentation"
+              :effective-definition-summary="effectiveDefinitionSummary"
+              :baseline-description="baselineDescription"
+              :assessment-for-finding="assessmentForFinding"
+              :active-assessment-for-finding="activeAssessmentForFinding"
+              :assessment-protection-summary="assessmentProtectionSummary"
+              :owner-label="ownerLabel"
+              :outlet-rule-description="outletRuleDescription"
+              :outlet-acknowledgement-presentation="outletAcknowledgementPresentation"
+              :format-date-time="formatDateTime"
+              :can-configure-policy="canConfigurePolicy"
+              :policy-for-assessment="policyForAssessment"
+              @review="openFindingReview"
+              @history="openAssessmentHistory"
+              @revise="openAssessmentRevision"
+              @configure-policy="openPolicy"
+              @restore-policy="openPolicyRestore"
+              @revoke-assessment="openAssessmentRevoke"
+              @page-change="loadFindings"
+            />
 
-                <section class="explanation-stage">
-                  <div class="explanation-stage__title">
-                    <span>2</span>
-                    <strong>{{ t('security.finding.explanationStages.governance') }}</strong>
-                  </div>
-                  <el-tag size="small" :type="decisionPresentation(finding).type">
-                    {{ decisionPresentation(finding).label }}
-                  </el-tag>
-                  <p class="explanation-primary">{{ effectiveDefinitionSummary(finding) }}</p>
-                  <p>{{ baselineDescription(finding) }}</p>
-                  <p v-if="activeAssessmentForFinding(finding)" class="resource-policy-summary">
-                    {{ assessmentProtectionSummary(activeAssessmentForFinding(finding)) }}
-                  </p>
-                </section>
+            <EnrollmentAssessmentList
+              v-if="manualAssessments.length > 0"
+              :assessments="manualAssessments"
+              :can-update="canUpdateAssessments"
+              :can-revoke-policies="canRevokePolicies"
+              :assessment-summary="assessmentSummary"
+              :assessment-protection-summary="assessmentProtectionSummary"
+              :assessment-conclusion-label="assessmentConclusionLabel"
+              :can-configure-policy="canConfigurePolicy"
+              :policy-for-assessment="policyForAssessment"
+              @history="openAssessmentHistory"
+              @revise="openAssessmentRevision"
+              @configure-policy="openPolicy"
+              @restore-policy="openPolicyRestore"
+              @revoke="openAssessmentRevoke"
+            />
 
-                <section class="explanation-stage">
-                  <div class="explanation-stage__title">
-                    <span>3</span>
-                    <strong>{{ t('security.finding.explanationStages.execution') }}</strong>
-                  </div>
-                  <div class="finding-outlets">
-                    <div v-for="outlet in finding.explanation.outlets" :key="outlet.consumer_owner" class="finding-outlet">
-                      <span>{{ ownerLabel(outlet.consumer_owner) }}</span>
-                      <strong>{{ outletRuleDescription(finding, outlet.consumer_owner) }}</strong>
-                      <el-tag size="small" :type="outletAcknowledgementPresentation(outlet).type">
-                        {{ outletAcknowledgementPresentation(outlet).label }}
-                      </el-tag>
-                    </div>
-                  </div>
-                </section>
-              </div>
-              <p class="finding-observed-at">{{ t('security.finding.observedAt') }}：{{ formatDateTime(finding.observed_at) }}</p>
-              <div v-if="finding.review" class="review-result">
-                <span>{{ t('security.finding.reviewRationale') }}</span>
-                <p>{{ finding.review.rationale }}</p>
-              </div>
-              <div v-if="!finding.review && canReviewFindings" class="finding-card__actions">
-                <el-button type="danger" plain @click="openFindingReview(finding, 'reject')">{{ t('security.finding.markFalsePositive') }}</el-button>
-                <el-button type="primary" plain @click="openFindingReview(finding, 'confirm')">{{ t('security.finding.review') }}</el-button>
-              </div>
-              <div v-else-if="assessmentForFinding(finding)" class="finding-card__actions">
-                <el-button plain @click="openAssessmentHistory(assessmentForFinding(finding))">
-                  {{ t('security.assessment.history') }}
-                </el-button>
-                <el-button
-                  v-if="canUpdateAssessments"
-                  plain
-                  @click="openAssessmentRevision(assessmentForFinding(finding))"
-                >
-                  {{ t('security.assessment.reviseConclusion') }}
-                </el-button>
-                <el-button
-                  v-if="activeAssessmentForFinding(finding) && canConfigurePolicy(activeAssessmentForFinding(finding))"
-                  type="primary"
-                  plain
-                  @click="openPolicy(activeAssessmentForFinding(finding))"
-                >
-                  {{ policyForAssessment(activeAssessmentForFinding(finding))?.state === 'active' ? t('security.policy.adjust') : t('security.policy.tighten') }}
-                </el-button>
-                <el-button
-                  v-if="policyForAssessment(activeAssessmentForFinding(finding))?.state === 'active' && canRevokePolicies"
-                  plain
-                  @click="openPolicyRestore(activeAssessmentForFinding(finding))"
-                >
-                  {{ t('security.policy.restoreDefault') }}
-                </el-button>
-                <el-button v-if="activeAssessmentForFinding(finding) && canUpdateAssessments" type="danger" plain @click="openAssessmentRevoke(activeAssessmentForFinding(finding))">
-                  {{ t('security.assessment.revokeConclusion') }}
-                </el-button>
-              </div>
-            </article>
-          </div>
-          <el-pagination
-            v-if="findingsTotal > findingsPageSize"
-            v-model:current-page="findingsPage"
-            class="finding-pagination"
-            small
-            background
-            layout="total, prev, pager, next"
-            :page-size="findingsPageSize"
-            :total="findingsTotal"
-            @current-change="loadFindings"
-          />
-
-          <section v-if="manualAssessments.length > 0" class="manual-assessment-list">
-            <h5>{{ t('security.assessment.manualConclusions') }}</h5>
-            <article v-for="assessment in manualAssessments" :key="assessment.id" class="manual-assessment-card">
-              <div>
-                <strong>{{ assessment.component_key }}</strong>
-                <span>{{ assessmentSummary(assessment) }}</span>
-                <p>{{ assessment.current?.rationale }}</p>
-                <p v-if="assessment.current?.conclusion === 'sensitive'" class="resource-policy-summary">
-                  {{ assessmentProtectionSummary(assessment) }}
-                </p>
-              </div>
-              <div class="manual-assessment-card__actions">
-                <el-tag :type="assessment.current?.conclusion === 'sensitive' ? 'success' : 'info'">
-                  {{ assessmentConclusionLabel(assessment.current?.conclusion) }}
-                </el-tag>
-                <el-button link @click="openAssessmentHistory(assessment)">
-                  {{ t('security.assessment.history') }}
-                </el-button>
-                <el-button
-                  v-if="canUpdateAssessments"
-                  link
-                  @click="openAssessmentRevision(assessment)"
-                >
-                  {{ t('security.assessment.reviseConclusion') }}
-                </el-button>
-                <el-button
-                  v-if="assessment.current?.conclusion === 'sensitive' && canConfigurePolicy(assessment)"
-                  link
-                  type="primary"
-                  @click="openPolicy(assessment)"
-                >
-                  {{ policyForAssessment(assessment)?.state === 'active' ? t('security.policy.adjust') : t('security.policy.tighten') }}
-                </el-button>
-                <el-button
-                  v-if="assessment.current?.conclusion === 'sensitive' && policyForAssessment(assessment)?.state === 'active' && canRevokePolicies"
-                  link
-                  @click="openPolicyRestore(assessment)"
-                >
-                  {{ t('security.policy.restoreDefault') }}
-                </el-button>
-                <el-button
-                  v-if="assessment.current?.conclusion === 'sensitive' && canUpdateAssessments"
-                  link
-                  type="danger"
-                  @click="openAssessmentRevoke(assessment)"
-                >
-                  {{ t('security.assessment.revokeConclusion') }}
-                </el-button>
-              </div>
-            </article>
-          </section>
-
-          <el-empty
-            v-if="findings.length === 0 && manualAssessments.length === 0"
-            :description="t('security.finding.noGovernanceConclusions')"
-            :image-size="72"
-          />
+            <el-empty
+              v-if="findings.length === 0 && manualAssessments.length === 0"
+              :description="t('security.finding.noGovernanceConclusions')"
+              :image-size="72"
+            />
           </template>
         </section>
 
-        <section v-if="canReadExemptions" class="exemption-section">
-          <div class="exemption-section__header">
-            <div>
-              <h4>{{ t('security.exemption.title') }}</h4>
-              <p>{{ t('security.exemption.hint') }}</p>
-            </div>
-          </div>
-          <el-skeleton v-if="exemptionsLoading" class="exemption-loading" :rows="2" animated />
-          <div v-else-if="exemptions.length > 0" class="exemption-list">
-            <article
-              v-for="exemption in exemptions"
-              :key="exemption.id"
-              :ref="element => setExemptionCardRef(exemption.id, element)"
-              class="exemption-card"
-              :class="{ 'is-focused': exemption.id === focusedExemptionID }"
-            >
-              <div class="exemption-card__main">
-                <div class="exemption-card__title">
-                  <strong>{{ assessmentComponent(exemption.assessment_id) }}</strong>
-                  <el-tag size="small" :type="exemptionStatePresentation(exemption).type">
-                    {{ exemptionStatePresentation(exemption).label }}
-                  </el-tag>
-                </div>
-                <span>{{ t('security.exemption.subject') }}：{{ exemption.subject_id }}</span>
-                <span>{{ ownerLabel(exemption.consumer_owner) }} · {{ actionLabel(exemption.action) }}</span>
-                <span>{{ t('security.exemption.expiresAt') }}：{{ formatDateTime(exemption.current?.expires_at) }}</span>
-                <p>{{ exemption.current?.rationale }}</p>
-              </div>
-              <div v-if="canRevokeExemptions" class="exemption-card__actions">
-                <el-button
-                  v-if="canRevokeExemptions && exemption.effective_state === 'active'"
-                  link
-                  type="danger"
-                  @click="openExemptionRevoke(exemption)"
-                >
-                  {{ t('security.exemption.revoke') }}
-                </el-button>
-              </div>
-            </article>
-          </div>
-          <el-empty v-else :description="t('security.exemption.empty')" :image-size="64" />
-        </section>
+        <EnrollmentExemptionSection
+          v-if="canReadExemptions"
+          ref="exemptionSectionRef"
+          :loading="exemptionsLoading"
+          :exemptions="exemptions"
+          :focused-exemption-id="focusedExemptionID"
+          :can-revoke="canRevokeExemptions"
+          :assessment-component="assessmentComponent"
+          :exemption-state-presentation="exemptionStatePresentation"
+          :owner-label="ownerLabel"
+          :action-label="actionLabel"
+          :format-date-time="formatDateTime"
+          @revoke="openExemptionRevoke"
+        />
 
         <h4>{{ t('security.enrollment.ownerProtection') }}</h4>
         <el-alert
@@ -835,33 +530,19 @@
       @opened="focusAccessRequestDecisionCancel"
       @closed="closeAccessRequestDecisionDialog"
     >
-      <template v-if="decidingAccessRequest">
-        <el-alert type="warning" :closable="false" :title="accessRequestDecisionHint" />
-        <div v-if="accessRequestDecisionConflict" class="version-conflict-notice" role="alert">
-          <span>{{ t('security.accessRequest.decisionVersionConflict') }}</span>
-          <el-button link type="primary" :loading="accessRequestDecisionReloading" @click="reloadAccessRequestDecisionBaseline">
-            {{ t('security.accessRequest.reloadLatestForDecision') }}
-          </el-button>
-        </div>
-        <div class="policy-target">
-          <strong>{{ decidingAccessRequest.target_full_name }} · {{ decidingAccessRequest.component?.key }}</strong>
-          <span>{{ t('security.accessRequest.requester') }}：{{ decidingAccessRequest.requester?.display_name }}（{{ releaseActorLabel(decidingAccessRequest.requester?.id) }}）</span>
-          <span>{{ t('security.accessRequest.requestedUntil') }}：{{ formatDateTime(decidingAccessRequest.requested_expires_at) }}</span>
-          <span>{{ t('security.accessRequest.rationale') }}：{{ decidingAccessRequest.rationale }}</span>
-        </div>
-        <el-form ref="accessRequestDecisionFormRef" :model="accessRequestDecisionForm" :rules="accessRequestDecisionRules" label-position="top">
-          <el-form-item :label="t('security.accessRequest.decisionRationaleLabel')" prop="rationale" required>
-            <el-input
-              v-model="accessRequestDecisionForm.rationale"
-              type="textarea"
-              :rows="4"
-              maxlength="2000"
-              show-word-limit
-              :placeholder="t('security.accessRequest.decisionRationale')"
-            />
-          </el-form-item>
-        </el-form>
-      </template>
+      <AccessRequestDecisionForm
+        v-if="decidingAccessRequest"
+        ref="accessRequestDecisionFormRef"
+        :request="decidingAccessRequest"
+        :hint="accessRequestDecisionHint"
+        :conflict="accessRequestDecisionConflict"
+        :reloading="accessRequestDecisionReloading"
+        :form="accessRequestDecisionForm"
+        :rules="accessRequestDecisionRules"
+        :release-actor-label="releaseActorLabel"
+        :format-date-time="formatDateTime"
+        @reload="reloadAccessRequestDecisionBaseline"
+      />
       <template #footer>
         <el-button ref="accessRequestDecisionCancelButton" :disabled="accessRequestDecisionSaving" @click="accessRequestDecisionDialog = false">
           {{ t('security.common.cancel') }}
@@ -878,80 +559,28 @@
     </el-dialog>
 
     <el-dialog v-model="reviewDialog" class="addp-dialog" :title="t('security.finding.reviewTitle')" width="min(640px, calc(100vw - 24px))" @opened="focusReviewRationale">
-      <template v-if="reviewingFinding">
-        <div class="review-target">
-          <div class="review-target__header">
-            <strong>{{ reviewingFinding.component_key }}</strong>
-            <el-tag size="small" type="warning" effect="plain">{{ reviewRemainingLabel }}</el-tag>
-          </div>
-          <span>{{ typeName(reviewingFinding.sensitive_data_type_id) }} · {{ confidenceLabel(reviewingFinding.confidence) }}</span>
-        </div>
-        <el-collapse v-model="reviewBasisExpanded" class="review-basis">
-          <el-collapse-item name="basis">
-            <template #title>
-              <div class="review-basis__title">
-                <QuestionFilled />
-                <span>{{ t('security.finding.reviewBasis.title') }}</span>
-                <small>{{ t('security.finding.reviewBasis.hint') }}</small>
-              </div>
-            </template>
-            <dl class="review-basis__facts">
-              <div>
-                <dt>{{ t('security.finding.reviewBasis.recognitionMethod') }}</dt>
-                <dd>{{ capabilityName(reviewingFinding) }}</dd>
-              </div>
-              <div>
-                <dt>{{ t('security.finding.reviewBasis.actualMatch') }}</dt>
-                <dd>{{ evidenceAuditDescription(reviewingFinding) }}</dd>
-              </div>
-              <div>
-                <dt>{{ t('security.finding.reviewBasis.governanceDecision') }}</dt>
-                <dd>
-                  <el-tag size="small" :type="decisionPresentation(reviewingFinding).type">
-                    {{ decisionPresentation(reviewingFinding).label }}
-                  </el-tag>
-                  <span>{{ effectiveDefinitionSummary(reviewingFinding) }}</span>
-                  <span>{{ baselineDescription(reviewingFinding) }}</span>
-                </dd>
-              </div>
-              <div>
-                <dt>{{ t('security.finding.reviewBasis.currentEnforcement') }}</dt>
-                <dd v-if="reviewingFinding.explanation?.outlets?.length" class="review-basis__outlets">
-                  <span v-for="outlet in reviewingFinding.explanation.outlets" :key="outlet.consumer_owner">
-                    <strong>{{ ownerLabel(outlet.consumer_owner) }}</strong>
-                    {{ outletRuleDescription(reviewingFinding, outlet.consumer_owner) }}
-                  </span>
-                </dd>
-                <dd v-else>{{ t('security.finding.outletUnavailable') }}</dd>
-              </div>
-            </dl>
-          </el-collapse-item>
-        </el-collapse>
-        <el-form ref="reviewFormRef" :model="reviewForm" :rules="reviewRules" label-position="top">
-          <el-form-item :label="t('security.finding.decision')" prop="decision" required>
-            <el-radio-group v-model="reviewForm.decision" class="decision-group">
-              <el-radio-button value="confirm">{{ t('security.finding.decisions.confirm') }}</el-radio-button>
-              <el-radio-button value="adjust">{{ t('security.finding.decisions.adjust') }}</el-radio-button>
-              <el-radio-button value="reject">{{ t('security.finding.decisions.reject') }}</el-radio-button>
-            </el-radio-group>
-          </el-form-item>
-          <template v-if="reviewForm.decision === 'adjust'">
-            <el-form-item :label="t('security.finding.sensitiveDataType')" prop="sensitiveDataTypeID" required>
-              <el-select v-model="reviewForm.sensitiveDataTypeID" class="wide" :placeholder="t('security.finding.selectSensitiveDataType')" @change="applyReviewDefaultGrade">
-                <el-option v-for="item in sensitiveTypes" :key="item.id" :label="item.name" :value="String(item.id)" />
-              </el-select>
-            </el-form-item>
-            <el-form-item :label="t('security.finding.securityGrade')" prop="securityGradeID" required>
-              <el-select v-model="reviewForm.securityGradeID" class="wide" :placeholder="t('security.finding.selectSecurityGrade')">
-                <el-option v-for="item in activeGradesForType(reviewForm.sensitiveDataTypeID)" :key="item.id" :label="item.name" :value="String(item.id)" />
-              </el-select>
-            </el-form-item>
-          </template>
-          <el-form-item :label="t('security.finding.rationale')" prop="rationale" required>
-            <el-input ref="reviewRationaleInput" v-model="reviewForm.rationale" type="textarea" :rows="4" maxlength="2000" show-word-limit :placeholder="reviewRationalePlaceholder" />
-          </el-form-item>
-        </el-form>
-      </template>
+      <FindingReviewForm
+        v-if="reviewingFinding"
+        ref="reviewFormRef"
+        v-model:basis-expanded="reviewBasisExpanded"
+        :finding="reviewingFinding"
+        :remaining-label="reviewRemainingLabel"
+        :form="reviewForm"
+        :rules="reviewRules"
+        :sensitive-types="sensitiveTypes"
+        :rationale-placeholder="reviewRationalePlaceholder"
+        :active-grades-for-type="activeGradesForType"
+        :type-name="typeName"
+        :confidence-label="confidenceLabel"
+        :capability-name="capabilityName"
+        :evidence-audit-description="evidenceAuditDescription"
+        :decision-presentation="decisionPresentation"
+        :effective-definition-summary="effectiveDefinitionSummary"
+        :baseline-description="baselineDescription"
+        :owner-label="ownerLabel"
+        :outlet-rule-description="outletRuleDescription"
+        @sensitive-type-change="applyReviewDefaultGrade"
+      />
       <template #footer>
         <el-button @click="reviewDialog = false">{{ t('security.common.cancel') }}</el-button>
         <el-button type="primary" :loading="reviewSaving" @click="submitFindingReview">{{ t('security.finding.submitReview') }}</el-button>
@@ -1224,39 +853,24 @@
       class="addp-dialog"
       :title="t('security.policy.title')"
       width="min(600px, calc(100vw - 24px))"
-      @opened="clearPolicyValidation"
+      @open="clearPolicyValidation"
       @closed="closePolicyDialog"
     >
-      <template v-if="policyAssessment">
-        <el-alert type="info" :closable="false" :title="t('security.policy.hint')" />
-        <div v-if="policyVersionConflict" class="version-conflict-notice" role="alert">
-          <span>{{ t('security.policy.versionConflict') }}</span>
-          <el-button link type="primary" :loading="policyReloading" @click="reloadPolicyBaseline">
-            {{ t('security.policy.reloadLatest') }}
-          </el-button>
-        </div>
-        <div class="policy-target">
-          <strong>{{ policyAssessment.component_key }}</strong>
-          <span>{{ assessmentSummary(policyAssessment) }}</span>
-          <span>{{ assessmentProtectionSummary(policyAssessment) }}</span>
-        </div>
-        <el-form ref="policyFormRef" :model="policyForm" :rules="policyRules" label-position="top">
-          <el-form-item :label="t('security.policy.scope')">
-            <el-input :model-value="t('security.policy.managerPreview')" disabled />
-          </el-form-item>
-          <el-form-item :label="t('security.policy.effect')" prop="effect" required>
-            <el-radio-group v-model="policyForm.effect">
-              <el-radio-button v-for="effect in stricterPolicyEffects(policyAssessment)" :key="effect" :value="effect">
-                {{ effectLabel(effect) }}
-              </el-radio-button>
-            </el-radio-group>
-            <div class="field-help">{{ t(`security.baseline.effectImpact.${policyForm.effect}`) }}</div>
-          </el-form-item>
-          <el-form-item :label="t('security.policy.rationale')" prop="rationale" required>
-            <el-input v-model="policyForm.rationale" type="textarea" :rows="4" maxlength="2000" show-word-limit :placeholder="t('security.policy.rationalePlaceholder')" />
-          </el-form-item>
-        </el-form>
-      </template>
+      <ProtectionPolicyForm
+        v-if="policyAssessment"
+        ref="policyFormRef"
+        mode="tighten"
+        :assessment="policyAssessment"
+        :assessment-summary="assessmentSummary(policyAssessment)"
+        :protection-summary="assessmentProtectionSummary(policyAssessment)"
+        :conflict="policyVersionConflict"
+        :reloading="policyReloading"
+        :form="policyForm"
+        :rules="policyRules"
+        :effects="stricterPolicyEffects(policyAssessment)"
+        :effect-label="effectLabel"
+        @reload="reloadPolicyBaseline"
+      />
       <template #footer>
         <el-button @click="policyDialog = false">{{ t('security.common.cancel') }}</el-button>
         <el-button type="primary" :loading="policySaving" :disabled="policyVersionConflict" @click="savePolicy">{{ t('security.policy.confirm') }}</el-button>
@@ -1274,32 +888,20 @@
       @opened="focusPolicyRestoreCancel"
       @closed="closePolicyRestoreDialog"
     >
-      <template v-if="policyRestoreAssessment">
-        <el-alert type="warning" :closable="false" :title="t('security.policy.restoreHint')" />
-        <div v-if="policyRestoreConflict" class="version-conflict-notice" role="alert">
-          <span>{{ t('security.policy.restoreVersionConflict') }}</span>
-          <el-button link type="primary" :loading="policyRestoreReloading" @click="reloadPolicyRestoreBaseline">
-            {{ t('security.policy.reloadLatestForRestore') }}
-          </el-button>
-        </div>
-        <div class="policy-target">
-          <strong>{{ policyRestoreAssessment.component_key }}</strong>
-          <span>{{ assessmentSummary(policyRestoreAssessment) }}</span>
-          <span>{{ assessmentProtectionSummary(policyRestoreAssessment) }}</span>
-        </div>
-        <el-form ref="policyRestoreFormRef" :model="policyRestoreForm" :rules="policyRestoreRules" label-position="top">
-          <el-form-item :label="t('security.policy.restoreRationale')" prop="rationale" required>
-            <el-input
-              v-model="policyRestoreForm.rationale"
-              type="textarea"
-              :rows="4"
-              maxlength="2000"
-              show-word-limit
-              :placeholder="t('security.policy.restoreRationalePlaceholder')"
-            />
-          </el-form-item>
-        </el-form>
-      </template>
+      <ProtectionPolicyForm
+        v-if="policyRestoreAssessment"
+        ref="policyRestoreFormRef"
+        mode="restore"
+        :assessment="policyRestoreAssessment"
+        :assessment-summary="assessmentSummary(policyRestoreAssessment)"
+        :protection-summary="assessmentProtectionSummary(policyRestoreAssessment)"
+        :conflict="policyRestoreConflict"
+        :reloading="policyRestoreReloading"
+        :form="policyRestoreForm"
+        :rules="policyRestoreRules"
+        :effect-label="effectLabel"
+        @reload="reloadPolicyRestoreBaseline"
+      />
       <template #footer>
         <el-button ref="policyRestoreCancelButton" :disabled="policyRestoreSaving" @click="policyRestoreDialog = false">{{ t('security.common.cancel') }}</el-button>
         <el-button type="danger" :loading="policyRestoreSaving" :disabled="policyRestoreConflict" @click="submitPolicyRestore">
@@ -1421,11 +1023,11 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
-import { QuestionFilled, Refresh } from '@element-plus/icons-vue'
+import { Refresh } from '@element-plus/icons-vue'
 import {
   ResourceTreePicker,
   listResourceTreeEngines,
@@ -1462,6 +1064,13 @@ const AUTO_REFRESH_FAST_WINDOW_MS = 30000
 const AUTO_REFRESH_TIMEOUT_MS = 120000
 
 const { t, locale } = useI18n()
+const AccessRequestDecisionForm = defineAsyncComponent(() => import('../components/protection-enrollment/AccessRequestDecisionForm.vue'))
+const AccessRequestReviewWorkspace = defineAsyncComponent(() => import('../components/protection-enrollment/AccessRequestReviewWorkspace.vue'))
+const EnrollmentAssessmentList = defineAsyncComponent(() => import('../components/protection-enrollment/EnrollmentAssessmentList.vue'))
+const EnrollmentExemptionSection = defineAsyncComponent(() => import('../components/protection-enrollment/EnrollmentExemptionSection.vue'))
+const EnrollmentFindingList = defineAsyncComponent(() => import('../components/protection-enrollment/EnrollmentFindingList.vue'))
+const FindingReviewForm = defineAsyncComponent(() => import('../components/protection-enrollment/FindingReviewForm.vue'))
+const ProtectionPolicyForm = defineAsyncComponent(() => import('../components/protection-enrollment/ProtectionPolicyForm.vue'))
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
@@ -1494,6 +1103,7 @@ const autoRefreshActive = ref(false)
 const lastRefreshedAt = ref(null)
 const saving = ref(false)
 const createDrawer = ref(false)
+const createFormRef = ref(null)
 const detailDrawer = ref(false)
 const releaseDialog = ref(false)
 const releaseFormRef = ref(null)
@@ -1528,7 +1138,7 @@ const policyDialog = ref(false)
 const policyFormRef = ref(null)
 const policyRestoreDialog = ref(false)
 const policyRestoreFormRef = ref(null)
-const selectedResource = ref(null)
+const createForm = reactive({ resource: null })
 const selectedItem = ref(null)
 const selectedItemLoading = ref(false)
 const initialLocator = ref('')
@@ -1549,7 +1159,7 @@ const policiesLoading = ref(false)
 const exemptions = ref([])
 const exemptionsLoading = ref(false)
 const focusedExemptionID = ref('')
-const exemptionCardRefs = new Map()
+const exemptionSectionRef = ref(null)
 const componentOptions = ref([])
 const componentsLoading = ref(false)
 const sensitiveTypes = ref([])
@@ -1584,7 +1194,6 @@ const accessRequestDecisionForm = reactive({ rationale: '' })
 const reviewingFinding = ref(null)
 const reviewSaving = ref(false)
 const reviewBasisExpanded = ref([])
-const reviewRationaleInput = ref(null)
 const reviewForm = reactive({ decision: 'confirm', sensitiveDataTypeID: '', securityGradeID: '', rationale: '' })
 const manualRationaleInput = ref(null)
 const manualAssessmentSaving = ref(false)
@@ -1687,6 +1296,19 @@ let workspaceMounted = false
 const discoveryRefreshWatches = new Map()
 
 const canCreate = computed(() => auth.hasPermission('security.enrollment.create'))
+const createFormRules = computed(() => ({
+  resource: [{
+    validator: (_rule, selection, callback) => {
+      const locator = String(selection?.identity?.locator || '').trim()
+      if (locator && selectedItem.value) {
+        callback()
+        return
+      }
+      callback(new Error(t('security.enrollment.resourceRequired')))
+    },
+    trigger: 'change'
+  }]
+}))
 const canRelease = computed(() => auth.hasPermission('security.enrollment.update'))
 const canReadFindings = computed(() => auth.hasPermission('security.finding.read'))
 const canReviewFindings = computed(() => auth.hasPermission('security.finding.update'))
@@ -1700,13 +1322,6 @@ const canRevokePolicies = computed(() => auth.hasPermission('security.policy.del
 const canReadExemptions = computed(() => auth.hasPermission('security.protection_exemption.read'))
 const canRevokeExemptions = computed(() => auth.hasPermission('security.protection_exemption.delete'))
 const canReviewAccessRequests = computed(() => auth.hasPermission('security.protection_access_request.update'))
-const hasAccessRequestFilters = computed(() => Boolean(
-  accessRequestFilters.resourceSearch ||
-  accessRequestFilters.requesterSearch ||
-  accessRequestFilters.state ||
-  accessRequestFilters.authorizationState ||
-  accessRequestCreatedRange.value?.length
-))
 const governanceLoading = computed(() => findingsLoading.value || assessmentsLoading.value || policiesLoading.value)
 const manualAssessments = computed(() => assessments.value.filter(item => item.current?.source_kind === 'manual'))
 const reviewQueueCapabilities = computed(() => {
@@ -2198,6 +1813,10 @@ async function handleAccessRequestScopeChange() {
   await loadAccessRequestQueue(1)
 }
 
+function updateAccessRequestFilters(filters) {
+  Object.assign(accessRequestFilters, filters)
+}
+
 async function applyAccessRequestFilters() {
   accessRequestPage.value = 1
   await loadAccessRequestQueue(1)
@@ -2215,18 +1834,6 @@ async function resetAccessRequestFilters() {
 
 async function handleAccessRequestPageChange() {
   await loadAccessRequestQueue(accessRequestPage.value)
-}
-
-function accessRequestStateType(state) {
-  if (state === 'approved') return 'success'
-  if (state === 'rejected') return 'danger'
-  return 'info'
-}
-
-function accessAuthorizationStateType(state) {
-  if (state === 'active') return 'success'
-  if (state === 'revoked') return 'danger'
-  return 'info'
 }
 
 async function openAccessRequestAuthorization(row) {
@@ -2973,8 +2580,7 @@ async function submitAssessmentRevoke() {
 
 function focusReviewRationale() {
   nextTick(() => {
-    reviewFormRef.value?.clearValidate()
-    reviewRationaleInput.value?.focus?.()
+    reviewFormRef.value?.focusRationale()
   })
 }
 
@@ -3243,10 +2849,17 @@ async function openReviewQueueResource(finding) {
 }
 
 function openCreate(locator = '') {
-  selectedResource.value = null
+  createForm.resource = null
   selectedItem.value = null
   initialLocator.value = String(locator || '').trim()
   createDrawer.value = true
+}
+
+function handleResourceModelUpdate(selection) {
+  if (String(selection?.identity?.locator || '').trim()) return
+  selectedItemRequest += 1
+  selectedItem.value = null
+  selectedItemLoading.value = false
 }
 
 async function handleResourceSelect(selection) {
@@ -3257,7 +2870,11 @@ async function handleResourceSelect(selection) {
   selectedItemLoading.value = true
   try {
     const item = await metaAPI.getItem(itemID)
-    if (request === selectedItemRequest) selectedItem.value = item
+    if (request === selectedItemRequest) {
+      selectedItem.value = item
+      await nextTick()
+      await createFormRef.value?.validateField('resource').catch(() => false)
+    }
   } catch (error) {
     if (request === selectedItemRequest) ElMessage.error(error.message || t('security.enrollment.itemLoadFailed'))
   } finally {
@@ -3266,8 +2883,9 @@ async function handleResourceSelect(selection) {
 }
 
 async function createEnrollment() {
-  const locator = String(selectedResource.value?.identity?.locator || '').trim()
-  if (!locator || !selectedItem.value) return ElMessage.warning(t('security.enrollment.resourceRequired'))
+  const valid = await createFormRef.value?.validate().catch(() => false)
+  if (valid === false) return
+  const locator = String(createForm.resource?.identity?.locator || '').trim()
   if (existingEnrollment.value) return ElMessage.warning(t('security.enrollment.alreadyEnrolled'))
   saving.value = true
   try {
@@ -3285,15 +2903,10 @@ async function createEnrollment() {
   }
 }
 
-function setExemptionCardRef(exemptionID, element) {
-  if (element) exemptionCardRefs.set(exemptionID, element)
-  else exemptionCardRefs.delete(exemptionID)
-}
-
 async function focusExemptionCard() {
   if (!focusedExemptionID.value) return
   await nextTick()
-  exemptionCardRefs.get(focusedExemptionID.value)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  await exemptionSectionRef.value?.focusFocused()
 }
 
 async function openDetail(row, exemptionID = '') {
@@ -3321,7 +2934,6 @@ function handleDetailClosed() {
   policiesLoading.value = false
   exemptionsLoading.value = false
   focusedExemptionID.value = ''
-  exemptionCardRefs.clear()
   detailRow.value = null
 }
 
@@ -3589,7 +3201,7 @@ async function releaseEnrollment() {
 
 async function handleCreateClosed() {
   selectedItemRequest += 1
-  selectedResource.value = null
+  createForm.resource = null
   selectedItem.value = null
   selectedItemLoading.value = false
   initialLocator.value = ''
@@ -3669,19 +3281,6 @@ onBeforeUnmount(() => {
 .workspace-tabs { margin: -4px 0 10px; }
 .workspace-tab-label { display: inline-flex; align-items: center; gap: 7px; }
 :deep(.workspace-tabs .el-tabs__header) { margin-bottom: 0; }
-.access-review-card { margin-bottom: 12px; border-color: var(--addp-border-color); background: var(--addp-bg-primary); }
-.access-review-card__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
-.access-review-card__header p { margin: 5px 0 0; color: var(--addp-text-secondary); font-size: 13px; }
-.access-review-card__scope { display: flex; align-items: center; gap: 10px; }
-.access-review-filters { display: flex; flex-wrap: wrap; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--addp-border-color); }
-.access-review-filters > .el-input { width: min(240px, 100%); }
-.access-review-filters > .el-select { width: min(180px, 100%); }
-.access-review-filters > :deep(.el-date-editor) { width: min(360px, 100%); }
-.access-actor { display: flex; flex-direction: column; gap: 2px; }
-.access-actor span { color: var(--addp-text-secondary); font-size: 12px; }
-.access-authorization-state { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
-.access-authorization-state span { color: var(--addp-text-secondary); font-size: 12px; }
-.access-authorization-link { height: auto; padding: 0; }
 .list-scope-bar { display: flex; align-items: center; margin-bottom: 12px; }
 .enrollment-card { border-color: var(--addp-border-color); background: var(--addp-bg-primary); }
 .review-queue-intro { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 12px; padding: 13px 15px; border: 1px solid var(--addp-border-color); border-radius: 8px; background: var(--addp-bg-primary); }
@@ -3689,8 +3288,6 @@ onBeforeUnmount(() => {
 .review-queue-filters { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
 .review-queue-filters .el-select { width: min(340px, 100%); }
 .review-queue-card :deep(.el-card__body) { padding-top: 8px; }
-.access-decision-actions { display: flex; align-items: center; gap: 4px; }
-.access-decision-unavailable { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; color: var(--addp-text-secondary); font-size: 12px; }
 .queue-candidate, .queue-recognition, .queue-evidence { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: 5px; }
 .queue-candidate span, .queue-evidence small { color: var(--addp-text-secondary); font-size: 12px; }
 .queue-recognition code { max-width: 100%; overflow: hidden; color: var(--addp-text-tertiary); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
@@ -3731,52 +3328,6 @@ h4 { margin: 24px 0 12px; }
 .finding-section__header h4 { margin: 0; }
 .finding-section__header p { margin: 6px 0 0; color: var(--addp-text-secondary); font-size: 13px; }
 .finding-section__actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
-.finding-list { display: flex; flex-direction: column; gap: 12px; }
-.finding-card { container: finding-card / inline-size; padding: 14px; border: 1px solid var(--addp-border-color); border-radius: 8px; background: var(--addp-bg-secondary); }
-.finding-card__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
-.finding-card__header > div { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
-.finding-card__header strong { overflow-wrap: anywhere; font-size: 15px; }
-.finding-card__header span { color: var(--addp-text-secondary); font-size: 12px; }
-.finding-explanation { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1fr) minmax(0, 1.25fr); overflow: hidden; border: 1px solid var(--addp-border-color); border-radius: 8px; background: var(--addp-bg-primary); }
-.explanation-stage { min-width: 0; padding: 12px; }
-.explanation-stage + .explanation-stage { border-left: 1px solid var(--addp-border-color); }
-.explanation-stage__title { display: flex; align-items: center; gap: 7px; margin-bottom: 10px; color: var(--addp-text-primary); }
-.explanation-stage__title > span { display: inline-flex; width: 20px; height: 20px; align-items: center; justify-content: center; flex: 0 0 auto; color: var(--el-color-primary); font-size: 12px; font-weight: 700; border: 1px solid var(--el-color-primary); border-radius: 50%; }
-.explanation-stage__title strong { font-size: 13px; }
-.explanation-stage p { margin: 6px 0 0; color: var(--addp-text-secondary); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
-.explanation-stage .explanation-primary { color: var(--addp-text-primary); font-weight: 600; }
-.explanation-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-.detection-rule-audit { display: flex; flex-direction: column; gap: 7px; margin: 12px 0 0; padding-top: 10px; border-top: 1px dashed var(--addp-border-color); }
-.detection-rule-audit > div { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 8px; font-size: 12px; line-height: 1.5; }
-.detection-rule-audit dt { color: var(--addp-text-tertiary); }
-.detection-rule-audit dd { margin: 0; color: var(--addp-text-secondary); overflow-wrap: anywhere; }
-.detection-rule-audit__details { align-items: center; }
-.detection-rule-audit__details dd { display: flex; align-items: center; }
-.rule-help-button { min-height: 24px; padding: 0 2px; }
-.recognition-rule-details { display: flex; flex-direction: column; gap: 10px; margin: 0; }
-.recognition-rule-details > div { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 10px; font-size: 12px; line-height: 1.6; }
-.recognition-rule-details dt { color: var(--addp-text-tertiary); }
-.recognition-rule-details dd { margin: 0; color: var(--addp-text-secondary); overflow-wrap: anywhere; }
-:global(.security-rule-popover) { max-width: calc(100vw - 32px); }
-.finding-outlets { display: flex; flex-direction: column; gap: 7px; }
-.finding-outlet { display: grid; grid-template-columns: minmax(78px, auto) minmax(0, 1fr) auto; align-items: center; gap: 7px; font-size: 12px; }
-.finding-outlet > span { color: var(--addp-text-secondary); }
-.finding-outlet > strong { min-width: 0; color: var(--addp-text-primary); font-weight: 500; line-height: 1.4; overflow-wrap: anywhere; }
-.finding-observed-at { margin: 8px 0 0; color: var(--addp-text-tertiary); font-size: 12px; text-align: right; }
-.review-result { margin-top: 12px; padding: 10px 12px; border-left: 3px solid var(--el-color-primary); background: var(--addp-bg-primary); }
-.review-result span { color: var(--addp-text-tertiary); font-size: 12px; }
-.review-result p { margin: 4px 0 0; color: var(--addp-text-secondary); overflow-wrap: anywhere; }
-.finding-card__actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
-.finding-pagination { justify-content: flex-end; margin-top: 14px; }
-.manual-assessment-list { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--addp-border-color); }
-.manual-assessment-list h5 { margin: 0 0 10px; font-size: 14px; }
-.manual-assessment-card { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 12px 14px; border: 1px solid var(--addp-border-color); border-radius: 8px; background: var(--addp-bg-secondary); }
-.manual-assessment-card + .manual-assessment-card { margin-top: 8px; }
-.manual-assessment-card > div:first-child { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
-.manual-assessment-card strong { overflow-wrap: anywhere; }
-.manual-assessment-card span, .manual-assessment-card p { margin: 0; color: var(--addp-text-secondary); font-size: 12px; line-height: 1.5; }
-.manual-assessment-card .resource-policy-summary, .resource-policy-summary { color: var(--addp-text-primary); font-weight: 600; }
-.manual-assessment-card__actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
 .policy-target { display: flex; flex-direction: column; gap: 4px; margin: 16px 0; padding: 12px 14px; border: 1px solid var(--addp-border-color); border-radius: 8px; background: var(--addp-bg-secondary); }
 .policy-target span { color: var(--addp-text-secondary); font-size: 12px; line-height: 1.5; }
 .assessment-history { min-height: 120px; }
@@ -3787,44 +3338,7 @@ h4 { margin: 24px 0 12px; }
 .assessment-history__item .assessment-history__summary { color: var(--addp-text-primary); font-weight: 600; }
 .assessment-history__item small { display: block; margin-top: 8px; color: var(--addp-text-tertiary); }
 .version-conflict-notice { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; padding: 10px 12px; color: var(--el-color-warning); border: 1px solid var(--el-color-warning); border-radius: 8px; background: var(--addp-bg-secondary); font-size: 13px; line-height: 1.5; }
-.exemption-section { margin-top: 24px; }
-.exemption-section__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
-.exemption-section__header h4 { margin: 0; }
-.exemption-section__header p { margin: 6px 0 0; color: var(--addp-text-secondary); font-size: 13px; }
-.exemption-loading { margin-top: 14px; }
-.exemption-list { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
-.exemption-card { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 12px 14px; border: 1px solid var(--addp-border-color); border-radius: 8px; background: var(--addp-bg-secondary); }
-.exemption-card.is-focused { border-color: var(--el-color-primary); box-shadow: 0 0 0 1px var(--el-color-primary); }
-.exemption-card__main { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 4px; }
-.exemption-card__title { display: flex; align-items: center; gap: 8px; }
-.exemption-card__title strong { min-width: 0; overflow-wrap: anywhere; }
-.exemption-card__main > span, .exemption-card__main > p { margin: 0; color: var(--addp-text-secondary); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
-.exemption-card__actions { display: flex; flex: 0 0 auto; gap: 4px; }
 .form-help { display: block; margin-top: 6px; color: var(--addp-text-tertiary); font-size: 12px; line-height: 1.5; }
-.review-target { display: flex; flex-direction: column; gap: 5px; margin-bottom: 18px; padding: 12px 14px; border: 1px solid var(--addp-border-color); border-radius: 8px; background: var(--addp-bg-secondary); }
-.review-target__header { display: flex; min-width: 0; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.review-target strong { overflow-wrap: anywhere; }
-.review-target__header strong { min-width: 0; }
-.review-target__header .el-tag { flex: 0 0 auto; }
-.review-target span { color: var(--addp-text-secondary); font-size: 13px; }
-.review-basis { margin: -6px 0 18px; border: 1px solid var(--addp-border-color); border-radius: 8px; }
-.review-basis :deep(.el-collapse-item__header) { min-height: 44px; padding: 0 12px; border-bottom: 0; border-radius: 8px; background: var(--addp-bg-secondary); }
-.review-basis :deep(.el-collapse-item__wrap) { border-bottom: 0; border-radius: 0 0 8px 8px; background: var(--addp-bg-primary); }
-.review-basis :deep(.el-collapse-item__content) { padding: 0; }
-.review-basis__title { display: flex; min-width: 0; align-items: center; gap: 7px; }
-.review-basis__title svg { width: 16px; height: 16px; flex: 0 0 auto; color: var(--el-color-primary); }
-.review-basis__title span { flex: 0 0 auto; color: var(--addp-text-primary); font-weight: 600; }
-.review-basis__title small { overflow: hidden; color: var(--addp-text-tertiary); font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
-.review-basis__facts { display: flex; flex-direction: column; gap: 0; margin: 0; padding: 4px 14px 12px; }
-.review-basis__facts > div { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 12px; padding: 9px 0; border-top: 1px solid var(--addp-border-color-light); font-size: 12px; line-height: 1.6; }
-.review-basis__facts dt { color: var(--addp-text-tertiary); }
-.review-basis__facts dd { display: flex; min-width: 0; flex-wrap: wrap; gap: 6px 10px; margin: 0; color: var(--addp-text-secondary); overflow-wrap: anywhere; }
-.review-basis__outlets { flex-direction: column; }
-.review-basis__outlets span { display: grid; grid-template-columns: minmax(82px, auto) minmax(0, 1fr); gap: 8px; }
-.review-basis__outlets strong { color: var(--addp-text-primary); font-weight: 500; }
-.decision-group { display: flex; width: 100%; }
-.decision-group :deep(.el-radio-button) { flex: 1; }
-.decision-group :deep(.el-radio-button__inner) { width: 100%; }
 .manual-assessment-form { margin-top: 16px; }
 .component-option { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .component-option small { color: var(--addp-text-tertiary); }
@@ -3837,27 +3351,14 @@ h4 { margin: 24px 0 12px; }
 :deep(.el-card__body) { padding: 0; }
 :deep(.el-table) { background: var(--addp-bg-primary); }
 :deep(.el-drawer__body) { padding-top: 8px; }
-@container finding-card (max-width: 920px) {
-  .finding-explanation { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .explanation-stage:nth-child(3) { grid-column: 1 / -1; border-top: 1px solid var(--addp-border-color); border-left: 0; }
-}
-@container finding-card (max-width: 560px) {
-  .finding-explanation { grid-template-columns: 1fr; }
-  .explanation-stage:nth-child(3) { grid-column: auto; }
-  .explanation-stage + .explanation-stage { border-top: 1px solid var(--addp-border-color); border-left: 0; }
-}
 @media (max-width: 1280px) {
   .owner-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 720px) {
   .version-conflict-notice { align-items: flex-start; flex-direction: column; }
-  .access-review-card__header { flex-direction: column; }
-  .access-review-filters > .el-input, .access-review-filters > .el-select, .access-review-filters > :deep(.el-date-editor) { width: 100%; }
   .review-queue-intro { align-items: flex-start; flex-direction: column; }
   .review-queue-filters .el-select { width: 100%; }
-  .finding-section__header, .manual-assessment-card, .exemption-section__header, .exemption-card { flex-direction: column; }
+  .finding-section__header { flex-direction: column; }
   .finding-section__actions { width: 100%; justify-content: space-between; }
-  .review-basis__title small { display: none; }
-  .review-basis__facts > div { grid-template-columns: 1fr; gap: 4px; }
 }
 </style>

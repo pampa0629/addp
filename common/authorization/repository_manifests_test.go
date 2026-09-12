@@ -13,8 +13,8 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 		t.Fatalf("LoadRepositoryAuthorizationCatalog() error = %v", err)
 	}
 	descriptors := report.Permissions
-	if len(descriptors) != 444 {
-		t.Fatalf("descriptor count = %d, want 444", len(descriptors))
+	if len(descriptors) != 452 {
+		t.Fatalf("descriptor count = %d, want 452", len(descriptors))
 	}
 	for _, descriptor := range descriptors {
 		if descriptor.OwnerModule == "security" && !reflect.DeepEqual(descriptor.AllowedScopeTypes, []string{"tenant"}) {
@@ -108,8 +108,16 @@ func TestRepositoryPermissionManifests(t *testing.T) {
 	assertRepositoryRolePermissions(t, roles, "tenant.orchestrator_runtime", []string{
 		"develop.task_provider.execute",
 		"develop.task_provider.read",
+		"graph.task_provider.execute",
+		"graph.task_provider.read",
+		"manager.task_provider.execute",
+		"manager.task_provider.read",
+		"meta.task_provider.execute",
+		"meta.task_provider.read",
 		"model.task_provider.execute",
 		"model.task_provider.read",
+		"orchestrator.task_provider.execute",
+		"orchestrator.task_provider.read",
 		"quality.task_provider.execute",
 		"quality.task_provider.read",
 		"system.task_authorization.execute",

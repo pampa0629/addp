@@ -159,10 +159,10 @@ func ManagerTaskProviderDeclaration() (*commonModels.TaskProviderDeclaration, er
 		Description: "矢量物化视图、矢量瓦片缓存、栅格快显、三维模型、点云、PPTX PDF 和空间业务数据生成任务",
 
 		// API 端点配置（相对于 base_url，支持 {task_type}/{id} 占位符）
-		TaskListEndpoint:    "/api/v1/manager/tasks",
-		TaskDetailEndpoint:  "/api/v1/manager/tasks/{task_type}/{id}",
-		TaskExecuteEndpoint: "/api/v1/manager/tasks/{task_type}/{id}/execute",
-		TaskStatusEndpoint:  "/api/v1/manager/executions/{execution_id}",
+		TaskListEndpoint:    "/api/v1/manager/task-provider/tasks",
+		TaskDetailEndpoint:  "/api/v1/manager/task-provider/tasks/{task_type}/{id}",
+		TaskExecuteEndpoint: "/api/v1/manager/task-provider/tasks/{task_type}/{id}/execute",
+		TaskStatusEndpoint:  "/api/v1/manager/task-provider/executions/{execution_id}",
 
 		// 能力描述（JSON 字符串）
 		Capabilities: &capabilitiesStr,

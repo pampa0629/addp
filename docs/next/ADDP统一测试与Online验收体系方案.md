@@ -1,6 +1,6 @@
 # ADDP 统一测试与 Online 验收体系方案
 
-> 状态：稳定规则已迁入正式规范；首次 `module-registry-recovery` T4 已触发但仍在等待专用 Runner 接单（2026-08-26）。
+> 状态：稳定规则已迁入正式规范；专用 macOS Runner 尚未上线，已登记的 self-hosted T4 仍等待首次真实执行（2026-09-12）。
 
 ## 一、专题边界
 
@@ -21,7 +21,7 @@
 - [x] `make test-changed`、`make test-module` 与 PR T0-T3 使用同一 owner 影响计算。
 - [x] `make test-integration` 严格串行编排全部已登记的 disposable 基础设施门禁。
 - [x] `make test-online ONLINE_SUITE=<suite>` 统一 Run ID、预检、超时、进程锁和 `addp.online-gate/v1` 报告。
-- [x] `standard-model-reference-deletion`、`module-registry-recovery`、`consumer-engine-recovery`、`enterprise-catalog-publishing`、`workbench-service-consumption`、`manager-internal-artifact-lineage`、`security-transfer-protection` 与 `security-plaintext-access` 已登记为真实 T4 suite，不存在占位 suite。
+- [x] Online registry 中的全部 suite 均已登记真实 owner 断言与唯一部署 profile，不存在占位 suite 或未登记的平行入口。
 - [x] 专用宿主机门禁会在生命周期操作前检查 macOS、`ADDP_ONLINE_HOST=1`、仓库外环境文件与证据目录、干净 checkout、`addp_online` 数据库和 suite profile。
 - [x] 手工 `.github/workflows/online-t4-gates.yml` 已绑定 `addp-online` Environment，并使用 `self-hosted`、`macOS`、`addp-online` Runner 标签。
 - [x] 手工 Online T4 workflow 已进入远端并被 GitHub 识别为 active；workflow 语法和 Runner 上下文约束由 `make test-platform` 自动检查。
@@ -30,17 +30,20 @@
 
 ## 三、专用 T4 Runner 首跑与消费方恢复场景
 
-2026-08-26 已对 `main` 提交 `0f5a88e4ff8c6a7cd364da401050cfd2c6806d10` 触发 [Online T4 run 32915692407](https://github.com/pampa0629/addp/actions/runs/32915692407)，输入为 `module-registry-recovery`。Workflow 和 Job 已正确创建，但持续为 `queued` 且没有执行步骤，说明尚未被匹配 `self-hosted`、`macOS`、`addp-online` 标签的 Runner 接单。该记录不算首次真实执行；恢复 Runner 后应继续观察现有运行，避免重复触发并制造并发排队。
+2026-08-26 已对 `main` 提交 `0f5a88e4ff8c6a7cd364da401050cfd2c6806d10` 触发 [Online T4 run 32915692407](https://github.com/pampa0629/addp/actions/runs/32915692407)，输入为 `module-registry-recovery`。2026-09-12 又触发 [Online T4 run 34667885473](https://github.com/pampa0629/addp/actions/runs/34667885473)，输入为 `manager-hybrid-search`。两次 Workflow 和 Job 都已正确创建，但均没有被匹配 `self-hosted`、`macOS`、`addp-online` 标签的 Runner 接单，因此不算真实 T4 执行证据。排队 Job 会在 24 小时后失败；专用 Runner 上线后必须重新手工触发，不能把过期排队记录当作待续作业。
 
 排查事实：Job 返回的 `runner_name`、`runner_group_name` 为空，标签声明与 workflow 一致；当前开发 Mac 未发现 Runner 进程、launchd 服务或安装目录，且个人 checkout 因根 `.env` 和脏工作区不满足 Host Gate。当前阻塞属于专用部署资源未在线或尚未准备，不属于业务代码、suite 或 workflow 故障。不得删除 `addp-online` 标签、改用 GitHub-hosted Runner 或放宽环境隔离规则规避该阻塞。
 
 ### 3.1 机器与环境准备
 
-- [ ] 准备独立 macOS Runner 账号和独立 checkout，并注册 `self-hosted`、`macOS`、`addp-online` 标签。
-- [ ] 创建 `addp-online` GitHub Environment，将仓库外环境文件的绝对路径配置为 `ADDP_ONLINE_ENV_FILE` 变量。
-- [ ] 环境文件基于当前部署配置准备专用测试 Tenant、最小权限 User / Service Principal、`POSTGRES_DB=addp_online`，以及八个 suite 所需的服务地址、浏览器用户凭据、PostgreSQL/MySQL/MongoDB/MinIO Engine Fixture、永久 Standard Domain 和 Department ID。
-- [ ] 确认 Runner 不存在仓库根 `.env`，不连接个人开发服务、`addp`、`addp_test` 或 `addp_iam_test`。
-- [ ] 确认证据目录、Docker、Go、Node、npm、Python、curl 和可用磁盘满足宿主机门禁。
+1. [ ] 擦除或重置专用 Mac，创建独立 `addp-online` 系统账号；不登录个人 Apple ID，不复制个人 SSH Key、浏览器会话、开发 `.env` 或生产凭据，只保留测试专用网络出口。
+2. [ ] 安装 Docker Desktop、Git、Go 1.24+、Python 3.11+、仓库 `.node-version` 声明的 Node.js 24、npm、`make`、`curl`、`lsof` 和 `nc`；先在独立 Local CI checkout 执行 `make local-ci LOCAL_CI_ARGS=--check-only`。
+3. [ ] 从仓库 `Settings → Actions → Runners` 使用 GitHub 当次生成的下载、校验和注册命令，将 Runner 安装在仓库外独立目录，增加唯一自定义标签 `addp-online`，并作为当前专用账号的系统服务运行。GitHub 自动添加的 `self-hosted`、`macOS` 和架构标签不手写替代。
+4. [ ] 创建受保护的 `addp-online` GitHub Environment，配置必要的人工批准，并只将仓库外环境文件的绝对路径保存为 Repository Variable `ADDP_ONLINE_ENV_FILE`；不把环境文件内容或长期业务凭据复制到 GitHub Secret。
+5. [ ] 在仓库外创建 owner-only（文件权限 `0600`）的 `addp-online.env`。它以根 `.env.example` 为字段清单，但必须使用独立 Secret、`POSTGRES_DB=addp_online`、全部回环服务地址和专用 Fixture 端口；Actions checkout 根目录不创建 `.env`。
+6. [ ] 首次人工启动该专用部署，只经正式 UI/API 建立长期测试事实：非默认 Tenant、最小权限 User / Service Principal、PostgreSQL/MySQL/MongoDB/MinIO/OceanBase/TiDB Engine Instance、Standard Domain / Department、Inference Provider / Deployment / 2560 维 Model Profile，以及 Manager `semantic_search_embedding` 场景绑定。不直接修改业务表。
+7. [ ] 将上述永久事实的 ID、测试 User 凭据和各 Fixture 的 owner 凭据写入仓库外 `addp-online.env`；DashScope API Key 只通过 Inference credential 设置操作进入其加密存储，环境文件只保存 Inference 的部署级 `ENCRYPTION_KEY` 和预期 Model Profile ID。
+8. [ ] 先直接在 Runner checkout 上为 `module-registry-recovery` 和 `manager-hybrid-search` 分别执行一次 `online-host-gate.sh --check-only`，确认工作区干净、仓库根无 `.env`、环境文件与证据目录均在仓库外、工具链完整且 Tenant / database / loopback 边界通过，再允许 GitHub Job 接单。
 
 ### 3.2 首次真实执行
 
@@ -52,8 +55,14 @@
 4. `enterprise-catalog-publishing`。
 5. `workbench-service-consumption`。
 6. `manager-internal-artifact-lineage`。
-7. `security-transfer-protection`。
-8. `security-plaintext-access`。
+7. `manager-hybrid-search`。
+8. `security-transfer-protection`。
+9. `security-plaintext-access`。
+10. `security-mysql-owner-protection`。
+11. `oceanbase-consumer-flow`。
+12. `tidb-consumer-flow`。
+13. `transfer-insert-only-mysql`。
+14. `transfer-relational-sql-etl`。
 
 每次运行必须核验：
 
@@ -151,7 +160,7 @@ Engine Instance 是永久身份，因此 suite 禁止按 Run ID 创建后删除�
 
 满足以下条件后删除本文：
 
-1. 八个已登记 T4 suite 在专用 Runner 至少各真实通过一次。
+1. 十四个已登记 self-hosted T4 suite 在专用 Runner 至少各真实通过一次；GitHub Hosted `opengauss-consumer-flow` 继续使用自己的 disposable profile，不进入专用 Mac 首跑清单。
 2. 构建身份、专用 Tenant、数据库隔离、失败清理和零残留证据均已核验。
 3. 进程乱序恢复形成可重复的部署编排证据。
 4. 根据首跑耗时与稳定性决定是否增加夜间 schedule；不需要定时执行时也必须明确记录决定。

@@ -153,6 +153,37 @@ func TestQueryTableBatchReaderStreamsAllBatchesAndClosesAtEnd(t *testing.T) {
 	}
 }
 
+func TestQueryTableBatchSourceValidatesPreparedReadSetBeforeOpeningSession(t *testing.T) {
+	expectedPath := engineplugin.TabularItemPath(11, engineplugin.EngineCatalogTermSchema, "public", "orders")
+	actualPath := engineplugin.TabularItemPath(11, engineplugin.EngineCatalogTermSchema, "public", "other_orders")
+	expected, err := engineplugin.NewQueryReadSet(expectedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actual, err := engineplugin.NewQueryReadSet(actualPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared := &fakePreparedQuery{readSet: actual}
+	provider := &fakeQueryReadSessionProvider{prepared: prepared}
+	source := &queryTableBatchSource{
+		provider:        provider,
+		request:         engineplugin.QueryRequest{EngineID: 11, Language: "sql", Query: "SELECT * FROM public.other_orders", Options: engineplugin.QueryOptions{ReadOnly: true}},
+		expectedReadSet: expected,
+	}
+
+	_, err = source.Open(t.Context())
+	if err == nil || !strings.Contains(err.Error(), "does not match declared inputs") {
+		t.Fatalf("Open() error = %v", err)
+	}
+	if prepared.readSetCalls != 1 {
+		t.Fatalf("PreparedQuery.ReadSet() calls = %d, want 1", prepared.readSetCalls)
+	}
+	if provider.opened {
+		t.Fatal("query read session opened before read set validation")
+	}
+}
+
 func TestTableTransferExecutorReadsShapefileRefs(t *testing.T) {
 	source := &fakeContentWriter{files: map[string][]byte{}}
 	shapefilePlugin := shapefileformat.NewPlugin(nil)
@@ -762,6 +793,49 @@ type markerTableBatchSource struct {
 type fakeQueryReadSession struct {
 	batches []*engineplugin.BatchData
 	closed  bool
+}
+
+type fakePreparedQuery struct {
+	readSet      *engineplugin.QueryReadSet
+	readSetCalls int
+}
+
+func (p *fakePreparedQuery) Analysis(context.Context) (*engineplugin.QueryAnalysis, error) {
+	return engineplugin.NewQueryAnalysis("sql", engineplugin.QuerySchemaCoverageUnknown)
+}
+
+func (p *fakePreparedQuery) ReadSet(context.Context) (*engineplugin.QueryReadSet, error) {
+	p.readSetCalls++
+	return p.readSet.Clone(), nil
+}
+
+func (p *fakePreparedQuery) OutputLineage(context.Context) (*engineplugin.QueryOutputLineage, error) {
+	return nil, nil
+}
+
+func (p *fakePreparedQuery) Execute(context.Context) (*engineplugin.QueryResult, error) {
+	return nil, nil
+}
+
+type fakeQueryReadSessionProvider struct {
+	engineplugin.EnginePlugin
+	prepared engineplugin.PreparedQuery
+	opened   bool
+}
+
+func (p *fakeQueryReadSessionProvider) QueryLanguages() []string { return []string{"sql"} }
+
+func (p *fakeQueryReadSessionProvider) GenerateSampleQuery(context.Context, engineplugin.ConnectionInfo, engineplugin.SampleQueryOptions) (string, string) {
+	return "", "sql"
+}
+
+func (p *fakeQueryReadSessionProvider) PrepareQuery(context.Context, engineplugin.ConnectionInfo, engineplugin.QueryRequest) (engineplugin.PreparedQuery, error) {
+	return p.prepared, nil
+}
+
+func (p *fakeQueryReadSessionProvider) OpenQueryReadSession(context.Context, engineplugin.PreparedQuery) (engineplugin.QueryReadSession, error) {
+	p.opened = true
+	return &fakeQueryReadSession{}, nil
 }
 
 func (s *fakeQueryReadSession) ReadBatch(context.Context, int) (*engineplugin.BatchData, error) {

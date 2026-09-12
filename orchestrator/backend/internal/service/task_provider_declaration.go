@@ -24,9 +24,9 @@ func OrchestratorTaskProviderDeclaration() (*commonModels.TaskProviderDeclaratio
 	capabilitiesJSON := commonModels.JSONString(encoded)
 	return &commonModels.TaskProviderDeclaration{
 		DisplayName: "任务编排", Description: "跨模块任务编排和调度任务",
-		TaskListEndpoint: "/api/v1/orchestrator/tasks", TaskDetailEndpoint: "/api/v1/orchestrator/tasks/{task_type}/{id}",
-		TaskExecuteEndpoint: "/api/v1/orchestrator/tasks/{task_type}/{id}/execute",
-		TaskStatusEndpoint:  "/api/v1/orchestrator/executions/{execution_id}",
+		TaskListEndpoint: "/api/v1/orchestrator/task-provider/tasks", TaskDetailEndpoint: "/api/v1/orchestrator/task-provider/tasks/{task_type}/{id}",
+		TaskExecuteEndpoint: "/api/v1/orchestrator/task-provider/tasks/{task_type}/{id}/execute",
+		TaskStatusEndpoint:  "/api/v1/orchestrator/task-provider/executions/{execution_id}",
 		Capabilities:        &capabilitiesJSON,
 	}, nil
 }

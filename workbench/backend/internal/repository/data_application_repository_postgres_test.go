@@ -108,6 +108,10 @@ func TestWorkbenchDataApplicationRepositoryAgainstPostgres(t *testing.T) {
 		Permission: models.DataApplicationExecutePermission, Effect: models.ResourceAccessEffectAllow,
 		SourceModule: models.ResourceAccessSourceAsset, SourceIdentity: "73",
 	}
+	allowed, err := accessRules.CanExecuteDataApplication(7, 91, application.ID, time.Now().UTC())
+	if err != nil || allowed {
+		t.Fatalf("ungranted CanExecuteDataApplication() = %v, %v", allowed, err)
+	}
 	createdRule, err := accessRules.FulfillAssetGrant(rule)
 	if err != nil {
 		t.Fatalf("FulfillAssetGrant() error = %v", err)
@@ -179,7 +183,7 @@ func TestWorkbenchDataApplicationRepositoryAgainstPostgres(t *testing.T) {
 			t.Fatalf("concurrent FulfillAssetGrant() IDs = %q and %q", concurrentRuleID, result.ID)
 		}
 	}
-	allowed, err := accessRules.CanExecuteDataApplication(7, 91, application.ID, time.Now().UTC())
+	allowed, err = accessRules.CanExecuteDataApplication(7, 91, application.ID, time.Now().UTC())
 	if err != nil || !allowed {
 		t.Fatalf("CanExecuteDataApplication() = %v, %v", allowed, err)
 	}

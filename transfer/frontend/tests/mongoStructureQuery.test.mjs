@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 
 import {
   compileMongoStructureQuery,
-  createMongoPathProjection,
+  createMongoPathProjections,
   createMongoStructureQuery,
   defaultMongoIndexOutput,
   defaultMongoOutputName,
@@ -35,10 +35,7 @@ test('document mode carries the record identifier and selected source fields onl
     { name: 'profile.address.city', type: 'string', nullable: true }
   ]
   const model = createMongoStructureQuery('customers')
-  model.projections.push(
-    createMongoPathProjection('_id', sourceFields),
-    createMongoPathProjection('profile.address.city', sourceFields, model.projections)
-  )
+  model.projections = createMongoPathProjections(['_id', 'profile.address.city'], sourceFields)
 
   assert.equal(
     compileMongoStructureQuery(model),
@@ -59,10 +56,10 @@ test('array mode carries the parent identifier, selected parent fields, element 
     includeIndex: true,
     indexOutput: defaultMongoIndexOutput('items')
   }
-  model.projections.push(
-    createMongoPathProjection('_id', sourceFields),
-    createMongoPathProjection('_openid', sourceFields, model.projections),
-    createMongoPathProjection('items.sku', sourceFields, [{ output: model.unwind.indexOutput }])
+  model.projections = createMongoPathProjections(
+    ['_id', '_openid', 'items.sku'],
+    sourceFields,
+    [model.unwind.indexOutput]
   )
 
   const output = mongoStructureOutputFields(model, sourceFields)
@@ -85,9 +82,9 @@ test('basic mode rejects filters, sorts, multiple unwind stages, and business ag
 })
 
 test('basic mode rejects noncanonical aliases and accepts parent fields beside the selected array', () => {
-  assert.deepEqual(
-    parseMongoStructureQuery('{"aggregate":"orders","pipeline":[{"$project":{"order_id":"$_id"}}]}'),
-    { supported: false, reason: 'noncanonical_output' }
+  assert.equal(
+    parseMongoStructureQuery('{"aggregate":"orders","pipeline":[{"$project":{"order_id":"$_id"}}]}').supported,
+    false
   )
 
   const model = createMongoStructureQuery('orders')
@@ -102,9 +99,13 @@ test('basic mode rejects noncanonical aliases and accepts parent fields beside t
 
 test('output aliases are deterministic and collision-safe without user configuration', () => {
   assert.equal(defaultMongoOutputName('items.product.sku'), 'items__product__sku')
-  const first = createMongoPathProjection('a.b')
-  const second = createMongoPathProjection('a__b', [], [first])
-  assert.deepEqual([first.output, second.output], ['a__b', 'a__b__2'])
+  const firstOrder = createMongoPathProjections(['a.b', 'a__b'])
+  const secondOrder = createMongoPathProjections(['a__b', 'a.b'])
+  const outputsBySource = projections => Object.fromEntries(
+    projections.map(projection => [projection.source, projection.output])
+  )
+  assert.deepEqual(outputsBySource(firstOrder), outputsBySource(secondOrder))
+  assert.deepEqual(outputsBySource(firstOrder), { 'a.b': 'a__b', a__b: 'a__b__2' })
 })
 
 test('validation requires the record identifier and selected fields', () => {
@@ -115,11 +116,27 @@ test('validation requires the record identifier and selected fields', () => {
   ])
 })
 
-test('mixed leaf fields remain selectable while structural fields stay excluded', () => {
-  assert.equal(isMongoProjectionLeafField({ name: 'members.userInfo.phone', type: 'mixed' }), true)
+test('unknown and structural field types stay excluded from the deterministic builder', () => {
+  assert.equal(isMongoProjectionLeafField({ name: 'members.userInfo.phone', type: 'mixed' }), false)
+  assert.equal(isMongoProjectionLeafField({ name: 'members.userInfo.email', type: 'unknown' }), false)
   assert.equal(isMongoProjectionLeafField({ name: 'members', type: 'array' }), false)
   assert.equal(isMongoProjectionLeafField({ name: 'members.userInfo', type: 'json' }), false)
   assert.equal(isMongoProjectionLeafField({ name: 'members.entryInfo', native_type: 'object' }), false)
+})
+
+test('selected collection and Meta fields constrain whether an existing query remains editable', () => {
+  const statement = '{"aggregate":"orders","pipeline":[{"$project":{"_id":"$_id","customer__name":{"$ifNull":["$customer.name",null]}}}]}'
+  const sourceFields = [
+    { name: '_id', type: 'string', primary_key: true },
+    { name: 'customer.name', type: 'string' }
+  ]
+
+  assert.equal(parseMongoStructureQuery(statement, { collection: 'orders', sourceFields }).supported, true)
+  assert.equal(parseMongoStructureQuery(statement, { collection: 'customers', sourceFields }).supported, false)
+  assert.equal(
+    parseMongoStructureQuery(statement, { collection: 'orders', sourceFields: sourceFields.slice(0, 1) }).supported,
+    false
+  )
 })
 
 test('parent and array element candidates preserve one-array row grain', () => {

@@ -1,11 +1,11 @@
 package planner
 
 import (
-	"github.com/addp/common/datatype"
 	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/addp/common/datatype"
 	engineplugin "github.com/addp/common/engine/plugin"
 	_ "github.com/addp/common/engine/plugins/mongodb"
 	"github.com/addp/common/format"
@@ -67,6 +67,10 @@ func TestBuildTableTransferPlanForMongoQuerySource(t *testing.T) {
 	if got := result.Plan.Source.RuntimeQuery.TargetPath.StringPath(); got != "Outdoor/Outdoors" {
 		t.Fatalf("query target path = %q", got)
 	}
+	if result.Plan.Source.ExpectedQueryReadSet == nil || len(result.Plan.Source.ExpectedQueryReadSet.Paths) != 1 ||
+		result.Plan.Source.ExpectedQueryReadSet.Paths[0].StringPath() != "Outdoor/Outdoors" {
+		t.Fatalf("expected query read set = %#v", result.Plan.Source.ExpectedQueryReadSet)
+	}
 }
 
 func TestBuildTableTransferPlanRejectsMQLForPostgreSQLSource(t *testing.T) {
@@ -101,6 +105,89 @@ func TestBuildTableTransferPlanRejectsMQLForPostgreSQLSource(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), `does not support language "mql"`) {
 		t.Fatalf("BuildTableTransferPlan() error = %v, want capability language rejection", err)
+	}
+}
+
+func TestBuildTableTransferPlanValidatesDeclaredQueryParameterTypes(t *testing.T) {
+	caps := engineplugin.NewTabularCapabilities("postgresql", engineplugin.EngineCatalogTermSchema, engineplugin.TabularCapabilityOptions{
+		QueryReadSession:   true,
+		SupportsParameters: true,
+	})
+	caps.Compute.Query.Parameters.Types = []string{"string"}
+
+	spec := minimalRelationalQuerySourceSpec()
+	spec.Source.Query.Statement = `SELECT "id" FROM "public"."roads" WHERE "id" = :p1 AND "area" >= :p2`
+	spec.Source.Query.Parameters = map[string]interface{}{
+		"p1": "9007199254740993",
+		"p2": "12345678901234567890.12345678901234567890",
+	}
+	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
+		1: {Type: "postgresql", EngineID: 1, Capabilities: &caps},
+		2: {Type: "nfs", EngineID: 2},
+	})
+	if err != nil {
+		t.Fatalf("BuildTableTransferPlan() error = %v", err)
+	}
+	if got := result.Plan.Source.RuntimeQuery.Options.Parameters; got["p1"] != "9007199254740993" || got["p2"] != "12345678901234567890.12345678901234567890" {
+		t.Fatalf("runtime parameters = %#v, want lossless decimal text", got)
+	}
+
+	spec.Source.Query.Statement = `SELECT "id" FROM "public"."roads" WHERE "active" = :p1`
+	spec.Source.Query.Parameters = map[string]interface{}{"p1": true}
+	_, err = BuildTableTransferPlan(spec, StaticEngineResolver{
+		1: {Type: "postgresql", EngineID: 1, Capabilities: &caps},
+		2: {Type: "nfs", EngineID: 2},
+	})
+	if err == nil || !strings.Contains(err.Error(), `parameter "p1" uses undeclared type "boolean"`) {
+		t.Fatalf("BuildTableTransferPlan() error = %v, want undeclared parameter type rejection", err)
+	}
+}
+
+func TestBuildTableTransferPlanRejectsLossyJSONIntegerQueryParameter(t *testing.T) {
+	spec := minimalRelationalQuerySourceSpec()
+	spec.Source.Query.Statement = `SELECT "id" FROM "public"."roads" WHERE "id" = :p1`
+	spec.Source.Query.Parameters = map[string]interface{}{"p1": float64(9007199254740992)}
+
+	_, err := BuildTableTransferPlan(spec, StaticEngineResolver{
+		1: {Type: "postgresql", EngineID: 1},
+		2: {Type: "nfs", EngineID: 2},
+	})
+	if err == nil || !strings.Contains(err.Error(), "cannot be represented losslessly as JSON number") {
+		t.Fatalf("BuildTableTransferPlan() error = %v, want lossy JSON integer rejection", err)
+	}
+
+	spec.Source.Query.Parameters = map[string]interface{}{"p1": int64(9007199254740992)}
+	_, err = BuildTableTransferPlan(spec, StaticEngineResolver{
+		1: {Type: "postgresql", EngineID: 1},
+		2: {Type: "nfs", EngineID: 2},
+	})
+	if err == nil || !strings.Contains(err.Error(), "cannot be represented losslessly as JSON number") {
+		t.Fatalf("BuildTableTransferPlan() error = %v, want unsafe int64 rejection", err)
+	}
+}
+
+func TestValidateQueryParameterValuesFailsClosed(t *testing.T) {
+	query := &engineplugin.QueryCapability{
+		Supported:   true,
+		Languages:   []string{"sql"},
+		ReadSession: true,
+		Parameters: &engineplugin.QueryParameterCapability{
+			Supported: true,
+			Languages: []string{"mql"},
+			Types:     []string{"string"},
+		},
+	}
+	if err := validateQueryParameterValues(query, "sql", map[string]interface{}{"p1": "active"}); err == nil || !strings.Contains(err.Error(), `not declared for language "sql"`) {
+		t.Fatalf("validateQueryParameterValues() error = %v, want language rejection", err)
+	}
+
+	query.Parameters = nil
+	if err := validateQueryParameterValues(query, "sql", map[string]interface{}{"p1": "active"}); err == nil || !strings.Contains(err.Error(), "parameters are not declared") {
+		t.Fatalf("validateQueryParameterValues() error = %v, want missing capability rejection", err)
+	}
+
+	if err := validateQueryParameterValues(query, "sql", nil); err != nil {
+		t.Fatalf("empty parameters should not require parameter capability: %v", err)
 	}
 }
 
@@ -211,6 +298,35 @@ func TestValidateQueryInputsRejectsUnstableOrder(t *testing.T) {
 	err := validateQueryInputs(source)
 	if err == nil || !strings.Contains(err.Error(), "must be sorted by name") {
 		t.Fatalf("validateQueryInputs() error = %v", err)
+	}
+}
+
+func TestBuildExpectedQueryReadSetUsesDeclaredInputLeavesInsteadOfAnchor(t *testing.T) {
+	model := engineplugin.DynamicSchemaCatalogModel()
+	anchor := engineplugin.EngineCatalogBranchPath(model, 11, engineplugin.EngineCatalogTermDatabase, "Outdoor")
+	endpoint := EndpointSpec{
+		Query: &QuerySourceSpec{Inputs: []QueryInputSpec{
+			{Name: "activities", Locator: "addp://engine/11/path/Outdoor/Outdoors?type=collection"},
+			{Name: "persons", Locator: "addp://engine/11/path/Outdoor/Persons?type=collection"},
+		}},
+	}
+
+	readSet, err := buildExpectedQueryReadSet(endpoint, model, anchor)
+	if err != nil {
+		t.Fatalf("buildExpectedQueryReadSet() error = %v", err)
+	}
+	if len(readSet.Paths) != 2 || readSet.Paths[0].StringPath() != "Outdoor/Outdoors" || readSet.Paths[1].StringPath() != "Outdoor/Persons" {
+		t.Fatalf("expected read set = %#v", readSet.Paths)
+	}
+}
+
+func TestBuildExpectedQueryReadSetRejectsBranchAnchorWithoutInputs(t *testing.T) {
+	model := engineplugin.DynamicSchemaCatalogModel()
+	anchor := engineplugin.EngineCatalogBranchPath(model, 11, engineplugin.EngineCatalogTermDatabase, "Outdoor")
+
+	_, err := buildExpectedQueryReadSet(EndpointSpec{Query: &QuerySourceSpec{}}, model, anchor)
+	if err == nil || !strings.Contains(err.Error(), "must use a catalog leaf locator") {
+		t.Fatalf("buildExpectedQueryReadSet() error = %v", err)
 	}
 }
 
@@ -1905,6 +2021,20 @@ func minimalNativeToEncodedSpec() TableExportTaskSpec {
 			Policy:         map[string]interface{}{"apply_mode": "replace"},
 		},
 	}
+}
+
+func minimalRelationalQuerySourceSpec() TableExportTaskSpec {
+	spec := minimalNativeToEncodedSpec()
+	spec.Source.Query = &QuerySourceSpec{
+		Language:  "sql",
+		Statement: `SELECT "id" FROM "public"."roads"`,
+	}
+	spec.Transforms = []TransformSpec{{
+		Type:   "field_mapping",
+		Mode:   "project",
+		Fields: []FieldMappingSpec{{Source: "id", Target: "id", TargetType: "bigint"}},
+	}}
+	return spec
 }
 
 func nativeTableTargetBinding(engineType string) EngineBinding {

@@ -84,7 +84,7 @@ func TestIAMOAuthClientCredentialsAuthContextAgainstPostgres(t *testing.T) {
 	if err := db.Raw(`SELECT id FROM system.roles WHERE tenant_id IS NULL AND role_key = 'tenant.manager_runtime'`).Scan(&managerRoleID).Error; err != nil {
 		t.Fatalf("load manager runtime role: %v", err)
 	}
-	if err := db.Exec(`INSERT INTO system.role_assignments (principal_id, role_id, scope_type, tenant_id, status, valid_from, source_type, reason) VALUES (?, ?, 'tenant', ?, 'active', now(), 'bootstrap', 'test runtime')`, managerPrincipalID, managerRoleID, tenantID).Error; err != nil {
+	if err := db.Exec(`INSERT INTO system.role_assignments (principal_id, role_id, scope_type, tenant_id, status, valid_from, source_type, grant_reason) VALUES (?, ?, 'tenant', ?, 'active', now(), 'bootstrap', 'test runtime')`, managerPrincipalID, managerRoleID, tenantID).Error; err != nil {
 		t.Fatalf("create manager runtime assignment: %v", err)
 	}
 	if err := db.Raw(`SELECT id FROM system.service_principals WHERE name = 'addp-meta'`).Scan(&metaPrincipalID).Error; err != nil {
@@ -97,7 +97,7 @@ func TestIAMOAuthClientCredentialsAuthContextAgainstPostgres(t *testing.T) {
 		if err := db.Exec(`INSERT INTO system.tenant_memberships (tenant_id, principal_id, status, source_type, joined_at, created_by_principal_id) VALUES (?, ?, 'active', 'bootstrap', now(), ?)`, runtimeTenantID, metaPrincipalID, metaPrincipalID).Error; err != nil {
 			t.Fatalf("create Meta runtime membership for tenant %d: %v", runtimeTenantID, err)
 		}
-		if err := db.Exec(`INSERT INTO system.role_assignments (principal_id, role_id, scope_type, tenant_id, status, valid_from, source_type, reason) VALUES (?, ?, 'tenant', ?, 'active', now(), 'bootstrap', 'test runtime')`, metaPrincipalID, metaRoleID, runtimeTenantID).Error; err != nil {
+		if err := db.Exec(`INSERT INTO system.role_assignments (principal_id, role_id, scope_type, tenant_id, status, valid_from, source_type, grant_reason) VALUES (?, ?, 'tenant', ?, 'active', now(), 'bootstrap', 'test runtime')`, metaPrincipalID, metaRoleID, runtimeTenantID).Error; err != nil {
 			t.Fatalf("create Meta runtime assignment for tenant %d: %v", runtimeTenantID, err)
 		}
 	}

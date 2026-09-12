@@ -148,9 +148,10 @@ POST /api/v1/graph/graphs/:id/review/:iid/approve     通过审核项
 POST /api/v1/graph/graphs/:id/review/:iid/reject      拒绝审核项
 PUT  /api/v1/graph/graphs/:id/review/:iid             修改并通过审核项
 
-GET  /api/v1/graph/tasks                              TaskProvider 构建任务列表
-GET  /api/v1/graph/tasks/:task_type/:id               TaskProvider 构建任务详情
-POST /api/v1/graph/tasks/:task_type/:id/execute       TaskProvider 执行构建任务
+GET  /api/v1/graph/task-provider/tasks                              TaskProvider 构建任务列表
+GET  /api/v1/graph/task-provider/tasks/:task_type/:id               TaskProvider 构建任务详情
+POST /api/v1/graph/task-provider/tasks/:task_type/:id/execute       TaskProvider 执行构建任务
+GET  /api/v1/graph/task-provider/executions/:execution_id           TaskProvider 构建执行状态
 GET  /api/v1/graph/executions/:execution_id           Graph 构建 execution 详情
 
 GET/POST /api/v1/graph/kg/:graphId/*                  可选认证的 Knowledge Service 查询
@@ -172,7 +173,7 @@ Graph 是以下 Permission 的唯一 owner：
 
 - Ontology 的实体类、关系类、版本、Model 导入、Schema 推导和约束/空间映射都是 Ontology 聚合内部能力，按操作语义映射到 `graph.ontology.read/create/update/delete`。
 - 图谱实例 CRUD 映射到 `graph.graph.*`；Schema、统计、浏览、搜索、展开、路径和私有 Knowledge Service 查询使用 `graph.graph.read`。公开 Knowledge Service 由图谱的显式公开策略决定，不伪造 Principal Permission。
-- 构建任务和 Graph TaskProvider 的查询/执行分别使用 `graph.build_task.read/execute`；上传或删除材料使用 `graph.build_task.update`；重跑使用 `graph.build_task.execute`。
+- 用户构建任务使用 `graph.build_task.*`；Graph TaskProvider 只允许 `addp-orchestrator` Service Client，并使用 `graph.task_provider.read|execute`。上传或删除材料使用 `graph.build_task.update`；重跑使用 `graph.build_task.execute`。
 - Analysis 能力探测使用 `graph.analysis.read`，算法执行和空间图层同步使用 `graph.analysis.execute`。
 - Review 列表/数量使用 `graph.review.read`，通过、拒绝和修改分别使用 `graph.review.approve/reject/update`；批量路由必须按请求 action 校验对应 Permission。
 

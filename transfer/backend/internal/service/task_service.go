@@ -391,6 +391,12 @@ func (s *TaskService) validateTaskConfig(_ context.Context, tenantID uint, confi
 	if err := validateNewTaskConfig(config, batchSize); err != nil {
 		return err
 	}
+	if spec, err := planner.ParseTableExportTaskSpec(config, batchSize); err == nil && spec.Source.Query != nil {
+		resolver := planner.BindEngineResolver(s.engineResolver, tenantID)
+		if err := planner.ValidateTableQuerySourceBinding(spec, resolver); err != nil {
+			return fmt.Errorf("%w: %v", ErrInvalidTaskConfig, err)
+		}
+	}
 	spec, err := planner.ParseDatabaseCDCTaskSpec(config)
 	if err != nil {
 		return nil

@@ -2840,6 +2840,115 @@ definitions:
         additionalProperties: true
         type: object
     type: object
+  taskprovider.ExecutionStatusResponse:
+    properties:
+      actor_principal_id:
+        description: |-
+          User-derived execution authorization facts. The raw User/Service tokens
+          and engine connection details are never persisted in task executions.
+        type: integer
+      actor_tenant_membership_id:
+        type: integer
+      attempt:
+        type: integer
+      authorization_expires_at:
+        type: string
+      bytes_read:
+        description: Transfer 读取字节数
+        type: integer
+      bytes_written:
+        description: Transfer 写入字节数
+        type: integer
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      current_step:
+        description: 当前步骤（Orchestrator/Workflow）
+        type: string
+      error_details:
+        allOf:
+        - $ref: '#/definitions/github_com_addp_common_models.JSONMap'
+        description: 错误详情（仅失败时有值）
+      execution_authorization_id:
+        type: integer
+      execution_boundary:
+        description: ExecutionBoundary separates finite queue work from long-running
+          runtime sessions.
+        type: string
+      execution_config:
+        allOf:
+        - $ref: '#/definitions/github_com_addp_common_models.JSONMap'
+        description: JSONB 字段
+      execution_id:
+        description: 执行标识
+        type: string
+      execution_time_ms:
+        description: 性能指标
+        type: integer
+      id:
+        type: integer
+      issued_authorization_version:
+        type: integer
+      max_attempts:
+        type: integer
+      metadata:
+        allOf:
+        - $ref: '#/definitions/github_com_addp_common_models.JSONMap'
+        description: 模块特有扩展数据（结果、断点、步骤结果等）
+      module:
+        description: 模块标识
+        type: string
+      outputs:
+        $ref: '#/definitions/github_com_addp_common_models.JSONMap'
+      parent_execution_id:
+        description: 父执行（Orchestrator 子步骤追踪父编排）
+        type: string
+      progress:
+        description: 0-100
+        type: integer
+      records_read:
+        description: Transfer 读取记录数
+        type: integer
+      records_written:
+        description: Transfer 写入记录数
+        type: integer
+      retry_of_execution_id:
+        type: string
+      rows_affected:
+        description: SQL 影响行数
+        type: integer
+      source:
+        description: 触发来源模块
+        type: string
+      source_task_id:
+        description: 关联原始任务
+        type: string
+      source_task_name:
+        description: 任务名称（冗余，便于查询）
+        type: string
+      started_at:
+        description: 时间戳
+        type: string
+      status:
+        description: 执行状态
+        type: string
+      task_type:
+        description: 稳定执行类型；可来自任务定义或 ad-hoc execution
+        type: string
+      tenant_id:
+        type: integer
+      trigger_type:
+        description: 触发信息
+        type: string
+      triggered_by:
+        description: 触发用户ID
+        type: integer
+      updated_at:
+        type: string
+    required:
+    - outputs
+    type: object
 host: localhost:8081
 info:
   contact: {}
@@ -5848,6 +5957,166 @@ paths:
       x-addp-auth-mode: resource_ticket
       x-addp-required-permissions:
       - manager.content.read
+  /task-provider/executions/{execution_id}:
+    get:
+      parameters:
+      - description: 执行ID | Execution ID
+        in: path
+        name: execution_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/taskprovider.ExecutionStatusResponse'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取 TaskProvider Manager 执行状态 | Get TaskProvider Manager execution status
+      tags:
+      - TaskProvider
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.task_provider.read
+  /task-provider/tasks:
+    get:
+      description: 仅向 Orchestrator Runtime 返回 Manager 已保存且可编排的任务定义。| Return saved
+        and orchestratable Manager task definitions only to the Orchestrator Runtime.
+      parameters:
+      - description: 任务类型 | Task type
+        in: query
+        name: task_type
+        type: string
+      - default: 1
+        description: 页码 | Page
+        in: query
+        name: page
+        type: integer
+      - default: 100
+        description: 每页数量 | Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.TaskListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 列出 TaskProvider Manager 任务 | List TaskProvider Manager tasks
+      tags:
+      - TaskProvider
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.task_provider.read
+  /task-provider/tasks/{task_type}/{id}:
+    get:
+      parameters:
+      - description: 任务类型 | Task type
+        in: path
+        name: task_type
+        required: true
+        type: string
+      - description: 任务ID | Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.TaskProviderTaskDetailResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取 TaskProvider Manager 任务详情 | Get TaskProvider Manager task detail
+      tags:
+      - TaskProvider
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.task_provider.read
+  /task-provider/tasks/{task_type}/{id}/execute:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 任务类型 | Task type
+        in: path
+        name: task_type
+        required: true
+        type: string
+      - description: 任务ID | Task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 执行配置 | Execution configuration
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/internal_api.TaskExecuteRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/internal_api.TaskExecuteResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 执行 TaskProvider Manager 任务 | Execute TaskProvider Manager task
+      tags:
+      - TaskProvider
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - manager.task_provider.execute
   /tasks:
     get:
       description: 列出 Manager 模块的任务（矢量瓦片缓存生成、矢量物化视图、栅格快显 COG、栅格 mosaic、三维模型与点云快显、向量化任务）|

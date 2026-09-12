@@ -724,6 +724,21 @@ func respondTaskProviderUnavailable(c *gin.Context) {
 }
 
 // ListProviderOrchestrationTasks 列出 Orchestrator 自身可编排任务。
+// @Summary 列出 TaskProvider 编排任务 | List TaskProvider orchestration tasks
+// @Description 按标准 TaskProvider 协议列出 Orchestrator 自身的编排任务；task_type 仅支持 orchestration。| List Orchestrator tasks through the standard TaskProvider protocol; task_type only supports orchestration.
+// @Tags Orchestrator
+// @Produce json
+// @Param task_type query string false "任务类型，固定为 orchestration | Task type, fixed to orchestration"
+// @Param page query int false "页码 | Page" default(1)
+// @Param page_size query int false "每页数量 | Page size" default(100)
+// @Success 200 {object} models.ListProviderOrchestrationTasksResponse
+// @Failure 400 {object} map[string]interface{}
+// @Failure 403 {object} models.ErrorResponse
+// @Failure 500 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["orchestrator.task_provider.read"]
+// @Router /task-provider/tasks [get]
+// @Security BearerAuth
 func (h *OrchestrationHandler) ListProviderOrchestrationTasks(c *gin.Context) {
 	taskType := strings.TrimSpace(c.Query("task_type"))
 	if taskType != "" && taskType != commonExecution.TaskTypeOrchestration {
@@ -774,8 +789,8 @@ func (h *OrchestrationHandler) ListProviderOrchestrationTasks(c *gin.Context) {
 // @Failure 403 {object} models.ErrorResponse "当前身份未绑定租户 | Current identity is not bound to a tenant"
 // @Failure 404 {object} map[string]interface{}
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["orchestrator.workflow.read"]
-// @Router /tasks/{task_type}/{id} [get]
+// @x-addp-required-permissions ["orchestrator.task_provider.read"]
+// @Router /task-provider/tasks/{task_type}/{id} [get]
 // @Security BearerAuth
 func (h *OrchestrationHandler) GetProviderOrchestrationTask(c *gin.Context) {
 	if c.Param("task_type") != commonExecution.TaskTypeOrchestration {
@@ -815,8 +830,8 @@ func (h *OrchestrationHandler) GetProviderOrchestrationTask(c *gin.Context) {
 // @Failure 404 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["orchestrator.workflow.execute"]
-// @Router /tasks/{task_type}/{id}/execute [post]
+// @x-addp-required-permissions ["orchestrator.task_provider.execute"]
+// @Router /task-provider/tasks/{task_type}/{id}/execute [post]
 // @Security BearerAuth
 func (h *OrchestrationHandler) ExecuteProviderOrchestrationTask(c *gin.Context) {
 	if c.Param("task_type") != commonExecution.TaskTypeOrchestration {
@@ -902,6 +917,31 @@ func (h *OrchestrationHandler) GetProviderExecution(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, exec)
+}
+
+// GetTaskProviderExecution 获取 TaskProvider 编排执行状态。
+// @Summary 获取 TaskProvider 编排执行状态 | Get TaskProvider orchestration execution status
+// @Tags Orchestrator
+// @Produce json
+// @Param execution_id path string true "执行 UUID | Execution UUID"
+// @Success 200 {object} taskprovider.ExecutionStatusResponse
+// @Failure 403 {object} models.ErrorResponse
+// @Failure 404 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["orchestrator.task_provider.read"]
+// @Router /task-provider/executions/{execution_id} [get]
+// @Security BearerAuth
+func (h *OrchestrationHandler) GetTaskProviderExecution(c *gin.Context) {
+	tenantID, ok := requireTenantID(c)
+	if !ok {
+		return
+	}
+	exec, err := h.executionService.GetExecutionByExecutionID(c.Request.Context(), c.Param("execution_id"), tenantID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": commoni18n.T(c, "orchestrator.error.execution_not_found")})
+		return
+	}
+	c.JSON(http.StatusOK, taskprovider.NewExecutionStatusResponse(exec))
 }
 
 // standardizeTaskListResponse 统一任务列表响应格式。

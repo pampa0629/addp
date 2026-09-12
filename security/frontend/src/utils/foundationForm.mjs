@@ -49,14 +49,22 @@ export function createRequiredRule(message, options = {}) {
   return rule
 }
 
-export function createMinimumNumberRule(message, minimum = 0) {
+export function createRequiredNumberRangeRule(requiredMessage, options = {}) {
+  const minimum = options.minimum ?? Number.NEGATIVE_INFINITY
+  const maximum = options.maximum ?? Number.POSITIVE_INFINITY
+  const rangeMessage = options.rangeMessage || requiredMessage
   return {
     validator: (_rule, value, callback) => {
-      if (value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value)) && Number(value) >= minimum) {
+      if (value === null || value === undefined || value === '') {
+        callback(new Error(requiredMessage))
+        return
+      }
+      const numericValue = Number(value)
+      if (Number.isFinite(numericValue) && numericValue >= minimum && numericValue <= maximum) {
         callback()
         return
       }
-      callback(new Error(message))
+      callback(new Error(rangeMessage))
     },
     trigger: 'change'
   }

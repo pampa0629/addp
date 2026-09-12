@@ -8,6 +8,7 @@ const exemptionID = 'c5d985f0-82fb-4a87-9252-c77dc2462a52'
 const accessApprovalRequestID = 'db5e38fd-e7e3-4e9c-bffb-87a0bffda005'
 const accessRejectionRequestID = 'cf72b9b5-063d-4f22-aa07-5c7977580d2e'
 const findingID = '8dfe6d44-dd40-4f63-b2bb-aaeb5d7f83f4'
+const newEnrollmentLocator = 'addp://engine/2/path/business/customers_new?type=table&item_id=201'
 
 test('marks and validates required classification and grade fields inline', async ({ page }) => {
   const backend = await installMockBackend(page)
@@ -44,6 +45,52 @@ test('marks and validates required classification and grade fields inline', asyn
   await expect(gradeName.locator('.el-form-item__error')).toHaveText('请完整填写名称')
   await expect(riskOrder.locator('.el-form-item__error')).toHaveText('请完整填写保护顺序')
   expect(backend.gradeCreateRequests).toHaveLength(0)
+  expect(backend.unhandledRequests).toEqual([])
+})
+
+test('uses a localized dangerous deletion confirmation with safe initial focus', async ({ page }) => {
+  const backend = await installMockBackend(page)
+
+  await page.goto('/classification-grading')
+  const classificationRow = page.getByRole('row').filter({ hasText: '个人信息' })
+  const deleteTrigger = classificationRow.getByRole('button', { name: '删除' })
+  await deleteTrigger.click()
+
+  const messageBox = page.locator('.el-message-box.addp-message-box')
+  const cancelButton = messageBox.getByRole('button', { name: '取消' })
+  const deleteButton = messageBox.getByRole('button', { name: '删除' })
+  await expect(messageBox).toBeVisible()
+  await expect(deleteButton).toHaveClass(/el-button--danger/)
+  await expect(cancelButton).toBeFocused()
+  await cancelButton.click()
+
+  await expect(messageBox).toHaveCount(0)
+  await expect(deleteTrigger).toBeFocused()
+  expect(backend.classificationDeleteRequests).toHaveLength(0)
+  expect(backend.unhandledRequests).toEqual([])
+})
+
+test('marks and validates the required enrollment resource inline', async ({ page }) => {
+  const backend = await installMockBackend(page)
+
+  await page.goto('/protection-enrollments')
+  await page.getByRole('button', { name: '纳入数据保护' }).first().click()
+
+  const createDrawer = page.locator('.el-drawer').filter({ hasText: '纳入数据保护' })
+  const resourceField = createDrawer.locator('.enrollment-resource-field')
+  await expect(resourceField).toHaveClass(/is-required/)
+  await expect(resourceField.locator(':scope > .el-form-item__label')).toHaveText('数据资源')
+  await createDrawer.getByRole('button', { name: '确认纳入保护' }).click()
+  await expect(resourceField.locator(':scope > .el-form-item__content > .el-form-item__error')).toHaveText('请先选择一个数据资源')
+  expect(backend.enrollmentCreateRequests).toHaveLength(0)
+
+  await createDrawer.locator('.resource-tree-picker .el-select').first().click()
+  await page.getByRole('option', { name: /业务 PostgreSQL/ }).click()
+  await createDrawer.locator('.el-tree-node__content').filter({ hasText: /^\s*customers_new\s*$/ }).click()
+  await expect(createDrawer.locator('.selection-card')).toContainText('business.customers_new')
+  await expect(resourceField.locator(':scope > .el-form-item__content > .el-form-item__error')).toHaveCount(0)
+  await createDrawer.getByRole('button', { name: '确认纳入保护' }).click()
+  await expect.poll(() => backend.enrollmentCreateRequests).toEqual([{ locator: newEnrollmentLocator }])
   expect(backend.unhandledRequests).toEqual([])
 })
 
@@ -569,6 +616,7 @@ async function installMockBackend(page, options = {}) {
   const permissions = [
     'security.classification.read',
     'security.classification.create',
+    'security.classification.delete',
     'security.grade.read',
     'security.grade.create',
     'security.sensitive_data_type.read',
@@ -603,7 +651,9 @@ async function installMockBackend(page, options = {}) {
   }
   const state = {
     classificationCreateRequests: [],
+    classificationDeleteRequests: [],
     gradeCreateRequests: [],
+    enrollmentCreateRequests: [],
     types: [],
     baselines: [],
     policies: [],
@@ -817,8 +867,47 @@ async function installMockBackend(page, options = {}) {
     if (path === '/api/v1/system/auth/context') {
       return fulfillJSON(route, { context: { type: 'tenant', tenant_id: '11' }, authorization: { role_assignments: [{ permissions }] } })
     }
-    if (path === '/api/v1/system/engines') return fulfillJSON(route, [{ id: 2, name: '业务 PostgreSQL', engine_type: 'postgresql', lifecycle_state: 'active' }])
-    if (path === '/api/v1/meta/engines') return fulfillJSON(route, [{ id: 2, name: '业务 PostgreSQL', engine_type: 'postgresql', lifecycle_state: 'active' }])
+    if (path === '/api/v1/system/engines') return fulfillJSON(route, [{ id: 2, name: '业务 PostgreSQL', engine_type: 'postgresql', lifecycle_state: 'active', connection_status: 'online' }])
+    if (path === '/api/v1/meta/engines') return fulfillJSON(route, [{ id: 2, name: '业务 PostgreSQL', engine_type: 'postgresql', lifecycle_state: 'active', connection_status: 'online' }])
+    if (method === 'GET' && path === '/api/v1/meta/resource-tree/2') {
+      return fulfillJSON(route, {
+        id: 'addp://engine/2/path/?type=database&node_id=20',
+        locator: 'addp://engine/2/path/?type=database&node_id=20',
+        label: '业务 PostgreSQL',
+        type: 'database',
+        children: [{
+          id: newEnrollmentLocator,
+          locator: newEnrollmentLocator,
+          label: 'customers_new',
+          type: 'table',
+          children: [],
+          metadata: { item_id: 201, data_type: 'table' }
+        }]
+      })
+    }
+    if (method === 'GET' && path === '/api/v1/meta/resource-tree/2/node') {
+      return fulfillJSON(route, {
+        children: [{
+          id: newEnrollmentLocator,
+          locator: newEnrollmentLocator,
+          label: 'customers_new',
+          type: 'table',
+          children: [],
+          metadata: { item_id: 201, data_type: 'table' }
+        }]
+      })
+    }
+    if (method === 'GET' && path === '/api/v1/meta/items/201') {
+      return fulfillJSON(route, {
+        id: 201,
+        engine_id: 2,
+        name: 'customers_new',
+        full_name: 'business.customers_new',
+        item_type: 'table',
+        fingerprint: 'sha256:new-customer-table',
+        scanned_at: '2026-09-12T01:00:00Z'
+      })
+    }
 
     if (method === 'GET' && path === '/api/v1/security/classifications') return fulfillJSON(route, classifications)
     if (method === 'GET' && path === '/api/v1/security/grades') return fulfillJSON(route, grades)
@@ -826,6 +915,10 @@ async function installMockBackend(page, options = {}) {
     if (method === 'POST' && path === '/api/v1/security/classifications') {
       state.classificationCreateRequests.push(request.postDataJSON())
       return fulfillJSON(route, { id: '2', ...request.postDataJSON(), version: '1' }, 201)
+    }
+    if (method === 'DELETE' && path === '/api/v1/security/classifications/1') {
+      state.classificationDeleteRequests.push('1')
+      return fulfillJSON(route, null, 204)
     }
     if (method === 'POST' && path === '/api/v1/security/grades') {
       state.gradeCreateRequests.push(request.postDataJSON())
@@ -918,6 +1011,10 @@ async function installMockBackend(page, options = {}) {
       if (scope !== 'released' && enrollment.state !== 'released') rows.push(enrollment)
       if (scope !== 'released' && state.currentEnrollment) rows.push(state.currentEnrollment)
       return fulfillJSON(route, { data: rows, total: rows.length, page: 1, page_size: 20, total_pages: rows.length ? 1 : 0 })
+    }
+    if (method === 'POST' && path === '/api/v1/security/protection-enrollments') {
+      state.enrollmentCreateRequests.push(request.postDataJSON())
+      return fulfillJSON(route, { ...enrollment, id: 'new-enrollment', version: '1' }, 201)
     }
     if (method === 'GET' && path === `/api/v1/security/protection-enrollments/${enrollmentID}`) {
       state.enrollmentDetailRequests += 1

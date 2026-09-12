@@ -18,4 +18,13 @@ func TestMetaTaskProviderDeclaration(t *testing.T) {
 	if capabilities.CapabilityFor("scan") == nil {
 		t.Fatalf("capabilities = %#v", capabilities.TaskCapabilities)
 	}
+	want := map[string]string{
+		"list":    "/api/v1/meta/task-provider/tasks",
+		"detail":  "/api/v1/meta/task-provider/tasks/{task_type}/{id}",
+		"execute": "/api/v1/meta/task-provider/tasks/{task_type}/{id}/execute",
+		"status":  "/api/v1/meta/task-provider/executions/{execution_id}",
+	}
+	if declaration.TaskListEndpoint != want["list"] || declaration.TaskDetailEndpoint != want["detail"] || declaration.TaskExecuteEndpoint != want["execute"] || declaration.TaskStatusEndpoint != want["status"] {
+		t.Fatalf("TaskProvider endpoints = %#v, want %#v", declaration, want)
+	}
 }

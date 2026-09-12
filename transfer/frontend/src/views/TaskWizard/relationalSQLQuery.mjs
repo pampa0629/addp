@@ -21,17 +21,20 @@ export function createRelationalSQLQuery(sourcePath = [], sourceFields = []) {
   }
 }
 
-export function relationalSQLFilterOperators(field) {
+export function relationalSQLFilterOperators(field, parameterTypes = []) {
   const type = normalizeFieldType(field, '')
   if (!FILTERABLE_TYPES.has(type)) return []
+  if (!parameterTypeSupported(relationalSQLParameterType(field), parameterTypes)) {
+    return ['is_null', 'is_not_null']
+  }
   const operators = ['eq', 'ne', 'in', 'is_null', 'is_not_null']
   if (COMPARABLE_TYPES.has(type)) operators.splice(2, 0, 'gt', 'gte', 'lt', 'lte')
   return operators
 }
 
-export function createRelationalSQLFilter(field, sourceFields = []) {
+export function createRelationalSQLFilter(field, sourceFields = [], parameterTypes = []) {
   const source = findSourceField(sourceFields, field)
-  const operators = relationalSQLFilterOperators(source)
+  const operators = relationalSQLFilterOperators(source, parameterTypes)
   return {
     field: source?.name || '',
     operator: operators[0] || '',
@@ -41,7 +44,12 @@ export function createRelationalSQLFilter(field, sourceFields = []) {
 
 export function compileRelationalSQLQuery(model, options = {}) {
   const normalized = normalizeModel(model, options.sourceFields)
-  const issues = validateNormalizedModel(normalized, options.sourceFields, options.parametersSupported !== false)
+  const issues = validateNormalizedModel(
+    normalized,
+    options.sourceFields,
+    options.parametersSupported !== false,
+    options.parameterTypes
+  )
   if (issues.length > 0) {
     const error = new Error('invalid relational SQL query')
     error.issues = issues
@@ -133,7 +141,12 @@ export function parseRelationalSQLQuery(statement, parameters, options = {}) {
   }
 
   const model = { sourcePath, selectedFields, matchMode, filters }
-  const issues = validateNormalizedModel(model, sourceFields, options.parametersSupported !== false)
+  const issues = validateNormalizedModel(
+    model,
+    sourceFields,
+    options.parametersSupported !== false,
+    options.parameterTypes
+  )
   if (issues.length > 0) return { supported: false, reason: 'invalid_structure', issues }
   const compiled = compileRelationalSQLQuery(model, { ...options, sourceFields })
   if (compiled.statement !== text || !parametersEqual(compiled.parameters, parameters)) {
@@ -147,18 +160,28 @@ export function relationalSQLOutputFields(model, sourceFields = []) {
   return uniqueSourceFields(sourceFields).filter(field => selected.has(field.name.toLowerCase())).map(field => ({ ...field }))
 }
 
-export function validateRelationalSQLQuery(model, sourceFields = [], parametersSupported = true) {
-  return validateNormalizedModel(normalizeModel(model, sourceFields), sourceFields, parametersSupported)
+export function validateRelationalSQLQuery(model, sourceFields = [], parametersSupported = true, parameterTypes = []) {
+  return validateNormalizedModel(normalizeModel(model, sourceFields), sourceFields, parametersSupported, parameterTypes)
 }
 
 export function relationalSQLFieldKind(field) {
   const type = normalizeFieldType(field, '')
-  if (['int', 'bigint', 'float', 'double', 'decimal'].includes(type)) return 'number'
+  if (['bigint', 'decimal'].includes(type)) return 'exact-number'
+  if (['int', 'float', 'double'].includes(type)) return 'number'
   if (type === 'bool') return 'boolean'
   if (type === 'date') return 'date'
   if (type === 'time') return 'time'
   if (type === 'timestamp') return 'timestamp'
   return 'text'
+}
+
+export function relationalSQLParameterType(field) {
+  const type = normalizeFieldType(field, '')
+  if (type === 'int') return 'integer'
+  if (['float', 'double'].includes(type)) return 'number'
+  if (type === 'bool') return 'boolean'
+  if (['string', 'bigint', 'decimal', 'date', 'time', 'timestamp', 'uuid'].includes(type)) return 'string'
+  return ''
 }
 
 function normalizeModel(model = {}, sourceFields = []) {
@@ -177,14 +200,14 @@ function normalizeModel(model = {}, sourceFields = []) {
   }
 }
 
-function validateNormalizedModel(model, sourceFields, parametersSupported) {
+function validateNormalizedModel(model, sourceFields, parametersSupported, parameterTypes) {
   const issues = []
   if (model.sourcePath.length === 0) issues.push(issue('sourcePath', 'source_required'))
   if (model.selectedFields.length === 0) issues.push(issue('selectedFields', 'projection_required'))
   if (!parametersSupported && model.filters.length > 0) issues.push(issue('filters', 'parameters_unsupported'))
   model.filters.forEach((filter, index) => {
     const field = findSourceField(sourceFields, filter.field)
-    const operators = relationalSQLFilterOperators(field)
+    const operators = relationalSQLFilterOperators(field, parameterTypes)
     if (!field) issues.push(issue(`filters.${index}.field`, 'filter_field_required'))
     if (!operators.includes(filter.operator)) issues.push(issue(`filters.${index}.operator`, 'filter_operator_invalid'))
     if (NULL_OPERATORS.has(filter.operator)) return
@@ -251,6 +274,7 @@ function parametersEqual(left, right) {
 
 function coerceFilterValue(field, value) {
   const kind = relationalSQLFieldKind(field)
+  if (kind === 'exact-number') return typeof value === 'string' ? value.trim() : value
   if (kind === 'number') {
     const number = Number(value)
     return Number.isFinite(number) ? number : value
@@ -261,9 +285,28 @@ function coerceFilterValue(field, value) {
 
 function filterValueValid(field, value) {
   if (value === undefined || value === null) return false
-  if (relationalSQLFieldKind(field) === 'number') return Number.isFinite(Number(value))
-  if (relationalSQLFieldKind(field) === 'boolean') return value === true || value === false || value === 'true' || value === 'false'
+  const kind = relationalSQLFieldKind(field)
+  if (kind === 'exact-number') {
+    if (typeof value !== 'string') return false
+    const text = value.trim()
+    return normalizeFieldType(field, '') === 'bigint'
+      ? /^[+-]?\d+$/.test(text)
+      : /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(text)
+  }
+  if (kind === 'number') {
+    const number = Number(value)
+    return normalizeFieldType(field, '') === 'int' ? Number.isSafeInteger(number) : Number.isFinite(number)
+  }
+  if (kind === 'boolean') return value === true || value === false || value === 'true' || value === 'false'
   return typeof value === 'string' || typeof value === 'number'
+}
+
+function parameterTypeSupported(requiredType, parameterTypes) {
+  const supported = new Set((parameterTypes instanceof Set || Array.isArray(parameterTypes) ? [...parameterTypes] : [])
+    .map(value => String(value || '').trim().toLowerCase())
+    .filter(Boolean))
+  if (requiredType === 'integer') return supported.has('integer') || supported.has('number')
+  return Boolean(requiredType) && supported.has(requiredType)
 }
 
 function splitOutsideQuotedText(text, separator, quote) {

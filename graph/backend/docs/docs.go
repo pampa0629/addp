@@ -22,14 +22,13 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "按 execution_id 查询 Graph 构建任务统一执行记录。| Get a Graph build task execution record by execution_id.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "图谱构建 | Graph Build"
                 ],
-                "summary": "获取 Graph 构建执行状态 | Get graph build execution status",
+                "summary": "获取 Graph 构建执行详情 | Get graph build execution detail",
                 "parameters": [
                     {
                         "type": "string",
@@ -43,8 +42,7 @@ const docTemplate = `{
                     "200": {
                         "description": "执行记录 | Execution",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/execution.TaskExecution"
                         }
                     },
                     "404": {
@@ -3140,7 +3138,51 @@ const docTemplate = `{
                 ]
             }
         },
-        "/tasks": {
+        "/task-provider/executions/{execution_id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按 execution_id 查询 Graph 构建任务统一执行记录。| Get a Graph build task execution record by execution_id.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "图谱构建 | Graph Build"
+                ],
+                "summary": "获取 Graph 构建执行状态 | Get graph build execution status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "执行UUID | Execution UUID",
+                        "name": "execution_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "执行记录 | Execution",
+                        "schema": {
+                            "$ref": "#/definitions/taskprovider.ExecutionStatusResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_graph_internal_models.ErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "graph.task_provider.read"
+                ]
+            }
+        },
+        "/task-provider/tasks": {
             "get": {
                 "security": [
                     {
@@ -3186,11 +3228,11 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "graph.build_task.read"
+                    "graph.task_provider.read"
                 ]
             }
         },
-        "/tasks/{task_type}/{id}": {
+        "/task-provider/tasks/{task_type}/{id}": {
             "get": {
                 "security": [
                     {
@@ -3243,11 +3285,11 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "graph.build_task.read"
+                    "graph.task_provider.read"
                 ]
             }
         },
-        "/tasks/{task_type}/{id}/execute": {
+        "/task-provider/tasks/{task_type}/{id}/execute": {
             "post": {
                 "security": [
                     {
@@ -3317,12 +3359,161 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "graph.build_task.execute"
+                    "graph.task_provider.execute"
                 ]
             }
         }
     },
     "definitions": {
+        "execution.TaskExecution": {
+            "type": "object",
+            "properties": {
+                "actor_principal_id": {
+                    "description": "User-derived execution authorization facts. The raw User/Service tokens\nand engine connection details are never persisted in task executions.",
+                    "type": "integer"
+                },
+                "actor_tenant_membership_id": {
+                    "type": "integer"
+                },
+                "attempt": {
+                    "type": "integer"
+                },
+                "authorization_expires_at": {
+                    "type": "string"
+                },
+                "bytes_read": {
+                    "description": "Transfer 读取字节数",
+                    "type": "integer"
+                },
+                "bytes_written": {
+                    "description": "Transfer 写入字节数",
+                    "type": "integer"
+                },
+                "completed_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "current_step": {
+                    "description": "当前步骤（Orchestrator/Workflow）",
+                    "type": "string"
+                },
+                "error_details": {
+                    "description": "错误详情（仅失败时有值）",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.JSONMap"
+                        }
+                    ]
+                },
+                "execution_authorization_id": {
+                    "type": "integer"
+                },
+                "execution_boundary": {
+                    "description": "ExecutionBoundary separates finite queue work from long-running runtime sessions.",
+                    "type": "string"
+                },
+                "execution_config": {
+                    "description": "JSONB 字段",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.JSONMap"
+                        }
+                    ]
+                },
+                "execution_id": {
+                    "description": "执行标识",
+                    "type": "string"
+                },
+                "execution_time_ms": {
+                    "description": "性能指标",
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "issued_authorization_version": {
+                    "type": "integer"
+                },
+                "max_attempts": {
+                    "type": "integer"
+                },
+                "metadata": {
+                    "description": "模块特有扩展数据（结果、断点、步骤结果等）",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.JSONMap"
+                        }
+                    ]
+                },
+                "module": {
+                    "description": "模块标识",
+                    "type": "string"
+                },
+                "parent_execution_id": {
+                    "description": "父执行（Orchestrator 子步骤追踪父编排）",
+                    "type": "string"
+                },
+                "progress": {
+                    "description": "0-100",
+                    "type": "integer"
+                },
+                "records_read": {
+                    "description": "Transfer 读取记录数",
+                    "type": "integer"
+                },
+                "records_written": {
+                    "description": "Transfer 写入记录数",
+                    "type": "integer"
+                },
+                "retry_of_execution_id": {
+                    "type": "string"
+                },
+                "rows_affected": {
+                    "description": "SQL 影响行数",
+                    "type": "integer"
+                },
+                "source": {
+                    "description": "触发来源模块",
+                    "type": "string"
+                },
+                "source_task_id": {
+                    "description": "关联原始任务",
+                    "type": "string"
+                },
+                "source_task_name": {
+                    "description": "任务名称（冗余，便于查询）",
+                    "type": "string"
+                },
+                "started_at": {
+                    "description": "时间戳",
+                    "type": "string"
+                },
+                "status": {
+                    "description": "执行状态",
+                    "type": "string"
+                },
+                "task_type": {
+                    "description": "稳定执行类型；可来自任务定义或 ad-hoc execution",
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "trigger_type": {
+                    "description": "触发信息",
+                    "type": "string"
+                },
+                "triggered_by": {
+                    "description": "触发用户ID",
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_addp_graph_internal_models.AlgorithmCapabilities": {
             "type": "object",
             "properties": {
@@ -4843,6 +5034,10 @@ const docTemplate = `{
                 }
             }
         },
+        "models.JSONMap": {
+            "type": "object",
+            "additionalProperties": true
+        },
         "taskprovider.ExecutionContract": {
             "type": "object",
             "properties": {
@@ -4861,6 +5056,161 @@ const docTemplate = `{
                 "output_schema": {
                     "type": "object",
                     "additionalProperties": true
+                }
+            }
+        },
+        "taskprovider.ExecutionStatusResponse": {
+            "type": "object",
+            "required": [
+                "outputs"
+            ],
+            "properties": {
+                "actor_principal_id": {
+                    "description": "User-derived execution authorization facts. The raw User/Service tokens\nand engine connection details are never persisted in task executions.",
+                    "type": "integer"
+                },
+                "actor_tenant_membership_id": {
+                    "type": "integer"
+                },
+                "attempt": {
+                    "type": "integer"
+                },
+                "authorization_expires_at": {
+                    "type": "string"
+                },
+                "bytes_read": {
+                    "description": "Transfer 读取字节数",
+                    "type": "integer"
+                },
+                "bytes_written": {
+                    "description": "Transfer 写入字节数",
+                    "type": "integer"
+                },
+                "completed_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "current_step": {
+                    "description": "当前步骤（Orchestrator/Workflow）",
+                    "type": "string"
+                },
+                "error_details": {
+                    "description": "错误详情（仅失败时有值）",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.JSONMap"
+                        }
+                    ]
+                },
+                "execution_authorization_id": {
+                    "type": "integer"
+                },
+                "execution_boundary": {
+                    "description": "ExecutionBoundary separates finite queue work from long-running runtime sessions.",
+                    "type": "string"
+                },
+                "execution_config": {
+                    "description": "JSONB 字段",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.JSONMap"
+                        }
+                    ]
+                },
+                "execution_id": {
+                    "description": "执行标识",
+                    "type": "string"
+                },
+                "execution_time_ms": {
+                    "description": "性能指标",
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "issued_authorization_version": {
+                    "type": "integer"
+                },
+                "max_attempts": {
+                    "type": "integer"
+                },
+                "metadata": {
+                    "description": "模块特有扩展数据（结果、断点、步骤结果等）",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.JSONMap"
+                        }
+                    ]
+                },
+                "module": {
+                    "description": "模块标识",
+                    "type": "string"
+                },
+                "outputs": {
+                    "$ref": "#/definitions/models.JSONMap"
+                },
+                "parent_execution_id": {
+                    "description": "父执行（Orchestrator 子步骤追踪父编排）",
+                    "type": "string"
+                },
+                "progress": {
+                    "description": "0-100",
+                    "type": "integer"
+                },
+                "records_read": {
+                    "description": "Transfer 读取记录数",
+                    "type": "integer"
+                },
+                "records_written": {
+                    "description": "Transfer 写入记录数",
+                    "type": "integer"
+                },
+                "retry_of_execution_id": {
+                    "type": "string"
+                },
+                "rows_affected": {
+                    "description": "SQL 影响行数",
+                    "type": "integer"
+                },
+                "source": {
+                    "description": "触发来源模块",
+                    "type": "string"
+                },
+                "source_task_id": {
+                    "description": "关联原始任务",
+                    "type": "string"
+                },
+                "source_task_name": {
+                    "description": "任务名称（冗余，便于查询）",
+                    "type": "string"
+                },
+                "started_at": {
+                    "description": "时间戳",
+                    "type": "string"
+                },
+                "status": {
+                    "description": "执行状态",
+                    "type": "string"
+                },
+                "task_type": {
+                    "description": "稳定执行类型；可来自任务定义或 ad-hoc execution",
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "trigger_type": {
+                    "description": "触发信息",
+                    "type": "string"
+                },
+                "triggered_by": {
+                    "description": "触发用户ID",
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
                 }
             }
         }

@@ -7,7 +7,7 @@ Transfer 模块是 ADDP 的数据传输中枢，统一负责 `sync` 任务、任
 当前主路径基于 `common/engine`、`common/format`、`common/contentio` 和 `common/engine/contentadapter`：
 
 - Transfer 负责任务 JSON、planner、policy、transform、worker、checkpoint、日志、指标和写后 Meta 扫描触发。
-- 一次性执行入口只允许已认证且具备不可委派 `transfer.execution.create` Permission 的模块 Service Client 调用，execution 的 `source` 必须由 `addp-<module>` Client ID 推导，调用方请求不得自报 `source_module`。同一模块使用不可委派 `transfer.execution.read` 回查自己创建的 execution，Transfer 必须再次按 Client ID 校验 `source`，不能借此读取其他模块或用户任务 execution。入口接受强类型 source / target / fields 契约，并在 Transfer 内转换为唯一 planner 配置；查询调用方必须把已解析的全部关系输入按稳定顺序写入 `source.query.inputs[]`，Transfer 校验其标准 ResourceLocator 与 source Engine 一致并据此记录完整血缘，不解析查询文本反推资源。调用方不得创建临时 Transfer task，也不得保存 Transfer task ID。bounded worker 必须同时执行有任务定义和无任务定义的 `sync` execution，并只在 `source_task_id` 存在时更新任务摘要。
+- 一次性执行入口只允许已认证且具备不可委派 `transfer.execution.create` Permission 的模块 Service Client 调用，execution 的 `source` 必须由 `addp-<module>` Client ID 推导，调用方请求不得自报 `source_module`。同一模块使用不可委派 `transfer.execution.read` 回查自己创建的 execution，Transfer 必须再次按 Client ID 校验 `source`，不能借此读取其他模块或用户任务 execution。入口接受强类型 source / target / fields 契约，并在 Transfer 内转换为唯一 planner 配置；查询调用方必须把已解析的全部关系输入按稳定顺序写入 `source.query.inputs[]`。Transfer 不自行解析 SQL/MQL 反推资源，但必须使用同一 `PreparedQuery` 的 Provider `ReadSet` 验证调用方声明；未声明 `inputs` 的 Console 单源查询必须精确只读取所选 source leaf。通过验证的输入才能写入血缘。调用方不得创建临时 Transfer task，也不得保存 Transfer task ID。bounded worker 必须同时执行有任务定义和无任务定义的 `sync` execution，并只在 `source_task_id` 存在时更新任务摘要。
 - 具体 engine-native 读写由 `common/engine` 提供。
 - 具体格式和数据类型读写由 `common/format` 提供。
 - content 的定位、读取、写入、range 和 scope list 由 `common/contentio` 表达；multi ref 的组织规则和读写语义由 `common/format` / `common/dataitem` / Transfer 编排层表达；engine content provider 到 contentio 的桥接由 `common/engine/contentadapter` 提供。
@@ -19,9 +19,9 @@ Security 对 Transfer 的稳定动作名为 `export`，它表示受保护数据�
 
 只读原生查询结果到 table 的 bounded 搬运属于同一主链路：source 必须消费 `common/engine.QueryReadSessionProvider`，target 继续消费 table write session。MongoDB 嵌套 BSON 的路径投影、数组展开、去重和关系合并由只读 MQL 在源端完成；Transfer 只搬运最终扁平行、执行显式字段映射和严格类型转换，不提供递归 JSON 自动摊平器。
 
-MongoDB 查询的 Console 基础结构整形构建器只是一种 MQL authoring 能力：通用支持 `可选单次 $unwind -> $project`，保存事实仍只有 `source.query` 中的标准 MQL command object。基础界面只决定文档/单数组的行粒度和源字段选择；单数组模式只允许展开一个数组，可以选择多个数组元素叶子字段，并可选择多个不位于任何数组下的父文档叶子字段随每个元素行重复携带；文档标识自动携带。查询输出名由编译器确定，PostgreSQL 目标名称和类型只在后续 `field_mapping` 配置。构建器不得暴露筛选、排序、空数组保留、投影别名等 MQL 拼装细节，不得保存第二份 DSL、硬编码业务 collection/字段、猜测多数组粒度或承担业务聚合；超出可逆子集的合法查询进入高级 MQL 编辑器。
+MongoDB 查询的 Console 基础结构整形构建器只是一种 MQL authoring 能力：通用支持 `可选单次 $unwind -> $project`，保存事实仍只有 `source.query` 中的标准 MQL command object。基础界面只决定文档/单数组的行粒度和源字段选择；单数组模式只允许展开一个数组，可以选择多个数组元素叶子字段，并可选择多个不位于任何数组下的父文档叶子字段随每个元素行重复携带；文档标识自动携带。查询输出名由全部源路径按稳定顺序统一编译，不得因选择顺序改变；PostgreSQL 目标名称和类型只在后续 `field_mapping` 配置。构建器不得暴露筛选、排序、空数组保留、投影别名、原生 MQL 编辑或查询参数等拼装细节，不得保存第二份 DSL、硬编码业务 collection/字段、猜测多数组粒度或承担业务聚合。只有严格属于可逆子集、且 collection、数组和投影路径均与当前 Meta 事实一致的 MQL 才能结构化编辑；其他已有查询在 Transfer Console 中只读展示，复杂查询开发归 Develop。
 
-关系型查询的 Console 基础构建器只承担 Transfer 的轻量 ETL authoring：源关系固定为用户已经选择的一个 native table，通用支持字段投影和一层 `all|any` 行过滤，过滤值全部编译为 `source.query.parameters` 中的类型化参数。可用查询语言、默认语言和标识符引号必须来自所选 Engine Instance 的 `compute.query` capability；单语言引擎不提供语言选择，未声明 `read_session` 的引擎不开放查询源。保存事实仍只有标准 `source.query.language=sql`、SQL `statement` 和 `parameters`，不得保存第二份可视化 DSL。基础构建器不得提供 Join、多表输入、聚合、计算字段、别名、排序、Limit 或方言私有函数；目标字段名和类型继续只由后续 `field_mapping` 配置，复杂数据开发归 Develop。只有严格属于可逆子集的 SQL 才能显示为基础表单，其他合法只读 SQL 进入高级 SQL 编辑器。
+关系型查询的 Console 基础构建器只承担 Transfer 的轻量 ETL authoring：源关系固定为用户已经选择的一个 native table，通用支持字段投影和一层 `all|any` 行过滤，过滤值全部编译为 `source.query.parameters` 中的类型化参数。可用查询语言、默认语言、标识符引号和参数类型必须来自所选 Engine Instance 的 `compute.query` capability；`bigint/decimal` 必须作为十进制字符串通过 `string` capability 无损传递，Planner 必须在调用 Provider 前再次校验参数开关、语言和值类型。单语言引擎不提供语言选择，未声明 `read_session` 的引擎不开放查询源。保存事实仍只有标准 `source.query.language=sql`、SQL `statement` 和 `parameters`，不得保存第二份可视化 DSL。基础构建器不得提供 Join、多表输入、聚合、计算字段、别名、排序、Limit 或方言私有函数；目标字段名和类型继续只由后续 `field_mapping` 配置，复杂数据开发归 Develop。只有严格属于可逆子集的 SQL 才能显示和编辑为基础表单；其他合法只读 SQL 只允许在 Transfer Console 中只读展示，不提供高级 SQL 编辑或保存入口。
 
 ## 技术栈与端口
 

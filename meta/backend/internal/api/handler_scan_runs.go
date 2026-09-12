@@ -6,7 +6,9 @@ import (
 	"strconv"
 	"strings"
 
+	commonExecution "github.com/addp/common/execution"
 	commonAuth "github.com/addp/common/middleware/auth"
+	"github.com/addp/common/taskprovider"
 	"github.com/addp/meta/internal/models"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -109,29 +111,58 @@ func (h *Handler) CreateManualScanRun(c *gin.Context) {
 // @Router /executions/{execution_id} [get]
 // @Security BearerAuth
 func (h *Handler) GetExecution(c *gin.Context) {
+	exec, ok := h.loadExecution(c)
+	if !ok {
+		return
+	}
+	c.JSON(http.StatusOK, exec)
+}
+
+// ProviderGetExecution 获取 TaskProvider 执行状态。
+// @Summary 获取 TaskProvider 扫描执行状态 | Get TaskProvider scan execution status
+// @Tags Meta Scan
+// @Produce json
+// @Param execution_id path string true "执行ID | Execution ID"
+// @Success 200 {object} taskprovider.ExecutionStatusResponse
+// @Failure 400 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Failure 503 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["meta.task_provider.read"]
+// @Router /task-provider/executions/{execution_id} [get]
+// @Security BearerAuth
+func (h *Handler) ProviderGetExecution(c *gin.Context) {
+	exec, ok := h.loadExecution(c)
+	if !ok {
+		return
+	}
+	c.JSON(http.StatusOK, taskprovider.NewExecutionStatusResponse(exec))
+}
+
+func (h *Handler) loadExecution(c *gin.Context) (*commonExecution.TaskExecution, bool) {
 	if h.executionService == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "execution service not available"})
-		return
+		return nil, false
 	}
 
 	tenantID := commonAuth.GetTenantID(c)
 	executionID := c.Param("execution_id")
 	if executionID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "missing execution_id"})
-		return
+		return nil, false
 	}
 
 	exec, err := h.executionService.GetExecution(c.Request.Context(), executionID, int(tenantID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "execution not found"})
-			return
+			return nil, false
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+		return nil, false
 	}
-
-	c.JSON(http.StatusOK, exec)
+	return exec, true
 }
 
 // ListScanRuns 列出执行记录（从 common.task_executions 查询）

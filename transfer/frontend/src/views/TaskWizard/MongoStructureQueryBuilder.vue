@@ -1,21 +1,26 @@
 <template>
   <div class="mongo-structure-builder">
-    <div class="builder-toolbar">
-      <el-radio-group :model-value="mode" @change="changeMode">
-        <el-radio-button value="visual">{{ t('transfer.taskWizard.mongoBuilder.visualMode') }}</el-radio-button>
-        <el-radio-button value="advanced">{{ t('transfer.taskWizard.mongoBuilder.advancedMode') }}</el-radio-button>
-      </el-radio-group>
-    </div>
+    <template v-if="unsupportedReason">
+      <el-alert
+        type="warning"
+        :closable="false"
+        :title="t('transfer.taskWizard.mongoBuilder.unsupportedTitle')"
+        :description="t('transfer.taskWizard.mongoBuilder.unsupportedDescription')"
+      />
+      <section class="builder-section">
+        <strong>{{ t('transfer.taskWizard.mongoBuilder.readOnlyMql') }}</strong>
+        <el-input :model-value="modelValue" type="textarea" :rows="10" readonly />
+        <el-input
+          v-if="readOnlyParameters"
+          :model-value="readOnlyParameters"
+          type="textarea"
+          :rows="3"
+          readonly
+        />
+      </section>
+    </template>
 
-    <el-alert
-      v-if="unsupportedReason"
-      type="warning"
-      :closable="false"
-      :title="t('transfer.taskWizard.mongoBuilder.unsupportedTitle')"
-      :description="t('transfer.taskWizard.mongoBuilder.unsupportedDescription')"
-    />
-
-    <template v-if="mode === 'visual'">
+    <template v-else>
       <section class="builder-section compact-section">
         <strong>{{ t('transfer.taskWizard.mongoBuilder.collection') }}</strong>
         <el-input :model-value="draft.collection" disabled />
@@ -177,20 +182,6 @@
       </el-collapse>
     </template>
 
-    <template v-else>
-      <el-alert
-        type="info"
-        :closable="false"
-        :title="t('transfer.taskWizard.mongoBuilder.advancedHint')"
-      />
-      <el-input
-        v-model="rawStatement"
-        type="textarea"
-        :rows="10"
-        :placeholder="t('transfer.taskWizard.queryStatementPlaceholder')"
-        @input="emitRawStatement"
-      />
-    </template>
   </div>
 </template>
 
@@ -199,7 +190,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   compileMongoStructureQuery,
-  createMongoPathProjection,
+  createMongoPathProjections,
   createMongoStructureQuery,
   defaultMongoIndexOutput,
   isMongoArrayElementLeafField,
@@ -212,14 +203,13 @@ import {
 
 const props = defineProps({
   modelValue: { type: String, default: '' },
+  parameters: { type: Object, default: () => ({}) },
   collection: { type: String, default: '' },
   sourceFields: { type: Array, default: () => [] }
 })
 
 const emit = defineEmits(['update:modelValue'])
 const { t } = useI18n()
-const mode = ref('visual')
-const rawStatement = ref('')
 const unsupportedReason = ref('')
 const draft = reactive(createMongoStructureQuery(props.collection))
 let lastEmittedStatement = ''
@@ -253,7 +243,10 @@ const selectedArraySources = computed({
     .map(item => item.source),
   set: values => replaceSelectedSources([...selectedParentSources.value, ...values])
 })
-const validationIssues = computed(() => validateMongoStructureQuery(draft))
+const validationIssues = computed(() => validateMongoStructureQuery(draft, {
+  collection: props.collection,
+  sourceFields: props.sourceFields
+}))
 const validationMessages = computed(() => [...new Set(validationIssues.value.map(item => {
   const key = `transfer.taskWizard.mongoBuilder.validation.${item.code}`
   const translated = t(key)
@@ -264,28 +257,27 @@ const compiledStatement = computed(() => {
   return compileMongoStructureQuery(draft)
 })
 const outputFields = computed(() => mongoStructureOutputFields(draft, props.sourceFields))
+const readOnlyParameters = computed(() => Object.keys(props.parameters || {}).length > 0
+  ? JSON.stringify(props.parameters, null, 2)
+  : '')
 
 watch(
   () => props.modelValue,
   statement => {
     const text = cleanText(statement)
     if (text === lastEmittedStatement) return
-    rawStatement.value = text
     if (!text) {
       replaceDraft(createMongoStructureQuery(props.collection))
       ensureIdentifierProjection()
-      mode.value = 'visual'
       unsupportedReason.value = ''
       return
     }
-    const parsed = parseMongoStructureQuery(text)
+    const parsed = parseWithCurrentContext(text)
     if (parsed.supported) {
       replaceDraft(parsed.model)
-      mode.value = 'visual'
       unsupportedReason.value = ''
       return
     }
-    mode.value = 'advanced'
     unsupportedReason.value = parsed.reason
   },
   { immediate: true }
@@ -294,7 +286,7 @@ watch(
 watch(
   () => props.collection,
   collection => {
-    if (mode.value !== 'visual') return
+    if (unsupportedReason.value) return
     const nextCollection = cleanText(collection)
     if (nextCollection && nextCollection !== draft.collection) draft.collection = nextCollection
   }
@@ -303,7 +295,16 @@ watch(
 watch(
   () => props.sourceFields,
   () => {
-    if (mode.value !== 'visual') return
+    const text = cleanText(props.modelValue)
+    if (text) {
+      const parsed = parseWithCurrentContext(text)
+      if (!parsed.supported) {
+        unsupportedReason.value = parsed.reason
+        return
+      }
+      if (unsupportedReason.value) replaceDraft(parsed.model)
+      unsupportedReason.value = ''
+    }
     ensureIdentifierProjection()
   },
   { deep: true }
@@ -312,32 +313,13 @@ watch(
 watch(
   draft,
   () => {
-    if (mode.value !== 'visual') return
+    if (unsupportedReason.value) return
     const statement = compiledStatement.value
     lastEmittedStatement = statement
-    rawStatement.value = statement
     emit('update:modelValue', statement)
   },
   { deep: true }
 )
-
-function changeMode(nextMode) {
-  if (nextMode === mode.value) return
-  if (nextMode === 'advanced') {
-    rawStatement.value = compiledStatement.value || cleanText(props.modelValue)
-    mode.value = 'advanced'
-    unsupportedReason.value = ''
-    return
-  }
-  const parsed = parseMongoStructureQuery(rawStatement.value)
-  if (!parsed.supported) {
-    unsupportedReason.value = parsed.reason
-    return
-  }
-  replaceDraft(parsed.model)
-  mode.value = 'visual'
-  unsupportedReason.value = ''
-}
 
 function changeRowShape(shape) {
   const portableProjections = draft.projections.filter(item => item.source === '_id' || !belongsToAnyArray(item.source))
@@ -365,33 +347,34 @@ function changeIncludeIndex(value) {
 function replaceSelectedSources(values) {
   const paths = [...new Set((Array.isArray(values) ? values : []).map(cleanText).filter(Boolean))]
   const previous = new Map(draft.projections.map(item => [item.source, item]))
-  const projections = []
-  const projectionPaths = ['_id', ...paths]
-  projectionPaths.forEach(path => {
-    const reserved = draft.unwind.includeIndex
-      ? [...projections, { output: draft.unwind.indexOutput }]
-      : projections
-    const projection = createMongoPathProjection(path, props.sourceFields, reserved)
+  const projections = createMongoPathProjections(
+    ['_id', ...paths],
+    props.sourceFields,
+    draft.unwind.includeIndex ? [draft.unwind.indexOutput] : []
+  )
+  projections.forEach(projection => {
+    const path = projection.source
     if (previous.has(path)) projection.nullable = previous.get(path).nullable
-    projections.push(projection)
   })
   draft.projections = projections
 }
 
 function ensureIdentifierProjection() {
   if (draft.projections.some(item => item.source === '_id')) return
-  draft.projections = [createMongoPathProjection('_id', props.sourceFields), ...draft.projections]
-}
-
-function emitRawStatement() {
-  lastEmittedStatement = cleanText(rawStatement.value)
-  emit('update:modelValue', rawStatement.value)
+  replaceSelectedSources(draft.projections.map(item => item.source))
 }
 
 function replaceDraft(model) {
   draft.collection = model.collection
   draft.unwind = { ...model.unwind }
   draft.projections = model.projections.map(item => ({ ...item }))
+}
+
+function parseWithCurrentContext(statement) {
+  return parseMongoStructureQuery(statement, {
+    collection: props.collection,
+    sourceFields: props.sourceFields
+  })
 }
 
 function belongsToAnyArray(name) {
@@ -425,7 +408,6 @@ function cleanText(value) {
   gap: 12px;
 }
 
-.builder-toolbar,
 .section-heading,
 .automatic-field-row,
 .selected-field-row {

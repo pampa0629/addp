@@ -187,10 +187,11 @@ func (s *PlatformTenantService) initializeTenantTx(ctx context.Context, tx *Repo
 		return err
 	}
 	tenantID := tenant.ID
+	administratorGrantReason := "initial tenant administrator"
 	assignment := &RoleAssignment{
 		PrincipalID: administratorID, RoleID: role.ID, ScopeType: "tenant", TenantID: &tenantID,
 		Status: "active", ValidFrom: now, SourceType: "manual", CreatedByPrincipalID: &actorID,
-		Reason: "initial tenant administrator",
+		GrantReason: &administratorGrantReason,
 	}
 	if err := tx.CreateTenantRoleAssignment(ctx, assignment); err != nil {
 		return err
@@ -203,6 +204,7 @@ func (s *PlatformTenantService) initializeTenantTx(ctx context.Context, tx *Repo
 		return fmt.Errorf("%w: built-in service runtime bindings are incomplete", commonapi.ErrConflict)
 	}
 	for _, binding := range serviceBindings {
+		serviceRuntimeGrantReason := "built-in service runtime"
 		serviceMembership := &TenantMembership{
 			TenantID: tenant.ID, PrincipalID: binding.PrincipalID,
 			Status: TenantMembershipStatusActive, SourceType: TenantMembershipSourceBootstrap,
@@ -214,7 +216,7 @@ func (s *PlatformTenantService) initializeTenantTx(ctx context.Context, tx *Repo
 		serviceAssignment := &RoleAssignment{
 			PrincipalID: binding.PrincipalID, RoleID: binding.RoleID,
 			ScopeType: "tenant", TenantID: &tenantID, Status: "active", ValidFrom: now,
-			SourceType: "bootstrap", Reason: "built-in service runtime",
+			SourceType: "bootstrap", GrantReason: &serviceRuntimeGrantReason,
 		}
 		if err := tx.CreateTenantRoleAssignment(ctx, serviceAssignment); err != nil {
 			return err

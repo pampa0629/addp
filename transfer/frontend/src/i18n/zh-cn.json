@@ -965,10 +965,9 @@
       "queryParametersObjectRequired": "查询参数必须是 JSON 对象",
       "queryParametersInvalid": "查询参数不是有效 JSON",
       "sqlBuilder": {
-        "visualMode": "条件构造",
-        "advancedMode": "高级 SQL",
-        "unsupportedTitle": "当前 SQL 不能用条件表单无损编辑",
-        "unsupportedDescription": "该语句超出单表字段投影和一层行过滤范围，请继续使用高级 SQL。复杂数据加工建议在 Develop 中完成。",
+        "unsupportedTitle": "当前 SQL 只能只读查看",
+        "unsupportedDescription": "该语句超出 Transfer 的单表字段投影和一层行过滤范围。复杂数据加工请在 Develop 中维护。",
+        "readOnlySql": "只读 SQL 和参数",
         "sourceTable": "源数据表",
         "outputFields": "选择输出字段",
         "outputFieldsHint": "这里只决定哪些源字段进入传输结果；目标字段名和类型在下一步配置。",
@@ -990,7 +989,6 @@
         "removeFilter": "删除",
         "incompleteTitle": "SQL 条件配置尚未完成",
         "viewGeneratedSql": "查看生成的 SQL 和参数",
-        "advancedHint": "高级模式只接受源 Provider 支持的只读 SQL。Join、聚合和复杂计算应在 Develop 中完成。",
         "operators": {
           "eq": "等于",
           "ne": "不等于",
@@ -1013,10 +1011,9 @@
         }
       },
       "mongoBuilder": {
-        "visualMode": "结构化构建",
-        "advancedMode": "高级 MQL",
         "unsupportedTitle": "当前 MQL 不能用结构化表单无损编辑",
-        "unsupportedDescription": "该语句包含基础结构整理范围外的阶段或表达式，请继续使用高级 MQL。任务仍保存并执行同一条 MQL。",
+        "unsupportedDescription": "该语句超出 Transfer 轻量 ETL 构建范围，或已与当前 Meta 字段事实不一致。此处只读展示，复杂 MQL 请在 Develop 中维护。",
+        "readOnlyMql": "只读 MQL",
         "collection": "源 Collection",
         "rowShape": "一行数据代表什么",
         "rowShapeHint": "只决定 MongoDB 文档如何形成输出行，不在这里配置 PostgreSQL 字段名和类型。",
@@ -1042,17 +1039,21 @@
         "arrayIndexSource": "由数组展开自动生成",
         "incompleteTitle": "结构配置尚未完成",
         "viewGeneratedMql": "查看生成的 MQL",
-        "advancedHint": "高级编辑器接受源 Provider 支持的只读 MQL command object；写操作会由服务端拒绝。",
         "validation": {
           "collection_required": "请选择 MongoDB Collection",
+          "collection_mismatch": "MQL Collection 必须与当前所选 Collection 一致",
           "field_path_required": "源字段路径不能为空或包含非法段",
           "unwind_path_required": "数组行模式必须选择数组字段",
+          "unwind_path_unavailable": "展开路径必须是当前 Meta 中的数组字段",
           "array_index_requires_unwind": "只有数组行模式才能输出数组序号",
           "array_index_output_invalid": "数组序号字段无效",
           "output_field_invalid": "输出字段不能为空、不能包含点号或以 $ 开头",
           "projection_required": "至少需要记录标识字段",
           "identifier_required": "必须保留 MongoDB _id 作为记录或父记录标识",
           "source_field_duplicate": "同一个源字段不能重复选择",
+          "source_field_unavailable": "投影字段在当前 Meta 中不存在",
+          "source_field_type_unsupported": "基础构建器不支持结构、mixed 或 unknown 字段",
+          "source_field_not_in_row_shape": "投影字段不属于当前文档或数组行粒度",
           "output_field_duplicate": "输出字段名不能重复",
           "unknown": "结构配置无效"
         }

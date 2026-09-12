@@ -48,7 +48,7 @@ var ErrTenantRoleAssignmentScopeMembershipRequired = fmt.Errorf(
 type TenantRoleAssignmentFilter struct {
 	MembershipID   *int64
 	PrincipalType  *PrincipalType
-	Status         *string
+	EffectiveState *string
 	ScopeType      *string
 	DepartmentID   *int64
 	ProjectGroupID *int64
@@ -250,7 +250,7 @@ func (s *TenantRoleService) DeleteRole(ctx context.Context, input DeleteTenantRo
 		if err != nil {
 			return err
 		}
-		if err := tx.DisableTenantCustomRole(ctx, role.ID, input.ActorPrincipalID, now); err != nil {
+		if err := tx.DisableTenantCustomRole(ctx, role.ID, input.ActorPrincipalID, strings.TrimSpace(input.Reason), now); err != nil {
 			return err
 		}
 		return NewAuditWriter(tx).Write(ctx, AuditEvent{
@@ -274,13 +274,24 @@ func (s *TenantRoleService) ListAssignments(ctx context.Context, tenantID int64,
 	return s.repository.ListTenantRoleAssignments(ctx, tenantID, filter, page, pageSize)
 }
 
+func (s *TenantRoleService) GetAssignment(ctx context.Context, tenantID, assignmentID int64) (*ManagedTenantRoleAssignment, error) {
+	if err := s.validateTenant(tenantID); err != nil {
+		return nil, err
+	}
+	if assignmentID <= 0 {
+		return nil, fmt.Errorf("%w: assignment is required", commonapi.ErrBadRequest)
+	}
+	return s.repository.GetManagedTenantRoleAssignment(ctx, tenantID, assignmentID)
+}
+
 func (s *TenantRoleService) CreateAssignments(ctx context.Context, input CreateTenantRoleAssignmentsInput) ([]ManagedTenantRoleAssignment, error) {
 	roleIDs, err := normalizeTenantRoleAssignmentIDs(input.RoleIDs)
 	if err != nil {
 		return nil, err
 	}
-	if input.TenantID <= 0 || input.MembershipID <= 0 || input.ActorPrincipalID <= 0 {
-		return nil, fmt.Errorf("%w: tenant, membership, roles and actor are required", commonapi.ErrBadRequest)
+	grantReason := strings.TrimSpace(input.Reason)
+	if input.TenantID <= 0 || input.MembershipID <= 0 || input.ActorPrincipalID <= 0 || grantReason == "" {
+		return nil, fmt.Errorf("%w: tenant, membership, roles, actor and reason are required", commonapi.ErrBadRequest)
 	}
 	if input.ScopeType == "" {
 		input.ScopeType = "tenant"
@@ -359,7 +370,7 @@ func (s *TenantRoleService) CreateAssignments(ctx context.Context, input CreateT
 			assignment := &RoleAssignment{
 				PrincipalID: membership.PrincipalID, RoleID: role.ID, ScopeType: input.ScopeType, TenantID: &tenantID,
 				DepartmentID: input.DepartmentID, ProjectGroupID: input.ProjectGroupID, Status: "active", ValidFrom: now,
-				ValidUntil: input.ValidUntil, SourceType: "manual", CreatedByPrincipalID: &input.ActorPrincipalID, Reason: strings.TrimSpace(input.Reason),
+				ValidUntil: input.ValidUntil, SourceType: "manual", CreatedByPrincipalID: &input.ActorPrincipalID, GrantReason: &grantReason,
 			}
 			if err := tx.CreateTenantRoleAssignment(ctx, assignment); err != nil {
 				return err
@@ -367,7 +378,7 @@ func (s *TenantRoleService) CreateAssignments(ctx context.Context, input CreateT
 			if err := NewAuditWriter(tx).Write(ctx, AuditEvent{
 				Metadata: input.Audit, EventName: "iam.tenant_role_assignment.created", Result: AuditResultSucceeded,
 				RiskLevel: AuditRiskMedium, ModuleName: "system", EntityType: "role_assignment", EntityID: strconv.FormatInt(assignment.ID, 10),
-				Details: map[string]any{"tenant_id": input.TenantID, "membership_id": membership.ID, "principal_id": membership.PrincipalID, "role_key": role.RoleKey, "scope_type": input.ScopeType, "authorization_version_changed": true},
+				Details: map[string]any{"tenant_id": input.TenantID, "membership_id": membership.ID, "principal_id": membership.PrincipalID, "role_key": role.RoleKey, "scope_type": input.ScopeType, "reason": grantReason, "authorization_version_changed": true},
 			}); err != nil {
 				return err
 			}
@@ -430,7 +441,8 @@ func (s *TenantRoleService) RevokeAssignment(ctx context.Context, input RevokeTe
 		if _, err := tx.LockPrincipal(ctx, assignment.PrincipalID); err != nil {
 			return err
 		}
-		if err := tx.RevokeTenantRoleAssignment(ctx, assignment.ID, input.ActorPrincipalID, now); err != nil {
+		revokedReason := strings.TrimSpace(input.Reason)
+		if err := tx.RevokeTenantRoleAssignment(ctx, assignment.ID, input.ActorPrincipalID, revokedReason, now); err != nil {
 			return err
 		}
 		return NewAuditWriter(tx).Write(ctx, AuditEvent{
@@ -452,8 +464,8 @@ func validateTenantRoleAssignmentFilter(filter TenantRoleAssignmentFilter) error
 	if filter.PrincipalType != nil && *filter.PrincipalType != PrincipalTypeUser && *filter.PrincipalType != PrincipalTypeServicePrincipal {
 		return fmt.Errorf("%w: invalid role assignment principal type filter", commonapi.ErrBadRequest)
 	}
-	if filter.Status != nil && *filter.Status != "active" && *filter.Status != "revoked" {
-		return fmt.Errorf("%w: invalid role assignment status filter", commonapi.ErrBadRequest)
+	if filter.EffectiveState != nil && !containsString([]string{"scheduled", "effective", "expired", "revoked"}, *filter.EffectiveState) {
+		return fmt.Errorf("%w: invalid role assignment effective state filter", commonapi.ErrBadRequest)
 	}
 	if filter.ScopeType == nil {
 		if filter.DepartmentID != nil || filter.ProjectGroupID != nil {

@@ -128,6 +128,7 @@ export const iamAPI = {
   },
   tenantRoleAssignments: {
     list: (params) => list('/system/tenant/role_assignments', params),
+    get: (id) => client.get(`/system/tenant/role_assignments/${id}`),
     create: (data) => client.post('/system/tenant/role_assignments', data),
     revoke: (id, reason) => client.post(`/system/tenant/role_assignments/${id}/revoke`, { reason })
   },

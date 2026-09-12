@@ -100,6 +100,8 @@ T4 只在隔离的 ADDP 测试部署执行，并按运行条件选择唯一部�
 - 常规 Online suite 使用带 `self-hosted`、`macOS`、`addp-online` 标签的专用 Runner 和 `addp-online` GitHub Environment，复用专用部署中的稳定 Tenant、User 和 Engine Instance。
 - 只有明确声明 Linux/CPU 限制的 suite 可登记 GitHub Hosted profile。该 profile 每轮必须在干净 `ubuntu-24.04` x86_64 Runner 上从零启动 disposable Infra、Tenant、User、Engine Instance 和业务引擎，退出时全部销毁；不使用 GitHub Environment 或仓库 Secret。
 - self-hosted Runner 使用独立账号和独立 checkout；Hosted Runner 使用 Actions 当次临时 checkout。两者都不复用个人开发工作区或开发服务进程。
+- 公开仓库的 self-hosted Runner 必须是可独立重置的专用测试设备，不得登录个人 Apple ID、保存个人 SSH Key、浏览器会话或访问个人与生产网络。只允许受保护 GitHub Environment 的 `workflow_dispatch` 和已毕业 suite 的固定 `schedule` 调度；`pull_request`、`pull_request_target`、`push`、Issue 事件或可由外部输入改写的动态 workflow 不得选择该 Runner。
+- self-hosted Online Job 的 `GITHUB_TOKEN` 只授予 `contents: read`，第三方 Action 必须固定不可变 commit SHA，`addp-online` Environment 必须在 Job 接单前执行必要的人工批准。Runner 不接收仓库 Secret 中的长期业务凭据；永久测试部署的 Secret 只存在专用设备上的 owner-only 仓库外环境文件和 owner 加密存储中。
 - 服务只绑定 Runner 可访问的回环地址；通用预检拒绝外部服务地址。
 - 仓库根不得保存 T4 `.env`。self-hosted profile 的 Tenant、数据库连接和凭据由仓库外绝对路径环境文件注入；Hosted profile 只能使用当次 disposable 部署产生、位于 `runner.temp` 的 owner-only 凭据文件。
 - `ADDP_ONLINE_HOST` 必须精确为 `1`；Hosted profile 还必须同时校验 `GITHUB_ACTIONS=true`、`RUNNER_OS=Linux` 和 `ADDP_ONLINE_HOSTED=1`。生命周期门禁必须在任何停止、启动或重启操作前完成只读准入检查。
@@ -155,7 +157,7 @@ openGauss 消费链路 T4 复用上述关系引擎 owner 断言，但只在 GitH
 
 Transfer 仅新增 MySQL T4 使用永久 PostgreSQL 与 MySQL Engine Instance，并由专属复合 Fixture 管理两端物理表。真实 User 必须从 Console 页面选择源表和目标库、进入字段映射、通过正式“分析源数据并推荐精度”接口把无声明精度的 PostgreSQL `numeric` 收敛为不会截断当前值的 MySQL `DECIMAL(6,2)`，再以主键 `id` 作为唯一 watermark 创建任务。页面自动执行的首轮必须读写 6 行；Fixture 同时修改 `id=1` 并新增 `id=7` 后，用户从任务详情再次执行必须只读写 1 行。最终 MySQL 目标必须共 7 行、`id=1` 保持首轮值、`id=7` 为新增值且无重复键，以证明单字段水位只覆盖严格递增新增、不承诺旧记录更新。浏览器还必须断言任务配置的 `tie_breaker=[]`、目标 `upsert` 键为 `id`，捕获并删除临时任务且确认 404；Fixture 在全部退出路径删除两端固定表并停止两个容器。该 suite 只登记手工 `workflow_dispatch`，首次真实通过前不得增加定时触发。
 
-Transfer 关系型 SQL ETL T4 使用永久 PostgreSQL Engine Instance，由专属 Fixture 管理同一数据库中的固定源表和目标表。真实 User 必须从 Console 选择源表，确认单语言引擎只显示固定 `SQL` 而不提供 MQL 或语言下拉，通过基础构造器选择输出字段并配置两个参数化行过滤，再选择 PostgreSQL 目标位置创建 snapshot 任务。浏览器必须断言保存事实只有标准 `source.query` SQL statement 与类型化 parameters、下一步字段映射只包含实际投影字段，并等待 Worker 读写恰好 2 行；Fixture 必须核对目标行集合、金额汇总和列顺序，以同时证明过滤与投影语义。临时任务必须通过正式 API 删除并确认 404，Fixture 在全部退出路径删除两端固定表并停止 PostgreSQL 容器。该 suite 只登记手工 `workflow_dispatch`，首次真实通过前不得增加定时触发。
+Transfer 关系型 SQL ETL T4 使用永久 PostgreSQL Engine Instance，由专属 Fixture 管理同一数据库中的固定源表和目标表。真实 User 必须从 Console 选择源表，确认单语言引擎只显示固定 `SQL` 而不提供 MQL、语言下拉或高级 SQL 编辑入口，通过基础构造器选择输出字段并配置两个参数化行过滤，再选择 PostgreSQL 目标位置创建 snapshot 任务。浏览器必须断言保存事实只有标准 `source.query` SQL statement 与类型化 parameters，其中 decimal 过滤值以字符串保存而不是 JavaScript Number；下一步字段映射只包含实际投影字段，并等待 Worker 读写恰好 2 行。Fixture 必须核对目标行集合、金额汇总和列顺序，以同时证明过滤、投影和精确参数绑定语义。临时任务必须通过正式 API 删除并确认 404，Fixture 在全部退出路径删除两端固定表并停止 PostgreSQL 容器。该 suite 只登记手工 `workflow_dispatch`，首次真实通过前不得增加定时触发。
 
 ### 5.3 数据、超时与清理
 

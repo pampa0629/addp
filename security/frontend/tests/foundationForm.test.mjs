@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildFoundationPayload, createMinimumNumberRule, createNonNegativeIntegerRule, createRequiredRule, initialFoundationFieldValue, isNonNegativeIntegerValue, protectionEffectI18nKey, sortFoundationRows } from '../src/utils/foundationForm.mjs'
+import { buildFoundationPayload, createNonNegativeIntegerRule, createRequiredNumberRangeRule, createRequiredRule, initialFoundationFieldValue, isNonNegativeIntegerValue, protectionEffectI18nKey, sortFoundationRows } from '../src/utils/foundationForm.mjs'
 
 describe('Security foundation form payload', () => {
   it('keeps an optional parent relation absent instead of serializing ID zero', () => {
@@ -81,20 +81,33 @@ describe('Security foundation form payload', () => {
     })
   })
 
-  it('uses and validates a numeric field minimum', () => {
+  it('uses one rule to distinguish a missing required number from an out-of-range value', () => {
     expect(initialFoundationFieldValue({ key: 'risk_order', type: 'number', min: 1 })).toBe(1)
 
-    const rule = createMinimumNumberRule('Please complete the field', 1)
+    const rule = createRequiredNumberRangeRule('Please complete the field', {
+      minimum: 1,
+      maximum: 100,
+      rangeMessage: 'Enter a number from 1 to 100'
+    })
     let validationError
 
     rule.validator({}, '', error => { validationError = error })
     expect(validationError).toEqual(new Error('Please complete the field'))
 
     rule.validator({}, 0, error => { validationError = error })
-    expect(validationError).toEqual(new Error('Please complete the field'))
+    expect(validationError).toEqual(new Error('Enter a number from 1 to 100'))
 
     rule.validator({}, 1, error => { validationError = error })
     expect(validationError).toBeUndefined()
+
+    rule.validator({}, 100, error => { validationError = error })
+    expect(validationError).toBeUndefined()
+
+    rule.validator({}, 101, error => { validationError = error })
+    expect(validationError).toEqual(new Error('Enter a number from 1 to 100'))
+
+    rule.validator({}, 'not-a-number', error => { validationError = error })
+    expect(validationError).toEqual(new Error('Enter a number from 1 to 100'))
     expect(rule.trigger).toBe('change')
   })
 })

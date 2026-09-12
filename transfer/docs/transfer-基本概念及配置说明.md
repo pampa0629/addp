@@ -126,21 +126,23 @@ MongoDB 控制台提供一个通用结构整形构建器，当前覆盖两类基
 - 一条源文档生成一行：自动携带 Meta 识别出的文档标识，并选择需要进入关系行的文档字段。
 - 一个数组元素生成一行：只能选择一个 Meta 识别出的数组字段，可以选择该数组下的多个元素叶子字段，也可以选择多个不位于任何数组下的父文档叶子字段随每个元素行重复携带；父文档标识自动携带，并可选输出数组序号。空数组和缺失数组固定生成零行。
 
-构建器只是一种 MQL 编写方式，不是新的任务 DSL 或执行路径。保存到任务中的唯一事实仍是 `source.query.language=mql` 和标准 MQL command object；基础构建器只生成 `可选单次 $unwind -> $project`，不生成筛选和排序。编辑已有任务时，只有严格属于该子集且使用系统确定性查询输出名的语句才反向显示为结构化表单，其他合法 MQL 统一进入高级编辑器。字段候选来自 Meta 已扫描的字段路径和数组类型，数组字段禁止手工输入；构建器不得内置业务库、collection、字段名或目标 schema。
+构建器只是一种 MQL 编写方式，不是新的任务 DSL 或执行路径。保存到任务中的唯一事实仍是 `source.query.language=mql` 和标准 MQL command object；基础构建器只生成 `可选单次 $unwind -> $project`，不生成筛选和排序。编辑已有任务时，只有严格属于该子集、使用系统确定性查询输出名，且 collection、数组与投影路径仍与当前 Meta 事实一致的语句才反向显示为结构化表单；其他已有 MQL 统一只读展示，不提供高级 MQL 编辑或保存入口。字段候选来自 Meta 已扫描的字段路径和数组类型，数组字段禁止手工输入；构建器不得内置业务库、collection、字段名或目标 schema。
 
-基础构建器不暴露 MQL 的 `$match`、`$sort`、`$ifNull`、投影别名和 `preserveNullAndEmptyArrays` 等实现细节，不提供递归自动摊平，不猜测多个数组之间的业务粒度，也不开放 `$group`、`$lookup`、`$unionWith` 等业务计算。父文档随行字段只是同一文档 `$project` 的上下文复制，不是关联、聚合或跨 Collection 读取。需要其他只读 MQL 能力时使用高级编辑器；指标、标准化、维度和事实加工仍属于 Develop。
+基础构建器不暴露 MQL 的 `$match`、`$sort`、`$ifNull`、投影别名和 `preserveNullAndEmptyArrays` 等实现细节，不提供递归自动摊平，不猜测多个数组之间的业务粒度，也不开放 `$group`、`$lookup`、`$unionWith` 等业务计算。父文档随行字段只是同一文档 `$project` 的上下文复制，不是关联、聚合或跨 Collection 读取。需要其他只读 MQL 能力时转到 Develop；指标、标准化、维度和事实加工仍属于 Develop。
+
+查询执行前，Transfer 必须从将要打开读会话的同一 `PreparedQuery` 无条件取得 Provider `ReadSet`。上游声明 `source.query.inputs[]` 时，其 Locator 集合必须与 ReadSet 精确相等；Console 单源构建器不声明 `inputs` 时，ReadSet 必须精确只包含所选 source leaf。输入缺失、多出或错配都必须在打开游标前失败，不得仅在数据保护命中时才解析；执行血缘只能使用已通过该校验的输入。
 
 结构整形与 PostgreSQL 字段映射的职责必须分离：结构整形只决定“一行代表什么”和“哪些 MongoDB 源字段进入查询结果”；编译器为查询结果自动生成确定性、无点号的内部字段名。下一步 `field_mapping` 只展示实际查询输出，不展示其余 MongoDB 原始字段，并负责 PostgreSQL 目标字段名、类型、可空性等目标定义。数组展开的父文档标识属于关系行必需来源，基础模式自动携带且不得从映射中删除；`activity_id` 等业务目标名只在 `field_mapping` 中声明。
 
 关系型 native table 的 Console 基础 SQL 构造器只扩展 Transfer 的轻量 ETL 能力，不是第二个 SQL IDE：
 
 - 源关系固定为用户已选择的单个 native table，基础界面只允许选择输出字段和配置一层“满足全部 / 满足任一”行过滤。
-- 过滤操作符按 Meta 字段类型开放；基础集合为等于、不等于、为空、不为空、属于列表，可比较标量另支持大于、大于等于、小于和小于等于。不对 geometry、JSON 结构或其他无稳定跨方言谓词的类型开放值过滤。
-- 所有过滤值必须生成稳定命名参数 `:p1`、`:p2` 并写入 `source.query.parameters`，不得将值拼入 SQL。schema、table 和 column 的引号必须消费 Engine capability 的 `identifier_quotes.sql`，不按 `engine_type` 猜测。
+- 过滤操作符按 Meta 字段类型和 Engine capability 的 `parameters.types` 共同开放；基础集合为等于、不等于、为空、不为空、属于列表，可比较标量另支持大于、大于等于、小于和小于等于。不对 geometry、JSON 结构或其他无稳定跨方言谓词的类型开放值过滤，也不得为未声明的参数类型提供值过滤。
+- 所有过滤值必须生成稳定命名参数 `:p1`、`:p2` 并写入 `source.query.parameters`，不得将值拼入 SQL。`int` 使用 `integer`（声明 `number` 也可承载整数值），`float/double` 使用 `number`，布尔值使用 `boolean`，普通文本及日期时间使用 `string`；`bigint/decimal` 必须使用十进制字符串通过 `string` 无损传递，禁止经过 JavaScript Number。schema、table 和 column 的引号必须消费 Engine capability 的 `identifier_quotes.sql`，不按 `engine_type` 猜测。
 - 基础构造器不提供 Join、多表输入、聚合、计算字段、输出别名、排序、Limit 或方言私有函数。目标字段名和类型继续由后续 `field_mapping` 配置；复杂 SQL 加工归 Develop。
-- 基础界面直接以已选字段生成确定输出字段，下一步 `field_mapping` 只消费该输出。仅当 SQL 严格属于上述可逆子集时才能反向显示为基础表单；其他合法只读 SQL 统一进入高级编辑器。
+- 基础界面直接以已选字段生成确定输出字段，下一步 `field_mapping` 只消费该输出。仅当 SQL 严格属于上述可逆子集时才能反向显示并编辑为基础表单；其他合法只读 SQL 在 Transfer Console 中只读展示，不提供高级 SQL 编辑或保存入口。
 
-查询入口必须由所选 Engine Instance 的 `compute.query` 能力驱动：只有 `supported=true`、`read_session=true` 且 `languages` 非空时才开放。单语言引擎直接使用 `default_language` 或唯一语言，不显示无意义的语言下拉框；仅当引擎真实声明多种语言时才允许在声明集合内切换。切换 Engine 或源资源必须清理不兼容的查询语句、参数和基础构造状态，不得把 MQL 带入 SQL 引擎或反之。
+查询入口必须由所选 Engine Instance 的 `compute.query` 能力驱动：只有 `supported=true`、`read_session=true` 且 `languages` 非空时才开放。单语言引擎直接使用 `default_language` 或唯一语言，不显示无意义的语言下拉框；仅当引擎真实声明多种语言时才允许在声明集合内切换。查询包含参数时，Planner 还必须失败关闭地校验 `parameters.supported`、`parameters.languages` 与 `parameters.types`，不能只依赖前端。切换 Engine 或源资源必须清理不兼容的查询语句、参数和基础构造状态，不得把 MQL 带入 SQL 引擎或反之。
 
 ## 三、table Transfer 支持范围
 

@@ -28,7 +28,11 @@ Transfer 负责：
 
 bounded query source 是源引擎下推后的连续读取边界：任务保存 capability 已声明支持的只读查询语言和查询文本，Transfer 通过 `QueryReadSessionProvider` 分批消费结果。MongoDB MQL 必须是单个 JSON command object，不接受裸 pipeline 数组；聚合查询使用 `{"aggregate":"<collection>","pipeline":[...]}`。pipeline 可以在源端使用 `$project` 将对象子字段投影为扁平列，使用 `$unwind` 展开数组，并以 `$group` / `$unionWith` 完成确定性关系整形；最终输出必须是一条文档对应一行。Transfer 不递归摊平 BSON/JSON，也不解释数组的业务粒度。`$out`、`$merge` 和所有写查询禁止进入该路径。
 
-Console 的 MongoDB 基础结构整形构建器只覆盖通用 `可选单次 $unwind -> $project` 子集，并编译为上述同一 MQL command object。它只接收 Meta 已识别的字段路径和单个数组字段，自动携带文档标识并生成查询内部输出名；筛选、排序、空数组保留和业务计算不进入基础界面。PostgreSQL 目标命名与类型只属于后续 `field_mapping`。构建器不保存独立配置、不生成第二条执行路线，也不以某个业务域的数据结构作为模板；不能无损反向解析的合法 MQL 只允许在高级编辑器中维护。
+Console 的 MongoDB 基础结构整形构建器只覆盖通用 `可选单次 $unwind -> $project` 子集，并编译为上述同一 MQL command object。它只接收 Meta 已识别的字段路径和单个数组字段，自动携带文档标识并生成与选择顺序无关的稳定查询内部输出名；筛选、排序、空数组保留和业务计算不进入基础界面。PostgreSQL 目标命名与类型只属于后续 `field_mapping`。构建器不保存独立配置、不生成第二条执行路线，也不以某个业务域的数据结构作为模板；不能无损反向解析或与当前 Meta 事实不一致的已有 MQL 只读展示，Transfer Console 不提供高级 MQL 编辑入口。
+
+bounded query source 执行前必须从同一 `PreparedQuery` 取得 Provider 证明的完整 `ReadSet`。有 `source.query.inputs[]` 时，Transfer 将其解析为 Engine Catalog leaf 集合并与 ReadSet 精确比对；无 `inputs` 时，查询必须精确只读取 source locator 所选 leaf。Transfer 不解析 SQL/MQL 文本自行推测资源，也不允许未验证的输入进入执行血缘。
+
+关系型 native table 的 Console 构建器只扩展 Transfer 的轻量 ETL 能力。源固定为用户已选择的单表，界面只提供字段投影和一层 `all|any` 参数化行过滤，目标字段命名与类型继续归后续 `field_mapping`。值过滤必须同时受 Meta 字段类型与 `compute.query.parameters.types` 约束；`bigint/decimal` 固定以十进制字符串通过 `string` capability 无损传递，不经过 JavaScript Number。Planner 在调用 Provider 前再次校验参数开关、语言与运行时值类型，并拒绝无法由 JSON Number 无损表达的大整数。构建器不提供 Join、多表输入、聚合、计算字段、别名、排序、Limit 或方言私有函数，也不提供高级 SQL 编辑入口。仅严格属于可逆子集的 SQL 可在 Transfer Console 中结构化编辑；其他合法只读 SQL 只读展示，复杂数据开发归 Develop。该界面只是标准 `source.query` 的受限编写方式，不保存第二份可视化 DSL，不建立第二条执行路线。
 
 当 bounded query source 需要向上游步骤创建的既有表写入数据时，任务定义启用通用动态目标模式，不保存物理 `target`；TaskProvider 将 `target_locator` 声明为必填运行时输入，由 Orchestrator 从任意显式依赖的稳定 ResourceLocator 输出绑定。worker 使用通用 Engine capability 校验目标已存在且字段映射的名称、顺序和类型一致，仅通过 table write session append 本 execution 结果，不执行删除、清空、建表或改表。Transfer 不得保存其他业务 owner 的 ID 或调用其 API 解析目标。
 

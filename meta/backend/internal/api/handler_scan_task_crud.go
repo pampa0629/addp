@@ -148,8 +148,8 @@ func (h *Handler) DeleteScanTask(c *gin.Context) {
 // @Failure 404 {object} map[string]interface{} "任务不存在 | Task not found"
 // @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["meta.scan_task.read"]
-// @Router /tasks/{task_type}/{id} [get]
+// @x-addp-required-permissions ["meta.task_provider.read"]
+// @Router /task-provider/tasks/{task_type}/{id} [get]
 // @Security BearerAuth
 func (h *Handler) ProviderGetScanTask(c *gin.Context) {
 	if h.taskService == nil {
@@ -228,8 +228,8 @@ func (h *Handler) ListScanTasks(c *gin.Context) {
 // @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["meta.scan_task.read"]
-// @Router /tasks [get]
+// @x-addp-required-permissions ["meta.task_provider.read"]
+// @Router /task-provider/tasks [get]
 // @Security BearerAuth
 func (h *Handler) ListProviderScanTasks(c *gin.Context) {
 	if h.taskService == nil {

@@ -65,6 +65,16 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 		api.Use(audit.ServiceAuditMiddleware("meta", systemClient))
 	}
 	{
+		// TaskProvider 仅允许 Orchestrator Runtime 使用专用最小权限访问。
+		taskProvider := api.Group("/task-provider")
+		taskProvider.Use(auth.MustNewServiceClientGuard("addp-orchestrator"))
+		{
+			taskProvider.GET("/tasks", permission(metaauthorization.PermissionMetaTaskProviderRead), handler.ListProviderScanTasks)
+			taskProvider.GET("/tasks/:task_type/:id", permission(metaauthorization.PermissionMetaTaskProviderRead), handler.ProviderGetScanTask)
+			taskProvider.POST("/tasks/:task_type/:id/execute", permission(metaauthorization.PermissionMetaTaskProviderExecute), handler.ProviderExecuteScanTask)
+			taskProvider.GET("/executions/:execution_id", permission(metaauthorization.PermissionMetaTaskProviderRead), handler.ProviderGetExecution)
+		}
+
 		// 资源相关
 		api.GET("/engines", permission(metaauthorization.PermissionMetaCatalogRead), handler.GetEngines)
 
@@ -74,9 +84,6 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 		api.POST("/inspect", permission(metaauthorization.PermissionMetaInspectExecute), handler.InspectAttributes)
 		api.GET("/scan/runs", permission(metaauthorization.PermissionMetaScanTaskRead), handler.ListScanRuns)
 		api.GET("/executions/:execution_id", permission(metaauthorization.PermissionMetaScanTaskRead), handler.GetExecution)
-		api.GET("/tasks", permission(metaauthorization.PermissionMetaScanTaskRead), handler.ListProviderScanTasks)
-		api.GET("/tasks/:task_type/:id", permission(metaauthorization.PermissionMetaScanTaskRead), handler.ProviderGetScanTask)
-		api.POST("/tasks/:task_type/:id/execute", permission(metaauthorization.PermissionMetaScanTaskExecute), handler.ProviderExecuteScanTask)
 		api.GET("/scan/tasks", permission(metaauthorization.PermissionMetaScanTaskRead), handler.ListScanTasks)
 		api.POST("/scan/tasks", permission(metaauthorization.PermissionMetaScanTaskCreate), handler.CreateScanTask)
 		api.PUT("/scan/tasks/engines/:engine_id", permission(metaauthorization.PermissionMetaScanTaskUpdate), handler.UpsertEngineScanTask)

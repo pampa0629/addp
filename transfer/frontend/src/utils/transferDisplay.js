@@ -33,13 +33,17 @@ export function queryReadSessionCapability(engine) {
   const parameterLanguages = query.parameters?.supported === true
     ? new Set((query.parameters.languages || []).map(value => String(value || '').trim().toLowerCase()).filter(Boolean))
     : new Set()
+  const parameterTypes = query.parameters?.supported === true
+    ? new Set((query.parameters.types || []).map(value => String(value || '').trim().toLowerCase()).filter(Boolean))
+    : new Set()
 
   return {
     engineFamily: String(capabilities?.engine_family || '').trim().toLowerCase(),
     languages,
     defaultLanguage: languages.includes(declaredDefault) ? declaredDefault : languages[0],
     identifierQuotes,
-    parameterLanguages
+    parameterLanguages,
+    parameterTypes
   }
 }
 

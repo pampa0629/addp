@@ -107,6 +107,7 @@ test('browser creates and executes PostgreSQL single-table SQL ETL', async ({ pa
     await expect(frame.getByTestId('task-query-language-select')).toHaveCount(0)
     const builder = frame.getByTestId('relational-sql-builder')
     await expect(builder).toBeVisible()
+    await expect(builder.locator('.el-radio-group')).toHaveCount(0)
     await builder.getByTestId('sql-clear-selected-fields').click()
     await selectOutputField(builder, 'id')
     await selectOutputField(builder, 'region')
@@ -167,7 +168,7 @@ test('browser creates and executes PostgreSQL single-table SQL ETL', async ({ pa
     expect(taskPayload?.config?.source?.query).toEqual({
       language: 'sql',
       statement: expectedStatement,
-      parameters: { p1: 'active', p2: 100 }
+      parameters: { p1: 'active', p2: '100' }
     })
     const mappingsPayload = taskPayload?.config?.transforms
       ?.find(transform => transform?.type === 'field_mapping')?.fields

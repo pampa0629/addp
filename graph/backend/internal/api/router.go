@@ -145,14 +145,16 @@ func SetupRouter(
 			}
 		}
 
-		// TaskProvider 标准入口
-		tasks := auth.Group("/tasks")
+		// TaskProvider 仅允许 Orchestrator Runtime 使用专用最小权限访问。
+		taskProvider := auth.Group("/task-provider")
+		taskProvider.Use(commonAuth.MustNewServiceClientGuard("addp-orchestrator"))
 		{
-			tasks.GET("", permission(graphauthorization.PermissionGraphBuildTaskRead), taskProviderHandler.ListProviderTasks)
-			tasks.GET("/:task_type/:id", permission(graphauthorization.PermissionGraphBuildTaskRead), taskProviderHandler.GetProviderTask)
-			tasks.POST("/:task_type/:id/execute", permission(graphauthorization.PermissionGraphBuildTaskExecute), taskProviderHandler.ExecuteProviderTask)
+			taskProvider.GET("/tasks", permission(graphauthorization.PermissionGraphTaskProviderRead), taskProviderHandler.ListProviderTasks)
+			taskProvider.GET("/tasks/:task_type/:id", permission(graphauthorization.PermissionGraphTaskProviderRead), taskProviderHandler.GetProviderTask)
+			taskProvider.POST("/tasks/:task_type/:id/execute", permission(graphauthorization.PermissionGraphTaskProviderExecute), taskProviderHandler.ExecuteProviderTask)
+			taskProvider.GET("/executions/:execution_id", permission(graphauthorization.PermissionGraphTaskProviderRead), taskProviderHandler.GetProviderExecution)
 		}
-		auth.GET("/executions/:execution_id", permission(graphauthorization.PermissionGraphBuildTaskRead), taskProviderHandler.GetProviderExecution)
+		auth.GET("/executions/:execution_id", permission(graphauthorization.PermissionGraphBuildTaskRead), taskProviderHandler.GetExecution)
 	}
 
 	// 知识服务 API（可选 JWT，handler 内部判断 is_public）

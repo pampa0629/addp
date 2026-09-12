@@ -2471,6 +2471,19 @@ definitions:
       reason:
         type: string
     type: object
+  internal_api.IAMRoleAssignmentActorResponse:
+    properties:
+      display_name:
+        type: string
+      identifier:
+        type: string
+      principal_id:
+        type: string
+      principal_type:
+        type: string
+      status:
+        type: string
+    type: object
   internal_api.IAMSecurityPolicyResponse:
     properties:
       access_token_ttl_minutes:
@@ -2717,12 +2730,18 @@ definitions:
     type: object
   internal_api.IAMTenantRoleAssignmentResponse:
     properties:
-      created_by_principal_id:
+      created_at:
         type: string
       department_id:
         type: string
       display_name:
         type: string
+      effective_state:
+        type: string
+      grant_reason:
+        type: string
+      granted_by:
+        $ref: '#/definitions/internal_api.IAMRoleAssignmentActorResponse'
       id:
         type: string
       membership_id:
@@ -2733,11 +2752,11 @@ definitions:
         type: string
       project_group_id:
         type: string
-      reason:
-        type: string
       revoked_at:
         type: string
-      revoked_by_principal_id:
+      revoked_by:
+        $ref: '#/definitions/internal_api.IAMRoleAssignmentActorResponse'
+      revoked_reason:
         type: string
       role_id:
         type: string
@@ -2747,9 +2766,13 @@ definitions:
         type: string
       role_name_i18n_key:
         type: string
+      same_scope_active_assignment_id:
+        type: string
       scope_type:
         type: string
       service_principal_name:
+        type: string
+      source_type:
         type: string
       status:
         type: string
@@ -9302,9 +9325,10 @@ paths:
         in: query
         name: principal_type
         type: string
-      - description: '状态：active 或 revoked | Status: active or revoked'
+      - description: '当前状态：scheduled、effective、expired 或 revoked；默认 effective | Current
+          state: scheduled, effective, expired, or revoked; defaults to effective'
         in: query
-        name: status
+        name: effective_state
         type: string
       - description: 授权范围类型 | Assignment scope type
         in: query
@@ -9385,6 +9409,34 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - iam.tenant_role_assignment.create
+  /tenant/role_assignments/{id}:
+    get:
+      parameters:
+      - description: 角色分配 ID | Role assignment ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.IAMTenantRoleAssignmentResponse'
+        "404":
+          description: 角色分配不存在或不属于当前租户 | Role assignment not found in the current
+            tenant
+          schema:
+            $ref: '#/definitions/internal_api.IAMErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 查询当前租户角色分配详情 | Get role assignment details in the current tenant
+      tags:
+      - 租户角色分配 | Tenant Role Assignments
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - iam.tenant_role_assignment.read
   /tenant/role_assignments/{id}/revoke:
     post:
       consumes:

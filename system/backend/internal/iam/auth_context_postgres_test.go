@@ -948,7 +948,7 @@ func insertRoleAssignment(
 	if err := db.Raw(`
 		INSERT INTO system.role_assignments (
 			principal_id, role_id, scope_type, tenant_id, department_id, project_group_id,
-			valid_from, valid_until, source_type, created_by_principal_id, reason
+			valid_from, valid_until, source_type, created_by_principal_id, grant_reason
 		)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'AuthContext integration test')
 		RETURNING id

@@ -34,7 +34,7 @@
         <el-select v-model="filters.scope_type" :placeholder="t('system.iam.roleAssignments.scope')" clearable @change="reload">
           <el-option v-for="scope in scopeTypes" :key="scope" :label="scopeLabel(scope)" :value="scope" />
         </el-select>
-        <el-select v-model="filters.status" :placeholder="t('system.iam.common.status')" clearable @change="reload">
+        <el-select v-model="filters.effective_state" :placeholder="t('system.iam.common.status')" @change="reload">
           <el-option v-for="status in assignmentStatuses" :key="status" :label="t(`system.iam.status.${status}`)" :value="status" />
         </el-select>
         <el-button v-if="!fixedMembership" :type="showingCurrentAccount ? 'primary' : 'default'" :icon="User" :disabled="!currentMembershipID" @click="toggleCurrentAccountFilter">
@@ -49,9 +49,14 @@
       <el-table-column v-if="!fixedMembership" :label="t('system.iam.memberships.member')" min-width="250"><template #default="{ row }"><TenantMemberIdentity :member="row" :current-membership-id="currentMembershipID" /></template></el-table-column>
       <el-table-column :label="t('system.iam.roles.role')" min-width="210"><template #default="{ row }"><div class="iam-primary-cell"><strong>{{ assignmentRoleName(row) }}</strong><span class="iam-role-key">{{ row.role_key }}</span></div></template></el-table-column>
       <el-table-column :label="t('system.iam.roleAssignments.scope')" min-width="230"><template #default="{ row }">{{ scopeValue(row) }}</template></el-table-column>
-      <el-table-column :label="t('system.iam.common.status')" width="110"><template #default="{ row }"><el-tag :type="row.status === 'active' ? 'success' : 'info'">{{ t(`system.iam.status.${row.status}`) }}</el-tag></template></el-table-column>
+      <el-table-column :label="t('system.iam.common.status')" width="110"><template #default="{ row }"><el-tag :type="assignmentStateTagType(row.effective_state)">{{ t(`system.iam.status.${row.effective_state}`) }}</el-tag></template></el-table-column>
       <el-table-column :label="t('system.iam.roleAssignments.validUntil')" width="180"><template #default="{ row }">{{ formatDate(row.valid_until) }}</template></el-table-column>
-      <el-table-column v-if="!props.readOnly" :label="t('system.iam.common.actions')" width="110" fixed="right"><template #default="{ row }"><el-button v-if="can('iam.tenant_role_assignment.revoke') && row.status === 'active'" link type="danger" :icon="CircleClose" @click="revoke(row)">{{ t('system.iam.common.revoke') }}</el-button></template></el-table-column>
+      <el-table-column :label="t('system.iam.common.actions')" width="180" fixed="right">
+        <template #default="{ row }">
+          <el-button link type="primary" :icon="View" @click="openDetails(row.id)">{{ t('system.iam.common.view') }}</el-button>
+          <el-button v-if="!props.readOnly && can('iam.tenant_role_assignment.revoke') && row.status === 'active'" link type="danger" :icon="CircleClose" @click="revoke(row)">{{ t('system.iam.common.revoke') }}</el-button>
+        </template>
+      </el-table-column>
     </el-table>
 
     <el-pagination v-model:current-page="page" v-model:page-size="pageSize" class="iam-pagination" :total="total" :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next" @current-change="load" @size-change="reload" />
@@ -106,10 +111,53 @@
           <div v-else-if="form.roleIds.length" class="iam-role-selection-detail">{{ t('system.iam.roleAssignments.selectedCount', { count: form.roleIds.length }) }}</div>
         </el-form-item>
         <el-form-item v-if="!hasTenantAdministratorSelected" :label="t('system.iam.roleAssignments.validUntil')"><el-date-picker v-model="form.validUntil" type="datetime" clearable style="width: 100%" /></el-form-item>
-        <el-form-item :label="t('system.iam.common.reason')"><el-input v-model="form.reason" type="textarea" :rows="2" /></el-form-item>
+        <el-form-item :label="t('system.iam.roleAssignments.grantReason')" prop="reason"><el-input v-model="form.reason" type="textarea" :rows="2" /></el-form-item>
       </el-form>
       <template #footer><el-button @click="dialogVisible = false">{{ t('system.iam.common.cancel') }}</el-button><el-button type="primary" :disabled="!canSubmitAssignments" :loading="submitting" @click="submit">{{ t('system.iam.roleAssignments.confirmAssignment') }}</el-button></template>
     </el-dialog>
+
+    <el-drawer v-if="detailVisible" v-model="detailVisible" :title="t('system.iam.roleAssignments.detail')" size="min(560px, 100%)" append-to-body destroy-on-close>
+      <div v-loading="detailLoading" class="iam-assignment-detail">
+        <template v-if="detail">
+          <div class="iam-assignment-detail__heading">
+            <div class="iam-primary-cell">
+              <strong>{{ assignmentRoleName(detail) }}</strong>
+              <span class="iam-role-key">{{ detail.role_key }}</span>
+            </div>
+            <el-tag :type="assignmentStateTagType(detail.effective_state)">{{ t(`system.iam.status.${detail.effective_state}`) }}</el-tag>
+          </div>
+
+          <el-alert v-if="detail.same_scope_active_assignment_id" type="info" :closable="false" show-icon>
+            <template #title>{{ t('system.iam.roleAssignments.sameScopeRegranted') }}</template>
+            <el-button link type="primary" @click="openDetails(detail.same_scope_active_assignment_id)">{{ t('system.iam.roleAssignments.viewCurrentAssignment') }}</el-button>
+          </el-alert>
+
+          <el-descriptions :title="t('system.iam.roleAssignments.assignmentInfo')" :column="1" border>
+            <el-descriptions-item :label="t('system.iam.roleAssignments.assignmentId')">{{ detail.id }}</el-descriptions-item>
+            <el-descriptions-item :label="t('system.iam.memberships.member')">{{ assignmentMemberLabel(detail) }}</el-descriptions-item>
+            <el-descriptions-item :label="t('system.iam.roleAssignments.scope')">{{ scopeValue(detail) }}</el-descriptions-item>
+          </el-descriptions>
+
+          <el-descriptions :title="t('system.iam.roleAssignments.grantInfo')" :column="1" border>
+            <el-descriptions-item :label="t('system.iam.roleAssignments.source')">{{ assignmentSourceLabel(detail.source_type) }}</el-descriptions-item>
+            <el-descriptions-item :label="t('system.iam.roleAssignments.grantedBy')">{{ assignmentActorLabel(detail.granted_by) }}</el-descriptions-item>
+            <el-descriptions-item :label="t('system.iam.roleAssignments.grantTime')">{{ formatDate(detail.created_at) }}</el-descriptions-item>
+            <el-descriptions-item :label="t('system.iam.roleAssignments.grantReason')">{{ detail.grant_reason || t('system.iam.roleAssignments.historicalReasonMissing') }}</el-descriptions-item>
+          </el-descriptions>
+
+          <el-descriptions :title="t('system.iam.roleAssignments.validity')" :column="1" border>
+            <el-descriptions-item :label="t('system.iam.roleAssignments.validFrom')">{{ formatDate(detail.valid_from) }}</el-descriptions-item>
+            <el-descriptions-item :label="t('system.iam.roleAssignments.validUntil')">{{ detail.valid_until ? formatDate(detail.valid_until) : t('system.iam.roleAssignments.noExpiry') }}</el-descriptions-item>
+          </el-descriptions>
+
+          <el-descriptions v-if="detail.effective_state === 'revoked'" :title="t('system.iam.roleAssignments.revokeInfo')" :column="1" border>
+            <el-descriptions-item :label="t('system.iam.roleAssignments.revokedBy')">{{ assignmentActorLabel(detail.revoked_by) }}</el-descriptions-item>
+            <el-descriptions-item :label="t('system.iam.roleAssignments.revokeTime')">{{ formatDate(detail.revoked_at) }}</el-descriptions-item>
+            <el-descriptions-item :label="t('system.iam.roleAssignments.revokeReason')">{{ detail.revoked_reason }}</el-descriptions-item>
+          </el-descriptions>
+        </template>
+      </div>
+    </el-drawer>
     <MFAStepUpDialog ref="stepUpRef" />
   </section>
 </template>
@@ -147,7 +195,7 @@ const MAX_ROLE_ASSIGNMENT_BATCH_SIZE = 50
 const authStore = useAuthStore()
 const can = (permission) => authStore.hasPermission(permission)
 const scopeTypes = ['tenant', 'department', 'project_group']
-const assignmentStatuses = ['active', 'revoked']
+const assignmentStatuses = ['effective', 'scheduled', 'expired', 'revoked']
 const rows = ref([])
 const roles = ref([])
 const membershipOptions = ref([])
@@ -162,8 +210,11 @@ const page = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
 const dialogVisible = ref(false)
+const detailVisible = ref(false)
+const detailLoading = ref(false)
+const detail = ref(null)
 const formRef = ref()
-const filters = reactive({ membership_id: '', scope_type: '', status: 'active' })
+const filters = reactive({ membership_id: '', scope_type: '', effective_state: 'effective' })
 const form = reactive({ membershipId: '', roleIds: [], scopeType: 'tenant', departmentId: '', projectGroupId: '', validUntil: null, reason: '' })
 const fixedMembership = computed(() => props.fixedMembership)
 const fixedMember = computed(() => fixedMembership.value ? {
@@ -208,7 +259,7 @@ const roleOptionGroups = computed(() => {
 const selectedRoleOptions = computed(() => roleOptions.value.filter((role) => form.roleIds.includes(role.id)))
 const availableRoleCount = computed(() => partitionTenantRoleOptions(roleOptions.value).available.length)
 const hasTenantAdministratorSelected = computed(() => selectedRoles.value.some((role) => role.role_key === TENANT_ADMINISTRATOR_ROLE_KEY))
-const canSubmitAssignments = computed(() => form.roleIds.length > 0 && selectedRoleOptions.value.length === form.roleIds.length && selectedRoleOptions.value.every((role) => !role.assigned))
+const canSubmitAssignments = computed(() => form.reason.trim() !== '' && form.roleIds.length > 0 && selectedRoleOptions.value.length === form.roleIds.length && selectedRoleOptions.value.every((role) => !role.assigned))
 const showRecommendations = computed(() => !fixedMembership.value && can('iam.tenant_role_assignment.create') && tenantRoleKeys(authStore.authContext).includes(TENANT_ADMINISTRATOR_ROLE_KEY))
 const recommendationIcons = {
   'tenant.infrastructure_administrator': Connection,
@@ -220,7 +271,8 @@ const rules = computed(() => ({
   roleIds: [{ required: true, type: 'array', min: 1, message: t('system.iam.validation.required'), trigger: 'change' }],
   scopeType: [{ required: true, message: t('system.iam.validation.required'), trigger: 'change' }],
   departmentId: [{ required: form.scopeType === 'department', message: t('system.iam.validation.required'), trigger: 'change' }],
-  projectGroupId: [{ required: form.scopeType === 'project_group', message: t('system.iam.validation.required'), trigger: 'change' }]
+  projectGroupId: [{ required: form.scopeType === 'project_group', message: t('system.iam.validation.required'), trigger: 'change' }],
+  reason: [{ required: true, whitespace: true, message: t('system.iam.validation.required'), trigger: 'blur' }]
 }))
 
 function roleLabel(role) { return resolveRoleName(role, t, te) }
@@ -230,6 +282,25 @@ function recommendationAssigned(roleKey) { return hasTenantRole(authStore.authCo
 function scopeLabel(scope) { return resolveTenantScopeLabel(scope, t) }
 function scopeValue(row) { return formatTenantAssignmentScope(row, t, organizationLabels.value) }
 function formatDate(value) { return value ? new Date(value).toLocaleString() : '-' }
+function assignmentStateTagType(state) {
+  if (state === 'effective') return 'success'
+  if (state === 'scheduled') return 'warning'
+  return 'info'
+}
+function assignmentMemberLabel(assignment) {
+  const identifier = assignment.username || assignment.service_principal_name || assignment.principal_id
+  return assignment.display_name === identifier ? assignment.display_name : `${assignment.display_name} (${identifier})`
+}
+function assignmentActorLabel(actor) {
+  if (!actor) return t('system.iam.roleAssignments.systemInitiated')
+  const displayName = actor.display_name || actor.identifier || actor.principal_id
+  if (!actor.identifier || displayName === actor.identifier) return displayName
+  return `${displayName} (${actor.identifier})`
+}
+function assignmentSourceLabel(sourceType) {
+  const key = `system.iam.source.${sourceType || 'unknown'}`
+  return te(key) ? t(key) : sourceType || t('system.iam.source.unknown')
+}
 async function load() {
   loading.value = true
   try {
@@ -239,7 +310,7 @@ async function load() {
       membership_id: effectiveMembershipID.value || undefined,
       principal_type: fixedMembership.value ? 'service_principal' : 'user',
       scope_type: filters.scope_type || undefined,
-      status: filters.status || undefined
+      effective_state: filters.effective_state
     })
     rows.value = result.data || []
     total.value = result.total || 0
@@ -284,7 +355,7 @@ async function loadMemberAssignments() {
     do {
       const result = await iamAPI.tenantRoleAssignments.list({
         membership_id: membershipId,
-        status: 'active',
+        effective_state: 'effective',
         page: assignmentPage,
         page_size: 100
       })
@@ -370,6 +441,18 @@ async function revoke(row) {
     if (error !== 'cancel' && error !== 'close') ElMessage.error(error.response?.data?.error || t('system.iam.common.updateFailed'))
   }
 }
+async function openDetails(assignmentId) {
+  detailVisible.value = true
+  detailLoading.value = true
+  try {
+    detail.value = await iamAPI.tenantRoleAssignments.get(assignmentId)
+  } catch (error) {
+    detail.value = null
+    ElMessage.error(error.response?.data?.error || t('system.iam.common.loadFailed'))
+  } finally {
+    detailLoading.value = false
+  }
+}
 async function refreshCurrentMemberAuthorization(membershipId) {
   if (String(membershipId) !== String(authStore.authContext?.context?.tenant_membership_id || '')) return
   await authStore.refreshAuthorization()
@@ -412,6 +495,9 @@ watch(() => fixedMembership.value?.membership_id, () => {
 .iam-role-option-key { overflow-wrap: anywhere; }
 .iam-role-key { overflow-wrap: anywhere; }
 .iam-role-selection-detail { width: 100%; margin-top: 6px; color: var(--addp-text-secondary); font-size: 12px; line-height: 1.5; }
+.iam-assignment-detail { min-height: 160px; }
+.iam-assignment-detail__heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.iam-assignment-detail :deep(.el-alert), .iam-assignment-detail :deep(.el-descriptions) { margin-bottom: 16px; }
 @media (max-width: 900px) {
   .iam-role-recommendations { align-items: stretch; flex-direction: column; }
   .iam-role-recommendations__actions { justify-content: flex-start; }

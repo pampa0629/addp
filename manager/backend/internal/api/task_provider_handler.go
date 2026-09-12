@@ -22,10 +22,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// TaskProviderHandler 标准 TaskProvider API 处理器
-// 实现: GET /api/v1/manager/tasks, POST /api/v1/manager/tasks/:task_type/:id/execute
+// TaskProviderHandler 管理人用任务 API 与隔离的 TaskProvider API。
+// TaskProvider 实现: GET /api/v1/manager/task-provider/tasks, POST /api/v1/manager/task-provider/tasks/:task_type/:id/execute
 //
-//	GET /api/v1/manager/tasks/:task_type/:id, GET /api/v1/manager/executions/:execution_id
+//	GET /api/v1/manager/task-provider/tasks/:task_type/:id, GET /api/v1/manager/task-provider/executions/:execution_id
 type TaskProviderHandler struct {
 	embeddingTaskSvc              *service.EmbeddingTaskService
 	tileCacheTaskSvc              *service.TileCacheTaskService
@@ -605,6 +605,90 @@ type PointCloudCOPCTaskResponse struct {
 	Result              *PointCloudCOPCTaskResultResponse `json:"result,omitempty"`
 	CreatedAt           time.Time                         `json:"created_at"`
 	UpdatedAt           time.Time                         `json:"updated_at"`
+}
+
+// ProviderListTasks 列出可供 Orchestrator 编排的 Manager 任务。
+// @Summary 列出 TaskProvider Manager 任务 | List TaskProvider Manager tasks
+// @Description 仅向 Orchestrator Runtime 返回 Manager 已保存且可编排的任务定义。| Return saved and orchestratable Manager task definitions only to the Orchestrator Runtime.
+// @Tags TaskProvider
+// @Produce json
+// @Param task_type query string false "任务类型 | Task type"
+// @Param page query int false "页码 | Page" default(1)
+// @Param page_size query int false "每页数量 | Page size" default(100)
+// @Success 200 {object} TaskListResponse
+// @Failure 400 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.task_provider.read"]
+// @Router /task-provider/tasks [get]
+// @Security BearerAuth
+func (h *TaskProviderHandler) ProviderListTasks(c *gin.Context) {
+	h.ListTasks(c)
+}
+
+// ProviderTaskDetail 获取 TaskProvider Manager 任务详情。
+// @Summary 获取 TaskProvider Manager 任务详情 | Get TaskProvider Manager task detail
+// @Tags TaskProvider
+// @Produce json
+// @Param task_type path string true "任务类型 | Task type"
+// @Param id path int true "任务ID | Task ID"
+// @Success 200 {object} TaskProviderTaskDetailResponse
+// @Failure 400 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.task_provider.read"]
+// @Router /task-provider/tasks/{task_type}/{id} [get]
+// @Security BearerAuth
+func (h *TaskProviderHandler) ProviderTaskDetail(c *gin.Context) {
+	h.TaskDetail(c)
+}
+
+// ProviderTaskExecute 执行 TaskProvider Manager 任务。
+// @Summary 执行 TaskProvider Manager 任务 | Execute TaskProvider Manager task
+// @Tags TaskProvider
+// @Accept json
+// @Produce json
+// @Param task_type path string true "任务类型 | Task type"
+// @Param id path int true "任务ID | Task ID"
+// @Param body body TaskExecuteRequest false "执行配置 | Execution configuration"
+// @Success 202 {object} TaskExecuteResponse
+// @Failure 400 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Failure 409 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.task_provider.execute"]
+// @Router /task-provider/tasks/{task_type}/{id}/execute [post]
+// @Security BearerAuth
+func (h *TaskProviderHandler) ProviderTaskExecute(c *gin.Context) {
+	h.TaskExecute(c)
+}
+
+// ProviderExecutionStatus 获取 TaskProvider Manager 执行状态。
+// @Summary 获取 TaskProvider Manager 执行状态 | Get TaskProvider Manager execution status
+// @Tags TaskProvider
+// @Produce json
+// @Param execution_id path string true "执行ID | Execution ID"
+// @Success 200 {object} taskprovider.ExecutionStatusResponse
+// @Failure 404 {object} map[string]interface{}
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["manager.task_provider.read"]
+// @Router /task-provider/executions/{execution_id} [get]
+// @Security BearerAuth
+func (h *TaskProviderHandler) ProviderExecutionStatus(c *gin.Context) {
+	tenantID := tenantIDValue(c)
+	executionID := c.Param("execution_id")
+
+	exec, err := h.taskExecRepo.GetByExecutionID(c.Request.Context(), executionID, int(tenantID))
+	if err != nil {
+		if errors.Is(err, commonapi.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "执行记录不存在"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, taskprovider.NewExecutionStatusResponse(exec))
 }
 
 // ListTasks GET /api/v1/manager/tasks

@@ -19,4 +19,13 @@ func TestOrchestratorTaskProviderDeclaration(t *testing.T) {
 	if capability == nil || !capability.SupportsSchedule {
 		t.Fatalf("capability = %#v", capability)
 	}
+	want := map[string]string{
+		"list":    "/api/v1/orchestrator/task-provider/tasks",
+		"detail":  "/api/v1/orchestrator/task-provider/tasks/{task_type}/{id}",
+		"execute": "/api/v1/orchestrator/task-provider/tasks/{task_type}/{id}/execute",
+		"status":  "/api/v1/orchestrator/task-provider/executions/{execution_id}",
+	}
+	if declaration.TaskListEndpoint != want["list"] || declaration.TaskDetailEndpoint != want["detail"] || declaration.TaskExecuteEndpoint != want["execute"] || declaration.TaskStatusEndpoint != want["status"] {
+		t.Fatalf("TaskProvider endpoints = %#v, want %#v", declaration, want)
+	}
 }

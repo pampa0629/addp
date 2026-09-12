@@ -24,14 +24,19 @@ export function defaultMongoIndexOutput(arrayPath) {
   return prefix ? `${prefix}__index` : ''
 }
 
-export function createMongoPathProjection(source, sourceFields = [], existingProjections = []) {
-  const cleanSource = cleanText(source).replace(/^\$+/, '')
-  const sourceField = findSourceField(sourceFields, cleanSource)
-  return {
-    source: cleanSource,
-    output: uniqueOutputName(defaultMongoOutputName(cleanSource), existingProjections.map(item => item?.output)),
-    nullable: sourceField?.primary_key === true ? false : sourceField?.nullable !== false
-  }
+export function createMongoPathProjections(sources, sourceFields = [], reservedOutputs = []) {
+  const normalizedSources = [...new Set((Array.isArray(sources) ? sources : [])
+    .map(source => cleanText(source).replace(/^\$+/, ''))
+    .filter(Boolean))]
+  const outputNames = stableMongoOutputNames(normalizedSources, reservedOutputs)
+  return normalizedSources.map(source => {
+    const sourceField = findSourceField(sourceFields, source)
+    return {
+      source,
+      output: outputNames.get(source),
+      nullable: sourceField?.primary_key === true ? false : sourceField?.nullable !== false
+    }
+  })
 }
 
 export function compileMongoStructureQuery(model) {
@@ -73,7 +78,7 @@ export function compileMongoStructureQuery(model) {
   return JSON.stringify({ aggregate: normalized.collection, pipeline })
 }
 
-export function parseMongoStructureQuery(statement) {
+export function parseMongoStructureQuery(statement, options = {}) {
   let command
   try {
     command = JSON.parse(String(statement || '').trim())
@@ -125,10 +130,6 @@ export function parseMongoStructureQuery(statement) {
     if (model.unwind.includeIndex && output === model.unwind.indexOutput && expression === 1) continue
     const parsed = parsePathProjection(output, expression)
     if (!parsed) return unsupported('unsupported_project')
-    const reservedOutputs = [model.unwind.includeIndex ? model.unwind.indexOutput : '', ...model.projections.map(item => item.output)]
-    if (parsed.output !== uniqueOutputName(defaultMongoOutputName(parsed.source), reservedOutputs)) {
-      return unsupported('noncanonical_output')
-    }
     model.projections.push(parsed)
   }
   stageIndex += 1
@@ -137,7 +138,7 @@ export function parseMongoStructureQuery(statement) {
     return unsupported('unsupported_stage')
   }
 
-  const issues = validateNormalizedModel(model)
+  const issues = validateNormalizedModel(model, options)
   if (issues.length > 0) {
     return { supported: false, reason: 'invalid_structure', issues }
   }
@@ -173,7 +174,7 @@ export function mongoStructureOutputFields(model, sourceFields = []) {
 
 export function isMongoProjectionLeafField(field) {
   const type = cleanText(field?.type || field?.native_type).toLowerCase()
-  return !['array', 'json', 'object'].includes(type)
+  return !['array', 'json', 'object', 'mixed', 'unknown'].includes(type)
 }
 
 export function isMongoParentLeafField(field, sourceFields = []) {
@@ -192,8 +193,8 @@ export function isMongoArrayElementLeafField(field, arrayPath, sourceFields = []
   ))
 }
 
-export function validateMongoStructureQuery(model) {
-  return validateNormalizedModel(normalizeModel(model))
+export function validateMongoStructureQuery(model, options = {}) {
+  return validateNormalizedModel(normalizeModel(model), options)
 }
 
 function normalizeModel(model = {}) {
@@ -214,9 +215,13 @@ function normalizeModel(model = {}) {
   }
 }
 
-function validateNormalizedModel(model) {
+function validateNormalizedModel(model, options = {}) {
   const issues = []
   if (!model.collection) issues.push(issue('collection', 'collection_required'))
+  const expectedCollection = cleanText(options.collection)
+  if (expectedCollection && model.collection !== expectedCollection) {
+    issues.push(issue('collection', 'collection_mismatch'))
+  }
   if (model.unwind.enabled && !isFieldPath(model.unwind.path)) {
     issues.push(issue('unwind.path', 'unwind_path_required'))
   }
@@ -230,12 +235,16 @@ function validateNormalizedModel(model) {
 
   const sources = new Set()
   const outputs = new Set(model.unwind.includeIndex ? [model.unwind.indexOutput.toLowerCase()] : [])
+  const expectedOutputs = stableMongoOutputNames(
+    model.projections.map(projection => projection.source),
+    model.unwind.includeIndex ? [model.unwind.indexOutput] : []
+  )
   model.projections.forEach((projection, index) => {
     if (!isFieldPath(projection.source)) issues.push(issue(`projections.${index}.source`, 'field_path_required'))
     const sourceKey = projection.source.toLowerCase()
     if (sourceKey && sources.has(sourceKey)) issues.push(issue(`projections.${index}.source`, 'source_field_duplicate'))
     sources.add(sourceKey)
-    const expectedOutput = uniqueOutputName(defaultMongoOutputName(projection.source), [...outputs])
+    const expectedOutput = expectedOutputs.get(projection.source)
     if (!isOutputField(projection.output) || projection.output !== expectedOutput) {
       issues.push(issue(`projections.${index}.output`, 'output_field_invalid'))
     }
@@ -244,6 +253,7 @@ function validateNormalizedModel(model) {
     outputs.add(outputKey)
   })
   if (!sources.has('_id')) issues.push(issue('projections', 'identifier_required'))
+  issues.push(...validateSourceContext(model, options.sourceFields))
   return issues
 }
 
@@ -298,12 +308,66 @@ function mongoArrayPaths(sourceFields) {
     .filter(Boolean)
 }
 
-function uniqueOutputName(base, existingOutputs = []) {
-  const used = new Set(existingOutputs.map(value => cleanText(value).toLowerCase()).filter(Boolean))
-  if (!used.has(base.toLowerCase())) return base
-  let suffix = 2
-  while (used.has(`${base}__${suffix}`.toLowerCase())) suffix += 1
-  return `${base}__${suffix}`
+function stableMongoOutputNames(sources, reservedOutputs = []) {
+  const groups = new Map()
+  for (const source of [...new Set(sources.map(cleanText).filter(Boolean))]) {
+    const base = defaultMongoOutputName(source)
+    const key = base.toLowerCase()
+    if (!groups.has(key)) groups.set(key, { base, sources: [] })
+    groups.get(key).sources.push(source)
+  }
+  const allBaseNames = new Set([...groups.keys()])
+  const used = new Set(reservedOutputs.map(value => cleanText(value).toLowerCase()).filter(Boolean))
+  const result = new Map()
+  for (const [, group] of [...groups.entries()].sort(([left], [right]) => compareText(left, right))) {
+    const orderedSources = group.sources.sort(compareText)
+    for (let index = 0; index < orderedSources.length; index += 1) {
+      let output = group.base
+      if (index > 0 || used.has(output.toLowerCase())) {
+        let suffix = 2
+        do {
+          output = `${group.base}__${suffix}`
+          suffix += 1
+        } while (used.has(output.toLowerCase()) || allBaseNames.has(output.toLowerCase()))
+      }
+      used.add(output.toLowerCase())
+      result.set(orderedSources[index], output)
+    }
+  }
+  return result
+}
+
+function validateSourceContext(model, sourceFields) {
+  const fields = Array.isArray(sourceFields) ? sourceFields : []
+  if (fields.length === 0) return []
+  const issues = []
+  if (model.unwind.enabled) {
+    const unwindField = findSourceField(fields, model.unwind.path)
+    if (!unwindField || cleanText(unwindField.type || unwindField.native_type).toLowerCase() !== 'array') {
+      issues.push(issue('unwind.path', 'unwind_path_unavailable'))
+    }
+  }
+  model.projections.forEach((projection, index) => {
+    const field = findSourceField(fields, projection.source)
+    if (!field) {
+      issues.push(issue(`projections.${index}.source`, 'source_field_unavailable'))
+      return
+    }
+    if (projection.source === '_id') return
+    if (!isMongoProjectionLeafField(field)) {
+      issues.push(issue(`projections.${index}.source`, 'source_field_type_unsupported'))
+      return
+    }
+    const validForShape = model.unwind.enabled
+      ? isMongoParentLeafField(field, fields) || isMongoArrayElementLeafField(field, model.unwind.path, fields)
+      : isMongoParentLeafField(field, fields)
+    if (!validForShape) issues.push(issue(`projections.${index}.source`, 'source_field_not_in_row_shape'))
+  })
+  return issues
+}
+
+function compareText(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0
 }
 
 function isPlainObject(value) {

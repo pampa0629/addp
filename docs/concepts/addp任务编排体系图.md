@@ -112,17 +112,17 @@ graph TB
 
 | 模块 | 任务名称 | 任务 API | 参数示例 |
 |------|---------|---------|---------|
-| **Meta** | 扫描元数据 | `POST /api/v1/meta/tasks/{task_type}/{id}/execute` | `task_type=scan` |
+| **Meta** | 扫描元数据 | `POST /api/v1/meta/task-provider/tasks/{task_type}/{id}/execute` | `task_type=scan` |
 | **Transfer** | Transfer 任务 | `POST /api/v1/transfer/task-provider/tasks/{task_type}/{id}/execute` | `task_type=sync` |
 | **Develop** | 执行查询 | `POST /api/v1/develop/task-provider/tasks/{task_type}/{id}/execute` | `task_type=query` |
 | **Develop** | 执行工作流 | `POST /api/v1/develop/task-provider/tasks/{task_type}/{id}/execute` | `task_type=workflow` |
 | **Develop** | 执行脚本 | `POST /api/v1/develop/task-provider/tasks/{task_type}/{id}/execute` | `task_type=script`，接入父 Execution Authorization 前拒绝编排 |
-| **Manager** | 生成瓦片缓存 | `POST /api/v1/manager/tasks/{task_type}/{id}/execute` | `task_type=vector_tile_cache_generation` |
-| **Manager** | 矢量物化视图 | `POST /api/v1/manager/tasks/{task_type}/{id}/execute` | `task_type=vector_materialized_view_generation` |
-| **Manager** | 向量化 | `POST /api/v1/manager/tasks/{task_type}/{id}/execute` | `task_type=embedding` |
+| **Manager** | 生成瓦片缓存 | `POST /api/v1/manager/task-provider/tasks/{task_type}/{id}/execute` | `task_type=vector_tile_cache_generation` |
+| **Manager** | 矢量物化视图 | `POST /api/v1/manager/task-provider/tasks/{task_type}/{id}/execute` | `task_type=vector_materialized_view_generation` |
+| **Manager** | 向量化 | `POST /api/v1/manager/task-provider/tasks/{task_type}/{id}/execute` | `task_type=embedding` |
 | **Quality** | 质量检查 | `POST /api/v1/quality/task-provider/tasks/{task_type}/{id}/execute` | `task_type=check` |
-| **Graph** | 图谱构建 | `POST /api/v1/graph/tasks/{task_type}/{id}/execute` | `task_type=kg_build` |
-| **Orchestrator** | 已保存编排 | `POST /api/v1/orchestrator/tasks/{task_type}/{id}/execute` | `task_type=orchestration` |
+| **Graph** | 图谱构建 | `POST /api/v1/graph/task-provider/tasks/{task_type}/{id}/execute` | `task_type=kg_build` |
+| **Orchestrator** | 已保存编排 | `POST /api/v1/orchestrator/task-provider/tasks/{task_type}/{id}/execute` | `task_type=orchestration` |
 
 ---
 

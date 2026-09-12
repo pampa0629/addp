@@ -146,6 +146,16 @@ func SetupRouter(
 		api.Use(audit.ServiceAuditMiddleware("manager", systemServiceClient))
 	}
 	{
+		// TaskProvider 仅允许 Orchestrator Runtime 使用专用最小权限访问。
+		taskProvider := api.Group("/task-provider")
+		taskProvider.Use(auth.MustNewServiceClientGuard("addp-orchestrator"))
+		{
+			taskProvider.GET("/tasks", permission(managerauthorization.PermissionManagerTaskProviderRead), taskProviderHandler.ProviderListTasks)
+			taskProvider.GET("/tasks/:task_type/:id", permission(managerauthorization.PermissionManagerTaskProviderRead), taskProviderHandler.ProviderTaskDetail)
+			taskProvider.POST("/tasks/:task_type/:id/execute", permission(managerauthorization.PermissionManagerTaskProviderExecute), taskProviderHandler.ProviderTaskExecute)
+			taskProvider.GET("/executions/:execution_id", permission(managerauthorization.PermissionManagerTaskProviderRead), taskProviderHandler.ProviderExecutionStatus)
+		}
+
 		if taskProviderHandler != nil {
 			taskProviderHandler.SetExecutionEnqueueNotifier(notifyExecutionEnqueued)
 			api.POST("/executions/:execution_id/events", permission(managerauthorization.PermissionManagerDerivedArtifactCreate), taskProviderHandler.RecordManagerExecutionProgressEvent)
@@ -164,7 +174,7 @@ func SetupRouter(
 		api.DELETE("/embeddings/:id", permission(managerauthorization.PermissionManagerDerivedArtifactDelete), embeddingHandler.DeleteEmbedding)
 		api.GET("/items/:item_id/embedding", permission(managerauthorization.PermissionManagerDerivedArtifactRead), embeddingHandler.GetItemEmbedding)
 
-		// ===== 标准 TaskProvider API =====
+		// ===== 用户任务管理 API =====
 		// GET|POST /api/v1/manager/tasks[/:task_type]         → 统一派生任务列表与创建
 		// GET|PUT|DELETE /api/v1/manager/tasks/:task_type/:id → 统一派生任务详情与维护
 		// POST   /api/v1/manager/tasks/:task_type/:id/execute → 触发执行

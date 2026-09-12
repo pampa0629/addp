@@ -14,8 +14,28 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 136 {
-		t.Fatalf("LatestVersion = %d, want 136", catalog.LatestVersion)
+	if catalog.LatestVersion != 138 {
+		t.Fatalf("LatestVersion = %d, want 138", catalog.LatestVersion)
+	}
+}
+
+func TestRoleAssignmentLifecycleMigrationPublishesImmutableHistory(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000138_iam_role_assignment_lifecycle.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 138: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"RENAME COLUMN reason TO grant_reason",
+		"ADD COLUMN revoked_reason text",
+		"role_assignments_lifecycle_check",
+		"revoked role assignment is immutable",
+		"new role assignment requires a grant reason",
+		"revoked role assignment requires a revocation reason",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 138 missing %q", fragment)
+		}
 	}
 }
 
@@ -492,6 +512,25 @@ func TestTransferTaskProviderRuntimeMigrationPublishesNarrowPermissions(t *testi
 	} {
 		if !strings.Contains(sql, fragment) {
 			t.Fatalf("migration 103 missing %q", fragment)
+		}
+	}
+}
+
+func TestTaskProviderRouteIsolationMigrationPublishesNarrowPermissions(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000137_iam_task_provider_route_isolation.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 137: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"'graph.task_provider.execute'", "'graph.task_provider.read'",
+		"'manager.task_provider.execute'", "'manager.task_provider.read'",
+		"'meta.task_provider.execute'", "'meta.task_provider.read'",
+		"'orchestrator.task_provider.execute'", "'orchestrator.task_provider.read'",
+		"'tenant.orchestrator_runtime'", "authorization_version = principal.authorization_version + 1",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 137 missing %q", fragment)
 		}
 	}
 }

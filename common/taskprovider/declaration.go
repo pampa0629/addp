@@ -27,8 +27,8 @@ func ValidateDeclaration(declaration *models.TaskProviderDeclaration) error {
 		if endpoint == "" || !strings.HasPrefix(endpoint, "/") {
 			return validationError("task_provider.%s must start with /", field)
 		}
-		if strings.Contains(endpoint, "/provider/tasks") {
-			return validationError("task_provider.%s must use the standard task endpoint", field)
+		if !strings.Contains(endpoint, "/task-provider/") {
+			return validationError("task_provider.%s must use an isolated /task-provider/ route space", field)
 		}
 	}
 	expectedSuffixes := map[string]string{
@@ -58,7 +58,7 @@ func ValidateDeclaration(declaration *models.TaskProviderDeclaration) error {
 	}
 	if cancelEndpoint != "" {
 		const suffix = "/executions/{execution_id}/cancel"
-		if !strings.HasPrefix(cancelEndpoint, "/") || !strings.HasSuffix(cancelEndpoint, suffix) {
+		if !strings.HasPrefix(cancelEndpoint, "/") || !strings.Contains(cancelEndpoint, "/task-provider/") || !strings.HasSuffix(cancelEndpoint, suffix) {
 			return validationError("task_provider.task_cancel_endpoint must use standard endpoint suffix %s", suffix)
 		}
 	}

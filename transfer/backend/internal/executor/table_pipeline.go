@@ -244,17 +244,25 @@ type nativeTableBatchSource struct {
 }
 
 type queryTableBatchSource struct {
-	provider  engineplugin.QueryReadSessionProvider
-	protector TableSourceProtector
-	connInfo  engineplugin.ConnectionInfo
-	request   engineplugin.QueryRequest
-	tableInfo *datatype.TableInfo
+	provider        engineplugin.QueryReadSessionProvider
+	protector       TableSourceProtector
+	connInfo        engineplugin.ConnectionInfo
+	request         engineplugin.QueryRequest
+	expectedReadSet *engineplugin.QueryReadSet
+	tableInfo       *datatype.TableInfo
 }
 
 func (s *queryTableBatchSource) Open(ctx context.Context) (TableBatchReader, error) {
 	prepared, err := s.provider.PrepareQuery(ctx, s.connInfo, s.request)
 	if err != nil {
 		return nil, fmt.Errorf("prepare query read session: %w", err)
+	}
+	readSet, err := prepared.ReadSet(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("resolve query source read set: %w", err)
+	}
+	if err := validateExpectedQueryReadSet(s.expectedReadSet, readSet); err != nil {
+		return nil, err
 	}
 	var protect func(*engineplugin.QueryResult) error
 	if s.protector != nil {
@@ -269,6 +277,60 @@ func (s *queryTableBatchSource) Open(ctx context.Context) (TableBatchReader, err
 	}
 	reader := TableBatchReader(&queryTableBatchReader{session: session, tableInfo: s.tableInfo})
 	return protectTableBatchReader(reader, protect)
+}
+
+func validateExpectedQueryReadSet(expected, actual *engineplugin.QueryReadSet) error {
+	if expected == nil || len(expected.Paths) == 0 {
+		return fmt.Errorf("query source expected read set is required")
+	}
+	if actual == nil || len(actual.Paths) == 0 {
+		return fmt.Errorf("query source provider returned an empty read set")
+	}
+	expectedNormalized, err := engineplugin.NewQueryReadSet(expected.Paths...)
+	if err != nil {
+		return fmt.Errorf("query source expected read set is invalid: %w", err)
+	}
+	actualNormalized, err := engineplugin.NewQueryReadSet(actual.Paths...)
+	if err != nil {
+		return fmt.Errorf("query source provider read set is invalid: %w", err)
+	}
+	if !sameQueryReadPaths(expected.Paths, expectedNormalized.Paths) {
+		return fmt.Errorf("query source expected read set must be canonical")
+	}
+	if !sameQueryReadPaths(actual.Paths, actualNormalized.Paths) {
+		return fmt.Errorf("query source provider read set must be canonical")
+	}
+	if !sameQueryReadPaths(expected.Paths, actual.Paths) {
+		return fmt.Errorf("query source read set does not match declared inputs: expected %v, actual %v",
+			queryReadPathNames(expected.Paths), queryReadPathNames(actual.Paths))
+	}
+	return nil
+}
+
+func sameQueryReadPaths(left, right []engineplugin.EngineCatalogPath) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index].Version != right[index].Version || left[index].EngineID != right[index].EngineID ||
+			len(left[index].Segments) != len(right[index].Segments) {
+			return false
+		}
+		for segmentIndex := range left[index].Segments {
+			if left[index].Segments[segmentIndex] != right[index].Segments[segmentIndex] {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func queryReadPathNames(paths []engineplugin.EngineCatalogPath) []string {
+	result := make([]string, 0, len(paths))
+	for _, path := range paths {
+		result = append(result, fmt.Sprintf("engine:%d/%s", path.EngineID, path.StringPath()))
+	}
+	return result
 }
 
 type queryTableBatchReader struct {

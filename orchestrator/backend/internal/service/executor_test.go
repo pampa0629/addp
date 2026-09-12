@@ -298,14 +298,14 @@ func TestExecuteWithTaskProviderForwardsScheduledExistingResultActionWithoutOwne
 	var executePayload map[string]interface{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/api/v1/manager/tasks/vector_tile_cache_generation/42/execute":
+		case "/api/v1/manager/task-provider/tasks/vector_tile_cache_generation/42/execute":
 			if err := json.NewDecoder(r.Body).Decode(&executePayload); err != nil {
 				t.Fatalf("decode execute payload: %v", err)
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusAccepted)
 			_ = json.NewEncoder(w).Encode(map[string]string{"execution_id": "child-exec"})
-		case "/api/v1/manager/executions/child-exec":
+		case "/api/v1/manager/task-provider/executions/child-exec":
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"execution_id": "child-exec",
@@ -321,8 +321,8 @@ func TestExecuteWithTaskProviderForwardsScheduledExistingResultActionWithoutOwne
 		taskProviderResolver: taskProviderResolverWithProvider(&commonModels.TaskProvider{
 			ModuleName: "manager", Backends: taskProviderBackendsForTest(server.URL), Available: true,
 			TaskProviderDeclaration: commonModels.TaskProviderDeclaration{
-				TaskExecuteEndpoint: "/api/v1/manager/tasks/{task_type}/{id}/execute",
-				TaskStatusEndpoint:  "/api/v1/manager/executions/{execution_id}",
+				TaskExecuteEndpoint: "/api/v1/manager/task-provider/tasks/{task_type}/{id}/execute",
+				TaskStatusEndpoint:  "/api/v1/manager/task-provider/executions/{execution_id}",
 				Capabilities: jsonStringPtr(taskCapabilitiesForTest(
 					"vector_tile_cache_generation",
 					false,
@@ -403,8 +403,8 @@ func TestExecuteWithTaskProviderRejectsDisallowedParametersBeforeHTTPCall(t *tes
 		taskProviderResolver: taskProviderResolverWithProvider(&commonModels.TaskProvider{
 			ModuleName: "meta", Backends: taskProviderBackendsForTest(server.URL), Available: true,
 			TaskProviderDeclaration: commonModels.TaskProviderDeclaration{
-				TaskExecuteEndpoint: "/api/v1/meta/tasks/{task_type}/{id}/execute",
-				TaskStatusEndpoint:  "/api/v1/meta/executions/{execution_id}",
+				TaskExecuteEndpoint: "/api/v1/meta/task-provider/tasks/{task_type}/{id}/execute",
+				TaskStatusEndpoint:  "/api/v1/meta/task-provider/executions/{execution_id}",
 				Capabilities:        jsonStringPtr(taskCapabilitiesForTest("scan", false, `{"type":"object","additionalProperties":false}`)),
 			},
 		}, `{"type":"object","additionalProperties":false}`),
@@ -522,12 +522,12 @@ func TestExtractProviderExecutionID(t *testing.T) {
 
 func TestReplaceTaskProviderEndpointOnlyUsesStandardPlaceholders(t *testing.T) {
 	got := replaceTaskProviderEndpoint(
-		"/api/v1/meta/tasks/{task_type}/{id}/execute",
+		"/api/v1/meta/task-provider/tasks/{task_type}/{id}/execute",
 		"scan",
 		"42",
 		"",
 	)
-	assert.Equal(t, "/api/v1/meta/tasks/scan/42/execute", got)
+	assert.Equal(t, "/api/v1/meta/task-provider/tasks/scan/42/execute", got)
 
 	legacy := replaceTaskProviderEndpoint(
 		"/api/v1/meta/tasks/:task_type/:id/execute",

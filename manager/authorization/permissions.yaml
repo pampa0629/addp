@@ -1,6 +1,6 @@
 schema_version: addp.permission_manifest/v1
 owner_module: manager
-manifest_version: 7
+manifest_version: 8
 permissions:
   - key: manager.configuration.read
     allowed_scope_types: [platform, tenant]
@@ -138,3 +138,19 @@ permissions:
     status: active
     name_i18n_key: permissions.manager.search.execute.name
     description_i18n_key: permissions.manager.search.execute.description
+  - key: manager.task_provider.execute
+    allowed_scope_types: [tenant]
+    risk_level: medium
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.manager.task_provider.execute.name
+    description_i18n_key: permissions.manager.task_provider.execute.description
+  - key: manager.task_provider.read
+    allowed_scope_types: [tenant]
+    risk_level: low
+    tenant_customizable: false
+    delegable: false
+    status: active
+    name_i18n_key: permissions.manager.task_provider.read.name
+    description_i18n_key: permissions.manager.task_provider.read.description

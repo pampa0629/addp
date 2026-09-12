@@ -6,6 +6,7 @@ import {
   createRelationalSQLQuery,
   parseRelationalSQLQuery,
   relationalSQLFilterOperators,
+  relationalSQLParameterType,
   relationalSQLOutputFields,
   validateRelationalSQLQuery
 } from '../src/views/TaskWizard/relationalSQLQuery.mjs'
@@ -23,7 +24,8 @@ const options = {
   sourcePath: ['public', 'farmland'],
   sourceFields,
   identifierQuote: '"',
-  parametersSupported: true
+  parametersSupported: true,
+  parameterTypes: new Set(['string', 'integer', 'number', 'boolean'])
 }
 
 test('basic relational query compiles projection and one-level typed filters', () => {
@@ -37,7 +39,7 @@ test('basic relational query compiles projection and one-level typed filters', (
 
   assert.deepEqual(compileRelationalSQLQuery(model, options), {
     statement: 'SELECT "id", "status", "area" FROM "public"."farmland" WHERE "status" = :p1 AND "area" >= :p2 AND "observed_at" IS NOT NULL',
-    parameters: { p1: 'active', p2: 1000.5 }
+    parameters: { p1: 'active', p2: '1000.5' }
   })
 })
 
@@ -47,15 +49,15 @@ test('any-match filters and IN values use stable ordered parameters', () => {
   model.matchMode = 'any'
   model.filters = [
     { field: 'status', operator: 'in', value: ['active', 'pending'] },
-    { field: 'id', operator: 'eq', value: 42 }
+    { field: 'id', operator: 'eq', value: '9007199254740993' }
   ]
 
   const compiled = compileRelationalSQLQuery(model, options)
   assert.equal(compiled.statement, 'SELECT "id" FROM "public"."farmland" WHERE "status" IN (:p1, :p2) OR "id" = :p3')
-  assert.deepEqual(compiled.parameters, { p1: 'active', p2: 'pending', p3: 42 })
+  assert.deepEqual(compiled.parameters, { p1: 'active', p2: 'pending', p3: '9007199254740993' })
 })
 
-test('canonical generated SQL round-trips while SQL IDE features stay advanced-only', () => {
+test('canonical generated SQL round-trips while SQL IDE features remain outside Transfer', () => {
   const statement = 'SELECT "id", "status" FROM "public"."farmland" WHERE "status" = :p1'
   const parsed = parseRelationalSQLQuery(statement, { p1: 'active' }, options)
   assert.equal(parsed.supported, true)
@@ -77,7 +79,7 @@ test('canonical parsing ignores JSON object key order for more than nine paramet
   model.filters = Array.from({ length: 11 }, (_, index) => ({
     field: 'id',
     operator: 'ne',
-    value: index + 1
+    value: String(index + 1)
   }))
   const compiled = compileRelationalSQLQuery(model, options)
   const reorderedParameters = Object.fromEntries(
@@ -87,11 +89,15 @@ test('canonical parsing ignores JSON object key order for more than nine paramet
   assert.equal(parseRelationalSQLQuery(compiled.statement, reorderedParameters, options).supported, true)
 })
 
-test('field types constrain filters and output fields preserve Meta facts', () => {
-  assert.deepEqual(relationalSQLFilterOperators(sourceFields[1]), ['eq', 'ne', 'in', 'is_null', 'is_not_null'])
-  assert.deepEqual(relationalSQLFilterOperators(sourceFields[2]), ['eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'in', 'is_null', 'is_not_null'])
-  assert.deepEqual(relationalSQLFilterOperators(sourceFields[4]), [])
-  assert.deepEqual(relationalSQLFilterOperators(sourceFields[5]), [])
+test('field types and declared parameter types constrain filters while preserving Meta facts', () => {
+  assert.deepEqual(relationalSQLFilterOperators(sourceFields[1], options.parameterTypes), ['eq', 'ne', 'in', 'is_null', 'is_not_null'])
+  assert.deepEqual(relationalSQLFilterOperators(sourceFields[2], options.parameterTypes), ['eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'in', 'is_null', 'is_not_null'])
+  assert.deepEqual(relationalSQLFilterOperators(sourceFields[4], options.parameterTypes), [])
+  assert.deepEqual(relationalSQLFilterOperators(sourceFields[5], options.parameterTypes), [])
+  assert.deepEqual(relationalSQLFilterOperators(sourceFields[2], new Set(['integer'])), ['is_null', 'is_not_null'])
+  assert.deepEqual(relationalSQLFilterOperators({ name: 'count', type: 'int' }, new Set(['number'])), ['eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'in', 'is_null', 'is_not_null'])
+  assert.equal(relationalSQLParameterType(sourceFields[0]), 'string')
+  assert.equal(relationalSQLParameterType(sourceFields[2]), 'string')
 
   const model = createRelationalSQLQuery(options.sourcePath, sourceFields)
   model.selectedFields = ['status', 'geom']
@@ -102,7 +108,44 @@ test('filters are rejected when the engine does not declare parameter binding', 
   const model = createRelationalSQLQuery(options.sourcePath, sourceFields)
   model.filters = [{ field: 'status', operator: 'eq', value: 'active' }]
   assert.deepEqual(
-    validateRelationalSQLQuery(model, sourceFields, false).map(issue => issue.code),
+    validateRelationalSQLQuery(model, sourceFields, false, options.parameterTypes).map(issue => issue.code),
     ['parameters_unsupported']
+  )
+})
+
+test('bigint and decimal filters require and preserve exact decimal text', () => {
+  const model = createRelationalSQLQuery(options.sourcePath, sourceFields)
+  model.selectedFields = ['id', 'area']
+  model.filters = [
+    { field: 'id', operator: 'eq', value: '9007199254740993' },
+    { field: 'area', operator: 'eq', value: '12345678901234567890.12345678901234567890' }
+  ]
+
+  const compiled = compileRelationalSQLQuery(model, options)
+  assert.deepEqual(compiled.parameters, {
+    p1: '9007199254740993',
+    p2: '12345678901234567890.12345678901234567890'
+  })
+  assert.equal(parseRelationalSQLQuery(compiled.statement, compiled.parameters, options).supported, true)
+
+  model.filters[0].value = 9007199254740992
+  assert.deepEqual(
+    validateRelationalSQLQuery(model, sourceFields, true, options.parameterTypes).map(issue => issue.code),
+    ['filter_value_required']
+  )
+})
+
+test('integer fields reject fractional and unsafe JSON number values', () => {
+  const integerField = { name: 'count', type: 'int' }
+  const model = createRelationalSQLQuery(options.sourcePath, [integerField])
+  model.filters = [{ field: 'count', operator: 'eq', value: 1.5 }]
+  assert.deepEqual(
+    validateRelationalSQLQuery(model, [integerField], true, options.parameterTypes).map(issue => issue.code),
+    ['filter_value_required']
+  )
+  model.filters[0].value = Number.MAX_SAFE_INTEGER + 1
+  assert.deepEqual(
+    validateRelationalSQLQuery(model, [integerField], true, options.parameterTypes).map(issue => issue.code),
+    ['filter_value_required']
   )
 })

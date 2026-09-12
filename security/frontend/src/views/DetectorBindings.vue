@@ -127,7 +127,8 @@
       class="addp-dialog"
       :title="editing ? t('security.detector.edit') : t('security.detector.create')"
       width="min(760px, calc(100vw - 24px))"
-      @opened="handleDialogOpened"
+      @open="clearDialogValidation"
+      @opened="focusDialogPrimaryControl"
     >
       <el-alert :title="t('security.detector.trustedCapabilityHint')" type="info" :closable="false" show-icon />
       <el-form ref="formRef" :model="form" :rules="formRules" label-position="top" class="detector-form">
@@ -191,7 +192,8 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { detectorAPI, detectorCapabilityAPI, discoveryQualityAPI } from '../api/security'
 import { useAuthStore } from '../store/auth'
-import { createRequiredRule } from '../utils/foundationForm.mjs'
+import { confirmDangerousAction } from '../utils/confirmation.mjs'
+import { createRequiredNumberRangeRule, createRequiredRule } from '../utils/foundationForm.mjs'
 
 const props = defineProps({
   sensitiveTypeId: { type: Number, required: true },
@@ -214,15 +216,10 @@ const form = reactive({ capability_key: '', confidence_percent: 90, enabled: tru
 const formRules = computed(() => ({
   capability_key: [createRequiredRule(t('security.common.requiredField', { name: t('security.detector.capability') }))],
   confidence_percent: [
-    createRequiredRule(t('security.common.requiredField', { name: t('security.detector.confidenceThreshold') })),
-    {
-      trigger: 'change',
-      validator: (_rule, value, callback) => {
-        if (value === null || value === undefined || value === '') return callback()
-        if (Number.isFinite(value) && value >= 1 && value <= 100) return callback()
-        callback(new Error(t('security.detector.confidenceThresholdRange')))
-      }
-    }
+    createRequiredNumberRangeRule(
+      t('security.common.requiredField', { name: t('security.detector.confidenceThreshold') }),
+      { minimum: 1, maximum: 100, rangeMessage: t('security.detector.confidenceThresholdRange') }
+    )
   ]
 }))
 
@@ -354,8 +351,11 @@ function openEdit(row) {
   dialog.value = true
 }
 
-function handleDialogOpened() {
-  formRef.value?.clearValidate()
+function clearDialogValidation() {
+  nextTick(() => formRef.value?.clearValidate())
+}
+
+function focusDialogPrimaryControl() {
   nextTick(() => formRef.value?.$el?.querySelector('.capability-option.selected')?.focus())
 }
 
@@ -389,7 +389,12 @@ async function save() {
 
 async function remove(row) {
   try {
-    await ElMessageBox.confirm(t('security.detector.confirmDelete', { name: capabilityName(row.capability_key) }), t('security.common.hint'), { type: 'warning' })
+    await confirmDangerousAction(ElMessageBox.confirm, {
+      message: t('security.detector.confirmDelete', { name: capabilityName(row.capability_key) }),
+      title: t('security.common.hint'),
+      confirmButtonText: t('security.common.delete'),
+      cancelButtonText: t('security.common.cancel')
+    })
     await detectorAPI.delete(row.id, { version: Number(row.version) })
     await load()
     emit('changed')

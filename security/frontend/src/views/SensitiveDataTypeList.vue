@@ -145,6 +145,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { classificationAPI, detectorAPI, gradeAPI, protectionBaselineAPI, sensitiveDataTypeAPI } from '../api/security'
 import { useAuthStore } from '../store/auth'
+import { confirmDangerousAction } from '../utils/confirmation.mjs'
 import DetectorBindings from './DetectorBindings.vue'
 import ProtectionBaselineBindings from './ProtectionBaselineBindings.vue'
 import { createNonNegativeIntegerRule, createRequiredRule, protectionEffectI18nKey } from '../utils/foundationForm.mjs'
@@ -321,7 +322,12 @@ async function save() {
 
 async function remove(row) {
   try {
-    await ElMessageBox.confirm(t('security.common.confirmDelete', { name: row.name }), t('security.common.hint'), { type: 'warning' })
+    await confirmDangerousAction(ElMessageBox.confirm, {
+      message: t('security.common.confirmDelete', { name: row.name }),
+      title: t('security.common.hint'),
+      confirmButtonText: t('security.common.delete'),
+      cancelButtonText: t('security.common.cancel')
+    })
     await sensitiveDataTypeAPI.delete(row.id)
     await load()
   } catch (error) {

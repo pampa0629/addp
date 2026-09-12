@@ -82,8 +82,8 @@ type taskProviderExecuteResponse struct {
 // @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
 // @Failure 500 {object} map[string]interface{} "服务器内部错误 | Internal server error"
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["meta.scan_task.execute"]
-// @Router /tasks/{task_type}/{id}/execute [post]
+// @x-addp-required-permissions ["meta.task_provider.execute"]
+// @Router /task-provider/tasks/{task_type}/{id}/execute [post]
 // @Security BearerAuth
 func (h *Handler) ProviderExecuteScanTask(c *gin.Context) {
 	taskType := c.Param("task_type")

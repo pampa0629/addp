@@ -38,10 +38,10 @@ func GraphTaskProviderDeclaration() (*commonModels.TaskProviderDeclaration, erro
 	return &commonModels.TaskProviderDeclaration{
 		DisplayName:         "知识图谱",
 		Description:         "知识图谱构建任务",
-		TaskListEndpoint:    "/api/v1/graph/tasks",
-		TaskDetailEndpoint:  "/api/v1/graph/tasks/{task_type}/{id}",
-		TaskExecuteEndpoint: "/api/v1/graph/tasks/{task_type}/{id}/execute",
-		TaskStatusEndpoint:  "/api/v1/graph/executions/{execution_id}",
+		TaskListEndpoint:    "/api/v1/graph/task-provider/tasks",
+		TaskDetailEndpoint:  "/api/v1/graph/task-provider/tasks/{task_type}/{id}",
+		TaskExecuteEndpoint: "/api/v1/graph/task-provider/tasks/{task_type}/{id}/execute",
+		TaskStatusEndpoint:  "/api/v1/graph/task-provider/executions/{execution_id}",
 		Capabilities:        &capabilitiesStr,
 	}, nil
 }

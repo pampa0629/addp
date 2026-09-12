@@ -295,7 +295,7 @@ func (r *Repository) CreateBootstrapRoleAssignment(
 	var assignmentID int64
 	err := r.db.WithContext(ctx).Raw(`
 		INSERT INTO system.role_assignments
-		    (principal_id, role_id, scope_type, status, valid_from, source_type, reason)
+		    (principal_id, role_id, scope_type, status, valid_from, source_type, grant_reason)
 		SELECT ?, role.id, 'platform', 'active', ?, 'bootstrap', ?
 		FROM system.roles role
 		WHERE role.role_key = ?

@@ -100,12 +100,23 @@ function assignment(overrides = {}) {
     department_id: null,
     project_group_id: null,
     status: 'active',
+    effective_state: 'effective',
     valid_from: '2026-09-09T06:00:00Z',
     valid_until: null,
-    reason: 'tenant bootstrap',
-    created_by_principal_id: '1',
-    revoked_by_principal_id: null,
+    source_type: 'manual',
+    grant_reason: 'tenant bootstrap',
+    granted_by: {
+      principal_id: '1',
+      principal_type: 'user',
+      display_name: 'E2E Administrator',
+      identifier: 'e2e-admin',
+      status: 'active'
+    },
+    created_at: '2026-09-09T06:00:00Z',
+    revoked_reason: null,
+    revoked_by: null,
     revoked_at: null,
+    same_scope_active_assignment_id: null,
     ...overrides
   }
 }
@@ -140,7 +151,7 @@ test('tenant administrator filters members and assigns multiple roles in one req
       role_id: '101',
       role_key: 'tenant.administrator',
       role_name: '租户管理员',
-      reason: 'research access'
+      grant_reason: 'research access'
     }),
     assignment({
       id: '503',
@@ -154,9 +165,17 @@ test('tenant administrator filters members and assigns multiple roles in one req
       scope_type: 'department',
       department_id: '301',
       status: 'revoked',
-      revoked_by_principal_id: '1',
+      effective_state: 'revoked',
+      revoked_reason: 'historical assignment',
+      revoked_by: {
+        principal_id: '1',
+        principal_type: 'user',
+        display_name: 'E2E Administrator',
+        identifier: 'e2e-admin',
+        status: 'active'
+      },
       revoked_at: '2026-09-08T07:00:00Z',
-      reason: 'historical assignment'
+      grant_reason: 'historical assignment'
     })
   ]
   const mutations = []
@@ -236,8 +255,14 @@ test('tenant administrator filters members and assigns multiple roles in one req
       listQueries.push(query)
       let rows = assignments
       if (query.membership_id) rows = rows.filter((item) => item.membership_id === query.membership_id)
-      if (query.status) rows = rows.filter((item) => item.status === query.status)
+      if (query.effective_state) rows = rows.filter((item) => item.effective_state === query.effective_state)
       await fulfillJSON(route, 200, paginated(rows, Number(query.page_size || 20)))
+      return
+    }
+    if (path.includes('/tenant/role_assignments/') && method === 'GET') {
+      const assignmentID = path.split('/').at(-1)
+      const detail = assignments.find((item) => item.id === assignmentID)
+      await fulfillJSON(route, detail ? 200 : 404, detail || { error: 'not_found' })
       return
     }
     if (path.endsWith('/tenant/role_assignments') && method === 'POST') {
@@ -258,7 +283,7 @@ test('tenant administrator filters members and assigns multiple roles in one req
           scope_type: input.scope_type,
           department_id: input.department_id,
           project_group_id: input.project_group_id,
-          reason: input.reason
+          grant_reason: input.reason
         })
       })
       assignments = [...assignments, ...created]
@@ -269,7 +294,16 @@ test('tenant administrator filters members and assigns multiple roles in one req
       const input = request.postDataJSON()
       mutations.push({ action: 'revoke', input })
       assignments = assignments.map((item) => item.id === '601'
-        ? { ...item, status: 'revoked', revoked_by_principal_id: '1', revoked_at: '2026-09-09T07:00:00Z' }
+        ? {
+            ...item,
+            status: 'revoked',
+            effective_state: 'revoked',
+            revoked_reason: input.reason,
+            revoked_by: {
+              principal_id: '1', principal_type: 'user', display_name: 'E2E Administrator', identifier: 'e2e-admin', status: 'active'
+            },
+            revoked_at: '2026-09-09T07:00:00Z'
+          }
         : item)
       await fulfillJSON(route, 200, assignments.find((item) => item.id === '601'))
       return
@@ -289,7 +323,7 @@ test('tenant administrator filters members and assigns multiple roles in one req
   await expect(page.getByRole('row').filter({ hasText: '已撤销' })).toHaveCount(0)
   await expect(page.getByRole('row').filter({ hasText: 'E2E Administrator' })).toBeVisible()
   await expect(page.getByRole('row').filter({ hasText: 'Alice Researcher' })).toBeVisible()
-  expect(listQueries.some((query) => query.status === 'active' && query.principal_type === 'user')).toBe(true)
+  expect(listQueries.some((query) => query.effective_state === 'effective' && query.principal_type === 'user')).toBe(true)
 
   await page.locator('.iam-toolbar .iam-member-select__member').click()
   await page.locator('.el-select-dropdown__item:visible').filter({ hasText: 'Alice Researcher' }).click()
@@ -354,6 +388,11 @@ test('tenant administrator filters members and assigns multiple roles in one req
   await expect(viewerRow).toBeVisible()
   await expect(stewardRow).toBeVisible()
   await expect(viewerRow).toContainText('部门 · 研究中心 (research)')
+  await viewerRow.getByRole('button', { name: '查看', exact: true }).click()
+  const detailDrawer = page.getByRole('dialog', { name: '授权详情' })
+  await expect(detailDrawer).toContainText('E2E batch assignment')
+  await expect(detailDrawer).toContainText('E2E Administrator')
+  await detailDrawer.getByRole('button', { name: '关闭此对话框' }).click()
   expect(authContextRequests).toBeGreaterThanOrEqual(1)
 
   await viewerRow.getByRole('button', { name: '撤销', exact: true }).click()
@@ -464,9 +503,9 @@ test('high-risk self assignment completes MFA step-up and retries the original r
     }
     if (path.endsWith('/tenant/role_assignments') && method === 'GET') {
       const membershipID = url.searchParams.get('membership_id')
-      const status = url.searchParams.get('status')
+      const effectiveState = url.searchParams.get('effective_state')
       const rows = currentAssignments.filter((item) =>
-        (!membershipID || item.membership_id === membershipID) && (!status || item.status === status)
+        (!membershipID || item.membership_id === membershipID) && (!effectiveState || item.effective_state === effectiveState)
       )
       await fulfillJSON(route, 200, paginated(rows, Number(url.searchParams.get('page_size') || 20)))
       return
@@ -483,7 +522,7 @@ test('high-risk self assignment completes MFA step-up and retries the original r
         role_id: '103',
         role_key: 'tenant.data_steward',
         role_name: '数据管理员',
-        reason: input.reason
+        grant_reason: input.reason
       })
       currentAssignments.push(created)
       await fulfillJSON(route, 201, [created])

@@ -430,8 +430,8 @@ func grantBootstrapPlatformRole(t *testing.T, db *gorm.DB, principalID int64, va
 	t.Helper()
 	if err := db.Exec(`
 		INSERT INTO system.role_assignments
-		    (principal_id, role_id, scope_type, source_type, valid_from)
-		SELECT ?, role.id, 'platform', 'bootstrap', ?
+		    (principal_id, role_id, scope_type, source_type, valid_from, grant_reason)
+		SELECT ?, role.id, 'platform', 'bootstrap', ?, 'context selection test bootstrap'
 		FROM system.roles role
 		WHERE role.role_key = 'platform.system_administrator'
 	`, principalID, validFrom).Error; err != nil {

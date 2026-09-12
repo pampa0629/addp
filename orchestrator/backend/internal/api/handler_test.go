@@ -641,7 +641,7 @@ func TestListModuleTasksReturnsServiceUnavailableForOfflineProvider(t *testing.T
 func TestListModuleTasksReturnsBadGatewayForOwnerError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	owner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/meta/tasks" {
+		if r.URL.Path != "/api/v1/meta/task-provider/tasks" {
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
 		if r.URL.Query().Has("tenant_id") {
@@ -779,10 +779,10 @@ func taskProviderForAPITest(moduleName, baseURL string) *commonModels.TaskProvid
 			InstanceID: "backend-1", BaseURL: baseURL, LeaseExpiresAt: time.Now().Add(time.Hour),
 		}},
 		TaskProviderDeclaration: commonModels.TaskProviderDeclaration{
-			TaskListEndpoint:    "/api/v1/meta/tasks",
-			TaskDetailEndpoint:  "/api/v1/meta/tasks/{task_type}/{id}",
-			TaskExecuteEndpoint: "/api/v1/meta/tasks/{task_type}/{id}/execute",
-			TaskStatusEndpoint:  "/api/v1/meta/executions/{execution_id}",
+			TaskListEndpoint:    "/api/v1/meta/task-provider/tasks",
+			TaskDetailEndpoint:  "/api/v1/meta/task-provider/tasks/{task_type}/{id}",
+			TaskExecuteEndpoint: "/api/v1/meta/task-provider/tasks/{task_type}/{id}/execute",
+			TaskStatusEndpoint:  "/api/v1/meta/task-provider/executions/{execution_id}",
 			Capabilities:        &capabilities,
 		},
 	}

@@ -99,11 +99,16 @@ func TestIntegrationPostgresBoundedExportMasksBeforeTargetWrite(t *testing.T) {
 		{Name: "contact_phone", Path: []string{"contact_phone"}, Type: datatype.FieldTypeString, Nullable: true},
 	}
 	query := fmt.Sprintf(`SELECT id, phone AS contact_phone FROM "%s"."%s" WHERE id = :p1`, schema, sourceTable)
+	expectedQueryReadSet, err := plugin.NewQueryReadSet(sourcePath)
+	if err != nil {
+		t.Fatal(err)
+	}
 	metrics, err = queryExecutor.Execute(ctx, executor.TableTransferPlan{
 		Source: executor.TableSourcePlan{
 			Kind: executor.TableEndpointQuery, ConnInfo: connInfo,
-			RuntimeQuery: &plugin.QueryRequest{EngineID: 11, Language: "sql", Query: query, TargetPath: &sourcePath, Options: plugin.QueryOptions{ReadOnly: true, Parameters: map[string]interface{}{"p1": 1}}},
-			TableInfo:    &datatype.TableInfo{Name: sourceTable, Fields: queryFields},
+			RuntimeQuery:         &plugin.QueryRequest{EngineID: 11, Language: "sql", Query: query, TargetPath: &sourcePath, Options: plugin.QueryOptions{ReadOnly: true, Parameters: map[string]interface{}{"p1": 1}}},
+			ExpectedQueryReadSet: expectedQueryReadSet,
+			TableInfo:            &datatype.TableInfo{Name: sourceTable, Fields: queryFields},
 		},
 		Target:    executor.TableTargetPlan{Kind: executor.TableEndpointNative, ConnInfo: connInfo, Path: queryTargetPath},
 		BatchSize: 10,

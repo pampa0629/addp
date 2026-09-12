@@ -107,7 +107,7 @@ func TestMFASessionClosureAgainstPostgres(t *testing.T) {
 	}
 	_, err = roleService.CreateAssignments(ctx, CreateTenantRoleAssignmentsInput{
 		TenantID: tenant.ID, MembershipID: membership.ID, RoleIDs: []int64{infrastructureRoleID},
-		ScopeType: "tenant", ActorPrincipalID: created.PrincipalID, AssuranceLevel: AssuranceLevelAAL1,
+		ScopeType: "tenant", Reason: "high-risk self assignment test", ActorPrincipalID: created.PrincipalID, AssuranceLevel: AssuranceLevelAAL1,
 	})
 	if !errors.Is(err, ErrStepUpRequired) {
 		t.Fatalf("AAL1 high-risk self assignment error = %v, want step-up required", err)
@@ -175,7 +175,7 @@ func TestMFASessionClosureAgainstPostgres(t *testing.T) {
 	stepUpExpiresAt := currentTime.Add(defaultMFAStepUpTTL)
 	assignments, err := roleService.CreateAssignments(ctx, CreateTenantRoleAssignmentsInput{
 		TenantID: tenant.ID, MembershipID: membership.ID, RoleIDs: []int64{infrastructureRoleID},
-		ScopeType: "tenant", ActorPrincipalID: created.PrincipalID, AssuranceLevel: AssuranceLevelAAL2,
+		ScopeType: "tenant", Reason: "high-risk self assignment after step-up", ActorPrincipalID: created.PrincipalID, AssuranceLevel: AssuranceLevelAAL2,
 		StepUpExpiresAt: &stepUpExpiresAt,
 	})
 	if err != nil || len(assignments) != 1 || assignments[0].RoleKey != "tenant.infrastructure_administrator" {

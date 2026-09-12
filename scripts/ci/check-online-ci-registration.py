@@ -1049,10 +1049,12 @@ def load_workflow_suites(
     text = path.read_text(encoding="utf-8")
     required_fragments = (
         "workflow_dispatch:",
+        "permissions:\n  contents: read",
         "- self-hosted",
         "- macOS",
         "- addp-online",
         "environment: addp-online",
+        "ADDP_ONLINE_ENV_FILE: ${{ vars.ADDP_ONLINE_ENV_FILE }}",
         "bash scripts/test/online-host-gate.sh --check-only",
         "bash scripts/test/online-host-gate.sh",
         "actions/upload-artifact@",
@@ -1060,6 +1062,46 @@ def load_workflow_suites(
     missing = [fragment for fragment in required_fragments if fragment not in text]
     if missing:
         raise RegistrationError("Online T4 workflow is missing: " + ", ".join(missing))
+    jobs_text = text.split("\njobs:\n", 1)
+    if len(jobs_text) != 2:
+        raise RegistrationError("Online T4 workflow jobs are missing")
+    job_blocks = re.findall(
+        r"(?ms)^  ([a-z][a-z0-9-]*):\n(.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)",
+        jobs_text[1],
+    )
+    self_hosted_jobs = [
+        (job_name, body)
+        for job_name, body in job_blocks
+        if re.search(r"(?m)^      - self-hosted\s*$", body)
+    ]
+    if not self_hosted_jobs:
+        raise RegistrationError("Online T4 workflow has no self-hosted job")
+    for job_name, body in self_hosted_jobs:
+        accepts_manual_dispatch = "github.event_name == 'workflow_dispatch'" in body
+        accepts_fixed_schedule = (
+            "github.event_name == 'schedule'" in body
+            and re.search(
+                r"(?m)^      ONLINE_SUITE_INPUT: [a-z][a-z0-9-]*$", body
+            )
+            is not None
+        )
+        if not accepts_manual_dispatch and not accepts_fixed_schedule:
+            raise RegistrationError(
+                f"self-hosted Online T4 job {job_name} must only accept "
+                "workflow_dispatch or a fixed schedule"
+            )
+        if "${{ secrets." in body:
+            raise RegistrationError(
+                f"self-hosted Online T4 job {job_name} must not receive repository secrets"
+            )
+        for action in re.findall(r"(?m)^\s*- uses:\s*([^\s]+)\s*$", body):
+            if action.startswith("./"):
+                continue
+            _, separator, revision = action.rpartition("@")
+            if not separator or re.fullmatch(r"[0-9a-f]{40}", revision) is None:
+                raise RegistrationError(
+                    f"self-hosted Online T4 job {job_name} action must use an immutable commit SHA: {action}"
+                )
     hosted_gates = sorted(
         (repository / "scripts/test").glob("online-hosted-*-gate.sh")
     )
@@ -1116,13 +1158,6 @@ def load_workflow_suites(
             raise RegistrationError(
                 "Online T4 nightly schedule must contain exactly one daily UTC cron"
             )
-        jobs_text = text.split("\njobs:\n", 1)
-        if len(jobs_text) != 2:
-            raise RegistrationError("Online T4 workflow jobs are missing")
-        job_blocks = re.findall(
-            r"(?ms)^  ([a-z][a-z0-9-]*):\n(.*?)(?=^  [a-z][a-z0-9-]*:\n|\Z)",
-            jobs_text[1],
-        )
         scheduled_workflow_suites: set[str] = set()
         for job_name, body in job_blocks:
             if "github.event_name == 'schedule'" in body:

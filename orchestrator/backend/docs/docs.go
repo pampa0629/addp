@@ -476,6 +476,275 @@ const docTemplate = `{
                 ]
             }
         },
+        "/task-provider/executions/{execution_id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Orchestrator"
+                ],
+                "summary": "获取 TaskProvider 编排执行状态 | Get TaskProvider orchestration execution status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "执行 UUID | Execution UUID",
+                        "name": "execution_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/taskprovider.ExecutionStatusResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "orchestrator.task_provider.read"
+                ]
+            }
+        },
+        "/task-provider/tasks": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按标准 TaskProvider 协议列出 Orchestrator 自身的编排任务；task_type 仅支持 orchestration。| List Orchestrator tasks through the standard TaskProvider protocol; task_type only supports orchestration.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Orchestrator"
+                ],
+                "summary": "列出 TaskProvider 编排任务 | List TaskProvider orchestration tasks",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "任务类型，固定为 orchestration | Task type, fixed to orchestration",
+                        "name": "task_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "页码 | Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 100,
+                        "description": "每页数量 | Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ListProviderOrchestrationTasksResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "orchestrator.task_provider.read"
+                ]
+            }
+        },
+        "/task-provider/tasks/{task_type}/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按标准 TaskProvider 路径获取 Orchestrator 编排任务详情；task_type 仅支持 orchestration。| Get Orchestrator task detail through the standard TaskProvider path; task_type only supports orchestration.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Orchestrator"
+                ],
+                "summary": "获取 TaskProvider 编排任务详情 | Get TaskProvider orchestration task detail",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "任务类型，固定为 orchestration | Task type, fixed to orchestration",
+                        "name": "task_type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "编排 ID | Orchestration ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ProviderOrchestrationTask"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "当前身份未绑定租户 | Current identity is not bound to a tenant",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "orchestrator.task_provider.read"
+                ]
+            }
+        },
+        "/task-provider/tasks/{task_type}/{id}/execute": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按标准 TaskProvider 协议执行 Orchestrator 编排任务；task_type 仅支持 orchestration。| Execute an Orchestrator task through the standard TaskProvider protocol; task_type only supports orchestration.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Orchestrator"
+                ],
+                "summary": "执行 TaskProvider 编排任务 | Execute TaskProvider orchestration task",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "任务类型，固定为 orchestration | Task type, fixed to orchestration",
+                        "name": "task_type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "编排 ID | Orchestration ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "TaskProvider 执行请求 | TaskProvider execution request",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.orchestrationTaskProviderExecuteRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.orchestrationTaskProviderExecuteResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "当前身份未绑定租户 | Current identity is not bound to a tenant",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "orchestrator.task_provider.execute"
+                ]
+            }
+        },
         "/task-providers": {
             "get": {
                 "security": [
@@ -674,154 +943,6 @@ const docTemplate = `{
                     "orchestrator.workflow.read"
                 ]
             }
-        },
-        "/tasks/{task_type}/{id}": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "按标准 TaskProvider 路径获取 Orchestrator 编排任务详情；task_type 仅支持 orchestration。| Get Orchestrator task detail through the standard TaskProvider path; task_type only supports orchestration.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Orchestrator"
-                ],
-                "summary": "获取 TaskProvider 编排任务详情 | Get TaskProvider orchestration task detail",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "任务类型，固定为 orchestration | Task type, fixed to orchestration",
-                        "name": "task_type",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "integer",
-                        "description": "编排 ID | Orchestration ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ProviderOrchestrationTask"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "403": {
-                        "description": "当前身份未绑定租户 | Current identity is not bound to a tenant",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "orchestrator.workflow.read"
-                ]
-            }
-        },
-        "/tasks/{task_type}/{id}/execute": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "按标准 TaskProvider 协议执行 Orchestrator 编排任务；task_type 仅支持 orchestration。| Execute an Orchestrator task through the standard TaskProvider protocol; task_type only supports orchestration.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Orchestrator"
-                ],
-                "summary": "执行 TaskProvider 编排任务 | Execute TaskProvider orchestration task",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "任务类型，固定为 orchestration | Task type, fixed to orchestration",
-                        "name": "task_type",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "integer",
-                        "description": "编排 ID | Orchestration ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "TaskProvider 执行请求 | TaskProvider execution request",
-                        "name": "request",
-                        "in": "body",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.orchestrationTaskProviderExecuteRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "202": {
-                        "description": "Accepted",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api.orchestrationTaskProviderExecuteResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "403": {
-                        "description": "当前身份未绑定租户 | Current identity is not bound to a tenant",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                },
-                "x-addp-auth-mode": "permission",
-                "x-addp-required-permissions": [
-                    "orchestrator.workflow.execute"
-                ]
-            }
         }
     },
     "definitions": {
@@ -980,6 +1101,26 @@ const docTemplate = `{
                 "error": {
                     "type": "string",
                     "example": "请求参数错误"
+                }
+            }
+        },
+        "github_com_addp_orchestrator_internal_models.ListProviderOrchestrationTasksResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_orchestrator_internal_models.ProviderOrchestrationTask"
+                    }
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
                 }
             }
         },
@@ -1160,6 +1301,161 @@ const docTemplate = `{
                 "output_schema": {
                     "type": "object",
                     "additionalProperties": true
+                }
+            }
+        },
+        "taskprovider.ExecutionStatusResponse": {
+            "type": "object",
+            "required": [
+                "outputs"
+            ],
+            "properties": {
+                "actor_principal_id": {
+                    "description": "User-derived execution authorization facts. The raw User/Service tokens\nand engine connection details are never persisted in task executions.",
+                    "type": "integer"
+                },
+                "actor_tenant_membership_id": {
+                    "type": "integer"
+                },
+                "attempt": {
+                    "type": "integer"
+                },
+                "authorization_expires_at": {
+                    "type": "string"
+                },
+                "bytes_read": {
+                    "description": "Transfer 读取字节数",
+                    "type": "integer"
+                },
+                "bytes_written": {
+                    "description": "Transfer 写入字节数",
+                    "type": "integer"
+                },
+                "completed_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "current_step": {
+                    "description": "当前步骤（Orchestrator/Workflow）",
+                    "type": "string"
+                },
+                "error_details": {
+                    "description": "错误详情（仅失败时有值）",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.JSONMap"
+                        }
+                    ]
+                },
+                "execution_authorization_id": {
+                    "type": "integer"
+                },
+                "execution_boundary": {
+                    "description": "ExecutionBoundary separates finite queue work from long-running runtime sessions.",
+                    "type": "string"
+                },
+                "execution_config": {
+                    "description": "JSONB 字段",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.JSONMap"
+                        }
+                    ]
+                },
+                "execution_id": {
+                    "description": "执行标识",
+                    "type": "string"
+                },
+                "execution_time_ms": {
+                    "description": "性能指标",
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "issued_authorization_version": {
+                    "type": "integer"
+                },
+                "max_attempts": {
+                    "type": "integer"
+                },
+                "metadata": {
+                    "description": "模块特有扩展数据（结果、断点、步骤结果等）",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.JSONMap"
+                        }
+                    ]
+                },
+                "module": {
+                    "description": "模块标识",
+                    "type": "string"
+                },
+                "outputs": {
+                    "$ref": "#/definitions/models.JSONMap"
+                },
+                "parent_execution_id": {
+                    "description": "父执行（Orchestrator 子步骤追踪父编排）",
+                    "type": "string"
+                },
+                "progress": {
+                    "description": "0-100",
+                    "type": "integer"
+                },
+                "records_read": {
+                    "description": "Transfer 读取记录数",
+                    "type": "integer"
+                },
+                "records_written": {
+                    "description": "Transfer 写入记录数",
+                    "type": "integer"
+                },
+                "retry_of_execution_id": {
+                    "type": "string"
+                },
+                "rows_affected": {
+                    "description": "SQL 影响行数",
+                    "type": "integer"
+                },
+                "source": {
+                    "description": "触发来源模块",
+                    "type": "string"
+                },
+                "source_task_id": {
+                    "description": "关联原始任务",
+                    "type": "string"
+                },
+                "source_task_name": {
+                    "description": "任务名称（冗余，便于查询）",
+                    "type": "string"
+                },
+                "started_at": {
+                    "description": "时间戳",
+                    "type": "string"
+                },
+                "status": {
+                    "description": "执行状态",
+                    "type": "string"
+                },
+                "task_type": {
+                    "description": "稳定执行类型；可来自任务定义或 ad-hoc execution",
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "trigger_type": {
+                    "description": "触发信息",
+                    "type": "string"
+                },
+                "triggered_by": {
+                    "description": "触发用户ID",
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
                 }
             }
         }

@@ -66,8 +66,8 @@ type graphTaskListResponse struct {
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 500 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["graph.build_task.read"]
-// @Router /tasks [get]
+// @x-addp-required-permissions ["graph.task_provider.read"]
+// @Router /task-provider/tasks [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ListProviderTasks(c *gin.Context) {
 	taskType := strings.TrimSpace(c.Query("task_type"))
@@ -113,8 +113,8 @@ func (h *TaskProviderHandler) ListProviderTasks(c *gin.Context) {
 // @Failure 400 {object} models.ErrorResponse
 // @Failure 404 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["graph.build_task.read"]
-// @Router /tasks/{task_type}/{id} [get]
+// @x-addp-required-permissions ["graph.task_provider.read"]
+// @Router /task-provider/tasks/{task_type}/{id} [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) GetProviderTask(c *gin.Context) {
 	taskType := c.Param("task_type")
@@ -150,8 +150,8 @@ func (h *TaskProviderHandler) GetProviderTask(c *gin.Context) {
 // @Failure 409 {object} models.ErrorResponse
 // @Failure 500 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["graph.build_task.execute"]
-// @Router /tasks/{task_type}/{id}/execute [post]
+// @x-addp-required-permissions ["graph.task_provider.execute"]
+// @Router /task-provider/tasks/{task_type}/{id}/execute [post]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ExecuteProviderTask(c *gin.Context) {
 	taskType := c.Param("task_type")
@@ -214,19 +214,46 @@ func (h *TaskProviderHandler) ExecuteProviderTask(c *gin.Context) {
 // @Tags 图谱构建 | Graph Build
 // @Produce json
 // @Param execution_id path string true "执行UUID | Execution UUID"
-// @Success 200 {object} map[string]interface{} "执行记录 | Execution"
+// @Success 200 {object} taskprovider.ExecutionStatusResponse "执行记录 | Execution"
+// @Failure 404 {object} models.ErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["graph.task_provider.read"]
+// @Router /task-provider/executions/{execution_id} [get]
+// @Security BearerAuth
+func (h *TaskProviderHandler) GetProviderExecution(c *gin.Context) {
+	execution, ok := h.loadExecution(c)
+	if !ok {
+		return
+	}
+	c.JSON(http.StatusOK, taskprovider.NewExecutionStatusResponse(execution))
+}
+
+// GetExecution 获取用户侧 Graph 构建执行详情。
+// @Summary 获取 Graph 构建执行详情 | Get graph build execution detail
+// @Tags 图谱构建 | Graph Build
+// @Produce json
+// @Param execution_id path string true "执行UUID | Execution UUID"
+// @Success 200 {object} execution.TaskExecution "执行记录 | Execution"
 // @Failure 404 {object} models.ErrorResponse
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["graph.build_task.read"]
 // @Router /executions/{execution_id} [get]
 // @Security BearerAuth
-func (h *TaskProviderHandler) GetProviderExecution(c *gin.Context) {
-	execution, err := h.executionRepo.GetByExecutionID(c.Request.Context(), c.Param("execution_id"), int(commonAuth.GetTenantID(c)))
-	if err != nil || execution.Module != commonExecution.ModuleGraph {
-		c.JSON(http.StatusNotFound, gin.H{"error": "execution not found"})
+func (h *TaskProviderHandler) GetExecution(c *gin.Context) {
+	execution, ok := h.loadExecution(c)
+	if !ok {
 		return
 	}
 	c.JSON(http.StatusOK, execution)
+}
+
+func (h *TaskProviderHandler) loadExecution(c *gin.Context) (*commonExecution.TaskExecution, bool) {
+	execution, err := h.executionRepo.GetByExecutionID(c.Request.Context(), c.Param("execution_id"), int(commonAuth.GetTenantID(c)))
+	if err != nil || execution.Module != commonExecution.ModuleGraph {
+		c.JSON(http.StatusNotFound, gin.H{"error": "execution not found"})
+		return nil, false
+	}
+	return execution, true
 }
 
 func graphTaskProviderListItem(task models.BuildTask) graphTaskListItem {

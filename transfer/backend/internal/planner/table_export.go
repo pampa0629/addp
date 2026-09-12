@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math"
 	pathpkg "path"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/addp/common/dataitem"
@@ -65,7 +67,8 @@ type QuerySourceSpec struct {
 
 // QueryInputSpec is a relation binding resolved by the query owner before the
 // Transfer execution is created. It is an execution fact, not a SQL parser
-// hint: Transfer validates the locator and uses it only for complete lineage.
+// hint: Transfer verifies it against the Provider's canonical query read set
+// before data is read, then uses the verified fact for complete lineage.
 type QueryInputSpec struct {
 	Name    string `json:"name"`
 	Locator string `json:"locator"`
@@ -262,6 +265,35 @@ type TableTransferBuildResult struct {
 	SourceEngine     EngineBinding
 	TargetEngine     EngineBinding
 	Plan             executor.TableTransferPlan
+}
+
+// ValidateTableQuerySourceBinding resolves the selected source Engine and
+// validates the query language, parameter capability, catalog anchor, and
+// declared input leaves before a task definition is persisted. Provider
+// ReadSet equality remains an execution-time check against the same prepared
+// query that opens the read session.
+func ValidateTableQuerySourceBinding(spec TableExportTaskSpec, resolver EngineResolver) error {
+	if spec.Source.Query == nil {
+		return nil
+	}
+	if resolver == nil {
+		return fmt.Errorf("engine resolver is required for query source validation")
+	}
+	sourceRef, err := spec.Source.EngineRef()
+	if err != nil {
+		return fmt.Errorf("parse query source locator: %w", err)
+	}
+	sourceEngine, err := resolver.ResolveEngine(sourceRef)
+	if err != nil {
+		return fmt.Errorf("resolve query source engine: %w", err)
+	}
+	if strings.TrimSpace(effectiveEngineType(sourceEngine, sourceRef)) == "" {
+		return fmt.Errorf("query source engine type is required")
+	}
+	if _, err := buildTableSourcePlan(spec.Source, sourceEngine, spec.Transforms); err != nil {
+		return err
+	}
+	return nil
 }
 
 func ParseTableExportTaskSpec(config map[string]interface{}, fallbackBatchSize int) (TableExportTaskSpec, error) {
@@ -896,6 +928,10 @@ func buildTableSourcePlan(endpoint EndpointSpec, engine EngineBinding, transform
 		if err != nil {
 			return executor.TableSourcePlan{}, fmt.Errorf("build query source catalog path: %w", err)
 		}
+		expectedReadSet, err := buildExpectedQueryReadSet(endpoint, modelProvider.EngineCatalogModel(), path)
+		if err != nil {
+			return executor.TableSourcePlan{}, err
+		}
 		capabilities := effectiveEngineCapabilities(engine)
 		if capabilities == nil || capabilities.Compute == nil || capabilities.Compute.Query == nil ||
 			!capabilities.Compute.Query.Supported || !capabilities.Compute.Query.ReadSession {
@@ -904,6 +940,9 @@ func buildTableSourcePlan(endpoint EndpointSpec, engine EngineBinding, transform
 		language := strings.ToLower(strings.TrimSpace(endpoint.Query.Language))
 		if !queryCapabilitySupportsLanguage(capabilities.Compute.Query, language) {
 			return executor.TableSourcePlan{}, fmt.Errorf("query source engine %q does not support language %q", engineType, language)
+		}
+		if err := validateQueryParameterValues(capabilities.Compute.Query, language, endpoint.Query.Parameters); err != nil {
+			return executor.TableSourcePlan{}, fmt.Errorf("query source engine %q parameter capability: %w", engineType, err)
 		}
 		request := engineplugin.QueryRequest{
 			EngineID:   engine.EngineID,
@@ -918,10 +957,11 @@ func buildTableSourcePlan(endpoint EndpointSpec, engine EngineBinding, transform
 			},
 		}
 		return executor.TableSourcePlan{
-			Kind:         executor.TableEndpointQuery,
-			ConnInfo:     engine.ConnInfo,
-			Path:         path,
-			RuntimeQuery: &request,
+			Kind:                 executor.TableEndpointQuery,
+			ConnInfo:             engine.ConnInfo,
+			Path:                 path,
+			RuntimeQuery:         &request,
+			ExpectedQueryReadSet: expectedReadSet,
 		}, nil
 	}
 	itemDescriptor, hasItemAttributes := sourceItemDescriptorFromMetaAttributes(endpoint.Attributes)
@@ -998,12 +1038,167 @@ func buildTableSourcePlan(endpoint EndpointSpec, engine EngineBinding, transform
 	}
 }
 
+func buildExpectedQueryReadSet(
+	endpoint EndpointSpec,
+	model engineplugin.EngineCatalogModelSpec,
+	sourcePath engineplugin.EngineCatalogPath,
+) (*engineplugin.QueryReadSet, error) {
+	paths := make([]engineplugin.EngineCatalogPath, 0, len(endpoint.Query.Inputs))
+	if len(endpoint.Query.Inputs) == 0 {
+		paths = append(paths, sourcePath)
+	} else {
+		for _, input := range endpoint.Query.Inputs {
+			locator, err := resourcetree.ParseURI(strings.TrimSpace(input.Locator))
+			if err != nil {
+				return nil, fmt.Errorf("parse query source input %q locator: %w", input.Name, err)
+			}
+			path, err := resourcetree.EngineCatalogPathFromLocator(model, locator)
+			if err != nil {
+				return nil, fmt.Errorf("build query source input %q catalog path: %w", input.Name, err)
+			}
+			paths = append(paths, path)
+		}
+	}
+	expected, err := engineplugin.NewQueryReadSet(paths...)
+	if err != nil {
+		if len(endpoint.Query.Inputs) == 0 {
+			return nil, fmt.Errorf("query source without inputs must use a catalog leaf locator: %w", err)
+		}
+		return nil, fmt.Errorf("query source inputs must identify catalog leaves: %w", err)
+	}
+	if len(endpoint.Query.Inputs) > 0 && len(expected.Paths) != len(endpoint.Query.Inputs) {
+		return nil, fmt.Errorf("query source input locators must be unique")
+	}
+	return expected, nil
+}
+
 func queryCapabilitySupportsLanguage(capability *engineplugin.QueryCapability, language string) bool {
 	if capability == nil || strings.TrimSpace(language) == "" {
 		return false
 	}
 	for _, supported := range capability.Languages {
 		if strings.EqualFold(strings.TrimSpace(supported), language) {
+			return true
+		}
+	}
+	return false
+}
+
+func validateQueryParameterValues(capability *engineplugin.QueryCapability, language string, parameters map[string]interface{}) error {
+	if len(parameters) == 0 {
+		return nil
+	}
+	if capability == nil || capability.Parameters == nil || !capability.Parameters.Supported {
+		return fmt.Errorf("parameters are not declared")
+	}
+	if !stringSetContainsFold(capability.Parameters.Languages, language) {
+		return fmt.Errorf("parameters are not declared for language %q", language)
+	}
+
+	names := make([]string, 0, len(parameters))
+	for name := range parameters {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		parameterType, err := queryParameterValueType(parameters[name])
+		if err != nil {
+			return fmt.Errorf("parameter %q: %w", name, err)
+		}
+		if !queryParameterTypeSupported(capability.Parameters.Types, parameterType) {
+			return fmt.Errorf("parameter %q uses undeclared type %q", name, parameterType)
+		}
+	}
+	return nil
+}
+
+func queryParameterValueType(value interface{}) (string, error) {
+	switch typed := value.(type) {
+	case string:
+		return "string", nil
+	case bool:
+		return "boolean", nil
+	case int:
+		return querySignedIntegerParameterType(int64(typed))
+	case int8:
+		return querySignedIntegerParameterType(int64(typed))
+	case int16:
+		return querySignedIntegerParameterType(int64(typed))
+	case int32:
+		return querySignedIntegerParameterType(int64(typed))
+	case int64:
+		return querySignedIntegerParameterType(typed)
+	case uint:
+		return queryUnsignedIntegerParameterType(uint64(typed))
+	case uint8:
+		return queryUnsignedIntegerParameterType(uint64(typed))
+	case uint16:
+		return queryUnsignedIntegerParameterType(uint64(typed))
+	case uint32:
+		return queryUnsignedIntegerParameterType(uint64(typed))
+	case uint64:
+		return queryUnsignedIntegerParameterType(typed)
+	case float32:
+		return queryFloatParameterType(float64(typed))
+	case float64:
+		return queryFloatParameterType(typed)
+	case json.Number:
+		if integer, err := typed.Int64(); err == nil {
+			return querySignedIntegerParameterType(integer)
+		}
+		parsed, err := typed.Float64()
+		if err != nil {
+			return "", fmt.Errorf("invalid JSON number")
+		}
+		return queryFloatParameterType(parsed)
+	default:
+		return "", fmt.Errorf("unsupported runtime value type %T", value)
+	}
+}
+
+const maxSafeJSONInteger = int64(1<<53 - 1)
+
+func querySignedIntegerParameterType(value int64) (string, error) {
+	if value < -maxSafeJSONInteger || value > maxSafeJSONInteger {
+		return "", lossyJSONIntegerError()
+	}
+	return "integer", nil
+}
+
+func queryUnsignedIntegerParameterType(value uint64) (string, error) {
+	if value > uint64(maxSafeJSONInteger) {
+		return "", lossyJSONIntegerError()
+	}
+	return "integer", nil
+}
+
+func queryFloatParameterType(value float64) (string, error) {
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		return "", fmt.Errorf("number must be finite")
+	}
+	if math.Trunc(value) == value {
+		if math.Abs(value) > float64(maxSafeJSONInteger) {
+			return "", lossyJSONIntegerError()
+		}
+		return "integer", nil
+	}
+	return "number", nil
+}
+
+func lossyJSONIntegerError() error {
+	return fmt.Errorf("integer cannot be represented losslessly as JSON number; send exact bigint or decimal values as strings")
+}
+
+func queryParameterTypeSupported(types []string, parameterType string) bool {
+	if parameterType == "integer" && stringSetContainsFold(types, "number") {
+		return true
+	}
+	return stringSetContainsFold(types, parameterType)
+}
+
+func stringSetContainsFold(values []string, expected string) bool {
+	for _, value := range values {
+		if strings.EqualFold(strings.TrimSpace(value), strings.TrimSpace(expected)) {
 			return true
 		}
 	}

@@ -1257,6 +1257,74 @@ func TestTransferTaskProviderForwardMigrationAgainstPostgres(t *testing.T) {
 	}
 }
 
+func TestTaskProviderRouteIsolationForwardMigrationAgainstPostgres(t *testing.T) {
+	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
+	if dsn == "" {
+		t.Skip("set ADDP_SYSTEM_POSTGRES_TEST_DSN to a disposable PostgreSQL 15+ database")
+	}
+	testsupport.RequireDisposablePostgresDSN(t, dsn)
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`DROP SCHEMA IF EXISTS system CASCADE; DROP SCHEMA IF EXISTS common CASCADE`); err != nil {
+		t.Fatalf("reset TaskProvider route isolation migration schemas: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	through136, through137 := migrationFilesBeforeAndThrough(t, "000137_iam_task_provider_route_isolation.up.sql")
+	if err := (&Runner{DSN: dsn, FS: through136, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply migrations through 136: %v", err)
+	}
+
+	countGrant := func() int {
+		t.Helper()
+		var count int
+		if err := db.QueryRow(`SELECT count(*) FROM system.role_permissions role_permission
+			JOIN system.roles role ON role.id = role_permission.role_id
+			JOIN system.permissions permission ON permission.id = role_permission.permission_id
+			WHERE role.tenant_id IS NULL AND role.role_key = 'tenant.orchestrator_runtime'
+			AND permission.permission_key IN (
+				'graph.task_provider.read', 'graph.task_provider.execute',
+				'manager.task_provider.read', 'manager.task_provider.execute',
+				'meta.task_provider.read', 'meta.task_provider.execute',
+				'orchestrator.task_provider.read', 'orchestrator.task_provider.execute'
+			)
+			AND role_permission.source_type = 'product'`).Scan(&count); err != nil {
+			t.Fatalf("count isolated TaskProvider runtime permissions: %v", err)
+		}
+		return count
+	}
+	readAuthorizationVersion := func() int64 {
+		t.Helper()
+		var version int64
+		if err := db.QueryRow(`SELECT principal.authorization_version
+			FROM system.principals principal
+			JOIN system.service_principals service_principal ON service_principal.id = principal.id
+			WHERE service_principal.name = 'addp-orchestrator'`).Scan(&version); err != nil {
+			t.Fatalf("read Orchestrator authorization version: %v", err)
+		}
+		return version
+	}
+	if count := countGrant(); count != 0 {
+		t.Fatalf("isolated TaskProvider grants before migration 137 = %d, want 0", count)
+	}
+	beforeVersion := readAuthorizationVersion()
+	if err := (&Runner{DSN: dsn, FS: through137, Root: DefaultMigrationsRoot}).Run(ctx); err != nil {
+		t.Fatalf("apply TaskProvider route isolation migration 137: %v", err)
+	}
+	var version int
+	var dirty bool
+	if err := db.QueryRow(`SELECT version, dirty FROM system.schema_migrations`).Scan(&version, &dirty); err != nil {
+		t.Fatal(err)
+	}
+	afterVersion := readAuthorizationVersion()
+	if grantCount := countGrant(); version != 137 || dirty || grantCount != 8 || afterVersion != beforeVersion+1 {
+		t.Fatalf("migration 137 state=(%d,%t) grants=%d authorization_version=%d->%d", version, dirty, grantCount, beforeVersion, afterVersion)
+	}
+}
+
 func TestExecutionAudienceForwardMigrationAgainstPostgres(t *testing.T) {
 	dsn := os.Getenv("ADDP_SYSTEM_POSTGRES_TEST_DSN")
 	if dsn == "" {
@@ -5901,21 +5969,45 @@ func assertAuthorizationGovernanceConstraints(t *testing.T, db *sql.DB) {
 	var tenantAssignmentID int64
 	if err := db.QueryRow(`
 		INSERT INTO system.role_assignments
-		    (principal_id, role_id, scope_type, tenant_id, source_type, created_by_principal_id)
-		VALUES ($1, $2, 'tenant', $3, 'manual', $1)
+		    (principal_id, role_id, scope_type, tenant_id, source_type, created_by_principal_id, grant_reason)
+		VALUES ($1, $2, 'tenant', $3, 'manual', $1, 'authorization governance constraint test')
 		RETURNING id
 	`, tenantUserID, tenantRoleID, tenantID).Scan(&tenantAssignmentID); err != nil {
 		t.Fatalf("create tenant role assignment: %v", err)
 	}
 	if _, err := db.Exec(`
 		INSERT INTO system.role_assignments
-		    (principal_id, role_id, scope_type, tenant_id, source_type, created_by_principal_id)
-		VALUES ($1, $2, 'tenant', $3, 'manual', $1)
+		    (principal_id, role_id, scope_type, tenant_id, source_type, created_by_principal_id, grant_reason)
+		VALUES ($1, $2, 'tenant', $3, 'manual', $1, 'duplicate authorization governance constraint test')
 	`, tenantUserID, tenantRoleID, tenantID); err == nil {
 		t.Fatal("duplicate active role assignment succeeded")
 	}
 	if _, err := db.Exec(`DELETE FROM system.role_assignments WHERE id = $1`, tenantAssignmentID); err == nil {
 		t.Fatal("physical role assignment deletion succeeded")
+	}
+	if _, err := db.Exec(`
+		INSERT INTO system.role_assignments
+		    (principal_id, role_id, scope_type, tenant_id, source_type, created_by_principal_id)
+		VALUES ($1, $2, 'tenant', $3, 'manual', $1)
+	`, tenantUserID, tenantRoleID, tenantID); err == nil {
+		t.Fatal("manual role assignment without a grant reason succeeded")
+	}
+	if _, err := db.Exec(`
+		UPDATE system.role_assignments
+		SET status = 'revoked', revoked_by_principal_id = $1, revoked_at = now()
+		WHERE id = $2
+	`, tenantUserID, tenantAssignmentID); err == nil {
+		t.Fatal("role assignment revocation without a reason succeeded")
+	}
+	if _, err := db.Exec(`
+		UPDATE system.role_assignments
+		SET status = 'revoked', revoked_by_principal_id = $1, revoked_at = now(), revoked_reason = 'authorization governance constraint test completed'
+		WHERE id = $2
+	`, tenantUserID, tenantAssignmentID); err != nil {
+		t.Fatalf("revoke tenant role assignment with lifecycle facts: %v", err)
+	}
+	if _, err := db.Exec(`UPDATE system.role_assignments SET grant_reason = 'changed after revocation' WHERE id = $1`, tenantAssignmentID); err == nil {
+		t.Fatal("revoked role assignment mutation succeeded")
 	}
 
 	var departmentID int64
@@ -5931,8 +6023,8 @@ func assertAuthorizationGovernanceConstraints(t *testing.T, db *sql.DB) {
 	}
 	if _, err := db.Exec(`
 		INSERT INTO system.role_assignments
-		    (principal_id, role_id, scope_type, tenant_id, department_id, source_type, created_by_principal_id)
-		VALUES ($1, $2, 'department', $3, $4, 'manual', $1)
+		    (principal_id, role_id, scope_type, tenant_id, department_id, source_type, created_by_principal_id, grant_reason)
+		VALUES ($1, $2, 'department', $3, $4, 'manual', $1, 'department authorization governance constraint test')
 	`, tenantUserID, departmentRoleID, tenantID, departmentID); err != nil {
 		t.Fatalf("create department role assignment: %v", err)
 	}
@@ -5965,8 +6057,8 @@ func assertAuthorizationGovernanceConstraints(t *testing.T, db *sql.DB) {
 	}
 	if _, err := db.Exec(`
 		INSERT INTO system.role_assignments
-		    (principal_id, role_id, scope_type, source_type, created_by_principal_id)
-		VALUES ($1, $2, 'platform', 'manual', $3)
+		    (principal_id, role_id, scope_type, source_type, created_by_principal_id, grant_reason)
+		VALUES ($1, $2, 'platform', 'manual', $3, 'unauthorized platform grant test')
 	`, targetUserID, platformRoleID, requesterUserID); err == nil {
 		t.Fatal("platform role assignment succeeded without an approved grant request")
 	}
@@ -5993,8 +6085,8 @@ func assertAuthorizationGovernanceConstraints(t *testing.T, db *sql.DB) {
 	var platformAssignmentID int64
 	if err := db.QueryRow(`
 		INSERT INTO system.role_assignments
-		    (principal_id, role_id, scope_type, source_type, created_by_principal_id, grant_change_request_id)
-		VALUES ($1, $2, 'platform', 'manual', $3, $4)
+		    (principal_id, role_id, scope_type, source_type, created_by_principal_id, grant_change_request_id, grant_reason)
+		VALUES ($1, $2, 'platform', 'manual', $3, $4, 'approved platform grant test')
 		RETURNING id
 	`, targetUserID, platformRoleID, requesterUserID, grantRequestID).Scan(&platformAssignmentID); err != nil {
 		t.Fatalf("apply approved platform role grant: %v", err)
@@ -6008,8 +6100,8 @@ func assertAuthorizationGovernanceConstraints(t *testing.T, db *sql.DB) {
 	approvePrivilegedChangeRequest(t, db, conflictRequestID, reviewerUserID)
 	if _, err := db.Exec(`
 		INSERT INTO system.role_assignments
-		    (principal_id, role_id, scope_type, source_type, created_by_principal_id, grant_change_request_id)
-		VALUES ($1, $2, 'platform', 'manual', $3, $4)
+		    (principal_id, role_id, scope_type, source_type, created_by_principal_id, grant_change_request_id, grant_reason)
+		VALUES ($1, $2, 'platform', 'manual', $3, $4, 'conflicting platform grant test')
 	`, targetUserID, conflictingPlatformRoleID, requesterUserID, conflictRequestID); err == nil {
 		t.Fatal("conflicting platform role assignment succeeded")
 	}
@@ -6032,7 +6124,8 @@ func assertAuthorizationGovernanceConstraints(t *testing.T, db *sql.DB) {
 		SET status = 'revoked',
 		    revoked_by_principal_id = $1,
 		    revoked_at = now(),
-		    revoke_change_request_id = $2
+		    revoke_change_request_id = $2,
+		    revoked_reason = 'approved platform revocation test'
 		WHERE id = $3
 	`, requesterUserID, revokeRequestID, platformAssignmentID); err != nil {
 		t.Fatalf("apply approved platform role revocation: %v", err)

@@ -79,7 +79,8 @@ manager/
 - 点云快显：`GET /point_cloud_copc/:id/content` 返回 ready COPC 快显内容；LAS / LAZ / E57 / PCD / XYZ 通过 `point_cloud_copc_generation` 生成 Manager 私有 COPC artifact，源 COPC 直接基础预览。
 - CAD 预览：`data_type=cad + format=dwg|dxf + layout=single` 的源文件由普通 Preview API 返回受控 `storage-stream` URL；Manager 前端仅在进入 CAD 预览时加载 LibreDWG Worker/WASM 和 WebGL renderer，在浏览器内解析并绘制，不创建 Manager 快显任务或派生产物。
 - 分块三维模型瓦片：`GET /model3d_tiles` 查询 Manager 受管结果，`GET /model3d_tiles/:id/assets/*asset_path` 返回 ready 3D Tiles / S3M 目录资源；生成入口统一由 Quick View action 驱动，独立管理页只负责任务、结果、监控与预览入口。
-- 任务提供者：`GET /tasks`、`GET /tasks/:task_type/:id`、`POST /tasks/:task_type/:id/execute`、`POST /tasks/:task_type/:id/rebind`（仅失效受管快显任务的来源驱动重绑，不自动执行）、`GET /executions/:execution_id`。
+- 用户任务管理：`GET /tasks`、`GET /tasks/:task_type/:id`、`POST /tasks/:task_type/:id/execute`、`POST /tasks/:task_type/:id/rebind`（仅失效受管快显任务的来源驱动重绑，不自动执行）、`GET /executions/:execution_id`，继续使用 `manager.derived_artifact.*`。
+- TaskProvider：`GET /task-provider/tasks`、`GET /task-provider/tasks/:task_type/:id`、`POST /task-provider/tasks/:task_type/:id/execute`、`GET /task-provider/executions/:execution_id`；整组路由只允许 `addp-orchestrator` Service Client，并使用 `manager.task_provider.read|execute`，不得向 Manager 前端暴露。
 - 数据进出与向量化：`POST /uploads`、`POST /imports`、`POST /exports`、`GET /exports/:id/file`、`POST /embedding_executions`、`GET /embeddings`、`GET /items/:item_id/embedding`。
 - 平台配置管理：`GET /settings/embedding`、`PUT /settings/embedding`；只接受 Platform Context 和 `manager.configuration.read/update`。
 

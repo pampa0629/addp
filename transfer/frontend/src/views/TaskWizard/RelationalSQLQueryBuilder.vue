@@ -1,21 +1,27 @@
 <template>
   <div class="relational-sql-builder" data-testid="relational-sql-builder">
-    <div class="builder-toolbar">
-      <el-radio-group :model-value="mode" @change="changeMode">
-        <el-radio-button value="visual">{{ t('transfer.taskWizard.sqlBuilder.visualMode') }}</el-radio-button>
-        <el-radio-button value="advanced">{{ t('transfer.taskWizard.sqlBuilder.advancedMode') }}</el-radio-button>
-      </el-radio-group>
-    </div>
+    <template v-if="unsupportedReason">
+      <el-alert
+        type="warning"
+        :closable="false"
+        :title="t('transfer.taskWizard.sqlBuilder.unsupportedTitle')"
+        :description="t('transfer.taskWizard.sqlBuilder.unsupportedDescription')"
+      />
+      <section class="builder-section">
+        <strong>{{ t('transfer.taskWizard.sqlBuilder.readOnlySql') }}</strong>
+        <el-input :model-value="modelValue" type="textarea" :rows="8" readonly />
+        <el-input
+          v-if="hasReadOnlyParameters"
+          :model-value="readOnlyParameters"
+          type="textarea"
+          :rows="3"
+          readonly
+          class="parameter-preview"
+        />
+      </section>
+    </template>
 
-    <el-alert
-      v-if="unsupportedReason"
-      type="warning"
-      :closable="false"
-      :title="t('transfer.taskWizard.sqlBuilder.unsupportedTitle')"
-      :description="t('transfer.taskWizard.sqlBuilder.unsupportedDescription')"
-    />
-
-    <template v-if="mode === 'visual'">
+    <template v-else>
       <section class="builder-section compact-section">
         <strong>{{ t('transfer.taskWizard.sqlBuilder.sourceTable') }}</strong>
         <code>{{ sourceLabel }}</code>
@@ -123,6 +129,11 @@
             controls-position="right"
             :placeholder="t('transfer.taskWizard.sqlBuilder.filterValue')"
           />
+          <el-input
+            v-else-if="fieldKind(filter.field) === 'exact-number'"
+            v-model="filter.value"
+            :placeholder="t('transfer.taskWizard.sqlBuilder.filterValue')"
+          />
           <el-select
             v-else-if="fieldKind(filter.field) === 'boolean'"
             v-model="filter.value"
@@ -193,29 +204,6 @@
         </el-collapse-item>
       </el-collapse>
     </template>
-
-    <template v-else>
-      <el-alert
-        type="info"
-        :closable="false"
-        :title="t('transfer.taskWizard.sqlBuilder.advancedHint')"
-      />
-      <el-input
-        v-model="rawStatement"
-        type="textarea"
-        :rows="10"
-        :placeholder="t('transfer.taskWizard.queryStatementPlaceholder')"
-        @input="emitAdvancedQuery"
-      />
-      <el-input
-        v-model="rawParametersText"
-        type="textarea"
-        :rows="3"
-        :placeholder="t('transfer.taskWizard.queryParametersPlaceholder')"
-        @input="emitAdvancedQuery"
-      />
-      <div v-if="advancedParameterError" class="query-error">{{ advancedParameterError }}</div>
-    </template>
   </div>
 </template>
 
@@ -240,28 +228,33 @@ const props = defineProps({
   sourcePath: { type: Array, default: () => [] },
   sourceFields: { type: Array, default: () => [] },
   identifierQuote: { type: String, default: '' },
-  parametersSupported: { type: Boolean, default: false }
+  parametersSupported: { type: Boolean, default: false },
+  parameterTypes: { type: [Array, Set], default: () => new Set() }
 })
 
 const emit = defineEmits(['update:query'])
 const { t } = useI18n()
-const mode = ref('visual')
 const fieldSearch = ref('')
-const rawStatement = ref('')
-const rawParametersText = ref('{}')
-const advancedParameterError = ref('')
 const unsupportedReason = ref('')
 const draft = reactive(createRelationalSQLQuery(props.sourcePath, props.sourceFields))
 let lastEmittedProps = ''
 
 const sourceLabel = computed(() => props.sourcePath.join('.'))
+const hasReadOnlyParameters = computed(() => Object.keys(props.parameters || {}).length > 0)
+const readOnlyParameters = computed(() => JSON.stringify(props.parameters || {}, null, 2))
 const sourceFieldMap = computed(() => new Map(props.sourceFields.map(field => [cleanText(field?.name).toLowerCase(), field])))
 const visibleFields = computed(() => {
   const search = cleanText(fieldSearch.value).toLowerCase()
   return uniqueFields(props.sourceFields).filter(field => !search || field.name.toLowerCase().includes(search))
 })
-const filterableFields = computed(() => uniqueFields(props.sourceFields).filter(field => relationalSQLFilterOperators(field).length > 0))
-const validationIssues = computed(() => validateRelationalSQLQuery(draft, props.sourceFields, props.parametersSupported))
+const filterableFields = computed(() => uniqueFields(props.sourceFields)
+  .filter(field => relationalSQLFilterOperators(field, props.parameterTypes).length > 0))
+const validationIssues = computed(() => validateRelationalSQLQuery(
+  draft,
+  props.sourceFields,
+  props.parametersSupported,
+  props.parameterTypes
+))
 const validationMessages = computed(() => [...new Set(validationIssues.value.map(item => {
   const key = `transfer.taskWizard.sqlBuilder.validation.${item.code}`
   const translated = t(key)
@@ -273,7 +266,15 @@ const compiled = computed(() => {
 })
 
 watch(
-  () => [props.modelValue, props.parameters, props.sourcePath, props.sourceFields, props.identifierQuote, props.parametersSupported],
+  () => [
+    props.modelValue,
+    props.parameters,
+    props.sourcePath,
+    props.sourceFields,
+    props.identifierQuote,
+    props.parametersSupported,
+    props.parameterTypes
+  ],
   () => hydrateFromProps(),
   { immediate: true, deep: true }
 )
@@ -281,7 +282,7 @@ watch(
 watch(
   draft,
   () => {
-    if (mode.value !== 'visual') return
+    if (unsupportedReason.value) return
     emitVisualQuery()
   },
   { deep: true, immediate: true }
@@ -293,48 +294,16 @@ function hydrateFromProps() {
   const statement = cleanText(props.modelValue)
   if (!statement) {
     replaceDraft(createRelationalSQLQuery(props.sourcePath, props.sourceFields))
-    rawStatement.value = ''
-    rawParametersText.value = '{}'
-    mode.value = 'visual'
     unsupportedReason.value = ''
     return
   }
   const parsed = parseRelationalSQLQuery(statement, props.parameters, compilerOptions())
   if (parsed.supported) {
     replaceDraft(parsed.model)
-    rawStatement.value = statement
-    rawParametersText.value = JSON.stringify(props.parameters || {}, null, 2)
-    mode.value = 'visual'
     unsupportedReason.value = ''
     return
   }
-  rawStatement.value = props.modelValue
-  rawParametersText.value = JSON.stringify(props.parameters || {}, null, 2)
-  mode.value = 'advanced'
   unsupportedReason.value = parsed.reason
-}
-
-function changeMode(nextMode) {
-  if (nextMode === mode.value) return
-  if (nextMode === 'advanced') {
-    rawStatement.value = compiled.value.statement || cleanText(props.modelValue)
-    rawParametersText.value = JSON.stringify(compiled.value.parameters || props.parameters || {}, null, 2)
-    mode.value = 'advanced'
-    unsupportedReason.value = ''
-    emitAdvancedQuery()
-    return
-  }
-  const parameters = parseAdvancedParameters()
-  if (!parameters) return
-  const parsed = parseRelationalSQLQuery(rawStatement.value, parameters, compilerOptions())
-  if (!parsed.supported) {
-    unsupportedReason.value = parsed.reason
-    return
-  }
-  replaceDraft(parsed.model)
-  mode.value = 'visual'
-  unsupportedReason.value = ''
-  emitVisualQuery()
 }
 
 function selectAllFields() {
@@ -353,7 +322,7 @@ function changeSelectedFields(values) {
 function addFilter() {
   const field = filterableFields.value[0]
   if (!field) return
-  draft.filters.push(createRelationalSQLFilter(field.name, props.sourceFields))
+  draft.filters.push(createRelationalSQLFilter(field.name, props.sourceFields, props.parameterTypes))
 }
 
 function removeFilter(index) {
@@ -364,7 +333,7 @@ function changeFilterField(index, fieldName) {
   const filter = draft.filters[index]
   if (!filter) return
   const field = sourceField(fieldName)
-  const operators = relationalSQLFilterOperators(field)
+  const operators = relationalSQLFilterOperators(field, props.parameterTypes)
   filter.field = field?.name || ''
   filter.operator = operators[0] || ''
   filter.value = undefined
@@ -378,7 +347,7 @@ function changeFilterOperator(index, operator) {
 }
 
 function operatorOptions(fieldName) {
-  return relationalSQLFilterOperators(sourceField(fieldName))
+  return relationalSQLFilterOperators(sourceField(fieldName), props.parameterTypes)
 }
 
 function fieldKind(fieldName) {
@@ -404,39 +373,12 @@ function emitVisualQuery() {
   const query = compiled.value
   const fields = relationalSQLOutputFields(draft, props.sourceFields)
   lastEmittedProps = propsSignature(query.statement, query.parameters)
-  rawStatement.value = query.statement
-  rawParametersText.value = JSON.stringify(query.parameters, null, 2)
   emit('update:query', {
     statement: query.statement,
     parameters: query.parameters,
     fields,
     valid: validationIssues.value.length === 0
   })
-}
-
-function emitAdvancedQuery() {
-  const parameters = parseAdvancedParameters()
-  emit('update:query', {
-    statement: rawStatement.value,
-    parameters: parameters || {},
-    fields: null,
-    valid: !!cleanText(rawStatement.value) && !!parameters
-  })
-  if (parameters) lastEmittedProps = propsSignature(rawStatement.value, parameters)
-}
-
-function parseAdvancedParameters() {
-  advancedParameterError.value = ''
-  try {
-    const parsed = JSON.parse(rawParametersText.value.trim() || '{}')
-    if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
-      throw new Error(t('transfer.taskWizard.queryParametersObjectRequired'))
-    }
-    return parsed
-  } catch (error) {
-    advancedParameterError.value = error.message || t('transfer.taskWizard.queryParametersInvalid')
-    return null
-  }
 }
 
 function replaceDraft(model) {
@@ -451,7 +393,8 @@ function compilerOptions() {
     sourcePath: props.sourcePath,
     sourceFields: props.sourceFields,
     identifierQuote: props.identifierQuote,
-    parametersSupported: props.parametersSupported
+    parametersSupported: props.parametersSupported,
+    parameterTypes: props.parameterTypes
   }
 }
 
@@ -479,8 +422,15 @@ function propsSignature(statement, parameters) {
     sourcePath: props.sourcePath,
     fields,
     identifierQuote: props.identifierQuote,
-    parametersSupported: props.parametersSupported
+    parametersSupported: props.parametersSupported,
+    parameterTypes: [...normalizeParameterTypes(props.parameterTypes)].sort()
   })}`
+}
+
+function normalizeParameterTypes(values) {
+  return new Set((values instanceof Set || Array.isArray(values) ? [...values] : [])
+    .map(value => String(value || '').trim().toLowerCase())
+    .filter(Boolean))
 }
 
 function cleanText(value) {
@@ -494,7 +444,6 @@ function cleanText(value) {
   gap: 12px;
 }
 
-.builder-toolbar,
 .section-heading,
 .section-actions,
 .filter-row {
@@ -584,11 +533,6 @@ function cleanText(value) {
 
 .parameter-preview {
   margin-top: 8px;
-}
-
-.query-error {
-  color: var(--el-color-danger);
-  font-size: 12px;
 }
 
 @media (max-width: 900px) {

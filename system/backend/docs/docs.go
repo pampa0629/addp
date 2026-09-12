@@ -8599,8 +8599,8 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "状态：active 或 revoked | Status: active or revoked",
-                        "name": "status",
+                        "description": "当前状态：scheduled、effective、expired 或 revoked；默认 effective | Current state: scheduled, effective, expired, or revoked; defaults to effective",
+                        "name": "effective_state",
                         "in": "query"
                     },
                     {
@@ -8708,6 +8708,49 @@ const docTemplate = `{
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
                     "iam.tenant_role_assignment.create"
+                ]
+            }
+        },
+        "/tenant/role_assignments/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "租户角色分配 | Tenant Role Assignments"
+                ],
+                "summary": "查询当前租户角色分配详情 | Get role assignment details in the current tenant",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "角色分配 ID | Role assignment ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMTenantRoleAssignmentResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "角色分配不存在或不属于当前租户 | Role assignment not found in the current tenant",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "iam.tenant_role_assignment.read"
                 ]
             }
         },
@@ -13082,6 +13125,26 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api.IAMRoleAssignmentActorResponse": {
+            "type": "object",
+            "properties": {
+                "display_name": {
+                    "type": "string"
+                },
+                "identifier": {
+                    "type": "string"
+                },
+                "principal_id": {
+                    "type": "string"
+                },
+                "principal_type": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_api.IAMSecurityPolicyResponse": {
             "type": "object",
             "properties": {
@@ -13455,7 +13518,7 @@ const docTemplate = `{
         "internal_api.IAMTenantRoleAssignmentResponse": {
             "type": "object",
             "properties": {
-                "created_by_principal_id": {
+                "created_at": {
                     "type": "string"
                 },
                 "department_id": {
@@ -13463,6 +13526,15 @@ const docTemplate = `{
                 },
                 "display_name": {
                     "type": "string"
+                },
+                "effective_state": {
+                    "type": "string"
+                },
+                "grant_reason": {
+                    "type": "string"
+                },
+                "granted_by": {
+                    "$ref": "#/definitions/internal_api.IAMRoleAssignmentActorResponse"
                 },
                 "id": {
                     "type": "string"
@@ -13479,13 +13551,13 @@ const docTemplate = `{
                 "project_group_id": {
                     "type": "string"
                 },
-                "reason": {
-                    "type": "string"
-                },
                 "revoked_at": {
                     "type": "string"
                 },
-                "revoked_by_principal_id": {
+                "revoked_by": {
+                    "$ref": "#/definitions/internal_api.IAMRoleAssignmentActorResponse"
+                },
+                "revoked_reason": {
                     "type": "string"
                 },
                 "role_id": {
@@ -13500,10 +13572,16 @@ const docTemplate = `{
                 "role_name_i18n_key": {
                     "type": "string"
                 },
+                "same_scope_active_assignment_id": {
+                    "type": "string"
+                },
                 "scope_type": {
                     "type": "string"
                 },
                 "service_principal_name": {
+                    "type": "string"
+                },
+                "source_type": {
                     "type": "string"
                 },
                 "status": {

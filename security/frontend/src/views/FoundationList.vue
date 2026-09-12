@@ -43,7 +43,8 @@
       class="addp-dialog"
       :title="editing ? t('security.common.editResource', { name: title }) : t('security.common.createResource', { name: title })"
       width="min(600px, calc(100vw - 24px))"
-      @opened="handleDialogOpened"
+      @open="clearDialogValidation"
+      @opened="focusDialogPrimaryControl"
     >
       <el-form ref="formRef" :model="form" :rules="formRules" label-width="170px">
         <el-form-item
@@ -94,7 +95,8 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { classificationAPI, gradeAPI } from '../api/security'
 import { useAuthStore } from '../store/auth'
-import { buildFoundationPayload, createMinimumNumberRule, createRequiredRule, initialFoundationFieldValue, sortFoundationRows } from '../utils/foundationForm.mjs'
+import { confirmDangerousAction } from '../utils/confirmation.mjs'
+import { buildFoundationPayload, createRequiredNumberRangeRule, createRequiredRule, initialFoundationFieldValue, sortFoundationRows } from '../utils/foundationForm.mjs'
 
 const props = defineProps({
   resourceKey: { type: String, default: '' },
@@ -146,8 +148,8 @@ const formRules = computed(() => Object.fromEntries(
     .filter(field => field.required)
     .map(field => {
       const message = t('security.common.requiredField', { name: t(field.label) })
-      if (field.reference) return [field.key, [createMinimumNumberRule(message, 1)]]
-      if (field.type === 'number') return [field.key, [createMinimumNumberRule(message, field.min ?? 0)]]
+      if (field.reference) return [field.key, [createRequiredNumberRangeRule(message, { minimum: 1 })]]
+      if (field.type === 'number') return [field.key, [createRequiredNumberRangeRule(message, { minimum: field.min ?? 0, maximum: field.max })]]
       return [field.key, [createRequiredRule(message, { trigger: 'blur', whitespace: true })]]
     })
 ))
@@ -200,8 +202,11 @@ function openEdit(row) {
   dialog.value = true
 }
 
-function handleDialogOpened() {
-  formRef.value?.clearValidate()
+function clearDialogValidation() {
+  nextTick(() => formRef.value?.clearValidate())
+}
+
+function focusDialogPrimaryControl() {
   nextTick(() => {
     formRef.value?.$el?.querySelector('input:not([disabled]), textarea:not([disabled])')?.focus()
   })
@@ -247,7 +252,12 @@ async function save() {
 
 async function remove(row) {
   try {
-    await ElMessageBox.confirm(t('security.common.confirmDelete', { name: row.name || row.code || row.id }), t('security.common.hint'), { type: 'warning' })
+    await confirmDangerousAction(ElMessageBox.confirm, {
+      message: t('security.common.confirmDelete', { name: row.name || row.code || row.id }),
+      title: t('security.common.hint'),
+      confirmButtonText: t('security.common.delete'),
+      cancelButtonText: t('security.common.cancel')
+    })
     await spec.value.api.delete(row.id)
     await load()
   } catch (error) {

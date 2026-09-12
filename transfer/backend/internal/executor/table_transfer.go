@@ -21,20 +21,21 @@ const (
 )
 
 type TableSourcePlan struct {
-	Kind         TableEndpointKind
-	ConnInfo     engineplugin.ConnectionInfo
-	Path         engineplugin.EngineCatalogPath
-	Query        string
-	RuntimeQuery *engineplugin.QueryRequest
-	ReadOptions  map[string]interface{}
-	ContentRead  engineplugin.ReadOptions
-	Format       format.FormatType
-	Layout       format.Layout
-	ParseOptions *format.ParseOptions
-	ResumeMarker *resume.Marker
-	TableInfo    *datatype.TableInfo
-	SpatialInfo  *datatype.SpatialInfo
-	RelatedRefs  []format.RelatedRef
+	Kind                 TableEndpointKind
+	ConnInfo             engineplugin.ConnectionInfo
+	Path                 engineplugin.EngineCatalogPath
+	Query                string
+	RuntimeQuery         *engineplugin.QueryRequest
+	ExpectedQueryReadSet *engineplugin.QueryReadSet
+	ReadOptions          map[string]interface{}
+	ContentRead          engineplugin.ReadOptions
+	Format               format.FormatType
+	Layout               format.Layout
+	ParseOptions         *format.ParseOptions
+	ResumeMarker         *resume.Marker
+	TableInfo            *datatype.TableInfo
+	SpatialInfo          *datatype.SpatialInfo
+	RelatedRefs          []format.RelatedRef
 }
 
 type TableTargetPlan struct {
@@ -232,7 +233,8 @@ func (e *TableTransferExecutor) openSource(plan TableSourcePlan) (TableBatchSour
 		}
 		return &queryTableBatchSource{
 			provider: e.SourceQuerySessionProvider, protector: e.SourceProtector,
-			connInfo: plan.ConnInfo, request: *plan.RuntimeQuery, tableInfo: plan.TableInfo,
+			connInfo: plan.ConnInfo, request: *plan.RuntimeQuery,
+			expectedReadSet: plan.ExpectedQueryReadSet, tableInfo: plan.TableInfo,
 		}, nil
 	case TableEndpointNative:
 		if e.SourceNativeReader == nil && e.SourceTableSessionProvider == nil {

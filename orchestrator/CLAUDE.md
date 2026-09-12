@@ -43,6 +43,7 @@ Orchestrator 是 `orchestrator.workflow.*` 的 Permission owner；定义只存�
 - 编排管理：`POST /orchestrations`、`GET /orchestrations`、`GET /orchestrations/:id`、`PUT /orchestrations/:id`、`DELETE /orchestrations/:id`。
 - 执行管理：`POST /orchestrations/:id/execute`、`GET /orchestrations/:id/executions`、`GET /executions`、`GET /orch-executions/:id`。
 - 能力发现：`GET /task-providers`、`GET /tasks`。
+- Orchestrator 自身 TaskProvider：`GET /task-provider/tasks`、`GET /task-provider/tasks/:task_type/:id`、`POST /task-provider/tasks/:task_type/:id/execute`、`GET /task-provider/executions/:execution_id`；整组路由只允许 `addp-orchestrator` Service Client，并使用 `orchestrator.task_provider.read|execute`。人用 `/tasks` 仅用于编排编辑器聚合其他 Provider 的任务列表。
 - 存活与就绪：`GET /health/live`、`GET /health/ready`。
 
 ## 开发规则

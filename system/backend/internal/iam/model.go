@@ -348,7 +348,8 @@ type RoleAssignment struct {
 	CreatedByPrincipalID *int64     `gorm:"column:created_by_principal_id"`
 	RevokedByPrincipalID *int64     `gorm:"column:revoked_by_principal_id"`
 	RevokedAt            *time.Time `gorm:"column:revoked_at"`
-	Reason               string     `gorm:"column:reason;not null"`
+	GrantReason          *string    `gorm:"column:grant_reason"`
+	RevokedReason        *string    `gorm:"column:revoked_reason"`
 	CreatedAt            time.Time  `gorm:"column:created_at;autoCreateTime"`
 	UpdatedAt            time.Time  `gorm:"column:updated_at;autoUpdateTime"`
 }

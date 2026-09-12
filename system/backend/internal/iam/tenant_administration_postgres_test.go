@@ -254,6 +254,12 @@ func TestTenantAdministrationClosureAgainstPostgres(t *testing.T) {
 	if err != nil || len(departmentAssignments) != 1 || departmentAssignments[0].DepartmentID == nil || *departmentAssignments[0].DepartmentID != activeDepartment.ID {
 		t.Fatalf("active department role assignment = %#v error=%v", departmentAssignments, err)
 	}
+	if _, err := roleService.CreateAssignments(ctx, CreateTenantRoleAssignmentsInput{
+		TenantID: tenant.ID, MembershipID: membership.Membership.ID, RoleIDs: []int64{infrastructureRole.ID},
+		ScopeType: "tenant", ActorPrincipalID: initialAdministrator.ID, Audit: tenantAudit,
+	}); !errors.Is(err, commonapi.ErrBadRequest) {
+		t.Fatalf("role assignment without grant reason error = %v, want bad request", err)
+	}
 	assignedBatch, err := roleService.CreateAssignments(ctx, CreateTenantRoleAssignmentsInput{
 		TenantID: tenant.ID, MembershipID: membership.Membership.ID, RoleIDs: []int64{infrastructureRole.ID, dataViewerRole.ID},
 		ScopeType: "tenant", Reason: "engine administration", ActorPrincipalID: initialAdministrator.ID, Audit: tenantAudit,
@@ -266,7 +272,9 @@ func TestTenantAdministrationClosureAgainstPostgres(t *testing.T) {
 	}
 	assigned := findBatchAssignmentByRoleKey(t, assignedBatch, "tenant.infrastructure_administrator")
 	if assigned.MembershipID != membership.Membership.ID || assigned.RoleKey != "tenant.infrastructure_administrator" ||
-		assigned.DisplayName != infrastructureAdministrator.DisplayName {
+		assigned.DisplayName != infrastructureAdministrator.DisplayName || assigned.EffectiveState != "effective" ||
+		assigned.GrantReason == nil || *assigned.GrantReason != "engine administration" ||
+		assigned.GrantedByDisplayName == nil || *assigned.GrantedByDisplayName != initialAdministrator.DisplayName {
 		t.Fatalf("created assignment projection = %#v", assigned)
 	}
 	if _, err := roleService.CreateAssignments(ctx, CreateTenantRoleAssignmentsInput{
@@ -276,23 +284,48 @@ func TestTenantAdministrationClosureAgainstPostgres(t *testing.T) {
 		t.Fatalf("duplicate assignment error = %v, want role assignment already exists", err)
 	}
 	membershipID := membership.Membership.ID
-	activeStatus := "active"
+	effectiveState := "effective"
 	tenantScope := "tenant"
 	filteredAssignments, filteredTotal, err := roleService.ListAssignments(ctx, tenant.ID, TenantRoleAssignmentFilter{
-		MembershipID:  &membershipID,
-		PrincipalType: &principalType,
-		Status:        &activeStatus,
-		ScopeType:     &tenantScope,
+		MembershipID:   &membershipID,
+		PrincipalType:  &principalType,
+		EffectiveState: &effectiveState,
+		ScopeType:      &tenantScope,
 	}, 1, 100)
 	if err != nil || filteredTotal != 2 || len(filteredAssignments) != 2 || findBatchAssignmentByRoleKey(t, filteredAssignments, "tenant.infrastructure_administrator").ID != assigned.ID {
 		t.Fatalf("filtered active assignments = %#v total=%d err=%v", filteredAssignments, filteredTotal, err)
+	}
+	if _, err := roleService.RevokeAssignment(ctx, RevokeTenantRoleAssignmentInput{
+		TenantID: tenant.ID, AssignmentID: assigned.ID, ActorPrincipalID: initialAdministrator.ID, Audit: tenantAudit,
+	}); !errors.Is(err, commonapi.ErrBadRequest) {
+		t.Fatalf("role assignment revocation without reason error = %v, want bad request", err)
 	}
 	revoked, err := roleService.RevokeAssignment(ctx, RevokeTenantRoleAssignmentInput{
 		TenantID: tenant.ID, AssignmentID: assigned.ID, Reason: "assignment test completed",
 		ActorPrincipalID: initialAdministrator.ID, Audit: tenantAudit,
 	})
-	if err != nil || revoked.Status != "revoked" || revoked.RoleKey != "tenant.infrastructure_administrator" {
+	if err != nil || revoked.Status != "revoked" || revoked.EffectiveState != "revoked" || revoked.RoleKey != "tenant.infrastructure_administrator" ||
+		revoked.RevokedReason == nil || *revoked.RevokedReason != "assignment test completed" ||
+		revoked.RevokedByDisplayName == nil || *revoked.RevokedByDisplayName != initialAdministrator.DisplayName {
 		t.Fatalf("revoked assignment = %#v err=%v", revoked, err)
+	}
+	replacementBatch, err := roleService.CreateAssignments(ctx, CreateTenantRoleAssignmentsInput{
+		TenantID: tenant.ID, MembershipID: membership.Membership.ID, RoleIDs: []int64{infrastructureRole.ID},
+		ScopeType: "tenant", Reason: "renewed engine administration", ActorPrincipalID: initialAdministrator.ID, Audit: tenantAudit,
+	})
+	if err != nil || len(replacementBatch) != 1 || replacementBatch[0].ID == assigned.ID {
+		t.Fatalf("replacement assignment = %#v err=%v", replacementBatch, err)
+	}
+	revokedDetail, err := roleService.GetAssignment(ctx, tenant.ID, assigned.ID)
+	if err != nil || revokedDetail.SameScopeActiveAssignmentID == nil || *revokedDetail.SameScopeActiveAssignmentID != replacementBatch[0].ID {
+		t.Fatalf("revoked assignment current replacement = %#v err=%v", revokedDetail, err)
+	}
+	revokedState := "revoked"
+	revokedAssignments, revokedTotal, err := roleService.ListAssignments(ctx, tenant.ID, TenantRoleAssignmentFilter{
+		MembershipID: &membershipID, EffectiveState: &revokedState, ScopeType: &tenantScope,
+	}, 1, 100)
+	if err != nil || revokedTotal != 1 || len(revokedAssignments) != 1 || revokedAssignments[0].ID != assigned.ID {
+		t.Fatalf("filtered revoked assignments = %#v total=%d err=%v", revokedAssignments, revokedTotal, err)
 	}
 
 	assignments, _, err := roleService.ListAssignments(ctx, tenant.ID, TenantRoleAssignmentFilter{}, 1, 100)
@@ -370,7 +403,7 @@ func TestTenantAdministrationClosureAgainstPostgres(t *testing.T) {
 	}
 	if _, err := roleService.CreateAssignments(ctx, CreateTenantRoleAssignmentsInput{
 		TenantID: tenant.ID, MembershipID: legacyMembership.ID, RoleIDs: []int64{infrastructureRole.ID},
-		ScopeType: "tenant", ActorPrincipalID: infrastructureAdministrator.ID, Audit: tenantAudit,
+		ScopeType: "tenant", Reason: "cross-tenant assignment must fail", ActorPrincipalID: infrastructureAdministrator.ID, Audit: tenantAudit,
 	}); err == nil {
 		t.Fatal("cross-tenant membership received role assignment")
 	}
