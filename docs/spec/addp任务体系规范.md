@@ -317,7 +317,7 @@ Transfer `sync` 的稳定语义由以下正交维度表达：
 3. watermark 增量必须使用稳定单字段或复合游标：`tie_breaker=[]` 的单字段游标只保证 insert，非空 tie breaker 的复合游标 `(watermark_field, tie_breaker...)` 保证 insert/update；读取区间统一为 `(committed_position, execution_upper_bound]`，两种模式都不支持物理删除，不得称为完整 CDC。
 4. 增量 committed position 归 Transfer 私有同步状态，不能写入任务定义或用 execution checkpoint 代替。只有目标批次成功提交后才能通过 CAS/fencing 推进同步状态。
 5. 同一增量任务默认只允许一个 active execution 推进主状态；任务 claim 与 pending execution 创建必须在同一数据库事务中完成。
-6. resume 创建新 execution 并从 committed position 继续；replay 是独立执行参数且永不推进主状态。PostgreSQL/MySQL/OceanBase/openGauss watermark 只支持 resume，不支持 replay，OceanBase/openGauss 限非空间表。
+6. resume 创建新 execution 并从 committed position 继续；replay 是独立执行参数且永不推进主状态。PostgreSQL/MySQL/OceanBase/TiDB/openGauss watermark 只支持 resume，不支持 replay，OceanBase/TiDB/openGauss 限非空间表。
 7. TaskProvider capability 只能声明已真实实现并验证的边界；不具备真实 worker 中断、资源释放和一致落库能力时必须 `supports_cancel=false`，也不得保留只改数据库状态的伪取消入口。
 
 #### Transfer continuous sync v1 契约

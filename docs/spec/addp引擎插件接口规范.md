@@ -351,7 +351,7 @@ type EncodedRecordBatchData struct {
 当前 bounded watermark 契约：
 
 - `BoundedWatermarkReadOptions` 必须包含一个 watermark field、可为空的 tie breaker 列表和可选 committed start cursor。`tie_breaker=[]` 表示仅同步新增，watermark field 必须自身精确匹配非空 primary key 或 unique constraint；非空 `tie_breaker` 表示同步新增和更新，完整位置为 `(watermark, tie_breaker...)`，tie breaker 必须精确匹配非空 primary key 或非 partial unique constraint。两种模式都不得用可空、非唯一或不稳定字段构造游标。
-- 当前 source Provider 由 PostgreSQL、MySQL、MySQL 模式 OceanBase 与 openGauss 实现：PostgreSQL/openGauss 在 repeatable-read 只读事务中冻结上界，MySQL-compatible 引擎在 InnoDB repeatable-read 事务中冻结上界；所有游标字段不得为 NULL，OceanBase 与 openGauss 当前只开放非空间表。
+- 当前 source Provider 由 PostgreSQL、MySQL、MySQL 模式 OceanBase、TiDB 与 openGauss 实现：PostgreSQL/openGauss 在 repeatable-read 只读事务中冻结上界，MySQL-compatible 引擎在 InnoDB repeatable-read 事务中冻结上界；所有游标字段不得为 NULL，OceanBase、TiDB 与 openGauss 当前只开放非空间表。
 - `WatermarkCursor.Values` 使用 canonical string 保存，具体列类型转换由 source Provider 解释。
 - `TableUpsertProvider` 使用稳定 keys 和单批事务提交；重复应用同一批必须得到相同目标状态。PostgreSQL 使用显式 `ON CONFLICT(keys)`；openGauss 使用原生 `MERGE INTO`，配置 keys 只用于 `ON` 匹配且不得在 matched 分支中更新；MySQL-compatible 目标使用 InnoDB 和 `ON DUPLICATE KEY UPDATE`，并必须拒绝会绕过配置 keys 的其他唯一约束。
 - Transfer 只在目标批次提交成功后推进 `transfer.sync_states`，Provider 不直接维护任务状态。
@@ -531,7 +531,7 @@ PostgreSQL Provider 的首个可信切片使用 PostgreSQL AST 和当前连接�
 - `VOLATILE` 函数、表函数、集合返回函数、非可信扩展成员的用户或扩展 schema 函数，以及任何候选无法完整证明的调用必须 unresolved；函数重载、默认参数、variadic 和当前 `search_path` 必须纳入候选闭包，不能按同名某一个安全函数缩小判断；
 - 普通视图继续按 `pg_rewrite/pg_depend` 展开绑定关系；视图依赖的非可信用户函数必须 unresolved。外部表、临时表、系统目录或其他无法证明为 Engine Catalog leaf 的来源同样 unresolved。
 
-MySQL 及 MySQL 模式 OceanBase Provider 的第一个可信 `QueryReadSet` 切片共享同一套 MySQL 兼容证明逻辑，只覆盖方言 AST 能完整解析、且当前连接目录确认所有引用都是真实基础表的只读 `SELECT`：
+MySQL、MySQL 模式 OceanBase 及 TiDB Provider 的第一个可信 `QueryReadSet` 切片共享同一套 MySQL 兼容证明逻辑，只覆盖方言 AST 能完整解析、且当前连接目录确认所有引用都是真实基础表的只读 `SELECT`：
 
 - 未限定表名必须使用当前连接的 `database` 解析，显式限定表名使用其 database；JOIN 和派生子查询中的全部基础表都必须进入集合；
 - 每个引用必须通过 `information_schema.tables` 解析为唯一 InnoDB `BASE TABLE`。View、FEDERATED 等可引入额外数据源的存储引擎、临时表、系统 database、动态标识符或不存在的关系统一 unresolved，不在首个切片中展开视图依赖；

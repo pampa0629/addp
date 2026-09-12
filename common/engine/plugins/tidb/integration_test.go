@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -86,6 +87,13 @@ func TestIntegrationTiDBCatalogQueryAndWrite(t *testing.T) {
 	if sourceEntry == nil || sourceEntry.Kind != plugin.EngineCatalogKindTable {
 		t.Fatalf("source table not found in %#v", tidbCatalogEntryNames(items))
 	}
+	resolvedSource, err := p.ResolvePath(ctx, connInfo, sourceEntry.Path)
+	if err != nil {
+		t.Fatalf("ResolvePath(source) error = %v", err)
+	}
+	if resolvedSource == nil || resolvedSource.Kind != plugin.EngineCatalogKindTable || resolvedSource.Path.StringPath() != databaseName+"/"+sourceTable {
+		t.Fatalf("ResolvePath(source) = %#v", resolvedSource)
+	}
 	facts, err := p.DescribeEngineCatalogFacts(ctx, connInfo, sourceEntry.Path, plugin.EngineCatalogFactsOptions{IncludeStatistics: true, IncludeConstraints: true})
 	if err != nil {
 		t.Fatalf("DescribeEngineCatalogFacts() error = %v", err)
@@ -96,6 +104,13 @@ func TestIntegrationTiDBCatalogQueryAndWrite(t *testing.T) {
 	assertTiDBIntegrationField(t, facts.Table.Fields, "id", datatype.FieldTypeBigInt, true)
 	assertTiDBIntegrationField(t, facts.Table.Fields, "amount", datatype.FieldTypeDecimal, false)
 	assertTiDBIntegrationField(t, facts.Table.Fields, "active", datatype.FieldTypeBool, false)
+	readBatch, err := p.ReadBatch(ctx, connInfo, sourceEntry.Path, plugin.BatchReadOptions{Limit: 10})
+	if err != nil {
+		t.Fatalf("ReadBatch() error = %v", err)
+	}
+	if len(readBatch.Rows) != 1 || readBatch.Rows[0]["name"] != "TiDB 8.5.8" {
+		t.Fatalf("ReadBatch() rows = %#v", readBatch.Rows)
+	}
 
 	prepared, err := p.PrepareQuery(ctx, connInfo, plugin.QueryRequest{
 		EngineID:   engineID,
@@ -110,6 +125,20 @@ func TestIntegrationTiDBCatalogQueryAndWrite(t *testing.T) {
 	readSet, err := prepared.ReadSet(ctx)
 	if err != nil || len(readSet.Paths) != 1 || readSet.Paths[0].StringPath() != databaseName+"/"+sourceTable {
 		t.Fatalf("PreparedQuery.ReadSet() = %#v, %v", readSet.Paths, err)
+	}
+	lineage, err := prepared.OutputLineage(ctx)
+	if err != nil {
+		t.Fatalf("PreparedQuery.OutputLineage() error = %v", err)
+	}
+	if len(lineage.Sources) != 1 || len(lineage.Sources[0].Bindings) != 2 {
+		t.Fatalf("PreparedQuery.OutputLineage() = %#v", lineage.Sources)
+	}
+	bindings := map[string]string{}
+	for _, binding := range lineage.Sources[0].Bindings {
+		bindings[binding.SourcePath[0]] = binding.OutputPath[0]
+	}
+	if !reflect.DeepEqual(bindings, map[string]string{"name": "name", "amount": "amount"}) {
+		t.Fatalf("PreparedQuery.OutputLineage() bindings = %#v", bindings)
 	}
 	result, err := prepared.Execute(ctx)
 	if err != nil {
