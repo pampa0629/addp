@@ -18,4 +18,10 @@ func TestQualityTaskProviderDeclaration(t *testing.T) {
 	if capabilities.CapabilityFor("check") == nil || capabilities.CapabilityFor("materialization_gate") == nil {
 		t.Fatalf("capabilities = %#v", capabilities.TaskCapabilities)
 	}
+	if declaration.TaskListEndpoint != "/api/v1/quality/task-provider/tasks" ||
+		declaration.TaskDetailEndpoint != "/api/v1/quality/task-provider/tasks/{task_type}/{id}" ||
+		declaration.TaskExecuteEndpoint != "/api/v1/quality/task-provider/tasks/{task_type}/{id}/execute" ||
+		declaration.TaskStatusEndpoint != "/api/v1/quality/task-provider/executions/{execution_id}" {
+		t.Fatalf("TaskProvider endpoints are not isolated: %#v", declaration)
+	}
 }

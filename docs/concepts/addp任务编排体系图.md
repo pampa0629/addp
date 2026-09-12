@@ -120,7 +120,7 @@ graph TB
 | **Manager** | 生成瓦片缓存 | `POST /api/v1/manager/tasks/{task_type}/{id}/execute` | `task_type=vector_tile_cache_generation` |
 | **Manager** | 矢量物化视图 | `POST /api/v1/manager/tasks/{task_type}/{id}/execute` | `task_type=vector_materialized_view_generation` |
 | **Manager** | 向量化 | `POST /api/v1/manager/tasks/{task_type}/{id}/execute` | `task_type=embedding` |
-| **Quality** | 质量检查 | `POST /api/v1/quality/tasks/{task_type}/{id}/execute` | `task_type=check` |
+| **Quality** | 质量检查 | `POST /api/v1/quality/task-provider/tasks/{task_type}/{id}/execute` | `task_type=check` |
 | **Graph** | 图谱构建 | `POST /api/v1/graph/tasks/{task_type}/{id}/execute` | `task_type=kg_build` |
 | **Orchestrator** | 已保存编排 | `POST /api/v1/orchestrator/tasks/{task_type}/{id}/execute` | `task_type=orchestration` |
 

@@ -105,6 +105,16 @@ SUITES: Mapping[str, Suite] = {
             ("monitor", "MONITOR_URL"),
         ),
     ),
+    "manager-hybrid-search": Suite(
+        command=(sys.executable, "scripts/test/manager-hybrid-search-online.py"),
+        services=(
+            ("gateway", "GATEWAY_URL"),
+            ("system", "SYSTEM_URL"),
+            ("meta", "META_URL"),
+            ("manager", "MANAGER_URL"),
+            ("inference", "INFERENCE_URL"),
+        ),
+    ),
     "security-transfer-protection": Suite(
         command=(sys.executable, "scripts/test/security-transfer-protection-online.py"),
         services=(

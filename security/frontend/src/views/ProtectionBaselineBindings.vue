@@ -58,13 +58,13 @@
       width="min(620px, calc(100vw - 24px))"
     >
       <el-alert :title="t('security.baseline.formHint')" type="info" :closable="false" show-icon />
-      <el-form label-position="top" class="baseline-form">
-        <el-form-item :label="t('security.fields.security_grade_id')" required>
+      <el-form ref="formRef" :model="form" :rules="formRules" label-position="top" class="baseline-form">
+        <el-form-item :label="t('security.fields.security_grade_id')" prop="security_grade_id" required>
           <el-select v-model="form.security_grade_id" class="wide" filterable :disabled="Boolean(editing)">
             <el-option v-for="item in availableGrades" :key="item.id" :value="Number(item.id)" :label="definitionLabel(item)" />
           </el-select>
         </el-form-item>
-        <el-form-item :label="t('security.fields.effect')" required>
+        <el-form-item :label="t('security.fields.effect')" prop="effect" required>
           <el-radio-group v-model="form.effect">
             <el-radio-button value="mask">{{ effectLabel('mask') }}</el-radio-button>
             <el-radio-button value="suppress">{{ effectLabel('suppress') }}</el-radio-button>
@@ -81,14 +81,14 @@
             <el-input :model-value="t('security.options.algorithms.keepPrefixSuffix')" disabled />
           </el-form-item>
           <div class="form-grid">
-            <el-form-item :label="t('security.fields.keep_prefix')" required>
+            <el-form-item :label="t('security.fields.keep_prefix')" prop="keep_prefix" required>
               <el-input-number v-model="form.keep_prefix" :min="0" controls-position="right" />
             </el-form-item>
-            <el-form-item :label="t('security.fields.keep_suffix')" required>
+            <el-form-item :label="t('security.fields.keep_suffix')" prop="keep_suffix" required>
               <el-input-number v-model="form.keep_suffix" :min="0" controls-position="right" />
             </el-form-item>
           </div>
-          <el-form-item :label="t('security.fields.invalid_value_effect')" required>
+          <el-form-item :label="t('security.fields.invalid_value_effect')" prop="invalid_value_effect" required>
             <el-select v-model="form.invalid_value_effect" class="wide">
               <el-option value="suppress" :label="effectLabel('suppress')" />
               <el-option value="deny" :label="effectLabel('deny')" />
@@ -109,12 +109,12 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { gradeAPI, protectionBaselineAPI } from '../api/security'
 import { useAuthStore } from '../store/auth'
-import { isNonNegativeIntegerValue, protectionEffectI18nKey } from '../utils/foundationForm.mjs'
+import { createNonNegativeIntegerRule, createRequiredRule, protectionEffectI18nKey } from '../utils/foundationForm.mjs'
 
 const props = defineProps({ sensitiveType: { type: Object, required: true } })
 const emit = defineEmits(['changed'])
@@ -125,6 +125,7 @@ const grades = ref([])
 const loading = ref(false)
 const saving = ref(false)
 const dialog = ref(false)
+const formRef = ref(null)
 const editing = ref(null)
 const form = reactive({ security_grade_id: null, effect: 'mask', keep_prefix: 3, keep_suffix: 4, invalid_value_effect: 'suppress', enabled: true, version: 0 })
 const orderedGrades = computed(() => [...grades.value].sort((left, right) => Number(left.risk_order) - Number(right.risk_order)))
@@ -132,6 +133,15 @@ const availableGrades = computed(() => editing.value
   ? orderedGrades.value.filter(item => String(item.id) === String(editing.value.security_grade_id))
   : orderedGrades.value.filter(item => !rows.value.some(row => String(row.security_grade_id) === String(item.id))))
 const isEditingInitial = computed(() => Boolean(editing.value && isInitialBaseline(editing.value)))
+const formRules = computed(() => ({
+  security_grade_id: [createRequiredRule(t('security.common.requiredField', { name: t('security.fields.security_grade_id') }))],
+  effect: [createRequiredRule(t('security.common.requiredField', { name: t('security.fields.effect') }))],
+  ...(form.effect === 'mask' ? {
+    keep_prefix: [createNonNegativeIntegerRule(t('security.common.requiredField', { name: t('security.fields.keep_prefix') }))],
+    keep_suffix: [createNonNegativeIntegerRule(t('security.common.requiredField', { name: t('security.fields.keep_suffix') }))],
+    invalid_value_effect: [createRequiredRule(t('security.common.requiredField', { name: t('security.fields.invalid_value_effect') }))]
+  } : {})
+}))
 
 function can(action) { return auth.hasPermission(`security.protection_baseline.${action}`) }
 function definitionLabel(item) { return t('security.common.referenceOption', { name: item.name, code: item.code }) }
@@ -169,8 +179,18 @@ function reset(row = {}) {
   form.enabled = row.enabled === undefined ? true : Boolean(row.enabled)
   form.version = Number(row.version || 0)
 }
-function openCreate() { editing.value = null; reset(); dialog.value = true }
-function openEdit(row) { editing.value = row; reset(row); dialog.value = true }
+function openCreate() {
+  editing.value = null
+  reset()
+  dialog.value = true
+  nextTick(() => formRef.value?.clearValidate())
+}
+function openEdit(row) {
+  editing.value = row
+  reset(row)
+  dialog.value = true
+  nextTick(() => formRef.value?.clearValidate())
+}
 
 watch(() => form.effect, effect => {
   if (effect === 'deny') form.invalid_value_effect = 'deny'
@@ -178,20 +198,8 @@ watch(() => form.effect, effect => {
 })
 
 async function save() {
-  if (!form.security_grade_id) {
-    ElMessage.warning(t('security.baseline.required'))
-    return
-  }
-  if (form.effect === 'mask') {
-    const missingMaskField = [
-      ['keep_prefix', form.keep_prefix],
-      ['keep_suffix', form.keep_suffix]
-    ].find(([, value]) => !isNonNegativeIntegerValue(value))
-    if (missingMaskField) {
-      ElMessage.warning(t('security.common.requiredField', { name: t(`security.fields.${missingMaskField[0]}`) }))
-      return
-    }
-  }
+  const valid = await formRef.value?.validate().catch(() => false)
+  if (valid === false) return
   saving.value = true
   try {
     const mask = form.effect === 'mask'

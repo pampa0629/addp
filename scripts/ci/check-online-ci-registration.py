@@ -347,6 +347,68 @@ def validate_manager_internal_artifact_lineage_profile(repository: Path, registe
             )
 
 
+def validate_manager_hybrid_search_profile(repository: Path, registered: set[str]) -> None:
+    if "manager-hybrid-search" not in registered:
+        return
+    host_gate = (repository / "scripts/test/online-host-gate.sh").read_text(encoding="utf-8")
+    required_fragments = (
+        "manager-hybrid-search)",
+        "START_TARGET=-all",
+        "SYSTEM_URL GATEWAY_URL META_URL MANAGER_URL INFERENCE_URL",
+        "ADDP_ONLINE_TEST_USER_ACCESS_TOKEN ADDP_ONLINE_TEST_TENANT_ID",
+        "ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID",
+        "ADDP_ONLINE_MANAGER_MINIO_PORT",
+        "ADDP_ONLINE_MANAGER_MINIO_ACCESS_KEY",
+        "ADDP_ONLINE_MANAGER_MINIO_SECRET_KEY",
+        "ADDP_ONLINE_MANAGER_MINIO_BUCKET",
+        "ADDP_ONLINE_MANAGER_MINIO_HYBRID_SEARCH_IMAGE_OBJECT",
+        "ADDP_ONLINE_MANAGER_EMBEDDING_MODEL_PROFILE_ID",
+        "bash business/scripts/online-manager-minio-fixture.sh start",
+        "bash business/scripts/online-manager-minio-fixture.sh stop",
+        'bash scripts/dev/start.sh "$START_TARGET"',
+    )
+    missing = [fragment for fragment in required_fragments if fragment not in host_gate]
+    if missing:
+        raise RegistrationError(
+            "manager-hybrid-search profile is missing: " + ", ".join(missing)
+        )
+    for relative in (
+        "business/scripts/online-manager-minio-fixture.sh",
+        "scripts/test/manager-hybrid-search-online.py",
+    ):
+        if not (repository / relative).is_file():
+            raise RegistrationError(f"manager-hybrid-search requires {relative}")
+    fixture = (repository / "business/scripts/online-manager-minio-fixture.sh").read_text(encoding="utf-8")
+    for fragment in (
+        "ADDP_ONLINE_HOST",
+        "--env-file /dev/null",
+        "business-minio",
+        "Autocop_4X3.jpg",
+        "ADDP_ONLINE_MANAGER_MINIO_HYBRID_SEARCH_IMAGE_OBJECT",
+        "MC_HOST_fixture",
+    ):
+        if fragment not in fixture:
+            raise RegistrationError(
+                f"manager-hybrid-search fixture contract is missing {fragment}"
+            )
+    owner = (repository / "scripts/test/manager-hybrid-search-online.py").read_text(encoding="utf-8")
+    for fragment in (
+        "/api/v1/meta/scan/run/manual",
+        "/api/v1/manager/embedding_executions",
+        "/api/v1/manager/embeddings?",
+        "/api/v1/manager/search?",
+        'expected_methods: list[str]',
+        '["keyword", "vector"]',
+        '["vector"]',
+        "vector_hits",
+        '"residual_resources": -1',
+    ):
+        if fragment not in owner:
+            raise RegistrationError(
+                f"manager-hybrid-search owner contract is missing {fragment}"
+            )
+
+
 def validate_security_transfer_protection_profile(repository: Path, registered: set[str]) -> None:
     if "security-transfer-protection" not in registered:
         return
@@ -1092,6 +1154,7 @@ def check_registration(repository: Path) -> None:
     validate_enterprise_catalog_publishing_profile(repository, registered)
     validate_workbench_service_consumption_profile(repository, registered)
     validate_manager_internal_artifact_lineage_profile(repository, registered)
+    validate_manager_hybrid_search_profile(repository, registered)
     validate_security_transfer_protection_profile(repository, registered)
     validate_security_plaintext_access_profile(repository, registered)
     validate_security_mysql_owner_protection_profile(repository, registered)

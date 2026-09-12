@@ -113,3 +113,10 @@ export function buildTenantRoleOptions(roles, assignments, selection) {
     })
     .sort((left, right) => Number(left.assigned) - Number(right.assigned) || left.role_key.localeCompare(right.role_key))
 }
+
+export function partitionTenantRoleOptions(roleOptions) {
+  return {
+    available: (roleOptions || []).filter((role) => !role.assigned),
+    assigned: (roleOptions || []).filter((role) => role.assigned)
+  }
+}

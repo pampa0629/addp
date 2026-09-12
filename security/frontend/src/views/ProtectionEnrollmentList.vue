@@ -849,8 +849,8 @@
           <span>{{ t('security.accessRequest.requestedUntil') }}：{{ formatDateTime(decidingAccessRequest.requested_expires_at) }}</span>
           <span>{{ t('security.accessRequest.rationale') }}：{{ decidingAccessRequest.rationale }}</span>
         </div>
-        <el-form label-position="top">
-          <el-form-item :label="t('security.accessRequest.decisionRationaleLabel')" required>
+        <el-form ref="accessRequestDecisionFormRef" :model="accessRequestDecisionForm" :rules="accessRequestDecisionRules" label-position="top">
+          <el-form-item :label="t('security.accessRequest.decisionRationaleLabel')" prop="rationale" required>
             <el-input
               v-model="accessRequestDecisionForm.rationale"
               type="textarea"
@@ -927,8 +927,8 @@
             </dl>
           </el-collapse-item>
         </el-collapse>
-        <el-form label-position="top">
-          <el-form-item :label="t('security.finding.decision')" required>
+        <el-form ref="reviewFormRef" :model="reviewForm" :rules="reviewRules" label-position="top">
+          <el-form-item :label="t('security.finding.decision')" prop="decision" required>
             <el-radio-group v-model="reviewForm.decision" class="decision-group">
               <el-radio-button value="confirm">{{ t('security.finding.decisions.confirm') }}</el-radio-button>
               <el-radio-button value="adjust">{{ t('security.finding.decisions.adjust') }}</el-radio-button>
@@ -936,18 +936,18 @@
             </el-radio-group>
           </el-form-item>
           <template v-if="reviewForm.decision === 'adjust'">
-            <el-form-item :label="t('security.finding.sensitiveDataType')" required>
+            <el-form-item :label="t('security.finding.sensitiveDataType')" prop="sensitiveDataTypeID" required>
               <el-select v-model="reviewForm.sensitiveDataTypeID" class="wide" :placeholder="t('security.finding.selectSensitiveDataType')" @change="applyReviewDefaultGrade">
                 <el-option v-for="item in sensitiveTypes" :key="item.id" :label="item.name" :value="String(item.id)" />
               </el-select>
             </el-form-item>
-            <el-form-item :label="t('security.finding.securityGrade')" required>
+            <el-form-item :label="t('security.finding.securityGrade')" prop="securityGradeID" required>
               <el-select v-model="reviewForm.securityGradeID" class="wide" :placeholder="t('security.finding.selectSecurityGrade')">
                 <el-option v-for="item in activeGradesForType(reviewForm.sensitiveDataTypeID)" :key="item.id" :label="item.name" :value="String(item.id)" />
               </el-select>
             </el-form-item>
           </template>
-          <el-form-item :label="t('security.finding.rationale')" required>
+          <el-form-item :label="t('security.finding.rationale')" prop="rationale" required>
             <el-input ref="reviewRationaleInput" v-model="reviewForm.rationale" type="textarea" :rows="4" maxlength="2000" show-word-limit :placeholder="reviewRationalePlaceholder" />
           </el-form-item>
         </el-form>
@@ -966,8 +966,8 @@
       @opened="focusManualRationale"
     >
       <el-alert type="info" :closable="false" :title="t('security.assessment.designateHint')" />
-      <el-form class="manual-assessment-form" label-position="top">
-        <el-form-item :label="t('security.assessment.component')" required>
+      <el-form ref="manualAssessmentFormRef" :model="manualAssessmentForm" :rules="manualAssessmentRules" class="manual-assessment-form" label-position="top">
+        <el-form-item :label="t('security.assessment.component')" prop="componentKey" required>
           <el-select
             v-model="manualAssessmentForm.componentKey"
             class="wide"
@@ -988,17 +988,17 @@
             </el-option>
           </el-select>
         </el-form-item>
-        <el-form-item :label="t('security.finding.sensitiveDataType')" required>
+        <el-form-item :label="t('security.finding.sensitiveDataType')" prop="sensitiveDataTypeID" required>
           <el-select v-model="manualAssessmentForm.sensitiveDataTypeID" class="wide" :placeholder="t('security.finding.selectSensitiveDataType')" @change="applyDefaultGrade">
             <el-option v-for="item in sensitiveTypes" :key="item.id" :label="item.name" :value="String(item.id)" />
           </el-select>
         </el-form-item>
-        <el-form-item :label="t('security.finding.securityGrade')" required>
+        <el-form-item :label="t('security.finding.securityGrade')" prop="securityGradeID" required>
           <el-select v-model="manualAssessmentForm.securityGradeID" class="wide" :placeholder="t('security.finding.selectSecurityGrade')">
             <el-option v-for="item in activeGradesForType(manualAssessmentForm.sensitiveDataTypeID)" :key="item.id" :label="item.name" :value="String(item.id)" />
           </el-select>
         </el-form-item>
-        <el-form-item :label="t('security.assessment.rationale')" required>
+        <el-form-item :label="t('security.assessment.rationale')" prop="rationale" required>
           <el-input
             ref="manualRationaleInput"
             v-model="manualAssessmentForm.rationale"
@@ -1087,8 +1087,8 @@
           <span>{{ assessmentConclusionLabel(revisingAssessment.current?.conclusion) }}</span>
           <span>{{ assessmentSummary(revisingAssessment) }}</span>
         </div>
-        <el-form label-position="top">
-          <el-form-item :label="t('security.finding.sensitiveDataType')" required>
+        <el-form ref="assessmentRevisionFormRef" :model="assessmentRevisionForm" :rules="assessmentRevisionRules" label-position="top">
+          <el-form-item :label="t('security.finding.sensitiveDataType')" prop="sensitiveDataTypeID" required>
             <el-select
               v-model="assessmentRevisionForm.sensitiveDataTypeID"
               class="wide"
@@ -1098,12 +1098,12 @@
               <el-option v-for="item in sensitiveTypes" :key="item.id" :label="item.name" :value="String(item.id)" />
             </el-select>
           </el-form-item>
-          <el-form-item :label="t('security.finding.securityGrade')" required>
+          <el-form-item :label="t('security.finding.securityGrade')" prop="securityGradeID" required>
             <el-select v-model="assessmentRevisionForm.securityGradeID" class="wide" :placeholder="t('security.finding.selectSecurityGrade')">
               <el-option v-for="item in activeGradesForType(assessmentRevisionForm.sensitiveDataTypeID)" :key="item.id" :label="item.name" :value="String(item.id)" />
             </el-select>
           </el-form-item>
-          <el-form-item :label="t('security.assessment.revisionRationale')" required>
+          <el-form-item :label="t('security.assessment.revisionRationale')" prop="rationale" required>
             <el-input
               ref="assessmentRevisionRationaleInput"
               v-model="assessmentRevisionForm.rationale"
@@ -1148,8 +1148,8 @@
           <span>{{ assessmentConclusionLabel(revokingAssessment.current?.conclusion) }}</span>
           <span>{{ assessmentSummary(revokingAssessment) }}</span>
         </div>
-        <el-form label-position="top">
-          <el-form-item :label="t('security.assessment.revokeRationale')" required>
+        <el-form ref="assessmentRevokeFormRef" :model="assessmentRevokeForm" :rules="assessmentRevokeRules" label-position="top">
+          <el-form-item :label="t('security.assessment.revokeRationale')" prop="rationale" required>
             <el-input
               v-model="assessmentRevokeForm.rationale"
               type="textarea"
@@ -1196,8 +1196,8 @@
           <span>{{ ownerLabel(revokingExemption.consumer_owner) }} · {{ actionLabel(revokingExemption.action) }}</span>
           <span>{{ t('security.exemption.expiresAt') }}：{{ formatDateTime(revokingExemption.current?.expires_at) }}</span>
         </div>
-        <el-form label-position="top">
-          <el-form-item :label="t('security.exemption.revokeRationale')" required>
+        <el-form ref="exemptionRevokeFormRef" :model="exemptionRevokeForm" :rules="exemptionRevokeRules" label-position="top">
+          <el-form-item :label="t('security.exemption.revokeRationale')" prop="rationale" required>
             <el-input
               v-model="exemptionRevokeForm.rationale"
               type="textarea"
@@ -1224,6 +1224,7 @@
       class="addp-dialog"
       :title="t('security.policy.title')"
       width="min(600px, calc(100vw - 24px))"
+      @opened="clearPolicyValidation"
       @closed="closePolicyDialog"
     >
       <template v-if="policyAssessment">
@@ -1239,11 +1240,11 @@
           <span>{{ assessmentSummary(policyAssessment) }}</span>
           <span>{{ assessmentProtectionSummary(policyAssessment) }}</span>
         </div>
-        <el-form label-position="top">
+        <el-form ref="policyFormRef" :model="policyForm" :rules="policyRules" label-position="top">
           <el-form-item :label="t('security.policy.scope')">
             <el-input :model-value="t('security.policy.managerPreview')" disabled />
           </el-form-item>
-          <el-form-item :label="t('security.policy.effect')" required>
+          <el-form-item :label="t('security.policy.effect')" prop="effect" required>
             <el-radio-group v-model="policyForm.effect">
               <el-radio-button v-for="effect in stricterPolicyEffects(policyAssessment)" :key="effect" :value="effect">
                 {{ effectLabel(effect) }}
@@ -1251,7 +1252,7 @@
             </el-radio-group>
             <div class="field-help">{{ t(`security.baseline.effectImpact.${policyForm.effect}`) }}</div>
           </el-form-item>
-          <el-form-item :label="t('security.policy.rationale')" required>
+          <el-form-item :label="t('security.policy.rationale')" prop="rationale" required>
             <el-input v-model="policyForm.rationale" type="textarea" :rows="4" maxlength="2000" show-word-limit :placeholder="t('security.policy.rationalePlaceholder')" />
           </el-form-item>
         </el-form>
@@ -1286,8 +1287,8 @@
           <span>{{ assessmentSummary(policyRestoreAssessment) }}</span>
           <span>{{ assessmentProtectionSummary(policyRestoreAssessment) }}</span>
         </div>
-        <el-form label-position="top">
-          <el-form-item :label="t('security.policy.restoreRationale')" required>
+        <el-form ref="policyRestoreFormRef" :model="policyRestoreForm" :rules="policyRestoreRules" label-position="top">
+          <el-form-item :label="t('security.policy.restoreRationale')" prop="rationale" required>
             <el-input
               v-model="policyRestoreForm.rationale"
               type="textarea"
@@ -1395,16 +1396,16 @@
           {{ t('security.enrollment.reloadLatestForRelease') }}
         </el-button>
       </div>
-      <el-form label-position="top" class="release-form">
+      <el-form ref="releaseFormRef" :model="releaseForm" :rules="releaseRules" label-position="top" class="release-form">
         <el-form-item :label="t('security.enrollment.resource')">
           <span>{{ releasing?.target_snapshot?.full_name || t('security.common.notAvailable') }}</span>
         </el-form-item>
         <el-form-item :label="t('security.enrollment.releaseBasisLabel')">
           <el-tag type="info" effect="plain">{{ releaseBasisLabel(releaseBasis) }}</el-tag>
         </el-form-item>
-        <el-form-item :label="t('security.enrollment.releaseReasonLabel')" required>
+        <el-form-item :label="t('security.enrollment.releaseReasonLabel')" prop="reason" required>
           <el-input
-            v-model="releaseReason"
+            v-model="releaseForm.reason"
             type="textarea"
             :rows="3"
             :placeholder="releaseReasonPlaceholder"
@@ -1434,6 +1435,7 @@ import {
 } from '@common-ui'
 import { assessmentAPI, classificationAPI, detectorCapabilityAPI, findingAPI, gradeAPI, metaAPI, protectionAccessRequestAPI, protectionBaselineAPI, protectionEnrollmentAPI, protectionExemptionAPI, protectionPolicyAPI, sensitiveDataTypeAPI } from '../api/security'
 import { useAuthStore } from '../store/auth'
+import { createRequiredRule } from '../utils/foundationForm.mjs'
 import {
   buildAssessmentRevisionPayload,
   buildFindingReviewPayload,
@@ -1494,6 +1496,7 @@ const saving = ref(false)
 const createDrawer = ref(false)
 const detailDrawer = ref(false)
 const releaseDialog = ref(false)
+const releaseFormRef = ref(null)
 const releaseCancelButton = ref(null)
 const releaseSaving = ref(false)
 const releaseReloading = ref(false)
@@ -1511,20 +1514,27 @@ const reEnrollmentReloading = ref(false)
 const reEnrollmentConflict = ref(false)
 const reEnrollmentSource = ref(null)
 const reviewDialog = ref(false)
+const reviewFormRef = ref(null)
 const manualAssessmentDialog = ref(false)
+const manualAssessmentFormRef = ref(null)
 const assessmentHistoryDialog = ref(false)
 const assessmentRevisionDialog = ref(false)
+const assessmentRevisionFormRef = ref(null)
 const assessmentRevokeDialog = ref(false)
+const assessmentRevokeFormRef = ref(null)
 const exemptionRevokeDialog = ref(false)
+const exemptionRevokeFormRef = ref(null)
 const policyDialog = ref(false)
+const policyFormRef = ref(null)
 const policyRestoreDialog = ref(false)
+const policyRestoreFormRef = ref(null)
 const selectedResource = ref(null)
 const selectedItem = ref(null)
 const selectedItemLoading = ref(false)
 const initialLocator = ref('')
 const detailRow = ref(null)
 const releasing = ref(null)
-const releaseReason = ref('')
+const releaseForm = reactive({ reason: '' })
 const releaseBasis = ref('manual')
 const engineNames = ref(new Map())
 const findings = ref([])
@@ -1563,6 +1573,7 @@ const accessRequestScope = ref('pending')
 const accessRequestFilters = reactive({ resourceSearch: '', requesterSearch: '', state: '', authorizationState: '' })
 const accessRequestCreatedRange = ref([])
 const accessRequestDecisionDialog = ref(false)
+const accessRequestDecisionFormRef = ref(null)
 const accessRequestDecisionCancelButton = ref(null)
 const accessRequestDecisionSaving = ref(false)
 const accessRequestDecisionReloading = ref(false)
@@ -1609,6 +1620,53 @@ const policyRestoreReloading = ref(false)
 const policyRestoreConflict = ref(false)
 const policyRestoreAssessment = ref(null)
 const policyRestoreForm = reactive({ rationale: '' })
+
+function requiredFieldRule(labelKey, options = {}) {
+  return createRequiredRule(t('security.common.requiredField', { name: t(labelKey) }), options)
+}
+
+const accessRequestDecisionRules = computed(() => ({
+  rationale: [requiredFieldRule('security.accessRequest.decisionRationaleLabel', { trigger: 'blur', whitespace: true })]
+}))
+const reviewRules = computed(() => ({
+  decision: [requiredFieldRule('security.finding.decision')],
+  sensitiveDataTypeID: [requiredFieldRule('security.finding.sensitiveDataType')],
+  securityGradeID: [requiredFieldRule('security.finding.securityGrade')],
+  rationale: [requiredFieldRule('security.finding.rationale', { trigger: 'blur', whitespace: true })]
+}))
+const manualAssessmentRules = computed(() => ({
+  componentKey: [requiredFieldRule('security.assessment.component')],
+  sensitiveDataTypeID: [requiredFieldRule('security.finding.sensitiveDataType')],
+  securityGradeID: [requiredFieldRule('security.finding.securityGrade')],
+  rationale: [requiredFieldRule('security.assessment.rationale', { trigger: 'blur', whitespace: true })]
+}))
+const assessmentRevisionRules = computed(() => ({
+  sensitiveDataTypeID: [requiredFieldRule('security.finding.sensitiveDataType')],
+  securityGradeID: [requiredFieldRule('security.finding.securityGrade')],
+  rationale: [requiredFieldRule('security.assessment.revisionRationale', { trigger: 'blur', whitespace: true })]
+}))
+const assessmentRevokeRules = computed(() => ({
+  rationale: [requiredFieldRule('security.assessment.revokeRationale', { trigger: 'blur', whitespace: true })]
+}))
+const exemptionRevokeRules = computed(() => ({
+  rationale: [requiredFieldRule('security.exemption.revokeRationale', { trigger: 'blur', whitespace: true })]
+}))
+const policyRules = computed(() => ({
+  effect: [requiredFieldRule('security.policy.effect')],
+  rationale: [requiredFieldRule('security.policy.rationale', { trigger: 'blur', whitespace: true })]
+}))
+const policyRestoreRules = computed(() => ({
+  rationale: [requiredFieldRule('security.policy.restoreRationale', { trigger: 'blur', whitespace: true })]
+}))
+const releaseRules = computed(() => ({
+  reason: [requiredFieldRule('security.enrollment.releaseReasonLabel', { trigger: 'blur', whitespace: true })]
+}))
+
+async function validateRequiredForm(instanceRef) {
+  if (!instanceRef.value) return false
+  return instanceRef.value.validate().catch(() => false)
+}
+
 let selectedItemRequest = 0
 let findingsRequest = 0
 let assessmentHistoryRequest = 0
@@ -2181,7 +2239,11 @@ async function openAccessRequestAuthorization(row) {
 }
 
 function focusAccessRequestDecisionCancel() {
-  nextTick(() => (accessRequestDecisionCancelButton.value?.$el || accessRequestDecisionCancelButton.value)?.focus?.())
+  nextTick(() => {
+    accessRequestDecisionFormRef.value?.clearValidate()
+    const cancelButton = accessRequestDecisionCancelButton.value?.$el || accessRequestDecisionCancelButton.value
+    cancelButton?.focus?.()
+  })
 }
 
 function openAccessRequestDecision(row, decision) {
@@ -2239,10 +2301,7 @@ async function submitAccessRequestDecision() {
   const row = decidingAccessRequest.value
   const decision = accessRequestDecision.value
   if (!row?.id || !['approve', 'reject'].includes(decision)) return
-  if (!accessRequestDecisionForm.rationale.trim()) {
-    ElMessage.warning(t('security.accessRequest.decisionRationaleRequired'))
-    return
-  }
+  if (!await validateRequiredForm(accessRequestDecisionFormRef)) return
   accessRequestDecisionSaving.value = true
   try {
     await protectionAccessRequestAPI.decide(row.id, {
@@ -2357,7 +2416,11 @@ async function loadGovernance(page = findingsPage.value) {
 }
 
 function focusExemptionRevokeCancel() {
-  nextTick(() => (exemptionRevokeCancelButton.value?.$el || exemptionRevokeCancelButton.value)?.focus?.())
+  nextTick(() => {
+    exemptionRevokeFormRef.value?.clearValidate()
+    const cancelButton = exemptionRevokeCancelButton.value?.$el || exemptionRevokeCancelButton.value
+    cancelButton?.focus?.()
+  })
 }
 
 function openExemptionRevoke(exemption) {
@@ -2410,10 +2473,7 @@ async function reloadExemptionRevokeBaseline() {
 
 async function submitExemptionRevoke() {
   if (!revokingExemption.value?.id) return
-  if (!exemptionRevokeForm.rationale.trim()) {
-    ElMessage.warning(t('security.exemption.rationaleRequired'))
-    return
-  }
+  if (!await validateRequiredForm(exemptionRevokeFormRef)) return
   exemptionRevokeSaving.value = true
   try {
     await protectionExemptionAPI.revoke(revokingExemption.value.id, {
@@ -2496,13 +2556,14 @@ async function openManualAssessment() {
 }
 
 function focusManualRationale() {
-  nextTick(() => manualRationaleInput.value?.focus?.())
+  nextTick(() => {
+    manualAssessmentFormRef.value?.clearValidate()
+    manualRationaleInput.value?.focus?.()
+  })
 }
 
 async function submitManualAssessment() {
-  if (!manualAssessmentForm.componentKey || !manualAssessmentForm.sensitiveDataTypeID || !manualAssessmentForm.securityGradeID || !manualAssessmentForm.rationale.trim()) {
-    return ElMessage.warning(t('security.assessment.required'))
-  }
+  if (!await validateRequiredForm(manualAssessmentFormRef)) return
   manualAssessmentSaving.value = true
   try {
     await assessmentAPI.create({
@@ -2551,7 +2612,10 @@ function closeAssessmentHistory() {
 }
 
 function focusAssessmentRevisionRationale() {
-  nextTick(() => assessmentRevisionRationaleInput.value?.focus?.())
+  nextTick(() => {
+    assessmentRevisionFormRef.value?.clearValidate()
+    assessmentRevisionRationaleInput.value?.focus?.()
+  })
 }
 
 async function openAssessmentRevision(assessment) {
@@ -2611,10 +2675,8 @@ function replaceAssessment(latest) {
 }
 
 async function submitAssessmentRevision() {
-  if (!revisingAssessment.value || !assessmentRevisionForm.sensitiveDataTypeID || !assessmentRevisionForm.securityGradeID || !assessmentRevisionForm.rationale.trim()) {
-    ElMessage.warning(t('security.assessment.revisionRequired'))
-    return
-  }
+  if (!revisingAssessment.value) return
+  if (!await validateRequiredForm(assessmentRevisionFormRef)) return
   assessmentRevisionSaving.value = true
   try {
     const revised = await assessmentAPI.revise(revisingAssessment.value.id, buildAssessmentRevisionPayload({
@@ -2668,6 +2730,10 @@ function closePolicyDialog() {
   policyReloading.value = false
 }
 
+function clearPolicyValidation() {
+  nextTick(() => policyFormRef.value?.clearValidate())
+}
+
 async function reloadPolicyBaseline() {
   const assessment = policyAssessment.value
   const policy = policyForAssessment(assessment)
@@ -2709,10 +2775,8 @@ function applyLatestPolicyContext(context) {
 }
 
 async function savePolicy() {
-  if (!policyAssessment.value || !policyForm.effect || !policyForm.rationale.trim()) {
-    ElMessage.warning(t('security.policy.required'))
-    return
-  }
+  if (!policyAssessment.value) return
+  if (!await validateRequiredForm(policyFormRef)) return
   policySaving.value = true
   try {
     const existing = policyForAssessment(policyAssessment.value)
@@ -2749,7 +2813,11 @@ async function savePolicy() {
 }
 
 function focusPolicyRestoreCancel() {
-  nextTick(() => (policyRestoreCancelButton.value?.$el || policyRestoreCancelButton.value)?.focus?.())
+  nextTick(() => {
+    policyRestoreFormRef.value?.clearValidate()
+    const cancelButton = policyRestoreCancelButton.value?.$el || policyRestoreCancelButton.value
+    cancelButton?.focus?.()
+  })
 }
 
 function openPolicyRestore(assessment) {
@@ -2802,10 +2870,7 @@ async function submitPolicyRestore() {
   const assessment = policyRestoreAssessment.value
   const policy = policyForAssessment(assessment)
   if (!policy || policy.state !== 'active') return
-  if (!policyRestoreForm.rationale.trim()) {
-    ElMessage.warning(t('security.policy.rationaleRequired'))
-    return
-  }
+  if (!await validateRequiredForm(policyRestoreFormRef)) return
   policyRestoreSaving.value = true
   try {
     await protectionPolicyAPI.revoke(policy.id, {
@@ -2830,7 +2895,11 @@ async function submitPolicyRestore() {
 }
 
 function focusAssessmentRevokeCancel() {
-  nextTick(() => (assessmentRevokeCancelButton.value?.$el || assessmentRevokeCancelButton.value)?.focus?.())
+  nextTick(() => {
+    assessmentRevokeFormRef.value?.clearValidate()
+    const cancelButton = assessmentRevokeCancelButton.value?.$el || assessmentRevokeCancelButton.value
+    cancelButton?.focus?.()
+  })
 }
 
 function openAssessmentRevoke(assessment) {
@@ -2878,10 +2947,7 @@ async function reloadAssessmentRevokeBaseline() {
 
 async function submitAssessmentRevoke() {
   if (!revokingAssessment.value?.id) return
-  if (!assessmentRevokeForm.rationale.trim()) {
-    ElMessage.warning(t('security.assessment.revokeRationaleRequired'))
-    return
-  }
+  if (!await validateRequiredForm(assessmentRevokeFormRef)) return
   assessmentRevokeSaving.value = true
   try {
     await assessmentAPI.revoke(revokingAssessment.value.id, {
@@ -2906,7 +2972,10 @@ async function submitAssessmentRevoke() {
 }
 
 function focusReviewRationale() {
-  nextTick(() => reviewRationaleInput.value?.focus?.())
+  nextTick(() => {
+    reviewFormRef.value?.clearValidate()
+    reviewRationaleInput.value?.focus?.()
+  })
 }
 
 async function nextQueueReviewFinding(reviewedFinding) {
@@ -2951,10 +3020,8 @@ async function nextDetailReviewFinding() {
 }
 
 async function submitFindingReview() {
-  if (!reviewForm.rationale.trim()) return ElMessage.warning(t('security.finding.rationaleRequired'))
-  if (reviewForm.decision === 'adjust' && (!reviewForm.sensitiveDataTypeID || !reviewForm.securityGradeID)) {
-    return ElMessage.warning(t('security.finding.adjustmentRequired'))
-  }
+  if (!reviewingFinding.value) return
+  if (!await validateRequiredForm(reviewFormRef)) return
   reviewSaving.value = true
   const reviewedFinding = reviewingFinding.value
   const continueFromQueue = activeWorkspace.value === 'review-queue'
@@ -3426,19 +3493,23 @@ function openRelease(row, basis = 'manual') {
   releaseReloadRequest += 1
   releasing.value = row
   releaseBasis.value = basis
-  releaseReason.value = ''
+  releaseForm.reason = ''
   releaseConflict.value = false
   releaseDialog.value = true
 }
 
 function focusReleaseCancel() {
-  nextTick(() => (releaseCancelButton.value?.$el || releaseCancelButton.value)?.focus?.())
+  nextTick(() => {
+    releaseFormRef.value?.clearValidate()
+    const cancelButton = releaseCancelButton.value?.$el || releaseCancelButton.value
+    cancelButton?.focus?.()
+  })
 }
 
 function closeReleaseDialog() {
   releaseReloadRequest += 1
   releasing.value = null
-  releaseReason.value = ''
+  releaseForm.reason = ''
   releaseBasis.value = 'manual'
   releaseConflict.value = false
   releaseReloading.value = false
@@ -3471,7 +3542,7 @@ async function reloadReleaseBaseline() {
       return
     }
     releasing.value = latest
-    releaseReason.value = ''
+    releaseForm.reason = ''
     releaseConflict.value = false
     ElMessage.success(t('security.enrollment.releaseReloadedLatest'))
     focusReleaseCancel()
@@ -3485,13 +3556,13 @@ async function reloadReleaseBaseline() {
 
 async function releaseEnrollment() {
   if (!releasing.value?.id || releaseConflict.value) return
-  if (!releaseReason.value.trim()) return ElMessage.warning(t('security.enrollment.releaseReasonRequired'))
+  if (!await validateRequiredForm(releaseFormRef)) return
   releaseSaving.value = true
   try {
     const released = await protectionEnrollmentAPI.release(releasing.value.id, {
       version: Number(releasing.value.version),
       basis: releaseBasis.value,
-      reason: releaseReason.value.trim()
+      reason: releaseForm.reason.trim()
     })
     replaceEnrollment(released)
     releaseDialog.value = false

@@ -185,6 +185,8 @@ func (r *TaskExecutionRepository) buildFilterQuery(ctx context.Context, filter T
 	}
 	if filter.TaskType != "" {
 		query = query.Where("task_type = ?", filter.TaskType)
+	} else if len(filter.TaskTypes) > 0 {
+		query = query.Where("task_type IN ?", filter.TaskTypes)
 	}
 	if filter.Status != "" {
 		query = query.Where("status = ?", filter.Status)
@@ -281,6 +283,7 @@ type TaskExecutionFilter struct {
 	TenantID     int
 	Module       string
 	TaskType     string
+	TaskTypes    []string
 	Status       string
 	TriggerType  string
 	Source       string

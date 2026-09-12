@@ -377,7 +377,8 @@ POST /api/v1/quality/runtime/catalog-summaries/resolve
 该路由只允许 `addp-catalog` Tenant Service Client 和不可委派、不可定制的 `quality.catalog.read`。Catalog 详情按需读取并明确表达 Quality 不可达；任何一方都不得为此复制评分、Issue 或 execution 历史，Quality 不可达也不影响 Catalog Ready。
 
 - MaterializationGateTask 业务 API 唯一路由为 `GET|POST /api/v1/quality/materialization-gate-tasks`和 `GET|PUT|DELETE /api/v1/quality/materialization-gate-tasks/{id}`；不提供模块内直接 run 端点。
-- TaskProvider 统一使用 `GET /api/v1/quality/tasks`、`GET /api/v1/quality/tasks/{task_type}/{id}`和 `POST /api/v1/quality/tasks/{task_type}/{id}/execute`；`task_type` 只允许 `check|materialization_gate`。
+- TaskProvider 统一使用 `GET /api/v1/quality/task-provider/tasks`、`GET /api/v1/quality/task-provider/tasks/{task_type}/{id}`、`POST /api/v1/quality/task-provider/tasks/{task_type}/{id}/execute` 和 `GET /api/v1/quality/task-provider/executions/{execution_id}`；`task_type` 只允许 `check|materialization_gate`。整组路由仅允许 `addp-orchestrator` Service Client 的固定 Guard 与 `quality.task_provider.read|execute` 保护，不得向 User Principal 或 Quality 前端暴露。
+- 人工执行历史统一使用 `GET /api/v1/quality/executions` 和 `GET /api/v1/quality/executions/{execution_id}`，以 `monitor.execution.read` 读取当前 Tenant 中 `module=quality` 且 `task_type IN (check, materialization_gate)` 的执行事实。Quality cleanup 的 `cleanup_executor` 不属于业务质量任务执行历史，不得出现在该列表或详情中。
 - 所有租户资源查询必须从认证上下文获取 Tenant，不能相信客户端传入的 Tenant ID。
 - 创建使用 `POST`，完整替换使用 `PUT`；Quality v1 的更新接口使用完整请求模型，不保留“指针字段即局部更新”的伪 PUT。
 - 列表响应遵循 ADDP 统一分页结构，参数使用 `page`、`page_size`；必须返回真实 `total`，并应用稳定排序。

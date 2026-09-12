@@ -41,7 +41,7 @@
             <div class="execution-link-row">
               <span class="execution-link-label">{{ t('quality.issue.firstExecution') }}</span>
               <el-button
-                v-if="issueExecutionRoute(row.execution_id)"
+                v-if="canViewExecutions && issueExecutionRoute(row.execution_id)"
                 class="execution-link"
                 type="primary"
                 link
@@ -49,12 +49,12 @@
               >
                 {{ row.execution_id }}
               </el-button>
-              <span v-else>-</span>
+              <span v-else>{{ row.execution_id || '-' }}</span>
             </div>
             <div class="execution-link-row">
               <span class="execution-link-label">{{ t('quality.issue.lastExecution') }}</span>
               <el-button
-                v-if="issueExecutionRoute(row.last_execution_id)"
+                v-if="canViewExecutions && issueExecutionRoute(row.last_execution_id)"
                 class="execution-link"
                 type="primary"
                 link
@@ -62,7 +62,7 @@
               >
                 {{ row.last_execution_id }}
               </el-button>
-              <span v-else>-</span>
+              <span v-else>{{ row.last_execution_id || '-' }}</span>
             </div>
           </div>
         </template>
@@ -117,10 +117,13 @@ import { useRoute, useRouter } from 'vue-router'
 import { navigateQualityRoute } from '../utils/moduleNavigation'
 import { issueDetailRoute, issueExecutionRoute } from '../utils/issueNavigation'
 import { buildIssueListRouteQuery, resolveIssueListRouteState } from '../utils/issueListRouteState'
+import { useAuthStore } from '../store/auth'
 
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
+const canViewExecutions = computed(() => authStore.hasPermission('monitor.execution.read'))
 
 const list = ref([])
 const loading = ref(false)

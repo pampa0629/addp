@@ -14,10 +14,14 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestQualityExecutionFilterIsScopedToQualityModule(t *testing.T) {
+func TestQualityExecutionFilterIsScopedToBusinessQualityTaskTypes(t *testing.T) {
 	filter := qualityExecutionFilter(7, 2, 50)
-	if filter.TenantID != 7 || filter.Module != commonExecution.ModuleQuality || filter.TaskType != "" || filter.Page != 2 || filter.PageSize != 50 {
+	if filter.TenantID != 7 || filter.Module != commonExecution.ModuleQuality || filter.Page != 2 || filter.PageSize != 50 {
 		t.Fatalf("quality execution filter = %#v", filter)
+	}
+	wantTaskTypes := []string{commonExecution.TaskTypeQualityCheck, commonExecution.TaskTypeMaterializationGate}
+	if len(filter.TaskTypes) != len(wantTaskTypes) || filter.TaskTypes[0] != wantTaskTypes[0] || filter.TaskTypes[1] != wantTaskTypes[1] {
+		t.Fatalf("quality execution task types = %#v, want %#v", filter.TaskTypes, wantTaskTypes)
 	}
 }
 
@@ -52,6 +56,7 @@ func TestExecutionListUsesQualityAndTenantFilters(t *testing.T) {
 	insertExecutionHandlerRow(t, db, 2, 8, "quality-8", commonExecution.ModuleQuality, commonExecution.TaskTypeQualityCheck, commonExecution.ExecutionStatusSuccess)
 	insertExecutionHandlerRow(t, db, 3, 7, "other-7", commonExecution.ModuleSystem, "cleanup", commonExecution.ExecutionStatusSuccess)
 	insertExecutionHandlerRow(t, db, 4, 7, "gate-7", commonExecution.ModuleQuality, commonExecution.TaskTypeMaterializationGate, commonExecution.ExecutionStatusSuccess)
+	insertExecutionHandlerRow(t, db, 5, 7, "cleanup-7", commonExecution.ModuleQuality, commonExecution.TaskTypeCleanupExecutor, commonExecution.ExecutionStatusSuccess)
 	handler := NewExecutionHandler(commonExecution.NewTaskExecutionRepository(db))
 	router := gin.New()
 	router.GET("/executions", withIssueHandlerAuth(7, 11), handler.List)

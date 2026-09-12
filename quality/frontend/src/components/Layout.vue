@@ -38,23 +38,23 @@
               <el-icon><CircleCheck /></el-icon>
               <span>{{ t('quality.layout.qualityManagement') }}</span>
             </template>
-            <el-menu-item index="/rule-applications">
+            <el-menu-item v-if="can('quality.rule_application.read')" index="/rule-applications">
               <el-icon><Setting /></el-icon>
               <span>{{ t('quality.layout.ruleApplications') }}</span>
             </el-menu-item>
-            <el-menu-item index="/check-tasks">
+            <el-menu-item v-if="can('quality.check_task.read')" index="/check-tasks">
               <el-icon><List /></el-icon>
               <span>{{ t('quality.layout.checkTasks') }}</span>
             </el-menu-item>
-            <el-menu-item index="/materialization-gate-tasks">
+            <el-menu-item v-if="can('quality.materialization_gate.read')" index="/materialization-gate-tasks">
               <el-icon><Lock /></el-icon>
               <span>{{ t('quality.layout.materializationGateTasks') }}</span>
             </el-menu-item>
-            <el-menu-item index="/executions">
+            <el-menu-item v-if="can('monitor.execution.read')" index="/executions">
               <el-icon><Clock /></el-icon>
               <span>{{ t('quality.layout.executions') }}</span>
             </el-menu-item>
-            <el-menu-item index="/issues">
+            <el-menu-item v-if="can('quality.issue.read')" index="/issues">
               <el-icon><Warning /></el-icon>
               <span>{{ t('quality.layout.issues') }}</span>
             </el-menu-item>
@@ -84,6 +84,7 @@ const { t } = useI18n()
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
+const can = permission => authStore.hasPermission(permission)
 const isInIframe = ref(false)
 
 onMounted(() => {

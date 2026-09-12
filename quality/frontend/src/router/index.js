@@ -21,43 +21,43 @@ const routes = [
         path: 'rule-applications',
         name: 'RuleApplicationList',
         component: () => import('../views/RuleApplicationList.vue'),
-        meta: { requiresAuth: true, title: '规则应用配置' }
+        meta: { requiresAuth: true, title: '规则应用配置', requiredPermissions: ['quality.rule_application.read'] }
       },
       {
         path: 'check-tasks',
         name: 'CheckTaskList',
         component: () => import('../views/CheckTaskList.vue'),
-        meta: { requiresAuth: true, title: '检查任务' }
+        meta: { requiresAuth: true, title: '检查任务', requiredPermissions: ['quality.check_task.read'] }
       },
       {
         path: 'materialization-gate-tasks',
         name: 'MaterializationGateTaskList',
         component: () => import('../views/MaterializationGateTaskList.vue'),
-        meta: { requiresAuth: true, title: '物化门禁任务' }
+        meta: { requiresAuth: true, title: '物化门禁任务', requiredPermissions: ['quality.materialization_gate.read'] }
       },
       {
         path: 'executions',
         name: 'ExecutionList',
         component: () => import('../views/ExecutionList.vue'),
-        meta: { requiresAuth: true, title: '执行记录' }
+        meta: { requiresAuth: true, title: '执行记录', requiredPermissions: ['monitor.execution.read'] }
       },
       {
         path: 'executions/:execution_id',
         name: 'ExecutionDetail',
         component: () => import('../views/ExecutionDetail.vue'),
-        meta: { requiresAuth: true, title: '执行详情' }
+        meta: { requiresAuth: true, title: '执行详情', requiredPermissions: ['monitor.execution.read'] }
       },
       {
         path: 'issues',
         name: 'IssueList',
         component: () => import('../views/IssueList.vue'),
-        meta: { requiresAuth: true, title: '问题工单' }
+        meta: { requiresAuth: true, title: '问题工单', requiredPermissions: ['quality.issue.read'] }
       },
       {
         path: 'issues/:id',
         name: 'IssueDetail',
         component: () => import('../views/IssueDetail.vue'),
-        meta: { requiresAuth: true, title: '问题工单详情' }
+        meta: { requiresAuth: true, title: '问题工单详情', requiredPermissions: ['quality.issue.read'] }
       }
     ]
   }
@@ -72,5 +72,18 @@ router.beforeEach(createAuthGuard(useAuthStore, {
   moduleName: 'Quality',
   loginRouteName: 'Login'
 }))
+
+router.beforeEach((to) => {
+  const authStore = useAuthStore()
+  if (!authStore.isAuthenticated) return true
+  const required = to.meta?.requiredPermissions || []
+  if (!required.some(permission => !authStore.hasPermission(permission))) return true
+
+  const fallback = routes[1].children.find(route =>
+    (route.meta?.requiredPermissions || []).every(permission => authStore.hasPermission(permission))
+  )
+  if (fallback && to.name !== fallback.name) return { name: fallback.name }
+  return false
+})
 
 export default router

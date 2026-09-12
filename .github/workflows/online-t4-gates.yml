@@ -13,6 +13,7 @@ on:
           - consumer-engine-recovery
           - enterprise-catalog-publishing
           - manager-internal-artifact-lineage
+          - manager-hybrid-search
           - module-registry-recovery
           - oceanbase-consumer-flow
           - opengauss-consumer-flow

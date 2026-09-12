@@ -198,18 +198,21 @@ DELETE /api/v1/quality/materialization-gate-tasks/:id   # 删除
 
 ### TaskProvider 标准入口
 ```
-GET    /api/v1/quality/tasks                       # 列表，task_type 支持 check|materialization_gate
-GET    /api/v1/quality/tasks/:task_type/:id        # 详情
-POST   /api/v1/quality/tasks/:task_type/:id/execute # 执行
+GET    /api/v1/quality/task-provider/tasks                        # 列表，task_type 支持 check|materialization_gate
+GET    /api/v1/quality/task-provider/tasks/:task_type/:id         # 详情
+POST   /api/v1/quality/task-provider/tasks/:task_type/:id/execute # 执行
+GET    /api/v1/quality/task-provider/executions/:execution_id     # 执行状态
 ```
 
-物化门禁没有直接 run API，只允许 Orchestrator 通过 TaskProvider 触发。其成功输出为 `materialization_group_id + materialization_group_version`，下游 Model 物化组发布必须将二者绑定到 `expected_group_id + expected_group_version`。
+整组 TaskProvider 路由只允许 `addp-orchestrator` Service Client 的固定 Guard 与 `quality.task_provider.read|execute` 保护，不向 User Principal 或 Quality 前端暴露。物化门禁没有直接 run API，只允许 Orchestrator 通过 TaskProvider 触发。其成功输出为 `materialization_group_id + materialization_group_version`，下游 Model 物化组发布必须将二者绑定到 `expected_group_id + expected_group_version`。
 
 ### 执行记录（只读，读 `common.task_executions`）
 ```
 GET    /api/v1/quality/executions                 # 列表（分页）
 GET    /api/v1/quality/executions/:execution_id   # 详情及结果（含质量评分、字段评分、规则明细）
 ```
+
+这两个人用接口要求 `monitor.execution.read`，仅投影当前 Tenant 中 `module=quality` 且 `task_type IN (check, materialization_gate)` 的执行事实；`cleanup_executor` 等运维执行不进入 Quality 业务历史页。
 
 ### 问题工单
 ```

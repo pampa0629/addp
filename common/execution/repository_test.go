@@ -97,6 +97,33 @@ func TestListUsesStableCreatedAtAndIDOrder(t *testing.T) {
 	}
 }
 
+func TestListFiltersByMultipleTaskTypes(t *testing.T) {
+	db := newTaskExecutionRepositoryTestDB(t)
+	repo := NewTaskExecutionRepository(db)
+	insertTaskExecutionRepositoryTestRowWithSourceTask(t, db, 1, 7, "check", ModuleQuality, TaskTypeQualityCheck, nil, ExecutionStatusSuccess, 10, "2026-01-01 10:00:00")
+	insertTaskExecutionRepositoryTestRowWithSourceTask(t, db, 2, 7, "gate", ModuleQuality, TaskTypeMaterializationGate, nil, ExecutionStatusSuccess, 20, "2026-01-01 10:01:00")
+	insertTaskExecutionRepositoryTestRowWithSourceTask(t, db, 3, 7, "cleanup", ModuleQuality, TaskTypeCleanupExecutor, nil, ExecutionStatusSuccess, 30, "2026-01-01 10:02:00")
+
+	items, total, err := repo.List(context.Background(), TaskExecutionFilter{
+		TenantID: 7,
+		Module:   ModuleQuality,
+		TaskTypes: []string{
+			TaskTypeQualityCheck,
+			TaskTypeMaterializationGate,
+		},
+		Page: 1, PageSize: 20,
+	})
+	if err != nil {
+		t.Fatalf("list executions: %v", err)
+	}
+	if total != 2 || len(items) != 2 {
+		t.Fatalf("total/items = %d/%d, want 2/2", total, len(items))
+	}
+	if items[0].ExecutionID != "gate" || items[1].ExecutionID != "check" {
+		t.Fatalf("executions = [%s, %s], want [gate, check]", items[0].ExecutionID, items[1].ExecutionID)
+	}
+}
+
 func TestUpdateFieldsReturnsNotFoundWhenExecutionDoesNotMatchTenant(t *testing.T) {
 	db := newTaskExecutionRepositoryTestDB(t)
 	repo := NewTaskExecutionRepository(db)

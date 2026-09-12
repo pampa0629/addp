@@ -248,6 +248,7 @@ test('application parameter changes invalidate only their bound component reques
 
 test('published runtime reloads the requested application and exposes an in-page retry', () => {
   const runtime = readSource('../src/views/DataApplicationRuntime.vue')
+  const login = readSource('../src/views/Login.vue')
   const runtimeState = readSource('../src/utils/dataApplicationRuntime.mjs')
   const zhCn = JSON.parse(readSource('../src/i18n/zh-cn.json'))
   const en = JSON.parse(readSource('../src/i18n/en.json'))
@@ -261,8 +262,18 @@ test('published runtime reloads the requested application and exposes an in-page
   assert.match(runtime, /watch\(\(\)\s*=>\s*route\.params\.id/)
   assert.match(runtime, /onBeforeUnmount\(\(\)\s*=>\s*requests\.invalidate\(\)\)/)
   assert.doesNotMatch(runtime, /onMounted\(load\)/)
+  assert.match(login, /resolveLoginRedirect\(route\.query\.redirect, ['"]\/applications['"]\)/)
+  assert.match(login, /router\.replace\(/)
+  assert.doesNotMatch(login, /router\.push\(['"]\/applications['"]\)/)
+  assert.match(runtime, /isDataApplicationRuntimeAccessDenied\(error\)/)
+  assert.match(runtime, /data-testid="runtime-open-portal-action"/)
+  assert.match(runtime, /data-testid="runtime-open-applications-action"/)
+  assert.match(runtime, /openPortalAssetSearch/)
+  assert.match(runtime, /openPortalApplications/)
   assert.equal(zhCn.workbench.retry, '重试')
   assert.equal(en.workbench.retry, 'Retry')
+  assert.equal(zhCn.workbench.runtimeAccessDeniedTitle, '暂时无法运行这个数据应用')
+  assert.equal(en.workbench.runtimeAccessDeniedTitle, 'This data application is not available to your account')
 })
 
 test('data application editor clones persisted reactive components through their raw value', () => {
@@ -378,6 +389,8 @@ test('one delivery component owns published runtime loading and is reused by lis
   assert.match(delivery, /closeButton\.value\?\.\$el\?\.focus\(\)/)
   assert.match(delivery, /defineExpose\(\{ open \}\)/)
   assert.match(delivery, /onBeforeUnmount\(invalidateRequest\)/)
+  assert.match(delivery, /workbench\.deliveryAccessTitle/)
+  assert.match(delivery, /workbench\.deliveryAccessHint/)
 
   for (const source of [list, editor]) {
     assert.match(source, /import DataApplicationDeliveryDialog from ['"]\.\.\/components\/DataApplicationDeliveryDialog\.vue['"]/)
@@ -393,6 +406,8 @@ test('one delivery component owns published runtime loading and is reused by lis
   assert.ok(publishCommit.indexOf('assignApplication(data)') < publishCommit.indexOf('deliveryDialog.value?.open(data.id, data.current_revision_number)'))
   assert.equal(zhCn.workbench.deliver, '交付')
   assert.equal(en.workbench.deliver, 'Deliver')
+  assert.equal(zhCn.workbench.deliveryAccessTitle, '应用链接不代表授权')
+  assert.equal(en.workbench.deliveryAccessTitle, 'An application link does not grant access')
 })
 
 test('delivery component opens the canonical Console runtime directly', () => {
@@ -403,6 +418,14 @@ test('delivery component opens the canonical Console runtime directly', () => {
   assert.match(navigation, /window\.open\(url,\s*['_"]_blank['_"],\s*['_"]noopener,noreferrer['_"]\)/)
   assert.match(delivery, /openDataApplicationRuntime/)
   assert.doesNotMatch(delivery, /window\.open\(`\/data-apps\//)
+})
+
+test('runtime access guidance uses only canonical Portal routes', () => {
+  const navigation = readSource('../src/utils/moduleNavigation.js')
+
+  assert.match(navigation, /openConsoleRoute\(['"]\/portal\/search['"]\)/)
+  assert.match(navigation, /openConsoleRoute\(['"]\/portal\/my\/applications['"]\)/)
+  assert.doesNotMatch(navigation, /asset[_-]?acl|source_identity/)
 })
 
 test('resolves shared map runtime peers from the Workbench dependency tree', () => {

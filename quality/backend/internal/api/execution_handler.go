@@ -19,6 +19,10 @@ func qualityExecutionFilter(tenantID, page, pageSize int) commonExecution.TaskEx
 	return commonExecution.TaskExecutionFilter{
 		TenantID: tenantID,
 		Module:   commonExecution.ModuleQuality,
+		TaskTypes: []string{
+			commonExecution.TaskTypeQualityCheck,
+			commonExecution.TaskTypeMaterializationGate,
+		},
 		Page:     page,
 		PageSize: pageSize,
 	}
@@ -52,7 +56,7 @@ func NewExecutionHandler(executionRepo *commonExecution.TaskExecutionRepository)
 // @Success 200 {object} qualityExecutionListResponse
 // @Failure 500 {object} qualityErrorResponse
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["quality.task_provider.read"]
+// @x-addp-required-permissions ["monitor.execution.read"]
 // @Router /executions [get]
 // @Security BearerAuth
 func (h *ExecutionHandler) List(c *gin.Context) {
@@ -91,10 +95,30 @@ func (h *ExecutionHandler) List(c *gin.Context) {
 // @Failure 404 {object} qualityErrorResponse
 // @Failure 500 {object} qualityErrorResponse
 // @x-addp-auth-mode "permission"
-// @x-addp-required-permissions ["quality.task_provider.read"]
+// @x-addp-required-permissions ["monitor.execution.read"]
 // @Router /executions/{execution_id} [get]
 // @Security BearerAuth
 func (h *ExecutionHandler) Get(c *gin.Context) {
+	h.respondExecution(c)
+}
+
+// ProviderGet 返回 TaskProvider 内部调用的执行状态。
+// @Summary 获取 TaskProvider 执行状态 | Get TaskProvider execution status
+// @Tags TaskProvider
+// @Produce json
+// @Param execution_id path string true "执行ID | Execution ID"
+// @Success 200 {object} taskprovider.ExecutionStatusResponse
+// @Failure 404 {object} qualityErrorResponse
+// @Failure 500 {object} qualityErrorResponse
+// @x-addp-auth-mode "permission"
+// @x-addp-required-permissions ["quality.task_provider.read"]
+// @Router /task-provider/executions/{execution_id} [get]
+// @Security BearerAuth
+func (h *ExecutionHandler) ProviderGet(c *gin.Context) {
+	h.respondExecution(c)
+}
+
+func (h *ExecutionHandler) respondExecution(c *gin.Context) {
 	tenantID := getTenantID(c)
 	executionID := c.Param("execution_id")
 

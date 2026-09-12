@@ -150,6 +150,8 @@ Department 和 Project Group Scope 必须引用当前 Tenant 内可用的组织�
 
 管理界面的 Role 选择器必须使用 Membership 的 `principal_type` 和 Role 的 `allowed_principal_types` 进行结构化过滤，只展示对目标 Principal 可分配的 Role。不得根据 Role Key 后缀、展示名称或其他字符串约定识别 Runtime Role。
 
+Role Assignment 管理列表默认只查询 `status=active` 的当前授权，`revoked` 记录作为不可删除的授权历史，只能通过明确切换状态筛选查看。Role 选择器必须把兼容 Role 分为“可分配角色”和“已分配角色”两组；同一 Membership、同一 Scope 下已有有效 Assignment 的 Role 保留可见但禁止重复选择，只有历史 `revoked` Assignment 时不得阻止重新分配。
+
 Tenant 管理界面按账号类别提供唯一授权入口：“角色管理 > 角色分配”只查询和选择 User Membership；Tenant-owned Service Account 的角色只从“应用接入 > 租户服务账号”管理；Platform-owned Runtime Service Principal 的角色只从“应用接入 > 平台运行账号”查看。两个入口继续复用相同的 Role Assignment API、校验和审计事实，但不得混排数据或共用可变更操作。Platform-owned Runtime Service Principal 只读，不允许 Tenant 管理员创建或撤销其系统引导的 Role Assignment；Tenant-owned Service Account 只可选择 `allowed_principal_types` 包含 `service_principal` 的 Role。
 
 ## 七、HTTP 与 Tool 授权声明

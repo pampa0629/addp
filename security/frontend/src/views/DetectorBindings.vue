@@ -127,10 +127,11 @@
       class="addp-dialog"
       :title="editing ? t('security.detector.edit') : t('security.detector.create')"
       width="min(760px, calc(100vw - 24px))"
+      @opened="handleDialogOpened"
     >
       <el-alert :title="t('security.detector.trustedCapabilityHint')" type="info" :closable="false" show-icon />
-      <el-form label-position="top" class="detector-form">
-        <el-form-item :label="t('security.detector.capability')" required>
+      <el-form ref="formRef" :model="form" :rules="formRules" label-position="top" class="detector-form">
+        <el-form-item :label="t('security.detector.capability')" prop="capability_key" required>
           <div class="capability-options" role="radiogroup" :aria-label="t('security.detector.capability')">
             <button
               v-for="item in selectableCapabilities"
@@ -151,7 +152,7 @@
           </div>
         </el-form-item>
         <CapabilityExplanation v-if="selectedCapability" :capability="selectedCapability" />
-        <el-form-item :label="t('security.detector.confidenceThreshold')" required>
+        <el-form-item :label="t('security.detector.confidenceThreshold')" prop="confidence_percent" required>
           <el-input-number v-model="form.confidence_percent" :min="1" :max="100" :step="1" controls-position="right" />
           <span class="percent-suffix">%</span>
           <div class="field-help">{{ t('security.detector.confidenceThresholdHelp') }}</div>
@@ -185,11 +186,12 @@
 </template>
 
 <script setup>
-import { computed, defineComponent, h, onMounted, reactive, ref, watch } from 'vue'
+import { computed, defineComponent, h, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { detectorAPI, detectorCapabilityAPI, discoveryQualityAPI } from '../api/security'
 import { useAuthStore } from '../store/auth'
+import { createRequiredRule } from '../utils/foundationForm.mjs'
 
 const props = defineProps({
   sensitiveTypeId: { type: Number, required: true },
@@ -204,10 +206,25 @@ const quality = ref(emptyQuality())
 const loading = ref(false)
 const saving = ref(false)
 const dialog = ref(false)
+const formRef = ref(null)
 const capabilityDetailsDialog = ref(false)
 const capabilityDetails = ref(null)
 const editing = ref(null)
 const form = reactive({ capability_key: '', confidence_percent: 90, enabled: true, version: 0 })
+const formRules = computed(() => ({
+  capability_key: [createRequiredRule(t('security.common.requiredField', { name: t('security.detector.capability') }))],
+  confidence_percent: [
+    createRequiredRule(t('security.common.requiredField', { name: t('security.detector.confidenceThreshold') })),
+    {
+      trigger: 'change',
+      validator: (_rule, value, callback) => {
+        if (value === null || value === undefined || value === '') return callback()
+        if (Number.isFinite(value) && value >= 1 && value <= 100) return callback()
+        callback(new Error(t('security.detector.confidenceThresholdRange')))
+      }
+    }
+  ]
+}))
 
 const scopedRows = computed(() => rows.value.filter(row => String(row.sensitive_data_type_id) === String(props.sensitiveTypeId)))
 const availableCapabilities = computed(() => {
@@ -269,6 +286,7 @@ function selectCapability(key) {
   if (form.capability_key === key) return
   form.capability_key = key
   applyRecommendedThreshold(key)
+  formRef.value?.clearValidate('capability_key')
 }
 function openCapabilityDetails(key) {
   capabilityDetails.value = capability(key) || null
@@ -336,11 +354,14 @@ function openEdit(row) {
   dialog.value = true
 }
 
+function handleDialogOpened() {
+  formRef.value?.clearValidate()
+  nextTick(() => formRef.value?.$el?.querySelector('.capability-option.selected')?.focus())
+}
+
 async function save() {
-  if (!form.capability_key || !Number.isFinite(form.confidence_percent) || form.confidence_percent < 1 || form.confidence_percent > 100) {
-    ElMessage.warning(t('security.detector.required'))
-    return
-  }
+  const valid = await formRef.value?.validate().catch(() => false)
+  if (valid === false) return
   saving.value = true
   try {
     const payload = {

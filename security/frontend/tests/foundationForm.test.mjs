@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildFoundationPayload, initialFoundationFieldValue, isNonNegativeIntegerValue, protectionEffectI18nKey, sortFoundationRows } from '../src/utils/foundationForm.mjs'
+import { buildFoundationPayload, createMinimumNumberRule, createNonNegativeIntegerRule, createRequiredRule, initialFoundationFieldValue, isNonNegativeIntegerValue, protectionEffectI18nKey, sortFoundationRows } from '../src/utils/foundationForm.mjs'
 
 describe('Security foundation form payload', () => {
   it('keeps an optional parent relation absent instead of serializing ID zero', () => {
@@ -53,5 +53,48 @@ describe('Security foundation form payload', () => {
     expect(isNonNegativeIntegerValue(Number.NaN)).toBe(false)
     expect(isNonNegativeIntegerValue(-1)).toBe(false)
     expect(isNonNegativeIntegerValue(1.5)).toBe(false)
+  })
+
+  it('builds an inline validation rule for a required non-negative integer', () => {
+    const rule = createNonNegativeIntegerRule('Please complete the field')
+    let validationError
+
+    rule.validator({}, null, error => { validationError = error })
+    expect(validationError).toEqual(new Error('Please complete the field'))
+
+    rule.validator({}, 0, error => { validationError = error })
+    expect(validationError).toBeUndefined()
+    expect(rule.trigger).toBe('change')
+  })
+
+  it('builds required rules for text and selection fields', () => {
+    expect(createRequiredRule('Required')).toEqual({
+      required: true,
+      message: 'Required',
+      trigger: 'change'
+    })
+    expect(createRequiredRule('Required', { trigger: 'blur', whitespace: true })).toEqual({
+      required: true,
+      message: 'Required',
+      trigger: 'blur',
+      whitespace: true
+    })
+  })
+
+  it('uses and validates a numeric field minimum', () => {
+    expect(initialFoundationFieldValue({ key: 'risk_order', type: 'number', min: 1 })).toBe(1)
+
+    const rule = createMinimumNumberRule('Please complete the field', 1)
+    let validationError
+
+    rule.validator({}, '', error => { validationError = error })
+    expect(validationError).toEqual(new Error('Please complete the field'))
+
+    rule.validator({}, 0, error => { validationError = error })
+    expect(validationError).toEqual(new Error('Please complete the field'))
+
+    rule.validator({}, 1, error => { validationError = error })
+    expect(validationError).toBeUndefined()
+    expect(rule.trigger).toBe('change')
   })
 })

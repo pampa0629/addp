@@ -1,4 +1,4 @@
-import { navigateConsoleModuleRoute, resolveConsoleRouteUrl } from '@common-ui'
+import { navigateConsoleModuleRoute, openConsoleRoute, resolveConsoleRouteUrl } from '@common-ui'
 import { buildDataApplicationRuntimeRoute } from './dataApplicationDelivery.mjs'
 
 export function navigateWorkbenchRoute(router, location, options = {}) {
@@ -16,4 +16,12 @@ export function openDataApplicationRuntime(applicationID, presetKey = '') {
   if (!url || typeof window === 'undefined') return false
   window.open(url, '_blank', 'noopener,noreferrer')
   return true
+}
+
+export function openPortalAssetSearch() {
+  return openConsoleRoute('/portal/search')
+}
+
+export function openPortalApplications() {
+  return openConsoleRoute('/portal/my/applications')
 }

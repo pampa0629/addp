@@ -152,6 +152,15 @@ describe('Console navigation bridge', () => {
     expect(en.console.menus.standard.collections).toBe('Standard Collections')
   })
 
+  it('shows Quality navigation only for matching human permissions', () => {
+	const configSource = readFileSync(new URL('../src/config/portalConfig.js', import.meta.url), 'utf8')
+	expect(configSource).toContain("index: '/quality/rule-applications', icon: Setting, label: 'console.menus.quality.ruleApplications', recentLabel: 'console.menus.quality.recentRuleApplications', permissions: ['quality.rule_application.read']")
+	expect(configSource).toContain("index: '/quality/check-tasks',       icon: List,    label: 'console.menus.quality.checkTasks', recentLabel: 'console.menus.quality.recentCheckTasks', permissions: ['quality.check_task.read']")
+	expect(configSource).toContain("index: '/quality/materialization-gate-tasks', icon: Lock, label: 'console.menus.quality.materializationGateTasks', recentLabel: 'console.menus.quality.recentMaterializationGateTasks', permissions: ['quality.materialization_gate.read']")
+	expect(configSource).toContain("index: '/quality/executions',        icon: Timer,   label: 'console.menus.quality.executions', recentLabel: 'console.menus.quality.recentExecutions', permissions: ['monitor.execution.read']")
+	expect(configSource).toContain("index: '/quality/issues',            icon: Warning, label: 'console.menus.quality.issues', recentLabel: 'console.menus.quality.recentIssues', permissions: ['quality.issue.read']")
+  })
+
   it('does not expose the removed standalone CAD raster quick-view page', () => {
     const configSource = readFileSync(new URL('../src/config/portalConfig.js', import.meta.url), 'utf8')
     const searchSource = readFileSync(new URL('../src/config/searchIndex.js', import.meta.url), 'utf8')

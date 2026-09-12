@@ -492,6 +492,7 @@ const sorted = sortTree(treeData, (a, b) => a.label.localeCompare(b.label))
 - **createAuthGuard(authStore, config)** - 创建标准化的 Vue Router 路由守卫
 - **createAuthInterceptor(authStore, moduleName)** - 创建智能等待的 Axios 请求拦截器
 - **createAuthStoreConfig(storeName, authAPI, options)** - 生成标准化的 Pinia auth store 配置
+- **resolveLoginRedirect(value, fallbackRoute)** - 解析登录后的站内回跳，只保留当前 origin 的完整 `fullPath`，并对外部地址、协议相对地址和登录循环失败关闭
 
 **快速示例**:
 
@@ -519,6 +520,10 @@ import { createAuthInterceptor } from '@common-ui'
 client.interceptors.request.use(
   createAuthInterceptor(useAuthStore(), 'Manager')
 )
+
+// 4. Login Redirect（保留 query/hash，失败时回到模块首页）
+import { resolveLoginRedirect } from '@common-ui'
+await router.replace(resolveLoginRedirect(route.query.redirect, '/applications'))
 ```
 
 **收益**: 每个模块的认证代码从 ~240 行减少到 ~23 行 (**-90%**) 🎉

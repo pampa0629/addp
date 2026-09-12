@@ -14,6 +14,8 @@ Manager 拥有的成功 execution 必须在 `common.task_executions.metadata.lin
 
 跨模块验收使用唯一 T4 suite `manager-internal-artifact-lineage`：专用 Business MinIO 的 LAS 与多页 PPTX 经同一次 Meta scan，分别通过 Manager `point_cloud_copc_generation` + PointCloud Runtime 与按需 `pptx_pdf_generation` + Document Workflow/LibreOffice 发布 infra 产物，并由 Monitor、Data Explorer 和正式清理 API 形成完整证据；不得用数据库夹具、伪 Runtime 或前端 mock 代替该链路。
 
+混合检索跨模块验收使用独立 T4 suite `manager-hybrid-search`：专用 Business MinIO Fixture 幂等发布仓库内确定性 JPG，真实 Meta scan 建立全文索引，Manager 通过预置 `semantic_search_embedding` 场景绑定调用 Inference Model Profile 完成图片和查询文本向量化，并由真实 pgvector 与 Meilisearch 验证统一 RRF 排名、去重和分页。专用 Runner 的 Model Profile 与场景绑定是长期前置事实，suite 不创建或改写 Provider、Deployment、Profile、Credential 或绑定；每轮只创建并经 Manager 正式 API 删除该图片的 embedding 结果。
+
 空间快显与瓦片缓存的目标边界：
 
 - `manager.preview_state`：预览状态，表达某个 data item 的用户预览模式偏好与轻量交互设置（包括表格可见字段）；是否可快显、推荐渲染源和默认瓦片缓存结果由 Quick View Capability API 动态合成。

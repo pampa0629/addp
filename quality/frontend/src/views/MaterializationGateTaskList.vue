@@ -30,7 +30,7 @@
         <template #default="{ row }">
           <template v-if="row.last_execution_id">
             <el-tag :type="statusType(row.last_execution_status)" size="small">{{ statusLabel(row.last_execution_status) }}</el-tag>
-            <el-button link type="primary" @click="openExecution(row.last_execution_id)">{{ t('quality.materializationGate.executionDetail') }}</el-button>
+            <el-button v-if="can('monitor.execution.read')" link type="primary" @click="openExecution(row.last_execution_id)">{{ t('quality.materializationGate.executionDetail') }}</el-button>
           </template>
           <span v-else>-</span>
         </template>

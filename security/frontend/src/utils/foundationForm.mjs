@@ -2,7 +2,7 @@ export function initialFoundationFieldValue(field, values = {}) {
   if (values[field.key] !== undefined && values[field.key] !== null) return values[field.key]
   if (field.nullable) return null
   if (field.type === 'boolean') return true
-  if (field.type === 'number') return 0
+  if (field.type === 'number') return field.min ?? 0
   return ''
 }
 
@@ -35,7 +35,44 @@ export function sortFoundationRows(resource, rows) {
 
 export function isNonNegativeIntegerValue(value) {
   if (value === null || value === undefined || value === '') return false
-  return Number.isInteger(Number(value)) && Number(value) >= 0
+  const numericValue = Number(value)
+  return Number.isInteger(numericValue) && numericValue >= 0
+}
+
+export function createRequiredRule(message, options = {}) {
+  const rule = {
+    required: true,
+    message,
+    trigger: options.trigger || 'change'
+  }
+  if (options.whitespace) rule.whitespace = true
+  return rule
+}
+
+export function createMinimumNumberRule(message, minimum = 0) {
+  return {
+    validator: (_rule, value, callback) => {
+      if (value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value)) && Number(value) >= minimum) {
+        callback()
+        return
+      }
+      callback(new Error(message))
+    },
+    trigger: 'change'
+  }
+}
+
+export function createNonNegativeIntegerRule(message) {
+  return {
+    validator: (_rule, value, callback) => {
+      if (isNonNegativeIntegerValue(value)) {
+        callback()
+        return
+      }
+      callback(new Error(message))
+    },
+    trigger: 'change'
+  }
 }
 
 const protectionEffects = new Set(['mask', 'suppress', 'deny'])

@@ -25,7 +25,7 @@
             <el-tag :type="executionStatusType(row.last_execution_status)" size="small">
               {{ executionStatusLabel(row.last_execution_status) }}
             </el-tag>
-            <el-button link type="primary" @click="openExecution(row.last_execution_id)">
+            <el-button v-if="canViewExecutions" link type="primary" @click="openExecution(row.last_execution_id)">
               {{ t('quality.checkTask.executionDetail') }}
             </el-button>
             <span class="execution-time">{{ row.last_run_at ? new Date(row.last_run_at).toLocaleString() : '-' }}</span>
@@ -132,11 +132,13 @@ import { checkTaskAPI, systemCatalogAPI, systemEngineAPI } from '../api/quality'
 import { navigateQualityRoute } from '../utils/moduleNavigation'
 import { buildCheckTaskRouteQuery, resolveCheckTaskRouteState } from '../utils/checkTaskRouteState'
 import { executionDetailRoute } from '../utils/executionNavigation'
+import { useAuthStore } from '../store/auth'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
 
 const tasks = ref([])
 const loading = ref(false)
@@ -157,6 +159,7 @@ const runningTaskIds = ref(new Set())
 const deletingTaskIds = ref(new Set())
 const pagination = ref({ page: 1, page_size: 20, total: 0 })
 const isEditing = computed(() => editingTaskID.value !== null)
+const canViewExecutions = computed(() => authStore.hasPermission('monitor.execution.read'))
 const dialogTitle = computed(() => isEditing.value ? t('quality.checkTask.editTitle') : t('quality.checkTask.createTitle'))
 let listRequestSequence = 0
 let catalogRequestSequence = 0

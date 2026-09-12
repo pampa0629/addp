@@ -240,11 +240,11 @@ export const SIDEBAR_MENUS = {
   quality: {
     label: 'console.menus.quality.label', icon: CircleCheck,
     items: [
-      { index: '/quality/rule-applications', icon: Setting, label: 'console.menus.quality.ruleApplications', recentLabel: 'console.menus.quality.recentRuleApplications' },
-      { index: '/quality/check-tasks',       icon: List,    label: 'console.menus.quality.checkTasks', recentLabel: 'console.menus.quality.recentCheckTasks' },
-      { index: '/quality/materialization-gate-tasks', icon: Lock, label: 'console.menus.quality.materializationGateTasks', recentLabel: 'console.menus.quality.recentMaterializationGateTasks' },
-      { index: '/quality/executions',        icon: Timer,   label: 'console.menus.quality.executions', recentLabel: 'console.menus.quality.recentExecutions' },
-      { index: '/quality/issues',            icon: Warning, label: 'console.menus.quality.issues', recentLabel: 'console.menus.quality.recentIssues' },
+      { index: '/quality/rule-applications', icon: Setting, label: 'console.menus.quality.ruleApplications', recentLabel: 'console.menus.quality.recentRuleApplications', permissions: ['quality.rule_application.read'] },
+      { index: '/quality/check-tasks',       icon: List,    label: 'console.menus.quality.checkTasks', recentLabel: 'console.menus.quality.recentCheckTasks', permissions: ['quality.check_task.read'] },
+      { index: '/quality/materialization-gate-tasks', icon: Lock, label: 'console.menus.quality.materializationGateTasks', recentLabel: 'console.menus.quality.recentMaterializationGateTasks', permissions: ['quality.materialization_gate.read'] },
+      { index: '/quality/executions',        icon: Timer,   label: 'console.menus.quality.executions', recentLabel: 'console.menus.quality.recentExecutions', permissions: ['monitor.execution.read'] },
+      { index: '/quality/issues',            icon: Warning, label: 'console.menus.quality.issues', recentLabel: 'console.menus.quality.recentIssues', permissions: ['quality.issue.read'] },
     ],
   },
   security: {

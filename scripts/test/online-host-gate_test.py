@@ -188,6 +188,7 @@ class OnlineHostGateTest(unittest.TestCase):
                 SYSTEM_URL=http://127.0.0.1:8180
                 GATEWAY_URL=http://127.0.0.1:8000
                 MANAGER_URL=http://127.0.0.1:8081
+                INFERENCE_URL=http://127.0.0.1:8094
                 SERVICE_URL=http://127.0.0.1:8085
                 WORKBENCH_URL=http://127.0.0.1:8095
                 MONITOR_URL=http://127.0.0.1:8100
@@ -245,6 +246,8 @@ class OnlineHostGateTest(unittest.TestCase):
                 ADDP_ONLINE_MANAGER_MINIO_BUCKET=addp-online
                 ADDP_ONLINE_MANAGER_MINIO_POINTCLOUD_OBJECT=pointcloud/pdal_las12_format0.las
                 ADDP_ONLINE_MANAGER_MINIO_PPTX_OBJECT=document/addp_online_preview_fixture.pptx
+                ADDP_ONLINE_MANAGER_MINIO_HYBRID_SEARCH_IMAGE_OBJECT=hybrid-search/purple-gaming-light-gun.jpg
+                ADDP_ONLINE_MANAGER_EMBEDDING_MODEL_PROFILE_ID=11111111-1111-1111-1111-111111111111
                 ADDP_ONLINE_SECURITY_MONGODB_ENGINE_ID=37
                 ADDP_ONLINE_SECURITY_MONGODB_PORT=57017
                 ADDP_ONLINE_SECURITY_MONGODB_DATABASE=security_online
@@ -506,6 +509,24 @@ class OnlineHostGateTest(unittest.TestCase):
                 "start:-all",
                 "npm:--prefix console/frontend exec -- playwright install chromium",
                 "make:test-online:ONLINE_SUITE=manager-internal-artifact-lineage",
+                "manager-fixture:stop",
+                "stop",
+            ],
+        )
+
+    def test_runs_manager_hybrid_search_suite_with_manager_minio_fixture(self) -> None:
+        result = self._run("manager-hybrid-search")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            self.command_log.read_text(encoding="utf-8").splitlines(),
+            [
+                "stop",
+                "infra-up",
+                "manager-fixture:stop",
+                "manager-fixture:start",
+                "start:-all",
+                "make:test-online:ONLINE_SUITE=manager-hybrid-search",
                 "manager-fixture:stop",
                 "stop",
             ],

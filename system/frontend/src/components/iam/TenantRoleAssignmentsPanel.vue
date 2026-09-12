@@ -89,16 +89,18 @@
             filterable
             style="width: 100%"
           >
-            <el-option v-for="role in roleOptions" :key="role.id" :label="roleLabel(role)" :value="role.id" :disabled="role.assigned">
-              <span class="iam-role-option">
-                <span class="iam-role-option__name">{{ roleLabel(role) }}</span>
-                <span class="iam-role-option__meta">
-                  <span v-if="role.assigned" class="iam-role-option__assigned"><el-icon><Check /></el-icon>{{ t('system.iam.roleAssignments.assigned') }}</span>
-                  <span v-else-if="role.assignedElsewhere">{{ t('system.iam.roleAssignments.assignedElsewhere') }}</span>
-                  <span class="iam-role-option-key">{{ role.role_key }}</span>
+            <el-option-group v-for="group in roleOptionGroups" :key="group.key" :label="group.label">
+              <el-option v-for="role in group.roles" :key="role.id" :label="roleLabel(role)" :value="role.id" :disabled="role.assigned">
+                <span class="iam-role-option">
+                  <span class="iam-role-option__name">{{ roleLabel(role) }}</span>
+                  <span class="iam-role-option__meta">
+                    <span v-if="role.assigned" class="iam-role-option__assigned"><el-icon><Check /></el-icon>{{ t('system.iam.roleAssignments.assignedInScope') }}</span>
+                    <span v-else-if="role.assignedElsewhere">{{ t('system.iam.roleAssignments.assignedElsewhere') }}</span>
+                    <span class="iam-role-option-key">{{ role.role_key }}</span>
+                  </span>
                 </span>
-              </span>
-            </el-option>
+              </el-option>
+            </el-option-group>
           </el-select>
           <div v-if="roleSelectionReady && !assignmentsLoading && availableRoleCount === 0" class="iam-role-selection-detail">{{ t('system.iam.roleAssignments.allAssigned') }}</div>
           <div v-else-if="form.roleIds.length" class="iam-role-selection-detail">{{ t('system.iam.roleAssignments.selectedCount', { count: form.roleIds.length }) }}</div>
@@ -129,6 +131,7 @@ import {
   formatOrganizationOptionLabel,
   formatTenantAssignmentScope,
   hasTenantRole,
+  partitionTenantRoleOptions,
   resolveRoleName,
   resolveTenantScopeLabel,
   tenantRoleKeys
@@ -160,7 +163,7 @@ const pageSize = ref(20)
 const total = ref(0)
 const dialogVisible = ref(false)
 const formRef = ref()
-const filters = reactive({ membership_id: '', scope_type: '', status: '' })
+const filters = reactive({ membership_id: '', scope_type: '', status: 'active' })
 const form = reactive({ membershipId: '', roleIds: [], scopeType: 'tenant', departmentId: '', projectGroupId: '', validUntil: null, reason: '' })
 const fixedMembership = computed(() => props.fixedMembership)
 const fixedMember = computed(() => fixedMembership.value ? {
@@ -195,8 +198,15 @@ const roleOptions = computed(() => roleSelectionReady.value ? buildTenantRoleOpt
   departmentId: form.departmentId,
   projectGroupId: form.projectGroupId
 }) : [])
+const roleOptionGroups = computed(() => {
+  const groups = partitionTenantRoleOptions(roleOptions.value)
+  return [
+    { key: 'available', label: t('system.iam.roleAssignments.availableRoles'), roles: groups.available },
+    { key: 'assigned', label: t('system.iam.roleAssignments.assignedRoles'), roles: groups.assigned }
+  ].filter((group) => group.roles.length > 0)
+})
 const selectedRoleOptions = computed(() => roleOptions.value.filter((role) => form.roleIds.includes(role.id)))
-const availableRoleCount = computed(() => roleOptions.value.filter((role) => !role.assigned).length)
+const availableRoleCount = computed(() => partitionTenantRoleOptions(roleOptions.value).available.length)
 const hasTenantAdministratorSelected = computed(() => selectedRoles.value.some((role) => role.role_key === TENANT_ADMINISTRATOR_ROLE_KEY))
 const canSubmitAssignments = computed(() => form.roleIds.length > 0 && selectedRoleOptions.value.length === form.roleIds.length && selectedRoleOptions.value.every((role) => !role.assigned))
 const showRecommendations = computed(() => !fixedMembership.value && can('iam.tenant_role_assignment.create') && tenantRoleKeys(authStore.authContext).includes(TENANT_ADMINISTRATOR_ROLE_KEY))

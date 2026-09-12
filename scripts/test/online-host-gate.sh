@@ -135,6 +135,19 @@ case "$ONLINE_SUITE" in
       ADDP_ONLINE_MANAGER_MINIO_ACCESS_KEY ADDP_ONLINE_MANAGER_MINIO_SECRET_KEY
       ADDP_ONLINE_MANAGER_MINIO_BUCKET ADDP_ONLINE_MANAGER_MINIO_POINTCLOUD_OBJECT
       ADDP_ONLINE_MANAGER_MINIO_PPTX_OBJECT
+      ADDP_ONLINE_MANAGER_MINIO_HYBRID_SEARCH_IMAGE_OBJECT
+    )
+    ;;
+  manager-hybrid-search)
+    START_TARGET=-all
+    REQUIRED_SUITE_ENV=(
+      SYSTEM_URL GATEWAY_URL META_URL MANAGER_URL INFERENCE_URL
+      ADDP_ONLINE_TEST_USER_ACCESS_TOKEN ADDP_ONLINE_TEST_TENANT_ID
+      ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID ADDP_ONLINE_MANAGER_MINIO_PORT
+      ADDP_ONLINE_MANAGER_MINIO_ACCESS_KEY ADDP_ONLINE_MANAGER_MINIO_SECRET_KEY
+      ADDP_ONLINE_MANAGER_MINIO_BUCKET
+      ADDP_ONLINE_MANAGER_MINIO_HYBRID_SEARCH_IMAGE_OBJECT
+      ADDP_ONLINE_MANAGER_EMBEDDING_MODEL_PROFILE_ID
     )
     ;;
   security-transfer-protection)
@@ -527,12 +540,15 @@ elif [ "$ONLINE_SUITE" = "security-mysql-owner-protection" ]; then
   run_logged bash business/scripts/online-engine-fixture.sh start
   run_logged bash business/scripts/online-workbench-mysql-fixture.sh start
   run_daemon_launcher_logged bash scripts/dev/start.sh "$START_TARGET"
-elif [ "$ONLINE_SUITE" = "manager-internal-artifact-lineage" ]; then
+elif [ "$ONLINE_SUITE" = "manager-internal-artifact-lineage" ] ||
+  [ "$ONLINE_SUITE" = "manager-hybrid-search" ]; then
   manager_minio_cleanup_required=1
   run_logged bash business/scripts/online-manager-minio-fixture.sh stop
   run_logged bash business/scripts/online-manager-minio-fixture.sh start
   run_daemon_launcher_logged bash scripts/dev/start.sh "$START_TARGET"
-  run_logged npm --prefix console/frontend exec -- playwright install chromium
+  if [ "$ONLINE_SUITE" = "manager-internal-artifact-lineage" ]; then
+    run_logged npm --prefix console/frontend exec -- playwright install chromium
+  fi
 elif [ "$ONLINE_SUITE" = "security-transfer-protection" ] ||
   [ "$ONLINE_SUITE" = "security-plaintext-access" ]; then
   security_transfer_fixture_cleanup_required=1

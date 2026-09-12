@@ -14,6 +14,14 @@
           <strong>{{ runtime.name }}</strong>
           <p>{{ t('workbench.deliveryHint', { revision: runtime.revision_number }) }}</p>
         </div>
+        <el-alert
+          class="delivery-access"
+          type="info"
+          show-icon
+          :closable="false"
+          :title="t('workbench.deliveryAccessTitle')"
+          :description="t('workbench.deliveryAccessHint')"
+        />
         <div class="delivery-list">
           <div v-for="item in deliveryItems" :key="item.presetKey || 'default'" class="delivery-item">
             <div class="delivery-identity">
@@ -114,5 +122,5 @@ onBeforeUnmount(invalidateRequest)
 </script>
 
 <style scoped>
-.delivery-content{min-height:120px}.delivery-header p{margin:6px 0 0;color:var(--addp-text-secondary)}.delivery-list{display:flex;flex-direction:column;gap:8px;margin-top:16px}.delivery-item{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 16px;background:var(--addp-bg-secondary);border:1px solid var(--addp-border-color);border-radius:8px}.delivery-identity{display:flex;align-items:center;gap:8px;min-width:0}.delivery-identity strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.delivery-identity code{color:var(--addp-text-secondary)}.delivery-actions{display:flex;flex-shrink:0;gap:8px}@media (max-width:768px){.delivery-item{align-items:stretch;flex-direction:column}.delivery-actions{justify-content:flex-end}}
+.delivery-content{min-height:120px}.delivery-header p{margin:6px 0 0;color:var(--addp-text-secondary)}.delivery-access{margin-top:16px}.delivery-list{display:flex;flex-direction:column;gap:8px;margin-top:16px}.delivery-item{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 16px;background:var(--addp-bg-secondary);border:1px solid var(--addp-border-color);border-radius:8px}.delivery-identity{display:flex;align-items:center;gap:8px;min-width:0}.delivery-identity strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.delivery-identity code{color:var(--addp-text-secondary)}.delivery-actions{display:flex;flex-shrink:0;gap:8px}@media (max-width:768px){.delivery-item{align-items:stretch;flex-direction:column}.delivery-actions{justify-content:flex-end}}
 </style>

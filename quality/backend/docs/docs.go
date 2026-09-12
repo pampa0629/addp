@@ -413,7 +413,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "quality.task_provider.read"
+                    "monitor.execution.read"
                 ]
             }
         },
@@ -462,7 +462,7 @@ const docTemplate = `{
                 },
                 "x-addp-auth-mode": "permission",
                 "x-addp-required-permissions": [
-                    "quality.task_provider.read"
+                    "monitor.execution.read"
                 ]
             }
         },
@@ -1400,7 +1400,56 @@ const docTemplate = `{
                 ]
             }
         },
-        "/tasks": {
+        "/task-provider/executions/{execution_id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "TaskProvider"
+                ],
+                "summary": "获取 TaskProvider 执行状态 | Get TaskProvider execution status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "执行ID | Execution ID",
+                        "name": "execution_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/taskprovider.ExecutionStatusResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.qualityErrorResponse"
+                        }
+                    }
+                },
+                "x-addp-auth-mode": "permission",
+                "x-addp-required-permissions": [
+                    "quality.task_provider.read"
+                ]
+            }
+        },
+        "/task-provider/tasks": {
             "get": {
                 "security": [
                     {
@@ -1449,7 +1498,7 @@ const docTemplate = `{
                 ]
             }
         },
-        "/tasks/{task_type}/{id}": {
+        "/task-provider/tasks/{task_type}/{id}": {
             "get": {
                 "security": [
                     {
@@ -1506,7 +1555,7 @@ const docTemplate = `{
                 ]
             }
         },
-        "/tasks/{task_type}/{id}/execute": {
+        "/task-provider/tasks/{task_type}/{id}/execute": {
             "post": {
                 "security": [
                     {

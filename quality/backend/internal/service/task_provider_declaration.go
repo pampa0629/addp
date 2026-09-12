@@ -50,10 +50,10 @@ func QualityTaskProviderDeclaration() (*commonModels.TaskProviderDeclaration, er
 	return &commonModels.TaskProviderDeclaration{
 		DisplayName:         "数据质量",
 		Description:         "数据质量检查与物化发布门禁任务",
-		TaskListEndpoint:    "/api/v1/quality/tasks",
-		TaskDetailEndpoint:  "/api/v1/quality/tasks/{task_type}/{id}",
-		TaskExecuteEndpoint: "/api/v1/quality/tasks/{task_type}/{id}/execute",
-		TaskStatusEndpoint:  "/api/v1/quality/executions/{execution_id}",
+		TaskListEndpoint:    "/api/v1/quality/task-provider/tasks",
+		TaskDetailEndpoint:  "/api/v1/quality/task-provider/tasks/{task_type}/{id}",
+		TaskExecuteEndpoint: "/api/v1/quality/task-provider/tasks/{task_type}/{id}/execute",
+		TaskStatusEndpoint:  "/api/v1/quality/task-provider/executions/{execution_id}",
 		Capabilities:        &capabilitiesStr,
 	}, nil
 }

@@ -19,12 +19,14 @@ class OnlineManagerMinIOFixtureTest(unittest.TestCase):
         self.log = self.root / "docker.log"
         (self.business / "scripts").mkdir(parents=True)
         (self.business / "nfs/data/点云").mkdir(parents=True)
+        (self.business / "nfs/data/3d/stl/Print Light Gun/images").mkdir(parents=True)
         (self.business / "fixtures/manager").mkdir(parents=True)
         self.bin.mkdir()
         shutil.copy2(SCRIPT, self.business / "scripts/online-manager-minio-fixture.sh")
         (self.business / "docker-compose.yml").write_text("services: {}\n", encoding="utf-8")
         (self.business / "nfs/data/点云/pdal_las12_format0.las").write_bytes(b"LAS fixture")
         (self.business / "fixtures/manager/addp_online_preview_fixture.pptx").write_bytes(b"PPTX fixture")
+        (self.business / "nfs/data/3d/stl/Print Light Gun/images/Autocop_4X3.jpg").write_bytes(b"JPEG fixture")
         self._executable("uname", "#!/bin/bash\necho Darwin\n")
         self._executable(
             "curl",
@@ -66,6 +68,7 @@ esac
                 "ADDP_ONLINE_MANAGER_MINIO_BUCKET": "addp-online",
                 "ADDP_ONLINE_MANAGER_MINIO_POINTCLOUD_OBJECT": "pointcloud/pdal_las12_format0.las",
                 "ADDP_ONLINE_MANAGER_MINIO_PPTX_OBJECT": "document/addp_online_preview_fixture.pptx",
+                "ADDP_ONLINE_MANAGER_MINIO_HYBRID_SEARCH_IMAGE_OBJECT": "hybrid-search/purple-gaming-light-gun.jpg",
                 "ADDP_TEST_CONTAINER_STATE": str(self.state),
                 "ADDP_TEST_DOCKER_LOG": str(self.log),
                 "MINIO_API_PORT": "9002",
@@ -107,6 +110,7 @@ esac
         self.assertIn("minio/mc:latest mb --ignore-existing fixture/addp-online", commands)
         self.assertIn("minio/mc:latest cp --quiet /fixture/source.las fixture/addp-online/pointcloud/pdal_las12_format0.las", commands)
         self.assertIn("minio/mc:latest cp --quiet /fixture/source.pptx fixture/addp-online/document/addp_online_preview_fixture.pptx", commands)
+        self.assertIn("minio/mc:latest cp --quiet /fixture/source.jpg fixture/addp-online/hybrid-search/purple-gaming-light-gun.jpg", commands)
         self.assertIn("|59002|online-manager|manager-secret-1234", commands)
         self.assertNotIn("|9002|personal|personal-secret", commands)
         self.assertFalse((self.business / ".env").exists())
@@ -142,6 +146,16 @@ esac
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("must end with .pptx", result.stderr)
+        self.assertFalse(self.log.exists())
+
+    def test_rejects_non_jpg_hybrid_search_object_key_before_docker(self) -> None:
+        result = self.run_fixture(
+            "start",
+            ADDP_ONLINE_MANAGER_MINIO_HYBRID_SEARCH_IMAGE_OBJECT="hybrid-search/source.png",
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("must end with .jpg", result.stderr)
         self.assertFalse(self.log.exists())
 
     def test_refuses_container_owned_by_another_compose_service(self) -> None:

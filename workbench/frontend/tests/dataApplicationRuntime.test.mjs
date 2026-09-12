@@ -2,8 +2,9 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createLatestRequestCoordinator } from '../../../common-frontend/basic/src/utils/latestRequest.js'
 import { defaultApplicationParameterValues } from '../src/utils/dataApplicationParameters.mjs'
-import { applicationParameterPreset, applicationRefreshDelayMilliseconds, buildComponentQuery, buildSelectionUpdate, canAttemptApplicationQuery, canExecuteComponentQuery, canHideApplicationParameters, canRunApplicationRefresh, canRunPublishedApplicationInitialQuery, commitLatestComponentDescriptorState, commitLatestDataApplicationLoad, componentBlockingError, componentIDsForApplicationParameters, initialApplicationParameterValues, invalidateApplicationParameterResults, runtimeGridStyle, runtimeLayoutStyle, runtimeSectionVisible } from '../src/utils/dataApplicationRuntime.mjs'
+import { applicationParameterPreset, applicationRefreshDelayMilliseconds, buildComponentQuery, buildSelectionUpdate, canAttemptApplicationQuery, canExecuteComponentQuery, canHideApplicationParameters, canRunApplicationRefresh, canRunPublishedApplicationInitialQuery, commitLatestComponentDescriptorState, commitLatestDataApplicationLoad, componentBlockingError, componentIDsForApplicationParameters, initialApplicationParameterValues, invalidateApplicationParameterResults, isDataApplicationRuntimeAccessDenied, runtimeGridStyle, runtimeLayoutStyle, runtimeSectionVisible } from '../src/utils/dataApplicationRuntime.mjs'
 import { downloadCurrentBoundedExport } from '../src/utils/boundedExport.mjs'
+import { resolveLoginRedirect } from '../../../common-frontend/basic/src/utils/loginRedirect.mjs'
 
 const component = {
   id: 'component-a',
@@ -35,6 +36,25 @@ const snapshot = {
   }],
   parameter_presets: [{ key: 'high-value', name: 'High value', parameter_values: { minimum_amount: 100, missing_rows: true } }],
 }
+
+test('returns to the exact data application scenario after login and rejects external redirects', () => {
+  assert.equal(
+    resolveLoginRedirect('/data-apps/application-a?preset=changsha#summary', '/applications'),
+    '/data-apps/application-a?preset=changsha#summary',
+  )
+  assert.equal(resolveLoginRedirect('https://example.com/data-apps/application-a', '/applications'), '/applications')
+  assert.equal(resolveLoginRedirect('//example.com/data-apps/application-a', '/applications'), '/applications')
+  assert.equal(resolveLoginRedirect('/\\example.com/data-apps/application-a', '/applications'), '/applications')
+  assert.equal(resolveLoginRedirect('/login?redirect=/data-apps/application-a', '/applications'), '/applications')
+  assert.equal(resolveLoginRedirect(['/data-apps/application-a'], '/applications'), '/applications')
+})
+
+test('distinguishes application access denial from other runtime failures', () => {
+  assert.equal(isDataApplicationRuntimeAccessDenied({ response: { status: 403 } }), true)
+  assert.equal(isDataApplicationRuntimeAccessDenied({ status: 403 }), true)
+  assert.equal(isDataApplicationRuntimeAccessDenied({ response: { status: 401 } }), false)
+  assert.equal(isDataApplicationRuntimeAccessDenied(new Error('network')), false)
+})
 
 test('resolves only a stable preset key and initializes a detached complete value set', () => {
   assert.equal(applicationParameterPreset(snapshot, 'high-value')?.name, 'High value')

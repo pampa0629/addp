@@ -105,19 +105,21 @@ func SetupRouter(
 			checkTasks.POST("/:id/run", permission(qualityauthorization.PermissionQualityCheckTaskExecute), checkTaskHandler.Run)
 		}
 
-		// TaskProvider 标准入口
-		tasks := api.Group("/tasks")
+		// TaskProvider 只允许 Orchestrator Runtime 使用专用最小权限访问。
+		taskProvider := api.Group("/task-provider")
+		taskProvider.Use(commonAuth.MustNewServiceClientGuard("addp-orchestrator"))
 		{
-			tasks.GET("", permission(qualityauthorization.PermissionQualityTaskProviderRead), taskProviderHandler.ListTasks)
-			tasks.GET("/:task_type/:id", permission(qualityauthorization.PermissionQualityTaskProviderRead), taskProviderHandler.TaskDetail)
-			tasks.POST("/:task_type/:id/execute", permission(qualityauthorization.PermissionQualityTaskProviderExecute), taskProviderHandler.TaskExecute)
+			taskProvider.GET("/tasks", permission(qualityauthorization.PermissionQualityTaskProviderRead), taskProviderHandler.ListTasks)
+			taskProvider.GET("/tasks/:task_type/:id", permission(qualityauthorization.PermissionQualityTaskProviderRead), taskProviderHandler.TaskDetail)
+			taskProvider.POST("/tasks/:task_type/:id/execute", permission(qualityauthorization.PermissionQualityTaskProviderExecute), taskProviderHandler.TaskExecute)
+			taskProvider.GET("/executions/:execution_id", permission(qualityauthorization.PermissionQualityTaskProviderRead), executionHandler.ProviderGet)
 		}
 
 		// 执行记录（读 common.task_executions）
 		executions := api.Group("/executions")
 		{
-			executions.GET("", permission(qualityauthorization.PermissionQualityTaskProviderRead), executionHandler.List)
-			executions.GET("/:execution_id", permission(qualityauthorization.PermissionQualityTaskProviderRead), executionHandler.Get)
+			executions.GET("", permission("monitor.execution.read"), executionHandler.List)
+			executions.GET("/:execution_id", permission("monitor.execution.read"), executionHandler.Get)
 		}
 
 		// 问题工单

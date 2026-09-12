@@ -46,16 +46,16 @@
         <h3>{{ t('quality.issue.observationFacts') }}</h3>
         <el-descriptions :column="2" border>
           <el-descriptions-item :label="t('quality.issue.firstExecution')" :span="2">
-            <el-button v-if="issueExecutionRoute(issue.execution_id)" type="primary" link @click="openExecution(issue.execution_id)">
+            <el-button v-if="canViewExecutions && issueExecutionRoute(issue.execution_id)" type="primary" link @click="openExecution(issue.execution_id)">
               {{ issue.execution_id }}
             </el-button>
-            <span v-else>-</span>
+            <span v-else>{{ issue.execution_id || '-' }}</span>
           </el-descriptions-item>
           <el-descriptions-item :label="t('quality.issue.lastExecution')" :span="2">
-            <el-button v-if="issueExecutionRoute(issue.last_execution_id)" type="primary" link @click="openExecution(issue.last_execution_id)">
+            <el-button v-if="canViewExecutions && issueExecutionRoute(issue.last_execution_id)" type="primary" link @click="openExecution(issue.last_execution_id)">
               {{ issue.last_execution_id }}
             </el-button>
-            <span v-else>-</span>
+            <span v-else>{{ issue.last_execution_id || '-' }}</span>
           </el-descriptions-item>
           <el-descriptions-item :label="t('quality.issue.firstObservedAt')">{{ formatDateTime(issue.created_at) }}</el-descriptions-item>
           <el-descriptions-item :label="t('quality.issue.lastObservedAt')">{{ formatDateTime(issue.last_observed_at) }}</el-descriptions-item>
@@ -86,10 +86,13 @@ import { issueAPI } from '../api/quality'
 import { navigateQualityRoute } from '../utils/moduleNavigation'
 import { issueExecutionRoute } from '../utils/issueNavigation'
 import { resolveIssueListRouteState } from '../utils/issueListRouteState'
+import { useAuthStore } from '../store/auth'
 
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
+const canViewExecutions = computed(() => authStore.hasPermission('monitor.execution.read'))
 const issue = ref(null)
 useConsolePageDescriptor(router, 'quality', {
   title: computed(() => t('quality.issue.recentVisitTitle')),

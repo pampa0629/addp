@@ -6,6 +6,7 @@ import {
   formatTenantAssignmentScope,
   hasTenantRole,
   needsTenantRoleSetup,
+  partitionTenantRoleOptions,
   resolveRoleDescription,
   resolveRoleName,
   resolveTenantScopeLabel,
@@ -41,6 +42,7 @@ describe('IAM tenant role presentation', () => {
     ]
     const assignments = [
       { role_id: '1', status: 'active', scope_type: 'tenant', department_id: null, project_group_id: null },
+      { role_id: '2', status: 'revoked', scope_type: 'tenant', department_id: null, project_group_id: null },
       { role_id: '3', status: 'active', scope_type: 'department', department_id: '8', project_group_id: null }
     ]
 
@@ -61,6 +63,17 @@ describe('IAM tenant role presentation', () => {
     expect(buildTenantRoleOptions(roles, assignments, {
       principalType: 'service_principal', scopeType: 'tenant', departmentId: '', projectGroupId: ''
     }).map((role) => role.role_key)).toEqual(['tenant.asset_runtime'])
+  })
+
+  it('separates assignable roles from roles already active in the selected scope', () => {
+    const groups = partitionTenantRoleOptions([
+      { id: '1', role_key: 'tenant.viewer', assigned: false },
+      { id: '2', role_key: 'tenant.operator', assigned: true },
+      { id: '3', role_key: 'tenant.auditor', assigned: false }
+    ])
+
+    expect(groups.available.map((role) => role.role_key)).toEqual(['tenant.viewer', 'tenant.auditor'])
+    expect(groups.assigned.map((role) => role.role_key)).toEqual(['tenant.operator'])
   })
 
   it('formats assignment scopes without constructing invalid i18n keys', () => {

@@ -7,6 +7,45 @@ const policyID = 'bca63b32-b670-4df9-bbcc-fe6867df6c0f'
 const exemptionID = 'c5d985f0-82fb-4a87-9252-c77dc2462a52'
 const accessApprovalRequestID = 'db5e38fd-e7e3-4e9c-bffb-87a0bffda005'
 const accessRejectionRequestID = 'cf72b9b5-063d-4f22-aa07-5c7977580d2e'
+const findingID = '8dfe6d44-dd40-4f63-b2bb-aaeb5d7f83f4'
+
+test('marks and validates required classification and grade fields inline', async ({ page }) => {
+  const backend = await installMockBackend(page)
+
+  await page.goto('/classification-grading')
+  await page.getByRole('button', { name: '新增分类目录' }).click()
+
+  const classificationDialog = page.getByRole('dialog', { name: '新增分类目录' })
+  const classificationCode = classificationDialog.locator('.el-form-item.is-required').filter({ hasText: '编码' })
+  const classificationName = classificationDialog.locator('.el-form-item.is-required').filter({ hasText: '名称' })
+  await expect(classificationCode).toBeVisible()
+  await expect(classificationName).toBeVisible()
+  await expect(classificationCode.getByRole('textbox')).toBeFocused()
+  await classificationDialog.getByRole('button', { name: '保存' }).click()
+  await expect(classificationCode.locator('.el-form-item__error')).toHaveText('请完整填写编码')
+  await expect(classificationName.locator('.el-form-item__error')).toHaveText('请完整填写名称')
+  expect(backend.classificationCreateRequests).toHaveLength(0)
+  await classificationDialog.getByRole('button', { name: '取消' }).click()
+
+  await page.getByRole('tab', { name: '保护等级' }).click()
+  await page.getByRole('button', { name: '新增保护等级' }).click()
+
+  const gradeDialog = page.getByRole('dialog', { name: '新增保护等级' })
+  const gradeCode = gradeDialog.locator('.el-form-item.is-required').filter({ hasText: '编码' })
+  const gradeName = gradeDialog.locator('.el-form-item.is-required').filter({ hasText: '名称' })
+  const riskOrder = gradeDialog.locator('.el-form-item.is-required').filter({ hasText: '保护顺序' })
+  await expect(gradeCode).toBeVisible()
+  await expect(gradeName).toBeVisible()
+  await expect(riskOrder).toBeVisible()
+  await expect(riskOrder.getByRole('spinbutton')).toHaveValue('1')
+  await riskOrder.getByRole('spinbutton').fill('')
+  await gradeDialog.getByRole('button', { name: '保存' }).click()
+  await expect(gradeCode.locator('.el-form-item__error')).toHaveText('请完整填写编码')
+  await expect(gradeName.locator('.el-form-item__error')).toHaveText('请完整填写名称')
+  await expect(riskOrder.locator('.el-form-item__error')).toHaveText('请完整填写保护顺序')
+  expect(backend.gradeCreateRequests).toHaveLength(0)
+  expect(backend.unhandledRequests).toEqual([])
+})
 
 test('creates a sensitive definition and safely revises, tightens, restores, and revokes protection', async ({ page }) => {
   const backend = await installMockBackend(page)
@@ -17,13 +56,31 @@ test('creates a sensitive definition and safely revises, tightens, restores, and
   await page.getByRole('button', { name: '新增敏感类型' }).click()
 
   const createDialog = page.getByRole('dialog', { name: '新增敏感类型' })
+  const codeField = createDialog.locator('.el-form-item').filter({ hasText: '编码' })
+  const nameField = createDialog.locator('.el-form-item').filter({ hasText: '名称' })
+  await createDialog.getByRole('button', { name: '保存' }).click()
+  await expect(codeField.locator('.el-form-item__error')).toHaveText('请完整填写编码')
+  await expect(nameField.locator('.el-form-item__error')).toHaveText('请完整填写名称')
+  expect(backend.typeCreateRequests).toHaveLength(0)
   await formTextbox(createDialog, '编码').fill('customer_phone')
+  await formTextbox(createDialog, '编码').press('Tab')
   await formTextbox(createDialog, '名称').fill('客户手机号')
+  await formTextbox(createDialog, '名称').press('Tab')
+  await expect(codeField.locator('.el-form-item__error')).toHaveCount(0)
+  await expect(nameField.locator('.el-form-item__error')).toHaveCount(0)
   await formTextbox(createDialog, '说明').fill('客户联系号码')
   await expect(createDialog.getByText('初始默认保护', { exact: true })).toBeVisible()
   await expect(createDialog.getByRole('radio', { name: '遮盖' })).toBeChecked()
-  await expect(createDialog.locator('.el-form-item.is-required').filter({ hasText: '保留前部字符数' })).toBeVisible()
+  const createPrefixField = createDialog.locator('.el-form-item.is-required').filter({ hasText: '保留前部字符数' })
+  await expect(createPrefixField).toBeVisible()
   await expect(createDialog.locator('.el-form-item.is-required').filter({ hasText: '保留后部字符数' })).toBeVisible()
+  await createPrefixField.getByRole('spinbutton').fill('')
+  await createDialog.getByRole('button', { name: '保存' }).click()
+  await expect(createPrefixField.locator('.el-form-item__error')).toHaveText('请完整填写保留前部字符数')
+  expect(backend.typeCreateRequests).toHaveLength(0)
+  await createPrefixField.getByRole('spinbutton').fill('3')
+  await createPrefixField.getByRole('spinbutton').press('Tab')
+  await expect(createPrefixField.locator('.el-form-item__error')).toHaveCount(0)
   await createDialog.getByRole('button', { name: '保存' }).click()
 
   await expect.poll(() => backend.typeCreateRequests.length).toBe(1)
@@ -42,6 +99,20 @@ test('creates a sensitive definition and safely revises, tightens, restores, and
   })
   await expect(page.getByRole('row', { name: /客户手机号/ })).toContainText('遮盖')
 
+  await page.getByRole('row', { name: /客户手机号/ }).getByRole('button', { name: /0 个参与/ }).click()
+  const detectorDrawer = page.locator('.el-drawer').filter({ hasText: '管理识别方式' })
+  await detectorDrawer.getByRole('button', { name: '添加识别方式' }).click()
+  const detectorDialog = page.getByRole('dialog', { name: '添加识别方式' })
+  await expect(detectorDialog.locator('.el-form-item.is-required').filter({ hasText: '识别能力' })).toBeVisible()
+  const thresholdField = detectorDialog.locator('.el-form-item.is-required').filter({ hasText: '自动采用条件' })
+  await expect(thresholdField).toBeVisible()
+  await thresholdField.getByRole('spinbutton').fill('')
+  await detectorDialog.getByRole('button', { name: '保存' }).click()
+  await expect(thresholdField.locator('.el-form-item__error')).toHaveText('请完整填写自动采用条件')
+  expect(backend.detectorCreateRequests).toHaveLength(0)
+  await detectorDialog.getByRole('button', { name: '取消' }).click()
+  await detectorDrawer.locator('.el-drawer__close-btn').click()
+
   await page.getByRole('row', { name: /客户手机号/ }).getByRole('button', { name: '遮盖' }).click()
   const baselineDrawer = page.locator('.el-drawer').filter({ hasText: '管理默认保护' })
   await expect(baselineDrawer.getByText('初始规则', { exact: true })).toBeVisible()
@@ -49,7 +120,14 @@ test('creates a sensitive definition and safely revises, tightens, restores, and
   await baselineDrawer.getByRole('row').filter({ hasText: '初始规则' }).getByRole('button', { name: '编辑' }).click()
   const baselineDialog = page.getByRole('dialog', { name: '编辑默认保护规则' })
   await expect(baselineDialog.locator('.el-form-item.is-required').filter({ hasText: '保留前部字符数' })).toBeVisible()
-  await expect(baselineDialog.locator('.el-form-item.is-required').filter({ hasText: '保留后部字符数' })).toBeVisible()
+  const baselineSuffixField = baselineDialog.locator('.el-form-item.is-required').filter({ hasText: '保留后部字符数' })
+  await expect(baselineSuffixField).toBeVisible()
+  await baselineSuffixField.getByRole('spinbutton').fill('')
+  await baselineDialog.getByRole('button', { name: '保存' }).click()
+  await expect(baselineSuffixField.locator('.el-form-item__error')).toHaveText('请完整填写保留后部字符数')
+  await baselineSuffixField.getByRole('spinbutton').fill('4')
+  await baselineSuffixField.getByRole('spinbutton').press('Tab')
+  await expect(baselineSuffixField.locator('.el-form-item__error')).toHaveCount(0)
   await baselineDialog.getByRole('button', { name: '取消' }).click()
 
   await page.goto('/protection-enrollments')
@@ -60,6 +138,9 @@ test('creates a sensitive definition and safely revises, tightens, restores, and
   await expect(approvalDialog.getByText('批准后将为该申请人生成仅限当前字段和数据预览出口的临时原值授权，并在申请期限到达时自动恢复保护。', { exact: true })).toBeVisible()
   await expect(approvalDialog.getByText('business.customers · customer.phone', { exact: true })).toBeVisible()
   await expect(approvalDialog.getByText(/申请用户甲/)).toBeVisible()
+  await approvalDialog.getByRole('button', { name: '确认批准' }).click()
+  await expect(approvalDialog.locator('.el-form-item__error')).toHaveText('请完整填写审批意见')
+  expect(backend.accessDecisionRequests).toHaveLength(0)
   await formTextbox(approvalDialog, '审批意见').fill('核对工单后批准临时查看原值')
   await approvalDialog.getByRole('button', { name: '确认批准' }).click()
 
@@ -108,6 +189,9 @@ test('creates a sensitive definition and safely revises, tightens, restores, and
   await detailDrawer.getByRole('button', { name: '调整结论' }).click()
   const revisionDialog = page.getByRole('dialog', { name: '调整正式安全结论' })
   await expect(revisionDialog.getByText('客户手机号 · 个人信息 · 较高风险', { exact: true })).toBeVisible()
+  await revisionDialog.getByRole('button', { name: '保存调整' }).click()
+  await expect(revisionDialog.locator('.el-form-item__error')).toHaveText('请完整填写调整依据')
+  expect(backend.assessmentRevisionRequests).toHaveLength(0)
   await formCombobox(revisionDialog, '安全等级').click()
   await page.getByRole('option', { name: '高风险', exact: true }).click()
   await formTextbox(revisionDialog, '调整依据').fill('复核业务影响后提升保护等级')
@@ -160,6 +244,9 @@ test('creates a sensitive definition and safely revises, tightens, restores, and
   const policyDialog = page.getByRole('dialog', { name: '资源级保护策略' })
   await expect(policyDialog.getByRole('textbox', { name: '生效出口' })).toHaveValue('数据预览')
   await expect(policyDialog.getByRole('radio', { name: '移除' })).toBeChecked()
+  await policyDialog.getByRole('button', { name: '保存策略' }).click()
+  await expect(policyDialog.locator('.el-form-item__error')).toHaveText('请完整填写调整依据')
+  expect(backend.policyCreateRequests).toHaveLength(0)
   await formTextbox(policyDialog, '调整依据').fill('该客户表仅允许展示非联系方式字段')
   await policyDialog.getByRole('button', { name: '保存策略' }).click()
 
@@ -210,6 +297,9 @@ test('creates a sensitive definition and safely revises, tightens, restores, and
   await detailDrawer.getByRole('button', { name: '恢复默认' }).click()
   const restoreDialog = page.getByRole('dialog', { name: '恢复默认保护' })
   await expect(restoreDialog.getByText('撤销资源级收紧策略后，该字段将回落到当前默认保护；资源仍保持纳管，也不会因此放行明文。', { exact: true })).toBeVisible()
+  await restoreDialog.getByRole('button', { name: '确认恢复' }).click()
+  await expect(restoreDialog.locator('.el-form-item__error')).toHaveText('请完整填写恢复依据')
+  expect(backend.policyRevokeRequests).toHaveLength(0)
   await formTextbox(restoreDialog, '恢复依据').fill('专项处理结束，恢复平台默认规则')
   await restoreDialog.getByRole('button', { name: '确认恢复' }).click()
 
@@ -242,6 +332,9 @@ test('creates a sensitive definition and safely revises, tightens, restores, and
   const exemptionRevokeDialog = page.getByRole('dialog', { name: '提前撤销临时授权' })
   await expect(exemptionRevokeDialog.getByText('提前撤销后，该用户将立即恢复执行当前字段保护规则；授权历史仍会保留。', { exact: true })).toBeVisible()
   await expect(exemptionRevokeDialog.getByText('requester-1', { exact: false })).toBeVisible()
+  await exemptionRevokeDialog.getByRole('button', { name: '确认撤销' }).click()
+  await expect(exemptionRevokeDialog.locator('.el-form-item__error')).toHaveText('请完整填写撤销依据')
+  expect(backend.exemptionRevokeRequests).toHaveLength(0)
   await formTextbox(exemptionRevokeDialog, '撤销依据').fill('业务处理已结束，提前恢复字段保护')
   await exemptionRevokeDialog.getByRole('button', { name: '确认撤销' }).click()
 
@@ -273,6 +366,9 @@ test('creates a sensitive definition and safely revises, tightens, restores, and
   await detailDrawer.getByRole('button', { name: '撤销敏感结论' }).click()
   const assessmentRevokeDialog = page.getByRole('dialog', { name: '撤销正式敏感结论' })
   await expect(assessmentRevokeDialog.getByText('撤销后将追加不可变的非敏感结论，并通过统一投影链收回各数据出口的对应字段规则；历史评估和复核证据仍会保留。', { exact: true })).toBeVisible()
+  await assessmentRevokeDialog.getByRole('button', { name: '确认撤销' }).click()
+  await expect(assessmentRevokeDialog.locator('.el-form-item__error')).toHaveText('请完整填写撤销依据')
+  expect(backend.assessmentRevokeRequests).toHaveLength(0)
   await formTextbox(assessmentRevokeDialog, '撤销依据').fill('核实后确认该字段不再属于敏感数据')
   await assessmentRevokeDialog.getByRole('button', { name: '确认撤销' }).click()
 
@@ -306,6 +402,9 @@ test('creates a sensitive definition and safely revises, tightens, restores, and
   await expect(releaseDialog.getByText('business.customers', { exact: true })).toBeVisible()
   await expect(releaseDialog.getByText('业务复核确认当前无需保护', { exact: true })).toBeVisible()
   await expect(releaseDialog.locator('.el-form-item.is-required').filter({ hasText: '退出原因' })).toBeVisible()
+  await releaseDialog.getByRole('button', { name: '确认无需保护并退出' }).click()
+  await expect(releaseDialog.locator('.el-form-item__error')).toHaveText('请完整填写退出原因')
+  expect(backend.releaseRequests).toHaveLength(0)
   await formTextbox(releaseDialog, '退出原因').fill('业务复核确认当前已支持能力均无命中')
   await releaseDialog.getByRole('button', { name: '确认无需保护并退出' }).click()
 
@@ -335,6 +434,42 @@ test('creates a sensitive definition and safely revises, tightens, restores, and
   })
   await expect(releaseDialog).toHaveCount(0)
   await expect(detailDrawer.getByText('正在停止保护', { exact: true }).first()).toBeVisible()
+  expect(backend.unhandledRequests).toEqual([])
+  expect(browserErrors).toEqual([])
+})
+
+test('validates finding review and manual designation fields inline before submission', async ({ page }) => {
+  const backend = await installMockBackend(page, { governanceValidation: true })
+  const browserErrors = []
+  page.on('pageerror', error => browserErrors.push(error.message))
+
+  await page.goto('/protection-enrollments')
+  await page.getByRole('button', { name: '查看详情' }).click()
+  const detailDrawer = page.locator('.el-drawer').filter({ hasText: '资源保护详情' })
+
+  const findingCard = detailDrawer.locator('.finding-card').filter({ hasText: 'customer.email' })
+  await findingCard.getByRole('button', { name: '确认或调整' }).click()
+  const reviewDialog = page.getByRole('dialog', { name: '复核敏感字段候选' })
+  await expect(reviewDialog.locator('.el-form-item.is-required').filter({ hasText: '复核说明' })).toBeVisible()
+  await reviewDialog.getByRole('button', { name: '提交复核' }).click()
+  await expect(reviewDialog.locator('.el-form-item__error')).toHaveText('请完整填写复核说明')
+  expect(backend.findingReviewRequests).toHaveLength(0)
+
+  await reviewDialog.getByText('调整分类分级', { exact: true }).click()
+  await expect(reviewDialog.locator('.el-form-item.is-required').filter({ hasText: '敏感数据类型' })).toBeVisible()
+  await expect(reviewDialog.locator('.el-form-item.is-required').filter({ hasText: '安全等级' })).toBeVisible()
+  await reviewDialog.getByRole('button', { name: '取消' }).click()
+
+  await detailDrawer.getByRole('button', { name: '指定敏感字段' }).click()
+  const designationDialog = page.getByRole('dialog', { name: '人工指定敏感字段' })
+  await designationDialog.getByRole('button', { name: '确认指定并应用保护' }).click()
+  await expect(designationDialog.locator('.el-form-item__error')).toHaveText([
+    '请完整填写数据字段',
+    '请完整填写敏感数据类型',
+    '请完整填写安全等级',
+    '请完整填写指定依据'
+  ])
+  expect(backend.assessmentCreateRequests).toHaveLength(0)
   expect(backend.unhandledRequests).toEqual([])
   expect(browserErrors).toEqual([])
 })
@@ -432,11 +567,16 @@ function formCombobox(container, label) {
 
 async function installMockBackend(page, options = {}) {
   const permissions = [
+    'security.classification.read',
+    'security.classification.create',
+    'security.grade.read',
+    'security.grade.create',
     'security.sensitive_data_type.read',
     'security.sensitive_data_type.create',
     'security.sensitive_data_type.update',
     'security.sensitive_data_type.delete',
     'security.detector.read',
+    'security.detector.create',
     'security.protection_baseline.read',
     'security.protection_baseline.create',
     'security.protection_baseline.update',
@@ -454,7 +594,16 @@ async function installMockBackend(page, options = {}) {
     'security.protection_exemption.delete',
     'security.protection_access_request.update'
   ]
+  if (options.governanceValidation) {
+    permissions.push(
+      'security.finding.read',
+      'security.finding.update',
+      'security.assessment.create'
+    )
+  }
   const state = {
+    classificationCreateRequests: [],
+    gradeCreateRequests: [],
     types: [],
     baselines: [],
     policies: [],
@@ -517,6 +666,7 @@ async function installMockBackend(page, options = {}) {
       }
     ],
     typeCreateRequests: [],
+    detectorCreateRequests: [],
     policyCreateRequests: [],
     policyUpdateRequests: [],
     policyRevokeRequests: [],
@@ -525,6 +675,8 @@ async function installMockBackend(page, options = {}) {
     exemptionDetailRequests: 0,
     accessDecisionRequests: [],
     accessDetailRequests: 0,
+    findingReviewRequests: [],
+    assessmentCreateRequests: [],
     assessmentRevisionRequests: [],
     assessmentRevokeRequests: [],
     assessmentHistoryRequests: 0,
@@ -549,6 +701,20 @@ async function installMockBackend(page, options = {}) {
     { id: '3', code: 'l3', name: '较高风险', risk_order: 3, version: '1' },
     { id: '4', code: 'l4', name: '高风险', risk_order: 4, version: '1' }
   ]
+  const detectorCapability = {
+    key: 'addp.detector.email_metadata/v1',
+    version: 'v1',
+    name_i18n_key: 'security.detectorCapabilities.emailMetadata.name',
+    description_i18n_key: 'security.detectorCapabilities.emailMetadata.description',
+    method_i18n_key: 'security.detectorCapabilities.emailMetadata.method',
+    privacy_i18n_key: 'security.detectorCapabilities.emailMetadata.privacy',
+    limitations_i18n_key: 'security.detectorCapabilities.emailMetadata.limitations',
+    target_kind: 'field_metadata',
+    evidence_source: 'metadata',
+    supported_item_types: ['table'],
+    supported_field_types: ['string'],
+    recommended_threshold: 0.9
+  }
   const enrollment = {
     id: enrollmentID,
     state: 'active',
@@ -579,6 +745,62 @@ async function installMockBackend(page, options = {}) {
       owner_progress: []
     })
   }
+  const governanceFinding = {
+    id: findingID,
+    enrollment_id: enrollmentID,
+    component_key: 'customer.email',
+    sensitive_data_type_id: '20',
+    detector_version: 'addp.detector.email_metadata/v1',
+    confidence: 0.96,
+    observed_at: '2026-09-10T08:05:00Z',
+    review: null,
+    evidence: {
+      matched_rule: 'terminal_field_name',
+      component_key: 'customer.email',
+      semantic_terminal: 'email',
+      normalized_terminal: 'email',
+      matched_alias: 'email',
+      field_type: 'string'
+    },
+    explanation: {
+      decision_state: 'awaiting_review',
+      automatic_adoption_threshold: 0.98,
+      meets_automatic_threshold: false,
+      capability: {
+        key: 'addp.detector.email_metadata/v1',
+        name_i18n_key: 'security.detectorCapabilities.emailMetadata.name',
+        method_i18n_key: 'security.detectorCapabilities.emailMetadata.method',
+        privacy_i18n_key: 'security.detectorCapabilities.emailMetadata.privacy',
+        limitations_i18n_key: 'security.detectorCapabilities.emailMetadata.limitations',
+        supported_item_types: ['table'],
+        evidence_source: 'metadata'
+      },
+      outlets: []
+    }
+  }
+  if (options.governanceValidation) {
+    state.types.push({
+      id: '20',
+      code: 'email',
+      name: '电子邮箱',
+      security_classification_id: '1',
+      default_security_grade_id: '3',
+      version: '1'
+    })
+    state.baselines.push({
+      id: '40',
+      sensitive_data_type_id: '20',
+      security_grade_id: '3',
+      effect: 'mask',
+      algorithm: 'addp.mask.keep_prefix_suffix/v2',
+      keep_prefix: 2,
+      keep_suffix: 3,
+      invalid_value_effect: 'suppress',
+      enabled: true,
+      version: '1'
+    })
+    enrollment.discovery_summary = { status: 'completed', finding_count: 1, pending_review_count: 1, reviewed_count: 0 }
+  }
 
   await page.addInitScript(() => {
     localStorage.setItem('addp-lang', 'zh-cn')
@@ -600,8 +822,33 @@ async function installMockBackend(page, options = {}) {
 
     if (method === 'GET' && path === '/api/v1/security/classifications') return fulfillJSON(route, classifications)
     if (method === 'GET' && path === '/api/v1/security/grades') return fulfillJSON(route, grades)
+    if (method === 'GET' && path === '/api/v1/security/definition-profiles') return fulfillJSON(route, [])
+    if (method === 'POST' && path === '/api/v1/security/classifications') {
+      state.classificationCreateRequests.push(request.postDataJSON())
+      return fulfillJSON(route, { id: '2', ...request.postDataJSON(), version: '1' }, 201)
+    }
+    if (method === 'POST' && path === '/api/v1/security/grades') {
+      state.gradeCreateRequests.push(request.postDataJSON())
+      return fulfillJSON(route, { id: '5', ...request.postDataJSON(), version: '1' }, 201)
+    }
     if (method === 'GET' && path === '/api/v1/security/sensitive-data-types') return fulfillJSON(route, state.types)
     if (method === 'GET' && path === '/api/v1/security/detectors') return fulfillJSON(route, [])
+    if (method === 'GET' && path === '/api/v1/security/detector-capabilities') return fulfillJSON(route, [detectorCapability])
+    if (method === 'GET' && path === '/api/v1/security/discovery-quality') {
+      return fulfillJSON(route, {
+        current_finding_count: 0,
+        awaiting_review_count: 0,
+        reviewed_sample_count: 0,
+        sensitive_confirmation_rate: null,
+        active_manual_assessment_count: 0,
+        revoked_manual_assessment_count: 0,
+        capabilities: []
+      })
+    }
+    if (method === 'POST' && path === '/api/v1/security/detectors') {
+      state.detectorCreateRequests.push(request.postDataJSON())
+      return fulfillJSON(route, { id: '50', ...request.postDataJSON(), version: '1' }, 201)
+    }
     if (method === 'GET' && path === '/api/v1/security/protection-baselines') return fulfillJSON(route, state.baselines)
 
     if (method === 'GET' && path === '/api/v1/security/protection-access-requests/review-queue') {
@@ -761,6 +1008,27 @@ async function installMockBackend(page, options = {}) {
         status: 'pending',
         created_at: '2026-09-11T09:10:00Z'
       }, 201)
+    }
+    if (method === 'GET' && path === '/api/v1/security/findings') {
+      const rows = options.governanceValidation ? [governanceFinding] : []
+      return fulfillJSON(route, { data: rows, total: rows.length, page: 1, page_size: 20, total_pages: rows.length ? 1 : 0 })
+    }
+    if (method === 'POST' && path === `/api/v1/security/findings/${findingID}/reviews`) {
+      state.findingReviewRequests.push(request.postDataJSON())
+      return fulfillJSON(route, governanceFinding, 201)
+    }
+    if (method === 'GET' && path === `/api/v1/security/protection-enrollments/${enrollmentID}/components`) {
+      return fulfillJSON(route, {
+        data: [{ component: { key: 'customer.email', value_type: 'string' } }],
+        total: 1,
+        page: 1,
+        page_size: 100,
+        total_pages: 1
+      })
+    }
+    if (method === 'POST' && path === '/api/v1/security/assessments') {
+      state.assessmentCreateRequests.push(request.postDataJSON())
+      return fulfillJSON(route, state.assessment, 201)
     }
     if (method === 'GET' && path === '/api/v1/security/assessments') {
       state.assessment ||= {

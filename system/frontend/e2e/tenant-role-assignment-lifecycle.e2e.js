@@ -141,6 +141,22 @@ test('tenant administrator filters members and assigns multiple roles in one req
       role_key: 'tenant.administrator',
       role_name: '租户管理员',
       reason: 'research access'
+    }),
+    assignment({
+      id: '503',
+      membership_id: '12',
+      principal_id: '2',
+      display_name: 'Alice Researcher',
+      username: 'alice',
+      role_id: '102',
+      role_key: 'tenant.data_viewer',
+      role_name: '数据查看者',
+      scope_type: 'department',
+      department_id: '301',
+      status: 'revoked',
+      revoked_by_principal_id: '1',
+      revoked_at: '2026-09-08T07:00:00Z',
+      reason: 'historical assignment'
     })
   ]
   const mutations = []
@@ -270,8 +286,10 @@ test('tenant administrator filters members and assigns multiple roles in one req
   await expect(page).toHaveURL(/\/iam\/roles\?tab=role-assignments$/)
   await expect(page.getByRole('heading', { name: '角色管理' })).toBeVisible()
   await expect(page.getByRole('tab', { name: '角色分配' })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByRole('row').filter({ hasText: '已撤销' })).toHaveCount(0)
   await expect(page.getByRole('row').filter({ hasText: 'E2E Administrator' })).toBeVisible()
   await expect(page.getByRole('row').filter({ hasText: 'Alice Researcher' })).toBeVisible()
+  expect(listQueries.some((query) => query.status === 'active' && query.principal_type === 'user')).toBe(true)
 
   await page.locator('.iam-toolbar .iam-member-select__member').click()
   await page.locator('.el-select-dropdown__item:visible').filter({ hasText: 'Alice Researcher' }).click()
@@ -290,6 +308,15 @@ test('tenant administrator filters members and assigns multiple roles in one req
   const dialog = page.getByRole('dialog', { name: '分配角色' })
   await expect(dialog).toContainText('E2E Administrator')
   await expect(dialog).toContainText('当前账号')
+
+  const initialRoleCombobox = dialog.getByRole('combobox', { name: /角色/ })
+  const initialRoleListboxID = await initialRoleCombobox.getAttribute('aria-controls')
+  await initialRoleCombobox.press('ArrowDown')
+  const initialRoleListbox = page.locator(`[id="${initialRoleListboxID}"]`)
+  await expect(initialRoleListbox.getByText('可分配角色', { exact: true })).toBeVisible()
+  await expect(initialRoleListbox.getByText('已分配角色', { exact: true })).toBeVisible()
+  await expect(initialRoleListbox.getByRole('option', { name: /租户管理员/ })).toHaveClass(/is-disabled/)
+  await page.keyboard.press('Escape')
 
   const memberCombobox = dialog.getByRole('combobox', { name: /成员/ })
   const memberListboxID = await memberCombobox.getAttribute('aria-controls')
@@ -333,8 +360,16 @@ test('tenant administrator filters members and assigns multiple roles in one req
   const prompt = page.getByRole('dialog', { name: '撤销' })
   await prompt.getByRole('textbox').fill('E2E revoke')
   await prompt.getByRole('button', { name: '确认', exact: true }).click()
-  await expect(viewerRow).toContainText('已撤销')
-  await expect(viewerRow.getByRole('button', { name: '撤销', exact: true })).toHaveCount(0)
+  await expect(prompt).toBeHidden()
+  await expect(viewerRow).toHaveCount(0)
+
+  const statusCombobox = page.locator('.iam-toolbar .el-select').nth(2).getByRole('combobox')
+  const statusListboxID = await statusCombobox.getAttribute('aria-controls')
+  await statusCombobox.press('ArrowDown')
+  await page.locator(`[id="${statusListboxID}"]`).getByRole('option', { name: '已撤销', exact: true }).click()
+  const revokedViewerRows = page.getByRole('row').filter({ hasText: '数据查看者' }).filter({ hasText: 'Alice Researcher' })
+  await expect(revokedViewerRows).toHaveCount(2)
+  await expect(revokedViewerRows.first()).toContainText('已撤销')
 
   expect(mutations).toEqual([
     {

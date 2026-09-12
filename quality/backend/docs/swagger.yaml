@@ -1208,7 +1208,7 @@ paths:
       - Execution
       x-addp-auth-mode: permission
       x-addp-required-permissions:
-      - quality.task_provider.read
+      - monitor.execution.read
   /executions/{execution_id}:
     get:
       parameters:
@@ -1239,7 +1239,7 @@ paths:
       - Execution
       x-addp-auth-mode: permission
       x-addp-required-permissions:
-      - quality.task_provider.read
+      - monitor.execution.read
   /issues:
     get:
       parameters:
@@ -1845,7 +1845,38 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - quality.catalog.read
-  /tasks:
+  /task-provider/executions/{execution_id}:
+    get:
+      parameters:
+      - description: 执行ID | Execution ID
+        in: path
+        name: execution_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/taskprovider.ExecutionStatusResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api.qualityErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: 获取 TaskProvider 执行状态 | Get TaskProvider execution status
+      tags:
+      - TaskProvider
+      x-addp-auth-mode: permission
+      x-addp-required-permissions:
+      - quality.task_provider.read
+  /task-provider/tasks:
     get:
       description: 按标准 TaskProvider 协议列出 Quality 任务；task_type 支持 check|materialization_gate。|
         List Quality tasks through the standard TaskProvider protocol; task_type supports
@@ -1878,7 +1909,7 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - quality.task_provider.read
-  /tasks/{task_type}/{id}:
+  /task-provider/tasks/{task_type}/{id}:
     get:
       description: 按标准 TaskProvider 协议获取 Quality 任务详情；task_type 支持 check|materialization_gate。|
         Get Quality task detail through the standard TaskProvider protocol; task_type
@@ -1917,7 +1948,7 @@ paths:
       x-addp-auth-mode: permission
       x-addp-required-permissions:
       - quality.task_provider.read
-  /tasks/{task_type}/{id}/execute:
+  /task-provider/tasks/{task_type}/{id}/execute:
     post:
       consumes:
       - application/json

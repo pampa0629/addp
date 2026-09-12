@@ -8,6 +8,7 @@ BUSINESS_DIR=$(cd "${SCRIPT_DIR}/.." && pwd -P)
 REPOSITORY_DIR=$(cd "${BUSINESS_DIR}/.." && pwd -P)
 POINTCLOUD_FIXTURE_SOURCE="${REPOSITORY_DIR}/business/nfs/data/点云/pdal_las12_format0.las"
 PPTX_FIXTURE_SOURCE="${REPOSITORY_DIR}/business/fixtures/manager/addp_online_preview_fixture.pptx"
+HYBRID_SEARCH_IMAGE_FIXTURE_SOURCE="${REPOSITORY_DIR}/business/nfs/data/3d/stl/Print Light Gun/images/Autocop_4X3.jpg"
 MC_IMAGE=${ADDP_ONLINE_MANAGER_MC_IMAGE:-minio/mc:latest}
 
 fail() {
@@ -32,6 +33,7 @@ required=(
   ADDP_ONLINE_MANAGER_MINIO_BUCKET
   ADDP_ONLINE_MANAGER_MINIO_POINTCLOUD_OBJECT
   ADDP_ONLINE_MANAGER_MINIO_PPTX_OBJECT
+  ADDP_ONLINE_MANAGER_MINIO_HYBRID_SEARCH_IMAGE_OBJECT
 )
 for variable in "${required[@]}"; do
   [ -n "${!variable:-}" ] || fail "$variable is required"
@@ -65,10 +67,16 @@ validate_object_key() {
 
 validate_object_key ADDP_ONLINE_MANAGER_MINIO_POINTCLOUD_OBJECT las
 validate_object_key ADDP_ONLINE_MANAGER_MINIO_PPTX_OBJECT pptx
-[ "$ADDP_ONLINE_MANAGER_MINIO_POINTCLOUD_OBJECT" != "$ADDP_ONLINE_MANAGER_MINIO_PPTX_OBJECT" ] ||
+validate_object_key ADDP_ONLINE_MANAGER_MINIO_HYBRID_SEARCH_IMAGE_OBJECT jpg
+fixture_object_count=$(printf '%s\n' \
+  "$ADDP_ONLINE_MANAGER_MINIO_POINTCLOUD_OBJECT" \
+  "$ADDP_ONLINE_MANAGER_MINIO_PPTX_OBJECT" \
+  "$ADDP_ONLINE_MANAGER_MINIO_HYBRID_SEARCH_IMAGE_OBJECT" | sort -u | wc -l | tr -d ' ')
+[ "$fixture_object_count" = "3" ] ||
   fail "Manager fixture object keys must be distinct"
 [ -f "$POINTCLOUD_FIXTURE_SOURCE" ] || fail "fixture source is missing: $POINTCLOUD_FIXTURE_SOURCE"
 [ -f "$PPTX_FIXTURE_SOURCE" ] || fail "fixture source is missing: $PPTX_FIXTURE_SOURCE"
+[ -f "$HYBRID_SEARCH_IMAGE_FIXTURE_SOURCE" ] || fail "fixture source is missing: $HYBRID_SEARCH_IMAGE_FIXTURE_SOURCE"
 
 docker_fixture() {
   env \
@@ -128,8 +136,15 @@ seed_fixture() {
     -v "$PPTX_FIXTURE_SOURCE:/fixture/source.pptx:ro" \
     "$MC_IMAGE" cp --quiet /fixture/source.pptx \
     "fixture/$ADDP_ONLINE_MANAGER_MINIO_BUCKET/$ADDP_ONLINE_MANAGER_MINIO_PPTX_OBJECT"
+  docker_fixture run --rm \
+    --network "$network" \
+    -e "MC_HOST_fixture=http://${ADDP_ONLINE_MANAGER_MINIO_ACCESS_KEY}:${ADDP_ONLINE_MANAGER_MINIO_SECRET_KEY}@business-minio:9000" \
+    -v "$HYBRID_SEARCH_IMAGE_FIXTURE_SOURCE:/fixture/source.jpg:ro" \
+    "$MC_IMAGE" cp --quiet /fixture/source.jpg \
+    "fixture/$ADDP_ONLINE_MANAGER_MINIO_BUCKET/$ADDP_ONLINE_MANAGER_MINIO_HYBRID_SEARCH_IMAGE_OBJECT"
   mc stat "fixture/$ADDP_ONLINE_MANAGER_MINIO_BUCKET/$ADDP_ONLINE_MANAGER_MINIO_POINTCLOUD_OBJECT" >/dev/null
   mc stat "fixture/$ADDP_ONLINE_MANAGER_MINIO_BUCKET/$ADDP_ONLINE_MANAGER_MINIO_PPTX_OBJECT" >/dev/null
+  mc stat "fixture/$ADDP_ONLINE_MANAGER_MINIO_BUCKET/$ADDP_ONLINE_MANAGER_MINIO_HYBRID_SEARCH_IMAGE_OBJECT" >/dev/null
 }
 
 validate_container_ownership
@@ -162,6 +177,8 @@ case "$action" in
       fail "point-cloud fixture object is missing"
     mc stat "fixture/$ADDP_ONLINE_MANAGER_MINIO_BUCKET/$ADDP_ONLINE_MANAGER_MINIO_PPTX_OBJECT" >/dev/null ||
       fail "PPTX fixture object is missing"
+    mc stat "fixture/$ADDP_ONLINE_MANAGER_MINIO_BUCKET/$ADDP_ONLINE_MANAGER_MINIO_HYBRID_SEARCH_IMAGE_OBJECT" >/dev/null ||
+      fail "hybrid-search image fixture object is missing"
     echo "Online Manager MinIO Fixture is ready"
     ;;
 esac

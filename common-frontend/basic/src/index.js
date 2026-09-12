@@ -60,6 +60,7 @@ export * from './utils/continuousExecution'
 export * from './utils/executionLineagePresentation'
 export * from './utils/focus'
 export * from './utils/latestRequest'
+export * from './utils/loginRedirect.mjs'
 export { toAmisResponse, toAmisListResponse, createAmisInterceptor } from './utils/amis-adaptor'
 
 // Types

@@ -547,6 +547,60 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         with self.assertRaisesRegex(CHECK.RegistrationError, "full start contract"):
             CHECK.check_registration(self.repository)
 
+    def test_requires_manager_hybrid_search_fixture_and_owner_suite(self) -> None:
+        gate = self.repository / "scripts/test/online-gate.py"
+        gate.write_text(
+            gate.read_text(encoding="utf-8").replace(
+                '"first-suite"', '"manager-hybrid-search"'
+            ),
+            encoding="utf-8",
+        )
+        host = self.repository / "scripts/test/online-host-gate.sh"
+        host.write_text(
+            host.read_text(encoding="utf-8").replace(
+                "first-suite)\n    START_TARGET=-system",
+                "manager-hybrid-search)\n    START_TARGET=-all",
+            )
+            + "\nSYSTEM_URL GATEWAY_URL META_URL MANAGER_URL INFERENCE_URL\n"
+            + "ADDP_ONLINE_TEST_USER_ACCESS_TOKEN ADDP_ONLINE_TEST_TENANT_ID\n"
+            + "ADDP_ONLINE_MANAGER_MINIO_ENGINE_ID ADDP_ONLINE_MANAGER_MINIO_PORT "
+            + "ADDP_ONLINE_MANAGER_MINIO_ACCESS_KEY ADDP_ONLINE_MANAGER_MINIO_SECRET_KEY "
+            + "ADDP_ONLINE_MANAGER_MINIO_BUCKET "
+            + "ADDP_ONLINE_MANAGER_MINIO_HYBRID_SEARCH_IMAGE_OBJECT "
+            + "ADDP_ONLINE_MANAGER_EMBEDDING_MODEL_PROFILE_ID\n"
+            + "bash business/scripts/online-manager-minio-fixture.sh start\n"
+            + "bash business/scripts/online-manager-minio-fixture.sh stop\n"
+            + 'bash scripts/dev/start.sh "$START_TARGET"\n',
+            encoding="utf-8",
+        )
+        self.workflow.write_text(
+            self.workflow.read_text(encoding="utf-8").replace(
+                "first-suite", "manager-hybrid-search"
+            ),
+            encoding="utf-8",
+        )
+        fixture = self.repository / "business/scripts/online-manager-minio-fixture.sh"
+        fixture.parent.mkdir(parents=True, exist_ok=True)
+        fixture.write_text(
+            "ADDP_ONLINE_HOST --env-file /dev/null business-minio Autocop_4X3.jpg "
+            "ADDP_ONLINE_MANAGER_MINIO_HYBRID_SEARCH_IMAGE_OBJECT MC_HOST_fixture\n",
+            encoding="utf-8",
+        )
+        owner = self.repository / "scripts/test/manager-hybrid-search-online.py"
+        owner.write_text(
+            "/api/v1/meta/scan/run/manual /api/v1/manager/embedding_executions "
+            "/api/v1/manager/embeddings? /api/v1/manager/search? "
+            "expected_methods: list[str] "
+            '["keyword", "vector"] ["vector"] vector_hits '
+            '"residual_resources": -1\n',
+            encoding="utf-8",
+        )
+
+        CHECK.check_registration(self.repository)
+        owner.unlink()
+        with self.assertRaisesRegex(CHECK.RegistrationError, "requires"):
+            CHECK.check_registration(self.repository)
+
     def test_requires_oceanbase_consumer_flow_owner_contract(self) -> None:
         host = self.repository / "scripts/test/online-host-gate.sh"
         host.write_text(

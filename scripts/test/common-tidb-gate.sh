@@ -18,6 +18,13 @@ compose() {
 cleanup() {
     local status=$?
     trap - EXIT INT TERM
+    set +e
+    if [ "$status" -ne 0 ]; then
+        echo "Common TiDB gate Compose state:" >&2
+        compose ps -a >&2
+        echo "Common TiDB gate container logs:" >&2
+        compose logs --no-color --tail=200 >&2
+    fi
     compose down --volumes --remove-orphans >/dev/null 2>&1 || status=1
     if docker ps -a --filter "label=com.docker.compose.project=$COMPOSE_PROJECT" --format '{{.ID}}' | grep -q .; then
         echo "Common TiDB gate cleanup left Compose containers" >&2

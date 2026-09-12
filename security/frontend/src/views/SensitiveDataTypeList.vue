@@ -52,25 +52,25 @@
       :title="editing ? t('security.common.editResource', { name: t('security.resources.sensitiveDataType') }) : t('security.common.createResource', { name: t('security.resources.sensitiveDataType') })"
       width="min(620px, calc(100vw - 24px))"
     >
-      <el-form label-position="top">
+      <el-form ref="formRef" :model="form" :rules="formRules" label-position="top">
         <div class="form-grid">
-          <el-form-item :label="t('security.fields.code')" required>
+          <el-form-item :label="t('security.fields.code')" prop="code" required>
             <el-input v-model="form.code" :disabled="Boolean(editing)" />
           </el-form-item>
-          <el-form-item :label="t('security.fields.name')" required>
+          <el-form-item :label="t('security.fields.name')" prop="name" required>
             <el-input v-model="form.name" />
           </el-form-item>
         </div>
         <el-form-item :label="t('security.fields.description')">
           <el-input v-model="form.description" type="textarea" :rows="3" />
         </el-form-item>
-        <el-form-item :label="t('security.fields.security_classification_id')" required>
+        <el-form-item :label="t('security.fields.security_classification_id')" prop="security_classification_id" required>
           <el-select v-model="form.security_classification_id" class="wide" filterable>
             <el-option v-for="item in classifications" :key="item.id" :value="Number(item.id)" :label="definitionLabel(item)" />
           </el-select>
           <div class="field-help">{{ t('security.sensitiveType.classificationHelp') }}</div>
         </el-form-item>
-        <el-form-item :label="t('security.fields.default_security_grade_id')" required>
+        <el-form-item :label="t('security.fields.default_security_grade_id')" prop="default_security_grade_id" required>
           <el-select v-model="form.default_security_grade_id" class="wide" filterable>
             <el-option v-for="item in selectableGrades" :key="item.id" :value="Number(item.id)" :label="definitionLabel(item)" />
           </el-select>
@@ -79,7 +79,7 @@
         <template v-if="!editing">
           <el-divider content-position="left">{{ t('security.sensitiveType.initialProtection') }}</el-divider>
           <el-alert :title="t('security.sensitiveType.initialProtectionHelp')" type="info" :closable="false" show-icon />
-          <el-form-item class="initial-protection-field" :label="t('security.fields.effect')" required>
+          <el-form-item class="initial-protection-field" :label="t('security.fields.effect')" prop="default_effect" required>
             <el-radio-group v-model="form.default_effect">
               <el-radio-button value="mask">{{ effectLabel('mask') }}</el-radio-button>
               <el-radio-button value="suppress">{{ effectLabel('suppress') }}</el-radio-button>
@@ -92,14 +92,14 @@
               <el-input :model-value="t('security.options.algorithms.keepPrefixSuffix')" disabled />
             </el-form-item>
             <div class="form-grid">
-              <el-form-item :label="t('security.fields.keep_prefix')" required>
+              <el-form-item :label="t('security.fields.keep_prefix')" prop="default_keep_prefix" required>
                 <el-input-number v-model="form.default_keep_prefix" :min="0" controls-position="right" />
               </el-form-item>
-              <el-form-item :label="t('security.fields.keep_suffix')" required>
+              <el-form-item :label="t('security.fields.keep_suffix')" prop="default_keep_suffix" required>
                 <el-input-number v-model="form.default_keep_suffix" :min="0" controls-position="right" />
               </el-form-item>
             </div>
-            <el-form-item :label="t('security.fields.invalid_value_effect')" required>
+            <el-form-item :label="t('security.fields.invalid_value_effect')" prop="default_invalid_value_effect" required>
               <el-select v-model="form.default_invalid_value_effect" class="wide">
                 <el-option value="suppress" :label="effectLabel('suppress')" />
                 <el-option value="deny" :label="effectLabel('deny')" />
@@ -140,14 +140,14 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { classificationAPI, detectorAPI, gradeAPI, protectionBaselineAPI, sensitiveDataTypeAPI } from '../api/security'
 import { useAuthStore } from '../store/auth'
 import DetectorBindings from './DetectorBindings.vue'
 import ProtectionBaselineBindings from './ProtectionBaselineBindings.vue'
-import { isNonNegativeIntegerValue, protectionEffectI18nKey } from '../utils/foundationForm.mjs'
+import { createNonNegativeIntegerRule, createRequiredRule, protectionEffectI18nKey } from '../utils/foundationForm.mjs'
 
 const { t } = useI18n()
 const auth = useAuthStore()
@@ -159,6 +159,7 @@ const baselines = ref([])
 const loading = ref(false)
 const saving = ref(false)
 const dialog = ref(false)
+const formRef = ref(null)
 const detectorDrawer = ref(false)
 const detectorDrawerRevision = ref(0)
 const baselineDrawer = ref(false)
@@ -180,6 +181,20 @@ const selectableGrades = computed(() => {
   ))
 })
 const canCreate = computed(() => can('create'))
+const formRules = computed(() => ({
+  code: [createRequiredRule(t('security.common.requiredField', { name: t('security.fields.code') }), { trigger: 'blur', whitespace: true })],
+  name: [createRequiredRule(t('security.common.requiredField', { name: t('security.fields.name') }), { trigger: 'blur', whitespace: true })],
+  security_classification_id: [createRequiredRule(t('security.common.requiredField', { name: t('security.fields.security_classification_id') }))],
+  default_security_grade_id: [createRequiredRule(t('security.common.requiredField', { name: t('security.fields.default_security_grade_id') }))],
+  ...(!editing.value ? {
+    default_effect: [createRequiredRule(t('security.common.requiredField', { name: t('security.fields.effect') }))],
+    ...(form.default_effect === 'mask' ? {
+      default_keep_prefix: [createNonNegativeIntegerRule(t('security.common.requiredField', { name: t('security.fields.keep_prefix') }))],
+      default_keep_suffix: [createNonNegativeIntegerRule(t('security.common.requiredField', { name: t('security.fields.keep_suffix') }))],
+      default_invalid_value_effect: [createRequiredRule(t('security.common.requiredField', { name: t('security.fields.invalid_value_effect') }))]
+    } : {})
+  } : {})
+}))
 
 function can(action) { return auth.hasPermission(`security.sensitive_data_type.${action}`) }
 function effectLabel(effect) {
@@ -242,8 +257,18 @@ function reset(row = {}) {
   form.default_keep_suffix = 4
   form.default_invalid_value_effect = 'suppress'
 }
-function openCreate() { editing.value = null; reset(); dialog.value = true }
-function openEdit(row) { editing.value = row; reset(row); dialog.value = true }
+function openCreate() {
+  editing.value = null
+  reset()
+  dialog.value = true
+  nextTick(() => formRef.value?.clearValidate())
+}
+function openEdit(row) {
+  editing.value = row
+  reset(row)
+  dialog.value = true
+  nextTick(() => formRef.value?.clearValidate())
+}
 function openDetectors(row) {
   selectedType.value = row
   detectorDrawerRevision.value += 1
@@ -261,20 +286,8 @@ watch(() => form.default_effect, effect => {
 })
 
 async function save() {
-  if (!form.code.trim() || !form.name.trim() || !form.security_classification_id || !form.default_security_grade_id) {
-    ElMessage.warning(t('security.sensitiveType.required'))
-    return
-  }
-  if (!editing.value && form.default_effect === 'mask') {
-    const missingMaskField = [
-      ['keep_prefix', form.default_keep_prefix],
-      ['keep_suffix', form.default_keep_suffix]
-    ].find(([, value]) => !isNonNegativeIntegerValue(value))
-    if (missingMaskField) {
-      ElMessage.warning(t('security.common.requiredField', { name: t(`security.fields.${missingMaskField[0]}`) }))
-      return
-    }
-  }
+  const valid = await formRef.value?.validate().catch(() => false)
+  if (valid === false) return
   saving.value = true
   try {
     const payload = {

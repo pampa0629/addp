@@ -314,7 +314,13 @@ async function installMockBackend(page, options = {}) {
     if (path === '/api/v1/system/auth/context') {
       return fulfillJSON(route, {
         context: { type: 'tenant' },
-        authorization: { role_assignments: [{ permissions: [] }] }
+        authorization: { role_assignments: [{ permissions: [
+          'quality.rule_application.read',
+          'quality.check_task.read',
+          'quality.materialization_gate.read',
+          'monitor.execution.read',
+          'quality.issue.read'
+        ] }] }
       })
     }
     if (path === '/api/v1/system/engines') return fulfillJSON(route, engines)

@@ -243,7 +243,7 @@ func TestExecuteWithTaskProviderUsesTenantServiceBearer(t *testing.T) {
 	statusAuthorization := ""
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/api/v1/quality/tasks/check/42/execute":
+		case "/api/v1/quality/task-provider/tasks/check/42/execute":
 			executeAuthorization = r.Header.Get("Authorization")
 			if r.Header.Get("X-Internal-API-Key") != "" || r.Header.Get("X-Tenant-ID") != "" {
 				t.Fatal("legacy internal headers must not be sent")
@@ -251,7 +251,7 @@ func TestExecuteWithTaskProviderUsesTenantServiceBearer(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusAccepted)
 			_ = json.NewEncoder(w).Encode(map[string]string{"execution_id": "child-exec"})
-		case "/api/v1/quality/executions/child-exec":
+		case "/api/v1/quality/task-provider/executions/child-exec":
 			statusAuthorization = r.Header.Get("Authorization")
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -268,8 +268,8 @@ func TestExecuteWithTaskProviderUsesTenantServiceBearer(t *testing.T) {
 		taskProviderResolver: taskProviderResolverWithProvider(&commonModels.TaskProvider{
 			ModuleName: "quality", Backends: taskProviderBackendsForTest(server.URL), Available: true,
 			TaskProviderDeclaration: commonModels.TaskProviderDeclaration{
-				TaskExecuteEndpoint: "/api/v1/quality/tasks/{task_type}/{id}/execute",
-				TaskStatusEndpoint:  "/api/v1/quality/executions/{execution_id}",
+				TaskExecuteEndpoint: "/api/v1/quality/task-provider/tasks/{task_type}/{id}/execute",
+				TaskStatusEndpoint:  "/api/v1/quality/task-provider/executions/{execution_id}",
 				Capabilities:        jsonStringPtr(taskCapabilitiesForTest("check", false, `{"type":"object","additionalProperties":false}`)),
 			},
 		}, `{"type":"object","additionalProperties":false}`),

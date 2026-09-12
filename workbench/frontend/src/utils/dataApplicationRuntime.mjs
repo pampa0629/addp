@@ -3,6 +3,10 @@ import { defaultApplicationParameterValues } from './dataApplicationParameters.m
 
 export const APPLICATION_PRESENTATION_SECTIONS = Object.freeze(['title', 'parameters', 'query_actions'])
 
+export function isDataApplicationRuntimeAccessDenied(error) {
+  return Number(error?.response?.status ?? error?.status) === 403
+}
+
 function hasValue(value, operator) {
   if (['is_null', 'is_not_null'].includes(operator)) return value === true
   if (value === null || value === undefined || value === '') return false

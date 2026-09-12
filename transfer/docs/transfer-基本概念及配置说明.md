@@ -75,7 +75,7 @@ snapshot checkpoint 用于 progress / diagnostics，不表示可从 checkpoint �
 | 字段 | 必填 | 说明 |
 |---|---:|---|
 | `runtime` | 是 | 执行边界；当前 worker 只支持 `boundary=bounded`。 |
-| `load` | 是 | 装载方式；支持 `mode=snapshot` 和 PostgreSQL/MySQL/OceanBase/openGauss native table 的 `mode=incremental + change_detection.type=watermark`；OceanBase/openGauss 限非空间表。 |
+| `load` | 是 | 装载方式；支持 `mode=snapshot` 和 PostgreSQL/MySQL/OceanBase/openGauss/TiDB native table 的 `mode=incremental + change_detection.type=watermark`；OceanBase/openGauss/TiDB 限非空间表。 |
 | `source` | 是 | 源 endpoint。 |
 | `target` | 是 | 目标 endpoint。 |
 | `transforms` | 否 | table batch transform 列表。 |
@@ -289,7 +289,7 @@ raw copy 是 non-table encoded single content 的原始字节复制。它不调�
 | `default` | 否 | 源字段缺失或值为 nil 时使用的默认值。 |
 | `format` | 否 | 日期、时间、数字等简单解析 / 格式化提示。 |
 
-`precision` / `scale` 只属于 decimal 目标字段，两者必须同时出现或同时省略。源字段已声明有限精度时，向导默认继承该事实；无界 decimal 写入声明 `limits.table_write.decimal.requires_explicit_precision_scale=true` 的目标时，必须在映射中显式填写。MySQL 与 MySQL 模式 OceanBase 声明 `max_precision=65`、`max_scale=30`，Oracle、Doris 与 ClickHouse 当前 Provider 声明 `max_precision=38`、`max_scale=38`，并统一要求 `scale <= precision`；向导校验与字段定义推荐统一消费目标 Engine Instance 的 capability，不按数据库名称建立分支，推荐 API 只接收所选 `target_engine_id`，不接受调用方另报引擎类型。系统不会把无界 decimal 静默收缩为固定默认精度；只有用户触发字段定义推荐时，Transfer 才会全量扫描所选源字段的实际值并展示结果供确认。
+`precision` / `scale` 只属于 decimal 目标字段，两者必须同时出现或同时省略。源字段已声明有限精度时，向导默认继承该事实；无界 decimal 写入声明 `limits.table_write.decimal.requires_explicit_precision_scale=true` 的目标时，必须在映射中显式填写。MySQL、MySQL 模式 OceanBase 与 TiDB 声明 `max_precision=65`、`max_scale=30`，Oracle、Doris 与 ClickHouse 当前 Provider 声明 `max_precision=38`、`max_scale=38`，并统一要求 `scale <= precision`；向导校验与字段定义推荐统一消费目标 Engine Instance 的 capability，不按数据库名称建立分支，推荐 API 只接收所选 `target_engine_id`，不接受调用方另报引擎类型。系统不会把无界 decimal 静默收缩为固定默认精度；只有用户触发字段定义推荐时，Transfer 才会全量扫描所选源字段的实际值并展示结果供确认。
 
 `mode`：
 
@@ -308,7 +308,7 @@ raw copy 是 non-table encoded single content 的原始字节复制。它不调�
 |---|---|
 | `replace` | Transfer 写入前清理目标资源或让 prepare 重建目标。 |
 | `append` | 追加写入；失败 retry 当前拒绝 append，避免重复写入。 |
-| `upsert` | 按稳定键幂等新增或更新；当前支持声明幂等 upsert 能力的 PostgreSQL、MySQL、OceanBase 与 openGauss native table 目标；OceanBase/openGauss 限非空间表。 |
+| `upsert` | 按稳定键幂等新增或更新；当前支持声明幂等 upsert 能力的 PostgreSQL、MySQL、OceanBase、openGauss 与 TiDB native table 目标；OceanBase/openGauss/TiDB 限非空间表。 |
 | `upsert_delete` | 数据库 CDC v1 按稳定键新增、更新和物理删除；与目标 partition ledger 原子提交。 |
 
 apply mode 是 Transfer policy；真实 upsert/delete 能力必须由目标 engine Provider 和 capability 声明。raw copy 第一版只支持 `replace`，并要求目标 engine 提供删除资源能力。
@@ -318,13 +318,13 @@ apply mode 是 Transfer policy；真实 upsert/delete 能力必须由目标 engi
 当前支持组合为：
 
 ```text
-PostgreSQL/MySQL/OceanBase/openGauss native table -> PostgreSQL/MySQL/OceanBase/openGauss native table
+PostgreSQL/MySQL/OceanBase/openGauss/TiDB native table -> PostgreSQL/MySQL/OceanBase/openGauss/TiDB native table
 bounded + incremental + watermark + upsert
 ```
 
-配置必须声明 `load.change_detection.field`、`start=committed`、`end=execution_upper_bound`，并在 `target.policy.keys` 声明稳定目标键。`tie_breaker=[]` 表示仅同步新增：watermark field 必须自身精确匹配非空主键或唯一约束，并由用户确认可靠单调递增且不可变，目标 keys 必须是该字段映射后的目标字段。非空 `tie_breaker` 表示同步新增和更新：tie breaker 必须精确匹配非空主键或唯一约束，并且稳定、不可变，目标 keys 必须与其字段映射一一对应。每次 execution 在源数据库的一致性快照内冻结游标上界，只读取 `(committed_position, execution_upper_bound]` 并稳定排序；MySQL-compatible 源必须是 InnoDB 基表，OceanBase 与 openGauss 当前不得包含空间字段。
+配置必须声明 `load.change_detection.field`、`start=committed`、`end=execution_upper_bound`，并在 `target.policy.keys` 声明稳定目标键。`tie_breaker=[]` 表示仅同步新增：watermark field 必须自身精确匹配非空主键或唯一约束，并由用户确认可靠单调递增且不可变，目标 keys 必须是该字段映射后的目标字段。非空 `tie_breaker` 表示同步新增和更新：tie breaker 必须精确匹配非空主键或唯一约束，并且稳定、不可变，目标 keys 必须与其字段映射一一对应。每次 execution 在源数据库的一致性快照内冻结游标上界，只读取 `(committed_position, execution_upper_bound]` 并稳定排序；MySQL、OceanBase 与 TiDB 源必须是目录报告为 InnoDB-compatible 的基表，OceanBase、openGauss 与 TiDB 当前不得包含空间字段。
 
-同步主状态存储在 `transfer.sync_states`。position 使用 `type=watermark`、`version=v1` 的 JSON；目标批次提交成功后才允许携带 `state_version` 和本次 fencing token 做 CAS 更新。重复应用必须由目标 `TableUpsertProvider` 幂等吸收：PostgreSQL 使用 `ON CONFLICT ... DO UPDATE`，openGauss 使用配置 keys 作为 `ON` 匹配条件且不更新匹配键的原生 `MERGE INTO`，MySQL 及 MySQL 模式 OceanBase 使用 InnoDB 事务内的 `ON DUPLICATE KEY UPDATE`。MySQL-compatible 目标的配置 keys 必须精确匹配非空主键或唯一约束，且目标表不得存在与配置 keys 不同的唯一约束；OceanBase 与 openGauss 当前只支持非空间目标。
+同步主状态存储在 `transfer.sync_states`。position 使用 `type=watermark`、`version=v1` 的 JSON；目标批次提交成功后才允许携带 `state_version` 和本次 fencing token 做 CAS 更新。重复应用必须由目标 `TableUpsertProvider` 幂等吸收：PostgreSQL 使用 `ON CONFLICT ... DO UPDATE`，openGauss 使用配置 keys 作为 `ON` 匹配条件且不更新匹配键的原生 `MERGE INTO`，MySQL 及 MySQL 模式 OceanBase 使用 InnoDB 事务内的 `ON DUPLICATE KEY UPDATE`，TiDB 使用事务内的 `ON DUPLICATE KEY UPDATE` 并固定以 `VALUES(column)` 引用冲突值。MySQL-compatible 目标的配置 keys 必须精确匹配非空主键或唯一约束，且目标表不得存在与配置 keys 不同的唯一约束；OceanBase、openGauss 与 TiDB 当前只支持非空间目标。
 
 第一版只支持 resume：新 execution 从 committed position 继续并在成功后推进主状态。不提供 replay，不发现物理删除，也不支持只读副本 lookback。单字段模式不保证已有记录更新；复合模式要求源表所有 insert/update 都可靠更新 watermark。时间回拨或未更新 watermark 的变化不在保证范围内。
 
@@ -409,7 +409,7 @@ capture supervisor 已通过 Kafka Connect REST 和 Infra Kafka admin API 管理
 |---|---|
 | observable | 已支持，用于进度展示和故障定位。 |
 | restartable | 已支持 retry 从头重跑；append 拒绝。 |
-| resumable | PostgreSQL/MySQL/OceanBase/openGauss source 的 watermark incremental 通过 `transfer.sync_states` 支持 execution 间 resume，OceanBase/openGauss 限非空间表；目标按幂等 `table_upsert` capability 选择，snapshot checkpoint 仍仅可观测。 |
+| resumable | PostgreSQL/MySQL/OceanBase/openGauss/TiDB source 的 watermark incremental 通过 `transfer.sync_states` 支持 execution 间 resume，OceanBase/openGauss/TiDB 限非空间表；目标按幂等 `table_upsert` capability 选择，snapshot checkpoint 仍仅可观测。 |
 
 ## 十一、写后 Meta 扫描
 

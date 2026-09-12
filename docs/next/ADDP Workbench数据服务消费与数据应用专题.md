@@ -1102,6 +1102,19 @@ workbench.data_application.execute
 
 已保存 Data Application 不因服务授权失效而删除，但相应 Component 查询必须阻断并显示重新申请或联系所有者的入口。
 
+#### 9.1.1 数据应用交付链接与受限访问
+
+Workbench 第一阶段的 Data Application 是 Tenant 内的已认证数据应用，不是匿名网页。稳定运行地址 `/data-apps/:application_id` 及可选 `preset` 只表达应用与发布场景定位，不表达授权；复制链接不得创建 Grant，`preset` 也不得承载 Token、API Key 或任意查询参数。
+
+顶层运行端的交付体验固定为以下单一路线：
+
+1. 匿名用户打开运行链接时进入统一登录，登录成功后返回原始 `fullPath`，包括已发布的 `preset` key；登录回跳只接受当前 origin 的站内路径，不接受协议相对 URL 或外部 URL。
+2. 已登录用户缺少 `workbench.data_application.execute` 或当前 Data Application 的有效 Grant 时，运行端显示稳定的受限访问状态，提供 Portal 资产搜索、“我的申请与授权”和当页重试入口；Workbench 不因此在线查询 Asset ACL，也不根据 Application ID 推断 Asset。
+3. 应用运行授权生效后，Component 仍使用当前 User Bearer 请求 Service；某个 Service 拒绝访问时只阻断相应 Component，不改用 Workbench 或创建者身份代理查询。
+4. 交付界面必须明示链接的访问范围：接收者需登录当前 Tenant，并具备应用运行权限、有效应用授权和各 Component 依赖的 Service 数据权限。
+
+如果未来存在面向匿名公众的真实产品需求，应单独设计“公开数据应用”的显式发布策略，且只能组合已显式允许公开访问的 Service，同时完成限流、防滥用、缓存和数据暴露审查。当前不增加匿名兼容分支、秘密链接、URL 凭据或创建者身份代理。
+
 ### 9.2 BFF 和服务身份
 
 - 同步代表用户访问 owner 时，转发当前已验证的 User Bearer；
@@ -2219,11 +2232,23 @@ Data Application 的发布后操作已从直接打开默认运行页收敛为唯
 
 Frontend 复用既有 Console URL 解析、Runtime API、latest-request coordinator 和 i18n 体系；链接构造与交付项编译由 Workbench 纯函数唯一维护。源码契约测试同时锁定交付组件唯一所有权、列表与编辑器只依赖组件公开 `open` 方法，以及发布成功提交后才打开交付入口。真实浏览器分别从长期应用 `c4c0aa6e-70b1-49e8-8ade-8db92f5c6e33` 的编辑器和应用管理页打开同一交付组件，两处均读取到发布修订 6，并展示“默认参数”“长沙场景”“株洲场景”三个交付项；关闭按钮获得键盘焦点，页面 warning/error 日志为空。为避免产生无意义的 Revision 7，本轮没有再次发布既有应用，发布后即时打开行为由 mutation 提交点的确定性契约测试覆盖。标准 `make test-module MODULE=workbench` 门禁已通过，包括 platform T0、Workbench Go、Frontend 86 项测试、production build、Swagger 12 个公开路由覆盖和 `addp_test` PostgreSQL 集成；书稿和差异格式校验也通过。上述应用和预设仍只作为验收证据，不进入产品默认配置。
 
+### 14.50 Data Application 已认证授权交付（2026-09-12）
+
+Data Application 的正式链接是 Tenant 内应用定位符，不是授权凭据。本轮按 9.1.1 将交付体验收敛为唯一的已认证路线：匿名用户先登录，登录成功后回到原始运行 `fullPath`；已登录但缺少运行 Permission 或应用 Grant 时进入受限访问页；应用可运行后，每个 Component 仍由 Service 使用当前 User Bearer 作最终授权判断。
+
+Console 顶层登录与 Workbench 独立登录已统一复用 `common-frontend` 的安全回跳解析。两者都只接受当前 origin 的站内路径，并使用 `replace` 返回完整 Data Application 地址；`preset` 与 hash 保留，外部 URL、协议相对 URL、反斜线 URL、数组 query 和登录循环均失败关闭。Workbench 独立入口失败时回到应用列表，Console 入口失败时回到平台首页。这一改动不使用 URL Token、API Key 或秘密链接，也不在两个登录页保留重复校验实现。
+
+运行快照请求返回 HTTP 403 时，页面统一说明“缺少数据应用运行权限或应用授权”，并提供 Portal `/portal/search`、`/portal/my/applications` 和当页重试三个受控入口。Workbench 只通过既有共享 Console 导航能力进入 Portal，未增加 Asset API、ACL 查询、Application ID 到 Asset 的推断或软授权。交付对话框同时明示“应用链接不代表授权”，告知接收者需登录当前 Tenant，并具备应用运行 Permission、有效应用 Grant 和依赖 Service 的数据权限。新增文案全部通过 Workbench 中英文 i18n 提供。
+
+确定性测试覆盖完整预设场景回跳、外部跳转失败关闭、Console 与 Workbench 对共享解析器的唯一消费、403 分类、受限访问操作、Portal 唯一公开路由和交付提示的中英文契约。第一次执行完整模块门禁时，集成阶段因未设置 `WORKBENCH_POSTGRES_TEST_DSN` 按规范失败关闭；随后显式指向允许的 `addp_test` 并重跑同一 `make test-module MODULE=workbench` 入口，platform T0、Workbench Go、Frontend T1/T3、production build、Swagger 12 个公开路由覆盖和 PostgreSQL T2 全部通过。共享回跳收敛后，又分别重跑 `make test-common-frontend`、`make test-console-frontend` 和 `make test-workbench-frontend`，覆盖三个受影响前端层级。
+
+真实浏览器在长期应用 `c4c0aa6e-70b1-49e8-8ade-8db92f5c6e33?preset=changsha` 上保留“长沙场景”并自动查询出 10 条耕地结果，证明现有授权运行主路未受影响；同一应用的编辑页交付对话框真实显示了新的授权范围提示，且交付页浏览器无 error。为不退出用户当前会话、不使用测试密码也不制造临时授权数据，本轮未在真实浏览器切换为无 Grant 用户；登录回跳和 403 受限页由上述确定性契约覆盖，不将其记为真实无授权账号验收。
+
 ## 十五、概念设计状态
 
 当前没有待确认的 Phase 0 概念问题。Phase 5 的 Selection Binding 同页联动、`desktop | wallboard` 展示模式、浏览器会话级全屏、Application Refresh Policy 和 Application Presentation Sections 已完成设计、实现、标准模块门禁与真实浏览器验收；Data Application 资产运营指标的事实源、模块归属以及 Asset 自有 `application` / 具体 Asset 运营分组也已完成运行态复核。外部 BI 的 owner 边界、消费契约、用户委托 OAuth 单一路线和 System 外部 OAuth Client 注册治理已经完成；首个真实 BI 验收载体仍为 Power Query 自定义 Connector 与 Power BI Desktop Import，但因当前缺少 Windows 宿主而暂缓。`common-python` 的产品无关 Service Consumer SDK、离线门禁及真实普通表、空间表和 Outdoor 多服务只读运行验收均已完成；它不替代 callback state、持久外部 Client 生命周期和真实 BI 产品端到端证据，因此正式 BI 接入指南继续保持未完成。
 
-14.19 的 Data Application 直接创作收口、Outdoor 双服务真实验收、14.20 的 Business MySQL 本地异构验收，以及 14.21–14.23 的 Phase 6 场景化组合、空间探索创作向导和保存前整页预览均已完成。验收数据只作运行证据，没有进入 Workbench 领域模型、生产代码或默认配置。14.46 的通用状态呈现契约、编辑器、共享 renderer、本地门禁，以及保存、重新加载、不可变 Revision 5 发布和 Value、Chart、Map、Table 四类 renderer 的正式运行闭环均已完成。14.48 的 Application Parameter Preset 已完成概念、不可变快照、强校验、创作配置、运行选择、只含 preset key 的正式链接及真实浏览器闭环；14.49 又完成当前不可变已发布 Revision 的唯一交付组件、管理页入口和编辑器发布后即时交付闭环，Phase 7 当前确认范围已经收口。真实数据量没有超过有界 GeoJSON 上限前不启动 Tile / OGC Features，也不继续堆叠 renderer。
+14.19 的 Data Application 直接创作收口、Outdoor 双服务真实验收、14.20 的 Business MySQL 本地异构验收，以及 14.21–14.23 的 Phase 6 场景化组合、空间探索创作向导和保存前整页预览均已完成。验收数据只作运行证据，没有进入 Workbench 领域模型、生产代码或默认配置。14.46 的通用状态呈现契约、编辑器、共享 renderer、本地门禁，以及保存、重新加载、不可变 Revision 5 发布和 Value、Chart、Map、Table 四类 renderer 的正式运行闭环均已完成。14.48 的 Application Parameter Preset 已完成概念、不可变快照、强校验、创作配置、运行选择、只含 preset key 的正式链接及真实浏览器闭环；14.49 又完成当前不可变已发布 Revision 的唯一交付组件、管理页入口和编辑器发布后即时交付闭环；14.50 完成正式链接的已认证授权交付：登录后返回原始场景，403 提供 Portal 申请与状态入口，交付界面明示应用和 Service 授权边界，且没有新增匿名运行、URL 凭据、Asset ACL 查询或 Workbench 查询代理。Phase 7 当前确认范围已经收口。真实数据量没有超过有界 GeoJSON 上限前不启动 Tile / OGC Features，也不继续堆叠 renderer。
 
 14.24 的历史契约清理已经通过用户确认完成；Outdoor 长期应用已显式重绑当前 Service 24 契约并发布 Revision 3，Revision 2 保持不可变。14.26–14.27 的通用 Service Consumer SDK、公开导出、单元测试、README、发布门禁和真实运行验收已经完成。14.28 已在 MySQL Engine Provider 内补齐受限、精确、失败关闭的 QueryReadSet 与直接列 QueryOutputLineage，并完成 Business MySQL Service、Python SDK、契约漂移阻断、显式重绑、不可变 Revision 2 及最终 Data Application Table / Chart 的运行态验收；14.29 进一步完成最终应用对 Descriptor 临时失败和查询临时失败的可恢复状态收敛，契约变化仍严格阻断；14.30 完成 Component 编辑器的 Descriptor、查询和导出异步上下文隔离，服务切换或关闭后的迟到结果不再污染当前草稿；14.31 完成编辑器游标翻页的原子提交，失败请求不再产生旧数据与新页码混合的假状态；14.32 已完成运行画布按 Parameter Binding 精确失效旧参数请求的实现、标准前端门禁与发布 Revision 2 的真实浏览器验收；14.33 进一步把参数竞态收敛为可控 Promise 行为测试，不再只依赖浏览器时序和源码合同；14.34 已用同一 generation 和可控 Promise 阻断迟到导出的文件下载副作用；14.35 已为 Descriptor 初始加载与查询重试建立独立 latest-request generation，旧响应不再覆盖新状态；14.36 已把同源运行路由 A/B 快速切换的迟到成功、错误和 loading 收尾纳入同一 latest-request 提交门禁；14.37 在运行页卸载时立即失效 Revision 请求；14.38 使 Component 编辑器的弹窗关闭与页面卸载共享同一 Descriptor、查询和导出失效入口；14.39 进一步把创建页、编辑页 ID 切换、应用加载、Descriptor 派生加载和页面卸载收敛到唯一 editor route generation；14.40 又把保存、发布、下线从确认到响应收尾的副作用纳入独立 mutation generation；14.41 把列表翻页、删除确认、DELETE 响应和删除后刷新也收敛到同一 Data Application request 提交语义；14.42 进一步把空间探索向导的 Catalog、汇总 Descriptor、空间 Descriptor、关闭重开和卸载收敛到三个相互独立但共享同一提交语义的会话 generation；14.43 已把 Element Plus 全量注册与 Map 运行依赖移出 Workbench 首屏，并建立入口 chunk 硬预算和正式 Console 运行验收；14.44 已完成已发布应用在 Descriptor 与必填默认值均可执行时只复用一次“查询全部组件”主路径，草稿手工查询、参数提交和 Wallboard 后续刷新语义不变；14.45 已完成通用字段呈现契约、共享 renderer 实现、本地门禁，以及真实应用从编辑、预览、保存、不可变 Revision 3 发布到正式运行页自动首查的完整闭环。Power Query 路线继续保留；获得 Windows 宿主后再在 `service/connectors/power-query/` 完成具体 Connector 与真实 BI 门禁。没有真实宿主证据前不修改 OAuth 或 Service API，也不提前编写“可直接照做”的正式 BI 接入指南。当前唯一未闭合的同专题自动化证据是 `workbench-service-consumption` T4：具备专用 runner 后应优先补跑，本地验收不能替代该 Online Gate。不要修改 Service 查询路由、引入 API Key 私有授权、数据库直连或增加 Workbench / Python 代理。跨模块综合统计和 Workbench 运行埋点继续暂缓；只有确认成功打开次数、独立访问用户和 Revision 分布确有独立产品价值时，才进入 Workbench owner 运行准入事实设计。在独立价值确认前不进入多页面、`mobile`、页面轮播、通用动作、后台定时任务或第二套运行状态。若后续实现与现有公开契约冲突，必须先回到本专题及正式规范修订设计，不得增加兼容路由、兼容字段或 Workbench 私有旁路。
 

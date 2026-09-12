@@ -40,14 +40,17 @@
 
     <el-dialog
       v-model="dialog"
+      class="addp-dialog"
       :title="editing ? t('security.common.editResource', { name: title }) : t('security.common.createResource', { name: title })"
-      width="600px"
+      width="min(600px, calc(100vw - 24px))"
+      @opened="handleDialogOpened"
     >
-      <el-form label-width="170px">
+      <el-form ref="formRef" :model="form" :rules="formRules" label-width="170px">
         <el-form-item
           v-for="field in visibleFields"
           :key="field.key"
           :label="t(field.label)"
+          :prop="field.key"
           :required="field.required"
         >
           <el-select
@@ -85,13 +88,13 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { classificationAPI, gradeAPI } from '../api/security'
 import { useAuthStore } from '../store/auth'
-import { buildFoundationPayload, initialFoundationFieldValue, sortFoundationRows } from '../utils/foundationForm.mjs'
+import { buildFoundationPayload, createMinimumNumberRule, createRequiredRule, initialFoundationFieldValue, sortFoundationRows } from '../utils/foundationForm.mjs'
 
 const props = defineProps({
   resourceKey: { type: String, default: '' },
@@ -136,7 +139,18 @@ const saving = ref(false)
 const dialog = ref(false)
 const editing = ref(null)
 const form = reactive({})
+const formRef = ref(null)
 const visibleFields = computed(() => fields.value)
+const formRules = computed(() => Object.fromEntries(
+  visibleFields.value
+    .filter(field => field.required)
+    .map(field => {
+      const message = t('security.common.requiredField', { name: t(field.label) })
+      if (field.reference) return [field.key, [createMinimumNumberRule(message, 1)]]
+      if (field.type === 'number') return [field.key, [createMinimumNumberRule(message, field.min ?? 0)]]
+      return [field.key, [createRequiredRule(message, { trigger: 'blur', whitespace: true })]]
+    })
+))
 
 function can(action) {
   return auth.hasPermission(`security.${spec.value.permission}.${action}`)
@@ -186,6 +200,13 @@ function openEdit(row) {
   dialog.value = true
 }
 
+function handleDialogOpened() {
+  formRef.value?.clearValidate()
+  nextTick(() => {
+    formRef.value?.$el?.querySelector('input:not([disabled]), textarea:not([disabled])')?.focus()
+  })
+}
+
 async function load() {
   loading.value = true
   try {
@@ -207,17 +228,8 @@ async function load() {
 }
 
 async function save() {
-  const missingField = visibleFields.value.find(field => {
-    if (!field.required) return false
-    const value = form[field.key]
-    if (field.reference) return !Number.isFinite(Number(value)) || Number(value) <= 0
-    if (field.type === 'number') return !Number.isFinite(Number(value)) || Number(value) < (field.min ?? 0)
-    return String(value ?? '').trim() === ''
-  })
-  if (missingField) {
-    ElMessage.warning(t('security.common.requiredField', { name: t(missingField.label) }))
-    return
-  }
+  const valid = await formRef.value?.validate().catch(() => false)
+  if (valid === false) return
   saving.value = true
   try {
     const payload = buildFoundationPayload(fields.value, form)

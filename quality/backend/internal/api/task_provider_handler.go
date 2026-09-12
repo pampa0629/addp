@@ -67,7 +67,7 @@ type qualityTaskProviderExecuteResponse struct {
 // @Failure 500 {object} qualityErrorResponse "服务器内部错误 | Internal server error"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["quality.task_provider.read"]
-// @Router /tasks [get]
+// @Router /task-provider/tasks [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ListTasks(c *gin.Context) {
 	taskType := strings.TrimSpace(c.Query("task_type"))
@@ -125,7 +125,7 @@ func (h *TaskProviderHandler) ListTasks(c *gin.Context) {
 // @Failure 404 {object} qualityErrorResponse "任务不存在 | Task not found"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["quality.task_provider.read"]
-// @Router /tasks/{task_type}/{id} [get]
+// @Router /task-provider/tasks/{task_type}/{id} [get]
 // @Security BearerAuth
 func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 	taskType := c.Param("task_type")
@@ -177,7 +177,7 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 // @Failure 500 {object} qualityErrorResponse "服务器内部错误 | Internal server error"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["quality.task_provider.execute"]
-// @Router /tasks/{task_type}/{id}/execute [post]
+// @Router /task-provider/tasks/{task_type}/{id}/execute [post]
 // @Security BearerAuth
 func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 	taskType := c.Param("task_type")

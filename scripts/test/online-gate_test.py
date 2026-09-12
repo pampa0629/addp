@@ -79,6 +79,7 @@ class OnlineGateTest(unittest.TestCase):
                 "consumer-engine-recovery",
                 "enterprise-catalog-publishing",
                 "manager-internal-artifact-lineage",
+                "manager-hybrid-search",
                 "module-registry-recovery",
                 "oceanbase-consumer-flow",
                 "opengauss-consumer-flow",
@@ -141,6 +142,17 @@ class OnlineGateTest(unittest.TestCase):
         )
         sql_etl_suite = ONLINE_GATE.SUITES["transfer-relational-sql-etl"]
         self.assertEqual(sql_etl_suite.services, transfer_suite.services)
+        hybrid_search_suite = ONLINE_GATE.SUITES["manager-hybrid-search"]
+        self.assertEqual(
+            hybrid_search_suite.services,
+            (
+                ("gateway", "GATEWAY_URL"),
+                ("system", "SYSTEM_URL"),
+                ("meta", "META_URL"),
+                ("manager", "MANAGER_URL"),
+                ("inference", "INFERENCE_URL"),
+            ),
+        )
         consumer_suite = ONLINE_GATE.SUITES["consumer-engine-recovery"]
         self.assertEqual(
             consumer_suite.services,
