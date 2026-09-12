@@ -614,7 +614,7 @@ func TestGetNodeByLocator(t *testing.T) {
 	tree := &TreeNode{
 		Locator: "addp://engine/1/path/?type=server",
 		Label:   "Root",
-		Type:    "engine",
+		Type:    "server",
 		Children: []*TreeNode{
 			{
 				Locator: "addp://engine/1/path/public?type=schema",
@@ -641,7 +641,7 @@ func TestGetNodeByLocator(t *testing.T) {
 			name:     "查找根节点",
 			locator:  "addp://engine/1/path/?type=server",
 			wantNil:  false,
-			wantType: "engine",
+			wantType: "server",
 		},
 		{
 			name:     "查找 schema",
@@ -682,7 +682,7 @@ func TestFilterTreeByType(t *testing.T) {
 	tree := &TreeNode{
 		Locator: "addp://engine/1/path/?type=server",
 		Label:   "Root",
-		Type:    "engine",
+		Type:    "server",
 		Children: []*TreeNode{
 			{
 				Locator: "addp://engine/1/path/public?type=schema",
@@ -719,9 +719,12 @@ func TestFilterTreeByType(t *testing.T) {
 	// 过滤只保留 schema 和 table
 	filtered := FilterTreeByType(tree, []string{"schema", "table"})
 
-	// 验证根节点仍存在（engine 类型）
-	if filtered.Type != "engine" {
-		t.Errorf("filtered.Type = %s, want %s", filtered.Type, "engine")
+	// 根节点虽然不在过滤集合内，但作为匹配后代的结构路径仍应保留。
+	if filtered == nil || filtered.Type != "server" {
+		t.Fatalf("filtered = %#v, want server catalog root", filtered)
+	}
+	if filtered.Locator != "addp://engine/1/path/?type=server" {
+		t.Errorf("filtered.Locator = %s, want canonical catalog root locator", filtered.Locator)
 	}
 
 	// 验证 schema 节点仍存在
@@ -735,34 +738,6 @@ func TestFilterTreeByType(t *testing.T) {
 	}
 }
 
-func TestEngineIcon(t *testing.T) {
-	workflowCapabilities := models.JSONString(`{"schema_version":"engine.capabilities/v1","engine_type":"acme_geo_workflow","engine_family":"workflow","compute":{"workflow":{"supported":true}}}`)
-	documentCapabilities := models.JSONString(`{"schema_version":"engine.capabilities/v1","engine_type":"mongodb","engine_family":"document"}`)
-	objectCapabilities := models.JSONString(`{"schema_version":"engine.capabilities/v1","engine_type":"minio","engine_family":"object"}`)
-	tests := []struct {
-		engineType string
-		caps       *models.JSONString
-		want       string
-	}{
-		{engineType: "postgresql", want: "Database"},
-		{engineType: "mysql", want: "Database"},
-		{engineType: "MongoDB", caps: &documentCapabilities, want: "DocumentText"},
-		{engineType: "minio", caps: &objectCapabilities, want: "FolderOpen"},
-		{engineType: "acme_geo_workflow", caps: &workflowCapabilities, want: "Grid"},
-		{engineType: "geopython_workflow", want: "Database"},
-		{engineType: "unknown", want: "Database"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.engineType, func(t *testing.T) {
-			got := EngineIcon(&models.Engine{EngineType: tt.engineType, Capabilities: tt.caps})
-			if got != tt.want {
-				t.Errorf("EngineIcon(%s) = %s, want %s", tt.engineType, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestGetIconByType(t *testing.T) {
 	tests := []struct {
 		nodeType string
@@ -771,6 +746,8 @@ func TestGetIconByType(t *testing.T) {
 		{"database", "Database"},
 		{"schema", "Folder"},
 		{"bucket", "FolderOpen"},
+		{"server", "FolderOpen"},
+		{"service", "FolderOpen"},
 		{"table", "Table"},
 		{"collection", "DocumentText"},
 		{"object", "Document"},

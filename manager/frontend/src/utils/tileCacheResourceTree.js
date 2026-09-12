@@ -23,19 +23,30 @@ export function createResourceRootNode(engine) {
 export function normalizeResourceNode(node, engine, { parseLocator, loaded = true } = {}) {
   if (!node) return null
   const locator = node.locator || node.id || ''
-  const metadata = node.metadata || {}
-  return {
+  const normalized = {
     ...node,
     id: locator || node.id,
     locator,
     label: node.label || node.name || engine?.name || locator,
-    engineId: node.engineId || node.engine_id || metadata.engine_id || engine?.id || locatorEngineID(locator, parseLocator),
-    engineType: node.engineType || node.engine_type || metadata.engine_type || engine?.engine_type || '',
-    engineName: node.engineName || node.engine_name || engine?.name || '',
     loaded,
     children: Array.isArray(node.children)
       ? node.children.map((child) => normalizeResourceNode(child, engine, { parseLocator })).filter(Boolean)
       : []
+  }
+  delete normalized.engineId
+  delete normalized.engineType
+  delete normalized.engineName
+  delete normalized.engine_id
+  delete normalized.engine_type
+  delete normalized.engine_name
+  if (!isResourceRootNode(normalized)) {
+    return normalized
+  }
+  return {
+    ...normalized,
+    engineId: engine?.id || locatorEngineID(locator, parseLocator),
+    engineType: engine?.engine_type || '',
+    engineName: engine?.name || normalized.label
   }
 }
 

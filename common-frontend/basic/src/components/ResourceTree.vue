@@ -63,6 +63,7 @@
         :lazy="lazy"
         :load="load"
         :node-class-name="resolveNodeClassName"
+        @click.capture="handleUnloadedExpandClick"
         @node-click="handleNodeClick"
         @node-expand="handleNodeExpand"
         @node-collapse="handleNodeCollapse"
@@ -78,11 +79,7 @@
               <span class="tree-node" :class="[data.type, { highlight: data.highlight }]">
                 <span class="node-main">
                   <slot name="node-icon" :node="node" :data="data">
-                    <el-icon v-if="data.type === 'engine'">
-                      <component :is="resolveEngineIcon(data)" />
-                    </el-icon>
-                    <!-- 其他节点类型图标 -->
-                    <el-icon v-else-if="data.type === 'schema' || data.type === 'database'">
+                    <el-icon v-if="data.type === 'schema' || data.type === 'database'">
                       <OfficeBuilding />
                     </el-icon>
                     <el-icon v-else-if="data.type === 'bucket'">
@@ -184,7 +181,6 @@ import {
   Upload
 } from '@element-plus/icons-vue'
 import { traverseTree, findNodePath } from '../types/tree'
-import { getEngineIconName } from '../utils/engineDisplay.js'
 import {
   addExpandedKey,
   hasExpandableChildren,
@@ -210,14 +206,6 @@ const actionIconMap = {
   Shop,
   Share,
   Upload
-}
-
-const resolveEngineIcon = (data) => {
-  return actionIconMap[data.icon] || actionIconMap[getEngineIconName({
-    engine_type: data.engineType || data.metadata?.engine_type,
-    capabilities_view: data.capabilitiesView || data.capabilities_view || data.metadata?.capabilities_view,
-    engine_family: data.engineFamily || data.metadata?.engine_family
-  })] || Coin
 }
 
 const props = defineProps({
@@ -665,6 +653,23 @@ const handleNodeClick = (nodeData) => {
   emit('node-click', nodeData)
 }
 
+// Element Plus 在非 lazy 模式下只根据已挂载的 children 判断叶子节点，
+// 因而 hasChildren=true 的未加载节点会被标记为 is-leaf。资源树契约仍要求
+// 这类节点可通过展开箭头触发宿主的增量加载。
+const handleUnloadedExpandClick = (event) => {
+  const expandIcon = event?.target?.closest?.('.el-tree-node__expand-icon.is-leaf')
+  if (!expandIcon) return
+
+  const nodeElement = expandIcon.closest('.el-tree-node')
+  const nodeKey = nodeElement?.getAttribute('data-key')
+  const node = nodeKey ? treeRef.value?.store?.getNode(nodeKey) : null
+  if (!node?.data || !isUnloadedExpandable(node.data)) return
+
+  event.preventDefault()
+  event.stopPropagation()
+  handleNodeExpand(node.data)
+}
+
 // 当前节点变化
 const handleCurrentChange = (data, node) => {
   if (data) {
@@ -834,13 +839,13 @@ defineExpose({
 .tree-container :deep(.el-tree-node.resource-tree-unloaded-children > .el-tree-node__content .el-tree-node__expand-icon.is-leaf) {
   visibility: visible;
   color: var(--el-text-color-secondary);
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .tree-container :deep(.el-tree-node__content:has(.tree-node-wrapper.resource-tree-unloaded-children-inline) .el-tree-node__expand-icon.is-leaf) {
   visibility: visible;
   color: var(--el-text-color-secondary);
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .tree-container :deep(.el-tree-node.is-current > .el-tree-node__content) {

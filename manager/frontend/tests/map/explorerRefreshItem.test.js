@@ -67,6 +67,43 @@ describe('explorer refreshItem', () => {
     expect(store.loadPreview).toHaveBeenCalledWith(locator, 1, '', '', '', '')
   })
 
+  it('keeps engine context on the catalog root instead of copying it into resource nodes', async () => {
+    const store = useExplorerStore()
+    const rootLocator = 'addp://engine/25/path/?type=server&node_id=377'
+    const databaseLocator = 'addp://engine/25/path/business?type=database&node_id=378'
+    const itemLocator = 'addp://engine/25/path/business/customers?type=table&item_id=901'
+
+    store.engines = [{ id: 25, name: 'Business TiDB', engine_type: 'tidb', connection_status: 'online' }]
+    mocks.getTree.mockResolvedValue({
+      id: rootLocator,
+      locator: rootLocator,
+      label: 'Business TiDB',
+      type: 'server',
+      hasChildren: true,
+      children: [{
+        id: databaseLocator,
+        locator: databaseLocator,
+        label: 'business',
+        type: 'database',
+        hasChildren: true,
+        children: [{
+          id: itemLocator,
+          locator: itemLocator,
+          label: 'customers',
+          type: 'table',
+          hasChildren: false,
+          children: []
+        }]
+      }]
+    })
+
+    const tree = await store.loadTree(25, 2)
+
+    expect(tree).toMatchObject({ engineId: 25, engineType: 'tidb', engineName: 'Business TiDB' })
+    expect(tree.children[0]).not.toHaveProperty('engineType')
+    expect(tree.children[0].children[0]).not.toHaveProperty('engineType')
+  })
+
   it('reloads the refreshed node children after a basic node scan completes', async () => {
     const store = useExplorerStore()
     const rootLocator = 'addp://engine/12/path/?type=server&node_id=1'

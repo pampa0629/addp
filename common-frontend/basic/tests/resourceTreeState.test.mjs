@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
 import {
@@ -60,4 +61,11 @@ test('hasExpandableChildren accepts every resource-tree contract shape', () => {
   assert.equal(hasExpandableChildren({ metadata: { item_count: 2 } }), true)
   assert.equal(hasExpandableChildren({ children: [{ id: 'child' }] }), true)
   assert.equal(hasExpandableChildren({ hasChildren: false, children: [] }), false)
+})
+
+test('resource tree does not model an engine as a resource node type', () => {
+  const resourceTree = readFileSync(new URL('../src/components/ResourceTree.vue', import.meta.url), 'utf8')
+
+  assert.doesNotMatch(resourceTree, /data\.type\s*===\s*['"]engine['"]/)
+  assert.doesNotMatch(resourceTree, /resolveEngineIcon|getEngineIconName/)
 })

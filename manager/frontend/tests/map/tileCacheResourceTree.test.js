@@ -89,6 +89,8 @@ describe('tileCacheResourceTree', () => {
       'addp://engine/7/path/public?type=schema&node_id=11'
     ])
     expect(merged.target).toMatchObject({ label: 'buildings', type: 'table' })
+    expect(merged.target).not.toHaveProperty('engineType')
+    expect(merged.target).not.toHaveProperty('engineId')
     expect(merged.nodes[0].children[0].children.map((node) => node.label)).toEqual(['roads', 'buildings'])
     expect(merged.nodes[0].children[0].loaded).toBe(false)
   })

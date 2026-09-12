@@ -263,11 +263,13 @@ export const useExplorerStore = defineStore('explorer', {
         // API 客户端的 extractData 已提取了 response.data
         const tree = response
 
-        // 获取引擎类型并为所有节点添加 engineType
         const engine = this.engines.find(e => e.id === engineId)
+        if (tree) {
+          this.normalizeResourceSubtree(tree)
+        }
         if (engine && tree) {
-          this.addEngineTypeToTree(tree, engine.engine_type)
           tree.engineId = tree.engineId || engine.id
+          tree.engineType = tree.engineType || engine.engine_type
           tree.engineName = tree.engineName || engine.name
           tree.loaded = true
         }
@@ -617,12 +619,10 @@ export const useExplorerStore = defineStore('explorer', {
         // 后端返回当前节点的权威事实及其直接子资源。
         const children = response.children || []
 
-        // 获取引擎类型并为子节点添加 engineType
-        const engine = this.engines.find(e => e.id === loc.engineId)
-        if (engine && response?.locator) {
-          this.addEngineTypeToTree(response, engine.engine_type)
-        } else if (engine && children.length > 0) {
-          children.forEach(child => this.addEngineTypeToTree(child, engine.engine_type))
+        if (response?.locator) {
+          this.normalizeResourceSubtree(response)
+        } else if (children.length > 0) {
+          children.forEach(child => this.normalizeResourceSubtree(child))
         }
 
         // 4. 更新缓存
@@ -681,9 +681,7 @@ export const useExplorerStore = defineStore('explorer', {
       }
 
       const engine = this.engines.find(e => e.id === loc.engineId)
-      if (engine) {
-        chain.forEach(node => this.addEngineTypeToTree(node, engine.engine_type))
-      }
+      chain.forEach(node => this.normalizeResourceSubtree(node))
 
       const merged = mergeAncestorChainIntoResourceTree(
         this.engineTrees[loc.engineId] ? [this.engineTrees[loc.engineId]] : [],
@@ -863,21 +861,24 @@ export const useExplorerStore = defineStore('explorer', {
     },
 
     /**
-     * 为树的所有节点添加 engineType 字段（辅助方法）
-     * @param {Object} tree - 树根节点
-     * @param {string} engineType - 引擎类型
+     * 规范化资源子树的展开事实。引擎上下文只属于 catalog 根节点，
+     * 普通资源通过 locator 中的 engine ID 关联所属引擎。
+     * @param {Object} tree - 资源子树根节点
      */
-    addEngineTypeToTree(tree, engineType) {
+    normalizeResourceSubtree(tree) {
       if (!tree) return
 
-      // 为当前节点添加 engineType
-      tree.engineType = engineType
+      delete tree.engineId
+      delete tree.engineType
+      delete tree.engineName
+      delete tree.engine_id
+      delete tree.engine_type
+      delete tree.engine_name
       tree.hasChildren = hasTreeNodeChildren(tree)
 
-      // 递归处理子节点
       if (tree.children && tree.children.length > 0) {
         for (const child of tree.children) {
-          this.addEngineTypeToTree(child, engineType)
+          this.normalizeResourceSubtree(child)
         }
       }
     },

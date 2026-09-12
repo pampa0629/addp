@@ -140,7 +140,7 @@ func buildFallbackCatalogRootTreeNode(engine *models.Engine, hasChildren bool) *
 		Label:       engine.Name,
 		Type:        string(rootType),
 		TypeLabel:   enginePlugin.EngineCatalogTermI18nKey(string(rootType)),
-		Icon:        EngineIcon(engine),
+		Icon:        getIconByType(string(rootType)),
 		Metadata:    engineTreeMetadata(engine, 0, "", 0, "", nil),
 		Children:    []*TreeNode{},
 		HasChildren: hasChildren,
@@ -694,25 +694,6 @@ func catalogRootResourceTypeFromCapabilities(engine *models.Engine) ResourceType
 	}
 }
 
-func EngineIcon(engine *models.Engine) string {
-	switch engineFamily(engine) {
-	case "object", "file":
-		return "FolderOpen"
-	case "document":
-		return "DocumentText"
-	case "graph":
-		return "Share"
-	case "workflow":
-		return "Grid"
-	case "script":
-		return "CodeBracket"
-	case "tabular":
-		return "Database"
-	}
-
-	return "Database"
-}
-
 func engineFamily(engine *models.Engine) string {
 	if engine == nil {
 		return ""
@@ -761,6 +742,8 @@ func getIconByType(nodeType string) string {
 		"directory":  "Folder",
 		"prefix":     "Folder",
 		"root":       "FolderOpen",
+		"server":     "FolderOpen",
+		"service":    "FolderOpen",
 		"dir":        "Folder",
 		"table":      "Table",
 		"collection": "DocumentText",
@@ -839,7 +822,7 @@ func GetNodeByLocator(tree *TreeNode, locator string) *TreeNode {
 }
 
 // FilterTreeByType 过滤树中特定类型的节点
-// 用于只显示特定类型的资源（例如只显示表，不显示 schema）
+// 用于只显示特定类型的资源，同时保留通往匹配资源的结构祖先。
 //
 // 参数:
 //   - tree: 树的根节点
@@ -856,8 +839,7 @@ func FilterTreeByType(tree *TreeNode, types []string) *TreeNode {
 }
 
 func filterNode(node *TreeNode, typeSet map[string]bool) *TreeNode {
-	// 如果当前节点类型不在集合中，返回 nil
-	if !typeSet[node.Type] && node.Type != "engine" {
+	if node == nil {
 		return nil
 	}
 
@@ -868,14 +850,13 @@ func filterNode(node *TreeNode, typeSet map[string]bool) *TreeNode {
 			filteredChildren = append(filteredChildren, filtered)
 		}
 	}
-
-	// 创建新节点（避免修改原树）
-	return &TreeNode{
-		Locator:  node.Locator,
-		Label:    node.Label,
-		Type:     node.Type,
-		Icon:     node.Icon,
-		Metadata: node.Metadata,
-		Children: filteredChildren,
+	if !typeSet[node.Type] && len(filteredChildren) == 0 {
+		return nil
 	}
+
+	// 创建新节点（避免修改原树），并保留完整节点契约。
+	filtered := *node
+	filtered.Children = filteredChildren
+	filtered.HasChildren = len(filteredChildren) > 0
+	return &filtered
 }
