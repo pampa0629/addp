@@ -77,6 +77,16 @@ SUITES: Mapping[str, Suite] = {
         owner_report="kingbase-official-media.json",
         workflow_job="kingbase-official-media-certification",
     ),
+    "dameng-official-media": Suite(
+        target="test-dameng-official-media-release",
+        artifact_environment=(
+            (
+                "ADDP_DAMENG_CERTIFICATION_REPORT",
+                "dameng-official-media.json",
+            ),
+        ),
+        owner_report="dameng-official-media.json",
+    ),
 }
 
 

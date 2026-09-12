@@ -28,7 +28,7 @@ export function useProtectionPolicyChange({
   onSubmitError = () => {}
 }) {
   const editDialog = ref(false)
-  const editFormRef = ref(null)
+  const editDialogRef = ref(null)
   const editSaving = ref(false)
   const editReloading = ref(false)
   const editConflict = ref(false)
@@ -37,8 +37,7 @@ export function useProtectionPolicyChange({
   const editForm = reactive({ effect: '', rationale: '' })
 
   const restoreDialog = ref(false)
-  const restoreFormRef = ref(null)
-  const restoreCancelButton = ref(null)
+  const restoreDialogRef = ref(null)
   const restoreSaving = ref(false)
   const restoreReloading = ref(false)
   const restoreConflict = ref(false)
@@ -116,10 +115,6 @@ export function useProtectionPolicyChange({
     clearEditSession()
   }
 
-  function clearEditValidation() {
-    nextTick(() => editFormRef.value?.clearValidate?.())
-  }
-
   async function reloadEditBaseline() {
     const assessment = editAssessment.value
     const policy = editPolicy.value
@@ -154,7 +149,7 @@ export function useProtectionPolicyChange({
     }
     const request = ++editSubmitRequest
     editSaving.value = true
-    const validation = editFormRef.value?.validate?.()
+    const validation = editDialogRef.value?.validate?.()
     const valid = await Promise.resolve(validation).catch(() => false)
     if (request !== editSubmitRequest || disposed) return { status: 'stale' }
     if (!valid) {
@@ -202,11 +197,9 @@ export function useProtectionPolicyChange({
     }
   }
 
-  function focusRestoreCancel() {
+  function focusRestoreDialogPrimary() {
     nextTick(() => {
-      restoreFormRef.value?.clearValidate?.()
-      const button = restoreCancelButton.value?.$el || restoreCancelButton.value
-      button?.focus?.()
+      restoreDialogRef.value?.focusPrimary?.()
     })
   }
 
@@ -260,7 +253,7 @@ export function useProtectionPolicyChange({
       restoreForm.rationale = ''
       restoreConflict.value = false
       onRestoreReloaded()
-      focusRestoreCancel()
+      focusRestoreDialogPrimary()
       return { status: 'reloaded', context }
     } catch (error) {
       if (request !== restoreReloadRequest || disposed) return { status: 'stale' }
@@ -278,7 +271,7 @@ export function useProtectionPolicyChange({
     }
     const request = ++restoreSubmitRequest
     restoreSaving.value = true
-    const validation = restoreFormRef.value?.validate?.()
+    const validation = restoreDialogRef.value?.validate?.()
     const valid = await Promise.resolve(validation).catch(() => false)
     if (request !== restoreSubmitRequest || disposed) return { status: 'stale' }
     if (!valid) {
@@ -327,7 +320,7 @@ export function useProtectionPolicyChange({
 
   return {
     editDialog,
-    editFormRef,
+    editDialogRef,
     editSaving,
     editReloading,
     editConflict,
@@ -337,12 +330,10 @@ export function useProtectionPolicyChange({
     editEffects,
     openEdit,
     closeEdit,
-    clearEditValidation,
     reloadEditBaseline,
     submitEdit,
     restoreDialog,
-    restoreFormRef,
-    restoreCancelButton,
+    restoreDialogRef,
     restoreSaving,
     restoreReloading,
     restoreConflict,
@@ -351,7 +342,6 @@ export function useProtectionPolicyChange({
     restoreRules,
     openRestore,
     closeRestore,
-    focusRestoreCancel,
     reloadRestoreBaseline,
     submitRestore,
     dispose

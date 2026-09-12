@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # ADDP_T2_SERVICES=postgres
+# ADDP_T2_REQUIRED_ENV=META_POSTGRES_TEST_DSN
 # meta-postgres-gate.sh - Run Meta PostgreSQL integration tests against a disposable database.
 
 set -euo pipefail

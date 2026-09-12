@@ -24,6 +24,7 @@ class Step:
     cwd: Path
     environment: tuple[tuple[str, str], ...] = ()
     excluded_environment: tuple[str, ...] = ()
+    required_environment: tuple[tuple[str, ...], ...] = ()
 
 
 GO_T1_EXCLUDED_ENVIRONMENT = (
@@ -32,6 +33,14 @@ GO_T1_EXCLUDED_ENVIRONMENT = (
 )
 T2_SERVICES_PATTERN = re.compile(
     r"(?m)^# ADDP_T2_SERVICES=(?P<services>[a-z0-9_-]+(?:,[a-z0-9_-]+)*)\s*$"
+)
+T2_REQUIRED_ENVIRONMENT_PATTERN = re.compile(
+    r"(?m)^# ADDP_T2_REQUIRED_ENV=(?P<requirements>"
+    r"[A-Z][A-Z0-9_]*(?:\|[A-Z][A-Z0-9_]*)*"
+    r"(?:,[A-Z][A-Z0-9_]*(?:\|[A-Z][A-Z0-9_]*)*)*)\s*$"
+)
+T2_REQUIRED_ENVIRONMENT_DECLARATION_PATTERN = re.compile(
+    r"(?m)^# ADDP_T2_REQUIRED_ENV=.*$"
 )
 
 
@@ -80,6 +89,24 @@ def hosted_t2_scripts(repository: Path) -> list[str]:
             (repository / path).read_text(encoding="utf-8")
         )
     ]
+
+
+def required_t2_environment(script: str) -> tuple[tuple[str, ...], ...]:
+    declarations = T2_REQUIRED_ENVIRONMENT_DECLARATION_PATTERN.findall(script)
+    if len(declarations) > 1:
+        raise ModuleGateError("T2 gate must declare ADDP_T2_REQUIRED_ENV at most once")
+    if not declarations:
+        return ()
+    match = T2_REQUIRED_ENVIRONMENT_PATTERN.fullmatch(declarations[0])
+    if match is None:
+        raise ModuleGateError(
+            "ADDP_T2_REQUIRED_ENV must contain uppercase names separated by commas; "
+            "use | only for accepted alternatives"
+        )
+    return tuple(
+        tuple(requirement.split("|"))
+        for requirement in match.group("requirements").split(",")
+    )
 
 
 def make_target(makefile: str, target: str) -> re.Match[str] | None:
@@ -173,7 +200,15 @@ def plan_module(repository: Path, module: str, include_platform: bool = True) ->
         if target in registered_targets or make_target(makefile, target) is None:
             continue
         registered_targets.add(target)
-        steps.append(Step(f"{module} integration T2", ("make", target), repository))
+        script = (repository / path).read_text(encoding="utf-8")
+        steps.append(
+            Step(
+                f"{module} integration T2",
+                ("make", target),
+                repository,
+                required_environment=required_t2_environment(script),
+            )
+        )
 
     minimum_step_count = 1 if include_platform else 0
     if len(steps) == minimum_step_count:
@@ -181,14 +216,81 @@ def plan_module(repository: Path, module: str, include_platform: bool = True) ->
     return steps
 
 
-def run_steps(steps: list[Step], dry_run: bool) -> None:
+def local_postgres_environment_example(name: str) -> str | None:
+    if "POSTGRES" not in name or not name.endswith("_DSN"):
+        return None
+    database = (
+        "addp_iam_test" if name == "ADDP_SYSTEM_POSTGRES_TEST_DSN" else "addp_test"
+    )
+    return f"postgres://addp:addp_password@127.0.0.1:15432/{database}?sslmode=disable"
+
+
+def preflight_required_environment(
+    steps: list[Step], base_environment: dict[str, str]
+) -> None:
+    missing = [
+        (
+            step,
+            tuple(
+                alternatives
+                for alternatives in step.required_environment
+                if not any(
+                    base_environment.get(name, "").strip()
+                    for name in alternatives
+                )
+            ),
+        )
+        for step in steps
+    ]
+    missing = [(step, names) for step, names in missing if names]
+    if not missing:
+        return
+
+    lines = ["required T2 environment is missing before gate execution:"]
+    for step, requirements in missing:
+        target = step.command[1] if len(step.command) > 1 else " ".join(step.command)
+        requirement_text = ", ".join(" or ".join(group) for group in requirements)
+        lines.append(f"- {target}: {requirement_text}")
+
+        names = [group[0] for group in requirements if len(group) == 1]
+        examples = [(name, local_postgres_environment_example(name)) for name in names]
+        if (
+            len(names) == len(requirements)
+            and examples
+            and all(value is not None for _, value in examples)
+            and target.startswith("test-")
+        ):
+            module = target.removeprefix("test-").split("-", 1)[0]
+            assignments = " ".join(f"{name}='{value}'" for name, value in examples)
+            lines.append(
+                f"  local PostgreSQL example: {assignments} "
+                f"make test-module MODULE={module}"
+            )
+    lines.append(
+        "Configure only allowed disposable test resources; see scripts/infra/README.md."
+    )
+    raise ModuleGateError("\n".join(lines))
+
+
+def run_steps(
+    steps: list[Step],
+    dry_run: bool,
+    base_environment: dict[str, str] | None = None,
+) -> None:
+    environment = dict(os.environ if base_environment is None else base_environment)
+    if not dry_run:
+        preflight_required_environment(steps, environment)
     for step in steps:
         command = " ".join(step.command)
         print(f"==> {step.label}: {command} (cwd={step.cwd})", flush=True)
         if dry_run:
             continue
-        environment = step_environment(step)
-        subprocess.run(step.command, cwd=step.cwd, env=environment, check=True)
+        subprocess.run(
+            step.command,
+            cwd=step.cwd,
+            env=step_environment(step, environment),
+            check=True,
+        )
 
 
 def parse_args() -> argparse.Namespace:

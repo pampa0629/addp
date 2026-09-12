@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # ADDP_T2_SERVICES=postgres
+# ADDP_T2_REQUIRED_ENV=STANDARD_POSTGRES_TEST_DSN
 # standard-postgres-gate.sh - Run Standard PostgreSQL integration tests against a disposable database.
 
 set -euo pipefail

@@ -82,7 +82,7 @@ fi
 echo "Downloading pinned KingbaseES $KINGBASE_OFFICIAL_VERSION x86_64 official media"
 kingbase_download_official_media "$MEDIA_PATH"
 IMAGE_OWNED=true
-docker load --input "$MEDIA_PATH"
+kingbase_load_official_image "$MEDIA_PATH"
 image_architecture=$(docker image inspect --format '{{.Architecture}}' "$KINGBASE_OFFICIAL_IMAGE")
 if [ "$image_architecture" != "$KINGBASE_OFFICIAL_IMAGE_ARCH" ]; then
     echo "loaded KingbaseES image architecture is $image_architecture, want $KINGBASE_OFFICIAL_IMAGE_ARCH" >&2

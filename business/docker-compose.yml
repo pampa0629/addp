@@ -12,6 +12,7 @@
 # - oceanbase: OceanBase CE（MySQL 模式分布式关系数据库）
 # - opengauss: openGauss 6.0.6 LTS（PG 兼容模式关系数据库）
 # - kingbase: KingbaseES V9R1C10（owner-managed Linux x86_64 授权样例，独立 profile）
+# - dameng: 达梦 DM8 ARM64 官方介质技术夹具（独立 profile）
 # - tidb-pd/tidb-tikv/tidb: TiDB 8.5.8 三组件分布式关系数据库
 # - neo4j: Neo4j Community Edition（图数据库，知识图谱）
 # - spark-master/workers: Apache Spark 分布式计算引擎
@@ -359,9 +360,8 @@ services:
     restart: unless-stopped
 
   kingbase:
-    image: kingbase_v009r001c010b0004_single_x86:v1
-    platform: linux/amd64
-    container_name: business-kingbase-disposable
+    image: addp/kingbase:v009r001c010b0004
+    container_name: business-kingbase
     profiles:
       - kingbase
     environment:
@@ -372,6 +372,20 @@ services:
       - "127.0.0.1:${KINGBASE_PORT:-5436}:54321"
     labels:
       com.addp.business-fixture: kingbase
+    networks:
+      - business-network
+    restart: "no"
+
+  dameng:
+    image: addp/dameng:dm8-20260708-arm64
+    platform: linux/arm64
+    container_name: business-dameng
+    profiles:
+      - dameng
+    ports:
+      - "127.0.0.1:${DAMENG_PORT:-5236}:5236"
+    labels:
+      com.addp.business-fixture: dameng
     networks:
       - business-network
     restart: "no"

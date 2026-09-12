@@ -34,8 +34,7 @@ export function useProtectionAssessmentChange({
   onSubmitError = () => {}
 }) {
   const revisionDialog = ref(false)
-  const revisionFormRef = ref(null)
-  const revisionRationaleInput = ref(null)
+  const revisionDialogRef = ref(null)
   const revisionSaving = ref(false)
   const revisionReloading = ref(false)
   const revisionConflict = ref(false)
@@ -43,8 +42,7 @@ export function useProtectionAssessmentChange({
   const revisionForm = reactive({ sensitiveDataTypeID: '', securityGradeID: '', rationale: '' })
 
   const revokeDialog = ref(false)
-  const revokeFormRef = ref(null)
-  const revokeCancelButton = ref(null)
+  const revokeDialogRef = ref(null)
   const revokeSaving = ref(false)
   const revokeReloading = ref(false)
   const revokeConflict = ref(false)
@@ -123,8 +121,7 @@ export function useProtectionAssessmentChange({
 
   function focusRevisionRationale() {
     nextTick(() => {
-      revisionFormRef.value?.clearValidate?.()
-      revisionRationaleInput.value?.focus?.()
+      revisionDialogRef.value?.focusPrimary?.()
     })
   }
 
@@ -160,7 +157,7 @@ export function useProtectionAssessmentChange({
     const request = ++revisionSubmitRequest
     const assessment = revisionAssessment.value
     revisionSaving.value = true
-    const validation = revisionFormRef.value?.validate?.()
+    const validation = revisionDialogRef.value?.validate?.()
     const valid = await Promise.resolve(validation).catch(() => false)
     if (request !== revisionSubmitRequest || disposed) return { status: 'stale' }
     if (!valid) {
@@ -223,9 +220,7 @@ export function useProtectionAssessmentChange({
 
   function focusRevokeCancel() {
     nextTick(() => {
-      revokeFormRef.value?.clearValidate?.()
-      const button = revokeCancelButton.value?.$el || revokeCancelButton.value
-      button?.focus?.()
+      revokeDialogRef.value?.focusPrimary?.()
     })
   }
 
@@ -267,7 +262,7 @@ export function useProtectionAssessmentChange({
     }
     const request = ++revokeSubmitRequest
     revokeSaving.value = true
-    const validation = revokeFormRef.value?.validate?.()
+    const validation = revokeDialogRef.value?.validate?.()
     const valid = await Promise.resolve(validation).catch(() => false)
     if (request !== revokeSubmitRequest || disposed) return { status: 'stale' }
     if (!valid) {
@@ -316,8 +311,7 @@ export function useProtectionAssessmentChange({
 
   return {
     revisionDialog,
-    revisionFormRef,
-    revisionRationaleInput,
+    revisionDialogRef,
     revisionSaving,
     revisionReloading,
     revisionConflict,
@@ -331,8 +325,7 @@ export function useProtectionAssessmentChange({
     reloadRevisionBaseline,
     submitRevision,
     revokeDialog,
-    revokeFormRef,
-    revokeCancelButton,
+    revokeDialogRef,
     revokeSaving,
     revokeReloading,
     revokeConflict,

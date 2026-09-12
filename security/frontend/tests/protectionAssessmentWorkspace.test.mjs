@@ -1,4 +1,3 @@
-import { nextTick } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
 import { useProtectionAssessmentWorkspace } from '../src/composables/useProtectionAssessmentWorkspace.mjs'
 
@@ -41,14 +40,12 @@ function createWorkspace(overrides = {}) {
 }
 
 function allowDesignationValidation(workspace) {
-  workspace.designationFormRef.value = { validate: vi.fn().mockResolvedValue(true), clearValidate: vi.fn() }
+  workspace.designationDialogRef.value = { validate: vi.fn().mockResolvedValue(true), focusPrimary: vi.fn() }
 }
 
 describe('protection assessment workspace sessions', () => {
   it('loads eligible components and definitions into a required designation form', async () => {
     const { dependencies, workspace } = createWorkspace()
-    workspace.designationFormRef.value = { clearValidate: vi.fn() }
-    workspace.designationRationaleInput.value = { focus: vi.fn() }
 
     await expect(workspace.openDesignation()).resolves.toEqual({
       status: 'opened',
@@ -68,19 +65,15 @@ describe('protection assessment workspace sessions', () => {
     workspace.applyDesignationDefaultGrade('10')
     expect(dependencies.defaultGradeID).toHaveBeenCalledWith('10')
     expect(workspace.designationForm.securityGradeID).toBe('20')
-    workspace.focusDesignationRationale()
-    await nextTick()
-    expect(workspace.designationFormRef.value.clearValidate).toHaveBeenCalledOnce()
-    expect(workspace.designationRationaleInput.value.focus).toHaveBeenCalledOnce()
   })
 
   it('submits one designation against the enrollment version captured when opened', async () => {
     let resolveValidation
     const openedEnrollment = { ...enrollment }
     const { dependencies, state, workspace } = createWorkspace({ getEnrollment: vi.fn(() => openedEnrollment) })
-    workspace.designationFormRef.value = {
+    workspace.designationDialogRef.value = {
       validate: vi.fn(() => new Promise(resolve => { resolveValidation = resolve })),
-      clearValidate: vi.fn()
+      focusPrimary: vi.fn()
     }
     await workspace.openDesignation()
     workspace.designationForm.componentKey = 'customers.email'
@@ -115,7 +108,7 @@ describe('protection assessment workspace sessions', () => {
   it('keeps invalid and failed designation forms available for correction', async () => {
     const submitError = new Error('submit failed')
     const { dependencies, workspace } = createWorkspace({ createAssessment: vi.fn().mockRejectedValue(submitError) })
-    workspace.designationFormRef.value = { validate: vi.fn().mockResolvedValue(false) }
+    workspace.designationDialogRef.value = { validate: vi.fn().mockResolvedValue(false) }
     await workspace.openDesignation()
 
     await expect(workspace.submitDesignation()).resolves.toEqual({ status: 'invalid' })
@@ -158,8 +151,6 @@ describe('protection assessment workspace sessions', () => {
     expect(dependencies.getAssessment).toHaveBeenCalledWith('assessment-1')
     expect(workspace.historyDialog.value).toBe(true)
     expect(workspace.history.value).toEqual(assessment)
-    expect(workspace.isCurrentHistoryRevision({ revision: '2' })).toBe(true)
-    expect(workspace.isCurrentHistoryRevision({ revision: '1' })).toBe(false)
   })
 
   it('keeps only the latest history request result', async () => {

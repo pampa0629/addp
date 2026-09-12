@@ -22,8 +22,7 @@ export function useProtectionEnrollmentRelease({
   onSubmitError = () => {}
 }) {
   const dialog = ref(false)
-  const formRef = ref(null)
-  const cancelButton = ref(null)
+  const dialogRef = ref(null)
   const saving = ref(false)
   const reloading = ref(false)
   const conflict = ref(false)
@@ -40,24 +39,10 @@ export function useProtectionEnrollmentRelease({
       name: t('security.enrollment.releaseReasonLabel')
     }), { trigger: 'blur', whitespace: true })]
   }))
-  const dialogTitle = computed(() => basis.value === 'no_supported_findings'
-    ? t('security.enrollment.confirmNoProtectionNeeded')
-    : t('security.enrollment.release'))
-  const dialogWarning = computed(() => basis.value === 'no_supported_findings'
-    ? t('security.enrollment.noFindingsReleaseWarning')
-    : t('security.enrollment.releaseWarning'))
-  const reasonPlaceholder = computed(() => basis.value === 'no_supported_findings'
-    ? t('security.enrollment.noFindingsReleaseReason')
-    : t('security.enrollment.releaseReason'))
-  const confirmLabel = computed(() => basis.value === 'no_supported_findings'
-    ? t('security.enrollment.confirmNoProtectionNeededAction')
-    : t('security.enrollment.confirmRelease'))
 
-  function focusCancel() {
+  function focusDialogPrimary() {
     nextTick(() => {
-      formRef.value?.clearValidate?.()
-      const button = cancelButton.value?.$el || cancelButton.value
-      button?.focus?.()
+      dialogRef.value?.focusPrimary?.()
     })
   }
 
@@ -114,7 +99,7 @@ export function useProtectionEnrollmentRelease({
       form.reason = ''
       conflict.value = false
       onReloaded()
-      focusCancel()
+      focusDialogPrimary()
       return { status: 'reloaded', enrollment: latest }
     } catch (error) {
       if (request !== reloadRequest || disposed) return { status: 'stale' }
@@ -131,7 +116,7 @@ export function useProtectionEnrollmentRelease({
     const source = enrollment.value
     const releaseBasis = basis.value
     saving.value = true
-    const validation = formRef.value?.validate?.()
+    const validation = dialogRef.value?.validate?.()
     const valid = await Promise.resolve(validation).catch(() => false)
     if (request !== submitRequest || disposed) return { status: 'stale' }
     if (!valid) {
@@ -182,8 +167,7 @@ export function useProtectionEnrollmentRelease({
 
   return {
     dialog,
-    formRef,
-    cancelButton,
+    dialogRef,
     saving,
     reloading,
     conflict,
@@ -191,13 +175,8 @@ export function useProtectionEnrollmentRelease({
     basis,
     form,
     rules,
-    dialogTitle,
-    dialogWarning,
-    reasonPlaceholder,
-    confirmLabel,
     open,
     close,
-    focusCancel,
     reloadBaseline,
     submit,
     dispose

@@ -520,6 +520,7 @@
 | technical metadata search projection | 技术元数据搜索投影 | 只包含 DataItem 身份、名称、路径、类型、结构、字段定义和规模等 Meta 技术事实的可重建搜索投影。 | 不包含数据行、字段值、文件正文、正文预览或正文派生属性；它不是 Security `search_index` 数据出口动作。 |
 | content search projection | 数据内容搜索投影 | 包含文件正文、正文预览、数据值或其派生摘要、关键词、作者等内容信息的可重建搜索投影。 | 属于 Security `search_index` 数据出口；已纳管 DataItem 必须命中本地有效投影和独立执行器，缺失时失效关闭。 |
 | capability | 能力 | 引擎、当前进程格式实现或数据项呈现的能力。 | engine capability、format descriptor / provider status、item capability 含义不同。 |
+| official-media technical fixture | 官方介质技术夹具 | 使用固定厂商介质、完整性摘要和 disposable 生命周期验证原生运行时、驱动协议与 SQL 边界的技术环境。 | 只证明介质与协议准入，不创建 Engine Instance，不登记 `engine_type`，也不构成 capability 声明。 |
 | spatial | 空间能力 | 描述空间字段、CRS、范围、几何类型、空间索引等横切语义。 | 是横切能力，不是 data type。 |
 | CRS definition conversion | CRS 定义转换 | 在不改变几何坐标和 CRS 身份的前提下，把同一 CRS 的定义在 WKT、ESRI WKT、Proj4、PROJJSON 等表达之间转换。 | 不等于坐标重投影；当前由 GeoPython Workflow `crs_to_projjson` direct 算子执行。 |
 | quick view | 快显 | Manager 空间预览中的高性能地图浏览模式。 | 快显是 UI 能力，不是任务，也不是瓦片缓存产物。 |

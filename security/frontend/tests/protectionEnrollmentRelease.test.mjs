@@ -30,7 +30,7 @@ function createRelease(overrides = {}) {
 }
 
 function allowValidation(release) {
-  release.formRef.value = { validate: vi.fn().mockResolvedValue(true), clearValidate: vi.fn() }
+  release.dialogRef.value = { validate: vi.fn().mockResolvedValue(true), focusPrimary: vi.fn() }
 }
 
 describe('protection enrollment release session', () => {
@@ -41,10 +41,6 @@ describe('protection enrollment release session', () => {
     expect(release.dialog.value).toBe(true)
     expect(release.enrollment.value).toEqual(activeEnrollment)
     expect(release.basis.value).toBe('no_supported_findings')
-    expect(release.dialogTitle.value).toBe('security.enrollment.confirmNoProtectionNeeded')
-    expect(release.dialogWarning.value).toBe('security.enrollment.noFindingsReleaseWarning')
-    expect(release.reasonPlaceholder.value).toBe('security.enrollment.noFindingsReleaseReason')
-    expect(release.confirmLabel.value).toBe('security.enrollment.confirmNoProtectionNeededAction')
     expect(release.rules.value.reason[0]).toMatchObject({ required: true, trigger: 'blur', whitespace: true })
     expect(release.open({ ...activeEnrollment, state: 'released' })).toBe(false)
   })
@@ -52,9 +48,9 @@ describe('protection enrollment release session', () => {
   it('submits one canonical release command while async validation is pending', async () => {
     let resolveValidation
     const { dependencies, release } = createRelease()
-    release.formRef.value = {
+    release.dialogRef.value = {
       validate: vi.fn(() => new Promise(resolve => { resolveValidation = resolve })),
-      clearValidate: vi.fn()
+      focusPrimary: vi.fn()
     }
     release.open(activeEnrollment, 'manual')
     release.form.reason = ' business owner confirmed '
@@ -86,7 +82,6 @@ describe('protection enrollment release session', () => {
       getEnrollment: vi.fn().mockResolvedValue(latest)
     })
     allowValidation(release)
-    release.cancelButton.value = { focus: vi.fn() }
     release.open(activeEnrollment, 'manual')
     release.form.reason = 'keep this until reload'
 
@@ -103,7 +98,7 @@ describe('protection enrollment release session', () => {
     expect(release.form.reason).toBe('')
     expect(release.conflict.value).toBe(false)
     expect(dependencies.onReloaded).toHaveBeenCalledOnce()
-    expect(release.cancelButton.value.focus).toHaveBeenCalled()
+    expect(release.dialogRef.value.focusPrimary).toHaveBeenCalled()
   })
 
   it('closes when the authoritative enrollment is already releasing', async () => {

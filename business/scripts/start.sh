@@ -23,6 +23,7 @@
 #   bash scripts/start.sh -tidb              # 只启动 TiDB 8.5.8
 #   bash scripts/start.sh -opengauss         # 只启动 openGauss
 #   bash scripts/start.sh -kingbase          # 只启动 KingbaseES（必须独立使用）
+#   bash scripts/start.sh -dameng            # 只启动 DM8 ARM64 技术夹具（必须独立使用）
 #   bash scripts/start.sh -redpanda          # 只启动业务 Redpanda
 #   bash scripts/start.sh -nfs               # 只启动 NFS
 #   bash scripts/start.sh -postgres -minio   # 启动 PostgreSQL + MinIO
@@ -38,7 +39,11 @@ cd "$PROJECT_ROOT"
 for arg in "$@"; do
     if [ "$arg" = "-kingbase" ]; then
         [ "$#" -eq 1 ] || { echo "-kingbase 必须独立使用" >&2; exit 1; }
-        exec "$SCRIPT_DIR/kingbase.sh" start
+        exec bash "$SCRIPT_DIR/kingbase.sh" start
+    fi
+    if [ "$arg" = "-dameng" ]; then
+        [ "$#" -eq 1 ] || { echo "-dameng 必须独立使用" >&2; exit 1; }
+        exec bash "$SCRIPT_DIR/dameng.sh" start
     fi
 done
 
@@ -149,6 +154,7 @@ for arg in "$@"; do
             echo "  bash scripts/start.sh -tidb                # 只启动 TiDB 8.5.8"
             echo "  bash scripts/start.sh -opengauss           # 只启动 openGauss"
             echo "  bash scripts/start.sh -kingbase            # 只启动 KingbaseES（必须独立使用，不属于 -all）"
+            echo "  bash scripts/start.sh -dameng              # 只启动 DM8 ARM64 技术夹具（必须独立使用，不属于 -all）"
             echo "  bash scripts/start.sh -redpanda            # 只启动业务 Redpanda"
             echo "  bash scripts/start.sh -nfs                  # 只启动 NFS"
             echo "  bash scripts/start.sh -postgres -minio      # 启动 PostgreSQL + MinIO"

@@ -379,7 +379,30 @@ def make_recipe(makefile: str, target: str) -> str | None:
 
 def makefile_script_references(makefile: str) -> set[str]:
     """返回根 Makefile 引用的仓库内 scripts/ 路径。"""
-    return set(re.findall(r"(?<![A-Za-z0-9_./-])(scripts/[A-Za-z0-9_./-]+)", makefile))
+    references: set[str] = set()
+    for line in makefile.splitlines():
+        if not line.startswith("\t"):
+            continue
+        lexer = shlex.shlex(
+            line.removeprefix("\t"),
+            posix=False,
+            punctuation_chars=";&|()",
+        )
+        lexer.whitespace_split = True
+        lexer.commenters = ""
+        try:
+            tokens = list(lexer)
+        except ValueError:
+            continue
+        for token in tokens:
+            if len(token) >= 2 and token[0] == token[-1] and token[0] in {'"', "'"}:
+                token = token[1:-1]
+            token = token.lstrip("@+-")
+            if token.startswith("./scripts/"):
+                token = token.removeprefix("./")
+            if re.fullmatch(r"scripts/[A-Za-z0-9_./-]+", token):
+                references.add(token)
+    return references
 
 
 def validate_registration(repository: Path) -> list[str]:

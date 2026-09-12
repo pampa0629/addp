@@ -35,8 +35,9 @@ PostgreSQL、Redis、MinIO 和 Meilisearch 当前来源于 `docker-compose.infra
 - TiDB SQL: `4000`
 - openGauss SQL: `5435`（容器端口 `5432`）
 - KingbaseES SQL: `5436`（容器端口 `54321`，仅 owner-managed disposable Business 样例）
+- 达梦 DM8 SQL: `5236`（容器端口 `5236`，仅 ARM64 官方介质技术夹具，不是已登记 Engine）
 
-来源：`business/docker-compose.yml`，可通过 `business/.env` 覆盖。脚本固定使用这些端口，不会自动改动；若被其他进程占用，启动脚本会给出警告并继续尝试（可能失败）。
+来源：`business/docker-compose.yml`。常规 Business 服务可通过 `business/.env` 覆盖；KingbaseES 与 DM8 技术夹具不进入该文件，只分别接受调用独立 profile 时当前 shell 中的 `KINGBASE_PORT`、`DAMENG_PORT`。脚本固定使用这些端口，不会自动改动；若被其他进程占用，启动脚本会给出警告并继续尝试（可能失败）。
 
 ```bash
 BUSINESS_POSTGRES_PORT=5433
@@ -53,6 +54,7 @@ OCEANBASE_PORT=2881
 TIDB_PORT=4000
 OPENGAUSS_PORT=5435
 KINGBASE_PORT=5436
+DAMENG_PORT=5236
 ```
 
 ## Reserved Policy（保留规则）
@@ -161,6 +163,7 @@ make ports-validate
 | Business OceanBase    | 2881     | 2881        | OceanBase CE MySQL 模式测试源；以 `engine_type=oceanbase` 注册为 System Engine |
 | Business openGauss    | 5435     | 5432        | openGauss 6.0.6 PG 兼容模式测试源；以 `engine_type=opengauss` 注册为 System Engine |
 | Business KingbaseES   | 5436     | 54321       | KingbaseES V9R1C10 PG 模式 owner-managed disposable 测试源；以 `engine_type=kingbase` 注册为 System Engine |
+| Business 达梦 DM8     | 5236     | 5236        | ARM64 官方介质技术夹具；当前不注册 Engine Instance 或 `engine_type` |
 
 ## 端口分配规则
 

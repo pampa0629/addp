@@ -8,6 +8,7 @@
 #   bash scripts/stop.sh -tidb        # 只停止 TiDB 8.5.8 三组件
 #   bash scripts/stop.sh -opengauss   # 只停止 openGauss
 #   bash scripts/stop.sh -kingbase    # 只停止 KingbaseES（必须独立使用）
+#   bash scripts/stop.sh -dameng      # 只停止 DM8 ARM64 技术夹具（必须独立使用）
 #   bash scripts/stop.sh -postgres    # 只停止 PostgreSQL
 #   bash scripts/stop.sh -oracle      # 只停止 Oracle
 #   bash scripts/stop.sh -all         # 停止所有（同无参数）
@@ -21,7 +22,11 @@ cd "$PROJECT_ROOT"
 for arg in "$@"; do
     if [ "$arg" = "-kingbase" ]; then
         [ "$#" -eq 1 ] || { echo "-kingbase 必须独立使用" >&2; exit 1; }
-        exec "$SCRIPT_DIR/kingbase.sh" stop
+        exec bash "$SCRIPT_DIR/kingbase.sh" stop
+    fi
+    if [ "$arg" = "-dameng" ]; then
+        [ "$#" -eq 1 ] || { echo "-dameng 必须独立使用" >&2; exit 1; }
+        exec bash "$SCRIPT_DIR/dameng.sh" stop
     fi
 done
 
@@ -38,8 +43,8 @@ for arg in "$@"; do
     case $arg in
         -all) HAS_ARGS=false; break ;;
         -h|--help)
-            echo "使用方法: bash scripts/stop.sh [-postgres|-oracle|-supermap-postgresql|-minio|-clickhouse|-mongodb|-doris|-spark|-neo4j|-mysql|-oceanbase|-tidb|-opengauss|-kingbase|-redpanda|-nfs|-all]"
-            echo "  -kingbase 必须独立使用，且不属于 -all"
+            echo "使用方法: bash scripts/stop.sh [-postgres|-oracle|-supermap-postgresql|-minio|-clickhouse|-mongodb|-doris|-spark|-neo4j|-mysql|-oceanbase|-tidb|-opengauss|-kingbase|-dameng|-redpanda|-nfs|-all]"
+            echo "  -kingbase 和 -dameng 必须独立使用，且不属于 -all"
             exit 0
             ;;
         -nfs)

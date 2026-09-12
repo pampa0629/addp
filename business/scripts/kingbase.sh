@@ -8,7 +8,7 @@ ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd -P)
 # shellcheck source=../../scripts/lib/kingbase-official-media.sh
 source "$ROOT_DIR/scripts/lib/kingbase-official-media.sh"
 
-CONTAINER_NAME=business-kingbase-disposable
+CONTAINER_NAME=business-kingbase
 COMPOSE_FILE=$ROOT_DIR/business/docker-compose.yml
 COMPOSE_PROJECT=business
 COMPOSE_SERVICE=kingbase

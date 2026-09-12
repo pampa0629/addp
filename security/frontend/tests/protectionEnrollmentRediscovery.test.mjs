@@ -38,16 +38,12 @@ function createRediscovery(overrides = {}) {
 }
 
 describe('protection enrollment rediscovery session', () => {
-  it('only opens rediscoverable enrollment states and focuses the safe action', async () => {
+  it('only opens rediscoverable enrollment states', () => {
     const { rediscovery } = createRediscovery()
-    rediscovery.cancelButton.value = { focus: vi.fn() }
 
     expect(rediscovery.open(activeEnrollment)).toBe(true)
     expect(rediscovery.dialog.value).toBe(true)
     expect(rediscovery.enrollment.value).toEqual(activeEnrollment)
-    rediscovery.focusCancel()
-    await nextTick()
-    expect(rediscovery.cancelButton.value.focus).toHaveBeenCalledOnce()
 
     rediscovery.close()
     expect(rediscovery.dialog.value).toBe(false)
@@ -60,7 +56,7 @@ describe('protection enrollment rediscovery session', () => {
     const { dependencies, rediscovery } = createRediscovery({
       getEnrollment: vi.fn().mockResolvedValue(latest)
     })
-    rediscovery.cancelButton.value = { focus: vi.fn() }
+    rediscovery.dialogRef.value = { focusPrimary: vi.fn() }
     rediscovery.open(activeEnrollment)
     rediscovery.conflict.value = true
 
@@ -72,7 +68,7 @@ describe('protection enrollment rediscovery session', () => {
     expect(rediscovery.enrollment.value).toEqual(latest)
     expect(rediscovery.conflict.value).toBe(false)
     expect(dependencies.onReloaded).toHaveBeenCalledOnce()
-    expect(rediscovery.cancelButton.value.focus).toHaveBeenCalledOnce()
+    expect(rediscovery.dialogRef.value.focusPrimary).toHaveBeenCalledOnce()
   })
 
   it('closes when the authoritative enrollment can no longer be rediscovered', async () => {

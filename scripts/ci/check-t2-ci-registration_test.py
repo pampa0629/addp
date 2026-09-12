@@ -24,7 +24,9 @@ class T2CIRegistrationTest(unittest.TestCase):
         script = self.repository / "scripts/test/sample-postgres-gate.sh"
         script.parent.mkdir(parents=True)
         script.write_text(
-            "#!/usr/bin/env bash\n# ADDP_T2_SERVICES=postgres\n",
+            "#!/usr/bin/env bash\n"
+            "# ADDP_T2_SERVICES=postgres\n"
+            "# ADDP_T2_REQUIRED_ENV=SAMPLE_POSTGRES_TEST_DSN\n",
             encoding="utf-8",
         )
         (self.repository / "Makefile").write_text(
@@ -55,6 +57,8 @@ class T2CIRegistrationTest(unittest.TestCase):
             "        id: sample\n"
             "        run: python3 scripts/ci/select-module-gate.py --module sample\n"
             "      - name: Run sample gate\n"
+            "        env:\n"
+            "          SAMPLE_POSTGRES_TEST_DSN: postgres://sample-disposable\n"
             "        run: make test-sample-postgres\n"
         )
 
@@ -278,6 +282,62 @@ class T2CIRegistrationTest(unittest.TestCase):
 
     def test_accepts_complete_registration(self) -> None:
         self.assertEqual([], MODULE.validate_registration(self.repository))
+
+    def test_rejects_missing_required_gate_environment_in_workflow(self) -> None:
+        self.workflow.write_text(
+            self._workflow_text().replace(
+                "        env:\n"
+                "          SAMPLE_POSTGRES_TEST_DSN: postgres://sample-disposable\n",
+                "",
+            ),
+            encoding="utf-8",
+        )
+
+        self.assertIn(
+            "scripts/test/sample-postgres-gate.sh: GitHub Actions target "
+            "test-sample-postgres does not provide SAMPLE_POSTGRES_TEST_DSN",
+            MODULE.validate_registration(self.repository),
+        )
+
+    def test_accepts_required_gate_environment_at_job_scope(self) -> None:
+        workflow = self._workflow_text().replace(
+            "  sample:\n",
+            "  sample:\n"
+            "    env:\n"
+            "      SAMPLE_POSTGRES_TEST_DSN: postgres://sample-disposable\n",
+            1,
+        ).replace(
+            "        env:\n"
+            "          SAMPLE_POSTGRES_TEST_DSN: postgres://sample-disposable\n",
+            "",
+            1,
+        )
+        self.workflow.write_text(workflow, encoding="utf-8")
+
+        self.assertEqual([], MODULE.validate_registration(self.repository))
+
+    def test_rejects_required_gate_environment_only_in_service_scope(self) -> None:
+        workflow = self._workflow_text().replace(
+            "        image: postgres:15@sha256:" + "a" * 64 + "\n",
+            "        image: postgres:15@sha256:"
+            + "a" * 64
+            + "\n"
+            + "        env:\n"
+            + "          SAMPLE_POSTGRES_TEST_DSN: postgres://wrong-scope\n",
+            1,
+        ).replace(
+            "        env:\n"
+            "          SAMPLE_POSTGRES_TEST_DSN: postgres://sample-disposable\n",
+            "",
+            1,
+        )
+        self.workflow.write_text(workflow, encoding="utf-8")
+
+        self.assertIn(
+            "scripts/test/sample-postgres-gate.sh: GitHub Actions target "
+            "test-sample-postgres does not provide SAMPLE_POSTGRES_TEST_DSN",
+            MODULE.validate_registration(self.repository),
+        )
 
     def test_accepts_pinned_mysql_gate(self) -> None:
         self._add_mysql_gate("mysql:8.0@sha256:" + "b" * 64)

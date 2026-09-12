@@ -8,6 +8,7 @@
 #   bash scripts/restart.sh -tidb        # 只重启 TiDB 8.5.8 三组件
 #   bash scripts/restart.sh -opengauss   # 只重启 openGauss
 #   bash scripts/restart.sh -kingbase    # 只重启 KingbaseES（必须独立使用）
+#   bash scripts/restart.sh -dameng      # 只重启 DM8 ARM64 技术夹具（必须独立使用）
 #   bash scripts/restart.sh -all         # 重启所有服务
 
 set -e
@@ -19,7 +20,7 @@ cd "$PROJECT_ROOT"
 if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
     [ "$#" -eq 1 ] || { echo "帮助参数必须独立使用" >&2; exit 1; }
     echo "使用方法: bash scripts/restart.sh [start.sh 支持的单个或组合选项]"
-    echo "  -kingbase 必须独立使用，且不属于 -all"
+    echo "  -kingbase 和 -dameng 必须独立使用，且不属于 -all"
     exit 0
 fi
 

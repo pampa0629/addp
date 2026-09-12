@@ -20,7 +20,7 @@ export function useProtectionEnrollmentReEnrollment({
   onSubmitError = () => {}
 }) {
   const dialog = ref(false)
-  const cancelButton = ref(null)
+  const dialogRef = ref(null)
   const saving = ref(false)
   const reloading = ref(false)
   const conflict = ref(false)
@@ -30,10 +30,9 @@ export function useProtectionEnrollmentReEnrollment({
   let submitRequest = 0
   let disposed = false
 
-  function focusCancel() {
+  function focusDialogPrimary() {
     nextTick(() => {
-      const button = cancelButton.value?.$el || cancelButton.value
-      button?.focus?.()
+      dialogRef.value?.focusPrimary?.()
     })
   }
 
@@ -81,7 +80,7 @@ export function useProtectionEnrollmentReEnrollment({
       source.value = latest
       conflict.value = false
       onReloaded()
-      focusCancel()
+      focusDialogPrimary()
       return { status: 'reloaded', enrollment: latest }
     } catch (error) {
       if (request !== reloadRequest || disposed) return { status: 'stale' }
@@ -146,14 +145,13 @@ export function useProtectionEnrollmentReEnrollment({
 
   return {
     dialog,
-    cancelButton,
+    dialogRef,
     saving,
     reloading,
     conflict,
     source,
     open,
     close,
-    focusCancel,
     reloadBaseline,
     submit,
     dispose

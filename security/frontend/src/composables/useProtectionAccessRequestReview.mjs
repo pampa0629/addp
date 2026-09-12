@@ -37,8 +37,7 @@ export function useProtectionAccessRequestReview({
   const createdRange = ref([])
 
   const decisionDialog = ref(false)
-  const decisionFormRef = ref(null)
-  const decisionCancelButton = ref(null)
+  const decisionDialogRef = ref(null)
   const decisionSaving = ref(false)
   const decisionReloading = ref(false)
   const decisionConflict = ref(false)
@@ -167,11 +166,9 @@ export function useProtectionAccessRequestReview({
     clearDecisionSession()
   }
 
-  function focusDecisionCancel() {
+  function focusDecisionDialogPrimary() {
     nextTick(() => {
-      decisionFormRef.value?.clearValidate?.()
-      const button = decisionCancelButton.value?.$el || decisionCancelButton.value
-      button?.focus?.()
+      decisionDialogRef.value?.focusPrimary?.()
     })
   }
 
@@ -195,7 +192,7 @@ export function useProtectionAccessRequestReview({
       decisionForm.rationale = ''
       decisionConflict.value = false
       onDecisionReloaded()
-      focusDecisionCancel()
+      focusDecisionDialogPrimary()
       return { status: 'reloaded', request: latest }
     } catch (error) {
       if (request !== decisionReloadRequest || disposed) return { status: 'stale' }
@@ -214,7 +211,7 @@ export function useProtectionAccessRequestReview({
     }
     const request = ++decisionSubmitRequest
     decisionSaving.value = true
-    const validation = decisionFormRef.value?.validate?.()
+    const validation = decisionDialogRef.value?.validate?.()
     const valid = await Promise.resolve(validation).catch(() => false)
     if (request !== decisionSubmitRequest || disposed) return { status: 'stale' }
     if (!valid) {
@@ -276,8 +273,7 @@ export function useProtectionAccessRequestReview({
     filters,
     createdRange,
     decisionDialog,
-    decisionFormRef,
-    decisionCancelButton,
+    decisionDialogRef,
     decisionSaving,
     decisionReloading,
     decisionConflict,
@@ -296,7 +292,6 @@ export function useProtectionAccessRequestReview({
     replaceRequest,
     openDecision,
     closeDecision,
-    focusDecisionCancel,
     reloadDecisionBaseline,
     submitDecision,
     dispose

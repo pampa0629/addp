@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # ADDP_T2_SERVICES=postgres
+# ADDP_T2_REQUIRED_ENV=ASSET_POSTGRES_TEST_DSN
 # asset-postgres-gate.sh - Run Asset authorization and schema tests against addp_test.
 
 set -euo pipefail

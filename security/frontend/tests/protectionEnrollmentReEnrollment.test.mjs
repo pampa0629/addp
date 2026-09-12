@@ -43,16 +43,12 @@ function createReEnrollment(overrides = {}) {
 }
 
 describe('protection enrollment re-enrollment session', () => {
-  it('only opens released lifecycles and focuses the safe action', async () => {
+  it('only opens released lifecycles', () => {
     const { reEnrollment } = createReEnrollment()
-    reEnrollment.cancelButton.value = { focus: vi.fn() }
 
     expect(reEnrollment.open(releasedEnrollment)).toBe(true)
     expect(reEnrollment.dialog.value).toBe(true)
     expect(reEnrollment.source.value).toEqual(releasedEnrollment)
-    reEnrollment.focusCancel()
-    await nextTick()
-    expect(reEnrollment.cancelButton.value.focus).toHaveBeenCalledOnce()
 
     reEnrollment.close()
     expect(reEnrollment.dialog.value).toBe(false)
@@ -65,7 +61,7 @@ describe('protection enrollment re-enrollment session', () => {
     const { dependencies, reEnrollment } = createReEnrollment({
       getEnrollment: vi.fn().mockResolvedValue(latest)
     })
-    reEnrollment.cancelButton.value = { focus: vi.fn() }
+    reEnrollment.dialogRef.value = { focusPrimary: vi.fn() }
     reEnrollment.open(releasedEnrollment)
     reEnrollment.conflict.value = true
 
@@ -77,7 +73,7 @@ describe('protection enrollment re-enrollment session', () => {
     expect(reEnrollment.source.value).toEqual(latest)
     expect(reEnrollment.conflict.value).toBe(false)
     expect(dependencies.onReloaded).toHaveBeenCalledOnce()
-    expect(reEnrollment.cancelButton.value.focus).toHaveBeenCalledOnce()
+    expect(reEnrollment.dialogRef.value.focusPrimary).toHaveBeenCalledOnce()
   })
 
   it('closes when the authoritative lifecycle is no longer released', async () => {

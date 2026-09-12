@@ -26,8 +26,7 @@ export function useProtectionExemptionRevocation({
   onSubmitError = () => {}
 }) {
   const dialog = ref(false)
-  const formRef = ref(null)
-  const cancelButton = ref(null)
+  const dialogRef = ref(null)
   const saving = ref(false)
   const reloading = ref(false)
   const conflict = ref(false)
@@ -69,11 +68,9 @@ export function useProtectionExemptionRevocation({
     clearSession()
   }
 
-  function focusCancel() {
+  function focusDialogPrimary() {
     nextTick(() => {
-      formRef.value?.clearValidate?.()
-      const button = cancelButton.value?.$el || cancelButton.value
-      button?.focus?.()
+      dialogRef.value?.focusPrimary?.()
     })
   }
 
@@ -95,7 +92,7 @@ export function useProtectionExemptionRevocation({
       form.rationale = ''
       conflict.value = false
       onReloaded()
-      focusCancel()
+      focusDialogPrimary()
       return { status: 'reloaded', exemption: latest }
     } catch (error) {
       if (request !== reloadRequest || disposed) return { status: 'stale' }
@@ -113,7 +110,7 @@ export function useProtectionExemptionRevocation({
     }
     const request = ++submitRequest
     saving.value = true
-    const validation = formRef.value?.validate?.()
+    const validation = dialogRef.value?.validate?.()
     const valid = await Promise.resolve(validation).catch(() => false)
     if (request !== submitRequest || disposed) return { status: 'stale' }
     if (!valid) {
@@ -160,8 +157,7 @@ export function useProtectionExemptionRevocation({
 
   return {
     dialog,
-    formRef,
-    cancelButton,
+    dialogRef,
     saving,
     reloading,
     conflict,
@@ -170,7 +166,6 @@ export function useProtectionExemptionRevocation({
     rules,
     open,
     close,
-    focusCancel,
     reloadBaseline,
     submit,
     dispose

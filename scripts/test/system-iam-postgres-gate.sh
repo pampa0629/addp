@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # ADDP_T2_SERVICES=postgres
+# ADDP_T2_REQUIRED_ENV=ADDP_SYSTEM_POSTGRES_TEST_DSN
 # system-iam-postgres-gate.sh - Run destructive System IAM tests against a disposable PostgreSQL database.
 
 set -euo pipefail

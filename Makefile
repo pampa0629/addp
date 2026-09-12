@@ -2,7 +2,7 @@
         build-iam-bootstrap build-iam-recovery build-iam-migration-repair \
         dev-start dev-restart dev-stop infra-up infra-down infra-restart infra-status prod-start prod-restart prod-stop prod-health ports-validate
 
-.PHONY: test-business-config test-common-oceanbase test-common-opengauss test-common-tidb test-common-kingbase test-common-oracle-decimal test-common-doris-decimal test-common-clickhouse-decimal test-opengauss-official-media-release test-kingbase-official-media-release test-integration-owner-managed
+.PHONY: test-business-config test-common-oceanbase test-common-opengauss test-common-tidb test-common-kingbase test-common-oracle-decimal test-common-doris-decimal test-common-clickhouse-decimal test-opengauss-official-media-release test-kingbase-official-media-release test-dameng-official-media-release test-integration-owner-managed
 
 # 默认目标
 .DEFAULT_GOAL := help
@@ -132,6 +132,9 @@ test-opengauss-official-media-release:
 test-kingbase-official-media-release:
 	@bash scripts/test/kingbase-official-media-release-gate.sh
 
+test-dameng-official-media-release:
+	@bash scripts/test/dameng-official-media-release-gate.sh
+
 test-module: ## 运行指定模块的 T0-T3 门禁；用法：make test-module MODULE=standard
 	@python3 scripts/test/module-gate.py --repository "$(CURDIR)" --module "$(MODULE)"
 
@@ -165,18 +168,26 @@ test-business-config: ## 校验 Business Compose 和服务管理脚本（不启�
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --images | grep -Fxq opengauss:6.0.6
 	@! docker compose --env-file /dev/null -f business/docker-compose.yml config --services | grep -Fxq kingbase
 	@docker compose --env-file /dev/null -f business/docker-compose.yml --profile kingbase config --services | grep -Fxq kingbase
-	@docker compose --env-file /dev/null -f business/docker-compose.yml --profile kingbase config --images | grep -Fxq kingbase_v009r001c010b0004_single_x86:v1
-	@docker compose --env-file /dev/null -f business/docker-compose.yml --profile kingbase config --format json | python3 -c 'import json, sys; service = json.load(sys.stdin)["services"]["kingbase"]; assert service["profiles"] == ["kingbase"]; assert service["platform"] == "linux/amd64"; assert service["environment"] == {"DB_MODE": "pg", "DB_PASSWORD": "", "DB_USER": "system"}; assert service["ports"] == [{"mode": "ingress", "host_ip": "127.0.0.1", "target": 54321, "published": "5436", "protocol": "tcp"}]; assert "volumes" not in service; assert service["labels"] == {"com.addp.business-fixture": "kingbase"}'
+	@docker compose --env-file /dev/null -f business/docker-compose.yml --profile kingbase config --images | grep -Fxq addp/kingbase:v009r001c010b0004
+	@docker compose --env-file /dev/null -f business/docker-compose.yml --profile kingbase config --format json | python3 -c 'import json, sys; service = json.load(sys.stdin)["services"]["kingbase"]; assert service["container_name"] == "business-kingbase"; assert service["profiles"] == ["kingbase"]; assert "platform" not in service; assert service["environment"] == {"DB_MODE": "pg", "DB_PASSWORD": "", "DB_USER": "system"}; assert service["ports"] == [{"mode": "ingress", "host_ip": "127.0.0.1", "target": 54321, "published": "5436", "protocol": "tcp"}]; assert "volumes" not in service; assert service["labels"] == {"com.addp.business-fixture": "kingbase"}'
+	@! docker compose --env-file /dev/null -f business/docker-compose.yml config --services | grep -Fxq dameng
+	@docker compose --env-file /dev/null -f business/docker-compose.yml --profile dameng config --services | grep -Fxq dameng
+	@docker compose --env-file /dev/null -f business/docker-compose.yml --profile dameng config --images | grep -Fxq addp/dameng:dm8-20260708-arm64
+	@docker compose --env-file /dev/null -f business/docker-compose.yml --profile dameng config --format json | python3 -c 'import json, sys; service = json.load(sys.stdin)["services"]["dameng"]; assert service["container_name"] == "business-dameng"; assert service["profiles"] == ["dameng"]; assert service["platform"] == "linux/arm64"; assert service["ports"] == [{"mode": "ingress", "host_ip": "127.0.0.1", "target": 5236, "published": "5236", "protocol": "tcp"}]; assert "volumes" not in service; assert service["labels"] == {"com.addp.business-fixture": "dameng"}'
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config | grep -Fq '/root/boot/init.d/01-addp-business.sql'
 	@test -f business/oceanbase/init.sql
 	@test -f business/tidb/init.sql
 	@test -f business/opengauss/init.sql
 	@test -f business/kingbase/init.sql
+	@test -f business/dameng/init.sql
+	@grep -Fq "WHERE TABLE_NAME = 'ADDP_ENGINE_PROBE'" business/dameng/init.sql
+	@grep -Fq 'TIMESTAMP '\''2026-09-13 08:00:00.000003'\''' business/dameng/init.sql
 	@grep -Fq 'SET NAMES utf8mb4;' business/oceanbase/init.sql
 	@grep -Fq 'CREATE TABLE IF NOT EXISTS addp_engine_probe' business/tidb/init.sql
 	@grep -Fq 'docker run --rm -i --network business_business-network' business/scripts/start.sh
 	@grep -Fq 'CREATE TABLE IF NOT EXISTS addp_engine_probe' business/opengauss/init.sql
 	@grep -Fq 'CREATE TABLE IF NOT EXISTS addp_engine_probe' business/kingbase/init.sql
+	@grep -Fq 'bash scripts/start.sh -kingbase' business/README.md
 	@grep -Fq 'FROM pg_database' business/scripts/kingbase.sh
 	@! grep -Fq 'sys_database' business/scripts/kingbase.sh
 	@grep -Fq 'compose create "$$COMPOSE_SERVICE"' business/scripts/kingbase.sh
@@ -184,26 +195,41 @@ test-business-config: ## 校验 Business Compose 和服务管理脚本（不启�
 	@grep -Fq 'compose rm --stop --force "$$COMPOSE_SERVICE"' business/scripts/kingbase.sh
 	@grep -Fq 'com.docker.compose.project' business/scripts/kingbase.sh
 	@! grep -Eq '(^|[[:space:]])docker create([[:space:]]|$$)' business/scripts/kingbase.sh
+	@grep -Fq 'exec bash "$$SCRIPT_DIR/kingbase.sh" start' business/scripts/start.sh
+	@grep -Fq 'exec bash "$$SCRIPT_DIR/kingbase.sh" stop' business/scripts/stop.sh
+	@grep -Fq 'exec bash "$$SCRIPT_DIR/dameng.sh" start' business/scripts/start.sh
+	@grep -Fq 'exec bash "$$SCRIPT_DIR/dameng.sh" stop' business/scripts/stop.sh
+	@grep -Fq 'd6871147cd4a04e1595d9dedf9d05245c55b17bff2ae738dded37fe568df9824' scripts/lib/dameng-official-media.sh
+	@grep -Fq '2a8a4844527e901718a88b4c747d7fd44460bcb2a862956bba98146760b8423e' scripts/lib/dameng-official-media.sh
 	@grep -Fq 'V009R001C010B0004' scripts/lib/kingbase-official-media.sh
 	@grep -Fq '16a436608cc204349e510cb136b8fc1fcbdf6874aee7b204cdac20a3522282da' scripts/lib/kingbase-official-media.sh
+	@grep -Fq '3d08f5a99f5659723c34315b71d49f783847cba19c7a0c61c2628bf9f131c8ee' scripts/lib/kingbase-official-media.sh
 	@grep -Fq 'openGauss-Docker-6.0.6-x86_64.tar' scripts/lib/opengauss-official-media.sh
 	@grep -Fq 'openGauss-Docker-6.0.6-aarch64.tar' scripts/lib/opengauss-official-media.sh
 	@grep -Fq '00ad2206ac93cf28c7702cd624b7c59dc1a146f9dca1f81ed19eeac430416c0b' scripts/lib/opengauss-official-media.sh
 	@grep -Fq 'opengauss_official_container_ready business-opengauss opengauss_gsql' business/scripts/start.sh
 	@test "$$(grep -c -- '--default-character-set=utf8mb4' business/scripts/start.sh)" -ge 4
-	@bash -n business/scripts/start.sh business/scripts/stop.sh business/scripts/restart.sh business/scripts/kingbase.sh scripts/utils/register-business.sh scripts/lib/opengauss-official-media.sh scripts/lib/kingbase-official-media.sh scripts/test/common-kingbase-gate.sh scripts/test/kingbase-official-media-release-gate.sh
+	@bash -n business/scripts/start.sh business/scripts/stop.sh business/scripts/restart.sh business/scripts/kingbase.sh business/scripts/dameng.sh scripts/utils/register-business.sh scripts/lib/opengauss-official-media.sh scripts/lib/kingbase-official-media.sh scripts/lib/dameng-official-media.sh scripts/test/common-kingbase-gate.sh scripts/test/kingbase-official-media-release-gate.sh scripts/test/dameng-official-media-release-gate.sh
 	@bash business/scripts/start.sh --help | grep -Fq -- '-oceanbase'
 	@bash business/scripts/start.sh --help | grep -Fq -- '-tidb'
 	@bash business/scripts/start.sh --help | grep -Fq -- '-opengauss'
 	@bash business/scripts/start.sh --help | grep -Fq -- '-kingbase'
 	@! bash business/scripts/start.sh -kingbase -postgres >/dev/null 2>&1
+	@bash business/scripts/start.sh --help | grep -Fq -- '-dameng'
+	@! bash business/scripts/start.sh -dameng -postgres >/dev/null 2>&1
 	@bash business/scripts/stop.sh --help | grep -Fq -- '-oceanbase'
 	@bash business/scripts/stop.sh --help | grep -Fq -- '-opengauss'
 	@bash business/scripts/stop.sh --help | grep -Fq -- '-kingbase'
 	@! bash business/scripts/stop.sh -kingbase -postgres >/dev/null 2>&1
+	@bash business/scripts/stop.sh --help | grep -Fq -- '-dameng'
+	@! bash business/scripts/stop.sh -dameng -postgres >/dev/null 2>&1
 	@bash business/scripts/restart.sh --help | grep -Fq -- '-kingbase'
 	@! bash business/scripts/restart.sh -kingbase -postgres >/dev/null 2>&1
+	@bash business/scripts/restart.sh --help | grep -Fq -- '-dameng'
+	@! bash business/scripts/restart.sh -dameng -postgres >/dev/null 2>&1
 	@bash business/scripts/kingbase.sh --help | grep -Fq -- 'start|stop|status'
+	@bash business/scripts/dameng.sh --help | grep -Fq -- 'start|stop|status'
+	@python3 -m unittest scripts/test/dameng-official-media-release-gate_test.py
 	@python3 -m unittest scripts/test/common-doris-decimal-gate_test.py
 
 test-integration: ## 严格串行运行所有本地可执行的 disposable 基础设施集成门禁
@@ -325,7 +351,7 @@ test-release: ## 运行指定 T5 发布套件；用法：make test-release RELEA
 	@python3 scripts/test/release-gate.py --repository "$(CURDIR)" --suite "$(RELEASE_SUITE)"
 
 test-release-runner: ## 运行 T5 分发器和 CI 登记检查的确定性测试
-	@python3 -m unittest scripts/test/release-gate_test.py scripts/test/opengauss-official-media-release-gate_test.py scripts/test/kingbase-official-media-release-gate_test.py scripts/ci/check-release-ci-registration_test.py
+	@python3 -m unittest scripts/test/release-gate_test.py scripts/test/opengauss-official-media-release-gate_test.py scripts/test/kingbase-official-media-release-gate_test.py scripts/test/dameng-official-media-release-gate_test.py scripts/ci/check-release-ci-registration_test.py
 	@python3 scripts/ci/check-release-ci-registration.py --repository "$(CURDIR)"
 
 test-platform: ## 运行无外部服务依赖的平台一致性门禁

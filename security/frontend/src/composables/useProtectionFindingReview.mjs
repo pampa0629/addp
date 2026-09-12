@@ -16,7 +16,7 @@ export function useProtectionFindingReview({
   onContinued = () => {}
 }) {
   const dialog = ref(false)
-  const formRef = ref(null)
+  const dialogRef = ref(null)
   const finding = ref(null)
   const saving = ref(false)
   const basisExpanded = ref([])
@@ -44,9 +44,9 @@ export function useProtectionFindingReview({
     return String(selectedType?.default_security_grade_id || '')
   }
 
-  function focusRationale() {
+  function focusDialogPrimary() {
     nextTick(() => {
-      formRef.value?.focusRationale?.()
+      dialogRef.value?.focusPrimary?.()
     })
   }
 
@@ -59,7 +59,7 @@ export function useProtectionFindingReview({
     form.rationale = ''
     context = reviewContext
     dialog.value = true
-    focusRationale()
+    focusDialogPrimary()
   }
 
   async function open(nextFinding, initialDecision = 'confirm') {
@@ -104,7 +104,7 @@ export function useProtectionFindingReview({
     const reviewedFinding = finding.value
     const reviewContext = context
     saving.value = true
-    const validation = formRef.value?.validate?.()
+    const validation = dialogRef.value?.validate?.()
     const valid = await Promise.resolve(validation).catch(() => false)
     if (request !== submitRequest || disposed) return { status: 'stale' }
     if (!valid) {
@@ -150,7 +150,7 @@ export function useProtectionFindingReview({
 
   return {
     dialog,
-    formRef,
+    dialogRef,
     finding,
     saving,
     basisExpanded,
@@ -159,7 +159,6 @@ export function useProtectionFindingReview({
     rationalePlaceholder,
     open,
     close,
-    focusRationale,
     applyDefaultGrade,
     submit,
     dispose

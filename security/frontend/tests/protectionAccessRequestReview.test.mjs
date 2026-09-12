@@ -24,7 +24,7 @@ function createReview(overrides = {}) {
 }
 
 function allowDecisionValidation(review) {
-  review.decisionFormRef.value = { validate: vi.fn().mockResolvedValue(true), clearValidate: vi.fn() }
+  review.decisionDialogRef.value = { validate: vi.fn().mockResolvedValue(true), focusPrimary: vi.fn() }
 }
 
 describe('protection access request review', () => {
@@ -100,8 +100,7 @@ describe('protection access request review', () => {
       .mockResolvedValueOnce({ id: 1, state: 'approved', can_decide: false, version: 3 })
     const { dependencies, review } = createReview({ getRequest })
     review.rows.value = [{ id: 1, state: 'pending', can_decide: true, version: 1 }]
-    review.decisionFormRef.value = { clearValidate: vi.fn() }
-    review.decisionCancelButton.value = { focus: vi.fn() }
+    review.decisionDialogRef.value = { focusPrimary: vi.fn() }
     review.openDecision(review.rows.value[0], 'approve')
     review.decisionForm.rationale = 'draft'
 
@@ -110,8 +109,7 @@ describe('protection access request review', () => {
     expect(review.decidingRequest.value.version).toBe(2)
     expect(review.decisionForm.rationale).toBe('')
     expect(dependencies.onDecisionReloaded).toHaveBeenCalledOnce()
-    expect(review.decisionFormRef.value.clearValidate).toHaveBeenCalledOnce()
-    expect(review.decisionCancelButton.value.focus).toHaveBeenCalledOnce()
+    expect(review.decisionDialogRef.value.focusPrimary).toHaveBeenCalledOnce()
 
     await expect(review.reloadDecisionBaseline()).resolves.toMatchObject({ status: 'already_processed' })
     expect(review.decisionDialog.value).toBe(false)
@@ -126,9 +124,9 @@ describe('protection access request review', () => {
     const refreshCollection = vi.fn(() => new Promise(resolve => { resolveCollectionRefresh = resolve }))
     const { dependencies, review } = createReview({ decideRequest, refreshCollection })
     const row = { id: 1, state: 'pending', can_decide: true, version: 4, requested_expires_at: '2026-09-20T00:00:00Z' }
-    review.decisionFormRef.value = {
+    review.decisionDialogRef.value = {
       validate: vi.fn(() => new Promise(resolve => { resolveValidation = resolve })),
-      clearValidate: vi.fn()
+      focusPrimary: vi.fn()
     }
 
     review.openDecision(row, 'approve')
@@ -200,7 +198,7 @@ describe('protection access request review', () => {
   it('does not send a decision when required validation fails', async () => {
     const decideRequest = vi.fn()
     const { review } = createReview({ decideRequest })
-    review.decisionFormRef.value = { validate: vi.fn().mockResolvedValue(false) }
+    review.decisionDialogRef.value = { validate: vi.fn().mockResolvedValue(false) }
     review.openDecision({ id: 1, state: 'pending', can_decide: true, version: 1 }, 'approve')
 
     await expect(review.submitDecision()).resolves.toEqual({ status: 'invalid' })
@@ -209,10 +207,8 @@ describe('protection access request review', () => {
     expect(review.decisionDialog.value).toBe(true)
   })
 
-  it('owns required validation, presentation, and safe initial focus', async () => {
+  it('owns required validation and decision presentation', () => {
     const { review } = createReview()
-    review.decisionFormRef.value = { clearValidate: vi.fn() }
-    review.decisionCancelButton.value = { $el: { focus: vi.fn() } }
     const row = { id: 1, state: 'pending', can_decide: true, version: 1 }
 
     expect(review.openDecision(row, 'reject')).toBe(true)
@@ -222,11 +218,6 @@ describe('protection access request review', () => {
     expect(review.decisionTitle.value).toBe('security.accessRequest.reject')
     expect(review.decisionHint.value).toBe('security.accessRequest.rejectHint')
     expect(review.decisionConfirmLabel.value).toBe('security.accessRequest.confirmActions.reject')
-
-    review.focusDecisionCancel()
-    await nextTick()
-    expect(review.decisionFormRef.value.clearValidate).toHaveBeenCalledOnce()
-    expect(review.decisionCancelButton.value.$el.focus).toHaveBeenCalledOnce()
   })
 
   it('reports decision load and submit failures without closing the dialog', async () => {

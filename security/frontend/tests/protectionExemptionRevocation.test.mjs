@@ -35,25 +35,18 @@ function createRevocation(overrides = {}) {
 }
 
 function allowValidation(revocation) {
-  revocation.formRef.value = { validate: vi.fn().mockResolvedValue(true), clearValidate: vi.fn() }
+  revocation.dialogRef.value = { validate: vi.fn().mockResolvedValue(true), focusPrimary: vi.fn() }
 }
 
 describe('protection exemption revocation session', () => {
-  it('opens only an active exemption with required rationale and safe initial focus', async () => {
+  it('opens only an active exemption with required rationale', () => {
     const { revocation } = createRevocation()
-    revocation.formRef.value = { clearValidate: vi.fn() }
-    revocation.cancelButton.value = { $el: { focus: vi.fn() } }
 
     expect(revocation.open(activeExemption)).toBe(true)
     expect(revocation.dialog.value).toBe(true)
     expect(revocation.exemption.value).toEqual(activeExemption)
     expect(revocation.exemption.value).not.toBe(activeExemption)
     expect(revocation.rules.value.rationale[0]).toMatchObject({ required: true, trigger: 'blur', whitespace: true })
-
-    revocation.focusCancel()
-    await nextTick()
-    expect(revocation.formRef.value.clearValidate).toHaveBeenCalledOnce()
-    expect(revocation.cancelButton.value.$el.focus).toHaveBeenCalledOnce()
 
     revocation.close()
     expect(revocation.open({ ...activeExemption, effective_state: 'expired' })).toBe(false)
@@ -63,9 +56,9 @@ describe('protection exemption revocation session', () => {
     let resolveValidation
     const openedExemption = { ...activeExemption, current: { ...activeExemption.current } }
     const { dependencies, revocation } = createRevocation()
-    revocation.formRef.value = {
+    revocation.dialogRef.value = {
       validate: vi.fn(() => new Promise(resolve => { resolveValidation = resolve })),
-      clearValidate: vi.fn()
+      focusPrimary: vi.fn()
     }
     revocation.open(openedExemption)
     revocation.form.rationale = ' work completed '
@@ -98,7 +91,6 @@ describe('protection exemption revocation session', () => {
       getExemption: vi.fn().mockResolvedValue(latest)
     })
     allowValidation(revocation)
-    revocation.cancelButton.value = { focus: vi.fn() }
     revocation.open(activeExemption)
     revocation.form.rationale = 'preserve revoke basis'
 
@@ -115,7 +107,7 @@ describe('protection exemption revocation session', () => {
     expect(revocation.form.rationale).toBe('')
     expect(revocation.conflict.value).toBe(false)
     expect(dependencies.onReloaded).toHaveBeenCalledOnce()
-    expect(revocation.cancelButton.value.focus).toHaveBeenCalledOnce()
+    expect(revocation.dialogRef.value.focusPrimary).toHaveBeenCalledOnce()
   })
 
   it('closes when the authoritative exemption is already inactive', async () => {
@@ -133,7 +125,7 @@ describe('protection exemption revocation session', () => {
   it('keeps invalid and generic failures actionable', async () => {
     const submitError = new Error('submit failed')
     const { dependencies, revocation } = createRevocation({ revokeExemption: vi.fn().mockRejectedValue(submitError) })
-    revocation.formRef.value = { validate: vi.fn().mockResolvedValue(false) }
+    revocation.dialogRef.value = { validate: vi.fn().mockResolvedValue(false) }
     revocation.open(activeExemption)
 
     await expect(revocation.submit()).resolves.toEqual({ status: 'invalid' })

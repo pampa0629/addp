@@ -26,7 +26,7 @@ function createReview(overrides = {}) {
 }
 
 function allowValidation(review) {
-  review.formRef.value = { validate: vi.fn().mockResolvedValue(true), focusRationale: vi.fn() }
+  review.dialogRef.value = { validate: vi.fn().mockResolvedValue(true), focusPrimary: vi.fn() }
 }
 
 describe('protection finding review session', () => {
@@ -46,7 +46,7 @@ describe('protection finding review session', () => {
       securityGradeID: '40',
       rationale: ''
     })
-    expect(review.formRef.value.focusRationale).toHaveBeenCalled()
+    expect(review.dialogRef.value.focusPrimary).toHaveBeenCalled()
 
     review.applyDefaultGrade('5')
     expect(review.form.securityGradeID).toBe('50')
@@ -112,7 +112,7 @@ describe('protection finding review session', () => {
   it('keeps invalid or failed submissions in the dialog', async () => {
     const submitError = new Error('submit failed')
     const { dependencies, review } = createReview({ reviewFinding: vi.fn().mockRejectedValue(submitError) })
-    review.formRef.value = { validate: vi.fn().mockResolvedValue(false) }
+    review.dialogRef.value = { validate: vi.fn().mockResolvedValue(false) }
     await review.open(sourceFinding)
 
     await expect(review.submit()).resolves.toEqual({ status: 'invalid' })
@@ -129,9 +129,9 @@ describe('protection finding review session', () => {
   it('prevents duplicate submissions while async validation is pending', async () => {
     let resolveValidation
     const { dependencies, review } = createReview()
-    review.formRef.value = {
+    review.dialogRef.value = {
       validate: vi.fn(() => new Promise(resolve => { resolveValidation = resolve })),
-      focusRationale: vi.fn()
+      focusPrimary: vi.fn()
     }
     await review.open(sourceFinding)
 

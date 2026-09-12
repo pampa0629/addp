@@ -45,18 +45,17 @@ function createAssessmentChange(overrides = {}) {
 }
 
 function allowRevisionValidation(assessmentChange) {
-  assessmentChange.revisionFormRef.value = { validate: vi.fn().mockResolvedValue(true), clearValidate: vi.fn() }
+  assessmentChange.revisionDialogRef.value = { validate: vi.fn().mockResolvedValue(true), focusPrimary: vi.fn() }
 }
 
 function allowRevokeValidation(assessmentChange) {
-  assessmentChange.revokeFormRef.value = { validate: vi.fn().mockResolvedValue(true), clearValidate: vi.fn() }
+  assessmentChange.revokeDialogRef.value = { validate: vi.fn().mockResolvedValue(true), focusPrimary: vi.fn() }
 }
 
 describe('protection assessment change sessions', () => {
   it('opens revision from the formal assessment baseline and owns required field validation', async () => {
     const { dependencies, assessmentChange } = createAssessmentChange()
-    assessmentChange.revisionFormRef.value = { clearValidate: vi.fn() }
-    assessmentChange.revisionRationaleInput.value = { focus: vi.fn() }
+    assessmentChange.revisionDialogRef.value = { focusPrimary: vi.fn() }
 
     await expect(assessmentChange.openRevision(assessment)).resolves.toEqual({ status: 'opened' })
 
@@ -75,8 +74,7 @@ describe('protection assessment change sessions', () => {
 
     assessmentChange.focusRevisionRationale()
     await nextTick()
-    expect(assessmentChange.revisionFormRef.value.clearValidate).toHaveBeenCalledOnce()
-    expect(assessmentChange.revisionRationaleInput.value.focus).toHaveBeenCalledOnce()
+    expect(assessmentChange.revisionDialogRef.value.focusPrimary).toHaveBeenCalledOnce()
   })
 
   it('falls back to the sensitive type default when the previous grade is no longer active', async () => {
@@ -99,9 +97,9 @@ describe('protection assessment change sessions', () => {
     const { dependencies, assessmentChange } = createAssessmentChange({
       reviseAssessment: vi.fn().mockResolvedValue(revised)
     })
-    assessmentChange.revisionFormRef.value = {
+    assessmentChange.revisionDialogRef.value = {
       validate: vi.fn(() => new Promise(resolve => { resolveValidation = resolve })),
-      clearValidate: vi.fn()
+      focusPrimary: vi.fn()
     }
     await assessmentChange.openRevision(openedAssessment)
     assessmentChange.revisionForm.sensitiveDataTypeID = '11'
@@ -160,8 +158,7 @@ describe('protection assessment change sessions', () => {
 
   it('opens revoke only for a sensitive conclusion and focuses the safe action', async () => {
     const { assessmentChange } = createAssessmentChange()
-    assessmentChange.revokeFormRef.value = { clearValidate: vi.fn() }
-    assessmentChange.revokeCancelButton.value = { $el: { focus: vi.fn() } }
+    assessmentChange.revokeDialogRef.value = { focusPrimary: vi.fn() }
 
     expect(assessmentChange.openRevoke(assessment)).toBe(true)
     expect(assessmentChange.revokeDialog.value).toBe(true)
@@ -170,8 +167,7 @@ describe('protection assessment change sessions', () => {
     expect(assessmentChange.revokeRules.value.rationale[0]).toMatchObject({ required: true, whitespace: true })
     assessmentChange.focusRevokeCancel()
     await nextTick()
-    expect(assessmentChange.revokeFormRef.value.clearValidate).toHaveBeenCalledOnce()
-    expect(assessmentChange.revokeCancelButton.value.$el.focus).toHaveBeenCalledOnce()
+    expect(assessmentChange.revokeDialogRef.value.focusPrimary).toHaveBeenCalledOnce()
 
     assessmentChange.closeRevoke()
     expect(assessmentChange.openRevoke({ ...assessment, current: { conclusion: 'not_sensitive' } })).toBe(false)
@@ -180,9 +176,9 @@ describe('protection assessment change sessions', () => {
   it('submits one versioned revoke command while asynchronous validation is pending', async () => {
     let resolveValidation
     const { dependencies, assessmentChange } = createAssessmentChange()
-    assessmentChange.revokeFormRef.value = {
+    assessmentChange.revokeDialogRef.value = {
       validate: vi.fn(() => new Promise(resolve => { resolveValidation = resolve })),
-      clearValidate: vi.fn()
+      focusPrimary: vi.fn()
     }
     assessmentChange.openRevoke(assessment)
     assessmentChange.revokeForm.rationale = ' classification corrected '

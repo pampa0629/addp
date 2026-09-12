@@ -56,17 +56,16 @@ function createPolicyChange(options = {}) {
 }
 
 function allowEditValidation(policyChange) {
-  policyChange.editFormRef.value = { validate: vi.fn().mockResolvedValue(true), clearValidate: vi.fn() }
+  policyChange.editDialogRef.value = { validate: vi.fn().mockResolvedValue(true), clearValidate: vi.fn() }
 }
 
 function allowRestoreValidation(policyChange) {
-  policyChange.restoreFormRef.value = { validate: vi.fn().mockResolvedValue(true), clearValidate: vi.fn() }
+  policyChange.restoreDialogRef.value = { validate: vi.fn().mockResolvedValue(true), focusPrimary: vi.fn() }
 }
 
 describe('protection policy change sessions', () => {
-  it('opens tightening from the current policy baseline and rejects an already-strictest assessment', async () => {
+  it('opens tightening from the current policy baseline and rejects an already-strictest assessment', () => {
     const { policyChange } = createPolicyChange()
-    policyChange.editFormRef.value = { clearValidate: vi.fn() }
 
     expect(policyChange.openEdit(assessment)).toBe(true)
     expect(policyChange.editDialog.value).toBe(true)
@@ -75,10 +74,6 @@ describe('protection policy change sessions', () => {
     expect(policyChange.editEffects.value).toEqual(['suppress', 'deny'])
     expect(policyChange.editRules.value.effect[0].required).toBe(true)
     expect(policyChange.editRules.value.rationale[0]).toMatchObject({ required: true, whitespace: true })
-    policyChange.clearEditValidation()
-    await nextTick()
-    expect(policyChange.editFormRef.value.clearValidate).toHaveBeenCalledOnce()
-
     const strictest = createPolicyChange({ stricterEffects: vi.fn(() => []) })
     expect(strictest.policyChange.openEdit(assessment)).toBe(false)
     expect(strictest.dependencies.onAlreadyStrictest).toHaveBeenCalledOnce()
@@ -88,7 +83,7 @@ describe('protection policy change sessions', () => {
   it('creates one canonical manager preview policy while async validation is pending', async () => {
     let resolveValidation
     const { dependencies, policyChange } = createPolicyChange({ currentPolicy: null })
-    policyChange.editFormRef.value = {
+    policyChange.editDialogRef.value = {
       validate: vi.fn(() => new Promise(resolve => { resolveValidation = resolve })),
       clearValidate: vi.fn()
     }
@@ -179,20 +174,13 @@ describe('protection policy change sessions', () => {
     })
   })
 
-  it('opens restore with a required rationale and focuses the safe action', async () => {
+  it('opens restore with a required rationale', () => {
     const { policyChange } = createPolicyChange()
-    policyChange.restoreFormRef.value = { clearValidate: vi.fn() }
-    policyChange.restoreCancelButton.value = { focus: vi.fn() }
 
     expect(policyChange.openRestore(assessment)).toBe(true)
     expect(policyChange.restoreDialog.value).toBe(true)
     expect(policyChange.restoreAssessment.value).toEqual(assessment)
     expect(policyChange.restoreRules.value.rationale[0]).toMatchObject({ required: true, whitespace: true })
-    policyChange.focusRestoreCancel()
-    await nextTick()
-    expect(policyChange.restoreFormRef.value.clearValidate).toHaveBeenCalledOnce()
-    expect(policyChange.restoreCancelButton.value.focus).toHaveBeenCalledOnce()
-
     const inactive = createPolicyChange({ currentPolicy: { ...activePolicy, state: 'revoked' } })
     expect(inactive.policyChange.openRestore(assessment)).toBe(false)
   })
@@ -205,7 +193,6 @@ describe('protection policy change sessions', () => {
       getPolicy: vi.fn().mockResolvedValue(latestPolicy)
     })
     allowRestoreValidation(policyChange)
-    policyChange.restoreCancelButton.value = { focus: vi.fn() }
     policyChange.openRestore(assessment)
     policyChange.restoreForm.rationale = 'preserve restore input'
 
@@ -219,7 +206,7 @@ describe('protection policy change sessions', () => {
     expect(policyChange.restoreForm.rationale).toBe('')
     expect(policyChange.restoreConflict.value).toBe(false)
     expect(dependencies.onRestoreReloaded).toHaveBeenCalledOnce()
-    expect(policyChange.restoreCancelButton.value.focus).toHaveBeenCalledOnce()
+    expect(policyChange.restoreDialogRef.value.focusPrimary).toHaveBeenCalledOnce()
   })
 
   it('closes restore when the latest policy context is already inactive', async () => {
@@ -239,9 +226,9 @@ describe('protection policy change sessions', () => {
   it('revokes the current policy through one versioned restore command', async () => {
     let resolveValidation
     const { dependencies, policyChange } = createPolicyChange()
-    policyChange.restoreFormRef.value = {
+    policyChange.restoreDialogRef.value = {
       validate: vi.fn(() => new Promise(resolve => { resolveValidation = resolve })),
-      clearValidate: vi.fn()
+      focusPrimary: vi.fn()
     }
     policyChange.openRestore(assessment)
     policyChange.restoreForm.rationale = ' restore platform default '

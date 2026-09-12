@@ -1,4 +1,4 @@
-import { computed, nextTick, reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { createRequiredRule } from '../utils/foundationForm.mjs'
 
 function snapshotEnrollment(enrollment) {
@@ -23,8 +23,7 @@ export function useProtectionAssessmentWorkspace({
   onHistoryLoadError = () => {}
 }) {
   const designationDialog = ref(false)
-  const designationFormRef = ref(null)
-  const designationRationaleInput = ref(null)
+  const designationDialogRef = ref(null)
   const designationSaving = ref(false)
   const componentsLoading = ref(false)
   const componentOptions = ref([])
@@ -100,13 +99,6 @@ export function useProtectionAssessmentWorkspace({
     clearDesignationSession()
   }
 
-  function focusDesignationRationale() {
-    nextTick(() => {
-      designationFormRef.value?.clearValidate?.()
-      designationRationaleInput.value?.focus?.()
-    })
-  }
-
   function applyDesignationDefaultGrade(typeID) {
     designationForm.securityGradeID = String(defaultGradeID(typeID) || '')
   }
@@ -118,7 +110,7 @@ export function useProtectionAssessmentWorkspace({
     }
     const request = ++designationSubmitRequest
     designationSaving.value = true
-    const validation = designationFormRef.value?.validate?.()
+    const validation = designationDialogRef.value?.validate?.()
     const valid = await Promise.resolve(validation).catch(() => false)
     if (request !== designationSubmitRequest || disposed) return { status: 'stale' }
     if (!valid) {
@@ -180,10 +172,6 @@ export function useProtectionAssessmentWorkspace({
     historyLoading.value = false
   }
 
-  function isCurrentHistoryRevision(revision) {
-    return Number(revision?.revision) === Number(history.value?.current_revision)
-  }
-
   function dispose() {
     disposed = true
     designationLoadRequest += 1
@@ -196,8 +184,7 @@ export function useProtectionAssessmentWorkspace({
 
   return {
     designationDialog,
-    designationFormRef,
-    designationRationaleInput,
+    designationDialogRef,
     designationSaving,
     componentsLoading,
     componentOptions,
@@ -206,7 +193,6 @@ export function useProtectionAssessmentWorkspace({
     designationRules,
     openDesignation,
     closeDesignation,
-    focusDesignationRationale,
     applyDesignationDefaultGrade,
     submitDesignation,
     historyDialog,
@@ -214,7 +200,6 @@ export function useProtectionAssessmentWorkspace({
     history,
     openHistory,
     closeHistory,
-    isCurrentHistoryRevision,
     dispose
   }
 }

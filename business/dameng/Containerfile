@@ -1,0 +1,51 @@
+FROM ubuntu:22.04@sha256:829f6df217bcbae2b371026e81711d1a787c61b2967ad09d015063663ebafbf7
+
+LABEL com.addp.dameng.version="20260708" \
+      com.addp.dameng.media.sha256="d6871147cd4a04e1595d9dedf9d05245c55b17bff2ae738dded37fe568df9824" \
+      com.addp.dameng.iso.sha256="2a8a4844527e901718a88b4c747d7fd44460bcb2a862956bba98146760b8423e" \
+      com.addp.local-only="true"
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    DM_HOME=/opt/dmdbms \
+    LD_LIBRARY_PATH=/opt/dmdbms/bin \
+    PATH=/opt/dmdbms/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends ca-certificates libaio1 p7zip-full unixodbc unixodbc-dev unzip \
+    && groupadd --system dinstall \
+    && useradd --create-home --gid dinstall --shell /bin/bash dmdba \
+    && install -d -o dmdba -g dinstall /opt/dmdbms /opt/dmdata /home/dmdba/install-tmp /tmp/dm8-iso \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --chown=dmdba:dinstall --from=dm-media /dm8_20260708_HWarm920_kylin10_sp1_64.zip /tmp/dm8.zip
+COPY --chown=dmdba:dinstall install.xml /home/dmdba/install.xml
+COPY --chown=dmdba:dinstall startup.sh /usr/local/bin/dameng-startup
+
+RUN chmod 0755 /usr/local/bin/dameng-startup
+
+USER dmdba
+ENV DM_INSTALL_TMPDIR=/home/dmdba/install-tmp
+
+RUN set -eux; \
+    unzip -q /tmp/dm8.zip -d /tmp/dm8-package; \
+    iso_path=$(find /tmp/dm8-package -type f -name '*.iso' -print -quit); \
+    test -n "$iso_path"; \
+    7z x -y -o/tmp/dm8-iso "$iso_path" >/dev/null; \
+    chmod +x /tmp/dm8-iso/DMInstall.bin; \
+    /tmp/dm8-iso/DMInstall.bin -q /home/dmdba/install.xml; \
+    /opt/dmdbms/bin/dminit \
+        PATH=/opt/dmdata \
+        PAGE_SIZE=32 \
+        EXTENT_SIZE=32 \
+        CASE_SENSITIVE=Y \
+        CHARSET=1 \
+        DB_NAME=DAMENG \
+        INSTANCE_NAME=DMSERVER \
+        PORT_NUM=5236 \
+        SYSDBA_PWD='AddpDameng8@' \
+        SYSAUDITOR_PWD='AddpAuditor8@'; \
+    rm -rf /tmp/dm8.zip /tmp/dm8-package /tmp/dm8-iso /home/dmdba/install.xml /home/dmdba/install-tmp
+
+EXPOSE 5236
+
+ENTRYPOINT ["/usr/local/bin/dameng-startup"]

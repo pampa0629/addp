@@ -130,6 +130,28 @@ def workflow_service_block(job: str, service: str) -> str | None:
     return service_match.group("body") if service_match else None
 
 
+def workflow_job_environment_block(job: str) -> str | None:
+    match = re.search(
+        r"(?ms)^    env:\s*\n(?P<body>.*?)(?=^    [a-zA-Z0-9_-]+:\s*$|\Z)",
+        job,
+    )
+    return match.group("body") if match else None
+
+
+def workflow_step_environment_block(step: str) -> str | None:
+    match = re.search(
+        r"(?ms)^        env:\s*\n(?P<body>.*?)(?=^        [a-zA-Z0-9_-]+:\s*$|\Z)",
+        step,
+    )
+    return match.group("body") if match else None
+
+
+def environment_scope_provides(scope: str | None, name: str) -> bool:
+    return scope is not None and re.search(
+        rf"(?m)^\s*{re.escape(name)}:\s*\S.*$", scope
+    ) is not None
+
+
 def service_image_is_pinned(service_block: str) -> bool:
     return re.search(
         r"(?m)^\s*image:\s*\S+:[^@\s]+@sha256:[0-9a-f]{64}\s*$",
@@ -220,6 +242,33 @@ def validate_registration(repository: Path) -> list[str]:
         if target_job is None:
             errors.append(f"{script}: GitHub Actions target {target} is missing")
         else:
+            script_content = (repository / script).read_text(encoding="utf-8")
+            target_step = next(
+                (
+                    step
+                    for step in steps
+                    if re.search(
+                        rf"(?m)^\s*(?:-\s*)?run:\s*make\s+{re.escape(target)}\s*$",
+                        step,
+                    )
+                ),
+                None,
+            )
+            job_environment = workflow_job_environment_block(target_job)
+            step_environment = (
+                workflow_step_environment_block(target_step) if target_step else None
+            )
+            for alternatives in MODULE_GATE.required_t2_environment(script_content):
+                if target_step is None or not any(
+                    environment_scope_provides(step_environment, name)
+                    or environment_scope_provides(job_environment, name)
+                    for name in alternatives
+                ):
+                    requirement = " or ".join(alternatives)
+                    errors.append(
+                        f"{script}: GitHub Actions target {target} does not provide "
+                        f"{requirement}"
+                    )
             for service in services:
                 service_block = workflow_service_block(target_job, service)
                 if service_block is None:
@@ -231,7 +280,6 @@ def validate_registration(repository: Path) -> list[str]:
                         f"{script}: {service} service image must pin an explicit tag and digest "
                         f"in {target} job"
                     )
-            script_content = (repository / script).read_text(encoding="utf-8")
             if "postgres" in services and gate_requires_explicit_disposable_database(
                 script_content
             ):

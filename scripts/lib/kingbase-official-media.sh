@@ -2,14 +2,36 @@
 # kingbase-official-media.sh - Canonical KingbaseES V9R1C10 official-media facts and loader.
 
 KINGBASE_OFFICIAL_VERSION=V009R001C010B0004
-KINGBASE_OFFICIAL_IMAGE=kingbase_v009r001c010b0004_single_x86:v1
-KINGBASE_OFFICIAL_MEDIA_URL=https://kingbase.oss-cn-beijing.aliyuncs.com/upload/KESV9-baseline/allmode/V009R001C010/docker/KingbaseES_V009R001C010B0004_x86_64_Docker.tar
-KINGBASE_OFFICIAL_MEDIA_FILENAME=KingbaseES_V009R001C010B0004_x86_64_Docker.tar
-KINGBASE_OFFICIAL_MEDIA_SHA256=16a436608cc204349e510cb136b8fc1fcbdf6874aee7b204cdac20a3522282da
-KINGBASE_OFFICIAL_MEDIA_MD5=26bb99891becc52f533488aac5fabfb6
-KINGBASE_OFFICIAL_IMAGE_ARCH=amd64
+KINGBASE_OFFICIAL_IMAGE=addp/kingbase:v009r001c010b0004
 KINGBASE_DATABASE_PORT=54321
 KINGBASE_HOME=/home/kingbase/install/kingbase
+
+kingbase_select_official_media() {
+    case "$1" in
+        x86_64|amd64)
+            KINGBASE_OFFICIAL_MEDIA_URL=https://kingbase.oss-cn-beijing.aliyuncs.com/upload/KESV9-baseline/allmode/V009R001C010/docker/KingbaseES_V009R001C010B0004_x86_64_Docker.tar
+            KINGBASE_OFFICIAL_MEDIA_FILENAME=KingbaseES_V009R001C010B0004_x86_64_Docker.tar
+            KINGBASE_OFFICIAL_MEDIA_SHA256=16a436608cc204349e510cb136b8fc1fcbdf6874aee7b204cdac20a3522282da
+            KINGBASE_OFFICIAL_MEDIA_MD5=26bb99891becc52f533488aac5fabfb6
+            KINGBASE_OFFICIAL_SOURCE_IMAGE=kingbase_v009r001c010b0004_single_x86:v1
+            KINGBASE_OFFICIAL_IMAGE_ARCH=amd64
+            ;;
+        aarch64|arm64)
+            KINGBASE_OFFICIAL_MEDIA_URL=https://kingbase.oss-cn-beijing.aliyuncs.com/upload/KESV9-baseline/allmode/V009R001C010/docker/KingbaseES_V009R001C010B0004_aarch64_Docker.tar
+            KINGBASE_OFFICIAL_MEDIA_FILENAME=KingbaseES_V009R001C010B0004_aarch64_Docker.tar
+            KINGBASE_OFFICIAL_MEDIA_SHA256=3d08f5a99f5659723c34315b71d49f783847cba19c7a0c61c2628bf9f131c8ee
+            KINGBASE_OFFICIAL_MEDIA_MD5=7b1661123cf7fc34c6be3553e8b6d24d
+            KINGBASE_OFFICIAL_SOURCE_IMAGE=kingbase_v009r001c010b0004_single_arm:v1
+            KINGBASE_OFFICIAL_IMAGE_ARCH=arm64
+            ;;
+        *)
+            echo "unsupported KingbaseES official-media architecture: $1" >&2
+            return 1
+            ;;
+    esac
+}
+
+kingbase_select_official_media "$(uname -m)"
 
 kingbase_verify_sha256() {
     local expected=$1
@@ -44,11 +66,21 @@ kingbase_download_official_media() {
     mv "$partial" "$destination"
 }
 
-kingbase_ensure_official_image() {
-    if [ "$(uname -s)" != "Linux" ] || [ "$(uname -m)" != "x86_64" ]; then
-        echo "KingbaseES official gates require Linux x86_64" >&2
+kingbase_load_official_image() {
+    local media_path=$1
+    local loaded_arch
+
+    docker load --input "$media_path"
+    loaded_arch=$(docker image inspect --format '{{.Architecture}}' "$KINGBASE_OFFICIAL_SOURCE_IMAGE")
+    if [ "$loaded_arch" != "$KINGBASE_OFFICIAL_IMAGE_ARCH" ]; then
+        echo "loaded $KINGBASE_OFFICIAL_SOURCE_IMAGE architecture is $loaded_arch, want $KINGBASE_OFFICIAL_IMAGE_ARCH" >&2
         return 1
     fi
+    docker image tag "$KINGBASE_OFFICIAL_SOURCE_IMAGE" "$KINGBASE_OFFICIAL_IMAGE"
+    docker image rm "$KINGBASE_OFFICIAL_SOURCE_IMAGE" >/dev/null
+}
+
+kingbase_ensure_official_image() {
     for command in curl docker; do
         if ! command -v "$command" >/dev/null 2>&1; then
             echo "$command is required to load KingbaseES official media" >&2
@@ -69,7 +101,7 @@ kingbase_ensure_official_image() {
     local cache_dir=${ADDP_KINGBASE_MEDIA_CACHE:-${TMPDIR:-/tmp}/addp-kingbase-official-media}
     local media_path=$cache_dir/$KINGBASE_OFFICIAL_MEDIA_FILENAME
     kingbase_download_official_media "$media_path"
-    docker load --input "$media_path"
+    kingbase_load_official_image "$media_path"
     local loaded_arch
     loaded_arch=$(docker image inspect --format '{{.Architecture}}' "$KINGBASE_OFFICIAL_IMAGE")
     if [ "$loaded_arch" != "$KINGBASE_OFFICIAL_IMAGE_ARCH" ]; then

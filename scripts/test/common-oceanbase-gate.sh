@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # ADDP_T2_SERVICES=oceanbase
+# ADDP_T2_REQUIRED_ENV=ADDP_TEST_OCEANBASE_PASSWORD|ADDP_LOCAL_CI_OCEANBASE
 # common-oceanbase-gate.sh - Run OceanBase Engine Provider integration tests against a disposable database.
 
 set -euo pipefail

@@ -4,6 +4,7 @@ go 1.24.2
 
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.42.0
+	github.com/alexbrainman/odbc v0.0.0-20250601004241-49e6b2bc0cf0
 	github.com/alicebob/miniredis/v2 v2.35.0
 	github.com/apache/arrow-go/v18 v18.5.1
 	github.com/beltran/gohive v1.8.1

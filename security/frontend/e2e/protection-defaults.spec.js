@@ -94,6 +94,42 @@ test('marks and validates the required enrollment resource inline', async ({ pag
   expect(backend.unhandledRequests).toEqual([])
 })
 
+test('opens the protected resource and focuses the approved grant from review history', async ({ page }) => {
+  const backend = await installMockBackend(page)
+  const browserErrors = []
+  page.on('pageerror', error => browserErrors.push(error.message))
+  Object.assign(backend.accessRequests[0], {
+    subject_id: 'requester-1',
+    state: 'approved',
+    version: '2',
+    can_decide: false,
+    reviewer: { type: 'user', id: '61', display_name: '审批用户甲' },
+    decided_at: '2026-09-11T08:10:00Z',
+    decision_rationale: '核验通过，批准临时查看原值',
+    authorization_state: 'active',
+    authorized_until: '2026-09-30T10:00:00Z',
+    exemption_id: exemptionID
+  })
+
+  await page.goto('/protection-enrollments')
+  const accessReviewCard = page.locator('.access-review-card')
+  await accessReviewCard.locator('.el-radio-button').filter({ hasText: '审批记录' }).click()
+
+  const approvedRow = accessReviewCard.getByRole('row').filter({ hasText: '申请用户甲' })
+  await expect(approvedRow).toContainText('生效中')
+  await approvedRow.getByRole('button', { name: '查看授权' }).click()
+
+  const detailDrawer = page.locator('.el-drawer').filter({ hasText: '资源保护详情' })
+  const focusedGrant = detailDrawer.locator('.exemption-card.is-focused').filter({ hasText: 'requester-1' })
+  await expect(detailDrawer).toBeVisible()
+  await expect(focusedGrant).toBeVisible()
+  await expect(focusedGrant).toContainText('customer.phone')
+  await expect(focusedGrant).toContainText('客户核验期间临时查看原值')
+  await expect.poll(() => backend.enrollmentDetailRequests).toBe(1)
+  expect(backend.unhandledRequests).toEqual([])
+  expect(browserErrors).toEqual([])
+})
+
 test('creates a sensitive definition and safely revises, tightens, restores, and revokes protection', async ({ page }) => {
   const backend = await installMockBackend(page)
   const browserErrors = []

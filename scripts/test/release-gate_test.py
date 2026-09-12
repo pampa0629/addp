@@ -112,6 +112,7 @@ class ReleaseGateTest(unittest.TestCase):
             {
                 "agent-evaluation",
                 "common-python-cli",
+                "dameng-official-media",
                 "kingbase-official-media",
                 "opengauss-official-media",
             },
@@ -123,6 +124,13 @@ class ReleaseGateTest(unittest.TestCase):
         self.assertEqual(
             RELEASE_GATE.SUITES["common-python-cli"].target,
             "test-common-python-cli-release",
+        )
+        self.assertEqual(
+            RELEASE_GATE.SUITES["dameng-official-media"].target,
+            "test-dameng-official-media-release",
+        )
+        self.assertIsNone(
+            RELEASE_GATE.SUITES["dameng-official-media"].workflow_job,
         )
         self.assertEqual(
             RELEASE_GATE.SUITES["opengauss-official-media"].target,

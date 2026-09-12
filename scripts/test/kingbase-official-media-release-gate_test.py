@@ -55,6 +55,12 @@ class KingbaseOfficialMediaReleaseGateTest(unittest.TestCase):
             "16a436608cc204349e510cb136b8fc1fcbdf6874aee7b204cdac20a3522282da",
             helper,
         )
+        self.assertIn(
+            "3d08f5a99f5659723c34315b71d49f783847cba19c7a0c61c2628bf9f131c8ee",
+            helper,
+        )
+        self.assertIn("addp/kingbase:v009r001c010b0004", helper)
+        self.assertIn("kingbase_load_official_image", gate)
         self.assertIn("kingbase.com.cn/download.html", helper)
         self.assertIn("kingbase_validate_license_input", gate)
         self.assertIn('"license_sha256": license_sha256', gate)

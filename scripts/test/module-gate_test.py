@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 SCRIPT = Path(__file__).with_name("module-gate.py")
@@ -34,7 +35,11 @@ class ModuleGateTest(unittest.TestCase):
             content = (
                 "#!/usr/bin/env bash\n# ADDP_T2_SERVICES=mongodb\n"
                 if "mongodb" in relative_path
-                else "#!/usr/bin/env bash\n# ADDP_T2_SERVICES=postgres\n"
+                else (
+                    "#!/usr/bin/env bash\n"
+                    "# ADDP_T2_SERVICES=postgres\n"
+                    "# ADDP_T2_REQUIRED_ENV=SAMPLE_POSTGRES_TEST_DSN\n"
+                )
                 if relative_path.endswith("-gate.sh")
                 else "{}\n"
             )
@@ -69,6 +74,67 @@ class ModuleGateTest(unittest.TestCase):
         self.assertEqual(
             ("*_POSTGRES_TEST_DSN", "ADDP_*_INTEGRATION"),
             steps[1].excluded_environment,
+        )
+        self.assertEqual((), steps[-2].required_environment)
+        self.assertEqual(
+            (("SAMPLE_POSTGRES_TEST_DSN",),),
+            steps[-1].required_environment,
+        )
+
+    def test_preflights_all_required_t2_environment_before_running_any_step(self) -> None:
+        steps = MODULE.plan_module(self.repository, "sample")
+
+        with mock.patch.object(MODULE.subprocess, "run") as run:
+            with self.assertRaisesRegex(
+                MODULE.ModuleGateError,
+                "test-sample-postgres: SAMPLE_POSTGRES_TEST_DSN",
+            ):
+                MODULE.run_steps(steps, dry_run=False, base_environment={})
+
+        run.assert_not_called()
+
+    def test_runs_after_required_t2_environment_is_present(self) -> None:
+        steps = MODULE.plan_module(self.repository, "sample")
+
+        with mock.patch.object(MODULE.subprocess, "run") as run:
+            MODULE.run_steps(
+                steps,
+                dry_run=False,
+                base_environment={"SAMPLE_POSTGRES_TEST_DSN": "postgres://test"},
+            )
+
+        self.assertEqual(len(steps), run.call_count)
+
+    def test_dry_run_does_not_require_t2_environment(self) -> None:
+        steps = MODULE.plan_module(self.repository, "sample")
+
+        with mock.patch.object(MODULE.subprocess, "run") as run:
+            MODULE.run_steps(steps, dry_run=True, base_environment={})
+
+        run.assert_not_called()
+
+    def test_rejects_invalid_required_t2_environment_declaration(self) -> None:
+        with self.assertRaisesRegex(
+            MODULE.ModuleGateError,
+            "uppercase names separated by commas",
+        ):
+            MODULE.required_t2_environment(
+                "# ADDP_T2_REQUIRED_ENV=sample_postgres_test_dsn\n"
+            )
+
+    def test_accepts_one_of_multiple_environment_alternatives(self) -> None:
+        requirements = MODULE.required_t2_environment(
+            "# ADDP_T2_REQUIRED_ENV=PASSWORD|LOCAL_SCOPE,OTHER\n"
+        )
+        step = MODULE.Step(
+            "sample integration T2",
+            ("make", "test-sample"),
+            self.repository,
+            required_environment=requirements,
+        )
+
+        MODULE.preflight_required_environment(
+            [step], {"LOCAL_SCOPE": "1", "OTHER": "set"}
         )
 
     def test_discovers_untracked_module_before_first_commit(self) -> None:

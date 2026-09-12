@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # ADDP_T2_SERVICES=postgres
+# ADDP_T2_REQUIRED_ENV=CATALOG_POSTGRES_TEST_DSN
 # catalog-postgres-gate.sh - Run Catalog PostgreSQL integration tests against a disposable database.
 
 set -euo pipefail

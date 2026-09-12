@@ -64,7 +64,7 @@ docker image inspect "$KINGBASE_OFFICIAL_IMAGE" >/dev/null 2>&1 && fail "refusin
 
 kingbase_download_official_media "$MEDIA_PATH"
 IMAGE_OWNED=true
-docker load --input "$MEDIA_PATH"
+kingbase_load_official_image "$MEDIA_PATH"
 image_architecture=$(docker image inspect --format '{{.Architecture}}' "$KINGBASE_OFFICIAL_IMAGE")
 [ "$image_architecture" = "$KINGBASE_OFFICIAL_IMAGE_ARCH" ] || fail "loaded image architecture is $image_architecture"
 image_id=$(docker image inspect --format '{{.Id}}' "$KINGBASE_OFFICIAL_IMAGE")
