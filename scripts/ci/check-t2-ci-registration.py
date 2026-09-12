@@ -126,6 +126,18 @@ def compose_service_block(compose: str, service: str) -> str | None:
     return match.group("body") if match else None
 
 
+def service_has_required_nofile_limit(service_block: str) -> bool:
+    soft = re.search(r"(?m)^\s*soft:\s*(\d+)\s*$", service_block)
+    hard = re.search(r"(?m)^\s*hard:\s*(\d+)\s*$", service_block)
+    return (
+        "nofile:" in service_block
+        and soft is not None
+        and hard is not None
+        and int(soft.group(1)) >= 1_000_000
+        and int(hard.group(1)) >= 1_000_000
+    )
+
+
 def make_recipe(makefile: str, target: str) -> str | None:
     match = re.search(
         rf"(?ms)^{re.escape(target)}\s*:[^\n]*\n(?P<recipe>(?:\t[^\n]*\n?)*)",
@@ -286,6 +298,12 @@ def validate_registration(repository: Path) -> list[str]:
                 elif not service_image_is_pinned(service_block):
                     errors.append(
                         f"{script}: {service} image must pin an explicit tag and digest in {compose_path}"
+                    )
+                elif service == "tidb-tikv" and not service_has_required_nofile_limit(
+                    service_block
+                ):
+                    errors.append(
+                        f"{script}: tidb-tikv must set nofile soft/hard limits to at least 1000000 in {compose_path}"
                     )
         script_content = (repository / script).read_text(encoding="utf-8")
         if "docker compose" not in script_content or "down --volumes --remove-orphans" not in script_content or "disposable" not in script_content:

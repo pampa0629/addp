@@ -156,6 +156,7 @@ test-business-config: ## 校验 Business Compose 和服务管理脚本（不启�
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --services | grep -Fxq tidb
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --images | grep -Fxq pingcap/pd:v8.5.8@sha256:424e896800e42e1b7eb585b604c8daa3454110d0f0df5ab41f7c5f49164d3aef
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --images | grep -Fxq pingcap/tikv:v8.5.8@sha256:ab84580b6795868940231aa778a34b082d19e4417e6d66f755c609bebdbbfd69
+	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --format json | python3 -c 'import json, sys; nofile = json.load(sys.stdin)["services"]["tidb-tikv"]["ulimits"]["nofile"]; assert nofile == {"soft": 1000000, "hard": 1000000}'
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --images | grep -Fxq pingcap/tidb:v8.5.8@sha256:df168c764bf2dfdb166dc37a5c3b0e210d29d5f3ab2d33317fd0fdf7b32037f5
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --services | grep -Fxq opengauss
 	@docker compose --env-file business/.env.example -f business/docker-compose.yml config --images | grep -Fxq opengauss:6.0.6

@@ -14,6 +14,26 @@ class RegistrationError(RuntimeError):
     pass
 
 
+def compose_service_block(compose: str, service: str) -> str | None:
+    match = re.search(
+        rf"(?ms)^  {re.escape(service)}:\s*\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:\s*$|\Z)",
+        compose,
+    )
+    return match.group("body") if match else None
+
+
+def service_has_required_nofile_limit(service_block: str) -> bool:
+    soft = re.search(r"(?m)^\s*soft:\s*(\d+)\s*$", service_block)
+    hard = re.search(r"(?m)^\s*hard:\s*(\d+)\s*$", service_block)
+    return (
+        "nofile:" in service_block
+        and soft is not None
+        and hard is not None
+        and int(soft.group(1)) >= 1_000_000
+        and int(hard.group(1)) >= 1_000_000
+    )
+
+
 def load_suite_registry(repository: Path) -> dict[str, object]:
     path = repository / "scripts/test/online-gate.py"
     spec = importlib.util.spec_from_file_location("addp_online_gate_registration", path)
@@ -745,6 +765,11 @@ def validate_tidb_consumer_flow_profile(
             raise RegistrationError(
                 f"tidb-consumer-flow Compose must pin {image}:v8.5.8 by digest"
             )
+    tikv_service = compose_service_block(compose, "tidb-tikv")
+    if tikv_service is None or not service_has_required_nofile_limit(tikv_service):
+        raise RegistrationError(
+            "tidb-consumer-flow Compose must set tidb-tikv nofile soft/hard limits to at least 1000000"
+        )
     if re.search(r"(?m)^volumes:\s*$", compose):
         raise RegistrationError(
             "tidb-consumer-flow Compose must remain disposable and volume-free"

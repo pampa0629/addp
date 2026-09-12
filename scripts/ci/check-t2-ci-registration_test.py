@@ -169,6 +169,10 @@ class T2CIRegistrationTest(unittest.TestCase):
             "    image: pingcap/pd:v8.5.8@sha256:" + "b" * 64 + "\n"
             "  tidb-tikv:\n"
             "    image: pingcap/tikv:v8.5.8@sha256:" + "c" * 64 + "\n"
+            "    ulimits:\n"
+            "      nofile:\n"
+            "        soft: 1000000\n"
+            "        hard: 1000000\n"
             "  tidb:\n"
             f"    image: {tidb_image}\n",
             encoding="utf-8",
@@ -329,6 +333,24 @@ class T2CIRegistrationTest(unittest.TestCase):
         self.assertIn(
             "scripts/test/common-tidb-gate.sh: tidb image must pin an explicit tag "
             "and digest in scripts/test/docker-compose.tidb-t2.yml",
+            MODULE.validate_registration(self.repository),
+        )
+
+    def test_rejects_insufficient_tidb_tikv_nofile_limit(self) -> None:
+        self._add_owned_service_gate(
+            "pingcap/tidb:v8.5.8@sha256:" + "d" * 64
+        )
+        compose = self.repository / "scripts/test/docker-compose.tidb-t2.yml"
+        compose.write_text(
+            compose.read_text(encoding="utf-8").replace(
+                "soft: 1000000", "soft: 65536"
+            ),
+            encoding="utf-8",
+        )
+
+        self.assertIn(
+            "scripts/test/common-tidb-gate.sh: tidb-tikv must set nofile soft/hard limits "
+            "to at least 1000000 in scripts/test/docker-compose.tidb-t2.yml",
             MODULE.validate_registration(self.repository),
         )
 

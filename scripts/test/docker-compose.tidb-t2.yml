@@ -13,6 +13,10 @@ services:
 
   tidb-tikv:
     image: pingcap/tikv:v8.5.8@sha256:ab84580b6795868940231aa778a34b082d19e4417e6d66f755c609bebdbbfd69
+    ulimits:
+      nofile:
+        soft: 1000000
+        hard: 1000000
     command:
       - --addr=0.0.0.0:20160
       - --advertise-addr=tidb-tikv:20160

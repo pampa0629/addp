@@ -695,6 +695,10 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             "    image: pingcap/pd:v8.5.8@sha256:" + "a" * 64 + "\n"
             "  tidb-tikv:\n"
             "    image: pingcap/tikv:v8.5.8@sha256:" + "b" * 64 + "\n"
+            "    ulimits:\n"
+            "      nofile:\n"
+            "        soft: 1000000\n"
+            "        hard: 1000000\n"
             "  tidb:\n"
             "    image: pingcap/tidb:v8.5.8@sha256:" + "c" * 64 + "\n",
             encoding="utf-8",
@@ -719,6 +723,16 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         CHECK.validate_tidb_consumer_flow_profile(
             self.repository, {"tidb-consumer-flow"}
         )
+        compose_text = compose.read_text(encoding="utf-8")
+        compose.write_text(
+            compose_text.replace("hard: 1000000", "hard: 65536"),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(CHECK.RegistrationError, "nofile"):
+            CHECK.validate_tidb_consumer_flow_profile(
+                self.repository, {"tidb-consumer-flow"}
+            )
+        compose.write_text(compose_text, encoding="utf-8")
         compose.write_text(
             compose.read_text(encoding="utf-8").replace(
                 "pingcap/tidb:v8.5.8@sha256:" + "c" * 64,
