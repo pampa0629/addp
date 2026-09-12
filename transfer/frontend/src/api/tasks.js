@@ -91,11 +91,6 @@ export const fieldDefinitionRecommendationAPI = {
 
 // 执行记录 API
 export const executionAPI = {
-  // 获取执行记录列表
-  list(params) {
-    return client.get('/transfer/executions', { params })
-  },
-
   // 获取执行详情
   get(executionId) {
     return client.get(`/transfer/executions/${executionId}`)
@@ -114,10 +109,5 @@ export const executionAPI = {
   // 获取执行日志
   logs(executionId, params) {
     return client.get(`/transfer/executions/${executionId}/logs`, { params })
-  },
-
-  // 获取执行统计
-  statistics(params) {
-    return client.get('/transfer/executions/statistics', { params })
   }
 }

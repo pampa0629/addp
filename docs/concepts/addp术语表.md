@@ -225,6 +225,8 @@
 | scan schedule inheritance | 扫描调度继承 | Meta 中粗粒度 ScanTask 为下级范围提供默认定时计划的关系。 | engine 级 ScanTask 可以作为默认计划；下级范围没有独立调度时继承该计划。 |
 | independent scan schedule | 独立扫描调度 | 更具体扫描范围上单独启用的 ScanTask。 | node / catalog path 等下级范围启用独立调度后，应从上级定时扫描范围中排除。 |
 | TaskExecution | 执行记录 | 某一次任务实际执行的运行态记录。 | 统一存储在 `common.task_executions`；Meta 扫描执行通过 `source_task_id` 关联 ScanTask。 |
+| module-wide execution list | 模块级执行列表 | 汇总某一模块多个任务定义或多个任务类型 execution 的列表视图。 | 属于 Monitor 的统一执行列表，不得由业务模块另设菜单、路由或页面；模块筛选通过 `module`、`task_type` 表达。 |
+| domain execution detail | 领域执行详情 | 业务模块围绕单次 execution 展示 owner 独有结果、日志、诊断和领域操作的详情视图。 | 可以保留在 owner 模块，但不复制 Monitor 的通用状态、统计和执行树；必须提供统一监控入口。 |
 | task owner module | 任务绑定模块 | 任务绑定对象所属的模块。 | 字段建议为 `owner_module`；不同于 execution `source`。 |
 | owner ref | 任务绑定引用 | 任务定义在绑定模块中的稳定引用。 | 例如 System engine 自动扫描任务可使用 `owner_ref=engine:{engine_id}`。 |
 | planned run time | 计划触发时间 | scheduled execution 对应的计划触发时间点。 | 字段建议为 `planned_run_at`；用于 `task_id + planned_run_at` 幂等触发。 |

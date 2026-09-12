@@ -33,6 +33,8 @@ const qualityResult = {
 const executions = [{
   execution_id: executionID,
   source_task_name: '客户表质量检查',
+  source_task_id: '12',
+  task_type: 'check',
   status: 'success',
   execution_time_ms: 142,
   created_at: '2026-08-14T08:00:00Z',
@@ -79,11 +81,6 @@ const checkTasks = [{
 test('loads Quality management pages with stable business fields', async ({ page }) => {
   await installMockBackend(page)
 
-  await page.goto('/executions?status=success&page_size=50')
-  await expect(page.getByRole('heading', { name: '执行记录' })).toBeVisible()
-  await expect(page.getByText(executionID, { exact: true }).first()).toBeVisible()
-  await expect(page.getByText('86.7%', { exact: true }).first()).toBeVisible()
-
   await page.goto('/issues?status=ignored&engine_id=2&page_size=50')
   await expect(page.getByRole('heading', { name: '问题工单' })).toBeVisible()
   await expect(page.getByText('mobile_phone', { exact: true }).first()).toBeVisible()
@@ -98,29 +95,25 @@ test('loads Quality management pages with stable business fields', async ({ page
   await expect(page.getByRole('heading', { name: '检查任务' })).toBeVisible()
   await expect(page.getByText('客户表质量检查', { exact: true }).first()).toBeVisible()
   await expect(page.getByText('查看详情', { exact: true }).first()).toBeVisible()
+  await expect(page.getByRole('button', { name: '查看执行记录' })).toBeVisible()
 })
 
-test('preserves execution list filters through detail and shows rule identity', async ({ page }) => {
+test('retains Quality domain execution detail and links back to Monitor', async ({ page }) => {
   await installMockBackend(page)
-  await page.goto('/executions?status=success&page_size=50')
+  await page.goto(`/executions/${executionID}`)
 
-  await page.getByRole('button', { name: '详情' }).click()
-  await expect(page).toHaveURL(new RegExp(`/executions/${executionID}\\?status=success&page_size=50$`))
   await expect(page.getByText('执行详情', { exact: false }).first()).toBeVisible()
   await expect(page.getByText(ruleKey, { exact: true }).first()).toBeVisible()
   await expect(page.getByText('86.7%', { exact: true }).first()).toBeVisible()
   await expect(page.getByText('format', { exact: true }).first()).toBeVisible()
   await expect(page.getByText('4', { exact: true }).first()).toBeVisible()
-
-  await page.locator('.el-page-header__back').click()
-  await expect(page).toHaveURL(/\/executions\?status=success&page_size=50$/)
-  await expect(page.getByText(executionID, { exact: true }).first()).toBeVisible()
+  await expect(page.getByRole('button', { name: '在统一监控中查看' })).toBeVisible()
 })
 
-test('renders the filtered-empty state when no execution matches', async ({ page }) => {
+test('standalone navigation no longer exposes a duplicate execution list', async ({ page }) => {
   await installMockBackend(page)
-  await page.goto('/executions?status=failed&page_size=50')
-  await expect(page.getByText('没有符合筛选条件的执行记录', { exact: true })).toBeVisible()
+  await page.goto('/check-tasks')
+  await expect(page.locator('.sidebar-menu').getByText('执行记录', { exact: true })).toHaveCount(0)
 })
 
 test('persists rule application enable changes', async ({ page }) => {

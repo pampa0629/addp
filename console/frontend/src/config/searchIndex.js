@@ -5,10 +5,8 @@ import { matchesNavigationAccess } from '../utils/navigationAccess'
 export const SEARCH_INDEX = [
   // 数据传输
   { labelKey: 'console.menus.transfer.tasks',       module: 'transfer',     route: '/transfer/tasks',        keywords: ['传输任务', '数据导入', '数据接入', 'transfer', 'import', '同步'] },
-  { labelKey: 'console.menus.transfer.executions',  module: 'transfer',     route: '/transfer/executions',   keywords: ['传输执行', '执行记录', 'execution'] },
   // 元数据
   { labelKey: 'console.menus.meta.scan',            module: 'meta',         route: '/meta/scan',             keywords: ['元数据扫描', '扫描', '元数据', 'metadata', 'scan'] },
-  { labelKey: 'console.menus.meta.tasks',           module: 'meta',         route: '/meta/tasks',            keywords: ['元数据任务', '任务监控', 'meta task'] },
   // 数据管理
   { labelKey: 'console.menus.manager.dataExplorer',       module: 'manager', route: '/manager/data-explorer',       keywords: ['数据探查', '数据浏览', '数据目录', 'explorer', 'browse'] },
   { labelKey: 'console.menus.manager.dataRetrieval',      module: 'manager', route: '/manager/data-retrieval',      keywords: ['数据检索', '搜索', 'retrieval', 'search'] },
@@ -42,6 +40,7 @@ export const SEARCH_INDEX = [
   { labelKey: 'console.menus.develop.sql',      module: 'develop', route: '/develop/sql',      keywords: ['SQL', 'SQL工作台', '查询', '开发', 'workbench', 'query'] },
   { labelKey: 'console.menus.develop.notebook', module: 'develop', route: '/develop/notebook', keywords: ['Notebook', 'Jupyter', '笔记本', '开发'] },
   { labelKey: 'console.menus.develop.workflow', module: 'develop', route: '/develop/workflow',  keywords: ['工作流', '算子', '工作流编辑', 'workflow', 'operator'] },
+  { labelKey: 'console.menus.develop.tasks',    module: 'develop', route: '/develop/tasks',     keywords: ['开发任务', '查询任务', '脚本任务', 'development task'] },
   // 数据服务
   { labelKey: 'console.menus.service.queryServices', module: 'service', route: '/service/query-services', keywords: ['查询服务', '发布API', 'API', '接口', 'query service', 'publish'] },
   { labelKey: 'console.menus.service.tile',          module: 'service', route: '/service/tile',           keywords: ['瓦片服务', '地图瓦片', 'tile', 'map tile', 'OGC'] },
@@ -51,10 +50,18 @@ export const SEARCH_INDEX = [
   { labelKey: 'console.menus.workbench.dataApplications', module: 'workbench', route: '/workbench/applications', keywords: ['数据应用', '数据服务消费', '动态查询', '可视化', '联动', '应用发布', '组合展示', 'workbench', 'service consumer', 'data application', 'application revision'] },
   // 任务编排
   { labelKey: 'console.menus.orchestrator.orchestrations', module: 'orchestrator', route: '/orchestrator/orchestrations', keywords: ['编排任务', '工作流编排', 'orchestration', 'dag'] },
-  { labelKey: 'console.menus.orchestrator.executions',     module: 'orchestrator', route: '/orchestrator/executions',    keywords: ['编排执行', '执行记录', 'orchestrator execution'] },
   // 执行监控
   { labelKey: 'console.menus.monitor.dashboard',   module: 'monitor', route: '/monitor/dashboard',  keywords: ['监控仪表盘', '监控', '运行状态', 'monitor', 'dashboard'] },
   { labelKey: 'console.menus.monitor.executions',  module: 'monitor', route: '/monitor/executions', keywords: ['执行记录', '任务历史', 'execution history'] },
+  { labelKey: 'console.menus.monitor.transferExecutions', module: 'monitor', route: '/monitor/executions?module=transfer&task_type=sync', keywords: ['传输执行', '传输执行记录', 'transfer execution'] },
+  { labelKey: 'console.menus.monitor.orchestrationExecutions', module: 'monitor', route: '/monitor/executions?module=orchestrator&task_type=orchestration', keywords: ['编排执行', '编排执行记录', 'orchestrator execution'] },
+  { labelKey: 'console.menus.monitor.metadataScanExecutions', module: 'monitor', route: '/monitor/executions?module=meta&task_type=scan', keywords: ['元数据扫描执行', '扫描执行记录', 'meta scan execution'] },
+  { labelKey: 'console.menus.monitor.developExecutions', module: 'monitor', route: '/monitor/executions?module=develop', keywords: ['开发执行', '查询执行', '工作流执行', '脚本执行', 'develop execution'] },
+  { labelKey: 'console.menus.monitor.qualityCheckExecutions', module: 'monitor', route: '/monitor/executions?module=quality&task_type=check', keywords: ['质量检查执行', '质量执行记录', 'quality check execution'] },
+  { labelKey: 'console.menus.monitor.materializationGateExecutions', module: 'monitor', route: '/monitor/executions?module=quality&task_type=materialization_gate', keywords: ['物化门禁执行', '门禁执行记录', 'materialization gate execution'] },
+  { labelKey: 'console.menus.monitor.managerExecutions', module: 'monitor', route: '/monitor/executions?module=manager', keywords: ['数据管理执行', '快显执行', '向量化执行', 'manager execution'] },
+  { labelKey: 'console.menus.monitor.graphBuildExecutions', module: 'monitor', route: '/monitor/executions?module=graph&task_type=kg_build', keywords: ['图谱构建执行', '知识图谱任务执行', 'graph build execution'] },
+  { labelKey: 'console.menus.monitor.modelExecutions', module: 'monitor', route: '/monitor/executions?module=model', keywords: ['数据建模执行', '物化执行', 'model execution'] },
   { labelKey: 'console.menus.monitor.alerts',      module: 'monitor', route: '/monitor/alerts',     keywords: ['告警', '风险', 'alert', 'incident'] },
   { labelKey: 'console.menus.monitor.notifications', module: 'monitor', route: '/monitor/notifications', keywords: ['Webhook', '邮件', '通知', '投递', 'email', 'notification', 'delivery'] },
   // 企业资源目录

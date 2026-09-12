@@ -5,9 +5,12 @@
         <h2>{{ t('quality.materializationGate.title') }}</h2>
         <p>{{ t('quality.materializationGate.subtitle') }}</p>
       </div>
-      <el-button v-if="can('quality.materialization_gate.create')" type="primary" :icon="Plus" @click="openCreate">
-        {{ t('quality.materializationGate.create') }}
-      </el-button>
+      <div class="page-header-actions">
+        <MonitorExecutionsButton v-if="can('monitor.execution.read')" module="quality" task-type="materialization_gate" />
+        <el-button v-if="can('quality.materialization_gate.create')" type="primary" :icon="Plus" @click="openCreate">
+          {{ t('quality.materializationGate.create') }}
+        </el-button>
+      </div>
     </div>
 
     <el-alert v-if="loadError" :title="loadError" type="error" show-icon :closable="false" class="load-error">
@@ -250,6 +253,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
+import { MonitorExecutionsButton } from '@common-ui'
 import { materializationGateAPI, modelMaterializationAPI } from '../api/quality'
 import { useAuthStore } from '../store/auth'
 import { navigateQualityRoute } from '../utils/moduleNavigation'
@@ -592,6 +596,7 @@ onMounted(loadReferences)
 <style scoped>
 .materialization-gate-list { padding:20px; }
 .page-header { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:16px; }
+.page-header-actions { display:flex; gap:8px; }
 .page-header h2 { margin:0; font-size:18px; }
 .page-header p, .section-heading p { margin:6px 0 0; color:var(--el-text-color-secondary); }
 .load-error { margin-bottom:16px; }

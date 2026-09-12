@@ -671,6 +671,20 @@ html.purple {
 </style>
 ```
 
+任务定义列表或任务工作区的页头，统一把页面标题与主业务操作放在左侧，把“查看执行记录”放在右侧。执行入口必须复用 `common-frontend` 的 `MonitorExecutionsButton`，默认使用普通次要按钮；不得用不同图标、强调色或模块私有文案制造多个执行监控入口。单任务详情使用 `scope="task"`，并传入 `module + task-type + source-task-id`。
+
+```vue
+<div class="page-header">
+  <div>
+    <h2>{{ t('module.tasks.title') }}</h2>
+    <p>{{ t('module.tasks.subtitle') }}</p>
+  </div>
+  <MonitorExecutionsButton module="quality" task-type="check" />
+</div>
+```
+
+Monitor 是模块级执行列表的唯一页面。业务模块可保留单任务历史和领域结果详情，但返回执行历史时仍使用共享按钮，不得自行实现另一套通用执行表格、统计卡片或路由筛选器。
+
 ### 2. 间距规范
 
 使用 8px 基础倍数进行间距设计：

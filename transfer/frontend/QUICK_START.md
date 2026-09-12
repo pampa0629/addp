@@ -148,7 +148,6 @@ src/
 │   ├── TaskForm.vue           # 旧：简单表单（保留）
 │   ├── TaskList.vue
 │   ├── TaskDetail.vue
-│   ├── ExecutionList.vue
 │   └── ExecutionDetail.vue
 ├── components/
 │   ├── FieldMappingEditor.vue # 新：字段映射

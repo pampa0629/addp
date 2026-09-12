@@ -30,7 +30,7 @@ orchestrator/
 │   └── tables/
 └── frontend/src/
     ├── components/            # DAGEditor、TaskPanel
-    ├── views/                 # OrchestrationList、OrchestrationForm、ExecutionList
+    ├── views/                 # OrchestrationList、OrchestrationForm、ExecutionList（单编排历史）
     └── api/
 ```
 
@@ -59,6 +59,7 @@ Orchestrator 是 `orchestrator.workflow.*` 的 Permission owner；定义只存�
 
 - Orchestrator 前端遵守 `docs/spec/addp前端路由与可恢复状态规范.md`，模块内公开导航统一通过 `src/utils/moduleNavigation.js`。
 - 编排身份固定使用 `/orchestrations/:id/edit`，执行历史固定使用 `/orchestrations/:id/executions`；列表进入目标使用 `push`，保存、取消或返回列表使用 `replace`。
+- Orchestrator 不提供模块级全局执行列表页面；编排列表通过 `openMonitorExecutions({ module: 'orchestrator', task_type: 'orchestration' })` 进入统一 Monitor。单编排执行历史保留步骤结果和子执行入口，并可按 `source_task_id` 进入统一监控。
 - TaskProvider 创建入口固定为 `/orchestrator/orchestrations/new`，编辑入口固定为 `/orchestrator/orchestrations/:id/edit`；列表页不作为创建入口。
 
 ## 开发与验证

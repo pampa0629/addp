@@ -40,11 +40,6 @@
             <el-icon><List /></el-icon>
             <span>{{ t('orchestrator.layout.orchestrations') }}</span>
           </el-menu-item>
-
-          <el-menu-item index="/executions">
-            <el-icon><Clock /></el-icon>
-            <span>{{ t('orchestrator.layout.executions') }}</span>
-          </el-menu-item>
         </el-menu>
       </el-aside>
 
@@ -64,8 +59,7 @@ import {
   User,
   ArrowDown,
   SwitchButton,
-  List,
-  Clock
+  List
 } from '@element-plus/icons-vue'
 
 const { t } = useI18n()

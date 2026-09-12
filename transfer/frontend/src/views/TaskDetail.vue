@@ -45,6 +45,12 @@
             <el-button v-if="canCreateReplay" type="primary" plain @click="openReplayDialog">
               {{ t('transfer.taskDetail.createReplay') }}
             </el-button>
+            <MonitorExecutionsButton
+              module="transfer"
+              task-type="sync"
+              :source-task-id="route.params.id"
+              scope="task"
+            />
             <el-button @click="openJsonDialog">{{ t('transfer.taskDetail.viewJsonConfig') }}</el-button>
           </div>
         </div>
@@ -442,14 +448,13 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useConsolePageDescriptor } from '@common-ui'
+import { formatDate, MonitorExecutionsButton, useConsolePageDescriptor } from '@common-ui'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { continuousRecoveryTagType, formatLocatorDisplayPath, getContinuousRecovery } from '@addp/common-frontend'
 import { taskAPI, executionAPI } from '@/api/tasks'
 import { systemEnginesAPI } from '@/api/systemEngines'
-import { formatDate } from '@common-ui'
 import { formatSchedule, getTaskStatusLabel, getTaskStatusTagType, getExecutionTagType, getExecutionLabel } from '@/utils/formatters'
 import { buildCDCStopRequest, continuousStartDisabledReason, getCDCCaptureHealthWarning, getCDCSourceRecoveryWarning, isCDCSchemaBlocked as isCDCSchemaBlockedTask, isDatabaseCDCTask } from '@/utils/cdcTask.mjs'
 import { parseTransferLocator } from '@/utils/resourceLocator'

@@ -8,7 +8,6 @@
       "ruleApplications": "规则应用配置",
       "checkTasks": "检查任务",
       "materializationGateTasks": "物化门禁任务",
-      "executions": "执行记录",
       "issues": "问题工单"
     },
     "login": {

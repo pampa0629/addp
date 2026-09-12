@@ -3,10 +3,12 @@
     <!-- 顶部导航 -->
     <div class="toolbar">
       <div class="toolbar-left">
-        <el-button @click="handleBack">
-          <el-icon><ArrowLeft /></el-icon>
-          {{ t('develop.executionDetail.back') }}
-        </el-button>
+        <MonitorExecutionsButton
+          module="develop"
+          :task-type="execution?.task_type"
+          :source-task-id="execution?.source_task_id"
+          scope="task"
+        />
         <h2>{{ t('develop.executionDetail.title') }}</h2>
         <el-tag
           :type="getStatusColor(execution?.status)"
@@ -224,11 +226,7 @@ import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
-import {
-  ArrowLeft,
-  Refresh,
-  Loading
-} from '@element-plus/icons-vue'
+import { Refresh, Loading } from '@element-plus/icons-vue'
 import {
   getExecution,
   getExecutionLogs,
@@ -238,7 +236,7 @@ import QueryResult from '@/components/QueryResult.vue'
 import { navigateDevelopRoute } from '@/utils/developNavigation'
 import { resolveExecutionDetailRouteState } from '@/utils/executionDetailRouteState'
 import { queryErrorMessage, queryResultFromExecution } from '@/utils/queryWorkbench.mjs'
-import { formatLocatorDisplayPath, listResourceTreeEngines, parseLocatorSafe, useConsolePageDescriptor } from '@addp/common-frontend'
+import { formatLocatorDisplayPath, listResourceTreeEngines, MonitorExecutionsButton, parseLocatorSafe, useConsolePageDescriptor } from '@addp/common-frontend'
 
 const route = useRoute()
 const router = useRouter()
@@ -479,15 +477,16 @@ const formatWorkflowResultValue = (value) => {
 }
 
 // 操作函数
-const handleBack = () => {
-  navigateDevelopRoute(router, '/executions', { history: 'replace' })
-}
-
 const handleRetry = async () => {
   try {
-    await retryExecution(executionId.value)
+    const retried = await retryExecution(executionId.value)
+    const retriedID = retried?.execution_id
+    if (!retriedID) {
+      ElMessage.error(t('develop.execution.retryResponseInvalid'))
+      return
+    }
     ElMessage.success(t('develop.execution.retrySubmitted'))
-    await navigateDevelopRoute(router, '/executions', { history: 'replace' })
+    await navigateDevelopRoute(router, `/executions/${retriedID}`, { history: 'replace' })
   } catch (error) {
     console.error('重试执行失败:', error)
     ElMessage.error(t('develop.execution.retryFailed') + (error.response?.data?.error || error.message))

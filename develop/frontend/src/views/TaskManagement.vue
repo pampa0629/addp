@@ -18,6 +18,7 @@
             </el-dropdown-menu>
           </template>
         </el-dropdown>
+        <MonitorExecutionsButton module="develop" :task-type="filters.dev_type" />
         <el-button @click="handleRefresh">
           <el-icon><Refresh /></el-icon>
           {{ t('develop.taskManagement.refresh') }}
@@ -222,7 +223,7 @@ import {
   executeDevTask,
   listEngines
 } from '@/api/devTask'
-import { ExecutionParameterForm, openMonitorExecution } from '@addp/common-frontend'
+import { ExecutionParameterForm, MonitorExecutionsButton, openMonitorExecution } from '@addp/common-frontend'
 import { navigateDevelopTaskEditor } from '@/utils/developNavigation'
 
 const router = useRouter()

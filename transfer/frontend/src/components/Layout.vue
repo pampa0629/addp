@@ -41,15 +41,6 @@
             <span>{{ t('transfer.layout.taskList') }}</span>
           </el-menu-item>
 
-          <el-menu-item index="/executions">
-            <el-icon><DocumentCopy /></el-icon>
-            <span>{{ t('transfer.layout.executionList') }}</span>
-          </el-menu-item>
-
-          <el-menu-item index="/dashboard">
-            <el-icon><Monitor /></el-icon>
-            <span>{{ t('transfer.layout.dashboard') }}</span>
-          </el-menu-item>
         </el-menu>
       </el-aside>
 
@@ -69,9 +60,7 @@ import {
   User,
   ArrowDown,
   SwitchButton,
-  List,
-  DocumentCopy,
-  Monitor
+  List
 } from '@element-plus/icons-vue'
 
 const router = useRouter()
@@ -88,7 +77,7 @@ onMounted(() => {
 const activeMenu = computed(() => {
   const path = route.path
   if (path.startsWith('/tasks')) return '/tasks'
-  if (path.startsWith('/executions')) return '/executions'
+  if (path.startsWith('/executions')) return '/tasks'
   return path
 })
 

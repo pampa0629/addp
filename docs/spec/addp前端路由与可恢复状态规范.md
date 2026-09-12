@@ -73,7 +73,7 @@ Develop TaskProvider 的 canonical 前端路由为：
 | Manager | 数据资源与预览子视图 | `locator`、`tab` |
 | Manager | 数据任务工作区 | 分类使用 `/manager/tasks/quick-view`、`/manager/tasks/spatial`、`/manager/tasks/embedding` 三个 canonical path；query 只保存 `task_type`、向量化页内 `tab`、`task_id`、`create=1` 及页面定义的创建来源参数，默认页内任务视图省略 `tab` |
 | Develop | SQL、工作流、Notebook 创建或编辑 | `action`、`id` |
-| Develop | 执行列表筛选与分页 | `dev_type`、`status`、`trigger_type`、`source_task_id`、`start_date`、`end_date`、`page`、`page_size` |
+| Monitor | 统一执行列表筛选与分页 | `module`、`task_type`、`source_task_id`、`execution_id`、`status`、`trigger_type`、`start_date`、`end_date`、`page`、`page_size`；业务模块不得复制同构列表状态 |
 | Orchestrator | 编排创建与编辑 | path `/orchestrations/new`、`/orchestrations/:id/edit` |
 | Graph | 本体/审核稳定 Tab、知识服务当前图谱 | `tab`、`graph_id` |
 | Service | 服务目录类型 Tab | `tab`，默认 `all` 省略 |
@@ -83,7 +83,6 @@ Develop TaskProvider 的 canonical 前端路由为：
 | Modeling | ER 图业务域筛选 | `domain_id` |
 | Modeling | 实体详情 Tab、星型模型事实表 | `tab`、`table_id` |
 | Quality | 执行详情 | path parameter `execution_id` |
-| Quality | 执行记录列表筛选与分页 | `status`、`page`、`page_size`；进入详情时以同名 query 保留列表返回上下文 |
 | Quality | 规则应用列表筛选与分页 | `engine_id`、`schema_name`、`table_name`、`page`、`page_size` |
 | Quality | 问题工单详情 | path `/issues/:id` |
 | Quality | 问题工单列表筛选与分页 | `status`、`engine_id`、`page`、`page_size` |

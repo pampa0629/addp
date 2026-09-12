@@ -36,11 +36,6 @@ export default {
     return client.get(`/orchestrator/orchestrations/${id}/executions`, { params })
   },
 
-  // 获取所有执行记录
-  listAllExecutions(params) {
-    return client.get('/orchestrator/executions', { params })
-  },
-
   // 获取执行详情
   getExecution(id) {
     return client.get(`/orchestrator/orch-executions/${id}`)

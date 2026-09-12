@@ -13,7 +13,7 @@
 - **GIS 工作流**: 可视化编辑和执行空间计算工作流（21个 GeoPython Workflow 算子）；右下角 AI 助手生成候选工作流
 - **Notebook 任务**: 上传、执行、下载和显式重绑定 Notebook 引擎，并查看统一执行历史；右下角 AI 助手确认 Session 数据源后生成 Python/GeoPandas 单元
 - **算子管理**: 聚合工作流运行时动态算子，供工作流编辑器使用
-- **执行历史**: 保存所有执行记录，支持历史回溯
+- **统一执行历史**: 所有执行记录写入公共执行表，并在 Monitor 中统一筛选和回溯；Develop 只保留领域结果详情
 
 ## 🚀 快速开始
 
@@ -46,7 +46,7 @@ docker compose up -d develop-backend develop-frontend jupyter-engine
 存储引擎重绑定: PUT /api/v1/develop/task-definitions/{id}/storage-engine-bindings/{source_engine_id}
 任务执行:    POST /api/v1/develop/task-definitions/:id/execute
 算子发现:   GET /api/v1/develop/workflow-engines/{workflow_engine_id}/operators
-执行历史:   GET /api/v1/develop/executions
+领域执行投影: GET /api/v1/develop/executions
 Notebook引擎: GET /api/v1/develop/notebook-engines
 Kernel发现: GET /api/v1/develop/notebook-engines/{engine_id}/kernels
 Notebook:   GET /api/v1/develop/notebooks

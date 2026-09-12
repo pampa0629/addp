@@ -85,7 +85,6 @@ quality/
             ├── Login.vue
             ├── RuleApplicationList.vue       # 规则应用配置页
             ├── CheckTaskList.vue             # 检查任务列表
-            ├── ExecutionList.vue             # 执行记录列表
             ├── ExecutionDetail.vue           # 执行详情（评分、规则明细）
             └── IssueList.vue                 # 质量问题工单列表
 ```
@@ -212,7 +211,7 @@ GET    /api/v1/quality/executions                 # 列表（分页）
 GET    /api/v1/quality/executions/:execution_id   # 详情及结果（含质量评分、字段评分、规则明细）
 ```
 
-这两个人用接口要求 `monitor.execution.read`，仅投影当前 Tenant 中 `module=quality` 且 `task_type IN (check, materialization_gate)` 的执行事实；`cleanup_executor` 等运维执行不进入 Quality 业务历史页。
+这两个人用接口要求 `monitor.execution.read`，仅投影当前 Tenant 中 `module=quality` 且 `task_type IN (check, materialization_gate)` 的执行事实；列表接口是 owner 领域投影，不对应 Quality 前端列表页。模块级执行列表统一由 Monitor 展示，`cleanup_executor` 等运维执行不进入 Quality 业务领域详情。
 
 ### 问题工单
 ```
@@ -309,7 +308,6 @@ worker 崩溃后由 lease 恢复：未达 max_attempts 返回 pending，达到�
 ```
 /quality/rule-applications          # 规则应用配置列表
 /quality/check-tasks                # 检查任务列表（含手动执行入口）
-/quality/executions                 # 执行记录列表
 /quality/executions/:execution_id   # 执行详情（评分卡片、字段评分表、规则明细表）
 /quality/issues                     # 问题工单列表（含状态过滤和处理操作）
 ```
@@ -424,9 +422,9 @@ failed execution 必须在 `error_details.code` 写数据质量规范定义的�
 
 ## 前端公开路由
 
-- 模块内 Router 使用 `/rule-applications`、`/check-tasks`、`/executions`、`/issues` 等无模块前缀路径；Console 公开 URL 统一加 `/quality` 前缀。
+- 模块内 Router 使用 `/rule-applications`、`/check-tasks`、`/materialization-gate-tasks`、`/executions/:execution_id`、`/issues` 等无模块前缀路径；Console 公开 URL 统一加 `/quality` 前缀。
 - 执行详情唯一使用 `/executions/:execution_id`，参数名与 Task Execution 领域身份一致，不接受 `id` 别名。
 - 规则应用列表使用 `engine_id`、`schema_name`、`table_name`、`page`、`page_size` 恢复筛选和分页，默认值省略。
-- 执行记录列表使用 `status`、`page`、`page_size` 恢复筛选和分页；列表进入详情使用 `push` 并保留同名 query，详情返回 `/executions` 使用 `replace` 恢复原列表上下文。
+- 检查任务和物化门禁任务页使用共享 `MonitorExecutionsButton` 按 `module=quality + task_type` 进入 Monitor；Quality 不保留模块级执行列表路由。
 - 业务导航统一调用 `frontend/src/utils/moduleNavigation.js`。
 - 检查任务列表使用 `page`、`page_size` 恢复分页，使用 `create=1` 恢复创建弹窗、使用 `task_id` 恢复编辑弹窗；创建和编辑保留分页上下文，默认列表省略 query，TaskProvider `create_url` / `edit_url` 必须使用同一契约。

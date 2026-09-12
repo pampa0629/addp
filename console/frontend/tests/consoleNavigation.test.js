@@ -103,6 +103,26 @@ describe('Console navigation bridge', () => {
     expect(en.console.menus.manager.embeddingTasks).toBe('Vectorization Tasks')
   })
 
+  it('uses Monitor as the only module-wide execution list for migrated modules', () => {
+    const configSource = readFileSync(new URL('../src/config/portalConfig.js', import.meta.url), 'utf8')
+    const searchSource = readFileSync(new URL('../src/config/searchIndex.js', import.meta.url), 'utf8')
+    const zhCn = JSON.parse(readFileSync(new URL('../src/i18n/zh-cn.json', import.meta.url), 'utf8'))
+
+    expect(configSource).not.toContain("index: '/transfer/executions'")
+    expect(searchSource).not.toContain("route: '/transfer/executions'")
+    expect(configSource).not.toContain("index: '/orchestrator/executions'")
+    expect(searchSource).not.toContain("route: '/orchestrator/executions'")
+    expect(searchIndex('传输执行', key => key).map(item => item.route))
+      .toContain('/monitor/executions?module=transfer&task_type=sync')
+    expect(searchIndex('编排执行', key => key).map(item => item.route))
+      .toContain('/monitor/executions?module=orchestrator&task_type=orchestration')
+    expect(searchIndex('传输执行', key => key === 'console.menus.monitor.transferExecutions'
+      ? zhCn.console.menus.monitor.transferExecutions
+      : key)).toContainEqual(expect.objectContaining({ label: '传输执行记录' }))
+    expect(zhCn.console.menus.monitor.transferExecutions)
+      .not.toBe(zhCn.console.menus.monitor.orchestrationExecutions)
+  })
+
   it('groups IAM navigation into five business-category pages', () => {
     const configSource = readFileSync(new URL('../src/config/portalConfig.js', import.meta.url), 'utf8')
     const routerSource = readFileSync(new URL('../../../system/frontend/src/router/index.js', import.meta.url), 'utf8')
@@ -176,7 +196,7 @@ describe('Console navigation bridge', () => {
 	expect(configSource).toContain("index: '/quality/rule-applications', icon: Setting, label: 'console.menus.quality.ruleApplications', recentLabel: 'console.menus.quality.recentRuleApplications', permissions: ['quality.rule_application.read']")
 	expect(configSource).toContain("index: '/quality/check-tasks',       icon: List,    label: 'console.menus.quality.checkTasks', recentLabel: 'console.menus.quality.recentCheckTasks', permissions: ['quality.check_task.read']")
 	expect(configSource).toContain("index: '/quality/materialization-gate-tasks', icon: Lock, label: 'console.menus.quality.materializationGateTasks', recentLabel: 'console.menus.quality.recentMaterializationGateTasks', permissions: ['quality.materialization_gate.read']")
-	expect(configSource).toContain("index: '/quality/executions',        icon: Timer,   label: 'console.menus.quality.executions', recentLabel: 'console.menus.quality.recentExecutions', permissions: ['monitor.execution.read']")
+	expect(configSource).not.toContain("index: '/quality/executions'")
 	expect(configSource).toContain("index: '/quality/issues',            icon: Warning, label: 'console.menus.quality.issues', recentLabel: 'console.menus.quality.recentIssues', permissions: ['quality.issue.read']")
   })
 

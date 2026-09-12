@@ -80,7 +80,6 @@ export const materializationGateAPI = {
 
 // 执行记录
 export const executionAPI = {
-  list: (params) => client.get('/quality/executions', { params }),
   get: (id) => client.get(`/quality/executions/${id}`)
 }
 

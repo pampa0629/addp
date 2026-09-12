@@ -53,22 +53,10 @@ const routes = [
         meta: { requiresAuth: true, title: '任务详情-数据传输' }
       },
       {
-        path: 'executions',
-        name: 'ExecutionList',
-        component: () => import('@/views/ExecutionList.vue'),
-        meta: { requiresAuth: true, title: '执行记录-数据传输' }
-      },
-      {
         path: 'executions/:execution_id',
         name: 'ExecutionDetail',
         component: () => import('@/views/ExecutionDetail.vue'),
         meta: { requiresAuth: true, title: '执行详情-数据传输' }
-      },
-      {
-        path: 'dashboard',
-        name: 'Dashboard',
-        component: () => import('@/views/Dashboard.vue'),
-        meta: { requiresAuth: true, title: '监控面板-数据传输' }
       },
     ]
   }

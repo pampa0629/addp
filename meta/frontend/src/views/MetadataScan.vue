@@ -1,5 +1,9 @@
 <template>
   <div class="metadata-scan">
+    <div class="page-header">
+      <h2>{{ t('meta.scan.title') }}</h2>
+      <MonitorExecutionsButton module="meta" task-type="scan" />
+    </div>
     <el-alert
       v-if="routeSelectionError"
       :title="routeSelectionError"
@@ -386,7 +390,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { Search, Refresh, CircleCheck, CircleClose, Warning, QuestionFilled, Clock, Link, Document } from '@element-plus/icons-vue'
-import { ScheduleConfig, describeCron, decodeScheduleToForm } from '@common-ui'
+import { MonitorExecutionsButton, ScheduleConfig, describeCron, decodeScheduleToForm } from '@common-ui'
 import metaApi from '../api/meta'
 import { isDirectLeafCatalog } from '../utils/catalogScanView'
 import { navigateMetaRoute } from '../utils/moduleNavigation'
@@ -1479,6 +1483,20 @@ onBeforeUnmount(() => {
 <style scoped>
 .metadata-scan {
   padding: 12px;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.page-header h2 {
+  margin: 0;
+  color: var(--addp-text-primary);
+  font-size: 20px;
 }
 
 .metadata-scan :deep(.el-card__body) {

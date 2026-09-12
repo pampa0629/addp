@@ -10,8 +10,7 @@
       "notebook": "Notebook 开发",
       "federatedQuery": "联邦查询",
       "workflow": "工作流编辑器",
-      "tasks": "任务管理",
-      "executions": "执行监控"
+      "tasks": "任务管理"
     },
     "login": {
       "title": "数据开发 - 登录",
@@ -596,6 +595,7 @@
       "detail": "详情",
       "retry": "重试",
       "retrySubmitted": "已提交重试",
+      "retryResponseInvalid": "重试响应缺少新执行 ID",
       "retryFailed": "重试失败: ",
       "loadFailed": "加载失败: ",
       "typeQuery": "查询",

@@ -19,20 +19,22 @@ describe('Console recent visits', () => {
     })
   })
 
-  it('prefers a globally self-contained recent label over the contextual sidebar label', () => {
+  it('records a filtered Monitor execution view as the canonical execution history entry', () => {
     expect(buildRecentVisitEntry({
-      module: 'transfer',
-      fullPath: '/transfer/executions',
+      module: 'monitor',
+      fullPath: '/monitor/executions?module=transfer&task_type=sync',
       menuConfig: {
-        label: 'console.menus.transfer.label',
+        label: 'console.menus.monitor.label',
         items: [{
-          index: '/transfer/executions',
-          label: 'console.menus.transfer.executions',
-          recentLabel: 'console.menus.transfer.recentExecutions'
+          index: '/monitor/executions',
+          label: 'console.menus.monitor.executions',
+          recentLabel: 'console.menus.monitor.recentExecutions'
         }]
       }
     })).toMatchObject({
-      label: 'console.menus.transfer.recentExecutions'
+      key: '/monitor/executions',
+      route: '/monitor/executions?module=transfer&task_type=sync',
+      label: 'console.menus.monitor.recentExecutions'
     })
   })
 

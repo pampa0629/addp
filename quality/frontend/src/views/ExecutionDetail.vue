@@ -1,6 +1,14 @@
 <template>
   <div v-loading="loading" class="execution-detail-page">
-    <el-page-header @back="backToList" :content="`${t('quality.execution.detailTitle')} - ${execution?.execution_id || ''}`" />
+    <div class="page-header">
+      <h2>{{ `${t('quality.execution.detailTitle')} - ${execution?.execution_id || ''}` }}</h2>
+      <MonitorExecutionsButton
+        module="quality"
+        :task-type="execution?.task_type"
+        :source-task-id="execution?.source_task_id"
+        scope="task"
+      />
+    </div>
 
     <el-result
       v-if="loadError"
@@ -9,7 +17,7 @@
       :sub-title="loadError"
     >
       <template #extra>
-        <el-button @click="backToList">{{ t('quality.execution.backToList') }}</el-button>
+        <MonitorExecutionsButton module="quality" />
       </template>
     </el-result>
 
@@ -109,11 +117,9 @@
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useConsolePageDescriptor } from '@common-ui'
+import { MonitorExecutionsButton, useConsolePageDescriptor } from '@common-ui'
 import { executionAPI } from '../api/quality'
 import { useI18n } from 'vue-i18n'
-import { navigateQualityRoute } from '../utils/moduleNavigation'
-import { resolveExecutionListRouteState } from '../utils/executionListRouteState'
 import { executionFailureLabel } from '../utils/executionFailure'
 
 const { t } = useI18n()
@@ -155,21 +161,7 @@ const statusLabel = (status) => ({
   cancelled: t('quality.execution.cancelled')
 }[status] || status)
 
-const backToList = () => navigateQualityRoute(router, {
-  path: '/executions',
-  query: resolveExecutionListRouteState(route.query).query
-}, { history: 'replace' })
-
 const loadExecution = async () => {
-  const listState = resolveExecutionListRouteState(route.query)
-  if (listState.changed) {
-    await navigateQualityRoute(router, {
-      name: 'ExecutionDetail',
-      params: { execution_id: route.params.execution_id },
-      query: listState.query
-    }, { history: 'replace' })
-    return
-  }
   const executionID = route.params.execution_id
   const requestSequence = ++loadSequence
   if (pollTimer) {
@@ -216,6 +208,20 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.page-header h2 {
+  margin: 0;
+  color: var(--addp-text-primary);
+  font-size: 20px;
+}
+
 .execution-detail-page {
   min-height: 240px;
 }

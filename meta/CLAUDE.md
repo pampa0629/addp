@@ -30,9 +30,13 @@ meta/
 │   ├── 数据库架构.md
 │   └── tables/
 └── frontend/src/
-    ├── views/                 # MetadataScan、TaskMonitor
+    ├── views/                 # MetadataScan 扫描任务工作区
     └── api/
 ```
+
+## 前端执行监控边界
+
+Meta 前端只保留扫描任务定义、调度配置和当前扫描反馈。跨扫描任务的执行列表、通用状态筛选与统计统一由 Monitor 展示；MetadataScan 页头使用 `common-frontend` 的 `MonitorExecutionsButton(module=meta, task_type=scan)` 进入统一监控，不保留 `/meta/tasks` 菜单、路由或独立执行列表。
 
 ## Meta 扫描分层约定
 

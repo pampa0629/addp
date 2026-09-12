@@ -10,8 +10,7 @@
       "notebook": "Notebook",
       "federatedQuery": "Federated Query",
       "workflow": "Workflow Editor",
-      "tasks": "Task Management",
-      "executions": "Execution Monitor"
+      "tasks": "Task Management"
     },
     "login": {
       "title": "Data Development - Login",
@@ -585,6 +584,7 @@
       "detail": "Detail",
       "retry": "Retry",
       "retrySubmitted": "Retry submitted",
+      "retryResponseInvalid": "The retry response is missing the new execution ID",
       "retryFailed": "Retry failed: ",
       "loadFailed": "Load failed: ",
       "typeQuery": "Query",

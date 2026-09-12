@@ -60,7 +60,25 @@ const isGeo = isGeospatialFormat('shapefile') // true
 
 ### 统一任务监控跳转
 
-任务执行接口返回统一 `execution_id` 后，模块前端应通过公共工具进入 Monitor：
+业务模块的任务定义列表和任务详情应使用共享按钮进入带 owner 筛选的 Monitor，不得各自实现模块级执行列表或重复导航逻辑：
+
+```vue
+<script setup>
+import { MonitorExecutionsButton } from '@addp/common-frontend'
+</script>
+
+<template>
+  <MonitorExecutionsButton module="transfer" task-type="sync" />
+  <MonitorExecutionsButton
+    module="transfer"
+    task-type="sync"
+    :source-task-id="task.id"
+    scope="task"
+  />
+</template>
+```
+
+任务执行接口返回统一 `execution_id` 后，通过公共工具定位单次执行：
 
 ```js
 import { openMonitorExecution } from '@addp/common-frontend'
@@ -68,7 +86,7 @@ import { openMonitorExecution } from '@addp/common-frontend'
 await openMonitorExecution(execution.execution_id)
 ```
 
-该工具在 Console iframe 中会请求父级切换到 `/monitor/executions?execution_id=...`；模块独立运行时会回退为在新窗口打开 Console 路由。业务模块不要自行硬编码 Console 端口或拼接跨模块 iframe URL。
+`MonitorExecutionsButton` 统一生成 `module + task_type + source_task_id` 查询并负责 Console bridge 导航；`openMonitorExecution()` 定位单次执行。两者在模块独立运行时都会回退到 Console 路由。业务模块不要自行硬编码 Console 端口、拼接跨模块 iframe URL，或复制按钮文案与交互。
 
 模块内公开导航使用 `navigateConsoleModuleRoute()`；跨模块或需要由 Console 加载目标页面时使用 `openConsoleRoute()`。只有页面已经自行完成受控状态切换、只需要同步地址栏时，才直接使用底层 `syncConsoleRoute()`：
 

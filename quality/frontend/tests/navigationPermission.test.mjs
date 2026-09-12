@@ -27,11 +27,11 @@ test('standalone Quality navigation hides entries without their human read permi
 		'quality.rule_application.read',
 		'quality.check_task.read',
 		'quality.materialization_gate.read',
-		'monitor.execution.read',
 		'quality.issue.read'
 	]) {
 		assert.ok(layoutSource.includes(`v-if="can('${permission}')"`))
 	}
+	assert.doesNotMatch(layoutSource, /index="\/executions"/)
 })
 
 test('task pages only link to execution detail for users allowed to read executions', () => {

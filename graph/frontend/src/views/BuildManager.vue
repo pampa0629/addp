@@ -2,7 +2,10 @@
   <div class="build-manager">
     <div class="page-header">
       <h2>{{ t('graph.build.title') }}</h2>
-      <el-button type="primary" @click="showCreateDialog = true">{{ t('graph.build.createTask') }}</el-button>
+      <div class="header-actions">
+        <MonitorExecutionsButton module="graph" task-type="kg_build" />
+        <el-button type="primary" @click="showCreateDialog = true">{{ t('graph.build.createTask') }}</el-button>
+      </div>
     </div>
 
     <div v-if="loading" class="loading-wrap"><el-icon class="is-loading"><Loading /></el-icon></div>
@@ -85,6 +88,7 @@ import { buildAPI } from '../api/graphBuild'
 import { useI18n } from 'vue-i18n'
 import { navigateGraphRoute } from '@/utils/moduleNavigation'
 import { useKnowledgeGraphPageDescriptor } from '../composables/useKnowledgeGraphPageDescriptor'
+import { MonitorExecutionsButton } from '@common-ui'
 
 const { t } = useI18n()
 
@@ -225,6 +229,7 @@ onMounted(loadTasks)
 .build-manager { padding: 20px; }
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
 .page-header h2 { margin: 0; }
+.header-actions { display: flex; gap: 8px; }
 .loading-wrap { text-align: center; padding: 60px; font-size: 24px; }
 .task-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 16px; }
 .task-card { background: var(--addp-bg-primary); border: 1px solid var(--addp-border-color); border-radius: 8px; padding: 16px; cursor: pointer; transition: box-shadow 0.2s; }

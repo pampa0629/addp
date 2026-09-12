@@ -9,6 +9,7 @@ export { default as ResourceTreePicker } from './components/ResourceTreePicker.v
 export { default as AuthLoginFlow } from './components/AuthLoginFlow.vue'
 export { default as StatusAnnouncer } from './components/StatusAnnouncer.vue'
 export { default as ExecutionParameterForm } from './components/ExecutionParameterForm.vue'
+export { default as MonitorExecutionsButton } from './components/MonitorExecutionsButton.vue'
 export { default as TabularResultRenderer } from './components/TabularResultRenderer.vue'
 export { default as DataPagination } from './components/DataPagination.vue'
 export { default as ExportDialog } from './components/ExportDialog.vue'

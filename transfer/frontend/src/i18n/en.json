@@ -5,11 +5,8 @@
       "user": "User",
       "logout": "Logout",
       "taskList": "Task List",
-      "executionList": "Execution Records",
-      "dashboard": "Dashboard",
       "moduleTitle": "Data Transfer Module",
       "transferTasks": "Transfer Tasks",
-      "executionRecords": "Execution Records",
       "createTask": "Create Task",
       "editTask": "Edit Task",
       "taskDetail": "Task Detail",
@@ -65,18 +62,6 @@
       "failed": "Failed",
       "cancelled": "Cancelled"
     },
-    "dashboard": {
-      "totalTasks": "Total Tasks",
-      "notExecuted": "Not Executed",
-      "running": "Running",
-      "success": "Success",
-      "failed": "Failed",
-      "recentExecutions": "Recent Executions",
-      "id": "ID",
-      "taskId": "Task ID",
-      "status": "Status",
-      "startTime": "Start Time"
-    },
     "taskList": {
       "title": "Data Transfer Tasks",
       "createTask": "Create Task",
@@ -131,17 +116,6 @@
       "paused": "Task paused",
       "resumed": "Task resumed",
       "deleted": "Task deleted"
-    },
-    "executionList": {
-      "title": "Execution Records",
-      "id": "ID",
-      "executionId": "Execution ID",
-      "taskId": "Task ID",
-      "status": "Status",
-      "processed": "Processed",
-      "startTime": "Start Time",
-      "actions": "Actions",
-      "detail": "Detail"
     },
     "taskDetail": {
       "recentVisitTitle": "Transfer Task",

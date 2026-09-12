@@ -228,3 +228,4 @@ bash scripts/dev/restart.sh -graph
 - 本体、图谱和构建任务使用 path parameter 表达对象身份；创建成功后用 `replace` 进入详情，列表进入详情使用 `push`。
 - 本体详情默认 `entities` Tab 省略，其他稳定 Tab 使用 `tab`；审核队列默认 `entity` 省略；知识服务当前图谱使用 `graph_id`。
 - 业务导航统一调用 `frontend/src/utils/moduleNavigation.js`，不得直接操作父窗口或在页面中调用 `router.push/replace/back`。
+- 图构建页只保留当前图谱的任务定义、材料、审核和单任务领域上下文；模块级与单任务执行历史都通过共享 `MonitorExecutionsButton(module=graph, task_type=kg_build)` 进入 Monitor，不新增 Graph 通用执行列表。

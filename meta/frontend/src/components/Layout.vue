@@ -47,10 +47,6 @@
             <el-icon><Search /></el-icon>
             <span>{{ t('meta.layout.metadataScan') }}</span>
           </el-menu-item>
-          <el-menu-item index="/tasks">
-            <el-icon><Timer /></el-icon>
-            <span>{{ t('meta.layout.taskMonitor') }}</span>
-          </el-menu-item>
         </el-menu>
       </el-aside>
 
@@ -63,13 +59,12 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import {
   DataAnalysis,
   Search,
-  Timer,
   User,
   ArrowDown,
   SwitchButton,
@@ -79,7 +74,6 @@ import { useAuthStore } from '../store/auth'
 
 const { t } = useI18n()
 const router = useRouter()
-const route = useRoute()
 const authStore = useAuthStore()
 
 const isInIframe = ref(false)
@@ -90,9 +84,7 @@ onMounted(() => {
 
 const userDisplayName = computed(() => authStore.user?.username || t('meta.layout.notLoggedIn'))
 
-const activeMenu = computed(() => {
-  return route.path.startsWith('/tasks') ? '/tasks' : '/scan'
-})
+const activeMenu = computed(() => '/scan')
 
 const handleShowProfile = () => {
   ElMessageBox.alert(

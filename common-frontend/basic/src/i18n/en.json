@@ -45,6 +45,10 @@
 	  "addItem": "Add item",
 	  "removeItem": "Remove item"
     },
+    "executionMonitor": {
+      "viewExecutions": "View executions",
+      "viewTaskExecutions": "View in Monitor"
+    },
     "confirm": "Confirm",
     "cancel": "Cancel",
     "save": "Save",

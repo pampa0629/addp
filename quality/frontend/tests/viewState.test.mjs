@@ -9,7 +9,6 @@ const readView = (name) => readFileSync(
 
 const ruleApplicationSource = readView('RuleApplicationList')
 const checkTaskSource = readView('CheckTaskList')
-const executionListSource = readView('ExecutionList')
 const executionDetailSource = readView('ExecutionDetail')
 const issueListSource = readView('IssueList')
 const issueDetailSource = readView('IssueDetail')
@@ -77,7 +76,7 @@ test('check task list projects the latest execution and polls only while active'
 })
 
 test('list failures clear stale rows and expose persistent errors', () => {
-  for (const source of [ruleApplicationSource, executionListSource, issueListSource]) {
+  for (const source of [ruleApplicationSource, issueListSource]) {
     assert.match(source, /loadError\.value = e\.response\?\.data\?\.error/)
     assert.match(source, /<el-alert v-if="loadError"/)
     assert.match(source, /\.value = \[\]/)
@@ -106,7 +105,7 @@ test('rule application enabled switch persists explicit state and rolls back fai
 })
 
 test('list requests ignore responses superseded by newer filters', () => {
-  for (const source of [ruleApplicationSource, checkTaskSource, executionListSource, issueListSource]) {
+  for (const source of [ruleApplicationSource, checkTaskSource, issueListSource]) {
     assert.match(source, /const requestSequence = \+\+listRequestSequence/)
     assert.match(source, /if \(requestSequence !== listRequestSequence\) return/)
   }
@@ -127,11 +126,9 @@ test('execution detail exposes the stable rule identity', () => {
   assert.match(executionDetailSource, /quality\.execution\.ruleKey/)
 })
 
-test('execution list and detail share localized stable failure reasons', () => {
-  assert.match(executionListSource, /executionFailureLabel\(row, t\)/)
+test('execution detail uses localized stable failure reasons', () => {
   assert.match(executionDetailSource, /executionFailureLabel\(execution\.value, t\)/)
   assert.match(executionFailureSource, /execution\.error_details\?\.code/)
   assert.match(executionFailureSource, /quality\.execution\.failureUnknown/)
-  assert.doesNotMatch(executionListSource, /error_details\?\.message/)
   assert.doesNotMatch(executionDetailSource, /error_details\?\.message/)
 })

@@ -66,9 +66,15 @@
             </el-tooltip>
 
             <el-tooltip :content="t('develop.notebook.history')">
-              <el-button type="info" size="small" text @click="viewHistory(notebook)">
-                <el-icon><Clock /></el-icon>
-              </el-button>
+              <MonitorExecutionsButton
+                module="develop"
+                task-type="script"
+                :source-task-id="notebook.id"
+                scope="task"
+                type="info"
+                size="small"
+                text
+              />
             </el-tooltip>
 
             <el-dropdown @command="handleCommand($event, notebook)">
@@ -144,9 +150,13 @@
             <el-button size="small" @click="downloadNotebook(currentNotebook)">
               <el-icon><Download /></el-icon> {{ t('develop.notebook.download') }}
             </el-button>
-            <el-button size="small" @click="viewHistory(currentNotebook)">
-              <el-icon><Clock /></el-icon> {{ t('develop.notebook.history') }}
-            </el-button>
+            <MonitorExecutionsButton
+              module="develop"
+              task-type="script"
+              :source-task-id="currentNotebook.id"
+              scope="task"
+              size="small"
+            >{{ t('develop.notebook.history') }}</MonitorExecutionsButton>
           </div>
         </div>
         <div class="notebook-workspace" v-loading="sessionLoading">
@@ -531,10 +541,10 @@
 import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Close, Upload, Refresh, Search, EditPen, VideoPlay, Clock, More, Download, Delete, Switch, Plus, MagicStick, InfoFilled } from '@element-plus/icons-vue'
+import { Close, Upload, Refresh, Search, EditPen, VideoPlay, More, Download, Delete, Switch, Plus, MagicStick, InfoFilled } from '@element-plus/icons-vue'
 import { notebookAPI } from '@/api/notebook'
 import { deleteDevTask, executeDevTask, getDevTask } from '@/api/devTask'
-import { engineSelectionState, isEngineSelectable, openMonitorExecution } from '@addp/common-frontend'
+import { engineSelectionState, isEngineSelectable, MonitorExecutionsButton, openMonitorExecution } from '@addp/common-frontend'
 import { useRoute, useRouter } from 'vue-router'
 import {
   buildDevelopTaskEditorLocation,
@@ -996,14 +1006,6 @@ const confirmExecute = async () => {
   } finally {
     executing.value = false
   }
-}
-
-// 查看执行历史
-const viewHistory = (notebook) => {
-  return navigateDevelopRoute(router, {
-    path: '/executions',
-    query: { source_task_id: notebook.id, dev_type: 'script' }
-  })
 }
 
 // 下拉菜单命令处理

@@ -103,6 +103,7 @@ manager/
 - 空间相关逻辑不得默认几何字段名为 `geom`，应从 Meta、预览检测或请求参数获取。
 - 不得把 Quick View 称为任务；瓦片缓存生成任务统一使用 `manager.task_definitions` 中的 `task_type=vector_tile_cache_generation`。
 - “快显任务”“空间数据任务”和“向量化任务”是统一“数据任务”工作区中的产品分类，不是单一 `task_type`。三类任务在“数据任务”父菜单下使用独立 canonical path，但复用同一个工作区实现。全部 Manager 生成类任务定义统一写入 `manager.task_definitions`，由 `task_type` 选择强类型配置、执行器和结果策略；向量化任务继续使用 `manager.embedding_tasks` 及其独立调度和结果语义。不得恢复生成类型独立实现或向量化独立工作区。
+- Manager 数据任务工作区只展示任务定义、最近执行摘要和领域结果入口；页头统一使用 `MonitorExecutionsButton(module=manager)`，按当前 `task_type` 筛选 Monitor。不得新增 Manager 模块级执行列表、菜单或通用统计页。
 - 统一任务表、语义唯一约束、资源绑定和资源回收生命周期的真实 PostgreSQL 验收统一走 `MANAGER_POSTGRES_TEST_DSN=... make test-manager-postgres`；普通 Go 测试不得把该场景降级为内存替身。
 - 业务矢量瓦片集生成任务统一使用 `manager.task_definitions` 中的 `task_type=vector_tile_set_generation`；结果只写用户选择的 Business 存储并触发 Meta scan，不进入 `manager.vector_tile_cache`。
 - “保存为业务瓦片集”必须创建或执行 `vector_tile_set_generation`。ready 缓存仅在源版本和生成 profile 完全一致时作为执行复用候选；复制必须使用临时对象、PMTiles 校验和原子提交，成功后再触发 Meta scan。

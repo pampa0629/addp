@@ -1,5 +1,9 @@
 <template>
   <div class="logical-table-list">
+    <div class="page-header">
+      <h2>{{ t('model.logical_table.title') }}</h2>
+      <MonitorExecutionsButton module="model" />
+    </div>
     <!-- 搜索区 -->
     <el-card shadow="never" class="search-card">
       <el-row :gutter="12" align="middle">
@@ -170,6 +174,7 @@ import { navigateModelRoute } from '../utils/moduleNavigation'
 import { useI18n } from 'vue-i18n'
 import { getModelErrorMessage } from '../utils/apiError'
 import { buildLogicalTableListRouteQuery, resolveLogicalTableListRouteState } from '../utils/routeState'
+import { MonitorExecutionsButton } from '@common-ui'
 
 const { t } = useI18n()
 
@@ -382,6 +387,20 @@ onMounted(async () => {
 <style scoped>
 .logical-table-list {
   padding: 20px;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.page-header h2 {
+  margin: 0;
+  color: var(--addp-text-primary);
+  font-size: 18px;
 }
 
 .search-card {

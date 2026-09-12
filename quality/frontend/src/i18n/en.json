@@ -8,7 +8,6 @@
       "ruleApplications": "Rule Applications",
       "checkTasks": "Check Tasks",
       "materializationGateTasks": "Materialization Gates",
-      "executions": "Executions",
       "issues": "Issues"
     },
     "login": {

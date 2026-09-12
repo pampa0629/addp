@@ -9,7 +9,7 @@ Transfer 模块的前端界面，基于 Vue 3 + Element Plus 开发。
 - ✅ 任务详情 - 查看任务配置和执行历史
 - ✅ 执行监控 - 实时查看任务执行进度
 - ✅ 执行日志 - 查看详细的执行日志
-- ✅ 监控面板 - 查看整体统计数据
+- ✅ 统一执行监控 - 从任务页面按 Transfer 范围进入 Monitor
 
 ## 技术栈
 
@@ -92,9 +92,7 @@ transfer/frontend/
 │   │   ├── TaskList.vue    # 任务列表
 │   │   ├── TaskForm.vue    # 任务表单
 │   │   ├── TaskDetail.vue  # 任务详情
-│   │   ├── ExecutionList.vue     # 执行列表
-│   │   ├── ExecutionDetail.vue   # 执行详情
-│   │   └── Dashboard.vue   # 监控面板
+│   │   └── ExecutionDetail.vue   # 传输领域执行详情
 │   ├── router/             # 路由配置
 │   ├── store/              # 状态管理
 │   ├── utils/              # 工具函数
@@ -138,11 +136,6 @@ transfer/frontend/
 - 显示执行信息
 - 实时进度
 - 执行日志查看
-
-### 监控面板（Dashboard.vue）
-- 整体统计数据
-- 最近执行记录
-- 实时刷新
 
 ## 开发规范
 

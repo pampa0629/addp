@@ -56,10 +56,6 @@
             <span>{{ t('develop.nav.tasks') }}</span>
           </el-menu-item>
 
-          <el-menu-item index="/executions">
-            <el-icon><Monitor /></el-icon>
-            <span>{{ t('develop.nav.executions') }}</span>
-          </el-menu-item>
         </el-menu>
       </el-aside>
 
@@ -82,8 +78,7 @@ import {
   Document,
   Notebook,
   Connection,
-  List,
-  Monitor
+  List
 } from '@element-plus/icons-vue'
 
 const router = useRouter()

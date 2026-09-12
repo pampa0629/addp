@@ -2,7 +2,10 @@
   <div>
     <div class="page-header">
       <h2>{{ t('quality.checkTask.title') }}</h2>
-      <el-button type="primary" :icon="Plus" @click="requestCreateDialog">{{ t('quality.checkTask.createTask') }}</el-button>
+      <div class="page-header-actions">
+        <MonitorExecutionsButton v-if="canViewExecutions" module="quality" task-type="check" />
+        <el-button type="primary" :icon="Plus" @click="requestCreateDialog">{{ t('quality.checkTask.createTask') }}</el-button>
+      </div>
     </div>
 
     <el-alert v-if="loadError" :title="loadError" type="error" show-icon :closable="false" class="load-error" />
@@ -134,6 +137,7 @@ import { buildCheckTaskRouteQuery, resolveCheckTaskRouteState } from '../utils/c
 import { executionDetailRoute } from '../utils/executionNavigation'
 import { useAuthStore } from '../store/auth'
 import { useI18n } from 'vue-i18n'
+import { MonitorExecutionsButton } from '@common-ui'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -564,6 +568,10 @@ const fetchEngines = async () => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 16px;
+}
+.page-header-actions {
+  display: flex;
+  gap: 8px;
 }
 .pagination {
   margin-top: 16px;

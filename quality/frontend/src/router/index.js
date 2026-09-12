@@ -36,12 +36,6 @@ const routes = [
         meta: { requiresAuth: true, title: '物化门禁任务', requiredPermissions: ['quality.materialization_gate.read'] }
       },
       {
-        path: 'executions',
-        name: 'ExecutionList',
-        component: () => import('../views/ExecutionList.vue'),
-        meta: { requiresAuth: true, title: '执行记录', requiredPermissions: ['monitor.execution.read'] }
-      },
-      {
         path: 'executions/:execution_id',
         name: 'ExecutionDetail',
         component: () => import('../views/ExecutionDetail.vue'),

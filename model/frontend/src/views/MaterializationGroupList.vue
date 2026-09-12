@@ -5,9 +5,12 @@
         <h2>{{ t('model.materialization_group.title') }}</h2>
         <p>{{ t('model.materialization_group.subtitle') }}</p>
       </div>
-      <el-button v-if="can('model.materialization_group.create')" type="primary" :icon="Plus" @click="openCreate">
-        {{ t('model.materialization_group.create') }}
-      </el-button>
+      <div class="header-actions">
+        <MonitorExecutionsButton module="model" task-type="materialization_group_publish" />
+        <el-button v-if="can('model.materialization_group.create')" type="primary" :icon="Plus" @click="openCreate">
+          {{ t('model.materialization_group.create') }}
+        </el-button>
+      </div>
     </div>
 
     <el-alert v-if="loadError" :title="loadError" type="error" show-icon :closable="false" class="load-error">
@@ -94,6 +97,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
+import { MonitorExecutionsButton } from '@common-ui'
 import { logicalTableAPI, materializationGroupAPI } from '../api/model'
 import { useAuthStore } from '../store/auth'
 import { getModelErrorMessage } from '../utils/apiError'
@@ -281,6 +285,7 @@ onMounted(loadReferences)
 <style scoped>
 .materialization-group-list { padding: 20px; }
 .page-header { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:16px; }
+.header-actions { display:flex; gap:8px; }
 .page-header h2 { margin:0; font-size:18px; }
 .page-header p { margin:6px 0 0; color:var(--el-text-color-secondary); }
 .load-error { margin-bottom:16px; }

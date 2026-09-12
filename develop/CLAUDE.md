@@ -92,7 +92,7 @@ Copilot `resources[]` 只允许提交具有 `item_id`、可由 Owner `resource.f
 
 查询工作台必须用统一澄清弹窗消费 Copilot 的结构化 `clarifications[]`。资源确认与计算规则、统计对象、时间范围、聚合维度、实体匹配、字段映射、去重/空值/分母规则等语义澄清使用同一交互框架；前端只按 `control` 渲染并提交 `clarification_answers`，不得识别“重叠度”等业务措辞或自行决定计算口径。用户取消澄清不能改写编辑器；回答后保留原问题、资源、语言和当前查询继续生成。Toast 只用于网络、权限、模块不可用和非法响应等系统错误，不能承载可恢复的用户澄清。
 
-执行列表 `/develop/executions` 的稳定筛选和分页状态使用 `dev_type`、`status`、`trigger_type`、`source_task_id`、`start_date`、`end_date`、`page`、`page_size` query；默认页码和默认每页数量从 URL 省略，未知或无效参数必须通过 `replace` 清理。
+Develop 前端不提供模块级执行列表。`/develop/tasks` 和 Notebook 工作区使用 `MonitorExecutionsButton(module=develop)` 进入统一 Monitor，并按 `task_type`、`source_task_id` 收窄范围。`/develop/executions/:execution_id` 仅保留查询、工作流和脚本的领域结果、日志与重试详情，不复制 Monitor 的通用执行列表、统计或筛选器。
 
 TaskProvider、执行状态回查和 Asset 发现属于服务间接口，统一只接受 Bearer Service Access Token 和 canonical AuthContext。TaskProvider 固定由 `addp-orchestrator` 调用，Asset 发现固定由 `addp-asset` 调用；两者还要校验各自精确 Permission。代表用户创建或继续执行任务时必须引用由原 User AuthContext 派生、绑定唯一 execution 的 Execution Authorization；内部调用不能凭 Service Principal 自身权限伪造 User、Tenant、`triggered_by` 或数据访问能力。旧 `/api/v1/develop/internal`、`X-Internal-API-Key` 和 `X-Tenant-ID` 已删除，不保留双轨。
 
@@ -181,7 +181,8 @@ Develop 只对已持久化且可重复使用的 `dev_tasks.dev_type=query|workfl
 - [frontend/src/views/QueryEditor.vue](frontend/src/views/QueryEditor.vue) - SQL/查询编辑器
 - [frontend/src/views/WorkflowEditor.vue](frontend/src/views/WorkflowEditor.vue) - GIS 工作流编辑器
 - [frontend/src/views/NotebookEditor.vue](frontend/src/views/NotebookEditor.vue) - Jupyter Notebook 编辑器
-- [frontend/src/views/ExecutionMonitor.vue](frontend/src/views/ExecutionMonitor.vue) - 执行历史查看
+- [frontend/src/views/TaskManagement.vue](frontend/src/views/TaskManagement.vue) - 开发任务定义与统一监控入口
+- [frontend/src/views/ExecutionDetail.vue](frontend/src/views/ExecutionDetail.vue) - 查询、工作流和脚本领域执行详情
 
 ### 配置文件
 

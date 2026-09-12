@@ -1018,6 +1018,33 @@ cleanup execution 属于系统运维执行记录。Monitor 必须能展示 clean
 
 前端模块拿到执行响应中的 `execution_id` 后，应使用 `common-frontend` 的 `openMonitorExecution(execution_id)` 进入统一监控页。该工具会优先通过 Console iframe bridge 切换父级路由到 `/monitor/executions?execution_id=...`，独立运行时再回退为在新窗口打开 Console 路由，避免覆盖当前业务模块页面。业务模块不得自行硬编码 Console 端口或拼装跨模块 iframe URL。
 
+### 执行监控前端所有权
+
+Monitor 是跨任务、跨模块执行列表和通用执行详情的唯一前端 owner。业务模块不得在侧边栏、功能搜索或模块首页保留另一套跨任务执行列表、通用执行统计或通用执行详情；需要展示本模块全部 execution 时，必须使用 `common-frontend` 的 `MonitorExecutionsButton` 进入带 `module`、可选 `task_type` 的 Monitor 页面。只有无法使用 Vue 组件的调用点才直接调用底层 `openMonitorExecutions()`。
+
+业务模块前端只保留 owner 领域上下文：
+
+1. 任务定义列表可以展示最近执行摘要，并提供进入本模块筛选后 Monitor 列表的入口。
+2. 任务详情可以保留按当前任务过滤的执行历史，以及日志、结果、重试、领域诊断等 owner 特有信息；通用状态、耗时、错误和父子执行树仍以 Monitor 为准。
+3. 需要查看某个任务的统一历史时，使用 `openMonitorExecutions({ module, task_type, source_task_id })`；查看单次 execution 时使用 `openMonitorExecution(execution_id)`。
+4. 模块领域详情与 Monitor 通用详情不得复制同一交互契约。跨模块稳定的执行状态、时间、进度、错误摘要和 Monitor 导航应由 `common-frontend` 提供共享能力。
+5. 模块级全局执行列表被 Monitor 替代后，旧菜单、功能搜索、前端路由和纯列表组件必须删除，不保留重定向或双轨兼容入口。
+
+各 TaskProvider 模块的前端所有权固定如下：
+
+| 模块 | 模块内保留 | 统一到 Monitor |
+| --- | --- | --- |
+| Transfer | 传输任务定义、单任务执行历史、传输日志与结果详情 | 模块全部执行列表、通用统计 |
+| Meta | 扫描任务定义、扫描配置与当前运行反馈 | 跨扫描任务执行列表 |
+| Manager | 快显、空间、向量化任务定义与领域结果 | 模块全部执行列表 |
+| Develop | 开发任务定义、查询/工作流/脚本执行结果详情 | 模块全部执行列表、通用统计 |
+| Orchestrator | 编排定义、单编排执行历史与步骤视图 | 跨编排执行列表 |
+| Quality | 检查任务、物化门禁任务、质量分和断言详情 | 跨质量任务执行列表 |
+| Graph | 图构建任务、单图及单任务构建上下文 | 跨图构建任务执行列表 |
+| Model | 逻辑表、物化组等任务定义与发布上下文 | 跨模型任务执行列表 |
+
+“模块内保留”不等于允许模块再实现一份通用 execution 表格。单任务历史必须由明确的 `source_task_id` 限定；领域详情只展示 owner 独有的业务结果、日志、诊断或操作，并提供返回统一监控的入口。模块私有 execution 查询接口可以作为单任务轮询或领域投影存在，但不得据此重新暴露模块级全局列表。
+
 ## 模块接入检查清单
 
 模块的持久任务定义要纳入 TaskProvider 和 Orchestrator，至少满足：

@@ -1,6 +1,12 @@
 <template>
   <div class="execution-detail">
-    <el-button @click="handleBack" style="margin-bottom: 20px;">{{ t('transfer.executionDetail.back') }}</el-button>
+    <MonitorExecutionsButton
+      module="transfer"
+      task-type="sync"
+      :source-task-id="execution.task_id"
+      scope="task"
+      style="margin-bottom: 20px;"
+    />
     <el-card v-loading="loading">
       <template #header>{{ t('transfer.executionDetail.executionDetailTitle', { id: execution.execution_id }) }}</template>
       <el-descriptions :column="2" border>
@@ -263,7 +269,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useConsolePageDescriptor } from '@common-ui'
+import { MonitorExecutionsButton, useConsolePageDescriptor } from '@common-ui'
 import { executionAPI } from '@/api/tasks'
 import { ElMessage, ElIcon } from 'element-plus'
 import { useI18n } from 'vue-i18n'
@@ -277,14 +283,12 @@ import {
   getContinuousDiagnostics,
   getContinuousRecovery
 } from '@addp/common-frontend'
-import { navigateTransferRoute } from '@/utils/moduleNavigation'
 
 const { t } = useI18n()
 
 const route = useRoute()
 const router = useRouter()
 
-const handleBack = () => navigateTransferRoute(router, '/executions', { history: 'replace' })
 const loading = ref(false)
 const refreshing = ref(false)
 const execution = ref({})

@@ -5,11 +5,8 @@
       "user": "用户",
       "logout": "退出登录",
       "taskList": "任务列表",
-      "executionList": "执行记录",
-      "dashboard": "监控面板",
       "moduleTitle": "数据传输模块",
       "transferTasks": "传输任务",
-      "executionRecords": "执行记录",
       "createTask": "创建任务",
       "editTask": "编辑任务",
       "taskDetail": "任务详情",
@@ -65,18 +62,6 @@
       "failed": "失败",
       "cancelled": "已取消"
     },
-    "dashboard": {
-      "totalTasks": "总任务数",
-      "notExecuted": "未执行",
-      "running": "执行中",
-      "success": "成功",
-      "failed": "失败",
-      "recentExecutions": "最近执行",
-      "id": "ID",
-      "taskId": "任务ID",
-      "status": "状态",
-      "startTime": "开始时间"
-    },
     "taskList": {
       "title": "数据传输任务",
       "createTask": "创建任务",
@@ -131,17 +116,6 @@
       "paused": "任务已暂停",
       "resumed": "任务已恢复",
       "deleted": "任务已删除"
-    },
-    "executionList": {
-      "title": "执行记录",
-      "id": "ID",
-      "executionId": "执行ID",
-      "taskId": "任务ID",
-      "status": "状态",
-      "processed": "已处理",
-      "startTime": "开始时间",
-      "actions": "操作",
-      "detail": "详情"
     },
     "taskDetail": {
       "recentVisitTitle": "传输任务",

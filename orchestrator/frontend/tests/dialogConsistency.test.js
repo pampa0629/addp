@@ -39,7 +39,6 @@ test('all orchestrator dialogs follow the shared contract', async () => {
 test('orchestrator dialogs use shared responsive hierarchy', async () => {
   const form = await readFile(resolve('src/views/OrchestrationForm.vue'), 'utf8')
   const executionList = await readFile(resolve('src/views/ExecutionList.vue'), 'utf8')
-  const executionRecords = await readFile(resolve('src/views/ExecutionRecords.vue'), 'utf8')
 
   assert.equal((form.match(/class="addp-dialog"/g) || []).length, 3)
   assert.doesNotMatch(form, /width="(?:520px|720px|60%)"/)
@@ -50,7 +49,6 @@ test('orchestrator dialogs use shared responsive hierarchy', async () => {
   assert.match(form, /height: clamp\(260px, 55vh, 520px\)/)
   assert.doesNotMatch(form, /\.json-actions/)
   assert.match(executionList, /class="addp-dialog"[\s\S]*width="min\(800px, calc\(100vw - 24px\)\)"/)
-  assert.match(executionRecords, /class="addp-dialog"[\s\S]*width="min\(800px, calc\(100vw - 24px\)\)"/)
 })
 
 test('orchestrator confirmations use localized destructive actions', async () => {

@@ -21,6 +21,7 @@ const RIVERS_LOCATOR = 'addp://engine/11/path/public/rivers?type=table&item_id=1
 const DOC_LOCATOR = 'addp://engine/12/path/doc?type=directory&node_id=220'
 const README_LOCATOR = 'addp://engine/12/path/doc/README.md?type=file&item_id=1201'
 const SLIDES_LOCATOR = 'addp://engine/12/path/doc/slides.pptx?type=file&item_id=1202'
+const TILES_LOCATOR = 'addp://engine/12/path/tiles?type=directory&node_id=230'
 const TILE_SET_LOCATOR = 'addp://engine/12/path/tiles/farmland.pmtiles?type=file&item_id=1301'
 
 test('selects a spatial table through the shared picker and applies capability facts', async ({ page }) => {
@@ -375,6 +376,13 @@ async function installMockBackend(page, options = {}) {
       return fulfillJSON(route, options.refreshRegression ? nfsShallowTree() : nfsTree())
     }
     if (path === `/api/v1/meta/resource-tree/${NFS_ENGINE.id}/ancestors`) {
+      const locator = url.searchParams.get('locator') || ''
+      if (locator === TILE_SET_LOCATOR) {
+        return fulfillJSON(route, {
+          target_locator: TILE_SET_LOCATOR,
+          ancestors: [nfsShallowTree(), nfsTilesNode(), nfsTileSetNode()]
+        })
+      }
       return fulfillJSON(route, {
         target_locator: DOC_LOCATOR,
         ancestors: [nfsShallowTree(), nfsDocNode()]
@@ -566,6 +574,30 @@ function nfsDocNode() {
       children: [],
       metadata: { item_id: 1202, data_type: 'document', format: 'pptx' }
     }]
+  }
+}
+
+function nfsTilesNode() {
+  return {
+    id: TILES_LOCATOR,
+    locator: TILES_LOCATOR,
+    label: 'tiles',
+    type: 'directory',
+    hasChildren: true,
+    loaded: true,
+    children: [nfsTileSetNode()]
+  }
+}
+
+function nfsTileSetNode() {
+  return {
+    id: TILE_SET_LOCATOR,
+    locator: TILE_SET_LOCATOR,
+    label: 'farmland.pmtiles',
+    type: 'file',
+    path: 'tiles/farmland.pmtiles',
+    children: [],
+    metadata: { item_id: 1301, data_type: 'file', format: 'pmtiles' }
   }
 }
 

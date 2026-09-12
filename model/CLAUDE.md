@@ -341,3 +341,4 @@ draft ⇄ approved
 - 实体和逻辑表详情使用 `/:id`；实体详情默认 `basic` Tab 省略，`attributes`、`relations` 使用唯一 `tab` query。
 - 星型模型当前事实表使用 `table_id`，并响应刷新及浏览器前进/后退；无选择时省略该 query。
 - 业务导航统一调用 `frontend/src/utils/moduleNavigation.js`；详情返回明确列表路由。
+- 逻辑表和物化组页面只管理 Model 任务定义与发布上下文；页头使用共享 `MonitorExecutionsButton(module=model)` 进入统一执行监控。Model 不新增模块级执行列表、菜单或通用统计页。

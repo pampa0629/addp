@@ -26,7 +26,13 @@
           </el-select>
         </el-form-item>
         <el-form-item :label="t('monitor.execution.filter.module')">
-          <el-select v-model="filters.module" :placeholder="t('monitor.execution.filter.module_placeholder')" clearable style="width: 150px;">
+          <el-select
+            v-model="filters.module"
+            :placeholder="t('monitor.execution.filter.module_placeholder')"
+            clearable
+            style="width: 150px;"
+            @change="handleModuleChange"
+          >
             <el-option
               v-for="option in moduleOptions"
               :key="option.value"
@@ -883,13 +889,6 @@ function targetKindTagType(targetKind) {
   return tagTypeMap[targetKind] || 'info'
 }
 
-watch(
-  () => filters.value.module,
-  () => {
-    filters.value.task_type = ''
-  }
-)
-
 // 加载执行记录
 async function loadExecutions(options = {}) {
   if (filters.value.source_task_id && (!filters.value.module || !filters.value.task_type)) {
@@ -925,19 +924,26 @@ async function loadExecutions(options = {}) {
 function applyQueryFilters(query) {
   const nextModule = firstQueryValue(query.module)
   const nextTaskType = firstQueryValue(query.task_type)
+  const nextSourceTaskID = firstQueryValue(query.source_task_id)
   const nextSource = firstQueryValue(query.source)
   const nextTriggerType = firstQueryValue(query.trigger_type)
   const nextStatus = firstQueryValue(query.status)
-  if (!nextModule && !nextTaskType && !nextSource && !nextTriggerType && !nextStatus) {
+  if (!nextModule && !nextTaskType && !nextSourceTaskID && !nextSource && !nextTriggerType && !nextStatus) {
     return false
   }
   filters.value.module = nextModule
   filters.value.task_type = nextTaskType
+  filters.value.source_task_id = nextSourceTaskID
   filters.value.source = nextSource
   filters.value.trigger_type = nextTriggerType
   filters.value.status = nextStatus
   pagination.value.page = 1
   return true
+}
+
+function handleModuleChange() {
+  filters.value.task_type = ''
+  filters.value.source_task_id = ''
 }
 
 async function loadTaskProviders() {

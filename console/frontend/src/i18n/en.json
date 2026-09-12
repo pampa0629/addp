@@ -321,15 +321,11 @@
     "menus": {
       "transfer": {
         "label": "Data Transfer",
-        "tasks": "Transfer Tasks",
-        "executions": "Executions",
-        "recentExecutions": "Transfer Executions"
+        "tasks": "Transfer Tasks"
       },
       "meta": {
         "label": "Metadata",
-        "scan": "Metadata Scan",
-        "tasks": "Task Monitor",
-        "recentTasks": "Metadata Task Monitor"
+        "scan": "Metadata Scan"
       },
       "manager": {
         "label": "Data Management",
@@ -377,12 +373,10 @@
         "ruleApplications": "Rule Applications",
         "checkTasks": "Check Tasks",
         "materializationGateTasks": "Materialization Gates",
-        "executions": "Executions",
         "issues": "Issues",
         "recentRuleApplications": "Quality Rule Applications",
         "recentCheckTasks": "Quality Check Tasks",
         "recentMaterializationGateTasks": "Materialization Gate Tasks",
-        "recentExecutions": "Quality Check Executions",
         "recentIssues": "Data Quality Issues"
       },
       "security": {
@@ -397,9 +391,7 @@
         "notebook": "Notebook",
         "workflow": "Workflow Editor",
         "tasks": "Task Management",
-        "executions": "Execution Monitor",
-        "recentTasks": "Development Task Management",
-        "recentExecutions": "Development Execution Monitor"
+        "recentTasks": "Development Task Management"
       },
       "service": {
         "label": "Data Services",
@@ -416,14 +408,21 @@
       },
       "orchestrator": {
         "label": "Task Orchestration",
-        "orchestrations": "Orchestrations",
-        "executions": "Executions",
-        "recentExecutions": "Orchestration Executions"
+        "orchestrations": "Orchestrations"
       },
       "monitor": {
         "label": "Execution Monitor",
         "dashboard": "Dashboard",
         "executions": "Executions",
+        "transferExecutions": "Transfer Executions",
+        "orchestrationExecutions": "Orchestration Executions",
+        "metadataScanExecutions": "Metadata Scan Executions",
+        "developExecutions": "Data Development Executions",
+        "qualityCheckExecutions": "Quality Check Executions",
+        "materializationGateExecutions": "Materialization Gate Executions",
+        "managerExecutions": "Data Management Executions",
+        "graphBuildExecutions": "Graph Build Executions",
+        "modelExecutions": "Data Modeling Executions",
         "alerts": "Alerts",
         "notifications": "Alert Notifications",
         "recentDashboard": "Execution Monitoring Dashboard",

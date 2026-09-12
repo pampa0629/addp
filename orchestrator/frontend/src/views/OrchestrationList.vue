@@ -2,7 +2,10 @@
   <div class="orchestration-list">
     <div class="header">
       <h2>{{ t('orchestrator.orchestrationList.title') }}</h2>
-      <el-button type="primary" @click="handleCreate">{{ t('orchestrator.orchestrationList.createBtn') }}</el-button>
+      <div class="header-actions">
+        <MonitorExecutionsButton module="orchestrator" task-type="orchestration" />
+        <el-button type="primary" @click="handleCreate">{{ t('orchestrator.orchestrationList.createBtn') }}</el-button>
+      </div>
     </div>
 
     <el-table :data="orchestrations" style="width: 100%" v-loading="loading">
@@ -55,7 +58,7 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import orchestrationAPI from '../api/orchestration'
-import { describeCron } from '@common-ui'
+import { describeCron, MonitorExecutionsButton } from '@common-ui'
 import { navigateOrchestratorRoute } from '@/utils/moduleNavigation'
 
 const { t } = useI18n()
@@ -151,6 +154,16 @@ async function handleDelete(row) {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
+}
+
+.header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.header-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
 }
 
 h2 {

@@ -41,12 +41,6 @@ const routes = [
         meta: { requiresAuth: true, title: '任务管理' }
       },
       {
-        path: 'executions',
-        name: 'ExecutionMonitor',
-        component: () => import('../views/ExecutionMonitor.vue'),
-        meta: { requiresAuth: true, title: '执行监控' }
-      },
-      {
         path: 'executions/:execution_id',
         name: 'ExecutionDetail',
         component: () => import('../views/ExecutionDetail.vue'),

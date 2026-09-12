@@ -56,12 +56,6 @@ const routes = [
         name: 'ExecutionList',
         component: () => import('../views/ExecutionList.vue'),
         meta: { requiresAuth: true, title: '执行历史' }
-      },
-      {
-        path: 'executions',
-        name: 'ExecutionRecords',
-        component: () => import('../views/ExecutionRecords.vue'),
-        meta: { requiresAuth: true, title: '执行记录' }
       }
     ]
   }

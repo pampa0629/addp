@@ -23,12 +23,6 @@ const routes = [
         name: 'MetadataScan',
         component: () => import('../views/MetadataScan.vue'),
         meta: { requiresAuth: true, title: '元数据-addp' }
-      },
-      {
-        path: 'tasks',
-        name: 'TaskMonitor',
-        component: () => import('../views/TaskMonitor.vue'),
-        meta: { requiresAuth: true, title: '元数据-addp' }
       }
     ]
   }

@@ -2,7 +2,17 @@
   <div class="execution-list">
     <div class="header">
       <h2>{{ t('orchestrator.executionList.title') }}</h2>
-      <el-button @click="handleBack">{{ t('orchestrator.executionList.backBtn') }}</el-button>
+      <div class="header-actions">
+        <MonitorExecutionsButton
+          module="orchestrator"
+          task-type="orchestration"
+          :source-task-id="route.params.id"
+          scope="task"
+          type="primary"
+          plain
+        />
+        <el-button @click="handleBack">{{ t('orchestrator.executionList.backBtn') }}</el-button>
+      </div>
     </div>
 
     <el-table :data="executions" style="width: 100%" v-loading="loading">
@@ -114,10 +124,9 @@ import { ref, onBeforeUnmount, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
-import { openMonitorExecution } from '@addp/common-frontend'
 import orchestrationAPI from '../api/orchestration'
 import { navigateOrchestratorRoute } from '@/utils/moduleNavigation'
-import { useConsolePageDescriptor } from '@common-ui'
+import { MonitorExecutionsButton, openMonitorExecution, useConsolePageDescriptor } from '@common-ui'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -256,6 +265,16 @@ async function openExecutionInMonitor(executionID) {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
+}
+
+.header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.header-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
 }
 
 h2 {

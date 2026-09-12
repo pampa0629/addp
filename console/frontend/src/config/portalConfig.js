@@ -1,7 +1,7 @@
 import {
   Coin, Reading, Tools, Folder, Shop, ChatDotRound, Memo, Setting,
   Upload, Box, DataAnalysis, Grid, CircleCheck, Edit, Link, Operation, DataLine,
-  List, Timer, Connection, Search, Document, Share, DataBoard, Odometer,
+  List, Connection, Search, Document, Share, DataBoard, Odometer,
   TrendCharts, SortDown, FolderOpened, Warning, Monitor, Notebook,
   Files, Tickets, Key, Refresh, Lock, SetUp,
   MapLocation, Collection,
@@ -94,17 +94,14 @@ export const PAGE_MAPS = {
   },
   meta: {
     'scan': 'scan',
-    'tasks': 'tasks',
     '': 'scan',
   },
   transfer: {
     'tasks': 'tasks',
-    'executions': 'executions',
     '': 'tasks',
   },
   orchestrator: {
     'orchestrations': 'orchestrations',
-    'executions': 'executions',
     '': 'orchestrations',
   },
   develop: {
@@ -112,7 +109,6 @@ export const PAGE_MAPS = {
     'notebook': 'notebook',
     'workflow': 'workflow',
     'tasks': 'tasks',
-    'executions': 'executions',
     '': 'sql',
   },
   service: {
@@ -197,14 +193,12 @@ export const SIDEBAR_MENUS = {
     label: 'console.menus.transfer.label', icon: Upload,
     items: [
       { index: '/transfer/tasks',        icon: List,       label: 'console.menus.transfer.tasks' },
-      { index: '/transfer/executions',   icon: Timer,      label: 'console.menus.transfer.executions', recentLabel: 'console.menus.transfer.recentExecutions' },
     ],
   },
   meta: {
     label: 'console.menus.meta.label', icon: Box,
     items: [
       { index: '/meta/scan',  icon: Search,  label: 'console.menus.meta.scan' },
-      { index: '/meta/tasks', icon: Monitor, label: 'console.menus.meta.tasks', recentLabel: 'console.menus.meta.recentTasks' },
     ],
   },
   manager: {
@@ -252,7 +246,6 @@ export const SIDEBAR_MENUS = {
       { index: '/quality/rule-applications', icon: Setting, label: 'console.menus.quality.ruleApplications', recentLabel: 'console.menus.quality.recentRuleApplications', permissions: ['quality.rule_application.read'] },
       { index: '/quality/check-tasks',       icon: List,    label: 'console.menus.quality.checkTasks', recentLabel: 'console.menus.quality.recentCheckTasks', permissions: ['quality.check_task.read'] },
       { index: '/quality/materialization-gate-tasks', icon: Lock, label: 'console.menus.quality.materializationGateTasks', recentLabel: 'console.menus.quality.recentMaterializationGateTasks', permissions: ['quality.materialization_gate.read'] },
-      { index: '/quality/executions',        icon: Timer,   label: 'console.menus.quality.executions', recentLabel: 'console.menus.quality.recentExecutions', permissions: ['monitor.execution.read'] },
       { index: '/quality/issues',            icon: Warning, label: 'console.menus.quality.issues', recentLabel: 'console.menus.quality.recentIssues', permissions: ['quality.issue.read'] },
     ],
   },
@@ -271,7 +264,6 @@ export const SIDEBAR_MENUS = {
       { index: '/develop/notebook',  icon: Notebook,   label: 'console.menus.develop.notebook' },
       { index: '/develop/workflow',  icon: Connection, label: 'console.menus.develop.workflow' },
       { index: '/develop/tasks',     icon: List,       label: 'console.menus.develop.tasks', recentLabel: 'console.menus.develop.recentTasks' },
-      { index: '/develop/executions',icon: Timer,      label: 'console.menus.develop.executions', recentLabel: 'console.menus.develop.recentExecutions' },
     ],
   },
   service: {
@@ -294,7 +286,6 @@ export const SIDEBAR_MENUS = {
     label: 'console.menus.orchestrator.label', icon: Operation,
     items: [
       { index: '/orchestrator/orchestrations', icon: List,  label: 'console.menus.orchestrator.orchestrations' },
-      { index: '/orchestrator/executions',     icon: Timer, label: 'console.menus.orchestrator.executions', recentLabel: 'console.menus.orchestrator.recentExecutions' },
     ],
   },
   monitor: {

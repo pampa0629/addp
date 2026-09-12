@@ -4,10 +4,13 @@
       <template #header>
         <div class="card-header">
           <span>{{ t('transfer.taskList.title') }}</span>
-          <el-button type="primary" @click="handleCreate">
-            <el-icon><Plus /></el-icon>
-            {{ t('transfer.taskList.createTask') }}
-          </el-button>
+          <div class="header-actions">
+            <MonitorExecutionsButton module="transfer" task-type="sync" />
+            <el-button type="primary" @click="handleCreate">
+              <el-icon><Plus /></el-icon>
+              {{ t('transfer.taskList.createTask') }}
+            </el-button>
+          </div>
         </div>
       </template>
 
@@ -157,7 +160,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Loading, SuccessFilled, CircleCloseFilled } from '@element-plus/icons-vue'
 import { taskAPI } from '@/api/tasks'
-import { formatDate } from '@common-ui'
+import { formatDate, MonitorExecutionsButton } from '@common-ui'
 import { formatSchedule, getTaskStatusLabel, getTaskStatusTagType } from '@/utils/formatters'
 import { buildCDCStopRequest, continuousStartDisabledReason, isCDCSchemaBlocked, isDatabaseCDCTask } from '@/utils/cdcTask.mjs'
 import { navigateTransferRoute } from '@/utils/moduleNavigation'
@@ -435,6 +438,16 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
 }
 
 .stats-row {

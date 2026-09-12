@@ -4,6 +4,12 @@
       <el-button text @click="returnToBuild">← {{ t('graph.common.back') }}</el-button>
       <h2>{{ task?.name || t('graph.build.taskDetail') }}</h2>
       <div class="header-actions">
+        <MonitorExecutionsButton
+          module="graph"
+          task-type="kg_build"
+          :source-task-id="taskId"
+          scope="task"
+        />
         <el-button v-if="canRun" type="primary" :loading="running" @click="handleRun">{{ t('graph.build.runTask') }}</el-button>
         <el-button v-if="task?.status === 'running'" type="warning" @click="handleCancel">{{ t('graph.build.cancel') }}</el-button>
         <el-button @click="openReview">
@@ -99,7 +105,7 @@ import { Loading } from '@element-plus/icons-vue'
 import { buildAPI } from '../api/graphBuild'
 import { useI18n } from 'vue-i18n'
 import { navigateGraphRoute } from '@/utils/moduleNavigation'
-import { useConsolePageDescriptor } from '@common-ui'
+import { MonitorExecutionsButton, useConsolePageDescriptor } from '@common-ui'
 
 const { t } = useI18n()
 

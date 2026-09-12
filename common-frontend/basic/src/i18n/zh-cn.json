@@ -45,6 +45,10 @@
 	  "addItem": "添加一项",
 	  "removeItem": "删除此项"
     },
+    "executionMonitor": {
+      "viewExecutions": "查看执行记录",
+      "viewTaskExecutions": "在统一监控中查看"
+    },
     "confirm": "确定",
     "cancel": "取消",
     "save": "保存",

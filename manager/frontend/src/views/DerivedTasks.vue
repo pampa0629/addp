@@ -5,17 +5,20 @@
         <h2>{{ pageTitle }}</h2>
         <p>{{ t('manager.derivedTasks.description') }}</p>
       </div>
-      <div v-if="category !== 'embedding'" class="header-actions">
-        <el-button @click="loadTasks"><el-icon><Refresh /></el-icon>{{ t('manager.derivedTasks.refresh') }}</el-button>
-        <el-button v-if="category === 'managed_quick_view'" type="primary" @click="beginQuickViewCreate"><el-icon><Plus /></el-icon>{{ t('manager.derivedTasks.createQuickView') }}</el-button>
-        <el-dropdown v-else split-button type="primary" @click="beginCreate(defaultSpatialTaskType)" @command="beginCreate">
-          <el-icon><Plus /></el-icon>{{ t('manager.derivedTasks.createSpatial') }}
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item v-for="option in taskTypeOptions" :key="option.value" :command="option.value">{{ t(option.label) }}</el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
+      <div class="header-actions">
+        <MonitorExecutionsButton module="manager" :task-type="monitorTaskType" />
+        <template v-if="category !== 'embedding'">
+          <el-button @click="loadTasks"><el-icon><Refresh /></el-icon>{{ t('manager.derivedTasks.refresh') }}</el-button>
+          <el-button v-if="category === 'managed_quick_view'" type="primary" @click="beginQuickViewCreate"><el-icon><Plus /></el-icon>{{ t('manager.derivedTasks.createQuickView') }}</el-button>
+          <el-dropdown v-else split-button type="primary" @click="beginCreate(defaultSpatialTaskType)" @command="beginCreate">
+            <el-icon><Plus /></el-icon>{{ t('manager.derivedTasks.createSpatial') }}
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item v-for="option in taskTypeOptions" :key="option.value" :command="option.value">{{ t(option.label) }}</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </template>
       </div>
     </div>
 
@@ -147,7 +150,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh } from '@element-plus/icons-vue'
-import { buildLocator, formatBytes, getResourceItemByCatalogPath, openMonitorExecution, parseLocatorSafe } from '@addp/common-frontend'
+import { buildLocator, formatBytes, getResourceItemByCatalogPath, MonitorExecutionsButton, openMonitorExecution, parseLocatorSafe } from '@addp/common-frontend'
 import { deleteDerivedTask, executeDerivedTask, getDerivedTask, listDerivedTasks } from '../api/derivedTasks'
 import { useCurrentResultConfirmation } from '../composables/useCurrentResultConfirmation'
 import { useQuickViewResourceDisplay } from '../composables/useQuickViewResourceDisplay'
@@ -231,6 +234,7 @@ function taskTypeFromRoute(currentRoute, currentCategory) {
 const category = ref(categoryFromRoute(route))
 const taskType = ref(taskTypeFromRoute(route, category.value))
 const taskTypeOptions = computed(() => (taskTypes[category.value] || []).map(([value, label]) => ({ value, label })))
+const monitorTaskType = computed(() => category.value === 'embedding' ? 'embedding' : taskType.value)
 const defaultSpatialTaskType = computed(() => taskType.value && categoryForTaskType(taskType.value) === 'spatial_business' ? taskType.value : 'vector_tile_set_generation')
 const pageTitle = computed(() => {
   const keys = {

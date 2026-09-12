@@ -238,7 +238,7 @@ SQL 编译必须遵守：
 5. 规则结构、参数、目标方言或数据库表达式错误都属于 execution 错误，不能跳过规则后继续宣告成功。
 6. 物化门禁只能由强类型断言编译器生成参数化 SQL，不得把 `message`、`value`或任何任务文本当作 SQL 片段。
 
-Quality 的 `failed` 或 `timeout` 终态 execution 必须在 `error_details.code` 使用稳定领域错误码；原始数据库、SQL、连接和外部服务错误只写服务日志，不得返回给前端。字段检查 v1 错误码沿用现有 `quality.authorization.*`、`quality.execution.*`和 `quality.issue.*`命名空间；物化门禁额外使用 `quality.materialization_gate.config_invalid`、`quality.materialization_gate.read_context_failed`、`quality.materialization_gate.unsupported_engine`、`quality.materialization_gate.authorization_failed`、`quality.materialization_gate.assertion_compile_failed`、`quality.materialization_gate.sql_execution_failed`、`quality.materialization_gate.assertion_failed`和 `quality.materialization_gate.result_invalid`。超时码仍为 `quality.execution.timeout`，失败兜底码仍为 `quality.execution.failed`。前端必须使用同一映射按错误码本地化展示终态原因；执行列表和详情都只能展示该稳定原因，不得展示持久化的安全摘要或内部错误文本。
+Quality 的 `failed` 或 `timeout` 终态 execution 必须在 `error_details.code` 使用稳定领域错误码；原始数据库、SQL、连接和外部服务错误只写服务日志，不得返回给前端。字段检查 v1 错误码沿用现有 `quality.authorization.*`、`quality.execution.*`和 `quality.issue.*`命名空间；物化门禁额外使用 `quality.materialization_gate.config_invalid`、`quality.materialization_gate.read_context_failed`、`quality.materialization_gate.unsupported_engine`、`quality.materialization_gate.authorization_failed`、`quality.materialization_gate.assertion_compile_failed`、`quality.materialization_gate.sql_execution_failed`、`quality.materialization_gate.assertion_failed`和 `quality.materialization_gate.result_invalid`。超时码仍为 `quality.execution.timeout`，失败兜底码仍为 `quality.execution.failed`。前端必须使用同一映射按错误码本地化展示终态原因；Monitor 列表和 Quality 领域详情都只能展示该稳定原因，不得展示持久化的安全摘要或内部错误文本。
 
 ### 5.2 空表与规则真值
 
@@ -378,12 +378,12 @@ POST /api/v1/quality/runtime/catalog-summaries/resolve
 
 - MaterializationGateTask 业务 API 唯一路由为 `GET|POST /api/v1/quality/materialization-gate-tasks`和 `GET|PUT|DELETE /api/v1/quality/materialization-gate-tasks/{id}`；不提供模块内直接 run 端点。
 - TaskProvider 统一使用 `GET /api/v1/quality/task-provider/tasks`、`GET /api/v1/quality/task-provider/tasks/{task_type}/{id}`、`POST /api/v1/quality/task-provider/tasks/{task_type}/{id}/execute` 和 `GET /api/v1/quality/task-provider/executions/{execution_id}`；`task_type` 只允许 `check|materialization_gate`。整组路由仅允许 `addp-orchestrator` Service Client 的固定 Guard 与 `quality.task_provider.read|execute` 保护，不得向 User Principal 或 Quality 前端暴露。
-- 人工执行历史统一使用 `GET /api/v1/quality/executions` 和 `GET /api/v1/quality/executions/{execution_id}`，以 `monitor.execution.read` 读取当前 Tenant 中 `module=quality` 且 `task_type IN (check, materialization_gate)` 的执行事实。Quality cleanup 的 `cleanup_executor` 不属于业务质量任务执行历史，不得出现在该列表或详情中。
+- Quality 领域执行投影使用 `GET /api/v1/quality/executions` 和 `GET /api/v1/quality/executions/{execution_id}`，以 `monitor.execution.read` 读取当前 Tenant 中 `module=quality` 且 `task_type IN (check, materialization_gate)` 的执行事实。前端模块级执行历史统一进入 Monitor；Quality 只保留质量评分、规则明细和门禁断言详情。Quality cleanup 的 `cleanup_executor` 不属于业务质量任务执行历史，不得出现在该投影或详情中。
 - 所有租户资源查询必须从认证上下文获取 Tenant，不能相信客户端传入的 Tenant ID。
 - 创建使用 `POST`，完整替换使用 `PUT`；Quality v1 的更新接口使用完整请求模型，不保留“指针字段即局部更新”的伪 PUT。
 - 列表响应遵循 ADDP 统一分页结构，参数使用 `page`、`page_size`；必须返回真实 `total`，并应用稳定排序。
 - Quality 当前数据量和 Console 跳页需求使用 offset 分页；索引必须覆盖常用 Tenant、状态、目标范围和稳定排序字段。未来切换游标分页时必须更新 API 规范并删除 offset 路线。
-- 执行记录列表可按 `status` 筛选；只接受 `pending`、`running`、`success`、`failed`、`timeout`、`cancelled`，未传表示全部。结果必须按 `created_at DESC, id DESC` 稳定排序。
+- 领域执行投影可按 `status` 筛选；只接受 `pending`、`running`、`success`、`failed`、`timeout`、`cancelled`，未传表示全部。结果必须按 `created_at DESC, id DESC` 稳定排序；该接口不构成 Quality 前端模块级执行列表的所有权。
 - 错误使用统一错误 envelope、稳定错误码和国际化消息；数据库、SQL 和外部服务原始错误不得直接返回给前端。
 - Swagger 注解、生成文件、前端调用和后端行为必须在同一变更中同步。
 
