@@ -354,6 +354,8 @@ describe('Security product information architecture', () => {
 
   it('keeps the pending review queue as a recoverable subview of protected resources', () => {
     const enrollment = readSource('../src/views/ProtectionEnrollmentList.vue')
+    const reviewQueue = readSource('../src/components/protection-enrollment/FindingReviewQueueWorkspace.vue')
+    const resourceIdentity = readSource('../src/components/protection-enrollment/EnrollmentResourceIdentity.vue')
     const reviewForm = readSource('../src/components/protection-enrollment/FindingReviewForm.vue')
     const zhCn = JSON.parse(readSource('../src/i18n/zh-cn.json'))
 
@@ -367,7 +369,19 @@ describe('Security product information architecture', () => {
     expect(enrollment).toContain('security.finding.reviewSavedAndContinued')
     expect(enrollment).toContain('security.finding.reviewRemainingQueue')
     expect(enrollment).toContain('security.finding.reviewRemainingResource')
+    expect(enrollment).toContain("defineAsyncComponent(() => import('../components/protection-enrollment/FindingReviewQueueWorkspace.vue'))")
     expect(enrollment).toContain("defineAsyncComponent(() => import('../components/protection-enrollment/FindingReviewForm.vue'))")
+    expect(enrollment).toContain('<FindingReviewQueueWorkspace')
+    expect(enrollment).toContain('<EnrollmentResourceIdentity')
+    expect(enrollment).not.toContain('class="review-queue-intro"')
+    expect(enrollment).not.toContain('class="resource-cell"')
+    expect(reviewQueue).toContain('class="review-queue-intro"')
+    expect(reviewQueue).toContain("emit('review', row, 'confirm')")
+    expect(reviewQueue).toContain("emit('review', row, 'reject')")
+    expect(reviewQueue).toContain("emit('openResource', row)")
+    expect(reviewQueue).toContain("emit('filterChange')")
+    expect(reviewQueue).toContain("emit('pageChange')")
+    expect(resourceIdentity).toContain('class="resource-cell"')
     expect(enrollment).toContain('v-model:basis-expanded="reviewBasisExpanded"')
     expect(reviewForm).toContain('security.finding.reviewBasis.actualMatch')
     expect(reviewForm).toContain('evidenceAuditDescription(finding)')

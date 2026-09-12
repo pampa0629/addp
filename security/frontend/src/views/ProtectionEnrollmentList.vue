@@ -50,191 +50,123 @@
         @open-authorization="openAccessRequestAuthorization"
         @decide="openAccessRequestDecision"
       />
-    <div class="list-scope-bar">
-      <el-radio-group v-model="listScope" size="small" @change="handleScopeChange">
-        <el-radio-button value="current">{{ t('security.enrollment.listScopes.current') }}</el-radio-button>
-        <el-radio-button value="released">{{ t('security.enrollment.listScopes.released') }}</el-radio-button>
-        <el-radio-button value="all">{{ t('security.enrollment.listScopes.all') }}</el-radio-button>
-      </el-radio-group>
-    </div>
-
-    <el-card class="enrollment-card" shadow="never">
-      <el-table v-loading="loading" :data="rows" row-key="id">
-        <el-table-column :label="t('security.enrollment.resource')" min-width="320">
-          <template #default="{ row }">
-            <button type="button" class="resource-cell" @click="openDetail(row)">
-              <span class="resource-name">{{ resourceName(row) }}</span>
-              <span class="resource-path">{{ resourcePath(row) }}</span>
-              <span class="resource-meta">
-                <el-tag size="small" effect="plain">{{ itemTypeLabel(row.target_snapshot?.item_type) }}</el-tag>
-                <span>{{ engineLabel(row.target_snapshot?.engine_id) }}</span>
-              </span>
-            </button>
-          </template>
-        </el-table-column>
-
-        <el-table-column :label="t('security.enrollment.state')" width="190">
-          <template #default="{ row }">
-            <div class="state-cell">
-              <el-tag :type="presentationState(row).type">{{ presentationState(row).label }}</el-tag>
-              <span>{{ presentationState(row).description }}</span>
-            </div>
-          </template>
-        </el-table-column>
-
-        <el-table-column :label="t('security.enrollment.progress')" min-width="430">
-          <template #default="{ row }">
-            <div class="owner-grid">
-              <div v-for="owner in row.owner_progress" :key="owner.consumer_owner" class="owner-item">
-                <span class="owner-name">{{ ownerLabel(owner.consumer_owner) }}</span>
-                <el-tag size="small" :type="ownerPresentation(row, owner).type">
-                  {{ ownerPresentation(row, owner).label }}
-                </el-tag>
-              </div>
-            </div>
-          </template>
-        </el-table-column>
-
-        <el-table-column :label="listScope === 'released' ? t('security.enrollment.releaseCompletedAt') : t('security.enrollment.discovery')" width="210">
-          <template #default="{ row }">
-            <span v-if="listScope === 'released'" class="release-time">{{ formatDateTime(row.released_at) }}</span>
-            <div v-else class="discovery-cell">
-              <el-tag size="small" :type="discoveryPresentation(row).type">{{ discoveryPresentation(row).label }}</el-tag>
-              <span>{{ formatDateTime(row.last_discovered_at) }}</span>
-            </div>
-          </template>
-        </el-table-column>
-
-        <el-table-column :label="t('security.common.actions')" width="210" fixed="right">
-          <template #default="{ row }">
-            <div class="row-actions">
-              <el-button
-                v-if="canCreate && row.state === 'released'"
-                link
-                type="primary"
-                @click="openReEnrollment(row)"
-              >
-                {{ t('security.enrollment.reEnroll') }}
-              </el-button>
-              <el-button link type="primary" @click="openDetail(row)">{{ t('security.enrollment.viewDetails') }}</el-button>
-            </div>
-          </template>
-        </el-table-column>
-      </el-table>
-
-      <el-empty v-if="!loading && rows.length === 0" :description="emptyDescription">
-        <el-button v-if="canCreate && listScope === 'current'" type="primary" @click="openCreate()">{{ t('security.enrollment.create') }}</el-button>
-      </el-empty>
-
-      <div v-if="total > pageSize" class="pagination">
-        <el-pagination
-          v-model:current-page="currentPage"
-          v-model:page-size="pageSize"
-          background
-          layout="total, sizes, prev, pager, next"
-          :page-sizes="[20, 50, 100]"
-          :total="total"
-          @change="handlePageChange"
-        />
-      </div>
-    </el-card>
-    </template>
-
-    <template v-else>
-      <div class="review-queue-intro">
-        <div>
-          <strong>{{ t('security.reviewQueue.title') }}</strong>
-          <p>{{ t('security.reviewQueue.description') }}</p>
-        </div>
-        <el-tag type="warning" effect="plain">{{ t('security.reviewQueue.pendingTotal', { count: reviewQueueTotal }) }}</el-tag>
+      <div class="list-scope-bar">
+        <el-radio-group v-model="listScope" size="small" @change="handleScopeChange">
+          <el-radio-button value="current">{{ t('security.enrollment.listScopes.current') }}</el-radio-button>
+          <el-radio-button value="released">{{ t('security.enrollment.listScopes.released') }}</el-radio-button>
+          <el-radio-button value="all">{{ t('security.enrollment.listScopes.all') }}</el-radio-button>
+        </el-radio-group>
       </div>
 
-      <div class="review-queue-filters">
-        <el-select
-          v-model="reviewQueueTypeID"
-          clearable
-          :placeholder="t('security.reviewQueue.allSensitiveTypes')"
-          @change="handleReviewQueueFilterChange"
-        >
-          <el-option v-for="item in sensitiveTypes" :key="item.id" :label="item.name" :value="String(item.id)" />
-        </el-select>
-        <el-select
-          v-model="reviewQueueDetectorVersion"
-          clearable
-          filterable
-          :placeholder="t('security.reviewQueue.allRecognitionMethods')"
-          @change="handleReviewQueueFilterChange"
-        >
-          <el-option v-for="item in reviewQueueCapabilities" :key="item.key" :label="capabilityOptionLabel(item)" :value="item.key" />
-        </el-select>
-        <el-button v-if="reviewQueueTypeID || reviewQueueDetectorVersion" @click="resetReviewQueueFilters">
-          {{ t('security.reviewQueue.clearFilters') }}
-        </el-button>
-      </div>
+      <el-card class="enrollment-card" shadow="never">
+        <el-table v-loading="loading" :data="rows" row-key="id">
+          <el-table-column :label="t('security.enrollment.resource')" min-width="320">
+            <template #default="{ row }">
+              <EnrollmentResourceIdentity
+                :row="row"
+                :resource-name="resourceName"
+                :resource-path="resourcePath"
+                :item-type-label="itemTypeLabel"
+                :engine-label="engineLabel"
+                @open="openDetail"
+              />
+            </template>
+          </el-table-column>
 
-      <el-card class="enrollment-card review-queue-card" shadow="never">
-        <el-table v-loading="reviewQueueLoading" :data="reviewQueueRows" row-key="id">
-          <el-table-column :label="t('security.reviewQueue.resource')" min-width="260">
+          <el-table-column :label="t('security.enrollment.state')" width="190">
             <template #default="{ row }">
-              <button type="button" class="resource-cell" @click="openReviewQueueResource(row)">
-                <span class="resource-name">{{ findingResourceName(row) }}</span>
-                <span class="resource-path">{{ row.target_snapshot?.full_name || t('security.enrollment.snapshotUnavailable') }}</span>
-                <span class="resource-meta">
-                  <el-tag size="small" effect="plain">{{ itemTypeLabel(row.target_snapshot?.item_type) }}</el-tag>
-                  <span>{{ engineLabel(row.target_snapshot?.engine_id) }}</span>
-                </span>
-              </button>
-            </template>
-          </el-table-column>
-          <el-table-column :label="t('security.reviewQueue.candidate')" min-width="250">
-            <template #default="{ row }">
-              <div class="queue-candidate">
-                <strong>{{ row.component_key }}</strong>
-                <span>{{ typeName(row.sensitive_data_type_id) }}</span>
+              <div class="state-cell">
+                <el-tag :type="presentationState(row).type">{{ presentationState(row).label }}</el-tag>
+                <span>{{ presentationState(row).description }}</span>
               </div>
             </template>
           </el-table-column>
-          <el-table-column :label="t('security.reviewQueue.recognition')" min-width="270">
+
+          <el-table-column :label="t('security.enrollment.progress')" min-width="430">
             <template #default="{ row }">
-              <div class="queue-recognition">
-                <span>{{ capabilityName(row) }}</span>
-                <code>{{ row.detector_version }}</code>
+              <div class="owner-grid">
+                <div v-for="owner in row.owner_progress" :key="owner.consumer_owner" class="owner-item">
+                  <span class="owner-name">{{ ownerLabel(owner.consumer_owner) }}</span>
+                  <el-tag size="small" :type="ownerPresentation(row, owner).type">
+                    {{ ownerPresentation(row, owner).label }}
+                  </el-tag>
+                </div>
               </div>
             </template>
           </el-table-column>
-          <el-table-column :label="t('security.finding.evidence')" min-width="250">
+
+          <el-table-column :label="listScope === 'released' ? t('security.enrollment.releaseCompletedAt') : t('security.enrollment.discovery')" width="210">
             <template #default="{ row }">
-              <div class="queue-evidence">
-                <span>{{ evidenceDescription(row) }}</span>
-                <small>{{ t('security.finding.confidenceValue', { value: confidenceLabel(row.confidence) }) }} · {{ formatDateTime(row.observed_at) }}</small>
+              <span v-if="listScope === 'released'" class="release-time">{{ formatDateTime(row.released_at) }}</span>
+              <div v-else class="discovery-cell">
+                <el-tag size="small" :type="discoveryPresentation(row).type">{{ discoveryPresentation(row).label }}</el-tag>
+                <span>{{ formatDateTime(row.last_discovered_at) }}</span>
               </div>
             </template>
           </el-table-column>
+
           <el-table-column :label="t('security.common.actions')" width="210" fixed="right">
             <template #default="{ row }">
-              <div class="queue-actions">
-                <el-button v-if="canReviewFindings" link type="primary" @click="openFindingReview(row, 'confirm')">{{ t('security.finding.review') }}</el-button>
-                <el-button v-if="canReviewFindings" link type="danger" @click="openFindingReview(row, 'reject')">{{ t('security.finding.markFalsePositive') }}</el-button>
+              <div class="row-actions">
+                <el-button
+                  v-if="canCreate && row.state === 'released'"
+                  link
+                  type="primary"
+                  @click="openReEnrollment(row)"
+                >
+                  {{ t('security.enrollment.reEnroll') }}
+                </el-button>
+                <el-button link type="primary" @click="openDetail(row)">{{ t('security.enrollment.viewDetails') }}</el-button>
               </div>
             </template>
           </el-table-column>
         </el-table>
 
-        <el-empty v-if="!reviewQueueLoading && reviewQueueRows.length === 0" :description="t('security.reviewQueue.empty')" />
+        <el-empty v-if="!loading && rows.length === 0" :description="emptyDescription">
+          <el-button v-if="canCreate && listScope === 'current'" type="primary" @click="openCreate()">{{ t('security.enrollment.create') }}</el-button>
+        </el-empty>
 
-        <div v-if="reviewQueueTotal > reviewQueuePageSize" class="pagination">
+        <div v-if="total > pageSize" class="pagination">
           <el-pagination
-            v-model:current-page="reviewQueuePage"
-            v-model:page-size="reviewQueuePageSize"
+            v-model:current-page="currentPage"
+            v-model:page-size="pageSize"
             background
             layout="total, sizes, prev, pager, next"
             :page-sizes="[20, 50, 100]"
-            :total="reviewQueueTotal"
-            @change="handleReviewQueuePageChange"
+            :total="total"
+            @change="handlePageChange"
           />
         </div>
       </el-card>
     </template>
+
+    <FindingReviewQueueWorkspace
+      v-else
+      v-model:type-id="reviewQueueTypeID"
+      v-model:detector-version="reviewQueueDetectorVersion"
+      v-model:page="reviewQueuePage"
+      v-model:page-size="reviewQueuePageSize"
+      :rows="reviewQueueRows"
+      :total="reviewQueueTotal"
+      :loading="reviewQueueLoading"
+      :sensitive-types="sensitiveTypes"
+      :detector-capabilities="detectorCapabilities"
+      :can-review="canReviewFindings"
+      :resource-name="resourceName"
+      :resource-path="resourcePath"
+      :item-type-label="itemTypeLabel"
+      :engine-label="engineLabel"
+      :type-name="typeName"
+      :capability-name="capabilityName"
+      :evidence-description="evidenceDescription"
+      :confidence-label="confidenceLabel"
+      :format-date-time="formatDateTime"
+      @filter-change="handleReviewQueueFilterChange"
+      @reset-filters="resetReviewQueueFilters"
+      @page-change="handleReviewQueuePageChange"
+      @open-resource="openReviewQueueResource"
+      @review="openFindingReview"
+    />
 
     <el-drawer
       v-model="createDrawer"
@@ -1038,6 +970,7 @@ import {
 import { assessmentAPI, classificationAPI, detectorCapabilityAPI, findingAPI, gradeAPI, metaAPI, protectionAccessRequestAPI, protectionBaselineAPI, protectionEnrollmentAPI, protectionExemptionAPI, protectionPolicyAPI, sensitiveDataTypeAPI } from '../api/security'
 import { useAuthStore } from '../store/auth'
 import { createRequiredRule } from '../utils/foundationForm.mjs'
+import EnrollmentResourceIdentity from '../components/protection-enrollment/EnrollmentResourceIdentity.vue'
 import {
   buildAssessmentRevisionPayload,
   buildFindingReviewPayload,
@@ -1069,6 +1002,7 @@ const AccessRequestReviewWorkspace = defineAsyncComponent(() => import('../compo
 const EnrollmentAssessmentList = defineAsyncComponent(() => import('../components/protection-enrollment/EnrollmentAssessmentList.vue'))
 const EnrollmentExemptionSection = defineAsyncComponent(() => import('../components/protection-enrollment/EnrollmentExemptionSection.vue'))
 const EnrollmentFindingList = defineAsyncComponent(() => import('../components/protection-enrollment/EnrollmentFindingList.vue'))
+const FindingReviewQueueWorkspace = defineAsyncComponent(() => import('../components/protection-enrollment/FindingReviewQueueWorkspace.vue'))
 const FindingReviewForm = defineAsyncComponent(() => import('../components/protection-enrollment/FindingReviewForm.vue'))
 const ProtectionPolicyForm = defineAsyncComponent(() => import('../components/protection-enrollment/ProtectionPolicyForm.vue'))
 const route = useRoute()
@@ -1324,15 +1258,6 @@ const canRevokeExemptions = computed(() => auth.hasPermission('security.protecti
 const canReviewAccessRequests = computed(() => auth.hasPermission('security.protection_access_request.update'))
 const governanceLoading = computed(() => findingsLoading.value || assessmentsLoading.value || policiesLoading.value)
 const manualAssessments = computed(() => assessments.value.filter(item => item.current?.source_kind === 'manual'))
-const reviewQueueCapabilities = computed(() => {
-  const capabilities = new Map(detectorCapabilities.value.map(item => [String(item.key || ''), item]))
-  for (const finding of reviewQueueRows.value) {
-    const capability = finding?.explanation?.capability
-    const key = String(finding?.detector_version || '')
-    if (key && !capabilities.has(key)) capabilities.set(key, capability?.key ? capability : { key })
-  }
-  return [...capabilities.values()].filter(item => item.key).sort((left, right) => String(left.key).localeCompare(String(right.key)))
-})
 const refreshFeedback = computed(() => {
   if (autoRefreshActive.value) return t('security.enrollment.autoRefreshing')
   if (!lastRefreshedAt.value) return ''
@@ -1378,18 +1303,6 @@ function resourceName(row) {
 
 function resourcePath(row) {
   return String(row.target_snapshot?.full_name || '').trim() || t('security.enrollment.snapshotUnavailable')
-}
-
-function findingResourceName(finding) {
-  return resourceName({ target_snapshot: finding?.target_snapshot })
-}
-
-function capabilityOptionLabel(capability) {
-  const key = String(capability?.key || '')
-  const i18nKey = String(capability?.name_i18n_key || '')
-  const translated = i18nKey ? t(i18nKey) : ''
-  const name = translated && translated !== i18nKey ? translated : key
-  return name === key ? key : `${name}（${key}）`
 }
 
 function engineLabel(engineID) {
@@ -3283,19 +3196,6 @@ onBeforeUnmount(() => {
 :deep(.workspace-tabs .el-tabs__header) { margin-bottom: 0; }
 .list-scope-bar { display: flex; align-items: center; margin-bottom: 12px; }
 .enrollment-card { border-color: var(--addp-border-color); background: var(--addp-bg-primary); }
-.review-queue-intro { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 12px; padding: 13px 15px; border: 1px solid var(--addp-border-color); border-radius: 8px; background: var(--addp-bg-primary); }
-.review-queue-intro p { margin: 5px 0 0; color: var(--addp-text-secondary); font-size: 13px; }
-.review-queue-filters { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
-.review-queue-filters .el-select { width: min(340px, 100%); }
-.review-queue-card :deep(.el-card__body) { padding-top: 8px; }
-.queue-candidate, .queue-recognition, .queue-evidence { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: 5px; }
-.queue-candidate span, .queue-evidence small { color: var(--addp-text-secondary); font-size: 12px; }
-.queue-recognition code { max-width: 100%; overflow: hidden; color: var(--addp-text-tertiary); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.queue-actions { display: flex; flex-wrap: wrap; gap: 2px; }
-.resource-cell { display: flex; width: 100%; flex-direction: column; align-items: flex-start; gap: 5px; padding: 4px 0; color: inherit; text-align: left; border: 0; background: transparent; cursor: pointer; }
-.resource-name { color: var(--el-color-primary); font-size: 15px; font-weight: 600; }
-.resource-path { max-width: 100%; overflow: hidden; color: var(--addp-text-secondary); text-overflow: ellipsis; white-space: nowrap; }
-.resource-meta { display: flex; align-items: center; gap: 8px; color: var(--addp-text-tertiary); font-size: 12px; }
 .state-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 7px; }
 .state-cell span { color: var(--addp-text-secondary); font-size: 12px; line-height: 1.45; }
 .discovery-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
@@ -3356,8 +3256,6 @@ h4 { margin: 24px 0 12px; }
 }
 @media (max-width: 720px) {
   .version-conflict-notice { align-items: flex-start; flex-direction: column; }
-  .review-queue-intro { align-items: flex-start; flex-direction: column; }
-  .review-queue-filters .el-select { width: 100%; }
   .finding-section__header { flex-direction: column; }
   .finding-section__actions { width: 100%; justify-content: space-between; }
 }
