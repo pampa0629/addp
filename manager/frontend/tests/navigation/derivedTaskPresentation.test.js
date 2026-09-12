@@ -5,7 +5,9 @@ import {
   derivedTaskSource,
   derivedTaskSourceEngineID,
   derivedTaskSourceLocator,
-  derivedTaskTargetEngineID
+  derivedTaskTargetCatalogIdentity,
+  derivedTaskTargetEngineID,
+  metaItemLocator
 } from '../../src/utils/derivedTaskPresentation.js'
 
 describe('derived task presentation', () => {
@@ -29,5 +31,33 @@ describe('derived task presentation', () => {
     const parser = () => ({ path: ['bucket', 'slides.pptx'] })
     expect(derivedTaskLocatorLabel('locator', parser)).toBe('bucket / slides.pptx')
     expect(derivedTaskResultName({ config: { result: { file_name: 'slides.pdf' } } })).toBe('slides.pdf')
+  })
+
+  it('resolves spatial business result identities without exposing Manager infra results', () => {
+    const parse = locator => ({ path: locator.includes('mosaics') ? ['addp', 'mosaics'] : ['addp', 'tiles'] })
+    expect(derivedTaskTargetCatalogIdentity({
+      task_type: 'vector_tile_set_generation',
+      config: { target: { engine_id: 12, storage_locator: 'tiles', name: 'roads.pmtiles' } }
+    }, parse)).toEqual({ engineId: 12, catalogPath: 'addp/tiles/roads.pmtiles' })
+    expect(derivedTaskTargetCatalogIdentity({
+      task_type: 'raster_mosaic_generation',
+      config: { placement: { mode: 'detached' }, target: { target_engine_id: 12, storage_locator: 'mosaics', dataset_name: 'terrain' } }
+    }, parse)).toEqual({ engineId: 12, catalogPath: 'addp/mosaics/terrain' })
+    expect(derivedTaskTargetCatalogIdentity({
+      task_type: 'raster_mosaic_generation',
+      config: { placement: { mode: 'in_place' }, target: { target_engine_id: 12, storage_locator: 'mosaics', dataset_name: 'ignored' } }
+    }, parse)).toEqual({ engineId: 12, catalogPath: 'addp/mosaics' })
+    expect(derivedTaskTargetCatalogIdentity({ task_type: 'model_3d_glb_generation', config: {} }, parse)).toBeNull()
+  })
+
+  it('builds a canonical item locator only from a resolved Meta item', () => {
+    const build = value => JSON.stringify(value)
+    expect(metaItemLocator({ id: 51, engine_id: 12, item_type: 'object', full_name: 'addp/tiles/roads.pmtiles' }, build)).toBe(JSON.stringify({
+      engineId: 12,
+      path: ['addp', 'tiles', 'roads.pmtiles'],
+      type: 'object',
+      itemId: 51
+    }))
+    expect(metaItemLocator({ engine_id: 12, item_type: 'object', full_name: 'addp/tiles/roads.pmtiles' }, build)).toBe('')
   })
 })

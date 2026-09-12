@@ -100,7 +100,7 @@ Department 和 Project Group Scope 必须引用当前 Tenant 的可用组织对�
 
 租户 Role 管理列表必须保持单行可浏览：主列表只展示 Role 名称、标识、类型、适用对象与 Scope、Permission 数量及模块摘要；Role 描述和完整 Permission 必须统一放在详情视图，Permission 按命名空间、资源与动作分组，不得用长描述或逗号拼接文本撑高整张表。角色定义首先按 `allowed_principal_types` 分为“用户账号角色”和“机器身份角色”，默认展示用户账号角色，并允许查看全部角色；分类不得依赖 Role Key 后缀或展示名称。列表还必须支持名称或标识搜索、Role 类型和允许 Scope 过滤。
 
-Role Assignment 列表支持按 Membership 与 `principal_type=user|service_principal` 组合过滤，成员列必须显式展示成员类型；“当前账号”只通过 AuthContext 的 `tenant_membership_id` 识别，不按用户名、邮箱或展示名称猜测。持久 `status` 只表达 `active` / `revoked` 生命周期，读取接口使用数据库时间派生 `effective_state=scheduled|effective|expired|revoked`，默认只返回 `effective`。Role 选择器把兼容 Role 分为“可分配角色”和“已分配角色”，只以同一 Membership、同一 Scope 下的 `effective` Assignment 禁止重复选择，历史撤销或到期记录不得阻止重新分配。
+Role Assignment 列表支持按 Membership 与 `principal_type=user|service_principal` 组合过滤，成员列必须显式展示成员类型；“当前账号”只通过 AuthContext 的 `tenant_membership_id` 识别，不按用户名、邮箱或展示名称猜测。持久 `status` 只表达 `active` / `revoked` 生命周期，读取接口使用数据库时间派生 `effective_state=scheduled|effective|expired|revoked`，默认只返回 `effective`。只有 `scheduled` 和 `effective` Assignment 可撤销；`expired` 只读，后端与数据库必须拒绝将其改写为 `revoked`。Role 选择器把兼容 Role 分为“可分配角色”和“已分配角色”，只以同一 Membership、同一 Scope 下的 `effective` Assignment 禁止重复选择，历史撤销或到期记录不得阻止重新分配。数据库对同一 Principal、Role 和 Scope 使用不重叠的半开授权区间 `[valid_from, valid_until)` 约束重复，不再以所有持久 `active` 记录共用一个唯一位置。
 
 `role_assignments.grant_reason` 保存授予原因；手工创建必须非空。撤销时必须原子写入 `revoked_by_principal_id`、`revoked_at` 和非空 `revoked_reason`，撤销后的 Assignment 不可恢复或修改。授权详情由 `GET /api/v1/system/tenant/role_assignments/:id` 读取，返回授予与撤销操作者的可读 Principal 引用、完整时间和原因；已撤销记录还派生同一 Principal、Role、Scope 下的 `same_scope_active_assignment_id`，但不把重新授权持久化为旧 Assignment 的替代关系。授权生命周期详情沿用 `iam.tenant_role_assignment.read`，不扩大 Tenant 审计权限。
 

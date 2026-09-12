@@ -26,21 +26,6 @@
     />
 
     <el-form class="target-form" :model="formData" label-width="120px">
-      <el-form-item
-        v-if="runtimeTargetAvailable"
-        :label="t('transfer.taskWizard.targetBindingLabel')"
-      >
-        <div class="runtime-target-config">
-          <el-switch
-            v-model="isRuntimeTarget"
-            :active-text="t('transfer.taskWizard.runtimeTargetEnabled')"
-            @change="handleTargetBindingChange"
-          />
-          <div class="field-hint">{{ t('transfer.taskWizard.runtimeTargetHint') }}</div>
-        </div>
-      </el-form-item>
-
-      <template v-if="!isRuntimeTarget">
       <el-form-item :label="t('transfer.taskWizard.targetEngineLabel')">
         <el-select
           data-testid="task-target-engine"
@@ -91,7 +76,7 @@
       </el-form-item>
 
       <el-form-item v-if="isNativeTableTarget && !isContinuousSource" :label="t('transfer.taskWizard.writeModeLabel')">
-        <el-select v-model="tableWriteMode" @change="syncTarget">
+        <el-select v-model="tableWriteMode" @change="handleTableWriteModeChange">
           <el-option
             v-for="mode in tableWriteModeOptions"
             :key="mode"
@@ -105,6 +90,25 @@
           </el-option>
         </el-select>
         <div class="field-hint">{{ writeModeDescription(tableWriteMode) }}</div>
+      </el-form-item>
+
+      <el-form-item
+        v-if="targetOverrideVisible"
+        :label="t('transfer.taskWizard.orchestrationExecutionLabel')"
+      >
+        <div class="target-override-config">
+          <el-switch
+            v-model="targetOverrideEnabled"
+            :disabled="!targetOverrideEligible"
+            :active-text="t('transfer.taskWizard.targetOverrideEnabled')"
+            @change="handleTargetOverrideChange"
+          />
+          <div class="field-hint">
+            {{ targetOverrideEligible
+              ? t('transfer.taskWizard.targetOverrideHint')
+              : t('transfer.taskWizard.targetOverrideUnavailableHint') }}
+          </div>
+        </div>
       </el-form-item>
 
       <el-form-item v-if="isContentTarget" :label="t('transfer.taskWizard.outputPathLabel')">
@@ -201,7 +205,6 @@
         :closable="false"
         :title="spatialTargetHint"
       />
-      </template>
     </el-form>
 
   </div>
@@ -230,6 +233,7 @@ import {
   resolveColumnarCompression,
   withColumnarCompressionOption
 } from './columnarCompression.mjs'
+import { TARGET_OVERRIDE_POLICY, targetOverrideEligible as isTargetOverrideEligible } from './targetOverride.mjs'
 import {
 	dataTypeLabel,
 	engineOptionLabel,
@@ -273,7 +277,8 @@ const targetSchema = ref('')
 const targetTable = ref('')
 const tableWriteMode = ref('overwrite')
 const tableWriteModeOptions = ['overwrite', 'append']
-const isRuntimeTarget = ref(props.wizardState.targetBinding.value === 'runtime')
+const targetOverrideEnabled = ref(props.wizardState.targetOverridePolicy.value === TARGET_OVERRIDE_POLICY)
+const selectedExistingTarget = ref(targetOverrideEnabled.value)
 
 const engines = ref([])
 const loadingEngines = ref(false)
@@ -310,9 +315,6 @@ const sourceRepresentation = computed(() => props.wizardState.sourceRepresentati
 const sourceFormat = computed(() => props.wizardState.sourceFormat?.value || '')
 
 const isContinuousSource = computed(() => props.wizardState.isContinuousTask?.value === true)
-const runtimeTargetAvailable = computed(() => {
-  return props.wizardState.sourceQueryEnabled?.value === true && !isContinuousSource.value
-})
 
 const sourceTransferSupported = computed(() => {
   if (isContinuousSource.value) return true
@@ -348,6 +350,22 @@ const isContentTarget = computed(() => {
   return isContentEngine(selectedEngine.value)
 })
 
+const targetOverrideVisible = computed(() => {
+  return isNativeTableTarget.value &&
+    !isContinuousSource.value &&
+    props.wizardState.isWatermarkIncremental?.value !== true
+})
+
+const targetOverrideEligible = computed(() => {
+  return targetOverrideVisible.value && isTargetOverrideEligible({
+    boundary: props.wizardState.runtimeBoundary.value,
+    loadMode: props.wizardState.loadMode.value,
+    representation: 'native',
+    existingTarget: selectedExistingTarget.value,
+    applyMode: tableWriteMode.value
+  })
+})
+
 const targetStorageKind = computed(() => {
   return isObjectStorageEngine(selectedEngine.value?.engine_type) ? 's3' : selectedEngine.value?.engine_type || ''
 })
@@ -355,7 +373,6 @@ const targetStorageKind = computed(() => {
 const targetPickerInitialLocator = computed(() => restoredParentLocator.value || '')
 
 const canProceed = computed(() => {
-  if (isRuntimeTarget.value) return runtimeTargetAvailable.value
   if (isNativeTableTarget.value) {
     const hasParentLocator = !!targetParentLocator.value
     return !!(formData.engineID && hasParentLocator && targetTable.value.trim())
@@ -370,11 +387,17 @@ const canProceed = computed(() => {
   return false
 })
 
-function handleTargetBindingChange(runtime) {
-  props.wizardState.setTargetBinding(runtime ? 'runtime' : 'definition')
-  if (!runtime) {
-    resetLocalTargetForm()
+function handleTargetOverrideChange(enabled) {
+  props.wizardState.setTargetOverridePolicy(enabled ? TARGET_OVERRIDE_POLICY : '')
+  syncTarget()
+}
+
+function handleTableWriteModeChange() {
+  if (!targetOverrideEligible.value && targetOverrideEnabled.value) {
+    targetOverrideEnabled.value = false
+    props.wizardState.setTargetOverridePolicy('')
   }
+  syncTarget()
 }
 
 const targetParentLocator = computed(() => {
@@ -482,7 +505,6 @@ const geometryFieldOptions = computed(() => {
 
 watch(canProceed, (ready) => {
   if (restoringState.value) return
-  if (isRuntimeTarget.value) return
   if (ready) {
     syncTarget()
   } else {
@@ -493,18 +515,14 @@ watch(canProceed, (ready) => {
 watch(
   () => [
     props.wizardState.targetEngineID.value,
-    props.wizardState.targetBinding.value,
+    props.wizardState.targetOverridePolicy.value,
     props.wizardState.targetRepresentation.value,
     props.wizardState.targetSchema.value,
     props.wizardState.targetTable.value,
     targetConfigSignature(props.wizardState.targetConfig.value || {})
   ],
-  async ([engineID, binding]) => {
-    isRuntimeTarget.value = binding === 'runtime'
-    if (isRuntimeTarget.value) {
-      resetLocalTargetForm()
-      return
-    }
+  async ([engineID, overridePolicy]) => {
+    targetOverrideEnabled.value = overridePolicy === TARGET_OVERRIDE_POLICY
     if (!engineID) {
       resetLocalTargetForm()
       return
@@ -521,10 +539,6 @@ function isObjectStorageEngine(engineType) {
 }
 
 function syncTarget() {
-  if (isRuntimeTarget.value) {
-    props.wizardState.setTargetBinding('runtime')
-    return
-  }
   if (!selectedEngine.value || !canProceed.value) {
     syncTargetDraft()
     return
@@ -535,7 +549,9 @@ function syncTarget() {
         schema: targetSchema.value,
         table: targetTable.value,
         parentLocator: targetParentLocator.value,
-        writeMode: tableWriteMode.value
+        writeMode: tableWriteMode.value,
+        existingTarget: selectedExistingTarget.value,
+        overridePolicy: targetOverrideEnabled.value ? TARGET_OVERRIDE_POLICY : ''
       }
     : {
         format: isRawCopySource.value ? sourceFormat.value : outputFormat.value,
@@ -591,7 +607,9 @@ function buildTargetDraftExtra() {
       schema: targetSchema.value,
       table: targetTable.value,
       parentLocator: targetParentLocator.value,
-      writeMode: tableWriteMode.value
+      writeMode: tableWriteMode.value,
+      existingTarget: selectedExistingTarget.value,
+      overridePolicy: targetOverrideEnabled.value ? TARGET_OVERRIDE_POLICY : ''
     }
   }
   if (isContentTarget.value) {
@@ -640,6 +658,9 @@ async function handleTargetEngineChange() {
   restoredParentLocator.value = ''
   targetSchema.value = ''
   targetTable.value = ''
+  selectedExistingTarget.value = false
+  targetOverrideEnabled.value = false
+  props.wizardState.setTargetOverridePolicy('')
   outputCompression.value = ''
   props.wizardState.resetTargetFields?.()
   syncTarget()
@@ -651,16 +672,21 @@ async function handleTargetParentSelect(selection) {
       const selected = await selectExistingNativeTarget(selection)
       if (!selected) return
     } else {
-			const previousParentLocator = targetParentLocator.value
-			const nextParentLocator = selection?.identity?.locator || ''
+      selectedExistingTarget.value = false
+      if (targetOverrideEnabled.value) {
+        targetOverrideEnabled.value = false
+        props.wizardState.setTargetOverridePolicy('')
+      }
+      const previousParentLocator = targetParentLocator.value
+      const nextParentLocator = selection?.identity?.locator || ''
       const parentChanged = !sameTargetParentIdentity(previousParentLocator, nextParentLocator)
       targetParentSelection.value = selection
       normalizedTargetParentLocator.value = ''
       targetSchema.value = targetParentNameFromSelection(selection)
-			if (parentChanged) {
-				targetTable.value = ''
-				props.wizardState.resetTargetFields?.()
-			}
+      if (parentChanged) {
+        targetTable.value = ''
+      }
+      props.wizardState.resetTargetFields?.()
     }
   } else if (isContentTarget.value) {
     if (selection.resource?.kind === 'item') {
@@ -703,6 +729,9 @@ async function selectExistingNativeTarget(selection) {
   normalizedTargetParentLocator.value = normalized.parentLocator
   targetSchema.value = targetParentNameFromSelection(selection)
   targetTable.value = targetNameFromSelection(selection)
+  selectedExistingTarget.value = true
+  targetOverrideEnabled.value = false
+  props.wizardState.setTargetOverridePolicy('')
   tableWriteMode.value = 'overwrite'
   await loadExistingTargetFields(selection)
   return true
@@ -728,6 +757,11 @@ async function loadExistingTargetFields(selection) {
 }
 
 function handleTargetTableInput() {
+  selectedExistingTarget.value = false
+  if (targetOverrideEnabled.value) {
+    targetOverrideEnabled.value = false
+    props.wizardState.setTargetOverridePolicy('')
+  }
   if ((props.wizardState.targetFields?.value || []).length > 0) {
     props.wizardState.resetTargetFields?.()
   }
@@ -937,11 +971,7 @@ async function loadCapabilities() {
 
 async function restoreState() {
   const state = props.wizardState
-  isRuntimeTarget.value = state.targetBinding.value === 'runtime'
-  if (isRuntimeTarget.value) {
-    resetLocalTargetForm()
-    return
-  }
+  targetOverrideEnabled.value = state.targetOverridePolicy.value === TARGET_OVERRIDE_POLICY
   if (!state.targetEngineID.value) {
     resetLocalTargetForm()
     return
@@ -964,6 +994,7 @@ async function restoreState() {
     targetSchema.value = config.schema || state.targetSchema?.value || ''
     targetTable.value = config.table || state.targetTable?.value || ''
     tableWriteMode.value = normalizeTableWriteMode(config.writeMode)
+    selectedExistingTarget.value = config.existingTarget === true || targetOverrideEnabled.value
     restoredParentLocator.value = await normalizeRestoredParentLocator(config.parentLocator || '')
     normalizedTargetParentLocator.value = restoredParentLocator.value
     if (restoredParentLocator.value) {
@@ -1033,6 +1064,8 @@ function resetLocalTargetForm() {
   targetSchema.value = ''
   targetTable.value = ''
   tableWriteMode.value = 'overwrite'
+  targetOverrideEnabled.value = false
+  selectedExistingTarget.value = false
 }
 
 function targetStateMatchesLocal() {
@@ -1067,7 +1100,9 @@ function targetConfigSignature(config) {
     schema: config.schema || '',
     table: config.table || '',
     parentLocator: config.parentLocator || '',
-    writeMode: normalizeTableWriteMode(config.writeMode)
+    writeMode: normalizeTableWriteMode(config.writeMode),
+    existingTarget: config.existingTarget === true,
+    overridePolicy: config.overridePolicy || ''
   })
 }
 
@@ -1314,7 +1349,7 @@ onMounted(async () => {
   font-size: 12px;
 }
 
-.runtime-target-config {
+.target-override-config {
   width: 100%;
 }
 

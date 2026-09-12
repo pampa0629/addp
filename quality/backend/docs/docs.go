@@ -1562,7 +1562,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "按标准 TaskProvider 协议执行 Quality 任务；materialization_gate 仅允许 Orchestrator 且 parameters 不支持覆盖。| Execute a Quality task through the standard TaskProvider protocol; materialization_gate only accepts Orchestrator and parameters overrides are not supported.",
+                "description": "仅接受 addp-orchestrator 以父 execution 血缘触发；请求必须提供 source=orchestrator 和 parent_execution_id，parameters 不支持覆盖。| Only accepts addp-orchestrator execution-lineage invocation; source=orchestrator and parent_execution_id are required, and parameters overrides are not supported.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1592,6 +1592,7 @@ const docTemplate = `{
                         "description": "TaskProvider 执行请求 | TaskProvider execution request",
                         "name": "request",
                         "in": "body",
+                        "required": true,
                         "schema": {
                             "$ref": "#/definitions/internal_api.qualityTaskProviderExecuteRequest"
                         }

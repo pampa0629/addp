@@ -180,7 +180,7 @@ import {
   isTransferableTableContainer,
   resolveContainerTableChild
 } from './containerSource.mjs'
-import { queryStatementValid } from './runtimeTarget.mjs'
+import { queryStatementValid } from './querySource.mjs'
 import MongoStructureQueryBuilder from './MongoStructureQueryBuilder.vue'
 import RelationalSQLQueryBuilder from './RelationalSQLQueryBuilder.vue'
 import { mongoStructureOutputFields, parseMongoStructureQuery } from './mongoStructureQuery.mjs'

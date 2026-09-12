@@ -21,6 +21,7 @@ const RIVERS_LOCATOR = 'addp://engine/11/path/public/rivers?type=table&item_id=1
 const DOC_LOCATOR = 'addp://engine/12/path/doc?type=directory&node_id=220'
 const README_LOCATOR = 'addp://engine/12/path/doc/README.md?type=file&item_id=1201'
 const SLIDES_LOCATOR = 'addp://engine/12/path/doc/slides.pptx?type=file&item_id=1202'
+const TILE_SET_LOCATOR = 'addp://engine/12/path/tiles/farmland.pmtiles?type=file&item_id=1301'
 
 test('selects a spatial table through the shared picker and applies capability facts', async ({ page }) => {
   const backend = await installMockBackend(page)
@@ -94,6 +95,7 @@ test('opens a managed quick-view task source from the task list without exposing
 
   const row = page.getByRole('row', { name: /public\.rivers 瓦片缓存/ })
   await expect(row.getByRole('button', { name: '结果', exact: true })).toHaveCount(0)
+  await expect(row.getByText('可用', { exact: true })).toBeVisible()
   await row.getByRole('button', { name: '源数据', exact: true }).click()
 
   await expect.poll(() => {
@@ -102,6 +104,23 @@ test('opens a managed quick-view task source from the task list without exposing
   }).toEqual({ pathname: '/data-explorer', locator: RIVERS_LOCATOR })
   expect(backend.taskDetailRequests).toEqual([])
   expect(backend.preferredModeRequests).toEqual([])
+})
+
+test('opens a spatial task target only after resolving the Meta data item', async ({ page }) => {
+  const backend = await installMockBackend(page, { includeSpatialTask: true })
+  await page.goto('/derived-tasks?category=spatial_business')
+
+  const row = page.getByRole('row', { name: /耕地矢量瓦片集/ })
+  await row.getByRole('button', { name: '目标数据', exact: true }).click()
+
+  await expect.poll(() => backend.targetItemLookups).toEqual([{
+    engineID: '12',
+    catalogPath: 'tiles/farmland.pmtiles'
+  }])
+  await expect.poll(() => {
+    const url = new URL(page.url())
+    return { pathname: url.pathname, locator: url.searchParams.get('locator') }
+  }).toEqual({ pathname: '/data-explorer', locator: TILE_SET_LOCATOR })
 })
 
 test('filters failed generation tasks and deletes only the selected tasks', async ({ page }) => {
@@ -283,7 +302,7 @@ function escapeRegExp(value) {
 async function installMockBackend(page, options = {}) {
   const tasks = options.includeFailedTasks
     ? failedTaskFixtures()
-    : (options.includeResultTask ? [resultTask()] : [])
+    : (options.includeResultTask ? [resultTask()] : (options.includeSpatialTask ? [spatialTask()] : []))
   const state = {
     capabilityLocators: [],
     quickViewActions: [],
@@ -295,6 +314,7 @@ async function installMockBackend(page, options = {}) {
     nodeRefreshRequests: [],
     scanExecutionRequests: 0,
     treeRequests: 0,
+    targetItemLookups: [],
     tasks
   }
 
@@ -323,6 +343,18 @@ async function installMockBackend(page, options = {}) {
     }
     if (path === '/api/v1/meta/engines') {
       return fulfillJSON(route, [POSTGRES_ENGINE, NFS_ENGINE])
+    }
+    if (path === '/api/v1/meta/items/by-catalog-path') {
+      state.targetItemLookups.push({
+        engineID: url.searchParams.get('engine_id') || '',
+        catalogPath: url.searchParams.get('catalog_path') || ''
+      })
+      return fulfillJSON(route, {
+        id: 1301,
+        engine_id: NFS_ENGINE.id,
+        item_type: 'file',
+        full_name: 'tiles/farmland.pmtiles'
+      })
     }
     if (path === `/api/v1/meta/resource-tree/${POSTGRES_ENGINE.id}`) {
       return fulfillJSON(route, postgresTree())
@@ -616,6 +648,8 @@ function resultTask() {
     category: 'managed_quick_view',
     name: 'public.rivers 瓦片缓存',
     enabled: true,
+    has_current_result: true,
+    current_result_status: 'ready',
     last_execution_status: 'success',
     last_execution_id: 'result-execution-61',
     updated_at: '2026-09-08T12:00:00Z',
@@ -623,6 +657,31 @@ function resultTask() {
       target: {
         source_engine_id: POSTGRES_ENGINE.id,
         item_locator: RIVERS_LOCATOR
+      }
+    }
+  }
+}
+
+function spatialTask() {
+  return {
+    id: 62,
+    task_type: 'vector_tile_set_generation',
+    category: 'spatial_business',
+    name: '耕地矢量瓦片集',
+    enabled: true,
+    last_execution_status: 'success',
+    last_execution_id: 'spatial-execution-62',
+    updated_at: '2026-09-08T13:00:00Z',
+    config: {
+      source: {
+        source_engine_id: POSTGRES_ENGINE.id,
+        locator: FARMLAND_LOCATOR,
+        item_id: 1101
+      },
+      target: {
+        engine_id: NFS_ENGINE.id,
+        storage_locator: 'addp://engine/12/path/tiles?type=directory&node_id=230',
+        name: 'farmland.pmtiles'
       }
     }
   }

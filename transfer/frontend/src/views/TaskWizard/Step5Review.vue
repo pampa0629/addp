@@ -141,11 +141,8 @@
         </div>
       </template>
       <el-descriptions class="endpoint-description" :column="1" border>
-        <el-descriptions-item v-if="!isRuntimeTarget" :label="t('transfer.taskWizard.reviewEngine')">
+        <el-descriptions-item :label="t('transfer.taskWizard.reviewEngine')">
           {{ targetEngineName }}
-        </el-descriptions-item>
-        <el-descriptions-item v-else :label="t('transfer.taskWizard.targetBindingLabel')">
-          {{ t('transfer.taskWizard.runtimeTargetReview') }}
         </el-descriptions-item>
         <el-descriptions-item :label="t('transfer.taskWizard.representation')">
           {{ representationLabel(wizardState.targetRepresentation.value) }}
@@ -158,6 +155,12 @@
         </el-descriptions-item>
         <el-descriptions-item :label="t('transfer.taskWizard.reviewResourcePath')">
           {{ targetResourcePath }}
+        </el-descriptions-item>
+        <el-descriptions-item
+          v-if="targetOverrideEnabled"
+          :label="t('transfer.taskWizard.orchestrationExecutionLabel')"
+        >
+          {{ t('transfer.taskWizard.targetOverrideReview') }}
         </el-descriptions-item>
       </el-descriptions>
       </el-card>
@@ -243,6 +246,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { formatLocatorDisplayPath } from '@addp/common-frontend'
+import { TARGET_OVERRIDE_POLICY } from './targetOverride.mjs'
 import { systemEnginesAPI } from '@/api/systemEngines'
 import { engineNameForID } from '@/utils/engineDisplay.mjs'
 import { dataTypeLabel, formatLabel, representationLabel, writeModeLabel } from '@/utils/transferDisplay'
@@ -280,8 +284,7 @@ const warnings = computed(() => {
   }
 
   if (!props.wizardState.schedule.value &&
-      !props.wizardState.isContinuousTask.value &&
-      props.wizardState.targetBinding.value !== 'runtime') {
+      !props.wizardState.isContinuousTask.value) {
     warns.push(t('transfer.taskWizard.warningNoSchedule'))
   }
 
@@ -289,7 +292,7 @@ const warnings = computed(() => {
 })
 
 const hasWarnings = computed(() => warnings.value.length > 0)
-const isRuntimeTarget = computed(() => props.wizardState.targetBinding.value === 'runtime')
+const targetOverrideEnabled = computed(() => props.wizardState.targetOverridePolicy.value === TARGET_OVERRIDE_POLICY)
 const sourceEngineName = computed(() => engineNameForID(engines.value, props.wizardState.sourceEngineID.value))
 const targetEngineName = computed(() => engineNameForID(engines.value, props.wizardState.targetEngineID.value))
 
@@ -329,12 +332,9 @@ const continuousInitialPositionLabel = computed(() => {
 })
 
 const targetApplyModeLabel = computed(() => {
-	if (isRuntimeTarget.value) {
-		return writeModeLabel('append')
-	}
-	if (props.wizardState.isDatabaseCDCTask.value) {
-		return t('transfer.taskWizard.applyModeUpsertDelete')
-	}
+  if (props.wizardState.isDatabaseCDCTask.value) {
+    return t('transfer.taskWizard.applyModeUpsertDelete')
+  }
   if (props.wizardState.isContinuousTask.value || props.wizardState.isWatermarkIncremental.value) {
     return t('transfer.taskWizard.applyModeUpsert')
   }
@@ -347,9 +347,6 @@ const sourceLocatorPath = computed(() => {
 })
 
 const targetResourcePath = computed(() => {
-  if (isRuntimeTarget.value) {
-    return t('transfer.taskWizard.runtimeTargetPath')
-  }
   const config = props.wizardState.targetConfig.value || {}
   if (props.wizardState.targetRepresentation.value === 'native') {
     return [props.wizardState.targetSchema.value, props.wizardState.targetTable.value].filter(Boolean).join('.') || '-'

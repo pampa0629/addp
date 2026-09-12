@@ -64,6 +64,9 @@
       <el-table-column :label="t('manager.derivedTasks.columns.status')" width="130">
         <template #default="{ row }"><el-tag :type="statusType(row.last_execution_status)">{{ statusLabel(row.last_execution_status) }}</el-tag></template>
       </el-table-column>
+      <el-table-column v-if="category === 'managed_quick_view'" :label="t('manager.derivedTasks.columns.quickViewStatus')" width="130">
+        <template #default="{ row }"><el-tag :type="currentResultStatusType(row)">{{ currentResultStatusLabel(row) }}</el-tag></template>
+      </el-table-column>
       <el-table-column :label="t('manager.derivedTasks.columns.updatedAt')" min-width="170">
         <template #default="{ row }">{{ formatTime(row.updated_at) }}</template>
       </el-table-column>
@@ -71,6 +74,7 @@
         <template #default="{ row }">
           <el-button link type="primary" @click="showDetail(row)">{{ t('manager.derivedTasks.detail') }}</el-button>
           <el-button v-if="sourceLocator(row)" link @click="openSource(row)">{{ t('manager.derivedTasks.source') }}</el-button>
+          <el-button v-if="isSpatialBusinessTask(row)" link :loading="openingTargetTaskID === row.id" @click="openTargetData(row)">{{ t('manager.derivedTasks.targetData') }}</el-button>
           <el-button v-if="isRebindableTask(row)" link type="warning" @click="beginRebind(row)">{{ t('manager.derivedTasks.rebind') }}</el-button>
           <el-button v-if="isSpatialBusinessTask(row)" link @click="beginEdit(row)">{{ t('manager.derivedTasks.edit') }}</el-button>
           <el-button link type="primary" :loading="executingTaskID === row.id" :disabled="!row.enabled || isExecuting(row)" @click="execute(row)">{{ t('manager.derivedTasks.execute') }}</el-button>
@@ -88,6 +92,7 @@
     <el-drawer v-model="detailVisible" :title="selectedTask?.name || t('manager.derivedTasks.detail')" size="560px" @closed="clearTaskDetailRoute">
       <div v-if="selectedTask" class="detail-actions">
         <el-button v-if="sourceLocator(selectedTask)" type="primary" plain @click="openSource(selectedTask)">{{ t('manager.derivedTasks.viewSource') }}</el-button>
+        <el-button v-if="isSpatialBusinessTask(selectedTask)" type="primary" plain :loading="openingTargetTaskID === selectedTask.id" @click="openTargetData(selectedTask)">{{ t('manager.derivedTasks.viewTargetData') }}</el-button>
         <el-button v-if="isRebindableTask(selectedTask)" type="warning" @click="beginRebind(selectedTask)">{{ t('manager.derivedTasks.rebind') }}</el-button>
         <el-button :loading="executingTaskID === selectedTask.id" :disabled="!selectedTask.enabled || isExecuting(selectedTask)" @click="execute(selectedTask)">{{ t('manager.derivedTasks.execute') }}</el-button>
         <el-button v-if="selectedTask.last_execution_id" @click="openMonitor(selectedTask)">{{ t('manager.derivedTasks.monitor') }}</el-button>
@@ -95,6 +100,7 @@
       <el-descriptions v-if="selectedTask" :column="1" border>
         <el-descriptions-item :label="t('manager.derivedTasks.columns.type')">{{ taskTypeLabel(selectedTask.task_type) }}</el-descriptions-item>
         <el-descriptions-item :label="t('manager.derivedTasks.columns.status')">{{ statusLabel(selectedTask.last_execution_status) }}</el-descriptions-item>
+        <el-descriptions-item v-if="isManagedQuickViewTask(selectedTask)" :label="t('manager.derivedTasks.columns.quickViewStatus')">{{ currentResultStatusLabel(selectedTask) }}</el-descriptions-item>
         <el-descriptions-item :label="t('manager.derivedTasks.columns.bindingStatus')">{{ bindingStatusLabel(selectedTask) }}</el-descriptions-item>
         <el-descriptions-item :label="t('manager.derivedTasks.columns.enabled')">{{ selectedTask.enabled ? t('manager.derivedTasks.enabled') : t('manager.derivedTasks.disabled') }}</el-descriptions-item>
         <el-descriptions-item :label="t('manager.derivedTasks.columns.engine')">{{ sourceEngineLabel(selectedTask) }}</el-descriptions-item>
@@ -147,7 +153,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh } from '@element-plus/icons-vue'
-import { formatBytes, openMonitorExecution } from '@addp/common-frontend'
+import { buildLocator, formatBytes, getResourceItemByCatalogPath, openMonitorExecution, parseLocatorSafe } from '@addp/common-frontend'
 import { deleteDerivedTask, executeDerivedTask, getDerivedTask, listDerivedTasks } from '../api/derivedTasks'
 import { useCurrentResultConfirmation } from '../composables/useCurrentResultConfirmation'
 import { useQuickViewResourceDisplay } from '../composables/useQuickViewResourceDisplay'
@@ -157,7 +163,9 @@ import {
   derivedTaskSourceFormat,
   derivedTaskSourceLocator,
   derivedTaskSourceSize,
-  derivedTaskTargetEngineID
+  derivedTaskTargetCatalogIdentity,
+  derivedTaskTargetEngineID,
+  metaItemLocator
 } from '../utils/derivedTaskPresentation'
 import { deleteSelectedDerivedTasks } from '../utils/derivedTaskBatch'
 import { navigateManagerRoute } from '../utils/moduleNavigation'
@@ -192,6 +200,7 @@ const executionStatus = ref(routeExecutionStatus)
 const bindingStatus = ref(routeBindingStatus)
 const selectedTasks = ref([])
 const batchDeleting = ref(false)
+const openingTargetTaskID = ref(0)
 
 const taskTypes = {
   managed_quick_view: [
@@ -231,6 +240,19 @@ function statusType(value) {
   if (value === 'success') return 'success'
   if (value === 'failed') return 'danger'
   if (value === 'pending' || value === 'running') return 'warning'
+  return 'info'
+}
+function currentResultStatusLabel(task) {
+  if (!task?.has_current_result) return t('manager.derivedTasks.quickViewStatus.notGenerated')
+  const status = String(task.current_result_status || '').trim()
+  const known = ['ready', 'building', 'generating', 'stale', 'failed', 'cancelled']
+  return known.includes(status) ? t(`manager.derivedTasks.quickViewStatus.${status}`) : (status || t('manager.derivedTasks.quickViewStatus.unavailable'))
+}
+function currentResultStatusType(task) {
+  const status = String(task?.current_result_status || '').trim()
+  if (status === 'ready') return 'success'
+  if (status === 'building' || status === 'generating' || status === 'stale') return 'warning'
+  if (status === 'failed') return 'danger'
   return 'info'
 }
 function bindingStatusLabel(task) {
@@ -351,6 +373,28 @@ async function removeSelected() {
   }
 }
 function openSource(row) { navigateManagerRoute(router, { path: '/data-explorer', query: { locator: sourceLocator(row) } }, { history: 'push' }) }
+async function openTargetData(row) {
+  const identity = derivedTaskTargetCatalogIdentity(row, parseLocatorSafe)
+  if (!identity) {
+    ElMessage.warning(t('manager.derivedTasks.targetUnavailable'))
+    return
+  }
+  openingTargetTaskID.value = row.id
+  try {
+    const item = await getResourceItemByCatalogPath('/api/v1/meta', { engine_id: identity.engineId, catalog_path: identity.catalogPath })
+    const locator = metaItemLocator(item, buildLocator)
+    if (!locator) {
+      ElMessage.warning(t('manager.derivedTasks.targetUnavailable'))
+      return
+    }
+    await navigateManagerRoute(router, { path: '/data-explorer', query: { locator } }, { history: 'push' })
+  } catch (error) {
+    if (error?.response?.status === 404) ElMessage.warning(t('manager.derivedTasks.targetNotDiscovered'))
+    else ElMessage.error(error?.response?.data?.error || t('manager.derivedTasks.targetOpenFailed'))
+  } finally {
+    openingTargetTaskID.value = 0
+  }
+}
 async function openMonitor(row) { await openMonitorExecution(row.last_execution_id) }
 function isSpatialBusinessTask(row) { return categoryForTaskType(row?.task_type) === 'spatial_business' }
 async function beginQuickViewCreate() {

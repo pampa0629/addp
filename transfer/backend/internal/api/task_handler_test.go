@@ -446,7 +446,23 @@ func TestProviderExecuteTaskUsesStandardExecutionShape(t *testing.T) {
 	})
 	router.POST("/tasks/:task_type/:id/execute", NewTaskHandler(taskSvc).ProviderExecuteTask)
 
-	req := httptest.NewRequest(http.MethodPost, "/tasks/sync/1/execute", strings.NewReader(`{}`))
+	parentExecutionID := "00000000-0000-4000-8000-000000000001"
+	principalID, membershipID, authorizationVersion := int64(41), int64(51), int64(6)
+	if err := commonExecution.NewTaskExecutionRepository(db).Create(context.Background(), &commonExecution.TaskExecution{
+		TenantID: 7, ExecutionID: parentExecutionID,
+		Module: commonExecution.ModuleOrchestrator, TaskType: commonExecution.TaskTypeOrchestration,
+		Source: commonExecution.ModuleOrchestrator, Status: commonExecution.ExecutionStatusRunning,
+		TriggerType:      commonExecution.TriggerTypeManual,
+		ActorPrincipalID: &principalID, ActorTenantMembershipID: &membershipID,
+		IssuedAuthorizationVersion: &authorizationVersion,
+	}); err != nil {
+		t.Fatalf("create parent execution: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/tasks/sync/1/execute", strings.NewReader(`{
+		"trigger_type":"manual",
+		"source":"orchestrator",
+		"parent_execution_id":"`+parentExecutionID+`"
+	}`))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)

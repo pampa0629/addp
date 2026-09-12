@@ -150,13 +150,13 @@ Department 和 Project Group Scope 必须引用当前 Tenant 内可用的组织�
 
 管理界面的 Role 选择器必须使用 Membership 的 `principal_type` 和 Role 的 `allowed_principal_types` 进行结构化过滤，只展示对目标 Principal 可分配的 Role。不得根据 Role Key 后缀、展示名称或其他字符串约定识别 Runtime Role。
 
-Role Assignment 的持久生命周期只使用 `active` / `revoked`；管理读取根据数据库时间派生 `scheduled` / `effective` / `expired` / `revoked` 当前状态，不把“尚未撤销”等同于“当前有效”。管理列表默认只查询 `effective` 当前授权，其他状态只能通过明确切换筛选查看。`revoked` Assignment 是不可删除、不可恢复的授权历史；需要恢复授权时必须创建新的 Assignment，旧记录不得复用。
+Role Assignment 的持久生命周期只使用 `active` / `revoked`；管理读取根据数据库时间派生 `scheduled` / `effective` / `expired` / `revoked` 当前状态，不把“尚未撤销”等同于“当前有效”。管理列表默认只查询 `effective` 当前授权，其他状态只能通过明确切换筛选查看。只有 `scheduled` 和 `effective` Assignment 可撤销；`expired` 是已经自然失效的历史事实，必须只读，撤销请求返回 `409 Conflict` 和稳定 `error_code=role_assignment_expired`。`revoked` Assignment 亦是不可删除、不可恢复的授权历史；需要恢复或续授权限时必须创建新的 Assignment，旧记录不得复用。
 
 Role Assignment 必须直接保存授权生命周期所需事实：授予原因 `grant_reason`、授予人、授予时间，以及撤销后的 `revoked_reason`、撤销人和撤销时间。手工创建和撤销必须分别提供非空原因；System 必须在同一事务内写入 Assignment 与对应审计事件。Assignment 用于授权管理员读取当前及历史生命周期，`audit_logs` 用于不可变审计证据，不得要求拥有 Role Assignment 读取权限的管理员额外获得 Tenant 全量审计权限才能理解授权状态。
 
 管理 API 必须提供当前 Tenant 内 Assignment 的独立详情读取。详情除目标 Principal、Role、Scope 和有效期外，还要解析授予人与撤销人的当前可读身份，并为已撤销记录派生同一 Principal、Role、Scope 下的当前有效 Assignment ID；该 ID 只表示“同范围当前重新授权”，不得持久化为替代关系。跨 Tenant ID 与不存在统一返回 `404 Not Found`。
 
-Role 选择器必须把兼容 Role 分为“可分配角色”和“已分配角色”两组；同一 Membership、同一 Scope 下已有 `effective` Assignment 的 Role 保留可见但禁止重复选择，只有历史 `revoked` 或 `expired` Assignment 时不得阻止重新分配。
+Role 选择器必须把兼容 Role 分为“可分配角色”和“已分配角色”两组；同一 Membership、同一 Scope 下已有 `effective` Assignment 的 Role 保留可见但禁止重复选择，只有历史 `revoked` 或 `expired` Assignment 时不得阻止重新分配。同一 Principal、Role 和 Scope 的多条 `active` Assignment 以授权有效区间判定重复：有效区间不得重叠，已结束区间不得占用当前或未来授权位置。
 
 Tenant 管理界面按账号类别提供唯一授权入口：“角色管理 > 角色分配”只查询和选择 User Membership；Tenant-owned Service Account 的角色只从“应用接入 > 租户服务账号”管理；Platform-owned Runtime Service Principal 的角色只从“应用接入 > 平台运行账号”查看。两个入口继续复用相同的 Role Assignment API、校验和审计事实，但不得混排数据或共用可变更操作。Platform-owned Runtime Service Principal 只读，不允许 Tenant 管理员创建或撤销其系统引导的 Role Assignment；Tenant-owned Service Account 只可选择 `allowed_principal_types` 包含 `service_principal` 的 Role。
 

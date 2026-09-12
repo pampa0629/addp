@@ -3,7 +3,6 @@ package api
 import (
 	"net/http"
 	"strconv"
-	"strings"
 
 	commonAPI "github.com/addp/common/api"
 	commonExecution "github.com/addp/common/execution"
@@ -70,13 +69,13 @@ type taskProviderExecuteResponse struct {
 
 // ProviderExecuteScanTask 按 TaskProvider 标准协议触发 ScanTask。
 // @Summary 执行 TaskProvider 扫描任务 | Execute TaskProvider scan task
-// @Description 按标准 TaskProvider 协议触发 Meta ScanTask；task_type 仅支持 scan，parameters 当前不支持覆盖。| Trigger a Meta ScanTask through the standard TaskProvider protocol; task_type only supports scan and parameters overrides are not supported.
+// @Description 仅接受 addp-orchestrator 以父 execution 血缘触发；task_type 仅支持 scan，请求必须提供 source=orchestrator 和 parent_execution_id，parameters 当前不支持覆盖。| Only accepts addp-orchestrator execution-lineage invocation; task_type only supports scan, source=orchestrator and parent_execution_id are required, and parameters overrides are not supported.
 // @Tags Meta Scan
 // @Accept json
 // @Produce json
 // @Param task_type path string true "任务类型，固定为 scan | Task type, fixed to scan"
 // @Param id path int true "扫描任务ID | Scan task ID"
-// @Param request body taskProviderExecuteRequest false "TaskProvider 执行请求 | TaskProvider execution request"
+// @Param request body taskProviderExecuteRequest true "TaskProvider 执行请求 | TaskProvider execution request"
 // @Success 202 {object} taskProviderExecuteResponse "执行记录 | Execution"
 // @Failure 400 {object} map[string]interface{} "请求参数错误 | Bad request"
 // @Failure 503 {object} map[string]interface{} "任务服务不可用 | Task service unavailable"
@@ -110,14 +109,13 @@ func (h *Handler) ProviderExecuteScanTask(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	source := strings.TrimSpace(req.Source)
-	if source == "" {
-		source = commonExecution.ModuleMeta
+	parentID, err := commonExecution.NormalizeOrchestratorChildContext(req.Source, req.ParentExecutionID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
-	var parentExecutionID *string
-	if strings.TrimSpace(req.ParentExecutionID) != "" {
-		parentExecutionID = &req.ParentExecutionID
-	}
+	source := commonExecution.ModuleOrchestrator
+	parentExecutionID := &parentID
 
 	tenantID := commonAuth.GetTenantID(c)
 	userID := commonAuth.GetUserID(c)

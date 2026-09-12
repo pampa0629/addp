@@ -26,6 +26,17 @@ func (r *TaskExecutionRepository) Create(ctx context.Context, exec *TaskExecutio
 	return r.db.WithContext(ctx).Create(exec).Error
 }
 
+// CreateOrchestratorChild verifies the parent execution and persists the child
+// with inherited actor facts in one transaction.
+func (r *TaskExecutionRepository) CreateOrchestratorChild(ctx context.Context, exec *TaskExecution) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := InheritOrchestratorActor(tx, exec); err != nil {
+			return err
+		}
+		return tx.Create(exec).Error
+	})
+}
+
 // Update 更新执行记录
 func (r *TaskExecutionRepository) Update(ctx context.Context, exec *TaskExecution) error {
 	return r.db.WithContext(ctx).Save(exec).Error

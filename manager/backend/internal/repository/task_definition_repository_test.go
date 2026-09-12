@@ -109,6 +109,50 @@ func TestRetireMissingTaskKeepsCanonicalReplacement(t *testing.T) {
 	}
 }
 
+func TestCurrentResultStatusesUsesLatestNonDeletedTenantResult(t *testing.T) {
+	db := newTaskDefinitionRepositoryTestDB(t)
+	if err := db.Exec(`CREATE TABLE manager.model_3d_glb (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		tenant_id INTEGER NOT NULL,
+		task_id INTEGER,
+		status TEXT NOT NULL,
+		updated_at DATETIME,
+		deleted_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create model_3d_glb: %v", err)
+	}
+
+	quickViewTask := &models.TaskDefinition{ID: 41, TenantID: 7, TaskType: commonExecution.TaskTypeModel3DGLBGeneration}
+	spatialTask := &models.TaskDefinition{ID: 42, TenantID: 7, TaskType: commonExecution.TaskTypeRasterMosaicGeneration}
+	statements := []string{
+		`INSERT INTO manager.model_3d_glb (tenant_id, task_id, status, updated_at) VALUES (7, 41, 'ready', '2026-01-01T00:00:00Z')`,
+		`INSERT INTO manager.model_3d_glb (tenant_id, task_id, status, updated_at) VALUES (7, 41, 'failed', '2026-01-02T00:00:00Z')`,
+		`INSERT INTO manager.model_3d_glb (tenant_id, task_id, status, updated_at, deleted_at) VALUES (7, 41, 'ready', '2026-01-03T00:00:00Z', '2026-01-03T00:00:01Z')`,
+		`INSERT INTO manager.model_3d_glb (tenant_id, task_id, status, updated_at) VALUES (8, 41, 'ready', '2026-01-04T00:00:00Z')`,
+	}
+	for _, statement := range statements {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatalf("insert result status: %v", err)
+		}
+	}
+
+	repo := NewTaskDefinitionRepository(db)
+	statuses, err := repo.CurrentResultStatuses(context.Background(), 7, []*models.TaskDefinition{quickViewTask, spatialTask})
+	if err != nil {
+		t.Fatalf("CurrentResultStatuses() error = %v", err)
+	}
+	if got := statuses[quickViewTask.ID]; got != "failed" {
+		t.Fatalf("latest status = %q, want failed", got)
+	}
+	if _, exists := statuses[spatialTask.ID]; exists {
+		t.Fatalf("spatial task unexpectedly has Manager current result: %#v", statuses)
+	}
+	status, exists, err := repo.CurrentResultStatus(context.Background(), 7, quickViewTask.TaskType, quickViewTask.ID)
+	if err != nil || !exists || status != "failed" {
+		t.Fatalf("CurrentResultStatus() = %q, %v, %v; want failed, true, nil", status, exists, err)
+	}
+}
+
 func newTaskDefinitionRepositoryTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})

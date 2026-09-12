@@ -112,6 +112,8 @@ type TaskListItem struct {
 	LastExecutionStatus *string              `json:"last_execution_status,omitempty"`
 	BindingStatus       string               `json:"binding_status"`
 	BindingIssue        string               `json:"binding_issue,omitempty"`
+	HasCurrentResult    bool                 `json:"has_current_result"`
+	CurrentResultStatus string               `json:"current_result_status,omitempty"`
 	UpdatedAt           time.Time            `json:"updated_at"`
 	Config              commonModels.JSONMap `json:"config"`
 }
@@ -208,17 +210,18 @@ type DerivedTaskRequest struct {
 // TaskProvider detail response. Owner-specific task fields remain at the same
 // top level in the actual response.
 type TaskProviderTaskDetailResponse struct {
-	ID                uint                           `json:"id"`
-	TenantID          uint                           `json:"tenant_id"`
-	TaskType          string                         `json:"task_type"`
-	Category          string                         `json:"category,omitempty"`
-	Version           uint                           `json:"version,omitempty"`
-	SemanticKey       string                         `json:"semantic_key,omitempty"`
-	Name              string                         `json:"name"`
-	BindingStatus     string                         `json:"binding_status,omitempty"`
-	BindingIssue      string                         `json:"binding_issue,omitempty"`
-	HasCurrentResult  bool                           `json:"has_current_result"`
-	ExecutionContract taskprovider.ExecutionContract `json:"execution_contract"`
+	ID                  uint                           `json:"id"`
+	TenantID            uint                           `json:"tenant_id"`
+	TaskType            string                         `json:"task_type"`
+	Category            string                         `json:"category,omitempty"`
+	Version             uint                           `json:"version,omitempty"`
+	SemanticKey         string                         `json:"semantic_key,omitempty"`
+	Name                string                         `json:"name"`
+	BindingStatus       string                         `json:"binding_status,omitempty"`
+	BindingIssue        string                         `json:"binding_issue,omitempty"`
+	HasCurrentResult    bool                           `json:"has_current_result"`
+	CurrentResultStatus string                         `json:"current_result_status,omitempty"`
+	ExecutionContract   taskprovider.ExecutionContract `json:"execution_contract"`
 }
 
 // EmbeddingTaskRequest 是私有向量化任务 CRUD 的显式契约。
@@ -645,12 +648,13 @@ func (h *TaskProviderHandler) ProviderTaskDetail(c *gin.Context) {
 
 // ProviderTaskExecute 执行 TaskProvider Manager 任务。
 // @Summary 执行 TaskProvider Manager 任务 | Execute TaskProvider Manager task
+// @Description 仅接受 addp-orchestrator 以父 execution 血缘触发；请求必须提供 source=orchestrator 和 parent_execution_id。| Only accepts addp-orchestrator execution-lineage invocation; source=orchestrator and parent_execution_id are required.
 // @Tags TaskProvider
 // @Accept json
 // @Produce json
 // @Param task_type path string true "任务类型 | Task type"
 // @Param id path int true "任务ID | Task ID"
-// @Param body body TaskExecuteRequest false "执行配置 | Execution configuration"
+// @Param body body TaskExecuteRequest true "TaskProvider 执行请求 | TaskProvider execution request"
 // @Success 202 {object} TaskExecuteResponse
 // @Failure 400 {object} map[string]interface{}
 // @Failure 404 {object} map[string]interface{}
@@ -660,7 +664,7 @@ func (h *TaskProviderHandler) ProviderTaskDetail(c *gin.Context) {
 // @Router /task-provider/tasks/{task_type}/{id}/execute [post]
 // @Security BearerAuth
 func (h *TaskProviderHandler) ProviderTaskExecute(c *gin.Context) {
-	h.TaskExecute(c)
+	h.executeTask(c, true)
 }
 
 // ProviderExecutionStatus 获取 TaskProvider Manager 执行状态。
@@ -744,9 +748,19 @@ func (h *TaskProviderHandler) listTasks(c *gin.Context, taskType string) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		currentResultStatuses, err := h.taskDefinitionRepo.CurrentResultStatuses(ctx, tenantID, tasks)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 		items = make([]TaskListItem, 0, len(tasks))
 		for _, task := range tasks {
-			items = append(items, taskListItem(task))
+			item := taskListItem(task)
+			if status, exists := currentResultStatuses[task.ID]; exists {
+				item.HasCurrentResult = true
+				item.CurrentResultStatus = status
+			}
+			items = append(items, item)
 		}
 		c.JSON(http.StatusOK, TaskListResponse{Items: items, Total: count, Page: page, PageSize: pageSize})
 		return
@@ -1505,12 +1519,15 @@ func (h *TaskProviderHandler) respondManagerTaskDetail(c *gin.Context, taskType 
 	}
 	result["execution_contract"] = managerTaskExecutionContract(taskType)
 	if h.taskDefinitionRepo != nil && managerTaskRequiresExistingResultAction(taskType) {
-		hasCurrentResult, err := h.taskDefinitionRepo.HasCurrentResult(c.Request.Context(), tenantIDValue(c), taskType, uint(taskID))
+		currentResultStatus, hasCurrentResult, err := h.taskDefinitionRepo.CurrentResultStatus(c.Request.Context(), tenantIDValue(c), taskType, uint(taskID))
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 		result["has_current_result"] = hasCurrentResult
+		if hasCurrentResult {
+			result["current_result_status"] = currentResultStatus
+		}
 	}
 	c.JSON(http.StatusOK, result)
 }
@@ -1615,7 +1632,7 @@ func existingResultActionAllowsOverwrite(action string) (bool, error) {
 
 // TaskExecute POST /api/v1/manager/tasks/:task_type/:id/execute
 // @Summary 执行任务 | Execute task
-// @Description 触发指定任务立即执行 | Trigger immediate execution of a specific task
+// @Description 由当前用户触发指定任务立即执行；不接受机器父执行上下文。| Trigger a task immediately as the current user; machine parent execution context is not accepted.
 // @Tags Manager
 // @Accept json
 // @Produce json
@@ -1631,6 +1648,10 @@ func existingResultActionAllowsOverwrite(action string) (bool, error) {
 // @Router /tasks/{task_type}/{id}/execute [post]
 // @Security BearerAuth
 func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
+	h.executeTask(c, false)
+}
+
+func (h *TaskProviderHandler) executeTask(c *gin.Context, taskProvider bool) {
 	tenantID := tenantIDValue(c)
 	taskType := c.Param("task_type")
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
@@ -1649,9 +1670,19 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	source := strings.TrimSpace(req.Source)
-	if source == "" {
-		source = commonExecution.ModuleManager
+	source := commonExecution.ModuleManager
+	var parentExecID *string
+	if taskProvider {
+		parentID, err := commonExecution.NormalizeOrchestratorChildContext(req.Source, req.ParentExecutionID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		source = commonExecution.ModuleOrchestrator
+		parentExecID = &parentID
+	} else if strings.TrimSpace(req.Source) != "" || strings.TrimSpace(req.ParentExecutionID) != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "user execution does not accept source or parent_execution_id"})
+		return
 	}
 	overwriteExistingResult := false
 	if managerTaskRequiresExistingResultAction(taskType) {
@@ -1664,11 +1695,6 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Manager task provider does not support execution parameter overrides"})
 		return
 	}
-	var parentExecID *string
-	if req.ParentExecutionID != "" {
-		parentExecID = &req.ParentExecutionID
-	}
-
 	ctx := c.Request.Context()
 	var executionID string
 	executionStatus := commonExecution.ExecutionStatusPending

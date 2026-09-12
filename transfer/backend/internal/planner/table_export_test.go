@@ -108,6 +108,77 @@ func TestBuildTableTransferPlanRejectsMQLForPostgreSQLSource(t *testing.T) {
 	}
 }
 
+func TestTargetOverrideIsIndependentOfSourceQueryAndKeepsDefaultTarget(t *testing.T) {
+	spec := overridableNativeTableSpec()
+	if spec.Source.Query != nil {
+		t.Fatal("test precondition failed: direct table source must not contain a query")
+	}
+	result, err := BuildTableTransferPlan(spec, StaticEngineResolver{
+		1: nativeTableSourceBinding("postgresql"),
+		2: nativeTableTargetBinding("postgresql"),
+	})
+	if err != nil {
+		t.Fatalf("BuildTableTransferPlan() error = %v", err)
+	}
+	if !result.Plan.Target.ManagedExisting || result.Plan.Target.DeleteBeforeWrite {
+		t.Fatalf("default overridable target plan = %#v", result.Plan.Target)
+	}
+	locator, err := NativeTableTargetLocator(spec)
+	if err != nil || locator != "addp://engine/2/path/public/default_target?type=table" {
+		t.Fatalf("default target locator = %q, error = %v", locator, err)
+	}
+}
+
+func TestResolveTargetOverrideChangesOnlyExecutionTarget(t *testing.T) {
+	spec := overridableNativeTableSpec()
+	resolved, err := ResolveTargetOverride(spec, "addp://engine/9/path/staging/run_1?type=table")
+	if err != nil {
+		t.Fatalf("ResolveTargetOverride() error = %v", err)
+	}
+	if resolved.Target.ParentLocator != "addp://engine/9/path/staging?type=schema" || resolved.Target.Name != "run_1" {
+		t.Fatalf("resolved target = %#v", resolved.Target)
+	}
+	if !resolved.Target.ManagedExisting || resolved.Target.OverridePolicy != targetOverrideExistingTableAppend {
+		t.Fatalf("resolved target safety policy = %#v", resolved.Target)
+	}
+	if spec.Target.ParentLocator != schemaLocator(2, "public") || spec.Target.Name != "default_target" {
+		t.Fatalf("saved default target was mutated: %#v", spec.Target)
+	}
+}
+
+func TestTargetOverrideRejectsDestructiveOrContinuousSemantics(t *testing.T) {
+	for name, mutate := range map[string]func(*TableExportTaskSpec){
+		"replace":    func(spec *TableExportTaskSpec) { spec.Target.Policy["apply_mode"] = "replace" },
+		"continuous": func(spec *TableExportTaskSpec) { spec.Runtime.Boundary = "continuous" },
+		"encoded":    func(spec *TableExportTaskSpec) { spec.Target.Representation = "encoded" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			spec := overridableNativeTableSpec()
+			mutate(&spec)
+			if err := validateTableTransferSpec(spec); err == nil {
+				t.Fatal("validateTableTransferSpec() succeeded, want target override safety rejection")
+			}
+		})
+	}
+}
+
+func TestParseTableExportTaskSpecRejectsRemovedRuntimeBinding(t *testing.T) {
+	config := map[string]interface{}{
+		"runtime": map[string]interface{}{"boundary": "bounded"},
+		"load":    map[string]interface{}{"mode": "snapshot"},
+		"source": map[string]interface{}{
+			"locator": "addp://engine/1/path/public/source_table?type=table", "data_type": "table", "representation": "native",
+		},
+		"target": map[string]interface{}{
+			"binding": "runtime", "data_type": "table", "representation": "native",
+			"policy": map[string]interface{}{"apply_mode": "append"},
+		},
+	}
+	if _, err := ParseTableExportTaskSpec(config, 1000); err == nil || !strings.Contains(err.Error(), "unknown field") {
+		t.Fatalf("ParseTableExportTaskSpec() error = %v, want removed binding rejection", err)
+	}
+}
+
 func TestBuildTableTransferPlanValidatesDeclaredQueryParameterTypes(t *testing.T) {
 	caps := engineplugin.NewTabularCapabilities("postgresql", engineplugin.EngineCatalogTermSchema, engineplugin.TabularCapabilityOptions{
 		QueryReadSession:   true,
@@ -2020,6 +2091,31 @@ func minimalNativeToEncodedSpec() TableExportTaskSpec {
 			Format:         format.FormatCSV,
 			Policy:         map[string]interface{}{"apply_mode": "replace"},
 		},
+	}
+}
+
+func overridableNativeTableSpec() TableExportTaskSpec {
+	nullable := false
+	return TableExportTaskSpec{
+		Runtime: RuntimeSpec{Boundary: runtimeBoundaryBounded},
+		Load:    LoadSpec{Mode: loadModeSnapshot},
+		Source: EndpointSpec{
+			Locator:        "addp://engine/1/path/public/source_table?type=table",
+			DataType:       dataTypeTable,
+			Representation: representationNative,
+		},
+		Target: EndpointSpec{
+			ParentLocator:  schemaLocator(2, "public"),
+			Name:           "default_target",
+			DataType:       dataTypeTable,
+			Representation: representationNative,
+			Policy:         map[string]interface{}{"apply_mode": "append"},
+			OverridePolicy: targetOverrideExistingTableAppend,
+		},
+		Transforms: []TransformSpec{{
+			Type: "field_mapping", Version: "v1", Mode: "project",
+			Fields: []FieldMappingSpec{{Source: "id", Target: "id", TargetType: "bigint", Nullable: &nullable}},
+		}},
 	}
 }
 

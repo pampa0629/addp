@@ -14,8 +14,27 @@ func TestEmbeddedMigrationCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
-	if catalog.LatestVersion != 138 {
-		t.Fatalf("LatestVersion = %d, want 138", catalog.LatestVersion)
+	if catalog.LatestVersion != 139 {
+		t.Fatalf("LatestVersion = %d, want 139", catalog.LatestVersion)
+	}
+}
+
+func TestRoleAssignmentExpiryGuardMigrationPublishesReadOnlyHistoryAndIntervalUniqueness(t *testing.T) {
+	data, err := fs.ReadFile(EmbeddedSQL, "sql/000139_iam_role_assignment_expiry_guard.up.sql")
+	if err != nil {
+		t.Fatalf("read migration 139: %v", err)
+	}
+	sql := string(data)
+	for _, fragment := range []string{
+		"DROP INDEX system.uq_role_assignments_active_scope",
+		"pg_advisory_xact_lock",
+		"role_assignments_effective_interval_overlap",
+		"role_assignments_expired_read_only",
+		"expired role assignment is read-only",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("migration 139 missing %q", fragment)
+		}
 	}
 }
 

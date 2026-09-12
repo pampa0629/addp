@@ -31,12 +31,3 @@ export function withQuerySource(endpoint, { enabled, language, statement, parame
   }
   return { ...endpoint, query }
 }
-
-export function buildRuntimeTableTarget() {
-  return {
-    binding: 'runtime',
-    data_type: 'table',
-    representation: 'native',
-    policy: { apply_mode: 'append' }
-  }
-}

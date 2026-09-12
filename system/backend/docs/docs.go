@@ -8795,6 +8795,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/internal_api.IAMTenantRoleAssignmentResponse"
                         }
+                    },
+                    "409": {
+                        "description": "角色分配已撤销或已到期 | Role assignment is already revoked or expired",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.IAMErrorResponse"
+                        }
                     }
                 },
                 "x-addp-auth-mode": "permission",

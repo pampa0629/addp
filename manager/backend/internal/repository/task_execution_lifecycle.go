@@ -103,6 +103,11 @@ func (l taskExecutionLifecycle) Claim(
 				execution.ExecutionConfig = commonModels.JSONMap{}
 			}
 		}
+		if execution.ParentExecutionID != nil {
+			if err := commonExecution.InheritOrchestratorActor(tx, execution); err != nil {
+				return err
+			}
+		}
 		if err := tx.Create(execution).Error; err != nil {
 			return err
 		}

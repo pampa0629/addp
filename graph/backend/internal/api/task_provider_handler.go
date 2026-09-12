@@ -138,13 +138,13 @@ func (h *TaskProviderHandler) GetProviderTask(c *gin.Context) {
 
 // ExecuteProviderTask 执行 Graph 构建任务。
 // @Summary 执行 TaskProvider 图谱构建任务 | Execute TaskProvider graph build task
-// @Description 按标准 TaskProvider 协议执行 Graph 构建任务；task_type 仅支持 kg_build，parameters 当前不支持覆盖。| Execute a Graph build task through the standard TaskProvider protocol; task_type only supports kg_build and parameters overrides are not supported.
+// @Description 仅接受 addp-orchestrator 以父 execution 血缘触发；task_type 仅支持 kg_build，请求必须提供 source=orchestrator 和 parent_execution_id，parameters 当前不支持覆盖。| Only accepts addp-orchestrator execution-lineage invocation; task_type only supports kg_build, source=orchestrator and parent_execution_id are required, and parameters overrides are not supported.
 // @Tags 图谱构建 | Graph Build
 // @Accept json
 // @Produce json
 // @Param task_type path string true "任务类型，固定为 kg_build | Task type, fixed to kg_build"
 // @Param id path int true "构建任务ID | Build task ID"
-// @Param request body graphTaskProviderExecuteRequest false "TaskProvider 执行请求 | TaskProvider execution request"
+// @Param request body graphTaskProviderExecuteRequest true "TaskProvider 执行请求 | TaskProvider execution request"
 // @Success 202 {object} graphTaskProviderExecuteResponse "执行ID | Execution ID"
 // @Failure 400 {object} models.ErrorResponse
 // @Failure 409 {object} models.ErrorResponse
@@ -180,14 +180,13 @@ func (h *TaskProviderHandler) ExecuteProviderTask(c *gin.Context) {
 		respondBuildActionError(c, err)
 		return
 	}
-	source := strings.TrimSpace(req.Source)
-	if source == "" {
-		source = commonExecution.ModuleGraph
+	parentID, err := commonExecution.NormalizeOrchestratorChildContext(req.Source, req.ParentExecutionID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
-	var parentExecutionID *string
-	if strings.TrimSpace(req.ParentExecutionID) != "" {
-		parentExecutionID = &req.ParentExecutionID
-	}
+	source := commonExecution.ModuleOrchestrator
+	parentExecutionID := &parentID
 
 	executionID, err := h.buildSvc.RunTaskByIDWithContext(
 		c.Request.Context(),

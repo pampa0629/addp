@@ -176,6 +176,20 @@ test('tenant administrator filters members and assigns multiple roles in one req
       },
       revoked_at: '2026-09-08T07:00:00Z',
       grant_reason: 'historical assignment'
+    }),
+    assignment({
+      id: '504',
+      membership_id: '12',
+      principal_id: '2',
+      display_name: 'Alice Researcher',
+      username: 'alice',
+      role_id: '103',
+      role_key: 'tenant.data_steward',
+      role_name: '数据管理员',
+      status: 'active',
+      effective_state: 'expired',
+      valid_until: '2026-09-08T06:00:00Z',
+      grant_reason: 'expired assignment'
     })
   ]
   const mutations = []
@@ -409,6 +423,12 @@ test('tenant administrator filters members and assigns multiple roles in one req
   const revokedViewerRows = page.getByRole('row').filter({ hasText: '数据查看者' }).filter({ hasText: 'Alice Researcher' })
   await expect(revokedViewerRows).toHaveCount(2)
   await expect(revokedViewerRows.first()).toContainText('已撤销')
+
+  await statusCombobox.press('ArrowDown')
+  await page.locator(`[id="${statusListboxID}"]`).getByRole('option', { name: '已过期', exact: true }).click()
+  const expiredStewardRow = page.getByRole('row').filter({ hasText: '数据管理员' }).filter({ hasText: 'Alice Researcher' })
+  await expect(expiredStewardRow).toContainText('已过期')
+  await expect(expiredStewardRow.getByRole('button', { name: '撤销', exact: true })).toHaveCount(0)
 
   expect(mutations).toEqual([
     {

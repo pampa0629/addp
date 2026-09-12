@@ -40,7 +40,8 @@ import {
   reconcileQueryOutputMappings
 } from './fieldMapping.mjs'
 import { mergeTopicFieldRecommendations } from './topicFieldRecommendations.mjs'
-import { buildRuntimeTableTarget, querySourceValid, withQuerySource } from './runtimeTarget.mjs'
+import { querySourceValid, withQuerySource } from './querySource.mjs'
+import { TARGET_OVERRIDE_POLICY, withTargetOverride } from './targetOverride.mjs'
 
 export function useTaskWizardState() {
   const { t } = useI18n()
@@ -90,7 +91,7 @@ export function useTaskWizardState() {
   const targetTable = ref('')
   const targetType = ref('nfs')
   const targetRepresentation = ref('encoded')
-  const targetBinding = ref('definition')
+  const targetOverridePolicy = ref('')
 
   // 字段映射
   const fieldMappings = ref([])
@@ -221,9 +222,6 @@ export function useTaskWizardState() {
           })
         )
       case 1: // 选择Target
-        if (targetBinding.value === 'runtime') {
-          return sourceQueryEnabled.value && runtimeBoundary.value === 'bounded'
-        }
         if (targetRepresentation.value === 'native') {
           return !!(targetEngineID.value && targetConfig.value?.parentLocator && targetTable.value)
         }
@@ -274,7 +272,7 @@ export function useTaskWizardState() {
       schedule: isContinuousTask.value ? '' : schedule.value,
       enabled: isContinuousTask.value ? false : (schedule.value ? enabled.value : false),
       batch_size: isContinuousTask.value ? continuousPollBatchSize.value : batchSize.value,
-      auto_scan_metadata: targetBinding.value !== 'runtime'
+      auto_scan_metadata: true
     }
 
     if (!isContinuousTask.value) {
@@ -458,9 +456,6 @@ export function useTaskWizardState() {
   }
 
   function buildTargetEndpoint() {
-    if (targetBinding.value === 'runtime') {
-      return buildRuntimeTableTarget()
-    }
     const fileConfig = targetConfig.value || {}
     if (targetRepresentation.value === 'native') {
       const policy = isContinuousTask.value
@@ -476,13 +471,14 @@ export function useTaskWizardState() {
         : {
             apply_mode: normalizeTableApplyMode(fileConfig.writeMode)
           }
-      return {
+      const endpoint = {
         parent_locator: fileConfig.parentLocator || '',
         name: targetTable.value,
         data_type: 'table',
         representation: 'native',
         policy
       }
+      return withTargetOverride(endpoint, targetOverridePolicy.value === TARGET_OVERRIDE_POLICY)
     }
 
     const format = targetBackendFormat(fileConfig)
@@ -649,7 +645,7 @@ export function useTaskWizardState() {
       targetSchema.value = ''
       targetTable.value = ''
       targetConfig.value = {}
-      targetBinding.value = 'definition'
+      targetOverridePolicy.value = ''
       transforms.value = []
       targetRepresentation.value = nextContinuous
         ? 'native'
@@ -669,9 +665,6 @@ export function useTaskWizardState() {
       ? parameters
       : {}
     sourceQueryValid.value = valid === true
-    if (!sourceQueryEnabled.value && targetBinding.value === 'runtime') {
-      setTargetBinding('definition')
-    }
   }
 
   function applyAssistantSource(candidate, engine = null) {
@@ -713,33 +706,38 @@ export function useTaskWizardState() {
     loadSourceFields(candidate.fields || [])
   }
 
-	function setLoadMode(mode) {
-		if (isKafkaTopicSource(sourceEngineType.value, sourceLocator.value)) {
-			loadMode.value = 'incremental'
-			runtimeBoundary.value = 'continuous'
-			return
-		}
-		if (mode === 'cdc') {
-			if (!supportsDatabaseCDC.value) return
-			loadMode.value = 'cdc'
-			runtimeBoundary.value = 'continuous'
-			schedule.value = ''
-			enabled.value = false
-			targetRepresentation.value = 'native'
-			continuousInitialPosition.value = 'earliest'
-			const primaryKeys = sourceFields.value.filter(isPrimaryKeyField).map(field => field.name)
-			updateContinuousKeyFields(primaryKeys)
-			return
-		}
-		const nextMode = ['insert_only', 'incremental'].includes(mode) ? mode : 'snapshot'
-		if (loadMode.value !== nextMode && ['insert_only', 'incremental'].includes(nextMode)) {
-			watermarkField.value = ''
-			watermarkTieBreakers.value = []
-			targetKeys.value = []
-		}
-		loadMode.value = nextMode
-		runtimeBoundary.value = 'bounded'
-	}
+  function setLoadMode(mode) {
+    if (isKafkaTopicSource(sourceEngineType.value, sourceLocator.value)) {
+      loadMode.value = 'incremental'
+      runtimeBoundary.value = 'continuous'
+      setTargetOverridePolicy('')
+      return
+    }
+    if (mode === 'cdc') {
+      if (!supportsDatabaseCDC.value) return
+      loadMode.value = 'cdc'
+      runtimeBoundary.value = 'continuous'
+      schedule.value = ''
+      enabled.value = false
+      targetRepresentation.value = 'native'
+      setTargetOverridePolicy('')
+      continuousInitialPosition.value = 'earliest'
+      const primaryKeys = sourceFields.value.filter(isPrimaryKeyField).map(field => field.name)
+      updateContinuousKeyFields(primaryKeys)
+      return
+    }
+    const nextMode = ['insert_only', 'incremental'].includes(mode) ? mode : 'snapshot'
+    if (nextMode !== 'snapshot') {
+      setTargetOverridePolicy('')
+    }
+    if (loadMode.value !== nextMode && ['insert_only', 'incremental'].includes(nextMode)) {
+      watermarkField.value = ''
+      watermarkTieBreakers.value = []
+      targetKeys.value = []
+    }
+    loadMode.value = nextMode
+    runtimeBoundary.value = 'bounded'
+  }
 
   function loadSourceFields(fields, attributes = null) {
     sourceFields.value = enrichSourceFieldsWithSpatialInfo(
@@ -831,26 +829,22 @@ export function useTaskWizardState() {
     targetTable.value = config.table || extra.table || ''
     targetType.value = config.targetType || 'nfs'
     targetRepresentation.value = config.representation || 'encoded'
-    targetBinding.value = 'definition'
+    targetOverridePolicy.value = extra.overridePolicy === TARGET_OVERRIDE_POLICY
+      ? TARGET_OVERRIDE_POLICY
+      : ''
     targetConfig.value = extra
     if (isWatermarkIncremental.value && !supportsWatermarkIncremental.value) {
       resetIncrementalConfig()
     }
   }
 
-  function setTargetBinding(binding) {
-    targetBinding.value = binding === 'runtime' ? 'runtime' : 'definition'
-    if (targetBinding.value === 'runtime') {
-      targetEngineID.value = null
-      targetEngineType.value = ''
-      targetEngineCapabilities.value = null
-      targetSchema.value = ''
-      targetTable.value = ''
-      targetType.value = 'postgresql'
-      targetRepresentation.value = 'native'
-      targetConfig.value = {}
-      targetFields.value = []
-      resetIncrementalConfig()
+  function setTargetOverridePolicy(policy) {
+    targetOverridePolicy.value = policy === TARGET_OVERRIDE_POLICY
+      ? TARGET_OVERRIDE_POLICY
+      : ''
+    targetConfig.value = {
+      ...(targetConfig.value || {}),
+      overridePolicy: targetOverridePolicy.value
     }
   }
 
@@ -863,7 +857,7 @@ export function useTaskWizardState() {
     targetType.value = 'nfs'
     targetRepresentation.value = 'encoded'
     targetConfig.value = {}
-    targetBinding.value = 'definition'
+    targetOverridePolicy.value = ''
     targetFields.value = []
     resetIncrementalConfig()
   }
@@ -968,7 +962,7 @@ export function useTaskWizardState() {
     try {
       const created = await taskAPI.create(taskConfig.value)
       const task = created?.data || created
-      if (!schedule.value && task?.id && targetBinding.value !== 'runtime') {
+      if (!schedule.value && task?.id) {
         try {
           await taskAPI.start(task.id)
           ElMessage.success(t('transfer.taskWizard.taskCreateAndStartSuccess'))
@@ -1045,17 +1039,6 @@ export function useTaskWizardState() {
     // Target 配置
     if (task.config?.target) {
       const target = task.config.target
-      targetBinding.value = target.binding === 'runtime' ? 'runtime' : 'definition'
-      if (targetBinding.value === 'runtime') {
-        targetEngineID.value = null
-        targetEngineType.value = ''
-        targetEngineCapabilities.value = null
-        targetSchema.value = ''
-        targetTable.value = ''
-        targetType.value = 'postgresql'
-        targetRepresentation.value = 'native'
-        targetConfig.value = {}
-      } else {
       const targetParentLoc = parseTransferLocator(target.parent_locator)
       targetEngineID.value = targetParentLoc.engineID || null
 			targetEngineType.value = normalizeEngineType(engineDescriptors.target?.engine_type || '')
@@ -1065,7 +1048,10 @@ export function useTaskWizardState() {
       targetType.value = normalizeTargetType(target)
       targetRepresentation.value = target.representation || 'encoded'
       targetConfig.value = extractTargetConfig(target)
-      }
+      targetOverridePolicy.value = target.override_policy === TARGET_OVERRIDE_POLICY
+        ? TARGET_OVERRIDE_POLICY
+        : ''
+      targetConfig.value.overridePolicy = targetOverridePolicy.value
     }
 
     // 字段映射：从 config.transforms 回填。
@@ -1434,7 +1420,7 @@ export function useTaskWizardState() {
     targetTable.value = ''
     targetType.value = 'nfs'
     targetRepresentation.value = 'encoded'
-    targetBinding.value = 'definition'
+    targetOverridePolicy.value = ''
     targetConfig.value = {}
     fieldMappings.value = []
     sourceFields.value = []
@@ -1486,7 +1472,7 @@ export function useTaskWizardState() {
     targetTable,
     targetType,
     targetRepresentation,
-    targetBinding,
+    targetOverridePolicy,
     fieldMappings,
     sourceFields,
     targetFields,
@@ -1523,7 +1509,7 @@ export function useTaskWizardState() {
     replaceSourceFields,
     updateSourceItem,
     updateTarget,
-    setTargetBinding,
+    setTargetOverridePolicy,
     clearTarget,
     loadTargetFields,
     resetTargetFields,

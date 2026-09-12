@@ -1058,11 +1058,11 @@
           "unknown": "结构配置无效"
         }
       },
-      "targetBindingLabel": "目标绑定",
-      "runtimeTargetEnabled": "由任务编排在执行期绑定",
-      "runtimeTargetHint": "任务不保存物理目标；编排必须传入已存在表的 target_locator。Transfer 只追加本次执行结果，不执行 DDL、清空或删除。",
-      "runtimeTargetReview": "执行期 ResourceLocator",
-      "runtimeTargetPath": "由编排的 target_locator 提供",
+      "orchestrationExecutionLabel": "编排执行",
+      "targetOverrideEnabled": "允许单次执行覆盖目标表",
+      "targetOverrideHint": "未提供覆盖参数时写入上方默认目标；覆盖只影响本次执行，不修改任务配置。",
+      "targetOverrideUnavailableHint": "仅有界快照任务选择已存在表并使用追加写入时可启用。",
+      "targetOverrideReview": "允许编排覆盖本次执行目标；未覆盖时使用默认目标",
       "targetTableNewAutoMapped": "目标表可能是新表，已使用源字段自动创建映射"
     },
     "taskForm": {

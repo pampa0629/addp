@@ -27,10 +27,9 @@ func TestExecutionLifecycleUsesRealStartAndTerminalTimes(t *testing.T) {
 	if _, err := service.CreateExecutionWithContext(context.Background(), 11, 0, commonExecution.TriggerTypeManual, commonExecution.ModuleOrchestrator, nil, actor); err == nil {
 		t.Fatal("tenant-less CreateExecution error is nil")
 	}
-	parentExecutionID := "parent-1"
 	execution, err := service.CreateExecutionWithContext(
 		context.Background(), 11, 7, commonExecution.TriggerTypeManual,
-		commonExecution.ModuleOrchestrator, &parentExecutionID, actor,
+		commonExecution.ModuleOrchestrator, nil, actor,
 	)
 	if err != nil {
 		t.Fatalf("CreateExecutionWithContext: %v", err)
@@ -41,8 +40,8 @@ func TestExecutionLifecycleUsesRealStartAndTerminalTimes(t *testing.T) {
 	if execution.SourceTaskID == nil || *execution.SourceTaskID != "11" || execution.SourceTaskName == nil || *execution.SourceTaskName == "" {
 		t.Fatalf("persistent task identity = id:%v name:%v", execution.SourceTaskID, execution.SourceTaskName)
 	}
-	if execution.ParentExecutionID == nil || *execution.ParentExecutionID != parentExecutionID {
-		t.Fatalf("parent_execution_id = %v, want %s", execution.ParentExecutionID, parentExecutionID)
+	if execution.ParentExecutionID != nil {
+		t.Fatalf("parent_execution_id = %v, want nil", execution.ParentExecutionID)
 	}
 	if _, err := service.GetExecution(context.Background(), uint(execution.ID), 0); err == nil {
 		t.Fatal("tenant-less GetExecution error is nil")
@@ -83,6 +82,45 @@ func TestExecutionLifecycleUsesRealStartAndTerminalTimes(t *testing.T) {
 	}
 	if finished.ErrorDetails["message"] != "step failed" {
 		t.Fatalf("error_details = %#v", finished.ErrorDetails)
+	}
+}
+
+func TestCreateExecutionWithContextInheritsActorFromRunningOrchestratorParent(t *testing.T) {
+	db := newOrchestratorExecutionServiceTestDB(t)
+	if err := db.Exec(`INSERT INTO orchestrator.orchestrations
+		(id, tenant_id, name, steps, enabled, schedule, created_at, updated_at)
+		VALUES (11, 7, 'parent orchestration', '[]', false, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+		       (12, 7, 'child orchestration', '[]', false, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`).Error; err != nil {
+		t.Fatalf("insert orchestrations: %v", err)
+	}
+	principalID := int64(41)
+	membershipID := int64(51)
+	authorizationVersion := int64(6)
+	parent := &commonExecution.TaskExecution{
+		TenantID: 7, ExecutionID: "11111111-1111-4111-8111-111111111111",
+		Module: commonExecution.ModuleOrchestrator, TaskType: commonExecution.TaskTypeOrchestration,
+		Source: commonExecution.ModuleOrchestrator, Status: commonExecution.ExecutionStatusRunning,
+		TriggerType:      commonExecution.TriggerTypeManual,
+		ActorPrincipalID: &principalID, ActorTenantMembershipID: &membershipID,
+		IssuedAuthorizationVersion: &authorizationVersion,
+	}
+	if err := commonExecution.NewTaskExecutionRepository(db).Create(context.Background(), parent); err != nil {
+		t.Fatalf("create parent execution: %v", err)
+	}
+
+	executionService := NewExecutionService(db, repository.NewOrchestrationRepository(db))
+	child, err := executionService.CreateExecutionWithContext(
+		context.Background(), 12, 7, commonExecution.TriggerTypeManual,
+		commonExecution.ModuleOrchestrator, &parent.ExecutionID, ExecutionActor{},
+	)
+	if err != nil {
+		t.Fatalf("CreateExecutionWithContext from parent: %v", err)
+	}
+	if child.ActorPrincipalID == nil || *child.ActorPrincipalID != principalID ||
+		child.ActorTenantMembershipID == nil || *child.ActorTenantMembershipID != membershipID ||
+		child.IssuedAuthorizationVersion == nil || *child.IssuedAuthorizationVersion != authorizationVersion {
+		t.Fatalf("child actor facts = principal:%v membership:%v version:%v",
+			child.ActorPrincipalID, child.ActorTenantMembershipID, child.IssuedAuthorizationVersion)
 	}
 }
 

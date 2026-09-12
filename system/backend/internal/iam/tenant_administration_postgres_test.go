@@ -260,9 +260,10 @@ func TestTenantAdministrationClosureAgainstPostgres(t *testing.T) {
 	}); !errors.Is(err, commonapi.ErrBadRequest) {
 		t.Fatalf("role assignment without grant reason error = %v, want bad request", err)
 	}
+	assignmentExpiry := currentTime.Add(time.Hour)
 	assignedBatch, err := roleService.CreateAssignments(ctx, CreateTenantRoleAssignmentsInput{
 		TenantID: tenant.ID, MembershipID: membership.Membership.ID, RoleIDs: []int64{infrastructureRole.ID, dataViewerRole.ID},
-		ScopeType: "tenant", Reason: "engine administration", ActorPrincipalID: initialAdministrator.ID, Audit: tenantAudit,
+		ScopeType: "tenant", ValidUntil: &assignmentExpiry, Reason: "engine administration", ActorPrincipalID: initialAdministrator.ID, Audit: tenantAudit,
 	})
 	if err != nil {
 		t.Fatalf("assign infrastructure administrator: %v", err)
@@ -271,6 +272,7 @@ func TestTenantAdministrationClosureAgainstPostgres(t *testing.T) {
 		t.Fatalf("created assignment batch = %#v", assignedBatch)
 	}
 	assigned := findBatchAssignmentByRoleKey(t, assignedBatch, "tenant.infrastructure_administrator")
+	expiringAssignment := findBatchAssignmentByRoleKey(t, assignedBatch, "tenant.data_viewer")
 	if assigned.MembershipID != membership.Membership.ID || assigned.RoleKey != "tenant.infrastructure_administrator" ||
 		assigned.DisplayName != infrastructureAdministrator.DisplayName || assigned.EffectiveState != "effective" ||
 		assigned.GrantReason == nil || *assigned.GrantReason != "engine administration" ||
@@ -320,6 +322,14 @@ func TestTenantAdministrationClosureAgainstPostgres(t *testing.T) {
 	if err != nil || revokedDetail.SameScopeActiveAssignmentID == nil || *revokedDetail.SameScopeActiveAssignmentID != replacementBatch[0].ID {
 		t.Fatalf("revoked assignment current replacement = %#v err=%v", revokedDetail, err)
 	}
+	currentTime = assignmentExpiry.Add(time.Microsecond)
+	if _, err := roleService.RevokeAssignment(ctx, RevokeTenantRoleAssignmentInput{
+		TenantID: tenant.ID, AssignmentID: expiringAssignment.ID, Reason: "must remain immutable after expiry",
+		ActorPrincipalID: initialAdministrator.ID, Audit: tenantAudit,
+	}); !errors.Is(err, ErrTenantRoleAssignmentExpired) || !errors.Is(err, commonapi.ErrConflict) {
+		t.Fatalf("expired role assignment revocation error = %v, want expired conflict", err)
+	}
+	currentTime = assignmentExpiry.Add(-time.Hour)
 	revokedState := "revoked"
 	revokedAssignments, revokedTotal, err := roleService.ListAssignments(ctx, tenant.ID, TenantRoleAssignmentFilter{
 		MembershipID: &membershipID, EffectiveState: &revokedState, ScopeType: &tenantScope,

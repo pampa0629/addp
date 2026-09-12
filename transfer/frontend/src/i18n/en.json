@@ -1271,11 +1271,11 @@
           "unknown": "The structure configuration is invalid"
         }
       },
-      "targetBindingLabel": "Target Binding",
-      "runtimeTargetEnabled": "Bind the target at orchestration runtime",
-      "runtimeTargetHint": "The task stores no physical target. Orchestration must pass target_locator for an existing table. Transfer only appends this execution's result and never runs DDL, truncate, or delete.",
-      "runtimeTargetReview": "Runtime ResourceLocator",
-      "runtimeTargetPath": "Provided by orchestration target_locator",
+      "orchestrationExecutionLabel": "Orchestration Execution",
+      "targetOverrideEnabled": "Allow one execution to override the target table",
+      "targetOverrideHint": "When no override is provided, data is written to the default target above. An override affects only the current execution and never changes the task.",
+      "targetOverrideUnavailableHint": "Available only for bounded snapshot tasks that select an existing table and use append mode.",
+      "targetOverrideReview": "Orchestration may override this execution target; otherwise the default target is used",
       "targetTableNewAutoMapped": "Target table may be new, used source fields to auto-create mapping"
     },
     "fieldMapping": {

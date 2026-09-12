@@ -45,6 +45,11 @@ var ErrTenantRoleAssignmentScopeMembershipRequired = fmt.Errorf(
 	commonapi.ErrConflict,
 )
 
+var ErrTenantRoleAssignmentExpired = fmt.Errorf(
+	"%w: expired tenant role assignment is read-only",
+	commonapi.ErrConflict,
+)
+
 type TenantRoleAssignmentFilter struct {
 	MembershipID   *int64
 	PrincipalType  *PrincipalType
@@ -437,6 +442,9 @@ func (s *TenantRoleService) RevokeAssignment(ctx context.Context, input RevokeTe
 		}
 		if assignment.Status != "active" {
 			return commonapi.ErrConflict
+		}
+		if assignment.ValidUntil != nil && !assignment.ValidUntil.After(now) {
+			return ErrTenantRoleAssignmentExpired
 		}
 		if _, err := tx.LockPrincipal(ctx, assignment.PrincipalID); err != nil {
 			return err

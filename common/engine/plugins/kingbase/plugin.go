@@ -1,0 +1,272 @@
+package kingbase
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"strings"
+
+	"github.com/addp/common/datatype"
+	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/engine/plugins/postgresql"
+	commonquery "github.com/addp/common/query"
+	"github.com/addp/common/resume"
+	"gorm.io/gorm"
+)
+
+type Plugin struct{}
+
+var kingbaseSystemSchemas = []string{
+	"anon",
+	"dbms_job",
+	"dbms_scheduler",
+	"kdb_schedule",
+	"perf",
+	"pg_bitmapindex",
+	"src_restrict",
+	"sys_catalog",
+	"sys_hm",
+	"sysaudit",
+	"sysmac",
+	"xlog_record_read",
+}
+
+var (
+	_ plugin.BatchReadableProvider                = (*Plugin)(nil)
+	_ plugin.BoundedWatermarkReadProvider         = (*Plugin)(nil)
+	_ plugin.ConnectionPoolPlugin                 = (*Plugin)(nil)
+	_ plugin.ControlledReadOnlySQLProvider        = (*Plugin)(nil)
+	_ plugin.EngineCatalogFactsProvider           = (*Plugin)(nil)
+	_ plugin.EngineCatalogModelProvider           = (*Plugin)(nil)
+	_ plugin.EngineCatalogProvider                = (*Plugin)(nil)
+	_ plugin.ParameterizedSQLQueryRuntimeProvider = (*Plugin)(nil)
+	_ plugin.QueryReadSessionProvider             = (*Plugin)(nil)
+	_ plugin.ResourceDeleteProvider               = (*Plugin)(nil)
+	_ plugin.TableReadSessionProvider             = (*Plugin)(nil)
+	_ plugin.TableUpsertProvider                  = (*Plugin)(nil)
+	_ plugin.TableWritePreparer                   = (*Plugin)(nil)
+	_ plugin.TableWriteSessionProvider            = (*Plugin)(nil)
+)
+
+func init() {
+	plugin.Register(&Plugin{})
+}
+
+func (p *Plugin) Type() string         { return "kingbase" }
+func (p *Plugin) DisplayName() string  { return "KingbaseES" }
+func (p *Plugin) EngineOrigin() string { return "general" }
+
+func (p *Plugin) protocol() *postgresql.PostgreSQLPlugin {
+	return postgresql.NewProtocolCompatiblePlugin(p.protocolIdentity())
+}
+
+func (p *Plugin) protocolIdentity() postgresql.ProtocolIdentity {
+	return postgresql.ProtocolIdentity{
+		EngineType:              p.Type(),
+		DisplayName:             p.DisplayName(),
+		AdditionalSystemSchemas: append([]string(nil), kingbaseSystemSchemas...),
+	}
+}
+
+func (p *Plugin) ConnectionSpec() plugin.ConnectionSpec {
+	return plugin.NewConnectionSpec(
+		plugin.ConnectionFieldSpec{Key: "host", LabelKey: "storageEngine.host", Input: plugin.ConnectionFieldText, Required: true, Identity: true, Default: "localhost", Placeholder: "localhost"},
+		plugin.ConnectionFieldSpec{Key: "port", LabelKey: "storageEngine.port", Input: plugin.ConnectionFieldNumber, Identity: true, Default: 54321, Min: plugin.Int(1), Max: plugin.Int(65535)},
+		plugin.ConnectionFieldSpec{Key: "database", LabelKey: "storageEngine.database", Input: plugin.ConnectionFieldText, Required: true, Identity: true, Default: "business", PlaceholderKey: "storageEngine.databasePlaceholder"},
+		plugin.ConnectionFieldSpec{Key: "user", LabelKey: "storageEngine.username", Input: plugin.ConnectionFieldText, Required: true, Default: "system", Placeholder: "system"},
+		plugin.ConnectionFieldSpec{Key: "password", LabelKey: "storageEngine.password", Input: plugin.ConnectionFieldPassword, Required: true, Sensitive: true},
+		plugin.ConnectionFieldSpec{Key: "sslmode", LabelKey: "storageEngine.sslMode", Input: plugin.ConnectionFieldSelect, Default: "disable", Options: []plugin.ConnectionFieldOption{
+			{Value: "disable", LabelKey: "storageEngine.sslDisable"},
+			{Value: "require", LabelKey: "storageEngine.sslRequire"},
+			{Value: "verify-ca", LabelKey: "storageEngine.sslVerifyCa"},
+			{Value: "verify-full", LabelKey: "storageEngine.sslVerifyFull"},
+		}},
+	)
+}
+
+func (p *Plugin) DefaultPort() int                   { return p.ConnectionSpec().DefaultPortValue() }
+func (p *Plugin) RequiredFields() []string           { return p.ConnectionSpec().RequiredFields() }
+func (p *Plugin) SensitiveFields() []string          { return p.ConnectionSpec().SensitiveFields() }
+func (p *Plugin) ConnectionIdentityFields() []string { return p.ConnectionSpec().IdentityFields() }
+
+func (p *Plugin) Capabilities() plugin.EngineCapabilities {
+	return plugin.NewTabularCapabilities(p.Type(), plugin.EngineCatalogTermSchema, plugin.TabularCapabilityOptions{
+		Constraints:          true,
+		TableReadSession:     true,
+		QueryReadSession:     true,
+		TableWriteSession:    true,
+		TableWritePrepare:    true,
+		BoundedWatermarkRead: true,
+		TableUpsert:          true,
+		Delete:               true,
+		SupportsExplain:      true,
+		SupportsCancel:       true,
+		SupportsParameters:   true,
+		AdditionalParameterTypes: []string{
+			"relation",
+		},
+		IdentifierQuote: `"`,
+		WriterConnector: "postgres_copy",
+	})
+}
+
+func (p *Plugin) EngineCatalogModel() plugin.EngineCatalogModelSpec {
+	return plugin.TabularCatalogModel(plugin.EngineCatalogTermSchema)
+}
+
+func (p *Plugin) StoreSemantics() plugin.StoreSemantics {
+	return plugin.StoreSemanticsFromCapabilities(p.Capabilities())
+}
+
+func (p *Plugin) ListChildren(ctx context.Context, connInfo plugin.ConnectionInfo, parent plugin.EngineCatalogPath, opts plugin.ListOptions) ([]plugin.EngineCatalogEntry, error) {
+	return p.protocol().ListChildren(ctx, connInfo, parent, opts)
+}
+
+func (p *Plugin) ResolvePath(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath) (*plugin.EngineCatalogEntry, error) {
+	return p.protocol().ResolvePath(ctx, connInfo, path)
+}
+
+func (p *Plugin) DescribeEngineCatalogFacts(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.EngineCatalogFactsOptions) (*plugin.EngineCatalogFacts, error) {
+	return p.protocol().DescribeEngineCatalogFacts(ctx, connInfo, path, opts)
+}
+
+func (p *Plugin) QueryLanguages() []string { return []string{"sql"} }
+
+func (p *Plugin) GenerateSampleQuery(ctx context.Context, connInfo plugin.ConnectionInfo, opts plugin.SampleQueryOptions) (string, string) {
+	return p.protocol().GenerateSampleQuery(ctx, connInfo, opts)
+}
+
+func (p *Plugin) PrepareQuery(ctx context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (plugin.PreparedQuery, error) {
+	return p.protocol().PrepareQuery(ctx, connInfo, req)
+}
+
+func (p *Plugin) OpenQueryReadSession(ctx context.Context, prepared plugin.PreparedQuery) (plugin.QueryReadSession, error) {
+	return p.protocol().OpenQueryReadSession(ctx, prepared)
+}
+
+func (p *Plugin) SQLDialect() string                 { return commonquery.DialectPostgreSQL }
+func (p *Plugin) SupportsParameterizedQueries() bool { return true }
+func (p *Plugin) ControlledReadOnlySQLBoundary() plugin.ControlledReadOnlySQLBoundary {
+	return plugin.ControlledReadOnlySQLBoundaryDatabaseTransaction
+}
+
+func (p *Plugin) ExecuteSQL(ctx context.Context, connInfo plugin.ConnectionInfo, statement string, opts plugin.QueryOptions) (*plugin.QueryResult, error) {
+	return plugin.ExecuteSQLWithConnectionPool(ctx, p, connInfo, statement, opts)
+}
+
+func (p *Plugin) ReadBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.BatchReadOptions) (*plugin.BatchData, error) {
+	return p.protocol().ReadBatch(ctx, connInfo, path, opts)
+}
+
+func (p *Plugin) OpenTableReadSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableReadSessionOptions) (plugin.TableReadSession, error) {
+	return p.protocol().OpenTableReadSession(ctx, connInfo, path, opts)
+}
+
+func (p *Plugin) OpenBoundedWatermarkRead(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.BoundedWatermarkReadOptions) (plugin.BoundedWatermarkReadSession, error) {
+	return p.protocol().OpenBoundedWatermarkRead(ctx, connInfo, path, opts)
+}
+
+func (p *Plugin) PrepareTableWrite(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableWriteOptions) error {
+	if err := validateNonSpatialWrite(opts.Fields, opts.SpatialInfo); err != nil {
+		return err
+	}
+	return p.protocol().PrepareTableWrite(ctx, connInfo, path, opts)
+}
+
+func (p *Plugin) OpenTableWriteSession(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableWriteSessionOptions) (plugin.TableWriteSession, error) {
+	if err := validateNonSpatialWrite(opts.Fields, opts.SpatialInfo); err != nil {
+		return nil, err
+	}
+	session, err := p.protocol().OpenTableWriteSession(ctx, connInfo, path, opts)
+	if err != nil {
+		return nil, err
+	}
+	return &tableWriteSession{TableWriteSession: session}, nil
+}
+
+type tableWriteSession struct {
+	plugin.TableWriteSession
+}
+
+func (s *tableWriteSession) CommitMarker() *resume.Marker {
+	provider, ok := s.TableWriteSession.(plugin.CommitMarkerProvider)
+	if !ok {
+		return nil
+	}
+	marker := provider.CommitMarker()
+	if marker != nil {
+		marker.Provider = "kingbase.table_write_session"
+	}
+	return marker
+}
+
+func (p *Plugin) PrepareTableUpsert(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, opts plugin.TableUpsertOptions) error {
+	if err := validateNonSpatialWrite(opts.Fields, opts.SpatialInfo); err != nil {
+		return err
+	}
+	return p.protocol().PrepareTableUpsert(ctx, connInfo, path, opts)
+}
+
+func (p *Plugin) UpsertBatch(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath, batch *plugin.BatchData, opts plugin.TableUpsertOptions) error {
+	if err := validateNonSpatialWrite(opts.Fields, opts.SpatialInfo); err != nil {
+		return err
+	}
+	return p.protocol().UpsertBatch(ctx, connInfo, path, batch, opts)
+}
+
+func validateNonSpatialWrite(fields []datatype.FieldInfo, spatialInfo *datatype.SpatialInfo) error {
+	if spatialInfo != nil && spatialInfo.IsSpatial() {
+		return fmt.Errorf("KingbaseES provider does not support spatial fields")
+	}
+	for _, field := range fields {
+		if datatype.IsSpatialFieldType(field.Type) {
+			return fmt.Errorf("KingbaseES provider does not support spatial fields")
+		}
+	}
+	return nil
+}
+
+func (p *Plugin) DeleteResource(ctx context.Context, connInfo plugin.ConnectionInfo, path plugin.EngineCatalogPath) error {
+	return p.protocol().DeleteResource(ctx, connInfo, path)
+}
+
+func (p *Plugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {
+	return plugin.ValidateRequiredFields(connInfo, p.RequiredFields())
+}
+
+func (p *Plugin) BuildDSN(connInfo plugin.ConnectionInfo) (string, error) {
+	return plugin.BuildPostgreSQLDSN(connInfo, p.DefaultPort())
+}
+
+func (p *Plugin) TestConnection(ctx context.Context, connInfo plugin.ConnectionInfo) error {
+	dsn, err := p.BuildDSN(connInfo)
+	if err != nil {
+		return fmt.Errorf("failed to build KingbaseES connection string: %w", err)
+	}
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		return fmt.Errorf("failed to open KingbaseES connection: %w", err)
+	}
+	defer db.Close()
+	var version string
+	var databaseMode string
+	if err := db.QueryRowContext(ctx, "SELECT version()").Scan(&version); err != nil {
+		return fmt.Errorf("failed to query KingbaseES version: %w", err)
+	}
+	if !strings.Contains(strings.ToLower(version), "kingbasees v009r001c010") {
+		return fmt.Errorf("unexpected KingbaseES version: %s", version)
+	}
+	if err := db.QueryRowContext(ctx, "SHOW database_mode").Scan(&databaseMode); err != nil {
+		return fmt.Errorf("failed to query KingbaseES database mode: %w", err)
+	}
+	if strings.ToLower(strings.TrimSpace(databaseMode)) != "pg" {
+		return fmt.Errorf("KingbaseES database_mode must be pg, got %s", databaseMode)
+	}
+	return nil
+}
+
+func (p *Plugin) CreateConnectionPool(connInfo plugin.ConnectionInfo, poolConfig *plugin.PoolConfig) (*gorm.DB, error) {
+	return p.protocol().CreateConnectionPool(connInfo, poolConfig)
+}
+
+func (p *Plugin) GORMDialect() string { return "postgres" }

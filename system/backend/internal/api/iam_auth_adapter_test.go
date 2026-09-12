@@ -136,6 +136,32 @@ func TestIAMAuthHandlerContract(t *testing.T) {
 		}
 	})
 
+	t.Run("expired role assignment is localized with a stable domain error", func(t *testing.T) {
+		for _, test := range []struct {
+			name, language, message string
+		}{
+			{name: "zh-cn", language: "zh-cn", message: "该角色授权已到期，历史记录不能撤销；如需继续授权，请新建角色分配。"},
+			{name: "en", language: "en", message: "This role assignment has expired and its history cannot be revoked. Create a new role assignment to continue access."},
+		} {
+			t.Run(test.name, func(t *testing.T) {
+				router := gin.New()
+				router.Use(i18nmiddleware.I18nMiddleware())
+				router.GET("/expired", func(c *gin.Context) { respondIAMError(c, iam.ErrTenantRoleAssignmentExpired) })
+				request := httptest.NewRequest(http.MethodGet, "/expired", nil)
+				request.Header.Set("Accept-Language", test.language)
+				recorder := httptest.NewRecorder()
+				router.ServeHTTP(recorder, request)
+
+				var response IAMErrorResponse
+				decodeIAMResponse(t, recorder, &response)
+				if recorder.Code != http.StatusConflict || response.ErrorCode == nil ||
+					*response.ErrorCode != "role_assignment_expired" || response.Error != test.message {
+					t.Fatalf("expired role assignment status=%d response=%#v", recorder.Code, response)
+				}
+			})
+		}
+	})
+
 	t.Run("organization membership principal type conflict is localized with a stable domain error", func(t *testing.T) {
 		for _, test := range []struct {
 			name, language, message string

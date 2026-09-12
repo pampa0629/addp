@@ -4581,6 +4581,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "仅接受 addp-orchestrator 以父 execution 血缘触发；请求必须提供 source=orchestrator 和 parent_execution_id。| Only accepts addp-orchestrator execution-lineage invocation; source=orchestrator and parent_execution_id are required.",
                 "consumes": [
                     "application/json"
                 ],
@@ -4607,9 +4608,10 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "执行配置 | Execution configuration",
+                        "description": "TaskProvider 执行请求 | TaskProvider execution request",
                         "name": "body",
                         "in": "body",
+                        "required": true,
                         "schema": {
                             "$ref": "#/definitions/internal_api.TaskExecuteRequest"
                         }
@@ -4950,7 +4952,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "触发指定任务立即执行 | Trigger immediate execution of a specific task",
+                "description": "由当前用户触发指定任务立即执行；不接受机器父执行上下文。| Trigger a task immediately as the current user; machine parent execution context is not accepted.",
                 "consumes": [
                     "application/json"
                 ],
@@ -9369,10 +9371,16 @@ const docTemplate = `{
                 "config": {
                     "$ref": "#/definitions/github_com_addp_common_models.JSONMap"
                 },
+                "current_result_status": {
+                    "type": "string"
+                },
                 "description": {
                     "type": "string"
                 },
                 "enabled": {
+                    "type": "boolean"
+                },
+                "has_current_result": {
                     "type": "boolean"
                 },
                 "id": {
@@ -9434,6 +9442,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "category": {
+                    "type": "string"
+                },
+                "current_result_status": {
                     "type": "string"
                 },
                 "execution_contract": {

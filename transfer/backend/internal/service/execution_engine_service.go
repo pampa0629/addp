@@ -201,8 +201,14 @@ func (s *ExecutionEngineService) executeCommonTransferTask(ctx context.Context, 
 		s.updateExecutionError(ctx, task, executionID, wrapped)
 		return wrapped
 	}
-	if planner.IsRuntimeExistingTargetTaskConfig(task.Config) {
-		return s.executeRuntimeTargetTableTransferTask(ctx, task, execution, executionID, spec)
+	targetOverride, hasTargetOverride, overrideErr := executionTargetOverrideLocator(execution.Metadata)
+	if overrideErr != nil {
+		wrapped := fmt.Errorf("resolve target override: %w", overrideErr)
+		s.updateExecutionError(ctx, task, executionID, wrapped)
+		return wrapped
+	}
+	if hasTargetOverride {
+		return s.executeTargetOverrideTableTransferTask(ctx, task, execution, executionID, spec, targetOverride)
 	}
 
 	resolver := planner.NewHybridEngineResolver(planner.BindEngineResolver(planner.NewSystemEngineResolver(s.systemClient), task.TenantID), s.infraEngineResolver())
@@ -541,35 +547,33 @@ func prepareBoundedTableSourceProtection(
 	}
 }
 
-func (s *ExecutionEngineService) executeRuntimeTargetTableTransferTask(
+func (s *ExecutionEngineService) executeTargetOverrideTableTransferTask(
 	ctx context.Context,
 	task *models.TransferTask,
 	execution *commonExecution.TaskExecution,
 	executionID uint,
 	spec planner.TableExportTaskSpec,
+	targetLocator string,
 ) error {
 	lease, ok := commonExecution.LeaseFromContext(ctx)
 	if !ok || execution == nil || execution.ParentExecutionID == nil || strings.TrimSpace(*execution.ParentExecutionID) == "" {
-		return s.failRuntimeTargetTransfer(ctx, task, executionID, fmt.Errorf("runtime-target transfer requires a current bounded lease and orchestration parent"))
+		return s.failTargetOverrideTransfer(ctx, task, executionID, fmt.Errorf("target override requires a current bounded lease and orchestration parent"))
 	}
 	if s.systemRuntime == nil {
-		return s.failRuntimeTargetTransfer(ctx, task, executionID, fmt.Errorf("System runtime client is required for runtime-target transfer"))
+		return s.failTargetOverrideTransfer(ctx, task, executionID, fmt.Errorf("System runtime client is required for target override"))
 	}
-	targetLocator, err := runtimeTargetLocator(execution.Metadata)
-	if err != nil {
-		return s.failRuntimeTargetTransfer(ctx, task, executionID, err)
-	}
-	resolvedSpec, err := planner.ResolveRuntimeExistingTarget(spec, targetLocator)
-	if err != nil {
-		return s.failRuntimeTargetTransfer(ctx, task, executionID, err)
+	resolvedSpec := spec
+	effectiveTargetLocator, err := planner.NativeTableTargetLocator(resolvedSpec)
+	if err != nil || effectiveTargetLocator != targetLocator {
+		return s.failTargetOverrideTransfer(ctx, task, executionID, fmt.Errorf("frozen target override does not match execution input"))
 	}
 	sourceRef, err := resolvedSpec.Source.EngineRef()
 	if err != nil {
-		return s.failRuntimeTargetTransfer(ctx, task, executionID, err)
+		return s.failTargetOverrideTransfer(ctx, task, executionID, err)
 	}
 	targetRef, err := resolvedSpec.Target.EngineRef()
 	if err != nil {
-		return s.failRuntimeTargetTransfer(ctx, task, executionID, err)
+		return s.failTargetOverrideTransfer(ctx, task, executionID, err)
 	}
 	effectsByEngine := map[uint][]string{sourceRef.ID: []string{"read"}}
 	if sourceRef.ID == targetRef.ID {
@@ -598,14 +602,14 @@ func (s *ExecutionEngineService) executeRuntimeTargetTableTransferTask(
 		ExpiresIn:         int64(time.Hour / time.Second),
 	})
 	if err != nil {
-		return s.failRuntimeTargetTransfer(ctx, task, executionID, err)
+		return s.failTargetOverrideTransfer(ctx, task, executionID, err)
 	}
 	authorizationFields, err := commonClient.TaskExecutionAuthorizationFields(issued)
 	if err != nil {
-		return s.failRuntimeTargetTransfer(ctx, task, executionID, err)
+		return s.failTargetOverrideTransfer(ctx, task, executionID, err)
 	}
 	if err := s.taskRepo.AttachBoundedExecutionAuthorization(ctx, lease, authorizationFields); err != nil {
-		return s.failRuntimeTargetTransfer(ctx, task, executionID, err)
+		return s.failTargetOverrideTransfer(ctx, task, executionID, err)
 	}
 
 	resolver := planner.StaticEngineResolver{}
@@ -616,23 +620,23 @@ func (s *ExecutionEngineService) executeRuntimeTargetTableTransferTask(
 			RequiredEffects: requiredEffects,
 		})
 		if err != nil {
-			return s.failRuntimeTargetTransfer(ctx, task, executionID, err)
+			return s.failTargetOverrideTransfer(ctx, task, executionID, err)
 		}
 		binding, err := planner.EngineBindingFromEngine(access.Engine)
 		if err != nil {
-			return s.failRuntimeTargetTransfer(ctx, task, executionID, err)
+			return s.failTargetOverrideTransfer(ctx, task, executionID, err)
 		}
 		resolver[engineID] = binding
 	}
 	_, metrics, err := s.runCommonTableTransferData(ctx, task, executionID, resolvedSpec, resolver)
 	if err != nil {
-		return s.failRuntimeTargetTransfer(ctx, task, executionID, err)
+		return s.failTargetOverrideTransfer(ctx, task, executionID, err)
 	}
 	if err := s.writeTransferLineageFacts(ctx, task, executionID, resolvedSpec.Source, resolvedSpec.Target.Locator, resolvedSpec.Target.ParentLocator, resolvedSpec.Target.Name, resolvedSpec.Target.Policy); err != nil {
-		s.logger.Warn("failed to persist runtime-target transfer lineage facts", "error", err, "execution_id", executionID)
+		s.logger.Warn("failed to persist target-override transfer lineage facts", "error", err, "execution_id", executionID)
 	}
 	if err := s.writeBoundedExecutionOutputs(ctx, executionID, targetLocator, "", "", metrics.RecordsWritten); err != nil {
-		return s.failRuntimeTargetTransfer(ctx, task, executionID, err)
+		return s.failTargetOverrideTransfer(ctx, task, executionID, err)
 	}
 	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, ""); err != nil {
 		return err
@@ -640,29 +644,36 @@ func (s *ExecutionEngineService) executeRuntimeTargetTableTransferTask(
 	return nil
 }
 
-func runtimeTargetLocator(metadata commonModels.JSONMap) (string, error) {
-	inputs, ok := metadata["runtime_inputs"].(map[string]interface{})
+func executionTargetOverrideLocator(metadata commonModels.JSONMap) (string, bool, error) {
+	inputs, ok := metadata["execution_inputs"].(map[string]interface{})
 	if !ok {
-		if typed, typedOK := metadata["runtime_inputs"].(commonModels.JSONMap); typedOK {
+		if typed, typedOK := metadata["execution_inputs"].(commonModels.JSONMap); typedOK {
 			inputs = map[string]interface{}(typed)
 			ok = true
 		}
 	}
-	value, valueOK := inputs["target_locator"].(string)
-	locator, err := resourcetree.ParseURI(strings.TrimSpace(value))
-	if !ok || !valueOK || err != nil || locator.Type != resourcetree.TypeTable {
-		return "", fmt.Errorf("runtime target_locator must identify a table")
+	if !ok {
+		return "", false, nil
 	}
-	return locator.ToURI(), nil
+	raw, exists := inputs["target_locator"]
+	if !exists {
+		return "", false, nil
+	}
+	value, valueOK := raw.(string)
+	locator, err := resourcetree.ParseURI(strings.TrimSpace(value))
+	if !valueOK || err != nil || locator.Type != resourcetree.TypeTable {
+		return "", false, fmt.Errorf("target_locator must identify a table")
+	}
+	return locator.ToURI(), true, nil
 }
 
-func (s *ExecutionEngineService) failRuntimeTargetTransfer(
+func (s *ExecutionEngineService) failTargetOverrideTransfer(
 	ctx context.Context,
 	task *models.TransferTask,
 	executionID uint,
 	err error,
 ) error {
-	wrapped := fmt.Errorf("execute runtime existing-table transfer: %w", err)
+	wrapped := fmt.Errorf("execute target override transfer: %w", err)
 	s.updateExecutionError(ctx, task, executionID, wrapped)
 	return wrapped
 }

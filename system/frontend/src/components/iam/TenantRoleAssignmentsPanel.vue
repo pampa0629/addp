@@ -54,7 +54,7 @@
       <el-table-column :label="t('system.iam.common.actions')" width="180" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" :icon="View" @click="openDetails(row.id)">{{ t('system.iam.common.view') }}</el-button>
-          <el-button v-if="!props.readOnly && can('iam.tenant_role_assignment.revoke') && row.status === 'active'" link type="danger" :icon="CircleClose" @click="revoke(row)">{{ t('system.iam.common.revoke') }}</el-button>
+          <el-button v-if="!props.readOnly && can('iam.tenant_role_assignment.revoke') && isRevocableAssignment(row)" link type="danger" :icon="CircleClose" @click="revoke(row)">{{ t('system.iam.common.revoke') }}</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -282,6 +282,7 @@ function recommendationAssigned(roleKey) { return hasTenantRole(authStore.authCo
 function scopeLabel(scope) { return resolveTenantScopeLabel(scope, t) }
 function scopeValue(row) { return formatTenantAssignmentScope(row, t, organizationLabels.value) }
 function formatDate(value) { return value ? new Date(value).toLocaleString() : '-' }
+function isRevocableAssignment(row) { return row.effective_state === 'scheduled' || row.effective_state === 'effective' }
 function assignmentStateTagType(state) {
   if (state === 'effective') return 'success'
   if (state === 'scheduled') return 'warning'

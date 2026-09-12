@@ -3038,6 +3038,7 @@ const docTemplate = `{
                         "description": "TaskProvider 执行请求 | TaskProvider execution request",
                         "name": "request",
                         "in": "body",
+                        "required": true,
                         "schema": {
                             "$ref": "#/definitions/internal_api.providerExecuteDevRequest"
                         }

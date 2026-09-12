@@ -163,13 +163,13 @@ func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 
 // TaskExecute 执行 Quality 检查任务。
 // @Summary 执行 TaskProvider 质量检查任务 | Execute TaskProvider quality check task
-// @Description 按标准 TaskProvider 协议执行 Quality 任务；materialization_gate 仅允许 Orchestrator 且 parameters 不支持覆盖。| Execute a Quality task through the standard TaskProvider protocol; materialization_gate only accepts Orchestrator and parameters overrides are not supported.
+// @Description 仅接受 addp-orchestrator 以父 execution 血缘触发；请求必须提供 source=orchestrator 和 parent_execution_id，parameters 不支持覆盖。| Only accepts addp-orchestrator execution-lineage invocation; source=orchestrator and parent_execution_id are required, and parameters overrides are not supported.
 // @Tags CheckTask
 // @Accept json
 // @Produce json
 // @Param task_type path string true "任务类型：check|materialization_gate | Task type: check or materialization_gate"
 // @Param id path int true "检查任务ID | Check task ID"
-// @Param request body qualityTaskProviderExecuteRequest false "TaskProvider 执行请求 | TaskProvider execution request"
+// @Param request body qualityTaskProviderExecuteRequest true "TaskProvider 执行请求 | TaskProvider execution request"
 // @Success 202 {object} qualityTaskProviderExecuteResponse "执行ID | Execution ID"
 // @Failure 400 {object} qualityErrorResponse "请求参数错误 | Bad request"
 // @Failure 404 {object} qualityErrorResponse "任务不存在 | Task not found"
@@ -207,14 +207,13 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 		respondInvalidRequest(c, "")
 		return
 	}
-	source := strings.TrimSpace(req.Source)
-	if source == "" {
-		source = commonExecution.ModuleQuality
+	parentID, err := commonExecution.NormalizeOrchestratorChildContext(req.Source, req.ParentExecutionID)
+	if err != nil {
+		respondInvalidRequest(c, "")
+		return
 	}
-	var parentExecutionID *string
-	if strings.TrimSpace(req.ParentExecutionID) != "" {
-		parentExecutionID = &req.ParentExecutionID
-	}
+	source := commonExecution.ModuleOrchestrator
+	parentExecutionID := &parentID
 
 	var executionID string
 	if taskType == commonExecution.TaskTypeMaterializationGate {

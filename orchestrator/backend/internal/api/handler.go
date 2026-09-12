@@ -817,13 +817,13 @@ func (h *OrchestrationHandler) GetProviderOrchestrationTask(c *gin.Context) {
 
 // ExecuteProviderOrchestrationTask 执行 Orchestrator 编排任务。
 // @Summary 执行 TaskProvider 编排任务 | Execute TaskProvider orchestration task
-// @Description 按标准 TaskProvider 协议执行 Orchestrator 编排任务；task_type 仅支持 orchestration。| Execute an Orchestrator task through the standard TaskProvider protocol; task_type only supports orchestration.
+// @Description 仅接受 addp-orchestrator 以父 execution 血缘触发；task_type 仅支持 orchestration，请求必须提供 source=orchestrator 和 parent_execution_id。| Only accepts addp-orchestrator execution-lineage invocation; task_type only supports orchestration, and source=orchestrator plus parent_execution_id are required.
 // @Tags Orchestrator
 // @Accept json
 // @Produce json
 // @Param task_type path string true "任务类型，固定为 orchestration | Task type, fixed to orchestration"
 // @Param id path int true "编排 ID | Orchestration ID"
-// @Param request body orchestrationTaskProviderExecuteRequest false "TaskProvider 执行请求 | TaskProvider execution request"
+// @Param request body orchestrationTaskProviderExecuteRequest true "TaskProvider 执行请求 | TaskProvider execution request"
 // @Success 202 {object} orchestrationTaskProviderExecuteResponse
 // @Failure 400 {object} map[string]interface{}
 // @Failure 403 {object} models.ErrorResponse "当前身份未绑定租户 | Current identity is not bound to a tenant"
@@ -863,14 +863,13 @@ func (h *OrchestrationHandler) ExecuteProviderOrchestrationTask(c *gin.Context) 
 		return
 	}
 
-	source := strings.TrimSpace(req.Source)
-	if source == "" {
-		source = commonExecution.ModuleOrchestrator
+	parentID, err := commonExecution.NormalizeOrchestratorChildContext(req.Source, req.ParentExecutionID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
-	var parentExecutionID *string
-	if strings.TrimSpace(req.ParentExecutionID) != "" {
-		parentExecutionID = &req.ParentExecutionID
-	}
+	source := commonExecution.ModuleOrchestrator
+	parentExecutionID := &parentID
 
 	execution, err := h.executionService.CreateExecutionWithContext(
 		c.Request.Context(),

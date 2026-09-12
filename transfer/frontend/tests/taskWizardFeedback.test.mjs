@@ -14,6 +14,10 @@ const step1Source = await readFile(
   new URL('../src/views/TaskWizard/Step1SelectSource.vue', import.meta.url),
   'utf8'
 )
+const step2Source = await readFile(
+  new URL('../src/views/TaskWizard/Step2SelectTarget.vue', import.meta.url),
+  'utf8'
+)
 const relationalSQLBuilderSource = await readFile(
   new URL('../src/views/TaskWizard/RelationalSQLQueryBuilder.vue', import.meta.url),
   'utf8'
@@ -54,6 +58,17 @@ test('MongoDB MQL 构造器不提供高级编辑路径且失配查询只读', ()
   assert.match(step1Source, /v-if="!isRelationalSqlSource && !isMongoMqlSource"/)
   assert.equal(zhCN.transfer.taskWizard.mongoBuilder.readOnlyMql, '只读 MQL')
   assert.equal(en.transfer.taskWizard.mongoBuilder.readOnlyMql, 'Read-only MQL')
+})
+
+test('目标覆盖位于默认目标之后且不依赖源查询开关', () => {
+  const targetTableIndex = step2Source.indexOf('targetTableLabel')
+  const overrideIndex = step2Source.indexOf('orchestrationExecutionLabel')
+  assert.ok(targetTableIndex >= 0 && overrideIndex > targetTableIndex)
+  assert.match(step2Source, /targetOverrideEligible/)
+  assert.doesNotMatch(step2Source, /sourceQueryEnabled[\s\S]*targetOverride/)
+  assert.doesNotMatch(step2Source, /targetBinding|runtimeTarget/)
+  assert.match(zhCN.transfer.taskWizard.targetOverrideHint, /默认目标/)
+  assert.match(en.transfer.taskWizard.targetOverrideHint, /default target/)
 })
 
 test('数据库 CDC 不可用时通过问号按钮展示原因', () => {

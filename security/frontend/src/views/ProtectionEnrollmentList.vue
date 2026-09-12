@@ -50,94 +50,29 @@
         @open-authorization="openAccessRequestAuthorization"
         @decide="openAccessRequestDecision"
       />
-      <div class="list-scope-bar">
-        <el-radio-group v-model="listScope" size="small" @change="handleScopeChange">
-          <el-radio-button value="current">{{ t('security.enrollment.listScopes.current') }}</el-radio-button>
-          <el-radio-button value="released">{{ t('security.enrollment.listScopes.released') }}</el-radio-button>
-          <el-radio-button value="all">{{ t('security.enrollment.listScopes.all') }}</el-radio-button>
-        </el-radio-group>
-      </div>
-
-      <el-card class="enrollment-card" shadow="never">
-        <el-table v-loading="loading" :data="rows" row-key="id">
-          <el-table-column :label="t('security.enrollment.resource')" min-width="320">
-            <template #default="{ row }">
-              <EnrollmentResourceIdentity
-                :row="row"
-                :resource-name="resourceName"
-                :resource-path="resourcePath"
-                :item-type-label="itemTypeLabel"
-                :engine-label="engineLabel"
-                @open="openDetail"
-              />
-            </template>
-          </el-table-column>
-
-          <el-table-column :label="t('security.enrollment.state')" width="190">
-            <template #default="{ row }">
-              <div class="state-cell">
-                <el-tag :type="presentationState(row).type">{{ presentationState(row).label }}</el-tag>
-                <span>{{ presentationState(row).description }}</span>
-              </div>
-            </template>
-          </el-table-column>
-
-          <el-table-column :label="t('security.enrollment.progress')" min-width="430">
-            <template #default="{ row }">
-              <div class="owner-grid">
-                <div v-for="owner in row.owner_progress" :key="owner.consumer_owner" class="owner-item">
-                  <span class="owner-name">{{ ownerLabel(owner.consumer_owner) }}</span>
-                  <el-tag size="small" :type="ownerPresentation(row, owner).type">
-                    {{ ownerPresentation(row, owner).label }}
-                  </el-tag>
-                </div>
-              </div>
-            </template>
-          </el-table-column>
-
-          <el-table-column :label="listScope === 'released' ? t('security.enrollment.releaseCompletedAt') : t('security.enrollment.discovery')" width="210">
-            <template #default="{ row }">
-              <span v-if="listScope === 'released'" class="release-time">{{ formatDateTime(row.released_at) }}</span>
-              <div v-else class="discovery-cell">
-                <el-tag size="small" :type="discoveryPresentation(row).type">{{ discoveryPresentation(row).label }}</el-tag>
-                <span>{{ formatDateTime(row.last_discovered_at) }}</span>
-              </div>
-            </template>
-          </el-table-column>
-
-          <el-table-column :label="t('security.common.actions')" width="210" fixed="right">
-            <template #default="{ row }">
-              <div class="row-actions">
-                <el-button
-                  v-if="canCreate && row.state === 'released'"
-                  link
-                  type="primary"
-                  @click="openReEnrollment(row)"
-                >
-                  {{ t('security.enrollment.reEnroll') }}
-                </el-button>
-                <el-button link type="primary" @click="openDetail(row)">{{ t('security.enrollment.viewDetails') }}</el-button>
-              </div>
-            </template>
-          </el-table-column>
-        </el-table>
-
-        <el-empty v-if="!loading && rows.length === 0" :description="emptyDescription">
-          <el-button v-if="canCreate && listScope === 'current'" type="primary" @click="openCreate()">{{ t('security.enrollment.create') }}</el-button>
-        </el-empty>
-
-        <div v-if="total > pageSize" class="pagination">
-          <el-pagination
-            v-model:current-page="currentPage"
-            v-model:page-size="pageSize"
-            background
-            layout="total, sizes, prev, pager, next"
-            :page-sizes="[20, 50, 100]"
-            :total="total"
-            @change="handlePageChange"
-          />
-        </div>
-      </el-card>
+      <EnrollmentResourceList
+        v-model:scope="listScope"
+        v-model:page="currentPage"
+        v-model:page-size="pageSize"
+        :rows="rows"
+        :total="total"
+        :loading="loading"
+        :can-create="canCreate"
+        :resource-name="resourceName"
+        :resource-path="resourcePath"
+        :item-type-label="itemTypeLabel"
+        :engine-label="engineLabel"
+        :presentation-state="presentationState"
+        :owner-label="ownerLabel"
+        :owner-presentation="ownerPresentation"
+        :format-date-time="formatDateTime"
+        :discovery-presentation="discoveryPresentation"
+        @scope-change="handleScopeChange"
+        @page-change="handlePageChange"
+        @open="openDetail"
+        @re-enroll="openReEnrollment"
+        @create="openCreate"
+      />
     </template>
 
     <FindingReviewQueueWorkspace
@@ -969,8 +904,11 @@ import {
 } from '@common-ui'
 import { assessmentAPI, classificationAPI, detectorCapabilityAPI, findingAPI, gradeAPI, metaAPI, protectionAccessRequestAPI, protectionBaselineAPI, protectionEnrollmentAPI, protectionExemptionAPI, protectionPolicyAPI, sensitiveDataTypeAPI } from '../api/security'
 import { useAuthStore } from '../store/auth'
+import { useProtectionAccessRequestReview } from '../composables/useProtectionAccessRequestReview.mjs'
+import { useProtectionEnrollmentCollection } from '../composables/useProtectionEnrollmentCollection.mjs'
+import { useProtectionEnrollmentGovernance } from '../composables/useProtectionEnrollmentGovernance.mjs'
 import { createRequiredRule } from '../utils/foundationForm.mjs'
-import EnrollmentResourceIdentity from '../components/protection-enrollment/EnrollmentResourceIdentity.vue'
+import EnrollmentResourceList from '../components/protection-enrollment/EnrollmentResourceList.vue'
 import {
   buildAssessmentRevisionPayload,
   buildFindingReviewPayload,
@@ -980,21 +918,14 @@ import {
   findingReviewState,
   isDiscoveryExecutionInProgress,
   isNoSupportedFindingsReleaseUnavailable,
-  isProtectionAccessRequestExpired,
   isProtectionEnrollmentAlreadyActive,
   isProtectionEffectStricter,
   isResourceVersionConflict,
   isZeroFindingDiscovery,
-  needsEnrollmentRefresh,
   normalizeDiscoverySummary,
   resolvePendingReviewContinuation,
   resolveReviewQueueFilters
 } from '../utils/protectionEnrollment.mjs'
-
-const AUTO_REFRESH_FAST_INTERVAL_MS = 2000
-const AUTO_REFRESH_SLOW_INTERVAL_MS = 5000
-const AUTO_REFRESH_FAST_WINDOW_MS = 30000
-const AUTO_REFRESH_TIMEOUT_MS = 120000
 
 const { t, locale } = useI18n()
 const AccessRequestDecisionForm = defineAsyncComponent(() => import('../components/protection-enrollment/AccessRequestDecisionForm.vue'))
@@ -1025,16 +956,7 @@ function resolveWorkspaceRouteState(routeQuery) {
 const initialWorkspaceRoute = resolveWorkspaceRouteState(route.query)
 const activeWorkspace = ref(initialWorkspaceRoute.tab)
 
-const rows = ref([])
-const total = ref(0)
-const currentPage = ref(1)
-const pageSize = ref(20)
-const listScope = ref('current')
-const loading = ref(false)
-const backgroundRefreshing = ref(false)
 const manualRefreshing = ref(false)
-const autoRefreshActive = ref(false)
-const lastRefreshedAt = ref(null)
 const saving = ref(false)
 const createDrawer = ref(false)
 const createFormRef = ref(null)
@@ -1081,17 +1003,6 @@ const releasing = ref(null)
 const releaseForm = reactive({ reason: '' })
 const releaseBasis = ref('manual')
 const engineNames = ref(new Map())
-const findings = ref([])
-const findingsTotal = ref(0)
-const findingsPage = ref(1)
-const findingsPageSize = 20
-const findingsLoading = ref(false)
-const assessments = ref([])
-const assessmentsLoading = ref(false)
-const policies = ref([])
-const policiesLoading = ref(false)
-const exemptions = ref([])
-const exemptionsLoading = ref(false)
 const focusedExemptionID = ref('')
 const exemptionSectionRef = ref(null)
 const componentOptions = ref([])
@@ -1108,23 +1019,8 @@ const reviewQueuePageSize = ref(initialWorkspaceRoute.reviewQueue.pageSize)
 const reviewQueueTypeID = ref(initialWorkspaceRoute.reviewQueue.sensitiveDataTypeID)
 const reviewQueueDetectorVersion = ref(initialWorkspaceRoute.reviewQueue.detectorVersion)
 const reviewQueueLoading = ref(false)
-const accessRequestRows = ref([])
-const accessRequestTotal = ref(0)
-const accessRequestPage = ref(1)
-const accessRequestPageSize = ref(10)
-const accessRequestLoading = ref(false)
-const accessRequestScope = ref('pending')
-const accessRequestFilters = reactive({ resourceSearch: '', requesterSearch: '', state: '', authorizationState: '' })
-const accessRequestCreatedRange = ref([])
-const accessRequestDecisionDialog = ref(false)
 const accessRequestDecisionFormRef = ref(null)
 const accessRequestDecisionCancelButton = ref(null)
-const accessRequestDecisionSaving = ref(false)
-const accessRequestDecisionReloading = ref(false)
-const accessRequestDecisionConflict = ref(false)
-const decidingAccessRequest = ref(null)
-const accessRequestDecision = ref('approve')
-const accessRequestDecisionForm = reactive({ rationale: '' })
 const reviewingFinding = ref(null)
 const reviewSaving = ref(false)
 const reviewBasisExpanded = ref([])
@@ -1163,6 +1059,33 @@ const policyRestoreReloading = ref(false)
 const policyRestoreConflict = ref(false)
 const policyRestoreAssessment = ref(null)
 const policyRestoreForm = reactive({ rationale: '' })
+
+const {
+  rows,
+  total,
+  currentPage,
+  pageSize,
+  listScope,
+  loading,
+  autoRefreshActive,
+  lastRefreshedAt,
+  load,
+  markRefreshed,
+  replaceRow: replaceCollectionRow,
+  setCollection,
+  watchDiscovery,
+  scheduleAutoRefresh,
+  stopAutoRefresh,
+  refreshCurrentPage,
+  refreshChangedScope,
+  startVisibilityTracking,
+  dispose: disposeEnrollmentCollection
+} = useProtectionEnrollmentCollection({
+  listEnrollments: params => protectionEnrollmentAPI.list(params),
+  onRowsLoaded: syncLoadedEnrollmentRows,
+  onLoadError: error => ElMessage.error(error.message || t('security.common.failed')),
+  onAutoRefreshTimeout: () => ElMessage.warning(t('security.enrollment.autoRefreshTimedOut'))
+})
 
 function requiredFieldRule(labelKey, options = {}) {
   return createRequiredRule(t('security.common.requiredField', { name: t(labelKey) }), options)
@@ -1211,9 +1134,7 @@ async function validateRequiredForm(instanceRef) {
 }
 
 let selectedItemRequest = 0
-let findingsRequest = 0
 let assessmentHistoryRequest = 0
-let accessRequestDecisionReloadRequest = 0
 let assessmentRevisionReloadRequest = 0
 let assessmentRevokeReloadRequest = 0
 let exemptionRevokeReloadRequest = 0
@@ -1222,12 +1143,7 @@ let policyRestoreReloadRequest = 0
 let releaseReloadRequest = 0
 let rediscoveryReloadRequest = 0
 let reEnrollmentReloadRequest = 0
-let refreshTimer = null
-let autoRefreshStartedAt = 0
-let autoRefreshTimedOut = false
-let refreshHiddenAt = 0
 let workspaceMounted = false
-const discoveryRefreshWatches = new Map()
 
 const canCreate = computed(() => auth.hasPermission('security.enrollment.create'))
 const createFormRules = computed(() => ({
@@ -1256,7 +1172,71 @@ const canRevokePolicies = computed(() => auth.hasPermission('security.policy.del
 const canReadExemptions = computed(() => auth.hasPermission('security.protection_exemption.read'))
 const canRevokeExemptions = computed(() => auth.hasPermission('security.protection_exemption.delete'))
 const canReviewAccessRequests = computed(() => auth.hasPermission('security.protection_access_request.update'))
-const governanceLoading = computed(() => findingsLoading.value || assessmentsLoading.value || policiesLoading.value)
+const {
+  rows: accessRequestRows,
+  total: accessRequestTotal,
+  page: accessRequestPage,
+  pageSize: accessRequestPageSize,
+  loading: accessRequestLoading,
+  scope: accessRequestScope,
+  filters: accessRequestFilters,
+  createdRange: accessRequestCreatedRange,
+  decisionDialog: accessRequestDecisionDialog,
+  decisionSaving: accessRequestDecisionSaving,
+  decisionReloading: accessRequestDecisionReloading,
+  decisionConflict: accessRequestDecisionConflict,
+  decidingRequest: decidingAccessRequest,
+  decision: accessRequestDecision,
+  decisionForm: accessRequestDecisionForm,
+  loadQueue: loadAccessRequestQueue,
+  changeScope: handleAccessRequestScopeChange,
+  updateFilters: updateAccessRequestFilters,
+  applyFilters: applyAccessRequestFilters,
+  resetFilters: resetAccessRequestFilters,
+  openDecision: openAccessRequestDecision,
+  closeDecision: closeAccessRequestDecisionState,
+  reloadDecisionBaseline,
+  submitDecision: submitAccessRequestDecisionCommand,
+  dispose: disposeAccessRequestReview
+} = useProtectionAccessRequestReview({
+  canReview: canReviewAccessRequests,
+  listRequests: params => protectionAccessRequestAPI.reviewQueue(params),
+  getRequest: id => protectionAccessRequestAPI.getForReview(id),
+  decideRequest: (id, payload) => protectionAccessRequestAPI.decide(id, payload),
+  onQueueLoadError: error => ElMessage.error(error.message || t('security.accessRequest.loadFailed'))
+})
+const {
+  findings,
+  findingsTotal,
+  findingsPage,
+  findingsPageSize,
+  findingsLoading,
+  assessments,
+  policies,
+  exemptions,
+  exemptionsLoading,
+  governanceLoading,
+  loadFindings,
+  loadAssessments,
+  loadPolicies,
+  loadExemptions,
+  loadGovernance: loadGovernanceData,
+  replaceAssessment,
+  replacePolicy,
+  replaceExemption,
+  reset: resetGovernance
+} = useProtectionEnrollmentGovernance({
+  enrollment: detailRow,
+  canReadFindings,
+  canReadAssessments,
+  canReadPolicies,
+  canReadExemptions,
+  listFindings: params => findingAPI.list(params),
+  listAssessments: params => assessmentAPI.list(params),
+  listPolicies: params => protectionPolicyAPI.list(params),
+  listExemptions: params => protectionExemptionAPI.list(params),
+  onLoadError: handleGovernanceLoadError
+})
 const manualAssessments = computed(() => assessments.value.filter(item => item.current?.source_kind === 'manual'))
 const refreshFeedback = computed(() => {
   if (autoRefreshActive.value) return t('security.enrollment.autoRefreshing')
@@ -1266,7 +1246,6 @@ const refreshFeedback = computed(() => {
 })
 const accessRequestDecisionTitle = computed(() => t(`security.accessRequest.${accessRequestDecision.value}`))
 const accessRequestDecisionHint = computed(() => t(`security.accessRequest.${accessRequestDecision.value}Hint`))
-const emptyDescription = computed(() => t(`security.enrollment.emptyStates.${listScope.value}`))
 const reviewRationalePlaceholder = computed(() => t(`security.finding.rationalePlaceholders.${reviewForm.decision}`))
 const reviewRemainingLabel = computed(() => {
   if (activeWorkspace.value === 'review-queue') {
@@ -1670,7 +1649,7 @@ async function loadReviewQueue(page = reviewQueuePage.value) {
     })
     reviewQueueRows.value = Array.isArray(response?.data) ? response.data : []
     reviewQueueTotal.value = Number(response?.total || 0)
-    lastRefreshedAt.value = new Date()
+    markRefreshed()
     return true
   } catch (error) {
     ElMessage.error(error.message || t('security.reviewQueue.loadFailed'))
@@ -1678,71 +1657,6 @@ async function loadReviewQueue(page = reviewQueuePage.value) {
   } finally {
     reviewQueueLoading.value = false
   }
-}
-
-function accessRequestQueueParams(page) {
-  const range = Array.isArray(accessRequestCreatedRange.value) ? accessRequestCreatedRange.value : []
-  return {
-    scope: accessRequestScope.value,
-    state: accessRequestScope.value === 'history' ? accessRequestFilters.state || undefined : undefined,
-    authorization_state: accessRequestScope.value === 'history' ? accessRequestFilters.authorizationState || undefined : undefined,
-    requester_search: accessRequestFilters.requesterSearch || undefined,
-    resource_search: accessRequestFilters.resourceSearch || undefined,
-    created_from: range[0] instanceof Date ? range[0].toISOString() : undefined,
-    created_to: range[1] instanceof Date ? range[1].toISOString() : undefined,
-    page,
-    page_size: accessRequestPageSize.value
-  }
-}
-
-async function loadAccessRequestQueue(page = accessRequestPage.value) {
-  if (!canReviewAccessRequests.value) {
-    accessRequestRows.value = []
-    accessRequestTotal.value = 0
-    return
-  }
-  accessRequestPage.value = Number(page) || 1
-  accessRequestLoading.value = true
-  try {
-    let response = await protectionAccessRequestAPI.reviewQueue(accessRequestQueueParams(accessRequestPage.value))
-    const totalPages = Number(response?.total_pages || 0)
-    if (totalPages > 0 && accessRequestPage.value > totalPages) {
-      accessRequestPage.value = totalPages
-      response = await protectionAccessRequestAPI.reviewQueue(accessRequestQueueParams(accessRequestPage.value))
-    }
-    accessRequestRows.value = Array.isArray(response?.data) ? response.data : []
-    accessRequestTotal.value = Number(response?.total || 0)
-  } catch (error) {
-    ElMessage.error(error.message || t('security.accessRequest.loadFailed'))
-  } finally {
-    accessRequestLoading.value = false
-  }
-}
-
-async function handleAccessRequestScopeChange() {
-  accessRequestPage.value = 1
-  accessRequestFilters.state = ''
-  accessRequestFilters.authorizationState = ''
-  await loadAccessRequestQueue(1)
-}
-
-function updateAccessRequestFilters(filters) {
-  Object.assign(accessRequestFilters, filters)
-}
-
-async function applyAccessRequestFilters() {
-  accessRequestPage.value = 1
-  await loadAccessRequestQueue(1)
-}
-
-async function resetAccessRequestFilters() {
-  accessRequestFilters.resourceSearch = ''
-  accessRequestFilters.requesterSearch = ''
-  accessRequestFilters.state = ''
-  accessRequestFilters.authorizationState = ''
-  accessRequestCreatedRange.value = []
-  accessRequestPage.value = 1
-  await loadAccessRequestQueue(1)
 }
 
 async function handleAccessRequestPageChange() {
@@ -1766,171 +1680,59 @@ function focusAccessRequestDecisionCancel() {
   })
 }
 
-function openAccessRequestDecision(row, decision) {
-  if (!row?.id || !row.can_decide || !['approve', 'reject'].includes(decision)) return
-  accessRequestDecisionReloadRequest += 1
-  decidingAccessRequest.value = row
-  accessRequestDecision.value = decision
-  accessRequestDecisionForm.rationale = ''
-  accessRequestDecisionConflict.value = false
-  accessRequestDecisionDialog.value = true
-}
-
 function closeAccessRequestDecisionDialog() {
-  accessRequestDecisionReloadRequest += 1
-  decidingAccessRequest.value = null
-  accessRequestDecision.value = 'approve'
-  accessRequestDecisionForm.rationale = ''
-  accessRequestDecisionConflict.value = false
-  accessRequestDecisionReloading.value = false
-}
-
-function replaceAccessRequest(latest) {
-  const index = accessRequestRows.value.findIndex(item => item.id === latest?.id)
-  if (index >= 0) accessRequestRows.value.splice(index, 1, latest)
+  closeAccessRequestDecisionState()
 }
 
 async function reloadAccessRequestDecisionBaseline() {
-  if (!decidingAccessRequest.value?.id) return
-  const request = ++accessRequestDecisionReloadRequest
-  accessRequestDecisionReloading.value = true
-  try {
-    const latest = await protectionAccessRequestAPI.getForReview(decidingAccessRequest.value.id)
-    if (request !== accessRequestDecisionReloadRequest) return
-    replaceAccessRequest(latest)
-    if (latest?.state !== 'pending' || !latest.can_decide) {
-      accessRequestDecisionDialog.value = false
-      await loadAccessRequestQueue(accessRequestPage.value)
-      ElMessage.info(t('security.accessRequest.alreadyProcessed'))
-      return
-    }
-    decidingAccessRequest.value = latest
-    accessRequestDecisionForm.rationale = ''
-    accessRequestDecisionConflict.value = false
+  const result = await reloadDecisionBaseline()
+  if (result.status === 'reloaded') {
     ElMessage.success(t('security.accessRequest.decisionReloadedLatest'))
     focusAccessRequestDecisionCancel()
-  } catch (error) {
-    if (request !== accessRequestDecisionReloadRequest) return
-    ElMessage.error(error.message || t('security.accessRequest.loadFailed'))
-  } finally {
-    if (request === accessRequestDecisionReloadRequest) accessRequestDecisionReloading.value = false
+    return
   }
+  if (result.status === 'already_processed') {
+    await loadAccessRequestQueue(accessRequestPage.value)
+    ElMessage.info(t('security.accessRequest.alreadyProcessed'))
+    return
+  }
+  if (result.status === 'failed') ElMessage.error(result.error.message || t('security.accessRequest.loadFailed'))
 }
 
 async function submitAccessRequestDecision() {
-  const row = decidingAccessRequest.value
-  const decision = accessRequestDecision.value
-  if (!row?.id || !['approve', 'reject'].includes(decision)) return
+  if (!decidingAccessRequest.value) return
   if (!await validateRequiredForm(accessRequestDecisionFormRef)) return
-  accessRequestDecisionSaving.value = true
-  try {
-    await protectionAccessRequestAPI.decide(row.id, {
-      version: Number(row.version),
-      decision,
-      expires_at: decision === 'approve' ? row.requested_expires_at : undefined,
-      rationale: accessRequestDecisionForm.rationale.trim()
-    })
-    accessRequestDecisionDialog.value = false
-    ElMessage.success(t(`security.accessRequest.${decision}d`))
-    accessRequestPage.value = 1
+  const result = await submitAccessRequestDecisionCommand()
+  if (result.status === 'succeeded') {
     await Promise.all([loadAccessRequestQueue(), load({ background: true })])
-  } catch (error) {
-    if (isResourceVersionConflict(error)) {
-      accessRequestDecisionConflict.value = true
-      ElMessage.warning(t('security.accessRequest.decisionVersionConflict'))
-      return
-    }
-    if (isProtectionAccessRequestExpired(error)) {
-      accessRequestDecisionDialog.value = false
-      await loadAccessRequestQueue(accessRequestPage.value)
-      ElMessage.info(t('security.accessRequest.expiredBeforeDecision'))
-      return
-    }
-    ElMessage.error(error.message || t('security.accessRequest.decisionFailed'))
-  } finally {
-    accessRequestDecisionSaving.value = false
-  }
-}
-
-async function loadFindings(page = findingsPage.value) {
-  const row = detailRow.value
-  if (!canReadFindings.value || !row?.id || !row.latest_source_snapshot_hash || normalizeDiscoverySummary(row).findingCount === 0) {
-    findings.value = []
-    findingsTotal.value = 0
+    ElMessage.success(t(`security.accessRequest.${result.decision}d`))
     return
   }
-  const request = ++findingsRequest
-  findingsPage.value = Number(page) || 1
-  findingsLoading.value = true
-  try {
-    const response = await findingAPI.list({ enrollment_id: row.id, source_snapshot_hash: row.latest_source_snapshot_hash, discovery_execution_id: row.latest_discovery_execution_id, page: findingsPage.value, page_size: findingsPageSize })
-    if (request !== findingsRequest) return
-    findings.value = Array.isArray(response?.data) ? response.data : []
-    findingsTotal.value = Number(response?.total || 0)
-  } catch (error) {
-    if (request === findingsRequest) ElMessage.error(error.message || t('security.finding.loadFailed'))
-  } finally {
-    if (request === findingsRequest) findingsLoading.value = false
-  }
-}
-
-async function loadAssessments() {
-  const row = detailRow.value
-  if (!canReadAssessments.value || !row?.id) {
-    assessments.value = []
+  if (result.status === 'version_conflict') {
+    ElMessage.warning(t('security.accessRequest.decisionVersionConflict'))
     return
   }
-  assessmentsLoading.value = true
-  try {
-    const response = await assessmentAPI.list({ enrollment_id: row.id, page: 1, page_size: 100 })
-    assessments.value = Array.isArray(response?.data) ? response.data : []
-  } catch (error) {
-    ElMessage.error(error.message || t('security.assessment.loadFailed'))
-  } finally {
-    assessmentsLoading.value = false
-  }
-}
-
-async function loadPolicies() {
-  const row = detailRow.value
-  if (!canReadPolicies.value || !row?.id) {
-    policies.value = []
+  if (result.status === 'expired') {
+    await loadAccessRequestQueue(accessRequestPage.value)
+    ElMessage.info(t('security.accessRequest.expiredBeforeDecision'))
     return
   }
-  policiesLoading.value = true
-  try {
-    const response = await protectionPolicyAPI.list({ enrollment_id: row.id, page: 1, page_size: 100 })
-    policies.value = Array.isArray(response?.data) ? response.data : []
-  } catch (error) {
-    ElMessage.error(error.message || t('security.policy.loadFailed'))
-  } finally {
-    policiesLoading.value = false
-  }
+  if (result.status === 'failed') ElMessage.error(result.error.message || t('security.accessRequest.decisionFailed'))
 }
 
-async function loadExemptions() {
-  const row = detailRow.value
-  if (!canReadExemptions.value || !row?.id) {
-    exemptions.value = []
-    return
+function handleGovernanceLoadError(kind, error) {
+  const messageKeys = {
+    findings: 'security.finding.loadFailed',
+    assessments: 'security.assessment.loadFailed',
+    policies: 'security.policy.loadFailed',
+    exemptions: 'security.exemption.loadFailed'
   }
-  exemptionsLoading.value = true
-  try {
-    const response = await protectionExemptionAPI.list({ enrollment_id: row.id, page: 1, page_size: 100 })
-    exemptions.value = Array.isArray(response?.data) ? response.data : []
-  } catch (error) {
-    ElMessage.error(error.message || t('security.exemption.loadFailed'))
-  } finally {
-    exemptionsLoading.value = false
-  }
+  ElMessage.error(error.message || t(messageKeys[kind]))
 }
 
 async function loadGovernance(page = findingsPage.value) {
   await Promise.all([
-    loadFindings(page),
-    loadAssessments(),
-    loadPolicies(),
-    loadExemptions(),
+    loadGovernanceData(page),
     loadFindingDefinitions().catch(error => ElMessage.error(error.message || t('security.finding.loadDefinitionsFailed')))
   ])
 }
@@ -1958,11 +1760,6 @@ function closeExemptionRevokeDialog() {
   exemptionRevokeForm.rationale = ''
   exemptionRevokeConflict.value = false
   exemptionRevokeReloading.value = false
-}
-
-function replaceExemption(latest) {
-  const index = exemptions.value.findIndex(item => item.id === latest?.id)
-  if (index >= 0) exemptions.value.splice(index, 1, latest)
 }
 
 async function reloadExemptionRevokeBaseline() {
@@ -2189,11 +1986,6 @@ async function reloadAssessmentRevisionBaseline() {
   }
 }
 
-function replaceAssessment(latest) {
-  const index = assessments.value.findIndex(item => item.id === latest?.id)
-  if (index >= 0) assessments.value.splice(index, 1, latest)
-}
-
 async function submitAssessmentRevision() {
   if (!revisingAssessment.value) return
   if (!await validateRequiredForm(assessmentRevisionFormRef)) return
@@ -2203,8 +1995,7 @@ async function submitAssessmentRevision() {
       version: revisingAssessment.value.version,
       ...assessmentRevisionForm
     }))
-    const index = assessments.value.findIndex(item => item.id === revised?.id)
-    if (index >= 0) assessments.value.splice(index, 1, revised)
+    replaceAssessment(revised)
     assessmentRevisionDialog.value = false
     await load({ background: true })
     await loadGovernance(findingsPage.value)
@@ -2289,8 +2080,7 @@ async function fetchLatestPolicyContext(assessment, policy) {
 
 function applyLatestPolicyContext(context) {
   protectionBaselines.value = Array.isArray(context.baselines) ? context.baselines : []
-  const policyIndex = policies.value.findIndex(item => item.id === context.policy?.id)
-  if (policyIndex >= 0) policies.value.splice(policyIndex, 1, context.policy)
+  replacePolicy(context.policy)
   replaceAssessment(context.assessment)
 }
 
@@ -2589,100 +2379,16 @@ async function loadEngines() {
   }
 }
 
-function reconcileDiscoveryRefreshWatches() {
-  for (const [enrollmentID, baselineMarker] of discoveryRefreshWatches) {
-    const row = rows.value.find(item => item.id === enrollmentID)
-    if (!row || row.state === 'released') {
-      discoveryRefreshWatches.delete(enrollmentID)
-      continue
-    }
-    if (row.last_discovered_at && discoveryRefreshMarker(row) !== baselineMarker) {
-      discoveryRefreshWatches.delete(enrollmentID)
-    }
-  }
-}
-
-function hasPendingRefresh() {
-  reconcileDiscoveryRefreshWatches()
-  return discoveryRefreshWatches.size > 0 || rows.value.some(needsEnrollmentRefresh)
-}
-
-function clearRefreshTimer() {
-  if (refreshTimer !== null) window.clearTimeout(refreshTimer)
-  refreshTimer = null
-}
-
-function stopAutoRefresh() {
-  clearRefreshTimer()
-  autoRefreshActive.value = false
-  autoRefreshStartedAt = 0
-}
-
-function scheduleAutoRefresh({ reset = false } = {}) {
-  clearRefreshTimer()
-  if (!hasPendingRefresh()) {
-    stopAutoRefresh()
-    return
-  }
-
-  const now = Date.now()
-  if (reset || !autoRefreshStartedAt) {
-    autoRefreshStartedAt = now
-    autoRefreshTimedOut = false
-  }
-  autoRefreshActive.value = true
-  if (document.hidden) return
-
-  const elapsed = now - autoRefreshStartedAt
-  if (elapsed >= AUTO_REFRESH_TIMEOUT_MS) {
-    stopAutoRefresh()
-    if (!autoRefreshTimedOut) {
-      autoRefreshTimedOut = true
-      ElMessage.warning(t('security.enrollment.autoRefreshTimedOut'))
-    }
-    return
-  }
-
-  const delay = elapsed < AUTO_REFRESH_FAST_WINDOW_MS
-    ? AUTO_REFRESH_FAST_INTERVAL_MS
-    : AUTO_REFRESH_SLOW_INTERVAL_MS
-  refreshTimer = window.setTimeout(runAutoRefresh, delay)
-}
-
-async function load(options = {}) {
-  const background = Boolean(options?.background)
-  if (loading.value || backgroundRefreshing.value) return false
+async function syncLoadedEnrollmentRows({ rows: loadedRows, options }) {
   const previousDetailMarker = discoveryRefreshMarker(detailRow.value)
-  if (background) backgroundRefreshing.value = true
-  else loading.value = true
-  try {
-    const response = await protectionEnrollmentAPI.list({ scope: listScope.value, page: currentPage.value, page_size: pageSize.value })
-    rows.value = response?.data || []
-    total.value = Number(response?.total || 0)
-    if (detailRow.value) {
-      const visibleDetail = rows.value.find(row => row.id === detailRow.value.id)
-      detailRow.value = visibleDetail || await protectionEnrollmentAPI.get(detailRow.value.id)
-    }
-    lastRefreshedAt.value = new Date()
-    if (options?.syncFindings && detailRow.value && discoveryRefreshMarker(detailRow.value) !== previousDetailMarker) {
-      findingsPage.value = 1
-      await loadGovernance(1)
-    }
-    return true
-  } catch (error) {
-    if (!options?.silent) ElMessage.error(error.message || t('security.common.failed'))
-    return false
-  } finally {
-    if (background) backgroundRefreshing.value = false
-    else loading.value = false
+  if (detailRow.value) {
+    const visibleDetail = loadedRows.find(row => row.id === detailRow.value.id)
+    detailRow.value = visibleDetail || await protectionEnrollmentAPI.get(detailRow.value.id)
   }
-}
-
-async function runAutoRefresh() {
-  refreshTimer = null
-  if (document.hidden) return
-  await load({ background: true, silent: true, syncFindings: true })
-  scheduleAutoRefresh()
+  if (options?.syncFindings && detailRow.value && discoveryRefreshMarker(detailRow.value) !== previousDetailMarker) {
+    findingsPage.value = 1
+    await loadGovernance(1)
+  }
 }
 
 async function manualRefresh() {
@@ -2702,15 +2408,12 @@ async function manualRefresh() {
 }
 
 async function handlePageChange() {
-  await load()
-  scheduleAutoRefresh({ reset: true })
+  await refreshCurrentPage()
 }
 
 async function handleScopeChange() {
-  currentPage.value = 1
   detailDrawer.value = false
-  await load()
-  scheduleAutoRefresh({ reset: true })
+  await refreshChangedScope()
 }
 
 function reviewQueueRouteQuery() {
@@ -2824,28 +2527,15 @@ async function focusExemptionCard() {
 
 async function openDetail(row, exemptionID = '') {
   detailRow.value = row
+  resetGovernance()
   focusedExemptionID.value = exemptionID
   detailDrawer.value = true
-  findingsPage.value = 1
-  findings.value = []
-  findingsTotal.value = 0
-  assessments.value = []
-  policies.value = []
-  exemptions.value = []
   await loadGovernance(1)
   await focusExemptionCard()
 }
 
 function handleDetailClosed() {
-  findingsRequest += 1
-  findings.value = []
-  findingsTotal.value = 0
-  assessments.value = []
-  policies.value = []
-  exemptions.value = []
-  findingsLoading.value = false
-  policiesLoading.value = false
-  exemptionsLoading.value = false
+  resetGovernance()
   focusedExemptionID.value = ''
   detailRow.value = null
 }
@@ -2905,7 +2595,7 @@ async function submitRediscovery() {
     if (Number(execution?.enrollment_version) > 0) {
       replaceEnrollment({ ...row, version: Number(execution.enrollment_version) })
     }
-    discoveryRefreshWatches.set(row.id, baselineMarker)
+    watchDiscovery(row.id, baselineMarker)
     rediscoveryDialog.value = false
     await load({ background: true, syncFindings: true })
     scheduleAutoRefresh({ reset: true })
@@ -2918,7 +2608,7 @@ async function submitRediscovery() {
       return
     }
     if (isDiscoveryExecutionInProgress(error)) {
-      discoveryRefreshWatches.set(row.id, discoveryRefreshMarker(row))
+      watchDiscovery(row.id, discoveryRefreshMarker(row))
       rediscoveryDialog.value = false
       await load({ background: true })
       scheduleAutoRefresh({ reset: true })
@@ -2987,8 +2677,7 @@ async function submitReEnrollment() {
     detailDrawer.value = false
     listScope.value = 'current'
     currentPage.value = 1
-    rows.value = [result.enrollment]
-    total.value = 1
+    setCollection([result.enrollment], 1)
     await load()
     scheduleAutoRefresh({ reset: true })
     ElMessage.success(t('security.enrollment.reEnrolled'))
@@ -3041,8 +2730,7 @@ function closeReleaseDialog() {
 }
 
 function replaceEnrollment(latest) {
-  const index = rows.value.findIndex(item => item.id === latest?.id)
-  if (index >= 0) rows.value.splice(index, 1, latest)
+  replaceCollectionRow(latest)
   if (detailRow.value?.id === latest?.id) detailRow.value = latest
 }
 
@@ -3123,19 +2811,6 @@ async function handleCreateClosed() {
   }
 }
 
-function handleVisibilityChange() {
-  if (document.hidden) {
-    refreshHiddenAt = Date.now()
-    clearRefreshTimer()
-    return
-  }
-  if (refreshHiddenAt && autoRefreshStartedAt) {
-    autoRefreshStartedAt += Date.now() - refreshHiddenAt
-  }
-  refreshHiddenAt = 0
-  if (autoRefreshActive.value) runAutoRefresh()
-}
-
 watch(() => route.query, async routeQuery => {
   const routeState = resolveWorkspaceRouteState(routeQuery)
   if (routeState.changed) {
@@ -3167,7 +2842,7 @@ watch(
 )
 
 onMounted(async () => {
-  document.addEventListener('visibilitychange', handleVisibilityChange)
+  startVisibilityTracking()
   workspaceMounted = true
   if (activeWorkspace.value === 'review-queue') {
     await Promise.all([loadReviewQueue(reviewQueuePage.value), loadFindingDefinitions(), loadDetectorCapabilities()])
@@ -3179,8 +2854,8 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
-  clearRefreshTimer()
-  document.removeEventListener('visibilitychange', handleVisibilityChange)
+  disposeAccessRequestReview()
+  disposeEnrollmentCollection()
 })
 </script>
 
@@ -3194,16 +2869,6 @@ onBeforeUnmount(() => {
 .workspace-tabs { margin: -4px 0 10px; }
 .workspace-tab-label { display: inline-flex; align-items: center; gap: 7px; }
 :deep(.workspace-tabs .el-tabs__header) { margin-bottom: 0; }
-.list-scope-bar { display: flex; align-items: center; margin-bottom: 12px; }
-.enrollment-card { border-color: var(--addp-border-color); background: var(--addp-bg-primary); }
-.state-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 7px; }
-.state-cell span { color: var(--addp-text-secondary); font-size: 12px; line-height: 1.45; }
-.discovery-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
-.discovery-cell span { color: var(--addp-text-tertiary); font-size: 12px; }
-.owner-grid { display: grid; grid-template-columns: repeat(2, minmax(170px, 1fr)); gap: 8px 16px; }
-.owner-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.owner-name { color: var(--addp-text-secondary); font-size: 13px; }
-.pagination { display: flex; justify-content: flex-end; padding-top: 16px; }
 .create-flow { display: flex; flex-direction: column; gap: 18px; }
 .selection-card { padding: 16px; border: 1px solid var(--addp-border-color); border-radius: 8px; background: var(--addp-bg-secondary); }
 .selection-card__title { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
@@ -3248,12 +2913,7 @@ h4 { margin: 24px 0 12px; }
 .technical-value { overflow-wrap: anywhere; font-family: monospace; color: var(--addp-text-secondary); }
 .detail-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
 .release-form { margin-top: 16px; }
-:deep(.el-card__body) { padding: 0; }
-:deep(.el-table) { background: var(--addp-bg-primary); }
 :deep(.el-drawer__body) { padding-top: 8px; }
-@media (max-width: 1280px) {
-  .owner-grid { grid-template-columns: 1fr; }
-}
 @media (max-width: 720px) {
   .version-conflict-notice { align-items: flex-start; flex-direction: column; }
   .finding-section__header { flex-direction: column; }

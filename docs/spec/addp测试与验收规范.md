@@ -78,6 +78,7 @@ T2 使用真实但可丢弃的基础设施，并满足：
 
 - CI Job 使用独占 Service 和随 Job 销毁的数据库。
 - 托管外部服务的 owner gate 必须在脚本头声明 `# ADDP_T2_SERVICES=<service,...>`；模块门禁、CI 注册和后续新增数据库类型都消费该声明，不按数据库名称维护发现分支。
+- 需要 owner 持有合法 License 或受控介质的门禁必须声明 `# ADDP_T2_OWNER_MANAGED=<runtime>`，只进入受保护 self-hosted Runner 的 `make test-integration-owner-managed`，不进入 GitHub Hosted、普通 `make test-integration` 或 macOS 定时巡检。脚本必须验证官方介质与 License SHA-256、拥有 disposable 容器全生命周期并验证零残留。
 - 本地共享 `addp-postgres` 只允许使用 `addp_test` 与 `addp_iam_test`，并且只能通过根 `Makefile` 或 `scripts/test/` 的标准入口操作。
 - 禁止为单次验证直接创建或删除数据库；现有标准入口不能满足隔离时，先完善入口及自动清理。
 - 门禁在任何破坏性动作前校验数据库身份，拒绝开发库、生产库或不满足 owner 安全约束的连接。
@@ -98,6 +99,7 @@ T3 的 PR 主路径使用独立端口、受控 API 夹具和非个人登录态�
 T4 只在隔离的 ADDP 测试部署执行，并按运行条件选择唯一部署 profile：
 
 - 常规 Online suite 使用带 `self-hosted`、`macOS`、`addp-online` 标签的专用 Runner 和 `addp-online` GitHub Environment，复用专用部署中的稳定 Tenant、User 和 Engine Instance。
+- 需要商业 License 的 Linux 引擎使用带 `self-hosted`、`Linux`、`X64` 和产品 owner 标签的专用 Runner，通过受保护 GitHub Environment 审批。License 和受控介质不进入 checkout、日志或 Artifact，也不回退到 Hosted 或 macOS profile。
 - 只有明确声明 Linux/CPU 限制的 suite 可登记 GitHub Hosted profile。该 profile 每轮必须在干净 `ubuntu-24.04` x86_64 Runner 上从零启动 disposable Infra、Tenant、User、Engine Instance 和业务引擎，退出时全部销毁；不使用 GitHub Environment 或仓库 Secret。
 - self-hosted Runner 使用独立账号和独立 checkout；Hosted Runner 使用 Actions 当次临时 checkout。两者都不复用个人开发工作区或开发服务进程。
 - 公开仓库的 self-hosted Runner 必须是可独立重置的专用测试设备，不得登录个人 Apple ID、保存个人 SSH Key、浏览器会话或访问个人与生产网络。只允许受保护 GitHub Environment 的 `workflow_dispatch` 和已毕业 suite 的固定 `schedule` 调度；`pull_request`、`pull_request_target`、`push`、Issue 事件或可由外部输入改写的动态 workflow 不得选择该 Runner。
@@ -153,6 +155,8 @@ OceanBase 消费链路 T4 使用专用 OceanBase CE MySQL 模式 Fixture 和永�
 
 TiDB 消费链路 T4 复用同一个关系引擎 owner 断言，在带 `self-hosted`、`macOS`、`addp-online` 标签的专用 Runner 上使用固定官方 digest、无数据卷的 PD/TiKV/TiDB 三组件 Fixture 和永久 `engine_type=tidb` Engine Instance。Fixture 固定重建 5 行非空间 watermark 源表和同构空目标表；suite 必须经 Meta 扫描取得 ResourceLocator，以同一条 bounded watermark + upsert Transfer 任务验证 5/2/0 三次读取计数，并由 Manager、Develop 与临时 Query Service 对最终 6 行结果计算相同 checksum。上层模块只消费通用 ResourceLocator、SQLDialect 和 Provider，不得把 TiDB 登记为 MySQL 或增加 `tidb` 类型分支。临时任务和服务必须按捕获 ID 删除并确认 404；成功、失败和中断退出路径都必须执行 `down --volumes --remove-orphans` 并验证三组件容器零残留。该 suite 首次真实通过前只登记手工 `workflow_dispatch`，不得增加定时触发。
 
+KingbaseES 消费链路 T4 复用同一个关系引擎 owner 断言，仅在带 `self-hosted`、`Linux`、`X64`、`addp-kingbase` 标签的受保护 Runner 上使用固定 SHA-256 的 V9R1C10 `V009R001C010B0004` 官方介质和 owner 正规 License。Fixture 每轮启动无卷 `DB_MODE=pg` disposable 容器，固定重建 5 行非空间 watermark 源表和同构空目标表；以永久 `engine_type=kingbase` Engine Instance 经 Meta 扫描取得 ResourceLocator，以 bounded watermark + `ON CONFLICT` upsert 验证 5/2/0 和最终 6 行 checksum，并由 Manager、Transfer、Develop、Service 经各自正式出口取得一致结果。上层模块只消费通用 ResourceLocator、SQLDialect 和 Provider，不得增加 `kingbase` 分支。成功、失败和中断路径都必须删除本轮容器、临时任务与服务，验证零残留；License 和镜像 tar 不归档。首次真实通过前只允许手工 `workflow_dispatch`。
+
 openGauss 消费链路 T4 复用上述关系引擎 owner 断言，但只在 GitHub Hosted `ubuntu-24.04` x86_64 profile 上运行。生命周期从固定 SHA-256 的 openGauss 6.0.6 LTS 官方介质启动独占容器，创建 `addp_online` 平台库、非默认 Tenant、最小权限消费 User、只含 `system.engine.create/read/execute` 的 Engine Provisioner 和临时 `engine_type=opengauss` Engine Instance。Business Fixture 只管理数据库并输出 owner-only Engine 描述，不调用 System API；System IAM owner helper 只创建身份和 Token，通用 Online 注册器使用 Engine Provisioner Token 通过正式 System API 注册并验证 Engine。Fixture 以 `public` schema 作为 namespace，使用 openGauss 原生 `MERGE` 推进相同的 5/2/0 watermark 数据集；Manager、Transfer、Develop 和 Service 必须通过与 OceanBase 相同的通用 ResourceLocator、SQLDialect 和 Provider 路径得到同一 6 行 checksum，上层模块不得新增 `opengauss` 分支。当次 Engine Instance 只随 disposable 平台库销毁，Token 和连接凭据只保存在不归档的 owner-only `runner.temp` 目录；Engine 注册后必须在进入业务断言前从进程环境清除 Provisioner Token 与数据库凭据，业务证据不得包含凭据。该 suite 在首次真实通过并确认构建身份、清理和零残留证据后，同时保留手工 `workflow_dispatch` 并登记每日夜间 `schedule`；定时事件只能选择 openGauss Hosted Job，其他 Online Job 必须显式排除定时事件。
 
 Transfer 仅新增 MySQL T4 使用永久 PostgreSQL 与 MySQL Engine Instance，并由专属复合 Fixture 管理两端物理表。真实 User 必须从 Console 页面选择源表和目标库、进入字段映射、通过正式“分析源数据并推荐精度”接口把无声明精度的 PostgreSQL `numeric` 收敛为不会截断当前值的 MySQL `DECIMAL(6,2)`，再以主键 `id` 作为唯一 watermark 创建任务。页面自动执行的首轮必须读写 6 行；Fixture 同时修改 `id=1` 并新增 `id=7` 后，用户从任务详情再次执行必须只读写 1 行。最终 MySQL 目标必须共 7 行、`id=1` 保持首轮值、`id=7` 为新增值且无重复键，以证明单字段水位只覆盖严格递增新增、不承诺旧记录更新。浏览器还必须断言任务配置的 `tie_breaker=[]`、目标 `upsert` 键为 `id`，捕获并删除临时任务且确认 404；Fixture 在全部退出路径删除两端固定表并停止两个容器。该 suite 只登记手工 `workflow_dispatch`，首次真实通过前不得增加定时触发。
@@ -192,6 +196,8 @@ T4 临时夹具优先通过 owner 正式 API 创建；正式 API 无法建立必
 T5 按产品或 Runtime 独立准备真实前置条件，例如 macOS Keychain、安装包生命周期、HA、故障切换或在线厂商证据。统一 `test-release` 分发器只选择 owner 门禁并生成 `addp.release-gate/v1` 报告，不合并不同产品的运行条件。
 
 厂商只提供离线 Docker tar、且 Runtime 受 OS/CPU 架构约束时，官方介质认证归 T5：owner 脚本必须在一处固定官方 HTTPS 地址和 SHA-256，负责下载、校验、`docker load`、原生启动、真实驱动/SQL 断言及所有退出路径清理；workflow 只选择匹配架构的 Runner 并调用统一 `test-release` 入口。此类 suite 不声明 `ADDP_T2_SERVICES`、不进入 `test-integration` 或辅助 macOS 巡检，也不能替代插件实现后的 T2 Provider 集成与 T4 跨模块验收。
+
+官方介质包含限时试用 License 时，T5 只允许将其用于首次准入评估，不得以重新下载介质、重建容器、替换主机或清除状态的方式重置试用期。长期门禁必须由 owner 提供来源合法、当前有效且 SHA-256 明确的 License，门禁报告只记录授权元数据与摘要，不归档 License 原文。
 
 发布 workflow 只准备环境、调用标准 Make 入口、归档证据和执行发布动作，不在 YAML 内重写业务测试。System IAM PostgreSQL 属于 T2，不因与发布流程共用 workflow 而变成 T5。
 

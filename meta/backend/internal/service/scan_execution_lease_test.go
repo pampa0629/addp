@@ -94,3 +94,39 @@ func TestCreateTaskRunRejectsSecondActiveExecution(t *testing.T) {
 		t.Fatalf("execution count = %d, want 1", count)
 	}
 }
+
+func TestCreateTaskRunInheritsOrchestratorParentActor(t *testing.T) {
+	db := openObjectCatalogScanTestDB(t)
+	createTaskExecutionTable(t, db)
+	createScanTaskTable(t, db)
+	now := time.Date(2026, 8, 20, 8, 0, 0, 0, time.UTC)
+	task := &models.ScanTask{TenantID: 7, EngineID: 9, Name: "orchestrated scan", CreatedAt: now, UpdatedAt: now}
+	if err := db.Create(task).Error; err != nil {
+		t.Fatalf("create scan task: %v", err)
+	}
+	principalID, membershipID, authorizationVersion := int64(41), int64(51), int64(6)
+	parent := &commonExecution.TaskExecution{
+		TenantID: 7, ExecutionID: "77777777-7777-4777-8777-777777777777",
+		Module: commonExecution.ModuleOrchestrator, TaskType: commonExecution.TaskTypeOrchestration,
+		Source: commonExecution.ModuleOrchestrator, Status: commonExecution.ExecutionStatusRunning,
+		TriggerType:      commonExecution.TriggerTypeManual,
+		ActorPrincipalID: &principalID, ActorTenantMembershipID: &membershipID,
+		IssuedAuthorizationVersion: &authorizationVersion,
+	}
+	if err := commonExecution.NewTaskExecutionRepository(db).Create(context.Background(), parent); err != nil {
+		t.Fatalf("create parent: %v", err)
+	}
+
+	execution, err := NewScanExecutionService(db, nil, nil, nil).CreateTaskRunWithContext(
+		context.Background(), task, 0, commonExecution.TriggerTypeManual,
+		commonExecution.ModuleOrchestrator, &parent.ExecutionID,
+	)
+	if err != nil {
+		t.Fatalf("create child execution: %v", err)
+	}
+	if execution.ActorPrincipalID == nil || *execution.ActorPrincipalID != principalID ||
+		execution.ActorTenantMembershipID == nil || *execution.ActorTenantMembershipID != membershipID ||
+		execution.IssuedAuthorizationVersion == nil || *execution.IssuedAuthorizationVersion != authorizationVersion {
+		t.Fatalf("child actor facts were not inherited: %#v", execution)
+	}
+}

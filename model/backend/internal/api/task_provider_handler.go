@@ -124,7 +124,7 @@ func (h *MaterializationTaskProviderHandler) TaskDetail(c *gin.Context) {
 // @Produce json
 // @Param task_type path string true "任务类型 | Task type"
 // @Param id path int true "逻辑表 ID | Logical table ID"
-// @Param request body materializationExecuteRequest false "执行请求 | Execution request"
+// @Param request body materializationExecuteRequest true "执行请求 | Execution request"
 // @Success 202 {object} materializationExecuteResponse
 // @Failure 400 {object} map[string]interface{}
 // @Failure 401 {object} map[string]interface{}

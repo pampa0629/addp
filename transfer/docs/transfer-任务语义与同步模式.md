@@ -2,7 +2,7 @@
 
 状态：正式
 
-更新时间：2026-08-04
+更新时间：2026-09-12
 
 本文定义 Transfer `sync` 任务的稳定语义、执行边界、状态所有权和当前支持范围。配置字段、类型矩阵和 API 以 [Transfer 模块基本概念及配置说明](transfer-基本概念及配置说明.md) 为准；公共任务与 execution 字段以 [ADDP 任务体系规范](../../docs/spec/addp任务体系规范.md) 为准；尚未实现的能力见 [Transfer 后续能力清单](../../docs/next/transfer后续能力清单.md)。
 
@@ -34,7 +34,7 @@ bounded query source 执行前必须从同一 `PreparedQuery` 取得 Provider �
 
 关系型 native table 的 Console 构建器只扩展 Transfer 的轻量 ETL 能力。源固定为用户已选择的单表，界面只提供字段投影和一层 `all|any` 参数化行过滤，目标字段命名与类型继续归后续 `field_mapping`。值过滤必须同时受 Meta 字段类型与 `compute.query.parameters.types` 约束；`bigint/decimal` 固定以十进制字符串通过 `string` capability 无损传递，不经过 JavaScript Number。Planner 在调用 Provider 前再次校验参数开关、语言与运行时值类型，并拒绝无法由 JSON Number 无损表达的大整数。构建器不提供 Join、多表输入、聚合、计算字段、别名、排序、Limit 或方言私有函数，也不提供高级 SQL 编辑入口。仅严格属于可逆子集的 SQL 可在 Transfer Console 中结构化编辑；其他合法只读 SQL 只读展示，复杂数据开发归 Develop。该界面只是标准 `source.query` 的受限编写方式，不保存第二份可视化 DSL，不建立第二条执行路线。
 
-当 bounded query source 需要向上游步骤创建的既有表写入数据时，任务定义启用通用动态目标模式，不保存物理 `target`；TaskProvider 将 `target_locator` 声明为必填运行时输入，由 Orchestrator 从任意显式依赖的稳定 ResourceLocator 输出绑定。worker 使用通用 Engine capability 校验目标已存在且字段映射的名称、顺序和类型一致，仅通过 table write session append 本 execution 结果，不执行删除、清空、建表或改表。Transfer 不得保存其他业务 owner 的 ID 或调用其 API 解析目标。
+bounded snapshot 可以在目标选择完成后启用“允许编排覆盖本次执行目标”。该能力与 source 是直接表、SQL 还是 MQL 无关；任务必须保存一个可直接执行的默认目标，并以 `target.override_policy=existing_table_append` 明确声明覆盖边界。默认目标和覆盖目标都必须是已存在原生表，`target.policy.apply_mode` 固定为 `append`。TaskProvider 将 `target_locator` 声明为带默认值的可选输入：未提供时写入任务默认目标，Orchestrator 可以用固定参数或显式上游稳定 ResourceLocator 输出覆盖本 execution，覆盖值不得写回任务定义。worker 使用通用 Engine capability 校验实际目标存在且字段映射的名称、顺序和类型一致，仅通过 table write session append，不执行删除、清空、建表或改表。Transfer 不得保存其他业务 owner 的 ID 或调用其 API 解析目标。
 
 SuperMap 空间表也遵守同一边界。`supermap/sdx_postgis` 继续使用 PostgreSQL/PostGIS 原生 Provider；`supermap/sdx_postgresql` 的 bounded table 读取和写入由 `bound_runtime_engine_id` 指向的兼容 Workflow Runtime 执行 SDK direct table session。Transfer 通过 Tenant Service Token 读取 Runtime Descriptor，并校验 `addp.workflow/v1` 与完整表读写 direct 算子，不按固定 `engine_type` 选择 Runtime。两种方向都使用统一 `BatchData` 业务模型；当前 `supermap.table-batch/v1` HTTP 线协议固定为 JSON，geometry 值是 EWKB 字节并按 JSON 标准 base64 编码。Transfer 和 Common Spatial 不解析或生成 SuperMap 私有 geometry Blob，也不建立 PostGIS→SuperMap、ArcGIS SDE→SuperMap 等引擎组合通道。
 
@@ -117,7 +117,7 @@ bounded snapshot 使用独立 `transfer-bounded-worker` 从 `common.task_executi
 
 - `replace` 从头重新执行。
 - `append` 拒绝 retry，避免重复追加。
-- 动态既有表目标的 lease 过期后不重放当前 writer execution，避免在不受 Transfer 拥有的目标上猜测幂等语义；调用方必须重新发起完整编排并使用新目标。
+- 使用目标覆盖的 execution 在 lease 过期后不重放，避免在本次动态目标上猜测幂等语义；调用方必须重新发起完整编排。
 - execution 完成后如启用 `auto_scan_metadata`，触发一次目标 Meta deep scan。
 
 ### 4.2 Watermark incremental

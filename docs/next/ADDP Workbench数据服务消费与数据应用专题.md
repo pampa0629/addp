@@ -2252,7 +2252,7 @@ Console 顶层登录与 Workbench 独立登录已统一复用 `common-frontend` 
 
 以后若要把完整非所有者闭环纳入 T4，只允许在专用 Online Tenant 中预置一套长期、非业务的“应用 owner + 消费 User + 已发布 Data Application + CatalogEntry + application Asset”永久夹具。每轮只新建可撤销的 Application / Authorization 业务记录，开始前先恢复无有效 Grant 基线，结束时撤销并确认 Runtime 重新返回 403；不得在每轮创建新的发布应用。该夹具的身份、资源 ID、治理归属和清理责任必须由统一 Online Fixture 管理，不写入 Workbench 生产默认值，也不复用本地 Outdoor 长期应用。
 
-确定性验收已进一步补齐生产 Runtime HTTP 路由级状态序列：测试使用 owner User `11` 的已发布 Revision 和非所有者 User `91`，由规范 AuthContext 与 `workbench.data_application.execute` Permission Guard 进入正式 Handler；初始 GET 返回 HTTP 403 与稳定错误码 `workbench_data_application_access_denied`，同一 Asset Authorization 来源履约后返回 HTTP 200 和当前 Revision，撤销后同一路由再次返回相同 403。PostgreSQL 门禁也增加无规则时必须拒绝的基线断言，与既有幂等履约、并发履约、冲突来源和撤销断言组成完整持久化序列。Workbench Backend 全量测试和标准 `make test-workbench-postgres` 均通过；本节仍不把确定性测试宣称为真实跨账号浏览器 T4。
+确定性验收已进一步补齐生产 Runtime HTTP 路由级状态序列：测试使用 owner User `11` 的已发布 Revision 和非所有者 User `91`，由规范 AuthContext 与 `workbench.data_application.execute` Permission Guard 进入正式 Handler；初始 GET 返回 HTTP 403 与稳定错误码 `workbench_data_application_access_denied`，同一 Asset Authorization 来源履约后返回 HTTP 200 和当前 Revision，撤销后同一路由再次返回相同 403。PostgreSQL 门禁也增加无规则时必须拒绝的基线断言，与既有幂等履约、并发履约、冲突来源和撤销断言组成完整持久化序列。此前由其他模块 TaskProvider Permission 注册中间态导致的 platform T0 阻塞已收口，随后重跑标准 `make test-module MODULE=workbench`，platform T0、Workbench Go T1、89 项 Frontend T1/T3 与 production build、Swagger 12 个公开路由覆盖和 PostgreSQL T2 全部通过；本节仍不把确定性测试宣称为真实跨账号浏览器 T4。
 
 ## 十五、概念设计状态
 

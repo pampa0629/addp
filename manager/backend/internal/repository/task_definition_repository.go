@@ -358,15 +358,75 @@ func (r *TaskDefinitionRepository) Delete(ctx context.Context, tenantID uint, ta
 }
 
 func (r *TaskDefinitionRepository) HasCurrentResult(ctx context.Context, tenantID uint, taskType string, taskID uint) (bool, error) {
+	_, exists, err := r.CurrentResultStatus(ctx, tenantID, taskType, taskID)
+	return exists, err
+}
+
+// CurrentResultStatus returns the latest non-deleted Manager-owned result for
+// one task definition. Spatial business tasks intentionally have no Manager
+// result table and therefore return exists=false.
+func (r *TaskDefinitionRepository) CurrentResultStatus(ctx context.Context, tenantID uint, taskType string, taskID uint) (string, bool, error) {
 	ownership, ok := managerExecutionOwnerships[taskType]
 	if !ok || ownership.resultTable == "" {
-		return false, nil
+		return "", false, nil
 	}
-	var count int64
-	query := r.db.WithContext(ctx).Table(ownership.resultTable).
-		Where("tenant_id = ? AND task_id = ? AND deleted_at IS NULL AND status <> ?", tenantID, taskID, "deleted")
-	if err := query.Count(&count).Error; err != nil {
-		return false, err
+	var row struct {
+		Status string
 	}
-	return count > 0, nil
+	err := r.db.WithContext(ctx).Table(ownership.resultTable).
+		Select("status").
+		Where("tenant_id = ? AND task_id = ? AND deleted_at IS NULL AND status <> ?", tenantID, taskID, "deleted").
+		Order("updated_at DESC, id DESC").
+		Take(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return row.Status, true, nil
+}
+
+// CurrentResultStatuses resolves current Manager-owned result facts for a task
+// page without issuing one query per task. The result table names come only
+// from managerExecutionOwnerships; task configuration never controls them.
+func (r *TaskDefinitionRepository) CurrentResultStatuses(ctx context.Context, tenantID uint, tasks []*models.TaskDefinition) (map[uint]string, error) {
+	statuses := make(map[uint]string)
+	taskIDsByType := make(map[string][]uint)
+	for _, task := range tasks {
+		if task == nil {
+			continue
+		}
+		ownership, ok := managerExecutionOwnerships[task.TaskType]
+		if !ok || ownership.resultTable == "" {
+			continue
+		}
+		taskIDsByType[task.TaskType] = append(taskIDsByType[task.TaskType], task.ID)
+	}
+
+	type resultStatusRow struct {
+		ID     uint
+		TaskID uint
+		Status string
+	}
+	for taskType, taskIDs := range taskIDsByType {
+		ownership := managerExecutionOwnerships[taskType]
+		var rows []resultStatusRow
+		if err := r.db.WithContext(ctx).Table(ownership.resultTable).
+			Select("id, task_id, status").
+			Where("tenant_id = ? AND task_id IN ? AND deleted_at IS NULL AND status <> ?", tenantID, taskIDs, "deleted").
+			Order("updated_at DESC, id DESC").
+			Scan(&rows).Error; err != nil {
+			return nil, err
+		}
+		for _, row := range rows {
+			if row.TaskID == 0 {
+				continue
+			}
+			if _, exists := statuses[row.TaskID]; !exists {
+				statuses[row.TaskID] = row.Status
+			}
+		}
+	}
+	return statuses, nil
 }

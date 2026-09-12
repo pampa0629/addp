@@ -669,7 +669,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "按标准 TaskProvider 协议执行 Orchestrator 编排任务；task_type 仅支持 orchestration。| Execute an Orchestrator task through the standard TaskProvider protocol; task_type only supports orchestration.",
+                "description": "仅接受 addp-orchestrator 以父 execution 血缘触发；task_type 仅支持 orchestration，请求必须提供 source=orchestrator 和 parent_execution_id。| Only accepts addp-orchestrator execution-lineage invocation; task_type only supports orchestration, and source=orchestrator plus parent_execution_id are required.",
                 "consumes": [
                     "application/json"
                 ],
@@ -699,6 +699,7 @@ const docTemplate = `{
                         "description": "TaskProvider 执行请求 | TaskProvider execution request",
                         "name": "request",
                         "in": "body",
+                        "required": true,
                         "schema": {
                             "$ref": "#/definitions/internal_api.orchestrationTaskProviderExecuteRequest"
                         }

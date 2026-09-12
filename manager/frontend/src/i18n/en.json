@@ -39,13 +39,14 @@
 		"model3DGLB": "3D Model GLB", "model3DTiles": "3D Model Tiles",
 		"gaussianSplat": "Gaussian KSplat", "pointCloudCOPC": "Point Cloud COPC", "vectorTileSet": "Business Vector Tile Set", "pptxPDF": "Presentation PDF"
 	  },
-	  "columns": { "name": "Name", "type": "Task Type", "engine": "Source Engine", "enabled": "Enabled", "bindingStatus": "Resource Status", "status": "Latest Status", "updatedAt": "Updated", "actions": "Actions" },
+	  "columns": { "name": "Name", "type": "Task Type", "engine": "Source Engine", "enabled": "Enabled", "bindingStatus": "Resource Status", "status": "Latest Execution", "quickViewStatus": "Quick-view Status", "updatedAt": "Updated", "actions": "Actions" },
 	  "status": { "never": "Never run", "pending": "Pending", "running": "Running", "success": "Succeeded", "failed": "Failed", "cancelled": "Cancelled" },
+	  "quickViewStatus": { "notGenerated": "Not generated", "ready": "Available", "building": "Generating", "generating": "Generating", "stale": "Stale", "failed": "Generation failed", "cancelled": "Cancelled", "unavailable": "Unavailable" },
 	  "bindingStatus": { "active": "Available", "missing": "Binding missing", "missingEngine": "Engine deleted", "missingSource": "Source missing" },
 	  "allTypes": "All task types", "allStatuses": "All statuses", "allBindingStatuses": "All resource statuses", "total": "{total} total", "enabled": "Enabled", "disabled": "Disabled",
-	  "refresh": "Refresh", "createQuickView": "New quick-view task", "createSpatial": "New spatial task", "detail": "Details", "source": "Source", "viewSource": "View in resource tree", "rebind": "Rebind", "edit": "Edit", "execute": "Execute", "monitor": "Monitor", "delete": "Delete",
+	  "refresh": "Refresh", "createQuickView": "New quick-view task", "createSpatial": "New spatial task", "detail": "Details", "source": "Source", "viewSource": "View in resource tree", "targetData": "Target data", "viewTargetData": "View target in resource tree", "rebind": "Rebind", "edit": "Edit", "execute": "Execute", "monitor": "Monitor", "delete": "Delete",
 	  "sourceItem": "Source item", "sourceFormat": "Source format", "sourceSize": "Source size", "targetEngine": "Target engine", "resultName": "Generated result", "lastRunAt": "Last run", "taskDescription": "Description", "empty": "No data tasks",
-	  "loadFailed": "Failed to load data tasks", "executeQueued": "Task queued", "executeFailed": "Task execution failed",
+	  "loadFailed": "Failed to load data tasks", "executeQueued": "Task queued", "executeFailed": "Task execution failed", "targetUnavailable": "The task has no resolvable target data configuration", "targetNotDiscovered": "Meta has not discovered the target data yet; try again after the scan completes", "targetOpenFailed": "Failed to open target data",
 	  "deleteConfirm": "Delete this task definition? Published business data will be retained.", "deleteSuccess": "Task deleted", "deleteFailed": "Failed to delete task",
 	  "batchDelete": "Delete selected ({count})", "batchDeleteTitle": "Delete selected tasks", "batchDeleteConfirm": "Delete the {count} selected task definitions? Published business data will be retained.", "batchDeleteSuccess": "Deleted {deleted} tasks", "batchDeletePartial": "Deleted {deleted} tasks; {failed} failed"
 	},

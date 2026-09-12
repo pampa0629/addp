@@ -101,6 +101,35 @@ func TestBuildExecutionLifecycleAndRerunClaimAreAtomic(t *testing.T) {
 	}
 }
 
+func TestBuildExecutionInheritsOrchestratorParentActor(t *testing.T) {
+	db := newBuildRepositoryTestDB(t)
+	repo := NewBuildRepository(db)
+	task, _ := createBuildRepositoryTestTask(t, db, 7, models.BuildStatusPending)
+	principalID, membershipID, authorizationVersion := int64(41), int64(51), int64(6)
+	parent := &commonExecution.TaskExecution{
+		TenantID: 7, ExecutionID: "66666666-6666-4666-8666-666666666666",
+		Module: commonExecution.ModuleOrchestrator, TaskType: commonExecution.TaskTypeOrchestration,
+		Source: commonExecution.ModuleOrchestrator, Status: commonExecution.ExecutionStatusRunning,
+		TriggerType:      commonExecution.TriggerTypeManual,
+		ActorPrincipalID: &principalID, ActorTenantMembershipID: &membershipID,
+		IssuedAuthorizationVersion: &authorizationVersion,
+	}
+	if err := commonExecution.NewTaskExecutionRepository(db).Create(context.Background(), parent); err != nil {
+		t.Fatalf("create parent: %v", err)
+	}
+	child := newGraphRepositoryTestExecution("graph-child", 7, time.Now().UTC())
+	child.Source = commonExecution.ModuleOrchestrator
+	child.ParentExecutionID = &parent.ExecutionID
+	if _, _, err := repo.ClaimExecution(context.Background(), task.ID, task.GraphID, task.TenantID, child, BuildExecutionClaimRun); err != nil {
+		t.Fatalf("claim child execution: %v", err)
+	}
+	if child.ActorPrincipalID == nil || *child.ActorPrincipalID != principalID ||
+		child.ActorTenantMembershipID == nil || *child.ActorTenantMembershipID != membershipID ||
+		child.IssuedAuthorizationVersion == nil || *child.IssuedAuthorizationVersion != authorizationVersion {
+		t.Fatalf("child actor facts were not inherited: %#v", child)
+	}
+}
+
 func TestBuildStartRollsBackWhenTaskCannotAdvance(t *testing.T) {
 	db := newBuildRepositoryTestDB(t)
 	repo := NewBuildRepository(db)

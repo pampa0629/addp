@@ -208,8 +208,14 @@ func (s *EmbeddingTaskService) createFailedEmbeddingTaskExecution(
 		StartedAt:         &startedAt,
 		CompletedAt:       &completedAt,
 	}
-	if err := s.taskExecRepo.Create(ctx, exec); err != nil {
-		return err
+	var createErr error
+	if parentExecutionID != nil {
+		createErr = s.taskExecRepo.CreateOrchestratorChild(ctx, exec)
+	} else {
+		createErr = s.taskExecRepo.Create(ctx, exec)
+	}
+	if createErr != nil {
+		return createErr
 	}
 	return s.embeddingRepo.UpdateEmbeddingTaskLastExecution(ctx, task.ID, executionID, commonExecution.ExecutionStatusFailed, completedAt)
 }

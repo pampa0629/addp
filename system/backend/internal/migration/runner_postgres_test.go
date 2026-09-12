@@ -6010,6 +6010,30 @@ func assertAuthorizationGovernanceConstraints(t *testing.T, db *sql.DB) {
 		t.Fatal("revoked role assignment mutation succeeded")
 	}
 
+	var expiredAssignmentID int64
+	if err := db.QueryRow(`
+		INSERT INTO system.role_assignments
+		    (principal_id, role_id, scope_type, tenant_id, status, valid_from, valid_until, source_type, created_by_principal_id, grant_reason)
+		VALUES ($1, $2, 'tenant', $3, 'active', now() - interval '2 hours', now() - interval '1 hour', 'manual', $1, 'expired authorization history')
+		RETURNING id
+	`, tenantUserID, tenantRoleID, tenantID).Scan(&expiredAssignmentID); err != nil {
+		t.Fatalf("create expired tenant role assignment: %v", err)
+	}
+	if _, err := db.Exec(`
+		UPDATE system.role_assignments
+		SET status = 'revoked', revoked_by_principal_id = $1, revoked_at = now(), revoked_reason = 'must remain immutable after expiry'
+		WHERE id = $2
+	`, tenantUserID, expiredAssignmentID); err == nil {
+		t.Fatal("expired role assignment revocation succeeded")
+	}
+	if _, err := db.Exec(`
+		INSERT INTO system.role_assignments
+		    (principal_id, role_id, scope_type, tenant_id, source_type, created_by_principal_id, grant_reason)
+		VALUES ($1, $2, 'tenant', $3, 'manual', $1, 'renewed after expiry')
+	`, tenantUserID, tenantRoleID, tenantID); err != nil {
+		t.Fatalf("reassign tenant role after expiry: %v", err)
+	}
+
 	var departmentID int64
 	if err := db.QueryRow(`INSERT INTO system.departments (tenant_id, code, name) VALUES ($1, 'authorization', 'Authorization') RETURNING id`, tenantID).Scan(&departmentID); err != nil {
 		t.Fatalf("create authorization department: %v", err)

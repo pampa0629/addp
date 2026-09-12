@@ -4848,6 +4848,7 @@ const docTemplate = `{
                         "description": "执行请求 | Execution request",
                         "name": "request",
                         "in": "body",
+                        "required": true,
                         "schema": {
                             "$ref": "#/definitions/internal_api.materializationExecuteRequest"
                         }

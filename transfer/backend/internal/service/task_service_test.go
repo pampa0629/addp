@@ -154,24 +154,51 @@ func TestCreateAdHocExecutionPersistsNoTransferTaskDefinition(t *testing.T) {
 	}
 }
 
-func TestRuntimeTargetTaskRequiresOrchestratorInputs(t *testing.T) {
+func TestTargetOverridableTaskUsesDefaultWithoutExecutionInput(t *testing.T) {
 	db := newTransferTaskServiceTestDB(t)
 	taskService := NewTaskService(db, nil, nil)
-	taskService.SetEngineResolver(planner.StaticEngineResolver{
-		1: {Type: "mongodb", EngineID: 1},
-	})
 	task, err := taskService.CreateTask(context.Background(), &models.CreateTaskRequest{
-		Name: "managed-dim", TaskType: commonExecution.TaskTypeSync,
-		Config: validRuntimeTargetTransferTaskConfig(),
+		Name: "overridable-copy", TaskType: commonExecution.TaskTypeSync,
+		Config: validOverridableTargetTransferTaskConfig(),
 	}, 7, 9)
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
-	if task.Enabled || task.Schedule != "" || task.AutoScanMetadata {
-		t.Fatalf("managed task owns scheduling or scanning: %#v", task)
+	if !task.AutoScanMetadata {
+		t.Fatalf("target-overridable task must retain its default metadata scan policy: %#v", task)
 	}
-	if _, err := taskService.StartTask(context.Background(), task.ID, 7, 9); err == nil || !strings.Contains(err.Error(), "target_locator") {
-		t.Fatalf("StartTask() error = %v, want runtime input rejection", err)
+	execution, err := taskService.StartTask(context.Background(), task.ID, 7, 9)
+	if err != nil {
+		t.Fatalf("StartTask() error = %v", err)
+	}
+	if execution.Status != commonExecution.ExecutionStatusPending {
+		t.Fatalf("default-target execution = %#v", execution)
+	}
+	var persisted commonExecution.TaskExecution
+	if err := db.Where("execution_id = ?", execution.ExecutionID).First(&persisted).Error; err != nil {
+		t.Fatalf("query default-target execution: %v", err)
+	}
+	if _, exists := persisted.Metadata["execution_inputs"]; exists {
+		t.Fatalf("default-target execution unexpectedly persisted overrides: %#v", persisted.Metadata)
+	}
+}
+
+func TestTargetOverrideRequiresOrchestratorParent(t *testing.T) {
+	db := newTransferTaskServiceTestDB(t)
+	taskService := NewTaskService(db, nil, nil)
+	task, err := taskService.CreateTask(context.Background(), &models.CreateTaskRequest{
+		Name: "overridable-copy", TaskType: commonExecution.TaskTypeSync,
+		Config: validOverridableTargetTransferTaskConfig(),
+	}, 7, 9)
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	parameters := map[string]interface{}{"target_locator": "addp://engine/9/path/public/staging?type=table"}
+	if _, err := taskService.StartTaskWithExecutionParameters(
+		context.Background(), task.ID, 7, 9, commonExecution.TriggerTypeManual,
+		commonExecution.ModuleTransfer, nil, parameters,
+	); err == nil || !strings.Contains(err.Error(), "Orchestrator parent") {
+		t.Fatalf("StartTaskWithExecutionParameters() error = %v, want Orchestrator parent rejection", err)
 	}
 	parentExecutionID := uuid.NewString()
 	actorPrincipalID, actorMembershipID, authorizationVersion := int64(91), int64(92), int64(3)
@@ -188,13 +215,13 @@ func TestRuntimeTargetTaskRequiresOrchestratorInputs(t *testing.T) {
 	execution, err := taskService.StartTaskWithExecutionParameters(
 		context.Background(), task.ID, 7, 9, commonExecution.TriggerTypeManual,
 		commonExecution.ModuleOrchestrator, &parentExecutionID,
-		map[string]interface{}{"target_locator": "addp://engine/9/path/public/staging?type=table"},
+		parameters,
 	)
 	if err != nil {
 		t.Fatalf("StartTaskWithContext() error = %v", err)
 	}
 	if execution.Status != commonExecution.ExecutionStatusPending {
-		t.Fatalf("managed execution = %#v", execution)
+		t.Fatalf("target-override execution = %#v", execution)
 	}
 	var persistedExecution commonExecution.TaskExecution
 	if err := db.Where("execution_id = ?", execution.ExecutionID).First(&persistedExecution).Error; err != nil {
@@ -202,6 +229,13 @@ func TestRuntimeTargetTaskRequiresOrchestratorInputs(t *testing.T) {
 	}
 	if persistedExecution.ParentExecutionID == nil || *persistedExecution.ParentExecutionID != parentExecutionID {
 		t.Fatalf("parent_execution_id = %v, want %s", persistedExecution.ParentExecutionID, parentExecutionID)
+	}
+	targetConfig := persistedExecution.ExecutionConfig["target"].(map[string]interface{})
+	if targetConfig["parent_locator"] != "addp://engine/9/path/public?type=schema" || targetConfig["name"] != "staging" {
+		t.Fatalf("frozen effective target = %#v", targetConfig)
+	}
+	if inputs := persistedExecution.Metadata["execution_inputs"].(map[string]interface{}); inputs["target_locator"] != parameters["target_locator"] {
+		t.Fatalf("frozen execution inputs = %#v", inputs)
 	}
 }
 
@@ -215,7 +249,10 @@ func TestCreateTaskRejectsQueryLanguageOutsideSourceCapability(t *testing.T) {
 	_, err := taskService.CreateTask(context.Background(), &models.CreateTaskRequest{
 		Name: "invalid-query-language", TaskType: commonExecution.TaskTypeSync,
 		Config: func() map[string]interface{} {
-			config := validRuntimeTargetTransferTaskConfig()
+			config := validOverridableTargetTransferTaskConfig()
+			config["source"].(map[string]interface{})["query"] = map[string]interface{}{
+				"language": "mql", "statement": `{"aggregate":"entries","pipeline":[]}`,
+			}
 			config["source"].(map[string]interface{})["locator"] = "addp://engine/1/path/public/entries?type=table"
 			return config
 		}(),
@@ -237,15 +274,20 @@ func TestTransferTaskExecutionContractDeclaresStableOutputsForFixedTarget(t *tes
 	assertTransferStableOutputContract(t, contract)
 }
 
-func TestTransferTaskExecutionContractRequiresTargetOnlyForRuntimeBinding(t *testing.T) {
-	contract := TransferTaskExecutionContract(validRuntimeTargetTransferTaskConfig())
+func TestTransferTaskExecutionContractDeclaresOptionalTargetOverrideWithDefault(t *testing.T) {
+	contract := TransferTaskExecutionContract(validOverridableTargetTransferTaskConfig())
 	inputProperties, ok := contract.InputSchema["properties"].(map[string]interface{})
 	if !ok || inputProperties["target_locator"] == nil {
-		t.Fatalf("runtime-target input properties = %#v, want target_locator", contract.InputSchema["properties"])
+		t.Fatalf("target-override input properties = %#v, want target_locator", contract.InputSchema["properties"])
 	}
-	required, ok := contract.InputSchema["required"].([]interface{})
-	if !ok || len(required) != 1 || required[0] != "target_locator" {
-		t.Fatalf("runtime-target required = %#v, want target_locator", contract.InputSchema["required"])
+	if _, required := contract.InputSchema["required"]; required {
+		t.Fatalf("target override must be optional: %#v", contract.InputSchema)
+	}
+	if contract.InputDefaults["target_locator"] != "addp://engine/2/path/public/default_target?type=table" {
+		t.Fatalf("target override default = %#v", contract.InputDefaults["target_locator"])
+	}
+	if contract.InputUISchema["target_locator"].(map[string]interface{})["order"] != 0 {
+		t.Fatalf("target override UI schema = %#v", contract.InputUISchema)
 	}
 	assertTransferStableOutputContract(t, contract)
 }
@@ -267,23 +309,18 @@ func assertTransferStableOutputContract(t *testing.T, contract taskprovider.Exec
 	}
 }
 
-func TestRuntimeTargetTaskRejectsTaskOwnedScheduleAndScan(t *testing.T) {
-	for name, request := range map[string]*models.CreateTaskRequest{
-		"schedule": {
-			Name: "scheduled-managed", TaskType: commonExecution.TaskTypeSync,
-			Config: validRuntimeTargetTransferTaskConfig(), Schedule: "0 0 * * * *", Enabled: boolPtr(true),
-		},
-		"scan": {
-			Name: "scanning-managed", TaskType: commonExecution.TaskTypeSync,
-			Config: validRuntimeTargetTransferTaskConfig(), AutoScanMetadata: boolPtr(true),
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			taskService := NewTaskService(newTransferTaskServiceTestDB(t), nil, nil)
-			if _, err := taskService.CreateTask(context.Background(), request, 7, 9); !errors.Is(err, ErrInvalidTaskConfig) {
-				t.Fatalf("CreateTask() error = %v, want invalid task config", err)
-			}
-		})
+func TestTargetOverridableTaskAcceptsTaskOwnedScheduleAndScan(t *testing.T) {
+	taskService := NewTaskService(newTransferTaskServiceTestDB(t), nil, nil)
+	task, err := taskService.CreateTask(context.Background(), &models.CreateTaskRequest{
+		Name: "scheduled-overridable", TaskType: commonExecution.TaskTypeSync,
+		Config: validOverridableTargetTransferTaskConfig(), Schedule: "0 0 * * * *",
+		Enabled: boolPtr(true), AutoScanMetadata: boolPtr(true),
+	}, 7, 9)
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	if !task.Enabled || !task.AutoScanMetadata || task.Schedule == "" {
+		t.Fatalf("scheduled target-overridable task = %#v", task)
 	}
 }
 
@@ -782,16 +819,16 @@ func validTableTransferTaskConfig() map[string]interface{} {
 	}
 }
 
-func validRuntimeTargetTransferTaskConfig() map[string]interface{} {
+func validOverridableTargetTransferTaskConfig() map[string]interface{} {
 	return map[string]interface{}{
 		"runtime": map[string]interface{}{"boundary": "bounded"},
 		"load":    map[string]interface{}{"mode": "snapshot"},
 		"source": map[string]interface{}{
-			"locator": "addp://engine/1/path/outdoor/entries?type=collection", "data_type": "table", "representation": "native",
-			"query": map[string]interface{}{"language": "mql", "statement": `{"aggregate":"entries","pipeline":[{"$project":{"person_id":"$person.id"}}]}`},
+			"locator": "addp://engine/1/path/public/source_table?type=table", "data_type": "table", "representation": "native",
 		},
 		"target": map[string]interface{}{
-			"binding": "runtime", "data_type": "table", "representation": "native",
+			"parent_locator": "addp://engine/2/path/public?type=schema", "name": "default_target",
+			"data_type": "table", "representation": "native", "override_policy": "existing_table_append",
 			"policy": map[string]interface{}{"apply_mode": "append"},
 		},
 		"transforms": []interface{}{map[string]interface{}{

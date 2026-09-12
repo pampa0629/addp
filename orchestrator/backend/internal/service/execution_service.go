@@ -17,6 +17,7 @@ import (
 
 // ExecutionService 统一执行服务（Orchestrator 模块）
 type ExecutionService struct {
+	db                *gorm.DB
 	taskExecutionRepo *commonExecution.TaskExecutionRepository
 	orchRepo          *repository.OrchestrationRepository
 	logger            *slog.Logger
@@ -34,6 +35,7 @@ func NewExecutionService(
 	orchRepo *repository.OrchestrationRepository,
 ) *ExecutionService {
 	return &ExecutionService{
+		db:                db,
 		taskExecutionRepo: commonExecution.NewTaskExecutionRepository(db),
 		orchRepo:          orchRepo,
 		logger:            logger.With("component", "execution_service"),
@@ -45,9 +47,6 @@ func NewExecutionService(
 func (s *ExecutionService) CreateExecutionWithContext(ctx context.Context, orchestrationID, tenantID uint, triggerType, source string, parentExecutionID *string, actor ExecutionActor) (*commonExecution.TaskExecution, error) {
 	if tenantID == 0 {
 		return nil, fmt.Errorf("tenant_id is required")
-	}
-	if actor.PrincipalID <= 0 || actor.TenantMembershipID <= 0 || actor.AuthorizationVersion <= 0 {
-		return nil, fmt.Errorf("execution actor facts are required")
 	}
 	// 获取编排信息
 	orch, err := s.orchRepo.GetByIDAndTenant(orchestrationID, tenantID)
@@ -61,6 +60,13 @@ func (s *ExecutionService) CreateExecutionWithContext(ctx context.Context, orche
 	}
 	if source == "" {
 		source = commonExecution.ModuleOrchestrator
+	}
+	if parentExecutionID == nil {
+		if actor.PrincipalID <= 0 || actor.TenantMembershipID <= 0 || actor.AuthorizationVersion <= 0 {
+			return nil, fmt.Errorf("execution actor facts are required")
+		}
+	} else if source != commonExecution.ModuleOrchestrator {
+		return nil, fmt.Errorf("orchestrator child execution source must be orchestrator")
 	}
 
 	// 创建统一执行记录
@@ -94,7 +100,14 @@ func (s *ExecutionService) CreateExecutionWithContext(ctx context.Context, orche
 		UpdatedAt:                  now,
 	}
 
-	if err := s.taskExecutionRepo.Create(ctx, execution); err != nil {
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if parentExecutionID != nil {
+			if err := commonExecution.InheritOrchestratorActor(tx, execution); err != nil {
+				return err
+			}
+		}
+		return tx.Create(execution).Error
+	}); err != nil {
 		return nil, fmt.Errorf("failed to create execution: %w", err)
 	}
 

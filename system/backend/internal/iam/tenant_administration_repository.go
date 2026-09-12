@@ -248,7 +248,7 @@ func (r *Repository) CreateTenantRoleAssignment(ctx context.Context, assignment 
 	err := r.db.WithContext(ctx).Create(assignment).Error
 	var postgresError *pgconn.PgError
 	if errors.As(err, &postgresError) && postgresError.Code == "23505" &&
-		postgresError.ConstraintName == "uq_role_assignments_active_scope" {
+		postgresError.ConstraintName == "role_assignments_effective_interval_overlap" {
 		return ErrTenantRoleAssignmentAlreadyExists
 	}
 	return wrapRepositoryError(err)
@@ -494,6 +494,10 @@ func (r *Repository) RevokeTenantRoleAssignment(ctx context.Context, assignmentI
 	result := r.db.WithContext(ctx).Model(&RoleAssignment{}).Where("id = ? AND status = 'active'", assignmentID).
 		Updates(map[string]any{"status": "revoked", "revoked_by_principal_id": actorID, "revoked_at": at, "revoked_reason": reason})
 	if result.Error != nil {
+		var postgresError *pgconn.PgError
+		if errors.As(result.Error, &postgresError) && postgresError.ConstraintName == "role_assignments_expired_read_only" {
+			return ErrTenantRoleAssignmentExpired
+		}
 		return wrapRepositoryError(result.Error)
 	}
 	if result.RowsAffected != 1 {

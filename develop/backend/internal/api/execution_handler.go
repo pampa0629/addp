@@ -636,7 +636,7 @@ type providerExecuteDevResponse struct {
 // @Produce json
 // @Param task_type path string true "TaskProvider 任务类型：query/workflow/script | TaskProvider task type: query/workflow/script"
 // @Param id path int true "开发任务ID | Development task ID"
-// @Param request body providerExecuteDevRequest false "TaskProvider 执行请求 | TaskProvider execution request"
+// @Param request body providerExecuteDevRequest true "TaskProvider 执行请求 | TaskProvider execution request"
 // @Success 202 {object} providerExecuteDevResponse "执行已启动 | Execution started"
 // @Failure 400 {object} map[string]interface{} "参数错误 | Bad request"
 // @Failure 500 {object} map[string]interface{} "服务器错误 | Server error"

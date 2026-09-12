@@ -156,6 +156,11 @@ func (s *ScanExecutionService) CreateTaskRunWithContext(ctx context.Context, tas
 			return fmt.Errorf("%w: meta scan task %d already has an active execution", commonAPI.ErrConflict, current.ID)
 		}
 		execution = scantask.NewTaskExecution(&current, userID, storageType, normalizedTriggerType, source, parentExecutionID, time.Now())
+		if execution.ParentExecutionID != nil {
+			if err := commonExecution.InheritOrchestratorActor(tx, execution); err != nil {
+				return err
+			}
+		}
 		if err := tx.Create(execution).Error; err != nil {
 			return err
 		}

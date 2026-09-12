@@ -4776,6 +4776,7 @@ paths:
       - description: 执行请求 | Execution request
         in: body
         name: request
+        required: true
         schema:
           $ref: '#/definitions/internal_api.materializationExecuteRequest'
       produces:

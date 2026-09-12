@@ -17,6 +17,7 @@ import (
 	"github.com/addp/manager/internal/repository"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -163,16 +164,17 @@ func TestTaskProviderTaskDetailUsesDirectObjectShape(t *testing.T) {
 		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
 	}
 	var resp struct {
-		ID                uint   `json:"id"`
-		TaskType          string `json:"task_type"`
-		Category          string `json:"category"`
-		Version           uint   `json:"version"`
-		BindingStatus     string `json:"binding_status"`
-		BindingIssue      string `json:"binding_issue"`
-		Status            string `json:"status"`
-		Data              any    `json:"data"`
-		HasCurrentResult  bool   `json:"has_current_result"`
-		ExecutionContract struct {
+		ID                  uint   `json:"id"`
+		TaskType            string `json:"task_type"`
+		Category            string `json:"category"`
+		Version             uint   `json:"version"`
+		BindingStatus       string `json:"binding_status"`
+		BindingIssue        string `json:"binding_issue"`
+		Status              string `json:"status"`
+		Data                any    `json:"data"`
+		HasCurrentResult    bool   `json:"has_current_result"`
+		CurrentResultStatus string `json:"current_result_status"`
+		ExecutionContract   struct {
 			InputSchema map[string]interface{} `json:"input_schema"`
 		} `json:"execution_contract"`
 	}
@@ -191,6 +193,9 @@ func TestTaskProviderTaskDetailUsesDirectObjectShape(t *testing.T) {
 	}
 	if !resp.HasCurrentResult {
 		t.Fatalf("has_current_result = false, want true; body=%s", w.Body.String())
+	}
+	if resp.CurrentResultStatus != "ready" {
+		t.Fatalf("current_result_status = %q, want ready; body=%s", resp.CurrentResultStatus, w.Body.String())
 	}
 	properties, _ := resp.ExecutionContract.InputSchema["properties"].(map[string]interface{})
 	if _, ok := properties["existing_result_action"]; !ok {
@@ -391,6 +396,16 @@ func TestManagerDerivedTaskListUsesUnifiedCategoryAndTypeFilters(t *testing.T) {
 		}).Error; err != nil {
 		t.Fatalf("mark tile cache task failed: %v", err)
 	}
+	var tileCacheTaskID uint
+	if err := db.Table("manager.task_definitions").
+		Select("id").
+		Where("tenant_id = ? AND name = ?", 1, "tile cache task").
+		Scan(&tileCacheTaskID).Error; err != nil {
+		t.Fatalf("load tile cache task id: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO manager.vector_tile_cache (tenant_id, task_id, status, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)`, 1, tileCacheTaskID, "ready").Error; err != nil {
+		t.Fatalf("create tile cache current result: %v", err)
+	}
 
 	handler := NewTaskProviderHandler(
 		service.NewEmbeddingTaskService(embeddingRepo, nil, nil, nil),
@@ -438,6 +453,9 @@ func TestManagerDerivedTaskListUsesUnifiedCategoryAndTypeFilters(t *testing.T) {
 	}
 	if len(bindingResp.Items) != 1 || bindingResp.Items[0].BindingStatus != models.TaskBindingStatusMissing || bindingResp.Items[0].BindingIssue != models.TaskBindingIssueMissingEngine {
 		t.Fatalf("binding-status response = %#v", bindingResp.Items)
+	}
+	if !bindingResp.Items[0].HasCurrentResult || bindingResp.Items[0].CurrentResultStatus != "ready" {
+		t.Fatalf("binding-status current result = %#v", bindingResp.Items[0])
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/tasks?binding_status=unknown", nil)
@@ -548,7 +566,7 @@ func TestTaskExecuteRejectsUnknownFields(t *testing.T) {
 		setTenantAuthContextForTest(c, 1, 1)
 		c.Next()
 	})
-	router.POST("/tasks/:task_type/:id/execute", handler.TaskExecute)
+	router.POST("/tasks/:task_type/:id/execute", handler.ProviderTaskExecute)
 
 	body := `{"parameters":{},"legacy":true}`
 	req := httptest.NewRequest(http.MethodPost, "/tasks/embedding/1/execute", strings.NewReader(body))
@@ -617,10 +635,12 @@ func TestTaskExecuteModel3DTilesRequiresConfirmationForExistingResult(t *testing
 		setTenantAuthContextForTest(c, 1, 1)
 		c.Next()
 	})
-	router.POST("/tasks/:task_type/:id/execute", handler.TaskExecute)
+	router.POST("/tasks/:task_type/:id/execute", handler.ProviderTaskExecute)
 	path := "/tasks/" + commonExecution.TaskTypeModel3DTilesGeneration + "/" + strconv.FormatUint(uint64(task.ID), 10) + "/execute"
+	parentExecutionID := createTaskProviderParentExecution(t, taskExecRepo, 1, commonExecution.TriggerTypeScheduled)
+	baseBody := `{"source":"orchestrator","parent_execution_id":"` + parentExecutionID + `"}`
 
-	first := executeTaskProviderRequest(t, router, path, ``)
+	first := executeTaskProviderRequest(t, router, path, baseBody)
 	if first.Code != http.StatusAccepted {
 		t.Fatalf("first execute status = %d, want 202; body=%s", first.Code, first.Body.String())
 	}
@@ -651,7 +671,7 @@ func TestTaskExecuteModel3DTilesRequiresConfirmationForExistingResult(t *testing
 	if err := db.Model(&commonExecution.TaskExecution{}).Count(&countBefore).Error; err != nil {
 		t.Fatalf("count executions before rejected refresh: %v", err)
 	}
-	withoutAction := executeTaskProviderRequest(t, router, path, `{}`)
+	withoutAction := executeTaskProviderRequest(t, router, path, baseBody)
 	if withoutAction.Code != http.StatusConflict {
 		t.Fatalf("execute without action status = %d, want 409; body=%s", withoutAction.Code, withoutAction.Body.String())
 	}
@@ -674,10 +694,10 @@ func TestTaskExecuteModel3DTilesRequiresConfirmationForExistingResult(t *testing
 	}
 
 	for _, body := range []string{
-		`{"parameters":{"confirm_existing_result":true}}`,
-		`{"parameters":{"existing_result_action":true}}`,
-		`{"parameters":{"existing_result_action":"overwrite","unknown":true}}`,
-		`{"parameters":{"existing_result_action":"keep"}}`,
+		`{"source":"orchestrator","parent_execution_id":"` + parentExecutionID + `","parameters":{"confirm_existing_result":true}}`,
+		`{"source":"orchestrator","parent_execution_id":"` + parentExecutionID + `","parameters":{"existing_result_action":true}}`,
+		`{"source":"orchestrator","parent_execution_id":"` + parentExecutionID + `","parameters":{"existing_result_action":"overwrite","unknown":true}}`,
+		`{"source":"orchestrator","parent_execution_id":"` + parentExecutionID + `","parameters":{"existing_result_action":"keep"}}`,
 	} {
 		invalid := executeTaskProviderRequest(t, router, path, body)
 		if invalid.Code != http.StatusBadRequest {
@@ -685,7 +705,7 @@ func TestTaskExecuteModel3DTilesRequiresConfirmationForExistingResult(t *testing
 		}
 	}
 
-	overwrite := executeTaskProviderRequest(t, router, path, `{"trigger_type":"scheduled","source":"orchestrator","parent_execution_id":"pipeline-exec","parameters":{"existing_result_action":"overwrite"}}`)
+	overwrite := executeTaskProviderRequest(t, router, path, `{"trigger_type":"scheduled","source":"orchestrator","parent_execution_id":"`+parentExecutionID+`","parameters":{"existing_result_action":"overwrite"}}`)
 	if overwrite.Code != http.StatusAccepted {
 		t.Fatalf("overwrite execute status = %d, want 202; body=%s", overwrite.Code, overwrite.Body.String())
 	}
@@ -706,8 +726,13 @@ func TestTaskExecuteModel3DTilesRequiresConfirmationForExistingResult(t *testing
 	if overwriteExecution.TriggerType != commonExecution.TriggerTypeScheduled || overwriteExecution.Source != commonExecution.ModuleOrchestrator {
 		t.Fatalf("scheduled overwrite execution = %#v", overwriteExecution)
 	}
-	if overwriteExecution.ParentExecutionID == nil || *overwriteExecution.ParentExecutionID != "pipeline-exec" {
+	if overwriteExecution.ParentExecutionID == nil || *overwriteExecution.ParentExecutionID != parentExecutionID {
 		t.Fatalf("scheduled overwrite parent_execution_id = %#v", overwriteExecution.ParentExecutionID)
+	}
+	if overwriteExecution.ActorPrincipalID == nil || *overwriteExecution.ActorPrincipalID != 41 ||
+		overwriteExecution.ActorTenantMembershipID == nil || *overwriteExecution.ActorTenantMembershipID != 51 ||
+		overwriteExecution.IssuedAuthorizationVersion == nil || *overwriteExecution.IssuedAuthorizationVersion != 6 {
+		t.Fatalf("scheduled overwrite actor facts were not inherited: %#v", overwriteExecution)
 	}
 }
 
@@ -726,6 +751,22 @@ func executeTaskProviderRequest(t *testing.T, router *gin.Engine, path, body str
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 	return w
+}
+
+func createTaskProviderParentExecution(t *testing.T, repo *commonExecution.TaskExecutionRepository, tenantID int, triggerType string) string {
+	t.Helper()
+	parentExecutionID := uuid.NewString()
+	principalID, membershipID, authorizationVersion := int64(41), int64(51), int64(6)
+	if err := repo.Create(context.Background(), &commonExecution.TaskExecution{
+		TenantID: tenantID, ExecutionID: parentExecutionID,
+		Module: commonExecution.ModuleOrchestrator, TaskType: commonExecution.TaskTypeOrchestration,
+		Source: commonExecution.ModuleOrchestrator, Status: commonExecution.ExecutionStatusRunning,
+		TriggerType: triggerType, ActorPrincipalID: &principalID, ActorTenantMembershipID: &membershipID,
+		IssuedAuthorizationVersion: &authorizationVersion,
+	}); err != nil {
+		t.Fatalf("create parent execution: %v", err)
+	}
+	return parentExecutionID
 }
 
 func TestTaskExecuteTileCacheReturnsPendingAndRejectsActiveExecution(t *testing.T) {
@@ -753,11 +794,12 @@ func TestTaskExecuteTileCacheReturnsPendingAndRejectsActiveExecution(t *testing.
 		setTenantAuthContextForTest(c, 1, 1)
 		c.Next()
 	})
-	router.POST("/tasks/:task_type/:id/execute", handler.TaskExecute)
+	router.POST("/tasks/:task_type/:id/execute", handler.ProviderTaskExecute)
 
 	path := "/tasks/" + commonExecution.TaskTypeVectorTileCacheGeneration + "/" + strconv.FormatUint(uint64(task.ID), 10) + "/execute"
-	first := httptest.NewRecorder()
-	router.ServeHTTP(first, httptest.NewRequest(http.MethodPost, path, nil))
+	parentExecutionID := createTaskProviderParentExecution(t, taskExecRepo, 1, commonExecution.TriggerTypeManual)
+	body := `{"source":"orchestrator","parent_execution_id":"` + parentExecutionID + `"}`
+	first := executeTaskProviderRequest(t, router, path, body)
 	if first.Code != http.StatusAccepted {
 		t.Fatalf("first execute status = %d, want 202; body=%s", first.Code, first.Body.String())
 	}
@@ -769,8 +811,7 @@ func TestTaskExecuteTileCacheReturnsPendingAndRejectsActiveExecution(t *testing.
 		t.Fatalf("first execute response = %#v, want pending execution", accepted)
 	}
 
-	second := httptest.NewRecorder()
-	router.ServeHTTP(second, httptest.NewRequest(http.MethodPost, path, nil))
+	second := executeTaskProviderRequest(t, router, path, body)
 	if second.Code != http.StatusConflict {
 		t.Fatalf("second execute status = %d, want 409; body=%s", second.Code, second.Body.String())
 	}
@@ -799,11 +840,12 @@ func TestTaskExecuteRasterCOGReturnsPendingAndRejectsActiveExecution(t *testing.
 		setTenantAuthContextForTest(c, 1, 1)
 		c.Next()
 	})
-	router.POST("/tasks/:task_type/:id/execute", handler.TaskExecute)
+	router.POST("/tasks/:task_type/:id/execute", handler.ProviderTaskExecute)
 
 	path := "/tasks/" + commonExecution.TaskTypeRasterCOGGeneration + "/" + strconv.FormatUint(uint64(task.ID), 10) + "/execute"
-	first := httptest.NewRecorder()
-	router.ServeHTTP(first, httptest.NewRequest(http.MethodPost, path, nil))
+	parentExecutionID := createTaskProviderParentExecution(t, taskExecRepo, 1, commonExecution.TriggerTypeManual)
+	body := `{"source":"orchestrator","parent_execution_id":"` + parentExecutionID + `"}`
+	first := executeTaskProviderRequest(t, router, path, body)
 	if first.Code != http.StatusAccepted {
 		t.Fatalf("first execute status = %d, want 202; body=%s", first.Code, first.Body.String())
 	}
@@ -815,8 +857,7 @@ func TestTaskExecuteRasterCOGReturnsPendingAndRejectsActiveExecution(t *testing.
 		t.Fatalf("first execute response = %#v, want pending execution", accepted)
 	}
 
-	second := httptest.NewRecorder()
-	router.ServeHTTP(second, httptest.NewRequest(http.MethodPost, path, nil))
+	second := executeTaskProviderRequest(t, router, path, body)
 	if second.Code != http.StatusConflict {
 		t.Fatalf("second execute status = %d, want 409; body=%s", second.Code, second.Body.String())
 	}
@@ -845,11 +886,12 @@ func TestTaskExecuteRasterMosaicReturnsPendingAndRejectsActiveExecution(t *testi
 		setTenantAuthContextForTest(c, 1, 1)
 		c.Next()
 	})
-	router.POST("/tasks/:task_type/:id/execute", handler.TaskExecute)
+	router.POST("/tasks/:task_type/:id/execute", handler.ProviderTaskExecute)
 
 	path := "/tasks/" + commonExecution.TaskTypeRasterMosaicGeneration + "/" + strconv.FormatUint(uint64(task.ID), 10) + "/execute"
-	first := httptest.NewRecorder()
-	router.ServeHTTP(first, httptest.NewRequest(http.MethodPost, path, nil))
+	parentExecutionID := createTaskProviderParentExecution(t, taskExecRepo, 1, commonExecution.TriggerTypeManual)
+	body := `{"source":"orchestrator","parent_execution_id":"` + parentExecutionID + `"}`
+	first := executeTaskProviderRequest(t, router, path, body)
 	if first.Code != http.StatusAccepted {
 		t.Fatalf("first execute status = %d, want 202; body=%s", first.Code, first.Body.String())
 	}
@@ -861,8 +903,7 @@ func TestTaskExecuteRasterMosaicReturnsPendingAndRejectsActiveExecution(t *testi
 		t.Fatalf("first execute response = %#v, want pending execution", accepted)
 	}
 
-	second := httptest.NewRecorder()
-	router.ServeHTTP(second, httptest.NewRequest(http.MethodPost, path, nil))
+	second := executeTaskProviderRequest(t, router, path, body)
 	if second.Code != http.StatusConflict {
 		t.Fatalf("second execute status = %d, want 409; body=%s", second.Code, second.Body.String())
 	}
@@ -892,11 +933,12 @@ func TestTaskExecuteModel3DGLBReturnsPendingAndRejectsActiveExecution(t *testing
 		setTenantAuthContextForTest(c, 1, 1)
 		c.Next()
 	})
-	router.POST("/tasks/:task_type/:id/execute", handler.TaskExecute)
+	router.POST("/tasks/:task_type/:id/execute", handler.ProviderTaskExecute)
 
 	path := "/tasks/" + commonExecution.TaskTypeModel3DGLBGeneration + "/" + strconv.FormatUint(uint64(task.ID), 10) + "/execute"
-	first := httptest.NewRecorder()
-	router.ServeHTTP(first, httptest.NewRequest(http.MethodPost, path, nil))
+	parentExecutionID := createTaskProviderParentExecution(t, taskExecRepo, 1, commonExecution.TriggerTypeManual)
+	body := `{"source":"orchestrator","parent_execution_id":"` + parentExecutionID + `"}`
+	first := executeTaskProviderRequest(t, router, path, body)
 	if first.Code != http.StatusAccepted {
 		t.Fatalf("first execute status = %d, want 202; body=%s", first.Code, first.Body.String())
 	}
@@ -908,8 +950,7 @@ func TestTaskExecuteModel3DGLBReturnsPendingAndRejectsActiveExecution(t *testing
 		t.Fatalf("first execute response = %#v, want pending execution", accepted)
 	}
 
-	second := httptest.NewRecorder()
-	router.ServeHTTP(second, httptest.NewRequest(http.MethodPost, path, nil))
+	second := executeTaskProviderRequest(t, router, path, body)
 	if second.Code != http.StatusConflict {
 		t.Fatalf("second execute status = %d, want 409; body=%s", second.Code, second.Body.String())
 	}
@@ -939,11 +980,12 @@ func TestTaskExecuteGaussianSplatKSplatReturnsPendingAndRejectsActiveExecution(t
 		setTenantAuthContextForTest(c, 1, 1)
 		c.Next()
 	})
-	router.POST("/tasks/:task_type/:id/execute", handler.TaskExecute)
+	router.POST("/tasks/:task_type/:id/execute", handler.ProviderTaskExecute)
 
 	path := "/tasks/" + commonExecution.TaskTypeGaussianSplatKSplatGeneration + "/" + strconv.FormatUint(uint64(task.ID), 10) + "/execute"
-	first := httptest.NewRecorder()
-	router.ServeHTTP(first, httptest.NewRequest(http.MethodPost, path, nil))
+	parentExecutionID := createTaskProviderParentExecution(t, taskExecRepo, 1, commonExecution.TriggerTypeManual)
+	body := `{"source":"orchestrator","parent_execution_id":"` + parentExecutionID + `"}`
+	first := executeTaskProviderRequest(t, router, path, body)
 	if first.Code != http.StatusAccepted {
 		t.Fatalf("first execute status = %d, want 202; body=%s", first.Code, first.Body.String())
 	}
@@ -955,8 +997,7 @@ func TestTaskExecuteGaussianSplatKSplatReturnsPendingAndRejectsActiveExecution(t
 		t.Fatalf("first execute response = %#v, want pending execution", accepted)
 	}
 
-	second := httptest.NewRecorder()
-	router.ServeHTTP(second, httptest.NewRequest(http.MethodPost, path, nil))
+	second := executeTaskProviderRequest(t, router, path, body)
 	if second.Code != http.StatusConflict {
 		t.Fatalf("second execute status = %d, want 409; body=%s", second.Code, second.Body.String())
 	}
@@ -980,11 +1021,12 @@ func TestTaskExecutePointCloudCOPCReturnsPendingAndRejectsActiveExecution(t *tes
 	handler.SetPointCloudCOPCTaskService(taskSvc)
 	router := gin.New()
 	router.Use(func(c *gin.Context) { setTenantAuthContextForTest(c, 1, 1); c.Next() })
-	router.POST("/tasks/:task_type/:id/execute", handler.TaskExecute)
+	router.POST("/tasks/:task_type/:id/execute", handler.ProviderTaskExecute)
 	path := "/tasks/" + commonExecution.TaskTypePointCloudCOPCGeneration + "/" + strconv.FormatUint(uint64(task.ID), 10) + "/execute"
 
-	first := httptest.NewRecorder()
-	router.ServeHTTP(first, httptest.NewRequest(http.MethodPost, path, nil))
+	parentExecutionID := createTaskProviderParentExecution(t, taskExecRepo, 1, commonExecution.TriggerTypeManual)
+	body := `{"source":"orchestrator","parent_execution_id":"` + parentExecutionID + `"}`
+	first := executeTaskProviderRequest(t, router, path, body)
 	if first.Code != http.StatusAccepted {
 		t.Fatalf("first execute status = %d, want 202; body=%s", first.Code, first.Body.String())
 	}
@@ -995,8 +1037,7 @@ func TestTaskExecutePointCloudCOPCReturnsPendingAndRejectsActiveExecution(t *tes
 	if accepted.ExecutionID == "" || accepted.Status != commonExecution.ExecutionStatusPending {
 		t.Fatalf("first execute response = %#v, want pending execution", accepted)
 	}
-	second := httptest.NewRecorder()
-	router.ServeHTTP(second, httptest.NewRequest(http.MethodPost, path, nil))
+	second := executeTaskProviderRequest(t, router, path, body)
 	if second.Code != http.StatusConflict {
 		t.Fatalf("second execute status = %d, want 409; body=%s", second.Code, second.Body.String())
 	}
@@ -1131,9 +1172,20 @@ func newTaskProviderHandlerTestDB(t *testing.T) *gorm.DB {
 		tenant_id INTEGER NOT NULL,
 		task_id INTEGER,
 		status TEXT NOT NULL DEFAULT 'ready',
+		updated_at DATETIME,
 		deleted_at DATETIME
 	)`).Error; err != nil {
 		t.Fatalf("create vector_tile_cache table: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE manager.vector_materialized_view (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		tenant_id INTEGER NOT NULL,
+		task_id INTEGER,
+		status TEXT NOT NULL DEFAULT 'ready',
+		updated_at DATETIME,
+		deleted_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create vector_materialized_view table: %v", err)
 	}
 	if err := db.Exec(`CREATE TABLE manager.embedding_tasks (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1158,6 +1210,8 @@ func newTaskProviderHandlerTestDB(t *testing.T) *gorm.DB {
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		tenant_id INTEGER NOT NULL,
 		task_id INTEGER,
+		status TEXT NOT NULL DEFAULT 'ready',
+		updated_at DATETIME,
 		deleted_at DATETIME
 	)`).Error; err != nil {
 		t.Fatalf("create raster_cog table: %v", err)

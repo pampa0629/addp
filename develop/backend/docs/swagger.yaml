@@ -3887,6 +3887,7 @@ paths:
       - description: TaskProvider 执行请求 | TaskProvider execution request
         in: body
         name: request
+        required: true
         schema:
           $ref: '#/definitions/internal_api.providerExecuteDevRequest'
       produces:

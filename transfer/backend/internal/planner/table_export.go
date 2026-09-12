@@ -22,18 +22,18 @@ import (
 )
 
 const (
-	runtimeBoundaryBounded = "bounded"
-	loadModeSnapshot       = "snapshot"
-	loadModeIncremental    = "incremental"
-	changeTypeWatermark    = "watermark"
-	dataTypeTable          = "table"
-	representationNative   = "native"
-	representationEncoded  = "encoded"
-	applyModeReplace       = "replace"
-	applyModeAppend        = "append"
-	applyModeUpsert        = "upsert"
-	applyModeUpsertDelete  = "upsert_delete"
-	targetBindingRuntime   = "runtime"
+	runtimeBoundaryBounded            = "bounded"
+	loadModeSnapshot                  = "snapshot"
+	loadModeIncremental               = "incremental"
+	changeTypeWatermark               = "watermark"
+	dataTypeTable                     = "table"
+	representationNative              = "native"
+	representationEncoded             = "encoded"
+	applyModeReplace                  = "replace"
+	applyModeAppend                   = "append"
+	applyModeUpsert                   = "upsert"
+	applyModeUpsertDelete             = "upsert_delete"
+	targetOverrideExistingTableAppend = "existing_table_append"
 )
 
 type EngineRef struct {
@@ -53,7 +53,7 @@ type EndpointSpec struct {
 	Options         map[string]interface{} `json:"options,omitempty"`
 	Policy          map[string]interface{} `json:"policy,omitempty"`
 	Query           *QuerySourceSpec       `json:"query,omitempty"`
-	Binding         string                 `json:"binding,omitempty"`
+	OverridePolicy  string                 `json:"override_policy,omitempty"`
 	Attributes      map[string]interface{} `json:"-"`
 	ManagedExisting bool                   `json:"-"`
 }
@@ -321,12 +321,15 @@ func ParseTableExportTaskSpec(config map[string]interface{}, fallbackBatchSize i
 	if err := validateTableTransferSpec(spec); err != nil {
 		return TableExportTaskSpec{}, err
 	}
+	if spec.Target.OverridePolicy == targetOverrideExistingTableAppend {
+		spec.Target.ManagedExisting = true
+	}
 	return spec, nil
 }
 
-func IsRuntimeExistingTargetTaskConfig(config map[string]interface{}) bool {
+func AllowsTargetOverrideTaskConfig(config map[string]interface{}) bool {
 	spec, err := ParseTableExportTaskSpec(config, 1)
-	return err == nil && spec.Target.Binding == targetBindingRuntime
+	return err == nil && spec.Target.OverridePolicy == targetOverrideExistingTableAppend
 }
 
 func hasTableExportWriter(formatType format.FormatType) bool {
@@ -352,8 +355,8 @@ func BuildTableTransferPlan(spec TableExportTaskSpec, resolver EngineResolver) (
 	if err := validateTableTransferSpec(spec); err != nil {
 		return nil, err
 	}
-	if spec.Target.Binding == targetBindingRuntime {
-		return nil, fmt.Errorf("runtime existing-table target must be resolved from execution parameters")
+	if spec.Target.OverridePolicy == targetOverrideExistingTableAppend {
+		spec.Target.ManagedExisting = true
 	}
 	if spec.Load.Mode != loadModeSnapshot {
 		return nil, fmt.Errorf("ordinary table transfer planner only supports snapshot load")
@@ -429,32 +432,54 @@ func BuildTableTransferPlan(spec TableExportTaskSpec, resolver EngineResolver) (
 	}, nil
 }
 
-// ResolveRuntimeExistingTarget binds one execution to an already existing
-// native table. It never creates, replaces, truncates, or deletes the target.
-func ResolveRuntimeExistingTarget(spec TableExportTaskSpec, targetLocator string) (TableExportTaskSpec, error) {
-	if spec.Target.Binding != targetBindingRuntime {
-		return TableExportTaskSpec{}, fmt.Errorf("runtime existing-table target is required")
+// ResolveTargetOverride redirects one execution to an already existing native
+// table. The saved default target remains unchanged and later executions use it
+// unless they provide another override. This path never creates, replaces,
+// truncates, or deletes the resolved target.
+func ResolveTargetOverride(spec TableExportTaskSpec, targetLocator string) (TableExportTaskSpec, error) {
+	if spec.Target.OverridePolicy != targetOverrideExistingTableAppend {
+		return TableExportTaskSpec{}, fmt.Errorf("target override is not enabled")
 	}
 	loc, err := resourcetree.ParseURI(strings.TrimSpace(targetLocator))
 	if err != nil {
-		return TableExportTaskSpec{}, fmt.Errorf("parse runtime target locator: %w", err)
+		return TableExportTaskSpec{}, fmt.Errorf("parse target override locator: %w", err)
 	}
 	if loc.Type != resourcetree.TypeTable || loc.EngineID == 0 || len(loc.Path) < 2 || strings.TrimSpace(loc.LastSegment()) == "" {
-		return TableExportTaskSpec{}, fmt.Errorf("runtime target locator must identify a native table")
+		return TableExportTaskSpec{}, fmt.Errorf("target override locator must identify a native table")
 	}
 	parent := loc.ParentPath()
 	if parent == nil || parent.Type != resourcetree.TypeSchema {
-		return TableExportTaskSpec{}, fmt.Errorf("runtime target locator must have a schema parent")
+		return TableExportTaskSpec{}, fmt.Errorf("target override locator must have a schema parent")
 	}
-	spec.Target.Binding = ""
 	spec.Target.Locator = ""
 	spec.Target.ParentLocator = parent.ToURI()
 	spec.Target.Name = loc.LastSegment()
 	spec.Target.ManagedExisting = true
 	if err := validateTableTransferSpec(spec); err != nil {
-		return TableExportTaskSpec{}, fmt.Errorf("resolve runtime existing-table target: %w", err)
+		return TableExportTaskSpec{}, fmt.Errorf("resolve target override: %w", err)
 	}
 	return spec, nil
+}
+
+// NativeTableTargetLocator returns the canonical ResourceLocator represented by
+// a native target endpoint.
+func NativeTableTargetLocator(spec TableExportTaskSpec) (string, error) {
+	if spec.Target.Representation != representationNative {
+		return "", fmt.Errorf("target is not a native table")
+	}
+	parent, err := spec.Target.ParentResourceLocator()
+	if err != nil {
+		return "", fmt.Errorf("parse target parent locator: %w", err)
+	}
+	name := strings.TrimSpace(spec.Target.Name)
+	if parent.Type != resourcetree.TypeSchema || name == "" {
+		return "", fmt.Errorf("target must identify a native table under a schema")
+	}
+	return (&resourcetree.ResourceLocator{
+		EngineID: parent.EngineID,
+		Path:     append(append([]string(nil), parent.Path...), name),
+		Type:     resourcetree.TypeTable,
+	}).ToURI(), nil
 }
 
 func SuperMapSDXPostgreSQLWorkspace(binding EngineBinding) (engineplugin.SpatialWorkspaceFact, bool) {
@@ -1298,32 +1323,19 @@ func validateTableTransferSpec(spec TableExportTaskSpec) error {
 	if spec.Runtime.Boundary != runtimeBoundaryBounded {
 		return fmt.Errorf("runtime.boundary must be %q, got %q", runtimeBoundaryBounded, spec.Runtime.Boundary)
 	}
-	if spec.Target.Binding == targetBindingRuntime {
+	if strings.TrimSpace(spec.Target.OverridePolicy) != "" {
+		if spec.Target.OverridePolicy != targetOverrideExistingTableAppend {
+			return fmt.Errorf("unsupported target override_policy %q", spec.Target.OverridePolicy)
+		}
 		if spec.Load.Mode != loadModeSnapshot || spec.Load.ChangeDetection != nil {
-			return fmt.Errorf("runtime existing-table target only supports snapshot load")
-		}
-		if err := validateEndpointCommon(spec.Source, "source", dataTypeTable); err != nil {
-			return err
-		}
-		if strings.TrimSpace(spec.Target.Locator) != "" || strings.TrimSpace(spec.Target.ParentLocator) != "" || strings.TrimSpace(spec.Target.Name) != "" {
-			return fmt.Errorf("runtime existing-table target identity must come from execution parameters")
+			return fmt.Errorf("target override only supports snapshot load")
 		}
 		if spec.Target.DataType != dataTypeTable || spec.Target.Representation != representationNative {
-			return fmt.Errorf("runtime target must be a native table")
+			return fmt.Errorf("target override requires a native table default target")
 		}
 		if applyMode(spec.Target.Policy) != applyModeAppend {
-			return fmt.Errorf("runtime existing-table target policy.apply_mode must be append")
+			return fmt.Errorf("target override policy.apply_mode must be append")
 		}
-		if err := validateTransformSpecs(spec.Transforms); err != nil {
-			return err
-		}
-		if spec.Source.Query == nil {
-			return fmt.Errorf("runtime existing-table target requires query source")
-		}
-		return validateQuerySource(spec.Source, spec.Transforms)
-	}
-	if strings.TrimSpace(spec.Target.Binding) != "" {
-		return fmt.Errorf("unsupported target binding %q", spec.Target.Binding)
 	}
 	switch spec.Load.Mode {
 	case loadModeSnapshot:
@@ -1380,7 +1392,7 @@ func endpointSpecEmpty(endpoint EndpointSpec) bool {
 	return strings.TrimSpace(endpoint.Locator) == "" && strings.TrimSpace(endpoint.ParentLocator) == "" &&
 		strings.TrimSpace(endpoint.Name) == "" && strings.TrimSpace(endpoint.DataType) == "" &&
 		strings.TrimSpace(endpoint.Representation) == "" && endpoint.Format == "" && len(endpoint.Options) == 0 &&
-		len(endpoint.Policy) == 0 && endpoint.Query == nil && strings.TrimSpace(endpoint.Binding) == ""
+		len(endpoint.Policy) == 0 && endpoint.Query == nil && strings.TrimSpace(endpoint.OverridePolicy) == ""
 }
 
 func validateQuerySource(source EndpointSpec, transforms []TransformSpec) error {

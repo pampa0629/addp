@@ -97,6 +97,9 @@ other = "The selected assignment scope is disabled or closed."
 [system.iam.role_assignment_scope_membership_required]
 other = "Roles can only be assigned within an active department or project group that the member has joined."
 
+[system.iam.role_assignment_expired]
+other = "This role assignment has expired and its history cannot be revoked. Create a new role assignment to continue access."
+
 [system.iam.organization_membership_principal_type_not_allowed]
 other = "Only user accounts can join departments and project groups; machine identities cannot be organization members."
 

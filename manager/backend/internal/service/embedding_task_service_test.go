@@ -54,7 +54,18 @@ func TestEmbeddingTaskExecuteReusesSingleExecution(t *testing.T) {
 		t.Fatalf("create embedding task: %v", err)
 	}
 
-	parentExecutionID := "parent-execution"
+	parentExecutionID := "33333333-3333-4333-8333-333333333333"
+	principalID, membershipID, authorizationVersion := int64(41), int64(51), int64(6)
+	if err := taskExecRepo.Create(context.Background(), &commonExecution.TaskExecution{
+		TenantID: int(task.TenantID), ExecutionID: parentExecutionID,
+		Module: commonExecution.ModuleOrchestrator, TaskType: commonExecution.TaskTypeOrchestration,
+		Source: commonExecution.ModuleOrchestrator, Status: commonExecution.ExecutionStatusRunning,
+		TriggerType:      commonExecution.TriggerTypeManual,
+		ActorPrincipalID: &principalID, ActorTenantMembershipID: &membershipID,
+		IssuedAuthorizationVersion: &authorizationVersion,
+	}); err != nil {
+		t.Fatalf("create parent execution: %v", err)
+	}
 	executionID, err := taskSvc.Execute(context.Background(), task.ID, task.TenantID, commonExecution.TriggerTypeManual, commonExecution.ModuleOrchestrator, &parentExecutionID)
 	if err != nil {
 		t.Fatalf("execute embedding task: %v", err)
@@ -72,6 +83,11 @@ func TestEmbeddingTaskExecuteReusesSingleExecution(t *testing.T) {
 	}
 	if exec.ParentExecutionID == nil || *exec.ParentExecutionID != parentExecutionID {
 		t.Fatalf("parent execution = %#v, want %s", exec.ParentExecutionID, parentExecutionID)
+	}
+	if exec.ActorPrincipalID == nil || *exec.ActorPrincipalID != principalID ||
+		exec.ActorTenantMembershipID == nil || *exec.ActorTenantMembershipID != membershipID ||
+		exec.IssuedAuthorizationVersion == nil || *exec.IssuedAuthorizationVersion != authorizationVersion {
+		t.Fatalf("execution actor facts were not inherited: %#v", exec)
 	}
 	target, ok := exec.ExecutionConfig["target"].(map[string]interface{})
 	if !ok {

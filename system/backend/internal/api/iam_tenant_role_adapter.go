@@ -477,6 +477,7 @@ func (h *IAMTenantRoleHandler) CreateAssignments(c *gin.Context) {
 // @Param        id path string true "角色分配 ID | Role assignment ID"
 // @Param        request body IAMRevokeTenantRoleAssignmentRequest true "撤销原因 | Revocation reason"
 // @Success      200 {object} IAMTenantRoleAssignmentResponse
+// @Failure      409 {object} IAMErrorResponse "角色分配已撤销或已到期 | Role assignment is already revoked or expired"
 // @x-addp-auth-mode "permission"
 // @x-addp-required-permissions ["iam.tenant_role_assignment.revoke"]
 // @Router       /tenant/role_assignments/{id}/revoke [post]

@@ -127,15 +127,15 @@ func TestBoundedExecutionClaimUsesDatabaseLeaseAndRecoveryFailsClosed(t *testing
 	}
 }
 
-func TestRuntimeTargetExpiredLeaseFailsClosed(t *testing.T) {
+func TestTargetOverrideExecutionExpiredLeaseFailsClosed(t *testing.T) {
 	db := newTaskRepositoryTestDB(t)
 	repo := NewTaskRepository(db)
-	task := createTaskRepositoryTestTask(t, db, 7, "runtime-target-lease")
-	config := runtimeTargetTaskRepositoryConfig()
+	task := createTaskRepositoryTestTask(t, db, 7, "target-override-lease")
+	config := targetOverrideTaskRepositoryConfig()
 	if err := db.Model(&task).Update("config", config).Error; err != nil {
 		t.Fatal(err)
 	}
-	execution := claimTestExecution(task, "runtime-target-execution")
+	execution := claimTestExecution(task, "target-override-execution")
 	execution.ExecutionBoundary = commonExecution.ExecutionBoundaryBounded
 	execution.ExecutionConfig = config
 	principalID, membershipID, version := int64(11), int64(12), int64(3)
@@ -447,16 +447,16 @@ func createTaskRepositoryTestTask(t *testing.T, db *gorm.DB, tenantID uint, name
 	return task
 }
 
-func runtimeTargetTaskRepositoryConfig() models.JSONMap {
+func targetOverrideTaskRepositoryConfig() models.JSONMap {
 	return models.JSONMap{
 		"runtime": map[string]interface{}{"boundary": "bounded"},
 		"load":    map[string]interface{}{"mode": "snapshot"},
 		"source": map[string]interface{}{
 			"locator": "addp://engine/1/path/outdoor/entries?type=table", "data_type": "table", "representation": "native",
-			"query": map[string]interface{}{"language": "mql", "statement": `[{"$project":{"person_id":"$person.id"}}]`},
 		},
 		"target": map[string]interface{}{
-			"binding": "runtime", "data_type": "table", "representation": "native",
+			"parent_locator": "addp://engine/2/path/public?type=schema", "name": "default_target",
+			"data_type": "table", "representation": "native", "override_policy": "existing_table_append",
 			"policy": map[string]interface{}{"apply_mode": "append"},
 		},
 		"transforms": []interface{}{map[string]interface{}{

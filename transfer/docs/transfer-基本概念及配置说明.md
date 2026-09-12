@@ -1,6 +1,6 @@
 # Transfer 模块基本概念及配置说明
 
-更新时间：2026-08-31
+更新时间：2026-09-12
 
 本文档定义 Transfer 稳定任务配置、执行状态、bounded snapshot 主链路、watermark bounded incremental 规则，以及 continuous/Kafka 契约与当前实现边界。旧版顶层 `mode`、`target.policy.write_mode`、`connector_type`、`source_config`、`target_config`、`output_format`、`file_type`、旧 endpoint `engine_id` 等字段不再兼容。
 
@@ -93,6 +93,7 @@ snapshot checkpoint 用于 progress / diagnostics，不表示可从 checkpoint �
 | `format` | encoded 必填 | encoded endpoint 的格式，如 `csv`、`json`、`geojson`、`parquet`、`shapefile`。 |
 | `options` | 否 | 格式或读取写入选项。 |
 | `policy` | target 必填 | 目标应用策略；必须声明 `apply_mode`，upsert 还必须声明 `keys`。 |
+| `override_policy` | target 可选 | `existing_table_append` 表示允许 Orchestrator 用可选 `target_locator` 覆盖单次执行目标；只允许 bounded snapshot、已存在原生表和 append。 |
 
 `locator` 示例：
 
@@ -143,6 +144,12 @@ MongoDB 控制台提供一个通用结构整形构建器，当前覆盖两类基
 - 基础界面直接以已选字段生成确定输出字段，下一步 `field_mapping` 只消费该输出。仅当 SQL 严格属于上述可逆子集时才能反向显示并编辑为基础表单；其他合法只读 SQL 在 Transfer Console 中只读展示，不提供高级 SQL 编辑或保存入口。
 
 查询入口必须由所选 Engine Instance 的 `compute.query` 能力驱动：只有 `supported=true`、`read_session=true` 且 `languages` 非空时才开放。单语言引擎直接使用 `default_language` 或唯一语言，不显示无意义的语言下拉框；仅当引擎真实声明多种语言时才允许在声明集合内切换。查询包含参数时，Planner 还必须失败关闭地校验 `parameters.supported`、`parameters.languages` 与 `parameters.types`，不能只依赖前端。切换 Engine 或源资源必须清理不兼容的查询语句、参数和基础构造状态，不得把 MQL 带入 SQL 引擎或反之。
+
+### 2.4 单次执行目标覆盖
+
+目标覆盖与 `source.query` 完全正交。任务必须先选择并保存一个已存在原生表作为默认目标，并使用 `policy.apply_mode=append`；随后才可以声明 `override_policy=existing_table_append`。该任务即使不经过 Orchestrator 也必须能直接执行。
+
+允许目标覆盖的 TaskProvider 契约将 `target_locator` 声明为可选 ResourceLocator 输入，并在 `input_defaults` 返回默认目标。执行时未提供该参数则使用保存的默认目标；只有带父编排 execution 的 Orchestrator 调用可以提交覆盖值。覆盖只修改冻结到本 execution 的有效目标，不修改任务定义。默认目标和覆盖目标都通过 existing-table write session 写入，不执行 prepare、DDL、replace、truncate 或 delete；continuous、watermark 和 encoded target 不开放该能力。
 
 ## 三、table Transfer 支持范围
 

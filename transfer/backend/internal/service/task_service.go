@@ -160,7 +160,6 @@ func (s *TaskService) CreateTask(ctx context.Context, req *models.CreateTaskRequ
 		return nil, err
 	}
 	boundary, _ := planner.TaskRuntimeBoundary(req.Config)
-	runtimeTarget := planner.IsRuntimeExistingTargetTaskConfig(req.Config)
 	schedule := strings.TrimSpace(req.Schedule)
 	enabled := false
 	if req.Enabled != nil {
@@ -171,9 +170,6 @@ func (s *TaskService) CreateTask(ctx context.Context, req *models.CreateTaskRequ
 	}
 	if boundary == planner.RuntimeBoundaryContinuous && (schedule != "" || enabled) {
 		return nil, fmt.Errorf("%w: continuous tasks do not support task-owned schedules", ErrInvalidTaskConfig)
-	}
-	if runtimeTarget && (schedule != "" || enabled) {
-		return nil, fmt.Errorf("%w: runtime-target tasks require execution parameters from Orchestrator", ErrInvalidTaskConfig)
 	}
 	nextRunAt, err := transferTaskNextRunAt(schedule, enabled, time.Now())
 	if err != nil {
@@ -198,12 +194,7 @@ func (s *TaskService) CreateTask(ctx context.Context, req *models.CreateTaskRequ
 	}
 
 	// 处理 auto_scan_metadata 字段
-	if runtimeTarget && req.AutoScanMetadata != nil && *req.AutoScanMetadata {
-		return nil, fmt.Errorf("%w: runtime-target tasks do not trigger Transfer metadata scans", ErrInvalidTaskConfig)
-	}
-	if runtimeTarget {
-		task.AutoScanMetadata = false
-	} else if req.AutoScanMetadata != nil {
+	if req.AutoScanMetadata != nil {
 		task.AutoScanMetadata = *req.AutoScanMetadata
 	} else {
 		task.AutoScanMetadata = true // 默认为 true
@@ -289,7 +280,6 @@ func (s *TaskService) UpdateTask(ctx context.Context, id, tenantID uint, req *mo
 		return nil, err
 	}
 	effectiveBoundary, _ := planner.TaskRuntimeBoundary(effectiveConfig)
-	runtimeTarget := planner.IsRuntimeExistingTargetTaskConfig(effectiveConfig)
 
 	// 更新字段
 	if req.Name != nil {
@@ -322,17 +312,8 @@ func (s *TaskService) UpdateTask(ctx context.Context, id, tenantID uint, req *mo
 	if effectiveBoundary == planner.RuntimeBoundaryContinuous && (task.Schedule != "" || task.Enabled) {
 		return nil, fmt.Errorf("%w: continuous tasks do not support task-owned schedules", ErrInvalidTaskConfig)
 	}
-	if runtimeTarget && (task.Schedule != "" || task.Enabled) {
-		return nil, fmt.Errorf("%w: runtime-target tasks require execution parameters from Orchestrator", ErrInvalidTaskConfig)
-	}
 	if req.AutoScanMetadata != nil {
-		if runtimeTarget && *req.AutoScanMetadata {
-			return nil, fmt.Errorf("%w: runtime-target tasks do not trigger Transfer metadata scans", ErrInvalidTaskConfig)
-		}
 		task.AutoScanMetadata = *req.AutoScanMetadata
-	}
-	if runtimeTarget {
-		task.AutoScanMetadata = false
 	}
 	nextRunAt, err := transferTaskNextRunAt(task.Schedule, task.Enabled, time.Now())
 	if err != nil {
@@ -593,7 +574,7 @@ func (s *TaskService) StartTaskWithContext(ctx context.Context, id, tenantID, us
 }
 
 // StartTaskWithExecutionParameters starts a TaskProvider execution after its
-// runtime-only inputs have been resolved by Orchestrator.
+// execution inputs have been resolved by Orchestrator.
 func (s *TaskService) StartTaskWithExecutionParameters(
 	ctx context.Context,
 	id, tenantID, userID uint,
@@ -651,14 +632,24 @@ func (s *TaskService) startTaskWithContext(
 	if strings.TrimSpace(source) == "" {
 		source = commonExecution.ModuleTransfer
 	}
-	runtimeTarget := planner.IsRuntimeExistingTargetTaskConfig(task.Config)
 	contract := TransferTaskExecutionContract(task.Config)
 	if err := taskprovider.ValidateExecutionParameters(contract.InputSchema, parameters, taskprovider.ParameterValidationOptions{}); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidTaskConfig, err)
 	}
-	if runtimeTarget &&
+	targetOverride, hasTargetOverride, err := executionTargetOverride(parameters)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidTaskConfig, err)
+	}
+	if hasTargetOverride &&
 		(source != commonExecution.ModuleOrchestrator || parentExecutionID == nil || strings.TrimSpace(*parentExecutionID) == "") {
-		return nil, fmt.Errorf("%w: runtime-target tasks require an Orchestrator parent execution", ErrInvalidTaskConfig)
+		return nil, fmt.Errorf("%w: target overrides require an Orchestrator parent execution", ErrInvalidTaskConfig)
+	}
+	executionConfig := task.Config
+	if hasTargetOverride {
+		executionConfig, err = resolveTargetOverrideExecutionConfig(task.Config, task.BatchSize, targetOverride)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrInvalidTaskConfig, err)
+		}
 	}
 	now := time.Now()
 	triggeredBy := int(userID)
@@ -666,13 +657,13 @@ func (s *TaskService) startTaskWithContext(
 		TenantID: int(task.TenantID), ExecutionID: uuid.New().String(), Module: commonExecution.ModuleTransfer,
 		TaskType: commonExecution.TaskTypeSync, Source: source, SourceTaskID: commonExecution.NewSourceTaskIDFromUint(id),
 		SourceTaskName: &task.Name, ParentExecutionID: parentExecutionID, Status: commonExecution.ExecutionStatusPending,
-		TriggerType: normalizedTriggerType, TriggeredBy: &triggeredBy, ExecutionConfig: task.Config,
+		TriggerType: normalizedTriggerType, TriggeredBy: &triggeredBy, ExecutionConfig: executionConfig,
 		ExecutionBoundary: boundary,
 		CreatedAt:         now, UpdatedAt: now,
 	}
-	if runtimeTarget {
+	if hasTargetOverride {
 		executionRecord.MaxAttempts = 1
-		executionRecord.Metadata = commonModels.JSONMap{"runtime_inputs": commonModels.JSONMap(parameters)}
+		executionRecord.Metadata = commonModels.JSONMap{"execution_inputs": commonModels.JSONMap{"target_locator": targetOverride}}
 	}
 	if boundary == planner.RuntimeBoundaryContinuous {
 		if task.Schedule != "" || task.Enabled {
@@ -708,6 +699,41 @@ func (s *TaskService) startTaskWithContext(
 	return execution, nil
 }
 
+func resolveTargetOverrideExecutionConfig(config map[string]interface{}, batchSize int, targetLocator string) (commonModels.JSONMap, error) {
+	spec, err := planner.ParseTableExportTaskSpec(config, batchSize)
+	if err != nil {
+		return nil, err
+	}
+	resolved, err := planner.ResolveTargetOverride(spec, targetLocator)
+	if err != nil {
+		return nil, err
+	}
+	payload, err := json.Marshal(resolved)
+	if err != nil {
+		return nil, fmt.Errorf("marshal effective target override config: %w", err)
+	}
+	var effective commonModels.JSONMap
+	if err := json.Unmarshal(payload, &effective); err != nil {
+		return nil, fmt.Errorf("decode effective target override config: %w", err)
+	}
+	return effective, nil
+}
+
+func executionTargetOverride(parameters map[string]interface{}) (string, bool, error) {
+	if parameters == nil {
+		return "", false, nil
+	}
+	raw, exists := parameters["target_locator"]
+	if !exists {
+		return "", false, nil
+	}
+	value, ok := raw.(string)
+	if !ok || strings.TrimSpace(value) == "" {
+		return "", false, fmt.Errorf("target_locator must identify a table")
+	}
+	return strings.TrimSpace(value), true, nil
+}
+
 func TransferTaskExecutionContract(config map[string]interface{}) taskprovider.ExecutionContract {
 	contract := taskprovider.EmptyExecutionContract()
 	contract.OutputSchema = map[string]interface{}{
@@ -720,15 +746,22 @@ func TransferTaskExecutionContract(config map[string]interface{}) taskprovider.E
 		"required":             []interface{}{"execution_id", "target_locator", "row_count"},
 		"additionalProperties": false,
 	}
-	if planner.IsRuntimeExistingTargetTaskConfig(config) {
+	if planner.AllowsTargetOverrideTaskConfig(config) {
 		contract.InputSchema = map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"target_locator": map[string]interface{}{"type": "string", "minLength": float64(1)},
+				"target_locator": map[string]interface{}{
+					"type": "string", "format": "resource-locator", "minLength": float64(1),
+				},
 			},
-			"required":             []interface{}{"target_locator"},
 			"additionalProperties": false,
 		}
+		if spec, err := planner.ParseTableExportTaskSpec(config, 1); err == nil {
+			if locator, locatorErr := planner.NativeTableTargetLocator(spec); locatorErr == nil {
+				contract.InputDefaults["target_locator"] = locator
+			}
+		}
+		contract.InputUISchema["target_locator"] = map[string]interface{}{"order": 0}
 	}
 	return contract
 }

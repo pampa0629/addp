@@ -37,6 +37,7 @@ const (
 	MsgRoleAssignmentScopeNotFound                   = "system.iam.role_assignment_scope_not_found"
 	MsgRoleAssignmentScopeUnavailable                = "system.iam.role_assignment_scope_unavailable"
 	MsgRoleAssignmentScopeMembershipRequired         = "system.iam.role_assignment_scope_membership_required"
+	MsgRoleAssignmentExpired                         = "system.iam.role_assignment_expired"
 	MsgOrganizationMembershipPrincipalTypeNotAllowed = "system.iam.organization_membership_principal_type_not_allowed"
 	MsgOrganizationVersionConflict                   = "system.iam.organization_version_conflict"
 	MsgOAuthClientVersionConflict                    = "system.iam.oauth_client_version_conflict"

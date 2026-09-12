@@ -2572,7 +2572,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "按标准 TaskProvider 协议触发 Meta ScanTask；task_type 仅支持 scan，parameters 当前不支持覆盖。| Trigger a Meta ScanTask through the standard TaskProvider protocol; task_type only supports scan and parameters overrides are not supported.",
+                "description": "仅接受 addp-orchestrator 以父 execution 血缘触发；task_type 仅支持 scan，请求必须提供 source=orchestrator 和 parent_execution_id，parameters 当前不支持覆盖。| Only accepts addp-orchestrator execution-lineage invocation; task_type only supports scan, source=orchestrator and parent_execution_id are required, and parameters overrides are not supported.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2602,6 +2602,7 @@ const docTemplate = `{
                         "description": "TaskProvider 执行请求 | TaskProvider execution request",
                         "name": "request",
                         "in": "body",
+                        "required": true,
                         "schema": {
                             "$ref": "#/definitions/internal_api.taskProviderExecuteRequest"
                         }

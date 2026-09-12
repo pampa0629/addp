@@ -2,20 +2,10 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
-  buildRuntimeTableTarget,
   querySourceValid,
   queryStatementValid,
   withQuerySource
-} from '../src/views/TaskWizard/runtimeTarget.mjs'
-
-test('runtime target uses the single existing-table append contract', () => {
-  assert.deepEqual(buildRuntimeTableTarget(), {
-    binding: 'runtime',
-    data_type: 'table',
-    representation: 'native',
-    policy: { apply_mode: 'append' }
-  })
-})
+} from '../src/views/TaskWizard/querySource.mjs'
 
 test('query source is valid only for bounded native tables with a complete query', () => {
   const valid = {

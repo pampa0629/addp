@@ -2073,7 +2073,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "按标准 TaskProvider 协议启动 Transfer 任务；runtime target 任务要求由 Orchestrator 绑定 target_locator。| Start a Transfer task through the standard TaskProvider protocol; runtime-target tasks require Orchestrator to bind target_locator.",
+                "description": "仅接受 addp-orchestrator 以父 execution 血缘触发；请求必须提供 source=orchestrator 和 parent_execution_id。允许目标覆盖的任务可通过可选 target_locator 覆盖本次执行目标。| Only accepts addp-orchestrator execution-lineage invocation; source=orchestrator and parent_execution_id are required. Target-overridable tasks may receive an optional target_locator for this execution.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2103,6 +2103,7 @@
                         "description": "TaskProvider 执行请求 | TaskProvider execution request",
                         "name": "request",
                         "in": "body",
+                        "required": true,
                         "schema": {
                             "$ref": "#/definitions/internal_api.ProviderExecuteRequest"
                         }
@@ -3143,6 +3144,10 @@
                 "options": {
                     "type": "object",
                     "additionalProperties": true
+                },
+                "override_policy": {
+                    "type": "string",
+                    "example": "existing_table_append"
                 },
                 "parent_locator": {
                     "type": "string",

@@ -512,13 +512,13 @@ func (h *TaskHandler) ProviderGetTask(c *gin.Context) {
 
 // ProviderExecuteTask 使用 TaskProvider 标准协议启动 Transfer 任务。
 // @Summary 执行 TaskProvider Transfer 任务 | Execute TaskProvider Transfer task
-// @Description 按标准 TaskProvider 协议启动 Transfer 任务；runtime target 任务要求由 Orchestrator 绑定 target_locator。| Start a Transfer task through the standard TaskProvider protocol; runtime-target tasks require Orchestrator to bind target_locator.
+// @Description 仅接受 addp-orchestrator 以父 execution 血缘触发；请求必须提供 source=orchestrator 和 parent_execution_id。允许目标覆盖的任务可通过可选 target_locator 覆盖本次执行目标。| Only accepts addp-orchestrator execution-lineage invocation; source=orchestrator and parent_execution_id are required. Target-overridable tasks may receive an optional target_locator for this execution.
 // @Tags         TaskProvider
 // @Accept json
 // @Produce json
 // @Param task_type path string true "任务类型，固定为 sync | Task type, fixed to sync"
 // @Param id path int true "任务ID | Task ID"
-// @Param request body ProviderExecuteRequest false "TaskProvider 执行请求 | TaskProvider execution request"
+// @Param request body ProviderExecuteRequest true "TaskProvider 执行请求 | TaskProvider execution request"
 // @Success 202 {object} ProviderExecuteResponse "执行记录 | Execution"
 // @Failure 400 {object} map[string]string "参数错误 | Bad request"
 // @Failure 500 {object} map[string]string "服务器错误 | Server error"
@@ -548,14 +548,13 @@ func (h *TaskHandler) ProviderExecuteTask(c *gin.Context) {
 		commonAPI.BadRequestError(c, err.Error())
 		return
 	}
-	source := strings.TrimSpace(req.Source)
-	if source == "" {
-		source = commonExecution.ModuleTransfer
+	parentID, err := commonExecution.NormalizeOrchestratorChildContext(req.Source, req.ParentExecutionID)
+	if err != nil {
+		commonAPI.BadRequestError(c, err.Error())
+		return
 	}
-	var parentExecutionID *string
-	if strings.TrimSpace(req.ParentExecutionID) != "" {
-		parentExecutionID = &req.ParentExecutionID
-	}
+	source := commonExecution.ModuleOrchestrator
+	parentExecutionID := &parentID
 
 	tenantID := commonAuth.GetTenantID(c)
 	userID := commonAuth.GetUserID(c)

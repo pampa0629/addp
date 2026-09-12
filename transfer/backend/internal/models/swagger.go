@@ -140,6 +140,7 @@ type TransferTargetEndpointDoc struct {
 	Format         string                  `json:"format,omitempty" example:"csv"`
 	Options        map[string]interface{}  `json:"options,omitempty"`
 	Policy         TransferTargetPolicyDoc `json:"policy"`
+	OverridePolicy string                  `json:"override_policy,omitempty" example:"existing_table_append"`
 }
 
 type TransferTargetPolicyDoc struct {

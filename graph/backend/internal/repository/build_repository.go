@@ -133,6 +133,11 @@ func (r *BuildRepository) ClaimExecution(ctx context.Context, taskID, graphID, t
 		execution.ExecutionConfig = commonModels.JSONMap{
 			"graph_id": graphID, "confidence_threshold": task.ConfidenceThreshold, "material_count": len(materials),
 		}
+		if execution.ParentExecutionID != nil {
+			if err := commonExecution.InheritOrchestratorActor(tx, execution); err != nil {
+				return err
+			}
+		}
 		if err := tx.Create(execution).Error; err != nil {
 			return err
 		}
